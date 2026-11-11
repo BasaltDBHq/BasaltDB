@@ -2,7 +2,7 @@
   "name": "revert_plan",
   "status": "IMPLEMENTED",
   "milestone": "M3",
-  "description": "The lines of a large revert plan (more than 1000 lines) that this agent prepared for the person, and its progress. After the person signs the plan with their passkey, apply it with apply_revert_batch: list the pending lines (pending: true, limit: 200) and pass their line numbers, until pending is 0. Lines come in execution order, the order that worked when the revert was tried; apply them in that order. People win: a line whose row changed after the plan was built is skipped, never overwritten.",
+  "description": "The lines of a large revert plan (more than 1000 lines) that this agent prepared for the person, and its progress. After the person signs the plan with their passkey, apply it with apply_revert_batch: list the pending lines (pending: true, limit: 200) and pass their line numbers, until pending is 0. Lines come in execution order, the order that worked when the revert was tried; apply them in that order. People win: a line whose row changed after the plan was built is skipped, never overwritten. While the plan is not signed (PENDING) the result carries revertUrl and personMessage, one line to show the person verbatim so they can review and sign it.",
   "inputSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -163,6 +163,15 @@
       "nextCursor": {
         "type": "string",
         "description": "Absent on the last page."
+      },
+      "revertUrl": {
+        "type": "string",
+        "format": "uri",
+        "description": "Only while PENDING: the revert page, the short link http://localhost:<port>/revert/<revertId> when the engine serves the local pages, else https://basaltvault.app/revert/#1.<request>."
+      },
+      "personMessage": {
+        "type": "string",
+        "description": "Only while PENDING: one line to show the person verbatim, with the revert link and its expiry."
       }
     },
     "$defs": {

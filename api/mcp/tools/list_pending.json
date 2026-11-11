@@ -2,7 +2,7 @@
   "name": "list_pending",
   "status": "IMPLEMENTED",
   "milestone": "M2",
-  "description": "This agent's held writes that have not been applied and have not expired: waiting for the person's passkey (PENDING) or approved and ready to apply with write and approvalId (APPROVED). Each carries approveCommand, the command the person runs in their terminal to open the approval page (give them that, not the long approval link, which breaks when copied), and the approval link itself. Newest first, cursor-paginated. Listing never approves anything.",
+  "description": "This agent's held writes that have not been applied and have not expired: waiting for the person's passkey (PENDING) or approved and ready to apply with write and approvalId (APPROVED). Each carries personMessage, one line to show the person verbatim, with the approval link (approvalUrl) and the equivalent basalt command (approveCommand). Use it to get a link back. Newest first, cursor-paginated. Listing never approves anything.",
   "inputSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -112,11 +112,19 @@
             "approvalUrl": {
               "type": "string",
               "format": "uri",
-              "description": "https://basaltvault.app/approve/#1.<request>; the request carries the preview the person signs. Long: terminals wrap it and chats may cut it, so prefer approveCommand."
+              "description": "The approval page for this held write: the short link http://localhost:<port>/approve/<approvalId> when the engine serves the local pages, else https://basaltvault.app/approve/#1.<request> (the request carries the preview the person signs)."
             },
             "approveCommand": {
               "type": "string",
-              "description": "basalt approve --agent <name> [--config <path>] --open <approvalId>: the person runs it in their terminal and it opens this approval link in their browser."
+              "description": "basalt approve --agent <name> [--config <path>] --open <approvalId>: the person runs it in their terminal and it opens the approval page in their browser."
+            },
+            "headline": {
+              "type": "string",
+              "description": "The held write in one line, cascaded rows stated (\"Delete 1 row in public.leads + 2 cascaded rows (public.lead_notes 2)\")."
+            },
+            "personMessage": {
+              "type": "string",
+              "description": "One line to show the person verbatim: what is held, the approval link, the equivalent command and the expiry."
             }
           }
         }

@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/setup-code.v1.json",
+  "title": "Setup code",
+  "description": "The JSON inside a setup code, basalt-setup.1.<b64url(deflate-raw(json))>.<check> (CONTRACT.md, Setup from your laptop). basalt init --remote makes it on the bot's machine; basalt init --setup-code reads it on the person's own computer. Only non-secret parameters: never the agent's password (its SCRAM-SHA-256 verifier instead) and never anything of the admin. Closed: an unknown key is refused. Rules a schema cannot state (guard.from <= guard.to, and < for UPGRADE; at least one table; a table in only one of write and read; the agent role <prefix>_agent_<name> at most 63 bytes; expiresAt no later than the setupId's UUIDv7 time plus 24 hours) are in CONTRACT.md. Golden fixtures: setup-code.fixtures.json.",
+  "oneOf": [
+    { "$ref": "#/$defs/install" },
+    { "$ref": "#/$defs/agentChange" },
+    { "$ref": "#/$defs/upgrade" }
+  ],
+  "$defs": {
+    "install": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "INSTALL: the guard (migrations guard.from+1..guard.to), the agent role with its password set from the verifier, its grants, and a portal passkey when none is active.",
+      "required": ["format", "setupId", "kind", "prefix", "target", "guard", "build", "agent", "expiresAt"],
+      "properties": {
+        "format": { "$ref": "#/$defs/format" },
+        "setupId": { "$ref": "#/$defs/setupId" },
+        "kind": { "type": "string", "enum": ["INSTALL"] },
+        "prefix": { "$ref": "#/$defs/prefix" },
+        "target": { "$ref": "#/$defs/target" },
+        "guard": { "$ref": "#/$defs/guard" },
+        "build": { "$ref": "#/$defs/build" },
+        "agent": { "$ref": "#/$defs/newAgent" },
+        "expiresAt": { "$ref": "#/$defs/expiresAt" }
+      }
+    },
+    "agentChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "AGENT: an existing agent's tables, replaced by write and read as given; with a verifier its password is rotated, without one it is kept. Also applies missing migrations up to guard.to and registers a portal passkey when none is active.",
+      "required": ["format", "setupId", "kind", "prefix", "target", "guard", "build", "agent", "expiresAt"],
+      "properties": {
+        "format": { "$ref": "#/$defs/format" },
+        "setupId": { "$ref": "#/$defs/setupId" },
+        "kind": { "type": "string", "enum": ["AGENT"] },
+        "prefix": { "$ref": "#/$defs/prefix" },
+        "target": { "$ref": "#/$defs/target" },
+        "guard": { "$ref": "#/$defs/guard" },
+        "build": { "$ref": "#/$defs/build" },
+        "agent": { "$ref": "#/$defs/changedAgent" },
+        "expiresAt": { "$ref": "#/$defs/expiresAt" }
+      }
+    },
+    "upgrade": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "UPGRADE: the missing migrations up to guard.to only. No agent part: the password, grants and policies are unchanged.",
+      "required": ["format", "setupId", "kind", "prefix", "target", "guard", "build", "expiresAt"],
+      "properties": {
+        "format": { "$ref": "#/$defs/format" },
+        "setupId": { "$ref": "#/$defs/setupId" },
+        "kind": { "type": "string", "enum": ["UPGRADE"] },
+        "prefix": { "$ref": "#/$defs/prefix" },
+        "target": { "$ref": "#/$defs/target" },
+        "guard": { "$ref": "#/$defs/guard" },
+        "build": { "$ref": "#/$defs/build" },
+        "expiresAt": { "$ref": "#/$defs/expiresAt" }
+      }
+    },
+    "format": {
+      "type": "integer",
+      "const": 1,
+      "description": "Payload format. A decoder refuses any other value as a newer format (update basalt), not as a damaged code."
+    },
+    "setupId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "description": "UUIDv7 made by basalt init --remote. Single use: recorded in basalt_meta.setups by the laptop's install transaction. Time-ordered, so a code older than the agent's latest recorded setup is refused."
+    },
+    "prefix": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,19}$",
+      "description": "The role name prefix (guard.Names): roles <prefix>_guard, <prefix>_agents, <prefix>_agent_<name>."
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The database the bot's engine connects to, from its password-less connection string. The laptop compares it with the admin connection string by database identity and refuses a mismatch (CO-17).",
+      "required": ["host", "port", "database"],
+      "properties": {
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253,
+          "pattern": "^[A-Za-z0-9.:_-]+$",
+          "description": "Host name or IP address, as in the bot's connection string."
+        },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "database": { "type": "string", "minLength": 1, "maxLength": 63 },
+        "supabaseRef": {
+          "type": "string",
+          "pattern": "^[a-z0-9]{20}$",
+          "description": "The Supabase project ref when the connection string names one: the pooler user postgres.<ref> or the direct host db.<ref>.supabase.co. Absent otherwise. With it, the project ref and database decide identity, so the pooler and the direct host of one project match."
+        }
+      }
+    },
+    "guard": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "basalt_meta schema versions. from: the version the bot read with the agent credential, 0 when it could not read one. to: the version the bot's build installs.",
+      "required": ["from", "to"],
+      "properties": {
+        "from": { "type": "integer", "minimum": 0 },
+        "to": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "build": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$",
+      "description": "The bot's basalt version, named when the laptop's binary is older than guard.to (update basalt on this computer to at least <build>)."
+    },
+    "table": {
+      "type": "string",
+      "pattern": "^[a-z_][a-z0-9_]{0,62}\\.[a-z_][a-z0-9_]{0,62}$",
+      "not": { "pattern": "^(pg_[a-z0-9_]*|information_schema|basalt_meta)\\." },
+      "description": "schema.table of plain (unquoted, lowercase) identifiers; never a system schema or basalt_meta."
+    },
+    "tables": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/table" }
+    },
+    "verifier": {
+      "type": "string",
+      "pattern": "^SCRAM-SHA-256\\$4096:[A-Za-z0-9+/]{22}==\\$[A-Za-z0-9+/]{43}=:[A-Za-z0-9+/]{43}=$",
+      "description": "The agent password's SCRAM-SHA-256 verifier (RFC 5802, RFC 7677), as Postgres stores it: SCRAM-SHA-256$4096:<salt>$<StoredKey>:<ServerKey>, standard base64, a 16-byte random salt and 4096 iterations. It lets nobody log in."
+    },
+    "statementTimeoutMs": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 86400000,
+      "description": "The agent role's statement_timeout (basalt init --statement-timeout)."
+    },
+    "newAgent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "write", "read", "verifier", "statementTimeoutMs"],
+      "properties": {
+        "name": { "$ref": "#/$defs/agentName" },
+        "write": { "$ref": "#/$defs/tables" },
+        "read": { "$ref": "#/$defs/tables" },
+        "verifier": { "$ref": "#/$defs/verifier" },
+        "statementTimeoutMs": { "$ref": "#/$defs/statementTimeoutMs" }
+      }
+    },
+    "changedAgent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "write", "read", "statementTimeoutMs"],
+      "properties": {
+        "name": { "$ref": "#/$defs/agentName" },
+        "write": { "$ref": "#/$defs/tables" },
+        "read": { "$ref": "#/$defs/tables" },
+        "verifier": { "$ref": "#/$defs/verifier" },
+        "statementTimeoutMs": { "$ref": "#/$defs/statementTimeoutMs" }
+      }
+    },
+    "agentName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,54}$",
+      "description": "The agent's name (guard.Names); its role <prefix>_agent_<name> fits in 63 bytes."
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+      "description": "RFC 3339 UTC, whole seconds: 24 hours after basalt init --remote made the code (CO-13)."
+    }
+  }
+}

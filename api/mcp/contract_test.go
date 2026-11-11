@@ -309,9 +309,13 @@ func TestNextStepActions(t *testing.T) {
 	enum, ok := action["enum"].([]any)
 	require.True(t, ok)
 	want := []any{}
+	seen := map[string]bool{}
 	for _, actor := range []string{mcpcontract.ActorAgent, mcpcontract.ActorPerson} {
 		for _, a := range mcpcontract.ActorActions[actor] {
-			want = append(want, a)
+			if !seen[a] {
+				want = append(want, a)
+			}
+			seen[a] = true
 		}
 	}
 	require.ElementsMatch(t, want, enum)

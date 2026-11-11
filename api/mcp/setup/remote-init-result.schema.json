@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/remote-init-result.v1.json",
+  "title": "basalt init --remote --json",
+  "description": "What basalt init --remote --json prints on stdout, exit 0: the setup is pending, not failed (CONTRACT.md, Setup from your laptop). The agent shows personMessage to the person verbatim and follows nextSteps: PERSON RUN_COMMAND (basalt init --setup-code <code> on the person's own computer), PERSON TELL_AGENT, AGENT END_TURN, AGENT CALL_TOOL status. Never a secret: the code carries the verifier, not the password.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["agent", "setupId", "kind", "code", "fingerprint", "expiresAt", "personMessage", "nextSteps"],
+  "properties": {
+    "agent": {
+      "type": "string",
+      "description": "The agent's name in the engine config."
+    },
+    "setupId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The code's setupId, also kept in engine.json agents[].setup."
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["INSTALL", "AGENT", "UPGRADE"]
+    },
+    "code": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1500,
+      "description": "The setup code, basalt-setup.1.<payload>.<check>. Shown to the person in a code block."
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{4}( [0-9a-f]{4}){4}$",
+      "description": "The setup fingerprint (CONTRACT.md, The setup code): basalt init --setup-code shows it, and the person checks it matches before running the code."
+    },
+    "reused": {
+      "type": "boolean",
+      "description": "True when a pending setup's code was printed again (same setupId and expiry) instead of a new one; --new-code makes a new one."
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "personMessage": {
+      "type": "string",
+      "description": "What the person does, in plain words: install basalt from the official release page on their own computer, run the command, check it shows the same fingerprint (named here), then tell the agent. Says never to paste the database password into the chat."
+    },
+    "nextSteps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "../errors/next-step.schema.json" }
+    }
+  }
+}

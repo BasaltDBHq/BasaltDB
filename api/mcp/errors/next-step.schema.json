@@ -25,7 +25,7 @@
         "RUN_COMMAND",
         "TELL_AGENT"
       ],
-      "description": "AGENT: CALL_TOOL, REVISE_CALL, RETRY_SMALLER_BATCHES, ASK_PERSON, END_TURN, STOP. PERSON: OPEN_LINK, RUN_COMMAND, TELL_AGENT."
+      "description": "AGENT: CALL_TOOL, REVISE_CALL, RETRY_SMALLER_BATCHES, ASK_PERSON, END_TURN, STOP, and RUN_COMMAND only when the engine's operatedBy is AGENT (a machine step on the engine's machine, never one that needs the admin). PERSON: OPEN_LINK, RUN_COMMAND, TELL_AGENT."
     },
     "text": {
       "type": "string",
@@ -49,7 +49,7 @@
     "command": {
       "type": "string",
       "minLength": 1,
-      "description": "RUN_COMMAND: the complete command to run in a terminal. Optional on OPEN_LINK: a command that opens the same page."
+      "description": "RUN_COMMAND: the complete command to run in a terminal: for an AGENT step on the engine's machine; for a PERSON step on the engine's machine, or on the person's own computer when the engine is agent-operated and the command needs the admin (text says which). Optional on OPEN_LINK: a command that opens the same page."
     },
     "url": {
       "type": "string",

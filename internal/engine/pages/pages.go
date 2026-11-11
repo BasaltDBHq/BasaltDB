@@ -60,19 +60,13 @@ type Server struct {
 }
 
 // New returns the pages for origin, the approval page's origin, which a
-// relayed POST must come from.
+// relayed POST must come from. The page files are the ones embedded in the
+// binary: after editing web/, rebuild and restart the engine.
 func New(origin string, log *slog.Logger) *Server {
-	return NewWithFiles(origin, log, web.Files)
-}
-
-// NewWithFiles is New serving the page files from files instead of the
-// embedded ones: the working tree's web/ for page development
-// (make serve-web).
-func NewWithFiles(origin string, log *slog.Logger, files fs.FS) *Server {
-	if origin == "" || log == nil || files == nil {
-		panic("pages: origin, logger and files required")
+	if origin == "" || log == nil {
+		panic("pages: origin and logger required")
 	}
-	return &Server{origin: origin, log: log, files: files}
+	return &Server{origin: origin, log: log, files: web.Files}
 }
 
 // Add serves a's approvals and reverts.

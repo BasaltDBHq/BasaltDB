@@ -270,7 +270,7 @@ M4.1. The engine serves the approval and revert pages itself, so a held write re
 
 - **Listener.** `pagesAddr` in `engine.json`: a loopback `host:port`. Default: when the pages base URL is local (`http://localhost:<port>`, the default `http://localhost:8787`), `127.0.0.1:<port>`; for the hosted console, `off`. `"off"` disables it. A non-loopback address is refused when the config is loaded: this listener has no TLS or plaintext opt-in. If the port cannot be bound when the engine starts (another process holds it), the engine refuses to start, naming the address and how to find the process (`lsof -nP -iTCP:<port> -sTCP:LISTEN`); it never falls back to the long link silently. To run without the pages, set `pagesAddr` to `"off"`. The listener applies the `websec` Host check (loopback names only), Origin check and security headers.
 - **Origin.** The page origin is the pages base URL (scheme, host, port), so the passkey's RP ID and origin are the ones it was registered with. Short links: `<base>/approvals/<approvalId>#s=<secret>` and `<base>/reverts/<revertId>#s=<secret>` (see [Link secrets](#link-secrets)).
-- **Assets.** The files under `web/` are embedded in the binary (`go:embed`); for page development, `pages.NewWithFiles` serves another directory (the working tree's `web/`) at the same paths.
+- **Assets.** The files under `web/` are embedded in the binary (`go:embed`); to try an edit to a page, rebuild the binary and restart the engine.
 
 | Method and path | What |
 |---|---|

@@ -57,6 +57,8 @@ func PatternDetectors() []Detector { return []Detector{EmailDetector{}, PhoneDet
 // EmailDetector finds email addresses by shape, known or not.
 type EmailDetector struct{}
 
+func (EmailDetector) shapes() {}
+
 // Detect returns the email spans in text. A span takes in ASCII letters and
 // digits glued to the end of the address ("a@corp.com2024"), so a token never
 // sits against them: a token is only recognized again when nothing
@@ -83,6 +85,8 @@ func (EmailDetector) Detect(text string) []Span {
 // PhoneDetector finds phone numbers by shape (+cc, or a US "(202) 555-0143"),
 // known or not, with minPhoneDigits to maxPhoneDigits digits.
 type PhoneDetector struct{}
+
+func (PhoneDetector) shapes() {}
 
 // Detect returns the phone spans in text.
 func (PhoneDetector) Detect(text string) []Span {

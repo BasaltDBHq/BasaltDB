@@ -39,7 +39,9 @@ func normalizeEmail(value string) string {
 // number). An unparsed value keeps a leading + and its letters and digits, so
 // distinct inputs stay distinct.
 func normalizePhone(value, region string) (string, int32) {
-	value = strings.TrimSpace(norm.NFKC.String(strings.Map(dropIgnorable, value)))
+	// The shape form, as the phone detector saw it: no marks, ASCII digits.
+	caser := cases.Fold()
+	value = strings.TrimSpace(shapeForm(&caser, value))
 	region = strings.ToUpper(strings.TrimSpace(region))
 	if e164, cc, ok := parseE164(value, region); ok {
 		return e164, cc

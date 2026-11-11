@@ -2,6 +2,7 @@ package pii_test
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 	"unicode"
@@ -27,6 +28,13 @@ func ignorables() []rune {
 	}
 	return out
 }
+
+// tokenIDRe matches token ids, whose base32 can spell any short word.
+var tokenIDRe = regexp.MustCompile(`pii\d+_[A-Z2-7]{12}|(?:Person|Address) [A-Z2-7]{12}`)
+
+// withoutTokens removes token ids, so a leak check reads only what is left of
+// the input.
+func withoutTokens(s string) string { return tokenIDRe.ReplaceAllString(s, " ") }
 
 // visible removes every ignorable character, so a leak check sees the text a
 // model would read.
@@ -87,7 +95,7 @@ func TestNoIgnorableCharacterHidesAValue(t *testing.T) {
 					in := v.value[:i] + string(r) + v.value[i:]
 					out, _, err := tz.Tokenize(in)
 					require.NoError(t, err, "%U at %d of %q", r, i, v.value)
-					seen := strings.ToLower(visible(out))
+					seen := strings.ToLower(withoutTokens(visible(out)))
 					for _, leak := range v.leaks {
 						require.NotContains(t, seen, leak, "%U at %d of %q", r, i, v.value)
 					}

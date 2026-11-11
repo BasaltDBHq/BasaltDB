@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -113,8 +114,9 @@ func (tz *Tokenizer) detect(text string) ([]Span, error) {
 	return found, nil
 }
 
-// widenToBoundaries grows each found span over the ASCII letters and digits
-// touching it, up to the next claimed span (a token already in the text or
+// widenToBoundaries grows each found span over the ASCII letters and digits,
+// combining marks and ignorable characters touching it, up to the next
+// claimed span (a token already in the text or
 // another found span). A token is only recognized again when nothing
 // alphanumeric touches it (existingTokens), so a token written against
 // letters ("0@0.A+00000000" gives "0@0.Apii1_…") would be read as part of a
@@ -130,11 +132,19 @@ func widenToBoundaries(text string, found, claimed []Span) {
 		if k+1 < len(claimed) {
 			hi = claimed[k+1].Start
 		}
-		for found[i].Start > lo && asciiAlnumAt(text, found[i].Start-1) {
-			found[i].Start--
+		for found[i].Start > lo {
+			n := widenLeft(text[lo:found[i].Start])
+			if n == 0 {
+				break
+			}
+			found[i].Start -= n
 		}
-		for found[i].End < hi && asciiAlnumAt(text, found[i].End) {
-			found[i].End++
+		for found[i].End < hi {
+			n := widenRight(text[found[i].End:hi])
+			if n == 0 {
+				break
+			}
+			found[i].End += n
 		}
 		// The next span is bounded by this one as widened.
 		claimed[k] = found[i]
@@ -169,7 +179,7 @@ func (tz *Tokenizer) replace(text string, found []Span) (string, []Replacement, 
 func detectFree(d Detector, text string, claimed []Span) ([]Span, error) {
 	var out []Span
 	for _, seg := range freeSegments(len(text), claimed) {
-		view := foldForDetection(text[seg.Start:seg.End])
+		view := foldForDetection(text[seg.Start:seg.End], wantsShapes(d))
 		for _, sp := range d.Detect(view.text) {
 			if err := checkSpan(view.text, sp); err != nil {
 				return nil, err
@@ -311,4 +321,41 @@ func asciiAlnumAt(text string, i int) bool {
 
 func isASCIIAlnum(c byte) bool {
 	return isASCIIDigit(c) || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+// shapeDetector marks the built-in shape detectors (EmailDetector,
+// PhoneDetector), which see the shape view: no combining marks, ASCII digits.
+type shapeDetector interface{ shapes() }
+
+func wantsShapes(d Detector) bool {
+	_, ok := d.(shapeDetector)
+	return ok
+}
+
+// widenLeft is the byte length of the last character of s when a span may
+// take it in: an ASCII letter or digit, a combining mark or an ignorable
+// character (the shape view drops the last two, so a keycap or a zero-width
+// space at a number's edge would otherwise be left beside its token).
+func widenLeft(s string) int {
+	r, n := utf8.DecodeLastRuneInString(s)
+	if n == 0 || !widensOver(r) {
+		return 0
+	}
+	return n
+}
+
+// widenRight is widenLeft for the first character of s.
+func widenRight(s string) int {
+	r, n := utf8.DecodeRuneInString(s)
+	if n == 0 || !widensOver(r) {
+		return 0
+	}
+	return n
+}
+
+func widensOver(r rune) bool {
+	if r < utf8.RuneSelf {
+		return isASCIIAlnum(byte(r))
+	}
+	return isIgnorable(r) || unicode.In(r, unicode.Mn, unicode.Me)
 }

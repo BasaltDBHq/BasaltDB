@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/compact-request.v2.json",
+  "title": "Compact request (format 2)",
+  "description": "What a format 2 approval or revert link carries: <base>/approvals/<approvalId>#2.<base64url(deflate-raw(this JSON))>, or the same under /reverts/<revertId>. [shapes, texts]: the binding text first, then the lines in order, each text either as it is or as a shape and its values, rebuilt to the exact text. No id (the binding has it) and no credentialIds (passkeys are discoverable). Limits a schema cannot state: every shape is used, a shaped text has exactly one value per slot of its shape, a value of {\"raw\": text} is the only object value, and the rebuilt texts total at most 1 MiB. See CONTRACT.md, Approvals, Format 2.",
+  "type": "array",
+  "prefixItems": [
+    {
+      "description": "shapes: the distinct key layouts of the texts, each listed once.",
+      "type": "array",
+      "maxItems": 1001,
+      "items": { "$ref": "#/$defs/shape" }
+    },
+    {
+      "description": "texts: the binding text, then 1 to 50 preview lines (an approval) or 1 to 1000 revert lines (a revert, or a large plan's sample).",
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 1001,
+      "items": { "$ref": "#/$defs/text" }
+    }
+  ],
+  "items": false,
+  "minItems": 2,
+  "$defs": {
+    "shape": {
+      "description": "A text's top-level keys in text order.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/entry" }
+    },
+    "entry": {
+      "description": "\"key\" takes one value; [\"key\", [\"column\", ...]] is a key whose value is an object and takes one value per column, in text order.",
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "array",
+          "prefixItems": [
+            { "type": "string" },
+            { "type": "array", "maxItems": 1600, "items": { "type": "string" } }
+          ],
+          "items": false,
+          "minItems": 2
+        }
+      ]
+    },
+    "text": {
+      "description": "The text as it is, or [shape index, value, ...].",
+      "oneOf": [
+        { "type": "string" },
+        {
+          "type": "array",
+          "prefixItems": [{ "type": "integer", "minimum": 0 }],
+          "items": { "$ref": "#/$defs/value" },
+          "minItems": 1
+        }
+      ]
+    },
+    "value": {
+      "description": "A string, true, false, null, an integer of magnitude at most 2^53 - 1 (never -0), an array of values (at most 32 deep), or {\"raw\": text} inserted as it is (other numbers, nested objects).",
+      "oneOf": [
+        { "type": "string" },
+        { "type": "boolean" },
+        { "type": "null" },
+        { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 },
+        { "type": "array", "items": { "$ref": "#/$defs/value" } },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["raw"],
+          "properties": {
+            "raw": { "type": "string" }
+          }
+        }
+      ]
+    }
+  }
+}

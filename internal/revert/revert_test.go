@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
+	"github.com/basaltdbhq/basaltdb/internal/linkcodec"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
@@ -130,7 +131,9 @@ func buildFixtures(t *testing.T) fixtures {
 	lines := revertLines()
 	binding := bindingText(lines)
 	req := revert.Request{RevertID: revertID, Binding: binding, Lines: lines, CredentialIDs: []passkey.Bytes{seq(16, 1)}}
-	frag, err := req.Fragment()
+	// The page's fixtures keep format 1, which the pages still read; format 2
+	// has its shared vectors in api/mcp/links/compact-request.json.
+	frag, err := linkcodec.Encode(linkcodec.Format1, req)
 	require.NoError(t, err)
 	f.Request.RevertID = revertID.String()
 	f.Request.Binding = binding
@@ -158,7 +161,7 @@ func buildFixtures(t *testing.T) fixtures {
 
 	all, sample := planSample(t)
 	plan := revert.Request{RevertID: revertID, Binding: batchedBinding(all, sample), Lines: sample}
-	f.Batched.Fragment, err = plan.Fragment()
+	f.Batched.Fragment, err = linkcodec.Encode(linkcodec.Format1, plan)
 	require.NoError(t, err)
 	f.Batched.RevertID = revertID.String()
 	f.Batched.Binding = plan.Binding
@@ -231,7 +234,7 @@ func TestRequestRoundTrip(t *testing.T) {
 	f := buildFixtures(t)
 	url, err := revert.Request{RevertID: revertID, Binding: f.Request.Binding, Lines: f.Request.Lines}.URL(links.DefaultLocal)
 	require.NoError(t, err)
-	require.True(t, strings.HasPrefix(url, "http://localhost:8787/reverts/"+revertID.String()+"#1."), url)
+	require.True(t, strings.HasPrefix(url, "http://localhost:8787/reverts/"+revertID.String()+"#2."), url)
 
 	_, frag, ok := strings.Cut(url, "#")
 	require.True(t, ok)
@@ -270,11 +273,14 @@ func TestRequestRefusesMismatch(t *testing.T) {
 		{"a skipped row turned into a restore", encode(revert.Request{RevertID: revertID, Binding: binding, Lines: unskipped}), "rowsHash"},
 		{"a line dropped", encode(revert.Request{RevertID: revertID, Binding: binding, Lines: lines[:3]}), "3 lines, binding 4"},
 		{"lines reordered", encode(revert.Request{RevertID: revertID, Binding: binding, Lines: []string{lines[1], lines[0], lines[2], lines[3]}}), "rowsHash"},
-		{"another revert id", encode(revert.Request{RevertID: runID, Binding: binding, Lines: lines}), "binding for"},
+		{"another revert id (format 1)", encodeV1(t, revert.Request{RevertID: runID, Binding: binding, Lines: lines}), "binding for"},
 		{"approval binding", encode(revert.Request{RevertID: revertID, Binding: strings.Replace(binding, `"REVERT"`, `"APPROVE"`, 1), Lines: lines}), "kind"},
 		{"restore count", encode(revert.Request{RevertID: revertID, Binding: strings.Replace(strings.Replace(binding, `"rows": 3`, `"rows": 2`, 1), `"skipped": 1`, `"skipped": 2`, 1), Lines: lines}), "RESTORE lines"},
-		{"wrong version", "2." + strings.TrimPrefix(encode(revert.Request{RevertID: revertID, Binding: binding, Lines: lines}), "1."), "must start with"},
-		{"not base64url", "1.@@@", "base64url"},
+		{"wrong version", "3." + strings.TrimPrefix(encode(revert.Request{RevertID: revertID, Binding: binding, Lines: lines}), "2."), "must start with"},
+		{"not base64url", "2.@@@", "base64url"},
+		{"format 1 json in format 2", "2." + strings.TrimPrefix(fixtureFormat1(t), "1."), "shapes, lines"},
+		{"only a binding", compactFragment(t, binding), "no lines"},
+		{"a revert line rebuilt wrong", format2Swap(t), "rowsHash"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -336,6 +342,92 @@ func TestBatchedRequestRoundTrip(t *testing.T) {
 	require.Equal(t, planSkips+planRestores, b.Lines())
 	require.Equal(t, f.Batched.SampleHash, b.SampleHash)
 	require.Len(t, req.Lines, revert.MaxLines)
+}
+
+// format2Swap returns the fixture request in format 2 with two values of
+// its last line swapped, so the lines rebuild but no longer hash to the
+// binding's rowsHash.
+func format2Swap(t *testing.T) string {
+	t.Helper()
+	lines := revertLines()
+	c := linkcodec.Compact(append([]string{bindingText(lines)}, lines...))
+	last := c.Lines[len(c.Lines)-1]
+	require.False(t, last.Verbatim)
+	last.Values[0], last.Values[1] = last.Values[1], last.Values[0]
+	frag, err := linkcodec.Encode(linkcodec.Format2, c)
+	require.NoError(t, err)
+	return frag
+}
+
+// encodeV1 encodes r in format 1, which carries the revert id apart from
+// the binding.
+func encodeV1(t *testing.T, r revert.Request) string {
+	t.Helper()
+	frag, err := linkcodec.Encode(linkcodec.Format1, r)
+	require.NoError(t, err)
+	return frag
+}
+
+func fixtureFormat1(t *testing.T) string {
+	t.Helper()
+	return buildFixtures(t).Request.Fragment
+}
+
+// compactFragment encodes texts in format 2 as they are.
+func compactFragment(t *testing.T, texts ...string) string {
+	t.Helper()
+	frag, err := linkcodec.Encode(linkcodec.Format2, linkcodec.Compact(texts))
+	require.NoError(t, err)
+	return frag
+}
+
+func TestRequestReadsFormat1(t *testing.T) {
+	t.Parallel()
+	f := buildFixtures(t)
+	require.True(t, strings.HasPrefix(f.Request.Fragment, "1."))
+	req, _, err := revert.ParseRequest("#" + f.Request.Fragment)
+	require.NoError(t, err)
+	require.Equal(t, f.Request.Lines, req.Lines)
+	require.Len(t, req.CredentialIDs, 1, "format 1 still carries credential ids")
+}
+
+func TestBatchedRequestFormat2(t *testing.T) {
+	t.Parallel()
+	all, sample := planSample(t)
+	plan := revert.Request{RevertID: revertID, Binding: batchedBinding(all, sample), Lines: sample, CredentialIDs: []passkey.Bytes{seq(16, 1)}}
+	v1, err := linkcodec.Encode(linkcodec.Format1, plan)
+	require.NoError(t, err)
+	v2, err := plan.Fragment()
+	require.NoError(t, err)
+	require.Less(t, len(v2), len(v1), "format 2 is shorter")
+	req, b, err := revert.ParseRequest(v2)
+	require.NoError(t, err)
+	require.True(t, b.Batched)
+	require.Equal(t, sample, req.Lines)
+	require.Empty(t, req.CredentialIDs, "format 2 leaves out credential ids: the passkeys are discoverable")
+}
+
+// FuzzParseRequest: whatever a revert link carries, parsing never panics,
+// and a request it accepts hashes to its binding.
+func FuzzParseRequest(f *testing.F) {
+	lines := revertLines()
+	req := revert.Request{RevertID: revertID, Binding: bindingText(lines), Lines: lines}
+	v1, err := linkcodec.Encode(linkcodec.Format1, req)
+	require.NoError(f, err)
+	v2, err := req.Fragment()
+	require.NoError(f, err)
+	f.Add(v1)
+	f.Add(v2)
+	f.Add("2.")
+	f.Add("2.@@@")
+	f.Fuzz(func(t *testing.T, fragment string) {
+		req, b, err := revert.ParseRequest(fragment)
+		if err != nil {
+			require.ErrorIs(t, err, revert.ErrInvalid)
+			return
+		}
+		require.Equal(t, b.RowsHash, revert.RowsHash(req.Lines))
+	})
 }
 
 func TestBatchedRequestRefuses(t *testing.T) {

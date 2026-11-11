@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
+	"github.com/basaltdbhq/basaltdb/internal/linkcodec"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
@@ -99,7 +100,9 @@ func buildFixtures(t *testing.T) fixtures {
 	lines := previewLines()
 	binding := bindingText(lines)
 	req := approval.Request{ApprovalID: approvalID, Binding: binding, Lines: lines, CredentialIDs: []passkey.Bytes{seq(16, 1)}}
-	frag, err := req.Fragment()
+	// The page's fixtures keep format 1, which the pages still read; format 2
+	// has its shared vectors in api/mcp/links/compact-request.json.
+	frag, err := linkcodec.Encode(linkcodec.Format1, req)
 	require.NoError(t, err)
 	f.Request.ApprovalID = approvalID.String()
 	f.Request.Binding = binding
@@ -194,7 +197,7 @@ func TestRequestRoundTrip(t *testing.T) {
 	f := buildFixtures(t)
 	url, err := approval.Request{ApprovalID: approvalID, Binding: f.Request.Binding, Lines: f.Request.Lines}.URL(links.HostedConsole)
 	require.NoError(t, err)
-	require.True(t, strings.HasPrefix(url, "https://console.basaltvault.app/approvals/"+approvalID.String()+"#1."), url)
+	require.True(t, strings.HasPrefix(url, "https://console.basaltvault.app/approvals/"+approvalID.String()+"#2."), url)
 
 	_, frag, ok := strings.Cut(url, "#")
 	require.True(t, ok)
@@ -227,12 +230,14 @@ func TestRequestRefusesMismatch(t *testing.T) {
 		{"a line changed after signing", encode(approval.Request{ApprovalID: approvalID, Binding: binding, Lines: changed}), "rowsHash"},
 		{"a line dropped", encode(approval.Request{ApprovalID: approvalID, Binding: binding, Lines: lines[:2]}), "2 lines, binding 3"},
 		{"lines reordered", encode(approval.Request{ApprovalID: approvalID, Binding: binding, Lines: []string{lines[1], lines[0], lines[2]}}), "rowsHash"},
-		{"another approval id", encode(approval.Request{ApprovalID: runID, Binding: binding, Lines: lines}), "binding for"},
+		{"another approval id (format 1)", encodeV1(t, approval.Request{ApprovalID: runID, Binding: binding, Lines: lines}), "binding for"},
 		{"binding kind", encode(approval.Request{ApprovalID: approvalID, Binding: strings.Replace(binding, "APPROVE", "REVERT", 1), Lines: lines}), "kind"},
 		{"binding unknown field", encode(approval.Request{ApprovalID: approvalID, Binding: strings.Replace(binding, `{"kind"`, `{"x": 1, "kind"`, 1), Lines: lines}), "unknown field"},
-		{"wrong version", "2." + strings.TrimPrefix(encode(approval.Request{ApprovalID: approvalID, Binding: binding, Lines: lines}), "1."), "must start with"},
-		{"not deflate", "1." + passkey.Bytes("plain json").String(), "deflate"},
-		{"not base64url", "1.@@@", "base64url"},
+		{"wrong version", "3." + strings.TrimPrefix(encode(approval.Request{ApprovalID: approvalID, Binding: binding, Lines: lines}), "2."), "must start with"},
+		{"not deflate", "2." + passkey.Bytes("plain json").String(), "deflate"},
+		{"not base64url", "2.@@@", "base64url"},
+		{"format 1 not deflate", "1." + passkey.Bytes("plain json").String(), "deflate"},
+		{"too many lines", encode(approval.Request{ApprovalID: approvalID, Binding: binding, Lines: make([]string, approval.MaxRows+1)}), "at most 50"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -241,6 +246,62 @@ func TestRequestRefusesMismatch(t *testing.T) {
 			require.ErrorContains(t, err, tc.detail)
 		})
 	}
+}
+
+// encodeV1 encodes r in format 1, which carries the approval id apart from
+// the binding.
+func encodeV1(t *testing.T, r approval.Request) string {
+	t.Helper()
+	frag, err := linkcodec.Encode(linkcodec.Format1, r)
+	require.NoError(t, err)
+	return frag
+}
+
+func TestRequestReadsFormat1(t *testing.T) {
+	t.Parallel()
+	f := buildFixtures(t)
+	require.True(t, strings.HasPrefix(f.Request.Fragment, "1."))
+	req, _, err := approval.ParseRequest("#" + f.Request.Fragment)
+	require.NoError(t, err)
+	require.Equal(t, f.Request.Lines, req.Lines)
+	require.Len(t, req.CredentialIDs, 1, "format 1 still carries credential ids")
+}
+
+func TestFormat2IsShorter(t *testing.T) {
+	t.Parallel()
+	req := approval.Request{ApprovalID: approvalID, Binding: bindingText(previewLines()), Lines: previewLines(), CredentialIDs: []passkey.Bytes{seq(16, 1)}}
+	v1, err := linkcodec.Encode(linkcodec.Format1, req)
+	require.NoError(t, err)
+	v2, err := req.Fragment()
+	require.NoError(t, err)
+	require.Less(t, len(v2), len(v1))
+	got, _, err := approval.ParseRequest(v2)
+	require.NoError(t, err)
+	require.Equal(t, req.Lines, got.Lines)
+	require.Empty(t, got.CredentialIDs, "format 2 leaves out credential ids: the passkeys are discoverable")
+}
+
+// FuzzParseRequest: whatever an approval link carries, parsing never
+// panics, and a request it accepts hashes to its binding.
+func FuzzParseRequest(f *testing.F) {
+	lines := previewLines()
+	req := approval.Request{ApprovalID: approvalID, Binding: bindingText(lines), Lines: lines}
+	v1, err := linkcodec.Encode(linkcodec.Format1, req)
+	require.NoError(f, err)
+	v2, err := req.Fragment()
+	require.NoError(f, err)
+	f.Add(v1)
+	f.Add(v2)
+	f.Add("#2.")
+	f.Add("2.@@@")
+	f.Fuzz(func(t *testing.T, fragment string) {
+		got, b, err := approval.ParseRequest(fragment)
+		if err != nil {
+			require.ErrorIs(t, err, approval.ErrInvalid)
+			return
+		}
+		require.Equal(t, b.RowsHash, approval.RowsHash(got.Lines))
+	})
 }
 
 func TestRequestRefusesInflationBomb(t *testing.T) {

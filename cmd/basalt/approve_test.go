@@ -156,7 +156,7 @@ func TestApprove(t *testing.T) {
 	require.Contains(t, r.stderr,
 		"basalt: Delete 1 row in public.leads + 4 cascaded rows (public.lead_notes 2 [values hidden], public.note_tags 2 [values hidden])\n")
 	link := strings.TrimSpace(r.stdout)
-	require.True(t, strings.HasPrefix(link, links.DefaultLocal+"/approvals/"+held.ApprovalID.String()+"#1."), link)
+	require.True(t, strings.HasPrefix(link, links.DefaultLocal+"/approvals/"+held.ApprovalID.String()+"#2."), link)
 	req, b, err := approval.ParseRequest(link[strings.Index(link, "#"):])
 	require.NoError(t, err)
 	require.Equal(t, held.ApprovalID, b.ApprovalID)
@@ -169,7 +169,7 @@ func TestApprove(t *testing.T) {
 	require.Empty(t, r.stdout)
 	require.Contains(t, r.stderr, "basalt: Delete 1 row in public.leads")
 	require.Contains(t, r.stderr, "opened the link in your browser")
-	require.NotContains(t, r.stderr, "#1.")
+	require.NotContains(t, r.stderr, "#2.")
 
 	// No browser: the link is printed to copy by hand.
 	h.openErr = errors.New("xdg-open not found")

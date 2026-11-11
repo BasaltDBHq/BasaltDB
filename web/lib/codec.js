@@ -6,7 +6,11 @@
 //
 // Rule: the binding text and the lines are hashed and parsed exactly as
 // received, never re-serialized. Postgres built them; the passkey signs
-// sha256 of the binding text's UTF-8 bytes.
+// sha256 of the binding text's UTF-8 bytes. A format 2 link carries them in
+// compact form, rebuilt byte for byte by compact.js before anything else.
+
+import { CompactError, rebuildTexts } from "./compact.js";
+import { DeflateError, deflateEnd } from "./deflate.js";
 
 // The hosted console and its passkeys' RP ID (owner decisions, Decided
 // Nov 12): RP ID basaltvault.app never changes. Until hosting exists the
@@ -14,11 +18,14 @@
 export const PROD_RP_ID = "basaltvault.app";
 export const HOSTED_CONSOLE = "https://console.basaltvault.app";
 
-export const APPROVAL_REQUEST_PREFIX = "1.";
+// Approval and revert links: format 2 (the compact request) is what the
+// engine writes; format 1 is still read.
+export const REQUEST_FORMAT_1 = "1.";
+export const REQUEST_FORMAT_2 = "2.";
+const REQUEST_FORMATS = [REQUEST_FORMAT_1, REQUEST_FORMAT_2];
 export const APPROVAL_RESPONSE_PREFIX = "basalt-approval.1.";
 export const REGISTRATION_REQUEST_PREFIX = "1.";
 export const REGISTRATION_RESPONSE_PREFIX = "basalt-passkey.1.";
-export const REVERT_REQUEST_PREFIX = "1.";
 export const REVERT_RESPONSE_PREFIX = "basalt-revert.1.";
 
 export const KIND_APPROVE = "APPROVE";
@@ -77,7 +84,8 @@ export function b64urlDecode(text) {
 }
 
 const encoder = new TextEncoder();
-const decoder = new TextDecoder("utf-8", { fatal: true });
+// ignoreBOM keeps a leading BOM, so JSON.parse refuses it as Go does.
+const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
 export function utf8(text) {
   return encoder.encode(text);
@@ -148,6 +156,16 @@ function stripPrefix(text, prefix, what) {
 }
 
 async function inflateRaw(bytes, what) {
+  // Refuse bytes after the deflate stream ourselves: not every
+  // DecompressionStream refuses them.
+  let end;
+  try {
+    end = deflateEnd(bytes);
+  } catch (err) {
+    if (err instanceof DeflateError) throw new TruncatedLinkError(`${what} is not deflate-raw`);
+    throw err;
+  }
+  if (end !== bytes.length) throw new CodeError(`${what} has data after the end of its deflate stream`);
   const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
   const reader = stream.getReader();
   const chunks = [];
@@ -187,18 +205,49 @@ function asTruncated(step) {
   }
 }
 
-// decodeRequest decodes a link fragment, with or without '#':
-// prefix + base64url(deflate-raw(json)), into an object with exactly the
-// required and optional keys. A fragment that is empty or does not decode
-// (base64url, deflate-raw, UTF-8, JSON) throws TruncatedLinkError.
-async function decodeRequest(fragment, prefix, what, required, optional) {
+// decodeRequest decodes an approval or revert link fragment, with or
+// without '#', in either format: format + base64url(deflate-raw(json)). It
+// returns the format 1 request, an object with exactly the required and
+// optional keys; for format 2 it rebuilds the binding text and at most
+// maxLines lines, and takes the id (idKey) from the binding. A fragment that
+// is empty or does not decode (base64url, deflate-raw, UTF-8, JSON) throws
+// TruncatedLinkError.
+async function decodeRequest(fragment, what, { idKey, maxLines, required, optional, parse }) {
   const text = String(fragment).replace(/^#/, "");
-  if (prefix.startsWith(text)) throw new TruncatedLinkError(`${what} is empty`);
-  const payload = stripPrefix(text, prefix, what);
+  if (REQUEST_FORMATS.some((f) => f.startsWith(text))) throw new TruncatedLinkError(`${what} is empty`);
+  const format = REQUEST_FORMATS.find((f) => text.startsWith(f));
+  if (format === undefined) throw new CodeError(`${what} must start with "${REQUEST_FORMAT_1}" or "${REQUEST_FORMAT_2}"`);
+  const payload = stripPrefix(text, format, what);
   const compressed = asTruncated(() => b64urlDecode(payload));
   const raw = await inflateRaw(compressed, what);
   const json = asTruncated(() => parseJSON(fromUtf8(raw), what));
-  return strictObject(json, what, required, optional);
+  if (format === REQUEST_FORMAT_1) return strictObject(json, what, required, optional);
+  return expandCompact(json, what, idKey, maxLines, parse);
+}
+
+// expandCompact turns a format 2 payload into the format 1 request: the
+// first text is the binding, the rest are the lines. The check that
+// follows parses the binding again and refuses it there.
+function expandCompact(json, what, idKey, maxLines, parse) {
+  // The binding travels as the first text.
+  const texts = Array.isArray(json) && Array.isArray(json[1]) ? json[1] : [];
+  if (texts.length > maxLines + 1) throw new CodeError(`${what} has ${texts.length - 1} lines, at most ${maxLines}`);
+  let rebuilt;
+  try {
+    rebuilt = rebuildTexts(json, maxLines + 1);
+  } catch (err) {
+    if (err instanceof CompactError) throw new CodeError(`${what} ${err.message}`);
+    throw err;
+  }
+  if (rebuilt.length < 2) throw new CodeError(`${what} has no lines after its binding`);
+  const [binding, ...lines] = rebuilt;
+  let id = null;
+  try {
+    id = parse(binding)[idKey];
+  } catch {
+    // check*Request parses the binding again and reports why.
+  }
+  return { [idKey]: id, binding, lines };
 }
 
 function requireLineStrings(lines, what) {
@@ -246,6 +295,82 @@ export function parseBinding(text) {
 
 const OPS = new Set(["INSERT", "UPDATE", "DELETE"]);
 
+// JSON_SPACE is the whitespace JSON allows between tokens.
+const JSON_SPACE = " \t\n\r";
+
+function skipSpace(s, i) {
+  while (i < s.length && JSON_SPACE.includes(s[i])) i++;
+  return i;
+}
+
+// stringEnd returns the index after the JSON string starting at i.
+function stringEnd(s, i) {
+  for (let j = i + 1; j < s.length; j++) {
+    if (s[j] === "\\") j++;
+    else if (s[j] === '"') return j + 1;
+  }
+  return s.length;
+}
+
+// valueEnd returns the index after the JSON value starting at i.
+function valueEnd(s, i) {
+  if (s[i] === '"') return stringEnd(s, i);
+  let depth = 0;
+  for (let j = i; j < s.length; j++) {
+    const c = s[j];
+    if (c === '"') {
+      j = stringEnd(s, j) - 1;
+    } else if (c === "{" || c === "[") {
+      depth++;
+    } else if (c === "}" || c === "]") {
+      if (depth === 0) return j;
+      depth--;
+      if (depth === 0) return j + 1;
+    } else if (c === "," && depth === 0) {
+      return j;
+    }
+  }
+  return s.length;
+}
+
+// memberTexts returns the members of a JSON object's text, each value as its
+// exact text. Only for text JSON.parse has already accepted.
+export function memberTexts(text) {
+  const out = new Map();
+  let i = skipSpace(text, 0) + 1;
+  for (;;) {
+    i = skipSpace(text, i);
+    if (i >= text.length || text[i] !== '"') return out;
+    const keyEnd = stringEnd(text, i);
+    const key = JSON.parse(text.slice(i, keyEnd));
+    i = skipSpace(text, keyEnd) + 1;
+    i = skipSpace(text, i);
+    const end = valueEnd(text, i);
+    out.set(key, text.slice(i, end).trim());
+    i = skipSpace(text, end);
+    if (text[i] === ",") i++;
+  }
+}
+
+// valueTexts returns, for each object member of a line (key, old, set,
+// now), its columns' values as their exact text, so a page shows a number
+// as Postgres printed it (JSON.parse rounds integers past 2^53).
+export function valueTexts(text) {
+  const out = {};
+  for (const [name, value] of memberTexts(text)) {
+    if (value.startsWith("{")) out[name] = memberTexts(value);
+  }
+  return out;
+}
+
+// displayValue is a column's value as the page shows it: a string as it is,
+// anything else as the exact text the line carries.
+export function displayValue(value, text) {
+  if (value === undefined) return "";
+  if (typeof value === "string") return value;
+  return text ?? JSON.stringify(value);
+}
+
 // parseLine parses one preview line for display.
 export function parseLine(text) {
   const raw = parseJSON(requireString(text, "preview line"), "preview line");
@@ -264,6 +389,7 @@ export function parseLine(text) {
     key: redacted ? null : l.key,
     old: redacted ? null : l.old,
     set: redacted ? null : l.set,
+    texts: redacted ? null : valueTexts(text),
   };
 }
 
@@ -272,7 +398,9 @@ export function parseLine(text) {
 // the lines hash to the binding's rowsHash. Only then may the page ask for a
 // signature.
 export async function parseApprovalRequest(fragment) {
-  return checkApprovalRequest(await decodeRequest(fragment, APPROVAL_REQUEST_PREFIX, "approval request", APPROVAL_REQUEST_FIELDS, ["credentialIds"]));
+  return checkApprovalRequest(await decodeRequest(fragment, "approval request", {
+    idKey: "approvalId", maxLines: MAX_ROWS, required: APPROVAL_REQUEST_FIELDS, optional: ["credentialIds"], parse: parseBinding,
+  }));
 }
 
 const APPROVAL_REQUEST_FIELDS = ["approvalId", "binding", "lines"];
@@ -393,6 +521,7 @@ export function parseRevertLine(text) {
     key: redacted ? null : l.key,
     now: redacted ? null : l.now,
     set: redacted ? null : l.set,
+    texts: redacted ? null : valueTexts(text),
   };
 }
 
@@ -401,7 +530,9 @@ export function parseRevertLine(text) {
 // RESTORE lines as the binding's rows, and the lines hash to rowsHash. Only
 // then may the page ask for a signature.
 export async function parseRevertRequest(fragment) {
-  return checkRevertRequest(await decodeRequest(fragment, REVERT_REQUEST_PREFIX, "revert request", REVERT_REQUEST_FIELDS, ["credentialIds"]));
+  return checkRevertRequest(await decodeRequest(fragment, "revert request", {
+    idKey: "revertId", maxLines: MAX_REVERT_LINES, required: REVERT_REQUEST_FIELDS, optional: ["credentialIds"], parse: parseRevertBinding,
+  }));
 }
 
 const REVERT_REQUEST_FIELDS = ["revertId", "binding", "lines"];

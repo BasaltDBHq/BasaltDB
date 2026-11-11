@@ -24,6 +24,16 @@ export function shortLinkId(pathname, page) {
   return m ? m[1] : null;
 }
 
+// pageId is the id in the page's path, which every approval and revert link
+// carries (/approvals/<id>, /reverts/<id>; CONTRACT.md, Page links). A
+// format 2 request takes its id from its binding, so the page refuses to
+// run without an id to check it against.
+export function pageId(pathname, page) {
+  const id = shortLinkId(pathname, page);
+  if (id === null) throw new Error(`this link has no ${page === "approvals" ? "approval" : "revert"} id in its path; open the whole link the engine gave`);
+  return id;
+}
+
 // Paths of the relay for a short link's page and id.
 export function relayPaths(page, id) {
   const action = page === "approvals" ? "approve" : "apply";
@@ -81,9 +91,9 @@ export function linkSecret(hash) {
 }
 
 // isLongLink reports whether a fragment carries the request itself
-// (#1.<request>), as long links do.
+// (#2.<request>, or #1.<request> before format 2), as long links do.
 export function isLongLink(hash) {
-  return /^#?1\./.test(String(hash ?? ""));
+  return /^#?[12]\./.test(String(hash ?? ""));
 }
 
 // fetchRequest reads the request a short link stands for.

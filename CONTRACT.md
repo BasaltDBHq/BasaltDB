@@ -404,10 +404,26 @@ All base64url is RFC 4648 §5 without padding. Byte fields inside JSON are base6
 
 | Payload | Carried as | JSON |
 |---|---|---|
-| Approval request | URL `<base>/approvals/<approvalId>#1.<b64url(deflate-raw(json))>` | `{ "approvalId", "binding", "lines", "credentialIds" }`: `binding` the binding text, `lines` the preview lines in order, `credentialIds` the registered passkeys (may be empty) |
+| Approval request | URL `<base>/approvals/<approvalId>#2.<b64url(deflate-raw(json))>` ([Format 2](#format-2-the-compact-request)) | `[shapes, texts]`: the binding text, then the preview lines in order |
+| Approval request, format 1 (read only) | URL `<base>/approvals/<approvalId>#1.<b64url(deflate-raw(json))>` | `{ "approvalId", "binding", "lines", "credentialIds" }`: `binding` the binding text, `lines` the preview lines in order, `credentialIds` the registered passkeys (may be empty). The pages still read it; the engine no longer writes it. The engine's local pages serve this JSON at `GET /api/v1/approvals/{approvalId}` |
 | Approval response | Text `basalt-approval.1.<b64url(json)>` | `{ "approvalId", "credentialId", "authenticatorData", "clientDataJson", "signature" }` from `navigator.credentials.get` (`signature` DER) |
 | Passkey registration request | URL `<base>/passkeys/register#1.<b64url(json)>` | `{ "challenge", "userId", "userName", "displayName" }`: 32 and 16 random bytes; names are labels for the passkey picker |
 | Passkey registration response | Text `basalt-passkey.1.<b64url(json)>` | `{ "credentialId", "clientDataJson", "authenticatorData", "publicKey", "publicKeyAlgorithm" }`: `publicKey` the SubjectPublicKeyInfo DER from `getPublicKey()`, algorithm `-7` (ES256) only |
+
+### Format 2: the compact request
+
+Owner decisions VC-7 and VC-29; the layout details are VC-31 (provisional). The engine writes approval and revert links in format 2; the pages read format 2 and format 1. Schema: [`compact-request.schema.json`](api/mcp/links/compact-request.schema.json). Shared vectors, which the contract test, the Go codec and the pages all run: [`compact-request.json`](api/mcp/links/compact-request.json).
+
+`#2.<b64url(deflate-raw(json))>`, where the JSON is `[shapes, texts]`:
+
+- **`texts`**: the binding text first, then the lines in order: the preview lines of an approval, or the revert lines (a large plan's sample) of a revert. At least 2 texts, at most 51 for an approval and 1001 for a revert. There is no separate id and no `credentialIds`: the id is the binding's `approvalId` or `revertId`, and the passkeys are discoverable.
+- **A text** is a JSON string, the text as it is, or `[shape, value, ...]`: the index of a shape in `shapes` and one value per slot of that shape.
+- **`shapes`**: the key layouts the texts share, each listed once and used by at least one text, never more than there are texts. A shape is 1 to 64 entries in text order. An entry is `"key"`, which takes one slot, or `["key", ["column", ...]]` for a key whose value is an object (`key`, `old`, `set`, `now`), which takes one slot per column (at most 1600), in text order.
+- **A value** is a string, `true`, `false`, `null`, an integer of magnitude at most 2^53 − 1 that is not `-0`, an array of values (nested at most 32 deep), or `{"raw": "<text>"}`: the value's `jsonb` text as it is, for anything else (other numbers, nested objects). Numbers are read as JavaScript's `JSON.parse` reads them, so `1.0` is the integer 1.
+
+**Rebuild.** A text `[shape, value, ...]` is `{`, then its entries joined by `, `, then `}`. An entry is `"key": value`, or for an object entry `"key": {`, then `"column": value` for each column joined by `, `, then `}`. An array is `[`, its values joined by `, `, then `]`; an integer is written in decimal; `{"raw": text}` is `text`. Keys, columns and strings are quoted as Postgres's `escape_json` quotes them: `\"`, `\\`, `\b`, `\f`, `\n`, `\r`, `\t`, any other character below U+0020 as `\u00xx` (lowercase hex), everything else as it is. That is `jsonb`'s own text layout, so the texts rebuild to the binding text and the lines byte for byte. The engine checks each text rebuilds exactly and sends any text that does not as a string.
+
+**Limits.** The page first repairs the fragment ([The pages repair what they can](#the-pages-repair-what-they-can): line breaks, spaces and the other characters a client adds are dropped), then decodes it. It refuses the repaired fragment unless: its payload is at most 1 MiB of base64url characters and nothing else (a decoder given an unrepaired fragment, as the Go codec is, refuses a line break rather than skipping it); it inflates to at most 1 MiB of UTF-8, with nothing after the end of the deflate stream (the page finds that end itself, without relying on the browser's decompressor); that is one JSON value the schema allows, with nothing after it; and the rebuilt texts total at most 1 MiB. Then it checks the rebuilt request exactly as a format 1 request: the binding's id against the id in the page's path, which the approval and revert pages require (a page whose path has no id refuses to run: a format 2 request has no id of its own), the kind, the number of lines, and `rowsHash` (or `sampleHash`). A wrong rebuild fails closed: the lines no longer hash to the binding's `rowsHash`, and a binding text that differs from the one Postgres built has a different challenge, which Postgres refuses.
 
 A page first repairs the fragment and, when it still does not decode, offers to read the link from the pasted message ([Showing links](#showing-links), planned M3.5). A page whose fragment does not decode as base64url, deflate-raw or JSON says the link looks cut short and to open it with `basalt approve --open` (or `basalt revert ... --open`), which builds the full link itself. The approval page checks `sha256(lines joined by "\n")` equals the binding's `rowsHash` and refuses to ask for a signature otherwise. Registration asks for `userVerification: "required"`, `residentKey: "required"`, `attestation: "none"`, ES256 only. `basalt init` verifies the registration in Go: type `webauthn.create`, challenge, origin, `rpIdHash`, the UP, UV and AT flags, the attested credential id equals `credentialId`, and a P-256 key.
 
@@ -466,7 +482,8 @@ A row is restored only if nobody wrote it after the last in-scope change. Otherw
 
 | Payload | Carried as | JSON |
 |---|---|---|
-| Revert request | URL `<base>/reverts/<revertId>#1.<b64url(deflate-raw(json))>` | `{ "revertId", "binding", "lines", "credentialIds" }` |
+| Revert request | URL `<base>/reverts/<revertId>#2.<b64url(deflate-raw(json))>` ([Format 2](#format-2-the-compact-request)) | `[shapes, texts]`: the binding text, then the revert lines in order |
+| Revert request, format 1 (read only) | URL `<base>/reverts/<revertId>#1.<b64url(deflate-raw(json))>` | `{ "revertId", "binding", "lines", "credentialIds" }`; the JSON the local pages serve at `GET /api/v1/reverts/{revertId}` |
 | Revert response | Text `basalt-revert.1.<b64url(json)>` | `{ "revertId", "credentialId", "authenticatorData", "clientDataJson", "signature" }` |
 
 The revert page checks `rowsHash` (or, for a large plan, `sampleHash`), refuses a binding whose `kind` is not `REVERT`, and shows restored rows (current and restored values) and skipped rows (reason) before asking for the passkey.
@@ -493,8 +510,8 @@ Owner decisions, Decided Nov 12. Every link is built from one pages base URL (`p
 
 | Page | Path |
 |---|---|
-| Approve a held write | `/approvals/<approvalId>` (long link: `#1.<request>` appended) |
-| Sign a revert | `/reverts/<revertId>` (long link: `#1.<request>` appended) |
+| Approve a held write | `/approvals/<approvalId>` (long link: `#2.<request>` appended) |
+| Sign a revert | `/reverts/<revertId>` (long link: `#2.<request>` appended) |
 | Register a passkey | `/passkeys/register#1.<request>` |
 | Check which passkeys a device has (M4.1) | `/passkeys/check#1.<request>` |
 | Forget a removed passkey (M4.1) | `/passkeys/forget#1.<request>` |
@@ -536,7 +553,7 @@ Owner decisions, Decided Nov 12: short links carry a per-link secret.
 - **One live link per item.** Issuing a link for an item revokes its earlier one. Links are issued by: `write` when it holds a write (`approvalUrl`); `revert_plan` while the plan is `PENDING`; `request_revert` when it prepares a revert, and in its wait form only with `reissueLink: true`; `list_pending` only when called with `reissueLink: true` (then every item it returns gets a new link and the old one stops working; the agent hands the person the new one); the CLI through `POST …/links`, for `basalt revert` (a freshly prepared revert has no link yet) and for `basalt approve --show`/`--open` only with `--reissue`. Without `reissueLink`, `list_pending` touches no link: `approvalUrl` is the long link and `personMessage` points back to the link already given. A waiting `write` that times out issues none and returns the hold's own answer, with the link it issued.
 - **Issuing for the CLI.** `POST /api/v1/approvals/{approvalId}/links` (and `/reverts/{revertId}/links`) with `{ "proof": "<hex>" }`, where `proof` = lowercase hex of `sha256(utf8("basalt-link.1\n" + binding text))`. Only a holder of the binding text can issue: a role that can read the item in `basalt_meta` (the CLI with the agent credential) or a holder of the long link, both of whom can already see the whole preview. The proof is not derivable from a signed response (whose challenge is `sha256(binding text)`). No `Origin` or a page-origin `Origin`, `Content-Type: application/json`; a wrong proof is answered as an unknown id.
 - **Refusals.** A missing or wrong secret, or a link revoked by a newer one, gets `404 NOT_FOUND` with the same body as an unknown id, on both the request and the relay. The page then says the link is incomplete or replaced and how to get a new one (`list_pending`, `basalt approve --open`).
-- **Not affected.** The long-fragment links (`#1.<request>`, the hosted form and Telegram's button) carry the preview themselves and need no secret. The passkey pages, `/passkeys/register#1.<request>`, `/passkeys/check#1.<request>` and `/passkeys/forget#1.<request>`, are static: their whole request travels in the fragment, so the link is already the bearer of everything the page shows, and the engine has no data or relay endpoint for them to gate. They carry no `#s=` secret. A passkey page that ever reads from or posts to the engine gets a short link with a secret and gates its routes as above.
+- **Not affected.** The long-fragment links (`#2.<request>`, or `#1.` before it; the hosted form and Telegram's button) carry the preview themselves and need no secret. The passkey pages, `/passkeys/register#1.<request>`, `/passkeys/check#1.<request>` and `/passkeys/forget#1.<request>`, are static: their whole request travels in the fragment, so the link is already the bearer of everything the page shows, and the engine has no data or relay endpoint for them to gate. They carry no `#s=` secret. A passkey page that ever reads from or posts to the engine gets a short link with a secret and gates its routes as above.
 - **Telegram.** The message text also carries the short secret link when the engine serves the pages (it works on the engine's machine only); the button keeps the long link.
 
 ### Handing a held action to the person
@@ -547,7 +564,7 @@ Every result that names a held action gives the agent what to show the person, s
 
 Planned (M3.5, Vault channel Phase 0, owner decision VC-7; design [`docs/redesign/specs/2026-11-12-vault-channel.md`](docs/redesign/specs/2026-11-12-vault-channel.md), section 3). Long links rarely fail on a hard length limit. They fail because chat and terminal clients format them: they hard-wrap the line, stop link detection at a line break, take a trailing `.` or `)` into the URL, or read `_` and `*` as emphasis. These rules keep a link whole from the engine to the person's browser. They apply to every link the engine, the CLI or a page hands over: approval, revert and passkey pages, short or long.
 
-Terms: a **short link** carries `#s=<secret>` ([Link secrets](#link-secrets)); a **long link** carries the whole request, `#1.<request>` or `#2.<request>` ([Codes](#codes)). Format `2.` is the compact request encoding (design section 3.2, item 1); its layout (schema and shared vectors) is contracted inside the codec PR that builds it, before that PR's code (owner decision VC-29). The pages read both `1.` and `2.`; once that change lands, the engine emits `2.`.
+Terms: a **short link** carries `#s=<secret>` ([Link secrets](#link-secrets)); a **long link** carries the whole request, `#1.<request>` or `#2.<request>` ([Codes](#codes)). Format `2.` is the compact request encoding (design section 3.2, item 1), laid out in [Format 2](#format-2-the-compact-request) (owner decision VC-29). The pages read both `1.` and `2.`; the engine emits `2.`.
 
 ### The link budget
 

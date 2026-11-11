@@ -17,14 +17,16 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/linkcodec"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 )
 
 // Code prefixes (CONTRACT.md, Approvals, Codes).
 const (
-	// RequestPrefix starts the approval link's fragment.
-	RequestPrefix = "1."
+	// RequestPrefix starts the approval link's fragment: format 2, the
+	// compact request. The pages also read format 1 (linkcodec).
+	RequestPrefix = linkcodec.Format2
 	// ResponsePrefix starts the code the approval page outputs.
 	ResponsePrefix = "basalt-approval.1."
 )
@@ -37,11 +39,6 @@ const (
 	// MaxRows is the most rows one held action can change (foundation,
 	// Default policy: over 50 is refused).
 	MaxRows = 50
-	// maxRequestBytes caps the inflated request, so a crafted link cannot
-	// inflate without bound.
-	maxRequestBytes = 1 << 20
-	// maxFragmentLen caps the compressed fragment before decoding.
-	maxFragmentLen = 1 << 20
 )
 
 // ErrInvalid wraps every reason a code or binding is refused.
@@ -103,7 +100,8 @@ func RowsHash(lines []string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// Request is what the engine puts in the approval link.
+// Request is the approval request: what the engine's local pages serve, and
+// what a format 1 link carries.
 type Request struct {
 	ApprovalID    uuid.UUID       `json:"approvalId"`
 	Binding       string          `json:"binding"`
@@ -131,14 +129,25 @@ func (r Request) Check() (Binding, error) {
 	return b, nil
 }
 
-// Fragment returns the link fragment (without '#'):
-// 1.<base64url(deflate-raw(json))>.
+// Fragment returns the link fragment (without '#') in format 2: the binding
+// and the lines in compact form. It carries no credential ids (the passkeys
+// are discoverable) and no separate approval id (the binding has it).
 func (r Request) Fragment() (string, error) {
-	return EncodeFragment(r)
+	return linkcodec.EncodeRequest(r.Binding, r.Lines)
+}
+
+// fromCompact is the request a format 2 link carries, its id read from the
+// binding; Check refuses a binding that does not parse.
+func fromCompact(binding string, lines []string) Request {
+	r := Request{Binding: binding, Lines: lines}
+	if b, err := ParseBinding(binding); err == nil {
+		r.ApprovalID = b.ApprovalID
+	}
+	return r
 }
 
 // URL returns the long approval link on the pages at base (links):
-// <base>/approvals/<approvalId>#1.<request>.
+// <base>/approvals/<approvalId>#2.<request>.
 func (r Request) URL(base string) (string, error) {
 	frag, err := r.Fragment()
 	if err != nil {
@@ -147,12 +156,12 @@ func (r Request) URL(base string) (string, error) {
 	return links.Approval(base, r.ApprovalID) + "#" + frag, nil
 }
 
-// ParseRequest decodes an approval link fragment, with or without '#', and
-// checks it (Check).
+// ParseRequest decodes an approval link fragment of either format, with or
+// without '#', and checks it (Check).
 func ParseRequest(fragment string) (Request, Binding, error) {
-	var r Request
-	if err := DecodeFragment(fragment, "approval request", &r); err != nil {
-		return Request{}, Binding{}, err
+	r, err := linkcodec.DecodeRequest(fragment, MaxRows, fromCompact)
+	if err != nil {
+		return Request{}, Binding{}, invalid("approval request %v", err)
 	}
 	b, err := r.Check()
 	if err != nil {

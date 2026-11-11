@@ -4,17 +4,17 @@
 // From a long link the page sends nothing anywhere and shows a code to
 // paste; from a short link it posts the signature to the engine that served
 // it (same origin), which relays it to Postgres.
-import { approvalResponseJSON, checkApprovalRequest, encodeApprovalResponse, parseApprovalRequest, relyingParty } from "./codec.js";
-import { fetchRequest, isLongLink, linkSecret, postResponse, relayPaths, shortLinkId } from "./local.js";
+import { approvalResponseJSON, checkApprovalRequest, displayValue, encodeApprovalResponse, parseApprovalRequest, relyingParty } from "./codec.js";
+import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
 import { $, APPROVE_REOPEN, el, fail, linkFailure, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
 import { canStartPasskey, cascadeConfirmation, headline, summarize } from "./summary.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
 
-function display(value) {
-  if (value === undefined) return "";
-  if (typeof value === "string") return value;
-  return JSON.stringify(value);
+// display shows a column's value as the line carries it (displayValue).
+function display(line, member, col) {
+  const row = line[member] ?? {};
+  return displayValue(row[col], line.texts?.[member]?.get(col));
 }
 
 function renderSummary(req, summary) {
@@ -48,8 +48,8 @@ function rowTable(line) {
     const assigned = col in after;
     const tr = el("tr", assigned && line.op === "UPDATE" ? "changed" : "");
     tr.append(el("td", "col", col));
-    if (showBefore) tr.append(el("td", "", display(before[col])));
-    if (showAfter) tr.append(el("td", "", assigned ? display(after[col]) : ""));
+    if (showBefore) tr.append(el("td", "", display(line, "old", col)));
+    if (showAfter) tr.append(el("td", "", assigned ? display(line, "set", col) : ""));
     table.append(tr);
   }
   return table;
@@ -95,12 +95,12 @@ const engineFetch = (path, init) => window.fetch(path, init);
 // the engine for a short link. relay is the path to post the signature to,
 // null for a long link.
 async function loadRequest() {
-  const id = shortLinkId(window.location.pathname, "approvals");
-  if (isLongLink(window.location.hash) || id === null) {
-    // A long link: the request is in the fragment, and names the same approval
-    // as the path.
+  // Every link names its approval in the path; a long link's request must
+  // name the same one.
+  const id = pageId(window.location.pathname, "approvals");
+  if (isLongLink(window.location.hash)) {
     const req = await parseApprovalRequest(window.location.hash);
-    if (id !== null && req.approvalId !== id) throw new Error(`the link is for approval ${req.approvalId}, its path for ${id}`);
+    if (req.approvalId !== id) throw new Error(`the link is for approval ${req.approvalId}, its path for ${id}`);
     return { req, relay: null };
   }
   const paths = relayPaths("approvals", id);

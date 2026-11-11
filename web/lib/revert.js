@@ -9,12 +9,13 @@ import {
   MAX_REVERT_BATCH,
   REVERT_APPLY_HOURS,
   checkRevertRequest,
+  displayValue,
   encodeRevertResponse,
   parseRevertRequest,
   relyingParty,
   revertResponseJSON,
 } from "./codec.js";
-import { fetchRequest, isLongLink, linkSecret, postResponse, relayPaths, revertDone, shortLinkId } from "./local.js";
+import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths, revertDone } from "./local.js";
 import { $, REVERT_REOPEN, el, fail, linkFailure, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
@@ -33,10 +34,10 @@ const CONFLICTS = {
   CONSTRAINT: "Restoring it would break a database constraint.",
 };
 
-function display(value) {
-  if (value === undefined) return "";
-  if (typeof value === "string") return value;
-  return JSON.stringify(value);
+// display shows a column's value as the line carries it (displayValue).
+function display(line, member, col) {
+  const row = line[member] ?? {};
+  return displayValue(row[col], line.texts?.[member]?.get(col));
 }
 
 function plural(n, word) {
@@ -85,11 +86,11 @@ function rowTable(line) {
   table.append(head);
   const columns = [...new Set([...Object.keys(now), ...Object.keys(after)])];
   for (const col of columns) {
-    const changes = showNow && showAfter && col in after && display(now[col]) !== display(after[col]);
+    const changes = showNow && showAfter && col in after && display(line, "now", col) !== display(line, "set", col);
     const tr = el("tr", changes ? "changed" : "");
     tr.append(el("td", "col", col));
-    if (showNow) tr.append(el("td", "", display(now[col])));
-    if (showAfter) tr.append(el("td", "", display(after[col])));
+    if (showNow) tr.append(el("td", "", display(line, "now", col)));
+    if (showAfter) tr.append(el("td", "", display(line, "set", col)));
     table.append(tr);
   }
   return table;
@@ -128,12 +129,12 @@ const engineFetch = (path, init) => window.fetch(path, init);
 // the engine for a short link. relay is the path to post the signature to,
 // null for a long link.
 async function loadRequest() {
-  const id = shortLinkId(window.location.pathname, "reverts");
-  if (isLongLink(window.location.hash) || id === null) {
-    // A long link: the request is in the fragment, and names the same revert
-    // as the path.
+  // Every link names its revert in the path; a long link's request must
+  // name the same one.
+  const id = pageId(window.location.pathname, "reverts");
+  if (isLongLink(window.location.hash)) {
     const req = await parseRevertRequest(window.location.hash);
-    if (id !== null && req.revertId !== id) throw new Error(`the link is for revert ${req.revertId}, its path for ${id}`);
+    if (req.revertId !== id) throw new Error(`the link is for revert ${req.revertId}, its path for ${id}`);
     return { req, relay: null };
   }
   const paths = relayPaths("reverts", id);

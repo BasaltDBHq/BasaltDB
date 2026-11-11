@@ -25,7 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
-var revertLink = regexp.MustCompile(`http://localhost:8787/reverts/[0-9a-f-]{36}#(1\.[A-Za-z0-9_-]+)`)
+var revertLink = regexp.MustCompile(`http://localhost:8787/reverts/[0-9a-f-]{36}#(2\.[A-Za-z0-9_-]+)`)
 
 // revertSetup is a demo database with basalt init done (agent bot on
 // leads, the person's passkey registered), and a run of the agent that
@@ -53,7 +53,7 @@ func signRevertLink(t *testing.T, person *passkeytest.Authenticator, fragment st
 	t.Helper()
 	req, b, err := revert.ParseRequest(fragment)
 	require.NoError(t, err)
-	require.Equal(t, []passkey.Bytes{person.ID}, req.CredentialIDs)
+	require.Empty(t, req.CredentialIDs, "a format 2 link carries no credential ids: the passkeys are discoverable")
 	as, err := person.Sign(revert.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	code, err := revert.NewResponse(b.RevertID, as).Code()
@@ -165,27 +165,20 @@ func TestRevertOpensTheLink(t *testing.T) {
 
 func TestRevertRefusesAForgedCode(t *testing.T) {
 	t.Parallel()
-	d, _, cred, run := revertSetup(t)
+	d, person, cred, run := revertSetup(t)
 	r := cli(t, nil, "", "revert", "--run", run.String(), "--credential-file", cred)
 	m := revertLink.FindStringSubmatch(r.stderr)
 	require.NotNil(t, m, r.stderr)
 
+	// The forger claims the registered passkey's credential id, as an agent
+	// forging a signature would.
 	forger, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
-	r = cli(t, nil, "", "revert", "--apply", signRevertLink(t, forgerWithIDOf(t, forger, m[1]), m[1]), "--credential-file", cred)
+	forger.ID = person.ID
+	r = cli(t, nil, "", "revert", "--apply", signRevertLink(t, forger, m[1]), "--credential-file", cred)
 	require.Equal(t, exitError, r.code)
 	require.Contains(t, r.stderr, "the code does not verify, nothing was reverted")
 	require.Equal(t, "won", leadStatusOf(t, d, 40))
-}
-
-// forgerWithIDOf makes forger claim the registered passkey's credential id,
-// as an agent forging a signature would.
-func forgerWithIDOf(t *testing.T, forger *passkeytest.Authenticator, fragment string) *passkeytest.Authenticator {
-	t.Helper()
-	req, _, err := revert.ParseRequest(fragment)
-	require.NoError(t, err)
-	forger.ID = req.CredentialIDs[0]
-	return forger
 }
 
 func TestRevertDryRun(t *testing.T) {

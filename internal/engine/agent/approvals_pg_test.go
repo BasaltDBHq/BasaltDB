@@ -94,12 +94,12 @@ func approvalOf(t *testing.T, body map[string]any) map[string]any {
 
 // signLink does what the person does on the approval page: decode the
 // link, check it, and sign the binding with the passkey.
-func signLink(t *testing.T, person *passkeytest.Authenticator, link string, signer *passkeytest.Authenticator) string {
+func signLink(t *testing.T, link string, signer *passkeytest.Authenticator) string {
 	t.Helper()
 	frag := link[strings.Index(link, "#")+1:]
 	req, b, err := approval.ParseRequest(frag)
 	require.NoError(t, err)
-	require.Equal(t, []passkey.Bytes{person.ID}, req.CredentialIDs)
+	require.Empty(t, req.CredentialIDs, "a format 2 link carries no credential ids: the passkeys are discoverable")
 	as, err := signer.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	code, err := approval.NewResponse(b.ApprovalID, as).Code()
@@ -123,7 +123,7 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 	ap := approvalOf(t, body)
 	require.Equal(t, json.Number("15"), ap["rows"])
 	link := str(t, ap["approvalUrl"])
-	require.True(t, strings.HasPrefix(link, links.DefaultLocal+"/approvals/"+str(t, ap["approvalId"])+"#1."), link)
+	require.True(t, strings.HasPrefix(link, links.DefaultLocal+"/approvals/"+str(t, ap["approvalId"])+"#2."), link)
 	approvalID := str(t, ap["approvalId"])
 	command := "basalt approve --agent bot --config /etc/basalt-test/engine.json --open " + approvalID
 	require.Equal(t, command, ap["approveCommand"])
@@ -179,7 +179,7 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 	forger, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 	forger.ID = person.ID
-	body, isError = h.call(t, "write", withApproval(map[string]any{"approval": signLink(t, person, link, forger)}))
+	body, isError = h.call(t, "write", withApproval(map[string]any{"approval": signLink(t, link, forger)}))
 	requireToolError(t, body, isError, "APPROVAL_INVALID", "", "BS005")
 	require.Contains(t, body["message"], "bad passkey signature")
 
@@ -187,7 +187,7 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 	requireToolError(t, body, isError, "APPROVAL_INVALID", "", "")
 	require.Contains(t, body["message"], "exactly those of the held write")
 
-	code := signLink(t, person, link, person)
+	code := signLink(t, link, person)
 	body, isError = h.call(t, "write", withApproval(map[string]any{"approval": code}))
 	require.False(t, isError, "%v", body)
 	require.Equal(t, "APPLIED", body["status"])
@@ -225,7 +225,7 @@ func TestHeldDeleteRelayedThroughBasaltApprove(t *testing.T) {
 	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
 	ap := approvalOf(t, body)
 	// The person relays the code with basalt approve (the agent credential).
-	code := signLink(t, person, str(t, ap["approvalUrl"]), person)
+	code := signLink(t, str(t, ap["approvalUrl"]), person)
 	resp, err := approval.ParseResponse(code)
 	require.NoError(t, err)
 	_, err = guard.SubmitApproval(context.Background(), d.Admin, resp.ApprovalID, resp.Assertion())

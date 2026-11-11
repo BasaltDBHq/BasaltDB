@@ -41,7 +41,7 @@ const instructions = "BasaltDB records every action you take on this database. "
 	"A write of 11 to 50 rows, or any DELETE, is held for the person's passkey approval: show them approval.personMessage verbatim (it has the approval link and the equivalent basalt command), then, in the same turn, repeat the write once with approvalId: it waits for their approval and applies it. " +
 	"If that wait runs out (APPROVAL_REQUIRED again), do not wait again: end your turn and say you apply it once they tell you they approved. " +
 	"Over 50 rows, DDL and functions outside the allowlist are refused. " +
-	"To undo your own work, check it with preview_revert and query, tell the person what you recommend, then call request_revert and show them its personMessage; follow its nextStep."
+	"To undo your own work, find the run with list_runs, check it with preview_revert and query, tell the person what you recommend, then call request_revert and show them its personMessage; follow its nextStep."
 
 // Run serves every agent in cfg until ctx is done. It takes the engine lock
 // in the socket directory, so one engine runs per machine. configArg is the

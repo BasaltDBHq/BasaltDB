@@ -34,6 +34,7 @@ const (
 	versionPasskeys                 // M4.1: passkey revocation and last use
 	versionAgentVersion             // M4 follow-up: agents read schema_version
 	versionRunsAgent                // M4.1: index for list_runs, the agent's own runs by id
+	versionPII                      // M5.1: PII classification
 )
 
 // migrations lists every version in order. M2 appends versions.
@@ -52,6 +53,7 @@ var migrations = []migration{
 	{version: versionPasskeys, sql: v12Revocation},
 	{version: versionAgentVersion, sql: v13AgentVersion},
 	{version: versionRunsAgent, sql: v14RunsAgent},
+	{version: versionPII, sql: v15Tables + v15Functions + v15Views},
 }
 
 // LatestVersion is the basalt_meta version this build installs.

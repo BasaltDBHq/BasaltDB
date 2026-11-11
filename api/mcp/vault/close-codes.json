@@ -46,14 +46,14 @@
       "code": 4006,
       "name": "LINK_REFUSED",
       "sentBy": ["ENGINE"],
-      "when": "Handshake message 1 for a token the engine does not hold, an expired or revoked link, a token other than SESSION_OPEN's, or a tag that fails (wrong psk). All answer alike. Also open sessions of a link the engine revokes or that expires.",
+      "when": "Handshake message 1 for a token the engine does not hold, an expired or revoked link, a token other than SESSION_OPEN's, a tag that fails (wrong psk), or an invalid ephemeral key (checked after the tag). All answer alike. Also open sessions of a link the engine revokes or that expires.",
       "pageShows": "LINK_GONE"
     },
     {
       "code": 4007,
       "name": "HANDSHAKE_FAILED",
-      "sentBy": ["PAGE", "ENGINE"],
-      "when": "An ephemeral key that is not a valid uncompressed P-256 point; message 2 that does not decrypt, whose payload fails its schema, or whose signature fails; on DIRECT, an engine key other than the pinned one.",
+      "sentBy": ["PAGE"],
+      "when": "An engine ephemeral key that is not a valid uncompressed P-256 point; message 2 that does not decrypt, whose payload fails its schema, or whose signature fails; on DIRECT, an engine key other than the pinned one.",
       "pageShows": "BROKEN"
     },
     {

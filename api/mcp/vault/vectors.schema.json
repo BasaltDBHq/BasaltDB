@@ -208,7 +208,7 @@
             "properties": {
               "name": { "$ref": "#/$defs/name" },
               "token": { "type": "string", "pattern": "^basalt-receipt\\.1\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$" },
-              "engineKey": { "type": "string", "pattern": "^[A-Za-z0-9_-]{122}$" },
+              "engineKey": { "type": "string", "pattern": "^[A-Za-z0-9_-]{122}$", "description": "The expected engine key the verifier holds from outside the receipt; refusal cases include a receipt validly signed by another key." },
               "payloadJson": { "type": "string", "description": "The decoded payload; present when expect is ACCEPT." },
               "expect": { "$ref": "#/$defs/expect" }
             }

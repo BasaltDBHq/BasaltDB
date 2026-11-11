@@ -2,7 +2,7 @@
 // against the binding, show them, and sign the binding with the person's
 // passkey. The page sends nothing anywhere; it shows a code to paste.
 import { encodeApprovalResponse, parseApprovalRequest, relyingParty } from "./codec.js";
-import { $, el, fail, showCode, webauthnError } from "./page.js";
+import { $, APPROVE_REOPEN, el, fail, linkFailure, showCode, webauthnError } from "./page.js";
 import { canStartPasskey, cascadeConfirmation, headline, summarize } from "./summary.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
@@ -120,7 +120,7 @@ async function main() {
     rp = relyingParty(window.location);
     req = await parseApprovalRequest(window.location.hash);
   } catch (err) {
-    fail(`This approval link cannot be used: ${err.message}`);
+    fail(linkFailure(err, "approval", APPROVE_REOPEN));
     return;
   }
   const summary = summarize(req.lines);

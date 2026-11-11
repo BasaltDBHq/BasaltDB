@@ -11,6 +11,24 @@ export function el(tag, className, text) {
   return node;
 }
 
+// linkFailure is the sentence a page shows when its link cannot be used.
+// kind names the page ("approval", "revert"); reopen says how to open the
+// full link from the terminal. A link that does not decode was most likely
+// cut short when copied, so the person is told to reopen it, not that it
+// is bad.
+export function linkFailure(err, kind, reopen) {
+  if (err?.name === "TruncatedLinkError") {
+    return `This ${kind} link looks cut short (${err.message}). Long links often break when copied from a terminal or a chat. ` +
+      `Open it from your terminal instead: ${reopen}.`;
+  }
+  return `This ${kind} link cannot be used: ${err?.message ?? err}`;
+}
+
+export const APPROVE_REOPEN =
+  "run basalt approve --agent <name> --open <approvalId> with the approvalId your agent gave you; it opens the full link in your browser";
+export const REVERT_REOPEN =
+  "run your basalt revert command again with --open; it prepares the revert and opens the full link in your browser";
+
 export function fail(message) {
   $("error-text").textContent = message;
   $("error").hidden = false;

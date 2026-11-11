@@ -2,7 +2,7 @@
   "name": "write",
   "status": "IMPLEMENTED",
   "milestone": "M1",
-  "description": "Run one INSERT, UPDATE or DELETE with bound parameters ($1, $2, ...) and an intent. The guard in the database records old and new rows. DDL, multiple statements, data-changing WITH, COPY and functions outside the allowlist are refused. A write of 11 to 50 rows, or any DELETE, is held: the result is APPROVAL_REQUIRED with an approval link for the person. Once the person approves with their passkey, call write again with the same arguments plus approvalId (and approval, if the person gave you the code).",
+  "description": "Run one INSERT, UPDATE or DELETE with bound parameters ($1, $2, ...) and an intent. The guard in the database records old and new rows. DDL, multiple statements, data-changing WITH, COPY and functions outside the allowlist are refused. A write of 11 to 50 rows, or any DELETE, is held: the result is APPROVAL_REQUIRED with approveCommand, a short command for the person to run in their terminal that opens the approval page (give them that rather than the long approvalUrl, which breaks when copied). Once the person approves with their passkey, call write again with the same arguments plus approvalId (and approval, if the person gave you the code).",
   "inputSchema": {
     "type": "object",
     "additionalProperties": false,

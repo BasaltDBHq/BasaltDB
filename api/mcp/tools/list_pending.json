@@ -2,7 +2,7 @@
   "name": "list_pending",
   "status": "IMPLEMENTED",
   "milestone": "M2",
-  "description": "This agent's held writes that have not been applied and have not expired: waiting for the person's passkey (PENDING) or approved and ready to apply with write and approvalId (APPROVED). Each carries the approval link to send to the person. Newest first, cursor-paginated. Listing never approves anything.",
+  "description": "This agent's held writes that have not been applied and have not expired: waiting for the person's passkey (PENDING) or approved and ready to apply with write and approvalId (APPROVED). Each carries approveCommand, the command the person runs in their terminal to open the approval page (give them that, not the long approval link, which breaks when copied), and the approval link itself. Newest first, cursor-paginated. Listing never approves anything.",
   "inputSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -56,7 +56,8 @@
             "status",
             "createdAt",
             "expiresAt",
-            "approvalUrl"
+            "approvalUrl",
+            "approveCommand"
           ],
           "properties": {
             "approvalId": {
@@ -111,7 +112,11 @@
             "approvalUrl": {
               "type": "string",
               "format": "uri",
-              "description": "https://basaltvault.app/approve/#1.<request>; the request carries the preview the person signs."
+              "description": "https://basaltvault.app/approve/#1.<request>; the request carries the preview the person signs. Long: terminals wrap it and chats may cut it, so prefer approveCommand."
+            },
+            "approveCommand": {
+              "type": "string",
+              "description": "basalt approve --agent <name> [--config <path>] --open <approvalId>: the person runs it in their terminal and it opens this approval link in their browser."
             }
           }
         }

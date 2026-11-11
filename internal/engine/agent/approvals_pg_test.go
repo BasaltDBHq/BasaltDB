@@ -75,6 +75,7 @@ func agentHarnessFor(t *testing.T, d *guardtest.DB, a *guardtest.Agent) agentEnv
 	svc := agent.NewService(agent.Deps{
 		Name: "bot", Reader: agentdb.NewReader(pool, limits, time.Now), Store: store, Reads: store, Approvals: store,
 		Reverts: store, Notifier: sent, Log: slog.New(slog.DiscardHandler), Now: time.Now,
+		ApproveCmd: "basalt approve --agent bot --config /etc/basalt-test/engine.json",
 	})
 	return agentEnv{d: d, a: a, h: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, person: person, sent: sent}
 }
@@ -119,6 +120,10 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 	link := str(t, ap["approvalUrl"])
 	require.True(t, strings.HasPrefix(link, approval.PageURL+"#1."), link)
 	approvalID := str(t, ap["approvalId"])
+	command := "basalt approve --agent bot --config /etc/basalt-test/engine.json --open " + approvalID
+	require.Equal(t, command, ap["approveCommand"])
+	require.Contains(t, str(t, body["message"]), "run this in their terminal, which opens the approval page: "+command)
+	require.Contains(t, str(t, body["message"]), "not the approvalUrl")
 	require.Equal(t, "open", leadStatus(t, d, 21), "a held write changes nothing")
 	require.Len(t, sent.sent, 1)
 	require.Equal(t, link, sent.sent[0].ApprovalURL)
@@ -132,6 +137,7 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 	require.Equal(t, approvalID, list[0]["approvalId"])
 	require.Equal(t, "PENDING", list[0]["status"])
 	require.Equal(t, link, list[0]["approvalUrl"])
+	require.Equal(t, command, list[0]["approveCommand"])
 	require.Equal(t, []any{"status"}, list[0]["assignedColumns"])
 
 	withApproval := func(extra map[string]any) map[string]any {

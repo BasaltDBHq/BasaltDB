@@ -30,6 +30,7 @@ type revertFlags struct {
 	status            string
 	page              string
 	dryRun, asJSON    bool
+	open              bool
 }
 
 // prepareTimeout replaces the agent role's statement timeout while
@@ -50,7 +51,8 @@ func runRevert(c *cliIO, args []string) int {
 	fs.StringVar(&f.intent, "intent", "", "why you revert (recorded); default \"Revert <scope> <id>\"")
 	fs.StringVar(&f.apply, "apply", "", "apply a prepared revert with the code the revert page gave you")
 	fs.StringVar(&f.status, "status", "", "show a revert's progress (a large revert is applied by the agent in batches)")
-	fs.StringVar(&f.page, "page", revert.PageURL, "revert page")
+	fs.StringVar(&f.page, "page", "", "revert page (default: next to the engine config's approvalPage, else "+revert.PageURL+")")
+	fs.BoolVar(&f.open, "open", false, "open the revert link in your browser instead of printing it")
 	fs.BoolVar(&f.dryRun, "dry-run", false, "only show what the revert would do")
 	fs.BoolVar(&f.asJSON, "json", false, "print the lines and the result as JSON")
 	agent := fs.String("agent", "", "use this agent's credential from the engine config")
@@ -72,6 +74,7 @@ func runRevert(c *cliIO, args []string) int {
 		return c.fail(err)
 	}
 	defer conn.Close(c.ctx)
+	f.page = configuredPage(f.page, revert.PageURL, *agent, *configPath, revertSibling)
 
 	switch {
 	case f.status != "":
@@ -101,10 +104,13 @@ func (f revertFlags) scope() (guard.RevertScope, error) {
 		named = append(named, guard.RevertScope{Kind: s.kind, ID: id})
 	}
 	if f.apply != "" || f.status != "" {
-		if len(named) > 0 || f.dryRun || (f.apply != "" && f.status != "") {
+		if len(named) > 0 || f.dryRun || f.open || (f.apply != "" && f.status != "") {
 			return guard.RevertScope{}, fmt.Errorf("%w: --apply takes only the code, --status only the revert id", errUsage)
 		}
 		return guard.RevertScope{}, nil
+	}
+	if f.open && f.dryRun {
+		return guard.RevertScope{}, fmt.Errorf("%w: --dry-run makes no link to open", errUsage)
 	}
 	if len(named) != 1 {
 		return guard.RevertScope{}, fmt.Errorf("%w: give exactly one of --change, --run, --task", errUsage)
@@ -161,9 +167,16 @@ func prepareRevert(c *cliIO, conn *pgx.Conn, scope guard.RevertScope, f revertFl
 	if err != nil {
 		return c.fail(err)
 	}
-	fmt.Fprintf(c.stderr, "basalt: revert %s expires %s. Open this link on a device with your passkey, check the rows, and sign:\n",
-		prep.RevertID, prep.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC"))
-	fmt.Fprintln(c.stderr, link)
+	expires := prep.ExpiresAt.UTC().Format(timeLayout)
+	switch {
+	case f.open:
+		fmt.Fprintf(c.stderr, "basalt: revert %s expires %s. Check the rows on the revert page and sign with your passkey.\n", prep.RevertID, expires)
+		openLink(c, link, c.stderr)
+	default:
+		fmt.Fprintf(c.stderr, "basalt: revert %s expires %s. Open this link on a device with your passkey, check the rows, and sign:\n",
+			prep.RevertID, expires)
+		fmt.Fprintln(c.stderr, link)
+	}
 	fmt.Fprint(c.stderr, "Paste the code the revert page showed: ")
 	code, err := c.line()
 	if err != nil || code == "" {

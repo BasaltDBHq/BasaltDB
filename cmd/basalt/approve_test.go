@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"path/filepath"
 	"strings"
@@ -157,6 +158,28 @@ func TestApprove(t *testing.T) {
 	req, b, err := approval.ParseRequest(link[strings.Index(link, "#"):])
 	require.NoError(t, err)
 	require.Equal(t, held.ApprovalID, b.ApprovalID)
+
+	// --open opens the same link in the browser and does not print it.
+	h := newFakeHost(t)
+	r = cliHost(t, h, append(append([]string{"approve"}, agentFlags...), "--open", held.ApprovalID.String())...)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Equal(t, []string{link}, h.opened)
+	require.Empty(t, r.stdout)
+	require.Contains(t, r.stderr, "basalt: Delete 1 row in public.leads")
+	require.Contains(t, r.stderr, "opened the link in your browser")
+	require.NotContains(t, r.stderr, "#1.")
+
+	// No browser: the link is printed to copy by hand.
+	h.openErr = errors.New("xdg-open not found")
+	r = cliHost(t, h, append(append([]string{"approve"}, agentFlags...), "--open", held.ApprovalID.String())...)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Equal(t, link, strings.TrimSpace(r.stdout))
+	require.Contains(t, r.stderr, "could not open a browser (xdg-open not found)")
+
+	r = cli(t, nil, "", append(append([]string{"approve"}, agentFlags...), "--open", held.ApprovalID.String(), "--show", held.ApprovalID.String())...)
+	require.Equal(t, exitUsage, r.code, r.stderr)
+	r = cli(t, nil, "", append(append([]string{"approve"}, agentFlags...), "--open", held.ApprovalID.String(), "code")...)
+	require.Equal(t, exitUsage, r.code, r.stderr)
 
 	sign := func(a *passkeytest.Authenticator) string {
 		as, err := a.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)

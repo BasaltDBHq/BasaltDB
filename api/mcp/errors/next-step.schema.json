@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/next-step.v1.json",
   "title": "Next step",
-  "description": "One step of nextSteps in an error body or a result: who does it, what, and everything needed to do it. Steps run first to last. The agent does AGENT steps and shows PERSON steps (command and url unchanged) to the person. Commands are complete (--agent and --config with the absolute engine config path, ids filled in) and never carry a secret. Which actions go with which actor: CONTRACT.md, Next steps. Design: docs/redesign/specs/2026-11-12-actionable-errors.md.",
+  "description": "One step of nextSteps in an error body or a result: who does it, what, and everything needed to do it. Steps run first to last. The agent does AGENT steps and shows PERSON steps (command and url unchanged) to the person. Commands are complete (--agent, ids filled in, and --config with the absolute engine config path unless it is the default the CLI finds by itself) and never carry a secret. Which actions go with which actor: CONTRACT.md, Next steps. Design: docs/redesign/specs/2026-11-12-actionable-errors.md.",
   "type": "object",
   "additionalProperties": false,
   "required": ["actor", "action", "text"],
@@ -40,7 +40,7 @@
     },
     "arguments": {
       "type": "object",
-      "description": "CALL_TOOL: the tool's arguments, filled in by the engine. With repeatCall they are merged over the arguments of the call that returned this step; a null value removes that argument."
+      "description": "CALL_TOOL: the tool's arguments, complete, filled in by the engine. With repeatCall they are merged over the arguments of the call that returned this step; a null value removes that argument. REVISE_CALL: the arguments the engine can fill in (ids); the agent adds the rest (an intent, a statement) as text says."
     },
     "repeatCall": {
       "type": "boolean",

@@ -2,14 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/result-warning.v1.json",
   "title": "Result warning",
-  "description": "A warning on a successful query or write result (its warnings array, absent when empty): the call worked, but the result is probably not what the agent expects. RLS_HIDES_ROWS: row-level security hides every row of a table in the statement from the agent role, and the statement returned or changed 0 rows. See CONTRACT.md, Next steps.",
+  "description": "A warning on a successful result (its warnings array, absent when empty): the call worked, but something needs attention. RLS_HIDES_ROWS (query, write): row-level security hides every row of a table in the statement from the agent role, and the statement returned or changed 0 rows. GUARD_UPGRADE_AVAILABLE (run_start): only non-breaking guard migrations are missing; everything works, basalt upgrade adds them. See CONTRACT.md, Next steps.",
   "type": "object",
   "additionalProperties": false,
   "required": ["code", "message", "nextSteps"],
   "properties": {
     "code": {
       "type": "string",
-      "enum": ["RLS_HIDES_ROWS"]
+      "enum": ["RLS_HIDES_ROWS", "GUARD_UPGRADE_AVAILABLE"]
     },
     "message": {
       "type": "string",

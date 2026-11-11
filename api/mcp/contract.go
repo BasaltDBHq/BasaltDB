@@ -132,12 +132,27 @@ type WarningSteps struct {
 	Steps         []StepKind `json:"steps"`
 }
 
+// Problem severities of the status tool (CONTRACT.md, Next steps).
+const (
+	SeverityError   = "ERROR"
+	SeverityWarning = "WARNING"
+)
+
+// ProblemSteps is the catalog entry of a problem the status tool reports.
+type ProblemSteps struct {
+	Code          string     `json:"code"`
+	Severity      string     `json:"severity"`
+	PersonMessage bool       `json:"personMessage"`
+	Steps         []StepKind `json:"steps"`
+}
+
 // NextSteps is api/mcp/errors/next-steps.json: for every error case, result
-// case and warning, the steps the engine returns, in order.
+// case, warning and status problem, the steps the engine returns, in order.
 type NextSteps struct {
 	Errors   []ErrorSteps   `json:"errors"`
 	Results  []ResultSteps  `json:"results"`
 	Warnings []WarningSteps `json:"warnings"`
+	Problems []ProblemSteps `json:"problems"`
 }
 
 // LoadNextSteps decodes the embedded next-steps catalog strictly.

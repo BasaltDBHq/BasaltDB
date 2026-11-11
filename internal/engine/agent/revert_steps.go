@@ -51,8 +51,9 @@ func callTool(tool string, args map[string]any, text string) mcp.NextStep {
 	return mcp.NextStep{Actor: mcp.ActorAgent, Action: mcp.ActionCallTool, Text: text, Tool: tool, Arguments: args}
 }
 
-func reviseCall(tool string, args map[string]any, text string) mcp.NextStep {
-	return mcp.NextStep{Actor: mcp.ActorAgent, Action: mcp.ActionReviseCall, Text: text, Tool: tool, Arguments: args}
+// reviseRequestRevert: call request_revert again, with what the agent adds.
+func reviseRequestRevert(args map[string]any, text string) mcp.NextStep {
+	return mcp.NextStep{Actor: mcp.ActorAgent, Action: mcp.ActionReviseCall, Text: text, Tool: toolRequestRevert, Arguments: args}
 }
 
 func openLink(url, text string) mcp.NextStep {
@@ -97,7 +98,7 @@ func appliedSteps() []mcp.NextStep {
 func expiredSteps(r ledger.Revert) []mcp.NextStep {
 	return []mcp.NextStep{
 		agentStep(mcp.ActionAskPerson, "Tell the person the revert was not signed in time and ask whether to request it again."),
-		reviseCall(toolRequestRevert, scopeArgs(r.Scope, r.ScopeID),
+		reviseRequestRevert(scopeArgs(r.Scope, r.ScopeID),
 			"On yes, call request_revert for the same scope with the person's reason as intent."),
 	}
 }
@@ -161,7 +162,7 @@ func (s *Service) rowsChanged(r ledger.Revert, detail string) error {
 		Message: "the database refused the revert, nothing was reverted: " + detail,
 		PersonMessage: fmt.Sprintf("Rows changed after the preview of the revert of %s %s, so nothing was reverted. The agent "+
 			"requests it again for you to sign the current rows.", strings.ToLower(r.Scope), r.ScopeID),
-		NextSteps: []mcp.NextStep{reviseCall(toolRequestRevert, scopeArgs(r.Scope, r.ScopeID),
+		NextSteps: []mcp.NextStep{reviseRequestRevert(scopeArgs(r.Scope, r.ScopeID),
 			"Rows changed after the preview, so nothing was reverted; request it again so the person signs the current rows.")}}
 }
 
@@ -227,7 +228,7 @@ func (s *Service) nothingToRevert(ctx context.Context, scope guard.RevertScope, 
 			"someone changed since are left as they are, and you sign it with your passkey.", what)
 		te.NextSteps = []mcp.NextStep{
 			agentStep(mcp.ActionAskPerson, "Tell the person it was already reverted; ask whether to undo that revert, which brings your work back."),
-			reviseCall(toolRequestRevert, map[string]any{},
+			reviseRequestRevert(map[string]any{},
 				"On yes, call request_revert with the revert's changeId (revertedBy in run_history) and the person's reason as intent."),
 		}
 	default:
@@ -263,7 +264,7 @@ func withArgumentSteps(err error) error {
 		return err
 	}
 	te := ToolError(err)
-	te.NextSteps = []mcp.NextStep{reviseCall(toolRequestRevert, nil,
+	te.NextSteps = []mcp.NextStep{reviseRequestRevert(nil,
 		"Fix the arguments as the message says; the tool's input schema lists them.")}
 	return te
 }

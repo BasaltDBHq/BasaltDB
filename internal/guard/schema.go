@@ -30,6 +30,7 @@ const (
 	versionRLS                      // M3 follow-up: the guard's row-level security policy
 	versionRevertBatches            // M3 follow-up: large reverts, signed once and applied in batches
 	versionAgentsInherit            // M4: agents are roles that inherit the agents group
+	versionPasskeys                 // M4.1: passkey revocation and last use
 )
 
 // migrations lists every version in order. M2 appends versions.
@@ -44,6 +45,7 @@ var migrations = []migration{
 	{version: versionRLS, sql: v8RLS},
 	{version: versionRevertBatches, sql: v9Tables + v9Chains + v9Execute + v9Prepare + v9Apply + v9Views},
 	{version: versionAgentsInherit, sql: v10Agents},
+	{version: versionPasskeys, sql: v11Revocation},
 }
 
 // LatestVersion is the basalt_meta version this build installs.

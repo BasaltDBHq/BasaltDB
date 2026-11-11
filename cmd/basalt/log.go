@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
@@ -76,7 +77,13 @@ func runLog(c *cliIO, args []string) int {
 		}
 	}
 
+	keys, err := ledger.ListPasskeys(ctx, conn)
+	if err != nil {
+		return c.fail(err)
+	}
+
 	warn(c, health)
+	warnPasskeys(c, keys)
 	if *asJSON {
 		if err := printJSON(c, page.Items, rowsByChange); err != nil {
 			return c.fail(err)
@@ -177,6 +184,28 @@ func warn(c *cliIO, h ledger.Health) {
 			h.LastHeartbeat.UTC().Format(time.RFC3339))
 	}
 }
+
+// warnPasskeys warns when no passkey is active, and names each passkey
+// that signed nothing for ledger.PasskeyUnusedAfter: WebAuthn never says a
+// passkey was deleted, so a lost one shows only as silence.
+func warnPasskeys(c *cliIO, keys []ledger.Passkey) {
+	if len(keys) == 0 {
+		fmt.Fprintln(c.stderr, "warning: no active passkey; held writes and reverts cannot be signed until basalt init --add-passkey")
+		return
+	}
+	now := c.now()
+	for _, k := range keys {
+		if !k.Unused(now) {
+			continue
+		}
+		id := passkey.Bytes(k.Credential.ID).String()
+		fmt.Fprintf(c.stderr, "warning: passkey %q (%s) has not signed anything for %d days or more (last used %s); if it is lost, run basalt passkey check or basalt passkey remove %s\n",
+			k.Label, id, int(ledger.PasskeyUnusedAfter.Hours()/hoursPerDay), lastUsed(k.LastUsedAt), id)
+	}
+}
+
+// hoursPerDay converts durations to days for messages.
+const hoursPerDay = 24
 
 func printText(c *cliIO, changes []ledger.Change, rows map[uuid.UUID][]ledger.RowChange) {
 	for _, ch := range changes {

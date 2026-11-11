@@ -18,6 +18,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 )
 
@@ -43,7 +45,7 @@ func cli(t *testing.T, env map[string]string, stdin string, args ...string) resu
 }
 
 var guardCommands = map[string]func(*cliIO, []string) int{
-	"init": runInit, "log": runLog, "uninstall": runUninstall, "approve": runApprove, "revert": runRevert,
+	"init": runInit, "log": runLog, "uninstall": runUninstall, "approve": runApprove, "revert": runRevert, "passkey": runPasskey,
 }
 
 // initAgent runs basalt init --yes for agent bot writing public.leads with
@@ -57,6 +59,15 @@ func initAgent(t *testing.T, d *guardtest.DB, configPath string) string {
 	require.Contains(t, r.stderr, "basalt engine --config "+configPath)
 	require.NotContains(t, r.stderr, "sudo")
 	return filepath.Join(filepath.Dir(configPath), "agents", "bot.url")
+}
+
+// registerTestPasskey registers a passkey as the admin, so basalt log
+// does not warn that none is active.
+func registerTestPasskey(t *testing.T, d *guardtest.DB) {
+	t.Helper()
+	p, err := passkeytest.New(passkey.Production)
+	require.NoError(t, err)
+	require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, p.Credential(), "test"))
 }
 
 func tempConfig(t *testing.T) string {
@@ -180,6 +191,7 @@ func TestLogShowsRunChanges(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	cfgPath := tempConfig(t)
 	path := initAgent(t, d, cfgPath)
+	registerTestPasskey(t, d)
 	b, err := os.ReadFile(path)
 	require.NoError(t, err)
 	ctx := context.Background()
@@ -241,6 +253,7 @@ func TestLogVerifiesFromItsPin(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
 	path := initAgent(t, d, tempConfig(t))
+	registerTestPasskey(t, d)
 	b, err := os.ReadFile(path)
 	require.NoError(t, err)
 	dsn := strings.TrimSpace(string(b))

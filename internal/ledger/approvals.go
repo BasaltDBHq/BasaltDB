@@ -144,10 +144,35 @@ func ListOpenApprovals(ctx context.Context, q guard.Querier, p ApprovalListParam
 // maxPasskeys bounds the passkey list; a database has a handful.
 const maxPasskeys = 100
 
-// Passkeys returns the registered passkeys' public data, as stored.
-func Passkeys(ctx context.Context, q guard.Querier) ([]passkey.Credential, error) {
-	sql, args, err := psql.Select("credential_id", "public_key_x", "public_key_y", "rp_id", "origin", "sign_count").
-		From("basalt_meta.agent_passkeys").OrderBy("credential_id").Limit(maxPasskeys).ToSql()
+// PasskeyUnusedAfter is how long a passkey may go without signing an
+// approval or revert before basalt log names it (CONTRACT.md, Passkey
+// management): a lost passkey is found by its silence.
+const PasskeyUnusedAfter = 90 * 24 * time.Hour
+
+// Passkey is an active passkey as the agent views show it: what a relay
+// needs to check a code, its label and dates.
+type Passkey struct {
+	Credential passkey.Credential
+	Label      string
+	CreatedAt  time.Time
+	LastUsedAt *time.Time
+}
+
+// Unused reports whether no approval or revert was signed with the passkey
+// for PasskeyUnusedAfter (counted from registration when never used).
+func (k Passkey) Unused(now time.Time) bool {
+	last := k.CreatedAt
+	if k.LastUsedAt != nil {
+		last = *k.LastUsedAt
+	}
+	return now.Sub(last) >= PasskeyUnusedAfter
+}
+
+// ListPasskeys returns the active passkeys (at most 100), oldest first.
+func ListPasskeys(ctx context.Context, q guard.Querier) ([]Passkey, error) {
+	sql, args, err := psql.Select("credential_id", "public_key_x", "public_key_y", "rp_id", "origin", "sign_count",
+		"label", "created_at", "last_used_at").
+		From("basalt_meta.agent_passkeys").OrderBy("created_at", "credential_id").Limit(maxPasskeys).ToSql()
 	if err != nil {
 		return nil, err
 	}
@@ -155,21 +180,36 @@ func Passkeys(ctx context.Context, q guard.Querier) ([]passkey.Credential, error
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (passkey.Credential, error) {
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (Passkey, error) {
 		var (
-			c     passkey.Credential
+			k     Passkey
+			c     = &k.Credential
 			x, y  []byte
 			count int64
 		)
-		if err := row.Scan(&c.ID, &x, &y, &c.Relying.RPID, &c.Relying.Origin, &count); err != nil {
-			return c, err
+		if err := row.Scan(&c.ID, &x, &y, &c.Relying.RPID, &c.Relying.Origin, &count, &k.Label, &k.CreatedAt, &k.LastUsedAt); err != nil {
+			return k, err
 		}
 		pub, err := passkey.PublicKeyFromXY(x, y)
 		if err != nil {
-			return c, err
+			return k, err
 		}
 		c.PublicKey = pub
 		c.SignCount = uint32(min(max(count, 0), int64(^uint32(0))))
-		return c, nil
+		return k, nil
 	})
+}
+
+// Passkeys returns the active passkeys' credentials, for relays that fill
+// credentialIds and check a code before submitting it.
+func Passkeys(ctx context.Context, q guard.Querier) ([]passkey.Credential, error) {
+	keys, err := ListPasskeys(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]passkey.Credential, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, k.Credential)
+	}
+	return out, nil
 }

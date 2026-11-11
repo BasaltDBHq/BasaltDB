@@ -32,7 +32,7 @@ func runLog(c *cliIO, args []string) int {
 	runFlag := fs.String("run", "", "only this run, with the rows each change wrote")
 	limit := fs.Int("limit", pagination.DefaultLimit, fmt.Sprintf("page size (max %d)", pagination.MaxLimit))
 	cursor := fs.String("cursor", "", "next-page cursor printed by the previous call")
-	sort := fs.String("sort", "", "id (oldest first) or -id (newest first, default)")
+	sortFlag := fs.String("sort", ledger.ChangeSortSpec.Default, "id (oldest first) or -id (newest first)")
 	asJSON := fs.Bool("json", false, "print change records as JSON")
 	agent := fs.String("agent", "", "read this agent's credential from the engine config")
 	configPath := fs.String("config", config.DefaultPath(runtime.GOOS), "engine config file")
@@ -42,7 +42,10 @@ func runLog(c *cliIO, args []string) int {
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
 	}
-	params := ledger.ChangeListParams{Params: pagination.Params{Limit: *limit, Cursor: *cursor, Sort: *sort}}
+	params := ledger.ChangeListParams{Params: pagination.Params{Limit: *limit, Cursor: *cursor, Sort: *sortFlag}}
+	if _, err := params.ParseSort(ledger.ChangeSortSpec); err != nil || *sortFlag == "" {
+		return c.fail(fmt.Errorf("%w: --sort must be id or -id, got %q", errUsage, *sortFlag))
+	}
 	params.ApplyDefaultsAndClamp()
 	if *runFlag != "" {
 		id, err := uuid.Parse(*runFlag)

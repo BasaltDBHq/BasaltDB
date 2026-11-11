@@ -85,6 +85,8 @@ func TestInitUsageErrors(t *testing.T) {
 		{"init", "--nope"},
 		{"log"},
 		{"log", "--run", "run_7f3k", "--agent", "bot"},
+		{"log", "--sort", "", "--agent", "bot"},
+		{"log", "--sort", "newest", "--agent", "bot"},
 		{"uninstall", "--prefix", "BAD"},
 	} {
 		r := cli(t, nil, "", args...)

@@ -1,0 +1,17 @@
+# Fake fixture PII, not real people. type<TAB>value.
+# Phones use reserved fictional ranges (+44 7700 900xxx, +1 202 555 01xx).
+PERSON_NAME	Alice Tamm
+PERSON_NAME	Mari-Liis Kask
+PERSON_NAME	Jaan Rebane
+PERSON_NAME	Rose Lepik
+PERSON_NAME	Rose
+EMAIL	fixture.alice.tamm@gmail.com
+EMAIL	mari.kask@fixture-corp.example
+EMAIL	jaan.rebane.fixture@outlook.com
+EMAIL	rose.lepik@fixture-corp.example
+PHONE	+44 7700 900123
+PHONE	+1 202 555 0143
+PHONE	+44 7700 900456
+PHONE	+44 7700 900789
+ADDRESS	12 Fixture Lane, Tallinn
+ADDRESS	Pärnu mnt 99, Tallinn

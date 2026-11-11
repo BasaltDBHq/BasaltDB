@@ -77,6 +77,10 @@ type Deps struct {
 	// CLIFlags select this agent in the person's basalt commands ("--agent
 	// NAME [--config PATH]"); "--agent NAME" when empty.
 	CLIFlags string
+	// FullCLIFlags are CLIFlags naming the config even at its default
+	// path ("--agent NAME --config PATH"), for a command the person copies
+	// from a message to run in any shell; CLIFlags when empty.
+	FullCLIFlags string
 	// PagesOrigin is the origin of the pages the engine serves itself
 	// (CONTRACT.md, Local pages), for short links; empty when it serves
 	// none, and held actions then carry the long link.
@@ -109,6 +113,9 @@ func NewService(d Deps) *Service {
 	}
 	if d.CLIFlags == "" {
 		d.CLIFlags = "--agent " + d.Name
+	}
+	if d.FullCLIFlags == "" {
+		d.FullCLIFlags = d.CLIFlags
 	}
 	return &Service{Deps: d}
 }

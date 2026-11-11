@@ -92,7 +92,7 @@ New codes and reasons go through the contract-first process.
 
 ## MCP tools
 
-The first release serves exactly these tools (foundation, "First release", plus the two large-revert tools of owner decision N12-1). `list_runs` and `request_revert` (agent-assisted revert, owner decisions N12-R1 to N12-R9) are `PLANNED`: contract only, not served yet.
+The first release serves exactly these tools (foundation, "First release", plus the two large-revert tools of owner decision N12-1). `list_runs` and `request_revert` (agent-assisted revert, owner decisions N12-R1 to N12-R9) are `PLANNED`. `request_revert` is served for its request form only: its wait form (`revertId`, with `waitForSignature`, `reissueLink` or `signature`) answers `INVALID_ARGUMENT` saying the engine cannot wait yet and what to do instead (`NOT_FOUND` for a revert this agent did not request), and changes nothing; until it is served the request form's `nextStep` tells the agent to end its turn after showing `personMessage`. The tool becomes `IMPLEMENTED` with the wait form.
 
 | Tool | Milestone | Purpose |
 |---|---|---|
@@ -105,7 +105,7 @@ The first release serves exactly these tools (foundation, "First release", plus 
 | `revert_plan` | M3 | Nov 12: the lines of a large revert plan and its progress |
 | `apply_revert_batch` | M3 | Nov 12: apply a batch of lines of a large revert plan the person signed |
 | `list_runs` | M4.1 | Planned. This agent's own runs, newest first, with what each did |
-| `request_revert` | M4.1 | Planned. Prepare a revert for the person to sign and hand them the link; then wait once for their signature |
+| `request_revert` | M4.1 | Planned; request form served. Prepare a revert for the person to sign and hand them the link; then wait once for their signature |
 
 `preview_revert` (M3): exactly one of `changeId`, `runId`, `taskId`, plus `limit` and `cursor` (no `sort`: lines come in their signed order). Returns `scope`, `scopeId`, the `rows` and `skipped` totals of the whole preview, the `command` the person runs (`basalt revert --agent <name> --run <id>`), and one page of lines as objects (see [Revert](#revert)). It runs the revert on trial and rolls it back; it never reverts. The cursor names the last line of the page by its hash, so a preview whose rows changed between pages is refused with `INVALID_ARGUMENT` (start again). A scope with nothing to revert is `NOT_FOUND`. A scope of any size can be previewed.
 

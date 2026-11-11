@@ -2,9 +2,12 @@ package guard
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
+	sq "github.com/Masterminds/squirrel"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
@@ -60,6 +63,49 @@ func PrepareRevert(ctx context.Context, q Querier, s RevertScope, intent string)
 		return PreparedRevert{}, fmt.Errorf("guard returned a bad revert binding: %w", err)
 	}
 	p.Batched = b.Batched
+	return p, nil
+}
+
+// Prepare time limits (agent-assisted revert design, Preparing). The
+// person's CLI may take minutes on a large scope; an MCP call stays under
+// the 2 minutes after which Claude Code moves a tool call to the
+// background.
+const (
+	CLIPrepareTimeout = 10 * time.Minute
+	MCPPrepareTimeout = 100 * time.Second
+)
+
+// ErrPrepareTimeout is a timeout shorter than the millisecond
+// statement_timeout counts in, where 0 would mean no limit at all.
+var ErrPrepareTimeout = errors.New("guard: a prepare timeout must be at least 1 ms")
+
+// PrepareRevertWithin prepares a revert of scope in its own transaction on
+// db, with statement_timeout set to timeout for that transaction only
+// (set_config(..., true)), whatever the role's default is. Past it
+// Postgres cancels the prepare (SQLSTATE 57014) and nothing is stored.
+// basalt revert and the engine's request_revert both prepare through it.
+func PrepareRevertWithin(ctx context.Context, db TxBeginner, s RevertScope, intent string, timeout time.Duration) (PreparedRevert, error) {
+	if timeout < time.Millisecond {
+		return PreparedRevert{}, ErrPrepareTimeout
+	}
+	sql, args, err := psql.Select().
+		Column(sq.Expr("pg_catalog.set_config('statement_timeout', ?, true)", strconv.FormatInt(timeout.Milliseconds(), 10))).
+		ToSql()
+	if err != nil {
+		return PreparedRevert{}, err
+	}
+	var p PreparedRevert
+	err = pgx.BeginTxFunc(ctx, db, pgx.TxOptions{}, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, sql, args...); err != nil {
+			return err
+		}
+		var err error
+		p, err = PrepareRevert(ctx, tx, s, intent)
+		return err
+	})
+	if err != nil {
+		return PreparedRevert{}, err
+	}
 	return p, nil
 }
 

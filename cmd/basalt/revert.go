@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"runtime"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -34,10 +33,6 @@ type revertFlags struct {
 	dryRun, asJSON    bool
 	open              bool
 }
-
-// prepareTimeout replaces the agent role's statement timeout while
-// prepare_revert runs: the trial of a large plan can take minutes.
-const prepareTimeout = 10 * time.Minute
 
 // runRevert: basalt revert. The person's command (M3): it prepares the
 // revert with the agent credential, shows what will be restored and what
@@ -140,17 +135,7 @@ func prepareRevert(c *cliIO, conn *pgx.Conn, scope guard.RevertScope, f revertFl
 	if intent == "" {
 		intent = fmt.Sprintf("Revert %s %s", strings.ToLower(string(scope.Kind)), scope.ID)
 	}
-	var prep guard.PreparedRevert
-	err := pgx.BeginFunc(c.ctx, conn, func(tx pgx.Tx) error {
-		// Plain SQL: a transaction-local setting.
-		if _, err := tx.Exec(c.ctx, `SELECT pg_catalog.set_config('statement_timeout', $1, true)`,
-			strconv.FormatInt(prepareTimeout.Milliseconds(), 10)); err != nil {
-			return err
-		}
-		var err error
-		prep, err = guard.PrepareRevert(c.ctx, tx, scope, intent)
-		return err
-	})
+	prep, err := guard.PrepareRevertWithin(c.ctx, conn, scope, intent, guard.CLIPrepareTimeout)
 	if err != nil {
 		return c.fail(fmt.Errorf("cannot prepare the revert: %s", pgDetail(err)))
 	}

@@ -3,7 +3,9 @@ package agentdb
 import (
 	"context"
 	"errors"
+	"time"
 
+	sq "github.com/Masterminds/squirrel"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
@@ -34,6 +36,28 @@ func (s *Store) PreviewRevert(ctx context.Context, scope guard.RevertScope) ([]s
 		return nil, err
 	}
 	return lines, nil
+}
+
+// PrepareRevert stores a revert of scope for the person to sign
+// (basalt_meta.prepare_revert) on the agent's credential, in its own
+// transaction with the statement timeout set to timeout instead of the
+// agent's limit, as basalt revert does.
+func (s *Store) PrepareRevert(ctx context.Context, scope guard.RevertScope, intent string, timeout time.Duration) (guard.PreparedRevert, error) {
+	return guard.PrepareRevertWithin(ctx, s.db, scope, intent, timeout)
+}
+
+// HasChange reports whether the agent's view of the change record shows
+// change id: one of its own changes, or a revert's change that covered it.
+func (s *Store) HasChange(ctx context.Context, id uuid.UUID) (bool, error) {
+	q, args, err := psql.Select().
+		Column(sq.Expr("EXISTS (?)", psql.Select("1").From("basalt_meta.agent_changes").Where(sq.Eq{"change_id": id.String()}))).
+		ToSql()
+	if err != nil {
+		return false, err
+	}
+	var ok bool
+	err = s.db.QueryRow(ctx, q, args...).Scan(&ok)
+	return ok, err
 }
 
 // FindRevert returns a revert the agent's role prepared.

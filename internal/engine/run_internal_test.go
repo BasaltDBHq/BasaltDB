@@ -3,6 +3,7 @@ package engine
 import (
 	"log/slog"
 	"net"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -24,6 +25,13 @@ func TestListenPagesRefusesATakenPort(t *testing.T) {
 	require.Contains(t, err.Error(), "another process holds "+addr)
 	require.Contains(t, err.Error(), "lsof -nP -iTCP:"+port+" -sTCP:LISTEN")
 	require.Contains(t, err.Error(), "make serve-web")
+}
+
+func TestFullCLIFlagsNameTheConfig(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "--agent bot --config "+config.DefaultPath(runtime.GOOS), fullCLIFlags("bot", ""))
+	require.Equal(t, "--agent bot --config /home/me/engine.json", fullCLIFlags("bot", "--config /home/me/engine.json"))
+	require.Equal(t, "--agent bot", cliFlags("bot", ""), "the short form omits the default config")
 }
 
 func TestListenPagesServesAFreePort(t *testing.T) {

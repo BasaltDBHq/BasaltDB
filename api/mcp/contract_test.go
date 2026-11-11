@@ -103,7 +103,8 @@ func TestM3ToolsHaveContracts(t *testing.T) {
 // enums, closed objects.
 // TestAgentRevertToolsHaveContracts: agent-assisted revert (owner
 // decisions N12-R1 to N12-R9) lands contract first, so both tools are
-// PLANNED until the engine serves them.
+// PLANNED until the engine serves them in full (request_revert serves its
+// request form first).
 func TestAgentRevertToolsHaveContracts(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"list_runs", "request_revert"} {

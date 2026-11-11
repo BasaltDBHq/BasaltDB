@@ -90,12 +90,16 @@ func phoneFallback(value string) string {
 // are dropped, so they neither split a word nor join two.
 func GenericForm(value string) string {
 	// A Caser is stateful, so each call takes its own.
-	s := norm.NFKC.String(cases.Fold().String(norm.NFKC.String(value)))
+	caser := cases.Fold()
+	s := nfkcCasefold(&caser, value)
 	var b strings.Builder
 	b.Grow(len(s))
 	gap := false
 	for _, r := range s {
 		switch {
+		case unicode.IsMark(r) && (gap || b.Len() == 0):
+			// A mark that follows no word character starts no word.
+			gap = true
 		case isWordRune(r):
 			if gap && b.Len() > 0 {
 				b.WriteByte(' ')
@@ -116,3 +120,22 @@ func GenericForm(value string) string {
 func isWordRune(r rune) bool {
 	return unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsMark(r)
 }
+
+// nfkcCasefold is NFKC, case folding, NFKC. golang.org/x/text's folding swaps
+// Cherokee upper and lower case in both directions, so folding twice would undo
+// it; Unicode's CaseFolding.txt folds Cherokee to upper case, and that is
+// restored here, which keeps the result stable when folded again.
+func nfkcCasefold(caser *cases.Caser, s string) string {
+	folded := caser.String(norm.NFKC.String(s))
+	if strings.IndexFunc(folded, isCherokee) >= 0 {
+		folded = strings.Map(func(r rune) rune {
+			if isCherokee(r) {
+				return unicode.ToUpper(r)
+			}
+			return r
+		}, folded)
+	}
+	return norm.NFKC.String(folded)
+}
+
+func isCherokee(r rune) bool { return unicode.Is(unicode.Cherokee, r) }

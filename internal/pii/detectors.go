@@ -154,7 +154,9 @@ func asciiDigits(s string) int {
 type Dictionary interface {
 	// Lookup finds a generic-form hash (Keys.GenericHash) and returns its type.
 	Lookup(h Hash) (EntityType, bool)
-	// Contains reports whether a typed-form hash (Keys.TypedHash) is known for t.
+	// Contains reports whether a typed-form hash (Keys.TypedHash) is known for
+	// t. The tokenizer finds emails and phones by shape whether known or not;
+	// basalt classify --check and the engine use the typed form.
 	Contains(t EntityType, h Hash) bool
 }
 
@@ -190,27 +192,6 @@ func (d *DictionaryDetector) Detect(text string) []Span {
 	return out
 }
 
-// FinalScan counts known values still in text, outside existing tokens (as
-// existingTokens bounds them), on the same folded view the tokenizer uses:
-// n-gram hits plus email and phone patterns whose typed form is in the
-// dictionary. Run on tokenized text it must be zero; anything else means a
-// value would leave, and the caller fails closed.
-func (d *DictionaryDetector) FinalScan(text string) int {
-	claimed := existingTokens(text)
-	// The built-in detectors never return a bad span, so detectFree cannot fail here.
-	ngrams, _ := detectFree(d, text, claimed)
-	hits := len(ngrams)
-	for _, det := range PatternDetectors() {
-		spans, _ := detectFree(det, text, claimed)
-		for _, sp := range spans {
-			if d.dict.Contains(sp.Type, d.keys.TypedHash(sp.Type, text[sp.Start:sp.End], d.phoneRegion)) {
-				hits++
-			}
-		}
-	}
-	return hits
-}
-
 func (d *DictionaryDetector) longestHit(text string, ws []word, i int) (int, EntityType) {
 	for n := min(maxNGram, len(ws)-i); n >= 1; n-- {
 		if !tightlyJoined(text, ws[i:i+n]) {
@@ -231,12 +212,18 @@ func (d *DictionaryDetector) longestHit(text string, ws []word, i int) (int, Ent
 type word struct{ start, end int }
 
 // splitWords finds runs of word characters. Format characters (zero-width
-// space, joiners) continue a word, matching GenericForm, which drops them.
+// space, joiners) continue a word, matching GenericForm, which drops them. A
+// combining mark continues a word but never starts one, as in GenericForm: a
+// spacing accent ("\u00a8") folds to a space and a mark, and the mark must
+// not stick to the next name.
 func splitWords(s string) []word {
 	var ws []word
 	start := -1
 	for i, r := range s {
 		inWord := isWordRune(r) || unicode.Is(unicode.Cf, r)
+		if start < 0 && unicode.IsMark(r) {
+			inWord = false
+		}
 		switch {
 		case inWord && start < 0:
 			start = i

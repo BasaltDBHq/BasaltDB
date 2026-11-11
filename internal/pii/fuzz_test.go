@@ -51,7 +51,7 @@ func FuzzTokenizeIsIdempotent(f *testing.F) {
 		if !utf8.ValidString(s) {
 			t.Skip()
 		}
-		tz, _ := newTokenizer(t)
+		tz := newTokenizer(t)
 		out, reps, err := tz.Tokenize(s)
 		require.NoError(t, err)
 		last := 0

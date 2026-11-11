@@ -59,23 +59,86 @@ func NewTokenizer(keys *Keys, phoneRegion string, detectors ...Detector) *Tokeni
 
 // Tokenize replaces every value the detectors find. It returns the new text and
 // the replacements in input order (for counts and the round-trip check; they
-// carry offsets and tokens, never values). A detector span that is out of
-// range, empty, splits a UTF-8 sequence or has an unknown type fails the whole
-// call: nothing is returned rather than a text that may still hold a value.
+// carry offsets and tokens, never values). The output is scanned again with
+// every detector (FinalScan) before it is returned. The call fails closed,
+// returning nothing rather than a text that may still hold a value, when that
+// scan finds anything, or when a detector span is out of range, empty, splits
+// a UTF-8 sequence or has an unknown type.
 func (tz *Tokenizer) Tokenize(text string) (string, []Replacement, error) {
+	found, err := tz.detect(text)
+	if err != nil {
+		return "", nil, err
+	}
+	out, reps, err := tz.replace(text, found)
+	if err != nil {
+		return "", nil, err
+	}
+	left, err := tz.FinalScan(out)
+	if err != nil {
+		return "", nil, err
+	}
+	if left > 0 {
+		return "", nil, fmt.Errorf("pii: tokenized text still holds %d detected values; refusing it", left)
+	}
+	return out, reps, nil
+}
+
+// FinalScan counts what the detectors still find in text outside the tokens
+// already in it, through the same folded view and claims as Tokenize. Run on
+// Tokenize's output it is zero; Tokenize itself fails closed otherwise, and a
+// caller runs it on any text that did not come through Tokenize (the proxy's
+// last check before a request leaves).
+func (tz *Tokenizer) FinalScan(text string) (int, error) {
+	found, err := tz.detect(text)
+	return len(found), err
+}
+
+// detect runs the detectors in order. Each one sees only text no earlier one
+// claimed; its spans, mapped back to the original text, are merged where they
+// overlap, so nothing any of them found is dropped.
+func (tz *Tokenizer) detect(text string) ([]Span, error) {
 	claimed := existingTokens(text)
 	var found []Span
 	for i, d := range tz.detectors {
 		spans, err := detectFree(d, text, claimed)
 		if err != nil {
-			return "", nil, fmt.Errorf("pii: detector %d: %w", i, err)
+			return nil, fmt.Errorf("pii: detector %d: %w", i, err)
 		}
-		accepted := nonOverlapping(spans)
+		accepted := mergeOverlapping(spans)
 		found = append(found, accepted...)
 		claimed = mergeSpans(claimed, accepted)
 	}
 	slices.SortFunc(found, func(a, b Span) int { return cmp.Compare(a.Start, b.Start) })
-	return tz.replace(text, found)
+	widenToBoundaries(text, found, claimed)
+	return found, nil
+}
+
+// widenToBoundaries grows each found span over the ASCII letters and digits
+// touching it, up to the next claimed span (a token already in the text or
+// another found span). A token is only recognized again when nothing
+// alphanumeric touches it (existingTokens), so a token written against
+// letters ("0@0.A+00000000" gives "0@0.Apii1_…") would be read as part of a
+// new address next turn. Spans that touch another span stay as they are: back
+// to back tokens recognize each other. claimed is sorted and holds found.
+func widenToBoundaries(text string, found, claimed []Span) {
+	for i := range found {
+		k, _ := slices.BinarySearchFunc(claimed, found[i].Start, func(c Span, start int) int { return cmp.Compare(c.Start, start) })
+		lo, hi := 0, len(text)
+		if k > 0 {
+			lo = claimed[k-1].End
+		}
+		if k+1 < len(claimed) {
+			hi = claimed[k+1].Start
+		}
+		for found[i].Start > lo && asciiAlnumAt(text, found[i].Start-1) {
+			found[i].Start--
+		}
+		for found[i].End < hi && asciiAlnumAt(text, found[i].End) {
+			found[i].End++
+		}
+		// The next span is bounded by this one as widened.
+		claimed[k] = found[i]
+	}
 }
 
 func (tz *Tokenizer) replace(text string, found []Span) (string, []Replacement, error) {
@@ -147,20 +210,22 @@ func freeSegments(n int, claimed []Span) []Span {
 	return segs
 }
 
-// nonOverlapping keeps, among overlapping spans, the one that starts first and
-// then the longest.
-func nonOverlapping(spans []Span) []Span {
+// mergeOverlapping joins overlapping spans into one that covers all of them,
+// with the type of the one that starts first (then the longest). Spans that
+// only touch stay apart. Overlaps happen when two values widen into the one
+// character between them (a "\u00bc" folds to "1\u20444"), so dropping either
+// would let a value through.
+func mergeOverlapping(spans []Span) []Span {
 	slices.SortFunc(spans, func(a, b Span) int {
 		return cmp.Or(cmp.Compare(a.Start, b.Start), cmp.Compare(b.End, a.End))
 	})
 	var out []Span
-	end := 0
 	for _, sp := range spans {
-		if len(out) > 0 && sp.Start < end {
+		if n := len(out); n > 0 && sp.Start < out[n-1].End {
+			out[n-1].End = max(out[n-1].End, sp.End)
 			continue
 		}
 		out = append(out, sp)
-		end = sp.End
 	}
 	return out
 }
@@ -197,23 +262,18 @@ func tokenDomainsRe() string {
 // existingTokens finds the tokens in text. A token counts only when no ASCII
 // letter or digit touches it on either side, so "xpii1_ABCDEFGHIJKL@corp.com"
 // (an address that merely contains a token shape) is not skipped. Tokens
-// written back to back form one run, checked at its two ends.
+// written back to back count as boundaries for each other: on the left only a
+// token already accepted does, on the right any token shape that starts there.
 func existingTokens(text string) []Span {
 	matches := tokenRe.FindAllStringIndex(text, -1)
 	out := make([]Span, 0, len(matches))
-	for i := 0; i < len(matches); {
-		j := i
-		for j+1 < len(matches) && matches[j+1][0] == matches[j][1] {
-			j++
+	for i, m := range matches {
+		start := withPhonePrefix(text, m[0])
+		leftOK := !asciiAlnumAt(text, start-1) || (len(out) > 0 && out[len(out)-1].End == start)
+		rightOK := !asciiAlnumAt(text, m[1]) || (i+1 < len(matches) && matches[i+1][0] == m[1])
+		if leftOK && rightOK {
+			out = append(out, Span{Start: start, End: m[1]})
 		}
-		start := withPhonePrefix(text, matches[i][0])
-		if !asciiAlnumAt(text, start-1) && !asciiAlnumAt(text, matches[j][1]) {
-			for k := i; k <= j; k++ {
-				out = append(out, Span{Start: matches[k][0], End: matches[k][1]})
-			}
-			out[len(out)-(j-i+1)].Start = start
-		}
-		i = j + 1
 	}
 	return out
 }

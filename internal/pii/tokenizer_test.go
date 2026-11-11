@@ -18,7 +18,7 @@ func tokenize(t *testing.T, tz *pii.Tokenizer, s string) (string, []pii.Replacem
 }
 
 func TestTokenizeText(t *testing.T) {
-	tz, dd := newTokenizer(t)
+	tz := newTokenizer(t)
 	in := "Customer Alice Tamm (fixture.alice.tamm@gmail.com, +44 7700 900123) lives at 12 Fixture Lane, Tallinn. " +
 		"Mari-Liis   Kask called from +1 202 555 0143. Rose Lepik likes the rose garden; Rose said hi. " +
 		"Will may call in May. A stranger, bob@unknown.example, is not in the dictionary."
@@ -32,12 +32,12 @@ func TestTokenizeText(t *testing.T) {
 	require.Contains(t, out, "pii1_", "tokens present")
 	require.Contains(t, out, "@redacted.invalid", "an unknown domain is not kept")
 	require.Len(t, reps, 8) // 2 emails (one not in the dictionary), 2 phones, 3 names, 1 address
-	require.Zero(t, dd.FinalScan(out))
-	require.Positive(t, dd.FinalScan(in))
+	require.Zero(t, finalScan(t, tz, out))
+	require.Positive(t, finalScan(t, tz, in))
 }
 
 func TestReplacementsPointAtTheInput(t *testing.T) {
-	tz, _ := newTokenizer(t)
+	tz := newTokenizer(t)
 	in := "Ask Alice Tamm at +44 7700 900123."
 	out, reps := tokenize(t, tz, in)
 	require.Len(t, reps, 2)
@@ -49,7 +49,7 @@ func TestReplacementsPointAtTheInput(t *testing.T) {
 }
 
 func TestTokenizeIsIdempotentOnTokens(t *testing.T) {
-	tz, _ := newTokenizer(t)
+	tz := newTokenizer(t)
 	once, _ := tokenize(t, tz, "Mail fixture.alice.tamm@gmail.com or mari.kask@fixture-corp.example, call +44 7700 900123, ask for Alice Tamm at 12 Fixture Lane, Tallinn.")
 	twice, reps := tokenize(t, tz, once)
 	require.Equal(t, once, twice, "a token in history is never tokenized again")
@@ -57,15 +57,43 @@ func TestTokenizeIsIdempotentOnTokens(t *testing.T) {
 }
 
 func TestTokensWrittenBackToBackAreBothKept(t *testing.T) {
-	tz, _ := newTokenizer(t)
+	tz := newTokenizer(t)
 	in := "pii1_AAAAAAAAAAAA@redacted.invalidpii1_BBBBBBBBBBBB@gmail.comPerson CCCCCCCCCCCC"
 	out, reps := tokenize(t, tz, in)
 	require.Empty(t, reps)
 	require.Equal(t, in, out)
 }
 
+// A token glued to letters on its right is not skipped, and the token before
+// it still is.
+func TestTokensBackToBackWithTrailingLetters(t *testing.T) {
+	tz := newTokenizer(t)
+	in := "pii1_AAAAAAAAAAAA@redacted.invalidpii1_BBBBBBBBBBBBA00"
+	out, reps := tokenize(t, tz, in)
+	require.Empty(t, reps)
+	require.Equal(t, in, out)
+	require.Zero(t, finalScan(t, tz, "xpii1_AAAAAAAAAAAApii1_BBBBBBBBBBBB")) // nothing detectable
+	out, reps = tokenize(t, tz, "xpii1_AAAAAAAAAAAApii1_BBBBBBBBBBBB@corp.com")
+	require.Len(t, reps, 1, "neither shape is a token, so the address is found whole")
+	require.NotContains(t, out, "corp.com")
+}
+
+// A token is never written against letters or digits: the span widens over
+// them, so the token is recognized next turn and makes no new address.
+func TestASpanWidensOverGluedLetters(t *testing.T) {
+	tz := newTokenizer(t)
+	in := "0@0.A+00000000"
+	out, reps := tokenize(t, tz, in)
+	require.Len(t, reps, 1)
+	require.Equal(t, "A+00000000", in[reps[0].Start:reps[0].End])
+	require.Equal(t, "0@0."+reps[0].Token.Surface(), out)
+	again, more := tokenize(t, tz, out)
+	require.Empty(t, more)
+	require.Equal(t, out, again)
+}
+
 func TestAnAddressGluedToDigitsIsTokenizedWhole(t *testing.T) {
-	tz, _ := newTokenizer(t)
+	tz := newTokenizer(t)
 	once, reps := tokenize(t, tz, "mail a.b@corp.example2024 now")
 	require.Len(t, reps, 1)
 	require.Equal(t, "a.b@corp.example2024", "mail a.b@corp.example2024 now"[reps[0].Start:reps[0].End])
@@ -90,13 +118,13 @@ func TestATokenShapeTouchingAlphanumericsIsNotSkipped(t *testing.T) {
 		require.Equal(t, in, in[reps[0].Start:reps[0].End], in)
 		require.NotEqual(t, in, out)
 	}
-	require.Positive(t, dd.FinalScan("send to "+address), "not skipped as a token")
+	require.Positive(t, finalScan(t, tz, "send to "+address), "not skipped as a token")
 	out, _ := tokenize(t, tz, "send to "+address)
-	require.Zero(t, dd.FinalScan(out))
+	require.Zero(t, finalScan(t, tz, out))
 }
 
 func TestAPhoneTokenPrefixIsClaimedOnlyWithABoundary(t *testing.T) {
-	tz, _ := newTokenizer(t)
+	tz := newTokenizer(t)
 	for _, in := range []string{"call +44 pii1_AAAAAAAAAAAA now", "x+44 pii1_AAAAAAAAAAAA"} {
 		out, reps := tokenize(t, tz, in)
 		require.Empty(t, reps, in)
@@ -105,14 +133,14 @@ func TestAPhoneTokenPrefixIsClaimedOnlyWithABoundary(t *testing.T) {
 }
 
 func TestTokenizeIsDeterministicAcrossTurns(t *testing.T) {
-	tz, _ := newTokenizer(t)
+	tz := newTokenizer(t)
 	a, _ := tokenize(t, tz, "Alice Tamm wrote from fixture.alice.tamm@gmail.com")
 	b, _ := tokenize(t, tz, "alice   tamm wrote from Fixture.Alice.Tamm@Gmail.com")
 	require.Equal(t, a, b)
 }
 
 func TestTokenizeFindsNFDTextAndKeepsOffsetsOnTheInput(t *testing.T) {
-	tz, _ := newTokenizer(t)
+	tz := newTokenizer(t)
 	in := "Visit Pa\u0308rnu mnt 99, Tallinn today"
 	out, reps := tokenize(t, tz, in)
 	require.Len(t, reps, 1)
@@ -122,16 +150,16 @@ func TestTokenizeFindsNFDTextAndKeepsOffsetsOnTheInput(t *testing.T) {
 }
 
 func TestTokenizeNGramsDoNotJoinAcrossWideGaps(t *testing.T) {
-	tz, _ := newTokenizer(t)
+	tz := newTokenizer(t)
 	out, reps := tokenize(t, tz, "Alice      Tamm")
 	require.Empty(t, reps)
 	require.Equal(t, "Alice      Tamm", out)
 }
 
 func TestTokenizeTypedFormFindsAPhoneWrittenDifferently(t *testing.T) {
-	tz, dd := newTokenizer(t)
+	tz := newTokenizer(t)
 	in := "call +447700900456 now"
-	require.Equal(t, 1, dd.FinalScan(in), "the typed form is in the dictionary")
+	require.Equal(t, 1, finalScan(t, tz, in), "a phone written without spaces is found")
 	out, reps := tokenize(t, tz, in)
 	require.Len(t, reps, 1)
 	require.Equal(t, "+447700900456", in[reps[0].Start:reps[0].End], "the whole number, not a prefix")
@@ -185,12 +213,16 @@ func TestLaterDetectorsSeeOnlyUnclaimedText(t *testing.T) {
 	spy := fakeDetector{spans: func(s string) []pii.Span { seen = append(seen, s); return nil }}
 	tz := pii.NewTokenizer(k, "", append(pii.PatternDetectors(), spy)...)
 	_, _ = tokenize(t, tz, "a z@corp.example b pii1_AAAAAAAAAAAA c")
-	require.Equal(t, []string{"a ", " b ", " c"}, seen)
+	require.GreaterOrEqual(t, len(seen), 3)
+	require.Equal(t, []string{"a ", " b ", " c"}, seen[:3], "the first pass; the final scan follows")
 }
 
-func TestOverlappingSpansFromOneDetectorKeepTheEarliestLongest(t *testing.T) {
+func TestOverlappingSpansFromOneDetectorAreMerged(t *testing.T) {
 	k := newKeys(t, testMaster)
-	d := fakeDetector{spans: func(string) []pii.Span {
+	d := fakeDetector{spans: func(s string) []pii.Span {
+		if s != "abcdefgh" {
+			return nil // the final scan of the output
+		}
 		return []pii.Span{
 			{Start: 2, End: 5, Type: pii.EntityOther},
 			{Start: 0, End: 3, Type: pii.EntityOther},
@@ -200,7 +232,7 @@ func TestOverlappingSpansFromOneDetectorKeepTheEarliestLongest(t *testing.T) {
 	}}
 	_, reps := tokenize(t, pii.NewTokenizer(k, "", d), "abcdefgh")
 	require.Len(t, reps, 2)
-	require.Equal(t, [2]int{0, 4}, [2]int{reps[0].Start, reps[0].End})
+	require.Equal(t, [2]int{0, 6}, [2]int{reps[0].Start, reps[0].End}, "overlaps cover all of their text, widened to the next span")
 	require.Equal(t, [2]int{6, 8}, [2]int{reps[1].Start, reps[1].End})
 }
 
@@ -222,6 +254,22 @@ func TestAnInvalidSpanFailsClosed(t *testing.T) {
 	}
 }
 
+// A detector that still matches the tokenized text fails the call: the
+// output is rescanned with every detector before it is returned.
+func TestTokenizeFailsClosedWhenTheOutputStillMatches(t *testing.T) {
+	k := newKeys(t, testMaster)
+	always := fakeDetector{spans: func(s string) []pii.Span {
+		if s == "" {
+			return nil
+		}
+		return []pii.Span{{Start: 0, End: 1, Type: pii.EntityOther}}
+	}}
+	out, reps, err := pii.NewTokenizer(k, "", always).Tokenize("a b")
+	require.ErrorContains(t, err, "still holds")
+	require.Empty(t, out)
+	require.Empty(t, reps)
+}
+
 func TestNewTokenizerPanicsWithoutDeps(t *testing.T) {
 	k := newKeys(t, testMaster)
 	require.Panics(t, func() { pii.NewTokenizer(nil, "", pii.PatternDetectors()...) })
@@ -231,20 +279,20 @@ func TestNewTokenizerPanicsWithoutDeps(t *testing.T) {
 }
 
 func TestAPhoneGluedToLettersIsFound(t *testing.T) {
-	tz, dd := newTokenizer(t)
+	tz := newTokenizer(t)
 	for _, c := range []struct{ in, number string }{
-		{"+447700900456x123", "+447700900456"},
+		{"+447700900456x123", "+447700900456x123"}, // widened over the glued letters
 		{"+447700900456_", "+447700900456"},
-		{"+44 7700 900456ext2", "+44 7700 900456"},
+		{"+44 7700 900456ext2", "+44 7700 900456ext2"},
 		{"call +44 7700 900456.", "+44 7700 900456"},
 		{"+44 7700 900123+1 202 555 0143", "+44 7700 900123"},
 	} {
-		require.Positive(t, dd.FinalScan(c.in), c.in)
+		require.Positive(t, finalScan(t, tz, c.in), c.in)
 		out, reps := tokenize(t, tz, c.in)
 		require.NotEmpty(t, reps, c.in)
 		require.Equal(t, c.number, c.in[reps[0].Start:reps[0].End], c.in)
 		require.NotContains(t, out, "900", c.in)
-		require.Zero(t, dd.FinalScan(out), c.in)
+		require.Zero(t, finalScan(t, tz, out), c.in)
 	}
 }
 
@@ -273,14 +321,16 @@ func TestFullWidthAndCompatibilityFormsAreFound(t *testing.T) {
 		require.Equal(t, mustToken(t, k, c.typ, c.plain, ""), reps[0].Token, c.in)
 		require.NotContains(t, out, c.value)
 	}
-	require.Equal(t, 1, dd.FinalScan(cases[0].in))
+	require.Equal(t, 1, finalScan(t, tz, cases[0].in))
 }
 
 func TestFoldedSpansWidenToWholeCharacters(t *testing.T) {
 	k := newKeys(t, testMaster)
 	// U+FB03 folds to "ffi"; a span over its middle "f" covers the whole ligature.
 	d := fakeDetector{spans: func(s string) []pii.Span {
-		require.Equal(t, "a ffi b", s)
+		if s != "a ffi b" {
+			return nil // the final scan of the output
+		}
 		return []pii.Span{{Start: 3, End: 4, Type: pii.EntityOther}}
 	}}
 	in := "A \ufb03 B"
@@ -298,11 +348,11 @@ func TestPhonePatternBounds(t *testing.T) {
 	_, reps = tokenize(t, tz, in)
 	require.Len(t, reps, 2, "a phone followed by another number keeps the phone")
 	require.Equal(t, "+44 7700 900123", in[reps[0].Start:reps[0].End])
-	require.Equal(t, "+1 202 555 0143", in[reps[1].Start:reps[1].End])
+	require.Equal(t, "1234+1 202 555 0143", in[reps[1].Start:reps[1].End], "widened over the digits glued to it")
 }
 
 func TestTokenizeIsSafeForConcurrentUse(t *testing.T) {
-	tz, _ := newTokenizer(t)
+	tz := newTokenizer(t)
 	want, _ := tokenize(t, tz, "Alice Tamm, +44 7700 900123")
 	var wg sync.WaitGroup
 	for range 8 {

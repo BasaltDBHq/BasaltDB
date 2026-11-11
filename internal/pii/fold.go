@@ -52,7 +52,7 @@ func writeFolded(b *strings.Builder, caser *cases.Caser, seg string) {
 		b.WriteByte(c)
 		return
 	}
-	b.WriteString(norm.NFKC.String(caser.String(norm.NFKC.String(seg))))
+	b.WriteString(nfkcCasefold(caser, seg))
 }
 
 // original maps a span of the folded text to the original bytes it came from.

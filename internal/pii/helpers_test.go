@@ -69,11 +69,19 @@ func loadFixture(t *testing.T, k *pii.Keys) *mapDict {
 	return d
 }
 
+// finalScan counts the values the tokenizer's detectors still find in s.
+func finalScan(t *testing.T, tz *pii.Tokenizer, s string) int {
+	t.Helper()
+	n, err := tz.FinalScan(s)
+	require.NoError(t, err)
+	return n
+}
+
 // newTokenizer is the default tokenizer (patterns, then the dictionary) over
 // the fixture dictionary.
-func newTokenizer(t *testing.T) (*pii.Tokenizer, *pii.DictionaryDetector) {
+func newTokenizer(t *testing.T) *pii.Tokenizer {
 	t.Helper()
 	k := newKeys(t, testMaster)
 	dd := pii.NewDictionaryDetector(k, loadFixture(t, k), "")
-	return pii.NewTokenizer(k, "", append(pii.PatternDetectors(), dd)...), dd
+	return pii.NewTokenizer(k, "", append(pii.PatternDetectors(), dd)...)
 }

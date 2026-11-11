@@ -312,7 +312,22 @@ ALTER ROLE %[1]s SET statement_timeout = %[3]d;`
 
 // agentAlterRoleSQL sets the password of an agent role that exists; a
 // role that does not exist is refused. Arguments as agentCreateRoleSQL.
+// The password comes from whoever made the setup code, so this must never
+// reach a role that is not a plain agent: it refuses (BS008) a role with
+// elevated attributes or outside the agents group itself, and record_setup,
+// run in the same transaction, refuses a superuser again.
 const agentAlterRoleSQL = `
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles r
+        WHERE r.rolname = '%[1]s' AND NOT (r.rolsuper OR r.rolcreaterole OR r.rolcreatedb
+              OR r.rolreplication OR r.rolbypassrls)
+          AND pg_catalog.pg_has_role(r.oid, '{{agents}}', 'USAGE'))
+       AND EXISTS (SELECT 1 FROM pg_catalog.pg_roles r WHERE r.rolname = '%[1]s') THEN
+        RAISE EXCEPTION USING ERRCODE = 'BS008', MESSAGE = 'LEDGER_INPUT_INVALID',
+            DETAIL = '%[1]s is not a plain agent role: a setup code cannot set its password';
+    END IF;
+END $$;
 ALTER ROLE %[1]s LOGIN PASSWORD %[2]s;
 GRANT {{agents}} TO %[1]s;
 ALTER ROLE %[1]s SET statement_timeout = %[3]d;`

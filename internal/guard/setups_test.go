@@ -1,6 +1,7 @@
 package guard_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/binary"
@@ -18,12 +19,22 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 )
 
 const (
 	setupLifetime = 24 * time.Hour
 	setupSkew     = 5 * time.Minute
 )
+
+// newVerifier is the SCRAM-SHA-256 verifier of password, as a setup code
+// carries it.
+func newVerifier(t *testing.T, password string) string {
+	t.Helper()
+	v, err := setupcode.NewVerifier(password)
+	require.NoError(t, err)
+	return v
+}
 
 // uuidAt is a UUIDv7 whose time is at (milliseconds).
 func uuidAt(t *testing.T, at time.Time) uuid.UUID {
@@ -54,7 +65,7 @@ func initFromVerifier(t *testing.T, d *guardtest.DB) string {
 	const name = "bot"
 	t.Helper()
 	pw := guard.NewPassword()
-	d.Init(t, guard.AgentSpec{Name: name, Verifier: guardtest.NewSCRAMVerifier(t, pw), CreateOnly: true, Write: leads, Read: leads})
+	d.Init(t, guard.AgentSpec{Name: name, Verifier: newVerifier(t, pw), CreateOnly: true, Write: leads, Read: leads})
 	return pw
 }
 
@@ -109,7 +120,9 @@ func TestSCRAMVerifierMatchesFixtures(t *testing.T) {
 	for _, v := range f.Verifiers {
 		salt, err := base64.StdEncoding.DecodeString(v.Salt)
 		require.NoError(t, err)
-		require.Equal(t, v.Verifier, guardtest.SCRAMVerifier(t, v.Password, salt))
+		got, err := setupcode.VerifierWithSalt(v.Password, salt)
+		require.NoError(t, err)
+		require.Equal(t, v.Verifier, got)
 		require.NoError(t, guard.CheckVerifier(v.Verifier))
 	}
 }
@@ -136,7 +149,7 @@ func TestPlanInitRefusesBadVerifierSpecs(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
 	ctx := context.Background()
-	v := guardtest.NewSCRAMVerifier(t, guard.NewPassword())
+	v := newVerifier(t, guard.NewPassword())
 	for name, spec := range map[string]guard.AgentSpec{
 		"password and verifier": {Name: "bot", Password: guard.NewPassword(), Verifier: v, Write: leads},
 		"plaintext as verifier": {Name: "bot", Verifier: guard.NewPassword(), Write: leads},
@@ -152,7 +165,7 @@ func TestAgentLogsInWithVerifierPassword(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	ctx := context.Background()
 	pw := guard.NewPassword()
-	verifier := guardtest.NewSCRAMVerifier(t, pw)
+	verifier := newVerifier(t, pw)
 
 	s, err := guard.PlanInit(ctx, d.Admin, guard.InitOptions{Names: d.Names,
 		Agent: guard.AgentSpec{Name: "bot", Verifier: verifier, CreateOnly: true, Write: leads, Read: leads}})
@@ -175,7 +188,7 @@ func TestAgentLogsInWithVerifierPassword(t *testing.T) {
 
 	// An AGENT code with a verifier rotates the password.
 	pw2 := guard.NewPassword()
-	d.Init(t, guard.AgentSpec{Name: "bot", Verifier: guardtest.NewSCRAMVerifier(t, pw2), Write: leads, Read: leads})
+	d.Init(t, guard.AgentSpec{Name: "bot", Verifier: newVerifier(t, pw2), Write: leads, Read: leads})
 	requireLogin(t, d, pw2)
 	requireNoLogin(t, d, "bot", pw)
 }
@@ -186,18 +199,28 @@ func TestInstallVerifierRefusesExistingRole(t *testing.T) {
 	a := d.NewAgent(t, "bot", leads, leads)
 
 	// ROLE_EXISTS, enforced in Postgres: CREATE ROLE fails, nothing changes.
-	err := d.TryInit(guard.AgentSpec{Name: "bot", Verifier: guardtest.NewSCRAMVerifier(t, guard.NewPassword()),
+	err := d.TryInit(guard.AgentSpec{Name: "bot", Verifier: newVerifier(t, guard.NewPassword()),
 		CreateOnly: true, Write: leads, Read: leads})
 	require.Equal(t, "42710", guardtest.SQLState(err), "%v", err)
 	requireLogin(t, d, a.Password)
 
 	// ROLE_MISSING: an AGENT verifier for a role that does not exist.
-	err = d.TryInit(guard.AgentSpec{Name: "other", Verifier: guardtest.NewSCRAMVerifier(t, guard.NewPassword()),
+	err = d.TryInit(guard.AgentSpec{Name: "other", Verifier: newVerifier(t, guard.NewPassword()),
 		Write: leads, Read: leads})
 	require.Equal(t, "42704", guardtest.SQLState(err), "%v", err)
 	exists, err := guard.AgentRoleExists(context.Background(), d.Admin, d.Names, "other")
 	require.NoError(t, err)
 	require.False(t, exists)
+
+	// An AGENT verifier never takes over a role that is not a plain agent:
+	// a superuser (a member of every role) or a role outside the group.
+	d.Exec(t, `CREATE ROLE `+d.Names.Prefix+`_agent_root SUPERUSER LOGIN`)
+	d.Exec(t, `GRANT `+d.Names.Agents()+` TO `+d.Names.Prefix+`_agent_root`)
+	d.Exec(t, `CREATE ROLE `+d.Names.Prefix+`_agent_app LOGIN`)
+	for _, name := range []string{"root", "app"} {
+		err = d.TryInit(guard.AgentSpec{Name: name, Verifier: newVerifier(t, guard.NewPassword()), Write: leads, Read: leads})
+		requireCode(t, err, guard.CodeLedgerInputInvalid)
+	}
 }
 
 func TestRecordSetup(t *testing.T) {
@@ -250,6 +273,7 @@ func TestRecordSetupRefusals(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	ctx := context.Background()
 	initFromVerifier(t, d)
+	d.NewAgent(t, "other", leads, leads)
 	record := func(s guard.Setup) error {
 		_, err := guard.RecordSetup(ctx, d.Admin, d.Names, s)
 		return err
@@ -267,10 +291,19 @@ func TestRecordSetupRefusals(t *testing.T) {
 		newer.ID = uuidAt(t, dbNow(t, d).Add(time.Second))
 		require.NoError(t, record(newer))
 		requireRefused(t, record(old), guard.SetupSuperseded)
-		// An UPGRADE is never superseded, and supersedes nothing.
+		// An UPGRADE is never superseded.
 		up := old
 		up.Kind, up.Agent = guard.SetupUpgrade, ""
 		require.NoError(t, record(up))
+		// And it supersedes nothing: an agent setup older than a recorded
+		// UPGRADE still runs.
+		later := guard.Setup{ID: uuidAt(t, dbNow(t, d).Add(2*time.Second)), Kind: guard.SetupUpgrade,
+			GuardVersion: guard.LatestVersion(), ExpiresAt: dbNow(t, d).Add(time.Hour)}
+		require.NoError(t, record(later))
+		older := installSetup(t, d, "other")
+		older.Kind = guard.SetupAgent
+		require.Negative(t, bytes.Compare(older.ID[:], later.ID[:]), "older than the UPGRADE")
+		require.NoError(t, record(older))
 	})
 	t.Run("expired", func(t *testing.T) {
 		now := dbNow(t, d)
@@ -307,7 +340,11 @@ func TestRecordSetupRefusals(t *testing.T) {
 		base := guard.Setup{ID: uuidAt(t, now), Kind: guard.SetupInstall, Agent: "bot",
 			GuardVersion: guard.LatestVersion(), ExpiresAt: now.Add(time.Hour)}
 		d.Exec(t, `CREATE ROLE `+d.Names.Prefix+`_agent_stranger NOLOGIN`)
+		// A superuser is a member of every role, agents included.
+		d.Exec(t, `CREATE ROLE `+d.Names.Prefix+`_agent_root SUPERUSER NOLOGIN`)
+		d.Exec(t, `GRANT `+d.Names.Agents()+` TO `+d.Names.Prefix+`_agent_root`)
 		for name, mutate := range map[string]func(*guard.Setup){
+			"a superuser agent role":     func(s *guard.Setup) { s.Agent = "root" },
 			"no agent for INSTALL":       func(s *guard.Setup) { s.Agent = "" },
 			"an agent for UPGRADE":       func(s *guard.Setup) { s.Kind = guard.SetupUpgrade },
 			"a role that is no agent":    func(s *guard.Setup) { s.Agent = "stranger" },

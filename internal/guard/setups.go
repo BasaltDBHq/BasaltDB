@@ -2,15 +2,15 @@ package guard
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
-	"regexp"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 )
 
 // Setup kinds (CONTRACT.md, The setup code).
@@ -77,22 +77,12 @@ func SetupRefusal(err error) (string, bool) {
 	return pg.Detail, true
 }
 
-// verifierPattern is the SCRAM-SHA-256 verifier of a setup code
-// (api/mcp/setup/setup-code.schema.json): 4096 iterations, a 16-byte salt,
-// 32-byte keys, standard base64. Its alphabet holds no quote or backslash.
-var verifierPattern = regexp.MustCompile(`^SCRAM-SHA-256\$4096:([A-Za-z0-9+/]{22}==)\$([A-Za-z0-9+/]{43}=):([A-Za-z0-9+/]{43}=)$`)
-
 // CheckVerifier returns ErrInvalidAgent unless v is a SCRAM-SHA-256
-// verifier in the setup code's format, with canonical base64.
+// verifier in the setup code's format, with canonical base64. Its alphabet
+// holds no quote or backslash.
 func CheckVerifier(v string) error {
-	m := verifierPattern.FindStringSubmatch(v)
-	if m == nil {
+	if !setupcode.ValidVerifier(v) {
 		return fmt.Errorf("%w: the password must be a SCRAM-SHA-256 verifier", ErrInvalidAgent)
-	}
-	for _, part := range m[1:] {
-		if _, err := base64.StdEncoding.Strict().DecodeString(part); err != nil {
-			return fmt.Errorf("%w: the SCRAM-SHA-256 verifier is not canonical base64", ErrInvalidAgent)
-		}
 	}
 	return nil
 }

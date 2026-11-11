@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS basalt_meta.setups (
     used_by       name        NOT NULL DEFAULT session_user,
     CONSTRAINT setups_agent_role CHECK ((agent_role IS NULL) = (kind = 'UPGRADE'))
 );
-CREATE INDEX IF NOT EXISTS setups_agent_role ON basalt_meta.setups (agent_role, setup_id);
+CREATE INDEX IF NOT EXISTS setups_by_agent ON basalt_meta.setups (agent_role, setup_id);
 REVOKE ALL ON basalt_meta.setups FROM PUBLIC;
 `
 

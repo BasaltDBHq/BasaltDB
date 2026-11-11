@@ -65,6 +65,9 @@ func TestPersonMessageOverLimitIsRefusedAtBuildTime(t *testing.T) {
 	require.NoError(t, CheckPersonMessage(strings.Repeat("a", MaxPersonMessageLength)))
 	require.ErrorIs(t, CheckPersonMessage(strings.Repeat("a", MaxPersonMessageLength+1)), ErrStepText)
 	require.NoError(t, CheckPersonMessage(""), "optional")
+	long := "http://localhost:8787/reverts/y#2." + strings.Repeat("A", 4000)
+	require.NoError(t, CheckPersonMessage("Sign it here:\n\n"+long+"\n\nExpires soon."), "a URL line is not counted")
+	require.ErrorIs(t, CheckPersonMessage(strings.Repeat("a", MaxPersonMessageLength)+"\n\n"+long), ErrStepText, "its blank line is")
 }
 
 func TestStepLimitsCountCharactersNotBytes(t *testing.T) {

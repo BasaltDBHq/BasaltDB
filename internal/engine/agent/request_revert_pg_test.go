@@ -14,6 +14,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/links"
+	"github.com/basaltdbhq/basaltdb/internal/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
@@ -61,9 +63,11 @@ func TestRequestRevertOfARunWithTheLocalPages(t *testing.T) {
 	require.Len(t, secret, 22, "a 128-bit secret")
 	require.Equal(t, pageOrigin+"/reverts/"+id+"#s="+secret, link)
 	msg := str(t, body["personMessage"])
-	require.True(t, strings.HasPrefix(msg, "Revert of run "+runID+" ready for your review: 2 rows to restore, 1 left as they are "+
-		"(changed after the agent). Why: Undo yesterday's lead status merge. Review and sign with your passkey: "+link+". Expires "), msg)
-	require.True(t, strings.HasSuffix(msg, " UTC."), msg)
+	require.True(t, strings.HasPrefix(msg, "Revert of run "+runID+": 2 rows to restore, 1 left as they are "+
+		"(changed after the agent). Why: Undo yesterday's lead status merge. Expires "), msg)
+	require.True(t, strings.HasSuffix(msg, "\nSign it with your passkey here:\n\n"+link), msg)
+	mcptest.Require(t, msg, mcptest.LinksOf(t, body))
+	require.Equal(t, []mcp.Link{{Label: "Review and sign the revert", URL: link}}, mcptest.LinksOf(t, body))
 	require.Equal(t, "won", leadStatus(t, d, 71), "a request reverts nothing")
 
 	// The short link's secret opens the request; a wrong one is an
@@ -103,10 +107,11 @@ func TestRequestRevertOfAChangeWithoutLocalPages(t *testing.T) {
 	link := str(t, body["revertUrl"])
 	require.True(t, strings.HasPrefix(link, links.DefaultLocal+"/reverts/"+id+"#2."), "no local pages: the long link: %s", link)
 	msg := str(t, body["personMessage"])
-	require.Contains(t, msg, "Revert of change "+changeID+" ready for your review: 2 rows to restore, 0 left as they are")
+	require.Contains(t, msg, "Revert of change "+changeID+": 2 rows to restore, 0 left as they are")
 	require.Contains(t, msg, "Why: Wrong leads. ")
-	require.Contains(t, msg, link+" (the page then shows a code: give it to the agent, or apply it yourself with: "+
-		"basalt revert --agent bot --config /etc/basalt-test/engine.json --apply <code>)")
+	require.True(t, strings.HasSuffix(msg, "\nSign it with your passkey here; the page then shows a code for the agent:\n\n"+link), msg)
+	mcptest.Require(t, msg, mcptest.LinksOf(t, body))
+	require.Equal(t, []mcp.Link{{Label: "Review and sign the revert", URL: link}}, mcptest.LinksOf(t, body))
 
 	// The person's code, applied by basalt revert --apply on the agent
 	// credential, reverts the change.
@@ -273,7 +278,18 @@ func TestRequestRevertOfALargeRun(t *testing.T) {
 	require.False(t, isError, "%v", body)
 	require.Equal(t, true, body["batched"])
 	require.EqualValues(t, fmt.Sprint(planRows), body["rows"])
-	require.Contains(t, str(t, body["personMessage"]), fmt.Sprintf("It covers %d rows: you sign it once", planRows))
+	msg := str(t, body["personMessage"])
+	require.Contains(t, msg, fmt.Sprintf("It covers %d rows: you sign once", planRows))
+	// No local pages and a plan this large: the long link is over the budget.
+	// Until the fallback lands (VC-28) it is still handed over, after a
+	// warning, in revertUrl and in the message, and the message keeps its limit.
+	link := str(t, body["revertUrl"])
+	require.Greater(t, len(link), links.DefaultBudget)
+	require.True(t, strings.HasPrefix(link, links.DefaultLocal+"/reverts/"), link)
+	require.True(t, strings.HasPrefix(msg, "Warning: this link is long and may arrive cut or broken.\nRevert of run "), msg)
+	require.True(t, strings.HasSuffix(msg, "\n\n"+link), "the link comes last, on its own line")
+	mcptest.Require(t, msg, mcptest.LinksOf(t, body))
+	require.Equal(t, []mcp.Link{{Label: "Review and sign the revert", URL: link}}, mcptest.LinksOf(t, body))
 	requireResultSteps(t, body, "REQUESTED")
 }
 

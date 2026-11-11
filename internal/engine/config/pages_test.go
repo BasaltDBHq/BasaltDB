@@ -8,29 +8,53 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 )
 
+func TestPagesBase(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, url, legacy, want, err string
+	}{
+		{name: "default: the engine's local pages", want: "http://localhost:8787"},
+		{name: "hosted console", url: "https://console.basaltvault.app", want: "https://console.basaltvault.app"},
+		{name: "local port", url: "http://localhost:9000/", want: "http://localhost:9000"},
+		{name: "older approvalPage key", legacy: "http://localhost:8787/approve/", want: "http://localhost:8787"},
+		{name: "pagesUrl wins", url: "http://localhost:9000", legacy: "http://localhost:8787/approve/", want: "http://localhost:9000"},
+		{name: "old hosted origin refused", url: "https://basaltvault.app", err: "pagesUrl"},
+		{name: "old hosted page refused", legacy: "https://basaltvault.app/approve/", err: "pagesUrl"},
+		{name: "a path refused", url: "http://localhost:8787/approvals", err: "pagesUrl"},
+		{name: "another host refused", url: "http://example.com:8787", err: "pagesUrl"},
+	} {
+		got, err := config.Config{PagesURL: tc.url, ApprovalPage: tc.legacy}.PagesBase()
+		if tc.err != "" {
+			require.ErrorContains(t, err, tc.err, tc.name)
+			continue
+		}
+		require.NoError(t, err, tc.name)
+		require.Equal(t, tc.want, got, tc.name)
+	}
+}
+
 func TestPages(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name, page, addr string
-		want             config.Pages
-		err              string
+		name, url, addr string
+		want            config.Pages
+		err             string
 	}{
-		{name: "hosted page: off", page: ""},
-		{name: "hosted page explicit: off", page: "https://basaltvault.app/approve/"},
-		{name: "local page: on at its port", page: "http://localhost:8787/approve/",
-			want: config.Pages{Addr: "127.0.0.1:8787", Origin: "http://localhost:8787"}},
-		{name: "loopback IP page", page: "http://127.0.0.1:9000/approve/",
+		{name: "default: on at 127.0.0.1:8787", want: config.Pages{Addr: "127.0.0.1:8787", Origin: "http://localhost:8787"}},
+		{name: "hosted console: off", url: "https://console.basaltvault.app"},
+		{name: "local port", url: "http://localhost:9000",
+			want: config.Pages{Addr: "127.0.0.1:9000", Origin: "http://localhost:9000"}},
+		{name: "loopback IP origin", url: "http://127.0.0.1:9000",
 			want: config.Pages{Addr: "127.0.0.1:9000", Origin: "http://127.0.0.1:9000"}},
-		{name: "explicit IPv6 loopback", page: "http://localhost:8787/approve/", addr: "[::1]:8787",
+		{name: "explicit IPv6 loopback", addr: "[::1]:8787",
 			want: config.Pages{Addr: "[::1]:8787", Origin: "http://localhost:8787"}},
-		{name: "off", page: "http://localhost:8787/approve/", addr: "off"},
-		{name: "every interface refused", page: "http://localhost:8787/approve/", addr: "0.0.0.0:8787", err: "loopback IP only"},
-		{name: "LAN address refused", page: "http://localhost:8787/approve/", addr: "192.168.1.10:8787", err: "loopback IP only"},
-		{name: "hostname refused", page: "http://localhost:8787/approve/", addr: "localhost:8787", err: "loopback IP only"},
-		{name: "pages need a local page", page: "https://basaltvault.app/approve/", addr: "127.0.0.1:8787", err: "needs a local approvalPage"},
-		{name: "https localhost is not served", page: "https://localhost:8787/approve/"},
+		{name: "off", addr: "off"},
+		{name: "every interface refused", addr: "0.0.0.0:8787", err: "loopback IP only"},
+		{name: "LAN address refused", addr: "192.168.1.10:8787", err: "loopback IP only"},
+		{name: "hostname refused", addr: "localhost:8787", err: "loopback IP only"},
+		{name: "pages need a local base", url: "https://console.basaltvault.app", addr: "127.0.0.1:8787", err: "needs a local pagesUrl"},
 	} {
-		got, err := config.Config{ApprovalPage: tc.page, PagesAddr: tc.addr}.Pages()
+		got, err := config.Config{PagesURL: tc.url, PagesAddr: tc.addr}.Pages()
 		if tc.err != "" {
 			require.ErrorContains(t, err, tc.err, tc.name)
 			continue
@@ -42,7 +66,7 @@ func TestPages(t *testing.T) {
 
 func TestLoadRefusesANonLoopbackPagesAddr(t *testing.T) {
 	t.Parallel()
-	_, err := config.Load(write(t, "engine.json", `{"socketDir": "/s", "approvalPage": "http://localhost:8787/approve/",
+	_, err := config.Load(write(t, "engine.json", `{"socketDir": "/s", "pagesUrl": "http://localhost:8787",
 		"pagesAddr": "0.0.0.0:8787", "agents": [{"name": "a", "osUser": "u", "credentialFile": "/c"}]}`, 0o600))
 	require.ErrorContains(t, err, "loopback IP only")
 }

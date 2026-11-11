@@ -6,13 +6,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
@@ -190,21 +190,12 @@ func (s *Service) revertNotice(ctx context.Context, r ledger.Revert) (string, st
 	if err != nil {
 		return "", "", err
 	}
-	long, err := revert.Request{RevertID: r.ID, Binding: r.BindingText, Lines: r.Lines, CredentialIDs: ids}.URL(s.revertPage())
+	long, err := revert.Request{RevertID: r.ID, Binding: r.BindingText, Lines: r.Lines, CredentialIDs: ids}.URL(s.PagesBase)
 	if err != nil {
 		return "", "", err
 	}
-	link := s.shortLink(revertPath, r.ID, long)
+	link := s.shortLink(links.Revert, r.ID, long)
 	msg := fmt.Sprintf("A revert is waiting for your passkey: %d rows to restore, %d left as they are. Review and sign: %s. Expires %s.",
 		r.Rows, r.Skipped, link, r.ExpiresAt.UTC().Format(personTime))
 	return link, msg, nil
-}
-
-// revertPage is the revert page next to the approval page (web/revert).
-func (s *Service) revertPage() string {
-	base, err := url.Parse(s.ApprovalPage)
-	if err != nil {
-		return revert.PageURL
-	}
-	return base.ResolveReference(&url.URL{Path: "../revert/"}).String()
 }

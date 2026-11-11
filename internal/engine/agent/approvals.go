@@ -15,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
@@ -128,7 +129,7 @@ func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding stri
 	if err != nil {
 		return heldNotice{}, err
 	}
-	long, err := approval.Request{ApprovalID: id, Binding: binding, Lines: lines, CredentialIDs: ids}.URL(s.ApprovalPage)
+	long, err := approval.Request{ApprovalID: id, Binding: binding, Lines: lines, CredentialIDs: ids}.URL(s.PagesBase)
 	if err != nil {
 		return heldNotice{}, err
 	}
@@ -137,7 +138,7 @@ func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding stri
 		return heldNotice{}, err
 	}
 	command := s.approveCommand(id)
-	link := s.shortLink(approvePath, id, long)
+	link := s.shortLink(links.Approval, id, long)
 	how := fmt.Sprintf("Approve: %s (or run: %s)", link, command)
 	if link == long {
 		// The long link carries the whole preview and breaks when copied:
@@ -157,19 +158,13 @@ func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding stri
 // personTime is how a person-facing message states a deadline.
 const personTime = "2006-01-02 15:04 UTC"
 
-// Paths of the engine's local pages (CONTRACT.md, Local pages).
-const (
-	approvePath = "/approve/"
-	revertPath  = "/revert/"
-)
-
-// shortLink is the page link <origin><path><id> when this engine serves
-// the pages, else long.
-func (s *Service) shortLink(path string, id uuid.UUID, long string) string {
+// shortLink is the page link page(origin, id) when this engine serves the
+// pages, else long.
+func (s *Service) shortLink(page func(string, uuid.UUID) string, id uuid.UUID, long string) string {
 	if s.PagesOrigin == "" {
 		return long
 	}
-	return s.PagesOrigin + path + id.String()
+	return page(s.PagesOrigin, id)
 }
 
 // approvalRequiredError is the APPROVAL_REQUIRED answer for a held write.

@@ -1,5 +1,5 @@
 // The revert page: read the revert (from the long link's fragment, or from
-// the engine for a short link /revert/<id>), check the lines against the
+// the engine for a short link /reverts/<id>), check the lines against the
 // binding, show what will be restored and what is left alone, and sign the
 // binding with the person's passkey. From a long link the page sends
 // nothing anywhere and shows a code to paste into `basalt revert`; from a
@@ -128,11 +128,15 @@ const engineFetch = (path, init) => window.fetch(path, init);
 // the engine for a short link. relay is the path to post the signature to,
 // null for a long link.
 async function loadRequest() {
-  const id = shortLinkId(window.location.pathname, "revert");
+  const id = shortLinkId(window.location.pathname, "reverts");
   if (window.location.hash || id === null) {
-    return { req: await parseRevertRequest(window.location.hash), relay: null };
+    // A long link: the request is in the fragment, and names the same revert
+    // as the path.
+    const req = await parseRevertRequest(window.location.hash);
+    if (id !== null && req.revertId !== id) throw new Error(`the link is for revert ${req.revertId}, its path for ${id}`);
+    return { req, relay: null };
   }
-  const paths = relayPaths("revert", id);
+  const paths = relayPaths("reverts", id);
   const req = await checkRevertRequest(await fetchRequest(engineFetch, paths.request));
   if (req.revertId !== id) throw new Error(`the engine sent revert ${req.revertId}, not ${id}`);
   return { req, relay: paths.relay };

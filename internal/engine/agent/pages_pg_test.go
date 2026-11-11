@@ -118,16 +118,16 @@ func TestShortLinkApprovedThroughTheRelay(t *testing.T) {
 	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
 	ap := approvalOf(t, body)
 	id := str(t, ap["approvalId"])
-	require.Equal(t, pageOrigin+"/approve/"+id, ap["approvalUrl"], "the short link")
+	require.Equal(t, pageOrigin+"/approvals/"+id, ap["approvalUrl"], "the short link")
 	msg := str(t, ap["personMessage"])
-	require.True(t, strings.HasPrefix(msg, "Held for your approval: Update 15 rows in public.leads. Approve: "+pageOrigin+"/approve/"+id+
+	require.True(t, strings.HasPrefix(msg, "Held for your approval: Update 15 rows in public.leads. Approve: "+pageOrigin+"/approvals/"+id+
 		" (or run: basalt approve --agent bot --config /etc/basalt-test/engine.json --open "+id+"). Expires "), msg)
 	require.True(t, strings.HasSuffix(msg, " UTC."), msg)
 	require.Len(t, env.sent.sent, 1)
 	require.Contains(t, env.sent.sent[0].ApprovalURL, "#1.", "Telegram keeps the long link")
 
 	// The page itself is served for the short link.
-	resp, err := http.Get(p.srv.URL + "/approve/" + id) //nolint:noctx // a test against a local httptest server
+	resp, err := http.Get(p.srv.URL + "/approvals/" + id) //nolint:noctx // a test against a local httptest server
 	require.NoError(t, err)
 	page, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
@@ -231,7 +231,7 @@ func TestWaitingNewWriteTimesOutHeld(t *testing.T) {
 	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
 	require.GreaterOrEqual(t, time.Since(start), time.Second, "it waited")
 	ap := approvalOf(t, body)
-	require.Equal(t, pageOrigin+"/approve/"+str(t, ap["approvalId"]), ap["approvalUrl"])
+	require.Equal(t, pageOrigin+"/approvals/"+str(t, ap["approvalId"]), ap["approvalUrl"])
 	require.Equal(t, "open", leadStatus(t, d, 21), "nothing applied")
 	require.Len(t, env.sent.sent, 1, "the person is told once")
 }

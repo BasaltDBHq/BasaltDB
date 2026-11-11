@@ -54,13 +54,13 @@ func TestSendMessage(t *testing.T) {
 	t.Parallel()
 	srv, got := server(t, http.StatusOK, `{"ok":true,"result":{"message_id":1}}`)
 	c := telegram.NewClient(srv.Client(), srv.URL, token(t), "42")
-	err := c.SendMessage(context.Background(), telegram.Message{Text: "hello", Button: &telegram.Button{Text: "Open", URL: "https://basaltvault.app/approve/#1.x"}})
+	err := c.SendMessage(context.Background(), telegram.Message{Text: "hello", Button: &telegram.Button{Text: "Open", URL: "https://console.basaltvault.app/approvals/0190a3f2-7c1e-7000-8000-000000000001#1.x"}})
 	require.NoError(t, err)
 	require.Equal(t, "/bot"+secret+"/sendMessage", got.path)
 	require.Equal(t, "42", got.body["chat_id"])
 	require.Equal(t, "hello", got.body["text"])
 	require.Equal(t, map[string]any{"is_disabled": true}, got.body["link_preview_options"])
-	require.Equal(t, map[string]any{"inline_keyboard": []any{[]any{map[string]any{"text": "Open", "url": "https://basaltvault.app/approve/#1.x"}}}}, got.body["reply_markup"])
+	require.Equal(t, map[string]any{"inline_keyboard": []any{[]any{map[string]any{"text": "Open", "url": "https://console.basaltvault.app/approvals/0190a3f2-7c1e-7000-8000-000000000001#1.x"}}}}, got.body["reply_markup"])
 	require.NotContains(t, got.body, "parse_mode", "plain text: nothing in a notice needs escaping")
 }
 
@@ -181,7 +181,7 @@ func notice(url string) telegram.Notice {
 }
 
 func approvalURL(n int) string {
-	const prefix = "https://basaltvault.app/approve/#1."
+	const prefix = "https://console.basaltvault.app/approvals/0190a3f2-7c1e-7000-8000-000000000001#1."
 	return prefix + strings.Repeat("A", n-len(prefix))
 }
 

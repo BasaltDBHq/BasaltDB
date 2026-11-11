@@ -8,8 +8,11 @@
 // received, never re-serialized. Postgres built them; the passkey signs
 // sha256 of the binding text's UTF-8 bytes.
 
+// The hosted console and its passkeys' RP ID (owner decisions, Decided
+// Nov 12): RP ID basaltvault.app never changes. Until hosting exists the
+// pages run on the engine's local pages, http://localhost:<port>.
 export const PROD_RP_ID = "basaltvault.app";
-export const PROD_ORIGIN = "https://basaltvault.app";
+export const HOSTED_CONSOLE = "https://console.basaltvault.app";
 
 export const APPROVAL_REQUEST_PREFIX = "1.";
 export const APPROVAL_RESPONSE_PREFIX = "basalt-approval.1.";
@@ -513,15 +516,16 @@ export function encodeRegistrationResponse({ credentialId, clientDataJson, authe
   return REGISTRATION_RESPONSE_PREFIX + b64urlEncode(utf8(json));
 }
 
-// relyingParty returns the RP ID and origin for the page's location:
-// basaltvault.app over HTTPS, or http://localhost:<port> for development.
-// Anywhere else the pages refuse to run.
+// relyingParty returns the RP ID and origin for the page's location: the
+// hosted console (RP ID basaltvault.app), or the engine's local pages at
+// http://localhost:<port> (RP ID localhost). Anywhere else the pages refuse
+// to run.
 export function relyingParty(loc) {
-  if (loc.protocol === "https:" && loc.hostname === PROD_RP_ID && loc.port === "") {
-    return { rpId: PROD_RP_ID, origin: PROD_ORIGIN };
+  if (`${loc.protocol}//${loc.hostname}` === HOSTED_CONSOLE && loc.port === "") {
+    return { rpId: PROD_RP_ID, origin: HOSTED_CONSOLE };
   }
   if (loc.protocol === "http:" && loc.hostname === "localhost" && loc.port !== "") {
     return { rpId: "localhost", origin: `http://localhost:${loc.port}` };
   }
-  throw new CodeError(`this page only runs at ${PROD_ORIGIN}`);
+  throw new CodeError(`this page only runs at ${HOSTED_CONSOLE} or http://localhost:<port>`);
 }

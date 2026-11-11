@@ -1,5 +1,5 @@
 // The engine's local pages (CONTRACT.md, Local pages): a short link
-// /approve/<id> or /revert/<id> opens a page the engine serves itself. The
+// /approvals/<id> or /reverts/<id> opens a page the engine serves itself. The
 // page reads the request for that id from the engine and, after the passkey
 // signs, posts the response back for the engine to relay. Same origin only.
 // Pure functions with the fetch passed in, so they run under `node --test`.
@@ -17,8 +17,8 @@ export class RelayError extends Error {
   }
 }
 
-// shortLinkId is the id a short link carries in its path, or null for any
-// other path (the long link carries its request in the fragment instead).
+// shortLinkId is the id a page link carries in its path (page "approvals"
+// or "reverts", as in /approvals/<id>), or null for any other path.
 export function shortLinkId(pathname, page) {
   const m = new RegExp(`^/${page}/${UUID_PATH}/?$`).exec(pathname);
   return m ? m[1] : null;
@@ -26,9 +26,8 @@ export function shortLinkId(pathname, page) {
 
 // Paths of the relay for a short link's page and id.
 export function relayPaths(page, id) {
-  const kind = page === "approve" ? "approvals" : "reverts";
-  const action = page === "approve" ? "approve" : "apply";
-  return { request: `/api/v1/${kind}/${id}`, relay: `/api/v1/${kind}/${id}/${action}` };
+  const action = page === "approvals" ? "approve" : "apply";
+  return { request: `/api/v1/${page}/${id}`, relay: `/api/v1/${page}/${id}/${action}` };
 }
 
 async function answer(call) {

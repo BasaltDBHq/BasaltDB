@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
@@ -28,7 +29,7 @@ type revertFlags struct {
 	intent            string
 	apply             string
 	status            string
-	page              string
+	pagesURL          string
 	local             string // origin of the engine's local pages, "" when not served
 	dryRun, asJSON    bool
 	open              bool
@@ -52,7 +53,7 @@ func runRevert(c *cliIO, args []string) int {
 	fs.StringVar(&f.intent, "intent", "", "why you revert (recorded); default \"Revert <scope> <id>\"")
 	fs.StringVar(&f.apply, "apply", "", "apply a prepared revert with the code the revert page gave you")
 	fs.StringVar(&f.status, "status", "", "show a revert's progress (a large revert is applied by the agent in batches)")
-	fs.StringVar(&f.page, "page", "", "revert page (default: next to the engine config's approvalPage, else "+revert.PageURL+")")
+	fs.StringVar(&f.pagesURL, "pages-url", "", "pages base URL (default: the engine config's pagesUrl, else "+links.DefaultLocal+")")
 	fs.BoolVar(&f.open, "open", false, "open the revert link in your browser instead of printing it")
 	fs.BoolVar(&f.dryRun, "dry-run", false, "only show what the revert would do")
 	fs.BoolVar(&f.asJSON, "json", false, "print the lines and the result as JSON")
@@ -76,9 +77,9 @@ func runRevert(c *cliIO, args []string) int {
 	}
 	defer conn.Close(c.ctx)
 	if scope.ID != uuid.Nil && !f.dryRun {
-		f.local = localPages(c, f.page, *agent, *configPath)
+		f.local = localPages(c, f.pagesURL, *agent, *configPath)
 	}
-	f.page = configuredPage(f.page, revert.PageURL, *agent, *configPath, revertSibling)
+	f.pagesURL = configuredBase(f.pagesURL, *agent, *configPath)
 
 	switch {
 	case f.status != "":
@@ -167,12 +168,12 @@ func prepareRevert(c *cliIO, conn *pgx.Conn, scope guard.RevertScope, f revertFl
 	for _, k := range keys {
 		ids = append(ids, k.ID)
 	}
-	link, err := revert.Request{RevertID: prep.RevertID, Binding: prep.BindingText, Lines: prep.Lines, CredentialIDs: ids}.URL(f.page)
+	link, err := revert.Request{RevertID: prep.RevertID, Binding: prep.BindingText, Lines: prep.Lines, CredentialIDs: ids}.URL(f.pagesURL)
 	if err != nil {
 		return c.fail(err)
 	}
-	pages := linkPages{page: f.page, local: f.local}
-	link = pages.short(revertPagePath, prep.RevertID, link)
+	pages := linkPages{base: f.pagesURL, local: f.local}
+	link = pages.short(links.Revert, prep.RevertID, link)
 	expires := prep.ExpiresAt.UTC().Format(timeLayout)
 	switch {
 	case f.open:

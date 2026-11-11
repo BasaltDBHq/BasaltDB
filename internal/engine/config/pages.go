@@ -6,50 +6,78 @@ import (
 	"net"
 	"net/url"
 	"strings"
+
+	"github.com/basaltdbhq/basaltdb/internal/links"
 )
 
 // PagesOff disables the engine's local pages listener.
 const PagesOff = "off"
-
-// defaultApprovalPage is the hosted approval page (approval.PageURL), the
-// approval page when the config names none.
-const defaultApprovalPage = "https://basaltvault.app/approve/"
 
 // loopbackV4 is the address the local pages bind by default.
 const loopbackV4 = "127.0.0.1"
 
 // Pages is where the engine serves the approval and revert pages
 // (CONTRACT.md, Local pages): the loopback address it binds and the origin
-// the short links use, the approval page's origin. Addr is "" when the
-// pages are off.
+// the links use. Addr is "" when the engine serves no pages (the hosted
+// console, or pagesAddr off).
 type Pages struct {
 	Addr   string
 	Origin string
 }
 
-// Pages resolves pagesAddr against the approval page. Default: on, at
-// 127.0.0.1 and the page's port, when the approval page is a local
-// http://localhost:<port> page (a development passkey origin); off
-// otherwise. A non-loopback or hostname address is refused: names are
+// PagesBase is the base URL every approval, revert and registration link
+// uses (links): pagesUrl; else the origin of the older approvalPage key;
+// else the engine's local pages, the default until hosting exists (owner
+// decisions, Decided Nov 12).
+func (c Config) PagesBase() (string, error) {
+	switch {
+	case c.PagesURL != "":
+		return checkBase(c.PagesURL)
+	case c.ApprovalPage != "":
+		u, err := url.Parse(c.ApprovalPage)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			return "", fmt.Errorf("approvalPage %q is not a URL", c.ApprovalPage)
+		}
+		return checkBase(u.Scheme + "://" + u.Host)
+	}
+	return links.DefaultLocal, nil
+}
+
+// checkBase accepts the hosted console or a local http origin
+// (http://localhost:<port>, or a loopback IP): an origin, no path.
+func checkBase(base string) (string, error) {
+	base = strings.TrimSuffix(base, "/")
+	if base == links.HostedConsole {
+		return base, nil
+	}
+	u, err := url.Parse(base)
+	if err != nil || u.Scheme != "http" || !isLoopbackName(u.Hostname()) || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("pagesUrl %q: use %s or a local http://localhost:<port>", base, links.HostedConsole)
+	}
+	return base, nil
+}
+
+// Pages resolves pagesAddr against the pages' base URL. Default: on, at
+// 127.0.0.1 and the base's port, when the base is local; off for the
+// hosted console. A non-loopback or hostname address is refused: names are
 // never trusted for listen policy, and this listener has no TLS.
 func (c Config) Pages() (Pages, error) {
+	base, err := c.PagesBase()
+	if err != nil {
+		return Pages{}, err
+	}
 	if c.PagesAddr == PagesOff {
 		return Pages{}, nil
 	}
-	page := c.ApprovalPage
-	if page == "" {
-		page = defaultApprovalPage
-	}
-	u, err := url.Parse(page)
-	if err != nil {
-		return Pages{}, fmt.Errorf("approvalPage: %w", err)
-	}
-	local := u.Scheme == "http" && isLoopbackName(u.Hostname())
-	if !local {
+	if base == links.HostedConsole {
 		if c.PagesAddr != "" {
-			return Pages{}, errors.New("pagesAddr needs a local approvalPage (http://localhost:<port>/approve/): the pages must be on the passkey's origin")
+			return Pages{}, errors.New("pagesAddr needs a local pagesUrl (http://localhost:<port>): the pages must be on the passkey's origin")
 		}
 		return Pages{}, nil
+	}
+	u, err := url.Parse(base)
+	if err != nil {
+		return Pages{}, err
 	}
 	port := u.Port()
 	if port == "" {
@@ -62,7 +90,7 @@ func (c Config) Pages() (Pages, error) {
 	if err := checkLoopbackAddr(addr); err != nil {
 		return Pages{}, err
 	}
-	return Pages{Addr: addr, Origin: u.Scheme + "://" + u.Host}, nil
+	return Pages{Addr: addr, Origin: base}, nil
 }
 
 // isLoopbackName reports whether host names this machine in a URL.

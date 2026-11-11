@@ -1,6 +1,6 @@
 // Package pages serves the approval and revert pages from the engine on a
 // loopback listener, with a same-origin relay for them (CONTRACT.md, Local
-// pages): a short link /approve/<id> or /revert/<id> opens the page, the
+// pages): a short link /approvals/<id> or /reverts/<id> opens the page, the
 // page reads the request for that id from the engine, and after the
 // person's passkey signs it posts the signature back for the engine to
 // relay with the agent's credential. The relay decides nothing: Postgres
@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"path"
 	"sync"
 
 	"github.com/google/uuid"
@@ -23,6 +24,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
@@ -54,10 +56,17 @@ type Server struct {
 // New returns the pages for origin, the approval page's origin, which a
 // relayed POST must come from.
 func New(origin string, log *slog.Logger) *Server {
-	if origin == "" || log == nil {
-		panic("pages: origin and logger required")
+	return NewWithFiles(origin, log, web.Files)
+}
+
+// NewWithFiles is New serving the page files from files instead of the
+// embedded ones: the working tree's web/ for page development
+// (make serve-web).
+func NewWithFiles(origin string, log *slog.Logger, files fs.FS) *Server {
+	if origin == "" || log == nil || files == nil {
+		panic("pages: origin, logger and files required")
 	}
-	return &Server{origin: origin, log: log, files: web.Files}
+	return &Server{origin: origin, log: log, files: files}
 }
 
 // Add serves a's approvals and reverts.
@@ -74,17 +83,33 @@ func (s *Server) Handler() http.Handler {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		_, _ = w.Write([]byte("ok\n"))
 	})
-	mux.Handle("GET /", http.FileServerFS(s.files))
-	// No directory listings: only the pages and their files.
-	mux.Handle("GET /{$}", http.NotFoundHandler())
-	mux.Handle("GET /lib/{$}", http.NotFoundHandler())
-	mux.HandleFunc("GET /approve/{id}", s.page("approve/index.html"))
-	mux.HandleFunc("GET /revert/{id}", s.page("revert/index.html"))
+	// The pages at their RESTful paths (links; owner decisions, Decided
+	// Nov 12), and only the files they load: no listings, no tests.
+	files := http.FileServerFS(s.files)
+	mux.Handle("GET /lib/{file}", libFile(files))
+	mux.Handle("GET /style.css", files)
+	mux.HandleFunc("GET "+links.ApprovalsPath+"{id}", s.page("approve/index.html"))
+	mux.HandleFunc("GET "+links.RevertsPath+"{id}", s.page("revert/index.html"))
+	mux.HandleFunc("GET "+links.RegisterPath, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		http.ServeFileFS(w, r, s.files, "register/index.html")
+	})
 	mux.HandleFunc("GET /api/v1/approvals/{approvalId}", s.getApproval)
 	mux.HandleFunc("POST /api/v1/approvals/{approvalId}/approve", s.postApproval)
 	mux.HandleFunc("GET /api/v1/reverts/{revertId}", s.getRevert)
 	mux.HandleFunc("POST /api/v1/reverts/{revertId}/apply", s.postRevert)
 	return mux
+}
+
+// libFile serves the pages' scripts, lib/*.js, and nothing else there.
+func libFile(files http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if path.Ext(r.PathValue("file")) != ".js" {
+			http.NotFound(w, r)
+			return
+		}
+		files.ServeHTTP(w, r)
+	})
 }
 
 // page serves the page a short link opens; the page reads the id from its

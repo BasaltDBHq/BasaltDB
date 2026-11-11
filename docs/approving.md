@@ -7,7 +7,7 @@ A write of 11 to 50 rows, or any `DELETE`, is held until you approve it with you
 When a write is held, the agent gets `APPROVAL_REQUIRED` with a `personMessage` and shows it to you as is:
 
 ```
-Held for your approval: Update 27 rows in basalt_demo.leads. Approve: http://localhost:8787/approve/<id> (or run: basalt approve --agent demo_bot --open <id>). Expires 2026-11-12 07:02 UTC.
+Held for your approval: Update 27 rows in basalt_demo.leads. Approve: http://localhost:8787/approvals/<id> (or run: basalt approve --agent demo_bot --open <id>). Expires 2026-11-12 07:02 UTC.
 ```
 
 1. Open the link. The engine serves the approval page itself and the page lists every row with its old and new values. Cascaded rows are marked, and you have to confirm them separately.
@@ -30,17 +30,17 @@ Add `--config PATH` when the engine runs from a non-default config. The commands
 
 ## Where the pages come from
 
-When `approvalPage` in `engine.json` is a local page (`http://localhost:<port>/approve/`, which `basalt init --passkey-origin http://localhost:<port>` sets), the engine serves the approval, revert and registration pages on `127.0.0.1:<port>` and logs `serving approval pages`. The page files are built into the binary, so `make serve-web` is only needed when you are working on the pages themselves.
+Every link is built from one base URL, `pagesUrl` in `engine.json`. `basalt init --passkey-origin` sets it, and the default is the engine's local pages at `http://localhost:8787`, which stays the default until the hosted console (`https://console.basaltvault.app`) is live. The paths are the same on both: `/approvals/<id>`, `/reverts/<id>` and `/passkeys/register`. When the base is local, the engine serves the approval, revert and registration pages on `127.0.0.1:<port>` and logs `serving approval pages`. The page files are built into the binary, so `make serve-web` is only needed when you are working on the pages themselves.
 
 - `"pagesAddr": "off"` in `engine.json` turns the pages off. Any address that is not a loopback IP is refused.
 - If the port is taken (for example, `make serve-web` is still running on it), the engine logs `approval pages not served` and held writes carry the long link. Stop the other server and restart the engine.
-- With the hosted page (`https://basaltvault.app`, not live yet), the engine serves no pages, and held writes carry the long link that holds the whole preview. Open that link with `basalt approve --open` rather than copying it, because terminals and chats can cut it short. The page says so when it gets a truncated link.
+- With the hosted console as the base (`https://console.basaltvault.app`, not live yet), the engine serves no pages, and held writes carry the long link (`/approvals/<id>#1....`) that holds the whole preview. Open that link with `basalt approve --open` rather than copying it, because terminals and chats can cut it short. The page says so when it gets a truncated link.
 
 Telegram always sends the long link. The short link only works on the machine where the engine runs.
 
 ## Authenticators
 
-Registration asks for one algorithm, ES256 (`pubKeyCredParams: [{ alg: -7 }]` in [`web/lib/register.js`](../web/lib/register.js)), a discoverable credential, and user verification. Every authenticator below supports ES256.
+Passkeys belong to the origin they were registered on: RP ID `localhost` for the local pages, and RP ID `basaltvault.app` (fixed) for the hosted console at `https://console.basaltvault.app`. Registration asks for one algorithm, ES256 (`pubKeyCredParams: [{ alg: -7 }]` in [`web/lib/register.js`](../web/lib/register.js)), a discoverable credential, and user verification. Every authenticator below supports ES256.
 
 **macOS.** Touch ID (iCloud Keychain), or any of the options listed for Linux.
 
@@ -62,9 +62,9 @@ The engine's pages listen on the server's loopback only. Until a hosted relay ex
 ssh -N -L 8787:127.0.0.1:8787 you@server
 ```
 
-Then open the short link (`http://localhost:8787/approve/<id>`) in the browser on your computer. Inside the tunnel the browser's origin is `http://localhost:8787`, which is the page origin the engine expects. The engine's Host and Origin checks accept it, and your passkey for `localhost` signs it. Use `127.0.0.1` as the tunnel target rather than `localhost`, so that SSH does not try the server's `::1` first, where the engine is not listening.
+Then open the short link (`http://localhost:8787/approvals/<id>`) in the browser on your computer. Inside the tunnel the browser's origin is `http://localhost:8787`, which is the page origin the engine expects. The engine's Host and Origin checks accept it, and your passkey for `localhost` signs it. Use `127.0.0.1` as the tunnel target rather than `localhost`, so that SSH does not try the server's `::1` first, where the engine is not listening.
 
 - The port has to match on both ends. A tunnel from local port 9000 gives the page the origin `http://localhost:9000`, and the engine refuses the signature relay from it (`403`).
 - Register the passkey through the same tunnel. Keep it open while `basalt init` waits for the code, since init serves the registration page on the server's port in the same way.
 - `basalt approve --show <id>` on the server prints the short link to open on your side.
-- Without a tunnel, use the long link (`basalt approve --show <id> --page http://localhost:8787/approve/`), served by `make serve-web` on your computer. Paste the code it shows into `basalt approve` on the server.
+- Without a tunnel, use the long link (`basalt approve --show <id> --pages-url http://localhost:8787`), served by `make serve-web` on your computer. Paste the code it shows into `basalt approve` on the server.

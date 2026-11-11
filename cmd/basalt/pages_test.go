@@ -30,7 +30,7 @@ const testPagesOrigin = "http://localhost:18787"
 func localConfig(t *testing.T, cred string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "engine.json")
-	body := `{"socketDir": "/tmp/bt", "approvalPage": "` + testPagesOrigin + `/approve/",
+	body := `{"socketDir": "/tmp/bt", "pagesUrl": "` + testPagesOrigin + `",
 		"agents": [{"name": "bot", "osUser": "tester", "credentialFile": "` + cred + `"}]}`
 	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
 	_, err := config.Load(path)
@@ -49,22 +49,22 @@ func TestApproveShowsTheShortLinkWhenTheEngineServesThePages(t *testing.T) {
 	h.pagesUp = true
 	r := cliHost(t, h, "approve", "--agent", "bot", "--config", cfg, "--show", id)
 	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Equal(t, testPagesOrigin+"/approve/"+id+"\n", r.stdout)
+	require.Equal(t, testPagesOrigin+"/approvals/"+id+"\n", r.stdout)
 
 	r = cliHost(t, h, "approve", "--agent", "bot", "--config", cfg, "--open", id)
 	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Equal(t, []string{testPagesOrigin + "/approve/" + id}, h.opened)
+	require.Equal(t, []string{testPagesOrigin + "/approvals/" + id}, h.opened)
 	require.Contains(t, r.stderr, "the page sends it to the engine, nothing to paste")
 
 	// No engine answering: the long link on the config's page.
 	h.pagesUp = false
 	r = cliHost(t, h, "approve", "--agent", "bot", "--config", cfg, "--show", id)
 	require.Equal(t, exitOK, r.code, r.stderr)
-	require.True(t, strings.HasPrefix(r.stdout, testPagesOrigin+"/approve/#1."), r.stdout)
+	require.True(t, strings.HasPrefix(r.stdout, testPagesOrigin+"/approvals/"+id+"#1."), r.stdout)
 	require.Equal(t, 1, count(t, d, `SELECT count(approval_id)::int FROM basalt_meta.approvals WHERE approved_at IS NULL`), "showing approves nothing")
 }
 
-var shortRevertLink = regexp.MustCompile(regexp.QuoteMeta(testPagesOrigin) + `/revert/([0-9a-f-]{36})`)
+var shortRevertLink = regexp.MustCompile(regexp.QuoteMeta(testPagesOrigin) + `/reverts/([0-9a-f-]{36})`)
 
 // pageRelay is stderr for basalt revert with the engine's pages: when the
 // short link appears, it does what the page and the engine's relay do,

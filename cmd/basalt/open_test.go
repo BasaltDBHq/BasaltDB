@@ -12,9 +12,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/revert"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 )
 
 // cliHost is cli with host h, which records the links basalt opens instead
@@ -31,7 +30,7 @@ func cliHost(t *testing.T, h host, args ...string) result {
 
 func TestOpenLink(t *testing.T) {
 	t.Parallel()
-	link := "http://localhost:8787/approve/#1.abc"
+	link := "http://localhost:8787/approvals/0190a3f2-7c1e-7000-8000-000000000001#1.abc"
 	h := newFakeHost(t)
 	var stdout, stderr bytes.Buffer
 	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr}, func(string) string { return "" })
@@ -64,21 +63,20 @@ func TestBrowserOpener(t *testing.T) {
 	require.False(t, ok)
 }
 
-func TestConfiguredPage(t *testing.T) {
+func TestConfiguredBase(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	withPage := filepath.Join(dir, "engine.json")
-	require.NoError(t, os.WriteFile(withPage, []byte(`{"socketDir": "/s", "approvalPage": "http://localhost:8787/approve/",
+	hosted := filepath.Join(dir, "engine.json")
+	require.NoError(t, os.WriteFile(hosted, []byte(`{"socketDir": "/s", "pagesUrl": "https://console.basaltvault.app",
 		"agents": [{"name": "bot", "osUser": "u", "credentialFile": "/c"}]}`), 0o600))
-	without := filepath.Join(dir, "plain.json")
-	require.NoError(t, os.WriteFile(without, []byte(`{"socketDir": "/s", "agents": [{"name": "bot", "osUser": "u", "credentialFile": "/c"}]}`), 0o600))
+	plain := filepath.Join(dir, "plain.json")
+	require.NoError(t, os.WriteFile(plain, []byte(`{"socketDir": "/s", "agents": [{"name": "bot", "osUser": "u", "credentialFile": "/c"}]}`), 0o600))
 
-	require.Equal(t, "http://localhost:8787/approve/", configuredPage("", approval.PageURL, "bot", withPage, ""))
-	require.Equal(t, "http://localhost:8787/revert/", configuredPage("", revert.PageURL, "bot", withPage, revertSibling))
-	require.Equal(t, "https://x.test/a/", configuredPage("https://x.test/a/", approval.PageURL, "bot", withPage, ""), "--page wins")
-	require.Equal(t, approval.PageURL, configuredPage("", approval.PageURL, "", withPage, ""), "no --agent, no config")
-	require.Equal(t, revert.PageURL, configuredPage("", revert.PageURL, "bot", without, revertSibling))
-	require.Equal(t, revert.PageURL, configuredPage("", revert.PageURL, "bot", filepath.Join(dir, "missing.json"), revertSibling))
+	require.Equal(t, links.HostedConsole, configuredBase("", "bot", hosted), "the config's pagesUrl")
+	require.Equal(t, "http://localhost:9000", configuredBase("http://localhost:9000", "bot", hosted), "--pages-url wins")
+	require.Equal(t, links.DefaultLocal, configuredBase("", "", hosted), "no --agent, no config: the local pages")
+	require.Equal(t, links.DefaultLocal, configuredBase("", "bot", plain), "the default until hosting")
+	require.Equal(t, links.DefaultLocal, configuredBase("", "bot", filepath.Join(dir, "missing.json")))
 }
 
 func TestConfigArg(t *testing.T) {

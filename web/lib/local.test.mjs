@@ -34,19 +34,20 @@ async function requestObject() {
 }
 
 test("a short link's id comes from its path", () => {
-  assert.equal(shortLinkId(`/approve/${id}`, "approve"), id);
-  assert.equal(shortLinkId(`/approve/${id}/`, "approve"), id);
-  assert.equal(shortLinkId("/approve/", "approve"), null);
-  assert.equal(shortLinkId(`/revert/${id}`, "approve"), null);
-  assert.equal(shortLinkId("/approve/not-an-id", "approve"), null);
-  assert.deepEqual(relayPaths("approve", id), { request: `/api/v1/approvals/${id}`, relay: `/api/v1/approvals/${id}/approve` });
-  assert.deepEqual(relayPaths("revert", id), { request: `/api/v1/reverts/${id}`, relay: `/api/v1/reverts/${id}/apply` });
+  assert.equal(shortLinkId(`/approvals/${id}`, "approvals"), id);
+  assert.equal(shortLinkId(`/approvals/${id}/`, "approvals"), id);
+  assert.equal(shortLinkId("/approvals/", "approvals"), null);
+  assert.equal(shortLinkId(`/reverts/${id}`, "approvals"), null);
+  assert.equal(shortLinkId(`/approve/${id}`, "approvals"), null);
+  assert.equal(shortLinkId("/approvals/not-an-id", "approvals"), null);
+  assert.deepEqual(relayPaths("approvals", id), { request: `/api/v1/approvals/${id}`, relay: `/api/v1/approvals/${id}/approve` });
+  assert.deepEqual(relayPaths("reverts", id), { request: `/api/v1/reverts/${id}`, relay: `/api/v1/reverts/${id}/apply` });
 });
 
 test("the request read from the engine passes the same checks as the long link", async () => {
   const obj = await requestObject();
   const { fetchFn, calls } = fakeEngine({ [`GET /api/v1/approvals/${id}`]: { body: obj } });
-  const req = await checkApprovalRequest(await fetchRequest(fetchFn, relayPaths("approve", id).request));
+  const req = await checkApprovalRequest(await fetchRequest(fetchFn, relayPaths("approvals", id).request));
   const fromLink = await parseApprovalRequest("#" + fixtures.request.fragment);
   assert.equal(req.bindingText, fromLink.bindingText);
   assert.deepEqual(req.challenge, fromLink.challenge);
@@ -65,7 +66,7 @@ test("the signed response is posted as JSON to the relay", async () => {
     clientDataJson: new Uint8Array([4]),
     signature: new Uint8Array([5]),
   };
-  const path = relayPaths("approve", id).relay;
+  const path = relayPaths("approvals", id).relay;
   const { fetchFn, calls } = fakeEngine({ [`POST ${path}`]: { body: { approvalId: id, status: "APPROVED" } } });
   const out = await postResponse(fetchFn, path, approvalResponseJSON(response));
   assert.equal(out.status, "APPROVED");

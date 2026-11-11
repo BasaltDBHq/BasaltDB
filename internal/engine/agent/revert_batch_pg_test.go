@@ -12,6 +12,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 )
@@ -101,7 +102,7 @@ func TestRevertPlanAndBatchTools(t *testing.T) {
 	require.Equal(t, "public.items", plan["table"])
 	// Not signed yet: the link to sign it, for the agent to hand over.
 	link := str(t, before["revertUrl"])
-	require.True(t, strings.HasPrefix(link, revert.PageURL+"#1."), "no local pages: the long link: %s", link)
+	require.True(t, strings.HasPrefix(link, links.DefaultLocal+"/reverts/"+id+"#1."), "no local pages: the long link: %s", link)
 	require.Contains(t, before["personMessage"], "A revert is waiting for your passkey: ")
 	require.Contains(t, before["personMessage"], "Review and sign: "+link)
 

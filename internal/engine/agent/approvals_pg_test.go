@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
@@ -120,7 +121,7 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 	ap := approvalOf(t, body)
 	require.Equal(t, json.Number("15"), ap["rows"])
 	link := str(t, ap["approvalUrl"])
-	require.True(t, strings.HasPrefix(link, approval.PageURL+"#1."), link)
+	require.True(t, strings.HasPrefix(link, links.DefaultLocal+"/approvals/"+str(t, ap["approvalId"])+"#1."), link)
 	approvalID := str(t, ap["approvalId"])
 	command := "basalt approve --agent bot --config /etc/basalt-test/engine.json --open " + approvalID
 	require.Equal(t, command, ap["approveCommand"])

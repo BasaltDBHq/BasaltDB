@@ -14,6 +14,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 )
 
@@ -26,7 +27,7 @@ func runApprove(c *cliIO, args []string) int {
 	fs := c.flags("approve")
 	show := fs.String("show", "", "print the approval link of this held write (approval id) instead")
 	open := fs.String("open", "", "open the approval link of this held write (approval id) in your browser instead")
-	page := fs.String("page", "", "approval page for --show and --open (default: the engine config's approvalPage, else "+approval.PageURL+")")
+	pagesURL := fs.String("pages-url", "", "pages base URL for --show and --open (default: the engine config's pagesUrl, else "+links.DefaultLocal+")")
 	agent := fs.String("agent", "", "use this agent's credential from the engine config")
 	configPath := fs.String("config", config.DefaultPath(runtime.GOOS), "engine config file")
 	credFile := fs.String("credential-file", "", "read the agent's connection string from this file")
@@ -52,8 +53,8 @@ func runApprove(c *cliIO, args []string) int {
 	defer conn.Close(c.ctx)
 	if held != "" {
 		pages := linkPages{
-			page:  configuredPage(*page, approval.PageURL, *agent, *configPath, ""),
-			local: localPages(c, *page, *agent, *configPath),
+			base:  configuredBase(*pagesURL, *agent, *configPath),
+			local: localPages(c, *pagesURL, *agent, *configPath),
 		}
 		return showApproval(c, conn, held, pages, *open != "")
 	}
@@ -107,11 +108,11 @@ func showApproval(c *cliIO, conn *pgx.Conn, idText string, pages linkPages, open
 	if err != nil {
 		return c.fail(err)
 	}
-	link, err := approval.Request{ApprovalID: a.ID, Binding: a.BindingText, Lines: a.Lines, CredentialIDs: ids}.URL(pages.page)
+	link, err := approval.Request{ApprovalID: a.ID, Binding: a.BindingText, Lines: a.Lines, CredentialIDs: ids}.URL(pages.base)
 	if err != nil {
 		return c.fail(err)
 	}
-	link = pages.short(approvePath, a.ID, link)
+	link = pages.short(links.Approval, a.ID, link)
 	fmt.Fprintf(c.stderr, "basalt: %s\n", summary.Headline())
 	expires := a.ExpiresAt.UTC().Format(timeLayout)
 	if open {

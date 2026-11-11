@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 )
@@ -191,11 +192,13 @@ func TestPreviewLinesAreInCOrder(t *testing.T) {
 func TestRequestRoundTrip(t *testing.T) {
 	t.Parallel()
 	f := buildFixtures(t)
-	url, err := approval.Request{ApprovalID: approvalID, Binding: f.Request.Binding, Lines: f.Request.Lines}.URL(approval.PageURL)
+	url, err := approval.Request{ApprovalID: approvalID, Binding: f.Request.Binding, Lines: f.Request.Lines}.URL(links.HostedConsole)
 	require.NoError(t, err)
-	require.True(t, strings.HasPrefix(url, "https://basaltvault.app/approve/#1."))
+	require.True(t, strings.HasPrefix(url, "https://console.basaltvault.app/approvals/"+approvalID.String()+"#1."), url)
 
-	req, b, err := approval.ParseRequest(strings.TrimPrefix(url, approval.PageURL))
+	_, frag, ok := strings.Cut(url, "#")
+	require.True(t, ok)
+	req, b, err := approval.ParseRequest(frag)
 	require.NoError(t, err)
 	require.Equal(t, f.Request.Lines, req.Lines)
 	require.Equal(t, approvalID, b.ApprovalID)

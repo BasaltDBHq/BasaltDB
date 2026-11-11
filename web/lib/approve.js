@@ -1,5 +1,5 @@
 // The approval page: read the held action (from the long link's fragment,
-// or from the engine for a short link /approve/<id>), check the rows against
+// or from the engine for a short link /approvals/<id>), check the rows against
 // the binding, show them, and sign the binding with the person's passkey.
 // From a long link the page sends nothing anywhere and shows a code to
 // paste; from a short link it posts the signature to the engine that served
@@ -95,11 +95,15 @@ const engineFetch = (path, init) => window.fetch(path, init);
 // the engine for a short link. relay is the path to post the signature to,
 // null for a long link.
 async function loadRequest() {
-  const id = shortLinkId(window.location.pathname, "approve");
+  const id = shortLinkId(window.location.pathname, "approvals");
   if (window.location.hash || id === null) {
-    return { req: await parseApprovalRequest(window.location.hash), relay: null };
+    // A long link: the request is in the fragment, and names the same approval
+    // as the path.
+    const req = await parseApprovalRequest(window.location.hash);
+    if (id !== null && req.approvalId !== id) throw new Error(`the link is for approval ${req.approvalId}, its path for ${id}`);
+    return { req, relay: null };
   }
-  const paths = relayPaths("approve", id);
+  const paths = relayPaths("approvals", id);
   const req = await checkApprovalRequest(await fetchRequest(engineFetch, paths.request));
   if (req.approvalId !== id) throw new Error(`the engine sent approval ${req.approvalId}, not ${id}`);
   return { req, relay: paths.relay };

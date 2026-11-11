@@ -110,15 +110,14 @@ func TestPagesServeTheEmbeddedFiles(t *testing.T) {
 	host := strings.TrimPrefix(s.origin, "http://")
 	id := uuid.Must(uuid.NewV7()).String()
 	for path, want := range map[string]string{
-		"/healthz":           "ok",
-		"/approve/":          "../lib/approve.js",
-		"/approve/" + id:     "../lib/approve.js",
-		"/revert/" + id:      "../lib/revert.js",
-		"/register/":         "../lib/register.js",
-		"/lib/approve.js":    "shortLinkId",
-		"/lib/local.js":      "RelayError",
-		"/style.css":         "{",
-		"/approve/" + id[1:]: "404",
+		"/healthz":             "ok",
+		"/approvals/" + id:     "../lib/approve.js",
+		"/reverts/" + id:       "../lib/revert.js",
+		"/passkeys/register":   "../lib/register.js",
+		"/lib/approve.js":      "shortLinkId",
+		"/lib/local.js":        "RelayError",
+		"/style.css":           "{",
+		"/approvals/" + id[1:]: "404",
 	} {
 		status, body := s.do(t, http.MethodGet, path, host, "", "", "")
 		if want == "404" {
@@ -128,7 +127,9 @@ func TestPagesServeTheEmbeddedFiles(t *testing.T) {
 		require.Equal(t, http.StatusOK, status, path)
 		require.Contains(t, body, want, path)
 	}
-	for _, path := range []string{"/", "/lib/", "/lib/codec.test.mjs", "/embed.go"} {
+	// The old paths and anything else under web/ are not served.
+	for _, path := range []string{"/", "/lib/", "/lib/codec.test.mjs", "/embed.go", "/approve/", "/approve/" + id,
+		"/revert/" + id, "/register/", "/approvals/", "/approve/index.html"} {
 		status, _ := s.do(t, http.MethodGet, path, host, "", "", "")
 		require.Equal(t, http.StatusNotFound, status, "%s: no listings, no tests, no sources", path)
 	}

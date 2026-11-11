@@ -66,7 +66,11 @@ func Run(ctx context.Context, cfg config.Config, configArg string, log *slog.Log
 	if site != nil {
 		closers = append(closers, func() { _ = site.ln.Close() })
 	}
-	env := agentEnv{cfg: cfg, configArg: configArg, pins: statePins(cfg.StateDirFor(runtime.GOOS), log), tg: tg}
+	base, err := cfg.PagesBase()
+	if err != nil {
+		return err
+	}
+	env := agentEnv{cfg: cfg, configArg: configArg, pagesBase: base, pins: statePins(cfg.StateDirFor(runtime.GOOS), log), tg: tg}
 	if site != nil {
 		env.pagesOrigin = site.origin
 	}
@@ -165,6 +169,7 @@ type agentRuntime struct {
 type agentEnv struct {
 	cfg         config.Config
 	configArg   string
+	pagesBase   string
 	pagesOrigin string
 	pins        upkeep.Pins
 	tg          *telegram.Notifier
@@ -194,18 +199,18 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	}
 	store := agentdb.NewStore(pool, limits, time.Now)
 	svc := agent.NewService(agent.Deps{
-		Name:         a.Name,
-		Reader:       agentdb.NewReader(pool, limits, time.Now),
-		Store:        store,
-		Reads:        store,
-		Approvals:    store,
-		Reverts:      store,
-		Notifier:     agentNotifier(env.tg, pool.Config().ConnConfig.Database),
-		ApprovalPage: env.cfg.ApprovalPage,
-		CLIFlags:     cliFlags(a.Name, env.configArg),
-		PagesOrigin:  env.pagesOrigin,
-		Log:          log,
-		Now:          time.Now,
+		Name:        a.Name,
+		Reader:      agentdb.NewReader(pool, limits, time.Now),
+		Store:       store,
+		Reads:       store,
+		Approvals:   store,
+		Reverts:     store,
+		Notifier:    agentNotifier(env.tg, pool.Config().ConnConfig.Database),
+		PagesBase:   env.pagesBase,
+		CLIFlags:    cliFlags(a.Name, env.configArg),
+		PagesOrigin: env.pagesOrigin,
+		Log:         log,
+		Now:         time.Now,
 	})
 	return agentRuntime{
 		svc:    svc,

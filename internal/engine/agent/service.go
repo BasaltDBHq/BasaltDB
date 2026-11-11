@@ -15,10 +15,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 )
@@ -70,8 +70,9 @@ type Deps struct {
 	Reverts RevertStore
 	// Notifier is optional: no notification when nil.
 	Notifier Notifier
-	// ApprovalPage is the approval page URL; approval.PageURL when empty.
-	ApprovalPage string
+	// PagesBase is the base URL of the approval and revert pages (links);
+	// links.DefaultLocal when empty.
+	PagesBase string
 	// CLIFlags select this agent in the person's basalt commands ("--agent
 	// NAME [--config PATH]"); "--agent NAME" when empty.
 	CLIFlags string
@@ -96,8 +97,8 @@ func NewService(d Deps) *Service {
 	if d.Notifier == nil {
 		d.Notifier = noNotifier{}
 	}
-	if d.ApprovalPage == "" {
-		d.ApprovalPage = approval.PageURL
+	if d.PagesBase == "" {
+		d.PagesBase = links.DefaultLocal
 	}
 	if d.CLIFlags == "" {
 		d.CLIFlags = "--agent " + d.Name

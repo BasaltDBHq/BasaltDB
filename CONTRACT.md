@@ -1,6 +1,6 @@
 # BasaltDB contracts
 
-Normative contract for the surfaces BasaltDB exposes: **MCP tools** served by the engine (through the per-agent shim), the **`basalt` CLI**, the **approval and revert pages**, and the **`basalt_meta` schema** the guard installs in the person's Postgres. The product is defined in [`docs/redesign/specs/2026-11-11-basalt-foundation-final.md`](docs/redesign/specs/2026-11-11-basalt-foundation-final.md); this file fixes the wire rules. There is no REST API, no OpenAPI/AsyncAPI and no event stream. The one HTTP surface is the engine's loopback [local pages](#local-pages): the pages plus a same-origin relay for them, not an API for other clients.
+Normative contract for the surfaces BasaltDB exposes: **MCP tools** served by the engine (through the per-agent shim), the **`basalt` CLI**, the **approval and revert pages**, and the **`basalt_meta` schema** the guard installs in the person's Postgres. The product is defined in [`docs/redesign/specs/2026-11-11-basalt-foundation-final.md`](docs/redesign/specs/2026-11-11-basalt-foundation-final.md); this file fixes the wire rules. There is no REST API, no OpenAPI/AsyncAPI and no event stream. The one HTTP surface is the engine's loopback [local pages](#local-pages): the pages plus a same-origin relay for them, not an API for other clients. From M3.5 the same pages API also runs inside the end-to-end encrypted [Vault channel](#vault-channel), the one hosted piece before M4 (owner decision VC-1).
 
 ## Process: contract first
 
@@ -554,6 +554,7 @@ Owner decisions, Decided Nov 12: short links carry a per-link secret.
 - **Issuing for the CLI.** `POST /api/v1/approvals/{approvalId}/links` (and `/reverts/{revertId}/links`) with `{ "proof": "<hex>" }`, where `proof` = lowercase hex of `sha256(utf8("basalt-link.1\n" + binding text))`. Only a holder of the binding text can issue: a role that can read the item in `basalt_meta` (the CLI with the agent credential) or a holder of the long link, both of whom can already see the whole preview. The proof is not derivable from a signed response (whose challenge is `sha256(binding text)`). No `Origin` or a page-origin `Origin`, `Content-Type: application/json`; a wrong proof is answered as an unknown id.
 - **Refusals.** A missing or wrong secret, or a link revoked by a newer one, gets `404 NOT_FOUND` with the same body as an unknown id, on both the request and the relay. The page then says the link is incomplete or replaced and how to get a new one (`list_pending`, `basalt approve --open`).
 - **Not affected.** The long-fragment links (`#2.<request>`, or `#1.` before it; the hosted form and Telegram's button) carry the preview themselves and need no secret. The passkey pages, `/passkeys/register#1.<request>`, `/passkeys/check#1.<request>` and `/passkeys/forget#1.<request>`, are static: their whole request travels in the fragment, so the link is already the bearer of everything the page shows, and the engine has no data or relay endpoint for them to gate. They carry no `#s=` secret. A passkey page that ever reads from or posts to the engine gets a short link with a secret and gates its routes as above.
+- **Over the Vault (M3.5).** On the portal the same short link opens an end-to-end encrypted session through the Vault: the engine also keeps the link's `linkToken` and `psk`, derived from the secret, and the secret travels only inside the session ([Vault channel](#vault-channel)).
 - **Telegram.** The message text also carries the short secret link when the engine serves the pages (it works on the engine's machine only); the button keeps the long link.
 
 ### Handing a held action to the person
@@ -642,6 +643,216 @@ The CLI prints every link on its own line, with nothing else on it.
 - **Bases are checked when read.** `pagesUrl` in `engine.json` and `--pages-url` must follow the URL rule, with no query or fragment. A config that breaks it is refused when it is loaded, and a flag that breaks it is a usage error (exit `2`). Either way the message names the setting and the first bad character's position, never echoes the raw byte, and says what to do: set it to an `https://` URL, or `http://localhost:<port>`, of printable characters.
 - **Never a control byte on a terminal (refuse, not escape).** The CLI never writes a byte below `0x20` or between `0x7F` and `0x9F` (as a byte or as the UTF-8 encoding of U+0080 to U+009F) to a terminal as part of a link. A URL that breaks the URL rule anyway (from an older config, or from the database) is not printed: the CLI exits `1` with the same message, naming the item's id and the command to print its link again after the fix. The CLI's tests cover this: a base with `ESC`, `BEL`, `\n`, `0x7F` and U+009B in it is refused at load and at `--pages-url`, and a URL that breaks the rule at print time writes no part of the URL and no control byte to the terminal.
 - **Hyperlinks.** When stdout is a terminal (and `TERM` is not `dumb`), the CLI prints the link as an OSC 8 hyperlink whose visible text is the whole URL: `ESC ] 8 ; ; <url> ESC \` `<url>` `ESC ] 8 ; ; ESC \`. The URL rule keeps the URL from ending the escape sequence or starting another. A terminal that supports OSC 8 makes the whole link clickable however it wraps; one that does not shows the plain URL. Otherwise (a pipe, a file, `--json`), the plain URL.
+
+## Vault channel
+
+Planned (M3.5, Vault channel Phase 1a; owner decisions VC-1 to VC-31, provisional details VC-32 to VC-41; design [`docs/redesign/specs/2026-11-12-vault-channel.md`](docs/redesign/specs/2026-11-12-vault-channel.md), sections 4 to 6, 8 and 9). An engine with no inbound port reaches the person's browser through the hosted Vault (`relay.basaltvault.app`, VC-20). The engine dials out, the portal page dials in, and the two run an end-to-end encrypted session keyed by the short link's secret, inside which the page speaks the same pages API the engine serves on loopback. The Vault pairs sockets and forwards opaque bytes.
+
+**The Vault is untrusted.** Neither the engine nor the page depends on it being honest. A Vault that drops, delays, duplicates, reorders, replays, truncates, reflects or alters any message can make a session fail, never make either side accept something. It never holds a key that opens a session (VC-4). The Vault service is closed source (VC-13, VC-18): this section is the whole protocol it must speak, and its internals (hosting, storage, its own rate numbers) are not part of the contract. Schemas, the close-code registry and the vector format: [`api/mcp/vault/`](api/mcp/vault/).
+
+**Scope (VC-1, VC-17).** Link sessions only, for the approval and revert pages. Pairing, box keys in use, envelopes, device codes, the pending list, notifications and accounts are after M4 (their contract is VC2-1's). The direct transport (`DIRECT`, M4.1) runs this same session over the person's own tunnel; its route, the pinned engine address and revocation of an engine in `basalt_meta` are VCT-1's contract ([Direct transport](#direct-transport-reserved)).
+
+**The exception (VC-1).** "No hosted service before M4" has one narrow exception: this rendezvous. It stores no plaintext, no credentials and no ledger, has no accounts, and approvals work when it is down (long links, below).
+
+### Primitives and encodings
+
+- **Algorithms (VC-5).** P-256 (ECDH and ECDSA), SHA-256, HMAC-SHA-256, HKDF-SHA-256 (RFC 5869) and AES-256-GCM: all in WebCrypto and in Go's standard library (`crypto/ecdh`, `crypto/ecdsa`, `crypto/hkdf`, `crypto/hmac`, `crypto/cipher`). No third-party crypto in the engine or the pages, and no primitive of our own: the handshake is a Noise pattern and every other step is a signature, an HKDF or an AEAD call.
+- **Public keys.** In a handshake message: the 65-byte uncompressed SEC1 point (`0x04 ‖ X ‖ Y`). As an identity: the 91-byte DER SubjectPublicKeyInfo (`id-ecPublicKey`, `prime256v1`, uncompressed point), base64url without padding (122 characters). Any other encoding (a compressed point, explicit curve parameters, trailing bytes) and any point not on the curve is refused.
+- **ECDH output** is the 32-byte x-coordinate (WebCrypto `deriveBits` with 256 bits; Go `ecdh.PrivateKey.ECDH`).
+- **Signatures** are ECDSA P-256 with SHA-256, encoded as 64 bytes `r ‖ s` (IEEE P1363, WebCrypto's form; Go converts from ASN.1), base64url without padding (86 characters). A verifier refuses any other length.
+- **Bytes** in JSON are base64url without padding unless a field says otherwise; in test vectors, lowercase hex.
+- **Signing contexts.** The engine's signing key signs only these, each input starting with its context line, so no signature made for one can be used as another (VC-37, provisional). A new context is a contract change.
+
+| Context line | Signed by | Over |
+|---|---|---|
+| `basalt-vault-engine.1\n` | Engine signing key | The Vault's challenge and the engine's Vault host ([engine socket](#the-engines-socket-to-the-vault)) |
+| `basalt-vault-session-sig.1\n` | Engine signing key | The handshake hash `h` after `e, ee` ([Handshake](#handshake)) |
+| `basalt-receipt.1\n` | Engine signing key | A receipt's payload bytes ([Receipts](#receipts)) |
+| `basalt-engine-box-key.1\n` | Engine signing key | The engine id and the box key's public key |
+| `basalt-engine-rotate.1\n` | The previous signing key | The new keys ([Engine keys](#engine-keys), rotation) |
+
+### Engine keys
+
+- **Two keys (VC-5).** A **signing key** (ECDSA P-256) and a **box key** (ECDH P-256, used from Phase 1b; made now so the key file keeps its shape). Neither does the other's job. The box key's public key is signed by the signing key (`basalt-engine-box-key.1\n` + `engineId` + `\n` + box key SPKI).
+- **Engine id** = base64url of the first 16 bytes of `sha256(signing key SPKI DER)`: 22 characters. It is self-certifying (anyone holding the key can check it; nobody can claim another engine's id) and a key fingerprint, not a UUIDv7. **Shown to people** as its first 16 characters in four groups of four, separated by spaces (`AbCd EfGh IjKl MnOp`), next to the agent name: in `status`, `basalt status`, and on every portal page with a session, so the person can compare.
+- **When made (VC-36, provisional).** On the engine's first start, whatever `vault` says: receipts need the signing key on every path, the local pages and the CLI included. A missing file is created.
+- **Storage.** `<stateDir>/channel.json` ([`channel-key-file.schema.json`](api/mcp/vault/channel-key-file.schema.json)): mode `0600`, owned by the engine's OS user (as `<agent>.links.json` and the credential file), written atomically (a temporary file in the same directory, `fsync`, rename). Private keys are PKCS#8 DER. No key material goes anywhere else: not to logs, `engine.json`, `status`, the ledger or the Vault. No OS keychain (as M51-1).
+- **Refused, never replaced (VC-36).** A key file that grants group or other access, is owned by another user, cannot be read, fails its schema, whose `engineId` is not its signing key's or whose `boxKeySig` does not verify is left as it is. The engine then serves MCP and the local pages as usual, does not connect to the Vault, hands over long links instead of portal short links, signs no receipt (the result says why), and `status` reports `vault.state` `KEY_ERROR`. The fix is to correct the file's owner and mode, or `basalt engine rotate-key`. (The links file is replaced instead, because a new link costs nothing; new keys change the engine id the person may have compared, and from M4.1 pinned.)
+- **Who can read it.** Whoever can read the agent's credential file: in same-user mode (`GUARD_ONLY`) and with `operatedBy` `AGENT`, the agent. A leaked key lets its holder pose as the engine to the Vault and sign receipts in its name. It reads no session without that session's link secret and approves nothing: only the person's passkey signs, and Postgres verifies it.
+- **Rotation (VC-40, provisional).** `basalt engine rotate-key [--config PATH] [--yes]` makes both keys again (a new engine id). When the old file is valid, it signs `basalt-engine-rotate.1\n` + old `engineId` + `\n` + new signing key SPKI + `\n` + new box key SPKI + `\n` + `at` with the old key and keeps it as `rotatedFrom` (the latest rotation only; the old private key is deleted). Then it revokes every outstanding short link of every agent (their `psk` sat next to the old key), unregisters their tokens, closes open sessions with `ENGINE_SHUTDOWN` and reconnects under the new id. An agent gets new links with `list_pending` and `reissueLink: true`. Rotation is never automatic. A `KEY_ERROR` file is rotated without a statement.
+- **Revocation by the person (M4.1, VC-21).** Recording the engine key in `basalt_meta`, and its revocation, are VCT-1's contract. This contract fixes the engine's side: an engine that finds its key revoked closes every session with `ENGINE_REVOKED`, unregisters its links, leaves the Vault, and reports it in `status`.
+
+### Link secrets in a session
+
+The short link is unchanged ([Link secrets](#link-secrets)): `https://portal.basaltvault.app/approvals/<approvalId>#s=<secret>` and `…/reverts/<revertId>#s=<secret>`. The page tells the transport by its own origin: same-origin `fetch` on the engine's local pages, the Vault on the portal (VC-25: the portal never calls `localhost`). With `s` the 16 bytes the 22-character secret decodes to (VC-9):
+
+- `linkToken` = HKDF-SHA-256(ikm `s`, salt empty, info `basalt-vault-link.1`, 16 bytes), base64url: 22 characters. The Vault's routing key for the link.
+- `psk` = HKDF-SHA-256(ikm `s`, salt empty, info `basalt-vault-psk.1`, 32 bytes): the session's pre-shared key.
+
+Neither reveals `s` and neither gives the other. The engine keeps `linkToken` and `psk` per item in `<agent>.links.json` next to `sha256(secret)`, with the same expiry, the same one-live-link rule, and constant-time comparison. The page derives both from `location.hash` and never sends `s` or `psk` to the Vault: the socket path carries `linkToken` only, and the secret itself travels only inside the encrypted session, as `basalt-link-secret`.
+
+### Handshake
+
+`Noise_NNpsk0_P256_AESGCM_SHA256`, from the Noise Protocol Framework (revision 34), with an engine signature in the second payload (VC-32, provisional; design 6.1). The page is the initiator, the engine the responder.
+
+- **Functions.** `DH`: P-256, 65-byte public keys, 32-byte x-coordinate output (`DHLEN` 32). `HASH`: SHA-256. `HKDF`: Noise's (HMAC-SHA-256; the same as RFC 5869 with empty info, and implemented with HMAC so a zero-length input key works in WebCrypto). Cipher: AES-256-GCM with Noise's nonce, 4 zero bytes followed by the 64-bit big-endian counter. The protocol name is 31 bytes, so `h` starts as the name padded with zero bytes to 32, and `ck` = `h`.
+- **Prologue** = UTF-8 of `basalt-vault-prologue.1\n` + transport (`RELAY` or `DIRECT`) + `\n` + `linkToken`. Each side builds it from what it knows itself (the page from its transport and its link; the engine from the socket the session came on and the token it looked up), so a session moved to another link or transport fails.
+- **Message 1, page to engine** (`psk, e`): exactly 99 bytes, `0x01` (version) ‖ `0x01` (type `HELLO`) ‖ `linkToken` (16 raw bytes) ‖ `e` (65 bytes) ‖ `EncryptAndHash` of the empty payload (the 16-byte tag). With `psk0`, that tag is under a key derived from `psk`: the page proves it holds the link before the engine does any public-key work.
+- **The engine on message 1**, in order: look `linkToken` up (on `RELAY` it must equal `SESSION_OPEN`'s); the [limits](#limits); check `e` is a valid point (`HANDSHAKE_FAILED`); check the tag. A token it does not hold, a link expired or revoked, a different `SESSION_OPEN` token, or a failing tag all close with `LINK_REFUSED`, alike, as a wrong secret answers today.
+- **Message 2, engine to page** (`e, ee`): `0x01` ‖ `0x02` (type `WELCOME`) ‖ `e` (65 bytes) ‖ `EncryptAndHash` of the payload, at most 1 024 bytes in all. The payload is UTF-8 JSON, [`handshake-payload.schema.json`](api/mcp/vault/handshake-payload.schema.json): `{ "engineKey": <SPKI, base64url>, "sig": <base64url> }`, where `sig` signs `basalt-vault-session-sig.1\n` followed by the 32 raw bytes of `h` after the `e` and `ee` tokens (before the payload is hashed in).
+- **The page on message 2.** Check `e` is a valid point, decrypt, parse the closed schema, verify `sig` over the same `h` with `engineKey`, and compute the engine id from `engineKey`. On `DIRECT`, compare it with the pinned key (VCT-1). Any failure closes with `HANDSHAKE_FAILED` and shows nothing from the engine.
+- **Split.** `Split()` gives `k1` (page to engine) and `k2` (engine to page), each with its own counter from 0. Both sides erase the ephemeral private keys and `ck`. The final `h` may be logged as the session id; keys never are.
+
+What this gives against the Vault and anyone on the path:
+
+- **Confidentiality and integrity.** Every key depends on `psk` (from the link secret, which the Vault never sees) and on the ephemeral-ephemeral DH. The Vault cannot read or change a session or pretend to be either side.
+- **Authentication by the link.** Only holders of `s` (the engine that issued the link, and whoever holds the link) can make message 1's tag or a message 2 the page accepts. The signature binds the session to the engine's identity key, for the fingerprint on the page, receipts and `DIRECT` pinning.
+- **Transcript binding.** `h` covers the prologue (version, transport, `linkToken`), both ephemeral keys and both payloads; the signature covers `h`; `Split` derives from the whole chain.
+- **Forward secrecy.** A later leak of the link secret, the links file or the engine's key does not open a recorded session.
+- **Replay.** A replayed message 1 meets a fresh engine ephemeral key and leads nowhere: the replayer lacks the page's ephemeral private key, so it can neither read message 2 nor send a frame. A replayed message 2 fails against the page's fresh key. Within a session, implicit counters refuse replays ([Frames](#frames)); across sessions, Postgres refuses a used approval or revert ([Replay and expiry](#replay-and-expiry)).
+
+### Frames
+
+After the handshake, every binary WebSocket message either way is one frame: `0x01` (version) ‖ `0x03` (type `FRAME`) ‖ AES-256-GCM ciphertext, made with Noise's `EncryptWithAd` under the direction's key and counter, with the two header bytes as associated data (VC-33, provisional). The nonce is the receiver's own count, never sent, so a frame dropped, repeated, reordered, reflected to its sender or taken from another session does not decrypt: the receiver closes with `FRAME_INVALID` and drops the session. There is no rekey; the limits end a session long before a counter could wrap. A text message, or a binary message with another header, closes with `PROTOCOL` (an unknown version with `UNSUPPORTED_VERSION`).
+
+**Padding (VC-34, provisional; design 6.2).** The plaintext is `len` (4 bytes, big-endian) ‖ content (`len` bytes) ‖ zero bytes up to `max(1024, the next power of two ≥ 4 + len)` bytes, at most 65 536. A receiver refuses (`FRAME_INVALID`) a plaintext of any other size for its `len`, or with a non-zero padding byte. Sizes on the wire are then 1 024, 2 048, … 65 536 bytes plus 18, so they leak a bucket, not a row count.
+
+**Content** is UTF-8 JSON, one of [`frame-message.schema.json`](api/mcp/vault/frame-message.schema.json):
+
+- `REQUEST`, page to engine: `{ "type", "id", "method", "path", "headers", "body", "more" }`.
+- `RESPONSE`, engine to page: `{ "type", "id", "status", "headers", "body", "more" }`.
+- `CONTINUE`, either way: `{ "type", "id", "body", "more" }`, the next piece of a body.
+
+`body` is text (the pages API speaks JSON). A body too large for one frame continues in `CONTINUE` frames, appended in order up to the one with `more: false`. A message is acted on only once that frame arrives, so a truncated message is never used: the page times out and shows nothing. `id` is 1 for a session's first request and one more for each next one; a response and its continuations carry the request's `id`. One request is in flight at a time: a `REQUEST` before the previous response ended closes with `PROTOCOL`.
+
+**Requests.**
+
+- **Routes.** Only these are dispatched; any other method or path is answered `404 NOT_FOUND` with the same body as an unknown id:
+  - `GET /api/v1/approvals/{approvalId}` and `POST /api/v1/approvals/{approvalId}/approve`;
+  - `GET /api/v1/reverts/{revertId}` and `POST /api/v1/reverts/{revertId}/apply`;
+  - reserved, each when its own contract lands: the passkey check and forget routes (a passkey page that reads from the engine gets a short link, [Link secrets](#link-secrets)), and after M4 (VC-27) `GET /api/v1/setups/{setupId}` and `POST /api/v1/setups/{setupId}/done`.
+
+  Never the `…/links` issuing routes, `/healthz`, the pages or their scripts.
+- **One item per session.** The path's id must be the item of the session's link, and `basalt-link-secret` must be that link's secret (its `sha256` and its `linkToken` both match). Otherwise `404 NOT_FOUND`.
+- **Headers**, lowercase. A request carries `basalt-link-secret` and `origin` (`https://portal.basaltvault.app`), and on `POST` `content-type: application/json`. A response carries `content-type`. Any other header in a request is answered `400 INVALID_ARGUMENT`.
+- **Dispatch.** The engine hands the request to the same handlers as on loopback, with the same checks, statuses and JSON bodies ([Local pages](#local-pages)): `NOT_FOUND` 404, `APPROVAL_EXPIRED` or `REVERT_EXPIRED` 410, `APPROVAL_INVALID` or `REVERT_INVALID` 409, `INVALID_ARGUMENT` 400, 413 over 16 KiB, 415, 403 for a wrong `origin`. The `approve` and `apply` responses also carry `receipt` ([Receipts](#receipts)).
+
+### Receipts
+
+A statement signed by the engine of what a relayed signature did (VC-22, mitigation 5; built in VC1-17; VC-38, provisional). Token: `basalt-receipt.1.<payload>.<sig>`.
+
+- `payload`: base64url of UTF-8 JSON, [`receipt.schema.json`](api/mcp/vault/receipt.schema.json): `format` (1), `kind` (`APPROVAL` or `REVERT`), `itemId`, `status` (`APPROVED`; `APPLIED` or `APPLYING`), `headline`, `agent`, `engineId`, `at`, and `changeId` when there is one.
+- `sig`: over `basalt-receipt.1\n` followed by the payload's decoded bytes. Signing exact bytes means no one needs canonical JSON.
+- **Checking one:** the signature against the engine key first, then `engineId` against that key, then parse.
+- `headline` is built from Postgres's record of the item, never from what the page sent, so a page that made the person sign another item than the one shown is caught when the receipt names the real one.
+- **Where:** the relay responses (`receipt`, on loopback and in a session). The page shows it with the engine fingerprint. In tool results (`write` with `approval`, `request_revert` with `signature`) it comes with VC1-17's own tool-schema change, with a `personMessage` the agent shows as it is.
+
+### The engine's socket to the Vault
+
+`wss://relay.basaltvault.app/v1/engines/<engineId>`, compiled into the binary (as the page origins are, CO-8). `vaultUrl` in `engine.json` overrides it for development and tests only, and only with a `ws://` URL on a loopback address (`127.0.0.1`, `[::1]` or `localhost`); anything else is refused when the config is loaded. The engine connects only when `vault` is `ON` and `pagesUrl` is the portal: a passkey with RP ID `localhost` cannot sign on the portal.
+
+1. **Open**, with the header `basalt-engine-key: <signing key SPKI, base64url>`. The Vault refuses (`AUTH_FAILED`) a key that is not a valid P-256 SPKI or does not hash to the path's `engineId`.
+2. **Challenge.** The Vault sends `CHALLENGE` with 32 random bytes: fresh per socket, single use, valid 30 seconds.
+3. **Auth.** The engine answers `AUTH` with `version` 1 and `sig` over `basalt-vault-engine.1\n` + challenge (as sent, base64url) + `\n` + host, where host is the engine's own Vault host (`relay.basaltvault.app`, or the override's `host:port`), never one the Vault names. A bad or late answer: `AUTH_FAILED`.
+4. **Ready.** The Vault sends `READY`. One live socket per engine id: a newer authenticated socket replaces the older, which is closed with `REPLACED`. After every `READY` the engine registers every live link again (registering is idempotent for the same engine), so a Vault that lost its state recovers.
+
+Control messages are text messages, JSON per [`control-message.schema.json`](api/mcp/vault/control-message.schema.json), at most 4 KiB. Session bytes are binary `ROUTE` messages: `0x01` ‖ `0x10` (type `ROUTE`) ‖ `sid` (16 bytes) ‖ the page's message exactly as received, or the engine's message for the page.
+
+| Message | Direction | Fields | Meaning |
+|---|---|---|---|
+| `REGISTER_LINK` | engine to Vault | `ref`, `linkToken`, `expiresAt` | Route page sockets for this token to me until `expiresAt` (at most 24 hours and 5 minutes ahead) |
+| `UNREGISTER_LINK` | engine to Vault | `ref`, `linkToken` | Stop routing it, and close its page sockets with `LINK_UNKNOWN` |
+| `OK` | Vault to engine | `ref` | Request `ref` succeeded |
+| `ERROR` | Vault to engine | `ref` (when it answers one), `code` | `LINK_CONFLICT` (another engine registered the token), `LINK_LIMIT` (too many live links), `INVALID_EXPIRY`, `UNKNOWN_SESSION`, `RATE_LIMITED`, `PROTOCOL` |
+| `SESSION_OPEN` | Vault to engine | `sid`, `linkToken` | A page connected for the token; its message 1 follows as a `ROUTE` |
+| `SESSION_CLOSE` | either way | `sid`, `code` | The session ended (1000, or a [close code](#close-codes)); the Vault closes the page's socket with the same code |
+
+`ref` is a positive integer the engine picks, unique among its requests waiting for an answer; `sid` is 16 random bytes the Vault picks per page socket (base64url in JSON). **No control message is trusted:** a forged `SESSION_OPEN` costs one refused handshake; a forged `OK` gives a link the page cannot reach (the person asks for the link again, which falls back if the Vault keeps failing); a forged `SESSION_CLOSE` or `ERROR` ends a session or a registration. None can open a session, read one or make the engine act on a request.
+
+- **Reconnecting (VC-2).** Exponential backoff from 1 to 60 seconds with full jitter, reset after `READY`. A WebSocket ping every 30 seconds; no pong for 90 seconds closes and redials.
+- **Registering a link (VC-15, design 6.5).** Before handing over a portal short link, the engine sends `REGISTER_LINK` and waits up to 5 seconds for `OK`. With no socket, an `ERROR` or no answer, it hands over the long link under the [link budget](#the-link-budget) rules instead, and the short link is not issued. `status` shows the socket's state.
+- **Unregistering.** Reissuing a link unregisters the old token first; a link that expires or is revoked is unregistered then, and its open sessions are closed with `LINK_REFUSED`. The Vault also drops a token at its `expiresAt` by itself.
+
+### The page's socket
+
+`wss://relay.basaltvault.app/v1/links/<linkToken>`, opened by a portal page (the Vault refuses another `Origin` with `PROTOCOL`; a check against other sites' pages, not a security boundary). The Vault closes with `LINK_UNKNOWN` when no engine registered the token or it expired, and with `ENGINE_OFFLINE` when its engine has no socket. Otherwise it sends `SESSION_OPEN` to the engine and forwards every binary message both ways unchanged and in order, as `ROUTE` messages on the engine's side. A text message from the page closes with `PROTOCOL`. When one side ends, the Vault closes the other with the same code.
+
+The page sends nothing but handshake message 1 and frames; it keeps no state between sessions (no storage in Phase 1a) and never holds a key past its session.
+
+### Close codes
+
+WebSocket close codes, with the name as the close reason. Registry: [`close-codes.json`](api/mcp/vault/close-codes.json), checked against this table by the contract test. A code that comes from the Vault only decides what the page shows; nothing else trusts it (VC-39, provisional). What the page shows: link gone (the link expired, was replaced or is incomplete, and how to get a new one, as the loopback `NOT_FOUND` reason `LINK`), engine offline (ask the agent to check `status`, or use the long link), broken (nothing was accepted; open the link again), or try later.
+
+| Code | Name | Sent by | When | The page shows |
+|---|---|---|---|---|
+| 4000 | `PROTOCOL` | page, engine, Vault | A message out of place or malformed (text for binary, unknown type, content that fails its schema, a second request in flight, a foreign `Origin`) | broken |
+| 4001 | `UNSUPPORTED_VERSION` | page, engine, Vault | A version byte or `AUTH` version other than 1 | broken |
+| 4002 | `AUTH_FAILED` | Vault | Engine socket: a bad `basalt-engine-key`, or a bad or late `AUTH` | (engine only) |
+| 4003 | `REPLACED` | Vault | Engine socket: a newer authenticated socket for the same id | (engine only) |
+| 4004 | `LINK_UNKNOWN` | Vault | No engine registered the token, it expired, or it was unregistered | link gone |
+| 4005 | `ENGINE_OFFLINE` | Vault | The token's engine has no socket | engine offline |
+| 4006 | `LINK_REFUSED` | engine | Message 1 for a link the engine does not hold, expired, revoked, with another token than `SESSION_OPEN`'s, or a failing tag, all alike; also open sessions of a link revoked or expired | link gone |
+| 4007 | `HANDSHAKE_FAILED` | page, engine | An invalid ephemeral key; message 2 that does not decrypt, fails its schema or its signature; on `DIRECT`, an engine key other than the pinned one | broken |
+| 4008 | `FRAME_INVALID` | page, engine | A frame that does not decrypt with the next counter, or with non-canonical padding | broken |
+| 4009 | `TOO_LARGE` | page, engine, Vault | A message over its [limit](#limits), or a response body over 16 MiB | broken |
+| 4010 | `RATE_LIMITED` | engine, Vault | Too many handshakes for a link, requests in a session, or connections at the Vault | try later |
+| 4011 | `SESSION_LIMIT` | engine, Vault | Too many open sessions for the link or the engine | try later |
+| 4012 | `TIMEOUT` | page, engine, Vault | The handshake took over 10 seconds, the session was idle 5 minutes, or it reached 30 minutes or its link's expiry | try later |
+| 4013 | `ENGINE_REVOKED` | engine | The engine's key is revoked in the person's database (M4.1) | engine offline |
+| 4014 | `ENGINE_SHUTDOWN` | engine | The engine is stopping, or rotated its keys | engine offline |
+
+A page that ends a session normally closes with 1000. A refusal inside a session that leaves it usable (`404`, `409`, `410`, `413`) is an HTTP status in a `RESPONSE`, not a close.
+
+### Limits
+
+Enforced by the engine and the page (VC-35, provisional). The Vault must carry messages up to these sizes, and may apply lower rates of its own (private numbers), never lower sizes. Rate checks come before any public-key operation.
+
+| Limit | Value | Over it |
+|---|---|---|
+| Handshake message 1 | exactly 99 bytes | `PROTOCOL` |
+| Handshake message 2 | at most 1 024 bytes | `TOO_LARGE` |
+| Frame | at most 65 554 bytes (65 536 of padded plaintext, 2 of header, 16 of tag) | `TOO_LARGE` |
+| `ROUTE` message on the engine's socket | at most 65 572 bytes (a frame plus 18) | `TOO_LARGE` |
+| Control message | at most 4 KiB | `TOO_LARGE` |
+| Request body | at most 16 KiB, as on loopback | `413` |
+| Response body | at most 16 MiB | `TOO_LARGE` (page) |
+| Handshake time | 10 seconds from `SESSION_OPEN` (engine) or from opening the socket (page) | `TIMEOUT` |
+| Idle session | 5 minutes without a frame | `TIMEOUT` |
+| Session lifetime | 30 minutes, and never past the link's expiry | `TIMEOUT` |
+| Requests per session | 64 | `RATE_LIMITED` |
+| Open sessions per link | 4 | `SESSION_LIMIT` |
+| Open sessions per engine | 64 | `SESSION_LIMIT` |
+| Handshakes per link | 20 per 10 minutes | `RATE_LIMITED` |
+| Live links the Vault accepts per engine | at least 1 000 | `ERROR` `LINK_LIMIT`; the engine hands over the long link |
+
+### Replay and expiry
+
+- Session keys are fresh per session; counters refuse replays within one ([Handshake](#handshake), [Frames](#frames)).
+- An approval is single-use in Postgres, a revert is applied once, and both expire (24 hours; one hour for an unsigned revert). A replayed signature is refused by Postgres (`APPROVAL_INVALID`, `REVERT_INVALID`) whatever carried it (design 6.3).
+- A reissued link revokes the old one at the engine (its `psk` deleted, its token unregistered, its sessions closed with `LINK_REFUSED`). An expired link goes the same way, and the Vault drops its token at `expiresAt` on its own.
+- A restarted engine keeps its links (the links file) but no session; it registers its links again after `READY`.
+
+### What the Vault sees
+
+**Sees (metadata only, VC-4):** engine ids and their public keys; when each engine is connected and from which IP address; link tokens, when they are registered, used and unregistered, and their expiry; page IP addresses and user agents; how many sessions and frames, their padded sizes and timing; close codes. **Never sees:** link secrets, `psk`s or session keys; item ids, rows, statements, headlines, signatures, receipts, results; any database credential; any private key. (The portal's static host sees the page path `/approvals/<id>`, an id the contract already treats as not secret.)
+
+**What the Vault must do** (tested against the Go fake Vault, VC1-4, and attacked by a hostile one, VC1-12): forward session bytes unchanged and in order; keep one engine's sessions apart from each other and from other engines'; route a token only to the engine that registered it first, and refuse another engine's registration (`LINK_CONFLICT`); drop tokens at their expiry; accept the sizes above; send fresh single-use challenges; never log session bytes. Retention (VC-24): connection metadata at most 7 days. Nothing in the engine or the page relies on any of these: each is about service and privacy, not about what gets accepted.
+
+### Configuration and status
+
+- **`vault`** in `engine.json`: `ON` or `OFF` (VC-19), set by `basalt init --vault=on|off`: `on` by default with `--operated-by=agent` or when installed through a Vault-driven setup, `off` otherwise; init prints the value it chose and why (`vault: on (default for --operated-by=agent; --vault=off to turn it off)`). `--vault=on` with a local pages origin is a usage error (exit `2`), for the passkey reason above. `vaultUrl`: the development override above.
+- **`status`** gains `vault` ([`status.json`](api/mcp/tools/status.json)): `state` (`OFF`, `CONNECTING`, `CONNECTED`, `UNREACHABLE` after 30 seconds without `READY`, `KEY_ERROR`), `engineId` and `fingerprint` whenever the key file loads. `basalt status` prints the same. No state is a problem: approvals work in all of them, through long links when the Vault is not there.
+- **Links** follow the [link budget](#the-link-budget)'s order: the portal short link when the Vault registered it, else the long link.
+
+### Direct transport (reserved)
+
+M4.1 (VC-16, VCT-1). The page reaches the engine's own listener through the person's tunnel at the address the person pinned, and runs this same handshake and these frames with transport `DIRECT` in the prologue; message 1 still carries `linkToken`, which tells the engine the link. The page compares `engineKey` with the key pinned for that address. The route (`GET /v1/session`), its Host and Origin rules, the pinned address, the CSP and the engine key in `basalt_meta` are VCT-1's contract. A tunnel that ends TLS sees only ciphertext.
+
+### Test vectors
+
+Shared files under `api/mcp/vault/testdata/` (VC1-2), each one kind, in the format of [`vectors.schema.json`](api/mcp/vault/vectors.schema.json): `LINK_DERIVATION`, `ENGINE_ID`, `PADDING`, `HANDSHAKE`, `FRAME`, `SIGNATURE` (every context above) and `RECEIPT`. Each case says what a receiver must do (`ACCEPT`, `REFUSE`, or a close code), so the refusals are pinned too: a tampered tag, a wrong `psk`, an invalid point, a compressed key, a reflected, replayed or reordered frame, non-zero padding, a signature from another context. Go tests and `node --test` read the same files; a mismatch fails `make ci`. Private keys are fixed 32-byte scalars so the bytes are reproducible; ECDSA signatures are randomized, so a vector pins one valid signature and a writer under test uses it instead of signing.
+
+The Vault service's own vectors and tests live with it, privately.
 
 ## `basalt_meta`
 

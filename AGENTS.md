@@ -31,7 +31,7 @@ scripts/       release and packaging scripts
 - Agents never approve and never revert. Approve and revert require a P-256 passkey signature verified **inside Postgres**.
 - If the guard cannot record or evaluate an agent's write, that write fails. Writes by people and the app are never blocked.
 - The admin credential is used once by `basalt init` and never stored. The engine holds only the agent's scoped credential.
-- Out of scope until after M4 (do not build): observe mode, logical replication, custom policies, the `changes` feed, sinks, webhooks, a web viewer beyond the approval and revert pages, other stores, Vault, any hosted service.
+- Out of scope until after M4 (do not build): observe mode, logical replication, custom policies, the `changes` feed, sinks, webhooks, a web viewer beyond the approval and revert pages, other stores, Vault, any hosted service. One narrow exception in M3.5 (owner decision VC-1): the Vault relay at `relay.basaltvault.app`, which only forwards end-to-end encrypted link sessions between an engine and the portal page, stores no plaintext, credentials or ledger, has no accounts, and is never required (approvals fall back to long links). Its protocol is [CONTRACT.md, Vault channel](CONTRACT.md#vault-channel); the service itself is closed source and not in this repository.
 
 ## Wire format
 
@@ -88,6 +88,7 @@ Read **this file before implementing**; do not introduce conventions that confli
 ## Listeners and local sockets
 
 - The engine serves agents over a **Unix socket per agent**; the agent is identified by the socket plus the peer OS user. Socket files and the credential file are readable only by the engine's OS user (and the socket by the agent's user where needed).
+- The engine's one outbound connection is its WebSocket to the Vault (M3.5, CONTRACT.md, Vault channel), only when `vault` is `ON`. Nothing the Vault sends is trusted: it may make a session fail, never make the engine accept anything.
 - Any HTTP listener (the approval and revert pages, when served locally) defaults to loopback. Host-empty addresses (`:8080`, `0.0.0.0`, `::`) bind every interface. Plaintext on a non-loopback bind is **refused** unless TLS cert and key are set or the operator explicitly opts in to insecure plaintext. Hostnames (including `localhost`) are not trusted by name: policy is the address actually bound. Listen policy uses the bind address only; it never trusts `X-Forwarded-For`, `Forwarded` or `X-Real-IP`.
 - Pages apply the `websec` Host, Origin and security-header hardening.
 - Custom HTTP headers use the lowercase **`basalt-`** prefix; do **not** register new **`X-`** headers. Keep standard names unchanged.

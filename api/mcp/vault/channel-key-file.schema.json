@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/vault-channel-key-file.v1.json",
+  "title": "Engine key file",
+  "description": "<stateDir>/channel.json: the engine's signing key and box key. Mode 0600, owned by the engine's OS user, written atomically. A file that fails this schema, whose engineId does not match signingKey, or whose boxKeySig does not verify is never replaced: the channel stays off and status reports vault.state KEY_ERROR. See CONTRACT.md, Vault channel, Engine keys.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "engineId", "createdAt", "signingKey", "boxKey", "boxKeySig"],
+  "properties": {
+    "format": {
+      "type": "integer",
+      "const": 1
+    },
+    "engineId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$",
+      "description": "base64url of the first 16 bytes of sha256(signing public key, SPKI DER)."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When these keys were made (RFC 3339 UTC)."
+    },
+    "signingKey": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "description": "The ECDSA P-256 private key, PKCS#8 DER, base64url without padding. Signs only the contexts listed in CONTRACT.md, Vault channel, Primitives and encodings."
+    },
+    "boxKey": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "description": "The ECDH P-256 private key, PKCS#8 DER, base64url without padding. Used only for ECDH (Phase 1b envelopes)."
+    },
+    "boxKeySig": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{86}$",
+      "description": "Signature (64 bytes r||s, base64url) by the signing key over \"basalt-engine-box-key.1\\n\" + engineId + \"\\n\" + box public key SPKI base64url."
+    },
+    "rotatedFrom": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["engineId", "signingKey", "at", "sig"],
+      "description": "The latest rotation, present when the old key file was valid at basalt engine rotate-key. The old private key is not kept.",
+      "properties": {
+        "engineId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{22}$",
+          "description": "The old engine id."
+        },
+        "signingKey": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{122}$",
+          "description": "The old signing public key, SPKI DER, base64url."
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the rotation happened; part of the signed statement."
+        },
+        "sig": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{86}$",
+          "description": "Signature by the old key over \"basalt-engine-rotate.1\\n\" + old engineId + \"\\n\" + new signing key SPKI + \"\\n\" + new box key SPKI + \"\\n\" + at (keys base64url)."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/vault-control-message.v1.json",
+  "title": "Engine socket control message",
+  "description": "A text WebSocket message on the engine's socket to the Vault (wss://relay.basaltvault.app/v1/engines/<engineId>), at most 4 KiB. Session bytes never travel here: they are binary ROUTE messages. Nothing here is authenticated end to end; the engine treats every Vault message as untrusted. A message that is not one of these shapes closes the socket with PROTOCOL. See CONTRACT.md, Vault channel, The engine's socket to the Vault.",
+  "oneOf": [
+    { "$ref": "#/$defs/challenge" },
+    { "$ref": "#/$defs/auth" },
+    { "$ref": "#/$defs/ready" },
+    { "$ref": "#/$defs/registerLink" },
+    { "$ref": "#/$defs/unregisterLink" },
+    { "$ref": "#/$defs/ok" },
+    { "$ref": "#/$defs/error" },
+    { "$ref": "#/$defs/sessionOpen" },
+    { "$ref": "#/$defs/sessionClose" }
+  ],
+  "$defs": {
+    "challenge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "challenge"],
+      "description": "Vault to engine, first message on a new socket.",
+      "properties": {
+        "type": { "type": "string", "enum": ["CHALLENGE"] },
+        "challenge": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$",
+          "description": "32 random bytes, base64url; single use, valid 30 seconds."
+        }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "version", "sig"],
+      "description": "Engine to Vault, answering CHALLENGE.",
+      "properties": {
+        "type": { "type": "string", "enum": ["AUTH"] },
+        "version": { "type": "integer", "const": 1 },
+        "sig": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{86}$",
+          "description": "ECDSA P-256 (r||s, base64url) by the engine's signing key over \"basalt-vault-engine.1\\n\" + challenge + \"\\n\" + host, host being the engine's own Vault host."
+        }
+      }
+    },
+    "ready": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "description": "Vault to engine: authenticated; the engine now registers every live link again.",
+      "properties": {
+        "type": { "type": "string", "enum": ["READY"] }
+      }
+    },
+    "registerLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "ref", "linkToken", "expiresAt"],
+      "description": "Engine to Vault: route page sockets for linkToken to this engine until expiresAt. Idempotent for the same engine.",
+      "properties": {
+        "type": { "type": "string", "enum": ["REGISTER_LINK"] },
+        "ref": { "$ref": "#/$defs/ref" },
+        "linkToken": { "$ref": "#/$defs/linkToken" },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The link's expiry; the Vault refuses one more than 24 hours and 5 minutes ahead (INVALID_EXPIRY) and drops the token at that time."
+        }
+      }
+    },
+    "unregisterLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "ref", "linkToken"],
+      "description": "Engine to Vault: stop routing linkToken and close its open page sockets with LINK_UNKNOWN.",
+      "properties": {
+        "type": { "type": "string", "enum": ["UNREGISTER_LINK"] },
+        "ref": { "$ref": "#/$defs/ref" },
+        "linkToken": { "$ref": "#/$defs/linkToken" }
+      }
+    },
+    "ok": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "ref"],
+      "description": "Vault to engine: the request ref succeeded.",
+      "properties": {
+        "type": { "type": "string", "enum": ["OK"] },
+        "ref": { "$ref": "#/$defs/ref" }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "code"],
+      "description": "Vault to engine: the request ref failed, or (without ref) the last message was refused.",
+      "properties": {
+        "type": { "type": "string", "enum": ["ERROR"] },
+        "ref": { "$ref": "#/$defs/ref" },
+        "code": {
+          "type": "string",
+          "enum": ["LINK_CONFLICT", "LINK_LIMIT", "INVALID_EXPIRY", "UNKNOWN_SESSION", "RATE_LIMITED", "PROTOCOL"],
+          "description": "LINK_CONFLICT: another engine registered the token. LINK_LIMIT: too many live links for this engine. INVALID_EXPIRY: expiresAt past or too far ahead. UNKNOWN_SESSION: a ROUTE or SESSION_CLOSE for a sid the Vault does not know. RATE_LIMITED: too many requests. PROTOCOL: malformed."
+        }
+      }
+    },
+    "sessionOpen": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "sid", "linkToken"],
+      "description": "Vault to engine: a page connected to /v1/links/<linkToken>. Its handshake message 1 follows as a ROUTE message.",
+      "properties": {
+        "type": { "type": "string", "enum": ["SESSION_OPEN"] },
+        "sid": { "$ref": "#/$defs/sid" },
+        "linkToken": { "$ref": "#/$defs/linkToken" }
+      }
+    },
+    "sessionClose": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "sid", "code"],
+      "description": "Either way: the session ended. The Vault closes the other side's socket with the same code.",
+      "properties": {
+        "type": { "type": "string", "enum": ["SESSION_CLOSE"] },
+        "sid": { "$ref": "#/$defs/sid" },
+        "code": {
+          "type": "integer",
+          "description": "1000 (normal) or a code of close-codes.json."
+        }
+      }
+    },
+    "ref": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991,
+      "description": "Picked by the engine, unique among its requests still waiting for an answer."
+    },
+    "sid": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$",
+      "description": "16 random bytes chosen by the Vault per page socket, base64url; the same 16 bytes head every ROUTE message of that session."
+    },
+    "linkToken": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$",
+      "description": "HKDF-SHA-256(link secret, empty salt, info basalt-vault-link.1, 16 bytes), base64url."
+    }
+  }
+}

@@ -1,0 +1,138 @@
+{
+  "name": "list_runs",
+  "status": "PLANNED",
+  "milestone": "M4.1",
+  "description": "This agent's own runs, newest first, with what each did: its intent, when it started, how many changes it applied, held, had refused or saw reverted, the rows it wrote and the tables it wrote to. Use it to find the run the person means (\"what you did yesterday on leads\") before run_history, preview_revert and request_revert. Without startTime or endTime you get the newest runs; you do not have to ask the person for a period. startTime and endTime filter on the run's start. Only runs of this agent are listed. Cursor-paginated.",
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "startTime": {
+        "type": "string",
+        "format": "date-time",
+        "description": "Only runs that started at or after this time (RFC 3339)."
+      },
+      "endTime": {
+        "type": "string",
+        "format": "date-time",
+        "description": "Only runs that started before this time (RFC 3339). Must be after startTime when both are given."
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Page size, default 50, clamped to 200."
+      },
+      "cursor": {
+        "type": "string",
+        "description": "nextCursor from the previous page."
+      },
+      "sort": {
+        "type": "string",
+        "pattern": "^-?id$",
+        "description": "id or -id. Default -id (newest first; run ids are time-ordered)."
+      }
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "items"
+    ],
+    "properties": {
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "runId",
+            "taskId",
+            "intent",
+            "startedAt",
+            "applied",
+            "held",
+            "refused",
+            "reverted",
+            "reads",
+            "rowsWritten",
+            "tables"
+          ],
+          "properties": {
+            "runId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "taskId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "intent": {
+              "type": "string"
+            },
+            "startedAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "lastChangeAt": {
+              "type": "string",
+              "format": "date-time",
+              "description": "When the run's latest change record (read or write) was made. Absent for a run with none."
+            },
+            "applied": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Writes applied (status APPLIED, op INSERT, UPDATE or DELETE)."
+            },
+            "held": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Writes still waiting for the person's approval (APPROVAL_PENDING)."
+            },
+            "refused": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Actions refused (REFUSED)."
+            },
+            "reverted": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Writes reverted in full (REVERTED). A partly reverted write counts as applied; run_history shows its revertedBy."
+            },
+            "reads": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Reads recorded in the run (op SELECT)."
+            },
+            "rowsWritten": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Rows written by the applied and reverted writes, cascaded rows included."
+            },
+            "tables": {
+              "type": "array",
+              "maxItems": 10,
+              "items": {
+                "type": "string"
+              },
+              "description": "Tables the run wrote to (schema.table), at most 10, in name order."
+            },
+            "tablesTruncated": {
+              "type": "boolean",
+              "description": "True when the run wrote to more than 10 tables; run_history has them all."
+            }
+          }
+        }
+      },
+      "nextCursor": {
+        "type": "string",
+        "description": "Absent on the last page."
+      }
+    }
+  },
+  "errors": [
+    "INVALID_ARGUMENT",
+    "UNAVAILABLE",
+    "INTERNAL"
+  ]
+}

@@ -1,0 +1,175 @@
+{
+  "name": "request_revert",
+  "status": "PLANNED",
+  "milestone": "M4.1",
+  "description": "Ask the person to revert one change, one run or one task of yours: Basalt prepares the revert (as basalt revert does) and returns revertUrl, the page where the person reviews every row and signs with their passkey, and personMessage, one line to show the person verbatim. You cannot sign or apply a revert: only the person's passkey can, checked in the database. Before you call it, check the current data (preview_revert, and query for rows that depend on the change) and tell the person what you recommend. Name exactly one of changeId, runId, taskId, with intent (why the person reverts, in their words). Show personMessage, then, without ending your turn, call request_revert once more with only revertId: that call waits up to waitForSignature seconds (default 90) and returns as soon as the person signs. APPLIED: the revert is done; tell the person what was restored and skipped. APPLYING (a revert over 1000 lines): the person signed the plan and you restore it now in batches (see nextStep). If the wait runs out (status PENDING), do not wait again: end your turn with the link and its expiry, and call request_revert with revertId when the person says they signed. People win: rows someone changed after you are skipped, never overwritten.",
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "changeId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Revert one change (a revert's own changeId reverts that revert)."
+      },
+      "runId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Revert every applied change of one run."
+      },
+      "taskId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Revert every applied change of one task, by any agent in it."
+      },
+      "intent": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500,
+        "description": "Why the person reverts, in a sentence they can check on the revert page. Required with changeId, runId or taskId; refused with revertId."
+      },
+      "revertId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "A revert you requested: wait for the person's signature and return its state. Takes no scope and no intent."
+      },
+      "waitForSignature": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 110,
+        "description": "Only with revertId: seconds to wait for the person to sign before returning PENDING. Default 90; 0 returns the state at once."
+      },
+      "reissueLink": {
+        "type": "boolean",
+        "description": "Only with revertId, while PENDING: issue a new short link (the earlier one stops working) and return it as revertUrl. Default false."
+      }
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "revertId",
+      "status",
+      "scope",
+      "scopeId",
+      "intent",
+      "batched",
+      "rows",
+      "skipped",
+      "expiresAt",
+      "personMessage"
+    ],
+    "properties": {
+      "revertId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "PENDING",
+          "APPLYING",
+          "APPLIED",
+          "EXPIRED"
+        ],
+        "description": "PENDING until the person signs; APPLIED once a revert of up to 1000 lines is signed (it is applied in the same transaction); APPLYING once a larger plan is signed and until you applied every line; EXPIRED when not signed within 1 hour, or a signed plan not finished within 24 hours."
+      },
+      "scope": {
+        "type": "string",
+        "enum": [
+          "CHANGE",
+          "RUN",
+          "TASK"
+        ]
+      },
+      "scopeId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "intent": {
+        "type": "string"
+      },
+      "batched": {
+        "type": "boolean",
+        "description": "True for a plan of more than 1000 lines: the person signs it once and you apply it with apply_revert_batch."
+      },
+      "rows": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Rows the signed revert restores (RESTORE lines)."
+      },
+      "skipped": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Rows it leaves as they are because someone changed them after you (SKIP lines), as prepared."
+      },
+      "expiresAt": {
+        "type": "string",
+        "format": "date-time",
+        "description": "The person must sign by then (1 hour after the request)."
+      },
+      "revertUrl": {
+        "type": "string",
+        "format": "uri",
+        "description": "When the revert was just requested, or with reissueLink while PENDING: the revert page, the short link http://localhost:<port>/reverts/<revertId>#s=<secret> when the engine serves the local pages, else the long link <base>/reverts/<revertId>#1.<request>. Absent otherwise: the link already given keeps working."
+      },
+      "personMessage": {
+        "type": "string",
+        "description": "One line to show the person verbatim: while PENDING what the revert restores and skips, the link (or a pointer to the link already given) and the expiry; otherwise the outcome."
+      },
+      "changeId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Once APPLIED, or APPLYING: the revert's own change record (op REVERT), to show with run_history or revert with changeId."
+      },
+      "applyBy": {
+        "type": "string",
+        "format": "date-time",
+        "description": "Batched plans, once signed: every line must be applied by then (24 hours after the signature)."
+      },
+      "progress": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Batched plans, once signed: lines applied so far.",
+        "required": [
+          "restored",
+          "skipped",
+          "pending",
+          "batches"
+        ],
+        "properties": {
+          "restored": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "skipped": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Lines skipped so far, at the signature and in batches."
+          },
+          "pending": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "batches": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "nextStep": {
+        "type": "string",
+        "description": "For you, not the person: what to call next. APPLYING: revert_plan with revertId, pending true and limit 200, then apply_revert_batch with those line numbers, until pending is 0. PENDING after a wait: end your turn."
+      }
+    }
+  },
+  "errors": [
+    "INVALID_ARGUMENT",
+    "NOT_FOUND",
+    "NOTHING_TO_REVERT",
+    "QUERY_TIMEOUT",
+    "UNAVAILABLE",
+    "INTERNAL"
+  ]
+}

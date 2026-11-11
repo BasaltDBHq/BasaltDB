@@ -19,7 +19,7 @@ var (
 	screamingCase = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 	toolName      = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 	errorCodeRow  = regexp.MustCompile("^\\| `([A-Z][A-Z0-9_]*)` \\|")
-	milestones    = map[string]bool{"M1": true, "M1.5": true, "M2": true, "M3": true}
+	milestones    = map[string]bool{"M1": true, "M1.5": true, "M2": true, "M3": true, "M4.1": true}
 )
 
 // contractErrorCodes reads the codes from CONTRACT.md's "Error codes" table,
@@ -101,6 +101,19 @@ func TestM3ToolsHaveContracts(t *testing.T) {
 // TestApprovalSchemas checks the approval-flow payload schemas follow the
 // wire rules (CONTRACT.md, Approvals): camelCase properties, SCREAMING_SNAKE_CASE
 // enums, closed objects.
+// TestAgentRevertToolsHaveContracts: agent-assisted revert (owner
+// decisions N12-R1 to N12-R7) lands contract first, so both tools are
+// PLANNED until the engine serves them.
+func TestAgentRevertToolsHaveContracts(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"list_runs", "request_revert"} {
+		tool, ok := mcpcontract.Find(mcpcontract.MustLoad(), name)
+		require.True(t, ok, name)
+		require.Equal(t, "M4.1", tool.Milestone, name)
+		require.Equal(t, mcpcontract.StatusPlanned, tool.Status, name)
+	}
+}
+
 func TestApprovalSchemas(t *testing.T) {
 	t.Parallel()
 	checkPayloadSchemas(t, "approval", []string{

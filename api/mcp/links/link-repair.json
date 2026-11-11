@@ -1,0 +1,197 @@
+{
+  "description": "Shared cases for CONTRACT.md, Showing links, The pages repair what they can. fragments: input is the text after the first # of the URL, want is the repaired fragment. pastes: input is the text the person pasted, want is the fragment read from it (without #), or null when there is none. The contract test checks every case against the rules; the pages' tests run them.",
+  "fragments": [
+    {
+      "name": "a clean long link is unchanged",
+      "input": "2.AbC-d_9",
+      "want": "2.AbC-d_9"
+    },
+    {
+      "name": "format 1 is read too",
+      "input": "1.AbC-d_9",
+      "want": "1.AbC-d_9"
+    },
+    {
+      "name": "underscores and hyphens are never removed",
+      "input": "1.__--_x-_",
+      "want": "1.__--_x-_"
+    },
+    {
+      "name": "a trailing period is dropped",
+      "input": "2.AbC-d_9.",
+      "want": "2.AbC-d_9"
+    },
+    {
+      "name": "a trailing parenthesis is dropped",
+      "input": "2.AbC-d_9)",
+      "want": "2.AbC-d_9"
+    },
+    {
+      "name": "a trailing quote is dropped",
+      "input": "2.AbC-d_9\"",
+      "want": "2.AbC-d_9"
+    },
+    {
+      "name": "trailing text after a comma is dropped",
+      "input": "2.AbC-d_9,and more",
+      "want": "2.AbC-d_9"
+    },
+    {
+      "name": "an encoded space is removed",
+      "input": "2.AbC%20-d_9",
+      "want": "2.AbC-d_9"
+    },
+    {
+      "name": "encoded line breaks and tabs are removed in either case",
+      "input": "1.AbC%0aDe%0D%0Af%09G",
+      "want": "1.AbCDefG"
+    },
+    {
+      "name": "a line break and indentation are removed",
+      "input": "2.AbC\n    -d_9",
+      "want": "2.AbC-d_9"
+    },
+    {
+      "name": "a carriage return and a tab are removed",
+      "input": "2.AbC\r\n\t-d_9",
+      "want": "2.AbC-d_9"
+    },
+    {
+      "name": "a quote marker on a wrapped line is removed",
+      "input": "2.AbC\n> -d_9",
+      "want": "2.AbC-d_9"
+    },
+    {
+      "name": "emphasis stars are removed",
+      "input": "2.Ab*C-d*_9",
+      "want": "2.AbC-d_9"
+    },
+    {
+      "name": "a Markdown escape before an underscore is removed",
+      "input": "2.AbC-d\\_9",
+      "want": "2.AbC-d_9"
+    },
+    {
+      "name": "a no-break space is removed",
+      "input": "2.AbC\u00a0-d_9",
+      "want": "2.AbC-d_9"
+    },
+    {
+      "name": "a line separator is removed",
+      "input": "2.AbC\u2028-d_9",
+      "want": "2.AbC-d_9"
+    },
+    {
+      "name": "a clean short link is unchanged",
+      "input": "s=q3Jv8sLk2mT0xYp1aBcD9w",
+      "want": "s=q3Jv8sLk2mT0xYp1aBcD9w"
+    },
+    {
+      "name": "a short link keeps 22 characters and drops a trailing period",
+      "input": "s=q3Jv8sLk2mT0xYp1aBcD9w.",
+      "want": "s=q3Jv8sLk2mT0xYp1aBcD9w"
+    },
+    {
+      "name": "a wrapped short link is joined",
+      "input": "s=q3Jv8sLk2m\n  T0xYp1aBcD9w",
+      "want": "s=q3Jv8sLk2mT0xYp1aBcD9w"
+    },
+    {
+      "name": "a cut short link is left to fail",
+      "input": "s=q3Jv8",
+      "want": "s=q3Jv8"
+    },
+    {
+      "name": "an unknown prefix is left to fail",
+      "input": "3.AbC",
+      "want": "3.AbC"
+    },
+    {
+      "name": "an empty fragment stays empty",
+      "input": "",
+      "want": ""
+    }
+  ],
+  "pastes": [
+    {
+      "name": "a terminal-wrapped and indented long link ends at the empty line",
+      "input": "  Held for your approval: Update 27 rows in public.leads.\n  Approve it with your passkey here:\n\n  https://portal.basaltvault.app/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#2.AbCdEf\n  GhIj-_kl\n  mn\n\n  Or run: basalt approve --agent demo_bot --open 0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b\n  Expires 2026-11-12 07:02 UTC.\n",
+      "want": "2.AbCdEfGhIj-_klmn"
+    },
+    {
+      "name": "a link on one line",
+      "input": "Approve here:\n\nhttps://portal.basaltvault.app/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#1.AbC-d_9\n\nExpires soon.",
+      "want": "1.AbC-d_9"
+    },
+    {
+      "name": "Windows line breaks",
+      "input": "Approve here:\r\n\r\nhttps://portal.basaltvault.app/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#2.AbC\r\nDeF\r\n\r\nExpires soon.",
+      "want": "2.AbCDeF"
+    },
+    {
+      "name": "a quoted message",
+      "input": "> Approve here:\n>\n> https://portal.basaltvault.app/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#1.AbC\n> DeF\n>\n> Expires soon.",
+      "want": "1.AbCDeF"
+    },
+    {
+      "name": "a link in bold",
+      "input": "**https://portal.basaltvault.app/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#2.AbC-d_9**\n\nExpires soon.",
+      "want": "2.AbC-d_9"
+    },
+    {
+      "name": "a Markdown escape inside the link",
+      "input": "https://portal.basaltvault.app/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#2.Ab\\_C\n\nExpires soon.",
+      "want": "2.Ab_C"
+    },
+    {
+      "name": "a line with a space stops the link",
+      "input": "https://portal.basaltvault.app/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#2.AbC\nDeF\nExpires 2026-11-12 07:02 UTC.",
+      "want": "2.AbCDeF"
+    },
+    {
+      "name": "a character that ends the line's run stops the link",
+      "input": "https://portal.basaltvault.app/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#2.AbC.\nDeF\n",
+      "want": "2.AbC"
+    },
+    {
+      "name": "a wrapped short link",
+      "input": "https://portal.basaltvault.app/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#s=q3Jv8sLk2mT0\n  xYp1aBcD9w\n\nExpires soon.",
+      "want": "s=q3Jv8sLk2mT0xYp1aBcD9w"
+    },
+    {
+      "name": "a short link stops at 22 characters",
+      "input": "https://portal.basaltvault.app/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#s=q3Jv8sLk2mT0xYp1aBcD9w\nAbc\n",
+      "want": "s=q3Jv8sLk2mT0xYp1aBcD9w"
+    },
+    {
+      "name": "the first link is read",
+      "input": "https://portal.basaltvault.app/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#1.First\n\nhttps://portal.basaltvault.app/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#2.Second\n",
+      "want": "1.First"
+    },
+    {
+      "name": "a lone carriage return ends a line",
+      "input": "Approve here:\r\rhttps://portal.basaltvault.app/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#2.AbC\rDeF\r\rExpires soon.",
+      "want": "2.AbCDeF"
+    },
+    {
+      "name": "a line separator ends a line",
+      "input": "Approve here:\u2028\u2028https://portal.basaltvault.app/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#2.AbC\u2028DeF\u2028\u2028Expires soon.",
+      "want": "2.AbCDeF"
+    },
+    {
+      "name": "text after the link on the same line is dropped",
+      "input": "Approve: https://portal.basaltvault.app/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#2.AbC-d_9 then tell me.\nDeF\n",
+      "want": "2.AbC-d_9"
+    },
+    {
+      "name": "only the fragment is taken, not the pasted origin or path",
+      "input": "https://evil.example/approvals/other#1.AbC\n\nExpires soon.",
+      "want": "1.AbC"
+    },
+    {
+      "name": "a message without a link",
+      "input": "Thanks, I approved it.",
+      "want": null
+    }
+  ]
+}

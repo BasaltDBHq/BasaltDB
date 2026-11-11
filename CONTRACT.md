@@ -64,7 +64,7 @@ From M2, an `APPROVAL_REQUIRED` body also carries `approval: { "approvalId", "ex
 - `headline`: the held write in one line, cascade stated (`Delete 1 row in public.leads + 2 cascaded rows (public.lead_notes 2)`), as `basalt approve --show` prints it.
 - `approvalUrl`: the **short link** `<base>/approvals/<approvalId>` when the engine serves the [local pages](#local-pages); otherwise the long link `<base>/approvals/<approvalId>#1.<request>` (below, [Page links](#page-links)). Clients that render links may show it.
 - `approveCommand`: `basalt approve --agent NAME [--config PATH] --open <approvalId>` (`--config` only when the engine runs from a non-default config; planned, AE-3: then with the absolute path). The person runs it in a terminal and it opens the approval page in their browser. A first-class path, not only a fallback.
-- `personMessage`: one line the agent shows the person verbatim: what is held, the headline, the link, the equivalent command and the expiry. For example `Held for your approval: Update 27 rows in basalt_demo.leads. Approve: http://localhost:8787/approvals/<id> (or run: basalt approve --agent demo_bot --open <id>). Expires 2026-11-12 07:02 UTC.`
+- `personMessage`: the message the agent shows the person verbatim: what is held, the headline, the link, the equivalent command and the expiry, with the link on its own line ([Showing links](#showing-links), which has an example). Planned (M3.5): `approval.links` and the body's `links` carry the link with a label, as there.
 
 `headline` and `personMessage` are new (M4.1); `approvalUrl` changes from always-long to short-when-served (M4.1, a breaking change). `list_pending` items carry the same four fields, so an agent that lost the link gets it again there.
 
@@ -98,7 +98,7 @@ Planned (owner decisions AE-1 to AE-14, design [`docs/redesign/specs/2026-11-12-
 
 - **`nextSteps`**: an ordered array of steps, first step first ([`next-step.schema.json`](api/mcp/errors/next-step.schema.json)). Each step has `actor` (`AGENT` or `PERSON`), `action`, and `text` (one plain sentence, at most 200 characters), plus what the action needs: `tool` and `arguments` (filled in by the engine: complete for `CALL_TOOL`, where `repeatCall: true` merges them over the arguments of the call that returned the step and `null` removes one; the ids it knows for `REVISE_CALL`), `command`, `url`, `maxRows`, `waitSeconds`.
 - **Actions.** `AGENT`: `CALL_TOOL` (call `tool` with `arguments`), `REVISE_CALL` (change the statement or arguments as `text` says, then call `tool`), `RETRY_SMALLER_BATCHES` (split into writes of at most `maxRows` rows, same intent and run), `ASK_PERSON`, `END_TURN` (end the turn; the person acts next), `STOP` (do not retry, do not work around). `PERSON`: `OPEN_LINK` (`url`, optionally `command` that opens the same page), `RUN_COMMAND` (`command`), `TELL_AGENT`. No step is conditional: each result carries its own steps. Machine steps (start or restart the engine, `basalt upgrade`, `basalt init`) are `PERSON` steps; the chat-only operator design (#182) adds how they resolve when `operatedBy` is `AGENT`.
-- **`personMessage`**: one plain line, at most 500 characters, that the agent shows the person verbatim. Set whenever the person must know or act. The agent also shows each `PERSON` step's `command` and `url` unchanged.
+- **`personMessage`**: plain text, at most 500 characters not counting its URL lines, that the agent shows the person verbatim. Set whenever the person must know or act. Each URL in it stands on a line of its own, and `links` lists them with labels ([Showing links](#showing-links); until M3.5 the engine writes one line). The agent also shows each `PERSON` step's `command` and `url` unchanged.
 - **Commands** are complete and copy-pasteable: every `basalt` command names `--agent <name>` and its ids, and `--config <absolute path>` unless the config is the default the CLI finds by itself (`/etc/basalt/engine.json` on Linux, `/Library/Application Support/Basalt/engine.json` on macOS). No placeholders. Never a secret (connection string, password, token); a command that needs the admin connection string asks for it itself. A short link's `#s=` secret appears only in `url` and `personMessage`. "Run `basalt init` again" steps use the flags init saved in `engine.json` ([CLI](#cli)), plus the one change the step is for.
 - **Steps never suggest getting around a limit**: no split below the hold threshold to avoid an approval, no other path around a refusal, no retry loop on a refusal. Over 50 rows the agent stops and asks; only on the person's explicit yes does it split into held batches of up to 50 rows, each needing the person's approval.
 - **Results.** `preview_revert`, `request_revert`, `revert_plan`, `apply_revert_batch` and each `list_pending` item carry `nextSteps` and `personMessage` when there is something to do. `query` and `write` carry `warnings: [{ code, message, table, personMessage, nextSteps }]` ([`warning.schema.json`](api/mcp/errors/warning.schema.json)), absent when empty, with `RLS_HIDES_ROWS` (row-level security hides every row of a table in the statement from the agent role and the statement returned or changed 0 rows); `run_start` carries `GUARD_UPGRADE_AVAILABLE`.
@@ -278,7 +278,7 @@ M2. The flow and the reasons are in [`docs/redesign/plans/2026-11-11-m2-approval
 - An approval or revert counts only with a valid P-256 passkey signature (WebAuthn ES256), verified inside Postgres. Pages and relays (the engine, the CLI, the agent's chat, Telegram) carry signed data and are not trusted.
 - **Pages.** Static files under `web/`. Hosted (not live yet) on the console `https://console.basaltvault.app` with passkey RP ID `basaltvault.app` (fixed for good: registered passkeys depend on it) and origin `https://console.basaltvault.app`. Until hosting exists the default everywhere is the engine's local pages, `http://localhost:8787` with RP ID `localhost` (owner decisions, Decided Nov 12). Both have the same paths ([Page links](#page-links)). The clientDataJSON origin check stays strict: a passkey signs only on the origin it was registered on. The pages have no backend, load no third-party code, and send nothing over the network: input comes in the URL fragment, output is a code the person copies. From M4.1 the engine also serves them on loopback with a same-origin relay ([Local pages](#local-pages)); that listener follows the listener rules in [AGENTS.md](AGENTS.md) and the `websec` hardening; custom HTTP headers use the lowercase **`basalt-`** prefix.
 - **Expiry.** 24 hours after the hold. No answer means blocked.
-- **Engine.** On `BS002` the engine checks the write is repeatable (`NOT_REPEATABLE` otherwise), previews it, holds it, and answers `APPROVAL_REQUIRED` with the link. The engine config (`engine.json`) may set `pagesUrl` (the pages base URL, default `http://localhost:8787`; the older key `approvalPage` is still read, its origin only), `pagesAddr` (see [Local pages](#local-pages)) and `notify.telegram: { botTokenFile, chatId }`; the token file must be mode 0600 and the token is never logged. Telegram only delivers the link, and always the long link: the short link works only on the engine's machine, and the phone flow is parked (M4.1).
+- **Engine.** On `BS002` the engine checks the write is repeatable (`NOT_REPEATABLE` otherwise), previews it, holds it, and answers `APPROVAL_REQUIRED` with the link. The engine config (`engine.json`) may set `pagesUrl` (the pages base URL, default `http://localhost:8787`; the older key `approvalPage` is still read, its origin only), `pagesAddr` (see [Local pages](#local-pages)) and `notify.telegram: { botTokenFile, chatId }`; the token file must be mode 0600 and the token is never logged. Telegram only delivers the link, and always the long link: the short link works only on the engine's machine, and the phone flow is parked (M4.1). The button's long link is not subject to the [link budget](#the-link-budget) (planned, M3.5): it is a button, not text a client can wrap.
 - **Waiting write (M4.1).** `write` takes `waitForApproval` (integer seconds, 0 to 110). When the write is held, or the call names an `approvalId` whose approval is not signed yet, the engine keeps the call open up to that long, checking about once a second. As soon as the approval is signed (by the page's relay, `basalt approve` or the `approval` argument) it applies the held write exactly as a repeat with `approvalId` would, and returns `APPLIED` in the same call. On timeout it returns `APPROVAL_REQUIRED` with the same `approval` body, and nothing is applied; its message tells the agent not to wait again but to end its turn, telling the person the write waits for their approval (link, expiry) and that it applies the write when they say they approved (a later `write` with `approvalId` applies at once). One wait per turn: a review can take longer than any wait, and MCP cannot start a client turn when the person approves. Default: **0 on a new write**, so the agent gets the link at once and can hand it over; **90 when `approvalId` is given**. The intended loop: the agent shows `personMessage`, then, in the same turn, repeats the write once with `approvalId` (also after a `list_pending` that handed over a link), and the call returns `APPLIED` once the person signs, with no "I approved it" from the person. Bound: Claude Code moves an MCP call still running after 2 minutes to a background task (`CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS`, default 120000), and its hard tool timeout (`MCP_TOOL_TIMEOUT`) is about 28 hours, so 110 seconds keeps a wait in the foreground. A client with a 60 second request timeout should pass a smaller value.
 
 ### What an approval binds (decision M2-1)
@@ -312,7 +312,7 @@ All base64url is RFC 4648 §5 without padding. Byte fields inside JSON are base6
 | Passkey registration request | URL `<base>/passkeys/register#1.<b64url(json)>` | `{ "challenge", "userId", "userName", "displayName" }`: 32 and 16 random bytes; names are labels for the passkey picker |
 | Passkey registration response | Text `basalt-passkey.1.<b64url(json)>` | `{ "credentialId", "clientDataJson", "authenticatorData", "publicKey", "publicKeyAlgorithm" }`: `publicKey` the SubjectPublicKeyInfo DER from `getPublicKey()`, algorithm `-7` (ES256) only |
 
-A page whose fragment does not decode as base64url, deflate-raw or JSON says the link looks cut short and to open it with `basalt approve --open` (or `basalt revert ... --open`), which builds the full link itself. The approval page checks `sha256(lines joined by "\n")` equals the binding's `rowsHash` and refuses to ask for a signature otherwise. Registration asks for `userVerification: "required"`, `residentKey: "required"`, `attestation: "none"`, ES256 only. `basalt init` verifies the registration in Go: type `webauthn.create`, challenge, origin, `rpIdHash`, the UP, UV and AT flags, the attested credential id equals `credentialId`, and a P-256 key.
+A page first repairs the fragment and, when it still does not decode, offers to read the link from the pasted message ([Showing links](#showing-links), planned M3.5). A page whose fragment does not decode as base64url, deflate-raw or JSON says the link looks cut short and to open it with `basalt approve --open` (or `basalt revert ... --open`), which builds the full link itself. The approval page checks `sha256(lines joined by "\n")` equals the binding's `rowsHash` and refuses to ask for a signature otherwise. Registration asks for `userVerification: "required"`, `residentKey: "required"`, `attestation: "none"`, ES256 only. `basalt init` verifies the registration in Go: type `webauthn.create`, challenge, origin, `rpIdHash`, the UP, UV and AT flags, the attested credential id equals `credentialId`, and a P-256 key.
 
 ### Checks in Postgres
 
@@ -445,6 +445,89 @@ Owner decisions, Decided Nov 12: short links carry a per-link secret.
 ### Handing a held action to the person
 
 Every result that names a held action gives the agent what to show the person, so the person needs nothing else: `APPROVAL_REQUIRED` (`write`) and `list_pending` items carry `headline`, `approvalUrl`, `approveCommand` and `personMessage` (above). `revert_plan` for a plan not yet signed (`status` `PENDING`) carries `revertUrl` (the short link when the pages are served, else the long link) and `personMessage`; so does `request_revert` when it prepares a revert, or reissues its link. An agent that lost a link calls `list_pending` again (for a revert, `request_revert` with `revertId` and `reissueLink: true`).
+
+## Showing links
+
+Planned (M3.5, Vault channel Phase 0, owner decision VC-7; design [`docs/redesign/specs/2026-11-12-vault-channel.md`](docs/redesign/specs/2026-11-12-vault-channel.md), section 3). Long links rarely fail on a hard length limit. They fail because chat and terminal clients format them: they hard-wrap the line, stop link detection at a line break, take a trailing `.` or `)` into the URL, or read `_` and `*` as emphasis. These rules keep a link whole from the engine to the person's browser. They apply to every link the engine, the CLI or a page hands over: approval, revert and passkey pages, short or long.
+
+Terms: a **short link** carries `#s=<secret>` ([Link secrets](#link-secrets)); a **long link** carries the whole request, `#1.<request>` or `#2.<request>` ([Codes](#codes)). Format `2.` is the compact request encoding (design section 3.2, item 1); its layout (schema and shared vectors) is contracted inside the codec PR that builds it, before that PR's code (owner decision VC-29). The pages read both `1.` and `2.`; once that change lands, the engine emits `2.`.
+
+### The link budget
+
+- **`linkBudget`** in `engine.json`: the longest long link, in characters of the whole URL (base, path and fragment; every link is ASCII), the engine hands an agent as the way to open a page. A positive integer with no other minimum; default **1800** (owner decision VC-30). A value that is not a positive integer is refused when the config is loaded.
+- **Short links are never measured.** They are about 110 characters plus the base, so they are always the first choice when one exists.
+- **What the engine hands over** for a held write or a revert, in this order:
+  1. A short link, when one exists: the engine's [local pages](#local-pages), or the portal's short link over the Vault (Phase 1a).
+  2. Else the long link, when it is at most `linkBudget` characters.
+  3. Else the long link is **over budget** and is not the main path. The fallback is the request file or pasted text of the chat-only operator design (#182, section 8.3, options B and C), which gets its own contract change. Until it lands, the engine still hands over the long link, because nothing else opens the page, but `personMessage` first says the link is long and may arrive cut or broken, gives the `basalt` command when the result has one (`approveCommand`), and then the link. This is a deliberate, interim deviation from the design (section 3.2, item 2, which says the long link is not handed over above the budget), owner decision VC-28; it ends when the fallback's contract lands.
+- **Fields stay as they are.** `approvalUrl`, `revertUrl` and a step's `url` carry whichever link the engine handed over (short, long, or over budget); no field is added for the budget. Revert links almost always go over: a revert carries up to 1000 lines.
+- **Only MCP results are budgeted.** The CLI prints the link it has (with `--open` it opens it instead), and the pages show what they are given.
+- **Telegram.** The notification is not budgeted either: its button keeps the long link whatever its length (Telegram limits only the message text), and its text follows the hand-over order above.
+
+### Links in `personMessage`
+
+Every `personMessage` follows these rules. They replace "one plain line" in [Next steps](#next-steps).
+
+- **Lines.** Plain text in lines separated by `\n` (never `\r`).
+- **Each URL is a paragraph of its own.** Its line holds the URL and nothing else: no label, no leading or trailing space, and nothing after it (no `.`, `,`, `;`, `:`, `)`, `>`, quote or backtick). The line before it and the line after it, when there is one, are empty. So the URL ends at the end of its line in plain text, and stands alone in Markdown.
+- **No Markdown.** The engine never writes `[label](url)`, `<url>`, a code span or emphasis around a URL, and never escapes characters in it. A client that renders Markdown uses `links` (below).
+- **Length.** At most 500 characters, not counting URL lines (the URL and its line break). URLs are bounded by the link budget, not by this limit. JSON Schema cannot express this, so the schemas carry no `maxLength` for `personMessage`; an engine test checks every message the engine builds (with the engine change that applies the budget).
+- **`links`.** Next to every `personMessage`, and present exactly when that `personMessage` holds a URL: an array of `{ "label", "url" }` ([`link.schema.json`](api/mcp/links/link.schema.json)), one entry per URL in the order they appear, each `url` byte for byte the URL in `personMessage`. `url` follows the URL rule of [Terminal hyperlinks](#terminal-hyperlinks): `https`, or `http` for a loopback host, and only RFC 3986 characters. `label` says what opening the link does, in plain text of 1 to 80 characters with no URL, no control character (C0, DEL or C1, U+0080 to U+009F), no line break, no bidirectional control (U+202A to U+202E, U+2066 to U+2069), and none of `[`, `]`, `(`, `)`, `<`, `>`, `` ` ``, `*`, `_` (`Approve the held write`, `Review and sign the revert`). A client that renders Markdown may show `[label](url)`.
+
+For example (`\n` shown as line breaks):
+
+```text
+Held for your approval: Update 27 rows in basalt_demo.leads.
+Approve it with your passkey here:
+
+http://localhost:8787/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#s=q3Jv8sLk2mT0xYp1aBcD9w
+
+Or run: basalt approve --agent demo_bot --open 0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b
+Expires 2026-11-12 07:02 UTC.
+```
+
+with `links: [{ "label": "Approve the held write", "url": "http://localhost:8787/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#s=q3Jv8sLk2mT0xYp1aBcD9w" }]`.
+
+A `PERSON` step's `url` is shown under the same rules: on its own line, unchanged.
+
+### What the agent is told
+
+The engine's MCP `initialize` result carries, in its `instructions`, this text unchanged:
+
+> When you show the person a link from Basalt, put it on its own line exactly as Basalt gave it, or as a Markdown link [label](url) with the label from links. Never put a link in a code block or inline code, never split, wrap, shorten, encode or rewrite it, and put nothing after it on its line. Show personMessage verbatim and keep its line breaks.
+
+The tool descriptions say the same where they mention `personMessage`.
+
+### The pages repair what they can
+
+Before decoding, the approval, revert and passkey pages repair the fragment (`location.hash`):
+
+1. Take the text after the first `#`.
+2. Remove every `%20`, `%09`, `%0A` and `%0D` (hex digits in either case).
+3. Remove every whitespace character (Unicode `White_Space`: spaces, tabs, line breaks, U+00A0, U+2028 and the rest; in JavaScript `/\p{White_Space}/u`, not `\s`, which differs) and every `>`, `*` and `\`.
+4. When the text starts with `1.` or `2.`, keep that prefix and the base64url characters (`A` to `Z`, `a` to `z`, `0` to `9`, `-`, `_`) right after it, up to the first other character; drop the rest (a trailing `.`, `)`, quote or text). When it starts with `s=`, keep `s=` and the 22 characters after it when all 22 are base64url. Anything else is left as it is and fails to decode.
+
+`_` and `-` are never removed: they are base64url. Repair never makes a wrong request pass: the page still checks the request's id against the path and `rowsHash` (or `sampleHash`) against the binding, and refuses to sign otherwise.
+
+When the repaired fragment still does not decode, or is missing, the page shows a box, "Paste the whole message from your agent", and reads the link out of the pasted text:
+
+1. Split the text into lines (`\r\n`, `\n`, `\r` or U+2028). In each line remove every `>`, `*` and `\`, then trim leading and trailing `White_Space`.
+2. Find the first line holding `#1.`, `#2.` or `#s=`. Take the prefix and the base64url characters right after it on that line.
+3. When they reach the end of the line, append each following line while it is not empty and holds only base64url characters; stop at the first line that does not. A short link stops at 22 characters.
+4. Decode the result as a repaired fragment (above). The empty line the engine puts after every URL is what ends a wrapped link.
+
+**Only the fragment is taken from the paste.** The page keeps its own origin and path: it uses the pasted text only for the fragment, ignores the scheme, host and path in front of it, never navigates to a pasted URL and never fetches from one. For a long link the decoded request must still carry the id of the page's own path. A short link (`s=`) carries no request and no id: the page sends the pasted secret with its own path's id, and the engine checks the secret against that id, so a secret pasted from another item's link is answered `NOT_FOUND`, as a wrong secret is.
+
+This covers terminal clients that hard-wrap and indent a long link: the person copies the whole block. Shared cases in [`api/mcp/links/link-repair.json`](api/mcp/links/link-repair.json) pin each rule (`fragments`: a fragment and its repair; `pastes`: a pasted message and the fragment read from it, or `null` when there is none); the contract test checks them against these rules, and the pages' tests run them.
+
+### Terminal hyperlinks
+
+The CLI prints every link on its own line, with nothing else on it.
+
+- **The URL rule.** Every link the CLI prints, and every pages base it builds one from, is `https://` followed only by RFC 3986 characters (`A` to `Z`, `a` to `z`, `0` to `9` and `-._~:/?#[]@!$&'()*+,;=%`), or `http://` for a loopback host (`localhost`, `127.0.0.1`, `[::1]`) followed by an optional port and the same characters. [`link.schema.json`](api/mcp/links/link.schema.json) carries the same rule as `url`'s pattern. Every byte of such a URL is between `0x21` and `0x7E`.
+- **Bases are checked when read.** `pagesUrl` in `engine.json` and `--pages-url` must follow the URL rule, with no query or fragment. A config that breaks it is refused when it is loaded, and a flag that breaks it is a usage error (exit `2`). Either way the message names the setting and the first bad character's position, never echoes the raw byte, and says what to do: set it to an `https://` URL, or `http://localhost:<port>`, of printable characters.
+- **Never a control byte on a terminal (refuse, not escape).** The CLI never writes a byte below `0x20` or between `0x7F` and `0x9F` (as a byte or as the UTF-8 encoding of U+0080 to U+009F) to a terminal as part of a link. A URL that breaks the URL rule anyway (from an older config, or from the database) is not printed: the CLI exits `1` with the same message, naming the item's id and the command to print its link again after the fix. The CLI's tests cover this: a base with `ESC`, `BEL`, `\n`, `0x7F` and U+009B in it is refused at load and at `--pages-url`, and a URL that breaks the rule at print time writes no part of the URL and no control byte to the terminal.
+- **Hyperlinks.** When stdout is a terminal (and `TERM` is not `dumb`), the CLI prints the link as an OSC 8 hyperlink whose visible text is the whole URL: `ESC ] 8 ; ; <url> ESC \` `<url>` `ESC ] 8 ; ; ESC \`. The URL rule keeps the URL from ending the escape sequence or starting another. A terminal that supports OSC 8 makes the whole link clickable however it wraps; one that does not shows the plain URL. Otherwise (a pipe, a file, `--json`), the plain URL.
 
 ## `basalt_meta`
 

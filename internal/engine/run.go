@@ -210,7 +210,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	if err != nil {
 		return agentRuntime{}, err
 	}
-	cmds, err := agent.NewCommands(a.Name, env.configPath, runtime.GOOS, nil)
+	cmds, err := agent.NewCommands(a.Name, env.configPath, runtime.GOOS, a.InitArgs)
 	if err != nil {
 		return agentRuntime{}, err
 	}

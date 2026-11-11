@@ -86,7 +86,8 @@ func TestInitRegistersPasskey(t *testing.T) {
 	// A second init keeps the registered passkey and asks nothing.
 	r := cli(t, map[string]string{envAdminURL: d.URL}, "",
 		"init", "--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix,
-		"--config", filepath.Join(t.TempDir(), "engine.json"), "--os-user", "tester", "--yes")
+		"--config", filepath.Join(t.TempDir(), "engine.json"), "--os-user", "tester", "--yes",
+		"--rotate-password") // a new config dir has no credential file to keep
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.NotContains(t, r.stderr, "/passkeys/register")
 }

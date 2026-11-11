@@ -92,6 +92,23 @@ func TestASpanWidensOverGluedLetters(t *testing.T) {
 	require.Equal(t, out, again)
 }
 
+// A phone token's "+cc " prefix that touches the token before it belongs to
+// its token. A detector that flags a stray "+44" shows the prefix is claimed:
+// were it left over, the final scan would find it and the call would fail.
+func TestAPhonePrefixTouchingAnotherTokenIsClaimed(t *testing.T) {
+	k := newKeys(t, testMaster)
+	tz := pii.NewTokenizer(k, "", append(pii.PatternDetectors(), wordSpan("+44", pii.EntityOther))...)
+	for _, in := range []string{"a@b.cc+447700900456", "+447700900456+447700900457"} {
+		out, reps := tokenize(t, tz, in)
+		require.Len(t, reps, 2, in)
+		require.Equal(t, reps[0].Token.Surface()+reps[1].Token.Surface(), out, in)
+		require.Equal(t, "+44 ", reps[1].Token.Prefix, in)
+		again, more := tokenize(t, tz, out)
+		require.Empty(t, more, in)
+		require.Equal(t, out, again, in)
+	}
+}
+
 func TestAnAddressGluedToDigitsIsTokenizedWhole(t *testing.T) {
 	tz := newTokenizer(t)
 	once, reps := tokenize(t, tz, "mail a.b@corp.example2024 now")

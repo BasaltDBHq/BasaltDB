@@ -268,8 +268,12 @@ func existingTokens(text string) []Span {
 	matches := tokenRe.FindAllStringIndex(text, -1)
 	out := make([]Span, 0, len(matches))
 	for i, m := range matches {
-		start := withPhonePrefix(text, m[0])
-		leftOK := !asciiAlnumAt(text, start-1) || (len(out) > 0 && out[len(out)-1].End == start)
+		prevEnd := -1
+		if len(out) > 0 {
+			prevEnd = out[len(out)-1].End
+		}
+		start := withPhonePrefix(text, m[0], prevEnd)
+		leftOK := !asciiAlnumAt(text, start-1) || prevEnd == start
 		rightOK := !asciiAlnumAt(text, m[1]) || (i+1 < len(matches) && matches[i+1][0] == m[1])
 		if leftOK && rightOK {
 			out = append(out, Span{Start: start, End: m[1]})
@@ -279,15 +283,18 @@ func existingTokens(text string) []Span {
 }
 
 // withPhonePrefix moves start back over a "+cc " prefix when one is there and
-// nothing alphanumeric touches it; otherwise the token starts at its id.
-func withPhonePrefix(text string, start int) int {
+// nothing alphanumeric touches it, or the token accepted before it ends right
+// there (prevEnd, -1 when there is none: "a@b.cc+447700900456" tokenizes to an
+// email token and a phone token back to back). Otherwise the token starts at
+// its id.
+func withPhonePrefix(text string, start, prevEnd int) int {
 	before := text[max(0, start-maxPhonePrefixLen):start]
 	loc := phonePrefixRe.FindStringIndex(before)
 	if loc == nil {
 		return start
 	}
 	ps := start - len(before) + loc[0]
-	if asciiAlnumAt(text, ps-1) {
+	if asciiAlnumAt(text, ps-1) && ps != prevEnd {
 		return start
 	}
 	return ps

@@ -33,6 +33,7 @@ const (
 	versionAgentPolicy              // M4: ledger row for an agent RLS policy the person confirmed
 	versionPasskeys                 // M4.1: passkey revocation and last use
 	versionAgentVersion             // M4 follow-up: agents read schema_version
+	versionRunsAgent                // M4.1: index for list_runs, the agent's own runs by id
 )
 
 // migrations lists every version in order. M2 appends versions.
@@ -50,6 +51,7 @@ var migrations = []migration{
 	{version: versionAgentPolicy, sql: v11AgentPolicy},
 	{version: versionPasskeys, sql: v12Revocation},
 	{version: versionAgentVersion, sql: v13AgentVersion},
+	{version: versionRunsAgent, sql: v14RunsAgent},
 }
 
 // LatestVersion is the basalt_meta version this build installs.

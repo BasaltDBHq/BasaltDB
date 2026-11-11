@@ -34,6 +34,7 @@ func Tools(svc *Service) []mcp.Tool {
 		contractTool("query", h.wrap("query", h.query)),
 		contractTool("write", h.wrap("write", h.write)),
 		contractTool("run_history", h.wrap("run_history", h.runHistory)),
+		contractTool("list_runs", h.wrap("list_runs", h.listRuns)),
 		contractTool("list_pending", h.wrap("list_pending", h.listPending)),
 		contractTool("preview_revert", h.wrap("preview_revert", h.previewRevert)),
 		contractTool("revert_plan", h.wrap("revert_plan", h.revertPlan)),

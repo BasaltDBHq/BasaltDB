@@ -33,7 +33,8 @@ func TestServiceInstallArgsKeepTheCredentialOffTheCommandLine(t *testing.T) {
 		"--agent", "bot", "--os-user", "iman", "--credential-stdin",
 	}, serviceInstallArgs(f, "/usr/local/bin/basalt"))
 	f.passkeyOrigin = "http://localhost:8787"
-	require.Contains(t, serviceInstallArgs(f, "/b"), "http://localhost:8787/approve/")
+	require.Contains(t, serviceInstallArgs(f, "/b"), "--pages-url")
+	require.Contains(t, serviceInstallArgs(f, "/b"), "http://localhost:8787")
 }
 
 func TestEngineSettings(t *testing.T) {
@@ -50,6 +51,6 @@ func TestEngineSettings(t *testing.T) {
 	}
 	require.Equal(t, config.Settings{
 		SocketDir: "/home/iman/basalt/run", StateDir: "/home/iman/basalt/state",
-		ApprovalPage: "http://localhost:8787/approve/",
+		PagesURL: "http://localhost:8787",
 	}, engineSettings(f, "linux"))
 }

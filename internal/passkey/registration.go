@@ -15,7 +15,7 @@ import (
 // Code prefixes (CONTRACT.md, Approvals, Codes).
 const (
 	// RegistrationRequestPrefix starts the URL fragment of the
-	// registration page: https://basaltvault.app/register/#1.<request>.
+	// registration page: <base>/passkeys/register#1.<request>.
 	RegistrationRequestPrefix = "1."
 	// RegistrationResponsePrefix starts the code the registration page
 	// outputs and basalt init reads.

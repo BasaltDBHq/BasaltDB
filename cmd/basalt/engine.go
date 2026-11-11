@@ -33,10 +33,23 @@ func runEngine(ctx context.Context, args []string, io stdio) int {
 		return fail(io.err, "engine", err)
 	}
 	log := slog.New(slog.NewTextHandler(io.err, nil))
-	if err := engine.Run(ctx, cfg, log); err != nil {
+	if err := engine.Run(ctx, cfg, configArg(*configPath), log); err != nil {
 		return fail(io.err, "engine", err)
 	}
 	return exitOK
+}
+
+// configArg is the --config argument a person's basalt command needs to
+// find this engine config: empty for the default path, else the absolute
+// path, quoted for a shell.
+func configArg(path string) string {
+	if path == config.DefaultPath(runtime.GOOS) {
+		return ""
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+	return "--config " + shellQuote(path)
 }
 
 // runMCP is the agent's MCP server: a relay from stdio to the agent's engine
@@ -81,7 +94,7 @@ func runService(ctx context.Context, args []string, io stdio) int {
 	var a agentInstall
 	fs.StringVar(&a.name, "agent", "", "install: also place this agent (basalt init runs this under sudo)")
 	fs.StringVar(&a.osUser, "os-user", "", "install --agent: the agent's OS user")
-	fs.StringVar(&a.approvalPage, "approval-page", "", "install --agent: the approval page (development origin)")
+	fs.StringVar(&a.pagesURL, "pages-url", "", "install --agent: the pages base URL the agent's passkey belongs to")
 	credStdin := fs.Bool("credential-stdin", false, "install --agent: read the agent's connection string from stdin")
 	if fs.Parse(args[1:]) != nil || fs.NArg() > 0 {
 		return exitUsage

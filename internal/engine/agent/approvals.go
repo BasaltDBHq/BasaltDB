@@ -15,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
@@ -70,58 +71,126 @@ func approvalRequired(err error) bool {
 // hold turns a write the guard held into a held action (decision M2-1):
 // refuse it when it is not repeatable, preview it in a transaction that
 // rolls back, store it with its lines, notify the person, and answer
-// APPROVAL_REQUIRED with the approval link.
-func (s *Service) hold(ctx context.Context, in guard.Intent, p WriteParams, stmt sqlguard.Statement, start time.Time) error {
+// APPROVAL_REQUIRED with the approval link. It returns the held write's
+// approval id with the APPROVAL_REQUIRED error, or uuid.Nil and the error
+// that kept it from being held.
+func (s *Service) hold(ctx context.Context, in guard.Intent, p WriteParams, stmt sqlguard.Statement, start time.Time) (uuid.UUID, error) {
 	h, err := sqlguard.CheckRepeatable(p.SQL)
 	if err != nil {
-		return s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
+		return uuid.Nil, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
 	}
 	assigned := h.Assigned
 	if assigned == nil {
 		if assigned, err = s.Approvals.TableColumns(ctx, h.Table); err != nil {
-			return err
+			return uuid.Nil, err
 		}
 	}
 	lines, err := s.Approvals.Preview(ctx, in, p.SQL, p.Params, assigned)
 	if err != nil {
-		return s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
+		return uuid.Nil, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
 	}
 	if len(lines) == 0 {
 		// The rows went away between the attempt and the preview.
-		return &mcp.ToolError{Code: CodeSQLError, Message: "the write changes no rows now; read again and decide"}
+		return uuid.Nil, &mcp.ToolError{Code: CodeSQLError, Message: "the write changes no rows now; read again and decide"}
 	}
 	held, err := s.Approvals.Hold(ctx, in, guard.HoldRequest{Statement: p.SQL, Params: p.Params, Assigned: assigned, Lines: lines})
 	if err != nil {
-		return err
+		return uuid.Nil, err
 	}
+	notice, err := s.approvalNotice(ctx, held.ApprovalID, held.BindingText, lines, held.ExpiresAt)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	// Telegram gets the long link: the short one works only on this
+	// machine (CONTRACT.md, Approvals, Engine).
+	sent := HeldNotice{
+		ApprovalID: held.ApprovalID, Agent: s.Name, Intent: p.Intent, Statement: p.SQL,
+		Rows: len(lines), Headline: notice.Headline, ExpiresAt: held.ExpiresAt, ApprovalURL: notice.longURL,
+	}
+	if err := s.Notifier.NotifyHeld(context.WithoutCancel(ctx), sent); err != nil {
+		s.Log.Error("notify held write", "approvalId", held.ApprovalID, "err", err)
+	}
+	return held.ApprovalID, approvalRequiredError(notice)
+}
+
+// heldNotice is a held write as the agent hands it to the person
+// (CONTRACT.md, Handing a held action to the person), with the long link
+// for notifications.
+type heldNotice struct {
+	mcp.ApprovalNotice
+	longURL string
+}
+
+// approvalNotice builds what the agent shows the person about a held
+// write: its headline, the link (short when this engine serves the pages),
+// the equivalent command and one line to show verbatim.
+func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding string, lines []string, expires time.Time) (heldNotice, error) {
 	ids, err := s.credentialIDs(ctx)
 	if err != nil {
-		return err
+		return heldNotice{}, err
 	}
-	link, err := s.approvalURL(ids, held.ApprovalID, held.BindingText, lines)
+	long, err := approval.Request{ApprovalID: id, Binding: binding, Lines: lines, CredentialIDs: ids}.URL(s.PagesBase)
 	if err != nil {
-		return err
+		return heldNotice{}, err
 	}
 	summary, err := approval.SummarizeText(lines)
 	if err != nil {
-		return err
+		return heldNotice{}, err
 	}
-	notice := HeldNotice{
-		ApprovalID: held.ApprovalID, Agent: s.Name, Intent: p.Intent, Statement: p.SQL,
-		Rows: len(lines), Headline: summary.Headline(), ExpiresAt: held.ExpiresAt, ApprovalURL: link,
+	command := s.approveCommand(id)
+	link := s.shortLink(links.Approval, id, long)
+	how := fmt.Sprintf("Approve: %s (or run: %s)", link, command)
+	if link == long {
+		// The long link carries the whole preview and breaks when copied:
+		// the message names the command, approvalUrl still has the link.
+		how = fmt.Sprintf("Approve by running: %s (it opens the approval page)", command)
 	}
-	if err := s.Notifier.NotifyHeld(context.WithoutCancel(ctx), notice); err != nil {
-		s.Log.Error("notify held write", "approvalId", held.ApprovalID, "err", err)
+	return heldNotice{
+		ApprovalNotice: mcp.ApprovalNotice{
+			ApprovalID: id.String(), ExpiresAt: timeText(expires), Rows: len(lines), Headline: summary.Headline(),
+			ApprovalURL: link, ApproveCommand: command,
+			PersonMessage: fmt.Sprintf("Held for your approval: %s. %s. Expires %s.", summary.Headline(), how, expires.UTC().Format(personTime)),
+		},
+		longURL: long,
+	}, nil
+}
+
+// personTime is how a person-facing message states a deadline.
+const personTime = "2006-01-02 15:04 UTC"
+
+// shortLink is the page link page(origin, id) when this engine serves the
+// pages, else long.
+func (s *Service) shortLink(page func(string, uuid.UUID) string, id uuid.UUID, long string) string {
+	if s.PagesOrigin == "" {
+		return long
 	}
+	return page(s.PagesOrigin, id)
+}
+
+// approvalRequiredError is the APPROVAL_REQUIRED answer for a held write.
+func approvalRequiredError(n heldNotice) error {
+	notice := n.ApprovalNotice
 	return &mcp.ToolError{
 		Code: CodeApprovalRequired,
-		Message: fmt.Sprintf("held for the person's approval: %d rows. Give the person the approvalUrl; once they approve with their passkey, "+
-			"call write again with the same arguments plus approvalId (and approval, if they give you the code). It expires at %s.",
-			len(lines), timeText(held.ExpiresAt)),
-		Approval: &mcp.ApprovalNotice{
-			ApprovalID: held.ApprovalID.String(), ExpiresAt: timeText(held.ExpiresAt), Rows: len(lines), ApprovalURL: link,
-		},
+		Message: fmt.Sprintf("held for the person's approval: %d rows. Show the person approval.personMessage verbatim, "+
+			"then call write again with the same arguments plus approvalId: it waits up to %d seconds for their passkey "+
+			"and returns APPLIED as soon as they approve (if it times out, repeat it). If they give you an approval code, "+
+			"pass it as approval. It expires at %s.",
+			notice.Rows, int(DefaultApprovalWait.Seconds()), notice.ExpiresAt),
+		Approval: &notice,
 	}
+}
+
+// DefaultApprovalWait is how long a write with approvalId waits for the
+// person's signature when the call does not say (CONTRACT.md, Waiting
+// write), under the 2 minutes after which Claude Code moves a tool call to
+// the background.
+const DefaultApprovalWait = 90 * time.Second
+
+// approveCommand is the command that opens a held write's approval page in
+// the person's browser: short enough to copy from a chat.
+func (s *Service) approveCommand(id uuid.UUID) string {
+	return "basalt approve " + s.CLIFlags + " --open " + id.String()
 }
 
 // credentialIDs are the registered passkeys, for the request's
@@ -136,11 +205,6 @@ func (s *Service) credentialIDs(ctx context.Context) ([]passkey.Bytes, error) {
 		ids = append(ids, k.ID)
 	}
 	return ids, nil
-}
-
-// approvalURL builds the approval link for a held write.
-func (s *Service) approvalURL(ids []passkey.Bytes, id uuid.UUID, binding string, lines []string) (string, error) {
-	return approval.Request{ApprovalID: id, Binding: binding, Lines: lines, CredentialIDs: ids}.URL(s.ApprovalPage)
 }
 
 func approvalInvalid(format string, args ...any) error {
@@ -169,6 +233,9 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 		return WriteOutcome{}, err
 	}
 	if err := s.relay(ctx, a, p.Approval); err != nil {
+		return WriteOutcome{}, err
+	}
+	if a, err = s.waitForSignature(ctx, a, p); err != nil {
 		return WriteOutcome{}, err
 	}
 	in := guard.Intent{RunID: run.ID, TaskID: run.TaskID, Text: p.Intent}
@@ -232,10 +299,10 @@ func (s *Service) relay(ctx context.Context, a ledger.Approval, code string) err
 	return err
 }
 
-// PendingItem is one open held write with its approval link.
+// PendingItem is one open held write with what the agent hands the person.
 type PendingItem struct {
 	ledger.Approval
-	ApprovalURL string
+	Notice mcp.ApprovalNotice
 }
 
 // ListPending returns one page of the agent's open held writes.
@@ -247,17 +314,63 @@ func (s *Service) ListPending(ctx context.Context, p ledger.ApprovalListParams) 
 	if err != nil {
 		return pagination.Page[PendingItem]{}, err
 	}
-	ids, err := s.credentialIDs(ctx)
-	if err != nil {
-		return pagination.Page[PendingItem]{}, err
-	}
 	out := pagination.Page[PendingItem]{Items: make([]PendingItem, 0, len(page.Items)), NextCursor: page.NextCursor}
 	for _, a := range page.Items {
-		link, err := s.approvalURL(ids, a.ID, a.BindingText, a.Lines)
+		n, err := s.approvalNotice(ctx, a.ID, a.BindingText, a.Lines, a.ExpiresAt)
 		if err != nil {
 			return pagination.Page[PendingItem]{}, err
 		}
-		out.Items = append(out.Items, PendingItem{Approval: a, ApprovalURL: link})
+		out.Items = append(out.Items, PendingItem{Approval: a, Notice: n.ApprovalNotice})
 	}
 	return out, nil
+}
+
+// approvalPoll is how often a waiting write checks for the signature.
+const approvalPoll = time.Second
+
+// awaitSigned waits up to wait for the person to sign a, checking about
+// once a second, and returns a as last read: still PENDING on timeout.
+// The signature may come from the page's relay, basalt approve or another
+// call; Postgres is the only place that knows.
+func (s *Service) awaitSigned(ctx context.Context, a ledger.Approval, wait time.Duration) (ledger.Approval, error) {
+	timeout := time.NewTimer(wait)
+	defer timeout.Stop()
+	tick := time.NewTicker(approvalPoll)
+	defer tick.Stop()
+	for a.Status == ledger.ApprovalPending {
+		select {
+		case <-ctx.Done():
+			return a, ctx.Err()
+		case <-timeout.C:
+			return a, nil
+		case <-tick.C:
+		}
+		next, err := s.Approvals.FindApproval(ctx, a.ID)
+		if err != nil {
+			return a, err
+		}
+		a = next
+	}
+	return a, nil
+}
+
+// waitForSignature waits for an unsigned held write when the call asks to
+// (p.Wait) and gave no code. It answers APPROVAL_REQUIRED again when the
+// person did not sign in time, and the approval as it is now otherwise.
+func (s *Service) waitForSignature(ctx context.Context, a ledger.Approval, p WriteParams) (ledger.Approval, error) {
+	if a.Status != ledger.ApprovalPending || p.Approval != "" || p.Wait == 0 {
+		return a, nil
+	}
+	a, err := s.awaitSigned(ctx, a, p.Wait)
+	if err != nil {
+		return a, err
+	}
+	if a.Status == ledger.ApprovalPending {
+		n, err := s.approvalNotice(ctx, a.ID, a.BindingText, a.Lines, a.ExpiresAt)
+		if err != nil {
+			return a, err
+		}
+		return a, approvalRequiredError(n)
+	}
+	return a, sameAsHeld(a, p) // it may have expired meanwhile
 }

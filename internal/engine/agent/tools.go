@@ -191,6 +191,9 @@ type writeArgs struct {
 	RunID      string `json:"runId" validate:"omitempty,uuid"`
 	ApprovalID string `json:"approvalId" validate:"required_with=Approval,omitempty,uuid"`
 	Approval   string `json:"approval" validate:"omitempty,max=8192"`
+	// WaitForApproval is seconds to wait for a held write's approval
+	// (CONTRACT.md, Approvals, Waiting write); nil means the default.
+	WaitForApproval *int `json:"waitForApproval" validate:"omitempty,min=0,max=110"`
 }
 
 type writeResult struct {
@@ -225,12 +228,25 @@ func (h handlers) write(ctx context.Context, raw json.RawMessage) (any, error) {
 	}
 	out, err := h.svc.Write(ctx, WriteParams{
 		SQL: args.SQL, Params: params, Intent: args.Intent, RunID: optionalID(args.RunID),
-		ApprovalID: optionalID(args.ApprovalID), Approval: args.Approval,
+		ApprovalID: optionalID(args.ApprovalID), Approval: args.Approval, Wait: args.wait(),
 	})
 	if err != nil {
 		return nil, err
 	}
 	return writeResultFromDomain(out), nil
+}
+
+// wait is waitForApproval with its default (CONTRACT.md, Waiting write):
+// none on a new write, so the agent gets the link at once, and
+// DefaultApprovalWait on a repeat with approvalId.
+func (a writeArgs) wait() time.Duration {
+	if a.WaitForApproval != nil {
+		return time.Duration(*a.WaitForApproval) * time.Second
+	}
+	if a.ApprovalID == "" {
+		return 0
+	}
+	return DefaultApprovalWait
 }
 
 func intentMissing(raw json.RawMessage) bool {

@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -36,6 +38,10 @@ type host interface {
 	System(out, errw io.Writer) service.System
 	// Probe waits until the engine answers MCP initialize on socket.
 	Probe(ctx context.Context, socket string) error
+	// OpenURL opens link in the person's default browser.
+	OpenURL(ctx context.Context, link string) error
+	// PagesUp reports whether the engine serves its local pages at origin.
+	PagesUp(ctx context.Context, origin string) bool
 }
 
 // osHost is the real machine.
@@ -58,6 +64,50 @@ func (osHost) Run(ctx context.Context, args []string, out, errw io.Writer) error
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Stdout, cmd.Stderr = out, errw
 	return cmd.Run()
+}
+
+func (osHost) OpenURL(ctx context.Context, link string) error {
+	name, ok := browserOpener(runtime.GOOS)
+	if !ok {
+		return fmt.Errorf("no browser opener on %s", runtime.GOOS)
+	}
+	path, err := exec.LookPath(name)
+	if err != nil {
+		return fmt.Errorf("%s not found", name)
+	}
+	// The link is one argument, never passed through a shell.
+	return exec.CommandContext(ctx, path, link).Run()
+}
+
+// pagesProbeTimeout bounds the check that the engine serves its pages: a
+// loopback answer is immediate.
+const pagesProbeTimeout = 2 * time.Second
+
+func (osHost) PagesUp(ctx context.Context, origin string) bool {
+	ctx, cancel := context.WithTimeout(ctx, pagesProbeTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin+"/healthz", nil)
+	if err != nil {
+		return false
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false
+	}
+	_ = resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
+
+// browserOpener is the command that opens a URL in the default browser on
+// goos.
+func browserOpener(goos string) (string, bool) {
+	switch goos {
+	case "darwin":
+		return "open", true
+	case "linux":
+		return "xdg-open", true
+	}
+	return "", false
 }
 
 func (osHost) System(out, errw io.Writer) service.System {

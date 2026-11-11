@@ -2,7 +2,7 @@
   "name": "request_revert",
   "status": "PLANNED",
   "milestone": "M4.1",
-  "description": "Ask the person to revert one change, one run or one task of yours: Basalt prepares the revert (as basalt revert does) and returns revertUrl, the page where the person reviews every row and signs with their passkey, and personMessage, one line to show the person verbatim. You cannot sign or apply a revert: only the person's passkey can, checked in the database. Before you call it, check the current data (preview_revert, and query for rows that depend on the change) and tell the person what you recommend. Name exactly one of changeId, runId, taskId, with intent (why the person reverts, in their words). Show personMessage, then, without ending your turn, call request_revert once more with only revertId: that call waits up to waitForSignature seconds (default 90) and returns as soon as the person signs. APPLIED: the revert is done; tell the person what was restored and skipped. APPLYING (a revert over 1000 lines): the person signed the plan and you restore it now in batches (see nextStep). If the wait runs out (status PENDING), do not wait again: end your turn with the link and its expiry, and call request_revert with revertId when the person says they signed. People win: rows someone changed after you are skipped, never overwritten.",
+  "description": "Ask the person to revert one change or one run of yours: Basalt prepares the revert (as basalt revert does) and returns revertUrl, the page where the person reviews every row and signs with their passkey, and personMessage, one line to show the person verbatim. You can never sign a revert; you can only deliver the person's signature, which the database verifies. Before you call it, check the current data (preview_revert, and query for rows that depend on the change) and tell the person what you recommend. Name exactly one of changeId, runId, with intent (why the person reverts, in their words). A whole task is reverted only by the person (basalt revert --task); if another agent's run looks wrong, ask that agent. Show personMessage, then, without ending your turn, call request_revert once more with only revertId: that call waits up to waitForSignature seconds (default 90) and returns as soon as the person signs. APPLIED: the revert is done; tell the person what was restored and skipped. APPLYING (a revert over 1000 lines): the person signed the plan and you restore it now in batches (see nextStep). If the wait runs out (status PENDING), do not wait again: end your turn with the link and its expiry, and call request_revert with revertId when the person says they signed. If the person gives you a basalt-revert.1. code from the revert page, pass it as signature with revertId. People win: rows someone changed after you are skipped, never overwritten.",
   "inputSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -17,21 +17,16 @@
         "format": "uuid",
         "description": "Revert every applied change of one run."
       },
-      "taskId": {
-        "type": "string",
-        "format": "uuid",
-        "description": "Revert every applied change of one task, by any agent in it."
-      },
       "intent": {
         "type": "string",
         "minLength": 1,
         "maxLength": 500,
-        "description": "Why the person reverts, in a sentence they can check on the revert page. Required with changeId, runId or taskId; refused with revertId."
+        "description": "Why the person reverts, in a sentence they can check on the revert page. Required with changeId or runId; refused with revertId."
       },
       "revertId": {
         "type": "string",
         "format": "uuid",
-        "description": "A revert you requested: wait for the person's signature and return its state. Takes no scope and no intent."
+        "description": "A revert you requested: wait for the person's signature (or deliver it with signature) and return its state. Takes no scope and no intent."
       },
       "waitForSignature": {
         "type": "integer",
@@ -42,6 +37,11 @@
       "reissueLink": {
         "type": "boolean",
         "description": "Only with revertId, while PENDING: issue a new short link (the earlier one stops working) and return it as revertUrl. Default false."
+      },
+      "signature": {
+        "type": "string",
+        "pattern": "^basalt-revert\\.1\\.[A-Za-z0-9_-]+$",
+        "description": "Only with revertId: the basalt-revert.1. code the revert page showed the person, when they give it to you (the page could not relay it itself). The engine submits it and the database verifies the person's passkey signature, then applies the revert (a large plan: records the signature; you then apply it in batches). It must be for this revertId. You cannot make one."
       }
     }
   },
@@ -79,8 +79,7 @@
         "type": "string",
         "enum": [
           "CHANGE",
-          "RUN",
-          "TASK"
+          "RUN"
         ]
       },
       "scopeId": {
@@ -168,6 +167,8 @@
     "INVALID_ARGUMENT",
     "NOT_FOUND",
     "NOTHING_TO_REVERT",
+    "REVERT_INVALID",
+    "REVERT_EXPIRED",
     "QUERY_TIMEOUT",
     "UNAVAILABLE",
     "INTERNAL"

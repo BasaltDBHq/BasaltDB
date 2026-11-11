@@ -5,7 +5,7 @@ package web
 
 import "embed"
 
-// Files are the pages: approve/, revert/, register/, lib/*.js, style.css.
+// Files are the pages: approve/, revert/, register/, passkeys/, lib/*.js, style.css.
 //
-//go:embed approve/index.html revert/index.html register/index.html lib/*.js style.css
+//go:embed approve/index.html revert/index.html register/index.html passkeys/index.html lib/*.js style.css
 var Files embed.FS

@@ -7,6 +7,7 @@ import {
   CHECK_RESPONSE_PREFIX,
   checkChallenge,
   encodeCheckResponse,
+  modeForPath,
   parseManageRequest,
   sendForgetSignals,
   signalSupport,
@@ -128,4 +129,12 @@ test("forget skips the accepted list without a user handle, and reports failures
   const out = await sendForgetSignals(b.pkc, "localhost", parseManageRequest(fragment(forget)));
   assert.equal(out.supported, true);
   assert.deepEqual(out.outcomes, [{ label: "old phone", call: "signalAllAcceptedCredentials", ok: false, error: "not allowed" }]);
+});
+
+test("the path names the mode", () => {
+  assert.equal(modeForPath("/passkeys/check"), "CHECK");
+  assert.equal(modeForPath("/passkeys/forget"), "FORGET");
+  for (const p of ["/passkeys/", "/passkeys/register", "/passkeys/check/", "/approvals/x"]) {
+    assert.throws(() => modeForPath(p), CodeError, p);
+  }
 });

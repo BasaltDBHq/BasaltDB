@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"runtime"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 )
 
@@ -126,6 +128,10 @@ func lastUsed(t *time.Time) string {
 // removeFlags are basalt passkey remove's options.
 type removeFlags struct {
 	force, yes bool
+	// pagesURL is the forget page's base; "" means the passkey's own
+	// registered origin, the only one that can signal about it.
+	pagesURL string
+	open     bool
 }
 
 func passkeyRemove(c *cliIO, args []string) int {
@@ -133,6 +139,8 @@ func passkeyRemove(c *cliIO, args []string) int {
 	var f removeFlags
 	fs.BoolVar(&f.force, "force", false, "allow removing the last active passkey (asks you to type its label)")
 	fs.BoolVar(&f.yes, "yes", false, "do not ask for confirmation (the last passkey still asks for its label)")
+	fs.StringVar(&f.pagesURL, "pages-url", "", "pages base URL of the forget link (default: the origin the passkey was registered with)")
+	fs.BoolVar(&f.open, "open", false, "open the forget link in the default browser instead of printing it")
 	if err := fs.Parse(args); err != nil {
 		return c.fail(fmt.Errorf("%w: %w", errUsage, err))
 	}
@@ -208,7 +216,7 @@ func removePasskey(c *cliIO, conn *pgx.Conn, keys []guard.RegisteredPasskey, k g
 	if remaining == 0 {
 		fmt.Fprintln(c.stderr, "basalt: register another with basalt init --add-passkey before the next held write")
 	}
-	return printForgetLink(c, keys, k)
+	return forgetLink(c, keys, k, f)
 }
 
 // confirmRemoval asks unless --yes; the last active passkey needs --force
@@ -238,9 +246,20 @@ func confirmRemoval(c *cliIO, k guard.RegisteredPasskey, last bool, f removeFlag
 	return nil
 }
 
-// printForgetLink prints the page that asks a device's password manager
-// to drop the removed passkey (WebAuthn Signal API, where supported).
-func printForgetLink(c *cliIO, keys []guard.RegisteredPasskey, removed guard.RegisteredPasskey) error {
+// forgetLink prints (or with --open opens) the page that asks a device's
+// password manager to drop the removed passkey (WebAuthn Signal API, where
+// supported). Only a page on the passkey's registered origin can signal
+// about it, so another --pages-url gets no link.
+func forgetLink(c *cliIO, keys []guard.RegisteredPasskey, removed guard.RegisteredPasskey, f removeFlags) error {
+	base := strings.TrimSuffix(f.pagesURL, "/")
+	if base == "" {
+		base = removed.Origin
+	}
+	if base != removed.Origin {
+		fmt.Fprintf(c.stderr, "basalt: the passkey belongs to %s, not %s; delete it by hand in your password manager, or run with --pages-url %s for a forget link\n",
+			removed.Origin, base, removed.Origin)
+		return nil
+	}
 	req := passkey.ForgetRequest{
 		Mode:     passkey.ModeForget,
 		Removed:  []passkey.Removed{{CredentialID: removed.ID, Label: removed.Label, UserHandle: removed.UserHandle}},
@@ -251,13 +270,39 @@ func printForgetLink(c *cliIO, keys []guard.RegisteredPasskey, removed guard.Reg
 			req.Accepted = append(req.Accepted, k.ID)
 		}
 	}
-	link, err := passkey.ManageURL(removed.Origin, req)
+	link, err := req.URL(base)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintln(c.stderr, "basalt: removing it here does not delete it from your devices. Open this link on each device that holds it, so its password manager can forget it (browsers without the WebAuthn Signal API: delete it by hand):")
-	fmt.Fprintln(c.stdout, link)
+	stop := servePagesFor(c, base)
+	defer stop()
+	showLink(c, link, f.open, c.stdout)
 	return nil
+}
+
+// showLink prints link to w, or with open opens it (printed to w when no
+// browser opens).
+func showLink(c *cliIO, link string, open bool, w io.Writer) {
+	if open {
+		openLink(c, link, w)
+		return
+	}
+	fmt.Fprintln(w, link)
+}
+
+// servePagesFor serves the embedded pages on a local base while a command
+// waits, when nothing answers there yet (the engine not running), as
+// basalt init does for registration. The hosted console needs nothing.
+func servePagesFor(c *cliIO, base string) (stop func()) {
+	if base == links.HostedConsole || c.host.PagesUp(c.ctx, base) {
+		return func() {}
+	}
+	stop, served := serveLocalPages(base)
+	if !served {
+		fmt.Fprint(c.stderr, serveHint(base))
+	}
+	return stop
 }
 
 func equalID(a, b []byte) bool { return passkey.Bytes(a).String() == passkey.Bytes(b).String() }
@@ -267,9 +312,12 @@ func equalID(a, b []byte) bool { return passkey.Bytes(a).String() == passkey.Byt
 // returns and offers to remove the ones not found.
 func passkeyCheck(c *cliIO, args []string) int {
 	fs, af := addAgentFlags(c, "passkey check")
+	pagesURL := fs.String("pages-url", "", "pages base URL of the check link (default: the engine config's pagesUrl, else "+links.DefaultLocal+")")
+	open := fs.Bool("open", false, "open the check link in the default browser instead of printing it")
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
 	}
+	base := strings.TrimSuffix(configuredBase(*pagesURL, *af.agent, *af.configPath), "/")
 	conn, err := af.connect(c)
 	if err != nil {
 		return c.fail(err)
@@ -282,13 +330,13 @@ func passkeyCheck(c *cliIO, args []string) int {
 	if len(keys) == 0 {
 		return c.fail(errors.New("no active passkey; register one with basalt init --add-passkey"))
 	}
-	var missing []ledger.Passkey
-	for _, group := range byOrigin(keys) {
-		m, err := checkOrigin(c, group)
-		if err != nil {
-			return c.fail(err)
-		}
-		missing = append(missing, m...)
+	here := onBase(c, keys, base)
+	if len(here) == 0 {
+		return c.fail(fmt.Errorf("no active passkey is registered on %s; pass the --pages-url named above", base))
+	}
+	missing, err := checkOnBase(c, here, base, *open)
+	if err != nil {
+		return c.fail(err)
 	}
 	if err := offerRemoval(c, missing); err != nil {
 		return c.fail(err)
@@ -296,28 +344,26 @@ func passkeyCheck(c *cliIO, args []string) int {
 	return exitOK
 }
 
-// byOrigin groups passkeys by origin, in first-seen order: a page can only
-// ask for passkeys of its own origin.
-func byOrigin(keys []ledger.Passkey) [][]ledger.Passkey {
-	var order []string
-	groups := map[string][]ledger.Passkey{}
+// onBase is the passkeys registered on base: a page can only ask for
+// passkeys of its own origin. The others are named with the --pages-url
+// that checks them.
+func onBase(c *cliIO, keys []ledger.Passkey, base string) []ledger.Passkey {
+	var here []ledger.Passkey
 	for _, k := range keys {
-		o := k.Credential.Relying.Origin
-		if _, ok := groups[o]; !ok {
-			order = append(order, o)
+		if k.Credential.Relying.Origin == base {
+			here = append(here, k)
+			continue
 		}
-		groups[o] = append(groups[o], k)
+		fmt.Fprintf(c.stderr, "basalt: passkey %q is registered on %s; check it with --pages-url %s\n",
+			k.Label, k.Credential.Relying.Origin, k.Credential.Relying.Origin)
 	}
-	out := make([][]ledger.Passkey, 0, len(order))
-	for _, o := range order {
-		out = append(out, groups[o])
-	}
-	return out
+	return here
 }
 
-// checkOrigin prints the check link for one origin's passkeys, reads the
-// page's code, prints each passkey's result and returns those not found.
-func checkOrigin(c *cliIO, keys []ledger.Passkey) ([]ledger.Passkey, error) {
+// checkOnBase prints (or opens) the check link for the passkeys on base,
+// reads the page's code, prints each passkey's result and returns those
+// not found.
+func checkOnBase(c *cliIO, keys []ledger.Passkey, base string, open bool) ([]ledger.Passkey, error) {
 	labeled := make([]passkey.Labeled, 0, len(keys))
 	creds := make([]passkey.Credential, 0, len(keys))
 	for _, k := range keys {
@@ -328,14 +374,15 @@ func checkOrigin(c *cliIO, keys []ledger.Passkey) ([]ledger.Passkey, error) {
 	if err != nil {
 		return nil, err
 	}
-	origin := keys[0].Credential.Relying.Origin
-	link, err := passkey.ManageURL(origin, req)
+	link, err := req.URL(base)
 	if err != nil {
 		return nil, err
 	}
 	fmt.Fprintf(c.stderr, "basalt: open this link on the device to check (%d passkeys for %s). It asks each passkey to sign a check that authorizes nothing:\n",
 		len(keys), keys[0].Credential.Relying.RPID)
-	fmt.Fprintln(c.stderr, link)
+	stop := servePagesFor(c, base)
+	defer stop()
+	showLink(c, link, open, c.stderr)
 	fmt.Fprint(c.stderr, "Paste the code the page showed: ")
 	code, err := c.line()
 	if err != nil || code == "" {

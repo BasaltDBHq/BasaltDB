@@ -30,12 +30,14 @@ const lockFileName = "engine.lock"
 // instructions is the MCP initialize instruction text every agent sees.
 const instructions = "BasaltDB records every action you take on this database. " +
 	"Start a run with run_start and an intent, read with query, and change data with write and an intent. " +
-	"A write of 11 to 50 rows, or any DELETE, is held for the person's passkey approval: give them the approvalUrl, then repeat the write with approvalId. " +
+	"A write of 11 to 50 rows, or any DELETE, is held for the person's passkey approval: give them the approveCommand to run in their terminal (it opens the approval page; the approvalUrl is long and breaks when copied), then repeat the write with approvalId. " +
 	"Over 50 rows, DDL and functions outside the allowlist are refused."
 
 // Run serves every agent in cfg until ctx is done. It takes the engine lock
-// in the socket directory, so one engine runs per machine.
-func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
+// in the socket directory, so one engine runs per machine. configArg is the
+// --config argument the person's basalt commands need to find cfg (empty
+// for the default path); held writes name it in the approve command.
+func Run(ctx context.Context, cfg config.Config, configArg string, log *slog.Logger) error {
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		return errors.New("the engine runs on Linux and macOS only (it needs peer credentials on Unix sockets)")
 	}
@@ -63,7 +65,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		if err != nil {
 			return fmt.Errorf("agent %s: %w", a.Name, err)
 		}
-		rt, err := newAgentRuntime(ctx, cfg, a, pins, tg, log.With("agent", a.Name))
+		rt, err := newAgentRuntime(ctx, cfg, a, approveCommand(a.Name, configArg), pins, tg, log.With("agent", a.Name))
 		if err != nil {
 			return fmt.Errorf("agent %s: %w", a.Name, err)
 		}
@@ -98,7 +100,17 @@ type agentRuntime struct {
 	close  func()
 }
 
-func newAgentRuntime(ctx context.Context, cfg config.Config, a config.Agent, pins upkeep.Pins, tg *telegram.Notifier, log *slog.Logger) (agentRuntime, error) {
+// approveCommand is the start of the command that opens a held write's
+// approval page for agent; the service appends --open and the id.
+func approveCommand(agent, configArg string) string {
+	cmd := "basalt approve --agent " + agent
+	if configArg == "" {
+		return cmd
+	}
+	return cmd + " " + configArg
+}
+
+func newAgentRuntime(ctx context.Context, cfg config.Config, a config.Agent, approveCmd string, pins upkeep.Pins, tg *telegram.Notifier, log *slog.Logger) (agentRuntime, error) {
 	limits, err := sqlLimits(cfg.Limits)
 	if err != nil {
 		return agentRuntime{}, err
@@ -121,6 +133,7 @@ func newAgentRuntime(ctx context.Context, cfg config.Config, a config.Agent, pin
 		Reverts:      store,
 		Notifier:     agentNotifier(tg, pool.Config().ConnConfig.Database),
 		ApprovalPage: cfg.ApprovalPage,
+		ApproveCmd:   approveCmd,
 		Log:          log,
 		Now:          time.Now,
 	})

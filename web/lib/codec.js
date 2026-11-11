@@ -40,6 +40,16 @@ export class CodeError extends Error {
   }
 }
 
+// TruncatedLinkError is a link fragment that does not decode. Links carry
+// the whole preview and run long; terminals wrap them and chats cut them,
+// so a fragment that stops making sense was most likely cut short.
+export class TruncatedLinkError extends CodeError {
+  constructor(message) {
+    super(message);
+    this.name = "TruncatedLinkError";
+  }
+}
+
 const B64URL = /^[A-Za-z0-9_-]*$/;
 const HEX64 = /^[0-9a-f]{64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -152,7 +162,7 @@ async function inflateRaw(bytes, what) {
     }
   } catch (err) {
     if (err instanceof CodeError) throw err;
-    throw new CodeError(`${what} is not deflate-raw`);
+    throw new TruncatedLinkError(`${what} is not deflate-raw`);
   }
   const out = new Uint8Array(total);
   let at = 0;
@@ -163,13 +173,29 @@ async function inflateRaw(bytes, what) {
   return out;
 }
 
+// asTruncated runs one decoding step of a link fragment and reports its
+// CodeError as a TruncatedLinkError.
+function asTruncated(step) {
+  try {
+    return step();
+  } catch (err) {
+    if (err instanceof CodeError) throw new TruncatedLinkError(err.message);
+    throw err;
+  }
+}
+
 // decodeRequest decodes a link fragment, with or without '#':
 // prefix + base64url(deflate-raw(json)), into an object with exactly the
-// required and optional keys.
+// required and optional keys. A fragment that is empty or does not decode
+// (base64url, deflate-raw, UTF-8, JSON) throws TruncatedLinkError.
 async function decodeRequest(fragment, prefix, what, required, optional) {
-  const payload = stripPrefix(String(fragment).replace(/^#/, ""), prefix, what);
-  const json = fromUtf8(await inflateRaw(b64urlDecode(payload), what));
-  return strictObject(parseJSON(json, what), what, required, optional);
+  const text = String(fragment).replace(/^#/, "");
+  if (prefix.startsWith(text)) throw new TruncatedLinkError(`${what} is empty`);
+  const payload = stripPrefix(text, prefix, what);
+  const compressed = asTruncated(() => b64urlDecode(payload));
+  const raw = await inflateRaw(compressed, what);
+  const json = asTruncated(() => parseJSON(fromUtf8(raw), what));
+  return strictObject(json, what, required, optional);
 }
 
 function requireLineStrings(lines, what) {

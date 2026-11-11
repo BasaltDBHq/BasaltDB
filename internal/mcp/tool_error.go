@@ -13,12 +13,14 @@ type ToolError struct {
 }
 
 // ApprovalNotice is the held write an APPROVAL_REQUIRED error carries: the
-// link to give the person and when it expires.
+// command to give the person (it opens the approval page), the link itself
+// for clients that render it, and when it expires.
 type ApprovalNotice struct {
-	ApprovalID  string `json:"approvalId"`
-	ExpiresAt   string `json:"expiresAt"`
-	Rows        int    `json:"rows"`
-	ApprovalURL string `json:"approvalUrl"`
+	ApprovalID     string `json:"approvalId"`
+	ExpiresAt      string `json:"expiresAt"`
+	Rows           int    `json:"rows"`
+	ApprovalURL    string `json:"approvalUrl"`
+	ApproveCommand string `json:"approveCommand"`
 }
 
 func (e *ToolError) Error() string {

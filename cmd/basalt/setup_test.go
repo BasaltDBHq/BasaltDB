@@ -28,6 +28,8 @@ type fakeHost struct {
 	sudoIn    []string
 	probed    []string
 	ran       [][]string
+	opened    []string
+	openErr   error
 	sys       *fakeSys
 }
 
@@ -61,6 +63,11 @@ func (h *fakeHost) Sudo(_ context.Context, args []string, stdin string, _, _ io.
 func (h *fakeHost) Run(_ context.Context, args []string, _, _ io.Writer) error {
 	h.ran = append(h.ran, args)
 	return nil
+}
+
+func (h *fakeHost) OpenURL(_ context.Context, link string) error {
+	h.opened = append(h.opened, link)
+	return h.openErr
 }
 
 func (h *fakeHost) System(io.Writer, io.Writer) service.System { return h.sys }

@@ -9,7 +9,7 @@ import {
   parseRevertRequest,
   relyingParty,
 } from "./codec.js";
-import { $, el, fail, showCode, webauthnError } from "./page.js";
+import { $, REVERT_REOPEN, el, fail, linkFailure, showCode, webauthnError } from "./page.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
 
@@ -150,7 +150,7 @@ async function main() {
     rp = relyingParty(window.location);
     req = await parseRevertRequest(window.location.hash);
   } catch (err) {
-    fail(`This revert link cannot be used: ${err.message}`);
+    fail(linkFailure(err, "revert", REVERT_REOPEN));
     return;
   }
   renderSummary(req);

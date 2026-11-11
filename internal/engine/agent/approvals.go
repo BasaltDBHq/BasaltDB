@@ -113,15 +113,26 @@ func (s *Service) hold(ctx context.Context, in guard.Intent, p WriteParams, stmt
 	if err := s.Notifier.NotifyHeld(context.WithoutCancel(ctx), notice); err != nil {
 		s.Log.Error("notify held write", "approvalId", held.ApprovalID, "err", err)
 	}
+	command := s.approveCommand(held.ApprovalID)
 	return &mcp.ToolError{
 		Code: CodeApprovalRequired,
-		Message: fmt.Sprintf("held for the person's approval: %d rows. Give the person the approvalUrl; once they approve with their passkey, "+
-			"call write again with the same arguments plus approvalId (and approval, if they give you the code). It expires at %s.",
-			len(lines), timeText(held.ExpiresAt)),
+		Message: fmt.Sprintf("held for the person's approval: %d rows. Ask the person to run this in their terminal, which opens the approval page: %s "+
+			"(give them this command, not the approvalUrl: the link is long and breaks when copied from a chat or a terminal). "+
+			"Once they approve with their passkey, call write again with the same arguments plus approvalId "+
+			"(and approval, if they give you the code). It expires at %s.",
+			len(lines), command, timeText(held.ExpiresAt)),
 		Approval: &mcp.ApprovalNotice{
-			ApprovalID: held.ApprovalID.String(), ExpiresAt: timeText(held.ExpiresAt), Rows: len(lines), ApprovalURL: link,
+			ApprovalID: held.ApprovalID.String(), ExpiresAt: timeText(held.ExpiresAt), Rows: len(lines),
+			ApprovalURL: link, ApproveCommand: command,
 		},
 	}
+}
+
+// approveCommand is the command that opens a held write's approval page in
+// the person's browser: short enough to copy from a chat, unlike the link,
+// which carries the whole preview.
+func (s *Service) approveCommand(id uuid.UUID) string {
+	return s.ApproveCmd + " --open " + id.String()
 }
 
 // credentialIDs are the registered passkeys, for the request's
@@ -232,10 +243,12 @@ func (s *Service) relay(ctx context.Context, a ledger.Approval, code string) err
 	return err
 }
 
-// PendingItem is one open held write with its approval link.
+// PendingItem is one open held write with its approval link and the
+// command that opens it.
 type PendingItem struct {
 	ledger.Approval
-	ApprovalURL string
+	ApprovalURL    string
+	ApproveCommand string
 }
 
 // ListPending returns one page of the agent's open held writes.
@@ -257,7 +270,7 @@ func (s *Service) ListPending(ctx context.Context, p ledger.ApprovalListParams) 
 		if err != nil {
 			return pagination.Page[PendingItem]{}, err
 		}
-		out.Items = append(out.Items, PendingItem{Approval: a, ApprovalURL: link})
+		out.Items = append(out.Items, PendingItem{Approval: a, ApprovalURL: link, ApproveCommand: s.approveCommand(a.ID)})
 	}
 	return out, nil
 }

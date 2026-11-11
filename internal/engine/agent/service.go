@@ -72,6 +72,10 @@ type Deps struct {
 	Notifier Notifier
 	// ApprovalPage is the approval page URL; approval.PageURL when empty.
 	ApprovalPage string
+	// ApproveCmd is the start of the command the person runs to open a
+	// held write's approval page ("basalt approve --agent NAME [--config
+	// PATH]"); "basalt approve --agent NAME" when empty.
+	ApproveCmd string
 }
 
 // Service runs one agent's tool calls.
@@ -91,6 +95,9 @@ func NewService(d Deps) *Service {
 	}
 	if d.ApprovalPage == "" {
 		d.ApprovalPage = approval.PageURL
+	}
+	if d.ApproveCmd == "" {
+		d.ApproveCmd = "basalt approve --agent " + d.Name
 	}
 	return &Service{Deps: d}
 }

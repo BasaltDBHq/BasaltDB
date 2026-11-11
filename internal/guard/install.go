@@ -48,6 +48,10 @@ type AgentSpec struct {
 type InitOptions struct {
 	Names Names
 	Agent AgentSpec
+	// AgentPolicies are the agent's tables the person confirmed the agent
+	// may see every row of (from AgentBlindTables). Each gets a policy
+	// named after the agent role and a ledger row; nothing else does.
+	AgentPolicies []BlindTable
 }
 
 // Statement is one step of a Script. Shown is what the person sees when it
@@ -144,6 +148,13 @@ func PlanInit(ctx context.Context, q Querier, opts InitOptions) (Script, error) 
 			return Script{}, err
 		}
 		s.Statements = append(s.Statements, agent...)
+		role, err := n.Agent(opts.Agent.Name)
+		if err != nil {
+			return Script{}, err
+		}
+		for _, b := range opts.AgentPolicies {
+			s.Statements = append(s.Statements, agentPolicy(role, b))
+		}
 	}
 	add(attachAll)
 	return s, nil
@@ -324,7 +335,7 @@ func isHex(s string) bool {
 	return err == nil
 }
 
-// Uninstall drops the guard's RLS policies and basalt_meta (and with it
+// Uninstall drops the guard's and agents' RLS policies and basalt_meta (and with it
 // every guard trigger), then the agent roles, the group and the owner.
 // Roles are cluster objects that
 // DROP SCHEMA leaves behind; DROP OWNED BY revokes their grants in this
@@ -348,8 +359,10 @@ func Uninstall(ctx context.Context, q Querier, n Names) error {
 	if err != nil {
 		return err
 	}
-	if err := dropGuardPolicies(ctx, q, n.Guard()); err != nil {
-		return err
+	for _, role := range append(agents, n.Guard()) {
+		if err := dropNamedPolicies(ctx, q, role); err != nil {
+			return err
+		}
 	}
 	// Plain SQL: DDL.
 	if _, err := q.Exec(ctx, `DROP SCHEMA IF EXISTS basalt_meta CASCADE`); err != nil {
@@ -363,13 +376,14 @@ func Uninstall(ctx context.Context, q Querier, n Names) error {
 	return nil
 }
 
-// dropGuardPolicies drops the row-level security policies attach created
-// for the guard role (named after it, decision N12-7).
-func dropGuardPolicies(ctx context.Context, q Querier, guardRole string) error {
+// dropNamedPolicies drops the row-level security policies named after role
+// and naming it: the guard's (attach, decision N12-7) and an agent's (init,
+// after the person confirmed it, decision "Agent RLS").
+func dropNamedPolicies(ctx context.Context, q Querier, role string) error {
 	// Plain SQL: catalog lookup building DDL with quoted identifiers.
 	rows, err := q.Query(ctx, `SELECT format('DROP POLICY %I ON %s', p.polname, p.polrelid::regclass)
 		FROM pg_catalog.pg_policy p JOIN pg_catalog.pg_roles r ON r.oid = ANY (p.polroles)
-		WHERE p.polname = $1 AND r.rolname = $1 ORDER BY 1`, guardRole)
+		WHERE p.polname = $1 AND r.rolname = $1 ORDER BY 1`, role)
 	if err != nil {
 		return err
 	}
@@ -379,7 +393,7 @@ func dropGuardPolicies(ctx context.Context, q Querier, guardRole string) error {
 	}
 	for _, sql := range drops {
 		if _, err := q.Exec(ctx, sql); err != nil {
-			return fmt.Errorf("drop guard policy: %w", err)
+			return fmt.Errorf("drop policy of %s: %w", role, err)
 		}
 	}
 	return nil

@@ -1,6 +1,7 @@
 package upkeep_test
 
 import (
+	"bytes"
 	"context"
 	"log/slog"
 	"testing"
@@ -217,4 +218,21 @@ func TestRunStopsWithTheContext(t *testing.T) {
 func TestNewPanicsWithoutDeps(t *testing.T) {
 	t.Parallel()
 	require.Panics(t, func() { upkeep.New("", "v", nil, slog.New(slog.DiscardHandler), time.Now) })
+}
+
+func TestTickWarnsAboutTablesRLSHides(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
+	d.Exec(t, `ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY`)
+	var buf bytes.Buffer
+	u := upkeep.New("bot", "test", a.Conn, slog.New(slog.NewTextHandler(&buf, nil)), time.Now)
+	require.NoError(t, u.Tick(context.Background()))
+	require.Contains(t, buf.String(), "row-level security hides every row")
+	require.Contains(t, buf.String(), "table=public.leads")
+
+	d.Exec(t, `CREATE POLICY bot ON public.leads FOR ALL TO `+a.Role+` USING (true)`)
+	buf.Reset()
+	require.NoError(t, u.Tick(context.Background()))
+	require.NotContains(t, buf.String(), "row-level security")
 }

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/result-warning.v1.json",
+  "title": "Result warning",
+  "description": "A warning on a successful query or write result (its warnings array, absent when empty): the call worked, but the result is probably not what the agent expects. RLS_HIDES_ROWS: row-level security hides every row of a table in the statement from the agent role, and the statement returned or changed 0 rows. See CONTRACT.md, Next steps.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["code", "message", "nextSteps"],
+  "properties": {
+    "code": {
+      "type": "string",
+      "enum": ["RLS_HIDES_ROWS"]
+    },
+    "message": {
+      "type": "string",
+      "description": "One line for the agent."
+    },
+    "table": {
+      "type": "string",
+      "description": "The table the warning is about, schema-qualified."
+    },
+    "personMessage": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "One plain line the agent shows the person verbatim."
+    },
+    "nextSteps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "next-step.schema.json" }
+    }
+  }
+}

@@ -163,12 +163,27 @@
       "nextCursor": {
         "type": "string",
         "description": "Absent on the last page."
+      },
+      "nextSteps": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "$ref": "../errors/next-step.schema.json"
+        },
+        "description": "Planned (CONTRACT.md, Next steps): what to do next, first step first."
+      },
+      "personMessage": {
+        "type": "string",
+        "maxLength": 500,
+        "description": "Planned (CONTRACT.md, Next steps): one plain line the agent shows the person verbatim."
       }
     }
   },
   "errors": [
     "INVALID_ARGUMENT",
     "NOT_FOUND",
+    "QUERY_TIMEOUT",
+    "NOTHING_TO_REVERT",
     "UNAVAILABLE",
     "INTERNAL"
   ]

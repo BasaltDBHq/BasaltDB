@@ -172,6 +172,14 @@
       "personMessage": {
         "type": "string",
         "description": "Only while PENDING: one line to show the person verbatim, with the revert link and its expiry."
+      },
+      "nextSteps": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "$ref": "../errors/next-step.schema.json"
+        },
+        "description": "Planned (CONTRACT.md, Next steps): what to do next, first step first."
       }
     },
     "$defs": {

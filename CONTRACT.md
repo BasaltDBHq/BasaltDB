@@ -57,11 +57,13 @@ Reads (M1.5): every `query` the engine runs is a change record with `op: SELECT`
 
 Tool errors return an MCP tool result with `isError: true` and a JSON body `{ "code": "<CODE>", "message": "…", "reason": "…", "sqlState": "…" }`. `reason` is set for `STATEMENT_REFUSED` and `QUERY_TIMEOUT`; `sqlState` is set when Postgres raised the error. Codes are stable once `IMPLEMENTED`.
 
+Planned (actionable errors, owner decisions AE-1 to AE-8; not emitted yet): the body also carries `nextSteps` (required, at least one step), `personMessage` (when the person must know or act), `errorId` (on `UNAVAILABLE` and `INTERNAL`), and `reason` for every code with more than one case. Schema: [`api/mcp/errors/tool-error.schema.json`](api/mcp/errors/tool-error.schema.json); rules in [Next steps](#next-steps).
+
 From M2, an `APPROVAL_REQUIRED` body also carries `approval: { "approvalId", "expiresAt", "rows", "headline", "approvalUrl", "approveCommand", "personMessage" }` (see [Approvals](#approvals) and [Handing a held action to the person](#handing-a-held-action-to-the-person)):
 
 - `headline`: the held write in one line, cascade stated (`Delete 1 row in public.leads + 2 cascaded rows (public.lead_notes 2)`), as `basalt approve --show` prints it.
 - `approvalUrl`: the **short link** `<base>/approvals/<approvalId>` when the engine serves the [local pages](#local-pages); otherwise the long link `<base>/approvals/<approvalId>#1.<request>` (below, [Page links](#page-links)). Clients that render links may show it.
-- `approveCommand`: `basalt approve --agent NAME [--config PATH] --open <approvalId>` (`--config` only when the engine runs from a non-default config). The person runs it in a terminal and it opens the approval page in their browser. A first-class path, not only a fallback.
+- `approveCommand`: `basalt approve --agent NAME [--config PATH] --open <approvalId>` (`--config` only when the engine runs from a non-default config; planned, AE-3: always, with the absolute path). The person runs it in a terminal and it opens the approval page in their browser. A first-class path, not only a fallback.
 - `personMessage`: one line the agent shows the person verbatim: what is held, the headline, the link, the equivalent command and the expiry. For example `Held for your approval: Update 27 rows in basalt_demo.leads. Approve: http://localhost:8787/approvals/<id> (or run: basalt approve --agent demo_bot --open <id>). Expires 2026-11-12 07:02 UTC.`
 
 `headline` and `personMessage` are new (M4.1); `approvalUrl` changes from always-long to short-when-served (M4.1, a breaking change). `list_pending` items carry the same four fields, so an agent that lost the link gets it again there.
@@ -78,17 +80,110 @@ From M2, an `APPROVAL_REQUIRED` body also carries `approval: { "approvalId", "ex
 | `APPROVAL_INVALID` | The approval does not exist, is used, belongs to another agent, or no longer matches the rows (`BS005`) |
 | `REVERT_INVALID` | M3. The revert authorisation does not exist, is already applied, carries a bad signature, or its rows changed since the preview (`BS005`). For a batch of a large plan: the plan is not this agent's, not signed or already finished, or a line is not in the plan, repeated, or already applied |
 | `REVERT_EXPIRED` | M3. The revert was not signed within 1 hour of `prepare_revert`, or a signed large plan was not finished within 24 hours of the signature (`BS005`) |
-| `NOTHING_TO_REVERT` | M3. Every row in the scope would be skipped, or the scope wrote no rows (`BS009`) |
+| `NOTHING_TO_REVERT` | M3. Every row in the scope would be skipped, or the scope wrote no rows (`BS009`). Planned (AE-8): also `preview_revert`, in place of `NOT_FOUND` |
 | `PERMISSION_DENIED` | The agent's role lacks the privilege; the database refused (`42501`) |
-| `NOT_FOUND` | The run named in the arguments does not exist for this agent |
+| `NOT_FOUND` | The run named in the arguments does not exist for this agent; also an approval or revert that is not this agent's, and a page link without its secret or replaced (reasons in [Next steps per code](#next-steps-per-code)) |
 | `SQL_ERROR` | Any other error Postgres raised for the agent's statement (syntax, unknown column, constraint); `sqlState` says which |
 | `INVALID_ARGUMENT` | Arguments fail schema validation, or an unknown argument was passed |
 | `UNAVAILABLE` | The database or the guard cannot be reached |
 | `INTERNAL` | A defect in the engine or the guard (`BS006`, `BS008`) |
 
-`STATEMENT_REFUSED` reasons: `PARSE_ERROR`, `MULTIPLE_STATEMENTS`, `WRONG_TOOL` (a write sent to `query` or a read sent to `write`), `DDL_NOT_ALLOWED`, `STATEMENT_NOT_ALLOWED` (`SET`, `DO`, `COPY`, `EXPLAIN`, transaction control and other utility statements), `SELECT_INTO`, `LOCKING_READ`, `MERGE_NOT_ALLOWED`, `DATA_MODIFYING_WITH`, `FUNCTION_NOT_ALLOWED`, and from M2 `NOT_REPEATABLE` (a write that would be held contains a value that changes between transactions; pass it as a parameter). `QUERY_TIMEOUT` reasons: `TIME_LIMIT`, `ROW_LIMIT`.
+`STATEMENT_REFUSED` reasons: `PARSE_ERROR`, `MULTIPLE_STATEMENTS`, `WRONG_TOOL` (a write sent to `query` or a read sent to `write`), `DDL_NOT_ALLOWED`, `STATEMENT_NOT_ALLOWED` (`SET`, `DO`, `COPY`, `EXPLAIN`, transaction control and other utility statements), `SELECT_INTO`, `LOCKING_READ`, `MERGE_NOT_ALLOWED`, `DATA_MODIFYING_WITH`, `FUNCTION_NOT_ALLOWED`, and from M2 `NOT_REPEATABLE` (a write that would be held contains a value that changes between transactions; pass it as a parameter). `QUERY_TIMEOUT` reasons: `TIME_LIMIT`, `ROW_LIMIT`. Planned (AE-5): `STATEMENT_REFUSED` gains `NO_PRIMARY_KEY` and `NOT_ALLOWED` (the guard's `BS007`, which carries no reason today), and the other codes with more than one case get reasons; [Next steps per code](#next-steps-per-code) lists them all.
 
-New codes and reasons go through the contract-first process.
+New codes and reasons go through the contract-first process. Each one needs its entry in [Next steps per code](#next-steps-per-code) and [`api/mcp/errors/next-steps.json`](api/mcp/errors/next-steps.json).
+
+## Next steps
+
+Planned (owner decisions AE-1 to AE-8, design [`docs/redesign/specs/2026-11-12-actionable-errors.md`](docs/redesign/specs/2026-11-12-actionable-errors.md)). Every error body and every result the agent must act on tells it what to do next and what to tell the person. No bare error strings to agents.
+
+- **`nextSteps`**: an ordered array of steps, first step first ([`next-step.schema.json`](api/mcp/errors/next-step.schema.json)). Each step has `actor` (`AGENT` or `PERSON`), `action`, and `text` (one plain sentence, at most 200 characters), plus what the action needs: `tool` and `arguments` (filled in by the engine; with `repeatCall: true` merged over the arguments of the call that returned the step, `null` removing one), `command`, `url`, `maxRows`, `waitSeconds`.
+- **Actions.** `AGENT`: `CALL_TOOL` (call `tool` with `arguments`), `REVISE_CALL` (change the statement or arguments as `text` says, then call `tool`), `RETRY_SMALLER_BATCHES` (split into writes of at most `maxRows` rows, same intent and run), `ASK_PERSON`, `END_TURN` (end the turn; the person acts next), `STOP` (do not retry, do not work around). `PERSON`: `OPEN_LINK` (`url`, optionally `command` that opens the same page), `RUN_COMMAND` (`command`), `TELL_AGENT`. No step is conditional: each result carries its own steps.
+- **`personMessage`**: one plain line, at most 500 characters, that the agent shows the person verbatim. Set whenever the person must know or act. The agent also shows each `PERSON` step's `command` and `url` unchanged.
+- **Commands** are complete and copy-pasteable: every `basalt` command names `--agent <name> --config <absolute engine config path>` and its ids. No placeholders. Never a secret (connection string, password, token); a command that needs the admin connection string asks for it itself. A short link's `#s=` secret appears only in `url` and `personMessage`.
+- **Steps never suggest getting around a limit**: no split below the hold threshold to avoid an approval, no other path around a refusal, no retry loop on a refusal.
+- **Results.** `preview_revert`, `revert_plan`, `apply_revert_batch` and each `list_pending` item carry `nextSteps` and `personMessage` when there is something to do. `query` and `write` carry `warnings: [{ code, message, table, personMessage, nextSteps }]` ([`warning.schema.json`](api/mcp/errors/warning.schema.json)), absent when empty; one code, `RLS_HIDES_ROWS`: row-level security hides every row of a table in the statement from the agent role and the statement returned or changed 0 rows.
+- **Pages.** The local pages' JSON errors carry `personMessage` and the entry's `PERSON` steps.
+- **Startup failures.** An engine whose guard schema is older than its build serves the agent and answers every call `UNAVAILABLE` reason `GUARD_OUTDATED`; `basalt mcp` that cannot reach the engine serves the tool list from its embedded contracts and answers every call `UNAVAILABLE` reason `ENGINE_UNREACHABLE` (it holds no credential and reaches no database).
+- **The catalog.** [`api/mcp/errors/next-steps.json`](api/mcp/errors/next-steps.json) fixes, per code and reason (and per tool where a tool differs), per result case and per warning, the `(actor, action)` sequence the engine returns and whether `personMessage` is set. The table below is the same list. The contract test checks both agree and that every code in [Error codes](#error-codes) has an entry; the engine's test checks every returned `nextSteps` against it.
+
+### Next steps per code
+
+`—` in Reason: the code's only or default case (no `reason`). Steps: `A` agent, `P` person; `+pm`: `personMessage` set.
+
+| Code | Reason | Tool | Steps |
+|---|---|---|---|
+| `INTENT_REQUIRED` | — | — | A `REVISE_CALL` |
+| `STALE_READ` | — | — | A `CALL_TOOL` (`query` of the row), A `REVISE_CALL` |
+| `STATEMENT_REFUSED` | `PARSE_ERROR` | — | A `REVISE_CALL` |
+| `STATEMENT_REFUSED` | `MULTIPLE_STATEMENTS` | — | A `REVISE_CALL` |
+| `STATEMENT_REFUSED` | `WRONG_TOOL` | — | A `REVISE_CALL` |
+| `STATEMENT_REFUSED` | `DDL_NOT_ALLOWED` | — | A `STOP`, A `ASK_PERSON`; +pm |
+| `STATEMENT_REFUSED` | `STATEMENT_NOT_ALLOWED` | — | A `REVISE_CALL` |
+| `STATEMENT_REFUSED` | `SELECT_INTO` | — | A `REVISE_CALL` |
+| `STATEMENT_REFUSED` | `LOCKING_READ` | — | A `REVISE_CALL` |
+| `STATEMENT_REFUSED` | `MERGE_NOT_ALLOWED` | — | A `REVISE_CALL` |
+| `STATEMENT_REFUSED` | `DATA_MODIFYING_WITH` | — | A `REVISE_CALL` |
+| `STATEMENT_REFUSED` | `FUNCTION_NOT_ALLOWED` | — | A `REVISE_CALL` |
+| `STATEMENT_REFUSED` | `NOT_REPEATABLE` | — | A `REVISE_CALL` |
+| `STATEMENT_REFUSED` | `NO_PRIMARY_KEY` | — | A `STOP`; +pm |
+| `STATEMENT_REFUSED` | `NOT_ALLOWED` | — | A `STOP` |
+| `ROW_LIMIT_EXCEEDED` | — | — | A `ASK_PERSON`, A `RETRY_SMALLER_BATCHES` (`maxRows` 50); +pm |
+| `QUERY_TIMEOUT` | `ROW_LIMIT` | — | A `REVISE_CALL` |
+| `QUERY_TIMEOUT` | `TIME_LIMIT` | — | A `REVISE_CALL` |
+| `QUERY_TIMEOUT` | `TIME_LIMIT` | `preview_revert` | A `STOP`, P `RUN_COMMAND` (`basalt revert ... --dry-run`), P `RUN_COMMAND` (`basalt revert ... --open`), A `END_TURN`; +pm |
+| `APPROVAL_REQUIRED` | `HELD` | — | P `OPEN_LINK`, A `CALL_TOOL` (`write` with `approvalId`, waits once); +pm |
+| `APPROVAL_REQUIRED` | `HELD_NO_PAGES` | — | P `RUN_COMMAND` (`basalt approve ... --open`), A `CALL_TOOL`; +pm |
+| `APPROVAL_REQUIRED` | `NO_PASSKEY` | — | P `RUN_COMMAND` (`basalt init ... --add-passkey`), P `OPEN_LINK`, A `END_TURN`; +pm |
+| `APPROVAL_REQUIRED` | `WAIT_ENDED` | — | P `OPEN_LINK`, P `TELL_AGENT`, A `END_TURN`, A `CALL_TOOL` (`write` with `approvalId`, no wait); +pm |
+| `APPROVAL_EXPIRED` | — | — | A `ASK_PERSON`, A `REVISE_CALL`; +pm |
+| `APPROVAL_INVALID` | `NOT_SIGNED` | — | P `OPEN_LINK`, A `END_TURN`; +pm |
+| `APPROVAL_INVALID` | `ALREADY_USED` | — | A `CALL_TOOL` (`run_history`), A `STOP` |
+| `APPROVAL_INVALID` | `DIFFERENT_WRITE` | — | A `CALL_TOOL` (`write` with the held arguments) |
+| `APPROVAL_INVALID` | `NOT_THIS_AGENT` | — | A `CALL_TOOL` (`list_pending`) |
+| `APPROVAL_INVALID` | `ROWS_CHANGED` | — | A `REVISE_CALL` (`query`), A `REVISE_CALL` (`write`, held anew); +pm |
+| `APPROVAL_INVALID` | `BAD_SIGNATURE` | — | P `OPEN_LINK`, A `END_TURN`; +pm |
+| `APPROVAL_INVALID` | `PASSKEY_REVOKED` | — | P `RUN_COMMAND` (`basalt passkey list`), P `RUN_COMMAND` (`basalt init ... --add-passkey`), P `OPEN_LINK`, A `END_TURN`; +pm |
+| `REVERT_INVALID` | `LINE_INVALID` | — | A `CALL_TOOL` (`revert_plan`, pending lines) |
+| `REVERT_INVALID` | `PLAN_NOT_SIGNED` | — | A `CALL_TOOL` (`revert_plan`), A `END_TURN` |
+| `REVERT_INVALID` | `PLAN_FINISHED` | — | A `CALL_TOOL` (`revert_plan`), A `STOP` |
+| `REVERT_INVALID` | `NOT_THIS_AGENT` | — | A `STOP` |
+| `REVERT_INVALID` | `ROWS_CHANGED` | — | P `RUN_COMMAND` (`basalt revert ... --open`); +pm |
+| `REVERT_INVALID` | `BAD_SIGNATURE` | — | P `RUN_COMMAND` (`basalt revert ... --open`), A `END_TURN`; +pm |
+| `REVERT_INVALID` | `PASSKEY_REVOKED` | — | P `RUN_COMMAND` (`basalt passkey list`), P `RUN_COMMAND` (`basalt init ... --add-passkey`), P `RUN_COMMAND` (`basalt revert ... --open`), A `END_TURN`; +pm |
+| `REVERT_EXPIRED` | `NOT_SIGNED` | — | P `RUN_COMMAND` (`basalt revert ... --open`); +pm |
+| `REVERT_EXPIRED` | `NOT_FINISHED` | — | P `RUN_COMMAND` (`basalt revert ... --open`), P `TELL_AGENT` (the new revert id); +pm |
+| `NOTHING_TO_REVERT` | — | — | A `STOP`; +pm |
+| `PERMISSION_DENIED` | — | — | A `STOP`, A `ASK_PERSON`, P `RUN_COMMAND` (`basalt init ...` with the table), P `RUN_COMMAND` (restart the engine); +pm |
+| `NOT_FOUND` | `RUN` | — | A `CALL_TOOL` (`run_start`) |
+| `NOT_FOUND` | `APPROVAL` | — | A `CALL_TOOL` (`list_pending`) |
+| `NOT_FOUND` | `REVERT` | — | A `ASK_PERSON` (the revert id `basalt revert` printed) |
+| `NOT_FOUND` | `LINK` | — | P `TELL_AGENT` (pages only); +pm |
+| `SQL_ERROR` | — | — | A `REVISE_CALL` |
+| `SQL_ERROR` | `NO_ROWS_NOW` | — | A `REVISE_CALL` (`query`) |
+| `INVALID_ARGUMENT` | — | — | A `REVISE_CALL` |
+| `INVALID_ARGUMENT` | `STALE_CURSOR` | — | A `CALL_TOOL` (same call, no `cursor`) |
+| `UNAVAILABLE` | `DATABASE_UNREACHABLE` | — | A `CALL_TOOL` (same call after 10 s), A `ASK_PERSON`; +pm |
+| `UNAVAILABLE` | `CREDENTIAL_REJECTED` | — | A `STOP`, P `RUN_COMMAND` (restart the engine); +pm |
+| `UNAVAILABLE` | `GUARD_OUTDATED` | — | A `STOP`, P `RUN_COMMAND` (`basalt init ...`, same flags), P `RUN_COMMAND` (restart the engine), P `TELL_AGENT`; +pm |
+| `UNAVAILABLE` | `ENGINE_UNREACHABLE` | — | A `STOP`, P `RUN_COMMAND` (start the engine); +pm |
+| `UNAVAILABLE` | `PAGES_OFF` | — | A `CALL_TOOL` (`list_pending`, hand over `approveCommand`) |
+| `INTERNAL` | — | — | A `STOP`; +pm |
+
+Results and warnings:
+
+| Tool or warning | Case | Steps |
+|---|---|---|
+| `preview_revert` | `PREVIEW` | A `ASK_PERSON`, P `RUN_COMMAND` (`basalt revert ... --open`); +pm |
+| `preview_revert` | `PREVIEW_LARGE` (over 1000 lines) | A `ASK_PERSON`, P `RUN_COMMAND`, P `TELL_AGENT` (the revert id, for the batches); +pm |
+| `list_pending` item | `PENDING` | P `OPEN_LINK`; +pm |
+| `list_pending` item | `EXPIRED` | A `ASK_PERSON`, A `REVISE_CALL`; +pm |
+| `revert_plan` | `PENDING` | P `OPEN_LINK`, P `TELL_AGENT`, A `END_TURN`; +pm |
+| `revert_plan` | `APPLYING` | A `CALL_TOOL` (`apply_revert_batch` with the pending line numbers) |
+| `revert_plan` | `APPLIED` | P `RUN_COMMAND` (`basalt revert ... --status`); +pm |
+| `revert_plan` | `EXPIRED` | P `RUN_COMMAND` (`basalt revert ... --open`); +pm |
+| `apply_revert_batch` | `APPLYING` | A `CALL_TOOL` (`revert_plan`, `pending: true`, `limit: 200`) |
+| `apply_revert_batch` | `APPLIED` | P `RUN_COMMAND` (`basalt revert ... --status`); +pm |
+| `RLS_HIDES_ROWS` | — | A `ASK_PERSON`, P `RUN_COMMAND` (`basalt init ... --agent-rls=all-rows`), P `RUN_COMMAND` (restart the engine); +pm |
 
 ## MCP tools
 
@@ -105,7 +200,7 @@ The first release serves exactly these tools (foundation, "First release", plus 
 | `revert_plan` | M3 | Nov 12: the lines of a large revert plan and its progress |
 | `apply_revert_batch` | M3 | Nov 12: apply a batch of lines of a large revert plan the person signed |
 
-`preview_revert` (M3): exactly one of `changeId`, `runId`, `taskId`, plus `limit` and `cursor` (no `sort`: lines come in their signed order). Returns `scope`, `scopeId`, the `rows` and `skipped` totals of the whole preview, the `command` the person runs (`basalt revert --agent <name> --run <id>`), and one page of lines as objects (see [Revert](#revert)). It runs the revert on trial and rolls it back; it never reverts. The cursor names the last line of the page by its hash, so a preview whose rows changed between pages is refused with `INVALID_ARGUMENT` (start again). A scope with nothing to revert is `NOT_FOUND`. A scope of any size can be previewed.
+`preview_revert` (M3): exactly one of `changeId`, `runId`, `taskId`, plus `limit` and `cursor` (no `sort`: lines come in their signed order). Returns `scope`, `scopeId`, the `rows` and `skipped` totals of the whole preview, the `command` the person runs (`basalt revert --agent <name> --run <id>`), and one page of lines as objects (see [Revert](#revert)). It runs the revert on trial and rolls it back; it never reverts. The cursor names the last line of the page by its hash, so a preview whose rows changed between pages is refused with `INVALID_ARGUMENT` (start again). A scope with nothing to revert is `NOT_FOUND` (planned, AE-8: `NOTHING_TO_REVERT`). A scope of any size can be previewed, within the agent role's statement timeout: a preview that runs out is `QUERY_TIMEOUT` `TIME_LIMIT`, and its next steps give the person `basalt revert ... --dry-run` and `--open`, whose prepare may take 10 minutes.
 
 `revert_plan` (large reverts, N12): `revertId`, optional `pending` (only lines not yet applied), `limit` and `cursor` (keyset on the line number; no `sort`: lines come in execution order). Returns the plan's `status` (`PENDING` until the person signs, `APPLYING`, `APPLIED`, `EXPIRED`), `scope`, `scopeId`, totals `lines`, `restored`, `skipped`, `pending`, `expiresAt` (sign by), `applyBy` (after the signature), `maxBatch` (200), and one page of `items`: `{line, outcome, batch, conflict, sqlState, plan}` with `outcome` `PENDING`, `RESTORED` or `SKIPPED` and `plan` the signed revert line as an object. Only the agent that prepared the revert sees it (`NOT_FOUND` otherwise). A revert of up to 1000 lines is applied in one call and has no plan to page (`INVALID_ARGUMENT`).
 
@@ -286,7 +381,7 @@ M4.1. The engine serves the approval and revert pages itself, so a held write re
 | `POST /api/v1/approvals/{approvalId}/links`, `POST /api/v1/reverts/{revertId}/links` | Issue a short link for the CLI (`basalt approve --show`/`--open`, `basalt revert`). Body `{ "proof" }`, see [Link secrets](#link-secrets). `200 { "url" }` with a new secret; the item's earlier link stops working |
 
 - **Which agent.** The engine looks the id up with each configured agent's credential (the ledger views show a role only its own approvals and reverts) and acts with the one that finds it. When none does: `404`. The secret is checked before the lookup, so a missing or wrong secret is answered the same as an unknown id.
-- **Errors.** JSON `{ "code", "message" }` with a code from [Error codes](#error-codes): `NOT_FOUND` 404; `APPROVAL_EXPIRED` or `REVERT_EXPIRED` 410; `APPROVAL_INVALID` or `REVERT_INVALID` 409 (already used, already signed, or refused by Postgres, with its detail); `INVALID_ARGUMENT` 400 (a bad id or body, or ids that differ); 415 for a body that is not `application/json`; 413 over 16 KiB; 403 for a missing or foreign `Origin`.
+- **Errors.** JSON `{ "code", "message" }` with a code from [Error codes](#error-codes): `NOT_FOUND` 404; `APPROVAL_EXPIRED` or `REVERT_EXPIRED` 410; `APPROVAL_INVALID` or `REVERT_INVALID` 409 (already used, already signed, or refused by Postgres, with its detail); `INVALID_ARGUMENT` 400 (a bad id or body, or ids that differ); 415 for a body that is not `application/json`; 413 over 16 KiB; 403 for a missing or foreign `Origin`. Planned ([Next steps](#next-steps)): the body also carries `personMessage` and the `PERSON` steps of the code's entry, which the page shows; a link without its secret or replaced is `NOT_FOUND` reason `LINK`.
 - **CSRF.** A `POST` must carry an `Origin` equal to the page origin and `Content-Type: application/json`. The listener sends no CORS headers, so another site's page can neither read a preview nor make a JSON post. The relay only carries a signature: Postgres refuses anything the person's passkey did not sign.
 - **Who can read a preview.** Only a holder of the short link (its secret), or of the long link, which carries the preview itself. The id alone is not enough: ids appear in tool results, logs and the CLI.
 - **The page.** It shows the same review as the long link. After the passkey signs, it posts the response and shows "Approved. The agent will continue." (approval) or the revert result. If the relay fails, it shows the error and the code to paste into `basalt approve` or `basalt revert --apply`.

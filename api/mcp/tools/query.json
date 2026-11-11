@@ -86,6 +86,14 @@
       "durationMs": {
         "type": "integer",
         "minimum": 0
+      },
+      "warnings": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "$ref": "../errors/warning.schema.json"
+        },
+        "description": "Planned (CONTRACT.md, Next steps): warnings about a result that worked but is probably not what the agent expects (RLS_HIDES_ROWS). Absent when empty."
       }
     }
   },

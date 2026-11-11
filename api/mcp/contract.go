@@ -1,6 +1,7 @@
 // Package mcpcontract holds the MCP tool contracts the engine serves: one
 // JSON file per tool under tools/, embedded so the engine lists the
-// contract's input schema verbatim. See CONTRACT.md, "Process: contract first".
+// contract's input schema verbatim, and the next-steps catalog under
+// errors/. See CONTRACT.md, "Process: contract first" and "Next steps".
 package mcpcontract
 
 import (
@@ -80,6 +81,95 @@ func Find(tools []Tool, name string) (Tool, bool) {
 		}
 	}
 	return Tool{}, false
+}
+
+// Next-step actors (CONTRACT.md, Next steps).
+const (
+	ActorAgent  = "AGENT"
+	ActorPerson = "PERSON"
+)
+
+// ActorActions lists the actions each actor may take in a next step
+// (CONTRACT.md, Next steps).
+var ActorActions = map[string][]string{
+	ActorAgent:  {"CALL_TOOL", "REVISE_CALL", "RETRY_SMALLER_BATCHES", "ASK_PERSON", "END_TURN", "STOP"},
+	ActorPerson: {"OPEN_LINK", "RUN_COMMAND", "TELL_AGENT"},
+}
+
+//go:embed errors/next-steps.json
+var nextStepsFile []byte
+
+// StepKind is one step of a catalog entry: who acts and how. The catalog
+// fixes the sequence; the engine fills in text, tool, arguments and commands.
+type StepKind struct {
+	Actor  string `json:"actor"`
+	Action string `json:"action"`
+}
+
+// ErrorSteps is the catalog entry of one error case: a code, its reason
+// (empty for the code's only or default case) and, where a tool's steps
+// differ, that tool.
+type ErrorSteps struct {
+	Code          string     `json:"code"`
+	Reason        string     `json:"reason,omitempty"`
+	Tool          string     `json:"tool,omitempty"`
+	PersonMessage bool       `json:"personMessage"`
+	Steps         []StepKind `json:"steps"`
+}
+
+// ResultSteps is the catalog entry of a result the agent must act on.
+type ResultSteps struct {
+	Tool          string     `json:"tool"`
+	Case          string     `json:"case"`
+	PersonMessage bool       `json:"personMessage"`
+	Steps         []StepKind `json:"steps"`
+}
+
+// WarningSteps is the catalog entry of a result warning.
+type WarningSteps struct {
+	Code          string     `json:"code"`
+	PersonMessage bool       `json:"personMessage"`
+	Steps         []StepKind `json:"steps"`
+}
+
+// NextSteps is api/mcp/errors/next-steps.json: for every error case, result
+// case and warning, the steps the engine returns, in order.
+type NextSteps struct {
+	Errors   []ErrorSteps   `json:"errors"`
+	Results  []ResultSteps  `json:"results"`
+	Warnings []WarningSteps `json:"warnings"`
+}
+
+// LoadNextSteps decodes the embedded next-steps catalog strictly.
+func LoadNextSteps() (NextSteps, error) {
+	var c NextSteps
+	dec := json.NewDecoder(strings.NewReader(string(nextStepsFile)))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&c); err != nil {
+		return NextSteps{}, fmt.Errorf("decode errors/next-steps.json: %w", err)
+	}
+	return c, nil
+}
+
+// ErrorEntry returns the entry for code and reason as returned by tool: the
+// tool's own entry when it has one, else the entry for every tool.
+func (c NextSteps) ErrorEntry(code, reason, tool string) (ErrorSteps, bool) {
+	var fallback *ErrorSteps
+	for i, e := range c.Errors {
+		if e.Code != code || e.Reason != reason {
+			continue
+		}
+		if e.Tool == tool {
+			return e, true
+		}
+		if e.Tool == "" {
+			fallback = &c.Errors[i]
+		}
+	}
+	if fallback == nil {
+		return ErrorSteps{}, false
+	}
+	return *fallback, true
 }
 
 // CheckServed compares the tools a server lists with the contracts: every

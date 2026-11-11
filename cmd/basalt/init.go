@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
@@ -21,6 +22,7 @@ import (
 type initFlags struct {
 	agent, write, read, prefix, configPath, socketDir, osUser, credFile, engineUser string
 	passkeyOrigin, passkeyLabel                                                     string
+	agentRLS                                                                        AgentRLSMode
 	spec                                                                            guard.AgentSpec
 	dryRun, yes, skipPasskey, addPasskey, noService                                 bool
 	// pathsGiven is true when --config, --socket-dir or --credential-file
@@ -55,7 +57,11 @@ func runInit(c *cliIO, args []string) int {
 	defer conn.Close(c.ctx)
 
 	f.spec.Password = guard.NewPassword()
-	script, err := guard.PlanInit(c.ctx, conn, guard.InitOptions{Names: names, Agent: f.spec})
+	policies, err := agentPolicies(c, conn, names, f)
+	if err != nil {
+		return c.fail(missingTablesHint(err, conn.Config().Database))
+	}
+	script, err := guard.PlanInit(c.ctx, conn, guard.InitOptions{Names: names, Agent: f.spec, AgentPolicies: policies})
 	if err != nil {
 		return c.fail(missingTablesHint(err, conn.Config().Database))
 	}
@@ -83,6 +89,7 @@ func runInit(c *cliIO, args []string) int {
 		return c.fail(err)
 	}
 	fmt.Fprintf(c.stderr, "basalt: guard installed; agent role %s\n", role)
+	warnRLSBlind(c, conn, role, f.spec)
 	if err := passkeyStep(c, conn, f); err != nil {
 		return c.fail(fmt.Errorf("the guard is installed but no passkey was registered (run basalt init again): %w", err))
 	}
@@ -90,6 +97,97 @@ func runInit(c *cliIO, args []string) int {
 		return c.fail(err)
 	}
 	return exitOK
+}
+
+// AgentRLSMode is the value of --agent-rls: what init does about agent
+// tables where row-level security hides every row from the agent role.
+// CLI input spelling only (AGENTS.md, Wire format): it is never stored;
+// the ledger records the policy itself (AGENT_POLICY_ADDED).
+type AgentRLSMode string
+
+// --agent-rls values.
+const (
+	// AgentRLSAsk asks once per table at a terminal (the default).
+	AgentRLSAsk AgentRLSMode = "ask"
+	// AgentRLSAllRows adds the agent policy on every such table, for scripts.
+	AgentRLSAllRows AgentRLSMode = "all-rows"
+	// AgentRLSNone never adds an agent policy and does not ask.
+	AgentRLSNone AgentRLSMode = "none"
+)
+
+// agentRLSRule is the validator rule of --agent-rls.
+const agentRLSRule = "oneof=ask all-rows none"
+
+// String implements flag.Value.
+func (a *AgentRLSMode) String() string { return string(*a) }
+
+// Set implements flag.Value, refusing anything but the three values.
+func (a *AgentRLSMode) Set(v string) error {
+	if err := validator.New().Var(v, agentRLSRule); err != nil {
+		return fmt.Errorf("must be %s, %s or %s", AgentRLSAsk, AgentRLSAllRows, AgentRLSNone)
+	}
+	*a = AgentRLSMode(v)
+	return nil
+}
+
+// agentPolicies picks the agent's tables where row-level security hides
+// every row from its role and the person lets the agent see all rows
+// (decision "Agent RLS", Nov 12): asked once per table at a terminal,
+// default no; never without a terminal, with --yes or on a dry run unless
+// --agent-rls=all-rows. Tables without RLS are never asked about. The
+// rest get warnRLSBlind's warning after init.
+func agentPolicies(c *cliIO, conn *pgx.Conn, names guard.Names, f initFlags) ([]guard.BlindTable, error) {
+	if f.agentRLS == AgentRLSNone {
+		return nil, nil
+	}
+	blind, err := guard.AgentBlindTables(c.ctx, conn, names, f.spec)
+	if err != nil {
+		return nil, err
+	}
+	if f.agentRLS == AgentRLSAllRows {
+		return blind, nil
+	}
+	if !c.interactive || f.yes || f.dryRun {
+		return nil, nil
+	}
+	var out []guard.BlindTable
+	for _, b := range blind {
+		ok, err := c.confirm(fmt.Sprintf("%s hides its rows with row-level security. Let %s see all %s of this table?",
+			b.Table, f.agent, rowCount(b.Rows)))
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			out = append(out, b)
+		}
+	}
+	return out, nil
+}
+
+// rowCount is "1 row" or "n rows".
+func rowCount(n int64) string {
+	if n == 1 {
+		return "1 row"
+	}
+	return fmt.Sprintf("%d rows", n)
+}
+
+// warnRLSBlind warns about every --write and --read table where row-level
+// security still hides all rows from the agent role: Supabase can turn
+// RLS on for new tables, and the agent then reads 0 rows without any
+// error. A failed check is a warning too: the guard is installed either
+// way.
+func warnRLSBlind(c *cliIO, conn *pgx.Conn, role string, spec guard.AgentSpec) {
+	tables := append(append([]string{}, spec.Write...), spec.Read...)
+	blind, err := guard.RLSBlindTables(c.ctx, conn, role, tables)
+	if err != nil {
+		fmt.Fprintf(c.stderr, "basalt: warning: could not check row-level security on the agent's tables: %v\n", err)
+		return
+	}
+	for _, t := range blind {
+		fmt.Fprintf(c.stderr, "basalt: warning: row-level security is on for %s and no policy lets %s see rows; "+
+			"the agent will read 0 rows. Add a policy for that role, or disable RLS on the table.\n", t, role)
+	}
 }
 
 // printSetupPlan is the dry run's account of the engine setup init would
@@ -139,6 +237,9 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 	fs.BoolVar(&f.addPasskey, "add-passkey", false, "register another passkey even if one is registered")
 	fs.StringVar(&f.passkeyOrigin, "passkey-origin", "", "development only: the registration page at http://localhost:<port> (RP ID localhost)")
 	fs.StringVar(&f.passkeyLabel, "passkey-label", "", "name of the passkey in the picker (default: the database name)")
+	f.agentRLS = AgentRLSAsk
+	fs.Var(&f.agentRLS, "agent-rls",
+		"on agent tables where row-level security hides every row: ask at a terminal, all-rows adds a policy letting the agent see them all, none skips the question")
 	if err := parse(fs, args); err != nil {
 		return f, err
 	}

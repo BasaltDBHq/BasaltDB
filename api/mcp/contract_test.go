@@ -99,15 +99,19 @@ func TestM3ToolsHaveContracts(t *testing.T) {
 }
 
 // TestAgentRevertToolsHaveContracts: agent-assisted revert (owner
-// decisions N12-R1 to N12-R9) lands contract first, so both tools are
-// PLANNED until the engine serves them.
+// decisions N12-R1 to N12-R9) lands contract first: each tool is PLANNED
+// until the engine serves it in full. list_runs is served; request_revert
+// serves its request form only.
 func TestAgentRevertToolsHaveContracts(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"list_runs", "request_revert"} {
+	for name, status := range map[string]string{
+		"list_runs":      mcpcontract.StatusImplemented,
+		"request_revert": mcpcontract.StatusPlanned,
+	} {
 		tool, ok := mcpcontract.Find(mcpcontract.MustLoad(), name)
 		require.True(t, ok, name)
 		require.Equal(t, "M4.1", tool.Milestone, name)
-		require.Equal(t, mcpcontract.StatusPlanned, tool.Status, name)
+		require.Equal(t, status, tool.Status, name)
 	}
 	// N12-R7, N12-R8: an agent requests reverts of its own changes or runs
 	// only (no task scope), and may deliver the person's signed code.

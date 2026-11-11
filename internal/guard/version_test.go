@@ -36,8 +36,11 @@ func TestCheckAgentVersion(t *testing.T) {
 	require.ErrorAs(t, err, &stale)
 	require.True(t, stale.Unreadable)
 	require.Contains(t, err.Error(), "or earlier is older than this build's")
+	// Such a guard has no rows past the version it reports either.
+	d.Exec(t, `DELETE FROM basalt_meta.schema_version WHERE version > $1`, stale.Installed)
 
-	// Running init again upgrades it.
+	// Running init again upgrades it (re-running every later migration,
+	// which must be idempotent on objects already there).
 	d.Init(t, guard.AgentSpec{Name: "bot", Password: a.Password, Write: leads, Read: leads})
 	require.NoError(t, guard.CheckAgentVersion(ctx, a.Conn))
 }

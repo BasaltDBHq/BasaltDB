@@ -40,7 +40,8 @@ const instructions = "BasaltDB records every action you take on this database. "
 	"Start a run with run_start and an intent, read with query, and change data with write and an intent. " +
 	"A write of 11 to 50 rows, or any DELETE, is held for the person's passkey approval: show them approval.personMessage verbatim (it has the approval link and the equivalent basalt command), then, in the same turn, repeat the write once with approvalId: it waits for their approval and applies it. " +
 	"If that wait runs out (APPROVAL_REQUIRED again), do not wait again: end your turn and say you apply it once they tell you they approved. " +
-	"Over 50 rows, DDL and functions outside the allowlist are refused."
+	"Over 50 rows, DDL and functions outside the allowlist are refused. " +
+	"To undo your own work, find the run with list_runs, check it with preview_revert and query, tell the person what you recommend, then call request_revert and show them its personMessage; follow its nextStep."
 
 // Run serves every agent in cfg until ctx is done. It takes the engine lock
 // in the socket directory, so one engine runs per machine. configArg is the
@@ -213,6 +214,15 @@ func cliFlags(agent, configArg string) string {
 	return flags + " " + configArg
 }
 
+// fullCLIFlags are cliFlags naming the config even at its default path,
+// for a command a message hands the person to copy as is.
+func fullCLIFlags(agent, configArg string) string {
+	if configArg == "" {
+		configArg = "--config " + config.DefaultPath(runtime.GOOS)
+	}
+	return cliFlags(agent, configArg)
+}
+
 func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slog.Logger) (agentRuntime, error) {
 	limits, err := sqlLimits(env.cfg.Limits)
 	if err != nil {
@@ -232,19 +242,20 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	}
 	store := agentdb.NewStore(pool, limits, time.Now)
 	svc := agent.NewService(agent.Deps{
-		Name:        a.Name,
-		Reader:      agentdb.NewReader(pool, limits, time.Now),
-		Store:       store,
-		Reads:       store,
-		Approvals:   store,
-		Reverts:     store,
-		Notifier:    agentNotifier(env.tg, pool.Config().ConnConfig.Database),
-		PagesBase:   env.pagesBase,
-		CLIFlags:    cliFlags(a.Name, env.configArg),
-		PagesOrigin: env.pagesOrigin,
-		Links:       linkSecrets(env.stateDir, a.Name, log),
-		Log:         log,
-		Now:         time.Now,
+		Name:         a.Name,
+		Reader:       agentdb.NewReader(pool, limits, time.Now),
+		Store:        store,
+		Reads:        store,
+		Approvals:    store,
+		Reverts:      store,
+		Notifier:     agentNotifier(env.tg, pool.Config().ConnConfig.Database),
+		PagesBase:    env.pagesBase,
+		CLIFlags:     cliFlags(a.Name, env.configArg),
+		FullCLIFlags: fullCLIFlags(a.Name, env.configArg),
+		PagesOrigin:  env.pagesOrigin,
+		Links:        linkSecrets(env.stateDir, a.Name, log),
+		Log:          log,
+		Now:          time.Now,
 	})
 	return agentRuntime{
 		svc:    svc,

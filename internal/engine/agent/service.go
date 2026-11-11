@@ -22,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
 // Limits of the guard's validating ledger functions (CONTRACT.md,
@@ -48,6 +49,7 @@ type Store interface {
 	Write(ctx context.Context, in guard.Intent, op sqlguard.Op, sql string, params []any) (agentdb.WriteResult, error)
 	RecordRefusal(ctx context.Context, r guard.Refusal) error
 	History(ctx context.Context, p ledger.ChangeListParams) (agentdb.History, error)
+	ListRuns(ctx context.Context, p ledger.RunListParams) (pagination.Page[agentdb.RunSummary], error)
 }
 
 // ReadRecorder records the reads the engine runs (owner decision #7) and
@@ -77,6 +79,10 @@ type Deps struct {
 	// CLIFlags select this agent in the person's basalt commands ("--agent
 	// NAME [--config PATH]"); "--agent NAME" when empty.
 	CLIFlags string
+	// FullCLIFlags are CLIFlags naming the config even at its default
+	// path ("--agent NAME --config PATH"), for a command the person copies
+	// from a message to run in any shell; CLIFlags when empty.
+	FullCLIFlags string
 	// PagesOrigin is the origin of the pages the engine serves itself
 	// (CONTRACT.md, Local pages), for short links; empty when it serves
 	// none, and held actions then carry the long link.
@@ -109,6 +115,9 @@ func NewService(d Deps) *Service {
 	}
 	if d.CLIFlags == "" {
 		d.CLIFlags = "--agent " + d.Name
+	}
+	if d.FullCLIFlags == "" {
+		d.FullCLIFlags = d.CLIFlags
 	}
 	return &Service{Deps: d}
 }
@@ -265,6 +274,11 @@ func (s *Service) History(ctx context.Context, p ledger.ChangeListParams) (agent
 		return agentdb.History{}, err
 	}
 	return s.Store.History(ctx, p)
+}
+
+// ListRuns returns one page of the agent's own runs with what each did.
+func (s *Service) ListRuns(ctx context.Context, p ledger.RunListParams) (pagination.Page[agentdb.RunSummary], error) {
+	return s.Store.ListRuns(ctx, p)
 }
 
 // findRun returns the agent's run, the zero run for uuid.Nil, or NOT_FOUND.

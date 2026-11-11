@@ -112,6 +112,104 @@ func (h handlers) previewRevert(ctx context.Context, raw json.RawMessage) (any, 
 	return out, nil
 }
 
+// --- request_revert ---
+
+// requestRevertArgs is the request_revert tool's input
+// (api/mcp/tools/request_revert.json): the request form (one scope and an
+// intent) or the wait form (revertId).
+type requestRevertArgs struct {
+	ChangeID         string `json:"changeId" validate:"omitempty,uuid"`
+	RunID            string `json:"runId" validate:"omitempty,uuid"`
+	Intent           string `json:"intent" validate:"omitempty,max=500"`
+	RevertID         string `json:"revertId" validate:"omitempty,uuid"`
+	WaitForSignature *int   `json:"waitForSignature" validate:"omitempty,min=0,max=110"`
+	ReissueLink      *bool  `json:"reissueLink"`
+	Signature        string `json:"signature" validate:"omitempty,max=8192"`
+}
+
+// requestScope returns the request form's one scope, checking the
+// argument combinations the schema cannot express.
+func (a requestRevertArgs) requestScope() (guard.RevertScope, error) {
+	if a.WaitForSignature != nil || a.ReissueLink != nil || a.Signature != "" {
+		return guard.RevertScope{}, &ArgumentError{Message: "invalid arguments: waitForSignature, reissueLink and signature go only with " +
+			"revertId; a new request returns the link at once, for you to show the person before anyone can sign"}
+	}
+	var out []guard.RevertScope
+	for _, s := range []struct {
+		kind revert.Scope
+		id   string
+	}{{revert.ScopeChange, a.ChangeID}, {revert.ScopeRun, a.RunID}} {
+		if s.id != "" {
+			out = append(out, guard.RevertScope{Kind: s.kind, ID: uuid.MustParse(s.id)})
+		}
+	}
+	if len(out) != 1 {
+		return guard.RevertScope{}, &ArgumentError{Message: "invalid arguments: name exactly one of changeId, runId (with intent), or only revertId"}
+	}
+	if a.Intent == "" {
+		return guard.RevertScope{}, &ArgumentError{Message: "invalid arguments: intent is required with changeId or runId: why the person " +
+			"reverts, in their words, in 1 to 500 characters; it is shown on the revert page they sign"}
+	}
+	return out[0], nil
+}
+
+type requestRevertResult struct {
+	RevertID      string `json:"revertId"`
+	Status        string `json:"status"`
+	Scope         string `json:"scope"`
+	ScopeID       string `json:"scopeId"`
+	Intent        string `json:"intent"`
+	Batched       bool   `json:"batched"`
+	Rows          int    `json:"rows"`
+	Skipped       int    `json:"skipped"`
+	ExpiresAt     string `json:"expiresAt"`
+	RevertURL     string `json:"revertUrl,omitempty"`
+	PersonMessage string `json:"personMessage"`
+	NextStep      string `json:"nextStep,omitempty"`
+}
+
+func requestRevertFromDomain(r RequestedRevert) requestRevertResult {
+	return requestRevertResult{
+		RevertID: r.Revert.ID.String(), Status: r.Revert.Status, Scope: r.Revert.Scope, ScopeID: r.Revert.ScopeID.String(),
+		Intent: r.Intent, Batched: r.Revert.Batched, Rows: r.Revert.Rows, Skipped: r.Revert.Skipped,
+		ExpiresAt: timeText(r.Revert.ExpiresAt), RevertURL: r.RevertURL, PersonMessage: r.PersonMessage, NextStep: r.NextStep,
+	}
+}
+
+func (h handlers) requestRevert(ctx context.Context, raw json.RawMessage) (any, error) {
+	var args requestRevertArgs
+	if err := decodeArgs(raw, &args); err != nil {
+		if hasTaskID(raw) {
+			return nil, &ArgumentError{Message: "invalid arguments: " + taskScopeRefused}
+		}
+		return nil, err
+	}
+	if args.RevertID != "" {
+		if args.ChangeID != "" || args.RunID != "" || args.Intent != "" {
+			return nil, &ArgumentError{Message: "invalid arguments: revertId takes no changeId, runId or intent; the revert already has them"}
+		}
+		return nil, h.svc.AwaitRevert(ctx, AwaitRevertParams{RevertID: uuid.MustParse(args.RevertID)})
+	}
+	scope, err := args.requestScope()
+	if err != nil {
+		return nil, err
+	}
+	r, err := h.svc.RequestRevert(ctx, RequestRevertParams{Scope: scope, Intent: args.Intent})
+	if err != nil {
+		return nil, err
+	}
+	return requestRevertFromDomain(r), nil
+}
+
+// hasTaskID reports whether the arguments name a taskId, which
+// request_revert refuses with its reason (N12-R7).
+func hasTaskID(raw json.RawMessage) bool {
+	var probe struct {
+		TaskID *json.RawMessage `json:"taskId"`
+	}
+	return json.Unmarshal(raw, &probe) == nil && probe.TaskID != nil
+}
+
 // --- revert_plan ---
 
 // revertPlanArgs is the revert_plan tool's input

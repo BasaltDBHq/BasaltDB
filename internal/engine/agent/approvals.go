@@ -195,18 +195,34 @@ func (s *Service) shortLink(page func(string, uuid.UUID) string, id uuid.UUID, e
 	return links.WithSecret(page(s.PagesOrigin, id), secret), nil
 }
 
-// approvalRequiredError is the APPROVAL_REQUIRED answer for a held write.
+// approvalRequiredError is the APPROVAL_REQUIRED answer for a new hold:
+// show the link, then wait once, in the same turn.
 func approvalRequiredError(n heldNotice) error {
+	return approvalError(n, fmt.Sprintf("held for the person's approval: %d rows. Show the person approval.personMessage verbatim, "+
+		"then, without ending your turn, call write once with the same arguments plus approvalId: it waits up to %d seconds "+
+		"for their passkey and returns APPLIED as soon as they approve. %s If they give you an approval code, pass it as approval. "+
+		"It expires at %s.",
+		n.Rows, int(DefaultApprovalWait.Seconds()), afterWaitRunsOut, n.ExpiresAt))
+}
+
+// approvalStillPendingError is the APPROVAL_REQUIRED answer of a wait
+// that ran out: no second wait, the person may take long.
+func approvalStillPendingError(n heldNotice) error {
+	return approvalError(n, fmt.Sprintf("still waiting for the person's approval of %d rows; nothing was applied. "+
+		"Do not call write to wait again. End your turn: tell the person the write is waiting for their approval "+
+		"(approval.personMessage has the link and the command), that it expires at %s, and that you apply it when they "+
+		"tell you they approved. Then call write with the same arguments plus approvalId: it applies at once.",
+		n.Rows, n.ExpiresAt))
+}
+
+// afterWaitRunsOut tells the agent what to do when its one wait for a
+// person's approval returns APPROVAL_REQUIRED again.
+const afterWaitRunsOut = "If that call returns APPROVAL_REQUIRED again, its wait ran out: do not wait again, " +
+	"end your turn as its message says."
+
+func approvalError(n heldNotice, message string) error {
 	notice := n.ApprovalNotice
-	return &mcp.ToolError{
-		Code: CodeApprovalRequired,
-		Message: fmt.Sprintf("held for the person's approval: %d rows. Show the person approval.personMessage verbatim, "+
-			"then call write again with the same arguments plus approvalId: it waits up to %d seconds for their passkey "+
-			"and returns APPLIED as soon as they approve (if it times out, repeat it). If they give you an approval code, "+
-			"pass it as approval. It expires at %s.",
-			notice.Rows, int(DefaultApprovalWait.Seconds()), notice.ExpiresAt),
-		Approval: &notice,
-	}
+	return &mcp.ToolError{Code: CodeApprovalRequired, Message: message, Approval: &notice}
 }
 
 // DefaultApprovalWait is how long a write with approvalId waits for the
@@ -400,7 +416,7 @@ func (s *Service) waitForSignature(ctx context.Context, a ledger.Approval, p Wri
 		if err != nil {
 			return a, err
 		}
-		return a, approvalRequiredError(n)
+		return a, approvalStillPendingError(n)
 	}
 	return a, sameAsHeld(a, p) // it may have expired meanwhile
 }

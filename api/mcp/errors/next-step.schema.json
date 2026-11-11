@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/next-step.v1.json",
+  "title": "Next step",
+  "description": "One step of nextSteps in an error body or a result: who does it, what, and everything needed to do it. Steps run first to last. The agent does AGENT steps and shows PERSON steps (command and url unchanged) to the person. Commands are complete (--agent, ids filled in, and --config with the absolute engine config path unless it is the default the CLI finds by itself) and never carry a secret. Which actions go with which actor: CONTRACT.md, Next steps. Design: docs/redesign/specs/2026-11-12-actionable-errors.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["actor", "action", "text"],
+  "properties": {
+    "actor": {
+      "type": "string",
+      "enum": ["AGENT", "PERSON"],
+      "description": "Who does the step."
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "CALL_TOOL",
+        "REVISE_CALL",
+        "RETRY_SMALLER_BATCHES",
+        "ASK_PERSON",
+        "END_TURN",
+        "STOP",
+        "OPEN_LINK",
+        "RUN_COMMAND",
+        "TELL_AGENT"
+      ],
+      "description": "AGENT: CALL_TOOL, REVISE_CALL, RETRY_SMALLER_BATCHES, ASK_PERSON, END_TURN, STOP. PERSON: OPEN_LINK, RUN_COMMAND, TELL_AGENT."
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "One plain sentence. A PERSON step is written to the person, an AGENT step to the agent."
+    },
+    "tool": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "CALL_TOOL and REVISE_CALL: the tool to call."
+    },
+    "arguments": {
+      "type": "object",
+      "description": "CALL_TOOL: the tool's arguments, complete, filled in by the engine. With repeatCall they are merged over the arguments of the call that returned this step; a null value removes that argument. REVISE_CALL: the arguments the engine can fill in (ids); the agent adds the rest (an intent, a statement) as text says."
+    },
+    "repeatCall": {
+      "type": "boolean",
+      "description": "CALL_TOOL: repeat the same call with arguments merged in."
+    },
+    "command": {
+      "type": "string",
+      "minLength": 1,
+      "description": "RUN_COMMAND: the complete command to run in a terminal. Optional on OPEN_LINK: a command that opens the same page."
+    },
+    "url": {
+      "type": "string",
+      "format": "uri",
+      "description": "OPEN_LINK: the link to open. May carry a short link's #s= secret; it is meant for the person."
+    },
+    "maxRows": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50,
+      "description": "RETRY_SMALLER_BATCHES: the most rows one write may touch, cascades included."
+    },
+    "waitSeconds": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 60,
+      "description": "CALL_TOOL: wait this long before the call (a retry)."
+    }
+  }
+}

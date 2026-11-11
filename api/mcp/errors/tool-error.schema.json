@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/tool-error.v1.json",
+  "title": "Tool error body",
+  "description": "The JSON body of every MCP tool result with isError: true, and of the local pages' JSON errors (PERSON steps only there). Every error tells the agent what to do next (nextSteps, first step first) and, when the person must know or act, what to show them (personMessage, verbatim). See CONTRACT.md, Error codes and Next steps.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["code", "message", "nextSteps"],
+  "properties": {
+    "code": {
+      "type": "string",
+      "enum": [
+        "INTENT_REQUIRED",
+        "STALE_READ",
+        "STATEMENT_REFUSED",
+        "ROW_LIMIT_EXCEEDED",
+        "QUERY_TIMEOUT",
+        "APPROVAL_REQUIRED",
+        "APPROVAL_EXPIRED",
+        "APPROVAL_INVALID",
+        "REVERT_INVALID",
+        "REVERT_EXPIRED",
+        "NOTHING_TO_REVERT",
+        "PERMISSION_DENIED",
+        "NOT_FOUND",
+        "SQL_ERROR",
+        "INVALID_ARGUMENT",
+        "UNAVAILABLE",
+        "INTERNAL"
+      ]
+    },
+    "reason": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]*$",
+      "description": "Which case of the code; set for every code with more than one case. The reasons per code are in api/mcp/errors/next-steps.json and CONTRACT.md, Next steps per code."
+    },
+    "message": {
+      "type": "string",
+      "description": "One line for the agent. May repeat the steps in prose."
+    },
+    "sqlState": {
+      "type": "string",
+      "pattern": "^[0-9A-Z]{5}$",
+      "description": "Set when Postgres raised the error."
+    },
+    "errorId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "UNAVAILABLE and INTERNAL: the id the engine logged the error under, for the person to find the log line."
+    },
+    "personMessage": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "One plain line the agent shows the person verbatim. Set whenever the person must know or act. For APPROVAL_REQUIRED it equals approval.personMessage."
+    },
+    "nextSteps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "next-step.schema.json" }
+    },
+    "approval": {
+      "type": "object",
+      "description": "APPROVAL_REQUIRED only: the held write (CONTRACT.md, Error codes).",
+      "additionalProperties": false,
+      "required": ["approvalId", "expiresAt", "rows", "headline", "approvalUrl", "approveCommand", "personMessage"],
+      "properties": {
+        "approvalId": { "type": "string", "format": "uuid" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "rows": { "type": "integer", "minimum": 1 },
+        "headline": { "type": "string" },
+        "approvalUrl": { "type": "string", "format": "uri" },
+        "approveCommand": { "type": "string" },
+        "personMessage": { "type": "string" }
+      }
+    }
+  }
+}

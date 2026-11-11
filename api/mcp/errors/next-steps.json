@@ -1,0 +1,110 @@
+{
+  "errors": [
+    { "code": "INTENT_REQUIRED", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "code": "STALE_READ", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }, { "actor": "AGENT", "action": "REVISE_CALL" }] },
+
+    { "code": "STATEMENT_REFUSED", "reason": "PARSE_ERROR", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "code": "STATEMENT_REFUSED", "reason": "MULTIPLE_STATEMENTS", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "code": "STATEMENT_REFUSED", "reason": "WRONG_TOOL", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "code": "STATEMENT_REFUSED", "reason": "DDL_NOT_ALLOWED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }] },
+    { "code": "STATEMENT_REFUSED", "reason": "STATEMENT_NOT_ALLOWED", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "code": "STATEMENT_REFUSED", "reason": "SELECT_INTO", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "code": "STATEMENT_REFUSED", "reason": "LOCKING_READ", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "code": "STATEMENT_REFUSED", "reason": "MERGE_NOT_ALLOWED", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "code": "STATEMENT_REFUSED", "reason": "DATA_MODIFYING_WITH", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "code": "STATEMENT_REFUSED", "reason": "FUNCTION_NOT_ALLOWED", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "code": "STATEMENT_REFUSED", "reason": "NOT_REPEATABLE", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "code": "STATEMENT_REFUSED", "reason": "NO_PRIMARY_KEY", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] },
+    { "code": "STATEMENT_REFUSED", "reason": "NOT_ALLOWED", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "STOP" }] },
+
+    { "code": "ROW_LIMIT_EXCEEDED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "RETRY_SMALLER_BATCHES" }] },
+
+    { "code": "QUERY_TIMEOUT", "reason": "ROW_LIMIT", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "code": "QUERY_TIMEOUT", "reason": "TIME_LIMIT", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "code": "QUERY_TIMEOUT", "reason": "TIME_LIMIT", "tool": "preview_revert", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "AGENT", "action": "END_TURN" }] },
+    { "code": "QUERY_TIMEOUT", "reason": "TIME_LIMIT", "tool": "request_revert", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "END_TURN" }] },
+
+    { "code": "APPROVAL_REQUIRED", "reason": "HELD", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },
+    { "code": "APPROVAL_REQUIRED", "reason": "HELD_NO_PAGES", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },
+    { "code": "APPROVAL_REQUIRED", "reason": "NO_PASSKEY", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "AGENT", "action": "END_TURN" }] },
+    { "code": "APPROVAL_REQUIRED", "reason": "WAIT_ENDED", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "END_TURN" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },
+
+    { "code": "APPROVAL_EXPIRED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "REVISE_CALL" }] },
+
+    { "code": "APPROVAL_INVALID", "reason": "NOT_SIGNED", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "AGENT", "action": "END_TURN" }] },
+    { "code": "APPROVAL_INVALID", "reason": "ALREADY_USED", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }, { "actor": "AGENT", "action": "STOP" }] },
+    { "code": "APPROVAL_INVALID", "reason": "DIFFERENT_WRITE", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }] },
+    { "code": "APPROVAL_INVALID", "reason": "NOT_THIS_AGENT", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }] },
+    { "code": "APPROVAL_INVALID", "reason": "ROWS_CHANGED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }, { "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "code": "APPROVAL_INVALID", "reason": "BAD_SIGNATURE", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "AGENT", "action": "END_TURN" }] },
+    { "code": "APPROVAL_INVALID", "reason": "PASSKEY_REVOKED", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "AGENT", "action": "END_TURN" }] },
+
+    { "code": "REVERT_INVALID", "reason": "LINE_INVALID", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }] },
+    { "code": "REVERT_INVALID", "reason": "PLAN_NOT_SIGNED", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }, { "actor": "AGENT", "action": "END_TURN" }] },
+    { "code": "REVERT_INVALID", "reason": "PLAN_FINISHED", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }, { "actor": "AGENT", "action": "STOP" }] },
+    { "code": "REVERT_INVALID", "reason": "NOT_THIS_AGENT", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "STOP" }] },
+    { "code": "REVERT_INVALID", "reason": "ROWS_CHANGED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "code": "REVERT_INVALID", "reason": "BAD_SIGNATURE", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "AGENT", "action": "END_TURN" }] },
+    { "code": "REVERT_INVALID", "reason": "PASSKEY_REVOKED", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "AGENT", "action": "END_TURN" }] },
+
+    { "code": "REVERT_EXPIRED", "reason": "NOT_SIGNED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "PERSON", "action": "RUN_COMMAND" }] },
+    { "code": "REVERT_EXPIRED", "reason": "NOT_FINISHED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "PERSON", "action": "RUN_COMMAND" }] },
+
+    { "code": "NOTHING_TO_REVERT", "reason": "READS_ONLY", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] },
+    { "code": "NOTHING_TO_REVERT", "reason": "ALL_CHANGED_BY_PEOPLE", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] },
+    { "code": "NOTHING_TO_REVERT", "reason": "ALREADY_REVERTED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "REVISE_CALL" }] },
+
+    { "code": "PERMISSION_DENIED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }] },
+
+    { "code": "NOT_FOUND", "reason": "RUN", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }] },
+    { "code": "NOT_FOUND", "reason": "CHANGE", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }] },
+    { "code": "NOT_FOUND", "reason": "APPROVAL", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }] },
+    { "code": "NOT_FOUND", "reason": "REVERT", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }] },
+    { "code": "NOT_FOUND", "reason": "LINK", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "TELL_AGENT" }] },
+
+    { "code": "SQL_ERROR", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "code": "SQL_ERROR", "reason": "NO_ROWS_NOW", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
+
+    { "code": "INVALID_ARGUMENT", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "code": "INVALID_ARGUMENT", "reason": "STALE_CURSOR", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }] },
+
+    { "code": "UNAVAILABLE", "reason": "DATABASE_UNREACHABLE", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }, { "actor": "AGENT", "action": "ASK_PERSON" }] },
+    { "code": "UNAVAILABLE", "reason": "CREDENTIAL_REJECTED", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "STOP" }] },
+    { "code": "UNAVAILABLE", "reason": "GUARD_MISSING", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "STOP" }] },
+    { "code": "UNAVAILABLE", "reason": "GUARD_OUTDATED", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "STOP" }] },
+    { "code": "UNAVAILABLE", "reason": "ENGINE_UNREACHABLE", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "STOP" }] },
+    { "code": "UNAVAILABLE", "reason": "PAGES_OFF", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }] },
+
+    { "code": "INTERNAL", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] }
+  ],
+  "results": [
+    { "tool": "preview_revert", "case": "PREVIEW", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "tool": "preview_revert", "case": "PREVIEW_TASK", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "PERSON", "action": "RUN_COMMAND" }] },
+    { "tool": "request_revert", "case": "REQUESTED", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },
+    { "tool": "request_revert", "case": "WAIT_ENDED", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "END_TURN" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },
+    { "tool": "request_revert", "case": "APPLYING", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }] },
+    { "tool": "request_revert", "case": "APPLIED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] },
+    { "tool": "request_revert", "case": "EXPIRED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "tool": "list_pending", "case": "PENDING", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }] },
+    { "tool": "list_pending", "case": "EXPIRED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "tool": "revert_plan", "case": "PENDING", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "END_TURN" }] },
+    { "tool": "revert_plan", "case": "APPLYING", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }] },
+    { "tool": "revert_plan", "case": "APPLIED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] },
+    { "tool": "revert_plan", "case": "EXPIRED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "PERSON", "action": "RUN_COMMAND" }] },
+    { "tool": "apply_revert_batch", "case": "APPLYING", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }] },
+    { "tool": "apply_revert_batch", "case": "APPLIED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] }
+  ],
+  "warnings": [
+    { "code": "RLS_HIDES_ROWS", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }] },
+    { "code": "GUARD_UPGRADE_AVAILABLE", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }] }
+  ],
+  "problems": [
+    { "code": "ENGINE_UNREACHABLE", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "STOP" }] },
+    { "code": "DATABASE_UNREACHABLE", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }] },
+    { "code": "CREDENTIAL_REJECTED", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "STOP" }] },
+    { "code": "GUARD_MISSING", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "STOP" }] },
+    { "code": "GUARD_OUTDATED", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "STOP" }] },
+    { "code": "GUARD_UPGRADE_AVAILABLE", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }] },
+    { "code": "NO_PASSKEY", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }] }
+  ]
+}

@@ -98,9 +98,6 @@ func TestM3ToolsHaveContracts(t *testing.T) {
 	}
 }
 
-// TestApprovalSchemas checks the approval-flow payload schemas follow the
-// wire rules (CONTRACT.md, Approvals): camelCase properties, SCREAMING_SNAKE_CASE
-// enums, closed objects.
 // TestAgentRevertToolsHaveContracts: agent-assisted revert (owner
 // decisions N12-R1 to N12-R9) lands contract first: each tool is PLANNED
 // until the engine serves it in full. list_runs is served; request_revert
@@ -126,6 +123,27 @@ func TestAgentRevertToolsHaveContracts(t *testing.T) {
 	require.Contains(t, props, "signature")
 }
 
+// TestStatusToolHasContract: status (owner decision AE-9) lands contract
+// first, PLANNED until the engine and the shim serve it. It takes no
+// arguments and never returns UNAVAILABLE: problems are part of its result.
+func TestStatusToolHasContract(t *testing.T) {
+	t.Parallel()
+	tool, ok := mcpcontract.Find(mcpcontract.MustLoad(), "status")
+	require.True(t, ok)
+	require.Equal(t, "M4.1", tool.Milestone)
+	require.Equal(t, mcpcontract.StatusPlanned, tool.Status)
+	props, ok := tool.InputSchema["properties"].(map[string]any)
+	require.True(t, ok)
+	require.Empty(t, props)
+	require.NotContains(t, tool.Errors, "UNAVAILABLE")
+	out, ok := tool.OutputSchema["properties"].(map[string]any)
+	require.True(t, ok)
+	require.NotContains(t, out, "credentialFile", "the MCP status never names the credential file")
+}
+
+// TestApprovalSchemas checks the approval-flow payload schemas follow the
+// wire rules (CONTRACT.md, Approvals): camelCase properties, SCREAMING_SNAKE_CASE
+// enums, closed objects.
 func TestApprovalSchemas(t *testing.T) {
 	t.Parallel()
 	checkPayloadSchemas(t, "approval", []string{
@@ -194,6 +212,284 @@ func requireObjectsClosed(t *testing.T, where string, node any) {
 			requireObjectsClosed(t, where, child)
 		}
 	}
+}
+
+// TestErrorSchemas checks the error body, next step and warning schemas
+// (CONTRACT.md, Next steps) follow the same wire rules.
+func TestErrorSchemas(t *testing.T) {
+	t.Parallel()
+	checkPayloadSchemas(t, "errors", []string{
+		"next-step.schema.json", "tool-error.schema.json", "warning.schema.json",
+	})
+}
+
+// TestErrorBodyCodes checks the error body schema's code enum is exactly the
+// codes of CONTRACT.md's "Error codes" table.
+func TestErrorBodyCodes(t *testing.T) {
+	t.Parallel()
+	schema := readJSON(t, "errors/tool-error.schema.json")
+	props, ok := schema["properties"].(map[string]any)
+	require.True(t, ok)
+	code, ok := props["code"].(map[string]any)
+	require.True(t, ok)
+	enum, ok := code["enum"].([]any)
+	require.True(t, ok)
+	got := map[string]bool{}
+	for _, c := range enum {
+		s, ok := c.(string)
+		require.True(t, ok)
+		got[s] = true
+	}
+	require.Equal(t, contractErrorCodes(t), got)
+}
+
+// TestNextStepActions checks the next step schema's action enum is exactly
+// the actions ActorActions allows.
+func TestNextStepActions(t *testing.T) {
+	t.Parallel()
+	schema := readJSON(t, "errors/next-step.schema.json")
+	props, ok := schema["properties"].(map[string]any)
+	require.True(t, ok)
+	action, ok := props["action"].(map[string]any)
+	require.True(t, ok)
+	enum, ok := action["enum"].([]any)
+	require.True(t, ok)
+	want := []any{}
+	for _, actor := range []string{mcpcontract.ActorAgent, mcpcontract.ActorPerson} {
+		for _, a := range mcpcontract.ActorActions[actor] {
+			want = append(want, a)
+		}
+	}
+	require.ElementsMatch(t, want, enum)
+}
+
+// TestNextStepsCatalog checks every error code has next steps, every step
+// pairs an actor with one of its actions, entries are unique, and the
+// catalog matches CONTRACT.md's "Next steps per code" tables.
+func TestNextStepsCatalog(t *testing.T) {
+	t.Parallel()
+	catalog, err := mcpcontract.LoadNextSteps()
+	require.NoError(t, err)
+	tools := mcpcontract.MustLoad()
+
+	codes := contractErrorCodes(t)
+	covered := map[string]bool{}
+	errorKeys := map[string]bool{}
+	for _, e := range catalog.Errors {
+		key := e.Code + "/" + e.Reason + "/" + e.Tool
+		require.False(t, errorKeys[key], "duplicate catalog entry %s", key)
+		errorKeys[key] = true
+		require.True(t, codes[e.Code], "catalog code %s is not in CONTRACT.md", e.Code)
+		if e.Reason != "" {
+			require.Regexp(t, screamingCase, e.Reason, key)
+		}
+		if e.Tool != "" {
+			tool, ok := mcpcontract.Find(tools, e.Tool)
+			require.True(t, ok, "%s: unknown tool", key)
+			require.Contains(t, tool.Errors, e.Code, "%s: the tool does not declare the code", key)
+		}
+		requireSteps(t, key, e.Steps)
+		covered[e.Code] = true
+	}
+	for code := range codes {
+		require.True(t, covered[code], "error code %s has no next steps in api/mcp/errors/next-steps.json", code)
+	}
+
+	resultKeys := map[string]bool{}
+	for _, r := range catalog.Results {
+		key := r.Tool + "/" + r.Case
+		require.False(t, resultKeys[key], "duplicate catalog entry %s", key)
+		resultKeys[key] = true
+		_, ok := mcpcontract.Find(tools, r.Tool)
+		require.True(t, ok, "%s: unknown tool", key)
+		require.Regexp(t, screamingCase, r.Case, key)
+		requireSteps(t, key, r.Steps)
+	}
+	warningCodes := map[string]bool{}
+	for _, w := range catalog.Warnings {
+		resultKeys[w.Code+"/"] = true
+		warningCodes[w.Code] = true
+		requireSteps(t, w.Code, w.Steps)
+	}
+	require.Equal(t, schemaEnum(t, readJSON(t, "errors/warning.schema.json"), "code"), warningCodes,
+		"every warning code needs next steps, and only those")
+
+	problemKeys := map[string]bool{}
+	for _, p := range catalog.Problems {
+		require.False(t, problemKeys[p.Code], "duplicate problem %s", p.Code)
+		problemKeys[p.Code] = true
+		require.Contains(t, []string{mcpcontract.SeverityError, mcpcontract.SeverityWarning}, p.Severity, p.Code)
+		require.True(t, p.PersonMessage, "%s: a status problem always tells the person", p.Code)
+		requireSteps(t, p.Code, p.Steps)
+	}
+	status, ok := mcpcontract.Find(tools, "status")
+	require.True(t, ok)
+	problems := mustMap(t, mustMap(t, mustMap(t, status.OutputSchema["properties"])["problems"])["items"])
+	require.Equal(t, schemaEnum(t, problems, "code"), problemKeys, "every status problem code needs next steps, and only those")
+
+	docErrors, docResults, docProblems := contractNextSteps(t)
+	require.Equal(t, errorKeys, docErrors, "CONTRACT.md \"Next steps per code\" and next-steps.json differ")
+	require.Equal(t, resultKeys, docResults, "CONTRACT.md results and warnings table and next-steps.json differ")
+	require.Equal(t, problemKeys, docProblems, "CONTRACT.md status problems table and next-steps.json differ")
+}
+
+func mustMap(t *testing.T, v any) map[string]any {
+	t.Helper()
+	m, ok := v.(map[string]any)
+	require.True(t, ok)
+	return m
+}
+
+// schemaEnum returns the enum of property prop of an object schema.
+func schemaEnum(t *testing.T, schema map[string]any, prop string) map[string]bool {
+	t.Helper()
+	props, ok := schema["properties"].(map[string]any)
+	require.True(t, ok)
+	p, ok := props[prop].(map[string]any)
+	require.True(t, ok, prop)
+	enum, ok := p["enum"].([]any)
+	require.True(t, ok, prop)
+	out := map[string]bool{}
+	for _, e := range enum {
+		s, ok := e.(string)
+		require.True(t, ok)
+		out[s] = true
+	}
+	return out
+}
+
+// TestNextStepsEntry checks a tool's own entry wins over the entry for every
+// tool, and the entry for every tool is the fallback.
+func TestNextStepsEntry(t *testing.T) {
+	t.Parallel()
+	catalog, err := mcpcontract.LoadNextSteps()
+	require.NoError(t, err)
+
+	own, ok := catalog.ErrorEntry("QUERY_TIMEOUT", "TIME_LIMIT", "preview_revert")
+	require.True(t, ok)
+	require.Equal(t, "preview_revert", own.Tool)
+
+	general, ok := catalog.ErrorEntry("QUERY_TIMEOUT", "TIME_LIMIT", "query")
+	require.True(t, ok)
+	require.Empty(t, general.Tool)
+
+	_, ok = catalog.ErrorEntry("QUERY_TIMEOUT", "NO_SUCH_REASON", "query")
+	require.False(t, ok)
+}
+
+// TestToolSchemaRefs checks every file $ref in a tool contract names a
+// schema file that exists (refs inside the file, "#/...", are skipped).
+func TestToolSchemaRefs(t *testing.T) {
+	t.Parallel()
+	for _, tool := range mcpcontract.MustLoad() {
+		raw, err := os.ReadFile(tool.File)
+		require.NoError(t, err)
+		var schema any
+		require.NoError(t, json.Unmarshal(raw, &schema))
+		for _, ref := range schemaRefs(schema) {
+			_, err := os.Stat(filepath.Join(filepath.Dir(tool.File), ref))
+			require.NoError(t, err, "%s: $ref %s", tool.Name, ref)
+		}
+	}
+}
+
+func requireSteps(t *testing.T, where string, steps []mcpcontract.StepKind) {
+	t.Helper()
+	require.NotEmpty(t, steps, "%s has no steps", where)
+	for _, s := range steps {
+		actions, ok := mcpcontract.ActorActions[s.Actor]
+		require.True(t, ok, "%s: unknown actor %q", where, s.Actor)
+		require.Contains(t, actions, s.Action, "%s: %s cannot %s", where, s.Actor, s.Action)
+	}
+}
+
+var (
+	nextStepsErrorRow   = regexp.MustCompile("^\\| `([A-Z][A-Z0-9_]*)` \\| (?:`([A-Z][A-Z0-9_]*)`|—) \\| (?:`([a-z_]+)`|—) \\|")
+	nextStepsResultRow  = regexp.MustCompile("^\\| `([a-z_]+)`(?: item)? \\| `([A-Z][A-Z0-9_]*)`")
+	nextStepsWarnRow    = regexp.MustCompile("^\\| `([A-Z][A-Z0-9_]*)` \\| — \\|")
+	nextStepsProblemRow = regexp.MustCompile("^\\| `([A-Z][A-Z0-9_]*)` \\| `(?:ERROR|WARNING)` \\|")
+)
+
+// Tables of CONTRACT.md's "Next steps per code", in order.
+const (
+	tableErrors = iota
+	tableResults
+	tableProblems
+)
+
+// contractNextSteps reads the keys of CONTRACT.md's "Next steps per code"
+// tables: code/reason/tool for errors, tool/case for results, code/ for
+// warnings, and code for status problems.
+func contractNextSteps(t *testing.T) (map[string]bool, map[string]bool, map[string]bool) {
+	t.Helper()
+	raw, err := os.ReadFile("../../CONTRACT.md")
+	require.NoError(t, err)
+	errs, results, problems := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	inSection, table := false, tableErrors
+	for line := range strings.SplitSeq(string(raw), "\n") {
+		if strings.HasPrefix(line, "#") {
+			inSection = line == "### Next steps per code"
+			continue
+		}
+		switch {
+		case !inSection:
+			continue
+		case strings.HasPrefix(line, "Results and warnings"):
+			table = tableResults
+			continue
+		case strings.HasPrefix(line, "Status problems"):
+			table = tableProblems
+			continue
+		}
+		switch table {
+		case tableErrors:
+			if m := nextStepsErrorRow.FindStringSubmatch(line); m != nil {
+				errs[m[1]+"/"+m[2]+"/"+m[3]] = true
+			}
+		case tableResults:
+			if m := nextStepsResultRow.FindStringSubmatch(line); m != nil {
+				results[m[1]+"/"+m[2]] = true
+			} else if m := nextStepsWarnRow.FindStringSubmatch(line); m != nil {
+				results[m[1]+"/"] = true
+			}
+		case tableProblems:
+			if m := nextStepsProblemRow.FindStringSubmatch(line); m != nil {
+				problems[m[1]] = true
+			}
+		}
+	}
+	require.NotEmpty(t, errs, "no next steps found in CONTRACT.md")
+	require.NotEmpty(t, results, "no result next steps found in CONTRACT.md")
+	require.NotEmpty(t, problems, "no status problems found in CONTRACT.md")
+	return errs, results, problems
+}
+
+// schemaRefs returns every $ref value in a schema, at any depth.
+func schemaRefs(node any) []string {
+	var refs []string
+	switch v := node.(type) {
+	case map[string]any:
+		if ref, ok := v["$ref"].(string); ok && !strings.HasPrefix(ref, "#") {
+			refs = append(refs, ref)
+		}
+		for _, child := range v {
+			refs = append(refs, schemaRefs(child)...)
+		}
+	case []any:
+		for _, child := range v {
+			refs = append(refs, schemaRefs(child)...)
+		}
+	}
+	return refs
+}
+
+func readJSON(t *testing.T, file string) map[string]any {
+	t.Helper()
+	raw, err := os.ReadFile(file)
+	require.NoError(t, err)
+	var v map[string]any
+	require.NoError(t, json.Unmarshal(raw, &v))
+	return v
 }
 
 func TestCheckServed(t *testing.T) {

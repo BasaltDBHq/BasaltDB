@@ -14,7 +14,7 @@ Held for your approval: Update 27 rows in basalt_demo.leads. Approve: http://loc
 2. Approve with your passkey. The page sends the signature to the engine, which hands it to Postgres. The page then says "Approved. The agent will continue."
 3. The agent has already repeated the write with `approvalId`. That call waits up to 90 seconds for your signature and returns `APPLIED` as soon as you sign. You do not have to tell it that you approved.
 
-Each short link carries a secret after `#s=`: the id alone opens nothing, and the secret never reaches a server log because browsers do not send the fragment. One link is live per held write. If the agent lost the link, it calls `list_pending`, which issues a new link and turns the old one off. After an engine restart every short link stops working until it is issued again (`list_pending`, or `basalt approve --open`). To refuse a write, close the page: the write stays blocked and expires after 24 hours.
+Each short link carries a secret after `#s=`: the id alone opens nothing, and the secret never reaches a server log because browsers do not send the fragment. One link is live per held write, and links survive an engine restart: the engine keeps the secrets' hashes in its state directory (`<stateDir>/<agent>.links.json`, mode `0600`). If the agent lost the link, it calls `list_pending` with `reissueLink: true`, which issues a new link and turns the old one off; a plain `list_pending` touches no link. From the terminal, `basalt approve --open <id> --reissue` does the same. To refuse a write, close the page: the write stays blocked and expires after 24 hours.
 
 A revert works the same way: `basalt revert --agent NAME --run <runId> --open` opens the revert page, you sign it there, and the command prints the result. Pasting the code the page shows into the prompt still works too.
 
@@ -22,7 +22,7 @@ A revert works the same way: `basalt revert --agent NAME --run <runId> --open` o
 
 The CLI path is a full alternative to the link:
 
-- `basalt approve --agent NAME --open <approvalId>` opens the approval page in your default browser (`open` on macOS, `xdg-open` on Linux).
+- `basalt approve --agent NAME --open <approvalId>` opens the approval page in your default browser (`open` on macOS, `xdg-open` on Linux). Add `--reissue` for a new short link, whose page sends the signature to the engine (the agent's earlier link stops working); without it you get the long link, whose page shows a code to paste.
 - `basalt approve --agent NAME --show <approvalId>` prints the link, for use on another device.
 - `basalt approve --agent NAME '<code>'` relays the code that a long-link page shows, for example a page opened from a Telegram message.
 

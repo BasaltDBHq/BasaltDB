@@ -26,6 +26,7 @@ import (
 func runApprove(c *cliIO, args []string) int {
 	fs := c.flags("approve")
 	show := fs.String("show", "", "print the approval link of this held write (approval id) instead")
+	reissue := fs.Bool("reissue", false, "with --show or --open: issue a new short link (the held write's earlier short link stops working)")
 	open := fs.String("open", "", "open the approval link of this held write (approval id) in your browser instead")
 	pagesURL := fs.String("pages-url", "", "pages base URL for --show and --open (default: the engine config's pagesUrl, else "+links.DefaultLocal+")")
 	agent := fs.String("agent", "", "use this agent's credential from the engine config")
@@ -38,6 +39,9 @@ func runApprove(c *cliIO, args []string) int {
 		return c.fail(fmt.Errorf("%w: give --show or --open, not both", errUsage))
 	}
 	held := *show + *open
+	if *reissue && held == "" {
+		return c.fail(fmt.Errorf("%w: --reissue goes with --show or --open", errUsage))
+	}
 	code, err := approveCode(c, fs.Args(), held)
 	if err != nil {
 		return c.fail(err)
@@ -53,8 +57,12 @@ func runApprove(c *cliIO, args []string) int {
 	defer conn.Close(c.ctx)
 	if held != "" {
 		pages := linkPages{
-			base:  configuredBase(*pagesURL, *agent, *configPath),
-			local: localPages(c, *pagesURL, *agent, *configPath),
+			base: configuredBase(*pagesURL, *agent, *configPath),
+		}
+		if *reissue {
+			// A short link is issued only on request: issuing revokes the
+			// one the agent handed over (CONTRACT.md, Link secrets).
+			pages.local = localPages(c, *pagesURL, *agent, *configPath)
 		}
 		return showApproval(c, conn, held, pages, *open != "")
 	}

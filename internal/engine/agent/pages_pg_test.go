@@ -37,7 +37,7 @@ type localPages struct {
 
 func newLocalPages(t *testing.T, env agentEnv) localPages {
 	t.Helper()
-	site := pages.New(pageOrigin, slog.New(slog.DiscardHandler), env.svc.Links)
+	site := pages.New(pageOrigin, slog.New(slog.DiscardHandler))
 	site.Add(env.svc)
 	srv := httptest.NewServer(site.Handler())
 	t.Cleanup(srv.Close)
@@ -322,12 +322,22 @@ func TestListPendingReissuesTheLink(t *testing.T) {
 	var req approval.Request
 	require.Equal(t, http.StatusOK, p.get("/api/v1/approvals/"+id, first, &req))
 
-	// The agent lost the link: list_pending gives a working one.
+	// Listing touches no link: the one handed over keeps working.
 	pending, isError := env.h.call(t, "list_pending", map[string]any{"runId": args["runId"]})
 	require.False(t, isError, "%v", pending)
 	list := items(t, pending)
 	require.Len(t, list, 1)
+	require.Contains(t, str(t, list[0]["approvalUrl"]), "#1.", "the long link, no new secret")
+	require.Contains(t, list[0]["personMessage"], "Approve with the link you were given")
+	require.Equal(t, http.StatusOK, p.get("/api/v1/approvals/"+id, first, &req))
+
+	// The agent lost the link: reissueLink gives a working one.
+	pending, isError = env.h.call(t, "list_pending", map[string]any{"runId": args["runId"], "reissueLink": true})
+	require.False(t, isError, "%v", pending)
+	list = items(t, pending)
+	require.Len(t, list, 1)
 	second := links.SecretOf(str(t, list[0]["approvalUrl"]))
+	require.NotEmpty(t, second)
 	require.NotEqual(t, first, second)
 	require.Contains(t, list[0]["personMessage"], str(t, list[0]["approvalUrl"]))
 

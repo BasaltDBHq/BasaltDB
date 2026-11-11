@@ -49,7 +49,13 @@ func TestApproveShowsTheShortLinkWhenTheEngineServesThePages(t *testing.T) {
 
 	h := newFakeHost(t)
 	h.pagesUp = true
+	// Without --reissue no link is touched: the long link.
 	r := cliHost(t, h, "approve", "--agent", "bot", "--config", cfg, "--show", id)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.True(t, strings.HasPrefix(r.stdout, testPagesOrigin+"/approvals/"+id+"#1."), r.stdout)
+	require.Empty(t, h.issued)
+
+	r = cliHost(t, h, "approve", "--agent", "bot", "--config", cfg, "--show", id, "--reissue")
 	require.Equal(t, exitOK, r.code, r.stderr)
 	short := testPagesOrigin + "/approvals/" + id + "#s=" + fakeSecret
 	require.Equal(t, short+"\n", r.stdout, "the short link with the secret the engine issued")
@@ -57,14 +63,14 @@ func TestApproveShowsTheShortLinkWhenTheEngineServesThePages(t *testing.T) {
 	require.Equal(t, []issuedLink{{endpoint: testPagesOrigin + "/api/v1/approvals/" + id + "/links", proof: links.IssueProof(binding)}}, h.issued,
 		"issued against proof of the binding text")
 
-	r = cliHost(t, h, "approve", "--agent", "bot", "--config", cfg, "--open", id)
+	r = cliHost(t, h, "approve", "--agent", "bot", "--config", cfg, "--open", id, "--reissue")
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Equal(t, []string{short}, h.opened)
 	require.Contains(t, r.stderr, "the page sends it to the engine, nothing to paste")
 
 	// The engine gives no link: the long one stands.
 	h.issueErr = errors.New("engine answered 404")
-	r = cliHost(t, h, "approve", "--agent", "bot", "--config", cfg, "--show", id)
+	r = cliHost(t, h, "approve", "--agent", "bot", "--config", cfg, "--show", id, "--reissue")
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.True(t, strings.HasPrefix(r.stdout, testPagesOrigin+"/approvals/"+id+"#1."), r.stdout)
 	require.Contains(t, r.stderr, "the engine gave no short link (engine answered 404)")

@@ -158,7 +158,7 @@ func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding stri
 	}
 	link, how := short, fmt.Sprintf("Approve: %s (or run: %s)", short, command)
 	switch {
-	case short == "" && issue:
+	case short == "" && (issue || s.PagesOrigin == ""):
 		// No local pages. The long link carries the whole preview and
 		// breaks when copied: the message names the command, approvalUrl
 		// still has the link.
@@ -333,8 +333,10 @@ type PendingItem struct {
 	Notice mcp.ApprovalNotice
 }
 
-// ListPending returns one page of the agent's open held writes.
-func (s *Service) ListPending(ctx context.Context, p ledger.ApprovalListParams) (pagination.Page[PendingItem], error) {
+// ListPending returns one page of the agent's open held writes. It touches
+// no link unless reissue is set: then each item gets a new short link and
+// its earlier one stops working (CONTRACT.md, Link secrets).
+func (s *Service) ListPending(ctx context.Context, p ledger.ApprovalListParams, reissue bool) (pagination.Page[PendingItem], error) {
 	if _, err := s.findRun(ctx, p.RunID); err != nil {
 		return pagination.Page[PendingItem]{}, err
 	}
@@ -344,7 +346,7 @@ func (s *Service) ListPending(ctx context.Context, p ledger.ApprovalListParams) 
 	}
 	out := pagination.Page[PendingItem]{Items: make([]PendingItem, 0, len(page.Items)), NextCursor: page.NextCursor}
 	for _, a := range page.Items {
-		n, err := s.approvalNotice(ctx, a.ID, a.BindingText, a.Lines, a.ExpiresAt, issueLink)
+		n, err := s.approvalNotice(ctx, a.ID, a.BindingText, a.Lines, a.ExpiresAt, reissue)
 		if err != nil {
 			return pagination.Page[PendingItem]{}, err
 		}

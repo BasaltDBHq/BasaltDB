@@ -142,6 +142,12 @@ func (s *Service) IssueRevertLink(ctx context.Context, id uuid.UUID, proof strin
 	return s.issuedLink(links.Revert, r.ID, r.ExpiresAt)
 }
 
+// CheckLink reports whether secret is the live link secret of one of this
+// agent's items.
+func (s *Service) CheckLink(id uuid.UUID, secret string) bool {
+	return s.Links.Check(id, secret)
+}
+
 // issuedLink is a newly issued short link; this engine must serve the
 // pages.
 func (s *Service) issuedLink(page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time) (string, error) {

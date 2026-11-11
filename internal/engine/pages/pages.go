@@ -44,34 +44,35 @@ type Agent interface {
 	RelayRevert(ctx context.Context, r revert.Response) (guard.AppliedRevert, error)
 	IssueApprovalLink(ctx context.Context, id uuid.UUID, proof string) (string, error)
 	IssueRevertLink(ctx context.Context, id uuid.UUID, proof string) (string, error)
+	// CheckLink reports whether secret is the live link secret of one of
+	// this agent's items (CONTRACT.md, Link secrets).
+	CheckLink(id uuid.UUID, secret string) bool
 }
 
 // Server is the pages' handler. Agents are added once each is set up,
 // before the listener serves.
 type Server struct {
-	origin  string
-	log     *slog.Logger
-	files   fs.FS
-	secrets *links.Secrets
-	mu      sync.RWMutex
-	agents  []Agent
+	origin string
+	log    *slog.Logger
+	files  fs.FS
+	mu     sync.RWMutex
+	agents []Agent
 }
 
 // New returns the pages for origin, the approval page's origin, which a
-// relayed POST must come from. secrets are the short links' secrets the
-// agents issue (CONTRACT.md, Link secrets).
-func New(origin string, log *slog.Logger, secrets *links.Secrets) *Server {
-	return NewWithFiles(origin, log, secrets, web.Files)
+// relayed POST must come from.
+func New(origin string, log *slog.Logger) *Server {
+	return NewWithFiles(origin, log, web.Files)
 }
 
 // NewWithFiles is New serving the page files from files instead of the
 // embedded ones: the working tree's web/ for page development
 // (make serve-web).
-func NewWithFiles(origin string, log *slog.Logger, secrets *links.Secrets, files fs.FS) *Server {
-	if origin == "" || log == nil || secrets == nil || files == nil {
-		panic("pages: origin, logger, secrets and files required")
+func NewWithFiles(origin string, log *slog.Logger, files fs.FS) *Server {
+	if origin == "" || log == nil || files == nil {
+		panic("pages: origin, logger and files required")
 	}
-	return &Server{origin: origin, log: log, files: files, secrets: secrets}
+	return &Server{origin: origin, log: log, files: files}
 }
 
 // Add serves a's approvals and reverts.
@@ -276,11 +277,25 @@ func (s *Server) linkedID(w http.ResponseWriter, r *http.Request, name string) (
 	if !ok {
 		return uuid.Nil, false
 	}
-	if !s.secrets.Check(id, r.Header.Get(links.SecretHeader)) {
+	if !s.linkLive(id, r.Header.Get(links.SecretHeader)) {
 		s.fail(w, errUnknown)
 		return uuid.Nil, false
 	}
 	return id, true
+}
+
+// linkLive reports whether some agent issued secret as id's live link.
+// Every agent is asked, so the time taken does not tell which one knows
+// the id.
+func (s *Server) linkLive(id uuid.UUID, secret string) bool {
+	s.mu.RLock()
+	agents := s.agents
+	s.mu.RUnlock()
+	live := false
+	for _, a := range agents {
+		live = a.CheckLink(id, secret) || live
+	}
+	return live
 }
 
 // errUnknown is the answer for an id no agent knows, or a link without its

@@ -48,6 +48,8 @@ func (a *stubAgent) IssueRevertLink(context.Context, uuid.UUID, string) (string,
 	return "", agent.ErrNotThisAgent
 }
 
+func (a *stubAgent) CheckLink(id uuid.UUID, secret string) bool { return a.secrets.Check(id, secret) }
+
 func (a *stubAgent) ApprovalRequest(_ context.Context, id uuid.UUID) (approval.Request, error) {
 	if id != a.known {
 		return approval.Request{}, agent.ErrNotThisAgent
@@ -92,7 +94,7 @@ func serve(t *testing.T, agents ...*stubAgent) site {
 	origin := "http://localhost:" + port
 
 	secrets := links.NewSecrets(time.Now, rand.Reader)
-	p := pages.New(origin, slog.New(slog.DiscardHandler), secrets)
+	p := pages.New(origin, slog.New(slog.DiscardHandler))
 	for _, a := range agents {
 		a.secrets, a.origin = secrets, origin
 		p.Add(a)

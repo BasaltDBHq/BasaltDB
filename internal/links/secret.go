@@ -5,8 +5,13 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -66,6 +71,8 @@ func ProofMatches(bindingText, proof string) bool {
 type Secrets struct {
 	now  func() time.Time
 	rand io.Reader
+	// path is the file the hashes persist in ("" keeps them in memory).
+	path string
 	mu   sync.Mutex
 	live map[uuid.UUID]secretEntry
 }
@@ -84,6 +91,89 @@ func NewSecrets(now func() time.Time, rand io.Reader) *Secrets {
 	return &Secrets{now: now, rand: rand, live: map[uuid.UUID]secretEntry{}}
 }
 
+// fileMode keeps the hashes to the engine's OS user.
+const fileMode = 0o600
+
+// OpenSecrets returns the store persisted at path (CONTRACT.md, Link
+// secrets: <stateDir>/<agent>.links.json), loading its unexpired hashes, so
+// short links survive an engine restart. A file that cannot be read is
+// reported with an empty store that replaces it on the next issue.
+func OpenSecrets(path string, now func() time.Time, rand io.Reader) (*Secrets, error) {
+	s := NewSecrets(now, rand)
+	s.path = path
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s, nil
+	}
+	if err != nil {
+		return s, fmt.Errorf("link secrets %s: %w", path, err)
+	}
+	var file secretsFile
+	if err := json.Unmarshal(raw, &file); err != nil {
+		return s, fmt.Errorf("link secrets %s: %w", path, err)
+	}
+	for _, e := range file.Links {
+		hash, err := hex.DecodeString(e.Hash)
+		if err != nil || len(hash) != sha256.Size {
+			return NewSecretsAt(path, now, rand), fmt.Errorf("link secrets %s: a bad hash", path)
+		}
+		s.live[e.ID] = secretEntry{hash: [sha256.Size]byte(hash), expires: e.ExpiresAt}
+	}
+	s.prune()
+	return s, nil
+}
+
+// NewSecretsAt is an empty store persisted at path.
+func NewSecretsAt(path string, now func() time.Time, rand io.Reader) *Secrets {
+	s := NewSecrets(now, rand)
+	s.path = path
+	return s
+}
+
+// secretsFile is the persisted store: hashes only, never a secret.
+type secretsFile struct {
+	Links []secretFileEntry `json:"links"`
+}
+
+type secretFileEntry struct {
+	ID        uuid.UUID `json:"id"`
+	Hash      string    `json:"hash"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+// save writes the store atomically (write, then rename); the caller holds
+// mu. A store without a path keeps its hashes in memory.
+func (s *Secrets) save() error {
+	if s.path == "" {
+		return nil
+	}
+	file := secretsFile{Links: make([]secretFileEntry, 0, len(s.live))}
+	for id, e := range s.live {
+		file.Links = append(file.Links, secretFileEntry{ID: id, Hash: hex.EncodeToString(e.hash[:]), ExpiresAt: e.expires})
+	}
+	raw, err := json.Marshal(file)
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(s.path), filepath.Base(s.path)+".*.tmp")
+	if err != nil {
+		return fmt.Errorf("link secrets: %w", err)
+	}
+	defer os.Remove(tmp.Name()) // gone after the rename; best effort otherwise
+	if err := tmp.Chmod(fileMode); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("link secrets: %w", err)
+	}
+	if _, err := tmp.Write(raw); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("link secrets: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("link secrets: %w", err)
+	}
+	return os.Rename(tmp.Name(), s.path)
+}
+
 // Issue makes a new secret for item id, valid until expires, and revokes
 // the item's earlier one.
 func (s *Secrets) Issue(id uuid.UUID, expires time.Time) (string, error) {
@@ -96,6 +186,9 @@ func (s *Secrets) Issue(id uuid.UUID, expires time.Time) (string, error) {
 	defer s.mu.Unlock()
 	s.prune()
 	s.live[id] = secretEntry{hash: sha256.Sum256([]byte(secret)), expires: expires}
+	if err := s.save(); err != nil {
+		return "", err
+	}
 	return secret, nil
 }
 

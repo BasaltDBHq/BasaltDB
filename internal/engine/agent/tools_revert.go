@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -153,27 +154,81 @@ func (a requestRevertArgs) requestScope() (guard.RevertScope, error) {
 	return out[0], nil
 }
 
+// awaitParams is the wait form's arguments as the service takes them. A
+// signature or a new link returns at once, so neither takes
+// waitForSignature; a signature takes no reissueLink.
+func (a requestRevertArgs) awaitParams() (AwaitRevertParams, error) {
+	if a.ChangeID != "" || a.RunID != "" || a.Intent != "" {
+		return AwaitRevertParams{}, &ArgumentError{Message: "invalid arguments: revertId takes no changeId, runId or intent; the revert already has them"}
+	}
+	reissue := a.ReissueLink != nil && *a.ReissueLink
+	if a.WaitForSignature != nil && (a.Signature != "" || reissue) {
+		return AwaitRevertParams{}, &ArgumentError{Message: "invalid arguments: waitForSignature does not go with signature or " +
+			"reissueLink: both return at once (show a new link before waiting for it)"}
+	}
+	if a.Signature != "" && reissue {
+		return AwaitRevertParams{}, &ArgumentError{Message: "invalid arguments: signature does not go with reissueLink"}
+	}
+	out := AwaitRevertParams{RevertID: uuid.MustParse(a.RevertID), Wait: DefaultRevertWait, Reissue: reissue}
+	if a.WaitForSignature != nil {
+		out.Wait = time.Duration(*a.WaitForSignature) * time.Second
+	}
+	if a.Signature == "" {
+		return out, nil
+	}
+	code, err := revert.ParseResponse(a.Signature)
+	if err != nil {
+		return AwaitRevertParams{}, &ArgumentError{Message: "invalid arguments: signature is not a basalt-revert.1. code the " +
+			"revert page shows (" + err.Error() + "); ask the person to copy the whole code. An approval code goes to write's approval"}
+	}
+	out.Signature = &code
+	return out, nil
+}
+
 type requestRevertResult struct {
-	RevertID      string `json:"revertId"`
-	Status        string `json:"status"`
-	Scope         string `json:"scope"`
-	ScopeID       string `json:"scopeId"`
-	Intent        string `json:"intent"`
-	Batched       bool   `json:"batched"`
-	Rows          int    `json:"rows"`
-	Skipped       int    `json:"skipped"`
-	ExpiresAt     string `json:"expiresAt"`
-	RevertURL     string `json:"revertUrl,omitempty"`
-	PersonMessage string `json:"personMessage"`
-	NextStep      string `json:"nextStep,omitempty"`
+	RevertID      string             `json:"revertId"`
+	Status        string             `json:"status"`
+	Scope         string             `json:"scope"`
+	ScopeID       string             `json:"scopeId"`
+	Intent        string             `json:"intent"`
+	Batched       bool               `json:"batched"`
+	Rows          int                `json:"rows"`
+	Skipped       int                `json:"skipped"`
+	ExpiresAt     string             `json:"expiresAt"`
+	RevertURL     string             `json:"revertUrl,omitempty"`
+	PersonMessage string             `json:"personMessage"`
+	ChangeID      string             `json:"changeId,omitempty"`
+	ApplyBy       string             `json:"applyBy,omitempty"`
+	Progress      *revertProgressDTO `json:"progress,omitempty"`
+	NextStep      string             `json:"nextStep,omitempty"`
+}
+
+type revertProgressDTO struct {
+	Restored int `json:"restored"`
+	Skipped  int `json:"skipped"`
+	Pending  int `json:"pending"`
+	Batches  int `json:"batches"`
 }
 
 func requestRevertFromDomain(r RequestedRevert) requestRevertResult {
-	return requestRevertResult{
-		RevertID: r.Revert.ID.String(), Status: r.Revert.Status, Scope: r.Revert.Scope, ScopeID: r.Revert.ScopeID.String(),
-		Intent: r.Intent, Batched: r.Revert.Batched, Rows: r.Revert.Rows, Skipped: r.Revert.Skipped,
-		ExpiresAt: timeText(r.Revert.ExpiresAt), RevertURL: r.RevertURL, PersonMessage: r.PersonMessage, NextStep: r.NextStep,
+	rv := r.Revert
+	out := requestRevertResult{
+		RevertID: rv.ID.String(), Status: rv.Status, Scope: rv.Scope, ScopeID: rv.ScopeID.String(),
+		Intent: rv.Intent, Batched: rv.Batched, Rows: rv.Rows, Skipped: rv.Skipped,
+		ExpiresAt: timeText(rv.ExpiresAt), RevertURL: r.RevertURL, PersonMessage: r.PersonMessage, NextStep: r.NextStep,
 	}
+	if rv.ChangeID != nil {
+		out.ChangeID = rv.ChangeID.String()
+	}
+	if rv.ApplyBy != nil {
+		out.ApplyBy = timeText(*rv.ApplyBy)
+	}
+	if rv.Batched && rv.SignedAt != nil {
+		out.Progress = &revertProgressDTO{
+			Restored: rv.Progress.Restored, Skipped: rv.Progress.Skipped, Pending: rv.Progress.Pending, Batches: rv.Batches,
+		}
+	}
+	return out
 }
 
 func (h handlers) requestRevert(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -185,16 +240,26 @@ func (h handlers) requestRevert(ctx context.Context, raw json.RawMessage) (any, 
 		return nil, err
 	}
 	if args.RevertID != "" {
-		if args.ChangeID != "" || args.RunID != "" || args.Intent != "" {
-			return nil, &ArgumentError{Message: "invalid arguments: revertId takes no changeId, runId or intent; the revert already has them"}
-		}
-		return nil, h.svc.AwaitRevert(ctx, AwaitRevertParams{RevertID: uuid.MustParse(args.RevertID)})
+		return h.awaitRevert(ctx, args)
 	}
 	scope, err := args.requestScope()
 	if err != nil {
 		return nil, err
 	}
 	r, err := h.svc.RequestRevert(ctx, RequestRevertParams{Scope: scope, Intent: args.Intent})
+	if err != nil {
+		return nil, err
+	}
+	return requestRevertFromDomain(r), nil
+}
+
+// awaitRevert is request_revert's wait form.
+func (h handlers) awaitRevert(ctx context.Context, args requestRevertArgs) (any, error) {
+	p, err := args.awaitParams()
+	if err != nil {
+		return nil, err
+	}
+	r, err := h.svc.AwaitRevert(ctx, p)
 	if err != nil {
 		return nil, err
 	}

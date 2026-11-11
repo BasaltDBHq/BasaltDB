@@ -102,14 +102,13 @@ func TestM3ToolsHaveContracts(t *testing.T) {
 // wire rules (CONTRACT.md, Approvals): camelCase properties, SCREAMING_SNAKE_CASE
 // enums, closed objects.
 // TestAgentRevertToolsHaveContracts: agent-assisted revert (owner
-// decisions N12-R1 to N12-R9) lands contract first: each tool is PLANNED
-// until the engine serves it in full. list_runs is served; request_revert
-// serves its request form only.
+// decisions N12-R1 to N12-R9) landed contract first: each tool was PLANNED
+// until the engine served it in full. Both are served.
 func TestAgentRevertToolsHaveContracts(t *testing.T) {
 	t.Parallel()
 	for name, status := range map[string]string{
 		"list_runs":      mcpcontract.StatusImplemented,
-		"request_revert": mcpcontract.StatusPlanned,
+		"request_revert": mcpcontract.StatusImplemented,
 	} {
 		tool, ok := mcpcontract.Find(mcpcontract.MustLoad(), name)
 		require.True(t, ok, name)

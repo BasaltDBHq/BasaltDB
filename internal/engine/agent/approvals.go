@@ -372,37 +372,42 @@ func (s *Service) ListPending(ctx context.Context, p ledger.ApprovalListParams, 
 }
 
 // approvalPoll is how often a waiting write checks for the signature.
-const approvalPoll = time.Second
+// DefaultPoll is how often a waiting call reads whether the person signed.
+const DefaultPoll = time.Second
 
-// awaitSigned waits up to wait for the person to sign a, checking about
-// once a second, and returns a as last read: still PENDING on timeout.
-// The signature may come from the page's relay, basalt approve or another
-// call; Postgres is the only place that knows.
-func (s *Service) awaitSigned(ctx context.Context, a ledger.Approval, wait time.Duration) (ledger.Approval, error) {
-	timeout := time.NewTimer(wait)
-	defer timeout.Stop()
-	tick := time.NewTicker(approvalPoll)
+// awaitWhile polls while pending reports true: every s.Poll it calls
+// refresh, until pending is false, the wait is over by s.Now, or ctx ends
+// (then ctx's error). It holds no transaction between reads. The waiting
+// write and request_revert's wait share it.
+func (s *Service) awaitWhile(ctx context.Context, wait time.Duration, pending func() bool, refresh func(context.Context) error) error {
+	deadline := s.Now().Add(wait)
+	tick := time.NewTicker(s.Poll)
 	defer tick.Stop()
-	for a.Status == ledger.ApprovalPending {
+	for pending() && s.Now().Before(deadline) {
 		select {
 		case <-ctx.Done():
-			return a, ctx.Err()
-		case <-timeout.C:
-			return a, nil
+			return ctx.Err()
 		case <-tick.C:
 		}
-		next, err := s.Approvals.FindApproval(ctx, a.ID)
-		if err != nil {
-			return a, err
+		if err := refresh(ctx); err != nil {
+			return err
 		}
-		a = next
 	}
-	return a, nil
+	return nil
 }
 
-// waitForSignature waits for an unsigned held write when the call asks to
-// (p.Wait) and gave no code. It answers APPROVAL_REQUIRED again when the
-// person did not sign in time, and the approval as it is now otherwise.
+func (s *Service) awaitSigned(ctx context.Context, a ledger.Approval, wait time.Duration) (ledger.Approval, error) {
+	err := s.awaitWhile(ctx, wait, func() bool { return a.Status == ledger.ApprovalPending }, func(ctx context.Context) error {
+		next, err := s.Approvals.FindApproval(ctx, a.ID)
+		if err != nil {
+			return err
+		}
+		a = next
+		return nil
+	})
+	return a, err
+}
+
 func (s *Service) waitForSignature(ctx context.Context, a ledger.Approval, p WriteParams) (ledger.Approval, error) {
 	if a.Status != ledger.ApprovalPending || p.Approval != "" || p.Wait == 0 {
 		return a, nil

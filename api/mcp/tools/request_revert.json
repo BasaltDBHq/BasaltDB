@@ -1,6 +1,6 @@
 {
   "name": "request_revert",
-  "status": "PLANNED",
+  "status": "IMPLEMENTED",
   "milestone": "M4.1",
   "description": "Ask the person to revert one change or one run of yours: Basalt prepares the revert (as basalt revert does) and returns revertUrl, the page where the person reviews every row and signs with their passkey, and personMessage, one line to show the person verbatim. You can never sign a revert; you can only deliver the person's signature, which the database verifies. Before you call it, check the current data (preview_revert, and query for rows that depend on the change) and tell the person what you recommend. Name exactly one of changeId, runId, with intent (why the person reverts, in their words). A whole task is reverted only by the person (basalt revert --task); if another agent's run looks wrong, ask that agent. Show personMessage, then, without ending your turn, call request_revert once more with only revertId: that call waits up to waitForSignature seconds (default 90) and returns as soon as the person signs. APPLIED: the revert is done; tell the person what was restored and skipped. APPLYING (a revert over 1000 lines): the person signed the plan and you restore it now in batches (see nextStep). If the wait runs out (status PENDING), do not wait again: end your turn with the link and its expiry, and call request_revert with revertId when the person says they signed. If the person gives you a basalt-revert.1. code from the revert page, pass it as signature with revertId. People win: rows someone changed after you are skipped, never overwritten.",
   "inputSchema": {
@@ -36,12 +36,12 @@
       },
       "reissueLink": {
         "type": "boolean",
-        "description": "Only with revertId, while PENDING: issue a new short link (the earlier one stops working) and return it as revertUrl. Default false."
+        "description": "Only with revertId, while PENDING: issue a new short link (the earlier one stops working) and return it as revertUrl. It returns at once, so the person gets the new link before you wait: not with waitForSignature or signature. Default false."
       },
       "signature": {
         "type": "string",
         "pattern": "^basalt-revert\\.1\\.[A-Za-z0-9_-]+$",
-        "description": "Only with revertId: the basalt-revert.1. code the revert page showed the person, when they give it to you (the page could not relay it itself). The engine submits it and the database verifies the person's passkey signature, then applies the revert (a large plan: records the signature; you then apply it in batches). It must be for this revertId. You cannot make one."
+        "description": "Only with revertId: the basalt-revert.1. code the revert page showed the person, when they give it to you (the page could not relay it itself). The engine submits it and the database verifies the person's passkey signature, then applies the revert (a large plan: records the signature; you then apply it in batches). It must be for this revertId. It returns at once: not with waitForSignature. You cannot make one."
       }
     }
   },

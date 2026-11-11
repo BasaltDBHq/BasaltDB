@@ -78,7 +78,7 @@ func agentHarnessFor(t *testing.T, d *guardtest.DB, a *guardtest.Agent, pagesOri
 	svc := agent.NewService(agent.Deps{
 		Name: "bot", Reader: agentdb.NewReader(pool, limits, time.Now), Store: store, Reads: store, Approvals: store,
 		Reverts: store, Notifier: sent, Log: slog.New(slog.DiscardHandler), Now: time.Now,
-		CLIFlags: "--agent bot --config /etc/basalt-test/engine.json", PagesOrigin: strings.Join(pagesOrigin, ""),
+		CLIFlags: "--agent bot --config /etc/basalt-test/engine.json", PagesOrigin: strings.Join(pagesOrigin, ""), Poll: testPoll,
 	})
 	return agentEnv{d: d, a: a, h: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, person: person, sent: sent, svc: svc}
 }

@@ -36,13 +36,15 @@ func itemsLeft(t *testing.T, d *guardtest.DB, v string) int {
 	return n
 }
 
-func newBatchEnv(t *testing.T) batchEnv {
+// newBatchEnv builds a batchEnv; pagesOrigin, when given, is the origin of
+// the engine's local pages, as for agentHarnessFor.
+func newBatchEnv(t *testing.T, pagesOrigin ...string) batchEnv {
 	t.Helper()
 	d := guardtest.New(t)
 	d.Exec(t, fmt.Sprintf(`CREATE TABLE public.items (id int PRIMARY KEY, v text NOT NULL);
 		INSERT INTO public.items SELECT g, 'before' FROM generate_series(1, %d) g`, planRows))
 	tables := []string{"public.items"}
-	e := agentHarnessFor(t, d, d.NewAgent(t, "bot", tables, tables))
+	e := agentHarnessFor(t, d, d.NewAgent(t, "bot", tables, tables), pagesOrigin...)
 	ctx := context.Background()
 	in := guard.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Bulk update"}
 	require.NoError(t, guard.StartRun(ctx, e.a.Conn, in))
@@ -76,6 +78,28 @@ func lineNumbers(t *testing.T, list []map[string]any) []int {
 		out = append(out, int(n))
 	}
 	return out
+}
+
+// applyEveryBatch is the agent's loop over a signed plan: list pending
+// lines, apply them, until none is left. It returns the batches applied.
+func applyEveryBatch(t *testing.T, h harness, id string) int {
+	t.Helper()
+	batches := 0
+	for {
+		page, isError := h.call(t, "revert_plan", map[string]any{"revertId": id, "pending": true, "limit": 200})
+		require.False(t, isError, "%v", page)
+		lines := lineNumbers(t, items(t, page))
+		if len(lines) == 0 {
+			require.Equal(t, "APPLIED", page["status"])
+			require.NotContains(t, page, "nextCursor")
+			return batches
+		}
+		res, isError := h.call(t, "apply_revert_batch", map[string]any{"revertId": id, "lines": lines})
+		require.False(t, isError, "%v", res)
+		batches++
+		require.EqualValues(t, fmt.Sprint(batches), res["batch"])
+		require.Len(t, items(t, res), len(lines))
+	}
 }
 
 func TestRevertPlanAndBatchTools(t *testing.T) {
@@ -122,23 +146,7 @@ func TestRevertPlanAndBatchTools(t *testing.T) {
 	require.False(t, isError, "%v", next)
 	require.Equal(t, 201, lineNumbers(t, items(t, next))[0])
 
-	// The agent's loop: list pending lines, apply them, until none is left.
-	batches := 0
-	for {
-		page, isError := e.h.call(t, "revert_plan", map[string]any{"revertId": id, "pending": true, "limit": 200})
-		require.False(t, isError, "%v", page)
-		lines := lineNumbers(t, items(t, page))
-		if len(lines) == 0 {
-			require.Equal(t, "APPLIED", page["status"])
-			require.NotContains(t, page, "nextCursor")
-			break
-		}
-		res, isError := e.h.call(t, "apply_revert_batch", map[string]any{"revertId": id, "lines": lines})
-		require.False(t, isError, "%v", res)
-		batches++
-		require.EqualValues(t, fmt.Sprint(batches), res["batch"])
-		require.Len(t, items(t, res), len(lines))
-	}
+	batches := applyEveryBatch(t, e.h, id)
 	require.Equal(t, (planRows+revert.MaxBatch-1)/revert.MaxBatch, batches)
 	require.Equal(t, planRows, itemsLeft(t, e.d, "before"))
 

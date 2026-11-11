@@ -90,6 +90,9 @@ type Deps struct {
 	// Links holds the short links' secrets, shared with the pages; a store
 	// of its own when nil.
 	Links *links.Secrets
+	// Poll is how often a waiting call reads whether the person signed;
+	// DefaultPoll when zero.
+	Poll time.Duration
 }
 
 // Service runs one agent's tool calls.
@@ -118,6 +121,9 @@ func NewService(d Deps) *Service {
 	}
 	if d.FullCLIFlags == "" {
 		d.FullCLIFlags = d.CLIFlags
+	}
+	if d.Poll <= 0 {
+		d.Poll = DefaultPoll
 	}
 	return &Service{Deps: d}
 }

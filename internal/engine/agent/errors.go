@@ -25,6 +25,8 @@ const (
 	CodeApprovalExpired   = "APPROVAL_EXPIRED"
 	CodeApprovalInvalid   = "APPROVAL_INVALID"
 	CodeNothingToRevert   = "NOTHING_TO_REVERT"
+	CodeRevertInvalid     = "REVERT_INVALID"
+	CodeRevertExpired     = "REVERT_EXPIRED"
 	CodePermissionDenied  = "PERMISSION_DENIED"
 	CodeNotFound          = "NOT_FOUND"
 	CodeSQLError          = "SQL_ERROR"

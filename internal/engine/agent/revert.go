@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -196,21 +197,16 @@ type RequestRevertParams struct {
 	Intent string
 }
 
-// RequestedRevert is a revert prepared for the person to sign: its state,
-// the link to sign it, one line to show the person verbatim, and what the
-// agent does next.
+// RequestedRevert is request_revert's answer in both forms: the revert as
+// agent_reverts shows it, the link when one was issued, the line for the
+// person and the agent's next step.
 type RequestedRevert struct {
 	Revert        ledger.Revert
-	Intent        string
 	RevertURL     string
 	PersonMessage string
 	NextStep      string
 }
 
-// RequestRevert prepares a revert of one of the agent's own changes or
-// runs, exactly as basalt revert does but within MCPPrepareTimeout, and
-// issues the link the person signs it at. Nothing is reverted: Postgres
-// applies it only with the person's passkey signature.
 func (s *Service) RequestRevert(ctx context.Context, p RequestRevertParams) (RequestedRevert, error) {
 	if err := s.checkOwnScope(ctx, p.Scope); err != nil {
 		return RequestedRevert{}, err
@@ -223,56 +219,190 @@ func (s *Service) RequestRevert(ctx context.Context, p RequestRevertParams) (Req
 	if err != nil {
 		return RequestedRevert{}, err
 	}
+	return s.revertWithLink(ctx, r, nextStepAfterRequest)
+}
+
+// revertWithLink issues r's link (revoking an earlier one) and returns it
+// with the message that carries it and next as the agent's next step, plus
+// the batch loop for a large plan.
+func (s *Service) revertWithLink(ctx context.Context, r ledger.Revert, next string) (RequestedRevert, error) {
 	link, msg, err := s.revertNotice(ctx, r)
 	if err != nil {
 		return RequestedRevert{}, err
 	}
-	next := nextStepAfterRequest
 	if r.Batched {
-		next = nextStepAfterBatchedRequest
+		next += " Once it returns APPLYING: " + batchLoop
 	}
-	return RequestedRevert{Revert: r, Intent: p.Intent, RevertURL: link, PersonMessage: msg, NextStep: next}, nil
+	return RequestedRevert{Revert: r, RevertURL: link, PersonMessage: msg, NextStep: next}, nil
 }
 
-// What the agent does after requesting a revert, while this engine cannot
-// wait for the signature (request_revert's wait form is not served yet).
+// DefaultRevertWait is how long request_revert with revertId waits for the
+// person's signature when the agent names no waitForSignature, as the
+// waiting write does.
+const DefaultRevertWait = DefaultApprovalWait
+
 const (
-	nextStepAfterRequest = "Show the person personMessage verbatim, then end your turn: this engine cannot wait for their signature yet " +
-		"(do not call request_revert with revertId). When they say they signed, check run_history: the reverted changes show status REVERTED."
-	nextStepAfterBatchedRequest = "Show the person personMessage verbatim, then end your turn: this engine cannot wait for their signature yet " +
-		"(do not call request_revert with revertId). When they say they signed, call revert_plan with revertId, pending true and limit 200, " +
-		"then apply_revert_batch with those line numbers, until pending is 0."
+	nextStepAfterRequest = "Show the person personMessage verbatim, then, without ending your turn, call request_revert once " +
+		"with only revertId: it waits up to 90 seconds for their passkey and returns as soon as they sign. " +
+		"If it returns PENDING, its wait ran out: do not wait again, end your turn as its nextStep says."
+	nextStepAfterReissue = "Show the person personMessage verbatim (the link given before no longer works), then, without " +
+		"ending your turn, call request_revert once with only revertId to wait for their passkey. If it returns PENDING, " +
+		"do not wait again: end your turn as its nextStep says."
+	batchLoop = "call revert_plan with revertId, pending true and limit 200, then apply_revert_batch with those line numbers, " +
+		"until pending is 0, before applyBy."
+	nextStepApplying = "The person signed the plan: restore it now. " + batchLoop + " Then tell the person what was restored " +
+		"and what was left as it is."
+	nextStepAfterWait = "Not signed yet; nothing was reverted. Do not call request_revert to wait again. End your turn: show " +
+		"the person personMessage (the revert waits for their passkey at the link you already gave them, until expiresAt) " +
+		"and say you report the result when they tell you they signed. When they do, call request_revert with only " +
+		"revertId: it returns at once if they signed. If they lost the link, call it with revertId and reissueLink true; " +
+		"if they give you a basalt-revert.1. code, pass it as signature."
+	nextStepPending = "Not signed yet; nothing was reverted. If you have not waited for this revert in this turn, call " +
+		"request_revert once with only revertId to wait for the person's passkey; otherwise end your turn and call it " +
+		"again when they say they signed."
+	nextStepExpired = "Nothing more can be applied under this revert. If the person still wants it, check the data " +
+		"again (preview_revert) and request a new one with request_revert."
 )
 
-// AwaitRevertParams are request_revert's arguments in its wait form.
+// AwaitRevertParams is request_revert's wait form: a revert this agent
+// requested, how long to wait for the person's signature, whether to issue
+// a new link, and the person's signed code to deliver (nil for none).
 type AwaitRevertParams struct {
-	RevertID uuid.UUID
+	RevertID  uuid.UUID
+	Wait      time.Duration
+	Reissue   bool
+	Signature *revert.Response
 }
 
-// AwaitRevert is request_revert's wait form. This engine does not serve it
-// yet: it always answers an error, NOT_FOUND for a revert the agent's role
-// did not prepare, else what to do instead, and changes nothing.
-func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) error {
-	_, err := s.Reverts.FindRevert(ctx, p.RevertID)
+// AwaitRevert returns the state of a revert this agent requested. With a
+// signature it delivers the person's code (Postgres verifies it) and
+// returns at once; with Reissue on a PENDING revert it issues a new link
+// and returns at once; otherwise it reads the revert about every s.Poll
+// until it is not PENDING or Wait is over. Only a signature writes.
+func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (RequestedRevert, error) {
+	r, err := s.Reverts.FindRevert(ctx, p.RevertID)
 	if errors.Is(err, ledger.ErrRevertNotFound) {
-		return &mcp.ToolError{Code: CodeNotFound, Message: fmt.Sprintf(
+		return RequestedRevert{}, &mcp.ToolError{Code: CodeNotFound, Message: fmt.Sprintf(
 			"no revert %s requested by this agent: request one with request_revert and a changeId or runId of yours", p.RevertID)}
 	}
 	if err != nil {
-		return err
+		return RequestedRevert{}, err
 	}
-	return &ArgumentError{Message: fmt.Sprintf(
-		"this engine cannot wait for a revert's signature or take its code yet (request_revert with revertId comes in a later version); "+
-			"nothing was changed. Do not call it again: end your turn, telling the person revert %s waits for their passkey at the link "+
-			"you gave them. When they say they signed, check run_history (reverted changes show status REVERTED). If the page gave "+
-			"them a basalt-revert.1. code, they apply it themselves with: basalt revert %s --apply <code>",
-		p.RevertID, s.FullCLIFlags)}
+	switch {
+	case p.Signature != nil:
+		return s.deliverRevertSignature(ctx, r, *p.Signature)
+	case p.Reissue && r.Status == ledger.RevertPending:
+		return s.revertWithLink(ctx, r, nextStepAfterReissue)
+	}
+	err = s.awaitWhile(ctx, p.Wait, func() bool { return r.Status == ledger.RevertPending }, func(ctx context.Context) error {
+		next, err := s.Reverts.FindRevert(ctx, r.ID)
+		if err != nil {
+			return err
+		}
+		r = next
+		return nil
+	})
+	if err != nil {
+		return RequestedRevert{}, err
+	}
+	return revertState(r, p.Wait > 0), nil
 }
 
-// checkOwnScope refuses a scope that is not one of the agent's own changes
-// or runs (N12-R7), read through the views that show the agent only its
-// own: an agent requests reverts of its own work only. This is the
-// engine's first filter; the person's signature remains the boundary.
+// deliverRevertSignature submits the person's code for r, as basalt revert
+// --apply does: the engine checks it names r and verifies against a
+// registered passkey (for a clear refusal), then apply_revert verifies it in
+// Postgres, which is the boundary.
+func (s *Service) deliverRevertSignature(ctx context.Context, r ledger.Revert, code revert.Response) (RequestedRevert, error) {
+	if err := s.checkRevertCode(ctx, r, code); err != nil {
+		return RequestedRevert{}, err
+	}
+	if _, err := s.Reverts.ApplyRevert(ctx, r.ID, code.Assertion()); err != nil {
+		return RequestedRevert{}, err
+	}
+	r, err := s.Reverts.FindRevert(ctx, r.ID)
+	if err != nil {
+		return RequestedRevert{}, err
+	}
+	return revertState(r, false), nil
+}
+
+func (s *Service) checkRevertCode(ctx context.Context, r ledger.Revert, code revert.Response) error {
+	switch {
+	case code.RevertID != r.ID:
+		return revertInvalid("the code is for revert %s, not %s; nothing was reverted. Ask the person for the code the page "+
+			"of revert %s shows", code.RevertID, r.ID, r.ID)
+	case r.Status == ledger.RevertExpired:
+		return &mcp.ToolError{Code: CodeRevertExpired, Message: fmt.Sprintf("revert %s expired at %s; nothing was reverted. %s",
+			r.ID, timeText(r.ExpiresAt), nextStepExpired)}
+	case r.Status != ledger.RevertPending:
+		return revertInvalid("revert %s was already signed (status %s); nothing more was applied. Call request_revert with "+
+			"only revertId to see its state", r.ID, r.Status)
+	}
+	keys, err := s.Approvals.Passkeys(ctx)
+	if err != nil {
+		return err
+	}
+	for _, k := range keys {
+		if !bytes.Equal(k.ID, code.CredentialID) {
+			continue
+		}
+		if _, err := revert.Verify(r.BindingText, k, code); err != nil {
+			return revertInvalid("the code does not verify against the person's passkey, nothing was reverted: %v", err)
+		}
+		return nil
+	}
+	return revertInvalid("the code was signed by a passkey this database does not know or that was revoked; nothing was " +
+		"reverted. The person signs with a passkey registered with basalt init")
+}
+
+func revertInvalid(format string, args ...any) error {
+	return &mcp.ToolError{Code: CodeRevertInvalid, Message: fmt.Sprintf(format, args...)}
+}
+
+// revertState is the answer for r without a new link: what happened, for
+// the person, and what the agent does next. waited tells a PENDING answer
+// after a wait (end the turn) from a plain read.
+func revertState(r ledger.Revert, waited bool) RequestedRevert {
+	out := RequestedRevert{Revert: r}
+	what := fmt.Sprintf("The revert of %s %s", strings.ToLower(r.Scope), r.ScopeID)
+	restored, skipped := r.Rows, r.Skipped
+	if r.Batched {
+		restored, skipped = r.Progress.Restored, r.Progress.Skipped
+	}
+	switch r.Status {
+	case ledger.RevertApplied:
+		out.PersonMessage = fmt.Sprintf("%s is done: %d rows restored, %d left as they are (changed after the agent).",
+			what, restored, skipped)
+	case ledger.RevertApplying:
+		out.PersonMessage = fmt.Sprintf("You signed it. %s restores %d more rows in batches before %s (%d restored and %d "+
+			"left as they are so far).", what, r.Progress.Pending, applyByText(r), restored, skipped)
+		out.NextStep = nextStepApplying
+	case ledger.RevertExpired:
+		out.PersonMessage = fmt.Sprintf("%s expired at %s without your signature; nothing was reverted.", what,
+			r.ExpiresAt.UTC().Format(personTime))
+		if r.SignedAt != nil {
+			out.PersonMessage = fmt.Sprintf("%s was signed but not finished by %s: %d rows restored, %d left as they are, "+
+				"%d not restored.", what, applyByText(r), restored, skipped, r.Progress.Pending)
+		}
+		out.NextStep = nextStepExpired
+	default:
+		out.PersonMessage = fmt.Sprintf("%s waits for your passkey at the link the agent gave you, until %s. Tell the agent "+
+			"when you have signed.", what, r.ExpiresAt.UTC().Format(personTime))
+		out.NextStep = nextStepPending
+		if waited {
+			out.NextStep = nextStepAfterWait
+		}
+	}
+	return out
+}
+
+func applyByText(r ledger.Revert) string {
+	if r.ApplyBy == nil {
+		return "the deadline"
+	}
+	return r.ApplyBy.UTC().Format(personTime)
+}
+
 func (s *Service) checkOwnScope(ctx context.Context, scope guard.RevertScope) error {
 	switch scope.Kind {
 	case revert.ScopeRun:
@@ -366,7 +496,8 @@ func (s *Service) revertNotice(ctx context.Context, r ledger.Revert) (string, st
 	if link == "" {
 		// No local pages: the page cannot send the signature back.
 		link = long
-		sign = fmt.Sprintf("Review and sign with your passkey: %s (the page then shows a code; apply it with: basalt revert %s --apply <code>)",
+		sign = fmt.Sprintf("Review and sign with your passkey: %s (the page then shows a code: give it to the agent, "+
+			"or apply it yourself with: basalt revert %s --apply <code>)",
 			long, s.FullCLIFlags)
 	}
 	msg := fmt.Sprintf("Revert of %s %s ready for your review: %d rows to restore, %d left as they are (changed after the agent). Why: %s. %s. Expires %s.",

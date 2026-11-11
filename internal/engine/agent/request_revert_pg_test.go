@@ -52,7 +52,8 @@ func TestRequestRevertOfARunWithTheLocalPages(t *testing.T) {
 	require.EqualValues(t, "2", body["rows"])
 	require.EqualValues(t, "1", body["skipped"])
 	require.NotEmpty(t, body["expiresAt"])
-	require.Contains(t, str(t, body["nextStep"]), "end your turn")
+	require.Contains(t, str(t, body["nextStep"]), "without ending your turn, call request_revert once with only revertId")
+	require.Contains(t, str(t, body["nextStep"]), "do not wait again")
 	link := str(t, body["revertUrl"])
 	secret := links.SecretOf(link)
 	require.Len(t, secret, 22, "a 128-bit secret")
@@ -102,7 +103,8 @@ func TestRequestRevertOfAChangeWithoutLocalPages(t *testing.T) {
 	msg := str(t, body["personMessage"])
 	require.Contains(t, msg, "Revert of change "+changeID+" ready for your review: 2 rows to restore, 0 left as they are")
 	require.Contains(t, msg, "Why: Wrong leads. ")
-	require.Contains(t, msg, link+" (the page then shows a code; apply it with: basalt revert --agent bot --config /etc/basalt-test/engine.json --apply <code>)")
+	require.Contains(t, msg, link+" (the page then shows a code: give it to the agent, or apply it yourself with: "+
+		"basalt revert --agent bot --config /etc/basalt-test/engine.json --apply <code>)")
 
 	// The person's code, applied by basalt revert --apply on the agent
 	// credential, reverts the change.
@@ -177,6 +179,12 @@ func TestRequestRevertArguments(t *testing.T) {
 		{"revertId": id, "runId": runID},
 		{"revertId": id, "intent": "Undo"},
 		{"revertId": id, "waitForSignature": 111},
+		{"revertId": id, "waitForSignature": -1},
+		{"revertId": id, "signature": "basalt-revert.1.abc"},
+		{"revertId": id, "signature": "basalt-revert.1.abc", "waitForSignature": 10},
+		{"revertId": id, "signature": "basalt-revert.1.abc", "reissueLink": true},
+		{"revertId": id, "reissueLink": true, "waitForSignature": 10},
+		{"revertId": id, "approval": "basalt-revert.1.abc"},
 		{"runId": runID, "intent": "Undo", "approve": true},
 	} {
 		body, isError := env.h.call(t, "request_revert", args)
@@ -187,16 +195,15 @@ func TestRequestRevertArguments(t *testing.T) {
 	requireToolError(t, body, isError, "INVALID_ARGUMENT", "", "")
 	require.Contains(t, str(t, body["message"]), "a whole task is reverted only by the person (basalt revert --task)")
 
-	// The wait form is not served yet: it says so, for a revert of this
-	// agent's, and changes nothing.
-	body, isError = env.h.call(t, "request_revert", map[string]any{"revertId": id})
-	requireToolError(t, body, isError, "NOT_FOUND", "", "")
-	req, isError := env.h.call(t, "request_revert", map[string]any{"runId": runID, "intent": "Undo"})
-	require.False(t, isError, "%v", req)
-	body, isError = env.h.call(t, "request_revert", map[string]any{"revertId": str(t, req["revertId"]), "waitForSignature": 0})
-	requireToolError(t, body, isError, "INVALID_ARGUMENT", "", "")
-	require.Contains(t, str(t, body["message"]), "cannot wait for a revert's signature")
-	require.Contains(t, str(t, body["message"]), "basalt revert --agent bot --config /etc/basalt-test/engine.json --apply <code>")
+	// A revert this agent did not request is not found, whatever the form.
+	for _, args := range []map[string]any{
+		{"revertId": id},
+		{"revertId": id, "waitForSignature": 0},
+		{"revertId": id, "reissueLink": true},
+	} {
+		body, isError = env.h.call(t, "request_revert", args)
+		requireToolError(t, body, isError, "NOT_FOUND", "", "")
+	}
 	require.Equal(t, "won", leadStatus(t, env.d, 78))
 }
 

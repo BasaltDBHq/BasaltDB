@@ -16,6 +16,9 @@ type listPendingArgs struct {
 	pagination.Params
 	RunID  string `json:"runId" validate:"omitempty,uuid"`
 	Status string `json:"status" validate:"omitempty,oneof=PENDING APPROVED"`
+	// ReissueLink issues each item a new short link (CONTRACT.md, Link
+	// secrets).
+	ReissueLink bool `json:"reissueLink"`
 }
 
 // pendingDTO is one item of list_pending's output.

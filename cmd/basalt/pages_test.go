@@ -52,7 +52,7 @@ func TestApproveShowsTheShortLinkWhenTheEngineServesThePages(t *testing.T) {
 	// Without --reissue no link is touched: the long link.
 	r := cliHost(t, h, "approve", "--agent", "bot", "--config", cfg, "--show", id)
 	require.Equal(t, exitOK, r.code, r.stderr)
-	require.True(t, strings.HasPrefix(r.stdout, testPagesOrigin+"/approvals/"+id+"#1."), r.stdout)
+	require.True(t, strings.HasPrefix(r.stdout, testPagesOrigin+"/approvals/"+id+"#2."), r.stdout)
 	require.Empty(t, h.issued)
 
 	r = cliHost(t, h, "approve", "--agent", "bot", "--config", cfg, "--show", id, "--reissue")
@@ -72,7 +72,7 @@ func TestApproveShowsTheShortLinkWhenTheEngineServesThePages(t *testing.T) {
 	h.issueErr = errors.New("engine answered 404")
 	r = cliHost(t, h, "approve", "--agent", "bot", "--config", cfg, "--show", id, "--reissue")
 	require.Equal(t, exitOK, r.code, r.stderr)
-	require.True(t, strings.HasPrefix(r.stdout, testPagesOrigin+"/approvals/"+id+"#1."), r.stdout)
+	require.True(t, strings.HasPrefix(r.stdout, testPagesOrigin+"/approvals/"+id+"#2."), r.stdout)
 	require.Contains(t, r.stderr, "the engine gave no short link (engine answered 404)")
 	h.issueErr = nil
 
@@ -80,7 +80,7 @@ func TestApproveShowsTheShortLinkWhenTheEngineServesThePages(t *testing.T) {
 	h.pagesUp = false
 	r = cliHost(t, h, "approve", "--agent", "bot", "--config", cfg, "--show", id)
 	require.Equal(t, exitOK, r.code, r.stderr)
-	require.True(t, strings.HasPrefix(r.stdout, testPagesOrigin+"/approvals/"+id+"#1."), r.stdout)
+	require.True(t, strings.HasPrefix(r.stdout, testPagesOrigin+"/approvals/"+id+"#2."), r.stdout)
 	require.Equal(t, 1, count(t, d, `SELECT count(approval_id)::int FROM basalt_meta.approvals WHERE approved_at IS NULL`), "showing approves nothing")
 }
 

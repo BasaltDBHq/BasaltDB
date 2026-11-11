@@ -274,7 +274,7 @@ func TestRequestRevertWaitRunsOut(t *testing.T) {
 	require.NotContains(t, body, "revertUrl", "the link already given keeps working")
 	require.NotContains(t, body, "changeId")
 	steps := requireResultSteps(t, body, "WAIT_ENDED")
-	require.True(t, strings.HasPrefix(str(t, steps[0]["url"]), links.DefaultLocal+"/reverts/"+id+"#1."),
+	require.True(t, strings.HasPrefix(str(t, steps[0]["url"]), links.DefaultLocal+"/reverts/"+id+"#2."),
 		"no local pages: the long link, as the request gave")
 	requireWaitEndedCalls(t, steps, id)
 	expires, err := time.Parse(time.RFC3339, str(t, body["expiresAt"]))
@@ -333,8 +333,8 @@ func TestRequestRevertReissueLink(t *testing.T) {
 	require.Contains(t, str(t, steps[2]["text"]), "the revert link you gave earlier")
 	requireWaitEndedCalls(t, steps, id)
 	require.Contains(t, str(t, ended["personMessage"]), "at the short link the agent gave you")
-	require.NotContains(t, str(t, ended["personMessage"]), "#1.")
-	require.NotContains(t, fmt.Sprint(ended), "#1.", "no long link anywhere")
+	require.NotContains(t, str(t, ended["personMessage"]), "#2.")
+	require.NotContains(t, fmt.Sprint(ended), "#2.", "no long link anywhere")
 
 	start := time.Now()
 	body := requestRevert(t, env.h, map[string]any{"revertId": id, "reissueLink": true})
@@ -477,7 +477,7 @@ func TestRequestRevertRefusesCodesThePersonDidNotSignForIt(t *testing.T) {
 		"sql": "UPDATE leads SET status = 'closed' WHERE id BETWEEN 21 AND 35", "intent": "Close cold leads",
 	})
 	requireToolError(t, held, isError, "APPROVAL_REQUIRED", "", "")
-	approvalCode := signLink(t, env.person, str(t, approvalOf(t, held)["approvalUrl"]), env.person)
+	approvalCode := signLink(t, str(t, approvalOf(t, held)["approvalUrl"]), env.person)
 	refused(idA, approvalCode, "INVALID_ARGUMENT", "", "not a basalt-revert.1. code")
 	resp, err := approval.ParseResponse(approvalCode)
 	require.NoError(t, err)

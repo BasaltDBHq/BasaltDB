@@ -101,7 +101,7 @@ func TestRequestRevertOfAChangeWithoutLocalPages(t *testing.T) {
 	require.EqualValues(t, "2", body["rows"])
 	id := str(t, body["revertId"])
 	link := str(t, body["revertUrl"])
-	require.True(t, strings.HasPrefix(link, links.DefaultLocal+"/reverts/"+id+"#1."), "no local pages: the long link: %s", link)
+	require.True(t, strings.HasPrefix(link, links.DefaultLocal+"/reverts/"+id+"#2."), "no local pages: the long link: %s", link)
 	msg := str(t, body["personMessage"])
 	require.Contains(t, msg, "Revert of change "+changeID+" ready for your review: 2 rows to restore, 0 left as they are")
 	require.Contains(t, msg, "Why: Wrong leads. ")

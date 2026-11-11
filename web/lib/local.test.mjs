@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { approvalResponseJSON, b64urlDecode, checkApprovalRequest, parseApprovalRequest } from "./codec.js";
-import { REQUEST_ATTEMPTS, REQUEST_RETRY_MS, RelayError, SECRET_HEADER, fetchRequest, isLongLink, linkSecret, postResponse, relayPaths, revertDone, shortLinkId } from "./local.js";
+import { REQUEST_ATTEMPTS, REQUEST_RETRY_MS, RelayError, SECRET_HEADER, fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths, revertDone, shortLinkId } from "./local.js";
 import { linkFailure, APPROVE_REOPEN } from "./page.js";
 
 const fixtures = JSON.parse(
@@ -40,6 +40,13 @@ test("a short link's id comes from its path", () => {
   assert.equal(shortLinkId(`/reverts/${id}`, "approvals"), null);
   assert.equal(shortLinkId(`/approve/${id}`, "approvals"), null);
   assert.equal(shortLinkId("/approvals/not-an-id", "approvals"), null);
+  assert.equal(pageId(`/approvals/${id}`, "approvals"), id);
+  assert.equal(pageId(`/reverts/${id}/`, "reverts"), id);
+  // A long link's request takes its id from its binding (format 2), so a
+  // page without an id in its path has nothing to check it against.
+  assert.throws(() => pageId("/approvals/", "approvals"), /no approval id in its path/);
+  assert.throws(() => pageId("/approve/index.html", "approvals"), /no approval id/);
+  assert.throws(() => pageId(`/approvals/${id}`, "reverts"), /no revert id/);
   assert.deepEqual(relayPaths("approvals", id), { request: `/api/v1/approvals/${id}`, relay: `/api/v1/approvals/${id}/approve` });
   assert.deepEqual(relayPaths("reverts", id), { request: `/api/v1/reverts/${id}`, relay: `/api/v1/reverts/${id}/apply` });
 });
@@ -150,6 +157,8 @@ test("a short link's secret comes from its fragment", () => {
   assert.equal(linkSecret("#1.abc"), "");
   assert.equal(linkSecret("#s=bad secret"), "");
   assert.ok(isLongLink("#1.abc"));
+  assert.ok(isLongLink("#2.abc"));
+  assert.ok(!isLongLink("#3.abc"));
   assert.ok(!isLongLink("#s=abc"));
   assert.ok(!isLongLink(""));
 });

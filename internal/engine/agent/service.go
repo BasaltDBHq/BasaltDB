@@ -288,7 +288,7 @@ func (s *Service) findRun(ctx context.Context, id uuid.UUID) (agentdb.Run, error
 	}
 	run, err := s.Store.FindRun(ctx, id)
 	if errors.Is(err, agentdb.ErrRunNotFound) {
-		return agentdb.Run{}, &mcp.ToolError{Code: CodeNotFound, Message: fmt.Sprintf("run %s is not one of this agent's runs; start one with run_start", id)}
+		return agentdb.Run{}, &mcp.ToolError{Code: CodeNotFound, Reason: reasonRun, Message: fmt.Sprintf("run %s is not one of this agent's runs; start one with run_start", id)}
 	}
 	return run, err
 }

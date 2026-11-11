@@ -147,7 +147,7 @@ func TestPagesServeTheEmbeddedFiles(t *testing.T) {
 		"/passkeys/forget":     "../lib/passkeys.js",
 		"/lib/manage.js":       "signalUnknownCredential",
 		"/passkeys/":           "404",
-		"/lib/approve.js":      "shortLinkId",
+		"/lib/approve.js":      "pageId",
 		"/lib/local.js":        "RelayError",
 		"/style.css":           "{",
 		"/approvals/" + id[1:]: "404",

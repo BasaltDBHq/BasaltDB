@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -141,6 +140,11 @@ func (s *Service) badSignature(ctx context.Context, r ledger.Revert, message str
 	if err != nil {
 		return err
 	}
+	return s.badSignatureWith(link, r, message)
+}
+
+// badSignatureWith is REVERT_INVALID BAD_SIGNATURE for the revert page at link.
+func (s *Service) badSignatureWith(link string, r ledger.Revert, message string) error {
 	return &mcp.ToolError{Code: CodeRevertInvalid, Reason: reasonBadSignature, Message: message,
 		PersonMessage: fmt.Sprintf("The code for the revert of %s %s did not verify, so nothing was reverted. Sign again on "+
 			"the revert page and give the agent the new code.", strings.ToLower(r.Scope), r.ScopeID),
@@ -155,6 +159,11 @@ func (s *Service) passkeyRevoked(ctx context.Context, r ledger.Revert) error {
 	if err != nil {
 		return err
 	}
+	return s.passkeyRevokedWith(link, r)
+}
+
+// passkeyRevokedWith is REVERT_INVALID PASSKEY_REVOKED for the revert page at link.
+func (s *Service) passkeyRevokedWith(link string, r ledger.Revert) error {
 	return &mcp.ToolError{Code: CodeRevertInvalid, Reason: reasonPasskeyRevoked,
 		Message: "the code was signed by a passkey this database does not know or that was revoked; nothing was reverted",
 		PersonMessage: fmt.Sprintf("The revert of %s %s was signed with a passkey this database does not accept (unknown or "+
@@ -162,7 +171,7 @@ func (s *Service) passkeyRevoked(ctx context.Context, r ledger.Revert) error {
 			strings.ToLower(r.Scope), r.ScopeID),
 		NextSteps: []mcp.NextStep{
 			runCommand(s.Commands.PasskeyList(), "See which passkeys this database accepts."),
-			runCommand(s.Commands.Init("--add-passkey"), "Register your passkey if it is not listed."),
+			runCommand(s.Commands.Init("--add-passkey"), "Register your passkey with this command: it adds the one you use and changes nothing else."),
 			openLink(link, "Then sign the revert again with that passkey."),
 			agentStep(mcp.ActionEndTurn, stepEndTurnPersonActsNext),
 		}}
@@ -202,60 +211,90 @@ func (s *Service) revertExpired(r ledger.Revert) error {
 }
 
 // prepareTimeout: the revert is too large to prepare over MCP; the person
-// prepares it in a terminal and gives the agent its id.
-func (s *Service) prepareTimeout(scope guard.RevertScope, sqlState string) error {
+// prepares it in a terminal. After a preview the person looks at what it
+// would do and prepares it; after a request they prepare it, sign it and give
+// the agent the revert id.
+func (s *Service) prepareTimeout(tool string, scope guard.RevertScope, sqlState string) error {
 	command := s.Commands.Revert(scope)
-	return &mcp.ToolError{Code: CodeQueryTimeout, Reason: ReasonTimeLimit, SQLState: sqlState, Message: fmt.Sprintf(
+	minutes := int(guard.CLIPrepareTimeout.Minutes())
+	te := &mcp.ToolError{Code: CodeQueryTimeout, Reason: ReasonTimeLimit, SQLState: sqlState, Message: fmt.Sprintf(
 		"preparing the revert of %s %s took longer than the %d seconds an MCP call may take; nothing was prepared. "+
 			"The person can prepare it in a terminal on the engine's machine, where it may take up to %d minutes: %s",
-		strings.ToLower(string(scope.Kind)), scope.ID, int(guard.MCPPrepareTimeout.Seconds()), int(guard.CLIPrepareTimeout.Minutes()),
-		command),
-		PersonMessage: fmt.Sprintf("This revert is too large to prepare through the agent. Run: %s, sign it, then give the "+
-			"agent the revert id it prints so it can apply it in batches.", command),
-		NextSteps: []mcp.NextStep{
-			agentStep(mcp.ActionStop, "This revert is too large to prepare here."),
-			runCommand(command, fmt.Sprintf("Prepare and sign it in a terminal; the CLI allows up to %d minutes.",
-				int(guard.CLIPrepareTimeout.Minutes()))),
-			personStep(mcp.ActionTellAgent, "Then give the agent the revert id that basalt revert prints."),
-			agentStep(mcp.ActionEndTurn, stepEndTurnPersonActsNext),
-		}}
+		strings.ToLower(string(scope.Kind)), scope.ID, int(guard.MCPPrepareTimeout.Seconds()), minutes, command)}
+	person, b := s.requestTimeoutSteps(command, minutes)
+	if tool == toolPreviewRevert {
+		person, b = s.previewTimeoutSteps(scope, command, minutes)
+	}
+	te.PersonMessage = person
+	steps, err := b.EndTurn(stepEndTurnPersonActsNext).Build()
+	if err != nil {
+		return err
+	}
+	te.NextSteps = steps
+	return te
 }
 
 // nothingToRevert tells the cases of BS009 apart: the scope changed no rows
 // a revert could restore (READS_ONLY), every row was already reverted, or
 // people changed every row since (people win).
-func (s *Service) nothingToRevert(ctx context.Context, scope guard.RevertScope, err error) error {
-	te := ToolError(err)
+func (s *Service) nothingToRevert(ctx context.Context, tool string, scope guard.RevertScope, err error) error {
+	detail := ToolError(err).Message
+	if strings.Contains(detail, "changed no rows") {
+		return s.nothingToRevertError(ctx, tool, scope, reasonReadsOnly, detail)
+	}
+	texts, perr := s.Reverts.PreviewRevert(ctx, scope)
+	if perr != nil {
+		texts = nil
+	}
+	return s.nothingToRevertError(ctx, tool, scope, skipReason(texts), detail)
+}
+
+// nothingToRevertError builds NOTHING_TO_REVERT for reason.
+func (s *Service) nothingToRevertError(ctx context.Context, tool string, scope guard.RevertScope, reason, detail string) error {
 	what := fmt.Sprintf("%s %s", strings.ToLower(string(scope.Kind)), scope.ID)
-	te.Reason = s.nothingToRevertReason(ctx, scope, te.Message)
-	te.Message = fmt.Sprintf("nothing to revert in %s; nothing was prepared. preview_revert shows each row and why it is "+
-		"skipped (%s)", what, te.Message)
-	switch te.Reason {
+	te := &mcp.ToolError{Code: CodeNothingToRevert, Reason: reason}
+	te.Message = fmt.Sprintf("nothing to revert in %s; nothing was prepared (%s)", what, detail)
+	if tool == toolRequestRevert {
+		te.Message = fmt.Sprintf("nothing to revert in %s; nothing was prepared. preview_revert shows each row and why it is "+
+			"skipped (%s)", what, detail)
+	}
+	b := NewSteps()
+	switch reason {
 	case reasonReadsOnly:
 		te.PersonMessage = fmt.Sprintf("Nothing to revert for %s: it only read data (or inserted rows it deleted again).", what)
-		te.NextSteps = []mcp.NextStep{agentStep(mcp.ActionStop, "There is nothing to revert; do not retry.")}
+		b.Stop("There is nothing to revert; do not retry.")
 	case reasonAlreadyReverted:
-		te.PersonMessage = fmt.Sprintf("%s was already reverted. Reverting that revert brings the agent's changes back; rows "+
-			"someone changed since are left as they are, and you sign it with your passkey.", what)
-		te.NextSteps = []mcp.NextStep{
-			agentStep(mcp.ActionAskPerson, "Tell the person it was already reverted; ask whether to undo that revert, which brings your work back."),
-			reviseRequestRevert(map[string]any{},
-				"On yes, call request_revert with the revert's changeId (revertedBy in run_history) and the person's reason as intent."),
+		by, err := s.Reverts.RevertedBy(ctx, scope)
+		if err != nil {
+			s.Log.Error("find the revert of a reverted scope", "scope", what, "err", err)
 		}
+		args, named := map[string]any{}, ""
+		if by != uuid.Nil {
+			args[argChangeID] = by.String()
+			named = fmt.Sprintf(" (the revert's change %s)", by)
+		}
+		te.PersonMessage = fmt.Sprintf("%s was already reverted%s. Reverting that revert brings the agent's changes back; rows "+
+			"someone changed since are left as they are, and you sign it with your passkey.", what, named)
+		b.AskPerson("Tell the person it was already reverted; ask whether to undo that revert, which brings your work back.")
+		b.ReviseCall(toolRequestRevert, args, "On yes, call request_revert with the revert's changeId and the person's reason as intent.")
 	default:
 		te.PersonMessage = fmt.Sprintf("Nothing to revert for %s: every row it wrote was changed since by someone else, and "+
 			"Basalt never overwrites them (people win).", what)
-		te.NextSteps = []mcp.NextStep{agentStep(mcp.ActionStop, "There is nothing to revert; do not retry.")}
+		b.Stop("There is nothing to revert; do not retry.")
 	}
+	steps, err := b.Build()
+	if err != nil {
+		return err
+	}
+	te.NextSteps = steps
 	return te
 }
 
-func (s *Service) nothingToRevertReason(ctx context.Context, scope guard.RevertScope, detail string) string {
-	if strings.Contains(detail, "changed no rows") {
-		return reasonReadsOnly
-	}
-	texts, err := s.Reverts.PreviewRevert(ctx, scope)
-	if err != nil || len(texts) == 0 {
+// skipReason is why a preview with no line to restore has nothing to revert:
+// every line skipped because it was reverted already, or because people
+// changed the rows since.
+func skipReason(texts []string) string {
+	if len(texts) == 0 {
 		return reasonAllChangedByPeople
 	}
 	for _, t := range texts {
@@ -267,15 +306,36 @@ func (s *Service) nothingToRevertReason(ctx context.Context, scope guard.RevertS
 	return reasonAlreadyReverted
 }
 
-// withArgumentSteps gives request_revert's INVALID_ARGUMENT its one step,
-// fix the arguments; any other error is returned as is.
-func withArgumentSteps(err error) error {
-	var ae *ArgumentError
-	if !errors.As(err, &ae) {
-		return err
+// allSkipped reports whether a preview's lines restore nothing.
+func allSkipped(texts []string) bool {
+	if len(texts) == 0 {
+		return false
 	}
-	te := ToolError(err)
-	te.NextSteps = []mcp.NextStep{reviseRequestRevert(nil,
-		"Fix the arguments as the message says; the tool's input schema lists them.")}
-	return te
+	for _, t := range texts {
+		if l, err := revert.ParseLine(t); err != nil || l.Action != revert.ActionSkip {
+			return false
+		}
+	}
+	return true
+}
+
+// requestTimeoutSteps: the person prepares and signs the revert in a
+// terminal and gives the agent the revert id.
+func (s *Service) requestTimeoutSteps(command string, minutes int) (string, *Steps) {
+	b := NewSteps().Stop("This revert is too large to prepare here: do not retry it.").
+		RunCommand(command, fmt.Sprintf("Prepare and sign it in a terminal; the CLI allows up to %d minutes.", minutes)).
+		TellAgent("Then give the agent the revert id that basalt revert prints.")
+	return fmt.Sprintf("This revert is too large to prepare through the agent. Run: %s, sign it, then give the "+
+		"agent the revert id it prints so it can apply it in batches.", command), b
+}
+
+// previewTimeoutSteps: the person sees what the revert would do, then
+// prepares it.
+func (s *Service) previewTimeoutSteps(scope guard.RevertScope, command string, minutes int) (string, *Steps) {
+	dry := s.Commands.RevertDryRun(scope)
+	b := NewSteps().Stop("This revert is too large to prepare here: do not retry it.").
+		RunCommand(dry, fmt.Sprintf("See what the revert would do; the CLI allows up to %d minutes.", minutes)).
+		RunCommand(command, "Then prepare it and sign it on the revert page.")
+	return fmt.Sprintf("This revert is too large for the agent to preview. See what it would do with: %s then prepare it "+
+		"and sign it with: %s", dry, command), b
 }

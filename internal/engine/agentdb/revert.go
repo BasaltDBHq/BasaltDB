@@ -12,6 +12,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/revert"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
@@ -58,6 +59,36 @@ func (s *Store) HasChange(ctx context.Context, id uuid.UUID) (bool, error) {
 	var ok bool
 	err = s.db.QueryRow(ctx, q, args...).Scan(&ok)
 	return ok, err
+}
+
+// RevertedBy returns the change record of the latest revert that covered
+// scope in the agent's view of the ledger, or uuid.Nil when none did. A change
+// scope is the change itself; a run or task scope is any of its changes. The
+// revert's change is what request_revert takes to redo the reverted work.
+func (s *Store) RevertedBy(ctx context.Context, scope guard.RevertScope) (uuid.UUID, error) {
+	column := map[revert.Scope]string{
+		revert.ScopeChange: "c.change_id", revert.ScopeRun: "c.run_id", revert.ScopeTask: "c.task_id",
+	}[scope.Kind]
+	if column == "" {
+		return uuid.Nil, nil
+	}
+	// Raw join: squirrel cannot express a lateral unnest of the array column.
+	q, args, err := psql.Select("rb").
+		From("basalt_meta.agent_changes c").
+		CrossJoin("LATERAL unnest(c.reverted_by) rb").
+		Where(sq.Eq{column: scope.ID.String()}).
+		OrderBy("rb DESC").
+		Limit(1).
+		ToSql()
+	if err != nil {
+		return uuid.Nil, err
+	}
+	var id uuid.UUID
+	err = s.db.QueryRow(ctx, q, args...).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, nil
+	}
+	return id, err
 }
 
 // FindRevert returns a revert the agent's role prepared.

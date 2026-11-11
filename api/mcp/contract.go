@@ -83,17 +83,51 @@ func Find(tools []Tool, name string) (Tool, bool) {
 	return Tool{}, false
 }
 
-// Next-step actors (CONTRACT.md, Next steps).
+// Next-step actors (CONTRACT.md, Next steps). ActorOperator is catalog-only:
+// a machine step on the engine's machine, which Resolve turns into
+// ActorAgent or ActorPerson by the engine's operatedBy. It never goes on the
+// wire.
 const (
-	ActorAgent  = "AGENT"
-	ActorPerson = "PERSON"
+	ActorAgent    = "AGENT"
+	ActorPerson   = "PERSON"
+	ActorOperator = "OPERATOR"
 )
+
+// Who operates the engine's machine: engine.json operatedBy (CONTRACT.md,
+// Setup from your laptop).
+const (
+	OperatedByPerson = "PERSON"
+	OperatedByAgent  = "AGENT"
+)
+
+// ActionRunCommand is the one action an AGENT step may take only when the
+// engine's operatedBy is AGENT, and the only action of an OPERATOR step.
+const ActionRunCommand = "RUN_COMMAND"
 
 // ActorActions lists the actions each actor may take in a next step
 // (CONTRACT.md, Next steps).
 var ActorActions = map[string][]string{
-	ActorAgent:  {"CALL_TOOL", "REVISE_CALL", "RETRY_SMALLER_BATCHES", "ASK_PERSON", "END_TURN", "STOP"},
-	ActorPerson: {"OPEN_LINK", "RUN_COMMAND", "TELL_AGENT"},
+	ActorAgent:    {"CALL_TOOL", "REVISE_CALL", "RETRY_SMALLER_BATCHES", "ASK_PERSON", "END_TURN", "STOP", ActionRunCommand},
+	ActorPerson:   {"OPEN_LINK", ActionRunCommand, "TELL_AGENT"},
+	ActorOperator: {ActionRunCommand},
+}
+
+// Resolve returns steps with every OPERATOR step addressed to the agent when
+// operatedBy is AGENT and to the person otherwise (PERSON, or a config the
+// shim cannot read).
+func Resolve(steps []StepKind, operatedBy string) []StepKind {
+	actor := ActorPerson
+	if operatedBy == OperatedByAgent {
+		actor = ActorAgent
+	}
+	out := make([]StepKind, len(steps))
+	for i, s := range steps {
+		if s.Actor == ActorOperator {
+			s.Actor = actor
+		}
+		out[i] = s
+	}
+	return out
 }
 
 //go:embed errors/next-steps.json
@@ -146,13 +180,47 @@ type ProblemSteps struct {
 	Steps         []StepKind `json:"steps"`
 }
 
+// Kinds of entry an agent-operated variant replaces.
+const (
+	VariantError   = "ERROR"
+	VariantWarning = "WARNING"
+	VariantProblem = "PROBLEM"
+)
+
+// VariantSteps replaces the steps of one error, warning or status problem
+// entry when the engine's operatedBy is AGENT: the person's admin step on
+// the engine's machine becomes the agent making a setup code (CONTRACT.md,
+// Next steps).
+type VariantSteps struct {
+	Kind          string     `json:"kind"`
+	Code          string     `json:"code"`
+	Reason        string     `json:"reason,omitempty"`
+	Tool          string     `json:"tool,omitempty"`
+	PersonMessage bool       `json:"personMessage"`
+	Steps         []StepKind `json:"steps"`
+}
+
 // NextSteps is api/mcp/errors/next-steps.json: for every error case, result
-// case, warning and status problem, the steps the engine returns, in order.
+// case, warning and status problem, the steps the engine returns, in order,
+// and the variants that replace some of them on an agent-operated engine.
 type NextSteps struct {
-	Errors   []ErrorSteps   `json:"errors"`
-	Results  []ResultSteps  `json:"results"`
-	Warnings []WarningSteps `json:"warnings"`
-	Problems []ProblemSteps `json:"problems"`
+	Errors        []ErrorSteps   `json:"errors"`
+	Results       []ResultSteps  `json:"results"`
+	Warnings      []WarningSteps `json:"warnings"`
+	Problems      []ProblemSteps `json:"problems"`
+	AgentOperated []VariantSteps `json:"agentOperated"`
+}
+
+// AgentOperatedEntry returns the variant of kind for code, reason and tool
+// on an agent-operated engine, if the catalog has one; otherwise the entry's
+// own steps apply, resolved with Resolve.
+func (c NextSteps) AgentOperatedEntry(kind, code, reason, tool string) (VariantSteps, bool) {
+	for _, v := range c.AgentOperated {
+		if v.Kind == kind && v.Code == code && v.Reason == reason && v.Tool == tool {
+			return v, true
+		}
+	}
+	return VariantSteps{}, false
 }
 
 // LoadNextSteps decodes the embedded next-steps catalog strictly.

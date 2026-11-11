@@ -1,7 +1,7 @@
 // The passkey registration page `basalt init` opens: create an ES256 passkey
 // for this relying party and show the code `basalt init` reads.
 import { ALG_ES256, encodeRegistrationResponse, parseRegistrationRequest, relyingParty } from "./codec.js";
-import { $, fail, showCode, webauthnError } from "./page.js";
+import { $, fail, loadOrPaste, showCode, webauthnError } from "./page.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
 
@@ -38,14 +38,16 @@ async function register(rp, req) {
   }
 }
 
-function main() {
+const describe = (err) => `This registration link cannot be used: ${err.message}`;
+
+async function main() {
   let rp;
   let req;
   try {
     rp = relyingParty(window.location);
-    req = parseRegistrationRequest(window.location.hash);
+    req = await loadOrPaste(parseRegistrationRequest, describe);
   } catch (err) {
-    fail(`This registration link cannot be used: ${err.message}`);
+    fail(describe(err));
     return;
   }
   $("user-name").textContent = req.userName;

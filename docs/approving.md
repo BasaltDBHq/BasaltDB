@@ -50,7 +50,7 @@ Every link is built from one base URL, `pagesUrl` in `engine.json`. `basalt init
 
 - `"pagesAddr": "off"` in `engine.json` turns the pages off. Any address that is not a loopback IP is refused.
 - If the port is taken (an old `make serve-web` from an earlier checkout, or a second engine), the engine refuses to start and names the address. `lsof -nP -iTCP:8787 -sTCP:LISTEN` shows what holds it; stop that process and start the engine again.
-- With the hosted console as the base (`https://console.basaltvault.app`, not live yet), the engine serves no pages, and held writes carry the long link (`/approvals/<id>#1....`) that holds the whole preview. Open that link with `basalt approve --open` rather than copying it, because terminals and chats can cut it short. The page says so when it gets a truncated link.
+- With the hosted console as the base (`https://console.basaltvault.app`, not live yet), the engine serves no pages, and held writes carry the long link (`/approvals/<id>#2....`) that holds the whole preview. Open that link with `basalt approve --open` rather than copying it, because terminals and chats can cut it short. The page says so when it gets a truncated link.
 
 Telegram always sends the long link. The short link only works on the machine where the engine runs.
 

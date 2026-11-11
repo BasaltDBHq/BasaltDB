@@ -181,3 +181,27 @@ func mustCommands(t *testing.T, path, goos string, initArgs []string) Commands {
 	require.NoError(t, err)
 	return c
 }
+
+func TestGrantExtendsTheSavedList(t *testing.T) {
+	t.Parallel()
+	for name, tc := range map[string]struct {
+		initArgs []string
+		want     string
+	}{
+		"joined":   {[]string{"--agent=bot", "--read=public.a"}, "--read=public.a,public.t"},
+		"separate": {[]string{"--agent", "bot", "--read", "public.a"}, "--read public.a,public.t"},
+		"absent":   {[]string{"--agent=bot", "--write=public.w"}, "--write=public.w --read=public.t"},
+	} {
+		c, err := NewCommands("bot", "", "linux", tc.initArgs)
+		require.NoError(t, err, name)
+		got, err := c.Grant("read", "public.t")
+		require.NoError(t, err, name)
+		require.Contains(t, strings.ReplaceAll(got, "'", ""), tc.want, name)
+	}
+	c, err := NewCommands("bot", "", "linux", nil)
+	require.NoError(t, err)
+	for _, bad := range []string{"a,b", "public.a,public.b", "events", `"a b".c`, "public.a;rm", ""} {
+		_, err := c.Grant("write", bad)
+		require.ErrorIs(t, err, ErrBadTable, bad)
+	}
+}

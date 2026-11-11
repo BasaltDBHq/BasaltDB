@@ -81,7 +81,7 @@ test("revert request refuses anything that does not match the binding", async ()
       return true;
     });
   }
-  await assert.rejects(parseRevertRequest("2." + f.fragment.slice(2)), /must start with/);
+  await assert.rejects(parseRevertRequest("3." + f.fragment.slice(2)), /must start with/);
   await assert.rejects(parseRevertRequest("1.@@"), /base64url/);
 });
 

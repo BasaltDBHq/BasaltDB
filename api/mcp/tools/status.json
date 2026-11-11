@@ -2,7 +2,7 @@
   "name": "status",
   "status": "PLANNED",
   "milestone": "M4.1",
-  "description": "Whether Basalt is ready for you, and what to do if not. Call it at the start of a session before any other Basalt tool, after the person says they fixed something (started the engine, ran an upgrade, registered a passkey), and after a failure that looks like setup rather than your statement (UNAVAILABLE, GUARD_OUTDATED). Answers even when the engine is down. Each problem carries nextSteps: do them in order, show the person personMessage verbatim and every PERSON step's command unchanged. When operatedBy is PERSON you never start, stop or upgrade anything yourself. Read-only; never returns a secret.",
+  "description": "Whether Basalt is ready for you, and what to do if not. Call it at the start of a session before any other Basalt tool, after the person says they fixed something (started the engine, ran an upgrade, registered a passkey), and after a failure that looks like setup rather than your statement (UNAVAILABLE, GUARD_OUTDATED, SETUP_PENDING). Answers even when the engine is down. Each problem carries nextSteps: do them in order, show the person personMessage verbatim and every PERSON step's command unchanged. When operatedBy is PERSON you never start, stop or upgrade anything yourself; when it is AGENT you run the machine steps addressed to you (AGENT RUN_COMMAND) and never ask the person for their database password. Read-only; never returns a secret.",
   "inputSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -11,7 +11,7 @@
   "outputSchema": {
     "type": "object",
     "additionalProperties": false,
-    "required": ["agent", "operatedBy", "ready", "engine", "guard", "pages", "passkeys", "problems"],
+    "required": ["agent", "operatedBy", "enforcement", "ready", "engine", "guard", "setup", "pages", "passkeys", "problems"],
     "properties": {
       "agent": {
         "type": "string",
@@ -20,7 +20,12 @@
       "operatedBy": {
         "type": "string",
         "enum": ["PERSON", "AGENT"],
-        "description": "Who runs the engine's machine (engine.json operatedBy, docs/redesign/specs/2026-11-12-chat-only-operator.md). PERSON (default, and when the shim cannot read the config): machine steps are the person's."
+        "description": "Who runs the engine's machine (engine.json operatedBy, docs/redesign/specs/2026-11-12-chat-only-operator.md). PERSON (default, and when the shim cannot read the config): machine steps are the person's. AGENT: machine steps are the agent's (AGENT RUN_COMMAND); steps that need the admin stay the person's, on their own computer."
+      },
+      "enforcement": {
+        "type": "string",
+        "enum": ["ENGINE_AND_GUARD", "GUARD_ONLY"],
+        "description": "ENGINE_AND_GUARD: the engine runs as its own OS user and the agent cannot read its credential, so every statement passes the engine's checks and the guard's. GUARD_ONLY: operatedBy is AGENT, or the engine runs in same-user mode, or the shim cannot read the config: the agent could connect with its credential directly, and the guard in Postgres still enforces intent, row limits, holds and signatures."
       },
       "ready": {
         "type": "boolean",
@@ -73,6 +78,38 @@
           }
         }
       },
+      "setup": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["state"],
+        "description": "Setup from the person's laptop (basalt init --remote on the engine's machine, then basalt init --setup-code on the person's own computer).",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": ["NONE", "PENDING", "EXPIRED", "DONE"],
+            "description": "PENDING: a setup code was made and its setup is not recorded yet. For an INSTALL code every tool but status answers UNAVAILABLE reason SETUP_PENDING (problem SETUP_NOT_RUN); for an AGENT or UPGRADE code the tools keep working with what is installed (problem SETUP_CHANGE_PENDING). EXPIRED: an INSTALL code past expiresAt (reason and problem SETUP_EXPIRED); a new code is needed. An expired AGENT or UPGRADE code is dropped, and the problem that called for it comes back. DONE: no setup pending, and setupId names the agent's latest recorded setup. NONE: no setup pending and none recorded (set up with basalt init and the admin connection string), or the engine is down and no setup is pending."
+          },
+          "setupId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "PENDING and EXPIRED: the pending code's. DONE: the latest recorded setup's."
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["INSTALL", "AGENT", "UPGRADE"]
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "PENDING and EXPIRED: when the code expires or expired."
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{4}( [0-9a-f]{4}){4}$",
+            "description": "PENDING: the pending code's setup fingerprint. Tell the person to check that basalt init --setup-code shows the same one."
+          }
+        }
+      },
       "pages": {
         "type": "object",
         "additionalProperties": false,
@@ -122,7 +159,10 @@
                 "GUARD_MISSING",
                 "GUARD_OUTDATED",
                 "GUARD_UPGRADE_AVAILABLE",
-                "NO_PASSKEY"
+                "NO_PASSKEY",
+                "SETUP_NOT_RUN",
+                "SETUP_EXPIRED",
+                "SETUP_CHANGE_PENDING"
               ]
             },
             "severity": {

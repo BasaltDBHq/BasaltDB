@@ -70,9 +70,9 @@ func (s *Service) openApproval(ctx context.Context, id uuid.UUID, proof *string)
 	case a.Status == ledger.ApprovalExpired || !s.Now().Before(a.ExpiresAt):
 		return a, &mcp.ToolError{Code: CodeApprovalExpired, Message: fmt.Sprintf("this approval expired at %s; the write stays blocked", a.ExpiresAt.UTC().Format(personTime))}
 	case a.Status == ledger.ApprovalApproved:
-		return a, approvalInvalid("this write is already approved; the agent applies it")
+		return a, approvalInvalid(reasonAlreadyUsed, "this write is already approved; the agent applies it")
 	case a.Status == ledger.ApprovalApplied:
-		return a, approvalInvalid("this approval was already used")
+		return a, approvalInvalid(reasonAlreadyUsed, "this approval was already used")
 	}
 	return a, nil
 }

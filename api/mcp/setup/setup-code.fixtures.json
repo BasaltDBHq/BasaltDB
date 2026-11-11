@@ -1,0 +1,552 @@
+{
+  "description": "Golden fixtures for the setup code (CONTRACT.md, Setup from your laptop). Generated once and fixed. valid: a codec decodes each code to its payload; fingerprint is its setup fingerprint. invalid: refused with the stated refusal (codec checks, the schema, and the rules the schema cannot state). laptop: what basalt init --setup-code decides for a valid code against a database state at time now, checks in CONTRACT.md's order (the admin connection string's target is not modelled): the refusal, or lines the summary must contain. verifiers: the SCRAM-SHA-256 verifier for a password and a salt (standard base64). Codes were encoded from compact JSON in the key order of setup-code.schema.json, deflated with Go compress/flate level 9. Test values only: no password here is used anywhere.",
+  "invalid": [
+    {
+      "name": "one character changed",
+      "code": "basalt-setup.1.TFFdb9pAEPwvq7z1zrkD48BJPDiQECg0fFWEVFV1Atfmiu0zd2c-EvHfKyO16j7u7M7O7HxCqk0hHQhOwKKrq3ECAhiXPMZOjz60oi59iNuS9lLGKPtXCQcCe1U20-Nvq3U4nQKBymCqziAgklbmDgg4aTJ0ID5hp60DAfJkKaNY0xhLZ2ROuVdpnaPxbF3JSFr0Yl00XNo4EEHHbxNIpLtBIKDS1mUGLRD4u7DEtCGO4gTTbKd-7_Oi1NXBWAdXAlktTdIISI0uQDACToPgwZVAVKv8ZtfreAwIyAzLm9ZSFs2tHGXyK9KNj5NRDkH8gKqOchV7DWThJwGDMvmvH-uikqXCG3ZEo1KFBgSsBstwRlcvIW11gjuf9QIRLsbDx_D76PGUTQaZnQ0X_vwp7PfvLv7beXv_UVbH4fzLZj_R87dntZCj-692kq8PU93dvY_yQa1fu32RdfLtsJz4Gz0zfqA2u8thW8ZymCxj_TD7OPLnS_byetG7-6d-8zMnHRZYurUqUNduZkG0m0CvBPBcKYM2bGJqsVZAOae8vWaBYC3B-Ttc_wQAAP__.UO3iZg",
+      "refusal": "DAMAGED"
+    },
+    {
+      "name": "cut short",
+      "code": "basalt-setup.1.TFFdb9pAEPwvq7z1zrkD48BJPDiQECg0fFWEVFV1ttfmiu0zd2c-EvHfKyO16j7u7M7O7HxCqk0hHQhOwKKrq3ECAhiXPMZOjz60oi59iNuS9lLGKPtXCQcCe1U20-Nvq3U4nQKBymCqziAgklbmDgg4aTJ0ID5hp60DAfJkKaNY0xhLZ2ROuVdpnaPxbF3JSFr0Yl00XNo4EEHHbxNIpLtBIKDS1mUGLRD4u7DEtCGO4gTTbKd-7_Oi1NXBWAdXAlktTdIISI0uQDACToPgwZVAVKv8ZtfreAwIyAzLm9ZSFs2tHGXyK9KNj5NRDkH8gKqOchV7DWThJwGDMvmvH-uikqXCG3ZEo1KFBgSsBstwRlcvIW11gjuf9QIRLsbDx_D76PGUTQaZnQ0X_vwp7PfvLv7beXv_UVbH4fzLZj_R87dntZCj-692kq8PU93dvY_yQa1fu32RdfLtsJz4Gz0zfqA2u8thW8ZymCxj_TD7OPLnS_byetG7-6d-8zMnHRZYurUqUNduZkG0m0CvBPBcKYM2bGJqsVZAOae8vWaBYC3B.UO3iZg",
+      "refusal": "DAMAGED"
+    },
+    {
+      "name": "check part missing",
+      "code": "basalt-setup.1.TFFdb9pAEPwvq7z1zrkD48BJPDiQECg0fFWEVFV1ttfmiu0zd2c-EvHfKyO16j7u7M7O7HxCqk0hHQhOwKKrq3ECAhiXPMZOjz60oi59iNuS9lLGKPtXCQcCe1U20-Nvq3U4nQKBymCqziAgklbmDgg4aTJ0ID5hp60DAfJkKaNY0xhLZ2ROuVdpnaPxbF3JSFr0Yl00XNo4EEHHbxNIpLtBIKDS1mUGLRD4u7DEtCGO4gTTbKd-7_Oi1NXBWAdXAlktTdIISI0uQDACToPgwZVAVKv8ZtfreAwIyAzLm9ZSFs2tHGXyK9KNj5NRDkH8gKqOchV7DWThJwGDMvmvH-uikqXCG3ZEo1KFBgSsBstwRlcvIW11gjuf9QIRLsbDx_D76PGUTQaZnQ0X_vwp7PfvLv7beXv_UVbH4fzLZj_R87dntZCj-692kq8PU93dvY_yQa1fu32RdfLtsJz4Gz0zfqA2u8thW8ZymCxj_TD7OPLnS_byetG7-6d-8zMnHRZYurUqUNduZkG0m0CvBPBcKYM2bGJqsVZAOae8vWaBYC3B-Ttc_wQAAP__",
+      "refusal": "DAMAGED"
+    },
+    {
+      "name": "an approval code",
+      "code": "basalt-approval.1.TFFdb9pAEPwvq7z1zrkD48BJPDiQECg0fFWEVFV1ttfmiu0zd2c-EvHfKyO16j7u7M7O7HxCqk0hHQhOwKKrq3ECAhiXPMZOjz60oi59iNuS9lLGKPtXCQcCe1U20-Nvq3U4nQKBymCqziAgklbmDgg4aTJ0ID5hp60DAfJkKaNY0xhLZ2ROuVdpnaPxbF3JSFr0Yl00XNo4EEHHbxNIpLtBIKDS1mUGLRD4u7DEtCGO4gTTbKd-7_Oi1NXBWAdXAlktTdIISI0uQDACToPgwZVAVKv8ZtfreAwIyAzLm9ZSFs2tHGXyK9KNj5NRDkH8gKqOchV7DWThJwGDMvmvH-uikqXCG3ZEo1KFBgSsBstwRlcvIW11gjuf9QIRLsbDx_D76PGUTQaZnQ0X_vwp7PfvLv7beXv_UVbH4fzLZj_R87dntZCj-692kq8PU93dvY_yQa1fu32RdfLtsJz4Gz0zfqA2u8thW8ZymCxj_TD7OPLnS_byetG7-6d-8zMnHRZYurUqUNduZkG0m0CvBPBcKYM2bGJqsVZAOae8vWaBYC3B-Ttc_wQAAP__",
+      "refusal": "NOT_A_SETUP_CODE"
+    },
+    {
+      "name": "a newer code format",
+      "code": "basalt-setup.2.TFFdb9pAEPwvq7z1zrkD48BJPDiQECg0fFWEVFV1ttfmiu0zd2c-EvHfKyO16j7u7M7O7HxCqk0hHQhOwKKrq3ECAhiXPMZOjz60oi59iNuS9lLGKPtXCQcCe1U20-Nvq3U4nQKBymCqziAgklbmDgg4aTJ0ID5hp60DAfJkKaNY0xhLZ2ROuVdpnaPxbF3JSFr0Yl00XNo4EEHHbxNIpLtBIKDS1mUGLRD4u7DEtCGO4gTTbKd-7_Oi1NXBWAdXAlktTdIISI0uQDACToPgwZVAVKv8ZtfreAwIyAzLm9ZSFs2tHGXyK9KNj5NRDkH8gKqOchV7DWThJwGDMvmvH-uikqXCG3ZEo1KFBgSsBstwRlcvIW11gjuf9QIRLsbDx_D76PGUTQaZnQ0X_vwp7PfvLv7beXv_UVbH4fzLZj_R87dntZCj-692kq8PU93dvY_yQa1fu32RdfLtsJz4Gz0zfqA2u8thW8ZymCxj_TD7OPLnS_byetG7-6d-8zMnHRZYurUqUNduZkG0m0CvBPBcKYM2bGJqsVZAOae8vWaBYC3B-Ttc_wQAAP__.gTS5Ag",
+      "refusal": "UNSUPPORTED_FORMAT"
+    },
+    {
+      "name": "a newer payload format",
+      "code": "basalt-setup.1.TJFdb-I8EIX_y6h3r03tEFKwxEUKLYUXtnytKF1VKyeZBC9JHGyHj1b891WQdrVzO5oz55znC2SGpQPxBaUsEATkKJOfkXZAwKBMQPyAqo5yFbdiXVSyVGjhg4B10mGBpVurAnXtZhZEmzHGCBzRqFShAQGrwTKc0dVLSL1OcOezXiDCxXj4GH4fPZ6yySCzs-HCnz-F_f7dxX87b-8_y-o4nP-32U_0_O1ZLeTo_n87ydeHqe7u3kf5oNav3b7IOvl2WE78jZ4ZP1Cb3eWwLWM5TJaxfph9HvnzJXt5vejd_VMfCJyMcvhPlCakhY8rgahWeQICWKvTYkAAz5UyaEMHAjzmBZRzyttrFgjmCc7fgUCqTSEdCI9AVkuTNOWlRhcgGAGnQfDgSmCvykZ3_G21DqdTIFAZTNUZBETSyrzp16Krq_HtO5c8xk6PPnhRlz7EbUl7KWOU_Z2EAwEnTYY3WIl0MpK2AVZp6zKDFgjstG18y5OljGJNYyydkTnlrUrrHE3L1tXtrGHZWNLGgQg6fpvAn9US00YiihNMs536tc-LUlcHYx1cr78DAAD__w.YcgnSw",
+      "refusal": "UNSUPPORTED_FORMAT"
+    },
+    {
+      "name": "unknown key",
+      "code": "basalt-setup.1.TFHpTuM8FH2XI_59Tut0CWCp0hcoW4cOWxHLCI2c5Cb14MSu7UAL6ruPUokR99_V1Tn3LJ-QRa2ae6chYI0PlSO_0qLf_1r-L7IerWVtNfVyU_eltWCQFTUB4hONrAkCmmTxOzMBDI5kAfELts20yjuMlY0ijxcGH2SgmpqwUDWZNsw9xJBzzhneyKlSkYPA3fFtOo_uztNoME72RvwwEenNxfQovT87eq9mx5WfT29G1yfpZLK3GT2un_ofjX2bXv_38Doz14-n6kae9X_4mV6sLs3B8vlMH7fm6mAiqrF-mjaz0YOZu1GiHpab1VOTy2lxm5v9-cdbfLqpzq82Ztk_mYDh3alA36x0Jj1etgxZq3QBAd4b9zgYaG2VI58GCAz4IIniOIqHC54IPhBx_AyG0rhaBoiYoWqlK7rwSmdqCM4QDEScbBleVdPxXvy8W6SXl2Cwjkq1hkAmvdRdvp5Cay9232MZ5zQ-jPYH2UG0nw9ldFhyHvF_U8RgCNJVtCurkEFm0tO3rsGwNL7TLd99xCNqo5ya4KSO4p41RpPr-dbuYF2XnSTjAkQyHg0Zvk63VHYUWV5QWS3Vn1ddN8aunA_Ybv8GAAD__w.BlGArQ",
+      "refusal": "INVALID"
+    },
+    {
+      "name": "password instead of a verifier",
+      "code": "basalt-setup.1.lJLLbts8EIXfZZDdTzqkLMk2AS-UODf_cRNfCscpgoKSRjJrSZRJypcYfvdCLlp029kNBnNw5nxzAplj5UCcoJIlgoACZfo91g4I1NLavTYpCGDc6_pB2OsPZJykmP1rDwQMyhTEN6ibuFBJJ9FlLSuFFj4IWCcdlli5hSpRN25iQXQZY4zADo3KFBoQML-dRRM6f4yoF4RXPhuEIpo-jW6irw83-3x8m9vJaOq_3kXD4dXRfzusrj-rejd6_W-5GevXt3s1lQ_X_9txsdg-6_76_aG4bfRLfyjyoFiNqrG_1BPjh2q5Pm5XVSJH6SzRvcnnjt8f88eXo15f3w2BwN4oh3-d0kZm4eNMIG5UcYmrE3QYEMBDrQzayIEAj3kh5Zzy7oKFgnmC83cgkGlTSgeCE8gb2YZ9gszoEgQj4DQIHp4JbFTV6j59mS-i5-eWjcFMHUBALK0sWloWXVM__YIleYLBgPa8uE97SVfSQcYYZX8q5UDASZPjBX0qnYylbfHX2rrcoAUCa21b33JvKaPY0AQrZ2RBeafWukDTsU19WWtZtpa0cSDCwO8S-D2aYdZKXH4gX6sfm6KsdL011sH5_DMAAP__.8bYs-g",
+      "refusal": "INVALID"
+    },
+    {
+      "name": "install without a verifier",
+      "code": "basalt-setup.1.TJBBi9swEIX_yztLRrIbb1e3PS6kPbQ5tYQytseOGttSpTEJBP_3okDLznV4b775HqCJV4F7YKWF4TAzDb-6IFBITAPcT8Stm31f9WGJtHrOOCtkIeGFVzn5hcMmXzJcY4wxCrfkhT_kSmPGeVfoNj8PcDDVoTJQ4Hv0ifObwKE2daut1bY5mdaZ2ln7AwpjSAsJnFWYNkpDIR1TWOCMggQ42-4KV7-W3vev309vxyMUYuLR3-HQUaa5PJNZtvj-vG7J9nx41S9191m_9A3p19EYbf7PYKEglCZ-mhlIqKNc7MSQZUqcoXAJuXDTLWujedM9r5Jo1raKIcycqrzFZ6yIK0ghCVx7-NQo_Ft947FUdP3A43Txv6_zsob4J2XBvv8NAAD__w.B8Iu8A",
+      "refusal": "INVALID"
+    },
+    {
+      "name": "upgrade with an agent part",
+      "code": "basalt-setup.1.TJFfb9owFMW_y1XfZoMNIYAlHlJCadlQgVJROlWTk9wEjyQOtsOfVnz3KUibdl-v7rnnnN8XyAxLB-ILSlkgCMhRJr8i7YCAQZmA-AlVHeUqbsW6qGSp0MIHAeukwwJLt1YF6trNLYguY4wROKJRqUIDAl7Gq2BOXx4D2un5dx4b-iJYPoX3wev0_pTNxpmdh0tvMQlGo7uL93betj_L6hguvm32M714e1BLOW1_t7N8ffihB7v3aT6u9fNgJLJevg3LmbfRc-P5arO7HLZlLMNkFev-_PPIHy7Z4_NF79qTERA4GeXwvyhNSAsfVwJRrfIEBLBWr8WAAJ4rZdAGDgR0WMennFPeXTNfsI7g_B0IpNoU0oHgBLJamqQpLzW6AMEIOA2C-1cCe1U2uq-L6SoIJ0CgMpiqMwiIpJV5069FV1dPt-9c8hh7Q9rvRAPaj7uSDlPGKPs3CQcCTpoMb7AS6WQkbQOs0tZlBi0Q2Gnb-JYnSxnFmsZYOiNzyluV1jmalq2r21nDsrGkjQPh97wugb-rFaaNRBQnmGY79XufF6WuDsY6uF7_BAAA__8.ZgwvAQ",
+      "refusal": "INVALID"
+    },
+    {
+      "name": "unknown kind",
+      "code": "basalt-setup.1.TJHdbuIwEIXfZdS7takNIYAlLlKgtHRR-VtRuqpWTjJJvCRxsB1-WvHuqyDtaud2NGfOOd8XyBRLB-ILSlkgCMhRxr9C7YCAQRmD-AlVHeYqakW6qGSp0MIHAeukwwJLt1EF6trNLYgOY4wROKJRiUIDAtajVTCn66eAtrv-nccGvgiWz-OH4Mf04ZTORqmdj5feYhIMh3cX7-28u_8sq-N48W27n-nF26Nayun9i53lm8N33c_ep_mo1q_9oUi7-W5czrytnhvPV9vsctiVkRzHq0j35p9H_nhJn14vOrufDIHAySiH_0VpQlr4uBIIa5XHIIC1ui0GBPBcKYM2cCCgzdo-5Zzyzob5grUF5-9AINGmkA4EJ5DW0sRNeYnRBQhGwGkQ3L8S2Kuy0V0E6_XLZAcEKoOJOoOAUFqZN_1adHX1fPvOJY-wO6C9dtinvagj6SBhjLJ_E3Mg4KRJ8QYrlk6G0jbAKm1datACgUzbxrc8Wcoo1jTC0hmZU96qtM7RtGxd3c4alo0lbRwIv-t1CPxdrTBpJMIoxiTN1O99XpS6Ohjr4Hr9EwAA__8.Lm7ZBw",
+      "refusal": "INVALID"
+    },
+    {
+      "name": "verifier with 1000 iterations",
+      "code": "basalt-setup.1.TJFbb-IwEIX_y6hva4PNJVBLPKTQUljYcltRuqpWTjJJvCRxsB0urfjvqyDtqvM6mjPnnO8TZIKFA_EJhcwRBGQoo9-BdkDAoIxA_IKyCjIVNkKdl7JQaOGdgHXSYY6F26gcdeXmFkSbMcYIHNGoWKEBAevhyp_T9bNPW13vjjPGhL-cjB78n-OHUzIdJnY-WnYWj_5gcHfpvJ53zY-iPI4W37b7qV68PqmlHDe_22m2Ocx0P30bZ8NKv_QHIulmu1Ex7Wz13HQ8tU0vh10RylG0CnVv_nHkT5fk-eWi0-bjAAicjHL4JUod0sL7lUBQqSwCAazRbTAggOdSGbS-AwEt1vIo55S3N8wTrCU4fwMCsTa5dCA4gaSSJqrLi43OQTACToPg3pXAXhW17uTHeuPPZkCgNBirMwgIpJVZ3a9FV5WT23cueYjde9prBX3aC9uS3seMUfZ_Ig4EnDQJ3mBF0slA2hpYqa1LDFogkGpb-5YnSxnFioZYOCMzyhul1hmahq3K21nNsrakjQPhdTttAv9WK4xriSCMME5S9Wef5YUuD8Y6uF7_BgAA__8.bnTZUA",
+      "refusal": "INVALID"
+    },
+    {
+      "name": "system schema table",
+      "code": "basalt-setup.1.PJFdb-I8EIX_y6h3r53aEAJY4iKFlsILW75WlK4q5CSO4yWJg-3w0Yr_vgrS7tyO5sw55_kGLkXpgH1DyQsBDHLBk32kHSAwgifAfkEl9zF3PNfSq-Se1y5TCXwisI47UYjSbVQhdO3mFlibEEIQnIRRqRIGGKyHq3CO168hbnWCB5_0AxYuJ6On8Of46SynQ2nno6W_eA4Hg4er_37ZPX6V1Wm0-G97mOrF-4ta8vHj_3aab44z3cs-xvmw1m-9AZOdfDcqp_5Wz40fqG12Pe7KmI-SVay7868TfbnK17erzh6fB4DgbJQT9zh1lKvYa4Ja-LwhiGqVJ8CAeB2PAAJxqZQRNnTAoEVaAaYU0_aGBIy0GKUfgCDVpuAOGEUga26SpsDU6AIYQeA0MBrcEBxU2ehOfqw34WwGCCojUnUBBhG3PG86tsLV1eT-nXIai04fd1tRD3fjNsf9lBBM_k1CAYHjRoo7sIQ7HnHbQKu0ddIICwgybRvf_GwxwaLGsSid4TmmXqV1Loxn6-p-5sW6aCxp44AFHb-N4O9qJdJGIooTkcpM_T7kRamro7EObrc_AQAA__8.JOgN_A",
+      "refusal": "INVALID"
+    },
+    {
+      "name": "basalt_meta table",
+      "code": "basalt-setup.1.PJFtb9owEMe_y6nvZqc2hLRY4kUKLYXBytNE6VRVTnIJHkkcbIeHVnz3KWjbvT3d_353vy-QGZYOxBeUskAQkKNMPiLtgIBBmYD4BVUd5Sr2Yl1UslRo4Z2AddJhgaVbqQJ17aYWRJsxxggc0KhUoQEBy_4inNLlc0hbneDGZ91AhPPR4CH8OXw4ZuN-ZqeDuT97DHu9m7P_etrcfpbVYTD7tt6N9ez1Sc3l8Pa7Heer_UTfb9-Geb_WL_c9kXXyzaAc-2s9NX6g1tvzflPGcpAsYn03_Tzwp3P2_HLW29vHHhA4GuWwOSWSVubuo0AnvUpau8OzhfcLgahWeQICmNfxGBDAU6UM2tCBgBZrBZRzytsrFgjWEpy_AYFUm0I6EJxAVkuTNE9MjS5AMAJOg-DBhcBOlU3u6MdyFU4mQKAymKoTiL8sQMCiq6vRdTuXPMZOl961ont6F7cl7aaMUfa_Eg4EnDQZXqUl0slI2kZcpa3LDFogsNW24ZZHSxnFmsZYOiNzyr1K6xyNZ-vqOtY4bZC0cSCCjt8m8K-1wLSJiOIE02yrfu_yotTV3lgHl8ufAAAA__8.Ci7chQ",
+      "refusal": "INVALID"
+    },
+    {
+      "name": "quoted identifier",
+      "code": "basalt-setup.1.TJFdb-I8EIX_y6h3r01tCAEscZFCS-GFLV8rSrfVykkmwUsSB9vhoxX_fRWkXe3cjubMOef5Apli4UB8QSFzBAEZyvhnqB0QMChjED-grMJMRY1I56UsFFr4IGCddJhj4dYqR125mQXRYowxAkc0KlFoQMBqsAxmdPUc0Gbbv_NYzxfBYjx8CL6PHk7pZJDa2XDhzR-Dfv_u4r2et_efRXkczv_b7Cd6_vqkFnJ0_7-dZOvDVHd3b6NsUOmXbl-k7Ww7LCbeRs-M56vN7nLYFpEcxstId2afR_50SZ9fLnp3_9gHAiejHP4T5R2mKGP7DvBxJRBWKotBAGu0GwwI4LlUBm3gQECTNX3KOeWtNfMFawrO34BAok0uHQhOIK2kiesCE6NzEIyA0yC4fyWwV0WtO_62WgfTKRAoDSbqDAJCaWVWd2zRVeX49p1LHmG7RzvNsEs7UUvSXsIYZX8n5kDASZPiDVgsnQylraGV2rrUoAUCO21r3_JkKaNY0QgLZ2RGeaPUOkPTsFV5O6t51pa0cSD8ttci8Ge1xKSWCKMYk3Snfu2zvNDlwVgH1-vvAAAA__8.aR2RoQ",
+      "refusal": "INVALID"
+    },
+    {
+      "name": "unqualified table",
+      "code": "basalt-setup.1.PJHdbuIwEIXfZdS7tcGGEMASFym0FBa2_K0oXVUrJ5kEL0kcbIefVrz7Kki7czuaM-ec7wtkioUD8QWFzBEEZCjj36F2QMCgjEH8grIKMxU1Ip2XslBo4YOAddJhjoXbqBx15eYWRJsxxgic0KhEoQEB6-EqmNP1S0BbHf_BY31fBMvJ6DH4OX48p9Nhauejpbd4CgaDh6v3dtk1P4vyNFp82x6mevH2rJZy3Pxup9nmONO9_fs4G1b6tTcQaSfbjYqpt9Vz4_lqu78ed0UkR_Eq0t3554k_X9OX16veN58GQOBslMM6Sp3OwseNQFipLAYBrNFpMCCAl1IZtIEDAS3W8innlLc3zBesJTh_BwKJNrl0IDiBtJImrltLjM5BMAJOg-D-jcBBFbXu5Md6E8xmQKA0mKgLCAillVldrEVXlZP7dy55hJ0-7bbCHu1GbUn7CWOU_Z-YAwEnTYp3SrF0MpS2JlVq61KDFgjsta19y7OljGJFIyyckRnljVLrDE3DVuX9rIZYW9LGgfA7XpvAv9UKk1oijGJM0r36c8jyQpdHYx3cbn8DAAD__w._VtBew",
+      "refusal": "INVALID"
+    },
+    {
+      "name": "agent name with a capital",
+      "code": "basalt-setup.1.TJHdbuIwEIXfZdS7takNIYAlLgK0FBa2_K0oXfXCSSbBSxIH2-GnFe--CtKudm5Hc-ac832BTLFwIL6gkDmCgBnKeKAdEDAoYxC_oKzCTEWNSOelLBRa-CBgnXSYY-E2KkddubkF0WKMMQInNCpRaEDAergK5nT9EtBm23_wWM8XwXIyGgQ_x4NzOh2mdj5aeounoN9_uHpvl93jZ1GeRotv28NUL96e1VKOH7_babY5znR3_z7OhpV-7fZF2s52o2LqbfXceL7a7q_HXRHJUbyKdGf-eeLP1_Tl9ar3j099IHA2yuF_UTKUsYWPG4GwUlkMAlij3WBAAC-lMmgDBwKarOlTzilvbZgvWFNw_g4EEm1y6UBwAmklTVx3lxidg2AEnAbB_RuBgypq3cmP9SaYzYBAaTBRFxAQSiuzul-Lrion9-9c8gjbPdpphl3aiVqS9hLGKPs3MQcCTpoU76xi6WQobc2r1NalBi0Q2Gtb-5ZnSxnFikZYOCMzyhul1hmahq3K-1nNsrakjQPht70Wgb-rFSa1RBjFmKR79fuQ5YUuj8Y6uN3-BAAA__8.Gv3J9Q",
+      "refusal": "INVALID"
+    },
+    {
+      "name": "setup id not a UUIDv7",
+      "code": "basalt-setup.1.TJHdbuIwEIXfZdS7tcGGkIIlLlJoKSxs-VtRuqpWTjIJXpI42A4_rXj3VZB21bkdzZlzzvcJMsXCgfiEQuYIAjKU8e9QOyBgUMYgfkFZhZmKGpHOS1kotPBOwDrpMMfCrVWOunIzC6LNGGMEjmhUotCAgNVgGczo6jmgrY5_57GeL4LFePgQ_Bw9nNLJILWz4cKbPwb9_t3Fez1vmx9FeRzOv232Ez1_fVILOWp-t5NsfZjq7u5tlA0q_dLti7STbYfFxNvomfF8tdldDtsiksN4Gen72ceRP13S55eL3jUf-0DgZJTDL1HqkBberwTCSmUxCGCNToMBATyXyqANHAhosZZPOae8vWa-YC3B-RsQSLTJpQPBCaSVNHFdXmJ0DoIRcBoE968E9qqodcc_VutgOgUCpcFEnUFAKK3M6n4tuqoc375zySPs9Oh9K-xSL2pL2ksYo-z_xBwIOGlSvMGKpZOhtDWwUluXGrRAYKdt7VueLGUUKxph4YzMKG-UWmdoGrYqb2c1y9qSNg6E3_HaBP6tlpjUEmEUY5Lu1J99lhe6PBjr4Hr9GwAA__8.ptwkdA",
+      "refusal": "INVALID"
+    },
+    {
+      "name": "expiry not UTC",
+      "code": "basalt-setup.1.TJFdb-I8EIX_y6h3takdQgqWuEihpfDCW75WlF1VKyeZBC9JHGyHj1b891WQdrVzOzNH55znC2SGpQPxBaUsEATkKJOfkXZAwKBMQPyAqo5yFbdiXVSyVGjhg4B10mGBpVurAnXtZhZEmzHGCBzRqFShAQGrwTKc0dVrSL1OcOezXiDCxXj4FH4bPZ2yySCzs-HCnz-H_f7dxX8_bx8-y-o4nN9v9hM9f39RCzl6-M9O8vVhqru776N8UOu3bl9knXw7LCf-Rs-MH6jN7nLYlrEcJstYP84-j_zlkr2-XfTu4bkPBE5GOfwnShPSwseVQFSrPAEBrNVpMSCA50oZtKEDAR7zAso55e016wrmCc7vmSdYc5dqU0gHghPIammSpsHU6AIEI-A0CB5cCexV2YiP_1-tw-kUCFQGU3UGAZG0Mm9KtujqanyzwCWPsdOjj17UpY9xW9JeyhhlfyfhQMBJk-GNWCKdjKRtqFXausygBQI7bRvz8mQpo1jTGEtnZE55q9I6R9OydXV7a4A2lrRxIIKO3ybwZ7XEtJGI4gTTbKd-7fOi1NXBWAfX6-8AAAD__w.M9zmXQ",
+      "refusal": "INVALID"
+    },
+    {
+      "name": "target without a port",
+      "code": "basalt-setup.1.TJFbb-I-EMW_y6hvfxtsLgEs8ZBCS-EPW24rSlfVykkmiZckDrbDpRXffRW0Wu28zcOZOef8vkAmWDgQX1DIHEFAhjL6GWgHBAzKCMQPKKsgU2Ej1HkpC4UWPghYJx3mWLitylFXbmFBtBljjMAJjYoVGhCwGa39Bd28-LTV9R46bOAJfzUdP_rfJ4_nZDZK7GK86iyf_OHw4dp5u-ybn0V5Gi__2x1mevn2rFZy0vzfzrLtca776fskG1X6tT8USTfbj4tZZ6cXpuOpXXo97otQjqN1qHuLzxN_viYvr1edNp-GQOBslMN_otQhLXzcCASVyiIQwBrdBgMCeCmVQes7ENBiLY9yTnl7yzzBWoLzdyAQa5NLB4ITSCpporq82OgcBCPgNAju3QgcVFHfnX7bbP35HAiUBmN1AQGBtDKr-7XoqnJ6_84lD7E7oL1W0Ke9sC3pIGaMsr8TcSDgpEnwDiuSTgbS1sBKbV1i0AKBVNvatzxbyihWNMTCGZlR3ii1ztA0bFXeZTXL2sCfdY1xLQvCCOMkVb8OWV7o8misg9vtdwAAAP__.mvxxNA",
+      "refusal": "INVALID"
+    },
+    {
+      "name": "a table in both lists",
+      "code": "basalt-setup.1.ZJFfb9owFMW_y1XfZqc2hBQs8ZBCS2Gw8m-idJomJ7kJHkkcbIc_rfjuU5C2l93Xo3vuuef3CTLD0oH4hFIWCAJylMmvSDsgYFAmIH5AVUe5ir1GsfCTgHXSYYGlW6sCde1mFkSbMcYIHNGoVKEBAavBMpzR1UtIW53gzme9QISL8fAx_D56PGWTQWZnw4U_fwr7_buL_3be3n-U1XE4_7LZT_T87Vkt5Oj-q53k68NUd3fvo3xQ69duX2SdfDssJ_5Gz4wfqM3uctiWsRwmy1g_zD6O_PmSvbxe9O7-qQ8ETkY5_P-NK4GoVnkCApjX8RgQwHOlDNrQgYAWawWUc8rbaxYI1hKcvwOBVJtCOhCcQFZLkzTFpUYXIBgBp0Hw4Epgr8rGd_xttQ6nUyBQGUzVGQRE0sq86daiq6vx7TqXPMZOjz60oi59iNuS9lLGKPs3CQcCTpoMb6AS6WQkbQOr0tZlBi0Q2Gnb5JYnSxnFmsZYOiNzyr1K6xyNZ-vqtubFumgiaeNABB2_TeCvtMS0sYjiBNNsp37v86LU1cFYB9frnwAAAP__.l1G5Fg",
+      "refusal": "INVALID"
+    },
+    {
+      "name": "no tables",
+      "code": "basalt-setup.1.PJFdb9owFIb_y1HvZoMNIYAlLlJoKQxWviZKp2lykpPgkcTBdvhoxX-fgrSe26Pznkfv8wkyxcKB-IRC5ggCMpTxn1A7IGBQxiB-_SZgnXSYY-E2KkddubkF0WaMMQInNCpRaEDAergK5nT9EtBWx3_wWN8XwXIyegx-jh_P6XSY2vlo6S2egsHg4eq9XXbNj6I8jRbftoepXrw9q6UcN7_babY5znRv_z7OhpV-7Q1E2sl2o2LqbfXceL7a7q_HXRHJUbyKdHf-ceLP1_Tl9ar3zacBEDgb5bAGvxEIK5XFIIA1Og0GBPBSKoM2cCCgxVo-5Zzy9ob5grUE5-9AINEmlw4EJ5BW0sR1OYnROQhGwGkQ3L8ROKiizp38WG-C2QwIlAYTdQEBobQyq_uz6Kpycv_OJY-w06fdVtij3agtaT9hjLKviTkQcNKkeJcRSydDaWshpbYuNWiBwF7bmlueLWUUKxph4YzMKG-UWmdoGrYq72eNSOc1kjYOhN_x2gT-r1aY1BFhFGOS7tXfQ5YXujwa6-B2-xcAAP__.BPZ_Gw",
+      "refusal": "INVALID"
+    },
+    {
+      "name": "guard from after to",
+      "code": "basalt-setup.1.TJFdb-I8EIX_y6h3rw02hACWuEihpfDClq8Vpatq5SST4CWJg-3w0Yr_vgrSrnZuR3PmnPN8gUyxcCC-oJA5goAMZfwz1A4IGJQxiB9QVmGmokak81IWCi18ELBOOsyxcBuVo67c3IJoM8YYgRMalSg0IGA9XAVzun4JaKvjP3is74tgORk9Bt_Hj-d0OkztfLT0Fk_BYPBw9d4uu-ZnUZ5Gi_-2h6levD2rpRw3_7fTbHOc6d7-fZwNK_3aG4i0k-1GxdTb6rnxfLXdX4-7IpKjeBXp7vzzxJ-v6cvrVe-bTwMgcDbK4T9R6pAWPm4EwkplMQhgjU6DAQG8lMqgDRwIaLGWTzmnvL1hvmAtwfk7EEi0yaUDwQmklTRxXV5idA6Cdwk4DYL7NwIHVdTCk2_rTTCbAYHSYKIuICCUVmZ1wRZdVU7u77nkEXb6tNsKe7QbtSXtJ4xR9ndiDgScNCneacXSyVDamliprUsNWiCw17Y2Ls-WMooVjbBwRmaUN0qtMzQNW5X3sxpmbUkbB8LveG0Cf1YrTGqJMIoxSffq1yHLC10ejXVwu_0OAAD__w.OwV6Ww",
+      "refusal": "INVALID"
+    },
+    {
+      "name": "upgrade from equal to",
+      "code": "basalt-setup.1.PI7BTvMwEAbf5TvbkZ3-zV98qwRC3FAFF26beJ2GJrWxN6JS1XdHrgR72cNqZ-aKfp1mDwfTdI2BAl_SlLnsBQ6taTttrbbbN9M50zprP6AQYl5I4KzCuFL2cFeEHBc42ylIrPumcJrOFfz--nzYPz5BIWUO0wUOPRWaBQqFZU0vd70l63fU6Zb6nf4_bEg_BGO0-Ru_hYJQHlmq0JNQT4XhkGKRMXOBwjGWGk7fRRvNqx74LJlmbZsU48y5KWu6vzVDXGpSzALXbf9tFH5PBw4V0Q-ew3icPk_zco7pKxfB7fYTAAD__w.gewejQ",
+      "refusal": "INVALID"
+    },
+    {
+      "name": "expiry more than 24 hours after the setup id's time",
+      "code": "basalt-setup.1.TJFdb-I8EIX_y6h3r03tEFKwxEUKLYUXtnytKF1VKyeZBC9JHGyHj1b891WQdrVzO5oz55znC2SGpQPxBaUsEATkKJOfkXZAwKBMQPyAqo5yFbdiXVSyVGjhg4B10mGBpVurAnXtZhZEmzHGCBzRqFShAQGrwTKc0dVLSL1OcOezXiDCxXj4GH4fPZ6yySCzs-HCnz-F_f7dxX87b-8_y-o4nP-32U_0_O1ZLeTo_n87ydeHqe7u3kf5oNav3b7IOvl2WE78jZ4ZP1Cb3eWwLWM5TJaxfph9HvnzJXt5vejd_VMfCJyMcvhPlCakhY8rgahWeQICWKvTYkAAz5UyaEMHAjzmBZRzyttrFgjmCe69A4FUm0I6EJxAVkuTNOWlRhcgGAGnQfDgSmCvykZ3_G21DqdTIFAZTNUZBETSyrzp16Krq_HtO5c8xk6PPnhRlz7EbUl7KWOU_Z2EAwEnTYY3WIl0MpK2AVZp6zKDFgjstG18y5OljGJNYyydkTnlrUrrHE3L1tXtrGHZWNLGgQg6fpvAn9US00YiihNMs536tc-LUlcHYx1cr78DAAD__w.k4FGTQ",
+      "refusal": "INVALID"
+    },
+    {
+      "name": "role name longer than 63 bytes",
+      "code": "basalt-setup.1.jJFfb9owFMW_y1XfZlMbQlos8ZBCS2Gw8m-idKqQk9wEjyQOtsOfVnz3KUyb9rjzeK_u0Tn39wkyxcKB-IRC5ggC5H8KCBiUMYgfUFZhpqJGpPNSFgotvBOwTjrMsXBLlaOu3MSCaDHGGIEDGpUoNCBg0ZsHE7p4Dmiz7d94rOOLYDbsPwTfBw_HdNRL7aQ_86aPQbd7c_ZeT-vbj6I89KdfVruRnr4-qZkc3H61o2y5H-v77dsg61X65b4r0na27hcjb6UnxvPVanver4tI9uN5pO8mHwf-dE6fX856e_vYBQJHoxz-UyVDGVt4vxAIK5XFIIA12g0GBPBUKoM2cCCgyZo-5Zzy1pL5gjUF529AINEmlw4EJ5BW0sT1cxOjcxCMgNMguH8hsFNF7Tv8tlgG4zEQKA0m6gQCQmll5jaZLtLN7-HmBAQsuqocXrNwySNsd-hdM7ynd1FL0k7CGGV_FXMg4KRJ8Yo2lk6G0tZ4S21datACga22dQt5tJRRrGiEhTMyo7xRap2hadiqvJ7VZOuA2jgQfttrEfizmmNSW4RRjEm6VT93WV7ocm-sg8vlVwAAAP__.oJxImA",
+      "refusal": "INVALID"
+    }
+  ],
+  "laptop": [
+    {
+      "name": "install on an empty database",
+      "code": "basalt-setup.1.TFFdb9pAEPwvq7z1zrkD48BJPDiQECg0fFWEVFV1ttfmiu0zd2c-EvHfKyO16j7u7M7O7HxCqk0hHQhOwKKrq3ECAhiXPMZOjz60oi59iNuS9lLGKPtXCQcCe1U20-Nvq3U4nQKBymCqziAgklbmDgg4aTJ0ID5hp60DAfJkKaNY0xhLZ2ROuVdpnaPxbF3JSFr0Yl00XNo4EEHHbxNIpLtBIKDS1mUGLRD4u7DEtCGO4gTTbKd-7_Oi1NXBWAdXAlktTdIISI0uQDACToPgwZVAVKv8ZtfreAwIyAzLm9ZSFs2tHGXyK9KNj5NRDkH8gKqOchV7DWThJwGDMvmvH-uikqXCG3ZEo1KFBgSsBstwRlcvIW11gjuf9QIRLsbDx_D76PGUTQaZnQ0X_vwp7PfvLv7beXv_UVbH4fzLZj_R87dntZCj-692kq8PU93dvY_yQa1fu32RdfLtsJz4Gz0zfqA2u8thW8ZymCxj_TD7OPLnS_byetG7-6d-8zMnHRZYurUqUNduZkG0m0CvBPBcKYM2bGJqsVZAOae8vWaBYC3B-Ttc_wQAAP__.UO3iZg",
+      "now": "2026-11-12T07:00:00Z",
+      "database": {
+        "guardVersion": 0,
+        "roles": [],
+        "setups": []
+      },
+      "binaryGuardVersion": 16,
+      "summary": [
+        "This creates the agent lead_bot (role basalt_agent_lead_bot).",
+        "Setup fingerprint: 25df 4a2b 0e93 3ad7 2d8c.",
+        "Prefix basalt, statement timeout 30000 ms."
+      ]
+    },
+    {
+      "name": "install refused: the role already exists",
+      "code": "basalt-setup.1.TFFdb9pAEPwvq7z1zrkD48BJPDiQECg0fFWEVFV1ttfmiu0zd2c-EvHfKyO16j7u7M7O7HxCqk0hHQhOwKKrq3ECAhiXPMZOjz60oi59iNuS9lLGKPtXCQcCe1U20-Nvq3U4nQKBymCqziAgklbmDgg4aTJ0ID5hp60DAfJkKaNY0xhLZ2ROuVdpnaPxbF3JSFr0Yl00XNo4EEHHbxNIpLtBIKDS1mUGLRD4u7DEtCGO4gTTbKd-7_Oi1NXBWAdXAlktTdIISI0uQDACToPgwZVAVKv8ZtfreAwIyAzLm9ZSFs2tHGXyK9KNj5NRDkH8gKqOchV7DWThJwGDMvmvH-uikqXCG3ZEo1KFBgSsBstwRlcvIW11gjuf9QIRLsbDx_D76PGUTQaZnQ0X_vwp7PfvLv7beXv_UVbH4fzLZj_R87dntZCj-692kq8PU93dvY_yQa1fu32RdfLtsJz4Gz0zfqA2u8thW8ZymCxj_TD7OPLnS_byetG7-6d-8zMnHRZYurUqUNduZkG0m0CvBPBcKYM2bGJqsVZAOae8vWaBYC3B-Ttc_wQAAP__.UO3iZg",
+      "now": "2026-11-12T07:00:00Z",
+      "database": {
+        "prefix": "basalt",
+        "guardVersion": 16,
+        "roles": [
+          "basalt_agent_lead_bot"
+        ],
+        "setups": []
+      },
+      "binaryGuardVersion": 16,
+      "refusal": "ROLE_EXISTS"
+    },
+    {
+      "name": "agent change with a verifier names the role whose password it replaces",
+      "code": "basalt-setup.1.TFHbbts6EPyXRd4OqehmxSbgB8HHtZPGcesbkBRFQElLmTElKiQVuwn87wVdtAhfCGKGszM7HyC0abgDFhGw6PrutgIGYcSjKrkRtMRiSG_KhNORCEMa_jtVAgQOsvXsfDZ92ACBzqCQJ2BQcMuVAwKOmxodsA_Ya-uAAT9aGlLsaYmtM1zRKOi0VmgC23e84BaDUjdeSxsHLBukCYGKuwsEDDptXW3QAoG_H1YovHBRVijqvXw5qKbV3auxDs4E6p6byhsQRjfAooyA0_4-Eyh6qS5pg0EQAgFeY3sx2_LGD1PIq-dC-yBHIx0C-wFdXyhZBh7yJj49n1vt0MJPAgZ59Ylb6qbjrfyDvaGRQqIBBuvJKl_Q9Tyn8SC7SsNRxr5v7_5fTXezVbi_Wx_cYrMdfNvm4_FV-_XX7GU0H8Sn-2yXJkOhsFju3r_k94-HbP7kHl6lPlZx3fWPY5a-19et2JTT9UpNJ8lSLZvb_5rF7vok9spNJ2kl84gPF7O349gv0nGHDbZuIxvUvVtYYInv-EwAT500aHPfXRzGGY0iGqWbMGNhzKLoCc6_AwAA__8.XThWVw",
+      "now": "2026-11-13T07:00:00Z",
+      "database": {
+        "prefix": "basalt",
+        "guardVersion": 16,
+        "roles": [
+          "basalt_agent_lead_bot",
+          "basalt_agent_crm"
+        ],
+        "setups": []
+      },
+      "binaryGuardVersion": 16,
+      "summary": [
+        "This replaces the password of the existing agent lead_bot (role basalt_agent_lead_bot): only whoever made this code can then log in as basalt_agent_lead_bot.",
+        "Run it only if lead_bot itself gave you this code.",
+        "Setup fingerprint: 8125 94b4 9a30 63a1 c20e."
+      ]
+    },
+    {
+      "name": "agent change keeping the password says so",
+      "code": "basalt-setup.1.TFBNb9QwFPwvc7Yje3e7Bd96QIgDHNCeQAi9xC-pafyB_aJWqvLfkSNA9cXSzHg8M6-Yc40kcFahsWzlk4eDsWT9-X7WE4_v9P10Jv1-Nkab_8dfoPAUUlc_fPzw5QaFUnkOL3AYqdEqUBCqCwvcKx5zEzjQc9NG86YnTlJp1XYoOa9ch7YVGqnxMOXYvXIVuOvd5azgSQ4KDiU3WSo3KPx78JXnbjxOnuflMfx6WmPK5Xdtgl1h2aj6HmCuOcLZq4Lkfu8K4xbWo-1wNxgo0MLpCJso9s9WJv9zzL3Icw3CcN9RtnEN09Cphh8Klcm_waccC6VwBPwLVV5CToe4CQlHTnILkfMmnxvcua-5K_BLCZXbQ1_pZE5Xba22l5u5OnNy1n7D_icAAP__.R8k8LA",
+      "now": "2026-11-13T07:00:00Z",
+      "database": {
+        "prefix": "basalt",
+        "guardVersion": 16,
+        "roles": [
+          "basalt_agent_lead_bot"
+        ],
+        "setups": []
+      },
+      "binaryGuardVersion": 16,
+      "summary": [
+        "This changes the tables of the existing agent lead_bot (role basalt_agent_lead_bot); its password stays.",
+        "Setup fingerprint: f444 8b4f 16f3 9138 e28b."
+      ]
+    },
+    {
+      "name": "agent change refused: the role does not exist",
+      "code": "basalt-setup.1.TFHbbts6EPyXRd4OqehmxSbgB8HHtZPGcesbkBRFQElLmTElKiQVuwn87wVdtAhfCGKGszM7HyC0abgDFhGw6PrutgIGYcSjKrkRtMRiSG_KhNORCEMa_jtVAgQOsvXsfDZ92ACBzqCQJ2BQcMuVAwKOmxodsA_Ya-uAAT9aGlLsaYmtM1zRKOi0VmgC23e84BaDUjdeSxsHLBukCYGKuwsEDDptXW3QAoG_H1YovHBRVijqvXw5qKbV3auxDs4E6p6byhsQRjfAooyA0_4-Eyh6qS5pg0EQAgFeY3sx2_LGD1PIq-dC-yBHIx0C-wFdXyhZBh7yJj49n1vt0MJPAgZ59Ylb6qbjrfyDvaGRQqIBBuvJKl_Q9Tyn8SC7SsNRxr5v7_5fTXezVbi_Wx_cYrMdfNvm4_FV-_XX7GU0H8Sn-2yXJkOhsFju3r_k94-HbP7kHl6lPlZx3fWPY5a-19et2JTT9UpNJ8lSLZvb_5rF7vok9spNJ2kl84gPF7O349gv0nGHDbZuIxvUvVtYYInv-EwAT500aHPfXRzGGY0iGqWbMGNhzKLoCc6_AwAA__8.XThWVw",
+      "now": "2026-11-13T07:00:00Z",
+      "database": {
+        "prefix": "basalt",
+        "guardVersion": 16,
+        "roles": [
+          "basalt_agent_crm"
+        ],
+        "setups": []
+      },
+      "binaryGuardVersion": 16,
+      "refusal": "ROLE_MISSING"
+    },
+    {
+      "name": "refused: expired",
+      "code": "basalt-setup.1.TFFdb9pAEPwvq7z1zrkD48BJPDiQECg0fFWEVFV1ttfmiu0zd2c-EvHfKyO16j7u7M7O7HxCqk0hHQhOwKKrq3ECAhiXPMZOjz60oi59iNuS9lLGKPtXCQcCe1U20-Nvq3U4nQKBymCqziAgklbmDgg4aTJ0ID5hp60DAfJkKaNY0xhLZ2ROuVdpnaPxbF3JSFr0Yl00XNo4EEHHbxNIpLtBIKDS1mUGLRD4u7DEtCGO4gTTbKd-7_Oi1NXBWAdXAlktTdIISI0uQDACToPgwZVAVKv8ZtfreAwIyAzLm9ZSFs2tHGXyK9KNj5NRDkH8gKqOchV7DWThJwGDMvmvH-uikqXCG3ZEo1KFBgSsBstwRlcvIW11gjuf9QIRLsbDx_D76PGUTQaZnQ0X_vwp7PfvLv7beXv_UVbH4fzLZj_R87dntZCj-692kq8PU93dvY_yQa1fu32RdfLtsJz4Gz0zfqA2u8thW8ZymCxj_TD7OPLnS_byetG7-6d-8zMnHRZYurUqUNduZkG0m0CvBPBcKYM2bGJqsVZAOae8vWaBYC3B-Ttc_wQAAP__.UO3iZg",
+      "now": "2026-11-13T06:02:11Z",
+      "database": {
+        "guardVersion": 0,
+        "roles": [],
+        "setups": []
+      },
+      "binaryGuardVersion": 16,
+      "refusal": "EXPIRED"
+    },
+    {
+      "name": "refused: setup id from the future beyond the clock skew",
+      "code": "basalt-setup.1.TFFdb9pAEPwvq7z1zrkD48BJPDiQECg0fFWEVFV1ttfmiu0zd2c-EvHfKyO16j7u7M7O7HxCqk0hHQhOwKKrq3ECAhiXPMZOjz60oi59iNuS9lLGKPtXCQcCe1U20-Nvq3U4nQKBymCqziAgklbmDgg4aTJ0ID5hp60DAfJkKaNY0xhLZ2ROuVdpnaPxbF3JSFr0Yl00XNo4EEHHbxNIpLtBIKDS1mUGLRD4u7DEtCGO4gTTbKd-7_Oi1NXBWAdXAlktTdIISI0uQDACToPgwZVAVKv8ZtfreAwIyAzLm9ZSFs2tHGXyK9KNj5NRDkH8gKqOchV7DWThJwGDMvmvH-uikqXCG3ZEo1KFBgSsBstwRlcvIW11gjuf9QIRLsbDx_D76PGUTQaZnQ0X_vwp7PfvLv7beXv_UVbH4fzLZj_R87dntZCj-692kq8PU93dvY_yQa1fu32RdfLtsJz4Gz0zfqA2u8thW8ZymCxj_TD7OPLnS_byetG7-6d-8zMnHRZYurUqUNduZkG0m0CvBPBcKYM2bGJqsVZAOae8vWaBYC3B-Ttc_wQAAP__.UO3iZg",
+      "now": "2026-11-12T05:57:10Z",
+      "database": {
+        "guardVersion": 0,
+        "roles": [],
+        "setups": []
+      },
+      "binaryGuardVersion": 16,
+      "refusal": "SETUP_ID_IN_FUTURE"
+    },
+    {
+      "name": "accepted: setup id ahead within the clock skew",
+      "code": "basalt-setup.1.TFFdb9pAEPwvq7z1zrkD48BJPDiQECg0fFWEVFV1ttfmiu0zd2c-EvHfKyO16j7u7M7O7HxCqk0hHQhOwKKrq3ECAhiXPMZOjz60oi59iNuS9lLGKPtXCQcCe1U20-Nvq3U4nQKBymCqziAgklbmDgg4aTJ0ID5hp60DAfJkKaNY0xhLZ2ROuVdpnaPxbF3JSFr0Yl00XNo4EEHHbxNIpLtBIKDS1mUGLRD4u7DEtCGO4gTTbKd-7_Oi1NXBWAdXAlktTdIISI0uQDACToPgwZVAVKv8ZtfreAwIyAzLm9ZSFs2tHGXyK9KNj5NRDkH8gKqOchV7DWThJwGDMvmvH-uikqXCG3ZEo1KFBgSsBstwRlcvIW11gjuf9QIRLsbDx_D76PGUTQaZnQ0X_vwp7PfvLv7beXv_UVbH4fzLZj_R87dntZCj-692kq8PU93dvY_yQa1fu32RdfLtsJz4Gz0zfqA2u8thW8ZymCxj_TD7OPLnS_byetG7-6d-8zMnHRZYurUqUNduZkG0m0CvBPBcKYM2bGJqsVZAOae8vWaBYC3B-Ttc_wQAAP__.UO3iZg",
+      "now": "2026-11-12T05:58:11Z",
+      "database": {
+        "guardVersion": 0,
+        "roles": [],
+        "setups": []
+      },
+      "binaryGuardVersion": 16,
+      "summary": [
+        "This creates the agent lead_bot (role basalt_agent_lead_bot)."
+      ]
+    },
+    {
+      "name": "refused: binary older than the code's guard",
+      "code": "basalt-setup.1.TFFdb9pAEPwvq7z1zrkD48BJPDiQECg0fFWEVFV1ttfmiu0zd2c-EvHfKyO16j7u7M7O7HxCqk0hHQhOwKKrq3ECAhiXPMZOjz60oi59iNuS9lLGKPtXCQcCe1U20-Nvq3U4nQKBymCqziAgklbmDgg4aTJ0ID5hp60DAfJkKaNY0xhLZ2ROuVdpnaPxbF3JSFr0Yl00XNo4EEHHbxNIpLtBIKDS1mUGLRD4u7DEtCGO4gTTbKd-7_Oi1NXBWAdXAlktTdIISI0uQDACToPgwZVAVKv8ZtfreAwIyAzLm9ZSFs2tHGXyK9KNj5NRDkH8gKqOchV7DWThJwGDMvmvH-uikqXCG3ZEo1KFBgSsBstwRlcvIW11gjuf9QIRLsbDx_D76PGUTQaZnQ0X_vwp7PfvLv7beXv_UVbH4fzLZj_R87dntZCj-692kq8PU93dvY_yQa1fu32RdfLtsJz4Gz0zfqA2u8thW8ZymCxj_TD7OPLnS_byetG7-6d-8zMnHRZYurUqUNduZkG0m0CvBPBcKYM2bGJqsVZAOae8vWaBYC3B-Ttc_wQAAP__.UO3iZg",
+      "now": "2026-11-12T07:00:00Z",
+      "database": {
+        "guardVersion": 0,
+        "roles": [],
+        "setups": []
+      },
+      "binaryGuardVersion": 15,
+      "refusal": "BINARY_TOO_OLD"
+    },
+    {
+      "name": "refused: another prefix is installed",
+      "code": "basalt-setup.1.TFFdb9pAEPwvq7z1zrkD48BJPDiQECg0fFWEVFV1ttfmiu0zd2c-EvHfKyO16j7u7M7O7HxCqk0hHQhOwKKrq3ECAhiXPMZOjz60oi59iNuS9lLGKPtXCQcCe1U20-Nvq3U4nQKBymCqziAgklbmDgg4aTJ0ID5hp60DAfJkKaNY0xhLZ2ROuVdpnaPxbF3JSFr0Yl00XNo4EEHHbxNIpLtBIKDS1mUGLRD4u7DEtCGO4gTTbKd-7_Oi1NXBWAdXAlktTdIISI0uQDACToPgwZVAVKv8ZtfreAwIyAzLm9ZSFs2tHGXyK9KNj5NRDkH8gKqOchV7DWThJwGDMvmvH-uikqXCG3ZEo1KFBgSsBstwRlcvIW11gjuf9QIRLsbDx_D76PGUTQaZnQ0X_vwp7PfvLv7beXv_UVbH4fzLZj_R87dntZCj-692kq8PU93dvY_yQa1fu32RdfLtsJz4Gz0zfqA2u8thW8ZymCxj_TD7OPLnS_byetG7-6d-8zMnHRZYurUqUNduZkG0m0CvBPBcKYM2bGJqsVZAOae8vWaBYC3B-Ttc_wQAAP__.UO3iZg",
+      "now": "2026-11-12T07:00:00Z",
+      "database": {
+        "prefix": "acme",
+        "guardVersion": 16,
+        "roles": [],
+        "setups": []
+      },
+      "binaryGuardVersion": 16,
+      "refusal": "PREFIX_MISMATCH"
+    },
+    {
+      "name": "refused: already used",
+      "code": "basalt-setup.1.TFBNb9QwFPwvc7Yje3e7Bd96QIgDHNCeQAi9xC-pafyB_aJWqvLfkSNA9cXSzHg8M6-Yc40kcFahsWzlk4eDsWT9-X7WE4_v9P10Jv1-Nkab_8dfoPAUUlc_fPzw5QaFUnkOL3AYqdEqUBCqCwvcKx5zEzjQc9NG86YnTlJp1XYoOa9ch7YVGqnxMOXYvXIVuOvd5azgSQ4KDiU3WSo3KPx78JXnbjxOnuflMfx6WmPK5Xdtgl1h2aj6HmCuOcLZq4Lkfu8K4xbWo-1wNxgo0MLpCJso9s9WJv9zzL3Icw3CcN9RtnEN09Cphh8Klcm_waccC6VwBPwLVV5CToe4CQlHTnILkfMmnxvcua-5K_BLCZXbQ1_pZE5Xba22l5u5OnNy1n7D_icAAP__.R8k8LA",
+      "now": "2026-11-13T07:00:00Z",
+      "database": {
+        "prefix": "basalt",
+        "guardVersion": 16,
+        "roles": [
+          "basalt_agent_lead_bot"
+        ],
+        "setups": [
+          {
+            "setupId": "01a1d37f-ceb8-7c3a-9f00-0000000000d4",
+            "agentRole": "basalt_agent_lead_bot",
+            "usedAt": "2026-11-13T06:30:00Z"
+          }
+        ]
+      },
+      "binaryGuardVersion": 16,
+      "refusal": "USED"
+    },
+    {
+      "name": "refused: a newer setup ran for the agent",
+      "code": "basalt-setup.1.TFBNb9QwFPwvc7Yje3e7Bd96QIgDHNCeQAi9xC-pafyB_aJWqvLfkSNA9cXSzHg8M6-Yc40kcFahsWzlk4eDsWT9-X7WE4_v9P10Jv1-Nkab_8dfoPAUUlc_fPzw5QaFUnkOL3AYqdEqUBCqCwvcKx5zEzjQc9NG86YnTlJp1XYoOa9ch7YVGqnxMOXYvXIVuOvd5azgSQ4KDiU3WSo3KPx78JXnbjxOnuflMfx6WmPK5Xdtgl1h2aj6HmCuOcLZq4Lkfu8K4xbWo-1wNxgo0MLpCJso9s9WJv9zzL3Icw3CcN9RtnEN09Cphh8Klcm_waccC6VwBPwLVV5CToe4CQlHTnILkfMmnxvcua-5K_BLCZXbQ1_pZE5Xba22l5u5OnNy1n7D_icAAP__.R8k8LA",
+      "now": "2026-11-13T07:00:00Z",
+      "database": {
+        "prefix": "basalt",
+        "guardVersion": 16,
+        "roles": [
+          "basalt_agent_lead_bot"
+        ],
+        "setups": [
+          {
+            "setupId": "01a1d37f-ceb8-7c3a-9f00-0000000000e1",
+            "agentRole": "basalt_agent_lead_bot",
+            "usedAt": "2026-11-13T06:40:00Z"
+          }
+        ]
+      },
+      "binaryGuardVersion": 16,
+      "refusal": "SUPERSEDED"
+    },
+    {
+      "name": "upgrade names no agent",
+      "code": "basalt-setup.1.PI_BTsMwEET_Zc52ZKdtKL5VAiFuqIILt028TkOT2tgbUanKv6NUgr3uzNObG0LMEwmcVSgsc3r1cDCWrN9To2tq9_qh25B-DMZo839-B4XzcFnTH28vx8PTMxRS5jBc4dBSoVGgIJR7FrgbTrEIHOinaKN51h1fJNOobZViHDlXZU7UUuGqi9PKilngmt12o-BJ7i84pFikz1yg8Fc4cljBbec59Kfh6zxOl5i-cxEsCv1M2a8CIccJzm4VJMLZZlFo52G8762aykCBr2nIXA6raG3qRlur7e7dNM7UztpPLL8BAAD__w.jMtAkg",
+      "now": "2026-11-14T07:00:00Z",
+      "database": {
+        "prefix": "basalt",
+        "guardVersion": 14,
+        "roles": [
+          "basalt_agent_lead_bot"
+        ],
+        "setups": []
+      },
+      "binaryGuardVersion": 16,
+      "summary": [
+        "This upgrades Basalt's guard from version 14 to 16; no agent changes.",
+        "Setup fingerprint: b540 eba0 bf5d f9de 640f."
+      ]
+    }
+  ],
+  "valid": [
+    {
+      "name": "install through the Supabase pooler",
+      "code": "basalt-setup.1.TFFdb9pAEPwvq7z1zrkD48BJPDiQECg0fFWEVFV1ttfmiu0zd2c-EvHfKyO16j7u7M7O7HxCqk0hHQhOwKKrq3ECAhiXPMZOjz60oi59iNuS9lLGKPtXCQcCe1U20-Nvq3U4nQKBymCqziAgklbmDgg4aTJ0ID5hp60DAfJkKaNY0xhLZ2ROuVdpnaPxbF3JSFr0Yl00XNo4EEHHbxNIpLtBIKDS1mUGLRD4u7DEtCGO4gTTbKd-7_Oi1NXBWAdXAlktTdIISI0uQDACToPgwZVAVKv8ZtfreAwIyAzLm9ZSFs2tHGXyK9KNj5NRDkH8gKqOchV7DWThJwGDMvmvH-uikqXCG3ZEo1KFBgSsBstwRlcvIW11gjuf9QIRLsbDx_D76PGUTQaZnQ0X_vwp7PfvLv7beXv_UVbH4fzLZj_R87dntZCj-692kq8PU93dvY_yQa1fu32RdfLtsJz4Gz0zfqA2u8thW8ZymCxj_TD7OPLnS_byetG7-6d-8zMnHRZYurUqUNduZkG0m0CvBPBcKYM2bGJqsVZAOae8vWaBYC3B-Ttc_wQAAP__.UO3iZg",
+      "fingerprint": "25df 4a2b 0e93 3ad7 2d8c",
+      "payload": {
+        "agent": {
+          "name": "lead_bot",
+          "read": [
+            "public.companies"
+          ],
+          "statementTimeoutMs": 30000,
+          "verifier": "SCRAM-SHA-256$4096:AQIDBAUGBwgJCgsMDQ4PEA==$y4XxY/znpvDP+WkJoPXFiQaG/KsJlTqLo8hZGlCuoO8=:g5lYDnJ4WoMr46iWhyqYncaDdRco7Mzv1FygHOyoh/E=",
+          "write": [
+            "public.leads"
+          ]
+        },
+        "build": "0.5.0",
+        "expiresAt": "2026-11-13T06:02:11Z",
+        "format": 1,
+        "guard": {
+          "from": 0,
+          "to": 16
+        },
+        "kind": "INSTALL",
+        "prefix": "basalt",
+        "setupId": "01a1ce59-72b8-7c3a-9f00-0000000000d1",
+        "target": {
+          "database": "postgres",
+          "host": "aws-0-eu-central-1.pooler.supabase.com",
+          "port": 6543,
+          "supabaseRef": "abcdefghijklmnopqrst"
+        }
+      }
+    },
+    {
+      "name": "install on a plain host, read list empty",
+      "code": "basalt-setup.1.PJDBbuIwEIbfZdTbOmCHJIAlDilpKSzZQmFFaVWtnGQSrCZxajsUWvHuq3Do3Eaa759P_zfkSlfCAmcEDNq2mWfAgTLBUvTHztBNRs4wHQhnnFPq0J_JXCDwLuvuev5nsw2XSyDQaMzlCTiItEIgYIUu0AL_hoMyFjhkSQ9PompK7KWq6gilLXDfG7gEMmFFIgx2fNPAhUDRCp11eK5VBZx5BKwCzoILgaSV5dW15_coEBAF1tdXtai6iFR3-Z9aWgT-Ck2blDLtlSgyAwSMKNFct3-1smjgjYBGkQF_fSNwRC1ziRo4bKZPYexsHkLH9YMbj44DHq7n0W34d3b7WSymhYmjtbe6CyeTm7P3fNr3v-rmGK1-7d4XavV8L9di1v9tFuX2Y6lGh5dZOW3V42jCC7_cR_XC26lYe4HcHc4f-zoVUfaUqmH8dWT35-Lh8awO_btJJ2yFxQpru5UVqtbGBjjzKaUXAnhqpEYTdg271A0cxhw22NKAU5cz9gKX_wEAAP__.gCqaIQ",
+      "fingerprint": "207e 0e5c 74cb fd81 c202",
+      "payload": {
+        "agent": {
+          "name": "crm",
+          "read": [],
+          "statementTimeoutMs": 15000,
+          "verifier": "SCRAM-SHA-256$4096:AQIDBAUGBwgJCgsMDQ4PEA==$y4XxY/znpvDP+WkJoPXFiQaG/KsJlTqLo8hZGlCuoO8=:g5lYDnJ4WoMr46iWhyqYncaDdRco7Mzv1FygHOyoh/E=",
+          "write": [
+            "public.leads",
+            "sales.lead_notes"
+          ]
+        },
+        "build": "0.5.0",
+        "expiresAt": "2026-11-13T06:02:11Z",
+        "format": 1,
+        "guard": {
+          "from": 14,
+          "to": 16
+        },
+        "kind": "INSTALL",
+        "prefix": "acme",
+        "setupId": "01a1ce59-72b8-7c3a-9f00-0000000000d2",
+        "target": {
+          "database": "app",
+          "host": "db.example.com",
+          "port": 5432
+        }
+      }
+    },
+    {
+      "name": "agent change with a new password",
+      "code": "basalt-setup.1.TFHbbts6EPyXRd4OqehmxSbgB8HHtZPGcesbkBRFQElLmTElKiQVuwn87wVdtAhfCGKGszM7HyC0abgDFhGw6PrutgIGYcSjKrkRtMRiSG_KhNORCEMa_jtVAgQOsvXsfDZ92ACBzqCQJ2BQcMuVAwKOmxodsA_Ya-uAAT9aGlLsaYmtM1zRKOi0VmgC23e84BaDUjdeSxsHLBukCYGKuwsEDDptXW3QAoG_H1YovHBRVijqvXw5qKbV3auxDs4E6p6byhsQRjfAooyA0_4-Eyh6qS5pg0EQAgFeY3sx2_LGD1PIq-dC-yBHIx0C-wFdXyhZBh7yJj49n1vt0MJPAgZ59Ylb6qbjrfyDvaGRQqIBBuvJKl_Q9Tyn8SC7SsNRxr5v7_5fTXezVbi_Wx_cYrMdfNvm4_FV-_XX7GU0H8Sn-2yXJkOhsFju3r_k94-HbP7kHl6lPlZx3fWPY5a-19et2JTT9UpNJ8lSLZvb_5rF7vok9spNJ2kl84gPF7O349gv0nGHDbZuIxvUvVtYYInv-EwAT500aHPfXRzGGY0iGqWbMGNhzKLoCc6_AwAA__8.XThWVw",
+      "fingerprint": "8125 94b4 9a30 63a1 c20e",
+      "payload": {
+        "agent": {
+          "name": "lead_bot",
+          "read": [
+            "public.companies"
+          ],
+          "statementTimeoutMs": 30000,
+          "verifier": "SCRAM-SHA-256$4096:QUJDREVGR0hJSktMTU5PUA==$nKyGj9H52xL6V438flebOVzFALYk6HZtNqiowd2gpuY=:4zg/nfTcESRlEC3OlOmI+mMV/xfhltEC4diA1a8MGvw=",
+          "write": [
+            "public.leads",
+            "public.lead_notes"
+          ]
+        },
+        "build": "0.5.0",
+        "expiresAt": "2026-11-14T06:02:11Z",
+        "format": 1,
+        "guard": {
+          "from": 16,
+          "to": 16
+        },
+        "kind": "AGENT",
+        "prefix": "basalt",
+        "setupId": "01a1d37f-ceb8-7c3a-9f00-0000000000d3",
+        "target": {
+          "database": "postgres",
+          "host": "aws-0-eu-central-1.pooler.supabase.com",
+          "port": 6543,
+          "supabaseRef": "abcdefghijklmnopqrst"
+        }
+      }
+    },
+    {
+      "name": "agent change keeping the password",
+      "code": "basalt-setup.1.TFBNb9QwFPwvc7Yje3e7Bd96QIgDHNCeQAi9xC-pafyB_aJWqvLfkSNA9cXSzHg8M6-Yc40kcFahsWzlk4eDsWT9-X7WE4_v9P10Jv1-Nkab_8dfoPAUUlc_fPzw5QaFUnkOL3AYqdEqUBCqCwvcKx5zEzjQc9NG86YnTlJp1XYoOa9ch7YVGqnxMOXYvXIVuOvd5azgSQ4KDiU3WSo3KPx78JXnbjxOnuflMfx6WmPK5Xdtgl1h2aj6HmCuOcLZq4Lkfu8K4xbWo-1wNxgo0MLpCJso9s9WJv9zzL3Icw3CcN9RtnEN09Cphh8Klcm_waccC6VwBPwLVV5CToe4CQlHTnILkfMmnxvcua-5K_BLCZXbQ1_pZE5Xba22l5u5OnNy1n7D_icAAP__.R8k8LA",
+      "fingerprint": "f444 8b4f 16f3 9138 e28b",
+      "payload": {
+        "agent": {
+          "name": "lead_bot",
+          "read": [
+            "public.companies",
+            "public.regions"
+          ],
+          "statementTimeoutMs": 30000,
+          "write": [
+            "public.leads"
+          ]
+        },
+        "build": "0.5.0",
+        "expiresAt": "2026-11-14T06:02:11Z",
+        "format": 1,
+        "guard": {
+          "from": 16,
+          "to": 16
+        },
+        "kind": "AGENT",
+        "prefix": "basalt",
+        "setupId": "01a1d37f-ceb8-7c3a-9f00-0000000000d4",
+        "target": {
+          "database": "postgres",
+          "host": "aws-0-eu-central-1.pooler.supabase.com",
+          "port": 6543,
+          "supabaseRef": "abcdefghijklmnopqrst"
+        }
+      }
+    },
+    {
+      "name": "upgrade, no agent part",
+      "code": "basalt-setup.1.PI_BTsMwEET_Zc52ZKdtKL5VAiFuqIILt028TkOT2tgbUanKv6NUgr3uzNObG0LMEwmcVSgsc3r1cDCWrN9To2tq9_qh25B-DMZo839-B4XzcFnTH28vx8PTMxRS5jBc4dBSoVGgIJR7FrgbTrEIHOinaKN51h1fJNOobZViHDlXZU7UUuGqi9PKilngmt12o-BJ7i84pFikz1yg8Fc4cljBbec59Kfh6zxOl5i-cxEsCv1M2a8CIccJzm4VJMLZZlFo52G8762aykCBr2nIXA6raG3qRlur7e7dNM7UztpPLL8BAAD__w.jMtAkg",
+      "fingerprint": "b540 eba0 bf5d f9de 640f",
+      "payload": {
+        "build": "0.6.0",
+        "expiresAt": "2026-11-15T06:02:11Z",
+        "format": 1,
+        "guard": {
+          "from": 14,
+          "to": 16
+        },
+        "kind": "UPGRADE",
+        "prefix": "basalt",
+        "setupId": "01a1d8a6-2ab8-7c3a-9f00-0000000000d5",
+        "target": {
+          "database": "postgres",
+          "host": "aws-0-eu-central-1.pooler.supabase.com",
+          "port": 6543,
+          "supabaseRef": "abcdefghijklmnopqrst"
+        }
+      }
+    },
+    {
+      "name": "wrapped copy with spaces and line breaks",
+      "code": "  basalt-setup.1.TFFdb9pAEPwvq7z1zrkD48BJPDiQECg0fFWEVFV1ttfmi\nu0zd2c-EvHfKyO16j7u7M7O7HxCqk0hHQhOwKKrq3ECAhiXPMZOjz60oi59i\nNuS9lLGKPtXCQcCe1U20-Nvq3U4nQKBymCqziAgklbmDgg4aTJ0ID5hp60DA\nfJkKaNY0xhLZ2ROuVdpnaPxbF3JSFr0Yl00XNo4EEHHbxNIpLtBIKDS1mUGL\nRD4u7DEtCGO4gTTbKd-7_Oi1NXBWAdXAlktTdIISI0uQDACToPgwZVAVKv8Z\ntfreAwIyAzLm9ZSFs2tHGXyK9KNj5NRDkH8gKqOchV7DWThJwGDMvmvH-uik\nqXCG3ZEo1KFBgSsBstwRlcvIW11gjuf9QIRLsbDx_D76PGUTQaZnQ0X_vwp7\nPfvLv7beXv_UVbH4fzLZj_R87dntZCj-692kq8PU93dvY_yQa1fu32RdfLts\nJz4Gz0zfqA2u8thW8ZymCxj_TD7OPLnS_byetG7-6d-8zMnHRZYurUqUNduZ\nkG0m0CvBPBcKYM2bGJqsVZAOae8vWaBYC3B-Ttc_wQAAP__.UO3iZg \n",
+      "fingerprint": "25df 4a2b 0e93 3ad7 2d8c",
+      "payload": {
+        "agent": {
+          "name": "lead_bot",
+          "read": [
+            "public.companies"
+          ],
+          "statementTimeoutMs": 30000,
+          "verifier": "SCRAM-SHA-256$4096:AQIDBAUGBwgJCgsMDQ4PEA==$y4XxY/znpvDP+WkJoPXFiQaG/KsJlTqLo8hZGlCuoO8=:g5lYDnJ4WoMr46iWhyqYncaDdRco7Mzv1FygHOyoh/E=",
+          "write": [
+            "public.leads"
+          ]
+        },
+        "build": "0.5.0",
+        "expiresAt": "2026-11-13T06:02:11Z",
+        "format": 1,
+        "guard": {
+          "from": 0,
+          "to": 16
+        },
+        "kind": "INSTALL",
+        "prefix": "basalt",
+        "setupId": "01a1ce59-72b8-7c3a-9f00-0000000000d1",
+        "target": {
+          "database": "postgres",
+          "host": "aws-0-eu-central-1.pooler.supabase.com",
+          "port": 6543,
+          "supabaseRef": "abcdefghijklmnopqrst"
+        }
+      }
+    }
+  ],
+  "verifiers": [
+    {
+      "name": "install password",
+      "password": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "salt": "AQIDBAUGBwgJCgsMDQ4PEA==",
+      "verifier": "SCRAM-SHA-256$4096:AQIDBAUGBwgJCgsMDQ4PEA==$y4XxY/znpvDP+WkJoPXFiQaG/KsJlTqLo8hZGlCuoO8=:g5lYDnJ4WoMr46iWhyqYncaDdRco7Mzv1FygHOyoh/E="
+    },
+    {
+      "name": "rotated password",
+      "password": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+      "salt": "QUJDREVGR0hJSktMTU5PUA==",
+      "verifier": "SCRAM-SHA-256$4096:QUJDREVGR0hJSktMTU5PUA==$nKyGj9H52xL6V438flebOVzFALYk6HZtNqiowd2gpuY=:4zg/nfTcESRlEC3OlOmI+mMV/xfhltEC4diA1a8MGvw="
+    }
+  ]
+}

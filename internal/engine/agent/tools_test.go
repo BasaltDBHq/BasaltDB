@@ -143,23 +143,26 @@ func TestToolErrorMapping(t *testing.T) {
 		{pg("BS003", "ROW_LIMIT_EXCEEDED"), CodeRowLimitExceeded, "", "BS003"},
 		{pg("BS004", "STALE_READ"), CodeStaleRead, "", "BS004"},
 		{pg("BS005", "APPROVAL_EXPIRED"), CodeApprovalExpired, "", "BS005"},
-		{pg("BS005", "APPROVAL_INVALID: approval already used"), CodeApprovalInvalid, "", "BS005"},
+		{pg("BS005", "APPROVAL_INVALID: approval already used"), CodeApprovalInvalid, reasonBadSignature, "BS005"},
+		{&pgconn.PgError{Code: "BS005", Message: "APPROVAL_INVALID", Detail: "approval already used"}, CodeApprovalInvalid, reasonAlreadyUsed, "BS005"},
 		{pg("BS006", "PREVIEW_CANNOT_COMMIT"), CodeInternal, "", "BS006"},
-		{pg("BS007", "NOT_ALLOWED: unknown basalt.mode"), CodeStatementRefused, "", "BS007"},
+		{pg("BS007", "NOT_ALLOWED: unknown basalt.mode"), CodeStatementRefused, ReasonNotAllowed, "BS007"},
 		{pg("BS008", "LEDGER_INPUT_INVALID"), CodeInternal, "", "BS008"},
 		{pg("57014", "canceling statement due to statement timeout"), CodeQueryTimeout, ReasonTimeLimit, "57014"},
 		{pg("42501", "permission denied for table secrets"), CodePermissionDenied, "", "42501"},
-		{pg("08006", "connection failure"), CodeUnavailable, "", "08006"},
-		{pg("28P01", "password authentication failed"), CodeUnavailable, "", "28P01"},
-		{pg("57P01", "terminating connection due to administrator command"), CodeUnavailable, "", "57P01"},
+		{pg("08006", "connection failure"), CodeUnavailable, reasonDatabaseUnreachable, "08006"},
+		{pg("28P01", "password authentication failed"), CodeUnavailable, reasonCredentialRejected, "28P01"},
+		{pg("57P01", "terminating connection due to administrator command"), CodeUnavailable, reasonDatabaseUnreachable, "57P01"},
 		{pg("23505", "duplicate key"), CodeSQLError, "", "23505"},
 		{&sqlguard.RefusalError{Reason: sqlguard.ReasonDDL}, CodeStatementRefused, "DDL_NOT_ALLOWED", ""},
 		{fmt.Errorf("read: %w", agentdb.ErrRowLimit), CodeQueryTimeout, ReasonRowLimit, ""},
 		{&ArgumentError{Message: "bad"}, CodeInvalidArgument, "", ""},
-		{&mcp.ToolError{Code: CodeNotFound, Message: "no run"}, CodeNotFound, "", ""},
-		{context.DeadlineExceeded, CodeUnavailable, "", ""},
+		{&mcp.ToolError{Code: CodeNotFound, Reason: reasonRun, Message: "no run"}, CodeNotFound, reasonRun, ""},
+		{context.DeadlineExceeded, CodeUnavailable, reasonDatabaseUnreachable, ""},
 		{fmt.Errorf("list: %w", ledger.ErrInvalidParams), CodeInvalidArgument, "", ""},
 		{guard.ErrInvalidIntent, CodeInvalidArgument, "", ""},
+		{fmt.Errorf("list: %w: invalid cursor: missing id", ledger.ErrInvalidParams), CodeInvalidArgument, ReasonStaleCursor, ""},
+		{&pgconn.PgError{Code: "BS007", Message: "NOT_ALLOWED", Detail: "table public.t has no primary key"}, CodeStatementRefused, ReasonNoPrimaryKey, "BS007"},
 		{errors.New("password=hunter2 something broke"), CodeInternal, "", ""},
 	}
 	for _, c := range cases {
@@ -204,7 +207,9 @@ func TestErrorIDIsInTheBodyAndTheLogLine(t *testing.T) {
 		CodeUnavailable: context.DeadlineExceeded,
 	} {
 		var logged strings.Builder
-		h := handlers{svc: NewService(deps()), log: slog.New(slog.NewTextHandler(&logged, nil))}
+		d := deps()
+		d.Log = slog.New(slog.NewTextHandler(&logged, nil))
+		h := handlers{svc: NewService(d)}
 		call := h.wrap("query", func(context.Context, json.RawMessage) (any, error) { return nil, cause })
 
 		_, err := call(context.Background(), nil)
@@ -224,7 +229,7 @@ func TestErrorIDIsInTheBodyAndTheLogLine(t *testing.T) {
 
 func TestErrorIDOnlyOnInternalAndUnavailable(t *testing.T) {
 	t.Parallel()
-	h := handlers{svc: NewService(deps()), log: slog.New(slog.DiscardHandler)}
+	h := handlers{svc: NewService(deps())}
 	call := h.wrap("query", func(context.Context, json.RawMessage) (any, error) { return nil, &ArgumentError{Message: "bad"} })
 	_, err := call(context.Background(), nil)
 	var te *mcp.ToolError

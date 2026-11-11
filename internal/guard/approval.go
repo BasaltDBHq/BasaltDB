@@ -13,15 +13,19 @@ import (
 )
 
 // RegisterPasskey stores the person's passkey (basalt init, admin
-// credential). Re-registering a credential replaces its key and resets its
-// counter.
+// credential) with its user handle when known. Re-registering a credential
+// replaces its key and resets its counter; a revoked one is refused.
 func RegisterPasskey(ctx context.Context, q Querier, cred passkey.Credential, label string) error {
 	x, y, err := cred.XY()
 	if err != nil {
 		return err
 	}
-	return execCall(ctx, q, sq.Expr("basalt_meta.register_passkey(?::bytea, ?::bytea, ?::bytea, ?, ?, ?)",
-		cred.ID, x, y, cred.Relying.RPID, cred.Relying.Origin, label))
+	var handle any // NULL when unknown
+	if len(cred.UserHandle) > 0 {
+		handle = cred.UserHandle
+	}
+	return execCall(ctx, q, sq.Expr("basalt_meta.register_passkey(?::bytea, ?::bytea, ?::bytea, ?, ?, ?, ?::bytea)",
+		cred.ID, x, y, cred.Relying.RPID, cred.Relying.Origin, label, handle))
 }
 
 // BeginPreview sets the session variables of a preview on tx: the guard

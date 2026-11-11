@@ -365,13 +365,13 @@ func TestPasskeyRegistration(t *testing.T) {
 	require.Equal(t, passkey.Origin, origin)
 
 	// Off the curve.
-	_, err := d.Admin.Exec(context.Background(), `SELECT basalt_meta.register_passkey('\x01', $1, $1, 'basaltvault.app', 'https://basaltvault.app', 'x')`, make([]byte, 32))
+	_, err := d.Admin.Exec(context.Background(), `SELECT basalt_meta.register_passkey('\x01', $1, $1, 'basaltvault.app', 'https://basaltvault.app', 'x', NULL)`, make([]byte, 32))
 	requireCode(t, err, guard.CodeLedgerInputInvalid)
 
 	// Agents cannot register a key or write the passkey table.
 	x, y, err := p.Credential().XY()
 	require.NoError(t, err)
-	_, err = a.Conn.Exec(context.Background(), `SELECT basalt_meta.register_passkey('\x02', $1, $2, 'basaltvault.app', 'https://basaltvault.app', 'mine')`, x, y)
+	_, err = a.Conn.Exec(context.Background(), `SELECT basalt_meta.register_passkey('\x02', $1, $2, 'basaltvault.app', 'https://basaltvault.app', 'mine', NULL)`, x, y)
 	require.Equal(t, "42501", guardtest.SQLState(err))
 	_, err = a.Conn.Exec(context.Background(), `INSERT INTO basalt_meta.passkeys VALUES ('\x02', $1, $2, 'basaltvault.app', 'https://basaltvault.app', 0, 'mine')`, x, y)
 	require.Equal(t, "42501", guardtest.SQLState(err))

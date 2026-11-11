@@ -161,6 +161,9 @@ type Credential struct {
 	PublicKey *ecdsa.PublicKey
 	SignCount uint32
 	Relying   Relying
+	// UserHandle is the WebAuthn user id the passkey was created with (nil
+	// when unknown); the forget page signals with it.
+	UserHandle []byte
 }
 
 // coordLen is the byte length of a P-256 coordinate.

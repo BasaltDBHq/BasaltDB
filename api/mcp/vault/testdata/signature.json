@@ -1,0 +1,94 @@
+{
+  "kind": "SIGNATURE",
+  "description": "ECDSA P-256 SHA-256 signatures, 64 bytes r||s in base64url, by the engine signing key, each over its context line and the bytes that follow (CONTRACT.md, Primitives and encodings). A verifier for a context refuses a message that does not start with its line, a signature made under another context, any other key, and any other length.",
+  "cases": [
+    {
+      "name": "vault_auth: valid",
+      "context": "VAULT_AUTH",
+      "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEglfhPHrg8LxuAWlZjdnNSo9CTcShFClz0sAD1eBem80rLis8Tm_wbA0QU_yosHyHSPy47tQX1Pf_1K2TIafeOw",
+      "message": "626173616c742d7661756c742d656e67696e652e310a4c64414c3133344349733759676d5a5567616e4232666b484d4a3057344637514236487159354b4564366b0a72656c61792e626173616c747661756c742e617070",
+      "sig": "p1IAbzZ8G47CWO4o_CEL5NP0v1vTTE3so4iXydEzBTzaYkAy4cmbGagI54VaDUUObAL0uzGTxq2N0kmks4Z9zA",
+      "expect": "ACCEPT"
+    },
+    {
+      "name": "session: valid",
+      "context": "SESSION",
+      "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEglfhPHrg8LxuAWlZjdnNSo9CTcShFClz0sAD1eBem80rLis8Tm_wbA0QU_yosHyHSPy47tQX1Pf_1K2TIafeOw",
+      "message": "626173616c742d7661756c742d73657373696f6e2d7369672e310a0f4dfb871ccca879635477cb318e4717d398f1c50b9d26c672240db74b29e21c",
+      "sig": "KfqffTW2nQVR6FZ-2VgQkTyk_-cNFBVwdpRMuPlLa4Ule7GWrfea4aRi8t0aRumD7n9sbOfy5lRYUejtxOTlvA",
+      "expect": "ACCEPT"
+    },
+    {
+      "name": "receipt: valid",
+      "context": "RECEIPT",
+      "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEglfhPHrg8LxuAWlZjdnNSo9CTcShFClz0sAD1eBem80rLis8Tm_wbA0QU_yosHyHSPy47tQX1Pf_1K2TIafeOw",
+      "message": "626173616c742d726563656970742e310a7b22666f726d6174223a317d",
+      "sig": "4VBMSXSbTF11554MvmQ6jJX2q0sKtpW0H1BqL3Qhp87isa1-o-QmK1W2C3Ce8RCQOYLx_eS5kO3GMD8ht6GNbQ",
+      "expect": "ACCEPT"
+    },
+    {
+      "name": "box_key: valid",
+      "context": "BOX_KEY",
+      "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEglfhPHrg8LxuAWlZjdnNSo9CTcShFClz0sAD1eBem80rLis8Tm_wbA0QU_yosHyHSPy47tQX1Pf_1K2TIafeOw",
+      "message": "626173616c742d656e67696e652d626f782d6b65792e310a5236385746597841634767496a4d454e53354f7172770a4d466b77457759484b6f5a497a6a3043415159494b6f5a497a6a3044415163445167414561483933556633715a5239764b5a45483452307338306f547032554373555657554d47554c386b33504b6a4e6b4a594765584571497861376c726130304537796c4a317862376a3138695f4447775962614f4b6c5941",
+      "sig": "J03GC2uEH8zs2INZcoic5VrjQcAVyhJDGttDRlxvzHaV55Dph7dYTYwdZBfFvyQPxnsCbpPm6zzc-sFq84gKXA",
+      "expect": "ACCEPT"
+    },
+    {
+      "name": "rotate: valid",
+      "context": "ROTATE",
+      "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEglfhPHrg8LxuAWlZjdnNSo9CTcShFClz0sAD1eBem80rLis8Tm_wbA0QU_yosHyHSPy47tQX1Pf_1K2TIafeOw",
+      "message": "626173616c742d656e67696e652d726f746174652e310a5236385746597841634767496a4d454e53354f7172770a4d466b77457759484b6f5a497a6a3043415159494b6f5a497a6a30444151634451674145486a734c55617367524252745f724d6a3276546a423634565356726259544f5a56736858307a5a36684172463346385731456c5f514e73763067596a5776765872356f586a4c5a6f384f395f4a7533763367465752770a4d466b77457759484b6f5a497a6a3043415159494b6f5a497a6a30444151634451674145755773664162546d396b6e5f61316447626e6370333665695341686c4249447a433233413833434f446835654576494b763764503638536c4555527a33736435793750394c3772724f72646569365a59476f484f33510a323032362d31312d31325430393a33303a30305a",
+      "sig": "nBnH1-PNroo20qQlo_VtV18IG4QtYhhG65JNiOrp4L22lwrUXlzDfDmUFI1q0kleXVKmHuS-XFwkEE03FlUDPQ",
+      "expect": "ACCEPT"
+    },
+    {
+      "name": "a session signature over the same bytes, checked as a receipt",
+      "context": "RECEIPT",
+      "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEglfhPHrg8LxuAWlZjdnNSo9CTcShFClz0sAD1eBem80rLis8Tm_wbA0QU_yosHyHSPy47tQX1Pf_1K2TIafeOw",
+      "message": "626173616c742d726563656970742e310a7b22666f726d6174223a317d",
+      "sig": "IKxtPmYDbHMxA2O2x_qoQT_GjkIG7o5px1-UjzkAsUTtx0ESrZviDPfQIXstXuo_nSi8n2KqgB0ugM2EnVQAnQ",
+      "expect": "REFUSE"
+    },
+    {
+      "name": "a message under another context line",
+      "context": "RECEIPT",
+      "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEglfhPHrg8LxuAWlZjdnNSo9CTcShFClz0sAD1eBem80rLis8Tm_wbA0QU_yosHyHSPy47tQX1Pf_1K2TIafeOw",
+      "message": "626173616c742d7661756c742d73657373696f6e2d7369672e310a7b22666f726d6174223a317d",
+      "sig": "RNIGRjOcHtj8n_XH4jSOW96GDUwOB1KZETl_oE3AAE1Z6U7vlArAntctfpFe-gpVgrw0xkODaj8FOi4c0bBkBQ",
+      "expect": "REFUSE"
+    },
+    {
+      "name": "another engine's key",
+      "context": "RECEIPT",
+      "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEglfhPHrg8LxuAWlZjdnNSo9CTcShFClz0sAD1eBem80rLis8Tm_wbA0QU_yosHyHSPy47tQX1Pf_1K2TIafeOw",
+      "message": "626173616c742d726563656970742e310a7b22666f726d6174223a317d",
+      "sig": "epMLqkBPxx0CZJRi3gOWUX8QFHEi3tz1QHM4EZgWX4o659xz9EWCrnD58x2d1KmmAbXExfY8O0D9R1L9qDNvaQ",
+      "expect": "REFUSE"
+    },
+    {
+      "name": "a signature over other bytes",
+      "context": "RECEIPT",
+      "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEglfhPHrg8LxuAWlZjdnNSo9CTcShFClz0sAD1eBem80rLis8Tm_wbA0QU_yosHyHSPy47tQX1Pf_1K2TIafeOw",
+      "message": "626173616c742d726563656970742e310a7b22666f726d6174223a317d",
+      "sig": "nzA8X5e5oqJjoUHjRKennVVfevudathDoQ47jy7B2OcbDxY2T0zljNzhrivb5_5mPXS0fgBejgsQ3kRDYEyV7w",
+      "expect": "REFUSE"
+    },
+    {
+      "name": "an ASN.1 DER signature",
+      "context": "RECEIPT",
+      "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEglfhPHrg8LxuAWlZjdnNSo9CTcShFClz0sAD1eBem80rLis8Tm_wbA0QU_yosHyHSPy47tQX1Pf_1K2TIafeOw",
+      "message": "626173616c742d726563656970742e310a7b22666f726d6174223a317d",
+      "sig": "MEUCIH0__5NFQh1SEo9Ioaaz2STiA_yVQHHCwvThQ4Js4BNEAiEA1UHPcm8JYkY6YZL8J0BIW6OuG9hRLxlzAh9u3c0cvY4",
+      "expect": "REFUSE"
+    },
+    {
+      "name": "a zero signature",
+      "context": "RECEIPT",
+      "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEglfhPHrg8LxuAWlZjdnNSo9CTcShFClz0sAD1eBem80rLis8Tm_wbA0QU_yosHyHSPy47tQX1Pf_1K2TIafeOw",
+      "message": "626173616c742d726563656970742e310a7b22666f726d6174223a317d",
+      "sig": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expect": "REFUSE"
+    }
+  ]
+}

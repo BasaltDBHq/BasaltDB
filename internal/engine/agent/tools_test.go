@@ -72,6 +72,22 @@ func TestServedToolsMatchTheContracts(t *testing.T) {
 	require.NoError(t, mcpcontract.CheckServed(contracts, served))
 }
 
+// TestHeldWriteDescriptionsWaitOnce: after handing over a link (write's
+// APPROVAL_REQUIRED or list_pending), the agent waits once with approvalId
+// in the same turn, and never loops on a wait that ran out.
+func TestHeldWriteDescriptionsWaitOnce(t *testing.T) {
+	t.Parallel()
+	contracts := mcpcontract.MustLoad()
+	write, ok := mcpcontract.Find(contracts, "write")
+	require.True(t, ok)
+	require.Contains(t, write.Description, "without ending your turn, call write once with the same arguments plus approvalId")
+	require.Contains(t, write.Description, "do not wait again")
+	require.NotContains(t, write.Description, "repeat it")
+	pending, ok := mcpcontract.Find(contracts, "list_pending")
+	require.True(t, ok)
+	require.Contains(t, pending.Description, "call write once, in the same turn, with its approvalId")
+}
+
 // TestArgsStructsMatchTheSchemas keeps each tool's Go argument struct and its
 // contract's input properties in step.
 func TestArgsStructsMatchTheSchemas(t *testing.T) {

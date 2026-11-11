@@ -2,7 +2,7 @@
   "name": "list_pending",
   "status": "IMPLEMENTED",
   "milestone": "M2",
-  "description": "This agent's held writes that have not been applied and have not expired: waiting for the person's passkey (PENDING) or approved and ready to apply with write and approvalId (APPROVED). Each carries personMessage, one line to show the person verbatim, with the approval link (approvalUrl) and the equivalent basalt command (approveCommand). Listing touches no link: the link already given keeps working. If it was lost, call with reissueLink: true to get a new short link for each item (the earlier one stops working) and hand the person the new one. Newest first, cursor-paginated. Listing never approves anything.",
+  "description": "This agent's held writes that have not been applied and have not expired: waiting for the person's passkey (PENDING) or approved and ready to apply with write and approvalId (APPROVED). Each carries personMessage, one line to show the person verbatim, with the approval link (approvalUrl) and the equivalent basalt command (approveCommand). Listing touches no link: the link already given keeps working. If it was lost, call with reissueLink: true to get a new short link for each item (the earlier one stops working) and hand the person the new one. After showing a PENDING item's personMessage, call write once, in the same turn, with its approvalId and its runId, intent, statement as sql and params: that call waits for the person's approval and applies the write (see write for when the wait runs out). For an APPROVED item, that write applies at once. Newest first, cursor-paginated. Listing never approves anything.",
   "inputSchema": {
     "type": "object",
     "additionalProperties": false,

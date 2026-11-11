@@ -1,0 +1,61 @@
+package setupcode
+
+// Refusal names why a setup code is refused (CONTRACT.md, Setup from your
+// laptop). The codec's are the first four; the rest are the person's
+// computer's checks against its clock, its binary and the database.
+type Refusal string
+
+// Refusals.
+const (
+	RefusalNotASetupCode     Refusal = "NOT_A_SETUP_CODE"
+	RefusalUnsupportedFormat Refusal = "UNSUPPORTED_FORMAT"
+	RefusalDamaged           Refusal = "DAMAGED"
+	RefusalInvalid           Refusal = "INVALID"
+
+	RefusalExpired         Refusal = "EXPIRED"
+	RefusalSetupIDInFuture Refusal = "SETUP_ID_IN_FUTURE"
+	RefusalExpiryTooFar    Refusal = "EXPIRY_TOO_FAR"
+	RefusalBinaryTooOld    Refusal = "BINARY_TOO_OLD"
+	RefusalPrefixMismatch  Refusal = "PREFIX_MISMATCH"
+	RefusalUsed            Refusal = "USED"
+	RefusalSuperseded      Refusal = "SUPERSEDED"
+	RefusalRoleExists      Refusal = "ROLE_EXISTS"
+	RefusalRoleMissing     Refusal = "ROLE_MISSING"
+)
+
+// Fixed messages (CONTRACT.md, The setup code).
+const (
+	msgNotASetupCode = "This is not a Basalt setup code."
+	msgUnsupported   = "This setup code is newer than basalt on this computer: update it from the release page."
+	msgDamaged       = "This setup code is damaged; copy it again."
+	msgInvalid       = "This setup code is not valid"
+)
+
+// Error is a refused setup code. Message is what the person reads. It
+// never holds a secret: a code carries none, and messages name fields, not
+// the values the code-maker wrote, except the agent's name and times.
+type Error struct {
+	Refusal Refusal
+	Message string
+}
+
+func (e *Error) Error() string { return e.Message }
+
+// refuse builds a codec refusal: the contract's fixed words, or for
+// INVALID what is wrong (detail).
+func refuse(r Refusal, detail string) *Error {
+	switch r {
+	case RefusalNotASetupCode:
+		return &Error{Refusal: r, Message: msgNotASetupCode}
+	case RefusalUnsupportedFormat:
+		return &Error{Refusal: r, Message: msgUnsupported}
+	case RefusalDamaged:
+		return &Error{Refusal: r, Message: msgDamaged}
+	default:
+		return &Error{Refusal: r, Message: msgInvalid + ": " + detail + ". Ask your agent for a new one."}
+	}
+}
+
+func refuseWith(r Refusal, msg string) *Error {
+	return &Error{Refusal: r, Message: msg}
+}

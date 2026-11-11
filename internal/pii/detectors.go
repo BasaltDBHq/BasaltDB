@@ -220,7 +220,7 @@ func splitWords(s string) []word {
 	var ws []word
 	start := -1
 	for i, r := range s {
-		inWord := isWordRune(r) || unicode.Is(unicode.Cf, r)
+		inWord := isWordRune(r) || isIgnorable(r)
 		if start < 0 && unicode.IsMark(r) {
 			inWord = false
 		}

@@ -30,6 +30,7 @@ func Normalize(t EntityType, value, phoneRegion string) string {
 }
 
 func normalizeEmail(value string) string {
+	value = strings.Map(dropIgnorable, value)
 	return norm.NFKC.String(strings.ToLower(strings.TrimSpace(norm.NFKC.String(value))))
 }
 
@@ -38,7 +39,7 @@ func normalizeEmail(value string) string {
 // number). An unparsed value keeps a leading + and its letters and digits, so
 // distinct inputs stay distinct.
 func normalizePhone(value, region string) (string, int32) {
-	value = strings.TrimSpace(norm.NFKC.String(value))
+	value = strings.TrimSpace(norm.NFKC.String(strings.Map(dropIgnorable, value)))
 	region = strings.ToUpper(strings.TrimSpace(region))
 	if e164, cc, ok := parseE164(value, region); ok {
 		return e164, cc
@@ -91,11 +92,12 @@ func phoneFallback(value string) string {
 func GenericForm(value string) string {
 	// A Caser is stateful, so each call takes its own.
 	caser := cases.Fold()
-	// Format characters go before normalizing, not after: one between two
-	// combining marks (combining class 0) keeps NFKC from reordering them, so
-	// dropping it afterwards would leave the marks out of canonical order and
-	// the next normalization would reorder them ("\u07e4\u0740\u0600\u05a4").
-	s := nfkcCasefold(&caser, strings.Map(dropFormat, value))
+	// Ignorable characters go before normalizing, not after: a format
+	// character between two combining marks (combining class 0) keeps NFKC
+	// from reordering them, so dropping it afterwards would leave the marks out
+	// of canonical order and the next normalization would reorder them
+	// ("\u07e4\u0740\u0600\u05a4").
+	s := nfkcCasefold(&caser, strings.Map(dropIgnorable, value))
 	var b strings.Builder
 	b.Grow(len(s))
 	gap := false
@@ -110,7 +112,7 @@ func GenericForm(value string) string {
 			}
 			gap = false
 			b.WriteRune(r)
-		case unicode.Is(unicode.Cf, r):
+		case isIgnorable(r):
 			// None reach here (dropped above, and folding makes none); kept
 			// transparent rather than a separator should that ever change.
 		default:
@@ -145,10 +147,21 @@ func nfkcCasefold(caser *cases.Caser, s string) string {
 
 func isCherokee(r rune) bool { return unicode.Is(unicode.Cherokee, r) }
 
-// dropFormat removes format characters (zero-width space, joiners, the Arabic
-// number sign) for strings.Map.
-func dropFormat(r rune) rune {
-	if unicode.Is(unicode.Cf, r) {
+// isIgnorable reports the characters that are dropped before anything else,
+// for every type and in the text detectors see: format characters (zero-width
+// space and joiners, soft hyphen, word joiner, BOM, bidi controls),
+// variation selectors and the other default-ignorable code points (Hangul
+// fillers, the combining grapheme joiner, the unassigned ignorable ranges).
+// This is Unicode's Default_Ignorable_Code_Point, which NFKC_Casefold removes,
+// plus the few format characters it leaves out. Invisible inside a value, any
+// of them would otherwise split the value so no detector saw it.
+func isIgnorable(r rune) bool {
+	return unicode.In(r, unicode.Cf, unicode.Variation_Selector, unicode.Other_Default_Ignorable_Code_Point)
+}
+
+// dropIgnorable removes ignorable characters, for strings.Map.
+func dropIgnorable(r rune) rune {
+	if isIgnorable(r) {
 		return -1
 	}
 	return r

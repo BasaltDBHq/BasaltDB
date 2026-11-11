@@ -42,7 +42,9 @@ func foldForDetection(s string) foldedView {
 }
 
 // writeFolded writes one segment folded. ASCII takes a fast path: NFKC leaves
-// it alone and folding is lower case.
+// it alone and folding is lower case. Ignorable characters write nothing, as
+// in Normalize: their segment keeps its piece, so a span found across one
+// maps back over it ("ali\u200bce@corp.ee" is one address).
 func writeFolded(b *strings.Builder, caser *cases.Caser, seg string) {
 	if len(seg) == 1 && seg[0] < utf8.RuneSelf {
 		c := seg[0]
@@ -52,7 +54,7 @@ func writeFolded(b *strings.Builder, caser *cases.Caser, seg string) {
 		b.WriteByte(c)
 		return
 	}
-	b.WriteString(nfkcCasefold(caser, seg))
+	b.WriteString(nfkcCasefold(caser, strings.Map(dropIgnorable, seg)))
 }
 
 // original maps a span of the folded text to the original bytes it came from.

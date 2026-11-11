@@ -424,3 +424,26 @@ func TestAnAgentSharingThePersonsUIDSeesOnlyItsOwnLedger(t *testing.T) {
 		})
 	}
 }
+
+func TestAPeerRunningTwoAgentsReachesExactlyThoseTwo(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	one, two, third := &fakeLedger{}, &fakeLedger{}, &fakeLedger{}
+	c := serveWith(t, person.Options{
+		Allow:     []uint32{personUID},
+		Agents:    map[string]person.Ledger{"one": one, "two": two, "third": third},
+		AgentUIDs: map[string]uint32{"one": personUID, "two": personUID, "third": agentUID},
+		PeerUID:   peerIs(personUID),
+	})
+	for _, name := range []string{"one", "two"} {
+		_, err := c.Agent(name).ListPasskeys(ctx)
+		require.NoError(t, err, name)
+	}
+	_, err := c.Agent("third").ListPasskeys(ctx)
+	var we *person.Error
+	require.ErrorAs(t, err, &we)
+	require.Equal(t, person.CodeAgentNotAllowed, we.Code)
+	require.Equal(t, int32(1), one.calls.Load())
+	require.Equal(t, int32(1), two.calls.Load())
+	require.Zero(t, third.calls.Load())
+}

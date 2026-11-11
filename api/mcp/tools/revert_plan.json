@@ -167,7 +167,7 @@
       "revertUrl": {
         "type": "string",
         "format": "uri",
-        "description": "Only while PENDING: the revert page, the short link http://localhost:<port>/reverts/<revertId> when the engine serves the local pages, else <base>/reverts/<revertId>#1.<request>."
+        "description": "Only while PENDING: the revert page, the short link http://localhost:<port>/reverts/<revertId>#s=<secret> when the engine serves the local pages (newly issued by this call; the earlier one stops working), else <base>/reverts/<revertId>#1.<request>."
       },
       "personMessage": {
         "type": "string",

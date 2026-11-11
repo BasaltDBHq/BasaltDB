@@ -2,7 +2,7 @@
   "name": "list_pending",
   "status": "IMPLEMENTED",
   "milestone": "M2",
-  "description": "This agent's held writes that have not been applied and have not expired: waiting for the person's passkey (PENDING) or approved and ready to apply with write and approvalId (APPROVED). Each carries personMessage, one line to show the person verbatim, with the approval link (approvalUrl) and the equivalent basalt command (approveCommand). Use it to get a link back. Newest first, cursor-paginated. Listing never approves anything.",
+  "description": "This agent's held writes that have not been applied and have not expired: waiting for the person's passkey (PENDING) or approved and ready to apply with write and approvalId (APPROVED). Each carries personMessage, one line to show the person verbatim, with the approval link (approvalUrl) and the equivalent basalt command (approveCommand). Every call issues each item a new short link and the earlier link stops working, so use it to get a working link back and hand the person the new one. Newest first, cursor-paginated. Listing never approves anything.",
   "inputSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -112,7 +112,7 @@
             "approvalUrl": {
               "type": "string",
               "format": "uri",
-              "description": "The approval page for this held write: the short link http://localhost:<port>/approvals/<approvalId> when the engine serves the local pages, else <base>/approvals/<approvalId>#1.<request> (base: the engine config's pagesUrl) (the request carries the preview the person signs)."
+              "description": "The approval page for this held write: the short link http://localhost:<port>/approvals/<approvalId>#s=<secret> when the engine serves the local pages (newly issued by this call; the earlier one stops working), else <base>/approvals/<approvalId>#1.<request> (base: the engine config's pagesUrl)."
             },
             "approveCommand": {
               "type": "string",

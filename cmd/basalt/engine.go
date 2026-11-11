@@ -12,6 +12,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine"
@@ -96,6 +97,14 @@ func runService(ctx context.Context, args []string, io stdio) int {
 		a.initArgs = append(a.initArgs, v)
 		return nil
 	})
+	fs.Func(flagPersonUID, "install --agent: an OS user id the engine's person socket admits (repeatable; default: SUDO_UID)", func(v string) error {
+		uid, err := parseUID(v)
+		if err != nil {
+			return err
+		}
+		a.personUIDs = append(a.personUIDs, uid)
+		return nil
+	})
 	fs.BoolVar(&a.keepCredential, flagKeepCredential, false, "install --agent: keep the agent's credential file (its role kept its password)")
 	credStdin := fs.Bool("credential-stdin", false, "install --agent: read the agent's connection string from stdin")
 	if fs.Parse(args[1:]) != nil || fs.NArg() > 0 {
@@ -111,6 +120,13 @@ func runService(ctx context.Context, args []string, io stdio) int {
 	}
 	spec := service.Spec{GOOS: runtime.GOOS, Binary: bin, ConfigPath: *configPath, User: *user}
 	if action == "install" && a.name != "" {
+		if len(a.personUIDs) == 0 && os.Getenv(envSudoUID) != "" {
+			uid, err := parseUID(os.Getenv(envSudoUID))
+			if err != nil {
+				return fail(io.err, "service", fmt.Errorf("%s: %w", envSudoUID, err))
+			}
+			a.personUIDs = []uint32{uid}
+		}
 		spec, err = agentSpecFromStdin(io.in, spec, a, *credStdin, *dryRun)
 		if err != nil {
 			return fail(io.err, "service", err)
@@ -158,6 +174,9 @@ func agentSpecFromStdin(in io.Reader, spec service.Spec, a agentInstall, credStd
 	if _, err := user.Lookup(a.osUser); err != nil {
 		return spec, fmt.Errorf("os user %q: %w", a.osUser, err)
 	}
+	if err := checkServicePersons(a.personUIDs, spec.User); err != nil {
+		return spec, err
+	}
 	if a.keepCredential {
 		return keptCredentialSpec(spec, a, dryRun)
 	}
@@ -194,4 +213,23 @@ func binaryPath(flagValue string) (string, error) {
 		return "", err
 	}
 	return filepath.EvalSymlinks(exe)
+}
+
+// checkServicePersons refuses a service install without a person uid, or
+// with root or the engine's own OS user among them (CONTRACT.md, CLI,
+// Recording the person).
+func checkServicePersons(uids []uint32, engineUser string) error {
+	if err := checkPersons(uids); err != nil {
+		return err
+	}
+	u, err := user.Lookup(engineUser)
+	if err != nil {
+		return nil //nolint:nilerr // the engine's user does not exist yet: the install creates it, with a new uid
+	}
+	for _, uid := range uids {
+		if strconv.FormatUint(uint64(uid), 10) == u.Uid {
+			return fmt.Errorf("--person-uid %d is the engine's own OS user %s; give the person's", uid, engineUser)
+		}
+	}
+	return nil
 }

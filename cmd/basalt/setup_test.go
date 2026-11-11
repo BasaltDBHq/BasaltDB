@@ -184,7 +184,7 @@ func TestInitInstallsTheServiceWithOneSudo(t *testing.T) {
 			require.Equal(t, []string{fakeBin, "service", "install", "--config", v.config, "--user", v.user,
 				"--agent", "bot", "--os-user", me(t), "--pages-url", links.DefaultLocal,
 				"--init-arg", "--agent=bot", "--init-arg", "--write=public.leads", "--init-arg", "--prefix=" + d.Names.Prefix,
-				"--init-arg", "--os-user=" + me(t), "--credential-stdin"}, h.sudo[0])
+				"--init-arg", "--os-user=" + me(t), "--person-uid", "501", "--credential-stdin"}, h.sudo[0])
 			require.Contains(t, h.sudoIn[0], d.Names.Prefix+"_agent_bot:", "the agent's credential goes on stdin")
 			require.NotContains(t, strings.Join(h.sudo[0], " "), "postgres://", "never on the command line")
 			require.Equal(t, []string{v.socket}, h.probed)
@@ -327,7 +327,7 @@ func TestServiceInstallAgentReadsTheCredentialFromStdin(t *testing.T) {
 	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "engine.json")
 	spec := service.Spec{GOOS: "linux", Binary: fakeBin, ConfigPath: cfgPath, User: "basalt"}
-	a := agentInstall{name: "bot", osUser: me(t)}
+	a := agentInstall{name: "bot", osUser: me(t), personUIDs: []uint32{4242}}
 
 	_, err := agentSpecFromStdin(strings.NewReader("postgres://x\n"), spec, a, false, false)
 	require.ErrorContains(t, err, "--credential-stdin")
@@ -336,8 +336,17 @@ func TestServiceInstallAgentReadsTheCredentialFromStdin(t *testing.T) {
 	_, err = agentSpecFromStdin(strings.NewReader("x\n"), spec, agentInstall{name: "bot", osUser: "no-such-user-basalt"}, true, false)
 	require.ErrorContains(t, err, "no-such-user-basalt")
 
+	noPerson := agentInstall{name: "bot", osUser: me(t)}
+	_, err = agentSpecFromStdin(strings.NewReader("x\n"), spec, noPerson, true, false)
+	require.ErrorIs(t, err, errNoPerson, "no person uid: no service")
+	noPerson.personUIDs = []uint32{0}
+	_, err = agentSpecFromStdin(strings.NewReader("x\n"), spec, noPerson, true, false)
+	require.ErrorContains(t, err, "is root", "root is never a person")
+
 	got, err := agentSpecFromStdin(strings.NewReader("postgres://agent:pw@h/db\n"), spec, a, true, false)
 	require.NoError(t, err)
+	require.Contains(t, string(got.Files[0].Content), `"mode": "SERVICE"`)
+	require.Contains(t, string(got.Files[0].Content), "\"personUids\": [\n    4242\n  ]")
 	cred := filepath.Join(filepath.Dir(cfgPath), "agents", "bot.url")
 	require.Equal(t, cred, got.Files[1].Path)
 	require.Equal(t, "postgres://agent:pw@h/db\n", string(got.Files[1].Content))

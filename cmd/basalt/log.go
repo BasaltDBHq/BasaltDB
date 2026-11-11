@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
@@ -54,23 +53,18 @@ func runLog(c *cliIO, args []string) int {
 		}
 		params.RunID = id
 	}
-	dsn, err := agentURL(c, *agent, *credFile, *configPath)
+	l, err := openLedger(c, *agent, *credFile, *configPath)
 	if err != nil {
 		return c.fail(err)
 	}
+	defer l.close()
 
 	ctx := c.ctx
-	conn, err := connect(ctx, dsn)
+	health, err := checkHealth(c, l, *fullCheck)
 	if err != nil {
 		return c.fail(err)
 	}
-	defer conn.Close(ctx)
-
-	health, err := checkHealth(c, conn, *fullCheck)
-	if err != nil {
-		return c.fail(err)
-	}
-	page, err := ledger.ListChanges(ctx, conn, params)
+	page, err := l.ListChanges(ctx, params)
 	if err != nil {
 		return c.fail(err)
 	}
@@ -80,12 +74,12 @@ func runLog(c *cliIO, args []string) int {
 		for _, ch := range page.Items {
 			ids = append(ids, ch.ID)
 		}
-		if rowsByChange, err = ledger.RowChanges(ctx, conn, ids); err != nil {
+		if rowsByChange, err = l.RowChanges(ctx, ids); err != nil {
 			return c.fail(err)
 		}
 	}
 
-	keys, err := ledger.ListPasskeys(ctx, conn)
+	keys, err := l.ListPasskeys(ctx)
 	if err != nil {
 		return c.fail(err)
 	}
@@ -134,11 +128,11 @@ func agentURL(c *cliIO, agent, credFile, configPath string) (string, error) {
 // this database and role (kept under the user cache directory), and pins
 // the new head when it is intact. A pin that cannot be read or written
 // only costs a full check, with a warning.
-func checkHealth(c *cliIO, conn *pgx.Conn, full bool) (ledger.Health, error) {
-	pins, name, err := logPins(c, conn.Config())
+func checkHealth(c *cliIO, l *agentLedger, full bool) (ledger.Health, error) {
+	pins, name, err := logPins(c, l.pinKey)
 	if err != nil {
 		fmt.Fprintf(c.stderr, "warning: no ledger pin, checking the whole chain: %v\n", err)
-		return ledger.CheckHealth(c.ctx, conn, c.now(), ledger.HealthOptions{Full: true})
+		return l.CheckHealth(c.ctx, ledger.HealthOptions{Full: true})
 	}
 	opts := ledger.HealthOptions{Full: full}
 	pin, ok, err := pins.Load(name)
@@ -148,7 +142,7 @@ func checkHealth(c *cliIO, conn *pgx.Conn, full bool) (ledger.Health, error) {
 	if ok {
 		opts.Pin = &pin
 	}
-	h, err := ledger.CheckHealth(c.ctx, conn, c.now(), opts)
+	h, err := l.CheckHealth(c.ctx, opts)
 	if err != nil || !h.Chain.Intact {
 		return h, err
 	}
@@ -160,7 +154,7 @@ func checkHealth(c *cliIO, conn *pgx.Conn, full bool) (ledger.Health, error) {
 
 // logPins is where basalt log keeps its pins: $BASALT_CACHE_DIR or the
 // user cache directory, one file per database and role.
-func logPins(c *cliIO, cfg *pgx.ConnConfig) (chainpin.File, string, error) {
+func logPins(c *cliIO, key string) (chainpin.File, string, error) {
 	dir := c.getenv(envCacheDir)
 	if dir == "" {
 		base, err := os.UserCacheDir()
@@ -169,7 +163,7 @@ func logPins(c *cliIO, cfg *pgx.ConnConfig) (chainpin.File, string, error) {
 		}
 		dir = filepath.Join(base, "basalt")
 	}
-	sum := sha256.Sum256(fmt.Appendf(nil, "%s\x00%d\x00%s\x00%s", cfg.Host, cfg.Port, cfg.Database, cfg.User))
+	sum := sha256.Sum256([]byte(key))
 	return chainpin.File{Dir: filepath.Join(dir, "ledger-pins")}, hex.EncodeToString(sum[:pinNameBytes]), nil
 }
 

@@ -7,12 +7,10 @@ import (
 	"runtime"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
@@ -46,27 +44,23 @@ func runApprove(c *cliIO, args []string) int {
 	if err != nil {
 		return c.fail(err)
 	}
-	dsn, err := agentURL(c, *agent, *credFile, *configPath)
+	l, err := openLedger(c, *agent, *credFile, *configPath)
 	if err != nil {
 		return c.fail(err)
 	}
-	conn, err := connect(c.ctx, dsn)
-	if err != nil {
-		return c.fail(err)
-	}
-	defer conn.Close(c.ctx)
+	defer l.close()
 	if held != "" {
 		pages := linkPages{
-			base: configuredBase(*pagesURL, *agent, *configPath),
+			base: l.pagesBase(*pagesURL),
 		}
 		if *reissue {
 			// A short link is issued only on request: issuing revokes the
 			// one the agent handed over (CONTRACT.md, Link secrets).
-			pages.local = localPages(c, *pagesURL, *agent, *configPath)
+			pages.local = l.localPages(c, *pagesURL)
 		}
-		return showApproval(c, conn, held, pages, *open != "")
+		return showApproval(c, l, held, pages, *open != "")
 	}
-	return submitApproval(c, conn, code)
+	return submitApproval(c, l, code)
 }
 
 // approveCode is the response code: the one argument, or a line from stdin
@@ -89,12 +83,12 @@ func approveCode(c *cliIO, args []string, held string) (string, error) {
 // showApproval prints the approval link of a held write on stdout, or with
 // open opens it in the browser (printing it only when no browser opens):
 // the short link when the engine serves the pages, else the long one.
-func showApproval(c *cliIO, conn *pgx.Conn, idText string, pages linkPages, open bool) int {
+func showApproval(c *cliIO, l *agentLedger, idText string, pages linkPages, open bool) int {
 	id, err := uuid.Parse(idText)
 	if err != nil {
 		return c.fail(fmt.Errorf("%w: --show and --open need an approval id", errUsage))
 	}
-	a, err := ledger.FindApproval(c.ctx, conn, id)
+	a, err := l.FindApproval(c.ctx, id)
 	if errors.Is(err, ledger.ErrApprovalNotFound) {
 		return c.fail(fmt.Errorf("approval %s is not a held write of this agent", id))
 	}
@@ -104,7 +98,7 @@ func showApproval(c *cliIO, conn *pgx.Conn, idText string, pages linkPages, open
 	if a.Status != ledger.ApprovalPending {
 		fmt.Fprintf(c.stderr, "basalt: approval %s is %s\n", id, a.Status)
 	}
-	keys, err := ledger.Passkeys(c.ctx, conn)
+	keys, err := l.credentials(c.ctx)
 	if err != nil {
 		return c.fail(err)
 	}
@@ -135,15 +129,15 @@ func showApproval(c *cliIO, conn *pgx.Conn, idText string, pages linkPages, open
 	return exitOK
 }
 
-func submitApproval(c *cliIO, conn *pgx.Conn, code string) int {
+func submitApproval(c *cliIO, l *agentLedger, code string) int {
 	resp, err := approval.ParseResponse(code)
 	if err != nil {
 		return c.fail(fmt.Errorf("%w: %w", errUsage, err))
 	}
-	if err := checkLocally(c, conn, resp); err != nil {
+	if err := checkLocally(c, l, resp); err != nil {
 		return c.fail(err)
 	}
-	if _, err := guard.SubmitApproval(c.ctx, conn, resp.ApprovalID, resp.Assertion()); err != nil {
+	if _, err := l.SubmitApproval(c.ctx, resp.ApprovalID, resp.Assertion()); err != nil {
 		return c.fail(fmt.Errorf("the database refused the approval: %s", pgDetail(err)))
 	}
 	fmt.Fprintf(c.stderr, "basalt: approval %s signed; the agent applies it by repeating the write with approvalId %s\n",
@@ -154,12 +148,12 @@ func submitApproval(c *cliIO, conn *pgx.Conn, code string) int {
 // checkLocally verifies the code with the Go mirror of the Postgres check
 // when this agent can see the approval, for a clear message before
 // submitting. Postgres checks again either way.
-func checkLocally(c *cliIO, conn *pgx.Conn, resp approval.Response) error {
-	a, err := ledger.FindApproval(c.ctx, conn, resp.ApprovalID)
+func checkLocally(c *cliIO, l *agentLedger, resp approval.Response) error {
+	a, err := l.FindApproval(c.ctx, resp.ApprovalID)
 	if errors.Is(err, ledger.ErrApprovalNotFound) {
 		return nil // another agent's approval: only Postgres can check it
 	}
-	return verifyCode(c, conn, err, resp.CredentialID, "submitted", func(k passkey.Credential) error {
+	return verifyCode(c, l, err, resp.CredentialID, "submitted", func(k passkey.Credential) error {
 		_, err := approval.Verify(a.BindingText, k, resp)
 		return err
 	})
@@ -169,11 +163,11 @@ func checkLocally(c *cliIO, conn *pgx.Conn, resp approval.Response) error {
 // code (the Go mirror of the Postgres check, for a clear message before
 // relaying), or fails when the database does not know that passkey. found
 // is the error of looking up what the code signs.
-func verifyCode(c *cliIO, conn *pgx.Conn, found error, credentialID []byte, notDone string, verify func(passkey.Credential) error) error {
+func verifyCode(c *cliIO, l *agentLedger, found error, credentialID []byte, notDone string, verify func(passkey.Credential) error) error {
 	if found != nil {
 		return found
 	}
-	keys, err := ledger.Passkeys(c.ctx, conn)
+	keys, err := l.credentials(c.ctx)
 	if err != nil {
 		return err
 	}

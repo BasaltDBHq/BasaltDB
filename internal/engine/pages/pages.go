@@ -275,7 +275,7 @@ func (s *Server) linkedID(w http.ResponseWriter, r *http.Request, name string) (
 		return uuid.Nil, false
 	}
 	if !s.linkLive(id, r.Header.Get(links.SecretHeader)) {
-		s.fail(w, agent.LinkNotFound())
+		s.fail(w, unknownLink())
 		return uuid.Nil, false
 	}
 	return id, true
@@ -313,7 +313,17 @@ func find[T any](ctx context.Context, s *Server, ask func(context.Context, Agent
 		return out, nil
 	}
 	var zero T
-	return zero, agent.LinkNotFound()
+	return zero, unknownLink()
+}
+
+// unknownLink is the NOT_FOUND answer for a link no agent knows. Should its
+// steps fail to build, the answer is the error itself (INTERNAL).
+func unknownLink() error {
+	te, err := agent.LinkNotFound()
+	if err != nil {
+		return err
+	}
+	return te
 }
 
 func (s *Server) pathID(w http.ResponseWriter, r *http.Request, name string) (uuid.UUID, bool) {

@@ -11,10 +11,10 @@ import (
 // expired or replaced by a newer one. It is the same whichever of those it
 // is (CONTRACT.md, Link secrets), and the person's next step is to ask the
 // agent for a new link.
-func LinkNotFound() *mcp.ToolError {
+func LinkNotFound() (*mcp.ToolError, error) {
 	steps, err := NewSteps().TellAgent("Ask the agent for the link again.").Build()
 	if err != nil {
-		panic(err) // a fixed step: a failure is a build defect
+		return nil, err
 	}
 	return &mcp.ToolError{
 		Code: CodeNotFound, Reason: reasonLink,
@@ -22,7 +22,7 @@ func LinkNotFound() *mcp.ToolError {
 			"ask the agent for the link again",
 		PersonMessage: "This link is incomplete, expired or was replaced by a newer one. Ask the agent for the link again.",
 		NextSteps:     steps,
-	}
+	}, nil
 }
 
 // PageFailure is err as the pages answer it: the contract's error body with

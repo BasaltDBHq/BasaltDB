@@ -37,9 +37,13 @@ type fakeRLS struct {
 	asked  int
 }
 
-func (f *fakeRLS) Hides(_ context.Context, table string) (bool, error) {
+// Hides names a hidden table as the database does: quoted.
+func (f *fakeRLS) Hides(_ context.Context, table string) (string, error) {
 	f.asked++
-	return f.hidden[table], f.err
+	if f.hidden[table] {
+		return `"` + strings.ReplaceAll(table, ".", `"."`) + `"`, f.err
+	}
+	return "", f.err
 }
 
 type fakeUpgrade struct {
@@ -392,8 +396,8 @@ func TestRLSWarningNamesTheTableAndOnlyAppearsOnZeroRows(t *testing.T) {
 
 	warnings := s.rlsWarnings(context.Background(), []string{"public.leads", "public.secrets"}, 0)
 	require.Len(t, warnings, 1)
-	require.Equal(t, "public.secrets", warnings[0].Table)
-	require.Contains(t, warnings[0].PersonMessage, "public.secrets")
+	require.Equal(t, `"public"."secrets"`, warnings[0].Table)
+	require.Contains(t, warnings[0].PersonMessage, `"public"."secrets"`, "the database's name, not the agent's spelling")
 }
 
 func TestRLSCheckFailureGivesNoWarning(t *testing.T) {
@@ -414,24 +418,38 @@ func TestBlindCacheAsksOncePerTableUntilRefreshed(t *testing.T) {
 	cache := NewBlindCache(func(_ context.Context, tables []string) ([]string, error) {
 		asked++
 		if hidden {
-			return tables, nil
+			return []string{"public.leads"}, nil
 		}
 		return nil, nil
 	})
 	for range 3 {
-		got, err := cache.Hides(context.Background(), "public.leads")
+		got, err := cache.Hides(context.Background(), "leads")
 		require.NoError(t, err)
-		require.True(t, got)
+		require.Equal(t, "public.leads", got)
 	}
 	require.Equal(t, 1, asked)
 
 	hidden = false
-	got, err := cache.Hides(context.Background(), "public.leads")
+	got, err := cache.Hides(context.Background(), "leads")
 	require.NoError(t, err)
-	require.True(t, got, "still the cached answer")
+	require.Equal(t, "public.leads", got, "still the cached answer")
 	cache.Refresh()
-	got, err = cache.Hides(context.Background(), "public.leads")
+	got, err = cache.Hides(context.Background(), "leads")
 	require.NoError(t, err)
-	require.False(t, got, "refreshed with the upkeep cycle")
+	require.Empty(t, got, "refreshed with the upkeep cycle")
 	require.Equal(t, 2, asked)
+}
+
+// A refresh between the question and the store must not leave the old answer.
+func TestBlindCacheDropsAnAnswerAskedBeforeARefresh(t *testing.T) {
+	t.Parallel()
+	var cache *BlindCache
+	cache = NewBlindCache(func(context.Context, []string) ([]string, error) {
+		cache.Refresh() // the upkeep cycle runs while the question is out
+		return []string{"public.leads"}, nil
+	})
+	got, err := cache.Hides(context.Background(), "leads")
+	require.NoError(t, err)
+	require.Equal(t, "public.leads", got)
+	require.Empty(t, cache.known, "the stale answer was not stored")
 }

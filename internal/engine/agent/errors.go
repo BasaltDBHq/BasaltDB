@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -37,6 +38,13 @@ const (
 	ReasonRowLimit        = "ROW_LIMIT"
 	sqlStateQueryCanceled = "57014"
 	sqlStateInsufficient  = "42501"
+	sqlStateInvalidSchema = "3F000"
+	sqlStateClassAuth     = "28"
+	guardSchema           = "basalt_meta"
+
+	ReasonStaleCursor  = "STALE_CURSOR"
+	ReasonNoPrimaryKey = "NO_PRIMARY_KEY"
+	ReasonNotAllowed   = "NOT_ALLOWED"
 )
 
 // guardCodes maps the guard's SQLSTATEs (M0 spike, section 2) to contract
@@ -68,6 +76,9 @@ var unavailableClasses = map[string]bool{"08": true, "28": true, "53": true, "57
 // ArgumentError is a tool call whose arguments fail validation.
 type ArgumentError struct {
 	Message string
+	// Reason is the catalog reason: STALE_CURSOR for a cursor that no longer
+	// leads anywhere, else none.
+	Reason string
 }
 
 func (e *ArgumentError) Error() string { return e.Message }
@@ -81,6 +92,7 @@ func ToolError(err error) *mcp.ToolError {
 		re *sqlguard.RefusalError
 		ae *ArgumentError
 		pe *pgconn.PgError
+		se *SetupError
 		ce *pgconn.ConnectError
 	)
 	switch {
@@ -90,16 +102,31 @@ func ToolError(err error) *mcp.ToolError {
 		return &mcp.ToolError{Code: CodeStatementRefused, Reason: string(re.Reason), Message: re.Error()}
 	case errors.Is(err, agentdb.ErrRowLimit):
 		return &mcp.ToolError{Code: CodeQueryTimeout, Reason: ReasonRowLimit, Message: err.Error() + "; add a LIMIT or a narrower WHERE"}
+	case errors.As(err, &se):
+		reason := reasonSetupPending
+		if se.Expired {
+			reason = reasonSetupExpired
+		}
+		return &mcp.ToolError{Code: CodeUnavailable, Reason: reason, Message: se.Error()}
 	case errors.As(err, &ae):
-		return &mcp.ToolError{Code: CodeInvalidArgument, Message: ae.Message}
+		return &mcp.ToolError{Code: CodeInvalidArgument, Reason: ae.Reason, Message: ae.Message}
 	case errors.Is(err, ledger.ErrInvalidParams), errors.Is(err, guard.ErrInvalidIntent):
-		return &mcp.ToolError{Code: CodeInvalidArgument, Message: err.Error()}
+		return &mcp.ToolError{Code: CodeInvalidArgument, Reason: argumentReason(err), Message: err.Error()}
 	case errors.As(err, &pe):
 		return pgToolError(pe)
 	case errors.As(err, &ce), errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
-		return &mcp.ToolError{Code: CodeUnavailable, Message: "the database cannot be reached"}
+		return &mcp.ToolError{Code: CodeUnavailable, Reason: reasonDatabaseUnreachable, Message: "the database cannot be reached"}
 	}
 	return &mcp.ToolError{Code: CodeInternal, Message: "internal engine error"}
+}
+
+// argumentReason is STALE_CURSOR for a list cursor the engine cannot read
+// (kept from an earlier page or another list), else no reason.
+func argumentReason(err error) string {
+	if strings.Contains(err.Error(), "invalid cursor") {
+		return ReasonStaleCursor
+	}
+	return ""
 }
 
 func pgToolError(pe *pgconn.PgError) *mcp.ToolError {
@@ -111,9 +138,13 @@ func pgToolError(pe *pgconn.PgError) *mcp.ToolError {
 			// versions, the missing intent); it names nothing secret.
 			te.Message = pe.Message + ": " + pe.Detail
 		}
+		if pe.Hint != "" {
+			te.Message += " (hint: " + pe.Hint + ")"
+		}
 		if gc, ok := guard.CodeOf(pe); ok && slices.Contains(messageCodes, gc) {
 			te.Code = string(gc)
 		}
+		te.Reason = guardReason(te.Code, pe.Detail)
 		return te
 	}
 	switch {
@@ -121,8 +152,77 @@ func pgToolError(pe *pgconn.PgError) *mcp.ToolError {
 		te.Code, te.Reason = CodeQueryTimeout, ReasonTimeLimit
 	case pe.Code == sqlStateInsufficient:
 		te.Code = CodePermissionDenied
+	case pe.Code == sqlStateInvalidSchema && strings.Contains(pe.Message, guardSchema):
+		te.Code, te.Reason = CodeUnavailable, reasonGuardMissing
 	case len(pe.Code) == len(sqlStateQueryCanceled) && unavailableClasses[pe.Code[:2]]:
-		te.Code = CodeUnavailable
+		te.Code, te.Reason = CodeUnavailable, unavailableReason(pe.Code)
 	}
 	return te
+}
+
+// unavailableReason tells a refused credential (class 28) from a database
+// the engine cannot reach.
+func unavailableReason(sqlState string) string {
+	if strings.HasPrefix(sqlState, sqlStateClassAuth) {
+		return reasonCredentialRejected
+	}
+	return reasonDatabaseUnreachable
+}
+
+// guardReason is the catalog reason of a guard error, told apart by the
+// guard's detail text (BS007, BS005).
+func guardReason(code, detail string) string {
+	switch code {
+	case CodeStatementRefused:
+		if strings.Contains(detail, "has no primary key") {
+			return ReasonNoPrimaryKey
+		}
+		return ReasonNotAllowed
+	case CodeApprovalInvalid:
+		return detailReason(detail, approvalDetails, reasonBadSignature)
+	case CodeRevertInvalid:
+		return detailReason(detail, revertDetails, reasonBadSignature)
+	}
+	return ""
+}
+
+type detailRule struct{ contains, reason string }
+
+// approvalDetails maps the guard's APPROVAL_INVALID details (BS005) to the
+// catalog's reasons, first match wins; any other detail is a signature the
+// guard did not accept.
+var approvalDetails = []detailRule{
+	{"unknown passkey", reasonPasskeyRevoked},
+	{"not approved yet", reasonNotSigned},
+	{"not signed for this agent", reasonNotSigned},
+	{"already used", reasonAlreadyUsed},
+	{"already signed", reasonAlreadyUsed},
+	{"another agent", reasonNotThisAgent},
+	{"no such approval", reasonNotThisAgent},
+	{"another run", reasonDifferentWrite},
+	{"differ from the approval", reasonDifferentWrite},
+	{"rows changed", reasonRowsChanged},
+	{"changes more than", reasonRowsChanged},
+}
+
+// revertDetails is the same for REVERT_INVALID.
+var revertDetails = []detailRule{
+	{"line ", reasonLineInvalid},
+	{"a batch has", reasonLineInvalid},
+	{"the batch names", reasonLineInvalid},
+	{"no such revert", reasonNotThisAgent},
+	{"applied in one call", reasonNotThisAgent},
+	{"not signed this revert", reasonPlanNotSigned},
+	{"already applied", reasonPlanFinished},
+	{"already signed", reasonPlanFinished},
+	{"rows changed", reasonRowsChanged},
+}
+
+func detailReason(detail string, rules []detailRule, fallback string) string {
+	for _, r := range rules {
+		if strings.Contains(detail, r.contains) {
+			return r.reason
+		}
+	}
+	return fallback
 }

@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -16,7 +15,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
-	"github.com/basaltdbhq/basaltdb/pkg/uniqueid"
 )
 
 // StatusApplied is the status of an applied write.
@@ -29,7 +27,7 @@ func Tools(svc *Service) []mcp.Tool {
 	if svc == nil {
 		panic("agent: service required")
 	}
-	h := handlers{svc: svc, log: svc.Log}
+	h := handlers{svc: svc}
 	return []mcp.Tool{
 		contractTool("run_start", h.wrap("run_start", h.runStart)),
 		contractTool("query", h.wrap("query", h.query)),
@@ -56,7 +54,6 @@ func contractTool(name string, call func(context.Context, json.RawMessage) (any,
 
 type handlers struct {
 	svc *Service
-	log *slog.Logger
 }
 
 // wrap maps every error to the contract's error body, logging the ones that
@@ -67,13 +64,21 @@ func (h handlers) wrap(tool string, call func(context.Context, json.RawMessage) 
 		if err == nil {
 			return out, nil
 		}
-		te := ToolError(err)
-		if te.Code == CodeInternal || te.Code == CodeUnavailable {
-			te.ErrorID = uniqueid.New()
-			h.log.Error("tool failed", "tool", tool, "code", te.Code, "error_id", te.ErrorID, "err", err)
-		}
-		return nil, te
+		return nil, h.svc.Failure(tool, callArgs(args), err)
 	}
+}
+
+// callArgs are the arguments of a call, as the engine reads them back into
+// the next steps of its error (a repeated call merges over them). Numbers
+// keep their text; a call whose arguments are not an object has none.
+func callArgs(raw json.RawMessage) map[string]any {
+	var args map[string]any
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	if dec.Decode(&args) != nil {
+		return nil
+	}
+	return args
 }
 
 var validate = validator.New(validator.WithRequiredStructEnabled())

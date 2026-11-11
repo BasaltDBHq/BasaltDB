@@ -207,6 +207,15 @@ func runText(ctx context.Context, tx pgx.Tx, sql string, params []any, limit, ex
 	defer rows.Close()
 
 	fds := rows.FieldDescriptions()
+	if len(fds) < extra {
+		// No row description: the statement failed to plan (a column that
+		// does not exist), and the error shows once the rows are closed.
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, nil, nil, err
+		}
+		return nil, nil, nil, fmt.Errorf("statement returned %d columns, fewer than its %d version columns", len(fds), extra)
+	}
 	visible := len(fds) - extra
 	cols := columns(tx.Conn().TypeMap(), fds[:visible])
 	out := []map[string]any{}

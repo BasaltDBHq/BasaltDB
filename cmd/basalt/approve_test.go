@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
@@ -63,9 +65,9 @@ func initWithPasskey(t *testing.T, d *guardtest.DB, person *passkeytest.Authenti
 	configPath := filepath.Join(t.TempDir(), "engine.json")
 	r := cliRand(t, map[string]string{envAdminURL: d.URL}, registrationCode(t, person, dbName(t, d))+"\n",
 		"init", "--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix,
-		"--config", configPath, "--os-user", "tester", "--yes")
+		"--config", configPath, "--os-user", "tester", "--yes", "--passkey-origin", links.HostedConsole)
 	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Contains(t, r.stderr, "https://basaltvault.app/register/#1.")
+	require.Contains(t, r.stderr, "https://console.basaltvault.app/passkeys/register#1.")
 	require.Contains(t, r.stderr, "passkey registered for basaltvault.app")
 	return filepath.Join(filepath.Dir(configPath), "agents", "bot.url")
 }
@@ -86,7 +88,7 @@ func TestInitRegistersPasskey(t *testing.T) {
 		"init", "--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix,
 		"--config", filepath.Join(t.TempDir(), "engine.json"), "--os-user", "tester", "--yes")
 	require.Equal(t, exitOK, r.code, r.stderr)
-	require.NotContains(t, r.stderr, "/register/")
+	require.NotContains(t, r.stderr, "/passkeys/register")
 }
 
 func TestInitRefusesABadRegistration(t *testing.T) {
@@ -153,10 +155,32 @@ func TestApprove(t *testing.T) {
 	require.Contains(t, r.stderr,
 		"basalt: Delete 1 row in public.leads + 4 cascaded rows (public.lead_notes 2 [values hidden], public.note_tags 2 [values hidden])\n")
 	link := strings.TrimSpace(r.stdout)
-	require.True(t, strings.HasPrefix(link, approval.PageURL+"#1."), link)
+	require.True(t, strings.HasPrefix(link, links.DefaultLocal+"/approvals/"+held.ApprovalID.String()+"#1."), link)
 	req, b, err := approval.ParseRequest(link[strings.Index(link, "#"):])
 	require.NoError(t, err)
 	require.Equal(t, held.ApprovalID, b.ApprovalID)
+
+	// --open opens the same link in the browser and does not print it.
+	h := newFakeHost(t)
+	r = cliHost(t, h, append(append([]string{"approve"}, agentFlags...), "--open", held.ApprovalID.String())...)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Equal(t, []string{link}, h.opened)
+	require.Empty(t, r.stdout)
+	require.Contains(t, r.stderr, "basalt: Delete 1 row in public.leads")
+	require.Contains(t, r.stderr, "opened the link in your browser")
+	require.NotContains(t, r.stderr, "#1.")
+
+	// No browser: the link is printed to copy by hand.
+	h.openErr = errors.New("xdg-open not found")
+	r = cliHost(t, h, append(append([]string{"approve"}, agentFlags...), "--open", held.ApprovalID.String())...)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Equal(t, link, strings.TrimSpace(r.stdout))
+	require.Contains(t, r.stderr, "could not open a browser (xdg-open not found)")
+
+	r = cli(t, nil, "", append(append([]string{"approve"}, agentFlags...), "--open", held.ApprovalID.String(), "--show", held.ApprovalID.String())...)
+	require.Equal(t, exitUsage, r.code, r.stderr)
+	r = cli(t, nil, "", append(append([]string{"approve"}, agentFlags...), "--open", held.ApprovalID.String(), "code")...)
+	require.Equal(t, exitUsage, r.code, r.stderr)
 
 	sign := func(a *passkeytest.Authenticator) string {
 		as, err := a.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)

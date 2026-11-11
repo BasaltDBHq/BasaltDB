@@ -128,7 +128,7 @@ func shellJoin(args []string) string {
 
 // agentInstall is the agent basalt service install places for the engine.
 type agentInstall struct {
-	name, osUser, approvalPage, dsn string
+	name, osUser, pagesURL, dsn string
 }
 
 // agentServiceSpec is the service install spec with the agent's files in
@@ -143,7 +143,7 @@ func agentServiceSpec(goos, bin, configPath, engineUser string, a agentInstall, 
 		return spec, nil
 	}
 	raw, err := config.Upserted(configPath,
-		config.Settings{SocketDir: config.DefaultSocketDir(goos), ApprovalPage: a.approvalPage},
+		config.Settings{SocketDir: config.DefaultSocketDir(goos), PagesURL: a.pagesURL},
 		config.Agent{Name: a.name, OSUser: a.osUser, CredentialFile: cred})
 	if err != nil {
 		return spec, err
@@ -159,7 +159,7 @@ func serviceInstallArgs(f initFlags, bin string) []string {
 	args := []string{bin, "service", "install", "--config", f.configPath, "--user", f.engineUser,
 		"--agent", f.agent, "--os-user", f.osUser}
 	if f.passkeyOrigin != "" {
-		args = append(args, "--approval-page", f.passkeyOrigin+approvePath)
+		args = append(args, "--pages-url", f.passkeyOrigin)
 	}
 	return append(args, "--credential-stdin")
 }
@@ -194,18 +194,10 @@ func elevateInstall(c *cliIO, f initFlags, dsn string) error {
 	}
 	if c.host.Euid() == 0 {
 		return applyServiceInstall(c, bin, f.configPath, f.engineUser,
-			agentInstall{name: f.agent, osUser: f.osUser, approvalPage: approvalPage(f), dsn: dsn}, false)
+			agentInstall{name: f.agent, osUser: f.osUser, pagesURL: f.passkeyOrigin, dsn: dsn}, false)
 	}
 	fmt.Fprintln(c.stderr, "basalt: installing the engine service with sudo:")
 	return c.host.Sudo(c.ctx, serviceInstallArgs(f, bin), dsn+"\n", c.stderr, c.stderr)
-}
-
-// approvalPage is the approval page for a development passkey origin.
-func approvalPage(f initFlags) string {
-	if f.passkeyOrigin == "" {
-		return ""
-	}
-	return f.passkeyOrigin + approvePath
 }
 
 // applyServiceInstall builds and runs (or only prints) the service install

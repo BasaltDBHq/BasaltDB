@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/revert-request.v1.json",
   "title": "Revert request",
-  "description": "What basalt revert puts in the revert link: https://basaltvault.app/revert/#1.<base64url(deflate-raw(this JSON))>. See CONTRACT.md, Revert.",
+  "description": "What basalt revert puts in the revert link, <base>/reverts/<revertId>#1.<base64url(deflate-raw(this JSON))>, and what the engine's local pages serve at GET /api/v1/reverts/{revertId}. See CONTRACT.md, Revert and Page links.",
   "type": "object",
   "additionalProperties": false,
   "required": [

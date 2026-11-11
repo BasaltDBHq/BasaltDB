@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 )
 
 // initFlags are basalt init's flags after parsing.
@@ -235,7 +236,8 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 	fs.BoolVar(&f.noService, "no-service", false, "do not install the engine service; print the foreground command")
 	fs.BoolVar(&f.skipPasskey, "skip-passkey", false, "do not register the passkey that approves held writes now")
 	fs.BoolVar(&f.addPasskey, "add-passkey", false, "register another passkey even if one is registered")
-	fs.StringVar(&f.passkeyOrigin, "passkey-origin", "", "development only: the registration page at http://localhost:<port> (RP ID localhost)")
+	fs.StringVar(&f.passkeyOrigin, "passkey-origin", links.DefaultLocal,
+		"pages origin the passkey belongs to: the engine's local pages http://localhost:<port> (RP ID localhost), or "+links.HostedConsole+" (RP ID basaltvault.app)")
 	fs.StringVar(&f.passkeyLabel, "passkey-label", "", "name of the passkey in the picker (default: the database name)")
 	f.agentRLS = AgentRLSAsk
 	fs.Var(&f.agentRLS, "agent-rls",
@@ -329,9 +331,7 @@ func engineSettings(f initFlags, goos string) config.Settings {
 	if f.configPath != config.DefaultPath(goos) {
 		s.StateDir = filepath.Join(filepath.Dir(f.configPath), stateDirName)
 	}
-	if f.passkeyOrigin != "" {
-		s.ApprovalPage = f.passkeyOrigin + approvePath
-	}
+	s.PagesURL = f.passkeyOrigin
 	return s
 }
 

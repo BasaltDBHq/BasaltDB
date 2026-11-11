@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
@@ -228,11 +229,13 @@ func TestParseLineRefuses(t *testing.T) {
 func TestRequestRoundTrip(t *testing.T) {
 	t.Parallel()
 	f := buildFixtures(t)
-	url, err := revert.Request{RevertID: revertID, Binding: f.Request.Binding, Lines: f.Request.Lines}.URL(revert.PageURL)
+	url, err := revert.Request{RevertID: revertID, Binding: f.Request.Binding, Lines: f.Request.Lines}.URL(links.DefaultLocal)
 	require.NoError(t, err)
-	require.True(t, strings.HasPrefix(url, "https://basaltvault.app/revert/#1."))
+	require.True(t, strings.HasPrefix(url, "http://localhost:8787/reverts/"+revertID.String()+"#1."), url)
 
-	req, b, err := revert.ParseRequest(strings.TrimPrefix(url, revert.PageURL))
+	_, frag, ok := strings.Cut(url, "#")
+	require.True(t, ok)
+	req, b, err := revert.ParseRequest(frag)
 	require.NoError(t, err)
 	require.Equal(t, f.Request.Lines, req.Lines)
 	require.Equal(t, revertID, b.RevertID)

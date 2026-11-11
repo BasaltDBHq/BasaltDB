@@ -123,19 +123,21 @@ type revertPlanArgs struct {
 }
 
 type revertPlanResult struct {
-	RevertID   string              `json:"revertId"`
-	Status     string              `json:"status"`
-	Scope      string              `json:"scope"`
-	ScopeID    string              `json:"scopeId"`
-	Lines      int                 `json:"lines"`
-	Restored   int                 `json:"restored"`
-	Skipped    int                 `json:"skipped"`
-	Pending    int                 `json:"pending"`
-	ExpiresAt  string              `json:"expiresAt"`
-	ApplyBy    string              `json:"applyBy,omitempty"`
-	MaxBatch   int                 `json:"maxBatch"`
-	Items      []revertPlanItemDTO `json:"items"`
-	NextCursor string              `json:"nextCursor,omitempty"`
+	RevertID      string              `json:"revertId"`
+	Status        string              `json:"status"`
+	Scope         string              `json:"scope"`
+	ScopeID       string              `json:"scopeId"`
+	Lines         int                 `json:"lines"`
+	Restored      int                 `json:"restored"`
+	Skipped       int                 `json:"skipped"`
+	Pending       int                 `json:"pending"`
+	ExpiresAt     string              `json:"expiresAt"`
+	ApplyBy       string              `json:"applyBy,omitempty"`
+	MaxBatch      int                 `json:"maxBatch"`
+	RevertURL     string              `json:"revertUrl,omitempty"`
+	PersonMessage string              `json:"personMessage,omitempty"`
+	Items         []revertPlanItemDTO `json:"items"`
+	NextCursor    string              `json:"nextCursor,omitempty"`
 }
 
 // revertPlanItemDTO is one line of a batched plan: its number, what
@@ -156,6 +158,7 @@ func revertPlanFromDomain(p RevertPlan) revertPlanResult {
 		Lines: r.Rows + r.Skipped, Restored: r.Progress.Restored, Skipped: r.Progress.Skipped, Pending: r.Progress.Pending,
 		ExpiresAt: timeText(r.ExpiresAt), MaxBatch: revert.MaxBatch,
 		Items: make([]revertPlanItemDTO, 0, len(p.Page.Items)), NextCursor: p.Page.NextCursor,
+		RevertURL: p.RevertURL, PersonMessage: p.PersonMessage,
 	}
 	if r.ApplyBy != nil {
 		out.ApplyBy = timeText(*r.ApplyBy)

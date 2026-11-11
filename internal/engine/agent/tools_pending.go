@@ -32,13 +32,17 @@ type pendingDTO struct {
 	CreatedAt       string          `json:"createdAt"`
 	ExpiresAt       string          `json:"expiresAt"`
 	ApprovalURL     string          `json:"approvalUrl"`
+	ApproveCommand  string          `json:"approveCommand"`
+	Headline        string          `json:"headline"`
+	PersonMessage   string          `json:"personMessage"`
 }
 
 func pendingFromDomain(p PendingItem) pendingDTO {
 	d := pendingDTO{
 		ApprovalID: p.ID.String(), RunID: p.RunID.String(), Intent: p.Intent, Statement: p.Statement,
 		Params: p.Params, AssignedColumns: p.Assigned, Rows: p.Rows, Status: p.Status,
-		CreatedAt: timeText(p.CreatedAt), ExpiresAt: timeText(p.ExpiresAt), ApprovalURL: p.ApprovalURL,
+		CreatedAt: timeText(p.CreatedAt), ExpiresAt: timeText(p.ExpiresAt), ApprovalURL: p.Notice.ApprovalURL, ApproveCommand: p.Notice.ApproveCommand,
+		Headline: p.Notice.Headline, PersonMessage: p.Notice.PersonMessage,
 	}
 	if p.TaskID.Valid {
 		d.TaskID = p.TaskID.UUID.String()

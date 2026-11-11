@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
@@ -28,8 +29,10 @@ type revertFlags struct {
 	intent            string
 	apply             string
 	status            string
-	page              string
+	pagesURL          string
+	local             string // origin of the engine's local pages, "" when not served
 	dryRun, asJSON    bool
+	open              bool
 }
 
 // prepareTimeout replaces the agent role's statement timeout while
@@ -50,7 +53,8 @@ func runRevert(c *cliIO, args []string) int {
 	fs.StringVar(&f.intent, "intent", "", "why you revert (recorded); default \"Revert <scope> <id>\"")
 	fs.StringVar(&f.apply, "apply", "", "apply a prepared revert with the code the revert page gave you")
 	fs.StringVar(&f.status, "status", "", "show a revert's progress (a large revert is applied by the agent in batches)")
-	fs.StringVar(&f.page, "page", revert.PageURL, "revert page")
+	fs.StringVar(&f.pagesURL, "pages-url", "", "pages base URL (default: the engine config's pagesUrl, else "+links.DefaultLocal+")")
+	fs.BoolVar(&f.open, "open", false, "open the revert link in your browser instead of printing it")
 	fs.BoolVar(&f.dryRun, "dry-run", false, "only show what the revert would do")
 	fs.BoolVar(&f.asJSON, "json", false, "print the lines and the result as JSON")
 	agent := fs.String("agent", "", "use this agent's credential from the engine config")
@@ -72,6 +76,10 @@ func runRevert(c *cliIO, args []string) int {
 		return c.fail(err)
 	}
 	defer conn.Close(c.ctx)
+	if scope.ID != uuid.Nil && !f.dryRun {
+		f.local = localPages(c, f.pagesURL, *agent, *configPath)
+	}
+	f.pagesURL = configuredBase(f.pagesURL, *agent, *configPath)
 
 	switch {
 	case f.status != "":
@@ -101,10 +109,13 @@ func (f revertFlags) scope() (guard.RevertScope, error) {
 		named = append(named, guard.RevertScope{Kind: s.kind, ID: id})
 	}
 	if f.apply != "" || f.status != "" {
-		if len(named) > 0 || f.dryRun || (f.apply != "" && f.status != "") {
+		if len(named) > 0 || f.dryRun || f.open || (f.apply != "" && f.status != "") {
 			return guard.RevertScope{}, fmt.Errorf("%w: --apply takes only the code, --status only the revert id", errUsage)
 		}
 		return guard.RevertScope{}, nil
+	}
+	if f.open && f.dryRun {
+		return guard.RevertScope{}, fmt.Errorf("%w: --dry-run makes no link to open", errUsage)
 	}
 	if len(named) != 1 {
 		return guard.RevertScope{}, fmt.Errorf("%w: give exactly one of --change, --run, --task", errUsage)
@@ -157,13 +168,25 @@ func prepareRevert(c *cliIO, conn *pgx.Conn, scope guard.RevertScope, f revertFl
 	for _, k := range keys {
 		ids = append(ids, k.ID)
 	}
-	link, err := revert.Request{RevertID: prep.RevertID, Binding: prep.BindingText, Lines: prep.Lines, CredentialIDs: ids}.URL(f.page)
+	link, err := revert.Request{RevertID: prep.RevertID, Binding: prep.BindingText, Lines: prep.Lines, CredentialIDs: ids}.URL(f.pagesURL)
 	if err != nil {
 		return c.fail(err)
 	}
-	fmt.Fprintf(c.stderr, "basalt: revert %s expires %s. Open this link on a device with your passkey, check the rows, and sign:\n",
-		prep.RevertID, prep.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC"))
-	fmt.Fprintln(c.stderr, link)
+	pages := linkPages{base: f.pagesURL, local: f.local}
+	link = pages.short(links.Revert, prep.RevertID, link)
+	expires := prep.ExpiresAt.UTC().Format(timeLayout)
+	switch {
+	case f.open:
+		fmt.Fprintf(c.stderr, "basalt: revert %s expires %s. Check the rows on the revert page and sign with your passkey.\n", prep.RevertID, expires)
+		openLink(c, link, c.stderr)
+	default:
+		fmt.Fprintf(c.stderr, "basalt: revert %s expires %s. Open this link on a device with your passkey, check the rows, and sign:\n",
+			prep.RevertID, expires)
+		fmt.Fprintln(c.stderr, link)
+	}
+	if f.local != "" {
+		return awaitRevert(c, conn, prep.RevertID, f.asJSON)
+	}
 	fmt.Fprint(c.stderr, "Paste the code the revert page showed: ")
 	code, err := c.line()
 	if err != nil || code == "" {
@@ -185,17 +208,69 @@ func applyRevertCode(c *cliIO, conn *pgx.Conn, code string, asJSON bool) int {
 	if err != nil {
 		return c.fail(fmt.Errorf("the database refused the revert: %s", pgDetail(err)))
 	}
+	return printApplied(c, resp.RevertID, out, asJSON)
+}
+
+// printApplied says what an applied revert did. A revert the page relayed
+// has no change id here; basalt log shows it.
+func printApplied(c *cliIO, id uuid.UUID, out guard.AppliedRevert, asJSON bool) int {
 	if asJSON {
 		return printJSONValue(c, out)
 	}
 	if out.Batched {
 		fmt.Fprintf(c.stderr, "basalt: signed. Your agent restores the %d remaining rows in batches of up to %d (MCP apply_revert_batch) before %s; %d rows are left as they are.\n",
 			out.Pending, revert.MaxBatch, out.ApplyBy.UTC().Format(timeLayout), out.Skipped)
-		fmt.Fprintf(c.stderr, "basalt: follow it with: basalt revert --status %s\n", resp.RevertID)
+		fmt.Fprintf(c.stderr, "basalt: follow it with: basalt revert --status %s\n", id)
 		return exitOK
 	}
-	fmt.Fprintf(c.stderr, "basalt: reverted: %d rows restored, %d left as they are (change %s)\n", out.Rows, out.Skipped, out.ChangeID)
+	change := ""
+	if out.ChangeID != uuid.Nil {
+		change = fmt.Sprintf(" (change %s)", out.ChangeID)
+	}
+	fmt.Fprintf(c.stderr, "basalt: reverted: %d rows restored, %d left as they are%s\n", out.Rows, out.Skipped, change)
 	return exitOK
+}
+
+// revertPoll is how often basalt revert checks whether the page's relay
+// applied the revert.
+const revertPoll = time.Second
+
+// awaitRevert waits for the revert to be signed on the engine's local page,
+// which relays it, while still taking a pasted code (CONTRACT.md, CLI). It
+// ends when the revert is applied or signed, or when it expires.
+func awaitRevert(c *cliIO, conn *pgx.Conn, id uuid.UUID, asJSON bool) int {
+	fmt.Fprintln(c.stderr, "basalt: waiting for your signature on the revert page (or paste the code it shows here)...")
+	codes := make(chan string, 1)
+	go func() {
+		// A closed or empty stdin just leaves the page to finish it.
+		if code, err := c.line(); err == nil && code != "" {
+			codes <- code
+		}
+	}()
+	tick := time.NewTicker(revertPoll)
+	defer tick.Stop()
+	for {
+		select {
+		case code := <-codes:
+			return applyRevertCode(c, conn, code, asJSON)
+		case <-c.ctx.Done():
+			return c.fail(c.ctx.Err())
+		case <-tick.C:
+		}
+		r, err := ledger.FindRevert(c.ctx, conn, id)
+		if err != nil {
+			return c.fail(err)
+		}
+		switch {
+		case r.Status == ledger.RevertExpired || (r.Status == ledger.RevertPending && !c.now().Before(r.ExpiresAt)):
+			return c.fail(errors.New("the revert expired unsigned; nothing was reverted. Run basalt revert again"))
+		case r.Status == ledger.RevertPending:
+			continue
+		}
+		return printApplied(c, id, guard.AppliedRevert{
+			Rows: r.Rows, Skipped: r.Skipped, Batched: r.Batched, Pending: r.Progress.Pending, ApplyBy: r.ApplyBy,
+		}, asJSON)
+	}
 }
 
 // timeLayout is how the CLI prints a deadline.

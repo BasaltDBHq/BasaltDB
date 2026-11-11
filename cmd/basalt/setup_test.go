@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -29,6 +30,10 @@ type fakeHost struct {
 	sudoIn    []string
 	probed    []string
 	ran       [][]string
+	// claudeHas lists the servers claude mcp get finds; get calls are
+	// recorded in got, not ran.
+	claudeHas []string
+	got       [][]string
 	opened    []string
 	openErr   error
 	pagesUp   bool
@@ -65,9 +70,19 @@ func (h *fakeHost) Sudo(_ context.Context, args []string, stdin string, _, _ io.
 }
 
 func (h *fakeHost) Run(_ context.Context, args []string, _, _ io.Writer) error {
+	if len(args) == claudeGetArgs && args[1] == "mcp" && args[2] == "get" {
+		h.got = append(h.got, args)
+		if slices.Contains(h.claudeHas, args[3]) {
+			return nil
+		}
+		return errors.New("no MCP server found")
+	}
 	h.ran = append(h.ran, args)
 	return nil
 }
+
+// claudeGetArgs is the length of claude mcp get <name>.
+const claudeGetArgs = 4
 
 func (h *fakeHost) OpenURL(_ context.Context, link string) error {
 	h.opened = append(h.opened, link)
@@ -207,6 +222,22 @@ func TestInitDeclinedServiceRunsInTheForeground(t *testing.T) {
 	require.Contains(t, r.stderr, "next, start the engine; it runs in the foreground as you")
 	require.Contains(t, r.stderr, "basalt engine --config "+shellQuote(filepath.Join(dir, "engine.json")))
 	require.NotContains(t, r.stderr, "sudo")
+}
+
+func TestInitSkipsClaudeWhenItHasTheServer(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	h := newFakeHost(t)
+	h.claude = "/usr/local/bin/claude"
+	h.claudeHas = []string{"basalt-bot"}
+	// Answers: run the SQL, no service. Claude Code is not asked about.
+	r := initRun(t, d, h, "linux", true, "y\nn\n")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Equal(t, [][]string{{"/usr/local/bin/claude", "mcp", "get", "basalt-bot"}}, h.got)
+	require.Empty(t, h.ran, "claude mcp add does not run for a server Claude Code has")
+	require.Contains(t, r.stderr, "basalt: Claude Code already has basalt-bot\n")
+	require.NotContains(t, r.stderr, "Add it to Claude Code now")
+	require.NotContains(t, r.stderr, "claude mcp add failed")
 }
 
 func TestInitWithoutATerminalNeverAsks(t *testing.T) {

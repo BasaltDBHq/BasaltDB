@@ -12,7 +12,7 @@ Held for your approval: Update 27 rows in basalt_demo.leads. Approve: http://loc
 
 1. Open the link. The engine serves the approval page itself and the page lists every row with its old and new values. Cascaded rows are marked, and you have to confirm them separately.
 2. Approve with your passkey. The page sends the signature to the engine, which hands it to Postgres. The page then says "Approved. The agent will continue."
-3. The agent has already repeated the write with `approvalId`. That call waits up to 90 seconds for your signature and returns `APPLIED` as soon as you sign. You do not have to tell it that you approved.
+3. The agent has already repeated the write with `approvalId`. That call waits up to 90 seconds for your signature and returns `APPLIED` as soon as you sign, so you do not have to tell it that you approved. If you take longer, the agent does not wait again: it ends its turn saying the write waits for your approval. Approve when you are ready, then tell the agent; its next write with `approvalId` applies at once.
 
 Each short link carries a secret after `#s=`: the id alone opens nothing, and the secret never reaches a server log because browsers do not send the fragment. One link is live per held write, and links survive an engine restart: the engine keeps the secrets' hashes in its state directory (`<stateDir>/<agent>.links.json`, mode `0600`). If the agent lost the link, it calls `list_pending` with `reissueLink: true`, which issues a new link and turns the old one off; a plain `list_pending` touches no link. From the terminal, `basalt approve --open <id> --reissue` does the same. To refuse a write, close the page: the write stays blocked and expires after 24 hours.
 
@@ -30,10 +30,10 @@ Add `--config PATH` when the engine runs from a non-default config. The commands
 
 ## Where the pages come from
 
-Every link is built from one base URL, `pagesUrl` in `engine.json`. `basalt init --passkey-origin` sets it, and the default is the engine's local pages at `http://localhost:8787`, which stays the default until the hosted console (`https://console.basaltvault.app`) is live. The paths are the same on both: `/approvals/<id>`, `/reverts/<id>` and `/passkeys/register`. When the base is local, the engine serves the approval, revert and registration pages on `127.0.0.1:<port>` and logs `serving approval pages`. The page files are built into the binary, so `make serve-web` is only needed when you are working on the pages themselves.
+Every link is built from one base URL, `pagesUrl` in `engine.json`. `basalt init --passkey-origin` sets it, and the default is the engine's local pages at `http://localhost:8787`, which stays the default until the hosted console (`https://console.basaltvault.app`) is live. The paths are the same on both: `/approvals/<id>`, `/reverts/<id>` and `/passkeys/register`. When the base is local, the engine serves the approval, revert and registration pages on `127.0.0.1:<port>` and logs `serving approval pages`. The page files are built into the binary: after editing anything under `web/`, rebuild (`make build`) and restart the engine to see it.
 
 - `"pagesAddr": "off"` in `engine.json` turns the pages off. Any address that is not a loopback IP is refused.
-- If the port is taken (for example, `make serve-web` is still running on it), the engine logs `approval pages not served` and held writes carry the long link. Stop the other server and restart the engine.
+- If the port is taken (an old `make serve-web` from an earlier checkout, or a second engine), the engine refuses to start and names the address. `lsof -nP -iTCP:8787 -sTCP:LISTEN` shows what holds it; stop that process and start the engine again.
 - With the hosted console as the base (`https://console.basaltvault.app`, not live yet), the engine serves no pages, and held writes carry the long link (`/approvals/<id>#1....`) that holds the whole preview. Open that link with `basalt approve --open` rather than copying it, because terminals and chats can cut it short. The page says so when it gets a truncated link.
 
 Telegram always sends the long link. The short link only works on the machine where the engine runs.
@@ -67,4 +67,4 @@ Then open the short link (`http://localhost:8787/approvals/<id>#s=<secret>`) in 
 - The port has to match on both ends. A tunnel from local port 9000 gives the page the origin `http://localhost:9000`, and the engine refuses the signature relay from it (`403`).
 - Register the passkey through the same tunnel. Keep it open while `basalt init` waits for the code, since init serves the registration page on the server's port in the same way.
 - `basalt approve --show <id>` on the server prints the short link to open on your side.
-- Without a tunnel, use the long link (`basalt approve --show <id> --pages-url http://localhost:8787`), served by `make serve-web` on your computer. Paste the code it shows into `basalt approve` on the server.
+- Without a tunnel there is no page to open on your computer until the hosted console is live, so keep the tunnel open while you approve.

@@ -126,7 +126,8 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 	command := "basalt approve --agent bot --config /etc/basalt-test/engine.json --open " + approvalID
 	require.Equal(t, command, ap["approveCommand"])
 	require.Contains(t, str(t, body["message"]), "Show the person approval.personMessage verbatim")
-	require.Contains(t, str(t, body["message"]), "call write again with the same arguments plus approvalId")
+	require.Contains(t, str(t, body["message"]), "without ending your turn, call write once with the same arguments plus approvalId")
+	require.Contains(t, str(t, body["message"]), "do not wait again")
 	require.Equal(t, "Update 15 rows in public.leads", ap["headline"])
 	require.True(t, strings.HasPrefix(str(t, ap["personMessage"]),
 		"Held for your approval: Update 15 rows in public.leads. Approve by running: "+command+" (it opens the approval page). Expires "),
@@ -164,6 +165,14 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 	body, isError = h.call(t, "write", withApproval(map[string]any{"waitForApproval": 0}))
 	requireToolError(t, body, isError, "APPROVAL_INVALID", "", "")
 	require.Contains(t, body["message"], "not approved yet")
+
+	// A wait that runs out tells the agent to end its turn, not to wait again.
+	body, isError = h.call(t, "write", withApproval(map[string]any{"waitForApproval": 1}))
+	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
+	require.Contains(t, str(t, body["message"]), "Do not call write to wait again. End your turn")
+	require.Contains(t, str(t, body["message"]), "apply it when they tell you they approved")
+	require.Equal(t, approvalID, approvalOf(t, body)["approvalId"])
+	require.Equal(t, "open", leadStatus(t, d, 21), "nothing applied")
 
 	forger, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)

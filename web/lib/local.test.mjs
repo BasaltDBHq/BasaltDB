@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { approvalResponseJSON, b64urlDecode, checkApprovalRequest, parseApprovalRequest } from "./codec.js";
-import { RelayError, SECRET_HEADER, fetchRequest, isLongLink, linkSecret, postResponse, relayPaths, revertDone, shortLinkId } from "./local.js";
+import { REQUEST_ATTEMPTS, REQUEST_RETRY_MS, RelayError, SECRET_HEADER, fetchRequest, isLongLink, linkSecret, postResponse, relayPaths, revertDone, shortLinkId } from "./local.js";
 import { linkFailure, APPROVE_REOPEN } from "./page.js";
 
 const fixtures = JSON.parse(
@@ -92,10 +92,50 @@ test("engine errors come back with their code and message", async () => {
   assert.equal(unknown.code, "NOT_FOUND");
   assert.match(linkFailure(unknown, "approval", APPROVE_REOPEN), /^This approval link is incomplete, was replaced by a newer one/);
 
-  const down = await fetchRequest(async () => {
-    throw new TypeError("fetch failed");
-  }, "/x", "").catch((e) => e);
+  const waited = [];
+  let calls = 0;
+  const down = await fetchRequest(
+    async () => {
+      calls++;
+      throw new TypeError("fetch failed");
+    },
+    "/x",
+    "",
+    async (ms) => waited.push(ms),
+  ).catch((e) => e);
   assert.match(down.message, /cannot reach the BasaltDB engine/);
+  assert.equal(calls, REQUEST_ATTEMPTS, "it tries again before giving up");
+  assert.deepEqual(waited, Array(REQUEST_ATTEMPTS - 1).fill(REQUEST_RETRY_MS));
+  assert.ok((REQUEST_ATTEMPTS - 1) * REQUEST_RETRY_MS <= 5000, "about 5 seconds at most");
+});
+
+test("reading the request waits out an engine restart", async () => {
+  const { fetchFn } = fakeEngine({
+    [`GET /api/v1/approvals/${id}`]: { status: 410, body: { code: "APPROVAL_EXPIRED", message: "this approval expired" } },
+  });
+  let calls = 0;
+  const restarting = async (...args) => {
+    calls++;
+    if (calls < 3) {
+      throw new TypeError("fetch failed");
+    }
+    return fetchFn(...args);
+  };
+  const waited = [];
+  const err = await fetchRequest(restarting, `/api/v1/approvals/${id}`, "s3cr3t", async (ms) => waited.push(ms)).catch((e) => e);
+  assert.equal(calls, 3);
+  assert.equal(waited.length, 2);
+  assert.equal(err.code, "APPROVAL_EXPIRED", "an engine answer is not retried");
+});
+
+test("the relay is never retried", async () => {
+  let calls = 0;
+  const err = await postResponse(async () => {
+    calls++;
+    throw new TypeError("fetch failed");
+  }, "/x", "", "{}").catch((e) => e);
+  assert.match(err.message, /cannot reach the BasaltDB engine/);
+  assert.equal(calls, 1);
 });
 
 test("a relayed revert says what it did", () => {

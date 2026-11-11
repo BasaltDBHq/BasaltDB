@@ -23,6 +23,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/pages"
 	"github.com/basaltdbhq/basaltdb/internal/engine/upkeep"
+	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/notify/telegram"
@@ -31,6 +32,8 @@ import (
 )
 
 const lockFileName = "engine.lock"
+
+var errNoAgent = errors.New("no agent to serve: every configured agent was refused (see the errors above)")
 
 // instructions is the MCP initialize instruction text every agent sees.
 const instructions = "BasaltDB records every action you take on this database. " +
@@ -64,8 +67,16 @@ func Run(ctx context.Context, cfg config.Config, configArg string, log *slog.Log
 			c()
 		}
 	}()
-	site := listenPages(cfg, log)
-	if site != nil {
+	pagesCfg, err := cfg.Pages()
+	if err != nil {
+		return err
+	}
+	var site *pagesSite
+	if pagesCfg.Addr != "" {
+		site, err = listenPages(pagesCfg, log)
+		if err != nil {
+			return err
+		}
 		closers = append(closers, func() { _ = site.ln.Close() })
 	}
 	base, err := cfg.PagesBase()
@@ -82,6 +93,13 @@ func Run(ctx context.Context, cfg config.Config, configArg string, log *slog.Log
 			return fmt.Errorf("agent %s: %w", a.Name, err)
 		}
 		rt, err := newAgentRuntime(ctx, env, a, log.With("agent", a.Name))
+		var stale *guard.StaleSchemaError
+		if errors.As(err, &stale) {
+			// Refuse this agent only: its guard would fail mid-call on
+			// objects this build reads.
+			log.Error(stale.Error(), "agent", a.Name)
+			continue
+		}
 		if err != nil {
 			return fmt.Errorf("agent %s: %w", a.Name, err)
 		}
@@ -96,6 +114,10 @@ func Run(ctx context.Context, cfg config.Config, configArg string, log *slog.Log
 			SocketPath: cfg.SocketPath(a.Name),
 			Server:     mcp.NewServer(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: instructions}, agent.Tools(rt.svc)...),
 		})
+	}
+
+	if len(agents) == 0 {
+		return errNoAgent
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -125,26 +147,29 @@ const pagesHeaderTimeout = 10 * time.Second
 // listenPages binds the local pages. Off, or an address it cannot bind (a
 // page server still on the port): no pages, logged, and held writes carry
 // the long link.
-func listenPages(cfg config.Config, log *slog.Logger) *pagesSite {
-	p, err := cfg.Pages()
-	if err != nil {
-		log.Error("approval pages not served", "err", err)
-		return nil
-	}
-	if p.Addr == "" {
-		return nil
-	}
+// listenPages binds the approval pages. A port it cannot bind stops the
+// engine: without the pages, held writes would carry only the long link,
+// which chat clients truncate. Run skips it when pagesAddr is "off".
+func listenPages(p config.Pages, log *slog.Logger) (*pagesSite, error) {
 	srv := pages.New(p.Origin, log.With("component", "pages"))
 	ln, h, err := server.Listen(server.Options{}, "approval pages", p.Addr, srv.Handler())
 	if err != nil {
-		log.Error("approval pages not served; held writes carry the long link", "addr", p.Addr, "err", err)
-		return nil
+		return nil, pagesPortError(p.Addr, err)
 	}
 	log.Info("serving approval pages", "addr", ln.Addr().String(), "origin", p.Origin)
-	return &pagesSite{pages: srv, ln: ln, handler: h, origin: p.Origin}
+	return &pagesSite{pages: srv, ln: ln, handler: h, origin: p.Origin}, nil
 }
 
-// serve answers page requests until ctx is done.
+func pagesPortError(addr string, err error) error {
+	port := addr
+	if _, p, splitErr := net.SplitHostPort(addr); splitErr == nil {
+		port = p
+	}
+	return fmt.Errorf("%w: another process holds %s (an old `make serve-web`, or another engine): "+
+		"find it with `lsof -nP -iTCP:%s -sTCP:LISTEN`, stop it and start the engine again "+
+		`(or set "pagesAddr": "off" in engine.json to run without the pages)`, err, addr, port)
+}
+
 func (s *pagesSite) serve(ctx context.Context, log *slog.Logger) {
 	hs := &http.Server{Handler: s.handler, ReadHeaderTimeout: pagesHeaderTimeout}
 	go func() {
@@ -198,6 +223,10 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	}
 	pool, err := agentdb.NewPool(ctx, url, agentPoolConns)
 	if err != nil {
+		return agentRuntime{}, err
+	}
+	if err := guard.CheckAgentVersion(ctx, pool); err != nil {
+		pool.Close()
 		return agentRuntime{}, err
 	}
 	store := agentdb.NewStore(pool, limits, time.Now)

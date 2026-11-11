@@ -277,15 +277,29 @@ func TestInitAsRootInstallsInProcess(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	h := newFakeHost(t)
 	h.euid = 0
-	r := initRun(t, d, h, "linux", false, "", "--yes")
+	r := initRun(t, d, h, "linux", false, "", "--yes", "--person-uid", "4242")
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Empty(t, h.sudo, "already root")
+	require.Contains(t, h.sys.written["/etc/basalt/engine.json"], `"mode": "SERVICE"`)
+	require.Contains(t, h.sys.written["/etc/basalt/engine.json"], "4242")
 	require.Contains(t, h.sys.ran, "chown basalt:basalt /etc/basalt/agents/bot.url")
 	require.Contains(t, h.sys.ran, "systemctl enable --now basalt-engine.service")
 	require.Contains(t, h.sys.written["/etc/basalt/agents/bot.url"], d.Names.Prefix+"_agent_bot:")
 	require.Equal(t, os.FileMode(config.FileMode), h.sys.modes["/etc/basalt/agents/bot.url"])
 	require.Contains(t, h.sys.written["/etc/basalt/engine.json"], `"socketDir": "/run/basalt"`)
 	require.NotContains(t, r.stderr, "postgres://", "the credential is never printed")
+}
+
+func TestInitAsRootWithoutAPersonInstallsNoService(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	h := newFakeHost(t)
+	h.euid = 0
+	// A root login without SUDO_UID names the person, or no service.
+	r := initRun(t, d, h, "linux", false, "", "--yes")
+	require.Equal(t, exitError, r.code)
+	require.Contains(t, r.stderr, "give --person-uid N")
+	require.Empty(t, h.sys.ran, "nothing installed without a person")
 }
 
 func TestInitSudoFailureSaysWhatIsInstalled(t *testing.T) {

@@ -49,7 +49,16 @@ func TestRequestRevertPrepareTimeLimit(t *testing.T) {
 	require.Equal(t, CodeQueryTimeout, te.Code)
 	require.Equal(t, ReasonTimeLimit, te.Reason)
 	require.Contains(t, te.Message, "nothing was prepared")
-	require.Contains(t, te.Message, "basalt revert --agent bot --config /etc/basalt/engine.json --run "+run.String()+" --open")
+	command := "basalt revert --agent bot --config /etc/basalt/engine.json --run " + run.String() + " --open"
+	require.Contains(t, te.Message, command)
+	require.Contains(t, te.PersonMessage, command)
+	kinds := make([]string, 0, len(te.NextSteps))
+	for _, s := range te.NextSteps {
+		kinds = append(kinds, s.Actor+" "+s.Action)
+	}
+	require.Equal(t, []string{"AGENT STOP", "PERSON RUN_COMMAND", "PERSON TELL_AGENT", "AGENT END_TURN"}, kinds,
+		"api/mcp/errors/next-steps.json, QUERY_TIMEOUT TIME_LIMIT request_revert")
+	require.Equal(t, command, te.NextSteps[1].Command)
 
 	// A call the client canceled is not the time limit.
 	ctx, cancel := context.WithCancel(context.Background())

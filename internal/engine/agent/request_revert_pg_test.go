@@ -52,9 +52,11 @@ func TestRequestRevertOfARunWithTheLocalPages(t *testing.T) {
 	require.EqualValues(t, "2", body["rows"])
 	require.EqualValues(t, "1", body["skipped"])
 	require.NotEmpty(t, body["expiresAt"])
-	require.Contains(t, str(t, body["nextStep"]), "without ending your turn, call request_revert once with only revertId")
-	require.Contains(t, str(t, body["nextStep"]), "do not wait again")
 	link := str(t, body["revertUrl"])
+	steps := requireResultSteps(t, body, "REQUESTED")
+	require.Equal(t, link, steps[0]["url"])
+	require.Equal(t, "request_revert", steps[1]["tool"])
+	require.Equal(t, map[string]any{"revertId": id, "waitForSignature": json.Number("90")}, steps[1]["arguments"])
 	secret := links.SecretOf(link)
 	require.Len(t, secret, 22, "a 128-bit secret")
 	require.Equal(t, pageOrigin+"/reverts/"+id+"#s="+secret, link)
@@ -138,7 +140,12 @@ func TestRequestRevertOfAnotherAgentsWorkIsNotFound(t *testing.T) {
 		{"changeId": uuid.Must(uuid.NewV7()).String(), "intent": "Undo"},
 	} {
 		body, isError := env.h.call(t, "request_revert", args)
-		requireToolError(t, body, isError, "NOT_FOUND", "", "")
+		reason := "RUN"
+		if _, ok := args["changeId"]; ok {
+			reason = "CHANGE"
+		}
+		steps := requireErrorSteps(t, body, isError, "NOT_FOUND", reason)
+		require.Equal(t, "list_runs", steps[0]["tool"])
 		require.Contains(t, str(t, body["message"]), "ask that agent", "%v", body)
 	}
 	var n int
@@ -154,9 +161,19 @@ func TestRequestRevertNothingToRevert(t *testing.T) {
 	env.d.Exec(t, `UPDATE public.leads SET status = 'person' WHERE id = 77`)
 
 	body, isError := env.h.call(t, "request_revert", map[string]any{"runId": runID, "intent": "Undo"})
-	requireToolError(t, body, isError, "NOTHING_TO_REVERT", "", "")
+	requireErrorSteps(t, body, isError, "NOTHING_TO_REVERT", "ALL_CHANGED_BY_PEOPLE")
 	require.Contains(t, str(t, body["message"]), "nothing was prepared")
 	require.Contains(t, str(t, body["message"]), "preview_revert")
+	require.Contains(t, str(t, body["personMessage"]), "people win")
+
+	// A run that only read has nothing to revert either.
+	run, isError := env.h.call(t, "run_start", map[string]any{"intent": "Look only"})
+	require.False(t, isError, "%v", run)
+	read, isError := env.h.call(t, "query", map[string]any{"sql": "SELECT id FROM leads WHERE id = 77", "runId": run["runId"]})
+	require.False(t, isError, "%v", read)
+	body, isError = env.h.call(t, "request_revert", map[string]any{"runId": run["runId"], "intent": "Undo"})
+	requireErrorSteps(t, body, isError, "NOTHING_TO_REVERT", "READS_ONLY")
+	require.Contains(t, str(t, body["personMessage"]), "it only read data")
 }
 
 func TestRequestRevertArguments(t *testing.T) {
@@ -188,11 +205,11 @@ func TestRequestRevertArguments(t *testing.T) {
 		{"runId": runID, "intent": "Undo", "approve": true},
 	} {
 		body, isError := env.h.call(t, "request_revert", args)
-		requireToolError(t, body, isError, "INVALID_ARGUMENT", "", "")
+		requireErrorSteps(t, body, isError, "INVALID_ARGUMENT", "")
 	}
 
 	body, isError := env.h.call(t, "request_revert", map[string]any{"taskId": id, "intent": "Undo"})
-	requireToolError(t, body, isError, "INVALID_ARGUMENT", "", "")
+	requireErrorSteps(t, body, isError, "INVALID_ARGUMENT", "")
 	require.Contains(t, str(t, body["message"]), "a whole task is reverted only by the person (basalt revert --task)")
 
 	// A revert this agent did not request is not found, whatever the form.
@@ -202,7 +219,7 @@ func TestRequestRevertArguments(t *testing.T) {
 		{"revertId": id, "reissueLink": true},
 	} {
 		body, isError = env.h.call(t, "request_revert", args)
-		requireToolError(t, body, isError, "NOT_FOUND", "", "")
+		requireErrorSteps(t, body, isError, "NOT_FOUND", "REVERT")
 	}
 	require.Equal(t, "won", leadStatus(t, env.d, 78))
 }
@@ -248,7 +265,7 @@ func TestRequestedRevertNeedsThePersonsSignature(t *testing.T) {
 }
 
 // A large revert is a plan the person signs once: the message says so and
-// nextStep points the agent at the batch loop.
+// the agent waits once, as for a small one.
 func TestRequestRevertOfALargeRun(t *testing.T) {
 	t.Parallel()
 	e := newBatchEnv(t)
@@ -257,7 +274,7 @@ func TestRequestRevertOfALargeRun(t *testing.T) {
 	require.Equal(t, true, body["batched"])
 	require.EqualValues(t, fmt.Sprint(planRows), body["rows"])
 	require.Contains(t, str(t, body["personMessage"]), fmt.Sprintf("It covers %d rows: you sign it once", planRows))
-	require.Contains(t, str(t, body["nextStep"]), "revert_plan with revertId, pending true and limit 200")
+	requireResultSteps(t, body, "REQUESTED")
 }
 
 // revertedChange is the change record of the revert of runID's change,

@@ -10,6 +10,38 @@ type ToolError struct {
 	Reason   string          `json:"reason,omitempty"`
 	SQLState string          `json:"sqlState,omitempty"`
 	Approval *ApprovalNotice `json:"approval,omitempty"`
+	// PersonMessage and NextSteps say what to tell the person and what to
+	// do next (CONTRACT.md, Next steps).
+	PersonMessage string     `json:"personMessage,omitempty"`
+	NextSteps     []NextStep `json:"nextSteps,omitempty"`
+}
+
+// Actors and actions of a next step (api/mcp/errors/next-step.schema.json).
+const (
+	ActorAgent  = "AGENT"
+	ActorPerson = "PERSON"
+
+	ActionCallTool   = "CALL_TOOL"
+	ActionReviseCall = "REVISE_CALL"
+	ActionAskPerson  = "ASK_PERSON"
+	ActionEndTurn    = "END_TURN"
+	ActionStop       = "STOP"
+	ActionOpenLink   = "OPEN_LINK"
+	ActionRunCommand = "RUN_COMMAND"
+	ActionTellAgent  = "TELL_AGENT"
+)
+
+// NextStep is one step of nextSteps in an error body or a result: who does
+// it, what, and everything needed to do it (CONTRACT.md, Next steps).
+type NextStep struct {
+	Actor      string         `json:"actor"`
+	Action     string         `json:"action"`
+	Text       string         `json:"text"`
+	Tool       string         `json:"tool,omitempty"`
+	Arguments  map[string]any `json:"arguments,omitempty"`
+	RepeatCall bool           `json:"repeatCall,omitempty"`
+	Command    string         `json:"command,omitempty"`
+	URL        string         `json:"url,omitempty"`
 }
 
 // ApprovalNotice is the held write an APPROVAL_REQUIRED error carries

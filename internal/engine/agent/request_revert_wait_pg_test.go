@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -124,6 +125,64 @@ func expireRevert(t *testing.T, env agentEnv, id string) {
 	env.d.Exec(t, `UPDATE basalt_meta.reverts SET expires_at = now() - interval '1 second' WHERE revert_id = $1`, id)
 }
 
+// maxStepText is the longest a step's text may be (next-step.schema.json).
+const maxStepText = 200
+
+// requireSteps checks body's nextSteps have exactly the actors and actions
+// of the catalog entry, each with its text, and personMessage when the
+// entry sets it. It returns the steps.
+func requireSteps(t *testing.T, body map[string]any, want []mcpcontract.StepKind, personMessage bool) []map[string]any {
+	t.Helper()
+	raw, ok := body["nextSteps"].([]any)
+	require.True(t, ok, "nextSteps: %v", body)
+	steps := make([]map[string]any, 0, len(raw))
+	got := make([]mcpcontract.StepKind, 0, len(raw))
+	for _, r := range raw {
+		step, ok := r.(map[string]any)
+		require.True(t, ok, "%v", r)
+		text := str(t, step["text"])
+		require.NotEmpty(t, text)
+		require.LessOrEqual(t, len(text), maxStepText, text)
+		steps = append(steps, step)
+		got = append(got, mcpcontract.StepKind{Actor: str(t, step["actor"]), Action: str(t, step["action"])})
+	}
+	require.Equal(t, want, got, "%v", body)
+	if personMessage {
+		require.NotEmpty(t, body["personMessage"], "%v", body)
+	}
+	return steps
+}
+
+// requireResultSteps checks a request_revert result against its catalog
+// case (api/mcp/errors/next-steps.json).
+func requireResultSteps(t *testing.T, body map[string]any, kase string) []map[string]any {
+	t.Helper()
+	c, err := mcpcontract.LoadNextSteps()
+	require.NoError(t, err)
+	for _, r := range c.Results {
+		if r.Tool == "request_revert" && r.Case == kase {
+			return requireSteps(t, body, r.Steps, r.PersonMessage)
+		}
+	}
+	require.Failf(t, "no catalog case", "request_revert %s", kase)
+	return nil
+}
+
+// requireErrorSteps checks a request_revert error body: its code and reason
+// and the catalog's steps for them.
+func requireErrorSteps(t *testing.T, body map[string]any, isError bool, code, reason string) []map[string]any {
+	t.Helper()
+	requireToolError(t, body, isError, code, reason, "")
+	if reason == "" {
+		require.NotContains(t, body, "reason")
+	}
+	c, err := mcpcontract.LoadNextSteps()
+	require.NoError(t, err)
+	e, ok := c.ErrorEntry(code, reason, "request_revert")
+	require.True(t, ok, "%s %s", code, reason)
+	return requireSteps(t, body, e.Steps, e.PersonMessage)
+}
+
 func TestRequestRevertWaitsForTheRelayedSignature(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
@@ -149,7 +208,8 @@ func TestRequestRevertWaitsForTheRelayedSignature(t *testing.T) {
 	require.NoError(t, err, "the revert's own change record")
 	require.NotContains(t, body, "revertUrl")
 	require.NotContains(t, body, "progress")
-	require.Equal(t, "The revert of run "+runID+" is done: 2 rows restored, 1 left as they are (changed after the agent).", body["personMessage"])
+	require.Equal(t, "Reverted: 2 rows restored, 1 left as they are because someone changed them after the agent (people win).", body["personMessage"])
+	requireResultSteps(t, body, "APPLIED")
 	require.Equal(t, "open", leadStatus(t, d, 81))
 	require.Equal(t, "person", leadStatus(t, d, 83), "people win")
 }
@@ -162,7 +222,8 @@ func TestRequestRevertWaitForALargePlan(t *testing.T) {
 	p := newLocalPages(t, e.agentEnv)
 	req := requestRevert(t, e.h, map[string]any{"runId": e.runID.String(), "intent": "Undo the bulk update"})
 	id, secret := str(t, req["revertId"]), links.SecretOf(str(t, req["revertUrl"]))
-	require.Contains(t, str(t, req["nextStep"]), "Once it returns APPLYING: call revert_plan with revertId, pending true and limit 200")
+	steps := requireResultSteps(t, req, "REQUESTED")
+	require.Equal(t, req["revertUrl"], steps[0]["url"])
 
 	relayed := p.relayLater(id, secret, p.signRevertPage(id, secret, e.person))
 	body := requestRevert(t, e.h, map[string]any{"revertId": id, "waitForSignature": 30})
@@ -174,8 +235,9 @@ func TestRequestRevertWaitForALargePlan(t *testing.T) {
 	require.Equal(t, planRows, itemsLeft(t, e.d, "before"))
 	done := requestRevert(t, e.h, map[string]any{"revertId": id, "waitForSignature": 0})
 	require.Equal(t, "APPLIED", done["status"])
-	require.Equal(t, fmt.Sprintf("The revert of run %s is done: %d rows restored, 0 left as they are (changed after the agent).",
-		e.runID, planRows), done["personMessage"])
+	require.Equal(t, fmt.Sprintf("Reverted: %d rows restored, 0 left as they are because someone changed them after the agent (people win).",
+		planRows), done["personMessage"])
+	requireResultSteps(t, done, "APPLIED")
 	require.Equal(t, body["changeId"], done["changeId"])
 }
 
@@ -191,7 +253,9 @@ func requireApplying(t *testing.T, body map[string]any) {
 	require.EqualValues(t, "0", progress["restored"])
 	require.EqualValues(t, fmt.Sprint(planRows), progress["pending"])
 	require.EqualValues(t, "0", progress["batches"])
-	require.Contains(t, str(t, body["nextStep"]), "call revert_plan with revertId, pending true and limit 200, then apply_revert_batch")
+	steps := requireResultSteps(t, body, "APPLYING")
+	require.Equal(t, "revert_plan", steps[0]["tool"])
+	require.Equal(t, map[string]any{"revertId": body["revertId"], "pending": true, "limit": json.Number("200")}, steps[0]["arguments"])
 	require.Contains(t, str(t, body["personMessage"]), fmt.Sprintf("restores %d more rows in batches before ", planRows))
 }
 
@@ -209,10 +273,10 @@ func TestRequestRevertWaitRunsOut(t *testing.T) {
 	require.Equal(t, "PENDING", body["status"])
 	require.NotContains(t, body, "revertUrl", "the link already given keeps working")
 	require.NotContains(t, body, "changeId")
-	next := str(t, body["nextStep"])
-	require.Contains(t, next, "Do not call request_revert to wait again. End your turn")
-	require.Contains(t, next, "call request_revert with only revertId: it returns at once if they signed")
-	require.Contains(t, next, "reissueLink true")
+	steps := requireResultSteps(t, body, "WAIT_ENDED")
+	require.True(t, strings.HasPrefix(str(t, steps[0]["url"]), links.DefaultLocal+"/reverts/"+id+"#1."), "the long link opens the same revert")
+	require.Equal(t, "request_revert", steps[3]["tool"])
+	require.Equal(t, map[string]any{"revertId": id, "waitForSignature": json.Number("0")}, steps[3]["arguments"], "the call after the turn does not wait")
 	expires, err := time.Parse(time.RFC3339, str(t, body["expiresAt"]))
 	require.NoError(t, err)
 	require.Equal(t, "The revert of run "+runID+" waits for your passkey at the link the agent gave you, until "+
@@ -222,7 +286,7 @@ func TestRequestRevertWaitRunsOut(t *testing.T) {
 	body = requestRevert(t, env.h, map[string]any{"revertId": id, "waitForSignature": 0})
 	require.Less(t, time.Since(start), time.Second, "waitForSignature 0 reads the state at once")
 	require.Equal(t, "PENDING", body["status"])
-	require.Contains(t, str(t, body["nextStep"]), "If you have not waited for this revert in this turn")
+	requireResultSteps(t, body, "WAIT_ENDED")
 	require.Equal(t, "won", leadStatus(t, env.d, 84), "a wait writes nothing")
 
 	expireRevert(t, env, id)
@@ -231,7 +295,8 @@ func TestRequestRevertWaitRunsOut(t *testing.T) {
 	require.Less(t, time.Since(start), 5*time.Second, "an expired revert does not wait")
 	require.Equal(t, "EXPIRED", body["status"])
 	require.Contains(t, str(t, body["personMessage"]), "without your signature; nothing was reverted")
-	require.Contains(t, str(t, body["nextStep"]), "request a new one with request_revert")
+	steps = requireResultSteps(t, body, "EXPIRED")
+	require.Equal(t, map[string]any{"runId": runID}, steps[1]["arguments"])
 	require.Equal(t, "won", leadStatus(t, env.d, 84))
 }
 
@@ -254,7 +319,8 @@ func TestRequestRevertReissueLink(t *testing.T) {
 	require.NotEqual(t, old, secret)
 	require.Equal(t, pageOrigin+"/reverts/"+id+"#s="+secret, link)
 	require.Contains(t, str(t, body["personMessage"]), "Review and sign with your passkey: "+link)
-	require.Contains(t, str(t, body["nextStep"]), "the link given before no longer works")
+	steps := requireResultSteps(t, body, "REQUESTED")
+	require.Equal(t, link, steps[0]["url"])
 
 	var perr pageError
 	require.Equal(t, http.StatusNotFound, p.get("/api/v1/reverts/"+id, old, &perr), "the old link is revoked")
@@ -266,6 +332,12 @@ func TestRequestRevertReissueLink(t *testing.T) {
 	body = requestRevert(t, env.h, map[string]any{"revertId": id, "reissueLink": true})
 	require.Equal(t, "APPLIED", body["status"])
 	require.NotContains(t, body, "revertUrl", "no link for a revert already signed")
+
+	// The run is reverted: a second request has nothing to revert, and says
+	// how to undo the revert instead.
+	again, isError := env.h.call(t, "request_revert", map[string]any{"runId": runID, "intent": "Undo again"})
+	requireErrorSteps(t, again, isError, "NOTHING_TO_REVERT", "ALREADY_REVERTED")
+	require.Contains(t, str(t, again["personMessage"]), "Reverting that revert brings the agent's changes back")
 }
 
 // A canceled call stops waiting at once.
@@ -298,7 +370,8 @@ func TestRequestRevertDeliversTheSignature(t *testing.T) {
 	require.Equal(t, "APPLIED", body["status"])
 	require.EqualValues(t, "1", body["rows"])
 	require.EqualValues(t, "1", body["skipped"])
-	require.Equal(t, "The revert of run "+runID+" is done: 1 rows restored, 1 left as they are (changed after the agent).", body["personMessage"])
+	require.Equal(t, "Reverted: 1 rows restored, 1 left as they are because someone changed them after the agent (people win).", body["personMessage"])
+	requireResultSteps(t, body, "APPLIED")
 	require.Equal(t, "open", leadStatus(t, env.d, 87))
 	require.Equal(t, "person", leadStatus(t, env.d, 88))
 	revertChange := str(t, body["changeId"])
@@ -338,18 +411,18 @@ func TestRequestRevertRefusesCodesThePersonDidNotSignForIt(t *testing.T) {
 	reqB := requestRevert(t, env.h, map[string]any{"runId": runB, "intent": "Undo B"})
 	idA, bindingA := longLinkBinding(t, str(t, reqA["revertUrl"]))
 	idB, bindingB := longLinkBinding(t, str(t, reqB["revertUrl"]))
-	refused := func(revertID uuid.UUID, code, want, message string) {
+	refused := func(revertID uuid.UUID, code, want, reason, message string) {
 		t.Helper()
 		body, isError := env.h.call(t, "request_revert", map[string]any{"revertId": revertID.String(), "signature": code})
-		requireToolError(t, body, isError, want, "", "")
+		requireErrorSteps(t, body, isError, want, reason)
 		require.Contains(t, str(t, body["message"]), message)
 	}
 
 	// The person's code for A, delivered as B's; and A's signature
 	// relabelled as B's.
 	asA := signBinding(t, env.person, bindingA)
-	refused(idB, revertCode(t, idA, asA), "REVERT_INVALID", "is for revert "+idA.String())
-	refused(idB, revertCode(t, idB, asA), "REVERT_INVALID", "does not verify")
+	refused(idB, revertCode(t, idA, asA), "REVERT_INVALID", "BAD_SIGNATURE", "is for revert "+idA.String())
+	refused(idB, revertCode(t, idB, asA), "REVERT_INVALID", "BAD_SIGNATURE", "does not verify")
 	_, err := guard.ApplyRevert(ctx, env.a.Conn, idB, asA)
 	requireRevertInvalid(t, err)
 
@@ -357,7 +430,7 @@ func TestRequestRevertRefusesCodesThePersonDidNotSignForIt(t *testing.T) {
 	tampered := signBinding(t, env.person, bindingA)
 	tampered.Signature = bytes.Clone(tampered.Signature)
 	tampered.Signature[len(tampered.Signature)-1] ^= 1
-	refused(idA, revertCode(t, idA, tampered), "REVERT_INVALID", "does not verify")
+	refused(idA, revertCode(t, idA, tampered), "REVERT_INVALID", "BAD_SIGNATURE", "does not verify")
 	_, err = guard.ApplyRevert(ctx, env.a.Conn, idA, tampered)
 	requireRevertInvalid(t, err)
 
@@ -368,7 +441,7 @@ func TestRequestRevertRefusesCodesThePersonDidNotSignForIt(t *testing.T) {
 	bySpare := signBinding(t, spare, bindingA)
 	_, err = guard.RevokePasskey(ctx, env.d.Admin, spare.ID, false)
 	require.NoError(t, err)
-	refused(idA, revertCode(t, idA, bySpare), "REVERT_INVALID", "revoked")
+	refused(idA, revertCode(t, idA, bySpare), "REVERT_INVALID", "PASSKEY_REVOKED", "revoked")
 	_, err = guard.ApplyRevert(ctx, env.a.Conn, idA, bySpare)
 	requireRevertInvalid(t, err)
 
@@ -379,10 +452,10 @@ func TestRequestRevertRefusesCodesThePersonDidNotSignForIt(t *testing.T) {
 	})
 	requireToolError(t, held, isError, "APPROVAL_REQUIRED", "", "")
 	approvalCode := signLink(t, env.person, str(t, approvalOf(t, held)["approvalUrl"]), env.person)
-	refused(idA, approvalCode, "INVALID_ARGUMENT", "not a basalt-revert.1. code")
+	refused(idA, approvalCode, "INVALID_ARGUMENT", "", "not a basalt-revert.1. code")
 	resp, err := approval.ParseResponse(approvalCode)
 	require.NoError(t, err)
-	refused(idA, revertCode(t, idA, resp.Assertion()), "REVERT_INVALID", "does not verify")
+	refused(idA, revertCode(t, idA, resp.Assertion()), "REVERT_INVALID", "BAD_SIGNATURE", "does not verify")
 
 	require.Equal(t, "won", leadStatus(t, env.d, 89), "nothing was written")
 	require.Equal(t, "won", leadStatus(t, env.d, 90))
@@ -396,7 +469,7 @@ func TestRequestRevertRefusesCodesThePersonDidNotSignForIt(t *testing.T) {
 	require.Equal(t, "APPLIED", requestRevert(t, env.h, map[string]any{"revertId": idA.String(), "signature": codeA})["status"])
 	require.Equal(t, "open", leadStatus(t, env.d, 89))
 	env.d.Exec(t, `UPDATE public.leads SET status = 'person' WHERE id = 89`)
-	refused(idA, codeA, "REVERT_INVALID", "already signed")
+	refused(idA, codeA, "REVERT_INVALID", "PLAN_FINISHED", "already signed")
 	_, err = guard.ApplyRevert(ctx, env.a.Conn, idA, asA)
 	requireRevertInvalid(t, err)
 	require.Equal(t, "person", leadStatus(t, env.d, 89), "a replay writes nothing")
@@ -404,7 +477,7 @@ func TestRequestRevertRefusesCodesThePersonDidNotSignForIt(t *testing.T) {
 	// An expired revert takes no signature, even the person's own.
 	expireRevert(t, env, idB.String())
 	asB := signBinding(t, env.person, bindingB)
-	refused(idB, revertCode(t, idB, asB), "REVERT_EXPIRED", "expired")
+	refused(idB, revertCode(t, idB, asB), "REVERT_EXPIRED", "NOT_SIGNED", "expired")
 	_, err = guard.ApplyRevert(ctx, env.a.Conn, idB, asB)
 	code, ok := guard.CodeOf(err)
 	require.True(t, ok, "%v", err)

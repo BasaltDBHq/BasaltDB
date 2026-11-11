@@ -199,12 +199,12 @@ type RequestRevertParams struct {
 
 // RequestedRevert is request_revert's answer in both forms: the revert as
 // agent_reverts shows it, the link when one was issued, the line for the
-// person and the agent's next step.
+// person and the agent's next steps (CONTRACT.md, Next steps).
 type RequestedRevert struct {
 	Revert        ledger.Revert
 	RevertURL     string
 	PersonMessage string
-	NextStep      string
+	NextSteps     []mcp.NextStep
 }
 
 func (s *Service) RequestRevert(ctx context.Context, p RequestRevertParams) (RequestedRevert, error) {
@@ -219,50 +219,24 @@ func (s *Service) RequestRevert(ctx context.Context, p RequestRevertParams) (Req
 	if err != nil {
 		return RequestedRevert{}, err
 	}
-	return s.revertWithLink(ctx, r, nextStepAfterRequest)
+	return s.revertWithLink(ctx, r)
 }
 
 // revertWithLink issues r's link (revoking an earlier one) and returns it
-// with the message that carries it and next as the agent's next step, plus
-// the batch loop for a large plan.
-func (s *Service) revertWithLink(ctx context.Context, r ledger.Revert, next string) (RequestedRevert, error) {
+// with the message that carries it: the REQUESTED steps, the person signs
+// and the agent waits once.
+func (s *Service) revertWithLink(ctx context.Context, r ledger.Revert) (RequestedRevert, error) {
 	link, msg, err := s.revertNotice(ctx, r)
 	if err != nil {
 		return RequestedRevert{}, err
 	}
-	if r.Batched {
-		next += " Once it returns APPLYING: " + batchLoop
-	}
-	return RequestedRevert{Revert: r, RevertURL: link, PersonMessage: msg, NextStep: next}, nil
+	return RequestedRevert{Revert: r, RevertURL: link, PersonMessage: msg, NextSteps: requestedSteps(r.ID, link)}, nil
 }
 
 // DefaultRevertWait is how long request_revert with revertId waits for the
 // person's signature when the agent names no waitForSignature, as the
 // waiting write does.
 const DefaultRevertWait = DefaultApprovalWait
-
-const (
-	nextStepAfterRequest = "Show the person personMessage verbatim, then, without ending your turn, call request_revert once " +
-		"with only revertId: it waits up to 90 seconds for their passkey and returns as soon as they sign. " +
-		"If it returns PENDING, its wait ran out: do not wait again, end your turn as its nextStep says."
-	nextStepAfterReissue = "Show the person personMessage verbatim (the link given before no longer works), then, without " +
-		"ending your turn, call request_revert once with only revertId to wait for their passkey. If it returns PENDING, " +
-		"do not wait again: end your turn as its nextStep says."
-	batchLoop = "call revert_plan with revertId, pending true and limit 200, then apply_revert_batch with those line numbers, " +
-		"until pending is 0, before applyBy."
-	nextStepApplying = "The person signed the plan: restore it now. " + batchLoop + " Then tell the person what was restored " +
-		"and what was left as it is."
-	nextStepAfterWait = "Not signed yet; nothing was reverted. Do not call request_revert to wait again. End your turn: show " +
-		"the person personMessage (the revert waits for their passkey at the link you already gave them, until expiresAt) " +
-		"and say you report the result when they tell you they signed. When they do, call request_revert with only " +
-		"revertId: it returns at once if they signed. If they lost the link, call it with revertId and reissueLink true; " +
-		"if they give you a basalt-revert.1. code, pass it as signature."
-	nextStepPending = "Not signed yet; nothing was reverted. If you have not waited for this revert in this turn, call " +
-		"request_revert once with only revertId to wait for the person's passkey; otherwise end your turn and call it " +
-		"again when they say they signed."
-	nextStepExpired = "Nothing more can be applied under this revert. If the person still wants it, check the data " +
-		"again (preview_revert) and request a new one with request_revert."
-)
 
 // AwaitRevertParams is request_revert's wait form: a revert this agent
 // requested, how long to wait for the person's signature, whether to issue
@@ -282,8 +256,7 @@ type AwaitRevertParams struct {
 func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (RequestedRevert, error) {
 	r, err := s.Reverts.FindRevert(ctx, p.RevertID)
 	if errors.Is(err, ledger.ErrRevertNotFound) {
-		return RequestedRevert{}, &mcp.ToolError{Code: CodeNotFound, Message: fmt.Sprintf(
-			"no revert %s requested by this agent: request one with request_revert and a changeId or runId of yours", p.RevertID)}
+		return RequestedRevert{}, revertNotFound(p.RevertID)
 	}
 	if err != nil {
 		return RequestedRevert{}, err
@@ -292,7 +265,7 @@ func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Request
 	case p.Signature != nil:
 		return s.deliverRevertSignature(ctx, r, *p.Signature)
 	case p.Reissue && r.Status == ledger.RevertPending:
-		return s.revertWithLink(ctx, r, nextStepAfterReissue)
+		return s.revertWithLink(ctx, r)
 	}
 	err = s.awaitWhile(ctx, p.Wait, func() bool { return r.Status == ledger.RevertPending }, func(ctx context.Context) error {
 		next, err := s.Reverts.FindRevert(ctx, r.ID)
@@ -305,7 +278,7 @@ func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Request
 	if err != nil {
 		return RequestedRevert{}, err
 	}
-	return revertState(r, p.Wait > 0), nil
+	return s.revertState(ctx, r)
 }
 
 // deliverRevertSignature submits the person's code for r, as basalt revert
@@ -317,26 +290,24 @@ func (s *Service) deliverRevertSignature(ctx context.Context, r ledger.Revert, c
 		return RequestedRevert{}, err
 	}
 	if _, err := s.Reverts.ApplyRevert(ctx, r.ID, code.Assertion()); err != nil {
-		return RequestedRevert{}, err
+		return RequestedRevert{}, s.applyRevertError(ctx, r, err)
 	}
 	r, err := s.Reverts.FindRevert(ctx, r.ID)
 	if err != nil {
 		return RequestedRevert{}, err
 	}
-	return revertState(r, false), nil
+	return s.revertState(ctx, r)
 }
 
 func (s *Service) checkRevertCode(ctx context.Context, r ledger.Revert, code revert.Response) error {
 	switch {
 	case code.RevertID != r.ID:
-		return revertInvalid("the code is for revert %s, not %s; nothing was reverted. Ask the person for the code the page "+
-			"of revert %s shows", code.RevertID, r.ID, r.ID)
+		return s.badSignature(ctx, r, fmt.Sprintf("the code is for revert %s, not %s; nothing was reverted. The person signs "+
+			"revert %s on its own page", code.RevertID, r.ID, r.ID))
 	case r.Status == ledger.RevertExpired:
-		return &mcp.ToolError{Code: CodeRevertExpired, Message: fmt.Sprintf("revert %s expired at %s; nothing was reverted. %s",
-			r.ID, timeText(r.ExpiresAt), nextStepExpired)}
+		return s.revertExpired(r)
 	case r.Status != ledger.RevertPending:
-		return revertInvalid("revert %s was already signed (status %s); nothing more was applied. Call request_revert with "+
-			"only revertId to see its state", r.ID, r.Status)
+		return alreadySigned(r)
 	}
 	keys, err := s.Approvals.Passkeys(ctx)
 	if err != nil {
@@ -347,22 +318,41 @@ func (s *Service) checkRevertCode(ctx context.Context, r ledger.Revert, code rev
 			continue
 		}
 		if _, err := revert.Verify(r.BindingText, k, code); err != nil {
-			return revertInvalid("the code does not verify against the person's passkey, nothing was reverted: %v", err)
+			return s.badSignature(ctx, r, fmt.Sprintf("the code does not verify against the person's passkey, nothing was "+
+				"reverted: %v", err))
 		}
 		return nil
 	}
-	return revertInvalid("the code was signed by a passkey this database does not know or that was revoked; nothing was " +
-		"reverted. The person signs with a passkey registered with basalt init")
+	return s.passkeyRevoked(ctx, r)
 }
 
-func revertInvalid(format string, args ...any) error {
-	return &mcp.ToolError{Code: CodeRevertInvalid, Message: fmt.Sprintf(format, args...)}
+// applyRevertError gives Postgres's refusal of a code the engine let
+// through its own steps: expired meanwhile, rows changed since the preview,
+// or a signature only Postgres could judge.
+func (s *Service) applyRevertError(ctx context.Context, r ledger.Revert, err error) error {
+	code, ok := guard.CodeOf(err)
+	if ok && code == guard.CodeRevertExpired {
+		return s.revertExpired(r)
+	}
+	var pe *pgconn.PgError
+	if !ok || code != guard.CodeRevertInvalid || !errors.As(err, &pe) {
+		return err
+	}
+	// apply_revert's details (basalt_meta version 9) tell the cases apart.
+	switch {
+	case strings.Contains(pe.Detail, "rows changed since"):
+		return s.rowsChanged(r, pe.Detail)
+	case strings.Contains(pe.Detail, "passkey revoked"):
+		return s.passkeyRevoked(ctx, r)
+	case strings.Contains(pe.Detail, "already"):
+		return alreadySigned(r)
+	}
+	return s.badSignature(ctx, r, "the database refused the code, nothing was reverted: "+pe.Detail)
 }
 
 // revertState is the answer for r without a new link: what happened, for
-// the person, and what the agent does next. waited tells a PENDING answer
-// after a wait (end the turn) from a plain read.
-func revertState(r ledger.Revert, waited bool) RequestedRevert {
+// the person, and the agent's next steps.
+func (s *Service) revertState(ctx context.Context, r ledger.Revert) (RequestedRevert, error) {
 	out := RequestedRevert{Revert: r}
 	what := fmt.Sprintf("The revert of %s %s", strings.ToLower(r.Scope), r.ScopeID)
 	restored, skipped := r.Rows, r.Skipped
@@ -371,12 +361,13 @@ func revertState(r ledger.Revert, waited bool) RequestedRevert {
 	}
 	switch r.Status {
 	case ledger.RevertApplied:
-		out.PersonMessage = fmt.Sprintf("%s is done: %d rows restored, %d left as they are (changed after the agent).",
-			what, restored, skipped)
+		out.PersonMessage = fmt.Sprintf("Reverted: %d rows restored, %d left as they are because someone changed them "+
+			"after the agent (people win).", restored, skipped)
+		out.NextSteps = appliedSteps()
 	case ledger.RevertApplying:
 		out.PersonMessage = fmt.Sprintf("You signed it. %s restores %d more rows in batches before %s (%d restored and %d "+
 			"left as they are so far).", what, r.Progress.Pending, applyByText(r), restored, skipped)
-		out.NextStep = nextStepApplying
+		out.NextSteps = applyingSteps(r.ID)
 	case ledger.RevertExpired:
 		out.PersonMessage = fmt.Sprintf("%s expired at %s without your signature; nothing was reverted.", what,
 			r.ExpiresAt.UTC().Format(personTime))
@@ -384,16 +375,17 @@ func revertState(r ledger.Revert, waited bool) RequestedRevert {
 			out.PersonMessage = fmt.Sprintf("%s was signed but not finished by %s: %d rows restored, %d left as they are, "+
 				"%d not restored.", what, applyByText(r), restored, skipped, r.Progress.Pending)
 		}
-		out.NextStep = nextStepExpired
+		out.NextSteps = expiredSteps(r)
 	default:
+		link, err := s.longRevertLink(ctx, r)
+		if err != nil {
+			return RequestedRevert{}, err
+		}
 		out.PersonMessage = fmt.Sprintf("%s waits for your passkey at the link the agent gave you, until %s. Tell the agent "+
 			"when you have signed.", what, r.ExpiresAt.UTC().Format(personTime))
-		out.NextStep = nextStepPending
-		if waited {
-			out.NextStep = nextStepAfterWait
-		}
+		out.NextSteps = waitEndedSteps(r.ID, link)
 	}
-	return out
+	return out, nil
 }
 
 func applyByText(r ledger.Revert) string {
@@ -432,10 +424,12 @@ const taskScopeRefused = "request_revert has no taskId: a whole task is reverted
 
 func notOwnScope(scope guard.RevertScope) error {
 	kind := strings.ToLower(string(scope.Kind))
-	return &mcp.ToolError{Code: CodeNotFound, Message: fmt.Sprintf(
+	return &mcp.ToolError{Code: CodeNotFound, Reason: string(scope.Kind), Message: fmt.Sprintf(
 		"%s %s is not one of this agent's %ss; nothing was prepared. request_revert reverts only your own changes and runs: "+
 			"check the id in run_history. If another agent's work looks wrong, ask that agent to request the revert; "+
-			"a person can revert any change, run or task with basalt revert", kind, scope.ID, kind)}
+			"a person can revert any change, run or task with basalt revert", kind, scope.ID, kind),
+		NextSteps: []mcp.NextStep{callTool(toolListRuns, map[string]any{},
+			"This id is not one of your runs or changes; list your runs.")}}
 }
 
 // prepareError is the answer to a prepare that failed: what the person
@@ -443,11 +437,7 @@ func notOwnScope(scope guard.RevertScope) error {
 // an MCP call and their terminal is the better path.
 func (s *Service) prepareError(ctx context.Context, scope guard.RevertScope, err error) error {
 	if code, ok := guard.CodeOf(err); ok && code == guard.CodeNothingToRevert {
-		te := ToolError(err)
-		te.Message = fmt.Sprintf("nothing to revert in %s %s: every row it wrote was changed after it (people win), or it wrote none; "+
-			"nothing was prepared. preview_revert shows each row and why it is skipped. Tell the person; if the data still needs "+
-			"fixing, suggest a forward fix. (%s)", strings.ToLower(string(scope.Kind)), scope.ID, te.Message)
-		return te
+		return s.nothingToRevert(ctx, scope, err)
 	}
 	if ctx.Err() != nil {
 		// The client canceled the call: not the prepare's time limit.
@@ -457,12 +447,7 @@ func (s *Service) prepareError(ctx context.Context, scope guard.RevertScope, err
 	if !errors.As(err, &pe) || pe.Code != sqlStateQueryCanceled {
 		return err
 	}
-	return &mcp.ToolError{Code: CodeQueryTimeout, Reason: ReasonTimeLimit, SQLState: pe.Code, Message: fmt.Sprintf(
-		"preparing the revert of %s %s took longer than the %d seconds an MCP call may take; nothing was prepared. "+
-			"The person can prepare it in a terminal on the engine's machine, where it may take up to %d minutes. "+
-			"Show them this command to run: %s",
-		strings.ToLower(string(scope.Kind)), scope.ID, int(guard.MCPPrepareTimeout.Seconds()),
-		int(guard.CLIPrepareTimeout.Minutes()), s.fullRevertCommand(scope))}
+	return s.prepareTimeout(scope, pe.Code)
 }
 
 // fullRevertCommand is revertCommand naming the engine config even at its
@@ -476,11 +461,7 @@ func (s *Service) fullRevertCommand(scope guard.RevertScope) string {
 // to show the person verbatim: the scope, what it restores and skips, why,
 // the link and the expiry, and for a large plan that they sign it once.
 func (s *Service) revertNotice(ctx context.Context, r ledger.Revert) (string, string, error) {
-	ids, err := s.credentialIDs(ctx)
-	if err != nil {
-		return "", "", err
-	}
-	long, err := revert.Request{RevertID: r.ID, Binding: r.BindingText, Lines: r.Lines, CredentialIDs: ids}.URL(s.PagesBase)
+	long, err := s.longRevertLink(ctx, r)
 	if err != nil {
 		return "", "", err
 	}

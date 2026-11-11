@@ -9,6 +9,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
@@ -200,7 +201,7 @@ type requestRevertResult struct {
 	ChangeID      string             `json:"changeId,omitempty"`
 	ApplyBy       string             `json:"applyBy,omitempty"`
 	Progress      *revertProgressDTO `json:"progress,omitempty"`
-	NextStep      string             `json:"nextStep,omitempty"`
+	NextSteps     []mcp.NextStep     `json:"nextSteps,omitempty"`
 }
 
 type revertProgressDTO struct {
@@ -215,7 +216,7 @@ func requestRevertFromDomain(r RequestedRevert) requestRevertResult {
 	out := requestRevertResult{
 		RevertID: rv.ID.String(), Status: rv.Status, Scope: rv.Scope, ScopeID: rv.ScopeID.String(),
 		Intent: rv.Intent, Batched: rv.Batched, Rows: rv.Rows, Skipped: rv.Skipped,
-		ExpiresAt: timeText(rv.ExpiresAt), RevertURL: r.RevertURL, PersonMessage: r.PersonMessage, NextStep: r.NextStep,
+		ExpiresAt: timeText(rv.ExpiresAt), RevertURL: r.RevertURL, PersonMessage: r.PersonMessage, NextSteps: r.NextSteps,
 	}
 	if rv.ChangeID != nil {
 		out.ChangeID = rv.ChangeID.String()
@@ -231,7 +232,13 @@ func requestRevertFromDomain(r RequestedRevert) requestRevertResult {
 	return out
 }
 
+// requestRevert serves both forms; a bad argument carries its next step.
 func (h handlers) requestRevert(ctx context.Context, raw json.RawMessage) (any, error) {
+	out, err := h.requestRevertForm(ctx, raw)
+	return out, withArgumentSteps(err)
+}
+
+func (h handlers) requestRevertForm(ctx context.Context, raw json.RawMessage) (any, error) {
 	var args requestRevertArgs
 	if err := decodeArgs(raw, &args); err != nil {
 		if hasTaskID(raw) {

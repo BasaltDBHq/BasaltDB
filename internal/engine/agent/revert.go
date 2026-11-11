@@ -377,14 +377,31 @@ func (s *Service) revertState(ctx context.Context, r ledger.Revert) (RequestedRe
 		}
 		out.NextSteps = expiredSteps(r)
 	default:
-		link, err := s.longRevertLink(ctx, r)
-		if err != nil {
-			return RequestedRevert{}, err
-		}
-		out.PersonMessage = fmt.Sprintf("%s waits for your passkey at the link the agent gave you, until %s. Tell the agent "+
-			"when you have signed.", what, r.ExpiresAt.UTC().Format(personTime))
-		out.NextSteps = waitEndedSteps(r.ID, link)
+		return s.waitEnded(ctx, out, what)
 	}
+	return out, nil
+}
+
+// waitEnded is a PENDING answer after the wait: the person signs at the
+// short link the agent gave them earlier (the engine keeps only its hash,
+// and a lost one is reissued with reissueLink). Only when the engine serves
+// no pages is there no short link, and the long link is given again.
+func (s *Service) waitEnded(ctx context.Context, out RequestedRevert, what string) (RequestedRevert, error) {
+	r := out.Revert
+	expires := r.ExpiresAt.UTC().Format(personTime)
+	if s.PagesOrigin != "" {
+		out.PersonMessage = fmt.Sprintf("%s waits for your passkey at the short link the agent gave you, until %s. Tell the "+
+			"agent when you have signed, or ask it for a new link if you lost that one.", what, expires)
+		out.NextSteps = waitEndedSteps(r.ID, "", waitEndedShortLink)
+		return out, nil
+	}
+	link, err := s.longRevertLink(ctx, r)
+	if err != nil {
+		return RequestedRevert{}, err
+	}
+	out.PersonMessage = fmt.Sprintf("%s waits for your passkey at the link the agent gave you, until %s. Tell the agent "+
+		"when you have signed, or give it the code the page shows.", what, expires)
+	out.NextSteps = waitEndedSteps(r.ID, link, waitEndedLongLink)
 	return out, nil
 }
 

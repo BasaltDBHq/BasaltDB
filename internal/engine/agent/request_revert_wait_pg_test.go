@@ -274,13 +274,14 @@ func TestRequestRevertWaitRunsOut(t *testing.T) {
 	require.NotContains(t, body, "revertUrl", "the link already given keeps working")
 	require.NotContains(t, body, "changeId")
 	steps := requireResultSteps(t, body, "WAIT_ENDED")
-	require.True(t, strings.HasPrefix(str(t, steps[0]["url"]), links.DefaultLocal+"/reverts/"+id+"#1."), "the long link opens the same revert")
-	require.Equal(t, "request_revert", steps[3]["tool"])
-	require.Equal(t, map[string]any{"revertId": id, "waitForSignature": json.Number("0")}, steps[3]["arguments"], "the call after the turn does not wait")
+	require.True(t, strings.HasPrefix(str(t, steps[0]["url"]), links.DefaultLocal+"/reverts/"+id+"#1."),
+		"no local pages: the long link, as the request gave")
+	requireWaitEndedCalls(t, steps, id)
 	expires, err := time.Parse(time.RFC3339, str(t, body["expiresAt"]))
 	require.NoError(t, err)
 	require.Equal(t, "The revert of run "+runID+" waits for your passkey at the link the agent gave you, until "+
-		expires.UTC().Format("2006-01-02 15:04 UTC")+". Tell the agent when you have signed.", body["personMessage"])
+		expires.UTC().Format("2006-01-02 15:04 UTC")+". Tell the agent when you have signed, or give it the code the page shows.",
+		body["personMessage"])
 
 	start = time.Now()
 	body = requestRevert(t, env.h, map[string]any{"revertId": id, "waitForSignature": 0})
@@ -300,6 +301,17 @@ func TestRequestRevertWaitRunsOut(t *testing.T) {
 	require.Equal(t, "won", leadStatus(t, env.d, 84))
 }
 
+// requireWaitEndedCalls checks WAIT_ENDED's two calls for the agent: the
+// one after the turn does not wait, and a fresh link only if it was lost.
+func requireWaitEndedCalls(t *testing.T, steps []map[string]any, id string) {
+	t.Helper()
+	require.Equal(t, "request_revert", steps[3]["tool"])
+	require.Equal(t, map[string]any{"revertId": id, "waitForSignature": json.Number("0")}, steps[3]["arguments"])
+	require.Equal(t, "request_revert", steps[4]["tool"])
+	require.Equal(t, map[string]any{"revertId": id, "reissueLink": true}, steps[4]["arguments"])
+	require.Contains(t, str(t, steps[4]["text"]), "Only if the link is lost")
+}
+
 // reissueLink issues a new short link at once and revokes the old one.
 func TestRequestRevertReissueLink(t *testing.T) {
 	t.Parallel()
@@ -310,6 +322,20 @@ func TestRequestRevertReissueLink(t *testing.T) {
 	req := requestRevert(t, env.h, map[string]any{"runId": runID, "intent": "Undo"})
 	id, old := str(t, req["revertId"]), links.SecretOf(str(t, req["revertUrl"]))
 
+	// With local pages a wait that runs out never hands out the long link:
+	// the person signs at the short link the agent gave them earlier.
+	ended := requestRevert(t, env.h, map[string]any{"revertId": id, "waitForSignature": 0})
+	require.Equal(t, "PENDING", ended["status"])
+	require.NotContains(t, ended, "revertUrl")
+	steps := requireResultSteps(t, ended, "WAIT_ENDED")
+	require.NotContains(t, steps[0], "url", "the engine keeps only the short link's hash; the agent still has the link")
+	require.Contains(t, str(t, steps[0]["text"]), "short link the agent gave you earlier")
+	require.Contains(t, str(t, steps[2]["text"]), "the revert link you gave earlier")
+	requireWaitEndedCalls(t, steps, id)
+	require.Contains(t, str(t, ended["personMessage"]), "at the short link the agent gave you")
+	require.NotContains(t, str(t, ended["personMessage"]), "#1.")
+	require.NotContains(t, fmt.Sprint(ended), "#1.", "no long link anywhere")
+
 	start := time.Now()
 	body := requestRevert(t, env.h, map[string]any{"revertId": id, "reissueLink": true})
 	require.Less(t, time.Since(start), 5*time.Second, "a new link returns at once, to be shown before the wait")
@@ -319,7 +345,7 @@ func TestRequestRevertReissueLink(t *testing.T) {
 	require.NotEqual(t, old, secret)
 	require.Equal(t, pageOrigin+"/reverts/"+id+"#s="+secret, link)
 	require.Contains(t, str(t, body["personMessage"]), "Review and sign with your passkey: "+link)
-	steps := requireResultSteps(t, body, "REQUESTED")
+	steps = requireResultSteps(t, body, "REQUESTED")
 	require.Equal(t, link, steps[0]["url"])
 
 	var perr pageError

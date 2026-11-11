@@ -73,16 +73,27 @@ func requestedSteps(id uuid.UUID, link string) []mcp.NextStep {
 	}
 }
 
+// The person's OPEN_LINK text after a wait: the short link given earlier
+// (the step carries no url), or, when the engine serves no pages, the long
+// link the step carries.
+const (
+	waitEndedShortLink = "Open the short link the agent gave you earlier and sign with your passkey."
+	waitEndedLongLink  = "Open the link and sign with your passkey; then give the agent the code the page shows."
+)
+
 // waitEndedSteps: not signed yet. The person signs at the link already
-// given (link is the long link, which opens the same revert); the agent
-// does not wait again.
-func waitEndedSteps(id uuid.UUID, link string) []mcp.NextStep {
+// given (link is "" with local pages: the agent shows the short link it
+// still has; else the long link); the agent does not wait again, and gets
+// a fresh short link only when the person lost theirs.
+func waitEndedSteps(id uuid.UUID, link, open string) []mcp.NextStep {
 	return []mcp.NextStep{
-		openLink(link, "Open the link you were given (this one opens the same revert) and sign with your passkey."),
-		personStep(mcp.ActionTellAgent, "Tell the agent when you have signed."),
-		agentStep(mcp.ActionEndTurn, "Do not wait again: end your turn with personMessage."),
+		openLink(link, open),
+		personStep(mcp.ActionTellAgent, "Tell the agent when you have signed, or that you lost the link."),
+		agentStep(mcp.ActionEndTurn, "Do not wait again: end your turn, showing personMessage and the revert link you gave earlier."),
 		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argWaitForSignature: 0},
 			"When the person says they signed, call it once more; it returns at once."),
+		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), "reissueLink": true},
+			"Only if the link is lost or the person asks for a new one: call this for a fresh link; the old one stops working."),
 	}
 }
 

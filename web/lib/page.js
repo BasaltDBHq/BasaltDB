@@ -1,6 +1,7 @@
 // DOM helpers shared by the approval and registration pages. Text only goes
 // into the page through textContent, never innerHTML: every value on these
 // pages came from a link someone else built.
+import { readPaste, repairHash } from "./repair.js";
 
 export const $ = (id) => document.getElementById(id);
 
@@ -11,11 +12,6 @@ export function el(tag, className, text) {
   return node;
 }
 
-// linkFailure is the sentence a page shows when its link cannot be used.
-// kind names the page ("approval", "revert"); reopen says how to open the
-// full link from the terminal. A link that does not decode was most likely
-// cut short when copied, so the person is told to reopen it, not that it
-// is bad.
 // personText is what the engine tells the person about a failure: its
 // personMessage and, for each of the person's steps, the command to run or
 // the link to open. "" when the engine told nothing more than its message.
@@ -29,6 +25,11 @@ export function personText(err) {
   return lines.join("\n");
 }
 
+// linkFailure is the sentence a page shows when its link cannot be used.
+// kind names the page ("approval", "revert"); reopen says how to open the
+// full link from the terminal. A link that does not decode was most likely
+// cut short when copied, so the person is told to reopen it, not that it
+// is bad.
 export function linkFailure(err, kind, reopen) {
   const told = err?.name === "RelayError" ? personText(err) : "";
   if (told && err.code === "NOT_FOUND") return told + "\nOr " + reopen + ".";
@@ -51,6 +52,63 @@ export const APPROVE_REOPEN =
   "run basalt approve --agent <name> --open <approvalId> with the approvalId your agent gave you; it opens the full link in your browser";
 export const REVERT_REOPEN =
   "run your basalt revert command again with --open; it prepares the revert and opens the full link in your browser";
+
+const NO_LINK_IN_PASTE =
+  "No link found in that text. Paste the whole message from your agent, from the line before the link to the line after it.";
+
+// loadOrPaste loads with the page's own fragment, repaired (CONTRACT.md,
+// Showing links). When that fails it shows the paste box and loads with the
+// fragment read from the pasted message. load(hash) gets only a fragment: the
+// page keeps its own origin and path, and never opens or fetches a pasted
+// URL. describe(err) is the message to show for a failure.
+export async function loadOrPaste(load, describe) {
+  try {
+    return await load(repairHash(window.location.hash));
+  } catch (err) {
+    if (!pasteHelps(err)) throw err;
+    return askForPaste(err, load, describe);
+  }
+}
+
+// pasteHelps: a pasted link can only fix a link that is wrong. An answer of
+// the engine other than NOT_FOUND (unavailable, expired, used) is not about
+// the link, so the box is not shown for it.
+function pasteHelps(err) {
+  return err?.name !== "RelayError" || err.code === "NOT_FOUND";
+}
+
+// MAX_PASTE_CHARS caps the pasted text: far above the largest link the
+// link budget (default 1800) allows, plus the message around it.
+export const MAX_PASTE_CHARS = 20000;
+const PASTE_TOO_LONG = "That text is too long to be one message from your agent. Paste only the message with the link.";
+
+function askForPaste(err, load, describe) {
+  fail(describe(err));
+  $("paste-box").hidden = false;
+  return new Promise((resolve) => {
+    $("paste-read").addEventListener("click", async () => {
+      const pasted = $("paste").value;
+      if (pasted.length > MAX_PASTE_CHARS) {
+        $("paste-status").textContent = PASTE_TOO_LONG;
+        return;
+      }
+      const fragment = readPaste(pasted);
+      if (fragment === null) {
+        $("paste-status").textContent = NO_LINK_IN_PASTE;
+        return;
+      }
+      $("paste-read").disabled = true;
+      try {
+        resolve(await load(`#${fragment}`));
+        $("paste-box").hidden = true;
+        $("error").hidden = true;
+      } catch (e) {
+        $("paste-status").textContent = describe(e);
+      }
+      $("paste-read").disabled = false;
+    });
+  });
+}
 
 export function fail(message) {
   $("error-text").textContent = message;

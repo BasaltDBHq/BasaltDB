@@ -5,7 +5,7 @@
 // the WebAuthn Signal API, where the browser has it. Sends nothing anywhere.
 import { relyingParty } from "./codec.js";
 import { MODE_CHECK, checkChallenge, encodeCheckResponse, modeForPath, parseManageRequest, sendForgetSignals } from "./manage.js";
-import { $, el, fail, showCode } from "./page.js";
+import { $, el, fail, loadOrPaste, showCode } from "./page.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
 const FOUND = "found on this device";
@@ -84,15 +84,23 @@ function showForget(rp, req) {
   $("forget").hidden = false;
 }
 
-function main() {
+const describe = (err) => `This passkey link cannot be used: ${err.message}`;
+
+async function main() {
   let rp;
   let req;
   try {
     rp = relyingParty(window.location);
-    req = parseManageRequest(window.location.hash);
-    if (modeForPath(window.location.pathname) !== req.mode) throw new Error("this link was opened on the wrong page");
+    req = await loadOrPaste(
+      (hash) => {
+        const parsed = parseManageRequest(hash);
+        if (modeForPath(window.location.pathname) !== parsed.mode) throw new Error("this link was opened on the wrong page");
+        return parsed;
+      },
+      describe,
+    );
   } catch (err) {
-    fail(`This passkey link cannot be used: ${err.message}`);
+    fail(describe(err));
     return;
   }
   $("main").hidden = false;

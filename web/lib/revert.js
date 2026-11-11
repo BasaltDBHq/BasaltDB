@@ -16,7 +16,7 @@ import {
   revertResponseJSON,
 } from "./codec.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths, revertDone } from "./local.js";
-import { $, REVERT_REOPEN, el, fail, linkFailure, personText, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
+import { $, REVERT_REOPEN, el, fail, linkFailure, loadOrPaste, personText, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
 
@@ -128,19 +128,19 @@ const engineFetch = (path, init) => window.fetch(path, init);
 // loadRequest reads the request: from the fragment of a long link, or from
 // the engine for a short link. relay is the path to post the signature to,
 // null for a long link.
-async function loadRequest() {
+async function loadRequest(hash) {
   // Every link names its revert in the path; a long link's request must
   // name the same one.
   const id = pageId(window.location.pathname, "reverts");
-  if (isLongLink(window.location.hash)) {
-    const req = await parseRevertRequest(window.location.hash);
+  if (isLongLink(hash)) {
+    const req = await parseRevertRequest(hash);
     if (req.revertId !== id) throw new Error(`the link is for revert ${req.revertId}, its path for ${id}`);
     return { req, relay: null };
   }
   const paths = relayPaths("reverts", id);
   // A short link: #s=<secret>. Without it the engine answers as for an
   // unknown id.
-  const secret = linkSecret(window.location.hash);
+  const secret = linkSecret(hash);
   const req = await checkRevertRequest(await fetchRequest(engineFetch, paths.request, secret));
   if (req.revertId !== id) throw new Error(`the engine sent revert ${req.revertId}, not ${id}`);
   return { req, relay: { path: paths.relay, secret } };
@@ -189,15 +189,17 @@ async function sign(rp, req, relay) {
   }
 }
 
+const describe = (err) => linkFailure(err, "revert", REVERT_REOPEN);
+
 async function main() {
   let rp;
   let req;
   let relay;
   try {
     rp = relyingParty(window.location);
-    ({ req, relay } = await loadRequest());
+    ({ req, relay } = await loadOrPaste(loadRequest, describe));
   } catch (err) {
-    fail(linkFailure(err, "revert", REVERT_REOPEN));
+    fail(describe(err));
     return;
   }
   renderSummary(req);

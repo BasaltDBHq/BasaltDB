@@ -6,7 +6,7 @@
 // it (same origin), which relays it to Postgres.
 import { approvalResponseJSON, checkApprovalRequest, displayValue, encodeApprovalResponse, parseApprovalRequest, relyingParty } from "./codec.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
-import { $, APPROVE_REOPEN, el, fail, linkFailure, personText, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
+import { $, APPROVE_REOPEN, el, fail, linkFailure, loadOrPaste, personText, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
 import { canStartPasskey, cascadeConfirmation, headline, summarize } from "./summary.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
@@ -94,19 +94,19 @@ const engineFetch = (path, init) => window.fetch(path, init);
 // loadRequest reads the request: from the fragment of a long link, or from
 // the engine for a short link. relay is the path to post the signature to,
 // null for a long link.
-async function loadRequest() {
+async function loadRequest(hash) {
   // Every link names its approval in the path; a long link's request must
   // name the same one.
   const id = pageId(window.location.pathname, "approvals");
-  if (isLongLink(window.location.hash)) {
-    const req = await parseApprovalRequest(window.location.hash);
+  if (isLongLink(hash)) {
+    const req = await parseApprovalRequest(hash);
     if (req.approvalId !== id) throw new Error(`the link is for approval ${req.approvalId}, its path for ${id}`);
     return { req, relay: null };
   }
   const paths = relayPaths("approvals", id);
   // A short link: #s=<secret>. Without it the engine answers as for an
   // unknown id.
-  const secret = linkSecret(window.location.hash);
+  const secret = linkSecret(hash);
   const req = await checkApprovalRequest(await fetchRequest(engineFetch, paths.request, secret));
   if (req.approvalId !== id) throw new Error(`the engine sent approval ${req.approvalId}, not ${id}`);
   return { req, relay: { path: paths.relay, secret } };
@@ -157,15 +157,17 @@ async function approve(rp, req, summary, relay) {
   }
 }
 
+const describe = (err) => linkFailure(err, "approval", APPROVE_REOPEN);
+
 async function main() {
   let rp;
   let req;
   let relay;
   try {
     rp = relyingParty(window.location);
-    ({ req, relay } = await loadRequest());
+    ({ req, relay } = await loadOrPaste(loadRequest, describe));
   } catch (err) {
-    fail(linkFailure(err, "approval", APPROVE_REOPEN));
+    fail(describe(err));
     return;
   }
   const summary = summarize(req.lines);

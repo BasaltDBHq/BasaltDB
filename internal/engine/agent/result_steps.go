@@ -1,0 +1,149 @@
+package agent
+
+import (
+	"fmt"
+	"strings"
+	"unicode/utf8"
+
+	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/revert"
+)
+
+// maxIntentInMessage is the most of a person's stated reason a personMessage
+// quotes: the whole reason is on the revert page they sign, and the message
+// has a limit of its own.
+const (
+	maxIntentInMessage   = 150
+	maxHeadlineInMessage = 200
+)
+
+// clip cuts s to at most n characters, ending in an ellipsis when it cut.
+func clip(s string, n int) string {
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	return string([]rune(s)[:n-1]) + "…"
+}
+
+func scopeText(scope string, id fmt.Stringer) string {
+	return fmt.Sprintf("%s %s", strings.ToLower(scope), id)
+}
+
+// previewGuidance is what preview_revert adds to a page of lines
+// (CONTRACT.md, Next steps, PREVIEW and PREVIEW_TASK): the person decides,
+// and a task is reverted only by the person.
+func (s *Service) previewGuidance(p RevertPreview) (string, []mcp.NextStep, error) {
+	what := scopeText(string(p.Scope.Kind), p.Scope.ID)
+	effect := fmt.Sprintf("would restore %d rows and leave %d as they are (changed after the agent)", p.Rows, p.Skipped)
+	if p.Scope.Kind == revert.ScopeTask {
+		command := s.Commands.Revert(p.Scope)
+		steps, err := NewSteps().
+			AskPerson("Tell the person this task can be reverted only by them, show them the command and ask whether to go on.").
+			RunCommand(command, "Prepare the revert of the task and open its page to review and sign it with a passkey.").
+			Build()
+		return fmt.Sprintf("Reverting %s %s. A task is reverted only by you: run %s, review the rows and sign with your passkey.", what, effect, command), steps, err
+	}
+	steps, err := NewSteps().
+		AskPerson("Show the person what the revert would do and ask whether to go on, and why they want it.").
+		ReviseCall(toolRequestRevert, scopeArgs(string(p.Scope.Kind), p.Scope.ID),
+			"On yes, call request_revert for this scope, with the person's reason as intent.").
+		Build()
+	return fmt.Sprintf("Reverting %s %s. Say yes and the agent asks you to review the rows and sign with your passkey.", what, effect), steps, err
+}
+
+// planGuidance is what revert_plan adds to a page of a large plan's lines,
+// by the plan's state (CONTRACT.md, Next steps): signing first, then the
+// agent applies the pending lines in batches.
+func (s *Service) planGuidance(plan RevertPlan) (string, []mcp.NextStep, error) {
+	r := plan.Revert
+	b := NewSteps()
+	switch r.Status {
+	case ledger.RevertPending:
+		b.OpenLink(plan.RevertURL, "", "Open the link, review the plan and sign it once with your passkey.").
+			TellAgent("Tell the agent when you have signed.").
+			EndTurn("End your turn: apply the lines only after the person says they signed.")
+		steps, err := b.Build()
+		return plan.PersonMessage, steps, err
+	case ledger.RevertApplying:
+		steps, err := s.applyBatchSteps(plan)
+		return "", steps, err
+	case ledger.RevertApplied:
+		steps, err := b.Stop("The revert is done; do not request it again.").Build()
+		return outcomeMessage(r), steps, err
+	}
+	command := s.Commands.Revert(guard.RevertScope{Kind: revert.Scope(r.Scope), ID: r.ScopeID})
+	steps, err := b.AskPerson("Tell the person the revert expired and ask whether to prepare it again.").
+		RunCommand(command, "Prepare it again and sign within an hour; rows already restored are skipped.").Build()
+	return outcomeMessage(r), steps, err
+}
+
+// applyBatchSteps tells the agent to apply the pending lines this page
+// shows (at most one batch); a page without any is read again with only the
+// pending lines.
+func (s *Service) applyBatchSteps(plan RevertPlan) ([]mcp.NextStep, error) {
+	id := plan.Revert.ID.String()
+	lines := make([]int, 0, revert.MaxBatch)
+	for _, l := range plan.Page.Items {
+		if l.Outcome == ledger.OutcomePending && len(lines) < revert.MaxBatch {
+			lines = append(lines, l.No)
+		}
+	}
+	if len(lines) == 0 {
+		return applyingSteps(plan.Revert.ID), nil
+	}
+	return NewSteps().CallTool(toolApplyRevertBatch, map[string]any{argRevertID: id, "lines": lines},
+		"Apply these pending lines, in this order; then call revert_plan again for the next ones.").Build()
+}
+
+// batchGuidance is what apply_revert_batch adds to a batch's result: more
+// lines to read, or the plan's end.
+func (s *Service) batchGuidance(res guard.BatchResult) (string, []mcp.NextStep, error) {
+	if res.Status != ledger.RevertApplied {
+		return "", applyingSteps(res.RevertID), nil
+	}
+	steps, err := NewSteps().Stop("The revert is done; do not apply more lines.").Build()
+	return fmt.Sprintf("Reverted: %d rows restored, %d left as they are because someone changed them after the agent (people win).",
+		res.Restored, res.Skipped), steps, err
+}
+
+// outcomeMessage is the line for the person when a revert ended: applied, or
+// expired before it was signed or finished.
+func outcomeMessage(r ledger.Revert) string {
+	restored, skipped := r.Rows, r.Skipped
+	if r.Batched {
+		restored, skipped = r.Progress.Restored, r.Progress.Skipped
+	}
+	what := "The revert of " + scopeText(r.Scope, r.ScopeID)
+	switch {
+	case r.Status == ledger.RevertApplied:
+		return fmt.Sprintf("Reverted: %d rows restored, %d left as they are because someone changed them after the agent (people win).",
+			restored, skipped)
+	case r.SignedAt != nil:
+		return fmt.Sprintf("%s was signed but not finished by %s: %d rows restored, %d left as they are, %d not restored.",
+			what, applyByText(r), restored, skipped, r.Progress.Pending)
+	}
+	return fmt.Sprintf("%s expired at %s without your signature; nothing was reverted.", what, r.ExpiresAt.UTC().Format(personTime))
+}
+
+// itemGuidance is the steps and the person's message for one list_pending
+// item (CONTRACT.md, Next steps): a write waiting for the person's passkey,
+// or one that expired meanwhile. An approved item needs nothing from the
+// person, and the agent applies it as the tool says.
+func (s *Service) itemGuidance(p PendingItem) (string, []mcp.NextStep, error) {
+	switch {
+	case p.Status == ledger.ApprovalExpired || !s.Now().Before(p.ExpiresAt):
+		b := NewSteps()
+		approvalExpiredSteps(b)
+		steps, err := b.Build()
+		return approvalExpiredMessage, steps, err
+	case p.Status == ledger.ApprovalPending:
+		steps, err := NewSteps().OpenLink(p.Notice.ApprovalURL, p.Notice.ApproveCommand,
+			"Open the link, review the rows and approve with your passkey.").Build()
+		return p.Notice.PersonMessage, steps, err
+	}
+	return p.Notice.PersonMessage, nil, nil
+}
+
+const approvalExpiredMessage = "The held write expired before it was approved, so nothing was applied. Ask the agent to send it again if you still want it."

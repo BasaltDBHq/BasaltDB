@@ -136,7 +136,7 @@ func (s *Service) errorGuidance(te *mcp.ToolError, f failure) ([]mcp.NextStep, s
 		person = s.approvalRequiredSteps(b, te)
 	case CodeApprovalExpired:
 		approvalExpiredSteps(b)
-		person = "The held write expired before it was approved, so nothing was applied. Ask the agent to send it again if you still want it."
+		person = approvalExpiredMessage
 	case CodeApprovalInvalid:
 		person = approvalInvalidSteps(b, te, f)
 	case CodeRevertInvalid:

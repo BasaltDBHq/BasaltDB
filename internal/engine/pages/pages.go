@@ -47,6 +47,9 @@ type Agent interface {
 	// CheckLink reports whether secret is the live link secret of one of
 	// this agent's items (CONTRACT.md, Link secrets).
 	CheckLink(id uuid.UUID, secret string) bool
+	// PageFailure is err as the pages answer it: the error body with the
+	// person's message and steps (CONTRACT.md, Next steps).
+	PageFailure(err error) *mcp.ToolError
 }
 
 // Server is the pages' handler. Agents are added once each is set up,
@@ -272,7 +275,7 @@ func (s *Server) linkedID(w http.ResponseWriter, r *http.Request, name string) (
 		return uuid.Nil, false
 	}
 	if !s.linkLive(id, r.Header.Get(links.SecretHeader)) {
-		s.fail(w, errUnknown)
+		s.fail(w, agent.LinkNotFound())
 		return uuid.Nil, false
 	}
 	return id, true
@@ -292,12 +295,9 @@ func (s *Server) linkLive(id uuid.UUID, secret string) bool {
 	return live
 }
 
-// errUnknown is the answer for an id no agent knows, or a link without its
-// secret: the two are told apart by nothing.
-var errUnknown = &mcp.ToolError{Code: agent.CodeNotFound, Message: "no held write or revert with this id, or the link is incomplete or was replaced by a newer one: ask the agent for the link again"}
-
 // find asks each agent in turn and answers with the first that knows the
-// id; none does: NOT_FOUND.
+// id; none does: NOT_FOUND, reason LINK, the same as a link without its
+// secret: the two are told apart by nothing.
 func find[T any](ctx context.Context, s *Server, ask func(context.Context, Agent) (T, error)) (T, error) {
 	s.mu.RLock()
 	agents := s.agents
@@ -307,10 +307,13 @@ func find[T any](ctx context.Context, s *Server, ask func(context.Context, Agent
 		if errors.Is(err, agent.ErrNotThisAgent) {
 			continue
 		}
-		return out, err
+		if err != nil {
+			return out, a.PageFailure(err)
+		}
+		return out, nil
 	}
 	var zero T
-	return zero, errUnknown
+	return zero, agent.LinkNotFound()
 }
 
 func (s *Server) pathID(w http.ResponseWriter, r *http.Request, name string) (uuid.UUID, bool) {
@@ -378,17 +381,35 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 	if status == http.StatusInternalServerError {
 		s.log.Error("pages", "err", err)
 	}
-	writeError(w, status, te.Code, te.Message)
+	writeJSON(w, status, errorDTO{
+		Code: te.Code, Message: te.Message, Reason: te.Reason, PersonMessage: te.PersonMessage, NextSteps: personSteps(te.NextSteps),
+	})
 }
 
-// errorDTO is the pages' error body.
+// errorDTO is the pages' error body: the contract's tool error as the page
+// shows it, with the person's message and only the steps for the person.
 type errorDTO struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code          string         `json:"code"`
+	Message       string         `json:"message"`
+	Reason        string         `json:"reason,omitempty"`
+	PersonMessage string         `json:"personMessage,omitempty"`
+	NextSteps     []mcp.NextStep `json:"nextSteps,omitempty"`
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, errorDTO{Code: code, Message: message})
+}
+
+// personSteps are the steps the person takes: the page shows them, and the
+// agent's steps go to the agent through its own tools.
+func personSteps(steps []mcp.NextStep) []mcp.NextStep {
+	var out []mcp.NextStep
+	for _, st := range steps {
+		if st.Actor == mcp.ActorPerson {
+			out = append(out, st)
+		}
+	}
+	return out
 }
 
 func (s *Server) reply(w http.ResponseWriter, v any) {

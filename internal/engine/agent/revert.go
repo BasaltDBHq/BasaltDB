@@ -58,6 +58,9 @@ type RevertPreview struct {
 	Skipped int
 	Command string
 	Page    pagination.Page[revert.Line]
+	// PersonMessage and NextSteps say what happens next (CONTRACT.md, Next steps).
+	PersonMessage string
+	NextSteps     []mcp.NextStep
 }
 
 // PreviewRevert returns what reverting the scope would restore and skip.
@@ -92,6 +95,9 @@ func (s *Service) PreviewRevert(ctx context.Context, p PreviewRevertParams) (Rev
 	out.Page.Items = lines[start:end]
 	if end < len(lines) {
 		out.Page.NextCursor = pagination.EncodeNameCursor(lineHash(texts[end-1]))
+	}
+	if out.PersonMessage, out.NextSteps, err = s.previewGuidance(out); err != nil {
+		return RevertPreview{}, err
 	}
 	return out, nil
 }
@@ -148,6 +154,7 @@ type RevertPlan struct {
 	Page          pagination.Page[RevertPlanLine]
 	RevertURL     string
 	PersonMessage string
+	NextSteps     []mcp.NextStep
 }
 
 // RevertPlan returns a large revert plan this agent prepared, its progress
@@ -183,6 +190,9 @@ func (s *Service) RevertPlan(ctx context.Context, p RevertPlanParams) (RevertPla
 		}
 		out.Page.Items = append(out.Page.Items, RevertPlanLine{RevertLine: l, Plan: parsed})
 	}
+	if out.PersonMessage, out.NextSteps, err = s.planGuidance(out); err != nil {
+		return RevertPlan{}, err
+	}
 	return out, nil
 }
 
@@ -194,8 +204,24 @@ type ApplyRevertBatchParams struct {
 
 // ApplyRevertBatch applies lines of a signed plan this agent prepared.
 // Postgres checks them against the signed plan and re-checks each row.
-func (s *Service) ApplyRevertBatch(ctx context.Context, p ApplyRevertBatchParams) (guard.BatchResult, error) {
-	return s.Reverts.ApplyRevertBatch(ctx, p.RevertID, p.Lines)
+func (s *Service) ApplyRevertBatch(ctx context.Context, p ApplyRevertBatchParams) (AppliedBatch, error) {
+	res, err := s.Reverts.ApplyRevertBatch(ctx, p.RevertID, p.Lines)
+	if err != nil {
+		return AppliedBatch{}, err
+	}
+	out := AppliedBatch{BatchResult: res}
+	if out.PersonMessage, out.NextSteps, err = s.batchGuidance(res); err != nil {
+		return AppliedBatch{}, err
+	}
+	return out, nil
+}
+
+// AppliedBatch is one applied batch with what happens next (CONTRACT.md,
+// Next steps): the next pending lines, or the end of the plan.
+type AppliedBatch struct {
+	guard.BatchResult
+	PersonMessage string
+	NextSteps     []mcp.NextStep
 }
 
 // RequestRevertParams are request_revert's validated arguments in its
@@ -363,29 +389,19 @@ func (s *Service) applyRevertError(ctx context.Context, r ledger.Revert, err err
 // the person, and the agent's next steps.
 func (s *Service) revertState(ctx context.Context, r ledger.Revert) (RequestedRevert, error) {
 	out := RequestedRevert{Revert: r}
-	what := fmt.Sprintf("The revert of %s %s", strings.ToLower(r.Scope), r.ScopeID)
-	restored, skipped := r.Rows, r.Skipped
-	if r.Batched {
-		restored, skipped = r.Progress.Restored, r.Progress.Skipped
-	}
 	switch r.Status {
 	case ledger.RevertApplied:
-		out.PersonMessage = fmt.Sprintf("Reverted: %d rows restored, %d left as they are because someone changed them "+
-			"after the agent (people win).", restored, skipped)
+		out.PersonMessage = outcomeMessage(r)
 		out.NextSteps = appliedSteps()
 	case ledger.RevertApplying:
-		out.PersonMessage = fmt.Sprintf("You signed it. %s restores %d more rows in batches before %s (%d restored and %d "+
-			"left as they are so far).", what, r.Progress.Pending, applyByText(r), restored, skipped)
+		// Nothing for the person yet: the agent restores the rest, and the
+		// last batch tells them (CONTRACT.md, Next steps, APPLYING).
 		out.NextSteps = applyingSteps(r.ID)
 	case ledger.RevertExpired:
-		out.PersonMessage = fmt.Sprintf("%s expired at %s without your signature; nothing was reverted.", what,
-			r.ExpiresAt.UTC().Format(personTime))
-		if r.SignedAt != nil {
-			out.PersonMessage = fmt.Sprintf("%s was signed but not finished by %s: %d rows restored, %d left as they are, "+
-				"%d not restored.", what, applyByText(r), restored, skipped, r.Progress.Pending)
-		}
+		out.PersonMessage = outcomeMessage(r)
 		out.NextSteps = expiredSteps(r)
 	default:
+		what := "The revert of " + scopeText(r.Scope, r.ScopeID)
 		return s.waitEnded(ctx, out, what)
 	}
 	return out, nil
@@ -493,16 +509,16 @@ func (s *Service) revertNotice(ctx context.Context, r ledger.Revert) (string, st
 	if err != nil {
 		return "", "", err
 	}
-	sign := "Review and sign with your passkey: " + link
+	how := "Sign it there with your passkey."
 	if link == "" {
 		// No local pages: the page cannot send the signature back.
 		link = long
-		sign = fmt.Sprintf("Review and sign with your passkey: %s (the page then shows a code: give it to the agent, "+
-			"or apply it yourself with: basalt revert %s --apply <code>)",
-			long, s.Commands.Flags())
+		how = fmt.Sprintf("The page then shows a code: give it to the agent, or apply it yourself with: basalt revert %s --apply <code>.",
+			s.Commands.Flags())
 	}
-	msg := fmt.Sprintf("Revert of %s %s ready for your review: %d rows to restore, %d left as they are (changed after the agent). Why: %s. %s. Expires %s.",
-		strings.ToLower(string(b.Scope)), b.ScopeID, r.Rows, r.Skipped, strings.TrimRight(b.Intent, ". "), sign, r.ExpiresAt.UTC().Format(personTime))
+	msg := fmt.Sprintf("Revert of %s ready for your review: %d rows to restore, %d left as they are (changed after the agent). Why: %s.\n\n%s\n\n%s Expires %s.",
+		scopeText(string(b.Scope), b.ScopeID), r.Rows, r.Skipped, clip(strings.TrimRight(b.Intent, ". "), maxIntentInMessage), link, how,
+		r.ExpiresAt.UTC().Format(personTime))
 	if r.Batched {
 		msg += fmt.Sprintf(" It covers %d rows: you sign it once, and the agent then restores it in batches within %d hours of your signature.",
 			b.Lines(), int(revert.ApplyWindow.Hours()))

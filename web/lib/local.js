@@ -9,11 +9,14 @@ const UUID_PATH = "([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
 // RelayError is an answer from the engine that is not a success, or no
 // answer at all. code is the contract's error code when the engine gave one.
 export class RelayError extends Error {
-  constructor(message, code = "", status = 0) {
+  constructor(message, code = "", status = 0, detail = {}) {
     super(message);
     this.name = "RelayError";
     this.code = code;
     this.status = status;
+    this.reason = detail.reason ?? "";
+    this.personMessage = detail.personMessage ?? "";
+    this.nextSteps = Array.isArray(detail.nextSteps) ? detail.nextSteps : [];
   }
 }
 
@@ -72,7 +75,7 @@ async function answer(call, attempts = 1, wait = sleep) {
     // An answer without a JSON body: the status says enough.
   }
   if (!res.ok) {
-    throw new RelayError(body?.message ?? `the engine answered ${res.status}`, body?.code ?? "", res.status);
+    throw new RelayError(body?.message ?? `the engine answered ${res.status}`, body?.code ?? "", res.status, body ?? {});
   }
   return body;
 }

@@ -46,6 +46,7 @@ type Upkeep struct {
 	log     *slog.Logger
 	now     func() time.Time
 	pins    Pins
+	rls     Refresher
 
 	started bool
 	head    *guard.ChainHead
@@ -63,10 +64,30 @@ func New(agent, version string, db guard.Querier, log *slog.Logger, now func() t
 	if agent == "" || db == nil || log == nil || now == nil {
 		panic("upkeep: agent, db, logger and clock required")
 	}
-	return &Upkeep{agent: agent, version: version, db: db, log: log, now: now, pins: &chainpin.Memory{}}
+	return &Upkeep{agent: agent, version: version, db: db, log: log, now: now, pins: &chainpin.Memory{}, rls: noRefresh{}}
 }
 
 // WithPins keeps verified chain heads in p, so the check survives restarts.
+// Refresher forgets what it learned about row-level security, so the next
+// statement asks the database again.
+type Refresher interface {
+	Refresh()
+}
+
+type noRefresh struct{}
+
+func (noRefresh) Refresh() {}
+
+// WithRLSCache has every cycle refresh r, the engine's cache of the tables
+// row-level security hides from the agent (the RLS_HIDES_ROWS warning).
+func (u *Upkeep) WithRLSCache(r Refresher) *Upkeep {
+	if r == nil {
+		panic("upkeep: nil refresher")
+	}
+	u.rls = r
+	return u
+}
+
 func (u *Upkeep) WithPins(p Pins) *Upkeep {
 	if p == nil {
 		panic("upkeep: nil pins")
@@ -231,6 +252,7 @@ func (u *Upkeep) checkCoverage(ctx context.Context) error {
 // where row-level security hides every row from it (Supabase can turn RLS
 // on for new tables). Basalt never adds a policy for the agent (N12-7).
 func (u *Upkeep) checkRLSBlind(ctx context.Context) error {
+	u.rls.Refresh()
 	tables, err := guard.RLSBlindTables(ctx, u.db, "", nil)
 	if err != nil {
 		return err

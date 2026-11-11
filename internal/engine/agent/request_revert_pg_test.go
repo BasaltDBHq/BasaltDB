@@ -62,7 +62,7 @@ func TestRequestRevertOfARunWithTheLocalPages(t *testing.T) {
 	require.Equal(t, pageOrigin+"/reverts/"+id+"#s="+secret, link)
 	msg := str(t, body["personMessage"])
 	require.True(t, strings.HasPrefix(msg, "Revert of run "+runID+" ready for your review: 2 rows to restore, 1 left as they are "+
-		"(changed after the agent). Why: Undo yesterday's lead status merge. Review and sign with your passkey: "+link+". Expires "), msg)
+		"(changed after the agent). Why: Undo yesterday's lead status merge.\n\n"+link+"\n\nSign it there with your passkey. Expires "), msg)
 	require.True(t, strings.HasSuffix(msg, " UTC."), msg)
 	require.Equal(t, "won", leadStatus(t, d, 71), "a request reverts nothing")
 
@@ -104,9 +104,9 @@ func TestRequestRevertOfAChangeWithoutLocalPages(t *testing.T) {
 	require.True(t, strings.HasPrefix(link, links.DefaultLocal+"/reverts/"+id+"#2."), "no local pages: the long link: %s", link)
 	msg := str(t, body["personMessage"])
 	require.Contains(t, msg, "Revert of change "+changeID+" ready for your review: 2 rows to restore, 0 left as they are")
-	require.Contains(t, msg, "Why: Wrong leads. ")
-	require.Contains(t, msg, link+" (the page then shows a code: give it to the agent, or apply it yourself with: "+
-		"basalt revert --agent bot --config /etc/basalt-test/engine.json --apply <code>)")
+	require.Contains(t, msg, "Why: Wrong leads.\n\n")
+	require.Contains(t, msg, "\n\n"+link+"\n\nThe page then shows a code: give it to the agent, or apply it yourself with: "+
+		"basalt revert --agent bot --config /etc/basalt-test/engine.json --apply <code>.")
 
 	// The person's code, applied by basalt revert --apply on the agent
 	// credential, reverts the change.

@@ -159,16 +159,17 @@ func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding stri
 	if err != nil {
 		return heldNotice{}, err
 	}
-	link, how, reason := short, fmt.Sprintf("Approve: %s (or run: %s)", short, command), reasonHeld
+	// The short link stands on a line of its own (CONTRACT.md, Showing links).
+	link, how, reason := short, fmt.Sprintf("Approve here:\n\n%s\n\nOr run: %s.", short, command), reasonHeld
 	switch {
 	case short == "" && (issue || s.PagesOrigin == ""):
 		// No local pages. The long link carries the whole preview and
 		// breaks when copied: the message names the command, approvalUrl
 		// still has the link.
-		link, how, reason = long, fmt.Sprintf("Approve by running: %s (it opens the approval page)", command), reasonHeldNoPages
+		link, how, reason = long, fmt.Sprintf("Approve by running: %s (it opens the approval page).", command), reasonHeldNoPages
 	case short == "":
 		// A wait that timed out: the link already handed over still works.
-		link, how = long, fmt.Sprintf("Approve with the link you were given, or run: %s", command)
+		link, how = long, fmt.Sprintf("Approve with the link you were given, or run: %s.", command)
 	}
 	if len(ids) == 0 {
 		reason = reasonNoPasskey // nobody can sign: the first step is to register a passkey
@@ -178,7 +179,7 @@ func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding stri
 		ApprovalNotice: mcp.ApprovalNotice{
 			ApprovalID: id.String(), ExpiresAt: timeText(expires), Rows: len(lines), Headline: summary.Headline(),
 			ApprovalURL: link, ApproveCommand: command,
-			PersonMessage: fmt.Sprintf("Held for your approval: %s. %s. Expires %s.", summary.Headline(), how, expires.UTC().Format(personTime)),
+			PersonMessage: fmt.Sprintf("Held for your approval: %s. %s Expires %s.", clip(summary.Headline(), maxHeadlineInMessage), how, expires.UTC().Format(personTime)),
 		},
 		longURL:  long,
 		shortURL: short,
@@ -309,7 +310,8 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 	if err != nil {
 		return WriteOutcome{}, s.withApprovalLink(ctx, a, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err))
 	}
-	return WriteOutcome{WriteResult: res, RunID: run.ID, Op: stmt.Op, ApprovalID: a.ID}, nil
+	return WriteOutcome{WriteResult: res, RunID: run.ID, Op: stmt.Op, ApprovalID: a.ID,
+		Warnings: s.rlsWarnings(ctx, stmt.Tables, res.Rows)}, nil
 }
 
 // withApprovalLink gives an approval error that sends the person back to the
@@ -384,6 +386,9 @@ func (s *Service) relay(ctx context.Context, a ledger.Approval, code string) err
 type PendingItem struct {
 	ledger.Approval
 	Notice mcp.ApprovalNotice
+	// PersonMessage and NextSteps say what happens next (CONTRACT.md, Next steps).
+	PersonMessage string
+	NextSteps     []mcp.NextStep
 }
 
 // ListPending returns one page of the agent's open held writes. It touches
@@ -403,7 +408,11 @@ func (s *Service) ListPending(ctx context.Context, p ledger.ApprovalListParams, 
 		if err != nil {
 			return pagination.Page[PendingItem]{}, err
 		}
-		out.Items = append(out.Items, PendingItem{Approval: a, Notice: n.ApprovalNotice})
+		item := PendingItem{Approval: a, Notice: n.ApprovalNotice}
+		if item.PersonMessage, item.NextSteps, err = s.itemGuidance(item); err != nil {
+			return pagination.Page[PendingItem]{}, err
+		}
+		out.Items = append(out.Items, item)
 	}
 	return out, nil
 }

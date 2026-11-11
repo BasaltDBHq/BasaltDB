@@ -128,7 +128,7 @@ func TestRevertPlanAndBatchTools(t *testing.T) {
 	link := str(t, before["revertUrl"])
 	require.True(t, strings.HasPrefix(link, links.DefaultLocal+"/reverts/"+id+"#2."), "no local pages: the long link: %s", link)
 	require.Contains(t, before["personMessage"], "Revert of run "+e.runID.String()+" ready for your review: ")
-	require.Contains(t, before["personMessage"], "Why: Undo the bulk update. Review and sign with your passkey: "+link)
+	require.Contains(t, before["personMessage"], "Why: Undo the bulk update.\n\n"+link+"\n\n")
 	require.Contains(t, before["personMessage"], fmt.Sprintf("It covers %d rows: you sign it once, and the agent then restores it in batches within 24 hours", planRows))
 
 	body, isError := e.h.call(t, "apply_revert_batch", map[string]any{"revertId": id, "lines": []int{1}})

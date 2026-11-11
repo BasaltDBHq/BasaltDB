@@ -32,6 +32,7 @@ const (
 	reasonAlreadyReverted     = "ALREADY_REVERTED"
 	toolRequestRevert         = "request_revert"
 	toolRevertPlan            = "revert_plan"
+	toolApplyRevertBatch      = "apply_revert_batch"
 	toolListRuns              = "list_runs"
 	argRevertID               = "revertId"
 	argWaitForSignature       = "waitForSignature"
@@ -92,7 +93,7 @@ func waitEndedSteps(id uuid.UUID, link, open string) []mcp.NextStep {
 		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argWaitForSignature: 0},
 			"When the person says they signed, call it once more; it returns at once."),
 		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), "reissueLink": true},
-			"Only if the link is lost or the person asks for a new one: call this for a fresh link; the old one stops working."),
+			"For a lost link, or when the person asks for a new one, call this: it gives a fresh link and the old one stops working."),
 	}
 }
 

@@ -1,0 +1,151 @@
+package agent
+
+import (
+	"context"
+	"fmt"
+	"sync"
+
+	"github.com/basaltdbhq/basaltdb/internal/mcp"
+)
+
+// RLSChecker says whether row-level security hides every row of a table
+// from the agent role. The engine's is a BlindCache; the default says no
+// table is hidden.
+type RLSChecker interface {
+	Hides(ctx context.Context, table string) (bool, error)
+}
+
+type noRLS struct{}
+
+func (noRLS) Hides(context.Context, string) (bool, error) { return false, nil }
+
+// BlindCache answers RLSChecker from the database's catalog, once per table
+// until Refresh: a statement that returns no rows asks, and a busy agent
+// does not ask again for the same table. The upkeep cycle calls Refresh, so
+// a policy added or dropped by the person shows within one cycle.
+type BlindCache struct {
+	// ask returns which of tables (as written in a statement) the role is
+	// blind to.
+	ask func(ctx context.Context, tables []string) ([]string, error)
+
+	mu    sync.Mutex
+	known map[string]bool
+}
+
+// NewBlindCache returns a cache that asks through ask. It panics without one.
+func NewBlindCache(ask func(ctx context.Context, tables []string) ([]string, error)) *BlindCache {
+	if ask == nil {
+		panic("agent: blind cache needs a query")
+	}
+	return &BlindCache{ask: ask, known: map[string]bool{}}
+}
+
+// Hides reports whether table is hidden from the agent role.
+func (c *BlindCache) Hides(ctx context.Context, table string) (bool, error) {
+	c.mu.Lock()
+	hidden, ok := c.known[table]
+	c.mu.Unlock()
+	if ok {
+		return hidden, nil
+	}
+	blind, err := c.ask(ctx, []string{table})
+	if err != nil {
+		return false, err
+	}
+	hidden = len(blind) > 0
+	c.mu.Lock()
+	c.known[table] = hidden
+	c.mu.Unlock()
+	return hidden, nil
+}
+
+// Refresh forgets every answer, so the next statement asks again.
+func (c *BlindCache) Refresh() {
+	c.mu.Lock()
+	clear(c.known)
+	c.mu.Unlock()
+}
+
+// UpgradeChecker says whether the guard misses only non-breaking migrations,
+// so everything works and basalt upgrade adds them. The default says no.
+type UpgradeChecker interface {
+	UpgradeAvailable(ctx context.Context) (bool, error)
+}
+
+type noUpgrade struct{}
+
+func (noUpgrade) UpgradeAvailable(context.Context) (bool, error) { return false, nil }
+
+// rlsWarnings is the RLS_HIDES_ROWS warning for each of tables that row-level
+// security hides from the agent, when the statement returned or changed no
+// row: an empty result there says nothing about the data. A check that fails
+// is logged and gives no warning: the call itself worked.
+func (s *Service) rlsWarnings(ctx context.Context, tables []string, rows int) []mcp.Warning {
+	if rows > 0 {
+		return nil
+	}
+	var out []mcp.Warning
+	for _, table := range tables {
+		hidden, err := s.RLS.Hides(ctx, table)
+		if err != nil {
+			s.Log.Error("check row-level security", "table", table, "err", err)
+			continue
+		}
+		if !hidden {
+			continue
+		}
+		w, err := s.rlsWarning(table)
+		if err != nil {
+			s.Log.Error("cannot build the row-level security warning", "table", table, "err", err)
+			continue
+		}
+		out = append(out, w)
+	}
+	return out
+}
+
+func (s *Service) rlsWarning(table string) (mcp.Warning, error) {
+	command := s.Commands.Init("--agent-rls=all-rows")
+	steps, err := NewSteps().
+		AskPerson("Tell the person row-level security hides every row of this table from you, and ask whether you may see its rows.").
+		RunCommand(command, "To let the agent see all rows, run this: init asks for the admin connection string itself.").
+		TellAgent("Tell the agent once it is done.").
+		Build()
+	if err != nil {
+		return mcp.Warning{}, err
+	}
+	return mcp.Warning{
+		Code:  mcp.WarningRLSHidesRows,
+		Table: table,
+		Message: fmt.Sprintf("row-level security hides every row of %s from this agent, so an empty result says nothing about its data; "+
+			"do not conclude the table is empty", table),
+		PersonMessage: fmt.Sprintf("Row-level security hides every row of %s from the agent, so it sees no rows there. To let it see them, "+
+			"run: %s then tell the agent. Leave it as it is if the agent should not see that table.", table, command),
+		NextSteps: steps,
+	}, nil
+}
+
+// upgradeWarnings is the GUARD_UPGRADE_AVAILABLE warning of run_start, when
+// only non-breaking guard migrations are missing.
+func (s *Service) upgradeWarnings(ctx context.Context) []mcp.Warning {
+	available, err := s.Upgrade.UpgradeAvailable(ctx)
+	if err != nil {
+		s.Log.Error("check for a guard upgrade", "err", err)
+		return nil
+	}
+	if !available {
+		return nil
+	}
+	command := s.Commands.Upgrade()
+	steps, err := NewSteps().RunCommand(command, "Run this to add the missing guard migrations: nothing stops, and the agent needs no restart.").Build()
+	if err != nil {
+		s.Log.Error("cannot build the guard upgrade warning", "err", err)
+		return nil
+	}
+	return []mcp.Warning{{
+		Code:          mcp.WarningGuardUpgradeAvailable,
+		Message:       "the guard in this database misses non-breaking migrations; everything works, the person can upgrade when it suits them",
+		PersonMessage: fmt.Sprintf("The guard in this database can be upgraded. Everything works as it is; when it suits you, run: %s", command),
+		NextSteps:     steps,
+	}}
+}

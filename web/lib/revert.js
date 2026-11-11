@@ -16,7 +16,7 @@ import {
   revertResponseJSON,
 } from "./codec.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths, revertDone } from "./local.js";
-import { $, REVERT_REOPEN, el, fail, linkFailure, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
+import { $, REVERT_REOPEN, el, fail, linkFailure, personText, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
 
@@ -154,7 +154,7 @@ async function finish(response, relay) {
       showDone(revertDone(await postResponse(engineFetch, relay.path, relay.secret, revertResponseJSON(response))));
       return;
     } catch (err) {
-      showRelayFailed(`The engine did not take the revert: ${err.message}. To finish by hand, paste the code below into basalt revert --apply.`);
+      showRelayFailed(`The engine did not take the revert: ${personText(err) || err.message}. To finish by hand, paste the code below into basalt revert --apply.`);
     }
   }
   showCode(encodeRevertResponse(response));

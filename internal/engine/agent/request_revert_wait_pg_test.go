@@ -256,7 +256,7 @@ func requireApplying(t *testing.T, body map[string]any) {
 	steps := requireResultSteps(t, body, "APPLYING")
 	require.Equal(t, "revert_plan", steps[0]["tool"])
 	require.Equal(t, map[string]any{"revertId": body["revertId"], "pending": true, "limit": json.Number("200")}, steps[0]["arguments"])
-	require.Contains(t, str(t, body["personMessage"]), fmt.Sprintf("restores %d more rows in batches before ", planRows))
+	require.Empty(t, str(t, body["personMessage"]), "APPLYING has nothing to tell the person yet: the last batch does")
 }
 
 // One wait, then end the turn: a wait that runs out returns PENDING, with
@@ -309,7 +309,7 @@ func requireWaitEndedCalls(t *testing.T, steps []map[string]any, id string) {
 	require.Equal(t, map[string]any{"revertId": id, "waitForSignature": json.Number("0")}, steps[3]["arguments"])
 	require.Equal(t, "request_revert", steps[4]["tool"])
 	require.Equal(t, map[string]any{"revertId": id, "reissueLink": true}, steps[4]["arguments"])
-	require.Contains(t, str(t, steps[4]["text"]), "Only if the link is lost")
+	require.Contains(t, str(t, steps[4]["text"]), "For a lost link")
 }
 
 // reissueLink issues a new short link at once and revokes the old one.
@@ -344,7 +344,7 @@ func TestRequestRevertReissueLink(t *testing.T) {
 	secret := links.SecretOf(link)
 	require.NotEqual(t, old, secret)
 	require.Equal(t, pageOrigin+"/reverts/"+id+"#s="+secret, link)
-	require.Contains(t, str(t, body["personMessage"]), "Review and sign with your passkey: "+link)
+	require.Contains(t, str(t, body["personMessage"]), "\n\n"+link+"\n\nSign it there with your passkey.")
 	steps = requireResultSteps(t, body, "REQUESTED")
 	require.Equal(t, link, steps[0]["url"])
 
@@ -390,7 +390,7 @@ func TestRequestRevertDeliversTheSignature(t *testing.T) {
 	runID, _ := winLeads(t, env.h, "87, 88")
 	env.d.Exec(t, `UPDATE public.leads SET status = 'person' WHERE id = 88`)
 	req := requestRevert(t, env.h, map[string]any{"runId": runID, "intent": "Undo"})
-	require.Contains(t, str(t, req["personMessage"]), "the page then shows a code: give it to the agent")
+	require.Contains(t, str(t, req["personMessage"]), "The page then shows a code: give it to the agent")
 
 	body := requestRevert(t, env.h, map[string]any{"revertId": req["revertId"], "signature": personCode(t, env, str(t, req["revertUrl"]))})
 	require.Equal(t, "APPLIED", body["status"])

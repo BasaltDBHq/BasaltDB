@@ -52,6 +52,7 @@ type agentEnv struct {
 	person *passkeytest.Authenticator
 	sent   *notices
 	svc    *agent.Service
+	blind  *agent.BlindCache
 }
 
 func agentHarness(t *testing.T) agentEnv {
@@ -77,12 +78,15 @@ func agentHarnessFor(t *testing.T, d *guardtest.DB, a *guardtest.Agent, pagesOri
 	limits := sqlguard.DefaultLimits()
 	store := agentdb.NewStore(pool, limits, time.Now)
 	sent := &notices{}
+	blind := agent.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
+		return guard.RLSBlindTables(ctx, pool, "", tables)
+	})
 	svc := agent.NewService(agent.Deps{
 		Name: "bot", Reader: agentdb.NewReader(pool, limits, time.Now), Store: store, Reads: store, Approvals: store,
 		Reverts: store, Notifier: sent, Log: slog.New(slog.DiscardHandler), Now: time.Now,
-		Commands: cmds, PagesOrigin: strings.Join(pagesOrigin, ""), Poll: testPoll,
+		Commands: cmds, PagesOrigin: strings.Join(pagesOrigin, ""), Poll: testPoll, RLS: blind,
 	})
-	return agentEnv{d: d, a: a, h: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, person: person, sent: sent, svc: svc}
+	return agentEnv{d: d, a: a, h: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, person: person, sent: sent, svc: svc, blind: blind}
 }
 
 func approvalOf(t *testing.T, body map[string]any) map[string]any {
@@ -150,6 +154,9 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 	require.Equal(t, command, list[0]["approveCommand"])
 	require.Equal(t, ap["personMessage"], list[0]["personMessage"], "list_pending gives the link back")
 	require.Equal(t, ap["headline"], list[0]["headline"])
+	pendingSteps := requireToolSteps(t, list[0], "list_pending", "PENDING")
+	require.Equal(t, link, pendingSteps[0]["url"])
+	require.Equal(t, command, pendingSteps[0]["command"])
 	require.Equal(t, []any{"status"}, list[0]["assignedColumns"])
 
 	withApproval := func(extra map[string]any) map[string]any {
@@ -236,6 +243,7 @@ func TestHeldDeleteRelayedThroughBasaltApprove(t *testing.T) {
 
 	pending, _ := h.call(t, "list_pending", map[string]any{"status": "APPROVED"})
 	require.Len(t, items(t, pending), 1)
+	require.NotContains(t, items(t, pending)[0], "nextSteps", "an approved item needs nothing from the person: the agent applies it")
 
 	args["approvalId"] = ap["approvalId"]
 	body, isError = h.call(t, "write", args)

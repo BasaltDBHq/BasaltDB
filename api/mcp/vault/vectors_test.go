@@ -250,6 +250,33 @@ func checkHandshakeCase(t *testing.T, c handshakeCase) {
 	}
 }
 
+// TestEngineChecksTagBeforePoint pins what the vectors cannot show: on
+// message 1 the engine checks the tag before any point arithmetic, so a bad
+// tag over an invalid point stops at the tag (both close with LINK_REFUSED).
+func TestEngineChecksTagBeforePoint(t *testing.T) {
+	t.Parallel()
+	keys := newVectorKeys()
+	lk := mustLink(keys.relaySecret)
+	other := mustLink(keys.otherLink)
+	pub := ephemeral(scalar("page ephemeral relay")).PublicKey().Bytes()
+
+	run := func(m1 []byte) ([]string, error) {
+		var steps []string
+		_, _, err := readMessage1(transportRelay, lk, m1, func(step string) { steps = append(steps, step) })
+		return steps, err
+	}
+
+	badTagBadPoint, _ := writeMessage1(transportRelay, lk.token, other.psk, offCurve(pub))
+	steps, err := run(badTagBadPoint)
+	require.ErrorIs(t, err, errLinkRefused)
+	require.Equal(t, []string{"header", "token", "tag"}, steps)
+
+	goodTagBadPoint, _ := writeMessage1(transportRelay, lk.token, lk.psk, offCurve(pub))
+	steps, err = run(goodTagBadPoint)
+	require.ErrorIs(t, err, errLinkRefused)
+	require.Equal(t, []string{"header", "token", "tag", "point"}, steps)
+}
+
 func requireKeys(t *testing.T, c handshakeCase, keys sessionKeys) {
 	t.Helper()
 	require.Equal(t, c.HandshakeHash, hx(keys.h))
@@ -337,6 +364,26 @@ func mustLink(secret string) linkKeys {
 		panic(err)
 	}
 	return lk
+}
+
+// withHeader is msg with its two header bytes replaced.
+func withHeader(msg []byte, version, typ byte) []byte {
+	out := bytes.Clone(msg)
+	out[0], out[1] = version, typ
+	return out
+}
+
+// highS returns the form of an r||s signature whose s is above n/2 (s or
+// n - s, both valid for the same message and key).
+func highS(sig []byte) []byte {
+	n := elliptic.P256().Params().N
+	s := new(big.Int).SetBytes(sig[sigLen/2:])
+	if s.Cmp(new(big.Int).Rsh(n, 1)) <= 0 {
+		s.Sub(n, s)
+	}
+	out := bytes.Clone(sig)
+	s.FillBytes(out[sigLen/2:])
+	return out
 }
 
 func flipLast(b []byte) []byte {
@@ -687,10 +734,23 @@ func genHandshake(keys vectorKeys) (f vectorFile[handshakeCase], relay, direct s
 	version2 := bytes.Clone(goodM2)
 	version2[0] = 0x02
 	pageRefuses("version 2", version2, errVersion)
-	pageRefuses("over 1024 bytes", welcome(func(h []byte) []byte {
+	oversize := welcome(func(h []byte) []byte {
 		return []byte(fmt.Sprintf(`{"engineKey":%q,"sig":%q,"pad":%q}`, engineKey,
 			mustSign(keys.engine, cat(sessionLine, h)), strings.Repeat("x", message2Max)))
-	}), errTooLarge)
+	})
+	pageRefuses("over 1024 bytes", oversize, errTooLarge)
+
+	// Two faults in one message pin the order of the checks.
+	engineRefuses("version 2 at 98 bytes: the version comes first", withHeader(goodM1[:message1Len-1], 0x02, typeHello), errVersion)
+	engineRefuses("version 2 with the WELCOME type: the version comes first", withHeader(goodM1, 0x02, typeWelcome), errVersion)
+	engineRefuses("the WELCOME type at 98 bytes", withHeader(goodM1[:message1Len-1], wireVersion, typeWelcome), errProtocol)
+	pageRefuses("version 2 over 1024 bytes: the version comes before the size", withHeader(oversize, 0x02, typeWelcome), errVersion)
+	pageRefuses("the HELLO type over 1024 bytes: the type comes before the size", withHeader(oversize, wireVersion, typeHello), errProtocol)
+	pageRefuses("over 1024 bytes with an engine key off the curve: the size comes first", func() []byte {
+		m := bytes.Clone(oversize)
+		m[headerLen+pointLen-1] ^= 1
+		return m
+	}(), errTooLarge)
 	return f, relay, direct
 }
 
@@ -764,6 +824,12 @@ func genFrames(keys vectorKeys, relay, direct sessionKeys) vectorFile[frameCase]
 	hello[1] = typeHello
 	refuse("a HELLO type after the handshake", pageToEngine, k1, 0, hello, errProtocol)
 	refuse("one byte over the largest frame", engineToPage, k2, 2, cat(largest, []byte{0}), errTooLarge)
+
+	// Two faults in one frame pin the order: size, version, type, then decrypt.
+	refuse("version 2 on an oversize frame: the size comes first", engineToPage, k2, 2, withHeader(cat(largest, []byte{0}), 0x02, typeFrame), errTooLarge)
+	refuse("the HELLO type on an oversize frame: the size comes first", engineToPage, k2, 2, withHeader(cat(largest, []byte{0}), wireVersion, typeHello), errTooLarge)
+	refuse("version 2 with the HELLO type: the version comes before the type", pageToEngine, k1, 0, withHeader(first, 0x02, typeHello), errVersion)
+	refuse("the HELLO type on a frame that does not decrypt: the type comes first", pageToEngine, k1, 0, withHeader(flipLast(first), wireVersion, typeHello), errProtocol)
 	return f
 }
 
@@ -809,6 +875,7 @@ func genSignatures(keys vectorKeys, relay sessionKeys) vectorFile[signatureCase]
 	}
 	add("an ASN.1 DER signature", "RECEIPT", engineKey, receipt, b64(der), expectRefuse)
 	add("a zero signature", "RECEIPT", engineKey, receipt, b64(make([]byte, sigLen)), expectRefuse)
+	add("a high-S signature is accepted", "RECEIPT", engineKey, receipt, b64(highS(sig)), expectAccept)
 	return f
 }
 

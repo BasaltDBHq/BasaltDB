@@ -89,6 +89,14 @@
       "message": "626173616c742d726563656970742e310a7b22666f726d6174223a317d",
       "sig": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
       "expect": "REFUSE"
+    },
+    {
+      "name": "a high-S signature is accepted",
+      "context": "RECEIPT",
+      "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEglfhPHrg8LxuAWlZjdnNSo9CTcShFClz0sAD1eBem80rLis8Tm_wbA0QU_yosHyHSPy47tQX1Pf_1K2TIafeOw",
+      "message": "626173616c742d726563656970742e310a7b22666f726d6174223a317d",
+      "sig": "fT__k0VCHVISj0ihprPZJOID_JVAccLC9OFDgmzgE0TVQc9ybwliRjphkvwnQEhbo64b2FEvGXMCH27dzRy9jg",
+      "expect": "ACCEPT"
     }
   ]
 }

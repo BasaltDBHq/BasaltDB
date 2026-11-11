@@ -413,7 +413,18 @@ func readHeader(msg []byte, want byte) error {
 
 // engineReadMessage1 is the engine's side, in the contract's order: header and
 // length, the token, the tag, and only then the point.
+//
+// The tag-before-point order is not visible in the vectors: a failing tag and
+// an invalid point both close with LINK_REFUSED, alike on purpose. It is
+// pinned by TestEngineChecksTagBeforePoint, which watches the steps through
+// readMessage1's onCheck hook.
 func engineReadMessage1(transport string, held linkKeys, msg []byte) (*symmetricState, *ecdh.PublicKey, error) {
+	return readMessage1(transport, held, msg, func(string) {})
+}
+
+// readMessage1 calls onCheck with the name of each check before it runs it.
+func readMessage1(transport string, held linkKeys, msg []byte, onCheck func(step string)) (*symmetricState, *ecdh.PublicKey, error) {
+	onCheck("header")
 	if err := readHeader(msg, typeHello); err != nil {
 		return nil, nil, err
 	}
@@ -423,15 +434,18 @@ func engineReadMessage1(transport string, held linkKeys, msg []byte) (*symmetric
 	token := msg[headerLen : headerLen+linkTokenLen]
 	ePub := msg[headerLen+linkTokenLen : headerLen+linkTokenLen+pointLen]
 	tag := msg[headerLen+linkTokenLen+pointLen:]
+	onCheck("token")
 	if !hmac.Equal(token, held.token) {
 		return nil, nil, errLinkRefused
 	}
+	onCheck("tag")
 	s := newSymmetricState(prologue(transport, held.token))
 	s.mixKeyAndHash(held.psk)
 	s.mixE(ePub)
 	if _, err := s.decryptAndHash(tag); err != nil {
 		return nil, nil, errLinkRefused
 	}
+	onCheck("point")
 	re, err := ecdh.P256().NewPublicKey(ePub)
 	if err != nil {
 		return nil, nil, errLinkRefused

@@ -18,6 +18,22 @@ Each short link carries a secret after `#s=`: the id alone opens nothing, and th
 
 A revert works the same way: `basalt revert --agent NAME --run <runId> --open` opens the revert page, you sign it there, and the command prints the result. Pasting the code the page shows into the prompt still works too.
 
+## Reverting from the agent
+
+You can ask the agent to undo a run without opening a terminal ("revert the run that qualified this week's leads"). The agent prepares the revert; only you can sign it.
+
+1. The agent finds the run with `list_runs` (its own runs only, newest first) and looks at what it did with `run_history`.
+2. It checks the current data with `preview_revert` and `query`: which rows would be restored, and which a person changed since (those are left as they are: people win).
+3. It recommends one of: revert the run, revert one change, or do not revert. It says why.
+4. When you agree, it calls `request_revert` with the `runId` or `changeId` and an `intent`, and shows you the `personMessage` with the short link to the revert page.
+5. It then calls `request_revert` with the `revertId` and waits once, about 90 seconds. Sign on the page within that time and it reports `APPLIED`. If you take longer, it ends its turn saying the revert waits for your signature; sign when you are ready and tell it.
+
+If the link was lost, the agent calls `request_revert` with `reissueLink: true` for a fresh short link (the old one stops working). If the page cannot reach the engine, it shows a `basalt-revert.1....` code: paste it into the chat and the agent delivers it with `signature`. The database verifies your passkey either way.
+
+A large plan is signed once, like any other. After you sign, the agent applies it in batches with `apply_revert_batch` until every line is done.
+
+The agent can revert its own changes and runs only. Reverting a whole task, across agents, stays your action: `basalt revert --task <taskId>`. A revert is a change like any other, so it can itself be reverted the same way.
+
 ## The CLI path
 
 The CLI path is a full alternative to the link:

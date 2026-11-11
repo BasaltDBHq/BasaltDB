@@ -6,13 +6,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 )
 
@@ -79,12 +77,10 @@ func TestConfiguredBase(t *testing.T) {
 	require.Equal(t, links.DefaultLocal, configuredBase("", "bot", filepath.Join(dir, "missing.json")))
 }
 
-func TestConfigArg(t *testing.T) {
+func TestEnginePathIsAbsolute(t *testing.T) {
 	t.Parallel()
-	require.Empty(t, configArg(config.DefaultPath(runtime.GOOS)))
-	require.Equal(t, "--config /home/me/basalt-m4/engine.json", configArg("/home/me/basalt-m4/engine.json"))
-	require.Equal(t, "--config '/Users/me/My Basalt/engine.json'", configArg("/Users/me/My Basalt/engine.json"))
+	require.Equal(t, "/home/me/basalt-m4/engine.json", enginePath("/home/me/basalt-m4/engine.json"))
 	abs, err := filepath.Abs("engine.json")
 	require.NoError(t, err)
-	require.Equal(t, "--config "+shellQuote(abs), configArg("engine.json"), "a relative path works from any directory")
+	require.Equal(t, abs, enginePath("engine.json"), "a relative path works from any directory")
 }

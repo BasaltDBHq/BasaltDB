@@ -161,8 +161,8 @@ func (s *Service) passkeyRevoked(ctx context.Context, r ledger.Revert) error {
 			"revoked), so nothing was reverted. Check your passkeys, register one if needed, then sign again.",
 			strings.ToLower(r.Scope), r.ScopeID),
 		NextSteps: []mcp.NextStep{
-			runCommand("basalt passkey list "+s.FullCLIFlags, "See which passkeys this database accepts."),
-			runCommand("basalt init "+s.FullCLIFlags+" --add-passkey", "Register your passkey if it is not listed."),
+			runCommand(s.Commands.PasskeyList(), "See which passkeys this database accepts."),
+			runCommand(s.Commands.Init("--add-passkey"), "Register your passkey if it is not listed."),
 			openLink(link, "Then sign the revert again with that passkey."),
 			agentStep(mcp.ActionEndTurn, stepEndTurnPersonActsNext),
 		}}
@@ -197,14 +197,14 @@ func (s *Service) revertExpired(r ledger.Revert) error {
 		PersonMessage: fmt.Sprintf("The revert of %s %s %s, so it expired.", strings.ToLower(r.Scope), r.ScopeID, window),
 		NextSteps: []mcp.NextStep{
 			agentStep(mcp.ActionAskPerson, "Ask the person whether to prepare it again."),
-			runCommand(s.fullRevertCommand(scope), "Prepare it again and sign within an hour; rows already restored are skipped."),
+			runCommand(s.Commands.Revert(scope), "Prepare it again and sign within an hour; rows already restored are skipped."),
 		}}
 }
 
 // prepareTimeout: the revert is too large to prepare over MCP; the person
 // prepares it in a terminal and gives the agent its id.
 func (s *Service) prepareTimeout(scope guard.RevertScope, sqlState string) error {
-	command := s.fullRevertCommand(scope)
+	command := s.Commands.Revert(scope)
 	return &mcp.ToolError{Code: CodeQueryTimeout, Reason: ReasonTimeLimit, SQLState: sqlState, Message: fmt.Sprintf(
 		"preparing the revert of %s %s took longer than the %d seconds an MCP call may take; nothing was prepared. "+
 			"The person can prepare it in a terminal on the engine's machine, where it may take up to %d minutes: %s",

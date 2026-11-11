@@ -34,12 +34,13 @@ func TestRequestRevertPrepareTimeLimit(t *testing.T) {
 	var limit time.Duration
 	d := deps()
 	d.Reverts = slowPrepare{timeout: &limit}
-	d.CLIFlags = "--agent bot"
-	d.FullCLIFlags = "--agent bot --config /etc/basalt/engine.json"
+	cmds, err := NewCommands("bot", "/etc/basalt-test/engine.json", "linux", nil)
+	require.NoError(t, err)
+	d.Commands = cmds
 	svc := NewService(d)
 	run := uuid.Must(uuid.NewV7())
 
-	_, err := svc.RequestRevert(context.Background(), RequestRevertParams{
+	_, err = svc.RequestRevert(context.Background(), RequestRevertParams{
 		Scope: guard.RevertScope{Kind: revert.ScopeRun, ID: run}, Intent: "Undo",
 	})
 	require.Equal(t, guard.MCPPrepareTimeout, limit)
@@ -49,7 +50,7 @@ func TestRequestRevertPrepareTimeLimit(t *testing.T) {
 	require.Equal(t, CodeQueryTimeout, te.Code)
 	require.Equal(t, ReasonTimeLimit, te.Reason)
 	require.Contains(t, te.Message, "nothing was prepared")
-	command := "basalt revert --agent bot --config /etc/basalt/engine.json --run " + run.String() + " --open"
+	command := "basalt revert --agent bot --config /etc/basalt-test/engine.json --run " + run.String() + " --open"
 	require.Contains(t, te.Message, command)
 	require.Contains(t, te.PersonMessage, command)
 	kinds := make([]string, 0, len(te.NextSteps))

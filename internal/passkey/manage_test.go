@@ -45,9 +45,9 @@ func TestVerifyCheck(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	link, err := passkey.ManageURL(passkey.Origin, req)
+	link, err := req.URL(passkey.Origin + "/")
 	require.NoError(t, err)
-	require.True(t, strings.HasPrefix(link, "https://basaltvault.app/passkeys/#1."), link)
+	require.True(t, strings.HasPrefix(link, "https://console.basaltvault.app/passkeys/check#1."), link)
 
 	resp := checkAnswer(t, req, laptop)
 	resp.Missing = []passkey.Bytes{phone.ID}
@@ -99,13 +99,14 @@ func TestNewCheckRequestBounds(t *testing.T) {
 
 func TestForgetLink(t *testing.T) {
 	t.Parallel()
-	link, err := passkey.ManageURL("http://localhost:8787", passkey.ForgetRequest{
+	link, err := passkey.ForgetRequest{
 		Mode:     passkey.ModeForget,
 		Removed:  []passkey.Removed{{CredentialID: []byte{1, 2, 3}, Label: "old"}},
 		Accepted: []passkey.Bytes{},
-	})
+	}.URL("http://localhost:8787")
 	require.NoError(t, err)
-	frag := strings.TrimPrefix(link, "http://localhost:8787/passkeys/#")
+	frag, ok := strings.CutPrefix(link, "http://localhost:8787/passkeys/forget#")
+	require.True(t, ok, link)
 	var got map[string]any
 	require.NoError(t, passkey.DecodeCode(passkey.ManageRequestPrefix, frag, &got))
 	require.Equal(t, map[string]any{

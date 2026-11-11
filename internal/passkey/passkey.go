@@ -17,12 +17,16 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+
+	"github.com/basaltdbhq/basaltdb/internal/links"
 )
 
-// The relying party approvals are signed for (owner decision #3).
+// The hosted relying party (owner decisions, Decided Nov 12): RP ID
+// basaltvault.app, fixed for good since registered passkeys depend on it,
+// and the hosted console's origin.
 const (
 	RPID   = "basaltvault.app"
-	Origin = "https://basaltvault.app"
+	Origin = links.HostedConsole
 )
 
 // localRPID is the development relying party: the pages served from
@@ -36,7 +40,8 @@ type Relying struct {
 	Origin string
 }
 
-// Production is basaltvault.app.
+// Production is the hosted console: RP ID basaltvault.app, origin
+// https://console.basaltvault.app.
 var Production = Relying{RPID: RPID, Origin: Origin}
 
 // Local returns the development relying party for the pages served at origin,

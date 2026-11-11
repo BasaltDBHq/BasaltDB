@@ -3,29 +3,29 @@ package main
 import (
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
+	"log/slog"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/pages"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/server"
 )
-
-// registerPath is the registration page on the relying party's origin.
-const registerPath = "/register/"
-
-// approvePath is the approval page on the same origin.
-const approvePath = "/approve/"
 
 // maxPasskeyLabel is the registration request's label limit in bytes.
 const maxPasskeyLabel = 64
 
-// relyingParty is basaltvault.app, or the local development page when
-// origin is set (http://localhost:<port>).
+// relyingParty is the hosted console (RP ID basaltvault.app) for its
+// origin, else the engine's local pages at origin (http://localhost:<port>,
+// RP ID localhost), the default until hosting exists.
 func relyingParty(origin string) (passkey.Relying, error) {
-	if origin == "" {
+	if origin == links.HostedConsole {
 		return passkey.Production, nil
 	}
 	rp, err := passkey.Local(origin)
@@ -35,45 +35,13 @@ func relyingParty(origin string) (passkey.Relying, error) {
 	return rp, nil
 }
 
-// webMarker is a file only the repo's web/ directory has.
-const webMarker = "web/register/index.html"
-
-// findWebDir walks up from dir to the nearest directory holding the
-// approval pages (a BasaltDB checkout) and returns its web/, or "".
-func findWebDir(dir string) string {
-	for dir != "" {
-		if _, err := os.Stat(filepath.Join(dir, webMarker)); err == nil {
-			return filepath.Join(dir, "web")
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return ""
-		}
-		dir = parent
-	}
-	return ""
-}
-
-// workingDir is the current directory, or "" when it cannot be read.
-func workingDir() string {
-	dir, err := os.Getwd()
-	if err != nil {
-		return ""
-	}
-	return dir
-}
-
-// serveHint tells the person how to serve the development pages on origin
-// (http://localhost:<port>): the exact command when a BasaltDB checkout is
-// found from dir, else where to run it. A page server started anywhere
-// else answers the link with 404.
-func serveHint(origin, dir string) string {
+// serveHint tells the person why the registration page on a local origin
+// (http://localhost:<port>) is not answering: init serves it itself, so
+// something else holds the port.
+func serveHint(origin string) string {
 	port := origin[strings.LastIndex(origin, ":")+1:]
-	if web := findWebDir(dir); web != "" {
-		return fmt.Sprintf("  (the page must be served first; in another terminal: python3 -m http.server %s --bind 127.0.0.1 --directory %s)\n",
-			port, shellQuote(web))
-	}
-	return fmt.Sprintf("  (the page must be served first: in the BasaltDB repo run make serve-web PORT=%s; a 404 means the server is not serving the repo's web/)\n", port)
+	return fmt.Sprintf("  (port %s is taken, so basalt init cannot serve this page: stop what holds it (lsof -nP -iTCP:%s -sTCP:LISTEN), "+
+		"or open the link while the engine serves the pages there)\n", port, port)
 }
 
 // hasPasskey reports whether a passkey is registered for this database.
@@ -101,10 +69,12 @@ func registerPasskey(c *cliIO, conn *pgx.Conn, rp passkey.Relying, label string)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(c.stderr, "basalt: register the passkey that approves this agent's held writes. Open this link on your phone or computer:\n  %s%s#%s\n",
-		rp.Origin, registerPath, frag)
-	if rp != passkey.Production {
-		fmt.Fprint(c.stderr, serveHint(rp.Origin, workingDir()))
+	fmt.Fprintf(c.stderr, "basalt: register the passkey that approves this agent's held writes. Open this link on your phone or computer:\n  %s#%s\n",
+		links.Register(rp.Origin), frag)
+	stop, served := serveLocalPages(rp.Origin)
+	defer stop()
+	if rp != passkey.Production && !served {
+		fmt.Fprint(c.stderr, serveHint(rp.Origin))
 	}
 	fmt.Fprint(c.stderr, "Paste the code the page shows: ")
 	code, err := c.line()
@@ -152,4 +122,38 @@ func passkeyStep(c *cliIO, conn *pgx.Conn, f initFlags) error {
 	}
 	fmt.Fprintf(c.stderr, "basalt: passkey registered for %s\n", rp.RPID)
 	return nil
+}
+
+// serveLocalPages serves the embedded pages on a local http://localhost
+// origin while basalt init waits for the registration code, so the link
+// works without a separate page server (the engine serves them later,
+// CONTRACT.md, Local pages). It serves nothing for another origin, or when
+// the port is taken (a page server already runs there). stop ends it.
+func serveLocalPages(origin string) (stop func(), served bool) {
+	noop := func() {}
+	addr, ok := localPagesAddr(origin)
+	if !ok {
+		return noop, false
+	}
+	site := pages.New(origin, slog.New(slog.DiscardHandler))
+	ln, h, err := server.Listen(server.Options{}, "registration page", addr, site.Handler())
+	if err != nil {
+		return noop, false
+	}
+	hs := &http.Server{Handler: h, ReadHeaderTimeout: pageHeaderTimeout}
+	go func() { _ = hs.Serve(ln) }()
+	return func() { _ = hs.Close() }, true
+}
+
+// pageHeaderTimeout bounds a page request's headers.
+const pageHeaderTimeout = 10 * time.Second
+
+// localPagesAddr is the loopback address for a local development origin
+// http://localhost:<port>, the default the engine's config resolves to.
+func localPagesAddr(origin string) (string, bool) {
+	p, err := config.Config{PagesURL: origin}.Pages()
+	if err != nil || p.Addr == "" {
+		return "", false
+	}
+	return p.Addr, true
 }

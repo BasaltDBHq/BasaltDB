@@ -14,24 +14,31 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 )
 
 // runApprove: basalt approve. A relay, never an approver: it carries the
 // code the approval page gave the person to Postgres, which checks the
 // passkey signature (owner decision #6). With --show it prints the
-// approval link of one of the agent's held writes.
+// approval link of one of the agent's held writes; with --open it opens
+// that link in the browser.
 func runApprove(c *cliIO, args []string) int {
 	fs := c.flags("approve")
 	show := fs.String("show", "", "print the approval link of this held write (approval id) instead")
-	page := fs.String("page", approval.PageURL, "approval page for --show")
+	open := fs.String("open", "", "open the approval link of this held write (approval id) in your browser instead")
+	pagesURL := fs.String("pages-url", "", "pages base URL for --show and --open (default: the engine config's pagesUrl, else "+links.DefaultLocal+")")
 	agent := fs.String("agent", "", "use this agent's credential from the engine config")
 	configPath := fs.String("config", config.DefaultPath(runtime.GOOS), "engine config file")
 	credFile := fs.String("credential-file", "", "read the agent's connection string from this file")
 	if err := fs.Parse(args); err != nil {
 		return c.fail(fmt.Errorf("%w: %w", errUsage, err))
 	}
-	code, err := approveCode(c, fs.Args(), *show)
+	if *show != "" && *open != "" {
+		return c.fail(fmt.Errorf("%w: give --show or --open, not both", errUsage))
+	}
+	held := *show + *open
+	code, err := approveCode(c, fs.Args(), held)
 	if err != nil {
 		return c.fail(err)
 	}
@@ -44,19 +51,23 @@ func runApprove(c *cliIO, args []string) int {
 		return c.fail(err)
 	}
 	defer conn.Close(c.ctx)
-	if *show != "" {
-		return showApproval(c, conn, *show, *page)
+	if held != "" {
+		pages := linkPages{
+			base:  configuredBase(*pagesURL, *agent, *configPath),
+			local: localPages(c, *pagesURL, *agent, *configPath),
+		}
+		return showApproval(c, conn, held, pages, *open != "")
 	}
 	return submitApproval(c, conn, code)
 }
 
 // approveCode is the response code: the one argument, or a line from stdin
-// when there is none. --show takes no code.
-func approveCode(c *cliIO, args []string, show string) (string, error) {
+// when there is none. --show and --open (held) take no code.
+func approveCode(c *cliIO, args []string, held string) (string, error) {
 	switch {
-	case show != "" && len(args) > 0:
-		return "", fmt.Errorf("%w: --show takes no code", errUsage)
-	case show != "":
+	case held != "" && len(args) > 0:
+		return "", fmt.Errorf("%w: --show and --open take no code", errUsage)
+	case held != "":
 		return "", nil
 	case len(args) > 1:
 		return "", fmt.Errorf("%w: give one approval code", errUsage)
@@ -67,10 +78,13 @@ func approveCode(c *cliIO, args []string, show string) (string, error) {
 	return c.line()
 }
 
-func showApproval(c *cliIO, conn *pgx.Conn, idText, page string) int {
+// showApproval prints the approval link of a held write on stdout, or with
+// open opens it in the browser (printing it only when no browser opens):
+// the short link when the engine serves the pages, else the long one.
+func showApproval(c *cliIO, conn *pgx.Conn, idText string, pages linkPages, open bool) int {
 	id, err := uuid.Parse(idText)
 	if err != nil {
-		return c.fail(fmt.Errorf("%w: --show needs an approval id", errUsage))
+		return c.fail(fmt.Errorf("%w: --show and --open need an approval id", errUsage))
 	}
 	a, err := ledger.FindApproval(c.ctx, conn, id)
 	if errors.Is(err, ledger.ErrApprovalNotFound) {
@@ -94,13 +108,21 @@ func showApproval(c *cliIO, conn *pgx.Conn, idText, page string) int {
 	if err != nil {
 		return c.fail(err)
 	}
-	link, err := approval.Request{ApprovalID: a.ID, Binding: a.BindingText, Lines: a.Lines, CredentialIDs: ids}.URL(page)
+	link, err := approval.Request{ApprovalID: a.ID, Binding: a.BindingText, Lines: a.Lines, CredentialIDs: ids}.URL(pages.base)
 	if err != nil {
 		return c.fail(err)
 	}
+	link = pages.short(links.Approval, a.ID, link)
 	fmt.Fprintf(c.stderr, "basalt: %s\n", summary.Headline())
+	expires := a.ExpiresAt.UTC().Format(timeLayout)
+	if open {
+		fmt.Fprintf(c.stderr, "basalt: %d rows, held by run %s, expires %s\n", a.Rows, a.RunID, expires)
+		openLink(c, link, c.stdout)
+		fmt.Fprintln(c.stderr, pages.nextStep("basalt: check the rows and sign with your passkey", "basalt approve '<code>'"))
+		return exitOK
+	}
 	fmt.Fprintf(c.stderr, "basalt: %d rows, held by run %s, expires %s; open this link on a device with your passkey:\n",
-		a.Rows, a.RunID, a.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC"))
+		a.Rows, a.RunID, expires)
 	fmt.Fprintln(c.stdout, link)
 	return exitOK
 }

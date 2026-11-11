@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/basaltdbhq/basaltdb/internal/links"
 )
 
 // The passkey management page (CONTRACT.md, Passkey management):
-// <origin>/passkeys/#1.<request>. It checks which passkeys a device can
-// still produce, and asks a device's password manager to forget removed
-// ones.
+// <base>/passkeys/check#1.<request> checks which passkeys a device can
+// still produce; <base>/passkeys/forget#1.<request> asks a device's
+// password manager to forget removed ones.
 const (
-	// ManagePath is the page on the passkey's origin.
-	ManagePath = "/passkeys/"
 	// ManageRequestPrefix starts the page's URL fragment.
 	ManageRequestPrefix = "1."
 	// CheckResponsePrefix starts the code the page outputs after a check.
@@ -75,13 +75,22 @@ func NewCheckRequest(rnd io.Reader, creds []Labeled) (CheckRequest, error) {
 	return req, nil
 }
 
-// ManageURL is the page link for a check or forget request on origin.
-func ManageURL(origin string, req any) (string, error) {
+// URL is the check page link for this request on base.
+func (r CheckRequest) URL(base string) (string, error) {
+	return manageURL(links.Check(base), r)
+}
+
+// URL is the forget page link for this request on base.
+func (r ForgetRequest) URL(base string) (string, error) {
+	return manageURL(links.Forget(base), r)
+}
+
+func manageURL(page string, req any) (string, error) {
 	frag, err := EncodeCode(ManageRequestPrefix, req)
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSuffix(origin, "/") + ManagePath + "#" + frag, nil
+	return page + "#" + frag, nil
 }
 
 // CheckChallenge is the WebAuthn challenge a check signs:

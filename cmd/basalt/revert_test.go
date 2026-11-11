@@ -25,7 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
-var revertLink = regexp.MustCompile(`https://basaltvault\.app/revert/#(1\.[A-Za-z0-9_-]+)`)
+var revertLink = regexp.MustCompile(`http://localhost:8787/reverts/[0-9a-f-]{36}#(1\.[A-Za-z0-9_-]+)`)
 
 // revertSetup is a demo database with basalt init done (agent bot on
 // leads, the person's passkey registered), and a run of the agent that
@@ -144,6 +144,25 @@ func TestRevertApplyLater(t *testing.T) {
 	require.Contains(t, r.stderr, "NOTHING_TO_REVERT")
 }
 
+func TestRevertOpensTheLink(t *testing.T) {
+	t.Parallel()
+	d, person, cred, run := revertSetup(t)
+
+	h := newFakeHost(t)
+	r := cliHost(t, h, "revert", "--run", run.String(), "--credential-file", cred, "--open")
+	require.Equal(t, exitError, r.code, "no code pasted")
+	require.Len(t, h.opened, 1)
+	m := revertLink.FindStringSubmatch(h.opened[0])
+	require.NotNil(t, m, h.opened[0])
+	require.NotContains(t, r.stderr, "/reverts/", "an opened link is not printed")
+	require.Contains(t, r.stderr, "opened the link in your browser")
+	require.Equal(t, "won", leadStatusOf(t, d, 40))
+
+	r = cli(t, nil, "", "revert", "--apply", signRevertLink(t, person, m[1]), "--credential-file", cred)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Equal(t, "open", leadStatusOf(t, d, 40))
+}
+
 func TestRevertRefusesAForgedCode(t *testing.T) {
 	t.Parallel()
 	d, _, cred, run := revertSetup(t)
@@ -176,7 +195,7 @@ func TestRevertDryRun(t *testing.T) {
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Equal(t, 6, strings.Count(r.stdout, "restore    public.leads"))
 	require.Contains(t, r.stderr, "dry run, nothing was reverted")
-	require.NotContains(t, r.stderr, "/revert/#")
+	require.NotContains(t, r.stderr, "/reverts/")
 	require.Equal(t, "won", leadStatusOf(t, d, 40))
 
 	r = cli(t, nil, "", "revert", "--run", run.String(), "--credential-file", cred, "--dry-run", "--json")
@@ -198,6 +217,8 @@ func TestRevertUsage(t *testing.T) {
 		{"revert", "--status", id, "--run", id},
 		{"revert", "--status", id, "--apply", "basalt-revert.1.x"},
 		{"revert", "--status", id, "--dry-run"},
+		{"revert", "--run", id, "--dry-run", "--open"},
+		{"revert", "--apply", "basalt-revert.1.x", "--open"},
 	} {
 		r := cli(t, map[string]string{envAgentURL: "postgres://unused"}, "", args...)
 		require.Equal(t, exitUsage, r.code, "%v: %s", args, r.stderr)

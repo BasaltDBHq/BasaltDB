@@ -8,8 +8,11 @@
 // received, never re-serialized. Postgres built them; the passkey signs
 // sha256 of the binding text's UTF-8 bytes.
 
+// The hosted console and its passkeys' RP ID (owner decisions, Decided
+// Nov 12): RP ID basaltvault.app never changes. Until hosting exists the
+// pages run on the engine's local pages, http://localhost:<port>.
 export const PROD_RP_ID = "basaltvault.app";
-export const PROD_ORIGIN = "https://basaltvault.app";
+export const HOSTED_CONSOLE = "https://console.basaltvault.app";
 
 export const APPROVAL_REQUEST_PREFIX = "1.";
 export const APPROVAL_RESPONSE_PREFIX = "basalt-approval.1.";
@@ -37,6 +40,16 @@ export class CodeError extends Error {
   constructor(message) {
     super(message);
     this.name = "CodeError";
+  }
+}
+
+// TruncatedLinkError is a link fragment that does not decode. Links carry
+// the whole preview and run long; terminals wrap them and chats cut them,
+// so a fragment that stops making sense was most likely cut short.
+export class TruncatedLinkError extends CodeError {
+  constructor(message) {
+    super(message);
+    this.name = "TruncatedLinkError";
   }
 }
 
@@ -152,7 +165,7 @@ async function inflateRaw(bytes, what) {
     }
   } catch (err) {
     if (err instanceof CodeError) throw err;
-    throw new CodeError(`${what} is not deflate-raw`);
+    throw new TruncatedLinkError(`${what} is not deflate-raw`);
   }
   const out = new Uint8Array(total);
   let at = 0;
@@ -163,13 +176,29 @@ async function inflateRaw(bytes, what) {
   return out;
 }
 
+// asTruncated runs one decoding step of a link fragment and reports its
+// CodeError as a TruncatedLinkError.
+function asTruncated(step) {
+  try {
+    return step();
+  } catch (err) {
+    if (err instanceof CodeError) throw new TruncatedLinkError(err.message);
+    throw err;
+  }
+}
+
 // decodeRequest decodes a link fragment, with or without '#':
 // prefix + base64url(deflate-raw(json)), into an object with exactly the
-// required and optional keys.
+// required and optional keys. A fragment that is empty or does not decode
+// (base64url, deflate-raw, UTF-8, JSON) throws TruncatedLinkError.
 async function decodeRequest(fragment, prefix, what, required, optional) {
-  const payload = stripPrefix(String(fragment).replace(/^#/, ""), prefix, what);
-  const json = fromUtf8(await inflateRaw(b64urlDecode(payload), what));
-  return strictObject(parseJSON(json, what), what, required, optional);
+  const text = String(fragment).replace(/^#/, "");
+  if (prefix.startsWith(text)) throw new TruncatedLinkError(`${what} is empty`);
+  const payload = stripPrefix(text, prefix, what);
+  const compressed = asTruncated(() => b64urlDecode(payload));
+  const raw = await inflateRaw(compressed, what);
+  const json = asTruncated(() => parseJSON(fromUtf8(raw), what));
+  return strictObject(json, what, required, optional);
 }
 
 function requireLineStrings(lines, what) {
@@ -243,7 +272,16 @@ export function parseLine(text) {
 // the lines hash to the binding's rowsHash. Only then may the page ask for a
 // signature.
 export async function parseApprovalRequest(fragment) {
-  const req = await decodeRequest(fragment, APPROVAL_REQUEST_PREFIX, "approval request", ["approvalId", "binding", "lines"], ["credentialIds"]);
+  return checkApprovalRequest(await decodeRequest(fragment, APPROVAL_REQUEST_PREFIX, "approval request", APPROVAL_REQUEST_FIELDS, ["credentialIds"]));
+}
+
+const APPROVAL_REQUEST_FIELDS = ["approvalId", "binding", "lines"];
+
+// checkApprovalRequest checks a decoded approval request, from a link
+// fragment or from the engine's local pages (GET /api/v1/approvals/{id}),
+// exactly as parseApprovalRequest does.
+export async function checkApprovalRequest(value) {
+  const req = strictObject(value, "approval request", APPROVAL_REQUEST_FIELDS, ["credentialIds"]);
   const binding = parseBinding(req.binding);
   if (req.approvalId !== binding.approvalId) {
     throw new CodeError(`request is for approval ${req.approvalId}, binding for ${binding.approvalId}`);
@@ -267,21 +305,26 @@ export async function parseApprovalRequest(fragment) {
 
 // encodeApprovalResponse builds the code the person copies. Keys in the
 // contract's order, so Go and the page produce the same text.
-export function encodeApprovalResponse({ approvalId, ...assertion }) {
-  return encodeAssertionCode(APPROVAL_RESPONSE_PREFIX, { approvalId }, assertion);
+export function encodeApprovalResponse(response) {
+  return APPROVAL_RESPONSE_PREFIX + b64urlEncode(utf8(approvalResponseJSON(response)));
 }
 
-// encodeAssertionCode builds prefix + base64url(json) with the id first and
-// the assertion's byte fields after it, in the contract's order.
-function encodeAssertionCode(prefix, id, { credentialId, authenticatorData, clientDataJson, signature }) {
-  const json = JSON.stringify({
+// approvalResponseJSON is the JSON an approval code carries, which the page
+// posts to the engine's relay (POST /api/v1/approvals/{id}/approve).
+export function approvalResponseJSON({ approvalId, ...assertion }) {
+  return assertionJSON({ approvalId }, assertion);
+}
+
+// assertionJSON is a response's JSON with the id first and the assertion's
+// byte fields after it, in the contract's order.
+function assertionJSON(id, { credentialId, authenticatorData, clientDataJson, signature }) {
+  return JSON.stringify({
     ...id,
     credentialId: b64urlEncode(credentialId),
     authenticatorData: b64urlEncode(authenticatorData),
     clientDataJson: b64urlEncode(clientDataJson),
     signature: b64urlEncode(signature),
   });
-  return prefix + b64urlEncode(utf8(json));
 }
 
 const REVERT_BINDING_FIELDS = [
@@ -358,7 +401,15 @@ export function parseRevertLine(text) {
 // RESTORE lines as the binding's rows, and the lines hash to rowsHash. Only
 // then may the page ask for a signature.
 export async function parseRevertRequest(fragment) {
-  const req = await decodeRequest(fragment, REVERT_REQUEST_PREFIX, "revert request", ["revertId", "binding", "lines"], ["credentialIds"]);
+  return checkRevertRequest(await decodeRequest(fragment, REVERT_REQUEST_PREFIX, "revert request", REVERT_REQUEST_FIELDS, ["credentialIds"]));
+}
+
+const REVERT_REQUEST_FIELDS = ["revertId", "binding", "lines"];
+
+// checkRevertRequest checks a decoded revert request, from a link fragment
+// or from the engine's local pages, exactly as parseRevertRequest does.
+export async function checkRevertRequest(value) {
+  const req = strictObject(value, "revert request", REVERT_REQUEST_FIELDS, ["credentialIds"]);
   const binding = parseRevertBinding(req.binding);
   if (req.revertId !== binding.revertId) {
     throw new CodeError(`request is for revert ${req.revertId}, binding for ${binding.revertId}`);
@@ -417,8 +468,14 @@ async function checkSample(texts, binding) {
 }
 
 // encodeRevertResponse builds the code the person pastes into basalt revert.
-export function encodeRevertResponse({ revertId, ...assertion }) {
-  return encodeAssertionCode(REVERT_RESPONSE_PREFIX, { revertId }, assertion);
+export function encodeRevertResponse(response) {
+  return REVERT_RESPONSE_PREFIX + b64urlEncode(utf8(revertResponseJSON(response)));
+}
+
+// revertResponseJSON is the JSON a revert code carries, which the page posts
+// to the engine's relay (POST /api/v1/reverts/{id}/apply).
+export function revertResponseJSON({ revertId, ...assertion }) {
+  return assertionJSON({ revertId }, assertion);
 }
 
 function checkLabel(label, what) {
@@ -459,15 +516,16 @@ export function encodeRegistrationResponse({ credentialId, clientDataJson, authe
   return REGISTRATION_RESPONSE_PREFIX + b64urlEncode(utf8(json));
 }
 
-// relyingParty returns the RP ID and origin for the page's location:
-// basaltvault.app over HTTPS, or http://localhost:<port> for development.
-// Anywhere else the pages refuse to run.
+// relyingParty returns the RP ID and origin for the page's location: the
+// hosted console (RP ID basaltvault.app), or the engine's local pages at
+// http://localhost:<port> (RP ID localhost). Anywhere else the pages refuse
+// to run.
 export function relyingParty(loc) {
-  if (loc.protocol === "https:" && loc.hostname === PROD_RP_ID && loc.port === "") {
-    return { rpId: PROD_RP_ID, origin: PROD_ORIGIN };
+  if (`${loc.protocol}//${loc.hostname}` === HOSTED_CONSOLE && loc.port === "") {
+    return { rpId: PROD_RP_ID, origin: HOSTED_CONSOLE };
   }
   if (loc.protocol === "http:" && loc.hostname === "localhost" && loc.port !== "") {
     return { rpId: "localhost", origin: `http://localhost:${loc.port}` };
   }
-  throw new CodeError(`this page only runs at ${PROD_ORIGIN}`);
+  throw new CodeError(`this page only runs at ${HOSTED_CONSOLE} or http://localhost:<port>`);
 }

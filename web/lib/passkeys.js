@@ -4,7 +4,7 @@
 // has. FORGET: ask the password manager to drop a revoked passkey through
 // the WebAuthn Signal API, where the browser has it. Sends nothing anywhere.
 import { relyingParty } from "./codec.js";
-import { MODE_CHECK, checkChallenge, encodeCheckResponse, parseManageRequest, sendForgetSignals } from "./manage.js";
+import { MODE_CHECK, checkChallenge, encodeCheckResponse, modeForPath, parseManageRequest, sendForgetSignals } from "./manage.js";
 import { $, el, fail, showCode } from "./page.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
@@ -90,6 +90,7 @@ function main() {
   try {
     rp = relyingParty(window.location);
     req = parseManageRequest(window.location.hash);
+    if (modeForPath(window.location.pathname) !== req.mode) throw new Error("this link was opened on the wrong page");
   } catch (err) {
     fail(`This passkey link cannot be used: ${err.message}`);
     return;

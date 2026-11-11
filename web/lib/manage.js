@@ -96,6 +96,14 @@ export function parseManageRequest(fragment) {
   return fail("unknown mode");
 }
 
+// modeForPath is the mode the page's path serves: /passkeys/check or
+// /passkeys/forget (CONTRACT.md, Page links). Anything else is refused.
+export function modeForPath(pathname) {
+  if (pathname === "/passkeys/check") return MODE_CHECK;
+  if (pathname === "/passkeys/forget") return MODE_FORGET;
+  return fail(`this page only runs at /passkeys/check or /passkeys/forget, not ${pathname}`);
+}
+
 // checkChallenge is the WebAuthn challenge a check signs.
 export async function checkChallenge(challenge) {
   return sha256(utf8(CHECK_CHALLENGE_PREFIX + challenge));

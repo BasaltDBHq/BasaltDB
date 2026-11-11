@@ -447,6 +447,34 @@ func TestDictionaryConcurrentRebuilds(t *testing.T) {
 	wg.Wait()
 }
 
+// status.json is written before the new base goes live: when that write
+// fails, Commit fails and nothing changed (old base, delta values kept).
+func TestDictionaryStatusWriteFailureLeavesOldBase(t *testing.T) {
+	k := newKeys(t, testMaster)
+	stateDir := t.TempDir()
+	d := openDict(t, stateDir, k, dictOptions())
+	old := value{pii.EntityEmail, "fixture.old@example.com", ""}
+	added := value{pii.EntityOther, "EE000000000000000077", ""}
+	fresh := value{pii.EntityEmail, "fixture.new@example.com", ""}
+	require.NoError(t, buildWith(t, d, []value{old}))
+	require.NoError(t, d.Add(added.typ, added.text, added.region))
+
+	statusPath := filepath.Join(stateDir, "pii", "status.json")
+	require.NoError(t, os.Remove(statusPath))
+	// A non-empty directory in its place makes the rename of the new status.json fail.
+	require.NoError(t, os.MkdirAll(filepath.Join(statusPath, "blocker"), 0o700))
+	require.ErrorContains(t, buildWith(t, d, []value{fresh}), "status.json")
+	requireFound(t, d, k, old)
+	requireFound(t, d, k, added)
+	requireNotFound(t, d, k, fresh)
+	require.Equal(t, 1, d.Status().DeltaValues)
+
+	require.NoError(t, os.RemoveAll(statusPath))
+	require.NoError(t, buildWith(t, d, []value{fresh}))
+	requireFound(t, d, k, fresh)
+	requireNotFound(t, d, k, old)
+}
+
 // BenchmarkDictionaryLookup200k measures 200,000 generic lookups (the n-grams
 // of a large request) against a base of 1,000,000 values, half of them hits.
 // The hashes are computed before the loop: this is the dictionary's cost, not

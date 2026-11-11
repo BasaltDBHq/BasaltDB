@@ -307,10 +307,10 @@ func (b *DictionaryBuild) Add(t EntityType, value, phoneRegion string) error {
 
 // Commit builds the filters (32-bit fingerprints, or 16-bit when 32 would
 // exceed the memory budget), writes them to a temp file renamed over
-// dictionary.bin, maps the new file, swaps it in and writes status.json. The
-// old mapping is released when no lookup holds it. On any error the previous
-// base stays and every delta value stays (ErrDictionaryOverBudget when even
-// 16 bits would not fit).
+// dictionary.bin, maps the new file, writes status.json and swaps the new
+// base in. The old mapping is released when no lookup holds it. On any error
+// nothing was swapped: the previous base and every delta value stay
+// (ErrDictionaryOverBudget when even 16 bits would not fit).
 func (b *DictionaryBuild) Commit(scan ScanStats) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -325,9 +325,41 @@ func (b *DictionaryBuild) Commit(scan ScanStats) error {
 		b.d.endBuild(false, ScanStats{})
 		return err
 	}
+	// status.json is written before the swap, so an error here means the
+	// commit failed: the old base and every delta value stay.
+	if err := writeStatusFile(b.d.dir, b.d.statusAfterBuild(nb, scan)); err != nil {
+		nb.release()
+		b.d.endBuild(false, ScanStats{})
+		return fmt.Errorf("pii: write %s: %w", StatusFileName, err)
+	}
 	b.d.base.Swap(nb).release()
 	b.d.endBuild(true, scan)
-	return b.d.WriteStatus()
+	return nil
+}
+
+// statusAfterBuild is the status once nb is swapped in and the frozen delta
+// dropped.
+func (d *FuseDictionary) statusAfterBuild(nb *baseFilter, scan ScanStats) DictionaryStatus {
+	d.mu.RLock()
+	st := withScan(d.lastScan, scan)
+	st.DeltaValues = d.active.size()
+	d.mu.RUnlock()
+	st.DictionaryValues = nb.values
+	st.FingerprintBits = nb.bits
+	st.UpdatedAt = d.opts.Now().UTC()
+	return st
+}
+
+// withScan is st with the last scan set to scan (an unset time keeps the
+// previous one).
+func withScan(st DictionaryStatus, scan ScanStats) DictionaryStatus {
+	if !scan.At.IsZero() {
+		at := scan.At.UTC()
+		st.LastScanAt = &at
+	}
+	st.LastScanColumns = scan.Columns
+	st.LastScanRows = scan.Rows
+	return st
 }
 
 // Abort ends the build without changing the base; every delta value stays.
@@ -405,12 +437,7 @@ func (d *FuseDictionary) endBuild(committed bool, scan ScanStats) {
 		return
 	}
 	d.frozen = newDelta()
-	if !scan.At.IsZero() {
-		at := scan.At.UTC()
-		d.lastScan.LastScanAt = &at
-	}
-	d.lastScan.LastScanColumns = scan.Columns
-	d.lastScan.LastScanRows = scan.Rows
+	d.lastScan = withScan(d.lastScan, scan)
 }
 
 func filterIndex(ti int, h Hash) int { return ti*dictShardCount + int(h>>dictShardShift) }

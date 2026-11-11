@@ -111,23 +111,40 @@ func (m *messageBuilder) Build() (string, []mcp.Link) {
 	return strings.Join(parts, "\n\n"), m.links
 }
 
-var (
-	urlScheme  = regexp.MustCompile(`(?i)\b(https?)://`)
-	whitespace = regexp.MustCompile(`\s+`)
+// Full-width ASCII forms (U+FF01 to U+FF5E) fold to ASCII, so a full-width
+// colon or slash cannot dodge the strip below.
+const (
+	fullWidthFirst rune = 0xff01
+	fullWidthLast  rune = 0xff5e
+	fullWidthShift rune = 0xfee0
 )
 
+// linkLike is what makes text look like a link or hold a link fragment: a
+// scheme separator, "www.", and the fragment prefixes of the link formats.
+var linkLike = regexp.MustCompile(`(?i)(:?//|www\.|#1\.|#2\.|#s=)`)
+
 // plainText makes text from the agent or the database safe inside a line of
-// a personMessage: one line, no control character, and no URL (a URL in a
-// message is a link the engine hands over, on a line of its own).
+// a personMessage: one line, no format or control character, full-width
+// forms folded, and nothing that reads as a URL or a link fragment (a URL in
+// a message is a link the engine hands over, on a line of its own).
 func plainText(s string) string {
 	s = strings.Map(func(r rune) rune {
-		if unicode.IsControl(r) && !unicode.IsSpace(r) {
+		switch {
+		case unicode.IsSpace(r):
+			return ' '
+		case unicode.In(r, unicode.Cf, unicode.Cc):
 			return -1
+		case r >= fullWidthFirst && r <= fullWidthLast:
+			return r - fullWidthShift
 		}
 		return r
 	}, s)
-	s = urlScheme.ReplaceAllString(s, "$1 ")
-	return strings.TrimSpace(whitespace.ReplaceAllString(s, " "))
+	// Strip until stable: removing one match can join the pieces of another.
+	for prev := ""; prev != s; {
+		prev = s
+		s = linkLike.ReplaceAllString(s, " ")
+	}
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // clip shortens s to at most n characters, ending in "..." when it cuts.

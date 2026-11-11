@@ -14,6 +14,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 )
 
@@ -26,7 +27,7 @@ func runApprove(c *cliIO, args []string) int {
 	fs := c.flags("approve")
 	show := fs.String("show", "", "print the approval link of this held write (approval id) instead")
 	open := fs.String("open", "", "open the approval link of this held write (approval id) in your browser instead")
-	page := fs.String("page", "", "approval page for --show and --open (default: the engine config's approvalPage, else "+approval.PageURL+")")
+	pagesURL := fs.String("pages-url", "", "pages base URL for --show and --open (default: the engine config's pagesUrl, else "+links.DefaultLocal+")")
 	agent := fs.String("agent", "", "use this agent's credential from the engine config")
 	configPath := fs.String("config", config.DefaultPath(runtime.GOOS), "engine config file")
 	credFile := fs.String("credential-file", "", "read the agent's connection string from this file")
@@ -51,7 +52,11 @@ func runApprove(c *cliIO, args []string) int {
 	}
 	defer conn.Close(c.ctx)
 	if held != "" {
-		return showApproval(c, conn, held, configuredPage(*page, approval.PageURL, *agent, *configPath, ""), *open != "")
+		pages := linkPages{
+			base:  configuredBase(*pagesURL, *agent, *configPath),
+			local: localPages(c, *pagesURL, *agent, *configPath),
+		}
+		return showApproval(c, conn, held, pages, *open != "")
 	}
 	return submitApproval(c, conn, code)
 }
@@ -74,8 +79,9 @@ func approveCode(c *cliIO, args []string, held string) (string, error) {
 }
 
 // showApproval prints the approval link of a held write on stdout, or with
-// open opens it in the browser (printing it only when no browser opens).
-func showApproval(c *cliIO, conn *pgx.Conn, idText, page string, open bool) int {
+// open opens it in the browser (printing it only when no browser opens):
+// the short link when the engine serves the pages, else the long one.
+func showApproval(c *cliIO, conn *pgx.Conn, idText string, pages linkPages, open bool) int {
 	id, err := uuid.Parse(idText)
 	if err != nil {
 		return c.fail(fmt.Errorf("%w: --show and --open need an approval id", errUsage))
@@ -102,16 +108,17 @@ func showApproval(c *cliIO, conn *pgx.Conn, idText, page string, open bool) int 
 	if err != nil {
 		return c.fail(err)
 	}
-	link, err := approval.Request{ApprovalID: a.ID, Binding: a.BindingText, Lines: a.Lines, CredentialIDs: ids}.URL(page)
+	link, err := approval.Request{ApprovalID: a.ID, Binding: a.BindingText, Lines: a.Lines, CredentialIDs: ids}.URL(pages.base)
 	if err != nil {
 		return c.fail(err)
 	}
+	link = pages.short(links.Approval, a.ID, link)
 	fmt.Fprintf(c.stderr, "basalt: %s\n", summary.Headline())
 	expires := a.ExpiresAt.UTC().Format(timeLayout)
 	if open {
 		fmt.Fprintf(c.stderr, "basalt: %d rows, held by run %s, expires %s\n", a.Rows, a.RunID, expires)
 		openLink(c, link, c.stdout)
-		fmt.Fprintln(c.stderr, "basalt: check the rows, sign with your passkey, then run basalt approve '<code>' with the code the page shows")
+		fmt.Fprintln(c.stderr, pages.nextStep("basalt: check the rows and sign with your passkey", "basalt approve '<code>'"))
 		return exitOK
 	}
 	fmt.Fprintf(c.stderr, "basalt: %d rows, held by run %s, expires %s; open this link on a device with your passkey:\n",

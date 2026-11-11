@@ -133,9 +133,9 @@ test("binding and lines", () => {
 });
 
 test("relying party", () => {
-  assert.deepEqual(relyingParty({ protocol: "https:", hostname: "basaltvault.app", port: "" }), {
+  assert.deepEqual(relyingParty({ protocol: "https:", hostname: "console.basaltvault.app", port: "" }), {
     rpId: "basaltvault.app",
-    origin: "https://basaltvault.app",
+    origin: "https://console.basaltvault.app",
   });
   assert.deepEqual(relyingParty({ protocol: "http:", hostname: "localhost", port: "8787" }), {
     rpId: "localhost",
@@ -144,7 +144,9 @@ test("relying party", () => {
   for (const loc of [
     { protocol: "https:", hostname: "evil.example", port: "" },
     { protocol: "http:", hostname: "basaltvault.app", port: "" },
-    { protocol: "https:", hostname: "basaltvault.app", port: "8443" },
+    { protocol: "https:", hostname: "console.basaltvault.app", port: "8443" },
+    { protocol: "https:", hostname: "basaltvault.app", port: "" },
+    { protocol: "http:", hostname: "console.basaltvault.app", port: "" },
     { protocol: "http:", hostname: "127.0.0.1", port: "8787" },
   ]) {
     assert.throws(() => relyingParty(loc), CodeError);

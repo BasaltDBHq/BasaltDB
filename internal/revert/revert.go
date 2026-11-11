@@ -19,18 +19,16 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 )
 
-// Code prefixes and the page URL (CONTRACT.md, Revert, Lines, binding and
-// codes).
+// Code prefixes (CONTRACT.md, Revert, Lines, binding and codes).
 const (
 	// RequestPrefix starts the revert link's fragment, as for approvals.
 	RequestPrefix = approval.RequestPrefix
 	// ResponsePrefix starts the code the revert page outputs.
 	ResponsePrefix = "basalt-revert.1."
-	// PageURL is the static revert page.
-	PageURL = "https://basaltvault.app/revert/"
 )
 
 // KindRevert is the binding kind of a revert authorisation.
@@ -268,14 +266,14 @@ func (r Request) Fragment() (string, error) {
 	return approval.EncodeFragment(r)
 }
 
-// URL returns the revert link on page (PageURL outside tests and local
-// development).
-func (r Request) URL(page string) (string, error) {
+// URL returns the long revert link on the pages at base (links):
+// <base>/reverts/<revertId>#1.<request>.
+func (r Request) URL(base string) (string, error) {
 	frag, err := r.Fragment()
 	if err != nil {
 		return "", err
 	}
-	return page + "#" + frag, nil
+	return links.Revert(base, r.RevertID) + "#" + frag, nil
 }
 
 // ParseRequest decodes a revert link fragment, with or without '#', and

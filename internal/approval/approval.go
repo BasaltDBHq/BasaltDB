@@ -17,17 +17,16 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 )
 
-// Code prefixes and the page URL (CONTRACT.md, Approvals, Codes).
+// Code prefixes (CONTRACT.md, Approvals, Codes).
 const (
 	// RequestPrefix starts the approval link's fragment.
 	RequestPrefix = "1."
 	// ResponsePrefix starts the code the approval page outputs.
 	ResponsePrefix = "basalt-approval.1."
-	// PageURL is the static approval page (owner decision #3).
-	PageURL = "https://basaltvault.app/approve/"
 )
 
 // KindApprove is the binding kind of an approval; M3 adds REVERT.
@@ -138,14 +137,14 @@ func (r Request) Fragment() (string, error) {
 	return EncodeFragment(r)
 }
 
-// URL returns the approval link on page (PageURL outside tests and local
-// development).
-func (r Request) URL(page string) (string, error) {
+// URL returns the long approval link on the pages at base (links):
+// <base>/approvals/<approvalId>#1.<request>.
+func (r Request) URL(base string) (string, error) {
 	frag, err := r.Fragment()
 	if err != nil {
 		return "", err
 	}
-	return page + "#" + frag, nil
+	return links.Approval(base, r.ApprovalID) + "#" + frag, nil
 }
 
 // ParseRequest decodes an approval link fragment, with or without '#', and

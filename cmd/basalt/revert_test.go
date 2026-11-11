@@ -25,7 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
-var revertLink = regexp.MustCompile(`https://basaltvault\.app/revert/#(1\.[A-Za-z0-9_-]+)`)
+var revertLink = regexp.MustCompile(`http://localhost:8787/reverts/[0-9a-f-]{36}#(1\.[A-Za-z0-9_-]+)`)
 
 // revertSetup is a demo database with basalt init done (agent bot on
 // leads, the person's passkey registered), and a run of the agent that
@@ -154,7 +154,7 @@ func TestRevertOpensTheLink(t *testing.T) {
 	require.Len(t, h.opened, 1)
 	m := revertLink.FindStringSubmatch(h.opened[0])
 	require.NotNil(t, m, h.opened[0])
-	require.NotContains(t, r.stderr, "/revert/#", "an opened link is not printed")
+	require.NotContains(t, r.stderr, "/reverts/", "an opened link is not printed")
 	require.Contains(t, r.stderr, "opened the link in your browser")
 	require.Equal(t, "won", leadStatusOf(t, d, 40))
 
@@ -195,7 +195,7 @@ func TestRevertDryRun(t *testing.T) {
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Equal(t, 6, strings.Count(r.stdout, "restore    public.leads"))
 	require.Contains(t, r.stderr, "dry run, nothing was reverted")
-	require.NotContains(t, r.stderr, "/revert/#")
+	require.NotContains(t, r.stderr, "/reverts/")
 	require.Equal(t, "won", leadStatusOf(t, d, 40))
 
 	r = cli(t, nil, "", "revert", "--run", run.String(), "--credential-file", cred, "--dry-run", "--json")

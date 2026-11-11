@@ -112,7 +112,7 @@
             "approvalUrl": {
               "type": "string",
               "format": "uri",
-              "description": "The approval page for this held write: the short link http://localhost:<port>/approve/<approvalId> when the engine serves the local pages, else https://basaltvault.app/approve/#1.<request> (the request carries the preview the person signs)."
+              "description": "The approval page for this held write: the short link http://localhost:<port>/approvals/<approvalId> when the engine serves the local pages, else <base>/approvals/<approvalId>#1.<request> (base: the engine config's pagesUrl) (the request carries the preview the person signs)."
             },
             "approveCommand": {
               "type": "string",

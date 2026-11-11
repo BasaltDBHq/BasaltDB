@@ -94,7 +94,7 @@ func runService(ctx context.Context, args []string, io stdio) int {
 	var a agentInstall
 	fs.StringVar(&a.name, "agent", "", "install: also place this agent (basalt init runs this under sudo)")
 	fs.StringVar(&a.osUser, "os-user", "", "install --agent: the agent's OS user")
-	fs.StringVar(&a.approvalPage, "approval-page", "", "install --agent: the approval page (development origin)")
+	fs.StringVar(&a.pagesURL, "pages-url", "", "install --agent: the pages base URL the agent's passkey belongs to")
 	credStdin := fs.Bool("credential-stdin", false, "install --agent: read the agent's connection string from stdin")
 	if fs.Parse(args[1:]) != nil || fs.NArg() > 0 {
 		return exitUsage

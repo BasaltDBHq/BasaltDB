@@ -228,12 +228,25 @@ func (h handlers) write(ctx context.Context, raw json.RawMessage) (any, error) {
 	}
 	out, err := h.svc.Write(ctx, WriteParams{
 		SQL: args.SQL, Params: params, Intent: args.Intent, RunID: optionalID(args.RunID),
-		ApprovalID: optionalID(args.ApprovalID), Approval: args.Approval,
+		ApprovalID: optionalID(args.ApprovalID), Approval: args.Approval, Wait: args.wait(),
 	})
 	if err != nil {
 		return nil, err
 	}
 	return writeResultFromDomain(out), nil
+}
+
+// wait is waitForApproval with its default (CONTRACT.md, Waiting write):
+// none on a new write, so the agent gets the link at once, and
+// DefaultApprovalWait on a repeat with approvalId.
+func (a writeArgs) wait() time.Duration {
+	if a.WaitForApproval != nil {
+		return time.Duration(*a.WaitForApproval) * time.Second
+	}
+	if a.ApprovalID == "" {
+		return 0
+	}
+	return DefaultApprovalWait
 }
 
 func intentMissing(raw json.RawMessage) bool {

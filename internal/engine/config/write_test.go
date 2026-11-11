@@ -40,29 +40,30 @@ func TestUpsertAgent(t *testing.T) {
 	require.Error(t, config.UpsertAgent(path, config.Settings{SocketDir: "/s"}, config.Agent{Name: "Bad/Name", OSUser: "x", CredentialFile: "/x"}))
 }
 
-func TestUpsertAgentStateDirAndApprovalPage(t *testing.T) {
+func TestUpsertAgentStateDirAndPagesURL(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "engine.json")
 	bot := config.Agent{Name: "bot", OSUser: "alice", CredentialFile: "/c/bot.url"}
 
-	// A new file takes the state directory; the approval page is set.
+	// A new file takes the state directory; the pages base URL is set.
 	require.NoError(t, config.UpsertAgent(path, config.Settings{
 		SocketDir: "/home/alice/basalt/run", StateDir: "/home/alice/basalt/state",
-		ApprovalPage: "http://localhost:8787/approve/",
+		PagesURL: "http://localhost:8787",
 	}, bot))
 	c, err := config.Load(path)
 	require.NoError(t, err)
 	require.Equal(t, "/home/alice/basalt/state", c.StateDir)
-	require.Equal(t, "http://localhost:8787/approve/", c.ApprovalPage)
+	require.Equal(t, "http://localhost:8787", c.PagesURL)
 
-	// Without a page the existing one stays; a new page replaces it.
+	// Without one the existing one stays; a new one replaces it, and the
+	// older approvalPage key with it.
 	require.NoError(t, config.UpsertAgent(path, config.Settings{}, bot))
 	c, err = config.Load(path)
 	require.NoError(t, err)
-	require.Equal(t, "http://localhost:8787/approve/", c.ApprovalPage)
-	require.NoError(t, config.UpsertAgent(path, config.Settings{ApprovalPage: "http://localhost:9000/approve/"}, bot))
+	require.Equal(t, "http://localhost:8787", c.PagesURL)
+	require.NoError(t, config.UpsertAgent(path, config.Settings{PagesURL: "http://localhost:9000"}, bot))
 	c, err = config.Load(path)
 	require.NoError(t, err)
-	require.Equal(t, "http://localhost:9000/approve/", c.ApprovalPage)
+	require.Equal(t, "http://localhost:9000", c.PagesURL)
 	require.Equal(t, "/home/alice/basalt/state", c.StateDir)
 }

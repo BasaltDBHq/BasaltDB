@@ -20,8 +20,8 @@ const (
 type Settings struct {
 	// SocketDir and StateDir are used only when the config file is new.
 	SocketDir, StateDir string
-	// ApprovalPage replaces the config's approval page when set.
-	ApprovalPage string
+	// PagesURL replaces the config's pages base URL when set.
+	PagesURL string
 }
 
 // UpsertAgent adds agent a to the config at path, or replaces the agent of
@@ -45,8 +45,8 @@ func Upserted(path string, s Settings, a Agent) ([]byte, error) {
 	case err != nil:
 		return nil, err
 	}
-	if s.ApprovalPage != "" {
-		c.ApprovalPage = s.ApprovalPage
+	if s.PagesURL != "" {
+		c.PagesURL, c.ApprovalPage = s.PagesURL, ""
 	}
 	replaced := false
 	for i := range c.Agents {

@@ -1,8 +1,12 @@
-// The approval page: decode the held action from the link, check the rows
-// against the binding, show them, and sign the binding with the person's
-// passkey. The page sends nothing anywhere; it shows a code to paste.
-import { encodeApprovalResponse, parseApprovalRequest, relyingParty } from "./codec.js";
-import { $, APPROVE_REOPEN, el, fail, linkFailure, showCode, webauthnError } from "./page.js";
+// The approval page: read the held action (from the long link's fragment,
+// or from the engine for a short link /approvals/<id>), check the rows against
+// the binding, show them, and sign the binding with the person's passkey.
+// From a long link the page sends nothing anywhere and shows a code to
+// paste; from a short link it posts the signature to the engine that served
+// it (same origin), which relays it to Postgres.
+import { approvalResponseJSON, checkApprovalRequest, encodeApprovalResponse, parseApprovalRequest, relyingParty } from "./codec.js";
+import { fetchRequest, postResponse, relayPaths, shortLinkId } from "./local.js";
+import { $, APPROVE_REOPEN, el, fail, linkFailure, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
 import { canStartPasskey, cascadeConfirmation, headline, summarize } from "./summary.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
@@ -84,7 +88,43 @@ function showCascadeConfirmation(summary) {
   $("cascade-confirm").hidden = false;
 }
 
-async function approve(rp, req, summary) {
+// engineFetch is fetch bound to the window, for the local relay.
+const engineFetch = (path, init) => window.fetch(path, init);
+
+// loadRequest reads the request: from the fragment of a long link, or from
+// the engine for a short link. relay is the path to post the signature to,
+// null for a long link.
+async function loadRequest() {
+  const id = shortLinkId(window.location.pathname, "approvals");
+  if (window.location.hash || id === null) {
+    // A long link: the request is in the fragment, and names the same approval
+    // as the path.
+    const req = await parseApprovalRequest(window.location.hash);
+    if (id !== null && req.approvalId !== id) throw new Error(`the link is for approval ${req.approvalId}, its path for ${id}`);
+    return { req, relay: null };
+  }
+  const paths = relayPaths("approvals", id);
+  const req = await checkApprovalRequest(await fetchRequest(engineFetch, paths.request));
+  if (req.approvalId !== id) throw new Error(`the engine sent approval ${req.approvalId}, not ${id}`);
+  return { req, relay: paths.relay };
+}
+
+// finish relays the signed response when the page came from a short link,
+// and otherwise (or when the relay fails) shows the code to paste.
+async function finish(response, relay) {
+  if (relay !== null) {
+    try {
+      await postResponse(engineFetch, relay, approvalResponseJSON(response));
+      showDone("Approved. The agent will continue.");
+      return;
+    } catch (err) {
+      showRelayFailed(`The engine did not take the approval: ${err.message}. To finish by hand, paste the code below into basalt approve.`);
+    }
+  }
+  showCode(encodeApprovalResponse(response));
+}
+
+async function approve(rp, req, summary, relay) {
   if (!gate(req, summary)) return;
   $("approve").disabled = true;
   try {
@@ -98,14 +138,15 @@ async function approve(rp, req, summary) {
       },
     });
     const r = cred.response;
-    showCode(
-      encodeApprovalResponse({
+    await finish(
+      {
         approvalId: req.approvalId,
         credentialId: new Uint8Array(cred.rawId),
         authenticatorData: new Uint8Array(r.authenticatorData),
         clientDataJson: new Uint8Array(r.clientDataJSON),
         signature: new Uint8Array(r.signature),
-      }),
+      },
+      relay,
     );
   } catch (err) {
     gate(req, summary);
@@ -116,9 +157,10 @@ async function approve(rp, req, summary) {
 async function main() {
   let rp;
   let req;
+  let relay;
   try {
     rp = relyingParty(window.location);
-    req = await parseApprovalRequest(window.location.hash);
+    ({ req, relay } = await loadRequest());
   } catch (err) {
     fail(linkFailure(err, "approval", APPROVE_REOPEN));
     return;
@@ -136,7 +178,7 @@ async function main() {
   showCascadeConfirmation(summary);
   gate(req, summary);
   $("cascade-ok").addEventListener("change", () => gate(req, summary));
-  $("approve").addEventListener("click", () => approve(rp, req, summary));
+  $("approve").addEventListener("click", () => approve(rp, req, summary, relay));
 }
 
 main();

@@ -82,10 +82,17 @@ type Config struct {
 	// StateDir keeps the engine's own state: each agent's last verified
 	// ledger chain head. Empty means DefaultStateDir.
 	StateDir string `json:"stateDir,omitempty"`
-	// ApprovalPage is the approval page held writes link to. Empty means
-	// https://basaltvault.app/approve/; http://localhost:<port>/approve/
-	// for development.
+	// PagesURL is the base URL of the approval, revert and registration
+	// pages (links): http://localhost:<port> for the engine's own pages,
+	// the default (links.DefaultLocal), or the hosted console. See
+	// PagesBase.
+	PagesURL string `json:"pagesUrl,omitempty"`
+	// ApprovalPage is the older key: only its origin is used, when
+	// pagesUrl is not set. basalt init writes pagesUrl.
 	ApprovalPage string `json:"approvalPage,omitempty" validate:"omitempty,url"`
+	// PagesAddr is where the engine serves the approval and revert pages on
+	// loopback (see Pages); "off" disables them, empty is the default.
+	PagesAddr string `json:"pagesAddr,omitempty"`
 	// Notify says where the person hears about held writes.
 	Notify Notify `json:"notify,omitzero"`
 }
@@ -194,6 +201,9 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	if err := c.checkSocketPaths(); err != nil {
+		return Config{}, fmt.Errorf("config %s: %w", path, err)
+	}
+	if _, err := c.Pages(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	return c, nil

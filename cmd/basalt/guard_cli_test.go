@@ -175,6 +175,54 @@ func TestInitInstallsAndWritesCredential(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestInitWarnsWhenRLSHidesRows: init warns about each agent table where
+// row-level security hides every row from the agent role (Supabase can
+// turn RLS on for new tables), adds no policy for it, and stays quiet
+// once a policy lets the role see rows. basalt log warns the same.
+func TestInitWarnsWhenRLSHidesRows(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	cfgPath := tempConfig(t)
+	r := cli(t, map[string]string{envAdminURL: d.URL}, "",
+		"init", "--agent", "bot", "--write", "public.leads", "--read", "public.lead_notes", "--prefix", d.Names.Prefix,
+		"--config", cfgPath, "--os-user", "tester", "--yes", "--skip-passkey")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.NotContains(t, r.stderr, "row-level security", "RLS off")
+
+	d.Exec(t, `ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY`)
+	path := initAgent(t, d, cfgPath)
+	role := d.Names.Prefix + "_agent_bot"
+	require.Contains(t, initOut(t, d, cfgPath),
+		"basalt: warning: row-level security is on for public.leads and no policy lets "+role+
+			" see rows; the agent will read 0 rows. Add a policy for that role, or disable RLS on the table.")
+
+	b, err := os.ReadFile(path)
+	require.NoError(t, err)
+	ctx := context.Background()
+	conn, err := pgdial.Connect(ctx, strings.TrimSpace(string(b)))
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+	var n int
+	require.NoError(t, conn.QueryRow(ctx, `SELECT count(id) FROM public.leads`).Scan(&n))
+	require.Zero(t, n, "init does not widen the agent's view")
+	lr := cli(t, nil, "", "log", "--credential-file", path)
+	require.Equal(t, exitOK, lr.code, lr.stderr)
+	require.Contains(t, lr.stderr, "warning: row-level security is on for public.leads and no policy lets this agent see rows")
+
+	d.Exec(t, `CREATE POLICY bot ON public.leads FOR SELECT TO `+role+` USING (true)`)
+	require.NotContains(t, initOut(t, d, cfgPath), "row-level security")
+}
+
+// initOut runs initAgent's init again and returns its stderr.
+func initOut(t *testing.T, d *guardtest.DB, configPath string) string {
+	t.Helper()
+	r := cli(t, map[string]string{envAdminURL: d.URL}, "",
+		"init", "--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix,
+		"--config", configPath, "--os-user", "tester", "--yes", "--skip-passkey")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	return r.stderr
+}
+
 func TestLogShowsRunChanges(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)

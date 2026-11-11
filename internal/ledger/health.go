@@ -40,6 +40,9 @@ type Health struct {
 	// is the pin passed in when the chain is broken.
 	Head      guard.ChainHead
 	Uncovered []guard.Uncovered
+	// RLSBlind are tables the agent can SELECT where row-level security
+	// hides every row from it (schema.table).
+	RLSBlind []string
 	// LastHeartbeat is zero when the agent never sent one.
 	LastHeartbeat  time.Time
 	HeartbeatStale bool
@@ -48,7 +51,7 @@ type Health struct {
 }
 
 // CheckHealth verifies the chain (incrementally from opts.Pin), lists
-// unguarded tables, and finds the agent's last heartbeat and recent
+// unguarded tables and tables row-level security hides from the agent, and finds the agent's last heartbeat and recent
 // dead-man row. now is the caller's clock.
 func CheckHealth(ctx context.Context, q guard.Querier, now time.Time, opts HealthOptions) (Health, error) {
 	var h Health
@@ -57,6 +60,9 @@ func CheckHealth(ctx context.Context, q guard.Querier, now time.Time, opts Healt
 		return Health{}, err
 	}
 	if h.Uncovered, err = guard.UncoveredTables(ctx, q); err != nil {
+		return Health{}, err
+	}
+	if h.RLSBlind, err = guard.RLSBlindTables(ctx, q, "", nil); err != nil {
 		return Health{}, err
 	}
 	sql, args, err := psql.Select("max(at)").From("basalt_meta.agent_ledger").

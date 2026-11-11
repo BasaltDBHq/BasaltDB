@@ -83,6 +83,7 @@ func runInit(c *cliIO, args []string) int {
 		return c.fail(err)
 	}
 	fmt.Fprintf(c.stderr, "basalt: guard installed; agent role %s\n", role)
+	warnRLSBlind(c, conn, role, f.spec)
 	if err := passkeyStep(c, conn, f); err != nil {
 		return c.fail(fmt.Errorf("the guard is installed but no passkey was registered (run basalt init again): %w", err))
 	}
@@ -90,6 +91,24 @@ func runInit(c *cliIO, args []string) int {
 		return c.fail(err)
 	}
 	return exitOK
+}
+
+// warnRLSBlind warns about every --write and --read table where row-level
+// security hides all rows from the agent role: Supabase can turn RLS on
+// for new tables, and the agent then reads 0 rows without any error. Init
+// never adds a policy for the agent (decision N12-7). A failed check is a
+// warning too: the guard is installed either way.
+func warnRLSBlind(c *cliIO, conn *pgx.Conn, role string, spec guard.AgentSpec) {
+	tables := append(append([]string{}, spec.Write...), spec.Read...)
+	blind, err := guard.RLSBlindTables(c.ctx, conn, role, tables)
+	if err != nil {
+		fmt.Fprintf(c.stderr, "basalt: warning: could not check row-level security on the agent's tables: %v\n", err)
+		return
+	}
+	for _, t := range blind {
+		fmt.Fprintf(c.stderr, "basalt: warning: row-level security is on for %s and no policy lets %s see rows; "+
+			"the agent will read 0 rows. Add a policy for that role, or disable RLS on the table.\n", t, role)
+	}
 }
 
 // printSetupPlan is the dry run's account of the engine setup init would

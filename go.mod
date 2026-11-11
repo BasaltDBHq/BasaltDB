@@ -3,6 +3,7 @@ module github.com/basaltdbhq/basaltdb
 go 1.26.0
 
 require (
+	github.com/FastFilter/xorfilter v0.5.1
 	github.com/Masterminds/squirrel v1.5.4
 	github.com/go-playground/validator/v10 v10.30.6
 	github.com/google/uuid v1.6.0

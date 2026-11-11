@@ -2,7 +2,7 @@
   "name": "list_pending",
   "status": "IMPLEMENTED",
   "milestone": "M2",
-  "description": "This agent's held writes that have not been applied and have not expired: waiting for the person's passkey (PENDING) or approved and ready to apply with write and approvalId (APPROVED). Each carries personMessage, one line to show the person verbatim, with the approval link (approvalUrl) and the equivalent basalt command (approveCommand). Every call issues each item a new short link and the earlier link stops working, so use it to get a working link back and hand the person the new one. Newest first, cursor-paginated. Listing never approves anything.",
+  "description": "This agent's held writes that have not been applied and have not expired: waiting for the person's passkey (PENDING) or approved and ready to apply with write and approvalId (APPROVED). Each carries personMessage, one line to show the person verbatim, with the approval link (approvalUrl) and the equivalent basalt command (approveCommand). Listing touches no link: the link already given keeps working. If it was lost, call with reissueLink: true to get a new short link for each item (the earlier one stops working) and hand the person the new one. Newest first, cursor-paginated. Listing never approves anything.",
   "inputSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -33,6 +33,10 @@
         "type": "string",
         "pattern": "^-?id$",
         "description": "id or -id. Default -id (newest first)."
+      },
+      "reissueLink": {
+        "type": "boolean",
+        "description": "Issue a new short link for each item returned, revoking its earlier link. Default false: links are left as they are."
       }
     }
   },
@@ -112,7 +116,7 @@
             "approvalUrl": {
               "type": "string",
               "format": "uri",
-              "description": "The approval page for this held write: the short link http://localhost:<port>/approvals/<approvalId>#s=<secret> when the engine serves the local pages (newly issued by this call; the earlier one stops working), else <base>/approvals/<approvalId>#1.<request> (base: the engine config's pagesUrl)."
+              "description": "The approval page for this held write: with reissueLink and when the engine serves the local pages, a newly issued short link http://localhost:<port>/approvals/<approvalId>#s=<secret> (the earlier one stops working); otherwise <base>/approvals/<approvalId>#1.<request> (base: the engine config's pagesUrl)."
             },
             "approveCommand": {
               "type": "string",

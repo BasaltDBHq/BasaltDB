@@ -16,6 +16,13 @@
   <section id="error" class="panel error" hidden>
     <h1>Cannot register</h1>
     <p id="error-text"></p>
+    <div id="paste-box" hidden>
+      <h2>Paste the whole message from your agent</h2>
+      <p class="muted">Copy everything from the line before the link to the line after it. Only the part after the # is used; this page keeps its own address.</p>
+      <textarea id="paste" rows="6" maxlength="20000" aria-label="The message from your agent"></textarea>
+      <div class="buttons"><button id="paste-read" type="button">Read the link</button></div>
+      <p id="paste-status" class="muted" role="status"></p>
+    </div>
   </section>
 
   <main id="main" hidden>

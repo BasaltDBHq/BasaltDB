@@ -140,7 +140,7 @@ func VerifyRegistration(req RegistrationRequest, resp RegistrationResponse, rp R
 	if !ok || pub.Curve != elliptic.P256() {
 		return Credential{}, rejected("public key is not P-256")
 	}
-	return Credential{ID: resp.CredentialID, PublicKey: pub, SignCount: ad.counter, Relying: rp}, nil
+	return Credential{ID: resp.CredentialID, PublicKey: pub, SignCount: ad.counter, Relying: rp, UserHandle: req.UserID}, nil
 }
 
 // maxCodeLen bounds a pasted or linked code before decoding.

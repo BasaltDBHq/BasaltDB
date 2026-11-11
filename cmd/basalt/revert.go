@@ -387,8 +387,12 @@ func printRevertStatus(c *cliIO, s revertStatusDTO) {
 	default:
 		fmt.Fprintf(c.stdout, "  not signed yet; sign by %s\n", s.ExpiresAt.UTC().Format(timeLayout))
 	}
+	skipped := make([]revert.Line, 0, len(s.SkippedLines))
 	for _, l := range s.SkippedLines {
-		fmt.Fprintln(c.stdout, revertLineText(withConflict(l.Plan, l.Conflict, l.SQLState)))
+		skipped = append(skipped, withConflict(l.Plan, l.Conflict, l.SQLState))
+	}
+	for _, l := range displayOrder(skipped) {
+		fmt.Fprintln(c.stdout, revertLineText(l))
 	}
 }
 
@@ -418,8 +422,9 @@ func checkRevertLocally(c *cliIO, conn *pgx.Conn, resp revert.Response) error {
 	})
 }
 
-// printRevertLines prints every line: what is restored, then what is left
-// alone and why.
+// printRevertLines prints every line in reading order (displayOrder): what
+// is restored, then what is left alone and why. --json keeps the signed
+// order.
 func printRevertLines(c *cliIO, texts []string, asJSON bool) error {
 	lines := make([]revert.Line, 0, len(texts))
 	for _, t := range texts {
@@ -436,16 +441,11 @@ func printRevertLines(c *cliIO, texts []string, asJSON bool) error {
 		return nil
 	}
 	restored := 0
-	for _, l := range lines {
+	for _, l := range displayOrder(lines) {
 		if l.Action == revert.ActionRestore {
 			restored++
-			fmt.Fprintln(c.stdout, revertLineText(l))
 		}
-	}
-	for _, l := range lines {
-		if l.Action == revert.ActionSkip {
-			fmt.Fprintln(c.stdout, revertLineText(l))
-		}
+		fmt.Fprintln(c.stdout, revertLineText(l))
 	}
 	fmt.Fprintf(c.stderr, "basalt: %d rows to restore, %d left as they are (people win)\n", restored, len(lines)-restored)
 	return nil

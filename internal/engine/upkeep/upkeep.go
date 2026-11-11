@@ -1,7 +1,8 @@
 // Package upkeep is the engine's timer for one agent: a heartbeat in the
 // ledger and a DEAD_MAN row after a long silence (the dead-man switch,
 // owner decision #14), retention (decision #10), the coverage check
-// (unguarded tables, recorded when the set changes), and incremental
+// (unguarded tables, recorded when the set changes), a warning for tables
+// row-level security hides from the agent, and incremental
 // verification of the ledger chain from a head pinned outside the
 // database, so a rewrite of history is noticed even across restarts.
 package upkeep
@@ -116,6 +117,9 @@ func (u *Upkeep) Tick(ctx context.Context) error {
 	if err := u.checkCoverage(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("coverage: %w", err))
 	}
+	if err := u.checkRLSBlind(ctx); err != nil {
+		errs = append(errs, fmt.Errorf("row-level security: %w", err))
+	}
 	if res, err := guard.Prune(ctx, u.db); err != nil {
 		errs = append(errs, fmt.Errorf("prune: %w", err))
 	} else if res.ValuesPruned+res.RowsDeleted > 0 {
@@ -220,6 +224,21 @@ func (u *Upkeep) checkCoverage(ctx context.Context) error {
 		return err
 	}
 	u.coverageKnown, u.uncovered = true, tables
+	return nil
+}
+
+// checkRLSBlind warns on every tick about each table the agent can SELECT
+// where row-level security hides every row from it (Supabase can turn RLS
+// on for new tables). Basalt never adds a policy for the agent (N12-7).
+func (u *Upkeep) checkRLSBlind(ctx context.Context) error {
+	tables, err := guard.RLSBlindTables(ctx, u.db, "", nil)
+	if err != nil {
+		return err
+	}
+	for _, t := range tables {
+		u.log.Warn("row-level security hides every row of this table from the agent; add a policy for its role or disable RLS",
+			"agent", u.agent, "table", t)
+	}
 	return nil
 }
 

@@ -2,7 +2,7 @@
   "name": "request_revert",
   "status": "IMPLEMENTED",
   "milestone": "M4.1",
-  "description": "Ask the person to revert one change or one run of yours: Basalt prepares the revert (as basalt revert does) and returns revertUrl, the page where the person reviews every row and signs with their passkey, and personMessage, one line to show the person verbatim. You can never sign a revert; you can only deliver the person's signature, which the database verifies. Before you call it, check the current data (preview_revert, and query for rows that depend on the change) and tell the person what you recommend. Name exactly one of changeId, runId, with intent (why the person reverts, in their words). A whole task is reverted only by the person (basalt revert --task); if another agent's run looks wrong, ask that agent. Show personMessage, then, without ending your turn, call request_revert once more with only revertId: that call waits up to waitForSignature seconds (default 90) and returns as soon as the person signs. APPLIED: the revert is done; tell the person what was restored and skipped. APPLYING (a revert over 1000 lines): the person signed the plan and you restore it now in batches (see nextStep). If the wait runs out (status PENDING), do not wait again: end your turn with the link and its expiry, and call request_revert with revertId when the person says they signed. If the person gives you a basalt-revert.1. code from the revert page, pass it as signature with revertId. People win: rows someone changed after you are skipped, never overwritten.",
+  "description": "Ask the person to revert one change or one run of yours: Basalt prepares the revert (as basalt revert does) and returns revertUrl, the page where the person reviews every row and signs with their passkey, and personMessage, one line to show the person verbatim. You can never sign a revert; you can only deliver the person's signature, which the database verifies. Before you call it, check the current data (preview_revert, and query for rows that depend on the change) and tell the person what you recommend. Name exactly one of changeId, runId, with intent (why the person reverts, in their words). A whole task is reverted only by the person (basalt revert --task); if another agent's run looks wrong, ask that agent. Show personMessage, then, without ending your turn, call request_revert once more with only revertId: that call waits up to waitForSignature seconds (default 90) and returns as soon as the person signs. APPLIED: the revert is done; tell the person what was restored and skipped. APPLYING (a revert over 1000 lines): the person signed the plan and you restore it now in batches (follow nextSteps). If the wait runs out (status PENDING), do not wait again: end your turn with the link and its expiry, and call request_revert with revertId when the person says they signed. If the person gives you a basalt-revert.1. code from the revert page, pass it as signature with revertId. People win: rows someone changed after you are skipped, never overwritten.",
   "inputSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -157,9 +157,13 @@
           }
         }
       },
-      "nextStep": {
-        "type": "string",
-        "description": "For you, not the person: what to call next. APPLYING: revert_plan with revertId, pending true and limit 200, then apply_revert_batch with those line numbers, until pending is 0. PENDING after a wait: end your turn."
+      "nextSteps": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "$ref": "../errors/next-step.schema.json"
+        },
+        "description": "What to do next, first step first (CONTRACT.md, Next steps): on PENDING the link for the person and the one wait; on PENDING after a wait, end your turn; on APPLYING the revert_plan and apply_revert_batch loop with arguments filled in; on EXPIRED, ask the person."
       }
     }
   },

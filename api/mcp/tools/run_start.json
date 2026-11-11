@@ -47,6 +47,14 @@
       "startedAt": {
         "type": "string",
         "format": "date-time"
+      },
+      "warnings": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "$ref": "../errors/warning.schema.json"
+        },
+        "description": "Planned (CONTRACT.md, Next steps): GUARD_UPGRADE_AVAILABLE when only non-breaking guard migrations are missing. Absent when empty."
       }
     }
   },

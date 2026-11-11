@@ -32,6 +32,7 @@ const (
 	versionAgentsInherit            // M4: agents are roles that inherit the agents group
 	versionAgentPolicy              // M4: ledger row for an agent RLS policy the person confirmed
 	versionPasskeys                 // M4.1: passkey revocation and last use
+	versionAgentVersion             // M4 follow-up: agents read schema_version
 )
 
 // migrations lists every version in order. M2 appends versions.
@@ -48,6 +49,7 @@ var migrations = []migration{
 	{version: versionAgentsInherit, sql: v10Agents},
 	{version: versionAgentPolicy, sql: v11AgentPolicy},
 	{version: versionPasskeys, sql: v12Revocation},
+	{version: versionAgentVersion, sql: v13AgentVersion},
 }
 
 // LatestVersion is the basalt_meta version this build installs.

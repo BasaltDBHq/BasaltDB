@@ -325,7 +325,9 @@ func TestInitAsksBeforeLettingTheAgentSeeRLSRows(t *testing.T) {
 		t.Parallel()
 		r := cli(t, nil, "", "init", "--agent", "bot", "--agent-rls", "some")
 		require.Equal(t, exitUsage, r.code)
-		require.Contains(t, r.stderr, "--agent-rls must be all-rows or none")
+		require.Contains(t, r.stderr, "must be ask, all-rows or none")
+		r = cli(t, nil, "", "init", "--agent", "bot", "--agent-rls", "ALL_ROWS")
+		require.Equal(t, exitUsage, r.code, "flag values are lowercase kebab-case")
 	})
 }
 

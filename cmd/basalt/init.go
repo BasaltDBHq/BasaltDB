@@ -8,9 +8,9 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"slices"
 	"strings"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
@@ -21,7 +21,8 @@ import (
 // initFlags are basalt init's flags after parsing.
 type initFlags struct {
 	agent, write, read, prefix, configPath, socketDir, osUser, credFile, engineUser string
-	passkeyOrigin, passkeyLabel, agentRLS                                           string
+	passkeyOrigin, passkeyLabel                                                     string
+	agentRLS                                                                        AgentRLSMode
 	spec                                                                            guard.AgentSpec
 	dryRun, yes, skipPasskey, addPasskey, noService                                 bool
 	// pathsGiven is true when --config, --socket-dir or --credential-file
@@ -98,13 +99,36 @@ func runInit(c *cliIO, args []string) int {
 	return exitOK
 }
 
-// --agent-rls values: ask at a terminal (the default), never add an agent
-// policy, or add one on every agent table RLS hides (for scripts).
+// AgentRLSMode is the value of --agent-rls: what init does about agent
+// tables where row-level security hides every row from the agent role.
+// CLI input spelling only (AGENTS.md, Wire format): it is never stored;
+// the ledger records the policy itself (AGENT_POLICY_ADDED).
+type AgentRLSMode string
+
+// --agent-rls values.
 const (
-	agentRLSAsk     = ""
-	agentRLSNone    = "none"
-	agentRLSAllRows = "all-rows"
+	// AgentRLSAsk asks once per table at a terminal (the default).
+	AgentRLSAsk AgentRLSMode = "ask"
+	// AgentRLSAllRows adds the agent policy on every such table, for scripts.
+	AgentRLSAllRows AgentRLSMode = "all-rows"
+	// AgentRLSNone never adds an agent policy and does not ask.
+	AgentRLSNone AgentRLSMode = "none"
 )
+
+// agentRLSRule is the validator rule of --agent-rls.
+const agentRLSRule = "oneof=ask all-rows none"
+
+// String implements flag.Value.
+func (a *AgentRLSMode) String() string { return string(*a) }
+
+// Set implements flag.Value, refusing anything but the three values.
+func (a *AgentRLSMode) Set(v string) error {
+	if err := validator.New().Var(v, agentRLSRule); err != nil {
+		return fmt.Errorf("must be %s, %s or %s", AgentRLSAsk, AgentRLSAllRows, AgentRLSNone)
+	}
+	*a = AgentRLSMode(v)
+	return nil
+}
 
 // agentPolicies picks the agent's tables where row-level security hides
 // every row from its role and the person lets the agent see all rows
@@ -113,14 +137,14 @@ const (
 // --agent-rls=all-rows. Tables without RLS are never asked about. The
 // rest get warnRLSBlind's warning after init.
 func agentPolicies(c *cliIO, conn *pgx.Conn, names guard.Names, f initFlags) ([]guard.BlindTable, error) {
-	if f.agentRLS == agentRLSNone {
+	if f.agentRLS == AgentRLSNone {
 		return nil, nil
 	}
 	blind, err := guard.AgentBlindTables(c.ctx, conn, names, f.spec)
 	if err != nil {
 		return nil, err
 	}
-	if f.agentRLS == agentRLSAllRows {
+	if f.agentRLS == AgentRLSAllRows {
 		return blind, nil
 	}
 	if !c.interactive || f.yes || f.dryRun {
@@ -213,8 +237,9 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 	fs.BoolVar(&f.addPasskey, "add-passkey", false, "register another passkey even if one is registered")
 	fs.StringVar(&f.passkeyOrigin, "passkey-origin", "", "development only: the registration page at http://localhost:<port> (RP ID localhost)")
 	fs.StringVar(&f.passkeyLabel, "passkey-label", "", "name of the passkey in the picker (default: the database name)")
-	fs.StringVar(&f.agentRLS, "agent-rls", agentRLSAsk,
-		"on agent tables where row-level security hides every row: all-rows adds a policy letting the agent see them all, none skips the question (default: ask at a terminal)")
+	f.agentRLS = AgentRLSAsk
+	fs.Var(&f.agentRLS, "agent-rls",
+		"on agent tables where row-level security hides every row: ask at a terminal, all-rows adds a policy letting the agent see them all, none skips the question")
 	if err := parse(fs, args); err != nil {
 		return f, err
 	}
@@ -226,9 +251,6 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 	})
 	if f.agent == "" {
 		return f, fmt.Errorf("%w: --agent is required", errUsage)
-	}
-	if !slices.Contains([]string{agentRLSAsk, agentRLSNone, agentRLSAllRows}, f.agentRLS) {
-		return f, fmt.Errorf("%w: --agent-rls must be %s or %s", errUsage, agentRLSAllRows, agentRLSNone)
 	}
 	if _, err := relyingParty(f.passkeyOrigin); err != nil {
 		return f, err

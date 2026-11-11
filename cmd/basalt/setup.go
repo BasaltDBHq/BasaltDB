@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strings"
 
@@ -227,7 +228,9 @@ func engineLogHint(goos string) string {
 const claudeServerPrefix = "basalt-"
 
 // offerClaude asks, at a terminal and only when the claude CLI is on PATH,
-// to add the agent's MCP server to Claude Code. Never without a yes.
+// to add the agent's MCP server to Claude Code. Never without a yes, and
+// not when Claude Code already has a server of that name (claude mcp get
+// succeeds), where claude mcp add would fail.
 func offerClaude(c *cliIO, f initFlags) error {
 	if !c.interactive {
 		return nil
@@ -240,7 +243,12 @@ func offerClaude(c *cliIO, f initFlags) error {
 	if err != nil {
 		return err
 	}
-	args := append([]string{claude, "mcp", "add", claudeServerPrefix + f.agent, "--"}, mcpArgs(f, c.goos, bin)...)
+	name := claudeServerPrefix + f.agent
+	if c.host.Run(c.ctx, []string{claude, "mcp", "get", name}, io.Discard, io.Discard) == nil {
+		fmt.Fprintf(c.stderr, "basalt: Claude Code already has %s\n", name)
+		return nil
+	}
+	args := append([]string{claude, "mcp", "add", name, "--"}, mcpArgs(f, c.goos, bin)...)
 	shown := shellJoin(append([]string{"claude"}, args[1:]...))
 	ok, err := c.confirmYes(fmt.Sprintf("Add it to Claude Code now (%s)?", shown))
 	if err != nil || !ok {

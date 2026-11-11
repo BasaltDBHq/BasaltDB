@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
@@ -49,12 +51,24 @@ func TestApproveShowsTheShortLinkWhenTheEngineServesThePages(t *testing.T) {
 	h.pagesUp = true
 	r := cliHost(t, h, "approve", "--agent", "bot", "--config", cfg, "--show", id)
 	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Equal(t, testPagesOrigin+"/approvals/"+id+"\n", r.stdout)
+	short := testPagesOrigin + "/approvals/" + id + "#s=" + fakeSecret
+	require.Equal(t, short+"\n", r.stdout, "the short link with the secret the engine issued")
+	binding := bindingOf(t, cred, held.ApprovalID)
+	require.Equal(t, []issuedLink{{endpoint: testPagesOrigin + "/api/v1/approvals/" + id + "/links", proof: links.IssueProof(binding)}}, h.issued,
+		"issued against proof of the binding text")
 
 	r = cliHost(t, h, "approve", "--agent", "bot", "--config", cfg, "--open", id)
 	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Equal(t, []string{testPagesOrigin + "/approvals/" + id}, h.opened)
+	require.Equal(t, []string{short}, h.opened)
 	require.Contains(t, r.stderr, "the page sends it to the engine, nothing to paste")
+
+	// The engine gives no link: the long one stands.
+	h.issueErr = errors.New("engine answered 404")
+	r = cliHost(t, h, "approve", "--agent", "bot", "--config", cfg, "--show", id)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.True(t, strings.HasPrefix(r.stdout, testPagesOrigin+"/approvals/"+id+"#1."), r.stdout)
+	require.Contains(t, r.stderr, "the engine gave no short link (engine answered 404)")
+	h.issueErr = nil
 
 	// No engine answering: the long link on the config's page.
 	h.pagesUp = false
@@ -64,7 +78,21 @@ func TestApproveShowsTheShortLinkWhenTheEngineServesThePages(t *testing.T) {
 	require.Equal(t, 1, count(t, d, `SELECT count(approval_id)::int FROM basalt_meta.approvals WHERE approved_at IS NULL`), "showing approves nothing")
 }
 
-var shortRevertLink = regexp.MustCompile(regexp.QuoteMeta(testPagesOrigin) + `/reverts/([0-9a-f-]{36})`)
+var shortRevertLink = regexp.MustCompile(regexp.QuoteMeta(testPagesOrigin) + `/reverts/([0-9a-f-]{36})#s=` + fakeSecret)
+
+// bindingOf is a held write's binding text, read with the agent's credential.
+func bindingOf(t *testing.T, cred string, id uuid.UUID) string {
+	t.Helper()
+	dsn, err := config.ReadCredential(cred)
+	require.NoError(t, err)
+	ctx := context.Background()
+	conn, err := pgdial.Connect(ctx, dsn)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+	a, err := ledger.FindApproval(ctx, conn, id)
+	require.NoError(t, err)
+	return a.BindingText
+}
 
 // pageRelay is stderr for basalt revert with the engine's pages: when the
 // short link appears, it does what the page and the engine's relay do,

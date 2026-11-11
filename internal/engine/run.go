@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -22,6 +23,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/pages"
 	"github.com/basaltdbhq/basaltdb/internal/engine/upkeep"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/notify/telegram"
 	"github.com/basaltdbhq/basaltdb/internal/server"
@@ -62,7 +64,9 @@ func Run(ctx context.Context, cfg config.Config, configArg string, log *slog.Log
 			c()
 		}
 	}()
-	site := listenPages(cfg, log)
+	// The short links' secrets, shared by every agent and the pages.
+	secrets := links.NewSecrets(time.Now, rand.Reader)
+	site := listenPages(cfg, secrets, log)
 	if site != nil {
 		closers = append(closers, func() { _ = site.ln.Close() })
 	}
@@ -70,7 +74,7 @@ func Run(ctx context.Context, cfg config.Config, configArg string, log *slog.Log
 	if err != nil {
 		return err
 	}
-	env := agentEnv{cfg: cfg, configArg: configArg, pagesBase: base, pins: statePins(cfg.StateDirFor(runtime.GOOS), log), tg: tg}
+	env := agentEnv{cfg: cfg, configArg: configArg, pagesBase: base, secrets: secrets, pins: statePins(cfg.StateDirFor(runtime.GOOS), log), tg: tg}
 	if site != nil {
 		env.pagesOrigin = site.origin
 	}
@@ -123,7 +127,7 @@ const pagesHeaderTimeout = 10 * time.Second
 // listenPages binds the local pages. Off, or an address it cannot bind (a
 // page server still on the port): no pages, logged, and held writes carry
 // the long link.
-func listenPages(cfg config.Config, log *slog.Logger) *pagesSite {
+func listenPages(cfg config.Config, secrets *links.Secrets, log *slog.Logger) *pagesSite {
 	p, err := cfg.Pages()
 	if err != nil {
 		log.Error("approval pages not served", "err", err)
@@ -132,7 +136,7 @@ func listenPages(cfg config.Config, log *slog.Logger) *pagesSite {
 	if p.Addr == "" {
 		return nil
 	}
-	srv := pages.New(p.Origin, log.With("component", "pages"))
+	srv := pages.New(p.Origin, log.With("component", "pages"), secrets)
 	ln, h, err := server.Listen(server.Options{}, "approval pages", p.Addr, srv.Handler())
 	if err != nil {
 		log.Error("approval pages not served; held writes carry the long link", "addr", p.Addr, "err", err)
@@ -171,6 +175,7 @@ type agentEnv struct {
 	configArg   string
 	pagesBase   string
 	pagesOrigin string
+	secrets     *links.Secrets
 	pins        upkeep.Pins
 	tg          *telegram.Notifier
 }
@@ -209,6 +214,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		PagesBase:   env.pagesBase,
 		CLIFlags:    cliFlags(a.Name, env.configArg),
 		PagesOrigin: env.pagesOrigin,
+		Links:       env.secrets,
 		Log:         log,
 		Now:         time.Now,
 	})

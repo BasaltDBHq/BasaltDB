@@ -20,13 +20,21 @@ type linkPages struct {
 	local string
 }
 
-// short is the short link page(local, id) when the engine serves the
-// pages, else long.
-func (p linkPages) short(page func(string, uuid.UUID) string, id uuid.UUID, long string) string {
+// short is a newly issued short link with its secret when the engine
+// serves the pages, else long. The engine issues it to whoever shows
+// proof of the item's binding text (CONTRACT.md, Link secrets); issuing it
+// revokes the item's earlier short link. kind is "approvals" or
+// "reverts". When the engine does not issue one, the long link stands.
+func (p linkPages) short(c *cliIO, kind string, id uuid.UUID, binding, long string) string {
 	if p.local == "" {
 		return long
 	}
-	return page(p.local, id)
+	link, err := c.host.IssueLink(c.ctx, p.local+"/api/v1/"+kind+"/"+id.String()+"/links", links.IssueProof(binding))
+	if err != nil {
+		fmt.Fprintf(c.stderr, "basalt: the engine gave no short link (%v); using the long link\n", err)
+		return long
+	}
+	return link
 }
 
 // nextStep says what follows the signature: the page relays it when the

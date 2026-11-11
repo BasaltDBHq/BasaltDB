@@ -6,6 +6,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"errors"
 	"flag"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/pages"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/server"
 )
 
@@ -33,7 +35,8 @@ func main() {
 
 func run(port, dir string) error {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	site := pages.NewWithFiles("http://localhost:"+port, log, os.DirFS(dir))
+	// No agents, so no secrets are ever issued: short links answer 404.
+	site := pages.NewWithFiles("http://localhost:"+port, log, links.NewSecrets(time.Now, rand.Reader), os.DirFS(dir))
 	ln, h, err := server.Listen(server.Options{}, "dev pages", "127.0.0.1:"+port, site.Handler())
 	if err != nil {
 		return err

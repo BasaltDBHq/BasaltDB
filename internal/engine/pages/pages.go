@@ -8,6 +8,7 @@
 package pages
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -41,32 +42,36 @@ type Agent interface {
 	RelayApproval(ctx context.Context, r approval.Response) error
 	RevertRequest(ctx context.Context, id uuid.UUID) (revert.Request, error)
 	RelayRevert(ctx context.Context, r revert.Response) (guard.AppliedRevert, error)
+	IssueApprovalLink(ctx context.Context, id uuid.UUID, proof string) (string, error)
+	IssueRevertLink(ctx context.Context, id uuid.UUID, proof string) (string, error)
 }
 
 // Server is the pages' handler. Agents are added once each is set up,
 // before the listener serves.
 type Server struct {
-	origin string
-	log    *slog.Logger
-	files  fs.FS
-	mu     sync.RWMutex
-	agents []Agent
+	origin  string
+	log     *slog.Logger
+	files   fs.FS
+	secrets *links.Secrets
+	mu      sync.RWMutex
+	agents  []Agent
 }
 
 // New returns the pages for origin, the approval page's origin, which a
-// relayed POST must come from.
-func New(origin string, log *slog.Logger) *Server {
-	return NewWithFiles(origin, log, web.Files)
+// relayed POST must come from. secrets are the short links' secrets the
+// agents issue (CONTRACT.md, Link secrets).
+func New(origin string, log *slog.Logger, secrets *links.Secrets) *Server {
+	return NewWithFiles(origin, log, secrets, web.Files)
 }
 
 // NewWithFiles is New serving the page files from files instead of the
 // embedded ones: the working tree's web/ for page development
 // (make serve-web).
-func NewWithFiles(origin string, log *slog.Logger, files fs.FS) *Server {
-	if origin == "" || log == nil || files == nil {
-		panic("pages: origin, logger and files required")
+func NewWithFiles(origin string, log *slog.Logger, secrets *links.Secrets, files fs.FS) *Server {
+	if origin == "" || log == nil || secrets == nil || files == nil {
+		panic("pages: origin, logger, secrets and files required")
 	}
-	return &Server{origin: origin, log: log, files: files}
+	return &Server{origin: origin, log: log, files: files, secrets: secrets}
 }
 
 // Add serves a's approvals and reverts.
@@ -98,6 +103,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/approvals/{approvalId}/approve", s.postApproval)
 	mux.HandleFunc("GET /api/v1/reverts/{revertId}", s.getRevert)
 	mux.HandleFunc("POST /api/v1/reverts/{revertId}/apply", s.postRevert)
+	mux.HandleFunc("POST /api/v1/approvals/{approvalId}/links", s.postApprovalLink)
+	mux.HandleFunc("POST /api/v1/reverts/{revertId}/links", s.postRevertLink)
 	return mux
 }
 
@@ -126,7 +133,7 @@ func (s *Server) page(name string) http.HandlerFunc {
 }
 
 func (s *Server) getApproval(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.pathID(w, r, "approvalId")
+	id, ok := s.linkedID(w, r, "approvalId")
 	if !ok {
 		return
 	}
@@ -139,11 +146,11 @@ func (s *Server) getApproval(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) postApproval(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.pathID(w, r, "approvalId")
+	id, ok := s.linkedID(w, r, "approvalId")
 	if !ok {
 		return
 	}
-	body, ok := s.body(w, r)
+	body, ok := s.body(w, r, pageOnly)
 	if !ok {
 		return
 	}
@@ -168,7 +175,7 @@ type approvedDTO struct {
 }
 
 func (s *Server) getRevert(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.pathID(w, r, "revertId")
+	id, ok := s.linkedID(w, r, "revertId")
 	if !ok {
 		return
 	}
@@ -181,11 +188,11 @@ func (s *Server) getRevert(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) postRevert(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.pathID(w, r, "revertId")
+	id, ok := s.linkedID(w, r, "revertId")
 	if !ok {
 		return
 	}
-	body, ok := s.body(w, r)
+	body, ok := s.body(w, r, pageOnly)
 	if !ok {
 		return
 	}
@@ -202,6 +209,75 @@ func (s *Server) postRevert(w http.ResponseWriter, r *http.Request) {
 	s.reply(w, out)
 }
 
+// issueDTO asks for a short link (POST .../links): proof of the item's
+// binding text (links.IssueProof).
+type issueDTO struct {
+	Proof string `json:"proof"`
+}
+
+// linkDTO is a newly issued short link.
+type linkDTO struct {
+	URL string `json:"url"`
+}
+
+func (s *Server) postApprovalLink(w http.ResponseWriter, r *http.Request) {
+	s.issueLink(w, r, "approvalId", func(ctx context.Context, a Agent, id uuid.UUID, proof string) (string, error) {
+		return a.IssueApprovalLink(ctx, id, proof)
+	})
+}
+
+func (s *Server) postRevertLink(w http.ResponseWriter, r *http.Request) {
+	s.issueLink(w, r, "revertId", func(ctx context.Context, a Agent, id uuid.UUID, proof string) (string, error) {
+		return a.IssueRevertLink(ctx, id, proof)
+	})
+}
+
+// issueLink issues a short link for the CLI, to a caller that shows proof
+// of the item's binding text; a wrong proof is answered as an unknown id.
+func (s *Server) issueLink(w http.ResponseWriter, r *http.Request, name string,
+	issue func(context.Context, Agent, uuid.UUID, string) (string, error)) {
+	id, ok := s.pathID(w, r, name)
+	if !ok {
+		return
+	}
+	body, ok := s.body(w, r, cliOrPage)
+	if !ok {
+		return
+	}
+	var in issueDTO
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&in); err != nil || in.Proof == "" {
+		s.fail(w, &mcp.ToolError{Code: agent.CodeInvalidArgument, Message: "the body must be {\"proof\": \"...\"}"})
+		return
+	}
+	link, err := find(r.Context(), s, func(ctx context.Context, a Agent) (string, error) { return issue(ctx, a, id, in.Proof) })
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.reply(w, linkDTO{URL: link})
+}
+
+// linkedID is the path's id when the request carries that item's live link
+// secret (CONTRACT.md, Link secrets). A missing, wrong or revoked secret
+// is answered exactly as an unknown id, before any lookup.
+func (s *Server) linkedID(w http.ResponseWriter, r *http.Request, name string) (uuid.UUID, bool) {
+	id, ok := s.pathID(w, r, name)
+	if !ok {
+		return uuid.Nil, false
+	}
+	if !s.secrets.Check(id, r.Header.Get(links.SecretHeader)) {
+		s.fail(w, errUnknown)
+		return uuid.Nil, false
+	}
+	return id, true
+}
+
+// errUnknown is the answer for an id no agent knows, or a link without its
+// secret: the two are told apart by nothing.
+var errUnknown = &mcp.ToolError{Code: agent.CodeNotFound, Message: "no held write or revert with this id, or the link is incomplete or was replaced by a newer one: ask the agent for the link again"}
+
 // find asks each agent in turn and answers with the first that knows the
 // id; none does: NOT_FOUND.
 func find[T any](ctx context.Context, s *Server, ask func(context.Context, Agent) (T, error)) (T, error) {
@@ -216,7 +292,7 @@ func find[T any](ctx context.Context, s *Server, ask func(context.Context, Agent
 		return out, err
 	}
 	var zero T
-	return zero, &mcp.ToolError{Code: agent.CodeNotFound, Message: "no held write or revert with this id: check the link, or ask the agent for it again"}
+	return zero, errUnknown
 }
 
 func (s *Server) pathID(w http.ResponseWriter, r *http.Request, name string) (uuid.UUID, bool) {
@@ -228,11 +304,19 @@ func (s *Server) pathID(w http.ResponseWriter, r *http.Request, name string) (uu
 	return id, true
 }
 
-// body reads a relayed signature: only from the page's own origin, only
-// JSON, at most maxBody bytes. With no CORS headers on this listener,
-// another site's page can make none of these posts.
-func (s *Server) body(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
-	if r.Header.Get("Origin") != s.origin {
+// Who may post: the relay only from the page's own origin; a link request
+// also from the CLI, which sends no Origin.
+const (
+	pageOnly  = false
+	cliOrPage = true
+)
+
+// body reads a posted body: from an allowed origin, only JSON, at most
+// maxBody bytes. With no CORS headers on this listener, another site's
+// page can make none of these posts.
+func (s *Server) body(w http.ResponseWriter, r *http.Request, fromCLI bool) ([]byte, bool) {
+	origin := r.Header.Get("Origin")
+	if origin != s.origin && (!fromCLI || origin != "") {
 		writeError(w, http.StatusForbidden, agent.CodePermissionDenied, "the request does not come from the approval page")
 		return nil, false
 	}

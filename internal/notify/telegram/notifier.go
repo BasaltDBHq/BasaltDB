@@ -44,6 +44,9 @@ type Notice struct {
 	Headline    string
 	ExpiresAt   time.Time
 	ApprovalURL string
+	// ShortURL is the engine's short link with its secret, when it serves
+	// the pages; it opens on the engine's machine only.
+	ShortURL string
 }
 
 // Notifier tells the person on Telegram that a write is held.
@@ -75,6 +78,9 @@ func HeldMessage(h Notice) Message {
 		truncate(h.Intent, maxIntentRunes),
 		truncate(h.Statement, maxStatementRunes),
 		h.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC"))
+	if h.ShortURL != "" {
+		summary += "\nOn the engine's computer: " + h.ShortURL
+	}
 	if len(h.ApprovalURL) <= maxButtonURLBytes {
 		return Message{Text: summary, Button: &Button{Text: ButtonText, URL: h.ApprovalURL}}
 	}

@@ -19,6 +19,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/pages"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 )
@@ -36,30 +37,40 @@ type localPages struct {
 
 func newLocalPages(t *testing.T, env agentEnv) localPages {
 	t.Helper()
-	site := pages.New(pageOrigin, slog.New(slog.DiscardHandler))
+	site := pages.New(pageOrigin, slog.New(slog.DiscardHandler), env.svc.Links)
 	site.Add(env.svc)
 	srv := httptest.NewServer(site.Handler())
 	t.Cleanup(srv.Close)
 	return localPages{t: t, srv: srv}
 }
 
-// get reads path and decodes the JSON answer into out.
-func (p localPages) get(path string, out any) int {
+// get reads path with a link's secret, as the page does, and decodes the
+// JSON answer into out.
+func (p localPages) get(path, secret string, out any) int {
 	p.t.Helper()
-	resp, err := http.Get(p.srv.URL + path) //nolint:noctx // a test against a local httptest server
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, p.srv.URL+path, nil)
+	require.NoError(p.t, err)
+	req.Header.Set(links.SecretHeader, secret)
+	resp, err := http.DefaultClient.Do(req)
 	require.NoError(p.t, err)
 	defer resp.Body.Close()
 	require.NoError(p.t, json.NewDecoder(resp.Body).Decode(out))
 	return resp.StatusCode
 }
 
-// post sends body as the page does, from origin.
-func (p localPages) post(path, origin string, body []byte, out any) int {
+// post sends body as the page does, from origin, with a link's secret
+// ("" for none).
+func (p localPages) post(path, origin, secret string, body []byte, out any) int {
 	p.t.Helper()
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, p.srv.URL+path, bytes.NewReader(body))
 	require.NoError(p.t, err)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Origin", origin)
+	if origin != "" {
+		req.Header.Set("Origin", origin)
+	}
+	if secret != "" {
+		req.Header.Set(links.SecretHeader, secret)
+	}
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(p.t, err)
 	defer resp.Body.Close()
@@ -73,10 +84,10 @@ func (p localPages) post(path, origin string, body []byte, out any) int {
 
 // signApproval is the page: read the request for id, check it, and sign it
 // with the person's passkey; it returns the response JSON the page posts.
-func (p localPages) signApproval(id string, person *passkeytest.Authenticator) []byte {
+func (p localPages) signApproval(id, secret string, person *passkeytest.Authenticator) []byte {
 	p.t.Helper()
 	var req approval.Request
-	require.Equal(p.t, http.StatusOK, p.get("/api/v1/approvals/"+id, &req))
+	require.Equal(p.t, http.StatusOK, p.get("/api/v1/approvals/"+id, secret, &req))
 	b, err := req.Check()
 	require.NoError(p.t, err, "the served request passes the same checks as the long link")
 	as, err := person.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
@@ -118,13 +129,17 @@ func TestShortLinkApprovedThroughTheRelay(t *testing.T) {
 	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
 	ap := approvalOf(t, body)
 	id := str(t, ap["approvalId"])
-	require.Equal(t, pageOrigin+"/approvals/"+id, ap["approvalUrl"], "the short link")
+	link := str(t, ap["approvalUrl"])
+	secret := links.SecretOf(link)
+	require.Len(t, secret, 22, "a 128-bit secret")
+	require.Equal(t, pageOrigin+"/approvals/"+id+"#s="+secret, link, "the short link carries its secret in the fragment")
 	msg := str(t, ap["personMessage"])
-	require.True(t, strings.HasPrefix(msg, "Held for your approval: Update 15 rows in public.leads. Approve: "+pageOrigin+"/approvals/"+id+
+	require.True(t, strings.HasPrefix(msg, "Held for your approval: Update 15 rows in public.leads. Approve: "+link+
 		" (or run: basalt approve --agent bot --config /etc/basalt-test/engine.json --open "+id+"). Expires "), msg)
 	require.True(t, strings.HasSuffix(msg, " UTC."), msg)
 	require.Len(t, env.sent.sent, 1)
-	require.Contains(t, env.sent.sent[0].ApprovalURL, "#1.", "Telegram keeps the long link")
+	require.Contains(t, env.sent.sent[0].ApprovalURL, "#1.", "Telegram's button keeps the long link")
+	require.Equal(t, link, env.sent.sent[0].ShortURL, "Telegram's text carries the short link")
 
 	// The page itself is served for the short link.
 	resp, err := http.Get(p.srv.URL + "/approvals/" + id) //nolint:noctx // a test against a local httptest server
@@ -135,25 +150,30 @@ func TestShortLinkApprovedThroughTheRelay(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Contains(t, string(page), "../lib/approve.js")
 
-	signed := p.signApproval(id, env.person)
-
-	// The relay refuses a post from anywhere but the page's origin, and a
-	// response for another approval.
+	// The id alone opens nothing.
 	var perr pageError
-	require.Equal(t, http.StatusForbidden, p.post("/api/v1/approvals/"+id+"/approve", "http://evil.test", signed, &perr))
-	require.Equal(t, http.StatusForbidden, p.post("/api/v1/approvals/"+id+"/approve", "", signed, &perr))
+	require.Equal(t, http.StatusNotFound, p.get("/api/v1/approvals/"+id, "", &perr))
+	require.Equal(t, "NOT_FOUND", perr.Code)
+
+	signed := p.signApproval(id, secret, env.person)
+
+	// The relay refuses a post without the secret, from anywhere but the
+	// page's origin, and a response for another approval.
+	require.Equal(t, http.StatusNotFound, p.post("/api/v1/approvals/"+id+"/approve", pageOrigin, "", signed, &perr))
+	require.Equal(t, http.StatusForbidden, p.post("/api/v1/approvals/"+id+"/approve", "http://evil.test", secret, signed, &perr))
+	require.Equal(t, http.StatusForbidden, p.post("/api/v1/approvals/"+id+"/approve", "", secret, signed, &perr))
 	other := uuid.Must(uuid.NewV7()).String()
-	require.Equal(t, http.StatusBadRequest, p.post("/api/v1/approvals/"+other+"/approve", pageOrigin, signed, &perr))
-	require.Equal(t, "INVALID_ARGUMENT", perr.Code)
+	require.Equal(t, http.StatusNotFound, p.post("/api/v1/approvals/"+other+"/approve", pageOrigin, secret, signed, &perr),
+		"a secret opens only its own item")
 
 	var ok map[string]any
-	require.Equal(t, http.StatusOK, p.post("/api/v1/approvals/"+id+"/approve", pageOrigin, signed, &ok))
+	require.Equal(t, http.StatusOK, p.post("/api/v1/approvals/"+id+"/approve", pageOrigin, secret, signed, &ok))
 	require.Equal(t, map[string]any{"approvalId": id, "status": "APPROVED"}, ok)
 
 	// Signed: the page no longer offers it, and a replay is refused.
-	require.Equal(t, http.StatusConflict, p.get("/api/v1/approvals/"+id, &perr))
+	require.Equal(t, http.StatusConflict, p.get("/api/v1/approvals/"+id, secret, &perr))
 	require.Equal(t, "APPROVAL_INVALID", perr.Code)
-	require.Equal(t, http.StatusConflict, p.post("/api/v1/approvals/"+id+"/approve", pageOrigin, signed, &perr))
+	require.Equal(t, http.StatusConflict, p.post("/api/v1/approvals/"+id+"/approve", pageOrigin, secret, signed, &perr))
 
 	// The agent repeats the write with approvalId: applied, no code relayed.
 	args["approvalId"] = id
@@ -171,18 +191,20 @@ func TestPagesRefuseUnknownAndExpired(t *testing.T) {
 
 	var perr pageError
 	unknown := uuid.Must(uuid.NewV7()).String()
-	require.Equal(t, http.StatusNotFound, p.get("/api/v1/approvals/"+unknown, &perr))
+	require.Equal(t, http.StatusNotFound, p.get("/api/v1/approvals/"+unknown, "x", &perr))
 	require.Equal(t, "NOT_FOUND", perr.Code)
-	require.Equal(t, http.StatusNotFound, p.get("/api/v1/reverts/"+unknown, &perr))
-	require.Equal(t, http.StatusBadRequest, p.get("/api/v1/approvals/nope", &perr))
+	require.Equal(t, http.StatusNotFound, p.get("/api/v1/reverts/"+unknown, "x", &perr))
+	require.Equal(t, http.StatusBadRequest, p.get("/api/v1/approvals/nope", "x", &perr))
 
 	args := holdWrite(t, env.h, nil)
 	body, isError := env.h.call(t, "write", args)
 	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
-	id := str(t, approvalOf(t, body)["approvalId"])
+	ap := approvalOf(t, body)
+	id, secret := str(t, ap["approvalId"]), links.SecretOf(str(t, ap["approvalUrl"]))
 	d.Exec(t, `UPDATE basalt_meta.approvals SET expires_at = now() - interval '1 minute' WHERE approval_id = '`+id+`'`)
-	require.Equal(t, http.StatusGone, p.get("/api/v1/approvals/"+id, &perr))
+	require.Equal(t, http.StatusGone, p.get("/api/v1/approvals/"+id, secret, &perr), "the right secret on an expired write")
 	require.Equal(t, "APPROVAL_EXPIRED", perr.Code)
+	require.Equal(t, http.StatusNotFound, p.get("/api/v1/approvals/"+id, "", &perr), "without it nothing is told")
 }
 
 func TestWaitingWriteAppliesWhenThePersonApproves(t *testing.T) {
@@ -194,7 +216,8 @@ func TestWaitingWriteAppliesWhenThePersonApproves(t *testing.T) {
 	args := holdWrite(t, env.h, nil)
 	body, isError := env.h.call(t, "write", args)
 	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
-	id := str(t, approvalOf(t, body)["approvalId"])
+	ap := approvalOf(t, body)
+	id, secret := str(t, ap["approvalId"]), links.SecretOf(str(t, ap["approvalUrl"]))
 
 	// The agent repeats the write with approvalId and the default wait; the
 	// person signs on the page a moment later.
@@ -210,7 +233,7 @@ func TestWaitingWriteAppliesWhenThePersonApproves(t *testing.T) {
 		done <- answer{b, e}
 	}()
 	time.Sleep(1500 * time.Millisecond)
-	require.Equal(t, http.StatusOK, p.post("/api/v1/approvals/"+id+"/approve", pageOrigin, p.signApproval(id, env.person), nil))
+	require.Equal(t, http.StatusOK, p.post("/api/v1/approvals/"+id+"/approve", pageOrigin, secret, p.signApproval(id, secret, env.person), nil))
 	got := <-done
 	require.False(t, got.isError, "%v", got.body)
 	require.Equal(t, "APPLIED", got.body["status"])
@@ -231,7 +254,8 @@ func TestWaitingNewWriteTimesOutHeld(t *testing.T) {
 	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
 	require.GreaterOrEqual(t, time.Since(start), time.Second, "it waited")
 	ap := approvalOf(t, body)
-	require.Equal(t, pageOrigin+"/approvals/"+str(t, ap["approvalId"]), ap["approvalUrl"])
+	require.True(t, strings.HasPrefix(str(t, ap["approvalUrl"]), pageOrigin+"/approvals/"+str(t, ap["approvalId"])+"#s="),
+		"the hold's own answer, with the link it issued")
 	require.Equal(t, "open", leadStatus(t, d, 21), "nothing applied")
 	require.Len(t, env.sent.sent, 1, "the person is told once")
 }
@@ -251,8 +275,22 @@ func TestShortLinkRevertThroughTheRelay(t *testing.T) {
 	require.NoError(t, err)
 	id := prep.RevertID.String()
 
+	// The CLI asks for a link with proof of the binding text.
+	var perr pageError
+	issue := func(proof string) (int, string) {
+		var out struct{ URL string }
+		status := p.post("/api/v1/reverts/"+id+"/links", "", "", []byte(`{"proof":"`+proof+`"}`), &out)
+		return status, out.URL
+	}
+	status, _ := issue(links.IssueProof(prep.BindingText + " "))
+	require.Equal(t, http.StatusNotFound, status, "a wrong proof is an unknown id")
+	status, link := issue(links.IssueProof(prep.BindingText))
+	require.Equal(t, http.StatusOK, status)
+	require.True(t, strings.HasPrefix(link, pageOrigin+"/reverts/"+id+"#s="), link)
+	secret := links.SecretOf(link)
+
 	var req revert.Request
-	require.Equal(t, http.StatusOK, p.get("/api/v1/reverts/"+id, &req))
+	require.Equal(t, http.StatusOK, p.get("/api/v1/reverts/"+id, secret, &req))
 	b, err := req.Check()
 	require.NoError(t, err)
 	as, err := env.person.Sign(revert.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
@@ -260,12 +298,40 @@ func TestShortLinkRevertThroughTheRelay(t *testing.T) {
 	signed, err := json.Marshal(revert.NewResponse(b.RevertID, as))
 	require.NoError(t, err)
 
-	var perr pageError
-	require.Equal(t, http.StatusForbidden, p.post("/api/v1/reverts/"+id+"/apply", "http://localhost:9999", signed, &perr))
+	require.Equal(t, http.StatusNotFound, p.post("/api/v1/reverts/"+id+"/apply", pageOrigin, "", signed, &perr), "no secret, no relay")
+	require.Equal(t, http.StatusForbidden, p.post("/api/v1/reverts/"+id+"/apply", "http://localhost:9999", secret, signed, &perr))
 	var out guard.AppliedRevert
-	require.Equal(t, http.StatusOK, p.post("/api/v1/reverts/"+id+"/apply", pageOrigin, signed, &out))
+	require.Equal(t, http.StatusOK, p.post("/api/v1/reverts/"+id+"/apply", pageOrigin, secret, signed, &out))
 	require.Equal(t, 6, out.Rows)
 	require.Equal(t, "open", leadStatus(t, d, 40))
-	require.Equal(t, http.StatusConflict, p.get("/api/v1/reverts/"+id, &perr))
+	require.Equal(t, http.StatusConflict, p.get("/api/v1/reverts/"+id, secret, &perr))
 	require.Equal(t, "REVERT_INVALID", perr.Code)
+}
+
+func TestListPendingReissuesTheLink(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	env := agentHarnessFor(t, d, d.NewAgent(t, "bot", leads, leads), pageOrigin)
+	p := newLocalPages(t, env)
+
+	args := holdWrite(t, env.h, nil)
+	body, isError := env.h.call(t, "write", args)
+	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
+	ap := approvalOf(t, body)
+	id, first := str(t, ap["approvalId"]), links.SecretOf(str(t, ap["approvalUrl"]))
+	var req approval.Request
+	require.Equal(t, http.StatusOK, p.get("/api/v1/approvals/"+id, first, &req))
+
+	// The agent lost the link: list_pending gives a working one.
+	pending, isError := env.h.call(t, "list_pending", map[string]any{"runId": args["runId"]})
+	require.False(t, isError, "%v", pending)
+	list := items(t, pending)
+	require.Len(t, list, 1)
+	second := links.SecretOf(str(t, list[0]["approvalUrl"]))
+	require.NotEqual(t, first, second)
+	require.Contains(t, list[0]["personMessage"], str(t, list[0]["approvalUrl"]))
+
+	var perr pageError
+	require.Equal(t, http.StatusNotFound, p.get("/api/v1/approvals/"+id, first, &perr), "the re-issued link revokes the old one")
+	require.Equal(t, http.StatusOK, p.get("/api/v1/approvals/"+id, second, &req))
 }

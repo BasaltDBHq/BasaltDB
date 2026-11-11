@@ -173,7 +173,7 @@ func prepareRevert(c *cliIO, conn *pgx.Conn, scope guard.RevertScope, f revertFl
 		return c.fail(err)
 	}
 	pages := linkPages{base: f.pagesURL, local: f.local}
-	link = pages.short(links.Revert, prep.RevertID, link)
+	link = pages.short(c, "reverts", prep.RevertID, prep.BindingText, link)
 	expires := prep.ExpiresAt.UTC().Format(timeLayout)
 	switch {
 	case f.open:

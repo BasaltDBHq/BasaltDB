@@ -17,6 +17,10 @@ export function el(tag, className, text) {
 // cut short when copied, so the person is told to reopen it, not that it
 // is bad.
 export function linkFailure(err, kind, reopen) {
+  if (err?.name === "RelayError" && err.code === "NOT_FOUND") {
+    return `This ${kind} link is incomplete, was replaced by a newer one, or the ${kind} is gone. ` +
+      `Ask the agent for the link again (it gets a new one from list_pending), or ${reopen}.`;
+  }
   if (err?.name === "RelayError") {
     return `This ${kind} cannot be shown: ${err.message}`;
   }

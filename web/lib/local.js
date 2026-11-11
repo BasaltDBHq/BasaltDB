@@ -49,17 +49,42 @@ async function answer(call) {
   return body;
 }
 
+// SECRET_HEADER carries a short link's secret to the engine (CONTRACT.md,
+// Link secrets). The secret lives in the link's fragment, which the browser
+// never sends, so it stays out of logs; the page passes it here, to the
+// same origin only.
+export const SECRET_HEADER = "basalt-link-secret";
+
+// linkSecret is the secret a short link's fragment carries (#s=<secret>),
+// or "" when there is none.
+export function linkSecret(hash) {
+  const m = /^#?s=([A-Za-z0-9_-]+)$/.exec(String(hash ?? ""));
+  return m ? m[1] : "";
+}
+
+// isLongLink reports whether a fragment carries the request itself
+// (#1.<request>), as long links do.
+export function isLongLink(hash) {
+  return /^#?1\./.test(String(hash ?? ""));
+}
+
 // fetchRequest reads the request a short link stands for.
-export function fetchRequest(fetchFn, path) {
-  return answer(() => fetchFn(path, { headers: { Accept: "application/json" }, cache: "no-store", credentials: "omit" }));
+export function fetchRequest(fetchFn, path, secret) {
+  return answer(() =>
+    fetchFn(path, {
+      headers: { Accept: "application/json", [SECRET_HEADER]: secret },
+      cache: "no-store",
+      credentials: "omit",
+    }),
+  );
 }
 
 // postResponse relays the signed response JSON to the engine.
-export function postResponse(fetchFn, path, json) {
+export function postResponse(fetchFn, path, secret, json) {
   return answer(() =>
     fetchFn(path, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: { "Content-Type": "application/json", Accept: "application/json", [SECRET_HEADER]: secret },
       body: json,
       cache: "no-store",
       credentials: "omit",

@@ -112,7 +112,7 @@ func showApproval(c *cliIO, conn *pgx.Conn, idText string, pages linkPages, open
 	if err != nil {
 		return c.fail(err)
 	}
-	link = pages.short(links.Approval, a.ID, link)
+	link = pages.short(c, "approvals", a.ID, a.BindingText, link)
 	fmt.Fprintf(c.stderr, "basalt: %s\n", summary.Headline())
 	expires := a.ExpiresAt.UTC().Format(timeLayout)
 	if open {

@@ -5,7 +5,7 @@
 // paste; from a short link it posts the signature to the engine that served
 // it (same origin), which relays it to Postgres.
 import { approvalResponseJSON, checkApprovalRequest, encodeApprovalResponse, parseApprovalRequest, relyingParty } from "./codec.js";
-import { fetchRequest, postResponse, relayPaths, shortLinkId } from "./local.js";
+import { fetchRequest, isLongLink, linkSecret, postResponse, relayPaths, shortLinkId } from "./local.js";
 import { $, APPROVE_REOPEN, el, fail, linkFailure, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
 import { canStartPasskey, cascadeConfirmation, headline, summarize } from "./summary.js";
 
@@ -96,7 +96,7 @@ const engineFetch = (path, init) => window.fetch(path, init);
 // null for a long link.
 async function loadRequest() {
   const id = shortLinkId(window.location.pathname, "approvals");
-  if (window.location.hash || id === null) {
+  if (isLongLink(window.location.hash) || id === null) {
     // A long link: the request is in the fragment, and names the same approval
     // as the path.
     const req = await parseApprovalRequest(window.location.hash);
@@ -104,9 +104,12 @@ async function loadRequest() {
     return { req, relay: null };
   }
   const paths = relayPaths("approvals", id);
-  const req = await checkApprovalRequest(await fetchRequest(engineFetch, paths.request));
+  // A short link: #s=<secret>. Without it the engine answers as for an
+  // unknown id.
+  const secret = linkSecret(window.location.hash);
+  const req = await checkApprovalRequest(await fetchRequest(engineFetch, paths.request, secret));
   if (req.approvalId !== id) throw new Error(`the engine sent approval ${req.approvalId}, not ${id}`);
-  return { req, relay: paths.relay };
+  return { req, relay: { path: paths.relay, secret } };
 }
 
 // finish relays the signed response when the page came from a short link,
@@ -114,7 +117,7 @@ async function loadRequest() {
 async function finish(response, relay) {
   if (relay !== null) {
     try {
-      await postResponse(engineFetch, relay, approvalResponseJSON(response));
+      await postResponse(engineFetch, relay.path, relay.secret, approvalResponseJSON(response));
       showDone("Approved. The agent will continue.");
       return;
     } catch (err) {

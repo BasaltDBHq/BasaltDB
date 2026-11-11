@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -135,7 +136,8 @@ func serveLocalPages(origin string) (stop func(), served bool) {
 	if !ok {
 		return noop, false
 	}
-	site := pages.New(origin, slog.New(slog.DiscardHandler))
+	// No agents: the registration page only, no short links.
+	site := pages.New(origin, slog.New(slog.DiscardHandler), links.NewSecrets(time.Now, rand.Reader))
 	ln, h, err := server.Listen(server.Options{}, "registration page", addr, site.Handler())
 	if err != nil {
 		return noop, false

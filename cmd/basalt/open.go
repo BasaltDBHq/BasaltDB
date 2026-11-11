@@ -6,12 +6,62 @@ import (
 	"io"
 	"net/url"
 
+	"github.com/google/uuid"
+
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 )
 
 // revertSibling is the revert page relative to the approval page: both are
 // served from the same origin (web/approve, web/revert).
 const revertSibling = "../revert/"
+
+// revertPagePath is the revert page on the engine's local pages, as
+// approvePath is the approval page (CONTRACT.md, Local pages).
+const revertPagePath = "/revert/"
+
+// linkPages is where a command's links point: the page of the long link,
+// and the origin of the engine's local pages when it serves them ("" when
+// not).
+type linkPages struct {
+	page  string
+	local string
+}
+
+// short is the short link <local><path><id> when the engine serves the
+// pages, else long.
+func (p linkPages) short(path string, id uuid.UUID, long string) string {
+	if p.local == "" {
+		return long
+	}
+	return p.local + path + id.String()
+}
+
+// nextStep says what follows the signature: the page relays it when the
+// engine served it, else the person pastes the code into paste.
+func (p linkPages) nextStep(sign, paste string) string {
+	if p.local != "" {
+		return sign + "; the page sends it to the engine, nothing to paste."
+	}
+	return sign + ", then run " + paste + " with the code the page shows."
+}
+
+// localPages is the origin of the pages the engine serves for the agent's
+// config when it answers there, or "": an explicit --page, no --agent,
+// pages off, or no engine running.
+func localPages(c *cliIO, page, agent, configPath string) string {
+	if page != "" || agent == "" {
+		return ""
+	}
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return ""
+	}
+	p, err := cfg.Pages()
+	if err != nil || p.Addr == "" || !c.host.PagesUp(c.ctx, p.Origin) {
+		return ""
+	}
+	return p.Origin
+}
 
 // openLink opens an approval or revert link in the default browser. The
 // links carry the whole preview and run to thousands of characters, which

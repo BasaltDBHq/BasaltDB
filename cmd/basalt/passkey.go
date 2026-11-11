@@ -3,14 +3,20 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/pages"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/server"
 )
 
 // registerPath is the registration page on the relying party's origin.
@@ -103,7 +109,9 @@ func registerPasskey(c *cliIO, conn *pgx.Conn, rp passkey.Relying, label string)
 	}
 	fmt.Fprintf(c.stderr, "basalt: register the passkey that approves this agent's held writes. Open this link on your phone or computer:\n  %s%s#%s\n",
 		rp.Origin, registerPath, frag)
-	if rp != passkey.Production {
+	stop, served := serveLocalPages(rp.Origin)
+	defer stop()
+	if rp != passkey.Production && !served {
 		fmt.Fprint(c.stderr, serveHint(rp.Origin, workingDir()))
 	}
 	fmt.Fprint(c.stderr, "Paste the code the page shows: ")
@@ -152,4 +160,38 @@ func passkeyStep(c *cliIO, conn *pgx.Conn, f initFlags) error {
 	}
 	fmt.Fprintf(c.stderr, "basalt: passkey registered for %s\n", rp.RPID)
 	return nil
+}
+
+// serveLocalPages serves the embedded pages on a local http://localhost
+// origin while basalt init waits for the registration code, so the link
+// works without a separate page server (the engine serves them later,
+// CONTRACT.md, Local pages). It serves nothing for another origin, or when
+// the port is taken (a page server already runs there). stop ends it.
+func serveLocalPages(origin string) (stop func(), served bool) {
+	noop := func() {}
+	addr, ok := localPagesAddr(origin)
+	if !ok {
+		return noop, false
+	}
+	site := pages.New(origin, slog.New(slog.DiscardHandler))
+	ln, h, err := server.Listen(server.Options{}, "registration page", addr, site.Handler())
+	if err != nil {
+		return noop, false
+	}
+	hs := &http.Server{Handler: h, ReadHeaderTimeout: pageHeaderTimeout}
+	go func() { _ = hs.Serve(ln) }()
+	return func() { _ = hs.Close() }, true
+}
+
+// pageHeaderTimeout bounds a page request's headers.
+const pageHeaderTimeout = 10 * time.Second
+
+// localPagesAddr is the loopback address for a local development origin
+// http://localhost:<port>, the default the engine's config resolves to.
+func localPagesAddr(origin string) (string, bool) {
+	p, err := config.Config{ApprovalPage: origin + approvePath}.Pages()
+	if err != nil || p.Addr == "" {
+		return "", false
+	}
+	return p.Addr, true
 }

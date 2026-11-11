@@ -50,6 +50,7 @@ type agentEnv struct {
 	h      harness
 	person *passkeytest.Authenticator
 	sent   *notices
+	svc    *agent.Service
 }
 
 func agentHarness(t *testing.T) agentEnv {
@@ -59,8 +60,9 @@ func agentHarness(t *testing.T) agentEnv {
 }
 
 // agentHarnessFor serves agent a of database d through MCP, with the
-// person's passkey registered.
-func agentHarnessFor(t *testing.T, d *guardtest.DB, a *guardtest.Agent) agentEnv {
+// person's passkey registered. pagesOrigin, when given, is the origin of
+// the engine's local pages, for short links.
+func agentHarnessFor(t *testing.T, d *guardtest.DB, a *guardtest.Agent, pagesOrigin ...string) agentEnv {
 	t.Helper()
 	person, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
@@ -75,9 +77,9 @@ func agentHarnessFor(t *testing.T, d *guardtest.DB, a *guardtest.Agent) agentEnv
 	svc := agent.NewService(agent.Deps{
 		Name: "bot", Reader: agentdb.NewReader(pool, limits, time.Now), Store: store, Reads: store, Approvals: store,
 		Reverts: store, Notifier: sent, Log: slog.New(slog.DiscardHandler), Now: time.Now,
-		ApproveCmd: "basalt approve --agent bot --config /etc/basalt-test/engine.json",
+		CLIFlags: "--agent bot --config /etc/basalt-test/engine.json", PagesOrigin: strings.Join(pagesOrigin, ""),
 	})
-	return agentEnv{d: d, a: a, h: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, person: person, sent: sent}
+	return agentEnv{d: d, a: a, h: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, person: person, sent: sent, svc: svc}
 }
 
 func approvalOf(t *testing.T, body map[string]any) map[string]any {
@@ -122,8 +124,12 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 	approvalID := str(t, ap["approvalId"])
 	command := "basalt approve --agent bot --config /etc/basalt-test/engine.json --open " + approvalID
 	require.Equal(t, command, ap["approveCommand"])
-	require.Contains(t, str(t, body["message"]), "run this in their terminal, which opens the approval page: "+command)
-	require.Contains(t, str(t, body["message"]), "not the approvalUrl")
+	require.Contains(t, str(t, body["message"]), "Show the person approval.personMessage verbatim")
+	require.Contains(t, str(t, body["message"]), "call write again with the same arguments plus approvalId")
+	require.Equal(t, "Update 15 rows in public.leads", ap["headline"])
+	require.True(t, strings.HasPrefix(str(t, ap["personMessage"]),
+		"Held for your approval: Update 15 rows in public.leads. Approve by running: "+command+" (it opens the approval page). Expires "),
+		"without local pages the message names the command, not the long link: %v", ap["personMessage"])
 	require.Equal(t, "open", leadStatus(t, d, 21), "a held write changes nothing")
 	require.Len(t, sent.sent, 1)
 	require.Equal(t, link, sent.sent[0].ApprovalURL)
@@ -138,6 +144,8 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 	require.Equal(t, "PENDING", list[0]["status"])
 	require.Equal(t, link, list[0]["approvalUrl"])
 	require.Equal(t, command, list[0]["approveCommand"])
+	require.Equal(t, ap["personMessage"], list[0]["personMessage"], "list_pending gives the link back")
+	require.Equal(t, ap["headline"], list[0]["headline"])
 	require.Equal(t, []any{"status"}, list[0]["assignedColumns"])
 
 	withApproval := func(extra map[string]any) map[string]any {
@@ -151,7 +159,8 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 		return out
 	}
 
-	body, isError = h.call(t, "write", withApproval(nil))
+	// Without waiting, an unsigned approval is refused at once by the guard.
+	body, isError = h.call(t, "write", withApproval(map[string]any{"waitForApproval": 0}))
 	requireToolError(t, body, isError, "APPROVAL_INVALID", "", "")
 	require.Contains(t, body["message"], "not approved yet")
 

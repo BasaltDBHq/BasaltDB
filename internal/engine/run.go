@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/http"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -18,6 +20,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/pages"
 	"github.com/basaltdbhq/basaltdb/internal/engine/upkeep"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/notify/telegram"
@@ -30,13 +33,13 @@ const lockFileName = "engine.lock"
 // instructions is the MCP initialize instruction text every agent sees.
 const instructions = "BasaltDB records every action you take on this database. " +
 	"Start a run with run_start and an intent, read with query, and change data with write and an intent. " +
-	"A write of 11 to 50 rows, or any DELETE, is held for the person's passkey approval: give them the approveCommand to run in their terminal (it opens the approval page; the approvalUrl is long and breaks when copied), then repeat the write with approvalId. " +
+	"A write of 11 to 50 rows, or any DELETE, is held for the person's passkey approval: show them approval.personMessage verbatim (it has the approval link and the equivalent basalt command), then repeat the write with approvalId, which waits for their approval and applies it. " +
 	"Over 50 rows, DDL and functions outside the allowlist are refused."
 
 // Run serves every agent in cfg until ctx is done. It takes the engine lock
 // in the socket directory, so one engine runs per machine. configArg is the
 // --config argument the person's basalt commands need to find cfg (empty
-// for the default path); held writes name it in the approve command.
+// for the default path); held writes name it in the commands they give.
 func Run(ctx context.Context, cfg config.Config, configArg string, log *slog.Logger) error {
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		return errors.New("the engine runs on Linux and macOS only (it needs peer credentials on Unix sockets)")
@@ -49,7 +52,6 @@ func Run(ctx context.Context, cfg config.Config, configArg string, log *slog.Log
 
 	agents := make([]Agent, 0, len(cfg.Agents))
 	upkeeps := make([]*upkeep.Upkeep, 0, len(cfg.Agents))
-	pins := statePins(cfg.StateDirFor(runtime.GOOS), log)
 	tg, err := newTelegram(cfg.Notify)
 	if err != nil {
 		return err
@@ -60,22 +62,33 @@ func Run(ctx context.Context, cfg config.Config, configArg string, log *slog.Log
 			c()
 		}
 	}()
+	site := listenPages(cfg, log)
+	if site != nil {
+		closers = append(closers, func() { _ = site.ln.Close() })
+	}
+	env := agentEnv{cfg: cfg, configArg: configArg, pins: statePins(cfg.StateDirFor(runtime.GOOS), log), tg: tg}
+	if site != nil {
+		env.pagesOrigin = site.origin
+	}
 	for _, a := range cfg.Agents {
 		uid, err := lookupUID(a.OSUser)
 		if err != nil {
 			return fmt.Errorf("agent %s: %w", a.Name, err)
 		}
-		rt, err := newAgentRuntime(ctx, cfg, a, approveCommand(a.Name, configArg), pins, tg, log.With("agent", a.Name))
+		rt, err := newAgentRuntime(ctx, env, a, log.With("agent", a.Name))
 		if err != nil {
 			return fmt.Errorf("agent %s: %w", a.Name, err)
 		}
 		closers = append(closers, rt.close)
 		upkeeps = append(upkeeps, rt.upkeep)
+		if site != nil {
+			site.pages.Add(rt.svc)
+		}
 		agents = append(agents, Agent{
 			Name:       a.Name,
 			UID:        uid,
 			SocketPath: cfg.SocketPath(a.Name),
-			Server:     mcp.NewServer(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: instructions}, rt.tools...),
+			Server:     mcp.NewServer(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: instructions}, agent.Tools(rt.svc)...),
 		})
 	}
 
@@ -86,32 +99,88 @@ func Run(ctx context.Context, cfg config.Config, configArg string, log *slog.Log
 	for _, u := range upkeeps {
 		wg.Go(func() { u.Run(ctx, upkeep.DefaultInterval) })
 	}
+	if site != nil {
+		wg.Go(func() { site.serve(ctx, log) })
+	}
 	return New(log, agents).Serve(ctx)
+}
+
+// pagesSite is the bound local pages listener (CONTRACT.md, Local pages).
+type pagesSite struct {
+	pages   *pages.Server
+	ln      net.Listener
+	handler http.Handler
+	origin  string
+}
+
+// pagesHeaderTimeout bounds a page request's headers (slowloris).
+const pagesHeaderTimeout = 10 * time.Second
+
+// listenPages binds the local pages. Off, or an address it cannot bind (a
+// page server still on the port): no pages, logged, and held writes carry
+// the long link.
+func listenPages(cfg config.Config, log *slog.Logger) *pagesSite {
+	p, err := cfg.Pages()
+	if err != nil {
+		log.Error("approval pages not served", "err", err)
+		return nil
+	}
+	if p.Addr == "" {
+		return nil
+	}
+	srv := pages.New(p.Origin, log.With("component", "pages"))
+	ln, h, err := server.Listen(server.Options{}, "approval pages", p.Addr, srv.Handler())
+	if err != nil {
+		log.Error("approval pages not served; held writes carry the long link", "addr", p.Addr, "err", err)
+		return nil
+	}
+	log.Info("serving approval pages", "addr", ln.Addr().String(), "origin", p.Origin)
+	return &pagesSite{pages: srv, ln: ln, handler: h, origin: p.Origin}
+}
+
+// serve answers page requests until ctx is done.
+func (s *pagesSite) serve(ctx context.Context, log *slog.Logger) {
+	hs := &http.Server{Handler: s.handler, ReadHeaderTimeout: pagesHeaderTimeout}
+	go func() {
+		<-ctx.Done()
+		_ = hs.Shutdown(context.WithoutCancel(ctx))
+	}()
+	if err := hs.Serve(s.ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Error("approval pages stopped", "err", err)
+	}
 }
 
 // agentPoolConns bounds each agent's connections to its database.
 const agentPoolConns = 4
 
-// agentRuntime is what the engine holds for one agent: its tools, its
+// agentRuntime is what the engine holds for one agent: its service, its
 // timer, and the lazy connection pool on its own credential they share.
 type agentRuntime struct {
-	tools  []mcp.Tool
+	svc    *agent.Service
 	upkeep *upkeep.Upkeep
 	close  func()
 }
 
-// approveCommand is the start of the command that opens a held write's
-// approval page for agent; the service appends --open and the id.
-func approveCommand(agent, configArg string) string {
-	cmd := "basalt approve --agent " + agent
-	if configArg == "" {
-		return cmd
-	}
-	return cmd + " " + configArg
+// agentEnv is what every agent's runtime shares.
+type agentEnv struct {
+	cfg         config.Config
+	configArg   string
+	pagesOrigin string
+	pins        upkeep.Pins
+	tg          *telegram.Notifier
 }
 
-func newAgentRuntime(ctx context.Context, cfg config.Config, a config.Agent, approveCmd string, pins upkeep.Pins, tg *telegram.Notifier, log *slog.Logger) (agentRuntime, error) {
-	limits, err := sqlLimits(cfg.Limits)
+// cliFlags select agent in the person's basalt commands.
+func cliFlags(agent, configArg string) string {
+	flags := "--agent " + agent
+	if configArg == "" {
+		return flags
+	}
+	return flags + " " + configArg
+}
+
+func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slog.Logger) (agentRuntime, error) {
+	limits, err := sqlLimits(env.cfg.Limits)
 	if err != nil {
 		return agentRuntime{}, err
 	}
@@ -131,15 +200,16 @@ func newAgentRuntime(ctx context.Context, cfg config.Config, a config.Agent, app
 		Reads:        store,
 		Approvals:    store,
 		Reverts:      store,
-		Notifier:     agentNotifier(tg, pool.Config().ConnConfig.Database),
-		ApprovalPage: cfg.ApprovalPage,
-		ApproveCmd:   approveCmd,
+		Notifier:     agentNotifier(env.tg, pool.Config().ConnConfig.Database),
+		ApprovalPage: env.cfg.ApprovalPage,
+		CLIFlags:     cliFlags(a.Name, env.configArg),
+		PagesOrigin:  env.pagesOrigin,
 		Log:          log,
 		Now:          time.Now,
 	})
 	return agentRuntime{
-		tools:  agent.Tools(svc),
-		upkeep: upkeep.New(a.Name, buildinfo.Version, pool, log, time.Now).WithPins(pins),
+		svc:    svc,
+		upkeep: upkeep.New(a.Name, buildinfo.Version, pool, log, time.Now).WithPins(env.pins),
 		close:  pool.Close,
 	}, nil
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"runtime"
@@ -39,6 +40,8 @@ type host interface {
 	Probe(ctx context.Context, socket string) error
 	// OpenURL opens link in the person's default browser.
 	OpenURL(ctx context.Context, link string) error
+	// PagesUp reports whether the engine serves its local pages at origin.
+	PagesUp(ctx context.Context, origin string) bool
 }
 
 // osHost is the real machine.
@@ -74,6 +77,25 @@ func (osHost) OpenURL(ctx context.Context, link string) error {
 	}
 	// The link is one argument, never passed through a shell.
 	return exec.CommandContext(ctx, path, link).Run()
+}
+
+// pagesProbeTimeout bounds the check that the engine serves its pages: a
+// loopback answer is immediate.
+const pagesProbeTimeout = 2 * time.Second
+
+func (osHost) PagesUp(ctx context.Context, origin string) bool {
+	ctx, cancel := context.WithTimeout(ctx, pagesProbeTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin+"/healthz", nil)
+	if err != nil {
+		return false
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false
+	}
+	_ = resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
 }
 
 // browserOpener is the command that opens a URL in the default browser on

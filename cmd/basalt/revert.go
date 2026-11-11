@@ -29,6 +29,7 @@ type revertFlags struct {
 	apply             string
 	status            string
 	page              string
+	local             string // origin of the engine's local pages, "" when not served
 	dryRun, asJSON    bool
 	open              bool
 }
@@ -74,6 +75,9 @@ func runRevert(c *cliIO, args []string) int {
 		return c.fail(err)
 	}
 	defer conn.Close(c.ctx)
+	if scope.ID != uuid.Nil && !f.dryRun {
+		f.local = localPages(c, f.page, *agent, *configPath)
+	}
 	f.page = configuredPage(f.page, revert.PageURL, *agent, *configPath, revertSibling)
 
 	switch {
@@ -167,6 +171,8 @@ func prepareRevert(c *cliIO, conn *pgx.Conn, scope guard.RevertScope, f revertFl
 	if err != nil {
 		return c.fail(err)
 	}
+	pages := linkPages{page: f.page, local: f.local}
+	link = pages.short(revertPagePath, prep.RevertID, link)
 	expires := prep.ExpiresAt.UTC().Format(timeLayout)
 	switch {
 	case f.open:
@@ -176,6 +182,9 @@ func prepareRevert(c *cliIO, conn *pgx.Conn, scope guard.RevertScope, f revertFl
 		fmt.Fprintf(c.stderr, "basalt: revert %s expires %s. Open this link on a device with your passkey, check the rows, and sign:\n",
 			prep.RevertID, expires)
 		fmt.Fprintln(c.stderr, link)
+	}
+	if f.local != "" {
+		return awaitRevert(c, conn, prep.RevertID, f.asJSON)
 	}
 	fmt.Fprint(c.stderr, "Paste the code the revert page showed: ")
 	code, err := c.line()
@@ -198,17 +207,69 @@ func applyRevertCode(c *cliIO, conn *pgx.Conn, code string, asJSON bool) int {
 	if err != nil {
 		return c.fail(fmt.Errorf("the database refused the revert: %s", pgDetail(err)))
 	}
+	return printApplied(c, resp.RevertID, out, asJSON)
+}
+
+// printApplied says what an applied revert did. A revert the page relayed
+// has no change id here; basalt log shows it.
+func printApplied(c *cliIO, id uuid.UUID, out guard.AppliedRevert, asJSON bool) int {
 	if asJSON {
 		return printJSONValue(c, out)
 	}
 	if out.Batched {
 		fmt.Fprintf(c.stderr, "basalt: signed. Your agent restores the %d remaining rows in batches of up to %d (MCP apply_revert_batch) before %s; %d rows are left as they are.\n",
 			out.Pending, revert.MaxBatch, out.ApplyBy.UTC().Format(timeLayout), out.Skipped)
-		fmt.Fprintf(c.stderr, "basalt: follow it with: basalt revert --status %s\n", resp.RevertID)
+		fmt.Fprintf(c.stderr, "basalt: follow it with: basalt revert --status %s\n", id)
 		return exitOK
 	}
-	fmt.Fprintf(c.stderr, "basalt: reverted: %d rows restored, %d left as they are (change %s)\n", out.Rows, out.Skipped, out.ChangeID)
+	change := ""
+	if out.ChangeID != uuid.Nil {
+		change = fmt.Sprintf(" (change %s)", out.ChangeID)
+	}
+	fmt.Fprintf(c.stderr, "basalt: reverted: %d rows restored, %d left as they are%s\n", out.Rows, out.Skipped, change)
 	return exitOK
+}
+
+// revertPoll is how often basalt revert checks whether the page's relay
+// applied the revert.
+const revertPoll = time.Second
+
+// awaitRevert waits for the revert to be signed on the engine's local page,
+// which relays it, while still taking a pasted code (CONTRACT.md, CLI). It
+// ends when the revert is applied or signed, or when it expires.
+func awaitRevert(c *cliIO, conn *pgx.Conn, id uuid.UUID, asJSON bool) int {
+	fmt.Fprintln(c.stderr, "basalt: waiting for your signature on the revert page (or paste the code it shows here)...")
+	codes := make(chan string, 1)
+	go func() {
+		// A closed or empty stdin just leaves the page to finish it.
+		if code, err := c.line(); err == nil && code != "" {
+			codes <- code
+		}
+	}()
+	tick := time.NewTicker(revertPoll)
+	defer tick.Stop()
+	for {
+		select {
+		case code := <-codes:
+			return applyRevertCode(c, conn, code, asJSON)
+		case <-c.ctx.Done():
+			return c.fail(c.ctx.Err())
+		case <-tick.C:
+		}
+		r, err := ledger.FindRevert(c.ctx, conn, id)
+		if err != nil {
+			return c.fail(err)
+		}
+		switch {
+		case r.Status == ledger.RevertExpired || (r.Status == ledger.RevertPending && !c.now().Before(r.ExpiresAt)):
+			return c.fail(errors.New("the revert expired unsigned; nothing was reverted. Run basalt revert again"))
+		case r.Status == ledger.RevertPending:
+			continue
+		}
+		return printApplied(c, id, guard.AppliedRevert{
+			Rows: r.Rows, Skipped: r.Skipped, Batched: r.Batched, Pending: r.Progress.Pending, ApplyBy: r.ApplyBy,
+		}, asJSON)
+	}
 }
 
 // timeLayout is how the CLI prints a deadline.

@@ -48,3 +48,7 @@ A JSON response naming the server `basalt` means the shim reached the engine. If
 ## Reading the ledger
 
 `basalt log --agent NAME` reads the agent's change records with the agent's own credential, so it needs to read the credential file. Once the file belongs to the engine's user, run it as that user (`sudo -u basalt basalt log --agent NAME`) or pass a copy of the URL in `BASALT_DATABASE_URL`.
+
+## Approving held writes
+
+A held write comes back to the agent as `APPROVAL_REQUIRED` with `approval.personMessage`, one line for the agent to show you: what is held, a short link the engine serves (`http://localhost:<port>/approve/<id>`), and the equivalent `basalt approve --open` command. You approve on that page with your passkey. The agent's repeated `write` with `approvalId` waits up to 90 seconds and returns `APPLIED` once you sign. Claude Code moves an MCP call to the background after 2 minutes (`CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS`), so the wait stays under that. A client with a 60 second request timeout should pass a smaller `waitForApproval`. Authenticators on Linux and approving for an engine on a headless server: [`approving.md`](approving.md).

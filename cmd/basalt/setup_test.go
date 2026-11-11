@@ -30,6 +30,7 @@ type fakeHost struct {
 	ran       [][]string
 	opened    []string
 	openErr   error
+	pagesUp   bool
 	sys       *fakeSys
 }
 
@@ -69,6 +70,8 @@ func (h *fakeHost) OpenURL(_ context.Context, link string) error {
 	h.opened = append(h.opened, link)
 	return h.openErr
 }
+
+func (h *fakeHost) PagesUp(context.Context, string) bool { return h.pagesUp }
 
 func (h *fakeHost) System(io.Writer, io.Writer) service.System { return h.sys }
 

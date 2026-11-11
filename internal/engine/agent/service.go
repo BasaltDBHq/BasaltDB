@@ -72,10 +72,13 @@ type Deps struct {
 	Notifier Notifier
 	// ApprovalPage is the approval page URL; approval.PageURL when empty.
 	ApprovalPage string
-	// ApproveCmd is the start of the command the person runs to open a
-	// held write's approval page ("basalt approve --agent NAME [--config
-	// PATH]"); "basalt approve --agent NAME" when empty.
-	ApproveCmd string
+	// CLIFlags select this agent in the person's basalt commands ("--agent
+	// NAME [--config PATH]"); "--agent NAME" when empty.
+	CLIFlags string
+	// PagesOrigin is the origin of the pages the engine serves itself
+	// (CONTRACT.md, Local pages), for short links; empty when it serves
+	// none, and held actions then carry the long link.
+	PagesOrigin string
 }
 
 // Service runs one agent's tool calls.
@@ -96,8 +99,8 @@ func NewService(d Deps) *Service {
 	if d.ApprovalPage == "" {
 		d.ApprovalPage = approval.PageURL
 	}
-	if d.ApproveCmd == "" {
-		d.ApproveCmd = "basalt approve --agent " + d.Name
+	if d.CLIFlags == "" {
+		d.CLIFlags = "--agent " + d.Name
 	}
 	return &Service{Deps: d}
 }
@@ -179,6 +182,10 @@ type WriteParams struct {
 	// code, relayed when given.
 	ApprovalID uuid.UUID
 	Approval   string
+	// Wait is how long to wait for the person to sign a held write before
+	// answering APPROVAL_REQUIRED (CONTRACT.md, Waiting write); 0 answers
+	// at once.
+	Wait time.Duration
 }
 
 // WriteOutcome is one applied write.
@@ -211,7 +218,14 @@ func (s *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, error
 	}
 	res, err := s.Store.Write(ctx, in, stmt.Op, p.SQL, p.Params)
 	if approvalRequired(err) {
-		return WriteOutcome{}, s.hold(ctx, in, p, stmt, start)
+		id, err := s.hold(ctx, in, p, stmt, start)
+		if id == uuid.Nil || p.Wait == 0 {
+			return WriteOutcome{}, err
+		}
+		// Held: wait for the person's signature and apply it, exactly as
+		// the repeat with approvalId would.
+		p.ApprovalID, p.RunID = id, run.ID
+		return s.applyApproved(ctx, p)
 	}
 	if err != nil {
 		return WriteOutcome{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)

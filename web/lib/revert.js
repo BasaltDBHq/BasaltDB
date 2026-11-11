@@ -1,15 +1,21 @@
-// The revert page: decode the revert from the link, check the lines against
-// the binding, show what will be restored and what is left alone, and sign
-// the binding with the person's passkey. The page sends nothing anywhere; it
-// shows a code to paste into `basalt revert`.
+// The revert page: read the revert (from the long link's fragment, or from
+// the engine for a short link /revert/<id>), check the lines against the
+// binding, show what will be restored and what is left alone, and sign the
+// binding with the person's passkey. From a long link the page sends
+// nothing anywhere and shows a code to paste into `basalt revert`; from a
+// short link it posts the signature to the engine that served it, which
+// relays it to Postgres.
 import {
   MAX_REVERT_BATCH,
   REVERT_APPLY_HOURS,
+  checkRevertRequest,
   encodeRevertResponse,
   parseRevertRequest,
   relyingParty,
+  revertResponseJSON,
 } from "./codec.js";
-import { $, REVERT_REOPEN, el, fail, linkFailure, showCode, webauthnError } from "./page.js";
+import { fetchRequest, postResponse, relayPaths, revertDone, shortLinkId } from "./local.js";
+import { $, REVERT_REOPEN, el, fail, linkFailure, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
 
@@ -115,7 +121,38 @@ function renderLine(line) {
   return card;
 }
 
-async function sign(rp, req) {
+// engineFetch is fetch bound to the window, for the local relay.
+const engineFetch = (path, init) => window.fetch(path, init);
+
+// loadRequest reads the request: from the fragment of a long link, or from
+// the engine for a short link. relay is the path to post the signature to,
+// null for a long link.
+async function loadRequest() {
+  const id = shortLinkId(window.location.pathname, "revert");
+  if (window.location.hash || id === null) {
+    return { req: await parseRevertRequest(window.location.hash), relay: null };
+  }
+  const paths = relayPaths("revert", id);
+  const req = await checkRevertRequest(await fetchRequest(engineFetch, paths.request));
+  if (req.revertId !== id) throw new Error(`the engine sent revert ${req.revertId}, not ${id}`);
+  return { req, relay: paths.relay };
+}
+
+// finish relays the signed response when the page came from a short link,
+// and otherwise (or when the relay fails) shows the code to paste.
+async function finish(response, relay) {
+  if (relay !== null) {
+    try {
+      showDone(revertDone(await postResponse(engineFetch, relay, revertResponseJSON(response))));
+      return;
+    } catch (err) {
+      showRelayFailed(`The engine did not take the revert: ${err.message}. To finish by hand, paste the code below into basalt revert --apply.`);
+    }
+  }
+  showCode(encodeRevertResponse(response));
+}
+
+async function sign(rp, req, relay) {
   $("sign").disabled = true;
   try {
     const cred = await navigator.credentials.get({
@@ -128,14 +165,15 @@ async function sign(rp, req) {
       },
     });
     const r = cred.response;
-    showCode(
-      encodeRevertResponse({
+    await finish(
+      {
         revertId: req.revertId,
         credentialId: new Uint8Array(cred.rawId),
         authenticatorData: new Uint8Array(r.authenticatorData),
         clientDataJson: new Uint8Array(r.clientDataJSON),
         signature: new Uint8Array(r.signature),
-      }),
+      },
+      relay,
     );
   } catch (err) {
     $("sign").disabled = false;
@@ -146,9 +184,10 @@ async function sign(rp, req) {
 async function main() {
   let rp;
   let req;
+  let relay;
   try {
     rp = relyingParty(window.location);
-    req = await parseRevertRequest(window.location.hash);
+    ({ req, relay } = await loadRequest());
   } catch (err) {
     fail(linkFailure(err, "revert", REVERT_REOPEN));
     return;
@@ -164,7 +203,7 @@ async function main() {
     $("status").textContent = "This revert link expired. Nothing was reverted; run basalt revert again.";
     return;
   }
-  $("sign").addEventListener("click", () => sign(rp, req));
+  $("sign").addEventListener("click", () => sign(rp, req, relay));
 }
 
 main();

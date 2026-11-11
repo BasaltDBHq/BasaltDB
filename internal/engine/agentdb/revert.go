@@ -9,6 +9,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
@@ -59,4 +60,12 @@ func (s *Store) ApplyRevertBatch(ctx context.Context, id uuid.UUID, lines []int)
 		return err
 	})
 	return out, err
+}
+
+// ApplyRevert relays the person's signed revert (basalt_meta.apply_revert)
+// on the agent's credential, as basalt revert does: Postgres verifies the
+// passkey assertion and runs the revert, or for a large plan records the
+// signature.
+func (s *Store) ApplyRevert(ctx context.Context, id uuid.UUID, a passkey.Assertion) (guard.AppliedRevert, error) {
+	return guard.ApplyRevert(ctx, s.db, id, a)
 }

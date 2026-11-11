@@ -51,7 +51,11 @@ func runApprove(c *cliIO, args []string) int {
 	}
 	defer conn.Close(c.ctx)
 	if held != "" {
-		return showApproval(c, conn, held, configuredPage(*page, approval.PageURL, *agent, *configPath, ""), *open != "")
+		pages := linkPages{
+			page:  configuredPage(*page, approval.PageURL, *agent, *configPath, ""),
+			local: localPages(c, *page, *agent, *configPath),
+		}
+		return showApproval(c, conn, held, pages, *open != "")
 	}
 	return submitApproval(c, conn, code)
 }
@@ -74,8 +78,9 @@ func approveCode(c *cliIO, args []string, held string) (string, error) {
 }
 
 // showApproval prints the approval link of a held write on stdout, or with
-// open opens it in the browser (printing it only when no browser opens).
-func showApproval(c *cliIO, conn *pgx.Conn, idText, page string, open bool) int {
+// open opens it in the browser (printing it only when no browser opens):
+// the short link when the engine serves the pages, else the long one.
+func showApproval(c *cliIO, conn *pgx.Conn, idText string, pages linkPages, open bool) int {
 	id, err := uuid.Parse(idText)
 	if err != nil {
 		return c.fail(fmt.Errorf("%w: --show and --open need an approval id", errUsage))
@@ -102,16 +107,17 @@ func showApproval(c *cliIO, conn *pgx.Conn, idText, page string, open bool) int 
 	if err != nil {
 		return c.fail(err)
 	}
-	link, err := approval.Request{ApprovalID: a.ID, Binding: a.BindingText, Lines: a.Lines, CredentialIDs: ids}.URL(page)
+	link, err := approval.Request{ApprovalID: a.ID, Binding: a.BindingText, Lines: a.Lines, CredentialIDs: ids}.URL(pages.page)
 	if err != nil {
 		return c.fail(err)
 	}
+	link = pages.short(approvePath, a.ID, link)
 	fmt.Fprintf(c.stderr, "basalt: %s\n", summary.Headline())
 	expires := a.ExpiresAt.UTC().Format(timeLayout)
 	if open {
 		fmt.Fprintf(c.stderr, "basalt: %d rows, held by run %s, expires %s\n", a.Rows, a.RunID, expires)
 		openLink(c, link, c.stdout)
-		fmt.Fprintln(c.stderr, "basalt: check the rows, sign with your passkey, then run basalt approve '<code>' with the code the page shows")
+		fmt.Fprintln(c.stderr, pages.nextStep("basalt: check the rows and sign with your passkey", "basalt approve '<code>'"))
 		return exitOK
 	}
 	fmt.Fprintf(c.stderr, "basalt: %d rows, held by run %s, expires %s; open this link on a device with your passkey:\n",

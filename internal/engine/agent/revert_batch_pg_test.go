@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -98,6 +99,11 @@ func TestRevertPlanAndBatchTools(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "RESTORE", plan["action"])
 	require.Equal(t, "public.items", plan["table"])
+	// Not signed yet: the link to sign it, for the agent to hand over.
+	link := str(t, before["revertUrl"])
+	require.True(t, strings.HasPrefix(link, revert.PageURL+"#1."), "no local pages: the long link: %s", link)
+	require.Contains(t, before["personMessage"], "A revert is waiting for your passkey: ")
+	require.Contains(t, before["personMessage"], "Review and sign: "+link)
 
 	body, isError := e.h.call(t, "apply_revert_batch", map[string]any{"revertId": id, "lines": []int{1}})
 	requireToolError(t, body, isError, "REVERT_INVALID", "", "")

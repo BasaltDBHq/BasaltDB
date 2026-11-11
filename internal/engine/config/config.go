@@ -86,6 +86,9 @@ type Config struct {
 	// https://basaltvault.app/approve/; http://localhost:<port>/approve/
 	// for development.
 	ApprovalPage string `json:"approvalPage,omitempty" validate:"omitempty,url"`
+	// PagesAddr is where the engine serves the approval and revert pages on
+	// loopback (see Pages); "off" disables them, empty is the default.
+	PagesAddr string `json:"pagesAddr,omitempty"`
 	// Notify says where the person hears about held writes.
 	Notify Notify `json:"notify,omitzero"`
 }
@@ -194,6 +197,9 @@ func Load(path string) (Config, error) {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	if err := c.checkSocketPaths(); err != nil {
+		return Config{}, fmt.Errorf("config %s: %w", path, err)
+	}
+	if _, err := c.Pages(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	return c, nil

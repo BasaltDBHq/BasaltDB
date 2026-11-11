@@ -269,7 +269,16 @@ export function parseLine(text) {
 // the lines hash to the binding's rowsHash. Only then may the page ask for a
 // signature.
 export async function parseApprovalRequest(fragment) {
-  const req = await decodeRequest(fragment, APPROVAL_REQUEST_PREFIX, "approval request", ["approvalId", "binding", "lines"], ["credentialIds"]);
+  return checkApprovalRequest(await decodeRequest(fragment, APPROVAL_REQUEST_PREFIX, "approval request", APPROVAL_REQUEST_FIELDS, ["credentialIds"]));
+}
+
+const APPROVAL_REQUEST_FIELDS = ["approvalId", "binding", "lines"];
+
+// checkApprovalRequest checks a decoded approval request, from a link
+// fragment or from the engine's local pages (GET /api/v1/approvals/{id}),
+// exactly as parseApprovalRequest does.
+export async function checkApprovalRequest(value) {
+  const req = strictObject(value, "approval request", APPROVAL_REQUEST_FIELDS, ["credentialIds"]);
   const binding = parseBinding(req.binding);
   if (req.approvalId !== binding.approvalId) {
     throw new CodeError(`request is for approval ${req.approvalId}, binding for ${binding.approvalId}`);
@@ -293,21 +302,26 @@ export async function parseApprovalRequest(fragment) {
 
 // encodeApprovalResponse builds the code the person copies. Keys in the
 // contract's order, so Go and the page produce the same text.
-export function encodeApprovalResponse({ approvalId, ...assertion }) {
-  return encodeAssertionCode(APPROVAL_RESPONSE_PREFIX, { approvalId }, assertion);
+export function encodeApprovalResponse(response) {
+  return APPROVAL_RESPONSE_PREFIX + b64urlEncode(utf8(approvalResponseJSON(response)));
 }
 
-// encodeAssertionCode builds prefix + base64url(json) with the id first and
-// the assertion's byte fields after it, in the contract's order.
-function encodeAssertionCode(prefix, id, { credentialId, authenticatorData, clientDataJson, signature }) {
-  const json = JSON.stringify({
+// approvalResponseJSON is the JSON an approval code carries, which the page
+// posts to the engine's relay (POST /api/v1/approvals/{id}/approve).
+export function approvalResponseJSON({ approvalId, ...assertion }) {
+  return assertionJSON({ approvalId }, assertion);
+}
+
+// assertionJSON is a response's JSON with the id first and the assertion's
+// byte fields after it, in the contract's order.
+function assertionJSON(id, { credentialId, authenticatorData, clientDataJson, signature }) {
+  return JSON.stringify({
     ...id,
     credentialId: b64urlEncode(credentialId),
     authenticatorData: b64urlEncode(authenticatorData),
     clientDataJson: b64urlEncode(clientDataJson),
     signature: b64urlEncode(signature),
   });
-  return prefix + b64urlEncode(utf8(json));
 }
 
 const REVERT_BINDING_FIELDS = [
@@ -384,7 +398,15 @@ export function parseRevertLine(text) {
 // RESTORE lines as the binding's rows, and the lines hash to rowsHash. Only
 // then may the page ask for a signature.
 export async function parseRevertRequest(fragment) {
-  const req = await decodeRequest(fragment, REVERT_REQUEST_PREFIX, "revert request", ["revertId", "binding", "lines"], ["credentialIds"]);
+  return checkRevertRequest(await decodeRequest(fragment, REVERT_REQUEST_PREFIX, "revert request", REVERT_REQUEST_FIELDS, ["credentialIds"]));
+}
+
+const REVERT_REQUEST_FIELDS = ["revertId", "binding", "lines"];
+
+// checkRevertRequest checks a decoded revert request, from a link fragment
+// or from the engine's local pages, exactly as parseRevertRequest does.
+export async function checkRevertRequest(value) {
+  const req = strictObject(value, "revert request", REVERT_REQUEST_FIELDS, ["credentialIds"]);
   const binding = parseRevertBinding(req.binding);
   if (req.revertId !== binding.revertId) {
     throw new CodeError(`request is for revert ${req.revertId}, binding for ${binding.revertId}`);
@@ -443,8 +465,14 @@ async function checkSample(texts, binding) {
 }
 
 // encodeRevertResponse builds the code the person pastes into basalt revert.
-export function encodeRevertResponse({ revertId, ...assertion }) {
-  return encodeAssertionCode(REVERT_RESPONSE_PREFIX, { revertId }, assertion);
+export function encodeRevertResponse(response) {
+  return REVERT_RESPONSE_PREFIX + b64urlEncode(utf8(revertResponseJSON(response)));
+}
+
+// revertResponseJSON is the JSON a revert code carries, which the page posts
+// to the engine's relay (POST /api/v1/reverts/{id}/apply).
+export function revertResponseJSON({ revertId, ...assertion }) {
+  return assertionJSON({ revertId }, assertion);
 }
 
 function checkLabel(label, what) {

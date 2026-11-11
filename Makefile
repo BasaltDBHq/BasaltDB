@@ -84,7 +84,7 @@ web-check: ## Syntax-check the approval and revert pages and run their codec tes
 PORT ?= 8787
 
 .PHONY: serve-web
-serve-web: ## Serve the approval, registration and revert pages on http://localhost:$(PORT) (development; loopback only)
+serve-web: ## Serve the approval, registration and revert pages on http://localhost:$(PORT) from the working tree, for page development (the engine and basalt init serve the built-in pages themselves; loopback only)
 	python3 -m http.server $(PORT) --bind 127.0.0.1 --directory "$(CURDIR)/web"
 
 .PHONY: ci

@@ -67,6 +67,13 @@ func WriteClassification(ctx context.Context, tx pgx.Tx, n Names, c Classificati
 	if err := n.Validate(); err != nil {
 		return err
 	}
+	// Keep the caller's role and search_path (SET LOCAL ones included) to
+	// put back after the write.
+	var role, searchPath string
+	saved := psql.Select().Column("current_setting('role')").Column("current_setting('search_path')")
+	if err := queryBuilt(ctx, tx, saved).Scan(&role, &searchPath); err != nil {
+		return err
+	}
 	// Plain SQL: role and setting changes on a validated role name.
 	if _, err := tx.Exec(ctx, n.render(`SET LOCAL ROLE {{guard}}; SET LOCAL search_path = pg_catalog`)); err != nil {
 		return fmt.Errorf("classify as the guard role: %w", err)
@@ -77,6 +84,8 @@ func WriteClassification(ctx context.Context, tx pgx.Tx, n Names, c Classificati
 			return err
 		}
 	}
+	// The NOT EXISTS is a raw predicate: squirrel has no anti-join over a
+	// set-returning function, and the whole subquery is constant text.
 	stale := psql.Delete("basalt_meta.pii_columns p").Where(`NOT EXISTS (SELECT 1
 		FROM basalt_meta.pii_readable_columns() r
 		WHERE r.table_schema = p.table_schema AND r.table_name = p.table_name AND r.column_name = p.column_name)`)
@@ -91,9 +100,12 @@ func WriteClassification(ctx context.Context, tx pgx.Tx, n Names, c Classificati
 	if err := execBuilt(ctx, tx, catalog); err != nil {
 		return fmt.Errorf("set the classification catalog: %w", err)
 	}
-	// Plain SQL: back to the login role for the rest of the transaction.
-	_, err := tx.Exec(ctx, `RESET search_path; RESET ROLE`)
-	return err
+	// Back to the caller's settings, transaction-local as they were. The
+	// search_path first: setting role 'none' as the guard role is allowed.
+	restore := psql.Select().
+		Column(sq.Expr("set_config('search_path', ?, true)", searchPath)).
+		Column(sq.Expr("set_config('role', ?, true)", role))
+	return execBuilt(ctx, tx, restore)
 }
 
 func upsertPIIColumns(ctx context.Context, tx pgx.Tx, cols []PIIColumn, at time.Time) error {
@@ -129,6 +141,19 @@ func execBuilt(ctx context.Context, q Querier, b sq.Sqlizer) error {
 	_, err = q.Exec(ctx, sql, args...)
 	return err
 }
+
+func queryBuilt(ctx context.Context, q Querier, b sq.Sqlizer) pgx.Row {
+	sql, args, err := b.ToSql()
+	if err != nil {
+		return errRow{err}
+	}
+	return q.QueryRow(ctx, sql, args...)
+}
+
+// errRow is a pgx.Row that fails Scan with err.
+type errRow struct{ err error }
+
+func (r errRow) Scan(...any) error { return r.err }
 
 // nullString maps "" to SQL NULL.
 func nullString(s string) any {

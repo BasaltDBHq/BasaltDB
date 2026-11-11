@@ -1,7 +1,13 @@
 package mcpcontract_test
 
 import (
+	"bytes"
+	"compress/flate"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -27,7 +33,7 @@ var (
 // the wire rules.
 func TestLinkSchemas(t *testing.T) {
 	t.Parallel()
-	checkPayloadSchemas(t, "links", []string{"link.schema.json"})
+	checkPayloadSchemas(t, "links", []string{"link.schema.json", "compact-request.schema.json"})
 }
 
 // TestLinksBesidePersonMessage checks every personMessage in the tool and
@@ -205,4 +211,65 @@ func base64urlRun(s string) string {
 
 func isBase64url(r rune) bool {
 	return r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' || r == '_'
+}
+
+type compactVector struct {
+	Name     string          `json:"name"`
+	Kind     string          `json:"kind"`
+	Fragment string          `json:"fragment"`
+	Payload  json.RawMessage `json:"payload"`
+	Binding  string          `json:"binding"`
+	Lines    []string        `json:"lines"`
+}
+
+type compactVectors struct {
+	Description string          `json:"description"`
+	Valid       []compactVector `json:"valid"`
+	Invalid     []compactVector `json:"invalid"`
+}
+
+// TestCompactRequestVectors checks format 2's shared vectors (CONTRACT.md,
+// Approvals, Format 2) against the parts of the format that need no
+// rebuild: every valid fragment is 2. and the base64url of the deflate-raw
+// of its payload, a [shapes, texts] pair, and its lines hash to its
+// binding's rowsHash. The codec's own tests (internal/linkcodec and the
+// pages) rebuild every vector.
+func TestCompactRequestVectors(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile("links/compact-request.json")
+	require.NoError(t, err)
+	var c compactVectors
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	require.NoError(t, dec.Decode(&c))
+	require.NotEmpty(t, c.Valid)
+	require.NotEmpty(t, c.Invalid)
+
+	names := map[string]bool{}
+	for _, tc := range append(append([]compactVector{}, c.Valid...), c.Invalid...) {
+		require.False(t, names[tc.Name], "vector names are unique: %q", tc.Name)
+		names[tc.Name] = true
+		require.Contains(t, []string{"APPROVE", "REVERT"}, tc.Kind, tc.Name)
+		require.True(t, strings.HasPrefix(tc.Fragment, "2."), tc.Name)
+	}
+	for _, tc := range c.Valid {
+		compressed, err := base64.RawURLEncoding.Strict().DecodeString(strings.TrimPrefix(tc.Fragment, "2."))
+		require.NoError(t, err, tc.Name)
+		inflated, err := io.ReadAll(flate.NewReader(bytes.NewReader(compressed)))
+		require.NoError(t, err, tc.Name)
+		require.JSONEq(t, string(tc.Payload), string(inflated), tc.Name)
+
+		var pair []json.RawMessage
+		require.NoError(t, json.Unmarshal(tc.Payload, &pair), tc.Name)
+		require.Len(t, pair, 2, "%s: [shapes, texts]", tc.Name)
+
+		var binding struct {
+			Kind     string `json:"kind"`
+			RowsHash string `json:"rowsHash"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(tc.Binding), &binding), tc.Name)
+		require.Equal(t, tc.Kind, binding.Kind, tc.Name)
+		sum := sha256.Sum256([]byte(strings.Join(tc.Lines, "\n")))
+		require.Equal(t, binding.RowsHash, hex.EncodeToString(sum[:]), tc.Name)
+	}
 }

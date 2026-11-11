@@ -138,7 +138,7 @@ func TestShortLinkApprovedThroughTheRelay(t *testing.T) {
 		" (or run: basalt approve --agent bot --config /etc/basalt-test/engine.json --open "+id+"). Expires "), msg)
 	require.True(t, strings.HasSuffix(msg, " UTC."), msg)
 	require.Len(t, env.sent.sent, 1)
-	require.Contains(t, env.sent.sent[0].ApprovalURL, "#1.", "Telegram's button keeps the long link")
+	require.Contains(t, env.sent.sent[0].ApprovalURL, "#2.", "Telegram's button keeps the long link")
 	require.Equal(t, link, env.sent.sent[0].ShortURL, "Telegram's text carries the short link")
 
 	// The page itself is served for the short link.
@@ -327,7 +327,7 @@ func TestListPendingReissuesTheLink(t *testing.T) {
 	require.False(t, isError, "%v", pending)
 	list := items(t, pending)
 	require.Len(t, list, 1)
-	require.Contains(t, str(t, list[0]["approvalUrl"]), "#1.", "the long link, no new secret")
+	require.Contains(t, str(t, list[0]["approvalUrl"]), "#2.", "the long link, no new secret")
 	require.Contains(t, list[0]["personMessage"], "Approve with the link you were given")
 	require.Equal(t, http.StatusOK, p.get("/api/v1/approvals/"+id, first, &req))
 

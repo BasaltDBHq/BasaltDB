@@ -1,0 +1,668 @@
+package agent
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"regexp"
+	"sort"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/stretchr/testify/require"
+
+	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
+	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+)
+
+// This file is the contract test of the engine's error guidance
+// (CONTRACT.md, Next steps): every error entry of api/mcp/errors/next-steps.json
+// has a case that provokes it, and every provoked body obeys the catalog and
+// the contract's rules. The cases raise each failure the way the layer below
+// does (a Postgres error carrying the guard's SQLSTATE, a statement
+// refusal, a store error) and run it through Service.Failure, the one place
+// every tool error passes; the guard cases on a real database are in
+// guidance_pg_test.go.
+
+const (
+	caseRunID    = "0193a4c2-7d1e-7c3a-9f00-0000000000a1"
+	caseRevertID = "0193a4c2-7d1e-7c3a-9f00-0000000000b2"
+	caseChangeID = "0193a4c2-7d1e-7c3a-9f00-0000000000c3"
+	caseApproval = "0193a4c2-7d1e-7c3a-9f00-0000000000d4"
+)
+
+var (
+	writeArgs0 = map[string]any{
+		"sql": "UPDATE leads SET status = $1 WHERE id = $2", "params": []any{"lost", 42},
+		"intent": "No answer for a week", "runId": caseRunID,
+	}
+	queryArgs0 = map[string]any{"sql": "SELECT id FROM leads", "runId": caseRunID}
+)
+
+type catalogCase struct {
+	tool string
+	args map[string]any
+	fail func(t *testing.T, s *Service) error
+}
+
+// catalogReverts and catalogApprovals are the stores the cases need: the
+// failure is raised by the test, so only the lookups the engine makes while
+// building steps answer.
+type catalogReverts struct {
+	RevertStore
+	lines []string
+	by    uuid.UUID
+}
+
+func (r catalogReverts) PreviewRevert(context.Context, guard.RevertScope) ([]string, error) {
+	return r.lines, nil
+}
+
+func (r catalogReverts) RevertedBy(context.Context, guard.RevertScope) (uuid.UUID, error) {
+	return r.by, nil
+}
+
+type catalogApprovals struct{ ApprovalStore }
+
+func (catalogApprovals) Passkeys(context.Context) ([]passkey.Credential, error) { return nil, nil }
+
+func pgFail(code, message, detail string) func(*testing.T, *Service) error {
+	return func(*testing.T, *Service) error {
+		return &pgconn.PgError{Code: code, Message: message, Detail: detail}
+	}
+}
+
+func staleText(table, key string) string {
+	return fmt.Sprintf("%s %s read at xmin 7, now 9", table, key)
+}
+
+func refusal(reason sqlguard.Reason) func(*testing.T, *Service) error {
+	return func(*testing.T, *Service) error { return &sqlguard.RefusalError{Reason: reason, Detail: "detail"} }
+}
+
+func plain(err error) func(*testing.T, *Service) error {
+	return func(*testing.T, *Service) error { return err }
+}
+
+func asToolError(te *mcp.ToolError) func(*testing.T, *Service) error {
+	return func(*testing.T, *Service) error { return te }
+}
+
+func guardApproval(detail string) func(*testing.T, *Service) error {
+	return pgFail("BS005", "APPROVAL_INVALID", detail)
+}
+
+func guardRevert(detail string) func(*testing.T, *Service) error {
+	return pgFail("BS005", "REVERT_INVALID", detail)
+}
+
+func caseRevert(signed bool) ledger.Revert {
+	r := ledger.Revert{
+		ID: uuid.MustParse(caseRevertID), Status: "PENDING", Scope: "RUN", ScopeID: uuid.MustParse(caseRunID),
+		ExpiresAt: time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC),
+	}
+	if signed {
+		at := r.ExpiresAt
+		r.SignedAt = &at
+	}
+	return r
+}
+
+func caseNotice(s *Service, url string) mcp.ApprovalNotice {
+	return mcp.ApprovalNotice{
+		ApprovalID: caseApproval, ExpiresAt: "2026-11-12T10:00:00Z", Rows: 3,
+		Headline: "Delete 3 rows in public.leads", ApprovalURL: url,
+		ApproveCommand: s.Commands.Approve(uuid.MustParse(caseApproval)),
+		PersonMessage:  "Held for your approval: Delete 3 rows in public.leads. Approve here:\n\n" + url + "\n\nExpires 2026-11-12 10:00 UTC.",
+	}
+}
+
+const caseShortLink = "http://localhost:7878/approvals/" + caseApproval + "#s=AAAAAAAAAAAAAAAAAAAAAA"
+
+func held(reason string, url string) func(*testing.T, *Service) error {
+	return func(_ *testing.T, s *Service) error {
+		n := heldNotice{ApprovalNotice: caseNotice(s, url), reason: reason}
+		if reason == reasonWaitEnded {
+			return approvalStillPendingError(n)
+		}
+		return approvalRequiredError(n)
+	}
+}
+
+func approvalLink(reason string) func(*testing.T, *Service) error {
+	return func(_ *testing.T, s *Service) error {
+		return s.approvalLinkError(&mcp.ToolError{Code: CodeApprovalInvalid, Reason: reason, Message: "m"}, caseNotice(s, caseShortLink))
+	}
+}
+
+func nothingToRevert(tool string, lines []string, detail string, by uuid.UUID) func(*testing.T, *Service) error {
+	return func(t *testing.T, s *Service) error {
+		s.Reverts = catalogReverts{lines: lines, by: by}
+		scope := guard.RevertScope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}
+		return s.nothingToRevert(context.Background(), tool, scope, &pgconn.PgError{Code: "BS009", Message: "NOTHING_TO_REVERT", Detail: detail})
+	}
+}
+
+const alreadyRevertedLine = `{"op": "UPDATE", "key": {"id": 3}, "now": {"id": 3}, "set": {"id": 3}, "table": "public.leads", ` +
+	`"action": "SKIP", "cascaded": false, "conflict": "ALREADY_REVERTED", "sqlState": null, "changeIds": ["` + caseChangeID + `"]}`
+
+const changedAfterLine = `{"op": "UPDATE", "key": {"id": 3}, "now": {"id": 3}, "set": {"id": 3}, "table": "public.leads", ` +
+	`"action": "SKIP", "cascaded": false, "conflict": "CHANGED_AFTER", "sqlState": null, "changeIds": ["` + caseChangeID + `"]}`
+
+func caseKey(code, reason, tool string) string { return code + "|" + reason + "|" + tool }
+
+// catalogCases has one case per error entry of the catalog. A new code or
+// reason needs its case here or TestEveryCatalogErrorHasACase fails.
+func catalogCases() map[string]catalogCase {
+	revertArgs := map[string]any{"revertId": caseRevertID}
+	timeoutRevert := func(tool string) func(*testing.T, *Service) error {
+		return func(t *testing.T, s *Service) error {
+			return s.prepareTimeout(tool, guard.RevertScope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}, "57014")
+		}
+	}
+	return map[string]catalogCase{
+		caseKey("INTENT_REQUIRED", "", ""): {"write", map[string]any{"sql": "DELETE FROM leads WHERE id = 1"}, pgFail("BS001", "INTENT_REQUIRED", "")},
+		caseKey("STALE_READ", "", ""): {"write", writeArgs0,
+			pgFail("BS004", "STALE_READ", staleText("public.leads", `{"id": 42}`))},
+
+		caseKey("STATEMENT_REFUSED", "PARSE_ERROR", ""):           {"query", queryArgs0, refusal(sqlguard.ReasonParseError)},
+		caseKey("STATEMENT_REFUSED", "MULTIPLE_STATEMENTS", ""):   {"query", queryArgs0, refusal(sqlguard.ReasonMultipleStatements)},
+		caseKey("STATEMENT_REFUSED", "WRONG_TOOL", ""):            {"query", queryArgs0, refusal(sqlguard.ReasonWrongTool)},
+		caseKey("STATEMENT_REFUSED", "DDL_NOT_ALLOWED", ""):       {"write", writeArgs0, refusal(sqlguard.ReasonDDL)},
+		caseKey("STATEMENT_REFUSED", "STATEMENT_NOT_ALLOWED", ""): {"write", writeArgs0, refusal(sqlguard.ReasonUtility)},
+		caseKey("STATEMENT_REFUSED", "SELECT_INTO", ""):           {"query", queryArgs0, refusal(sqlguard.ReasonSelectInto)},
+		caseKey("STATEMENT_REFUSED", "LOCKING_READ", ""):          {"query", queryArgs0, refusal(sqlguard.ReasonLockingRead)},
+		caseKey("STATEMENT_REFUSED", "MERGE_NOT_ALLOWED", ""):     {"write", writeArgs0, refusal(sqlguard.ReasonMerge)},
+		caseKey("STATEMENT_REFUSED", "DATA_MODIFYING_WITH", ""):   {"query", queryArgs0, refusal(sqlguard.ReasonDataModifyingWith)},
+		caseKey("STATEMENT_REFUSED", "FUNCTION_NOT_ALLOWED", ""):  {"query", queryArgs0, refusal(sqlguard.ReasonFunction)},
+		caseKey("STATEMENT_REFUSED", "NOT_REPEATABLE", ""):        {"write", writeArgs0, refusal(sqlguard.ReasonNotRepeatable)},
+		caseKey("STATEMENT_REFUSED", "NO_PRIMARY_KEY", ""): {"write", writeArgs0,
+			pgFail("BS007", "NOT_ALLOWED", "table public.events has no primary key; the guard keys ledger rows by it")},
+		caseKey("STATEMENT_REFUSED", "NOT_ALLOWED", ""): {"write", writeArgs0, pgFail("BS007", "NOT_ALLOWED", "TRUNCATE by an agent")},
+
+		caseKey("ROW_LIMIT_EXCEEDED", "", ""): {"write", writeArgs0,
+			pgFail("BS003", "ROW_LIMIT_EXCEEDED", "more than 50 rows in one action (cascades included)")},
+
+		caseKey("QUERY_TIMEOUT", "ROW_LIMIT", ""):  {"query", queryArgs0, plain(agentdb.ErrRowLimit)},
+		caseKey("QUERY_TIMEOUT", "TIME_LIMIT", ""): {"query", queryArgs0, pgFail("57014", "canceling statement due to statement timeout", "")},
+		caseKey("QUERY_TIMEOUT", "TIME_LIMIT", "preview_revert"): {"preview_revert", map[string]any{"runId": caseRunID},
+			timeoutRevert("preview_revert")},
+		caseKey("QUERY_TIMEOUT", "TIME_LIMIT", "request_revert"): {"request_revert", map[string]any{"runId": caseRunID, "intent": "Undo"},
+			timeoutRevert("request_revert")},
+
+		caseKey("APPROVAL_REQUIRED", "HELD", ""):          {"write", writeArgs0, held(reasonHeld, caseShortLink)},
+		caseKey("APPROVAL_REQUIRED", "HELD_NO_PAGES", ""): {"write", writeArgs0, held(reasonHeldNoPages, "http://localhost:7878/approvals/"+caseApproval+"#1.abc")},
+		caseKey("APPROVAL_REQUIRED", "NO_PASSKEY", ""):    {"write", writeArgs0, held(reasonNoPasskey, caseShortLink)},
+		caseKey("APPROVAL_REQUIRED", "WAIT_ENDED", ""): {"write", withApproval(writeArgs0),
+			held(reasonWaitEnded, "http://localhost:7878/approvals/"+caseApproval+"#1.abc")},
+
+		caseKey("APPROVAL_EXPIRED", "", ""): {"write", withApproval(writeArgs0), asToolError(&mcp.ToolError{Code: CodeApprovalExpired, Message: "approval expired"})},
+
+		caseKey("APPROVAL_INVALID", "NOT_SIGNED", ""):      {"write", withApproval(writeArgs0), approvalLink(reasonNotSigned)},
+		caseKey("APPROVAL_INVALID", "ALREADY_USED", ""):    {"write", withApproval(writeArgs0), guardApproval("approval already used")},
+		caseKey("APPROVAL_INVALID", "DIFFERENT_WRITE", ""): {"write", withApproval(writeArgs0), guardApproval("the statement or its parameters differ from the approval")},
+		caseKey("APPROVAL_INVALID", "NOT_THIS_AGENT", ""):  {"write", withApproval(writeArgs0), guardApproval("approval is for another agent")},
+		caseKey("APPROVAL_INVALID", "ROWS_CHANGED", ""): {"write", withApproval(writeArgs0),
+			guardApproval("rows changed since the preview; a fresh preview and approval are needed")},
+		caseKey("APPROVAL_INVALID", "BAD_SIGNATURE", ""):   {"write", withApproval(writeArgs0), approvalLink(reasonBadSignature)},
+		caseKey("APPROVAL_INVALID", "PASSKEY_REVOKED", ""): {"write", withApproval(writeArgs0), approvalLink(reasonPasskeyRevoked)},
+
+		caseKey("REVERT_INVALID", "LINE_INVALID", ""): {"apply_revert_batch", map[string]any{"revertId": caseRevertID, "lines": []any{1}},
+			guardRevert("line 9 is not in the plan")},
+		caseKey("REVERT_INVALID", "PLAN_NOT_SIGNED", ""): {"apply_revert_batch", map[string]any{"revertId": caseRevertID, "lines": []any{1}},
+			guardRevert("the person has not signed this revert yet (basalt revert)")},
+		caseKey("REVERT_INVALID", "PLAN_FINISHED", ""): {"apply_revert_batch", map[string]any{"revertId": caseRevertID, "lines": []any{1}},
+			guardRevert("revert already applied: no line is pending")},
+		caseKey("REVERT_INVALID", "NOT_THIS_AGENT", ""): {"apply_revert_batch", map[string]any{"revertId": caseRevertID, "lines": []any{1}},
+			guardRevert("no such revert")},
+		caseKey("REVERT_INVALID", "ROWS_CHANGED", ""): {"request_revert", revertArgs, func(t *testing.T, s *Service) error {
+			return s.rowsChanged(caseRevert(false), "rows changed")
+		}},
+		caseKey("REVERT_INVALID", "BAD_SIGNATURE", ""): {"request_revert", revertArgs, func(t *testing.T, s *Service) error {
+			return s.badSignatureWith(caseShortLink, caseRevert(false), "the code does not verify")
+		}},
+		caseKey("REVERT_INVALID", "PASSKEY_REVOKED", ""): {"request_revert", revertArgs, func(t *testing.T, s *Service) error {
+			return s.passkeyRevokedWith(caseShortLink, caseRevert(false))
+		}},
+
+		caseKey("REVERT_EXPIRED", "NOT_SIGNED", ""):   {"request_revert", revertArgs, func(t *testing.T, s *Service) error { return s.revertExpired(caseRevert(false)) }},
+		caseKey("REVERT_EXPIRED", "NOT_FINISHED", ""): {"request_revert", revertArgs, func(t *testing.T, s *Service) error { return s.revertExpired(caseRevert(true)) }},
+
+		caseKey("NOTHING_TO_REVERT", "READS_ONLY", ""): {"request_revert", map[string]any{"runId": caseRunID, "intent": "Undo"},
+			nothingToRevert("request_revert", nil, "the run changed no rows", uuid.Nil)},
+		caseKey("NOTHING_TO_REVERT", "ALL_CHANGED_BY_PEOPLE", ""): {"preview_revert", map[string]any{"runId": caseRunID},
+			nothingToRevert("preview_revert", []string{changedAfterLine}, "every line skipped", uuid.Nil)},
+		caseKey("NOTHING_TO_REVERT", "ALREADY_REVERTED", ""): {"preview_revert", map[string]any{"runId": caseRunID},
+			nothingToRevert("preview_revert", []string{alreadyRevertedLine}, "every line skipped", uuid.MustParse(caseChangeID))},
+
+		caseKey("PERMISSION_DENIED", "", ""): {"query", queryArgs0, pgFail("42501", "permission denied for table events", "")},
+
+		caseKey("NOT_FOUND", "RUN", ""):      {"query", queryArgs0, asToolError(&mcp.ToolError{Code: CodeNotFound, Reason: "RUN", Message: "no such run"})},
+		caseKey("NOT_FOUND", "CHANGE", ""):   {"request_revert", map[string]any{"changeId": caseChangeID, "intent": "Undo", "runId": caseRunID}, asToolError(&mcp.ToolError{Code: CodeNotFound, Reason: "CHANGE", Message: "no such change"})},
+		caseKey("NOT_FOUND", "APPROVAL", ""): {"write", withApproval(writeArgs0), asToolError(&mcp.ToolError{Code: CodeNotFound, Reason: "APPROVAL", Message: "no such approval"})},
+		caseKey("NOT_FOUND", "REVERT", ""):   {"request_revert", revertArgs, plainFunc(func() error { return revertNotFound(uuid.MustParse(caseRevertID)) })},
+		caseKey("NOT_FOUND", "LINK", ""):     {"approval_page", nil, asToolError(&mcp.ToolError{Code: CodeNotFound, Reason: "LINK", Message: "no such link"})},
+
+		caseKey("SQL_ERROR", "", ""):            {"write", writeArgs0, pgFail("42703", `column "x" does not exist`, "")},
+		caseKey("SQL_ERROR", "NO_ROWS_NOW", ""): {"write", writeArgs0, asToolError(&mcp.ToolError{Code: CodeSQLError, Reason: reasonNoRowsNow, Message: "changes no rows now"})},
+		caseKey("INVALID_ARGUMENT", "", ""):     {"write", writeArgs0, plain(&ArgumentError{Message: "invalid arguments"})},
+		caseKey("INVALID_ARGUMENT", "STALE_CURSOR", ""): {"run_history", map[string]any{"runId": caseRunID, "cursor": "x"},
+			plain(fmt.Errorf("%w: %w", ledger.ErrInvalidParams, errors.New("invalid cursor: missing id")))},
+
+		caseKey("UNAVAILABLE", "DATABASE_UNREACHABLE", ""): {"query", queryArgs0, plain(context.DeadlineExceeded)},
+		caseKey("UNAVAILABLE", "CREDENTIAL_REJECTED", ""):  {"query", queryArgs0, pgFail("28P01", "password authentication failed", "")},
+		caseKey("UNAVAILABLE", "GUARD_MISSING", ""):        {"query", queryArgs0, pgFail("3F000", `schema "basalt_meta" does not exist`, "")},
+		caseKey("UNAVAILABLE", "GUARD_OUTDATED", ""):       {"query", queryArgs0, asToolError(&mcp.ToolError{Code: CodeUnavailable, Reason: reasonGuardOutdated, Message: "the guard is outdated"})},
+		caseKey("UNAVAILABLE", "ENGINE_UNREACHABLE", ""):   {"query", queryArgs0, asToolError(&mcp.ToolError{Code: CodeUnavailable, Reason: reasonEngineUnreachable, Message: "no engine"})},
+		caseKey("UNAVAILABLE", "PAGES_OFF", ""):            {"write", writeArgs0, asToolError(&mcp.ToolError{Code: CodeUnavailable, Reason: reasonPagesOff, Message: "no pages"})},
+
+		caseKey("UNAVAILABLE", "SETUP_PENDING", ""): {"query", queryArgs0, plain(&SetupError{Code: "K7Q2-M9XD"})},
+		caseKey("UNAVAILABLE", "SETUP_EXPIRED", ""): {"query", queryArgs0, plain(&SetupError{Code: "K7Q2-M9XD", Expired: true})},
+
+		caseKey("INTERNAL", "", ""): {"query", queryArgs0, plain(errors.New("boom"))},
+	}
+}
+
+func plainFunc(f func() error) func(*testing.T, *Service) error {
+	return func(*testing.T, *Service) error { return f() }
+}
+
+func withApproval(args map[string]any) map[string]any {
+	out := make(map[string]any, len(args)+1)
+	for k, v := range args {
+		out[k] = v
+	}
+	out["approvalId"] = caseApproval
+	return out
+}
+
+func catalogOf(t *testing.T) mcpcontract.NextSteps {
+	t.Helper()
+	c, err := mcpcontract.LoadNextSteps()
+	require.NoError(t, err)
+	return c
+}
+
+func entryKey(e mcpcontract.ErrorSteps) string { return caseKey(e.Code, e.Reason, e.Tool) }
+
+// TestEveryCatalogErrorHasACase walks the catalog: an error entry without a
+// case fails, so a new code or reason cannot ship without guidance, and a
+// case without an entry is stale.
+func TestEveryCatalogErrorHasACase(t *testing.T) {
+	t.Parallel()
+	cases := catalogCases()
+	seen := map[string]bool{}
+	var missing []string
+	for _, e := range catalogOf(t).Errors {
+		seen[entryKey(e)] = true
+		if _, ok := cases[entryKey(e)]; !ok {
+			missing = append(missing, entryKey(e))
+		}
+	}
+	require.Empty(t, missing, "catalog errors without a case in catalogCases")
+	var stale []string
+	for k := range cases {
+		if !seen[k] {
+			stale = append(stale, k)
+		}
+	}
+	sort.Strings(stale)
+	require.Empty(t, stale, "cases without a catalog entry")
+}
+
+// serviceFor builds the service the cases run on: configPath "" is the
+// platform default config.
+func serviceFor(t *testing.T, goos, configPath string, initArgs []string) *Service {
+	t.Helper()
+	cmds, err := NewCommands("bot", configPath, goos, initArgs)
+	require.NoError(t, err)
+	d := deps()
+	d.Commands = cmds
+	d.Approvals = catalogApprovals{}
+	d.Reverts = catalogReverts{}
+	return NewService(d)
+}
+
+func TestEveryCatalogErrorGivesTheCatalogsSteps(t *testing.T) {
+	t.Parallel()
+	for _, variant := range []struct {
+		name, goos, config string
+		initArgs           []string
+	}{
+		{"default config", "linux", "", []string{"--agent=bot", "--write=public.leads"}},
+		{"custom config", "darwin", "/srv/basalt/engine.json", []string{"--agent=bot", "--read=public.leads"}},
+	} {
+		for key, kase := range catalogCases() {
+			t.Run(variant.name+"/"+key, func(t *testing.T) {
+				t.Parallel()
+				s := serviceFor(t, variant.goos, variant.config, variant.initArgs)
+				te := s.Failure(kase.tool, kase.args, kase.fail(t, s))
+				requireObeysCatalog(t, kase, te, variant.config)
+			})
+		}
+	}
+}
+
+func requireObeysCatalog(t *testing.T, kase catalogCase, te *mcp.ToolError, config string) {
+	t.Helper()
+	entry, ok := catalogOf(t).ErrorEntry(te.Code, te.Reason, kase.tool)
+	require.True(t, ok, "no catalog entry for %s %s %s", te.Code, te.Reason, kase.tool)
+	require.NotEmpty(t, te.Message, "the message stays")
+	require.NotEmpty(t, te.NextSteps, "nextSteps is required")
+	got := make([]mcpcontract.StepKind, 0, len(te.NextSteps))
+	for _, st := range te.NextSteps {
+		got = append(got, mcpcontract.StepKind{Actor: st.Actor, Action: st.Action})
+	}
+	// The engine has no operatedBy AGENT mode yet: OPERATOR steps are the person's.
+	require.Equal(t, mcpcontract.Resolve(entry.Steps, mcpcontract.OperatedByPerson), got, "(actor, action) sequence of %s", entryKey(entry))
+	require.Equal(t, entry.PersonMessage, te.PersonMessage != "", "personMessage set exactly when the catalog says: %q", te.PersonMessage)
+	require.LessOrEqual(t, countWithoutURLs(te.PersonMessage), MaxPersonMessageLength)
+	requireURLsStandAlone(t, te.PersonMessage)
+	for i, st := range te.NextSteps {
+		requireStepObeysRules(t, st, kase, config, fmt.Sprintf("%s step %d", entryKey(entry), i+1))
+	}
+	if te.Code == CodeInternal || te.Code == CodeUnavailable {
+		require.NotEmpty(t, te.ErrorID, "errorId on UNAVAILABLE and INTERNAL")
+	}
+	if te.Code == CodeRowLimitExceeded {
+		require.Equal(t, MaxRetryRows, te.NextSteps[2].MaxRows)
+		require.Contains(t, te.NextSteps[2].Text, "only on an explicit yes", "AE-7")
+	}
+}
+
+var urlPattern = regexp.MustCompile(`https?://\S+`)
+
+func countWithoutURLs(s string) int { return len([]rune(urlPattern.ReplaceAllString(s, ""))) }
+
+// requireURLsStandAlone: every URL in a personMessage stands on a line of its
+// own with a blank line before and after (CONTRACT.md, Showing links).
+func requireURLsStandAlone(t *testing.T, message string) {
+	t.Helper()
+	lines := strings.Split(message, "\n")
+	for i, line := range lines {
+		if !urlPattern.MatchString(line) {
+			continue
+		}
+		require.Equal(t, strings.TrimSpace(line), urlPattern.FindString(line), "a URL stands alone on its line: %q", message)
+		if i > 0 {
+			require.Empty(t, strings.TrimSpace(lines[i-1]), "a blank line before the URL: %q", message)
+		}
+		if i < len(lines)-1 {
+			require.Empty(t, strings.TrimSpace(lines[i+1]), "a blank line after the URL: %q", message)
+		}
+	}
+}
+
+var conditionalWords = regexp.MustCompile(`(?i)\b(if|unless|otherwise)\b`)
+
+var secretPattern = regexp.MustCompile(`(?i)(://|#s=|secret|token|postgres)`)
+
+func requireStepObeysRules(t *testing.T, st mcp.NextStep, kase catalogCase, config, where string) {
+	t.Helper()
+	require.Contains(t, mcpcontract.ActorActions[st.Actor], st.Action, where)
+	require.NotEmpty(t, st.Text, where)
+	require.LessOrEqual(t, len([]rune(st.Text)), MaxStepTextLength, where)
+	require.Empty(t, conditionalWords.FindString(st.Text), "%s: no conditional steps: %q", where, st.Text)
+	require.Empty(t, secretPattern.FindString(st.Command), "%s: a command never carries a secret: %q", where, st.Command)
+	require.NotContains(t, strings.ReplaceAll(strings.ToLower(st.Command), "--rotate-password", ""), "password", where)
+	require.LessOrEqual(t, st.WaitSeconds, MaxWaitSeconds, where)
+
+	switch st.Action {
+	case mcp.ActionCallTool, mcp.ActionReviseCall:
+		requireToolArguments(t, st, kase, where)
+	case mcp.ActionRetrySmallerBatches:
+		require.Positive(t, st.MaxRows, where)
+		require.LessOrEqual(t, st.MaxRows, MaxRetryRows, where)
+	case mcp.ActionRunCommand:
+		requireCommand(t, st.Command, config, where)
+	case mcp.ActionOpenLink:
+		require.NotEmpty(t, st.URL, where)
+		if st.Command != "" {
+			requireCommand(t, st.Command, config, where)
+		}
+	}
+	if st.Action != mcp.ActionRetrySmallerBatches {
+		require.Zero(t, st.MaxRows, where)
+	}
+	if st.Action != mcp.ActionRunCommand && st.Action != mcp.ActionOpenLink {
+		require.Empty(t, st.Command, where)
+	}
+	if st.Action != mcp.ActionOpenLink {
+		require.Empty(t, st.URL, where)
+	}
+}
+
+var serviceManager = regexp.MustCompile(`^sudo (systemctl|launchctl) `)
+
+func requireCommand(t *testing.T, command, config, where string) {
+	t.Helper()
+	require.NotEmpty(t, command, where)
+	if serviceManager.MatchString(command) {
+		return
+	}
+	require.True(t, strings.HasPrefix(command, "basalt "), "%s: %q", where, command)
+	if strings.HasPrefix(command, "basalt engine ") { // the foreground engine names its config itself
+		return
+	}
+	require.Regexp(t, `--agent[ =]bot`, command, where)
+	require.NotContains(t, command, "<", "%s: no placeholders: %q", where, command)
+	if config == "" {
+		require.NotContains(t, command, "--config", where)
+		return
+	}
+	require.Contains(t, command, "--config "+config, where)
+}
+
+func requireToolArguments(t *testing.T, st mcp.NextStep, kase catalogCase, where string) {
+	t.Helper()
+	tool, ok := mcpcontract.Find(mcpcontract.MustLoad(), st.Tool)
+	require.True(t, ok, "%s: %q is not a contract tool", where, st.Tool)
+	args := jsonMap(t, st.Arguments)
+	if st.RepeatCall {
+		require.Equal(t, kase.tool, st.Tool, "%s: a repeated call is a call of the same tool", where)
+		merged := jsonMap(t, kase.args)
+		for k, v := range args {
+			if v == nil {
+				delete(merged, k)
+				continue
+			}
+			merged[k] = v
+		}
+		require.NoError(t, validateSchema(tool.InputSchema, merged), "%s: the repeated call's arguments", where)
+		return
+	}
+	if st.Action == mcp.ActionReviseCall {
+		props, _ := tool.InputSchema["properties"].(map[string]any)
+		for k := range args {
+			require.Contains(t, props, k, "%s: %s has no argument %q", where, st.Tool, k)
+		}
+		return
+	}
+	require.NoError(t, validateSchema(tool.InputSchema, args), "%s: arguments of %s must validate against its inputSchema", where, st.Tool)
+}
+
+func jsonMap(t *testing.T, v map[string]any) map[string]any {
+	t.Helper()
+	raw, err := json.Marshal(v)
+	require.NoError(t, err)
+	out := map[string]any{}
+	require.NoError(t, json.Unmarshal(raw, &out))
+	return out
+}
+
+// validateSchema checks v against the subset of JSON Schema the tool input
+// schemas use: type, required, properties, additionalProperties false, enum,
+// minimum, minLength, maxLength, pattern, format uuid, items, maxItems.
+func validateSchema(schema map[string]any, v any) error {
+	if types, ok := schemaTypes(schema["type"]); ok && !matchesAnyType(types, v) {
+		return fmt.Errorf("%v is not of type %v", v, types)
+	}
+	if enum, ok := schema["enum"].([]any); ok && !containsValue(enum, v) {
+		return fmt.Errorf("%v is not one of %v", v, enum)
+	}
+	switch x := v.(type) {
+	case map[string]any:
+		return validateObject(schema, x)
+	case []any:
+		return validateArray(schema, x)
+	case string:
+		return validateString(schema, x)
+	case float64:
+		if lower, ok := schema["minimum"].(float64); ok && x < lower {
+			return fmt.Errorf("%v is below %v", x, lower)
+		}
+	}
+	return nil
+}
+
+func validateObject(schema map[string]any, obj map[string]any) error {
+	props, _ := schema["properties"].(map[string]any)
+	if req, ok := schema["required"].([]any); ok {
+		for _, r := range req {
+			if _, present := obj[r.(string)]; !present {
+				return fmt.Errorf("missing required argument %q", r)
+			}
+		}
+	}
+	for k, val := range obj {
+		sub, known := props[k].(map[string]any)
+		if !known {
+			if schema["additionalProperties"] == false {
+				return fmt.Errorf("unknown argument %q", k)
+			}
+			continue
+		}
+		if err := validateSchema(sub, val); err != nil {
+			return fmt.Errorf("%s: %w", k, err)
+		}
+	}
+	return nil
+}
+
+func validateArray(schema map[string]any, arr []any) error {
+	if most, ok := schema["maxItems"].(float64); ok && float64(len(arr)) > most {
+		return fmt.Errorf("%d items, at most %v", len(arr), most)
+	}
+	items, ok := schema["items"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	for _, it := range arr {
+		if err := validateSchema(items, it); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+func validateString(schema map[string]any, s string) error {
+	n := float64(len([]rune(s)))
+	if least, ok := schema["minLength"].(float64); ok && n < least {
+		return fmt.Errorf("%q is shorter than %v", s, least)
+	}
+	if most, ok := schema["maxLength"].(float64); ok && n > most {
+		return fmt.Errorf("a string longer than %v", most)
+	}
+	if p, ok := schema["pattern"].(string); ok && !regexp.MustCompile(p).MatchString(s) {
+		return fmt.Errorf("%q does not match %s", s, p)
+	}
+	if schema["format"] == "uuid" && !uuidPattern.MatchString(s) {
+		return fmt.Errorf("%q is not a uuid", s)
+	}
+	return nil
+}
+
+func schemaTypes(v any) ([]string, bool) {
+	switch x := v.(type) {
+	case string:
+		return []string{x}, true
+	case []any:
+		out := make([]string, 0, len(x))
+		for _, e := range x {
+			out = append(out, e.(string))
+		}
+		return out, true
+	}
+	return nil, false
+}
+
+func matchesAnyType(types []string, v any) bool {
+	for _, t := range types {
+		switch {
+		case t == "object" && isKind[map[string]any](v), t == "array" && isKind[[]any](v), t == "string" && isKind[string](v),
+			t == "boolean" && isKind[bool](v), t == "null" && v == nil:
+			return true
+		case t == "number" && isKind[float64](v):
+			return true
+		case t == "integer":
+			if f, ok := v.(float64); ok && f == float64(int64(f)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func isKind[T any](v any) bool { _, ok := v.(T); return ok }
+
+func containsValue(list []any, v any) bool {
+	for _, e := range list {
+		if e == v {
+			return true
+		}
+	}
+	return false
+}
+
+// TestStepRulesRefuseABadStep: the rules above are live, so a step that
+// breaks one fails the table test.
+func TestStepRulesRefuseABadStep(t *testing.T) {
+	t.Parallel()
+	require.Error(t, validateSchema(mcpcontract.MustLoad()[0].InputSchema, map[string]any{"nope": 1}))
+	tool, ok := mcpcontract.Find(mcpcontract.MustLoad(), "query")
+	require.True(t, ok)
+	require.Error(t, validateSchema(tool.InputSchema, map[string]any{}), "sql is required")
+	require.NoError(t, validateSchema(tool.InputSchema, map[string]any{"sql": "SELECT 1", "params": []any{1.0, "a", nil}}))
+	require.Error(t, validateSchema(tool.InputSchema, map[string]any{"sql": "SELECT 1", "runId": "x"}), "format uuid")
+}
+
+// A STALE_READ whose detail the engine cannot read still tells the agent what
+// to do: stop and ask.
+func TestStaleReadWithAnUnreadableDetailStopsAndAsks(t *testing.T) {
+	t.Parallel()
+	s := serviceFor(t, "linux", "", nil)
+	te := s.Failure("write", writeArgs0, &pgconn.PgError{Code: "BS004", Message: "STALE_READ", Detail: "something else"})
+	require.Equal(t, CodeStaleRead, te.Code)
+	require.Len(t, te.NextSteps, 2)
+	require.Equal(t, mcp.ActionStop, te.NextSteps[0].Action)
+	require.Equal(t, mcp.ActionAskPerson, te.NextSteps[1].Action)
+}
+
+// PERMISSION_DENIED grants only a plain schema.table name; anything else, or a
+// table named without its schema, falls back to the plan.
+func TestPermissionDeniedGrantsOnlyAPlainQualifiedTable(t *testing.T) {
+	t.Parallel()
+	s := serviceFor(t, "linux", "", []string{"--agent=bot", "--read=public.leads"})
+	for message, want := range map[string]string{
+		"permission denied for table public.events": "--read=public.leads,public.events",
+		"permission denied for table events":        "--dry-run",
+		`permission denied for table "a,b"`:         "--dry-run",
+		"permission denied for table a,public.b":    "--dry-run",
+	} {
+		te := s.Failure("query", queryArgs0, &pgconn.PgError{Code: "42501", Message: message})
+		require.Contains(t, te.NextSteps[2].Command, want, message)
+		require.NotContains(t, te.PersonMessage, "basalt init", "the command is in the step, not in the message")
+		require.LessOrEqual(t, countWithoutURLs(te.PersonMessage), MaxPersonMessageLength)
+	}
+}

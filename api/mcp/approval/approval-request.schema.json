@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/approval-request.v1.json",
   "title": "Approval request",
-  "description": "What the engine puts in the approval link, <base>/approvals/<approvalId>#1.<base64url(deflate-raw(this JSON))>, and what the engine's local pages serve at GET /api/v1/approvals/{approvalId}. See CONTRACT.md, Approvals and Page links.",
+  "description": "What the engine's local pages serve at GET /api/v1/approvals/{approvalId}, and what a format 1 approval link carries, <base>/approvals/<approvalId>#1.<base64url(deflate-raw(this JSON))>, which the pages still read. The engine writes format 2 (compact-request.schema.json). See CONTRACT.md, Approvals and Page links.",
   "type": "object",
   "additionalProperties": false,
   "required": [

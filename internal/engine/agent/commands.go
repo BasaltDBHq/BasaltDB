@@ -1,8 +1,10 @@
 package agent
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 
@@ -165,7 +167,49 @@ func (c Commands) Init(change string) string {
 	for _, a := range c.initArgs {
 		parts = append(parts, shellQuote(a))
 	}
-	return strings.Join(append(parts, change), " ")
+	if change != "" {
+		parts = append(parts, change)
+	}
+	return strings.Join(parts, " ")
+}
+
+// ErrBadTable is a table name Grant refuses: not a plain schema.table, so it
+// could add a second table to the list or break the command's quoting.
+var ErrBadTable = errors.New("not a plain schema.table name")
+
+var plainTable = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_$]*\.[A-Za-z_][A-Za-z0-9_$]*$`)
+
+// Grant is init with the saved flags and table added to the agent's access
+// list: flag is "read" or "write". A saved list is extended, never replaced
+// (init takes the last value of a flag). The table must be a plain,
+// schema-qualified name: a list separator or a quote could add another table.
+func (c Commands) Grant(flag, table string) (string, error) {
+	if !plainTable.MatchString(table) {
+		return "", fmt.Errorf("%w: %q", ErrBadTable, table)
+	}
+	args := append([]string(nil), c.initArgs...)
+	merged := false
+	for i := 0; i < len(args) && !merged; i++ {
+		name, value, hasValue := strings.Cut(strings.TrimLeft(args[i], "-"), "=")
+		switch {
+		case name != flag:
+		case hasValue:
+			args[i], merged = "--"+flag+"="+value+","+table, true
+		case i+1 < len(args):
+			args[i+1], merged = args[i+1]+","+table, true
+		}
+	}
+	if !merged {
+		args = append(args, "--"+flag+"="+table)
+	}
+	c.initArgs = args
+	return c.Init(""), nil
+}
+
+// RevertDryRun is the person's command that prepares the revert of scope
+// without signing it and prints what it would do.
+func (c Commands) RevertDryRun(scope guard.RevertScope) string {
+	return c.verb("revert", "--"+strings.ToLower(string(scope.Kind)), scope.ID.String(), "--dry-run")
 }
 
 // EngineStart starts the engine: the foreground command, or the service

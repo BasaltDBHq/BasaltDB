@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
+	"github.com/basaltdbhq/basaltdb/internal/linkcodec"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 )
@@ -184,7 +185,8 @@ func Sample(lines []string) ([]string, error) {
 	return out[:min(len(out), MaxLines)], nil
 }
 
-// Request is what basalt revert puts in the revert link.
+// Request is the revert request: what the engine's local pages serve, and
+// what a format 1 link carries.
 type Request struct {
 	RevertID      uuid.UUID       `json:"revertId"`
 	Binding       string          `json:"binding"`
@@ -260,14 +262,25 @@ func (r Request) checkSample(b Binding) error {
 	return nil
 }
 
-// Fragment returns the link fragment (without '#'):
-// 1.<base64url(deflate-raw(json))>.
+// Fragment returns the link fragment (without '#') in format 2, as for
+// approvals: the binding and the lines in compact form, no credential ids
+// and no separate revert id.
 func (r Request) Fragment() (string, error) {
-	return approval.EncodeFragment(r)
+	return linkcodec.EncodeRequest(r.Binding, r.Lines)
+}
+
+// fromCompact is the request a format 2 link carries, its id read from the
+// binding; Check refuses a binding that does not parse.
+func fromCompact(binding string, lines []string) Request {
+	r := Request{Binding: binding, Lines: lines}
+	if b, err := ParseBinding(binding); err == nil {
+		r.RevertID = b.RevertID
+	}
+	return r
 }
 
 // URL returns the long revert link on the pages at base (links):
-// <base>/reverts/<revertId>#1.<request>.
+// <base>/reverts/<revertId>#2.<request>.
 func (r Request) URL(base string) (string, error) {
 	frag, err := r.Fragment()
 	if err != nil {
@@ -276,12 +289,12 @@ func (r Request) URL(base string) (string, error) {
 	return links.Revert(base, r.RevertID) + "#" + frag, nil
 }
 
-// ParseRequest decodes a revert link fragment, with or without '#', and
-// checks it (Check).
+// ParseRequest decodes a revert link fragment of either format, with or
+// without '#', and checks it (Check).
 func ParseRequest(fragment string) (Request, Binding, error) {
-	var r Request
-	if err := approval.DecodeFragment(fragment, "revert request", &r); err != nil {
-		return Request{}, Binding{}, err
+	r, err := linkcodec.DecodeRequest(fragment, MaxLines, fromCompact)
+	if err != nil {
+		return Request{}, Binding{}, invalid("revert request %v", err)
 	}
 	b, err := r.Check()
 	if err != nil {

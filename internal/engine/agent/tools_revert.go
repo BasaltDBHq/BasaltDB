@@ -234,8 +234,7 @@ func requestRevertFromDomain(r RequestedRevert) requestRevertResult {
 
 // requestRevert serves both forms; a bad argument carries its next step.
 func (h handlers) requestRevert(ctx context.Context, raw json.RawMessage) (any, error) {
-	out, err := h.requestRevertForm(ctx, raw)
-	return out, withArgumentSteps(err)
+	return h.requestRevertForm(ctx, raw)
 }
 
 func (h handlers) requestRevertForm(ctx context.Context, raw json.RawMessage) (any, error) {

@@ -94,7 +94,7 @@ func (s *Service) hold(ctx context.Context, in guard.Intent, p WriteParams, stmt
 	}
 	if len(lines) == 0 {
 		// The rows went away between the attempt and the preview.
-		return uuid.Nil, &mcp.ToolError{Code: CodeSQLError, Message: "the write changes no rows now; read again and decide"}
+		return uuid.Nil, &mcp.ToolError{Code: CodeSQLError, Reason: reasonNoRowsNow, Message: "the write changes no rows now; read again and decide"}
 	}
 	held, err := s.Approvals.Hold(ctx, in, guard.HoldRequest{Statement: p.SQL, Params: p.Params, Assigned: assigned, Lines: lines})
 	if err != nil {
@@ -125,6 +125,9 @@ type heldNotice struct {
 	mcp.ApprovalNotice
 	longURL  string
 	shortURL string // "" when no short link was issued
+	// reason is the APPROVAL_REQUIRED case: HELD, HELD_NO_PAGES or NO_PASSKEY
+	// (WAIT_ENDED is set by the wait that ran out).
+	reason string
 }
 
 // Whether building a notice issues a new short link, revoking the item's
@@ -156,18 +159,22 @@ func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding stri
 	if err != nil {
 		return heldNotice{}, err
 	}
-	link, how := short, fmt.Sprintf("Approve: %s (or run: %s)", short, command)
+	link, how, reason := short, fmt.Sprintf("Approve: %s (or run: %s)", short, command), reasonHeld
 	switch {
 	case short == "" && (issue || s.PagesOrigin == ""):
 		// No local pages. The long link carries the whole preview and
 		// breaks when copied: the message names the command, approvalUrl
 		// still has the link.
-		link, how = long, fmt.Sprintf("Approve by running: %s (it opens the approval page)", command)
+		link, how, reason = long, fmt.Sprintf("Approve by running: %s (it opens the approval page)", command), reasonHeldNoPages
 	case short == "":
 		// A wait that timed out: the link already handed over still works.
 		link, how = long, fmt.Sprintf("Approve with the link you were given, or run: %s", command)
 	}
+	if len(ids) == 0 {
+		reason = reasonNoPasskey // nobody can sign: the first step is to register a passkey
+	}
 	return heldNotice{
+		reason: reason,
 		ApprovalNotice: mcp.ApprovalNotice{
 			ApprovalID: id.String(), ExpiresAt: timeText(expires), Rows: len(lines), Headline: summary.Headline(),
 			ApprovalURL: link, ApproveCommand: command,
@@ -208,6 +215,7 @@ func approvalRequiredError(n heldNotice) error {
 // approvalStillPendingError is the APPROVAL_REQUIRED answer of a wait
 // that ran out: no second wait, the person may take long.
 func approvalStillPendingError(n heldNotice) error {
+	n.reason = reasonWaitEnded
 	return approvalError(n, fmt.Sprintf("still waiting for the person's approval of %d rows; nothing was applied. "+
 		"Do not call write to wait again. End your turn: tell the person the write is waiting for their approval "+
 		"(approval.personMessage has the link and the command), that it expires at %s, and that you apply it when they "+
@@ -222,7 +230,7 @@ const afterWaitRunsOut = "If that call returns APPROVAL_REQUIRED again, its wait
 
 func approvalError(n heldNotice, message string) error {
 	notice := n.ApprovalNotice
-	return &mcp.ToolError{Code: CodeApprovalRequired, Message: message, Approval: &notice}
+	return &mcp.ToolError{Code: CodeApprovalRequired, Reason: n.reason, Message: message, Approval: &notice}
 }
 
 // DefaultApprovalWait is how long a write with approvalId waits for the
@@ -245,8 +253,23 @@ func (s *Service) credentialIDs(ctx context.Context) ([]passkey.Bytes, error) {
 	return ids, nil
 }
 
-func approvalInvalid(format string, args ...any) error {
-	return &mcp.ToolError{Code: CodeApprovalInvalid, Message: fmt.Sprintf(format, args...)}
+func approvalInvalid(reason, format string, args ...any) *mcp.ToolError {
+	return &mcp.ToolError{Code: CodeApprovalInvalid, Reason: reason, Message: fmt.Sprintf(format, args...)}
+}
+
+// differentWrite is the refusal of a write that is not the held one: its
+// step repeats the held write exactly, with its approval id.
+func differentWrite(a ledger.Approval, format string, args ...any) error {
+	te := approvalInvalid(reasonDifferentWrite, format, args...)
+	call := map[string]any{"sql": a.Statement, "intent": a.Intent, argRunID: a.RunID.String(), argApprovalID: a.ID.String()}
+	var params []any
+	if len(a.Params) > 0 && json.Unmarshal(a.Params, &params) == nil && len(params) > 0 {
+		call["params"] = params
+	}
+	if steps, err := NewSteps().CallTool(toolWrite, call, "Send exactly the held write: this sql, these params and this intent, with its approvalId.").Build(); err == nil {
+		te.NextSteps = steps
+	}
+	return te
 }
 
 // applyApproved runs a held write under its approval: the same statement,
@@ -262,7 +285,7 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 	}
 	a, err := s.Approvals.FindApproval(ctx, p.ApprovalID)
 	if errors.Is(err, ledger.ErrApprovalNotFound) {
-		return WriteOutcome{}, approvalInvalid("approval %s is not one of this agent's held writes", p.ApprovalID)
+		return WriteOutcome{}, approvalInvalid(reasonNotThisAgent, "approval %s is not one of this agent's held writes", p.ApprovalID)
 	}
 	if err != nil {
 		return WriteOutcome{}, err
@@ -271,7 +294,7 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 		return WriteOutcome{}, err
 	}
 	if err := s.relay(ctx, a, p.Approval); err != nil {
-		return WriteOutcome{}, err
+		return WriteOutcome{}, s.withApprovalLink(ctx, a, err)
 	}
 	if a, err = s.waitForSignature(ctx, a, p); err != nil {
 		return WriteOutcome{}, err
@@ -284,22 +307,42 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 	}
 	res, err := s.Approvals.WriteApproved(ctx, in, a.ID, stmt.Op, p.SQL, p.Params)
 	if err != nil {
-		return WriteOutcome{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
+		return WriteOutcome{}, s.withApprovalLink(ctx, a, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err))
 	}
 	return WriteOutcome{WriteResult: res, RunID: run.ID, Op: stmt.Op, ApprovalID: a.ID}, nil
+}
+
+// withApprovalLink gives an approval error that sends the person back to the
+// approval page (not signed yet, a bad signature, a passkey the database
+// does not accept) the page's link in its steps; any other error passes.
+func (s *Service) withApprovalLink(ctx context.Context, a ledger.Approval, err error) error {
+	te := ToolError(err)
+	if te.Code != CodeApprovalInvalid || len(te.NextSteps) > 0 {
+		return err
+	}
+	switch te.Reason {
+	case reasonNotSigned, reasonBadSignature, reasonPasskeyRevoked:
+	default:
+		return err
+	}
+	n, linkErr := s.approvalNotice(ctx, a.ID, a.BindingText, a.Lines, a.ExpiresAt, keepLink)
+	if linkErr != nil {
+		return linkErr
+	}
+	return s.approvalLinkError(te, n.ApprovalNotice)
 }
 
 // sameAsHeld checks the call repeats the held write.
 func sameAsHeld(a ledger.Approval, p WriteParams) error {
 	switch {
 	case a.Status == ledger.ApprovalApplied:
-		return approvalInvalid("approval %s was already used", a.ID)
+		return approvalInvalid(reasonAlreadyUsed, "approval %s was already used", a.ID)
 	case a.Status == ledger.ApprovalExpired:
 		return &mcp.ToolError{Code: CodeApprovalExpired, Message: fmt.Sprintf("approval %s expired at %s; the write stays blocked", a.ID, timeText(a.ExpiresAt))}
 	case a.RunID != p.RunID:
-		return approvalInvalid("approval %s belongs to run %s", a.ID, a.RunID)
+		return differentWrite(a, "approval %s belongs to run %s", a.ID, a.RunID)
 	case a.Statement != p.SQL || !sameParams(a.Params, p.Params):
-		return approvalInvalid("sql and params must be exactly those of the held write")
+		return differentWrite(a, "sql and params must be exactly those of the held write")
 	}
 	return nil
 }
@@ -328,10 +371,10 @@ func (s *Service) relay(ctx context.Context, a ledger.Approval, code string) err
 	}
 	resp, err := approval.ParseResponse(code)
 	if err != nil {
-		return approvalInvalid("the approval code is damaged: %v", err)
+		return approvalInvalid(reasonBadSignature, "the approval code is damaged: %v", err)
 	}
 	if resp.ApprovalID != a.ID {
-		return approvalInvalid("the approval code is for approval %s, not %s", resp.ApprovalID, a.ID)
+		return approvalInvalid(reasonBadSignature, "the approval code is for approval %s, not %s", resp.ApprovalID, a.ID)
 	}
 	_, err = s.Approvals.SubmitApproval(ctx, a.ID, resp.Assertion())
 	return err

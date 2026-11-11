@@ -31,6 +31,10 @@ import (
 // Postgres verifies the signature.
 type RevertStore interface {
 	PreviewRevert(ctx context.Context, scope guard.RevertScope) ([]string, error)
+	// RevertedBy is the change record of the latest revert that covered scope
+	// (a revert's own change, which request_revert accepts to redo the work),
+	// or uuid.Nil when none did.
+	RevertedBy(ctx context.Context, scope guard.RevertScope) (uuid.UUID, error)
 	PrepareRevert(ctx context.Context, scope guard.RevertScope, intent string, timeout time.Duration) (guard.PreparedRevert, error)
 	HasChange(ctx context.Context, id uuid.UUID) (bool, error)
 	FindRevert(ctx context.Context, id uuid.UUID) (ledger.Revert, error)
@@ -60,12 +64,16 @@ type RevertPreview struct {
 // It changes nothing: the guard runs the revert on trial and undoes it.
 func (s *Service) PreviewRevert(ctx context.Context, p PreviewRevertParams) (RevertPreview, error) {
 	texts, err := s.Reverts.PreviewRevert(ctx, p.Scope)
-	if code, ok := guard.CodeOf(err); ok && code == guard.CodeNothingToRevert {
-		return RevertPreview{}, &mcp.ToolError{Code: CodeNotFound, Message: fmt.Sprintf(
-			"nothing to revert: %s %s changed no rows a revert could restore", p.Scope.Kind, p.Scope.ID)}
+	if err != nil {
+		return RevertPreview{}, s.previewError(ctx, p.Scope, err)
 	}
+	start, err := lineAfter(texts, p.Cursor)
 	if err != nil {
 		return RevertPreview{}, err
+	}
+	if allSkipped(texts) {
+		// Every line is skipped: nothing a revert could restore (AE-8, AE-14).
+		return RevertPreview{}, s.nothingToRevertError(ctx, toolPreviewRevert, p.Scope, skipReason(texts), "every row is skipped")
 	}
 	out := RevertPreview{Scope: p.Scope, Command: s.Commands.Revert(p.Scope)}
 	lines := make([]revert.Line, 0, len(texts))
@@ -80,16 +88,23 @@ func (s *Service) PreviewRevert(ctx context.Context, p PreviewRevertParams) (Rev
 		}
 	}
 	out.Skipped = len(lines) - out.Rows
-	start, err := lineAfter(texts, p.Cursor)
-	if err != nil {
-		return RevertPreview{}, err
-	}
 	end := min(start+p.Limit, len(lines))
 	out.Page.Items = lines[start:end]
 	if end < len(lines) {
 		out.Page.NextCursor = pagination.EncodeNameCursor(lineHash(texts[end-1]))
 	}
 	return out, nil
+}
+
+// previewError answers a preview that failed. An id that is not this agent's
+// stays NOT_FOUND; nothing to revert and a timeout carry their steps.
+func (s *Service) previewError(ctx context.Context, scope guard.RevertScope, err error) error {
+	if code, ok := guard.CodeOf(err); ok && code == guard.CodeNothingToRevert && scope.Kind != revert.ScopeTask {
+		if ownErr := s.checkOwnScope(ctx, scope); ownErr != nil {
+			return ownErr
+		}
+	}
+	return s.prepareError(ctx, toolPreviewRevert, scope, err)
 }
 
 // lineAfter is the index of the first line after the cursor's line. The
@@ -101,14 +116,14 @@ func lineAfter(texts []string, cursor string) (int, error) {
 	}
 	hash, err := pagination.DecodeNameCursor(cursor)
 	if err != nil {
-		return 0, &ArgumentError{Message: "invalid cursor"}
+		return 0, &ArgumentError{Message: "invalid cursor", Reason: ReasonStaleCursor}
 	}
 	for i, t := range texts {
 		if lineHash(t) == hash {
 			return i + 1, nil
 		}
 	}
-	return 0, &ArgumentError{Message: "the cursor's line is no longer in the preview: the rows changed, start from the first page"}
+	return 0, &ArgumentError{Message: "the cursor's line is no longer in the preview: the rows changed, start from the first page", Reason: ReasonStaleCursor}
 }
 
 func lineHash(text string) string {
@@ -141,7 +156,7 @@ type RevertPlan struct {
 func (s *Service) RevertPlan(ctx context.Context, p RevertPlanParams) (RevertPlan, error) {
 	r, err := s.Reverts.FindRevert(ctx, p.RevertID)
 	if errors.Is(err, ledger.ErrRevertNotFound) {
-		return RevertPlan{}, &mcp.ToolError{Code: CodeNotFound, Message: fmt.Sprintf("no revert %s prepared by this agent", p.RevertID)}
+		return RevertPlan{}, &mcp.ToolError{Code: CodeNotFound, Reason: reasonRevert, Message: fmt.Sprintf("no revert %s prepared by this agent", p.RevertID)}
 	}
 	if err != nil {
 		return RevertPlan{}, err
@@ -207,7 +222,7 @@ func (s *Service) RequestRevert(ctx context.Context, p RequestRevertParams) (Req
 	}
 	prep, err := s.Reverts.PrepareRevert(ctx, p.Scope, p.Intent, guard.MCPPrepareTimeout)
 	if err != nil {
-		return RequestedRevert{}, s.prepareError(ctx, p.Scope, err)
+		return RequestedRevert{}, s.prepareError(ctx, toolRequestRevert, p.Scope, err)
 	}
 	r, err := s.Reverts.FindRevert(ctx, prep.RevertID)
 	if err != nil {
@@ -446,9 +461,9 @@ func notOwnScope(scope guard.RevertScope) error {
 // prepareError is the answer to a prepare that failed: what the person
 // can do when nothing can be reverted, or when the prepare is too large for
 // an MCP call and their terminal is the better path.
-func (s *Service) prepareError(ctx context.Context, scope guard.RevertScope, err error) error {
+func (s *Service) prepareError(ctx context.Context, tool string, scope guard.RevertScope, err error) error {
 	if code, ok := guard.CodeOf(err); ok && code == guard.CodeNothingToRevert {
-		return s.nothingToRevert(ctx, scope, err)
+		return s.nothingToRevert(ctx, tool, scope, err)
 	}
 	if ctx.Err() != nil {
 		// The client canceled the call: not the prepare's time limit.
@@ -458,7 +473,7 @@ func (s *Service) prepareError(ctx context.Context, scope guard.RevertScope, err
 	if !errors.As(err, &pe) || pe.Code != sqlStateQueryCanceled {
 		return err
 	}
-	return s.prepareTimeout(scope, pe.Code)
+	return s.prepareTimeout(tool, scope, pe.Code)
 }
 
 // revertNotice is the link to sign a prepared revert (a newly issued short

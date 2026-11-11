@@ -68,7 +68,7 @@ test("approval request refuses anything that does not match the binding", async 
       return true;
     });
   }
-  await assert.rejects(parseApprovalRequest("2." + f.fragment.slice(2)), /must start with/);
+  await assert.rejects(parseApprovalRequest("3." + f.fragment.slice(2)), /must start with/);
   await assert.rejects(parseApprovalRequest("1." + b64urlEncode(utf8("plain"))), /deflate-raw/);
   await assert.rejects(parseApprovalRequest("1.@@"), /base64url/);
 });

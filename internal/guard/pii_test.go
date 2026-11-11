@@ -290,8 +290,8 @@ func TestPIIUnclassified(t *testing.T) {
 	require.Zero(t, count(t, p.bot.Conn, `SELECT count(1)::int FROM basalt_meta.agent_pii_columns
 		WHERE table_name = 'customers' AND column_name IN ('email', 'email_address')`))
 
-	// other reads ssn and vault, bot does not: each sees its own columns.
-	require.NotContains(t, strings2(t, p.other.Conn, query), "leads.score:bigint:TYPE_CHANGED")
+	// other reads customers and vault, not leads: only its own columns.
+	require.Equal(t, []string{"customers.email_address:text:NEW"}, strings2(t, p.other.Conn, query))
 }
 
 func TestPIIReadableColumnsAndFingerprint(t *testing.T) {
@@ -337,16 +337,30 @@ func TestWriteClassificationRunsAsGuard(t *testing.T) {
 	require.Equal(t, 1, count(t, p.Admin, `SELECT count(1)::int FROM basalt_meta.pii_catalog
 		WHERE fingerprint = basalt_meta.pii_fingerprint() AND classified_by = $1`, admin))
 
-	// The transaction ran under the guard role, and leaves it after.
+	// The write runs under the guard role and puts the caller's role and
+	// search_path back after, SET LOCAL ones included.
+	settings := func(tx pgx.Tx) (string, string) {
+		var role, path string
+		require.NoError(t, tx.QueryRow(ctx, `SELECT current_user::text, current_setting('search_path')`).Scan(&role, &path))
+		return role, path
+	}
 	require.NoError(t, pgx.BeginFunc(ctx, p.Admin, func(tx pgx.Tx) error {
-		if err := guard.WriteClassification(ctx, tx, p.Names, guard.Classification{At: time.Now()}); err != nil {
-			return err
-		}
-		var role string
-		if err := tx.QueryRow(ctx, `SELECT current_user::text`).Scan(&role); err != nil {
-			return err
-		}
-		require.Equal(t, admin, role)
+		before := [2]string{}
+		before[0], before[1] = settings(tx)
+		require.NoError(t, guard.WriteClassification(ctx, tx, p.Names, guard.Classification{At: time.Now()}))
+		after := [2]string{}
+		after[0], after[1] = settings(tx)
+		require.Equal(t, before, after)
+		require.Equal(t, admin, after[0])
+		return nil
+	}))
+	require.NoError(t, pgx.BeginFunc(ctx, p.Admin, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `SET LOCAL search_path = public, pg_temp; SET LOCAL ROLE `+p.Names.Guard())
+		require.NoError(t, err)
+		require.NoError(t, guard.WriteClassification(ctx, tx, p.Names, guard.Classification{At: time.Now()}))
+		role, path := settings(tx)
+		require.Equal(t, p.Names.Guard(), role)
+		require.Equal(t, "public, pg_temp", path)
 		return nil
 	}))
 
@@ -385,4 +399,68 @@ func TestPIIMigrationIsIdempotentAndRemovable(t *testing.T) {
 	require.NoError(t, p.Admin.QueryRow(ctx, `SELECT (SELECT count(1) FROM pg_class WHERE relname LIKE '%pii%')
 		+ (SELECT count(1) FROM pg_proc WHERE proname LIKE 'pii%')`).Scan(&left))
 	require.Zero(t, left)
+}
+
+// loginRole creates a NOINHERIT login role: a member of what it is granted
+// that holds none of its privileges until SET ROLE.
+func (p piiDB) loginRole(t *testing.T, name string) (string, string) {
+	t.Helper()
+	role := p.Names.Prefix + "_" + name
+	p.Exec(t, `CREATE ROLE `+role+` LOGIN NOINHERIT PASSWORD 'pw'`)
+	dsn, err := guard.AgentConnString(p.URL, role, "pw")
+	require.NoError(t, err)
+	return role, dsn
+}
+
+func TestPIIViewsAreSecurityBarriers(t *testing.T) {
+	t.Parallel()
+	p := newPIIDB(t)
+	// agent_pii_catalog's filter has no column of the view in it, so
+	// Postgres runs it as a one-time filter before any qual of the caller's
+	// query and the leaky-function test cannot fail without the barrier.
+	// Check the option itself on both views.
+	require.Equal(t, []string{"agent_pii_catalog", "agent_pii_columns"}, strings2(t, p.Admin, `SELECT c.relname::text
+		FROM pg_class c WHERE c.relnamespace = 'basalt_meta'::regnamespace AND c.relname LIKE 'agent_pii%'
+		  AND 'security_barrier=true' = ANY (c.reloptions) ORDER BY 1`))
+}
+
+func TestPIIViewsFilterOnTheLoginRole(t *testing.T) {
+	t.Parallel()
+	p := newPIIDB(t)
+	p.classifyAll(t)
+	ctx := context.Background()
+
+	// A login role that can SET ROLE to bot: as bot, current_user is bot,
+	// which may read the views, but session_user is still the login role,
+	// which may select no column and is not an agent.
+	role, dsn := p.loginRole(t, "person")
+	p.Exec(t, `GRANT `+p.bot.Role+` TO `+role)
+	c, err := pgdial.Connect(ctx, dsn)
+	require.NoError(t, err)
+	defer c.Close(ctx)
+	_, err = c.Exec(ctx, `SET ROLE `+p.bot.Role)
+	require.NoError(t, err)
+	require.Equal(t, 9, count(t, p.bot.Conn, `SELECT count(1)::int FROM basalt_meta.agent_pii_columns`))
+	require.Zero(t, count(t, c, `SELECT count(1)::int FROM basalt_meta.agent_pii_columns`))
+	require.Zero(t, count(t, c, `SELECT count(1)::int FROM basalt_meta.agent_pii_catalog`))
+	require.Empty(t, strings2(t, c, `SELECT column_name FROM basalt_meta.pii_unclassified()`))
+}
+
+func TestPIIReadableColumnsNeedAnInheritingMember(t *testing.T) {
+	t.Parallel()
+	p := newPIIDB(t)
+
+	// A member of the agents group that does not inherit it (as the admin
+	// who created the roles is from Postgres 16) is not an agent: what it
+	// may select is not a readable column.
+	role, _ := p.loginRole(t, "admin2")
+	p.Exec(t, `GRANT `+p.Names.Agents()+` TO `+role)
+	p.Exec(t, `GRANT SELECT ON public.payroll TO `+role)
+	require.Zero(t, count(t, p.Admin, `SELECT count(1)::int FROM basalt_meta.pii_readable_columns()
+		WHERE table_name = 'payroll'`))
+
+	// An inheriting member makes it readable.
+	p.Exec(t, `GRANT SELECT ON public.payroll TO `+p.other.Role)
+	require.Equal(t, 2, count(t, p.Admin, `SELECT count(1)::int FROM basalt_meta.pii_readable_columns()
+		WHERE table_name = 'payroll'`))
 }

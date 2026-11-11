@@ -18,6 +18,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
@@ -136,8 +137,11 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 	require.Contains(t, str(t, body["message"]), "do not wait again")
 	require.Equal(t, "Update 15 rows in public.leads", ap["headline"])
 	require.True(t, strings.HasPrefix(str(t, ap["personMessage"]),
-		"Held for your approval: Update 15 rows in public.leads. Approve by running: "+command+" (it opens the approval page). Expires "),
-		"without local pages the message names the command, not the long link: %v", ap["personMessage"])
+		"Held for your approval: Update 15 rows in public.leads.\nApprove it with your passkey here; the page then shows a code for the agent:\n\n"+
+			link+"\n\nOr run: "+command+"\nExpires "),
+		"without local pages and within the budget the message carries the long link: %v", ap["personMessage"])
+	mcptest.Require(t, str(t, ap["personMessage"]), mcptest.LinksOf(t, ap))
+	require.Equal(t, []mcp.Link{{Label: "Approve the held write", URL: link}}, mcptest.LinksOf(t, ap))
 	require.Equal(t, "open", leadStatus(t, d, 21), "a held write changes nothing")
 	require.Len(t, sent.sent, 1)
 	require.Equal(t, link, sent.sent[0].ApprovalURL)
@@ -153,6 +157,8 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 	require.Equal(t, link, list[0]["approvalUrl"])
 	require.Equal(t, command, list[0]["approveCommand"])
 	require.Equal(t, ap["personMessage"], list[0]["personMessage"], "list_pending gives the link back")
+	require.Equal(t, ap["links"], list[0]["links"])
+	mcptest.Require(t, str(t, list[0]["personMessage"]), mcptest.LinksOf(t, list[0]))
 	require.Equal(t, ap["headline"], list[0]["headline"])
 	pendingSteps := requireToolSteps(t, list[0], "list_pending", "PENDING")
 	require.Equal(t, link, pendingSteps[0]["url"])

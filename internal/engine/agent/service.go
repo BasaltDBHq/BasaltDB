@@ -86,6 +86,10 @@ type Deps struct {
 	// Links holds the short links' secrets, shared with the pages; a store
 	// of its own when nil.
 	Links *links.Secrets
+	// LinkBudget is the longest long link, in characters of the whole URL,
+	// handed to an agent as the way to open a page (CONTRACT.md, The link
+	// budget); links.DefaultBudget when zero.
+	LinkBudget int
 	// Poll is how often a waiting call reads whether the person signed;
 	// DefaultPoll when zero.
 	Poll time.Duration
@@ -127,6 +131,9 @@ func NewService(d Deps) *Service {
 	if d.Commands.flags == "" {
 		// A name and no config path or init arguments cannot fail.
 		d.Commands, _ = NewCommands(d.Name, "", "", nil)
+	}
+	if d.LinkBudget <= 0 {
+		d.LinkBudget = links.DefaultBudget
 	}
 	if d.Poll <= 0 {
 		d.Poll = DefaultPoll

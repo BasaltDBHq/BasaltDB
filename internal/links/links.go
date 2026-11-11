@@ -20,6 +20,11 @@ const (
 	DefaultLocal = "http://localhost:8787"
 )
 
+// DefaultBudget is the longest long link, in characters of the whole URL,
+// the engine hands an agent as the way to open a page (engine.json
+// linkBudget, CONTRACT.md, The link budget; owner decision VC-30).
+const DefaultBudget = 1800
+
 // Page paths, the same on the local pages and the hosted console.
 const (
 	ApprovalsPath = "/approvals/"

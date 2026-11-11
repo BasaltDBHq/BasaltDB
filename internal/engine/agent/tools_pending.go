@@ -40,6 +40,7 @@ type pendingDTO struct {
 	Headline        string          `json:"headline"`
 	PersonMessage   string          `json:"personMessage"`
 	NextSteps       []mcp.NextStep  `json:"nextSteps,omitempty"`
+	Links           []mcp.Link      `json:"links,omitempty"`
 }
 
 func pendingFromDomain(p PendingItem) pendingDTO {
@@ -47,7 +48,7 @@ func pendingFromDomain(p PendingItem) pendingDTO {
 		ApprovalID: p.ID.String(), RunID: p.RunID.String(), Intent: p.Intent, Statement: p.Statement,
 		Params: p.Params, AssignedColumns: p.Assigned, Rows: p.Rows, Status: p.Status,
 		CreatedAt: timeText(p.CreatedAt), ExpiresAt: timeText(p.ExpiresAt), ApprovalURL: p.Notice.ApprovalURL, ApproveCommand: p.Notice.ApproveCommand,
-		Headline: p.Notice.Headline, PersonMessage: p.PersonMessage, NextSteps: p.NextSteps,
+		Headline: p.Notice.Headline, PersonMessage: p.PersonMessage, Links: p.Links, NextSteps: p.NextSteps,
 	}
 	if p.TaskID.Valid {
 		d.TaskID = p.TaskID.UUID.String()

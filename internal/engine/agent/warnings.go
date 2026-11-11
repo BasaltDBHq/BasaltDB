@@ -8,6 +8,9 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 )
 
+// maxTableChars is the most of a table's name a personMessage quotes.
+const maxTableChars = 100
+
 // RLSChecker says whether row-level security hides every row of a table
 // from the agent role. It returns the table's name as the database writes it
 // (quoted where needed), or "" when the table is not hidden. The engine's is
@@ -115,7 +118,8 @@ func (s *Service) rlsWarnings(ctx context.Context, tables []string, rows int) []
 	return out
 }
 
-func (s *Service) rlsWarning(table string) (mcp.Warning, error) {
+func (s *Service) rlsWarning(dbName string) (mcp.Warning, error) {
+	table := shown(dbName, maxTableChars)
 	command := s.Commands.Init("--agent-rls=all-rows")
 	steps, err := NewSteps().
 		AskPerson("Tell the person row-level security hides every row of this table from you, and ask whether you may see its rows.").
@@ -127,7 +131,7 @@ func (s *Service) rlsWarning(table string) (mcp.Warning, error) {
 	}
 	return mcp.Warning{
 		Code:  mcp.WarningRLSHidesRows,
-		Table: table,
+		Table: dbName,
 		Message: fmt.Sprintf("row-level security hides every row of %s from this agent, so an empty result says nothing about its data; "+
 			"do not conclude the table is empty", table),
 		PersonMessage: fmt.Sprintf("Row-level security hides every row of %s from the agent, so it sees no rows there. To let it see them, "+

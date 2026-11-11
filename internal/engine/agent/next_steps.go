@@ -113,6 +113,9 @@ func (s *Service) addGuidance(te *mcp.ToolError, f failure) {
 			te.PersonMessage = person
 		}
 	}
+	if err := CheckPersonMessage(te.PersonMessage); err != nil {
+		s.Log.Error("person message breaks its limit", "code", te.Code, "reason", te.Reason, "tool", f.tool, "err", err)
+	}
 	if entry.PersonMessage != (te.PersonMessage != "") {
 		s.Log.Error("person message disagrees with the catalog", "code", te.Code, "reason", te.Reason, "tool", f.tool)
 	}
@@ -237,7 +240,7 @@ func refusedSteps(b *Steps, te *mcp.ToolError, f failure) string {
 	case ReasonNoPrimaryKey:
 		b.Stop("The table has no primary key, so its writes cannot be recorded: do not retry or work around it.")
 		return fmt.Sprintf("%s has no primary key, so Basalt cannot guard writes to it and refuses them. Add a primary key to the table, "+
-			"or revoke the agent's write access to it.", tableFromDetail(te.Message))
+			"or revoke the agent's write access to it.", shown(tableFromDetail(te.Message), maxTableChars))
 	case ReasonNotAllowed:
 		b.Stop("The database refused this action for the agent: do not retry or work around it.")
 		return ""
@@ -379,7 +382,7 @@ func (s *Service) permissionDeniedSteps(b *Steps, te *mcp.ToolError, f failure) 
 		// safely; Postgres usually names the table without its schema, and
 		// then the person sees the plan and adds the table themselves.
 		if grant, err := s.Commands.Grant(flag, m[1]); err == nil {
-			command, what = grant, flag+" access to "+m[1]
+			command, what = grant, flag+" access to "+shown(m[1], maxTableChars)
 		}
 	}
 	b.RunCommand(command, "Show the person this command: it gives the agent the missing access, and init asks for the admin connection string itself.")
@@ -460,26 +463,28 @@ func (s *Service) unavailableSteps(b *Steps, te *mcp.ToolError, f failure) strin
 
 // approvalLinkError is the APPROVAL_INVALID answer for an approval that
 // needs the person back at its page: not signed yet, a signature the
-// database refused, or a passkey it does not accept.
-func (s *Service) approvalLinkError(te *mcp.ToolError, n mcp.ApprovalNotice) *mcp.ToolError {
+// database refused, or a passkey it does not accept. The link in its message
+// follows the link budget like the hold's; no new short link is issued here.
+func (s *Service) approvalLinkError(te *mcp.ToolError, n heldNotice) *mcp.ToolError {
 	b := NewSteps()
+	pick := chooseLink(n.shortURL, n.longURL, s.LinkBudget)
+	var lead string
 	switch te.Reason {
 	case reasonNotSigned:
 		b.OpenLink(n.ApprovalURL, n.ApproveCommand, "Open the link and approve with your passkey: the write is not approved yet.")
-		te.PersonMessage = "The held write was not approved yet, so nothing was applied. Approve it with your passkey, then the agent applies it:\n\n" +
-			n.ApprovalURL + "\n\nOr run: " + n.ApproveCommand
+		lead = "The held write was not approved yet, so nothing was applied."
 	case reasonBadSignature:
 		b.OpenLink(n.ApprovalURL, n.ApproveCommand, "Approve again on the page; the code did not verify.")
-		te.PersonMessage = "The approval code did not verify, so nothing was applied. Approve again on the approval page:\n\n" + n.ApprovalURL + "\n"
+		lead = "The approval code did not verify, so nothing was applied."
 	case reasonPasskeyRevoked:
 		b.RunCommand(s.Commands.PasskeyList(), "See which passkeys this database accepts.")
 		b.RunCommand(s.Commands.Init("--add-passkey"), "Register your passkey with this command: it adds the one you use and changes nothing else.")
 		b.OpenLink(n.ApprovalURL, n.ApproveCommand, "Then approve the held write with that passkey.")
-		te.PersonMessage = "The approval was signed with a passkey this database does not accept (unknown or revoked), so nothing was applied. " +
-			"Check your passkeys, register one if needed, then approve again on the approval page:\n\n" + n.ApprovalURL + "\n"
+		lead = "That passkey is not accepted here (unknown or revoked), so nothing was applied. Check your passkeys, register one if needed, then approve again."
 	default:
 		return te
 	}
+	te.PersonMessage, te.Links = approvalMessage(lead, pick, n.ApproveCommand)
 	b.EndTurn("End your turn: the person acts next.")
 	steps, err := b.Build()
 	if err != nil {

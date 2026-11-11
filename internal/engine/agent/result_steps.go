@@ -3,29 +3,12 @@ package agent
 import (
 	"fmt"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 )
-
-// maxIntentInMessage is the most of a person's stated reason a personMessage
-// quotes: the whole reason is on the revert page they sign, and the message
-// has a limit of its own.
-const (
-	maxIntentInMessage   = 150
-	maxHeadlineInMessage = 200
-)
-
-// clip cuts s to at most n characters, ending in an ellipsis when it cut.
-func clip(s string, n int) string {
-	if utf8.RuneCountInString(s) <= n {
-		return s
-	}
-	return string([]rune(s)[:n-1]) + "…"
-}
 
 func scopeText(scope string, id fmt.Stringer) string {
 	return fmt.Sprintf("%s %s", strings.ToLower(scope), id)
@@ -131,19 +114,19 @@ func outcomeMessage(r ledger.Revert) string {
 // item (CONTRACT.md, Next steps): a write waiting for the person's passkey,
 // or one that expired meanwhile. An approved item needs nothing from the
 // person, and the agent applies it as the tool says.
-func (s *Service) itemGuidance(p PendingItem) (string, []mcp.NextStep, error) {
+func (s *Service) itemGuidance(p PendingItem) (string, []mcp.Link, []mcp.NextStep, error) {
 	switch {
 	case p.Status == ledger.ApprovalExpired || !s.Now().Before(p.ExpiresAt):
 		b := NewSteps()
 		approvalExpiredSteps(b)
 		steps, err := b.Build()
-		return approvalExpiredMessage, steps, err
+		return approvalExpiredMessage, nil, steps, err
 	case p.Status == ledger.ApprovalPending:
 		steps, err := NewSteps().OpenLink(p.Notice.ApprovalURL, p.Notice.ApproveCommand,
 			"Open the link, review the rows and approve with your passkey.").Build()
-		return p.Notice.PersonMessage, steps, err
+		return p.Notice.PersonMessage, p.Notice.Links, steps, err
 	}
-	return p.Notice.PersonMessage, nil, nil
+	return p.Notice.PersonMessage, p.Notice.Links, nil, nil
 }
 
 const approvalExpiredMessage = "The held write expired before it was approved, so nothing was applied. Ask the agent to send it again if you still want it."

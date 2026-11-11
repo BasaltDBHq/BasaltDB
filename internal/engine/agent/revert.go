@@ -155,6 +155,7 @@ type RevertPlan struct {
 	RevertURL     string
 	PersonMessage string
 	NextSteps     []mcp.NextStep
+	Links         []mcp.Link
 }
 
 // RevertPlan returns a large revert plan this agent prepared, its progress
@@ -178,9 +179,11 @@ func (s *Service) RevertPlan(ctx context.Context, p RevertPlanParams) (RevertPla
 	}
 	out := RevertPlan{Revert: r, Page: pagination.Page[RevertPlanLine]{NextCursor: page.NextCursor}}
 	if r.Status == ledger.RevertPending {
-		if out.RevertURL, out.PersonMessage, err = s.revertNotice(ctx, r); err != nil {
+		n, err := s.revertNotice(ctx, r)
+		if err != nil {
 			return RevertPlan{}, err
 		}
+		out.RevertURL, out.PersonMessage, out.Links = n.URL, n.Message, n.Links
 	}
 	out.Page.Items = make([]RevertPlanLine, 0, len(page.Items))
 	for _, l := range page.Items {
@@ -239,6 +242,7 @@ type RequestedRevert struct {
 	Revert        ledger.Revert
 	RevertURL     string
 	PersonMessage string
+	Links         []mcp.Link
 	NextSteps     []mcp.NextStep
 }
 
@@ -261,11 +265,11 @@ func (s *Service) RequestRevert(ctx context.Context, p RequestRevertParams) (Req
 // with the message that carries it: the REQUESTED steps, the person signs
 // and the agent waits once.
 func (s *Service) revertWithLink(ctx context.Context, r ledger.Revert) (RequestedRevert, error) {
-	link, msg, err := s.revertNotice(ctx, r)
+	n, err := s.revertNotice(ctx, r)
 	if err != nil {
 		return RequestedRevert{}, err
 	}
-	return RequestedRevert{Revert: r, RevertURL: link, PersonMessage: msg, NextSteps: requestedSteps(r.ID, link)}, nil
+	return RequestedRevert{Revert: r, RevertURL: n.URL, PersonMessage: n.Message, Links: n.Links, NextSteps: requestedSteps(r.ID, n.URL)}, nil
 }
 
 // DefaultRevertWait is how long request_revert with revertId waits for the
@@ -492,36 +496,40 @@ func (s *Service) prepareError(ctx context.Context, tool string, scope guard.Rev
 	return s.prepareTimeout(tool, scope, pe.Code)
 }
 
-// revertNotice is the link to sign a prepared revert (a newly issued short
-// link when this engine serves the pages, else the long one) and one line
-// to show the person verbatim: the scope, what it restores and skips, why,
-// the link and the expiry, and for a large plan that they sign it once.
-func (s *Service) revertNotice(ctx context.Context, r ledger.Revert) (string, string, error) {
+// revertLink is what the agent hands the person to sign a prepared revert:
+// the link chosen by the link budget and the message that carries it.
+type revertLink struct {
+	URL     string
+	Message string
+	Links   []mcp.Link
+}
+
+// revertNotice is the link to sign a prepared revert (chooseLink: a newly
+// issued short link when this engine serves the pages, else the long one) and
+// the message to show the person verbatim: the scope, what it restores and
+// skips, why, the expiry, and for a large plan that they sign it once, then
+// the link.
+func (s *Service) revertNotice(ctx context.Context, r ledger.Revert) (revertLink, error) {
 	long, err := s.longRevertLink(ctx, r)
 	if err != nil {
-		return "", "", err
+		return revertLink{}, err
 	}
 	b, err := revert.ParseBinding(r.BindingText)
 	if err != nil {
-		return "", "", fmt.Errorf("guard returned a bad revert binding: %w", err)
+		return revertLink{}, fmt.Errorf("guard returned a bad revert binding: %w", err)
 	}
-	link, err := s.shortLink(links.Revert, r.ID, r.ExpiresAt, issueLink)
+	short, err := s.shortLink(links.Revert, r.ID, r.ExpiresAt, issueLink)
 	if err != nil {
-		return "", "", err
+		return revertLink{}, err
 	}
-	how := "Sign it there with your passkey."
-	if link == "" {
-		// No local pages: the page cannot send the signature back.
-		link = long
-		how = fmt.Sprintf("The page then shows a code: give it to the agent, or apply it yourself with: basalt revert %s --apply <code>.",
-			s.Commands.Flags())
-	}
-	msg := fmt.Sprintf("Revert of %s ready for your review: %d rows to restore, %d left as they are (changed after the agent). Why: %s.\n\n%s\n\n%s Expires %s.",
-		scopeText(string(b.Scope), b.ScopeID), r.Rows, r.Skipped, clip(strings.TrimRight(b.Intent, ". "), maxIntentInMessage), link, how,
-		r.ExpiresAt.UTC().Format(personTime))
+	pick := chooseLink(short, long, s.LinkBudget)
+	summary := fmt.Sprintf("Revert of %s %s: %d rows to restore, %d left as they are (changed after the agent). Why: %s. %s",
+		strings.ToLower(string(b.Scope)), b.ScopeID, r.Rows, r.Skipped, shown(strings.TrimRight(b.Intent, ". "), maxIntentChars), expiryLine(r.ExpiresAt))
+	var extra []string
 	if r.Batched {
-		msg += fmt.Sprintf(" It covers %d rows: you sign it once, and the agent then restores it in batches within %d hours of your signature.",
-			b.Lines(), int(revert.ApplyWindow.Hours()))
+		extra = append(extra, fmt.Sprintf("It covers %d rows: you sign once, and the agent restores it in batches within %d hours.",
+			b.Lines(), int(revert.ApplyWindow.Hours())))
 	}
-	return link, msg, nil
+	msg, msgLinks := revertMessage(summary, pick, extra...)
+	return revertLink{URL: pick.URL, Message: msg, Links: msgLinks}, nil
 }

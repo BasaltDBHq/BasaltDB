@@ -12,8 +12,11 @@ type ToolError struct {
 	Approval *ApprovalNotice `json:"approval,omitempty"`
 	// PersonMessage and NextSteps say what to tell the person and what to
 	// do next (CONTRACT.md, Next steps).
-	PersonMessage string     `json:"personMessage,omitempty"`
-	NextSteps     []NextStep `json:"nextSteps,omitempty"`
+	PersonMessage string `json:"personMessage,omitempty"`
+	// Links are the URLs of PersonMessage with labels, in order; set exactly
+	// when PersonMessage holds a URL (CONTRACT.md, Showing links).
+	Links     []Link     `json:"links,omitempty"`
+	NextSteps []NextStep `json:"nextSteps,omitempty"`
 	// ErrorID is set on UNAVAILABLE and INTERNAL: a UUIDv7 the engine logs
 	// with the error, for the person to find the log line.
 	ErrorID string `json:"errorId,omitempty"`
@@ -52,6 +55,13 @@ type NextStep struct {
 	WaitSeconds int `json:"waitSeconds,omitempty"`
 }
 
+// Link is one URL of a personMessage with a label, so a client that renders
+// Markdown can show [label](url) (api/mcp/links/link.schema.json).
+type Link struct {
+	Label string `json:"label"`
+	URL   string `json:"url"`
+}
+
 // ApprovalNotice is the held write an APPROVAL_REQUIRED error carries
 // (CONTRACT.md, Handing a held action to the person): what is held, the
 // approval link (short when the engine serves the pages), the equivalent
@@ -64,6 +74,8 @@ type ApprovalNotice struct {
 	ApprovalURL    string `json:"approvalUrl"`
 	ApproveCommand string `json:"approveCommand"`
 	PersonMessage  string `json:"personMessage"`
+	// Links equals the body's links: the URLs of PersonMessage.
+	Links []Link `json:"links,omitempty"`
 }
 
 func (e *ToolError) Error() string {

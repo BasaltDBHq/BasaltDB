@@ -21,6 +21,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 )
@@ -138,9 +139,11 @@ func TestShortLinkApprovedThroughTheRelay(t *testing.T) {
 	require.Len(t, secret, 22, "a 128-bit secret")
 	require.Equal(t, pageOrigin+"/approvals/"+id+"#s="+secret, link, "the short link carries its secret in the fragment")
 	msg := str(t, ap["personMessage"])
-	require.True(t, strings.HasPrefix(msg, "Held for your approval: Update 15 rows in public.leads. Approve here:\n\n"+link+
-		"\n\nOr run: basalt approve --agent bot --config /etc/basalt-test/engine.json --open "+id+". Expires "), msg)
+	require.True(t, strings.HasPrefix(msg, "Held for your approval: Update 15 rows in public.leads.\nApprove it with your passkey here:\n\n"+link+
+		"\n\nOr run: basalt approve --agent bot --config /etc/basalt-test/engine.json --open "+id+"\nExpires "), msg)
 	require.True(t, strings.HasSuffix(msg, " UTC."), msg)
+	mcptest.Require(t, msg, mcptest.LinksOf(t, ap))
+	require.Equal(t, []mcp.Link{{Label: "Approve the held write", URL: link}}, mcptest.LinksOf(t, ap))
 	require.Len(t, env.sent.sent, 1)
 	require.Contains(t, env.sent.sent[0].ApprovalURL, "#2.", "Telegram's button keeps the long link")
 	require.Equal(t, link, env.sent.sent[0].ShortURL, "Telegram's text carries the short link")

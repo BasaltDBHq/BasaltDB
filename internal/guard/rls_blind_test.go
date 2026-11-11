@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -72,4 +73,79 @@ func TestRLSBlindTables(t *testing.T) {
 	blind, err = guard.RLSBlindTables(ctx, d.Admin, a.Role, tables)
 	require.NoError(t, err)
 	require.Empty(t, blind)
+}
+
+// policiesOn lists "table policy command roles" for every policy.
+func policiesOn(t *testing.T, d *guardtest.DB) []string {
+	t.Helper()
+	// Plain SQL: test catalog read.
+	rows, err := d.Admin.Query(context.Background(), `SELECT format('%s %s %s %s', p.polrelid::regclass, p.polname, p.polcmd, p.polroles::regrole[])
+		FROM pg_policy p ORDER BY 1`)
+	require.NoError(t, err)
+	out, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	require.NoError(t, err)
+	return out
+}
+
+// TestAgentPolicies: before the agent role exists, AgentBlindTables finds
+// its RLS tables with their row counts; the policies the person confirmed
+// let the agent see every row, are recorded in the ledger, are kept by
+// re-init, touch no other table, and uninstall drops them (decision
+// "Agent RLS", Nov 12).
+func TestAgentPolicies(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	ctx := context.Background()
+	d.Exec(t, `ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
+		ALTER TABLE public.lead_notes ENABLE ROW LEVEL SECURITY;
+		ALTER TABLE public.payroll ENABLE ROW LEVEL SECURITY`)
+	spec := guard.AgentSpec{Name: "bot", Password: guard.NewPassword(), Write: leads, Read: []string{"public.lead_notes"}}
+
+	blind, err := guard.AgentBlindTables(ctx, d.Admin, d.Names, spec)
+	require.NoError(t, err)
+	require.Equal(t, []guard.BlindTable{{Table: "public.leads", Rows: 200, Write: true}, {Table: "public.lead_notes", Rows: 60}}, blind)
+
+	s, err := guard.PlanInit(ctx, d.Admin, guard.InitOptions{Names: d.Names, Agent: spec, AgentPolicies: blind})
+	require.NoError(t, err)
+	role, err := d.Names.Agent("bot")
+	require.NoError(t, err)
+	require.Contains(t, s.SQL(), "CREATE POLICY "+role+" ON public.leads AS PERMISSIVE FOR ALL TO "+role+" USING (true) WITH CHECK (true);")
+	require.Contains(t, s.SQL(), "CREATE POLICY "+role+" ON public.lead_notes AS PERMISSIVE FOR SELECT TO "+role+" USING (true);")
+	require.NoError(t, pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return s.Apply(ctx, tx) }))
+
+	dsn, err := guard.AgentConnString(d.URL, role, spec.Password)
+	require.NoError(t, err)
+	a := &guardtest.Agent{Role: role, Password: spec.Password, URL: dsn}
+	a.Conn = a.Connect(t)
+	require.Equal(t, 200, agentCount(t, a, "public.leads"))
+	require.Equal(t, 60, agentCount(t, a, "public.lead_notes"))
+	g := d.Names.Guard()
+	require.ElementsMatch(t, []string{
+		"lead_notes " + g + " * {" + g + "}",
+		"lead_notes " + role + " r {" + role + "}",
+		"leads " + g + " * {" + g + "}",
+		"leads " + role + " * {" + role + "}",
+	}, policiesOn(t, d), "payroll is not the agent's: untouched")
+
+	// Plain SQL: test read of the agent's ledger view.
+	rows, err := a.Conn.Query(ctx, `SELECT table_name || ' ' || (detail->>'command') FROM basalt_meta.agent_ledger
+		WHERE kind = 'AGENT_POLICY_ADDED' ORDER BY seq`)
+	require.NoError(t, err)
+	events, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	require.NoError(t, err)
+	require.Equal(t, []string{"public.leads ALL", "public.lead_notes SELECT"}, events)
+
+	blind, err = guard.AgentBlindTables(ctx, d.Admin, d.Names, spec)
+	require.NoError(t, err)
+	require.Empty(t, blind, "re-init asks nothing more")
+	spec.Password = guard.NewPassword()
+	d.Init(t, spec)
+	require.Len(t, policiesOn(t, d), 4, "re-init keeps them")
+
+	_, err = d.Admin.Exec(ctx, `SELECT basalt_meta.record_agent_policy($1, 'public.payroll'::regclass, 'SELECT')`, role)
+	require.Error(t, err, "no ledger row without the policy")
+
+	require.NoError(t, a.Conn.Close(ctx))
+	require.NoError(t, guard.Uninstall(ctx, d.Admin, d.Names))
+	require.Empty(t, policiesOn(t, d))
 }

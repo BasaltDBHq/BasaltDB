@@ -7,7 +7,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"regexp"
 	"runtime"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,16 +32,20 @@ func runLog(c *cliIO, args []string) int {
 	runFlag := fs.String("run", "", "only this run, with the rows each change wrote")
 	limit := fs.Int("limit", pagination.DefaultLimit, fmt.Sprintf("page size (max %d)", pagination.MaxLimit))
 	cursor := fs.String("cursor", "", "next-page cursor printed by the previous call")
-	sort := fs.String("sort", "", "id (oldest first) or -id (newest first, default)")
+	sortFlag := fs.String("sort", ledger.ChangeSortSpec.Default, "id (oldest first) or -id (newest first)")
 	asJSON := fs.Bool("json", false, "print change records as JSON")
 	agent := fs.String("agent", "", "read this agent's credential from the engine config")
 	configPath := fs.String("config", config.DefaultPath(runtime.GOOS), "engine config file")
 	credFile := fs.String("credential-file", "", "read the agent's connection string from this file")
 	fullCheck := fs.Bool("full-check", false, "recompute the whole ledger chain instead of checking from the last verified head")
+	full := fs.Bool("full", false, "print whole before and after rows and every read, instead of the compact view")
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
 	}
-	params := ledger.ChangeListParams{Params: pagination.Params{Limit: *limit, Cursor: *cursor, Sort: *sort}}
+	params := ledger.ChangeListParams{Params: pagination.Params{Limit: *limit, Cursor: *cursor, Sort: *sortFlag}}
+	if _, err := params.ParseSort(ledger.ChangeSortSpec); err != nil || *sortFlag == "" {
+		return c.fail(fmt.Errorf("%w: --sort must be id or -id, got %q", errUsage, *sortFlag))
+	}
 	params.ApplyDefaultsAndClamp()
 	if *runFlag != "" {
 		id, err := uuid.Parse(*runFlag)
@@ -89,7 +97,7 @@ func runLog(c *cliIO, args []string) int {
 			return c.fail(err)
 		}
 	} else {
-		printText(c, page.Items, rowsByChange)
+		printText(c, page.Items, rowsByChange, *full)
 	}
 	if page.NextCursor != "" {
 		fmt.Fprintf(c.stderr, "next cursor: %s\n", page.NextCursor)
@@ -210,24 +218,79 @@ func warnPasskeys(c *cliIO, keys []ledger.Passkey) {
 // hoursPerDay converts durations to days for messages.
 const hoursPerDay = 24
 
-func printText(c *cliIO, changes []ledger.Change, rows map[uuid.UUID][]ledger.RowChange) {
-	for _, ch := range changes {
-		duration := "-"
-		if ch.DurationMs != nil {
-			duration = fmt.Sprintf("%dms", *ch.DurationMs)
+// printText prints one line per change, newest first, with the rows it
+// wrote below it when they were loaded (--run). Compact by default: a row
+// shows its key and the columns that changed, and consecutive reads
+// collapse into one line. full prints whole rows and every read.
+func printText(c *cliIO, changes []ledger.Change, rows map[uuid.UUID][]ledger.RowChange, full bool) {
+	for i := 0; i < len(changes); i++ {
+		ch := changes[i]
+		if n := readRun(changes[i:]); !full && n > 1 {
+			fmt.Fprintln(c.stdout, readsLine(changes[i:i+n]))
+			i += n - 1
+			continue
 		}
-		fmt.Fprintf(c.stdout, "%s  %-8s %-6s %-24s %3d rows  %6s  %s  %q\n",
-			ch.At.UTC().Format(time.RFC3339), ch.Status, ch.Op, ch.Table, ch.Rows, duration, ch.ID, ch.Intent)
+		fmt.Fprintln(c.stdout, changeLine(ch))
 		if ch.Code != "" {
 			fmt.Fprintf(c.stdout, "    refused: %s %s\n", ch.Code, ch.Reason)
 		}
 		for _, r := range rows[ch.ID] {
-			fmt.Fprintf(c.stdout, "    %s\n", rowLine(r))
+			fmt.Fprintf(c.stdout, "    %s\n", rowLine(r, full))
 		}
 	}
 }
 
-func rowLine(r ledger.RowChange) string {
+func changeLine(ch ledger.Change) string {
+	duration := "-"
+	if ch.DurationMs != nil {
+		duration = fmt.Sprintf("%dms", *ch.DurationMs)
+	}
+	return fmt.Sprintf("%s  %-8s %-6s %-24s %3d rows  %6s  %s  %q",
+		ch.At.UTC().Format(time.RFC3339), ch.Status, ch.Op, ch.Table, ch.Rows, duration, ch.ID, ch.Intent)
+}
+
+// opSelect is the op of a read's change record (M1.5).
+const opSelect = "SELECT"
+
+func isRead(ch ledger.Change) bool { return ch.Op == opSelect && ch.Code == "" }
+
+// readRun is how many changes from the first are consecutive reads.
+func readRun(changes []ledger.Change) int {
+	n := 0
+	for n < len(changes) && isRead(changes[n]) {
+		n++
+	}
+	return n
+}
+
+// readsLine is consecutive reads in one line: how many, the rows they
+// returned, and their tables in first-seen order with a count each.
+func readsLine(reads []ledger.Change) string {
+	rows := 0
+	var tables []string
+	perTable := map[string]int{}
+	for _, r := range reads {
+		rows += r.Rows
+		t := r.Table
+		if t == "" {
+			t = "(no table)"
+		}
+		if perTable[t] == 0 {
+			tables = append(tables, t)
+		}
+		perTable[t]++
+	}
+	parts := make([]string, 0, len(tables))
+	for _, t := range tables {
+		parts = append(parts, fmt.Sprintf("%s (%d)", t, perTable[t]))
+	}
+	return fmt.Sprintf("%s  %-8s %-6s %d reads, %d rows: %s",
+		reads[0].At.UTC().Format(time.RFC3339), reads[0].Status, opSelect, len(reads), rows, strings.Join(parts, ", "))
+}
+
+// rowLine is one row a change wrote: compact (key, and for an update the
+// columns that changed) or full (whole before and after rows).
+func rowLine(r ledger.RowChange, full bool) string {
 	prefix := r.Op + " " + r.Table
 	if r.Cascaded {
 		prefix += " (cascaded)"
@@ -243,9 +306,48 @@ func rowLine(r ledger.RowChange) string {
 		return prefix + " values hidden: the agent cannot read this table"
 	case r.Pruned:
 		return prefix + " " + compactJSON(r.Key) + " values pruned after 30 days"
-	default:
+	case full:
 		return prefix + " " + compactJSON(r.Key) + " before=" + compactJSON(r.Before) + " after=" + compactJSON(r.After)
 	}
+	line := prefix + " " + compactJSON(r.Key)
+	if changed := changedValues(r.Before, r.After); r.Op == "UPDATE" && len(changed) > 0 {
+		line += " " + strings.Join(changed, ", ")
+	}
+	return line
+}
+
+// changedValues lists "col old -> new" for the columns whose values
+// differ, by column name.
+func changedValues(before, after map[string]any) []string {
+	cols := make([]string, 0, len(after))
+	for col, v := range after {
+		if old, ok := before[col]; !ok || !reflect.DeepEqual(old, v) {
+			cols = append(cols, col)
+		}
+	}
+	sort.Strings(cols)
+	out := make([]string, 0, len(cols))
+	for _, col := range cols {
+		out = append(out, col+" "+displayValue(before[col])+" -> "+displayValue(after[col]))
+	}
+	return out
+}
+
+// bareValue is a string printed without quotes: a word that cannot be
+// mistaken for a number, a boolean or null.
+var bareValue = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.:@/+-]*$`)
+
+// displayValue is a value for a person: a plain word bare, anything else
+// as JSON.
+func displayValue(v any) string {
+	if s, ok := v.(string); ok && bareValue.MatchString(s) && s != "null" && s != "true" && s != "false" {
+		return s
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "?"
+	}
+	return string(b)
 }
 
 func compactJSON(v map[string]any) string {

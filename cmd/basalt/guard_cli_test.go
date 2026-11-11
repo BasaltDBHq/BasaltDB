@@ -85,6 +85,8 @@ func TestInitUsageErrors(t *testing.T) {
 		{"init", "--nope"},
 		{"log"},
 		{"log", "--run", "run_7f3k", "--agent", "bot"},
+		{"log", "--sort", "", "--agent", "bot"},
+		{"log", "--sort", "newest", "--agent", "bot"},
 		{"uninstall", "--prefix", "BAD"},
 	} {
 		r := cli(t, nil, "", args...)
@@ -373,10 +375,16 @@ func TestLogShowsRunChanges(t *testing.T) {
 	r := cli(t, nil, "", "log", "--agent", "bot", "--config", cfgPath, "--run", in.RunID.String())
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Contains(t, r.stdout, `"Merge duplicate case reports"`)
-	require.Contains(t, r.stdout, `UPDATE public.leads (blind write) {"id":4} before=`)
+	require.Contains(t, r.stdout, `UPDATE public.leads (blind write) {"id":4} status open -> merged`+"\n", "compact: key and changed columns")
+	require.Contains(t, r.stdout, `id 101 -> 9101`)
 	require.Contains(t, r.stdout, `UPDATE public.lead_owner (cascaded) values hidden`)
+	require.NotContains(t, r.stdout, "before=")
 	require.NotContains(t, r.stdout, "owner 1")
 	require.Empty(t, r.stderr)
+
+	r = cli(t, nil, "", "log", "--agent", "bot", "--config", cfgPath, "--run", in.RunID.String(), "--full")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Contains(t, r.stdout, `UPDATE public.leads (blind write) {"id":4} before=`)
 
 	r = cli(t, map[string]string{envAgentURL: strings.TrimSpace(string(b))}, "", "log", "--json", "--limit", "1", "--sort", "id")
 	require.Equal(t, exitOK, r.code, r.stderr)

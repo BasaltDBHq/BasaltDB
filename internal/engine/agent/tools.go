@@ -191,6 +191,9 @@ type writeArgs struct {
 	RunID      string `json:"runId" validate:"omitempty,uuid"`
 	ApprovalID string `json:"approvalId" validate:"required_with=Approval,omitempty,uuid"`
 	Approval   string `json:"approval" validate:"omitempty,max=8192"`
+	// WaitForApproval is seconds to wait for a held write's approval
+	// (CONTRACT.md, Approvals, Waiting write); nil means the default.
+	WaitForApproval *int `json:"waitForApproval" validate:"omitempty,min=0,max=110"`
 }
 
 type writeResult struct {

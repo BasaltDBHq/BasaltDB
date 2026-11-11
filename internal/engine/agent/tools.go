@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
+	"github.com/basaltdbhq/basaltdb/pkg/uniqueid"
 )
 
 // StatusApplied is the status of an applied write.
@@ -68,7 +69,8 @@ func (h handlers) wrap(tool string, call func(context.Context, json.RawMessage) 
 		}
 		te := ToolError(err)
 		if te.Code == CodeInternal || te.Code == CodeUnavailable {
-			h.log.Error("tool failed", "tool", tool, "code", te.Code, "err", err)
+			te.ErrorID = uniqueid.New()
+			h.log.Error("tool failed", "tool", tool, "code", te.Code, "error_id", te.ErrorID, "err", err)
 		}
 		return nil, te
 	}

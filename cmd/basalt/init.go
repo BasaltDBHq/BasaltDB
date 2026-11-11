@@ -13,6 +13,7 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -29,6 +30,16 @@ type initFlags struct {
 	// pathsGiven is true when --config, --socket-dir or --credential-file
 	// was given: the person runs the engine in the foreground themselves.
 	pathsGiven bool
+	// rotatePassword sets a new password even when the agent's role exists.
+	rotatePassword bool
+	// keepCredential: the role exists and keeps its password, so the
+	// credential file the engine reads is left as it is.
+	keepCredential bool
+	// rotated: an existing role got a new password, so a running engine
+	// holds a stale one until it restarts.
+	rotated bool
+	// initArgs are the flags saved to engine.json (savedArgs).
+	initArgs []string
 }
 
 // runInit: basalt init. Shows the setup SQL, installs or upgrades
@@ -41,6 +52,9 @@ func runInit(c *cliIO, args []string) int {
 	f, err := parseInit(c, args)
 	if err != nil {
 		return c.fail(err)
+	}
+	if _, err := f.commands(c.goos); err != nil {
+		return c.fail(fmt.Errorf("%w: %w", errUsage, err))
 	}
 	names := guard.Names{Prefix: f.prefix}
 	role, err := names.Agent(f.agent)
@@ -57,7 +71,19 @@ func runInit(c *cliIO, args []string) int {
 	}
 	defer conn.Close(c.ctx)
 
-	f.spec.Password = guard.NewPassword()
+	exists, err := guard.AgentRoleExists(c.ctx, conn, names, f.agent)
+	if err != nil {
+		return c.fail(err)
+	}
+	f.keepCredential = exists && !f.rotatePassword
+	if f.keepCredential && (f.noService || f.pathsGiven) && !fileExists(f.credFile) {
+		// A mistyped path must not rotate the password.
+		return c.fail(fmt.Errorf("role %s exists but there is no credential file %s; check the path, or run init with --rotate-password", role, f.credFile))
+	}
+	f.rotated = exists && f.rotatePassword
+	if !f.keepCredential {
+		f.spec.Password = guard.NewPassword()
+	}
 	policies, err := agentPolicies(c, conn, names, f)
 	if err != nil {
 		return c.fail(missingTablesHint(err, conn.Config().Database))
@@ -85,9 +111,12 @@ func runInit(c *cliIO, args []string) int {
 	if err := applyInit(c.ctx, conn, script); err != nil {
 		return c.fail(err)
 	}
-	dsn, err := guard.AgentConnString(admin, role, f.spec.Password)
-	if err != nil {
-		return c.fail(err)
+	var dsn string
+	if !f.keepCredential {
+		dsn, err = guard.AgentConnString(admin, role, f.spec.Password)
+		if err != nil {
+			return c.fail(err)
+		}
 	}
 	fmt.Fprintf(c.stderr, "basalt: guard installed; agent role %s\n", role)
 	warnRLSBlind(c, conn, role, f.spec)
@@ -200,13 +229,14 @@ func printSetupPlan(c *cliIO, f initFlags) error {
 		fmt.Fprint(c.stderr, foregroundNext(f, c.goos))
 		return nil
 	}
+	f.initArgs = f.savedArgs(c.goos)
 	bin, err := c.host.Executable()
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(c.stderr, "basalt: dry run; then init asks to install the engine service, which runs (the credential on stdin):\n  sudo %s\nwith these steps:\n",
 		shellJoin(serviceInstallArgs(f, bin)))
-	return applyServiceInstall(c, bin, f.configPath, f.engineUser, agentInstall{name: f.agent, osUser: f.osUser}, true)
+	return applyServiceInstall(c, bin, f.configPath, f.engineUser, f.agentInstall(""), true)
 }
 
 // shellQuote quotes s for a POSIX shell when it has anything but plain
@@ -231,6 +261,7 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 	fs.StringVar(&f.osUser, "os-user", "", "OS user the agent runs as, the only one allowed on its socket (default: you)")
 	fs.StringVar(&f.engineUser, "engine-user", service.DefaultUser(c.goos), "OS user the engine service runs as")
 	fs.StringVar(&f.credFile, "credential-file", "", "where to write the agent's connection string (default <config dir>/agents/NAME.url)")
+	fs.BoolVar(&f.rotatePassword, "rotate-password", false, "set a new password for an agent role that exists (init keeps it by default); restart the engine after")
 	fs.BoolVar(&f.dryRun, "dry-run", false, "print the SQL and the engine setup, and exit")
 	fs.BoolVar(&f.yes, "yes", false, "do not ask before running the SQL or installing the engine service")
 	fs.BoolVar(&f.noService, "no-service", false, "do not install the engine service; print the foreground command")
@@ -355,4 +386,43 @@ func applyInit(ctx context.Context, conn *pgx.Conn, script guard.Script) error {
 		}
 		return nil
 	})
+}
+
+// savedArgs are the flags init writes to engine.json for the agent: the ones
+// whose value is not the default, plus --agent and --os-user, in `--flag=value`
+// form. Never the admin connection string, a password or a one-shot flag.
+func (f initFlags) savedArgs(goos string) []string {
+	args := []string{"--agent=" + f.agent}
+	addIf := func(name, value, def string) {
+		if value != "" && value != def {
+			args = append(args, "--"+name+"="+value)
+		}
+	}
+	addIf("write", f.write, "")
+	addIf("read", f.read, "")
+	addIf("prefix", f.prefix, guard.DefaultPrefix)
+	addIf("statement-timeout", f.spec.StatementTimeout.String(), guard.DefaultStatementTimeout.String())
+	addIf("socket-dir", f.socketDir, config.DefaultSocketDir(goos))
+	addIf("os-user", f.osUser, "")
+	addIf("engine-user", f.engineUser, service.DefaultUser(goos))
+	addIf("credential-file", f.credFile, filepath.Join(filepath.Dir(f.configPath), "agents", f.agent+".url"))
+	addIf("passkey-origin", f.passkeyOrigin, links.DefaultLocal)
+	addIf("agent-rls", string(f.agentRLS), string(AgentRLSAsk))
+	return args
+}
+
+// commands are the agent's commands for what init saves. It refuses saved
+// arguments the engine would not accept (a connection URL, a password), so
+// init fails before it writes them.
+func (f initFlags) commands(goos string) (agent.Commands, error) {
+	path, err := filepath.Abs(f.configPath)
+	if err != nil {
+		return agent.Commands{}, err
+	}
+	return agent.NewCommands(f.agent, path, goos, f.savedArgs(goos))
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }

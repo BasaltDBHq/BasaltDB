@@ -44,10 +44,10 @@ const instructions = "BasaltDB records every action you take on this database. "
 	"To undo your own work, find the run with list_runs, check it with preview_revert and query, tell the person what you recommend, then call request_revert: show its personMessage, then call request_revert once with revertId to wait for their passkey; if that wait runs out, do not wait again."
 
 // Run serves every agent in cfg until ctx is done. It takes the engine lock
-// in the socket directory, so one engine runs per machine. configArg is the
-// --config argument the person's basalt commands need to find cfg (empty
-// for the default path); held writes name it in the commands they give.
-func Run(ctx context.Context, cfg config.Config, configArg string, log *slog.Logger) error {
+// in the socket directory, so one engine runs per machine. configPath is the
+// absolute path cfg was read from, which the person's basalt commands name
+// with --config unless it is the platform default.
+func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Logger) error {
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		return errors.New("the engine runs on Linux and macOS only (it needs peer credentials on Unix sockets)")
 	}
@@ -85,7 +85,7 @@ func Run(ctx context.Context, cfg config.Config, configArg string, log *slog.Log
 	if err != nil {
 		return err
 	}
-	env := agentEnv{cfg: cfg, configArg: configArg, pagesBase: base, stateDir: cfg.StateDirFor(runtime.GOOS), pins: statePins(cfg.StateDirFor(runtime.GOOS), log), tg: tg}
+	env := agentEnv{cfg: cfg, configPath: configPath, pagesBase: base, stateDir: cfg.StateDirFor(runtime.GOOS), pins: statePins(cfg.StateDirFor(runtime.GOOS), log), tg: tg}
 	if site != nil {
 		env.pagesOrigin = site.origin
 	}
@@ -197,7 +197,7 @@ type agentRuntime struct {
 // agentEnv is what every agent's runtime shares.
 type agentEnv struct {
 	cfg         config.Config
-	configArg   string
+	configPath  string
 	pagesBase   string
 	pagesOrigin string
 	stateDir    string
@@ -205,26 +205,12 @@ type agentEnv struct {
 	tg          *telegram.Notifier
 }
 
-// cliFlags select agent in the person's basalt commands.
-func cliFlags(agent, configArg string) string {
-	flags := "--agent " + agent
-	if configArg == "" {
-		return flags
-	}
-	return flags + " " + configArg
-}
-
-// fullCLIFlags are cliFlags naming the config even at its default path,
-// for a command a message hands the person to copy as is.
-func fullCLIFlags(agent, configArg string) string {
-	if configArg == "" {
-		configArg = "--config " + config.DefaultPath(runtime.GOOS)
-	}
-	return cliFlags(agent, configArg)
-}
-
 func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slog.Logger) (agentRuntime, error) {
 	limits, err := sqlLimits(env.cfg.Limits)
+	if err != nil {
+		return agentRuntime{}, err
+	}
+	cmds, err := agent.NewCommands(a.Name, env.configPath, runtime.GOOS, a.InitArgs)
 	if err != nil {
 		return agentRuntime{}, err
 	}
@@ -242,20 +228,19 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	}
 	store := agentdb.NewStore(pool, limits, time.Now)
 	svc := agent.NewService(agent.Deps{
-		Name:         a.Name,
-		Reader:       agentdb.NewReader(pool, limits, time.Now),
-		Store:        store,
-		Reads:        store,
-		Approvals:    store,
-		Reverts:      store,
-		Notifier:     agentNotifier(env.tg, pool.Config().ConnConfig.Database),
-		PagesBase:    env.pagesBase,
-		CLIFlags:     cliFlags(a.Name, env.configArg),
-		FullCLIFlags: fullCLIFlags(a.Name, env.configArg),
-		PagesOrigin:  env.pagesOrigin,
-		Links:        linkSecrets(env.stateDir, a.Name, log),
-		Log:          log,
-		Now:          time.Now,
+		Name:        a.Name,
+		Reader:      agentdb.NewReader(pool, limits, time.Now),
+		Store:       store,
+		Reads:       store,
+		Approvals:   store,
+		Reverts:     store,
+		Notifier:    agentNotifier(env.tg, pool.Config().ConnConfig.Database),
+		PagesBase:   env.pagesBase,
+		Commands:    cmds,
+		PagesOrigin: env.pagesOrigin,
+		Links:       linkSecrets(env.stateDir, a.Name, log),
+		Log:         log,
+		Now:         time.Now,
 	})
 	return agentRuntime{
 		svc:    svc,

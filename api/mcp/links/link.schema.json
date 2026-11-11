@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/link.v1.json",
+  "title": "Link",
+  "description": "One URL of a personMessage, with a label, so a client that renders Markdown can show [label](url). Every personMessage that holds a URL has a links array next to it: one entry per URL, in order, each url byte for byte the URL in personMessage. See CONTRACT.md, Showing links.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["label", "url"],
+  "properties": {
+    "label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[^\\[\\]()<>`*_\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029\\u202a-\\u202e\\u2066-\\u2069]+$",
+      "description": "What opening the link does, in plain text (Approve the held write). No URL, no control character (C0, DEL, C1), no line break, no bidirectional control, no Markdown characters."
+    },
+    "url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^(https://[A-Za-z0-9._~:/?#\\[\\]@!$&'()*+,;=%-]+|http://(localhost|127\\.0\\.0\\.1|\\[::1\\])(:[0-9]+)?([/?#][A-Za-z0-9._~:/?#\\[\\]@!$&'()*+,;=%-]*)?)$",
+      "description": "The URL exactly as it stands on its own line in personMessage: https, or http for a loopback host (localhost, 127.0.0.1, [::1]), with only RFC 3986 characters (bytes 0x21 to 0x7E), so the CLI can print it as an OSC 8 hyperlink (CONTRACT.md, Terminal hyperlinks)."
+    }
+  }
+}

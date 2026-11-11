@@ -151,7 +151,7 @@ func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding stri
 	if err != nil {
 		return heldNotice{}, err
 	}
-	command := s.approveCommand(id)
+	command := s.Commands.Approve(id)
 	short, err := s.shortLink(links.Approval, id, expires, issue)
 	if err != nil {
 		return heldNotice{}, err
@@ -230,12 +230,6 @@ func approvalError(n heldNotice, message string) error {
 // write), under the 2 minutes after which Claude Code moves a tool call to
 // the background.
 const DefaultApprovalWait = 90 * time.Second
-
-// approveCommand is the command that opens a held write's approval page in
-// the person's browser: short enough to copy from a chat.
-func (s *Service) approveCommand(id uuid.UUID) string {
-	return "basalt approve " + s.CLIFlags + " --open " + id.String()
-}
 
 // credentialIDs are the registered passkeys, for the request's
 // allowCredentials.

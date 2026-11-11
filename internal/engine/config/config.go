@@ -117,6 +117,10 @@ type Agent struct {
 	OSUser string `json:"osUser" validate:"required"`
 	// CredentialFile holds the agent role's Postgres URL, mode 0600.
 	CredentialFile string `json:"credentialFile" validate:"required"`
+	// InitArgs are the flags basalt init was run with for this agent (never
+	// the admin connection string, a password or a one-shot flag), so a
+	// step can name the init command again. See agent.NewCommands.
+	InitArgs []string `json:"initArgs,omitempty"`
 }
 
 // Limits bound agent statements. Zero means the engine default.

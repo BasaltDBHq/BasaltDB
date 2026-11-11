@@ -59,6 +59,17 @@ func DefaultUser(goos string) string {
 	return linuxUser
 }
 
+// StartCommand is the command that starts the installed engine on goos,
+// whether or not its service is loaded yet. On macOS an unloaded job needs
+// bootstrap first; when it is already loaded, bootstrap fails harmlessly
+// and kickstart starts (or restarts) it.
+func StartCommand(goos string) string {
+	if goos == goosDarwin {
+		return "sudo launchctl bootstrap system " + LaunchdPlist + "; sudo launchctl kickstart -k system/" + LaunchdLabel
+	}
+	return "sudo systemctl start " + SystemdUnitName
+}
+
 // RestartArgs is the command that restarts the installed engine on goos,
 // so it picks up a changed config.
 func RestartArgs(goos string) []string {

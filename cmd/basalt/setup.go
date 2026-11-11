@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -29,6 +30,7 @@ const perUserDirName = "basalt"
 
 // setupEngine is init's last step.
 func setupEngine(c *cliIO, f initFlags, dsn string) error {
+	f.initArgs = f.savedArgs(c.goos)
 	asService, err := chooseService(c, f)
 	if err != nil {
 		return err
@@ -43,10 +45,19 @@ func setupEngine(c *cliIO, f initFlags, dsn string) error {
 	if err != nil {
 		return err
 	}
+	f.initArgs = f.savedArgs(c.goos)
+	cmds, err := f.commands(c.goos)
+	if err != nil {
+		return err
+	}
 	if err := register(c, f, dsn); err != nil {
-		return fmt.Errorf("the guard is installed but the engine config was not written (run init again to rotate the credential): %w", err)
+		return fmt.Errorf("the guard is installed but the engine config was not written (run init again with --rotate-password): %w", err)
 	}
 	fmt.Fprintf(c.stderr, "basalt: credential %s; engine config %s\n", f.credFile, f.configPath)
+	if f.rotated {
+		fmt.Fprintf(c.stderr, "basalt: the agent's password changed; restart the engine so it uses the new one:\n  %s\n",
+			cmds.Foreground().EngineRestart())
+	}
 	fmt.Fprint(c.stderr, foregroundNext(f, c.goos))
 	return offerClaude(c, f)
 }
@@ -92,12 +103,24 @@ func perUserPaths(c *cliIO, f initFlags) (initFlags, error) {
 // register writes the credential file and adds the agent to the engine
 // config (foreground setup).
 func register(c *cliIO, f initFlags, dsn string) error {
-	if err := config.WriteFile(f.credFile, []byte(dsn+"\n")); err != nil {
+	if err := writeCredential(f.credFile, dsn, f.keepCredential); err != nil {
 		return err
 	}
 	return config.UpsertAgent(f.configPath, engineSettings(f, c.goos), config.Agent{
-		Name: f.agent, OSUser: f.osUser, CredentialFile: f.credFile,
+		Name: f.agent, OSUser: f.osUser, CredentialFile: f.credFile, InitArgs: f.initArgs,
 	})
+}
+
+// writeCredential writes the agent's connection string, unless the role
+// kept its password: then the file the engine reads stays, and must exist.
+func writeCredential(path, dsn string, keep bool) error {
+	if !keep {
+		return config.WriteFile(path, []byte(dsn+"\n"))
+	}
+	if _, err := os.Stat(path); err != nil {
+		return fmt.Errorf("the agent's role keeps its password but its credential file %s is missing; run init with --rotate-password", path)
+	}
+	return nil
 }
 
 // foregroundNext is the one command that starts the engine, and the MCP
@@ -130,6 +153,11 @@ func shellJoin(args []string) string {
 // agentInstall is the agent basalt service install places for the engine.
 type agentInstall struct {
 	name, osUser, pagesURL, dsn string
+	// initArgs are saved to the agent's config entry.
+	initArgs []string
+	// keepCredential leaves the credential file as it is (the role kept its
+	// password); dsn is empty.
+	keepCredential bool
 }
 
 // agentServiceSpec is the service install spec with the agent's files in
@@ -139,31 +167,56 @@ type agentInstall struct {
 func agentServiceSpec(goos, bin, configPath, engineUser string, a agentInstall, printOnly bool) (service.Spec, error) {
 	spec := service.Spec{GOOS: goos, Binary: bin, ConfigPath: configPath, User: engineUser}
 	cred := filepath.Join(filepath.Dir(configPath), "agents", a.name+".url")
-	spec.Files = []service.File{{Path: configPath}, {Path: cred}}
+	spec.Files = []service.File{{Path: configPath}}
+	if !a.keepCredential {
+		spec.Files = append(spec.Files, service.File{Path: cred})
+	}
 	if printOnly {
 		return spec, nil
 	}
 	raw, err := config.Upserted(configPath,
 		config.Settings{SocketDir: config.DefaultSocketDir(goos), PagesURL: a.pagesURL},
-		config.Agent{Name: a.name, OSUser: a.osUser, CredentialFile: cred})
+		config.Agent{Name: a.name, OSUser: a.osUser, CredentialFile: cred, InitArgs: a.initArgs})
 	if err != nil {
 		return spec, err
 	}
 	spec.Files[0].Content = raw
-	spec.Files[1].Content = []byte(a.dsn + "\n")
+	if !a.keepCredential {
+		spec.Files[1].Content = []byte(a.dsn + "\n")
+	}
 	return spec, nil
 }
 
+// agentInstall is what `service install --agent` needs for this init.
+func (f initFlags) agentInstall(dsn string) agentInstall {
+	return agentInstall{name: f.agent, osUser: f.osUser, pagesURL: f.passkeyOrigin, dsn: dsn,
+		initArgs: f.initArgs, keepCredential: f.keepCredential}
+}
+
 // serviceInstallArgs is the one command init runs under sudo. The
-// credential goes on its stdin, never on the command line.
+// credential goes on its stdin, never on the command line; when the role
+// kept its password the credential file stays and nothing goes on stdin.
 func serviceInstallArgs(f initFlags, bin string) []string {
 	args := []string{bin, "service", "install", "--config", f.configPath, "--user", f.engineUser,
 		"--agent", f.agent, "--os-user", f.osUser}
 	if f.passkeyOrigin != "" {
 		args = append(args, "--pages-url", f.passkeyOrigin)
 	}
+	for _, a := range f.initArgs {
+		args = append(args, "--"+flagInitArg, a)
+	}
+	if f.keepCredential {
+		return append(args, "--"+flagKeepCredential)
+	}
 	return append(args, "--credential-stdin")
 }
+
+// Flags of basalt service install --agent that carry init's saved flags and
+// say the credential file stays.
+const (
+	flagInitArg        = "init-arg"
+	flagKeepCredential = "keep-credential"
+)
 
 // installService installs the engine service with the agent in one
 // elevation, then checks the engine answers on the agent's socket.
@@ -195,7 +248,7 @@ func elevateInstall(c *cliIO, f initFlags, dsn string) error {
 	}
 	if c.host.Euid() == 0 {
 		return applyServiceInstall(c, bin, f.configPath, f.engineUser,
-			agentInstall{name: f.agent, osUser: f.osUser, pagesURL: f.passkeyOrigin, dsn: dsn}, false)
+			f.agentInstall(dsn), false)
 	}
 	fmt.Fprintln(c.stderr, "basalt: installing the engine service with sudo:")
 	return c.host.Sudo(c.ctx, serviceInstallArgs(f, bin), dsn+"\n", c.stderr, c.stderr)

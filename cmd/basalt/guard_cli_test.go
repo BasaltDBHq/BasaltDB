@@ -161,7 +161,8 @@ func TestInitInstallsAndWritesCredential(t *testing.T) {
 	cfg, err := config.Load(cfgPath)
 	require.NoError(t, err)
 	require.Equal(t, config.DefaultSocketDir(runtime.GOOS), cfg.SocketDir)
-	require.Equal(t, []config.Agent{{Name: "bot", OSUser: "tester", CredentialFile: path}}, cfg.Agents)
+	require.Equal(t, []config.Agent{{Name: "bot", OSUser: "tester", CredentialFile: path, InitArgs: []string{
+		"--agent=bot", "--write=public.leads", "--prefix=" + d.Names.Prefix, "--os-user=tester"}}}, cfg.Agents)
 	raw, err := os.ReadFile(cfgPath)
 	require.NoError(t, err)
 	require.NotContains(t, string(raw), "basalt@", "the config holds no credential")
@@ -180,13 +181,18 @@ func TestInitInstallsAndWritesCredential(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, guard.CodeIntentRequired, code)
 
-	// Init again rotates the password: the old credential stops working.
+	// Init again keeps the password: the credential file is untouched and
+	// the engine's connection keeps working, with no restart.
 	initAgent(t, d, cfgPath)
 	cfg, err = config.Load(cfgPath)
 	require.NoError(t, err)
 	require.Len(t, cfg.Agents, 1, "init again replaces the agent entry")
-	_, err = pgdial.Connect(ctx, dsn)
-	require.Error(t, err)
+	again, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, dsn, strings.TrimSpace(string(again)))
+	conn2, err := pgdial.Connect(ctx, dsn)
+	require.NoError(t, err)
+	conn2.Close(ctx)
 }
 
 // TestInitWarnsWhenRLSHidesRows: init warns about each agent table where

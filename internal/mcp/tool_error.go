@@ -14,6 +14,9 @@ type ToolError struct {
 	// do next (CONTRACT.md, Next steps).
 	PersonMessage string     `json:"personMessage,omitempty"`
 	NextSteps     []NextStep `json:"nextSteps,omitempty"`
+	// ErrorID is set on UNAVAILABLE and INTERNAL: a UUIDv7 the engine logs
+	// with the error, for the person to find the log line.
+	ErrorID string `json:"errorId,omitempty"`
 }
 
 // Actors and actions of a next step (api/mcp/errors/next-step.schema.json).
@@ -21,14 +24,15 @@ const (
 	ActorAgent  = "AGENT"
 	ActorPerson = "PERSON"
 
-	ActionCallTool   = "CALL_TOOL"
-	ActionReviseCall = "REVISE_CALL"
-	ActionAskPerson  = "ASK_PERSON"
-	ActionEndTurn    = "END_TURN"
-	ActionStop       = "STOP"
-	ActionOpenLink   = "OPEN_LINK"
-	ActionRunCommand = "RUN_COMMAND"
-	ActionTellAgent  = "TELL_AGENT"
+	ActionCallTool            = "CALL_TOOL"
+	ActionReviseCall          = "REVISE_CALL"
+	ActionRetrySmallerBatches = "RETRY_SMALLER_BATCHES"
+	ActionAskPerson           = "ASK_PERSON"
+	ActionEndTurn             = "END_TURN"
+	ActionStop                = "STOP"
+	ActionOpenLink            = "OPEN_LINK"
+	ActionRunCommand          = "RUN_COMMAND"
+	ActionTellAgent           = "TELL_AGENT"
 )
 
 // NextStep is one step of nextSteps in an error body or a result: who does
@@ -42,6 +46,10 @@ type NextStep struct {
 	RepeatCall bool           `json:"repeatCall,omitempty"`
 	Command    string         `json:"command,omitempty"`
 	URL        string         `json:"url,omitempty"`
+	// MaxRows is RETRY_SMALLER_BATCHES' row limit; WaitSeconds is how long
+	// a CALL_TOOL step waits before the call.
+	MaxRows     int `json:"maxRows,omitempty"`
+	WaitSeconds int `json:"waitSeconds,omitempty"`
 }
 
 // ApprovalNotice is the held write an APPROVAL_REQUIRED error carries

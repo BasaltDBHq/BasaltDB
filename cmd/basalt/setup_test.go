@@ -182,7 +182,9 @@ func TestInitInstallsTheServiceWithOneSudo(t *testing.T) {
 
 			require.Len(t, h.sudo, 1, "one elevation")
 			require.Equal(t, []string{fakeBin, "service", "install", "--config", v.config, "--user", v.user,
-				"--agent", "bot", "--os-user", me(t), "--pages-url", links.DefaultLocal, "--credential-stdin"}, h.sudo[0])
+				"--agent", "bot", "--os-user", me(t), "--pages-url", links.DefaultLocal,
+				"--init-arg", "--agent=bot", "--init-arg", "--write=public.leads", "--init-arg", "--prefix=" + d.Names.Prefix,
+				"--init-arg", "--os-user=" + me(t), "--credential-stdin"}, h.sudo[0])
 			require.Contains(t, h.sudoIn[0], d.Names.Prefix+"_agent_bot:", "the agent's credential goes on stdin")
 			require.NotContains(t, strings.Join(h.sudo[0], " "), "postgres://", "never on the command line")
 			require.Equal(t, []string{v.socket}, h.probed)

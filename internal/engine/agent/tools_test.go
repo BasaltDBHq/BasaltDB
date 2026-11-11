@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -192,4 +193,41 @@ func TestTruncateKeepsRunes(t *testing.T) {
 	require.Equal(t, "abc", truncate("abc", 5))
 	require.Equal(t, "ab", truncate("abé", 3), "never cut inside a rune")
 	require.Equal(t, "abé", truncate("abé", 4))
+}
+
+// An INTERNAL or UNAVAILABLE error carries a UUIDv7 errorId that the engine
+// logs with the error, so the person can find the log line.
+func TestErrorIDIsInTheBodyAndTheLogLine(t *testing.T) {
+	t.Parallel()
+	for name, cause := range map[string]error{
+		CodeInternal:    errors.New("boom"),
+		CodeUnavailable: context.DeadlineExceeded,
+	} {
+		var logged strings.Builder
+		h := handlers{svc: NewService(deps()), log: slog.New(slog.NewTextHandler(&logged, nil))}
+		call := h.wrap("query", func(context.Context, json.RawMessage) (any, error) { return nil, cause })
+
+		_, err := call(context.Background(), nil)
+		var te *mcp.ToolError
+		require.True(t, errors.As(err, &te), name)
+		require.Equal(t, name, te.Code)
+		id, perr := uuid.Parse(te.ErrorID)
+		require.NoError(t, perr, "%s: %q", name, te.ErrorID)
+		require.Equal(t, uuid.Version(7), id.Version(), name)
+		require.Contains(t, logged.String(), "error_id="+te.ErrorID, name)
+
+		body, merr := json.Marshal(te)
+		require.NoError(t, merr)
+		require.Contains(t, string(body), `"errorId":"`+te.ErrorID+`"`, name)
+	}
+}
+
+func TestErrorIDOnlyOnInternalAndUnavailable(t *testing.T) {
+	t.Parallel()
+	h := handlers{svc: NewService(deps()), log: slog.New(slog.DiscardHandler)}
+	call := h.wrap("query", func(context.Context, json.RawMessage) (any, error) { return nil, &ArgumentError{Message: "bad"} })
+	_, err := call(context.Background(), nil)
+	var te *mcp.ToolError
+	require.True(t, errors.As(err, &te))
+	require.Empty(t, te.ErrorID)
 }

@@ -69,6 +69,8 @@ func agentHarnessFor(t *testing.T, d *guardtest.DB, a *guardtest.Agent, pagesOri
 	require.NoError(t, err)
 	require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, person.Credential(), "app"))
 
+	cmds, err := agent.NewCommands("bot", "/etc/basalt-test/engine.json", "linux", nil)
+	require.NoError(t, err)
 	pool, err := agentdb.NewPool(context.Background(), a.URL, 2)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
@@ -78,7 +80,7 @@ func agentHarnessFor(t *testing.T, d *guardtest.DB, a *guardtest.Agent, pagesOri
 	svc := agent.NewService(agent.Deps{
 		Name: "bot", Reader: agentdb.NewReader(pool, limits, time.Now), Store: store, Reads: store, Approvals: store,
 		Reverts: store, Notifier: sent, Log: slog.New(slog.DiscardHandler), Now: time.Now,
-		CLIFlags: "--agent bot --config /etc/basalt-test/engine.json", PagesOrigin: strings.Join(pagesOrigin, ""), Poll: testPoll,
+		Commands: cmds, PagesOrigin: strings.Join(pagesOrigin, ""), Poll: testPoll,
 	})
 	return agentEnv{d: d, a: a, h: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, person: person, sent: sent, svc: svc}
 }

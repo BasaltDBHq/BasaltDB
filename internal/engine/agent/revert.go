@@ -67,7 +67,7 @@ func (s *Service) PreviewRevert(ctx context.Context, p PreviewRevertParams) (Rev
 	if err != nil {
 		return RevertPreview{}, err
 	}
-	out := RevertPreview{Scope: p.Scope, Command: s.revertCommand(p.Scope)}
+	out := RevertPreview{Scope: p.Scope, Command: s.Commands.Revert(p.Scope)}
 	lines := make([]revert.Line, 0, len(texts))
 	for _, text := range texts {
 		l, err := revert.ParseLine(text)
@@ -181,12 +181,6 @@ type ApplyRevertBatchParams struct {
 // Postgres checks them against the signed plan and re-checks each row.
 func (s *Service) ApplyRevertBatch(ctx context.Context, p ApplyRevertBatchParams) (guard.BatchResult, error) {
 	return s.Reverts.ApplyRevertBatch(ctx, p.RevertID, p.Lines)
-}
-
-// revertCommand is what the person runs to revert the scope: it opens the
-// revert page in their browser.
-func (s *Service) revertCommand(scope guard.RevertScope) string {
-	return fmt.Sprintf("basalt revert %s --%s %s --open", s.CLIFlags, strings.ToLower(string(scope.Kind)), scope.ID)
 }
 
 // RequestRevertParams are request_revert's validated arguments in its
@@ -467,12 +461,6 @@ func (s *Service) prepareError(ctx context.Context, scope guard.RevertScope, err
 	return s.prepareTimeout(scope, pe.Code)
 }
 
-// fullRevertCommand is revertCommand naming the engine config even at its
-// default path, for a command the person copies from a message as is.
-func (s *Service) fullRevertCommand(scope guard.RevertScope) string {
-	return fmt.Sprintf("basalt revert %s --%s %s --open", s.FullCLIFlags, strings.ToLower(string(scope.Kind)), scope.ID)
-}
-
 // revertNotice is the link to sign a prepared revert (a newly issued short
 // link when this engine serves the pages, else the long one) and one line
 // to show the person verbatim: the scope, what it restores and skips, why,
@@ -496,7 +484,7 @@ func (s *Service) revertNotice(ctx context.Context, r ledger.Revert) (string, st
 		link = long
 		sign = fmt.Sprintf("Review and sign with your passkey: %s (the page then shows a code: give it to the agent, "+
 			"or apply it yourself with: basalt revert %s --apply <code>)",
-			long, s.FullCLIFlags)
+			long, s.Commands.Flags())
 	}
 	msg := fmt.Sprintf("Revert of %s %s ready for your review: %d rows to restore, %d left as they are (changed after the agent). Why: %s. %s. Expires %s.",
 		strings.ToLower(string(b.Scope)), b.ScopeID, r.Rows, r.Skipped, strings.TrimRight(b.Intent, ". "), sign, r.ExpiresAt.UTC().Format(personTime))

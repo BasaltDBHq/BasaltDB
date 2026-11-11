@@ -250,7 +250,7 @@ func agentRoleStatement(n Names, role string, spec AgentSpec, timeoutMs int64) S
 	case spec.Verifier != "" && spec.CreateOnly:
 		return Statement{SQL: render(agentCreateRoleSQL, quoteLiteral(spec.Verifier))}
 	case spec.Verifier != "":
-		return Statement{SQL: render(agentSetPasswordSQL, quoteLiteral(spec.Verifier))}
+		return Statement{SQL: render(agentAlterRoleSQL, quoteLiteral(spec.Verifier))}
 	case spec.CreateOnly:
 		return Statement{SQL: render(agentCreateRoleSQL, quoteLiteral(spec.Password)),
 			Shown: render(agentCreateRoleSQL, quoteLiteral(redacted))}
@@ -310,9 +310,9 @@ CREATE ROLE %[1]s LOGIN INHERIT NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRL
 GRANT {{agents}} TO %[1]s;
 ALTER ROLE %[1]s SET statement_timeout = %[3]d;`
 
-// agentSetPasswordSQL sets the password of an agent role that exists; a
+// agentAlterRoleSQL sets the password of an agent role that exists; a
 // role that does not exist is refused. Arguments as agentCreateRoleSQL.
-const agentSetPasswordSQL = `
+const agentAlterRoleSQL = `
 ALTER ROLE %[1]s LOGIN PASSWORD %[2]s;
 GRANT {{agents}} TO %[1]s;
 ALTER ROLE %[1]s SET statement_timeout = %[3]d;`

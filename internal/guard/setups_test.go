@@ -48,9 +48,10 @@ func installSetup(t *testing.T, d *guardtest.DB, agent string) guard.Setup {
 		GuardVersion: guard.LatestVersion(), ExpiresAt: now.Add(setupLifetime).Truncate(time.Second)}
 }
 
-// initFromVerifier installs the guard and the agent name from a verifier
+// initFromVerifier installs the guard and the agent bot from a verifier
 // (an INSTALL setup code) and returns the password it was made from.
-func initFromVerifier(t *testing.T, d *guardtest.DB, name string) string {
+func initFromVerifier(t *testing.T, d *guardtest.DB) string {
+	const name = "bot"
 	t.Helper()
 	pw := guard.NewPassword()
 	d.Init(t, guard.AgentSpec{Name: name, Verifier: guardtest.NewSCRAMVerifier(t, pw), CreateOnly: true, Write: leads, Read: leads})
@@ -69,7 +70,9 @@ func connectAs(ctx context.Context, d *guardtest.DB, name, password string) (*pg
 	return pgdial.Connect(ctx, dsn)
 }
 
-func requireLogin(t *testing.T, d *guardtest.DB, name, password string) *pgx.Conn {
+// requireLogin connects as the agent bot with password.
+func requireLogin(t *testing.T, d *guardtest.DB, password string) *pgx.Conn {
+	const name = "bot"
 	t.Helper()
 	c, err := connectAs(context.Background(), d, name, password)
 	require.NoError(t, err)
@@ -166,14 +169,14 @@ func TestAgentLogsInWithVerifierPassword(t *testing.T) {
 	role, err := d.Names.Agent("bot")
 	require.NoError(t, err)
 	require.Equal(t, verifier, scalarOf[string](t, d.Admin, `SELECT rolpassword FROM pg_authid WHERE rolname = $1`, role))
-	bot := requireLogin(t, d, "bot", pw)
+	bot := requireLogin(t, d, pw)
 	require.Equal(t, 200, count(t, bot, `SELECT count(id)::int FROM public.leads`))
 	requireNoLogin(t, d, "bot", guard.NewPassword())
 
 	// An AGENT code with a verifier rotates the password.
 	pw2 := guard.NewPassword()
 	d.Init(t, guard.AgentSpec{Name: "bot", Verifier: guardtest.NewSCRAMVerifier(t, pw2), Write: leads, Read: leads})
-	requireLogin(t, d, "bot", pw2)
+	requireLogin(t, d, pw2)
 	requireNoLogin(t, d, "bot", pw)
 }
 
@@ -186,7 +189,7 @@ func TestInstallVerifierRefusesExistingRole(t *testing.T) {
 	err := d.TryInit(guard.AgentSpec{Name: "bot", Verifier: guardtest.NewSCRAMVerifier(t, guard.NewPassword()),
 		CreateOnly: true, Write: leads, Read: leads})
 	require.Equal(t, "42710", guardtest.SQLState(err), "%v", err)
-	requireLogin(t, d, "bot", a.Password)
+	requireLogin(t, d, a.Password)
 
 	// ROLE_MISSING: an AGENT verifier for a role that does not exist.
 	err = d.TryInit(guard.AgentSpec{Name: "other", Verifier: guardtest.NewSCRAMVerifier(t, guard.NewPassword()),
@@ -201,7 +204,7 @@ func TestRecordSetup(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
 	ctx := context.Background()
-	pw := initFromVerifier(t, d, "bot")
+	pw := initFromVerifier(t, d)
 	s := installSetup(t, d, "bot")
 
 	seq, err := guard.RecordSetup(ctx, d.Admin, d.Names, s)
@@ -231,7 +234,7 @@ func TestRecordSetup(t *testing.T) {
 	require.Equal(t, admin, usedBy)
 
 	// The engine confirms the setup by logging in and finding it.
-	bot := requireLogin(t, d, "bot", pw)
+	bot := requireLogin(t, d, pw)
 	require.Equal(t, 1, count(t, bot, `SELECT count(setup_id)::int FROM basalt_meta.agent_setups WHERE setup_id = $1`, s.ID))
 
 	// An UPGRADE is recorded under the admin's name.
@@ -246,7 +249,7 @@ func TestRecordSetupRefusals(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
 	ctx := context.Background()
-	initFromVerifier(t, d, "bot")
+	initFromVerifier(t, d)
 	record := func(s guard.Setup) error {
 		_, err := guard.RecordSetup(ctx, d.Admin, d.Names, s)
 		return err
@@ -326,9 +329,9 @@ func TestAgentCannotRecordOrWriteSetups(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
 	ctx := context.Background()
-	pw := initFromVerifier(t, d, "bot")
+	pw := initFromVerifier(t, d)
 	other := d.NewAgent(t, "other", leads, leads)
-	bot := requireLogin(t, d, "bot", pw)
+	bot := requireLogin(t, d, pw)
 
 	mine := installSetup(t, d, "bot")
 	_, err := guard.RecordSetup(ctx, d.Admin, d.Names, mine)
@@ -379,7 +382,7 @@ func TestSetupsMigrationIsIdempotentAndRemovable(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
 	ctx := context.Background()
-	pw := initFromVerifier(t, d, "bot")
+	pw := initFromVerifier(t, d)
 	s := installSetup(t, d, "bot")
 	_, err := guard.RecordSetup(ctx, d.Admin, d.Names, s)
 	require.NoError(t, err)
@@ -387,7 +390,7 @@ func TestSetupsMigrationIsIdempotentAndRemovable(t *testing.T) {
 	// Running version 16 again keeps the rows and the checks.
 	d.Exec(t, `DELETE FROM basalt_meta.schema_version WHERE version >= 16`)
 	d.Init(t, guard.AgentSpec{Name: "bot", Write: leads, Read: leads})
-	bot := requireLogin(t, d, "bot", pw)
+	bot := requireLogin(t, d, pw)
 	require.Equal(t, 1, count(t, bot, `SELECT count(setup_id)::int FROM basalt_meta.agent_setups`))
 	_, err = guard.RecordSetup(ctx, d.Admin, d.Names, s)
 	requireRefused(t, err, guard.SetupUsed)

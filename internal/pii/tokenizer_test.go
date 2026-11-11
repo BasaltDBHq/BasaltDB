@@ -58,11 +58,50 @@ func TestTokenizeIsIdempotentOnTokens(t *testing.T) {
 
 func TestTokensWrittenBackToBackAreBothKept(t *testing.T) {
 	tz, _ := newTokenizer(t)
-	once, reps := tokenize(t, tz, "00@0.AA0@0.AA0")
-	require.Len(t, reps, 2)
+	in := "pii1_AAAAAAAAAAAA@redacted.invalidpii1_BBBBBBBBBBBB@gmail.comPerson CCCCCCCCCCCC"
+	out, reps := tokenize(t, tz, in)
+	require.Empty(t, reps)
+	require.Equal(t, in, out)
+}
+
+func TestAnAddressGluedToDigitsIsTokenizedWhole(t *testing.T) {
+	tz, _ := newTokenizer(t)
+	once, reps := tokenize(t, tz, "mail a.b@corp.example2024 now")
+	require.Len(t, reps, 1)
+	require.Equal(t, "a.b@corp.example2024", "mail a.b@corp.example2024 now"[reps[0].Start:reps[0].End])
 	twice, more := tokenize(t, tz, once)
 	require.Empty(t, more)
 	require.Equal(t, once, twice)
+}
+
+// A token shape inside a longer word is not a token: the address around it is
+// tokenized, and the final scan does not skip it.
+func TestATokenShapeTouchingAlphanumericsIsNotSkipped(t *testing.T) {
+	k := newKeys(t, testMaster)
+	d := newMapDict()
+	address := "xpii1_ABCDEFGHIJKL@corp.com"
+	d.add(k, pii.EntityEmail, address)
+	d.add(k, pii.EntityPersonName, "Person ABCDEFGHIJKLz")
+	dd := pii.NewDictionaryDetector(k, d, "")
+	tz := pii.NewTokenizer(k, "", append(pii.PatternDetectors(), dd)...)
+	for _, in := range []string{address, "pii1_ABCDEFGHIJKLM@corp.com", "Person ABCDEFGHIJKLz"} {
+		out, reps := tokenize(t, tz, in)
+		require.Len(t, reps, 1, in)
+		require.Equal(t, in, in[reps[0].Start:reps[0].End], in)
+		require.NotEqual(t, in, out)
+	}
+	require.Positive(t, dd.FinalScan("send to "+address), "not skipped as a token")
+	out, _ := tokenize(t, tz, "send to "+address)
+	require.Zero(t, dd.FinalScan(out))
+}
+
+func TestAPhoneTokenPrefixIsClaimedOnlyWithABoundary(t *testing.T) {
+	tz, _ := newTokenizer(t)
+	for _, in := range []string{"call +44 pii1_AAAAAAAAAAAA now", "x+44 pii1_AAAAAAAAAAAA"} {
+		out, reps := tokenize(t, tz, in)
+		require.Empty(t, reps, in)
+		require.Equal(t, in, out)
+	}
 }
 
 func TestTokenizeIsDeterministicAcrossTurns(t *testing.T) {
@@ -102,7 +141,7 @@ func TestTokenizeTypedFormFindsAPhoneWrittenDifferently(t *testing.T) {
 func TestTokenizeLocalPhoneWithARegion(t *testing.T) {
 	k := newKeys(t, testMaster)
 	d := newMapDict()
-	d.add(k, pii.EntityPhone, "+62 812 3456 7890", "")
+	d.add(k, pii.EntityPhone, "+62 812 3456 7890")
 	dd := pii.NewDictionaryDetector(k, d, "ID")
 	tz := pii.NewTokenizer(k, "ID", append(pii.PatternDetectors(), dd)...)
 	in := "WA +62 812-3456-7890"
@@ -128,9 +167,10 @@ func wordSpan(word string, typ pii.EntityType) fakeDetector {
 	}}
 }
 
+// Detectors see the folded text (lower case), so the fake ones search for it.
 func TestDetectorsRunInOrderAndBasaltMakesEveryToken(t *testing.T) {
 	k := newKeys(t, testMaster)
-	tz := pii.NewTokenizer(k, "", append(pii.PatternDetectors(), wordSpan("Zed Qux", pii.EntityPersonName), wordSpan("Qux", pii.EntityOther))...)
+	tz := pii.NewTokenizer(k, "", append(pii.PatternDetectors(), wordSpan("zed qux", pii.EntityPersonName), wordSpan("qux", pii.EntityOther))...)
 	in := "hello Zed Qux, z@corp.example"
 	out, reps := tokenize(t, tz, in)
 	require.Len(t, reps, 2, "the later detector's overlapping span is dropped")
@@ -188,6 +228,65 @@ func TestNewTokenizerPanicsWithoutDeps(t *testing.T) {
 	require.Panics(t, func() { pii.NewTokenizer(k, "") })
 	require.Panics(t, func() { pii.NewDictionaryDetector(nil, newMapDict(), "") })
 	require.Panics(t, func() { pii.NewDictionaryDetector(k, nil, "") })
+}
+
+func TestAPhoneGluedToLettersIsFound(t *testing.T) {
+	tz, dd := newTokenizer(t)
+	for _, c := range []struct{ in, number string }{
+		{"+447700900456x123", "+447700900456"},
+		{"+447700900456_", "+447700900456"},
+		{"+44 7700 900456ext2", "+44 7700 900456"},
+		{"call +44 7700 900456.", "+44 7700 900456"},
+		{"+44 7700 900123+1 202 555 0143", "+44 7700 900123"},
+	} {
+		require.Positive(t, dd.FinalScan(c.in), c.in)
+		out, reps := tokenize(t, tz, c.in)
+		require.NotEmpty(t, reps, c.in)
+		require.Equal(t, c.number, c.in[reps[0].Start:reps[0].End], c.in)
+		require.NotContains(t, out, "900", c.in)
+		require.Zero(t, dd.FinalScan(out), c.in)
+	}
+}
+
+func TestFullWidthAndCompatibilityFormsAreFound(t *testing.T) {
+	k := newKeys(t, testMaster)
+	d := newMapDict()
+	d.add(k, pii.EntityPersonName, "Alexandra Jones")
+	dd := pii.NewDictionaryDetector(k, d, "")
+	tz := pii.NewTokenizer(k, "", append(pii.PatternDetectors(), dd)...)
+	cases := []struct {
+		in, value string
+		typ       pii.EntityType
+		plain     string
+	}{
+		{"hi \uff21\uff4c\uff45\uff58\uff41\uff4e\uff44\uff52\uff41 \uff2a\uff4f\uff4e\uff45\uff53!", "\uff21\uff4c\uff45\uff58\uff41\uff4e\uff44\uff52\uff41 \uff2a\uff4f\uff4e\uff45\uff53", pii.EntityPersonName, "Alexandra Jones"},
+		{"to \uff41\uff4c\uff49\uff43\uff45@example.com", "\uff41\uff4c\uff49\uff43\uff45@example.com", pii.EntityEmail, "alice@example.com"},
+		{"call \uff0b\uff14\uff14\uff17\uff17\uff10\uff10\uff19\uff10\uff10\uff14\uff15\uff16 now", "\uff0b\uff14\uff14\uff17\uff17\uff10\uff10\uff19\uff10\uff10\uff14\uff15\uff16", pii.EntityPhone, "+447700900456"},
+		{"ALEXANDRA  jones", "ALEXANDRA  jones", pii.EntityPersonName, "Alexandra Jones"},
+		{"\ufb01 alice@ex\u00e4mple.ee", "alice@ex\u00e4mple.ee", pii.EntityEmail, "alice@ex\u00e4mple.ee"},
+		{"Ali\u0307ce@xn--exmple-cua.ee", "Ali\u0307ce@xn--exmple-cua.ee", pii.EntityEmail, "ali\u0307ce@xn--exmple-cua.ee"},
+	}
+	for _, c := range cases {
+		out, reps := tokenize(t, tz, c.in)
+		require.Len(t, reps, 1, c.in)
+		require.Equal(t, c.value, c.in[reps[0].Start:reps[0].End], "spans map back to the original")
+		require.Equal(t, mustToken(t, k, c.typ, c.plain, ""), reps[0].Token, c.in)
+		require.NotContains(t, out, c.value)
+	}
+	require.Equal(t, 1, dd.FinalScan(cases[0].in))
+}
+
+func TestFoldedSpansWidenToWholeCharacters(t *testing.T) {
+	k := newKeys(t, testMaster)
+	// U+FB03 folds to "ffi"; a span over its middle "f" covers the whole ligature.
+	d := fakeDetector{spans: func(s string) []pii.Span {
+		require.Equal(t, "a ffi b", s)
+		return []pii.Span{{Start: 3, End: 4, Type: pii.EntityOther}}
+	}}
+	in := "A \ufb03 B"
+	_, reps := tokenize(t, pii.NewTokenizer(k, "", d), in)
+	require.Len(t, reps, 1)
+	require.Equal(t, "\ufb03", in[reps[0].Start:reps[0].End])
 }
 
 func TestPhonePatternBounds(t *testing.T) {

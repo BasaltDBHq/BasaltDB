@@ -10,8 +10,9 @@ import (
 )
 
 // Normalize maps equal values written differently to the same text, so they
-// get the same token and the same dictionary hash. Every type is NFC first;
-// then EMAIL is trimmed and lower-cased, PHONE becomes E.164 through
+// get the same token and the same dictionary hash. Every type is NFKC first
+// (full-width and other compatibility forms become their plain letters and
+// digits; NFKC includes NFC); then EMAIL is trimmed and lower-cased, PHONE becomes E.164 through
 // libphonenumber (phoneRegion, ISO 3166 alpha-2, is used for a number written
 // without +cc), and every other type takes the generic form. The result is
 // deterministic for a given Unicode version (Go's and golang.org/x/text's).
@@ -29,7 +30,7 @@ func Normalize(t EntityType, value, phoneRegion string) string {
 }
 
 func normalizeEmail(value string) string {
-	return norm.NFC.String(strings.ToLower(strings.TrimSpace(norm.NFC.String(value))))
+	return norm.NFKC.String(strings.ToLower(strings.TrimSpace(norm.NFKC.String(value))))
 }
 
 // normalizePhone returns the E.164 form and the country calling code (0 when
@@ -37,7 +38,7 @@ func normalizeEmail(value string) string {
 // number). An unparsed value keeps a leading + and its letters and digits, so
 // distinct inputs stay distinct.
 func normalizePhone(value, region string) (string, int32) {
-	value = norm.NFC.String(strings.TrimSpace(value))
+	value = strings.TrimSpace(norm.NFKC.String(value))
 	region = strings.ToUpper(strings.TrimSpace(region))
 	if e164, cc, ok := parseE164(value, region); ok {
 		return e164, cc
@@ -81,14 +82,15 @@ func phoneFallback(value string) string {
 }
 
 // GenericForm is the form names, addresses and other identifiers are compared
-// in, and the form free-text word n-grams are looked up by: NFC, Unicode case
-// folding, NFC again (folding can leave a sequence that composes), then every
+// in, and the form free-text word n-grams are looked up by: NFKC, Unicode case
+// folding, NFKC again (folding can leave a sequence that composes), that is
+// NFKC_Casefold apart from the ignorables, which are dropped next; then every
 // run of characters that are not letters, digits or marks becomes one space,
 // with no space at either end. Format characters (zero-width space, joiners)
 // are dropped, so they neither split a word nor join two.
 func GenericForm(value string) string {
 	// A Caser is stateful, so each call takes its own.
-	s := norm.NFC.String(cases.Fold().String(norm.NFC.String(value)))
+	s := norm.NFKC.String(cases.Fold().String(norm.NFKC.String(value)))
 	var b strings.Builder
 	b.Grow(len(s))
 	gap := false

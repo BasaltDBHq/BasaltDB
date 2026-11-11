@@ -32,12 +32,13 @@ func newMapDict() *mapDict {
 	return &mapDict{generic: map[pii.Hash]pii.EntityType{}, typed: make(map[pii.EntityType]map[pii.Hash]bool)}
 }
 
-func (d *mapDict) add(k *pii.Keys, t pii.EntityType, value, region string) {
+// add stores a value. Values here are written with +cc, so no phone region.
+func (d *mapDict) add(k *pii.Keys, t pii.EntityType, value string) {
 	d.generic[k.GenericHash(value)] = t
 	if d.typed[t] == nil {
 		d.typed[t] = map[pii.Hash]bool{}
 	}
-	d.typed[t][k.TypedHash(t, value, region)] = true
+	d.typed[t][k.TypedHash(t, value, "")] = true
 }
 
 func (d *mapDict) Lookup(h pii.Hash) (pii.EntityType, bool) {
@@ -62,7 +63,7 @@ func loadFixture(t *testing.T, k *pii.Keys) *mapDict {
 		}
 		typ, val, ok := strings.Cut(line, "\t")
 		require.True(t, ok, line)
-		d.add(k, pii.EntityType(typ), val, "")
+		d.add(k, pii.EntityType(typ), val)
 	}
 	require.NoError(t, sc.Err())
 	return d

@@ -25,10 +25,16 @@ const maxSeparatorLen = 3
 const phoneCore = `\+\d{1,3}[ .\-]?\(?\d{1,4}\)?(?:[ .\-]?\d{2,4}){1,4}|\(\d{3}\) ?\d{3}[ .\-]\d{4}`
 
 var (
-	emailRe = regexp.MustCompile(`[A-Za-z0-9._%+\-]+@[A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)*\.[A-Za-z]{2,}`)
-	// phoneRe ends on a word boundary: without it, leftmost-first matching
-	// stops inside a number written without spaces and leaves its last digits.
-	phoneRe = regexp.MustCompile(`(?:` + phoneCore + `)\b`)
+	// emailRe takes internationalized addresses: letters, marks and digits of
+	// any script in the local part and the domain, and a letter or punycode
+	// ("xn--") top-level domain. Detection runs on folded text, so case does
+	// not matter.
+	emailRe = regexp.MustCompile(`[\p{L}\p{M}\p{N}._%+\-]+@[\p{L}\p{M}\p{N}\-]+(?:\.[\p{L}\p{M}\p{N}\-]+)*\.(?:xn--[a-z0-9\-]+|[\p{L}\p{M}]{2,})`)
+	// phoneRe's group 1 is the number. It must be followed by a non-digit or
+	// the end, so leftmost-first matching cannot stop inside a number written
+	// without spaces; any character may follow, so a number glued to letters
+	// ("x123", "ext2", "_") is still found. The follower is not part of the span.
+	phoneRe = regexp.MustCompile(`(` + phoneCore + `)(?:$|[^0-9])`)
 	// phoneWholeRe checks that a cut-down match is still a phone by itself.
 	phoneWholeRe = regexp.MustCompile(`^(?:` + phoneCore + `)$`)
 )
@@ -51,12 +57,25 @@ func PatternDetectors() []Detector { return []Detector{EmailDetector{}, PhoneDet
 // EmailDetector finds email addresses by shape, known or not.
 type EmailDetector struct{}
 
-// Detect returns the email spans in text.
+// Detect returns the email spans in text. A span takes in ASCII letters and
+// digits glued to the end of the address ("a@corp.com2024"), so a token never
+// sits against them: a token is only recognized again when nothing
+// alphanumeric touches it.
 func (EmailDetector) Detect(text string) []Span {
-	matches := emailRe.FindAllStringIndex(text, -1)
-	out := make([]Span, 0, len(matches))
-	for _, m := range matches {
-		out = append(out, Span{Start: m[0], End: m[1], Type: EntityEmail})
+	var out []Span
+	// The search goes on from the end of each widened span, so the next
+	// address is matched on what is left, as a second pass would see it.
+	for pos := 0; pos < len(text); {
+		m := emailRe.FindStringIndex(text[pos:])
+		if m == nil {
+			break
+		}
+		end := pos + m[1]
+		for asciiAlnumAt(text, end) {
+			end++
+		}
+		out = append(out, Span{Start: pos + m[0], End: end, Type: EntityEmail})
+		pos = end
 	}
 	return out
 }
@@ -68,10 +87,26 @@ type PhoneDetector struct{}
 // Detect returns the phone spans in text.
 func (PhoneDetector) Detect(text string) []Span {
 	var out []Span
-	for _, m := range phoneRe.FindAllStringIndex(text, -1) {
+	for _, m := range phoneMatches(text) {
 		if end, ok := phoneEnd(text[m[0]:m[1]]); ok {
 			out = append(out, Span{Start: m[0], End: m[0] + end, Type: EntityPhone})
 		}
+	}
+	return out
+}
+
+// phoneMatches returns the numbers phoneRe finds, without the character that
+// follows each one, and searches on from the end of the number, so that
+// character can start the next number ("…0143+1 202…").
+func phoneMatches(text string) [][2]int {
+	var out [][2]int
+	for pos := 0; pos < len(text); {
+		m := phoneRe.FindStringSubmatchIndex(text[pos:])
+		if m == nil {
+			break
+		}
+		out = append(out, [2]int{pos + m[2], pos + m[3]})
+		pos += m[3]
 	}
 	return out
 }
@@ -155,26 +190,22 @@ func (d *DictionaryDetector) Detect(text string) []Span {
 	return out
 }
 
-// FinalScan counts known values still in text, outside existing tokens:
+// FinalScan counts known values still in text, outside existing tokens (as
+// existingTokens bounds them), on the same folded view the tokenizer uses:
 // n-gram hits plus email and phone patterns whose typed form is in the
 // dictionary. Run on tokenized text it must be zero; anything else means a
 // value would leave, and the caller fails closed.
 func (d *DictionaryDetector) FinalScan(text string) int {
-	hits := 0
-	for _, seg := range freeSegments(len(text), existingTokens(text)) {
-		part := text[seg.Start:seg.End]
-		hits += len(d.Detect(part))
-		hits += d.typedHits(part, emailRe, EntityEmail)
-		hits += d.typedHits(part, phoneRe, EntityPhone)
-	}
-	return hits
-}
-
-func (d *DictionaryDetector) typedHits(text string, re *regexp.Regexp, t EntityType) int {
-	hits := 0
-	for _, m := range re.FindAllString(text, -1) {
-		if d.dict.Contains(t, d.keys.TypedHash(t, m, d.phoneRegion)) {
-			hits++
+	claimed := existingTokens(text)
+	// The built-in detectors never return a bad span, so detectFree cannot fail here.
+	ngrams, _ := detectFree(d, text, claimed)
+	hits := len(ngrams)
+	for _, det := range PatternDetectors() {
+		spans, _ := detectFree(det, text, claimed)
+		for _, sp := range spans {
+			if d.dict.Contains(sp.Type, d.keys.TypedHash(sp.Type, text[sp.Start:sp.End], d.phoneRegion)) {
+				hits++
+			}
 		}
 	}
 	return hits

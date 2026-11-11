@@ -62,8 +62,19 @@ func createMaster(path string, random io.Reader) error {
 		return fmt.Errorf("pii key %s: %w", path, err)
 	}
 	err = os.Link(tmp.Name(), path)
-	if err != nil && !errors.Is(err, fs.ErrExist) {
+	if errors.Is(err, fs.ErrExist) {
+		return nil
+	}
+	if err != nil {
 		return fmt.Errorf("pii key %s: %w", path, err)
+	}
+	if err := os.Remove(tmp.Name()); err != nil {
+		return fmt.Errorf("pii key %s: %w", path, err)
+	}
+	// The new name (and the temp name gone) survive a crash only once the
+	// directory itself is on disk.
+	if err := syncDir(filepath.Dir(path)); err != nil {
+		return fmt.Errorf("pii key %s: sync directory: %w", path, err)
 	}
 	return nil
 }
@@ -84,8 +95,10 @@ func writeKeyTemp(tmp *os.File, master []byte) error {
 	return tmp.Close()
 }
 
-// readMaster opens the key file and checks the opened file itself (not just
-// the path), so a file swapped between the check and the read is refused.
+// readMaster opens the key file without following a symlink and without
+// blocking on a FIFO, and checks the opened file itself (not just the path):
+// a regular file, owned by this process's user, mode 0600 or narrower, of the
+// right size. A file swapped between the check and the read is refused.
 func readMaster(path string) ([]byte, error) {
 	link, err := os.Lstat(path)
 	if err != nil {
@@ -94,7 +107,7 @@ func readMaster(path string) ([]byte, error) {
 	if !link.Mode().IsRegular() {
 		return nil, notRegular(path)
 	}
-	f, err := os.Open(path)
+	f, err := openNoFollow(path)
 	if err != nil {
 		return nil, fmt.Errorf("pii key %s: %w", path, err)
 	}
@@ -105,6 +118,9 @@ func readMaster(path string) ([]byte, error) {
 	}
 	if !os.SameFile(link, fi) || !fi.Mode().IsRegular() {
 		return nil, notRegular(path)
+	}
+	if err := checkOwner(fi); err != nil {
+		return nil, fmt.Errorf("pii key %s: %w", path, err)
 	}
 	if runtime.GOOS != "windows" && fi.Mode().Perm()&keyFilePermMask != 0 {
 		return nil, fmt.Errorf("pii key %s is mode %o; it must be readable by the engine's user only (0600)", path, fi.Mode().Perm())

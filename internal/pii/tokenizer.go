@@ -99,17 +99,20 @@ func (tz *Tokenizer) replace(text string, found []Span) (string, []Replacement, 
 	return b.String(), reps, nil
 }
 
-// detectFree runs d on each stretch of text outside claimed (sorted, disjoint)
-// and returns its spans as offsets into text.
+// detectFree runs d on the folded view (foldForDetection) of each stretch of
+// text outside claimed (sorted, disjoint) and returns its spans as offsets into
+// text. A span is checked against the folded text it was found in, then mapped
+// back to the original characters it came from.
 func detectFree(d Detector, text string, claimed []Span) ([]Span, error) {
 	var out []Span
 	for _, seg := range freeSegments(len(text), claimed) {
-		part := text[seg.Start:seg.End]
-		for _, sp := range d.Detect(part) {
-			if err := checkSpan(part, sp); err != nil {
+		view := foldForDetection(text[seg.Start:seg.End])
+		for _, sp := range d.Detect(view.text) {
+			if err := checkSpan(view.text, sp); err != nil {
 				return nil, err
 			}
-			out = append(out, Span{Start: seg.Start + sp.Start, End: seg.Start + sp.End, Type: sp.Type})
+			start, end := view.original(sp)
+			out = append(out, Span{Start: seg.Start + start, End: seg.Start + end, Type: sp.Type})
 		}
 	}
 	return out, nil
@@ -171,9 +174,15 @@ func mergeSpans(a, b []Span) []Span {
 // tokenRe finds token surfaces already in the text (a history re-sent next
 // turn), so they are never tokenized again. Any key version (pii2_) counts. An
 // email token's domain is matched literally (only the domains MakeToken
-// writes), and no word boundary is required around a token, so tokens written
-// back to back, or glued to other text, are all found.
-var tokenRe = regexp.MustCompile(`(?:\+\d{1,3} )?pii\d+_[A-Z2-7]{12}(?:@(?:` + tokenDomainsRe() + `))?|(?:Person|Address) [A-Z2-7]{12}`)
+// writes). Boundaries are checked in existingTokens; a phone token's "+cc "
+// prefix is added there too.
+var tokenRe = regexp.MustCompile(`pii\d+_[A-Z2-7]{12}(?:@(?:` + tokenDomainsRe() + `))?|(?:Person|Address) [A-Z2-7]{12}`)
+
+// phonePrefixRe is the "+cc " a phone token starts with, just before its id.
+var phonePrefixRe = regexp.MustCompile(`\+\d{1,3} $`)
+
+// maxPhonePrefixLen is the longest "+cc " prefix: "+" and three digits and a space.
+const maxPhonePrefixLen = 5
 
 func tokenDomainsRe() string {
 	domains := append([]string{redactedDomain}, slices.Collect(maps.Keys(commonMailProviders))...)
@@ -185,11 +194,54 @@ func tokenDomainsRe() string {
 	return strings.Join(domains, "|")
 }
 
+// existingTokens finds the tokens in text. A token counts only when no ASCII
+// letter or digit touches it on either side, so "xpii1_ABCDEFGHIJKL@corp.com"
+// (an address that merely contains a token shape) is not skipped. Tokens
+// written back to back form one run, checked at its two ends.
 func existingTokens(text string) []Span {
 	matches := tokenRe.FindAllStringIndex(text, -1)
 	out := make([]Span, 0, len(matches))
-	for _, m := range matches {
-		out = append(out, Span{Start: m[0], End: m[1]})
+	for i := 0; i < len(matches); {
+		j := i
+		for j+1 < len(matches) && matches[j+1][0] == matches[j][1] {
+			j++
+		}
+		start := withPhonePrefix(text, matches[i][0])
+		if !asciiAlnumAt(text, start-1) && !asciiAlnumAt(text, matches[j][1]) {
+			for k := i; k <= j; k++ {
+				out = append(out, Span{Start: matches[k][0], End: matches[k][1]})
+			}
+			out[len(out)-(j-i+1)].Start = start
+		}
+		i = j + 1
 	}
 	return out
+}
+
+// withPhonePrefix moves start back over a "+cc " prefix when one is there and
+// nothing alphanumeric touches it; otherwise the token starts at its id.
+func withPhonePrefix(text string, start int) int {
+	before := text[max(0, start-maxPhonePrefixLen):start]
+	loc := phonePrefixRe.FindStringIndex(before)
+	if loc == nil {
+		return start
+	}
+	ps := start - len(before) + loc[0]
+	if asciiAlnumAt(text, ps-1) {
+		return start
+	}
+	return ps
+}
+
+// asciiAlnumAt reports whether text[i] is an ASCII letter or digit (false
+// outside text).
+func asciiAlnumAt(text string, i int) bool {
+	if i < 0 || i >= len(text) {
+		return false
+	}
+	return isASCIIAlnum(text[i])
+}
+
+func isASCIIAlnum(c byte) bool {
+	return isASCIIDigit(c) || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }

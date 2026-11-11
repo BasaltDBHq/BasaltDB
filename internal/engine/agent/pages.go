@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 )
@@ -27,7 +29,7 @@ var ErrNotThisAgent = errors.New("not one of this agent's approvals or reverts")
 // ApprovalRequest is the approval request of a held write still waiting
 // for the person's signature: the JSON the long link carries.
 func (s *Service) ApprovalRequest(ctx context.Context, id uuid.UUID) (approval.Request, error) {
-	a, err := s.openApproval(ctx, id)
+	a, err := s.openApproval(ctx, id, nil)
 	if err != nil {
 		return approval.Request{}, err
 	}
@@ -41,7 +43,7 @@ func (s *Service) ApprovalRequest(ctx context.Context, id uuid.UUID) (approval.R
 // RelayApproval submits the person's signed approval of one of this
 // agent's held writes (submit_approval).
 func (s *Service) RelayApproval(ctx context.Context, r approval.Response) error {
-	if _, err := s.openApproval(ctx, r.ApprovalID); err != nil {
+	if _, err := s.openApproval(ctx, r.ApprovalID, nil); err != nil {
 		return err
 	}
 	_, err := s.Approvals.SubmitApproval(ctx, r.ApprovalID, r.Assertion())
@@ -50,13 +52,19 @@ func (s *Service) RelayApproval(ctx context.Context, r approval.Response) error 
 
 // openApproval is one of this agent's held writes that can still be
 // signed.
-func (s *Service) openApproval(ctx context.Context, id uuid.UUID) (ledger.Approval, error) {
+// A non-nil proof must match the binding text (links.ProofMatches),
+// checked before anything about the approval is told: a wrong proof is
+// answered as an unknown id.
+func (s *Service) openApproval(ctx context.Context, id uuid.UUID, proof *string) (ledger.Approval, error) {
 	a, err := s.Approvals.FindApproval(ctx, id)
 	if errors.Is(err, ledger.ErrApprovalNotFound) {
 		return ledger.Approval{}, ErrNotThisAgent
 	}
 	if err != nil {
 		return ledger.Approval{}, err
+	}
+	if proof != nil && !links.ProofMatches(a.BindingText, *proof) {
+		return ledger.Approval{}, ErrNotThisAgent
 	}
 	switch {
 	case a.Status == ledger.ApprovalExpired || !s.Now().Before(a.ExpiresAt):
@@ -72,7 +80,7 @@ func (s *Service) openApproval(ctx context.Context, id uuid.UUID) (ledger.Approv
 // RevertRequest is the revert request of a revert this agent's role
 // prepared that the person has not signed yet.
 func (s *Service) RevertRequest(ctx context.Context, id uuid.UUID) (revert.Request, error) {
-	r, err := s.openRevert(ctx, id)
+	r, err := s.openRevert(ctx, id, nil)
 	if err != nil {
 		return revert.Request{}, err
 	}
@@ -87,19 +95,22 @@ func (s *Service) RevertRequest(ctx context.Context, id uuid.UUID) (revert.Reque
 // verifies the signature and runs the revert, or for a large plan records
 // it for the agent's batches.
 func (s *Service) RelayRevert(ctx context.Context, r revert.Response) (guard.AppliedRevert, error) {
-	if _, err := s.openRevert(ctx, r.RevertID); err != nil {
+	if _, err := s.openRevert(ctx, r.RevertID, nil); err != nil {
 		return guard.AppliedRevert{}, err
 	}
 	return s.Reverts.ApplyRevert(ctx, r.RevertID, r.Assertion())
 }
 
-func (s *Service) openRevert(ctx context.Context, id uuid.UUID) (ledger.Revert, error) {
+func (s *Service) openRevert(ctx context.Context, id uuid.UUID, proof *string) (ledger.Revert, error) {
 	r, err := s.Reverts.FindRevert(ctx, id)
 	if errors.Is(err, ledger.ErrRevertNotFound) {
 		return ledger.Revert{}, ErrNotThisAgent
 	}
 	if err != nil {
 		return ledger.Revert{}, err
+	}
+	if proof != nil && !links.ProofMatches(r.BindingText, *proof) {
+		return ledger.Revert{}, ErrNotThisAgent
 	}
 	switch {
 	case r.Status == ledger.RevertExpired || (r.Status == ledger.RevertPending && !s.Now().Before(r.ExpiresAt)):
@@ -108,4 +119,44 @@ func (s *Service) openRevert(ctx context.Context, id uuid.UUID) (ledger.Revert, 
 		return r, &mcp.ToolError{Code: string(guard.CodeRevertInvalid), Message: "this revert is already signed"}
 	}
 	return r, nil
+}
+
+// IssueApprovalLink issues a new short link for one of this agent's held
+// writes, revoking its earlier one, to a caller that shows proof of the
+// binding text (the CLI; CONTRACT.md, Link secrets).
+func (s *Service) IssueApprovalLink(ctx context.Context, id uuid.UUID, proof string) (string, error) {
+	a, err := s.openApproval(ctx, id, &proof)
+	if err != nil {
+		return "", err
+	}
+	return s.issuedLink(links.Approval, a.ID, a.ExpiresAt)
+}
+
+// IssueRevertLink issues a new short link for a revert this agent's role
+// prepared, to a caller that shows proof of its binding text.
+func (s *Service) IssueRevertLink(ctx context.Context, id uuid.UUID, proof string) (string, error) {
+	r, err := s.openRevert(ctx, id, &proof)
+	if err != nil {
+		return "", err
+	}
+	return s.issuedLink(links.Revert, r.ID, r.ExpiresAt)
+}
+
+// CheckLink reports whether secret is the live link secret of one of this
+// agent's items.
+func (s *Service) CheckLink(id uuid.UUID, secret string) bool {
+	return s.Links.Check(id, secret)
+}
+
+// issuedLink is a newly issued short link; this engine must serve the
+// pages.
+func (s *Service) issuedLink(page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time) (string, error) {
+	link, err := s.shortLink(page, id, expires, issueLink)
+	if err != nil {
+		return "", err
+	}
+	if link == "" {
+		return "", &mcp.ToolError{Code: CodeUnavailable, Message: "this engine serves no pages"}
+	}
+	return link, nil
 }

@@ -60,7 +60,7 @@ func (h handlers) listPending(ctx context.Context, raw json.RawMessage) (any, er
 	}
 	params := ledger.ApprovalListParams{Params: args.Params, RunID: optionalID(args.RunID), Status: args.Status}
 	params.ApplyDefaultsAndClamp()
-	page, err := h.svc.ListPending(ctx, params)
+	page, err := h.svc.ListPending(ctx, params, args.ReissueLink)
 	if err != nil {
 		return nil, err
 	}

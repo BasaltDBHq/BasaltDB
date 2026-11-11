@@ -6,6 +6,7 @@ package agent
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -80,6 +81,9 @@ type Deps struct {
 	// (CONTRACT.md, Local pages), for short links; empty when it serves
 	// none, and held actions then carry the long link.
 	PagesOrigin string
+	// Links holds the short links' secrets, shared with the pages; a store
+	// of its own when nil.
+	Links *links.Secrets
 }
 
 // Service runs one agent's tool calls.
@@ -99,6 +103,9 @@ func NewService(d Deps) *Service {
 	}
 	if d.PagesBase == "" {
 		d.PagesBase = links.DefaultLocal
+	}
+	if d.Links == nil {
+		d.Links = links.NewSecrets(time.Now, rand.Reader)
 	}
 	if d.CLIFlags == "" {
 		d.CLIFlags = "--agent " + d.Name
@@ -224,9 +231,15 @@ func (s *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, error
 			return WriteOutcome{}, err
 		}
 		// Held: wait for the person's signature and apply it, exactly as
-		// the repeat with approvalId would.
+		// the repeat with approvalId would. On timeout the answer is the
+		// hold's own, which carries the link just issued.
 		p.ApprovalID, p.RunID = id, run.ID
-		return s.applyApproved(ctx, p)
+		out, waitErr := s.applyApproved(ctx, p)
+		var te *mcp.ToolError
+		if errors.As(waitErr, &te) && te.Code == CodeApprovalRequired {
+			return WriteOutcome{}, err
+		}
+		return out, waitErr
 	}
 	if err != nil {
 		return WriteOutcome{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)

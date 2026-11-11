@@ -47,6 +47,9 @@ type HeldNotice struct {
 	Headline    string
 	ExpiresAt   time.Time
 	ApprovalURL string
+	// ShortURL is the short link with its secret, when the engine serves
+	// the pages; it works on the engine's machine only.
+	ShortURL string
 }
 
 // Notifier tells the person a write is held (Telegram, when configured).
@@ -97,15 +100,17 @@ func (s *Service) hold(ctx context.Context, in guard.Intent, p WriteParams, stmt
 	if err != nil {
 		return uuid.Nil, err
 	}
-	notice, err := s.approvalNotice(ctx, held.ApprovalID, held.BindingText, lines, held.ExpiresAt)
+	notice, err := s.approvalNotice(ctx, held.ApprovalID, held.BindingText, lines, held.ExpiresAt, issueLink)
 	if err != nil {
 		return uuid.Nil, err
 	}
-	// Telegram gets the long link: the short one works only on this
-	// machine (CONTRACT.md, Approvals, Engine).
+	// Telegram's button gets the long link: the short one works only on
+	// this machine; its text carries the short one too (CONTRACT.md, Link
+	// secrets).
 	sent := HeldNotice{
 		ApprovalID: held.ApprovalID, Agent: s.Name, Intent: p.Intent, Statement: p.SQL,
 		Rows: len(lines), Headline: notice.Headline, ExpiresAt: held.ExpiresAt, ApprovalURL: notice.longURL,
+		ShortURL: notice.shortURL,
 	}
 	if err := s.Notifier.NotifyHeld(context.WithoutCancel(ctx), sent); err != nil {
 		s.Log.Error("notify held write", "approvalId", held.ApprovalID, "err", err)
@@ -118,13 +123,22 @@ func (s *Service) hold(ctx context.Context, in guard.Intent, p WriteParams, stmt
 // for notifications.
 type heldNotice struct {
 	mcp.ApprovalNotice
-	longURL string
+	longURL  string
+	shortURL string // "" when no short link was issued
 }
 
+// Whether building a notice issues a new short link, revoking the item's
+// earlier one (CONTRACT.md, Link secrets).
+const (
+	issueLink = true
+	keepLink  = false
+)
+
 // approvalNotice builds what the agent shows the person about a held
-// write: its headline, the link (short when this engine serves the pages),
-// the equivalent command and one line to show verbatim.
-func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding string, lines []string, expires time.Time) (heldNotice, error) {
+// write: its headline, the link (a newly issued short link when this
+// engine serves the pages and issue is set, else the long one), the
+// equivalent command and one line to show verbatim.
+func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding string, lines []string, expires time.Time, issue bool) (heldNotice, error) {
 	ids, err := s.credentialIDs(ctx)
 	if err != nil {
 		return heldNotice{}, err
@@ -138,12 +152,20 @@ func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding stri
 		return heldNotice{}, err
 	}
 	command := s.approveCommand(id)
-	link := s.shortLink(links.Approval, id, long)
-	how := fmt.Sprintf("Approve: %s (or run: %s)", link, command)
-	if link == long {
-		// The long link carries the whole preview and breaks when copied:
-		// the message names the command, approvalUrl still has the link.
-		how = fmt.Sprintf("Approve by running: %s (it opens the approval page)", command)
+	short, err := s.shortLink(links.Approval, id, expires, issue)
+	if err != nil {
+		return heldNotice{}, err
+	}
+	link, how := short, fmt.Sprintf("Approve: %s (or run: %s)", short, command)
+	switch {
+	case short == "" && (issue || s.PagesOrigin == ""):
+		// No local pages. The long link carries the whole preview and
+		// breaks when copied: the message names the command, approvalUrl
+		// still has the link.
+		link, how = long, fmt.Sprintf("Approve by running: %s (it opens the approval page)", command)
+	case short == "":
+		// A wait that timed out: the link already handed over still works.
+		link, how = long, fmt.Sprintf("Approve with the link you were given, or run: %s", command)
 	}
 	return heldNotice{
 		ApprovalNotice: mcp.ApprovalNotice{
@@ -151,20 +173,26 @@ func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding stri
 			ApprovalURL: link, ApproveCommand: command,
 			PersonMessage: fmt.Sprintf("Held for your approval: %s. %s. Expires %s.", summary.Headline(), how, expires.UTC().Format(personTime)),
 		},
-		longURL: long,
+		longURL:  long,
+		shortURL: short,
 	}, nil
 }
 
 // personTime is how a person-facing message states a deadline.
 const personTime = "2006-01-02 15:04 UTC"
 
-// shortLink is the page link page(origin, id) when this engine serves the
-// pages, else long.
-func (s *Service) shortLink(page func(string, uuid.UUID) string, id uuid.UUID, long string) string {
-	if s.PagesOrigin == "" {
-		return long
+// shortLink issues a new short link page(origin, id)#s=<secret> for an
+// item that expires at expires, revoking its earlier one, when this engine
+// serves the pages and issue is set; else "".
+func (s *Service) shortLink(page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time, issue bool) (string, error) {
+	if s.PagesOrigin == "" || !issue {
+		return "", nil
 	}
-	return page(s.PagesOrigin, id)
+	secret, err := s.Links.Issue(id, expires)
+	if err != nil {
+		return "", err
+	}
+	return links.WithSecret(page(s.PagesOrigin, id), secret), nil
 }
 
 // approvalRequiredError is the APPROVAL_REQUIRED answer for a held write.
@@ -305,8 +333,10 @@ type PendingItem struct {
 	Notice mcp.ApprovalNotice
 }
 
-// ListPending returns one page of the agent's open held writes.
-func (s *Service) ListPending(ctx context.Context, p ledger.ApprovalListParams) (pagination.Page[PendingItem], error) {
+// ListPending returns one page of the agent's open held writes. It touches
+// no link unless reissue is set: then each item gets a new short link and
+// its earlier one stops working (CONTRACT.md, Link secrets).
+func (s *Service) ListPending(ctx context.Context, p ledger.ApprovalListParams, reissue bool) (pagination.Page[PendingItem], error) {
 	if _, err := s.findRun(ctx, p.RunID); err != nil {
 		return pagination.Page[PendingItem]{}, err
 	}
@@ -316,7 +346,7 @@ func (s *Service) ListPending(ctx context.Context, p ledger.ApprovalListParams) 
 	}
 	out := pagination.Page[PendingItem]{Items: make([]PendingItem, 0, len(page.Items)), NextCursor: page.NextCursor}
 	for _, a := range page.Items {
-		n, err := s.approvalNotice(ctx, a.ID, a.BindingText, a.Lines, a.ExpiresAt)
+		n, err := s.approvalNotice(ctx, a.ID, a.BindingText, a.Lines, a.ExpiresAt, reissue)
 		if err != nil {
 			return pagination.Page[PendingItem]{}, err
 		}
@@ -366,7 +396,7 @@ func (s *Service) waitForSignature(ctx context.Context, a ledger.Approval, p Wri
 		return a, err
 	}
 	if a.Status == ledger.ApprovalPending {
-		n, err := s.approvalNotice(ctx, a.ID, a.BindingText, a.Lines, a.ExpiresAt)
+		n, err := s.approvalNotice(ctx, a.ID, a.BindingText, a.Lines, a.ExpiresAt, keepLink)
 		if err != nil {
 			return a, err
 		}

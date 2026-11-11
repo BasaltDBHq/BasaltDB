@@ -135,6 +135,7 @@ func serveLocalPages(origin string) (stop func(), served bool) {
 	if !ok {
 		return noop, false
 	}
+	// No agents: the registration page only, no short links.
 	site := pages.New(origin, slog.New(slog.DiscardHandler))
 	ln, h, err := server.Listen(server.Options{}, "registration page", addr, site.Handler())
 	if err != nil {

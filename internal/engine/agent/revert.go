@@ -194,7 +194,13 @@ func (s *Service) revertNotice(ctx context.Context, r ledger.Revert) (string, st
 	if err != nil {
 		return "", "", err
 	}
-	link := s.shortLink(links.Revert, r.ID, long)
+	link, err := s.shortLink(links.Revert, r.ID, r.ExpiresAt, issueLink)
+	if err != nil {
+		return "", "", err
+	}
+	if link == "" {
+		link = long
+	}
 	msg := fmt.Sprintf("A revert is waiting for your passkey: %d rows to restore, %d left as they are. Review and sign: %s. Expires %s.",
 		r.Rows, r.Skipped, link, r.ExpiresAt.UTC().Format(personTime))
 	return link, msg, nil

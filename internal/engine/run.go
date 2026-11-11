@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -22,6 +23,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/pages"
 	"github.com/basaltdbhq/basaltdb/internal/engine/upkeep"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/notify/telegram"
 	"github.com/basaltdbhq/basaltdb/internal/server"
@@ -70,7 +72,7 @@ func Run(ctx context.Context, cfg config.Config, configArg string, log *slog.Log
 	if err != nil {
 		return err
 	}
-	env := agentEnv{cfg: cfg, configArg: configArg, pagesBase: base, pins: statePins(cfg.StateDirFor(runtime.GOOS), log), tg: tg}
+	env := agentEnv{cfg: cfg, configArg: configArg, pagesBase: base, stateDir: cfg.StateDirFor(runtime.GOOS), pins: statePins(cfg.StateDirFor(runtime.GOOS), log), tg: tg}
 	if site != nil {
 		env.pagesOrigin = site.origin
 	}
@@ -171,6 +173,7 @@ type agentEnv struct {
 	configArg   string
 	pagesBase   string
 	pagesOrigin string
+	stateDir    string
 	pins        upkeep.Pins
 	tg          *telegram.Notifier
 }
@@ -209,6 +212,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		PagesBase:   env.pagesBase,
 		CLIFlags:    cliFlags(a.Name, env.configArg),
 		PagesOrigin: env.pagesOrigin,
+		Links:       linkSecrets(env.stateDir, a.Name, log),
 		Log:         log,
 		Now:         time.Now,
 	})
@@ -259,3 +263,23 @@ func lookupUID(name string) (uint32, error) {
 	}
 	return uint32(uid), nil
 }
+
+// linkSecrets is agent's link-secret store, persisted in the state
+// directory (CONTRACT.md, Link secrets) so short links survive a restart.
+// A directory it cannot create, or a file it cannot read, is logged: the
+// store then starts empty, and those links are issued again.
+func linkSecrets(dir, agent string, log *slog.Logger) *links.Secrets {
+	if err := os.MkdirAll(dir, stateDirMode); err != nil {
+		log.Error("no state directory; short links last until the engine stops", "dir", dir, "err", err)
+		return links.NewSecrets(time.Now, rand.Reader)
+	}
+	s, err := links.OpenSecrets(filepath.Join(dir, agent+linkSecretsSuffix), time.Now, rand.Reader)
+	if err != nil {
+		log.Error("link secrets unreadable; earlier short links stop working", "err", err)
+	}
+	return s
+}
+
+// linkSecretsSuffix names an agent's link-secret file in the state
+// directory: <stateDir>/<agent>.links.json.
+const linkSecretsSuffix = ".links.json"

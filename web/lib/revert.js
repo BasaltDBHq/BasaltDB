@@ -14,7 +14,7 @@ import {
   relyingParty,
   revertResponseJSON,
 } from "./codec.js";
-import { fetchRequest, postResponse, relayPaths, revertDone, shortLinkId } from "./local.js";
+import { fetchRequest, isLongLink, linkSecret, postResponse, relayPaths, revertDone, shortLinkId } from "./local.js";
 import { $, REVERT_REOPEN, el, fail, linkFailure, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
@@ -129,7 +129,7 @@ const engineFetch = (path, init) => window.fetch(path, init);
 // null for a long link.
 async function loadRequest() {
   const id = shortLinkId(window.location.pathname, "reverts");
-  if (window.location.hash || id === null) {
+  if (isLongLink(window.location.hash) || id === null) {
     // A long link: the request is in the fragment, and names the same revert
     // as the path.
     const req = await parseRevertRequest(window.location.hash);
@@ -137,9 +137,12 @@ async function loadRequest() {
     return { req, relay: null };
   }
   const paths = relayPaths("reverts", id);
-  const req = await checkRevertRequest(await fetchRequest(engineFetch, paths.request));
+  // A short link: #s=<secret>. Without it the engine answers as for an
+  // unknown id.
+  const secret = linkSecret(window.location.hash);
+  const req = await checkRevertRequest(await fetchRequest(engineFetch, paths.request, secret));
   if (req.revertId !== id) throw new Error(`the engine sent revert ${req.revertId}, not ${id}`);
-  return { req, relay: paths.relay };
+  return { req, relay: { path: paths.relay, secret } };
 }
 
 // finish relays the signed response when the page came from a short link,
@@ -147,7 +150,7 @@ async function loadRequest() {
 async function finish(response, relay) {
   if (relay !== null) {
     try {
-      showDone(revertDone(await postResponse(engineFetch, relay, revertResponseJSON(response))));
+      showDone(revertDone(await postResponse(engineFetch, relay.path, relay.secret, revertResponseJSON(response))));
       return;
     } catch (err) {
       showRelayFailed(`The engine did not take the revert: ${err.message}. To finish by hand, paste the code below into basalt revert --apply.`);

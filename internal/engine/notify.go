@@ -48,5 +48,6 @@ func (t telegramNotifier) NotifyHeld(ctx context.Context, h agent.HeldNotice) er
 	return t.n.NotifyHeld(ctx, telegram.Notice{
 		ApprovalID: h.ApprovalID, Agent: h.Agent, Database: t.database, Intent: h.Intent,
 		Statement: h.Statement, Headline: h.Headline, ExpiresAt: h.ExpiresAt, ApprovalURL: h.ApprovalURL,
+		ShortURL: h.ShortURL,
 	})
 }

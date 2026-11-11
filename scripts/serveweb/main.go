@@ -33,6 +33,7 @@ func main() {
 
 func run(port, dir string) error {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	// No agents, so no link is ever issued: short links answer 404.
 	site := pages.NewWithFiles("http://localhost:"+port, log, os.DirFS(dir))
 	ln, h, err := server.Listen(server.Options{}, "dev pages", "127.0.0.1:"+port, site.Handler())
 	if err != nil {

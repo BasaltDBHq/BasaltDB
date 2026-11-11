@@ -198,6 +198,13 @@ func TestHeldMessage(t *testing.T) {
 		require.Contains(t, m.Text, "Statement: DELETE FROM public.leads WHERE source = $1")
 		require.Contains(t, m.Text, "Expires: 2026-11-11 23:02 UTC")
 	})
+	t.Run("the engine's short link with its secret: in the text", func(t *testing.T) {
+		n := notice(approvalURL(2048))
+		n.ShortURL = "http://localhost:8787/approvals/0193a4c2-7d1e-7c3a-9f00-0000000000a1#s=c2VjcmV0LXNlY3JldC0xMg"
+		m := telegram.HeldMessage(n)
+		require.Contains(t, m.Text, "\nOn the engine's computer: "+n.ShortURL)
+		require.Equal(t, approvalURL(2048), m.Button.URL, "the button keeps the long link")
+	})
 	t.Run("longer link: in the text", func(t *testing.T) {
 		m := telegram.HeldMessage(notice(approvalURL(3000)))
 		require.Nil(t, m.Button)

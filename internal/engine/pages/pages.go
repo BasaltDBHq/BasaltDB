@@ -95,10 +95,11 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /style.css", files)
 	mux.HandleFunc("GET "+links.ApprovalsPath+"{id}", s.page("approve/index.html"))
 	mux.HandleFunc("GET "+links.RevertsPath+"{id}", s.page("revert/index.html"))
-	mux.HandleFunc("GET "+links.RegisterPath, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-store")
-		http.ServeFileFS(w, r, s.files, "register/index.html")
-	})
+	mux.HandleFunc("GET "+links.RegisterPath, s.static("register/index.html"))
+	// The passkey management page (M4.1): static, input in the fragment,
+	// no relay.
+	mux.HandleFunc("GET "+links.CheckPath, s.static("passkeys/index.html"))
+	mux.HandleFunc("GET "+links.ForgetPath, s.static("passkeys/index.html"))
 	mux.HandleFunc("GET /api/v1/approvals/{approvalId}", s.getApproval)
 	mux.HandleFunc("POST /api/v1/approvals/{approvalId}/approve", s.postApproval)
 	mux.HandleFunc("GET /api/v1/reverts/{revertId}", s.getRevert)
@@ -117,6 +118,14 @@ func libFile(files http.Handler) http.Handler {
 		}
 		files.ServeHTTP(w, r)
 	})
+}
+
+// static serves a page that takes everything from its URL fragment.
+func (s *Server) static(name string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		http.ServeFileFS(w, r, s.files, name)
+	}
 }
 
 // page serves the page a short link opens; the page reads the id from its

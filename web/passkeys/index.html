@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex">
+  <title>Your passkeys</title>
+  <link rel="stylesheet" href="../style.css">
+  <script type="module" src="../lib/passkeys.js"></script>
+</head>
+<body>
+  <header><span class="brand">BasaltDB</span> passkeys</header>
+
+  <section id="error" class="panel error" hidden>
+    <h1>Cannot use this link</h1>
+    <p id="error-text"></p>
+  </section>
+
+  <main id="main" hidden>
+    <section id="check" hidden>
+      <h1>Which of your passkeys does this device have?</h1>
+      <p>Check each passkey below. This device signs a check that cannot approve or revert anything. A passkey this device cannot produce shows as not found; <code>basalt passkey check</code> then offers to remove it.</p>
+      <ul id="credentials" class="rows"></ul>
+      <section id="action" class="panel">
+        <button id="done" type="button">Done: show the code</button>
+        <p id="status" class="muted" role="status"></p>
+      </section>
+      <section id="result" class="panel" hidden>
+        <h2>Result</h2>
+        <p>Paste this code into the <code>basalt passkey check</code> prompt.</p>
+        <textarea id="code" readonly rows="5"></textarea>
+        <div class="buttons">
+          <button id="copy" type="button">Copy</button>
+          <button id="share" type="button" hidden>Share</button>
+        </div>
+      </section>
+    </section>
+
+    <section id="forget" hidden>
+      <h1>Forget a removed passkey</h1>
+      <p>BasaltDB revoked <strong id="removed-labels"></strong> for <strong id="rp-id"></strong>. It can no longer approve or revert. This page asks this device's password manager to forget it too.</p>
+      <section class="panel">
+        <button id="signal" type="button">Tell this device</button>
+        <p id="signal-status" class="muted" role="status"></p>
+      </section>
+    </section>
+  </main>
+</body>
+</html>

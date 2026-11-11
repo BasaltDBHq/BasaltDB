@@ -48,6 +48,7 @@ func commands() []command {
 		{"log", "Show an agent's change records", withIO(runLog)},
 		{"approve", "Relay the code the approval page gave you to Postgres (or --show a held write's link)", withIO(runApprove)},
 		{"revert", "Revert a change, run or task with your passkey; people's later edits are kept", withIO(runRevert)},
+		{"passkey", "List, check or remove your passkeys (list | check | remove <id>)", withIO(runPasskey)},
 		{"uninstall", "Remove the guard, its ledger and its roles from Postgres", withIO(runUninstall)},
 		{"version", "Print the version", runVersion},
 		{"help", "Show this help", nil},

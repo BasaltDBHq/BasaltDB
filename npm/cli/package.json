@@ -1,0 +1,33 @@
+{
+  "name": "@basaltdb/cli",
+  "version": "0.0.0-dev",
+  "description": "BasaltDB CLI (Apache-2.0). Unscoped name basaltdb is a different project.",
+  "license": "Apache-2.0",
+  "bin": {
+    "basalt": "bin/basalt.js"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BasaltDBHq/BasaltDB.git"
+  },
+  "mcpName": "io.github.basaltdbhq/basaltdb",
+  "homepage": "https://github.com/BasaltDBHq/BasaltDB",
+  "bugs": {
+    "url": "https://github.com/BasaltDBHq/BasaltDB/issues"
+  },
+  "optionalDependencies": {
+    "@basaltdb/linux-x64": "0.0.0-dev",
+    "@basaltdb/linux-arm64": "0.0.0-dev",
+    "@basaltdb/darwin-x64": "0.0.0-dev",
+    "@basaltdb/darwin-arm64": "0.0.0-dev",
+    "@basaltdb/win32-x64": "0.0.0-dev"
+  }
+}

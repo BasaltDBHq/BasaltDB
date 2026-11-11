@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex">
+  <title>Revert agent changes</title>
+  <link rel="stylesheet" href="../style.css">
+  <script type="module" src="../lib/revert.js"></script>
+</head>
+<body>
+  <header><span class="brand">BasaltDB</span> revert</header>
+
+  <section id="error" class="panel error" hidden>
+    <h1>Cannot revert</h1>
+    <p id="error-text"></p>
+  </section>
+
+  <main id="main" hidden>
+    <h1>Revert what the agent changed</h1>
+    <dl class="summary">
+      <dt>Scope</dt><dd id="scope"></dd>
+      <dt>Agents</dt><dd id="agents"></dd>
+      <dt>Database</dt><dd id="database"></dd>
+      <dt>Why</dt><dd id="intent"></dd>
+      <dt>Restored</dt><dd id="rows"></dd>
+      <dt>Left alone</dt><dd id="skipped"></dd>
+      <dt>Plan</dt><dd id="plan"></dd>
+      <dt>Sign by</dt><dd id="expires"></dd>
+    </dl>
+
+    <h2 id="restore-title">Rows that will be restored</h2>
+    <p id="restore-note" class="muted">Highlighted values change back to what they were before the agent. Postgres checks these exact rows again before the revert runs; if any changed, nothing is written.</p>
+    <ol id="restore" class="rows"></ol>
+
+    <section id="skip-section" hidden>
+      <h2 id="skip-title">Rows left as they are</h2>
+      <p class="muted">Someone changed these rows after the agent, or they cannot be restored. People win: the revert does not touch them.</p>
+      <ol id="skip" class="rows"></ol>
+    </section>
+
+    <section id="action" class="panel">
+      <button id="sign" type="button">Revert with my passkey</button>
+      <p id="status" class="muted" role="status"></p>
+      <p class="muted">To cancel, close this page. Without your passkey nothing is reverted, and this link expires on its own.</p>
+    </section>
+
+    <section id="result" class="panel" hidden>
+      <h2>Signed</h2>
+      <p>Paste this code into <code>basalt revert</code> on your computer. It only works for this revert.</p>
+      <textarea id="code" readonly rows="5"></textarea>
+      <div class="buttons">
+        <button id="copy" type="button">Copy</button>
+        <button id="share" type="button" hidden>Share</button>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

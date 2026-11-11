@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/binding.v1.json",
+  "title": "Approval binding",
+  "description": "The jsonb text basalt_meta.hold_action builds. The WebAuthn challenge is sha256 of its UTF-8 bytes. Clients parse it for display and never re-serialise it. See CONTRACT.md, Approvals.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "approvalId",
+    "database",
+    "agent",
+    "runId",
+    "intent",
+    "statement",
+    "params",
+    "assignedColumns",
+    "rows",
+    "rowsHash",
+    "expiresAt"
+  ],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "APPROVE"
+      ],
+      "description": "Reverts (M3) use kind REVERT in their own binding, api/mcp/revert/revert-binding.schema.json."
+    },
+    "approvalId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "database": {
+      "type": "string",
+      "description": "current_database() of the guarded database."
+    },
+    "agent": {
+      "type": "string",
+      "description": "The agent role's name (session_user)."
+    },
+    "runId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "taskId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "intent": {
+      "type": "string"
+    },
+    "statement": {
+      "type": "string"
+    },
+    "params": {
+      "type": "array",
+      "description": "Values bound to $1, $2, ... as the agent sent them."
+    },
+    "assignedColumns": {
+      "type": "array",
+      "description": "Columns of the target table the statement assigns; their new values are bound.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "rows": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50
+    },
+    "rowsHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Lowercase hex sha256 of the preview lines joined by a newline."
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 UTC with microseconds, 24 hours after the hold."
+    }
+  }
+}

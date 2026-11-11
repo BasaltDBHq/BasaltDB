@@ -1,0 +1,131 @@
+{
+  "name": "list_pending",
+  "status": "IMPLEMENTED",
+  "milestone": "M2",
+  "description": "This agent's held writes that have not been applied and have not expired: waiting for the person's passkey (PENDING) or approved and ready to apply with write and approvalId (APPROVED). Each carries the approval link to send to the person. Newest first, cursor-paginated. Listing never approves anything.",
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "runId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Only held writes of this run."
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "PENDING",
+          "APPROVED"
+        ],
+        "description": "Only held writes in this state. Default both."
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Page size, default 50, clamped to 200."
+      },
+      "cursor": {
+        "type": "string",
+        "description": "nextCursor from the previous page."
+      },
+      "sort": {
+        "type": "string",
+        "pattern": "^-?id$",
+        "description": "id or -id. Default -id (newest first)."
+      }
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "items"
+    ],
+    "properties": {
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "approvalId",
+            "runId",
+            "intent",
+            "statement",
+            "rows",
+            "status",
+            "createdAt",
+            "expiresAt",
+            "approvalUrl"
+          ],
+          "properties": {
+            "approvalId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "runId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "taskId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "intent": {
+              "type": "string"
+            },
+            "statement": {
+              "type": "string"
+            },
+            "params": {
+              "type": "array",
+              "description": "Values bound to $1, $2, ..."
+            },
+            "assignedColumns": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Columns whose new values the approval binds (CONTRACT.md, Approvals)."
+            },
+            "rows": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Rows the held write changes, cascaded rows included."
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "APPROVED"
+              ]
+            },
+            "createdAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "expiresAt": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "approvalUrl": {
+              "type": "string",
+              "format": "uri",
+              "description": "https://basaltvault.app/approve/#1.<request>; the request carries the preview the person signs."
+            }
+          }
+        }
+      },
+      "nextCursor": {
+        "type": "string",
+        "description": "Absent on the last page."
+      }
+    }
+  },
+  "errors": [
+    "INVALID_ARGUMENT",
+    "NOT_FOUND",
+    "UNAVAILABLE",
+    "INTERNAL"
+  ]
+}

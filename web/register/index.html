@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex">
+  <title>Register your passkey</title>
+  <link rel="stylesheet" href="../style.css">
+  <script type="module" src="../lib/register.js"></script>
+</head>
+<body>
+  <header><span class="brand">BasaltDB</span> passkey</header>
+
+  <section id="error" class="panel error" hidden>
+    <h1>Cannot register</h1>
+    <p id="error-text"></p>
+  </section>
+
+  <main id="main" hidden>
+    <h1>Register the passkey that approves agent changes</h1>
+    <p>This creates a passkey named <strong id="user-name"></strong> for <strong id="rp-id"></strong>. Only this passkey can approve held writes and reverts in that database. Agents never get it.</p>
+
+    <section id="action" class="panel">
+      <button id="register" type="button">Create passkey</button>
+      <p id="status" class="muted" role="status"></p>
+    </section>
+
+    <section id="result" class="panel" hidden>
+      <h2>Created</h2>
+      <p>Paste this code into the <code>basalt init</code> prompt. It holds only the public key.</p>
+      <textarea id="code" readonly rows="5"></textarea>
+      <div class="buttons">
+        <button id="copy" type="button">Copy</button>
+        <button id="share" type="button" hidden>Share</button>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.basaltdbhq/basaltdb",
+  "title": "BasaltDB",
+  "description": "The action ledger for AI agents on your Postgres (MCP).",
+  "repository": {
+    "url": "https://github.com/BasaltDBHq/BasaltDB",
+    "source": "github"
+  },
+  "version": "0.0.0-dev",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@basaltdb/cli",
+      "version": "0.0.0-dev",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

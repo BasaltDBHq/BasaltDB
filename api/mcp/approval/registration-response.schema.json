@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/registration-response.v1.json",
+  "title": "Passkey registration response",
+  "description": "What the registration page outputs, as the text basalt-passkey.1.<base64url(this JSON)>. Byte fields are base64url without padding. basalt init verifies it and stores the public key. See CONTRACT.md, Approvals.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "credentialId",
+    "clientDataJson",
+    "authenticatorData",
+    "publicKey",
+    "publicKeyAlgorithm"
+  ],
+  "properties": {
+    "credentialId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "clientDataJson": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "authenticatorData": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "description": "From getAuthenticatorData(); carries the attested credential id."
+    },
+    "publicKey": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "description": "SubjectPublicKeyInfo DER from getPublicKey()."
+    },
+    "publicKeyAlgorithm": {
+      "type": "integer",
+      "const": -7,
+      "description": "COSE ES256, the only algorithm accepted."
+    }
+  }
+}

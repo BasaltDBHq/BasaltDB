@@ -1,0 +1,58 @@
+{
+  "name": "run_start",
+  "status": "IMPLEMENTED",
+  "milestone": "M1",
+  "description": "Start a run: one task with one intent, the unit a person reviews and reverts. Pass the runId to later write and query calls. Pass taskId to join a task another agent started.",
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "intent"
+    ],
+    "properties": {
+      "intent": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500,
+        "description": "Why this run exists, in a sentence a person can review."
+      },
+      "taskId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "A task shared with other agents. A new task is created when absent."
+      }
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "runId",
+      "taskId",
+      "intent",
+      "startedAt"
+    ],
+    "properties": {
+      "runId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "taskId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "intent": {
+        "type": "string"
+      },
+      "startedAt": {
+        "type": "string",
+        "format": "date-time"
+      }
+    }
+  },
+  "errors": [
+    "INVALID_ARGUMENT",
+    "UNAVAILABLE",
+    "INTERNAL"
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/registration-request.v1.json",
+  "title": "Passkey registration request",
+  "description": "What basalt init puts in the registration link: https://basaltvault.app/register/#1.<base64url(this JSON)>. See CONTRACT.md, Approvals.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "challenge",
+    "userId",
+    "userName",
+    "displayName"
+  ],
+  "properties": {
+    "challenge": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$",
+      "description": "32 random bytes, base64url."
+    },
+    "userId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$",
+      "description": "16 random bytes, base64url."
+    },
+    "userName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Label in the passkey picker, e.g. the database name."
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    }
+  }
+}

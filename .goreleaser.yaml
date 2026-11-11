@@ -1,0 +1,92 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+# One binary, basalt. All release binaries are CGO_ENABLED=0 static builds.
+# Version tags are created manually (see docs/RELEASING.md). CI never
+# creates or pushes git tags. Branch/PR builds use --snapshot (no GitHub
+# Release, no registry publish).
+project_name: basaltdb
+
+builds:
+  - id: basalt
+    main: ./cmd/basalt
+    binary: basalt
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X github.com/basaltdbhq/basaltdb/internal/buildinfo.Version={{.Env.BASALT_VERSION}}
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    # Flat archives so install.sh can copy binaries from the extract root.
+    wrap_in_directory: false
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+nfpms:
+  - id: linux-packages
+    ids: [basalt]
+    package_name: basaltdb
+    file_name_template: "{{ .PackageName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    homepage: "https://github.com/{{ .Env.GITHUB_REPOSITORY }}"
+    maintainer: Iman Tumorang <iman@tumorang.com>
+    description: |-
+      The action ledger for AI agents on your Postgres. Not a database.
+      Open source under Apache-2.0.
+    license: Apache-2.0
+    formats: [deb, rpm, apk]
+    bindir: /usr/bin
+    section: database
+    contents:
+      - src: LICENSE
+        dst: /usr/share/doc/basaltdb/LICENSE
+      - src: README.md
+        dst: /usr/share/doc/basaltdb/README.md
+
+checksum:
+  name_template: SHA256SUMS
+  algorithm: sha256
+
+changelog:
+  disable: true
+
+# Snapshot archive names (CI Actions artifacts only). CI never tags
+# and never publishes these to GitHub Releases.
+snapshot:
+  version_template: "0.0.0-nightly"
+
+# Published only on v* tags when HOMEBREW_TAP_GITHUB_TOKEN is set.
+# The workflow passes --skip=homebrew otherwise so a missing tap/secret is a no-op.
+# Default tap is BasaltDBHq/homebrew-tap (install: brew install basaltdbhq/tap/basaltdb).
+brews:
+  - name: basaltdb
+    homepage: "https://github.com/{{ .Env.GITHUB_REPOSITORY }}"
+    description: The action ledger for AI agents on your Postgres
+    license: Apache-2.0
+    directory: Formula
+    repository:
+      owner: '{{ or .Env.HOMEBREW_TAP_OWNER "BasaltDBHq" }}'
+      name: '{{ or .Env.HOMEBREW_TAP_NAME "homebrew-tap" }}'
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    install: |
+      bin.install "basalt"
+    skip_upload: '{{ or (ne .Env.RELEASE_KIND "tag") (eq .Env.HOMEBREW_TAP_GITHUB_TOKEN "") }}'
+
+release:
+  name_template: "{{ .Tag }}"
+  # Semver prerelease suffix (-alpha / -beta / -rc) → GitHub prerelease.
+  prerelease: auto
+  mode: replace

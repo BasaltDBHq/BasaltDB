@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/preview-line.v1.json",
+  "title": "Preview line",
+  "description": "One affected row of a held write, as jsonb text from basalt_meta.preview_lines. Lines are ordered COLLATE \"C\". See CONTRACT.md, Approvals.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "op",
+        "key",
+        "old",
+        "set",
+        "table",
+        "cascaded"
+      ],
+      "properties": {
+        "op": {
+          "type": "string",
+          "enum": [
+            "INSERT",
+            "UPDATE",
+            "DELETE"
+          ]
+        },
+        "key": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Primary key of the old row; null for INSERT."
+        },
+        "old": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Full old row; null for INSERT."
+        },
+        "set": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "New values of the assigned columns; null for DELETE and cascaded rows."
+        },
+        "table": {
+          "type": "string",
+          "description": "Schema-qualified table name."
+        },
+        "cascaded": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "op",
+        "table",
+        "rowHash",
+        "cascaded",
+        "redacted"
+      ],
+      "properties": {
+        "op": {
+          "type": "string",
+          "enum": [
+            "INSERT",
+            "UPDATE",
+            "DELETE"
+          ]
+        },
+        "table": {
+          "type": "string"
+        },
+        "rowHash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Lowercase hex sha256 of jsonb_build_array(key, old, set)::text."
+        },
+        "cascaded": {
+          "type": "boolean"
+        },
+        "redacted": {
+          "const": true,
+          "description": "The agent role cannot SELECT this table, so key and values are hidden."
+        }
+      }
+    }
+  ]
+}

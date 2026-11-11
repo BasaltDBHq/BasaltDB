@@ -1,0 +1,175 @@
+{
+  "name": "preview_revert",
+  "status": "IMPLEMENTED",
+  "milestone": "M3",
+  "description": "What reverting one change, one run, or one task (across agents) would do, without doing it: each row the revert would restore (RESTORE) and each row it would leave alone because someone changed it after the agent (SKIP, with the reason). People win: a skipped row is never overwritten. The preview runs the revert on trial and rolls it back. Nothing is reverted through MCP: only a person can revert, with their passkey, by running the returned command. Name exactly one of changeId, runId, taskId. Lines are cursor-paginated in their signed order. Any size can be previewed; a revert over 1000 lines becomes a plan the agent applies in batches after the person signs it (revert_plan, apply_revert_batch).",
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "changeId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Revert one change (a revert's own changeId reverts that revert)."
+      },
+      "runId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Revert every applied change of one run."
+      },
+      "taskId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Revert every applied change of one task, by any agent."
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Page size, default 50, clamped to 200."
+      },
+      "cursor": {
+        "type": "string",
+        "description": "nextCursor from the previous page."
+      }
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "scope",
+      "scopeId",
+      "rows",
+      "skipped",
+      "command",
+      "items"
+    ],
+    "properties": {
+      "scope": {
+        "type": "string",
+        "enum": [
+          "CHANGE",
+          "RUN",
+          "TASK"
+        ]
+      },
+      "scopeId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "rows": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "RESTORE lines in the whole preview."
+      },
+      "skipped": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "SKIP lines in the whole preview."
+      },
+      "command": {
+        "type": "string",
+        "description": "The command the person runs to revert, e.g. basalt revert --run <runId>."
+      },
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "action",
+            "op",
+            "table",
+            "cascaded",
+            "changeIds"
+          ],
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": [
+                "RESTORE",
+                "SKIP"
+              ]
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "INSERT",
+                "UPDATE",
+                "DELETE"
+              ],
+              "description": "The inverse write the revert would run."
+            },
+            "table": {
+              "type": "string"
+            },
+            "key": {
+              "type": "object",
+              "description": "Absent when redacted."
+            },
+            "now": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "The row as it is now. Absent when redacted."
+            },
+            "set": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "The values the revert would write. Absent when redacted."
+            },
+            "conflict": {
+              "type": "string",
+              "enum": [
+                "CHANGED_AFTER",
+                "ROW_GONE",
+                "KEY_TAKEN",
+                "ALREADY_REVERTED",
+                "VALUES_PRUNED",
+                "SCHEMA_CHANGED",
+                "CASCADE",
+                "CONSTRAINT"
+              ],
+              "description": "Set on SKIP lines only."
+            },
+            "sqlState": {
+              "type": "string",
+              "description": "Set on CONSTRAINT conflicts only."
+            },
+            "cascaded": {
+              "type": "boolean"
+            },
+            "redacted": {
+              "type": "boolean",
+              "description": "True when this agent cannot SELECT the table; key and values are hidden."
+            },
+            "rowHash": {
+              "type": "string",
+              "description": "Set when redacted."
+            },
+            "changeIds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          }
+        }
+      },
+      "nextCursor": {
+        "type": "string",
+        "description": "Absent on the last page."
+      }
+    }
+  },
+  "errors": [
+    "INVALID_ARGUMENT",
+    "NOT_FOUND",
+    "UNAVAILABLE",
+    "INTERNAL"
+  ]
+}

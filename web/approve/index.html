@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex">
+  <title>Approve a held write</title>
+  <link rel="stylesheet" href="../style.css">
+  <script type="module" src="../lib/approve.js"></script>
+</head>
+<body>
+  <header><span class="brand">BasaltDB</span> approval</header>
+
+  <section id="error" class="panel error" hidden>
+    <h1>Cannot approve</h1>
+    <p id="error-text"></p>
+  </section>
+
+  <main id="main" hidden>
+    <h1>An agent wants to make this change</h1>
+    <p id="headline" class="headline"></p>
+    <dl class="summary">
+      <dt>Agent</dt><dd id="agent"></dd>
+      <dt>Database</dt><dd id="database"></dd>
+      <dt>Why</dt><dd id="intent"></dd>
+      <dt>Statement</dt><dd><pre id="statement"></pre></dd>
+      <dt>Parameters</dt><dd><pre id="params"></pre></dd>
+      <dt>Rows</dt><dd id="rows"></dd>
+      <dt>Expires</dt><dd id="expires"></dd>
+    </dl>
+
+    <h2>Every row it will change</h2>
+    <p class="muted">Highlighted values are what the statement sets. Postgres checks these exact rows again before the change commits.</p>
+    <ol id="lines" class="rows"></ol>
+
+    <section id="action" class="panel">
+      <label id="cascade-confirm" class="confirm" hidden>
+        <input id="cascade-ok" type="checkbox">
+        <span id="cascade-text"></span>
+      </label>
+      <button id="approve" type="button">Approve with my passkey</button>
+      <p id="status" class="muted" role="status"></p>
+      <p class="muted">To refuse, close this page. Without your passkey the change never happens, and it expires on its own.</p>
+    </section>
+
+    <section id="result" class="panel" hidden>
+      <h2>Signed</h2>
+      <p>Paste this code into <code>basalt approve</code> on your computer, or into the agent's chat. It only works for this change.</p>
+      <textarea id="code" readonly rows="5"></textarea>
+      <div class="buttons">
+        <button id="copy" type="button">Copy</button>
+        <button id="share" type="button" hidden>Share</button>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

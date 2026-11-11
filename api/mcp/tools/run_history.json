@@ -1,0 +1,274 @@
+{
+  "name": "run_history",
+  "status": "IMPLEMENTED",
+  "milestone": "M1",
+  "description": "The change records of one run of this agent, applied and refused, with the rows each change wrote (cascades included; values of tables the agent cannot read are redacted, values older than 30 days pruned). Newest first, cursor-paginated.",
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "runId"
+    ],
+    "properties": {
+      "runId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Page size, default 50, clamped to 200."
+      },
+      "cursor": {
+        "type": "string",
+        "description": "nextCursor from the previous page."
+      },
+      "sort": {
+        "type": "string",
+        "pattern": "^-?id$",
+        "description": "id or -id. Default -id (newest first)."
+      }
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "items"
+    ],
+    "properties": {
+      "items": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/changeRecord"
+        }
+      },
+      "nextCursor": {
+        "type": "string",
+        "description": "Absent on the last page."
+      }
+    },
+    "$defs": {
+      "changeRecord": {
+        "type": "object",
+        "required": [
+          "changeId",
+          "at",
+          "actor",
+          "target",
+          "rows",
+          "cascadedRows",
+          "status",
+          "rowChanges"
+        ],
+        "properties": {
+          "changeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "actor": {
+            "type": "object",
+            "required": [
+              "kind",
+              "name"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "AGENT",
+                  "PERSON"
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "runId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "taskId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          },
+          "intent": {
+            "type": "string"
+          },
+          "target": {
+            "type": "object",
+            "properties": {
+              "table": {
+                "type": "string"
+              }
+            }
+          },
+          "op": {
+            "type": "string",
+            "enum": [
+              "SELECT",
+              "INSERT",
+              "UPDATE",
+              "DELETE",
+              "OTHER",
+              "REVERT"
+            ]
+          },
+          "statement": {
+            "type": "string"
+          },
+          "params": {
+            "type": "array",
+            "description": "Values bound to $1, $2, ...; pruned after 30 days."
+          },
+          "durationMs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "rows": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows the action changed, cascaded rows included; for a SELECT, rows returned."
+          },
+          "cascadedRows": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "APPLIED",
+              "APPROVAL_PENDING",
+              "REFUSED",
+              "APPROVAL_EXPIRED",
+              "REVERTED"
+            ]
+          },
+          "reason": {
+            "type": "object",
+            "description": "Set when status is REFUSED.",
+            "required": [
+              "code"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Error code from CONTRACT.md."
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          },
+          "rowChanges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "table",
+                "op",
+                "cascaded",
+                "redacted",
+                "pruned"
+              ],
+              "properties": {
+                "table": {
+                  "type": "string"
+                },
+                "op": {
+                  "type": "string",
+                  "enum": [
+                    "INSERT",
+                    "UPDATE",
+                    "DELETE"
+                  ]
+                },
+                "key": {
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "before": {
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "after": {
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "cascaded": {
+                  "type": "boolean"
+                },
+                "redacted": {
+                  "type": "boolean"
+                },
+                "pruned": {
+                  "type": "boolean"
+                },
+                "basedOn": {
+                  "$ref": "#/$defs/basedOn",
+                  "description": "UPDATE or DELETE of a row the run had read."
+                },
+                "blindWrite": {
+                  "type": "boolean",
+                  "description": "UPDATE or DELETE of a row the run never read: allowed and marked."
+                }
+              }
+            }
+          },
+          "basedOn": {
+            "$ref": "#/$defs/basedOn",
+            "description": "Set when the change wrote exactly one non-cascaded row and the run had read it."
+          },
+          "revertId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "On a revert's own record (op REVERT, actor PERSON): the revert it carried out."
+          },
+          "revertedBy": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Revert changes that restored rows of this change. Status is REVERTED only when every row was restored; a partly reverted change stays APPLIED."
+          }
+        }
+      },
+      "basedOn": {
+        "type": "object",
+        "description": "The version of the row the run read before this write.",
+        "required": [
+          "version"
+        ],
+        "properties": {
+          "version": {
+            "type": "string",
+            "pattern": "^xmin:[0-9]+$"
+          },
+          "changeId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The read (or earlier write) of this run that saw that version."
+          }
+        }
+      }
+    }
+  },
+  "errors": [
+    "INVALID_ARGUMENT",
+    "NOT_FOUND",
+    "UNAVAILABLE",
+    "INTERNAL"
+  ]
+}

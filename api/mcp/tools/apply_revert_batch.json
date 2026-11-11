@@ -1,0 +1,128 @@
+{
+  "name": "apply_revert_batch",
+  "status": "IMPLEMENTED",
+  "milestone": "M3",
+  "description": "Apply up to 200 lines of a large revert plan that the person signed with their passkey. Only the agent that prepared the plan can apply it, only lines in the plan, each at most once, within 24 hours of the signature. Each line is checked again with its row locked: a row someone changed after the plan was built is skipped (people win), never overwritten. A batch that fails a check writes nothing. Get the line numbers from revert_plan with pending: true, in order; repeat until pending is 0.",
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "revertId",
+      "lines"
+    ],
+    "properties": {
+      "revertId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "lines": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 200,
+        "uniqueItems": true,
+        "items": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "description": "Line numbers from revert_plan, still pending."
+      }
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "revertId",
+      "batch",
+      "status",
+      "restored",
+      "skipped",
+      "pending",
+      "items"
+    ],
+    "properties": {
+      "revertId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "batch": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "This batch's number in the plan."
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "APPLYING",
+          "APPLIED"
+        ],
+        "description": "APPLIED when this batch left no line pending."
+      },
+      "restored": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Lines of the whole plan restored so far."
+      },
+      "skipped": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Lines of the whole plan skipped so far."
+      },
+      "pending": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Lines of the whole plan not applied yet."
+      },
+      "items": {
+        "type": "array",
+        "description": "This batch's lines, in the order given.",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "line",
+            "outcome"
+          ],
+          "properties": {
+            "line": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "outcome": {
+              "type": "string",
+              "enum": [
+                "RESTORED",
+                "SKIPPED"
+              ]
+            },
+            "conflict": {
+              "type": "string",
+              "enum": [
+                "CHANGED_AFTER",
+                "ROW_GONE",
+                "KEY_TAKEN",
+                "ALREADY_REVERTED",
+                "VALUES_PRUNED",
+                "SCHEMA_CHANGED",
+                "CASCADE",
+                "CONSTRAINT"
+              ],
+              "description": "Set on SKIPPED only."
+            },
+            "sqlState": {
+              "type": "string",
+              "description": "Set on CONSTRAINT conflicts only."
+            }
+          }
+        }
+      }
+    }
+  },
+  "errors": [
+    "INVALID_ARGUMENT",
+    "REVERT_INVALID",
+    "REVERT_EXPIRED",
+    "UNAVAILABLE",
+    "INTERNAL"
+  ]
+}

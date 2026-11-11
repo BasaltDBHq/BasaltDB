@@ -1,0 +1,9 @@
+# BasaltDB
+
+> The action ledger for AI agents on your database. Not a database: your data stays in your own Postgres. One Go binary next to each agent, reached over MCP, plus a guard installed in your Postgres that records, holds and reverts agent writes.
+
+## Start here
+
+- [README](README.md): what BasaltDB is, what it is not, and the milestone status
+- [Foundation](docs/redesign/specs/2026-11-11-basalt-foundation-final.md): the product definition, architecture, default policy and change record
+- [Roadmap](docs/redesign/plans/2026-11-11-roadmap-m0-m3.md): milestones and what is built so far

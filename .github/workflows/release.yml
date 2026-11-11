@@ -1,0 +1,127 @@
+name: Release
+
+# Only a v* tag pushed by hand (docs/RELEASING.md).
+# Never runs on master/main, pull_request, or workflow_dispatch.
+# This workflow never creates or pushes git tags.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Refuse non-tag publish
+        run: test "$(sh scripts/release-kind.sh "${GITHUB_EVENT_NAME}" "${GITHUB_REF}")" = tag
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set version
+        env:
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          HOMEBREW_TAP_OWNER: ${{ vars.HOMEBREW_TAP_OWNER }}
+          HOMEBREW_TAP_NAME: ${{ vars.HOMEBREW_TAP_NAME }}
+        run: |
+          set -euo pipefail
+          sh scripts/require-v-tag.sh "${GITHUB_REF_NAME}"
+          extra=""
+          echo "HOMEBREW_TAP_OWNER=${HOMEBREW_TAP_OWNER:-BasaltDBHq}" >> "${GITHUB_ENV}"
+          echo "HOMEBREW_TAP_NAME=${HOMEBREW_TAP_NAME:-homebrew-tap}" >> "${GITHUB_ENV}"
+          echo "BASALT_VERSION=${GITHUB_REF_NAME}" >> "${GITHUB_ENV}"
+          echo "RELEASE_KIND=tag" >> "${GITHUB_ENV}"
+          echo "ARTIFACT_NAME=${GITHUB_REF_NAME}" >> "${GITHUB_ENV}"
+          if [[ -z "${HOMEBREW_TAP_GITHUB_TOKEN}" ]]; then
+            extra="--skip=homebrew"
+            echo "Skipping Homebrew publish."
+            echo "::notice::HOMEBREW_TAP_GITHUB_TOKEN is empty; skipping Homebrew. Tap is BasaltDBHq/homebrew-tap (override HOMEBREW_TAP_OWNER / HOMEBREW_TAP_NAME)."
+          fi
+          echo "GORELEASER_ARGS=${extra}" >> "${GITHUB_ENV}"
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean ${{ env.GORELEASER_ARGS }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BASALT_VERSION: ${{ env.BASALT_VERSION }}
+          RELEASE_KIND: ${{ env.RELEASE_KIND }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          HOMEBREW_TAP_OWNER: ${{ env.HOMEBREW_TAP_OWNER }}
+          HOMEBREW_TAP_NAME: ${{ env.HOMEBREW_TAP_NAME }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: basaltdb-${{ env.ARTIFACT_NAME }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.deb
+            dist/*.rpm
+            dist/*.apk
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+  npm:
+    name: Publish npm
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: https://registry.npmjs.org
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: basaltdb-${{ github.ref_name }}
+          path: dist
+
+      - name: Publish @basaltdb/cli
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+        run: sh scripts/npm-publish.sh
+
+  mcp-registry:
+    name: Publish MCP registry
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Publish server.json
+        env:
+          MCP_REGISTRY_TOKEN: ${{ secrets.MCP_REGISTRY_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: sh scripts/mcp-registry-publish.sh

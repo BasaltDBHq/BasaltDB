@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/approval-response.v1.json",
+  "title": "Approval response",
+  "description": "What the approval page outputs, as the text basalt-approval.1.<base64url(this JSON)>. Byte fields are base64url without padding. Any relay may carry it; basalt_meta.submit_approval verifies it. See CONTRACT.md, Approvals.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "approvalId",
+    "credentialId",
+    "authenticatorData",
+    "clientDataJson",
+    "signature"
+  ],
+  "properties": {
+    "approvalId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "credentialId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "authenticatorData": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "clientDataJson": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "description": "ASN.1 DER ECDSA signature (ES256)."
+    }
+  }
+}

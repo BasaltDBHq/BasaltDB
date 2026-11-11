@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/revert-line.v1.json",
+  "title": "Revert line",
+  "description": "One row of a revert, as jsonb text from basalt_meta.preview_revert or prepare_revert. RESTORE lines are written; SKIP lines are left as they are and named. Lines are ordered COLLATE \"C\". See CONTRACT.md, Revert.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "op",
+        "key",
+        "now",
+        "set",
+        "table",
+        "action",
+        "conflict",
+        "sqlState",
+        "cascaded",
+        "changeIds"
+      ],
+      "properties": {
+        "op": {
+          "type": "string",
+          "enum": [
+            "INSERT",
+            "UPDATE",
+            "DELETE"
+          ],
+          "description": "The inverse write the revert runs: DELETE undoes an INSERT, INSERT re-inserts a deleted row, UPDATE restores old values."
+        },
+        "key": {
+          "type": "object",
+          "description": "Primary key the inverse write targets: the row's current key, or the key it is re-inserted with."
+        },
+        "now": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "The full row as it is now; null when it does not exist."
+        },
+        "set": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "The values the revert writes (the row before the first in-scope change, generated columns left out); null for DELETE."
+        },
+        "table": {
+          "type": "string",
+          "description": "Schema-qualified table name."
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "RESTORE",
+            "SKIP"
+          ]
+        },
+        "conflict": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "enum": [
+                "CHANGED_AFTER",
+                "ROW_GONE",
+                "KEY_TAKEN",
+                "ALREADY_REVERTED",
+                "VALUES_PRUNED",
+                "SCHEMA_CHANGED",
+                "CASCADE",
+                "CONSTRAINT"
+              ]
+            }
+          ],
+          "description": "Why the row is skipped; null for RESTORE. See CONTRACT.md, Revert, Conflicts."
+        },
+        "sqlState": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9A-Z]{5}$",
+          "description": "Set only for CONSTRAINT: the SQLSTATE the trial write raised."
+        },
+        "cascaded": {
+          "type": "boolean",
+          "description": "The first in-scope change reached this row through an FK cascade."
+        },
+        "changeIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "description": "The in-scope changes that touched this row, in ledger order."
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "op",
+        "table",
+        "action",
+        "rowHash",
+        "conflict",
+        "cascaded",
+        "redacted",
+        "changeIds"
+      ],
+      "properties": {
+        "op": {
+          "type": "string",
+          "enum": [
+            "INSERT",
+            "UPDATE",
+            "DELETE"
+          ],
+          "description": "The inverse write the revert runs: DELETE undoes an INSERT, INSERT re-inserts a deleted row, UPDATE restores old values."
+        },
+        "table": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "RESTORE",
+            "SKIP"
+          ]
+        },
+        "rowHash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Lowercase hex sha256 of jsonb_build_array(key, now, set)::text."
+        },
+        "conflict": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "enum": [
+                "CHANGED_AFTER",
+                "ROW_GONE",
+                "KEY_TAKEN",
+                "ALREADY_REVERTED",
+                "VALUES_PRUNED",
+                "SCHEMA_CHANGED",
+                "CASCADE",
+                "CONSTRAINT"
+              ]
+            }
+          ],
+          "description": "Why the row is skipped; null for RESTORE. See CONTRACT.md, Revert, Conflicts."
+        },
+        "cascaded": {
+          "type": "boolean"
+        },
+        "redacted": {
+          "const": true,
+          "description": "The role that prepared the revert cannot SELECT this table, so key and values are hidden."
+        },
+        "changeIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "description": "The in-scope changes that touched this row, in ledger order."
+        }
+      }
+    }
+  ]
+}

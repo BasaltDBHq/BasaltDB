@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: basalt_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      BASALTDB_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/basalt_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: ci
+        run: make ci
+
+  # Darwin/amd64 and darwin/arm64 are already in .goreleaser.yaml and on
+  # v0.0.1-alpha. This job rebuilds those archives (CGO_ENABLED=0 snapshot,
+  # no registry push) so macos-smoke runs the release tarball, not go build.
+  darwin-archives:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean --snapshot --skip=publish --skip=homebrew --skip=announce
+        env:
+          BASALT_VERSION: snapshot
+          RELEASE_KIND: snapshot
+          GITHUB_REPOSITORY: ${{ github.repository }}
+      - name: Require darwin archives and checksums
+        run: |
+          set -euo pipefail
+          test -f dist/basaltdb_0.0.0-nightly_darwin_amd64.tar.gz
+          test -f dist/basaltdb_0.0.0-nightly_darwin_arm64.tar.gz
+          test -f dist/SHA256SUMS
+          grep -F 'basaltdb_0.0.0-nightly_darwin_amd64.tar.gz' dist/SHA256SUMS
+          grep -F 'basaltdb_0.0.0-nightly_darwin_arm64.tar.gz' dist/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: basaltdb-snapshot
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.deb
+            dist/*.rpm
+            dist/*.apk
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+  macos-smoke:
+    needs: darwin-archives
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            expect_uname: arm64
+            archive: basaltdb_0.0.0-nightly_darwin_arm64.tar.gz
+          - runner: macos-15-intel
+            expect_uname: x86_64
+            archive: basaltdb_0.0.0-nightly_darwin_amd64.tar.gz
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: basaltdb-snapshot
+          path: dist
+      - name: Verify runner arch, checksum, and archive
+        run: |
+          set -euo pipefail
+          got=$(uname -m)
+          echo "runner=${{ matrix.runner }} uname-m=${got} expect=${{ matrix.expect_uname }}"
+          test "$got" = "${{ matrix.expect_uname }}"
+          cd dist
+          if command -v sha256sum >/dev/null 2>&1; then
+            grep " ${{ matrix.archive }}$" SHA256SUMS | sha256sum -c -
+          else
+            grep " ${{ matrix.archive }}$" SHA256SUMS | shasum -a 256 -c -
+          fi
+          mkdir extract
+          tar -xzf "${{ matrix.archive }}" -C extract
+          test -x extract/basalt
+          file extract/basalt
+      - name: Smoke release binaries
+        env:
+          EXPECT_UNAME: ${{ matrix.expect_uname }}
+        run: sh scripts/release-archive-smoke.sh dist/extract

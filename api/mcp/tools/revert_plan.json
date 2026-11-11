@@ -1,0 +1,256 @@
+{
+  "name": "revert_plan",
+  "status": "IMPLEMENTED",
+  "milestone": "M3",
+  "description": "The lines of a large revert plan (more than 1000 lines) that this agent prepared for the person, and its progress. After the person signs the plan with their passkey, apply it with apply_revert_batch: list the pending lines (pending: true, limit: 200) and pass their line numbers, until pending is 0. Lines come in execution order, the order that worked when the revert was tried; apply them in that order. People win: a line whose row changed after the plan was built is skipped, never overwritten.",
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "revertId"
+    ],
+    "properties": {
+      "revertId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "The revert id basalt revert printed."
+      },
+      "pending": {
+        "type": "boolean",
+        "description": "Only lines not applied yet."
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Page size, default 50, clamped to 200."
+      },
+      "cursor": {
+        "type": "string",
+        "description": "nextCursor from the previous page."
+      }
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "revertId",
+      "status",
+      "scope",
+      "scopeId",
+      "lines",
+      "restored",
+      "skipped",
+      "pending",
+      "expiresAt",
+      "maxBatch",
+      "items"
+    ],
+    "properties": {
+      "revertId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "PENDING",
+          "APPLYING",
+          "APPLIED",
+          "EXPIRED"
+        ],
+        "description": "PENDING until the person signs; APPLYING while lines are pending; APPLIED when none is; EXPIRED when not signed within 1 hour or not finished within 24 hours of the signature."
+      },
+      "scope": {
+        "type": "string",
+        "enum": [
+          "CHANGE",
+          "RUN",
+          "TASK"
+        ]
+      },
+      "scopeId": {
+        "type": "string",
+        "format": "uuid"
+      },
+      "lines": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "Lines in the whole plan."
+      },
+      "restored": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Lines restored so far."
+      },
+      "skipped": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Lines skipped so far (at the signature and in batches)."
+      },
+      "pending": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Lines not applied yet."
+      },
+      "expiresAt": {
+        "type": "string",
+        "format": "date-time",
+        "description": "The person must sign by then."
+      },
+      "applyBy": {
+        "type": "string",
+        "format": "date-time",
+        "description": "Set once signed: every line must be applied by then (24 hours after the signature)."
+      },
+      "maxBatch": {
+        "type": "integer",
+        "description": "Most line numbers one apply_revert_batch call takes (200)."
+      },
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "line",
+            "outcome",
+            "plan"
+          ],
+          "properties": {
+            "line": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "The line number to pass to apply_revert_batch."
+            },
+            "outcome": {
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "RESTORED",
+                "SKIPPED"
+              ]
+            },
+            "batch": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "The batch that applied the line; 0 for lines skipped at the signature. Absent while pending."
+            },
+            "conflict": {
+              "type": "string",
+              "enum": [
+                "CHANGED_AFTER",
+                "ROW_GONE",
+                "KEY_TAKEN",
+                "ALREADY_REVERTED",
+                "VALUES_PRUNED",
+                "SCHEMA_CHANGED",
+                "CASCADE",
+                "CONSTRAINT"
+              ],
+              "description": "Why the line was skipped. Set on SKIPPED only."
+            },
+            "sqlState": {
+              "type": "string",
+              "description": "Set on CONSTRAINT conflicts only."
+            },
+            "plan": {
+              "$ref": "#/$defs/revertLine"
+            }
+          }
+        }
+      },
+      "nextCursor": {
+        "type": "string",
+        "description": "Absent on the last page."
+      }
+    },
+    "$defs": {
+      "revertLine": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "The signed revert line as an object (CONTRACT.md, Revert; same fields as preview_revert items).",
+        "required": [
+          "action",
+          "op",
+          "table",
+          "cascaded",
+          "changeIds"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "RESTORE",
+              "SKIP"
+            ]
+          },
+          "op": {
+            "type": "string",
+            "enum": [
+              "INSERT",
+              "UPDATE",
+              "DELETE"
+            ]
+          },
+          "table": {
+            "type": "string"
+          },
+          "key": {
+            "type": "object"
+          },
+          "now": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "set": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "conflict": {
+            "type": "string",
+            "enum": [
+              "CHANGED_AFTER",
+              "ROW_GONE",
+              "KEY_TAKEN",
+              "ALREADY_REVERTED",
+              "VALUES_PRUNED",
+              "SCHEMA_CHANGED",
+              "CASCADE",
+              "CONSTRAINT"
+            ]
+          },
+          "sqlState": {
+            "type": "string"
+          },
+          "cascaded": {
+            "type": "boolean"
+          },
+          "redacted": {
+            "type": "boolean"
+          },
+          "rowHash": {
+            "type": "string"
+          },
+          "changeIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      }
+    }
+  },
+  "errors": [
+    "INVALID_ARGUMENT",
+    "NOT_FOUND",
+    "UNAVAILABLE",
+    "INTERNAL"
+  ]
+}

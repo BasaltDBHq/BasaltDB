@@ -1,0 +1,30 @@
+# Binaries
+/basalt
+
+# Local data
+data/
+
+# Logs and PIDs
+*.log
+*.pid
+
+# Go
+*.test
+*.out
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+/bin/
+
+# npm / MCP publish staging
+npm/cli/LICENSE
+npm/platforms/*/LICENSE
+npm/platforms/*/bin/
+
+# local scratch (plans, specs, briefs)
+tmp/

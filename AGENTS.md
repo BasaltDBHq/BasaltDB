@@ -36,6 +36,7 @@ scripts/       release and packaging scripts
 ## Wire format
 
 - Normative rules live in **[CONTRACT.md](CONTRACT.md)**: camelCase JSON keys, **SCREAMING_SNAKE_CASE** enum values everywhere (Go identifiers stay PascalCase: `StatusApplied = "APPLIED"`), UUIDv7 ids, RFC 3339 UTC timestamps, the change record, error codes, MCP tools.
+- **CLI flag values** a person types are lowercase kebab-case (`--agent-rls=ask|all-rows|none`). They are an input spelling only: anything stored, sent on the wire or written to the ledger uses the SCREAMING_SNAKE_CASE enum it maps to. Every flag with a fixed set of values has an explicit default value (no empty-string sentinel).
 - **Contract first:** a new MCP tool, a tool schema change, a new error code, or a new `basalt_meta` table or function lands in a **contract-only PR** first (schemas under `api/mcp/`, `CONTRACT.md`, contract test). No implementation in the same PR unless CI needs it.
 - Named types for anything (de)serialized; separate DTOs (`FromDomain` mappers) from domain structs.
 

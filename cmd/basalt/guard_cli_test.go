@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -211,6 +212,123 @@ func TestInitWarnsWhenRLSHidesRows(t *testing.T) {
 
 	d.Exec(t, `CREATE POLICY bot ON public.leads FOR SELECT TO `+role+` USING (true)`)
 	require.NotContains(t, initOut(t, d, cfgPath), "row-level security")
+}
+
+// agentRows counts the rows of table the agent's credential file sees.
+func agentRows(t *testing.T, credFile, table string) int {
+	t.Helper()
+	b, err := os.ReadFile(credFile)
+	require.NoError(t, err)
+	ctx := context.Background()
+	conn, err := pgdial.Connect(ctx, strings.TrimSpace(string(b)))
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+	var n int
+	require.NoError(t, conn.QueryRow(ctx, `SELECT count(id) FROM `+table).Scan(&n))
+	return n
+}
+
+// agentPolicyCount counts the policies named after the agent role.
+func agentPolicyCount(t *testing.T, d *guardtest.DB) int {
+	t.Helper()
+	var n int
+	require.NoError(t, d.Admin.QueryRow(context.Background(), `SELECT count(1)::int FROM pg_policy WHERE polname = $1`,
+		d.Names.Prefix+"_agent_bot").Scan(&n))
+	return n
+}
+
+// TestInitAsksBeforeLettingTheAgentSeeRLSRows: at a terminal init asks once
+// per agent table RLS hides (row count shown, default no); yes adds the
+// agent policy and the agent sees the rows; no leaves 0 rows and the
+// warning; re-init asks only about new blind tables; without a terminal
+// or with --yes nothing is added unless --agent-rls=all-rows; tables not
+// granted to the agent are never touched (decision "Agent RLS", Nov 12).
+func TestInitAsksBeforeLettingTheAgentSeeRLSRows(t *testing.T) {
+	t.Parallel()
+	question := func(table string, rows int) string {
+		return fmt.Sprintf("public.%s hides its rows with row-level security. Let bot see all %d rows of this table? [y/N]", table, rows)
+	}
+	setup := func(t *testing.T) (*guardtest.DB, string, []string) {
+		t.Helper()
+		d := guardtest.New(t).WithDemo(t)
+		d.Exec(t, `ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
+			ALTER TABLE public.lead_notes ENABLE ROW LEVEL SECURITY;
+			ALTER TABLE public.payroll ENABLE ROW LEVEL SECURITY`)
+		cfg := tempConfig(t)
+		return d, filepath.Join(filepath.Dir(cfg), "agents", "bot.url"), []string{"--config", cfg, "--os-user", "tester"}
+	}
+
+	t.Run("yes and no at a terminal", func(t *testing.T) {
+		t.Parallel()
+		d, cred, args := setup(t)
+		h := newFakeHost(t)
+		// Answers: yes for leads, default (no) for lead_notes, run the SQL.
+		r := initRun(t, d, h, "linux", true, "y\n\ny\n", append(args, "--read", "public.lead_notes")...)
+		require.Equal(t, exitOK, r.code, r.stderr)
+		require.Contains(t, r.stderr, question("leads", 200))
+		require.Contains(t, r.stderr, question("lead_notes", 60))
+		require.NotContains(t, r.stderr, "payroll")
+		require.Contains(t, r.stdout, "CREATE POLICY "+d.Names.Prefix+"_agent_bot ON public.leads AS PERMISSIVE FOR ALL")
+		require.NotContains(t, r.stdout, "ON public.lead_notes AS PERMISSIVE")
+		require.NotContains(t, r.stderr, "row-level security is on for public.leads")
+		require.Contains(t, r.stderr, "row-level security is on for public.lead_notes and no policy lets")
+		require.Equal(t, 200, agentRows(t, cred, "public.leads"))
+		require.Zero(t, agentRows(t, cred, "public.lead_notes"))
+		require.Equal(t, 1, agentPolicyCount(t, d))
+
+		// Re-init asks only about lead_notes, which is still blind.
+		r = initRun(t, d, h, "linux", true, "y\ny\n", append(args, "--read", "public.lead_notes")...)
+		require.Equal(t, exitOK, r.code, r.stderr)
+		require.NotContains(t, r.stderr, question("leads", 200))
+		require.Contains(t, r.stderr, question("lead_notes", 60))
+		require.Equal(t, 60, agentRows(t, cred, "public.lead_notes"))
+		require.Equal(t, 2, agentPolicyCount(t, d))
+
+		// --agent-rls=none skips the question.
+		d.Exec(t, `ALTER TABLE public.note_tags ENABLE ROW LEVEL SECURITY`)
+		r = initRun(t, d, h, "linux", true, "y\n", append(args, "--read", "public.lead_notes,public.note_tags", "--agent-rls", "none")...)
+		require.Equal(t, exitOK, r.code, r.stderr)
+		require.NotContains(t, r.stderr, "hides its rows")
+		require.Contains(t, r.stderr, "row-level security is on for public.note_tags and no policy lets")
+
+		r = cli(t, map[string]string{envAdminURL: d.URL}, "", "uninstall", "--prefix", d.Names.Prefix, "--yes")
+		require.Equal(t, exitOK, r.code, r.stderr)
+		require.Zero(t, agentPolicyCount(t, d))
+	})
+
+	t.Run("without a terminal or with --yes", func(t *testing.T) {
+		t.Parallel()
+		d, cred, args := setup(t)
+		h := newFakeHost(t)
+		r := initRun(t, d, h, "linux", false, "y\n", args...)
+		require.Equal(t, exitOK, r.code, r.stderr)
+		require.NotContains(t, r.stderr, "hides its rows")
+		require.Contains(t, r.stderr, "row-level security is on for public.leads and no policy lets")
+		r = initRun(t, d, h, "linux", true, "", append(args, "--yes")...)
+		require.Equal(t, exitOK, r.code, r.stderr)
+		require.NotContains(t, r.stderr, "hides its rows")
+		require.Zero(t, agentRows(t, cred, "public.leads"))
+		require.Zero(t, agentPolicyCount(t, d))
+
+		r = initRun(t, d, h, "linux", false, "", append(args, "--yes", "--agent-rls", "all-rows")...)
+		require.Equal(t, exitOK, r.code, r.stderr)
+		require.NotContains(t, r.stderr, "row-level security is on")
+		require.Equal(t, 200, agentRows(t, cred, "public.leads"))
+		require.Equal(t, 1, agentPolicyCount(t, d))
+		var payroll int
+		require.NoError(t, d.Admin.QueryRow(context.Background(),
+			`SELECT count(1)::int FROM pg_policy WHERE polrelid = 'public.payroll'::regclass`).Scan(&payroll))
+		require.Zero(t, payroll, "a table not granted to the agent is never touched")
+	})
+
+	t.Run("bad flag", func(t *testing.T) {
+		t.Parallel()
+		r := cli(t, nil, "", "init", "--agent", "bot", "--agent-rls", "some")
+		require.Equal(t, exitUsage, r.code)
+		require.Contains(t, r.stderr, "must be ask, all-rows or none")
+		r = cli(t, nil, "", "init", "--agent", "bot", "--agent-rls", "ALL_ROWS")
+		require.Equal(t, exitUsage, r.code, "flag values are lowercase kebab-case")
+	})
 }
 
 // initOut runs initAgent's init again and returns its stderr.

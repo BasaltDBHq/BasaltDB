@@ -198,10 +198,15 @@ func requireObjectsClosed(t *testing.T, where string, node any) {
 			require.Equal(t, false, v["additionalProperties"], "%s must set additionalProperties: false", where)
 		}
 		for k, child := range v {
-			if k == "properties" {
+			switch k {
+			case "properties":
 				for name, prop := range child.(map[string]any) {
 					requireObjectsClosed(t, where+"."+name, prop)
 				}
+				continue
+			case "if":
+				// A condition (if/then/else) tests properties of an object
+				// declared closed elsewhere; it does not declare a shape.
 				continue
 			}
 			requireObjectsClosed(t, where+"."+k, child)
@@ -211,6 +216,56 @@ func requireObjectsClosed(t *testing.T, where string, node any) {
 			requireObjectsClosed(t, where, child)
 		}
 	}
+}
+
+// TestPIISchemas checks the basalt classify --json review schema (CONTRACT.md,
+// PII classification) follows the same wire rules.
+func TestPIISchemas(t *testing.T) {
+	t.Parallel()
+	checkPayloadSchemas(t, "pii", []string{"classify-review.schema.json"})
+}
+
+// TestPIIEnums checks the classes and entity types of CONTRACT.md's "PII
+// classification" tables are exactly the review schema's enums, so the
+// contract and the schema cannot drift apart.
+func TestPIIEnums(t *testing.T) {
+	t.Parallel()
+	schema := readJSON(t, "pii/classify-review.schema.json")
+	defs := mustMap(t, schema["$defs"])
+	for subsection, def := range map[string]string{"### Classes": "class", "### Entity types": "entityType"} {
+		docValues := contractSubsectionValues(t, "## PII classification", subsection)
+		require.Equal(t, docValues, schemaEnum(t, map[string]any{"properties": defs}, def),
+			"CONTRACT.md %s and classify-review.schema.json %s differ", subsection, def)
+	}
+	column := mustMap(t, defs["column"])
+	require.Equal(t, contractSubsectionValues(t, "## PII classification", "### `--json` review"),
+		schemaEnum(t, column, "status"),
+		"CONTRACT.md review status table and classify-review.schema.json status differ")
+}
+
+// contractSubsectionValues reads the first-column enum values of the table
+// under the given ### subsection of a ## section of CONTRACT.md.
+func contractSubsectionValues(t *testing.T, section, subsection string) map[string]bool {
+	t.Helper()
+	raw, err := os.ReadFile("../../CONTRACT.md")
+	require.NoError(t, err)
+	values := map[string]bool{}
+	inSection, inSubsection := false, false
+	for line := range strings.SplitSeq(string(raw), "\n") {
+		switch {
+		case strings.HasPrefix(line, "## "):
+			inSection, inSubsection = line == section, false
+			continue
+		case strings.HasPrefix(line, "### "):
+			inSubsection = inSection && line == subsection
+			continue
+		}
+		if m := errorCodeRow.FindStringSubmatch(line); inSubsection && m != nil {
+			values[m[1]] = true
+		}
+	}
+	require.NotEmpty(t, values, "no values found under %s %s in CONTRACT.md", section, subsection)
+	return values
 }
 
 // TestErrorSchemas checks the error body, next step and warning schemas

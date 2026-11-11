@@ -16,6 +16,8 @@ var fuzzSeeds = []string{
 	"pii1_AAAAAAAAAAAA@redacted.invalid +44 pii1_BBBBBBBBBBBB Person CCCCCCCCCCCC",
 	"+447700900456 (202) 555-0143 0812-3456-7890",
 	"+447700900456x123",
+	"a@b.cc+447700900456",
+	"+447700900456+447700900457",
 	"+447700900456_",
 	"+44 7700 900456ext2",
 	"\uff21\uff4c\uff45\uff58\uff41\uff4e\uff44\uff52\uff41 \uff2a\uff4f\uff4e\uff45\uff53 \uff41\uff4c\uff49\uff43\uff45@example.com \uff0b\uff14\uff14\uff17\uff17\uff10\uff10\uff19\uff10\uff10\uff14\uff15\uff16",

@@ -45,7 +45,7 @@ func normalizePhone(value, region string) (string, int32) {
 	}
 	// Parse the cleaned form too, so the fallback is stable: normalizing it
 	// again takes exactly this path and gives the same text.
-	clean := phoneFallback(value)
+	clean := norm.NFKC.String(phoneFallback(value))
 	if e164, cc, ok := parseE164(clean, region); ok {
 		return e164, cc
 	}
@@ -91,7 +91,11 @@ func phoneFallback(value string) string {
 func GenericForm(value string) string {
 	// A Caser is stateful, so each call takes its own.
 	caser := cases.Fold()
-	s := nfkcCasefold(&caser, value)
+	// Format characters go before normalizing, not after: one between two
+	// combining marks (combining class 0) keeps NFKC from reordering them, so
+	// dropping it afterwards would leave the marks out of canonical order and
+	// the next normalization would reorder them ("\u07e4\u0740\u0600\u05a4").
+	s := nfkcCasefold(&caser, strings.Map(dropFormat, value))
 	var b strings.Builder
 	b.Grow(len(s))
 	gap := false
@@ -107,7 +111,8 @@ func GenericForm(value string) string {
 			gap = false
 			b.WriteRune(r)
 		case unicode.Is(unicode.Cf, r):
-			// Transparent: neither a word character nor a separator.
+			// None reach here (dropped above, and folding makes none); kept
+			// transparent rather than a separator should that ever change.
 		default:
 			gap = true
 		}
@@ -139,3 +144,12 @@ func nfkcCasefold(caser *cases.Caser, s string) string {
 }
 
 func isCherokee(r rune) bool { return unicode.Is(unicode.Cherokee, r) }
+
+// dropFormat removes format characters (zero-width space, joiners, the Arabic
+// number sign) for strings.Map.
+func dropFormat(r rune) rune {
+	if unicode.Is(unicode.Cf, r) {
+		return -1
+	}
+	return r
+}

@@ -38,6 +38,7 @@ func TestNormalize(t *testing.T) {
 		{"email full-width is plain", pii.EntityEmail, "\uff41\uff4c\uff49\uff43\uff45@example.com", "", "alice@example.com"},
 		{"email IDN domain", pii.EntityEmail, "Alice@Ex\u00c4mple.ee", "", "alice@ex\u00e4mple.ee"},
 		{"name Cherokee folds to upper case", pii.EntityPersonName, "\uabb9 \u13e9", "", "\u13e9 \u13e9"},
+		{"name format char between marks keeps canonical order", pii.EntityPersonName, "\u07e4\u0740\u0600\u05a4", "", "\u07e4\u05a4\u0740"},
 		{"name zero-width chars are ignored", pii.EntityPersonName, "Ali\u200bce Ta\u200dmm", "", "alice tamm"},
 		{"address", pii.EntityAddress, "Pärnu mnt 99,\nTallinn", "", "pärnu mnt 99 tallinn"},
 		{"other", pii.EntityOther, "DE89 3704-0044", "", "de89 3704 0044"},

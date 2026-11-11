@@ -107,7 +107,10 @@ func TestGenericFormIsStableForEveryCharacter(t *testing.T) {
 		if !utf8.ValidRune(r) {
 			continue
 		}
-		for _, s := range []string{string(r), "a" + string(r) + "b"} {
+		// Alone, inside a word, and as the character between two combining
+		// marks of different classes (230 then 220), which must not end up
+		// out of canonical order.
+		for _, s := range []string{string(r), "a" + string(r) + "b", "a\u0301" + string(r) + "\u0316b"} {
 			once := pii.GenericForm(s)
 			require.Equal(t, once, pii.GenericForm(once), "%U", r)
 		}

@@ -22,7 +22,8 @@ import (
 const StatusApplied = "APPLIED"
 
 // Tools returns the MCP tools served to one agent: every contract in api/mcp
-// that is IMPLEMENTED, each listed with the contract's description and input
+// that is IMPLEMENTED, and request_revert while its wait form is still to
+// come, each listed with the contract's description and input
 // schema. Handlers parse, validate, make one service call and render.
 func Tools(svc *Service) []mcp.Tool {
 	if svc == nil {
@@ -39,6 +40,9 @@ func Tools(svc *Service) []mcp.Tool {
 		contractTool("preview_revert", h.wrap("preview_revert", h.previewRevert)),
 		contractTool("revert_plan", h.wrap("revert_plan", h.revertPlan)),
 		contractTool("apply_revert_batch", h.wrap("apply_revert_batch", h.applyRevertBatch)),
+		// PLANNED: the request form is served; the wait form (revertId)
+		// answers that this engine cannot wait yet (AwaitRevert).
+		contractTool("request_revert", h.wrap("request_revert", h.requestRevert)),
 	}
 }
 

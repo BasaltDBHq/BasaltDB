@@ -2,7 +2,7 @@
   "name": "preview_revert",
   "status": "IMPLEMENTED",
   "milestone": "M3",
-  "description": "What reverting one change, one run, or one task (across agents) would do, without doing it: each row the revert would restore (RESTORE) and each row it would leave alone because someone changed it after the agent (SKIP, with the reason). People win: a skipped row is never overwritten. The preview runs the revert on trial and rolls it back. Nothing is reverted through MCP: only a person can revert, with their passkey, by running the returned command. Name exactly one of changeId, runId, taskId. Lines are cursor-paginated in their signed order. Any size can be previewed; a revert over 1000 lines becomes a plan the agent applies in batches after the person signs it (revert_plan, apply_revert_batch).",
+  "description": "What reverting one change, one run, or one task (across agents) would do, without doing it: each row the revert would restore (RESTORE) and each row it would leave alone because someone changed it after the agent (SKIP, with the reason). People win: a skipped row is never overwritten. The preview runs the revert on trial and rolls it back. Nothing is reverted here: only a person can revert, with their passkey. To hand them a revert of one of your own changes or runs, call request_revert (it returns a link to show them); otherwise they run the returned command. Name exactly one of changeId, runId, taskId. Lines are cursor-paginated in their signed order. Any size can be previewed; a revert over 1000 lines becomes a plan the agent applies in batches after the person signs it (revert_plan, apply_revert_batch).",
   "inputSchema": {
     "type": "object",
     "additionalProperties": false,

@@ -98,7 +98,8 @@ func TestArgsStructsMatchTheSchemas(t *testing.T) {
 	t.Parallel()
 	args := map[string]any{
 		"run_start": runStartArgs{}, "query": queryArgs{}, "write": writeArgs{}, "run_history": runHistoryArgs{}, "list_pending": listPendingArgs{},
-		"list_runs": ledger.RunListParams{},
+		"list_runs":      ledger.RunListParams{},
+		"request_revert": requestRevertArgs{},
 	}
 	for name, v := range args {
 		c, ok := mcpcontract.Find(mcpcontract.MustLoad(), name)

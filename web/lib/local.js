@@ -30,13 +30,31 @@ export function relayPaths(page, id) {
   return { request: `/api/v1/${page}/${id}`, relay: `/api/v1/${page}/${id}/${action}` };
 }
 
-async function answer(call) {
-  let res;
-  try {
-    res = await call();
-  } catch {
-    throw new RelayError("cannot reach the BasaltDB engine: is it still running?");
+const UNREACHABLE = "cannot reach the BasaltDB engine: is it still running?";
+
+// Reading the request retries an unreachable engine for about 5 seconds
+// (REQUEST_ATTEMPTS tries, REQUEST_RETRY_MS apart), so a page opened while
+// the engine restarts still loads. The relay POST is never retried.
+export const REQUEST_ATTEMPTS = 6;
+export const REQUEST_RETRY_MS = 1000;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function reach(call, attempts, wait) {
+  for (let i = 1; ; i++) {
+    try {
+      return await call();
+    } catch {
+      if (i >= attempts) {
+        throw new RelayError(UNREACHABLE);
+      }
+    }
+    await wait(REQUEST_RETRY_MS);
   }
+}
+
+async function answer(call, attempts = 1, wait = sleep) {
+  const res = await reach(call, attempts, wait);
   let body = null;
   try {
     body = await res.json();
@@ -69,13 +87,18 @@ export function isLongLink(hash) {
 }
 
 // fetchRequest reads the request a short link stands for.
-export function fetchRequest(fetchFn, path, secret) {
-  return answer(() =>
-    fetchFn(path, {
-      headers: { Accept: "application/json", [SECRET_HEADER]: secret },
-      cache: "no-store",
-      credentials: "omit",
-    }),
+// fetchRequest reads the request; wait (ms) => Promise is injected by
+// tests and defaults to a timer.
+export function fetchRequest(fetchFn, path, secret, wait = sleep) {
+  return answer(
+    () =>
+      fetchFn(path, {
+        headers: { Accept: "application/json", [SECRET_HEADER]: secret },
+        cache: "no-store",
+        credentials: "omit",
+      }),
+    REQUEST_ATTEMPTS,
+    wait,
   );
 }
 

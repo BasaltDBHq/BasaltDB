@@ -1,9 +1,9 @@
 package guard
 
-// Version 11 (M4.1): passkey management (CONTRACT.md, Passkey management).
+// Version 12 (M4.1): passkey management (CONTRACT.md, Passkey management).
 // WebAuthn never tells the server a passkey was deleted, so the person
 // revokes it here; a revoked passkey signs nothing. Rows are kept.
-const v11Revocation = `
+const v12Revocation = `
 ALTER TABLE basalt_meta.passkeys
     ADD COLUMN user_handle  bytea CHECK (octet_length(user_handle) BETWEEN 1 AND 64),
     ADD COLUMN last_used_at timestamptz,

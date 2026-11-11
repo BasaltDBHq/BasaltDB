@@ -61,6 +61,7 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 
 	agents := make([]Agent, 0, len(cfg.Agents))
 	ledgers := make(map[string]person.Ledger, len(cfg.Agents))
+	agentUIDs := make(map[string]uint32, len(cfg.Agents))
 	upkeeps := make([]*upkeep.Upkeep, 0, len(cfg.Agents))
 	tg, err := newTelegram(cfg.Notify)
 	if err != nil {
@@ -110,6 +111,7 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 		}
 		closers = append(closers, rt.close)
 		ledgers[a.Name] = rt.ledger
+		agentUIDs[a.Name] = uid
 		upkeeps = append(upkeeps, rt.upkeep)
 		if site != nil {
 			site.pages.Add(rt.svc)
@@ -134,7 +136,7 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 		wg.Go(func() { u.Run(ctx, upkeep.DefaultInterval) })
 	}
 	if cfg.Service() {
-		srv, ln, err := listenPerson(cfg, ledgers, person.PagesDTO{PagesURL: base, LocalOrigin: env.pagesOrigin}, log)
+		srv, ln, err := listenPerson(cfg, ledgers, agentUIDs, person.PagesDTO{PagesURL: base, LocalOrigin: env.pagesOrigin}, log)
 		if err != nil {
 			return err
 		}
@@ -149,7 +151,7 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 // listenPerson opens the person socket of a service-mode engine (CONTRACT.md,
 // The person socket): mode 0666 like the agent sockets, admitting only the
 // recorded person uids.
-func listenPerson(cfg config.Config, ledgers map[string]person.Ledger, pages person.PagesDTO, log *slog.Logger) (*person.Server, *net.UnixListener, error) {
+func listenPerson(cfg config.Config, ledgers map[string]person.Ledger, agentUIDs map[string]uint32, pages person.PagesDTO, log *slog.Logger) (*person.Server, *net.UnixListener, error) {
 	path := config.PersonSocketPath(cfg.SocketDir)
 	ln, err := listenSocket(path)
 	if err != nil {
@@ -157,7 +159,7 @@ func listenPerson(cfg config.Config, ledgers map[string]person.Ledger, pages per
 	}
 	log.Info("serving the person socket", "socket", path, "personUids", cfg.PersonUIDs)
 	srv := person.NewServer(person.Options{
-		Allow: cfg.PersonUIDs, Agents: ledgers, Pages: pages, PeerUID: peercred.UID, Log: log.With("component", "person"),
+		Allow: cfg.PersonUIDs, Agents: ledgers, AgentUIDs: agentUIDs, Pages: pages, PeerUID: peercred.UID, Log: log.With("component", "person"),
 	})
 	return srv, ln, nil
 }

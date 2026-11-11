@@ -404,8 +404,9 @@ func warnAgentIsPerson(c *cliIO, f initFlags) {
 	}
 	for _, uid := range f.personUIDs {
 		if strconv.FormatUint(uint64(uid), 10) == u.Uid {
-			fmt.Fprintf(c.stderr, "basalt: warning: the agent runs as OS user %s, which is also a person the engine admits on its person socket; "+
-				"run the agent as another OS user to keep it off that socket (approve and revert still need your passkey)\n", f.osUser)
+			fmt.Fprintf(c.stderr, "basalt: warning: the agent runs as OS user %s, which is also the person the engine admits on its person socket. "+
+				"While they share that user, basalt log, approve and revert over the socket see only this agent's ledger (the engine cannot tell you and the agent apart), "+
+				"and the agent can use them too (approve and revert still need your passkey). For full isolation, run the agent as its own OS user: basalt init --os-user <user>\n", f.osUser)
 			return
 		}
 	}

@@ -110,14 +110,18 @@ func socketPath(t *testing.T) string {
 // the tests run without root).
 func serve(t *testing.T, allow []uint32, peer person.PeerUIDFunc, l person.Ledger) person.Client {
 	t.Helper()
+	return serveWith(t, person.Options{Allow: allow, Agents: map[string]person.Ledger{"bot": l}, PeerUID: peer})
+}
+
+// serveWith is serve with every option given.
+func serveWith(t *testing.T, o person.Options) person.Client {
+	t.Helper()
 	path := socketPath(t)
 	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
 	require.NoError(t, err)
-	srv := person.NewServer(person.Options{
-		Allow: allow, Agents: map[string]person.Ledger{"bot": l},
-		Pages:   person.PagesDTO{PagesURL: "http://localhost:8787", LocalOrigin: "http://localhost:8787"},
-		PeerUID: peer, Log: slog.New(slog.DiscardHandler),
-	})
+	o.Pages = person.PagesDTO{PagesURL: "http://localhost:8787", LocalOrigin: "http://localhost:8787"}
+	o.Log = slog.New(slog.DiscardHandler)
+	srv := person.NewServer(o)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { srv.Serve(ctx, ln); close(done) }()
@@ -324,4 +328,99 @@ func TestThePersonSocketRoundTripsWhatTheCLIPrints(t *testing.T) {
 	h, err := c.Agent("bot").CheckHealth(ctx, ledger.HealthOptions{Pin: &guard.ChainHead{Seq: 3, Hash: []byte{3}}})
 	require.NoError(t, err)
 	require.Equal(t, guard.ChainHead{Seq: 7, Hash: []byte{1, 2}}, h.Head)
+}
+
+// agentCalls are the 11 agent-scoped calls; PAGES names no agent.
+func agentCalls() map[person.Method]func(context.Context, *person.AgentClient) error {
+	id := uuid.Must(uuid.NewV7())
+	scope := guard.RevertScope{Kind: "RUN", ID: id}
+	return map[person.Method]func(context.Context, *person.AgentClient) error{ //nolint:exhaustive // PAGES names no agent
+		person.MethodCheckHealth: func(c context.Context, a *person.AgentClient) error {
+			_, err := a.CheckHealth(c, ledger.HealthOptions{})
+			return err
+		},
+		person.MethodListChanges: func(c context.Context, a *person.AgentClient) error {
+			_, err := a.ListChanges(c, ledger.ChangeListParams{})
+			return err
+		},
+		person.MethodRowChanges: func(c context.Context, a *person.AgentClient) error {
+			_, err := a.RowChanges(c, []uuid.UUID{id})
+			return err
+		},
+		person.MethodListPasskeys: func(c context.Context, a *person.AgentClient) error {
+			_, err := a.ListPasskeys(c)
+			return err
+		},
+		person.MethodFindApproval: func(c context.Context, a *person.AgentClient) error {
+			_, err := a.FindApproval(c, id)
+			return err
+		},
+		person.MethodSubmitApproval: func(c context.Context, a *person.AgentClient) error {
+			_, err := a.SubmitApproval(c, id, passkey.Assertion{})
+			return err
+		},
+		person.MethodFindRevert: func(c context.Context, a *person.AgentClient) error {
+			_, err := a.FindRevert(c, id)
+			return err
+		},
+		person.MethodPreviewRevert: func(c context.Context, a *person.AgentClient) error {
+			_, err := a.PreviewRevert(c, scope)
+			return err
+		},
+		person.MethodPrepareRevert: func(c context.Context, a *person.AgentClient) error {
+			_, err := a.PrepareRevert(c, scope, "undo")
+			return err
+		},
+		person.MethodApplyRevert: func(c context.Context, a *person.AgentClient) error {
+			_, err := a.ApplyRevert(c, id, passkey.Assertion{})
+			return err
+		},
+		person.MethodListRevertLines: func(c context.Context, a *person.AgentClient) error {
+			_, err := a.ListRevertLines(c, ledger.RevertLineParams{RevertID: id, Params: pagination.Params{Limit: 10}})
+			return err
+		},
+	}
+}
+
+// TestAnAgentSharingThePersonsUIDSeesOnlyItsOwnLedger is owner decision
+// SM-4: when the peer is on the allowlist and is also an agent's OS user,
+// every call is scoped to that agent; another agent's ledger is refused.
+func TestAnAgentSharingThePersonsUIDSeesOnlyItsOwnLedger(t *testing.T) {
+	t.Parallel()
+	require.Len(t, agentCalls(), 11, "every agent-scoped method")
+	for m, call := range agentCalls() {
+		t.Run(string(m), func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			bot, other := &fakeLedger{}, &fakeLedger{}
+			o := person.Options{
+				Allow:     []uint32{personUID},
+				Agents:    map[string]person.Ledger{"bot": bot, "other": other},
+				AgentUIDs: map[string]uint32{"bot": personUID, "other": otherUID},
+			}
+
+			// The peer runs bot: bot is served, other is refused unread.
+			o.PeerUID = peerIs(personUID)
+			c := serveWith(t, o)
+			require.NoError(t, call(ctx, c.Agent("bot")), "its own agent")
+			require.Equal(t, int32(1), bot.calls.Load())
+			err := call(ctx, c.Agent("other"))
+			var we *person.Error
+			require.ErrorAs(t, err, &we)
+			require.Equal(t, person.CodeAgentNotAllowed, we.Code)
+			require.Contains(t, we.Message, "basalt init --os-user")
+			require.Zero(t, other.calls.Load(), "another agent's ledger is never reached")
+			err = call(ctx, c.Agent("nobody"))
+			require.ErrorAs(t, err, &we)
+			require.Equal(t, person.CodeAgentNotAllowed, we.Code, "no probing for agent names")
+			_, err = c.Pages(ctx)
+			require.NoError(t, err, "PAGES names no agent")
+
+			// A person who runs no agent sees every agent.
+			o.Allow, o.PeerUID = []uint32{agentUID}, peerIs(agentUID)
+			p := serveWith(t, o)
+			require.NoError(t, call(ctx, p.Agent("bot")))
+			require.NoError(t, call(ctx, p.Agent("other")))
+		})
+	}
 }

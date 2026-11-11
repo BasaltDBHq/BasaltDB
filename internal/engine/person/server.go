@@ -32,6 +32,10 @@ type Options struct {
 	// Agents are the engine's agents by name, each with its Ledger on the
 	// agent's own credential.
 	Agents map[string]Ledger
+	// AgentUIDs are the uids of the agents' OS users (osUser), by agent
+	// name. A peer that is an agent's OS user is scoped to its own agents
+	// (owner decision SM-4).
+	AgentUIDs map[string]uint32
 	// Pages is PAGES's answer.
 	Pages   PagesDTO
 	PeerUID PeerUIDFunc
@@ -40,8 +44,10 @@ type Options struct {
 
 // Server serves the person socket.
 type Server struct {
-	allow   map[uint32]bool
-	agents  map[string]Ledger
+	allow  map[uint32]bool
+	agents map[string]Ledger
+	// scopes are, per agent OS user uid, the agents that uid runs.
+	scopes  map[uint32]map[string]bool
 	pages   PagesDTO
 	peerUID PeerUIDFunc
 	log     *slog.Logger
@@ -68,7 +74,14 @@ func NewServer(o Options) *Server {
 	if len(allow) == 0 {
 		o.Log.Warn("person socket: no person uid recorded; it admits nobody (run basalt init with --person-uid)")
 	}
-	return &Server{allow: allow, agents: o.Agents, pages: o.Pages, peerUID: o.PeerUID, log: o.Log}
+	scopes := map[uint32]map[string]bool{}
+	for name, uid := range o.AgentUIDs {
+		if scopes[uid] == nil {
+			scopes[uid] = map[string]bool{}
+		}
+		scopes[uid][name] = true
+	}
+	return &Server{allow: allow, agents: o.Agents, scopes: scopes, pages: o.Pages, peerUID: o.PeerUID, log: o.Log}
 }
 
 // Serve accepts on ln until ctx is done, at most MaxConns at a time.
@@ -177,6 +190,14 @@ func (s *Server) handle(ctx context.Context, uid uint32, req Request) Response {
 	h, ok := handlers[req.Method]
 	if !ok || h == nil {
 		return Response{Error: &Error{Code: CodeUnknownMethod, Message: fmt.Sprintf("unknown method %q", req.Method)}}
+	}
+	if scope, isAgent := s.scopes[uid]; isAgent && !scope[req.Agent] {
+		// The peer is an agent's OS user (it shares the person's uid): it
+		// sees only its own agents, never another agent's ledger (SM-4).
+		s.log.Warn("person socket: refused another agent's ledger to an agent's OS user", "agent", req.Agent, "peerUid", uid)
+		return Response{Error: &Error{Code: CodeAgentNotAllowed, Message: fmt.Sprintf(
+			"OS user %d runs an agent, so this socket serves it only that agent's ledger, not %q; "+
+				"run the agent as another OS user (basalt init --os-user) to see every agent", uid, req.Agent)}}
 	}
 	l, ok := s.agents[req.Agent]
 	if !ok {

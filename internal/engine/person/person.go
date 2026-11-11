@@ -56,6 +56,7 @@ type Code string
 const (
 	CodeUIDNotAllowed   Code = "UID_NOT_ALLOWED"
 	CodeUnknownAgent    Code = "UNKNOWN_AGENT"
+	CodeAgentNotAllowed Code = "AGENT_NOT_ALLOWED"
 	CodeUnknownMethod   Code = "UNKNOWN_METHOD"
 	CodeInvalidArgument Code = "INVALID_ARGUMENT"
 	CodeNotFound        Code = "NOT_FOUND"

@@ -22,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
 // Limits of the guard's validating ledger functions (CONTRACT.md,
@@ -48,6 +49,7 @@ type Store interface {
 	Write(ctx context.Context, in guard.Intent, op sqlguard.Op, sql string, params []any) (agentdb.WriteResult, error)
 	RecordRefusal(ctx context.Context, r guard.Refusal) error
 	History(ctx context.Context, p ledger.ChangeListParams) (agentdb.History, error)
+	ListRuns(ctx context.Context, p ledger.RunListParams) (pagination.Page[agentdb.RunSummary], error)
 }
 
 // ReadRecorder records the reads the engine runs (owner decision #7) and
@@ -265,6 +267,11 @@ func (s *Service) History(ctx context.Context, p ledger.ChangeListParams) (agent
 		return agentdb.History{}, err
 	}
 	return s.Store.History(ctx, p)
+}
+
+// ListRuns returns one page of the agent's own runs with what each did.
+func (s *Service) ListRuns(ctx context.Context, p ledger.RunListParams) (pagination.Page[agentdb.RunSummary], error) {
+	return s.Store.ListRuns(ctx, p)
 }
 
 // findRun returns the agent's run, the zero run for uuid.Nil, or NOT_FOUND.

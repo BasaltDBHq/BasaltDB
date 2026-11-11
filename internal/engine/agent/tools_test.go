@@ -21,6 +21,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
 type nopReader struct{}
@@ -43,6 +44,9 @@ func (nopStore) Write(context.Context, guard.Intent, sqlguard.Op, string, []any)
 func (nopStore) RecordRefusal(context.Context, guard.Refusal) error { return nil }
 func (nopStore) History(context.Context, ledger.ChangeListParams) (agentdb.History, error) {
 	return agentdb.History{}, nil
+}
+func (nopStore) ListRuns(context.Context, ledger.RunListParams) (pagination.Page[agentdb.RunSummary], error) {
+	return pagination.Page[agentdb.RunSummary]{}, nil
 }
 
 func deps() Deps {
@@ -94,6 +98,7 @@ func TestArgsStructsMatchTheSchemas(t *testing.T) {
 	t.Parallel()
 	args := map[string]any{
 		"run_start": runStartArgs{}, "query": queryArgs{}, "write": writeArgs{}, "run_history": runHistoryArgs{}, "list_pending": listPendingArgs{},
+		"list_runs": ledger.RunListParams{},
 	}
 	for name, v := range args {
 		c, ok := mcpcontract.Find(mcpcontract.MustLoad(), name)

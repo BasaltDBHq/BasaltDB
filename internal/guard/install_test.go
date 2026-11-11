@@ -139,7 +139,7 @@ func TestInstallIdempotent(t *testing.T) {
 	ctx := context.Background()
 
 	var versions, triggers int
-	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT max(version) FROM basalt_meta.schema_version`).Scan(&versions))
+	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT count(1)::int FROM basalt_meta.schema_version`).Scan(&versions))
 	require.Equal(t, guard.LatestVersion(), versions)
 	require.NoError(t, d.Admin.QueryRow(ctx,
 		`SELECT count(1)::int FROM pg_trigger WHERE tgname = 'basalt_guard'`).Scan(&triggers))

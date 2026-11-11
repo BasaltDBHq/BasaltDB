@@ -184,6 +184,9 @@ func warn(c *cliIO, h ledger.Health) {
 	for _, u := range h.Uncovered {
 		fmt.Fprintf(c.stderr, "warning: table %s is not guarded (%s); run basalt init again\n", u.Table, u.Why)
 	}
+	for _, t := range h.RLSBlind {
+		fmt.Fprintf(c.stderr, "warning: row-level security is on for %s and no policy lets this agent see rows; it reads 0 rows there\n", t)
+	}
 	if h.HeartbeatStale {
 		fmt.Fprintf(c.stderr, "warning: no engine heartbeat since %s; the engine may have stopped\n",
 			h.LastHeartbeat.UTC().Format(time.RFC3339))

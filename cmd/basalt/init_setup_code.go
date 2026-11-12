@@ -379,8 +379,6 @@ func (l *laptopSetup) refused(err error) error {
 	return fmt.Errorf("%w; nothing changed", err)
 }
 
-// passkey registers a portal passkey when no active one belongs to the
-// portal, or with --add-passkey (step 7).
 // sentences joins the non-empty parts with one space, each ending with a
 // period.
 func sentences(parts ...string) string {
@@ -398,6 +396,8 @@ func sentences(parts ...string) string {
 	return strings.Join(out, " ")
 }
 
+// passkey registers a portal passkey when no active one belongs to the
+// portal, or with --add-passkey (step 7).
 func (l *laptopSetup) passkey() error {
 	keys, err := guard.ActivePasskeys(l.c.ctx, l.conn)
 	if err != nil {

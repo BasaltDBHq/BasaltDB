@@ -82,7 +82,6 @@ func Summary(p Payload, s SummaryState) []string {
 	return out
 }
 
-// grantsSentence says in words what the agent can do with its tables.
 // timeoutNote is " (now <m> ms)" when the role's current statement_timeout
 // differs from the code's, plus the one set for this database only, which
 // wins over it; "" when neither differs.
@@ -100,6 +99,7 @@ func timeoutNote(s SummaryState) string {
 	return " (" + strings.Join(parts, "; ") + ")"
 }
 
+// grantsSentence says in words what the agent can do with its tables.
 func grantsSentence(a *Agent) string {
 	limits := fmt.Sprintf("up to %d rows at a time without asking you, %d to %d with your passkey, never more",
 		summaryAutoRows, summaryAutoRows+1, summaryHoldRows)

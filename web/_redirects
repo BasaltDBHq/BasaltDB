@@ -1,8 +1,8 @@
 # Cloudflare Pages rewrites (status 200) for the paths the engine's local
 # pages server serves (internal/engine/pages PageRoutes). TestRedirectsMatchRoutes
 # fails if the two drift.
-/approvals/*        /approve/index.html    200
-/reverts/*          /revert/index.html     200
-/passkeys/register  /register/index.html   200
-/passkeys/check     /passkeys/index.html   200
-/passkeys/forget    /passkeys/index.html   200
+/approvals/*        /approve/    200
+/reverts/*          /revert/     200
+/passkeys/register  /register/   200
+/passkeys/check     /passkeys/   200
+/passkeys/forget    /passkeys/   200

@@ -296,7 +296,7 @@ func TestRedirectsMatchRoutes(t *testing.T) {
 		if r.ID {
 			src += "*"
 		}
-		want[src] = "/" + r.File
+		want[src] = "/" + strings.TrimSuffix(r.File, "index.html")
 		_, err := os.Stat("../../../web/" + r.File)
 		require.NoError(t, err)
 	}

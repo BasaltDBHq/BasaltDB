@@ -59,11 +59,11 @@ Cloudflare also serves the project at `<project>.pages.dev`, plus a URL per depl
 
 ## 6. Verify
 
-Use a real approval path (any UUID: the rewrite serves the page, which then reads its request from the engine). A 404 here means `_redirects` was not published.
+Use a real approval path (any UUID: the rewrite serves the page, which then reads its request from the engine). A 404 here means `_redirects` was not published. Links never end in a slash (`/approvals/<id>/` is not a route): on Pages such a path is not rewritten to a page, and the relative `../lib/` paths would break, so do not hand-write one. Pages `_redirects` cannot return a 404 rule to block it.
 
 ```sh
 ID=0199c0de-0000-7000-8000-000000000000
-[ "$(curl -s -o /dev/null -w '%{http_code}' "https://portal.basaltvault.app/approvals/$ID")" = 200 ] || echo 'FAIL: /approvals/<id> is not 200'
+[ "$(curl -s -o /dev/null -w '%{http_code}' "https://portal.basaltvault.app/approvals/$ID")" = 200 ] || { echo 'FAIL: /approvals/<id> is not 200'; exit 1; }
 curl -sI "https://portal.basaltvault.app/approvals/$ID" | grep -iE 'content-security-policy|x-frame-options|referrer-policy|x-content-type-options|cross-origin-opener-policy|strict-transport-security'
 curl -sI https://portal.basaltvault.app/lib/codec.js | grep -i content-type
 curl -s -o /dev/null -w '%{http_code}\n' https://portal.basaltvault.app/lib/codec.test.mjs

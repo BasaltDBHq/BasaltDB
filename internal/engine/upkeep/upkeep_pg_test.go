@@ -236,3 +236,20 @@ func TestTickWarnsAboutTablesRLSHides(t *testing.T) {
 	require.NoError(t, u.Tick(context.Background()))
 	require.NotContains(t, buf.String(), "row-level security")
 }
+
+type countingRefresher struct{ n int }
+
+func (c *countingRefresher) Refresh() { c.n++ }
+
+// Every cycle has the engine forget which tables row-level security hides, so
+// a policy the person adds shows in the agent's next warning.
+func TestTickRefreshesTheRLSCache(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
+	r := &countingRefresher{}
+	u := newUpkeep(a.Conn, time.Now).WithRLSCache(r)
+	require.NoError(t, u.Tick(context.Background()))
+	require.NoError(t, u.Tick(context.Background()))
+	require.Equal(t, 2, r.n)
+}

@@ -6,7 +6,7 @@
 // it (same origin), which relays it to Postgres.
 import { approvalResponseJSON, checkApprovalRequest, displayValue, encodeApprovalResponse, parseApprovalRequest, relyingParty } from "./codec.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
-import { $, APPROVE_REOPEN, el, fail, linkFailure, loadOrPaste, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
+import { $, APPROVE_REOPEN, el, fail, linkFailure, loadOrPaste, personText, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
 import { canStartPasskey, cascadeConfirmation, headline, summarize } from "./summary.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
@@ -121,7 +121,7 @@ async function finish(response, relay) {
       showDone("Approved. The agent will continue.");
       return;
     } catch (err) {
-      showRelayFailed(`The engine did not take the approval: ${err.message}. To finish by hand, paste the code below into basalt approve.`);
+      showRelayFailed(`The engine did not take the approval: ${personText(err) || err.message}. To finish by hand, paste the code below into basalt approve.`);
     }
   }
   showCode(encodeApprovalResponse(response));

@@ -9,9 +9,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/guard"
-
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/guard"
 )
 
 func TestForegroundNext(t *testing.T) {
@@ -46,7 +45,7 @@ func TestEngineSettings(t *testing.T) {
 	t.Parallel()
 	// The platform default config keeps the default state directory and page.
 	f := initFlags{configPath: "/etc/basalt/engine.json", socketDir: "/run/basalt"}
-	require.Equal(t, config.Settings{SocketDir: "/run/basalt"}, engineSettings(f, "linux"))
+	require.Equal(t, config.Settings{SocketDir: "/run/basalt", Mode: config.ModeSameUser}, engineSettings(f, "linux"))
 
 	// A per-user config keeps its state next to it; a development passkey
 	// origin serves the approval page.
@@ -56,7 +55,7 @@ func TestEngineSettings(t *testing.T) {
 	}
 	require.Equal(t, config.Settings{
 		SocketDir: "/home/iman/basalt/run", StateDir: "/home/iman/basalt/state",
-		PagesURL: "http://localhost:8787",
+		PagesURL: "http://localhost:8787", Mode: config.ModeSameUser,
 	}, engineSettings(f, "linux"))
 }
 
@@ -92,4 +91,35 @@ func TestInitRefusesAnUnusableAdminStringBeforeConnecting(t *testing.T) {
 		require.Contains(t, stderr.String(), want.Error())
 		require.NotContains(t, stderr.String(), "ADMINSECRET")
 	}
+}
+
+func TestInitRecordsThePerson(t *testing.T) {
+	t.Parallel()
+	h := &fakeHost{euid: 501}
+	c := &cliIO{getenv: func(string) string { return "" }, host: h}
+
+	uids, err := persons(c, initFlags{})
+	require.NoError(t, err)
+	require.Equal(t, []uint32{501}, uids, "the person running init")
+
+	uids, err = persons(c, initFlags{personUIDs: []uint32{502, 503}})
+	require.NoError(t, err)
+	require.Equal(t, []uint32{502, 503}, uids, "--person-uid wins")
+
+	h.euid = 0
+	c.getenv = func(k string) string { return map[string]string{envSudoUID: "504"}[k] }
+	uids, err = persons(c, initFlags{})
+	require.NoError(t, err)
+	require.Equal(t, []uint32{504}, uids, "init under sudo: the user who ran sudo")
+
+	c.getenv = func(string) string { return "" }
+	_, err = persons(c, initFlags{})
+	require.ErrorIs(t, err, errNoPerson, "a root login without --person-uid installs no service")
+	_, err = persons(c, initFlags{personUIDs: []uint32{0}})
+	require.ErrorContains(t, err, "is root")
+
+	f := initFlags{agent: "bot", configPath: "/etc/basalt/engine.json", engineUser: "basalt", osUser: "iman", personUIDs: []uint32{501, 502}}
+	args := serviceInstallArgs(f, "/b")
+	require.Equal(t, []string{"--person-uid", "501", "--person-uid", "502", "--credential-stdin"}, args[len(args)-5:])
+	require.NotContains(t, f.savedArgs("linux"), "--person-uid=501", "a one-shot flag, not saved")
 }

@@ -1,0 +1,30 @@
+{
+  "kind": "LINK_DERIVATION",
+  "description": "linkToken = HKDF-SHA-256(secret, salt empty, info basalt-vault-link.1, 16 bytes) as base64url; psk = HKDF-SHA-256(secret, salt empty, info basalt-vault-psk.1, 32 bytes). The secret is the link's #s= value, 16 bytes in base64url.",
+  "cases": [
+    {
+      "name": "all-zero secret",
+      "secret": "AAAAAAAAAAAAAAAAAAAAAA",
+      "linkToken": "VOCmb3ijauLxqnIISjFIEQ",
+      "psk": "bad27349dffdd3ef4a2f949fffc24d16e4ccc842ab5e1f6dd2446e25b3935711"
+    },
+    {
+      "name": "all-ones secret",
+      "secret": "_____________________w",
+      "linkToken": "UQ2u2IfM6RfaTMsb_2DAwA",
+      "psk": "dbbbd82fdc3ec10068966608f44c38dec113cb2e2e2d4174f0d3c47cd7fd6bdf"
+    },
+    {
+      "name": "the contract's example secret",
+      "secret": "q3Jv8sLk2mT0xYp1aBcD9w",
+      "linkToken": "Ymxpl0uGbHOjzhFZUnseKQ",
+      "psk": "9551d1001faad3dc7a566c5a987280333ad188e52a17131b1a3e81200319ed62"
+    },
+    {
+      "name": "the handshake vectors' relay link",
+      "secret": "oo3hsfnTW0SXS80SkQL_vQ",
+      "linkToken": "isf73vO7e9vmsU96hJSx1A",
+      "psk": "cbb394a97e989ced9006aad8a046f62cf3835694e02616fdc1cfd404902e6515"
+    }
+  ]
+}

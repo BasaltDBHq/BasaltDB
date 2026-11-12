@@ -1,5 +1,8 @@
 # Cloudflare Pages headers for the portal. Keep the /* block identical to
 # internal/websec (headers.go); TestPortalHeadersMatchEngine fails on drift.
+# Strict-Transport-Security is portal-only (the engine serves plain http). It
+# is set on portal.basaltvault.app, so includeSubDomains covers only that host's
+# subdomains, not the rest of basaltvault.app; no preload.
 # connect-src, script-src and the rest fall back to default-src 'self': the
 # pages load only their own modules and fetch only their own origin.
 /*
@@ -7,6 +10,8 @@
   X-Frame-Options: DENY
   Referrer-Policy: no-referrer
   X-Content-Type-Options: nosniff
+  Cross-Origin-Opener-Policy: same-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
 
 /*.js
   Content-Type: text/javascript

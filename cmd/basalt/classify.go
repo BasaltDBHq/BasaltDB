@@ -258,6 +258,10 @@ func readableColumns(c *cliIO, conn *pgx.Conn, st guard.ClassificationState, set
 	if err != nil {
 		return nil, err
 	}
+	bases, err := classify.BaseTypes(c.ctx, conn)
+	if err != nil {
+		return nil, err
+	}
 	wanted := map[guard.ColumnKey]bool{}
 	for _, s := range sets {
 		wanted[s.column] = true
@@ -271,7 +275,8 @@ func readableColumns(c *cliIO, conn *pgx.Conn, st guard.ClassificationState, set
 		delete(wanted, k)
 		cols = append(cols, classify.Column{
 			Schema: r.Schema, Table: r.Table, Name: r.Column, DataType: r.DataType,
-			Key: keys[classify.KeyRef{TableOID: r.TableOID, Attnum: r.Attnum}],
+			Key:      keys[classify.KeyRef{TableOID: r.TableOID, Attnum: r.Attnum}],
+			BaseType: bases[classify.KeyRef{TableOID: r.TableOID, Attnum: r.Attnum}],
 		})
 	}
 	for _, s := range sets {

@@ -31,7 +31,7 @@ func SuggestAll(ctx context.Context, cols []Column, sample SampleFunc, opts Opti
 	var phones []int
 	for i, col := range cols {
 		out[i].Column = col
-		if !Sampled(col.DataType) {
+		if !Sampled(col.SampleType()) {
 			out[i].Suggestion = Suggest(col, Sample{}, opts)
 			continue
 		}
@@ -60,14 +60,14 @@ func SuggestAll(ctx context.Context, cols []Column, sample SampleFunc, opts Opti
 }
 
 // phoneLike is a column whose region inference may run: named as a phone,
-// or holding mostly phone-shaped values.
+// or holding mostly phone-shaped values, bare runs of digits included.
 func phoneLike(col Column, values []string) bool {
-	if hit, ok := matchName(col.Name, kindOf(col.DataType)); ok && hit.entity == guard.EntityPhone {
+	if hit, ok := matchName(col.Name, kindOf(col.SampleType())); ok && hit.entity == guard.EntityPhone {
 		return true
 	}
 	c := 0
 	for _, v := range values {
-		if _, ok := phoneShape(v, false); ok {
+		if _, ok := shapePhone(v, true); ok {
 			c++
 		}
 	}

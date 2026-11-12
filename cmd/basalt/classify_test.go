@@ -18,13 +18,13 @@ import (
 
 // classifyDB is the classify fixture schema with an agent that reads both
 // of its tables.
-func classifyDB(t *testing.T) *guardtest.DB {
+func classifyDB(t *testing.T, more ...string) *guardtest.DB {
 	t.Helper()
 	d := guardtest.New(t)
 	schema, err := os.ReadFile("../../internal/pii/classify/testdata/schema.sql")
 	require.NoError(t, err)
 	d.Exec(t, string(schema))
-	d.NewAgent(t, "bot", nil, []string{"public.customers", "public.orders"})
+	d.NewAgent(t, "bot", nil, append([]string{"public.customers", "public.orders"}, more...))
 	return d
 }
 
@@ -355,7 +355,7 @@ func TestClassifyRefusesAGuardWithoutPII(t *testing.T) {
 // stderr or basalt_meta.
 func TestClassifyPrintsNoValue(t *testing.T) {
 	t.Parallel()
-	d := classifyDB(t)
+	d := classifyDB(t, "public.leads", "public.bad_cast")
 	ctx := context.Background()
 	rows, err := d.Admin.Query(ctx, `SELECT DISTINCT v FROM (
 		SELECT unnest(ARRAY[password, email, phone, full_name, address, iban, description, login, contact,
@@ -381,7 +381,7 @@ func TestClassifyPrintsNoValue(t *testing.T) {
 		{"", false, []string{"--check"}},
 		{"", false, []string{"--check", "--json"}},
 		{"", false, []string{"--set", "public.customers.email=identifier:email"}},
-		{"\ne\nstatus=identifier:other\ny\ny\n", true, nil},
+		{"\ne\nnope=public\n" + strings.Repeat("y\n", 20), true, nil},
 		{"", false, []string{"--yes", "--review=all"}},
 		{"", false, []string{"--json", "--review=all"}},
 	} {
@@ -408,7 +408,8 @@ func TestClassifyPrintsNoValue(t *testing.T) {
 		}
 	}
 	// The words of names and addresses are values too.
-	for _, w := range []string{"Alice", "Tamm", "Olivia", "Wijaya", "Jalan", "Melati", "Bandung", "courier", "@example"} {
+	for _, w := range []string{"Alice", "Tamm", "Olivia", "Wijaya", "Jalan", "Melati", "Bandung", "courier", "@example",
+		"Blue Widget", "Widget", "invalid input", "CB-1", "62812", "62815", "62813"} {
 		require.NotContains(t, all, w)
 	}
 }

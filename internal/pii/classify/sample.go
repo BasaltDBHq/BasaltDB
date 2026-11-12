@@ -98,14 +98,53 @@ func (s Sampler) Sample(ctx context.Context, col Column) (Sample, error) {
 		values, err = pgx.CollectRows(rows, pgx.RowTo[string])
 		return err
 	})
-	var pg *pgconn.PgError
-	switch {
-	case err == nil:
+	if err == nil {
 		return Sample{Values: values}, nil
-	case errors.As(err, &pg) && pg.Code == sqlStateQueryCanceled:
+	}
+	// A Postgres error's message and detail can quote a value (invalid
+	// input syntax for type integer: "…"), so only its SQLSTATE is kept,
+	// and the column is left for a person to review.
+	var pg *pgconn.PgError
+	if !errors.As(err, &pg) {
+		return Sample{}, fmt.Errorf("sample %s: the connection failed", col.FullName())
+	}
+	switch pg.Code {
+	case sqlStateQueryCanceled:
 		return Sample{Unavailable: UnavailableTimeout}, nil
-	case errors.As(err, &pg) && pg.Code == sqlStatePermissionDenied:
+	case sqlStatePermissionDenied:
 		return Sample{Unavailable: UnavailableNoReadable}, nil
 	}
-	return Sample{}, fmt.Errorf("sample %s: %w", col.FullName(), err)
+	return Sample{Unavailable: "error " + pg.Code}, nil
+}
+
+// BaseTypes maps every column whose type is a domain to the type the domain
+// is built on, through domains of domains (format_type, no modifier), so a
+// domain over text is sampled as text. Any role may read pg_catalog.
+func BaseTypes(ctx context.Context, q guard.Querier) (map[KeyRef]string, error) {
+	// Plain SQL: a recursive CTE over the catalog, which squirrel cannot
+	// express. Constant text, no arguments.
+	rows, err := q.Query(ctx, `WITH RECURSIVE b(attrelid, attnum, typ) AS (
+		SELECT a.attrelid, a.attnum, t.typbasetype
+		  FROM pg_catalog.pg_attribute a JOIN pg_catalog.pg_type t ON t.oid = a.atttypid
+		 WHERE t.typtype = 'd' AND a.attnum > 0 AND NOT a.attisdropped
+		UNION ALL
+		SELECT b.attrelid, b.attnum, t.typbasetype
+		  FROM b JOIN pg_catalog.pg_type t ON t.oid = b.typ
+		 WHERE t.typtype = 'd')
+		SELECT b.attrelid, b.attnum, pg_catalog.format_type(b.typ, NULL)
+		  FROM b JOIN pg_catalog.pg_type t ON t.oid = b.typ
+		 WHERE t.typtype <> 'd'`)
+	if err != nil {
+		return nil, fmt.Errorf("read domain base types: %w", err)
+	}
+	out := map[KeyRef]string{}
+	var (
+		ref  KeyRef
+		base string
+	)
+	_, err = pgx.ForEachRow(rows, []any{&ref.TableOID, &ref.Attnum, &base}, func() error {
+		out[ref] = base
+		return nil
+	})
+	return out, err
 }

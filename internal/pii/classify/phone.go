@@ -32,10 +32,28 @@ type phoneValue struct {
 }
 
 // phoneShape returns the value as a phone candidate. bare allows a run of
-// digits with no +, no leading 0 and no separator (an integer column), which
-// is a phone only when the column's name says so: random ids pass some
-// region's rules too often to count otherwise.
+// digits with no +, no leading 0 and no separator (an integer column). Such
+// a run is read as international first when it is a valid number with a
+// + before it (6281234567801 is +62, not a German local number).
 func phoneShape(v string, bare bool) (phoneValue, bool) {
+	pv, ok := shapePhone(v, bare)
+	if !ok || pv.international || !bare || strings.HasPrefix(pv.text, "0") {
+		return pv, ok
+	}
+	if intl := (phoneValue{text: "+" + pv.text, international: true}); validIn(intl, "") {
+		return intl, true
+	}
+	return pv, true
+}
+
+// bareDigits reports whether v is a run of digits with no +, no leading 0
+// and no separator: a phone only by its digits.
+func bareDigits(v string) bool {
+	v = strings.TrimSpace(v)
+	return allASCIIDigits(v) && !strings.HasPrefix(v, "0")
+}
+
+func shapePhone(v string, bare bool) (phoneValue, bool) {
 	v = strings.TrimSpace(v)
 	separated := strings.ContainsAny(v, phoneSeparators)
 	s := strings.Map(func(r rune) rune {

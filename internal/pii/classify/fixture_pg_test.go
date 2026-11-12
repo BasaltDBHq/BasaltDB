@@ -3,7 +3,6 @@ package classify_test
 import (
 	"context"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -22,13 +21,14 @@ type want struct {
 }
 
 var (
-	public     = want{class: guard.ClassPublic}
-	secret     = want{class: guard.ClassSecret}
-	freeText   = want{class: guard.ClassFreeText}
-	email      = want{class: guard.ClassIdentifier, entity: guard.EntityEmail}
-	idPhone    = want{class: guard.ClassIdentifier, entity: guard.EntityPhone, region: "ID"}
-	personName = want{class: guard.ClassIdentifier, entity: guard.EntityPersonName}
-	other      = want{class: guard.ClassIdentifier, entity: guard.EntityOther}
+	public      = want{class: guard.ClassPublic}
+	secret      = want{class: guard.ClassSecret}
+	freeText    = want{class: guard.ClassFreeText}
+	email       = want{class: guard.ClassIdentifier, entity: guard.EntityEmail}
+	idPhone     = want{class: guard.ClassIdentifier, entity: guard.EntityPhone, region: "ID"}
+	personName  = want{class: guard.ClassIdentifier, entity: guard.EntityPersonName}
+	other       = want{class: guard.ClassIdentifier, entity: guard.EntityOther}
+	reviewPhone = want{class: guard.ClassIdentifier, entity: guard.EntityPhone, region: "ID", needsReview: true}
 )
 
 // fixtureWant is the expected suggestion of every column of
@@ -68,6 +68,17 @@ var fixtureWant = map[string]want{
 	"public.orders.product_name":    public,
 	"public.orders.created_at":      public,
 	"public.orders.paid":            public,
+	"public.leads.id":               public,
+	"public.leads.primary_ref":      email,
+	"public.leads.alt_line":         idPhone,
+	"public.leads.reach_at":         reviewPhone,
+	"public.leads.reach_text":       reviewPhone,
+	"public.leads.mobile_updated":   idPhone,
+	"public.leads.email_status":     public,
+	"public.leads.ref_value":        {class: guard.ClassIdentifier, entity: guard.EntityOther, needsReview: true},
+	"public.leads.call_notes":       freeText,
+	"public.bad_cast.id":            public,
+	"public.bad_cast.n":             {class: guard.ClassIdentifier, entity: guard.EntityOther, needsReview: true},
 }
 
 // fixtureDB loads the fixture schema and an agent that reads both tables.
@@ -77,7 +88,7 @@ func fixtureDB(t *testing.T) *guardtest.DB {
 	schema, err := os.ReadFile("testdata/schema.sql")
 	require.NoError(t, err)
 	d.Exec(t, string(schema))
-	d.NewAgent(t, "bot", nil, []string{"public.customers", "public.orders"})
+	d.NewAgent(t, "bot", nil, []string{"public.customers", "public.orders", "public.leads", "public.bad_cast"})
 	return d
 }
 
@@ -93,10 +104,13 @@ func suggestAll(t *testing.T, d *guardtest.DB, opts classify.Options, keep bool)
 	}))
 	keys, err := classify.KeyColumns(ctx, d.Admin)
 	require.NoError(t, err)
+	bases, err := classify.BaseTypes(ctx, d.Admin)
+	require.NoError(t, err)
 	cols := make([]classify.Column, 0, len(st.Readable))
 	for _, r := range st.Readable {
 		cols = append(cols, classify.Column{Schema: r.Schema, Table: r.Table, Name: r.Column, DataType: r.DataType,
-			Key: keys[classify.KeyRef{TableOID: r.TableOID, Attnum: r.Attnum}]})
+			Key:      keys[classify.KeyRef{TableOID: r.TableOID, Attnum: r.Attnum}],
+			BaseType: bases[classify.KeyRef{TableOID: r.TableOID, Attnum: r.Attnum}]})
 	}
 	sampler := classify.Sampler{Conn: d.Admin, Timeout: 5 * time.Second}
 	results, err := classify.SuggestAll(ctx, cols, sampler.Sample, opts,
@@ -156,7 +170,7 @@ func TestFixtureSchemaRoundTrip(t *testing.T) {
 	for name, w := range fixtureWant {
 		ck, ok := checks[name]
 		require.Equal(t, w.class == guard.ClassIdentifier, ok, name)
-		if !ok || w.entity == guard.EntityOther && strings.HasSuffix(name, "dob") {
+		if !ok || name == "public.customers.dob" || name == "public.bad_cast.n" {
 			continue
 		}
 		require.Positive(t, ck.Sampled, name)
@@ -177,6 +191,38 @@ func TestSampleTimesOutAndIsReviewed(t *testing.T) {
 	got := classify.Suggest(classify.Column{Schema: "public", Table: "slow", Name: "v", DataType: "text"}, s, classify.Options{})
 	require.Equal(t, classify.Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityOther, NeedsReview: true,
 		Reason: "SAMPLE:timed out"}, got)
+}
+
+// TestSampleErrorKeepsOnlyTheSQLState: an error that would quote a value
+// (invalid input syntax for type integer: "Blue Widget") leaves the column
+// for review with its SQLSTATE only.
+func TestSampleErrorKeepsOnlyTheSQLState(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t)
+	d.Exec(t, `CREATE TABLE public.items (id bigint, label text);
+		INSERT INTO public.items VALUES (1, 'Blue Widget');
+		CREATE VIEW public.bad AS SELECT label::integer AS n FROM public.items`)
+	col := classify.Column{Schema: "public", Table: "bad", Name: "n", DataType: "integer"}
+	s, err := classify.Sampler{Conn: d.Admin, Timeout: 5 * time.Second}.Sample(context.Background(), col)
+	require.NoError(t, err)
+	require.Equal(t, classify.Sample{Unavailable: "error 22P02"}, s)
+	require.Equal(t, classify.Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityOther, NeedsReview: true,
+		Reason: "SAMPLE:error 22P02"}, classify.Suggest(col, s, classify.Options{}))
+}
+
+// TestDomainsAreJudgedByTheirBaseType: a domain over citext, and a domain
+// over a domain over text, are sampled as text.
+func TestDomainsAreJudgedByTheirBaseType(t *testing.T) {
+	t.Parallel()
+	d := fixtureDB(t)
+	got := map[string]classify.Result{}
+	for _, r := range suggestAll(t, d, classify.Options{}, false) {
+		got[r.Column.FullName()] = r
+	}
+	require.Equal(t, "public.email_address", got["public.leads.primary_ref"].Column.DataType)
+	require.Equal(t, "citext", got["public.leads.primary_ref"].Column.BaseType)
+	require.Equal(t, "text", got["public.leads.alt_line"].Column.BaseType)
+	require.Equal(t, guard.EntityEmail, got["public.leads.primary_ref"].Suggestion.EntityType)
 }
 
 func TestSampleIsBounded(t *testing.T) {

@@ -61,7 +61,7 @@ SELECT g,
        '+62813' || lpad(((g * 7919) % 100000000)::text, 8, '0'),
        '0813' || lpad(((g * 104729) % 100000000)::text, 8, '0'),
        6281300000000 + g * 7919,
-       100000000000 + (g::bigint * 982451653) % 899999999999,
+       9900000000000000 + (g::bigint * 982451653) % 99999999999999,
        (ARRAY['customers', 'orders', 'invoices'])[1 + g % 3],
        (ARRAY['Blue Widget', 'Steel Bolt', 'Garden Hose'])[1 + g % 3],
        g % 7,
@@ -85,3 +85,43 @@ INSERT INTO public.orders
 SELECT g, 1 + g % 200, 500000 + (g * 37) % 300, (g * 3.75)::numeric(10, 2), 1 + g % 9,
        (ARRAY['Blue Widget', 'Steel Bolt'])[1 + g % 2], timestamptz '2026-01-01' + g * interval '1 hour', g % 2 = 0
   FROM generate_series(1, 300) g;
+
+-- Review findings on #260: domains, bare-digit phones with no name, a
+-- qualified name, a notes column that is not only codes, and a view whose
+-- sample fails with an error that would quote a value.
+CREATE EXTENSION IF NOT EXISTS citext;
+CREATE DOMAIN public.email_address AS citext;
+CREATE DOMAIN public.contact_text AS text;
+CREATE DOMAIN public.contact_line AS public.contact_text;
+
+CREATE TABLE public.leads (
+    id             bigint PRIMARY KEY,
+    -- Domains are judged by their base type.
+    primary_ref    public.email_address,
+    alt_line       public.contact_line,
+    -- Bare digits that are valid phones: protected, for review.
+    reach_at       bigint,
+    reach_text     text,
+    -- A qualifier does not cancel the name when the values are phones…
+    mobile_updated text,
+    -- …but does when they are short flags.
+    email_status   text,
+    -- Repeated numbers of one length: an identifier to review.
+    ref_value      bigint,
+    -- Notes with phone numbers among the codes stay FREE_TEXT.
+    call_notes     text
+);
+
+INSERT INTO public.leads
+SELECT g,
+       'lead' || g || '@example.com',
+       '+62 811-' || (5000 + g) || '-' || lpad(g::text, 4, '0'),
+       6281300000000 + g * 104729,
+       '62812' || lpad(((g * 7919) % 100000000)::text, 8, '0'),
+       '62815' || lpad(((g * 6007) % 100000000)::text, 8, '0'),
+       (ARRAY['verified', 'pending'])[1 + g % 2],
+       (ARRAY[9811000000000017, 9811000000000213, 9811000000000419, 9811000000000625, 9811000000000831])[1 + g % 5],
+       CASE WHEN g % 2 = 0 THEN '+62 812-' || (6000 + g) || '-' || lpad(g::text, 4, '0') ELSE 'CB-' || g END
+  FROM generate_series(1, 100) g;
+
+CREATE VIEW public.bad_cast AS SELECT id, product_name::integer AS n FROM public.customers;

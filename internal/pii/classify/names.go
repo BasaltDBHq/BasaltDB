@@ -109,11 +109,26 @@ type nameHit struct {
 	class, entity string
 	// word is the column name, for the reason.
 	word string
+	// qualified is a match followed by a qualifier (email_status,
+	// phone_updated): the name is kept as a floor unless the sample shows
+	// only short codes or flags.
+	qualified bool
 }
 
-// matchName applies the name rules to a column of kind k.
+// match is how a rule matched a name.
+type match int
+
+const (
+	noMatch match = iota
+	qualifiedMatch
+	fullMatch
+)
+
+// matchName applies the name rules to a column of kind k. A full match wins
+// over a qualified one.
 func matchName(name string, k kind) (nameHit, bool) {
 	ws := splitName(name)
+	var qualified *nameHit
 	for _, r := range nameRules {
 		if !slices.Contains(r.kinds, k) {
 			continue
@@ -122,30 +137,41 @@ func matchName(name string, k kind) (nameHit, bool) {
 		if r.numericPhrases != nil && (k == kindInt || k == kindNumeric) {
 			phrases = r.numericPhrases
 		}
-		if ruleMatches(r, phrases, ws) {
+		switch ruleMatches(r, phrases, ws) {
+		case fullMatch:
 			return nameHit{class: r.class, entity: r.entity, word: name}, true
+		case qualifiedMatch:
+			if qualified == nil {
+				qualified = &nameHit{class: r.class, entity: r.entity, word: name, qualified: true}
+			}
+		case noMatch:
 		}
+	}
+	if qualified != nil {
+		return *qualified, true
 	}
 	return nameHit{}, false
 }
 
-func ruleMatches(r nameRule, phrases [][]string, ws []string) bool {
+func ruleMatches(r nameRule, phrases [][]string, ws []string) match {
+	best := noMatch
 	for _, p := range phrases {
 		for i := 0; i+len(p) <= len(ws); i++ {
 			if !slices.Equal(ws[i:i+len(p)], p) {
 				continue
 			}
-			end := i + len(p)
-			if end < len(ws) && qualifiers[ws[end]] {
-				continue
-			}
 			if r.entity == guard.EntityPersonName && p[0] == "name" && i > 0 && nonPersonNames[ws[i-1]] {
 				continue
 			}
-			return true
+			end := i + len(p)
+			if end < len(ws) && qualifiers[ws[end]] {
+				best = qualifiedMatch
+				continue
+			}
+			return fullMatch
 		}
 	}
-	return false
+	return best
 }
 
 // splitName lower-cases a column name and splits it on anything but letters

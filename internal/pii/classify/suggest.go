@@ -23,11 +23,11 @@ const (
 	freeTextLen = 40
 	// spacedShare is the share of free-text values that hold a space.
 	spacedShare = 50
-	// distinctShare is the share of distinct values of an ambiguous column.
-	distinctShare = 90
-	// fixedLengthShare is the share of values of the commonest length for a
-	// column to count as fixed length.
-	fixedLengthShare = 95
+	// wideLengthSpread: digit runs whose lengths differ by this much are
+	// amounts or counts, not identifiers.
+	wideLengthSpread = 4
+	// minSequentialValues is the fewest distinct values that make a sequence.
+	minSequentialValues = 5
 	// sequentialSpan: distinct integers whose range is at most this many
 	// times their count are sequential (an id or a counter).
 	sequentialSpan = 2
@@ -50,8 +50,20 @@ type Column struct {
 	Schema, Table, Name string
 	// DataType is format_type without the modifier.
 	DataType string
+	// BaseType is the type a domain column is built on ("" when the type
+	// is no domain): the column is judged by it.
+	BaseType string
 	// Key is true when the column is part of a primary or foreign key.
 	Key bool
+}
+
+// SampleType is the type the column is judged by: the domain's base type,
+// else its data type.
+func (c Column) SampleType() string {
+	if c.BaseType != "" {
+		return c.BaseType
+	}
+	return c.DataType
 }
 
 // QualifiedTable is schema.table.
@@ -102,10 +114,10 @@ func Rank(class string) int {
 // name rules; then keys and the shape of numbers. Ambiguous numbers come out
 // IDENTIFIER OTHER for review, never PUBLIC.
 func Suggest(col Column, s Sample, opts Options) Suggestion {
-	k := kindOf(col.DataType)
+	k := kindOf(col.SampleType())
 	hit, named := matchName(col.Name, k)
 	switch {
-	case !Sampled(col.DataType):
+	case !Sampled(col.SampleType()):
 		if named {
 			return fromName(hit)
 		}
@@ -120,7 +132,10 @@ func Suggest(col Column, s Sample, opts Options) Suggestion {
 		}
 		return unsampled(hit, named, reasonNoValues)
 	}
-	if v, ok := validate(k, s.Values, hit, named, opts); ok {
+	if named && hit.qualified && shortCodes(s.Values) {
+		named = false // email_status holding verified, pending: about the value, not the value
+	}
+	if v, ok := validate(k, col.Key, s.Values, hit, named, opts); ok {
 		return v
 	}
 	if named {
@@ -148,7 +163,7 @@ func unsampled(hit nameHit, named bool, reason string) Suggestion {
 }
 
 // validate runs the sample validators in order, the most protective first.
-func validate(k kind, values []string, hit nameHit, named bool, opts Options) (Suggestion, bool) {
+func validate(k kind, key bool, values []string, hit nameHit, named bool, opts Options) (Suggestion, bool) {
 	n := len(values)
 	enough := func(c int) bool { return c*percent >= sampleShare*n }
 	count := func(f func(string) bool) int {
@@ -175,12 +190,22 @@ func validate(k kind, values []string, hit nameHit, named bool, opts Options) (S
 			return withName(Suggestion{Class: ch.class, EntityType: ch.entity, Reason: sampled(ch.label, c)}, hit, named), true
 		}
 	}
-	bare := named && hit.entity == guard.EntityPhone
-	if enough(count(func(v string) bool { _, ok := phoneShape(v, bare); return ok })) {
-		r := inferRegion(values, bare, opts.PhoneRegion, opts.CallingCodes)
+	namedPhone := named && hit.entity == guard.EntityPhone
+	if namedPhone || enough(count(func(v string) bool { _, ok := phoneShape(v, false); return ok })) {
+		r := inferRegion(values, namedPhone, opts.PhoneRegion, opts.CallingCodes)
 		if enough(r.valid) {
 			s := Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityPhone, PhoneRegion: r.region,
 				Reason: sampled("PHONE", r.valid) + regionNote(r, n)}
+			return withName(s, hit, named), true
+		}
+	}
+	// Runs of bare digits that are valid phones, with no name to say so:
+	// protected as phones, for a person to confirm. Keys and sequences are ids.
+	if !namedPhone && !key && enough(count(bareDigits)) && !numberShape(values).sequential {
+		r := inferRegion(values, true, opts.PhoneRegion, opts.CallingCodes)
+		if enough(r.valid) {
+			s := Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityPhone, PhoneRegion: r.region, NeedsReview: true,
+				Reason: sampled("PHONE", r.valid) + " bare digits" + regionNote(r, n)}
 			return withName(s, hit, named), true
 		}
 	}
@@ -246,7 +271,7 @@ func byName(hit nameHit, values []string, opts Options) Suggestion {
 	default:
 		return s
 	}
-	if hit.class == guard.ClassFreeText && !slices.ContainsFunc(values, func(v string) bool { return !codeLike(v) }) {
+	if hit.class == guard.ClassFreeText && !slices.ContainsFunc(values, func(v string) bool { return !codeLike(v) || anyValidator(v) }) {
 		return Suggestion{Class: guard.ClassPublic, Reason: s.Reason + "; " + reasonCodes}
 	}
 	return s
@@ -263,11 +288,13 @@ func byShape(values []string) Suggestion {
 		switch {
 		case st.sequential:
 			return public(reasonSequential)
-		case st.distinct*percent >= distinctShare*n && st.modal*percent >= fixedLengthShare*n:
+		case st.maxLen-st.minLen >= wideLengthSpread:
+			return public(fmt.Sprintf("SHAPE:lengths %d to %d", st.minLen, st.maxLen))
+		case st.long*percent >= sampleShare*n:
 			return Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityOther, NeedsReview: true,
-				Reason: fmt.Sprintf("SHAPE:%d%% distinct, fixed length %d", st.distinct*percent/n, st.modalLen)}
+				Reason: fmt.Sprintf("SHAPE:%d distinct numbers of %d, lengths %d to %d, no validator", st.distinct, n, st.minLen, st.maxLen)}
 		}
-		return public(fmt.Sprintf("SHAPE:%d%% distinct, lengths %d to %d", st.distinct*percent/n, st.minLen, st.maxLen))
+		return public(fmt.Sprintf("SHAPE:short numbers, lengths %d to %d", st.minLen, st.maxLen))
 	}
 	if slices.ContainsFunc(values, func(v string) bool { return looksNumeric(strings.TrimSpace(v)) }) &&
 		!slices.ContainsFunc(values, func(v string) bool { return !looksNumeric(strings.TrimSpace(v)) }) {
@@ -283,13 +310,12 @@ func looksNumeric(v string) bool {
 }
 
 type numberStats struct {
-	distinct, modal, modalLen, minLen, maxLen int
-	sequential                                bool
+	distinct, long, minLen, maxLen int
+	sequential                     bool
 }
 
 func numberShape(values []string) numberStats {
 	seen := map[string]bool{}
-	lengths := map[int]int{}
 	st := numberStats{minLen: -1}
 	var lo, hi uint64
 	ints, started := true, false
@@ -299,7 +325,9 @@ func numberShape(values []string) numberStats {
 			seen[v] = true
 			st.distinct++
 		}
-		lengths[len(v)]++
+		if len(v) >= minPhoneDigits {
+			st.long++
+		}
 		st.minLen = minLen(st.minLen, len(v))
 		st.maxLen = max(st.maxLen, len(v))
 		if len(v) > maxSequentialDigits || (len(v) > 1 && v[0] == '0') {
@@ -312,13 +340,9 @@ func numberShape(values []string) numberStats {
 		}
 		lo, hi = min(lo, x), max(hi, x)
 	}
-	for l, c := range lengths {
-		if c > st.modal || (c == st.modal && l < st.modalLen) {
-			st.modal, st.modalLen = c, l
-		}
-	}
-	n := len(values)
-	st.sequential = ints && st.distinct*percent >= distinctShare*n && hi-lo < uint64(sequentialSpan*st.distinct)
+	// Sequential is judged on the distinct values, so repeats of one number
+	// are not a sequence.
+	st.sequential = ints && st.distinct >= minSequentialValues && hi-lo < uint64(sequentialSpan*st.distinct)
 	return st
 }
 

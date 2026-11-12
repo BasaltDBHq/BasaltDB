@@ -34,11 +34,9 @@ func TestMatchName(t *testing.T) {
 		{"customerEmail", kindText, &hit{guard.ClassIdentifier, guard.EntityEmail}},
 		{"email_address", kindText, &hit{guard.ClassIdentifier, guard.EntityEmail}},
 		{"mail_count", kindInt, nil},
-		{"email_count", kindText, nil},
 		{"email_verified", kindBool, nil},
 		{"encrypted_password", kindText, &hit{guard.ClassSecret, ""}},
 		{"password_changed_at", kindDate, nil},
-		{"token_type", kindText, nil},
 		{"password_hash", kindOther, &hit{guard.ClassSecret, ""}},
 		{"mobile", kindInt, &hit{guard.ClassIdentifier, guard.EntityPhone}},
 		{"name", kindText, &hit{guard.ClassIdentifier, guard.EntityPersonName}},
@@ -66,6 +64,15 @@ func TestMatchName(t *testing.T) {
 		require.True(t, ok, tc.name)
 		require.Equal(t, *tc.want, hit{got.class, got.entity}, tc.name)
 	}
+	// A qualifier keeps the name only as a floor, marked qualified.
+	for _, name := range []string{"email_count", "token_type", "mobile_updated"} {
+		got, ok := matchName(name, kindText)
+		require.True(t, ok, name)
+		require.True(t, got.qualified, name)
+	}
+	got, ok := matchName("email_address", kindText)
+	require.True(t, ok)
+	require.False(t, got.qualified)
 }
 
 func TestKindOf(t *testing.T) {
@@ -132,7 +139,7 @@ func TestSuggestShapes(t *testing.T) {
 	ambiguous := make([]string, 0, 50)
 	for i := range 50 {
 		seq = append(seq, strconv.Itoa(1000+i))
-		ambiguous = append(ambiguous, strconv.Itoa(7300000000+i*7919*13))
+		ambiguous = append(ambiguous, strconv.Itoa(9900000000000000+i*7919*13))
 	}
 	review := Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityOther, NeedsReview: true}
 	for _, tc := range []struct {
@@ -153,6 +160,9 @@ func TestSuggestShapes(t *testing.T) {
 			Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityPersonName}},
 		{col("notes", "text"), []string{"A-1", "B-2"}, Suggestion{Class: guard.ClassPublic}},
 		{col("notes", "text"), []string{"call Alice"}, Suggestion{Class: guard.ClassFreeText}},
+		{col("notes", "text"), []string{"A-1", "B-2", "6281234567801"}, Suggestion{Class: guard.ClassFreeText}},
+		{col("email_status", "text"), []string{"verified", "pending"}, Suggestion{Class: guard.ClassPublic}},
+		{col("contact_updated", "text"), []string{"short"}, Suggestion{Class: guard.ClassPublic}},
 	} {
 		got := Suggest(tc.col, Sample{Values: tc.values}, Options{})
 		if tc.want.Reason == "" {
@@ -160,9 +170,11 @@ func TestSuggestShapes(t *testing.T) {
 		}
 		require.Equal(t, tc.want, got, "%s %s %v", tc.col.Name, tc.col.DataType, tc.values)
 	}
-	// Bare numbers that are valid phones are no phone without the name.
+	// Bare numbers that are valid phones are phones to review without the
+	// name, read with their country code (+62, not a German number).
 	phones := []string{"6281234567801", "6281299991234", "6281355512345"}
-	require.Equal(t, guard.EntityOther, Suggest(col("ref", "bigint"), Sample{Values: phones}, Options{}).EntityType)
+	unnamed := Suggest(col("ref", "bigint"), Sample{Values: phones}, Options{})
+	require.Equal(t, []any{guard.EntityPhone, "ID", true}, []any{unnamed.EntityType, unnamed.PhoneRegion, unnamed.NeedsReview})
 	require.Equal(t, guard.EntityPhone, Suggest(col("msisdn", "bigint"), Sample{Values: phones}, Options{}).EntityType)
 }
 
@@ -173,6 +185,9 @@ func TestProtectedNeverLowersAConfirmedClass(t *testing.T) {
 			Suggestion: Suggestion{Class: guard.ClassPublic}},
 		Stored: &guard.PIIColumn{Class: guard.ClassIdentifier, EntityType: guard.EntityEmail, DataType: "text"},
 	}
+	require.Equal(t, Decision{Class: guard.ClassIdentifier, EntityType: guard.EntityEmail}, c.Protected())
+	// An equal rank keeps the person's class too.
+	c.Suggestion = Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityPersonName}
 	require.Equal(t, Decision{Class: guard.ClassIdentifier, EntityType: guard.EntityEmail}, c.Protected())
 	c.Suggestion = Suggestion{Class: guard.ClassSecret, NeedsReview: true}
 	require.Equal(t, Decision{Class: guard.ClassSecret, NeedsReview: true}, c.Protected())

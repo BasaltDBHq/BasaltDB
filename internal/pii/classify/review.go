@@ -92,10 +92,10 @@ func (c ReviewColumn) Suggested() Decision {
 }
 
 // Protected is what --yes takes: the suggestion, flagged for review when it
-// is, unless the class a person confirmed earlier protects more, which then
-// stays. An unattended run never lowers a column's protection.
+// is, unless a person confirmed a class at least as protective, which then
+// stays. An unattended run never lowers or overrides a person's class.
 func (c ReviewColumn) Protected() Decision {
-	if c.Confirmed() && Rank(c.Stored.Class) > Rank(c.Suggestion.Class) {
+	if c.Confirmed() && Rank(c.Stored.Class) >= Rank(c.Suggestion.Class) {
 		st := c.Stored
 		return Decision{Class: st.Class, EntityType: st.EntityType, PhoneRegion: st.PhoneRegion, NeedsReview: st.NeedsReview}
 	}

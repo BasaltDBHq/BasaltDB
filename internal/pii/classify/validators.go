@@ -170,6 +170,31 @@ func codeLike(v string) bool {
 	return true
 }
 
+// anyValidator reports whether v passes any validator, counting every
+// phone-shaped run of digits (bare ones too) as a phone.
+func anyValidator(v string) bool {
+	if validCard(v) || validNIK(v) || validIBAN(v) || validEmail(v) || validIMEI(v) || startsWithFirstName(v) {
+		return true
+	}
+	_, phone := shapePhone(v, true)
+	return phone
+}
+
+// maxShortCode is the longest value shortCodes accepts.
+const maxShortCode = 20
+
+// shortCodes reports whether every value is a short code or flag (verified,
+// true, A-100): no space, at most maxShortCode characters, and no validator
+// passes.
+func shortCodes(values []string) bool {
+	for _, v := range values {
+		if hasSpace(v) || runeLen(strings.TrimSpace(v)) > maxShortCode || anyValidator(v) {
+			return false
+		}
+	}
+	return true
+}
+
 func hasSpace(v string) bool { return strings.ContainsFunc(strings.TrimSpace(v), unicode.IsSpace) }
 
 func runeLen(v string) int { return utf8.RuneCountInString(v) }

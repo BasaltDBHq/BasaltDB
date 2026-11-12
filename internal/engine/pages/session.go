@@ -30,14 +30,14 @@ type sessionRoute struct {
 }
 
 // sessionRoutes are the only routes a session dispatches: never the links
-// issuing routes, /healthz, the pages or their files. The revert reject
-// route joins when the engine serves it (RS-2).
+// issuing routes, /healthz, the pages or their files.
 var sessionRoutes = []sessionRoute{
 	{http.MethodGet, approvalsResource, "", approvalParam, (*Server).getApproval},
 	{http.MethodPost, approvalsResource, "approve", approvalParam, (*Server).postApproval},
 	{http.MethodGet, revertsResource, "", revertParam, (*Server).getRevert},
 	{http.MethodPost, revertsResource, "apply", revertParam, (*Server).postRevert},
 	{http.MethodPost, revertsResource, "scope", revertParam, (*Server).postScope},
+	{http.MethodPost, revertsResource, "reject", revertParam, (*Server).postReject},
 }
 
 // The resources of the pages API and the path parameters naming an

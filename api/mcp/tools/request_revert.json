@@ -99,7 +99,7 @@
           "EXPIRED",
           "REJECTED"
         ],
-        "description": "PENDING until the person signs; APPLIED once a revert of up to 1000 lines is signed (it is applied in the same transaction); APPLYING once a larger plan is signed and until you applied every line; EXPIRED when not signed within 1 hour, or a signed plan not finished within 24 hours. Planned (revert scope, RS-2): REJECTED when the person rejected it on the signing page; nothing was reverted, and you do not request it again unless the person asks."
+        "description": "PENDING until the person signs; APPLIED once a revert of up to 1000 lines is signed (it is applied in the same transaction); APPLYING once a larger plan is signed and until you applied every line; EXPIRED when not signed within 1 hour, or a signed plan not finished within 24 hours. REJECTED when the person rejected it on the signing page; nothing was reverted, and you do not request it again unless the person asks."
       },
       "scope": {
         "type": "string",
@@ -126,12 +126,12 @@
       "rejectedAt": {
         "type": "string",
         "format": "date-time",
-        "description": "Planned (revert scope, RS-2): with REJECTED, when the person rejected it."
+        "description": "With REJECTED, when the person rejected it."
       },
       "note": {
         "type": "string",
         "maxLength": 500,
-        "description": "Planned (revert scope, RS-2): with REJECTED, the note the person wrote for you on the signing page, when they wrote one."
+        "description": "With REJECTED, the note the person wrote for you on the signing page, when they wrote one."
       },
       "intent": {
         "type": "string"

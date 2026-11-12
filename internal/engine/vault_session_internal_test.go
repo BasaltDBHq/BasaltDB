@@ -87,6 +87,10 @@ func (a *heldAgent) RescopeRevert(context.Context, uuid.UUID, string, agent.Scop
 
 func (a *heldAgent) CheckResetLink(uuid.UUID, string) bool { return false }
 
+func (a *heldAgent) RejectRevert(context.Context, uuid.UUID, string, agent.RejectRequest) (agent.RejectResponse, error) {
+	return agent.RejectResponse{}, agent.ErrNotThisAgent
+}
+
 func (a *heldAgent) RelayRevert(context.Context, revert.Response) (guard.AppliedRevert, error) {
 	return guard.AppliedRevert{}, agent.ErrNotThisAgent
 }

@@ -166,6 +166,7 @@ func resultCases() map[string]resultCase {
 		resultKey("request_revert", "APPLYING"): {tool: "request_revert", args: revertArgs, build: state(ledger.RevertApplying)},
 		resultKey("request_revert", "APPLIED"):  {tool: "request_revert", args: revertArgs, build: state(ledger.RevertApplied)},
 		resultKey("request_revert", "EXPIRED"):  {tool: "request_revert", args: revertArgs, build: state(ledger.RevertExpired)},
+		resultKey("request_revert", "REJECTED"): {tool: "request_revert", args: revertArgs, build: state(ledger.RevertRejected)},
 
 		resultKey("list_pending", "PENDING"): {tool: "list_pending", args: map[string]any{},
 			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {

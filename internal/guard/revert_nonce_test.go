@@ -35,5 +35,5 @@ func TestRevertNonceForTheRequestingRoleOnly(t *testing.T) {
 
 	require.False(t, scalarOf[bool](t, e.d.Admin,
 		`SELECT has_function_privilege('public', 'basalt_meta.revert_nonce(uuid)', 'EXECUTE')`), "not executable by PUBLIC")
-	require.Equal(t, 22, scalarOf[int](t, e.d.Admin, `SELECT max(version) FROM basalt_meta.schema_version`))
+	require.Equal(t, guard.LatestVersion(), scalarOf[int](t, e.d.Admin, `SELECT max(version) FROM basalt_meta.schema_version`))
 }

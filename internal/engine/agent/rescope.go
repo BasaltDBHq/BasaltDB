@@ -357,18 +357,27 @@ func (s *Service) heldState(r ledger.Revert, secret string) (rescoped, bool, err
 	if !held || r.Widened || st.request.Binding == r.BindingText {
 		return st, held, nil
 	}
-	s.rescopes.drop(r.ID)
 	if st.token == nil {
+		s.rescopes.drop(r.ID)
 		return rescoped{}, false, nil
 	}
+	return rescoped{}, false, s.personScopeGone(r)
+}
+
+// personScopeGone drops what the engine held for revert r and revokes the
+// person's link as a reset does, once Postgres shows the person's scope is
+// gone (the agent role reset it directly): the answer is NOT_FOUND
+// LINK_RESET, and the page says the agent reset the revert.
+func (s *Service) personScopeGone(r ledger.Revert) error {
+	s.rescopes.drop(r.ID)
 	if err := s.Links.Reset(r.ID, r.ExpiresAt); err != nil {
-		return rescoped{}, false, err
+		return err
 	}
 	te, err := LinkReset()
 	if err != nil {
-		return rescoped{}, false, err
+		return err
 	}
-	return rescoped{}, false, te
+	return te
 }
 
 // resetToProposal puts a widened revert back to the agent's proposal for

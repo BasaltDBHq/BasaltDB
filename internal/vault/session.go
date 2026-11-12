@@ -296,18 +296,52 @@ func (cn *conn) work(ctx context.Context, ss *session) {
 		case <-ctx.Done():
 			return
 		case req := <-e.work:
+			after := &afterAnswer{}
 			dctx := context.WithValue(ctx, rotateKey{}, rotator(func(token channel.LinkToken) { cn.rotate(ss, token) }))
+			dctx = context.WithValue(dctx, afterKey{}, after)
 			resp := pages.Dispatch(dctx, e.link, req)
 			if ctx.Err() != nil {
+				after.run()
 				return
 			}
-			if err := cn.respond(ctx, ss, req.id, resp); err != nil {
+			err := cn.respond(ctx, ss, req.id, resp)
+			after.run()
+			if err != nil {
 				cn.c.opts.Log.Debug("vault session: answer", "err", err)
 				cn.endAsync(ss.id, channel.ErrProtocol)
 				return
 			}
 		}
 	}
+}
+
+// afterKey carries, in the context of a request a session dispatches, the
+// work to run once its answer went out.
+type afterKey struct{}
+
+// afterAnswer is the work a request's handler left for after its answer.
+// Only the session's worker touches it: the handler runs on the worker.
+type afterAnswer struct{ fs []func() }
+
+func (a *afterAnswer) run() {
+	for _, f := range a.fs {
+		f()
+	}
+}
+
+// AfterAnswer runs f once the answer to the request ctx carries was sent in
+// its session, or the session ended (CONTRACT.md, Vault channel, Frames: a
+// reject in the session revokes the revert's link, which ends the session,
+// and the page must get the reject's answer first). It reports false, and
+// keeps nothing, for a request that did not come through a session, such
+// as one on loopback: the caller then runs f itself.
+func AfterAnswer(ctx context.Context, f func()) bool {
+	a, ok := ctx.Value(afterKey{}).(*afterAnswer)
+	if !ok {
+		return false
+	}
+	a.fs = append(a.fs, f)
+	return true
 }
 
 // rotateKey carries, in the context of a request a session dispatches, the

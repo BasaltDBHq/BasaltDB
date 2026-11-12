@@ -308,6 +308,13 @@ func (s *Secrets) Revoke(id uuid.UUID, token channel.LinkToken) error {
 	}, true)
 }
 
+// RevokeItem revokes item id's live link, whatever it is, as when the
+// person rejected the revert: the page holding it then reads an unknown
+// id, and a relay link's sessions end.
+func (s *Secrets) RevokeItem(id uuid.UUID) error {
+	return s.revokeWhere(func(eid uuid.UUID, _ secretEntry) bool { return eid == id }, true)
+}
+
 // RevokeToken revokes the relay link of token, whichever item holds it, as
 // when another engine registered that token (VC-42). It reports whether
 // this store held it. It tells onDrop nothing: the Vault said the token is

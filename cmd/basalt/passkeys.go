@@ -169,11 +169,12 @@ func passkeyRemove(c *cliIO, args []string) int {
 
 // idAfterFlags moves a credential id that starts with "-" behind "--".
 // base64url includes "-", so about one id in 64 looks like a flag to the
-// flag package and would be refused as one. A single-dash argument is taken
-// as an id only when it is at least minIDPrefix characters of base64url
-// (the dash included) and names no flag. The scan stops at "--" (what follows
-// is already positional) and skips the value of a flag that takes one, so a
-// value that starts with "-" is never taken as the id.
+// flag package and would be refused as one. An argument that starts with
+// one or more dashes is taken as an id only when it is at least minIDPrefix
+// characters of base64url (the dashes included) and names no flag. The scan
+// stops at "--" (what follows is already positional) and skips the value of
+// a flag that takes one, so a value that starts with "-" is never taken as
+// the id.
 func idAfterFlags(fs *flag.FlagSet, args []string) []string {
 	for i := 0; i < len(args); i++ {
 		a := args[i]
@@ -211,7 +212,12 @@ func takesSeparateValue(fs *flag.FlagSet, a string) bool {
 }
 
 func looksLikeID(fs *flag.FlagSet, a string) bool {
-	if len(a) < minIDPrefix || a[0] != '-' || a[1] == '-' || fs.Lookup(a[1:]) != nil {
+	if len(a) < minIDPrefix || a[0] != '-' {
+		return false
+	}
+	// The flag package reads "-name" and "--name" alike: neither is an id.
+	name := strings.TrimPrefix(strings.TrimPrefix(a, "-"), "-")
+	if fs.Lookup(name) != nil {
 		return false
 	}
 	return strings.Trim(a, base64URLAlphabet) == ""

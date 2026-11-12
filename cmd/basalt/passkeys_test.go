@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"io"
@@ -162,43 +163,77 @@ func TestPasskeyRemoveIDStartingWithDash(t *testing.T) {
 	require.False(t, looksLikeID(fs, "-yes"))
 	require.False(t, looksLikeID(fs, "-abc"))
 	require.False(t, looksLikeID(fs, "-abc=defghijk"))
-	require.False(t, looksLikeID(fs, "--abcdefghijk"))
+	require.False(t, looksLikeID(fs, "--pages-url"))
+	// Ids that start with one, two or three dashes are ids.
+	require.True(t, looksLikeID(fs, "-abcdefghijk"))
+	require.True(t, looksLikeID(fs, "--abcdefghijk"))
+	require.True(t, looksLikeID(fs, "---abcdefghij"))
+	for _, args := range [][]string{
+		{"--abcdefghijk", "--yes"},
+		{"---abcdefghij", "--yes"},
+	} {
+		require.Equal(t, []string{"--yes", "--", args[0]}, idAfterFlags(fs, args), args)
+	}
 }
 
-// dashPasskey is a passkey whose credential id text starts with "-".
-func dashPasskey(t *testing.T) *passkeytest.Authenticator {
+// dashPasskey is a passkey whose credential id text starts with prefix: a
+// random id with its first characters replaced, so the test does not depend
+// on what the random id happens to start with.
+func dashPasskey(t *testing.T, prefix string) *passkeytest.Authenticator {
 	t.Helper()
-	const attempts = 2000 // one id in 64 qualifies; failing all is impossible in practice
-	for range attempts {
-		a, err := passkeytest.New(passkey.Production)
-		require.NoError(t, err)
-		if strings.HasPrefix(id(a), "-") {
-			return a
-		}
-	}
-	t.Fatal("no passkey id starting with a dash")
-	return nil
+	a, err := passkeytest.New(passkey.Production)
+	require.NoError(t, err)
+	text := prefix + id(a)[len(prefix):]
+	a.ID, err = base64.RawURLEncoding.DecodeString(text)
+	require.NoError(t, err)
+	require.Equal(t, text, id(a))
+	return a
 }
 
 func TestPasskeyRemoveDashID(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
-	laptop, tablet := dashPasskey(t), dashPasskey(t)
+	one, two, three := dashPasskey(t, "-a"), dashPasskey(t, "--b"), dashPasskey(t, "---c")
 	phone, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
-	initWithPasskey(t, d, laptop)
-	require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, tablet.Credential(), "tablet"))
-	require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, phone.Credential(), "phone"))
+	initWithPasskey(t, d, one)
+	for _, p := range []struct {
+		key   *passkeytest.Authenticator
+		label string
+	}{{two, "two"}, {three, "three"}, {phone, "phone"}} {
+		require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, p.key.Credential(), p.label))
+	}
 	admin := map[string]string{envAdminURL: d.URL}
 
 	// The documented "--" form, with a flag value before it and a dash-led
-	// id longer than the shortest prefix.
-	r := cli(t, admin, "", "passkey", "remove", "--yes", "--pages-url", links.DefaultLocal, "--", id(tablet)[:12])
+	// id longer than the shortest prefix: an id starting with "---".
+	r := cli(t, admin, "", "passkey", "remove", "--yes", "--pages-url", links.DefaultLocal, "--", id(three)[:12])
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Contains(t, r.stderr, "revoked; it can no longer approve or revert. 3 active passkeys remain")
+
+	// The shortest accepted prefix (dashes included), as typed, with a flag
+	// after it: an id starting with "--", then one starting with "-".
+	r = cli(t, admin, "", "passkey", "remove", id(two)[:minIDPrefix], "--yes", "--pages-url", links.DefaultLocal)
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Contains(t, r.stderr, "revoked; it can no longer approve or revert. 2 active passkeys remain")
 
-	// The shortest accepted prefix (dash included), as typed, with a flag after it.
-	r = cli(t, admin, "", "passkey", "remove", id(laptop)[:minIDPrefix], "--yes", "--pages-url", links.DefaultLocal)
+	r = cli(t, admin, "", "passkey", "remove", "--pages-url", links.DefaultLocal, id(one)[:minIDPrefix], "--yes")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Contains(t, r.stderr, "revoked; it can no longer approve or revert. 1 active passkeys remain")
+}
+
+// TestPasskeyRemoveTripleDashID removes an id starting with "---" typed
+// without the "--" separator.
+func TestPasskeyRemoveTripleDashID(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	three := dashPasskey(t, "---c")
+	phone, err := passkeytest.New(passkey.Production)
+	require.NoError(t, err)
+	initWithPasskey(t, d, three)
+	require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, phone.Credential(), "phone"))
+
+	r := cli(t, map[string]string{envAdminURL: d.URL}, "", "passkey", "remove", id(three)[:minIDPrefix], "--yes", "--pages-url", links.DefaultLocal)
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Contains(t, r.stderr, "revoked; it can no longer approve or revert. 1 active passkeys remain")
 }

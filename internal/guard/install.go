@@ -591,11 +591,12 @@ func AgentConnString(adminURL, role, password string) (string, error) {
 		}
 	}
 	agent := url.URL{
-		Scheme:   u.Scheme,
-		User:     url.UserPassword(user, password),
-		Host:     u.Host,
-		Path:     u.Path,
-		RawQuery: query.Encode(),
+		Scheme: u.Scheme,
+		User:   url.UserPassword(user, password),
+		Host:   u.Host,
+		Path:   u.Path,
+		// Encode writes a space as "+", which pgx reads as a plus.
+		RawQuery: strings.ReplaceAll(query.Encode(), "+", "%20"),
 	}
 	return agent.String(), nil
 }

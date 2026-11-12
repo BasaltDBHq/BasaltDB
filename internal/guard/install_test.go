@@ -2,9 +2,19 @@ package guard_test
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"fmt"
+	"math/big"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
@@ -34,6 +44,8 @@ func TestNamesValidate(t *testing.T) {
 func TestAgentConnString(t *testing.T) {
 	t.Parallel()
 	const canary = "ADMINSECRET"
+	ca := writeCA(t)
+	caQuery := strings.ReplaceAll(ca, " ", "%20")
 	cases := map[string]struct {
 		admin, want, user string
 		// parse: what pgx can parse here; the default is both strings.
@@ -89,6 +101,21 @@ func TestAgentConnString(t *testing.T) {
 		"a unix socket host and port in the query are kept": {
 			admin: "postgres:///app?host=/var/run/postgresql&port=5433&user=admin&password=" + canary,
 			want:  "postgres://basalt_agent_bot:pw@/app?host=%2Fvar%2Frun%2Fpostgresql&port=5433",
+			user:  "basalt_agent_bot",
+		},
+		"a space in dbname stays a space": {
+			admin: "postgres://admin:" + canary + "@db.example.com?dbname=my%20db&application_name=my%20app",
+			want:  "postgres://basalt_agent_bot:pw@db.example.com?application_name=my%20app&dbname=my%20db",
+			user:  "basalt_agent_bot",
+		},
+		"a plus in dbname stays a plus": {
+			admin: "postgres://admin:" + canary + "@db.example.com?dbname=a%2Bb",
+			want:  "postgres://basalt_agent_bot:pw@db.example.com?dbname=a%2Bb",
+			user:  "basalt_agent_bot",
+		},
+		"a space in an sslrootcert path stays a space": {
+			admin: "postgres://admin:" + canary + "@db.example.com/app?sslmode=verify-ca&sslrootcert=" + caQuery,
+			want:  "postgres://basalt_agent_bot:pw@db.example.com/app?sslmode=verify-ca&sslrootcert=" + strings.ReplaceAll(caQuery, "/", "%2F"),
 			user:  "basalt_agent_bot",
 		},
 		"dbname in the query is kept": {
@@ -325,4 +352,24 @@ func TestUninstallDropsSchemaAndRoles(t *testing.T) {
 
 	// Uninstalling twice is a no-op.
 	require.NoError(t, guard.Uninstall(ctx, d.Admin, d.Names))
+}
+
+// writeCA writes a self-signed CA certificate under a directory whose name
+// has a space, and returns its path.
+func writeCA(t *testing.T) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "test ca"},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
+		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	require.NoError(t, err)
+	dir := filepath.Join(t.TempDir(), "ca dir")
+	require.NoError(t, os.Mkdir(dir, 0o700))
+	path := filepath.Join(dir, "ca.pem")
+	require.NoError(t, os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600))
+	return path
 }

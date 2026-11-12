@@ -69,7 +69,7 @@ Milestones are gated by evidence, not dates. Progress is tracked in the [roadmap
 | M1.5. Stale writes | Reads recorded by row version, task ids shared across agents, `STALE_READ` refusal |
 | M2. Approvals | Default policy, a preview that can never commit, passkey approval checked inside Postgres, notification |
 | M3. Revert | Revert by change and by run, preview, people-win conflict checks |
-| M4. Show it | The two-minute demo on a real Supabase project; an install guide |
+| M4. Show it | The two-minute demo on a real Supabase project; an [install guide](docs/install.md) |
 
 The product definition, decisions and plans live in [docs/redesign](docs/redesign/README.md).
 

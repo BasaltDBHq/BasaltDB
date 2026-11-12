@@ -496,26 +496,27 @@ func notOwnTask(scope guard.RevertScope) error {
 // scopeRefused answers a scope the guard refused (BS011, CONTRACT.md,
 // Guard errors): another agent's or an unknown change, run or task is
 // NOT_FOUND, alike; a descriptor the engine built badly is
-// INVALID_ARGUMENT with the guard's explanation.
-func scopeRefused(scope guard.RevertScope, err error) (error, bool) {
+// INVALID_ARGUMENT with the guard's explanation. nil when err is not a
+// scope refusal.
+func scopeRefused(scope guard.RevertScope, err error) error {
 	detail, hint, ok := guard.ScopeRefusal(err)
 	if !ok {
-		return nil, false
+		return nil
 	}
 	switch detail {
 	case guard.ScopeNotOwnChange, guard.ScopeNotOwnRun:
-		return notOwnScope(scope), true
+		return notOwnScope(scope)
 	case guard.ScopeNotOwnTask:
-		return notOwnTask(scope), true
+		return notOwnTask(scope)
 	}
-	return &ArgumentError{Message: "the revert scope was refused: " + hint}, true
+	return &ArgumentError{Message: "the revert scope was refused: " + hint}
 }
 
 // prepareError is the answer to a prepare that failed: what the person
 // can do when nothing can be reverted, or when the prepare is too large for
 // an MCP call and their terminal is the better path.
 func (s *Service) prepareError(ctx context.Context, tool string, scope guard.RevertScope, err error) error {
-	if refused, ok := scopeRefused(scope, err); ok {
+	if refused := scopeRefused(scope, err); refused != nil {
 		return refused
 	}
 	if code, ok := guard.CodeOf(err); ok && code == guard.CodeNothingToRevert {

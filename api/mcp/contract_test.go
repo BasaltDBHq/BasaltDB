@@ -196,9 +196,6 @@ func TestStatusToolHasContract(t *testing.T) {
 	require.NotContains(t, out, "credentialFile", "the MCP status never names the credential file")
 }
 
-// TestApprovalSchemas checks the approval-flow payload schemas follow the
-// wire rules (CONTRACT.md, Approvals): camelCase properties, SCREAMING_SNAKE_CASE
-// enums, closed objects.
 // TestDescribeContract: describe is contracted, not served yet (PLANNED), and
 // its description carries the comment rule (D-4) and the visibility rule (D-7).
 func TestDescribeContract(t *testing.T) {
@@ -220,6 +217,9 @@ func TestDescribeContract(t *testing.T) {
 	require.Contains(t, tool.Description, "not secret")
 }
 
+// TestApprovalSchemas checks the approval-flow payload schemas follow the
+// wire rules (CONTRACT.md, Approvals): camelCase properties, SCREAMING_SNAKE_CASE
+// enums, closed objects.
 func TestApprovalSchemas(t *testing.T) {
 	t.Parallel()
 	checkPayloadSchemas(t, "approval", []string{

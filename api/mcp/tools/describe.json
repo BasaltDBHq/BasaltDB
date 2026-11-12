@@ -254,16 +254,16 @@
         "items": {
           "type": "string"
         },
-        "description": "RESOURCE: column names. Left out whole when it touches a hidden column."
+        "description": "RESOURCE: column names. Left out whole when it touches a hidden column, including one that appears only in an expression."
       },
       "hiddenKeys": {
         "type": "integer",
         "minimum": 0,
-        "description": "RESOURCE: primary or unique keys left out because they touch a hidden column."
+        "description": "RESOURCE: primary or unique keys left out because they touch a hidden column, including one that appears only in an expression."
       },
       "indexes": {
         "type": "array",
-        "description": "RESOURCE. An index that touches a hidden column is left out whole.",
+        "description": "RESOURCE. An index that touches a hidden column is left out whole, including one that appears only in an index expression or a partial-index WHERE predicate.",
         "items": {
           "type": "object",
           "additionalProperties": false,
@@ -304,7 +304,7 @@
       "hiddenIndexes": {
         "type": "integer",
         "minimum": 0,
-        "description": "RESOURCE: indexes left out because they touch a hidden column."
+        "description": "RESOURCE: indexes left out because they touch a hidden column, including one that appears only in an index expression or a partial-index WHERE predicate."
       },
       "foreignKeys": {
         "type": "array",

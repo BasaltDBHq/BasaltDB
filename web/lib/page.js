@@ -12,12 +12,28 @@ export function el(tag, className, text) {
   return node;
 }
 
+// personText is what the engine tells the person about a failure: its
+// personMessage and, for each of the person's steps, the command to run or
+// the link to open. "" when the engine told nothing more than its message.
+export function personText(err) {
+  if (!err?.personMessage) return "";
+  const lines = [err.personMessage];
+  for (const step of err.nextSteps ?? []) {
+    if (step.action === "RUN_COMMAND" && step.command) lines.push(step.text + " Run: " + step.command);
+    if (step.action === "OPEN_LINK" && step.url) lines.push(step.text + " Open: " + step.url);
+  }
+  return lines.join("\n");
+}
+
 // linkFailure is the sentence a page shows when its link cannot be used.
 // kind names the page ("approval", "revert"); reopen says how to open the
 // full link from the terminal. A link that does not decode was most likely
 // cut short when copied, so the person is told to reopen it, not that it
 // is bad.
 export function linkFailure(err, kind, reopen) {
+  const told = err?.name === "RelayError" ? personText(err) : "";
+  if (told && err.code === "NOT_FOUND") return told + "\nOr " + reopen + ".";
+  if (told) return told;
   if (err?.name === "RelayError" && err.code === "NOT_FOUND") {
     return `This ${kind} link is incomplete, was replaced by a newer one, or the ${kind} is gone. ` +
       `Ask the agent for the link again (it gets a new one from list_pending), or ${reopen}.`;

@@ -210,6 +210,7 @@ func printApplied(c *cliIO, id uuid.UUID, out guard.AppliedRevert, asJSON bool) 
 	if out.Batched {
 		fmt.Fprintf(c.stderr, "basalt: signed. Your agent restores the %d remaining rows in batches of up to %d (MCP apply_revert_batch) before %s; %d rows are left as they are.\n",
 			out.Pending, revert.MaxBatch, out.ApplyBy.UTC().Format(timeLayout), out.Skipped)
+		fmt.Fprintf(c.stderr, "basalt: tell your agent: apply revert %s in batches\n", id)
 		fmt.Fprintf(c.stderr, "basalt: follow it with: basalt revert --status %s\n", id)
 		return exitOK
 	}

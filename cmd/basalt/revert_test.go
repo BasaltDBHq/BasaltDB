@@ -258,6 +258,7 @@ func TestRevertLargePlan(t *testing.T) {
 	require.Contains(t, stderr.buf.String(), "large revert: 1010 rows, 1009 to restore and 1 left as they are")
 	require.Contains(t, stderr.buf.String(), "the first 1000 rows, rows left alone first")
 	require.Contains(t, stderr.buf.String(), "signed. Your agent restores the 1009 remaining rows in batches of up to 200")
+	require.Regexp(t, `basalt: tell your agent: apply revert [0-9a-f-]{36} in batches\n`, stderr.buf.String())
 	require.Contains(t, stdout.String(), `skip       public.leads {"id": 1005}: CHANGED_AFTER`)
 	require.Equal(t, 1000, strings.Count(stdout.String(), "\n"), "the sample")
 	m := statusCommand.FindStringSubmatch(stderr.buf.String())

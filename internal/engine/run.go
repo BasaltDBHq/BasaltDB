@@ -235,6 +235,9 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		return agentRuntime{}, err
 	}
 	store := agentdb.NewStore(pool, limits, time.Now)
+	blind := agent.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
+		return guard.RLSBlindTables(ctx, pool, "", tables)
+	})
 	svc := agent.NewService(agent.Deps{
 		Name:        a.Name,
 		Reader:      agentdb.NewReader(pool, limits, time.Now),
@@ -248,12 +251,13 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		Commands:    cmds,
 		PagesOrigin: env.pagesOrigin,
 		Links:       linkSecrets(env.stateDir, a.Name, log),
+		RLS:         blind,
 		Log:         log,
 		Now:         time.Now,
 	})
 	return agentRuntime{
 		svc:    svc,
-		upkeep: upkeep.New(a.Name, buildinfo.Version, pool, log, time.Now).WithPins(env.pins),
+		upkeep: upkeep.New(a.Name, buildinfo.Version, pool, log, time.Now).WithPins(env.pins).WithRLSCache(blind),
 		close:  pool.Close,
 	}, nil
 }

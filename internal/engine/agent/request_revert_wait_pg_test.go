@@ -257,7 +257,7 @@ func requireApplying(t *testing.T, body map[string]any) {
 	steps := requireResultSteps(t, body, "APPLYING")
 	require.Equal(t, "revert_plan", steps[0]["tool"])
 	require.Equal(t, map[string]any{"revertId": body["revertId"], "pending": true, "limit": json.Number("200")}, steps[0]["arguments"])
-	require.Contains(t, str(t, body["personMessage"]), fmt.Sprintf("restores %d more rows in batches before ", planRows))
+	require.Empty(t, str(t, body["personMessage"]), "APPLYING has nothing to tell the person yet: the last batch does")
 }
 
 // One wait, then end the turn: a wait that runs out returns PENDING, with
@@ -310,7 +310,7 @@ func requireWaitEndedCalls(t *testing.T, steps []map[string]any, id string) {
 	require.Equal(t, map[string]any{"revertId": id, "waitForSignature": json.Number("0")}, steps[3]["arguments"])
 	require.Equal(t, "request_revert", steps[4]["tool"])
 	require.Equal(t, map[string]any{"revertId": id, "reissueLink": true}, steps[4]["arguments"])
-	require.Contains(t, str(t, steps[4]["text"]), "Only if the link is lost")
+	require.Contains(t, str(t, steps[4]["text"]), "For a lost link")
 }
 
 // reissueLink issues a new short link at once and revokes the old one.

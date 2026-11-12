@@ -28,22 +28,23 @@ import (
 
 // Setup code shape (CONTRACT.md, Setup from your laptop).
 const (
-	setupCodePrefix     = "basalt-setup."
-	setupCodeFormat     = "1."
-	setupCodeMaxLen     = 1500 // basalt init --remote refuses a longer code
-	setupCheckBytes     = 4    // check: base64url of the first 4 bytes of sha256
-	setupMaxInflated    = 64 << 10
-	scramIterations     = 4096
-	scramKeyLen         = sha256.Size
-	fingerprintBytes    = 10              // setup fingerprint: 10 bytes, 20 hex digits
-	fingerprintGroup    = 4               // hex digits per group
-	maxRoleLen          = 63              // NAMEDATALEN - 1
-	setupLifetime       = 24 * time.Hour  // CO-13
-	setupClockSkew      = 5 * time.Minute // tolerated clock difference (RI-13)
-	refusalNotSetupCode = "NOT_A_SETUP_CODE"
-	refusalUnsupported  = "UNSUPPORTED_FORMAT"
-	refusalDamaged      = "DAMAGED"
-	refusalInvalid      = "INVALID"
+	setupCodePrefix      = "basalt-setup."
+	setupCodeFormat      = "1."
+	setupCodeMaxLen      = 1500 // basalt init --remote refuses a longer code
+	setupCheckBytes      = 4    // check: base64url of the first 4 bytes of sha256
+	setupMaxInflated     = 64 << 10
+	scramIterations      = 4096
+	scramKeyLen          = sha256.Size
+	fingerprintBytes     = 10              // setup fingerprint: 10 bytes, 20 hex digits
+	fingerprintGroup     = 4               // hex digits per group
+	maxRoleLen           = 63              // NAMEDATALEN - 1
+	setupLifetime        = 24 * time.Hour  // CO-13
+	setupClockSkew       = 5 * time.Minute // tolerated clock difference (RI-13)
+	setupMinGuardVersion = 16              // the first guard with record_setup
+	refusalNotSetupCode  = "NOT_A_SETUP_CODE"
+	refusalUnsupported   = "UNSUPPORTED_FORMAT"
+	refusalDamaged       = "DAMAGED"
+	refusalInvalid       = "INVALID"
 )
 
 type setupFixtures struct {
@@ -298,6 +299,8 @@ func laptopDecision(p map[string]any, l laptopFixture, now time.Time) (string, s
 		return "EXPIRY_TOO_FAR", ""
 	case to > l.BinaryGuardVersion:
 		return "BINARY_TOO_OLD", ""
+	case to < setupMinGuardVersion:
+		return "GUARD_TOO_OLD", ""
 	case db.Prefix != "" && db.Prefix != prefix:
 		return "PREFIX_MISMATCH", ""
 	}

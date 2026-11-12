@@ -133,6 +133,22 @@ var hostDot = regexp.MustCompile(`([\p{L}\p{N}_-])\.(\p{L})`)
 // middleDot replaces a host dot.
 const middleDot = "$1·$2"
 
+// dottedQuad is an IPv4 address (10.0.0.1); its dots become middle dots
+// too, as do a version's with four parts.
+var dottedQuad = regexp.MustCompile(`(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})`)
+
+const quadDots = "$1·$2·$3·$4"
+
+// hostPort is a port after a host (localhost:8080/x, http:8080): a space
+// before the colon keeps it readable and unlinked. A port needs a path
+// after it or a letter before it, so a time like 10:30 stays.
+var (
+	portPath   = regexp.MustCompile(`(\S):(\d{1,5}/)`)
+	letterPort = regexp.MustCompile(`(\p{L}):(\d{1,5})\b`)
+)
+
+const spacedPort = "$1 :$2"
+
 // markdownLink is the join of a markdown link, [text](target); a space
 // breaks it and keeps both parts readable.
 var markdownLink = regexp.MustCompile(`\]\(`)
@@ -181,6 +197,9 @@ func plainText(s string) string {
 		prev = s
 		s = linkLike.ReplaceAllString(s, " ")
 		s = hostDot.ReplaceAllString(s, middleDot)
+		s = dottedQuad.ReplaceAllString(s, quadDots)
+		s = portPath.ReplaceAllString(s, spacedPort)
+		s = letterPort.ReplaceAllString(s, spacedPort)
 		s = markdownLink.ReplaceAllString(s, "] (")
 	}
 	return strings.Join(strings.Fields(s), " ")

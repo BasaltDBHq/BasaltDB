@@ -37,6 +37,21 @@ test("visibleText escapes bidi, invisible and C1 characters and keeps the rest",
   assert.equal(visibleText("SELECT 1\n\tFROM t\r", { lines: true }), "SELECT 1\n\tFROM t<U+000D>");
 });
 
+const cp = (...points) => String.fromCodePoint(...points);
+
+test("visibleText escapes every default-ignorable character, variation selectors included", () => {
+  assert.equal(visibleText(`a${cp(0xfe0f)}b`), "a<U+FE0F>b");
+  assert.equal(visibleText(`a${cp(0xe0100)}b`), "a<U+E0100>b");
+  assert.equal(visibleText(`a${cp(0x180b)}b`), "a<U+180B>b");
+});
+
+test("visibleText keeps two combining marks in a row and escapes the rest", () => {
+  const mark = cp(0x353);
+  assert.equal(visibleText(`e${cp(0x301)}`), `e${cp(0x301)}`);
+  assert.equal(visibleText(`0${mark}${mark}${mark}x${mark}`), `0${mark}${mark}<U+0353>x${mark}`);
+  assert.equal(visibleText(`0${mark.repeat(300)}`), `0${mark}${mark}${"<U+0353>".repeat(298)}`);
+});
+
 // A minimal DOM: enough for el() and the row tables.
 function fakeElement(tag) {
   return {

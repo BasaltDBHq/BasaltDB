@@ -59,6 +59,9 @@ func TestPlainTextKeepsAgentTextOutOfTheURLRule(t *testing.T) {
 		"big solidus":              "https:\u29f8\u29f8evil",
 		"ideographic full stop":    "evil\u3002io",
 		"markdown link":            "[the page](https:evil)",
+		"ip with port":             "10.0.0.1:8080/approve",
+		"scheme and ip":            "http:1.2.3.4",
+		"localhost":                "localhost:8080/x",
 		"underscore before scheme": "_https://evil.example/x",
 		"letter before scheme":     "xhttps://evil.example/x",
 		"www":                      "www.evil.example/x",
@@ -80,6 +83,7 @@ func TestPlainTextKeepsAgentTextOutOfTheURLRule(t *testing.T) {
 		got := plainText(probe)
 		require.NotRegexp(t, `(?i)//|\\\\|www\.|#1\.|#2\.|#s=|\p{Cf}|\p{Cc}|[\x{2215}\x{2044}\x{29f8}]|\]\(`, got, name)
 		require.NotRegexp(t, `[\p{L}\p{N}_-]\.\p{L}`, got, name, "no bare host")
+		require.NotRegexp(t, `\d+\.\d+\.\d+\.\d+|\S:\d+/|\p{L}:\d`, got, name, "no address or port")
 		require.Empty(t, urlPattern.FindString(got), name)
 	}
 	// Each form, neutralized and still readable.
@@ -92,6 +96,11 @@ func TestPlainTextKeepsAgentTextOutOfTheURLRule(t *testing.T) {
 		"[the page](evil.io)":              "[the page] (evil·io)",
 		"Update 3 rows in public.leads":    "Update 3 rows in public·leads",
 		"raise prices by 1.5 percent":      "raise prices by 1.5 percent",
+		"10.0.0.1:8080/approve":            "10·0·0·1 :8080/approve",
+		"http:1.2.3.4":                     "http :1·2·3·4",
+		"see localhost:8080/x":             "see localhost :8080/x",
+		"localhost:8080":                   "localhost :8080",
+		"meet at 10:30 today":              "meet at 10:30 today",
 	} {
 		require.Equal(t, want, plainText(probe), probe)
 	}

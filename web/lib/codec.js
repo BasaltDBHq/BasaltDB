@@ -383,22 +383,39 @@ export function paramsText(bindingText) {
 // HIDDEN matches what hides text or changes how it reads: controls (C0, DEL,
 // C1), format characters (bidi controls such as U+202E, zero-width
 // characters), line and paragraph separators, spaces other than U+0020,
-// lone surrogates and the other default-ignorable characters. The CLI
-// escapes the same set (cmd/basalt, visibleText).
-const HIDDEN =
-  /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Cs}   -   　͏ᅟᅠ឴឵⁥ㅤﾠ￰-￸\u{e0000}-\u{e00ff}\u{e01f0}-\u{e0fff}]/gu;
+// lone surrogates and every default-ignorable character (variation
+// selectors such as U+FE0F and U+E0100, Mongolian ones such as U+180B,
+// Hangul fillers). The CLI escapes the same set (cmd/basalt, visibleText).
+const HIDDEN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Cs}\p{Default_Ignorable_Code_Point}\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]/u;
+const MARK = /\p{M}/u;
+
+// MAX_MARKS is how many combining marks in a row show as marks; the rest
+// are escaped, so a stack of hundreds cannot paint over the cells around it.
+const MAX_MARKS = 2;
 
 function escapeHidden(c) {
   return `<U+${c.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")}>`;
 }
 
 // visibleText shows text an agent wrote (values, table names, the intent)
-// as it is, except each character HIDDEN matches, shown as <U+XXXX>: 0001
-// with a U+202E in it cannot read as 1000, and a zero-width space or a
-// no-break space shows. With lines set, line feeds and tabs stay (the
-// statement keeps its layout).
+// as it is, except each character HIDDEN matches and each combining mark
+// after the first MAX_MARKS in a row, shown as <U+XXXX>: 0001 with a U+202E
+// in it cannot read as 1000, and a zero-width space or a no-break space
+// shows. With lines set, line feeds and tabs stay (the statement keeps its
+// layout).
 export function visibleText(text, { lines = false } = {}) {
-  return String(text).replace(HIDDEN, (c) => (lines && (c === "\n" || c === "\t") ? c : escapeHidden(c)));
+  let out = "";
+  let marks = 0;
+  for (const c of String(text)) {
+    if (HIDDEN.test(c)) {
+      out += lines && (c === "\n" || c === "\t") ? c : escapeHidden(c);
+      marks = 0;
+      continue;
+    }
+    marks = MARK.test(c) ? marks + 1 : 0;
+    out += marks > MAX_MARKS ? escapeHidden(c) : c;
+  }
+  return out;
 }
 
 // parseLine parses one preview line for display.

@@ -54,12 +54,23 @@ func checkIssuedLink(link, local, kind string, id uuid.UUID) error {
 	if !ok {
 		return fmt.Errorf("it answered with a link that is not %s %s on %s", strings.TrimSuffix(kind, "s"), id, local)
 	}
-	raw, err := base64.RawURLEncoding.DecodeString(secret)
+	// The decoder skips CR and LF, so the characters are checked first.
+	malformed := errors.New("it answered with a link whose secret is malformed")
+	if len(secret) != secretChars || strings.TrimLeft(secret, base64URLChars) != "" {
+		return malformed
+	}
+	raw, err := base64.RawURLEncoding.Strict().DecodeString(secret)
 	if err != nil || len(raw) != links.SecretBytes {
-		return errors.New("it answered with a link whose secret is malformed")
+		return malformed
 	}
 	return nil
 }
+
+// secretChars is the length of a link secret: links.SecretBytes in
+// unpadded base64url.
+var secretChars = base64.RawURLEncoding.EncodedLen(links.SecretBytes)
+
+const base64URLChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
 // nextStep says what follows the signature: the page relays it when the
 // engine served it, else the person pastes the code into paste.

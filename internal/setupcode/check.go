@@ -2,6 +2,7 @@ package setupcode
 
 import (
 	"bytes"
+	"fmt"
 	"slices"
 	"time"
 
@@ -15,12 +16,19 @@ const ClockSkew = 5 * time.Minute
 // timeLayout is how refusals show a time: 2026-11-12 07:02 UTC.
 const timeLayout = "2006-01-02 15:04 UTC"
 
+// MinGuardVersion is the first guard version that records a setup
+// (basalt_meta.setups and record_setup, version 16). A code whose guard.to
+// is older cannot be applied: its transaction would end in a function the
+// database does not have.
+const MinGuardVersion = 16
+
 // CheckLocal applies the person's computer's checks to a decoded code, in
 // the contract's order: EXPIRED (now at or past expiresAt),
 // SETUP_ID_IN_FUTURE (the setupId's time more than ClockSkew ahead),
 // EXPIRY_TOO_FAR (expiresAt more than 24 hours and ClockSkew ahead), then
-// BINARY_TOO_OLD (guard.to newer than binaryGuardVersion). The code-maker
-// writes both times, so the clock decides, not the code.
+// BINARY_TOO_OLD (guard.to newer than binaryGuardVersion), then
+// GUARD_TOO_OLD (guard.to older than MinGuardVersion). The code-maker writes
+// both times, so the clock decides, not the code.
 func CheckLocal(p Payload, now time.Time, binaryGuardVersion int) error {
 	expires, err := p.ExpiresTime()
 	if err != nil {
@@ -40,6 +48,9 @@ func CheckLocal(p Payload, now time.Time, binaryGuardVersion int) error {
 		return refuseWith(RefusalExpiryTooFar, futureMessage(agent))
 	case p.Guard.To > binaryGuardVersion:
 		return refuseWith(RefusalBinaryTooOld, "Update basalt on this computer to at least "+p.Build+".")
+	case p.Guard.To < MinGuardVersion:
+		return refuseWith(RefusalGuardTooOld, fmt.Sprintf("This setup code is for guard version %d, but setup codes need guard version %d or later. "+
+			"Ask %s for a new code made with an up-to-date basalt.", p.Guard.To, MinGuardVersion, agent))
 	}
 	return nil
 }

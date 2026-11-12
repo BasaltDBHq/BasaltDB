@@ -215,14 +215,28 @@ func SetupsFor(ctx context.Context, q Querier, id uuid.UUID, role string) ([]set
 	})
 }
 
+// RoleTimeouts is the statement_timeout a role has set, as Postgres stores
+// it ("30000", "30s"); "" for one it has not set.
+type RoleTimeouts struct {
+	// AllDatabases is ALTER ROLE ... SET, what basalt sets.
+	AllDatabases string
+	// ThisDatabase is ALTER ROLE ... IN DATABASE <the connected one> SET,
+	// which takes precedence over AllDatabases in that database.
+	ThisDatabase string
+}
+
 // RoleStatementTimeout is the statement_timeout role has set for every
-// database (ALTER ROLE ... SET), as Postgres stores it ("30000", "30s"); ""
-// when it has none.
-func RoleStatementTimeout(ctx context.Context, q Querier, role string) (string, error) {
-	var v string
-	err := q.QueryRow(ctx, `SELECT coalesce((SELECT substr(c, length('statement_timeout=') + 1)
+// database and for the connected database only.
+func RoleStatementTimeout(ctx context.Context, q Querier, role string) (RoleTimeouts, error) {
+	var v RoleTimeouts
+	// Raw SQL: a catalog query over unnest(setconfig) with FILTER aggregates.
+	err := q.QueryRow(ctx, `SELECT
+		coalesce(max(substr(c, length('statement_timeout=') + 1)) FILTER (WHERE s.setdatabase = 0), ''),
+		coalesce(max(substr(c, length('statement_timeout=') + 1)) FILTER (WHERE s.setdatabase <> 0), '')
 		FROM pg_catalog.pg_db_role_setting s
 		JOIN pg_catalog.pg_roles r ON r.oid = s.setrole, LATERAL unnest(s.setconfig) c
-		WHERE r.rolname = $1 AND s.setdatabase = 0 AND c LIKE 'statement\_timeout=%'), '')`, role).Scan(&v)
+		WHERE r.rolname = $1 AND c LIKE 'statement\_timeout=%'
+		AND s.setdatabase IN (0, (SELECT d.oid FROM pg_catalog.pg_database d WHERE d.datname = current_database()))`, role).
+		Scan(&v.AllDatabases, &v.ThisDatabase)
 	return v, err
 }

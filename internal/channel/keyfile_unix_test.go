@@ -50,3 +50,13 @@ func TestCheckOwnerRefusesAnotherUser(t *testing.T) {
 	st.Uid++
 	require.ErrorContains(t, checkOwner(statInfo{FileInfo: fi, st: &st}), "not by the engine's user")
 }
+
+func TestCheckStateDirRefusesAnotherUsersDirectory(t *testing.T) {
+	t.Parallel()
+	fi, err := os.Lstat(t.TempDir())
+	require.NoError(t, err)
+	require.NoError(t, checkStateDirInfo(fi))
+	st := *fi.Sys().(*syscall.Stat_t)
+	st.Uid++
+	require.ErrorContains(t, checkStateDirInfo(statInfo{FileInfo: fi, st: &st}), "not by the engine's user")
+}

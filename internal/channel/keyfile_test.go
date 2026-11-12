@@ -305,3 +305,67 @@ func TestLoadOrCreateKeysFailsWhenItCannotWrite(t *testing.T) {
 	_, err := LoadOrCreateKeys(filepath.Join(dir, KeyFileName), time.Now)
 	require.ErrorIs(t, err, ErrKeyFile)
 }
+
+func TestLoadKeysRefusesAStateDirectoryOthersCanWrite(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == goosWindows {
+		t.Skip("POSIX modes")
+	}
+	for _, mode := range []os.FileMode{0o770, 0o720, 0o702, 0o777} {
+		path, _ := writeValid(t)
+		dir := filepath.Dir(path)
+		require.NoError(t, os.Chmod(dir, mode))
+		err := requireRefusedUntouched(t, path, mode)
+		require.ErrorContains(t, err, "state directory")
+		_, err = LoadKeys(path)
+		require.ErrorIs(t, err, ErrKeyFile, mode)
+
+		fresh := filepath.Join(dir, "fresh-"+KeyFileName)
+		_, err = LoadOrCreateKeys(fresh, time.Now)
+		require.ErrorIs(t, err, ErrKeyFile, mode)
+		_, err = os.Lstat(fresh)
+		require.ErrorIs(t, err, os.ErrNotExist, "nothing is created in such a directory")
+		require.NoError(t, os.Chmod(dir, 0o700))
+	}
+	// Read-only for group and others is fine.
+	path, _ := writeValid(t)
+	require.NoError(t, os.Chmod(filepath.Dir(path), 0o755))
+	_, err := LoadKeys(path)
+	require.NoError(t, err)
+}
+
+func TestLoadKeysRefusesAStateDirectoryThatIsALink(t *testing.T) {
+	t.Parallel()
+	path, _ := writeValid(t)
+	link := filepath.Join(t.TempDir(), "state")
+	if err := os.Symlink(filepath.Dir(path), link); err != nil {
+		t.Skip("no symlinks here")
+	}
+	_, err := LoadKeys(filepath.Join(link, KeyFileName))
+	require.ErrorIs(t, err, ErrKeyFile)
+	require.ErrorContains(t, err, "not a link")
+}
+
+func TestLoadOrCreateKeysRemovesStaleTemps(t *testing.T) {
+	t.Parallel()
+	path := keyPath(t)
+	dir := filepath.Dir(path)
+	stale := filepath.Join(dir, KeyFileName+".123.tmp")
+	fresh := filepath.Join(dir, KeyFileName+".456.tmp")
+	unrelated := filepath.Join(dir, "other.json.789.tmp")
+	for _, p := range []string{stale, fresh, unrelated} {
+		require.NoError(t, os.WriteFile(p, []byte("x"), 0o600))
+	}
+	old := time.Now().Add(-2 * staleTempAge)
+	require.NoError(t, os.Chtimes(stale, old, old))
+	require.NoError(t, os.Chtimes(unrelated, old, old))
+
+	_, err := LoadOrCreateKeys(path, time.Now)
+	require.NoError(t, err)
+	_, err = os.Lstat(stale)
+	require.ErrorIs(t, err, os.ErrNotExist, "a stale temp is removed")
+	_, err = os.Lstat(fresh)
+	require.NoError(t, err, "a recent temp may be a concurrent start's")
+	_, err = os.Lstat(unrelated)
+	require.NoError(t, err, "only this key file's temps")
+}

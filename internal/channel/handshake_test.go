@@ -493,3 +493,42 @@ func TestNothingPrintsAKey(t *testing.T) {
 	}
 	require.Contains(t, printed, keys.EngineID())
 }
+
+// TestDeadTokensRunTheTagCheck: a token that is not live (unknown, or not
+// SESSION_OPEN's) still goes through the tag check before it is refused, so
+// it costs what a live token with a wrong psk costs; and a tag made under
+// the zero psk the check uses for it is still refused.
+func TestDeadTokensRunTheTagCheck(t *testing.T) {
+	t.Parallel()
+	lk := mustLink(t)
+	other := mustLink(t)
+	steps := func(m1 []byte, check HelloCheck) ([]string, error) {
+		var got []string
+		_, err := readHello(m1, check, func(step string) { got = append(got, step) })
+		return got, err
+	}
+	want := []string{"header", "token", "tag"}
+
+	_, unknown, err := WriteHello(TransportDirect, other)
+	require.NoError(t, err)
+	got, err := steps(unknown, HelloCheck{Transport: TransportDirect, Lookup: holding(lk)})
+	require.ErrorIs(t, err, ErrLinkRefused)
+	require.Equal(t, want, got, "an unknown token")
+
+	_, held, err := WriteHello(TransportRelay, lk)
+	require.NoError(t, err)
+	got, err = steps(held, HelloCheck{Transport: TransportRelay, SessionToken: &other.Token, Lookup: holding(lk)})
+	require.ErrorIs(t, err, ErrLinkRefused)
+	require.Equal(t, want, got, "a token other than SESSION_OPEN's")
+
+	_, wrongPSK, err := WriteHello(TransportRelay, LinkKeys{Token: lk.Token, PSK: other.PSK})
+	require.NoError(t, err)
+	got, err = steps(wrongPSK, relayCheck(lk))
+	require.ErrorIs(t, err, ErrLinkRefused)
+	require.Equal(t, want, got, "a live token with a wrong psk")
+
+	_, zeroPSK, err := WriteHello(TransportDirect, LinkKeys{Token: other.Token})
+	require.NoError(t, err)
+	_, err = ReadHello(zeroPSK, HelloCheck{Transport: TransportDirect, Lookup: holding(lk)})
+	require.ErrorIs(t, err, ErrLinkRefused, "a valid tag under the zero psk opens nothing")
+}

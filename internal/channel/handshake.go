@@ -80,8 +80,10 @@ type Responder struct {
 // ReadHello checks handshake message 1 in the contract's order: version,
 // type and the exact length; the token (SESSION_OPEN's on RELAY, and one the
 // engine holds); the tag; and only then the ephemeral point. Every refusal
-// from the token on is ErrLinkRefused, alike, so a probe cannot tell a live
-// token from a dead one. Rate checks (CONTRACT.md, Limits) are the caller's,
+// from the token on is ErrLinkRefused, alike, and a token that is not live
+// still runs the tag check (under a zero psk, then refused), so a probe can
+// tell a live token from a dead one neither by the answer nor by the time
+// the tag check takes. Rate checks (CONTRACT.md, Limits) are the caller's,
 // before this call.
 func ReadHello(msg []byte, check HelloCheck) (*Responder, error) {
 	return readHello(msg, check, func(string) {})
@@ -109,20 +111,26 @@ func readHello(msg []byte, check HelloCheck, onCheck func(step string)) (*Respon
 	tag := rest[LinkTokenLen+PointLen:]
 
 	onCheck("token")
-	if check.SessionToken != nil && subtle.ConstantTimeCompare(token[:], check.SessionToken[:]) != 1 {
-		return nil, ErrLinkRefused
-	}
-	psk, ok := check.Lookup(token)
-	if !ok {
-		return nil, ErrLinkRefused
-	}
+	live := check.SessionToken == nil || subtle.ConstantTimeCompare(token[:], check.SessionToken[:]) == 1
+	held, ok := check.Lookup(token)
+	defer held.Zero()
+	// A token that is not live still goes through the tag check, under an
+	// all-zero psk, so a dead token and a live one with a wrong psk take
+	// the same work. The result is refused whatever the tag says: anyone
+	// can make a tag under the zero psk.
+	var psk PSK
 	defer psk.Zero()
+	live = live && ok
+	if live {
+		psk = held
+	}
 
 	onCheck("tag")
 	ss := newSymmetricState(prologue(check.Transport, token))
 	ss.mixKeyAndHash(psk[:])
 	ss.mixE(ePub)
-	if _, err := ss.decryptAndHash(tag); err != nil {
+	_, tagErr := ss.decryptAndHash(tag)
+	if tagErr != nil || !live {
 		ss.erase()
 		return nil, ErrLinkRefused
 	}

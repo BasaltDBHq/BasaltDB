@@ -2,7 +2,7 @@
   "name": "apply_revert_batch",
   "status": "IMPLEMENTED",
   "milestone": "M3",
-  "description": "Apply up to 200 lines of a large revert plan that the person signed with their passkey. Only the agent that prepared the plan can apply it, only lines in the plan, each at most once, within 24 hours of the signature. Each line is checked again with its row locked: a row someone changed after the plan was built is skipped (people win), never overwritten. A batch that fails a check writes nothing. Get the line numbers from revert_plan with pending: true, in order; repeat until pending is 0.",
+  "description": "Apply up to 200 lines of a large revert plan that the person signed with their passkey. Only the agent that prepared the plan can apply it, only lines in the plan, each at most once, within 24 hours of the signature. Each line is checked again with its row locked: a row someone changed after the plan was built is skipped (people win), never overwritten. A batch that fails a check writes nothing. Get the line numbers from revert_plan with pending: true, in order; repeat until pending is 0. The result carries nextSteps: do them in order.",
   "inputSchema": {
     "type": "object",
     "additionalProperties": false,

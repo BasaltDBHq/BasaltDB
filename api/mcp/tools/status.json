@@ -130,7 +130,7 @@
         "type": "object",
         "additionalProperties": false,
         "required": ["state"],
-        "description": "Planned (M3.5, CONTRACT.md, Vault channel): the engine's connection to the hosted Vault and its identity. Absent when the engine is down.",
+        "description": "CONTRACT.md, Vault channel: the engine's connection to the hosted Vault and its identity. Absent when the engine is down.",
         "properties": {
           "state": {
             "type": "string",

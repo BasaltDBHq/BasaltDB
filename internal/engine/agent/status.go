@@ -195,16 +195,23 @@ type statusDeps struct {
 	cmds                      Commands
 	setup                     *config.Setup
 	probe                     Probe
-	passkeys                  func(context.Context) ([]passkey.Credential, error)
-	log                       *slog.Logger
-	now                       func() time.Time
+	finisher                  SetupFinisher
+	// finished forgets the pending setup once the database shows it
+	// recorded.
+	finished func(id string)
+	// notRecorded remembers, for a few seconds, that a held call found the
+	// pending setup not recorded (setupGate).
+	notRecorded *setupCache
+	passkeys    func(context.Context) ([]passkey.Credential, error)
+	log         *slog.Logger
+	now         func() time.Time
 }
 
 func (s *Service) statusDeps() statusDeps {
 	return statusDeps{
 		name: s.Name, operatedBy: s.OperatedBy, build: s.Build, pagesBase: s.PagesBase, pagesOrigin: s.PagesOrigin,
-		sameUser: s.SameUser, engineReachable: true, vault: s.Vault, cmds: s.Commands, setup: s.Setup, probe: s.Probe,
-		passkeys: s.Approvals.Passkeys, log: s.Log, now: s.Now,
+		sameUser: s.SameUser, engineReachable: true, vault: s.Vault, cmds: s.Commands, setup: s.pendingSetup(), probe: s.Probe,
+		finisher: s.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, passkeys: s.Approvals.Passkeys, log: s.Log, now: s.Now,
 	}
 }
 
@@ -244,11 +251,13 @@ func (l LocalStatus) Report(ctx context.Context) (StatusReport, error) {
 	return statusDeps{
 		name: l.Name, operatedBy: l.OperatedBy, build: buildinfo.Version, pagesBase: base, pagesOrigin: l.PagesOrigin,
 		sameUser: true, engineReachable: l.EngineRunning, engineUnknown: l.EngineUnknown, cmds: l.Commands, setup: l.Setup, probe: l.Probe,
-		passkeys: l.Passkeys, log: l.Log, now: l.Now,
+		// basalt status reads; the running engine finishes the setup.
+		finisher: noFinisher{}, finished: func(string) {}, notRecorded: &setupCache{}, passkeys: l.Passkeys, log: l.Log, now: l.Now,
 	}.report(ctx)
 }
 
 func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
+	s.cmds = s.cmds.OperatedBy(s.operatedBy)
 	r := StatusReport{
 		Agent: s.name, OperatedBy: operatedBy(s.operatedBy), Enforcement: enforcement(s.operatedBy, s.sameUser),
 		Engine: EngineStatus{Reachable: s.engineReachable, Build: s.build},
@@ -261,7 +270,7 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 	ps := problems{cmds: s.cmds}
 	if !s.engineReachable && !s.engineUnknown {
 		ps.add(problemEngineUnreachable, "the engine is not running, so the agent's tools do not answer",
-			func(b *Steps) string { return engineUnreachableSteps(b, s.cmds) })
+			func(b *Steps) string { return engineUnreachableSteps(b, s.cmds, toolStatus) })
 	}
 	setup, known := s.setupView(ctx)
 	r.Setup = setup.status
@@ -310,9 +319,12 @@ func EngineDownStatus(name string, cmds Commands, cfg *config.Config, build stri
 		Setup:  SetupStatus{State: setupNone},
 		Pages:  PagesStatus{URL: links.DefaultLocal},
 	}
+	if cfg != nil {
+		cmds = cmds.OperatedBy(cfg.OperatedBy)
+	}
 	ps := problems{cmds: cmds}
 	ps.add(problemEngineUnreachable, "the engine does not answer, so no tool but status works",
-		func(b *Steps) string { return engineUnreachableSteps(b, cmds) })
+		func(b *Steps) string { return engineUnreachableSteps(b, cmds, toolStatus) })
 	if cfg != nil {
 		r.OperatedBy = operatedBy(cfg.OperatedBy)
 		r.Enforcement = enforcement(cfg.OperatedBy, !cfg.Service())
@@ -386,14 +398,23 @@ func (s statusDeps) countPasskeys(ctx context.Context, ps *problems) PasskeysSta
 	}
 	n := len(keys)
 	if n == 0 {
-		cmd := s.cmds.Init("--add-passkey")
 		ps.add(problemNoPasskey, "no passkey is registered, so held writes and reverts cannot be signed",
-			func(b *Steps) string {
-				b.RunCommand(cmd, "Register a passkey: held writes and reverts are signed with one.")
-				return "No passkey is registered for this agent, so nothing it holds for you can be approved yet. Run: " + cmd
-			})
+			func(b *Steps) string { return noPasskeySteps(b, s.cmds) })
 	}
 	return PasskeysStatus{Registered: n > 0, Active: &n}
+}
+
+// noPasskeySteps: the person registers a passkey; on an agent-operated
+// engine, with a setup code the agent makes (RI-6: the person's computer
+// registers a portal passkey when none is active).
+func noPasskeySteps(b *Steps, cmds Commands) string {
+	const lead = "No passkey is registered for this agent, so nothing it holds for you can be approved yet."
+	if cmds.AgentOperated() {
+		return remoteSetupSteps(b, cmds, "", lead)
+	}
+	cmd := cmds.Init("--add-passkey")
+	b.RunCommand(cmd, "Register a passkey: held writes and reverts are signed with one.")
+	return lead + " Run: " + cmd
 }
 
 // addUnreachable is the problem of a guard read that failed: the database
@@ -442,7 +463,9 @@ func versions(vs []int) string {
 // setupView is the agent's setup from the laptop as status reports it.
 type setupView struct {
 	status SetupStatus
-	code   string
+	// code and fingerprint are the pending code's, also once it expired
+	// (status shows the fingerprint only while pending).
+	code, fingerprint string
 }
 
 // explainsGuard reports whether an INSTALL setup is pending or expired: the
@@ -460,10 +483,10 @@ func (v setupView) addProblem(ps *problems) {
 	case v.status.State != setupPending:
 	case v.status.Kind == guard.SetupInstall:
 		ps.add(problemSetupNotRun, "the agent's setup has not run yet; no tool but status works until it has",
-			func(b *Steps) string { return setupPendingSteps(b, ps.cmds, v.code, true) })
+			func(b *Steps) string { return setupPendingSteps(b, v.code, v.fingerprint, true) })
 	default:
 		ps.add(problemSetupChangePending, "a setup change is waiting for the person; the tools keep working as installed",
-			func(b *Steps) string { return setupPendingSteps(b, ps.cmds, v.code, false) })
+			func(b *Steps) string { return setupPendingSteps(b, v.code, v.fingerprint, false) })
 	}
 }
 
@@ -502,7 +525,7 @@ func setupFrom(p *config.Setup, recorded bool, now time.Time) setupView {
 	if expired && p.Kind != guard.SetupInstall {
 		return setupView{status: SetupStatus{State: setupNone}}
 	}
-	v := setupView{code: p.Code, status: SetupStatus{State: setupPending, SetupID: p.SetupID, Kind: p.Kind, ExpiresAt: p.ExpiresAt, Fingerprint: p.Fingerprint}}
+	v := setupView{code: p.Code, fingerprint: p.Fingerprint, status: SetupStatus{State: setupPending, SetupID: p.SetupID, Kind: p.Kind, ExpiresAt: p.ExpiresAt, Fingerprint: p.Fingerprint}}
 	if expired {
 		v.status.State, v.status.Fingerprint = setupExpired, ""
 	}
@@ -591,7 +614,7 @@ func (h handlers) status(ctx context.Context, raw json.RawMessage) (any, error) 
 // never refused.
 func (s *Service) Admit(ctx context.Context) error {
 	if v, known := s.statusDeps().setupGate(ctx); known && v.explainsGuard() {
-		return &SetupError{Code: v.code, Expired: v.status.State == setupExpired}
+		return &SetupError{Code: v.code, Fingerprint: v.fingerprint, Expired: v.status.State == setupExpired}
 	}
 	st, err := s.Probe.GuardStatus(ctx)
 	if err != nil {
@@ -616,8 +639,15 @@ func (s statusDeps) setupGate(ctx context.Context) (setupView, bool) {
 	if s.setup == nil || s.setup.Kind != guard.SetupInstall {
 		return setupView{status: SetupStatus{State: setupNone}}, true
 	}
+	now := s.now()
+	if s.notRecorded.fresh(s.setup.SetupID, now) {
+		return setupFrom(s.setup, false, now), true
+	}
 	recorded, known := s.pendingRecorded(ctx)
-	return setupFrom(s.setup, recorded, s.now()), known
+	if known && !recorded {
+		s.notRecorded.remember(s.setup.SetupID, now)
+	}
+	return setupFrom(s.setup, recorded, now), known
 }
 
 // pendingRecorded reads whether the pending setup code was used. A database
@@ -627,7 +657,7 @@ func (s statusDeps) setupGate(ctx context.Context) (setupView, bool) {
 func (s statusDeps) pendingRecorded(ctx context.Context) (recorded, known bool) {
 	id, err := uuid.Parse(s.setup.SetupID)
 	if err == nil {
-		recorded, err = s.probe.SetupRecorded(ctx, id)
+		recorded, err = s.recordedAsAgent(ctx, id)
 	}
 	switch {
 	case err == nil:

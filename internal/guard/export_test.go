@@ -1,5 +1,8 @@
 package guard
 
+// VersionSetups is the guard version that added record_setup.
+const VersionSetups = versionSetups
+
 // AgentAdoptSQL is the SQL init runs before taking over an existing agent
 // role, for tests that run it as an admin who is not a superuser.
 func AgentAdoptSQL(n Names, agent string, spec AgentSpec) (string, error) {

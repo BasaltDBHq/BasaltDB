@@ -28,6 +28,11 @@ type SummaryState struct {
 	// after "now" ("15000 ms", "not set"), only when an AGENT code changes
 	// it; empty otherwise.
 	TimeoutNow string
+	// TimeoutThisDatabase is the agent role's statement_timeout set for
+	// this database only (ALTER ROLE ... IN DATABASE), which takes
+	// precedence over the one the code sets, shown the same way; empty when
+	// it has none there or it is the code's.
+	TimeoutThisDatabase string
 }
 
 // Summary is what basalt init --setup-code shows before the SQL, one line
@@ -55,8 +60,8 @@ func Summary(p Payload, s SummaryState) []string {
 		out = append(out, fmt.Sprintf("Prefix %s.", p.Prefix))
 	} else {
 		line := fmt.Sprintf("Prefix %s, statement timeout %d ms", p.Prefix, p.Agent.StatementTimeoutMs)
-		if p.Kind == KindAgent && s.TimeoutNow != "" {
-			line += " (now " + s.TimeoutNow + ")"
+		if p.Kind == KindAgent {
+			line += timeoutNote(s)
 		}
 		out = append(out, line+".")
 	}
@@ -78,6 +83,23 @@ func Summary(p Payload, s SummaryState) []string {
 }
 
 // grantsSentence says in words what the agent can do with its tables.
+// timeoutNote is " (now <m> ms)" when the role's current statement_timeout
+// differs from the code's, plus the one set for this database only, which
+// wins over it; "" when neither differs.
+func timeoutNote(s SummaryState) string {
+	var parts []string
+	if s.TimeoutNow != "" {
+		parts = append(parts, "now "+s.TimeoutNow)
+	}
+	if s.TimeoutThisDatabase != "" {
+		parts = append(parts, s.TimeoutThisDatabase+" set for this database only, which takes precedence")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(parts, "; ") + ")"
+}
+
 func grantsSentence(a *Agent) string {
 	limits := fmt.Sprintf("up to %d rows at a time without asking you, %d to %d with your passkey, never more",
 		summaryAutoRows, summaryAutoRows+1, summaryHoldRows)

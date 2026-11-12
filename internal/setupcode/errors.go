@@ -16,6 +16,7 @@ const (
 	RefusalSetupIDInFuture Refusal = "SETUP_ID_IN_FUTURE"
 	RefusalExpiryTooFar    Refusal = "EXPIRY_TOO_FAR"
 	RefusalBinaryTooOld    Refusal = "BINARY_TOO_OLD"
+	RefusalGuardTooOld     Refusal = "GUARD_TOO_OLD"
 	RefusalPrefixMismatch  Refusal = "PREFIX_MISMATCH"
 	RefusalUsed            Refusal = "USED"
 	RefusalSuperseded      Refusal = "SUPERSEDED"

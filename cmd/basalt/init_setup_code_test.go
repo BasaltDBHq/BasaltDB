@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -144,6 +146,10 @@ func TestInitSetupCodeRefusesBeforeTheDatabase(t *testing.T) {
 	require.NoError(t, err)
 	// An admin string that cannot connect: none of these refusals connects.
 	const admin = "postgres://admin:adminsecret@127.0.0.1:1/app"
+	old := install.payload
+	old.Guard.From, old.Guard.To = 0, setupcode.MinGuardVersion-1
+	oldCode, err := setupcode.Encode(old)
+	require.NoError(t, err)
 
 	for name, tc := range map[string]struct {
 		now  time.Time
@@ -154,6 +160,8 @@ func TestInitSetupCodeRefusesBeforeTheDatabase(t *testing.T) {
 		"from the future": {expires.Add(-48 * time.Hour), install.res.Code, "basalt: This setup code claims a time in the future. Check this computer's clock, or ask bot for a new code.\n"},
 		"not a code":      {time.Time{}, "hello", "basalt: This is not a Basalt setup code.\n"},
 		"damaged":         {time.Time{}, damaged(install.res.Code), "basalt: This setup code is damaged; copy it again.\n"},
+		"guard too old": {time.Time{}, oldCode, "basalt: This setup code is for guard version 15, but setup codes need guard version 16 or later. " +
+			"Ask bot for a new code made with an up-to-date basalt.\n"},
 		"wrapped and wrong host": {time.Time{}, install.res.Code[:40] + "\n  " + install.res.Code[40:],
 			"basalt: This setup code is for database app of db.example.com:5432 (the agent connects there). Your admin connection string points at database app of 127.0.0.1:1. " +
 				"Either run this command with the admin connection string of db.example.com:5432, or ask bot for a new code for the database you meant " +
@@ -322,7 +330,7 @@ func TestInitSetupCodeRollsBackEverything(t *testing.T) {
 	require.ErrorContains(t, l.refused(err), "This setup code was already used on ")
 	now, err := guard.RoleStatementTimeout(context.Background(), d.Admin, role)
 	require.NoError(t, err)
-	require.Equal(t, "5", now)
+	require.Equal(t, "5", now.AllDatabases)
 }
 
 func TestInitSetupCodeAgentCodeReplacesTheTables(t *testing.T) {
@@ -341,6 +349,14 @@ func TestInitSetupCodeAgentCodeReplacesTheTables(t *testing.T) {
 	require.Contains(t, r.stdout, "This changes the tables of the existing agent bot (role "+role+"); its password stays.")
 	require.Contains(t, r.stdout, "statement timeout 30000 ms (now 15000 ms).")
 	require.NotContains(t, r.stderr, "/passkeys/register", "a portal passkey is registered already")
+
+	// A statement_timeout set for this database only wins over the
+	// role's: the summary shows it.
+	d.Exec(t, "ALTER ROLE "+role+" IN DATABASE "+pgx.Identifier{dbName(t, d)}.Sanitize()+" SET statement_timeout = '5s'")
+	again := remoteDBRun(t, cfg, "--agent", "bot", "--read", "public.leads", "--prefix", d.Names.Prefix, "--new-code")
+	r = laptopRun(t, d.URL, "", time.Time{}, "--setup-code", again.res.Code, "--dry-run")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Contains(t, r.stdout, "statement timeout 30000 ms (5000 ms set for this database only, which takes precedence).")
 
 	privilege := func(table, priv string) bool {
 		var ok bool
@@ -374,4 +390,46 @@ func TestInitSetupCodeUpgrade(t *testing.T) {
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Equal(t, latest, installedVersion(t, d))
 	require.Contains(t, r.stdout, "Done. Tell your agent to check its status.")
+}
+
+func TestInitSetupCodeUpgradeWithNothingToUpgrade(t *testing.T) {
+	t.Parallel()
+	d, dbURL := remoteDB(t)
+	cfg := tempConfig(t)
+	installed(t, d, dbURL, cfg, "--write", "public.leads")
+	latest := guard.LatestVersion()
+	d.Exec(t, fmt.Sprintf(`DELETE FROM basalt_meta.schema_version WHERE version = %d`, latest))
+	upgrade := remoteDBRun(t, cfg, "--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix)
+	require.Equal(t, "UPGRADE", upgrade.res.Kind)
+	// Someone upgraded the guard since the code was made.
+	d.Exec(t, fmt.Sprintf(`INSERT INTO basalt_meta.schema_version (version) VALUES (%d)`, latest))
+
+	r := laptopRun(t, d.URL, "", time.Time{}, "--setup-code", upgrade.res.Code, "--yes")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Equal(t, fmt.Sprintf("basalt: the guard is already at version %d and this code upgrades it to version %d: nothing to upgrade; nothing changed\n",
+		latest, latest), r.stderr)
+	require.Empty(t, r.stdout)
+	setups, err := guard.SetupsFor(context.Background(), d.Admin, uuid.MustParse(upgrade.res.SetupID), "")
+	require.NoError(t, err)
+	require.Empty(t, setups, "nothing recorded")
+}
+
+func TestUpgradeDone(t *testing.T) {
+	t.Parallel()
+	upgrade := setupcode.Payload{Kind: setupcode.KindUpgrade, Guard: setupcode.Guard{From: 17, To: 19}}
+	require.False(t, upgradeDone(upgrade, 0), "no guard: the code installs it")
+	require.False(t, upgradeDone(upgrade, 18))
+	require.True(t, upgradeDone(upgrade, 19))
+	require.True(t, upgradeDone(upgrade, 20))
+	agentCode := setupcode.Payload{Kind: setupcode.KindAgent, Guard: setupcode.Guard{From: 19, To: 19}}
+	require.False(t, upgradeDone(agentCode, 19), "only an UPGRADE code is done by the guard alone")
+}
+
+func TestSetupRefusedMessage(t *testing.T) {
+	t.Parallel()
+	l := &laptopSetup{p: setupcode.Payload{Kind: setupcode.KindUpgrade}}
+	err := l.refused(&pgconn.PgError{Message: "boom", Detail: "the detail", Hint: "Do this."})
+	require.True(t, strings.HasSuffix(err.Error(), ": the detail. Do this. Nothing changed."), err.Error())
+	err = l.refused(&pgconn.PgError{Message: "boom", Hint: "Do this"})
+	require.True(t, strings.HasSuffix(err.Error(), ": Do this. Nothing changed."), err.Error())
 }

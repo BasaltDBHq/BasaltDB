@@ -154,6 +154,11 @@ func (l *laptopSetup) run() error {
 	if err := setupcode.CheckDatabase(l.p, db); err != nil {
 		return err
 	}
+	if upgradeDone(l.p, state.GuardVersion) {
+		fmt.Fprintf(c.stderr, "basalt: the guard is already at version %d and this code upgrades it to version %d: nothing to upgrade; nothing changed\n",
+			state.GuardVersion, l.p.Guard.To)
+		return nil
+	}
 	for _, line := range setupcode.Summary(l.p, state) {
 		fmt.Fprintln(c.stdout, line)
 	}
@@ -189,6 +194,23 @@ func (l *laptopSetup) run() error {
 	}
 	fmt.Fprintf(c.stdout, "Done. Tell %s to check its status.\n", agentWord(l.p))
 	return nil
+}
+
+// upgradeDone is whether an UPGRADE code has nothing to add: the installed
+// guard already has every migration up to the code's guard.to (or is
+// newer). No guard installed is not done: the code installs it.
+func upgradeDone(p setupcode.Payload, installed int) bool {
+	if p.Kind != setupcode.KindUpgrade || installed == 0 {
+		return false
+	}
+	var upTo []guard.Migration
+	for _, m := range guard.Migrations() {
+		if m.Version <= p.Guard.To {
+			upTo = append(upTo, m)
+		}
+	}
+	st := guard.StatusAt(installed, upTo)
+	return st.State == guard.GuardOK || st.State == guard.GuardNewer
 }
 
 // agentWord names the agent in messages: its name, or "your agent" for an
@@ -229,7 +251,11 @@ func (l *laptopSetup) readDatabase() (setupcode.Database, setupcode.SummaryState
 		if err != nil {
 			return db, state, err
 		}
-		state.TimeoutNow = timeoutNow(now, l.p.Agent.StatementTimeoutMs)
+		want := l.p.Agent.StatementTimeoutMs
+		state.TimeoutNow = timeoutNow(now.AllDatabases, want)
+		if now.ThisDatabase != "" {
+			state.TimeoutThisDatabase = timeoutNow(now.ThisDatabase, want)
+		}
 	}
 	return db, state, nil
 }
@@ -348,13 +374,30 @@ func (l *laptopSetup) refused(err error) error {
 	}
 	var pg *pgconn.PgError
 	if errors.As(err, &pg) && (pg.Detail != "" || pg.Hint != "") {
-		return fmt.Errorf("%w: %s %s Nothing changed", err, strings.TrimSpace(pg.Detail), strings.TrimSpace(pg.Hint))
+		return fmt.Errorf("%w: %s Nothing changed.", err, sentences(pg.Detail, pg.Hint)) //nolint:staticcheck // full sentences after Postgres's message, shown as is
 	}
 	return fmt.Errorf("%w; nothing changed", err)
 }
 
 // passkey registers a portal passkey when no active one belongs to the
 // portal, or with --add-passkey (step 7).
+// sentences joins the non-empty parts with one space, each ending with a
+// period.
+func sentences(parts ...string) string {
+	var out []string
+	for _, s := range parts {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if !strings.HasSuffix(s, ".") {
+			s += "."
+		}
+		out = append(out, s)
+	}
+	return strings.Join(out, " ")
+}
+
 func (l *laptopSetup) passkey() error {
 	keys, err := guard.ActivePasskeys(l.c.ctx, l.conn)
 	if err != nil {

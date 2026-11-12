@@ -506,3 +506,29 @@ func TestSetupsMigrationIsIdempotentAndRemovable(t *testing.T) {
 	require.Zero(t, count(t, d.Admin, `SELECT ((SELECT count(1) FROM pg_class WHERE relname LIKE '%setups%')
 		+ (SELECT count(1) FROM pg_proc WHERE proname IN ('record_setup', '_setup_refused')))::int`))
 }
+
+// setupcode.MinGuardVersion, which refuses older codes before connecting,
+// is the version that added record_setup.
+func TestMinGuardVersionRecordsSetups(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, guard.VersionSetups, setupcode.MinGuardVersion)
+}
+
+func TestRoleStatementTimeoutReadsThisDatabase(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t)
+	role := d.Names.Prefix + "_timeout_probe"
+	d.Exec(t, "CREATE ROLE "+role+" NOLOGIN")
+	t.Cleanup(func() { d.Exec(t, "DROP ROLE IF EXISTS "+role) })
+	ctx := context.Background()
+
+	got, err := guard.RoleStatementTimeout(ctx, d.Admin, role)
+	require.NoError(t, err)
+	require.Equal(t, guard.RoleTimeouts{}, got)
+
+	d.Exec(t, "ALTER ROLE "+role+" SET statement_timeout = '30s'")
+	d.Exec(t, "ALTER ROLE "+role+" IN DATABASE "+pgx.Identifier{d.Admin.Config().Database}.Sanitize()+" SET statement_timeout = 5000")
+	got, err = guard.RoleStatementTimeout(ctx, d.Admin, role)
+	require.NoError(t, err)
+	require.Equal(t, guard.RoleTimeouts{AllDatabases: "30s", ThisDatabase: "5000"}, got)
+}

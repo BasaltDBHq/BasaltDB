@@ -22,6 +22,28 @@
         "format": "uuid",
         "description": "Revert every applied change of one task, by any agent."
       },
+      "runs": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 20,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "description": "Planned (revert scope, RS-1): only with taskId, 1 to 20 of your own runs with that task id; the preview holds only their lines. Absent: all your runs in the task."
+      },
+      "tables": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 20,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "pattern": "^[^.\\s]+\\.[^.\\s]+$"
+        },
+        "description": "Planned (revert scope, RS-1): 1 to 20 schema.table names, each a table you wrote in this scope; the preview holds only their lines. Absent: every table."
+      },
       "limit": {
         "type": "integer",
         "minimum": 1,
@@ -56,6 +78,10 @@
       "scopeId": {
         "type": "string",
         "format": "uuid"
+      },
+      "select": {
+        "$ref": "../revert/revert-select.schema.json",
+        "description": "Planned (revert scope, RS-3): the scope descriptor the preview covers, as Postgres normalized it: agents is exactly [your role], runs and tables your filters or null."
       },
       "rows": {
         "type": "integer",

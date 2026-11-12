@@ -386,7 +386,7 @@ func TestLogShowsRunChanges(t *testing.T) {
 	require.Contains(t, r.stdout, `UPDATE public.lead_owner (cascaded) values hidden`)
 	require.NotContains(t, r.stdout, "before=")
 	require.NotContains(t, r.stdout, "owner 1")
-	require.Empty(t, r.stderr)
+	require.Empty(t, withoutPII(r.stderr))
 
 	r = cli(t, nil, "", "log", "--agent", "bot", "--config", cfgPath, "--run", in.RunID.String(), "--full")
 	require.Equal(t, exitOK, r.code, r.stderr)
@@ -448,7 +448,7 @@ func TestLogVerifiesFromItsPin(t *testing.T) {
 	env := map[string]string{envAgentURL: dsn, envCacheDir: cache}
 	r := cli(t, env, "", "log")
 	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Empty(t, r.stderr)
+	require.Empty(t, withoutPII(r.stderr))
 	pins, err := os.ReadDir(filepath.Join(cache, "ledger-pins"))
 	require.NoError(t, err)
 	require.Len(t, pins, 1, "the verified head is pinned")
@@ -466,7 +466,7 @@ func TestLogVerifiesFromItsPin(t *testing.T) {
 		UPDATE basalt_meta.chain_head SET hash = prev WHERE id;
 	END $$`)
 	r = cli(t, map[string]string{envAgentURL: dsn}, "", "log")
-	require.Empty(t, r.stderr, "a fresh cache has no pin to compare")
+	require.Empty(t, withoutPII(r.stderr), "a fresh cache has no pin to compare")
 	for _, args := range [][]string{{"log"}, {"log", "--full-check"}} {
 		r = cli(t, env, "", args...)
 		require.Equal(t, exitOK, r.code, r.stderr)

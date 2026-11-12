@@ -10,6 +10,8 @@ import (
 	"encoding/xml"
 	"fmt"
 	"strings"
+
+	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 )
 
 // Service names and unit locations.
@@ -43,6 +45,33 @@ type Spec struct {
 	// Files are written mode 0600, owned by User, before the service
 	// starts: the engine config and an agent's credential from basalt init.
 	Files []File
+	// MemoryMB is the engine's pii.maxMemoryMB; 0 is the default. The unit
+	// limits the engine's memory from it, so pressure throttles or stops
+	// only the engine's own OS user (M5.1 plan, section 5).
+	MemoryMB int
+}
+
+// The unit's memory limits, as multiples of pii.maxMemoryMB: the Go heap
+// is soft-limited to twice the budget (GOMEMLIMIT, a dictionary build and
+// the rest of the engine), and the mapped dictionary file takes up to the
+// budget again. MemoryHigh throttles past that; MemoryMax stops the engine.
+// The limits are written at install time: after raising pii.maxMemoryMB,
+// basalt service install must run again to rewrite them. On macOS the
+// plist's ResidentSetSize limits are written for the record only: current
+// macOS does not enforce them, so GOMEMLIMIT is the only limit there.
+const (
+	memoryHighFactor = 3
+	memoryMaxFactor  = 4
+	bytesPerMB       = 1 << 20
+)
+
+// memoryLimitsMB are the soft and hard limits for s, in MiB.
+func (s Spec) memoryLimitsMB() (high, hard int) {
+	mb := s.MemoryMB
+	if mb <= 0 {
+		mb = config.DefaultPIIMaxMemoryMB
+	}
+	return mb * memoryHighFactor, mb * memoryMaxFactor
 }
 
 // File is one file the install writes for the engine.
@@ -90,6 +119,7 @@ func SystemdUnit(s Spec) string {
 	for _, a := range s.args() {
 		quoted = append(quoted, systemdQuote(a))
 	}
+	high, hard := s.memoryLimitsMB()
 	return fmt.Sprintf(`[Unit]
 Description=BasaltDB engine
 Documentation=https://github.com/BasaltDBHq/BasaltDB
@@ -110,6 +140,8 @@ StateDirectoryMode=0700
 StateDirectory=basalt
 StateDirectoryMode=0700
 UMask=0077
+MemoryHigh=%[4]dM
+MemoryMax=%[5]dM
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
@@ -122,7 +154,7 @@ LockPersonality=yes
 
 [Install]
 WantedBy=multi-user.target
-`, s.User, strings.Join(quoted, " "), systemdRunMode)
+`, s.User, strings.Join(quoted, " "), systemdRunMode, high, hard)
 }
 
 // systemdQuote quotes an ExecStart word when it has spaces, quotes or
@@ -137,6 +169,7 @@ func systemdQuote(s string) string {
 
 // LaunchdDaemon renders the macOS launch daemon.
 func LaunchdDaemon(s Spec) string {
+	high, hard := s.memoryLimitsMB()
 	var args strings.Builder
 	for _, a := range s.args() {
 		args.WriteString("\n\t\t<string>" + xmlEscape(a) + "</string>")
@@ -162,9 +195,19 @@ func LaunchdDaemon(s Spec) string {
 	<integer>%[4]d</integer>
 	<key>StandardErrorPath</key>
 	<string>%[5]s</string>
+	<key>SoftResourceLimits</key>
+	<dict>
+		<key>ResidentSetSize</key>
+		<integer>%[6]d</integer>
+	</dict>
+	<key>HardResourceLimits</key>
+	<dict>
+		<key>ResidentSetSize</key>
+		<integer>%[7]d</integer>
+	</dict>
 </dict>
 </plist>
-`, LaunchdLabel, args.String(), xmlEscape(s.User), launchdUmask, darwinLogFile)
+`, LaunchdLabel, args.String(), xmlEscape(s.User), launchdUmask, darwinLogFile, int64(high)*bytesPerMB, int64(hard)*bytesPerMB)
 }
 
 func xmlEscape(s string) string {

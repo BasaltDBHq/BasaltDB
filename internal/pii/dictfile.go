@@ -172,6 +172,23 @@ func writeStatusFile(dir string, st DictionaryStatus) error {
 	})
 }
 
+// ReadStatus reads <stateDir>/pii/status.json, as basalt log does. It
+// reports false when the file is missing, cannot be read (permissions, an
+// unreadable stateDir) or does not parse. It holds counts and times only.
+func ReadStatus(stateDir string) (DictionaryStatus, bool) {
+	var st DictionaryStatus
+	f, err := openNoFollow(filepath.Join(stateDir, DictionaryDirName, StatusFileName))
+	if err != nil {
+		return st, false
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxStatusFileSize))
+	if err != nil || json.Unmarshal(data, &st) != nil {
+		return DictionaryStatus{}, false
+	}
+	return st, true
+}
+
 // readStatusFile reads status.json back (the last scan survives a restart).
 // Any problem gives a zero status: it only carries counts.
 func readStatusFile(dir string) DictionaryStatus {

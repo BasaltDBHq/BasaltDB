@@ -32,6 +32,11 @@ type Column struct {
 	Name string
 	// Type is the Postgres type name, or "oid:<n>" for a type pgx does not know.
 	Type string
+	// TableOID and Attnum are the table column the value comes from (pgx
+	// FieldDescription), both 0 for a computed column. The engine maps them
+	// to the column's PII class; they never reach the agent.
+	TableOID uint32
+	Attnum   int16
 }
 
 // ReadResult is the rows of one read.
@@ -262,7 +267,7 @@ func columns(tm *pgtype.Map, fds []pgconn.FieldDescription) []Column {
 		if t, ok := tm.TypeForOID(fd.DataTypeOID); ok {
 			typ = t.Name
 		}
-		cols = append(cols, Column{Name: name, Type: typ})
+		cols = append(cols, Column{Name: name, Type: typ, TableOID: fd.TableOID, Attnum: int16(fd.TableAttributeNumber)})
 	}
 	return cols
 }

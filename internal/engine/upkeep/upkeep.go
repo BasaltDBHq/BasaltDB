@@ -50,6 +50,7 @@ type Upkeep struct {
 	now        func() time.Time
 	pins       Pins
 	rls        Refresher
+	pii        PIICheck
 	// admit gates every tick (WithGate); it admits every tick when unset.
 	admit func(ctx context.Context) error
 
@@ -70,7 +71,7 @@ func New(agent, version string, db guard.Querier, log *slog.Logger, now func() t
 		panic("upkeep: agent, db, logger and clock required")
 	}
 	return &Upkeep{agent: agent, version: version, operatedBy: operatedByPerson, db: db, log: log, now: now,
-		pins: &chainpin.Memory{}, rls: noRefresh{}, admit: admitAll}
+		pins: &chainpin.Memory{}, rls: noRefresh{}, pii: noPII{}, admit: admitAll}
 }
 
 // operatedByPerson is the heartbeat's operatedBy until WithOperatedBy.
@@ -97,6 +98,26 @@ type Refresher interface {
 type noRefresh struct{}
 
 func (noRefresh) Refresh() {}
+
+// PIICheck is the hourly PII classification check (piidict.Watch): it
+// reloads the classification map when it moved and warns about
+// unclassified columns.
+type PIICheck interface {
+	Tick(ctx context.Context) error
+}
+
+type noPII struct{}
+
+func (noPII) Tick(context.Context) error { return nil }
+
+// WithPII has every tick run p.
+func (u *Upkeep) WithPII(p PIICheck) *Upkeep {
+	if p == nil {
+		panic("upkeep: nil pii check")
+	}
+	u.pii = p
+	return u
+}
 
 // WithRLSCache has every cycle refresh r, the engine's cache of the tables
 // row-level security hides from the agent (the RLS_HIDES_ROWS warning).
@@ -177,6 +198,9 @@ func (u *Upkeep) Tick(ctx context.Context) error {
 	}
 	if err := u.checkRLSBlind(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("row-level security: %w", err))
+	}
+	if err := u.pii.Tick(ctx); err != nil {
+		errs = append(errs, fmt.Errorf("pii: %w", err))
 	}
 	if res, err := guard.Prune(ctx, u.db); err != nil {
 		errs = append(errs, fmt.Errorf("prune: %w", err))

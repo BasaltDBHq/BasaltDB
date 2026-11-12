@@ -3,6 +3,7 @@ package ledger
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -48,6 +49,87 @@ type Health struct {
 	HeartbeatStale bool
 	// DeadMan is the last DEAD_MAN row of the past DeadManAfter, or nil.
 	DeadMan *DeadMan
+	// PII is the classification summary; nil before guard version 15.
+	PII *PIIHealth
+}
+
+// MaxPIINames is how many column names the PII summary carries per list;
+// basalt log prints them, then "…".
+const MaxPIINames = 10
+
+// PIIHealth is what basalt log's PII line and warnings say (CONTRACT.md, PII
+// classification, basalt log). Names are not PII; no value is read.
+type PIIHealth struct {
+	// Classified counts the agent's rows of agent_pii_columns with a class
+	// other than UNCLASSIFIED.
+	Classified int
+	// Unclassified counts pii_unclassified() rows of why NEW or
+	// UNCLASSIFIED; UnclassifiedNames are the first MaxPIINames of them.
+	Unclassified      int
+	UnclassifiedNames []string
+	// Review counts the columns whose type changed or that need a review;
+	// ReviewNames are the first MaxPIINames of them.
+	Review      int
+	ReviewNames []string
+	// Dictionary is the engine's dictionary, nil when it is not known here
+	// (basalt log then reads status.json, or says it is not built yet).
+	Dictionary *DictionaryHealth
+}
+
+// DictionaryHealth is the dictionary part of the PII line.
+type DictionaryHealth struct {
+	Values     uint64
+	LastScanAt *time.Time
+}
+
+// checkPII reads the PII summary, or nil when the guard has no PII
+// classification (before version 15).
+func checkPII(ctx context.Context, q guard.Querier) (*PIIHealth, error) {
+	var has bool
+	// Plain SQL: a catalog lookup of the version 15 function.
+	if err := q.QueryRow(ctx, `SELECT to_regprocedure('basalt_meta.pii_unclassified()') IS NOT NULL`).Scan(&has); err != nil {
+		return nil, err
+	}
+	if !has {
+		return nil, nil //nolint:nilnil // before version 15 there is no summary, and no error
+	}
+	classified, flagged, err := guard.PIIClassCounts(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	cols, err := guard.PIIUnclassified(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	h := &PIIHealth{Classified: classified}
+	review := map[string]bool{}
+	var reviewNames []string
+	for _, c := range cols {
+		if c.Unclassified() {
+			h.Unclassified++
+			h.UnclassifiedNames = appendName(h.UnclassifiedNames, c.Name())
+			continue
+		}
+		review[c.Name()] = true
+		reviewNames = append(reviewNames, c.Name())
+	}
+	for _, n := range flagged {
+		if !review[n] {
+			review[n] = true
+			reviewNames = append(reviewNames, n)
+		}
+	}
+	slices.Sort(reviewNames)
+	h.Review = len(reviewNames)
+	h.ReviewNames = reviewNames[:min(len(reviewNames), MaxPIINames)]
+	return h, nil
+}
+
+func appendName(names []string, n string) []string {
+	if len(names) >= MaxPIINames {
+		return names
+	}
+	return append(names, n)
 }
 
 // CheckHealth verifies the chain (incrementally from opts.Pin), lists
@@ -84,6 +166,9 @@ func CheckHealth(ctx context.Context, q guard.Querier, now time.Time, opts Healt
 	}
 	if found {
 		h.DeadMan = &dm
+	}
+	if h.PII, err = checkPII(ctx, q); err != nil {
+		return Health{}, err
 	}
 	return h, nil
 }

@@ -141,7 +141,7 @@ func passkeyRemove(c *cliIO, args []string) int {
 	fs.BoolVar(&f.yes, "yes", false, "do not ask for confirmation (the last passkey still asks for its label)")
 	fs.StringVar(&f.pagesURL, "pages-url", "", "pages base URL of the forget link (default: the origin the passkey was registered with)")
 	fs.BoolVar(&f.open, "open", false, "open the forget link in the default browser instead of printing it")
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(idAfterFlags(fs, args)); err != nil {
 		return c.fail(fmt.Errorf("%w: %w", errUsage, err))
 	}
 	if fs.NArg() != 1 {
@@ -166,6 +166,31 @@ func passkeyRemove(c *cliIO, args []string) int {
 	}
 	return exitOK
 }
+
+// idAfterFlags moves a credential id that starts with "-" behind "--".
+// base64url includes "-", so about one id in 64 looks like a flag to the
+// flag package and would be refused as one. A single-dash argument is taken
+// as an id only when it is at least minIDPrefix characters of base64url
+// (the dash included) and names no flag.
+func idAfterFlags(fs *flag.FlagSet, args []string) []string {
+	for i, a := range args {
+		if !looksLikeID(fs, a) {
+			continue
+		}
+		rest := append(append([]string{}, args[:i]...), args[i+1:]...)
+		return append(rest, "--", a)
+	}
+	return args
+}
+
+func looksLikeID(fs *flag.FlagSet, a string) bool {
+	if len(a) < minIDPrefix || a[0] != '-' || a[1] == '-' || fs.Lookup(a[1:]) != nil {
+		return false
+	}
+	return strings.Trim(a, base64URLAlphabet) == ""
+}
+
+const base64URLAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
 // connectAdmin opens the admin connection (env or hidden prompt, never stored).
 func connectAdmin(c *cliIO) (*pgx.Conn, error) {

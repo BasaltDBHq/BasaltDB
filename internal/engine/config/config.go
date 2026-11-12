@@ -101,6 +101,40 @@ type Config struct {
 	LinkBudget *int `json:"linkBudget,omitempty"`
 	// Notify says where the person hears about held writes.
 	Notify Notify `json:"notify,omitzero"`
+	// Mode is ModeService when basalt init installed the background
+	// service, else ModeSameUser (also when empty). Only ModeService opens
+	// the person socket.
+	Mode Mode `json:"mode,omitempty" validate:"omitempty,oneof=SERVICE SAME_USER"`
+	// PersonUIDs are the OS users the person socket admits (owner decision
+	// SM-2): the person(s) recorded at basalt init. Empty admits nobody.
+	PersonUIDs []uint32 `json:"personUids,omitempty" validate:"unique"`
+}
+
+// Mode is how the engine runs (owner decision SM-3).
+type Mode string
+
+// Modes.
+const (
+	// ModeService: the engine runs as its own OS user under systemd or
+	// launchd, and the person reaches it over the person socket.
+	ModeService Mode = "SERVICE"
+	// ModeSameUser: the person runs the engine as themselves and the CLI
+	// reads the config and the credential directly.
+	ModeSameUser Mode = "SAME_USER"
+)
+
+// Service reports whether c is a background-service config.
+func (c Config) Service() bool {
+	return c.Mode == ModeService
+}
+
+// PersonSocketName is the person socket's name in the socket directory,
+// <SocketDir>/person.sock; no agent may take it.
+const PersonSocketName = "person"
+
+// PersonSocketPath is the person socket in socket directory dir.
+func PersonSocketPath(dir string) string {
+	return SocketPath(dir, PersonSocketName)
 }
 
 // Notify configures notifications. Every field is optional.
@@ -190,9 +224,10 @@ func newValidator() *validator.Validate {
 // ValidAgentName reports whether name is a valid agent name: the same rule
 // the guard applies to role names (lowercase letters, digits and '_',
 // starting with a letter, basalt_agent_<name> within 63 bytes), so a name
-// the engine accepts is one basalt init can create a role for.
+// the engine accepts is one basalt init can create a role for. "person" is
+// the person socket's and is refused.
 func ValidAgentName(name string) bool {
-	return guard.ValidAgentName(name)
+	return name != PersonSocketName && guard.ValidAgentName(name)
 }
 
 // Load reads and validates the config file at path. Unknown keys are refused.

@@ -139,7 +139,7 @@ func (s *Service) errorGuidance(te *mcp.ToolError, f failure) ([]mcp.NextStep, s
 		person = s.approvalRequiredSteps(b, te)
 	case CodeApprovalExpired:
 		approvalExpiredSteps(b)
-		person = "The held write expired before it was approved, so nothing was applied. Ask the agent to send it again if you still want it."
+		person = approvalExpiredMessage
 	case CodeApprovalInvalid:
 		person = approvalInvalidSteps(b, te, f)
 	case CodeRevertInvalid:
@@ -240,7 +240,7 @@ func refusedSteps(b *Steps, te *mcp.ToolError, f failure) string {
 	case ReasonNoPrimaryKey:
 		b.Stop("The table has no primary key, so its writes cannot be recorded: do not retry or work around it.")
 		return fmt.Sprintf("%s has no primary key, so Basalt cannot guard writes to it and refuses them. Add a primary key to the table, "+
-			"or revoke the agent's write access to it.", tableFromDetail(te.Message))
+			"or revoke the agent's write access to it.", shown(tableFromDetail(te.Message), maxTableChars))
 	case ReasonNotAllowed:
 		b.Stop("The database refused this action for the agent: do not retry or work around it.")
 		return ""
@@ -382,7 +382,7 @@ func (s *Service) permissionDeniedSteps(b *Steps, te *mcp.ToolError, f failure) 
 		// safely; Postgres usually names the table without its schema, and
 		// then the person sees the plan and adds the table themselves.
 		if grant, err := s.Commands.Grant(flag, m[1]); err == nil {
-			command, what = grant, flag+" access to "+m[1]
+			command, what = grant, flag+" access to "+shown(m[1], maxTableChars)
 		}
 	}
 	b.RunCommand(command, "Show the person this command: it gives the agent the missing access, and init asks for the admin connection string itself.")

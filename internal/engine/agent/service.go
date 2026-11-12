@@ -93,6 +93,12 @@ type Deps struct {
 	// Poll is how often a waiting call reads whether the person signed;
 	// DefaultPoll when zero.
 	Poll time.Duration
+	// RLS says whether row-level security hides a table from the agent
+	// (the RLS_HIDES_ROWS warning); optional, nothing is hidden when nil.
+	RLS RLSChecker
+	// Upgrade says whether only non-breaking guard migrations are missing
+	// (the GUARD_UPGRADE_AVAILABLE warning); optional, none is missing when nil.
+	Upgrade UpgradeChecker
 }
 
 // Service runs one agent's tool calls.
@@ -109,6 +115,12 @@ func NewService(d Deps) *Service {
 	}
 	if d.Notifier == nil {
 		d.Notifier = noNotifier{}
+	}
+	if d.RLS == nil {
+		d.RLS = noRLS{}
+	}
+	if d.Upgrade == nil {
+		d.Upgrade = noUpgrade{}
 	}
 	if d.PagesBase == "" {
 		d.PagesBase = links.DefaultLocal
@@ -135,11 +147,25 @@ type RunInfo struct {
 	TaskID    uuid.UUID
 	Intent    string
 	StartedAt time.Time
+	// Warnings are what the person should hear about the setup, with the
+	// steps for it (GUARD_UPGRADE_AVAILABLE).
+	Warnings []mcp.Warning
 }
 
 // StartRun starts a run with intent. taskID joins a task another agent
 // started; uuid.Nil starts a new task.
 func (s *Service) StartRun(ctx context.Context, intent string, taskID uuid.UUID) (RunInfo, error) {
+	run, err := s.startRun(ctx, intent, taskID)
+	if err != nil {
+		return RunInfo{}, err
+	}
+	run.Warnings = s.upgradeWarnings(ctx)
+	return run, nil
+}
+
+// startRun is StartRun without the setup warnings, for the run a write
+// starts for itself.
+func (s *Service) startRun(ctx context.Context, intent string, taskID uuid.UUID) (RunInfo, error) {
 	if taskID == uuid.Nil {
 		taskID = newID()
 	}
@@ -161,6 +187,7 @@ type QueryParams struct {
 type QueryOutcome struct {
 	agentdb.ReadResult
 	ChangeID uuid.UUID
+	Warnings []mcp.Warning
 }
 
 // Query checks sql against the policy, runs it read-only within the limits
@@ -193,7 +220,7 @@ func (s *Service) Query(ctx context.Context, p QueryParams) (QueryOutcome, error
 	if err != nil {
 		return QueryOutcome{}, fmt.Errorf("record read: %w", err)
 	}
-	return QueryOutcome{ReadResult: res, ChangeID: change}, nil
+	return QueryOutcome{ReadResult: res, ChangeID: change, Warnings: s.rlsWarnings(ctx, stmt.Tables, len(res.Rows))}, nil
 }
 
 // WriteParams are one write call's validated arguments.
@@ -219,6 +246,7 @@ type WriteOutcome struct {
 	Op    sqlguard.Op
 	// ApprovalID is set when the write applied under an approval.
 	ApprovalID uuid.UUID
+	Warnings   []mcp.Warning
 }
 
 // Write checks sql against the policy and runs it through the guard with
@@ -260,7 +288,7 @@ func (s *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, error
 	if err != nil {
 		return WriteOutcome{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
 	}
-	return WriteOutcome{WriteResult: res, RunID: run.ID, Op: stmt.Op}, nil
+	return WriteOutcome{WriteResult: res, RunID: run.ID, Op: stmt.Op, Warnings: s.rlsWarnings(ctx, stmt.Tables, res.Rows)}, nil
 }
 
 // writeRun finds the named run, or starts a one-write run.
@@ -268,7 +296,7 @@ func (s *Service) writeRun(ctx context.Context, p WriteParams) (agentdb.Run, err
 	if p.RunID != uuid.Nil {
 		return s.findRun(ctx, p.RunID)
 	}
-	info, err := s.StartRun(ctx, p.Intent, uuid.Nil)
+	info, err := s.startRun(ctx, p.Intent, uuid.Nil)
 	if err != nil {
 		return agentdb.Run{}, err
 	}

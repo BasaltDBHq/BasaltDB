@@ -21,6 +21,9 @@ data/
 
 /bin/
 
+# portal build output
+/dist/
+
 # npm / MCP publish staging
 npm/cli/LICENSE
 npm/platforms/*/LICENSE

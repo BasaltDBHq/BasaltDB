@@ -32,6 +32,27 @@ import (
 	"github.com/basaltdbhq/basaltdb/web"
 )
 
+// PageRoute is a page the engine serves at a RESTful path. ID routes take
+// one uuid after Path (/approvals/<id>); the others are exactly Path. The
+// portal's static host must rewrite the same paths to the same files:
+// web/_redirects, which a test checks against PageRoutes.
+type PageRoute struct {
+	Path string
+	ID   bool
+	File string
+}
+
+// PageRoutes are the pages, in the order they are registered.
+var PageRoutes = []PageRoute{
+	{Path: links.ApprovalsPath, ID: true, File: "approve/index.html"},
+	{Path: links.RevertsPath, ID: true, File: "revert/index.html"},
+	{Path: links.RegisterPath, File: "register/index.html"},
+	// The passkey management page (M4.1): static, input in the fragment,
+	// no relay.
+	{Path: links.CheckPath, File: "passkeys/index.html"},
+	{Path: links.ForgetPath, File: "passkeys/index.html"},
+}
+
 // maxBody bounds a relayed signature (the response JSON is about 1 KiB).
 const maxBody = 16 << 10
 
@@ -47,6 +68,9 @@ type Agent interface {
 	// CheckLink reports whether secret is the live link secret of one of
 	// this agent's items (CONTRACT.md, Link secrets).
 	CheckLink(id uuid.UUID, secret string) bool
+	// PageFailure is err as the pages answer it: the error body with the
+	// person's message and steps (CONTRACT.md, Next steps).
+	PageFailure(err error) *mcp.ToolError
 }
 
 // Server is the pages' handler. Agents are added once each is set up,
@@ -88,13 +112,13 @@ func (s *Server) Handler() http.Handler {
 	files := http.FileServerFS(s.files)
 	mux.Handle("GET /lib/{file}", libFile(files))
 	mux.Handle("GET /style.css", files)
-	mux.HandleFunc("GET "+links.ApprovalsPath+"{id}", s.page("approve/index.html"))
-	mux.HandleFunc("GET "+links.RevertsPath+"{id}", s.page("revert/index.html"))
-	mux.HandleFunc("GET "+links.RegisterPath, s.static("register/index.html"))
-	// The passkey management page (M4.1): static, input in the fragment,
-	// no relay.
-	mux.HandleFunc("GET "+links.CheckPath, s.static("passkeys/index.html"))
-	mux.HandleFunc("GET "+links.ForgetPath, s.static("passkeys/index.html"))
+	for _, r := range PageRoutes {
+		if r.ID {
+			mux.HandleFunc("GET "+r.Path+"{id}", s.page(r.File))
+		} else {
+			mux.HandleFunc("GET "+r.Path, s.static(r.File))
+		}
+	}
 	mux.HandleFunc("GET /api/v1/approvals/{approvalId}", s.getApproval)
 	mux.HandleFunc("POST /api/v1/approvals/{approvalId}/approve", s.postApproval)
 	mux.HandleFunc("GET /api/v1/reverts/{revertId}", s.getRevert)
@@ -272,7 +296,7 @@ func (s *Server) linkedID(w http.ResponseWriter, r *http.Request, name string) (
 		return uuid.Nil, false
 	}
 	if !s.linkLive(id, r.Header.Get(links.SecretHeader)) {
-		s.fail(w, errUnknown)
+		s.fail(w, unknownLink())
 		return uuid.Nil, false
 	}
 	return id, true
@@ -292,12 +316,9 @@ func (s *Server) linkLive(id uuid.UUID, secret string) bool {
 	return live
 }
 
-// errUnknown is the answer for an id no agent knows, or a link without its
-// secret: the two are told apart by nothing.
-var errUnknown = &mcp.ToolError{Code: agent.CodeNotFound, Message: "no held write or revert with this id, or the link is incomplete or was replaced by a newer one: ask the agent for the link again"}
-
 // find asks each agent in turn and answers with the first that knows the
-// id; none does: NOT_FOUND.
+// id; none does: NOT_FOUND, reason LINK, the same as a link without its
+// secret: the two are told apart by nothing.
 func find[T any](ctx context.Context, s *Server, ask func(context.Context, Agent) (T, error)) (T, error) {
 	s.mu.RLock()
 	agents := s.agents
@@ -307,10 +328,23 @@ func find[T any](ctx context.Context, s *Server, ask func(context.Context, Agent
 		if errors.Is(err, agent.ErrNotThisAgent) {
 			continue
 		}
-		return out, err
+		if err != nil {
+			return out, a.PageFailure(err)
+		}
+		return out, nil
 	}
 	var zero T
-	return zero, errUnknown
+	return zero, unknownLink()
+}
+
+// unknownLink is the NOT_FOUND answer for a link no agent knows. Should its
+// steps fail to build, the answer is the error itself (INTERNAL).
+func unknownLink() error {
+	te, err := agent.LinkNotFound()
+	if err != nil {
+		return err
+	}
+	return te
 }
 
 func (s *Server) pathID(w http.ResponseWriter, r *http.Request, name string) (uuid.UUID, bool) {
@@ -378,17 +412,35 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 	if status == http.StatusInternalServerError {
 		s.log.Error("pages", "err", err)
 	}
-	writeError(w, status, te.Code, te.Message)
+	writeJSON(w, status, errorDTO{
+		Code: te.Code, Message: te.Message, Reason: te.Reason, PersonMessage: te.PersonMessage, NextSteps: personSteps(te.NextSteps),
+	})
 }
 
-// errorDTO is the pages' error body.
+// errorDTO is the pages' error body: the contract's tool error as the page
+// shows it, with the person's message and only the steps for the person.
 type errorDTO struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code          string         `json:"code"`
+	Message       string         `json:"message"`
+	Reason        string         `json:"reason,omitempty"`
+	PersonMessage string         `json:"personMessage,omitempty"`
+	NextSteps     []mcp.NextStep `json:"nextSteps,omitempty"`
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, errorDTO{Code: code, Message: message})
+}
+
+// personSteps are the steps the person takes: the page shows them, and the
+// agent's steps go to the agent through its own tools.
+func personSteps(steps []mcp.NextStep) []mcp.NextStep {
+	var out []mcp.NextStep
+	for _, st := range steps {
+		if st.Actor == mcp.ActorPerson {
+			out = append(out, st)
+		}
+	}
+	return out
 }
 
 func (s *Server) reply(w http.ResponseWriter, v any) {

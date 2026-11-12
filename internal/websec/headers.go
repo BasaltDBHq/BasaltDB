@@ -7,6 +7,9 @@ const (
 	frameOptions   = "DENY"
 	referrerPolicy = "no-referrer"
 	contentTypeOpt = "nosniff"
+	// The pages open no other windows and none is meant to reach them: the
+	// passkey calls are same-origin WebAuthn in the page itself.
+	openerPolicy = "same-origin"
 )
 
 // Headers sets browser hardening headers on every response.
@@ -17,6 +20,7 @@ func Headers() func(http.Handler) http.Handler {
 			w.Header().Set("X-Frame-Options", frameOptions)
 			w.Header().Set("Referrer-Policy", referrerPolicy)
 			w.Header().Set("X-Content-Type-Options", contentTypeOpt)
+			w.Header().Set("Cross-Origin-Opener-Policy", openerPolicy)
 			next.ServeHTTP(w, r)
 		})
 	}

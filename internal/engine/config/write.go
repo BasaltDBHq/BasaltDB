@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 )
 
 const (
@@ -22,6 +23,11 @@ type Settings struct {
 	SocketDir, StateDir string
 	// PagesURL replaces the config's pages base URL when set.
 	PagesURL string
+	// Mode replaces the config's mode when set.
+	Mode Mode
+	// PersonUIDs are added to the config's person uids; the recorded ones
+	// stay (re-running init keeps them).
+	PersonUIDs []uint32
 }
 
 // UpsertAgent adds agent a to the config at path, or replaces the agent of
@@ -55,6 +61,10 @@ func UpsertedWith(path string, open func(string) (*os.File, error), s Settings, 
 	if s.PagesURL != "" {
 		c.PagesURL, c.ApprovalPage = s.PagesURL, ""
 	}
+	if s.Mode != "" {
+		c.Mode = s.Mode
+	}
+	c.PersonUIDs = addUIDs(c.PersonUIDs, s.PersonUIDs)
 	replaced := false
 	for i := range c.Agents {
 		if c.Agents[i].Name == a.Name {
@@ -98,4 +108,14 @@ func WriteFile(path string, data []byte) error {
 		return err
 	}
 	return os.Rename(tmp.Name(), path)
+}
+
+// addUIDs is have with every uid of add it lacks, in order.
+func addUIDs(have, add []uint32) []uint32 {
+	for _, u := range add {
+		if !slices.Contains(have, u) {
+			have = append(have, u)
+		}
+	}
+	return have
 }

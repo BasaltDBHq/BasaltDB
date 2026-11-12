@@ -64,6 +64,11 @@ func runInit(c *cliIO, args []string) int {
 	if err != nil {
 		return c.fail(fmt.Errorf("%w: %w", errUsage, err))
 	}
+	if mayInstallService(c, f) {
+		if _, err := checkedExecutable(c); err != nil {
+			return c.fail(err)
+		}
+	}
 	admin, err := c.adminURL()
 	if err != nil {
 		return c.fail(err)

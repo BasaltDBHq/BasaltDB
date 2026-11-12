@@ -25,6 +25,8 @@ type fakeSystem struct {
 	exists  map[string]bool
 	modes   map[string]os.FileMode
 	owners  map[string]string
+	// binaryErr is what CheckBinary returns.
+	binaryErr error
 }
 
 func newFake() *fakeSystem {
@@ -65,6 +67,8 @@ func (f *fakeSystem) WriteFile(path string, data []byte, mode os.FileMode, owner
 	f.modes[path] = mode
 	return nil
 }
+
+func (f *fakeSystem) CheckBinary(string) error { return f.binaryErr }
 
 func (f *fakeSystem) Remove(path string) error {
 	f.removed = append(f.removed, path)

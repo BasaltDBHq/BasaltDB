@@ -7,27 +7,57 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/user"
-	"strconv"
 	"strings"
 	"syscall"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/service"
 )
 
-const (
-	// credentialPermMask is the permission bits a credential file must not have.
-	credentialPermMask = 0o077
-	rootUID            = 0
-)
+// credentialPermMask is the permission bits a credential file must not have.
+const credentialPermMask = 0o077
+
+// openEngineFile opens a file in the engine's own directories as root. The
+// engine's user owns those directories and could plant a link, so every
+// directory is reached from / without following one (service.OpenTrustedFile)
+// and the open descriptor must be a regular file with one link owned by
+// exactly the engine's user: not root, since a hardlink to an old root-only
+// file keeps root as its owner. Checks and reads use the same descriptor.
+func openEngineFile(path, engineUser string) (*os.File, error) {
+	uid := service.LookupUID(engineUser)
+	f, err := service.OpenTrustedFile(path, uid)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkEngineFile(f, uid, engineUser); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return f, nil
+}
+
+func checkEngineFile(f *os.File, uid int, engineUser string) error {
+	fi, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	if err := config.CheckPlainFile(fi); err != nil {
+		return fmt.Errorf("%s: %w", f.Name(), err)
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return errors.New("cannot read the file's owner")
+	}
+	if int(st.Uid) != uid {
+		return fmt.Errorf("%s is owned by uid %d, not %s", f.Name(), st.Uid, engineUser)
+	}
+	return nil
+}
 
 // readKeptCredential reads the agent's existing credential file as root
-// without following a symlink (the engine's user owns the directory and could
-// plant one): it opens with O_NOFOLLOW, then checks the open descriptor is a
-// regular file, mode 0600 or tighter, owned by the engine's user or root, and
-// reads from that descriptor, so nothing can change between check and read.
+// (openEngineFile), mode 0600 or tighter.
 func readKeptCredential(path, engineUser string) (string, error) {
-	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	f, err := openEngineFile(path, engineUser)
 	if err != nil {
 		return "", err
 	}
@@ -36,20 +66,8 @@ func readKeptCredential(path, engineUser string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// A regular file with one link: a hardlink to a root-only file the engine
-	// user planted would otherwise be copied out as the credential.
-	if err := config.CheckPlainFile(fi); err != nil {
-		return "", err
-	}
 	if fi.Mode().Perm()&credentialPermMask != 0 {
 		return "", fmt.Errorf("mode %o is more open than 0600", fi.Mode().Perm())
-	}
-	st, ok := fi.Sys().(*syscall.Stat_t)
-	if !ok {
-		return "", errors.New("cannot read the file's owner")
-	}
-	if st.Uid != rootUID && !ownedBy(st.Uid, engineUser) {
-		return "", fmt.Errorf("owned by uid %d, not %s or root", st.Uid, engineUser)
 	}
 	raw, err := io.ReadAll(io.LimitReader(f, maxCredentialBytes+1))
 	if err != nil {
@@ -60,13 +78,4 @@ func readKeptCredential(path, engineUser string) (string, error) {
 		return "", errors.New("empty or too large")
 	}
 	return line, nil
-}
-
-func ownedBy(uid uint32, name string) bool {
-	u, err := user.Lookup(name)
-	if err != nil {
-		return false
-	}
-	id, err := strconv.ParseUint(u.Uid, 10, 32)
-	return err == nil && uint32(id) == uid
 }

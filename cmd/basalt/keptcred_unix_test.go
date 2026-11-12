@@ -68,3 +68,53 @@ func TestReadKeptCredentialChecksTheOpenFile(t *testing.T) {
 	_, err = readKeptCredential(path, "nobody-such-user")
 	require.Error(t, err, "a file owned by someone else is refused")
 }
+
+// TestMain moves temp directories out of a sticky, world-writable /tmp
+// (Linux): the install refuses to read the engine's files below one, as it
+// should, and tests stand in for the engine user in their own directories.
+func TestMain(m *testing.M) {
+	if fi, err := os.Stat(os.TempDir()); err == nil && fi.Mode()&os.ModeSticky != 0 {
+		dir, err := os.MkdirTemp(".", ".tmp-test-")
+		if err != nil {
+			panic(err)
+		}
+		abs, _ := filepath.Abs(dir)
+		os.Setenv("TMPDIR", abs)
+		code := m.Run()
+		_ = os.RemoveAll(abs)
+		os.Exit(code)
+	}
+	os.Exit(m.Run())
+}
+
+// The engine user owns the config directory, so it could swap agents/ for
+// a symlink to a directory holding someone else's file: the read refuses it.
+func TestReadKeptCredentialRefusesASymlinkedDirectory(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	elsewhere := filepath.Join(dir, "elsewhere")
+	require.NoError(t, os.Mkdir(elsewhere, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(elsewhere, "bot.url"), []byte("PRIVATE KEY\n"), 0o600))
+	require.NoError(t, os.Symlink(elsewhere, filepath.Join(dir, "agents")))
+
+	got, err := readKeptCredential(filepath.Join(dir, "agents", "bot.url"), me(t))
+
+	require.ErrorContains(t, err, "a symlink is refused")
+	require.Empty(t, got)
+}
+
+// A root-owned file with one link, as a hardlink to an old root-only file
+// looks once its other name is gone, is not the engine user's: refused.
+func TestReadKeptCredentialRefusesARootOwnedFile(t *testing.T) {
+	t.Parallel()
+	if os.Getuid() == 0 {
+		t.Skip("as root the engine user would be root")
+	}
+	path, err := filepath.EvalSymlinks("/etc/hosts")
+	require.NoError(t, err)
+
+	got, err := readKeptCredential(path, me(t))
+
+	require.ErrorContains(t, err, "owned by uid 0, not "+me(t))
+	require.Empty(t, got)
+}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/channel"
+	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/vault"
 )
@@ -51,4 +52,11 @@ func loadEngineKeys(stateDir string, now func() time.Time) (*channel.EngineKeys,
 		return nil, err
 	}
 	return channel.LoadOrCreateKeys(filepath.Join(stateDir, channel.KeyFileName), now)
+}
+
+// VaultStatus is status.vault for every agent's status tool: OFF (with the
+// engine id when the keys load), KEY_ERROR, or the socket's state.
+func (v engineVault) VaultStatus() agent.VaultStatus {
+	st := v.status()
+	return agent.VaultStatus{State: string(st.State), EngineID: st.EngineID, Fingerprint: st.Fingerprint}
 }

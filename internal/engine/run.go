@@ -106,6 +106,7 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 		env.pagesOrigin = site.origin
 	}
 	ev := openVault(cfg, env.stateDir, time.Now, log)
+	env.vault = ev
 	st := ev.status()
 	log.Info("vault", "state", st.State, "engineId", st.EngineID, "fingerprint", st.Fingerprint)
 	srv, err := startAgents(ctx, cfg, env, agentUIDs, newAgentRuntime, log)
@@ -284,6 +285,8 @@ type agentEnv struct {
 	stateDir    string
 	pins        upkeep.Pins
 	tg          *telegram.Notifier
+	// vault reports the Vault connection in every agent's status.
+	vault agent.VaultReporter
 }
 
 func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slog.Logger) (agentRuntime, error) {
@@ -332,6 +335,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		SameUser:    !env.cfg.Service(),
 		Setup:       a.Setup,
 		Probe:       probe,
+		Vault:       env.vault,
 	})
 	return agentRuntime{
 		svc:    svc,

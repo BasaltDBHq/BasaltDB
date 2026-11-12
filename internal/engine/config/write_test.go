@@ -67,3 +67,33 @@ func TestUpsertAgentStateDirAndPagesURL(t *testing.T) {
 	require.Equal(t, "http://localhost:9000", c.PagesURL)
 	require.Equal(t, "/home/alice/basalt/state", c.StateDir)
 }
+
+func TestUpsertAgentRecordsTheModeAndKeepsThePersons(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "engine.json")
+	bot := config.Agent{Name: "bot", OSUser: "bot", CredentialFile: "/c/bot.url"}
+	service := config.Settings{SocketDir: "/run/basalt", Mode: config.ModeService, PersonUIDs: []uint32{501}}
+	require.NoError(t, config.UpsertAgent(path, service, bot))
+
+	// Re-running init keeps the recorded person and adds a new one once.
+	service.PersonUIDs = []uint32{502, 501}
+	require.NoError(t, config.UpsertAgent(path, service, bot))
+	c, err := config.Load(path)
+	require.NoError(t, err)
+	require.True(t, c.Service())
+	require.Equal(t, []uint32{501, 502}, c.PersonUIDs)
+
+	// No mode written means same-user mode.
+	plain := filepath.Join(t.TempDir(), "engine.json")
+	require.NoError(t, config.UpsertAgent(plain, config.Settings{SocketDir: "/tmp/run"}, bot))
+	c, err = config.Load(plain)
+	require.NoError(t, err)
+	require.False(t, c.Service())
+	require.Empty(t, c.PersonUIDs)
+}
+
+func TestNoAgentTakesThePersonSocket(t *testing.T) {
+	t.Parallel()
+	require.False(t, config.ValidAgentName(config.PersonSocketName))
+	require.Equal(t, "/run/basalt/person.sock", config.PersonSocketPath("/run/basalt"))
+}

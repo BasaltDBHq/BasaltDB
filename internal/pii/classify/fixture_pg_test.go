@@ -88,7 +88,7 @@ var fixtureWant = map[string]want{
 	"public.users.uid":              public,
 	"public.sessions.id":            reviewPhone,
 	"public.sessions.user_ref":      reviewPhone,
-	"public.sessions.seq":           public,
+	"public.sessions.seq":           reviewPhone,
 	"public.accounts.account_no":    {class: guard.ClassIdentifier, entity: guard.EntityOther, needsReview: true},
 	"public.accounts.owner_id":      public,
 	"public.bad_cast.id":            public,

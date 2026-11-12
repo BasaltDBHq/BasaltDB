@@ -60,8 +60,9 @@ func TestConsecutivePhonesAreNoSequence(t *testing.T) {
 	// A key holding MSISDNs is a phone to review; an identity is an id.
 	require.Equal(t, guard.EntityPhone, Suggest(Column{Name: "ref", DataType: "bigint", Key: true},
 		Sample{Values: block(6281200000001, 1, 50)}, Options{}).EntityType)
-	require.Equal(t, Suggestion{Class: guard.ClassPublic, Reason: reasonKey},
-		Suggest(Column{Name: "ref", DataType: "bigint", Key: true, Generated: true}, Sample{Values: block(6281200000001, 1, 50)}, Options{}))
+	// An identity filled with MSISDNs meets the gate too.
+	require.Equal(t, guard.EntityPhone, Suggest(Column{Name: "ref", DataType: "bigint", Key: true, Generated: true},
+		Sample{Values: block(6281200000001, 1, 50)}, Options{}).EntityType)
 }
 
 // TestKeysAreJudgedLikeAnyColumn: only identity and serial columns, uuid
@@ -89,7 +90,24 @@ func TestKeysAreJudgedLikeAnyColumn(t *testing.T) {
 		require.Equal(t, []any{guard.ClassIdentifier, true}, []any{got.Class, got.NeedsReview}, "%s: %s", tc.name, got.Reason)
 	}
 	require.Equal(t, guard.ClassPublic, Suggest(Column{Name: "id", DataType: "bigint", Key: true, Generated: true},
-		Sample{Values: msisdns}, Options{}).Class, "identity")
+		Sample{Values: []string{"3", "17", "1200", "9"}}, Options{}).Class, "identity")
+	require.Equal(t, guard.ClassPublic, Suggest(Column{Name: "id", DataType: "bigint", Key: true, Generated: true},
+		Sample{}, Options{}).Class, "empty identity")
+	// The exemption never overrides a name rule, a validator or the gate.
+	for _, tc := range []struct {
+		col    Column
+		values []string
+		class  string
+		entity string
+	}{
+		{Column{Name: "zip", DataType: "integer", Key: true}, []string{"40115", "10110", "80361"}, guard.ClassIdentifier, guard.EntityAddress},
+		{Column{Name: "pin", DataType: "integer", Key: true}, []string{"4821", "1093", "7710"}, guard.ClassSecret, ""},
+		{Column{Name: "phone", DataType: "bigint", Key: true, Generated: true}, msisdns, guard.ClassIdentifier, guard.EntityPhone},
+		{Column{Name: "contact", DataType: "text", Generated: true}, []string{"a@example.com", "b@example.org"}, guard.ClassIdentifier, guard.EntityEmail},
+	} {
+		got := Suggest(tc.col, Sample{Values: tc.values}, Options{})
+		require.Equal(t, []string{tc.class, tc.entity}, []string{got.Class, got.EntityType}, "%s: %s", tc.col.Name, got.Reason)
+	}
 	require.Equal(t, guard.ClassPublic, Suggest(Column{Name: "id", DataType: "uuid", Key: true}, Sample{}, Options{}).Class, "uuid")
 	require.Equal(t, guard.ClassPublic, Suggest(Column{Name: "id", DataType: "bigint", Key: true},
 		Sample{Values: []string{"7", "42", "99999"}}, Options{}).Class, "short integer key")

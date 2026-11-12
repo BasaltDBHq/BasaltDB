@@ -145,10 +145,10 @@ func Suggest(col Column, s Sample, opts Options) Suggestion {
 	case s.Unavailable != "":
 		return unsampled(hit, named, "SAMPLE:"+s.Unavailable)
 	}
-	if internalID(col, k, s.Values) {
-		return Suggestion{Class: guard.ClassPublic, Reason: reasonKey}
-	}
 	if len(s.Values) == 0 {
+		if !named && internalID(col, k, nil) {
+			return Suggestion{Class: guard.ClassPublic, Reason: reasonKey}
+		}
 		return unsampled(hit, named, reasonNoValues)
 	}
 	if named && hit.qualified && hit.class != guard.ClassSecret && shortCodes(s.Values) {
@@ -160,7 +160,7 @@ func Suggest(col Column, s Sample, opts Options) Suggestion {
 	if named {
 		return byName(hit, s.Values, opts)
 	}
-	return byShape(s.Values, opts)
+	return byShape(col, k, s.Values, opts)
 }
 
 func fromName(hit nameHit) Suggestion {
@@ -297,7 +297,7 @@ func byName(hit nameHit, values []string, opts Options) Suggestion {
 // byShape judges a column no validator and no name rule claimed: integers
 // that run in sequence are ids, decimals and mixed lengths are amounts and
 // counts, and unique numbers of one length are an identifier to review.
-func byShape(values []string, opts Options) Suggestion {
+func byShape(col Column, k kind, values []string, opts Options) Suggestion {
 	n := len(values)
 	public := func(reason string) Suggestion { return Suggestion{Class: guard.ClassPublic, Reason: reason} }
 	allDigits := !slices.ContainsFunc(values, func(v string) bool { return !allASCIIDigits(strings.TrimSpace(v)) })
@@ -311,6 +311,11 @@ func byShape(values []string, opts Options) Suggestion {
 	// digit runs or validator hits makes the column an identifier.
 	if s, ok := longValues(values, opts); ok {
 		return s
+	}
+	// Below the gate only: an id the database makes is no name, validator or
+	// long-number hit.
+	if internalID(col, k, values) {
+		return public(reasonKey)
 	}
 	if allDigits {
 		if st.maxLen-st.minLen >= wideLengthSpread {

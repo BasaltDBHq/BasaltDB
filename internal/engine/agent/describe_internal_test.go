@@ -3,11 +3,13 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
@@ -142,7 +144,7 @@ func ordersDetail() pgcatalog.Detail {
 	return d
 }
 
-func describeService(t *testing.T, cat *fakeCatalog, classes fakeClasses, operatedBy string) *Service {
+func describeService(t *testing.T, cat Catalog, classes fakeClasses, operatedBy string) *Service {
 	t.Helper()
 	d := deps()
 	cmds, err := NewCommands("bot", "", "linux", nil)
@@ -415,6 +417,12 @@ func TestResourceFingerprintIgnoresStats(t *testing.T) {
 	require.NotEqual(t, first["stats"], second["stats"])
 	require.Equal(t, first["fingerprint"], second["fingerprint"], "stats are left out")
 
+	d.Indexes[0].Scans, d.Indexes[0].SizeBytes = 1234, 1<<20
+	cat.details[ordersOID] = d
+	scanned := decodeBody(t, mustDescribe(t, s, map[string]any{"resource": "shop.orders"}))
+	require.NotEqual(t, first["indexes"], scanned["indexes"])
+	require.Equal(t, first["fingerprint"], scanned["fingerprint"], "index sizes and scans are left out")
+
 	d.Columns[0].Comment = "the order's id"
 	cat.details[ordersOID] = d
 	third := decodeBody(t, mustDescribe(t, s, map[string]any{"resource": "shop.orders"}))
@@ -614,4 +622,77 @@ func TestDescribeAnswersMatchTheOutputSchema(t *testing.T) {
 	require.Error(t, validateSchema(schema, map[string]any{"form": "OVERVIEW", "tables": 1.0}))
 	require.Error(t, validateSchema(schema, map[string]any{"form": "RESOURCE", "kind": "INDEX"}))
 	require.Error(t, validateSchema(schema, map[string]any{"form": "RESOURCE", "comment": strings.Repeat("x", 501)}))
+}
+
+// errCatalog is a Catalog whose every read fails with err.
+type errCatalog struct {
+	fakeCatalog
+	err error
+}
+
+func (e *errCatalog) Relations(context.Context) ([]pgcatalog.Relation, int, error) {
+	return nil, 0, e.err
+}
+func (e *errCatalog) Find(context.Context, string, string) (pgcatalog.Relation, bool, error) {
+	return pgcatalog.Relation{}, false, e.err
+}
+
+func (e *errCatalog) Search(context.Context, string, []pgcatalog.ColumnKey, *pgcatalog.SearchCursor, int) ([]pgcatalog.Match, error) {
+	return nil, e.err
+}
+
+// TestDescribeErrorsStayInTheContract: describe declares INVALID_ARGUMENT,
+// NOT_FOUND, QUERY_TIMEOUT, UNAVAILABLE and INTERNAL only, so any other
+// Postgres error reading the catalog is INTERNAL, never SQL_ERROR or
+// PERMISSION_DENIED; a timeout stays QUERY_TIMEOUT with a step that fits the
+// form, and an unreachable database stays UNAVAILABLE.
+func TestDescribeErrorsStayInTheContract(t *testing.T) {
+	t.Parallel()
+	forms := map[string]map[string]any{
+		"overview": {}, "search": {"query": "orders"}, "resource": {"resource": "shop.orders"},
+	}
+	for name, args := range forms {
+		for _, c := range []struct {
+			err  error
+			code string
+		}{
+			{&pgconn.PgError{Code: "42501", Message: "permission denied for table pg_class"}, CodeInternal},
+			{&pgconn.PgError{Code: "42703", Message: `column "x" does not exist`}, CodeInternal},
+			{&pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"}, CodeQueryTimeout},
+			{&pgconn.PgError{Code: "08006", Message: "connection failure"}, CodeUnavailable},
+			{errors.New("boom"), CodeInternal},
+		} {
+			s := describeService(t, &errCatalog{err: c.err}, fakeClasses{}, "")
+			body, isError := callDescribe(t, s, args)
+			require.True(t, isError, "%s: %v", name, c.err)
+			m := decodeBody(t, body)
+			require.Equal(t, c.code, m["code"], "%s: %v", name, c.err)
+			require.NotEmpty(t, m["nextSteps"], "%s: %v", name, c.err)
+			require.NotContains(t, body, "pg_class", "an engine failure names nothing")
+			if c.code == CodeQueryTimeout {
+				text := m["nextSteps"].([]any)[0].(map[string]any)["text"].(string)
+				require.NotContains(t, text, "statement", "%s: the step fits describe", name)
+				if name == "search" {
+					require.Contains(t, text, "more specific query")
+				}
+			}
+		}
+	}
+}
+
+// TestDescribeWithoutClassesFailsClosed: with no PII classes the engine
+// cannot tell SECRET columns, so describe answers INTERNAL instead of
+// showing every column.
+func TestDescribeWithoutClassesFailsClosed(t *testing.T) {
+	t.Parallel()
+	cat, _ := ordersCatalog()
+	d := deps()
+	d.Catalog = cat
+	s := NewService(d)
+	for _, args := range []map[string]any{{}, {"query": "orders"}, {"resource": "shop.orders"}} {
+		body, isError := callDescribe(t, s, args)
+		require.True(t, isError, "%v", args)
+		require.Equal(t, CodeInternal, decodeBody(t, body)["code"], "%v", args)
+		require.NotContains(t, body, "card_token")
+	}
 }

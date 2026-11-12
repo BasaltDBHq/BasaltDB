@@ -57,8 +57,17 @@ type describeResourceResult struct {
 	Resource
 }
 
-// describe serves the three forms, told apart by their arguments.
+// describe serves the three forms, told apart by their arguments, with every
+// error within the codes describe declares.
 func (h handlers) describe(ctx context.Context, raw json.RawMessage) (any, error) {
+	out, err := h.describeForm(ctx, raw)
+	if err != nil {
+		return nil, describeError(err)
+	}
+	return out, nil
+}
+
+func (h handlers) describeForm(ctx context.Context, raw json.RawMessage) (any, error) {
 	var args describeArgs
 	if err := decodeArgs(raw, &args); err != nil {
 		return nil, err

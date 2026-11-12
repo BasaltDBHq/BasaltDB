@@ -83,19 +83,18 @@ func (noCatalog) Structure(context.Context) ([]string, error) { return nil, errN
 func (noCatalog) Database() string                            { return "" }
 func (noCatalog) Limits() sqlguard.Limits                     { return sqlguard.DefaultLimits() }
 
-// noClasses classes every column UNCLASSIFIED and none SECRET.
+// noClasses serves a service built without PII classes: it cannot tell a
+// SECRET column, so every describe call fails closed (INTERNAL).
 type noClasses struct{}
 
-func (noClasses) Resolve(_ context.Context, refs []piidict.ColumnRef) ([]piidict.Class, error) {
-	out := make([]piidict.Class, len(refs))
-	for i := range out {
-		out[i] = piidict.Unclassified
-	}
-	return out, nil
+var errNoClasses = errors.New("describe: no pii classes configured")
+
+func (noClasses) Resolve(context.Context, []piidict.ColumnRef) ([]piidict.Class, error) {
+	return nil, errNoClasses
 }
 
-func (noClasses) Secrets(context.Context) ([]piidict.ColumnRef, error) { return nil, nil }
-func (noClasses) CatalogFingerprint(context.Context) (string, error)   { return "", nil }
+func (noClasses) Secrets(context.Context) ([]piidict.ColumnRef, error) { return nil, errNoClasses }
+func (noClasses) CatalogFingerprint(context.Context) (string, error)   { return "", errNoClasses }
 
 const (
 	// overviewInlineMax is the most visible tables the overview lists
@@ -633,15 +632,21 @@ func resourceStats(d pgcatalog.Detail) *ResourceStats {
 }
 
 // resourceFingerprint is the sha256 of the canonical JSON of the answer
-// without stats and fingerprint, followed by the PII catalog fingerprint:
-// it moves on any change the agent can see and on a reclassification, never
-// on row counts or scans.
+// without stats, index sizes and scans, and fingerprint, followed by the PII catalog fingerprint:
+// it moves on any structural change the agent can see and on a
+// reclassification, never on row counts, sizes or scans.
 func resourceFingerprint(r Resource, pii string) (string, error) {
 	canon := r
 	canon.Fingerprint = ""
 	if r.ResourceDetail != nil {
 		d := *r.ResourceDetail
 		d.Stats = nil
+		// Index sizes and scan counters change with use, like stats.
+		d.Indexes = make([]IndexInfo, len(r.Indexes))
+		for i, x := range r.Indexes {
+			x.SizeBytes, x.Scans = 0, 0
+			d.Indexes[i] = x
+		}
 		canon.ResourceDetail = &d
 	}
 	raw, err := json.Marshal(canon)
@@ -788,3 +793,21 @@ var quotedKeywords = func() map[string]bool {
 	}
 	return m
 }()
+
+// describeError keeps a describe failure within the codes describe declares
+// (INVALID_ARGUMENT, NOT_FOUND, QUERY_TIMEOUT, UNAVAILABLE, INTERNAL): any
+// other, such as a Postgres error reading the catalog, is the engine's
+// failure, INTERNAL, logged with its cause and never shown to the agent.
+func describeError(err error) error {
+	switch ToolError(err).Code {
+	case CodeInvalidArgument, CodeNotFound, CodeQueryTimeout, CodeUnavailable, CodeInternal:
+		return err
+	}
+	return &describeFailureError{err: err}
+}
+
+// describeFailureError is an error ToolError cannot map to a contract code
+// (it does not unwrap), so it answers INTERNAL; its text is only logged.
+type describeFailureError struct{ err error }
+
+func (e *describeFailureError) Error() string { return "describe: " + e.err.Error() }

@@ -66,7 +66,8 @@ var hiddenNames = []string{"card_token", "cost_price", "orders_card_idx", "order
 
 type describeHarness struct {
 	harness
-	db *guardtest.DB
+	db   *guardtest.DB
+	role string
 }
 
 func describeDB(t *testing.T) describeHarness {
@@ -92,7 +93,7 @@ func describeDB(t *testing.T) describeHarness {
 		Catalog: agentdb.NewCatalog(pool, limits, pool.Config().ConnConfig.Database),
 		Classes: piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool),
 	})
-	return describeHarness{harness: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, db: d}
+	return describeHarness{harness: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, db: d, role: a.Role}
 }
 
 // classifyDescribe classes every readable column PUBLIC and card_token
@@ -186,11 +187,24 @@ func TestDescribeIfFingerprint(t *testing.T) {
 	require.False(t, isError, "%v", res)
 	fp := str(t, res["fingerprint"])
 
-	h.db.Exec(t, `INSERT INTO shop.orders (id, price) VALUES (99, 5); ANALYZE shop.orders`)
+	// Rows that grow the indexes, and an index scan the statistics count.
+	h.db.Exec(t, `INSERT INTO shop.orders (id, price) SELECT g, 5 FROM generate_series(100, 3000) g; ANALYZE shop.orders`)
+	h.db.Exec(t, `SET enable_seqscan = off`)
+	h.db.Exec(t, `SELECT id FROM shop.orders WHERE status = 'new'`)
+	h.db.Exec(t, `RESET enable_seqscan`)
+	require.Eventually(t, func() bool {
+		var scans int64
+		err := h.db.Admin.QueryRow(context.Background(), `SELECT coalesce(sum(idx_scan), 0) FROM pg_stat_user_indexes
+			WHERE relname = 'orders'`).Scan(&scans)
+		return err == nil && scans > 0
+	}, 10*time.Second, 100*time.Millisecond, "the index scan reaches the statistics")
+	moved, isError := h.describe(t, map[string]any{"resource": "shop.orders"})
+	require.False(t, isError, "%v", moved)
+	require.NotEqual(t, res["indexes"], moved["indexes"], "index sizes or scans moved")
 	same, isError := h.describe(t, map[string]any{"resource": "shop.orders", "ifFingerprint": fp})
 	require.False(t, isError, "%v", same)
 	require.Equal(t, map[string]any{"form": "RESOURCE", "resource": "shop.orders", "fingerprint": fp, "unchanged": true}, same,
-		"row counts and scans do not change the fingerprint")
+		"row counts, index sizes and scans do not change the fingerprint")
 
 	h.db.Exec(t, `ALTER TABLE shop.orders ADD COLUMN note text`)
 	changed, isError := h.describe(t, map[string]any{"resource": "shop.orders", "ifFingerprint": fp})
@@ -210,6 +224,14 @@ func TestDescribeOverviewFingerprintFollowsStructure(t *testing.T) {
 	h.db.Exec(t, `CREATE INDEX lines_qty_idx ON shop.lines (qty)`)
 	third, _ := h.describe(t, map[string]any{})
 	require.NotEqual(t, first["fingerprint"], third["fingerprint"], "an index does")
+
+	h.db.Exec(t, `GRANT INSERT ON shop.orders TO `+pgx.Identifier{h.role}.Sanitize())
+	granted, _ := h.describe(t, map[string]any{})
+	require.NotEqual(t, third["fingerprint"], granted["fingerprint"], "a write grant does")
+
+	h.db.Exec(t, `COMMENT ON TABLE shop.lines IS 'Order lines'`)
+	commented, _ := h.describe(t, map[string]any{})
+	require.NotEqual(t, granted["fingerprint"], commented["fingerprint"], "a table comment does")
 }
 
 // TestDescribeDoesNotRecordReads: describe reads the catalog only, so the

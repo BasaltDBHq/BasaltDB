@@ -24,8 +24,9 @@ import (
 )
 
 // basalt status (CONTRACT.md, CLI; owner decision AE-13): the status tool's
-// report for the person, plus where the engine runs. Never a secret, a
-// file's contents or the credential file's path.
+// report for the person, plus where the engine runs. Never a secret or a
+// file's contents. The credential file's path appears only as a saved
+// --credential-file flag in an init command (AE-15).
 
 // statusOut is basalt status --json: the status tool's result plus
 // configPath, engine.pid, engine.osUser, socketDir and stateDir.
@@ -44,6 +45,11 @@ type engineOut struct {
 	Build     string `json:"build,omitempty"`
 	PID       int    `json:"pid,omitempty"`
 	OSUser    string `json:"osUser,omitempty"`
+	// Unknown is a lock file this user cannot open: whether the engine
+	// runs cannot be told (reachable is false, with no problem for it).
+	Unknown bool `json:"unknown,omitempty"`
+	// why says why it is unknown, for the text output.
+	why string
 }
 
 // statusAgentPool bounds basalt status's connections: one at a time.
@@ -150,7 +156,7 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 	}
 	r, err := agent.LocalStatus{
 		Name: a.Name, Commands: cmds, OperatedBy: cfg.OperatedBy, Setup: a.Setup,
-		PagesBase: base, PagesOrigin: servedPages(c, cfg, eng.Reachable), EngineRunning: eng.Reachable,
+		PagesBase: base, PagesOrigin: servedPages(c, cfg, eng.Reachable), EngineRunning: eng.Reachable, EngineUnknown: eng.Unknown,
 		Probe:    agent.DBProbe{Q: pool, Migrations: guard.Migrations()},
 		Passkeys: func(ctx context.Context) ([]passkey.Credential, error) { return ledger.Passkeys(ctx, pool) },
 		Log:      slog.New(slog.DiscardHandler), Now: c.now,
@@ -178,14 +184,26 @@ func statusAgent(cfg config.Config, name, path string) (config.Agent, error) {
 }
 
 // runningEngine reads the engine's lock file: held while it runs, with its
-// pid, owned by its OS user. No lock file: not running.
+// pid, owned by its OS user. No lock file: not running. A lock file this
+// user cannot open read-write (another user's engine): unknown, never "not
+// running". Probing takes the lock for an instant when it is free, so an
+// engine starting in that instant fails with "already running" and must be
+// started again; status never holds it longer than the probe.
 func runningEngine(socketDir string) engineOut {
 	path := engine.LockPath(socketDir)
 	if _, err := os.Stat(path); err != nil {
 		return engineOut{}
 	}
+	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		return engineOut{Unknown: true, OSUser: fileOwner(path), why: withoutPath(err).Error()}
+	}
+	_ = f.Close()
 	pid, running, err := server.Running(path)
-	if err != nil || !running {
+	switch {
+	case err != nil:
+		return engineOut{Unknown: true, OSUser: fileOwner(path), why: withoutPath(err).Error()}
+	case !running:
 		return engineOut{}
 	}
 	return engineOut{Reachable: true, PID: pid, OSUser: fileOwner(path)}
@@ -214,6 +232,9 @@ func withoutPath(err error) error {
 // printStatus is basalt status for the person.
 func printStatus(w io.Writer, s statusOut) {
 	engineLine := "not running"
+	if s.Engine.Unknown {
+		engineLine = fmt.Sprintf("unknown (its lock file, owned by %s, cannot be opened: %s)", s.Engine.OSUser, s.Engine.why)
+	}
 	if s.Engine.Reachable {
 		engineLine = "running"
 		if s.Engine.PID > 0 {

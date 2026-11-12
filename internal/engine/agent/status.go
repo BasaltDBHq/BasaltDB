@@ -190,6 +190,7 @@ type statusDeps struct {
 	name, operatedBy, build   string
 	pagesBase, pagesOrigin    string
 	sameUser, engineReachable bool
+	engineUnknown             bool
 	vault                     VaultReporter
 	cmds                      Commands
 	setup                     *config.Setup
@@ -221,10 +222,13 @@ type LocalStatus struct {
 	// of the local pages when the running engine serves them, else empty.
 	PagesBase, PagesOrigin string
 	EngineRunning          bool
-	Probe                  Probe
-	Passkeys               func(context.Context) ([]passkey.Credential, error)
-	Log                    *slog.Logger
-	Now                    func() time.Time
+	// EngineUnknown: whether the engine runs cannot be told, so there is
+	// no ENGINE_UNREACHABLE problem (engine.reachable stays false).
+	EngineUnknown bool
+	Probe         Probe
+	Passkeys      func(context.Context) ([]passkey.Credential, error)
+	Log           *slog.Logger
+	Now           func() time.Time
 }
 
 // Report is the status report. It panics on a missing probe, passkey
@@ -239,7 +243,7 @@ func (l LocalStatus) Report(ctx context.Context) (StatusReport, error) {
 	}
 	return statusDeps{
 		name: l.Name, operatedBy: l.OperatedBy, build: buildinfo.Version, pagesBase: base, pagesOrigin: l.PagesOrigin,
-		sameUser: true, engineReachable: l.EngineRunning, cmds: l.Commands, setup: l.Setup, probe: l.Probe,
+		sameUser: true, engineReachable: l.EngineRunning, engineUnknown: l.EngineUnknown, cmds: l.Commands, setup: l.Setup, probe: l.Probe,
 		passkeys: l.Passkeys, log: l.Log, now: l.Now,
 	}.report(ctx)
 }
@@ -255,7 +259,7 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 		r.Vault = &v
 	}
 	ps := problems{cmds: s.cmds}
-	if !s.engineReachable {
+	if !s.engineReachable && !s.engineUnknown {
 		ps.add(problemEngineUnreachable, "the engine is not running, so the agent's tools do not answer",
 			func(b *Steps) string { return engineUnreachableSteps(b, s.cmds) })
 	}

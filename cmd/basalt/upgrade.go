@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -140,14 +141,18 @@ func personAgentGuard(c *cliIO, agentName string) (agentGuard, error) {
 	if err != nil {
 		return agentGuard{}, err
 	}
-	st := guard.Status{
-		State: report.Guard.State, Build: report.Guard.Build,
-		MissingBreaking: report.Guard.MissingBreaking, MissingNonBreaking: report.Guard.MissingNonBreaking,
+	return agentGuard{target: setupcode.Target(target), guard: thisBuildsVerdict(report.Guard), operatedBy: report.OperatedBy}, nil
+}
+
+// thisBuildsVerdict judges the installed version the engine read against
+// this basalt's migrations, not the engine's: a person who installed a
+// newer basalt while the old engine runs still gets the new migrations.
+// What the engine could not read (UNKNOWN, MISSING) stays as it said.
+func thisBuildsVerdict(g agent.GuardStatus) guard.Status {
+	if g.Installed == nil || g.State == guard.GuardUnknown || g.State == guard.GuardMissing {
+		return guard.Status{State: g.State, Build: guard.LatestVersion()}
 	}
-	if report.Guard.Installed != nil {
-		st.Installed = *report.Guard.Installed
-	}
-	return agentGuard{target: setupcode.Target(target), guard: st, operatedBy: report.OperatedBy}, nil
+	return guard.StatusAt(*g.Installed, guard.Migrations())
 }
 
 // configAgentOf loads the config and finds agent in it.

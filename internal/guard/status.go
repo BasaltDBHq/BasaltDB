@@ -92,6 +92,29 @@ func AgentStatus(ctx context.Context, q Querier, migs []Migration) (Status, erro
 	return st, nil
 }
 
+// StatusAt is the status of a guard whose newest installed version is
+// installed (0: none), against migs: every version of migs after installed
+// is missing. It judges a version read elsewhere (another build's engine)
+// by this build's migrations.
+func StatusAt(installed int, migs []Migration) Status {
+	st := Status{Installed: installed, Build: buildVersion(migs)}
+	if installed == 0 {
+		st.State = GuardMissing
+		return st
+	}
+	for _, m := range migs {
+		switch {
+		case m.Version <= installed:
+		case m.Breaking:
+			st.MissingBreaking = append(st.MissingBreaking, m.Version)
+		default:
+			st.MissingNonBreaking = append(st.MissingNonBreaking, m.Version)
+		}
+	}
+	st.State = stateOf(st)
+	return st
+}
+
 func stateOf(st Status) string {
 	switch {
 	case len(st.MissingBreaking) > 0:

@@ -246,3 +246,72 @@ func TestUpgradeThroughThePersonSocket(t *testing.T) {
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Equal(t, latest, g.version(t))
 }
+
+// An engine still running an older build judges the guard by its own
+// migrations and says OK; this basalt has one more, and upgrade adds it.
+func TestUpgradeJudgesTheGuardByThisBuildNotTheRunningEngines(t *testing.T) {
+	t.Parallel()
+	latest := guard.LatestVersion()
+	g := newOlderGuard(t, latest-1)
+	old := outdatedReport(t, g)
+	installed := latest - 1
+	old.Guard = agent.GuardStatus{State: guard.GuardOK, Installed: &installed, Build: latest - 1}
+	old.Problems, old.Ready = nil, true
+	socket := fakeEngine(t, old, dbTarget(t, g.dsn))
+	r := serviceCmd(t, runUpgrade, socket, map[string]string{envAdminURL: g.d.URL}, "--agent", "bot", "--yes")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.NotContains(t, r.stderr, "nothing to upgrade")
+	require.Contains(t, r.stdout, setupcode.UpgradeLine(latest-1, latest))
+	require.Equal(t, latest, g.version(t))
+}
+
+// A credential file outside the default is saved in initArgs (AE-15): its
+// path may appear as that flag in an init command, never on its own, and
+// its contents never.
+func TestStatusNamesANonDefaultCredentialFileOnlyAsTheSavedFlag(t *testing.T) {
+	t.Parallel()
+	g := newOlderGuard(t, 0)
+	custom := filepath.Join(filepath.Dir(g.configPath), "custom-cred.url")
+	require.NoError(t, os.Rename(g.credFile, custom))
+	cfg, err := config.Load(g.configPath)
+	require.NoError(t, err)
+	cfg.Agents[0].CredentialFile = custom
+	cfg.Agents[0].InitArgs = append(cfg.Agents[0].InitArgs, "--credential-file="+custom)
+	raw, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(g.configPath, raw, 0o600))
+
+	for _, args := range [][]string{{"--json"}, nil} {
+		r := g.status(t, args...)
+		require.Equal(t, exitOK, r.code, r.stderr)
+		out := r.stdout + r.stderr
+		g.requireNoSecret(t, out)
+		require.Contains(t, out, "--credential-file="+custom, "NO_PASSKEY's init command carries the saved flag")
+		require.Equal(t, strings.Count(out, custom), strings.Count(out, "--credential-file="+custom),
+			"the path appears only as the saved flag")
+	}
+}
+
+func TestStatusSaysUnknownForALockFileItCannotOpen(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("root opens any file")
+	}
+	g := newOlderGuard(t, 0)
+	require.NoError(t, os.MkdirAll(g.socketDir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(g.socketDir, "engine.lock"), []byte("12\n"), 0o000))
+
+	r := g.status(t, "--json")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	var out map[string]any
+	require.NoError(t, json.Unmarshal([]byte(r.stdout), &out))
+	eng := out["engine"].(map[string]any)
+	require.Equal(t, true, eng["unknown"])
+	require.Equal(t, false, eng["reachable"])
+	for _, p := range out["problems"].([]any) {
+		require.NotEqual(t, "ENGINE_UNREACHABLE", p.(map[string]any)["code"], "not known to be down")
+	}
+	text := g.status(t)
+	require.Contains(t, text.stdout, "Engine:       unknown (its lock file, owned by ")
+	require.NotContains(t, text.stdout, "not running")
+}

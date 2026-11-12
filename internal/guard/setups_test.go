@@ -259,6 +259,10 @@ func TestRecordSetup(t *testing.T) {
 	// The engine confirms the setup by logging in and finding it.
 	bot := requireLogin(t, d, pw)
 	require.Equal(t, 1, count(t, bot, `SELECT count(setup_id)::int FROM basalt_meta.agent_setups WHERE setup_id = $1`, s.ID))
+	latest, ok, err := guard.LatestAgentSetup(ctx, bot)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, guard.AgentSetup{SetupID: s.ID, Kind: guard.SetupInstall}, latest, "status reports it as DONE")
 
 	// An UPGRADE is recorded under the admin's name.
 	now := dbNow(t, d)
@@ -266,6 +270,10 @@ func TestRecordSetup(t *testing.T) {
 	seq, err = guard.RecordSetup(ctx, d.Admin, d.Names, up)
 	require.NoError(t, err)
 	require.Equal(t, admin, scalarOf[string](t, d.Admin, `SELECT agent::text FROM basalt_meta.ledger WHERE seq = $1`, seq))
+	latest, ok, err = guard.LatestAgentSetup(ctx, bot)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, guard.AgentSetup{SetupID: up.ID, Kind: guard.SetupUpgrade}, latest, "an agent sees every UPGRADE")
 }
 
 func TestRecordSetupRefusals(t *testing.T) {

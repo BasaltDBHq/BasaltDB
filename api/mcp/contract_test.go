@@ -185,7 +185,7 @@ func TestStatusToolHasContract(t *testing.T) {
 	tool, ok := mcpcontract.Find(mcpcontract.MustLoad(), "status")
 	require.True(t, ok)
 	require.Equal(t, "M4.1", tool.Milestone)
-	require.Equal(t, mcpcontract.StatusPlanned, tool.Status)
+	require.Equal(t, mcpcontract.StatusImplemented, tool.Status)
 	props, ok := tool.InputSchema["properties"].(map[string]any)
 	require.True(t, ok)
 	require.Empty(t, props)

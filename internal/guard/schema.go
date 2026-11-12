@@ -16,6 +16,11 @@ package guard
 type migration struct {
 	version int
 	sql     string
+	// nonBreaking marks a version an engine serves an agent without
+	// (CONTRACT.md, basalt_meta, AE-11): only GUARD_UPGRADE_AVAILABLE then.
+	// Breaking is the default; setting it needs the engine test that serves
+	// an agent on a guard without this version.
+	nonBreaking bool
 }
 
 // basalt_meta versions, in order.

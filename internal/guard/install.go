@@ -225,11 +225,15 @@ func planAgent(ctx context.Context, q Querier, n Names, spec AgentSpec) ([]State
 	if err != nil {
 		return nil, err
 	}
+	adopt, err := agentAdoptStatement(n, role, spec)
+	if err != nil {
+		return nil, err
+	}
 	st, err := agentRoleStatement(n, role, spec, timeout.Milliseconds())
 	if err != nil {
 		return nil, err
 	}
-	return append([]Statement{st}, grants...), nil
+	return append([]Statement{adopt, st}, grants...), nil
 }
 
 // checkAgentPassword accepts at most one of a generated password and a
@@ -298,33 +302,93 @@ func AgentRoleExists(ctx context.Context, q Querier, n Names, agent string) (boo
 	return exists, err
 }
 
-// agentPlainRoleCheck refuses (BS008) to take over a role named %[1]s that
-// exists and is not a plain agent. Every path that gives an existing role
-// LOGIN, a password or the agents group runs it first. A role is not plain
-// when it, or any role it is a member of (directly or not, inheriting or
-// not, so it could SET ROLE to it), has an elevated attribute, is a
-// predefined role that reads or writes every table, the server's files or
-// programs, or owns the database, or is the guard role. pg_has_role answers
-// true for the role itself, and for every role when it is a superuser.
-const agentPlainRoleCheck = `
+// agentAdoptSQL runs before every agent role statement. When a role named
+// %[1]s already exists, init is about to give it LOGIN, a password or the
+// agents group, so it must be a plain agent; otherwise this refuses (BS008)
+// and nothing changes. %[2]s is the agent's tables, as SQL literals of
+// validated identifiers. The role is refused when:
+//   - it, or a role it is a member of, has an elevated attribute;
+//   - it is a member (directly or not, inheriting or not, so it could SET
+//     ROLE) of any role but the agents group: an allow-list, so a new
+//     predefined role is refused too (pg_has_role is true for the role
+//     itself, and for every role when it is a superuser);
+//   - it is a member of the owner of the database, of an agent table or a
+//     guarded table, or of their schemas;
+//   - it holds a direct privilege on anything in basalt_meta, or TRUNCATE,
+//     TRIGGER, REFERENCES or MAINTAIN on an agent or guarded table.
+//
+// Then it resets the role's own settings (ALTER ROLE ... SET), everywhere
+// and in this database: a setting such as session_replication_role =
+// replica would skip the guard's triggers. A setting the admin may not
+// reset (one only a superuser may set, when the admin is not one) is
+// refused.
+const agentAdoptSQL = `
 DO $$
+DECLARE
+    v_role   oid := (SELECT r.oid FROM pg_catalog.pg_roles r WHERE r.rolname = '%[1]s');
+    v_tables oid[] := ARRAY[%[2]s]::text[]::pg_catalog.regclass[]::oid[];
+    v_db     pg_catalog.pg_database%%ROWTYPE;
 BEGIN
-    IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles r
-        JOIN pg_catalog.pg_roles g ON pg_catalog.pg_has_role(r.oid, g.oid, 'MEMBER')
-        WHERE r.rolname = '%[1]s'
+    IF v_role IS NULL THEN
+        RETURN; -- a new role: nothing to take over
+    END IF;
+    SELECT * INTO v_db FROM pg_catalog.pg_database d WHERE d.datname = pg_catalog.current_database();
+    v_tables := v_tables || ARRAY(SELECT t.tgrelid FROM pg_catalog.pg_trigger t WHERE t.tgname = 'basalt_guard');
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles g
+        WHERE pg_catalog.pg_has_role(v_role, g.oid, 'MEMBER')
           AND (g.rolsuper OR g.rolcreaterole OR g.rolcreatedb OR g.rolreplication OR g.rolbypassrls
-               OR g.rolname IN ('pg_read_all_data', 'pg_write_all_data', 'pg_read_server_files',
-                                'pg_write_server_files', 'pg_execute_server_program',
-                                'pg_database_owner', '{{guard}}'))) THEN
+               OR (g.oid <> v_role AND g.rolname <> '{{agents}}'))) THEN
         RAISE EXCEPTION USING ERRCODE = 'BS008', MESSAGE = 'LEDGER_INPUT_INVALID',
-            DETAIL = '%[1]s is not a plain agent role: it has, or is a member of a role with, elevated rights',
+            DETAIL = '%[1]s is not a plain agent role: it has elevated attributes, or is a member of a role other than {{agents}}',
             HINT = 'Remove those attributes and memberships from the role, or use another agent name.';
+    END IF;
+    IF pg_catalog.pg_has_role(v_role, v_db.datdba, 'MEMBER') OR EXISTS (SELECT 1 FROM pg_catalog.pg_class c
+        JOIN pg_catalog.pg_namespace s ON s.oid = c.relnamespace
+        WHERE c.oid = ANY (v_tables)
+          AND (pg_catalog.pg_has_role(v_role, c.relowner, 'MEMBER') OR pg_catalog.pg_has_role(v_role, s.nspowner, 'MEMBER'))) THEN
+        RAISE EXCEPTION USING ERRCODE = 'BS008', MESSAGE = 'LEDGER_INPUT_INVALID',
+            DETAIL = '%[1]s is not a plain agent role: it owns, or is a member of the owner of, the database, an agent or guarded table, or its schema',
+            HINT = 'Use another agent name; an agent must not own what the guard protects.';
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c, LATERAL pg_catalog.aclexplode(c.relacl) a
+        WHERE a.grantee = v_role
+          AND (c.relnamespace = 'basalt_meta'::pg_catalog.regnamespace
+               OR (c.oid = ANY (v_tables) AND a.privilege_type IN ('TRUNCATE', 'TRIGGER', 'REFERENCES', 'MAINTAIN'))))
+       OR EXISTS (SELECT 1 FROM pg_catalog.pg_proc p, LATERAL pg_catalog.aclexplode(p.proacl) a
+        WHERE p.pronamespace = 'basalt_meta'::pg_catalog.regnamespace AND a.grantee = v_role)
+       OR EXISTS (SELECT 1 FROM pg_catalog.pg_namespace n, LATERAL pg_catalog.aclexplode(n.nspacl) a
+        WHERE n.nspname = 'basalt_meta' AND a.grantee = v_role) THEN
+        RAISE EXCEPTION USING ERRCODE = 'BS008', MESSAGE = 'LEDGER_INPUT_INVALID',
+            DETAIL = '%[1]s is not a plain agent role: it holds privileges on basalt_meta, or TRUNCATE, TRIGGER, REFERENCES or MAINTAIN on an agent or guarded table',
+            HINT = 'Revoke those privileges from the role, or use another agent name.';
+    END IF;
+    EXECUTE pg_catalog.format('ALTER ROLE %%I RESET ALL', '%[1]s');
+    EXECUTE pg_catalog.format('ALTER ROLE %%I IN DATABASE %%I RESET ALL', '%[1]s', v_db.datname);
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_db_role_setting s
+        WHERE s.setrole = v_role AND s.setdatabase IN (0, v_db.oid)) THEN
+        RAISE EXCEPTION USING ERRCODE = 'BS008', MESSAGE = 'LEDGER_INPUT_INVALID',
+            DETAIL = '%[1]s has role settings this admin cannot reset',
+            HINT = 'Have a superuser run ALTER ROLE %[1]s RESET ALL (and IN DATABASE), or use another agent name.';
     END IF;
 END $$;`
 
+// agentAdoptStatement is agentAdoptSQL for role and spec's tables.
+func agentAdoptStatement(n Names, role string, spec AgentSpec) (Statement, error) {
+	names := append(append([]string{}, spec.Write...), spec.Read...)
+	tables := make([]string, 0, len(names))
+	for _, name := range names {
+		t, err := parseTable(name)
+		if err != nil {
+			return Statement{}, err
+		}
+		tables = append(tables, quoteLiteral(t.ident()))
+	}
+	return Statement{SQL: n.render(fmt.Sprintf(agentAdoptSQL, role, strings.Join(tables, ", ")))}, nil
+}
+
 // agentKeepRoleSQL updates an agent role that exists without touching its
 // password. %[1]s is the validated role, %[2]d the statement timeout in ms.
-const agentKeepRoleSQL = agentPlainRoleCheck + `
+const agentKeepRoleSQL = `
 ALTER ROLE %[1]s LOGIN;
 GRANT {{agents}} TO %[1]s;
 ALTER ROLE %[1]s SET statement_timeout = %[2]d;`
@@ -332,7 +396,7 @@ ALTER ROLE %[1]s SET statement_timeout = %[2]d;`
 // agentRoleSQL creates or rotates one agent role. %[1]s is the validated
 // role, %[2]s the SCRAM-SHA-256 verifier as a SQL literal, %[3]d the
 // statement timeout in ms.
-const agentRoleSQL = agentPlainRoleCheck + `
+const agentRoleSQL = `
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '%[1]s') THEN
@@ -356,10 +420,10 @@ ALTER ROLE %[1]s SET statement_timeout = %[3]d;`
 // agentAlterRoleSQL sets the password of an agent role that exists; a
 // role that does not exist is refused. Arguments as agentCreateRoleSQL.
 // The password comes from whoever made the setup code, so this must never
-// reach a role that is not a plain agent: besides agentPlainRoleCheck it
-// refuses (BS008) a role outside the agents group, and record_setup, run
-// in the same transaction, checks the role again.
-const agentAlterRoleSQL = agentPlainRoleCheck + `
+// reach a role that is not a plain agent: besides agentAdoptSQL it refuses
+// (BS008) a role outside the agents group, and record_setup, run in the
+// same transaction, checks the role again.
+const agentAlterRoleSQL = `
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles r

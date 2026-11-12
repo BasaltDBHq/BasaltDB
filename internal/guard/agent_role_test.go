@@ -11,6 +11,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 )
 
 const scramPrefix = "SCRAM-SHA-256$4096:"
@@ -81,6 +82,8 @@ func elevatedRoles(t *testing.T, d *guardtest.DB) []string {
 	reader := d.Names.Prefix + "_reader"
 	d.Exec(t, `CREATE ROLE `+reader+` NOLOGIN`)
 	d.Exec(t, `GRANT pg_read_all_data TO `+reader)
+	friends := d.Names.Prefix + "_friends"
+	d.Exec(t, `CREATE ROLE `+friends+` NOLOGIN`)
 	fixtures := map[string]string{
 		"super":      `CREATE ROLE %[1]s LOGIN SUPERUSER`,
 		"maker":      `CREATE ROLE %[1]s LOGIN CREATEROLE`,
@@ -95,6 +98,17 @@ func elevatedRoles(t *testing.T, d *guardtest.DB) []string {
 		"underboss": `CREATE ROLE %[1]s LOGIN NOINHERIT; GRANT ` + boss + ` TO %[1]s`,
 		// Indirect: a member of a member of pg_read_all_data.
 		"indirect": `CREATE ROLE %[1]s LOGIN; GRANT ` + reader + ` TO %[1]s`,
+		// Memberships are an allow-list: anything but the agents group.
+		"monitor": `CREATE ROLE %[1]s LOGIN; GRANT pg_monitor TO %[1]s`,
+		"signal":  `CREATE ROLE %[1]s LOGIN; GRANT pg_signal_backend TO %[1]s`,
+		"friend":  `CREATE ROLE %[1]s LOGIN; GRANT ` + friends + ` TO %[1]s`,
+		// Direct privileges that let it get around the guard.
+		"truncator":  `CREATE ROLE %[1]s LOGIN; GRANT TRUNCATE ON public.leads TO %[1]s`,
+		"triggerer":  `CREATE ROLE %[1]s LOGIN; GRANT TRIGGER ON public.lead_notes TO %[1]s`, // guarded, not its own
+		"referencer": `CREATE ROLE %[1]s LOGIN; GRANT REFERENCES ON public.leads TO %[1]s`,
+		"metareader": `CREATE ROLE %[1]s LOGIN; GRANT SELECT ON basalt_meta.ledger TO %[1]s`,
+		"metausage":  `CREATE ROLE %[1]s LOGIN; GRANT USAGE ON SCHEMA basalt_meta TO %[1]s`,
+		"metacaller": `CREATE ROLE %[1]s LOGIN; GRANT EXECUTE ON FUNCTION basalt_meta.verify_chain() TO %[1]s`,
 	}
 	names := make([]string, 0, len(fixtures))
 	for name, sql := range fixtures {
@@ -124,15 +138,17 @@ func TestInitRefusesToAdoptAnElevatedRole(t *testing.T) {
 			t.Run(path+"/"+name, func(t *testing.T) {
 				role, err := d.Names.Agent(name)
 				require.NoError(t, err)
-				before := scalarOf[string](t, d.Admin, `SELECT coalesce(rolpassword, '') FROM pg_authid WHERE rolname = $1`, role)
+				state := func() string {
+					return scalarOf[string](t, d.Admin, `SELECT coalesce(a.rolpassword, '') || a.rolcanlogin::text ||
+						(SELECT count(1) FROM information_schema.table_privileges p WHERE p.grantee = a.rolname)::text
+						FROM pg_authid a WHERE a.rolname = $1`, role)
+				}
+				before := state()
 				s := spec()
 				s.Name = name
 				err = d.TryInit(s)
 				requireCode(t, err, guard.CodeLedgerInputInvalid)
-				require.Equal(t, before, scalarOf[string](t, d.Admin,
-					`SELECT coalesce(rolpassword, '') FROM pg_authid WHERE rolname = $1`, role), "nothing changed")
-				require.Zero(t, count(t, d.Admin, `SELECT count(1)::int FROM information_schema.table_privileges
-					WHERE grantee = $1 AND table_name = 'leads'`, role), "no grant was made")
+				require.Equal(t, before, state(), "nothing changed")
 			})
 		}
 	}
@@ -152,4 +168,103 @@ func TestInitAdoptsAPlainExistingRole(t *testing.T) {
 	// Re-running init keeps the password and still passes the check.
 	d.Init(t, guard.AgentSpec{Name: "bot", Write: leads, Read: leads})
 	requireLogin(t, d, pw)
+}
+
+func TestInitRefusesAnAgentThatOwns(t *testing.T) {
+	t.Parallel()
+	for name, own := range map[string]func(t *testing.T, d *guardtest.DB, role string){
+		"an agent table": func(t *testing.T, d *guardtest.DB, role string) {
+			d.Exec(t, `ALTER TABLE public.leads OWNER TO `+role)
+		},
+		"a guarded table": func(t *testing.T, d *guardtest.DB, role string) {
+			d.Exec(t, `ALTER TABLE public.lead_notes OWNER TO `+role)
+		},
+		"the table schema": func(t *testing.T, d *guardtest.DB, role string) {
+			d.Exec(t, `ALTER SCHEMA public OWNER TO `+role)
+		},
+		"the database": func(t *testing.T, d *guardtest.DB, role string) {
+			d.Exec(t, `ALTER DATABASE `+pgx.Identifier{d.Admin.Config().Database}.Sanitize()+` OWNER TO `+role)
+		},
+		// A member of the owner, not the owner itself.
+		"through a group": func(t *testing.T, d *guardtest.DB, role string) {
+			d.Exec(t, `CREATE ROLE `+d.Names.Prefix+`_owners NOLOGIN`)
+			d.Exec(t, `ALTER TABLE public.leads OWNER TO `+d.Names.Prefix+`_owners`)
+			d.Exec(t, `GRANT `+d.Names.Prefix+`_owners TO `+role)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			d := guardtest.New(t).WithDemo(t)
+			d.NewAgent(t, "bot", leads, leads)
+			role, err := d.Names.Agent("bot")
+			require.NoError(t, err)
+			own(t, d, role)
+			for _, spec := range []guard.AgentSpec{
+				{Name: "bot", Write: leads, Read: leads},
+				{Name: "bot", Password: guard.NewPassword(), Write: leads, Read: leads},
+			} {
+				requireCode(t, d.TryInit(spec), guard.CodeLedgerInputInvalid)
+			}
+		})
+	}
+}
+
+func TestInitResetsTheRoleSettings(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	ctx := context.Background()
+	d.Init(t, guard.AgentSpec{})
+	role, err := d.Names.Agent("bot")
+	require.NoError(t, err)
+	// A superuser once set replica mode on the role: the guard's triggers
+	// would not fire for its sessions.
+	d.Exec(t, `CREATE ROLE `+role+` NOLOGIN`)
+	d.Exec(t, `ALTER ROLE `+role+` SET session_replication_role = replica`)
+	d.Exec(t, `ALTER ROLE `+role+` IN DATABASE `+pgx.Identifier{d.Admin.Config().Database}.Sanitize()+
+		` SET session_replication_role = replica`)
+
+	pw := guard.NewPassword()
+	d.Init(t, guard.AgentSpec{Name: "bot", Password: pw, Write: leads, Read: leads})
+	require.Equal(t, []string{"statement_timeout=30000"}, scalarOf[[]string](t, d.Admin,
+		`SELECT array_agg(c ORDER BY c) FROM pg_db_role_setting s, unnest(s.setconfig) c
+		WHERE s.setrole = $1::regrole`, role))
+	bot := requireLogin(t, d, pw)
+	require.Equal(t, "origin", scalarOf[string](t, bot, `SHOW session_replication_role`))
+	_, err = bot.Exec(ctx, `UPDATE public.leads SET status = 'merged' WHERE id = 4`)
+	requireCode(t, err, guard.CodeIntentRequired)
+
+	// Keeping the password resets them too.
+	d.Exec(t, `ALTER ROLE `+role+` SET session_replication_role = replica`)
+	d.Init(t, guard.AgentSpec{Name: "bot", Write: leads, Read: leads})
+	require.Zero(t, count(t, d.Admin, `SELECT count(1)::int FROM pg_db_role_setting s, unnest(s.setconfig) c
+		WHERE s.setrole = $1::regrole AND c LIKE 'session_replication_role%'`, role))
+}
+
+func TestInitRefusesSettingsTheAdminCannotReset(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	ctx := context.Background()
+	d.Init(t, guard.AgentSpec{})
+	// An admin that is not a superuser (as on a hosted Postgres) created the
+	// agent role; a superuser then set a setting only a superuser may set.
+	admin := d.Names.Prefix + "_admin"
+	pw := guard.NewPassword()
+	d.Exec(t, `CREATE ROLE `+admin+` LOGIN CREATEROLE PASSWORD '`+pw+`'`)
+	dsn, err := guard.AgentConnString(d.URL, admin, pw)
+	require.NoError(t, err)
+	c, err := pgdial.Connect(ctx, dsn)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = c.Close(context.Background()) })
+	role, err := d.Names.Agent("bot")
+	require.NoError(t, err)
+	_, err = c.Exec(ctx, `CREATE ROLE `+role+` NOLOGIN`)
+	require.NoError(t, err)
+	d.Exec(t, `ALTER ROLE `+role+` SET session_replication_role = replica`)
+
+	sql, err := guard.AgentAdoptSQL(d.Names, "bot", guard.AgentSpec{Write: leads})
+	require.NoError(t, err)
+	_, err = c.Exec(ctx, sql)
+	requireCode(t, err, guard.CodeLedgerInputInvalid)
+	require.Equal(t, 1, count(t, d.Admin, `SELECT count(1)::int FROM pg_db_role_setting s, unnest(s.setconfig) c
+		WHERE s.setrole = $1::regrole AND c = 'session_replication_role=replica'`, role))
 }

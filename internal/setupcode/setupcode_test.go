@@ -243,12 +243,14 @@ func TestDecodeRefusesPayloads(t *testing.T) {
 		"trailing data":             {append(append([]byte{}, good...), []byte(" {}")...), setupcode.RefusalInvalid},
 		// The last of duplicate keys would win in Go's decoder: a reader
 		// that kept the first would see another code.
-		"duplicate key":         {replace(`"kind":"INSTALL"`, `"kind":"UPGRADE","kind":"INSTALL"`), setupcode.RefusalInvalid},
-		"duplicate same value":  {replace(`"kind":"INSTALL"`, `"kind":"INSTALL","kind":"INSTALL"`), setupcode.RefusalInvalid},
-		"duplicate format":      {replace(`"format":1`, `"format":2,"format":1`), setupcode.RefusalInvalid},
-		"duplicate nested key":  {replace(`"database":"postgres"`, `"database":"other","database":"postgres"`), setupcode.RefusalInvalid},
-		"duplicate escaped key": {replace(`"prefix":`, `"prefix":"evil","prefix":`), setupcode.RefusalInvalid},
-		"duplicate verifier":    {replace(`"verifier":`, `"verifier":"x","verifier":`), setupcode.RefusalInvalid},
+		"duplicate key":        {replace(`"kind":"INSTALL"`, `"kind":"UPGRADE","kind":"INSTALL"`), setupcode.RefusalInvalid},
+		"duplicate same value": {replace(`"kind":"INSTALL"`, `"kind":"INSTALL","kind":"INSTALL"`), setupcode.RefusalInvalid},
+		"duplicate format":     {replace(`"format":1`, `"format":2,"format":1`), setupcode.RefusalInvalid},
+		"duplicate nested key": {replace(`"database":"postgres"`, `"database":"other","database":"postgres"`), setupcode.RefusalInvalid},
+		// \u0066 is a JSON escape of "f": the same key once decoded.
+		"duplicate escaped key":    {replace(`"prefix":`, "\"pre\\u0066ix\":\"evil\",\"prefix\":"), setupcode.RefusalInvalid},
+		"duplicate escaped format": {replace(`"format":1`, "\"\\u0066ormat\":2,\"format\":1"), setupcode.RefusalInvalid},
+		"duplicate verifier":       {replace(`"verifier":`, `"verifier":"x","verifier":`), setupcode.RefusalInvalid},
 		"non-canonical verifier": {
 			replace("AQIDBAUGBwgJCgsMDQ4PEA==", "AQIDBAUGBwgJCgsMDQ4PEB=="),
 			setupcode.RefusalInvalid,

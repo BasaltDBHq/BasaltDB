@@ -80,13 +80,66 @@ type healthDTO struct {
 	LastHeartbeat  time.Time      `json:"lastHeartbeat"`
 	HeartbeatStale bool           `json:"heartbeatStale"`
 	DeadMan        *deadManDTO    `json:"deadMan"`
+	// PII is absent before guard version 15.
+	PII *piiHealthDTO `json:"pii,omitempty"`
+}
+
+type piiHealthDTO struct {
+	Classified        int                  `json:"classified"`
+	Unclassified      int                  `json:"unclassified"`
+	UnclassifiedNames []string             `json:"unclassifiedNames"`
+	Review            int                  `json:"review"`
+	ReviewNames       []string             `json:"reviewNames"`
+	Dictionary        *dictionaryHealthDTO `json:"dictionary,omitempty"`
+}
+
+type dictionaryHealthDTO struct {
+	Values     uint64     `json:"values"`
+	LastScanAt *time.Time `json:"lastScanAt,omitempty"`
+}
+
+func piiHealthFromDomain(p *ledger.PIIHealth) *piiHealthDTO {
+	if p == nil {
+		return nil
+	}
+	out := &piiHealthDTO{
+		Classified: p.Classified, Unclassified: p.Unclassified, UnclassifiedNames: nonNil(p.UnclassifiedNames),
+		Review: p.Review, ReviewNames: nonNil(p.ReviewNames),
+	}
+	if p.Dictionary != nil {
+		d := dictionaryHealthDTO(*p.Dictionary)
+		out.Dictionary = &d
+	}
+	return out
+}
+
+func (p *piiHealthDTO) toDomain() *ledger.PIIHealth {
+	if p == nil {
+		return nil
+	}
+	out := &ledger.PIIHealth{
+		Classified: p.Classified, Unclassified: p.Unclassified, UnclassifiedNames: p.UnclassifiedNames,
+		Review: p.Review, ReviewNames: p.ReviewNames,
+	}
+	if p.Dictionary != nil {
+		d := ledger.DictionaryHealth(*p.Dictionary)
+		out.Dictionary = &d
+	}
+	return out
+}
+
+func nonNil(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
 
 func healthFromDomain(h ledger.Health) healthDTO {
 	out := healthDTO{
 		Chain: chainDTO{Intact: h.Chain.Intact, BrokenAt: h.Chain.BrokenAt}, Head: headFromDomain(h.Head),
 		Uncovered: make([]uncoveredDTO, 0, len(h.Uncovered)), RLSBlind: h.RLSBlind,
-		LastHeartbeat: h.LastHeartbeat, HeartbeatStale: h.HeartbeatStale,
+		LastHeartbeat: h.LastHeartbeat, HeartbeatStale: h.HeartbeatStale, PII: piiHealthFromDomain(h.PII),
 	}
 	for _, u := range h.Uncovered {
 		out.Uncovered = append(out.Uncovered, uncoveredDTO(u))
@@ -102,6 +155,7 @@ func (h healthDTO) toDomain() ledger.Health {
 	out := ledger.Health{
 		Chain: guard.ChainStatus{Intact: h.Chain.Intact, BrokenAt: h.Chain.BrokenAt}, Head: h.Head.toDomain(),
 		RLSBlind: h.RLSBlind, LastHeartbeat: h.LastHeartbeat, HeartbeatStale: h.HeartbeatStale,
+		PII: h.PII.toDomain(),
 	}
 	for _, u := range h.Uncovered {
 		out.Uncovered = append(out.Uncovered, guard.Uncovered(u))

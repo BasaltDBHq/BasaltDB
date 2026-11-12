@@ -37,6 +37,22 @@ func TestInstructionsCarryTheLinkSentence(t *testing.T) {
 		"Show personMessage verbatim and keep its line breaks.")
 }
 
+// TestInstructionsTeachNextSteps checks the instructions tell the agent to
+// call status and to follow nextSteps (actionable-errors design, section 5).
+func TestInstructionsTeachNextSteps(t *testing.T) {
+	t.Parallel()
+	for _, want := range []string{
+		"Call status at the start of a session",
+		"carries nextSteps: do them in order",
+		"STOP means do not retry or work around it",
+		"When status says operatedBy PERSON, never start, stop, restart or upgrade anything yourself.",
+		"Never split a write to avoid a hold",
+		"You can never approve a write or sign a revert.",
+	} {
+		require.Contains(t, Instructions, want)
+	}
+}
+
 func TestListenPagesServesAFreePort(t *testing.T) {
 	t.Parallel()
 	site, err := listenPages(config.Pages{Addr: "127.0.0.1:0", Origin: "http://localhost:8787"}, slog.New(slog.DiscardHandler))

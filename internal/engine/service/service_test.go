@@ -131,6 +131,22 @@ func TestLaunchdDaemon(t *testing.T) {
 	require.Contains(t, service.LaunchdDaemon(odd), "<string>/a&amp;b/&lt;c&gt;.json</string>")
 }
 
+func TestUnitsLimitTheEngineMemoryFromThePIIBudget(t *testing.T) {
+	t.Parallel()
+	unit := service.SystemdUnit(linuxSpec())
+	require.Contains(t, unit, "MemoryHigh=1536M\n", "three times the default 512 MiB budget")
+	require.Contains(t, unit, "MemoryMax=2048M\n")
+	plist := service.LaunchdDaemon(darwinSpec())
+	require.Contains(t, plist, "<key>SoftResourceLimits</key>\n\t<dict>\n\t\t<key>ResidentSetSize</key>\n\t\t<integer>1610612736</integer>")
+	require.Contains(t, plist, "<key>HardResourceLimits</key>\n\t<dict>\n\t\t<key>ResidentSetSize</key>\n\t\t<integer>2147483648</integer>")
+
+	small := linuxSpec()
+	small.MemoryMB = 64
+	unit = service.SystemdUnit(small)
+	require.Contains(t, unit, "MemoryHigh=192M\n")
+	require.Contains(t, unit, "MemoryMax=256M\n")
+}
+
 func TestLinuxInstallPlan(t *testing.T) {
 	t.Parallel()
 	sys := newFake()

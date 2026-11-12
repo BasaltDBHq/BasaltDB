@@ -183,7 +183,7 @@ func queryResultFromDomain(r QueryOutcome) queryResult {
 func columnsDTO(cols []agentdb.Column) []columnDTO {
 	out := make([]columnDTO, 0, len(cols))
 	for _, c := range cols {
-		out = append(out, columnDTO(c))
+		out = append(out, columnDTO{Name: c.Name, Type: c.Type})
 	}
 	return out
 }

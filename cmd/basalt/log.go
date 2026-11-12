@@ -20,6 +20,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
@@ -84,6 +85,7 @@ func runLog(c *cliIO, args []string) int {
 		return c.fail(err)
 	}
 
+	printPII(c, health.PII, l.configPath)
 	warn(c, health)
 	warnPasskeys(c, keys)
 	if *asJSON {
@@ -213,6 +215,60 @@ func warnPasskeys(c *cliIO, keys []ledger.Passkey) {
 		fmt.Fprintf(c.stderr, "warning: passkey %q (%s) has not signed anything for %d days or more (last used %s); if it is lost, run basalt passkey check or basalt passkey remove %s\n",
 			k.Label, id, int(ledger.PasskeyUnusedAfter.Hours()/hoursPerDay), lastUsed(k.LastUsedAt), id)
 	}
+}
+
+// printPII prints the PII line on stderr and warns about unclassified
+// columns and columns that need a review (CONTRACT.md, PII classification,
+// basalt log). Nothing before guard version 15 (p nil). The dictionary
+// counts come from the engine (service mode) or its status.json; when
+// neither is there the line says the dictionary is not built yet.
+func printPII(c *cliIO, p *ledger.PIIHealth, configPath string) {
+	if p == nil {
+		return
+	}
+	dict := p.Dictionary
+	if dict == nil {
+		dict = statusDictionary(configPath)
+	}
+	tail := "dictionary not built yet"
+	if dict != nil && dict.LastScanAt != nil {
+		tail = fmt.Sprintf("dictionary of %d values, last scan %s", dict.Values, dict.LastScanAt.UTC().Format(time.RFC3339))
+	}
+	fmt.Fprintf(c.stderr, "PII: %d columns classified, %d unclassified; %s\n", p.Classified, p.Unclassified, tail)
+	if p.Unclassified > 0 {
+		fmt.Fprintf(c.stderr, "basalt: warning: %d columns the agent can read are not classified yet: %s; run basalt classify\n",
+			p.Unclassified, piiNames(p.UnclassifiedNames, p.Unclassified))
+	}
+	if p.Review > 0 {
+		fmt.Fprintf(c.stderr, "basalt: warning: %d columns need a classification review (type changed or flagged): %s; run basalt classify\n",
+			p.Review, piiNames(p.ReviewNames, p.Review))
+	}
+}
+
+// piiNames lists at most ledger.MaxPIINames names, then "…" when there are
+// more.
+func piiNames(names []string, total int) string {
+	names = names[:min(len(names), ledger.MaxPIINames)]
+	out := strings.Join(names, ", ")
+	if total > len(names) {
+		out += ", …"
+	}
+	return out
+}
+
+// statusDictionary reads the engine's status.json from the state directory
+// the config names (the platform default when the config cannot be read);
+// nil when it cannot be read.
+func statusDictionary(configPath string) *ledger.DictionaryHealth {
+	dir := config.DefaultStateDir(runtime.GOOS)
+	if cfg, err := config.Load(configPath); err == nil {
+		dir = cfg.StateDirFor(runtime.GOOS)
+	}
+	st, ok := pii.ReadStatus(dir)
+	if !ok {
+		return nil
+	}
+	return &ledger.DictionaryHealth{Values: st.DictionaryValues + uint64(st.DeltaValues), LastScanAt: st.LastScanAt}
 }
 
 // hoursPerDay converts durations to days for messages.

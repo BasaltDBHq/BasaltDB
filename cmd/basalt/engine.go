@@ -202,6 +202,12 @@ func runService(ctx context.Context, args []string, io stdio) int {
 		return fail(io.err, "service", err)
 	}
 	spec := service.Spec{GOOS: runtime.GOOS, Binary: bin, ConfigPath: *configPath, User: *user}
+	// The unit's memory limits follow the installed config's
+	// pii.maxMemoryMB (the default when there is none yet), so running
+	// install again after raising it rewrites them.
+	if cfg, err := config.LoadNoFollow(*configPath); err == nil {
+		spec.MemoryMB = cfg.PIIOrDefault().MaxMemoryMB
+	}
 	if action == "install" && a.name != "" {
 		if len(a.personUIDs) == 0 && os.Getenv(envSudoUID) != "" {
 			uid, err := parseUID(os.Getenv(envSudoUID))

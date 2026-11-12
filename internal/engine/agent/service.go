@@ -122,7 +122,22 @@ type Deps struct {
 	// Vault reports the engine's Vault connection for status; status leaves
 	// vault out when nil.
 	Vault VaultReporter
+	// PII sees every read's rows before they are returned and adds the
+	// values of IDENTIFIER columns to the dictionary (M5.1); optional,
+	// nothing is added when nil.
+	PII PIIObserver
 }
+
+// PIIObserver adds the PII values of rows the agent is about to get to the
+// engine's dictionary. An error means a value could not be added: the rows
+// are not returned (fail closed). It never logs a value.
+type PIIObserver interface {
+	Observe(ctx context.Context, cols []agentdb.Column, rows []map[string]any) error
+}
+
+type noPII struct{}
+
+func (noPII) Observe(context.Context, []agentdb.Column, []map[string]any) error { return nil }
 
 // Service runs one agent's tool calls.
 type Service struct {
@@ -156,6 +171,9 @@ func NewService(d Deps) *Service {
 	}
 	if d.Relay == nil {
 		d.Relay = noRelay{}
+	}
+	if d.PII == nil {
+		d.PII = noPII{}
 	}
 	if d.PagesBase == "" {
 		d.PagesBase = links.DefaultLocal
@@ -247,6 +265,15 @@ func (s *Service) Query(ctx context.Context, p QueryParams) (QueryOutcome, error
 	res, err := s.Reader.Read(ctx, p.SQL, p.Params, stmt.RowSources)
 	if err != nil {
 		return QueryOutcome{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
+	}
+	// The values of IDENTIFIER columns go in the dictionary before the rows
+	// leave the engine (M5.1 plan, section 6). One that cannot be added
+	// keeps the rows from the agent.
+	if err := s.PII.Observe(ctx, res.Columns, res.Rows); err != nil {
+		s.Log.Error("pii: the read's values could not be added to the dictionary; its rows are withheld", "err", err)
+		// An engine failure, not the agent's SQL: INTERNAL even when a
+		// Postgres error (a map reload) caused it. The cause is logged above.
+		return QueryOutcome{}, &mcp.ToolError{Code: CodeInternal, Message: "internal engine error"}
 	}
 	change, err := s.Reads.RecordRead(ctx, guard.Read{
 		RunID: run.ID, Statement: p.SQL, Params: p.Params, Tables: stmt.Tables,

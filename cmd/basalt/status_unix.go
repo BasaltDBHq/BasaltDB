@@ -10,9 +10,10 @@ import (
 )
 
 // fileOwner is the name of the OS user who owns path (its uid when the name
-// does not resolve), or "" when it cannot be read.
+// does not resolve), or "" when it cannot be read. A symlink is not
+// followed: its own owner is the answer.
 func fileOwner(path string) string {
-	fi, err := os.Stat(path)
+	fi, err := os.Lstat(path)
 	if err != nil {
 		return ""
 	}

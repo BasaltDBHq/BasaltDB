@@ -99,7 +99,7 @@ type remoteFlags struct {
 	newCode, json, configGiven                          bool
 	spec                                                guard.AgentSpec
 	// vaultFlag is --vault as given ("" when not); vault is what init
-	// writes (chooseVault).
+	// asks the config's vault to be (chooseVault).
 	vaultFlag VaultMode
 	vault     vaultChoice
 }
@@ -320,7 +320,7 @@ func newRemoteInit(c *cliIO, f remoteFlags) (*remoteInit, error) {
 // lives in the user's own config directory, as init's foreground setup.
 func (r *remoteInit) paths() error {
 	dir := filepath.Dir(r.f.configPath)
-	r.settings = config.Settings{SocketDir: config.DefaultSocketDir(r.c.goos), PagesURL: links.Portal, OperatedBy: r.f.operatedBy.enum(), Vault: r.f.vault.mode.enum()}
+	r.settings = r.f.vault.settings(config.Settings{SocketDir: config.DefaultSocketDir(r.c.goos), PagesURL: links.Portal, OperatedBy: r.f.operatedBy.enum()})
 	if !r.f.configGiven && r.c.host.Euid() != 0 {
 		base, err := r.c.host.UserConfigDir()
 		if err != nil {
@@ -719,13 +719,13 @@ func (r *remoteInit) writeCredential(p plan) error {
 
 // writeConfig upserts the agent and prints the vault value it wrote.
 func (r *remoteInit) writeConfig(saved []string, s *config.Setup) error {
-	err := config.UpsertAgent(r.f.configPath, r.settings, config.Agent{
+	v, err := config.UpsertAgentVault(r.f.configPath, r.settings, config.Agent{
 		Name: r.f.agent, OSUser: r.osUser, CredentialFile: r.credFile, InitArgs: saved, Setup: s,
 	})
 	if err != nil {
 		return err
 	}
-	fmt.Fprint(r.c.stderr, r.f.vault.line())
+	fmt.Fprint(r.c.stderr, r.f.vault.line(v))
 	return nil
 }
 

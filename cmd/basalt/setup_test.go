@@ -203,7 +203,7 @@ func TestInitInstallsTheServiceWithOneSudo(t *testing.T) {
 
 			require.Len(t, h.sudo, 1, "one elevation")
 			require.Equal(t, []string{fakeBin, "service", "install", "--config", v.config, "--user", v.user,
-				"--agent", "bot", "--os-user", me(t), "--pages-url", links.DefaultLocal, "--vault=off",
+				"--agent", "bot", "--os-user", me(t), "--pages-url", links.DefaultLocal, "--vault-default=off",
 				"--init-arg", "--agent=bot", "--init-arg", "--write=public.leads", "--init-arg", "--prefix=" + d.Names.Prefix,
 				"--init-arg", "--os-user=" + me(t), "--person-uid", "501", "--credential-stdin"}, h.sudo[0])
 			require.Contains(t, h.sudoIn[0], d.Names.Prefix+"_agent_bot:", "the agent's credential goes on stdin")
@@ -213,7 +213,6 @@ func TestInitInstallsTheServiceWithOneSudo(t *testing.T) {
 
 			require.Contains(t, r.stderr, "Install the engine as a background service? This creates the OS user "+v.user+" and needs your password once. [Y/n]")
 			require.Contains(t, r.stderr, "basalt: engine running as "+v.user+"; it answered on "+v.socket)
-			require.Contains(t, r.stderr, "basalt: vault: off (default in person mode, where the engine serves its own pages)\n")
 			require.Contains(t, r.stderr, "  basalt mcp --agent bot\n")
 			require.Contains(t, r.stderr, "Add it to Claude Code now (claude mcp add basalt-bot -- "+fakeBin+" mcp --agent bot)? [Y/n]")
 			require.NotContains(t, r.stderr, "chown")
@@ -311,6 +310,8 @@ func TestInitAsRootInstallsInProcess(t *testing.T) {
 	require.Contains(t, h.sys.written["/etc/basalt/agents/bot.url"], d.Names.Prefix+"_agent_bot:")
 	require.Equal(t, os.FileMode(config.FileMode), h.sys.modes["/etc/basalt/agents/bot.url"])
 	require.Contains(t, h.sys.written["/etc/basalt/engine.json"], `"socketDir": "/run/basalt"`)
+	require.Contains(t, h.sys.written["/etc/basalt/engine.json"], `"vault": "OFF"`, "a new config: the person-mode default")
+	require.Contains(t, r.stderr, "basalt: vault: off (default in person mode, where the engine serves its own pages)\n")
 	require.NotContains(t, r.stderr, "postgres://", "the credential is never printed")
 }
 

@@ -21,6 +21,10 @@ import (
 // flagVault is --vault on basalt init, init --remote and service install.
 const flagVault = "vault"
 
+// flagVaultDefault is service install's vault for a config that has none:
+// init passes it instead of --vault when the person gave none.
+const flagVaultDefault = "vault-default"
+
 // VaultMode is the value of --vault: whether the engine dials out to the
 // Vault for portal link sessions. CLI input spelling only; engine.json
 // holds config.VaultOn or config.VaultOff.
@@ -56,36 +60,80 @@ func (v VaultMode) enum() string {
 	return ""
 }
 
-// vaultChoice is the vault value init writes and why, for the line init
-// prints (`vault: on (default for --operated-by=agent; --vault=off to turn
-// it off)`).
+// personDefaultWhy is why basalt init (person mode) defaults to off.
+const personDefaultWhy = "default in person mode, where the engine serves its own pages"
+
+// vaultChoice is what init asks the config's vault to be: --vault when the
+// person gave it, else def, which applies only when the config has no
+// vault yet or init changes its operatedBy. Otherwise the config's value
+// stays, so a rerun never undoes the person's choice (VC-19).
 type vaultChoice struct {
-	mode VaultMode
-	why  string
+	given VaultMode // --vault; "" when not given
+	def   VaultMode
+	why   string // why def is the default
 }
 
-// line is what init prints on stderr once it wrote the choice.
-func (v vaultChoice) line() string {
-	return fmt.Sprintf("basalt: vault: %s (%s)\n", v.mode, v.why)
+// settings sets s's vault and its default from v.
+func (v vaultChoice) settings(s config.Settings) config.Settings {
+	s.Vault, s.VaultDefault = v.given.enum(), v.def.enum()
+	return s
 }
 
-// chooseVault is the vault value for an engine whose pages base is
+// line is what init prints on stderr once it wrote w (`vault: on (default
+// for --operated-by=agent; --vault=off to turn it off)`).
+func (v vaultChoice) line(w config.VaultWritten) string {
+	mode := modeOf(w.Vault)
+	switch {
+	case v.given != "":
+		return fmt.Sprintf("basalt: vault: %s (--vault=%s)\n", v.given, v.given)
+	case w.Kept:
+		return fmt.Sprintf("basalt: vault: %s (kept from engine.json; --vault=%s to change)\n", mode, mode.other())
+	}
+	return fmt.Sprintf("basalt: vault: %s (%s)\n", mode, v.why)
+}
+
+// dryRunLine is line for a dry run, which reads and writes nothing.
+func (v vaultChoice) dryRunLine() string {
+	if v.given != "" {
+		return v.line(config.VaultWritten{Vault: v.given.enum()})
+	}
+	return fmt.Sprintf("basalt: vault: the value engine.json already has, else %s (%s)\n", v.def, v.why)
+}
+
+// modeOf is the --vault spelling of an engine.json vault.
+func modeOf(enum string) VaultMode {
+	switch enum {
+	case config.VaultOn:
+		return VaultModeOn
+	case config.VaultOff:
+		return VaultModeOff
+	}
+	return ""
+}
+
+// other is the opposite mode.
+func (v VaultMode) other() VaultMode {
+	if v == VaultModeOn {
+		return VaultModeOff
+	}
+	return VaultModeOn
+}
+
+// chooseVault is the vault choice for an engine whose pages base is
 // pagesURL: --vault when given, else the default (on with
 // --operated-by=agent, off otherwise). --vault=on needs the portal's
 // pages: a passkey on any other origin cannot sign on the portal, and the
 // engine never dials out for them, so it is a usage error (exit 2).
-// defaultWhy says why the default is what it is.
+// defaultWhy says why the default is off.
 func chooseVault(given VaultMode, operatedBy OperatedBy, pagesURL, defaultWhy string) (vaultChoice, error) {
-	switch {
-	case given == VaultModeOn && pagesURL != links.Portal:
+	if given == VaultModeOn && pagesURL != links.Portal {
 		return vaultChoice{}, fmt.Errorf("%w: --vault=on needs the portal's pages (%s), and these are %s: "+
 			"a passkey registered there cannot sign on the portal, so the engine would not use the Vault", errUsage, links.Portal, pagesURL)
-	case given != "":
-		return vaultChoice{mode: given, why: "--vault=" + string(given)}, nil
-	case operatedBy == OperatedByAgent:
-		return vaultChoice{mode: VaultModeOn, why: "default for --operated-by=agent; --vault=off to turn it off"}, nil
 	}
-	return vaultChoice{mode: VaultModeOff, why: defaultWhy}, nil
+	if operatedBy == OperatedByAgent {
+		return vaultChoice{given: given, def: VaultModeOn, why: "default for --operated-by=agent; --vault=off to turn it off"}, nil
+	}
+	return vaultChoice{given: given, def: VaultModeOff, why: defaultWhy}, nil
 }
 
 // localVault is status.vault for basalt status in same-user mode, from

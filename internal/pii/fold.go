@@ -72,11 +72,38 @@ func writeFolded(b *strings.Builder, caser *cases.Caser, seg string, shapes bool
 // written either way is the same letter), then the combining marks (Mn, Me)
 // left over dropped, before and after case folding (folding can turn a mark
 // into a letter, as U+0345 into "ι"), then every decimal digit (Nd) as its
-// ASCII digit.
+// ASCII digit and every dash and full stop as its ASCII form (shapePunct).
 func shapeForm(caser *cases.Caser, seg string) string {
 	s := strings.Map(dropIgnorableOrMark, norm.NFKC.String(strings.Map(dropIgnorable, seg)))
-	return strings.Map(asciiDigit, strings.Map(dropIgnorableOrMark, nfkcCasefold(caser, s)))
+	return strings.Map(shapePunct, strings.Map(dropIgnorableOrMark, nfkcCasefold(caser, s)))
 }
+
+// shapePunct maps, for strings.Map, a decimal digit of any script to its
+// ASCII digit (asciiDigit), every dash (Pd: hyphen, non-breaking hyphen, en
+// and em dash, …) and the minus sign U+2212 to '-', and the ideographic full
+// stops (U+3002, U+FF0E, U+FF61), which IDNA reads as a domain's dots, to '.'.
+// NFKC leaves these dashes and U+3002 alone, so a phone written with them, or
+// an address with an ideographic dot, would otherwise be cut short.
+func shapePunct(r rune) rune {
+	switch {
+	case r < utf8.RuneSelf:
+		return r
+	case isDash(r):
+		return '-'
+	case isFullStop(r):
+		return '.'
+	}
+	return asciiDigit(r)
+}
+
+// minusSign is U+2212, written for '-' by some editors and locales.
+const minusSign = '\u2212'
+
+// isDash reports a dash (Pd) or the minus sign.
+func isDash(r rune) bool { return r == minusSign || unicode.Is(unicode.Pd, r) }
+
+// isFullStop reports the ideographic full stops: U+3002, U+FF0E, U+FF61.
+func isFullStop(r rune) bool { return r == '\u3002' || r == '\uff0e' || r == '\uff61' }
 
 // dropIgnorableOrMark removes ignorable characters and combining marks, for
 // strings.Map.

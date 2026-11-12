@@ -62,6 +62,9 @@ func TestParseConnURLRefusesTargetParams(t *testing.T) {
 	require.NoError(t, err)
 	_, err = TargetOf(u)
 	require.ErrorContains(t, err, "dbname=")
+	var pe *TargetParamError
+	require.ErrorAs(t, err, &pe)
+	require.Equal(t, "dbname", pe.Param)
 }
 
 func TestNewSetupID(t *testing.T) {

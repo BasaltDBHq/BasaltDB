@@ -55,7 +55,9 @@ func hasPasskey(c *cliIO, conn *pgx.Conn) (bool, error) {
 // registerPasskey is basalt init's passkey step: print the registration
 // link, read the code the page shows, verify it, and store the public key
 // with the admin connection (owner decision #3; CONTRACT.md, Approvals).
-func registerPasskey(c *cliIO, conn *pgx.Conn, rp passkey.Relying, label string) error {
+// With open it also opens the link in the browser (basalt init
+// --setup-code at a terminal).
+func registerPasskey(c *cliIO, conn *pgx.Conn, rp passkey.Relying, label string, open bool) error {
 	db := conn.Config().Database
 	display := "BasaltDB · " + db
 	if len(display) > maxPasskeyLabel {
@@ -71,8 +73,14 @@ func registerPasskey(c *cliIO, conn *pgx.Conn, rp passkey.Relying, label string)
 	}
 	fmt.Fprintln(c.stderr, "basalt: register the passkey that approves this agent's held writes. Open this link on your phone or computer:")
 	ref := linkRef{setting: "--passkey-origin", item: "the passkey registration", again: "basalt init"}
-	if err := printLink(c, c.stderr, links.Register(rp.Origin)+"#"+frag, ref); err != nil {
+	link := links.Register(rp.Origin) + "#" + frag
+	if err := printLink(c, c.stderr, link, ref); err != nil {
 		return err
+	}
+	if open {
+		if err := c.host.OpenURL(c.ctx, link); err != nil {
+			fmt.Fprintf(c.stderr, "basalt: could not open a browser (%v); open the link above yourself\n", err)
+		}
 	}
 	stop, served := serveLocalPages(rp.Origin)
 	defer stop()
@@ -120,7 +128,7 @@ func passkeyStep(c *cliIO, conn *pgx.Conn, f initFlags) error {
 	if label == "" {
 		label = conn.Config().Database
 	}
-	if err := registerPasskey(c, conn, rp, label); err != nil {
+	if err := registerPasskey(c, conn, rp, label, false); err != nil {
 		return err
 	}
 	fmt.Fprintf(c.stderr, "basalt: passkey registered for %s\n", rp.RPID)

@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
@@ -67,6 +69,33 @@ func RecordSetup(ctx context.Context, q Querier, n Names, s Setup) (int64, error
 	return seq, err
 }
 
+// RecordSetupStatement is record_setup as one statement with its values
+// written in, so the SQL a person reads before saying yes shows it. Every
+// value is checked or formatted here: a UUID, a kind of three, a role from
+// Names, an int and a UTC time.
+func RecordSetupStatement(n Names, s Setup) (Statement, error) {
+	if err := n.Validate(); err != nil {
+		return Statement{}, err
+	}
+	switch s.Kind {
+	case SetupInstall, SetupAgent, SetupUpgrade:
+	default:
+		return Statement{}, fmt.Errorf("%w: setup kind %q", ErrInvalidAgent, s.Kind)
+	}
+	agent := "NULL"
+	if s.Agent != "" {
+		role, err := n.Agent(s.Agent)
+		if err != nil {
+			return Statement{}, err
+		}
+		agent = quoteLiteral(role)
+	}
+	sql := fmt.Sprintf("\nSELECT basalt_meta.record_setup(%s::uuid, %s, %s::name, %d, %s::timestamptz);",
+		quoteLiteral(s.ID.String()), quoteLiteral(s.Kind), agent, s.GuardVersion,
+		quoteLiteral(s.ExpiresAt.UTC().Format(time.RFC3339)))
+	return Statement{SQL: sql}, nil
+}
+
 // SetupRefusal returns the reason (SetupUsed, ...) of a SETUP_REFUSED
 // error, and false when err is not one.
 func SetupRefusal(err error) (string, bool) {
@@ -105,4 +134,64 @@ func SetupRecorded(ctx context.Context, q Querier, id uuid.UUID) (bool, error) {
 	var found bool
 	err = q.QueryRow(ctx, sql, args...).Scan(&found)
 	return found, err
+}
+
+// InstalledPrefix is the prefix of the installed basalt_meta, read from
+// the owner of the schema (<prefix>_guard); "" when none is installed. An
+// owner that is not a guard role is returned whole, so it never matches a
+// code's prefix.
+func InstalledPrefix(ctx context.Context, q Querier) (string, error) {
+	var owner string
+	err := q.QueryRow(ctx, `SELECT coalesce((SELECT pg_catalog.pg_get_userbyid(n.nspowner)::text
+		FROM pg_catalog.pg_namespace n WHERE n.nspname = 'basalt_meta'), '')`).Scan(&owner)
+	if err != nil {
+		return "", err
+	}
+	if prefix, ok := strings.CutSuffix(owner, guardSuffix); ok && prefix != "" {
+		return prefix, nil
+	}
+	return owner, nil
+}
+
+// guardSuffix ends the name of the role that owns basalt_meta.
+const guardSuffix = "_guard"
+
+// SetupsFor lists the recorded setups a code is checked against: the
+// code's own setup id and every setup of role ("" for none). Nothing
+// before version 16, which has no setups table.
+func SetupsFor(ctx context.Context, q Querier, id uuid.UUID, role string) ([]setupcode.RecordedSetup, error) {
+	var exists bool
+	if err := q.QueryRow(ctx, `SELECT to_regclass('basalt_meta.setups') IS NOT NULL`).Scan(&exists); err != nil || !exists {
+		return nil, err
+	}
+	where := sq.Or{sq.Eq{"setup_id": id}}
+	if role != "" {
+		where = append(where, sq.Eq{"agent_role": role})
+	}
+	sql, args, err := psql.Select("setup_id::text", "coalesce(agent_role::text, '')", "used_at").
+		From("basalt_meta.setups").Where(where).OrderBy("setup_id").ToSql()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := q.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (setupcode.RecordedSetup, error) {
+		var s setupcode.RecordedSetup
+		err := row.Scan(&s.SetupID, &s.AgentRole, &s.UsedAt)
+		return s, err
+	})
+}
+
+// RoleStatementTimeout is the statement_timeout role has set for every
+// database (ALTER ROLE ... SET), as Postgres stores it ("30000", "30s"); ""
+// when it has none.
+func RoleStatementTimeout(ctx context.Context, q Querier, role string) (string, error) {
+	var v string
+	err := q.QueryRow(ctx, `SELECT coalesce((SELECT substr(c, length('statement_timeout=') + 1)
+		FROM pg_catalog.pg_db_role_setting s
+		JOIN pg_catalog.pg_roles r ON r.oid = s.setrole, LATERAL unnest(s.setconfig) c
+		WHERE r.rolname = $1 AND s.setdatabase = 0 AND c LIKE 'statement\_timeout=%'), '')`, role).Scan(&v)
+	return v, err
 }

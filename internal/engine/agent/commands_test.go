@@ -205,3 +205,23 @@ func TestGrantExtendsTheSavedList(t *testing.T) {
 		require.ErrorIs(t, err, ErrBadTable, bad)
 	}
 }
+
+// InitRemote keeps only the saved flags basalt init --remote takes (it
+// refuses --os-user and init's other flags), and on an agent-operated
+// engine asks for --json, whose steps the agent follows.
+func TestInitRemoteKeepsTheFlagsItTakes(t *testing.T) {
+	t.Parallel()
+	c := mustCommands(t, "/srv/basalt/engine.json", "linux",
+		[]string{"--agent=bot", "--write=public.leads", "--os-user", "bot", "--socket-dir=/run/b", "--read", "public.companies", "--operated-by=agent"})
+	const saved = "--agent=bot --write=public.leads --read public.companies --operated-by=agent"
+	require.Equal(t, "basalt init --remote --config /srv/basalt/engine.json "+saved+" --new-code", c.InitRemote("--new-code"))
+	agentOperated := c.OperatedBy("AGENT")
+	require.True(t, agentOperated.AgentOperated())
+	require.Equal(t, "basalt init --remote --config /srv/basalt/engine.json "+saved+" --json", agentOperated.InitRemote(""))
+	grant, err := agentOperated.RemoteGrant("write", "public.notes")
+	require.NoError(t, err)
+	require.Equal(t, "basalt init --remote --config /srv/basalt/engine.json --agent=bot '--write=public.leads,public.notes' "+
+		"--read public.companies --operated-by=agent --json", grant)
+	require.Equal(t, "basalt init --setup-code basalt-setup.1.abc.def", SetupCode("basalt-setup.1.abc.def"))
+	require.False(t, c.OperatedBy("PERSON").AgentOperated())
+}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -379,6 +380,37 @@ func TestEveryCatalogWarningGivesTheCatalogsSteps(t *testing.T) {
 					catalogCase{tool: kase.tool}, w.PersonMessage, nil, w.NextSteps, variant.config, false)
 			})
 		}
+	}
+}
+
+// On an agent-operated engine each warning takes its agentOperated variant:
+// the agent makes a setup code instead of the person running an admin
+// command on the agent's machine.
+func TestEveryCatalogWarningGivesTheVariantOnAnAgentOperatedEngine(t *testing.T) {
+	t.Parallel()
+	for _, entry := range catalogOf(t).Warnings {
+		kase := warningCases()[entry.Code]
+		t.Run(entry.Code, func(t *testing.T) {
+			t.Parallel()
+			s := operatedService(t, "linux", "", []string{"--agent=bot", "--write=public.leads", "--os-user=bot"}, mcpcontract.OperatedByAgent)
+			s.PagesOrigin = "http://localhost:7878"
+			warnings := kase.build(t, s)
+			require.Len(t, warnings, 1)
+			w := warnings[0]
+			want, pm, variant := expectedSteps(t, mcpcontract.VariantWarning, entry.Code, "", "", entry.Steps, entry.PersonMessage, mcpcontract.OperatedByAgent)
+			require.True(t, variant, "every warning has a variant")
+			got := make([]mcpcontract.StepKind, 0, len(w.NextSteps))
+			for _, st := range w.NextSteps {
+				got = append(got, mcpcontract.StepKind{Actor: st.Actor, Action: st.Action})
+			}
+			require.Equal(t, want, got)
+			require.Equal(t, pm, w.PersonMessage != "")
+			mcptest.Require(t, w.PersonMessage, nil)
+			requireOperatorRules(t, w.NextSteps, w.PersonMessage, variant, entry.Code)
+			for i, st := range w.NextSteps {
+				requireStepObeysRules(t, st, catalogCase{tool: kase.tool}, "", "step "+strconv.Itoa(i+1))
+			}
+		})
 	}
 }
 

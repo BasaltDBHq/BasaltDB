@@ -6,12 +6,14 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -82,14 +84,15 @@ func myUID() uint32 {
 	return uint32(os.Getuid())
 }
 
+// shimRequests is an initialize and a tools/call, one per line.
+const shimRequests = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}` + "\n" +
+	`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"whoami"}}` + "\n"
+
 // callThroughShim runs one initialize and one tools/call through the shim,
 // as an agent's MCP client would over stdio.
 func callThroughShim(t *testing.T, socket string) string {
 	t.Helper()
-	in := strings.NewReader(strings.Join([]string{
-		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
-		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"whoami"}}`,
-	}, "\n") + "\n")
+	in := strings.NewReader(shimRequests)
 	var out strings.Builder
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -145,8 +148,18 @@ func TestPeerCredentialFailureClosesTheConnection(t *testing.T) {
 	go func() { _ = e.Serve(ctx) }()
 	waitListening(t, bot.SocketPath)
 
-	out := callThroughShim(t, bot.SocketPath)
-	require.Empty(t, out)
+	// The engine closes the socket while the shim's request is still
+	// unread, so the shim sees a clean end or, depending on timing, a reset
+	// (or a broken pipe). Both mean "refused"; nothing may come back. The
+	// shim itself must keep reporting a reset mid-response as an error.
+	var out strings.Builder
+	rctx, rcancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer rcancel()
+	err := shim.Relay(rctx, bot.SocketPath, strings.NewReader(shimRequests), &out)
+	if err != nil {
+		require.True(t, errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE), "unexpected error: %v", err)
+	}
+	require.Empty(t, out.String())
 }
 
 func TestStaleSocketIsReplacedButOtherFilesAreNot(t *testing.T) {

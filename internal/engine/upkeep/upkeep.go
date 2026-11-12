@@ -42,11 +42,14 @@ type Pins interface {
 type Upkeep struct {
 	agent   string
 	version string
-	db      guard.Querier
-	log     *slog.Logger
-	now     func() time.Time
-	pins    Pins
-	rls     Refresher
+	// operatedBy is engine.json operatedBy, recorded in every heartbeat
+	// (CO-15).
+	operatedBy string
+	db         guard.Querier
+	log        *slog.Logger
+	now        func() time.Time
+	pins       Pins
+	rls        Refresher
 	// admit gates every tick (WithGate); it admits every tick when unset.
 	admit func(ctx context.Context) error
 
@@ -66,7 +69,21 @@ func New(agent, version string, db guard.Querier, log *slog.Logger, now func() t
 	if agent == "" || db == nil || log == nil || now == nil {
 		panic("upkeep: agent, db, logger and clock required")
 	}
-	return &Upkeep{agent: agent, version: version, db: db, log: log, now: now, pins: &chainpin.Memory{}, rls: noRefresh{}, admit: admitAll}
+	return &Upkeep{agent: agent, version: version, operatedBy: operatedByPerson, db: db, log: log, now: now,
+		pins: &chainpin.Memory{}, rls: noRefresh{}, admit: admitAll}
+}
+
+// operatedByPerson is the heartbeat's operatedBy until WithOperatedBy.
+const operatedByPerson = "PERSON"
+
+// WithOperatedBy records operatedBy (PERSON or AGENT) in every heartbeat's
+// detail, so the ledger shows when enforcement was guard-only (CO-15); an
+// empty value is PERSON, as in engine.json.
+func (u *Upkeep) WithOperatedBy(operatedBy string) *Upkeep {
+	if operatedBy != "" {
+		u.operatedBy = operatedBy
+	}
+	return u
 }
 
 func admitAll(context.Context) error { return nil }
@@ -137,7 +154,7 @@ func (u *Upkeep) Tick(ctx context.Context) error {
 	if err := u.admit(ctx); err != nil {
 		return fmt.Errorf("skipped: the guard does not serve this agent: %w", err)
 	}
-	detail := map[string]any{"engineVersion": u.version}
+	detail := map[string]any{"engineVersion": u.version, "operatedBy": u.operatedBy}
 	var errs []error
 
 	st, err := u.checkChain(ctx)

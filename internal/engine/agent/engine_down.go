@@ -61,7 +61,7 @@ func (d EngineDown) status(_ context.Context, raw json.RawMessage) (any, error) 
 
 func (d EngineDown) unreachable(tool string) func(context.Context, json.RawMessage) (any, error) {
 	return func(context.Context, json.RawMessage) (any, error) {
-		te, err := d.unreachableError(tool, "the basalt engine does not answer on this agent's socket, so "+tool+" cannot run; status still works")
+		te, err := d.unreachableError(tool, tool, "the basalt engine does not answer on this agent's socket, so "+tool+" cannot run; status still works")
 		if err != nil {
 			return nil, err
 		}
@@ -71,11 +71,13 @@ func (d EngineDown) unreachable(tool string) func(context.Context, json.RawMessa
 
 // unreachableError is UNAVAILABLE ENGINE_UNREACHABLE for a call of tool,
 // logged under its error id.
-func (d EngineDown) unreachableError(tool, message string) (*mcp.ToolError, error) {
+// retry is the tool an agent-operated engine's agent calls again once it
+// started the engine; "" calls status.
+func (d EngineDown) unreachableError(tool, retry, message string) (*mcp.ToolError, error) {
 	te := &mcp.ToolError{Code: CodeUnavailable, Reason: reasonEngineUnreachable, ErrorID: uniqueid.New(), Message: message}
 	d.Log.Error("engine unreachable", "tool", tool, "error_id", te.ErrorID)
 	b := NewSteps()
-	te.PersonMessage = engineUnreachableSteps(b, d.Commands)
+	te.PersonMessage = engineUnreachableSteps(b, d.commands(), retry)
 	steps, err := b.Build()
 	if err != nil {
 		return nil, err
@@ -115,11 +117,21 @@ func (s EngineDownServer) Abandoned(_ context.Context, out io.Writer, line []byt
 		Name string `json:"name"`
 	}
 	_ = json.Unmarshal(req.Params, &p) // a call without a name is still answered
-	te, err := s.down.unreachableError(p.Name, message)
+	// The call may have run: the agent checks status, never repeats it.
+	te, err := s.down.unreachableError(p.Name, "", message)
 	if err != nil {
 		return mcp.WriteError(out, req.ID, mcp.ErrCodeServer, message)
 	}
 	return mcp.WriteToolError(out, req.ID, te)
+}
+
+// commands are d's commands for the operatedBy of the config the shim
+// read; PERSON when it read none.
+func (d EngineDown) commands() Commands {
+	if d.Config == nil {
+		return d.Commands.OperatedBy(mcpcontract.OperatedByPerson)
+	}
+	return d.Commands.OperatedBy(d.Config.OperatedBy)
 }
 
 func (d EngineDown) invalidArgument(err error) *mcp.ToolError {

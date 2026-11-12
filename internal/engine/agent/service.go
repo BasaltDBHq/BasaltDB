@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -122,11 +123,19 @@ type Deps struct {
 	// Vault reports the engine's Vault connection for status; status leaves
 	// vault out when nil.
 	Vault VaultReporter
+	// Finisher finishes a setup the database shows recorded: it promotes a
+	// rotated credential and clears setup from engine.json. Optional: the
+	// setup is then only forgotten in memory.
+	Finisher SetupFinisher
 }
 
 // Service runs one agent's tool calls.
 type Service struct {
 	Deps
+	// setupMu guards setup, the agent's pending setup: Deps.Setup until the
+	// database shows it recorded.
+	setupMu sync.Mutex
+	setup   *config.Setup
 }
 
 // NewService returns the service for one agent. It panics on a missing
@@ -144,6 +153,9 @@ func NewService(d Deps) *Service {
 	}
 	if d.Probe == nil {
 		d.Probe = noProbe{}
+	}
+	if d.Finisher == nil {
+		d.Finisher = noFinisher{}
 	}
 	if d.Upgrade == nil {
 		d.Upgrade = guardUpgrade{probe: d.Probe}
@@ -164,13 +176,14 @@ func NewService(d Deps) *Service {
 		// A name and no config path or init arguments cannot fail.
 		d.Commands, _ = NewCommands(d.Name, "", "", nil)
 	}
+	d.Commands = d.Commands.OperatedBy(d.OperatedBy)
 	if d.LinkBudget <= 0 {
 		d.LinkBudget = links.DefaultBudget
 	}
 	if d.Poll <= 0 {
 		d.Poll = DefaultPoll
 	}
-	return &Service{Deps: d}
+	return &Service{Deps: d, setup: d.Setup}
 }
 
 // RunInfo is a started run.

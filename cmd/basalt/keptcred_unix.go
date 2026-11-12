@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -18,8 +17,6 @@ import (
 const (
 	// credentialPermMask is the permission bits a credential file must not have.
 	credentialPermMask = 0o077
-	// lockDirMode is the mode of a directory lockFile creates.
-	lockDirMode = 0o700
 )
 
 // openEngineFile opens a file in the engine's own directories as root. The
@@ -141,38 +138,13 @@ func readCredentialFile(path string, owner func(uid uint32) (ok bool, want strin
 	return line, fi, nil
 }
 
-// lockFile takes an exclusive advisory lock on path (created 0600, never
-// through a symlink, never blocking on a FIFO, and only on a regular file)
-// and returns its release. It does not wait: a lock held by another run is
-// an error.
+// lockFile takes the agent's lock (config.LockFile), the one the engine
+// also takes before it promotes a credential or clears a setup. It does not
+// wait: a lock held by another run is an error.
 func lockFile(path string) (func(), error) {
-	if err := os.MkdirAll(filepath.Dir(path), lockDirMode); err != nil {
-		return nil, err
+	unlock, err := config.LockFile(path)
+	if errors.Is(err, config.ErrLocked) {
+		return nil, fmt.Errorf("another basalt init --remote is running for this agent, or the engine is finishing its setup (%s is locked); run it again in a moment", path)
 	}
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, config.FileMode)
-	if err != nil {
-		return nil, fmt.Errorf("lock %s: %w", path, err)
-	}
-	if err := checkOpenPlainFile(f); err != nil {
-		_ = f.Close()
-		return nil, fmt.Errorf("lock %s: %w", path, err)
-	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		_ = f.Close()
-		return nil, fmt.Errorf("another basalt init --remote is running for this agent (%s is locked); run it again when it is done", path)
-	}
-	return func() {
-		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-		_ = f.Close()
-	}, nil
-}
-
-// checkOpenPlainFile refuses an open file that is not a regular file with one
-// link, checked through its descriptor.
-func checkOpenPlainFile(f *os.File) error {
-	fi, err := f.Stat()
-	if err != nil {
-		return err
-	}
-	return config.CheckPlainFile(fi)
+	return unlock, err
 }

@@ -74,10 +74,17 @@ func guardAt(state string, missingBreaking, missingNonBreaking []int) guard.Stat
 
 var statusNow = time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
 
+// testSetupCode and testFingerprint stand for a pending setup code (in the
+// codec's alphabet) and its fingerprint.
+const (
+	testSetupCode   = "basalt-setup.1.eJzLSM3JyVcozy_KSQEAGgQEXQ.Ab3_x9"
+	testFingerprint = "a1b2 c3d4 e5f6 0718 293a"
+)
+
 func pendingSetup(kind string, expires time.Time) *config.Setup {
 	return &config.Setup{
 		SetupID: "0193a4c2-7d1e-7c3a-9f00-0000000000e5", Kind: kind, GuardVersion: guard.LatestVersion(),
-		ExpiresAt: expires.UTC().Format(time.RFC3339), Code: "K7Q2-M9XD", Fingerprint: "a1b2 c3d4 e5f6 0718 293a",
+		ExpiresAt: expires.UTC().Format(time.RFC3339), Code: testSetupCode, Fingerprint: testFingerprint,
 	}
 }
 
@@ -89,9 +96,15 @@ type statusCase struct {
 }
 
 func engineStatus(probe *fakeProbe, passkeys int, setup *config.Setup) func(t *testing.T) StatusReport {
+	return operatedStatus(probe, passkeys, setup, "")
+}
+
+// operatedStatus is engineStatus on an engine whose operatedBy is operatedBy.
+func operatedStatus(probe *fakeProbe, passkeys int, setup *config.Setup, operatedBy string) func(t *testing.T) StatusReport {
 	return func(t *testing.T) StatusReport {
 		t.Helper()
 		d := deps()
+		d.OperatedBy = operatedBy
 		d.Probe = probe
 		d.Approvals = keys{n: passkeys}
 		d.Setup = setup
@@ -107,15 +120,22 @@ func engineStatus(probe *fakeProbe, passkeys int, setup *config.Setup) func(t *t
 	}
 }
 
-func statusCases() map[string]statusCase {
+func statusCases() map[string]statusCase { return statusCasesFor("") }
+
+// statusCasesFor are the status cases on an engine whose operatedBy is
+// operatedBy.
+func statusCasesFor(operatedBy string) map[string]statusCase {
 	ok := guardAt(guard.GuardOK, nil, nil)
 	soon, past := statusNow.Add(time.Hour), statusNow.Add(-time.Hour)
+	engineStatus := func(probe *fakeProbe, passkeys int, setup *config.Setup) func(t *testing.T) StatusReport {
+		return operatedStatus(probe, passkeys, setup, operatedBy)
+	}
 	return map[string]statusCase{
 		problemEngineUnreachable: {state: guard.GuardUnknown, report: func(t *testing.T) StatusReport {
 			t.Helper()
 			cmds, err := NewCommands("bot", "", "linux", nil)
 			require.NoError(t, err)
-			cfg := &config.Config{SocketDir: "/run/basalt", Agents: []config.Agent{{Name: "bot", OSUser: "bot", CredentialFile: statusCredential}}}
+			cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: operatedBy, Agents: []config.Agent{{Name: "bot", OSUser: "bot", CredentialFile: statusCredential}}}
 			r, err := EngineDownStatus("bot", cmds, cfg, "test", statusNow)
 			require.NoError(t, err)
 			return r
@@ -150,36 +170,45 @@ func TestEveryStatusProblemObeysTheCatalog(t *testing.T) {
 	t.Parallel()
 	statusTool, ok := mcpcontract.Find(mcpcontract.MustLoad(), toolStatus)
 	require.True(t, ok)
-	for code, kase := range statusCases() {
-		t.Run(code, func(t *testing.T) {
-			t.Parallel()
-			r := kase.report(t)
-			raw := requireStatusSchema(t, statusTool, r)
-			require.NotContains(t, raw, statusCredential, "status never names the credential file")
-			require.NotContains(t, raw, "credential-file", "status never names the credential file")
-			require.Equal(t, kase.state, r.Guard.State)
+	for _, operatedBy := range []string{mcpcontract.OperatedByPerson, mcpcontract.OperatedByAgent} {
+		for code, kase := range statusCasesFor(operatedBy) {
+			t.Run(operatedBy+"/"+code, func(t *testing.T) {
+				t.Parallel()
+				requireProblemObeysCatalog(t, statusTool, code, kase, operatedBy)
+			})
+		}
+	}
+}
 
-			entry, ok := problemEntry(code)
-			require.True(t, ok)
-			p := findProblem(t, r, code)
-			require.Equal(t, entry.Severity, p.Severity)
-			require.NotEmpty(t, p.Message)
-			got := make([]mcpcontract.StepKind, 0, len(p.NextSteps))
-			for _, st := range p.NextSteps {
-				got = append(got, mcpcontract.StepKind{Actor: st.Actor, Action: st.Action})
-			}
-			// The engine has no operatedBy AGENT mode yet: OPERATOR steps are the person's.
-			require.Equal(t, mcpcontract.Resolve(entry.Steps, mcpcontract.OperatedByPerson), got, "(actor, action) sequence of %s", code)
-			require.Equal(t, entry.PersonMessage, p.PersonMessage != "", "personMessage set exactly when the catalog says")
-			requirePersonMessage(t, p.PersonMessage, nil)
-			for i, st := range p.NextSteps {
-				requireStepObeysRules(t, st, catalogCase{tool: toolStatus, args: map[string]any{}}, "", fmt.Sprintf("%s step %d", code, i+1))
-			}
-			require.Equal(t, entry.Severity != mcpcontract.SeverityError, r.Ready, "ready exactly when no ERROR problem")
-			for i := 1; i < len(r.Problems); i++ {
-				require.LessOrEqual(t, severityRank(r.Problems[i-1].Severity), severityRank(r.Problems[i].Severity), "errors first")
-			}
-		})
+func requireProblemObeysCatalog(t *testing.T, statusTool mcpcontract.Tool, code string, kase statusCase, operatedBy string) {
+	t.Helper()
+	r := kase.report(t)
+	require.Equal(t, operatedBy, r.OperatedBy)
+	raw := requireStatusSchema(t, statusTool, r)
+	require.NotContains(t, raw, statusCredential, "status never names the credential file")
+	require.NotContains(t, raw, "credential-file", "status never names the credential file")
+	require.Equal(t, kase.state, r.Guard.State)
+
+	entry, ok := problemEntry(code)
+	require.True(t, ok)
+	p := findProblem(t, r, code)
+	require.Equal(t, entry.Severity, p.Severity)
+	require.NotEmpty(t, p.Message)
+	got := make([]mcpcontract.StepKind, 0, len(p.NextSteps))
+	for _, st := range p.NextSteps {
+		got = append(got, mcpcontract.StepKind{Actor: st.Actor, Action: st.Action})
+	}
+	want, pm, variant := expectedSteps(t, mcpcontract.VariantProblem, code, "", "", entry.Steps, entry.PersonMessage, operatedBy)
+	require.Equal(t, want, got, "(actor, action) sequence of %s", code)
+	require.Equal(t, pm, p.PersonMessage != "", "personMessage set exactly when the catalog says")
+	requireOperatorRules(t, p.NextSteps, p.PersonMessage, variant, code)
+	requirePersonMessage(t, p.PersonMessage, nil)
+	for i, st := range p.NextSteps {
+		requireStepObeysRules(t, st, catalogCase{tool: toolStatus, args: map[string]any{}}, "", fmt.Sprintf("%s step %d", code, i+1))
+	}
+	require.Equal(t, entry.Severity != mcpcontract.SeverityError, r.Ready, "ready exactly when no ERROR problem")
+	for i := 1; i < len(r.Problems); i++ {
+		require.LessOrEqual(t, severityRank(r.Problems[i-1].Severity), severityRank(r.Problems[i].Severity), "errors first")
 	}
 }
 
@@ -347,7 +376,7 @@ func steps(t *testing.T, body map[string]any) []mcpcontract.StepKind {
 // requireOnlyStatusServed calls every served tool but status on srv and
 // checks each is refused UNAVAILABLE reason with the catalog's steps, and
 // that status still answers.
-func requireOnlyStatusServed(t *testing.T, srv *mcp.Server, tools []mcp.Tool, reason, command string) {
+func requireOnlyStatusServed(t *testing.T, srv *mcp.Server, tools []mcp.Tool, reason, command, inMessage string) {
 	t.Helper()
 	entry, ok := catalogOf(t).ErrorEntry(CodeUnavailable, reason, "")
 	require.True(t, ok)
@@ -361,7 +390,7 @@ func requireOnlyStatusServed(t *testing.T, srv *mcp.Server, tools []mcp.Tool, re
 		require.Equal(t, reason, body["reason"], tool.Name)
 		require.NotEmpty(t, body["errorId"], tool.Name)
 		require.Equal(t, mcpcontract.Resolve(entry.Steps, mcpcontract.OperatedByPerson), steps(t, body), tool.Name)
-		require.Contains(t, body["personMessage"], command, tool.Name)
+		require.Contains(t, body["personMessage"], inMessage, tool.Name)
 		require.Equal(t, command, body["nextSteps"].([]any)[0].(map[string]any)["command"], tool.Name)
 	}
 	body, isError := serveCall(t, srv, toolStatus, map[string]any{})
@@ -373,7 +402,7 @@ func TestAnOutdatedGuardServesOnlyStatus(t *testing.T) {
 	t.Parallel()
 	probe := &fakeProbe{st: guardAt(guard.GuardOutdated, []int{guard.LatestVersion()}, nil)}
 	srv, tools := degraded(t, probe, nil)
-	requireOnlyStatusServed(t, srv, tools, reasonGuardOutdated, "basalt upgrade --agent bot")
+	requireOnlyStatusServed(t, srv, tools, reasonGuardOutdated, "basalt upgrade --agent bot", "basalt upgrade --agent bot")
 
 	// The person upgrades: the next call is served, with no restart.
 	probe.st = guardAt(guard.GuardOK, nil, nil)
@@ -385,7 +414,7 @@ func TestAnOutdatedGuardServesOnlyStatus(t *testing.T) {
 func TestAMissingGuardServesOnlyStatus(t *testing.T) {
 	t.Parallel()
 	srv, tools := degraded(t, &fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}}, nil)
-	requireOnlyStatusServed(t, srv, tools, reasonGuardMissing, "basalt init --agent bot")
+	requireOnlyStatusServed(t, srv, tools, reasonGuardMissing, "basalt init --agent bot", "basalt init --agent bot")
 }
 
 func TestOnlyNonBreakingMissingIsServedWithTheWarning(t *testing.T) {
@@ -406,7 +435,10 @@ func TestAPendingInstallServesOnlyStatus(t *testing.T) {
 	t.Parallel()
 	probe := &fakeProbe{err: errNoRole, recordedErr: errNoRole}
 	srv, tools := degraded(t, probe, pendingSetup(guard.SetupInstall, statusNow.Add(time.Hour)))
-	requireOnlyStatusServed(t, srv, tools, reasonSetupPending, "basalt init --agent bot --setup-code K7Q2-M9XD")
+	// The person runs the code on their own computer: basalt init
+	// --setup-code takes no --agent or --config, and the message names the
+	// fingerprint to check, not the code itself.
+	requireOnlyStatusServed(t, srv, tools, reasonSetupPending, "basalt init --setup-code "+testSetupCode, testFingerprint)
 
 	body, isError := serveCall(t, srv, toolStatus, map[string]any{})
 	require.False(t, isError)
@@ -489,4 +521,35 @@ func TestEngineDownToolsAnswerEveryCall(t *testing.T) {
 	require.True(t, isError)
 	require.Equal(t, CodeInvalidArgument, body["code"])
 	require.NotEmpty(t, body["nextSteps"])
+}
+
+// The shim reads operatedBy from the config: on an agent-operated engine the
+// agent starts the engine itself, once, then repeats its call; the shim
+// that cannot read the config keeps the person's steps (the default above).
+func TestEngineDownOnAnAgentOperatedEngine(t *testing.T) {
+	t.Parallel()
+	cmds, err := NewCommands("bot", "", "linux", nil)
+	require.NoError(t, err)
+	cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: mcpcontract.OperatedByAgent, Mode: config.ModeService,
+		Agents: []config.Agent{{Name: "bot", OSUser: "bot", CredentialFile: statusCredential}}}
+	down := EngineDown{Name: "bot", Commands: cmds, Config: cfg, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
+	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, down.Tools()...)
+
+	v, ok := catalogOf(t).AgentOperatedEntry(mcpcontract.VariantError, CodeUnavailable, reasonEngineUnreachable, "")
+	require.True(t, ok)
+	body, isError := serveCall(t, srv, "query", map[string]any{"sql": "SELECT 1"})
+	require.True(t, isError)
+	require.Equal(t, v.Steps, steps(t, body))
+	require.Nil(t, body["personMessage"], "the agent starts it: nothing for the person")
+	first := body["nextSteps"].([]any)[0].(map[string]any)
+	require.Equal(t, service.StartCommand("linux"), first["command"])
+	second := body["nextSteps"].([]any)[1].(map[string]any)
+	require.Equal(t, "query", second["tool"])
+	require.Equal(t, true, second["repeatCall"])
+
+	body, isError = serveCall(t, srv, toolStatus, map[string]any{})
+	require.False(t, isError)
+	require.Equal(t, mcpcontract.OperatedByAgent, body["operatedBy"])
+	p := body["problems"].([]any)[0].(map[string]any)
+	require.Equal(t, mcpcontract.ActorAgent, p["nextSteps"].([]any)[0].(map[string]any)["actor"])
 }

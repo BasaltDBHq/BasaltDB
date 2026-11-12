@@ -117,12 +117,22 @@ func (s *Service) rlsWarnings(ctx context.Context, tables []string, rows int) []
 
 func (s *Service) rlsWarning(dbName string) (mcp.Warning, error) {
 	table := shown(dbName, maxTableChars)
-	command := s.Commands.Init("--agent-rls=all-rows")
-	steps, err := NewSteps().
-		AskPerson("Tell the person row-level security hides every row of this table from you, and ask whether you may see its rows.").
-		RunCommand(command, "To let the agent see all rows, run this: init asks for the admin connection string itself.").
-		TellAgent("Tell the agent once it is done.").
-		Build()
+	b := NewSteps().AskPerson("Tell the person row-level security hides every row of this table from you, and ask whether you may see its rows.")
+	var person string
+	switch {
+	case s.Commands.AgentOperated():
+		b.AgentRunCommand(s.Commands.InitRemote(""), "On the person's yes, run this to make a setup code, then show its personMessage and follow its nextSteps.")
+		person = fmt.Sprintf("Row-level security hides every row of %s from the agent, so it sees no rows there. To let it see them, "+
+			"tell the agent: it gives you a setup code to run on your own computer, which asks about that table. "+
+			"Leave it as it is if the agent should not see that table.", table)
+	default:
+		command := s.Commands.Init("--agent-rls=all-rows")
+		b.RunCommand(command, "To let the agent see all rows, run this: init asks for the admin connection string itself.").
+			TellAgent("Tell the agent once it is done.")
+		person = fmt.Sprintf("Row-level security hides every row of %s from the agent, so it sees no rows there. To let it see them, "+
+			"run: %s then tell the agent. Leave it as it is if the agent should not see that table.", table, command)
+	}
+	steps, err := b.Build()
 	if err != nil {
 		return mcp.Warning{}, err
 	}
@@ -131,9 +141,8 @@ func (s *Service) rlsWarning(dbName string) (mcp.Warning, error) {
 		Table: dbName,
 		Message: fmt.Sprintf("row-level security hides every row of %s from this agent, so an empty result says nothing about its data; "+
 			"do not conclude the table is empty", table),
-		PersonMessage: fmt.Sprintf("Row-level security hides every row of %s from the agent, so it sees no rows there. To let it see them, "+
-			"run: %s then tell the agent. Leave it as it is if the agent should not see that table.", table, command),
-		NextSteps: steps,
+		PersonMessage: person,
+		NextSteps:     steps,
 	}, nil
 }
 
@@ -166,6 +175,9 @@ func (s *Service) upgradeWarnings(ctx context.Context) []mcp.Warning {
 // upgradeSteps: the person adds the missing non-breaking migrations when it
 // suits them, in a warning and in status.
 func upgradeSteps(b *Steps, cmds Commands) string {
+	if cmds.AgentOperated() {
+		return remoteSetupSteps(b, cmds, "", "The guard in this database can be upgraded; everything works as it is, so this can wait until it suits you.")
+	}
 	command := cmds.Upgrade()
 	b.RunCommand(command, "Run this to add the missing guard migrations: nothing stops, and the agent needs no restart.")
 	return fmt.Sprintf("The guard in this database can be upgraded. Everything works as it is; when it suits you, run: %s", command)

@@ -1,6 +1,7 @@
 package pii_test
 
 import (
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -45,6 +46,8 @@ func TestEmailLocalPartsAreFoundWhole(t *testing.T) {
 		{"bar before the address stays", "| bob@corp.ee |", "bob@corp.ee", "bob@corp.ee"},
 		{"brace before the address stays", "{bob@corp.ee}", "bob@corp.ee", "bob@corp.ee"},
 		{"unclosed quote stays", `mail "bob@corp.ee now`, "bob@corp.ee", "bob@corp.ee"},
+		{"SQL-escaped apostrophe", "WHERE email = 'o''connor@corp.ee'", "o''connor@corp.ee", "o''connor@corp.ee"},
+		{"apostrophe before the at sign", "mail bob'@corp.ee now", "bob'@corp.ee", "bob'@corp.ee"},
 		{"apostrophes between letters", "mail d'o'brien@corp.ee now", "d'o'brien@corp.ee", "d'o'brien@corp.ee"},
 		{"dot-joined quoted words", `mail "bob"."smith"@corp.ee now`, `"bob"."smith"@corp.ee`, `"bob"."smith"@corp.ee`},
 		{"atom then quoted word", `mail bob."smith"@corp.ee now`, `bob."smith"@corp.ee`, `bob."smith"@corp.ee`},
@@ -135,6 +138,7 @@ func TestPhoneSeparatorsAreFound(t *testing.T) {
 		{"00 prefix without spaces", "00442079460958", "+44 20 7946 0958"},
 		{"00 prefix with dashes", "001-202-555-0143", "+1 202 555 0143"},
 		{"US form with two spaces", "(202)  555-0143", "(202) 555-0143"},
+		{"US form with four spaces", "(202)    555-0143", "(202) 555-0143"},
 		{"US form with a slash", "(202) 555/0143", "(202) 555-0143"},
 	}
 	for _, c := range cases {
@@ -191,11 +195,46 @@ func TestPhoneShapeKnownLimits(t *testing.T) {
 		"call x0044 20 7946 0958 now",  // 00 touching a letter
 		"call +4420794609581234 now",   // digits glued past 15, no separator
 		"call +1     202 555 0143 now", // five spaces between groups
-		"call +44 20 7946 0958/",       // followed by a '/' that ends the text
+		"call (202)     555-0143 now",  // five spaces in the US form
 		"call 0044 7700 900123 now",    // not a valid number with + for 00
 	} {
 		_, reps := tokenize(t, tz, in)
 		require.Empty(t, reps, "%q", in)
+	}
+}
+
+// Each number is found up to where the text stops being a phone: a trailing
+// '/', slash-joined digits after it, a second line break. Tokenizing twice
+// gives the same text.
+func TestAPhoneBeforeASlashOrALineBreak(t *testing.T) {
+	tz := patternTokenizer(t)
+	cases := []struct{ in, number string }{
+		{"call +44 20 7946 0958/", "+44 20 7946 0958"},
+		{"tel: +1 202 555 0143/", "+1 202 555 0143"},
+		{"call +44 20 7946 0958/12/26 now", "+44 20 7946 0958"},
+		// A number split over two line breaks keeps its last group out
+		// (Known limits).
+		{"call +44 20\n7946\n0958", "+44 20\n7946"},
+		// A number glued to a slash and another number: both are tokens, and
+		// the second pass finds nothing more.
+		{"+00000000/0+00000000", "+00000000"},
+	}
+	for _, c := range cases {
+		out, reps := tokenize(t, tz, c.in)
+		require.NotEmpty(t, reps, "%q", c.in)
+		require.Equal(t, c.number, c.in[reps[0].Start:reps[0].End], "%q", c.in)
+		again, more := tokenize(t, tz, out)
+		require.Empty(t, more, "%q", c.in)
+		require.Equal(t, out, again, "%q", c.in)
+	}
+	// A US number padded across a search window is found the same as on its
+	// own, or not at all: never in part.
+	for _, pad := range []int{950, 960, 970, 980, 990, 1000} {
+		in := strings.Repeat("x ", pad/2) + "(202)    555-0143 end"
+		out, reps := tokenize(t, tz, in)
+		require.Len(t, reps, 1, "pad %d", pad)
+		require.Equal(t, "(202)    555-0143", in[reps[0].Start:reps[0].End], "pad %d", pad)
+		require.NotContains(t, out, "555", "pad %d", pad)
 	}
 }
 
@@ -293,12 +332,17 @@ func TestManyRejected00RunsStayCheap(t *testing.T) {
 		size        = 128 << 10
 		maxSlowdown = 8
 	)
+	// The fastest of three runs, so a pause in one does not fail the test.
 	timed := func(unit string) time.Duration {
 		in := strings.Repeat(unit, size/len(unit))
-		start := time.Now()
-		_, _, err := tz.Tokenize(in)
-		require.NoError(t, err)
-		return time.Since(start)
+		best := time.Duration(math.MaxInt64)
+		for range 3 {
+			start := time.Now()
+			_, _, err := tz.Tokenize(in)
+			require.NoError(t, err)
+			best = min(best, time.Since(start))
+		}
+		return best
 	}
 	plain := timed("abcd ")
 	for _, unit := range []string{"0044 ", "0012 ", "0039 0"} {

@@ -48,7 +48,7 @@ const (
 // "(202) 555-0143". A group of one digit counts ("… 45 6"), so a number never
 // leaves its last digit behind; a lone digit after a number ("… 456 7 items")
 // is taken into the token, which only covers more.
-const phoneCore = `(?:\+|00)\d{1,3}` + phoneSep + `?\(?\d{1,4}\)?(?:` + phoneSep + `?\d{1,4}){1,4}|\(\d{3}\) *\d{3}` + phoneSep + `\d{4}`
+const phoneCore = `(?:\+|00)\d{1,3}` + phoneSep + `?\(?\d{1,4}\)?(?:` + phoneSep + `?\d{1,4}){1,4}|\(\d{3}\) {0,4}\d{3}` + phoneSep + `\d{4}`
 
 // iddPrefix is the international dialing prefix most of the world writes
 // instead of "+" ("0044 7700 900123").
@@ -60,9 +60,12 @@ const iddPrefix = "00"
 //   - emailFirst: what an unquoted word starts with: a letter, mark, digit or
 //     one of "._%+-!#$&*^~". "'/=?`{|}" usually quote or delimit an address
 //     ('bob@corp.ee', |bob@corp.ee|), so they cannot start it.
-//   - emailInner: what follows, the RFC 5322 atom characters but '\”.
-//   - emailApos: a '\” counts only between two letters or digits
-//     (bob.o'connor), so email='bob@corp.ee' keeps its quote.
+//   - emailInner: what follows, the RFC 5322 atom characters but the
+//     apostrophe.
+//   - emailApos: an apostrophe, or two (SQL's escaped one: o”connor), counts
+//     only after a letter or digit, and before one or at the end of the
+//     word (bob.o'connor, bob'@corp.ee), so email='bob@corp.ee' keeps its
+//     quote.
 //   - emailQuoted: a quoted string of any length, any character escaped,
 //     line breaks included, so no quoted local part is left whole.
 //
@@ -73,7 +76,7 @@ const (
 	emailAlnum  = `[\p{L}\p{M}\p{N}]`
 	emailFirst  = "[\\p{L}\\p{M}\\p{N}._%+\\-!#$&*^~]"
 	emailInner  = "[\\p{L}\\p{M}\\p{N}._%+\\-!#$&*^~/=?`{|}]"
-	emailApos   = emailAlnum + `(?:'` + emailAlnum + `)+`
+	emailApos   = emailAlnum + `(?:''?` + emailAlnum + `)*''?`
 	emailAtom   = `(?:` + emailFirst + `|` + emailApos + `)(?:` + emailInner + `|` + emailApos + `)*`
 	emailQuoted = `"(?:[^"\\]|\\[\s\S])*"`
 	emailWord   = `(?:` + emailAtom + `|` + emailQuoted + `)`
@@ -194,8 +197,8 @@ func (PhoneDetector) Detect(text string) []Span {
 			break
 		}
 		start, end := pos+m[2], pos+m[3]
-		n, ok := phoneEnd(text[start:end])
-		if !ok || (isIDDMatch(text[start:end]) && asciiAlnumAt(text, start-1)) || beforeDatePart(text, start+n) {
+		n, ok := phoneEnd(text[start:end], end < len(text) && text[end] == '/')
+		if !ok || (isIDDMatch(text[start:end]) && asciiAlnumAt(text, start-1)) {
 			// A match that is no phone (a date, an id, a long number), or a
 			// "00" glued to letters or digits, covers no number: search again
 			// from its next character, so a number inside or after it is
@@ -213,15 +216,6 @@ func (PhoneDetector) Detect(text string) []Span {
 	return out
 }
 
-// beforeDatePart reports a number followed by '/' and a digit, or by '/' at
-// the end of the text: one part of a slash-joined run ("+12/11/2026") that
-// separatorsOK turned away whole. The end of the text counts because a token
-// may stand there after a first pass ("+00000000/0+00000000" leaves
-// "+00000000/" before a token), so both passes agree.
-func beforeDatePart(text string, end int) bool {
-	return end < len(text) && text[end] == '/' && (end+1 == len(text) || isASCIIDigit(text[end+1]))
-}
-
 // isIDDMatch reports a match written with the "00" prefix instead of "+".
 func isIDDMatch(match string) bool { return strings.HasPrefix(match, iddPrefix) }
 
@@ -233,13 +227,17 @@ func isIDDMatch(match string) bool { return strings.HasPrefix(match, iddPrefix) 
 // follows the number (a second pass over tokenized text). A "00" number is a
 // digit run as often as a phone (an id, an order number), so it counts only
 // when libphonenumber finds a valid number with "+" in its place, and its
-// "00" counts as no digits.
-func phoneEnd(match string) (int, bool) {
+// "00" counts as no digits. slashNext says a '/' follows the match.
+func phoneEnd(match string, slashNext bool) (int, bool) {
 	idd := isIDDMatch(match)
 	for end := len(match); end > 0; end-- {
-		// A cut ends on a digit before a separator other than '/': a number
-		// is not cut out of a date ("+30 2026/11/12").
-		if end < len(match) && (!isASCIIDigit(match[end-1]) || isASCIIDigit(match[end]) || match[end] == '/') {
+		// A cut ends on a digit before a separator, and before a '/' only
+		// when no '/' comes earlier: a number is not cut out of a date
+		// ("+30 2026/11/12"), but "+44 20 7946 0958/12/26" keeps its number.
+		if end < len(match) && (!isASCIIDigit(match[end-1]) || isASCIIDigit(match[end])) {
+			continue
+		}
+		if slashAfterSlash(match[:end], (end < len(match) && match[end] == '/') || (end == len(match) && slashNext)) {
 			continue
 		}
 		n := asciiDigits(match[:end])
@@ -257,6 +255,14 @@ func phoneEnd(match string) (int, bool) {
 		}
 	}
 	return 0, false
+}
+
+// slashAfterSlash reports a number that holds a '/' and ends right before
+// another: a part of a slash-joined run. Whether the second '/' is inside the
+// match or follows it does not matter, so a second pass, which sees a token
+// after the '/' rather than digits, decides the same.
+func slashAfterSlash(number string, slashNext bool) bool {
+	return slashNext && strings.IndexByte(number, '/') >= 0
 }
 
 // separatorsOK limits what a number may hold besides spaces, dots and

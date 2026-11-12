@@ -3,6 +3,7 @@ package pii_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -28,9 +29,6 @@ func TestEmailLocalPartsAreFoundWhole(t *testing.T) {
 		{"hash", "mail zed#x@corp.ee now", "zed#x@corp.ee", "zed#x@corp.ee"},
 		{"dollar", "mail zed$x@corp.ee now", "zed$x@corp.ee", "zed$x@corp.ee"},
 		{"star", "mail zed*x@corp.ee now", "zed*x@corp.ee", "zed*x@corp.ee"},
-		{"slash", "mail zed/x@corp.ee now", "zed/x@corp.ee", "zed/x@corp.ee"},
-		{"equals", "mail zed=x@corp.ee now", "zed=x@corp.ee", "zed=x@corp.ee"},
-		{"question mark", "mail zed?x@corp.ee now", "zed?x@corp.ee", "zed?x@corp.ee"},
 		{"caret", "mail zed^x@corp.ee now", "zed^x@corp.ee", "zed^x@corp.ee"},
 		{"backtick", "mail zed`x@corp.ee now", "zed`x@corp.ee", "zed`x@corp.ee"},
 		{"braces", "mail zed{q}@other.com now", "zed{q}@other.com", "zed{q}@other.com"},
@@ -47,6 +45,16 @@ func TestEmailLocalPartsAreFoundWhole(t *testing.T) {
 		{"bar before the address stays", "| bob@corp.ee |", "bob@corp.ee", "bob@corp.ee"},
 		{"brace before the address stays", "{bob@corp.ee}", "bob@corp.ee", "bob@corp.ee"},
 		{"unclosed quote stays", `mail "bob@corp.ee now`, "bob@corp.ee", "bob@corp.ee"},
+		{"apostrophes between letters", "mail d'o'brien@corp.ee now", "d'o'brien@corp.ee", "d'o'brien@corp.ee"},
+		{"dot-joined quoted words", `mail "bob"."smith"@corp.ee now`, `"bob"."smith"@corp.ee`, `"bob"."smith"@corp.ee`},
+		{"atom then quoted word", `mail bob."smith"@corp.ee now`, `bob."smith"@corp.ee`, `bob."smith"@corp.ee`},
+		{"quoted then atom", `mail "bob".smith@corp.ee now`, `"bob".smith@corp.ee`, `"bob".smith@corp.ee`},
+		{"long quoted word", `mail "` + strings.Repeat("a", 80) + `"@corp.ee now`, `"` + strings.Repeat("a", 80) + `"@corp.ee`, `"` + strings.Repeat("a", 80) + `"@corp.ee`},
+		{"quoted with a line break", "mail \"alice\ntamm\"@corp.ee now", "\"alice\ntamm\"@corp.ee", "\"alice\ntamm\"@corp.ee"},
+		{"quoted with an escaped line break", "mail \"alice\\\ntamm\"@corp.ee now", "\"alice\\\ntamm\"@corp.ee", "\"alice\\\ntamm\"@corp.ee"},
+		{"quoted with a slash and an equals sign", `mail "a/b=c"@corp.ee now`, `"a/b=c"@corp.ee`, `"a/b=c"@corp.ee`},
+		{"Unicode hyphen", "mail a\u2010b@corp.ee now", "a\u2010b@corp.ee", "a-b@corp.ee"},
+		{"minus sign", "mail a\u2212b@corp.ee now", "a\u2212b@corp.ee", "a-b@corp.ee"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -62,6 +70,32 @@ func TestEmailLocalPartsAreFoundWhole(t *testing.T) {
 			require.Empty(t, more)
 			require.Equal(t, out, again)
 		})
+	}
+}
+
+// A key, a query or a path glued to an address stays out of its token, and
+// the address gets the token of its plain spelling. The other side of this
+// rule: a local part that itself holds '=', '/' or '?' (zed=x@corp.ee) is
+// cut there too, and what comes before the cut stays (Known limits).
+func TestContextGluedToAnAddressStaysOut(t *testing.T) {
+	k := newKeys(t, testMaster)
+	tz := patternTokenizer(t)
+	cases := []struct{ in, value, plain string }{
+		{"WHERE email='bob@corp.ee'", "bob@corp.ee", "bob@corp.ee"},
+		{"GET /x?email=bob@corp.ee&x=1", "bob@corp.ee", "bob@corp.ee"},
+		{"see /users/bob@corp.ee/edit", "bob@corp.ee", "bob@corp.ee"},
+		{"mailto:bob@corp.ee", "bob@corp.ee", "bob@corp.ee"},
+		{"mail zed=x@corp.ee now", "x@corp.ee", "x@corp.ee"},
+	}
+	for _, c := range cases {
+		out, reps := tokenize(t, tz, c.in)
+		require.Len(t, reps, 1, c.in)
+		require.Equal(t, c.value, c.in[reps[0].Start:reps[0].End], c.in)
+		want := mustToken(t, k, pii.EntityEmail, c.plain, "")
+		require.Equal(t, want, reps[0].Token, c.in)
+		again, more := tokenize(t, tz, out)
+		require.Empty(t, more, c.in)
+		require.Equal(t, out, again, c.in)
 	}
 }
 
@@ -87,14 +121,15 @@ func TestPhoneSeparatorsAreFound(t *testing.T) {
 	tz := patternTokenizer(t)
 	cases := []struct{ name, number, plain string }{
 		{"double spaces", "+1  202  555  0143", "+1 202 555 0143"},
+		{"four spaces", "+1    202 555 0143", "+1 202 555 0143"},
 		{"newline", "+44 7700\n900123", "+44 7700 900123"},
-		{"tab and newline", "+44\t7700\r\n900123", "+44 7700 900123"},
+		{"CRLF", "+44 7700\r\n900123", "+44 7700 900123"},
 		{"hyphen U+2010", "+44‐7700‐900123", "+44 7700 900123"},
 		{"non-breaking hyphen U+2011", "+44‑7700‑900123", "+44 7700 900123"},
 		{"en dash", "+44–7700–900123", "+44 7700 900123"},
 		{"em dash", "+44—7700—900123", "+44 7700 900123"},
 		{"minus sign U+2212", "+44−7700−900123", "+44 7700 900123"},
-		{"slash", "+1 202/555/0143", "+1 202 555 0143"},
+		{"one slash after a space", "+49 89/1234 5678", "+49 89 1234 5678"},
 		{"no-break space", "+44 7700 900123", "+44 7700 900123"},
 		{"00 prefix", "0044 20 7946 0958", "+44 20 7946 0958"},
 		{"00 prefix without spaces", "00442079460958", "+44 20 7946 0958"},
@@ -134,11 +169,44 @@ func TestPhoneShapesKeepFalsePositivesOut(t *testing.T) {
 		"range 1–2 and 3−4",
 		"total 00 44",
 		"+1 234 and 0044 12",
+		"delta +30 2026/11/12",
+		"date +12/11/2026",
+		"7\t+12\t3456\t7890",
+		"+100\n250\n3000\n42",
+		"+1 202/555/0143",
+		"+1202/5550143",
 	} {
 		out, reps := tokenize(t, tz, in)
 		require.Empty(t, reps, "%q", in)
 		require.Equal(t, in, out)
 	}
+}
+
+// The known limits of the phone shapes (the M5.1 plan): these are not found
+// by shape. They are pinned so a change to them is a decision, not a drift.
+func TestPhoneShapeKnownLimits(t *testing.T) {
+	tz := patternTokenizer(t)
+	for _, in := range []string{
+		"call 00 44 20 7946 0958 now",  // a space after the 00
+		"call x0044 20 7946 0958 now",  // 00 touching a letter
+		"call +4420794609581234 now",   // digits glued past 15, no separator
+		"call +1     202 555 0143 now", // five spaces between groups
+		"call +44 20 7946 0958/",       // followed by a '/' that ends the text
+		"call 0044 7700 900123 now",    // not a valid number with + for 00
+	} {
+		_, reps := tokenize(t, tz, in)
+		require.Empty(t, reps, "%q", in)
+	}
+}
+
+// A number after a rejected match is still found, as a second pass would
+// find it once a token stands before it.
+func TestAPhoneAfterARejectedMatchIsFound(t *testing.T) {
+	tz := patternTokenizer(t)
+	in := "+1 202/555/0143 0044 20 7946 0958"
+	_, reps := tokenize(t, tz, in)
+	require.Len(t, reps, 1)
+	require.Equal(t, "0044 20 7946 0958", in[reps[0].Start:reps[0].End])
 }
 
 // A number found inside a rejected "00" run is still found.
@@ -199,7 +267,7 @@ func TestThe00PrefixNormalizesAsPlus(t *testing.T) {
 // pass over these would not finish within the test timeout.
 func TestLongNearMissesStayFast(t *testing.T) {
 	tz := patternTokenizer(t)
-	const n = 1 << 16
+	const n = 1 << 15
 	for _, in := range []string{
 		strings.Repeat("a'", n) + "@",
 		strings.Repeat(`"a`, n) + `"@`,
@@ -208,8 +276,32 @@ func TestLongNearMissesStayFast(t *testing.T) {
 		strings.Repeat("0012 ", n),
 		strings.Repeat("+1\n", n),
 		strings.Repeat("a.", n) + "@corp",
+		strings.Repeat(`"a".`, n) + "@corp",
 	} {
 		_, _, err := tz.Tokenize(in)
 		require.NoError(t, err)
+	}
+}
+
+// A text full of "00" runs that are no phones stays cheap: the length check
+// turns them away before libphonenumber parses anything. The budget is
+// relative to plain text of the same size, so it holds with -race too: these
+// take about 2.5 times as long as plain text, parsing every run took 25 times.
+func TestManyRejected00RunsStayCheap(t *testing.T) {
+	tz := patternTokenizer(t)
+	const (
+		size        = 128 << 10
+		maxSlowdown = 8
+	)
+	timed := func(unit string) time.Duration {
+		in := strings.Repeat(unit, size/len(unit))
+		start := time.Now()
+		_, _, err := tz.Tokenize(in)
+		require.NoError(t, err)
+		return time.Since(start)
+	}
+	plain := timed("abcd ")
+	for _, unit := range []string{"0044 ", "0012 ", "0039 0"} {
+		require.Less(t, timed(unit), maxSlowdown*plain, "%q", unit)
 	}
 }

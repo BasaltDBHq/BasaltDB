@@ -3,6 +3,7 @@ package pii
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/nyaruka/phonenumbers"
 	"golang.org/x/text/cases"
@@ -30,17 +31,24 @@ func Normalize(t EntityType, value, phoneRegion string) string {
 }
 
 // normalizeEmail drops ignorables, then NFKC, trims, lower-cases and NFKC
-// again, and writes the ideographic full stops as '.', as the detectors see
-// them: "a@corp。ee" is "a@corp.ee" (IDNA reads them as a domain's dots).
+// again, and writes every dash and the minus sign as '-' and the ideographic
+// full stops as '.', as the detectors see them: "a‐b@corp。ee" is
+// "a-b@corp.ee" (IDNA reads the full stops as a domain's dots).
 func normalizeEmail(value string) string {
 	value = strings.Map(dropIgnorable, value)
 	s := norm.NFKC.String(strings.ToLower(strings.TrimSpace(norm.NFKC.String(value))))
-	return strings.Map(asciiFullStop, s)
+	return strings.Map(emailPunct, s)
 }
 
-// asciiFullStop maps an ideographic full stop to '.', for strings.Map.
-func asciiFullStop(r rune) rune {
-	if isFullStop(r) {
+// emailPunct maps a dash or the minus sign to '-' and an ideographic full stop
+// to '.', for strings.Map.
+func emailPunct(r rune) rune {
+	switch {
+	case r < utf8.RuneSelf:
+		return r
+	case isDash(r):
+		return '-'
+	case isFullStop(r):
 		return '.'
 	}
 	return r

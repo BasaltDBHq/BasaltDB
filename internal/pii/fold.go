@@ -88,7 +88,7 @@ func shapePunct(r rune) rune {
 	switch {
 	case r < utf8.RuneSelf:
 		return r
-	case r == minusSign || unicode.Is(unicode.Pd, r):
+	case isDash(r):
 		return '-'
 	case isFullStop(r):
 		return '.'
@@ -98,6 +98,9 @@ func shapePunct(r rune) rune {
 
 // minusSign is U+2212, written for '-' by some editors and locales.
 const minusSign = '\u2212'
+
+// isDash reports a dash (Pd) or the minus sign.
+func isDash(r rune) bool { return r == minusSign || unicode.Is(unicode.Pd, r) }
 
 // isFullStop reports the ideographic full stops: U+3002, U+FF0E, U+FF61.
 func isFullStop(r rune) bool { return r == '\u3002' || r == '\uff0e' || r == '\uff61' }

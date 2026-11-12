@@ -77,8 +77,8 @@ func TestClassifyWithoutATerminalPrintsTheReviewAndWritesNothing(t *testing.T) {
 	r := classifyCLI(t, d, "", false, 0)
 	require.Equal(t, exitError, r.code, r.stderr)
 	require.Contains(t, r.stderr, "basalt: no terminal to confirm the classes; pass --yes to accept the suggestions or --set to set columns")
-	require.Contains(t, r.stdout, "34 columns to classify in 2 tables")
-	require.Contains(t, r.stdout, "SECRET 3  IDENTIFIER 15  FREE_TEXT 2  PUBLIC 14  ⚠ needs review 1")
+	require.Contains(t, r.stdout, "35 columns to classify in 2 tables")
+	require.Contains(t, r.stdout, "SECRET 3  IDENTIFIER 15  FREE_TEXT 2  PUBLIC 15  ⚠ needs review 1")
 	require.Contains(t, r.stdout, "⚠ member_code → IDENTIFIER other?")
 	require.Empty(t, storedClasses(t, d))
 }
@@ -88,7 +88,7 @@ func TestClassifyYesTakesTheProtectedSuggestions(t *testing.T) {
 	d := classifyDB(t)
 	r := classifyCLI(t, d, "", false, 0, "--yes")
 	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Contains(t, r.stderr, "basalt: classified 34 columns (14 PUBLIC, 15 IDENTIFIER, 2 FREE_TEXT, 3 SECRET); 0 columns stay UNCLASSIFIED")
+	require.Contains(t, r.stderr, "basalt: classified 35 columns (15 PUBLIC, 15 IDENTIFIER, 2 FREE_TEXT, 3 SECRET); 0 columns stay UNCLASSIFIED")
 	got := storedClasses(t, d)
 	require.Equal(t, storedClass{class: guard.ClassIdentifier, entity: guard.EntityOther, needsReview: true}, got["customers.member_code"])
 	require.Equal(t, storedClass{class: guard.ClassIdentifier, entity: guard.EntityPhone, region: "ID"}, got["customers.msisdn"])
@@ -186,7 +186,7 @@ func TestClassifyJSONAndDryRunWriteNothing(t *testing.T) {
 			}
 		}
 	}
-	require.Equal(t, 34, cols)
+	require.Equal(t, 35, cols)
 
 	r = classifyCLI(t, d, "", false, 0, "--json", "--yes")
 	review = decodeReview(t, r.stdout)
@@ -299,7 +299,7 @@ func TestClassifyInteractiveReview(t *testing.T) {
 	}
 	// Layout C: the summary, then SECRET first within a table, the
 	// needs-review column last.
-	require.True(t, strings.HasPrefix(r.stdout, "34 columns to classify in 2 tables\n"), r.stdout)
+	require.True(t, strings.HasPrefix(r.stdout, "35 columns to classify in 2 tables\n"), r.stdout)
 	customers := r.stdout[strings.Index(r.stdout, "public.customers\n"):strings.Index(r.stdout, "public.orders\n")]
 	require.Less(t, strings.Index(customers, "SECRET"), strings.Index(customers, "IDENTIFIER"))
 	require.Less(t, strings.Index(customers, "IDENTIFIER"), strings.Index(customers, "FREE_TEXT"))
@@ -313,7 +313,7 @@ func TestClassifyInteractiveReview(t *testing.T) {
 	require.Equal(t, storedClass{class: guard.ClassIdentifier, entity: guard.EntityEmail}, got["customers.email"])
 	require.Equal(t, guard.ClassUnclassified, got["orders.amount"].class, "a skipped table stays UNCLASSIFIED")
 	require.Contains(t, r.stderr, "basalt: classified 26 columns")
-	require.Contains(t, r.stderr, "8 columns stay UNCLASSIFIED")
+	require.Contains(t, r.stderr, "9 columns stay UNCLASSIFIED")
 }
 
 func TestClassifyInteractiveDeclineProtection(t *testing.T) {

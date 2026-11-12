@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/nyaruka/phonenumbers"
@@ -116,6 +117,8 @@ func CallingCodes(values []string, into map[int32]int) {
 type regionResult struct {
 	region string
 	valid  int
+	// mobile and prefixed break ties between regions (bestRegion).
+	mobile, prefixed int
 }
 
 // inferRegion finds the region where most of a column's phone candidates
@@ -166,6 +169,27 @@ func countValid(vs []phoneValue, region string) int {
 	return n
 }
 
+// scoreRegion counts the local numbers valid in region, how many of those
+// are mobile numbers there, and how many start with region's calling code.
+func scoreRegion(vs []phoneValue, region string) regionResult {
+	out := regionResult{region: region}
+	code := strconv.Itoa(int(regionCode(region)))
+	for _, v := range vs {
+		n, err := phonenumbers.Parse(v.text, region)
+		if err != nil || !phonenumbers.IsValidNumber(n) {
+			continue
+		}
+		out.valid++
+		if t := phonenumbers.GetNumberType(n); t == phonenumbers.MOBILE || t == phonenumbers.FIXED_LINE_OR_MOBILE {
+			out.mobile++
+		}
+		if strings.HasPrefix(v.text, code) {
+			out.prefixed++
+		}
+	}
+	return out
+}
+
 func bestRegion(local []phoneValue, db map[int32]int) regionResult {
 	if len(local) == 0 {
 		return regionResult{}
@@ -174,14 +198,20 @@ func bestRegion(local []phoneValue, db map[int32]int) regionResult {
 	probe := local[:min(regionProbe, len(local))]
 	scored := make([]regionResult, 0, len(regions))
 	for _, r := range regions {
-		if n := countValid(probe, r); n > 0 {
-			scored = append(scored, regionResult{region: r, valid: n})
+		if s := scoreRegion(probe, r); s.valid > 0 {
+			scored = append(scored, s)
 		}
 	}
+	// Ties go to the database's dominant +cc, then to the region whose
+	// calling code the numbers start with (628… is ID), then to the region
+	// where they are mobile numbers, then to a code's main region; the name
+	// only decides last.
 	rank := func(a, b regionResult) int {
 		return cmp.Or(
 			cmp.Compare(b.valid, a.valid),
 			cmp.Compare(db[regionCode(b.region)], db[regionCode(a.region)]),
+			cmp.Compare(b.prefixed, a.prefixed),
+			cmp.Compare(b.mobile, a.mobile),
 			cmp.Compare(mainRegion(b.region), mainRegion(a.region)),
 			cmp.Compare(a.region, b.region),
 		)
@@ -190,7 +220,7 @@ func bestRegion(local []phoneValue, db map[int32]int) regionResult {
 	scored = scored[:min(regionFinalists, len(scored))]
 	if len(probe) < len(local) {
 		for i := range scored {
-			scored[i].valid = countValid(local, scored[i].region)
+			scored[i] = scoreRegion(local, scored[i].region)
 		}
 		slices.SortFunc(scored, rank)
 	}

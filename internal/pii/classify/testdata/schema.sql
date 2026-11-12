@@ -82,7 +82,7 @@ CREATE TABLE public.orders (
 );
 
 INSERT INTO public.orders
-SELECT g, 1 + g % 200, 500000 + (g * 37) % 300, (g * 3.75)::numeric(10, 2), 1 + g % 9,
+SELECT g, 1 + g % 200, 1000 + (g * 37) % 300, (g * 3.75)::numeric(10, 2), 1 + g % 9,
        (ARRAY['Blue Widget', 'Steel Bolt'])[1 + g % 2], timestamptz '2026-01-01' + g * interval '1 hour', g % 2 = 0
   FROM generate_series(1, 300) g;
 
@@ -114,7 +114,11 @@ CREATE TABLE public.leads (
     mixed_ref      bigint,
     -- PINs and a qualified secret name.
     pin            text,
-    token_sent     text
+    token_sent     text,
+    -- Blocks of consecutive MSISDNs are phones, not a sequence of ids.
+    line_block     bigint,
+    line_text      text,
+    every_second   bigint
 );
 
 INSERT INTO public.leads
@@ -129,7 +133,13 @@ SELECT g,
        CASE WHEN g % 2 = 0 THEN '+62 812-' || (6000 + g) || '-' || lpad(g::text, 4, '0') ELSE 'CB-' || g END,
        CASE WHEN g % 10 < 7 THEN 6281200000000 + g * 104729 ELSE 100 + g * 37 END,
        lpad(((g * 7919) % 10000)::text, 4, '0'),
-       substr(md5('t' || g), 1, 10)
+       substr(md5('t' || g), 1, 10),
+       6281200000000 + g,
+       (6281300000000 + g)::text,
+       6281400000000 + 2 * g
   FROM generate_series(1, 100) g;
 
 CREATE VIEW public.bad_cast AS SELECT id, product_name::integer AS n FROM public.customers;
+
+-- A long sequence filled by an identity is an internal id: PUBLIC.
+ALTER TABLE public.orders ADD COLUMN ticket_no bigint GENERATED ALWAYS AS IDENTITY (START WITH 500001);

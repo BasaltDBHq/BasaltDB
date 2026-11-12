@@ -80,6 +80,10 @@ var fixtureWant = map[string]want{
 	"public.leads.mixed_ref":        reviewPhone,
 	"public.leads.pin":              secret,
 	"public.leads.token_sent":       secret,
+	"public.leads.line_block":       reviewPhone,
+	"public.leads.line_text":        reviewPhone,
+	"public.leads.every_second":     reviewPhone,
+	"public.orders.ticket_no":       public,
 	"public.bad_cast.id":            public,
 	"public.bad_cast.n":             {class: guard.ClassIdentifier, entity: guard.EntityOther, needsReview: true},
 }

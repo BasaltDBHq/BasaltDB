@@ -32,6 +32,49 @@ func TestLongValuesGateBeforeEveryPublicRule(t *testing.T) {
 		Sample{Values: []string{"1125.00", "3.75", "12.50"}}, Options{}).Class)
 }
 
+// TestConsecutivePhonesAreNoSequence: a block of consecutive MSISDNs, every
+// second one, or five in a row are phones to review, as bigint and as text;
+// only short sequences, or a key, are ids.
+func TestConsecutivePhonesAreNoSequence(t *testing.T) {
+	t.Parallel()
+	block := func(start, step, n int) []string {
+		out := make([]string, 0, n)
+		for i := range n {
+			out = append(out, strconv.Itoa(start+i*step))
+		}
+		return out
+	}
+	for _, vs := range [][]string{
+		block(6281200000001, 1, 200),
+		block(6281200000001, 2, 200),
+		block(6281200000001, 1, 5),
+	} {
+		for _, typ := range []string{"bigint", "text"} {
+			got := Suggest(Column{Schema: "public", Table: "t", Name: "ref", DataType: typ}, Sample{Values: vs}, Options{})
+			require.Equal(t, []any{guard.ClassIdentifier, guard.EntityPhone, "ID", true},
+				[]any{got.Class, got.EntityType, got.PhoneRegion, got.NeedsReview}, "%s %d values: %s", typ, len(vs), got.Reason)
+		}
+	}
+	require.Equal(t, Suggestion{Class: guard.ClassPublic, Reason: reasonSequential},
+		Suggest(Column{Name: "order_number", DataType: "bigint"}, Sample{Values: block(1000, 1, 50)}, Options{}))
+	require.Equal(t, Suggestion{Class: guard.ClassPublic, Reason: reasonKey},
+		Suggest(Column{Name: "ref", DataType: "bigint", Key: true}, Sample{Values: block(6281200000001, 1, 50)}, Options{}))
+}
+
+// TestRegionTiesGoToTheNumbersOwnCountry: local numbers valid in several
+// regions infer ID with no +cc in the database.
+func TestRegionTiesGoToTheNumbersOwnCountry(t *testing.T) {
+	t.Parallel()
+	for _, vs := range [][]string{
+		{"081234567801", "081298765432", "081311122233"},
+		{"0812-3456-7801", "0857-1234-5678", "0878-1234-5678"},
+	} {
+		require.Equal(t, "ID", inferRegion(vs, false, "", map[int32]int{}).region, "%v", vs)
+	}
+	// With the database's +cc dominant, ties go to it.
+	require.Equal(t, "ID", inferRegion([]string{"081234567801"}, false, "", map[int32]int{62: 5}).region)
+}
+
 // TestPhonesInAnyFillerAreNeverPublic is a property test: random mixes of at
 // least 10% phones with any filler never come out PUBLIC.
 func TestPhonesInAnyFillerAreNeverPublic(t *testing.T) {

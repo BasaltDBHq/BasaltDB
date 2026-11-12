@@ -132,7 +132,8 @@ func TestPhoneShape(t *testing.T) {
 		require.Equal(t, tc.ok, ok, tc.in)
 	}
 	r := inferRegion([]string{"081234567801", "081234567802", "+62 812-3456-7803"}, false, "", map[int32]int{62: 3})
-	require.Equal(t, regionResult{region: "ID", valid: 3}, r)
+	require.Equal(t, []int{3}, []int{r.valid})
+	require.Equal(t, "ID", r.region)
 	require.Equal(t, "EE", inferRegion([]string{"+372 5123 4567"}, false, "", nil).region)
 	require.Empty(t, inferRegion([]string{"hello"}, false, "", nil).region)
 }

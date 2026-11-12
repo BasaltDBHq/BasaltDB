@@ -39,15 +39,18 @@ type KeyRef struct {
 	Attnum   int16
 }
 
-// KeyColumns lists the columns that are part of a primary or foreign key.
-// Any role may read pg_constraint.
+// KeyColumns lists the columns that are internal ids: part of a primary or
+// foreign key, an identity column, or filled by a sequence (a serial's
+// nextval default). Any role may read the catalog.
 func KeyColumns(ctx context.Context, q guard.Querier) (map[KeyRef]bool, error) {
-	sql, args, err := psql.Select("conrelid", "unnest(conkey)").From("pg_catalog.pg_constraint").
-		Where(sq.Eq{"contype": []string{"p", "f"}}).ToSql()
-	if err != nil {
-		return nil, err
-	}
-	rows, err := q.Query(ctx, sql, args...)
+	// Plain SQL: a UNION over three catalogs, which squirrel cannot express.
+	// Constant text, no arguments.
+	rows, err := q.Query(ctx, `SELECT conrelid, unnest(conkey) FROM pg_catalog.pg_constraint WHERE contype IN ('p', 'f')
+		UNION
+		SELECT attrelid, attnum FROM pg_catalog.pg_attribute WHERE attidentity <> '' AND attnum > 0 AND NOT attisdropped
+		UNION
+		SELECT adrelid, adnum FROM pg_catalog.pg_attrdef
+		 WHERE pg_catalog.pg_get_expr(adbin, adrelid) LIKE 'nextval(%'`)
 	if err != nil {
 		return nil, fmt.Errorf("read key columns: %w", err)
 	}

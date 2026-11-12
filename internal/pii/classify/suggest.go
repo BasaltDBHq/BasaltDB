@@ -203,8 +203,9 @@ func validate(k kind, key bool, values []string, hit nameHit, named bool, opts O
 		}
 	}
 	// Runs of bare digits that are valid phones, with no name to say so:
-	// protected as phones, for a person to confirm. Keys and sequences are ids.
-	if !namedPhone && !key && enough(count(bareDigits)) && !numberShape(values).sequential {
+	// protected as phones, for a person to confirm (a block of consecutive
+	// MSISDNs included). Keys are ids.
+	if !namedPhone && !key && enough(count(bareDigits)) {
 		r := inferRegion(values, true, opts.PhoneRegion, opts.CallingCodes)
 		if enough(r.valid) {
 			s := Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityPhone, PhoneRegion: r.region, NeedsReview: true,
@@ -289,8 +290,8 @@ func byShape(values []string, opts Options) Suggestion {
 	allDigits := !slices.ContainsFunc(values, func(v string) bool { return !allASCIIDigits(strings.TrimSpace(v)) })
 	var st numberStats
 	if allDigits {
-		if st = numberShape(values); st.sequential {
-			return public(reasonSequential) // an internal id (plan, section 3)
+		if st = numberShape(values); st.sequential && st.maxLen < minPhoneDigits {
+			return public(reasonSequential) // short ids; a long sequence (a block of MSISDNs) meets the gate
 		}
 	}
 	// The one gate before every PUBLIC rule below: a fair share of long

@@ -309,18 +309,18 @@ func TestPIIReadableColumnsAndFingerprint(t *testing.T) {
 		"public.vault.id:bigint", "public.vault.secret:text",
 	}, lines)
 
-	want := sha256.Sum256([]byte(strings.Join(lines, "\n")))
+	want := fingerprintOf(t, p.Admin)
 	var got []byte
 	require.NoError(t, p.bot.Conn.QueryRow(ctx, `SELECT basalt_meta.pii_fingerprint()`).Scan(&got))
-	require.Equal(t, want[:], got)
+	require.Equal(t, want, got)
 
 	// A length change keeps it; a new readable column moves it.
 	p.Exec(t, `ALTER TABLE public.customers ALTER COLUMN phone TYPE varchar(40)`)
 	require.NoError(t, p.bot.Conn.QueryRow(ctx, `SELECT basalt_meta.pii_fingerprint()`).Scan(&got))
-	require.Equal(t, want[:], got)
+	require.Equal(t, want, got)
 	p.Exec(t, `ALTER TABLE public.vault ADD COLUMN note text`)
 	require.NoError(t, p.bot.Conn.QueryRow(ctx, `SELECT basalt_meta.pii_fingerprint()`).Scan(&got))
-	require.NotEqual(t, want[:], got)
+	require.NotEqual(t, want, got)
 }
 
 func TestWriteClassificationRunsAsGuard(t *testing.T) {

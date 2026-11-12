@@ -102,6 +102,26 @@ func (b *Steps) RunCommand(command, text string) *Steps {
 	return b.add(NextStep{Actor: mcp.ActorPerson, Action: mcp.ActionRunCommand, Command: command}, text)
 }
 
+// AgentRunCommand adds an AGENT step: run command on the engine's machine.
+// Only an agent-operated engine returns one (CONTRACT.md, Next steps), and
+// never with a command that needs the admin connection string (CO-9).
+func (b *Steps) AgentRunCommand(command, text string) *Steps {
+	if command == "" {
+		return b.fail(errors.New("RUN_COMMAND needs a command"))
+	}
+	return b.add(NextStep{Actor: mcp.ActorAgent, Action: mcp.ActionRunCommand, Command: command}, text)
+}
+
+// MachineCommand adds a machine step on the engine's machine (a catalog
+// OPERATOR step): the agent's on an agent-operated engine, with
+// agentText, else the person's, with personText.
+func (b *Steps) MachineCommand(cmds Commands, command, personText, agentText string) *Steps {
+	if cmds.AgentOperated() {
+		return b.AgentRunCommand(command, agentText)
+	}
+	return b.RunCommand(command, personText)
+}
+
 // TellAgent adds a PERSON step: the person tells the agent to go on.
 func (b *Steps) TellAgent(text string) *Steps {
 	return b.add(NextStep{Actor: mcp.ActorPerson, Action: mcp.ActionTellAgent}, text)

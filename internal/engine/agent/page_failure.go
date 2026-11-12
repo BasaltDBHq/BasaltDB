@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -25,10 +26,35 @@ func LinkNotFound() (*mcp.ToolError, error) {
 	}, nil
 }
 
+// linkResetMessage is what the page tells the person holding a link the
+// agent's reset revoked.
+const linkResetMessage = "The agent reset this revert to its own work. Ask it for the new link, and widen again if you " +
+	"still want to include other agents."
+
+// LinkReset is the pages' answer for a revert link the agent's reset
+// revoked (CONTRACT.md, Link secrets, A widened revert): the person widened
+// the revert, and the agent asked for a new link to its own proposal.
+func LinkReset() (*mcp.ToolError, error) {
+	steps, err := NewSteps().TellAgent("Ask the agent for the new link to this revert.").Build()
+	if err != nil {
+		return nil, err
+	}
+	return &mcp.ToolError{
+		Code: CodeNotFound, Reason: reasonLinkReset,
+		Message:       "the agent reset this revert to its own work, so this link was replaced: ask the agent for the new link",
+		PersonMessage: linkResetMessage,
+		NextSteps:     steps,
+	}, nil
+}
+
 // PageFailure is err as the pages answer it: the contract's error body with
 // the person's message and the steps the catalog gives it. The page shows
 // them to the person, so the caller keeps only the PERSON steps.
 func (s *Service) PageFailure(err error) *mcp.ToolError {
+	var pe *PageError
+	if errors.As(err, &pe) {
+		return pe.ToolError
+	}
 	te := ToolError(err)
 	if s.pageSignatureFailure(te) {
 		return te

@@ -42,8 +42,10 @@ func TestPagesRelayNothingOnAnOutdatedGuard(t *testing.T) {
 	requireGuardOutdated(t, err, "approval page")
 	_, err = s.RelayRevert(ctx, revert.Response{RevertID: id})
 	requireGuardOutdated(t, err, "pages revert")
-	_, err = s.RevertRequest(ctx, id)
+	_, err = s.RevertRequest(ctx, id, "secret")
 	requireGuardOutdated(t, err, "revert page")
+	_, err = s.RescopeRevert(ctx, id, "secret", ScopeRequest{})
+	requireGuardOutdated(t, err, "pages scope")
 
 	// The page shows the person the upgrade command.
 	pf := s.PageFailure(s.RelayApproval(ctx, approval.Response{ApprovalID: id}))

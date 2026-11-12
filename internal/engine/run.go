@@ -389,9 +389,14 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	if err != nil {
 		return agentRuntime{}, err
 	}
-	pool, err := agentdb.NewPool(ctx, url, agentPoolConns)
+	pool, password, err := agentdb.NewSwitchablePool(ctx, url, agentPoolConns)
 	if err != nil {
 		return agentRuntime{}, err
+	}
+	finisher := &setupFinisher{
+		configPath: env.configPath, agent: a.Name, credFile: a.CredentialFile,
+		login: targetOf(pool.Config().ConnConfig), password: password, reset: pool.Reset,
+		connect: connectAgent, log: log,
 	}
 	probe := agent.DBProbe{Q: pool, Migrations: guard.Migrations()}
 	logGuard(ctx, probe, log)
@@ -432,11 +437,13 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		Setup:       a.Setup,
 		Probe:       probe,
 		Vault:       env.vault,
+		Finisher:    finisher,
 		PII:         observer.On(pool),
 	})
 	return agentRuntime{
 		svc: svc,
-		upkeep: upkeep.New(a.Name, buildinfo.Version, pool, log, time.Now).WithPins(env.pins).WithRLSCache(blind).WithGate(svc.Admit).
+		upkeep: upkeep.New(a.Name, buildinfo.Version, pool, log, time.Now).WithPins(env.pins).WithRLSCache(blind).
+			WithOperatedBy(env.cfg.OperatedBy).WithGate(svc.AdmitTick).
 			WithPII(piidict.NewWatch(a.Name, classes, pool, log.With("component", "pii"))),
 		ledger: piiLedger{Ledger: gatedLedger{inner: person.NewDBLedger(pool, time.Now), admit: svc.Admit}, dict: env.dict},
 		info:   agentInfo(svc, pool.Config().ConnConfig.Config),

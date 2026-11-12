@@ -30,14 +30,24 @@ type sessionRoute struct {
 }
 
 // sessionRoutes are the only routes a session dispatches: never the links
-// issuing routes, /healthz, the pages or their files. The revert scope and
-// reject routes join when the engine serves them (RS-2).
+// issuing routes, /healthz, the pages or their files. The revert reject
+// route joins when the engine serves it (RS-2).
 var sessionRoutes = []sessionRoute{
-	{http.MethodGet, "approvals", "", "approvalId", (*Server).getApproval},
-	{http.MethodPost, "approvals", "approve", "approvalId", (*Server).postApproval},
-	{http.MethodGet, "reverts", "", "revertId", (*Server).getRevert},
-	{http.MethodPost, "reverts", "apply", "revertId", (*Server).postRevert},
+	{http.MethodGet, approvalsResource, "", approvalParam, (*Server).getApproval},
+	{http.MethodPost, approvalsResource, "approve", approvalParam, (*Server).postApproval},
+	{http.MethodGet, revertsResource, "", revertParam, (*Server).getRevert},
+	{http.MethodPost, revertsResource, "apply", revertParam, (*Server).postRevert},
+	{http.MethodPost, revertsResource, "scope", revertParam, (*Server).postScope},
 }
+
+// The resources of the pages API and the path parameters naming an
+// approval and a revert.
+const (
+	approvalsResource = "approvals"
+	revertsResource   = "reverts"
+	approvalParam     = "approvalId"
+	revertParam       = "revertId"
+)
 
 // sessionAPIPrefix starts every route a session may call.
 const sessionAPIPrefix = "/api/v1/"

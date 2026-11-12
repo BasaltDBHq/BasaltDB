@@ -19,8 +19,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/basaltdbhq/basaltdb/internal/pgdial"
-
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 )
@@ -337,12 +335,6 @@ func ParamValues(params []any) ([]any, error) {
 // NewPool opens a lazy pool on an agent's credential: no connection is made
 // until the first statement, so the engine starts while the database is down.
 func NewPool(ctx context.Context, url string, maxConns int32) (*pgxpool.Pool, error) {
-	cfg, err := pgdial.PoolConfig(url)
-	if err != nil {
-		// The parse error can echo the URL, which holds the password.
-		return nil, errors.New("the agent's credential is not a valid Postgres URL")
-	}
-	cfg.MaxConns = maxConns
-	cfg.ConnConfig.RuntimeParams["application_name"] = "basalt-engine"
-	return pgxpool.NewWithConfig(ctx, cfg)
+	pool, _, err := NewSwitchablePool(ctx, url, maxConns)
+	return pool, err
 }

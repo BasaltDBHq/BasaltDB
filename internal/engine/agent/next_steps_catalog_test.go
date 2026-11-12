@@ -256,7 +256,8 @@ func catalogCases() map[string]catalogCase {
 			plainFunc(func() error {
 				return notOwnTask(guard.RevertScope{Kind: "TASK", ID: uuid.MustParse(caseRunID)})
 			})},
-		caseKey("NOT_FOUND", "LINK", ""): {"approval_page", nil, asToolError(&mcp.ToolError{Code: CodeNotFound, Reason: "LINK", Message: "no such link"})},
+		caseKey("NOT_FOUND", "LINK", ""):       {"approval_page", nil, asToolError(&mcp.ToolError{Code: CodeNotFound, Reason: "LINK", Message: "no such link"})},
+		caseKey("NOT_FOUND", "LINK_RESET", ""): {"revert_page", nil, asToolError(&mcp.ToolError{Code: CodeNotFound, Reason: "LINK_RESET", Message: "the link was reset"})},
 
 		caseKey("SQL_ERROR", "", ""):            {"write", writeArgs0, pgFail("42703", `column "x" does not exist`, "")},
 		caseKey("SQL_ERROR", "NO_ROWS_NOW", ""): {"write", writeArgs0, asToolError(&mcp.ToolError{Code: CodeSQLError, Reason: reasonNoRowsNow, Message: "changes no rows now"})},
@@ -271,8 +272,8 @@ func catalogCases() map[string]catalogCase {
 		caseKey("UNAVAILABLE", "ENGINE_UNREACHABLE", ""):   {"query", queryArgs0, asToolError(&mcp.ToolError{Code: CodeUnavailable, Reason: reasonEngineUnreachable, Message: "no engine"})},
 		caseKey("UNAVAILABLE", "PAGES_OFF", ""):            {"write", writeArgs0, asToolError(&mcp.ToolError{Code: CodeUnavailable, Reason: reasonPagesOff, Message: "no pages"})},
 
-		caseKey("UNAVAILABLE", "SETUP_PENDING", ""): {"query", queryArgs0, plain(&SetupError{Code: "K7Q2-M9XD"})},
-		caseKey("UNAVAILABLE", "SETUP_EXPIRED", ""): {"query", queryArgs0, plain(&SetupError{Code: "K7Q2-M9XD", Expired: true})},
+		caseKey("UNAVAILABLE", "SETUP_PENDING", ""): {"query", queryArgs0, plain(&SetupError{Code: testSetupCode, Fingerprint: testFingerprint})},
+		caseKey("UNAVAILABLE", "SETUP_EXPIRED", ""): {"query", queryArgs0, plain(&SetupError{Code: testSetupCode, Fingerprint: testFingerprint, Expired: true})},
 
 		caseKey("INTERNAL", "", ""): {"query", queryArgs0, plain(errors.New("boom"))},
 	}
@@ -329,10 +330,17 @@ func TestEveryCatalogErrorHasACase(t *testing.T) {
 // platform default config.
 func serviceFor(t *testing.T, goos, configPath string, initArgs []string) *Service {
 	t.Helper()
+	return operatedService(t, goos, configPath, initArgs, "")
+}
+
+// operatedService is serviceFor on an engine whose operatedBy is operatedBy.
+func operatedService(t *testing.T, goos, configPath string, initArgs []string, operatedBy string) *Service {
+	t.Helper()
 	cmds, err := NewCommands("bot", configPath, goos, initArgs)
 	require.NoError(t, err)
 	d := deps()
 	d.Commands = cmds
+	d.OperatedBy = operatedBy
 	d.Approvals = catalogApprovals{}
 	d.Reverts = catalogReverts{}
 	return NewService(d)
@@ -341,24 +349,68 @@ func serviceFor(t *testing.T, goos, configPath string, initArgs []string) *Servi
 func TestEveryCatalogErrorGivesTheCatalogsSteps(t *testing.T) {
 	t.Parallel()
 	for _, variant := range []struct {
-		name, goos, config string
-		initArgs           []string
+		name, goos, config, operatedBy string
+		initArgs                       []string
 	}{
-		{"default config", "linux", "", []string{"--agent=bot", "--write=public.leads"}},
-		{"custom config", "darwin", "/srv/basalt/engine.json", []string{"--agent=bot", "--read=public.leads"}},
+		{"default config", "linux", "", "", []string{"--agent=bot", "--write=public.leads"}},
+		{"custom config", "darwin", "/srv/basalt/engine.json", "", []string{"--agent=bot", "--read=public.leads"}},
+		{"agent-operated", "linux", "", mcpcontract.OperatedByAgent, []string{"--agent=bot", "--write=public.leads", "--os-user=bot", "--operated-by=agent"}},
+		{"agent-operated custom config", "darwin", "/srv/basalt/engine.json", mcpcontract.OperatedByAgent, []string{"--agent=bot", "--read=public.leads", "--operated-by=agent"}},
 	} {
 		for key, kase := range catalogCases() {
 			t.Run(variant.name+"/"+key, func(t *testing.T) {
 				t.Parallel()
-				s := serviceFor(t, variant.goos, variant.config, variant.initArgs)
+				s := operatedService(t, variant.goos, variant.config, variant.initArgs, variant.operatedBy)
 				te := s.Failure(kase.tool, kase.args, kase.fail(t, s))
-				requireObeysCatalog(t, kase, te, variant.config)
+				requireObeysCatalog(t, kase, te, variant.config, variant.operatedBy)
 			})
 		}
 	}
 }
 
-func requireObeysCatalog(t *testing.T, kase catalogCase, te *mcp.ToolError, config string) {
+// expectedSteps is what the catalog fixes for an entry with steps and
+// personMessage on an engine operated by operatedBy: its agentOperated
+// variant of kind on an agent-operated engine, if there is one, else its
+// own steps with OPERATOR resolved (CONTRACT.md, Next steps on an
+// agent-operated engine).
+func expectedSteps(t *testing.T, kind, code, reason, tool string, steps []mcpcontract.StepKind, personMessage bool, operatedBy string) ([]mcpcontract.StepKind, bool, bool) {
+	t.Helper()
+	if operatedBy == mcpcontract.OperatedByAgent {
+		if v, ok := catalogOf(t).AgentOperatedEntry(kind, code, reason, tool); ok {
+			return v.Steps, v.PersonMessage, true
+		}
+	}
+	return mcpcontract.Resolve(steps, operatedBy), personMessage, false
+}
+
+// requireOperatorRules checks the steps of an agent-operated engine: an
+// AGENT command runs on the engine's machine and never needs the admin
+// connection string (CO-9), so it is init --remote or the engine's start;
+// and a variant's personMessage names none of them.
+func requireOperatorRules(t *testing.T, steps []mcp.NextStep, personMessage string, variant bool, where string) {
+	t.Helper()
+	for _, st := range steps {
+		if st.Actor != mcp.ActorAgent || st.Action != mcp.ActionRunCommand {
+			continue
+		}
+		machine := strings.HasPrefix(st.Command, "basalt init --remote ") || serviceManager.MatchString(st.Command) ||
+			strings.HasPrefix(st.Command, "basalt engine ")
+		require.True(t, machine, "%s: an AGENT command is init --remote or the engine's start: %q", where, st.Command)
+		if strings.HasPrefix(st.Command, "basalt init --remote ") {
+			require.True(t, strings.HasSuffix(st.Command, " --json"), "%s: the agent reads init --remote's steps: %q", where, st.Command)
+			require.NotContains(t, st.Command, "--os-user", "%s: init --remote takes no --os-user", where)
+		}
+		if variant {
+			require.NotContains(t, personMessage, st.Command, "%s: personMessage names no command on the agent's machine", where)
+		}
+	}
+	if variant {
+		require.NotContains(t, personMessage, "sudo ", where)
+		require.NotContains(t, personMessage, "basalt engine", where)
+	}
+}
+
+func requireObeysCatalog(t *testing.T, kase catalogCase, te *mcp.ToolError, config, operatedBy string) {
 	t.Helper()
 	entry, ok := catalogOf(t).ErrorEntry(te.Code, te.Reason, kase.tool)
 	require.True(t, ok, "no catalog entry for %s %s %s", te.Code, te.Reason, kase.tool)
@@ -368,9 +420,10 @@ func requireObeysCatalog(t *testing.T, kase catalogCase, te *mcp.ToolError, conf
 	for _, st := range te.NextSteps {
 		got = append(got, mcpcontract.StepKind{Actor: st.Actor, Action: st.Action})
 	}
-	// The engine has no operatedBy AGENT mode yet: OPERATOR steps are the person's.
-	require.Equal(t, mcpcontract.Resolve(entry.Steps, mcpcontract.OperatedByPerson), got, "(actor, action) sequence of %s", entryKey(entry))
-	require.Equal(t, entry.PersonMessage, te.PersonMessage != "", "personMessage set exactly when the catalog says: %q", te.PersonMessage)
+	want, pm, variant := expectedSteps(t, mcpcontract.VariantError, entry.Code, entry.Reason, entry.Tool, entry.Steps, entry.PersonMessage, operatedBy)
+	require.Equal(t, want, got, "(actor, action) sequence of %s", entryKey(entry))
+	require.Equal(t, pm, te.PersonMessage != "", "personMessage set exactly when the catalog says: %q", te.PersonMessage)
+	requireOperatorRules(t, te.NextSteps, te.PersonMessage, variant, entryKey(entry))
 	requirePersonMessage(t, te.PersonMessage, te.Links)
 	for i, st := range te.NextSteps {
 		requireStepObeysRules(t, st, kase, config, fmt.Sprintf("%s step %d", entryKey(entry), i+1))
@@ -432,6 +485,13 @@ func requireCommand(t *testing.T, command, config, where string) {
 		return
 	}
 	require.True(t, strings.HasPrefix(command, "basalt "), "%s: %q", where, command)
+	if code, ok := strings.CutPrefix(command, "basalt init --setup-code "); ok {
+		// Run on the person's own computer: it writes no engine config, so
+		// it names no agent and no config (CONTRACT.md, basalt init
+		// --setup-code).
+		require.Regexp(t, `^[A-Za-z0-9._-]+$`, code, where)
+		return
+	}
 	if strings.HasPrefix(command, "basalt engine ") { // the foreground engine names its config itself
 		return
 	}

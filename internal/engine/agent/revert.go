@@ -314,6 +314,9 @@ func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Request
 		}
 		return s.revertWithLink(ctx, r)
 	case p.Reissue && r.Status == ledger.RevertPending:
+		if err := s.retirePersonScope(ctx, r); err != nil {
+			return RequestedRevert{}, err
+		}
 		return s.revertWithLink(ctx, r)
 	}
 	err = s.awaitWhile(ctx, p.Wait, func() bool { return r.Status == ledger.RevertPending }, func(ctx context.Context) error {

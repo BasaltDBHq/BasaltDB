@@ -87,9 +87,10 @@ type rescopes struct {
 	locks map[uuid.UUID]*revertLock
 }
 
-// revertLock is one revert's lock and how many hold or wait for it.
+// revertLock is one revert's lock (a one-slot channel, so a waiter can
+// give up with its context) and how many hold or wait for it.
 type revertLock struct {
-	mu    sync.Mutex
+	slot  chan struct{}
 	users int
 }
 
@@ -97,20 +98,19 @@ func newRescopes() *rescopes {
 	return &rescopes{byID: map[uuid.UUID]rescoped{}, locks: map[uuid.UUID]*revertLock{}}
 }
 
-// lock takes revert id's lock and returns its release. The lock is
-// forgotten once nobody holds or waits for it.
-func (r *rescopes) lock(id uuid.UUID) func() {
+// lock takes revert id's lock and returns its release, or ctx's error when
+// ctx ends while it waits. The lock is forgotten once nobody holds or waits
+// for it.
+func (r *rescopes) lock(ctx context.Context, id uuid.UUID) (func(), error) {
 	r.mu.Lock()
 	l, ok := r.locks[id]
 	if !ok {
-		l = &revertLock{}
+		l = &revertLock{slot: make(chan struct{}, 1)}
 		r.locks[id] = l
 	}
 	l.users++
 	r.mu.Unlock()
-	l.mu.Lock()
-	return func() {
-		l.mu.Unlock()
+	leave := func() {
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		l.users--
@@ -118,6 +118,25 @@ func (r *rescopes) lock(id uuid.UUID) func() {
 			delete(r.locks, id)
 		}
 	}
+	select {
+	case l.slot <- struct{}{}:
+	case <-ctx.Done():
+		leave()
+		return nil, ctx.Err()
+	}
+	return func() {
+		<-l.slot
+		leave()
+	}, nil
+}
+
+// holdsToken reports whether the engine holds a scope token for revert id,
+// whatever link it belongs to.
+func (r *rescopes) holdsToken(id uuid.UUID, now time.Time) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	st, ok := r.byID[id]
+	return ok && st.token != nil && now.Before(st.expires)
 }
 
 // get is id's state when it belongs to the link secret and has not
@@ -161,7 +180,10 @@ func (s *Service) RescopeRevert(ctx context.Context, id uuid.UUID, secret string
 	if widen && subtle.ConstantTimeCompare([]byte(in.NewSecret), []byte(secret)) == 1 {
 		return ScopeResponse{}, &ArgumentError{Message: "newSecret must be a new secret the page made, not the link's current one"}
 	}
-	release := s.rescopes.lock(id)
+	release, err := s.rescopes.lock(ctx, id)
+	if err != nil {
+		return ScopeResponse{}, err
+	}
 	defer release()
 	r, err := s.openRevert(ctx, id, nil)
 	if err != nil {
@@ -355,7 +377,10 @@ func (s *Service) heldState(r ledger.Revert, secret string) (rescoped, bool, err
 // can say the agent reset it (LINK_RESET), and the lines held in memory
 // go. The caller issues the new link.
 func (s *Service) resetToProposal(ctx context.Context, r ledger.Revert) (ledger.Revert, error) {
-	release := s.rescopes.lock(r.ID)
+	release, err := s.rescopes.lock(ctx, r.ID)
+	if err != nil {
+		return ledger.Revert{}, err
+	}
 	defer release()
 	out, err := s.Reverts.ResetRevert(ctx, r.ID, RescopeTimeout)
 	if err != nil {
@@ -366,6 +391,24 @@ func (s *Service) resetToProposal(ctx context.Context, r ledger.Revert) (ledger.
 		return ledger.Revert{}, err
 	}
 	return s.Reverts.FindRevert(ctx, r.ID)
+}
+
+// retirePersonScope is the agent's reissue of a revert that is no longer
+// widened while the engine still holds the person's scope token for it (the
+// agent reset it in Postgres directly): the person's link is revoked as by
+// a reset, so their page says LINK_RESET, and what the engine held goes.
+// The caller then issues the agent's new link.
+func (s *Service) retirePersonScope(ctx context.Context, r ledger.Revert) error {
+	release, err := s.rescopes.lock(ctx, r.ID)
+	if err != nil {
+		return err
+	}
+	defer release()
+	if !s.rescopes.holdsToken(r.ID, s.Now()) {
+		return nil
+	}
+	s.rescopes.drop(r.ID)
+	return s.Links.Reset(r.ID, r.ExpiresAt)
 }
 
 // CheckResetLink reports whether secret is a link of revert id that the

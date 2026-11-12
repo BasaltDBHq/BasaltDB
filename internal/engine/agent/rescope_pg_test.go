@@ -511,6 +511,40 @@ func TestDirectResetInPostgresBeatsTheEnginesMemory(t *testing.T) {
 	require.False(t, b.Widened)
 }
 
+// The agent resets a widened revert in Postgres directly and asks for a
+// new link before the person reloads: the person's link still answers
+// LINK_RESET, not as an unknown link, and the agent's new link works.
+func TestReissueAfterADirectResetTellsThePerson(t *testing.T) {
+	t.Parallel()
+	e := newRescopeEnv(t)
+	id, secret := e.request(t)
+	personSecret := newLinkSecret(t)
+	require.Equal(t, http.StatusOK, e.p.post(scopePath(id), pageOrigin, secret,
+		e.widenBody(t, e.person, id, e.nonce(t, id, secret), e.every(), personSecret), nil))
+
+	_, err := e.bot.Conn.Exec(context.Background(), `SELECT basalt_meta.reset_revert($1)`, id)
+	require.NoError(t, err)
+	body, isError := e.h.call(t, "request_revert", map[string]any{"revertId": id.String(), "reissueLink": true})
+	require.False(t, isError, "%v", body)
+	agentSecret := links.SecretOf(str(t, body["revertUrl"]))
+
+	var perr pageError
+	require.Equal(t, http.StatusNotFound, e.p.get(revertPath(id), personSecret, &perr))
+	require.Equal(t, "LINK_RESET", perr.Reason)
+	var read revert.Request
+	require.Equal(t, http.StatusOK, e.p.get(revertPath(id), agentSecret, &read))
+	b, err := read.Check()
+	require.NoError(t, err)
+	require.False(t, b.Widened)
+
+	// Without a held token a reissue is a plain one: the earlier link reads
+	// as replaced.
+	body, isError = e.h.call(t, "request_revert", map[string]any{"revertId": id.String(), "reissueLink": true})
+	require.False(t, isError, "%v", body)
+	require.Equal(t, http.StatusNotFound, e.p.get(revertPath(id), agentSecret, &perr))
+	require.Equal(t, "LINK", perr.Reason)
+}
+
 // Rescopes of one revert run one at a time: after many concurrent narrows
 // under the token, the request the engine serves is the one Postgres
 // stored last.

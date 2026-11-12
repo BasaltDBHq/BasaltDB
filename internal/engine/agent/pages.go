@@ -92,7 +92,10 @@ func (s *Service) openApproval(ctx context.Context, id uuid.UUID, proof *string)
 // binding or lines (RS-5): an engine that restarted since asks the person
 // to widen again (owner, Q13), with the nonce that widen signs.
 func (s *Service) RevertRequest(ctx context.Context, id uuid.UUID, secret string) (revert.Request, error) {
-	release := s.rescopes.lock(id)
+	release, err := s.rescopes.lock(ctx, id)
+	if err != nil {
+		return revert.Request{}, err
+	}
 	defer release()
 	r, err := s.openRevert(ctx, id, nil)
 	if err != nil {

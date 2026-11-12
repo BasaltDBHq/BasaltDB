@@ -85,8 +85,13 @@ func (s *Service) openApproval(ctx context.Context, id uuid.UUID, proof *string)
 }
 
 // RevertRequest is the revert request of a revert this agent's role
-// prepared that the person has not signed yet.
-func (s *Service) RevertRequest(ctx context.Context, id uuid.UUID) (revert.Request, error) {
+// prepared that the person has not signed yet, for the page holding
+// secret, its live link secret. A revert the person rescoped through this
+// engine is served as the rescope returned it, with the nonce of the next
+// widen; after a widen only from memory, since the agent role's view shows
+// no binding or lines (RS-5): an engine that restarted since asks the
+// person to widen again (owner, Q13).
+func (s *Service) RevertRequest(ctx context.Context, id uuid.UUID, secret string) (revert.Request, error) {
 	r, err := s.openRevert(ctx, id, nil)
 	if err != nil {
 		return revert.Request{}, err
@@ -94,6 +99,13 @@ func (s *Service) RevertRequest(ctx context.Context, id uuid.UUID) (revert.Reque
 	ids, err := s.credentialIDs(ctx)
 	if err != nil {
 		return revert.Request{}, err
+	}
+	if st, ok := s.rescopes.get(id, secret, s.Now()); ok {
+		st.request.CredentialIDs = ids
+		return st.request, nil
+	}
+	if r.Widened {
+		return revert.Request{}, widenAgain()
 	}
 	return revert.Request{RevertID: r.ID, Binding: r.BindingText, Lines: r.Lines, CredentialIDs: ids}, nil
 }
@@ -150,11 +162,17 @@ func (s *Service) IssueApprovalLink(ctx context.Context, id uuid.UUID, proof str
 }
 
 // IssueRevertLink issues a new short link for a revert this agent's role
-// prepared, to a caller that shows proof of its binding text.
+// prepared, to a caller that shows proof of its binding text. A widened
+// revert is refused as an unknown id: its binding text is the person's,
+// which the agent role can no longer read, so no proof of it can come from
+// the agent's credential (CONTRACT.md, Link secrets).
 func (s *Service) IssueRevertLink(ctx context.Context, id uuid.UUID, proof string) (string, error) {
 	r, err := s.openRevert(ctx, id, &proof)
 	if err != nil {
 		return "", err
+	}
+	if r.Widened || r.BindingText == "" {
+		return "", ErrNotThisAgent
 	}
 	return s.issuedLink(links.Revert, r.ID, r.ExpiresAt)
 }

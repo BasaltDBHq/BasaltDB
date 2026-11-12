@@ -13,6 +13,7 @@ import {
   REVERT_SAMPLE_SHARE,
   b64urlDecode,
   b64urlEncode,
+  checkRevertRequest,
   encodeRevertResponse,
   parseApprovalRequest,
   parseRevertBinding,
@@ -57,6 +58,17 @@ test("revert request from Go decodes and checks", async () => {
   assert.deepEqual(req.lines[2].changeIds.length, 2);
   assert.equal(req.lines[3].action, "SKIP");
   assert.equal(req.lines[3].conflict, "CHANGED_AFTER");
+});
+
+test("the engine's revert request may carry the next widen's nonce; a long link may not", async () => {
+  const f = fixtures.request;
+  const base = { revertId: f.revertId, binding: f.binding, lines: f.lines };
+  const nonce = "AAECAwQFBgcICQoLDA0ODw";
+  const req = await checkRevertRequest({ ...base, rescopeNonce: nonce });
+  assert.equal(req.rescopeNonce, nonce);
+  assert.equal((await checkRevertRequest(base)).rescopeNonce, null);
+  await assert.rejects(checkRevertRequest({ ...base, rescopeNonce: "short" }), /rescopeNonce/);
+  await assert.rejects(parseRevertRequest(requestFragment({ ...base, rescopeNonce: nonce })), /unknown field/);
 });
 
 test("revert request refuses anything that does not match the binding", async () => {

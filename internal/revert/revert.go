@@ -272,9 +272,12 @@ func Sample(lines []string) ([]string, error) {
 // Request is the revert request: what the engine's local pages serve, and
 // what a format 1 link carries.
 type Request struct {
-	RevertID      uuid.UUID       `json:"revertId"`
-	Binding       string          `json:"binding"`
-	Lines         []string        `json:"lines"`
+	RevertID uuid.UUID `json:"revertId"`
+	Binding  string    `json:"binding"`
+	Lines    []string  `json:"lines"`
+	// RescopeNonce is the nonce a widen proof signs, served only by the
+	// engine, never carried in a long link.
+	RescopeNonce  passkey.Bytes   `json:"rescopeNonce,omitempty"`
 	CredentialIDs []passkey.Bytes `json:"credentialIds,omitempty"`
 }
 

@@ -3,6 +3,7 @@ package agentdb
 import (
 	"context"
 	"errors"
+	"strconv"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
@@ -67,6 +68,52 @@ func (s *Store) PrepareRevert(ctx context.Context, scope guard.RevertScope, inte
 		return guard.PreparedRevert{}, err
 	}
 	return p, nil
+}
+
+// RescopeRevert changes the scope of a revert the agent's role prepared
+// (basalt_meta.rescope_revert), for the person on the revert page, in its
+// own transaction with the statement timeout set to timeout instead of the
+// agent's limit. Past it Postgres cancels the rescope (57014) and nothing
+// changes.
+func (s *Store) RescopeRevert(ctx context.Context, req guard.RescopeRequest, timeout time.Duration) (guard.RescopedRevert, error) {
+	var out guard.RescopedRevert
+	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
+		if err := setStatementTimeout(ctx, tx, timeout); err != nil {
+			return err
+		}
+		var err error
+		out, err = guard.RescopeRevert(ctx, tx, req)
+		return err
+	})
+	return out, err
+}
+
+// ResetRevert puts a widened revert the agent's role prepared back to its
+// proposal (basalt_meta.reset_revert), for the agent's reissueLink, under
+// the same time limit as a rescope.
+func (s *Store) ResetRevert(ctx context.Context, id uuid.UUID, timeout time.Duration) (guard.RescopedRevert, error) {
+	var out guard.RescopedRevert
+	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
+		if err := setStatementTimeout(ctx, tx, timeout); err != nil {
+			return err
+		}
+		var err error
+		out, err = guard.ResetRevert(ctx, tx, id)
+		return err
+	})
+	return out, err
+}
+
+// setStatementTimeout sets statement_timeout for tx only.
+func setStatementTimeout(ctx context.Context, tx pgx.Tx, timeout time.Duration) error {
+	q, args, err := psql.Select().
+		Column(sq.Expr("pg_catalog.set_config('statement_timeout', ?, true)", strconv.FormatInt(timeout.Milliseconds(), 10))).
+		ToSql()
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, q, args...)
+	return err
 }
 
 // savepoint begins a savepoint in tx where a guard helper begins a

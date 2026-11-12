@@ -296,7 +296,8 @@ func (cn *conn) work(ctx context.Context, ss *session) {
 		case <-ctx.Done():
 			return
 		case req := <-e.work:
-			resp := pages.Dispatch(ctx, e.link, req)
+			dctx := context.WithValue(ctx, rotateKey{}, rotator(func(token channel.LinkToken) { cn.rotate(ss, token) }))
+			resp := pages.Dispatch(dctx, e.link, req)
 			if ctx.Err() != nil {
 				return
 			}
@@ -306,6 +307,41 @@ func (cn *conn) work(ctx context.Context, ss *session) {
 				return
 			}
 		}
+	}
+}
+
+// rotateKey carries, in the context of a request a session dispatches, the
+// function that moves the session to its link's new token.
+type rotateKey struct{}
+
+type rotator func(channel.LinkToken)
+
+// RotateSession moves the session whose request ctx carries onto token, the
+// token of the link its item was rotated to (CONTRACT.md, Vault channel,
+// Frames: a widen in the session rotates the revert's link, and the
+// session stays open under its keys). The session's later requests must
+// carry the new secret, and every other session of the old token is ended
+// with LINK_REFUSED. It reports false for a request that did not come
+// through a session, such as one on loopback.
+func RotateSession(ctx context.Context, token channel.LinkToken) bool {
+	f, ok := ctx.Value(rotateKey{}).(rotator)
+	if !ok {
+		return false
+	}
+	f(token)
+	return true
+}
+
+// rotate is RotateSession for ss, on its worker: only the worker reads
+// est.link, and ss.token is read under the sessions' lock.
+func (cn *conn) rotate(ss *session, token channel.LinkToken) {
+	cn.sessions.mu.Lock()
+	old := ss.token
+	ss.token = token
+	cn.sessions.mu.Unlock()
+	ss.est.link.Token = token
+	if old != token {
+		cn.endLink(old)
 	}
 }
 

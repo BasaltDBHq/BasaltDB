@@ -127,6 +127,9 @@ type Deps struct {
 // Service runs one agent's tool calls.
 type Service struct {
 	Deps
+	// rescopes are the reverts the person rescoped through this engine,
+	// in memory only (CONTRACT.md, Rescope, widen and reject).
+	rescopes *rescopes
 }
 
 // NewService returns the service for one agent. It panics on a missing
@@ -170,7 +173,7 @@ func NewService(d Deps) *Service {
 	if d.Poll <= 0 {
 		d.Poll = DefaultPoll
 	}
-	return &Service{Deps: d}
+	return &Service{Deps: d, rescopes: newRescopes()}
 }
 
 // RunInfo is a started run.

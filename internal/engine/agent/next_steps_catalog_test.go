@@ -122,7 +122,8 @@ func caseNotice(s *Service, url string) mcp.ApprovalNotice {
 		ApprovalID: caseApproval, ExpiresAt: "2026-11-12T10:00:00Z", Rows: 3,
 		Headline: "Delete 3 rows in public.leads", ApprovalURL: url,
 		ApproveCommand: s.Commands.Approve(uuid.MustParse(caseApproval)),
-		PersonMessage:  "Held for your approval: Delete 3 rows in public.leads. Approve here:\n\n" + url + "\n\nExpires 2026-11-12 10:00 UTC.",
+		PersonMessage:  "Held for your approval: Delete 3 rows in public.leads.\nApprove it with your passkey here:\n\n" + url + "\n\nExpires 2026-11-12 10:00 UTC.",
+		Links:          []mcp.Link{{Label: labelApprove, URL: url}},
 	}
 }
 
@@ -140,7 +141,8 @@ func held(reason string, url string) func(*testing.T, *Service) error {
 
 func approvalLink(reason string) func(*testing.T, *Service) error {
 	return func(_ *testing.T, s *Service) error {
-		return s.approvalLinkError(&mcp.ToolError{Code: CodeApprovalInvalid, Reason: reason, Message: "m"}, caseNotice(s, caseShortLink))
+		n := heldNotice{ApprovalNotice: caseNotice(s, caseShortLink), longURL: caseShortLink}
+		return s.approvalLinkError(&mcp.ToolError{Code: CodeApprovalInvalid, Reason: reason, Message: "m"}, n)
 	}
 }
 
@@ -365,8 +367,7 @@ func requireObeysCatalog(t *testing.T, kase catalogCase, te *mcp.ToolError, conf
 	// The engine has no operatedBy AGENT mode yet: OPERATOR steps are the person's.
 	require.Equal(t, mcpcontract.Resolve(entry.Steps, mcpcontract.OperatedByPerson), got, "(actor, action) sequence of %s", entryKey(entry))
 	require.Equal(t, entry.PersonMessage, te.PersonMessage != "", "personMessage set exactly when the catalog says: %q", te.PersonMessage)
-	require.LessOrEqual(t, countWithoutURLs(te.PersonMessage), MaxPersonMessageLength)
-	requireURLsStandAlone(t, te.PersonMessage)
+	requirePersonMessage(t, te.PersonMessage, te.Links)
 	for i, st := range te.NextSteps {
 		requireStepObeysRules(t, st, kase, config, fmt.Sprintf("%s step %d", entryKey(entry), i+1))
 	}
@@ -376,29 +377,6 @@ func requireObeysCatalog(t *testing.T, kase catalogCase, te *mcp.ToolError, conf
 	if te.Code == CodeRowLimitExceeded {
 		require.Equal(t, MaxRetryRows, te.NextSteps[2].MaxRows)
 		require.Contains(t, te.NextSteps[2].Text, "only on an explicit yes", "AE-7")
-	}
-}
-
-var urlPattern = regexp.MustCompile(`https?://\S+`)
-
-func countWithoutURLs(s string) int { return len([]rune(urlPattern.ReplaceAllString(s, ""))) }
-
-// requireURLsStandAlone: every URL in a personMessage stands on a line of its
-// own with a blank line before and after (CONTRACT.md, Showing links).
-func requireURLsStandAlone(t *testing.T, message string) {
-	t.Helper()
-	lines := strings.Split(message, "\n")
-	for i, line := range lines {
-		if !urlPattern.MatchString(line) {
-			continue
-		}
-		require.Equal(t, strings.TrimSpace(line), urlPattern.FindString(line), "a URL stands alone on its line: %q", message)
-		if i > 0 {
-			require.Empty(t, strings.TrimSpace(lines[i-1]), "a blank line before the URL: %q", message)
-		}
-		if i < len(lines)-1 {
-			require.Empty(t, strings.TrimSpace(lines[i+1]), "a blank line after the URL: %q", message)
-		}
 	}
 }
 
@@ -663,6 +641,6 @@ func TestPermissionDeniedGrantsOnlyAPlainQualifiedTable(t *testing.T) {
 		te := s.Failure("query", queryArgs0, &pgconn.PgError{Code: "42501", Message: message})
 		require.Contains(t, te.NextSteps[2].Command, want, message)
 		require.NotContains(t, te.PersonMessage, "basalt init", "the command is in the step, not in the message")
-		require.LessOrEqual(t, countWithoutURLs(te.PersonMessage), MaxPersonMessageLength)
+		requirePersonMessage(t, te.PersonMessage, te.Links)
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/links"
+	"github.com/basaltdbhq/basaltdb/internal/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
@@ -344,7 +345,8 @@ func TestRequestRevertReissueLink(t *testing.T) {
 	secret := links.SecretOf(link)
 	require.NotEqual(t, old, secret)
 	require.Equal(t, pageOrigin+"/reverts/"+id+"#s="+secret, link)
-	require.Contains(t, str(t, body["personMessage"]), "Review and sign with your passkey: "+link)
+	require.Contains(t, str(t, body["personMessage"]), "Sign it with your passkey here:\n\n"+link)
+	mcptest.Require(t, str(t, body["personMessage"]), mcptest.LinksOf(t, body))
 	steps = requireResultSteps(t, body, "REQUESTED")
 	require.Equal(t, link, steps[0]["url"])
 
@@ -390,7 +392,7 @@ func TestRequestRevertDeliversTheSignature(t *testing.T) {
 	runID, _ := winLeads(t, env.h, "87, 88")
 	env.d.Exec(t, `UPDATE public.leads SET status = 'person' WHERE id = 88`)
 	req := requestRevert(t, env.h, map[string]any{"runId": runID, "intent": "Undo"})
-	require.Contains(t, str(t, req["personMessage"]), "the page then shows a code: give it to the agent")
+	require.Contains(t, str(t, req["personMessage"]), "the page then shows a code for the agent")
 
 	body := requestRevert(t, env.h, map[string]any{"revertId": req["revertId"], "signature": personCode(t, env, str(t, req["revertUrl"]))})
 	require.Equal(t, "APPLIED", body["status"])

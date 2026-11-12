@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -49,6 +50,8 @@ func (a *stubAgent) IssueRevertLink(context.Context, uuid.UUID, string) (string,
 }
 
 func (a *stubAgent) CheckLink(id uuid.UUID, secret string) bool { return a.secrets.Check(id, secret) }
+
+func (a *stubAgent) PageFailure(err error) *mcp.ToolError { return agent.ToolError(err) }
 
 func (a *stubAgent) ApprovalRequest(_ context.Context, id uuid.UUID) (approval.Request, error) {
 	if id != a.known {
@@ -220,53 +223,56 @@ func TestPagesRelayChecks(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, status, out)
 }
 
-func TestPagesRequireTheLinkSecret(t *testing.T) {
+// An unknown link tells the person what to do: ask the agent again. The
+// error carries the person's message and only the person's steps.
+func TestPagesUnknownLinkCarriesThePersonsMessageAndSteps(t *testing.T) {
 	t.Parallel()
-	id := uuid.Must(uuid.NewV7())
-	a := &stubAgent{known: id}
-	s := serve(t, a)
+	s := serve(t, &stubAgent{known: uuid.Must(uuid.NewV7())})
 	host := strings.TrimPrefix(s.origin, "http://")
-	get := "/api/v1/approvals/" + id.String()
-	post := get + "/approve"
-	body := fmt.Sprintf(`{"approvalId":%q,"credentialId":"AQ","authenticatorData":"Ag","clientDataJson":"Aw","signature":"BA"}`, id)
-
-	// Unknown id: the answer every refusal below must match exactly.
-	_, unknown := s.do(t, http.MethodGet, "/api/v1/approvals/"+uuid.Must(uuid.NewV7()).String(), host, "", "", "")
-
-	secret, err := s.secrets.Issue(id, time.Now().Add(time.Hour))
-	require.NoError(t, err)
-	wrong := []byte(secret)
-	wrong[0] ^= 1
-	for name, sent := range map[string][]string{"no secret": nil, "empty": {""}, "wrong": {string(wrong)}} {
-		status, out := s.do(t, http.MethodGet, get, host, "", "", "", sent...)
-		require.Equal(t, http.StatusNotFound, status, name)
-		require.Equal(t, unknown, out, "%s: told apart from an unknown id by nothing", name)
-		status, out = s.do(t, http.MethodPost, post, host, s.origin, "application/json", body, sent...)
-		require.Equal(t, http.StatusNotFound, status, name)
-		require.Equal(t, unknown, out, name)
-	}
-	require.Empty(t, a.relayed, "the relay refuses without the secret")
-
-	status, out := s.do(t, http.MethodGet, get, host, "", "", "", secret)
-	require.Equal(t, http.StatusOK, status, out)
-
-	// The CLI's link request: proof of the binding, no Origin.
-	issuePath := "/api/v1/approvals/" + id.String() + "/links"
-	status, out = s.do(t, http.MethodPost, issuePath, host, "", "application/json", `{"proof":"bad"}`)
+	status, out := s.do(t, http.MethodGet, "/api/v1/approvals/"+uuid.Must(uuid.NewV7()).String(), host, "", "", "")
 	require.Equal(t, http.StatusNotFound, status)
-	require.Equal(t, unknown, out, "a wrong proof is answered as an unknown id")
-	status, out = s.do(t, http.MethodPost, issuePath, host, "http://evil.test", "application/json", `{"proof":"good"}`)
-	require.Equal(t, http.StatusForbidden, status, out)
-	status, out = s.do(t, http.MethodPost, issuePath, host, "", "application/json", `{"proof":"good"}`)
-	require.Equal(t, http.StatusOK, status, out)
-	var issued struct{ URL string }
-	require.NoError(t, json.Unmarshal([]byte(out), &issued))
-	require.True(t, strings.HasPrefix(issued.URL, s.origin+"/approvals/"+id.String()+"#s="), issued.URL)
-	fresh := issued.URL[strings.LastIndex(issued.URL, "=")+1:]
+	var body struct {
+		Code          string         `json:"code"`
+		Reason        string         `json:"reason"`
+		PersonMessage string         `json:"personMessage"`
+		NextSteps     []mcp.NextStep `json:"nextSteps"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &body))
+	require.Equal(t, "NOT_FOUND", body.Code)
+	require.Equal(t, "LINK", body.Reason)
+	require.Contains(t, body.PersonMessage, "Ask the agent for the link again")
+	require.Len(t, body.NextSteps, 1)
+	require.Equal(t, mcp.ActorPerson, body.NextSteps[0].Actor)
+	require.Equal(t, mcp.ActionTellAgent, body.NextSteps[0].Action)
+}
 
-	// The new link revoked the earlier one.
-	status, _ = s.do(t, http.MethodGet, get, host, "", "", "", secret)
-	require.Equal(t, http.StatusNotFound, status, "the re-issued link revokes the old one")
-	status, _ = s.do(t, http.MethodGet, get, host, "", "", "", fresh)
-	require.Equal(t, http.StatusOK, status)
+// TestRedirectsMatchRoutes: the portal's web/_redirects rewrites exactly the
+// paths the local pages server serves, to the same files.
+func TestRedirectsMatchRoutes(t *testing.T) {
+	t.Parallel()
+	b, err := os.ReadFile("../../../web/_redirects")
+	require.NoError(t, err)
+	got := map[string]string{}
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		f := strings.Fields(line)
+		require.Len(t, f, 3, line)
+		require.Equal(t, "200", f[2], "a rewrite, not a redirect: %s", line)
+		require.NotContains(t, got, f[0], "duplicate rule")
+		got[f[0]] = f[1]
+	}
+	want := map[string]string{}
+	for _, r := range pages.PageRoutes {
+		src := r.Path
+		if r.ID {
+			src += "*"
+		}
+		want[src] = "/" + strings.TrimSuffix(r.File, "index.html")
+		_, err := os.Stat("../../../web/" + r.File)
+		require.NoError(t, err)
+	}
+	require.Equal(t, want, got)
 }

@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 )
 
 const (
@@ -24,6 +25,11 @@ type Settings struct {
 	PagesURL string
 	// OperatedBy replaces the config's operatedBy when set.
 	OperatedBy string
+	// Mode replaces the config's mode when set.
+	Mode Mode
+	// PersonUIDs are added to the config's person uids; the recorded ones
+	// stay (re-running init keeps them).
+	PersonUIDs []uint32
 }
 
 // UpsertAgent adds agent a to the config at path, or replaces the agent of
@@ -40,7 +46,14 @@ func UpsertAgent(path string, s Settings, a Agent) error {
 // Upserted is the content UpsertAgent writes, without writing it: the
 // service install writes it itself, owned by the engine's OS user.
 func Upserted(path string, s Settings, a Agent) ([]byte, error) {
-	c, err := LoadNoFollow(path)
+	return UpsertedWith(path, openNoFollow, s, a)
+}
+
+// UpsertedWith is Upserted reading the existing file through open. The
+// service install, as root, passes one that follows no link anywhere on the
+// path and accepts only a file the engine's user owns.
+func UpsertedWith(path string, open func(string) (*os.File, error), s Settings, a Agent) ([]byte, error) {
+	c, err := load(path, open)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		c = Config{SocketDir: s.SocketDir, StateDir: s.StateDir}
@@ -53,6 +66,10 @@ func Upserted(path string, s Settings, a Agent) ([]byte, error) {
 	if s.OperatedBy != "" {
 		c.OperatedBy = s.OperatedBy
 	}
+	if s.Mode != "" {
+		c.Mode = s.Mode
+	}
+	c.PersonUIDs = addUIDs(c.PersonUIDs, s.PersonUIDs)
 	replaced := false
 	for i := range c.Agents {
 		if c.Agents[i].Name == a.Name {
@@ -103,4 +120,14 @@ func WriteFile(path string, data []byte) error {
 		return err
 	}
 	return os.Rename(tmp.Name(), path)
+}
+
+// addUIDs is have with every uid of add it lacks, in order.
+func addUIDs(have, add []uint32) []uint32 {
+	for _, u := range add {
+		if !slices.Contains(have, u) {
+			have = append(have, u)
+		}
+	}
+	return have
 }

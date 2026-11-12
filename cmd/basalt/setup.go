@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
@@ -158,6 +160,8 @@ type agentInstall struct {
 	// keepCredential leaves the credential file as it is (the role kept its
 	// password); dsn is empty.
 	keepCredential bool
+	// personUIDs are added to the config's personUids.
+	personUIDs []uint32
 }
 
 // agentServiceSpec is the service install spec with the agent's files in
@@ -174,8 +178,10 @@ func agentServiceSpec(goos, bin, configPath, engineUser string, a agentInstall, 
 	if printOnly {
 		return spec, nil
 	}
-	raw, err := config.Upserted(configPath,
-		config.Settings{SocketDir: config.DefaultSocketDir(goos), PagesURL: a.pagesURL},
+	// Root reads the existing config from the engine user's directory.
+	open := func(p string) (*os.File, error) { return openEngineFile(p, engineUser) }
+	raw, err := config.UpsertedWith(configPath, open,
+		config.Settings{SocketDir: config.DefaultSocketDir(goos), PagesURL: a.pagesURL, Mode: config.ModeService, PersonUIDs: a.personUIDs},
 		config.Agent{Name: a.name, OSUser: a.osUser, CredentialFile: cred, InitArgs: a.initArgs})
 	if err != nil {
 		return spec, err
@@ -190,7 +196,7 @@ func agentServiceSpec(goos, bin, configPath, engineUser string, a agentInstall, 
 // agentInstall is what `service install --agent` needs for this init.
 func (f initFlags) agentInstall(dsn string) agentInstall {
 	return agentInstall{name: f.agent, osUser: f.osUser, pagesURL: f.passkeyOrigin, dsn: dsn,
-		initArgs: f.initArgs, keepCredential: f.keepCredential}
+		initArgs: f.initArgs, keepCredential: f.keepCredential, personUIDs: f.personUIDs}
 }
 
 // serviceInstallArgs is the one command init runs under sudo. The
@@ -205,6 +211,9 @@ func serviceInstallArgs(f initFlags, bin string) []string {
 	for _, a := range f.initArgs {
 		args = append(args, "--"+flagInitArg, a)
 	}
+	for _, uid := range f.personUIDs {
+		args = append(args, "--"+flagPersonUID, strconv.FormatUint(uint64(uid), 10))
+	}
 	if f.keepCredential {
 		return append(args, "--"+flagKeepCredential)
 	}
@@ -216,11 +225,18 @@ func serviceInstallArgs(f initFlags, bin string) []string {
 const (
 	flagInitArg        = "init-arg"
 	flagKeepCredential = "keep-credential"
+	flagPersonUID      = "person-uid"
 )
 
 // installService installs the engine service with the agent in one
 // elevation, then checks the engine answers on the agent's socket.
 func installService(c *cliIO, f initFlags, dsn string) error {
+	uids, err := persons(c, f)
+	if err != nil {
+		return err
+	}
+	f.personUIDs = uids
+	warnAgentIsPerson(c, f)
 	if err := elevateInstall(c, f, dsn); err != nil {
 		return err
 	}
@@ -242,7 +258,7 @@ func installService(c *cliIO, f initFlags, dsn string) error {
 // elevateInstall runs the service install with the agent: in this process
 // when init already runs as root, else as one sudo command.
 func elevateInstall(c *cliIO, f initFlags, dsn string) error {
-	bin, err := c.host.Executable()
+	bin, err := checkedExecutable(c)
 	if err != nil {
 		return err
 	}
@@ -252,6 +268,27 @@ func elevateInstall(c *cliIO, f initFlags, dsn string) error {
 	}
 	fmt.Fprintln(c.stderr, "basalt: installing the engine service with sudo:")
 	return c.host.Sudo(c.ctx, serviceInstallArgs(f, bin), dsn+"\n", c.stderr, c.stderr)
+}
+
+// checkedExecutable is this basalt binary, refused (as the person, with
+// lstat only) when anyone but root could change it: init hands it to sudo,
+// so a binary the agent replaced would otherwise run as root.
+func checkedExecutable(c *cliIO) (string, error) {
+	bin, err := c.host.Executable()
+	if err != nil {
+		return "", err
+	}
+	if err := c.host.System(c.stderr, c.stderr).CheckBinary(bin); err != nil {
+		return "", fmt.Errorf("%w (or run basalt init with --no-service)", err)
+	}
+	return bin, nil
+}
+
+// mayInstallService reports whether this init can go on to install the
+// engine service (or print its plan): then the binary is checked before
+// anything else, so a refusal leaves the database as it was.
+func mayInstallService(c *cliIO, f initFlags) bool {
+	return !f.noService && !f.pathsGiven && (f.yes || f.dryRun || c.interactive)
 }
 
 // applyServiceInstall builds and runs (or only prints) the service install
@@ -318,4 +355,82 @@ func socketDirArgs(f initFlags, goos string) []string {
 		return nil
 	}
 	return []string{"--socket-dir", f.socketDir}
+}
+
+// envSudoUID is the uid of the user who ran sudo.
+const envSudoUID = "SUDO_UID"
+
+// persons are the uids the engine's person socket admits (CONTRACT.md, CLI,
+// Recording the person): --person-uid, else the person running init (the
+// user who ran sudo when init runs as root). Never root: without a person
+// the service is not installed.
+func persons(c *cliIO, f initFlags) ([]uint32, error) {
+	uids := f.personUIDs
+	if len(uids) == 0 {
+		uid, err := invokingUID(c)
+		if err != nil {
+			return nil, err
+		}
+		uids = []uint32{uid}
+	}
+	if err := checkPersons(uids); err != nil {
+		return nil, err
+	}
+	return uids, nil
+}
+
+// invokingUID is the uid of the person running init.
+func invokingUID(c *cliIO) (uint32, error) {
+	euid := c.host.Euid()
+	if euid != 0 {
+		return uint32(euid), nil
+	}
+	sudo := c.getenv(envSudoUID)
+	if sudo == "" {
+		return 0, errNoPerson
+	}
+	return parseUID(sudo)
+}
+
+var errNoPerson = errors.New("no person to admit on the engine's person socket (init runs as root without SUDO_UID); " +
+	"give --person-uid N, the OS user id that runs basalt log, approve and revert")
+
+// checkPersons refuses no uid and root.
+func checkPersons(uids []uint32) error {
+	if len(uids) == 0 {
+		return errNoPerson
+	}
+	for _, u := range uids {
+		if u == 0 {
+			return errors.New("--person-uid 0 is root; give the OS user id of the person who runs basalt log, approve and revert")
+		}
+	}
+	return nil
+}
+
+// parseUID reads an OS user id.
+func parseUID(v string) (uint32, error) {
+	uid, err := strconv.ParseUint(strings.TrimSpace(v), 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("%q is not an OS user id", v)
+	}
+	return uint32(uid), nil
+}
+
+// warnAgentIsPerson says when the agent runs as a recorded person: the
+// engine cannot tell two processes of one OS user apart, so that agent can
+// reach the person socket too. Approve and revert still need the passkey.
+func warnAgentIsPerson(c *cliIO, f initFlags) {
+	u, err := user.Lookup(f.osUser)
+	if err != nil {
+		return // the service install reports an unknown OS user
+	}
+	for _, uid := range f.personUIDs {
+		if strconv.FormatUint(uint64(uid), 10) == u.Uid {
+			fmt.Fprintf(c.stderr, "basalt: warning: the agent runs as OS user %s, which is also the person the engine admits on its person socket. "+
+				"While they share that user, basalt log, approve and revert over the socket see only this agent's ledger (the engine cannot tell you and the agent apart), "+
+				"and the agent can use them too (approve and revert still need your passkey). For full isolation, run the agent as its own OS user: basalt init --os-user <user>\n", f.osUser)
+			return
+		}
+	}
 }

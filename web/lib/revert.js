@@ -14,9 +14,10 @@ import {
   parseRevertRequest,
   relyingParty,
   revertResponseJSON,
+  revertShown,
 } from "./codec.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths, revertDone } from "./local.js";
-import { $, REVERT_REOPEN, el, fail, linkFailure, loadOrPaste, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
+import { $, REVERT_REOPEN, el, fail, linkFailure, loadOrPaste, personText, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
 
@@ -57,27 +58,32 @@ function renderSummary(req) {
     $("plan").textContent = `${plural(b.rows + b.skipped, "row")}, all shown below, restored in one step when you sign.`;
     return;
   }
-  // A large plan (decisions N12-1 to N12-4): the link carries a sample.
-  const restoreShown = req.lines.filter((l) => l.action === "RESTORE").length;
-  const skipShown = req.lines.length - restoreShown;
+  // A large plan (decisions N12-1 to N12-4, RSS-1): the link carries a
+  // sample. The counts come from the binding and the checked lines only.
+  const shown = revertShown(req);
   $("plan").textContent =
-    `${plural(b.rows + b.skipped, "row")}. Your signature covers every one; this page shows the first ${req.lines.length}, ` +
-    `rows left alone first. After you sign, the agent restores them in batches of up to ${MAX_REVERT_BATCH} rows ` +
+    `${plural(b.rows + b.skipped, "row")}. Your signature covers every one; this page shows ${req.lines.length}: ` +
+    `${shown.restoreShown} to restore and ${shown.skipShown} left as they are. ` +
+    `Not shown: ${plural(shown.restoreHidden, "row")} to restore and ${plural(shown.skipHidden, "row")} left as they are. ` +
+    `After you sign, the agent restores them in batches of up to ${MAX_REVERT_BATCH} rows ` +
     `within ${REVERT_APPLY_HOURS} hours. Follow it with basalt revert --status ${b.revertId}.`;
-  $("restore-title").textContent = `Rows that will be restored (${restoreShown} of ${b.rows} shown)`;
-  $("skip-title").textContent = `Rows left as they are (${skipShown} of ${b.skipped} shown)`;
+  $("restore-title").textContent = `Rows that will be restored (${shown.restoreShown} of ${b.rows} shown)`;
+  $("skip-title").textContent = `Rows left as they are (${shown.skipShown} of ${b.skipped} shown)`;
   $("restore-note").textContent =
     "Highlighted values change back to what they were before the agent. Each row is checked again with its row locked when its batch runs; a row someone changed by then is left as it is.";
 }
 
 // rowTable shows a row now and after the revert: only "Now" for a row the
 // revert deletes, only "After revert" for a row it re-inserts, both for an
-// update with the columns that change highlighted.
-function rowTable(line) {
+// update with the columns that change highlighted. A row the revert leaves
+// alone (SKIP) shows only "Now": the revert keeps it as it is, so values it
+// would have written must not look like they will be applied.
+export function rowTable(line) {
   const now = line.now ?? {};
-  const after = line.set ?? {};
+  const skipped = line.action === "SKIP";
+  const after = skipped ? {} : (line.set ?? {});
   const showNow = line.now !== null;
-  const showAfter = line.set !== null;
+  const showAfter = !skipped && line.set !== null;
   const table = el("table", "values");
   const head = el("tr");
   head.append(el("th", "", "Column"));
@@ -154,7 +160,7 @@ async function finish(response, relay) {
       showDone(revertDone(await postResponse(engineFetch, relay.path, relay.secret, revertResponseJSON(response))));
       return;
     } catch (err) {
-      showRelayFailed(`The engine did not take the revert: ${err.message}. To finish by hand, paste the code below into basalt revert --apply.`);
+      showRelayFailed(`The engine did not take the revert: ${personText(err) || err.message}. To finish by hand, paste the code below into basalt revert --apply.`);
     }
   }
   showCode(encodeRevertResponse(response));
@@ -216,4 +222,5 @@ async function main() {
   $("sign").addEventListener("click", () => sign(rp, req, relay));
 }
 
-main();
+// Pages run it; the tests import rowTable without a page.
+if (typeof document !== "undefined") main();

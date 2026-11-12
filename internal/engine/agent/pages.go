@@ -95,10 +95,15 @@ func (s *Service) RevertRequest(ctx context.Context, id uuid.UUID) (revert.Reque
 // verifies the signature and runs the revert, or for a large plan records
 // it for the agent's batches.
 func (s *Service) RelayRevert(ctx context.Context, r revert.Response) (guard.AppliedRevert, error) {
-	if _, err := s.openRevert(ctx, r.RevertID, nil); err != nil {
+	open, err := s.openRevert(ctx, r.RevertID, nil)
+	if err != nil {
 		return guard.AppliedRevert{}, err
 	}
-	return s.Reverts.ApplyRevert(ctx, r.RevertID, r.Assertion())
+	applied, err := s.Reverts.ApplyRevert(ctx, r.RevertID, r.Assertion())
+	if err != nil {
+		return guard.AppliedRevert{}, s.applyRevertError(ctx, open, err)
+	}
+	return applied, nil
 }
 
 func (s *Service) openRevert(ctx context.Context, id uuid.UUID, proof *string) (ledger.Revert, error) {
@@ -114,9 +119,9 @@ func (s *Service) openRevert(ctx context.Context, id uuid.UUID, proof *string) (
 	}
 	switch {
 	case r.Status == ledger.RevertExpired || (r.Status == ledger.RevertPending && !s.Now().Before(r.ExpiresAt)):
-		return r, &mcp.ToolError{Code: string(guard.CodeRevertExpired), Message: "this revert expired; nothing was reverted. Run basalt revert again."}
+		return r, s.revertExpired(r)
 	case r.Status != ledger.RevertPending:
-		return r, &mcp.ToolError{Code: string(guard.CodeRevertInvalid), Message: "this revert is already signed"}
+		return r, alreadySigned(r)
 	}
 	return r, nil
 }

@@ -8,10 +8,11 @@ Design: [chat-only operator, section 5](redesign/specs/2026-11-12-chat-only-oper
 
 ## What gets served
 
-- Everything under `web/`: `approve/`, `revert/`, `register/`, `passkeys/`, `lib/*.js`, `style.css`.
-- `web/_headers` sets the same headers the engine's own pages send (`internal/websec`): `Content-Security-Policy: default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, and `.js` as `text/javascript`.
+- `make portal-build` copies only the served files into `dist/portal`: `approve/`, `revert/`, `register/`, `passkeys/` (each `index.html`), `lib/*.js` (no `*.test.mjs`), `style.css`, `_headers` and `_redirects`. These are the files the engine embeds (`web/embed.go`); `embed.go`, `embed_test.go` and the tests are not published. Cloudflare serves `dist/portal`, not `web/`.
+- `web/_redirects` rewrites (status 200) the engine's page paths to the page files: `/approvals/<id>` to `approve/`, `/reverts/<id>` to `revert/`, `/passkeys/register` to `register/`, `/passkeys/check` and `/passkeys/forget` to `passkeys/`. The pages load their scripts with `../lib/...`, which resolves to `/lib/...` from those paths. A test (`go test ./internal/engine/pages`) fails if the rules drift from the routes the engine serves.
+- `web/_headers` sets the same headers the engine's own pages send (`internal/websec`): `Content-Security-Policy: default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, `Cross-Origin-Opener-Policy: same-origin`, and `.js` as `text/javascript`. On top it sets `Strict-Transport-Security: max-age=31536000; includeSubDomains` (portal only; the engine serves plain http). It is sent by `portal.basaltvault.app`, so `includeSubDomains` covers only that host's subdomains, never the rest of `basaltvault.app`. There is no `preload`.
 - The policy allows scripts, styles and `fetch` from the page's own origin only. The pages have no inline scripts, inline styles or event handlers, and a test (`go test ./internal/websec`) fails if one is added or if `_headers` drifts from the engine's headers.
-- The `*.test.mjs` files under `web/lib` are served too. They are harmless static text.
+- `same-origin` COOP is safe here: the pages open no other windows, and the passkey calls (`navigator.credentials`) are same-origin WebAuthn in the page itself.
 
 ## 1. Lock down the accounts first
 
@@ -29,7 +30,7 @@ In the Cloudflare dashboard: Workers & Pages, Create, Pages, Connect to Git.
 1. Install the Cloudflare Pages GitHub app on `BasaltDBHq/BasaltDB` **only** (choose "Only select repositories", never "All repositories"), and pick that repository.
 2. Project name: `basalt-portal` (any name works; it only decides the `*.pages.dev` address).
 3. Production branch: `master`.
-4. Framework preset: None. Build command: leave empty. Build output directory: `web`.
+4. Framework preset: None. Build command: `make portal-build`. Build output directory: `dist/portal`.
 5. Save and deploy.
 
 Then in the project settings, Builds and deployments:
@@ -58,12 +59,17 @@ Cloudflare also serves the project at `<project>.pages.dev`, plus a URL per depl
 
 ## 6. Verify
 
+Use a real approval path (any UUID: the rewrite serves the page, which then reads its request from the engine). A 404 here means `_redirects` was not published. Links never end in a slash (`/approvals/<id>/` is not a route): on Pages such a path is not rewritten to a page, and the relative `../lib/` paths would break, so do not hand-write one. Pages `_redirects` cannot return a 404 rule to block it.
+
 ```sh
-curl -sI https://portal.basaltvault.app/approve/ | grep -iE 'content-security-policy|x-frame-options|referrer-policy'
+ID=0199c0de-0000-7000-8000-000000000000
+[ "$(curl -s -o /dev/null -w '%{http_code}' "https://portal.basaltvault.app/approvals/$ID")" = 200 ] || { echo 'FAIL: /approvals/<id> is not 200'; exit 1; }
+curl -sI "https://portal.basaltvault.app/approvals/$ID" | grep -iE 'content-security-policy|x-frame-options|referrer-policy|x-content-type-options|cross-origin-opener-policy|strict-transport-security'
 curl -sI https://portal.basaltvault.app/lib/codec.js | grep -i content-type
+curl -s -o /dev/null -w '%{http_code}\n' https://portal.basaltvault.app/lib/codec.test.mjs
 ```
 
-Expected: the three headers above on pages, and `content-type: text/javascript` on modules. Open `/passkeys/` in a browser and confirm the console shows no CSP violations.
+Expected: `200` on the first line, all six headers above, `content-type: text/javascript` on modules, and `404` for `codec.test.mjs`. Repeat for `/reverts/$ID` and `/passkeys/register`. Open `/passkeys/register` in a browser and confirm the console shows no CSP violations.
 
 ## Changing the portal
 

@@ -40,6 +40,9 @@ type initFlags struct {
 	rotated bool
 	// initArgs are the flags saved to engine.json (savedArgs).
 	initArgs []string
+	// personUIDs are the OS users the engine's person socket admits
+	// (--person-uid; else the person running init, see persons).
+	personUIDs []uint32
 }
 
 // runInit: basalt init. Shows the setup SQL, installs or upgrades
@@ -64,11 +67,21 @@ func runInit(c *cliIO, args []string) int {
 	if err != nil {
 		return c.fail(fmt.Errorf("%w: %w", errUsage, err))
 	}
+	if mayInstallService(c, f) {
+		if _, err := checkedExecutable(c); err != nil {
+			return c.fail(err)
+		}
+	}
 	admin, err := c.adminURL()
 	if err != nil {
 		return c.fail(err)
 	}
-	conn, err := connect(c.ctx, admin)
+	// The agent's connection string is built from the admin's: refuse one
+	// it cannot be built from before anything changes in the database.
+	if _, err := guard.AgentConnString(admin, role, ""); err != nil {
+		return c.fail(err)
+	}
+	conn, err := c.dial(c.ctx, admin)
 	if err != nil {
 		return c.fail(err)
 	}
@@ -233,6 +246,11 @@ func printSetupPlan(c *cliIO, f initFlags) error {
 		return nil
 	}
 	f.initArgs = f.savedArgs(c.goos)
+	uids, err := persons(c, f)
+	if err != nil {
+		return err
+	}
+	f.personUIDs = uids
 	bin, err := c.host.Executable()
 	if err != nil {
 		return err
@@ -273,6 +291,14 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 	fs.StringVar(&f.passkeyOrigin, "passkey-origin", links.DefaultLocal,
 		"pages origin the passkey belongs to: the engine's local pages http://localhost:<port> (RP ID localhost), or "+links.HostedConsole+" (RP ID basaltvault.app)")
 	fs.StringVar(&f.passkeyLabel, "passkey-label", "", "name of the passkey in the picker (default: the database name)")
+	fs.Func(flagPersonUID, "service: an OS user id the engine's person socket admits for basalt log, approve and revert (repeatable; default: you)", func(v string) error {
+		uid, err := parseUID(v)
+		if err != nil {
+			return err
+		}
+		f.personUIDs = append(f.personUIDs, uid)
+		return nil
+	})
 	f.agentRLS = AgentRLSAsk
 	fs.Var(&f.agentRLS, "agent-rls",
 		"on agent tables where row-level security hides every row: ask at a terminal, all-rows adds a policy letting the agent see them all, none skips the question")
@@ -361,7 +387,7 @@ const stateDirName = "state"
 // development passkey origin serves the approval page too, so held writes
 // link to the page that knows the registered passkey.
 func engineSettings(f initFlags, goos string) config.Settings {
-	s := config.Settings{SocketDir: f.socketDir}
+	s := config.Settings{SocketDir: f.socketDir, Mode: config.ModeSameUser}
 	if f.configPath != config.DefaultPath(goos) {
 		s.StateDir = filepath.Join(filepath.Dir(f.configPath), stateDirName)
 	}

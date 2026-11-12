@@ -312,8 +312,9 @@ func AgentRoleExists(ctx context.Context, q Querier, n Names, agent string) (boo
 //     ROLE) of any role but the agents group: an allow-list, so a new
 //     predefined role is refused too (pg_has_role is true for the role
 //     itself, and for every role when it is a superuser);
-//   - it is a member of the owner of the database, of an agent table or a
-//     guarded table, or of their schemas;
+//   - it is a member of the owner of the database or of any object in it
+//     (pg_shdepend): an owner can replace a function, view or default that
+//     a guarded write runs, and so run code as the next writer;
 //   - it holds a direct privilege on anything in basalt_meta, or TRUNCATE,
 //     TRIGGER, REFERENCES or MAINTAIN on an agent or guarded table.
 //
@@ -342,13 +343,12 @@ BEGIN
             DETAIL = '%[1]s is not a plain agent role: it has elevated attributes, or is a member of a role other than {{agents}}',
             HINT = 'Remove those attributes and memberships from the role, or use another agent name.';
     END IF;
-    IF pg_catalog.pg_has_role(v_role, v_db.datdba, 'MEMBER') OR EXISTS (SELECT 1 FROM pg_catalog.pg_class c
-        JOIN pg_catalog.pg_namespace s ON s.oid = c.relnamespace
-        WHERE c.oid = ANY (v_tables)
-          AND (pg_catalog.pg_has_role(v_role, c.relowner, 'MEMBER') OR pg_catalog.pg_has_role(v_role, s.nspowner, 'MEMBER'))) THEN
+    IF pg_catalog.pg_has_role(v_role, v_db.datdba, 'MEMBER') OR EXISTS (SELECT 1 FROM pg_catalog.pg_shdepend s
+        WHERE s.dbid = v_db.oid AND s.deptype = 'o' AND s.refclassid = 'pg_catalog.pg_authid'::pg_catalog.regclass
+          AND pg_catalog.pg_has_role(v_role, s.refobjid, 'MEMBER')) THEN
         RAISE EXCEPTION USING ERRCODE = 'BS008', MESSAGE = 'LEDGER_INPUT_INVALID',
-            DETAIL = '%[1]s is not a plain agent role: it owns, or is a member of the owner of, the database, an agent or guarded table, or its schema',
-            HINT = 'Use another agent name; an agent must not own what the guard protects.';
+            DETAIL = '%[1]s is not a plain agent role: it owns, or is a member of the owner of, this database or an object in it',
+            HINT = 'Reassign what it owns (REASSIGN OWNED BY %[1]s TO ...), or use another agent name.';
     END IF;
     IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c, LATERAL pg_catalog.aclexplode(c.relacl) a
         WHERE a.grantee = v_role

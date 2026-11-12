@@ -185,6 +185,26 @@ func TestInitRefusesAnAgentThatOwns(t *testing.T) {
 		"the database": func(t *testing.T, d *guardtest.DB, role string) {
 			d.Exec(t, `ALTER DATABASE `+pgx.Identifier{d.Admin.Config().Database}.Sanitize()+` OWNER TO `+role)
 		},
+		// Any object: its owner could replace it and run code as whoever
+		// writes the guarded table next.
+		"a trigger function": func(t *testing.T, d *guardtest.DB, role string) {
+			d.Exec(t, `CREATE FUNCTION public.touch() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$`)
+			d.Exec(t, `CREATE TRIGGER touch BEFORE UPDATE ON public.leads FOR EACH ROW EXECUTE FUNCTION public.touch()`)
+			d.Exec(t, `ALTER FUNCTION public.touch() OWNER TO `+role)
+		},
+		"a default's function": func(t *testing.T, d *guardtest.DB, role string) {
+			d.Exec(t, `CREATE FUNCTION public.zero() RETURNS int LANGUAGE sql AS $$ SELECT 0 $$`)
+			d.Exec(t, `ALTER TABLE public.leads ALTER COLUMN score SET DEFAULT public.zero()`)
+			d.Exec(t, `ALTER FUNCTION public.zero() OWNER TO `+role)
+		},
+		"a view": func(t *testing.T, d *guardtest.DB, role string) {
+			d.Exec(t, `CREATE VIEW public.lead_view AS SELECT id FROM public.leads`)
+			d.Exec(t, `ALTER VIEW public.lead_view OWNER TO `+role)
+		},
+		"a sequence": func(t *testing.T, d *guardtest.DB, role string) {
+			d.Exec(t, `CREATE SEQUENCE public.lead_seq`)
+			d.Exec(t, `ALTER SEQUENCE public.lead_seq OWNER TO `+role)
+		},
 		// A member of the owner, not the owner itself.
 		"through a group": func(t *testing.T, d *guardtest.DB, role string) {
 			d.Exec(t, `CREATE ROLE `+d.Names.Prefix+`_owners NOLOGIN`)

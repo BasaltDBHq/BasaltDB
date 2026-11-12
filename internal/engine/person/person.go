@@ -47,6 +47,8 @@ const (
 	MethodPrepareRevert   Method = "PREPARE_REVERT"
 	MethodApplyRevert     Method = "APPLY_REVERT"
 	MethodListRevertLines Method = "LIST_REVERT_LINES"
+	MethodStatus          Method = "STATUS"
+	MethodTarget          Method = "TARGET"
 )
 
 // Code is an error code of the person socket.

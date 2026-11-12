@@ -46,16 +46,16 @@ func vaultInStatus(t *testing.T, ev engineVault) map[string]any {
 func TestStatusReportsAKeyError(t *testing.T) {
 	t.Parallel()
 	stateDir := t.TempDir()
-	openVault(config.Config{}, stateDir, time.Now, quietLog(), nil)
+	openVault(config.Config{}, stateDir, time.Now, quietLog(), nil, nil)
 	require.NoError(t, os.Chmod(filepath.Join(stateDir, channel.KeyFileName), 0o644))
 
-	ev := openVault(config.Config{Vault: config.VaultOn, PagesURL: links.Portal}, stateDir, time.Now, quietLog(), nil)
+	ev := openVault(config.Config{Vault: config.VaultOn, PagesURL: links.Portal}, stateDir, time.Now, quietLog(), nil, nil)
 	require.Equal(t, map[string]any{"state": "KEY_ERROR"}, vaultInStatus(t, ev), "no engine id without the key file")
 }
 
 func TestStatusReportsVaultOff(t *testing.T) {
 	t.Parallel()
-	ev := openVault(config.Config{}, t.TempDir(), time.Now, quietLog(), nil)
+	ev := openVault(config.Config{}, t.TempDir(), time.Now, quietLog(), nil, nil)
 	v := vaultInStatus(t, ev)
 	require.Equal(t, "OFF", v["state"])
 	require.Equal(t, ev.status().EngineID, v["engineId"], "the engine id whenever the key file loads")

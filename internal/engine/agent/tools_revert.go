@@ -20,13 +20,19 @@ import (
 // (api/mcp/tools/preview_revert.json).
 type previewRevertArgs struct {
 	pagination.Params
+	scopeIDs
+}
+
+// scopeIDs are the scope arguments preview_revert and request_revert share:
+// exactly one of them names the change, run or task to revert.
+type scopeIDs struct {
 	ChangeID string `json:"changeId" validate:"omitempty,uuid"`
 	RunID    string `json:"runId" validate:"omitempty,uuid"`
 	TaskID   string `json:"taskId" validate:"omitempty,uuid"`
 }
 
-// scope returns the one scope the arguments name.
-func (a previewRevertArgs) scope() (guard.RevertScope, error) {
+// named returns the scopes the arguments name.
+func (a scopeIDs) named() []guard.RevertScope {
 	var out []guard.RevertScope
 	for _, s := range []struct {
 		kind revert.Scope
@@ -36,6 +42,12 @@ func (a previewRevertArgs) scope() (guard.RevertScope, error) {
 			out = append(out, guard.RevertScope{Kind: s.kind, ID: uuid.MustParse(s.id)})
 		}
 	}
+	return out
+}
+
+// scope returns the one scope the arguments name.
+func (a previewRevertArgs) scope() (guard.RevertScope, error) {
+	out := a.named()
 	if len(out) != 1 {
 		return guard.RevertScope{}, &ArgumentError{Message: "name exactly one of changeId, runId, taskId"}
 	}
@@ -123,8 +135,7 @@ func (h handlers) previewRevert(ctx context.Context, raw json.RawMessage) (any, 
 // (api/mcp/tools/request_revert.json): the request form (one scope and an
 // intent) or the wait form (revertId).
 type requestRevertArgs struct {
-	ChangeID         string `json:"changeId" validate:"omitempty,uuid"`
-	RunID            string `json:"runId" validate:"omitempty,uuid"`
+	scopeIDs
 	Intent           string `json:"intent" validate:"omitempty,max=500"`
 	RevertID         string `json:"revertId" validate:"omitempty,uuid"`
 	WaitForSignature *int   `json:"waitForSignature" validate:"omitempty,min=0,max=110"`
@@ -139,20 +150,13 @@ func (a requestRevertArgs) requestScope() (guard.RevertScope, error) {
 		return guard.RevertScope{}, &ArgumentError{Message: "invalid arguments: waitForSignature, reissueLink and signature go only with " +
 			"revertId; a new request returns the link at once, for you to show the person before anyone can sign"}
 	}
-	var out []guard.RevertScope
-	for _, s := range []struct {
-		kind revert.Scope
-		id   string
-	}{{revert.ScopeChange, a.ChangeID}, {revert.ScopeRun, a.RunID}} {
-		if s.id != "" {
-			out = append(out, guard.RevertScope{Kind: s.kind, ID: uuid.MustParse(s.id)})
-		}
-	}
+	out := a.named()
 	if len(out) != 1 {
-		return guard.RevertScope{}, &ArgumentError{Message: "invalid arguments: name exactly one of changeId, runId (with intent), or only revertId"}
+		return guard.RevertScope{}, &ArgumentError{Message: "invalid arguments: name exactly one of changeId, runId, taskId (with intent), " +
+			"or only revertId"}
 	}
 	if a.Intent == "" {
-		return guard.RevertScope{}, &ArgumentError{Message: "invalid arguments: intent is required with changeId or runId: why the person " +
+		return guard.RevertScope{}, &ArgumentError{Message: "invalid arguments: intent is required with changeId, runId or taskId: why the person " +
 			"reverts, in their words, in 1 to 500 characters; it is shown on the revert page they sign"}
 	}
 	return out[0], nil
@@ -162,8 +166,9 @@ func (a requestRevertArgs) requestScope() (guard.RevertScope, error) {
 // signature or a new link returns at once, so neither takes
 // waitForSignature; a signature takes no reissueLink.
 func (a requestRevertArgs) awaitParams() (AwaitRevertParams, error) {
-	if a.ChangeID != "" || a.RunID != "" || a.Intent != "" {
-		return AwaitRevertParams{}, &ArgumentError{Message: "invalid arguments: revertId takes no changeId, runId or intent; the revert already has them"}
+	if len(a.named()) > 0 || a.Intent != "" {
+		return AwaitRevertParams{}, &ArgumentError{Message: "invalid arguments: revertId takes no changeId, runId, taskId or intent; " +
+			"the revert already has them"}
 	}
 	reissue := a.ReissueLink != nil && *a.ReissueLink
 	if a.WaitForSignature != nil && (a.Signature != "" || reissue) {
@@ -244,9 +249,6 @@ func (h handlers) requestRevert(ctx context.Context, raw json.RawMessage) (any, 
 func (h handlers) requestRevertForm(ctx context.Context, raw json.RawMessage) (any, error) {
 	var args requestRevertArgs
 	if err := decodeArgs(raw, &args); err != nil {
-		if hasTaskID(raw) {
-			return nil, &ArgumentError{Message: "invalid arguments: " + taskScopeRefused}
-		}
 		return nil, err
 	}
 	if args.RevertID != "" {
@@ -274,15 +276,6 @@ func (h handlers) awaitRevert(ctx context.Context, args requestRevertArgs) (any,
 		return nil, err
 	}
 	return requestRevertFromDomain(r), nil
-}
-
-// hasTaskID reports whether the arguments name a taskId, which
-// request_revert refuses with its reason (N12-R7).
-func hasTaskID(raw json.RawMessage) bool {
-	var probe struct {
-		TaskID *json.RawMessage `json:"taskId"`
-	}
-	return json.Unmarshal(raw, &probe) == nil && probe.TaskID != nil
 }
 
 // --- revert_plan ---

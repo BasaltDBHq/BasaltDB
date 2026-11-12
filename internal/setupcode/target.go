@@ -140,6 +140,13 @@ func TargetOf(u *url.URL) (Target, error) {
 	return t, nil
 }
 
+// ConnTarget is the database a parsed connection (pgx's config: host,
+// port, database and user) connects to, with the Supabase project ref when
+// its user or host names one. A Unix socket directory is its host.
+func ConnTarget(host string, port int, database, user string) Target {
+	return Target{Host: host, Port: port, Database: database, SupabaseRef: supabaseRef(user, host)}
+}
+
 // supabaseRef is the Supabase project ref the user or the host names, or
 // "" when neither does.
 func supabaseRef(user, host string) string {

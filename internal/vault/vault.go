@@ -16,8 +16,12 @@
 //
 // Register and Unregister put the engine's short links on the Vault
 // (VC1-6), and every live link is registered again after each READY.
-// Serving the pages API in a session (VC1-7) builds on this connection;
-// until then the engine answers every session's message 1 with LINK_REFUSED.
+//
+// A page that holds a relay link opens a session through the Vault: the
+// engine resolves message 1's token to the link's psk (SessionLinks),
+// completes the handshake and answers the page's requests with the pages
+// API (Dispatcher), within the contract's limits and timeouts. Without
+// both, every session's message 1 is refused as a dead token is.
 package vault
 
 import (
@@ -131,6 +135,15 @@ type Options struct {
 	// Links are the live links registered again after every READY; none
 	// when nil.
 	Links Links
+	// SessionLinks resolve a session's token to its live link, and Pages
+	// answer the session's requests. With either nil, every session is
+	// refused at message 1 (LINK_REFUSED).
+	SessionLinks SessionLinks
+	Pages        Dispatcher
+	// IdleTimeout and SessionLifetime default to the contract's values
+	// when zero. Tests shorten them.
+	IdleTimeout     time.Duration
+	SessionLifetime time.Duration
 }
 
 func (o *Options) defaults() {
@@ -154,6 +167,8 @@ func (o *Options) defaults() {
 	setDefault(&o.UnreachableAfter, UnreachableAfter)
 	setDefault(&o.HandshakeTimeout, HandshakeTimeout)
 	setDefault(&o.RegisterTimeout, RegisterTimeout)
+	setDefault(&o.IdleTimeout, IdleTimeout)
+	setDefault(&o.SessionLifetime, SessionLifetime)
 	if o.Links == nil {
 		o.Links = noLiveLinks{}
 	}
@@ -164,6 +179,18 @@ func setDefault(d *time.Duration, v time.Duration) {
 		*d = v
 	}
 }
+
+// links resolve session tokens: none without pages to serve them.
+func (c *Client) links() SessionLinks {
+	if c.opts.SessionLinks == nil || c.opts.Pages == nil {
+		return noSessionLinks{}
+	}
+	return c.opts.SessionLinks
+}
+
+// dispatcher answers session requests; only an established session, which
+// links() let through, ever reaches it.
+func (c *Client) dispatcher() Dispatcher { return c.opts.Pages }
 
 // ErrRunning is Run called while the same Client is already running: one
 // Client keeps one socket.

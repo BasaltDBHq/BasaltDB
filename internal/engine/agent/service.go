@@ -268,7 +268,9 @@ func (s *Service) Query(ctx context.Context, p QueryParams) (QueryOutcome, error
 	// keeps the rows from the agent.
 	if err := s.PII.Observe(ctx, res.Columns, res.Rows); err != nil {
 		s.Log.Error("pii: the read's values could not be added to the dictionary; its rows are withheld", "err", err)
-		return QueryOutcome{}, fmt.Errorf("pii dictionary: %w", err)
+		// An engine failure, not the agent's SQL: INTERNAL even when a
+		// Postgres error (a map reload) caused it. The cause is logged above.
+		return QueryOutcome{}, &mcp.ToolError{Code: CodeInternal, Message: "internal engine error"}
 	}
 	change, err := s.Reads.RecordRead(ctx, guard.Read{
 		RunID: run.ID, Statement: p.SQL, Params: p.Params, Tables: stmt.Tables,

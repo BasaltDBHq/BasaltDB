@@ -69,6 +69,7 @@ var identifiers = map[string]string{
 	"nokey.email":     guard.EntityEmail,
 	"orders.email":    guard.EntityEmail,
 	"emails_v.mail":   guard.EntityEmail,
+	"slow_v.mail":     guard.EntityEmail,
 }
 
 // classify writes a class for the readable columns, as basalt classify does.

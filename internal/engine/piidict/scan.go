@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
@@ -31,15 +32,26 @@ const (
 	// budget / bytesPerAddBound values, so the build itself stays within
 	// pii.maxMemoryMB.
 	bytesPerAddBound = 16
+	// DefaultLoadTimeout bounds a catalog read (the map, a table's key),
+	// so a pool with no free connection cannot hold the scan for good.
+	DefaultLoadTimeout = time.Minute
+	// pageWaitMargin is how long a page may wait for a connection, on top
+	// of the agent's statement timeout.
+	pageWaitMargin = time.Minute
+	// failWarnAfter is how many cycles in a row may fail before the scan
+	// warns that the dictionary is not being rebuilt.
+	failWarnAfter = 3
 )
 
 // SQLSTATEs that make the scan skip one table and go on: the table or
 // column is gone, or the agent may no longer read it. Its values then drop
-// out of the next base, as values the agent cannot read should.
+// out of the next base, as values the agent cannot read should. A statement
+// timeout skips only a relation read in one pass (slowRelationError).
 const (
 	sqlStateUndefinedTable  = "42P01"
 	sqlStateUndefinedColumn = "42703"
 	sqlStateInsufficient    = "42501"
+	sqlStateQueryCanceled   = "57014"
 )
 
 // Relation kinds (pg_class.relkind) that have a ctid to page by.
@@ -80,7 +92,9 @@ type ScanOptions struct {
 	RowsPerSecond int
 	// MaxMemoryBytes is pii.maxMemoryMB in bytes.
 	MaxMemoryBytes int64
-	Now            func() time.Time
+	// LoadTimeout bounds each catalog read; DefaultLoadTimeout when zero.
+	LoadTimeout time.Duration
+	Now         func() time.Time
 	// Sleep waits d or until ctx is done (tests make it instant).
 	Sleep func(ctx context.Context, d time.Duration) error
 }
@@ -97,6 +111,9 @@ func (o ScanOptions) withDefaults() ScanOptions {
 	}
 	if o.MaxMemoryBytes <= 0 {
 		o.MaxMemoryBytes = pii.DefaultMaxMemoryMB * bytesPerMB
+	}
+	if o.LoadTimeout <= 0 {
+		o.LoadTimeout = DefaultLoadTimeout
 	}
 	if o.Now == nil {
 		o.Now = time.Now
@@ -126,6 +143,8 @@ type Scanner struct {
 	sources []ScanSource
 	opts    ScanOptions
 	log     *slog.Logger
+	// failures counts the cycles in a row that did not commit.
+	failures atomic.Int32
 }
 
 // NewScanner returns the engine's scanner. It panics on a missing
@@ -167,13 +186,29 @@ type ScanResult struct {
 	Columns int
 	Rows    int64
 	Values  int64
+	// Skipped counts the relations left out of this cycle.
+	Skipped int
 }
 
 // Cycle reads every IDENTIFIER column and commits a new base. On any error
-// but a table that is gone or no longer readable, the build is aborted and
-// the previous base and the delta stay (fail closed: a base missing values
-// is never committed).
+// but a relation it skips (gone, no longer readable, or too slow to read in
+// one pass), the build is aborted and the previous base and the delta stay
+// (fail closed: a base missing values is never committed). When cycles keep
+// failing it warns: once the delta is full, reads of IDENTIFIER columns fail.
 func (s *Scanner) Cycle(ctx context.Context) (ScanResult, error) {
+	res, err := s.cycle(ctx)
+	if err == nil {
+		s.failures.Store(0)
+		return res, nil
+	}
+	if n := s.failures.Add(1); n >= failWarnAfter && ctx.Err() == nil {
+		s.log.Warn(fmt.Sprintf("pii: the dictionary has not been rebuilt for %d scans in a row; once its delta is full, reads of IDENTIFIER columns fail", n),
+			"failedScans", n)
+	}
+	return res, err
+}
+
+func (s *Scanner) cycle(ctx context.Context) (ScanResult, error) {
 	start := s.opts.Now()
 	b, err := s.dict.StartBuild()
 	if err != nil {
@@ -193,7 +228,7 @@ func (s *Scanner) Cycle(ctx context.Context) (ScanResult, error) {
 		return run.res, err
 	}
 	s.log.Info("pii: dictionary scan", "columns", run.res.Columns, "rows", run.res.Rows,
-		"values", run.res.Values, "duration", s.opts.Now().Sub(start).String())
+		"values", run.res.Values, "skipped", run.res.Skipped, "duration", s.opts.Now().Sub(start).String())
 	return run.res, nil
 }
 
@@ -207,15 +242,18 @@ type scanRun struct {
 }
 
 func (r *scanRun) source(ctx context.Context, src ScanSource) error {
-	cols, err := src.Classes.Identifiers(ctx, src.DB)
+	lctx, cancel := context.WithTimeout(ctx, r.s.opts.LoadTimeout)
+	cols, err := src.Classes.Identifiers(lctx, src.DB)
+	cancel()
 	if err != nil {
 		return fmt.Errorf("agent %s: %w", src.Agent, err)
 	}
 	for _, t := range byTable(cols) {
 		err := r.table(ctx, src, t)
-		if skippable(err) {
-			r.s.log.Warn("pii: skipped a table the agent can no longer read", "agent", src.Agent,
-				"table", t.schema+"."+t.name, "err", err)
+		if why := skipReason(err); why != "" {
+			r.res.Skipped++
+			r.s.log.Warn("pii: skipped a relation in this scan: "+why, "agent", src.Agent,
+				"table", t.schema+"."+t.name, "columns", len(t.cols))
 			continue
 		}
 		if err != nil {
@@ -226,16 +264,23 @@ func (r *scanRun) source(ctx context.Context, src ScanSource) error {
 	return nil
 }
 
-func skippable(err error) bool {
+// skipReason says why a relation's error skips it instead of failing the
+// cycle, or "" when it does not: the relation is gone or no longer readable,
+// or a relation without a keyset is too slow to read in one pass.
+func skipReason(err error) string {
+	var slow *slowRelationError
+	if errors.As(err, &slow) {
+		return "it has no key to page by and a full read exceeds the statement timeout; values the agent reads from it are still added"
+	}
 	var pe *pgconn.PgError
 	if !errors.As(err, &pe) {
-		return false
+		return ""
 	}
 	switch pe.Code {
 	case sqlStateUndefinedTable, sqlStateUndefinedColumn, sqlStateInsufficient:
-		return true
+		return "the agent can no longer read it"
 	}
-	return false
+	return ""
 }
 
 // scanTable is one table's IDENTIFIER columns.
@@ -265,27 +310,42 @@ func byTable(cols []IdentifierColumn) []scanTable {
 	return out
 }
 
-// table pages through one table: by its primary key, by ctid for a table
-// without one, or (a view, a partitioned or foreign table without a key)
-// by each column's distinct values.
+// table pages through one table: by its primary key, or by ctid for a
+// table or materialized view without one. A relation with neither (a view,
+// a partitioned or foreign table without a key) is read in one pass, under
+// the agent's statement timeout: a timeout there skips that relation
+// (slowRelationError) instead of failing the whole cycle.
 func (r *scanRun) table(ctx context.Context, src ScanSource, t scanTable) error {
-	keys, relkind, err := keysetOf(ctx, src.DB, t.oid)
+	kctx, cancel := context.WithTimeout(ctx, r.s.opts.LoadTimeout)
+	keys, relkind, err := keysetOf(kctx, src.DB, t.oid)
+	cancel()
 	if err != nil {
 		return err
 	}
 	if len(keys) == 0 && relkind != relkindTable && relkind != relkindMaterialized {
-		for _, c := range t.cols {
-			if err := r.pageAll(ctx, src, valuePager(t, c)); err != nil {
-				return err
-			}
+		err := r.pageAll(ctx, src, onePassPager(t))
+		var pe *pgconn.PgError
+		if errors.As(err, &pe) && pe.Code == sqlStateQueryCanceled {
+			return &slowRelationError{err: err}
 		}
-		return nil
+		return err
 	}
 	if len(keys) == 0 {
 		keys = []keyColumn{{name: "ctid", typ: "tid", system: true}}
 	}
 	return r.pageAll(ctx, src, rowPager(t, keys))
 }
+
+// slowRelationError is a relation without a keyset that could not be read
+// in one pass within the statement timeout. The cycle skips it with a
+// warning; values the agent reads from it still go in the delta.
+type slowRelationError struct{ err error }
+
+func (e *slowRelationError) Error() string {
+	return "read in one pass, it exceeded the statement timeout: " + e.err.Error()
+}
+
+func (e *slowRelationError) Unwrap() error { return e.err }
 
 // keyColumn is one column of the keyset a table is paged by.
 type keyColumn struct {
@@ -351,6 +411,8 @@ type pager struct {
 	query   func(cursor []string) (string, []any, error)
 	keyCols int
 	cols    []Class
+	// onePass is a single statement with no LIMIT: its one page is all.
+	onePass bool
 }
 
 // rowPager pages a table by its keyset, all IDENTIFIER columns at once:
@@ -384,21 +446,21 @@ func rowPager(t scanTable, keys []keyColumn) func(page int) pager {
 	}
 }
 
-// valuePager pages one column of a relation without a keyset by its
-// distinct values in byte order.
-func valuePager(t scanTable, c Class) func(page int) pager {
-	return func(page int) pager {
-		col := pgx.Identifier{c.Column}.Sanitize()
+// onePassPager reads a relation without a keyset in one streamed
+// statement, all IDENTIFIER columns at once: SELECT c… FROM t. It reads
+// each row once (no per-page re-sort of the whole relation), and the
+// agent's statement timeout bounds it.
+func onePassPager(t scanTable) func(page int) pager {
+	return func(int) pager {
+		sel := make([]string, 0, len(t.cols))
+		for _, c := range t.cols {
+			sel = append(sel, pgx.Identifier{c.Column}.Sanitize())
+		}
 		from := pgx.Identifier{t.schema, t.name}.Sanitize()
-		inner := psql.Select(col + `::text COLLATE "C" AS v`).Distinct().From(from).Where(col + " IS NOT NULL")
 		return pager{
-			keyCols: 1, cols: []Class{c},
-			query: func(cursor []string) (string, []any, error) {
-				b := psql.Select("v", "v").FromSelect(inner, "d").OrderBy("v").Limit(uint64(page))
-				if cursor != nil {
-					b = b.Where(sq.Expr("v > ?", cursor[0]))
-				}
-				return b.ToSql()
+			cols: t.cols, onePass: true,
+			query: func([]string) (string, []any, error) {
+				return psql.Select(sel...).From(from).ToSql()
 			},
 		}
 	}
@@ -426,7 +488,7 @@ func (r *scanRun) pageAll(ctx context.Context, src ScanSource, mk func(page int)
 		if err := r.limit.wait(ctx, n); err != nil {
 			return err
 		}
-		if n < r.s.opts.PageRows {
+		if p.onePass || n < r.s.opts.PageRows {
 			return nil
 		}
 		cursor = next
@@ -440,6 +502,10 @@ func (r *scanRun) page(ctx context.Context, src ScanSource, p pager, cursor []st
 	if err != nil {
 		return nil, 0, err
 	}
+	// The statement timeout bounds the query; the margin bounds the wait
+	// for a connection.
+	ctx, cancel := context.WithTimeout(ctx, src.Limits.StatementTimeout+pageWaitMargin)
+	defer cancel()
 	tx, err := src.DB.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
 	if err != nil {
 		return nil, 0, err

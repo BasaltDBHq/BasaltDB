@@ -55,6 +55,10 @@ type Spec struct {
 // is soft-limited to twice the budget (GOMEMLIMIT, a dictionary build and
 // the rest of the engine), and the mapped dictionary file takes up to the
 // budget again. MemoryHigh throttles past that; MemoryMax stops the engine.
+// The limits are written at install time: after raising pii.maxMemoryMB,
+// basalt service install must run again to rewrite them. On macOS the
+// plist's ResidentSetSize limits are written for the record only: current
+// macOS does not enforce them, so GOMEMLIMIT is the only limit there.
 const (
 	memoryHighFactor = 3
 	memoryMaxFactor  = 4

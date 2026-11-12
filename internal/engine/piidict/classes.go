@@ -87,17 +87,31 @@ type snapshot struct {
 
 // Map is one agent's classification map (CONTRACT.md, PII classification,
 // Engine): agent_pii_columns keyed by table oid and attribute number, with
-// the fingerprint and catalog row read with it. Lookups take no lock; loads
-// are serialized. Safe for concurrent use.
+// the fingerprint and catalog row read with it. Lookups take no lock. No
+// lock is ever held while waiting for the database: a load through the
+// agent's pool runs as one flight that others wait on with their own
+// context, and a load inside a caller's transaction (a write's RETURNING)
+// reads on that transaction's connection, so a full pool cannot wedge it.
+// Safe for concurrent use.
 type Map struct {
 	log  *slog.Logger
 	snap atomic.Pointer[snapshot]
 	// loads counts loads (tests).
 	loads atomic.Int64
 
-	mu     sync.Mutex // serializes loads; guards tried and warned
-	tried  map[uint32]struct{}
-	warned map[ColumnRef]struct{}
+	mu        sync.Mutex // guards the fields below; never held during I/O
+	tried     map[uint32]struct{}
+	warned    map[ColumnRef]struct{}
+	flight    *flight // the pool load running now, or nil
+	nextSeq   uint64  // the sequence number of the next load
+	storedSeq uint64  // the sequence number of the stored snapshot
+}
+
+// flight is one load through the pool, which others may wait on.
+type flight struct {
+	seq  uint64
+	done chan struct{}
+	err  error
 }
 
 // NewMap returns an empty map; it loads on first use. It panics on a nil
@@ -106,41 +120,111 @@ func NewMap(log *slog.Logger) *Map {
 	if log == nil {
 		panic("piidict: logger required")
 	}
-	return &Map{log: log, tried: map[uint32]struct{}{}, warned: map[ColumnRef]struct{}{}}
+	return &Map{log: log, tried: map[uint32]struct{}{}, warned: map[ColumnRef]struct{}{}, nextSeq: 1}
 }
 
 // Loads is how many times the map was loaded.
 func (m *Map) Loads() int64 { return m.loads.Load() }
 
 // Load reads agent_pii_columns, pii_fingerprint() and agent_pii_catalog
-// in one snapshot and replaces the map.
+// in one snapshot, begun after this call, and replaces the map.
 func (m *Map) Load(ctx context.Context, db guard.Querier) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.loadLocked(ctx, db)
+	return m.load(ctx, db, true)
 }
 
-func (m *Map) loadLocked(ctx context.Context, db guard.Querier) error {
+// load loads a snapshot. fresh asks for a load begun after this call (an
+// unknown oid, a moved catalog); otherwise a load already running will do.
+func (m *Map) load(ctx context.Context, db guard.Querier, fresh bool) error {
+	if _, ok := db.(beginner); !ok {
+		// Inside the caller's transaction: read on its own connection.
+		m.mu.Lock()
+		seq := m.nextSeq
+		m.nextSeq++
+		m.mu.Unlock()
+		s, err := readSnapshot(ctx, db)
+		if err != nil {
+			return fmt.Errorf("load the pii classification: %w", err)
+		}
+		m.store(seq, s)
+		return nil
+	}
+	f, lead, err := m.joinFlight(ctx, fresh)
+	if err != nil {
+		return err
+	}
+	if !lead {
+		return waitFlight(ctx, f)
+	}
 	s, err := withSnapshot(ctx, db, readSnapshot)
 	if err != nil {
-		return fmt.Errorf("load the pii classification: %w", err)
+		f.err = fmt.Errorf("load the pii classification: %w", err)
+	} else {
+		m.store(f.seq, s)
 	}
-	m.snap.Store(s)
-	m.loads.Add(1)
-	return nil
+	m.mu.Lock()
+	m.flight = nil
+	m.mu.Unlock()
+	close(f.done)
+	return f.err
 }
 
-// Tick is the hourly check: it reads the fingerprint and the catalog row
-// again and reloads the map when either differs from the values kept at the
-// last load (or nothing was loaded yet). It then starts a new tick: every
-// unknown oid may reload once more, and missing columns are warned again.
-func (m *Map) Tick(ctx context.Context, db guard.Querier) (reloaded bool, err error) {
+// joinFlight returns the flight to wait on, or a new one the caller leads
+// (lead). A fresh request first waits out a flight begun before it.
+func (m *Map) joinFlight(ctx context.Context, fresh bool) (f *flight, lead bool, err error) {
+	m.mu.Lock()
+	need := uint64(0)
+	if fresh {
+		need = m.nextSeq
+	}
+	for m.flight != nil && m.flight.seq < need {
+		old := m.flight
+		m.mu.Unlock()
+		if err := waitFlight(ctx, old); err != nil && ctx.Err() != nil {
+			return nil, false, err
+		}
+		m.mu.Lock()
+	}
+	defer m.mu.Unlock()
+	if m.flight != nil {
+		return m.flight, false, nil
+	}
+	m.flight = &flight{seq: m.nextSeq, done: make(chan struct{})}
+	m.nextSeq++
+	return m.flight, true, nil
+}
+
+// waitFlight waits for f, or for ctx.
+func waitFlight(ctx context.Context, f *flight) error {
+	select {
+	case <-f.done:
+		return f.err
+	case <-ctx.Done():
+		return fmt.Errorf("wait for the pii classification: %w", ctx.Err())
+	}
+}
+
+// store keeps s unless a later load was stored already.
+func (m *Map) store(seq uint64, s *snapshot) {
+	m.loads.Add(1)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if seq < m.storedSeq {
+		return
+	}
+	m.storedSeq = seq
+	m.snap.Store(s)
+}
+
+// Tick is the hourly check: it starts a new tick (every unknown oid may
+// reload once more, and missing columns are warned again), then reads the
+// fingerprint and the catalog row and reloads the map when either differs
+// from the values kept at the last load (or nothing was loaded yet).
+func (m *Map) Tick(ctx context.Context, db guard.Querier) (reloaded bool, err error) {
+	m.mu.Lock()
 	clear(m.tried)
 	clear(m.warned)
-	cur := m.snap.Load()
-	if cur != nil {
+	m.mu.Unlock()
+	if cur := m.snap.Load(); cur != nil {
 		now, err := withSnapshot(ctx, db, readMarks)
 		if err != nil {
 			return false, fmt.Errorf("read the pii fingerprint: %w", err)
@@ -149,7 +233,7 @@ func (m *Map) Tick(ctx context.Context, db guard.Querier) (reloaded bool, err er
 			return false, nil
 		}
 	}
-	return true, m.loadLocked(ctx, db)
+	return true, m.load(ctx, db, true)
 }
 
 // Resolve returns the class of each column. A column whose table oid is
@@ -184,27 +268,29 @@ func (m *Map) Resolve(ctx context.Context, db guard.Querier, refs []ColumnRef) (
 // none is loaded or a table oid of refs is unknown and not yet tried this
 // tick.
 func (m *Map) current(ctx context.Context, db guard.Querier, refs []ColumnRef) (*snapshot, error) {
-	if s := m.snap.Load(); s != nil && !s.unknown(refs) {
+	s := m.snap.Load()
+	if s != nil && !s.unknown(refs) {
 		return s, nil
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	s := m.snap.Load()
 	if s == nil {
-		if err := m.loadLocked(ctx, db); err != nil {
+		if err := m.load(ctx, db, false); err != nil {
 			return nil, err
 		}
 		s = m.snap.Load()
 	}
+	m.mu.Lock()
 	fresh := m.tryUnknownLocked(s, refs)
+	m.mu.Unlock()
 	if len(fresh) == 0 {
 		return s, nil
 	}
-	if err := m.loadLocked(ctx, db); err != nil {
+	if err := m.load(ctx, db, true); err != nil {
 		// Not tried after all: the next result from those tables reloads.
+		m.mu.Lock()
 		for _, oid := range fresh {
 			delete(m.tried, oid)
 		}
+		m.mu.Unlock()
 		return nil, err
 	}
 	return m.snap.Load(), nil

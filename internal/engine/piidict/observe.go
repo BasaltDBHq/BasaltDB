@@ -3,6 +3,7 @@ package piidict
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -44,6 +45,25 @@ func (o *Observer) Observe(ctx context.Context, db guard.Querier, cols []agentdb
 	if len(rows) == 0 || len(cols) == 0 {
 		return nil
 	}
+	if err := o.observe(ctx, db, cols, rows); err != nil {
+		return &DictionaryError{err: err}
+	}
+	return nil
+}
+
+// DictionaryError is a failure to classify or add the values of a result:
+// an engine failure, not the agent's SQL, so the tool answers INTERNAL even
+// when a Postgres error (a map reload) caused it. It does not unwrap, so the
+// tool's error mapping never sees that Postgres error; errors.Is still finds
+// the cause (pii.ErrDeltaFull).
+type DictionaryError struct{ err error }
+
+func (e *DictionaryError) Error() string { return "pii dictionary: " + e.err.Error() }
+
+// Is reports whether the cause is target.
+func (e *DictionaryError) Is(target error) bool { return errors.Is(e.err, target) }
+
+func (o *Observer) observe(ctx context.Context, db guard.Querier, cols []agentdb.Column, rows []map[string]any) error {
 	refs := make([]ColumnRef, len(cols))
 	for i, c := range cols {
 		refs[i] = ColumnRef{TableOID: c.TableOID, Attnum: c.Attnum}

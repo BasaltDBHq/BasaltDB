@@ -6,12 +6,17 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 )
 
 // maxLoggedNames bounds the column names one log line lists.
 const maxLoggedNames = 50
+
+// TickTimeout bounds the hourly check, so a database that does not answer
+// (or a pool that has no free connection) cannot hold it for good.
+const TickTimeout = time.Minute
 
 // Watch is one agent's hourly classification check, run by its upkeep tick
 // (and so also at start): it reloads the map when the fingerprint or the
@@ -35,6 +40,8 @@ func NewWatch(agent string, classes *Map, db guard.Querier, log *slog.Logger) *W
 // Tick reloads the map when needed and warns about unclassified columns
 // and columns whose type changed. Names are not PII; no value is read.
 func (w *Watch) Tick(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, TickTimeout)
+	defer cancel()
 	var errs []error
 	reloaded, err := w.classes.Tick(ctx, w.db)
 	switch {

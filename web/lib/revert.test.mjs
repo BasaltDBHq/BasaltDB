@@ -138,7 +138,7 @@ test("a large plan's link carries its sample (N12-4)", async () => {
   assert.throws(() => parseRevertBinding(f.binding.replace('"batched": true', '"batched": false')), /must be true/);
 });
 
-test("a large plan's sample keeps room for restored rows (RS-1)", async () => {
+test("a large plan's sample keeps room for restored rows (RSS-1)", async () => {
   assert.equal(REVERT_SAMPLE_SHARE, 500);
   assert.deepEqual(revertSampleCounts(1500, 50), { skips: 950, restores: 50 });
   assert.deepEqual(revertSampleCounts(2000, 2000), { skips: 500, restores: 500 });
@@ -154,7 +154,7 @@ test("a large plan's sample keeps room for restored rows (RS-1)", async () => {
   assert.equal(req.lines.filter((l) => l.action === "RESTORE").length, 50);
   assert.equal(req.lines.filter((l) => l.action === "SKIP").length, 950);
 
-  // The sample before RS-1 (1000 SKIP lines, no RESTORE line) is refused,
+  // The sample before RSS-1 (1000 SKIP lines, no RESTORE line) is refused,
   // even with a binding whose sampleHash matches it.
   const decoded = JSON.parse(inflateRawSync(Buffer.from(f.fragment.slice(2), "base64url")).toString("utf8"));
   const skips = decoded.lines.filter((l) => l.includes('"action": "SKIP"'));

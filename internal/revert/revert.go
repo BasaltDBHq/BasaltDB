@@ -37,7 +37,7 @@ const KindRevert = "REVERT"
 
 // MaxLines is the most lines, restored and skipped, of a revert applied in
 // one call, and the most lines a revert link carries (decisions M3-9,
-// N12-4, RS-1). A plan with more lines is batched: the person signs it once and
+// N12-4, RSS-1). A plan with more lines is batched: the person signs it once and
 // the agent applies it in batches.
 const MaxLines = 1000
 
@@ -170,7 +170,7 @@ const SampleShare = MaxLines / 2
 // SampleCounts returns how many SKIP and RESTORE lines a plan with skipped
 // SKIP lines and rows RESTORE lines carries in its sample: up to
 // SampleShare of each, and when one kind has fewer the other fills the
-// rest, at most MaxLines in all (decision N12-4, amended by RS-1). Both
+// rest, at most MaxLines in all (decision N12-4, amended by RSS-1). Both
 // counts come from the signed binding, so a page can check them.
 func SampleCounts(skipped, rows int) (skips, restores int) {
 	skips = min(skipped, max(SampleShare, MaxLines-rows))
@@ -180,7 +180,7 @@ func SampleCounts(skipped, rows int) (skips, restores int) {
 
 // Sample returns the lines a revert link carries for a plan whose lines are
 // in signed order: the SKIP lines, then the RESTORE lines, each group in
-// signed order and cut to SampleCounts (decisions N12-4, RS-1). Postgres
+// signed order and cut to SampleCounts (decisions N12-4, RSS-1). Postgres
 // builds the same sample in prepare_revert.
 func Sample(lines []string) ([]string, error) {
 	skips := make([]string, 0, len(lines))

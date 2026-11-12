@@ -138,7 +138,7 @@ func TestPrepareBatchedPlan(t *testing.T) {
 
 // TestBatchedSampleKeepsRestores: with more SKIP lines than half a sample,
 // Postgres still puts RESTORE lines in the link, split as revert.Sample does
-// (decision RS-1). Before version 17 this plan's sample held 700 SKIP lines
+// (decision RSS-1). Before version 17 this plan's sample held 700 SKIP lines
 // and only 300 RESTORE lines; with 1000 SKIP lines it held none.
 func TestBatchedSampleKeepsRestores(t *testing.T) {
 	t.Parallel()

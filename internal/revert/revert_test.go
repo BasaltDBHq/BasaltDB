@@ -124,7 +124,7 @@ type fixtures struct {
 		Skipped    int    `json:"skipped"`
 	} `json:"batched"`
 	// BatchedSkips is a large plan with more SKIP lines than a sample holds:
-	// its sample still carries every RESTORE line (decision RS-1).
+	// its sample still carries every RESTORE line (decision RSS-1).
 	BatchedSkips struct {
 		Fragment string `json:"fragment"`
 		Rows     int    `json:"rows"`
@@ -381,7 +381,7 @@ func mixedLines(skips, restores int) []string {
 
 // TestSampleShowsBothKinds: a large plan's sample keeps room for 500 SKIP
 // and 500 RESTORE lines, and a kind with fewer leaves its room to the other
-// (decision RS-1), so SKIP lines can never crowd out every RESTORE line.
+// (decision RSS-1), so SKIP lines can never crowd out every RESTORE line.
 func TestSampleShowsBothKinds(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -434,7 +434,7 @@ func TestBatchedRequestChecksTheSplit(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 50, b.Rows)
 
-	// The sample before RS-1: the first 1000 SKIP lines and no RESTORE line.
+	// The sample before RSS-1: the first 1000 SKIP lines and no RESTORE line.
 	var skipsOnly []string
 	for _, text := range all {
 		if strings.Contains(text, `"SKIP"`) && len(skipsOnly) < revert.MaxLines {

@@ -31,8 +31,8 @@ export const REVERT_RESPONSE_PREFIX = "basalt-revert.1.";
 export const KIND_APPROVE = "APPROVE";
 export const MAX_ROWS = 50; // foundation, Default policy: over 50 rows is refused
 export const KIND_REVERT = "REVERT";
-export const MAX_REVERT_LINES = 1000; // decisions M3-9, N12-4, RS-1: lines of a one-call revert, and lines a link carries
-export const REVERT_SAMPLE_SHARE = MAX_REVERT_LINES / 2; // decision RS-1: room a sample keeps for each kind of line
+export const MAX_REVERT_LINES = 1000; // decisions M3-9, N12-4, RSS-1: lines of a one-call revert, and lines a link carries
+export const REVERT_SAMPLE_SHARE = MAX_REVERT_LINES / 2; // decision RSS-1: room a sample keeps for each kind of line
 export const MAX_REVERT_BATCH = 200; // decision N12-3: lines per apply_revert_batch
 export const REVERT_APPLY_HOURS = 24; // decision N12-2: a signed large plan runs within 24 hours
 export const ALG_ES256 = -7;
@@ -579,7 +579,7 @@ async function checkAllLines(texts, binding) {
 // revertSampleCounts is how many SKIP and RESTORE lines a batched plan's
 // sample carries, from the signed binding's skipped and rows: up to
 // REVERT_SAMPLE_SHARE of each, and when one kind has fewer the other fills
-// the rest, at most MAX_REVERT_LINES (decision RS-1, amending N12-4). Same as
+// the rest, at most MAX_REVERT_LINES (decision RSS-1, amending N12-4). Same as
 // revert.SampleCounts in Go.
 export function revertSampleCounts(skipped, rows) {
   const skips = Math.min(skipped, Math.max(REVERT_SAMPLE_SHARE, MAX_REVERT_LINES - rows));
@@ -603,7 +603,7 @@ export function revertShown(req) {
 }
 
 // checkSample: a large plan's request carries its sample (decisions N12-4,
-// RS-1): MAX_REVERT_LINES lines, SKIP lines first, as many of each kind as
+// RSS-1): MAX_REVERT_LINES lines, SKIP lines first, as many of each kind as
 // revertSampleCounts gives, hashing to sampleHash. The signature still
 // covers every line through rowsHash.
 async function checkSample(texts, binding) {

@@ -1,7 +1,7 @@
 package guard
 
 // Version 17: a batched plan's sample keeps room for both kinds of line
-// (decision RS-1, amending N12-4). Up to version 16 the sample was the first
+// (decision RSS-1, amending N12-4). Up to version 16 the sample was the first
 // 1000 lines with SKIP lines first, so a plan with 1000 or more SKIP lines
 // showed the person no RESTORE line at all. prepare_revert is the same as
 // version 9's except for the sample, which _revert_sample now builds as
@@ -10,7 +10,7 @@ const v17RevertSample = `
 -- The lines a batched plan's link carries: up to half of p_max SKIP lines
 -- and up to half RESTORE lines; when one kind has fewer, the other fills
 -- the rest, at most p_max in all. SKIP lines first, each kind in signed
--- order (decision RS-1). Must match revert.Sample and revert.SampleCounts.
+-- order (decision RSS-1). Must match revert.Sample and revert.SampleCounts.
 CREATE OR REPLACE FUNCTION basalt_meta._revert_sample(p_lines text[], p_max int) RETURNS text[]
 LANGUAGE sql IMMUTABLE SET search_path = pg_catalog AS $$
     WITH l AS (
@@ -38,7 +38,7 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog AS $$
 #variable_conflict use_column
 DECLARE
     c_ttl       constant interval := interval '1 hour';
-    c_max_lines constant int := 1000; -- one-call revert and lines in a link (M3-9, N12-4, RS-1)
+    c_max_lines constant int := 1000; -- one-call revert and lines in a link (M3-9, N12-4, RSS-1)
     v_id        uuid := basalt_meta._uuidv7();
     v_expires   timestamptz := now() + c_ttl;
     v_chains    basalt_meta.revert_chain[];

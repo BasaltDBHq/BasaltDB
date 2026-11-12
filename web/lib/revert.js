@@ -58,7 +58,7 @@ function renderSummary(req) {
     $("plan").textContent = `${plural(b.rows + b.skipped, "row")}, all shown below, restored in one step when you sign.`;
     return;
   }
-  // A large plan (decisions N12-1 to N12-4, RS-1): the link carries a
+  // A large plan (decisions N12-1 to N12-4, RSS-1): the link carries a
   // sample. The counts come from the binding and the checked lines only.
   const shown = revertShown(req);
   $("plan").textContent =

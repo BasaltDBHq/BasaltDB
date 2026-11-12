@@ -243,19 +243,25 @@ func (PhoneDetector) Detect(text string) []Span {
 }
 
 // gluedToANumber reports a "+" number written without separators right after
-// a digit or a '.', as in a version's build metadata (1.0.0+20130313144700),
-// unless only letters and digits stand between it and the phone before it
-// ("+447700900456+447700900457", "+44…A0+44…"): that phone's token takes
-// them in, so a second pass sees this number at the start of what follows
-// the token. prevEnd is where the phone before ends, or -1.
+// a digit, or after a '.' that follows a digit, as in a version's build
+// metadata (1.0.0+20130313144700). After a word ("Tel.+44…", "Nr.+49…") it is
+// a phone. So is one where only letters and digits, and then maybe a '.',
+// stand between it and the phone before it ("+447700900456+447700900457",
+// "+44…456.+44…"): that phone's token takes the letters and digits in, so a
+// second pass sees this number right after the token. prevEnd is where the
+// phone before ends, or -1.
 func gluedToANumber(text string, start, end, prevEnd int) bool {
 	if start == 0 || text[start] != '+' || asciiDigits(text[start:end]) != end-start-1 {
 		return false
 	}
-	if prevEnd >= 0 && allASCIIAlnum(text[prevEnd:start]) {
+	before := start
+	if text[start-1] == '.' {
+		before--
+	}
+	if before == 0 || !isASCIIDigit(text[before-1]) {
 		return false
 	}
-	return isASCIIDigit(text[start-1]) || text[start-1] == '.'
+	return prevEnd < 0 || prevEnd > before || !allASCIIAlnum(text[prevEnd:before])
 }
 
 func allASCIIAlnum(s string) bool {
@@ -334,8 +340,26 @@ func separatorsOK(number string) bool {
 	return strings.Count(number, "/") == 1 && strings.ContainsAny(number[:slash], " .-\r\n()")
 }
 
-// isDecimal reports a number whose one separator is a single '.'.
+// minDottedPhoneDigits is how many digits a number written with one '.' needs
+// to be a phone rather than a signed decimal: a coordinate has up to eight
+// (+48.858370, possible for Poland), a phone with its country code ten or
+// more (+44.7700900123, +1.2025550143).
+const minDottedPhoneDigits = 10
+
+// isDecimal reports a signed decimal: a number whose one separator is a
+// single '.', and whose digits are too few for a phone or, read after "+",
+// no possible number (+48.858370, +0.00012345). Otherwise it is a phone
+// written with a dot (+44.7700900123).
 func isDecimal(number string) bool {
+	if !isDotted(number) {
+		return false
+	}
+	digits := asciiDigitsOf(strings.TrimPrefix(number, iddPrefix))
+	return len(digits) < minDottedPhoneDigits || !possibleLength(digits)
+}
+
+// isDotted reports a number whose one separator is a single '.'.
+func isDotted(number string) bool {
 	seps := strings.Map(func(r rune) rune {
 		if r == '+' || isASCIIDigit(byte(r)) {
 			return -1

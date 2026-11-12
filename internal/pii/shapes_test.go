@@ -145,6 +145,9 @@ func TestPhoneSeparatorsAreFound(t *testing.T) {
 		{"no-break space", "+44 7700 900123", "+44 7700 900123"},
 		{"00 prefix", "0044 20 7946 0958", "+44 20 7946 0958"},
 		{"00 prefix, fictional range", "0044 7700 900123", "+44 7700 900123"},
+		{"one dot, UK", "+44.7700900123", "+44 7700 900123"},
+		{"one dot, US", "+1.2025550143", "+1 202 555 0143"},
+		{"one dot, France", "+33.123456789", "+33 1 23 45 67 89"},
 		{"00 prefix, Italian leading zero", "0039 06 1234 5678", "+39 06 1234 5678"},
 		{"00 prefix with dashes", "001-202-555-0143", "+1 202 555 0143"},
 		{"US form with two spaces", "(202)  555-0143", "(202) 555-0143"},
@@ -211,6 +214,8 @@ func TestPhoneShapeKnownLimits(t *testing.T) {
 		"call x0044 20 7946 0958 now",  // 00 touching a letter
 		"call +4420794609581234 now",   // digits glued past 15, no separator
 		"call +1     202 555 0143 now", // five spaces between groups
+		"id:1+447700900123",            // a + number glued to a digit
+		"0+447700900123",               // a + number glued to a digit
 		"call (202)     555-0143 now",  // five spaces in the US form
 	} {
 		_, reps := tokenize(t, tz, in)
@@ -253,6 +258,31 @@ func TestAPhoneBeforeASlashOrALineBreak(t *testing.T) {
 	}
 }
 
+// A "+" number glued to a word, or to the phone before it, is a phone.
+func TestAGluedPhoneAfterAWordIsFound(t *testing.T) {
+	k := newKeys(t, testMaster)
+	tz := patternTokenizer(t)
+	cases := []struct {
+		in      string
+		numbers []string
+	}{
+		{"Tel.+447700900123", []string{"+447700900123"}},
+		{"Nr.+4915112345678", []string{"+4915112345678"}},
+		{"+447700900456.+447700900457", []string{"+447700900456", "+447700900457"}},
+	}
+	for _, c := range cases {
+		out, reps := tokenize(t, tz, c.in)
+		require.Len(t, reps, len(c.numbers), "%q", c.in)
+		for i, n := range c.numbers {
+			require.Equal(t, n, c.in[reps[i].Start:reps[i].End], "%q", c.in)
+			require.Equal(t, mustToken(t, k, pii.EntityPhone, n, ""), reps[i].Token, "%q", c.in)
+		}
+		again, more := tokenize(t, tz, out)
+		require.Empty(t, more, "%q", c.in)
+		require.Equal(t, out, again, "%q", c.in)
+	}
+}
+
 // Phone shapes still taken for phones although they may be none: a "+"
 // number is found by shape alone, whatever libphonenumber says of it (Known
 // limits). Pinned so a change is a decision.
@@ -260,6 +290,7 @@ func TestPhoneShapeKnownFalsePositives(t *testing.T) {
 	tz := patternTokenizer(t)
 	for _, in := range []string{
 		"score +12 3456 7890 points", // QA F14
+		"id 0049 1234 5678",          // a 00 id of a possible length
 	} {
 		_, reps := tokenize(t, tz, in)
 		require.Len(t, reps, 1, "%q", in)

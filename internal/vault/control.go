@@ -11,14 +11,19 @@ import (
 
 // Control message types (api/mcp/vault/control-message.schema.json).
 const (
-	typeChallenge    = "CHALLENGE"
-	typeAuth         = "AUTH"
-	typeReady        = "READY"
-	typeOK           = "OK"
-	typeError        = "ERROR"
-	typeSessionOpen  = "SESSION_OPEN"
-	typeSessionClose = "SESSION_CLOSE"
+	typeChallenge      = "CHALLENGE"
+	typeAuth           = "AUTH"
+	typeReady          = "READY"
+	typeRegisterLink   = "REGISTER_LINK"
+	typeUnregisterLink = "UNREGISTER_LINK"
+	typeOK             = "OK"
+	typeError          = "ERROR"
+	typeSessionOpen    = "SESSION_OPEN"
+	typeSessionClose   = "SESSION_CLOSE"
 )
+
+// CodeLinkConflict is the ERROR code of a token another engine registered.
+const CodeLinkConflict = "LINK_CONFLICT"
 
 // authVersion is AUTH's only version.
 const authVersion = 1
@@ -31,7 +36,7 @@ const closeNormal = 1000
 
 // errorCodes are the ERROR codes the Vault may send.
 var errorCodes = map[string]bool{
-	"LINK_CONFLICT":   true,
+	CodeLinkConflict:  true,
 	"LINK_LIMIT":      true,
 	"INVALID_EXPIRY":  true,
 	"UNKNOWN_SESSION": true,
@@ -53,6 +58,22 @@ type authMsg struct {
 	Type    string `json:"type"`
 	Version int    `json:"version"`
 	Sig     string `json:"sig"`
+}
+
+// registerLinkMsg is REGISTER_LINK, engine to Vault. It carries the link's
+// token only: never its secret or psk.
+type registerLinkMsg struct {
+	Type      string `json:"type"`
+	Ref       int64  `json:"ref"`
+	LinkToken string `json:"linkToken"`
+	ExpiresAt string `json:"expiresAt"`
+}
+
+// unregisterLinkMsg is UNREGISTER_LINK, engine to Vault.
+type unregisterLinkMsg struct {
+	Type      string `json:"type"`
+	Ref       int64  `json:"ref"`
+	LinkToken string `json:"linkToken"`
 }
 
 // typeOnly is READY, and the head every control message is read by.

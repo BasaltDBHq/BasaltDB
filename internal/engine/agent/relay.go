@@ -1,0 +1,66 @@
+package agent
+
+import (
+	"context"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/basaltdbhq/basaltdb/internal/channel"
+	"github.com/basaltdbhq/basaltdb/internal/links"
+	"github.com/basaltdbhq/basaltdb/internal/vault"
+)
+
+// LinkRelay registers portal short links with the Vault (CONTRACT.md, Vault
+// channel, The engine's socket to the Vault). *vault.Client is the one
+// implementation outside tests.
+type LinkRelay interface {
+	// Connected reports whether the engine's socket is READY.
+	Connected() bool
+	// Register routes token to this engine until expiresAt; any error
+	// means the link must not be handed over.
+	Register(ctx context.Context, token channel.LinkToken, expiresAt time.Time) error
+}
+
+// relayLink is a new portal short link over the Vault (CONTRACT.md, Vault
+// channel), or "" to fall back. Only while the socket is READY: the engine
+// issues the link's secret, registers the token derived from it (never the
+// secret or its psk) and waits up to vault.RegisterTimeout for OK. With no
+// socket, an ERROR or no answer, the new link is revoked and never handed
+// over, and the caller falls back (CONTRACT.md: the short link is not
+// issued). Issuing revokes the item's earlier link, whose token the link
+// store's OnDrop unregisters; so does revoking this one.
+func (s *Service) relayLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time) string {
+	if !s.Relay.Connected() {
+		return ""
+	}
+	secret, token, err := s.Links.IssueRelay(id, expires)
+	if err != nil {
+		s.Log.Error("issue a portal short link; handing over the long link", "id", id, "err", err)
+		return ""
+	}
+	err = s.Relay.Register(ctx, token, expires)
+	if err == nil {
+		return links.WithSecret(page(s.PagesBase, id), secret)
+	}
+	if rerr := s.Links.Revoke(id, token); rerr != nil {
+		s.Log.Error("revoke an unregistered short link", "id", id, "err", rerr)
+	}
+	msg := "the Vault did not register the short link; handing over the long link"
+	if vault.IsConflict(err) {
+		// VC-42: another engine holds this token. The link is revoked, and
+		// the item's next link has a new secret whose token nobody else knows.
+		msg = "another engine registered this link's token at the Vault; the link is revoked and the long link handed over"
+	}
+	s.Log.Warn(msg, "id", id, "err", err)
+	return ""
+}
+
+// noRelay is LinkRelay with the Vault off: never connected.
+type noRelay struct{}
+
+func (noRelay) Connected() bool { return false }
+
+func (noRelay) Register(context.Context, channel.LinkToken, time.Time) error {
+	return vault.ErrNotConnected
+}

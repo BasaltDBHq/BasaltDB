@@ -106,20 +106,17 @@ var (
 	phoneWholeRe = regexp.MustCompile(`^(?:` + phoneCore + `)$`)
 )
 
-// commonWords are single words that are also names or ordinary words; a
-// dictionary value that is one of them is matched only inside a longer n-gram
-// (the design's common-word rule), so ordinary sentences are not garbled.
-var commonWords = map[string]bool{
-	"will": true, "may": true, "rose": true, "june": true, "april": true, "mark": true,
-	"bill": true, "grace": true, "hope": true, "joy": true, "faith": true, "art": true,
-	"amber": true, "summer": true, "dawn": true, "max": true, "page": true, "lane": true,
-}
-
 // PatternDetectors are the shape detectors, in the order they must run:
-// emails, then phones. Phones run on what emails left, so a number inside an
-// address is never cut out of it, and a second pass over tokenized text sees
-// the same stretches the first did.
-func PatternDetectors() []Detector { return []Detector{EmailDetector{}, PhoneDetector{}} }
+// emails, IBANs, cards, then phones. Each runs on what the earlier ones left,
+// so a number inside an address is never cut out of it, an IBAN group that
+// looks like a phone ("DE89 3704 0044 0532 0130 00") stays in its IBAN, and a
+// card after a country code ("+1 4111 1111 1111 1111") is not cut into a phone
+// and a leftover group. Cards and IBANs touch no ASCII letter or digit, so
+// they take nothing a phone glued to them would need. A second pass over
+// tokenized text sees the same stretches the first did.
+func PatternDetectors() []Detector {
+	return []Detector{EmailDetector{}, IBANDetector{}, CardDetector{}, PhoneDetector{}}
+}
 
 // EmailDetector finds email addresses by shape, known or not.
 type EmailDetector struct{}
@@ -496,7 +493,7 @@ func (d *DictionaryDetector) longestHit(text string, ws []word, i int) (int, Ent
 		}
 		form := GenericForm(text[ws[i].start:ws[i+n-1].end])
 		// An empty form (only format characters) is never a value.
-		if form == "" || (n == 1 && commonWords[form]) {
+		if form == "" || (n == 1 && isCommonWord(form)) {
 			continue
 		}
 		if typ, ok := d.dict.Lookup(d.keys.hash(genericHashPrefix + form)); ok {

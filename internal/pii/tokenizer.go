@@ -324,7 +324,8 @@ func isASCIIAlnum(c byte) bool {
 }
 
 // shapeDetector marks the built-in shape detectors (EmailDetector,
-// PhoneDetector), which see the shape view: no combining marks, ASCII digits.
+// PhoneDetector, CardDetector, IBANDetector), which see the shape view: no
+// combining marks, ASCII digits, every dash as '-'.
 type shapeDetector interface{ shapes() }
 
 func wantsShapes(d Detector) bool {

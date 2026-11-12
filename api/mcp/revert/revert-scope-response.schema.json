@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/revert-scope-response.v1.json",
+  "title": "Revert scope response",
+  "description": "Planned (basalt_meta version 19, owner decision RS-2). The 200 answer to POST /api/v1/reverts/{revertId}/scope: the rebuilt revert request and, only for a proven widen or a narrow under its scope token, the catalog the person picks from. No other route, function or view returns the catalog. See CONTRACT.md, Revert, Rescope, widen and reject.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request"
+  ],
+  "properties": {
+    "request": {
+      "$ref": "revert-request.schema.json",
+      "description": "The revert request for the new select: new binding (rowsHash, expiresAt), its lines, a new rescopeNonce after a widen. The page checks it as any revert request."
+    },
+    "catalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agents",
+        "runs",
+        "tables"
+      ],
+      "description": "What the person may choose from inside the widest select they proved: the agents with changes in the scope, their runs and the tables written. Present only on a proven widen and on a narrow under its token.",
+      "properties": {
+        "agents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "agent",
+              "changes"
+            ],
+            "properties": {
+              "agent": {
+                "type": "string",
+                "description": "The agent role."
+              },
+              "changes": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Its applied or reverted changes that wrote rows in the scope."
+              }
+            }
+          }
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "runId",
+              "agent",
+              "startedAt",
+              "changes"
+            ],
+            "properties": {
+              "runId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "agent": {
+                "type": "string"
+              },
+              "startedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "changes": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "tables": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "table",
+              "rows"
+            ],
+            "properties": {
+              "table": {
+                "type": "string",
+                "description": "schema.table"
+              },
+              "rows": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Rows written in the scope by the agents shown."
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

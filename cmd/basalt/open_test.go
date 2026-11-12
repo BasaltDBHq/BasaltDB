@@ -34,20 +34,20 @@ func TestOpenLink(t *testing.T) {
 	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr}, func(string) string { return "" })
 	c.host = h
 
-	openLink(c, link, &stdout)
+	require.NoError(t, openLink(c, link, &stdout, linkRef{}))
 	require.Equal(t, []string{link}, h.opened)
 	require.Empty(t, stdout.String(), "an opened link is not printed")
 	require.Contains(t, stderr.String(), "opened the link in your browser")
 
 	h.openErr = errors.New("no display")
-	openLink(c, link, &stdout)
+	require.NoError(t, openLink(c, link, &stdout, linkRef{}))
 	require.Equal(t, link+"\n", stdout.String(), "the link is printed when no browser opens")
 	require.Contains(t, stderr.String(), "could not open a browser (no display)")
 
 	stdout.Reset()
-	openLink(c, "-a Calculator", &stdout)
+	require.Error(t, openLink(c, "-a Calculator", &stdout, linkRef{}))
 	require.Len(t, h.opened, 2, "a page that is not a web URL never reaches the opener")
-	require.Equal(t, "-a Calculator\n", stdout.String())
+	require.Empty(t, stdout.String(), "a bad URL is not printed either")
 }
 
 func TestBrowserOpener(t *testing.T) {

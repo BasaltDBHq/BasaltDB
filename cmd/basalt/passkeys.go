@@ -139,7 +139,7 @@ func passkeyRemove(c *cliIO, args []string) int {
 	var f removeFlags
 	fs.BoolVar(&f.force, "force", false, "allow removing the last active passkey (asks you to type its label)")
 	fs.BoolVar(&f.yes, "yes", false, "do not ask for confirmation (the last passkey still asks for its label)")
-	fs.StringVar(&f.pagesURL, "pages-url", "", "pages base URL of the forget link (default: the origin the passkey was registered with)")
+	pagesURLFlag(fs, &f.pagesURL, "pages base URL of the forget link (default: the origin the passkey was registered with)")
 	fs.BoolVar(&f.open, "open", false, "open the forget link in the default browser instead of printing it")
 	if err := fs.Parse(idAfterFlags(fs, args)); err != nil {
 		return c.fail(fmt.Errorf("%w: %w", errUsage, err))
@@ -302,18 +302,17 @@ func forgetLink(c *cliIO, keys []guard.RegisteredPasskey, removed guard.Register
 	fmt.Fprintln(c.stderr, "basalt: removing it here does not delete it from your devices. Open this link on each device that holds it, so its password manager can forget it (browsers without the WebAuthn Signal API: delete it by hand):")
 	stop := servePagesFor(c, base)
 	defer stop()
-	showLink(c, link, f.open, c.stdout)
-	return nil
+	ref := linkRef{setting: "the passkey's registered origin", item: "forgetting passkey " + printableLabel(removed.Label), again: "basalt passkey remove"}
+	return showLink(c, link, f.open, c.stdout, ref)
 }
 
 // showLink prints link to w, or with open opens it (printed to w when no
 // browser opens).
-func showLink(c *cliIO, link string, open bool, w io.Writer) {
+func showLink(c *cliIO, link string, open bool, w io.Writer, ref linkRef) error {
 	if open {
-		openLink(c, link, w)
-		return
+		return openLink(c, link, w, ref)
 	}
-	fmt.Fprintln(w, link)
+	return printLink(c, w, link, ref)
 }
 
 // servePagesFor serves the embedded pages on a local base while a command
@@ -337,12 +336,13 @@ func equalID(a, b []byte) bool { return passkey.Bytes(a).String() == passkey.Byt
 // returns and offers to remove the ones not found.
 func passkeyCheck(c *cliIO, args []string) int {
 	fs, af := addAgentFlags(c, "passkey check")
-	pagesURL := fs.String("pages-url", "", "pages base URL of the check link (default: the engine config's pagesUrl, else "+links.DefaultLocal+")")
+	var pagesURL string
+	pagesURLFlag(fs, &pagesURL, "pages base URL of the check link (default: the engine config's pagesUrl, else "+links.DefaultLocal+")")
 	open := fs.Bool("open", false, "open the check link in the default browser instead of printing it")
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
 	}
-	base := strings.TrimSuffix(configuredBase(*pagesURL, *af.agent, *af.configPath), "/")
+	base := strings.TrimSuffix(configuredBase(pagesURL, *af.agent, *af.configPath), "/")
 	conn, err := af.connect(c)
 	if err != nil {
 		return c.fail(err)
@@ -407,7 +407,10 @@ func checkOnBase(c *cliIO, keys []ledger.Passkey, base string, open bool) ([]led
 		len(keys), keys[0].Credential.Relying.RPID)
 	stop := servePagesFor(c, base)
 	defer stop()
-	showLink(c, link, open, c.stderr)
+	ref := linkRef{setting: "pagesUrl", item: "the passkey check", again: "basalt passkey check"}
+	if err := showLink(c, link, open, c.stderr, ref); err != nil {
+		return nil, err
+	}
 	fmt.Fprint(c.stderr, "Paste the code the page showed: ")
 	code, err := c.line()
 	if err != nil || code == "" {

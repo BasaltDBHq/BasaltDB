@@ -68,17 +68,21 @@ func localPages(c *cliIO, pagesURL, agent, configPath string) string {
 // links carry the whole preview and run to thousands of characters, which
 // terminals wrap and chats cut, so opening them from here is the reliable
 // path. When no browser opens, the link goes to fallback to copy by hand.
-func openLink(c *cliIO, link string, fallback io.Writer) {
+// A link that breaks the URL rule is neither opened nor printed.
+func openLink(c *cliIO, link string, fallback io.Writer, ref linkRef) error {
+	if err := links.CheckURL(link); err != nil {
+		return refusedLink(err, ref)
+	}
 	err := checkWebLink(link)
 	if err == nil {
 		err = c.host.OpenURL(c.ctx, link)
 	}
 	if err != nil {
 		fmt.Fprintf(c.stderr, "basalt: could not open a browser (%v); open this link yourself:\n", err)
-		fmt.Fprintln(fallback, link)
-		return
+		return printLink(c, fallback, link, ref)
 	}
 	fmt.Fprintln(c.stderr, "basalt: opened the link in your browser")
+	return nil
 }
 
 // checkWebLink refuses anything but an http or https URL, so a --page value

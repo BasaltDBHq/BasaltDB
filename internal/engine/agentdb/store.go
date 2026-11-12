@@ -24,17 +24,36 @@ type DB interface {
 // Store runs one agent's writes through the guard and reads its runs and
 // change records, always on the agent's own credential.
 type Store struct {
-	db     DB
-	limits sqlguard.Limits
-	now    func() time.Time
+	db       DB
+	limits   sqlguard.Limits
+	now      func() time.Time
+	returned ReturnedFunc
 }
+
+// ReturnedFunc sees the rows a write returns (RETURNING) inside the write's
+// transaction, before COMMIT: the engine adds their PII values to the
+// dictionary there. An error rolls the write back, so no value it could not
+// handle is applied or returned (fail closed).
+type ReturnedFunc func(ctx context.Context, tx pgx.Tx, cols []Column, rows []map[string]any) error
 
 // NewStore returns a store on db. It panics on a nil db or clock.
 func NewStore(db DB, limits sqlguard.Limits, now func() time.Time) *Store {
 	if db == nil || now == nil {
 		panic("agentdb: db and clock required")
 	}
-	return &Store{db: db, limits: limits, now: now}
+	return &Store{db: db, limits: limits, now: now, returned: noReturned}
+}
+
+func noReturned(context.Context, pgx.Tx, []Column, []map[string]any) error { return nil }
+
+// WithReturned has every write hand its returned rows to f before COMMIT.
+// It panics on a nil f.
+func (s *Store) WithReturned(f ReturnedFunc) *Store {
+	if f == nil {
+		panic("agentdb: nil returned-rows hook")
+	}
+	s.returned = f
+	return s
 }
 
 // Run is one of the agent's runs.
@@ -109,6 +128,11 @@ func (s *Store) write(ctx context.Context, op sqlguard.Op, sql string, params []
 		cols, rows, _, err := runText(ctx, tx, sql, params, s.limits.ReadRowLimit, 0)
 		if err != nil {
 			return err
+		}
+		if len(rows) > 0 {
+			if err := s.returned(ctx, tx, cols, rows); err != nil {
+				return err
+			}
 		}
 		res.Columns, res.Returning = cols, rows
 		res.Duration = s.now().Sub(start)

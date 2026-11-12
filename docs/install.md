@@ -88,6 +88,13 @@ curl -s http://localhost:8787/healthz
 
 It prints `ok`.
 
+### Engine memory
+
+The engine keeps its PII dictionary within `pii.maxMemoryMB` in `engine.json` (default 512). It sets the Go memory limit (`GOMEMLIMIT`) to twice that unless you set `GOMEMLIMIT` yourself. `basalt service install` also writes limits into the service:
+
+- **Linux:** the systemd unit gets `MemoryHigh` (3 × `maxMemoryMB`) and `MemoryMax` (4 ×). These are written when the service is installed and do not follow later edits of `engine.json`. After you raise `pii.maxMemoryMB`, run `sudo basalt service install` again with the same flags, or systemd may throttle or stop the engine below its new budget.
+- **macOS:** the launchd plist gets `SoftResourceLimits` and `HardResourceLimits` with a `ResidentSetSize` of the same sizes, but current macOS does not enforce `ResidentSetSize`. The engine's only memory limit there is `GOMEMLIMIT`. Under memory pressure the OS can still evict the pages of the memory-mapped dictionary file.
+
 ## 5. Wire your MCP client
 
 Claude Code:

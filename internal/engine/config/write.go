@@ -30,17 +30,68 @@ type Settings struct {
 	// PersonUIDs are added to the config's person uids; the recorded ones
 	// stay (re-running init keeps them).
 	PersonUIDs []uint32
+	// Vault replaces the config's vault (VaultOn or VaultOff) when set:
+	// the person chose it (--vault).
+	Vault string
+	// VaultDefault is the vault written when Vault is empty and the config
+	// has none yet, or when OperatedBy changes the config's operatedBy.
+	// Otherwise the config's vault stays: a rerun never undoes the
+	// person's choice (VC-19).
+	VaultDefault string
+}
+
+// operatedByPerson is operatedBy's value when empty.
+const operatedByPerson = "PERSON"
+
+// VaultWritten is the vault an upsert wrote, and whether it is the one
+// the config already had (neither chosen nor the default applied).
+type VaultWritten struct {
+	Vault string
+	Kept  bool
+}
+
+// vaultFor is the vault s writes over the existing config prev (existed
+// false: no file yet).
+func (s Settings) vaultFor(prev Config, existed bool) VaultWritten {
+	switch {
+	case s.Vault != "":
+		return VaultWritten{Vault: s.Vault}
+	case existed && prev.Vault != "" && !s.changesOperatedBy(prev):
+		return VaultWritten{Vault: prev.Vault, Kept: true}
+	case s.VaultDefault != "":
+		return VaultWritten{Vault: s.VaultDefault}
+	}
+	return VaultWritten{Vault: prev.Vault, Kept: prev.Vault != ""}
+}
+
+// changesOperatedBy reports whether s sets an operatedBy other than
+// prev's (empty is PERSON).
+func (s Settings) changesOperatedBy(prev Config) bool {
+	if s.OperatedBy == "" {
+		return false
+	}
+	was := prev.OperatedBy
+	if was == "" {
+		was = operatedByPerson
+	}
+	return was != s.OperatedBy
 }
 
 // UpsertAgent adds agent a to the config at path, or replaces the agent of
 // the same name, creating the file from s when it does not exist. basalt
 // init calls it. The file is written atomically with FileMode.
 func UpsertAgent(path string, s Settings, a Agent) error {
-	raw, err := Upserted(path, s, a)
+	_, err := UpsertAgentVault(path, s, a)
+	return err
+}
+
+// UpsertAgentVault is UpsertAgent, returning the vault it wrote.
+func UpsertAgentVault(path string, s Settings, a Agent) (VaultWritten, error) {
+	raw, v, err := UpsertedVault(path, openNoFollow, s, a)
 	if err != nil {
-		return err
+		return VaultWritten{}, err
 	}
-	return WriteFile(path, raw)
+	return v, WriteFile(path, raw)
 }
 
 // Upserted is the content UpsertAgent writes, without writing it: the
@@ -53,13 +104,22 @@ func Upserted(path string, s Settings, a Agent) ([]byte, error) {
 // service install, as root, passes one that follows no link anywhere on the
 // path and accepts only a file the engine's user owns.
 func UpsertedWith(path string, open func(string) (*os.File, error), s Settings, a Agent) ([]byte, error) {
+	raw, _, err := UpsertedVault(path, open, s, a)
+	return raw, err
+}
+
+// UpsertedVault is UpsertedWith, returning the vault it wrote.
+func UpsertedVault(path string, open func(string) (*os.File, error), s Settings, a Agent) ([]byte, VaultWritten, error) {
 	c, err := load(path, open)
+	existed := true
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		c = Config{SocketDir: s.SocketDir, StateDir: s.StateDir}
+		c, existed = Config{SocketDir: s.SocketDir, StateDir: s.StateDir}, false
 	case err != nil:
-		return nil, err
+		return nil, VaultWritten{}, err
 	}
+	vault := s.vaultFor(c, existed)
+	c.Vault = vault.Vault
 	if s.PagesURL != "" {
 		c.PagesURL, c.ApprovalPage = s.PagesURL, ""
 	}
@@ -80,13 +140,13 @@ func UpsertedWith(path string, open func(string) (*os.File, error), s Settings, 
 		c.Agents = append(c.Agents, a)
 	}
 	if err := validate.Struct(c); err != nil {
-		return nil, fmt.Errorf("config %s: %w", path, err)
+		return nil, VaultWritten{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	raw, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
-		return nil, err
+		return nil, VaultWritten{}, err
 	}
-	return append(raw, '\n'), nil
+	return append(raw, '\n'), vault, nil
 }
 
 // WriteFile writes data to path atomically with FileMode, creating the

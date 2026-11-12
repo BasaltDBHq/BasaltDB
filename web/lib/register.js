@@ -5,6 +5,17 @@ import { $, fail, loadOrPaste, showCode, webauthnError } from "./page.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
 
+// prfEnabled reports whether the authenticator enabled prf for the new
+// credential. Browsers without the extension return nothing; that is false,
+// never an error.
+function prfEnabled(cred) {
+  try {
+    return cred.getClientExtensionResults?.()?.prf?.enabled === true;
+  } catch {
+    return false;
+  }
+}
+
 async function register(rp, req) {
   $("register").disabled = true;
   try {
@@ -16,6 +27,9 @@ async function register(rp, req) {
         pubKeyCredParams: [{ type: "public-key", alg: ALG_ES256 }],
         authenticatorSelection: { residentKey: "required", requireResidentKey: true, userVerification: "required" },
         attestation: "none",
+        // Ask for prf so a later vault channel phase needs no re-registration.
+        // Only whether it is enabled is read; no prf output is used or sent.
+        extensions: { prf: {} },
         timeout: PROMPT_TIMEOUT_MS,
       },
     });
@@ -30,6 +44,7 @@ async function register(rp, req) {
         authenticatorData: new Uint8Array(r.getAuthenticatorData()),
         publicKey: new Uint8Array(r.getPublicKey()),
         publicKeyAlgorithm: r.getPublicKeyAlgorithm(),
+        prfSupported: prfEnabled(cred),
       }),
     );
   } catch (err) {

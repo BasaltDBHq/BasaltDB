@@ -1,0 +1,109 @@
+{
+  "codes": [
+    {
+      "code": 4000,
+      "name": "PROTOCOL",
+      "sentBy": ["PAGE", "ENGINE", "VAULT"],
+      "when": "A message out of place or malformed: a text message where binary is expected or the reverse, an unknown type byte, content that fails its schema, a REQUEST while another is in flight, a page socket without the portal Origin.",
+      "pageShows": "BROKEN"
+    },
+    {
+      "code": 4001,
+      "name": "UNSUPPORTED_VERSION",
+      "sentBy": ["PAGE", "ENGINE", "VAULT"],
+      "when": "A version byte or AUTH version other than 1.",
+      "pageShows": "BROKEN"
+    },
+    {
+      "code": 4002,
+      "name": "AUTH_FAILED",
+      "sentBy": ["VAULT"],
+      "when": "Engine socket only: basalt-engine-key is not a P-256 SPKI or does not hash to the engine id, or AUTH's signature fails or comes late.",
+      "pageShows": "BROKEN"
+    },
+    {
+      "code": 4003,
+      "name": "REPLACED",
+      "sentBy": ["VAULT"],
+      "when": "Engine socket only: a newer authenticated socket for the same engine id took over.",
+      "pageShows": "TRY_LATER"
+    },
+    {
+      "code": 4004,
+      "name": "LINK_UNKNOWN",
+      "sentBy": ["VAULT"],
+      "when": "Page socket: no engine registered the token, it expired, or the engine unregistered it.",
+      "pageShows": "LINK_GONE"
+    },
+    {
+      "code": 4005,
+      "name": "ENGINE_OFFLINE",
+      "sentBy": ["VAULT"],
+      "when": "Page socket: the engine that registered the token has no socket now.",
+      "pageShows": "ENGINE_OFFLINE"
+    },
+    {
+      "code": 4006,
+      "name": "LINK_REFUSED",
+      "sentBy": ["ENGINE"],
+      "when": "Handshake message 1 for a token the engine does not hold, an expired or revoked link, a token other than SESSION_OPEN's, a tag that fails (wrong psk), or an invalid ephemeral key (checked after the tag). All answer alike. Also open sessions of a link the engine revokes or that expires.",
+      "pageShows": "LINK_GONE"
+    },
+    {
+      "code": 4007,
+      "name": "HANDSHAKE_FAILED",
+      "sentBy": ["PAGE"],
+      "when": "An engine ephemeral key that is not a valid uncompressed P-256 point; message 2 that does not decrypt, whose payload fails its schema, or whose signature fails; on DIRECT, an engine key other than the pinned one.",
+      "pageShows": "BROKEN"
+    },
+    {
+      "code": 4008,
+      "name": "FRAME_INVALID",
+      "sentBy": ["PAGE", "ENGINE"],
+      "when": "A frame that does not decrypt with the next counter (dropped, repeated, reordered, reflected or from another session), or whose padding is not canonical.",
+      "pageShows": "BROKEN"
+    },
+    {
+      "code": 4009,
+      "name": "TOO_LARGE",
+      "sentBy": ["PAGE", "ENGINE", "VAULT"],
+      "when": "A message over its size limit, or a response body over 16 MiB.",
+      "pageShows": "BROKEN"
+    },
+    {
+      "code": 4010,
+      "name": "RATE_LIMITED",
+      "sentBy": ["ENGINE", "VAULT"],
+      "when": "Too many handshakes for a link, requests in a session, or connections at the Vault.",
+      "pageShows": "TRY_LATER"
+    },
+    {
+      "code": 4011,
+      "name": "SESSION_LIMIT",
+      "sentBy": ["ENGINE", "VAULT"],
+      "when": "Too many open sessions for the link or for the engine.",
+      "pageShows": "TRY_LATER"
+    },
+    {
+      "code": 4012,
+      "name": "TIMEOUT",
+      "sentBy": ["PAGE", "ENGINE", "VAULT"],
+      "when": "The handshake did not finish in 10 seconds, the session was idle 5 minutes, or it reached 30 minutes or its link's expiry.",
+      "pageShows": "TRY_LATER"
+    },
+    {
+      "code": 4013,
+      "name": "ENGINE_REVOKED",
+      "sentBy": ["ENGINE"],
+      "when": "The engine's key is revoked in the person's database (M4.1); the engine serves no session.",
+      "pageShows": "ENGINE_OFFLINE"
+    },
+    {
+      "code": 4014,
+      "name": "ENGINE_SHUTDOWN",
+      "sentBy": ["ENGINE"],
+      "when": "The engine is stopping, or its keys were rotated.",
+      "pageShows": "ENGINE_OFFLINE"
+    }
+  ]
+}

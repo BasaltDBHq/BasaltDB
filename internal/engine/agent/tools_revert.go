@@ -198,6 +198,7 @@ type requestRevertResult struct {
 	ExpiresAt     string             `json:"expiresAt"`
 	RevertURL     string             `json:"revertUrl,omitempty"`
 	PersonMessage string             `json:"personMessage"`
+	Links         []mcp.Link         `json:"links,omitempty"`
 	ChangeID      string             `json:"changeId,omitempty"`
 	ApplyBy       string             `json:"applyBy,omitempty"`
 	Progress      *revertProgressDTO `json:"progress,omitempty"`
@@ -216,7 +217,7 @@ func requestRevertFromDomain(r RequestedRevert) requestRevertResult {
 	out := requestRevertResult{
 		RevertID: rv.ID.String(), Status: rv.Status, Scope: rv.Scope, ScopeID: rv.ScopeID.String(),
 		Intent: rv.Intent, Batched: rv.Batched, Rows: rv.Rows, Skipped: rv.Skipped,
-		ExpiresAt: timeText(rv.ExpiresAt), RevertURL: r.RevertURL, PersonMessage: r.PersonMessage, NextSteps: r.NextSteps,
+		ExpiresAt: timeText(rv.ExpiresAt), RevertURL: r.RevertURL, PersonMessage: r.PersonMessage, Links: r.Links, NextSteps: r.NextSteps,
 	}
 	if rv.ChangeID != nil {
 		out.ChangeID = rv.ChangeID.String()
@@ -305,6 +306,7 @@ type revertPlanResult struct {
 	MaxBatch      int                 `json:"maxBatch"`
 	RevertURL     string              `json:"revertUrl,omitempty"`
 	PersonMessage string              `json:"personMessage,omitempty"`
+	Links         []mcp.Link          `json:"links,omitempty"`
 	Items         []revertPlanItemDTO `json:"items"`
 	NextCursor    string              `json:"nextCursor,omitempty"`
 }
@@ -327,7 +329,7 @@ func revertPlanFromDomain(p RevertPlan) revertPlanResult {
 		Lines: r.Rows + r.Skipped, Restored: r.Progress.Restored, Skipped: r.Progress.Skipped, Pending: r.Progress.Pending,
 		ExpiresAt: timeText(r.ExpiresAt), MaxBatch: revert.MaxBatch,
 		Items: make([]revertPlanItemDTO, 0, len(p.Page.Items)), NextCursor: p.Page.NextCursor,
-		RevertURL: p.RevertURL, PersonMessage: p.PersonMessage,
+		RevertURL: p.RevertURL, PersonMessage: p.PersonMessage, Links: p.Links,
 	}
 	if r.ApplyBy != nil {
 		out.ApplyBy = timeText(*r.ApplyBy)

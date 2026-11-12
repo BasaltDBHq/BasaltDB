@@ -3,6 +3,7 @@ package agent
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"unicode/utf8"
 
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
@@ -139,10 +140,14 @@ func (b *Steps) fail(err error) *Steps {
 	return b
 }
 
-// CheckPersonMessage refuses a personMessage over its limit. It may be
-// empty: not every error needs the person.
+// urlLines are the lines of a personMessage that hold a URL, with their line
+// break: the limit does not count them (CONTRACT.md, Links in personMessage).
+var urlLines = regexp.MustCompile(`(?m)^https?://\S+\n?`)
+
+// CheckPersonMessage refuses a personMessage over its limit, not counting its
+// URL lines. It may be empty: not every error needs the person.
 func CheckPersonMessage(message string) error {
-	return checkLength("personMessage", message, MaxPersonMessageLength, false)
+	return checkLength("personMessage", urlLines.ReplaceAllString(message, ""), MaxPersonMessageLength, false)
 }
 
 func checkLength(field, text string, limit int, required bool) error {

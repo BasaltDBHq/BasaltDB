@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/user"
@@ -50,7 +51,7 @@ func newFakeHost(t *testing.T) *fakeHost {
 	dir, err := os.MkdirTemp("/tmp", "bt")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	return &fakeHost{euid: 501, configDir: dir, sys: &fakeSys{written: map[string]string{}, modes: map[string]os.FileMode{}}}
+	return &fakeHost{euid: 501, configDir: dir, sys: &fakeSys{written: map[string]string{}, modes: map[string]os.FileMode{}, owners: map[string]string{}}}
 }
 
 func (h *fakeHost) Euid() int                      { return h.euid }
@@ -116,6 +117,7 @@ type fakeSys struct {
 	ran     []string
 	written map[string]string
 	modes   map[string]os.FileMode
+	owners  map[string]string
 }
 
 func (s *fakeSys) UserExists(string) bool { return false }
@@ -132,7 +134,13 @@ func (s *fakeSys) Run(_ context.Context, args ...string) error {
 	return nil
 }
 
-func (s *fakeSys) WriteFile(path string, data []byte, mode os.FileMode) error {
+func (s *fakeSys) Mkdir(path string, mode os.FileMode, owner string) error {
+	s.ran = append(s.ran, fmt.Sprintf("mkdir -m %04o -o %s %s", mode, owner, path))
+	return nil
+}
+
+func (s *fakeSys) WriteFile(path string, data []byte, mode os.FileMode, owner string) error {
+	s.owners[path] = owner
 	s.written[path], s.modes[path] = string(data), mode
 	return nil
 }
@@ -280,7 +288,7 @@ func TestInitAsRootInstallsInProcess(t *testing.T) {
 	r := initRun(t, d, h, "linux", false, "", "--yes")
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Empty(t, h.sudo, "already root")
-	require.Contains(t, h.sys.ran, "chown basalt:basalt /etc/basalt/agents/bot.url")
+	require.Equal(t, "basalt", h.sys.owners["/etc/basalt/agents/bot.url"])
 	require.Contains(t, h.sys.ran, "systemctl enable --now basalt-engine.service")
 	require.Contains(t, h.sys.written["/etc/basalt/agents/bot.url"], d.Names.Prefix+"_agent_bot:")
 	require.Equal(t, os.FileMode(config.FileMode), h.sys.modes["/etc/basalt/agents/bot.url"])

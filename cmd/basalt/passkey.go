@@ -69,8 +69,11 @@ func registerPasskey(c *cliIO, conn *pgx.Conn, rp passkey.Relying, label string)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(c.stderr, "basalt: register the passkey that approves this agent's held writes. Open this link on your phone or computer:\n  %s#%s\n",
-		links.Register(rp.Origin), frag)
+	fmt.Fprintln(c.stderr, "basalt: register the passkey that approves this agent's held writes. Open this link on your phone or computer:")
+	ref := linkRef{setting: "--passkey-origin", item: "the passkey registration", again: "basalt init"}
+	if err := printLink(c, c.stderr, links.Register(rp.Origin)+"#"+frag, ref); err != nil {
+		return err
+	}
 	stop, served := serveLocalPages(rp.Origin)
 	defer stop()
 	if rp != passkey.Production && !served {

@@ -203,7 +203,7 @@ func TestInitInstallsTheServiceWithOneSudo(t *testing.T) {
 
 			require.Len(t, h.sudo, 1, "one elevation")
 			require.Equal(t, []string{fakeBin, "service", "install", "--config", v.config, "--user", v.user,
-				"--agent", "bot", "--os-user", me(t), "--pages-url", links.DefaultLocal,
+				"--agent", "bot", "--os-user", me(t), "--pages-url", links.DefaultLocal, "--vault=off",
 				"--init-arg", "--agent=bot", "--init-arg", "--write=public.leads", "--init-arg", "--prefix=" + d.Names.Prefix,
 				"--init-arg", "--os-user=" + me(t), "--person-uid", "501", "--credential-stdin"}, h.sudo[0])
 			require.Contains(t, h.sudoIn[0], d.Names.Prefix+"_agent_bot:", "the agent's credential goes on stdin")
@@ -213,6 +213,7 @@ func TestInitInstallsTheServiceWithOneSudo(t *testing.T) {
 
 			require.Contains(t, r.stderr, "Install the engine as a background service? This creates the OS user "+v.user+" and needs your password once. [Y/n]")
 			require.Contains(t, r.stderr, "basalt: engine running as "+v.user+"; it answered on "+v.socket)
+			require.Contains(t, r.stderr, "basalt: vault: off (default in person mode, where the engine serves its own pages)\n")
 			require.Contains(t, r.stderr, "  basalt mcp --agent bot\n")
 			require.Contains(t, r.stderr, "Add it to Claude Code now (claude mcp add basalt-bot -- "+fakeBin+" mcp --agent bot)? [Y/n]")
 			require.NotContains(t, r.stderr, "chown")
@@ -239,6 +240,8 @@ func TestInitDeclinedServiceRunsInTheForeground(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(dir, "run"), cfg.SocketDir)
 	require.Equal(t, filepath.Join(dir, "state"), cfg.StateDir)
+	require.Equal(t, config.VaultOff, cfg.Vault, "person mode: the Vault is off by default")
+	require.Contains(t, r.stderr, "basalt: vault: off (default in person mode, where the engine serves its own pages)\n")
 	info, err := os.Stat(filepath.Join(dir, "agents", "bot.url"))
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(config.FileMode), info.Mode().Perm())
@@ -389,6 +392,12 @@ func TestServiceInstallAgentReadsTheCredentialFromStdin(t *testing.T) {
 	require.Contains(t, string(got.Files[0].Content), `"socketDir": "/run/basalt"`)
 	require.Contains(t, string(got.Files[0].Content), `"credentialFile": "`+cred+`"`)
 	require.NotContains(t, string(got.Files[0].Content), "pw@", "the config holds no credential")
+	require.NotContains(t, string(got.Files[0].Content), `"vault"`, "no --vault: the config's stays")
+
+	a.vault = config.VaultOn
+	got, err = agentSpecFromStdin(strings.NewReader("postgres://agent:pw@h/db\n"), spec, a, true, false)
+	require.NoError(t, err)
+	require.Contains(t, string(got.Files[0].Content), `"vault": "ON"`, "--vault writes the config's vault")
 }
 
 // A binary anyone but root could change is refused before init asks for the

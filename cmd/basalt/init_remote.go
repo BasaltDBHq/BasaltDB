@@ -98,6 +98,10 @@ type remoteFlags struct {
 	operatedBy                                          OperatedBy
 	newCode, json, configGiven                          bool
 	spec                                                guard.AgentSpec
+	// vaultFlag is --vault as given ("" when not); vault is what init
+	// writes (chooseVault).
+	vaultFlag VaultMode
+	vault     vaultChoice
 }
 
 // RemoteInitResult is what basalt init --remote --json prints
@@ -194,6 +198,7 @@ func parseInitRemote(c *cliIO, args []string) (remoteFlags, error) {
 	fs.BoolVar(&f.newCode, "new-code", false, "make a new code (and a new agent password) even when one is pending")
 	fs.StringVar(&f.configPath, "config", config.DefaultPath(c.goos), "engine config file")
 	fs.BoolVar(&f.json, "json", false, "print the result as JSON (remote-init-result.schema.json)")
+	fs.Var(&f.vaultFlag, flagVault, "on or off: whether the engine reaches the portal's pages through the Vault (default on with --operated-by=agent, else off)")
 	if err := parse(fs, args); err != nil {
 		return f, err
 	}
@@ -212,6 +217,11 @@ func parseInitRemote(c *cliIO, args []string) (remoteFlags, error) {
 		return f, fmt.Errorf("%w: %w", errUsage, err)
 	}
 	f.spec = guard.AgentSpec{Name: f.agent, Write: splitList(f.write), Read: splitList(f.read), StatementTimeout: f.timeout}
+	vc, err := chooseVault(f.vaultFlag, f.operatedBy, links.Portal, "default for --operated-by=person; --vault=on to turn it on")
+	if err != nil {
+		return f, err
+	}
+	f.vault = vc
 	return f, nil
 }
 
@@ -310,7 +320,7 @@ func newRemoteInit(c *cliIO, f remoteFlags) (*remoteInit, error) {
 // lives in the user's own config directory, as init's foreground setup.
 func (r *remoteInit) paths() error {
 	dir := filepath.Dir(r.f.configPath)
-	r.settings = config.Settings{SocketDir: config.DefaultSocketDir(r.c.goos), PagesURL: links.Portal, OperatedBy: r.f.operatedBy.enum()}
+	r.settings = config.Settings{SocketDir: config.DefaultSocketDir(r.c.goos), PagesURL: links.Portal, OperatedBy: r.f.operatedBy.enum(), Vault: r.f.vault.mode.enum()}
 	if !r.f.configGiven && r.c.host.Euid() != 0 {
 		base, err := r.c.host.UserConfigDir()
 		if err != nil {
@@ -707,10 +717,16 @@ func (r *remoteInit) writeCredential(p plan) error {
 	return config.WriteFile(path, []byte(dsn+"\n"))
 }
 
+// writeConfig upserts the agent and prints the vault value it wrote.
 func (r *remoteInit) writeConfig(saved []string, s *config.Setup) error {
-	return config.UpsertAgent(r.f.configPath, r.settings, config.Agent{
+	err := config.UpsertAgent(r.f.configPath, r.settings, config.Agent{
 		Name: r.f.agent, OSUser: r.osUser, CredentialFile: r.credFile, InitArgs: saved, Setup: s,
 	})
+	if err != nil {
+		return err
+	}
+	fmt.Fprint(r.c.stderr, r.f.vault.line())
+	return nil
 }
 
 // result is the remote-init result: the code, what the person does with

@@ -56,6 +56,7 @@ func setupEngine(c *cliIO, f initFlags, dsn string) error {
 		return fmt.Errorf("the guard is installed but the engine config was not written (run init again with --rotate-password): %w", err)
 	}
 	fmt.Fprintf(c.stderr, "basalt: credential %s; engine config %s\n", f.credFile, f.configPath)
+	fmt.Fprint(c.stderr, f.vault.line())
 	if f.rotated {
 		fmt.Fprintf(c.stderr, "basalt: the agent's password changed; restart the engine so it uses the new one:\n  %s\n",
 			cmds.Foreground().EngineRestart())
@@ -155,6 +156,9 @@ func shellJoin(args []string) string {
 // agentInstall is the agent basalt service install places for the engine.
 type agentInstall struct {
 	name, osUser, pagesURL, dsn string
+	// vault is the config's vault (config.VaultOn or VaultOff); "" keeps
+	// the config's.
+	vault string
 	// initArgs are saved to the agent's config entry.
 	initArgs []string
 	// keepCredential leaves the credential file as it is (the role kept its
@@ -181,7 +185,7 @@ func agentServiceSpec(goos, bin, configPath, engineUser string, a agentInstall, 
 	// Root reads the existing config from the engine user's directory.
 	open := func(p string) (*os.File, error) { return openEngineFile(p, engineUser) }
 	raw, err := config.UpsertedWith(configPath, open,
-		config.Settings{SocketDir: config.DefaultSocketDir(goos), PagesURL: a.pagesURL, Mode: config.ModeService, PersonUIDs: a.personUIDs},
+		config.Settings{SocketDir: config.DefaultSocketDir(goos), PagesURL: a.pagesURL, Mode: config.ModeService, PersonUIDs: a.personUIDs, Vault: a.vault},
 		config.Agent{Name: a.name, OSUser: a.osUser, CredentialFile: cred, InitArgs: a.initArgs})
 	if err != nil {
 		return spec, err
@@ -195,7 +199,7 @@ func agentServiceSpec(goos, bin, configPath, engineUser string, a agentInstall, 
 
 // agentInstall is what `service install --agent` needs for this init.
 func (f initFlags) agentInstall(dsn string) agentInstall {
-	return agentInstall{name: f.agent, osUser: f.osUser, pagesURL: f.passkeyOrigin, dsn: dsn,
+	return agentInstall{name: f.agent, osUser: f.osUser, pagesURL: f.passkeyOrigin, dsn: dsn, vault: f.vault.mode.enum(),
 		initArgs: f.initArgs, keepCredential: f.keepCredential, personUIDs: f.personUIDs}
 }
 
@@ -207,6 +211,9 @@ func serviceInstallArgs(f initFlags, bin string) []string {
 		"--agent", f.agent, "--os-user", f.osUser}
 	if f.passkeyOrigin != "" {
 		args = append(args, "--pages-url", f.passkeyOrigin)
+	}
+	if f.vault.mode != "" {
+		args = append(args, "--"+flagVault+"="+string(f.vault.mode))
 	}
 	for _, a := range f.initArgs {
 		args = append(args, "--"+flagInitArg, a)
@@ -240,6 +247,7 @@ func installService(c *cliIO, f initFlags, dsn string) error {
 	if err := elevateInstall(c, f, dsn); err != nil {
 		return err
 	}
+	fmt.Fprint(c.stderr, f.vault.line())
 	socket := config.SocketPath(config.DefaultSocketDir(c.goos), f.agent)
 	if me, _ := invokingUser(); me != f.osUser {
 		// The engine admits only the agent's OS user on its socket.

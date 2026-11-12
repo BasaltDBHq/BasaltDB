@@ -30,6 +30,8 @@ type Settings struct {
 	// PersonUIDs are added to the config's person uids; the recorded ones
 	// stay (re-running init keeps them).
 	PersonUIDs []uint32
+	// Vault replaces the config's vault (VaultOn or VaultOff) when set.
+	Vault string
 }
 
 // UpsertAgent adds agent a to the config at path, or replaces the agent of
@@ -68,6 +70,9 @@ func UpsertedWith(path string, open func(string) (*os.File, error), s Settings, 
 	}
 	if s.Mode != "" {
 		c.Mode = s.Mode
+	}
+	if s.Vault != "" {
+		c.Vault = s.Vault
 	}
 	c.PersonUIDs = addUIDs(c.PersonUIDs, s.PersonUIDs)
 	replaced := false

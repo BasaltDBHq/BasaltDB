@@ -47,7 +47,7 @@ func runRevert(c *cliIO, args []string) int {
 	fs.StringVar(&f.intent, "intent", "", "why you revert (recorded); default \"Revert <scope> <id>\"")
 	fs.StringVar(&f.apply, "apply", "", "apply a prepared revert with the code the revert page gave you")
 	fs.StringVar(&f.status, "status", "", "show a revert's progress (a large revert is applied by the agent in batches)")
-	fs.StringVar(&f.pagesURL, "pages-url", "", "pages base URL (default: the engine config's pagesUrl, else "+links.DefaultLocal+")")
+	pagesURLFlag(fs, &f.pagesURL, "pages base URL (default: the engine config's pagesUrl, else "+links.DefaultLocal+")")
 	fs.BoolVar(&f.open, "open", false, "open the revert link in your browser instead of printing it")
 	fs.BoolVar(&f.dryRun, "dry-run", false, "only show what the revert would do")
 	fs.BoolVar(&f.asJSON, "json", false, "print the lines and the result as JSON")
@@ -153,16 +153,21 @@ func prepareRevert(c *cliIO, l *agentLedger, scope guard.RevertScope, f revertFl
 		return c.fail(err)
 	}
 	pages := linkPages{base: f.pagesURL, local: f.local}
+	ref := linkRef{setting: "pagesUrl", item: "revert " + prep.RevertID.String(), again: "the same basalt revert command"}
 	link = pages.short(c, "reverts", prep.RevertID, prep.BindingText, link)
 	expires := prep.ExpiresAt.UTC().Format(timeLayout)
 	switch {
 	case f.open:
 		fmt.Fprintf(c.stderr, "basalt: revert %s expires %s. Check the rows on the revert page and sign with your passkey.\n", prep.RevertID, expires)
-		openLink(c, link, c.stderr)
+		if err := openLink(c, link, c.stderr, ref); err != nil {
+			return c.fail(err)
+		}
 	default:
 		fmt.Fprintf(c.stderr, "basalt: revert %s expires %s. Open this link on a device with your passkey, check the rows, and sign:\n",
 			prep.RevertID, expires)
-		fmt.Fprintln(c.stderr, link)
+		if err := printLink(c, c.stderr, link, ref); err != nil {
+			return c.fail(err)
+		}
 	}
 	if f.local != "" {
 		return awaitRevert(c, l, prep.RevertID, f.asJSON)

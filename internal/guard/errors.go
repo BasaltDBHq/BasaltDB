@@ -25,11 +25,13 @@ const (
 	CodeRevertExpired       Code = "REVERT_EXPIRED"        // BS005
 	CodeNothingToRevert     Code = "NOTHING_TO_REVERT"     // BS009
 	CodeRevertCascade       Code = "REVERT_CASCADE"        // BS009, caught inside a revert
+	CodeSetupRefused        Code = "SETUP_REFUSED"         // BS010, to the admin only
 )
 
 const (
-	sqlstateApproval = "BS005"
-	sqlstateRevert   = "BS009"
+	sqlstateApproval     = "BS005"
+	sqlstateRevert       = "BS009"
+	sqlstateSetupRefused = "BS010"
 )
 
 // byMessage lists the SQLSTATEs that carry several codes, told apart by
@@ -46,15 +48,16 @@ var byMessage = map[string]map[string]Code{
 }
 
 var sqlstateCodes = map[string]Code{
-	"BS001":          CodeIntentRequired,
-	"BS002":          CodeApprovalRequired,
-	"BS003":          CodeRowLimitExceeded,
-	"BS004":          CodeStaleRead,
-	sqlstateApproval: CodeApprovalInvalid,
-	"BS006":          CodePreviewCannotCommit,
-	"BS007":          CodeNotAllowed,
-	"BS008":          CodeLedgerInputInvalid,
-	sqlstateRevert:   CodeNothingToRevert,
+	"BS001":              CodeIntentRequired,
+	"BS002":              CodeApprovalRequired,
+	"BS003":              CodeRowLimitExceeded,
+	"BS004":              CodeStaleRead,
+	sqlstateApproval:     CodeApprovalInvalid,
+	"BS006":              CodePreviewCannotCommit,
+	"BS007":              CodeNotAllowed,
+	"BS008":              CodeLedgerInputInvalid,
+	sqlstateRevert:       CodeNothingToRevert,
+	sqlstateSetupRefused: CodeSetupRefused,
 }
 
 // CodeOf returns the guard-level code (the MESSAGE the guard raised) of

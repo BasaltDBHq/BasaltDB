@@ -35,14 +35,6 @@ func (s OSSystem) Run(ctx context.Context, args ...string) error {
 
 // WriteFile writes a file with mode, also when it already exists with
 // another mode.
-func (OSSystem) WriteFile(path string, data []byte, mode os.FileMode) error {
-	if err := os.WriteFile(path, data, mode); err != nil {
-		return err
-	}
-	return os.Chmod(path, mode)
-}
-
-// Remove removes a unit file.
 func (OSSystem) Remove(path string) error {
 	return os.Remove(path)
 }

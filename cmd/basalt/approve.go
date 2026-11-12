@@ -26,7 +26,8 @@ func runApprove(c *cliIO, args []string) int {
 	show := fs.String("show", "", "print the approval link of this held write (approval id) instead")
 	reissue := fs.Bool("reissue", false, "with --show or --open: issue a new short link (the held write's earlier short link stops working)")
 	open := fs.String("open", "", "open the approval link of this held write (approval id) in your browser instead")
-	pagesURL := fs.String("pages-url", "", "pages base URL for --show and --open (default: the engine config's pagesUrl, else "+links.DefaultLocal+")")
+	var pagesURL string
+	pagesURLFlag(fs, &pagesURL, "pages base URL for --show and --open (default: the engine config's pagesUrl, else "+links.DefaultLocal+")")
 	agent := fs.String("agent", "", "use this agent's credential from the engine config")
 	configPath := fs.String("config", config.DefaultPath(runtime.GOOS), "engine config file")
 	credFile := fs.String("credential-file", "", "read the agent's connection string from this file")
@@ -51,12 +52,12 @@ func runApprove(c *cliIO, args []string) int {
 	defer l.close()
 	if held != "" {
 		pages := linkPages{
-			base: l.pagesBase(*pagesURL),
+			base: l.pagesBase(pagesURL),
 		}
 		if *reissue {
 			// A short link is issued only on request: issuing revokes the
 			// one the agent handed over (CONTRACT.md, Link secrets).
-			pages.local = l.localPages(c, *pagesURL)
+			pages.local = l.localPages(c, pagesURL)
 		}
 		return showApproval(c, l, held, pages, *open != "")
 	}
@@ -114,18 +115,23 @@ func showApproval(c *cliIO, l *agentLedger, idText string, pages linkPages, open
 	if err != nil {
 		return c.fail(err)
 	}
+	ref := linkRef{setting: "pagesUrl", item: "approval " + id.String(), again: "basalt approve --show " + id.String()}
 	link = pages.short(c, "approvals", a.ID, a.BindingText, link)
 	fmt.Fprintf(c.stderr, "basalt: %s\n", summary.Headline())
 	expires := a.ExpiresAt.UTC().Format(timeLayout)
 	if open {
 		fmt.Fprintf(c.stderr, "basalt: %d rows, held by run %s, expires %s\n", a.Rows, a.RunID, expires)
-		openLink(c, link, c.stdout)
+		if err := openLink(c, link, c.stdout, ref); err != nil {
+			return c.fail(err)
+		}
 		fmt.Fprintln(c.stderr, pages.nextStep("basalt: check the rows and sign with your passkey", "basalt approve '<code>'"))
 		return exitOK
 	}
 	fmt.Fprintf(c.stderr, "basalt: %d rows, held by run %s, expires %s; open this link on a device with your passkey:\n",
 		a.Rows, a.RunID, expires)
-	fmt.Fprintln(c.stdout, link)
+	if err := printLink(c, c.stdout, link, ref); err != nil {
+		return c.fail(err)
+	}
 	return exitOK
 }
 

@@ -43,7 +43,15 @@ const instructions = "BasaltDB records every action you take on this database. "
 	"A write of 11 to 50 rows, or any DELETE, is held for the person's passkey approval: show them approval.personMessage verbatim (it has the approval link and the equivalent basalt command), then, in the same turn, repeat the write once with approvalId: it waits for their approval and applies it. " +
 	"If that wait runs out (APPROVAL_REQUIRED again), do not wait again: end your turn and say you apply it once they tell you they approved. " +
 	"Over 50 rows, DDL and functions outside the allowlist are refused. " +
-	"To undo your own work, find the run with list_runs, check it with preview_revert and query, tell the person what you recommend, then call request_revert: show its personMessage, then call request_revert once with revertId to wait for their passkey; if that wait runs out, do not wait again."
+	"To undo your own work, find the run with list_runs, check it with preview_revert and query, tell the person what you recommend, then call request_revert: show its personMessage, then call request_revert once with revertId to wait for their passkey; if that wait runs out, do not wait again. " +
+	linkInstructions
+
+// linkInstructions is the sentence CONTRACT.md (Showing links, What the agent
+// is told) puts in the initialize instructions, unchanged.
+const linkInstructions = "When you show the person a link from Basalt, put it on its own line exactly as Basalt gave it, " +
+	"or as a Markdown link [label](url) with the label from links. Never put a link in a code block or inline code, " +
+	"never split, wrap, shorten, encode or rewrite it, and put nothing after it on its line. " +
+	"Show personMessage verbatim and keep its line breaks."
 
 // Run serves every agent in cfg until ctx is done. It takes the engine lock
 // in the socket directory, so one engine runs per machine. configPath is the
@@ -308,6 +316,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		Reverts:     store,
 		Notifier:    agentNotifier(env.tg, pool.Config().ConnConfig.Database),
 		PagesBase:   env.pagesBase,
+		LinkBudget:  env.cfg.LinkBudgetOrDefault(),
 		Commands:    cmds,
 		PagesOrigin: env.pagesOrigin,
 		Links:       linkSecrets(env.stateDir, a.Name, log),

@@ -45,6 +45,17 @@ func TestCheckAgentVersion(t *testing.T) {
 	require.NoError(t, guard.CheckAgentVersion(ctx, a.Conn))
 }
 
+// An engine serves a guard newer than its build: a setup code's guard.to
+// may be newer than the engine that made it, once the person's computer
+// ran a newer basalt (CONTRACT.md, Setup from your laptop).
+func TestCheckAgentVersionServesNewerGuard(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", leads, leads)
+	d.Exec(t, `INSERT INTO basalt_meta.schema_version (version) VALUES ($1)`, guard.LatestVersion()+1)
+	require.NoError(t, guard.CheckAgentVersion(context.Background(), a.Conn))
+}
+
 func TestCheckAgentVersionNoGuard(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t)

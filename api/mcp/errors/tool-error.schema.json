@@ -55,7 +55,7 @@
     "links": {
       "type": "array",
       "minItems": 1,
-      "description": "Planned (M3.5, CONTRACT.md, Showing links): the URLs of personMessage with labels, in order; present exactly when personMessage holds a URL.",
+      "description": "The URLs of personMessage with labels, in order; present exactly when personMessage holds a URL.",
       "items": { "$ref": "../links/link.schema.json" }
     },
     "nextSteps": {
@@ -79,7 +79,7 @@
         "links": {
           "type": "array",
           "minItems": 1,
-          "description": "Planned (M3.5): equals the body's links.",
+          "description": "Equals the body's links.",
           "items": { "$ref": "../links/link.schema.json" }
         }
       }

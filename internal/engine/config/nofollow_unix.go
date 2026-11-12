@@ -8,11 +8,12 @@ import (
 	"syscall"
 )
 
-// openNoFollow opens path read-only without following a symlink at the path,
-// and refuses anything but a regular file with one link (a hardlink to a
-// root-only file the engine user planted).
+// openNoFollow opens path read-only without following a symlink at the path
+// and without blocking on a FIFO or device (O_NONBLOCK), and refuses anything
+// but a regular file with one link (a hardlink to a root-only file the engine
+// user planted).
 func openNoFollow(path string) (*os.File, error) {
-	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, err
 	}

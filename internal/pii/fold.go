@@ -3,6 +3,7 @@ package pii
 import (
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"golang.org/x/text/cases"
@@ -22,8 +23,13 @@ type foldedView struct {
 // foldPiece is where one segment starts in the original and in the folded text.
 type foldPiece struct{ orig, fold int }
 
-// foldForDetection builds the folded view of s.
-func foldForDetection(s string) foldedView {
+// foldForDetection builds the folded view of s. With shapes set it builds the
+// view the shape detectors (emails, phones) see instead: also without
+// combining marks and with every decimal digit as its ASCII digit
+// (shapeForm), so a mark on a digit or a non-ASCII digit cannot split a
+// number. The dictionary keeps the plain folded view, where marks stay part
+// of their word ("Jose\u0301" is still "josé").
+func foldForDetection(s string, shapes bool) foldedView {
 	var b strings.Builder
 	b.Grow(len(s))
 	caser := cases.Fold()
@@ -34,7 +40,7 @@ func foldForDetection(s string) foldedView {
 			n = len(s) - pos
 		}
 		pieces = append(pieces, foldPiece{orig: pos, fold: b.Len()})
-		writeFolded(&b, &caser, s[pos:pos+n])
+		writeFolded(&b, &caser, s[pos:pos+n], shapes)
 		pos += n
 	}
 	pieces = append(pieces, foldPiece{orig: len(s), fold: b.Len()})
@@ -42,8 +48,10 @@ func foldForDetection(s string) foldedView {
 }
 
 // writeFolded writes one segment folded. ASCII takes a fast path: NFKC leaves
-// it alone and folding is lower case.
-func writeFolded(b *strings.Builder, caser *cases.Caser, seg string) {
+// it alone and folding is lower case. Ignorable characters write nothing, as
+// in Normalize: their segment keeps its piece, so a span found across one
+// maps back over it ("ali\u200bce@corp.ee" is one address).
+func writeFolded(b *strings.Builder, caser *cases.Caser, seg string, shapes bool) {
 	if len(seg) == 1 && seg[0] < utf8.RuneSelf {
 		c := seg[0]
 		if c >= 'A' && c <= 'Z' {
@@ -52,8 +60,51 @@ func writeFolded(b *strings.Builder, caser *cases.Caser, seg string) {
 		b.WriteByte(c)
 		return
 	}
-	b.WriteString(nfkcCasefold(caser, seg))
+	if shapes {
+		b.WriteString(shapeForm(caser, seg))
+		return
+	}
+	b.WriteString(nfkcCasefold(caser, strings.Map(dropIgnorable, seg)))
 }
+
+// shapeForm is the shape detectors' form of a segment: ignorables dropped,
+// NFKC (so a mark that composes with its letter stays part of it, and "é"
+// written either way is the same letter), then the combining marks (Mn, Me)
+// left over dropped, before and after case folding (folding can turn a mark
+// into a letter, as U+0345 into "ι"), then every decimal digit (Nd) as its
+// ASCII digit.
+func shapeForm(caser *cases.Caser, seg string) string {
+	s := strings.Map(dropIgnorableOrMark, norm.NFKC.String(strings.Map(dropIgnorable, seg)))
+	return strings.Map(asciiDigit, strings.Map(dropIgnorableOrMark, nfkcCasefold(caser, s)))
+}
+
+// dropIgnorableOrMark removes ignorable characters and combining marks, for
+// strings.Map.
+func dropIgnorableOrMark(r rune) rune {
+	if isIgnorable(r) || unicode.In(r, unicode.Mn, unicode.Me) {
+		return -1
+	}
+	return r
+}
+
+// asciiDigit maps a decimal digit of any script to its ASCII digit, for
+// strings.Map. Unicode encodes every set of decimal digits as ten contiguous
+// code points from zero to nine, and sets that follow each other without a
+// gap are whole sets too, so the distance from the start of the run, modulo
+// ten, is the digit's value.
+func asciiDigit(r rune) rune {
+	if r < utf8.RuneSelf || !unicode.Is(unicode.Nd, r) {
+		return r
+	}
+	start := r
+	for unicode.Is(unicode.Nd, start-1) {
+		start--
+	}
+	return '0' + (r-start)%decimalDigits
+}
+
+// decimalDigits is how many digits a set of decimal digits holds.
+const decimalDigits = 10
 
 // original maps a span of the folded text to the original bytes it came from.
 // A span that starts or ends inside a segment's folded output (one character

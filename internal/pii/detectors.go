@@ -20,9 +20,11 @@ const maxNGram = 4
 // between the words of one n-gram ("Alice Tamm", "Tamm, Alice", `"Alice","Tamm"`).
 const maxSeparatorLen = 3
 
-// phoneCore is a phone shape: +cc and up to five digit groups, or a US
-// "(202) 555-0143".
-const phoneCore = `\+\d{1,3}[ .\-]?\(?\d{1,4}\)?(?:[ .\-]?\d{2,4}){1,4}|\(\d{3}\) ?\d{3}[ .\-]\d{4}`
+// phoneCore is a phone shape: +cc and up to five digit groups of one to four
+// digits, or a US "(202) 555-0143". A group of one digit counts ("… 45 6"),
+// so a number never leaves its last digit behind; a lone digit after a
+// number ("… 456 7 items") is taken into the token, which only covers more.
+const phoneCore = `\+\d{1,3}[ .\-]?\(?\d{1,4}\)?(?:[ .\-]?\d{1,4}){1,4}|\(\d{3}\) ?\d{3}[ .\-]\d{4}`
 
 var (
 	// emailRe takes internationalized addresses: letters, marks and digits of
@@ -57,6 +59,8 @@ func PatternDetectors() []Detector { return []Detector{EmailDetector{}, PhoneDet
 // EmailDetector finds email addresses by shape, known or not.
 type EmailDetector struct{}
 
+func (EmailDetector) shapes() {}
+
 // Detect returns the email spans in text. A span takes in ASCII letters and
 // digits glued to the end of the address ("a@corp.com2024"), so a token never
 // sits against them: a token is only recognized again when nothing
@@ -83,6 +87,8 @@ func (EmailDetector) Detect(text string) []Span {
 // PhoneDetector finds phone numbers by shape (+cc, or a US "(202) 555-0143"),
 // known or not, with minPhoneDigits to maxPhoneDigits digits.
 type PhoneDetector struct{}
+
+func (PhoneDetector) shapes() {}
 
 // Detect returns the phone spans in text.
 func (PhoneDetector) Detect(text string) []Span {
@@ -220,7 +226,7 @@ func splitWords(s string) []word {
 	var ws []word
 	start := -1
 	for i, r := range s {
-		inWord := isWordRune(r) || unicode.Is(unicode.Cf, r)
+		inWord := isWordRune(r) || isIgnorable(r)
 		if start < 0 && unicode.IsMark(r) {
 			inWord = false
 		}

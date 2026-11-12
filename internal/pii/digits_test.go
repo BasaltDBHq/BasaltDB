@@ -126,3 +126,16 @@ func TestNameDetectionKeepsMarks(t *testing.T) {
 	_, reps := tokenize(t, tz, "Jose Perez")
 	require.Empty(t, reps, "a name without its accents is another name")
 }
+
+// A last group of one digit belongs to the number, ASCII or not.
+func TestAOneDigitLastGroupIsPartOfThePhone(t *testing.T) {
+	k := newKeys(t, testMaster)
+	tz := newTokenizer(t)
+	plain := mustToken(t, k, pii.EntityPhone, "+447700900456", "")
+	for _, in := range []string{"+44 7700 900 45 6", inDigits("+44 7700 900 45 6", 0x0660)} {
+		out, reps := tokenize(t, tz, "call "+in+" now")
+		require.Len(t, reps, 1, "%q", in)
+		require.Equal(t, plain, reps[0].Token, "%q", in)
+		require.Equal(t, "call "+plain.Surface()+" now", out, "%q", in)
+	}
+}

@@ -528,15 +528,17 @@ func dropRole(ctx context.Context, q Querier, role string) error {
 const supabasePoolerHost = ".pooler.supabase.com"
 
 // agentQueryKeys are the connection string parameters the agent's
-// connection string keeps from the admin's: how to reach and trust the
-// server, never who logs in. Every other parameter is dropped, among them
-// user, password, passfile, sslpassword, service, servicefile, host,
-// port and dbname, which pgx would read in place of the agent's own.
+// connection string keeps from the admin's: where the server is and how
+// to trust it, never who logs in. Every other parameter is dropped, among
+// them user, password, passfile, service and servicefile, which pgx would
+// read in place of the agent's own user and password, and sslcert, sslkey
+// and sslpassword, the admin's TLS client identity (CO-9).
 var agentQueryKeys = map[string]bool{
+	"host":                    true,
+	"port":                    true,
+	"dbname":                  true,
 	"sslmode":                 true,
 	"sslrootcert":             true,
-	"sslcert":                 true,
-	"sslkey":                  true,
 	"sslcrl":                  true,
 	"sslcertmode":             true,
 	"sslnegotiation":          true,
@@ -551,9 +553,16 @@ var agentQueryKeys = map[string]bool{
 	"default_query_exec_mode": true,
 }
 
-// ErrAdminURLForm is returned for an admin connection string that is not
-// a postgres:// URL.
-var ErrAdminURLForm = errors.New("the admin connection string must be a URL (postgres://user:password@host:port/database), not keyword/value pairs")
+// Errors for an admin connection string the agent's connection string
+// cannot be built from.
+// Neither repeats the string, which holds the admin password.
+var (
+	// ErrAdminURLForm: not a postgres:// or postgresql:// URL.
+	ErrAdminURLForm = errors.New("the admin connection string must be a URL (postgres://user:password@host:port/database), not keyword/value pairs")
+	// ErrAdminURLParse: a postgres:// URL that does not parse, such as a
+	// Unix socket directory percent-encoded in the host.
+	ErrAdminURLParse = errors.New("the admin connection URL cannot be parsed; give a Unix socket directory as a parameter (postgres://user:password@/database?host=/var/run/postgresql), not percent-encoded in the host")
+)
 
 // AgentConnString builds the agent's connection string from adminURL: its
 // scheme, hosts, ports and database, the agent's user and password, and
@@ -564,9 +573,12 @@ var ErrAdminURLForm = errors.New("the admin connection string must be a URL (pos
 // ErrAdminURLForm. Through Supabase's pooler the agent's user keeps the
 // admin's project ref, so the pooler can route it.
 func AgentConnString(adminURL, role, password string) (string, error) {
-	u, err := url.Parse(adminURL)
-	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") {
+	if !strings.HasPrefix(adminURL, "postgres://") && !strings.HasPrefix(adminURL, "postgresql://") {
 		return "", ErrAdminURLForm
+	}
+	u, err := url.Parse(adminURL)
+	if err != nil {
+		return "", ErrAdminURLParse
 	}
 	user := role
 	if _, ref, ok := strings.Cut(u.User.Username(), "."); ok && strings.HasSuffix(u.Hostname(), supabasePoolerHost) {

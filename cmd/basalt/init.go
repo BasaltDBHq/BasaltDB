@@ -70,7 +70,7 @@ func runInit(c *cliIO, args []string) int {
 	if _, err := guard.AgentConnString(admin, role, ""); err != nil {
 		return c.fail(err)
 	}
-	conn, err := connect(c.ctx, admin)
+	conn, err := c.dial(c.ctx, admin)
 	if err != nil {
 		return c.fail(err)
 	}

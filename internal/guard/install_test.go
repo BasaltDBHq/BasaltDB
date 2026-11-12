@@ -2,6 +2,7 @@ package guard_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -35,14 +36,14 @@ func TestAgentConnString(t *testing.T) {
 	const canary = "ADMINSECRET"
 	cases := map[string]struct {
 		admin, want, user string
-		// certFiles: the result names certificate files that do not
-		// exist, which pgx cannot parse.
-		certFiles bool
+		// parse: what pgx can parse here; the default is both strings.
+		parse parsed
 	}{
 		"direct": {
 			admin: "postgres://postgres:" + canary + "@db.abcd.supabase.co:5432/postgres?sslmode=require",
 			want:  "postgres://basalt_agent_bot:pw@db.abcd.supabase.co:5432/postgres?sslmode=require",
 			user:  "basalt_agent_bot",
+			parse: parsedBoth,
 		},
 		"supabase pooler keeps the project ref": {
 			admin: "postgresql://postgres.abcd:" + canary + "@aws-0-eu-central-1.pooler.supabase.com:5432/postgres",
@@ -69,23 +70,46 @@ func TestAgentConnString(t *testing.T) {
 			want:  "postgres://basalt_agent_bot:pw@db.example.com/app",
 			user:  "basalt_agent_bot",
 		},
-		"passfile, service and sslpassword are dropped": {
-			admin: "postgres://admin@db.example.com/app?passfile=/home/admin/.pgpass&service=" + canary + "&servicefile=/x&sslpassword=" + canary,
+		"passfile and sslpassword are dropped": {
+			admin: "postgres://admin@db.example.com/app?passfile=/home/admin/.pgpass&sslpassword=" + canary,
 			want:  "postgres://basalt_agent_bot:pw@db.example.com/app",
 			user:  "basalt_agent_bot",
 		},
-		"host, port, dbname and runtime parameters are dropped": {
-			admin: "postgres://admin:" + canary + "@db.example.com/app?host=evil&port=1&dbname=other&options=-c%20role%3Dadmin&search_path=x",
+		"service and servicefile are dropped": {
+			admin: "postgres://admin@db.example.com/app?service=" + canary + "&servicefile=/home/admin/.pg_service.conf",
 			want:  "postgres://basalt_agent_bot:pw@db.example.com/app",
+			user:  "basalt_agent_bot",
+			parse: parsedAgent, // the service file does not exist
+		},
+		"runtime parameters are dropped": {
+			admin: "postgres://admin:" + canary + "@db.example.com/app?options=-c%20role%3Dadmin&search_path=x",
+			want:  "postgres://basalt_agent_bot:pw@db.example.com/app",
+			user:  "basalt_agent_bot",
+		},
+		"a unix socket host and port in the query are kept": {
+			admin: "postgres:///app?host=/var/run/postgresql&port=5433&user=admin&password=" + canary,
+			want:  "postgres://basalt_agent_bot:pw@/app?host=%2Fvar%2Frun%2Fpostgresql&port=5433",
+			user:  "basalt_agent_bot",
+		},
+		"dbname in the query is kept": {
+			admin: "postgres://admin:" + canary + "@db.example.com?dbname=app",
+			want:  "postgres://basalt_agent_bot:pw@db.example.com?dbname=app",
 			user:  "basalt_agent_bot",
 		},
 		"the allowlisted parameters are kept": {
-			admin: "postgres://admin:" + canary + "@db.example.com/app?sslmode=disable&sslrootcert=/ca.pem&sslcert=/c.pem&sslkey=/k.pem" +
-				"&channel_binding=require&target_session_attrs=read-write&connect_timeout=5&application_name=basalt&default_query_exec_mode=exec",
+			admin: "postgres://admin:" + canary + "@db.example.com/app?sslmode=require&channel_binding=require" +
+				"&target_session_attrs=read-write&connect_timeout=5&application_name=basalt&default_query_exec_mode=exec",
 			want: "postgres://basalt_agent_bot:pw@db.example.com/app?application_name=basalt&channel_binding=require&connect_timeout=5" +
-				"&default_query_exec_mode=exec&sslcert=%2Fc.pem&sslkey=%2Fk.pem&sslmode=disable&sslrootcert=%2Fca.pem&target_session_attrs=read-write",
-			user:      "basalt_agent_bot",
-			certFiles: true,
+				"&default_query_exec_mode=exec&sslmode=require&target_session_attrs=read-write",
+			user: "basalt_agent_bot",
+		},
+		"the admin's client certificate and key are dropped": {
+			admin: "postgres://admin:" + canary + "@db.example.com/app?sslmode=verify-ca&sslrootcert=/etc/ssl/ca.pem&sslcrl=/etc/ssl/crl.pem" +
+				"&sslcert=/home/admin/" + canary + ".crt&sslkey=/home/admin/" + canary + ".key&sslcertmode=require",
+			want: "postgres://basalt_agent_bot:pw@db.example.com/app?sslcertmode=require&sslcrl=%2Fetc%2Fssl%2Fcrl.pem" +
+				"&sslmode=verify-ca&sslrootcert=%2Fetc%2Fssl%2Fca.pem",
+			user:  "basalt_agent_bot",
+			parse: parsedNone, // the certificate files do not exist
 		},
 		"multiple hosts": {
 			admin: "postgres://admin:" + canary + "@db1.example.com:5432,db2.example.com:5433/app?target_session_attrs=primary&password=" + canary,
@@ -111,13 +135,19 @@ func TestAgentConnString(t *testing.T) {
 			require.Equal(t, c.want, got)
 			require.NotContains(t, got, canary)
 			require.NotContains(t, got, "admin")
-			if c.certFiles {
+			if c.parse == parsedNone {
 				return
 			}
 			cfg, err := pgx.ParseConfig(got)
 			require.NoError(t, err)
 			require.Equal(t, c.user, cfg.User)
 			require.Equal(t, "pw", cfg.Password)
+			if c.parse == parsedAgent {
+				return
+			}
+			adminCfg, err := pgx.ParseConfig(c.admin)
+			require.NoError(t, err)
+			require.Equal(t, route(adminCfg), route(cfg), "the agent connects where the admin does")
 		})
 	}
 	for _, kv := range []string{
@@ -127,6 +157,29 @@ func TestAgentConnString(t *testing.T) {
 		_, err := guard.AgentConnString(kv, "basalt_agent_bot", "pw")
 		require.ErrorIs(t, err, guard.ErrAdminURLForm, kv)
 	}
+	_, err := guard.AgentConnString("postgres://admin:"+canary+"@%2Fvar%2Frun%2Fpostgresql/app", "basalt_agent_bot", "pw")
+	require.ErrorIs(t, err, guard.ErrAdminURLParse)
+	require.NotContains(t, err.Error(), canary)
+}
+
+// parsed is what pgx can parse in a TestAgentConnString case.
+type parsed int
+
+const (
+	parsedBoth  parsed = iota // the admin's and the agent's strings
+	parsedAgent               // the agent's only
+	parsedNone                // neither
+)
+
+// route is where a pgx config connects: every host and port, and the
+// database.
+func route(cfg *pgx.ConnConfig) []string {
+	r := make([]string, 0, 2+len(cfg.Fallbacks))
+	r = append(r, cfg.Database, fmt.Sprintf("%s:%d", cfg.Host, cfg.Port))
+	for _, f := range cfg.Fallbacks {
+		r = append(r, fmt.Sprintf("%s:%d", f.Host, f.Port))
+	}
+	return r
 }
 
 func TestPlanInitRedactsPassword(t *testing.T) {

@@ -1,10 +1,15 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/guard"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 )
@@ -62,4 +67,29 @@ func TestServiceInstallArgsKeepTheCredentialFileWhenThePasswordIsKept(t *testing
 	args := serviceInstallArgs(f, "/b")
 	require.Equal(t, []string{"--init-arg", "--agent=bot", "--init-arg", "--os-user=iman", "--keep-credential"}, args[len(args)-5:])
 	require.NotContains(t, args, "--credential-stdin")
+}
+
+func TestInitRefusesAnUnusableAdminStringBeforeConnecting(t *testing.T) {
+	t.Parallel()
+	for admin, want := range map[string]error{
+		"host=db user=admin password=ADMINSECRET dbname=app":         guard.ErrAdminURLForm,
+		"postgres://admin:ADMINSECRET@%2Fvar%2Frun%2Fpostgresql/app": guard.ErrAdminURLParse,
+	} {
+		var stdout, stderr bytes.Buffer
+		c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr},
+			func(k string) string {
+				if k == envAdminURL {
+					return admin
+				}
+				return ""
+			})
+		c.dial = func(context.Context, string) (*pgx.Conn, error) {
+			t.Errorf("init connected with %q", admin)
+			return nil, context.Canceled
+		}
+		code := runInit(c, []string{"--agent", "bot", "--yes", "--no-service", "--config", t.TempDir() + "/engine.json"})
+		require.Equal(t, exitError, code, stderr.String())
+		require.Contains(t, stderr.String(), want.Error())
+		require.NotContains(t, stderr.String(), "ADMINSECRET")
+	}
 }

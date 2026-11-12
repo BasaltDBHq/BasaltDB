@@ -49,12 +49,15 @@ type cliIO struct {
 	// host runs what init does outside Postgres (sudo, the service probe,
 	// claude mcp add); tests use a fake.
 	host host
+	// dial opens a database connection (connect outside tests).
+	dial func(ctx context.Context, dsn string) (*pgx.Conn, error)
 }
 
 func newIO(ctx context.Context, std stdio, getenv func(string) string) *cliIO {
 	c := &cliIO{
 		ctx: ctx, stdin: bufio.NewReader(std.in), stdout: std.out, stderr: std.err,
 		getenv: getenv, now: time.Now, rand: rand.Reader, goos: runtime.GOOS, host: osHost{},
+		dial: connect,
 	}
 	stdin := std.in
 	if f, ok := stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {

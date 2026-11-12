@@ -1,0 +1,60 @@
+package agent
+
+import (
+	"context"
+	"testing"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/approval"
+	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/revert"
+)
+
+// gatedService is a service on an outdated guard whose approval and revert
+// stores panic when called: a page or CLI call that reached them would
+// relay a signature to a guard this build calls unsafe.
+func gatedService(t *testing.T) *Service {
+	t.Helper()
+	d := deps()
+	d.Probe = &fakeProbe{st: guardAt(guard.GuardOutdated, []int{guard.LatestVersion()}, nil)}
+	d.Approvals = struct{ ApprovalStore }{}
+	d.Reverts = struct{ RevertStore }{}
+	return NewService(d)
+}
+
+func requireGuardOutdated(t *testing.T, err error, path string) {
+	t.Helper()
+	var te *mcp.ToolError
+	require.ErrorAs(t, err, &te, path)
+	require.Equal(t, CodeUnavailable, te.Code, path)
+	require.Equal(t, reasonGuardOutdated, te.Reason, path)
+}
+
+func TestPagesRelayNothingOnAnOutdatedGuard(t *testing.T) {
+	t.Parallel()
+	s, ctx, id := gatedService(t), context.Background(), uuid.New()
+
+	requireGuardOutdated(t, s.RelayApproval(ctx, approval.Response{ApprovalID: id}), "pages approve")
+	_, err := s.ApprovalRequest(ctx, id)
+	requireGuardOutdated(t, err, "approval page")
+	_, err = s.RelayRevert(ctx, revert.Response{RevertID: id})
+	requireGuardOutdated(t, err, "pages revert")
+	_, err = s.RevertRequest(ctx, id)
+	requireGuardOutdated(t, err, "revert page")
+
+	// The page shows the person the upgrade command.
+	pf := s.PageFailure(s.RelayApproval(ctx, approval.Response{ApprovalID: id}))
+	require.Contains(t, pf.PersonMessage, "basalt upgrade --agent bot")
+}
+
+func TestNoLinkIsIssuedOnAnOutdatedGuard(t *testing.T) {
+	t.Parallel()
+	s, ctx, id := gatedService(t), context.Background(), uuid.New()
+	_, err := s.IssueApprovalLink(ctx, id, "proof")
+	requireGuardOutdated(t, err, "approval link issue")
+	_, err = s.IssueRevertLink(ctx, id, "proof")
+	requireGuardOutdated(t, err, "revert link issue")
+}

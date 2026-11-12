@@ -432,25 +432,15 @@ func invalidArgumentSteps(b *Steps, te *mcp.ToolError, f failure) {
 // unavailableSteps: a database the engine cannot reach is retried once; the
 // machine problems are the person's to fix, with the command for it.
 func (s *Service) unavailableSteps(b *Steps, te *mcp.ToolError, f failure) string {
-	person := func(command, problem string) string {
-		b.RunCommand(command, "Run this to fix it.")
-		b.TellAgent("Tell the agent when it is done.")
-		b.Stop("Do not retry until the person says it is fixed.")
-		return fmt.Sprintf("%s Run: %s then tell the agent.", problem, command)
-	}
 	switch te.Reason {
 	case reasonDatabaseUnreachable:
 		b.RepeatCall(f.tool, nil, 0, "Try the same call once more, in case the database was only briefly busy.")
 		b.AskPerson("Then tell the person the database cannot be reached and ask them to check that Postgres is running.")
-		return "The agent cannot reach the database. Check that Postgres is running and reachable from the machine the engine runs on."
-	case reasonCredentialRejected:
-		return person(s.Commands.Init("--rotate-password"), "The database refused the agent's credential (its password changed or was never right); this sets a new one and prints the restart command.")
-	case reasonGuardMissing:
-		return person(s.Commands.Init(""), "The guard is not installed in this database (or was removed); this installs it again with the saved flags.")
-	case reasonGuardOutdated:
-		return person(s.Commands.Upgrade(), "The guard in this database is older than this engine needs; this upgrades it.")
+		return databaseUnreachableMessage
+	case reasonCredentialRejected, reasonGuardMissing, reasonGuardOutdated:
+		return fixSteps(b, s.Commands, te.Reason)
 	case reasonEngineUnreachable:
-		return person(s.Commands.EngineStart(), "The agent cannot reach the engine, so it is not running.")
+		return engineUnreachableSteps(b, s.Commands)
 	case reasonSetupPending, reasonSetupExpired:
 		return s.setupSteps(b, te, f)
 	case reasonPagesOff:
@@ -459,6 +449,46 @@ func (s *Service) unavailableSteps(b *Steps, te *mcp.ToolError, f failure) strin
 	}
 	b.fail(fmt.Errorf("UNAVAILABLE has no reason %q", te.Reason))
 	return ""
+}
+
+// databaseUnreachableMessage is the person's message when the database
+// cannot be reached, in an error and in status.
+const databaseUnreachableMessage = "The agent cannot reach the database. Check that Postgres is running and reachable from the machine the engine runs on."
+
+// fixes are the person's command and what it fixes for the machine problems
+// of the guard and the credential, shared by the UNAVAILABLE errors and the
+// status problems of the same name.
+var fixes = map[string]struct {
+	command func(Commands) string
+	problem string
+}{
+	reasonCredentialRejected: {func(c Commands) string { return c.Init("--rotate-password") },
+		"The database refused the agent's credential (its password changed or was never right); this sets a new one and prints the restart command."},
+	reasonGuardMissing:  {func(c Commands) string { return c.Init("") }, "The guard is not installed in this database (or was removed); this installs it again with the saved flags."},
+	reasonGuardOutdated: {Commands.Upgrade, "The guard in this database is older than this engine needs; this upgrades it."},
+}
+
+// fixSteps: the person runs the fix for reason, then tells the agent; the
+// agent stops until then.
+func fixSteps(b *Steps, cmds Commands, reason string) string {
+	fix, ok := fixes[reason]
+	if !ok {
+		b.fail(fmt.Errorf("no fix for %s", reason))
+		return ""
+	}
+	return personFix(b, fix.command(cmds), fix.problem)
+}
+
+// engineUnreachableSteps: the person starts the engine.
+func engineUnreachableSteps(b *Steps, cmds Commands) string {
+	return personFix(b, cmds.EngineStart(), "The agent cannot reach the engine, so it is not running.")
+}
+
+func personFix(b *Steps, command, problem string) string {
+	b.RunCommand(command, "Run this to fix it.")
+	b.TellAgent("Tell the agent when it is done.")
+	b.Stop("Do not retry until the person says it is fixed.")
+	return fmt.Sprintf("%s Run: %s then tell the agent.", problem, command)
 }
 
 // approvalLinkError is the APPROVAL_INVALID answer for an approval that
@@ -517,20 +547,39 @@ var setupCode = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
 // the person runs: the engine has no operatedBy AGENT mode yet).
 func (s *Service) setupSteps(b *Steps, te *mcp.ToolError, f failure) string {
 	if te.Reason == reasonSetupExpired {
-		command := s.Commands.Init("--remote --new-code")
-		b.RunCommand(command, "Make a new setup code: this asks for the admin connection string itself.")
-		b.EndTurn("End your turn: the person acts next.")
-		return "The setup code for this agent expired before it was used. Run this to make a new one, then follow the steps it prints: " + command
+		return setupExpiredSteps(b, s.Commands)
 	}
 	var se *SetupError
-	if !errors.As(f.err, &se) || !setupCode.MatchString(se.Code) {
+	if !errors.As(f.err, &se) {
 		b.fail(errors.New("a pending setup needs its code"))
 		return ""
 	}
-	command := s.Commands.Init("--setup-code " + se.Code)
+	return setupPendingSteps(b, s.Commands, se.Code, true)
+}
+
+// setupExpiredSteps: a new setup code is made on the engine's machine.
+func setupExpiredSteps(b *Steps, cmds Commands) string {
+	command := cmds.Init("--remote --new-code")
+	b.RunCommand(command, "Make a new setup code: this asks for the admin connection string itself.")
+	b.EndTurn("End your turn: the person acts next.")
+	return "The setup code for this agent expired before it was used. Run this to make a new one, then follow the steps it prints: " + command
+}
+
+// setupPendingSteps: the person runs the pending setup code on their own
+// computer. An INSTALL code blocks the tools (blocking), so the agent ends
+// its turn and checks status after; an AGENT or UPGRADE code does not.
+func setupPendingSteps(b *Steps, cmds Commands, code string, blocking bool) string {
+	if !setupCode.MatchString(code) {
+		b.fail(errors.New("a pending setup needs its code"))
+		return ""
+	}
+	command := cmds.Init("--setup-code " + code)
 	b.RunCommand(command, "On your own computer, run this to finish the agent's setup.")
 	b.TellAgent("Tell the agent when it is done.")
+	if !blocking {
+		return "A change to this agent's setup is waiting for you. On your own computer, run: " + command + " then tell the agent."
+	}
 	b.EndTurn("End your turn: the person acts next.")
-	b.CallTool("status", map[string]any{}, "When the person says it is done, check that the agent is ready.")
+	b.CallTool(toolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
 	return "This agent's setup has not run yet. On your own computer, run: " + command + " then tell the agent."
 }

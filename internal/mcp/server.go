@@ -112,6 +112,12 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 	return sc.Err()
 }
 
+// ServeLine answers one JSON-RPC message on out, as Serve does for each line
+// (the MCP shim answers the lines the engine cannot).
+func (s *Server) ServeLine(ctx context.Context, out io.Writer, line []byte) error {
+	return s.serveLine(ctx, out, bytes.TrimSpace(line))
+}
+
 func (s *Server) serveLine(ctx context.Context, out io.Writer, line []byte) error {
 	var req Request
 	if err := json.Unmarshal(line, &req); err != nil {
@@ -207,6 +213,30 @@ func toolResult(v any, isError bool) map[string]any {
 		"content": []map[string]any{{"type": "text", "text": string(text)}},
 		"isError": isError,
 	}
+}
+
+// RequestOf decodes line as a request that wants an answer; ok is false
+// for a notification or a line that is not a JSON-RPC message.
+func RequestOf(line []byte) (req Request, ok bool) {
+	if json.Unmarshal(line, &req) != nil {
+		return Request{}, false
+	}
+	return req, req.ID != nil
+}
+
+// ErrCodeServer is the JSON-RPC server error code for a request the server
+// could not answer (the shim, for one its engine took and dropped).
+const ErrCodeServer = -32000
+
+// WriteToolError writes the tools/call answer for request id that carries
+// te, with isError set.
+func WriteToolError(w io.Writer, id any, te *ToolError) error {
+	return writeResponse(w, id, toolResult(te, true), nil)
+}
+
+// WriteError writes a JSON-RPC error answer for request id.
+func WriteError(w io.Writer, id any, code int, message string) error {
+	return writeResponse(w, id, nil, &RPCError{Code: code, Message: message})
 }
 
 func writeResponse(w io.Writer, id, result any, rpcErr *RPCError) error {

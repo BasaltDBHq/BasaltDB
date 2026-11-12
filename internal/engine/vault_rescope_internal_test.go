@@ -138,10 +138,14 @@ func TestVaultSessionWidensARevert(t *testing.T) {
 	selJSON, err := json.Marshal(every)
 	require.NoError(t, err)
 	var norm string
-	var nonce []byte
 	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT basalt_meta._revert_select_norm($1::jsonb)::text`, string(selJSON)).Scan(&norm))
-	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT rescope_nonce FROM basalt_meta.reverts WHERE revert_id = $1`, id).Scan(&nonce))
-	as, err := person.Sign(revert.RescopeChallenge(id, nonce, key, norm), passkeytest.FlagsUPUV, nil)
+	// The page reads the nonce from the engine, in the session.
+	r0 := do(p, http.MethodGet, readPath, s.secret, "")
+	require.Equal(t, http.StatusOK, r0.Status, r0.Body)
+	var proposal revert.Request
+	require.NoError(t, json.Unmarshal([]byte(r0.Body), &proposal))
+	require.Len(t, proposal.RescopeNonce, 16)
+	as, err := person.Sign(revert.RescopeChallenge(id, proposal.RescopeNonce, key, norm), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	widen, err := json.Marshal(agent.ScopeRequest{Select: every, NewSecret: newSecret, Proof: &agent.ScopeProof{
 		CredentialID: as.CredentialID, AuthenticatorData: as.AuthenticatorData, ClientDataJSON: as.ClientDataJSON, Signature: as.Signature,

@@ -213,3 +213,9 @@ func (s *Store) ApplyRevertBatch(ctx context.Context, id uuid.UUID, lines []int)
 func (s *Store) ApplyRevert(ctx context.Context, id uuid.UUID, a passkey.Assertion) (guard.AppliedRevert, error) {
 	return guard.ApplyRevert(ctx, s.db, id, a)
 }
+
+// RevertNonce reads the rescope nonce of a revert the agent's role prepared
+// (basalt_meta.revert_nonce).
+func (s *Store) RevertNonce(ctx context.Context, id uuid.UUID) ([]byte, error) {
+	return guard.RevertNonce(ctx, s.db, id)
+}

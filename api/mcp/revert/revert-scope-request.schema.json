@@ -22,7 +22,7 @@
         "clientDataJson",
         "signature"
       ],
-      "description": "The widen proof: a WebAuthn assertion by the person's passkey whose challenge is sha256(utf8(\"basalt-rescope.1\\n\" + revertId + \"\\n\" + nonce + \"\\n\" + hex(sha256(rescopeKey)) + \"\\n\" + normalized select)), with nonce the request's rescopeNonce as base64url and rescopeKey = HKDF-SHA-256(ikm newSecret, salt empty, info \"basalt-rescope-key.1\", 32 bytes).",
+      "description": "The widen proof: a WebAuthn assertion by the person's passkey whose challenge is sha256(utf8(\"basalt-rescope.1\\n\" + revertId + \"\\n\" + nonce + \"\\n\" + hex(sha256(rescopeKey)) + \"\\n\" + normalized select)), with nonce the request's rescopeNonce as base64url and rescopeKey = HKDF-SHA-256(ikm the 16 decoded bytes of newSecret, salt empty, info \"basalt-rescope-key.1\", 32 bytes).",
       "properties": {
         "credentialId": {
           "type": "string",

@@ -394,12 +394,31 @@ func find[T any](ctx context.Context, s *Server, ask func(context.Context, Agent
 			continue
 		}
 		if err != nil {
-			return out, a.PageFailure(err)
+			return out, pageFailure(a, err)
 		}
 		return out, nil
 	}
 	var zero T
 	return zero, unknownLink()
+}
+
+// nonceError is a page failure that hands the page the nonce of the widen
+// it asks the person for (a widened revert the engine no longer holds).
+type nonceError struct {
+	*mcp.ToolError
+	nonce passkey.Bytes
+}
+
+func (e *nonceError) Unwrap() error { return e.ToolError }
+
+// pageFailure is a's answer for err, keeping a rescope nonce it carries.
+func pageFailure(a Agent, err error) error {
+	te := a.PageFailure(err)
+	var pe *agent.PageError
+	if errors.As(err, &pe) && pe.RescopeNonce != nil {
+		return &nonceError{ToolError: te, nonce: pe.RescopeNonce}
+	}
+	return te
 }
 
 // unknownLink is the NOT_FOUND answer for a link no agent knows. Should its
@@ -478,9 +497,14 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 	if status == http.StatusInternalServerError {
 		s.log.Error("pages", "err", err)
 	}
-	writeJSON(w, status, errorDTO{
+	dto := errorDTO{
 		Code: te.Code, Message: te.Message, Reason: te.Reason, PersonMessage: te.PersonMessage, NextSteps: personSteps(te.NextSteps),
-	})
+	}
+	var ne *nonceError
+	if errors.As(err, &ne) {
+		dto.RescopeNonce = ne.nonce
+	}
+	writeJSON(w, status, dto)
 }
 
 // errorDTO is the pages' error body: the contract's tool error as the page
@@ -491,6 +515,9 @@ type errorDTO struct {
 	Reason        string         `json:"reason,omitempty"`
 	PersonMessage string         `json:"personMessage,omitempty"`
 	NextSteps     []mcp.NextStep `json:"nextSteps,omitempty"`
+	// RescopeNonce is set only on the 409 for a widened revert the engine
+	// no longer holds: the nonce of the person's new widen proof.
+	RescopeNonce passkey.Bytes `json:"rescopeNonce,omitempty"`
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {

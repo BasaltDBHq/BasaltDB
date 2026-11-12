@@ -32,7 +32,7 @@
     "rescopeNonce": {
       "type": "string",
       "pattern": "^[A-Za-z0-9_-]{22}$",
-      "description": "The revert's current single-use nonce, 16 bytes base64url, which a widen proof signs. Served only by the engine (the scope route's answer, and GET /api/v1/reverts/{revertId} once the engine has rescoped or reset the revert: the agent role's views do not show it), never carried in a long link: a long link cannot widen."
+      "description": "The revert's current single-use nonce, 16 bytes base64url, which a widen proof signs. Served only by the engine (GET /api/v1/reverts/{revertId} and the scope route's answer; the engine reads it with basalt_meta.revert_nonce, version 22), never carried in a long link: a long link cannot widen."
     },
     "credentialIds": {
       "type": "array",

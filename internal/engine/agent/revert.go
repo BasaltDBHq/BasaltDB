@@ -48,6 +48,8 @@ type RevertStore interface {
 	// canceled past timeout.
 	RescopeRevert(ctx context.Context, req guard.RescopeRequest, timeout time.Duration) (guard.RescopedRevert, error)
 	ResetRevert(ctx context.Context, id uuid.UUID, timeout time.Duration) (guard.RescopedRevert, error)
+	// RevertNonce is the rescope nonce of a revert the role prepared.
+	RevertNonce(ctx context.Context, id uuid.UUID) ([]byte, error)
 }
 
 // PreviewRevertParams are preview_revert's validated arguments: the scope

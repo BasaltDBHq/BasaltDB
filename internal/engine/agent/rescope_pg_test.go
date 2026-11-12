@@ -179,7 +179,25 @@ func (e *rescopeEnv) every() revert.Select {
 	return revert.Select{Scope: revert.ScopeTask, ScopeID: e.task}
 }
 
-func (e *rescopeEnv) nonce(t *testing.T, id uuid.UUID) []byte {
+// nonce is the nonce of the next widen as the page reads it from the
+// engine with the link's secret, which reads it as the agent role
+// (basalt_meta.revert_nonce): the request's, or for a widened revert the
+// engine no longer holds, the 409's.
+func (e *rescopeEnv) nonce(t *testing.T, id uuid.UUID, secret string) []byte {
+	t.Helper()
+	var out struct {
+		RescopeNonce passkey.Bytes `json:"rescopeNonce"`
+		Code         string        `json:"code"`
+	}
+	status := e.p.get(revertPath(id), secret, &out)
+	require.Contains(t, []int{http.StatusOK, http.StatusConflict}, status, out.Code)
+	require.Len(t, out.RescopeNonce, 16)
+	return out.RescopeNonce
+}
+
+// adminNonce is the stored nonce, read as the admin, to check what the
+// engine served.
+func (e *rescopeEnv) adminNonce(t *testing.T, id uuid.UUID) []byte {
 	t.Helper()
 	var n []byte
 	require.NoError(t, e.d.Admin.QueryRow(context.Background(), `SELECT rescope_nonce FROM basalt_meta.reverts WHERE revert_id = $1`, id).Scan(&n))
@@ -245,7 +263,7 @@ func TestScopeRouteWidenRotatesTheLink(t *testing.T) {
 	require.Equal(t, http.StatusOK, e.p.post(scopePath(id), pageOrigin, agentSecret, scopeBody(t, agent.ScopeRequest{Select: e.own()}), &own))
 	require.Nil(t, own.Catalog, "no catalog without a proof or token")
 	require.Len(t, own.Request.RescopeNonce, 16)
-	require.Equal(t, e.nonce(t, id), []byte(own.Request.RescopeNonce))
+	require.Equal(t, e.adminNonce(t, id), []byte(own.Request.RescopeNonce))
 	var read revert.Request
 	require.Equal(t, http.StatusOK, e.p.get(revertPath(id), agentSecret, &read))
 	require.Equal(t, own.Request.RescopeNonce, read.RescopeNonce)
@@ -299,7 +317,8 @@ func TestScopeRouteRefusesEveryBadWidenAlike(t *testing.T) {
 	t.Parallel()
 	e := newRescopeEnv(t)
 	id, secret := e.request(t)
-	nonce := e.nonce(t, id)
+	nonce := e.nonce(t, id, secret)
+	require.Equal(t, e.adminNonce(t, id), nonce, "GET serves the stored nonce")
 	thief, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 	signedFor := newLinkSecret(t)
@@ -352,7 +371,15 @@ func TestScopeRouteRefusesEveryBadWidenAlike(t *testing.T) {
 		require.Equal(t, "INVALID_ARGUMENT", perr.Code, name)
 	}
 
-	require.Equal(t, nonce, e.nonce(t, id), "no refusal consumed the nonce")
+	require.Equal(t, nonce, e.nonce(t, id, secret), "no refusal consumed the nonce")
+
+	// A widen that names the link's current secret as the new one would
+	// leave the agent's link working: refused on its shape.
+	var perr pageError
+	require.Equal(t, http.StatusBadRequest, e.p.post(scopePath(id), pageOrigin, secret,
+		e.widenBody(t, e.person, id, nonce, e.every(), secret), &perr))
+	require.Equal(t, "INVALID_ARGUMENT", perr.Code)
+	require.Equal(t, nonce, e.nonce(t, id, secret))
 	var read revert.Request
 	require.Equal(t, http.StatusOK, e.p.get(revertPath(id), secret, &read), "the link still works")
 	b, err := read.Check()
@@ -377,7 +404,7 @@ func TestResetGivesTheRotatedLinkLinkReset(t *testing.T) {
 	id, secret := e.request(t)
 	personSecret := newLinkSecret(t)
 	require.Equal(t, http.StatusOK, e.p.post(scopePath(id), pageOrigin, secret,
-		e.widenBody(t, e.person, id, e.nonce(t, id), e.every(), personSecret), nil))
+		e.widenBody(t, e.person, id, e.nonce(t, id, secret), e.every(), personSecret), nil))
 
 	body, isError := e.h.call(t, "request_revert", map[string]any{"revertId": id.String(), "reissueLink": true})
 	require.False(t, isError, "%v", body)
@@ -423,7 +450,7 @@ func TestScopeTokenIsLostOnRestart(t *testing.T) {
 	id, secret := e.request(t)
 	personSecret := newLinkSecret(t)
 	require.Equal(t, http.StatusOK, e.p.post(scopePath(id), pageOrigin, secret,
-		e.widenBody(t, e.person, id, e.nonce(t, id), e.every(), personSecret), nil))
+		e.widenBody(t, e.person, id, e.nonce(t, id, secret), e.every(), personSecret), nil))
 
 	e.start(t, nil)
 	var perr pageError
@@ -435,14 +462,84 @@ func TestScopeTokenIsLostOnRestart(t *testing.T) {
 	require.Equal(t, http.StatusConflict, e.p.post(scopePath(id), pageOrigin, personSecret, scopeBody(t, agent.ScopeRequest{Select: e.own()}), &perr),
 		"after a widen even the agent's own work needs the token")
 
+	// The 409 carries the nonce, read as the agent role: the page widens
+	// again with it.
+	var lost struct {
+		Code         string        `json:"code"`
+		RescopeNonce passkey.Bytes `json:"rescopeNonce"`
+	}
+	require.Equal(t, http.StatusConflict, e.p.get(revertPath(id), personSecret, &lost))
+	require.Len(t, lost.RescopeNonce, 16)
 	again := newLinkSecret(t)
 	var wide scopeAnswer
 	require.Equal(t, http.StatusOK, e.p.post(scopePath(id), pageOrigin, personSecret,
-		e.widenBody(t, e.person, id, e.nonce(t, id), e.every(), again), &wide))
+		e.widenBody(t, e.person, id, lost.RescopeNonce, e.every(), again), &wide))
 	require.NotNil(t, wide.Catalog)
 	require.Equal(t, http.StatusOK, e.p.post(scopePath(id), pageOrigin, again, helperOnly, nil), "the new widen's token narrows")
 	require.Equal(t, http.StatusNotFound, e.p.get(revertPath(id), personSecret, &perr), "the earlier rotated link is dead")
 	e.calls.requireNoSecret(t, secret, personSecret, again)
+}
+
+// Postgres wins over the engine's memory: when the agent resets a widened
+// revert straight in Postgres, the person's page gets LINK_RESET, not the
+// lines the engine still held, and the agent's view is served again.
+func TestDirectResetInPostgresBeatsTheEnginesMemory(t *testing.T) {
+	t.Parallel()
+	e := newRescopeEnv(t)
+	id, secret := e.request(t)
+	personSecret := newLinkSecret(t)
+	require.Equal(t, http.StatusOK, e.p.post(scopePath(id), pageOrigin, secret,
+		e.widenBody(t, e.person, id, e.nonce(t, id, secret), e.every(), personSecret), nil))
+	var read revert.Request
+	require.Equal(t, http.StatusOK, e.p.get(revertPath(id), personSecret, &read))
+
+	_, err := e.bot.Conn.Exec(context.Background(), `SELECT basalt_meta.reset_revert($1)`, id)
+	require.NoError(t, err)
+
+	var perr pageError
+	require.Equal(t, http.StatusNotFound, e.p.get(revertPath(id), personSecret, &perr))
+	require.Equal(t, "LINK_RESET", perr.Reason)
+	require.Equal(t, http.StatusNotFound, e.p.post(scopePath(id), pageOrigin, personSecret,
+		scopeBody(t, agent.ScopeRequest{Select: e.own()}), &perr))
+	require.Equal(t, "LINK_RESET", perr.Reason, "the held token is gone with it")
+
+	body, isError := e.h.call(t, "request_revert", map[string]any{"revertId": id.String(), "reissueLink": true})
+	require.False(t, isError, "%v", body)
+	require.Equal(t, http.StatusOK, e.p.get(revertPath(id), links.SecretOf(str(t, body["revertUrl"])), &read))
+	b, err := read.Check()
+	require.NoError(t, err)
+	require.False(t, b.Widened)
+}
+
+// Rescopes of one revert run one at a time: after many concurrent narrows
+// under the token, the request the engine serves is the one Postgres
+// stored last.
+func TestConcurrentRescopesKeepTheLatest(t *testing.T) {
+	t.Parallel()
+	e := newRescopeEnv(t)
+	id, secret := e.request(t)
+	personSecret := newLinkSecret(t)
+	require.Equal(t, http.StatusOK, e.p.post(scopePath(id), pageOrigin, secret,
+		e.widenBody(t, e.person, id, e.nonce(t, id, secret), e.every(), personSecret), nil))
+	selects := [][]byte{
+		scopeBody(t, agent.ScopeRequest{Select: revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Role}}}),
+		scopeBody(t, agent.ScopeRequest{Select: e.every()}),
+	}
+	const posts = 8
+	var wg sync.WaitGroup
+	statuses := make([]int, posts)
+	for i := range posts {
+		wg.Go(func() { statuses[i] = e.p.post(scopePath(id), pageOrigin, personSecret, selects[i%2], nil) })
+	}
+	wg.Wait()
+	for _, st := range statuses {
+		require.Equal(t, http.StatusOK, st)
+	}
+	var read revert.Request
+	require.Equal(t, http.StatusOK, e.p.get(revertPath(id), personSecret, &read))
+	var stored string
+	require.NoError(t, e.d.Admin.QueryRow(context.Background(), `SELECT binding_text FROM basalt_meta.reverts WHERE revert_id = $1`, id).Scan(&stored))
+	require.Equal(t, stored, read.Binding, "the engine serves what Postgres stored last")
 }
 
 // slowReverts answers every rescope as Postgres does once the statement

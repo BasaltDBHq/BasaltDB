@@ -503,26 +503,56 @@ function assertionJSON(id, { credentialId, authenticatorData, clientDataJson, si
 }
 
 const REVERT_BINDING_FIELDS = [
-  "kind", "revertId", "database", "scope", "scopeId", "agents", "intent",
+  "kind", "revertId", "database", "select", "widened", "intent",
   "rows", "skipped", "rowsHash", "expiresAt", "requestedBy",
 ];
+const REVERT_SELECT_FIELDS = ["scope", "scopeId", "agents", "runs", "tables"];
 const REVERT_SCOPES = new Set(["CHANGE", "RUN", "TASK"]);
+// Runs and tables a scope descriptor lists at most (owner, Q10).
+const MAX_REVERT_FILTER = 20;
 const REVERT_ACTIONS = new Set(["RESTORE", "SKIP"]);
 const REVERT_CONFLICTS = new Set([
   "CHANGED_AFTER", "ROW_GONE", "KEY_TAKEN", "ALREADY_REVERTED",
   "VALUES_PRUNED", "SCHEMA_CHANGED", "CASCADE", "CONSTRAINT",
 ]);
 
+// parseRevertSelect checks a scope descriptor (CONTRACT.md, The scope
+// descriptor): the binding's select or proposed. null lists mean all.
+function parseRevertSelect(value, what) {
+  const s = strictObject(value, what, REVERT_SELECT_FIELDS);
+  if (!REVERT_SCOPES.has(s.scope)) throw new CodeError(`${what} scope "${s.scope}"`);
+  if (!UUID.test(s.scopeId)) throw new CodeError(`${what} scopeId must be a uuid`);
+  for (const key of ["agents", "runs", "tables"]) {
+    const list = s[key];
+    if (list === null) continue;
+    if (!Array.isArray(list) || list.length === 0 || !list.every((x) => typeof x === "string" && x !== "")) {
+      throw new CodeError(`${what} ${key} must be null or a list of at least one`);
+    }
+    if (key !== "agents" && list.length > MAX_REVERT_FILTER) {
+      throw new CodeError(`${what} lists more than ${MAX_REVERT_FILTER} ${key}`);
+    }
+  }
+  if (s.runs !== null && s.scope !== "TASK") throw new CodeError(`${what} lists runs for a ${s.scope} scope`);
+  return s;
+}
+
 // parseRevertBinding parses a revert binding text for display. The text
 // itself is what gets signed.
 export function parseRevertBinding(text) {
-  const b = strictObject(parseJSON(requireString(text, "binding"), "binding"), "binding", REVERT_BINDING_FIELDS, ["batched", "sampleHash"]);
+  const b = strictObject(parseJSON(requireString(text, "binding"), "binding"), "binding", REVERT_BINDING_FIELDS,
+    ["proposed", "agentRows", "batched", "sampleHash"]);
   if (b.kind !== KIND_REVERT) throw new CodeError(`binding kind "${b.kind}"`);
-  if (!REVERT_SCOPES.has(b.scope)) throw new CodeError(`binding scope "${b.scope}"`);
-  if (!UUID.test(b.revertId) || !UUID.test(b.scopeId)) throw new CodeError("binding revertId and scopeId must be uuids");
-  if (!Array.isArray(b.agents) || b.agents.length === 0) throw new CodeError("binding names no agents");
-  if (!Number.isInteger(b.rows) || b.rows < 1) throw new CodeError(`binding rows ${b.rows}: a revert restores at least one row`);
+  if (!UUID.test(b.revertId)) throw new CodeError("binding revertId must be a uuid");
+  parseRevertSelect(b.select, "binding select");
+  if ("proposed" in b) parseRevertSelect(b.proposed, "binding proposed");
+  const widened = b.select.agents === null || b.select.agents.some((a) => a !== b.requestedBy);
+  if (b.widened !== widened) throw new CodeError(`binding widened ${b.widened} does not match its select and requestedBy`);
+  if (widened !== ("agentRows" in b)) throw new CodeError("binding agentRows goes with widened, and only with it");
   if (!Number.isInteger(b.skipped) || b.skipped < 0) throw new CodeError(`binding skipped ${b.skipped}`);
+  // A task proposal with no line of the agent's own is stored for the
+  // person to widen; it has nothing to sign as it is.
+  const empty = b.select.scope === "TASK" && b.rows === 0 && b.skipped === 0 && !("batched" in b);
+  if (!Number.isInteger(b.rows) || (b.rows < 1 && !empty)) throw new CodeError(`binding rows ${b.rows}: a revert restores at least one row`);
   requireRowsHash(b.rowsHash);
   const lines = b.rows + b.skipped;
   if ("batched" in b) {

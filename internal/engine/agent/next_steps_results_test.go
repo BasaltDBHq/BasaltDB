@@ -63,8 +63,8 @@ func caseBindingText(t *testing.T, batched bool) string {
 		rows, skipped = 1209, 1
 	}
 	raw, err := json.Marshal(revert.Binding{
-		Kind: revert.KindRevert, RevertID: uuid.MustParse(caseRevertID), Database: "app", Scope: revert.ScopeRun,
-		ScopeID: uuid.MustParse(caseRunID), Agents: []string{"bot"}, Intent: strings.Repeat("The agent set the wrong status. ", 30),
+		Kind: revert.KindRevert, RevertID: uuid.MustParse(caseRevertID), Database: "app",
+		Select: revert.Select{Scope: revert.ScopeRun, ScopeID: uuid.MustParse(caseRunID), Agents: []string{"bot"}}, Intent: strings.Repeat("The agent set the wrong status. ", 30),
 		Rows: rows, Skipped: skipped, RowsHash: strings.Repeat("a", 64), ExpiresAt: caseRevert(false).ExpiresAt, RequestedBy: "bot",
 		Batched: batched, SampleHash: map[bool]string{true: strings.Repeat("b", 64)}[batched],
 	})
@@ -462,7 +462,8 @@ func TestSuppliedTextCannotFakeALinkInAPersonMessage(t *testing.T) {
 
 	r := caseRevertWith(t, ledger.RevertPending)
 	raw, err := json.Marshal(revert.Binding{
-		Kind: revert.KindRevert, RevertID: r.ID, Database: "app", Scope: revert.ScopeRun, ScopeID: r.ScopeID, Agents: []string{"bot"},
+		Kind: revert.KindRevert, RevertID: r.ID, Database: "app",
+		Select: revert.Select{Scope: revert.ScopeRun, ScopeID: r.ScopeID, Agents: []string{"bot"}},
 		Intent: evil, Rows: 3, Skipped: 1, RowsHash: strings.Repeat("a", 64), ExpiresAt: r.ExpiresAt, RequestedBy: "bot",
 	})
 	require.NoError(t, err)

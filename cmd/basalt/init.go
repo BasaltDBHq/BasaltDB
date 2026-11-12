@@ -52,6 +52,9 @@ type initFlags struct {
 // the engine service with one sudo (or prints the foreground command; see
 // setupEngine). The admin connection string is never stored.
 func runInit(c *cliIO, args []string) int {
+	if isRemote(args) {
+		return runInitRemote(c, args)
+	}
 	f, err := parseInit(c, args)
 	if err != nil {
 		return c.fail(err)
@@ -64,11 +67,21 @@ func runInit(c *cliIO, args []string) int {
 	if err != nil {
 		return c.fail(fmt.Errorf("%w: %w", errUsage, err))
 	}
+	if mayInstallService(c, f) {
+		if _, err := checkedExecutable(c); err != nil {
+			return c.fail(err)
+		}
+	}
 	admin, err := c.adminURL()
 	if err != nil {
 		return c.fail(err)
 	}
-	conn, err := connect(c.ctx, admin)
+	// The agent's connection string is built from the admin's: refuse one
+	// it cannot be built from before anything changes in the database.
+	if _, err := guard.AgentConnString(admin, role, ""); err != nil {
+		return c.fail(err)
+	}
+	conn, err := c.dial(c.ctx, admin)
 	if err != nil {
 		return c.fail(err)
 	}

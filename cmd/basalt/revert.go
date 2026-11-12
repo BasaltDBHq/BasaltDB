@@ -270,8 +270,9 @@ func printPlanSize(c *cliIO, prep guard.PreparedRevert) {
 	}
 	fmt.Fprintf(c.stderr, "basalt: large revert: %d rows, %d to restore and %d left as they are. You sign it once; your agent then restores it in batches of up to %d within %d hours of your signature.\n",
 		b.Lines(), b.Rows, b.Skipped, revert.MaxBatch, int(revert.ApplyWindow.Hours()))
-	fmt.Fprintf(c.stderr, "basalt: below and in the link: the first %d rows, rows left alone first. The signature covers all %d.\n",
-		len(prep.Lines), b.Lines())
+	skips, restores := revert.SampleCounts(b.Skipped, b.Rows)
+	fmt.Fprintf(c.stderr, "basalt: below and in the link: %d rows, %d to restore and %d left as they are. The signature covers all %d.\n",
+		len(prep.Lines), restores, skips, b.Lines())
 }
 
 // revertStatusDTO is basalt revert --status --json.

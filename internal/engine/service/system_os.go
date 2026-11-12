@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"strconv"
 )
 
 // OSSystem runs install steps on this machine. Commands inherit stdout and
@@ -18,6 +19,23 @@ type OSSystem struct {
 func (OSSystem) UserExists(name string) bool {
 	_, err := user.Lookup(name)
 	return err == nil
+}
+
+// keepID tells chown to leave an id as it is; as an owner uid it is no user.
+const keepID = -1
+
+// LookupUID is the uid of the OS user name, or -1 when there is no such
+// user (the install has not made it yet, so it owns nothing).
+func LookupUID(name string) int {
+	u, err := user.Lookup(name)
+	if err != nil {
+		return keepID
+	}
+	uid, err := strconv.Atoi(u.Uid)
+	if err != nil {
+		return keepID
+	}
+	return uid
 }
 
 // Output runs a command and returns its stdout.

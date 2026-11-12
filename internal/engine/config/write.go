@@ -23,6 +23,8 @@ type Settings struct {
 	SocketDir, StateDir string
 	// PagesURL replaces the config's pages base URL when set.
 	PagesURL string
+	// OperatedBy replaces the config's operatedBy when set.
+	OperatedBy string
 	// Mode replaces the config's mode when set.
 	Mode Mode
 	// PersonUIDs are added to the config's person uids; the recorded ones
@@ -44,7 +46,14 @@ func UpsertAgent(path string, s Settings, a Agent) error {
 // Upserted is the content UpsertAgent writes, without writing it: the
 // service install writes it itself, owned by the engine's OS user.
 func Upserted(path string, s Settings, a Agent) ([]byte, error) {
-	c, err := LoadNoFollow(path)
+	return UpsertedWith(path, openNoFollow, s, a)
+}
+
+// UpsertedWith is Upserted reading the existing file through open. The
+// service install, as root, passes one that follows no link anywhere on the
+// path and accepts only a file the engine's user owns.
+func UpsertedWith(path string, open func(string) (*os.File, error), s Settings, a Agent) ([]byte, error) {
+	c, err := load(path, open)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		c = Config{SocketDir: s.SocketDir, StateDir: s.StateDir}
@@ -53,6 +62,9 @@ func Upserted(path string, s Settings, a Agent) ([]byte, error) {
 	}
 	if s.PagesURL != "" {
 		c.PagesURL, c.ApprovalPage = s.PagesURL, ""
+	}
+	if s.OperatedBy != "" {
+		c.OperatedBy = s.OperatedBy
 	}
 	if s.Mode != "" {
 		c.Mode = s.Mode
@@ -78,11 +90,18 @@ func Upserted(path string, s Settings, a Agent) ([]byte, error) {
 }
 
 // WriteFile writes data to path atomically with FileMode, creating the
-// directory (mode 0700) when missing.
+// directory (mode 0700) when missing. It writes a new temporary file
+// (O_EXCL, so never through a planted link) and renames it over path,
+// which replaces a link rather than following it; a path that is a
+// symlink or not a regular file is refused all the same, since nothing
+// basalt writes is ever one.
 func WriteFile(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, dirMode); err != nil {
 		return err
+	}
+	if fi, err := os.Lstat(path); err == nil && !fi.Mode().IsRegular() {
+		return fmt.Errorf("%s is not a regular file (a symlink?); refusing to write it", path)
 	}
 	tmp, err := os.CreateTemp(dir, ".basalt-*")
 	if err != nil {

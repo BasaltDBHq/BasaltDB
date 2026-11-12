@@ -3,6 +3,7 @@
 // numbers, and no character that hides or reorders text.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { paramsText, parseBinding, parseLine, parseRevertLine, visibleText } from "./codec.js";
 // Imported before any document exists, so the pages' main() does not run.
@@ -38,6 +39,25 @@ test("visibleText escapes bidi, invisible and C1 characters and keeps the rest",
 });
 
 const cp = (...points) => String.fromCodePoint(...points);
+
+// selectorsWith lists the selectors of every rule in style.css whose body
+// holds all of the given declarations.
+function selectorsWith(css, ...declarations) {
+  const out = new Set();
+  for (const [, selectors, body] of css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+    if (!declarations.every((d) => body.includes(d))) continue;
+    for (const s of selectors.split(",")) out.add(s.trim());
+  }
+  return out;
+}
+
+test("the stylesheet pins agent-written text to stored order and clips what overflows", () => {
+  const css = readFileSync(new URL("../style.css", import.meta.url), "utf8");
+  const pinned = selectorsWith(css, "direction: ltr", "unicode-bidi: isolate-override");
+  for (const s of [".values td", "#params", "#statement", "#intent"]) assert.ok(pinned.has(s), `${s} is not isolate-override`);
+  const clipped = selectorsWith(css, "overflow: hidden");
+  for (const s of [".values td", ".summary dd"]) assert.ok(clipped.has(s), `${s} does not clip overflow`);
+});
 
 test("visibleText escapes every default-ignorable character, variation selectors included", () => {
   assert.equal(visibleText(`a${cp(0xfe0f)}b`), "a<U+FE0F>b");

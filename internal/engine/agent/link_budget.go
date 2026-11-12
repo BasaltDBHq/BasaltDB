@@ -134,7 +134,10 @@ var hostDot = regexp.MustCompile(`([\p{L}\p{N}_-])\.(\p{L})`)
 const middleDot = "$1·$2"
 
 // dottedQuad is an IPv4 address (10.0.0.1); its dots become middle dots
-// too, as do a version's with four parts.
+// too, as do a version's with four parts. The short forms a browser also
+// takes (0x7f.1, 127.1, decimal 2130706433) are left alone on purpose:
+// chat apps do not link them, and without a scheme (removed above) they
+// are not a URL.
 var dottedQuad = regexp.MustCompile(`(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})`)
 
 const quadDots = "$1·$2·$3·$4"

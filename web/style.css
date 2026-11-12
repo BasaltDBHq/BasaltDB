@@ -91,10 +91,11 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
 .values td, .summary dd, .table-name, .headline, #cascade-text { unicode-bidi: isolate; }
 .values td { white-space: pre-wrap; }
 .values td, .summary dd { overflow: hidden; }
-/* Values and params show in the order they are stored, left to right, even
-   with right-to-left letters in them: "ש 100 200" cannot read as
-   "200 100 ש" (fidelity over readability). */
-.values td, #params { direction: ltr; unicode-bidi: isolate-override; }
+/* Values, params, the statement and the intent show in the order they are
+   stored, left to right, even with right-to-left letters in them:
+   "ש 100 200" cannot read as "200 100 ש" (fidelity over readability).
+   web/lib/display.test.mjs checks the selectors. */
+.values td, #params, #statement, #intent { direction: ltr; unicode-bidi: isolate-override; }
 
 button {
   font: inherit;

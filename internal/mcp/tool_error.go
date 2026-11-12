@@ -81,3 +81,20 @@ type ApprovalNotice struct {
 func (e *ToolError) Error() string {
 	return e.Message
 }
+
+// Warning is a successful result's warning (api/mcp/errors/warning.schema.json):
+// the call worked, but something needs attention. A result carries them in
+// warnings, absent when there are none.
+type Warning struct {
+	Code          string     `json:"code"`
+	Message       string     `json:"message"`
+	Table         string     `json:"table,omitempty"`
+	PersonMessage string     `json:"personMessage,omitempty"`
+	NextSteps     []NextStep `json:"nextSteps"`
+}
+
+// Codes of Warning.
+const (
+	WarningRLSHidesRows          = "RLS_HIDES_ROWS"
+	WarningGuardUpgradeAvailable = "GUARD_UPGRADE_AVAILABLE"
+)

@@ -2,7 +2,7 @@
   "name": "query",
   "status": "IMPLEMENTED",
   "milestone": "M1",
-  "description": "Run one SELECT on the database with bound parameters ($1, $2, ...). Runs read-only, within the engine's time limit and row limit. The read is recorded as a change record (in the run when runId is given), with the version of each row the engine can identify, so a later write in the run to a row changed since is refused with STALE_READ. Multiple statements, locking reads and functions outside the allowlist are refused.",
+  "description": "Run one SELECT on the database with bound parameters ($1, $2, ...). Runs read-only, within the engine's time limit and row limit. The read is recorded as a change record (in the run when runId is given), with the version of each row the engine can identify, so a later write in the run to a row changed since is refused with STALE_READ. Multiple statements, locking reads and functions outside the allowlist are refused. A refusal, or a warning such as RLS_HIDES_ROWS, carries nextSteps: do them in order, and show personMessage verbatim.",
   "inputSchema": {
     "type": "object",
     "additionalProperties": false,

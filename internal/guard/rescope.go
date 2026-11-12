@@ -125,3 +125,16 @@ func ResetRevert(ctx context.Context, q Querier, revertID uuid.UUID) (RescopedRe
 	}
 	return out, nil
 }
+
+// RevertNonce is the rescope nonce of the caller's own revert, which the
+// person's next widen proof signs (basalt_meta.revert_nonce, version 22).
+// Another role's revert, or none, is REVERT_INVALID "no such revert".
+func RevertNonce(ctx context.Context, q Querier, revertID uuid.UUID) ([]byte, error) {
+	var out []byte
+	// Plain SQL: one function call returning bytea.
+	err := q.QueryRow(ctx, `SELECT basalt_meta.revert_nonce($1::uuid)`, revertID.String()).Scan(&out)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}

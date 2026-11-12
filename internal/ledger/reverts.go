@@ -47,6 +47,10 @@ type Revert struct {
 	// ChangeID is the revert's own change record (op REVERT), set once a
 	// one-call revert is applied or a batched plan is signed.
 	ChangeID *uuid.UUID
+	// Widened is set once the person widened the revert beyond the role's
+	// own work (version 20): the view then shows no binding, selection or
+	// lines.
+	Widened bool
 }
 
 // RevertProgress counts a batched plan's lines by outcome.
@@ -60,7 +64,7 @@ type RevertProgress struct {
 func FindRevert(ctx context.Context, q guard.Querier, id uuid.UUID) (Revert, error) {
 	sql, args, err := psql.Select("revert_id", "status", "scope", "scope_id", "intent", "rows", "skipped", "expires_at",
 		"coalesce(binding_text, '')", "coalesce(lines, '{}')", "batched", "signed_at", "apply_by", "batches",
-		"coalesce(restored, 0)", "coalesce(skipped_now, 0)", "coalesce(pending, 0)", "change_id").
+		"coalesce(restored, 0)", "coalesce(skipped_now, 0)", "coalesce(pending, 0)", "change_id", "widened").
 		From("basalt_meta.agent_reverts").Where(sq.Eq{"revert_id": id.String()}).ToSql()
 	if err != nil {
 		return Revert{}, err
@@ -73,7 +77,7 @@ func FindRevert(ctx context.Context, q guard.Querier, id uuid.UUID) (Revert, err
 		var r Revert
 		err := row.Scan(&r.ID, &r.Status, &r.Scope, &r.ScopeID, &r.Intent, &r.Rows, &r.Skipped, &r.ExpiresAt, &r.BindingText,
 			&r.Lines, &r.Batched, &r.SignedAt, &r.ApplyBy, &r.Batches,
-			&r.Progress.Restored, &r.Progress.Skipped, &r.Progress.Pending, &r.ChangeID)
+			&r.Progress.Restored, &r.Progress.Skipped, &r.Progress.Pending, &r.ChangeID, &r.Widened)
 		return r, err
 	})
 	if errors.Is(err, pgx.ErrNoRows) {

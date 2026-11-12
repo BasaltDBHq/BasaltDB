@@ -615,9 +615,14 @@ export async function parseRevertRequest(fragment) {
 const REVERT_REQUEST_FIELDS = ["revertId", "binding", "lines"];
 
 // checkRevertRequest checks a decoded revert request, from a link fragment
-// or from the engine's local pages, exactly as parseRevertRequest does.
+// or from the engine's local pages, exactly as parseRevertRequest does. The
+// engine may also send rescopeNonce, the nonce of the next widen proof; a
+// long link never carries it (decodeRequest refuses it there).
 export async function checkRevertRequest(value) {
-  const req = strictObject(value, "revert request", REVERT_REQUEST_FIELDS, ["credentialIds"]);
+  const req = strictObject(value, "revert request", REVERT_REQUEST_FIELDS, ["credentialIds", "rescopeNonce"]);
+  if ("rescopeNonce" in req && (typeof req.rescopeNonce !== "string" || !/^[A-Za-z0-9_-]{22}$/.test(req.rescopeNonce))) {
+    throw new CodeError("revert request has a bad rescopeNonce");
+  }
   const binding = parseRevertBinding(req.binding);
   if (req.revertId !== binding.revertId) {
     throw new CodeError(`request is for revert ${req.revertId}, binding for ${binding.revertId}`);
@@ -630,6 +635,7 @@ export async function checkRevertRequest(value) {
     binding,
     lines,
     credentialIds: decodeCredentialIds(req.credentialIds),
+    rescopeNonce: req.rescopeNonce ?? null,
     challenge: await challengeFor(req.binding),
   };
 }

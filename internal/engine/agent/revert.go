@@ -43,6 +43,13 @@ type RevertStore interface {
 	RevertLines(ctx context.Context, p ledger.RevertLineParams) (pagination.Page[ledger.RevertLine], error)
 	ApplyRevertBatch(ctx context.Context, id uuid.UUID, lines []int) (guard.BatchResult, error)
 	ApplyRevert(ctx context.Context, id uuid.UUID, a passkey.Assertion) (guard.AppliedRevert, error)
+	// RescopeRevert and ResetRevert change a pending revert's scope for the
+	// person, and put it back to the proposal for the agent's reissue, each
+	// canceled past timeout.
+	RescopeRevert(ctx context.Context, req guard.RescopeRequest, timeout time.Duration) (guard.RescopedRevert, error)
+	ResetRevert(ctx context.Context, id uuid.UUID, timeout time.Duration) (guard.RescopedRevert, error)
+	// RevertNonce is the rescope nonce of a revert the role prepared.
+	RevertNonce(ctx context.Context, id uuid.UUID) ([]byte, error)
 }
 
 // PreviewRevertParams are preview_revert's validated arguments: the scope
@@ -299,7 +306,17 @@ func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Request
 	switch {
 	case p.Signature != nil:
 		return s.deliverRevertSignature(ctx, r, *p.Signature)
+	case p.Reissue && r.Status == ledger.RevertPending && r.Widened:
+		// No link to the person's scope for the agent: the reissue resets the
+		// revert to its proposal (owner, Q8).
+		if r, err = s.resetToProposal(ctx, r); err != nil {
+			return RequestedRevert{}, err
+		}
+		return s.revertWithLink(ctx, r)
 	case p.Reissue && r.Status == ledger.RevertPending:
+		if err := s.retirePersonScope(ctx, r); err != nil {
+			return RequestedRevert{}, err
+		}
 		return s.revertWithLink(ctx, r)
 	}
 	err = s.awaitWhile(ctx, p.Wait, func() bool { return r.Status == ledger.RevertPending }, func(ctx context.Context) error {

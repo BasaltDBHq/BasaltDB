@@ -94,6 +94,7 @@ func TestVaultSessionOnAnUnsafeGuardAnswersAsLoopback(t *testing.T) {
 		{http.MethodPost, "/api/v1/approvals/" + id.String() + "/approve", string(approveBody)},
 		{http.MethodGet, "/api/v1/reverts/" + id.String(), ""},
 		{http.MethodPost, "/api/v1/reverts/" + id.String() + "/apply", string(applyBody)},
+		{http.MethodPost, "/api/v1/reverts/" + id.String() + "/scope", `{"select":{"scope":"TASK","scopeId":"` + id.String() + `"}}`},
 	}
 	for _, c := range cases {
 		headers := pagetest.Headers(s.secret)

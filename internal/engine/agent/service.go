@@ -153,6 +153,9 @@ type Service struct {
 	setup   *config.Setup
 	// notRecorded is the held calls' cache of a setup not recorded yet.
 	notRecorded setupCache
+	// rescopes are the reverts the person rescoped through this engine,
+	// in memory only (CONTRACT.md, Rescope, widen and reject).
+	rescopes *rescopes
 }
 
 // NewService returns the service for one agent. It panics on a missing
@@ -203,7 +206,7 @@ func NewService(d Deps) *Service {
 	if d.Poll <= 0 {
 		d.Poll = DefaultPoll
 	}
-	return &Service{Deps: d, setup: d.Setup}
+	return &Service{Deps: d, setup: d.Setup, rescopes: newRescopes()}
 }
 
 // RunInfo is a started run.

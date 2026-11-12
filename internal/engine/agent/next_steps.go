@@ -42,6 +42,7 @@ const (
 	reasonChange              = "CHANGE"
 	reasonApproval            = "APPROVAL"
 	reasonLink                = "LINK"
+	reasonLinkReset           = "LINK_RESET"
 
 	toolWrite         = "write"
 	toolQuery         = "query"
@@ -435,6 +436,9 @@ func notFoundSteps(b *Steps, te *mcp.ToolError, f failure) string {
 	case reasonLink:
 		b.TellAgent("Ask the agent for the link again.")
 		return "This link is incomplete, expired or was replaced by a newer one. Ask the agent for the link again."
+	case reasonLinkReset:
+		b.TellAgent("Ask the agent for the new link to this revert.")
+		return linkResetMessage
 	default:
 		b.fail(fmt.Errorf("NOT_FOUND has no reason %q", te.Reason))
 	}

@@ -61,13 +61,21 @@ const maxBody = 16 << 10
 type Agent interface {
 	ApprovalRequest(ctx context.Context, id uuid.UUID) (approval.Request, error)
 	RelayApproval(ctx context.Context, r approval.Response) error
-	RevertRequest(ctx context.Context, id uuid.UUID) (revert.Request, error)
+	// RevertRequest is the request for the page holding secret, the
+	// revert's live link secret.
+	RevertRequest(ctx context.Context, id uuid.UUID, secret string) (revert.Request, error)
 	RelayRevert(ctx context.Context, r revert.Response) (guard.AppliedRevert, error)
+	// RescopeRevert changes the revert's scope for the page holding secret
+	// (CONTRACT.md, Rescope, widen and reject).
+	RescopeRevert(ctx context.Context, id uuid.UUID, secret string, in agent.ScopeRequest) (agent.ScopeResponse, error)
 	IssueApprovalLink(ctx context.Context, id uuid.UUID, proof string) (string, error)
 	IssueRevertLink(ctx context.Context, id uuid.UUID, proof string) (string, error)
 	// CheckLink reports whether secret is the live link secret of one of
 	// this agent's items (CONTRACT.md, Link secrets).
 	CheckLink(id uuid.UUID, secret string) bool
+	// CheckResetLink reports whether secret is a link of revert id that the
+	// agent's reset revoked (NOT_FOUND reason LINK_RESET).
+	CheckResetLink(id uuid.UUID, secret string) bool
 	// PageFailure is err as the pages answer it: the error body with the
 	// person's message and steps (CONTRACT.md, Next steps).
 	PageFailure(err error) *mcp.ToolError
@@ -123,6 +131,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/approvals/{approvalId}/approve", s.postApproval)
 	mux.HandleFunc("GET /api/v1/reverts/{revertId}", s.getRevert)
 	mux.HandleFunc("POST /api/v1/reverts/{revertId}/apply", s.postRevert)
+	mux.HandleFunc("POST /api/v1/reverts/{revertId}/scope", s.postScope)
 	mux.HandleFunc("POST /api/v1/approvals/{approvalId}/links", s.postApprovalLink)
 	mux.HandleFunc("POST /api/v1/reverts/{revertId}/links", s.postRevertLink)
 	return mux
@@ -161,7 +170,7 @@ func (s *Server) page(name string) http.HandlerFunc {
 }
 
 func (s *Server) getApproval(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.linkedID(w, r, "approvalId")
+	id, ok := s.linkedID(w, r, approvalParam)
 	if !ok {
 		return
 	}
@@ -174,7 +183,7 @@ func (s *Server) getApproval(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) postApproval(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.linkedID(w, r, "approvalId")
+	id, ok := s.linkedID(w, r, approvalParam)
 	if !ok {
 		return
 	}
@@ -203,11 +212,12 @@ type approvedDTO struct {
 }
 
 func (s *Server) getRevert(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.linkedID(w, r, "revertId")
+	id, ok := s.linkedID(w, r, revertParam)
 	if !ok {
 		return
 	}
-	req, err := find(r.Context(), s, func(ctx context.Context, a Agent) (revert.Request, error) { return a.RevertRequest(ctx, id) })
+	secret := r.Header.Get(links.SecretHeader)
+	req, err := find(r.Context(), s, func(ctx context.Context, a Agent) (revert.Request, error) { return a.RevertRequest(ctx, id, secret) })
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -216,7 +226,7 @@ func (s *Server) getRevert(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) postRevert(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.linkedID(w, r, "revertId")
+	id, ok := s.linkedID(w, r, revertParam)
 	if !ok {
 		return
 	}
@@ -237,6 +247,39 @@ func (s *Server) postRevert(w http.ResponseWriter, r *http.Request) {
 	s.reply(w, out)
 }
 
+// postScope narrows or widens a revert's scope for the page (CONTRACT.md,
+// Local pages, POST …/scope). The body is decoded strictly: an unknown key
+// (the reserved store included) or a proof without its new secret is
+// refused on its shape, before anything is looked up. Postgres checks the
+// rest in the contract's order.
+func (s *Server) postScope(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.linkedID(w, r, revertParam)
+	if !ok {
+		return
+	}
+	body, ok := s.body(w, r, pageOnly)
+	if !ok {
+		return
+	}
+	var in agent.ScopeRequest
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&in); err != nil || dec.More() || (in.Proof == nil) != (in.NewSecret == "") {
+		s.fail(w, &mcp.ToolError{Code: agent.CodeInvalidArgument,
+			Message: "the body must be {\"select\", \"proof\"?, \"newSecret\"?} (revert-scope-request.schema.json), proof and newSecret together"})
+		return
+	}
+	secret := r.Header.Get(links.SecretHeader)
+	out, err := find(r.Context(), s, func(ctx context.Context, a Agent) (agent.ScopeResponse, error) {
+		return a.RescopeRevert(ctx, id, secret, in)
+	})
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.reply(w, out)
+}
+
 // issueDTO asks for a short link (POST .../links): proof of the item's
 // binding text (links.IssueProof).
 type issueDTO struct {
@@ -249,13 +292,13 @@ type linkDTO struct {
 }
 
 func (s *Server) postApprovalLink(w http.ResponseWriter, r *http.Request) {
-	s.issueLink(w, r, "approvalId", func(ctx context.Context, a Agent, id uuid.UUID, proof string) (string, error) {
+	s.issueLink(w, r, approvalParam, func(ctx context.Context, a Agent, id uuid.UUID, proof string) (string, error) {
 		return a.IssueApprovalLink(ctx, id, proof)
 	})
 }
 
 func (s *Server) postRevertLink(w http.ResponseWriter, r *http.Request) {
-	s.issueLink(w, r, "revertId", func(ctx context.Context, a Agent, id uuid.UUID, proof string) (string, error) {
+	s.issueLink(w, r, revertParam, func(ctx context.Context, a Agent, id uuid.UUID, proof string) (string, error) {
 		return a.IssueRevertLink(ctx, id, proof)
 	})
 }
@@ -295,11 +338,33 @@ func (s *Server) linkedID(w http.ResponseWriter, r *http.Request, name string) (
 	if !ok {
 		return uuid.Nil, false
 	}
-	if !s.linkLive(id, r.Header.Get(links.SecretHeader)) {
-		s.fail(w, unknownLink())
+	secret := r.Header.Get(links.SecretHeader)
+	if !s.linkLive(id, secret) {
+		s.fail(w, s.deadLink(id, secret))
 		return uuid.Nil, false
 	}
 	return id, true
+}
+
+// deadLink is the answer for a secret that is not id's live link: LINK_RESET
+// when the agent's reset revoked it, so the page can say why, else the
+// same answer as an unknown id. Every agent is asked, as by linkLive.
+func (s *Server) deadLink(id uuid.UUID, secret string) error {
+	s.mu.RLock()
+	agents := s.agents
+	s.mu.RUnlock()
+	reset := false
+	for _, a := range agents {
+		reset = a.CheckResetLink(id, secret) || reset
+	}
+	if !reset {
+		return unknownLink()
+	}
+	te, err := agent.LinkReset()
+	if err != nil {
+		return err
+	}
+	return te
 }
 
 // linkLive reports whether some agent issued secret as id's live link.
@@ -329,12 +394,31 @@ func find[T any](ctx context.Context, s *Server, ask func(context.Context, Agent
 			continue
 		}
 		if err != nil {
-			return out, a.PageFailure(err)
+			return out, pageFailure(a, err)
 		}
 		return out, nil
 	}
 	var zero T
 	return zero, unknownLink()
+}
+
+// nonceError is a page failure that hands the page the nonce of the widen
+// it asks the person for (a widened revert the engine no longer holds).
+type nonceError struct {
+	*mcp.ToolError
+	nonce passkey.Bytes
+}
+
+func (e *nonceError) Unwrap() error { return e.ToolError }
+
+// pageFailure is a's answer for err, keeping a rescope nonce it carries.
+func pageFailure(a Agent, err error) error {
+	te := a.PageFailure(err)
+	var pe *agent.PageError
+	if errors.As(err, &pe) && pe.RescopeNonce != nil {
+		return &nonceError{ToolError: te, nonce: pe.RescopeNonce}
+	}
+	return te
 }
 
 // unknownLink is the NOT_FOUND answer for a link no agent knows. Should its
@@ -399,6 +483,7 @@ var statuses = map[string]int{
 	string(guard.CodeRevertInvalid): http.StatusConflict,
 	agent.CodeInvalidArgument:       http.StatusBadRequest,
 	agent.CodeUnavailable:           http.StatusServiceUnavailable,
+	agent.CodeQueryTimeout:          http.StatusGatewayTimeout,
 }
 
 // fail answers err as the contract's error body. Unexpected errors are
@@ -412,9 +497,14 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 	if status == http.StatusInternalServerError {
 		s.log.Error("pages", "err", err)
 	}
-	writeJSON(w, status, errorDTO{
+	dto := errorDTO{
 		Code: te.Code, Message: te.Message, Reason: te.Reason, PersonMessage: te.PersonMessage, NextSteps: personSteps(te.NextSteps),
-	})
+	}
+	var ne *nonceError
+	if errors.As(err, &ne) {
+		dto.RescopeNonce = ne.nonce
+	}
+	writeJSON(w, status, dto)
 }
 
 // errorDTO is the pages' error body: the contract's tool error as the page
@@ -425,6 +515,9 @@ type errorDTO struct {
 	Reason        string         `json:"reason,omitempty"`
 	PersonMessage string         `json:"personMessage,omitempty"`
 	NextSteps     []mcp.NextStep `json:"nextSteps,omitempty"`
+	// RescopeNonce is set only on the 409 for a widened revert the engine
+	// no longer holds: the nonce of the person's new widen proof.
+	RescopeNonce passkey.Bytes `json:"rescopeNonce,omitempty"`
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {

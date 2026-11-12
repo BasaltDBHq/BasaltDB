@@ -32,6 +32,27 @@ import (
 	"github.com/basaltdbhq/basaltdb/web"
 )
 
+// PageRoute is a page the engine serves at a RESTful path. ID routes take
+// one uuid after Path (/approvals/<id>); the others are exactly Path. The
+// portal's static host must rewrite the same paths to the same files:
+// web/_redirects, which a test checks against PageRoutes.
+type PageRoute struct {
+	Path string
+	ID   bool
+	File string
+}
+
+// PageRoutes are the pages, in the order they are registered.
+var PageRoutes = []PageRoute{
+	{Path: links.ApprovalsPath, ID: true, File: "approve/index.html"},
+	{Path: links.RevertsPath, ID: true, File: "revert/index.html"},
+	{Path: links.RegisterPath, File: "register/index.html"},
+	// The passkey management page (M4.1): static, input in the fragment,
+	// no relay.
+	{Path: links.CheckPath, File: "passkeys/index.html"},
+	{Path: links.ForgetPath, File: "passkeys/index.html"},
+}
+
 // maxBody bounds a relayed signature (the response JSON is about 1 KiB).
 const maxBody = 16 << 10
 
@@ -88,13 +109,13 @@ func (s *Server) Handler() http.Handler {
 	files := http.FileServerFS(s.files)
 	mux.Handle("GET /lib/{file}", libFile(files))
 	mux.Handle("GET /style.css", files)
-	mux.HandleFunc("GET "+links.ApprovalsPath+"{id}", s.page("approve/index.html"))
-	mux.HandleFunc("GET "+links.RevertsPath+"{id}", s.page("revert/index.html"))
-	mux.HandleFunc("GET "+links.RegisterPath, s.static("register/index.html"))
-	// The passkey management page (M4.1): static, input in the fragment,
-	// no relay.
-	mux.HandleFunc("GET "+links.CheckPath, s.static("passkeys/index.html"))
-	mux.HandleFunc("GET "+links.ForgetPath, s.static("passkeys/index.html"))
+	for _, r := range PageRoutes {
+		if r.ID {
+			mux.HandleFunc("GET "+r.Path+"{id}", s.page(r.File))
+		} else {
+			mux.HandleFunc("GET "+r.Path, s.static(r.File))
+		}
+	}
 	mux.HandleFunc("GET /api/v1/approvals/{approvalId}", s.getApproval)
 	mux.HandleFunc("POST /api/v1/approvals/{approvalId}/approve", s.postApproval)
 	mux.HandleFunc("GET /api/v1/reverts/{revertId}", s.getRevert)

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -269,4 +270,35 @@ func TestPagesRequireTheLinkSecret(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, status, "the re-issued link revokes the old one")
 	status, _ = s.do(t, http.MethodGet, get, host, "", "", "", fresh)
 	require.Equal(t, http.StatusOK, status)
+}
+
+// TestRedirectsMatchRoutes: the portal's web/_redirects rewrites exactly the
+// paths the local pages server serves, to the same files.
+func TestRedirectsMatchRoutes(t *testing.T) {
+	t.Parallel()
+	b, err := os.ReadFile("../../../web/_redirects")
+	require.NoError(t, err)
+	got := map[string]string{}
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		f := strings.Fields(line)
+		require.Len(t, f, 3, line)
+		require.Equal(t, "200", f[2], "a rewrite, not a redirect: %s", line)
+		require.NotContains(t, got, f[0], "duplicate rule")
+		got[f[0]] = f[1]
+	}
+	want := map[string]string{}
+	for _, r := range pages.PageRoutes {
+		src := r.Path
+		if r.ID {
+			src += "*"
+		}
+		want[src] = "/" + r.File
+		_, err := os.Stat("../../../web/" + r.File)
+		require.NoError(t, err)
+	}
+	require.Equal(t, want, got)
 }

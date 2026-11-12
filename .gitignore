@@ -21,10 +21,16 @@ data/
 
 /bin/
 
+# portal build output
+/dist/
+
 # npm / MCP publish staging
 npm/cli/LICENSE
 npm/platforms/*/LICENSE
 npm/platforms/*/bin/
+
+# portal build output
+/dist/
 
 # local scratch (plans, specs, briefs)
 tmp/

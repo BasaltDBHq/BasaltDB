@@ -81,5 +81,18 @@ web-check: ## Syntax-check the approval and revert pages and run their codec tes
 	@for f in web/lib/*.js; do node --check "$$f" || exit 1; done
 	@node --test web/lib/*.test.mjs >/dev/null || node --test web/lib/*.test.mjs
 
+# The portal's static host serves only the files the engine's embed serves
+# (web/embed.go), plus the Pages config. Tests and Go files stay out.
+PORTAL_DIR ?= dist/portal
+
+.PHONY: portal-build
+portal-build: ## Copy only the served portal files to dist/portal (Cloudflare Pages output)
+	@rm -rf "$(PORTAL_DIR)"
+	@mkdir -p "$(PORTAL_DIR)/lib"
+	@for d in approve revert register passkeys; do mkdir -p "$(PORTAL_DIR)/$$d" && cp "web/$$d/index.html" "$(PORTAL_DIR)/$$d/index.html" || exit 1; done
+	@for f in web/lib/*.js; do cp "$$f" "$(PORTAL_DIR)/lib/" || exit 1; done
+	@cp web/style.css web/_headers web/_redirects "$(PORTAL_DIR)/"
+	@if find "$(PORTAL_DIR)" \( -name '*.test.mjs' -o -name '*.go' \) | grep -q .; then echo 'portal-build: test or Go files in output' >&2; exit 1; fi
+
 .PHONY: ci
-ci: lint vet install-sh-check npm-check web-check test ## Same steps as the GitHub check job
+ci: lint vet install-sh-check npm-check web-check portal-build test ## Same steps as the GitHub check job

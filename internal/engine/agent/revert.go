@@ -478,10 +478,46 @@ func notOwnScope(scope guard.RevertScope) error {
 			"This id is not one of your runs or changes; list your runs.")}}
 }
 
+// notOwnTask is a task this agent has no run in (RS-6): NOT_FOUND reason
+// TASK, the same answer whether or not other agents ran in it. The command
+// leaves the agent for the person to fill in: this agent cannot see who ran
+// in the task (N12-R1).
+func notOwnTask(scope guard.RevertScope) error {
+	return &mcp.ToolError{Code: CodeNotFound, Reason: string(revert.ScopeTask), Message: fmt.Sprintf(
+		"task %s has no run of this agent; nothing was prepared. An agent reverts only its own work: "+
+			"check the task id in list_runs", scope.ID),
+		PersonMessage: fmt.Sprintf("This agent has no run in task %s. To revert work in that task, run "+
+			"basalt revert --agent <agent> --task %s --open with an agent that ran in it, or ask that agent to request the revert.",
+			scope.ID, scope.ID),
+		NextSteps: []mcp.NextStep{callTool(toolListRuns, map[string]any{},
+			"This task has none of your runs; list your runs.")}}
+}
+
+// scopeRefused answers a scope the guard refused (BS011, CONTRACT.md,
+// Guard errors): another agent's or an unknown change, run or task is
+// NOT_FOUND, alike; a descriptor the engine built badly is
+// INVALID_ARGUMENT with the guard's explanation.
+func scopeRefused(scope guard.RevertScope, err error) (error, bool) {
+	detail, hint, ok := guard.ScopeRefusal(err)
+	if !ok {
+		return nil, false
+	}
+	switch detail {
+	case guard.ScopeNotOwnChange, guard.ScopeNotOwnRun:
+		return notOwnScope(scope), true
+	case guard.ScopeNotOwnTask:
+		return notOwnTask(scope), true
+	}
+	return &ArgumentError{Message: "the revert scope was refused: " + hint}, true
+}
+
 // prepareError is the answer to a prepare that failed: what the person
 // can do when nothing can be reverted, or when the prepare is too large for
 // an MCP call and their terminal is the better path.
 func (s *Service) prepareError(ctx context.Context, tool string, scope guard.RevertScope, err error) error {
+	if refused, ok := scopeRefused(scope, err); ok {
+		return refused
+	}
 	if code, ok := guard.CodeOf(err); ok && code == guard.CodeNothingToRevert {
 		return s.nothingToRevert(ctx, tool, scope, err)
 	}
@@ -524,7 +560,7 @@ func (s *Service) revertNotice(ctx context.Context, r ledger.Revert) (revertLink
 	}
 	pick := chooseLink(short, long, s.LinkBudget)
 	summary := fmt.Sprintf("Revert of %s %s: %d rows to restore, %d left as they are (changed after the agent). Why: %s. %s",
-		strings.ToLower(string(b.Scope)), b.ScopeID, r.Rows, r.Skipped, shown(strings.TrimRight(b.Intent, ". "), maxIntentChars), expiryLine(r.ExpiresAt))
+		strings.ToLower(string(b.Select.Scope)), b.Select.ScopeID, r.Rows, r.Skipped, shown(strings.TrimRight(b.Intent, ". "), maxIntentChars), expiryLine(r.ExpiresAt))
 	var extra []string
 	if r.Batched {
 		extra = append(extra, fmt.Sprintf("It covers %d rows: you sign once, and the agent restores it in batches within %d hours.",

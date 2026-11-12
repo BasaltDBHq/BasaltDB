@@ -166,7 +166,7 @@ Planned (owner decisions AE-1 to AE-14, design [`docs/redesign/specs/2026-11-12-
 | `NOT_FOUND` | `APPROVAL` | — | A `CALL_TOOL` (`list_pending`) |
 | `NOT_FOUND` | `REVERT` | — | A `ASK_PERSON` (the revert id `basalt revert` printed) |
 | `NOT_FOUND` | `LINK` | — | P `TELL_AGENT` (pages only); +pm |
-| `NOT_FOUND` | `TASK` | — | Planned (RS-6). A `CALL_TOOL` (`list_runs`); +pm: this agent has no run in task X; to revert work in that task the person runs `basalt revert --agent <agent> --task <id> --open` with an agent that ran in it, or asks that agent to request it. The task id is filled in; the agent name is left to the person, because this agent cannot see who ran in the task (N12-R1): a stated exception to AE-3's filled-in commands |
+| `NOT_FOUND` | `TASK` | — | RS-6. A `CALL_TOOL` (`list_runs`); +pm: this agent has no run in task X; to revert work in that task the person runs `basalt revert --agent <agent> --task <id> --open` with an agent that ran in it, or asks that agent to request it. The task id is filled in; the agent name is left to the person, because this agent cannot see who ran in the task (N12-R1): a stated exception to AE-3's filled-in commands |
 | `NOT_FOUND` | `LINK_RESET` | — | Planned (RS-2). P `TELL_AGENT` (pages only: the agent reset this revert to its own work; ask it for the new link, and widen again to include other agents); +pm |
 | `SQL_ERROR` | — | — | A `REVISE_CALL` |
 | `SQL_ERROR` | `NO_ROWS_NOW` | — | A `REVISE_CALL` (`query`) |
@@ -525,7 +525,7 @@ A row is restored only if nobody wrote it after the last in-scope change. Otherw
 
 `rowsHash` = lowercase hex of `sha256(utf8(lines joined by "\n"))` over every line, `RESTORE` and `SKIP`, so the person signs both what is restored and what is left alone. **Challenge** = `sha256(utf8(binding text))`, as for approvals. A large plan's binding also has `"batched": true` and `"sampleHash"` (see [Large plans](#large-plans)); a one-call revert's binding has neither key.
 
-Planned (RS-3, [version 20](#version-20-revert-scope)), the binding carries the scope as descriptors instead of `scope`, `scopeId` and `agents` ([`revert-binding.schema.json`](api/mcp/revert/revert-binding.schema.json)); there is no compatibility shim:
+From [version 20](#version-20-revert-scope) (RS-3), the binding carries the scope as descriptors instead of `scope`, `scopeId` and `agents` ([`revert-binding.schema.json`](api/mcp/revert/revert-binding.schema.json)); there is no compatibility shim:
 
 ```json
 {"kind": "REVERT", "rows": 14, "intent": "…", "select": {…descriptor…}, "skipped": 1, "widened": true, "database": "app", "proposed": {…descriptor…}, "revertId": "…", "rowsHash": "<hex>", "agentRows": {"basalt_agent_bot": 11, "basalt_agent_sync": 4}, "expiresAt": "…", "requestedBy": "basalt_agent_bot"}
@@ -567,7 +567,7 @@ Planned ([version 20](#version-20-revert-scope)): `apply_revert` and `apply_reve
 
 ### The scope descriptor
 
-Planned (RS-1, RS-3, RS-4; [`revert-select.schema.json`](api/mcp/revert/revert-select.schema.json)). One JSON object, stored with the revert (`reverts.selection`) and carried in the binding as `select` and `proposed`:
+RS-1, RS-3, RS-4, from [version 20](#version-20-revert-scope) ([`revert-select.schema.json`](api/mcp/revert/revert-select.schema.json)). One JSON object, stored with the revert (`reverts.selection`) and carried in the binding as `select` and `proposed`:
 
 ```json
 {"runs": null, "scope": "TASK", "agents": ["basalt_agent_bot", "basalt_agent_sync"], "tables": ["public.invoices", "public.leads"], "scopeId": "0193…"}
@@ -1390,7 +1390,7 @@ The fingerprint stored in `pii_catalog` is never compared with the live one, so 
 
 ### Version 20: revert scope
 
-Planned (owner decisions RS-1 to RS-7; plan [`docs/redesign/plans/2026-11-12-revert-scope-person-chooses.md`](docs/redesign/plans/2026-11-12-revert-scope-person-chooses.md), section "Postgres"). Version 19 is [the PII fingerprint by oid](#version-19-the-pii-fingerprint-names-columns-by-oid), already on master. If another change takes 20 first, this one takes the next free number. **Breaking** (AE-11): the engine calls functions with new signatures. Rules in [Revert](#revert): [The scope descriptor](#the-scope-descriptor) and [Rescope, widen and reject](#rescope-widen-and-reject).
+Owner decisions RS-1 to RS-7; plan [`docs/redesign/plans/2026-11-12-revert-scope-person-chooses.md`](docs/redesign/plans/2026-11-12-revert-scope-person-chooses.md), section "Postgres". Installed: the `reverts` columns, `agent_reverts`, `preview_revert`, `prepare_revert`, `apply_revert` and `apply_revert_batch` rows below and the migration; planned: `rescope_revert`, `reset_revert`, `reject_revert`, the `agent_revert_lines` redaction, and the ledger kinds `REVERT_RESCOPED`, `REVERT_RESET` and `REVERT_REJECTED`. Version 19 is [the PII fingerprint by oid](#version-19-the-pii-fingerprint-names-columns-by-oid), already on master. If another change takes 20 first, this one takes the next free number. **Breaking** (AE-11): the engine calls functions with new signatures. Rules in [Revert](#revert): [The scope descriptor](#the-scope-descriptor) and [Rescope, widen and reject](#rescope-widen-and-reject).
 
 | Object | Purpose |
 |---|---|
@@ -1406,7 +1406,7 @@ Planned (owner decisions RS-1 to RS-7; plan [`docs/redesign/plans/2026-11-12-rev
 
 Ledger kinds `REVERT_RESCOPED` (detail `revertId`, old and new `select`, old and new `rowsHash`, `via` the path Postgres checked: `OWN_WORK` (no proof or token: the person on the link, the agent holding it, or the agent role directly, which Postgres cannot tell apart), `PROOF` (with `credentialId` and `rescopeKeyHash` = hex `sha256(rescopeKey)`) or `SCOPE_TOKEN`; never a key or secret), `REVERT_RESET` (`revertId`, the dropped `select`, old and new `rowsHash`; always the requesting role) and `REVERT_REJECTED` (`revertId`, `note`, `via`: `LINK_OR_AGENT` without a token, `SCOPE_TOKEN` with one).
 
-**Migration.** Every existing revert gets `selection` from its `scope`, `scope_id` and `agents` (`runs` and `tables` `null`), `proposed = selection` and a nonce; then the old columns become the generated ones and the views that use them are recreated. Reverts from the M3-14 era whose `agents` name other roles come out `widened`. Every `PENDING` revert with no signature gets `expires_at = now()` (its old binding has no `select`); the migration's ledger row notes the count. A large plan signed before the upgrade (`APPLYING`, within its 24 hours) keeps its numbered lines and old binding and finishes as signed: `apply_revert_batch` checks each line against its stored signed text, not the binding's `select`. An engine on an older guard answers `UNAVAILABLE` `GUARD_OUTDATED`; the upgrade is `basalt upgrade` or an `UPGRADE` setup code.
+**Migration.** Every existing revert gets `selection` from its `scope`, `scope_id` and `agents` (`runs` and `tables` `null`), `proposed = selection` and a nonce; then the old columns become the generated ones and the views that use them are recreated. Reverts from the M3-14 era whose `agents` name other roles come out `widened`. Every `PENDING` revert with no signature gets `expires_at = now()` (its old binding has no `select`); when there was any, a `MIGRATION` ledger row notes the count (detail `version: 20`, `revertsExpired`). Like every migration from version 16, it is idempotent. A large plan signed before the upgrade (`APPLYING`, within its 24 hours) keeps its numbered lines and old binding and finishes as signed: `apply_revert_batch` checks each line against its stored signed text, not the binding's `select`. An engine on an older guard answers `UNAVAILABLE` `GUARD_OUTDATED`; the upgrade is `basalt upgrade` or an `UPGRADE` setup code.
 
 ### Guard errors
 
@@ -1424,7 +1424,7 @@ Raised by the guard with SQLSTATE class `BS`. The tool code each maps to is in [
 | `BS008` | `LEDGER_INPUT_INVALID` | A ledger function got invalid input |
 | `BS009` | `NOTHING_TO_REVERT`, `REVERT_CASCADE` | M3. A revert that cannot be prepared; `REVERT_CASCADE` is caught inside the revert and becomes a `CASCADE` conflict. `REVERT_TOO_LARGE` is removed in version 9 |
 | `BS010` | `SETUP_REFUSED` | Planned, version 16. `record_setup` refused a setup code; detail `USED`, `SUPERSEDED`, `EXPIRED`, `SETUP_ID_IN_FUTURE` or `EXPIRY_TOO_FAR`. Raised to the admin's `basalt init --setup-code` only, never to an agent |
-| `BS011` | `SCOPE_REFUSED` | Planned, version 20. A revert scope descriptor refused by `preview_revert`, `prepare_revert` or `rescope_revert`. Shape details, from the descriptor alone: `SHAPE` (`INVALID_ARGUMENT`), `STORE_RESERVED` (`INVALID_ARGUMENT`), `FILTER_CAP` (`INVALID_ARGUMENT` `SCOPE_FILTER_CAP`). In `preview_revert` and `prepare_revert` (the agent's own proposal): `NOT_OWN_CHANGE`, `NOT_OWN_RUN`, `NOT_OWN_TASK` (the engine maps them to `NOT_FOUND` reason `CHANGE`, `RUN`, `TASK`, unknown and other agents' ids alike) and `FILTER` (`INVALID_ARGUMENT` `SCOPE_FILTER`; the message names each refused entry with the fixed texts of [MCP tools](#mcp-tools)). In `rescope_revert` a select that is not provably own work, or any select after a widen, is never answered with `BS011` before the proof or token check: it fails as `BS005` `REVERT_INVALID` detail `WIDEN_REFUSED`, one message for every cause; only a proven or own-work select gets `FILTER` or `DESCRIPTOR` (`INVALID_ARGUMENT`) for an agent, run or table outside the scope ([check order](#rescope-widen-and-reject)) |
+| `BS011` | `SCOPE_REFUSED` | Version 20. A revert scope descriptor refused by `preview_revert`, `prepare_revert` or `rescope_revert`. Shape details, from the descriptor alone: `SHAPE` (`INVALID_ARGUMENT`), `STORE_RESERVED` (`INVALID_ARGUMENT`), `FILTER_CAP` (`INVALID_ARGUMENT` `SCOPE_FILTER_CAP`). In `preview_revert` and `prepare_revert` (the agent's own proposal): `NOT_OWN_CHANGE`, `NOT_OWN_RUN`, `NOT_OWN_TASK` (the engine maps them to `NOT_FOUND` reason `CHANGE`, `RUN`, `TASK`, unknown and other agents' ids alike) and `FILTER` (`INVALID_ARGUMENT` `SCOPE_FILTER`; the message names each refused entry with the fixed texts of [MCP tools](#mcp-tools)). In `rescope_revert` a select that is not provably own work, or any select after a widen, is never answered with `BS011` before the proof or token check: it fails as `BS005` `REVERT_INVALID` detail `WIDEN_REFUSED`, one message for every cause; only a proven or own-work select gets `FILTER` or `DESCRIPTOR` (`INVALID_ARGUMENT`) for an agent, run or table outside the scope ([check order](#rescope-widen-and-reject)) |
 
 ## Passkey management
 

@@ -252,7 +252,11 @@ func catalogCases() map[string]catalogCase {
 		caseKey("NOT_FOUND", "CHANGE", ""):   {"request_revert", map[string]any{"changeId": caseChangeID, "intent": "Undo", "runId": caseRunID}, asToolError(&mcp.ToolError{Code: CodeNotFound, Reason: "CHANGE", Message: "no such change"})},
 		caseKey("NOT_FOUND", "APPROVAL", ""): {"write", withApproval(writeArgs0), asToolError(&mcp.ToolError{Code: CodeNotFound, Reason: "APPROVAL", Message: "no such approval"})},
 		caseKey("NOT_FOUND", "REVERT", ""):   {"request_revert", revertArgs, plainFunc(func() error { return revertNotFound(uuid.MustParse(caseRevertID)) })},
-		caseKey("NOT_FOUND", "LINK", ""):     {"approval_page", nil, asToolError(&mcp.ToolError{Code: CodeNotFound, Reason: "LINK", Message: "no such link"})},
+		caseKey("NOT_FOUND", "TASK", ""): {"preview_revert", map[string]any{"taskId": caseRunID},
+			plainFunc(func() error {
+				return notOwnTask(guard.RevertScope{Kind: "TASK", ID: uuid.MustParse(caseRunID)})
+			})},
+		caseKey("NOT_FOUND", "LINK", ""): {"approval_page", nil, asToolError(&mcp.ToolError{Code: CodeNotFound, Reason: "LINK", Message: "no such link"})},
 
 		caseKey("SQL_ERROR", "", ""):            {"write", writeArgs0, pgFail("42703", `column "x" does not exist`, "")},
 		caseKey("SQL_ERROR", "NO_ROWS_NOW", ""): {"write", writeArgs0, asToolError(&mcp.ToolError{Code: CodeSQLError, Reason: reasonNoRowsNow, Message: "changes no rows now"})},

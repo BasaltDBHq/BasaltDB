@@ -80,25 +80,99 @@ func RowsHash(lines []string) string {
 	return approval.RowsHash(lines)
 }
 
+// Select is a revert's scope descriptor as the binding carries it
+// (CONTRACT.md, Revert, The scope descriptor): a scope narrowed to some
+// agents, runs and tables, nil for all. Postgres normalizes it; clients
+// never re-serialize it.
+type Select struct {
+	Scope   Scope       `json:"scope"`
+	ScopeID uuid.UUID   `json:"scopeId"`
+	Agents  []string    `json:"agents"`
+	Runs    []uuid.UUID `json:"runs"`
+	Tables  []string    `json:"tables"`
+}
+
+// MaxFilter is the most runs, and the most tables, a descriptor lists
+// (owner, Q10).
+const MaxFilter = 20
+
+func (s Select) check(name string) error {
+	switch s.Scope {
+	case ScopeChange, ScopeRun, ScopeTask:
+	default:
+		return invalid("binding %s scope %q", name, s.Scope)
+	}
+	if s.ScopeID == uuid.Nil {
+		return invalid("binding %s names no scope id", name)
+	}
+	if s.Agents != nil && len(s.Agents) == 0 {
+		return invalid("binding %s names no agents", name)
+	}
+	if s.Runs != nil && s.Scope != ScopeTask {
+		return invalid("binding %s lists runs for a %s scope", name, s.Scope)
+	}
+	if len(s.Runs) > MaxFilter || len(s.Tables) > MaxFilter {
+		return invalid("binding %s lists more than %d runs or tables", name, MaxFilter)
+	}
+	return nil
+}
+
+// widenedFor reports whether s covers changes not made by role: every
+// agent (Agents nil) or another role.
+func (s Select) widenedFor(role string) bool {
+	return s.Agents == nil || slices.ContainsFunc(s.Agents, func(a string) bool { return a != role })
+}
+
 // Binding is the parsed binding text. The text itself, not this struct, is
 // what the passkey signs: never re-serialize it.
 type Binding struct {
-	Kind        string    `json:"kind"`
-	RevertID    uuid.UUID `json:"revertId"`
-	Database    string    `json:"database"`
-	Scope       Scope     `json:"scope"`
-	ScopeID     uuid.UUID `json:"scopeId"`
-	Agents      []string  `json:"agents"`
-	Intent      string    `json:"intent"`
-	Rows        int       `json:"rows"`
-	Skipped     int       `json:"skipped"`
-	RowsHash    string    `json:"rowsHash"`
-	ExpiresAt   time.Time `json:"expiresAt"`
-	RequestedBy string    `json:"requestedBy"`
+	Kind     string    `json:"kind"`
+	RevertID uuid.UUID `json:"revertId"`
+	Database string    `json:"database"`
+	// Select is the scope the person signs; Proposed what the agent asked
+	// for, set only when a rescope changed it.
+	Select   Select  `json:"select"`
+	Proposed *Select `json:"proposed,omitempty"`
+	// Widened is set when Select covers changes not made by RequestedBy;
+	// AgentRows (lines per agent role) is present exactly then.
+	Widened     bool           `json:"widened"`
+	AgentRows   map[string]int `json:"agentRows,omitempty"`
+	Intent      string         `json:"intent"`
+	Rows        int            `json:"rows"`
+	Skipped     int            `json:"skipped"`
+	RowsHash    string         `json:"rowsHash"`
+	ExpiresAt   time.Time      `json:"expiresAt"`
+	RequestedBy string         `json:"requestedBy"`
 	// Batched and SampleHash are set only on a plan of more than MaxLines
 	// lines (CONTRACT.md, Revert, Large plans).
 	Batched    bool   `json:"batched,omitempty"`
 	SampleHash string `json:"sampleHash,omitempty"`
+}
+
+// Empty reports a task proposal with no line of the requesting agent's own
+// (CONTRACT.md, Revert): stored so the person may widen it, never signed as
+// it is (apply_revert answers NOTHING_TO_REVERT).
+func (b Binding) Empty() bool {
+	return b.Select.Scope == ScopeTask && b.Rows == 0 && b.Skipped == 0 && !b.Batched
+}
+
+// checkScope checks select, proposed, widened and agentRows agree.
+func (b Binding) checkScope() error {
+	if err := b.Select.check("select"); err != nil {
+		return err
+	}
+	if b.Proposed != nil {
+		if err := b.Proposed.check("proposed"); err != nil {
+			return err
+		}
+	}
+	if b.Widened != b.Select.widenedFor(b.RequestedBy) {
+		return invalid("binding widened %t does not match its select and requestedBy", b.Widened)
+	}
+	if b.Widened != (b.AgentRows != nil) {
+		return invalid("binding agentRows goes with widened, and only with it")
+	}
+	return nil
 }
 
 // Lines is how many lines the binding covers.
@@ -117,19 +191,14 @@ func ParseBinding(text string) (Binding, error) {
 	if b.Kind != KindRevert {
 		return Binding{}, invalid("binding kind %q", b.Kind)
 	}
-	switch b.Scope {
-	case ScopeChange, ScopeRun, ScopeTask:
-	default:
-		return Binding{}, invalid("binding scope %q", b.Scope)
-	}
-	if len(b.Agents) == 0 {
-		return Binding{}, invalid("binding names no agents")
-	}
-	if b.Rows < 1 {
-		return Binding{}, invalid("binding rows %d: a revert restores at least one row", b.Rows)
+	if err := b.checkScope(); err != nil {
+		return Binding{}, err
 	}
 	if b.Skipped < 0 {
 		return Binding{}, invalid("binding skipped %d", b.Skipped)
+	}
+	if b.Rows < 1 && !b.Empty() {
+		return Binding{}, invalid("binding rows %d: a revert restores at least one row", b.Rows)
 	}
 	if !isDigest(b.RowsHash) {
 		return Binding{}, invalid("binding rowsHash is not a sha256 hex digest")

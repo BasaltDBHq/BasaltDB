@@ -131,17 +131,25 @@
     {
       "name": "a revert: the pages' fixture",
       "kind": "REVERT",
-      "fragment": "2.pJPNTttKFMdfxTrrE-SxnThhlwu-l-giLkrCXdSyojOe42BhbOOZlLLjHVqpUoXUVReV-hZ9Exas-wjV2AlVKFWhJNJ4fL7-v5lzHMcxnOWlAoSmutSAoNOqZkCgJZfGGvLScGk2nokN1Wd5XbPdKTIkSduEhl9zYyabUgekTwGB39R5w3ps2oiLFWvD6q8rSDCGqgYEQ7Jo9VKTV2WXvM5NSaekWp20KrMiT7sqilLTWU-pXPJE6ftyMZzxlX3kCpIEoawu7ZtmszZak7F6BZNarKN-YnhcWV8UM0Nt9m-V4410p0nnNksbMivdubeQHrpfRpRgHLsI0-j_aDoH9BGmJ0dWTJKmwiza1i5kZSBBOClV5ZhTdiQp55ybpS3mipFPQer1QiW4F6Y-9UaZ6_bc-5_0AAUC1fWTwlUACCJIiYJh5g0kqYCGPMpYKtcfhm7APOiTP_K8jNSAXBKyn_muEgMKRqn0QiWHLiB4rjfoCdETYu6Gu663K8SO8PygP3gF-Nj5YoGwHx1G8wgQ6pUs8nTHTsDC0NJO9zSazf-bWifJl_0BTbNiLFdF0e3iJ9wLi7ZdHsLkaNZ2q99V6HeD6vSd2-t3zt37T3c3X5xvHz9ct_1cH6SdYRu2dZIfGO3yDAwf4eR4f2zvyrcye5R9_ezc3rx1rBIgtPOh4FFfVXMJW2hbVBkV-g-wnjJc7D2kDzFEiFRuWDnyyiGn5ka339GlXUOEQyblhL_Env07Od4ww97B-OifaH8x_nseTeEZ-JYrSb4HAAD__w",
+      "fragment": "2.pJPBTttMEMdfxZrzBHltJ0645QN_JSqiKAk91IqisXccLIxtvJum3HiHVqpUIfXUQ6W-Rd-EA-c-QrXrhCqUChCJtFnt7Mz_Nzv_xHEMZ3kpAaGpVgoQ8lJzqQFjUFxwanfNsjQhlVY1AwItuNTmQFNS8F1kJGE2Q1BneV2zqbjKJZd2J0lTQsokN_yeGz3aKB6QOgUE_lDnDauhtjculqw0y_8uYYYxVPVGyminOq_KNnmdm5JKSVqdtCqzIk_bKpJS3Z6eUrngkVR35WI440vzk7fMZbVqO9brQ3OkjV7BJOfrW38xPKysLoqJJpv9qHK8kW416dxkKU16qdrwFtL98MuIZhjHLsI4ehuNp4A-wkkpK0efspOQdM65WTBguSwKhPHJkcFISFGh59YA86TSMFvHXTHwKUi9TigFd8LUp84gc92Oe_dJPECBGRWKEag2M308SQaAIIKUKOhnXi8hGVCfBxkn0vX7oRsw97rkDzwvI9kjl0TSzXxXih4FgzTxQpn0XUDwXK_XEaIjxNQNd11vV4gd4flBt_cO8KGuYoGwHx1G0wgQ6mVS5OmOccRc08IYfhxNpm_GJkjJy76Aully-4x2Fz_hXVjY8XkIo6OJnV63rdBtjet0nZurT87t52-31z-cX1-_XNn5rhuxnjbXtjr5g2GXZ2AY5xzvD81b-UZmj7Kf352b64-OUQIEayUJD8aqmkvYQtuiag3zbKynmIu9-_QhhgiRzDVLJ7l0yKm5UfZ_tTJriHDIJJ3wn9iT16PjDTPsHQyPXkX78-H_02gMz8A3XLPZ7wAAAP__",
       "payload": [
         [
           [
             "kind",
             "rows",
-            "scope",
-            "agents",
             "intent",
-            "scopeId",
+            [
+              "select",
+              [
+                "runs",
+                "scope",
+                "agents",
+                "tables",
+                "scopeId"
+              ]
+            ],
             "skipped",
+            "widened",
             "database",
             "revertId",
             "rowsHash",
@@ -219,13 +227,16 @@
             0,
             "REVERT",
             3,
+            "Undo the bad merge",
+            null,
             "RUN",
             [
               "basalt_agent_bot"
             ],
-            "Undo the bad merge",
+            null,
             "0193a4c2-7d1e-7c3a-9f00-0000000000b2",
             1,
+            false,
             "app",
             "0193a4c2-7d1e-7c3a-9f00-0000000000d4",
             "14caa48f26bad4a8e9febd038704ee65a3922fad6a0a1b5f30d16a49cb27db80",
@@ -303,7 +314,7 @@
           ]
         ]
       ],
-      "binding": "{\"kind\": \"REVERT\", \"rows\": 3, \"scope\": \"RUN\", \"agents\": [\"basalt_agent_bot\"], \"intent\": \"Undo the bad merge\", \"scopeId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000b2\", \"skipped\": 1, \"database\": \"app\", \"revertId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000d4\", \"rowsHash\": \"14caa48f26bad4a8e9febd038704ee65a3922fad6a0a1b5f30d16a49cb27db80\", \"expiresAt\": \"2026-11-11T07:02:11.123456Z\", \"requestedBy\": \"basalt_agent_bot\"}",
+      "binding": "{\"kind\": \"REVERT\", \"rows\": 3, \"intent\": \"Undo the bad merge\", \"select\": {\"runs\": null, \"scope\": \"RUN\", \"agents\": [\"basalt_agent_bot\"], \"tables\": null, \"scopeId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000b2\"}, \"skipped\": 1, \"widened\": false, \"database\": \"app\", \"revertId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000d4\", \"rowsHash\": \"14caa48f26bad4a8e9febd038704ee65a3922fad6a0a1b5f30d16a49cb27db80\", \"expiresAt\": \"2026-11-11T07:02:11.123456Z\", \"requestedBy\": \"basalt_agent_bot\"}",
       "lines": [
         "{\"op\": \"DELETE\", \"table\": \"public.note_tags\", \"action\": \"RESTORE\", \"rowHash\": \"abababababababababababababababababababababababababababababababab\", \"cascaded\": true, \"conflict\": null, \"redacted\": true, \"changeIds\": [\"0193a4c2-7d1e-7c3a-9f00-0000000000e1\"]}",
         "{\"op\": \"INSERT\", \"key\": {\"id\": 5}, \"now\": null, \"set\": {\"id\": 5, \"note\": \"note 5 — 日本 🚀\", \"lead_id\": 3}, \"table\": \"public.lead_notes\", \"action\": \"RESTORE\", \"cascaded\": true, \"conflict\": null, \"sqlState\": null, \"changeIds\": [\"0193a4c2-7d1e-7c3a-9f00-0000000000e1\"]}",

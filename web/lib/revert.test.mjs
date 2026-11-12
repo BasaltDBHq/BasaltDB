@@ -38,10 +38,11 @@ test("revert request from Go decodes and checks", async () => {
   const req = await parseRevertRequest("#" + f.fragment);
   assert.equal(req.revertId, f.revertId);
   assert.equal(req.bindingText, f.binding);
-  assert.equal(req.binding.scope, "RUN");
+  assert.equal(req.binding.select.scope, "RUN");
+  assert.equal(req.binding.widened, false);
   assert.equal(req.binding.rows, 3);
   assert.equal(req.binding.skipped, 1);
-  assert.deepEqual(req.binding.agents, ["basalt_agent_bot"]);
+  assert.deepEqual(req.binding.select.agents, ["basalt_agent_bot"]);
   assert.equal(req.binding.expiresAt.toISOString(), "2026-11-11T07:02:11.123Z");
   assert.equal(b64urlEncode(req.challenge), f.challenge);
   assert.deepEqual(req.credentialIds.map(b64urlEncode), f.credentialIds);
@@ -104,7 +105,24 @@ test("revert binding limits", () => {
   assert.throws(() => parseRevertBinding(b.replace('"rows": 3', '"rows": 0')), /rows 0/);
   assert.throws(() => parseRevertBinding(b.replace('"RUN"', '"DATABASE"')), /scope/);
   assert.throws(() => parseRevertBinding(b.replace('["basalt_agent_bot"]', "[]")), /agents/);
+  assert.throws(() => parseRevertBinding(b.replace('"widened": false', '"widened": false, "scope": "RUN"')), /unknown field "scope"/);
+  assert.throws(() => parseRevertBinding(b.replace('"tables": null', '"tables": null, "store": "x"')), /unknown field "store"/);
+  assert.throws(() => parseRevertBinding(b.replace('"runs": null', `"runs": ["${fixtures.request.revertId}"]`)), /lists runs/);
+  assert.throws(() => parseRevertBinding(b.replace('["basalt_agent_bot"]', '["basalt_agent_bot", "basalt_agent_sync"]')), /widened false/);
+  assert.throws(() => parseRevertBinding(b.replace('"widened": false', '"widened": false, "agentRows": {"x": 1}')), /agentRows/);
+  assert.throws(() => parseRevertBinding(b.replace('"rows": 3', '"rows": 0').replace('"skipped": 1', '"skipped": 0')), /rows 0/);
   assert.equal(MAX_REVERT_LINES, 1000);
+});
+
+test("a widened select and an empty task proposal parse", () => {
+  const b = fixtures.request.binding;
+  const widened = parseRevertBinding(b.replace('["basalt_agent_bot"]', "null")
+    .replace('"widened": false', '"widened": true, "agentRows": {"basalt_agent_bot": 3, "basalt_agent_sync": 1}'));
+  assert.equal(widened.select.agents, null);
+  assert.deepEqual(Object.keys(widened.agentRows), ["basalt_agent_bot", "basalt_agent_sync"]);
+  const empty = parseRevertBinding(b.replace('"scope": "RUN"', '"scope": "TASK"').replace('"rows": 3', '"rows": 0')
+    .replace('"skipped": 1', '"skipped": 0'));
+  assert.equal(empty.rows + empty.skipped, 0);
 });
 
 test("a large plan's link carries its sample (N12-4)", async () => {

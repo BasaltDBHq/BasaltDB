@@ -2,6 +2,7 @@ package guard
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -15,19 +16,51 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 )
 
-// RevertScope is what a revert covers: one change, one run, or one task
-// across agents (CONTRACT.md, Revert).
+// RevertScope is an agent's own proposal of what a revert covers: one of
+// its changes, one of its runs, or its own changes in a task it ran in,
+// optionally narrowed to some of its runs in that task and some tables
+// (CONTRACT.md, Revert, The scope descriptor). The guard builds the
+// descriptor with agents = [the calling role] and refuses anything outside
+// the caller's own work (BS011 SCOPE_REFUSED).
 type RevertScope struct {
 	Kind revert.Scope
 	ID   uuid.UUID
+	// Runs narrows a TASK to some of the caller's runs in it; nil for all.
+	Runs []uuid.UUID
+	// Tables narrows the lines to some schema.table names; nil for all.
+	Tables []string
 }
 
-// PreviewRevert returns the revert lines of scope as Postgres builds them
-// (CONTRACT.md, Revert), in COLLATE "C" order, redacted for the caller.
-// It changes nothing.
+// ownSelect is the SQL expression of the calling role's own descriptor for
+// $1 (scope), $2 (scope id), $3 (runs) and $4 (tables), with agents
+// = [session_user]: the role is the one Postgres authenticated, never an
+// argument.
+const ownSelect = `jsonb_build_object('scope', $1::text, 'scopeId', $2::text, ` +
+	`'agents', jsonb_build_array(session_user::text), 'runs', $3::jsonb, 'tables', $4::jsonb)`
+
+// args are the ownSelect arguments of s. A nil list is JSON null (all).
+func (s RevertScope) args() ([]any, error) {
+	runs, err := json.Marshal(s.Runs)
+	if err != nil {
+		return nil, err
+	}
+	tables, err := json.Marshal(s.Tables)
+	if err != nil {
+		return nil, err
+	}
+	return []any{string(s.Kind), s.ID.String(), string(runs), string(tables)}, nil
+}
+
+// PreviewRevert returns the revert lines of the caller's own scope as
+// Postgres builds them (CONTRACT.md, Revert), in COLLATE "C" order,
+// redacted for the caller. It changes nothing.
 func PreviewRevert(ctx context.Context, q Querier, s RevertScope) ([]string, error) {
-	// Plain SQL: a set-returning function in FROM.
-	rows, err := q.Query(ctx, `SELECT l FROM basalt_meta.preview_revert($1, $2::uuid) AS l`, string(s.Kind), s.ID.String())
+	args, err := s.args()
+	if err != nil {
+		return nil, err
+	}
+	// Plain SQL: a set-returning function in FROM over a built descriptor.
+	rows, err := q.Query(ctx, `SELECT l FROM basalt_meta.preview_revert(`+ownSelect+`) AS l`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -44,16 +77,22 @@ type PreparedRevert struct {
 	Batched     bool
 }
 
-// PrepareRevert stores a revert of scope for the person to sign
+// PrepareRevert stores the caller's own proposal s for the person to sign
 // (basalt_meta.prepare_revert): Postgres runs it on trial, builds the lines
-// and the binding, and appends REVERT_PENDING. Over revert.MaxLines lines
+// and the binding, and appends REVERT_PENDING. A TASK the caller ran in
+// with no line of its own is stored as an empty proposal (Rows 0) the
+// person may widen on the page; it cannot be signed as it is. Over revert.MaxLines lines
 // it stores a batched plan. Call it outside a read-only transaction; a
 // large plan's trial can take minutes.
 func PrepareRevert(ctx context.Context, q Querier, s RevertScope, intent string) (PreparedRevert, error) {
+	args, err := s.args()
+	if err != nil {
+		return PreparedRevert{}, err
+	}
 	var p PreparedRevert
-	// Plain SQL: a set-returning function in FROM.
-	err := q.QueryRow(ctx, `SELECT r.revert_id, r.binding_text, r.expires_at, r.lines
-		FROM basalt_meta.prepare_revert($1, $2::uuid, $3) AS r`, string(s.Kind), s.ID.String(), intent).
+	// Plain SQL: a set-returning function in FROM over a built descriptor.
+	err = q.QueryRow(ctx, `SELECT r.revert_id, r.binding_text, r.expires_at, r.lines
+		FROM basalt_meta.prepare_revert(`+ownSelect+`, $5) AS r`, append(args, intent)...).
 		Scan(&p.RevertID, &p.BindingText, &p.ExpiresAt, &p.Lines)
 	if err != nil {
 		return PreparedRevert{}, err

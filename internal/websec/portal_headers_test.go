@@ -61,7 +61,15 @@ func TestPortalHeadersMatchEngine(t *testing.T) {
 	}
 	require.NotEmpty(t, engine)
 
-	require.Equal(t, engine, rules["/*"], "web/_headers /* block drifted from internal/websec")
+	// HSTS is portal-only: browsers ignore it on the engine's http loopback.
+	portal := map[string]string{}
+	for name, value := range rules["/*"] {
+		portal[name] = value
+	}
+	hsts := portal["Strict-Transport-Security"]
+	delete(portal, "Strict-Transport-Security")
+	require.Equal(t, engine, portal, "web/_headers /* block drifted from internal/websec")
+	require.Equal(t, "max-age=31536000; includeSubDomains", hsts)
 	require.Equal(t, map[string]string{"Content-Type": "text/javascript"}, rules["/*.js"])
 	require.Len(t, rules, 2, "unexpected extra rules in web/_headers")
 }

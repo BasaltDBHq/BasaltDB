@@ -264,6 +264,14 @@ func catalogCases() map[string]catalogCase {
 		caseKey("INVALID_ARGUMENT", "", ""):     {"write", writeArgs0, plain(&ArgumentError{Message: "invalid arguments"})},
 		caseKey("INVALID_ARGUMENT", "STALE_CURSOR", ""): {"run_history", map[string]any{"runId": caseRunID, "cursor": "x"},
 			plain(fmt.Errorf("%w: %w", ledger.ErrInvalidParams, errors.New("invalid cursor: missing id")))},
+		caseKey("INVALID_ARGUMENT", "SCOPE_FILTER", ""): {"preview_revert", map[string]any{"runId": caseRunID, "tables": []any{"public.ghost"}},
+			plainFunc(func() error {
+				return scopeRefused(guard.RevertScope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}, &pgconn.PgError{
+					Code: "BS011", Message: "SCOPE_REFUSED", Detail: guard.ScopeFilter, Hint: "public.ghost has no change of yours in this scope",
+				})
+			})},
+		caseKey("INVALID_ARGUMENT", "SCOPE_FILTER_CAP", ""): {"request_revert", map[string]any{"taskId": caseRunID, "intent": "Undo", "tables": []any{"public.leads"}},
+			plainFunc(scopeFilterCapped)},
 
 		caseKey("UNAVAILABLE", "DATABASE_UNREACHABLE", ""): {"query", queryArgs0, plain(context.DeadlineExceeded)},
 		caseKey("UNAVAILABLE", "CREDENTIAL_REJECTED", ""):  {"query", queryArgs0, pgFail("28P01", "password authentication failed", "")},

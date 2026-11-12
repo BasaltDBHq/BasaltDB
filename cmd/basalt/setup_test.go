@@ -203,7 +203,7 @@ func TestInitInstallsTheServiceWithOneSudo(t *testing.T) {
 
 			require.Len(t, h.sudo, 1, "one elevation")
 			require.Equal(t, []string{fakeBin, "service", "install", "--config", v.config, "--user", v.user,
-				"--agent", "bot", "--os-user", me(t), "--pages-url", links.DefaultLocal,
+				"--agent", "bot", "--os-user", me(t), "--pages-url", links.DefaultLocal, "--vault-default=off",
 				"--init-arg", "--agent=bot", "--init-arg", "--write=public.leads", "--init-arg", "--prefix=" + d.Names.Prefix,
 				"--init-arg", "--os-user=" + me(t), "--person-uid", "501", "--credential-stdin"}, h.sudo[0])
 			require.Contains(t, h.sudoIn[0], d.Names.Prefix+"_agent_bot:", "the agent's credential goes on stdin")
@@ -239,6 +239,8 @@ func TestInitDeclinedServiceRunsInTheForeground(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(dir, "run"), cfg.SocketDir)
 	require.Equal(t, filepath.Join(dir, "state"), cfg.StateDir)
+	require.Equal(t, config.VaultOff, cfg.Vault, "person mode: the Vault is off by default")
+	require.Contains(t, r.stderr, "basalt: vault: off (default in person mode, where the engine serves its own pages)\n")
 	info, err := os.Stat(filepath.Join(dir, "agents", "bot.url"))
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(config.FileMode), info.Mode().Perm())
@@ -308,6 +310,8 @@ func TestInitAsRootInstallsInProcess(t *testing.T) {
 	require.Contains(t, h.sys.written["/etc/basalt/agents/bot.url"], d.Names.Prefix+"_agent_bot:")
 	require.Equal(t, os.FileMode(config.FileMode), h.sys.modes["/etc/basalt/agents/bot.url"])
 	require.Contains(t, h.sys.written["/etc/basalt/engine.json"], `"socketDir": "/run/basalt"`)
+	require.Contains(t, h.sys.written["/etc/basalt/engine.json"], `"vault": "OFF"`, "a new config: the person-mode default")
+	require.Contains(t, r.stderr, "basalt: vault: off (default in person mode, where the engine serves its own pages)\n")
 	require.NotContains(t, r.stderr, "postgres://", "the credential is never printed")
 }
 
@@ -389,6 +393,12 @@ func TestServiceInstallAgentReadsTheCredentialFromStdin(t *testing.T) {
 	require.Contains(t, string(got.Files[0].Content), `"socketDir": "/run/basalt"`)
 	require.Contains(t, string(got.Files[0].Content), `"credentialFile": "`+cred+`"`)
 	require.NotContains(t, string(got.Files[0].Content), "pw@", "the config holds no credential")
+	require.NotContains(t, string(got.Files[0].Content), `"vault"`, "no --vault: the config's stays")
+
+	a.vault = config.VaultOn
+	got, err = agentSpecFromStdin(strings.NewReader("postgres://agent:pw@h/db\n"), spec, a, true, false)
+	require.NoError(t, err)
+	require.Contains(t, string(got.Files[0].Content), `"vault": "ON"`, "--vault writes the config's vault")
 }
 
 // A binary anyone but root could change is refused before init asks for the

@@ -43,6 +43,10 @@ type initFlags struct {
 	// personUIDs are the OS users the engine's person socket admits
 	// (--person-uid; else the person running init, see persons).
 	personUIDs []uint32
+	// vaultFlag is --vault as given ("" when not); vault is what init
+	// asks the config's vault to be (chooseVault).
+	vaultFlag VaultMode
+	vault     vaultChoice
 }
 
 // runInit: basalt init. Shows the setup SQL, installs or upgrades
@@ -245,6 +249,7 @@ func warnRLSBlind(c *cliIO, conn *pgx.Conn, role string, spec guard.AgentSpec) {
 func printSetupPlan(c *cliIO, f initFlags) error {
 	if f.noService || f.pathsGiven {
 		fmt.Fprintf(c.stderr, "basalt: dry run; then init writes %s and %s, and prints:\n", f.credFile, f.configPath)
+		fmt.Fprint(c.stderr, f.vault.dryRunLine())
 		fmt.Fprint(c.stderr, foregroundNext(f, c.goos))
 		return nil
 	}
@@ -260,6 +265,7 @@ func printSetupPlan(c *cliIO, f initFlags) error {
 	}
 	fmt.Fprintf(c.stderr, "basalt: dry run; then init asks to install the engine service, which runs (the credential on stdin):\n  sudo %s\nwith these steps:\n",
 		shellJoin(serviceInstallArgs(f, bin)))
+	fmt.Fprint(c.stderr, f.vault.dryRunLine())
 	return applyServiceInstall(c, bin, f.configPath, f.engineUser, f.agentInstall(""), true)
 }
 
@@ -305,6 +311,7 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 	f.agentRLS = AgentRLSAsk
 	fs.Var(&f.agentRLS, "agent-rls",
 		"on agent tables where row-level security hides every row: ask at a terminal, all-rows adds a policy letting the agent see them all, none skips the question")
+	fs.Var(&f.vaultFlag, flagVault, "on or off: whether the engine reaches the portal's pages through the Vault (default off; on needs the portal's pages)")
 	if err := parse(fs, args); err != nil {
 		return f, err
 	}
@@ -320,6 +327,12 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 	if _, err := relyingParty(f.passkeyOrigin); err != nil {
 		return f, err
 	}
+	// basalt init is person-operated: --operated-by=agent is init --remote's.
+	vc, err := chooseVault(f.vaultFlag, OperatedByPerson, f.passkeyOrigin, personDefaultWhy)
+	if err != nil {
+		return f, err
+	}
+	f.vault = vc
 	if !config.ValidAgentName(f.agent) {
 		return f, fmt.Errorf("%w: agent name %q is not valid for the engine", errUsage, f.agent)
 	}
@@ -390,7 +403,7 @@ const stateDirName = "state"
 // development passkey origin serves the approval page too, so held writes
 // link to the page that knows the registered passkey.
 func engineSettings(f initFlags, goos string) config.Settings {
-	s := config.Settings{SocketDir: f.socketDir, Mode: config.ModeSameUser}
+	s := f.vault.settings(config.Settings{SocketDir: f.socketDir, Mode: config.ModeSameUser})
 	if f.configPath != config.DefaultPath(goos) {
 		s.StateDir = filepath.Join(filepath.Dir(f.configPath), stateDirName)
 	}

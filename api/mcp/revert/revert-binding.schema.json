@@ -2,16 +2,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/revert-binding.v1.json",
   "title": "Revert binding",
-  "description": "The jsonb text basalt_meta.prepare_revert builds. The WebAuthn challenge is sha256 of its UTF-8 bytes. Clients parse it for display and never re-serialise it. See CONTRACT.md, Revert.",
+  "description": "The jsonb text basalt_meta.prepare_revert (and, from version 20, rescope_revert and reset_revert) builds. The WebAuthn challenge is sha256 of its UTF-8 bytes. Clients parse it for display and never re-serialise it. This is the shape from basalt_meta version 20 (planned, owner decision RS-3); up to version 19 the scope sat at the top level as scope, scopeId and agents, with no select, proposed, widened or agentRows. See CONTRACT.md, Revert.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "kind",
     "revertId",
     "database",
-    "scope",
-    "scopeId",
-    "agents",
+    "select",
+    "widened",
     "intent",
     "rows",
     "skipped",
@@ -33,28 +32,28 @@
     },
     "database": {
       "type": "string",
-      "description": "current_database() of the guarded database."
+      "description": "current_database() of the guarded database, for display. Not the reserved store key of the descriptor (RS-4)."
     },
-    "scope": {
-      "type": "string",
-      "enum": [
-        "CHANGE",
-        "RUN",
-        "TASK"
-      ]
+    "select": {
+      "$ref": "revert-select.schema.json",
+      "description": "The scope the person signs: the agent's proposal, or the person's rescope of it."
     },
-    "scopeId": {
-      "type": "string",
-      "format": "uuid",
-      "description": "The changeId, runId or taskId the scope names."
+    "proposed": {
+      "$ref": "revert-select.schema.json",
+      "description": "What the requesting agent proposed. Omitted when it equals select, which is every revert nobody rescoped."
     },
-    "agents": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "type": "string"
+    "widened": {
+      "type": "boolean",
+      "description": "True when select covers any change not made by requestedBy (its agents is null or names another role)."
+    },
+    "agentRows": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
       },
-      "description": "Agent roles whose changes are in scope, sorted."
+      "description": "Present exactly when widened is true: lines per agent role whose changes the select covers, RESTORE and SKIP, keyed by role name, for the page's headline. The keys are role names, not our own keys."
     },
     "intent": {
       "type": "string",
@@ -62,8 +61,8 @@
     },
     "rows": {
       "type": "integer",
-      "minimum": 1,
-      "description": "RESTORE lines. With rows plus skipped over 1000 the plan is batched."
+      "minimum": 0,
+      "description": "RESTORE lines. With rows plus skipped over 1000 the plan is batched. 0 only for a task proposal with no line of the agent's own (a revert that cannot be signed until the person widens it; apply_revert answers NOTHING_TO_REVERT)."
     },
     "skipped": {
       "type": "integer",
@@ -78,7 +77,7 @@
     "expiresAt": {
       "type": "string",
       "format": "date-time",
-      "description": "RFC 3339 UTC with microseconds, 1 hour after prepare_revert."
+      "description": "RFC 3339 UTC with microseconds, 1 hour after prepare_revert, or after the latest rescope or reset."
     },
     "requestedBy": {
       "type": "string",
@@ -92,7 +91,7 @@
     "sampleHash": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$",
-      "description": "Present only with batched: lowercase hex sha256 of the sample (the first 1000 lines, SKIP lines first, each group in signed order) joined by a newline. The revert request carries the sample."
+      "description": "Present only with batched: lowercase hex sha256 of the sample (CONTRACT.md, Large plans) joined by a newline. The revert request carries the sample."
     }
   },
   "dependentRequired": {

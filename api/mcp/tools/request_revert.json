@@ -17,11 +17,38 @@
         "format": "uuid",
         "description": "Revert every applied change of one run."
       },
+      "taskId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Planned (revert scope, RS-7): revert your own changes in one task you ran in (you have a run with that task id); only your own lines. The person can include other agents' changes on the signing page. A task you never ran in is NOT_FOUND."
+      },
+      "runs": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 20,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "description": "Planned (revert scope, RS-1): only with taskId, 1 to 20 of your own runs with that task id; the revert holds only their lines and the page shows it as your proposal. Absent: all your runs in the task."
+      },
+      "tables": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 20,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "pattern": "^[^.\\s]+\\.[^.\\s]+$"
+        },
+        "description": "Planned (revert scope, RS-1): with changeId, runId or taskId, 1 to 20 schema.table names, each a table you wrote in this scope; the revert holds only their lines. Absent: every table."
+      },
       "intent": {
         "type": "string",
         "minLength": 1,
         "maxLength": 500,
-        "description": "Why the person reverts, in a sentence they can check on the revert page. Required with changeId or runId; refused with revertId."
+        "description": "Why the person reverts, in a sentence they can check on the revert page. Required with changeId or runId (and, planned, taskId); refused with revertId."
       },
       "revertId": {
         "type": "string",
@@ -51,8 +78,6 @@
     "required": [
       "revertId",
       "status",
-      "scope",
-      "scopeId",
       "intent",
       "batched",
       "rows",
@@ -71,20 +96,42 @@
           "PENDING",
           "APPLYING",
           "APPLIED",
-          "EXPIRED"
+          "EXPIRED",
+          "REJECTED"
         ],
-        "description": "PENDING until the person signs; APPLIED once a revert of up to 1000 lines is signed (it is applied in the same transaction); APPLYING once a larger plan is signed and until you applied every line; EXPIRED when not signed within 1 hour, or a signed plan not finished within 24 hours."
+        "description": "PENDING until the person signs; APPLIED once a revert of up to 1000 lines is signed (it is applied in the same transaction); APPLYING once a larger plan is signed and until you applied every line; EXPIRED when not signed within 1 hour, or a signed plan not finished within 24 hours. Planned (revert scope, RS-2): REJECTED when the person rejected it on the signing page; nothing was reverted, and you do not request it again unless the person asks."
       },
       "scope": {
         "type": "string",
         "enum": [
           "CHANGE",
-          "RUN"
-        ]
+          "RUN",
+          "TASK"
+        ],
+        "description": "The scope you requested. Planned (revert scope): TASK with taskId (RS-7); absent when widened (RS-5)."
       },
       "scopeId": {
         "type": "string",
-        "format": "uuid"
+        "format": "uuid",
+        "description": "The id you requested. Planned (revert scope): absent when widened (RS-5)."
+      },
+      "select": {
+        "$ref": "../revert/revert-select.schema.json",
+        "description": "Planned (revert scope, RS-3): the scope descriptor of the revert as it stands, while the person has not widened it (your proposal, or the person's narrowing of it). Absent when widened: you cannot see what the person added."
+      },
+      "widened": {
+        "type": "boolean",
+        "description": "Planned (revert scope, RS-5): true when the person included other agents' changes. You then get only revertId, status, intent, batched, rows, skipped, expiresAt, personMessage and, for a large plan, changeId, applyBy and progress: no scope, select, lines or link. Absent or false otherwise."
+      },
+      "rejectedAt": {
+        "type": "string",
+        "format": "date-time",
+        "description": "Planned (revert scope, RS-2): with REJECTED, when the person rejected it."
+      },
+      "note": {
+        "type": "string",
+        "maxLength": 500,
+        "description": "Planned (revert scope, RS-2): with REJECTED, the note the person wrote for you on the signing page, when they wrote one."
       },
       "intent": {
         "type": "string"

@@ -37,8 +37,101 @@ type Tool struct {
 	File string `json:"-"`
 }
 
-// Load returns every tool contract, sorted by name.
+// PlannedPrefix starts the description of a tool's input property, or the
+// Steps text of a next-steps row in CONTRACT.md, that is contracted but not
+// served yet (CONTRACT.md, Process: contract first).
+const PlannedPrefix = "Planned ("
+
+// MaxScopeFilter is the most runs, and the most tables, a revert scope
+// descriptor may name (owner decision RS-1).
+const MaxScopeFilter = 20
+
+// Load returns every tool contract as the engine serves it, sorted by name:
+// input properties whose description starts with PlannedPrefix are left
+// out, so the engine neither lists nor accepts them until they land.
 func Load() ([]Tool, error) {
+	tools, err := LoadAll()
+	if err != nil {
+		return nil, err
+	}
+	for i := range tools {
+		if err := DropPlannedInputs(tools[i].InputSchema); err != nil {
+			return nil, fmt.Errorf("%s: %w", tools[i].File, err)
+		}
+	}
+	return tools, nil
+}
+
+// DropPlannedInputs removes the planned properties of an input schema. A
+// planned property named by required, dependentRequired or a oneOf, anyOf
+// or allOf branch is an error: leaving it out would change what the served
+// schema accepts.
+func DropPlannedInputs(schema map[string]any) error {
+	props, ok := schema["properties"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	used := namesInConstraints(schema)
+	for name, p := range props {
+		prop, ok := p.(map[string]any)
+		if !ok {
+			continue // not a schema object: the contract test refuses it
+		}
+		desc, _ := prop["description"].(string)
+		if !strings.HasPrefix(desc, PlannedPrefix) {
+			continue
+		}
+		if used[name] {
+			return fmt.Errorf("planned input %q is named in required, dependentRequired, oneOf, anyOf or allOf", name)
+		}
+		delete(props, name)
+	}
+	return nil
+}
+
+// namesInConstraints returns the property names a schema's required,
+// dependentRequired (keys and values) and oneOf, anyOf and allOf branches
+// mention, at any depth of those branches.
+func namesInConstraints(schema map[string]any) map[string]bool {
+	out := map[string]bool{}
+	addStrings := func(v any) {
+		list, _ := v.([]any)
+		for _, s := range list {
+			if name, ok := s.(string); ok {
+				out[name] = true
+			}
+		}
+	}
+	addStrings(schema["required"])
+	if deps, ok := schema["dependentRequired"].(map[string]any); ok {
+		for k, v := range deps {
+			out[k] = true
+			addStrings(v)
+		}
+	}
+	for _, key := range []string{"oneOf", "anyOf", "allOf"} {
+		branches, _ := schema[key].([]any)
+		for _, b := range branches {
+			branch, ok := b.(map[string]any)
+			if !ok {
+				continue // not a schema object: the contract test refuses it
+			}
+			for name := range namesInConstraints(branch) {
+				out[name] = true
+			}
+			if bp, ok := branch["properties"].(map[string]any); ok {
+				for name := range bp {
+					out[name] = true
+				}
+			}
+		}
+	}
+	return out
+}
+
+// LoadAll returns every tool contract as written, planned input properties
+// included, sorted by name. The contract tests check these.
+func LoadAll() ([]Tool, error) {
 	entries, err := toolFiles.ReadDir("tools")
 	if err != nil {
 		return nil, fmt.Errorf("read tool contracts: %w", err)
@@ -149,6 +242,10 @@ type ErrorSteps struct {
 	Tool          string     `json:"tool,omitempty"`
 	PersonMessage bool       `json:"personMessage"`
 	Steps         []StepKind `json:"steps"`
+	// Planned marks an entry the engine does not return yet. It may stand
+	// next to a served entry of the same key, which it replaces when it
+	// lands.
+	Planned bool `json:"planned,omitempty"`
 }
 
 // ResultSteps is the catalog entry of a result the agent must act on.
@@ -157,6 +254,8 @@ type ResultSteps struct {
 	Case          string     `json:"case"`
 	PersonMessage bool       `json:"personMessage"`
 	Steps         []StepKind `json:"steps"`
+	// Planned as for ErrorSteps.
+	Planned bool `json:"planned,omitempty"`
 }
 
 // WarningSteps is the catalog entry of a result warning.
@@ -223,8 +322,32 @@ func (c NextSteps) AgentOperatedEntry(kind, code, reason, tool string) (VariantS
 	return VariantSteps{}, false
 }
 
-// LoadNextSteps decodes the embedded next-steps catalog strictly.
+// LoadNextSteps returns the catalog the engine serves: every entry but the
+// planned ones.
 func LoadNextSteps() (NextSteps, error) {
+	c, err := LoadAllNextSteps()
+	if err != nil {
+		return NextSteps{}, err
+	}
+	errs := make([]ErrorSteps, 0, len(c.Errors))
+	for _, e := range c.Errors {
+		if !e.Planned {
+			errs = append(errs, e)
+		}
+	}
+	results := make([]ResultSteps, 0, len(c.Results))
+	for _, r := range c.Results {
+		if !r.Planned {
+			results = append(results, r)
+		}
+	}
+	c.Errors, c.Results = errs, results
+	return c, nil
+}
+
+// LoadAllNextSteps decodes the embedded next-steps catalog strictly, planned
+// entries included. The contract tests check these.
+func LoadAllNextSteps() (NextSteps, error) {
 	var c NextSteps
 	dec := json.NewDecoder(strings.NewReader(string(nextStepsFile)))
 	dec.DisallowUnknownFields()

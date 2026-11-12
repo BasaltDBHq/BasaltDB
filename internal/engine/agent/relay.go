@@ -43,14 +43,21 @@ func (s *Service) relayLink(ctx context.Context, page func(string, uuid.UUID) st
 	if err == nil {
 		return links.WithSecret(page(s.PagesBase, id), secret)
 	}
-	if rerr := s.Links.Revoke(id, token); rerr != nil {
-		s.Log.Error("revoke an unregistered short link", "id", id, "err", rerr)
-	}
 	msg := "the Vault did not register the short link; handing over the long link"
-	if vault.IsConflict(err) {
+	var rerr error
+	switch {
+	case vault.IsConflict(err):
 		// VC-42: another engine holds this token. The link is revoked, and
-		// the item's next link has a new secret whose token nobody else knows.
+		// the item's next link has a new secret whose token nobody else
+		// knows. No UNREGISTER: the token is not this engine's.
 		msg = "another engine registered this link's token at the Vault; the link is revoked and the long link handed over"
+		_, rerr = s.Links.RevokeToken(token)
+	default:
+		// The registration may still land late: revoking unregisters it.
+		rerr = s.Links.Revoke(id, token)
+	}
+	if rerr != nil {
+		s.Log.Error("revoke an unregistered short link", "id", id, "err", rerr)
 	}
 	s.Log.Warn(msg, "id", id, "err", err)
 	return ""

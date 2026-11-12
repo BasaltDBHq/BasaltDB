@@ -287,33 +287,40 @@ func (s *Secrets) issue(id uuid.UUID, expires time.Time, relay bool) (string, ch
 func (s *Secrets) Revoke(id uuid.UUID, token channel.LinkToken) error {
 	return s.revokeWhere(func(eid uuid.UUID, e secretEntry) bool {
 		return eid == id && e.keys != nil && e.keys.Token == token
-	})
+	}, true)
 }
 
 // RevokeToken revokes the relay link of token, whichever item holds it, as
 // when another engine registered that token (VC-42). It reports whether
-// this store held it.
+// this store held it. It tells onDrop nothing: the Vault said the token is
+// another engine's, so unregistering it is pointless, and the caller may be
+// the socket's read loop, which must not write.
 func (s *Secrets) RevokeToken(token channel.LinkToken) (bool, error) {
 	held := false
 	err := s.revokeWhere(func(_ uuid.UUID, e secretEntry) bool {
 		match := e.keys != nil && e.keys.Token == token
 		held = held || match
 		return match
-	})
+	}, false)
 	return held, err
 }
 
 // RevokeRelay revokes every relay link, as when the engine's keys rotate
 // (VC-40): their psks sat next to the old key.
 func (s *Secrets) RevokeRelay() error {
-	return s.revokeWhere(func(_ uuid.UUID, e secretEntry) bool { return e.keys != nil })
+	return s.revokeWhere(func(_ uuid.UUID, e secretEntry) bool { return e.keys != nil }, true)
 }
 
-// revokeWhere deletes the entries match picks, saves the store and tells
-// onDrop their tokens.
-func (s *Secrets) revokeWhere(match func(uuid.UUID, secretEntry) bool) error {
+// revokeWhere deletes the entries match picks and saves the store. With
+// tellDrop it also prunes expired links and tells onDrop every dropped
+// token; without, it calls onDrop for nothing (expired links wait for the
+// next prune).
+func (s *Secrets) revokeWhere(match func(uuid.UUID, secretEntry) bool, tellDrop bool) error {
 	s.mu.Lock()
-	dropped := s.prune()
+	var dropped []channel.LinkToken
+	if tellDrop {
+		dropped = s.prune()
+	}
 	removed := false
 	for id, e := range s.live {
 		if !match(id, e) {
@@ -321,7 +328,7 @@ func (s *Secrets) revokeWhere(match func(uuid.UUID, secretEntry) bool) error {
 		}
 		delete(s.live, id)
 		removed = true
-		if e.keys != nil {
+		if tellDrop && e.keys != nil {
 			dropped = append(dropped, e.keys.Token)
 		}
 	}

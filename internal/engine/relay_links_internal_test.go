@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -82,4 +83,53 @@ func TestRelayLinksAcrossAgents(t *testing.T) {
 	relay.RevokeAll()
 	require.Empty(t, relay.Live())
 	require.Eventually(t, func() bool { return owner(a) == "" }, wait, tick)
+}
+
+// Many LINK_CONFLICTs after READY revoke their links without sending an
+// UNREGISTER_LINK from the socket's read loop, so reads go on: a Vault that
+// would stall on any UNREGISTER_LINK still answers the next registration.
+func TestManyConflictsDoNotStallReads(t *testing.T) {
+	t.Parallel()
+	const conflicts = 50
+	stall := make(chan struct{})
+	var unregisters atomic.Int64
+	v := vaulttest.New(vaulttest.Options{OnUnregister: func(string, vaulttest.UnregisterLink) vaulttest.Verdict {
+		unregisters.Add(1)
+		<-stall
+		return vaulttest.Verdict{}
+	}})
+	t.Cleanup(v.Close)
+	t.Cleanup(func() { close(stall) })
+	relay := newRelayLinks(quietLog())
+	cfg := config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}
+	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), relay)
+	require.NotNil(t, ev.client)
+	store := links.NewSecrets(time.Now, rand.Reader)
+	relay.add(store, ev.client.Unregister)
+	for range conflicts {
+		_, tok, err := store.IssueRelay(uuid.Must(uuid.NewV7()), time.Now().Add(time.Hour))
+		require.NoError(t, err)
+		v.Bind(tok.String(), "AAAAAAAAAAAAAAAAAAAAAA", time.Now().Add(time.Hour))
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = ev.client.Run(ctx)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+	require.Eventually(t, func() bool { return len(store.Relay()) == 0 }, 5*time.Second, 5*time.Millisecond,
+		"every conflicting link is revoked")
+
+	start := time.Now()
+	var fresh channel.LinkToken
+	_, err := rand.Read(fresh[:])
+	require.NoError(t, err)
+	require.NoError(t, ev.client.Register(context.Background(), fresh, time.Now().Add(time.Hour)))
+	require.Less(t, time.Since(start), time.Second, "the socket is read promptly")
+	require.Zero(t, unregisters.Load(), "no UNREGISTER_LINK for a token another engine holds")
 }

@@ -118,7 +118,8 @@ func TestRelayLinksTellOnDrop(t *testing.T) {
 	held, err = s.RevokeToken(fourth)
 	require.NoError(t, err)
 	require.True(t, held, "a LINK_CONFLICT revokes the link of its token")
-	require.Equal(t, []channel.LinkToken{fourth}, drops.take())
+	require.Empty(t, s.Relay())
+	require.Empty(t, drops.take(), "without unregistering it: the token is another engine's")
 
 	_, fifth, err := s.IssueRelay(other, now.Add(time.Minute))
 	require.NoError(t, err)

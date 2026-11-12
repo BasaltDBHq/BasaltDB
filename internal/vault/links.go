@@ -48,7 +48,10 @@ type Links interface {
 	// Live lists every live relay link.
 	Live() []Link
 	// Conflict revokes the link of token: another engine registered it
-	// (VC-42), so its next link gets a new secret whose token nobody else knows.
+	// (VC-42), so its next link gets a new secret whose token nobody else
+	// knows. It runs on the socket's read loop, so it must not block or
+	// write to the socket: it does not unregister the token, which the Vault
+	// already said is not this engine's.
 	Conflict(token channel.LinkToken)
 }
 
@@ -122,7 +125,7 @@ func (c *Client) Unregister(token channel.LinkToken) {
 		return
 	}
 	log := c.opts.Log
-	_, err := cn.send(context.Background(), func(ref int64) any {
+	err := cn.sendNoWait(context.Background(), func(ref int64) any {
 		return unregisterLinkMsg{Type: typeUnregisterLink, Ref: ref, LinkToken: token.String()}
 	}, func(a answer) {
 		if a.code != "" {
@@ -134,9 +137,33 @@ func (c *Client) Unregister(token channel.LinkToken) {
 	}
 }
 
-// registerMsg is REGISTER_LINK for token until expiresAt.
+// registerMsg is REGISTER_LINK for token until expiresAt. expiresAt goes in
+// whole seconds, rounded down, so the Vault drops the token at most a second
+// before the engine drops the link, never after.
 func registerMsg(ref int64, token channel.LinkToken, expiresAt time.Time) registerLinkMsg {
-	return registerLinkMsg{Type: typeRegisterLink, Ref: ref, LinkToken: token.String(), ExpiresAt: expiresAt.UTC().Format(time.RFC3339)}
+	return registerLinkMsg{
+		Type: typeRegisterLink, Ref: ref, LinkToken: token.String(),
+		ExpiresAt: expiresAt.UTC().Truncate(time.Second).Format(time.RFC3339),
+	}
+}
+
+// sendNoWait is send for a request nobody waits on: its answer, if one
+// comes within RegisterTimeout, goes to onAnswer; after that the ref is
+// forgotten, so a silent Vault cannot make pending grow without bound.
+func (cn *conn) sendNoWait(ctx context.Context, build func(ref int64) any, onAnswer func(answer)) error {
+	ref, err := cn.send(ctx, build, onAnswer)
+	if err != nil {
+		return err
+	}
+	time.AfterFunc(cn.c.opts.RegisterTimeout, func() { cn.forget(ref) })
+	return nil
+}
+
+// pendingLen is how many requests wait for an answer.
+func (cn *conn) pendingLen() int {
+	cn.mu.Lock()
+	defer cn.mu.Unlock()
+	return len(cn.pending)
 }
 
 // send writes the request build makes with a fresh ref and keeps onAnswer
@@ -188,7 +215,7 @@ func (cn *conn) registerAll(ctx context.Context) {
 	log := cn.c.opts.Log
 	for _, l := range links.Live() {
 		token := l.Token
-		_, err := cn.send(ctx, func(ref int64) any { return registerMsg(ref, token, l.ExpiresAt) }, func(a answer) {
+		err := cn.sendNoWait(ctx, func(ref int64) any { return registerMsg(ref, token, l.ExpiresAt) }, func(a answer) {
 			switch a.code {
 			case "":
 			case CodeLinkConflict:

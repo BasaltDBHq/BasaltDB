@@ -77,9 +77,15 @@ func (a *heldAgent) isApproved() bool {
 	return a.approved
 }
 
-func (a *heldAgent) RevertRequest(context.Context, uuid.UUID) (revert.Request, error) {
+func (a *heldAgent) RevertRequest(context.Context, uuid.UUID, string) (revert.Request, error) {
 	return revert.Request{}, agent.ErrNotThisAgent
 }
+
+func (a *heldAgent) RescopeRevert(context.Context, uuid.UUID, string, agent.ScopeRequest) (agent.ScopeResponse, error) {
+	return agent.ScopeResponse{}, agent.ErrNotThisAgent
+}
+
+func (a *heldAgent) CheckResetLink(uuid.UUID, string) bool { return false }
 
 func (a *heldAgent) RelayRevert(context.Context, revert.Response) (guard.AppliedRevert, error) {
 	return guard.AppliedRevert{}, agent.ErrNotThisAgent

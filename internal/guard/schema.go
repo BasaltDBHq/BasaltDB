@@ -46,6 +46,7 @@ const (
 	versionPIIOids                  // M5.1 follow-up: pii_fingerprint names columns by oid and quotes names
 	versionRevertScope              // RS-1 to RS-4: a revert's scope descriptor, own work only for agents
 	versionRevertWiden              // RS-2, RS-5: the widen proof, rescope and reset, redaction after a widen
+	versionRevertNonce              // RS-2: the requesting role reads its revert's rescope nonce
 )
 
 // migrations lists every version in order. M2 appends versions.
@@ -71,6 +72,7 @@ var migrations = []migration{
 	{version: versionPIIOids, sql: v19PIIFingerprint},
 	{version: versionRevertScope, sql: v20Descriptor + v20Tables + v20Chains + v20Prepare + v20Apply},
 	{version: versionRevertWiden, sql: v21Own + v21Rescope + v21Views},
+	{version: versionRevertNonce, sql: v22RevertNonce},
 }
 
 // LatestVersion is the basalt_meta version this build installs.

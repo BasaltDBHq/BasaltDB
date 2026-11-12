@@ -79,6 +79,10 @@ type Secrets struct {
 	path string
 	mu   sync.Mutex
 	live map[uuid.UUID]secretEntry
+	// resets are the hashes of revert links an agent's reset revoked, kept
+	// until the revert expires so the page can tell the person
+	// (CONTRACT.md, Link secrets, LINK_RESET).
+	resets map[uuid.UUID][]secretEntry
 	// onDrop is told the token of every relay link that stops being live:
 	// replaced, revoked or expired. It runs without mu held.
 	onDrop func(channel.LinkToken)
@@ -104,7 +108,7 @@ func NewSecrets(now func() time.Time, rand io.Reader) *Secrets {
 	if now == nil || rand == nil {
 		panic("links.NewSecrets: clock and randomness required")
 	}
-	return &Secrets{now: now, rand: rand, live: map[uuid.UUID]secretEntry{}}
+	return &Secrets{now: now, rand: rand, live: map[uuid.UUID]secretEntry{}, resets: map[uuid.UUID][]secretEntry{}}
 }
 
 // fileMode keeps the hashes to the engine's OS user.
@@ -135,6 +139,13 @@ func OpenSecrets(path string, now func() time.Time, rand io.Reader) (*Secrets, e
 		}
 		s.live[e.ID] = entry
 	}
+	for _, e := range file.Resets {
+		entry, err := e.entry()
+		if err != nil || entry.keys != nil {
+			return NewSecretsAt(path, now, rand), fmt.Errorf("link secrets %s: a bad reset link", path)
+		}
+		s.resets[e.ID] = append(s.resets[e.ID], entry)
+	}
 	// Expired relay links of a stopped engine are not unregistered: the
 	// Vault drops each token at its expiresAt by itself.
 	s.prune()
@@ -152,6 +163,8 @@ func NewSecretsAt(path string, now func() time.Time, rand io.Reader) *Secrets {
 // psk, never a secret.
 type secretsFile struct {
 	Links []secretFileEntry `json:"links"`
+	// Resets are revert links revoked by a reset: hash and expiry only.
+	Resets []secretFileEntry `json:"resets,omitempty"`
 }
 
 type secretFileEntry struct {
@@ -202,6 +215,11 @@ func (s *Secrets) save() error {
 			entry.PSK = base64.RawURLEncoding.EncodeToString(e.keys.PSK[:])
 		}
 		file.Links = append(file.Links, entry)
+	}
+	for id, list := range s.resets {
+		for _, e := range list {
+			file.Resets = append(file.Resets, secretFileEntry{ID: id, Hash: hex.EncodeToString(e.hash[:]), ExpiresAt: e.expires})
+		}
 	}
 	raw, err := json.Marshal(file)
 	if err != nil {
@@ -435,6 +453,19 @@ func (s *Secrets) prune() []channel.LinkToken {
 		if e.keys != nil {
 			dropped = append(dropped, e.keys.Token)
 		}
+	}
+	for id, list := range s.resets {
+		kept := list[:0]
+		for _, e := range list {
+			if now.Before(e.expires) {
+				kept = append(kept, e)
+			}
+		}
+		if len(kept) == 0 {
+			delete(s.resets, id)
+			continue
+		}
+		s.resets[id] = kept
 	}
 	return dropped
 }

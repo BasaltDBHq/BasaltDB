@@ -68,9 +68,15 @@ func (a *stubAgent) RelayApproval(_ context.Context, r approval.Response) error 
 	return a.err
 }
 
-func (a *stubAgent) RevertRequest(context.Context, uuid.UUID) (revert.Request, error) {
+func (a *stubAgent) RevertRequest(context.Context, uuid.UUID, string) (revert.Request, error) {
 	return revert.Request{}, agent.ErrNotThisAgent
 }
+
+func (a *stubAgent) RescopeRevert(context.Context, uuid.UUID, string, agent.ScopeRequest) (agent.ScopeResponse, error) {
+	return agent.ScopeResponse{}, agent.ErrNotThisAgent
+}
+
+func (a *stubAgent) CheckResetLink(uuid.UUID, string) bool { return false }
 
 func (a *stubAgent) RelayRevert(context.Context, revert.Response) (guard.AppliedRevert, error) {
 	return guard.AppliedRevert{}, agent.ErrNotThisAgent

@@ -256,7 +256,8 @@ func catalogCases() map[string]catalogCase {
 			plainFunc(func() error {
 				return notOwnTask(guard.RevertScope{Kind: "TASK", ID: uuid.MustParse(caseRunID)})
 			})},
-		caseKey("NOT_FOUND", "LINK", ""): {"approval_page", nil, asToolError(&mcp.ToolError{Code: CodeNotFound, Reason: "LINK", Message: "no such link"})},
+		caseKey("NOT_FOUND", "LINK", ""):       {"approval_page", nil, asToolError(&mcp.ToolError{Code: CodeNotFound, Reason: "LINK", Message: "no such link"})},
+		caseKey("NOT_FOUND", "LINK_RESET", ""): {"revert_page", nil, asToolError(&mcp.ToolError{Code: CodeNotFound, Reason: "LINK_RESET", Message: "the link was reset"})},
 
 		caseKey("SQL_ERROR", "", ""):            {"write", writeArgs0, pgFail("42703", `column "x" does not exist`, "")},
 		caseKey("SQL_ERROR", "NO_ROWS_NOW", ""): {"write", writeArgs0, asToolError(&mcp.ToolError{Code: CodeSQLError, Reason: reasonNoRowsNow, Message: "changes no rows now"})},

@@ -65,6 +65,7 @@ func TestTickChecksIn(t *testing.T) {
 	hb := heartbeats(t, a.Conn)
 	require.Len(t, hb, 1)
 	require.Equal(t, "test", hb[0].detail["engineVersion"])
+	require.Equal(t, "PERSON", hb[0].detail["operatedBy"], "PERSON unless the config says AGENT")
 	require.NotContains(t, hb[0].detail, "chainBrokenAt")
 	require.Empty(t, events(t, a.Conn, "DEAD_MAN"))
 	require.Empty(t, events(t, a.Conn, "UNCOVERED_TABLES"), "nothing to report")
@@ -76,6 +77,19 @@ func TestTickChecksIn(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, health.HeartbeatStale)
 	require.True(t, health.Chain.Intact)
+}
+
+// Every heartbeat records who operates the engine's machine, so the ledger
+// shows the periods when enforcement was guard-only (CO-15).
+func TestHeartbeatRecordsOperatedBy(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
+
+	require.NoError(t, newUpkeep(a.Conn, time.Now).WithOperatedBy("AGENT").Tick(context.Background()))
+	hb := heartbeats(t, a.Conn)
+	require.Len(t, hb, 1)
+	require.Equal(t, "AGENT", hb[0].detail["operatedBy"])
 }
 
 func TestTickAfterSilenceWritesTheDeadManRow(t *testing.T) {

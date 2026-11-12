@@ -305,6 +305,12 @@ func (s *Service) approvalRequiredSteps(b *Steps, te *mcp.ToolError) string {
 		b.RunCommand(n.ApproveCommand, "Run this to open the approval page, then approve with your passkey.")
 		b.RepeatCall(toolWrite, again, 0, fmt.Sprintf("In this turn, call write again with the same arguments plus approvalId: it waits up to %d seconds for the approval.", int(DefaultApprovalWait.Seconds())))
 	case reasonNoPasskey:
+		if s.Commands.AgentOperated() {
+			// The person registers a portal passkey on their own computer
+			// with a setup code (RI-6).
+			b.AgentRunCommand(s.Commands.InitRemote(""), "Nobody can approve yet: run this once to make a setup code that registers a passkey, then follow what it prints.")
+			break
+		}
 		b.RunCommand(s.Commands.Init("--add-passkey"), "Register a passkey first: approvals are signed with one.")
 		b.OpenLink(n.ApprovalURL, n.ApproveCommand, "Then open the link and approve the held write.")
 		b.EndTurn("End your turn: the person acts next.")
@@ -372,23 +378,45 @@ var deniedTable = regexp.MustCompile(`permission denied for (?:table|relation) (
 // access it lacked: init with the saved flags plus the table.
 func (s *Service) permissionDeniedSteps(b *Steps, te *mcp.ToolError, f failure) string {
 	b.Stop("The agent role may not do this: do not retry or look for another route.")
-	b.AskPerson("Tell the person which access is missing and ask them to grant it.")
-	flag := "write"
+	flag := flagWrite
 	if f.tool == toolQuery {
-		flag = "read"
+		flag = flagRead
 	}
-	command, what := s.Commands.Init("--dry-run"), "access to what it asked for"
+	table := ""
 	if m := deniedTable.FindStringSubmatch(te.Message); m != nil {
-		// Only a schema-qualified plain name can be added to the access list
-		// safely; Postgres usually names the table without its schema, and
-		// then the person sees the plan and adds the table themselves.
-		if grant, err := s.Commands.Grant(flag, m[1]); err == nil {
-			command, what = grant, flag+" access to "+shown(m[1], maxTableChars)
-		}
+		table = m[1]
+	}
+	if s.Commands.AgentOperated() {
+		return s.remotePermissionSteps(b, flag, table)
+	}
+	b.AskPerson("Tell the person which access is missing and ask them to grant it.")
+	command, what := s.Commands.Init("--dry-run"), "access to what it asked for"
+	// Only a schema-qualified plain name can be added to the access list
+	// safely; Postgres usually names the table without its schema, and then
+	// the person sees the plan and adds the table themselves.
+	if grant, err := s.Commands.Grant(flag, table); err == nil {
+		command, what = grant, flag+" access to "+shown(table, maxTableChars)
 	}
 	b.RunCommand(command, "Show the person this command: it gives the agent the missing access, and init asks for the admin connection string itself.")
 	b.TellAgent("Tell the agent once the access is granted.")
 	return fmt.Sprintf("The agent was denied %s. If it should have it, run the command the agent shows you, then tell the agent.", what)
+}
+
+// remotePermissionSteps: on an agent-operated engine the agent asks, and
+// only when the person tells it to add the access, in a later turn, makes a
+// setup code with the table added (RI-16).
+func (s *Service) remotePermissionSteps(b *Steps, flag, table string) string {
+	b.AskPerson("Tell the person which access is missing and ask whether you should have it.")
+	b.TellAgent("Tell the agent to add the access once you decide it should have it.")
+	b.EndTurn("End your turn: the person decides.")
+	command, what := s.Commands.InitRemote(""), "access to what it asked for"
+	text := "When the person tells you to add it, run this with the table added to --" + flag + ", then follow what it prints."
+	if grant, err := s.Commands.RemoteGrant(flag, table); err == nil {
+		command, what = grant, flag+" access to "+shown(table, maxTableChars)
+		text = "When the person tells you to add it, run this to make a setup code, then follow what it prints."
+	}
+	b.AgentRunCommand(command, text)
+	return fmt.Sprintf("The agent was denied %s. If it should have it, tell the agent: it gives you a setup code to run on your own computer.", what)
 }
 
 func notFoundSteps(b *Steps, te *mcp.ToolError, f failure) string {
@@ -444,7 +472,7 @@ func (s *Service) unavailableSteps(b *Steps, te *mcp.ToolError, f failure) strin
 	case reasonCredentialRejected, reasonGuardMissing, reasonGuardOutdated:
 		return fixSteps(b, s.Commands, te.Reason)
 	case reasonEngineUnreachable:
-		return engineUnreachableSteps(b, s.Commands)
+		return engineUnreachableSteps(b, s.Commands, f.tool)
 	case reasonSetupPending, reasonSetupExpired:
 		return s.setupSteps(b, te, f)
 	case reasonPagesOff:
@@ -472,9 +500,27 @@ var fixes = map[string]struct {
 	reasonGuardOutdated: {Commands.Upgrade, "The guard in this database is older than this engine needs; this upgrades it."},
 }
 
+// remoteFixes are the setup codes that fix the same machine problems on an
+// agent-operated engine, where the admin connection string never comes
+// (CO-9): the change to init --remote and what the person is told.
+var remoteFixes = map[string]struct{ change, problem string }{
+	reasonCredentialRejected: {"--new-code", "The database refuses the agent's credential, so the agent needs a new password."},
+	reasonGuardMissing:       {"", "Basalt's guard is not installed in this database (or was removed), so the agent cannot work."},
+	reasonGuardOutdated:      {"", "Basalt's guard in this database is older than this engine needs, so the agent cannot work until it is upgraded."},
+}
+
 // fixSteps: the person runs the fix for reason, then tells the agent; the
-// agent stops until then.
+// agent stops until then. On an agent-operated engine the agent makes a
+// setup code for it instead (RI-17 for CREDENTIAL_REJECTED).
 func fixSteps(b *Steps, cmds Commands, reason string) string {
+	if cmds.AgentOperated() {
+		fix, ok := remoteFixes[reason]
+		if !ok {
+			b.fail(fmt.Errorf("no fix for %s", reason))
+			return ""
+		}
+		return remoteSetupSteps(b, cmds, fix.change, fix.problem)
+	}
 	fix, ok := fixes[reason]
 	if !ok {
 		b.fail(fmt.Errorf("no fix for %s", reason))
@@ -483,9 +529,29 @@ func fixSteps(b *Steps, cmds Commands, reason string) string {
 	return personFix(b, fix.command(cmds), fix.problem)
 }
 
-// engineUnreachableSteps: the person starts the engine.
-func engineUnreachableSteps(b *Steps, cmds Commands) string {
-	return personFix(b, cmds.EngineStart(), "The agent cannot reach the engine, so it is not running.")
+// remoteSetupSteps: on an agent-operated engine, the agent runs basalt init
+// --remote --json now; what it prints (a setup code, its personMessage and
+// nextSteps) replaces the rest of these steps (RI-2). The person's message
+// names no command on the agent's machine.
+func remoteSetupSteps(b *Steps, cmds Commands, change, problem string) string {
+	b.AgentRunCommand(cmds.InitRemote(change), "Run this once to make a setup code, then show the person its personMessage and follow its nextSteps.")
+	return problem + " The agent gives you a setup code: run the basalt init --setup-code command it shows on your own computer, then tell the agent."
+}
+
+// engineUnreachableSteps: the person starts the engine; on an agent-operated
+// engine the agent starts it, once, then repeats tool (status when tool is
+// empty or status itself).
+func engineUnreachableSteps(b *Steps, cmds Commands, tool string) string {
+	if !cmds.AgentOperated() {
+		return personFix(b, cmds.EngineStart(), "The agent cannot reach the engine, so it is not running.")
+	}
+	b.AgentRunCommand(cmds.EngineStart(), "Start the Basalt engine on this machine, once; ask the person when it still does not answer.")
+	if tool == "" || tool == toolStatus {
+		b.CallTool(toolStatus, map[string]any{}, "Then call status to check that the engine answers.")
+		return ""
+	}
+	b.RepeatCall(tool, nil, 0, "Then make the same call again, once.")
+	return ""
 }
 
 func personFix(b *Steps, command, problem string) string {
@@ -531,10 +597,12 @@ func (s *Service) approvalLinkError(te *mcp.ToolError, n heldNotice) *mcp.ToolEr
 
 // SetupError is a call refused because the agent's setup from the laptop has
 // not run (CONTRACT.md, Setup from your laptop). Code is the pending setup
-// code, which the person runs on their own computer; Expired when it ran out.
+// code, which the person runs on their own computer, and Fingerprint the
+// one it shows; Expired when it ran out.
 type SetupError struct {
-	Code    string
-	Expired bool
+	Code        string
+	Fingerprint string
+	Expired     bool
 }
 
 func (e *SetupError) Error() string {
@@ -544,11 +612,11 @@ func (e *SetupError) Error() string {
 	return "the agent's setup has not run yet"
 }
 
-var setupCode = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
+// setupCode is a setup code's alphabet: basalt-setup.1.<base64url>.<check>.
+var setupCode = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // setupSteps: a pending setup is run by the person on their own computer;
-// an expired one is renewed on the engine's machine (an OPERATOR step, which
-// the person runs: the engine has no operatedBy AGENT mode yet).
+// an expired one is renewed on the engine's machine (an OPERATOR step).
 func (s *Service) setupSteps(b *Steps, te *mcp.ToolError, f failure) string {
 	if te.Reason == reasonSetupExpired {
 		return setupExpiredSteps(b, s.Commands)
@@ -558,32 +626,40 @@ func (s *Service) setupSteps(b *Steps, te *mcp.ToolError, f failure) string {
 		b.fail(errors.New("a pending setup needs its code"))
 		return ""
 	}
-	return setupPendingSteps(b, s.Commands, se.Code, true)
+	return setupPendingSteps(b, se.Code, se.Fingerprint, true)
 }
 
-// setupExpiredSteps: a new setup code is made on the engine's machine.
+// setupExpiredSteps: a new setup code is made on the engine's machine, by
+// whoever operates it; basalt init --remote never asks for the admin.
 func setupExpiredSteps(b *Steps, cmds Commands) string {
-	command := cmds.Init("--remote --new-code")
-	b.RunCommand(command, "Make a new setup code: this asks for the admin connection string itself.")
-	b.EndTurn("End your turn: the person acts next.")
-	return "The setup code for this agent expired before it was used. Run this to make a new one, then follow the steps it prints: " + command
+	command := cmds.InitRemote("--new-code")
+	b.MachineCommand(cmds, command, "Make a new setup code on the agent's machine with this, then follow the steps it prints.",
+		"Run this once to make a new setup code, then show the person its personMessage and follow its nextSteps.")
+	b.EndTurn("End your turn: the person runs the new code next.")
+	if cmds.AgentOperated() {
+		return "The setup code for this agent expired before it was used. The agent gives you a new one: " +
+			"run the basalt init --setup-code command it shows on your own computer, then tell the agent."
+	}
+	return "The setup code for this agent expired before it was used. On the agent's machine, run this to make a new one, then follow the steps it prints: " + command
 }
 
 // setupPendingSteps: the person runs the pending setup code on their own
-// computer. An INSTALL code blocks the tools (blocking), so the agent ends
-// its turn and checks status after; an AGENT or UPGRADE code does not.
-func setupPendingSteps(b *Steps, cmds Commands, code string, blocking bool) string {
-	if !setupCode.MatchString(code) {
-		b.fail(errors.New("a pending setup needs its code"))
+// computer, checking it shows fingerprint. An INSTALL code blocks the tools
+// (blocking), so the agent ends its turn and checks status after; an AGENT
+// or UPGRADE code does not. The message names the command, not the code
+// itself, which is in the step and runs to 1500 characters.
+func setupPendingSteps(b *Steps, code, fingerprint string, blocking bool) string {
+	if !setupCode.MatchString(code) || fingerprint == "" {
+		b.fail(errors.New("a pending setup needs its code and fingerprint"))
 		return ""
 	}
-	command := cmds.Init("--setup-code " + code)
-	b.RunCommand(command, "On your own computer, run this to finish the agent's setup.")
+	b.RunCommand(SetupCode(code), "On your own computer, not the agent's machine, run this and check it shows the same setup fingerprint.")
 	b.TellAgent("Tell the agent when it is done.")
+	check := " Check that it shows the setup fingerprint " + fingerprint + ", then tell the agent. Never paste your database password into this chat."
 	if !blocking {
-		return "A change to this agent's setup is waiting for you. On your own computer, run: " + command + " then tell the agent."
+		return "A change to this agent's setup is waiting for you. On your own computer, run the basalt init --setup-code command the agent shows you." + check
 	}
 	b.EndTurn("End your turn: the person acts next.")
 	b.CallTool(toolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
-	return "This agent's setup has not run yet. On your own computer, run: " + command + " then tell the agent."
+	return "This agent's setup has not run yet. On your own computer, run the basalt init --setup-code command the agent shows you." + check
 }

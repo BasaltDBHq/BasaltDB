@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
+	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -27,18 +28,25 @@ type Commands struct {
 	goos       string
 	initArgs   []string
 	foreground bool
+	// agentOperated: engine.json operatedBy is AGENT, so machine steps are
+	// the agent's and admin steps run on the person's own computer.
+	agentOperated bool
 }
 
 const (
 	flagAgent         = "agent"
+	flagWrite         = "write"
+	flagRead          = "read"
 	flagPasskeyOrigin = "passkey-origin"
+	// cmdBasalt is the CLI every command runs.
+	cmdBasalt = "basalt"
 )
 
 // savedInitFlags are the init flags a saved plan may carry (CONTRACT.md,
 // Planned: init saves its flags). --credential-file is a path, not a secret
 // (AE-15, provisional). Anything else is refused.
 var savedInitFlags = map[string]bool{
-	flagAgent: true, "write": true, "read": true, "prefix": true, "statement-timeout": true,
+	flagAgent: true, flagWrite: true, flagRead: true, "prefix": true, "statement-timeout": true,
 	"socket-dir": true, "os-user": true, "engine-user": true, "credential-file": true,
 	flagPasskeyOrigin: true, "agent-rls": true, "operated-by": true,
 }
@@ -130,6 +138,18 @@ func (c Commands) Foreground() Commands {
 	return c
 }
 
+// OperatedBy returns c for an engine whose engine.json operatedBy is
+// operatedBy: AGENT makes machine steps the agent's (CONTRACT.md, Next
+// steps, Who runs machine steps); anything else, PERSON included, keeps
+// them the person's.
+func (c Commands) OperatedBy(operatedBy string) Commands {
+	c.agentOperated = operatedBy == mcpcontract.OperatedByAgent
+	return c
+}
+
+// AgentOperated reports whether the engine's operatedBy is AGENT.
+func (c Commands) AgentOperated() bool { return c.agentOperated }
+
 // Flags are "--agent NAME [--config PATH]", to put after a basalt verb.
 func (c Commands) Flags() string { return c.flags }
 
@@ -157,7 +177,7 @@ func (c Commands) Upgrade() string { return c.verb("upgrade") }
 // Init runs init again with the agent's saved flags plus one change (for
 // example "--add-passkey"). The saved flags already name the agent.
 func (c Commands) Init(change string) string {
-	parts := []string{"basalt", "init"}
+	parts := []string{cmdBasalt, "init"}
 	if !c.hasAgentFlag() {
 		parts = append(parts, "--agent", c.agent)
 	}
@@ -184,8 +204,27 @@ var plainTable = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_$]*\.[A-Za-z_][A-Za-z0
 // (init takes the last value of a flag). The table must be a plain,
 // schema-qualified name: a list separator or a quote could add another table.
 func (c Commands) Grant(flag, table string) (string, error) {
+	g, err := c.granted(flag, table)
+	if err != nil {
+		return "", err
+	}
+	return g.Init(""), nil
+}
+
+// RemoteGrant is InitRemote with table added to the agent's access list,
+// as Grant adds it.
+func (c Commands) RemoteGrant(flag, table string) (string, error) {
+	g, err := c.granted(flag, table)
+	if err != nil {
+		return "", err
+	}
+	return g.InitRemote(""), nil
+}
+
+// granted is c with table added to the saved flag's list.
+func (c Commands) granted(flag, table string) (Commands, error) {
 	if !plainTable.MatchString(table) {
-		return "", fmt.Errorf("%w: %q", ErrBadTable, table)
+		return Commands{}, fmt.Errorf("%w: %q", ErrBadTable, table)
 	}
 	args := append([]string(nil), c.initArgs...)
 	merged := false
@@ -203,8 +242,56 @@ func (c Commands) Grant(flag, table string) (string, error) {
 		args = append(args, "--"+flag+"="+table)
 	}
 	c.initArgs = args
-	return c.Init(""), nil
+	return c, nil
 }
+
+// remoteInitFlags are the saved init flags basalt init --remote takes; the
+// others (--os-user, --socket-dir and the like) are init's own and
+// --remote refuses them.
+var remoteInitFlags = map[string]bool{
+	flagAgent: true, flagWrite: true, flagRead: true, "prefix": true, "statement-timeout": true, "operated-by": true,
+}
+
+// InitRemote is basalt init --remote on the engine's machine with the saved
+// flags it takes plus change (for example "--new-code"). It makes a setup
+// code and never asks for the admin connection string (CO-9). On an
+// agent-operated engine it ends with --json: the agent follows the
+// personMessage and nextSteps it prints (CONTRACT.md, Setup code steps).
+func (c Commands) InitRemote(change string) string {
+	parts := []string{cmdBasalt, "init", "--remote"}
+	if !c.hasAgentFlag() {
+		parts = append(parts, "--agent", c.agent)
+	}
+	if c.configFlag != "" {
+		parts = append(parts, c.configFlag)
+	}
+	for i := 0; i < len(c.initArgs); i++ {
+		a := c.initArgs[i]
+		name, _, hasValue := strings.Cut(strings.TrimLeft(a, "-"), "=")
+		keep := remoteInitFlags[name]
+		if keep {
+			parts = append(parts, shellQuote(a))
+		}
+		if !hasValue && i+1 < len(c.initArgs) {
+			i++ // the flag's value is the next argument
+			if keep {
+				parts = append(parts, shellQuote(c.initArgs[i]))
+			}
+		}
+	}
+	if change != "" {
+		parts = append(parts, change)
+	}
+	if c.agentOperated {
+		parts = append(parts, "--json")
+	}
+	return strings.Join(parts, " ")
+}
+
+// SetupCode is what the person runs on their own computer to apply a setup
+// code: basalt init --setup-code takes no --agent or --config, since it
+// writes no engine config (CONTRACT.md, basalt init --setup-code).
+func SetupCode(code string) string { return "basalt init --setup-code " + code }
 
 // RevertDryRun is the person's command that prepares the revert of scope
 // without signing it and prints what it would do.
@@ -241,7 +328,7 @@ func (c Commands) foregroundEngine() string {
 // verb is `basalt <verb> <flags> <args...>`; verb may be a verb and its
 // subcommand ("passkey list").
 func (c Commands) verb(verb string, args ...string) string {
-	return strings.Join(append([]string{"basalt", verb, c.flags}, args...), " ")
+	return strings.Join(append([]string{cmdBasalt, verb, c.flags}, args...), " ")
 }
 
 // shellQuote quotes s for a POSIX shell when it needs it. A leading = is

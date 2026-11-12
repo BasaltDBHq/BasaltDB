@@ -85,8 +85,15 @@ func UpsertAgent(path string, s Settings, a Agent) error {
 	return err
 }
 
-// UpsertAgentVault is UpsertAgent, returning the vault it wrote.
+// UpsertAgentVault is UpsertAgent, returning the vault it wrote. It holds
+// the config's lock (lockConfig) from the read to the write, so a setup the
+// engine clears meanwhile is not lost, nor this agent by the engine's write.
 func UpsertAgentVault(path string, s Settings, a Agent) (VaultWritten, error) {
+	unlock, err := lockConfig(path)
+	if err != nil {
+		return VaultWritten{}, err
+	}
+	defer unlock()
 	raw, v, err := UpsertedVault(path, openNoFollow, s, a)
 	if err != nil {
 		return VaultWritten{}, err
@@ -147,6 +154,37 @@ func UpsertedVault(path string, open func(string) (*os.File, error), s Settings,
 		return nil, VaultWritten{}, err
 	}
 	return append(raw, '\n'), vault, nil
+}
+
+// ClearSetup removes agent's pending setup from the config at path, once
+// the engine found it recorded (CONTRACT.md, Setup from your laptop, On the
+// engine). Only setup id is cleared: when the agent's pending setup is
+// another one (basalt init --remote made a new code meanwhile) or none,
+// the file is left as it is and cleared is false. The file is read without
+// following a link and written atomically with FileMode, under the config's
+// lock (lockConfig), which every upsert takes too, so a change to another
+// agent made meanwhile is never lost. The caller also holds the agent's lock
+// (LockFile), as basalt init --remote does.
+func ClearSetup(path, agent, id string) (cleared bool, err error) {
+	unlock, err := lockConfig(path)
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
+	c, err := load(path, openNoFollow)
+	if err != nil {
+		return false, err
+	}
+	i := slices.IndexFunc(c.Agents, func(a Agent) bool { return a.Name == agent })
+	if i < 0 || c.Agents[i].Setup == nil || c.Agents[i].Setup.SetupID != id {
+		return false, nil
+	}
+	c.Agents[i].Setup = nil
+	raw, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return false, err
+	}
+	return true, WriteFile(path, append(raw, '\n'))
 }
 
 // WriteFile writes data to path atomically with FileMode, creating the

@@ -139,7 +139,7 @@ func TestShortLinkApprovedThroughTheRelay(t *testing.T) {
 	require.Len(t, secret, 22, "a 128-bit secret")
 	require.Equal(t, pageOrigin+"/approvals/"+id+"#s="+secret, link, "the short link carries its secret in the fragment")
 	msg := str(t, ap["personMessage"])
-	require.True(t, strings.HasPrefix(msg, "Held for your approval: Update 15 rows in public.leads.\nApprove it with your passkey here:\n\n"+link+
+	require.True(t, strings.HasPrefix(msg, "Held for your approval: Update 15 rows in public·leads.\nApprove it with your passkey here:\n\n"+link+
 		"\n\nOr run: basalt approve --agent bot --config /etc/basalt-test/engine.json --open "+id+"\nExpires "), msg)
 	require.True(t, strings.HasSuffix(msg, " UTC."), msg)
 	mcptest.Require(t, msg, mcptest.LinksOf(t, ap))

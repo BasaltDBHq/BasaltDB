@@ -439,8 +439,13 @@ func printRevertLines(c *cliIO, texts []string, asJSON bool) error {
 }
 
 // revertLineText is one line for a person: action, table, key, and the
-// columns that change back (or the reason the row is skipped).
+// columns that change back (or the reason the row is skipped), with the
+// characters that hide or reorder text shown as escapes (visibleText).
 func revertLineText(l revert.Line) string {
+	return visibleText(revertLine(l))
+}
+
+func revertLine(l revert.Line) string {
 	verb := map[string]string{"UPDATE": "restore", "INSERT": "re-insert", "DELETE": "delete"}[l.Op]
 	key := string(l.Key)
 	if l.Redacted {

@@ -323,20 +323,7 @@ func applySetup(ctx context.Context, conn *pgx.Conn, script guard.Script) error 
 	if n == 0 {
 		return errors.New("nothing to run")
 	}
-	body := guard.Script{Statements: script.Statements[:n-1]}
-	record := script.Statements[n-1]
-	return pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
-		if err := body.Apply(ctx, tx); err != nil {
-			return err
-		}
-		if err := checkCovered(ctx, tx); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, record.SQL); err != nil {
-			return fmt.Errorf("record the setup: %w", err)
-		}
-		return nil
-	})
+	return applyInit(ctx, conn, guard.Script{Statements: script.Statements[:n-1]}, script.Statements[n-1])
 }
 
 // refused turns a failed transaction into what the person reads. Nothing

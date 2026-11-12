@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -12,10 +13,12 @@ import (
 	"github.com/google/uuid"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/passkey"
 )
 
 // The status tool (CONTRACT.md, MCP tools, status; api/mcp/tools/status.json).
@@ -178,16 +181,84 @@ type Problem struct {
 // or a missing guard is a problem in the result, not an error. It never
 // names the credential file.
 func (s *Service) Status(ctx context.Context) (StatusReport, error) {
-	r := StatusReport{
-		Agent: s.Name, OperatedBy: operatedBy(s.OperatedBy), Enforcement: enforcement(s.OperatedBy, s.SameUser),
-		Engine: EngineStatus{Reachable: true, Build: s.Build},
-		Pages:  PagesStatus{Served: s.PagesOrigin != "", URL: s.PagesBase},
+	return s.statusDeps().report(ctx)
+}
+
+// statusDeps are what a status report reads: the Service's own in the
+// engine, LocalStatus's for basalt status on an engine run as the person.
+type statusDeps struct {
+	name, operatedBy, build   string
+	pagesBase, pagesOrigin    string
+	sameUser, engineReachable bool
+	vault                     VaultReporter
+	cmds                      Commands
+	setup                     *config.Setup
+	probe                     Probe
+	passkeys                  func(context.Context) ([]passkey.Credential, error)
+	log                       *slog.Logger
+	now                       func() time.Time
+}
+
+func (s *Service) statusDeps() statusDeps {
+	return statusDeps{
+		name: s.Name, operatedBy: s.OperatedBy, build: s.Build, pagesBase: s.PagesBase, pagesOrigin: s.PagesOrigin,
+		sameUser: s.SameUser, engineReachable: true, vault: s.Vault, cmds: s.Commands, setup: s.Setup, probe: s.Probe,
+		passkeys: s.Approvals.Passkeys, log: s.Log, now: s.Now,
 	}
-	if s.Vault != nil {
-		v := s.Vault.VaultStatus()
+}
+
+// LocalStatus is what basalt status reads for an agent whose engine runs as
+// the person's own OS user (same-user mode): the config, the agent's own
+// credential and whether the engine process runs. Its report is the status
+// tool's, with engine.reachable from the process and ENGINE_UNREACHABLE
+// when it does not run.
+type LocalStatus struct {
+	Name       string
+	Commands   Commands
+	OperatedBy string
+	Setup      *config.Setup
+	// PagesBase is the config's pages base URL; PagesOrigin is the origin
+	// of the local pages when the running engine serves them, else empty.
+	PagesBase, PagesOrigin string
+	EngineRunning          bool
+	Probe                  Probe
+	Passkeys               func(context.Context) ([]passkey.Credential, error)
+	Log                    *slog.Logger
+	Now                    func() time.Time
+}
+
+// Report is the status report. It panics on a missing probe, passkey
+// reader, logger or clock.
+func (l LocalStatus) Report(ctx context.Context) (StatusReport, error) {
+	if l.Probe == nil || l.Passkeys == nil || l.Log == nil || l.Now == nil {
+		panic("agent: local status needs a probe, a passkey reader, a logger and a clock")
+	}
+	base := l.PagesBase
+	if base == "" {
+		base = links.DefaultLocal
+	}
+	return statusDeps{
+		name: l.Name, operatedBy: l.OperatedBy, build: buildinfo.Version, pagesBase: base, pagesOrigin: l.PagesOrigin,
+		sameUser: true, engineReachable: l.EngineRunning, cmds: l.Commands, setup: l.Setup, probe: l.Probe,
+		passkeys: l.Passkeys, log: l.Log, now: l.Now,
+	}.report(ctx)
+}
+
+func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
+	r := StatusReport{
+		Agent: s.name, OperatedBy: operatedBy(s.operatedBy), Enforcement: enforcement(s.operatedBy, s.sameUser),
+		Engine: EngineStatus{Reachable: s.engineReachable, Build: s.build},
+		Pages:  PagesStatus{Served: s.pagesOrigin != "", URL: s.pagesBase},
+	}
+	if s.vault != nil {
+		v := s.vault.VaultStatus()
 		r.Vault = &v
 	}
-	ps := problems{cmds: s.Commands}
+	ps := problems{cmds: s.cmds}
+	if !s.engineReachable {
+		ps.add(problemEngineUnreachable, "the engine is not running, so the agent's tools do not answer",
+			func(b *Steps) string { return engineUnreachableSteps(b, s.cmds) })
+	}
 	setup, known := s.setupView(ctx)
 	r.Setup = setup.status
 	if known {
@@ -196,7 +267,7 @@ func (s *Service) Status(ctx context.Context) (StatusReport, error) {
 		setup.addProblem(&ps)
 	}
 
-	st, err := s.Probe.GuardStatus(ctx)
+	st, err := s.probe.GuardStatus(ctx)
 	// A pending INSTALL code explains a role that cannot log in or a guard
 	// that is not there yet; any other failure is reported as it is.
 	explained := known && setup.explainsGuard() && notInstalledYet(st, err)
@@ -213,7 +284,7 @@ func (s *Service) Status(ctx context.Context) (StatusReport, error) {
 		}
 	}
 	if err == nil && st.State != guard.GuardMissing {
-		r.Passkeys = s.passkeys(ctx, &ps)
+		r.Passkeys = s.countPasskeys(ctx, &ps)
 	}
 	list, err := ps.sorted()
 	if err != nil {
@@ -303,15 +374,15 @@ func guardStatusDTO(st guard.Status) GuardStatus {
 
 // passkeys counts the active passkeys; none is NO_PASSKEY. A count that
 // fails is logged and leaves active out.
-func (s *Service) passkeys(ctx context.Context, ps *problems) PasskeysStatus {
-	keys, err := s.Approvals.Passkeys(ctx)
+func (s statusDeps) countPasskeys(ctx context.Context, ps *problems) PasskeysStatus {
+	keys, err := s.passkeys(ctx)
 	if err != nil {
-		s.Log.Error("status: count passkeys", "err", err)
+		s.log.Error("status: count passkeys", "err", err)
 		return PasskeysStatus{}
 	}
 	n := len(keys)
 	if n == 0 {
-		cmd := s.Commands.Init("--add-passkey")
+		cmd := s.cmds.Init("--add-passkey")
 		ps.add(problemNoPasskey, "no passkey is registered, so held writes and reverts cannot be signed",
 			func(b *Steps) string {
 				b.RunCommand(cmd, "Register a passkey: held writes and reverts are signed with one.")
@@ -323,17 +394,17 @@ func (s *Service) passkeys(ctx context.Context, ps *problems) PasskeysStatus {
 
 // addUnreachable is the problem of a guard read that failed: the database
 // refused the credential, or cannot be reached.
-func (s *Service) addUnreachable(ps *problems, err error) {
+func (s statusDeps) addUnreachable(ps *problems, err error) {
 	te := ToolError(err)
 	switch te.Reason {
 	case reasonCredentialRejected:
 		ps.add(problemCredentialRejected, "the database refuses the agent's credential",
-			func(b *Steps) string { return fixSteps(b, s.Commands, reasonCredentialRejected) })
+			func(b *Steps) string { return fixSteps(b, s.cmds, reasonCredentialRejected) })
 	case reasonGuardMissing:
 		ps.add(problemGuardMissing, "the guard is not installed in this database",
-			func(b *Steps) string { return fixSteps(b, s.Commands, reasonGuardMissing) })
+			func(b *Steps) string { return fixSteps(b, s.cmds, reasonGuardMissing) })
 	default:
-		s.Log.Error("status: read the guard", "err", err)
+		s.log.Error("status: read the guard", "err", err)
 		ps.add(problemDatabaseUnreachable, "the database cannot be reached",
 			func(b *Steps) string {
 				b.AskPerson("Tell the person the database cannot be reached and ask them to check that Postgres is running.")
@@ -396,18 +467,18 @@ func (v setupView) addProblem(ps *problems) {
 // it is recorded, else its latest recorded setup. known is false when the
 // database cannot tell whether the pending code was used (see
 // pendingRecorded); the config's code is then shown, with no problem.
-func (s *Service) setupView(ctx context.Context) (setupView, bool) {
+func (s statusDeps) setupView(ctx context.Context) (setupView, bool) {
 	recorded, known := false, true
-	if s.Setup != nil {
+	if s.setup != nil {
 		recorded, known = s.pendingRecorded(ctx)
 	}
-	v := setupFrom(s.Setup, recorded, s.Now())
+	v := setupFrom(s.setup, recorded, s.now())
 	if v.status.State != setupNone || !known {
 		return v, known
 	}
-	latest, ok, err := s.Probe.LatestSetup(ctx)
+	latest, ok, err := s.probe.LatestSetup(ctx)
 	if err != nil {
-		s.Log.Error("status: read the latest setup", "err", err)
+		s.log.Error("status: read the latest setup", "err", err)
 	}
 	if ok {
 		v.status = SetupStatus{State: setupDone, SetupID: latest.SetupID.String(), Kind: latest.Kind}
@@ -515,7 +586,7 @@ func (h handlers) status(ctx context.Context, raw json.RawMessage) (any, error) 
 // guard on every call, so basalt upgrade needs no engine restart. status is
 // never refused.
 func (s *Service) Admit(ctx context.Context) error {
-	if v, known := s.setupGate(ctx); known && v.explainsGuard() {
+	if v, known := s.statusDeps().setupGate(ctx); known && v.explainsGuard() {
 		return &SetupError{Code: v.code, Expired: v.status.State == setupExpired}
 	}
 	st, err := s.Probe.GuardStatus(ctx)
@@ -537,22 +608,22 @@ func (s *Service) Admit(ctx context.Context) error {
 // setupGate is the pending setup a call checks: none without a pending
 // INSTALL code, so an agent without one reads nothing more. known is false
 // when the database cannot tell whether the code was used.
-func (s *Service) setupGate(ctx context.Context) (setupView, bool) {
-	if s.Setup == nil || s.Setup.Kind != guard.SetupInstall {
+func (s statusDeps) setupGate(ctx context.Context) (setupView, bool) {
+	if s.setup == nil || s.setup.Kind != guard.SetupInstall {
 		return setupView{status: SetupStatus{State: setupNone}}, true
 	}
 	recorded, known := s.pendingRecorded(ctx)
-	return setupFrom(s.Setup, recorded, s.Now()), known
+	return setupFrom(s.setup, recorded, s.now()), known
 }
 
 // pendingRecorded reads whether the pending setup code was used. A database
 // that refuses the agent's role or has no guard yet means it was not (an
 // INSTALL code makes both); any other failure, such as a database that
 // cannot be reached, leaves it unknown (known false), logged.
-func (s *Service) pendingRecorded(ctx context.Context) (recorded, known bool) {
-	id, err := uuid.Parse(s.Setup.SetupID)
+func (s statusDeps) pendingRecorded(ctx context.Context) (recorded, known bool) {
+	id, err := uuid.Parse(s.setup.SetupID)
 	if err == nil {
-		recorded, err = s.Probe.SetupRecorded(ctx, id)
+		recorded, err = s.probe.SetupRecorded(ctx, id)
 	}
 	switch {
 	case err == nil:
@@ -560,7 +631,7 @@ func (s *Service) pendingRecorded(ctx context.Context) (recorded, known bool) {
 	case notInstalledYet(guard.Status{}, err):
 		return false, true
 	}
-	s.Log.Error("read the pending setup", "err", err)
+	s.log.Error("read the pending setup", "err", err)
 	return false, false
 }
 

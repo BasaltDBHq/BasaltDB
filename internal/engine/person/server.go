@@ -36,6 +36,10 @@ type Options struct {
 	// name. A peer that is an agent's OS user is scoped to its own agents
 	// (owner decision SM-4).
 	AgentUIDs map[string]uint32
+	// Info answers STATUS and TARGET, by agent name; Engine is what STATUS
+	// says about the engine itself.
+	Info   map[string]AgentInfo
+	Engine EngineInfo
 	// Pages is PAGES's answer.
 	Pages   PagesDTO
 	PeerUID PeerUIDFunc
@@ -48,6 +52,8 @@ type Server struct {
 	agents map[string]Ledger
 	// scopes are, per agent OS user uid, the agents that uid runs.
 	scopes  map[uint32]map[string]bool
+	info    map[string]AgentInfo
+	engine  EngineInfo
 	pages   PagesDTO
 	peerUID PeerUIDFunc
 	log     *slog.Logger
@@ -81,7 +87,10 @@ func NewServer(o Options) *Server {
 		}
 		scopes[uid][name] = true
 	}
-	return &Server{allow: allow, agents: o.Agents, scopes: scopes, pages: o.Pages, peerUID: o.PeerUID, log: o.Log}
+	return &Server{
+		allow: allow, agents: o.Agents, scopes: scopes, info: o.Info, engine: o.Engine,
+		pages: o.Pages, peerUID: o.PeerUID, log: o.Log,
+	}
 }
 
 // Serve accepts on ln until ctx is done, at most MaxConns at a time.
@@ -188,7 +197,7 @@ func (s *Server) handle(ctx context.Context, uid uint32, req Request) Response {
 		return result(s.pages, nil)
 	}
 	h, ok := handlers[req.Method]
-	if !ok || h == nil {
+	if !ok {
 		return Response{Error: &Error{Code: CodeUnknownMethod, Message: fmt.Sprintf("unknown method %q", req.Method)}}
 	}
 	if scope, isAgent := s.scopes[uid]; isAgent && !scope[req.Agent] {
@@ -198,6 +207,9 @@ func (s *Server) handle(ctx context.Context, uid uint32, req Request) Response {
 		return Response{Error: &Error{Code: CodeAgentNotAllowed, Message: fmt.Sprintf(
 			"OS user %d runs an agent, so this socket serves it only that agent's ledger, not %q; "+
 				"run the agent as another OS user (basalt init --os-user) to see every agent", uid, req.Agent)}}
+	}
+	if h == nil {
+		return s.answerInfo(ctx, req)
 	}
 	l, ok := s.agents[req.Agent]
 	if !ok {
@@ -268,6 +280,9 @@ const maxRowChangeIDs = pagination.MaxLimit
 
 var handlers = map[Method]handler{
 	MethodPages: nil, // answered by the server itself, for no agent
+	// Answered from the agent's AgentInfo, without the guard check.
+	MethodStatus: nil,
+	MethodTarget: nil,
 	MethodCheckHealth: call(func(ctx context.Context, l Ledger, p healthParams) (any, error) {
 		h, err := l.CheckHealth(ctx, p.toDomain())
 		return healthFromDomain(h), err

@@ -19,7 +19,7 @@ var (
 	screamingCase = regexp.MustCompile(`^[A-Z][A-Z0-9_]*$`)
 	toolName      = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 	errorCodeRow  = regexp.MustCompile("^\\| `([A-Z][A-Z0-9_]*)` \\|")
-	milestones    = map[string]bool{"M1": true, "M1.5": true, "M2": true, "M3": true, "M4.1": true}
+	milestones    = map[string]bool{"M1": true, "M1.5": true, "M2": true, "M3": true, "M4": true, "M4.1": true}
 )
 
 // contractErrorCodes reads the codes from CONTRACT.md's "Error codes" table,
@@ -199,6 +199,27 @@ func TestStatusToolHasContract(t *testing.T) {
 // TestApprovalSchemas checks the approval-flow payload schemas follow the
 // wire rules (CONTRACT.md, Approvals): camelCase properties, SCREAMING_SNAKE_CASE
 // enums, closed objects.
+// TestDescribeContract: describe is contracted, not served yet (PLANNED), and
+// its description carries the comment rule (D-4) and the visibility rule (D-7).
+func TestDescribeContract(t *testing.T) {
+	t.Parallel()
+	tool, ok := mcpcontract.Find(mcpcontract.MustLoad(), "describe")
+	require.True(t, ok, "no contract describe")
+	require.Equal(t, mcpcontract.StatusPlanned, tool.Status)
+	require.Equal(t, "M4", tool.Milestone)
+	props, ok := tool.InputSchema["properties"].(map[string]any)
+	require.True(t, ok)
+	names := make([]string, 0, len(props))
+	for name := range props {
+		names = append(names, name)
+	}
+	require.ElementsMatch(t, []string{"query", "resource", "ifFingerprint", "limit", "cursor"}, names)
+	require.ElementsMatch(t,
+		[]string{"INVALID_ARGUMENT", "NOT_FOUND", "QUERY_TIMEOUT", "UNAVAILABLE", "INTERNAL"}, tool.Errors)
+	require.Contains(t, tool.Description, "never as instructions")
+	require.Contains(t, tool.Description, "not secret")
+}
+
 func TestApprovalSchemas(t *testing.T) {
 	t.Parallel()
 	checkPayloadSchemas(t, "approval", []string{

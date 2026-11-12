@@ -1,0 +1,2 @@
+go test fuzz v1
+string("\u07e4\u0740\u0600\u05a4")

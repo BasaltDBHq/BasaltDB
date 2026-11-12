@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/vault-receipt.v1.json",
+  "title": "Receipt payload",
+  "description": "The payload of an engine-signed receipt, basalt-receipt.1.<payload>.<sig>: payload is base64url of these exact JSON bytes, sig is ECDSA P-256 SHA-256 (64 bytes r||s, base64url) over the UTF-8 bytes of \"basalt-receipt.1\\n\" followed by the same JSON bytes. Verify against an expected engine key from outside the receipt (pinned on DIRECT, else the engine status reports), then that engineId is that key's id, then parse; a receipt checked only against a key that came with it proves nothing about which engine signed it. See CONTRACT.md, Vault channel, Receipts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "kind", "itemId", "status", "headline", "rowsHash", "agent", "engineId", "at"],
+  "properties": {
+    "format": {
+      "type": "integer",
+      "const": 1
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["APPROVAL", "REVERT"]
+    },
+    "itemId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The approvalId or revertId."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["APPROVED", "APPLIED", "APPLYING"],
+      "description": "APPROVED for an approval; APPLIED or APPLYING for a revert."
+    },
+    "headline": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "description": "What was approved or reverted, built from Postgres's record of the item, never from what the page sent."
+    },
+    "rowsHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "The rowsHash of the binding the passkey signed, from Postgres's record of the item (CONTRACT.md, Approvals and Revert), so the receipt names exactly the rows that were signed."
+    },
+    "agent": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The agent whose item it is."
+    },
+    "engineId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$"
+    },
+    "at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "changeId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The change the signature produced, when there is one when the receipt is made."
+    }
+  }
+}

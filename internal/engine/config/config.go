@@ -197,7 +197,17 @@ func ValidAgentName(name string) bool {
 
 // Load reads and validates the config file at path. Unknown keys are refused.
 func Load(path string) (Config, error) {
-	raw, err := readSmall(path)
+	return load(path, os.Open)
+}
+
+// LoadNoFollow is Load for a root process reading a file in a directory the
+// engine's user owns: it refuses a symlink or hardlink at path.
+func LoadNoFollow(path string) (Config, error) {
+	return load(path, openNoFollow)
+}
+
+func load(path string, open func(string) (*os.File, error)) (Config, error) {
+	raw, err := readSmall(path, open)
 	if err != nil {
 		return Config{}, err
 	}
@@ -250,7 +260,7 @@ func ReadCredential(path string) (string, error) {
 	if fi.Mode().Perm()&credentialPermMask != 0 {
 		return "", fmt.Errorf("credential file %s is mode %o; it must be readable by the engine's user only (0600)", path, fi.Mode().Perm())
 	}
-	raw, err := readSmall(path)
+	raw, err := readSmall(path, os.Open)
 	if err != nil {
 		return "", err
 	}
@@ -261,8 +271,8 @@ func ReadCredential(path string) (string, error) {
 	return url, nil
 }
 
-func readSmall(path string) ([]byte, error) {
-	f, err := os.Open(path)
+func readSmall(path string, open func(string) (*os.File, error)) ([]byte, error) {
+	f, err := open(path)
 	if err != nil {
 		return nil, err
 	}

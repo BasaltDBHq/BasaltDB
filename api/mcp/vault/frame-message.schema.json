@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/vault-frame-message.v1.json",
+  "title": "Frame content",
+  "description": "The UTF-8 JSON inside one decrypted, unpadded frame of a link session: an HTTP-shaped request from the page, a response from the engine, or the next piece of a body too large for one frame. A message is acted on only once its frame with more: false has arrived. One request in flight per session. Content that is not one of these shapes closes the session with PROTOCOL. See CONTRACT.md, Vault channel, Frames.",
+  "oneOf": [
+    { "$ref": "#/$defs/request" },
+    { "$ref": "#/$defs/response" },
+    { "$ref": "#/$defs/continuation" }
+  ],
+  "$defs": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "method", "path", "headers", "body", "more"],
+      "properties": {
+        "type": { "type": "string", "enum": ["REQUEST"] },
+        "id": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64,
+          "description": "1 for the session's first request, then one more per request."
+        },
+        "method": { "type": "string", "enum": ["GET", "POST"] },
+        "path": {
+          "type": "string",
+          "pattern": "^/api/v1/(approvals|reverts)/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(/approve|/apply)?$",
+          "description": "A route of the allowlist (CONTRACT.md, Vault channel, Frames), for the session's own item. Anything else is answered 404 NOT_FOUND."
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": { "type": "string", "maxLength": 1024 },
+          "propertyNames": { "pattern": "^(basalt-link-secret|origin|content-type)$" },
+          "required": ["basalt-link-secret", "origin"],
+          "description": "Lowercase names. basalt-link-secret (the session's own link secret) and origin (https://portal.basaltvault.app) always; content-type application/json on POST. Any other header is answered 400 INVALID_ARGUMENT."
+        },
+        "body": {
+          "type": "string",
+          "description": "The request body text, or its first piece when more is true. Empty for GET. At most 16 KiB in all (413 above)."
+        },
+        "more": { "type": "boolean", "description": "True when CONTINUE frames with the rest of the body follow." }
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "status", "headers", "body", "more"],
+      "properties": {
+        "type": { "type": "string", "enum": ["RESPONSE"] },
+        "id": { "type": "integer", "minimum": 1, "maximum": 64, "description": "The id of the request it answers." },
+        "status": { "type": "integer", "minimum": 200, "maximum": 599 },
+        "headers": {
+          "type": "object",
+          "additionalProperties": { "type": "string", "maxLength": 1024 },
+          "propertyNames": { "pattern": "^content-type$" }
+        },
+        "body": {
+          "type": "string",
+          "description": "The response body text as the loopback pages API sends it, or its first piece. At most 16 MiB in all; a page refuses more (TOO_LARGE)."
+        },
+        "more": { "type": "boolean" }
+      }
+    },
+    "continuation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "body", "more"],
+      "properties": {
+        "type": { "type": "string", "enum": ["CONTINUE"] },
+        "id": { "type": "integer", "minimum": 1, "maximum": 64, "description": "The id of the request or response it continues." },
+        "body": { "type": "string", "description": "The next piece of the body, appended as is." },
+        "more": { "type": "boolean" }
+      }
+    }
+  }
+}

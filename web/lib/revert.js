@@ -72,12 +72,15 @@ function renderSummary(req) {
 
 // rowTable shows a row now and after the revert: only "Now" for a row the
 // revert deletes, only "After revert" for a row it re-inserts, both for an
-// update with the columns that change highlighted.
-function rowTable(line) {
+// update with the columns that change highlighted. A row the revert leaves
+// alone (SKIP) shows only "Now": the revert keeps it as it is, so values it
+// would have written must not look like they will be applied.
+export function rowTable(line) {
   const now = line.now ?? {};
-  const after = line.set ?? {};
+  const skipped = line.action === "SKIP";
+  const after = skipped ? {} : (line.set ?? {});
   const showNow = line.now !== null;
-  const showAfter = line.set !== null;
+  const showAfter = !skipped && line.set !== null;
   const table = el("table", "values");
   const head = el("tr");
   head.append(el("th", "", "Column"));
@@ -216,4 +219,5 @@ async function main() {
   $("sign").addEventListener("click", () => sign(rp, req, relay));
 }
 
-main();
+// Pages run it; the tests import rowTable without a page.
+if (typeof document !== "undefined") main();

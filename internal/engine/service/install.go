@@ -16,10 +16,10 @@ import (
 // File modes for what install writes.
 const (
 	unitFileMode  = 0o644
-	configDirMode = "0750"
-	openDirMode   = "0755"
+	configDirMode = 0o750
+	openDirMode   = 0o755
 	// privateDirMode is the agents directory holding credential files.
-	privateDirMode = "0700"
+	privateDirMode = 0o700
 
 	// darwinIDMin and darwinIDMax bound the uid/gid picked for the engine's
 	// user on macOS: below 500 keeps it a hidden system account, at or
@@ -38,7 +38,12 @@ type System interface {
 	Exists(path string) bool
 	Output(ctx context.Context, args ...string) (string, error)
 	Run(ctx context.Context, args ...string) error
-	WriteFile(path string, data []byte, mode os.FileMode) error
+	// WriteFile writes a file without following links; owner, when set, is
+	// the OS user that owns the new file.
+	WriteFile(path string, data []byte, mode os.FileMode, owner string) error
+	// Mkdir makes a directory (or takes over an existing real one) without
+	// following a link; it refuses a symlink.
+	Mkdir(path string, mode os.FileMode, owner string) error
 	Remove(path string) error
 }
 
@@ -50,6 +55,7 @@ const (
 	StepRun    StepKind = "RUN"
 	StepWrite  StepKind = "WRITE"
 	StepRemove StepKind = "REMOVE"
+	StepMkdir  StepKind = "MKDIR"
 )
 
 // Step is one action of an install or uninstall plan.
@@ -60,6 +66,8 @@ type Step struct {
 	Content string   // StepWrite; never printed (a credential can be one)
 	// Mode is the StepWrite file mode; zero means a unit file's 0644.
 	Mode os.FileMode
+	// Owner is the OS user that owns what StepWrite or StepMkdir makes.
+	Owner string
 }
 
 // String is the step as a person reads it before it runs.
@@ -69,6 +77,8 @@ func (s Step) String() string {
 		return "write " + s.Path
 	case StepRemove:
 		return "rm -f " + s.Path
+	case StepMkdir:
+		return fmt.Sprintf("mkdir -m %04o -o %s %s", s.Mode, s.Owner, strings.Join(quoteArgs([]string{s.Path}), ""))
 	case StepRun:
 		return strings.Join(quoteArgs(s.Args), " ")
 	}
@@ -87,6 +97,12 @@ func quoteArgs(args []string) []string {
 }
 
 func run(args ...string) Step { return Step{Kind: StepRun, Args: args} }
+
+// mkdir is a step making a directory owned by user without following a link
+// (install -d would follow one the engine user planted).
+func mkdir(mode os.FileMode, user, path string) Step {
+	return Step{Kind: StepMkdir, Path: path, Mode: mode, Owner: user}
+}
 
 // Validate checks the spec can be installed.
 func (s Spec) Validate() error {
@@ -122,7 +138,7 @@ func linuxInstall(sys System, s Spec) []Step {
 			"--home-dir", "/nonexistent", "--shell", "/usr/sbin/nologin", s.User))
 	}
 	installed := sys.Exists(SystemdUnitPath)
-	steps = append(steps, run("install", "-d", "-m", configDirMode, "-o", s.User, "-g", s.User, filepath.Dir(s.ConfigPath)))
+	steps = append(steps, mkdir(configDirMode, s.User, filepath.Dir(s.ConfigPath)))
 	steps = append(steps, fileSteps(s)...)
 	steps = append(steps,
 		Step{Kind: StepWrite, Path: SystemdUnitPath, Content: SystemdUnit(s)},
@@ -140,15 +156,15 @@ func linuxInstall(sys System, s Spec) []Step {
 func fileSteps(s Spec) []Step {
 	var steps []Step
 	made := map[string]bool{filepath.Dir(s.ConfigPath): true}
-	owner := s.User + ":" + s.User
 	for _, f := range s.Files {
 		if dir := filepath.Dir(f.Path); !made[dir] {
 			made[dir] = true
-			steps = append(steps, run("install", "-d", "-m", privateDirMode, "-o", s.User, "-g", s.User, dir))
+			// Not install -d: it follows a symlinked directory the engine user planted.
+			steps = append(steps, mkdir(privateDirMode, s.User, dir))
 		}
-		steps = append(steps,
-			Step{Kind: StepWrite, Path: f.Path, Content: string(f.Content), Mode: config.FileMode},
-			run("chown", owner, f.Path))
+		// The owner is set on the new file's descriptor before it is renamed
+		// into place, so no step changes the owner of a path.
+		steps = append(steps, Step{Kind: StepWrite, Path: f.Path, Content: string(f.Content), Mode: config.FileMode, Owner: s.User})
 	}
 	return steps
 }
@@ -167,10 +183,10 @@ func darwinInstall(ctx context.Context, sys System, s Spec) ([]Step, error) {
 	steps = append(steps,
 		// The config dir stays traversable: the socket dir lives inside it,
 		// and credential files inside are 0600.
-		run("install", "-d", "-m", openDirMode, "-o", s.User, "-g", s.User, configDir),
-		run("install", "-d", "-m", openDirMode, "-o", s.User, "-g", s.User, config.DefaultSocketDir(goosDarwin)),
-		run("install", "-d", "-m", configDirMode, "-o", s.User, "-g", s.User, darwinLogDir),
-		run("install", "-d", "-m", configDirMode, "-o", s.User, "-g", s.User, config.DefaultStateDir(goosDarwin)),
+		mkdir(openDirMode, s.User, configDir),
+		mkdir(openDirMode, s.User, config.DefaultSocketDir(goosDarwin)),
+		mkdir(configDirMode, s.User, darwinLogDir),
+		mkdir(configDirMode, s.User, config.DefaultStateDir(goosDarwin)),
 	)
 	steps = append(steps, fileSteps(s)...)
 	steps = append(steps, Step{Kind: StepWrite, Path: LaunchdPlist, Content: LaunchdDaemon(s)})
@@ -277,7 +293,9 @@ func applyStep(ctx context.Context, sys System, st Step) error {
 		if mode == 0 {
 			mode = unitFileMode
 		}
-		return sys.WriteFile(st.Path, []byte(st.Content), mode)
+		return sys.WriteFile(st.Path, []byte(st.Content), mode, st.Owner)
+	case StepMkdir:
+		return sys.Mkdir(st.Path, st.Mode, st.Owner)
 	case StepRemove:
 		err := sys.Remove(st.Path)
 		if errors.Is(err, os.ErrNotExist) {

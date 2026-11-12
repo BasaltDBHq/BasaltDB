@@ -32,6 +32,26 @@ func TestKeptCredentialSpecRefusesASymlink(t *testing.T) {
 	}
 }
 
+func TestReadKeptCredentialRefusesAHardlink(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	secret := filepath.Join(dir, "root-only")
+	require.NoError(t, os.WriteFile(secret, []byte("PRIVATE KEY\n"), 0o600))
+	path := filepath.Join(dir, "bot.url")
+	require.NoError(t, os.Link(secret, path))
+
+	got, err := readKeptCredential(path, me(t))
+
+	require.ErrorContains(t, err, "hard link")
+	require.Empty(t, got)
+}
+
+func TestReadKeptCredentialRefusesADirectory(t *testing.T) {
+	t.Parallel()
+	_, err := readKeptCredential(t.TempDir(), me(t))
+	require.Error(t, err)
+}
+
 func TestReadKeptCredentialChecksTheOpenFile(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

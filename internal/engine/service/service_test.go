@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -23,12 +24,13 @@ type fakeSystem struct {
 	failOn  string
 	exists  map[string]bool
 	modes   map[string]os.FileMode
+	owners  map[string]string
 }
 
 func newFake() *fakeSystem {
 	return &fakeSystem{
 		users: map[string]bool{}, outputs: map[string]string{}, written: map[string]string{},
-		exists: map[string]bool{}, modes: map[string]os.FileMode{},
+		exists: map[string]bool{}, modes: map[string]os.FileMode{}, owners: map[string]string{},
 	}
 }
 
@@ -49,7 +51,16 @@ func (f *fakeSystem) Run(_ context.Context, args ...string) error {
 	return nil
 }
 
-func (f *fakeSystem) WriteFile(path string, data []byte, mode os.FileMode) error {
+func (f *fakeSystem) Mkdir(path string, mode os.FileMode, owner string) error {
+	if f.failOn == "mkdir" {
+		return errors.New("exit status 1")
+	}
+	f.ran = append(f.ran, fmt.Sprintf("mkdir -m %04o -o %s %s", mode, owner, path))
+	return nil
+}
+
+func (f *fakeSystem) WriteFile(path string, data []byte, mode os.FileMode, owner string) error {
+	f.owners[path] = owner
 	f.written[path] = string(data)
 	f.modes[path] = mode
 	return nil
@@ -125,7 +136,7 @@ func TestLinuxInstallPlan(t *testing.T) {
 	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
 	require.Equal(t, []string{
 		"useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin basalt",
-		"install -d -m 0750 -o basalt -g basalt /etc/basalt",
+		"mkdir -m 0750 -o basalt /etc/basalt",
 		"systemctl daemon-reload",
 		"systemctl enable --now basalt-engine.service",
 	}, sys.ran)
@@ -151,14 +162,14 @@ func TestDarwinInstallPlan(t *testing.T) {
 	require.Contains(t, sys.ran, "dscl . -create /Users/_basalt UniqueID 302")
 	require.Contains(t, sys.ran, "dscl . -create /Groups/_basalt PrimaryGroupID 302")
 	require.Contains(t, sys.ran, "dscl . -create /Users/_basalt UserShell /usr/bin/false")
-	require.Contains(t, sys.ran, "install -d -m 0755 -o _basalt -g _basalt /Library/Application Support/Basalt/run")
-	require.Contains(t, sys.ran, "install -d -m 0750 -o _basalt -g _basalt /Library/Application Support/Basalt/state")
+	require.Contains(t, sys.ran, "mkdir -m 0755 -o _basalt /Library/Application Support/Basalt/run")
+	require.Contains(t, sys.ran, "mkdir -m 0750 -o _basalt /Library/Application Support/Basalt/state")
 	require.Equal(t, []string{
 		"launchctl bootstrap system /Library/LaunchDaemons/dev.basaltdb.engine.plist",
 		"launchctl enable system/dev.basaltdb.engine",
 	}, sys.ran[len(sys.ran)-2:])
 	require.Equal(t, service.LaunchdDaemon(darwinSpec()), sys.written[service.LaunchdPlist])
-	require.Contains(t, out.String(), `install -d -m 0755 -o _basalt -g _basalt "/Library/Application Support/Basalt/run"`)
+	require.Contains(t, out.String(), `mkdir -m 0755 -o _basalt "/Library/Application Support/Basalt/run"`)
 }
 
 func TestDryRunRunsNothing(t *testing.T) {
@@ -177,11 +188,11 @@ func TestApplyStopsAtTheFirstFailure(t *testing.T) {
 	t.Parallel()
 	sys := newFake()
 	sys.users["basalt"] = true
-	sys.failOn = "install -d"
+	sys.failOn = "mkdir"
 	steps, err := service.InstallPlan(context.Background(), sys, linuxSpec())
 	require.NoError(t, err)
 	err = service.Apply(context.Background(), sys, steps, false, &strings.Builder{})
-	require.ErrorContains(t, err, "install -d -m 0750")
+	require.ErrorContains(t, err, "mkdir -m 0750")
 	require.Empty(t, sys.written, "no unit written after a failed step")
 }
 
@@ -257,10 +268,8 @@ func TestInstallWritesOwnedFilesAndRestartsAnInstalledService(t *testing.T) {
 	var out strings.Builder
 	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
 	require.Equal(t, []string{
-		"install -d -m 0750 -o basalt -g basalt /etc/basalt",
-		"chown basalt:basalt /etc/basalt/engine.json",
-		"install -d -m 0700 -o basalt -g basalt /etc/basalt/agents",
-		"chown basalt:basalt /etc/basalt/agents/bot.url",
+		"mkdir -m 0750 -o basalt /etc/basalt",
+		"mkdir -m 0700 -o basalt /etc/basalt/agents",
 		"systemctl daemon-reload",
 		"systemctl enable basalt-engine.service",
 		"systemctl restart basalt-engine.service",
@@ -279,8 +288,8 @@ func TestInstallWritesOwnedFilesAndRestartsAnInstalledService(t *testing.T) {
 	steps, err = service.InstallPlan(context.Background(), sys, dspec)
 	require.NoError(t, err)
 	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &strings.Builder{}))
-	require.Contains(t, sys.ran, "install -d -m 0700 -o _basalt -g _basalt /Library/Application Support/Basalt/agents")
-	require.Contains(t, sys.ran, "chown _basalt:_basalt /Library/Application Support/Basalt/agents/bot.url")
+	require.Contains(t, sys.ran, "mkdir -m 0700 -o _basalt /Library/Application Support/Basalt/agents")
+	require.Equal(t, "_basalt", sys.owners["/Library/Application Support/Basalt/agents/bot.url"])
 	require.Equal(t, "launchctl kickstart -k system/dev.basaltdb.engine", sys.ran[len(sys.ran)-1])
 	require.NotContains(t, sys.ran, "launchctl bootstrap system "+service.LaunchdPlist)
 }

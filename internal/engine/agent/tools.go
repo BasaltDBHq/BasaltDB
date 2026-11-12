@@ -39,6 +39,7 @@ func Tools(svc *Service) []mcp.Tool {
 		contractTool("revert_plan", h.wrap("revert_plan", h.revertPlan)),
 		contractTool("apply_revert_batch", h.wrap("apply_revert_batch", h.applyRevertBatch)),
 		contractTool("request_revert", h.wrap("request_revert", h.requestRevert)),
+		contractTool(toolStatus, h.wrap(toolStatus, h.status)),
 	}
 }
 
@@ -56,16 +57,27 @@ type handlers struct {
 	svc *Service
 }
 
-// wrap maps every error to the contract's error body, logging the ones that
-// are the engine's fault.
+// wrap admits the call (every tool but status, see Service.Admit) and maps
+// every error to the contract's error body, logging the ones that are the
+// engine's fault.
 func (h handlers) wrap(tool string, call func(context.Context, json.RawMessage) (any, error)) func(context.Context, json.RawMessage) (any, error) {
 	return func(ctx context.Context, args json.RawMessage) (any, error) {
-		out, err := call(ctx, args)
+		out, err := h.admitted(ctx, tool, args, call)
 		if err == nil {
 			return out, nil
 		}
 		return nil, h.svc.Failure(tool, callArgs(args), err)
 	}
+}
+
+func (h handlers) admitted(ctx context.Context, tool string, args json.RawMessage, call func(context.Context, json.RawMessage) (any, error)) (any, error) {
+	if tool == toolStatus {
+		return call(ctx, args)
+	}
+	if err := h.svc.Admit(ctx); err != nil {
+		return nil, err
+	}
+	return call(ctx, args)
 }
 
 // callArgs are the arguments of a call, as the engine reads them back into

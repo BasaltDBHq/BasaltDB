@@ -81,14 +81,11 @@ func (c *BlindCache) Refresh() {
 }
 
 // UpgradeChecker says whether the guard misses only non-breaking migrations,
-// so everything works and basalt upgrade adds them. The default says no.
+// so everything works and basalt upgrade adds them. The default asks the
+// service's Probe.
 type UpgradeChecker interface {
 	UpgradeAvailable(ctx context.Context) (bool, error)
 }
-
-type noUpgrade struct{}
-
-func (noUpgrade) UpgradeAvailable(context.Context) (bool, error) { return false, nil }
 
 // rlsWarnings is the RLS_HIDES_ROWS warning for each of tables that row-level
 // security hides from the agent, when the statement returned or changed no
@@ -151,8 +148,9 @@ func (s *Service) upgradeWarnings(ctx context.Context) []mcp.Warning {
 	if !available {
 		return nil
 	}
-	command := s.Commands.Upgrade()
-	steps, err := NewSteps().RunCommand(command, "Run this to add the missing guard migrations: nothing stops, and the agent needs no restart.").Build()
+	b := NewSteps()
+	person := upgradeSteps(b, s.Commands)
+	steps, err := b.Build()
 	if err != nil {
 		s.Log.Error("cannot build the guard upgrade warning", "err", err)
 		return nil
@@ -160,7 +158,15 @@ func (s *Service) upgradeWarnings(ctx context.Context) []mcp.Warning {
 	return []mcp.Warning{{
 		Code:          mcp.WarningGuardUpgradeAvailable,
 		Message:       "the guard in this database misses non-breaking migrations; everything works, the person can upgrade when it suits them",
-		PersonMessage: fmt.Sprintf("The guard in this database can be upgraded. Everything works as it is; when it suits you, run: %s", command),
+		PersonMessage: person,
 		NextSteps:     steps,
 	}}
+}
+
+// upgradeSteps: the person adds the missing non-breaking migrations when it
+// suits them, in a warning and in status.
+func upgradeSteps(b *Steps, cmds Commands) string {
+	command := cmds.Upgrade()
+	b.RunCommand(command, "Run this to add the missing guard migrations: nothing stops, and the agent needs no restart.")
+	return fmt.Sprintf("The guard in this database can be upgraded. Everything works as it is; when it suits you, run: %s", command)
 }

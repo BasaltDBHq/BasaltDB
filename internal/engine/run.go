@@ -37,8 +37,9 @@ const lockFileName = "engine.lock"
 
 var errNoAgent = errors.New("no agent to serve: every configured agent was refused (see the errors above)")
 
-// instructions is the MCP initialize instruction text every agent sees.
-const instructions = "BasaltDB records every action you take on this database. " +
+// Instructions is the MCP initialize instruction text every agent sees,
+// from the engine and from the shim while the engine is down.
+const Instructions = "BasaltDB records every action you take on this database. " +
 	"Start a run with run_start and an intent, read with query, and change data with write and an intent. " +
 	"A write of 11 to 50 rows, or any DELETE, is held for the person's passkey approval: show them approval.personMessage verbatim (it has the approval link and the equivalent basalt command), then, in the same turn, repeat the write once with approvalId: it waits for their approval and applies it. " +
 	"If that wait runs out (APPROVAL_REQUIRED again), do not wait again: end your turn and say you apply it once they tell you they approved. " +
@@ -166,20 +167,14 @@ type startedAgents struct {
 	closers  []func()
 }
 
-// startAgents builds each agent's runtime. An agent whose guard is older
-// than this build is skipped (logged); its OS user stays in uids, which
-// the person socket scopes by.
+// startAgents builds each agent's runtime. An agent whose guard is missing
+// or outdated is still served, degraded: status only, until the person
+// installs or upgrades it (agent.Service.Admit). Every configured agent's OS
+// user is in uids, which the person socket scopes by.
 func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[string]uint32, newRT runtimeFunc, log *slog.Logger) (startedAgents, error) {
 	out := startedAgents{ledgers: make(map[string]person.Ledger, len(cfg.Agents))}
 	for _, a := range cfg.Agents {
 		rt, err := newRT(ctx, env, a, log.With("agent", a.Name))
-		var stale *guard.StaleSchemaError
-		if errors.As(err, &stale) {
-			// Refuse this agent only: its guard would fail mid-call on
-			// objects this build reads.
-			log.Error(stale.Error(), "agent", a.Name)
-			continue
-		}
 		if err != nil {
 			return out, fmt.Errorf("agent %s: %w", a.Name, err)
 		}
@@ -191,7 +186,7 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 			Name:       a.Name,
 			UID:        uids[a.Name],
 			SocketPath: cfg.SocketPath(a.Name),
-			Server:     mcp.NewServer(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: instructions}, agent.Tools(rt.svc)...),
+			Server:     mcp.NewServer(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: Instructions}, agent.Tools(rt.svc)...),
 		})
 	}
 	return out, nil
@@ -294,6 +289,9 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	if err != nil {
 		return agentRuntime{}, err
 	}
+	if !env.cfg.Service() {
+		cmds = cmds.Foreground()
+	}
 	url, err := config.ReadCredential(a.CredentialFile)
 	if err != nil {
 		return agentRuntime{}, err
@@ -302,10 +300,8 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	if err != nil {
 		return agentRuntime{}, err
 	}
-	if err := guard.CheckAgentVersion(ctx, pool); err != nil {
-		pool.Close()
-		return agentRuntime{}, err
-	}
+	probe := agent.DBProbe{Q: pool, Migrations: guard.Migrations()}
+	logGuard(ctx, probe, log)
 	store := agentdb.NewStore(pool, limits, time.Now)
 	blind := agent.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
 		return guard.RLSBlindTables(ctx, pool, "", tables)
@@ -326,6 +322,10 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		RLS:         blind,
 		Log:         log,
 		Now:         time.Now,
+		OperatedBy:  env.cfg.OperatedBy,
+		SameUser:    !env.cfg.Service(),
+		Setup:       a.Setup,
+		Probe:       probe,
 	})
 	return agentRuntime{
 		svc:    svc,
@@ -333,6 +333,23 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		ledger: person.NewDBLedger(pool, time.Now),
 		close:  pool.Close,
 	}, nil
+}
+
+// logGuard logs the agent's guard as the engine starts serving it. A guard
+// that is missing or misses a breaking migration, or a database the engine
+// cannot reach, does not stop the engine: the agent gets status and its
+// problems, and the guard is read again on each call.
+func logGuard(ctx context.Context, probe agent.DBProbe, log *slog.Logger) {
+	st, err := probe.GuardStatus(ctx)
+	switch {
+	case err != nil:
+		log.Error("cannot read the guard; only status works until the database answers", "err", err)
+	case !st.Served():
+		log.Error("the guard cannot serve this agent; only status works until it is installed or upgraded",
+			"guard", st.State, "installed", st.Installed, "build", st.Build, "missingBreaking", st.MissingBreaking)
+	case st.State == guard.GuardUpgradeAvailable:
+		log.Warn("the guard misses non-breaking migrations; basalt upgrade adds them", "missingNonBreaking", st.MissingNonBreaking)
+	}
 }
 
 // stateDirMode keeps the engine's state to its own OS user.

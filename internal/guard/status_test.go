@@ -1,0 +1,88 @@
+package guard_test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
+)
+
+func TestEveryMigrationIsListedBreakingByDefault(t *testing.T) {
+	t.Parallel()
+	migs := guard.Migrations()
+	require.Len(t, migs, guard.LatestVersion())
+	for i, m := range migs {
+		require.Equal(t, i+1, m.Version)
+	}
+}
+
+func TestAgentStatus(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", leads, leads)
+	ctx := context.Background()
+	latest := guard.LatestVersion()
+	migs := guard.Migrations()
+
+	st, err := guard.AgentStatus(ctx, a.Conn, migs)
+	require.NoError(t, err)
+	require.Equal(t, guard.Status{State: guard.GuardOK, Installed: latest, Build: latest}, st)
+	require.True(t, st.Served())
+
+	// A version in the middle not recorded: missing, though newer ones are.
+	d.Exec(t, `DELETE FROM basalt_meta.schema_version WHERE version = $1`, latest-1)
+	st, err = guard.AgentStatus(ctx, a.Conn, migs)
+	require.NoError(t, err)
+	require.Equal(t, guard.GuardOutdated, st.State)
+	require.Equal(t, []int{latest - 1}, st.MissingBreaking)
+	require.Equal(t, latest, st.Installed)
+	require.False(t, st.Served())
+
+	// The same gap in a non-breaking migration only: served.
+	nonBreaking := append([]guard.Migration(nil), migs...)
+	nonBreaking[latest-2].Breaking = false
+	st, err = guard.AgentStatus(ctx, a.Conn, nonBreaking)
+	require.NoError(t, err)
+	require.Equal(t, guard.GuardUpgradeAvailable, st.State)
+	require.Equal(t, []int{latest - 1}, st.MissingNonBreaking)
+	require.Empty(t, st.MissingBreaking)
+	require.True(t, st.Served())
+
+	// A guard newer than the build.
+	d.Exec(t, `INSERT INTO basalt_meta.schema_version (version) VALUES ($1), ($2)`, latest-1, latest+1)
+	st, err = guard.AgentStatus(ctx, a.Conn, migs)
+	require.NoError(t, err)
+	require.Equal(t, guard.GuardNewer, st.State)
+	require.True(t, st.Served())
+
+	// A guard from before agents could read schema_version: every later
+	// version is missing.
+	d.Exec(t, `REVOKE SELECT ON basalt_meta.schema_version FROM `+d.Names.Agents())
+	st, err = guard.AgentStatus(ctx, a.Conn, migs)
+	require.NoError(t, err)
+	require.Equal(t, guard.GuardOutdated, st.State)
+	require.Contains(t, st.MissingBreaking, latest)
+	require.NotContains(t, st.MissingBreaking, 1)
+}
+
+func TestAgentStatusNoGuard(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t)
+	st, err := guard.AgentStatus(context.Background(), d.Admin, guard.Migrations())
+	require.NoError(t, err)
+	require.Equal(t, guard.GuardMissing, st.State)
+	require.Zero(t, st.Installed)
+	require.False(t, st.Served())
+}
+
+func TestLatestAgentSetupWithoutSetups(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", leads, leads)
+	_, ok, err := guard.LatestAgentSetup(context.Background(), a.Conn)
+	require.NoError(t, err)
+	require.False(t, ok)
+}

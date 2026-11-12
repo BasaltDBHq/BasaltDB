@@ -14,11 +14,14 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
+	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/shim"
 )
 
@@ -51,29 +54,93 @@ func enginePath(path string) string {
 }
 
 // runMCP is the agent's MCP server: a relay from stdio to the agent's engine
-// socket. It never loads the SQL parser or a credential.
+// socket. It never reads a credential or reaches a database. While the
+// socket does not answer it serves status and the tool list itself and
+// answers every other call UNAVAILABLE ENGINE_UNREACHABLE (CONTRACT.md, Next
+// steps, Startup failures).
 func runMCP(ctx context.Context, args []string, io stdio) int {
 	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
 	fs.SetOutput(io.err)
-	agent := fs.String("agent", "", "agent name (socket <socket-dir>/<agent>.sock)")
+	name := fs.String("agent", "", "agent name (socket <socket-dir>/<agent>.sock)")
 	socketDir := fs.String("socket-dir", config.DefaultSocketDir(runtime.GOOS), "engine socket directory")
 	socket := fs.String("socket", "", "engine socket path (overrides --agent)")
+	configPath := fs.String("config", config.DefaultPath(runtime.GOOS), "engine config file, read (when it can be) for status while the engine is down")
 	if fs.Parse(args) != nil || fs.NArg() > 0 {
 		return exitUsage
 	}
 	path := *socket
 	if path == "" {
-		if !config.ValidAgentName(*agent) {
+		if !config.ValidAgentName(*name) {
 			fs.Usage()
 			return exitUsage
 		}
-		path = config.SocketPath(*socketDir, *agent)
+		path = config.SocketPath(*socketDir, *name)
 	}
-	if err := shim.Relay(ctx, path, io.in, io.out); err != nil {
+	fallback, err := engineDownServer(shimAgent(*name, path), enginePath(*configPath), slog.New(slog.NewTextHandler(io.err, nil)))
+	if err != nil {
+		return fail(io.err, "mcp", err)
+	}
+	if err := shim.Serve(ctx, path, fallback, io.in, io.out); err != nil {
 		return fail(io.err, "mcp", err)
 	}
 	return exitOK
 }
+
+// shimAgent names the agent in status when basalt mcp was given only a
+// socket path: the socket's base name.
+func shimAgent(name, socket string) string {
+	if name != "" {
+		return name
+	}
+	return strings.TrimSuffix(filepath.Base(socket), ".sock")
+}
+
+// engineDownServer is what basalt mcp answers while the engine is down. The
+// config is read when the shim's OS user may (same-user mode); a service's
+// config is the engine user's alone, and then operatedBy is PERSON and the
+// engine starts with the service manager.
+func engineDownServer(name, configPath string, log *slog.Logger) (*mcp.Server, error) {
+	var cfg *config.Config
+	if c, err := config.Load(configPath); err == nil {
+		cfg = &c
+	}
+	cmds, err := shimCommands(name, configPath, cfg)
+	if err != nil {
+		return nil, err
+	}
+	down := agent.EngineDown{Name: name, Commands: cmds, Config: cfg, Log: log, Now: time.Now}
+	return mcp.NewServer(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: engine.Instructions}, down.Tools()...), nil
+}
+
+// shimCommands are the agent's commands as far as the shim knows them: the
+// saved init flags and the foreground engine when it could read a same-user
+// config.
+func shimCommands(name, configPath string, cfg *config.Config) (agent.Commands, error) {
+	if !config.ValidAgentName(name) {
+		name = fallbackAgentName
+	}
+	if cfg == nil {
+		return agent.NewCommands(name, configPath, runtime.GOOS, nil)
+	}
+	var initArgs []string
+	for _, a := range cfg.Agents {
+		if a.Name == name {
+			initArgs = a.InitArgs
+		}
+	}
+	cmds, err := agent.NewCommands(name, configPath, runtime.GOOS, initArgs)
+	if err != nil {
+		return agent.NewCommands(name, configPath, runtime.GOOS, nil)
+	}
+	if !cfg.Service() {
+		cmds = cmds.Foreground()
+	}
+	return cmds, nil
+}
+
+// fallbackAgentName names the agent in commands when basalt mcp was given a
+// socket whose name is not an agent name.
+const fallbackAgentName = "agent"
 
 // runService installs or uninstalls the engine as a system service. It
 // prints every step first; --dry-run stops there.

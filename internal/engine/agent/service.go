@@ -16,7 +16,9 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
+	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
@@ -97,8 +99,26 @@ type Deps struct {
 	// (the RLS_HIDES_ROWS warning); optional, nothing is hidden when nil.
 	RLS RLSChecker
 	// Upgrade says whether only non-breaking guard migrations are missing
-	// (the GUARD_UPGRADE_AVAILABLE warning); optional, none is missing when nil.
+	// (the GUARD_UPGRADE_AVAILABLE warning); optional, Probe answers when nil.
 	Upgrade UpgradeChecker
+
+	// What the status tool reports beyond the database, all optional
+	// (CONTRACT.md, MCP tools, status). OperatedBy is engine.json operatedBy
+	// (PERSON when empty); SameUser is an engine run as the person's own OS
+	// user (enforcement GUARD_ONLY); Setup is the agent's pending setup code
+	// from the config; Build is the engine's build (buildinfo.Version when
+	// empty).
+	OperatedBy string
+	SameUser   bool
+	Setup      *config.Setup
+	Build      string
+	// Probe reads the guard's state and the agent's setups on its
+	// credential, for status and to admit each call; a current guard when
+	// nil.
+	Probe Probe
+	// Vault reports the engine's Vault connection for status; status leaves
+	// vault out when nil.
+	Vault VaultReporter
 }
 
 // Service runs one agent's tool calls.
@@ -119,8 +139,14 @@ func NewService(d Deps) *Service {
 	if d.RLS == nil {
 		d.RLS = noRLS{}
 	}
+	if d.Probe == nil {
+		d.Probe = noProbe{}
+	}
 	if d.Upgrade == nil {
-		d.Upgrade = noUpgrade{}
+		d.Upgrade = guardUpgrade{probe: d.Probe}
+	}
+	if d.Build == "" {
+		d.Build = buildinfo.Version
 	}
 	if d.PagesBase == "" {
 		d.PagesBase = links.DefaultLocal

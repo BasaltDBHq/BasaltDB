@@ -112,6 +112,12 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 	return sc.Err()
 }
 
+// ServeLine answers one JSON-RPC message on out, as Serve does for each line
+// (the MCP shim answers the lines the engine cannot).
+func (s *Server) ServeLine(ctx context.Context, out io.Writer, line []byte) error {
+	return s.serveLine(ctx, out, bytes.TrimSpace(line))
+}
+
 func (s *Server) serveLine(ctx context.Context, out io.Writer, line []byte) error {
 	var req Request
 	if err := json.Unmarshal(line, &req); err != nil {

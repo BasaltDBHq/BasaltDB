@@ -80,6 +80,12 @@ func waitListening(t *testing.T, path string) {
 	}, 5*time.Second, 10*time.Millisecond)
 }
 
+// fallback stands in for what basalt mcp answers while the engine is down.
+var fallback = mcp.NewServer(mcp.Info{Name: "fallback", Version: "test"}, mcp.Tool{Name: "whoami",
+	Call: func(context.Context, json.RawMessage) (any, error) {
+		return map[string]string{"agent": "the shim"}, nil
+	}})
+
 func myUID() uint32 {
 	return uint32(os.Getuid())
 }
@@ -96,7 +102,7 @@ func callThroughShim(t *testing.T, socket string) string {
 	var out strings.Builder
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	require.NoError(t, shim.Relay(ctx, socket, in, &out))
+	require.NoError(t, shim.Serve(ctx, socket, fallback, in, &out))
 	return out.String()
 }
 
@@ -150,16 +156,18 @@ func TestPeerCredentialFailureClosesTheConnection(t *testing.T) {
 
 	// The engine closes the socket while the shim's request is still
 	// unread, so the shim sees a clean end or, depending on timing, a reset
-	// (or a broken pipe). Both mean "refused"; nothing may come back. The
-	// shim itself must keep reporting a reset mid-response as an error.
+	// (or a broken pipe). Both mean "refused": nothing from the engine may
+	// come back. A request the shim could not hand over at all is answered
+	// by its fallback, never by the engine.
 	var out strings.Builder
 	rctx, rcancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer rcancel()
-	err := shim.Relay(rctx, bot.SocketPath, strings.NewReader(shimRequests), &out)
+	err := shim.Serve(rctx, bot.SocketPath, fallback, strings.NewReader(shimRequests), &out)
 	if err != nil {
 		require.True(t, errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE), "unexpected error: %v", err)
 	}
-	require.Empty(t, out.String())
+	require.NotContains(t, out.String(), `\"agent\": \"bot\"`)
+	require.NotContains(t, out.String(), `"name":"basalt"`)
 }
 
 func TestStaleSocketIsReplacedButOtherFilesAreNot(t *testing.T) {
@@ -183,10 +191,15 @@ func TestStaleSocketIsReplacedButOtherFilesAreNot(t *testing.T) {
 	require.Equal(t, "keep me", string(raw))
 }
 
-func TestShimReportsAMissingEngine(t *testing.T) {
+func TestShimAnswersItselfWithoutAnEngine(t *testing.T) {
 	t.Parallel()
-	err := shim.Relay(context.Background(), filepath.Join(shortDir(t), "nobody.sock"), strings.NewReader(""), io.Discard)
-	require.ErrorContains(t, err, "is the engine service running?")
+	var out strings.Builder
+	err := shim.Serve(context.Background(), filepath.Join(shortDir(t), "nobody.sock"), fallback, strings.NewReader(shimRequests), &out)
+	require.NoError(t, err)
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	require.Len(t, lines, 2)
+	require.Contains(t, lines[0], `"name":"fallback"`)
+	require.Contains(t, lines[1], `\"agent\": \"the shim\"`)
 }
 
 func TestNewPanicsWithoutAgents(t *testing.T) {

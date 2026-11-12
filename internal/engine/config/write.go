@@ -85,8 +85,15 @@ func UpsertAgent(path string, s Settings, a Agent) error {
 	return err
 }
 
-// UpsertAgentVault is UpsertAgent, returning the vault it wrote.
+// UpsertAgentVault is UpsertAgent, returning the vault it wrote. It holds
+// the config's lock (lockConfig) from the read to the write, so a setup the
+// engine clears meanwhile is not lost, nor this agent by the engine's write.
 func UpsertAgentVault(path string, s Settings, a Agent) (VaultWritten, error) {
+	unlock, err := lockConfig(path)
+	if err != nil {
+		return VaultWritten{}, err
+	}
+	defer unlock()
 	raw, v, err := UpsertedVault(path, openNoFollow, s, a)
 	if err != nil {
 		return VaultWritten{}, err
@@ -154,9 +161,16 @@ func UpsertedVault(path string, open func(string) (*os.File, error), s Settings,
 // engine). Only setup id is cleared: when the agent's pending setup is
 // another one (basalt init --remote made a new code meanwhile) or none,
 // the file is left as it is and cleared is false. The file is read without
-// following a link and written atomically with FileMode; the caller holds
-// the agent's lock (LockFile), as basalt init --remote does.
+// following a link and written atomically with FileMode, under the config's
+// lock (lockConfig), which every upsert takes too, so a change to another
+// agent made meanwhile is never lost. The caller also holds the agent's lock
+// (LockFile), as basalt init --remote does.
 func ClearSetup(path, agent, id string) (cleared bool, err error) {
+	unlock, err := lockConfig(path)
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
 	c, err := load(path, openNoFollow)
 	if err != nil {
 		return false, err

@@ -12,6 +12,10 @@ var ErrLocked = errors.New("locked")
 
 var errNoLock = errors.New("agent locks and credential promotion run on linux and darwin only")
 
+// lockConfig: the engine and basalt init --remote run on linux and darwin
+// only, so nothing else writes the config here.
+func lockConfig(string) (func(), error) { return func() {}, nil }
+
 // LockFile: see lock_unix.go.
 func LockFile(string) (func(), error) { return nil, errNoLock }
 

@@ -205,6 +205,52 @@ func TestTheHeartbeatFinishesAChangeSetup(t *testing.T) {
 	require.Equal(t, []finishCall{{id: setup.SetupID}}, fin.finished())
 }
 
+// countingProbe counts the reads of the pending setup.
+type countingProbe struct {
+	*fakeProbe
+	mu    sync.Mutex
+	reads int
+}
+
+func (p *countingProbe) SetupRecorded(ctx context.Context, id uuid.UUID) (bool, error) {
+	p.mu.Lock()
+	p.reads++
+	p.mu.Unlock()
+	return p.fakeProbe.SetupRecorded(ctx, id)
+}
+
+func (p *countingProbe) count() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.reads
+}
+
+// Held calls trust a not-recorded answer for a few seconds, so a burst of
+// calls costs one read; status always reads afresh.
+func TestHeldCallsTrustANotRecordedAnswerBriefly(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	probe := &countingProbe{fakeProbe: &fakeProbe{err: errNoRole, recordedErr: errNoRole}}
+	now := statusNow
+	d := deps()
+	d.Probe, d.Finisher, d.Approvals, d.Setup = probe, &fakeFinisher{}, keys{n: 1}, pendingInstall()
+	d.Now = func() time.Time { return now }
+	svc := NewService(d)
+
+	for range 5 {
+		require.Error(t, svc.Admit(ctx))
+	}
+	require.Equal(t, 1, probe.count(), "one read for the burst")
+
+	_, err := svc.Status(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 2, probe.count(), "status reads afresh")
+
+	now = now.Add(notRecordedFor)
+	require.Error(t, svc.Admit(ctx))
+	require.Equal(t, 3, probe.count(), "read again once the answer is old")
+}
+
 // serverOf is svc's MCP server and tools.
 func serverOf(svc *Service) (*mcp.Server, []mcp.Tool) {
 	tools := Tools(svc)

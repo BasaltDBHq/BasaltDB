@@ -446,8 +446,12 @@ func TestAPendingInstallServesOnlyStatus(t *testing.T) {
 	require.Len(t, problems, 1, "the setup explains the missing role: no database problem besides it")
 	require.Equal(t, problemSetupNotRun, problems[0].(map[string]any)["code"])
 
+	// The person ran it and the agent checks status, which reads afresh
+	// (held calls may trust a not-recorded answer for a few seconds).
 	probe.recorded, probe.recordedErr = true, nil
 	probe.err, probe.st = nil, guardAt(guard.GuardOK, nil, nil)
+	_, isError = serveCall(t, srv, toolStatus, map[string]any{})
+	require.False(t, isError)
 	_, isError = serveCall(t, srv, "run_start", map[string]any{"intent": "x"})
 	require.False(t, isError, "a recorded setup is served")
 }

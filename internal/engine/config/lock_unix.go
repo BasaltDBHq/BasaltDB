@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // ErrLocked is a lock another process (or another holder in this one)
@@ -46,6 +47,28 @@ func LockFile(path string) (func(), error) {
 		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 		_ = f.Close()
 	}, nil
+}
+
+// configLockWait is how long a config write waits for another to finish:
+// each holds the lock for one read and one atomic write.
+const configLockWait = 5 * time.Second
+
+// configLockPoll is how often a waiting config write tries the lock again.
+const configLockPoll = 20 * time.Millisecond
+
+// lockConfig takes <path>.lock, the config-wide lock every read-modify-write
+// of engine.json holds (UpsertAgentVault, ClearSetup), waiting up to
+// configLockWait for another writer. Lock order: an agent's lock first,
+// then this one.
+func lockConfig(path string) (func(), error) {
+	deadline := time.Now().Add(configLockWait)
+	for {
+		unlock, err := LockFile(path + ".lock")
+		if !errors.Is(err, ErrLocked) || time.Now().After(deadline) {
+			return unlock, err
+		}
+		time.Sleep(configLockPoll)
+	}
 }
 
 // ReadOwnCredential reads a credential file this process's user owns: a

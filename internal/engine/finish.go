@@ -58,9 +58,16 @@ type setupFinisher struct {
 	// pending is the .pending credential last seen to log in and find the
 	// pending setup recorded: what Finish promotes.
 	pending *pendingCredential
+	// promoted is the setup whose credential was promoted last: a second
+	// finisher of the same setup (concurrent calls) finds it done.
+	promoted string
+	// warnedOtherDB is the setup the other-database warning was logged for,
+	// so it is logged once per setup, not on every call.
+	warnedOtherDB uuid.UUID
 }
 
 type pendingCredential struct {
+	setupID  string
 	file     os.FileInfo
 	password string
 }
@@ -100,7 +107,7 @@ func (f *setupFinisher) PendingRecorded(ctx context.Context, id uuid.UUID) (reco
 	if targetOf(cc) != f.login {
 		// A code for another database: basalt init --remote moves it over
 		// on its next run, and the engine picks it up when restarted.
-		f.log.Warn("the pending credential names another database or role than the engine's; restart the engine after the setup ran", "path", path)
+		f.warnOtherDB(id, path)
 		return false, false, nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, pendingLoginTimeout)
@@ -119,7 +126,7 @@ func (f *setupFinisher) PendingRecorded(ctx context.Context, id uuid.UUID) (reco
 	}
 	if recorded {
 		f.mu.Lock()
-		f.pending = &pendingCredential{file: fi, password: cc.Password}
+		f.pending = &pendingCredential{setupID: id.String(), file: fi, password: cc.Password}
 		f.mu.Unlock()
 	}
 	return recorded, true, nil
@@ -137,7 +144,7 @@ func (f *setupFinisher) Finish(_ context.Context, id string, promote bool) error
 	}
 	defer unlock()
 	if promote {
-		if err := f.promote(); err != nil {
+		if err := f.promote(id); err != nil {
 			return err
 		}
 	}
@@ -149,13 +156,31 @@ func (f *setupFinisher) Finish(_ context.Context, id string, promote bool) error
 	return nil
 }
 
-// promote moves the .pending credential over the credential file, once the
-// .pending path still names the file that logged in (a regular file with
-// one link), then has the pool log in with its password. f.mu is held.
-func (f *setupFinisher) promote() error {
+// warnOtherDB logs, once per setup, that the .pending credential names
+// another database or role than the engine's.
+func (f *setupFinisher) warnOtherDB(id uuid.UUID, path string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.warnedOtherDB == id {
+		return
+	}
+	f.warnedOtherDB = id
+	f.log.Warn("the pending credential names another database or role than the engine's; restart the engine after the setup ran",
+		"path", path, "setupId", id)
+}
+
+// promote moves the .pending credential of setup id over the credential
+// file, once the .pending path still names the file that logged in (a
+// regular file with one link), then has the pool log in with its password.
+// A setup whose credential was already promoted (by a concurrent call) is
+// done. f.mu is held.
+func (f *setupFinisher) promote(id string) error {
 	p := f.pending
-	if p == nil {
-		return errors.New("no pending credential logged in")
+	switch {
+	case p == nil && f.promoted == id:
+		return nil
+	case p == nil || p.setupID != id:
+		return errors.New("no pending credential logged in for this setup")
 	}
 	path := f.credFile + pendingSuffix
 	if err := config.SameCredentialFile(path, p.file); err != nil {
@@ -164,7 +189,7 @@ func (f *setupFinisher) promote() error {
 	if err := os.Rename(path, f.credFile); err != nil {
 		return err
 	}
-	f.pending = nil
+	f.pending, f.promoted = nil, id
 	f.password.Set(p.password)
 	f.reset()
 	return nil

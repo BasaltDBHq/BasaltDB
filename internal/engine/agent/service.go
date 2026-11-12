@@ -151,6 +151,8 @@ type Service struct {
 	// database shows it recorded.
 	setupMu sync.Mutex
 	setup   *config.Setup
+	// notRecorded is the held calls' cache of a setup not recorded yet.
+	notRecorded setupCache
 }
 
 // NewService returns the service for one agent. It panics on a missing

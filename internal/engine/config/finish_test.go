@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -65,6 +66,33 @@ func TestClearSetupRefusesALinkedConfig(t *testing.T) {
 	c, err := config.Load(target)
 	require.NoError(t, err)
 	require.NotNil(t, c.Agents[0].Setup)
+}
+
+// The engine clearing agent a's setup while basalt init writes agent b: both
+// hold the config's lock from read to write, so neither change is lost.
+func TestClearSetupAndAnUpsertOfAnotherAgentBothLand(t *testing.T) {
+	t.Parallel()
+	const rounds = 30
+	for i := range rounds {
+		path := filepath.Join(t.TempDir(), "engine.json")
+		a, b := pendingAgent("a"), pendingAgent("b")
+		require.NoError(t, config.UpsertAgent(path, config.Settings{SocketDir: "/run/basalt"}, a))
+		require.NoError(t, config.UpsertAgent(path, config.Settings{}, b))
+
+		b.InitArgs = []string{"--agent=b", "--write=public.notes"}
+		var wg sync.WaitGroup
+		var clearErr, upsertErr error
+		wg.Go(func() { _, clearErr = config.ClearSetup(path, "a", finishSetupID) })
+		wg.Go(func() { upsertErr = config.UpsertAgent(path, config.Settings{}, b) })
+		wg.Wait()
+		require.NoError(t, clearErr, "round %d", i)
+		require.NoError(t, upsertErr, "round %d", i)
+
+		c, err := config.Load(path)
+		require.NoError(t, err)
+		require.Nil(t, c.Agents[0].Setup, "round %d: a's clear landed", i)
+		require.Equal(t, b.InitArgs, c.Agents[1].InitArgs, "round %d: b's upsert landed", i)
+	}
 }
 
 func TestLockFileIsExclusive(t *testing.T) {

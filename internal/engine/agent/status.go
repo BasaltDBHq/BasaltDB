@@ -199,16 +199,19 @@ type statusDeps struct {
 	// finished forgets the pending setup once the database shows it
 	// recorded.
 	finished func(id string)
-	passkeys func(context.Context) ([]passkey.Credential, error)
-	log      *slog.Logger
-	now      func() time.Time
+	// notRecorded remembers, for a few seconds, that a held call found the
+	// pending setup not recorded (setupGate).
+	notRecorded *setupCache
+	passkeys    func(context.Context) ([]passkey.Credential, error)
+	log         *slog.Logger
+	now         func() time.Time
 }
 
 func (s *Service) statusDeps() statusDeps {
 	return statusDeps{
 		name: s.Name, operatedBy: s.OperatedBy, build: s.Build, pagesBase: s.PagesBase, pagesOrigin: s.PagesOrigin,
 		sameUser: s.SameUser, engineReachable: true, vault: s.Vault, cmds: s.Commands, setup: s.pendingSetup(), probe: s.Probe,
-		finisher: s.Finisher, finished: s.setupFinished, passkeys: s.Approvals.Passkeys, log: s.Log, now: s.Now,
+		finisher: s.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, passkeys: s.Approvals.Passkeys, log: s.Log, now: s.Now,
 	}
 }
 
@@ -249,7 +252,7 @@ func (l LocalStatus) Report(ctx context.Context) (StatusReport, error) {
 		name: l.Name, operatedBy: l.OperatedBy, build: buildinfo.Version, pagesBase: base, pagesOrigin: l.PagesOrigin,
 		sameUser: true, engineReachable: l.EngineRunning, engineUnknown: l.EngineUnknown, cmds: l.Commands, setup: l.Setup, probe: l.Probe,
 		// basalt status reads; the running engine finishes the setup.
-		finisher: noFinisher{}, finished: func(string) {}, passkeys: l.Passkeys, log: l.Log, now: l.Now,
+		finisher: noFinisher{}, finished: func(string) {}, notRecorded: &setupCache{}, passkeys: l.Passkeys, log: l.Log, now: l.Now,
 	}.report(ctx)
 }
 
@@ -636,8 +639,15 @@ func (s statusDeps) setupGate(ctx context.Context) (setupView, bool) {
 	if s.setup == nil || s.setup.Kind != guard.SetupInstall {
 		return setupView{status: SetupStatus{State: setupNone}}, true
 	}
+	now := s.now()
+	if s.notRecorded.fresh(s.setup.SetupID, now) {
+		return setupFrom(s.setup, false, now), true
+	}
 	recorded, known := s.pendingRecorded(ctx)
-	return setupFrom(s.setup, recorded, s.now()), known
+	if known && !recorded {
+		s.notRecorded.remember(s.setup.SetupID, now)
+	}
+	return setupFrom(s.setup, recorded, now), known
 }
 
 // pendingRecorded reads whether the pending setup code was used. A database

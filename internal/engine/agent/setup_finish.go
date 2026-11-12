@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"errors"
+	"sync"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -49,6 +51,34 @@ func (noFinisher) Finish(context.Context, string, bool) error { return nil }
 // role does not exist, or has another password).
 func LoginRefused(err error) bool {
 	return err != nil && ToolError(err).Reason == reasonCredentialRejected
+}
+
+// notRecordedFor is how long a held call trusts an earlier call that found
+// the pending setup not recorded, so a burst of calls while the person runs
+// the code costs one login, not one each. status always reads afresh: it is
+// what the agent calls once the person says the setup ran.
+const notRecordedFor = 5 * time.Second
+
+// setupCache remembers when a setup was last found not recorded.
+type setupCache struct {
+	mu sync.Mutex
+	id string
+	at time.Time
+}
+
+// fresh reports whether setup id was found not recorded within
+// notRecordedFor of now.
+func (c *setupCache) fresh(id string, now time.Time) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.id == id && !now.Before(c.at) && now.Sub(c.at) < notRecordedFor
+}
+
+// remember records that setup id was found not recorded at now.
+func (c *setupCache) remember(id string, now time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.id, c.at = id, now
 }
 
 // pendingSetup is the agent's pending setup, nil when none is.

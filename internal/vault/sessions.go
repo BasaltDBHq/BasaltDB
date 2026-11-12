@@ -60,6 +60,13 @@ func (s *sessions) expired() []sid {
 	return out
 }
 
+// late reports whether session id has waited for its message 1 past the
+// handshake timeout.
+func (s *sessions) late(id sid) bool {
+	p, ok := s.open[id]
+	return ok && s.now().Sub(p.openedAt) >= s.timeout
+}
+
 // limit is the most payload bytes the next ROUTE for id may carry, before
 // any of it is read: message 1's exact size for a session waiting for it,
 // else a frame's (bytes of a session already closed, dropped once read).

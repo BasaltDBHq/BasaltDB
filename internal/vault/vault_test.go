@@ -364,9 +364,17 @@ func TestForgedControlMessagesAreHarmless(t *testing.T) {
 
 func TestNewRefusesABadURL(t *testing.T) {
 	t.Parallel()
-	for _, u := range []string{"http://127.0.0.1:1", "ws://", "ws://h/path", "ws://h?q=1", "ws://u@h"} {
+	for _, u := range []string{
+		"http://127.0.0.1:1", "ws://", "ws://h/path", "ws://h?q=1", "ws://u@h",
+		// Plaintext only to a loopback Vault.
+		"ws://relay.basaltvault.app", "ws://10.0.0.1:8787", "ws://127.0.0.2:8787", "ws://localhost.evil.io:1", "ws://0.0.0.0:1",
+	} {
 		_, err := vault.New(vault.Options{URL: u, Keys: newKeys(t)})
 		require.Error(t, err, u)
+	}
+	for _, u := range []string{"", "wss://relay.basaltvault.app", "ws://127.0.0.1:1", "ws://[::1]:1", "ws://LocalHost:1/"} {
+		_, err := vault.New(vault.Options{URL: u, Keys: newKeys(t)})
+		require.NoError(t, err, u)
 	}
 	require.Panics(t, func() { _, _ = vault.New(vault.Options{}) })
 }

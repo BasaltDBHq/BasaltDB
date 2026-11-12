@@ -84,3 +84,15 @@ func TestSessionPhaseLimits(t *testing.T) {
 	require.Equal(t, channel.LinkToken{9}, token)
 	require.True(t, waiting)
 }
+
+func TestSessionLate(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC)
+	s := newSessions(10*time.Second, func() time.Time { return now })
+	require.False(t, s.late(sid{1}), "an unknown session is not late")
+	require.Zero(t, s.add(sid{1}, channel.LinkToken{}))
+	now = now.Add(10*time.Second - time.Nanosecond)
+	require.False(t, s.late(sid{1}))
+	now = now.Add(time.Nanosecond)
+	require.True(t, s.late(sid{1}))
+}

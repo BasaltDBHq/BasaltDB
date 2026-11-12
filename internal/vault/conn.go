@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,6 +16,9 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/channel"
 )
+
+// loopbackHosts are the only hosts a ws:// (plaintext) Vault URL may name.
+var loopbackHosts = map[string]bool{"127.0.0.1": true, "::1": true, "localhost": true}
 
 // challengeLen is the size of a decoded CHALLENGE.
 const challengeLen = 32
@@ -36,6 +40,11 @@ func newTarget(base, engineID string) (target, error) {
 	if err != nil || (u.Scheme != "ws" && u.Scheme != "wss") || u.Host == "" || u.User != nil ||
 		(u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
 		return target{}, fmt.Errorf("vault: %q is not a ws:// or wss:// base URL", base)
+	}
+	// Plaintext only to this machine: config refuses any other ws:// URL
+	// already, and this keeps the client from dialing one either way.
+	if u.Scheme == "ws" && !loopbackHosts[strings.ToLower(u.Hostname())] {
+		return target{}, fmt.Errorf("vault: %q: ws:// is for a loopback Vault only (127.0.0.1, [::1] or localhost); use wss://", base)
 	}
 	return target{url: u.Scheme + "://" + u.Host + "/v1/engines/" + engineID, host: u.Host}, nil
 }
@@ -295,7 +304,13 @@ func (cn *conn) route(ctx context.Context, r io.Reader) error {
 		// were still on their way): dropped.
 		return nil
 	}
+	// A message 1 past the handshake timeout is not read: the session ends
+	// with TIMEOUT, as it would have on a timer.
+	late := cn.sessions.late(id)
 	cn.sessions.remove(id)
+	if late {
+		return cn.closeSession(ctx, id, channel.ErrTimeout)
+	}
 	return cn.closeSession(ctx, id, hello(payload, token))
 }
 

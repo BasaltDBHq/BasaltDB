@@ -369,3 +369,38 @@ func TestDoesNotFollowRedirects(t *testing.T) {
 	require.Never(t, func() bool { return hits.Load() > 0 }, 100*time.Millisecond, tick)
 	require.Equal(t, vault.StateConnecting, c.Status().State)
 }
+
+func TestLateMessageOneTimesOut(t *testing.T) {
+	t.Parallel()
+	url, result := hostileVault(t, func(ctx context.Context, ws *websocket.Conn) error {
+		if err := ready(ctx, ws); err != nil {
+			return err
+		}
+		// In time: refused as a dead token is.
+		if err := openSession(ctx, ws, vaulttest.SID{1}); err != nil {
+			return err
+		}
+		if err := ws.Write(ctx, websocket.MessageBinary, hello(vaulttest.SID{1}, channel.Message1Len, 0x01, 0x01)); err != nil {
+			return err
+		}
+		if err := sessionClosed(ctx, ws, vaulttest.SID{1}, channel.ErrLinkRefused); err != nil {
+			return err
+		}
+		// Past the handshake timeout, with no SESSION_OPEN in between: the
+		// message 1 is not read, the session ends with TIMEOUT.
+		if err := openSession(ctx, ws, vaulttest.SID{2}); err != nil {
+			return err
+		}
+		time.Sleep(80 * time.Millisecond)
+		if err := ws.Write(ctx, websocket.MessageBinary, hello(vaulttest.SID{2}, channel.Message1Len, 0x01, 0x01)); err != nil {
+			return err
+		}
+		return sessionClosed(ctx, ws, vaulttest.SID{2}, channel.ErrTimeout)
+	})
+	opts := fastOptions(url, newKeys(t))
+	opts.HandshakeTimeout = 50 * time.Millisecond
+	c := newClient(t, opts)
+	run(t, c)
+	require.NoError(t, <-result)
+	require.Equal(t, vault.StateConnected, c.Status().State)
+}

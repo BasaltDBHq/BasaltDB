@@ -17,7 +17,7 @@ import {
   revertShown,
 } from "./codec.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths, revertDone } from "./local.js";
-import { $, REVERT_REOPEN, el, fail, linkFailure, loadOrPaste, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
+import { $, REVERT_REOPEN, el, fail, linkFailure, loadOrPaste, personText, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
 
@@ -75,12 +75,15 @@ function renderSummary(req) {
 
 // rowTable shows a row now and after the revert: only "Now" for a row the
 // revert deletes, only "After revert" for a row it re-inserts, both for an
-// update with the columns that change highlighted.
-function rowTable(line) {
+// update with the columns that change highlighted. A row the revert leaves
+// alone (SKIP) shows only "Now": the revert keeps it as it is, so values it
+// would have written must not look like they will be applied.
+export function rowTable(line) {
   const now = line.now ?? {};
-  const after = line.set ?? {};
+  const skipped = line.action === "SKIP";
+  const after = skipped ? {} : (line.set ?? {});
   const showNow = line.now !== null;
-  const showAfter = line.set !== null;
+  const showAfter = !skipped && line.set !== null;
   const table = el("table", "values");
   const head = el("tr");
   head.append(el("th", "", "Column"));
@@ -157,7 +160,7 @@ async function finish(response, relay) {
       showDone(revertDone(await postResponse(engineFetch, relay.path, relay.secret, revertResponseJSON(response))));
       return;
     } catch (err) {
-      showRelayFailed(`The engine did not take the revert: ${err.message}. To finish by hand, paste the code below into basalt revert --apply.`);
+      showRelayFailed(`The engine did not take the revert: ${personText(err) || err.message}. To finish by hand, paste the code below into basalt revert --apply.`);
     }
   }
   showCode(encodeRevertResponse(response));
@@ -219,4 +222,5 @@ async function main() {
   $("sign").addEventListener("click", () => sign(rp, req, relay));
 }
 
-main();
+// Pages run it; the tests import rowTable without a page.
+if (typeof document !== "undefined") main();

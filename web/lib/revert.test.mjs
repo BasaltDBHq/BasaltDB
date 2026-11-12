@@ -22,6 +22,8 @@ import {
   revertShown,
   rowsHash,
 } from "./codec.js";
+// Imported before any document exists, so the page's main() does not run.
+import { rowTable } from "./revert.js";
 
 const fixtures = JSON.parse(
   readFileSync(new URL("../../internal/revert/testdata/fixtures.json", import.meta.url), "utf8"),
@@ -218,4 +220,54 @@ test("revert response matches Go byte for byte", () => {
   });
   assert.equal(code, f.code);
   assert.ok(code.startsWith("basalt-revert.1."));
+});
+
+// A minimal DOM: enough for el() and the row table.
+function fakeElement(tag) {
+  return {
+    tag,
+    className: "",
+    textContent: "",
+    children: [],
+    append(...nodes) {
+      this.children.push(...nodes);
+    },
+  };
+}
+
+// tableRows reads a rendered row table back as the page shows it: the
+// header cells and, per row, its class and cell texts.
+function tableRows(table) {
+  const [head, ...rows] = table.children;
+  return {
+    header: head.children.map((c) => c.textContent),
+    rows: rows.map((r) => ({ className: r.className, cells: r.children.map((c) => c.textContent) })),
+  };
+}
+
+test("the row table shows After revert for a restored row and not for a skipped one", async () => {
+  globalThis.document = { createElement: fakeElement };
+  const req = await parseRevertRequest("#" + fixtures.request.fragment);
+  const restore = req.lines[2];
+  const skip = req.lines[3];
+  assert.equal(restore.action, "RESTORE");
+  assert.equal(skip.action, "SKIP");
+
+  const restored = tableRows(rowTable(restore));
+  assert.deepEqual(restored.header, ["Column", "Now", "After revert"]);
+  const status = restored.rows.find((r) => r.cells[0] === "status");
+  assert.equal(status.className, "changed");
+  assert.equal(status.cells.length, 3);
+  assert.notEqual(status.cells[1], status.cells[2]);
+
+  const skipped = tableRows(rowTable(skip));
+  assert.deepEqual(skipped.header, ["Column", "Now"]);
+  assert.equal(skipped.rows.length, Object.keys(skip.now).length);
+  for (const row of skipped.rows) {
+    assert.equal(row.className, "");
+    assert.equal(row.cells.length, 2);
+  }
+  const shown = skipped.rows.flatMap((r) => r.cells);
+  assert.ok(shown.includes("Edited by a person"));
+  assert.ok(!shown.includes("Lead 7"), "the value the revert would have written is not shown");
 });

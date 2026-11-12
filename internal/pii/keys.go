@@ -1,6 +1,7 @@
 // Package pii holds the engine's PII primitives: keys derived from k_master,
-// value normalization, deterministic tokens and the tokenizer that runs a list
-// of detectors over text. No function here logs or prints a value or a key.
+// value normalization, deterministic tokens, the tokenizer that runs a list
+// of detectors over text, and the keyed-hash dictionary those detectors look
+// values up in. No function here logs or prints a value or a key.
 package pii
 
 import (
@@ -96,6 +97,15 @@ func (k *Keys) GenericHash(value string) Hash {
 func (k *Keys) TypedHash(t EntityType, value, phoneRegion string) Hash {
 	return k.hash(typedHashPrefix + string(t) + ":" + Normalize(t, value, phoneRegion))
 }
+
+// dictionaryCheckForm is hashed with the dictionary key to tell, from the
+// dictionary file alone, whether it was built with these keys. Its prefix is
+// neither the generic nor the typed one, so it is never a value's hash.
+const dictionaryCheckForm = "c:dictionary-key-check"
+
+// dictionaryCheck identifies the dictionary key without revealing it: a file
+// whose check differs was built with another k_master and is discarded.
+func (k *Keys) dictionaryCheck() uint64 { return uint64(k.hash(dictionaryCheckForm)) }
 
 func (k *Keys) hash(form string) Hash {
 	mac := hmac.New(sha256.New, k.dictKey)

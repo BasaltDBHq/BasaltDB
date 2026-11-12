@@ -124,6 +124,31 @@ func TestAgentRevertToolsHaveContracts(t *testing.T) {
 	}
 }
 
+// TestDropPlannedInputsRefusesConstrainedNames: a planned property that the
+// schema requires or names in a combinator cannot be dropped silently.
+func TestDropPlannedInputsRefusesConstrainedNames(t *testing.T) {
+	t.Parallel()
+	planned := func() map[string]any {
+		return map[string]any{
+			"ok":  map[string]any{"type": "string"},
+			"new": map[string]any{"type": "string", "description": mcpcontract.PlannedPrefix + "later)."},
+		}
+	}
+	for name, schema := range map[string]map[string]any{
+		"required":          {"properties": planned(), "required": []any{"new"}},
+		"dependentRequired": {"properties": planned(), "dependentRequired": map[string]any{"ok": []any{"new"}}},
+		"oneOf":             {"properties": planned(), "oneOf": []any{map[string]any{"required": []any{"new"}}}},
+		"anyOf":             {"properties": planned(), "anyOf": []any{map[string]any{"properties": map[string]any{"new": map[string]any{}}}}},
+		"allOf":             {"properties": planned(), "allOf": []any{map[string]any{"required": []any{"new"}}}},
+	} {
+		require.Error(t, mcpcontract.DropPlannedInputs(schema), name)
+	}
+	free := map[string]any{"properties": planned(), "required": []any{"ok"}}
+	require.NoError(t, mcpcontract.DropPlannedInputs(free))
+	require.NotContains(t, mustMap(t, free["properties"]), "new")
+	require.Contains(t, mustMap(t, free["properties"]), "ok")
+}
+
 // TestRevertScopeArguments: the revert scope arguments (RS-1, RS-7) are in
 // the contract, marked planned, and the engine does not serve them yet.
 func TestRevertScopeArguments(t *testing.T) {
@@ -236,7 +261,7 @@ func requireObjectsClosed(t *testing.T, where string, node any) {
 					requireObjectsClosed(t, where+"."+name, prop)
 				}
 				continue
-			case "if":
+			case "if", "then", "else":
 				// A condition (if/then/else) tests properties of an object
 				// declared closed elsewhere; it does not declare a shape.
 				continue

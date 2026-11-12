@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/revert-select.v1.json",
   "title": "Revert scope descriptor",
-  "description": "Planned (basalt_meta version 19, owner decisions RS-1 to RS-4). What a revert covers: the binding's select and proposed, the select of POST /api/v1/reverts/{revertId}/scope, and the select that tool results show the agent. Postgres normalizes it before storing or signing it: every key present, lists sorted by their text COLLATE \"C\" and deduplicated, null for all, written as the jsonb text Postgres returns (jsonb fixes the key order), so the same choice always gives the same text. The key store is reserved for multi-database work (RS-4): absent today, and Postgres refuses a descriptor that carries it (INVALID_ARGUMENT). See CONTRACT.md, Revert, The scope descriptor.",
+  "description": "Planned (basalt_meta version 20, owner decisions RS-1 to RS-4). What a revert covers: the binding's select and proposed, the select of POST /api/v1/reverts/{revertId}/scope, and the select that tool results show the agent. Postgres normalizes it before storing or signing it: every key present, lists sorted by their text COLLATE \"C\" and deduplicated, null for all, written as the jsonb text Postgres returns (jsonb fixes the key order), so the same choice always gives the same text. The key store is reserved for multi-database work (RS-4): absent today, and Postgres refuses a descriptor that carries it (INVALID_ARGUMENT). See CONTRACT.md, Revert, The scope descriptor.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -12,6 +12,24 @@
     "runs",
     "tables"
   ],
+  "if": {
+    "properties": {
+      "scope": {
+        "enum": [
+          "CHANGE",
+          "RUN"
+        ]
+      }
+    }
+  },
+  "then": {
+    "properties": {
+      "runs": {
+        "type": "null",
+        "description": "A CHANGE or RUN is one run already: runs is only for TASK."
+      }
+    }
+  },
   "properties": {
     "scope": {
       "type": "string",
@@ -63,7 +81,7 @@
       "uniqueItems": true,
       "items": {
         "type": "string",
-        "minLength": 3
+        "pattern": "^[^.\\s]+\\.[^.\\s]+$"
       },
       "description": "null: every table. Otherwise schema.table names, sorted, each a guarded table written in the scope by a selected agent. Filters lines, not changes: a change that wrote two tables can be half selected."
     }

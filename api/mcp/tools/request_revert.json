@@ -40,7 +40,7 @@
         "uniqueItems": true,
         "items": {
           "type": "string",
-          "minLength": 3
+          "pattern": "^[^.\\s]+\\.[^.\\s]+$"
         },
         "description": "Planned (revert scope, RS-1): with changeId, runId or taskId, 1 to 20 schema.table names, each a table you wrote in this scope; the revert holds only their lines. Absent: every table."
       },
@@ -48,7 +48,7 @@
         "type": "string",
         "minLength": 1,
         "maxLength": 500,
-        "description": "Why the person reverts, in a sentence they can check on the revert page. Required with changeId or runId; refused with revertId."
+        "description": "Why the person reverts, in a sentence they can check on the revert page. Required with changeId or runId (and, planned, taskId); refused with revertId."
       },
       "revertId": {
         "type": "string",

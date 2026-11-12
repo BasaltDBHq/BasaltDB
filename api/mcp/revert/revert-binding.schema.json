@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/revert-binding.v1.json",
   "title": "Revert binding",
-  "description": "The jsonb text basalt_meta.prepare_revert (and, from version 19, rescope_revert and reset_revert) builds. The WebAuthn challenge is sha256 of its UTF-8 bytes. Clients parse it for display and never re-serialise it. This is the shape from basalt_meta version 19 (planned, owner decision RS-3); up to version 18 the scope sat at the top level as scope, scopeId and agents, with no select, proposed, widened or agentRows. See CONTRACT.md, Revert.",
+  "description": "The jsonb text basalt_meta.prepare_revert (and, from version 20, rescope_revert and reset_revert) builds. The WebAuthn challenge is sha256 of its UTF-8 bytes. Clients parse it for display and never re-serialise it. This is the shape from basalt_meta version 20 (planned, owner decision RS-3); up to version 19 the scope sat at the top level as scope, scopeId and agents, with no select, proposed, widened or agentRows. See CONTRACT.md, Revert.",
   "type": "object",
   "additionalProperties": false,
   "required": [

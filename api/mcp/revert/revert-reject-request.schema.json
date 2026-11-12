@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/revert-reject-request.v1.json",
   "title": "Revert reject request",
-  "description": "Planned (basalt_meta version 19, owner decision RS-2). The body of POST /api/v1/reverts/{revertId}/reject, which the revert page sends under the link's current secret, on loopback or inside a Vault link session. No passkey: rejecting can only stop a revert. The engine calls basalt_meta.reject_revert and revokes the link; the answer is 200 { \"revertId\", \"status\": \"REJECTED\", \"rejectedAt\" }. See CONTRACT.md, Revert, Rescope, widen and reject.",
+  "description": "Planned (basalt_meta version 20, owner decision RS-2). The body of POST /api/v1/reverts/{revertId}/reject, which the revert page sends under the link's current secret, on loopback or inside a Vault link session. No passkey: rejecting can only stop a revert. The engine calls basalt_meta.reject_revert, adding the scope token it holds for a widened revert's rotated link (after a widen Postgres refuses a reject without it), and revokes the link; the answer is 200 { \"revertId\", \"status\": \"REJECTED\", \"rejectedAt\" }. See CONTRACT.md, Revert, Rescope, widen and reject.",
   "type": "object",
   "additionalProperties": false,
   "properties": {

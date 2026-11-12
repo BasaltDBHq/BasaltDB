@@ -55,26 +55,78 @@ func Load() ([]Tool, error) {
 		return nil, err
 	}
 	for i := range tools {
-		dropPlannedInputs(tools[i].InputSchema)
+		if err := DropPlannedInputs(tools[i].InputSchema); err != nil {
+			return nil, fmt.Errorf("%s: %w", tools[i].File, err)
+		}
 	}
 	return tools, nil
 }
 
-// dropPlannedInputs removes the planned properties of an input schema.
-func dropPlannedInputs(schema map[string]any) {
+// DropPlannedInputs removes the planned properties of an input schema. A
+// planned property named by required, dependentRequired or a oneOf, anyOf
+// or allOf branch is an error: leaving it out would change what the served
+// schema accepts.
+func DropPlannedInputs(schema map[string]any) error {
 	props, ok := schema["properties"].(map[string]any)
 	if !ok {
-		return
+		return nil
 	}
+	used := namesInConstraints(schema)
 	for name, p := range props {
 		prop, ok := p.(map[string]any)
 		if !ok {
 			continue // not a schema object: the contract test refuses it
 		}
-		if desc, _ := prop["description"].(string); strings.HasPrefix(desc, PlannedPrefix) {
-			delete(props, name)
+		desc, _ := prop["description"].(string)
+		if !strings.HasPrefix(desc, PlannedPrefix) {
+			continue
+		}
+		if used[name] {
+			return fmt.Errorf("planned input %q is named in required, dependentRequired, oneOf, anyOf or allOf", name)
+		}
+		delete(props, name)
+	}
+	return nil
+}
+
+// namesInConstraints returns the property names a schema's required,
+// dependentRequired (keys and values) and oneOf, anyOf and allOf branches
+// mention, at any depth of those branches.
+func namesInConstraints(schema map[string]any) map[string]bool {
+	out := map[string]bool{}
+	addStrings := func(v any) {
+		list, _ := v.([]any)
+		for _, s := range list {
+			if name, ok := s.(string); ok {
+				out[name] = true
+			}
 		}
 	}
+	addStrings(schema["required"])
+	if deps, ok := schema["dependentRequired"].(map[string]any); ok {
+		for k, v := range deps {
+			out[k] = true
+			addStrings(v)
+		}
+	}
+	for _, key := range []string{"oneOf", "anyOf", "allOf"} {
+		branches, _ := schema[key].([]any)
+		for _, b := range branches {
+			branch, ok := b.(map[string]any)
+			if !ok {
+				continue // not a schema object: the contract test refuses it
+			}
+			for name := range namesInConstraints(branch) {
+				out[name] = true
+			}
+			if bp, ok := branch["properties"].(map[string]any); ok {
+				for name := range bp {
+					out[name] = true
+				}
+			}
+		}
+	}
+	return out
 }
 
 // LoadAll returns every tool contract as written, planned input properties

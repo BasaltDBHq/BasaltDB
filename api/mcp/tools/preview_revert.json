@@ -40,7 +40,7 @@
         "uniqueItems": true,
         "items": {
           "type": "string",
-          "minLength": 3
+          "pattern": "^[^.\\s]+\\.[^.\\s]+$"
         },
         "description": "Planned (revert scope, RS-1): 1 to 20 schema.table names, each a table you wrote in this scope; the preview holds only their lines. Absent: every table."
       },

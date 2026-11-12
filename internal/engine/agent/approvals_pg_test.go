@@ -137,7 +137,7 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 	require.Contains(t, str(t, body["message"]), "do not wait again")
 	require.Equal(t, "Update 15 rows in public.leads", ap["headline"])
 	require.True(t, strings.HasPrefix(str(t, ap["personMessage"]),
-		"Held for your approval: Update 15 rows in public.leads.\nApprove it with your passkey here; the page then shows a code for the agent:\n\n"+
+		"Held for your approval: Update 15 rows in public·leads.\nApprove it with your passkey here; the page then shows a code for the agent:\n\n"+
 			link+"\n\nOr run: "+command+"\nExpires "),
 		"without local pages and within the budget the message carries the long link: %v", ap["personMessage"])
 	mcptest.Require(t, str(t, ap["personMessage"]), mcptest.LinksOf(t, ap))

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
 	"time"
 
 	"github.com/google/uuid"
@@ -356,20 +355,28 @@ func sameAsHeld(a ledger.Approval, p WriteParams) error {
 	return nil
 }
 
-// sameParams compares the held parameters (jsonb) with the call's.
+// sameParams compares the held parameters (jsonb) with the call's. Numbers
+// compare by their exact decimal value, never through float64:
+// 9007199254740993 is not its rounded neighbor and 1e400 is not 1e399.
+// jsonb keeps numbers exact but may respell them (1e2 is held as 100), so
+// the text alone would refuse an exact repeat.
 func sameParams(held json.RawMessage, params []any) bool {
-	var a, b any
-	if len(held) > 0 && json.Unmarshal(held, &a) != nil {
-		return false
-	}
-	raw, err := json.Marshal(params)
-	if err != nil || json.Unmarshal(raw, &b) != nil {
-		return false
-	}
 	if len(held) == 0 && len(params) == 0 {
 		return true
 	}
-	return reflect.DeepEqual(a, b)
+	var a any
+	if len(held) > 0 {
+		var ok bool
+		if a, ok = decodeExact(held); !ok {
+			return false
+		}
+	}
+	raw, err := json.Marshal(params)
+	if err != nil {
+		return false
+	}
+	b, ok := decodeExact(raw)
+	return ok && sameJSON(a, b)
 }
 
 // relay submits the person's response code for a, when given and not yet

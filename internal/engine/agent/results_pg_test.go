@@ -125,7 +125,7 @@ func TestRLSHidesRowsWarning(t *testing.T) {
 	require.Equal(t, "RLS_HIDES_ROWS", w["code"])
 	require.Equal(t, "public.vault", w["table"])
 	require.NotEmpty(t, w["message"])
-	require.Contains(t, str(t, w["personMessage"]), "public.vault")
+	require.Contains(t, str(t, w["personMessage"]), "public·vault", "a bare host's dot shows as a middle dot")
 	steps := requireSteps(t, w, catalogWarning(t, "RLS_HIDES_ROWS").Steps, true)
 	require.Equal(t, "basalt init --agent bot --config /etc/basalt-test/engine.json --agent-rls=all-rows", steps[1]["command"])
 

@@ -40,7 +40,10 @@ type fakeHost struct {
 	pagesUp   bool
 	issued    []issuedLink
 	issueErr  error
-	sys       *fakeSys
+	// issueURL, when set, is the link IssueLink answers with instead of
+	// the item's page.
+	issueURL string
+	sys      *fakeSys
 }
 
 const fakeBin = "/opt/basalt/bin/basalt"
@@ -96,6 +99,9 @@ func (h *fakeHost) PagesUp(context.Context, string) bool { return h.pagesUp }
 // issues a fixed secret.
 func (h *fakeHost) IssueLink(_ context.Context, endpoint, proof string) (string, error) {
 	h.issued = append(h.issued, issuedLink{endpoint: endpoint, proof: proof})
+	if h.issueURL != "" {
+		return h.issueURL, h.issueErr
+	}
 	page := strings.Replace(strings.TrimSuffix(endpoint, "/links"), "/api/v1/", "/", 1)
 	return page + "#s=" + fakeSecret, h.issueErr
 }

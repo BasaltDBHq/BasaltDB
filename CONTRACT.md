@@ -616,13 +616,14 @@ Every `personMessage` follows these rules. They replace "one plain line" in [Nex
 - **Lines.** Plain text in lines separated by `\n` (never `\r`).
 - **Each URL is a paragraph of its own.** Its line holds the URL and nothing else: no label, no leading or trailing space, and nothing after it (no `.`, `,`, `;`, `:`, `)`, `>`, quote or backtick). The line before it and the line after it, when there is one, are empty. So the URL ends at the end of its line in plain text, and stands alone in Markdown.
 - **No Markdown.** The engine never writes `[label](url)`, `<url>`, a code span or emphasis around a URL, and never escapes characters in it. A client that renders Markdown uses `links` (below).
+- **Text from the agent or the database** (an intent, a table name) never reads as a link. It is one line with no control or format character; full-width forms and lookalike slashes and dots (U+2215, U+2044, U+29F8, U+3002 and the like) fold to ASCII; scheme separators (`//`, `\\`), `www.` and link fragment prefixes are removed; a dot between two labels of a host name becomes a middle dot (`evil.io` shows as `evil·io`, `public.leads` as `public·leads`), so a chat app does not link a bare host; so do the dots of a four-part dotted number (`10.0.0.1` shows as `10·0·0·1`); a port gets a space before its colon when a path follows it or a letter precedes it (`localhost:8080/x` shows as `localhost :8080/x`); and `](` becomes `] (`, so it is no Markdown link.
 - **Length.** At most 500 characters, not counting URL lines (the URL and its line break). URLs are bounded by the link budget, not by this limit. JSON Schema cannot express this, so the schemas carry no `maxLength` for `personMessage`; an engine test checks every message the engine builds (with the engine change that applies the budget).
 - **`links`.** Next to every `personMessage`, and present exactly when that `personMessage` holds a URL: an array of `{ "label", "url" }` ([`link.schema.json`](api/mcp/links/link.schema.json)), one entry per URL in the order they appear, each `url` byte for byte the URL in `personMessage`. `url` follows the URL rule of [Terminal hyperlinks](#terminal-hyperlinks): `https`, or `http` for a loopback host, and only RFC 3986 characters. `label` says what opening the link does, in plain text of 1 to 80 characters with no URL, no control character (C0, DEL or C1, U+0080 to U+009F), no line break, no bidirectional control (U+202A to U+202E, U+2066 to U+2069), and none of `[`, `]`, `(`, `)`, `<`, `>`, `` ` ``, `*`, `_` (`Approve the held write`, `Review and sign the revert`). A client that renders Markdown may show `[label](url)`.
 
 For example (`\n` shown as line breaks):
 
 ```text
-Held for your approval: Update 27 rows in basalt_demo.leads.
+Held for your approval: Update 27 rows in basalt_demo·leads.
 Approve it with your passkey here:
 
 http://localhost:8787/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#s=q3Jv8sLk2mT0xYp1aBcD9w

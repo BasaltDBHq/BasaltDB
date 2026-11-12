@@ -22,12 +22,19 @@ type Relation struct {
 }
 
 // userSchemaFilter keeps a query to user schemas: not the system schemas,
-// toast and temp schemas, basalt_meta, or a schema an extension installed
-// into. It expects the pg_namespace row to be aliased n. The underscores in
+// toast and temp schemas, basalt_meta, or a schema that is itself a member of
+// an extension. A schema an extension merely installs into (public, say)
+// stays; the relations the extension owns are dropped by notExtensionRelation. It expects the pg_namespace row to be aliased n. The underscores in
 // the LIKE patterns are escaped because the schema names mean them literally.
 const userSchemaFilter = `n.nspname NOT IN ('pg_catalog', 'information_schema', 'basalt_meta')
 	AND n.nspname NOT LIKE 'pg\_toast%' AND n.nspname NOT LIKE 'pg\_temp%'
-	AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_extension e WHERE e.extnamespace = n.oid)`
+	AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d WHERE d.classid = 'pg_catalog.pg_namespace'::regclass
+		AND d.objid = n.oid AND d.deptype = 'e')`
+
+// notExtensionRelation drops relations that belong to an extension (for
+// example pg_stat_statements views). It expects the pg_class row aliased c.
+const notExtensionRelation = `NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend xd
+	WHERE xd.classid = 'pg_catalog.pg_class'::regclass AND xd.objid = c.oid AND xd.deptype = 'e')`
 
 // readableTable is true when session_user can SELECT from the relation: a
 // table-level grant, or a grant on at least one column (a column-grant table
@@ -35,24 +42,44 @@ const userSchemaFilter = `n.nspname NOT IN ('pg_catalog', 'information_schema', 
 const readableTable = `pg_catalog.has_any_column_privilege(session_user, c.oid, 'SELECT')`
 
 // relationColumns and relationFrom select the Relation fields over every
-// user-schema relation that is not a partition. A partitioned parent
-// reports the summed estimate of its analyzed leaves, since its own is never
-// kept.
+// user-schema relation that is not a partition. A partitioned parent reports
+// its own estimate when it has one, else the summed estimate of its analyzed
+// leaves.
 // relationKind maps pg_class.relkind to the Relation.Kind names.
 const relationKind = `CASE c.relkind WHEN 'r' THEN 'TABLE' WHEN 'v' THEN 'VIEW'
 		WHEN 'm' THEN 'MATERIALIZED_VIEW' ELSE 'PARTITIONED_TABLE' END`
 
 const relationColumns = `c.oid, n.nspname AS nspname, c.relname AS relname,
 	` + relationKind + ` AS kind,
-	CASE WHEN c.relkind = 'p' THEN
+	CASE WHEN c.reltuples >= 0 THEN c.reltuples::bigint
+	WHEN c.relkind = 'p' THEN
 		(SELECT sum(l.reltuples)::bigint FROM pg_catalog.pg_partition_tree(c.oid) t
 			JOIN pg_catalog.pg_class l ON l.oid = t.relid WHERE t.isleaf AND l.reltuples >= 0)
-	WHEN c.reltuples >= 0 THEN c.reltuples::bigint END AS est,
+	END AS est,
 	COALESCE(pg_catalog.obj_description(c.oid, 'pg_class'), '') AS comment`
 
 const relationFrom = `FROM pg_catalog.pg_class c
 	JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-	WHERE c.relkind IN ('r', 'v', 'm', 'p') AND NOT c.relispartition AND ` + userSchemaFilter
+	WHERE c.relkind IN ('r', 'v', 'm', 'p') AND NOT c.relispartition AND ` + userSchemaFilter + ` AND ` + notExtensionRelation
+
+// privilegeColumns selects session_user's SELECT, INSERT, UPDATE and DELETE
+// rights, in that order. SELECT follows readableTable so a column-grant table
+// reports it, consistent with visibility.
+const privilegeColumns = readableTable + ` AS p_select,
+	pg_catalog.has_table_privilege(session_user, c.oid, 'INSERT') AS p_insert,
+	pg_catalog.has_table_privilege(session_user, c.oid, 'UPDATE') AS p_update,
+	pg_catalog.has_table_privilege(session_user, c.oid, 'DELETE') AS p_delete`
+
+// privilegeNames turns the four flags of privilegeColumns into names.
+func privilegeNames(flags [4]bool) []string {
+	var out []string
+	for i, name := range []string{"SELECT", "INSERT", "UPDATE", "DELETE"} {
+		if flags[i] {
+			out = append(out, name)
+		}
+	}
+	return out
+}
 
 func (r *Relation) scanTargets() []any {
 	return []any{&r.OID, &r.Schema, &r.Name, &r.Kind, &r.EstimatedRows, &r.Comment}

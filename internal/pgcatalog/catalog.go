@@ -38,7 +38,7 @@ func ForeignKeys(ctx context.Context, db Querier, schema, table string) ([]Forei
 		CROSS JOIN LATERAL unnest(k.conkey, k.confkey) WITH ORDINALITY AS u(attnum, refattnum, ord)
 		JOIN pg_catalog.pg_attribute a ON a.attrelid = k.conrelid AND a.attnum = u.attnum
 		JOIN pg_catalog.pg_attribute ra ON ra.attrelid = k.confrelid AND ra.attnum = u.refattnum
-		WHERE k.contype = 'f' AND n.nspname = $1 AND c.relname = $2
+		WHERE k.contype = 'f' AND k.conparentid = 0 AND n.nspname = $1 AND c.relname = $2
 		ORDER BY k.conname, u.ord`, schema, table)
 	if err != nil {
 		return nil, err

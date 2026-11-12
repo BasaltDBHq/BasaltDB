@@ -47,13 +47,13 @@ func describeFixture(t *testing.T) *pgx.Conn {
 	_, err = admin.Exec(ctx, `DROP SCHEMA IF EXISTS `+s+` CASCADE;
 		CREATE ROLE `+role+`;
 		CREATE SCHEMA `+s+`;
-		CREATE TABLE `+s+`.a (id int PRIMARY KEY, label text);
-		COMMENT ON TABLE `+s+`.a IS '  Accounts, padded  ';
+		CREATE TABLE `+s+`.a (id int PRIMARY KEY, zqxlabel text);
+		COMMENT ON TABLE `+s+`.a IS '  Accounts, zqxpadded  ';
 		COMMENT ON COLUMN `+s+`.a.id IS 'account id';
-		CREATE TABLE `+s+`.b (id int PRIMARY KEY, label text, secret_note text,
+		CREATE TABLE `+s+`.b (id int PRIMARY KEY, zqxlabel text, zqxsecret text,
 			doubled int GENERATED ALWAYS AS (id * 2) STORED);
-		CREATE INDEX b_secret_idx ON `+s+`.b (secret_note);
-		CREATE INDEX b_partial_idx ON `+s+`.b (label) WHERE secret_note IS NOT NULL;
+		CREATE INDEX b_secret_idx ON `+s+`.b (zqxsecret);
+		CREATE INDEX b_partial_idx ON `+s+`.b (zqxlabel) WHERE zqxsecret IS NOT NULL;
 		CREATE TABLE `+s+`.hidden (id int PRIMARY KEY, a_id int REFERENCES `+s+`.a (id) ON DELETE CASCADE);
 		CREATE TABLE `+s+`.child (id int PRIMARY KEY, a_id int REFERENCES `+s+`.a (id) ON DELETE CASCADE);
 		CREATE TABLE `+s+`.leaf (id int PRIMARY KEY, b_id int REFERENCES `+s+`.b (id));
@@ -62,11 +62,16 @@ func describeFixture(t *testing.T) *pgx.Conn {
 		CREATE TABLE `+s+`.p2 PARTITION OF `+s+`.p FOR VALUES FROM (10) TO (20);
 		CREATE TABLE `+s+`.p3 PARTITION OF `+s+`.p FOR VALUES FROM (20) TO (30);
 		CREATE TABLE `+s+`.fresh (x int);
-		CREATE VIEW `+s+`.v AS SELECT id, label FROM `+s+`.a;
+		CREATE TABLE `+s+`.zqx_orders (id int PRIMARY KEY);
+		CREATE TABLE `+s+`.pfk (id int, a_id int REFERENCES `+s+`.a (id) ON DELETE CASCADE) PARTITION BY RANGE (id);
+		CREATE TABLE `+s+`.pfk1 PARTITION OF `+s+`.pfk FOR VALUES FROM (0) TO (10);
+		CREATE TABLE `+s+`.pfk2 PARTITION OF `+s+`.pfk FOR VALUES FROM (10) TO (20);
+		CREATE EXTENSION IF NOT EXISTS pg_trgm SCHEMA `+s+`;
+		CREATE VIEW `+s+`.v AS SELECT id, zqxlabel FROM `+s+`.a;
 		GRANT USAGE ON SCHEMA `+s+` TO `+role+`;
 		GRANT SELECT, INSERT, UPDATE, DELETE ON `+s+`.a TO `+role+`;
-		GRANT SELECT (id, label) ON `+s+`.b TO `+role+`;
-		GRANT SELECT ON `+s+`.child, `+s+`.leaf, `+s+`.p, `+s+`.fresh, `+s+`.v TO `+role+`;
+		GRANT SELECT (id, zqxlabel) ON `+s+`.b TO `+role+`;
+		GRANT SELECT ON `+s+`.child, `+s+`.leaf, `+s+`.p, `+s+`.pfk, `+s+`.zqx_orders, `+s+`.fresh, `+s+`.v TO `+role+`;
 		INSERT INTO `+s+`.a VALUES (1, 'x');
 		ANALYZE `+s+`.a;`)
 	require.NoError(t, err)
@@ -107,12 +112,13 @@ func TestRelationsHidesUngranted(t *testing.T) {
 	require.NotContains(t, names, "p1")
 	require.NotContains(t, names, "p2")
 	require.NotContains(t, names, "p3")
-	require.ElementsMatch(t, []string{"a", "b", "child", "leaf", "p", "fresh", "v"}, names)
+	require.NotContains(t, names, "pfk1")
+	require.ElementsMatch(t, []string{"a", "b", "child", "leaf", "p", "pfk", "zqx_orders", "fresh", "v"}, names)
 	require.Equal(t, "PARTITIONED_TABLE", relByName(t, rels, "p").Kind)
 	require.Equal(t, "VIEW", relByName(t, rels, "v").Kind)
 	require.Equal(t, "TABLE", relByName(t, rels, "a").Kind)
 	require.GreaterOrEqual(t, notGranted, 1)
-	require.Equal(t, "  Accounts, padded  ", relByName(t, rels, "a").Comment)
+	require.Equal(t, "  Accounts, zqxpadded  ", relByName(t, rels, "a").Comment)
 }
 
 func TestRelationsEstimatedRowsNilWhenNeverAnalyzed(t *testing.T) {
@@ -158,8 +164,8 @@ func TestDescribeRelationColumnsAndKeys(t *testing.T) {
 	require.True(t, cols["id"].Selectable)
 	require.False(t, cols["id"].Nullable)
 	require.Equal(t, "integer", cols["id"].Type)
-	require.False(t, cols["secret_note"].Selectable)
-	require.Equal(t, int16(3), cols["secret_note"].Attnum)
+	require.False(t, cols["zqxsecret"].Selectable)
+	require.Equal(t, int16(3), cols["zqxsecret"].Attnum)
 	require.True(t, cols["doubled"].Generated)
 	require.Equal(t, []int16{1}, cols["doubled"].DefaultAttnums)
 	require.Equal(t, []int16{1}, b.PrimaryKey)
@@ -179,7 +185,7 @@ func TestDescribeRelationColumnsAndKeys(t *testing.T) {
 	a, err := pgcatalog.DescribeRelation(ctx, db, relByName(t, rels, "a").OID)
 	require.NoError(t, err)
 	require.Equal(t, 1, a.CascadesIntoHidden)
-	require.Equal(t, "  Accounts, padded  ", a.Comment)
+	require.Equal(t, "  Accounts, zqxpadded  ", a.Comment)
 	require.Equal(t, []string{"DELETE", "INSERT", "SELECT", "UPDATE"}, sorted(a.Privileges))
 	require.Equal(t, "account id", a.Columns[0].Comment)
 
@@ -196,12 +202,12 @@ func TestDescribeRelationColumnsAndKeys(t *testing.T) {
 			continue
 		}
 		childKeys++
-		require.Equal(t, "child", k.OtherTable)
+		require.Contains(t, []string{"child", "pfk"}, k.OtherTable)
 		require.Equal(t, []string{"a_id"}, k.OtherColumns)
 		require.Equal(t, []int16{1}, k.Attnums)
 	}
 	require.Equal(t, 1, hiddenKeys)
-	require.Equal(t, 1, childKeys)
+	require.Equal(t, 2, childKeys)
 
 	leaf, err := pgcatalog.DescribeRelation(ctx, db, relByName(t, rels, "leaf").OID)
 	require.NoError(t, err)
@@ -226,61 +232,114 @@ func TestForeignKeysSeesReadOnlyTables(t *testing.T) {
 	require.Equal(t, []pgcatalog.ForeignKey{{Column: "b_id", RefSchema: describeSchema, RefTable: "b", RefColumn: "id"}}, fks)
 }
 
-func TestSearchRanksAndPages(t *testing.T) {
+func TestForeignKeysIgnoresPartitionClones(t *testing.T) {
 	db := describeFixture(t)
-	ctx := context.Background()
+	fks, err := pgcatalog.ForeignKeys(context.Background(), db, describeSchema, "pfk")
+	require.NoError(t, err)
+	require.Equal(t, []pgcatalog.ForeignKey{{Column: "a_id", RefSchema: describeSchema, RefTable: "a", RefColumn: "id"}}, fks)
+}
 
-	all, err := pgcatalog.Search(ctx, db, "a", nil, 100)
+func searchFixture(t *testing.T, db pgcatalog.Querier, q string, exclude []pgcatalog.ColumnKey, limit int) []pgcatalog.Match {
+	t.Helper()
+	got, err := pgcatalog.Search(context.Background(), db, q, exclude, nil, limit)
 	require.NoError(t, err)
 	var mine []pgcatalog.Match
-	for _, m := range all {
+	for _, m := range got {
 		if m.Schema == describeSchema {
 			mine = append(mine, m)
 		}
 	}
-	require.NotEmpty(t, mine)
-	require.Equal(t, "a", mine[0].Name)
-	require.Equal(t, 0, mine[0].Rank)
-	require.Equal(t, "table", mine[0].Matched)
+	return mine
+}
 
-	for _, m := range all {
+func TestSearchRanksAndPages(t *testing.T) {
+	db := describeFixture(t)
+
+	exact := searchFixture(t, db, "a", nil, 100000)
+	require.NotEmpty(t, exact)
+	require.Equal(t, "a", exact[0].Name)
+	require.Equal(t, 0, exact[0].Rank)
+	require.Equal(t, "table", exact[0].Matched)
+	require.Equal(t, []string{"DELETE", "INSERT", "SELECT", "UPDATE"}, sorted(exact[0].Privileges))
+	for _, m := range exact {
 		require.NotEqual(t, "hidden", m.Name)
 	}
 
-	secret, err := pgcatalog.Search(ctx, db, "secret", nil, 100)
-	require.NoError(t, err)
-	for _, m := range secret {
-		require.False(t, m.Schema == describeSchema && m.Name == "b", "unselectable column must not match")
-	}
+	prefix := searchFixture(t, db, "zqx_ord", nil, 100)
+	require.Len(t, prefix, 1)
+	require.Equal(t, 1, prefix[0].Rank)
+	contains := searchFixture(t, db, "x_ord", nil, 100)
+	require.Len(t, contains, 1)
+	require.Equal(t, 2, contains[0].Rank)
 
-	byComment, err := pgcatalog.Search(ctx, db, "padded", nil, 100)
-	require.NoError(t, err)
-	require.Equal(t, 4, byComment[0].Rank)
+	secret := searchFixture(t, db, "zqxsecret", nil, 100)
+	require.Empty(t, secret, "an unselectable column must not match")
+
+	byComment := searchFixture(t, db, "zqxpadded", nil, 100)
+	require.Len(t, byComment, 1)
+	require.Equal(t, 5, byComment[0].Rank)
 	require.Equal(t, "comment", byComment[0].Matched)
 
-	byColumn, err := pgcatalog.Search(ctx, db, "label", nil, 100)
-	require.NoError(t, err)
-	require.Equal(t, 3, byColumn[0].Rank)
-	require.Equal(t, "column label", byColumn[0].Matched)
+	byColumn := searchFixture(t, db, "zqxlabel", nil, 100)
+	require.NotEmpty(t, byColumn)
+	require.Equal(t, 4, byColumn[0].Rank)
+	require.Equal(t, "column zqxlabel", byColumn[0].Matched)
 
+	bySchema := searchFixture(t, db, "catalog_describe", nil, 100000)
+	require.NotEmpty(t, bySchema)
+	for _, m := range bySchema {
+		require.Equal(t, 3, m.Rank)
+		require.Equal(t, "schema", m.Matched)
+	}
+
+	all := searchFixture(t, db, "zqx", nil, 100000)
+	require.GreaterOrEqual(t, len(all), 3)
 	var paged []pgcatalog.Match
 	var cursor *pgcatalog.SearchCursor
-	for range len(all) + 1 {
-		page, err := pgcatalog.Search(ctx, db, "a", cursor, 1)
+	for range len(all) + 5 {
+		page, err := pgcatalog.Search(context.Background(), db, "zqx", nil, cursor, 1)
 		require.NoError(t, err)
 		if len(page) == 0 {
 			break
 		}
 		require.Len(t, page, 1)
-		paged = append(paged, page[0])
+		if page[0].Schema == describeSchema {
+			paged = append(paged, page[0])
+		}
 		cursor = &pgcatalog.SearchCursor{Rank: page[0].Rank, Schema: page[0].Schema, Name: page[0].Name}
 	}
 	require.Equal(t, all, paged)
 }
 
+func TestSearchExcludesColumns(t *testing.T) {
+	db := describeFixture(t)
+	ctx := context.Background()
+	rels, _, err := pgcatalog.Relations(ctx, db)
+	require.NoError(t, err)
+	a := relByName(t, rels, "a")
+	d, err := pgcatalog.DescribeRelation(ctx, db, a.OID)
+	require.NoError(t, err)
+	var attnum int16
+	for _, c := range d.Columns {
+		if c.Name == "zqxlabel" {
+			attnum = c.Attnum
+		}
+	}
+	require.NotZero(t, attnum)
+
+	// Excluding a's only matching column leaves it unmatched, and no other
+	// match names that column on a.
+	got := searchFixture(t, db, "zqxlabel", []pgcatalog.ColumnKey{{OID: a.OID, Attnum: attnum}}, 100)
+	for _, m := range got {
+		require.NotEqual(t, "a", m.Name, "a's only matching column is excluded")
+	}
+	// The same column name on another table still matches.
+	require.NotEmpty(t, got)
+}
+
 func TestSearchTreatsWildcardsAsText(t *testing.T) {
 	db := describeFixture(t)
-	got, err := pgcatalog.Search(context.Background(), db, "%", nil, 100)
+	got, err := pgcatalog.Search(context.Background(), db, "%", nil, nil, 100)
 	require.NoError(t, err)
 	require.Empty(t, got)
 }
@@ -316,7 +375,7 @@ func TestStructureLinesChangeOnAddColumn(t *testing.T) {
 	require.Contains(t, before, describeSchema+".a:TABLE")
 	for _, l := range before {
 		require.NotContains(t, l, describeSchema+".hidden")
-		require.NotContains(t, l, "secret_note:text")
+		require.NotContains(t, l, "zqxsecret:text")
 	}
 
 	admin, err := pgdial.Connect(ctx, url)

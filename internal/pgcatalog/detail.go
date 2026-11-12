@@ -92,10 +92,7 @@ func DescribeRelation(ctx context.Context, db Querier, oid uint32) (Detail, erro
 	var d Detail
 	// Plain SQL: a pg_catalog read, not table DML.
 	rows, err := db.Query(ctx, `SELECT `+relationColumns+`, c.relrowsecurity,
-			pg_catalog.has_table_privilege(session_user, c.oid, 'SELECT'),
-			pg_catalog.has_table_privilege(session_user, c.oid, 'INSERT'),
-			pg_catalog.has_table_privilege(session_user, c.oid, 'UPDATE'),
-			pg_catalog.has_table_privilege(session_user, c.oid, 'DELETE')
+			`+privilegeColumns+`
 		FROM pg_catalog.pg_class c
 		JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
 		WHERE c.oid = $1 AND c.relkind IN ('r', 'v', 'm', 'p')`, oid)
@@ -112,11 +109,7 @@ func DescribeRelation(ctx context.Context, db Querier, oid uint32) (Detail, erro
 	if err != nil {
 		return Detail{}, err
 	}
-	for i, name := range []string{"SELECT", "INSERT", "UPDATE", "DELETE"} {
-		if privs[i] {
-			d.Privileges = append(d.Privileges, name)
-		}
-	}
+	d.Privileges = privilegeNames(privs)
 
 	if d.Columns, err = columnsOf(ctx, db, oid); err != nil {
 		return Detail{}, err
@@ -148,6 +141,7 @@ func columnsOf(ctx context.Context, db Querier, oid uint32) ([]Column, error) {
 			COALESCE(pg_catalog.pg_get_expr(d.adbin, d.adrelid), ''),
 			COALESCE(array(SELECT DISTINCT dep.refobjsubid::int2 FROM pg_catalog.pg_depend dep
 				WHERE dep.classid = 'pg_catalog.pg_attrdef'::regclass AND dep.objid = d.oid
+				AND dep.refclassid = 'pg_catalog.pg_class'::regclass
 				AND dep.refobjid = a.attrelid AND dep.refobjsubid > 0
 				AND dep.refobjsubid <> a.attnum ORDER BY 1), '{}'::int2[]),
 			a.attgenerated <> '',
@@ -194,6 +188,7 @@ func indexesOf(ctx context.Context, db Querier, oid uint32) ([]Index, error) {
 				UNION ALL
 				SELECT dep.refobjsubid::int2 FROM pg_catalog.pg_depend dep
 				WHERE dep.classid = 'pg_catalog.pg_class'::regclass AND dep.objid = i.indexrelid
+				AND dep.refclassid = 'pg_catalog.pg_class'::regclass
 				AND dep.refobjid = i.indrelid AND dep.refobjsubid > 0
 			) s WHERE s.k > 0 ORDER BY s.k), '{}'::int2[]),
 			i.indisunique, i.indpred IS NOT NULL,
@@ -214,7 +209,9 @@ func indexesOf(ctx context.Context, db Querier, oid uint32) ([]Index, error) {
 	})
 }
 
-// keysOf returns the foreign keys leaving and entering the relation. The
+// keysOf returns the foreign keys leaving and entering the relation, skipping
+// the per-partition clones Postgres makes of a partitioned table's key
+// (conparentid <> 0), which would name partitions the role may not read. The
 // other relation's names are blanked in SQL unless session_user can read it.
 func keysOf(ctx context.Context, db Querier, oid uint32) ([]Key, error) {
 	// Plain SQL: a pg_catalog read, not table DML.
@@ -239,7 +236,7 @@ func keysOf(ctx context.Context, db Querier, oid uint32) ([]Key, error) {
 				pg_catalog.has_any_column_privilege(session_user,
 					CASE WHEN x.conrelid = $1 THEN x.confrelid ELSE x.conrelid END, 'SELECT') AS readable
 			FROM pg_catalog.pg_constraint x
-			WHERE x.contype = 'f' AND (x.conrelid = $1 OR x.confrelid = $1)
+			WHERE x.contype = 'f' AND x.conparentid = 0 AND (x.conrelid = $1 OR x.confrelid = $1)
 		) k
 		JOIN pg_catalog.pg_class oc ON oc.oid = k.other_oid
 		JOIN pg_catalog.pg_namespace on_ ON on_.oid = oc.relnamespace
@@ -286,7 +283,7 @@ func cascadesIntoHidden(ctx context.Context, db Querier, oid uint32) (int, error
 		rows, err := db.Query(ctx, `SELECT DISTINCT x.conrelid::oid,
 				pg_catalog.has_any_column_privilege(session_user, x.conrelid, 'SELECT')
 			FROM pg_catalog.pg_constraint x
-			WHERE x.contype = 'f' AND x.confdeltype IN ('c', 'n', 'd') AND x.confrelid = ANY($1::oid[])`, frontier)
+			WHERE x.contype = 'f' AND x.conparentid = 0 AND x.confdeltype IN ('c', 'n', 'd') AND x.confrelid = ANY($1::oid[])`, frontier)
 		if err != nil {
 			return 0, err
 		}

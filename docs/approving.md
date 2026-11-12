@@ -25,14 +25,14 @@ You can ask the agent to undo a run without opening a terminal ("revert the run 
 1. The agent finds the run with `list_runs` (its own runs only, newest first) and looks at what it did with `run_history`.
 2. It checks the current data with `preview_revert` and `query`: which rows would be restored, and which a person changed since (those are left as they are: people win).
 3. It recommends one of: revert the run, revert one change, or do not revert. It says why.
-4. When you agree, it calls `request_revert` with the `runId` or `changeId` and an `intent`, and shows you the `personMessage` with the short link to the revert page.
+4. When you agree, it calls `request_revert` with the `runId`, `changeId` or `taskId` and an `intent`, and shows you the `personMessage` with the short link to the revert page.
 5. It then calls `request_revert` with the `revertId` and waits once, about 90 seconds. Sign on the page within that time and it reports `APPLIED`. If you take longer, it ends its turn saying the revert waits for your signature; sign when you are ready and tell it.
 
 If the link was lost, the agent calls `request_revert` with `reissueLink: true` for a fresh short link (the old one stops working). If the page cannot reach the engine, it shows a `basalt-revert.1....` code: paste it into the chat and the agent delivers it with `signature`. The database verifies your passkey either way.
 
 A large plan is signed once, like any other. After you sign, the agent applies it in batches with `apply_revert_batch` until every line is done.
 
-The agent can revert its own changes and runs only. Reverting a whole task, across agents, stays your action: `basalt revert --task <taskId>`. A revert is a change like any other, so it can itself be reverted the same way.
+An agent asks for a revert of its own work only: one of its changes, one of its runs, or its own changes in a task it ran in (`taskId`). A change, run or task that is not its own is answered `NOT_FOUND`, the same as an id that does not exist. A task revert holds only that agent's lines. If other agents also changed rows in the task, run `basalt revert --task <taskId>` yourself to include them. If another agent's run looks wrong, ask that agent. Whichever way the revert starts, only you sign it. A revert is a change like any other, so it can itself be reverted the same way.
 
 ## The CLI path
 
@@ -52,7 +52,7 @@ Every link is built from one base URL, `pagesUrl` in `engine.json`. `basalt init
 - If the port is taken (an old `make serve-web` from an earlier checkout, or a second engine), the engine refuses to start and names the address. `lsof -nP -iTCP:8787 -sTCP:LISTEN` shows what holds it; stop that process and start the engine again.
 - With the hosted console as the base (`https://console.basaltvault.app`, not live yet), the engine serves no pages, and held writes carry the long link (`/approvals/<id>#2....`) that holds the whole preview. Open that link with `basalt approve --open` rather than copying it, because terminals and chats can cut it short. The page says so when it gets a truncated link.
 
-Telegram always sends the long link. The short link only works on the machine where the engine runs.
+Telegram always sends the long link. The short link only works on the machine where the engine runs. An optional hosted relay, the Vault, is meant to carry portal short links to an engine with no inbound port; it is off by default and its page side is not finished. See [vault.md](vault.md).
 
 ## Authenticators
 

@@ -69,8 +69,8 @@
 
     { "code": "INVALID_ARGUMENT", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
     { "code": "INVALID_ARGUMENT", "reason": "STALE_CURSOR", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }] },
-    { "code": "INVALID_ARGUMENT", "reason": "SCOPE_FILTER", "planned": true, "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },
-    { "code": "INVALID_ARGUMENT", "reason": "SCOPE_FILTER_CAP", "planned": true, "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "code": "INVALID_ARGUMENT", "reason": "SCOPE_FILTER", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },
+    { "code": "INVALID_ARGUMENT", "reason": "SCOPE_FILTER_CAP", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
 
     { "code": "UNAVAILABLE", "reason": "DATABASE_UNREACHABLE", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }, { "actor": "AGENT", "action": "ASK_PERSON" }] },
     { "code": "UNAVAILABLE", "reason": "CREDENTIAL_REJECTED", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "STOP" }] },

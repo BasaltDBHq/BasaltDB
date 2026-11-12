@@ -537,8 +537,27 @@ func scopeRefused(scope guard.RevertScope, err error) error {
 		return notOwnScope(scope)
 	case guard.ScopeNotOwnTask:
 		return notOwnTask(scope)
+	case guard.ScopeFilter:
+		return scopeFilterRefused(hint)
+	case guard.ScopeFilterCap:
+		return scopeFilterCapped()
 	}
 	return &ArgumentError{Message: "the revert scope was refused: " + hint}
+}
+
+// scopeFilterRefused answers runs or tables outside the agent's own work.
+// refused is the guard's list of refused entries, one fixed text per kind,
+// so another agent's run or table reads exactly like an unknown one.
+func scopeFilterRefused(refused string) error {
+	return &ArgumentError{Reason: ReasonScopeFilter, Message: "the revert filter names work that is not yours, nothing was " +
+		"prepared: " + refused + ". runs lists only your own runs in the task, and tables only tables you wrote in this " +
+		"scope; run_history shows them"}
+}
+
+func scopeFilterCapped() error {
+	return &ArgumentError{Reason: ReasonScopeFilterCap, Message: fmt.Sprintf("runs and tables each list at most %d "+
+		"entries, nothing was prepared. Leave a filter out for all of your work in the scope: the person can narrow it on the "+
+		"signing page", revert.MaxFilter)}
 }
 
 // prepareError is the answer to a prepare that failed: what the person
@@ -592,8 +611,9 @@ func (s *Service) revertNotice(ctx context.Context, r ledger.Revert) (revertLink
 		return revertLink{}, err
 	}
 	pick := chooseLink(short, long, s.LinkBudget)
-	summary := fmt.Sprintf("Revert of %s %s: %d rows to restore, %d left as they are (changed after the agent). Why: %s. %s",
-		strings.ToLower(string(b.Select.Scope)), b.Select.ScopeID, r.Rows, r.Skipped, shown(strings.TrimRight(b.Intent, ". "), maxIntentChars), expiryLine(r.ExpiresAt))
+	filters := filterText(guard.RevertScope{Runs: b.Select.Runs, Tables: b.Select.Tables})
+	summary := fmt.Sprintf("Revert of %s %s%s: %d rows to restore, %d left as they are (changed after the agent). Why: %s. %s",
+		strings.ToLower(string(b.Select.Scope)), b.Select.ScopeID, filters, r.Rows, r.Skipped, shown(strings.TrimRight(b.Intent, ". "), maxIntentChars), expiryLine(r.ExpiresAt))
 	var extra []string
 	if b.Select.Scope == revert.ScopeTask {
 		extra = append(extra, taskWidenPointer)

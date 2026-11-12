@@ -109,14 +109,72 @@ func appliedSteps() []mcp.NextStep {
 func expiredSteps(r ledger.Revert) []mcp.NextStep {
 	return []mcp.NextStep{
 		agentStep(mcp.ActionAskPerson, "Tell the person the revert was not signed in time and ask whether to request it again."),
-		reviseRequestRevert(scopeArgs(r.Scope, r.ScopeID),
+		reviseRequestRevert(scopeArgs(proposalOf(r)),
 			"On yes, call request_revert for the same scope with the person's reason as intent."),
 	}
 }
 
-// scopeArgs names a revert's scope as request_revert's arguments.
-func scopeArgs(scope string, id uuid.UUID) map[string]any {
-	return map[string]any{strings.ToLower(scope) + "Id": id.String()}
+// scopeArgs names a revert scope as request_revert's arguments, its runs
+// and tables filters included, so a request the agent makes from these
+// steps covers no more than the person was shown.
+func scopeArgs(scope guard.RevertScope) map[string]any {
+	args := map[string]any{strings.ToLower(string(scope.Kind)) + "Id": scope.ID.String()}
+	if len(scope.Runs) > 0 {
+		runs := make([]string, 0, len(scope.Runs))
+		for _, id := range scope.Runs {
+			runs = append(runs, id.String())
+		}
+		args["runs"] = runs
+	}
+	if len(scope.Tables) > 0 {
+		args["tables"] = scope.Tables
+	}
+	return args
+}
+
+// proposalOf is the scope of revert r with the runs and tables of the
+// select its binding carries (the agent's proposal, or the person's
+// narrowing of it), so requesting r again keeps them.
+func proposalOf(r ledger.Revert) guard.RevertScope {
+	scope := guard.RevertScope{Kind: revert.Scope(r.Scope), ID: r.ScopeID}
+	// The agent's view hides a widened revert's binding (version 20): a new
+	// request then names only the agent's own scope, which the guard limits
+	// to its own work.
+	if r.BindingText == "" {
+		return scope
+	}
+	b, err := revert.ParseBinding(r.BindingText)
+	if err != nil {
+		// The guard built the binding; one that does not parse fails the
+		// revert's link and message first (revertNotice). The steps keep the
+		// scope alone, and the page shows the person what a new request holds.
+		return scope
+	}
+	scope.Runs, scope.Tables = b.Select.Runs, b.Select.Tables
+	return scope
+}
+
+// maxFilterTableChars is how much of a filter's first table name a
+// person's message shows; the page shows them all.
+const maxFilterTableChars = 32
+
+// filterText names scope's runs and tables filters for a person, "" when it
+// has none: the count of runs, the first table and how many more.
+func filterText(scope guard.RevertScope) string {
+	var parts []string
+	if n := len(scope.Runs); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d of its runs", n))
+	}
+	switch n := len(scope.Tables); {
+	case n == 1:
+		parts = append(parts, "table "+shown(scope.Tables[0], maxFilterTableChars))
+	case n > 1:
+		parts = append(parts, fmt.Sprintf("tables %s and %d more", shown(scope.Tables[0], maxFilterTableChars), n-1))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return ", only " + strings.Join(parts, " and ")
 }
 
 // longRevertLink is r's long link: it carries the whole request, so the
@@ -181,9 +239,9 @@ func (s *Service) passkeyRevokedWith(link string, r ledger.Revert) error {
 func (s *Service) rowsChanged(r ledger.Revert, detail string) error {
 	return &mcp.ToolError{Code: CodeRevertInvalid, Reason: reasonRowsChanged,
 		Message: "the database refused the revert, nothing was reverted: " + detail,
-		PersonMessage: fmt.Sprintf("Rows changed after the preview of the revert of %s %s, so nothing was reverted. The agent "+
-			"requests it again for you to sign the current rows.", strings.ToLower(r.Scope), r.ScopeID),
-		NextSteps: []mcp.NextStep{reviseRequestRevert(scopeArgs(r.Scope, r.ScopeID),
+		PersonMessage: fmt.Sprintf("Rows changed after the preview of the revert of %s %s%s, so nothing was reverted. The agent "+
+			"requests it again for you to sign the current rows.", strings.ToLower(r.Scope), r.ScopeID, filterText(proposalOf(r))),
+		NextSteps: []mcp.NextStep{reviseRequestRevert(scopeArgs(proposalOf(r)),
 			"Rows changed after the preview, so nothing was reverted; request it again so the person signs the current rows.")}}
 }
 

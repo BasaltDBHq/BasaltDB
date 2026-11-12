@@ -205,7 +205,7 @@ func runService(ctx context.Context, args []string, io stdio) int {
 	// The unit's memory limits follow the installed config's
 	// pii.maxMemoryMB (the default when there is none yet), so running
 	// install again after raising it rewrites them.
-	if cfg, err := config.Load(*configPath); err == nil {
+	if cfg, err := config.LoadNoFollow(*configPath); err == nil {
 		spec.MemoryMB = cfg.PIIOrDefault().MaxMemoryMB
 	}
 	if action == "install" && a.name != "" {

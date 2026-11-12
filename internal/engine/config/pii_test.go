@@ -24,7 +24,15 @@ func TestPIIConfig(t *testing.T) {
 	}
 	require.Equal(t, int64(512)<<20, config.Config{}.PIIOrDefault().MaxMemoryBytes())
 
-	for _, bad := range []string{`{"maxMemoryMB": -1}`, `{"scanRowsPerSecond": -5}`, `{"unknown": 1}`} {
+	c, err := config.Load(write(t, "engine.json", `{"socketDir": "/s", "pii": {"maxMemoryMB": 65536}, `+linkBudgetAgent+`}`, 0o600))
+	require.NoError(t, err, "the largest budget")
+	require.Equal(t, int64(config.MaxPIIMemoryMB)<<20, c.PIIOrDefault().MaxMemoryBytes())
+
+	for _, bad := range []string{
+		`{"maxMemoryMB": -1}`, `{"scanRowsPerSecond": -5}`, `{"unknown": 1}`,
+		`{"maxMemoryMB": 65537}`,
+		`{"maxMemoryMB": 9223372036854775807}`, // would overflow MaxMemoryBytes into a negative
+	} {
 		_, err := config.Load(write(t, "engine.json", `{"socketDir": "/s", "pii": `+bad+`, `+linkBudgetAgent+`}`, 0o600))
 		require.Error(t, err, bad)
 	}

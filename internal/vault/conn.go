@@ -68,7 +68,12 @@ func closeCode(err error) string {
 type conn struct {
 	c        *Client
 	ws       *websocket.Conn
-	sessions sessions
+	sessions *sessions
+	// ctx is the socket's own context, set before serving: what ends a
+	// session from outside the read loop writes with it.
+	ctx context.Context
+	// workers are the sessions' workers; the socket ends after them.
+	workers sync.WaitGroup
 	// done is closed when the socket has ended: a request waiting for an
 	// answer on it stops waiting.
 	done chan struct{}
@@ -89,7 +94,7 @@ func (c *Client) connect(ctx context.Context) (bool, error) {
 	}
 	cn := &conn{
 		c: c, ws: ws, sessions: newSessions(c.opts.HandshakeTimeout, c.opts.Now),
-		done: make(chan struct{}), pending: map[int64]func(answer){},
+		ctx: ctx, done: make(chan struct{}), pending: map[int64]func(answer){},
 	}
 	c.setConn(cn)
 	defer func() {
@@ -193,6 +198,15 @@ func (cn *conn) serve(ctx context.Context) error {
 	// transport dropping it.
 	sctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
+	cn.ctx = sctx
+	// When the socket ends, so do its sessions: they do not move to the
+	// next socket (CONTRACT.md, The page's socket).
+	defer func() {
+		for _, ss := range cn.sessions.takeAll() {
+			ss.stop()
+		}
+		cn.workers.Wait()
+	}()
 	closed := make(chan struct{})
 	stop := context.AfterFunc(ctx, func() {
 		defer close(closed)
@@ -274,7 +288,9 @@ func (cn *conn) control(ctx context.Context, m control) error {
 	case typeSessionOpen:
 		return cn.sessionOpen(ctx, m.sessionOpen)
 	case typeSessionClose:
-		cn.sessions.remove(m.sessionClose.sid)
+		if ss := cn.sessions.take(m.sessionClose.sid); ss != nil {
+			ss.stop()
+		}
 		return nil
 	case typeOK:
 		cn.answered(m.ok.Ref, answer{})
@@ -295,7 +311,10 @@ func (cn *conn) sessionOpen(ctx context.Context, m *sessionOpen) error {
 			return err
 		}
 	}
-	code := cn.sessions.add(m.sid, m.token)
+	code, dup := cn.sessions.add(m.sid, m.token)
+	if dup != nil {
+		dup.stop()
+	}
 	if code == 0 {
 		return nil
 	}
@@ -309,27 +328,33 @@ func (cn *conn) route(ctx context.Context, r io.Reader) error {
 	if err != nil {
 		return err
 	}
-	limit, token, awaitingHello := cn.sessions.limit(id)
+	ph, ss := cn.sessions.lookup(id)
+	limit := channel.FrameMax
+	if ph == phaseHello {
+		limit = channel.Message1Len
+	}
 	payload, over, err := readBounded(r, limit)
 	if err != nil {
 		return readErr(err)
 	}
 	if over {
-		return cn.oversize(ctx, r, id, limit, awaitingHello)
+		return cn.oversize(ctx, r, id, limit, ph == phaseHello)
 	}
-	if !awaitingHello {
+	switch ph {
+	case phaseNone:
 		// A session the engine does not hold (one it closed, whose bytes
 		// were still on their way): dropped.
 		return nil
+	case phaseOpen:
+		return cn.frame(ctx, ss, payload)
+	case phaseHello:
 	}
 	// A message 1 past the handshake timeout is not read: the session ends
 	// with TIMEOUT, as it would have on a timer.
-	late := cn.sessions.late(id)
-	cn.sessions.remove(id)
-	if late {
-		return cn.closeSession(ctx, id, channel.ErrTimeout)
+	if cn.sessions.late(ss) {
+		return cn.end(ctx, id, channel.ErrTimeout)
 	}
-	return cn.closeSession(ctx, id, hello(payload, token))
+	return cn.handshake(ctx, ss, payload)
 }
 
 // oversize handles a ROUTE payload over its session's limit: the rest is
@@ -347,24 +372,7 @@ func (cn *conn) oversize(ctx context.Context, r io.Reader, id sid, limit int, aw
 	case !awaitingHello:
 		return nil
 	}
-	cn.sessions.remove(id)
-	return cn.closeSession(ctx, id, channel.ErrProtocol)
-}
-
-// noLinks is the engine's session link lookup until VC1-7 serves the pages
-// API in a session: every token is answered as one it does not hold.
-func noLinks(channel.LinkToken) (channel.PSK, bool) { return channel.PSK{}, false }
-
-// hello checks a session's message 1 against SESSION_OPEN's token as the
-// contract orders it and returns the code that closes the session. With no
-// link held, a well-formed one is refused as a dead token is: LINK_REFUSED.
-func hello(msg []byte, token channel.LinkToken) channel.CloseError {
-	_, err := channel.ReadHello(msg, channel.HelloCheck{Transport: channel.TransportRelay, SessionToken: &token, Lookup: noLinks})
-	var ce channel.CloseError
-	if errors.As(err, &ce) {
-		return ce
-	}
-	return channel.ErrLinkRefused
+	return cn.end(ctx, id, channel.ErrProtocol)
 }
 
 // closeSession tells the Vault a session ended with code.

@@ -359,6 +359,44 @@ func (s *Secrets) Relay() []RelayLink {
 	return out
 }
 
+// SessionLink is the live relay link a session's token names.
+type SessionLink struct {
+	Item      uuid.UUID
+	Keys      channel.LinkKeys
+	ExpiresAt time.Time
+}
+
+// Session finds the live, unexpired relay link of token (CONTRACT.md,
+// Vault channel: message 1 names its link by token). It compares every
+// relay link's token in constant time and does the same work whether it
+// finds one or not. It drops nothing and tells onDrop nothing: it runs on
+// the Vault socket's read loop, which must not write.
+func (s *Secrets) Session(token channel.LinkToken) (SessionLink, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.now()
+	var out SessionLink
+	found := 0
+	for id, e := range s.live {
+		if e.keys == nil {
+			continue
+		}
+		match := subtle.ConstantTimeCompare(e.keys.Token[:], token[:]) & boolInt(now.Before(e.expires))
+		if match == 1 {
+			out = SessionLink{Item: id, Keys: *e.keys, ExpiresAt: e.expires}
+		}
+		found |= match
+	}
+	return out, found == 1
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
 // Prune drops expired links now, telling onDrop the relay links' tokens.
 // The engine calls it on a timer, so an expired link is unregistered at the
 // Vault even when nothing else touches the store.

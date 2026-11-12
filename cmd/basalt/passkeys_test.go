@@ -130,9 +130,30 @@ func TestPasskeyRemoveIDStartingWithDash(t *testing.T) {
 	fs := flag.NewFlagSet("t", flag.ContinueOnError)
 	fs.Bool("yes", false, "")
 	fs.SetOutput(io.Discard)
-	for _, args := range [][]string{{"-abcdefghijk"}, {"--yes", "-abcdefghijk"}, {"-abcdefghijk", "--yes"}} {
+	fs.String("pages-url", "", "")
+	for _, args := range [][]string{
+		{"-abcdefghijk"},
+		{"--yes", "-abcdefghijk"},
+		{"-abcdefghijk", "--yes"},
+		{"--", "-abcdefghijk"},
+		{"--yes", "--", "-abcdefghijk"},
+		{"--pages-url", "https://p.example", "-abcdefghijk"},
+		{"--pages-url", "https://p.example", "--", "-abcdefghijk"},
+		{"-pages-url", "https://p.example", "-abcdefghijk"},
+		{"--pages-url=https://p.example", "-abcdefghijk"},
+	} {
 		require.NoError(t, fs.Parse(idAfterFlags(fs, args)), args)
 		require.Equal(t, []string{"-abcdefghijk"}, fs.Args(), args)
+	}
+	// A flag value that starts with "-" and looks like an id stays the value.
+	pagesURL := fs.Lookup("pages-url")
+	for _, args := range [][]string{
+		{"--pages-url", "-zyxwvutsrqp", "-abcdefghijk"},
+		{"--pages-url", "-zyxwvutsrqp", "--", "-abcdefghijk"},
+	} {
+		require.NoError(t, fs.Parse(idAfterFlags(fs, args)), args)
+		require.Equal(t, []string{"-abcdefghijk"}, fs.Args(), args)
+		require.Equal(t, "-zyxwvutsrqp", pagesURL.Value.String(), args)
 	}
 	// The boundary: minIDPrefix characters, the dash included, is an id.
 	require.True(t, looksLikeID(fs, "-"+strings.Repeat("a", minIDPrefix-1)))
@@ -162,15 +183,22 @@ func dashPasskey(t *testing.T) *passkeytest.Authenticator {
 func TestPasskeyRemoveDashID(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
-	laptop := dashPasskey(t)
+	laptop, tablet := dashPasskey(t), dashPasskey(t)
 	phone, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 	initWithPasskey(t, d, laptop)
+	require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, tablet.Credential(), "tablet"))
 	require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, phone.Credential(), "phone"))
 	admin := map[string]string{envAdminURL: d.URL}
 
+	// The documented "--" form, with a flag value before it and a dash-led
+	// id longer than the shortest prefix.
+	r := cli(t, admin, "", "passkey", "remove", "--yes", "--pages-url", links.DefaultLocal, "--", id(tablet)[:12])
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Contains(t, r.stderr, "revoked; it can no longer approve or revert. 2 active passkeys remain")
+
 	// The shortest accepted prefix (dash included), as typed, with a flag after it.
-	r := cli(t, admin, "", "passkey", "remove", id(laptop)[:minIDPrefix], "--yes", "--pages-url", links.DefaultLocal)
+	r = cli(t, admin, "", "passkey", "remove", id(laptop)[:minIDPrefix], "--yes", "--pages-url", links.DefaultLocal)
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Contains(t, r.stderr, "revoked; it can no longer approve or revert. 1 active passkeys remain")
 }

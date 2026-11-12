@@ -136,6 +136,10 @@ func TestLaptopFixtures(t *testing.T) {
 			err = laptopCheck(t, p, l, now)
 			if l.Refusal == "" {
 				require.NoError(t, err)
+				shown := strings.Join(setupcode.Summary(p, setupcode.SummaryState{GuardVersion: l.Database.GuardVersion}), "\n")
+				for _, line := range l.Summary {
+					require.Contains(t, shown, line)
+				}
 				return
 			}
 			require.Error(t, err)

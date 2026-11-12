@@ -31,7 +31,7 @@
           "type": "string",
           "format": "uuid"
         },
-        "description": "Planned (revert scope, RS-1): only with taskId, 1 to 20 of your own runs with that task id; the preview holds only their lines. Absent: all your runs in the task."
+        "description": "Only with taskId, 1 to 20 of your own runs with that task id; the preview holds only their lines. Absent: all your runs in the task."
       },
       "tables": {
         "type": "array",
@@ -42,7 +42,7 @@
           "type": "string",
           "pattern": "^[^.\\s]+\\.[^.\\s]+$"
         },
-        "description": "Planned (revert scope, RS-1): 1 to 20 schema.table names, each a table you wrote in this scope; the preview holds only their lines. Absent: every table."
+        "description": "1 to 20 schema.table names, each a table you wrote in this scope; the preview holds only their lines. Absent: every table."
       },
       "limit": {
         "type": "integer",

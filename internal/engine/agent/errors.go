@@ -45,6 +45,11 @@ const (
 	ReasonStaleCursor  = "STALE_CURSOR"
 	ReasonNoPrimaryKey = "NO_PRIMARY_KEY"
 	ReasonNotAllowed   = "NOT_ALLOWED"
+	// ReasonScopeFilter is a revert filter entry outside the agent's own
+	// work, and ReasonScopeFilterCap a filter over revert.MaxFilter entries
+	// (CONTRACT.md, Revert scope on preview_revert and request_revert).
+	ReasonScopeFilter    = "SCOPE_FILTER"
+	ReasonScopeFilterCap = "SCOPE_FILTER_CAP"
 )
 
 // guardCodes maps the guard's SQLSTATEs (M0 spike, section 2) to contract
@@ -77,7 +82,8 @@ var unavailableClasses = map[string]bool{"08": true, "28": true, "53": true, "57
 type ArgumentError struct {
 	Message string
 	// Reason is the catalog reason: STALE_CURSOR for a cursor that no longer
-	// leads anywhere, else none.
+	// leads anywhere, SCOPE_FILTER or SCOPE_FILTER_CAP for a revert filter
+	// refused, else none.
 	Reason string
 }
 

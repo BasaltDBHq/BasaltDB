@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"regexp"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,11 +25,49 @@ type previewRevertArgs struct {
 }
 
 // scopeIDs are the scope arguments preview_revert and request_revert share:
-// exactly one of them names the change, run or task to revert.
+// exactly one of the ids names the change, run or task to revert, and the
+// optional runs and tables filters narrow it to some of the agent's own
+// work in it (RS-1).
 type scopeIDs struct {
-	ChangeID string `json:"changeId" validate:"omitempty,uuid"`
-	RunID    string `json:"runId" validate:"omitempty,uuid"`
-	TaskID   string `json:"taskId" validate:"omitempty,uuid"`
+	ChangeID string   `json:"changeId" validate:"omitempty,uuid"`
+	RunID    string   `json:"runId" validate:"omitempty,uuid"`
+	TaskID   string   `json:"taskId" validate:"omitempty,uuid"`
+	Runs     []string `json:"runs" validate:"omitempty,unique,dive,uuid"`
+	Tables   []string `json:"tables" validate:"omitempty,unique"`
+}
+
+// filterTable is a schema.table name as the tools' tables filter takes it.
+var filterTable = regexp.MustCompile(`^[^.\s]+\.[^.\s]+$`)
+
+// hasFilters reports whether the arguments carry a runs or tables filter.
+func (a scopeIDs) hasFilters() bool { return a.Runs != nil || a.Tables != nil }
+
+// filtered narrows scope by the runs and tables filters. It refuses what
+// the arguments alone show is outside the agent's own work or over the cap;
+// whether each run and table is the agent's own Postgres checks, and the
+// engine maps its refusal (scopeRefused).
+func (a scopeIDs) filtered(scope guard.RevertScope) (guard.RevertScope, error) {
+	if a.Runs != nil && scope.Kind != revert.ScopeTask {
+		return guard.RevertScope{}, &ArgumentError{Reason: ReasonScopeFilter, Message: "invalid arguments: runs goes only with " +
+			"taskId, nothing was prepared: a change or a run is one run already. Narrow it with tables"}
+	}
+	if len(a.Runs) > revert.MaxFilter || len(a.Tables) > revert.MaxFilter {
+		return guard.RevertScope{}, scopeFilterCapped()
+	}
+	if (a.Runs != nil && len(a.Runs) == 0) || (a.Tables != nil && len(a.Tables) == 0) {
+		return guard.RevertScope{}, &ArgumentError{Message: "invalid arguments: runs and tables list at least one entry; leave " +
+			"a filter out for all of your work in the scope"}
+	}
+	for _, t := range a.Tables {
+		if !filterTable.MatchString(t) {
+			return guard.RevertScope{}, &ArgumentError{Message: "invalid arguments: tables are schema.table names, such as public.leads"}
+		}
+	}
+	for _, id := range a.Runs {
+		scope.Runs = append(scope.Runs, uuid.MustParse(id))
+	}
+	scope.Tables = a.Tables
+	return scope, nil
 }
 
 // named returns the scopes the arguments name.
@@ -51,7 +90,7 @@ func (a previewRevertArgs) scope() (guard.RevertScope, error) {
 	if len(out) != 1 {
 		return guard.RevertScope{}, &ArgumentError{Message: "name exactly one of changeId, runId, taskId"}
 	}
-	return out[0], nil
+	return a.filtered(out[0])
 }
 
 type revertPreviewResult struct {
@@ -159,16 +198,16 @@ func (a requestRevertArgs) requestScope() (guard.RevertScope, error) {
 		return guard.RevertScope{}, &ArgumentError{Message: "invalid arguments: intent is required with changeId, runId or taskId: why the person " +
 			"reverts, in their words, in 1 to 500 characters; it is shown on the revert page they sign"}
 	}
-	return out[0], nil
+	return a.filtered(out[0])
 }
 
 // awaitParams is the wait form's arguments as the service takes them. A
 // signature or a new link returns at once, so neither takes
 // waitForSignature; a signature takes no reissueLink.
 func (a requestRevertArgs) awaitParams() (AwaitRevertParams, error) {
-	if len(a.named()) > 0 || a.Intent != "" {
-		return AwaitRevertParams{}, &ArgumentError{Message: "invalid arguments: revertId takes no changeId, runId, taskId or intent; " +
-			"the revert already has them"}
+	if len(a.named()) > 0 || a.hasFilters() || a.Intent != "" {
+		return AwaitRevertParams{}, &ArgumentError{Message: "invalid arguments: revertId takes no changeId, runId, taskId, runs, " +
+			"tables or intent; the revert already has them"}
 	}
 	reissue := a.ReissueLink != nil && *a.ReissueLink
 	if a.WaitForSignature != nil && (a.Signature != "" || reissue) {

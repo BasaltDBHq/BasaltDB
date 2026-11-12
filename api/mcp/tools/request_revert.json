@@ -31,7 +31,7 @@
           "type": "string",
           "format": "uuid"
         },
-        "description": "Planned (revert scope, RS-1): only with taskId, 1 to 20 of your own runs with that task id; the revert holds only their lines and the page shows it as your proposal. Absent: all your runs in the task."
+        "description": "Only with taskId, 1 to 20 of your own runs with that task id; the revert holds only their lines and the page shows it as your proposal. Absent: all your runs in the task."
       },
       "tables": {
         "type": "array",
@@ -42,7 +42,7 @@
           "type": "string",
           "pattern": "^[^.\\s]+\\.[^.\\s]+$"
         },
-        "description": "Planned (revert scope, RS-1): with changeId, runId or taskId, 1 to 20 schema.table names, each a table you wrote in this scope; the revert holds only their lines. Absent: every table."
+        "description": "With changeId, runId or taskId, 1 to 20 schema.table names, each a table you wrote in this scope; the revert holds only their lines. Absent: every table."
       },
       "intent": {
         "type": "string",

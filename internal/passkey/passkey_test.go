@@ -211,6 +211,14 @@ func TestRegistrationCodes(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, resp, back)
 
+	// prfSupported is optional: absent parses as false, present round-trips.
+	resp.PRFSupported = true
+	code, err = resp.Code()
+	require.NoError(t, err)
+	back, err = passkey.ParseRegistrationResponse(code)
+	require.NoError(t, err)
+	require.True(t, back.PRFSupported)
+
 	bad := []struct{ name, code, detail string }{
 		{"wrong prefix", "basalt-approval.1.e30", "must start with"},
 		{"padding", passkey.RegistrationResponsePrefix + "e30=", "base64url"},

@@ -35,6 +35,10 @@
       "type": "integer",
       "const": -7,
       "description": "COSE ES256, the only algorithm accepted."
+    },
+    "prfSupported": {
+      "type": "boolean",
+      "description": "Optional. Whether the authenticator reported the WebAuthn prf extension as enabled for this credential at registration. Absent is the same as false. Nothing uses it yet (the vault channel's Phase 1b will); the prf output is never part of this code."
     }
   }
 }

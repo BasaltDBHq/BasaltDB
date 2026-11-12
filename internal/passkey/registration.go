@@ -92,6 +92,10 @@ type RegistrationResponse struct {
 	AuthenticatorData  Bytes `json:"authenticatorData"`
 	PublicKey          Bytes `json:"publicKey"`
 	PublicKeyAlgorithm int   `json:"publicKeyAlgorithm"`
+	// PRFSupported is whether the authenticator reported the prf extension as
+	// enabled at registration. Optional and unused until the vault channel's
+	// Phase 1b; no prf output is ever part of the code.
+	PRFSupported bool `json:"prfSupported,omitempty"`
 }
 
 // Code returns the text the person copies: basalt-passkey.1.<base64url(json)>.

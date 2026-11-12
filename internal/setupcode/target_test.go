@@ -2,6 +2,7 @@ package setupcode
 
 import (
 	"bytes"
+	"net/url"
 	"testing"
 	"time"
 
@@ -48,6 +49,19 @@ func TestParseConnURL(t *testing.T) {
 		_, _, err = ParseConnURL(bad)
 		require.Error(t, err, bad)
 	}
+}
+
+func TestParseConnURLRefusesTargetParams(t *testing.T) {
+	t.Parallel()
+	for _, param := range []string{"host=10.0.0.9", "hostaddr=10.0.0.9", "port=6000", "dbname=other", "DBName=other"} {
+		_, _, err := ParseConnURL("postgres://app@10.0.0.5:5432/crm?sslmode=require&" + param)
+		require.Error(t, err, param)
+		require.Contains(t, err.Error(), "put the host, port and database in the URL itself", param)
+	}
+	u, err := url.Parse("postgres://app:pw@10.0.0.5/crm?dbname=other")
+	require.NoError(t, err)
+	_, err = TargetOf(u)
+	require.ErrorContains(t, err, "dbname=")
 }
 
 func TestNewSetupID(t *testing.T) {

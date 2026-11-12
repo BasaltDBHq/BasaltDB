@@ -270,6 +270,39 @@ func requireSetupGuidance(t *testing.T, res RemoteInitResult) {
 	require.Equal(t, "status", res.NextSteps[3].Tool)
 }
 
+func TestInitRemoteCredentialDropsTheURLsLoginParams(t *testing.T) {
+	t.Parallel()
+	cfg := tempConfig(t)
+	const canary = "zzcanary"
+	r := remote(t, cfg, "--agent", "bot", "--write", "public.leads", "--database-url",
+		"postgres://app@db.example.com:5432/crm?sslmode=require&user="+canary+"user&passfile=/"+canary+"/passfile&sslkey=/"+canary+"/key.pem")
+
+	raw, err := os.ReadFile(r.credFile)
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), canary)
+	pc, err := pgx.ParseConfig(strings.TrimSpace(string(raw)))
+	require.NoError(t, err)
+	require.Equal(t, guard.DefaultPrefix+"_agent_bot", pc.User)
+	require.Equal(t, credentialPassword(t, r.credFile), pc.Password)
+	require.Equal(t, "db.example.com", pc.Host)
+	require.Equal(t, "crm", pc.Database)
+	require.NotNil(t, pc.TLSConfig, "sslmode is kept")
+	require.Empty(t, pc.TLSConfig.Certificates, "the admin's sslkey is not the agent's")
+}
+
+func TestInitRemoteRefusesTargetParams(t *testing.T) {
+	t.Parallel()
+	cfg := tempConfig(t)
+	for _, param := range []string{"host=other.example.com", "port=6000", "dbname=other"} {
+		r := cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", "bot", "--write", "public.leads",
+			"--database-url", "postgres://app@db.example.com:5432/crm?"+param)
+		require.Equal(t, exitUsage, r.code, "%s: %s", param, r.stderr)
+		require.Contains(t, r.stderr, "put the host, port and database in the URL itself", param)
+		require.Empty(t, r.stdout)
+	}
+	require.NoFileExists(t, cfg)
+}
+
 func TestInitRemoteRerunPrintsThePendingCode(t *testing.T) {
 	t.Parallel()
 	cfg := tempConfig(t)

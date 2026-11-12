@@ -89,9 +89,24 @@ func ParseConnURL(conn string) (*url.URL, Target, error) {
 	return u, t, nil
 }
 
+// targetParams are connection parameters that would name another server or
+// database than the URL's host, port and path: pgx reads them in place of
+// those, so the target in the setup code and the agent's real connection
+// could differ. TargetOf refuses them.
+var targetParams = []string{"host", "hostaddr", "port", "dbname"}
+
 // TargetOf is the database u names: host, port, database and the Supabase
-// project ref (see ParseConnURL). It does not look at u's password.
+// project ref (see ParseConnURL). It does not look at u's password. A
+// host, hostaddr, port or dbname parameter is refused: the target is
+// read from the URL's host, port and path only.
 func TargetOf(u *url.URL) (Target, error) {
+	for k := range u.Query() {
+		for _, p := range targetParams {
+			if strings.EqualFold(strings.TrimSpace(k), p) {
+				return Target{}, fmt.Errorf("the connection string has a %s= parameter; put the host, port and database in the URL itself (postgres://user@host:port/database) and remove %s= from its parameters", p, p)
+			}
+		}
+	}
 	host := u.Hostname()
 	if host == "" || strings.Contains(u.Host, ",") {
 		return Target{}, errors.New("the connection string must name one database host")

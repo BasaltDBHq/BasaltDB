@@ -75,24 +75,72 @@ func TestFullJitter(t *testing.T) {
 func TestSessionPhaseLimits(t *testing.T) {
 	t.Parallel()
 	s := newSessions(time.Second, time.Now)
-	limit, _, waiting := s.limit(sid{1})
-	require.Equal(t, channel.FrameMax, limit)
-	require.False(t, waiting)
-	require.Zero(t, s.add(sid{1}, channel.LinkToken{9}))
-	limit, token, waiting := s.limit(sid{1})
-	require.Equal(t, channel.Message1Len, limit)
-	require.Equal(t, channel.LinkToken{9}, token)
-	require.True(t, waiting)
+	ph, _ := s.lookup(sid{1})
+	require.Equal(t, phaseNone, ph)
+	code, _ := s.add(sid{1}, channel.LinkToken{9})
+	require.Zero(t, code)
+	ph, ss := s.lookup(sid{1})
+	require.Equal(t, phaseHello, ph)
+	require.Equal(t, channel.LinkToken{9}, ss.token)
+	ok, code := s.establish(ss, &established{})
+	require.True(t, ok)
+	require.Zero(t, code)
+	ph, _ = s.lookup(sid{1})
+	require.Equal(t, phaseOpen, ph)
 }
 
 func TestSessionLate(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC)
 	s := newSessions(10*time.Second, func() time.Time { return now })
-	require.False(t, s.late(sid{1}), "an unknown session is not late")
-	require.Zero(t, s.add(sid{1}, channel.LinkToken{}))
+	code, _ := s.add(sid{1}, channel.LinkToken{})
+	require.Zero(t, code)
+	_, ss := s.lookup(sid{1})
 	now = now.Add(10*time.Second - time.Nanosecond)
-	require.False(t, s.late(sid{1}))
+	require.False(t, s.late(ss))
 	now = now.Add(time.Nanosecond)
-	require.True(t, s.late(sid{1}))
+	require.True(t, s.late(ss))
+}
+
+// Every token's message 1s count, held or not, up to HandshakesPerLink per
+// HandshakeWindow; the counters stay bounded whatever tokens arrive.
+func TestHandshakeRate(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC)
+	s := newSessions(10*time.Second, func() time.Time { return now })
+	for range HandshakesPerLink {
+		require.True(t, s.allowHandshake(channel.LinkToken{1}))
+	}
+	require.False(t, s.allowHandshake(channel.LinkToken{1}))
+	require.True(t, s.allowHandshake(channel.LinkToken{2}), "another token has its own count")
+	now = now.Add(HandshakeWindow)
+	require.True(t, s.allowHandshake(channel.LinkToken{1}), "the window moved on")
+
+	for i := range maxTrackedTokens {
+		s.allowHandshake(channel.LinkToken{3, byte(i), byte(i >> 8)})
+	}
+	require.LessOrEqual(t, len(s.handshakes), maxTrackedTokens)
+	now = now.Add(HandshakeWindow)
+	require.True(t, s.allowHandshake(channel.LinkToken{4}), "old counters are dropped when full")
+	require.Len(t, s.handshakes, 1)
+}
+
+// The session limit per link counts established sessions of the token.
+func TestSessionsPerLink(t *testing.T) {
+	t.Parallel()
+	s := newSessions(10*time.Second, time.Now)
+	for i := range MaxSessionsPerLink + 1 {
+		code, _ := s.add(sid{byte(i)}, channel.LinkToken{7})
+		require.Zero(t, code)
+	}
+	for i := range MaxSessionsPerLink {
+		_, ss := s.lookup(sid{byte(i)})
+		ok, _ := s.establish(ss, &established{})
+		require.True(t, ok)
+	}
+	_, ss := s.lookup(sid{MaxSessionsPerLink})
+	ok, code := s.establish(ss, &established{})
+	require.False(t, ok)
+	require.Equal(t, channel.ErrSessionLimit, code)
+	require.Len(t, s.ofToken(channel.LinkToken{7}), MaxSessionsPerLink+1)
 }

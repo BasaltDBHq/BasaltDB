@@ -27,7 +27,7 @@ func TestRelayLinksAcrossAgents(t *testing.T) {
 	t.Cleanup(v.Close)
 	relay := newRelayLinks(quietLog())
 	cfg := config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}
-	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), relay)
+	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), relay, nil)
 	require.NotNil(t, ev.client)
 	engineID := ev.status().EngineID
 	owner := func(tok channel.LinkToken) string {
@@ -102,7 +102,7 @@ func TestManyConflictsDoNotStallReads(t *testing.T) {
 	t.Cleanup(func() { close(stall) })
 	relay := newRelayLinks(quietLog())
 	cfg := config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}
-	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), relay)
+	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), relay, nil)
 	require.NotNil(t, ev.client)
 	store := links.NewSecrets(time.Now, rand.Reader)
 	relay.add(store, ev.client.Unregister)

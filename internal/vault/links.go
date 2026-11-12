@@ -117,13 +117,16 @@ func (c *Client) Register(ctx context.Context, token channel.LinkToken, expiresA
 
 // Unregister tells the Vault to stop routing token, without waiting for the
 // answer (CONTRACT.md: a reissue does not wait, and a LINK_CONFLICT there
-// stops nothing). With no socket it does nothing: the Vault drops the token
-// at its expiry, and the engine refuses its sessions either way.
+// stops nothing), and closes the token's open sessions with LINK_REFUSED:
+// its link was replaced, revoked or expired. With no socket it does
+// nothing: the Vault drops the token at its expiry, and the engine refuses
+// its sessions either way.
 func (c *Client) Unregister(token channel.LinkToken) {
 	cn := c.current()
 	if cn == nil {
 		return
 	}
+	cn.endLink(token)
 	log := c.opts.Log
 	err := cn.sendNoWait(context.Background(), func(ref int64) any {
 		return unregisterLinkMsg{Type: typeUnregisterLink, Ref: ref, LinkToken: token.String()}

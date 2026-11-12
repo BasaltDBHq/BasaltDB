@@ -77,6 +77,9 @@ var fixtureWant = map[string]want{
 	"public.leads.email_status":     public,
 	"public.leads.ref_value":        {class: guard.ClassIdentifier, entity: guard.EntityOther, needsReview: true},
 	"public.leads.call_notes":       freeText,
+	"public.leads.mixed_ref":        reviewPhone,
+	"public.leads.pin":              secret,
+	"public.leads.token_sent":       secret,
 	"public.bad_cast.id":            public,
 	"public.bad_cast.n":             {class: guard.ClassIdentifier, entity: guard.EntityOther, needsReview: true},
 }

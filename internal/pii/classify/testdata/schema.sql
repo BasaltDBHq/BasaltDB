@@ -109,7 +109,12 @@ CREATE TABLE public.leads (
     -- Repeated numbers of one length: an identifier to review.
     ref_value      bigint,
     -- Notes with phone numbers among the codes stay FREE_TEXT.
-    call_notes     text
+    call_notes     text,
+    -- Long phones mixed with short numbers: never PUBLIC by spread.
+    mixed_ref      bigint,
+    -- PINs and a qualified secret name.
+    pin            text,
+    token_sent     text
 );
 
 INSERT INTO public.leads
@@ -121,7 +126,10 @@ SELECT g,
        '62815' || lpad(((g * 6007) % 100000000)::text, 8, '0'),
        (ARRAY['verified', 'pending'])[1 + g % 2],
        (ARRAY[9811000000000017, 9811000000000213, 9811000000000419, 9811000000000625, 9811000000000831])[1 + g % 5],
-       CASE WHEN g % 2 = 0 THEN '+62 812-' || (6000 + g) || '-' || lpad(g::text, 4, '0') ELSE 'CB-' || g END
+       CASE WHEN g % 2 = 0 THEN '+62 812-' || (6000 + g) || '-' || lpad(g::text, 4, '0') ELSE 'CB-' || g END,
+       CASE WHEN g % 10 < 7 THEN 6281200000000 + g * 104729 ELSE 100 + g * 37 END,
+       lpad(((g * 7919) % 10000)::text, 4, '0'),
+       substr(md5('t' || g), 1, 10)
   FROM generate_series(1, 100) g;
 
 CREATE VIEW public.bad_cast AS SELECT id, product_name::integer AS n FROM public.customers;

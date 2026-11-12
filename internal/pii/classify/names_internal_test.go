@@ -70,6 +70,11 @@ func TestMatchName(t *testing.T) {
 		require.True(t, ok, name)
 		require.True(t, got.qualified, name)
 	}
+	for _, name := range []string{"pin", "otp", "cvc", "cvv", "passcode", "security_code", "card_pin"} {
+		got, ok := matchName(name, kindText)
+		require.True(t, ok, name)
+		require.Equal(t, guard.ClassSecret, got.class, name)
+	}
 	got, ok := matchName("email_address", kindText)
 	require.True(t, ok)
 	require.False(t, got.qualified)
@@ -175,6 +180,18 @@ func TestSuggestShapes(t *testing.T) {
 	phones := []string{"6281234567801", "6281299991234", "6281355512345"}
 	unnamed := Suggest(col("ref", "bigint"), Sample{Values: phones}, Options{})
 	require.Equal(t, []any{guard.EntityPhone, "ID", true}, []any{unnamed.EntityType, unnamed.PhoneRegion, unnamed.NeedsReview})
+	// Real-format Indonesian mobiles written bare, 11 to 13 digits: ID.
+	for _, vs := range [][]string{{"628123456789", "628129876543", "628131112223"}, {"6281234567890", "6285712345678", "6287812345678"}} {
+		got := Suggest(col("ref", "text"), Sample{Values: vs}, Options{})
+		require.Equal(t, []any{guard.EntityPhone, "ID"}, []any{got.EntityType, got.PhoneRegion}, "%v", vs)
+	}
+	// Long phones among short numbers are not PUBLIC by their length spread.
+	mixed := []string{"6281234567801", "6281299991234", "6281355512345", "6281377770000", "6281388881111", "6281399992222", "6281311113333", "123", "4567", "89"}
+	got := Suggest(col("ref", "bigint"), Sample{Values: mixed}, Options{})
+	require.Equal(t, []any{guard.ClassIdentifier, guard.EntityPhone, true}, []any{got.Class, got.EntityType, got.NeedsReview}, got.Reason)
+	// A qualified secret name stays SECRET over short codes.
+	require.Equal(t, guard.ClassSecret, Suggest(col("token_sent", "text"), Sample{Values: []string{"a8F3kq92Zx"}}, Options{}).Class)
+	require.Equal(t, guard.ClassSecret, Suggest(col("pin", "text"), Sample{Values: []string{"0420", "1234"}}, Options{}).Class)
 	require.Equal(t, guard.EntityPhone, Suggest(col("msisdn", "bigint"), Sample{Values: phones}, Options{}).EntityType)
 }
 

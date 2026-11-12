@@ -35,7 +35,8 @@ var nameRules = []nameRule{
 	{
 		class: guard.ClassSecret,
 		phrases: words("password", "passwd", "secret", "token", "api key", "apikey", "hash", "ssn",
-			"national id", "passport", "tax id", "card number", "cvv", "nik"),
+			"national id", "passport", "tax id", "card number", "cvv", "cvc", "nik", "pin", "otp", "passcode",
+			"security code"),
 		kinds: []kind{kindText, kindInt, kindNumeric, kindOther},
 	},
 	{

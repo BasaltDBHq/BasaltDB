@@ -26,6 +26,9 @@ const (
 	// wideLengthSpread: digit runs whose lengths differ by this much are
 	// amounts or counts, not identifiers.
 	wideLengthSpread = 4
+	// longShare is the share (percent) of numbers of minPhoneDigits or more
+	// digits that makes a number column an identifier to review.
+	longShare = 10
 	// minSequentialValues is the fewest distinct values that make a sequence.
 	minSequentialValues = 5
 	// sequentialSpan: distinct integers whose range is at most this many
@@ -132,7 +135,7 @@ func Suggest(col Column, s Sample, opts Options) Suggestion {
 		}
 		return unsampled(hit, named, reasonNoValues)
 	}
-	if named && hit.qualified && shortCodes(s.Values) {
+	if named && hit.qualified && hit.class != guard.ClassSecret && shortCodes(s.Values) {
 		named = false // email_status holding verified, pending: about the value, not the value
 	}
 	if v, ok := validate(k, col.Key, s.Values, hit, named, opts); ok {
@@ -144,7 +147,7 @@ func Suggest(col Column, s Sample, opts Options) Suggestion {
 	if col.Key {
 		return Suggestion{Class: guard.ClassPublic, Reason: reasonKey}
 	}
-	return byShape(s.Values)
+	return byShape(s.Values, opts)
 }
 
 func fromName(hit nameHit) Suggestion {
@@ -280,7 +283,7 @@ func byName(hit nameHit, values []string, opts Options) Suggestion {
 // byShape judges a column no validator and no name rule claimed: integers
 // that run in sequence are ids, decimals and mixed lengths are amounts and
 // counts, and unique numbers of one length are an identifier to review.
-func byShape(values []string) Suggestion {
+func byShape(values []string, opts Options) Suggestion {
 	n := len(values)
 	public := func(reason string) Suggestion { return Suggestion{Class: guard.ClassPublic, Reason: reason} }
 	if !slices.ContainsFunc(values, func(v string) bool { return !allASCIIDigits(strings.TrimSpace(v)) }) {
@@ -288,11 +291,10 @@ func byShape(values []string) Suggestion {
 		switch {
 		case st.sequential:
 			return public(reasonSequential)
+		case st.long*percent >= longShare*n:
+			return longNumbers(values, st, opts)
 		case st.maxLen-st.minLen >= wideLengthSpread:
-			return public(fmt.Sprintf("SHAPE:lengths %d to %d", st.minLen, st.maxLen))
-		case st.long*percent >= sampleShare*n:
-			return Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityOther, NeedsReview: true,
-				Reason: fmt.Sprintf("SHAPE:%d distinct numbers of %d, lengths %d to %d, no validator", st.distinct, n, st.minLen, st.maxLen)}
+			return public(fmt.Sprintf("SHAPE:lengths %d to %d, %d of %d long", st.minLen, st.maxLen, st.long, n))
 		}
 		return public(fmt.Sprintf("SHAPE:short numbers, lengths %d to %d", st.minLen, st.maxLen))
 	}
@@ -301,6 +303,21 @@ func byShape(values []string) Suggestion {
 		return public(reasonDecimals)
 	}
 	return public(fmt.Sprintf("SAMPLE:no validator matched %d values", n))
+}
+
+// longNumbers is the suggestion for a column where a fair share of the
+// numbers have 6 digits or more: an identifier for review, a phone when most
+// of those long numbers are valid phones. Short numbers mixed in (counts,
+// codes) never make it PUBLIC.
+func longNumbers(values []string, st numberStats, opts Options) Suggestion {
+	long := slices.DeleteFunc(slices.Clone(values), func(v string) bool { return len(strings.TrimSpace(v)) < minPhoneDigits })
+	n := len(values)
+	if r := inferRegion(long, true, opts.PhoneRegion, opts.CallingCodes); r.valid*percent >= sampleShare*len(long) {
+		return Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityPhone, PhoneRegion: r.region, NeedsReview: true,
+			Reason: fmt.Sprintf("SAMPLE:PHONE %d/%d of the %d long numbers", r.valid, len(long), n) + regionNote(r, len(long))}
+	}
+	return Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityOther, NeedsReview: true,
+		Reason: fmt.Sprintf("SHAPE:%d of %d numbers long, %d distinct, lengths %d to %d, no validator", st.long, n, st.distinct, st.minLen, st.maxLen)}
 }
 
 // looksNumeric is a signed or decimal number (an amount).

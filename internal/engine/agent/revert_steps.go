@@ -283,6 +283,12 @@ func (s *Service) nothingToRevertError(ctx context.Context, tool string, scope g
 			"Basalt never overwrites them (people win).", what)
 		b.Stop("There is nothing to revert; do not retry.")
 	}
+	if scope.Kind == revert.ScopeTask {
+		// The agent's own lines are empty, but other agents' may not be
+		// (RS-6): the person can open the page and widen to them.
+		te.PersonMessage += fmt.Sprintf(" To include other agents' changes in this task, run %s and choose them on the "+
+			"signing page.", s.Commands.Revert(scope))
+	}
 	steps, err := b.Build()
 	if err != nil {
 		return err

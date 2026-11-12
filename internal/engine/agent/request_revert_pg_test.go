@@ -125,38 +125,126 @@ func TestRequestRevertOfAChangeWithoutLocalPages(t *testing.T) {
 	require.Equal(t, "open", leadStatus(t, env.d, 74))
 }
 
-// An agent requests reverts of its own work only (N12-R7).
-func TestRequestRevertOfAnotherAgentsWorkIsNotFound(t *testing.T) {
+// An agent previews and requests reverts of its own work only (RS-1, RS-6):
+// another agent's change, run or task answers NOT_FOUND byte for byte as an
+// unknown one does, on both tools, and nothing is prepared.
+func TestRevertOfAnotherAgentsWorkIsNotFound(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
 	env := agentHarnessFor(t, d, d.NewAgent(t, "bot", leads, leads))
 	other := d.NewAgent(t, "other", leads, leads)
 	ctx := context.Background()
-	in := guard.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Other's work"}
+	in := guard.Intent{RunID: uuid.Must(uuid.NewV7()), TaskID: uuid.Must(uuid.NewV7()), Text: "Other's work"}
 	require.NoError(t, guard.StartRun(ctx, other.Conn, in))
 	require.NoError(t, guardtest.Guarded(ctx, other.Conn, in, `UPDATE public.leads SET status = 'won' WHERE id = 76`))
-	var otherChange string
-	require.NoError(t, other.Conn.QueryRow(ctx, `SELECT change_id::text FROM basalt_meta.agent_changes WHERE run_id = $1`, in.RunID).Scan(&otherChange))
+	var otherChange uuid.UUID
+	require.NoError(t, other.Conn.QueryRow(ctx, `SELECT change_id FROM basalt_meta.agent_changes WHERE run_id = $1`, in.RunID).Scan(&otherChange))
 
-	for _, args := range []map[string]any{
-		{"runId": in.RunID.String(), "intent": "Undo"},
-		{"changeId": otherChange, "intent": "Undo"},
-		{"runId": uuid.Must(uuid.NewV7()).String(), "intent": "Undo"},
-		{"changeId": uuid.Must(uuid.NewV7()).String(), "intent": "Undo"},
-	} {
-		body, isError := env.h.call(t, "request_revert", args)
-		reason := "RUN"
-		if _, ok := args["changeId"]; ok {
-			reason = "CHANGE"
+	for _, tool := range []string{"preview_revert", "request_revert"} {
+		for _, tc := range []struct {
+			arg, reason string
+			theirs      uuid.UUID
+		}{
+			{"changeId", "CHANGE", otherChange},
+			{"runId", "RUN", in.RunID},
+			{"taskId", "TASK", in.TaskID},
+		} {
+			call := func(id uuid.UUID) (map[string]any, string) {
+				args := map[string]any{tc.arg: id.String()}
+				if tool == "request_revert" {
+					args["intent"] = "Undo"
+				}
+				body, isError := env.h.call(t, tool, args)
+				steps := requireErrorSteps(t, body, isError, "NOT_FOUND", tc.reason)
+				require.Equal(t, "list_runs", steps[0]["tool"])
+				raw, err := json.Marshal(body)
+				require.NoError(t, err)
+				return body, strings.ReplaceAll(string(raw), id.String(), "<id>")
+			}
+			theirs, theirsText := call(tc.theirs)
+			_, unknownText := call(uuid.Must(uuid.NewV7()))
+			require.Equal(t, unknownText, theirsText, "%s: another agent's %s and an unknown one read alike", tool, tc.arg)
+			if tc.reason == "TASK" {
+				require.Contains(t, str(t, theirs["personMessage"]), "basalt revert --agent <agent> --task "+in.TaskID.String()+" --open")
+				continue
+			}
+			require.Contains(t, str(t, theirs["message"]), "ask that agent", "%v", theirs)
 		}
-		steps := requireErrorSteps(t, body, isError, "NOT_FOUND", reason)
-		require.Equal(t, "list_runs", steps[0]["tool"])
-		require.Contains(t, str(t, body["message"]), "ask that agent", "%v", body)
 	}
 	var n int
 	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT count(revert_id)::int FROM basalt_meta.reverts`).Scan(&n))
 	require.Zero(t, n, "nothing was prepared")
 	require.Equal(t, "won", leadStatus(t, d, 76))
+}
+
+// An agent requests the revert of its own lines in a task it ran in (RS-1,
+// RS-7): another agent's changes in the task are left out, a row it wrote
+// later is skipped, and the message points the person to widening.
+func TestRequestRevertOfOwnTask(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	env := agentHarnessFor(t, d, d.NewAgent(t, "bot", leads, leads))
+	other := d.NewAgent(t, "other", leads, leads)
+	ctx := context.Background()
+	run, isError := env.h.call(t, "run_start", map[string]any{"intent": "Win leads"})
+	require.False(t, isError, "%v", run)
+	taskID := str(t, run["taskId"])
+	out, isError := env.h.call(t, "write", map[string]any{
+		"sql": "UPDATE leads SET status = 'won' WHERE id IN (81, 83)", "intent": "They signed", "runId": run["runId"],
+	})
+	require.False(t, isError, "%v", out)
+	in := guard.Intent{RunID: uuid.Must(uuid.NewV7()), TaskID: uuid.MustParse(taskID), Text: "Same task, other agent"}
+	require.NoError(t, guard.StartRun(ctx, other.Conn, in))
+	require.NoError(t, guardtest.Guarded(ctx, other.Conn, in,
+		`UPDATE public.leads SET status = 'lost' WHERE id = 82`, `UPDATE public.leads SET status = 'lost' WHERE id = 83`))
+
+	preview, isError := env.h.call(t, "preview_revert", map[string]any{"taskId": taskID})
+	require.False(t, isError, "%v", preview)
+	require.EqualValues(t, "1", preview["rows"], "only the agent's own row 81 is restored")
+	require.EqualValues(t, "1", preview["skipped"], "row 83, which the other agent wrote later, is skipped")
+	items, ok := preview["items"].([]any)
+	require.True(t, ok)
+	require.Len(t, items, 2, "the other agent's row 82 is not in the agent's proposal")
+
+	body, isError := env.h.call(t, "request_revert", map[string]any{"taskId": taskID, "intent": "Undo the task's lead wins"})
+	require.False(t, isError, "%v", body)
+	require.Equal(t, "PENDING", body["status"])
+	require.Equal(t, "TASK", body["scope"])
+	require.Equal(t, taskID, body["scopeId"])
+	require.EqualValues(t, "1", body["rows"])
+	require.EqualValues(t, "1", body["skipped"])
+	requireResultSteps(t, body, "REQUESTED")
+	msg := str(t, body["personMessage"])
+	require.True(t, strings.HasPrefix(msg, "Revert of task "+taskID+": 1 rows to restore"), msg)
+	require.Contains(t, msg, "\nYou can include other agents' changes in this task on the signing page.\n", msg)
+	mcptest.Require(t, msg, mcptest.LinksOf(t, body))
+
+	link := str(t, body["revertUrl"])
+	_, b, err := revert.ParseRequest(link[strings.Index(link, "#")+1:])
+	require.NoError(t, err)
+	require.Equal(t, revert.ScopeTask, b.Select.Scope)
+	require.Equal(t, []string{env.a.Role}, b.Select.Agents, "the proposal holds only the requesting agent")
+	require.Equal(t, "won", leadStatus(t, d, 81), "a request reverts nothing")
+}
+
+// An own task with nothing of the agent's to undo is NOTHING_TO_REVERT
+// (RS-6), and the message names the command that opens the page, where the
+// person can widen to other agents' changes.
+func TestRequestRevertOfOwnTaskWithNothingToRevert(t *testing.T) {
+	t.Parallel()
+	env := agentHarness(t)
+	run, isError := env.h.call(t, "run_start", map[string]any{"intent": "Look only"})
+	require.False(t, isError, "%v", run)
+	read, isError := env.h.call(t, "query", map[string]any{"sql": "SELECT id FROM leads WHERE id = 84", "runId": run["runId"]})
+	require.False(t, isError, "%v", read)
+	taskID := str(t, run["taskId"])
+	body, isError := env.h.call(t, "request_revert", map[string]any{"taskId": taskID, "intent": "Undo"})
+	requireErrorSteps(t, body, isError, "NOTHING_TO_REVERT", "READS_ONLY")
+	require.Contains(t, str(t, body["personMessage"]), "To include other agents' changes in this task, run "+
+		"basalt revert --agent bot --config /etc/basalt-test/engine.json --task "+taskID+" --open")
+	var n int
+	require.NoError(t, env.d.Admin.QueryRow(context.Background(), `SELECT count(revert_id)::int FROM basalt_meta.reverts`).Scan(&n))
+	require.Zero(t, n, "the empty proposal is rolled back")
 }
 
 func TestRequestRevertNothingToRevert(t *testing.T) {
@@ -213,9 +301,16 @@ func TestRequestRevertArguments(t *testing.T) {
 		requireErrorSteps(t, body, isError, "INVALID_ARGUMENT", "")
 	}
 
+	// taskId is served (RS-7): a task this agent never ran in is not found.
 	body, isError := env.h.call(t, "request_revert", map[string]any{"taskId": id, "intent": "Undo"})
+	requireErrorSteps(t, body, isError, "NOT_FOUND", "TASK")
+	body, isError = env.h.call(t, "request_revert", map[string]any{"taskId": id})
 	requireErrorSteps(t, body, isError, "INVALID_ARGUMENT", "")
-	require.Contains(t, str(t, body["message"]), "a whole task is reverted only by the person (basalt revert --task)")
+	require.Contains(t, str(t, body["message"]), "intent is required with changeId, runId or taskId")
+	body, isError = env.h.call(t, "request_revert", map[string]any{"taskId": id, "runId": runID, "intent": "Undo"})
+	requireErrorSteps(t, body, isError, "INVALID_ARGUMENT", "")
+	body, isError = env.h.call(t, "request_revert", map[string]any{"revertId": id, "taskId": id})
+	requireErrorSteps(t, body, isError, "INVALID_ARGUMENT", "")
 
 	// A revert this agent did not request is not found, whatever the form.
 	for _, args := range []map[string]any{
@@ -308,46 +403,4 @@ func requireRevertInvalid(t *testing.T, err error) {
 	code, ok := guard.CodeOf(err)
 	require.True(t, ok, "%v", err)
 	require.Equal(t, guard.CodeRevertInvalid, code, "%v", err)
-}
-
-// preview_revert answers another agent's change, run or task exactly as one
-// that does not exist (RS-1, RS-6): Postgres refuses the scope, and the
-// engine maps it to NOT_FOUND with the same body.
-func TestPreviewRevertOfAnotherAgentsWorkIsNotFound(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t).WithDemo(t)
-	env := agentHarnessFor(t, d, d.NewAgent(t, "bot", leads, leads))
-	other := d.NewAgent(t, "other", leads, leads)
-	ctx := context.Background()
-	in := guard.Intent{RunID: uuid.Must(uuid.NewV7()), TaskID: uuid.Must(uuid.NewV7()), Text: "Other's work"}
-	require.NoError(t, guard.StartRun(ctx, other.Conn, in))
-	require.NoError(t, guardtest.Guarded(ctx, other.Conn, in, `UPDATE public.leads SET status = 'won' WHERE id = 77`))
-	var otherChange uuid.UUID
-	require.NoError(t, other.Conn.QueryRow(ctx, `SELECT change_id FROM basalt_meta.agent_changes WHERE run_id = $1`, in.RunID).Scan(&otherChange))
-
-	cases := []struct {
-		arg, reason string
-		theirs      uuid.UUID
-	}{
-		{"changeId", "CHANGE", otherChange},
-		{"runId", "RUN", in.RunID},
-		{"taskId", "TASK", in.TaskID},
-	}
-	for _, tc := range cases {
-		unknown := uuid.Must(uuid.NewV7())
-		theirs, isError := env.h.call(t, "preview_revert", map[string]any{tc.arg: tc.theirs.String()})
-		steps := requireErrorSteps(t, theirs, isError, "NOT_FOUND", tc.reason)
-		require.Equal(t, "list_runs", steps[0]["tool"])
-		none, isError := env.h.call(t, "preview_revert", map[string]any{tc.arg: unknown.String()})
-		require.True(t, isError)
-		a, err := json.Marshal(theirs)
-		require.NoError(t, err)
-		b, err := json.Marshal(none)
-		require.NoError(t, err)
-		require.Equal(t, strings.ReplaceAll(string(b), unknown.String(), "<id>"), strings.ReplaceAll(string(a), tc.theirs.String(), "<id>"),
-			"another agent's %s and an unknown one read alike", tc.arg)
-	}
-	task, _ := env.h.call(t, "preview_revert", map[string]any{"taskId": in.TaskID.String()})
-	require.Contains(t, str(t, task["personMessage"]), "basalt revert --agent <agent> --task "+in.TaskID.String()+" --open")
-	require.Equal(t, "won", leadStatus(t, d, 77))
 }

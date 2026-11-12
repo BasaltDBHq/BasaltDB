@@ -16,24 +16,22 @@ func scopeText(scope string, id fmt.Stringer) string {
 
 // previewGuidance is what preview_revert adds to a page of lines
 // (CONTRACT.md, Next steps, PREVIEW and PREVIEW_TASK): the person decides,
-// and a task is reverted only by the person.
+// and the agent requests the revert of its own change, run or task lines.
+// For a task the message always points to widening on the signing page.
 func (s *Service) previewGuidance(p RevertPreview) (string, []mcp.NextStep, error) {
 	what := scopeText(string(p.Scope.Kind), p.Scope.ID)
 	effect := fmt.Sprintf("would restore %d rows and leave %d as they are (changed after the agent)", p.Rows, p.Skipped)
+	pointer := ""
 	if p.Scope.Kind == revert.ScopeTask {
-		command := s.Commands.Revert(p.Scope)
-		steps, err := NewSteps().
-			AskPerson("Tell the person this task can be reverted only by them, show them the command and ask whether to go on.").
-			RunCommand(command, "Prepare the revert of the task and open its page to review and sign it with a passkey.").
-			Build()
-		return fmt.Sprintf("Reverting %s %s. A task is reverted only by you: run %s, review the rows and sign with your passkey.", what, effect, command), steps, err
+		what, pointer = "this agent's changes in "+what, " "+taskWidenPointer
 	}
 	steps, err := NewSteps().
 		AskPerson("Show the person what the revert would do and ask whether to go on, and why they want it.").
 		ReviseCall(toolRequestRevert, scopeArgs(string(p.Scope.Kind), p.Scope.ID),
 			"On yes, call request_revert for this scope, with the person's reason as intent.").
 		Build()
-	return fmt.Sprintf("Reverting %s %s. Say yes and the agent asks you to review the rows and sign with your passkey.", what, effect), steps, err
+	return fmt.Sprintf("Reverting %s %s. Say yes and the agent asks you to review the rows and sign with your passkey.%s",
+		what, effect, pointer), steps, err
 }
 
 // planGuidance is what revert_plan adds to a page of a large plan's lines,

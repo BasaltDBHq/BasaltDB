@@ -18,8 +18,8 @@ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog AS $$
                row_number() OVER (PARTITION BY (u.l::jsonb ->> 'action') = 'RESTORE' ORDER BY u.n) AS k
           FROM unnest(p_lines) WITH ORDINALITY u(l, n)
     ), c AS (
-        SELECT count(*) FILTER (WHERE NOT l.restore)::int AS skips,
-               count(*) FILTER (WHERE l.restore)::int AS restores
+        SELECT count(l.n) FILTER (WHERE NOT l.restore)::int AS skips,
+               count(l.n) FILTER (WHERE l.restore)::int AS restores
           FROM l
     ), t AS (
         SELECT least(c.skips, greatest(p_max / 2, p_max - c.restores)) AS skips, c.restores FROM c
@@ -29,6 +29,8 @@ LANGUAGE sql IMMUTABLE SET search_path = pg_catalog AS $$
      WHERE (NOT l.restore AND l.k <= t.skips)
         OR (l.restore AND l.k <= least(t.restores, p_max - t.skips))
 $$;
+
+REVOKE ALL ON FUNCTION basalt_meta._revert_sample(text[], int) FROM PUBLIC;
 
 -- Version 9's prepare_revert with the sample from _revert_sample. rowsHash
 -- still covers every line; sampleHash covers the sample.

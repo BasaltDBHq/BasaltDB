@@ -166,6 +166,17 @@ test("a large plan's sample keeps room for restored rows (RSS-1)", async () => {
   );
 });
 
+test("the batchedSkips sample round-trips in format 2 (RSS-1)", async () => {
+  const f = fixtures.batchedSkips;
+  assert.ok(f.fragment2.startsWith("2."));
+  const v1 = await parseRevertRequest("#" + f.fragment);
+  const v2 = await parseRevertRequest("#" + f.fragment2);
+  assert.equal(v2.bindingText, v1.bindingText);
+  assert.deepEqual(v2.lines, v1.lines);
+  assert.deepEqual(v2.credentialIds, [], "format 2 carries no credential ids");
+  assert.deepEqual(revertShown(v2), { restoreShown: 50, skipShown: 950, restoreHidden: 0, skipHidden: 550 });
+});
+
 test("hidden counts come only from signed data", async () => {
   const req = await parseRevertRequest("#" + fixtures.batchedSkips.fragment);
   // The binding's totals less the lines that hash to sampleHash.

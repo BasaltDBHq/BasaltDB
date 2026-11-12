@@ -126,9 +126,10 @@ type fixtures struct {
 	// BatchedSkips is a large plan with more SKIP lines than a sample holds:
 	// its sample still carries every RESTORE line (decision RSS-1).
 	BatchedSkips struct {
-		Fragment string `json:"fragment"`
-		Rows     int    `json:"rows"`
-		Skipped  int    `json:"skipped"`
+		Fragment  string `json:"fragment"`
+		Fragment2 string `json:"fragment2"` // the same request in format 2
+		Rows      int    `json:"rows"`
+		Skipped   int    `json:"skipped"`
 	} `json:"batchedSkips"`
 }
 
@@ -193,6 +194,8 @@ func buildFixtures(t *testing.T) fixtures {
 	require.NoError(t, err)
 	plan = revert.Request{RevertID: revertID, Binding: mixedBinding(all, sample, skipsPlanSkips, skipsPlanRestores), Lines: sample}
 	f.BatchedSkips.Fragment, err = linkcodec.Encode(linkcodec.Format1, plan)
+	require.NoError(t, err)
+	f.BatchedSkips.Fragment2, err = plan.Fragment()
 	require.NoError(t, err)
 	f.BatchedSkips.Rows = skipsPlanRestores
 	f.BatchedSkips.Skipped = skipsPlanSkips
@@ -518,6 +521,23 @@ func TestBatchedRequestFormat2(t *testing.T) {
 	require.True(t, b.Batched)
 	require.Equal(t, sample, req.Lines)
 	require.Empty(t, req.CredentialIDs, "format 2 leaves out credential ids: the passkeys are discoverable")
+}
+
+// TestBatchedSkipsFormat2: the batchedSkips fixture round-trips in format 2
+// as in format 1, its sample split as RSS-1 gives (the page runs the same
+// fixture in web/lib/revert.test.mjs).
+func TestBatchedSkipsFormat2(t *testing.T) {
+	t.Parallel()
+	f := buildFixtures(t).BatchedSkips
+	v1, b1, err := revert.ParseRequest(f.Fragment)
+	require.NoError(t, err)
+	v2, b2, err := revert.ParseRequest(f.Fragment2)
+	require.NoError(t, err)
+	require.Equal(t, b1, b2)
+	require.Equal(t, v1.Binding, v2.Binding)
+	require.Equal(t, v1.Lines, v2.Lines)
+	s, r := revert.SampleCounts(b2.Skipped, b2.Rows)
+	require.Equal(t, [2]int{950, 50}, [2]int{s, r})
 }
 
 // FuzzParseRequest: whatever a revert link carries, parsing never panics,

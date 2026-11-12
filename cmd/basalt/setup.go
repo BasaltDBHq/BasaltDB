@@ -53,10 +53,12 @@ func setupEngine(c *cliIO, f initFlags, dsn string) error {
 	if err != nil {
 		return err
 	}
-	if err := register(c, f, dsn); err != nil {
+	v, err := register(c, f, dsn)
+	if err != nil {
 		return fmt.Errorf("the guard is installed but the engine config was not written (run init again with --rotate-password): %w", err)
 	}
 	fmt.Fprintf(c.stderr, "basalt: credential %s; engine config %s\n", f.credFile, f.configPath)
+	fmt.Fprint(c.stderr, f.vault.line(v))
 	if f.rotated {
 		fmt.Fprintf(c.stderr, "basalt: the agent's password changed; restart the engine so it uses the new one:\n  %s\n",
 			cmds.Foreground().EngineRestart())
@@ -105,11 +107,11 @@ func perUserPaths(c *cliIO, f initFlags) (initFlags, error) {
 
 // register writes the credential file and adds the agent to the engine
 // config (foreground setup).
-func register(c *cliIO, f initFlags, dsn string) error {
+func register(c *cliIO, f initFlags, dsn string) (config.VaultWritten, error) {
 	if err := writeCredential(f.credFile, dsn, f.keepCredential); err != nil {
-		return err
+		return config.VaultWritten{}, err
 	}
-	return config.UpsertAgent(f.configPath, engineSettings(f, c.goos), config.Agent{
+	return config.UpsertAgentVault(f.configPath, engineSettings(f, c.goos), config.Agent{
 		Name: f.agent, OSUser: f.osUser, CredentialFile: f.credFile, InitArgs: f.initArgs,
 	})
 }
@@ -156,6 +158,12 @@ func shellJoin(args []string) string {
 // agentInstall is the agent basalt service install places for the engine.
 type agentInstall struct {
 	name, osUser, pagesURL, dsn string
+	// vault is the config's vault the person chose (config.VaultOn or
+	// VaultOff); vaultDefault applies only when the config has none. Both
+	// "" keep the config's.
+	vault, vaultDefault string
+	// report, when set, is told the vault the install wrote.
+	report func(config.VaultWritten)
 	// initArgs are saved to the agent's config entry.
 	initArgs []string
 	// keepCredential leaves the credential file as it is (the role kept its
@@ -181,11 +189,15 @@ func agentServiceSpec(goos, bin, configPath, engineUser string, a agentInstall, 
 	}
 	// Root reads the existing config from the engine user's directory.
 	open := func(p string) (*os.File, error) { return openEngineFile(p, engineUser) }
-	raw, err := config.UpsertedWith(configPath, open,
-		config.Settings{SocketDir: config.DefaultSocketDir(goos), PagesURL: a.pagesURL, Mode: config.ModeService, PersonUIDs: a.personUIDs},
+	raw, v, err := config.UpsertedVault(configPath, open,
+		config.Settings{SocketDir: config.DefaultSocketDir(goos), PagesURL: a.pagesURL, Mode: config.ModeService, PersonUIDs: a.personUIDs,
+			Vault: a.vault, VaultDefault: a.vaultDefault},
 		config.Agent{Name: a.name, OSUser: a.osUser, CredentialFile: cred, InitArgs: a.initArgs})
 	if err != nil {
 		return spec, err
+	}
+	if a.report != nil {
+		a.report(v)
 	}
 	spec.Files[0].Content = raw
 	// The unit's memory limits follow the config's pii.maxMemoryMB.
@@ -199,9 +211,16 @@ func agentServiceSpec(goos, bin, configPath, engineUser string, a agentInstall, 
 	return spec, nil
 }
 
+// vaultChoice is the init choice a service install carries: only basalt
+// init, which is person-operated, runs it.
+func (a agentInstall) vaultChoice() vaultChoice {
+	return vaultChoice{given: modeOf(a.vault), def: modeOf(a.vaultDefault), why: personDefaultWhy}
+}
+
 // agentInstall is what `service install --agent` needs for this init.
 func (f initFlags) agentInstall(dsn string) agentInstall {
 	return agentInstall{name: f.agent, osUser: f.osUser, pagesURL: f.passkeyOrigin, dsn: dsn,
+		vault: f.vault.given.enum(), vaultDefault: f.vault.def.enum(),
 		initArgs: f.initArgs, keepCredential: f.keepCredential, personUIDs: f.personUIDs}
 }
 
@@ -213,6 +232,14 @@ func serviceInstallArgs(f initFlags, bin string) []string {
 		"--agent", f.agent, "--os-user", f.osUser}
 	if f.passkeyOrigin != "" {
 		args = append(args, "--pages-url", f.passkeyOrigin)
+	}
+	// --vault only when the person gave it; else the default, which the
+	// install applies only when the config has no vault yet.
+	switch {
+	case f.vault.given != "":
+		args = append(args, "--"+flagVault+"="+string(f.vault.given))
+	case f.vault.def != "":
+		args = append(args, "--"+flagVaultDefault+"="+string(f.vault.def))
 	}
 	for _, a := range f.initArgs {
 		args = append(args, "--"+flagInitArg, a)
@@ -301,6 +328,9 @@ func mayInstallService(c *cliIO, f initFlags) bool {
 // with an agent. basalt service install runs it under sudo; init runs it
 // itself when already root.
 func applyServiceInstall(c *cliIO, bin, configPath, engineUser string, a agentInstall, printOnly bool) error {
+	if !printOnly {
+		a.report = func(v config.VaultWritten) { fmt.Fprint(c.stderr, a.vaultChoice().line(v)) }
+	}
 	spec, err := agentServiceSpec(c.goos, bin, configPath, engineUser, a, printOnly)
 	if err != nil {
 		return err

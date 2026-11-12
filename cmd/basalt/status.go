@@ -38,6 +38,10 @@ type statusOut struct {
 	ConfigPath string    `json:"configPath"`
 	SocketDir  string    `json:"socketDir"`
 	StateDir   string    `json:"stateDir"`
+	// vaultID is the engine id in same-user mode when the Vault is on:
+	// the connection state only the running engine knows is left out of
+	// the report, and the text output still shows the id (localVault).
+	vaultID *agent.VaultStatus
 }
 
 type engineOut struct {
@@ -165,7 +169,12 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 		return statusOut{}, err
 	}
 	eng.Build = r.Engine.Build
-	return statusOut{StatusReport: r, Engine: eng, ConfigPath: abs, SocketDir: cfg.SocketDir, StateDir: cfg.StateDirFor(c.goos)}, nil
+	stateDir := cfg.StateDirFor(c.goos)
+	out := statusOut{StatusReport: r, Engine: eng, ConfigPath: abs, SocketDir: cfg.SocketDir, StateDir: stateDir}
+	if !eng.Unknown {
+		out.Vault, out.vaultID = localVault(cfg, stateDir)
+	}
+	return out, nil
 }
 
 // statusAgent is the named agent, or the config's only one.
@@ -251,8 +260,15 @@ func printStatus(w io.Writer, s statusOut) {
 	fmt.Fprintf(w, "State:        %s\n", s.StateDir)
 	fmt.Fprintf(w, "Pages:        %s\n", pages)
 	fmt.Fprintf(w, "Operated by:  %s (enforcement %s)\n", s.OperatedBy, s.Enforcement)
-	if v := s.Vault; v != nil {
-		fmt.Fprintf(w, "Vault:        %s%s\n", v.State, fingerprintWords(v.Fingerprint))
+	switch {
+	case s.Vault != nil:
+		fmt.Fprintf(w, "Vault:        %s\n", vaultWords(*s.Vault, s.StateDir))
+		if s.Vault.EngineID != "" {
+			fmt.Fprintf(w, "Engine id:    %s\n", engineIDWords(*s.Vault))
+		}
+	case s.vaultID != nil:
+		fmt.Fprintln(w, "Vault:        ON in the config; only the running engine knows whether it is connected (the agent's status tool reports it)")
+		fmt.Fprintf(w, "Engine id:    %s\n", engineIDWords(*s.vaultID))
 	}
 	ready := "ready"
 	if !s.Ready {
@@ -282,13 +298,6 @@ func printStatus(w io.Writer, s statusOut) {
 			}
 		}
 	}
-}
-
-func fingerprintWords(fp string) string {
-	if fp == "" {
-		return ""
-	}
-	return ", engine " + fp
 }
 
 // guardWords is the guard's version against the build's, in words.

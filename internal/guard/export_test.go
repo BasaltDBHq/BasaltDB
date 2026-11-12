@@ -10,3 +10,6 @@ func AgentAdoptSQL(n Names, agent string, spec AgentSpec) (string, error) {
 	st, err := agentAdoptStatement(n, role, spec)
 	return st.SQL, err
 }
+
+// VersionRevertScope is basalt_meta version 20, for the migration tests.
+const VersionRevertScope = versionRevertScope

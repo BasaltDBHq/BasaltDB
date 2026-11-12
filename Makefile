@@ -26,7 +26,7 @@ vet: ## go vet
 	@go vet ./...
 
 .PHONY: test
-test: bin/gotestsum ## Race tests (gotestsum)
+test: bin/gotestsum portal-build ## Race tests (gotestsum; builds dist/portal first so TestPortalBuildMatchesEmbed never skips)
 	@$(GOTESTSUM) --format pkgname-and-test-fails --hide-summary=skipped -- -race -count=1 -timeout 15m $(PKG)
 
 .PHONY: test-cover

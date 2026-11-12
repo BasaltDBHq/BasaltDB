@@ -202,6 +202,21 @@ func sortedAgents(in []guard.CatalogAgent, first string) []guard.CatalogAgent {
 	return out
 }
 
+// p256Order is the order n of the P-256 group, big-endian.
+var p256Order, _ = hex.DecodeString("ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551")
+
+// derSig is the ASN.1 DER ECDSA signature (r, s) of big-endian integers.
+func derSig(r, s []byte) []byte {
+	integer := func(b []byte) []byte {
+		if b[0]&0x80 != 0 {
+			b = append([]byte{0}, b...)
+		}
+		return append([]byte{0x02, byte(len(b))}, b...)
+	}
+	body := append(integer(r), integer(s)...)
+	return append([]byte{0x30, byte(len(body))}, body...)
+}
+
 // Straight to rescope_revert as the agent role: every way of widening
 // without the person's proof and its key is refused with one text, and
 // nothing changes.
@@ -234,6 +249,18 @@ func TestRescopeWidenRefused(t *testing.T) {
 		"the other agent only, no proof":     {Select: revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.helper.Role}}},
 		"a proof with a short key":           {Select: e.every(), Proof: &validProof, RescopeKey: validKey[:16]},
 		"an approval-shaped proof, any text": {Select: e.every(), Proof: &passkey.Assertion{CredentialID: []byte("x")}, RescopeKey: validKey},
+	}
+	// Crafted signatures over the right challenge: s equal to the curve
+	// order (no inverse), r out of range, and DER that does not parse.
+	for name, sig := range map[string][]byte{
+		"s = n (not invertible)": derSig([]byte{1}, p256Order),
+		"r = n":                  derSig(p256Order, []byte{1}),
+		"s = 0":                  derSig([]byte{1}, []byte{0}),
+		"broken DER":             {0x30, 0x00},
+	} {
+		crafted := validProof
+		crafted.Signature = sig
+		cases["a crafted signature, "+name] = guard.RescopeRequest{Select: e.every(), Proof: &crafted, RescopeKey: validKey}
 	}
 	var text string
 	for name, req := range cases {
@@ -555,13 +582,18 @@ func newRunWith(t *testing.T, a *guardtest.Agent, stmt string) uuid.UUID {
 // After a widen, the requesting agent reads no line, select or ledger
 // detail naming the other agents' work: agent_reverts, agent_revert_lines
 // (a large plan, by line) and agent_ledger.
-func TestWidenedRevertRedacted(t *testing.T) {
-	t.Parallel()
+// widenHelperRows is how many rows the helper changes in newWidenBulk: with
+// bot's ten, a widen makes a large plan.
+const widenHelperRows = 1200
+
+// newWidenBulk: public.items, bot changed ids 1 to 10 and the helper ids
+// 11 to 1210 in one task, and bot proposed its own part (ten lines).
+func newWidenBulk(t *testing.T) widenEnv {
+	t.Helper()
 	d := guardtest.New(t)
 	ctx := context.Background()
-	const helperRows = 1200
 	d.Exec(t, fmt.Sprintf(`CREATE TABLE public.items (id int PRIMARY KEY, v text NOT NULL);
-		INSERT INTO public.items SELECT g, 'before' FROM generate_series(1, %d) g`, helperRows+10))
+		INSERT INTO public.items SELECT g, 'before' FROM generate_series(1, %d) g`, widenHelperRows+10))
 	items := []string{"public.items"}
 	bot, helper := d.NewAgent(t, "bot", items, items), d.NewAgent(t, "helper", items, items)
 	task := uuid.Must(uuid.NewV7())
@@ -572,8 +604,8 @@ func TestWidenedRevertRedacted(t *testing.T) {
 	}
 	botRun, helpRun := start(bot), start(helper)
 	require.NoError(t, guardtest.Guarded(ctx, bot.Conn, botRun, `UPDATE public.items SET v = 'bot' WHERE id BETWEEN 1 AND 10`))
-	stmts := make([]string, 0, helperRows/10)
-	for i := 10; i < helperRows+10; i += 10 {
+	stmts := make([]string, 0, widenHelperRows/10)
+	for i := 10; i < widenHelperRows+10; i += 10 {
 		stmts = append(stmts, fmt.Sprintf(`UPDATE public.items SET v = 'helper' WHERE id BETWEEN %d AND %d`, i+1, i+10))
 	}
 	require.NoError(t, guardtest.Guarded(ctx, helper.Conn, helpRun, stmts...))
@@ -582,6 +614,15 @@ func TestWidenedRevertRedacted(t *testing.T) {
 	require.NoError(t, err)
 	e.prep = prep
 	require.False(t, prep.Batched)
+	return e
+}
+
+func TestWidenedRevertRedacted(t *testing.T) {
+	t.Parallel()
+	e := newWidenBulk(t)
+	ctx := context.Background()
+	const helperRows = widenHelperRows
+	bot, prep := e.bot, e.prep
 
 	out := e.widen(t, e.every())
 	b, err := revert.ParseBinding(out.BindingText)
@@ -659,4 +700,61 @@ func TestRevertWidenMigration(t *testing.T) {
 	_, err := guard.ResetRevert(context.Background(), e.bot.Conn, e.prep.RevertID)
 	require.NoError(t, err)
 	require.Nil(t, guardVerify(t, e.d))
+}
+
+// A widened large plan, signed and applied in batches by the requesting
+// agent, with lines of the helper's rows skipped at the trial and during a
+// batch: no ledger row the agent reads names the helper, its keys or its
+// rows' values (REVERT_SIGNED, REVERT_BATCH and REVERTED copy skipped
+// lines; the revert's ROW_CHANGE rows hold restored values).
+func TestWidenedBatchedLedgerRedacted(t *testing.T) {
+	t.Parallel()
+	e := newWidenBulk(t)
+	ctx := context.Background()
+	e.d.Exec(t, `UPDATE public.items SET v = 'person' WHERE id = 500`)
+	out := e.widen(t, e.every())
+	b, err := revert.ParseBinding(out.BindingText)
+	require.NoError(t, err)
+	require.True(t, b.Batched)
+	require.Equal(t, 1, b.Skipped, "the helper's row 500 the person changed")
+
+	sig, err := e.p.Sign(revert.Challenge(out.BindingText), passkeytest.FlagsUPUV, nil)
+	require.NoError(t, err)
+	signed, err := guard.ApplyRevert(ctx, e.bot.Conn, e.prep.RevertID, sig)
+	require.NoError(t, err)
+	require.True(t, signed.Batched)
+	e.d.Exec(t, `UPDATE public.items SET v = 'person' WHERE id = 900`)
+	for {
+		lines := pendingLines(t, e.bot.Conn, e.prep.RevertID, revert.MaxBatch)
+		if len(lines) == 0 {
+			break
+		}
+		_, err := guard.ApplyRevertBatch(ctx, e.bot.Conn, e.prep.RevertID, lines)
+		require.NoError(t, err)
+	}
+	require.Equal(t, "APPLIED", scalarOf[string](t, e.bot.Conn, `SELECT status FROM basalt_meta.agent_reverts WHERE revert_id = $1`, e.prep.RevertID))
+	require.Equal(t, 2, count(t, e.d.Admin, `SELECT count(seq)::int FROM basalt_meta.ledger
+		WHERE kind IN ('REVERT_SIGNED', 'REVERT_BATCH') AND jsonb_array_length(detail -> 'skipped') > 0`),
+		"the stored rows do carry the skipped helper rows")
+
+	rows, err := e.bot.Conn.Query(ctx, `SELECT kind, row_to_json(x)::text FROM basalt_meta.agent_ledger x ORDER BY seq`)
+	require.NoError(t, err)
+	type ledgerRow struct{ Kind, Text string }
+	all, err := pgx.CollectRows(rows, pgx.RowToStructByPos[ledgerRow])
+	require.NoError(t, err)
+	kinds := map[string]bool{}
+	for _, r := range all {
+		kinds[r.Kind] = true
+		require.NotContains(t, r.Text, e.helper.Role, r.Kind)
+		require.NotContains(t, r.Text, `"helper"`, "a helper row's values: %s", r.Kind)
+		require.NotContains(t, r.Text, `"id": 500`, r.Kind)
+		require.NotContains(t, r.Text, `"id": 900`, r.Kind)
+		require.NotContains(t, r.Text, `"skipped": [`, r.Kind)
+	}
+	for _, k := range []string{"REVERT_RESCOPED", "REVERT_SIGNED", "REVERT_BATCH", "REVERTED", "ROW_CHANGE"} {
+		require.True(t, kinds[k], "the agent still sees its %s rows", k)
+	}
+	// The revert's own rows of bot's ten changes keep their values.
+	require.Equal(t, 10, count(t, e.bot.Conn, `SELECT count(l.seq)::int FROM basalt_meta.agent_ledger l
+		WHERE l.kind = 'ROW_CHANGE' AND l.change_id = $1 AND l.row_key IS NOT NULL`, signed.ChangeID))
 }

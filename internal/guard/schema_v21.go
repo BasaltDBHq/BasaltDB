@@ -461,6 +461,8 @@ CREATE OR REPLACE VIEW basalt_meta.agent_revert_lines WITH (security_barrier = t
 --   * a ROW_CHANGE the change of a widened revert wrote for a row whose
 --     reverted changes (revertOf) are not all the row's agent's: no table,
 --     key, values or detail, and redacted.
+-- Ids from details are cast to uuid only when they look like one, so the
+-- lookups use the primary keys and one malformed value cannot fail the view.
 CREATE OR REPLACE VIEW basalt_meta.agent_ledger WITH (security_barrier = true) AS
     SELECT l.seq, l.at, l.agent, l.change_id, l.kind,
            CASE WHEN NOT w.hide_row THEN l.table_name END AS table_name, l.op,
@@ -483,7 +485,8 @@ CREATE OR REPLACE VIEW basalt_meta.agent_ledger WITH (security_barrier = true) A
           SELECT l.kind <> 'ROW_CHANGE' AND pg_catalog.jsonb_typeof(l.detail -> 'revertId') = 'string' AND (
                      EXISTS (SELECT 1 FROM basalt_meta.reverts r
                               WHERE r.widened
-                                AND r.revert_id::text = pg_catalog.lower(l.detail ->> 'revertId'))
+                                AND r.revert_id = CASE WHEN l.detail ->> 'revertId' ~ '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+                                                     THEN (l.detail ->> 'revertId')::uuid END)
                      OR EXISTS (
                      SELECT 1 FROM (VALUES (l.detail -> 'select'), (l.detail -> 'oldSelect'), (l.detail -> 'droppedSelect')) s(sel)
                       WHERE pg_catalog.jsonb_typeof(s.sel) = 'object'
@@ -495,7 +498,8 @@ CREATE OR REPLACE VIEW basalt_meta.agent_ledger WITH (security_barrier = true) A
                               WHERE c.change_id = l.change_id AND c.op = 'REVERT' AND r.widened)
                  AND EXISTS (SELECT 1 FROM pg_catalog.jsonb_array_elements_text(l.detail -> 'revertOf') u(cid)
                               WHERE NOT EXISTS (SELECT 1 FROM basalt_meta.changes o
-                                                 WHERE o.change_id::text = pg_catalog.lower(u.cid) AND o.agent = l.agent)) AS hide_row
+                                                 WHERE o.change_id = CASE WHEN u.cid ~ '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$' THEN u.cid::uuid END
+                                                   AND o.agent = l.agent)) AS hide_row
       ) w
      WHERE l.agent = session_user;
 

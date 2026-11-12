@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -757,4 +758,43 @@ func TestWidenedBatchedLedgerRedacted(t *testing.T) {
 	// The revert's own rows of bot's ten changes keep their values.
 	require.Equal(t, 10, count(t, e.bot.Conn, `SELECT count(l.seq)::int FROM basalt_meta.agent_ledger l
 		WHERE l.kind = 'ROW_CHANGE' AND l.change_id = $1 AND l.row_key IS NOT NULL`, signed.ChangeID))
+}
+
+// agent_ledger looks reverts and changes up by their primary keys (ids
+// from details are cast to uuid, not compared as text), and a malformed
+// id in a detail neither fails the view nor shows anything.
+func TestAgentLedgerRevertLookups(t *testing.T) {
+	t.Parallel()
+	e := newWidenEnv(t)
+	ctx := context.Background()
+	out := e.widen(t, e.every())
+	sig, err := e.p.Sign(revert.Challenge(out.BindingText), passkeytest.FlagsUPUV, nil)
+	require.NoError(t, err)
+	_, err = guard.ApplyRevert(ctx, e.bot.Conn, e.prep.RevertID, sig)
+	require.NoError(t, err)
+	e.d.Exec(t, `SELECT basalt_meta._append($1, NULL, 'REVERT_BATCH', NULL, NULL, NULL, NULL, NULL, NULL,
+		'{"revertId": "not-a-uuid", "skipped": []}'::jsonb)`, e.bot.Role)
+
+	require.Equal(t, `{"skipped": [], "revertId": "not-a-uuid"}`, scalarOf[string](t, e.bot.Conn,
+		`SELECT detail::text FROM basalt_meta.agent_ledger WHERE detail ->> 'revertId' = 'not-a-uuid'`))
+	require.Positive(t, count(t, e.bot.Conn, `SELECT count(seq)::int FROM basalt_meta.agent_ledger`))
+
+	var plan []string
+	err = pgx.BeginFunc(ctx, e.bot.Conn, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `SET LOCAL enable_seqscan = off`); err != nil {
+			return err
+		}
+		rows, err := tx.Query(ctx, `EXPLAIN SELECT * FROM basalt_meta.agent_ledger`)
+		if err != nil {
+			return err
+		}
+		plan, err = pgx.CollectRows(rows, pgx.RowTo[string])
+		return err
+	})
+	require.NoError(t, err)
+	text := strings.Join(plan, "\n")
+	require.NotContains(t, text, "Seq Scan on reverts", text)
+	require.NotContains(t, text, "Seq Scan on changes", text)
+	require.Contains(t, text, "reverts_pkey", text)
+	require.Nil(t, guardVerify(t, e.d))
 }

@@ -39,25 +39,35 @@ type KeyRef struct {
 	Attnum   int16
 }
 
+// KeyKind is what the catalog says of a column: part of a primary or
+// foreign key, and/or filled by the database (identity or serial).
+type KeyKind struct{ Key, Generated bool }
+
 // KeyColumns lists the columns that are internal ids: part of a primary or
 // foreign key, an identity column, or filled by a sequence (a serial's
 // nextval default). Any role may read the catalog.
-func KeyColumns(ctx context.Context, q guard.Querier) (map[KeyRef]bool, error) {
+func KeyColumns(ctx context.Context, q guard.Querier) (map[KeyRef]KeyKind, error) {
 	// Plain SQL: a UNION over three catalogs, which squirrel cannot express.
 	// Constant text, no arguments.
-	rows, err := q.Query(ctx, `SELECT conrelid, unnest(conkey) FROM pg_catalog.pg_constraint WHERE contype IN ('p', 'f')
+	rows, err := q.Query(ctx, `SELECT conrelid, unnest(conkey), false FROM pg_catalog.pg_constraint WHERE contype IN ('p', 'f')
 		UNION
-		SELECT attrelid, attnum FROM pg_catalog.pg_attribute WHERE attidentity <> '' AND attnum > 0 AND NOT attisdropped
+		SELECT attrelid, attnum, true FROM pg_catalog.pg_attribute WHERE attidentity <> '' AND attnum > 0 AND NOT attisdropped
 		UNION
-		SELECT adrelid, adnum FROM pg_catalog.pg_attrdef
+		SELECT adrelid, adnum, true FROM pg_catalog.pg_attrdef
 		 WHERE pg_catalog.pg_get_expr(adbin, adrelid) LIKE 'nextval(%'`)
 	if err != nil {
 		return nil, fmt.Errorf("read key columns: %w", err)
 	}
-	out := map[KeyRef]bool{}
-	var ref KeyRef
-	_, err = pgx.ForEachRow(rows, []any{&ref.TableOID, &ref.Attnum}, func() error {
-		out[ref] = true
+	out := map[KeyRef]KeyKind{}
+	var (
+		ref       KeyRef
+		generated bool
+	)
+	_, err = pgx.ForEachRow(rows, []any{&ref.TableOID, &ref.Attnum, &generated}, func() error {
+		k := out[ref]
+		k.Generated = k.Generated || generated
+		k.Key = k.Key || !generated
+		out[ref] = k
 		return nil
 	})
 	return out, err

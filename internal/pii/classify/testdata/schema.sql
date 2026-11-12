@@ -143,3 +143,16 @@ CREATE VIEW public.bad_cast AS SELECT id, product_name::integer AS n FROM public
 
 -- A long sequence filled by an identity is an internal id: PUBLIC.
 ALTER TABLE public.orders ADD COLUMN ticket_no bigint GENERATED ALWAYS AS IDENTITY (START WITH 500001);
+
+-- Keys are judged like any column, unless the database makes them (identity,
+-- serial) or they are uuids or short integers.
+CREATE TABLE public.users (ref bigint PRIMARY KEY, uid uuid DEFAULT gen_random_uuid());
+INSERT INTO public.users (ref) SELECT 6281200000000 + g FROM generate_series(1, 100) g;
+CREATE TABLE public.sessions (
+    id       text PRIMARY KEY,
+    user_ref bigint REFERENCES public.users (ref),
+    seq      bigint GENERATED ALWAYS AS IDENTITY (START WITH 6281200000001)
+);
+INSERT INTO public.sessions (id, user_ref) SELECT '62813' || lpad(g::text, 8, '0'), 6281200000000 + g FROM generate_series(1, 100) g;
+CREATE TABLE public.accounts (account_no text PRIMARY KEY, owner_id uuid);
+INSERT INTO public.accounts SELECT '99' || lpad((g * 7919)::text, 14, '0'), gen_random_uuid() FROM generate_series(1, 100) g;

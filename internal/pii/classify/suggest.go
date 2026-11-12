@@ -58,6 +58,23 @@ type Column struct {
 	BaseType string
 	// Key is true when the column is part of a primary or foreign key.
 	Key bool
+	// Generated is true for an identity column or one filled by a
+	// sequence (a serial's nextval default).
+	Generated bool
+}
+
+// internalID reports whether a column is an id the database makes: an
+// identity or serial column, or an integer key whose values all have fewer
+// than minPhoneDigits digits. Any other key (a text key, a foreign key
+// holding phone numbers, a long integer key) is judged like any column.
+func internalID(col Column, k kind, values []string) bool {
+	if col.Generated {
+		return true
+	}
+	if !col.Key || k != kindInt {
+		return false
+	}
+	return !slices.ContainsFunc(values, func(v string) bool { return len(strings.TrimLeft(strings.TrimSpace(v), "-")) >= minPhoneDigits })
 }
 
 // SampleType is the type the column is judged by: the domain's base type,
@@ -128,24 +145,20 @@ func Suggest(col Column, s Sample, opts Options) Suggestion {
 	case s.Unavailable != "":
 		return unsampled(hit, named, "SAMPLE:"+s.Unavailable)
 	}
-	n := len(s.Values)
-	if n == 0 {
-		if col.Key {
-			return Suggestion{Class: guard.ClassPublic, Reason: reasonKey}
-		}
+	if internalID(col, k, s.Values) {
+		return Suggestion{Class: guard.ClassPublic, Reason: reasonKey}
+	}
+	if len(s.Values) == 0 {
 		return unsampled(hit, named, reasonNoValues)
 	}
 	if named && hit.qualified && hit.class != guard.ClassSecret && shortCodes(s.Values) {
 		named = false // email_status holding verified, pending: about the value, not the value
 	}
-	if v, ok := validate(k, col.Key, s.Values, hit, named, opts); ok {
+	if v, ok := validate(k, s.Values, hit, named, opts); ok {
 		return v
 	}
 	if named {
 		return byName(hit, s.Values, opts)
-	}
-	if col.Key {
-		return Suggestion{Class: guard.ClassPublic, Reason: reasonKey}
 	}
 	return byShape(s.Values, opts)
 }
@@ -166,7 +179,7 @@ func unsampled(hit nameHit, named bool, reason string) Suggestion {
 }
 
 // validate runs the sample validators in order, the most protective first.
-func validate(k kind, key bool, values []string, hit nameHit, named bool, opts Options) (Suggestion, bool) {
+func validate(k kind, values []string, hit nameHit, named bool, opts Options) (Suggestion, bool) {
 	n := len(values)
 	enough := func(c int) bool { return c*percent >= sampleShare*n }
 	count := func(f func(string) bool) int {
@@ -204,8 +217,8 @@ func validate(k kind, key bool, values []string, hit nameHit, named bool, opts O
 	}
 	// Runs of bare digits that are valid phones, with no name to say so:
 	// protected as phones, for a person to confirm (a block of consecutive
-	// MSISDNs included). Keys are ids.
-	if !namedPhone && !key && enough(count(bareDigits)) {
+	// MSISDNs, and keys too, included).
+	if !namedPhone && enough(count(bareDigits)) {
 		r := inferRegion(values, true, opts.PhoneRegion, opts.CallingCodes)
 		if enough(r.valid) {
 			s := Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityPhone, PhoneRegion: r.region, NeedsReview: true,

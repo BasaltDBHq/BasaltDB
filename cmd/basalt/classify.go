@@ -273,10 +273,10 @@ func readableColumns(c *cliIO, conn *pgx.Conn, st guard.ClassificationState, set
 			continue
 		}
 		delete(wanted, k)
+		ref := classify.KeyRef{TableOID: r.TableOID, Attnum: r.Attnum}
 		cols = append(cols, classify.Column{
 			Schema: r.Schema, Table: r.Table, Name: r.Column, DataType: r.DataType,
-			Key:      keys[classify.KeyRef{TableOID: r.TableOID, Attnum: r.Attnum}],
-			BaseType: bases[classify.KeyRef{TableOID: r.TableOID, Attnum: r.Attnum}],
+			Key: keys[ref].Key, Generated: keys[ref].Generated, BaseType: bases[ref],
 		})
 	}
 	for _, s := range sets {

@@ -57,8 +57,42 @@ func TestConsecutivePhonesAreNoSequence(t *testing.T) {
 	}
 	require.Equal(t, Suggestion{Class: guard.ClassPublic, Reason: reasonSequential},
 		Suggest(Column{Name: "order_number", DataType: "bigint"}, Sample{Values: block(1000, 1, 50)}, Options{}))
+	// A key holding MSISDNs is a phone to review; an identity is an id.
+	require.Equal(t, guard.EntityPhone, Suggest(Column{Name: "ref", DataType: "bigint", Key: true},
+		Sample{Values: block(6281200000001, 1, 50)}, Options{}).EntityType)
 	require.Equal(t, Suggestion{Class: guard.ClassPublic, Reason: reasonKey},
-		Suggest(Column{Name: "ref", DataType: "bigint", Key: true}, Sample{Values: block(6281200000001, 1, 50)}, Options{}))
+		Suggest(Column{Name: "ref", DataType: "bigint", Key: true, Generated: true}, Sample{Values: block(6281200000001, 1, 50)}, Options{}))
+}
+
+// TestKeysAreJudgedLikeAnyColumn: only identity and serial columns, uuid
+// columns and integer keys of short values are ids; any other key goes
+// through the validators and the gate.
+func TestKeysAreJudgedLikeAnyColumn(t *testing.T) {
+	t.Parallel()
+	msisdns := make([]string, 0, 50)
+	accounts := make([]string, 0, 50)
+	for i := range 50 {
+		msisdns = append(msisdns, strconv.Itoa(6281200000001+i))
+		accounts = append(accounts, strconv.Itoa(9900000000000000+i*7919*13))
+	}
+	for _, tc := range []struct {
+		name   string
+		col    Column
+		values []string
+	}{
+		{"text PK of 628… numbers", Column{Name: "id", DataType: "text", Key: true}, msisdns},
+		{"FK to users(phone)", Column{Name: "user_ref", DataType: "bigint", Key: true}, msisdns},
+		{"text PK of 16-digit accounts", Column{Name: "id", DataType: "text", Key: true}, accounts},
+		{"consecutive MSISDN bigint PK", Column{Name: "id", DataType: "bigint", Key: true}, msisdns},
+	} {
+		got := Suggest(tc.col, Sample{Values: tc.values}, Options{})
+		require.Equal(t, []any{guard.ClassIdentifier, true}, []any{got.Class, got.NeedsReview}, "%s: %s", tc.name, got.Reason)
+	}
+	require.Equal(t, guard.ClassPublic, Suggest(Column{Name: "id", DataType: "bigint", Key: true, Generated: true},
+		Sample{Values: msisdns}, Options{}).Class, "identity")
+	require.Equal(t, guard.ClassPublic, Suggest(Column{Name: "id", DataType: "uuid", Key: true}, Sample{}, Options{}).Class, "uuid")
+	require.Equal(t, guard.ClassPublic, Suggest(Column{Name: "id", DataType: "bigint", Key: true},
+		Sample{Values: []string{"7", "42", "99999"}}, Options{}).Class, "short integer key")
 }
 
 // TestRegionTiesGoToTheNumbersOwnCountry: local numbers valid in several

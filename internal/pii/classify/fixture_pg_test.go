@@ -84,6 +84,13 @@ var fixtureWant = map[string]want{
 	"public.leads.line_text":        reviewPhone,
 	"public.leads.every_second":     reviewPhone,
 	"public.orders.ticket_no":       public,
+	"public.users.ref":              reviewPhone,
+	"public.users.uid":              public,
+	"public.sessions.id":            reviewPhone,
+	"public.sessions.user_ref":      reviewPhone,
+	"public.sessions.seq":           public,
+	"public.accounts.account_no":    {class: guard.ClassIdentifier, entity: guard.EntityOther, needsReview: true},
+	"public.accounts.owner_id":      public,
 	"public.bad_cast.id":            public,
 	"public.bad_cast.n":             {class: guard.ClassIdentifier, entity: guard.EntityOther, needsReview: true},
 }
@@ -95,7 +102,8 @@ func fixtureDB(t *testing.T) *guardtest.DB {
 	schema, err := os.ReadFile("testdata/schema.sql")
 	require.NoError(t, err)
 	d.Exec(t, string(schema))
-	d.NewAgent(t, "bot", nil, []string{"public.customers", "public.orders", "public.leads", "public.bad_cast"})
+	d.NewAgent(t, "bot", nil, []string{"public.customers", "public.orders", "public.leads", "public.bad_cast",
+		"public.users", "public.sessions", "public.accounts"})
 	return d
 }
 
@@ -115,9 +123,9 @@ func suggestAll(t *testing.T, d *guardtest.DB, opts classify.Options, keep bool)
 	require.NoError(t, err)
 	cols := make([]classify.Column, 0, len(st.Readable))
 	for _, r := range st.Readable {
+		ref := classify.KeyRef{TableOID: r.TableOID, Attnum: r.Attnum}
 		cols = append(cols, classify.Column{Schema: r.Schema, Table: r.Table, Name: r.Column, DataType: r.DataType,
-			Key:      keys[classify.KeyRef{TableOID: r.TableOID, Attnum: r.Attnum}],
-			BaseType: bases[classify.KeyRef{TableOID: r.TableOID, Attnum: r.Attnum}]})
+			Key: keys[ref].Key, Generated: keys[ref].Generated, BaseType: bases[ref]})
 	}
 	sampler := classify.Sampler{Conn: d.Admin, Timeout: 5 * time.Second}
 	results, err := classify.SuggestAll(ctx, cols, sampler.Sample, opts,

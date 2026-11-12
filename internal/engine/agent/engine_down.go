@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"time"
 
@@ -60,20 +61,65 @@ func (d EngineDown) status(_ context.Context, raw json.RawMessage) (any, error) 
 
 func (d EngineDown) unreachable(tool string) func(context.Context, json.RawMessage) (any, error) {
 	return func(context.Context, json.RawMessage) (any, error) {
-		te := &mcp.ToolError{
-			Code: CodeUnavailable, Reason: reasonEngineUnreachable, ErrorID: uniqueid.New(),
-			Message: "the basalt engine does not answer on this agent's socket, so " + tool + " cannot run; status still works",
-		}
-		d.Log.Error("engine unreachable", "tool", tool, "error_id", te.ErrorID)
-		b := NewSteps()
-		te.PersonMessage = engineUnreachableSteps(b, d.Commands)
-		steps, err := b.Build()
+		te, err := d.unreachableError(tool, "the basalt engine does not answer on this agent's socket, so "+tool+" cannot run; status still works")
 		if err != nil {
 			return nil, err
 		}
-		te.NextSteps = steps
 		return nil, te
 	}
+}
+
+// unreachableError is UNAVAILABLE ENGINE_UNREACHABLE for a call of tool,
+// logged under its error id.
+func (d EngineDown) unreachableError(tool, message string) (*mcp.ToolError, error) {
+	te := &mcp.ToolError{Code: CodeUnavailable, Reason: reasonEngineUnreachable, ErrorID: uniqueid.New(), Message: message}
+	d.Log.Error("engine unreachable", "tool", tool, "error_id", te.ErrorID)
+	b := NewSteps()
+	te.PersonMessage = engineUnreachableSteps(b, d.Commands)
+	steps, err := b.Build()
+	if err != nil {
+		return nil, err
+	}
+	te.NextSteps = steps
+	return te, nil
+}
+
+// EngineDownServer is what basalt mcp answers with itself: the engine-down
+// tools, and the answer to a request the engine took but closed the
+// connection without answering.
+type EngineDownServer struct {
+	*mcp.Server
+	down EngineDown
+}
+
+// Server is the engine-down tools served under info.
+func (d EngineDown) Server(info mcp.Info) EngineDownServer {
+	return EngineDownServer{Server: mcp.NewServer(info, d.Tools()...), down: d}
+}
+
+// Abandoned answers a request the engine took and never answered (it
+// closed the connection: it stopped, or it refused the peer), always with
+// an error and never by running the call again: a tools/call gets UNAVAILABLE
+// ENGINE_UNREACHABLE with its steps, any other request a JSON-RPC error. A
+// notification gets nothing.
+func (s EngineDownServer) Abandoned(_ context.Context, out io.Writer, line []byte) error {
+	req, ok := mcp.RequestOf(line)
+	if !ok {
+		return nil
+	}
+	const message = "the basalt engine closed the connection before answering, so the call may or may not have run; call status, and read before you write again"
+	if req.Method != "tools/call" {
+		return mcp.WriteError(out, req.ID, mcp.ErrCodeServer, message)
+	}
+	var p struct {
+		Name string `json:"name"`
+	}
+	_ = json.Unmarshal(req.Params, &p) // a call without a name is still answered
+	te, err := s.down.unreachableError(p.Name, message)
+	if err != nil {
+		return mcp.WriteError(out, req.ID, mcp.ErrCodeServer, message)
+	}
+	return mcp.WriteToolError(out, req.ID, te)
 }
 
 func (d EngineDown) invalidArgument(err error) *mcp.ToolError {

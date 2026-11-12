@@ -72,7 +72,7 @@ func startShim(t *testing.T, socket string) (*client, <-chan error) {
 	cmds, err := agent.NewCommands("bot", "", "linux", nil)
 	require.NoError(t, err)
 	down := agent.EngineDown{Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: time.Now}
-	fallback := mcp.NewServer(mcp.Info{Name: "basalt", Version: "test"}, down.Tools()...)
+	fallback := down.Server(mcp.Info{Name: "basalt", Version: "test"})
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
 	done := make(chan error, 1)

@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -36,12 +35,16 @@ type fakeProbe struct {
 	st       guard.Status
 	err      error
 	recorded bool
-	latest   *guard.AgentSetup
+	// recordedErr fails SetupRecorded.
+	recordedErr error
+	latest      *guard.AgentSetup
 }
 
 func (p *fakeProbe) GuardStatus(context.Context) (guard.Status, error) { return p.st, p.err }
 
-func (p *fakeProbe) SetupRecorded(context.Context, uuid.UUID) (bool, error) { return p.recorded, nil }
+func (p *fakeProbe) SetupRecorded(context.Context, uuid.UUID) (bool, error) {
+	return p.recorded, p.recordedErr
+}
 
 func (p *fakeProbe) LatestSetup(context.Context) (guard.AgentSetup, bool, error) {
 	if p.latest == nil {
@@ -301,14 +304,15 @@ func TestSetupStates(t *testing.T) {
 // --- degraded mode ---
 
 // degraded is a service whose probe the test changes between calls.
-func degraded(t *testing.T, probe *fakeProbe, setup *config.Setup) *mcp.Server {
+func degraded(t *testing.T, probe *fakeProbe, setup *config.Setup) (*mcp.Server, []mcp.Tool) {
 	t.Helper()
 	d := deps()
 	d.Probe = probe
 	d.Approvals = keys{n: 1}
 	d.Setup = setup
 	d.Now = func() time.Time { return statusNow }
-	return mcp.NewServer(mcp.Info{Name: "basalt"}, Tools(NewService(d))...)
+	tools := Tools(NewService(d))
+	return mcp.NewServer(mcp.Info{Name: "basalt"}, tools...), tools
 }
 
 func serveCall(t *testing.T, srv *mcp.Server, tool string, args map[string]any) (map[string]any, bool) {
@@ -340,48 +344,53 @@ func steps(t *testing.T, body map[string]any) []mcpcontract.StepKind {
 	return out
 }
 
+// requireOnlyStatusServed calls every served tool but status on srv and
+// checks each is refused UNAVAILABLE reason with the catalog's steps, and
+// that status still answers.
+func requireOnlyStatusServed(t *testing.T, srv *mcp.Server, tools []mcp.Tool, reason, command string) {
+	t.Helper()
+	entry, ok := catalogOf(t).ErrorEntry(CodeUnavailable, reason, "")
+	require.True(t, ok)
+	for _, tool := range tools {
+		if tool.Name == toolStatus {
+			continue
+		}
+		body, isError := serveCall(t, srv, tool.Name, map[string]any{})
+		require.True(t, isError, tool.Name)
+		require.Equal(t, CodeUnavailable, body["code"], tool.Name)
+		require.Equal(t, reason, body["reason"], tool.Name)
+		require.NotEmpty(t, body["errorId"], tool.Name)
+		require.Equal(t, mcpcontract.Resolve(entry.Steps, mcpcontract.OperatedByPerson), steps(t, body), tool.Name)
+		require.Contains(t, body["personMessage"], command, tool.Name)
+		require.Equal(t, command, body["nextSteps"].([]any)[0].(map[string]any)["command"], tool.Name)
+	}
+	body, isError := serveCall(t, srv, toolStatus, map[string]any{})
+	require.False(t, isError, "status is served: %v", body)
+	require.Equal(t, false, body["ready"])
+}
+
 func TestAnOutdatedGuardServesOnlyStatus(t *testing.T) {
 	t.Parallel()
 	probe := &fakeProbe{st: guardAt(guard.GuardOutdated, []int{guard.LatestVersion()}, nil)}
-	srv := degraded(t, probe, nil)
-
-	for _, tool := range []string{"run_start", "query", "write", "list_runs", "list_pending"} {
-		body, isError := serveCall(t, srv, tool, map[string]any{"intent": "x", "sql": "SELECT 1"})
-		require.True(t, isError, tool)
-		require.Equal(t, CodeUnavailable, body["code"], tool)
-		require.Equal(t, reasonGuardOutdated, body["reason"], tool)
-		require.NotEmpty(t, body["errorId"], tool)
-		require.Contains(t, body["personMessage"], "basalt upgrade --agent bot", tool)
-		require.Equal(t, []mcpcontract.StepKind{
-			{Actor: mcp.ActorPerson, Action: mcp.ActionRunCommand}, {Actor: mcp.ActorPerson, Action: mcp.ActionTellAgent}, {Actor: mcp.ActorAgent, Action: mcp.ActionStop},
-		}, steps(t, body), tool)
-		require.Equal(t, "basalt upgrade --agent bot", body["nextSteps"].([]any)[0].(map[string]any)["command"], tool)
-	}
-	body, isError := serveCall(t, srv, toolStatus, map[string]any{})
-	require.False(t, isError, "status is served while the guard is outdated")
-	require.Equal(t, guard.GuardOutdated, body["guard"].(map[string]any)["state"])
-	require.Equal(t, false, body["ready"])
+	srv, tools := degraded(t, probe, nil)
+	requireOnlyStatusServed(t, srv, tools, reasonGuardOutdated, "basalt upgrade --agent bot")
 
 	// The person upgrades: the next call is served, with no restart.
 	probe.st = guardAt(guard.GuardOK, nil, nil)
-	body, isError = serveCall(t, srv, "run_start", map[string]any{"intent": "x"})
+	body, isError := serveCall(t, srv, "run_start", map[string]any{"intent": "x"})
 	require.False(t, isError, "%v", body)
 	require.Nil(t, body["warnings"])
 }
 
 func TestAMissingGuardServesOnlyStatus(t *testing.T) {
 	t.Parallel()
-	srv := degraded(t, &fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}}, nil)
-	body, isError := serveCall(t, srv, "run_start", map[string]any{"intent": "x"})
-	require.True(t, isError)
-	require.Equal(t, reasonGuardMissing, body["reason"])
-	_, isError = serveCall(t, srv, toolStatus, map[string]any{})
-	require.False(t, isError)
+	srv, tools := degraded(t, &fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}}, nil)
+	requireOnlyStatusServed(t, srv, tools, reasonGuardMissing, "basalt init --agent bot")
 }
 
 func TestOnlyNonBreakingMissingIsServedWithTheWarning(t *testing.T) {
 	t.Parallel()
-	srv := degraded(t, &fakeProbe{st: guardAt(guard.GuardUpgradeAvailable, nil, []int{guard.LatestVersion()})}, nil)
+	srv, _ := degraded(t, &fakeProbe{st: guardAt(guard.GuardUpgradeAvailable, nil, []int{guard.LatestVersion()})}, nil)
 	body, isError := serveCall(t, srv, "run_start", map[string]any{"intent": "x"})
 	require.False(t, isError, "%v", body)
 	warnings := body["warnings"].([]any)
@@ -389,30 +398,51 @@ func TestOnlyNonBreakingMissingIsServedWithTheWarning(t *testing.T) {
 	require.Equal(t, mcp.WarningGuardUpgradeAvailable, warnings[0].(map[string]any)["code"])
 }
 
+// errNoRole is the error a pending INSTALL code's agent gets: its role does
+// not exist yet, so the database refuses the login.
+var errNoRole = &pgconn.PgError{Code: "28P01", Message: "password authentication failed"}
+
 func TestAPendingInstallServesOnlyStatus(t *testing.T) {
 	t.Parallel()
-	probe := &fakeProbe{err: errors.New("no role yet")}
-	srv := degraded(t, probe, pendingSetup(guard.SetupInstall, statusNow.Add(time.Hour)))
-	body, isError := serveCall(t, srv, "query", map[string]any{"sql": "SELECT 1"})
-	require.True(t, isError)
-	require.Equal(t, reasonSetupPending, body["reason"])
-	require.Contains(t, body["personMessage"], "--setup-code K7Q2-M9XD")
+	probe := &fakeProbe{err: errNoRole, recordedErr: errNoRole}
+	srv, tools := degraded(t, probe, pendingSetup(guard.SetupInstall, statusNow.Add(time.Hour)))
+	requireOnlyStatusServed(t, srv, tools, reasonSetupPending, "basalt init --agent bot --setup-code K7Q2-M9XD")
 
-	body, isError = serveCall(t, srv, toolStatus, map[string]any{})
+	body, isError := serveCall(t, srv, toolStatus, map[string]any{})
 	require.False(t, isError)
 	problems := body["problems"].([]any)
 	require.Len(t, problems, 1, "the setup explains the missing role: no database problem besides it")
 	require.Equal(t, problemSetupNotRun, problems[0].(map[string]any)["code"])
 
-	probe.recorded = true
+	probe.recorded, probe.recordedErr = true, nil
 	probe.err, probe.st = nil, guardAt(guard.GuardOK, nil, nil)
 	_, isError = serveCall(t, srv, "run_start", map[string]any{"intent": "x"})
 	require.False(t, isError, "a recorded setup is served")
 }
 
+// A database that cannot be reached says nothing about the setup code: the
+// code may have been used already. Status reports the database, not the
+// setup, and the tools answer DATABASE_UNREACHABLE.
+func TestAPendingInstallWithTheDatabaseDownReportsTheDatabase(t *testing.T) {
+	t.Parallel()
+	probe := &fakeProbe{err: context.DeadlineExceeded, recordedErr: context.DeadlineExceeded}
+	srv, _ := degraded(t, probe, pendingSetup(guard.SetupInstall, statusNow.Add(time.Hour)))
+
+	body, isError := serveCall(t, srv, "query", map[string]any{"sql": "SELECT 1"})
+	require.True(t, isError)
+	require.Equal(t, reasonDatabaseUnreachable, body["reason"])
+
+	body, isError = serveCall(t, srv, toolStatus, map[string]any{})
+	require.False(t, isError)
+	problems := body["problems"].([]any)
+	require.Len(t, problems, 1)
+	require.Equal(t, problemDatabaseUnreachable, problems[0].(map[string]any)["code"], "no SETUP_NOT_RUN for a code that may be used")
+	require.Equal(t, setupPending, body["setup"].(map[string]any)["state"], "the config's code is still shown")
+}
+
 func TestStatusRefusesArguments(t *testing.T) {
 	t.Parallel()
-	srv := degraded(t, &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}, nil)
+	srv, _ := degraded(t, &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}, nil)
 	body, isError := serveCall(t, srv, toolStatus, map[string]any{"verbose": true})
 	require.True(t, isError)
 	require.Equal(t, CodeInvalidArgument, body["code"])

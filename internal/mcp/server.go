@@ -215,6 +215,30 @@ func toolResult(v any, isError bool) map[string]any {
 	}
 }
 
+// RequestOf decodes line as a request that wants an answer; ok is false
+// for a notification or a line that is not a JSON-RPC message.
+func RequestOf(line []byte) (req Request, ok bool) {
+	if json.Unmarshal(line, &req) != nil {
+		return Request{}, false
+	}
+	return req, req.ID != nil
+}
+
+// ErrCodeServer is the JSON-RPC server error code for a request the server
+// could not answer (the shim, for one its engine took and dropped).
+const ErrCodeServer = -32000
+
+// WriteToolError writes the tools/call answer for request id that carries
+// te, with isError set.
+func WriteToolError(w io.Writer, id any, te *ToolError) error {
+	return writeResponse(w, id, toolResult(te, true), nil)
+}
+
+// WriteError writes a JSON-RPC error answer for request id.
+func WriteError(w io.Writer, id any, code int, message string) error {
+	return writeResponse(w, id, nil, &RPCError{Code: code, Message: message})
+}
+
 func writeResponse(w io.Writer, id, result any, rpcErr *RPCError) error {
 	return json.NewEncoder(w).Encode(Response{JSONRPC: "2.0", ID: id, Result: result, Error: rpcErr})
 }

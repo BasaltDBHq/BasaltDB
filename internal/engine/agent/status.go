@@ -188,20 +188,27 @@ func (s *Service) Status(ctx context.Context) (StatusReport, error) {
 		r.Vault = &v
 	}
 	ps := problems{cmds: s.Commands}
-	setup := s.setupView(ctx)
+	setup, known := s.setupView(ctx)
 	r.Setup = setup.status
-	setup.addProblem(&ps)
+	if known {
+		// A setup whose recorded state could not be read (the database is
+		// down) gets no problem: the code may have been used already.
+		setup.addProblem(&ps)
+	}
 
 	st, err := s.Probe.GuardStatus(ctx)
+	// A pending INSTALL code explains a role that cannot log in or a guard
+	// that is not there yet; any other failure is reported as it is.
+	explained := known && setup.explainsGuard() && notInstalledYet(st, err)
 	switch {
 	case err != nil:
 		r.Guard = GuardStatus{State: guard.GuardUnknown, Build: guard.LatestVersion()}
-		if !setup.explainsGuard() {
+		if !explained {
 			s.addUnreachable(&ps, err)
 		}
 	default:
 		r.Guard = guardStatusDTO(st)
-		if !setup.explainsGuard() {
+		if !explained {
 			addGuardProblem(&ps, st)
 		}
 	}
@@ -386,22 +393,17 @@ func (v setupView) addProblem(ps *problems) {
 }
 
 // setupView reads the agent's setup: its pending code from the config unless
-// it is recorded, else its latest recorded setup. A read that fails is
-// logged and treated as nothing recorded.
-func (s *Service) setupView(ctx context.Context) setupView {
-	recorded := false
+// it is recorded, else its latest recorded setup. known is false when the
+// database cannot tell whether the pending code was used (see
+// pendingRecorded); the config's code is then shown, with no problem.
+func (s *Service) setupView(ctx context.Context) (setupView, bool) {
+	recorded, known := false, true
 	if s.Setup != nil {
-		id, err := uuid.Parse(s.Setup.SetupID)
-		if err == nil {
-			recorded, err = s.Probe.SetupRecorded(ctx, id)
-		}
-		if err != nil {
-			s.Log.Error("status: read the pending setup", "err", err)
-		}
+		recorded, known = s.pendingRecorded(ctx)
 	}
 	v := setupFrom(s.Setup, recorded, s.Now())
-	if v.status.State != setupNone {
-		return v
+	if v.status.State != setupNone || !known {
+		return v, known
 	}
 	latest, ok, err := s.Probe.LatestSetup(ctx)
 	if err != nil {
@@ -410,7 +412,7 @@ func (s *Service) setupView(ctx context.Context) setupView {
 	if ok {
 		v.status = SetupStatus{State: setupDone, SetupID: latest.SetupID.String(), Kind: latest.Kind}
 	}
-	return v
+	return v, true
 }
 
 // setupFrom is the pending setup's state: PENDING until it expires, then
@@ -513,7 +515,7 @@ func (h handlers) status(ctx context.Context, raw json.RawMessage) (any, error) 
 // guard on every call, so basalt upgrade needs no engine restart. status is
 // never refused.
 func (s *Service) Admit(ctx context.Context) error {
-	if v := s.setupGate(ctx); v.explainsGuard() {
+	if v, known := s.setupGate(ctx); known && v.explainsGuard() {
 		return &SetupError{Code: v.code, Expired: v.status.State == setupExpired}
 	}
 	st, err := s.Probe.GuardStatus(ctx)
@@ -533,18 +535,44 @@ func (s *Service) Admit(ctx context.Context) error {
 }
 
 // setupGate is the pending setup a call checks: none without a pending
-// INSTALL code, so an agent without one reads nothing more.
-func (s *Service) setupGate(ctx context.Context) setupView {
+// INSTALL code, so an agent without one reads nothing more. known is false
+// when the database cannot tell whether the code was used.
+func (s *Service) setupGate(ctx context.Context) (setupView, bool) {
 	if s.Setup == nil || s.Setup.Kind != guard.SetupInstall {
-		return setupView{status: SetupStatus{State: setupNone}}
+		return setupView{status: SetupStatus{State: setupNone}}, true
 	}
-	recorded := false
-	if id, err := uuid.Parse(s.Setup.SetupID); err == nil {
-		if recorded, err = s.Probe.SetupRecorded(ctx, id); err != nil {
-			recorded = false
-		}
+	recorded, known := s.pendingRecorded(ctx)
+	return setupFrom(s.Setup, recorded, s.Now()), known
+}
+
+// pendingRecorded reads whether the pending setup code was used. A database
+// that refuses the agent's role or has no guard yet means it was not (an
+// INSTALL code makes both); any other failure, such as a database that
+// cannot be reached, leaves it unknown (known false), logged.
+func (s *Service) pendingRecorded(ctx context.Context) (recorded, known bool) {
+	id, err := uuid.Parse(s.Setup.SetupID)
+	if err == nil {
+		recorded, err = s.Probe.SetupRecorded(ctx, id)
 	}
-	return setupFrom(s.Setup, recorded, s.Now())
+	switch {
+	case err == nil:
+		return recorded, true
+	case notInstalledYet(guard.Status{}, err):
+		return false, true
+	}
+	s.Log.Error("read the pending setup", "err", err)
+	return false, false
+}
+
+// notInstalledYet reports whether a guard read (st, or the error it failed
+// with) shows what a pending INSTALL code explains: the agent's role cannot
+// log in yet, or the guard is not there yet.
+func notInstalledYet(st guard.Status, err error) bool {
+	if err == nil {
+		return st.State == guard.GuardMissing
+	}
+	reason := ToolError(err).Reason
+	return reason == reasonCredentialRejected || reason == reasonGuardMissing
 }
 
 // guardUpgrade answers UpgradeChecker from the probe.

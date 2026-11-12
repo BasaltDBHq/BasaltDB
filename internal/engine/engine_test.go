@@ -80,11 +80,23 @@ func waitListening(t *testing.T, path string) {
 	}, 5*time.Second, 10*time.Millisecond)
 }
 
-// fallback stands in for what basalt mcp answers while the engine is down.
-var fallback = mcp.NewServer(mcp.Info{Name: "fallback", Version: "test"}, mcp.Tool{Name: "whoami",
+// testFallback stands in for what basalt mcp answers while the engine is
+// down; a request the engine took and dropped gets an error marked
+// "abandoned".
+type testFallback struct{ *mcp.Server }
+
+func (testFallback) Abandoned(_ context.Context, out io.Writer, line []byte) error {
+	req, ok := mcp.RequestOf(line)
+	if !ok {
+		return nil
+	}
+	return mcp.WriteError(out, req.ID, mcp.ErrCodeServer, "abandoned")
+}
+
+var fallback = testFallback{mcp.NewServer(mcp.Info{Name: "fallback", Version: "test"}, mcp.Tool{Name: "whoami",
 	Call: func(context.Context, json.RawMessage) (any, error) {
 		return map[string]string{"agent": "the shim"}, nil
-	}})
+	}})}
 
 func myUID() uint32 {
 	return uint32(os.Getuid())
@@ -157,8 +169,9 @@ func TestPeerCredentialFailureClosesTheConnection(t *testing.T) {
 	// The engine closes the socket while the shim's request is still
 	// unread, so the shim sees a clean end or, depending on timing, a reset
 	// (or a broken pipe). Both mean "refused": nothing from the engine may
-	// come back. A request the shim could not hand over at all is answered
-	// by its fallback, never by the engine.
+	// come back. Every request is still answered once, so the client never
+	// hangs: one the engine took is answered as abandoned (an error), one the
+	// shim could not hand over by its fallback.
 	var out strings.Builder
 	rctx, rcancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer rcancel()
@@ -168,6 +181,10 @@ func TestPeerCredentialFailureClosesTheConnection(t *testing.T) {
 	}
 	require.NotContains(t, out.String(), `\"agent\": \"bot\"`)
 	require.NotContains(t, out.String(), `"name":"basalt"`)
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	require.Len(t, lines, 2, "one answer per request: %s", out.String())
+	require.Contains(t, out.String(), `"id":1,`)
+	require.Contains(t, out.String(), `"id":2,`)
 }
 
 func TestStaleSocketIsReplacedButOtherFilesAreNot(t *testing.T) {

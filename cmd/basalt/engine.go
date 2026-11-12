@@ -99,17 +99,17 @@ func shimAgent(name, socket string) string {
 // config is read when the shim's OS user may (same-user mode); a service's
 // config is the engine user's alone, and then operatedBy is PERSON and the
 // engine starts with the service manager.
-func engineDownServer(name, configPath string, log *slog.Logger) (*mcp.Server, error) {
+func engineDownServer(name, configPath string, log *slog.Logger) (agent.EngineDownServer, error) {
 	var cfg *config.Config
 	if c, err := config.Load(configPath); err == nil {
 		cfg = &c
 	}
 	cmds, err := shimCommands(name, configPath, cfg)
 	if err != nil {
-		return nil, err
+		return agent.EngineDownServer{}, err
 	}
 	down := agent.EngineDown{Name: name, Commands: cmds, Config: cfg, Log: log, Now: time.Now}
-	return mcp.NewServer(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: engine.Instructions}, down.Tools()...), nil
+	return down.Server(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: engine.Instructions}), nil
 }
 
 // shimCommands are the agent's commands as far as the shim knows them: the

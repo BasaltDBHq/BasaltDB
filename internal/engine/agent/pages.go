@@ -55,7 +55,14 @@ func (s *Service) RelayApproval(ctx context.Context, r approval.Response) error 
 // A non-nil proof must match the binding text (links.ProofMatches),
 // checked before anything about the approval is told: a wrong proof is
 // answered as an unknown id.
+//
+// It admits the call first (Admit): the pages, the CLI's link issue and the
+// MCP tools reach a held write only on a guard this build serves, so no
+// signature is relayed to a guard it calls unsafe.
 func (s *Service) openApproval(ctx context.Context, id uuid.UUID, proof *string) (ledger.Approval, error) {
+	if err := s.Admit(ctx); err != nil {
+		return ledger.Approval{}, err
+	}
 	a, err := s.Approvals.FindApproval(ctx, id)
 	if errors.Is(err, ledger.ErrApprovalNotFound) {
 		return ledger.Approval{}, ErrNotThisAgent
@@ -106,7 +113,12 @@ func (s *Service) RelayRevert(ctx context.Context, r revert.Response) (guard.App
 	return applied, nil
 }
 
+// openRevert is a revert this agent's role prepared that can still be
+// signed, admitted first as openApproval is.
 func (s *Service) openRevert(ctx context.Context, id uuid.UUID, proof *string) (ledger.Revert, error) {
+	if err := s.Admit(ctx); err != nil {
+		return ledger.Revert{}, err
+	}
 	r, err := s.Reverts.FindRevert(ctx, id)
 	if errors.Is(err, ledger.ErrRevertNotFound) {
 		return ledger.Revert{}, ErrNotThisAgent

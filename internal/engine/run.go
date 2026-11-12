@@ -339,8 +339,8 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	})
 	return agentRuntime{
 		svc:    svc,
-		upkeep: upkeep.New(a.Name, buildinfo.Version, pool, log, time.Now).WithPins(env.pins).WithRLSCache(blind),
-		ledger: person.NewDBLedger(pool, time.Now),
+		upkeep: upkeep.New(a.Name, buildinfo.Version, pool, log, time.Now).WithPins(env.pins).WithRLSCache(blind).WithGate(svc.Admit),
+		ledger: gatedLedger{inner: person.NewDBLedger(pool, time.Now), admit: svc.Admit},
 		close:  pool.Close,
 	}, nil
 }

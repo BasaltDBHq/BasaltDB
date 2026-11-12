@@ -10,6 +10,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -24,9 +25,13 @@ const (
 	scannerMaxSize = 16 << 20
 )
 
-// LineServer answers one JSON-RPC message (mcp.Server).
-type LineServer interface {
+// Fallback answers what the engine does not (agent.EngineDownServer).
+type Fallback interface {
+	// ServeLine answers one JSON-RPC message the engine never received.
 	ServeLine(ctx context.Context, out io.Writer, line []byte) error
+	// Abandoned answers a request the engine received but closed the
+	// connection without answering: always an error, never a replay.
+	Abandoned(ctx context.Context, out io.Writer, line []byte) error
 }
 
 // Serve relays each message the client writes to in, one JSON-RPC message
@@ -34,11 +39,13 @@ type LineServer interface {
 // to out. A message that finds no engine (the socket does not answer, or the
 // engine closed the connection) is answered by fallback, and the next one
 // tries the socket again, so an engine that starts later is used from then
-// on. When in ends, the write side of the socket is closed so the engine
-// finishes its answers; Serve returns after them, or when ctx is done. An
-// engine connection that ends in an error other than a clean close is
-// reported when it is the last one.
-func Serve(ctx context.Context, socketPath string, fallback LineServer, in io.Reader, out io.Writer) error {
+// on. A request the engine received but did not answer before it closed the
+// connection is answered by fallback.Abandoned, so the client never waits
+// forever. When in ends, the write side of the socket is closed so the
+// engine finishes its answers; Serve returns after them, or when ctx is
+// done. An engine connection that ends in an error other than a clean close
+// is reported when it is the last one.
+func Serve(ctx context.Context, socketPath string, fallback Fallback, in io.Reader, out io.Writer) error {
 	if fallback == nil {
 		panic("shim: fallback server required")
 	}
@@ -90,7 +97,7 @@ func readLines(ctx context.Context, in io.Reader, lines chan<- []byte, errs chan
 // relay holds the current engine connection, if any.
 type relay struct {
 	path     string
-	fallback LineServer
+	fallback Fallback
 	out      *lineWriter
 	sess     *session
 }
@@ -99,14 +106,14 @@ type relay struct {
 // connection, or answers it from the fallback when the engine does not take
 // it.
 func (r *relay) send(ctx context.Context, line []byte) error {
-	if r.sess != nil && r.sess.alive() && r.sess.write(line) == nil {
+	if r.sess != nil && r.sess.forward(line) {
 		return nil
 	}
 	r.close()
-	sess, err := dial(ctx, r.path, r.out)
+	sess, err := dial(ctx, r.path, r.out, r.fallback)
 	if err == nil {
 		r.sess = sess
-		if sess.write(line) == nil {
+		if sess.forward(line) {
 			return nil
 		}
 		r.close()
@@ -139,16 +146,23 @@ func (r *relay) close() {
 }
 
 // session is one connection to the engine and the goroutine copying its
-// answers to the client.
+// answers to the client. It keeps the requests the engine has not answered
+// yet, by id, and answers them through the fallback when the connection
+// ends.
 type session struct {
-	conn *net.UnixConn
-	done chan struct{}
+	conn     *net.UnixConn
+	fallback Fallback
+	done     chan struct{}
 	// err is the read error that ended the session, set before done closes;
 	// nil for a clean close.
 	err error
+
+	mu      sync.Mutex
+	ended   bool
+	pending map[string][]byte
 }
 
-func dial(ctx context.Context, path string, out *lineWriter) (*session, error) {
+func dial(ctx context.Context, path string, out *lineWriter, fallback Fallback) (*session, error) {
 	var d net.Dialer
 	c, err := d.DialContext(ctx, "unix", path)
 	if err != nil {
@@ -159,18 +173,20 @@ func dial(ctx context.Context, path string, out *lineWriter) (*session, error) {
 		c.Close()
 		return nil, fmt.Errorf("%s is not a Unix socket", path)
 	}
-	s := &session{conn: conn, done: make(chan struct{})}
-	go s.copyAnswers(out)
+	s := &session{conn: conn, fallback: fallback, done: make(chan struct{}), pending: map[string][]byte{}}
+	go s.copyAnswers(ctx, out)
 	return s, nil
 }
 
 // copyAnswers writes each line the engine sends to out until the engine
-// closes the connection.
-func (s *session) copyAnswers(out *lineWriter) {
+// closes the connection, then answers what it left unanswered.
+func (s *session) copyAnswers(ctx context.Context, out *lineWriter) {
 	defer close(s.done)
+	defer s.abandon(ctx, out)
 	sc := bufio.NewScanner(s.conn)
 	sc.Buffer(make([]byte, scannerInitSize), scannerMaxSize)
 	for sc.Scan() {
+		s.answered(sc.Bytes())
 		if err := out.writeLine(sc.Bytes()); err != nil {
 			s.err = fmt.Errorf("write to the MCP client: %w", err)
 			return
@@ -181,18 +197,69 @@ func (s *session) copyAnswers(out *lineWriter) {
 	}
 }
 
-func (s *session) alive() bool {
-	select {
-	case <-s.done:
-		return false
-	default:
-		return true
+// abandon ends the session and answers every request still pending.
+func (s *session) abandon(ctx context.Context, out *lineWriter) {
+	s.mu.Lock()
+	s.ended = true
+	left := s.pending
+	s.pending = nil
+	s.mu.Unlock()
+	for _, line := range left {
+		_ = s.fallback.Abandoned(context.WithoutCancel(ctx), out, line)
 	}
 }
 
-func (s *session) write(line []byte) error {
-	_, err := s.conn.Write(append(append([]byte(nil), line...), '\n'))
-	return err
+// forward hands line to the engine and reports whether the session took
+// it: false when the session has ended or the write failed, and the caller
+// answers it some other way.
+func (s *session) forward(line []byte) bool {
+	key := messageID(line)
+	s.mu.Lock()
+	if s.ended {
+		s.mu.Unlock()
+		return false
+	}
+	if key != "" {
+		s.pending[key] = line
+	}
+	s.mu.Unlock()
+	if _, err := s.conn.Write(append(append([]byte(nil), line...), '\n')); err == nil {
+		return true
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, still := s.pending[key]; key != "" && !still {
+		return true // the session ended meanwhile and already answered it
+	}
+	delete(s.pending, key)
+	return false
+}
+
+// answered drops the request an engine answer is for.
+func (s *session) answered(line []byte) {
+	key := messageID(line)
+	if key == "" {
+		return
+	}
+	s.mu.Lock()
+	delete(s.pending, key)
+	s.mu.Unlock()
+}
+
+// messageID is a JSON-RPC message's id in one canonical spelling; "" for a
+// notification or a line that is not JSON.
+func messageID(line []byte) string {
+	var m struct {
+		ID any `json:"id"`
+	}
+	if json.Unmarshal(line, &m) != nil || m.ID == nil {
+		return ""
+	}
+	raw, err := json.Marshal(m.ID)
+	if err != nil {
+		return ""
+	}
+	return string(raw)
 }
 
 // lineWriter writes whole lines to the client, one at a time: the engine's

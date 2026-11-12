@@ -119,8 +119,23 @@ func requireServedWithTheWarning(t *testing.T, h harness, version int) {
 	warnings := body["warnings"].([]any)
 	require.Len(t, warnings, 1)
 	require.Equal(t, mcp.WarningGuardUpgradeAvailable, warnings[0].(map[string]any)["code"])
-	body, isError = h.call(t, "query", map[string]any{"sql": "SELECT id FROM leads", "runId": body["runId"]})
+	runID := body["runId"]
+	body, isError = h.call(t, "query", map[string]any{"sql": "SELECT id FROM leads", "runId": runID})
 	require.False(t, isError, "%v", body)
+
+	// A write through the guard is applied, and a write the guard holds is
+	// held for the person's approval: the guard's write path works without
+	// the missing migration.
+	body, isError = h.call(t, "write", map[string]any{
+		"sql": "UPDATE leads SET name = $1 WHERE id = $2", "params": []any{"Bo", 1}, "intent": "rename", "runId": runID,
+	})
+	require.False(t, isError, "%v", body)
+	require.Equal(t, "APPLIED", body["status"])
+	body, isError = h.call(t, "write", map[string]any{
+		"sql": "DELETE FROM leads WHERE id = $1", "params": []any{1}, "intent": "drop the lead", "runId": runID,
+	})
+	requireToolError(t, body, isError, agent.CodeApprovalRequired, "", "")
+	require.NotEmpty(t, body["approval"].(map[string]any)["approvalId"], "the delete is held with an approval")
 
 	body, isError = h.call(t, "status", map[string]any{})
 	require.False(t, isError)

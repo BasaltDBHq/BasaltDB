@@ -113,6 +113,13 @@ type Config struct {
 	// PersonUIDs are the OS users the person socket admits (owner decision
 	// SM-2): the person(s) recorded at basalt init. Empty admits nobody.
 	PersonUIDs []uint32 `json:"personUids,omitempty" validate:"unique"`
+	// Vault is ON when the engine dials out to the Vault for portal link
+	// sessions (CONTRACT.md, Vault channel); OFF, or empty, when it does
+	// not. See VaultOn.
+	Vault string `json:"vault,omitempty" validate:"omitempty,oneof=ON OFF"`
+	// VaultURL overrides the Vault's address for development and tests
+	// only: a ws:// URL on a loopback address. Empty is the Vault itself.
+	VaultURL string `json:"vaultUrl,omitempty"`
 }
 
 // Mode is how the engine runs (owner decision SM-3).
@@ -291,6 +298,9 @@ func load(path string, open func(string) (*os.File, error)) (Config, error) {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	if _, err := c.Pages(); err != nil {
+		return Config{}, fmt.Errorf("config %s: %w", path, err)
+	}
+	if err := CheckVaultURL(c.VaultURL); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	return c, nil

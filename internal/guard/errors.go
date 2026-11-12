@@ -39,7 +39,16 @@ const (
 	ScopeNotOwnRun     = "NOT_OWN_RUN"
 	ScopeNotOwnTask    = "NOT_OWN_TASK"
 	ScopeFilter        = "FILTER"
+	// ScopeDescriptor is a rescope_revert select whose scope, or a listed
+	// agent, lies outside what the revert can cover (version 21).
+	ScopeDescriptor = "DESCRIPTOR"
 )
+
+// RevertWidenRefused is the one detail of REVERT_INVALID for every failed
+// proof or token check of rescope_revert (version 21): no proof, a bad or
+// replayed proof, a wrong key, no or a wrong token, a select outside the
+// ceiling or naming work that is not the caller's.
+const RevertWidenRefused = "WIDEN_REFUSED"
 
 const (
 	sqlstateApproval     = "BS005"

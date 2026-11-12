@@ -138,9 +138,10 @@ const (
 )
 
 // approvalNotice builds what the agent shows the person about a held
-// write: its headline, the link (a newly issued short link when this
-// engine serves the pages and issue is set, else the long one), the
-// equivalent command and one line to show verbatim.
+// write: its headline, the link chosen by the link budget (chooseLink: a
+// newly issued short link when this engine serves the pages and issue is
+// set, else the long one), the equivalent command and the message to show
+// verbatim.
 func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding string, lines []string, expires time.Time, issue bool) (heldNotice, error) {
 	ids, err := s.credentialIDs(ctx)
 	if err != nil {
@@ -159,16 +160,23 @@ func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding stri
 	if err != nil {
 		return heldNotice{}, err
 	}
-	link, how, reason := short, fmt.Sprintf("Approve: %s (or run: %s)", short, command), reasonHeld
+	pick, reason := chooseLink(short, long, s.LinkBudget), reasonHeld
+	lead := "Held for your approval: " + shown(summary.Headline(), maxHeadlineChars) + "."
+	var text string
+	var msgLinks []mcp.Link
 	switch {
-	case short == "" && (issue || s.PagesOrigin == ""):
-		// No local pages. The long link carries the whole preview and
-		// breaks when copied: the message names the command, approvalUrl
-		// still has the link.
-		link, how, reason = long, fmt.Sprintf("Approve by running: %s (it opens the approval page)", command), reasonHeldNoPages
-	case short == "":
-		// A wait that timed out: the link already handed over still works.
-		link, how = long, fmt.Sprintf("Approve with the link you were given, or run: %s", command)
+	case short == "" && s.PagesOrigin != "":
+		// A wait or a list that issues no new link: the link already handed
+		// over still works, so the message adds no URL.
+		pick = handOver{URL: long, Kind: linkLong}
+		text, msgLinks = newMessage().Text(lead).
+			Text("Approve with the link you were given, or run: " + command).
+			Text(expiryLine(expires)).Build()
+	default:
+		if short == "" {
+			reason = reasonHeldNoPages
+		}
+		text, msgLinks = approvalMessage(lead, pick, command, expiryLine(expires))
 	}
 	if len(ids) == 0 {
 		reason = reasonNoPasskey // nobody can sign: the first step is to register a passkey
@@ -177,8 +185,7 @@ func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding stri
 		reason: reason,
 		ApprovalNotice: mcp.ApprovalNotice{
 			ApprovalID: id.String(), ExpiresAt: timeText(expires), Rows: len(lines), Headline: summary.Headline(),
-			ApprovalURL: link, ApproveCommand: command,
-			PersonMessage: fmt.Sprintf("Held for your approval: %s. %s. Expires %s.", summary.Headline(), how, expires.UTC().Format(personTime)),
+			ApprovalURL: pick.URL, ApproveCommand: command, PersonMessage: text, Links: msgLinks,
 		},
 		longURL:  long,
 		shortURL: short,
@@ -230,7 +237,8 @@ const afterWaitRunsOut = "If that call returns APPROVAL_REQUIRED again, its wait
 
 func approvalError(n heldNotice, message string) error {
 	notice := n.ApprovalNotice
-	return &mcp.ToolError{Code: CodeApprovalRequired, Reason: n.reason, Message: message, Approval: &notice}
+	return &mcp.ToolError{Code: CodeApprovalRequired, Reason: n.reason, Message: message, Approval: &notice,
+		PersonMessage: notice.PersonMessage, Links: notice.Links}
 }
 
 // DefaultApprovalWait is how long a write with approvalId waits for the
@@ -329,7 +337,7 @@ func (s *Service) withApprovalLink(ctx context.Context, a ledger.Approval, err e
 	if linkErr != nil {
 		return linkErr
 	}
-	return s.approvalLinkError(te, n.ApprovalNotice)
+	return s.approvalLinkError(te, n)
 }
 
 // sameAsHeld checks the call repeats the held write.

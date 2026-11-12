@@ -18,6 +18,7 @@ import (
 	"github.com/go-playground/validator/v10"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 )
 
 // Platform defaults. The engine service runs as its own OS user; the config
@@ -93,6 +94,11 @@ type Config struct {
 	// PagesAddr is where the engine serves the approval and revert pages on
 	// loopback (see Pages); "off" disables them, empty is the default.
 	PagesAddr string `json:"pagesAddr,omitempty"`
+	// LinkBudget is the longest long link, in characters of the whole URL,
+	// the engine hands an agent as the way to open a page (CONTRACT.md, The
+	// link budget). A pointer so that a written 0 is refused rather than read
+	// as unset; nil means links.DefaultBudget. See LinkBudgetOrDefault.
+	LinkBudget *int `json:"linkBudget,omitempty"`
 	// Notify says where the person hears about held writes.
 	Notify Notify `json:"notify,omitzero"`
 }
@@ -191,7 +197,17 @@ func ValidAgentName(name string) bool {
 
 // Load reads and validates the config file at path. Unknown keys are refused.
 func Load(path string) (Config, error) {
-	raw, err := readSmall(path)
+	return load(path, os.Open)
+}
+
+// LoadNoFollow is Load for a root process reading a file in a directory the
+// engine's user owns: it refuses a symlink or hardlink at path.
+func LoadNoFollow(path string) (Config, error) {
+	return load(path, openNoFollow)
+}
+
+func load(path string, open func(string) (*os.File, error)) (Config, error) {
+	raw, err := readSmall(path, open)
 	if err != nil {
 		return Config{}, err
 	}
@@ -207,10 +223,31 @@ func Load(path string) (Config, error) {
 	if err := c.checkSocketPaths(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
+	if err := c.checkLinkBudget(); err != nil {
+		return Config{}, fmt.Errorf("config %s: %w", path, err)
+	}
 	if _, err := c.Pages(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	return c, nil
+}
+
+// LinkBudgetOrDefault is the configured link budget, or links.DefaultBudget
+// when none is set.
+func (c Config) LinkBudgetOrDefault() int {
+	if c.LinkBudget == nil {
+		return links.DefaultBudget
+	}
+	return *c.LinkBudget
+}
+
+// checkLinkBudget refuses a linkBudget that is not a positive integer.
+func (c Config) checkLinkBudget() error {
+	if c.LinkBudget == nil || *c.LinkBudget > 0 {
+		return nil
+	}
+	return fmt.Errorf("linkBudget %d is not a positive integer: set it to a number of characters above zero, or remove it for the default %d",
+		*c.LinkBudget, links.DefaultBudget)
 }
 
 // ReadCredential reads an agent's Postgres URL. It refuses a file that group
@@ -223,7 +260,7 @@ func ReadCredential(path string) (string, error) {
 	if fi.Mode().Perm()&credentialPermMask != 0 {
 		return "", fmt.Errorf("credential file %s is mode %o; it must be readable by the engine's user only (0600)", path, fi.Mode().Perm())
 	}
-	raw, err := readSmall(path)
+	raw, err := readSmall(path, os.Open)
 	if err != nil {
 		return "", err
 	}
@@ -234,8 +271,8 @@ func ReadCredential(path string) (string, error) {
 	return url, nil
 }
 
-func readSmall(path string) ([]byte, error) {
-	f, err := os.Open(path)
+func readSmall(path string, open func(string) (*os.File, error)) ([]byte, error) {
+	f, err := open(path)
 	if err != nil {
 		return nil, err
 	}

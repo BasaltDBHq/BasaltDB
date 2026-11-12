@@ -73,7 +73,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["type", "ref", "linkToken"],
-      "description": "Engine to Vault: stop routing linkToken and close its open page sockets with LINK_UNKNOWN.",
+      "description": "Engine to Vault: stop routing linkToken and close its open page sockets with LINK_UNKNOWN. Only the engine the token is bound to can; another engine gets ERROR LINK_CONFLICT. A token not registered answers OK.",
       "properties": {
         "type": { "type": "string", "enum": ["UNREGISTER_LINK"] },
         "ref": { "$ref": "#/$defs/ref" },
@@ -101,7 +101,7 @@
         "code": {
           "type": "string",
           "enum": ["LINK_CONFLICT", "LINK_LIMIT", "INVALID_EXPIRY", "UNKNOWN_SESSION", "RATE_LIMITED", "PROTOCOL"],
-          "description": "LINK_CONFLICT: another engine registered the token. LINK_LIMIT: too many live links for this engine. INVALID_EXPIRY: expiresAt past or too far ahead. UNKNOWN_SESSION: a ROUTE or SESSION_CLOSE for a sid the Vault does not know. RATE_LIMITED: too many requests. PROTOCOL: malformed."
+          "description": "LINK_CONFLICT: another engine registered the token (on REGISTER_LINK or UNREGISTER_LINK). LINK_LIMIT: too many live links for this engine. INVALID_EXPIRY: expiresAt past or too far ahead. UNKNOWN_SESSION: a ROUTE or SESSION_CLOSE for a sid the Vault does not know. RATE_LIMITED: too many requests. PROTOCOL: malformed."
         }
       }
     },

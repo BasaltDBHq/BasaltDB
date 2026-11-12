@@ -152,3 +152,18 @@ test("relying party", () => {
     assert.throws(() => relyingParty(loc), CodeError);
   }
 });
+
+test("registration response carries prfSupported only when true", () => {
+  const f = fixtures.registrationResponse;
+  const fields = {
+    credentialId: b64urlDecode(f.credentialId),
+    clientDataJson: b64urlDecode(f.clientDataJson),
+    authenticatorData: b64urlDecode(f.authenticatorData),
+    publicKey: b64urlDecode(f.publicKey),
+    publicKeyAlgorithm: f.publicKeyAlgorithm,
+  };
+  assert.equal(encodeRegistrationResponse({ ...fields, prfSupported: false }), f.code);
+  const json = (code) => JSON.parse(new TextDecoder().decode(b64urlDecode(code.split(".").pop())));
+  assert.equal(json(encodeRegistrationResponse({ ...fields, prfSupported: true })).prfSupported, true);
+  assert.equal("prfSupported" in json(encodeRegistrationResponse(fields)), false);
+});

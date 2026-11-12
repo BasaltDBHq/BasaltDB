@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 )
 
 const (
@@ -34,8 +36,10 @@ func readKeptCredential(path, engineUser string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !fi.Mode().IsRegular() {
-		return "", errors.New("not a regular file")
+	// A regular file with one link: a hardlink to a root-only file the engine
+	// user planted would otherwise be copied out as the credential.
+	if err := config.CheckPlainFile(fi); err != nil {
+		return "", err
 	}
 	if fi.Mode().Perm()&credentialPermMask != 0 {
 		return "", fmt.Errorf("mode %o is more open than 0600", fi.Mode().Perm())

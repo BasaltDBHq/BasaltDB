@@ -146,18 +146,26 @@ type vaultSession struct {
 func newVaultSession(t *testing.T) *vaultSession {
 	t.Helper()
 	w := &wire{}
-	v := vaulttest.New(vaulttest.Options{Tamper: w.tamper, OnEngineMessage: w.observe})
-	t.Cleanup(v.Close)
 	person, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 	id := uuid.Must(uuid.NewV7())
 	lines := []string{`{"op":"UPDATE","table":"public.leads","cascaded":false}`}
 	store := links.NewSecrets(time.Now, rand.Reader)
 	held := &heldAgent{secrets: store, id: id, binding: heldBinding(id, lines), lines: lines, cred: person.Credential()}
+	s := serveOverVault(t, w, held, store, id)
+	s.agent, s.person = held, person
+	return s
+}
 
+// serveOverVault connects an engine whose pages serve a to a fake Vault
+// that records into w, and issues and registers a relay link for item id.
+func serveOverVault(t *testing.T, w *wire, a pages.Agent, store *links.Secrets, id uuid.UUID) *vaultSession {
+	t.Helper()
+	v := vaulttest.New(vaulttest.Options{Tamper: w.tamper, OnEngineMessage: w.observe})
+	t.Cleanup(v.Close)
 	relay := newRelayLinks(quietLog())
 	site := pages.New(links.Portal, quietLog())
-	site.Add(held)
+	site.Add(a)
 	cfg := config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}
 	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), relay, site)
 	require.NotNil(t, ev.client)
@@ -179,7 +187,7 @@ func newVaultSession(t *testing.T) *vaultSession {
 	require.NoError(t, ev.client.Register(context.Background(), token, time.Now().Add(time.Hour)))
 	keys, err := channel.DeriveLink(secret)
 	require.NoError(t, err)
-	return &vaultSession{v: v, client: ev.client, wire: w, agent: held, store: store, person: person, secret: secret, keys: keys}
+	return &vaultSession{v: v, client: ev.client, wire: w, store: store, secret: secret, keys: keys}
 }
 
 func (s *vaultSession) open(t *testing.T) *pagetest.Page {

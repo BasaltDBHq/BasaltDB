@@ -330,7 +330,7 @@ Service mode only (owner decisions SM-1 to SM-3). With `"mode": "SERVICE"` the e
 | Method | `params` | `result` | Used by |
 |---|---|---|---|
 | `PAGES` | `{}` | `{ "pagesUrl", "localOrigin" }`: the pages base URL links use, and the origin of the engine's local pages when it serves them (`""` when off) | `approve --show/--open`, `revert` |
-| `CHECK_HEALTH` | `{ "full", "pin" }` (`pin` `{ "seq", "hash" }` or null) | `{ "chain": { "intact", "brokenAt" }, "head", "uncovered": [{ "table", "why" }], "rlsBlind", "lastHeartbeat", "heartbeatStale", "deadMan" }` | `log` |
+| `CHECK_HEALTH` | `{ "full", "pin" }` (`pin` `{ "seq", "hash" }` or null) | `{ "chain": { "intact", "brokenAt" }, "head", "uncovered": [{ "table", "why" }], "rlsBlind", "lastHeartbeat", "heartbeatStale", "deadMan", "pii" }`; `pii` (M5.1, absent before guard version 15) is `{ "classified", "unclassified", "unclassifiedNames", "review", "reviewNames", "dictionary" }`, at most 10 names each, and `dictionary` `{ "values", "lastScanAt" }` is the engine's own dictionary status, for the [PII line](#engine-basalt-log-and-basalt-init) | `log` |
 | `LIST_CHANGES` | `{ "limit", "cursor", "sort", "runId" }` | `{ "items": [change], "nextCursor" }` | `log` |
 | `ROW_CHANGES` | `{ "changeIds" }` (at most 200) | `{ "rows": { "<changeId>": [rowChange] } }` | `log --run`, `log --json` |
 | `LIST_PASSKEYS` | `{}` | `{ "items": [{ "credentialId", "x", "y", "signCount", "rpId", "origin", "userHandle", "label", "createdAt", "lastUsedAt" }] }`: public keys only | `log`, `approve`, `revert` |

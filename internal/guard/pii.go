@@ -155,6 +155,78 @@ type errRow struct{ err error }
 
 func (r errRow) Scan(...any) error { return r.err }
 
+// Why a column needs a person (pii_unclassified().why).
+const (
+	UnclassifiedNew         = "NEW"
+	UnclassifiedClass       = "UNCLASSIFIED"
+	UnclassifiedTypeChanged = "TYPE_CHANGED"
+)
+
+// UnclassifiedColumn is one row of pii_unclassified(): a column the login
+// role can read that needs a person.
+type UnclassifiedColumn struct {
+	Schema, Table, Column, DataType string
+	// Why is UnclassifiedNew, UnclassifiedClass or UnclassifiedTypeChanged.
+	Why string
+}
+
+// Name is schema.table.column.
+func (c UnclassifiedColumn) Name() string { return c.Schema + "." + c.Table + "." + c.Column }
+
+// Unclassified reports whether the column has no class yet (NEW or
+// UNCLASSIFIED); a TYPE_CHANGED column keeps its class and needs a review.
+func (c UnclassifiedColumn) Unclassified() bool {
+	return c.Why == UnclassifiedNew || c.Why == UnclassifiedClass
+}
+
+// PIIUnclassified calls pii_unclassified() as the login role (version 15).
+func PIIUnclassified(ctx context.Context, q Querier) ([]UnclassifiedColumn, error) {
+	sql, args, err := psql.Select("table_schema", "table_name", "column_name", "data_type", "why").
+		From("basalt_meta.pii_unclassified()").ToSql()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := q.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (UnclassifiedColumn, error) {
+		var c UnclassifiedColumn
+		err := r.Scan(&c.Schema, &c.Table, &c.Column, &c.DataType, &c.Why)
+		return c, err
+	})
+}
+
+// PIIClassCounts reads the login role's rows of agent_pii_columns: how
+// many are classified (any class but UNCLASSIFIED), and the names of those
+// a classify run flagged for review (needs_review), in name order.
+func PIIClassCounts(ctx context.Context, q Querier) (classified int, review []string, err error) {
+	sql, args, err := psql.Select("table_schema || '.' || table_name || '.' || column_name", "class", "needs_review").
+		From("basalt_meta.agent_pii_columns").
+		OrderBy(`table_schema COLLATE "C"`, `table_name COLLATE "C"`, `column_name COLLATE "C"`).ToSql()
+	if err != nil {
+		return 0, nil, err
+	}
+	rows, err := q.Query(ctx, sql, args...)
+	if err != nil {
+		return 0, nil, err
+	}
+	var (
+		name, class string
+		needsReview bool
+	)
+	_, err = pgx.ForEachRow(rows, []any{&name, &class, &needsReview}, func() error {
+		if class != ClassUnclassified {
+			classified++
+		}
+		if needsReview {
+			review = append(review, name)
+		}
+		return nil
+	})
+	return classified, review, err
+}
+
 // nullString maps "" to SQL NULL.
 func nullString(s string) any {
 	if s == "" {

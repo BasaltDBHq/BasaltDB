@@ -27,11 +27,13 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/pages"
 	"github.com/basaltdbhq/basaltdb/internal/engine/peercred"
 	"github.com/basaltdbhq/basaltdb/internal/engine/person"
+	"github.com/basaltdbhq/basaltdb/internal/engine/piidict"
 	"github.com/basaltdbhq/basaltdb/internal/engine/upkeep"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/notify/telegram"
+	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/server"
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
@@ -115,6 +117,16 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 		return err
 	}
 	env := agentEnv{cfg: cfg, configPath: configPath, pagesBase: base, stateDir: cfg.StateDirFor(runtime.GOOS), pins: statePins(cfg.StateDirFor(runtime.GOOS), log), tg: tg}
+	piiCfg := cfg.PIIOrDefault()
+	piiLog := log.With("component", "pii")
+	// A key file wider than 0600, or PII state the engine cannot open,
+	// stops the engine (M51-1): it never serves without its dictionary.
+	dict, err := openPII(env.stateDir, piiCfg, piiLog)
+	if err != nil {
+		return err
+	}
+	closers = append(closers, func() { _ = dict.Close() })
+	env.dict = dict
 	if site != nil {
 		env.pagesOrigin = site.origin
 	}
@@ -160,6 +172,10 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 	for _, u := range upkeeps {
 		wg.Go(func() { u.Run(ctx, upkeep.DefaultInterval) })
 	}
+	scanner := piidict.NewScanner(dict, srv.scans, piidict.ScanOptions{
+		RowsPerSecond: piiCfg.ScanRowsPerSecond, MaxMemoryBytes: piiCfg.MaxMemoryBytes(),
+	}, piiLog)
+	wg.Go(func() { scanner.Run(ctx) })
 	if ev.client != nil {
 		wg.Go(func() { _ = ev.client.Run(ctx) })
 		wg.Go(func() { relay.pruneEvery(ctx, pruneInterval) })
@@ -206,6 +222,7 @@ type startedAgents struct {
 	infos    map[string]person.AgentInfo
 	upkeeps  []*upkeep.Upkeep
 	services []*agent.Service
+	scans    []piidict.ScanSource
 	closers  []func()
 }
 
@@ -228,6 +245,9 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 		out.infos[a.Name] = rt.info
 		out.upkeeps = append(out.upkeeps, rt.upkeep)
 		out.services = append(out.services, rt.svc)
+		if rt.scan.DB != nil {
+			out.scans = append(out.scans, rt.scan)
+		}
 		out.agents = append(out.agents, Agent{
 			Name:       a.Name,
 			UID:        uids[a.Name],
@@ -321,7 +341,9 @@ type agentRuntime struct {
 	// ledger serves the person socket on the agent's credential.
 	ledger person.Ledger
 	// info answers the person socket's STATUS and TARGET.
-	info  person.AgentInfo
+	info person.AgentInfo
+	// scan is what the engine's PII scan reads for this agent.
+	scan  piidict.ScanSource
 	close func()
 }
 
@@ -340,6 +362,8 @@ type agentEnv struct {
 	// each agent registers its portal short links there.
 	relay      *vault.Client
 	relayLinks *relayLinks
+	// dict is the engine's PII dictionary, shared by every agent.
+	dict *pii.FuseDictionary
 }
 
 func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slog.Logger) (agentRuntime, error) {
@@ -364,7 +388,12 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	}
 	probe := agent.DBProbe{Q: pool, Migrations: guard.Migrations()}
 	logGuard(ctx, probe, log)
-	store := agentdb.NewStore(pool, limits, time.Now)
+	// The agent's classification map, and the values of IDENTIFIER columns
+	// it reads added to the dictionary before they leave the engine: query
+	// rows in the service, RETURNING rows inside the write's transaction.
+	classes := piidict.NewMap(log.With("component", "pii"))
+	observer := piidict.NewObserver(classes, env.dict)
+	store := agentdb.NewStore(pool, limits, time.Now).WithReturned(observer.Returned)
 	secrets := linkSecrets(env.stateDir, a.Name, log)
 	var relay agent.LinkRelay
 	if env.relay != nil {
@@ -396,12 +425,15 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		Setup:       a.Setup,
 		Probe:       probe,
 		Vault:       env.vault,
+		PII:         observer.On(pool),
 	})
 	return agentRuntime{
-		svc:    svc,
-		upkeep: upkeep.New(a.Name, buildinfo.Version, pool, log, time.Now).WithPins(env.pins).WithRLSCache(blind).WithGate(svc.Admit),
-		ledger: gatedLedger{inner: person.NewDBLedger(pool, time.Now), admit: svc.Admit},
+		svc: svc,
+		upkeep: upkeep.New(a.Name, buildinfo.Version, pool, log, time.Now).WithPins(env.pins).WithRLSCache(blind).WithGate(svc.Admit).
+			WithPII(piidict.NewWatch(a.Name, classes, pool, log.With("component", "pii"))),
+		ledger: piiLedger{Ledger: gatedLedger{inner: person.NewDBLedger(pool, time.Now), admit: svc.Admit}, dict: env.dict},
 		info:   agentInfo(svc, pool.Config().ConnConfig.Config),
+		scan:   piidict.ScanSource{Agent: a.Name, DB: pool, Classes: classes, Limits: limits},
 		close:  pool.Close,
 	}, nil
 }

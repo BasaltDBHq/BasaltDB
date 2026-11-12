@@ -120,7 +120,41 @@ type Config struct {
 	// VaultURL overrides the Vault's address for development and tests
 	// only: a ws:// URL on a loopback address. Empty is the Vault itself.
 	VaultURL string `json:"vaultUrl,omitempty"`
+	// PII sizes the PII dictionary and its scan (CONTRACT.md, PII
+	// classification, Engine config). Zero fields take the defaults.
+	PII PII `json:"pii,omitzero"`
 }
+
+// PII is engine.json pii: the dictionary's memory budget and the scan's
+// rate. Zero means the default.
+type PII struct {
+	MaxMemoryMB       int `json:"maxMemoryMB,omitempty" validate:"gte=0"`
+	ScanRowsPerSecond int `json:"scanRowsPerSecond,omitempty" validate:"gte=0"`
+}
+
+// PII defaults (CONTRACT.md, PII classification, Engine config).
+const (
+	DefaultPIIMaxMemoryMB       = 512
+	DefaultPIIScanRowsPerSecond = 20_000
+)
+
+// PIIOrDefault is c.PII with zero fields set to the defaults.
+func (c Config) PIIOrDefault() PII {
+	p := c.PII
+	if p.MaxMemoryMB == 0 {
+		p.MaxMemoryMB = DefaultPIIMaxMemoryMB
+	}
+	if p.ScanRowsPerSecond == 0 {
+		p.ScanRowsPerSecond = DefaultPIIScanRowsPerSecond
+	}
+	return p
+}
+
+// bytesPerMB converts pii.maxMemoryMB.
+const bytesPerMB = 1 << 20
+
+// MaxMemoryBytes is MaxMemoryMB in bytes.
+func (p PII) MaxMemoryBytes() int64 { return int64(p.MaxMemoryMB) * bytesPerMB }
 
 // Mode is how the engine runs (owner decision SM-3).
 type Mode string

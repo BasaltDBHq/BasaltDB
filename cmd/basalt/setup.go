@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -187,6 +188,11 @@ func agentServiceSpec(goos, bin, configPath, engineUser string, a agentInstall, 
 		return spec, err
 	}
 	spec.Files[0].Content = raw
+	// The unit's memory limits follow the config's pii.maxMemoryMB.
+	var written config.Config
+	if err := json.Unmarshal(raw, &written); err == nil {
+		spec.MemoryMB = written.PIIOrDefault().MaxMemoryMB
+	}
 	if !a.keepCredential {
 		spec.Files[1].Content = []byte(a.dsn + "\n")
 	}

@@ -28,8 +28,10 @@ type engineVault struct {
 // vault says (VC-36: receipts need the signing key on every path), and
 // prepares the socket when vault is ON and the pages are the portal. A key
 // file that is refused is left as it is: the engine serves MCP and the local
-// pages as usual, never dials out, and status says KEY_ERROR.
-func openVault(cfg config.Config, stateDir string, now func() time.Time, log *slog.Logger, live vault.Links) engineVault {
+// pages as usual, never dials out, and status says KEY_ERROR. Sessions
+// resolve their token in live and are answered by pages; with either nil,
+// every session is refused at message 1.
+func openVault(cfg config.Config, stateDir string, now func() time.Time, log *slog.Logger, live *relayLinks, pages vault.Dispatcher) engineVault {
 	keys, err := loadEngineKeys(stateDir, now)
 	if err != nil {
 		log.Error("engine key file refused: the Vault stays off and links are long links until it is fixed; "+
@@ -40,7 +42,11 @@ func openVault(cfg config.Config, stateDir string, now func() time.Time, log *sl
 	if !cfg.VaultEnabled() {
 		return off
 	}
-	client, err := vault.New(vault.Options{URL: cfg.VaultURL, Keys: keys, Log: log.With("component", "vault"), Now: now, Links: live})
+	opts := vault.Options{URL: cfg.VaultURL, Keys: keys, Log: log.With("component", "vault"), Now: now, Pages: pages}
+	if live != nil {
+		opts.Links, opts.SessionLinks = live, live
+	}
+	client, err := vault.New(opts)
 	if err != nil {
 		log.Error("the Vault stays off", "err", err)
 		return off
@@ -87,6 +93,23 @@ func (r *relayLinks) Live() []vault.Link {
 		}
 	}
 	return out
+}
+
+// Session is the live relay link of token, in whichever agent's store holds
+// it. Every store is asked, so the time taken does not tell which agent, or
+// whether any, holds the token.
+func (r *relayLinks) Session(token channel.LinkToken) (vault.SessionLink, bool) {
+	var out vault.SessionLink
+	found := false
+	for _, s := range r.all() {
+		l, ok := s.Session(token)
+		if ok && !found {
+			out = vault.SessionLink{Token: l.Keys.Token, Item: l.Item, PSK: l.Keys.PSK, ExpiresAt: l.ExpiresAt}
+			found = true
+		}
+		l.Keys.PSK.Zero()
+	}
+	return out, found
 }
 
 // Conflict revokes the link of token in whichever store holds it.

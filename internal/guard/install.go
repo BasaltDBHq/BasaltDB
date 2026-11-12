@@ -13,6 +13,8 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 )
 
 // Querier is the part of a pgx connection, pool or transaction this
@@ -38,7 +40,8 @@ var ErrInvalidAgent = errors.New("invalid agent")
 // "schema.table" or "table" (schema public).
 type AgentSpec struct {
 	Name string
-	// Password is the hex password to set (NewPassword). Empty keeps the
+	// Password is the hex password to set (NewPassword). Postgres gets only
+	// its SCRAM-SHA-256 verifier, never the password. Empty keeps the
 	// password of a role that exists (AE-12); see AgentRoleExists.
 	Password string
 	// Verifier is the password as a SCRAM-SHA-256 verifier (a setup code,
@@ -222,7 +225,11 @@ func planAgent(ctx context.Context, q Querier, n Names, spec AgentSpec) ([]State
 	if err != nil {
 		return nil, err
 	}
-	return append([]Statement{agentRoleStatement(n, role, spec, timeout.Milliseconds())}, grants...), nil
+	st, err := agentRoleStatement(n, role, spec, timeout.Milliseconds())
+	if err != nil {
+		return nil, err
+	}
+	return append([]Statement{st}, grants...), nil
 }
 
 // checkAgentPassword accepts at most one of a generated password and a
@@ -242,22 +249,33 @@ func checkAgentPassword(spec AgentSpec) error {
 }
 
 // agentRoleStatement creates, rotates or keeps the agent role's password.
-// A generated password is redacted in what the person sees; a verifier is
-// shown as is.
-func agentRoleStatement(n Names, role string, spec AgentSpec, timeoutMs int64) Statement {
-	render := func(tmpl, password string) string { return n.render(fmt.Sprintf(tmpl, role, password, timeoutMs)) }
-	switch {
-	case spec.Verifier != "" && spec.CreateOnly:
-		return Statement{SQL: render(agentCreateRoleSQL, quoteLiteral(spec.Verifier))}
-	case spec.Verifier != "":
-		return Statement{SQL: render(agentAlterRoleSQL, quoteLiteral(spec.Verifier))}
-	case spec.CreateOnly:
-		return Statement{SQL: render(agentCreateRoleSQL, quoteLiteral(spec.Password)),
-			Shown: render(agentCreateRoleSQL, quoteLiteral(redacted))}
-	case spec.Password != "":
-		return Statement{SQL: render(agentRoleSQL, spec.Password), Shown: render(agentRoleSQL, redacted)}
+// The SQL never holds a plaintext password: a generated one is sent as its
+// SCRAM-SHA-256 verifier, computed here, so a server log of the statement
+// (log_statement, log_min_error_statement) cannot reveal it. What the person
+// sees shows a generated password's verifier redacted, and a setup code's
+// verifier as is.
+func agentRoleStatement(n Names, role string, spec AgentSpec, timeoutMs int64) (Statement, error) {
+	if spec.Password == "" && spec.Verifier == "" {
+		return Statement{SQL: n.render(fmt.Sprintf(agentKeepRoleSQL, role, timeoutMs))}, nil
 	}
-	return Statement{SQL: n.render(fmt.Sprintf(agentKeepRoleSQL, role, timeoutMs))}
+	tmpl := agentRoleSQL
+	switch {
+	case spec.CreateOnly:
+		tmpl = agentCreateRoleSQL
+	case spec.Verifier != "":
+		tmpl = agentAlterRoleSQL
+	}
+	render := func(verifier string) string {
+		return n.render(fmt.Sprintf(tmpl, role, quoteLiteral(verifier), timeoutMs))
+	}
+	if spec.Verifier != "" {
+		return Statement{SQL: render(spec.Verifier)}, nil
+	}
+	verifier, err := setupcode.NewVerifier(spec.Password)
+	if err != nil {
+		return Statement{}, fmt.Errorf("%w: %w", ErrInvalidAgent, err)
+	}
+	return Statement{SQL: render(verifier), Shown: render(redacted)}, nil
 }
 
 // quoteLiteral renders s as a SQL string literal (standard_conforming_strings).
@@ -280,22 +298,47 @@ func AgentRoleExists(ctx context.Context, q Querier, n Names, agent string) (boo
 	return exists, err
 }
 
+// agentPlainRoleCheck refuses (BS008) to take over a role named %[1]s that
+// exists and is not a plain agent. Every path that gives an existing role
+// LOGIN, a password or the agents group runs it first. A role is not plain
+// when it, or any role it is a member of (directly or not, inheriting or
+// not, so it could SET ROLE to it), has an elevated attribute, is a
+// predefined role that reads or writes every table, the server's files or
+// programs, or owns the database, or is the guard role. pg_has_role answers
+// true for the role itself, and for every role when it is a superuser.
+const agentPlainRoleCheck = `
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles r
+        JOIN pg_catalog.pg_roles g ON pg_catalog.pg_has_role(r.oid, g.oid, 'MEMBER')
+        WHERE r.rolname = '%[1]s'
+          AND (g.rolsuper OR g.rolcreaterole OR g.rolcreatedb OR g.rolreplication OR g.rolbypassrls
+               OR g.rolname IN ('pg_read_all_data', 'pg_write_all_data', 'pg_read_server_files',
+                                'pg_write_server_files', 'pg_execute_server_program',
+                                'pg_database_owner', '{{guard}}'))) THEN
+        RAISE EXCEPTION USING ERRCODE = 'BS008', MESSAGE = 'LEDGER_INPUT_INVALID',
+            DETAIL = '%[1]s is not a plain agent role: it has, or is a member of a role with, elevated rights',
+            HINT = 'Remove those attributes and memberships from the role, or use another agent name.';
+    END IF;
+END $$;`
+
 // agentKeepRoleSQL updates an agent role that exists without touching its
 // password. %[1]s is the validated role, %[2]d the statement timeout in ms.
-const agentKeepRoleSQL = `
+const agentKeepRoleSQL = agentPlainRoleCheck + `
 ALTER ROLE %[1]s LOGIN;
 GRANT {{agents}} TO %[1]s;
 ALTER ROLE %[1]s SET statement_timeout = %[2]d;`
 
 // agentRoleSQL creates or rotates one agent role. %[1]s is the validated
-// role, %[2]s the hex password, %[3]d the statement timeout in ms.
-const agentRoleSQL = `
+// role, %[2]s the SCRAM-SHA-256 verifier as a SQL literal, %[3]d the
+// statement timeout in ms.
+const agentRoleSQL = agentPlainRoleCheck + `
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '%[1]s') THEN
-        CREATE ROLE %[1]s LOGIN INHERIT NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '%[2]s';
+        CREATE ROLE %[1]s LOGIN INHERIT NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD %[2]s;
     ELSE
-        ALTER ROLE %[1]s LOGIN PASSWORD '%[2]s';
+        ALTER ROLE %[1]s LOGIN PASSWORD %[2]s;
     END IF;
 END $$;
 GRANT {{agents}} TO %[1]s;
@@ -303,8 +346,8 @@ ALTER ROLE %[1]s SET statement_timeout = %[3]d;`
 
 // agentCreateRoleSQL creates a new agent role with a plain CREATE ROLE, so
 // a role that exists is refused (an INSTALL setup code never takes over a
-// role). %[1]s is the validated role, %[2]s the password or verifier as a
-// SQL literal, %[3]d the statement timeout in ms.
+// role). %[1]s is the validated role, %[2]s the verifier as a SQL literal,
+// %[3]d the statement timeout in ms.
 const agentCreateRoleSQL = `
 CREATE ROLE %[1]s LOGIN INHERIT NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD %[2]s;
 GRANT {{agents}} TO %[1]s;
@@ -313,19 +356,16 @@ ALTER ROLE %[1]s SET statement_timeout = %[3]d;`
 // agentAlterRoleSQL sets the password of an agent role that exists; a
 // role that does not exist is refused. Arguments as agentCreateRoleSQL.
 // The password comes from whoever made the setup code, so this must never
-// reach a role that is not a plain agent: it refuses (BS008) a role with
-// elevated attributes or outside the agents group itself, and record_setup,
-// run in the same transaction, refuses a superuser again.
-const agentAlterRoleSQL = `
+// reach a role that is not a plain agent: besides agentPlainRoleCheck it
+// refuses (BS008) a role outside the agents group, and record_setup, run
+// in the same transaction, checks the role again.
+const agentAlterRoleSQL = agentPlainRoleCheck + `
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles r
-        WHERE r.rolname = '%[1]s' AND NOT (r.rolsuper OR r.rolcreaterole OR r.rolcreatedb
-              OR r.rolreplication OR r.rolbypassrls)
-          AND pg_catalog.pg_has_role(r.oid, '{{agents}}', 'USAGE'))
-       AND EXISTS (SELECT 1 FROM pg_catalog.pg_roles r WHERE r.rolname = '%[1]s') THEN
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles r
+        WHERE r.rolname = '%[1]s' AND NOT pg_catalog.pg_has_role(r.oid, '{{agents}}', 'USAGE')) THEN
         RAISE EXCEPTION USING ERRCODE = 'BS008', MESSAGE = 'LEDGER_INPUT_INVALID',
-            DETAIL = '%[1]s is not a plain agent role: a setup code cannot set its password';
+            DETAIL = '%[1]s is not an agent role: a setup code cannot set its password';
     END IF;
 END $$;
 ALTER ROLE %[1]s LOGIN PASSWORD %[2]s;

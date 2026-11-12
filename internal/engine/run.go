@@ -31,6 +31,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/notify/telegram"
 	"github.com/basaltdbhq/basaltdb/internal/server"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/vault"
 )
 
 const lockFileName = "engine.lock"
@@ -104,7 +105,11 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 	if site != nil {
 		env.pagesOrigin = site.origin
 	}
-	ev := openVault(cfg, env.stateDir, time.Now, log)
+	relay := newRelayLinks(log.With("component", "vault"))
+	ev := openVault(cfg, env.stateDir, time.Now, log, relay)
+	if ev.client != nil {
+		env.relay, env.relayLinks = ev.client, relay
+	}
 	st := ev.status()
 	log.Info("vault", "state", st.State, "engineId", st.EngineID, "fingerprint", st.Fingerprint)
 	srv, err := startAgents(ctx, cfg, env, agentUIDs, newAgentRuntime, log)
@@ -131,6 +136,7 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 	}
 	if ev.client != nil {
 		wg.Go(func() { _ = ev.client.Run(ctx) })
+		wg.Go(func() { relay.pruneEvery(ctx, pruneInterval) })
 	}
 	if cfg.Service() {
 		srv, ln, err := listenPerson(cfg, ledgers, agentUIDs, person.PagesDTO{PagesURL: base, LocalOrigin: env.pagesOrigin}, log)
@@ -289,6 +295,10 @@ type agentEnv struct {
 	stateDir    string
 	pins        upkeep.Pins
 	tg          *telegram.Notifier
+	// relay and relayLinks are set when the engine dials out to the Vault:
+	// each agent registers its portal short links there.
+	relay      *vault.Client
+	relayLinks *relayLinks
 }
 
 func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slog.Logger) (agentRuntime, error) {
@@ -313,6 +323,12 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		return agentRuntime{}, err
 	}
 	store := agentdb.NewStore(pool, limits, time.Now)
+	secrets := linkSecrets(env.stateDir, a.Name, log)
+	var relay agent.LinkRelay
+	if env.relay != nil {
+		relay = env.relay
+		env.relayLinks.add(secrets, env.relay.Unregister)
+	}
 	blind := agent.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
 		return guard.RLSBlindTables(ctx, pool, "", tables)
 	})
@@ -328,7 +344,8 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		LinkBudget:  env.cfg.LinkBudgetOrDefault(),
 		Commands:    cmds,
 		PagesOrigin: env.pagesOrigin,
-		Links:       linkSecrets(env.stateDir, a.Name, log),
+		Links:       secrets,
+		Relay:       relay,
 		RLS:         blind,
 		Log:         log,
 		Now:         time.Now,

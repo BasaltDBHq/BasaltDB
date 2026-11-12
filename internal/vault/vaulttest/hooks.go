@@ -73,6 +73,16 @@ type UnregisterHook func(engineID string, m UnregisterLink) Verdict
 // ToEngine close ends the session at the Vault without telling the engine.
 type SessionCloseHook func(s SessionInfo, dir Direction, code websocket.StatusCode) (websocket.StatusCode, bool)
 
+// EngineMessageHook sees one message an engine sent on its socket. It is
+// called from several goroutines at once and must be safe for that.
+type EngineMessageHook func(engineID string, typ websocket.MessageType, data []byte)
+
+func (v *Vault) observe(engineID string, typ websocket.MessageType, data []byte) {
+	if v.opts.OnEngineMessage != nil {
+		v.opts.OnEngineMessage(engineID, typ, data)
+	}
+}
+
 func (v *Vault) sessionCloseHook(s *session, dir Direction, code websocket.StatusCode) (websocket.StatusCode, bool) {
 	if v.opts.OnSessionClose == nil {
 		return code, true

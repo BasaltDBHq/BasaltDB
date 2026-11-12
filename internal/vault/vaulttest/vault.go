@@ -61,6 +61,9 @@ type Options struct {
 	OnUnregister UnregisterHook
 	// OnSessionClose, when set, sees each SESSION_CLOSE either way.
 	OnSessionClose SessionCloseHook
+	// OnEngineMessage, when set, sees every message an engine sends on its
+	// socket (AUTH included), as received, before it is handled.
+	OnEngineMessage EngineMessageHook
 }
 
 // Vault is the fake. Start one with New; Close stops it.
@@ -287,6 +290,7 @@ func (v *Vault) authenticate(ctx context.Context, conn *websocket.Conn, engineID
 	if err != nil {
 		return CloseAuthFailed
 	}
+	v.observe(engineID, typ, data)
 	if typ != websocket.MessageText {
 		return CloseProtocol
 	}
@@ -318,6 +322,7 @@ func (v *Vault) engineLoop(ctx context.Context, e *engineConn) websocket.StatusC
 		if err != nil {
 			return CloseNormal
 		}
+		v.observe(e.id, typ, data)
 		code := v.engineMessage(ctx, e, typ, data)
 		if code != 0 {
 			return code

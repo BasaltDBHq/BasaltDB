@@ -14,9 +14,10 @@
 // its shape; anything else closes the socket with a registry code and the
 // engine dials again.
 //
-// Link registration (VC1-6) and serving the pages API in a session (VC1-7)
-// build on this connection. Until then the engine holds no link the Vault
-// can route to, so it answers every session's message 1 with LINK_REFUSED.
+// Register and Unregister put the engine's short links on the Vault
+// (VC1-6), and every live link is registered again after each READY.
+// Serving the pages API in a session (VC1-7) builds on this connection;
+// until then the engine answers every session's message 1 with LINK_REFUSED.
 package vault
 
 import (
@@ -125,6 +126,11 @@ type Options struct {
 	AuthTimeout      time.Duration
 	UnreachableAfter time.Duration
 	HandshakeTimeout time.Duration
+	// RegisterTimeout defaults to RegisterTimeout when zero.
+	RegisterTimeout time.Duration
+	// Links are the live links registered again after every READY; none
+	// when nil.
+	Links Links
 }
 
 func (o *Options) defaults() {
@@ -147,6 +153,10 @@ func (o *Options) defaults() {
 	setDefault(&o.AuthTimeout, AuthTimeout)
 	setDefault(&o.UnreachableAfter, UnreachableAfter)
 	setDefault(&o.HandshakeTimeout, HandshakeTimeout)
+	setDefault(&o.RegisterTimeout, RegisterTimeout)
+	if o.Links == nil {
+		o.Links = noLiveLinks{}
+	}
 }
 
 func setDefault(d *time.Duration, v time.Duration) {
@@ -166,8 +176,9 @@ type Client struct {
 	target  target
 	running atomic.Bool
 
-	mu        sync.Mutex
-	connected bool
+	mu sync.Mutex
+	// cur is the READY socket, nil while there is none.
+	cur *conn
 	// waitingSince is when the engine last started waiting for READY: the
 	// start of Run, or the end of a READY socket.
 	waitingSince time.Time
@@ -194,7 +205,7 @@ func (c *Client) Status() Status {
 	defer c.mu.Unlock()
 	s := Status{State: StateConnecting, EngineID: c.opts.Keys.EngineID(), Fingerprint: c.opts.Keys.Fingerprint()}
 	switch {
-	case c.connected:
+	case c.cur != nil:
 		s.State = StateConnected
 	case c.opts.Now().Sub(c.waitingSince) >= c.opts.UnreachableAfter:
 		s.State = StateUnreachable
@@ -202,13 +213,14 @@ func (c *Client) Status() Status {
 	return s
 }
 
-func (c *Client) setConnected(connected bool) {
+// setConn makes cn the READY socket, or records that there is none (nil).
+func (c *Client) setConn(cn *conn) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.connected && !connected {
+	if c.cur != nil && cn == nil {
 		c.waitingSince = c.opts.Now()
 	}
-	c.connected = connected
+	c.cur = cn
 }
 
 // Run keeps the socket until ctx is done, dialing again after every loss
@@ -226,7 +238,6 @@ func (c *Client) Run(ctx context.Context) error {
 	attempt := 0
 	for {
 		ready, err := c.connect(ctx)
-		c.setConnected(false)
 		if ctx.Err() != nil {
 			return nil
 		}

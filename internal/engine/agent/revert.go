@@ -554,7 +554,7 @@ func (s *Service) revertNotice(ctx context.Context, r ledger.Revert) (revertLink
 	if err != nil {
 		return revertLink{}, fmt.Errorf("guard returned a bad revert binding: %w", err)
 	}
-	short, err := s.shortLink(links.Revert, r.ID, r.ExpiresAt, issueLink)
+	short, err := s.shortLink(ctx, links.Revert, r.ID, r.ExpiresAt, issueLink)
 	if err != nil {
 		return revertLink{}, err
 	}

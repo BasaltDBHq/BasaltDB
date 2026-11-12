@@ -52,6 +52,9 @@ type initFlags struct {
 // the engine service with one sudo (or prints the foreground command; see
 // setupEngine). The admin connection string is never stored.
 func runInit(c *cliIO, args []string) int {
+	if isRemote(args) {
+		return runInitRemote(c, args)
+	}
 	f, err := parseInit(c, args)
 	if err != nil {
 		return c.fail(err)

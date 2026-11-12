@@ -37,6 +37,9 @@ const (
 type Error struct {
 	Refusal Refusal
 	Message string
+	// Detail is what is wrong, for INVALID: basalt init --remote names it
+	// when its own inputs would make an invalid code.
+	Detail string
 }
 
 func (e *Error) Error() string { return e.Message }
@@ -52,7 +55,7 @@ func refuse(r Refusal, detail string) *Error {
 	case RefusalDamaged:
 		return &Error{Refusal: r, Message: msgDamaged}
 	default:
-		return &Error{Refusal: r, Message: msgInvalid + ": " + detail + ". Ask your agent for a new one."}
+		return &Error{Refusal: r, Message: msgInvalid + ": " + detail + ". Ask your agent for a new one.", Detail: detail}
 	}
 }
 

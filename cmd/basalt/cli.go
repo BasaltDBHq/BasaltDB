@@ -49,6 +49,9 @@ type cliIO struct {
 	// host runs what init does outside Postgres (sudo, the service probe,
 	// claude mcp add); tests use a fake.
 	host host
+	// agentLogin logs in with the agent's credential (basalt init
+	// --remote): nil and no error when the database refuses the login.
+	agentLogin func(ctx context.Context, dsn string) (agentConn, error)
 	// dial opens a database connection (connect outside tests).
 	dial func(ctx context.Context, dsn string) (*pgx.Conn, error)
 	// engine tells service mode from same-user mode and finds the person
@@ -60,8 +63,9 @@ func newIO(ctx context.Context, std stdio, getenv func(string) string) *cliIO {
 	c := &cliIO{
 		ctx: ctx, stdin: bufio.NewReader(std.in), stdout: std.out, stderr: std.err,
 		getenv: getenv, now: time.Now, rand: rand.Reader, goos: runtime.GOOS, host: osHost{},
-		dial:   connect,
-		engine: osEngineAccess(runtime.GOOS),
+		agentLogin: loginAsAgent,
+		dial:       connect,
+		engine:     osEngineAccess(runtime.GOOS),
 	}
 	stdin := std.in
 	if f, ok := stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {

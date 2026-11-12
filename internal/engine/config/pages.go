@@ -46,7 +46,7 @@ func (c Config) PagesBase() (string, error) {
 	return links.DefaultLocal, nil
 }
 
-// checkBase accepts the hosted console or a local http origin
+// checkBase accepts the hosted console, the portal or a local http origin
 // (http://localhost:<port>, or a loopback IP): an origin, no path.
 // CheckPagesURL is the check config load runs on pagesUrl, for the
 // --pages-url flag to run too; setting names it in the message.
@@ -60,7 +60,7 @@ func checkBase(setting, base string) (string, error) {
 		return "", fmt.Errorf("%s: %w; set it to an https:// URL, or http://localhost:<port>, of printable characters", setting, err)
 	}
 	base = strings.TrimSuffix(base, "/")
-	if base == links.HostedConsole {
+	if isHosted(base) {
 		return base, nil
 	}
 	u, err := url.Parse(base)
@@ -82,7 +82,7 @@ func (c Config) Pages() (Pages, error) {
 	if c.PagesAddr == PagesOff {
 		return Pages{}, nil
 	}
-	if base == links.HostedConsole {
+	if isHosted(base) {
 		if c.PagesAddr != "" {
 			return Pages{}, errors.New("pagesAddr needs a local pagesUrl (http://localhost:<port>): the pages must be on the passkey's origin")
 		}
@@ -104,6 +104,12 @@ func (c Config) Pages() (Pages, error) {
 		return Pages{}, err
 	}
 	return Pages{Addr: addr, Origin: base}, nil
+}
+
+// isHosted reports whether base is a hosted pages origin, which the engine
+// does not serve.
+func isHosted(base string) bool {
+	return base == links.HostedConsole || base == links.Portal
 }
 
 // isLoopbackName reports whether host names this machine in a URL.

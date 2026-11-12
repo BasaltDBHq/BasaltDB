@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-playground/validator/v10"
 
+	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 )
@@ -101,6 +102,10 @@ type Config struct {
 	LinkBudget *int `json:"linkBudget,omitempty"`
 	// Notify says where the person hears about held writes.
 	Notify Notify `json:"notify,omitzero"`
+	// OperatedBy is who runs machine steps on this engine's machine:
+	// PERSON (also when empty) or AGENT (CONTRACT.md, Who operates the
+	// engine).
+	OperatedBy string `json:"operatedBy,omitempty" validate:"omitempty,oneof=PERSON AGENT"`
 	// Mode is ModeService when basalt init installed the background
 	// service, else ModeSameUser (also when empty). Only ModeService opens
 	// the person socket.
@@ -137,6 +142,9 @@ func PersonSocketPath(dir string) string {
 	return SocketPath(dir, PersonSocketName)
 }
 
+// AgentOperated reports whether the agent runs this engine's machine steps.
+func (c Config) AgentOperated() bool { return c.OperatedBy == mcpcontract.OperatedByAgent }
+
 // Notify configures notifications. Every field is optional.
 type Notify struct {
 	Telegram *Telegram `json:"telegram,omitempty"`
@@ -161,6 +169,27 @@ type Agent struct {
 	// the admin connection string, a password or a one-shot flag), so a
 	// step can name the init command again. See agent.NewCommands.
 	InitArgs []string `json:"initArgs,omitempty"`
+	// Setup is the pending setup code basalt init --remote made for this
+	// agent; nil when none is pending.
+	Setup *Setup `json:"setup,omitempty"`
+}
+
+// Setup is an agent's pending setup (CONTRACT.md, basalt init --remote):
+// what status and a re-run of init hand out again. Nothing secret: the
+// code carries the password's verifier, not the password.
+type Setup struct {
+	SetupID      string `json:"setupId" validate:"required,uuid"`
+	Kind         string `json:"kind" validate:"oneof=INSTALL AGENT UPGRADE"`
+	GuardVersion int    `json:"guardVersion" validate:"gte=1"`
+	// ExpiresAt is RFC 3339 UTC, whole seconds.
+	ExpiresAt   string `json:"expiresAt" validate:"required"`
+	Code        string `json:"code" validate:"required"`
+	Fingerprint string `json:"fingerprint" validate:"required"`
+}
+
+// Expires parses ExpiresAt.
+func (s Setup) Expires() (time.Time, error) {
+	return time.Parse(time.RFC3339, s.ExpiresAt)
 }
 
 // Limits bound agent statements. Zero means the engine default.

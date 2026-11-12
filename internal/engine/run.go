@@ -105,6 +105,9 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 	if site != nil {
 		env.pagesOrigin = site.origin
 	}
+	ev := openVault(cfg, env.stateDir, time.Now, log)
+	st := ev.status()
+	log.Info("vault", "state", st.State, "engineId", st.EngineID, "fingerprint", st.Fingerprint)
 	srv, err := startAgents(ctx, cfg, env, agentUIDs, newAgentRuntime, log)
 	closers = append(closers, srv.closers...)
 	if err != nil {
@@ -126,6 +129,9 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 	defer cancel()
 	for _, u := range upkeeps {
 		wg.Go(func() { u.Run(ctx, upkeep.DefaultInterval) })
+	}
+	if ev.client != nil {
+		wg.Go(func() { _ = ev.client.Run(ctx) })
 	}
 	if cfg.Service() {
 		srv, ln, err := listenPerson(cfg, ledgers, agentUIDs, person.PagesDTO{PagesURL: base, LocalOrigin: env.pagesOrigin}, log)

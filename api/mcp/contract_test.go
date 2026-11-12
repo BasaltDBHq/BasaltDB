@@ -45,7 +45,7 @@ func contractErrorCodes(t *testing.T) map[string]bool {
 
 func TestToolContracts(t *testing.T) {
 	t.Parallel()
-	tools, err := mcpcontract.Load()
+	tools, err := mcpcontract.LoadAll()
 	require.NoError(t, err)
 	require.NotEmpty(t, tools)
 	codes := contractErrorCodes(t)
@@ -118,8 +118,63 @@ func TestAgentRevertToolsHaveContracts(t *testing.T) {
 	require.True(t, ok)
 	props, ok := tool.InputSchema["properties"].(map[string]any)
 	require.True(t, ok)
-	require.NotContains(t, props, "taskId")
 	require.Contains(t, props, "signature")
+	for _, planned := range []string{"taskId", "runs", "tables"} {
+		require.NotContains(t, props, planned, "RS-7 and RS-1 arguments are not served until the engine checks them")
+	}
+}
+
+// TestDropPlannedInputsRefusesConstrainedNames: a planned property that the
+// schema requires or names in a combinator cannot be dropped silently.
+func TestDropPlannedInputsRefusesConstrainedNames(t *testing.T) {
+	t.Parallel()
+	planned := func() map[string]any {
+		return map[string]any{
+			"ok":  map[string]any{"type": "string"},
+			"new": map[string]any{"type": "string", "description": mcpcontract.PlannedPrefix + "later)."},
+		}
+	}
+	for name, schema := range map[string]map[string]any{
+		"required":          {"properties": planned(), "required": []any{"new"}},
+		"dependentRequired": {"properties": planned(), "dependentRequired": map[string]any{"ok": []any{"new"}}},
+		"oneOf":             {"properties": planned(), "oneOf": []any{map[string]any{"required": []any{"new"}}}},
+		"anyOf":             {"properties": planned(), "anyOf": []any{map[string]any{"properties": map[string]any{"new": map[string]any{}}}}},
+		"allOf":             {"properties": planned(), "allOf": []any{map[string]any{"required": []any{"new"}}}},
+	} {
+		require.Error(t, mcpcontract.DropPlannedInputs(schema), name)
+	}
+	free := map[string]any{"properties": planned(), "required": []any{"ok"}}
+	require.NoError(t, mcpcontract.DropPlannedInputs(free))
+	require.NotContains(t, mustMap(t, free["properties"]), "new")
+	require.Contains(t, mustMap(t, free["properties"]), "ok")
+}
+
+// TestRevertScopeArguments: the revert scope arguments (RS-1, RS-7) are in
+// the contract, marked planned, and the engine does not serve them yet.
+func TestRevertScopeArguments(t *testing.T) {
+	t.Parallel()
+	all, err := mcpcontract.LoadAll()
+	require.NoError(t, err)
+	for tool, names := range map[string][]string{
+		"request_revert": {"taskId", "runs", "tables"},
+		"preview_revert": {"runs", "tables"},
+	} {
+		written, ok := mcpcontract.Find(all, tool)
+		require.True(t, ok, tool)
+		served, ok := mcpcontract.Find(mcpcontract.MustLoad(), tool)
+		require.True(t, ok, tool)
+		props := mustMap(t, written.InputSchema["properties"])
+		servedProps := mustMap(t, served.InputSchema["properties"])
+		for _, name := range names {
+			prop := mustMap(t, props[name])
+			desc, _ := prop["description"].(string)
+			require.True(t, strings.HasPrefix(desc, mcpcontract.PlannedPrefix), "%s.%s is planned", tool, name)
+			require.NotContains(t, servedProps, name, "%s.%s is not served", tool, name)
+		}
+		for _, name := range []string{"runs", "tables"} {
+			require.EqualValues(t, mcpcontract.MaxScopeFilter, mustMap(t, props[name])["maxItems"], "%s.%s cap (owner, Q10)", tool, name)
+		}
+	}
 }
 
 // TestStatusToolHasContract: status (owner decision AE-9) lands contract
@@ -158,6 +213,8 @@ func TestRevertSchemas(t *testing.T) {
 	checkPayloadSchemas(t, "revert", []string{
 		"revert-binding.schema.json", "revert-line.schema.json",
 		"revert-request.schema.json", "revert-response.schema.json",
+		"revert-select.schema.json", "revert-scope-request.schema.json",
+		"revert-scope-response.schema.json", "revert-reject-request.schema.json",
 	})
 }
 
@@ -204,7 +261,7 @@ func requireObjectsClosed(t *testing.T, where string, node any) {
 					requireObjectsClosed(t, where+"."+name, prop)
 				}
 				continue
-			case "if":
+			case "if", "then", "else":
 				// A condition (if/then/else) tests properties of an object
 				// declared closed elsewhere; it does not declare a shape.
 				continue
@@ -326,7 +383,7 @@ func TestNextStepActions(t *testing.T) {
 // catalog matches CONTRACT.md's "Next steps per code" tables.
 func TestNextStepsCatalog(t *testing.T) {
 	t.Parallel()
-	catalog, err := mcpcontract.LoadNextSteps()
+	catalog, err := mcpcontract.LoadAllNextSteps()
 	require.NoError(t, err)
 	tools := mcpcontract.MustLoad()
 
@@ -334,7 +391,7 @@ func TestNextStepsCatalog(t *testing.T) {
 	covered := map[string]bool{}
 	errorKeys := map[string]bool{}
 	for _, e := range catalog.Errors {
-		key := e.Code + "/" + e.Reason + "/" + e.Tool
+		key := e.Code + "/" + e.Reason + "/" + e.Tool + plannedKey(e.Planned)
 		require.False(t, errorKeys[key], "duplicate catalog entry %s", key)
 		errorKeys[key] = true
 		require.True(t, codes[e.Code], "catalog code %s is not in CONTRACT.md", e.Code)
@@ -355,7 +412,7 @@ func TestNextStepsCatalog(t *testing.T) {
 
 	resultKeys := map[string]bool{}
 	for _, r := range catalog.Results {
-		key := r.Tool + "/" + r.Case
+		key := r.Tool + "/" + r.Case + plannedKey(r.Planned)
 		require.False(t, resultKeys[key], "duplicate catalog entry %s", key)
 		resultKeys[key] = true
 		_, ok := mcpcontract.Find(tools, r.Tool)
@@ -439,7 +496,9 @@ func TestNextStepsEntry(t *testing.T) {
 // schema file that exists (refs inside the file, "#/...", are skipped).
 func TestToolSchemaRefs(t *testing.T) {
 	t.Parallel()
-	for _, tool := range mcpcontract.MustLoad() {
+	tools, err := mcpcontract.LoadAll()
+	require.NoError(t, err)
+	for _, tool := range tools {
 		raw, err := os.ReadFile(tool.File)
 		require.NoError(t, err)
 		var schema any
@@ -499,14 +558,15 @@ func contractNextSteps(t *testing.T) (map[string]bool, map[string]bool, map[stri
 			table = tableProblems
 			continue
 		}
+		planned := plannedKey(strings.Contains(line, "| "+mcpcontract.PlannedPrefix))
 		switch table {
 		case tableErrors:
 			if m := nextStepsErrorRow.FindStringSubmatch(line); m != nil {
-				errs[m[1]+"/"+m[2]+"/"+m[3]] = true
+				errs[m[1]+"/"+m[2]+"/"+m[3]+planned] = true
 			}
 		case tableResults:
 			if m := nextStepsResultRow.FindStringSubmatch(line); m != nil {
-				results[m[1]+"/"+m[2]] = true
+				results[m[1]+"/"+m[2]+planned] = true
 			} else if m := nextStepsWarnRow.FindStringSubmatch(line); m != nil {
 				results[m[1]+"/"] = true
 			}
@@ -520,6 +580,49 @@ func contractNextSteps(t *testing.T) (map[string]bool, map[string]bool, map[stri
 	require.NotEmpty(t, results, "no result next steps found in CONTRACT.md")
 	require.NotEmpty(t, problems, "no status problems found in CONTRACT.md")
 	return errs, results, problems
+}
+
+// plannedKey marks the key of a planned catalog entry, or of a CONTRACT.md
+// row whose Steps start with "Planned (", so a planned entry may stand next
+// to the served entry it replaces when it lands.
+func plannedKey(planned bool) string {
+	if planned {
+		return "/planned"
+	}
+	return ""
+}
+
+// TestServedCatalogLeavesPlannedOut: the engine's catalog has no planned
+// entry, and a planned entry never shadows the served one of its key.
+func TestServedCatalogLeavesPlannedOut(t *testing.T) {
+	t.Parallel()
+	all, err := mcpcontract.LoadAllNextSteps()
+	require.NoError(t, err)
+	served, err := mcpcontract.LoadNextSteps()
+	require.NoError(t, err)
+	plannedErrors, plannedResults := 0, 0
+	for _, e := range all.Errors {
+		if e.Planned {
+			plannedErrors++
+		}
+	}
+	for _, r := range all.Results {
+		if r.Planned {
+			plannedResults++
+		}
+	}
+	require.Positive(t, plannedErrors, "the revert scope errors are planned")
+	require.Positive(t, plannedResults, "the revert scope results are planned")
+	require.Len(t, served.Errors, len(all.Errors)-plannedErrors)
+	require.Len(t, served.Results, len(all.Results)-plannedResults)
+	for _, e := range served.Errors {
+		require.False(t, e.Planned, e.Code+"/"+e.Reason)
+	}
+	for _, r := range served.Results {
+		require.False(t, r.Planned, r.Tool+"/"+r.Case)
+	}
+	task, ok := served.ErrorEntry("NOT_FOUND", "TASK", "request_revert")
+	require.False(t, ok, "NOT_FOUND TASK is not served yet: %+v", task)
 }
 
 // schemaRefs returns every $ref value in a schema, at any depth.

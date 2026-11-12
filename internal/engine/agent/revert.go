@@ -611,8 +611,9 @@ func (s *Service) revertNotice(ctx context.Context, r ledger.Revert) (revertLink
 		return revertLink{}, err
 	}
 	pick := chooseLink(short, long, s.LinkBudget)
-	summary := fmt.Sprintf("Revert of %s %s: %d rows to restore, %d left as they are (changed after the agent). Why: %s. %s",
-		strings.ToLower(string(b.Select.Scope)), b.Select.ScopeID, r.Rows, r.Skipped, shown(strings.TrimRight(b.Intent, ". "), maxIntentChars), expiryLine(r.ExpiresAt))
+	filters := filterText(guard.RevertScope{Runs: b.Select.Runs, Tables: b.Select.Tables})
+	summary := fmt.Sprintf("Revert of %s %s%s: %d rows to restore, %d left as they are (changed after the agent). Why: %s. %s",
+		strings.ToLower(string(b.Select.Scope)), b.Select.ScopeID, filters, r.Rows, r.Skipped, shown(strings.TrimRight(b.Intent, ". "), maxIntentChars), expiryLine(r.ExpiresAt))
 	var extra []string
 	if b.Select.Scope == revert.ScopeTask {
 		extra = append(extra, taskWidenPointer)

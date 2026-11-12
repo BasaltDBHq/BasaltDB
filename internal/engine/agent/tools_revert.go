@@ -36,8 +36,9 @@ type scopeIDs struct {
 	Tables   []string `json:"tables" validate:"omitempty,unique"`
 }
 
-// filterTable is a schema.table name as the tools' tables filter takes it.
-var filterTable = regexp.MustCompile(`^[^.\s]+\.[^.\s]+$`)
+// filterTable is a schema.table name as the tools' tables filter takes it:
+// no whitespace, no semicolon, one dot.
+var filterTable = regexp.MustCompile(`^[^.\s;]+\.[^.\s;]+$`)
 
 // hasFilters reports whether the arguments carry a runs or tables filter.
 func (a scopeIDs) hasFilters() bool { return a.Runs != nil || a.Tables != nil }

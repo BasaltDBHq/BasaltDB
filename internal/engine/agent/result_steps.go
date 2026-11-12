@@ -25,10 +25,15 @@ func (s *Service) previewGuidance(p RevertPreview) (string, []mcp.NextStep, erro
 	if p.Scope.Kind == revert.ScopeTask {
 		what, pointer = "this agent's changes in "+what, " "+taskWidenPointer
 	}
+	if filters := filterText(p.Scope); filters != "" {
+		what += filters
+		pointer += fmt.Sprintf(" Run by hand, basalt revert opens the page on all of the agent's work in the %s, without "+
+			"these filters.", strings.ToLower(string(p.Scope.Kind)))
+	}
 	steps, err := NewSteps().
 		AskPerson("Show the person what the revert would do and ask whether to go on, and why they want it.").
-		ReviseCall(toolRequestRevert, scopeArgs(string(p.Scope.Kind), p.Scope.ID),
-			"On yes, call request_revert for this scope, with the person's reason as intent.").
+		ReviseCall(toolRequestRevert, scopeArgs(p.Scope),
+			"On yes, call request_revert with these arguments and the person's reason as intent.").
 		Build()
 	return fmt.Sprintf("Reverting %s %s. Say yes and the agent asks you to review the rows and sign with your passkey.%s",
 		what, effect, pointer), steps, err

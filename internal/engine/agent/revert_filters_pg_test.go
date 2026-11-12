@@ -111,15 +111,32 @@ func TestRevertFiltersNarrowTheProposal(t *testing.T) {
 	require.False(t, isError, "%v", body)
 	require.EqualValues(t, "1", body["rows"], "only run 1's lead 91")
 	require.Equal(t, []string{"public.leads"}, tablesOf(t, body))
+	steps, ok := body["nextSteps"].([]any)
+	require.True(t, ok, "%v", body)
+	step, ok := steps[1].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "request_revert", step["tool"])
+	require.Equal(t, map[string]any{"taskId": env.taskID, "runs": []any{env.run1}, "tables": []any{"public.leads"}}, step["arguments"],
+		"the request the steps lead to is the one previewed, filters included")
+	msg := str(t, body["personMessage"])
+	require.Contains(t, msg, "task "+env.taskID+", only 1 of its runs and table public·leads would restore 1 rows", msg)
+	require.Contains(t, msg, "without these filters", msg)
 
 	for _, tc := range []struct {
-		args   map[string]any
-		scope  revert.Scope
-		runs   []uuid.UUID
-		tables []string
+		args    map[string]any
+		scope   revert.Scope
+		runs    []uuid.UUID
+		tables  []string
+		message string
 	}{
-		{map[string]any{"runId": env.run1, "tables": []any{"public.lead_owner"}}, revert.ScopeRun, nil, []string{"public.lead_owner"}},
-		{map[string]any{"taskId": env.taskID, "runs": []any{env.run2}}, revert.ScopeTask, []uuid.UUID{uuid.MustParse(env.run2)}, nil},
+		{
+			map[string]any{"runId": env.run1, "tables": []any{"public.lead_owner"}}, revert.ScopeRun, nil, []string{"public.lead_owner"},
+			"Revert of run " + env.run1 + ", only table public·lead_owner: 1 rows to restore",
+		},
+		{
+			map[string]any{"taskId": env.taskID, "runs": []any{env.run2}}, revert.ScopeTask, []uuid.UUID{uuid.MustParse(env.run2)}, nil,
+			"Revert of task " + env.taskID + ", only 1 of its runs: 1 rows to restore",
+		},
 	} {
 		body, isError := env.call(t, "request_revert", tc.args)
 		require.False(t, isError, "%v", body)
@@ -133,6 +150,7 @@ func TestRevertFiltersNarrowTheProposal(t *testing.T) {
 		require.Equal(t, tc.runs, b.Select.Runs, "the page shows the agent's runs filter as its proposal")
 		require.Equal(t, tc.tables, b.Select.Tables, "the page shows the agent's tables filter as its proposal")
 		require.Nil(t, b.Proposed, "a proposal nobody rescoped carries no separate proposed")
+		require.True(t, strings.HasPrefix(str(t, body["personMessage"]), tc.message), "the chat names the filters as the page does: %s", body["personMessage"])
 	}
 	require.Equal(t, "won", leadStatus(t, env.d, 91), "a request reverts nothing")
 
@@ -212,6 +230,7 @@ func TestRevertRunsFilterNeedsATask(t *testing.T) {
 			{"taskId": env.taskID, "runs": []any{}},
 			{"taskId": env.taskID, "tables": []any{}},
 			{"taskId": env.taskID, "tables": []any{"leads"}},
+			{"taskId": env.taskID, "tables": []any{"public.leads;drop"}},
 			{"taskId": env.taskID, "runs": []any{"not-a-uuid"}},
 			{"taskId": env.taskID, "runs": []any{env.run1, env.run1}},
 		} {

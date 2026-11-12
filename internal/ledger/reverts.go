@@ -23,6 +23,9 @@ const (
 	RevertApplying = "APPLYING"
 	RevertApplied  = "APPLIED"
 	RevertExpired  = "EXPIRED"
+	// RevertRejected is a revert the person rejected on the revert page
+	// (basalt_meta version 23): nothing was reverted.
+	RevertRejected = "REJECTED"
 )
 
 // Revert is a revert the calling role prepared (basalt_meta.agent_reverts).
@@ -51,6 +54,11 @@ type Revert struct {
 	// own work (version 20): the view then shows no binding, selection or
 	// lines.
 	Widened bool
+	// RejectedAt and RejectNote are set on a REJECTED revert: when the
+	// person rejected it, and the note they wrote for the agent ("" for
+	// none).
+	RejectedAt *time.Time
+	RejectNote string
 }
 
 // RevertProgress counts a batched plan's lines by outcome.
@@ -64,7 +72,8 @@ type RevertProgress struct {
 func FindRevert(ctx context.Context, q guard.Querier, id uuid.UUID) (Revert, error) {
 	sql, args, err := psql.Select("revert_id", "status", "scope", "scope_id", "intent", "rows", "skipped", "expires_at",
 		"coalesce(binding_text, '')", "coalesce(lines, '{}')", "batched", "signed_at", "apply_by", "batches",
-		"coalesce(restored, 0)", "coalesce(skipped_now, 0)", "coalesce(pending, 0)", "change_id", "widened").
+		"coalesce(restored, 0)", "coalesce(skipped_now, 0)", "coalesce(pending, 0)", "change_id", "widened",
+		"rejected_at", "coalesce(reject_note, '')").
 		From("basalt_meta.agent_reverts").Where(sq.Eq{"revert_id": id.String()}).ToSql()
 	if err != nil {
 		return Revert{}, err
@@ -77,7 +86,8 @@ func FindRevert(ctx context.Context, q guard.Querier, id uuid.UUID) (Revert, err
 		var r Revert
 		err := row.Scan(&r.ID, &r.Status, &r.Scope, &r.ScopeID, &r.Intent, &r.Rows, &r.Skipped, &r.ExpiresAt, &r.BindingText,
 			&r.Lines, &r.Batched, &r.SignedAt, &r.ApplyBy, &r.Batches,
-			&r.Progress.Restored, &r.Progress.Skipped, &r.Progress.Pending, &r.ChangeID, &r.Widened)
+			&r.Progress.Restored, &r.Progress.Skipped, &r.Progress.Pending, &r.ChangeID, &r.Widened,
+			&r.RejectedAt, &r.RejectNote)
 		return r, err
 	})
 	if errors.Is(err, pgx.ErrNoRows) {

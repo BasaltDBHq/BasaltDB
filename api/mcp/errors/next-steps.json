@@ -91,7 +91,7 @@
     { "tool": "request_revert", "case": "APPLYING", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }] },
     { "tool": "request_revert", "case": "APPLIED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] },
     { "tool": "request_revert", "case": "EXPIRED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "REVISE_CALL" }] },
-    { "tool": "request_revert", "case": "REJECTED", "planned": true, "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] },
+    { "tool": "request_revert", "case": "REJECTED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] },
     { "tool": "list_pending", "case": "PENDING", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }] },
     { "tool": "list_pending", "case": "EXPIRED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "REVISE_CALL" }] },
     { "tool": "revert_plan", "case": "PENDING", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "END_TURN" }] },

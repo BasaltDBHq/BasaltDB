@@ -68,6 +68,9 @@ type Agent interface {
 	// RescopeRevert changes the revert's scope for the page holding secret
 	// (CONTRACT.md, Rescope, widen and reject).
 	RescopeRevert(ctx context.Context, id uuid.UUID, secret string, in agent.ScopeRequest) (agent.ScopeResponse, error)
+	// RejectRevert rejects the revert for the page holding secret and
+	// revokes its link (CONTRACT.md, Rescope, widen and reject).
+	RejectRevert(ctx context.Context, id uuid.UUID, secret string, in agent.RejectRequest) (agent.RejectResponse, error)
 	IssueApprovalLink(ctx context.Context, id uuid.UUID, proof string) (string, error)
 	IssueRevertLink(ctx context.Context, id uuid.UUID, proof string) (string, error)
 	// CheckLink reports whether secret is the live link secret of one of
@@ -132,6 +135,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/reverts/{revertId}", s.getRevert)
 	mux.HandleFunc("POST /api/v1/reverts/{revertId}/apply", s.postRevert)
 	mux.HandleFunc("POST /api/v1/reverts/{revertId}/scope", s.postScope)
+	mux.HandleFunc("POST /api/v1/reverts/{revertId}/reject", s.postReject)
 	mux.HandleFunc("POST /api/v1/approvals/{approvalId}/links", s.postApprovalLink)
 	mux.HandleFunc("POST /api/v1/reverts/{revertId}/links", s.postRevertLink)
 	return mux
@@ -272,6 +276,37 @@ func (s *Server) postScope(w http.ResponseWriter, r *http.Request) {
 	secret := r.Header.Get(links.SecretHeader)
 	out, err := find(r.Context(), s, func(ctx context.Context, a Agent) (agent.ScopeResponse, error) {
 		return a.RescopeRevert(ctx, id, secret, in)
+	})
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.reply(w, out)
+}
+
+// postReject rejects a revert for the page (CONTRACT.md, Local pages, POST
+// …/reject). The body is decoded strictly, { "note"? }; the note's length is
+// the service's to check. Postgres decides the rest.
+func (s *Server) postReject(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.linkedID(w, r, revertParam)
+	if !ok {
+		return
+	}
+	body, ok := s.body(w, r, pageOnly)
+	if !ok {
+		return
+	}
+	var in agent.RejectRequest
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&in); err != nil || dec.More() {
+		s.fail(w, &mcp.ToolError{Code: agent.CodeInvalidArgument,
+			Message: "the body must be {\"note\"?} (revert-reject-request.schema.json)"})
+		return
+	}
+	secret := r.Header.Get(links.SecretHeader)
+	out, err := find(r.Context(), s, func(ctx context.Context, a Agent) (agent.RejectResponse, error) {
+		return a.RejectRevert(ctx, id, secret, in)
 	})
 	if err != nil {
 		s.fail(w, err)

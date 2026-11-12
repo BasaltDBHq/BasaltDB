@@ -612,7 +612,8 @@ func TestServedCatalogLeavesPlannedOut(t *testing.T) {
 			plannedResults++
 		}
 	}
-	require.Positive(t, plannedResults, "the revert scope results are planned")
+	// Every entry is served since the RS-1 filters and the reject
+	// (REJECTED); a planned entry added later is still counted below.
 	require.Len(t, served.Errors, len(all.Errors)-plannedErrors)
 	require.Len(t, served.Results, len(all.Results)-plannedResults)
 	for _, e := range served.Errors {

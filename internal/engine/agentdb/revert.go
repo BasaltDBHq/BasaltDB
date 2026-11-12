@@ -219,3 +219,10 @@ func (s *Store) ApplyRevert(ctx context.Context, id uuid.UUID, a passkey.Asserti
 func (s *Store) RevertNonce(ctx context.Context, id uuid.UUID) ([]byte, error) {
 	return guard.RevertNonce(ctx, s.db, id)
 }
+
+// RejectRevert marks a pending revert the agent's role prepared REJECTED
+// for the person on the revert page (basalt_meta.reject_revert), with the
+// scope token the engine holds for a widened revert's rotated link.
+func (s *Store) RejectRevert(ctx context.Context, id uuid.UUID, note string, token []byte) (guard.RejectedRevert, error) {
+	return guard.RejectRevert(ctx, s.db, id, note, token)
+}

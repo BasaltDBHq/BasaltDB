@@ -138,3 +138,40 @@ func RevertNonce(ctx context.Context, q Querier, revertID uuid.UUID) ([]byte, er
 	}
 	return out, nil
 }
+
+// The paths reject_revert records in REVERT_REJECTED (CONTRACT.md,
+// basalt_meta, Version 23): no token, so Postgres cannot tell the person on
+// the link from the agent holding it; or the scope token of a widened
+// revert, which only the engine holds for the person's rotated link.
+const (
+	RejectViaLinkOrAgent = "LINK_OR_AGENT"
+	RejectViaScopeToken  = "SCOPE_TOKEN"
+)
+
+// MaxRejectNote is the longest note the person may leave with a reject, in
+// characters (reverts.reject_note).
+const MaxRejectNote = 500
+
+// RejectedRevert is reject_revert's answer.
+type RejectedRevert struct {
+	RevertID   uuid.UUID `json:"revertId"`
+	Status     string    `json:"status"`
+	RejectedAt time.Time `json:"rejectedAt"`
+}
+
+// RejectRevert marks the caller's own pending, unsigned revert REJECTED
+// (basalt_meta.reject_revert, version 23) with the person's note ("" for
+// none). Once the person widened the revert, token must be its scope token;
+// before that it is nil. A missing or wrong token is REVERT_INVALID detail
+// RevertWidenRefused; another role's revert, or none, is REVERT_INVALID "no
+// such revert".
+func RejectRevert(ctx context.Context, q Querier, revertID uuid.UUID, note string, token []byte) (RejectedRevert, error) {
+	var out RejectedRevert
+	// Plain SQL: one function call returning jsonb.
+	err := q.QueryRow(ctx, `SELECT basalt_meta.reject_revert($1::uuid, $2::text, $3::bytea)`,
+		revertID.String(), note, token).Scan(&out)
+	if err != nil {
+		return RejectedRevert{}, err
+	}
+	return out, nil
+}

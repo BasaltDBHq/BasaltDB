@@ -69,6 +69,15 @@ type conn struct {
 	c        *Client
 	ws       *websocket.Conn
 	sessions sessions
+	// done is closed when the socket has ended: a request waiting for an
+	// answer on it stops waiting.
+	done chan struct{}
+
+	mu sync.Mutex
+	// nextRef is the last ref used; pending holds what to do with the
+	// answer to each request still waiting for one.
+	nextRef int64
+	pending map[int64]func(answer)
 }
 
 // connect dials, authenticates and serves one socket until it ends. ready
@@ -78,8 +87,15 @@ func (c *Client) connect(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	cn := &conn{c: c, ws: ws, sessions: newSessions(c.opts.HandshakeTimeout, c.opts.Now)}
-	c.setConnected(true)
+	cn := &conn{
+		c: c, ws: ws, sessions: newSessions(c.opts.HandshakeTimeout, c.opts.Now),
+		done: make(chan struct{}), pending: map[int64]func(answer){},
+	}
+	c.setConn(cn)
+	defer func() {
+		c.setConn(nil)
+		close(cn.done)
+	}()
 	c.opts.Log.Info("vault socket ready", "engineId", c.opts.Keys.EngineID())
 	return true, cn.serve(ctx)
 }
@@ -192,6 +208,7 @@ func (cn *conn) serve(ctx context.Context) error {
 	defer wg.Wait()
 	defer cancel()
 	wg.Go(func() { cn.ping(sctx) })
+	wg.Go(func() { cn.registerAll(sctx) })
 
 	for {
 		err := cn.readOne(sctx)
@@ -259,10 +276,11 @@ func (cn *conn) control(ctx context.Context, m control) error {
 	case typeSessionClose:
 		cn.sessions.remove(m.sessionClose.sid)
 		return nil
-	case typeOK, typeError:
-		// The engine has no request waiting for an answer until it
-		// registers links (VC1-6), so any answer is a forged one: ignored.
-		cn.c.opts.Log.Debug("vault socket: an answer to no request", "type", m.typ)
+	case typeOK:
+		cn.answered(m.ok.Ref, answer{})
+		return nil
+	case typeError:
+		cn.answered(m.err.Ref, answer{code: m.err.Code})
 		return nil
 	default:
 		// A second CHALLENGE or READY is out of place.
@@ -333,8 +351,8 @@ func (cn *conn) oversize(ctx context.Context, r io.Reader, id sid, limit int, aw
 	return cn.closeSession(ctx, id, channel.ErrProtocol)
 }
 
-// noLinks is the engine's link lookup until VC1-6 and VC1-7: it holds no
-// link the Vault can route, so every token is one it does not hold.
+// noLinks is the engine's session link lookup until VC1-7 serves the pages
+// API in a session: every token is answered as one it does not hold.
 func noLinks(channel.LinkToken) (channel.PSK, bool) { return channel.PSK{}, false }
 
 // hello checks a session's message 1 against SESSION_OPEN's token as the

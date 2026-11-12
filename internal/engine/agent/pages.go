@@ -156,7 +156,7 @@ func (s *Service) CheckLink(id uuid.UUID, secret string) bool {
 // issuedLink is a newly issued short link; this engine must serve the
 // pages.
 func (s *Service) issuedLink(page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time) (string, error) {
-	link, err := s.shortLink(page, id, expires, issueLink)
+	link, err := s.localLink(page, id, expires)
 	if err != nil {
 		return "", err
 	}

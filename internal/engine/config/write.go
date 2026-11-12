@@ -22,6 +22,8 @@ type Settings struct {
 	SocketDir, StateDir string
 	// PagesURL replaces the config's pages base URL when set.
 	PagesURL string
+	// OperatedBy replaces the config's operatedBy when set.
+	OperatedBy string
 }
 
 // UpsertAgent adds agent a to the config at path, or replaces the agent of
@@ -48,6 +50,9 @@ func Upserted(path string, s Settings, a Agent) ([]byte, error) {
 	if s.PagesURL != "" {
 		c.PagesURL, c.ApprovalPage = s.PagesURL, ""
 	}
+	if s.OperatedBy != "" {
+		c.OperatedBy = s.OperatedBy
+	}
 	replaced := false
 	for i := range c.Agents {
 		if c.Agents[i].Name == a.Name {
@@ -68,11 +73,18 @@ func Upserted(path string, s Settings, a Agent) ([]byte, error) {
 }
 
 // WriteFile writes data to path atomically with FileMode, creating the
-// directory (mode 0700) when missing.
+// directory (mode 0700) when missing. It writes a new temporary file
+// (O_EXCL, so never through a planted link) and renames it over path,
+// which replaces a link rather than following it; a path that is a
+// symlink or not a regular file is refused all the same, since nothing
+// basalt writes is ever one.
 func WriteFile(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, dirMode); err != nil {
 		return err
+	}
+	if fi, err := os.Lstat(path); err == nil && !fi.Mode().IsRegular() {
+		return fmt.Errorf("%s is not a regular file (a symlink?); refusing to write it", path)
 	}
 	tmp, err := os.CreateTemp(dir, ".basalt-*")
 	if err != nil {

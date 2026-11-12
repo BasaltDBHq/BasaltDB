@@ -2,6 +2,7 @@ package guard
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
 
@@ -50,4 +51,19 @@ func CheckAgentVersion(ctx context.Context, q Querier) error {
 		return nil
 	}
 	return &StaleSchemaError{Installed: installed, Latest: latest}
+}
+
+// AgentVersion is the basalt_meta version q (an agent connection) sees: 0
+// without basalt_meta, and the version before versionAgentVersion when the
+// agent cannot read schema_version (a guard from before it).
+func AgentVersion(ctx context.Context, q Querier) (int, error) {
+	err := CheckAgentVersion(ctx, q)
+	var stale *StaleSchemaError
+	switch {
+	case errors.As(err, &stale):
+		return stale.Installed, nil
+	case err != nil:
+		return 0, err
+	}
+	return InstalledVersion(ctx, q)
 }

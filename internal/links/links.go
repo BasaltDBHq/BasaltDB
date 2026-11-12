@@ -15,6 +15,11 @@ const (
 	// HostedConsole is the hosted pages' origin (not live yet). Its
 	// passkeys use RP ID basaltvault.app, which never changes.
 	HostedConsole = "https://console.basaltvault.app"
+	// Portal is the hosted pages' origin of an agent-operated engine and of
+	// basalt init --remote (CONTRACT.md, Who operates the engine; CO-8).
+	// Same RP ID as HostedConsole; renaming the console to it is its own
+	// change.
+	Portal = "https://portal.basaltvault.app"
 	// DefaultLocal is the engine's local pages, the default base until
 	// hosting exists.
 	DefaultLocal = "http://localhost:8787"

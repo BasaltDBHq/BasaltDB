@@ -21,10 +21,29 @@ const (
 
 // readKeptCredential reads the agent's existing credential file as root
 // without following a symlink (the engine's user owns the directory and could
-// plant one): it opens with O_NOFOLLOW, then checks the open descriptor is a
-// regular file, mode 0600 or tighter, owned by the engine's user or root, and
-// reads from that descriptor, so nothing can change between check and read.
+// plant one): see readCredentialFile. The file must be owned by the engine's
+// user or root.
 func readKeptCredential(path, engineUser string) (string, error) {
+	return readCredentialFile(path, func(uid uint32) (bool, string) {
+		return uid == rootUID || ownedBy(uid, engineUser), engineUser + " or root"
+	})
+}
+
+// readOwnCredential reads a credential file this process wrote (basalt init
+// --remote: the credential file and its .pending), owned by this process's
+// user, with readCredentialFile's checks.
+func readOwnCredential(path string) (string, error) {
+	euid := os.Geteuid()
+	return readCredentialFile(path, func(uid uint32) (bool, string) {
+		return euid >= 0 && uint64(uid) == uint64(euid), "you"
+	})
+}
+
+// readCredentialFile opens path with O_NOFOLLOW, then checks the open
+// descriptor is a regular file, mode 0600 or tighter, with an owner owner
+// accepts, and reads from that descriptor, so nothing can change between
+// check and read.
+func readCredentialFile(path string, owner func(uid uint32) (ok bool, want string)) (string, error) {
 	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		return "", err
@@ -44,8 +63,8 @@ func readKeptCredential(path, engineUser string) (string, error) {
 	if !ok {
 		return "", errors.New("cannot read the file's owner")
 	}
-	if st.Uid != rootUID && !ownedBy(st.Uid, engineUser) {
-		return "", fmt.Errorf("owned by uid %d, not %s or root", st.Uid, engineUser)
+	if ok, want := owner(st.Uid); !ok {
+		return "", fmt.Errorf("owned by uid %d, not %s", st.Uid, want)
 	}
 	raw, err := io.ReadAll(io.LimitReader(f, maxCredentialBytes+1))
 	if err != nil {

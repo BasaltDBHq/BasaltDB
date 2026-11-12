@@ -86,3 +86,23 @@ func CheckVerifier(v string) error {
 	}
 	return nil
 }
+
+// SetupRecorded reports whether setup id is recorded, read with the agent's
+// own connection through basalt_meta.agent_setups (an agent sees its own
+// setups and every UPGRADE). A guard older than version 16 has no setups:
+// false.
+func SetupRecorded(ctx context.Context, q Querier, id uuid.UUID) (bool, error) {
+	var readable bool
+	// Plain SQL: catalog and privilege lookups, which any role may run.
+	err := q.QueryRow(ctx, `SELECT coalesce(has_table_privilege(to_regclass('basalt_meta.agent_setups'), 'SELECT'), false)`).Scan(&readable)
+	if err != nil || !readable {
+		return false, err
+	}
+	sql, args, err := psql.Select("1").From("basalt_meta.agent_setups").Where(sq.Eq{"setup_id": id}).Prefix("SELECT EXISTS (").Suffix(")").ToSql()
+	if err != nil {
+		return false, err
+	}
+	var found bool
+	err = q.QueryRow(ctx, sql, args...).Scan(&found)
+	return found, err
+}

@@ -123,6 +123,25 @@ type fixtures struct {
 		Lines      int    `json:"lines"`
 		Skipped    int    `json:"skipped"`
 	} `json:"batched"`
+	// BatchedSkips is a large plan with more SKIP lines than a sample holds:
+	// its sample still carries every RESTORE line (decision RS-1).
+	BatchedSkips struct {
+		Fragment string `json:"fragment"`
+		Rows     int    `json:"rows"`
+		Skipped  int    `json:"skipped"`
+	} `json:"batchedSkips"`
+}
+
+// Size of the batchedSkips fixture plan.
+const (
+	skipsPlanSkips    = 1500
+	skipsPlanRestores = 50
+)
+
+// mixedBinding is the binding of a batched plan of mixedLines(skips, rows).
+func mixedBinding(all, sample []string, skips, rows int) string {
+	return fmt.Sprintf(`{"kind": "REVERT", "rows": %d, "scope": "RUN", "agents": ["basalt_agent_bot"], "intent": "Undo the bulk load", "batched": true, "scopeId": %q, "skipped": %d, "database": "app", "revertId": %q, "rowsHash": %q, "expiresAt": "2026-11-11T07:02:11.123456Z", "sampleHash": %q, "requestedBy": "basalt_agent_bot"}`,
+		rows, runID.String(), skips, revertID.String(), revert.RowsHash(all), revert.RowsHash(sample))
 }
 
 func buildFixtures(t *testing.T) fixtures {
@@ -168,6 +187,15 @@ func buildFixtures(t *testing.T) fixtures {
 	f.Batched.SampleHash = revert.RowsHash(sample)
 	f.Batched.Lines = len(all)
 	f.Batched.Skipped = planSkips
+
+	all = mixedLines(skipsPlanSkips, skipsPlanRestores)
+	sample, err = revert.Sample(all)
+	require.NoError(t, err)
+	plan = revert.Request{RevertID: revertID, Binding: mixedBinding(all, sample, skipsPlanSkips, skipsPlanRestores), Lines: sample}
+	f.BatchedSkips.Fragment, err = linkcodec.Encode(linkcodec.Format1, plan)
+	require.NoError(t, err)
+	f.BatchedSkips.Rows = skipsPlanRestores
+	f.BatchedSkips.Skipped = skipsPlanSkips
 	return f
 }
 
@@ -331,6 +359,91 @@ func TestSampleSkipsFirst(t *testing.T) {
 	small, err := revert.Sample(revertLines())
 	require.NoError(t, err)
 	require.Equal(t, []string{revertLines()[3], revertLines()[0], revertLines()[1], revertLines()[2]}, small)
+}
+
+// mixedLines is a plan of skips SKIP lines and restores RESTORE lines,
+// interleaved, in the order given (Sample does not sort).
+func mixedLines(skips, restores int) []string {
+	lines := make([]string, 0, skips+restores)
+	for i := 0; skips > 0 || restores > 0; i++ {
+		action, conflict := `"RESTORE"`, `null`
+		if skips > 0 && (i%2 == 0 || restores == 0) {
+			action, conflict = `"SKIP"`, `"CHANGED_AFTER"`
+			skips--
+		} else {
+			restores--
+		}
+		lines = append(lines, fmt.Sprintf(`{"op": "UPDATE", "key": {"id": %d}, "now": {"id": %d, "v": "agent"}, "set": {"id": %d, "v": "before"}, "table": "public.items", "action": %s, "cascaded": false, "conflict": %s, "sqlState": null, "changeIds": [%q]}`,
+			i+1, i+1, i+1, action, conflict, change1))
+	}
+	return lines
+}
+
+// TestSampleShowsBothKinds: a large plan's sample keeps room for 500 SKIP
+// and 500 RESTORE lines, and a kind with fewer leaves its room to the other
+// (decision RS-1), so SKIP lines can never crowd out every RESTORE line.
+func TestSampleShowsBothKinds(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		skips, restores         int
+		wantSkips, wantRestores int
+	}{
+		{1500, 50, 950, 50},
+		{2000, 2000, 500, 500},
+		{10, 3000, 10, 990},
+		{3000, 0, 1000, 0},
+		{1000, 1, 999, 1},
+		{500, 501, 500, 500},
+		{600, 401, 599, 401},
+	}
+	for _, tc := range cases {
+		name := fmt.Sprintf("%d skips, %d restores", tc.skips, tc.restores)
+		s, r := revert.SampleCounts(tc.skips, tc.restores)
+		require.Equal(t, [2]int{tc.wantSkips, tc.wantRestores}, [2]int{s, r}, name)
+
+		all := mixedLines(tc.skips, tc.restores)
+		sample, err := revert.Sample(all)
+		require.NoError(t, err, name)
+		require.Len(t, sample, tc.wantSkips+tc.wantRestores, name)
+		skips, restores := []string{}, []string{}
+		for _, text := range all {
+			l, err := revert.ParseLine(text)
+			require.NoError(t, err)
+			if l.Action == revert.ActionSkip {
+				skips = append(skips, text)
+			} else {
+				restores = append(restores, text)
+			}
+		}
+		require.Equal(t, skips[:tc.wantSkips], sample[:tc.wantSkips], "%s: SKIP lines first, in signed order", name)
+		require.Equal(t, restores[:tc.wantRestores], sample[tc.wantSkips:], "%s: then RESTORE lines, in signed order", name)
+	}
+}
+
+// TestBatchedRequestChecksTheSplit: a request's sample must split as
+// SampleCounts gives for the binding's skipped and rows.
+func TestBatchedRequestChecksTheSplit(t *testing.T) {
+	t.Parallel()
+	all := mixedLines(skipsPlanSkips, skipsPlanRestores)
+	sample, err := revert.Sample(all)
+	require.NoError(t, err)
+	binding := func(lines []string) string {
+		return mixedBinding(all, lines, skipsPlanSkips, skipsPlanRestores)
+	}
+	b, err := revert.Request{RevertID: revertID, Binding: binding(sample), Lines: sample}.Check()
+	require.NoError(t, err)
+	require.Equal(t, 50, b.Rows)
+
+	// The sample before RS-1: the first 1000 SKIP lines and no RESTORE line.
+	var skipsOnly []string
+	for _, text := range all {
+		if strings.Contains(text, `"SKIP"`) && len(skipsOnly) < revert.MaxLines {
+			skipsOnly = append(skipsOnly, text)
+		}
+	}
+	_, err = revert.Request{RevertID: revertID, Binding: binding(skipsOnly), Lines: skipsOnly}.Check()
+	require.ErrorIs(t, err, revert.ErrInvalid)
+	require.ErrorContains(t, err, "request has 1000 SKIP lines, the binding's sample 950")
 }
 
 func TestBatchedRequestRoundTrip(t *testing.T) {

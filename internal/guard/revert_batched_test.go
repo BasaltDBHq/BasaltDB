@@ -136,6 +136,43 @@ func TestPrepareBatchedPlan(t *testing.T) {
 	require.Len(t, previewRevert(t, e.a.Conn, revert.ScopeRun, e.in.RunID), bulkRows)
 }
 
+// TestBatchedSampleKeepsRestores: with more SKIP lines than half a sample,
+// Postgres still puts RESTORE lines in the link, split as revert.Sample does
+// (decision RS-1). Before version 17 this plan's sample held 700 SKIP lines
+// and only 300 RESTORE lines; with 1000 SKIP lines it held none.
+func TestBatchedSampleKeepsRestores(t *testing.T) {
+	t.Parallel()
+	e := newBulkEnv(t)
+	const skips = 700
+	e.d.Exec(t, fmt.Sprintf(`UPDATE public.items SET v = 'person' WHERE id <= %d`, skips))
+	ctx := context.Background()
+	prep, err := guard.PrepareRevert(ctx, e.a.Conn, e.scope(), "Undo the bulk update")
+	require.NoError(t, err)
+	b, err := revert.Request{RevertID: prep.RevertID, Binding: prep.BindingText, Lines: prep.Lines}.Check()
+	require.NoError(t, err, "the Go codec accepts the sample Postgres built")
+	require.Equal(t, skips, b.Skipped)
+	require.Equal(t, bulkRows-skips, b.Rows)
+
+	rows, err := e.a.Conn.Query(ctx, `SELECT line FROM basalt_meta.agent_revert_lines
+		WHERE revert_id = $1 ORDER BY line COLLATE "C"`, prep.RevertID)
+	require.NoError(t, err)
+	all, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	require.NoError(t, err)
+	sample, err := revert.Sample(all)
+	require.NoError(t, err)
+	require.Equal(t, sample, prep.Lines)
+
+	restores := 0
+	for _, text := range prep.Lines {
+		l, err := revert.ParseLine(text)
+		require.NoError(t, err)
+		if l.Action == revert.ActionRestore {
+			restores++
+		}
+	}
+	require.Equal(t, revert.SampleShare, restores)
+}
+
 func TestBatchedRevertAppliesInBatches(t *testing.T) {
 	t.Parallel()
 	e := newBulkEnv(t)

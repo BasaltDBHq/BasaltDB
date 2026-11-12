@@ -14,6 +14,7 @@ import {
   parseRevertRequest,
   relyingParty,
   revertResponseJSON,
+  revertShown,
 } from "./codec.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths, revertDone } from "./local.js";
 import { $, REVERT_REOPEN, el, fail, linkFailure, loadOrPaste, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
@@ -57,15 +58,17 @@ function renderSummary(req) {
     $("plan").textContent = `${plural(b.rows + b.skipped, "row")}, all shown below, restored in one step when you sign.`;
     return;
   }
-  // A large plan (decisions N12-1 to N12-4): the link carries a sample.
-  const restoreShown = req.lines.filter((l) => l.action === "RESTORE").length;
-  const skipShown = req.lines.length - restoreShown;
+  // A large plan (decisions N12-1 to N12-4, RS-1): the link carries a
+  // sample. The counts come from the binding and the checked lines only.
+  const shown = revertShown(req);
   $("plan").textContent =
-    `${plural(b.rows + b.skipped, "row")}. Your signature covers every one; this page shows the first ${req.lines.length}, ` +
-    `rows left alone first. After you sign, the agent restores them in batches of up to ${MAX_REVERT_BATCH} rows ` +
+    `${plural(b.rows + b.skipped, "row")}. Your signature covers every one; this page shows ${req.lines.length}: ` +
+    `${shown.restoreShown} to restore and ${shown.skipShown} left as they are. ` +
+    `Not shown: ${plural(shown.restoreHidden, "row")} to restore and ${plural(shown.skipHidden, "row")} left as they are. ` +
+    `After you sign, the agent restores them in batches of up to ${MAX_REVERT_BATCH} rows ` +
     `within ${REVERT_APPLY_HOURS} hours. Follow it with basalt revert --status ${b.revertId}.`;
-  $("restore-title").textContent = `Rows that will be restored (${restoreShown} of ${b.rows} shown)`;
-  $("skip-title").textContent = `Rows left as they are (${skipShown} of ${b.skipped} shown)`;
+  $("restore-title").textContent = `Rows that will be restored (${shown.restoreShown} of ${b.rows} shown)`;
+  $("skip-title").textContent = `Rows left as they are (${shown.skipShown} of ${b.skipped} shown)`;
   $("restore-note").textContent =
     "Highlighted values change back to what they were before the agent. Each row is checked again with its row locked when its batch runs; a row someone changed by then is left as it is.";
 }

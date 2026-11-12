@@ -37,7 +37,7 @@ const KindRevert = "REVERT"
 
 // MaxLines is the most lines, restored and skipped, of a revert applied in
 // one call, and the most lines a revert link carries (decisions M3-9,
-// N12-4). A plan with more lines is batched: the person signs it once and
+// N12-4, RS-1). A plan with more lines is batched: the person signs it once and
 // the agent applies it in batches.
 const MaxLines = 1000
 
@@ -163,10 +163,25 @@ func isDigest(s string) bool {
 	return err == nil && len(s) == sha256.Size*2
 }
 
+// SampleShare is the room a batched plan's sample keeps for each kind of
+// line: up to SampleShare SKIP lines and up to SampleShare RESTORE lines.
+const SampleShare = MaxLines / 2
+
+// SampleCounts returns how many SKIP and RESTORE lines a plan with skipped
+// SKIP lines and rows RESTORE lines carries in its sample: up to
+// SampleShare of each, and when one kind has fewer the other fills the
+// rest, at most MaxLines in all (decision N12-4, amended by RS-1). Both
+// counts come from the signed binding, so a page can check them.
+func SampleCounts(skipped, rows int) (skips, restores int) {
+	skips = min(skipped, max(SampleShare, MaxLines-rows))
+	restores = min(rows, MaxLines-skips)
+	return skips, restores
+}
+
 // Sample returns the lines a revert link carries for a plan whose lines are
-// in signed order: SKIP lines first, then RESTORE lines, each group in
-// signed order, at most MaxLines (decision N12-4). Postgres builds the same
-// sample in prepare_revert.
+// in signed order: the SKIP lines, then the RESTORE lines, each group in
+// signed order and cut to SampleCounts (decisions N12-4, RS-1). Postgres
+// builds the same sample in prepare_revert.
 func Sample(lines []string) ([]string, error) {
 	skips := make([]string, 0, len(lines))
 	restores := make([]string, 0, len(lines))
@@ -181,8 +196,8 @@ func Sample(lines []string) ([]string, error) {
 		}
 		restores = append(restores, text)
 	}
-	out := slices.Concat(skips, restores)
-	return out[:min(len(out), MaxLines)], nil
+	s, r := SampleCounts(len(skips), len(restores))
+	return slices.Concat(skips[:s], restores[:r]), nil
 }
 
 // Request is the revert request: what the engine's local pages serve, and
@@ -197,7 +212,8 @@ type Request struct {
 // Check parses the binding and checks the request against it: same revert,
 // one line per row, as many RESTORE lines as the binding's rows, and the
 // lines hash to rowsHash. For a batched plan the request carries the
-// sample instead: MaxLines lines, SKIP lines first, hashing to sampleHash.
+// sample instead: MaxLines lines, SKIP lines first, as many of each kind as
+// SampleCounts gives, hashing to sampleHash.
 // The revert page makes the same checks before asking for a signature.
 func (r Request) Check() (Binding, error) {
 	b, err := ParseBinding(r.Binding)
@@ -233,7 +249,9 @@ func (r Request) Check() (Binding, error) {
 }
 
 // checkSample checks a batched plan's request: the plan's sample, in
-// order, matching the binding's sampleHash and skipped count.
+// order, matching the binding's sampleHash, with as many SKIP lines as
+// SampleCounts gives for the binding's skipped and rows (the rest are
+// RESTORE lines, since the sample has MaxLines lines).
 func (r Request) checkSample(b Binding) error {
 	if len(r.Lines) != MaxLines {
 		return invalid("request has %d lines, a batched plan's sample has %d", len(r.Lines), MaxLines)
@@ -256,7 +274,7 @@ func (r Request) checkSample(b Binding) error {
 		}
 		skips++
 	}
-	if want := min(b.Skipped, MaxLines); skips != want {
+	if want, _ := SampleCounts(b.Skipped, b.Rows); skips != want {
 		return invalid("request has %d SKIP lines, the binding's sample %d", skips, want)
 	}
 	return nil

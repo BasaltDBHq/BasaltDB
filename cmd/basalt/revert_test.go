@@ -256,7 +256,7 @@ func TestRevertLargePlan(t *testing.T) {
 	code := runRevert(c, []string{"--run", in.RunID.String(), "--credential-file", cred})
 	require.Equal(t, exitOK, code, stderr.buf.String())
 	require.Contains(t, stderr.buf.String(), "large revert: 1010 rows, 1009 to restore and 1 left as they are")
-	require.Contains(t, stderr.buf.String(), "the first 1000 rows, rows left alone first")
+	require.Contains(t, stderr.buf.String(), "below and in the link: 1000 rows, 999 to restore and 1 left as they are")
 	require.Contains(t, stderr.buf.String(), "signed. Your agent restores the 1009 remaining rows in batches of up to 200")
 	require.Contains(t, stdout.String(), `skip       public.leads {"id": 1005}: CHANGED_AFTER`)
 	require.Equal(t, 1000, strings.Count(stdout.String(), "\n"), "the sample")

@@ -31,7 +31,8 @@ export const REVERT_RESPONSE_PREFIX = "basalt-revert.1.";
 export const KIND_APPROVE = "APPROVE";
 export const MAX_ROWS = 50; // foundation, Default policy: over 50 rows is refused
 export const KIND_REVERT = "REVERT";
-export const MAX_REVERT_LINES = 1000; // decisions M3-9, N12-4: lines of a one-call revert, and lines a link carries
+export const MAX_REVERT_LINES = 1000; // decisions M3-9, N12-4, RS-1: lines of a one-call revert, and lines a link carries
+export const REVERT_SAMPLE_SHARE = MAX_REVERT_LINES / 2; // decision RS-1: room a sample keeps for each kind of line
 export const MAX_REVERT_BATCH = 200; // decision N12-3: lines per apply_revert_batch
 export const REVERT_APPLY_HOURS = 24; // decision N12-2: a signed large plan runs within 24 hours
 export const ALG_ES256 = -7;
@@ -575,9 +576,36 @@ async function checkAllLines(texts, binding) {
   return lines;
 }
 
-// checkSample: a large plan's request carries its sample (decision N12-4):
-// the first MAX_REVERT_LINES lines, SKIP lines first, hashing to sampleHash.
-// The signature still covers every line through rowsHash.
+// revertSampleCounts is how many SKIP and RESTORE lines a batched plan's
+// sample carries, from the signed binding's skipped and rows: up to
+// REVERT_SAMPLE_SHARE of each, and when one kind has fewer the other fills
+// the rest, at most MAX_REVERT_LINES (decision RS-1, amending N12-4). Same as
+// revert.SampleCounts in Go.
+export function revertSampleCounts(skipped, rows) {
+  const skips = Math.min(skipped, Math.max(REVERT_SAMPLE_SHARE, MAX_REVERT_LINES - rows));
+  return { skips, restores: Math.min(rows, MAX_REVERT_LINES - skips) };
+}
+
+// revertShown is what a checked revert request shows and hides, for the
+// page's "x of N shown" lines. Every number comes from signed data: the
+// totals from the binding, the shown counts from the lines, which hash to
+// rowsHash (one call) or sampleHash (a batched plan). The request carries
+// nothing else the page could count from.
+export function revertShown(req) {
+  const restoreShown = req.lines.filter((l) => l.action === "RESTORE").length;
+  const skipShown = req.lines.length - restoreShown;
+  return {
+    restoreShown,
+    skipShown,
+    restoreHidden: req.binding.rows - restoreShown,
+    skipHidden: req.binding.skipped - skipShown,
+  };
+}
+
+// checkSample: a large plan's request carries its sample (decisions N12-4,
+// RS-1): MAX_REVERT_LINES lines, SKIP lines first, as many of each kind as
+// revertSampleCounts gives, hashing to sampleHash. The signature still
+// covers every line through rowsHash.
 async function checkSample(texts, binding) {
   if (texts.length !== MAX_REVERT_LINES) {
     throw new CodeError(`request has ${texts.length} lines, a batched plan's sample has ${MAX_REVERT_LINES}`);
@@ -591,7 +619,7 @@ async function checkSample(texts, binding) {
   if (lines.slice(skips).some((l) => l.action === "SKIP")) {
     throw new CodeError("the sample must list SKIP lines before RESTORE lines");
   }
-  const want = Math.min(binding.skipped, MAX_REVERT_LINES);
+  const want = revertSampleCounts(binding.skipped, binding.rows).skips;
   if (skips !== want) {
     throw new CodeError(`request has ${skips} SKIP lines, the binding's sample ${want}`);
   }

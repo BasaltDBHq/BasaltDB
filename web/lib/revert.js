@@ -15,6 +15,7 @@ import {
   relyingParty,
   revertResponseJSON,
   revertShown,
+  visibleText,
 } from "./codec.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths, revertDone } from "./local.js";
 import { $, REVERT_REOPEN, el, fail, linkFailure, loadOrPaste, personText, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
@@ -35,10 +36,11 @@ const CONFLICTS = {
   CONSTRAINT: "Restoring it would break a database constraint.",
 };
 
-// display shows a column's value as the line carries it (displayValue).
+// display shows a column's value as the line carries it (displayValue), with
+// the characters that hide or reorder text shown as escapes (visibleText).
 function display(line, member, col) {
   const row = line[member] ?? {};
-  return displayValue(row[col], line.texts?.[member]?.get(col));
+  return visibleText(displayValue(row[col], line.texts?.[member]?.get(col)));
 }
 
 function plural(n, word) {
@@ -48,9 +50,9 @@ function plural(n, word) {
 function renderSummary(req) {
   const b = req.binding;
   $("scope").textContent = `${SCOPES[b.scope]} (${b.scopeId})`;
-  $("agents").textContent = b.agents.join(", ");
-  $("database").textContent = b.database;
-  $("intent").textContent = b.intent;
+  $("agents").textContent = visibleText(b.agents.join(", "));
+  $("database").textContent = visibleText(b.database);
+  $("intent").textContent = visibleText(b.intent);
   $("rows").textContent = plural(b.rows, "row");
   $("skipped").textContent = plural(b.skipped, "row");
   $("expires").textContent = b.expiresAt.toLocaleString();
@@ -94,7 +96,7 @@ export function rowTable(line) {
   for (const col of columns) {
     const changes = showNow && showAfter && col in after && display(line, "now", col) !== display(line, "set", col);
     const tr = el("tr", changes ? "changed" : "");
-    tr.append(el("td", "col", col));
+    tr.append(el("td", "col", visibleText(col)));
     if (showNow) tr.append(el("td", "", display(line, "now", col)));
     if (showAfter) tr.append(el("td", "", display(line, "set", col)));
     table.append(tr);
@@ -112,12 +114,12 @@ function renderLine(line) {
   const card = el("li", "row");
   const title = el("div", "row-title");
   title.append(el("span", `op op-${line.op.toLowerCase()}`, opLabel(line)));
-  title.append(el("span", "table-name", line.table));
+  title.append(el("span", "table-name", visibleText(line.table)));
   if (line.cascaded) title.append(el("span", "badge", "cascaded"));
   card.append(title);
   if (line.action === "SKIP") {
     const reason = CONFLICTS[line.conflict];
-    card.append(el("p", "conflict", line.sqlState ? `${reason} (SQLSTATE ${line.sqlState})` : reason));
+    card.append(el("p", "conflict", line.sqlState ? `${reason} (SQLSTATE ${visibleText(line.sqlState)})` : reason));
   }
   if (line.redacted) {
     card.append(el("p", "muted", "Values hidden: the role that prepared this revert cannot read this table."));

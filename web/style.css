@@ -83,6 +83,19 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
 .values th { text-align: left; color: var(--muted); font-weight: 500; font-size: 0.8rem; }
 .values th, .values td { padding: 0.2rem 0.5rem; border-top: 1px solid var(--line); vertical-align: top; word-break: break-word; }
 .values tr.changed td { background: var(--changed); }
+/* Text an agent wrote: right-to-left letters in one value cannot reorder the
+   text around it, and a value's spaces show as they are (two spaces are not
+   one). Hidden characters are escaped as <U+XXXX> before they get here, and
+   a long run of combining marks too; overflow: hidden clips what is left so
+   nothing paints over a neighboring cell. */
+.values td, .summary dd, .table-name, .headline, #cascade-text { unicode-bidi: isolate; }
+.values td { white-space: pre-wrap; }
+.values td, .summary dd { overflow: hidden; }
+/* Values, params, the statement and the intent show in the order they are
+   stored, left to right, even with right-to-left letters in them:
+   "ש 100 200" cannot read as "200 100 ש" (fidelity over readability).
+   web/lib/display.test.mjs checks the selectors. */
+.values td, #params, #statement, #intent { direction: ltr; unicode-bidi: isolate-override; }
 
 button {
   font: inherit;

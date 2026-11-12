@@ -120,8 +120,8 @@ func TestAgentRevertToolsHaveContracts(t *testing.T) {
 	require.True(t, ok)
 	require.Contains(t, props, "signature")
 	require.Contains(t, props, "taskId", "RS-7: served now that the engine checks the agent ran in the task")
-	for _, planned := range []string{"runs", "tables"} {
-		require.NotContains(t, props, planned, "RS-1 filters are not served until the engine checks them")
+	for _, filter := range []string{"runs", "tables"} {
+		require.Contains(t, props, filter, "RS-1: the filters are served")
 	}
 }
 
@@ -150,9 +150,8 @@ func TestDropPlannedInputsRefusesConstrainedNames(t *testing.T) {
 	require.Contains(t, mustMap(t, free["properties"]), "ok")
 }
 
-// TestRevertScopeArguments: the revert scope filters (RS-1) are in the
-// contract, marked planned, and the engine does not serve them yet.
-// request_revert's taskId (RS-7) is served.
+// TestRevertScopeArguments: the revert scope filters (RS-1) are served on
+// both tools, capped at 20 entries each (owner, Q10).
 func TestRevertScopeArguments(t *testing.T) {
 	t.Parallel()
 	all, err := mcpcontract.LoadAll()
@@ -170,8 +169,8 @@ func TestRevertScopeArguments(t *testing.T) {
 		for _, name := range names {
 			prop := mustMap(t, props[name])
 			desc, _ := prop["description"].(string)
-			require.True(t, strings.HasPrefix(desc, mcpcontract.PlannedPrefix), "%s.%s is planned", tool, name)
-			require.NotContains(t, servedProps, name, "%s.%s is not served", tool, name)
+			require.False(t, strings.HasPrefix(desc, mcpcontract.PlannedPrefix), "%s.%s is served", tool, name)
+			require.Contains(t, servedProps, name, "%s.%s is served", tool, name)
 		}
 		for _, name := range []string{"runs", "tables"} {
 			require.EqualValues(t, mcpcontract.MaxScopeFilter, mustMap(t, props[name])["maxItems"], "%s.%s cap (owner, Q10)", tool, name)
@@ -613,9 +612,8 @@ func TestServedCatalogLeavesPlannedOut(t *testing.T) {
 			plannedResults++
 		}
 	}
-	require.Positive(t, plannedErrors, "the revert scope errors are planned")
-	// Every result case is served since the reject (REJECTED); a planned
-	// result added later is still counted below.
+	// Every entry is served since the RS-1 filters and the reject
+	// (REJECTED); a planned entry added later is still counted below.
 	require.Len(t, served.Errors, len(all.Errors)-plannedErrors)
 	require.Len(t, served.Results, len(all.Results)-plannedResults)
 	for _, e := range served.Errors {
@@ -626,6 +624,10 @@ func TestServedCatalogLeavesPlannedOut(t *testing.T) {
 	}
 	_, ok := served.ErrorEntry("NOT_FOUND", "LINK_RESET", "")
 	require.True(t, ok, "NOT_FOUND LINK_RESET is served (the revert page's reset link)")
+	for _, reason := range []string{"SCOPE_FILTER", "SCOPE_FILTER_CAP"} {
+		_, ok := served.ErrorEntry("INVALID_ARGUMENT", reason, "")
+		require.True(t, ok, "INVALID_ARGUMENT %s is served (RS-1 filters)", reason)
+	}
 }
 
 // schemaRefs returns every $ref value in a schema, at any depth.

@@ -118,6 +118,9 @@ type fakeSys struct {
 	written map[string]string
 	modes   map[string]os.FileMode
 	owners  map[string]string
+	// binaryErr is what CheckBinary returns; checked records its calls.
+	binaryErr error
+	checked   []string
 }
 
 func (s *fakeSys) UserExists(string) bool { return false }
@@ -145,6 +148,10 @@ func (s *fakeSys) WriteFile(path string, data []byte, mode os.FileMode, owner st
 	return nil
 }
 func (s *fakeSys) Remove(string) error { return nil }
+func (s *fakeSys) CheckBinary(path string) error {
+	s.checked = append(s.checked, path)
+	return s.binaryErr
+}
 
 // initRun runs basalt init against d with the fake host, as if at a
 // terminal when interactive.
@@ -348,7 +355,7 @@ func TestInitDryRunPrintsTheServicePlan(t *testing.T) {
 func TestServiceInstallAgentReadsTheCredentialFromStdin(t *testing.T) {
 	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "engine.json")
-	spec := service.Spec{GOOS: "linux", Binary: fakeBin, ConfigPath: cfgPath, User: "basalt"}
+	spec := service.Spec{GOOS: "linux", Binary: fakeBin, ConfigPath: cfgPath, User: me(t)}
 	a := agentInstall{name: "bot", osUser: me(t), personUIDs: []uint32{4242}}
 
 	_, err := agentSpecFromStdin(strings.NewReader("postgres://x\n"), spec, a, false, false)
@@ -376,4 +383,50 @@ func TestServiceInstallAgentReadsTheCredentialFromStdin(t *testing.T) {
 	require.Contains(t, string(got.Files[0].Content), `"socketDir": "/run/basalt"`)
 	require.Contains(t, string(got.Files[0].Content), `"credentialFile": "`+cred+`"`)
 	require.NotContains(t, string(got.Files[0].Content), "pw@", "the config holds no credential")
+}
+
+// A binary anyone but root could change is refused before init asks for the
+// admin connection, connects, or runs sudo: the database is left as it was
+// and the agent's replacement never runs as root.
+func TestInitRefusesUnprotectedBinaryBeforeAnything(t *testing.T) {
+	t.Parallel()
+	for _, extra := range [][]string{{"--yes"}, {"--dry-run"}} {
+		h := newFakeHost(t)
+		h.sys.binaryErr = errors.New("/opt/basalt/bin is owned by uid 501, not root")
+		var stdout, stderr bytes.Buffer
+		getenv := func(k string) string {
+			if k == envAdminURL {
+				return "postgres://nobody@127.0.0.1:1/none?connect_timeout=1"
+			}
+			return ""
+		}
+		c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr}, getenv)
+		c.goos, c.host = "linux", h
+		code := runInit(c, append([]string{"--agent", "bot", "--write", "public.leads", "--skip-passkey"}, extra...))
+
+		require.Equal(t, exitError, code, extra)
+		require.Contains(t, stderr.String(), "owned by uid 501, not root", extra)
+		require.Contains(t, stderr.String(), "--no-service", extra)
+		require.NotContains(t, stderr.String(), "connect:", "init never connects")
+		require.Empty(t, stdout.String(), "no SQL is planned")
+		require.Equal(t, []string{fakeBin}, h.sys.checked)
+		require.Empty(t, h.sudo)
+	}
+}
+
+// With --no-service init never hands the binary to sudo, so it is not checked.
+func TestInitNoServiceDoesNotCheckTheBinary(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost(t)
+	h.sys.binaryErr = errors.New("unprotected")
+	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: io.Discard, err: io.Discard},
+		func(k string) string {
+			if k == envAdminURL {
+				return "postgres://nobody@127.0.0.1:1/none?connect_timeout=1"
+			}
+			return ""
+		})
+	c.goos, c.host = "linux", h
+	runInit(c, []string{"--agent", "bot", "--write", "public.leads", "--skip-passkey", "--yes", "--no-service"})
+	require.Empty(t, h.sys.checked)
 }

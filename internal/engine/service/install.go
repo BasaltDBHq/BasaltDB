@@ -45,6 +45,8 @@ type System interface {
 	// following a link; it refuses a symlink.
 	Mkdir(path string, mode os.FileMode, owner string) error
 	Remove(path string) error
+	// CheckBinary refuses a binary anyone but root could change.
+	CheckBinary(path string) error
 }
 
 // StepKind is one kind of install step.
@@ -123,6 +125,9 @@ func (s Spec) Validate() error {
 // its directories, and the unit, then start the service.
 func InstallPlan(ctx context.Context, sys System, s Spec) ([]Step, error) {
 	if err := s.Validate(); err != nil {
+		return nil, err
+	}
+	if err := sys.CheckBinary(s.Binary); err != nil {
 		return nil, err
 	}
 	if s.GOOS == goosDarwin {

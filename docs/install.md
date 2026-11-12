@@ -18,11 +18,22 @@ The admin connection string is used once, by `basalt init`, typed into its hidde
 git clone https://github.com/BasaltDBHq/BasaltDB.git
 cd BasaltDB
 go build -o basalt ./cmd/basalt
-sudo mkdir -p /usr/local/bin && sudo install -m 0755 basalt /usr/local/bin/basalt
+sudo install -d -o root -m 0755 /usr/local/libexec
+sudo install -o root -m 0755 basalt /usr/local/libexec/basalt
+sudo mkdir -p /usr/local/bin
+sudo ln -sf /usr/local/libexec/basalt /usr/local/bin/basalt
 basalt version
 ```
 
-`basalt version` prints the version. The engine will run as its own OS user from this path, so keep the binary somewhere every user can read, not in your home directory.
+`basalt version` prints the version.
+
+The engine runs as its own OS user from the real file behind the link, `/usr/local/libexec/basalt`. Whoever can change that file can run code with the agent's credential, so `basalt init` and `basalt service install` check it first, before init asks for the admin connection string and again before `sudo`, like sshd's `StrictModes`: the file and every directory above it must be owned by root and not writable by group or others. Otherwise they stop before changing anything:
+
+```
+basalt: /usr/local/bin is owned by uid 501, not root: the engine service runs /usr/local/bin/basalt as the engine's OS user, so only root may be able to change it or any directory above it. Install basalt in a root-owned directory and run that copy: ... (or run basalt init with --no-service)
+```
+
+That is why the commands above put the binary in `/usr/local/libexec` and only link it from `/usr/local/bin`: on an Intel Mac with Homebrew, `/usr/local/bin` belongs to you, so a `basalt` installed there is refused. Do not run `sudo install -d` on `/usr/local/bin` itself there: it would hand Homebrew's directory to root. Never install it in your home directory. If you see the error, run the `sudo install` commands above and run `basalt init` again.
 
 ## 2. Get the connection string
 

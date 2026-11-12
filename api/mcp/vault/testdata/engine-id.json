@@ -1,0 +1,50 @@
+{
+  "kind": "ENGINE_ID",
+  "description": "engineId = base64url of the first 16 bytes of sha256(signing key SPKI DER); fingerprint = its first 16 characters in four groups of four. Only the 91-byte SPKI with id-ecPublicKey, prime256v1 and an uncompressed point on the curve is accepted; every other encoding is refused.",
+  "cases": [
+    {
+      "name": "the vectors' engine signing key",
+      "engineKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEglfhPHrg8LxuAWlZjdnNSo9CTcShFClz0sAD1eBem80rLis8Tm_wbA0QU_yosHyHSPy47tQX1Pf_1K2TIafeOw",
+      "engineId": "R68WFYxAcGgIjMENS5Oqrw",
+      "fingerprint": "R68W FYxA cGgI jMEN",
+      "expect": "ACCEPT"
+    },
+    {
+      "name": "another engine's signing key",
+      "engineKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEoMHd-jMWvu9MK7ZtXP3c_OzMrGM8Kg6sJPsa9t04gT7HRDhRVIdYCarHyiCH6PcODbc5v6LauPzoaekmhvbdAw",
+      "engineId": "ODizizQoZOoQJ3PTGhUy-g",
+      "fingerprint": "ODiz izQo ZOoQ J3PT",
+      "expect": "ACCEPT"
+    },
+    {
+      "name": "a compressed point",
+      "engineKey": "MDkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDIgADglfhPHrg8LxuAWlZjdnNSo9CTcShFClz0sAD1eBem80",
+      "expect": "REFUSE"
+    },
+    {
+      "name": "explicit curve parameters",
+      "engineKey": "MIIBMzCB7AYHKoZIzj0CATCB4AIBATAsBgcqhkjOPQEBAiEA_____wAAAAEAAAAAAAAAAAAAAAD_______________8wRAQg_____wAAAAEAAAAAAAAAAAAAAAD_______________wEIFrGNdiqOpPns-u9VXaYhrxlHQawzFOw9jvOPD4n0mBLBEEEaxfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpZP40Li_hp_m47n60p8D54WK84zV2sxXs7LtkBoN79R9QIhAP____8AAAAA__________-85vqtpxeehPO5ysL8YyVRAgEBA0IABIJX4Tx64PC8bgFpWY3ZzUqPQk3EoRQpc9LAA9XgXpvNKy4rPE5v8GwNEFP8qLB8h0j8uO7UF9T3_9StkyGn3js",
+      "expect": "REFUSE"
+    },
+    {
+      "name": "a trailing byte",
+      "engineKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEglfhPHrg8LxuAWlZjdnNSo9CTcShFClz0sAD1eBem80rLis8Tm_wbA0QU_yosHyHSPy47tQX1Pf_1K2TIafeOwA",
+      "expect": "REFUSE"
+    },
+    {
+      "name": "a truncated key",
+      "engineKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEglfhPHrg8LxuAWlZjdnNSo9CTcShFClz0sAD1eBem80rLis8Tm_wbA0QU_yosHyHSPy47tQX1Pf_1K2TIafe",
+      "expect": "REFUSE"
+    },
+    {
+      "name": "a point off the curve",
+      "engineKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEglfhPHrg8LxuAWlZjdnNSo9CTcShFClz0sAD1eBem80rLis8Tm_wbA0QU_yosHyHSPy47tQX1Pf_1K2TIafeOg",
+      "expect": "REFUSE"
+    },
+    {
+      "name": "a P-384 key",
+      "engineKey": "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEOG52fqXLcWyc1iD_c0ISnIkqb8zv5hIUDIC_9Z6UNGgBndoW5QebDB2QAdI6Yktt0IjQw4JjlBlHh0A-in0H5eIvfpwLjoD6H6_10otLtZeyZ_C4cCPKYfyEVL3e_S4O",
+      "expect": "REFUSE"
+    }
+  ]
+}

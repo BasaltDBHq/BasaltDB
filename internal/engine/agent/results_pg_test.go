@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -176,8 +177,8 @@ func requireToolSteps(t *testing.T, body map[string]any, tool, kase string) []ma
 	return nil
 }
 
-// preview_revert tells the agent to ask the person, and a task is reverted
-// only by the person.
+// preview_revert tells the agent to ask the person, then request the revert
+// of its change, run or task.
 func TestPreviewRevertNextSteps(t *testing.T) {
 	t.Parallel()
 	env := agentHarness(t)
@@ -195,8 +196,13 @@ func TestPreviewRevertNextSteps(t *testing.T) {
 	require.Equal(t, "request_revert", steps[1]["tool"])
 	require.Equal(t, map[string]any{"runId": runID}, steps[1]["arguments"])
 
+	// A task the agent ran in is its own scope (RS-1, RS-7): the agent
+	// requests it, and the person can widen it on the signing page.
 	body, isError = env.h.call(t, "preview_revert", map[string]any{"taskId": taskID})
 	require.False(t, isError, "%v", body)
 	steps = requireToolSteps(t, body, "preview_revert", "PREVIEW_TASK")
-	require.Equal(t, "basalt revert --agent bot --config /etc/basalt-test/engine.json --task "+taskID+" --open", steps[1]["command"])
+	require.Equal(t, "request_revert", steps[1]["tool"])
+	require.Equal(t, map[string]any{"taskId": taskID}, steps[1]["arguments"])
+	require.True(t, strings.HasSuffix(str(t, body["personMessage"]),
+		" You can include other agents' changes in this task on the signing page."), "%v", body["personMessage"])
 }

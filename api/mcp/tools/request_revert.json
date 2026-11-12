@@ -2,7 +2,7 @@
   "name": "request_revert",
   "status": "IMPLEMENTED",
   "milestone": "M4.1",
-  "description": "Ask the person to revert one change or one run of yours: Basalt prepares the revert (as basalt revert does) and returns revertUrl, the page where the person reviews every row and signs with their passkey, and personMessage, the message to show the person verbatim, keeping its line breaks (put each link on a line of its own, exactly as given, or as [label](url) with the label from links). You can never sign a revert; you can only deliver the person's signature, which the database verifies. Before you call it, check the current data (preview_revert, and query for rows that depend on the change) and tell the person what you recommend. Name exactly one of changeId, runId, with intent (why the person reverts, in their words). A whole task is reverted only by the person (basalt revert --task); if another agent's run looks wrong, ask that agent. Show personMessage, then, without ending your turn, call request_revert once more with only revertId: that call waits up to waitForSignature seconds (default 90) and returns as soon as the person signs. APPLIED: the revert is done; tell the person what was restored and skipped. APPLYING (a revert over 1000 lines): the person signed the plan and you restore it now in batches (follow nextSteps). If the wait runs out (status PENDING), do not wait again: end your turn with the link and its expiry, and call request_revert with revertId when the person says they signed. If the person gives you a basalt-revert.1. code from the revert page, pass it as signature with revertId. People win: rows someone changed after you are skipped, never overwritten.",
+  "description": "Ask the person to revert one change or one run of yours, or your own changes in one task you ran in: Basalt prepares the revert (as basalt revert does) and returns revertUrl, the page where the person reviews every row and signs with their passkey, and personMessage, the message to show the person verbatim, keeping its line breaks (put each link on a line of its own, exactly as given, or as [label](url) with the label from links). You can never sign a revert; you can only deliver the person's signature, which the database verifies. Before you call it, check the current data (preview_revert, and query for rows that depend on the change) and tell the person what you recommend. Name exactly one of changeId, runId, taskId, with intent (why the person reverts, in their words). Another agent's change or run, or a task you never ran in, is NOT_FOUND; a task revert holds only your own lines, and the person can include other agents' changes on the signing page. If another agent's run looks wrong, ask that agent. Show personMessage, then, without ending your turn, call request_revert once more with only revertId: that call waits up to waitForSignature seconds (default 90) and returns as soon as the person signs. APPLIED: the revert is done; tell the person what was restored and skipped. APPLYING (a revert over 1000 lines): the person signed the plan and you restore it now in batches (follow nextSteps). If the wait runs out (status PENDING), do not wait again: end your turn with the link and its expiry, and call request_revert with revertId when the person says they signed. If the person gives you a basalt-revert.1. code from the revert page, pass it as signature with revertId. People win: rows someone changed after you are skipped, never overwritten.",
   "inputSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -20,7 +20,7 @@
       "taskId": {
         "type": "string",
         "format": "uuid",
-        "description": "Planned (revert scope, RS-7): revert your own changes in one task you ran in (you have a run with that task id); only your own lines. The person can include other agents' changes on the signing page. A task you never ran in is NOT_FOUND."
+        "description": "Revert your own changes in one task you ran in (you have a run with that task id); only your own lines. The person can include other agents' changes on the signing page. A task you never ran in is NOT_FOUND."
       },
       "runs": {
         "type": "array",
@@ -48,7 +48,7 @@
         "type": "string",
         "minLength": 1,
         "maxLength": 500,
-        "description": "Why the person reverts, in a sentence they can check on the revert page. Required with changeId or runId (and, planned, taskId); refused with revertId."
+        "description": "Why the person reverts, in a sentence they can check on the revert page. Required with changeId, runId or taskId; refused with revertId."
       },
       "revertId": {
         "type": "string",
@@ -108,7 +108,7 @@
           "RUN",
           "TASK"
         ],
-        "description": "The scope you requested. Planned (revert scope): TASK with taskId (RS-7); absent when widened (RS-5)."
+        "description": "The scope you requested (TASK with taskId). Planned (revert scope, RS-5): absent when widened."
       },
       "scopeId": {
         "type": "string",

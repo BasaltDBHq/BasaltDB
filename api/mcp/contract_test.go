@@ -112,15 +112,16 @@ func TestAgentRevertToolsHaveContracts(t *testing.T) {
 		require.Equal(t, "M4.1", tool.Milestone, name)
 		require.Equal(t, status, tool.Status, name)
 	}
-	// N12-R7, N12-R8: an agent requests reverts of its own changes or runs
-	// only (no task scope), and may deliver the person's signed code.
+	// N12-R8, RS-7: an agent requests reverts of its own changes, runs and
+	// tasks it ran in, and may deliver the person's signed code.
 	tool, ok := mcpcontract.Find(mcpcontract.MustLoad(), "request_revert")
 	require.True(t, ok)
 	props, ok := tool.InputSchema["properties"].(map[string]any)
 	require.True(t, ok)
 	require.Contains(t, props, "signature")
-	for _, planned := range []string{"taskId", "runs", "tables"} {
-		require.NotContains(t, props, planned, "RS-7 and RS-1 arguments are not served until the engine checks them")
+	require.Contains(t, props, "taskId", "RS-7: served now that the engine checks the agent ran in the task")
+	for _, planned := range []string{"runs", "tables"} {
+		require.NotContains(t, props, planned, "RS-1 filters are not served until the engine checks them")
 	}
 }
 
@@ -149,14 +150,15 @@ func TestDropPlannedInputsRefusesConstrainedNames(t *testing.T) {
 	require.Contains(t, mustMap(t, free["properties"]), "ok")
 }
 
-// TestRevertScopeArguments: the revert scope arguments (RS-1, RS-7) are in
-// the contract, marked planned, and the engine does not serve them yet.
+// TestRevertScopeArguments: the revert scope filters (RS-1) are in the
+// contract, marked planned, and the engine does not serve them yet.
+// request_revert's taskId (RS-7) is served.
 func TestRevertScopeArguments(t *testing.T) {
 	t.Parallel()
 	all, err := mcpcontract.LoadAll()
 	require.NoError(t, err)
 	for tool, names := range map[string][]string{
-		"request_revert": {"taskId", "runs", "tables"},
+		"request_revert": {"runs", "tables"},
 		"preview_revert": {"runs", "tables"},
 	} {
 		written, ok := mcpcontract.Find(all, tool)

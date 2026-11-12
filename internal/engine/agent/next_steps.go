@@ -149,6 +149,10 @@ func (s *Service) errorGuidance(te *mcp.ToolError, f failure) ([]mcp.NextStep, s
 	case CodePermissionDenied:
 		person = s.permissionDeniedSteps(b, te, f)
 	case CodeNotFound:
+		if f.tool == toolDescribe {
+			person = s.describeNotFoundSteps(b, f)
+			break
+		}
 		person = notFoundSteps(b, te, f)
 	case CodeSQLError:
 		sqlErrorSteps(b, te, f)
@@ -279,6 +283,10 @@ func rowLimitSteps(b *Steps) string {
 }
 
 func queryTimeoutSteps(b *Steps, te *mcp.ToolError, f failure) {
+	if f.tool == toolDescribe {
+		b.ReviseCall(f.tool, nil, "Search with a longer, more specific query so the catalog answers in time, then call describe again.")
+		return
+	}
 	if te.Reason == ReasonRowLimit {
 		b.ReviseCall(f.tool, nil, "Add a LIMIT or a narrower WHERE so the call returns fewer rows, then call it again.")
 		return

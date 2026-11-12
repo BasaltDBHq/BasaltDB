@@ -19,6 +19,9 @@ type Relation struct {
 	EstimatedRows *int64
 	// Comment is the catalog text, untrimmed.
 	Comment string
+	// Privileges lists SELECT, INSERT, UPDATE and DELETE as held by
+	// session_user, SELECT by the visibility rule (readableTable).
+	Privileges []string
 }
 
 // userSchemaFilter keeps a query to user schemas: not the system schemas,
@@ -89,7 +92,7 @@ func (r *Relation) scanTargets() []any {
 // name, and counts the ones it cannot, without naming them.
 func Relations(ctx context.Context, db Querier) (visible []Relation, notGranted int, err error) {
 	// Plain SQL: a pg_catalog read, not table DML.
-	rows, err := db.Query(ctx, `SELECT `+relationColumns+`, `+readableTable+` `+relationFrom+`
+	rows, err := db.Query(ctx, `SELECT `+relationColumns+`, `+privilegeColumns+` `+relationFrom+`
 		ORDER BY n.nspname, c.relname`)
 	if err != nil {
 		return nil, 0, err
@@ -97,14 +100,15 @@ func Relations(ctx context.Context, db Querier) (visible []Relation, notGranted 
 	defer rows.Close()
 	for rows.Next() {
 		var r Relation
-		var readable bool
-		if err := rows.Scan(append(r.scanTargets(), &readable)...); err != nil {
+		var privs [4]bool
+		if err := rows.Scan(append(r.scanTargets(), &privs[0], &privs[1], &privs[2], &privs[3])...); err != nil {
 			return nil, 0, err
 		}
-		if !readable {
+		if !privs[0] {
 			notGranted++
 			continue
 		}
+		r.Privileges = privilegeNames(privs)
 		visible = append(visible, r)
 	}
 	return visible, notGranted, rows.Err()
@@ -114,14 +118,16 @@ func Relations(ctx context.Context, db Querier) (visible []Relation, notGranted 
 // session_user cannot read it (the two look the same on purpose).
 func FindRelation(ctx context.Context, db Querier, schema, name string) (Relation, bool, error) {
 	// Plain SQL: a pg_catalog read, not table DML.
-	rows, err := db.Query(ctx, `SELECT `+relationColumns+` `+relationFrom+`
+	rows, err := db.Query(ctx, `SELECT `+relationColumns+`, `+privilegeColumns+` `+relationFrom+`
 		AND n.nspname = $1 AND c.relname = $2 AND `+readableTable, schema, name)
 	if err != nil {
 		return Relation{}, false, err
 	}
 	r, err := pgx.CollectOneRow(rows, func(row pgx.CollectableRow) (Relation, error) {
 		var r Relation
-		err := row.Scan(r.scanTargets()...)
+		var privs [4]bool
+		err := row.Scan(append(r.scanTargets(), &privs[0], &privs[1], &privs[2], &privs[3])...)
+		r.Privileges = privilegeNames(privs)
 		return r, err
 	})
 	if errors.Is(err, pgx.ErrNoRows) {

@@ -121,6 +121,24 @@ func TestRelationsHidesUngranted(t *testing.T) {
 	require.Equal(t, "  Accounts, zqxpadded  ", relByName(t, rels, "a").Comment)
 }
 
+// TestRelationsReportPrivileges: the overview lists each table's access, so
+// Relations and FindRelation report SELECT by the visibility rule (a
+// column grant counts) and the table-level writes.
+func TestRelationsReportPrivileges(t *testing.T) {
+	db := describeFixture(t)
+	ctx := context.Background()
+	rels, _, err := pgcatalog.Relations(ctx, db)
+	require.NoError(t, err)
+	require.Equal(t, []string{"DELETE", "INSERT", "SELECT", "UPDATE"}, sorted(relByName(t, rels, "a").Privileges))
+	require.Equal(t, []string{"SELECT"}, relByName(t, rels, "b").Privileges, "a column grant is SELECT")
+	require.Equal(t, []string{"SELECT"}, relByName(t, rels, "v").Privileges)
+
+	r, ok, err := pgcatalog.FindRelation(ctx, db, describeSchema, "a")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, []string{"DELETE", "INSERT", "SELECT", "UPDATE"}, sorted(r.Privileges))
+}
+
 func TestRelationsEstimatedRowsNilWhenNeverAnalyzed(t *testing.T) {
 	db := describeFixture(t)
 	rels, _, err := pgcatalog.Relations(context.Background(), db)

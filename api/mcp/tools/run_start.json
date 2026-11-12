@@ -2,7 +2,7 @@
   "name": "run_start",
   "status": "IMPLEMENTED",
   "milestone": "M1",
-  "description": "Start a run: one task with one intent, the unit a person reviews and reverts. Pass the runId to later write and query calls. Pass taskId to join a task another agent started. Call status once at the start of a session. If the guard has migrations to install, the result carries a GUARD_UPGRADE_AVAILABLE warning with nextSteps (the work goes on; the person upgrades when ready).",
+  "description": "Start a run: one task with one intent, the unit a person reviews and reverts. Pass the runId to later write and query calls. Pass taskId to join a task another agent started. Call status once at the start of a session, and describe before your first query to see the tables you can use. If the guard has migrations to install, the result carries a GUARD_UPGRADE_AVAILABLE warning with nextSteps (the work goes on; the person upgrades when ready).",
   "inputSchema": {
     "type": "object",
     "additionalProperties": false,

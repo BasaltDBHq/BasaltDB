@@ -79,8 +79,6 @@ type Detail struct {
 	Keys       []Key
 	Stats      Stats
 	RLS        bool
-	// Privileges lists SELECT, INSERT, UPDATE and DELETE as held by session_user.
-	Privileges []string
 	// CascadesIntoHidden is how many distinct unreadable tables a DELETE here
 	// reaches, transitively over CASCADE, SET NULL and SET DEFAULT.
 	CascadesIntoHidden int

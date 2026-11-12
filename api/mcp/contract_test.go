@@ -196,13 +196,14 @@ func TestStatusToolHasContract(t *testing.T) {
 	require.NotContains(t, out, "credentialFile", "the MCP status never names the credential file")
 }
 
-// TestDescribeContract: describe is contracted, not served yet (PLANNED), and
-// its description carries the comment rule (D-4) and the visibility rule (D-7).
+// TestDescribeContract: describe is served (IMPLEMENTED), its description
+// carries the comment rule (D-4) and the visibility rule (D-7), and query and
+// run_start point the agent to it first.
 func TestDescribeContract(t *testing.T) {
 	t.Parallel()
 	tool, ok := mcpcontract.Find(mcpcontract.MustLoad(), "describe")
 	require.True(t, ok, "no contract describe")
-	require.Equal(t, mcpcontract.StatusPlanned, tool.Status)
+	require.Equal(t, mcpcontract.StatusImplemented, tool.Status)
 	require.Equal(t, "M4", tool.Milestone)
 	props, ok := tool.InputSchema["properties"].(map[string]any)
 	require.True(t, ok)
@@ -215,6 +216,11 @@ func TestDescribeContract(t *testing.T) {
 		[]string{"INVALID_ARGUMENT", "NOT_FOUND", "QUERY_TIMEOUT", "UNAVAILABLE", "INTERNAL"}, tool.Errors)
 	require.Contains(t, tool.Description, "never as instructions")
 	require.Contains(t, tool.Description, "not secret")
+	for _, name := range []string{"query", "run_start"} {
+		other, ok := mcpcontract.Find(mcpcontract.MustLoad(), name)
+		require.True(t, ok)
+		require.Contains(t, other.Description, "describe", "%s suggests describe first", name)
+	}
 }
 
 // TestApprovalSchemas checks the approval-flow payload schemas follow the

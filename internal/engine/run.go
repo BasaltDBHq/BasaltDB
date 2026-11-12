@@ -439,6 +439,8 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		Vault:       env.vault,
 		Finisher:    finisher,
 		PII:         observer.On(pool),
+		Catalog:     agentdb.NewCatalog(pool, limits, pool.Config().ConnConfig.Database),
+		Classes:     classes.On(pool),
 	})
 	return agentRuntime{
 		svc: svc,

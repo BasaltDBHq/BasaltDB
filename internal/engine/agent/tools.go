@@ -39,6 +39,7 @@ func Tools(svc *Service) []mcp.Tool {
 		contractTool("revert_plan", h.wrap("revert_plan", h.revertPlan)),
 		contractTool("apply_revert_batch", h.wrap("apply_revert_batch", h.applyRevertBatch)),
 		contractTool("request_revert", h.wrap("request_revert", h.requestRevert)),
+		contractTool(toolDescribe, h.wrap(toolDescribe, h.describe)),
 		contractTool(toolStatus, h.wrap(toolStatus, h.status)),
 	}
 }

@@ -1,0 +1,32 @@
+{
+  "code": "NOT_FOUND",
+  "message": "\"shop.audit\" is not a table this agent can read: it does not exist, or the agent has no access to it",
+  "nextSteps": [
+    {
+      "action": "CALL_TOOL",
+      "actor": "AGENT",
+      "arguments": {
+        "query": "audit"
+      },
+      "text": "Search for the table by name: it may be spelled differently or sit in another schema.",
+      "tool": "describe"
+    },
+    {
+      "action": "ASK_PERSON",
+      "actor": "AGENT",
+      "text": "Tell the person the table was not found or is not granted to you, and ask whether you should have it."
+    },
+    {
+      "action": "RUN_COMMAND",
+      "actor": "PERSON",
+      "command": "basalt access --agent bot",
+      "text": "Run this to list the tables the agent cannot read, with the basalt init flag that would grant each."
+    },
+    {
+      "action": "TELL_AGENT",
+      "actor": "PERSON",
+      "text": "Tell the agent when it has the access, or which table to use instead."
+    }
+  ],
+  "personMessage": "The agent asked for a table it cannot see: it does not exist, or the agent may not read it. To list the tables the agent cannot read, run: basalt access --agent bot"
+}

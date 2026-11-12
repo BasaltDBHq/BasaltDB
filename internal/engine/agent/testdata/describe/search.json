@@ -1,0 +1,37 @@
+{
+  "form": "SEARCH",
+  "items": [
+    {
+      "access": [
+        "SELECT"
+      ],
+      "comment": "Line items, one per product in an order",
+      "estimatedRows": 0,
+      "kind": "TABLE",
+      "matched": "table",
+      "resource": "\"Sales\".\"Order Items\""
+    },
+    {
+      "access": [
+        "SELECT"
+      ],
+      "comment": "Customer orders",
+      "estimatedRows": 20,
+      "kind": "TABLE",
+      "matched": "table",
+      "resource": "shop.orders"
+    },
+    {
+      "access": [
+        "SELECT",
+        "INSERT",
+        "UPDATE",
+        "DELETE"
+      ],
+      "estimatedRows": 20,
+      "kind": "TABLE",
+      "matched": "column order_id",
+      "resource": "shop.lines"
+    }
+  ]
+}

@@ -100,8 +100,11 @@ func (p localPages) signApproval(id, secret string, person *passkeytest.Authenti
 }
 
 type pageError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code          string         `json:"code"`
+	Message       string         `json:"message"`
+	Reason        string         `json:"reason"`
+	PersonMessage string         `json:"personMessage"`
+	NextSteps     []mcp.NextStep `json:"nextSteps"`
 }
 
 // holdWrite starts a run and returns the arguments of a write the guard
@@ -197,6 +200,8 @@ func TestPagesRefuseUnknownAndExpired(t *testing.T) {
 	unknown := uuid.Must(uuid.NewV7()).String()
 	require.Equal(t, http.StatusNotFound, p.get("/api/v1/approvals/"+unknown, "x", &perr))
 	require.Equal(t, "NOT_FOUND", perr.Code)
+	require.Equal(t, "LINK", perr.Reason)
+	require.Contains(t, perr.PersonMessage, "Ask the agent for the link again")
 	require.Equal(t, http.StatusNotFound, p.get("/api/v1/reverts/"+unknown, "x", &perr))
 	require.Equal(t, http.StatusBadRequest, p.get("/api/v1/approvals/nope", "x", &perr))
 
@@ -206,8 +211,11 @@ func TestPagesRefuseUnknownAndExpired(t *testing.T) {
 	ap := approvalOf(t, body)
 	id, secret := str(t, ap["approvalId"]), links.SecretOf(str(t, ap["approvalUrl"]))
 	d.Exec(t, `UPDATE basalt_meta.approvals SET expires_at = now() - interval '1 minute' WHERE approval_id = '`+id+`'`)
+	perr = pageError{}
 	require.Equal(t, http.StatusGone, p.get("/api/v1/approvals/"+id, secret, &perr), "the right secret on an expired write")
 	require.Equal(t, "APPROVAL_EXPIRED", perr.Code)
+	require.Contains(t, perr.PersonMessage, "expired before it was approved", "the page tells the person what happened")
+	require.Empty(t, perr.NextSteps, "its steps are the agent's, not the page's")
 	require.Equal(t, http.StatusNotFound, p.get("/api/v1/approvals/"+id, "", &perr), "without it nothing is told")
 }
 
@@ -310,6 +318,30 @@ func TestShortLinkRevertThroughTheRelay(t *testing.T) {
 	require.Equal(t, "open", leadStatus(t, d, 40))
 	require.Equal(t, http.StatusConflict, p.get("/api/v1/reverts/"+id, secret, &perr))
 	require.Equal(t, "REVERT_INVALID", perr.Code)
+	require.Equal(t, "PLAN_FINISHED", perr.Reason)
+}
+
+// An expired revert's page error carries the person's message and their
+// step: the command that prepares it again. The agent's steps stay out.
+func TestRevertPageErrorCarriesThePersonsSteps(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	env := agentHarnessFor(t, d, d.NewAgent(t, "bot", leads, leads), pageOrigin)
+	p := newLocalPages(t, env)
+	runID, _ := winLeads(t, env.h, "46, 47")
+	req := requestRevert(t, env.h, map[string]any{"runId": runID, "intent": "Undo"})
+	id, secret := str(t, req["revertId"]), links.SecretOf(str(t, req["revertUrl"]))
+	expireRevert(t, env, id)
+
+	var perr pageError
+	require.Equal(t, http.StatusGone, p.get("/api/v1/reverts/"+id, secret, &perr))
+	require.Equal(t, "REVERT_EXPIRED", perr.Code)
+	require.Equal(t, "NOT_SIGNED", perr.Reason)
+	require.Contains(t, perr.PersonMessage, "expired")
+	require.Len(t, perr.NextSteps, 1)
+	require.Equal(t, mcp.ActorPerson, perr.NextSteps[0].Actor)
+	require.Equal(t, mcp.ActionRunCommand, perr.NextSteps[0].Action)
+	require.Equal(t, "basalt revert --agent bot --config /etc/basalt-test/engine.json --run "+runID+" --open", perr.NextSteps[0].Command)
 }
 
 func TestListPendingReissuesTheLink(t *testing.T) {

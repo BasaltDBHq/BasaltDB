@@ -317,7 +317,8 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 	if err != nil {
 		return WriteOutcome{}, s.withApprovalLink(ctx, a, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err))
 	}
-	return WriteOutcome{WriteResult: res, RunID: run.ID, Op: stmt.Op, ApprovalID: a.ID}, nil
+	return WriteOutcome{WriteResult: res, RunID: run.ID, Op: stmt.Op, ApprovalID: a.ID,
+		Warnings: s.rlsWarnings(ctx, stmt.Tables, res.Rows)}, nil
 }
 
 // withApprovalLink gives an approval error that sends the person back to the
@@ -392,6 +393,10 @@ func (s *Service) relay(ctx context.Context, a ledger.Approval, code string) err
 type PendingItem struct {
 	ledger.Approval
 	Notice mcp.ApprovalNotice
+	// PersonMessage and NextSteps say what happens next (CONTRACT.md, Next steps).
+	PersonMessage string
+	Links         []mcp.Link
+	NextSteps     []mcp.NextStep
 }
 
 // ListPending returns one page of the agent's open held writes. It touches
@@ -411,7 +416,11 @@ func (s *Service) ListPending(ctx context.Context, p ledger.ApprovalListParams, 
 		if err != nil {
 			return pagination.Page[PendingItem]{}, err
 		}
-		out.Items = append(out.Items, PendingItem{Approval: a, Notice: n.ApprovalNotice})
+		item := PendingItem{Approval: a, Notice: n.ApprovalNotice}
+		if item.PersonMessage, item.Links, item.NextSteps, err = s.itemGuidance(item); err != nil {
+			return pagination.Page[PendingItem]{}, err
+		}
+		out.Items = append(out.Items, item)
 	}
 	return out, nil
 }

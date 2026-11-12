@@ -119,10 +119,11 @@ type runStartArgs struct {
 }
 
 type runStartResult struct {
-	RunID     string `json:"runId"`
-	TaskID    string `json:"taskId"`
-	Intent    string `json:"intent"`
-	StartedAt string `json:"startedAt"`
+	RunID     string        `json:"runId"`
+	TaskID    string        `json:"taskId"`
+	Intent    string        `json:"intent"`
+	StartedAt string        `json:"startedAt"`
+	Warnings  []mcp.Warning `json:"warnings,omitempty"`
 }
 
 func (h handlers) runStart(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -134,7 +135,7 @@ func (h handlers) runStart(ctx context.Context, raw json.RawMessage) (any, error
 	if err != nil {
 		return nil, err
 	}
-	return runStartResult{RunID: run.RunID.String(), TaskID: run.TaskID.String(), Intent: run.Intent, StartedAt: timeText(run.StartedAt)}, nil
+	return runStartResult{RunID: run.RunID.String(), TaskID: run.TaskID.String(), Intent: run.Intent, StartedAt: timeText(run.StartedAt), Warnings: run.Warnings}, nil
 }
 
 // --- query ---
@@ -152,6 +153,7 @@ type queryResult struct {
 	Rows       []map[string]any `json:"rows"`
 	RowCount   int              `json:"rowCount"`
 	DurationMs int64            `json:"durationMs"`
+	Warnings   []mcp.Warning    `json:"warnings,omitempty"`
 }
 
 type columnDTO struct {
@@ -162,7 +164,7 @@ type columnDTO struct {
 func queryResultFromDomain(r QueryOutcome) queryResult {
 	return queryResult{
 		ChangeID: r.ChangeID.String(), Columns: columnsDTO(r.Columns), Rows: r.Rows, RowCount: len(r.Rows),
-		DurationMs: r.Duration.Milliseconds(),
+		DurationMs: r.Duration.Milliseconds(), Warnings: r.Warnings,
 	}
 }
 
@@ -213,12 +215,13 @@ type writeResult struct {
 	DurationMs int64            `json:"durationMs"`
 	Status     string           `json:"status"`
 	Returning  []map[string]any `json:"returning,omitempty"`
+	Warnings   []mcp.Warning    `json:"warnings,omitempty"`
 }
 
 func writeResultFromDomain(o WriteOutcome) writeResult {
 	return writeResult{
 		ChangeID: o.ChangeID.String(), RunID: o.RunID.String(), Op: string(o.Op), Rows: o.Rows,
-		DurationMs: o.Duration.Milliseconds(), Status: StatusApplied, Returning: o.Returning,
+		DurationMs: o.Duration.Milliseconds(), Status: StatusApplied, Returning: o.Returning, Warnings: o.Warnings,
 	}
 }
 

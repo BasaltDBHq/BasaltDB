@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 
 import { approvalResponseJSON, b64urlDecode, checkApprovalRequest, parseApprovalRequest } from "./codec.js";
 import { REQUEST_ATTEMPTS, REQUEST_RETRY_MS, RelayError, SECRET_HEADER, fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths, revertDone, shortLinkId } from "./local.js";
-import { linkFailure, APPROVE_REOPEN } from "./page.js";
+import { linkFailure, personText, APPROVE_REOPEN } from "./page.js";
 
 const fixtures = JSON.parse(
   readFileSync(new URL("../../internal/approval/testdata/fixtures.json", import.meta.url), "utf8"),
@@ -83,6 +83,40 @@ test("the signed response is posted as JSON to the relay", async () => {
   assert.equal(calls[0].init.headers["Content-Type"], "application/json");
   assert.equal(calls[0].init.headers[SECRET_HEADER], "s3cr3t");
   assert.deepEqual(Object.keys(JSON.parse(calls[0].init.body)), ["approvalId", "credentialId", "authenticatorData", "clientDataJson", "signature"]);
+});
+
+test("engine errors carry the person's message and steps, and the page shows them", async () => {
+  const { fetchFn } = fakeEngine({
+    [`GET /api/v1/reverts/${id}`]: {
+      status: 410,
+      body: {
+        code: "REVERT_EXPIRED",
+        message: "revert expired",
+        reason: "NOT_SIGNED",
+        personMessage: "The revert of run r1 was not signed within an hour, so it expired.",
+        nextSteps: [{ actor: "PERSON", action: "RUN_COMMAND", text: "Prepare it again.", command: "basalt revert --agent bot --run r1 --open" }],
+      },
+    },
+    [`GET /api/v1/approvals/${id}`]: {
+      status: 404,
+      body: { code: "NOT_FOUND", message: "no such link", reason: "LINK", personMessage: "This link is incomplete, expired or was replaced.", nextSteps: [] },
+    },
+  });
+  const err = await fetchRequest(fetchFn, `/api/v1/reverts/${id}`, "s3cr3t").catch((e) => e);
+  assert.equal(err.reason, "NOT_SIGNED");
+  assert.equal(err.personMessage, "The revert of run r1 was not signed within an hour, so it expired.");
+  assert.equal(err.nextSteps.length, 1);
+  assert.equal(
+    linkFailure(err, "revert", "reopen it"),
+    "The revert of run r1 was not signed within an hour, so it expired.\nPrepare it again. Run: basalt revert --agent bot --run r1 --open",
+  );
+
+  const link = await fetchRequest(fetchFn, `/api/v1/approvals/${id}`, "").catch((e) => e);
+  assert.equal(linkFailure(link, "approval", APPROVE_REOPEN), "This link is incomplete, expired or was replaced.\nOr " + APPROVE_REOPEN + ".");
+
+  const bare = new RelayError("plain");
+  assert.deepEqual(bare.nextSteps, []);
+  assert.equal(personText(bare), "", "an error without the person's message shows its own text");
 });
 
 test("engine errors come back with their code and message", async () => {

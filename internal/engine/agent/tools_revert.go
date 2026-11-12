@@ -43,13 +43,15 @@ func (a previewRevertArgs) scope() (guard.RevertScope, error) {
 }
 
 type revertPreviewResult struct {
-	Scope      string          `json:"scope"`
-	ScopeID    string          `json:"scopeId"`
-	Rows       int             `json:"rows"`
-	Skipped    int             `json:"skipped"`
-	Command    string          `json:"command"`
-	Items      []revertLineDTO `json:"items"`
-	NextCursor string          `json:"nextCursor,omitempty"`
+	Scope         string          `json:"scope"`
+	ScopeID       string          `json:"scopeId"`
+	Rows          int             `json:"rows"`
+	Skipped       int             `json:"skipped"`
+	Command       string          `json:"command"`
+	Items         []revertLineDTO `json:"items"`
+	NextCursor    string          `json:"nextCursor,omitempty"`
+	PersonMessage string          `json:"personMessage,omitempty"`
+	NextSteps     []mcp.NextStep  `json:"nextSteps,omitempty"`
 }
 
 // revertLineDTO is one revert line as the tool returns it: the line's
@@ -107,6 +109,7 @@ func (h handlers) previewRevert(ctx context.Context, raw json.RawMessage) (any, 
 	out := revertPreviewResult{
 		Scope: string(p.Scope.Kind), ScopeID: p.Scope.ID.String(), Rows: p.Rows, Skipped: p.Skipped, Command: p.Command,
 		Items: make([]revertLineDTO, 0, len(p.Page.Items)), NextCursor: p.Page.NextCursor,
+		PersonMessage: p.PersonMessage, NextSteps: p.NextSteps,
 	}
 	for _, l := range p.Page.Items {
 		out.Items = append(out.Items, revertLineFromDomain(l))
@@ -309,6 +312,7 @@ type revertPlanResult struct {
 	Links         []mcp.Link          `json:"links,omitempty"`
 	Items         []revertPlanItemDTO `json:"items"`
 	NextCursor    string              `json:"nextCursor,omitempty"`
+	NextSteps     []mcp.NextStep      `json:"nextSteps,omitempty"`
 }
 
 // revertPlanItemDTO is one line of a batched plan: its number, what
@@ -329,7 +333,7 @@ func revertPlanFromDomain(p RevertPlan) revertPlanResult {
 		Lines: r.Rows + r.Skipped, Restored: r.Progress.Restored, Skipped: r.Progress.Skipped, Pending: r.Progress.Pending,
 		ExpiresAt: timeText(r.ExpiresAt), MaxBatch: revert.MaxBatch,
 		Items: make([]revertPlanItemDTO, 0, len(p.Page.Items)), NextCursor: p.Page.NextCursor,
-		RevertURL: p.RevertURL, PersonMessage: p.PersonMessage, Links: p.Links,
+		RevertURL: p.RevertURL, PersonMessage: p.PersonMessage, Links: p.Links, NextSteps: p.NextSteps,
 	}
 	if r.ApplyBy != nil {
 		out.ApplyBy = timeText(*r.ApplyBy)
@@ -373,13 +377,15 @@ type applyRevertBatchArgs struct {
 }
 
 type batchResultDTO struct {
-	RevertID string            `json:"revertId"`
-	Batch    int               `json:"batch"`
-	Status   string            `json:"status"`
-	Restored int               `json:"restored"`
-	Skipped  int               `json:"skipped"`
-	Pending  int               `json:"pending"`
-	Items    []guard.BatchItem `json:"items"`
+	RevertID      string            `json:"revertId"`
+	Batch         int               `json:"batch"`
+	Status        string            `json:"status"`
+	Restored      int               `json:"restored"`
+	Skipped       int               `json:"skipped"`
+	Pending       int               `json:"pending"`
+	Items         []guard.BatchItem `json:"items"`
+	PersonMessage string            `json:"personMessage,omitempty"`
+	NextSteps     []mcp.NextStep    `json:"nextSteps,omitempty"`
 }
 
 func (h handlers) applyRevertBatch(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -394,5 +400,6 @@ func (h handlers) applyRevertBatch(ctx context.Context, raw json.RawMessage) (an
 	return batchResultDTO{
 		RevertID: res.RevertID.String(), Batch: res.Batch, Status: res.Status,
 		Restored: res.Restored, Skipped: res.Skipped, Pending: res.Pending, Items: res.Items,
+		PersonMessage: res.PersonMessage, NextSteps: res.NextSteps,
 	}, nil
 }

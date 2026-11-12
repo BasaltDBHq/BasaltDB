@@ -48,8 +48,20 @@ func TestMessageBuilder(t *testing.T) {
 
 func TestPlainTextKeepsAgentTextOutOfTheURLRule(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, "Fix leads see https evil.example/x and [31mred", plainText("Fix leads\nsee https://evil.example/x and\r\n\x1b[31mred\x07"))
+	require.Equal(t, "Fix leads see https evil·example/x and [31mred", plainText("Fix leads\nsee https://evil.example/x and\r\n\x1b[31mred\x07"))
 	for name, probe := range map[string]string{
+		"bare dotted host":         "see console.basaltvault.app.evil.io/x now",
+		"bare host":                "evil.io",
+		"backslash scheme":         `https:\\evil`,
+		"mixed slashes":            `https:/\evil`,
+		"division slash":           "https:\u2215\u2215evil",
+		"fraction slash":           "https:\u2044\u2044evil",
+		"big solidus":              "https:\u29f8\u29f8evil",
+		"ideographic full stop":    "evil\u3002io",
+		"markdown link":            "[the page](https:evil)",
+		"ip with port":             "10.0.0.1:8080/approve",
+		"scheme and ip":            "http:1.2.3.4",
+		"localhost":                "localhost:8080/x",
 		"underscore before scheme": "_https://evil.example/x",
 		"letter before scheme":     "xhttps://evil.example/x",
 		"www":                      "www.evil.example/x",
@@ -58,9 +70,9 @@ func TestPlainTextKeepsAgentTextOutOfTheURLRule(t *testing.T) {
 		"zero-width space":         "ht\u200btps://evil.example/x",
 		"soft hyphen":              "ht\u00adtps://evil.example/x",
 		"control inside":           "ht\x00tps://evil.example/x",
-		"no-break space":           "see https://evil.example/x",
+		"no-break space":           "see\u00a0https://evil.example/x",
 		"next line":                "a\u0085https://evil.example/x",
-		"line separator":           "a https://evil.example/x",
+		"line separator":           "a\u2028https://evil.example/x",
 		"vertical tab":             "a\vhttps://evil.example/x",
 		"nested":                   "ht:///tps://evil.example",
 		"long fragment 2":          "#2.abcdef",
@@ -69,8 +81,28 @@ func TestPlainTextKeepsAgentTextOutOfTheURLRule(t *testing.T) {
 		"split fragment":           "#\u200b2.abc",
 	} {
 		got := plainText(probe)
-		require.NotRegexp(t, `(?i)//|www\.|#1\.|#2\.|#s=|\p{Cf}|\p{Cc}`, got, name)
+		require.NotRegexp(t, `(?i)//|\\\\|www\.|#1\.|#2\.|#s=|\p{Cf}|\p{Cc}|[\x{2215}\x{2044}\x{29f8}]|\]\(`, got, name)
+		require.NotRegexp(t, `[\p{L}\p{N}_-]\.\p{L}`, got, name, "no bare host")
+		require.NotRegexp(t, `\d+\.\d+\.\d+\.\d+|\S:\d+/|\p{L}:\d`, got, name, "no address or port")
 		require.Empty(t, urlPattern.FindString(got), name)
+	}
+	// Each form, neutralized and still readable.
+	for probe, want := range map[string]string{
+		"see console.basaltvault.app.evil.io/x now": "see console·basaltvault·app·evil·io/x now",
+		`https:\\evil.io`:                  "https evil·io",
+		"https:\u2215\u2215evil.io\u2215x": "https evil·io/x",
+		"https:\u2044\u2044evil":           "https evil",
+		"https:\u29f8\u29f8evil":           "https evil",
+		"[the page](evil.io)":              "[the page] (evil·io)",
+		"Update 3 rows in public.leads":    "Update 3 rows in public·leads",
+		"raise prices by 1.5 percent":      "raise prices by 1.5 percent",
+		"10.0.0.1:8080/approve":            "10·0·0·1 :8080/approve",
+		"http:1.2.3.4":                     "http :1·2·3·4",
+		"see localhost:8080/x":             "see localhost :8080/x",
+		"localhost:8080":                   "localhost :8080",
+		"meet at 10:30 today":              "meet at 10:30 today",
+	} {
+		require.Equal(t, want, plainText(probe), probe)
 	}
 	require.Equal(t, "short", shown("short", 10))
 	require.Equal(t, "abcdefg...", shown("abcdefghijklmnop", 10))

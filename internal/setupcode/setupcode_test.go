@@ -191,6 +191,13 @@ func TestDecodeMessages(t *testing.T) {
 	require.EqualError(t, err, "This setup code is damaged; copy it again.")
 	_, err = setupcode.Decode("basalt-setup.2.abc.AAAAAA")
 	require.EqualError(t, err, "This setup code is newer than basalt on this computer: update it from the release page.")
+	// Layout version 1 cut short is not a newer layout.
+	for _, code := range []string{"basalt-setup.1", "basalt-setup.1\n"} {
+		_, err = setupcode.Decode(code)
+		require.Equal(t, setupcode.RefusalInvalid, refusalOf(t, err), "%q", code)
+	}
+	_, err = setupcode.Decode("basalt-setup.12")
+	require.Equal(t, setupcode.RefusalUnsupportedFormat, refusalOf(t, err))
 }
 
 func TestDecodeRefusesPayloads(t *testing.T) {
@@ -234,6 +241,16 @@ func TestDecodeRefusesPayloads(t *testing.T) {
 		"database with an isolate":  {replace(`"database":"postgres"`, `"database":"post\u2066gres"`), setupcode.RefusalInvalid},
 		"database with zero width":  {replace(`"database":"postgres"`, `"database":"post\u200bgres"`), setupcode.RefusalInvalid},
 		"trailing data":             {append(append([]byte{}, good...), []byte(" {}")...), setupcode.RefusalInvalid},
+		// The last of duplicate keys would win in Go's decoder: a reader
+		// that kept the first would see another code.
+		"duplicate key":        {replace(`"kind":"INSTALL"`, `"kind":"UPGRADE","kind":"INSTALL"`), setupcode.RefusalInvalid},
+		"duplicate same value": {replace(`"kind":"INSTALL"`, `"kind":"INSTALL","kind":"INSTALL"`), setupcode.RefusalInvalid},
+		"duplicate format":     {replace(`"format":1`, `"format":2,"format":1`), setupcode.RefusalInvalid},
+		"duplicate nested key": {replace(`"database":"postgres"`, `"database":"other","database":"postgres"`), setupcode.RefusalInvalid},
+		// \u0066 is a JSON escape of "f": the same key once decoded.
+		"duplicate escaped key":    {replace(`"prefix":`, "\"pre\\u0066ix\":\"evil\",\"prefix\":"), setupcode.RefusalInvalid},
+		"duplicate escaped format": {replace(`"format":1`, "\"\\u0066ormat\":2,\"format\":1"), setupcode.RefusalInvalid},
+		"duplicate verifier":       {replace(`"verifier":`, `"verifier":"x","verifier":`), setupcode.RefusalInvalid},
 		"non-canonical verifier": {
 			replace("AQIDBAUGBwgJCgsMDQ4PEA==", "AQIDBAUGBwgJCgsMDQ4PEB=="),
 			setupcode.RefusalInvalid,

@@ -10,6 +10,9 @@ import (
 	"runtime"
 )
 
+// goosWindows is runtime.GOOS on Windows, where file modes are not checked.
+const goosWindows = "windows"
+
 // KeyFileName is k_master's file in the engine's stateDir (decision M51-1).
 const KeyFileName = "pii.key"
 
@@ -122,7 +125,7 @@ func readMaster(path string) ([]byte, error) {
 	if err := checkOwner(fi); err != nil {
 		return nil, fmt.Errorf("pii key %s: %w", path, err)
 	}
-	if runtime.GOOS != "windows" && fi.Mode().Perm()&keyFilePermMask != 0 {
+	if runtime.GOOS != goosWindows && fi.Mode().Perm()&keyFilePermMask != 0 {
 		return nil, fmt.Errorf("pii key %s is mode %o; it must be readable by the engine's user only (0600)", path, fi.Mode().Perm())
 	}
 	if fi.Size() != MasterKeySize {

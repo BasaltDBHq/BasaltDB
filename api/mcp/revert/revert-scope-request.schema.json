@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/revert-scope-request.v1.json",
+  "title": "Revert scope request",
+  "description": "Planned (basalt_meta version 20, owner decision RS-2). The body of POST /api/v1/reverts/{revertId}/scope, which the revert page sends to the engine that served it, on loopback or inside a Vault link session, under the link's secret. Without proof: a narrow, inside the agent's own work, or inside the person's last proven select when the engine holds its scope token. With proof and newSecret: a widen beyond the agent's own work. Byte fields are base64url without padding. See CONTRACT.md, Revert, Rescope, widen and reject.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "select"
+  ],
+  "properties": {
+    "select": {
+      "$ref": "revert-select.schema.json",
+      "description": "The scope the person wants. Postgres normalizes it; the widen proof signs the normalized text."
+    },
+    "proof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "credentialId",
+        "authenticatorData",
+        "clientDataJson",
+        "signature"
+      ],
+      "description": "The widen proof: a WebAuthn assertion by the person's passkey whose challenge is sha256(utf8(\"basalt-rescope.1\\n\" + revertId + \"\\n\" + nonce + \"\\n\" + hex(sha256(rescopeKey)) + \"\\n\" + normalized select)), with nonce the request's rescopeNonce as base64url and rescopeKey = HKDF-SHA-256(ikm newSecret, salt empty, info \"basalt-rescope-key.1\", 32 bytes).",
+      "properties": {
+        "credentialId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "authenticatorData": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "clientDataJson": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "signature": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "description": "ASN.1 DER ECDSA signature (ES256)."
+        }
+      }
+    },
+    "newSecret": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$",
+      "description": "The link secret the revert has after the widen: 16 random bytes the page made (crypto.getRandomValues), base64url, 22 characters. Sent only to the engine; the engine passes Postgres only rescopeKey, derived from it, and never logs or stores it (it keeps sha256(newSecret), linkToken and psk as for any link)."
+    }
+  },
+  "dependentRequired": {
+    "proof": [
+      "newSecret"
+    ],
+    "newSecret": [
+      "proof"
+    ]
+  }
+}

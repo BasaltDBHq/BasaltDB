@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/basaltdbhq/basaltdb/internal/channel"
 )
 
 // Link secrets (CONTRACT.md, Link secrets; owner decisions, Decided Nov
@@ -67,7 +69,9 @@ func ProofMatches(bindingText, proof string) bool {
 	return subtle.ConstantTimeCompare([]byte(IssueProof(bindingText)), []byte(proof)) == 1
 }
 
-// Secrets holds the hash of each held item's one live link secret.
+// Secrets holds the hash of each held item's one live link secret, and for
+// a portal short link over the Vault (a relay link; CONTRACT.md, Vault
+// channel, Link secrets in a session) the linkToken and psk derived from it.
 type Secrets struct {
 	now  func() time.Time
 	rand io.Reader
@@ -75,11 +79,23 @@ type Secrets struct {
 	path string
 	mu   sync.Mutex
 	live map[uuid.UUID]secretEntry
+	// onDrop is told the token of every relay link that stops being live:
+	// replaced, revoked or expired. It runs without mu held.
+	onDrop func(channel.LinkToken)
 }
 
 type secretEntry struct {
 	hash    [sha256.Size]byte
 	expires time.Time
+	// keys are a relay link's Vault token and psk; nil for a link to the
+	// engine's local pages.
+	keys *channel.LinkKeys
+}
+
+// RelayLink is a live relay link: its token and expiry.
+type RelayLink struct {
+	Token     channel.LinkToken
+	ExpiresAt time.Time
 }
 
 // NewSecrets returns an empty store; rand is the randomness source
@@ -113,12 +129,14 @@ func OpenSecrets(path string, now func() time.Time, rand io.Reader) (*Secrets, e
 		return s, fmt.Errorf("link secrets %s: %w", path, err)
 	}
 	for _, e := range file.Links {
-		hash, err := hex.DecodeString(e.Hash)
-		if err != nil || len(hash) != sha256.Size {
-			return NewSecretsAt(path, now, rand), fmt.Errorf("link secrets %s: a bad hash", path)
+		entry, err := e.entry()
+		if err != nil {
+			return NewSecretsAt(path, now, rand), fmt.Errorf("link secrets %s: %w", path, err)
 		}
-		s.live[e.ID] = secretEntry{hash: [sha256.Size]byte(hash), expires: e.ExpiresAt}
+		s.live[e.ID] = entry
 	}
+	// Expired relay links of a stopped engine are not unregistered: the
+	// Vault drops each token at its expiresAt by itself.
 	s.prune()
 	return s, nil
 }
@@ -130,7 +148,8 @@ func NewSecretsAt(path string, now func() time.Time, rand io.Reader) *Secrets {
 	return s
 }
 
-// secretsFile is the persisted store: hashes only, never a secret.
+// secretsFile is the persisted store: hashes, and a relay link's token and
+// psk, never a secret.
 type secretsFile struct {
 	Links []secretFileEntry `json:"links"`
 }
@@ -139,6 +158,34 @@ type secretFileEntry struct {
 	ID        uuid.UUID `json:"id"`
 	Hash      string    `json:"hash"`
 	ExpiresAt time.Time `json:"expiresAt"`
+	// LinkToken and PSK are a relay link's, base64url (CONTRACT.md, Vault
+	// channel: the engine keeps them next to sha256(secret)).
+	LinkToken string `json:"linkToken,omitempty"`
+	PSK       string `json:"psk,omitempty"`
+}
+
+// entry reads one persisted link: its hash, and a relay link's token and
+// psk, both or neither.
+func (e secretFileEntry) entry() (secretEntry, error) {
+	hash, err := hex.DecodeString(e.Hash)
+	if err != nil || len(hash) != sha256.Size {
+		return secretEntry{}, errors.New("a bad hash")
+	}
+	out := secretEntry{hash: [sha256.Size]byte(hash), expires: e.ExpiresAt}
+	if e.LinkToken == "" && e.PSK == "" {
+		return out, nil
+	}
+	token, err := channel.ParseLinkToken(e.LinkToken)
+	if err != nil {
+		return secretEntry{}, errors.New("a bad link token")
+	}
+	psk, err := base64.RawURLEncoding.Strict().DecodeString(e.PSK)
+	if err != nil || len(psk) != channel.PSKLen {
+		return secretEntry{}, errors.New("a bad psk")
+	}
+	out.keys = &channel.LinkKeys{Token: token, PSK: channel.PSK(psk)}
+	clear(psk)
+	return out, nil
 }
 
 // save writes the store atomically (write, then rename); the caller holds
@@ -149,7 +196,12 @@ func (s *Secrets) save() error {
 	}
 	file := secretsFile{Links: make([]secretFileEntry, 0, len(s.live))}
 	for id, e := range s.live {
-		file.Links = append(file.Links, secretFileEntry{ID: id, Hash: hex.EncodeToString(e.hash[:]), ExpiresAt: e.expires})
+		entry := secretFileEntry{ID: id, Hash: hex.EncodeToString(e.hash[:]), ExpiresAt: e.expires}
+		if e.keys != nil {
+			entry.LinkToken = e.keys.Token.String()
+			entry.PSK = base64.RawURLEncoding.EncodeToString(e.keys.PSK[:])
+		}
+		file.Links = append(file.Links, entry)
 	}
 	raw, err := json.Marshal(file)
 	if err != nil {
@@ -174,22 +226,148 @@ func (s *Secrets) save() error {
 	return os.Rename(tmp.Name(), s.path)
 }
 
+// OnDrop sets what is told the token of every relay link that stops being
+// live (replaced by a newer link, revoked or expired), so the engine
+// unregisters it at the Vault. It is set once, before the store is used.
+func (s *Secrets) OnDrop(f func(channel.LinkToken)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onDrop = f
+}
+
 // Issue makes a new secret for item id, valid until expires, and revokes
 // the item's earlier one.
 func (s *Secrets) Issue(id uuid.UUID, expires time.Time) (string, error) {
+	secret, _, err := s.issue(id, expires, false)
+	return secret, err
+}
+
+// IssueRelay makes a new secret for item id, valid until expires, for a
+// portal short link over the Vault, and revokes the item's earlier one. It
+// keeps the linkToken and psk derived from the secret and returns the
+// token: of the three, the only one the Vault may see.
+func (s *Secrets) IssueRelay(id uuid.UUID, expires time.Time) (string, channel.LinkToken, error) {
+	return s.issue(id, expires, true)
+}
+
+func (s *Secrets) issue(id uuid.UUID, expires time.Time, relay bool) (string, channel.LinkToken, error) {
 	raw := make([]byte, SecretBytes)
 	if _, err := io.ReadFull(s.rand, raw); err != nil {
-		return "", fmt.Errorf("link secret: %w", err)
+		return "", channel.LinkToken{}, fmt.Errorf("link secret: %w", err)
 	}
 	secret := base64.RawURLEncoding.EncodeToString(raw)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.prune()
-	s.live[id] = secretEntry{hash: sha256.Sum256([]byte(secret)), expires: expires}
-	if err := s.save(); err != nil {
-		return "", err
+	clear(raw)
+	entry := secretEntry{hash: sha256.Sum256([]byte(secret)), expires: expires}
+	var token channel.LinkToken
+	if relay {
+		keys, err := channel.DeriveLink(secret)
+		if err != nil {
+			return "", channel.LinkToken{}, err
+		}
+		entry.keys, token = &keys, keys.Token
 	}
-	return secret, nil
+	s.mu.Lock()
+	dropped := s.prune()
+	if old, ok := s.live[id]; ok && old.keys != nil {
+		dropped = append(dropped, old.keys.Token)
+	}
+	s.live[id] = entry
+	err := s.save()
+	f := s.onDrop
+	s.mu.Unlock()
+	tell(f, dropped)
+	if err != nil {
+		return "", channel.LinkToken{}, err
+	}
+	return secret, token, nil
+}
+
+// Revoke revokes item id's link when it is still the relay link of token
+// (a newer link is left alone), as when the Vault did not register it.
+func (s *Secrets) Revoke(id uuid.UUID, token channel.LinkToken) error {
+	return s.revokeWhere(func(eid uuid.UUID, e secretEntry) bool {
+		return eid == id && e.keys != nil && e.keys.Token == token
+	}, true)
+}
+
+// RevokeToken revokes the relay link of token, whichever item holds it, as
+// when another engine registered that token (VC-42). It reports whether
+// this store held it. It tells onDrop nothing: the Vault said the token is
+// another engine's, so unregistering it is pointless, and the caller may be
+// the socket's read loop, which must not write.
+func (s *Secrets) RevokeToken(token channel.LinkToken) (bool, error) {
+	held := false
+	err := s.revokeWhere(func(_ uuid.UUID, e secretEntry) bool {
+		match := e.keys != nil && e.keys.Token == token
+		held = held || match
+		return match
+	}, false)
+	return held, err
+}
+
+// RevokeRelay revokes every relay link, as when the engine's keys rotate
+// (VC-40): their psks sat next to the old key.
+func (s *Secrets) RevokeRelay() error {
+	return s.revokeWhere(func(_ uuid.UUID, e secretEntry) bool { return e.keys != nil }, true)
+}
+
+// revokeWhere deletes the entries match picks and saves the store. With
+// tellDrop it also prunes expired links and tells onDrop every dropped
+// token; without, it calls onDrop for nothing (expired links wait for the
+// next prune).
+func (s *Secrets) revokeWhere(match func(uuid.UUID, secretEntry) bool, tellDrop bool) error {
+	s.mu.Lock()
+	var dropped []channel.LinkToken
+	if tellDrop {
+		dropped = s.prune()
+	}
+	removed := false
+	for id, e := range s.live {
+		if !match(id, e) {
+			continue
+		}
+		delete(s.live, id)
+		removed = true
+		if tellDrop && e.keys != nil {
+			dropped = append(dropped, e.keys.Token)
+		}
+	}
+	var err error
+	if removed {
+		err = s.save()
+	}
+	f := s.onDrop
+	s.mu.Unlock()
+	tell(f, dropped)
+	return err
+}
+
+// Relay lists the live relay links, which the engine registers with the
+// Vault again after every READY.
+func (s *Secrets) Relay() []RelayLink {
+	s.mu.Lock()
+	dropped := s.prune()
+	out := make([]RelayLink, 0, len(s.live))
+	for _, e := range s.live {
+		if e.keys != nil {
+			out = append(out, RelayLink{Token: e.keys.Token, ExpiresAt: e.expires})
+		}
+	}
+	f := s.onDrop
+	s.mu.Unlock()
+	tell(f, dropped)
+	return out
+}
+
+// Prune drops expired links now, telling onDrop the relay links' tokens.
+// The engine calls it on a timer, so an expired link is unregistered at the
+// Vault even when nothing else touches the store.
+func (s *Secrets) Prune() {
+	s.mu.Lock()
+	dropped := s.prune()
+	f := s.onDrop
+	s.mu.Unlock()
+	tell(f, dropped)
 }
 
 // Check reports whether secret is item id's live, unexpired secret. It
@@ -197,22 +375,38 @@ func (s *Secrets) Issue(id uuid.UUID, expires time.Time) (string, error) {
 func (s *Secrets) Check(id uuid.UUID, secret string) bool {
 	got := sha256.Sum256([]byte(secret))
 	s.mu.Lock()
+	dropped := s.prune()
 	e, ok := s.live[id]
-	if ok && !s.now().Before(e.expires) {
-		delete(s.live, id)
-		ok = false
-	}
+	f := s.onDrop
 	s.mu.Unlock()
+	tell(f, dropped)
 	match := subtle.ConstantTimeCompare(got[:], e.hash[:]) == 1
 	return ok && secret != "" && match
 }
 
-// prune drops expired secrets; the caller holds mu.
-func (s *Secrets) prune() {
+// prune drops expired secrets and returns the relay links' tokens among
+// them; the caller holds mu.
+func (s *Secrets) prune() []channel.LinkToken {
 	now := s.now()
+	var dropped []channel.LinkToken
 	for id, e := range s.live {
-		if !now.Before(e.expires) {
-			delete(s.live, id)
+		if now.Before(e.expires) {
+			continue
 		}
+		delete(s.live, id)
+		if e.keys != nil {
+			dropped = append(dropped, e.keys.Token)
+		}
+	}
+	return dropped
+}
+
+// tell hands dropped tokens to onDrop, when it is set.
+func tell(f func(channel.LinkToken), dropped []channel.LinkToken) {
+	if f == nil {
+		return
+	}
+	for _, t := range dropped {
+		f(t)
 	}
 }

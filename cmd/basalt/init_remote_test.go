@@ -552,7 +552,7 @@ func TestInitRemoteRefusesAHardLinkedCredential(t *testing.T) {
 	require.NoError(t, os.Link(first.credFile, filepath.Join(t.TempDir(), "copy")))
 	r := cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", "bot", "--write", "public.leads")
 	require.Equal(t, exitError, r.code)
-	require.Contains(t, r.stderr, "hard links")
+	require.Contains(t, r.stderr, "hard link")
 }
 
 func TestInitRemoteRunsOneAtATime(t *testing.T) {

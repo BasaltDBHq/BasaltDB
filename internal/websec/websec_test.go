@@ -58,7 +58,7 @@ func TestFramingBlocked(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
-	require.Equal(t, "default-src 'self'; frame-ancestors 'none'", w.Header().Get("Content-Security-Policy"))
+	require.Equal(t, "default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'", w.Header().Get("Content-Security-Policy"))
 	require.Equal(t, "DENY", w.Header().Get("X-Frame-Options"))
 	require.Equal(t, "no-referrer", w.Header().Get("Referrer-Policy"))
 }

@@ -5,6 +5,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -114,8 +115,11 @@ func followLink(dfd int, name, full string, rootOnly bool, rest []string) (strin
 	if err := unix.Fstatat(dfd, name, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 		return "", err
 	}
-	if !rootOnly || uint32(st.Mode)&unix.S_IFMT != unix.S_IFLNK || st.Uid != 0 {
-		return "", notRealDir(full)
+	if uint32(st.Mode)&unix.S_IFMT != unix.S_IFLNK {
+		return "", notDir(full)
+	}
+	if !rootOnly || st.Uid != 0 {
+		return "", symlinkRefused(full)
 	}
 	buf := make([]byte, linkBufSize)
 	n, err := unix.Readlinkat(dfd, name, buf)
@@ -129,8 +133,43 @@ func followLink(dfd int, name, full string, rootOnly bool, rest []string) (strin
 	return filepath.Join(append([]string{target}, rest...)...), nil
 }
 
-func notRealDir(full string) error {
+func symlinkRefused(full string) error {
 	return fmt.Errorf("%s is not a real directory (a symlink is refused)", full)
+}
+
+func notDir(full string) error {
+	return fmt.Errorf("%s is not a directory", full)
+}
+
+// notDirAt says why name in dfd could not be opened as a directory: it is a
+// symlink, or something else.
+func notDirAt(dfd int, name, full string) error {
+	var st unix.Stat_t
+	if err := unix.Fstatat(dfd, name, &st, unix.AT_SYMLINK_NOFOLLOW); err == nil && uint32(st.Mode)&unix.S_IFMT != unix.S_IFLNK {
+		return notDir(full)
+	}
+	return symlinkRefused(full)
+}
+
+// OpenTrustedFile opens path read-only for root: its directory through
+// openTrusted (owner is the uid that may own directories on the way, -1 for
+// none), and the file with O_NOFOLLOW relative to it. The caller checks the
+// open file (type, links, owner) through its descriptor.
+func OpenTrustedFile(path string, owner int) (*os.File, error) {
+	dfd, err := openTrusted(filepath.Dir(path), owner)
+	if err != nil {
+		return nil, err
+	}
+	defer unix.Close(dfd)
+	base := filepath.Base(path)
+	fd, err := unix.Openat(dfd, base, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	if errors.Is(err, unix.ELOOP) {
+		return nil, fmt.Errorf("%s is a symlink, which is refused", path)
+	}
+	if err != nil {
+		return nil, &os.PathError{Op: "open", Path: path, Err: err}
+	}
+	return os.NewFile(uintptr(fd), path), nil
 }
 
 // checkDir refuses a directory root cannot trust to stay put: owned by

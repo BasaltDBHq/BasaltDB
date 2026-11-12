@@ -174,7 +174,9 @@ func agentServiceSpec(goos, bin, configPath, engineUser string, a agentInstall, 
 	if printOnly {
 		return spec, nil
 	}
-	raw, err := config.Upserted(configPath,
+	// Root reads the existing config from the engine user's directory.
+	open := func(p string) (*os.File, error) { return openEngineFile(p, engineUser) }
+	raw, err := config.UpsertedWith(configPath, open,
 		config.Settings{SocketDir: config.DefaultSocketDir(goos), PagesURL: a.pagesURL},
 		config.Agent{Name: a.name, OSUser: a.osUser, CredentialFile: cred, InitArgs: a.initArgs})
 	if err != nil {
@@ -242,7 +244,7 @@ func installService(c *cliIO, f initFlags, dsn string) error {
 // elevateInstall runs the service install with the agent: in this process
 // when init already runs as root, else as one sudo command.
 func elevateInstall(c *cliIO, f initFlags, dsn string) error {
-	bin, err := c.host.Executable()
+	bin, err := checkedExecutable(c)
 	if err != nil {
 		return err
 	}
@@ -252,6 +254,27 @@ func elevateInstall(c *cliIO, f initFlags, dsn string) error {
 	}
 	fmt.Fprintln(c.stderr, "basalt: installing the engine service with sudo:")
 	return c.host.Sudo(c.ctx, serviceInstallArgs(f, bin), dsn+"\n", c.stderr, c.stderr)
+}
+
+// checkedExecutable is this basalt binary, refused (as the person, with
+// lstat only) when anyone but root could change it: init hands it to sudo,
+// so a binary the agent replaced would otherwise run as root.
+func checkedExecutable(c *cliIO) (string, error) {
+	bin, err := c.host.Executable()
+	if err != nil {
+		return "", err
+	}
+	if err := c.host.System(c.stderr, c.stderr).CheckBinary(bin); err != nil {
+		return "", fmt.Errorf("%w (or run basalt init with --no-service)", err)
+	}
+	return bin, nil
+}
+
+// mayInstallService reports whether this init can go on to install the
+// engine service (or print its plan): then the binary is checked before
+// anything else, so a refusal leaves the database as it was.
+func mayInstallService(c *cliIO, f initFlags) bool {
+	return !f.noService && !f.pathsGiven && (f.yes || f.dryRun || c.interactive)
 }
 
 // applyServiceInstall builds and runs (or only prints) the service install

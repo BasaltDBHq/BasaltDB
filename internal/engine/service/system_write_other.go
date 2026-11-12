@@ -14,3 +14,5 @@ func (OSSystem) WriteFile(string, []byte, os.FileMode, string) error { return er
 func (OSSystem) Mkdir(string, os.FileMode, string) error { return errUnsupported }
 
 func (OSSystem) CheckBinary(string) error { return errUnsupported }
+
+func OpenTrustedFile(string, int) (*os.File, error) { return nil, errUnsupported }

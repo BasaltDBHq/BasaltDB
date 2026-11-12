@@ -130,9 +130,6 @@ func checkExisting(dfd int, path string, uid int, owner string) error {
 
 type ownerIDs struct{ uid, gid int }
 
-// keepID tells chown to leave an id as it is.
-const keepID = -1
-
 // lookupOwner resolves the OS user; an empty name means "leave the owner".
 func lookupOwner(name string) (ownerIDs, error) {
 	if name == "" {
@@ -156,7 +153,7 @@ func lookupOwner(name string) (ownerIDs, error) {
 func openDirAt(pfd int, name, full string) (int, error) {
 	fd, err := unix.Openat(pfd, name, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if errors.Is(err, unix.ELOOP) || errors.Is(err, unix.ENOTDIR) {
-		return -1, fmt.Errorf("%s is not a real directory (a symlink is refused)", full)
+		return -1, notDirAt(pfd, name, full)
 	}
 	return fd, err
 }

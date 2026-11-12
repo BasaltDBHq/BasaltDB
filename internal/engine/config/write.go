@@ -38,7 +38,14 @@ func UpsertAgent(path string, s Settings, a Agent) error {
 // Upserted is the content UpsertAgent writes, without writing it: the
 // service install writes it itself, owned by the engine's OS user.
 func Upserted(path string, s Settings, a Agent) ([]byte, error) {
-	c, err := LoadNoFollow(path)
+	return UpsertedWith(path, openNoFollow, s, a)
+}
+
+// UpsertedWith is Upserted reading the existing file through open. The
+// service install, as root, passes one that follows no link anywhere on the
+// path and accepts only a file the engine's user owns.
+func UpsertedWith(path string, open func(string) (*os.File, error), s Settings, a Agent) ([]byte, error) {
+	c, err := load(path, open)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		c = Config{SocketDir: s.SocketDir, StateDir: s.StateDir}

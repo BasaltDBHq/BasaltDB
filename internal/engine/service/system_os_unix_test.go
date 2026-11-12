@@ -153,7 +153,37 @@ func TestOSSystemMkdirRefusesSymlinkAndFile(t *testing.T) {
 
 	file := filepath.Join(dir, "file")
 	require.NoError(t, os.WriteFile(file, nil, 0o600))
-	require.ErrorContains(t, OSSystem{}.Mkdir(file, 0o700, ""), "not a real directory")
+	require.ErrorContains(t, OSSystem{}.Mkdir(file, 0o700, ""), file+" is not a directory")
+}
+
+// A regular file in a middle component is named as what it is.
+func TestOSSystemRefusesFileInMiddleComponent(t *testing.T) {
+	dir := realTempDir(t)
+	file := filepath.Join(dir, "file")
+	require.NoError(t, os.WriteFile(file, nil, 0o600))
+
+	err := OSSystem{}.WriteFile(filepath.Join(file, "agents", "bot.url"), []byte("x"), 0o600, "")
+	require.ErrorContains(t, err, file+" is not a directory")
+	require.NotContains(t, err.Error(), "symlink")
+	require.ErrorContains(t, OSSystem{}.Mkdir(filepath.Join(file, "agents"), 0o700, ""), file+" is not a directory")
+}
+
+func TestOpenTrustedFile(t *testing.T) {
+	dir := realTempDir(t)
+	require.NoError(t, os.Mkdir(filepath.Join(dir, "real"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "real", "f"), []byte("ok"), 0o600))
+	require.NoError(t, os.Symlink(filepath.Join(dir, "real"), filepath.Join(dir, "link")))
+	require.NoError(t, os.Symlink(filepath.Join(dir, "real", "f"), filepath.Join(dir, "real", "g")))
+
+	f, err := OpenTrustedFile(filepath.Join(dir, "real", "f"), keepID)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+	_, err = OpenTrustedFile(filepath.Join(dir, "link", "f"), keepID)
+	require.ErrorContains(t, err, "a symlink is refused")
+	_, err = OpenTrustedFile(filepath.Join(dir, "real", "g"), keepID)
+	require.ErrorContains(t, err, "is a symlink, which is refused")
+	_, err = OpenTrustedFile(filepath.Join(dir, "real", "missing"), keepID)
+	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
 // testPolicy lets the test user stand in for root: tests cannot run as

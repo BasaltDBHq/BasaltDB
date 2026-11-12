@@ -37,6 +37,8 @@ type RevertStore interface {
 	RevertedBy(ctx context.Context, scope guard.RevertScope) (uuid.UUID, error)
 	PrepareRevert(ctx context.Context, scope guard.RevertScope, intent string, timeout time.Duration) (guard.PreparedRevert, error)
 	HasChange(ctx context.Context, id uuid.UUID) (bool, error)
+	// HasTaskRun reports whether the agent has a run with this task id.
+	HasTaskRun(ctx context.Context, id uuid.UUID) (bool, error)
 	FindRevert(ctx context.Context, id uuid.UUID) (ledger.Revert, error)
 	RevertLines(ctx context.Context, p ledger.RevertLineParams) (pagination.Page[ledger.RevertLine], error)
 	ApplyRevertBatch(ctx context.Context, id uuid.UUID, lines []int) (guard.BatchResult, error)
@@ -65,10 +67,15 @@ type RevertPreview struct {
 
 // PreviewRevert returns what reverting the scope would restore and skip.
 // It changes nothing: the guard runs the revert on trial and undoes it.
+// The scope must be the agent's own (RS-1): another agent's id answers
+// NOT_FOUND before any guard call.
 func (s *Service) PreviewRevert(ctx context.Context, p PreviewRevertParams) (RevertPreview, error) {
+	if err := s.checkOwnScope(ctx, p.Scope); err != nil {
+		return RevertPreview{}, err
+	}
 	texts, err := s.Reverts.PreviewRevert(ctx, p.Scope)
 	if err != nil {
-		return RevertPreview{}, s.previewError(ctx, p.Scope, err)
+		return RevertPreview{}, s.prepareError(ctx, toolPreviewRevert, p.Scope, err)
 	}
 	start, err := lineAfter(texts, p.Cursor)
 	if err != nil {
@@ -100,17 +107,6 @@ func (s *Service) PreviewRevert(ctx context.Context, p PreviewRevertParams) (Rev
 		return RevertPreview{}, err
 	}
 	return out, nil
-}
-
-// previewError answers a preview that failed. An id that is not this agent's
-// stays NOT_FOUND; nothing to revert and a timeout carry their steps.
-func (s *Service) previewError(ctx context.Context, scope guard.RevertScope, err error) error {
-	if code, ok := guard.CodeOf(err); ok && code == guard.CodeNothingToRevert && scope.Kind != revert.ScopeTask {
-		if ownErr := s.checkOwnScope(ctx, scope); ownErr != nil {
-			return ownErr
-		}
-	}
-	return s.prepareError(ctx, toolPreviewRevert, scope, err)
 }
 
 // lineAfter is the index of the first line after the cursor's line. The
@@ -441,6 +437,11 @@ func applyByText(r ledger.Revert) string {
 	return r.ApplyBy.UTC().Format(personTime)
 }
 
+// checkOwnScope runs before any guard call on preview_revert and
+// request_revert (RS-1, RS-6): the change, the run, or a task the agent ran
+// in (any run with that task id) must be its own. Another agent's id and an
+// unknown one get the same NOT_FOUND; Postgres refuses the same scopes when
+// an agent role calls the guard directly.
 func (s *Service) checkOwnScope(ctx context.Context, scope guard.RevertScope) error {
 	switch scope.Kind {
 	case revert.ScopeRun:
@@ -450,29 +451,40 @@ func (s *Service) checkOwnScope(ctx context.Context, scope guard.RevertScope) er
 		}
 		return err
 	case revert.ScopeChange:
-		ok, err := s.Reverts.HasChange(ctx, scope.ID)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return notOwnScope(scope)
-		}
-		return nil
+		own, err := s.Reverts.HasChange(ctx, scope.ID)
+		return ownOr(own, err, notOwnScope(scope))
 	case revert.ScopeTask:
-		return &ArgumentError{Message: taskScopeRefused}
+		own, err := s.Reverts.HasTaskRun(ctx, scope.ID)
+		return ownOr(own, err, notOwnTask(scope))
 	}
 	return &ArgumentError{Message: fmt.Sprintf("unknown revert scope %q", scope.Kind)}
 }
 
-// taskScopeRefused explains why request_revert takes no task (N12-R7).
-const taskScopeRefused = "request_revert has no taskId: a whole task is reverted only by the person (basalt revert --task). " +
-	"Request the revert of one of your own changes (changeId) or runs (runId); if another agent's run looks wrong, ask that agent"
+// ownOr is checkOwnScope's answer to an ownership lookup: the lookup's
+// error, refused when the scope is not the agent's, or nil.
+func ownOr(own bool, err, refused error) error {
+	if err != nil {
+		return err
+	}
+	if !own {
+		return refused
+	}
+	return nil
+}
 
+// taskWidenPointer ends every person message about a task the agent
+// proposes (RS-1, RS-7): the same sentence whether or not other agents
+// wrote in the task, so it tells the agent nothing it cannot see.
+const taskWidenPointer = "You can include other agents' changes in this task on the signing page."
+
+// notOwnScope is a change or run that is not this agent's (RS-6): NOT_FOUND
+// with the scope's reason, the same answer for another agent's id and an
+// unknown one, on preview_revert and request_revert alike.
 func notOwnScope(scope guard.RevertScope) error {
 	kind := strings.ToLower(string(scope.Kind))
 	return &mcp.ToolError{Code: CodeNotFound, Reason: string(scope.Kind), Message: fmt.Sprintf(
-		"%s %s is not one of this agent's %ss; nothing was prepared. request_revert reverts only your own changes and runs: "+
-			"check the id in run_history. If another agent's work looks wrong, ask that agent to request the revert; "+
+		"%s %s is not one of this agent's %ss; nothing was prepared. An agent reverts only its own changes, runs and tasks it "+
+			"ran in: check the id in run_history. If another agent's work looks wrong, ask that agent to request the revert; "+
 			"a person can revert any change, run or task with basalt revert", kind, scope.ID, kind),
 		NextSteps: []mcp.NextStep{callTool(toolListRuns, map[string]any{},
 			"This id is not one of your runs or changes; list your runs.")}}
@@ -519,6 +531,9 @@ func (s *Service) prepareError(ctx context.Context, tool string, scope guard.Rev
 	if refused := scopeRefused(scope, err); refused != nil {
 		return refused
 	}
+	if errors.Is(err, agentdb.ErrEmptyProposal) {
+		return s.nothingToRevertError(ctx, tool, scope, reasonReadsOnly, "this agent changed no rows in it that a revert could restore")
+	}
 	if code, ok := guard.CodeOf(err); ok && code == guard.CodeNothingToRevert {
 		return s.nothingToRevert(ctx, tool, scope, err)
 	}
@@ -563,6 +578,9 @@ func (s *Service) revertNotice(ctx context.Context, r ledger.Revert) (revertLink
 	summary := fmt.Sprintf("Revert of %s %s: %d rows to restore, %d left as they are (changed after the agent). Why: %s. %s",
 		strings.ToLower(string(b.Select.Scope)), b.Select.ScopeID, r.Rows, r.Skipped, shown(strings.TrimRight(b.Intent, ". "), maxIntentChars), expiryLine(r.ExpiresAt))
 	var extra []string
+	if b.Select.Scope == revert.ScopeTask {
+		extra = append(extra, taskWidenPointer)
+	}
 	if r.Batched {
 		extra = append(extra, fmt.Sprintf("It covers %d rows: you sign once, and the agent restores it in batches within %d hours.",
 			b.Lines(), int(revert.ApplyWindow.Hours())))

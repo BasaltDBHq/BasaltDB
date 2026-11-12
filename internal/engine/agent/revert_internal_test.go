@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
@@ -66,4 +67,55 @@ func TestRequestRevertPrepareTimeLimit(t *testing.T) {
 	cancel()
 	_, err = svc.RequestRevert(ctx, RequestRevertParams{Scope: guard.RevertScope{Kind: revert.ScopeRun, ID: run}, Intent: "Undo"})
 	require.Equal(t, CodeUnavailable, ToolError(err).Code)
+}
+
+// noRuns is a Store that finds none of the agent's runs.
+type noRuns struct{ nopStore }
+
+func (noRuns) FindRun(context.Context, uuid.UUID) (agentdb.Run, error) {
+	return agentdb.Run{}, agentdb.ErrRunNotFound
+}
+
+// countedReverts owns nothing and counts the guard calls it receives.
+type countedReverts struct {
+	RevertStore
+	guardCalls *int
+}
+
+func (countedReverts) HasChange(context.Context, uuid.UUID) (bool, error)  { return false, nil }
+func (countedReverts) HasTaskRun(context.Context, uuid.UUID) (bool, error) { return false, nil }
+
+func (r countedReverts) PreviewRevert(context.Context, guard.RevertScope) ([]string, error) {
+	*r.guardCalls++
+	return nil, nil
+}
+
+func (r countedReverts) PrepareRevert(context.Context, guard.RevertScope, string, time.Duration) (guard.PreparedRevert, error) {
+	*r.guardCalls++
+	return guard.PreparedRevert{}, nil
+}
+
+// TestNotOwnScopeBeforeAnyGuardCall: preview_revert and request_revert
+// check the agent's own change, run or task first (RS-1), so a scope that
+// is not its own never reaches the guard.
+func TestNotOwnScopeBeforeAnyGuardCall(t *testing.T) {
+	t.Parallel()
+	var calls int
+	d := deps()
+	d.Store = noRuns{}
+	d.Reverts = countedReverts{guardCalls: &calls}
+	svc := NewService(d)
+	ctx := context.Background()
+	for kind, reason := range map[revert.Scope]string{
+		revert.ScopeChange: "CHANGE", revert.ScopeRun: "RUN", revert.ScopeTask: "TASK",
+	} {
+		scope := guard.RevertScope{Kind: kind, ID: uuid.Must(uuid.NewV7())}
+		_, err := svc.PreviewRevert(ctx, PreviewRevertParams{Scope: scope})
+		require.Equal(t, CodeNotFound, ToolError(err).Code, "%v", err)
+		require.Equal(t, reason, ToolError(err).Reason)
+		_, err = svc.RequestRevert(ctx, RequestRevertParams{Scope: scope, Intent: "Undo"})
+		require.Equal(t, CodeNotFound, ToolError(err).Code, "%v", err)
+		require.Equal(t, reason, ToolError(err).Reason)
+	}
+	require.Zero(t, calls, "no guard call for a scope that is not the agent's")
 }

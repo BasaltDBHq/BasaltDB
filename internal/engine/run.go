@@ -119,7 +119,16 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 		env.pagesOrigin = site.origin
 	}
 	relay := newRelayLinks(log.With("component", "vault"))
-	ev := openVault(cfg, env.stateDir, time.Now, log, relay)
+	// Link sessions through the Vault are answered by the pages API on the
+	// portal's origin (CONTRACT.md, Vault channel, Frames), with no
+	// listener: only the session reaches these handlers.
+	var sessionPages *pages.Server
+	var dispatch vault.Dispatcher
+	if cfg.VaultEnabled() {
+		sessionPages = pages.New(base, log.With("component", "vault-pages"))
+		dispatch = sessionPages
+	}
+	ev := openVault(cfg, env.stateDir, time.Now, log, relay, dispatch)
 	env.vault = ev
 	if ev.client != nil {
 		env.relay, env.relayLinks = ev.client, relay
@@ -132,9 +141,12 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 		return err
 	}
 	agents, ledgers, upkeeps := srv.agents, srv.ledgers, srv.upkeeps
-	if site != nil {
-		for _, svc := range srv.services {
+	for _, svc := range srv.services {
+		if site != nil {
 			site.pages.Add(svc)
+		}
+		if sessionPages != nil {
+			sessionPages.Add(svc)
 		}
 	}
 	if len(agents) == 0 {

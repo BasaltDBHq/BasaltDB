@@ -39,19 +39,61 @@ func (s *Store) PreviewRevert(ctx context.Context, scope guard.RevertScope) ([]s
 	return lines, nil
 }
 
+// ErrEmptyProposal is a task revert with no line of the agent's own. The
+// guard stores such a proposal for the person to widen on the page (basalt
+// revert --task); through MCP it is NOTHING_TO_REVERT (RS-6), so PrepareRevert
+// rolls it back.
+var ErrEmptyProposal = errors.New("the task has no line of this agent's own to revert")
+
 // PrepareRevert stores a revert of scope for the person to sign
 // (basalt_meta.prepare_revert) on the agent's credential, in its own
 // transaction with the statement timeout set to timeout instead of the
-// agent's limit, as basalt revert does.
+// agent's limit, as basalt revert does. A proposal with no line is rolled
+// back and answered ErrEmptyProposal.
 func (s *Store) PrepareRevert(ctx context.Context, scope guard.RevertScope, intent string, timeout time.Duration) (guard.PreparedRevert, error) {
-	return guard.PrepareRevertWithin(ctx, s.db, scope, intent, timeout)
+	var p guard.PreparedRevert
+	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
+		var err error
+		p, err = guard.PrepareRevertWithin(ctx, savepoint{tx}, scope, intent, timeout)
+		if err != nil {
+			return err
+		}
+		if len(p.Lines) == 0 {
+			return ErrEmptyProposal
+		}
+		return nil
+	})
+	if err != nil {
+		return guard.PreparedRevert{}, err
+	}
+	return p, nil
+}
+
+// savepoint begins a savepoint in tx where a guard helper begins a
+// transaction, so its work commits or rolls back with tx.
+type savepoint struct{ tx pgx.Tx }
+
+func (s savepoint) BeginTx(ctx context.Context, _ pgx.TxOptions) (pgx.Tx, error) {
+	return s.tx.Begin(ctx)
 }
 
 // HasChange reports whether the agent's view of the change record shows
 // change id: one of its own changes, or a revert's change that covered it.
 func (s *Store) HasChange(ctx context.Context, id uuid.UUID) (bool, error) {
+	return s.exists(ctx, "basalt_meta.agent_changes", sq.Eq{"change_id": id.String()})
+}
+
+// HasTaskRun reports whether the agent has a run with task id id, read
+// through its agent_runs view (RS-1: a task the agent ran in is its own
+// scope; any run with that task id counts).
+func (s *Store) HasTaskRun(ctx context.Context, id uuid.UUID) (bool, error) {
+	return s.exists(ctx, "basalt_meta.agent_runs", sq.Eq{"task_id": id.String()})
+}
+
+// exists reports whether the agent's view from has a row matching where.
+func (s *Store) exists(ctx context.Context, from string, where sq.Eq) (bool, error) {
 	q, args, err := psql.Select().
-		Column(sq.Expr("EXISTS (?)", psql.Select("1").From("basalt_meta.agent_changes").Where(sq.Eq{"change_id": id.String()}))).
+		Column(sq.Expr("EXISTS (?)", psql.Select("1").From(from).Where(where))).
 		ToSql()
 	if err != nil {
 		return false, err

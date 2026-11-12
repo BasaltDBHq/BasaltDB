@@ -286,14 +286,20 @@ func byName(hit nameHit, values []string, opts Options) Suggestion {
 func byShape(values []string, opts Options) Suggestion {
 	n := len(values)
 	public := func(reason string) Suggestion { return Suggestion{Class: guard.ClassPublic, Reason: reason} }
-	if !slices.ContainsFunc(values, func(v string) bool { return !allASCIIDigits(strings.TrimSpace(v)) }) {
-		st := numberShape(values)
-		switch {
-		case st.sequential:
-			return public(reasonSequential)
-		case st.long*percent >= longShare*n:
-			return longNumbers(values, st, opts)
-		case st.maxLen-st.minLen >= wideLengthSpread:
+	allDigits := !slices.ContainsFunc(values, func(v string) bool { return !allASCIIDigits(strings.TrimSpace(v)) })
+	var st numberStats
+	if allDigits {
+		if st = numberShape(values); st.sequential {
+			return public(reasonSequential) // an internal id (plan, section 3)
+		}
+	}
+	// The one gate before every PUBLIC rule below: a fair share of long
+	// digit runs or validator hits makes the column an identifier.
+	if s, ok := longValues(values, opts); ok {
+		return s
+	}
+	if allDigits {
+		if st.maxLen-st.minLen >= wideLengthSpread {
 			return public(fmt.Sprintf("SHAPE:lengths %d to %d, %d of %d long", st.minLen, st.maxLen, st.long, n))
 		}
 		return public(fmt.Sprintf("SHAPE:short numbers, lengths %d to %d", st.minLen, st.maxLen))
@@ -305,19 +311,71 @@ func byShape(values []string, opts Options) Suggestion {
 	return public(fmt.Sprintf("SAMPLE:no validator matched %d values", n))
 }
 
-// longNumbers is the suggestion for a column where a fair share of the
-// numbers have 6 digits or more: an identifier for review, a phone when most
-// of those long numbers are valid phones. Short numbers mixed in (counts,
-// codes) never make it PUBLIC.
-func longNumbers(values []string, st numberStats, opts Options) Suggestion {
-	long := slices.DeleteFunc(slices.Clone(values), func(v string) bool { return len(strings.TrimSpace(v)) < minPhoneDigits })
+// longValues is the gate before every PUBLIC shape rule: when at least
+// longShare percent of the values hold a long digit run or pass a validator,
+// the column is an identifier for review, a phone when most of those values
+// are valid phones. Whatever fills the rest (words, decimals, short numbers,
+// codes) never makes it PUBLIC.
+func longValues(values []string, opts Options) (Suggestion, bool) {
 	n := len(values)
+	var long []string
+	for _, v := range values {
+		if c, ok := longCandidate(v); ok {
+			long = append(long, c)
+		}
+	}
+	if len(long)*percent < longShare*n {
+		return Suggestion{}, false
+	}
 	if r := inferRegion(long, true, opts.PhoneRegion, opts.CallingCodes); r.valid*percent >= sampleShare*len(long) {
 		return Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityPhone, PhoneRegion: r.region, NeedsReview: true,
-			Reason: fmt.Sprintf("SAMPLE:PHONE %d/%d of the %d long numbers", r.valid, len(long), n) + regionNote(r, len(long))}
+			Reason: fmt.Sprintf("SAMPLE:PHONE %d/%d of the %d values with long digits", r.valid, len(long), n) + regionNote(r, len(long))}, true
 	}
 	return Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityOther, NeedsReview: true,
-		Reason: fmt.Sprintf("SHAPE:%d of %d numbers long, %d distinct, lengths %d to %d, no validator", st.long, n, st.distinct, st.minLen, st.maxLen)}
+		Reason: fmt.Sprintf("SHAPE:%d of %d values hold long digit runs or pass a validator", len(long), n)}, true
+}
+
+// longCandidate reports whether v holds a digit run of minPhoneDigits digits
+// or more (after a leading + or 00 and separators are
+// dropped) or passes any validator, and returns the form to try as a phone:
+// the value itself when it is phone-shaped, else its first long run.
+func longCandidate(v string) (string, bool) {
+	if whole, _, ok := strings.Cut(strings.TrimSpace(v), "."); ok && plainDecimal(strings.TrimSpace(v)) {
+		return whole, len(whole) >= minPhoneDigits // an amount: only its whole part counts
+	}
+	if _, ok := shapePhone(v, true); ok {
+		return v, true
+	}
+	s := strings.TrimSpace(v)
+	s = strings.TrimPrefix(strings.TrimPrefix(s, "+"), internationalOut)
+	if !plainDecimal(s) { // 1125.00 is an amount: its dot joins no groups
+		s = strings.Map(func(r rune) rune {
+			if strings.ContainsRune(phoneSeparators, r) {
+				return -1
+			}
+			return r
+		}, s)
+	}
+	start := -1
+	for i := 0; i <= len(s); i++ {
+		if i < len(s) && s[i] >= '0' && s[i] <= '9' {
+			if start < 0 {
+				start = i
+			}
+			continue
+		}
+		if start >= 0 && i-start >= minPhoneDigits {
+			return s[start:i], true
+		}
+		start = -1
+	}
+	return v, anyValidator(v)
+}
+
+// plainDecimal is digits, one dot and digits (12.50, 1125.00): an amount.
+func plainDecimal(s string) bool {
+	whole, frac, ok := strings.Cut(s, ".")
+	return ok && allASCIIDigits(whole) && allASCIIDigits(frac)
 }
 
 // looksNumeric is a signed or decimal number (an amount).

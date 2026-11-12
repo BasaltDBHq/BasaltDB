@@ -44,6 +44,9 @@ type cliIO struct {
 	interactive bool
 	// tty overrides the terminal check of printLink; tests set it.
 	tty func(io.Writer) bool
+	// width is the terminal's width in columns, 0 when stdout is no
+	// terminal; tests set it.
+	width func() int
 	// goos is the platform whose paths and service manager init uses.
 	goos string
 	// host runs what init does outside Postgres (sudo, the service probe,
@@ -66,6 +69,7 @@ func newIO(ctx context.Context, std stdio, getenv func(string) string) *cliIO {
 		agentLogin: loginAsAgent,
 		dial:       connect,
 		engine:     osEngineAccess(runtime.GOOS),
+		width:      func() int { return terminalWidth(std.out) },
 	}
 	stdin := std.in
 	if f, ok := stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
@@ -73,6 +77,19 @@ func newIO(ctx context.Context, std stdio, getenv func(string) string) *cliIO {
 		c.interactive = true
 	}
 	return c
+}
+
+// terminalWidth is w's width in columns when it is a terminal, else 0.
+func terminalWidth(w io.Writer) int {
+	f, ok := w.(*os.File)
+	if !ok {
+		return 0
+	}
+	cols, _, err := term.GetSize(int(f.Fd()))
+	if err != nil {
+		return 0
+	}
+	return cols
 }
 
 // errUsage marks an error as a usage error (exit 2).

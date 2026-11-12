@@ -40,6 +40,9 @@ const (
 	// rotates it waits: the old password keeps working until the person runs
 	// the code (RI-5).
 	pendingSuffix = ".pending"
+	// lockSuffix names the lock file that keeps two runs of init --remote
+	// for one agent apart.
+	lockSuffix = ".lock"
 	// releasePage is where the person installs basalt on their own computer.
 	releasePage = "https://github.com/BasaltDBHq/BasaltDB/releases"
 	// loginTimeout bounds the agent's login that decides the code's kind.
@@ -51,6 +54,10 @@ const (
 // invalid_password (28P01) and invalid_authorization_specification (28000:
 // no such role, a pg_hba refusal).
 const sqlstateClassAuth = "28"
+
+// sqlstateInternal is internal_error, which Supabase's pooler raises for a
+// user it does not know (supavisorNoTenant).
+const sqlstateInternal = "XX000"
 
 // OperatedBy is the value of --operated-by: who runs the machine steps on
 // this engine's machine. CLI input spelling only; engine.json holds the
@@ -161,6 +168,7 @@ func runInitRemote(c *cliIO, args []string) int {
 		return c.fail(err)
 	}
 	res, err := r.run()
+	r.unlock()
 	if err != nil {
 		return c.fail(err)
 	}
@@ -263,9 +271,15 @@ type remoteInit struct {
 	osUser   string
 	base     *url.URL
 	target   setupcode.Target
-	// password is the agent's password in the credential file when that
-	// file is for this database; "" otherwise.
+	// password is the agent's password this machine holds for this
+	// database: the one that logs in, else the newest (.pending first);
+	// "" when it holds none.
 	password string
+	// credExists: the credential file exists, so a new password goes to
+	// .pending (writeCredential).
+	credExists bool
+	// unlock releases the lock that keeps two runs for the agent apart.
+	unlock func()
 	// loggedIn: the role logs in with the credential (or its .pending one,
 	// then moved over the credential file). installed is the guard version
 	// it sees, recorded whether the pending setup is recorded.
@@ -279,7 +293,13 @@ func newRemoteInit(c *cliIO, f remoteFlags) (*remoteInit, error) {
 	if err := r.paths(); err != nil {
 		return nil, err
 	}
+	unlock, err := lockFile(r.credFile + lockSuffix)
+	if err != nil {
+		return nil, err
+	}
+	r.unlock = unlock
 	if err := r.connection(); err != nil {
+		unlock()
 		return nil, err
 	}
 	return r, nil
@@ -334,87 +354,133 @@ func (r *remoteInit) paths() error {
 	return nil
 }
 
-// connection settles the database: --database-url, else the credential
-// file's. It logs in as the agent when there is a credential for it.
+// credential is a credential file as read: its connection string, the
+// database it names, and the file it was read from (to check, before
+// moving it, that the path still names that file).
+type credential struct {
+	dsn    string
+	url    *url.URL
+	target setupcode.Target
+	file   os.FileInfo
+}
+
+func (c *credential) password() string {
+	pw, _ := c.url.User.Password()
+	return pw
+}
+
+// connection settles the database: --database-url, else the .pending
+// credential's (a setup for another database may be waiting), else the
+// credential file's. It logs in as the agent with the credentials for that
+// database, .pending first.
 func (r *remoteInit) connection() error {
-	existing, err := readCredentialIfAny(r.credFile)
+	cred, err := readCredentialIfAny(r.credFile)
 	if err != nil {
 		return err
 	}
-	var credTarget setupcode.Target
-	var credURL *url.URL
-	if existing != "" {
-		if credURL, err = url.Parse(existing); err != nil {
-			return fmt.Errorf("the credential file %s does not hold a connection URL", r.credFile)
-		}
-		if credTarget, err = setupcode.TargetOf(credURL); err != nil {
-			return fmt.Errorf("the credential file %s: %w", r.credFile, err)
-		}
+	pending, err := readCredentialIfAny(r.credFile + pendingSuffix)
+	if err != nil {
+		return err
 	}
 	switch {
 	case r.f.databaseURL != "":
 		if r.base, r.target, err = setupcode.ParseConnURL(r.f.databaseURL); err != nil {
 			return fmt.Errorf("%w: --database-url: %w", errUsage, err)
 		}
-	case credURL != nil:
-		r.base, r.target = credURL, credTarget
+	case pending != nil:
+		r.base, r.target = pending.url, pending.target
+	case cred != nil:
+		r.base, r.target = cred.url, cred.target
 	default:
 		return fmt.Errorf("%w: --database-url is required on the agent's first run (the connection string without its password)", errUsage)
 	}
-	if credURL == nil || credTarget != r.target {
-		return nil // no credential for this database: the role cannot log in
+	r.credExists = cred != nil
+	if pending != nil && pending.target != r.target {
+		pending = nil
 	}
-	r.password, _ = credURL.User.Password()
-	return r.login(existing)
+	if cred != nil && cred.target != r.target {
+		cred = nil
+	}
+	// The password this machine holds for the database: the newest one.
+	for _, c := range []*credential{cred, pending} {
+		if c != nil {
+			r.password = c.password()
+		}
+	}
+	return r.login(pending, cred)
 }
 
 // readCredentialIfAny reads a credential file with the no-follow checks,
-// or "" when there is none.
-func readCredentialIfAny(path string) (string, error) {
+// or nil when there is none.
+func readCredentialIfAny(path string) (*credential, error) {
 	if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
-		return "", nil
+		return nil, nil //nolint:nilnil // no file is no credential
 	}
-	dsn, err := readOwnCredential(path)
+	dsn, fi, err := readOwnCredential(path)
 	if err != nil {
-		return "", fmt.Errorf("the credential file %s is not usable: %w", path, err)
+		return nil, fmt.Errorf("the credential file %s is not usable: %w", path, err)
 	}
-	return dsn, nil
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("the credential file %s does not hold a connection URL", path)
+	}
+	t, err := setupcode.TargetOf(u)
+	if err != nil {
+		return nil, fmt.Errorf("the credential file %s: %w", path, err)
+	}
+	return &credential{dsn: dsn, url: u, target: t, file: fi}, nil
 }
 
 // login logs in as the agent: with the .pending credential first (a
-// rotation the person may have run), which then replaces the credential
+// setup the person may have run), which then replaces the credential
 // file, else with the credential file. A refused login is not an error:
-// the role cannot log in. An unreachable database is.
-func (r *remoteInit) login(existing string) error {
-	pendingFile := r.credFile + pendingSuffix
-	pending, err := readCredentialIfAny(pendingFile)
-	if err != nil {
-		return err
-	}
-	if pending != "" {
-		conn, err := r.c.agentLogin(r.c.ctx, pending)
+// the role cannot log in. An unreachable database is, and changes nothing.
+func (r *remoteInit) login(pending, cred *credential) error {
+	if pending != nil {
+		conn, err := r.c.agentLogin(r.c.ctx, pending.dsn)
 		switch {
 		case err == nil:
 			defer conn.Close(r.c.ctx)
-			if err := os.Rename(pendingFile, r.credFile); err != nil {
+			if err := r.promote(pending); err != nil {
 				return err
 			}
-			u, _ := url.Parse(pending)
-			r.password, _ = u.User.Password()
+			r.password = pending.password()
 			return r.inspect(conn)
 		case !errors.Is(err, errLoginRefused):
 			return err
 		}
 	}
-	conn, err := r.c.agentLogin(r.c.ctx, existing)
+	if cred == nil {
+		return nil
+	}
+	conn, err := r.c.agentLogin(r.c.ctx, cred.dsn)
 	switch {
 	case errors.Is(err, errLoginRefused):
 		return nil // the role cannot log in
 	case err != nil:
 		return err
 	}
+	r.password = cred.password()
 	defer conn.Close(r.c.ctx)
 	return r.inspect(conn)
+}
+
+// promote moves the .pending credential, which logs in, over the
+// credential file, once the .pending path still names the file read.
+func (r *remoteInit) promote(pending *credential) error {
+	pendingFile := r.credFile + pendingSuffix
+	now, err := os.Lstat(pendingFile)
+	if err != nil {
+		return err
+	}
+	if !os.SameFile(now, pending.file) {
+		return fmt.Errorf("%s changed while basalt init ran; nothing changed, run it again", pendingFile)
+	}
+	if err := os.Rename(pendingFile, r.credFile); err != nil {
+		return err
+	}
+	r.credExists = true
+	return nil
 }
 
 // agentConn is the agent's own connection init --remote reads with.
@@ -441,7 +507,8 @@ func loginAsAgent(ctx context.Context, dsn string) (agentConn, error) {
 	switch {
 	case err == nil:
 		return conn, nil
-	case errors.As(err, &pg) && (strings.HasPrefix(pg.Code, sqlstateClassAuth) || strings.Contains(pg.Message, supavisorNoTenant)):
+	case errors.As(err, &pg) && (strings.HasPrefix(pg.Code, sqlstateClassAuth) ||
+		(pg.Code == sqlstateInternal && strings.Contains(pg.Message, supavisorNoTenant))):
 		return nil, errLoginRefused
 	}
 	return nil, fmt.Errorf("cannot reach the database to check the agent's role (nothing changed): %w", err)
@@ -481,14 +548,14 @@ func (r *remoteInit) reusable(saved []string) *config.Setup {
 	return s
 }
 
-// plan is the code init makes: its kind, the password it sets (to write
-// to the credential file, or to .pending while the old one logs in), and
-// the guard versions.
+// plan is the code init makes: its kind, the password whose verifier it
+// carries (rotate), whether that password is new (and so written: see
+// writeCredential), and the guard versions.
 type plan struct {
-	kind              setupcode.Kind
-	password          string
-	toPending, rotate bool
-	from              int
+	kind                setupcode.Kind
+	password            string
+	rotate, newPassword bool
+	from                int
 }
 
 // decide picks the kind (CONTRACT.md, basalt init --remote, item 3; RI-6).
@@ -497,7 +564,7 @@ type plan struct {
 // With --new-code after a setup that was not an INSTALL, a role that does
 // not log in gets an AGENT code with a new password (RI-17). A role that
 // logs in: AGENT for a change of tables or timeout, or with --new-code (a
-// new password, kept in .pending until the person runs the code); else
+// new password); else
 // UPGRADE when its guard is older than this build's; else an AGENT code
 // with no change.
 func (r *remoteInit) decide(saved []string) (plan, error) {
@@ -519,7 +586,7 @@ func (r *remoteInit) decide(saved []string) (plan, error) {
 	changed := r.entry == nil || !sameRequest(r.entry.InitArgs, saved)
 	switch {
 	case r.f.newCode:
-		p.kind, p.toPending = setupcode.KindAgent, true
+		p.kind = setupcode.KindAgent
 		return r.withNewPassword(p)
 	case changed:
 		p.kind = setupcode.KindAgent
@@ -536,7 +603,7 @@ func (r *remoteInit) withNewPassword(p plan) (plan, error) {
 	if err != nil {
 		return plan{}, err
 	}
-	p.password, p.rotate = pw, true
+	p.password, p.rotate, p.newPassword = pw, true, true
 	return p, nil
 }
 
@@ -609,29 +676,27 @@ func (r *remoteInit) run() (RemoteInitResult, error) {
 	return r.result(s, false)
 }
 
-// writeCredential writes the agent's connection string with the plan's
-// password: to .pending while the current password still logs in, else to
-// the credential file (and a stale .pending goes). Both 0600, atomic, never
-// through a symlink (config.WriteFile).
+// writeCredential writes a new password's connection string. It never
+// replaces a credential file that exists: a login refused now may be a
+// transient error, and the old password may still be the one that works,
+// so the new one waits in .pending until a login proves it (the engine,
+// or the next run of init, then moves it over). Only the first credential
+// goes straight to the credential file. Both 0600, atomic, never through
+// a symlink (config.WriteFile). A password this machine already holds is
+// not written again.
 func (r *remoteInit) writeCredential(p plan) error {
-	if !p.rotate {
+	if !p.newPassword {
 		return nil
 	}
 	dsn, err := guard.AgentConnString(r.base.String(), r.role, p.password)
 	if err != nil {
 		return err
 	}
-	pendingFile := r.credFile + pendingSuffix
-	if p.toPending {
-		return config.WriteFile(pendingFile, []byte(dsn+"\n"))
+	path := r.credFile
+	if r.credExists {
+		path += pendingSuffix
 	}
-	if err := config.WriteFile(r.credFile, []byte(dsn+"\n")); err != nil {
-		return err
-	}
-	if err := os.Remove(pendingFile); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	return nil
+	return config.WriteFile(path, []byte(dsn+"\n"))
 }
 
 func (r *remoteInit) writeConfig(saved []string, s *config.Setup) error {
@@ -666,13 +731,15 @@ func setupSteps(code string) ([]agent.NextStep, error) {
 		Build()
 }
 
-// setupPersonMessage is what the agent shows the person verbatim.
+// setupPersonMessage is what the agent shows the person verbatim, within
+// agent.MaxPersonMessageLength for the longest agent name: it names the
+// agent once.
 func setupPersonMessage(name, fingerprint string) string {
-	return fmt.Sprintf("Basalt needs you to finish setting up %s from your own computer, not the machine %s runs on. "+
+	return fmt.Sprintf("Finish setting up Basalt for %s on your own computer, not the agent's machine. "+
 		"Install basalt from the official release page:\n%s\n"+
-		"then run the basalt init --setup-code command %s gives you. Check that it shows the setup fingerprint %s, "+
-		"then tell %s it is done. Never paste your database password into this chat.",
-		name, name, releasePage, name, fingerprint, name)
+		"then run the basalt init --setup-code command the agent gave you. Check that it shows the setup fingerprint %s, "+
+		"then tell the agent it is done. Never paste your database password into this chat.",
+		name, releasePage, fingerprint)
 }
 
 // printRemoteResult prints the result: JSON, or the code in a block of its

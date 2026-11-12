@@ -148,6 +148,7 @@ func TestInitRemoteRefusesAPasswordBeforeAnythingElse(t *testing.T) {
 		{"--agent", "bot", "--write", "public.leads", "--database-url", "postgres://postgres:hunter2pw@db.example.com:5432/postgres"},
 		{"--database-url=postgres://postgres@db.example.com/postgres?sslmode=require&password=hunter2pw", "--agent", "bot"},
 		{"--database-url", "host=db.example.com user=postgres password=hunter2pw dbname=postgres"},
+		{"--database-url", "host=db.example.com user=postgres PASSWORD = 'hunter2pw' dbname=postgres"},
 		{"--database-url", "postgres://postgres:hunter2pw[@db.example.com/postgres", "--nope"},
 		{"--agent", "Bad-Name", "--database-url", "postgresql://postgres.ref:hunter2pw@aws-0-eu-central-1.pooler.supabase.com:6543/postgres"},
 	} {
@@ -488,19 +489,98 @@ func TestInitRemoteRefusedLoginMakesAnInstallCode(t *testing.T) {
 	require.Equal(t, "INSTALL", r.res.Kind, "the role cannot log in")
 
 	// --new-code once the install had run: an AGENT code with a new
-	// password, straight into the credential file, since the old one no
-	// longer logs in (RI-17).
+	// password (RI-17), kept in .pending: the refusal could have been
+	// transient, so the credential file stays as it is.
 	clearSetup(t, cfg)
 	pw := credentialPassword(t, install.credFile)
 	rotate := remoteDBRun(t, cfg, append(base, "--new-code")...)
 	require.Equal(t, "AGENT", rotate.res.Kind)
-	pw2 := credentialPassword(t, install.credFile)
+	require.Equal(t, pw, credentialPassword(t, install.credFile))
+	pw2 := credentialPassword(t, install.credFile+pendingSuffix)
 	require.NotEqual(t, pw, pw2)
-	require.NoFileExists(t, install.credFile+pendingSuffix)
 	requireVerifierOf(t, rotate.payload.Agent.Verifier, pw2)
+
+	// The person runs it: .pending logs in and replaces the credential.
 	runCode(t, d, rotate.payload)
+	after := remoteDBRun(t, cfg, base...)
+	require.Equal(t, "AGENT", after.res.Kind, "the bot logs in again")
+	require.Equal(t, pw2, credentialPassword(t, install.credFile))
+	require.NoFileExists(t, install.credFile+pendingSuffix)
+}
+
+func TestInitRemoteNeverOverwritesTheCredential(t *testing.T) {
+	t.Parallel()
+	cfg := tempConfig(t)
+	args := []string{"--agent", "bot", "--write", "public.leads"}
+	first := remote(t, cfg, append(args, "--database-url", supabaseURL)...)
+	pw := credentialPassword(t, first.credFile)
+	runAsFinished(t, cfg)
+
+	// A refused login (perhaps a pooler hiccup) then --new-code: the new
+	// password waits in .pending; the credential that may still work stays.
+	rotate := remote(t, cfg, append(args, "--new-code")...)
+	require.Equal(t, "AGENT", rotate.res.Kind)
+	require.Equal(t, pw, credentialPassword(t, first.credFile))
+	pw2 := credentialPassword(t, first.credFile+pendingSuffix)
+	require.NotEqual(t, pw, pw2)
+	requireVerifierOf(t, rotate.payload.Agent.Verifier, pw2)
+
+	// Another database: an INSTALL code whose password waits in .pending.
+	other := remote(t, cfg, append(args, "--database-url", "postgres://app@db.example.com:5432/crm")...)
+	require.Equal(t, "INSTALL", other.res.Kind)
+	require.Equal(t, setupcode.Target{Host: "db.example.com", Port: 5432, Database: "crm"}, other.payload.Target)
+	require.Equal(t, pw, credentialPassword(t, first.credFile))
+	pw3 := credentialPassword(t, first.credFile+pendingSuffix)
+	requireVerifierOf(t, other.payload.Agent.Verifier, pw3)
+	// A re-run without --database-url follows the pending setup's database.
+	again := remote(t, cfg, args...)
+	require.True(t, again.res.Reused)
+	require.Equal(t, other.res.SetupID, again.res.SetupID)
+}
+
+// runAsFinished drops the pending setup, as the engine does once it sees
+// the setup recorded.
+func runAsFinished(t *testing.T, cfg string) {
+	t.Helper()
 	clearSetup(t, cfg)
-	require.Equal(t, "AGENT", remoteDBRun(t, cfg, base...).res.Kind, "the bot logs in again")
+}
+
+func TestInitRemoteRefusesAHardLinkedCredential(t *testing.T) {
+	t.Parallel()
+	cfg := tempConfig(t)
+	first := remote(t, cfg, "--agent", "bot", "--write", "public.leads", "--database-url", supabaseURL)
+	require.NoError(t, os.Link(first.credFile, filepath.Join(t.TempDir(), "copy")))
+	r := cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", "bot", "--write", "public.leads")
+	require.Equal(t, exitError, r.code)
+	require.Contains(t, r.stderr, "hard links")
+}
+
+func TestInitRemoteRunsOneAtATime(t *testing.T) {
+	t.Parallel()
+	cfg := tempConfig(t)
+	first := remote(t, cfg, "--agent", "bot", "--write", "public.leads", "--database-url", supabaseURL)
+	unlock, err := lockFile(first.credFile + lockSuffix)
+	require.NoError(t, err)
+	r := cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", "bot", "--write", "public.leads")
+	require.Equal(t, exitError, r.code)
+	require.Contains(t, r.stderr, "another basalt init --remote is running")
+	unlock()
+	require.Equal(t, exitOK, cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", "bot", "--write", "public.leads").code)
+}
+
+func TestSetupPersonMessageFitsForTheLongestName(t *testing.T) {
+	t.Parallel()
+	name := ""
+	for n := 1; n < 100; n++ {
+		if candidate := strings.Repeat("a", n); config.ValidAgentName(candidate) {
+			name = candidate
+		}
+	}
+	require.GreaterOrEqual(t, len(name), 50)
+	pm := setupPersonMessage(name, "3f9a 21c0 7d44 e1b2 90ac")
+	withoutURL := strings.Replace(pm, releasePage+"\n", "", 1)
+	require.LessOrEqual(t, utf8.RuneCountInString(withoutURL), agent.MaxPersonMessageLength, pm)
+	require.Equal(t, 1, strings.Count(pm, name), "the agent is named once")
 }
 
 // clearSetup drops the pending setup from engine.json, as the engine does

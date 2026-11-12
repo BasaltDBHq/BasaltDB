@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -38,7 +39,7 @@ var ErrHasPassword = errors.New("This connection string contains a password. bas
 // key=value string. Supabase's [YOUR-PASSWORD] placeholder is not one.
 func HasPassword(conn string) bool {
 	conn = dropPlaceholder(conn)
-	if strings.Contains(strings.ToLower(conn), passwordParam+"=") {
+	if passwordKeyword.MatchString(conn) {
 		return true
 	}
 	u, err := url.Parse(conn)
@@ -52,12 +53,16 @@ func HasPassword(conn string) bool {
 		return true
 	}
 	for k := range u.Query() {
-		if strings.EqualFold(k, passwordParam) {
+		if strings.EqualFold(strings.TrimSpace(k), passwordParam) {
 			return true
 		}
 	}
 	return false
 }
+
+// passwordKeyword is a password keyword with its =, in any case and with
+// any spaces around the = (libpq's key = value form allows them).
+var passwordKeyword = regexp.MustCompile(`(?i)` + passwordParam + `\s*=`)
 
 // dropPlaceholder removes Supabase's password placeholder.
 func dropPlaceholder(conn string) string {

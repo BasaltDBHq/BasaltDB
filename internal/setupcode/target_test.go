@@ -18,6 +18,9 @@ func TestHasPassword(t *testing.T) {
 		"postgres://postgres@db.example.com/postgres?password=s3cret":                                    true,
 		"postgres://postgres@db.example.com/postgres?PASSWORD=s3cret":                                    true,
 		"host=db.example.com user=postgres password=s3cret":                                              true,
+		"host=db.example.com user=postgres password = s3cret":                                            true,
+		"host=db.example.com user=postgres Password\t=\t's3cret'":                                        true,
+		"postgres://postgres@db.example.com/postgres?password%20=s3cret":                                 true,
 		"postgres://postgres:s3[cret@db.example.com/postgres":                                            true,
 	} {
 		require.Equal(t, want, HasPassword(conn), conn)

@@ -23,7 +23,7 @@ Not built yet:
 
 - **The engine's public key and its id.** The id is the first 16 bytes of the SHA-256 of that key, in base64url. The engine proves it holds the private key by signing a challenge from the Vault. The private key stays in `<stateDir>/channel.json`, mode `0600`, and is never sent.
 - **Link tokens, never secrets.** A short link looks like `https://portal.basaltvault.app/approvals/<id>#s=<secret>`. The engine derives a 22-character link token from the secret with HKDF and registers only that token, with its expiry. It never sends the secret, or the pre-shared key derived from it. The `#s=` part stays in your browser: browsers do not send the fragment to any server.
-- **Padded, encrypted frames.** Once a page connects, the page and the engine run a Noise handshake (`Noise_NNpsk0_P256_AESGCM_SHA256`) keyed by the link secret. Everything after that, the approval or revert rows included, travels inside AES-256-GCM frames that the Vault forwards without being able to read or change them. Each frame is padded to at least 1,024 bytes and then to the next power of two, up to 32,768.
+- **Padded, encrypted frames.** Once a page connects, the page and the engine run a Noise handshake (`Noise_NNpsk0_P256_AESGCM_SHA256`) keyed by the link secret. Everything after that, the approval or revert rows included, travels inside AES-256-GCM frames that the Vault forwards without being able to read them, or change them without the session failing. Each frame is padded to at least 1,024 bytes and then to the next power of two, up to 32,768.
 
 No database credential, SQL, row, ledger entry, passkey signature or private key goes to the Vault.
 
@@ -83,7 +83,7 @@ Engine id:    AbCd EfGh IjKl MnOp (id AbCdEfGhIjKlMnOpQrStUv)
 
 The engine id is a fingerprint of the engine's public key. Compare it across `basalt status`, the agent's `status` tool and, later, the portal page.
 
-For an engine that runs as a service, `basalt status` asks the engine, so it prints the live state. For an engine you start by hand, `basalt status` reads `engine.json` and the key file instead. It prints `OFF` or `KEY_ERROR` as above. When the setting is `ON`, it prints `Vault: ON in the config; only the running engine knows whether it is connected` with the engine id, and the live state comes from the agent's `status` tool. No Vault state is reported as a problem: approvals work in all of them.
+For an engine that runs as a service, `basalt status` asks the engine, so it prints the live state. For an engine you start by hand, `basalt status` reads `engine.json` and the key file instead. It prints `OFF` or `KEY_ERROR` as above. When the setting is `ON`, it prints `Vault:        ON in the config; only the running engine knows whether it is connected (the agent's status tool reports it)` with the engine id, and the live state comes from the agent's `status` tool. No Vault state is reported as a problem: approvals work in all of them.
 
 ## The engine's key file
 

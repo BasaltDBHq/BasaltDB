@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 func TestOSSystemWriteFileDoesNotFollowFileSymlink(t *testing.T) {
@@ -153,4 +154,133 @@ func TestOSSystemMkdirRefusesSymlinkAndFile(t *testing.T) {
 	file := filepath.Join(dir, "file")
 	require.NoError(t, os.WriteFile(file, nil, 0o600))
 	require.ErrorContains(t, OSSystem{}.Mkdir(file, 0o700, ""), "not a real directory")
+}
+
+// testPolicy lets the test user stand in for root: tests cannot run as
+// root, so directories the test user owns (and a sticky /tmp) count as
+// root's.
+func testPolicy() trustPolicy {
+	return trustPolicy{rootUIDs: []uint32{0, uint32(os.Getuid())}, stickyOK: true}
+}
+
+func TestMain(m *testing.M) {
+	dirPolicy = testPolicy()
+	os.Exit(m.Run())
+}
+
+// rootOnly trusts only uid 0, as a real install does, for one test.
+func rootOnly(t *testing.T) {
+	t.Helper()
+	dirPolicy.rootUIDs = []uint32{0}
+	t.Cleanup(func() { dirPolicy = testPolicy() })
+}
+
+// realTempDir is t.TempDir with symlinks resolved (macOS /var is one), as
+// the install names directories in its errors.
+func realTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	return dir
+}
+
+// ownedBy makes the directory at path look owned by uid to the install.
+func ownedBy(t *testing.T, path string, uid uint32) {
+	t.Helper()
+	fi, err := os.Stat(path)
+	require.NoError(t, err)
+	ino := fi.Sys().(*syscall.Stat_t).Ino
+	fstat = func(fd int, st *unix.Stat_t) error {
+		if err := unix.Fstat(fd, st); err != nil {
+			return err
+		}
+		if st.Ino == ino {
+			st.Uid = uid
+		}
+		return nil
+	}
+	t.Cleanup(func() { fstat = unix.Fstat })
+}
+
+// The engine user owns the config directory x once it is made (and its
+// parent too when an earlier install put the config there), so it can swap
+// x for a symlink to elsewhere. Root must not follow x to make, chown or
+// write into elsewhere/agents.
+func TestOSSystemRefusesSymlinkInMiddleComponent(t *testing.T) {
+	dir := t.TempDir()
+	cur, err := user.Current()
+	require.NoError(t, err)
+	x := filepath.Join(dir, "x")
+	require.NoError(t, OSSystem{}.Mkdir(x, 0o755, cur.Username))
+	elsewhere := filepath.Join(dir, "elsewhere")
+	require.NoError(t, os.MkdirAll(filepath.Join(elsewhere, "agents"), 0o755))
+	require.NoError(t, os.Chmod(filepath.Join(elsewhere, "agents"), 0o755))
+	require.NoError(t, os.Rename(x, filepath.Join(dir, "moved")))
+	require.NoError(t, os.Symlink(elsewhere, x))
+
+	require.ErrorContains(t, OSSystem{}.Mkdir(filepath.Join(x, "agents"), 0o700, cur.Username), "symlink is refused")
+	require.ErrorContains(t, OSSystem{}.WriteFile(filepath.Join(x, "agents", "bot.url"), []byte("secret"), 0o600, cur.Username), "symlink is refused")
+	require.ErrorContains(t, OSSystem{}.Mkdir(filepath.Join(x, "agents", "deeper"), 0o700, cur.Username), "symlink is refused")
+
+	fi, err := os.Stat(filepath.Join(elsewhere, "agents"))
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o755), fi.Mode().Perm(), "the link target keeps its mode")
+	entries, err := os.ReadDir(filepath.Join(elsewhere, "agents"))
+	require.NoError(t, err)
+	require.Empty(t, entries, "nothing is written or made through the link")
+}
+
+func TestOSSystemRefusesGroupWritableAncestor(t *testing.T) {
+	dir := realTempDir(t)
+	shared := filepath.Join(dir, "shared")
+	require.NoError(t, os.MkdirAll(filepath.Join(shared, "agents"), 0o700))
+	require.NoError(t, os.Chmod(shared, 0o775))
+
+	err := OSSystem{}.WriteFile(filepath.Join(shared, "agents", "bot.url"), []byte("x"), 0o600, "")
+	require.ErrorContains(t, err, shared+" is writable by group or others")
+	require.ErrorContains(t, err, "sudo chmod go-w "+shared)
+	require.ErrorContains(t, OSSystem{}.Mkdir(filepath.Join(shared, "new"), 0o700, ""), shared+" is writable by group or others")
+	_, err = os.Stat(filepath.Join(shared, "new"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestOSSystemRefusesAncestorOwnedByAnotherUser(t *testing.T) {
+	dir := realTempDir(t)
+	theirs := filepath.Join(dir, "theirs")
+	require.NoError(t, os.MkdirAll(filepath.Join(theirs, "agents"), 0o700))
+	ownedBy(t, theirs, 4242)
+
+	err := OSSystem{}.WriteFile(filepath.Join(theirs, "agents", "bot.url"), []byte("x"), 0o600, "")
+	require.ErrorContains(t, err, theirs+" is owned by uid 4242, not root")
+	require.ErrorContains(t, OSSystem{}.Mkdir(filepath.Join(theirs, "new"), 0o700, ""), theirs+" is owned by uid 4242")
+}
+
+// With only root trusted, as in a real install, a directory a person owns
+// is refused, except for files the install gives to that same user: the
+// engine's credential goes into agents below its own config directory.
+func TestOSSystemRootOnlyAllowsTheOwnersDirectories(t *testing.T) {
+	rootOnly(t)
+	dir := t.TempDir()
+	cur, err := user.Current()
+	require.NoError(t, err)
+
+	err = OSSystem{}.WriteFile(filepath.Join(dir, "engine.json"), []byte("x"), 0o600, "")
+	require.ErrorContains(t, err, "could redirect what root writes below it")
+	require.NoError(t, OSSystem{}.WriteFile(filepath.Join(dir, "engine.json"), []byte("x"), 0o600, cur.Username))
+}
+
+func TestOSSystemMkdirRefusesExistingDirOwnedByAnotherUser(t *testing.T) {
+	dir := t.TempDir()
+	cur, err := user.Current()
+	require.NoError(t, err)
+	agents := filepath.Join(dir, "agents")
+	require.NoError(t, os.Mkdir(agents, 0o755))
+	require.NoError(t, os.Chmod(agents, 0o755))
+	ownedBy(t, agents, 4242)
+
+	err = OSSystem{}.Mkdir(agents, 0o700, cur.Username)
+	require.ErrorContains(t, err, agents+" already exists and is owned by uid 4242, not root or "+cur.Username)
+	fi, err := os.Stat(agents)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o755), fi.Mode().Perm(), "a refused directory is left as it was")
 }

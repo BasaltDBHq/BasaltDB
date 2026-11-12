@@ -144,7 +144,8 @@ func (s *fakeSys) WriteFile(path string, data []byte, mode os.FileMode, owner st
 	s.written[path], s.modes[path] = string(data), mode
 	return nil
 }
-func (s *fakeSys) Remove(string) error { return nil }
+func (s *fakeSys) Remove(string) error      { return nil }
+func (s *fakeSys) CheckBinary(string) error { return nil }
 
 // initRun runs basalt init against d with the fake host, as if at a
 // terminal when interactive.

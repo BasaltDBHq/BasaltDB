@@ -12,3 +12,5 @@ var errUnsupported = errors.New("the engine service installs on linux and darwin
 func (OSSystem) WriteFile(string, []byte, os.FileMode, string) error { return errUnsupported }
 
 func (OSSystem) Mkdir(string, os.FileMode, string) error { return errUnsupported }
+
+func (OSSystem) CheckBinary(string) error { return errUnsupported }

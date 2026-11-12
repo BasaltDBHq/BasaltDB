@@ -30,9 +30,9 @@ const (
 var afterDirOpen func()
 
 // WriteFile writes data to path as root without following a link the engine
-// user could plant. The directory holding the file is opened once with
-// O_NOFOLLOW (its parent is root-controlled, so it is resolved normally) and
-// everything after that is relative to that descriptor: a new temp file is
+// user could plant. The directory holding the file is opened once by
+// openTrusted (every component without following a link) and everything
+// after that is relative to that descriptor: a new temp file is
 // created exclusively, its mode and owner are set through its own descriptor,
 // and renameat moves it over the target. A symlink or hardlink at the target
 // is replaced, never written through or re-owned.
@@ -41,7 +41,7 @@ func (OSSystem) WriteFile(path string, data []byte, mode os.FileMode, owner stri
 	if err != nil {
 		return err
 	}
-	dfd, err := openDir(filepath.Dir(path))
+	dfd, err := openTrusted(filepath.Dir(path), ids.uid)
 	if err != nil {
 		return err
 	}
@@ -67,26 +67,31 @@ func (OSSystem) WriteFile(path string, data []byte, mode os.FileMode, owner stri
 
 // Mkdir makes path (mode, owner) relative to its parent, refusing a symlink
 // at path, and sets mode and owner through the opened directory descriptor.
+// The parent is reached by openTrusted, so no component of it is a symlink
+// the engine user planted. A directory that already exists is taken over
+// only when root or owner owns it.
 func (OSSystem) Mkdir(path string, mode os.FileMode, owner string) error {
 	ids, err := lookupOwner(owner)
 	if err != nil {
 		return err
 	}
 	parent := filepath.Dir(path)
-	pfd, err := unix.Open(parent, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	pfd, err := openTrusted(parent, ids.uid)
 	if errors.Is(err, unix.ENOENT) && parent != path {
 		// Missing ancestors are made by root (root-owned, 0755), like install -d.
 		if err := (OSSystem{}).Mkdir(parent, ancestorDirMode, ""); err != nil {
 			return err
 		}
-		pfd, err = unix.Open(parent, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+		pfd, err = openTrusted(parent, ids.uid)
 	}
 	if err != nil {
 		return err
 	}
 	defer unix.Close(pfd)
 	base := filepath.Base(path)
-	if err := unix.Mkdirat(pfd, base, uint32(mode.Perm())); err != nil && !errors.Is(err, unix.EEXIST) {
+	err = unix.Mkdirat(pfd, base, uint32(mode.Perm()))
+	existed := errors.Is(err, unix.EEXIST)
+	if err != nil && !existed {
 		return err
 	}
 	dfd, err := openDirAt(pfd, base, path)
@@ -94,10 +99,33 @@ func (OSSystem) Mkdir(path string, mode os.FileMode, owner string) error {
 		return err
 	}
 	defer unix.Close(dfd)
+	if existed {
+		if err := checkExisting(dfd, path, ids.uid, owner); err != nil {
+			return err
+		}
+	}
 	if err := unix.Fchmod(dfd, uint32(mode.Perm())); err != nil {
 		return err
 	}
 	return unix.Fchown(dfd, ids.uid, ids.gid)
+}
+
+// checkExisting refuses to take over a directory that someone other than
+// root or the intended owner made: chowning it would hand them a directory
+// root then writes into.
+func checkExisting(dfd int, path string, uid int, owner string) error {
+	var st unix.Stat_t
+	if err := fstat(dfd, &st); err != nil {
+		return err
+	}
+	if dirPolicy.rootUID(st.Uid) || int(st.Uid) == uid {
+		return nil
+	}
+	if owner == "" {
+		owner = "root"
+	}
+	return fmt.Errorf("%s already exists and is owned by uid %d, not root or %s; "+
+		"move it aside (sudo mv %s %s.old) or choose another --config, then run the install again", path, st.Uid, owner, path, path)
 }
 
 type ownerIDs struct{ uid, gid int }
@@ -123,20 +151,6 @@ func lookupOwner(name string) (ownerIDs, error) {
 		return ownerIDs{}, err
 	}
 	return ownerIDs{uid: uid, gid: gid}, nil
-}
-
-// openDir opens dir with its last component not followed.
-func openDir(dir string) (int, error) {
-	parent := filepath.Dir(dir)
-	if parent == dir {
-		return unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
-	}
-	pfd, err := unix.Open(parent, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
-	if err != nil {
-		return -1, err
-	}
-	defer unix.Close(pfd)
-	return openDirAt(pfd, filepath.Base(dir), dir)
 }
 
 func openDirAt(pfd int, name, full string) (int, error) {

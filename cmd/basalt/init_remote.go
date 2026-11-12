@@ -425,6 +425,14 @@ func readCredentialIfAny(path string) (*credential, error) {
 		return nil, fmt.Errorf("the credential file %s does not hold a connection URL", path)
 	}
 	t, err := setupcode.TargetOf(u)
+	var pe *setupcode.TargetParamError
+	if errors.As(err, &pe) {
+		// basalt init keeps these parameters; --remote can't target them.
+		// The file is the running engine's credential: never treat it as
+		// absent, or a new one would overwrite it.
+		return nil, fmt.Errorf("the credential file %s was written by basalt init for a connection string with a %s= parameter, "+
+			"which basalt init --remote can't target; it was left as is. Use another --agent name, or another --config", path, pe.Param)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("the credential file %s: %w", path, err)
 	}

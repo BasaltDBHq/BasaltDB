@@ -95,6 +95,16 @@ func ParseConnURL(conn string) (*url.URL, Target, error) {
 // could differ. TargetOf refuses them.
 var targetParams = []string{"host", "hostaddr", "port", "dbname"}
 
+// TargetParamError is a connection string TargetOf refuses for its Param
+// parameter (one of targetParams).
+type TargetParamError struct {
+	Param string
+}
+
+func (e *TargetParamError) Error() string {
+	return fmt.Sprintf("the connection string has a %s= parameter; put the host, port and database in the URL itself (postgres://user@host:port/database) and remove %s= from its parameters", e.Param, e.Param)
+}
+
 // TargetOf is the database u names: host, port, database and the Supabase
 // project ref (see ParseConnURL). It does not look at u's password. A
 // host, hostaddr, port or dbname parameter is refused: the target is
@@ -103,7 +113,7 @@ func TargetOf(u *url.URL) (Target, error) {
 	for k := range u.Query() {
 		for _, p := range targetParams {
 			if strings.EqualFold(strings.TrimSpace(k), p) {
-				return Target{}, fmt.Errorf("the connection string has a %s= parameter; put the host, port and database in the URL itself (postgres://user@host:port/database) and remove %s= from its parameters", p, p)
+				return Target{}, &TargetParamError{Param: p}
 			}
 		}
 	}

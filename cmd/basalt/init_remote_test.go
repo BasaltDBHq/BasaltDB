@@ -303,6 +303,35 @@ func TestInitRemoteRefusesTargetParams(t *testing.T) {
 	require.NoFileExists(t, cfg)
 }
 
+// basalt init keeps host, port and dbname parameters in the credential it
+// writes; --remote can't target such a URL. It says so and leaves the file,
+// the running engine's credential, as it is.
+func TestInitRemoteExplainsACredentialWithTargetParams(t *testing.T) {
+	t.Parallel()
+	const stored = "postgres://basalt_agent_bot:enginepw@db.example.com:5432/crm?sslmode=require&host=10.0.0.9\n"
+	for _, suffix := range []string{"", pendingSuffix} {
+		for _, extra := range [][]string{nil, {"--database-url", "postgres://app@db.example.com:5432/crm"}} {
+			cfg := tempConfig(t)
+			path := filepath.Join(filepath.Dir(cfg), "agents", "bot.url"+suffix)
+			require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
+			require.NoError(t, os.WriteFile(path, []byte(stored), config.FileMode))
+
+			args := append([]string{"init", "--remote", "--config", cfg, "--agent", "bot", "--write", "public.leads"}, extra...)
+			r := cliNoDB(t, args...)
+
+			require.Equal(t, exitError, r.code, "%q %v: %s", suffix, extra, r.stderr)
+			require.Contains(t, r.stderr, "was written by basalt init for a connection string with a host= parameter")
+			require.Contains(t, r.stderr, "Use another --agent name, or another --config")
+			require.NotContains(t, r.stderr, "enginepw")
+			require.Empty(t, r.stdout)
+			raw, err := os.ReadFile(path)
+			require.NoError(t, err)
+			require.Equal(t, stored, string(raw), "the credential is not overwritten")
+			require.NoFileExists(t, cfg)
+		}
+	}
+}
+
 func TestInitRemoteRerunPrintsThePendingCode(t *testing.T) {
 	t.Parallel()
 	cfg := tempConfig(t)

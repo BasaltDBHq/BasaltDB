@@ -55,6 +55,9 @@ func runInit(c *cliIO, args []string) int {
 	if isRemote(args) {
 		return runInitRemote(c, args)
 	}
+	if isSetupCode(args) {
+		return runInitSetupCode(c, args)
+	}
 	f, err := parseInit(c, args)
 	if err != nil {
 		return c.fail(err)
@@ -402,19 +405,25 @@ func applyInit(ctx context.Context, conn *pgx.Conn, script guard.Script) error {
 		if err := script.Apply(ctx, tx); err != nil {
 			return err
 		}
-		uncovered, err := guard.UncoveredTables(ctx, tx)
-		if err != nil {
-			return err
-		}
-		if len(uncovered) > 0 {
-			tables := make([]string, 0, len(uncovered))
-			for _, u := range uncovered {
-				tables = append(tables, u.Table+" ("+u.Why+")")
-			}
-			return fmt.Errorf("tables left unguarded: %s", strings.Join(tables, ", "))
-		}
-		return nil
+		return checkCovered(ctx, tx)
 	})
+}
+
+// checkCovered refuses, inside the install's transaction, while any
+// agent-writable table or cascade target is left unguarded.
+func checkCovered(ctx context.Context, tx pgx.Tx) error {
+	uncovered, err := guard.UncoveredTables(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if len(uncovered) > 0 {
+		tables := make([]string, 0, len(uncovered))
+		for _, u := range uncovered {
+			tables = append(tables, u.Table+" ("+u.Why+")")
+		}
+		return fmt.Errorf("tables left unguarded: %s", strings.Join(tables, ", "))
+	}
+	return nil
 }
 
 // savedArgs are the flags init writes to engine.json for the agent: the ones

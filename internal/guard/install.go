@@ -53,7 +53,12 @@ type AgentSpec struct {
 	// Verifier is set on the existing role with ALTER ROLE, which Postgres
 	// refuses when the role does not exist (an AGENT setup code). Needs
 	// Password or Verifier.
-	CreateOnly       bool
+	CreateOnly bool
+	// Change is an AGENT setup code: the role must already be a member of
+	// the agents group (a setup code never pulls another role in), and its
+	// table privileges are replaced by Read and Write, so tables no longer
+	// listed lose theirs (CONTRACT.md, The setup code, kinds).
+	Change           bool
 	Read             []string
 	Write            []string
 	StatementTimeout time.Duration
@@ -68,6 +73,9 @@ type InitOptions struct {
 	// may see every row of (from AgentBlindTables). Each gets a policy
 	// named after the agent role and a ledger row; nothing else does.
 	AgentPolicies []BlindTable
+	// UpTo stops the migrations at this version (a setup code's guard.to);
+	// 0 applies every migration this build has.
+	UpTo int
 }
 
 // Statement is one step of a Script. Shown is what the person sees when it
@@ -153,7 +161,7 @@ func PlanInit(ctx context.Context, q Querier, opts InitOptions) (Script, error) 
 	add(installRoles)
 	add(installSchema)
 	for _, m := range migrations {
-		if m.version <= version {
+		if m.version <= version || (opts.UpTo > 0 && m.version > opts.UpTo) {
 			continue
 		}
 		add(migrationBegin + m.sql + fmt.Sprintf(migrationEnd, m.version))
@@ -233,8 +241,41 @@ func planAgent(ctx context.Context, q Querier, n Names, spec AgentSpec) ([]State
 	if err != nil {
 		return nil, err
 	}
-	return append([]Statement{adopt, st}, grants...), nil
+	out := []Statement{adopt}
+	if spec.Change {
+		out = append(out, Statement{SQL: n.render(fmt.Sprintf(agentChangeSQL, role))})
+	}
+	return append(append(out, st), grants...), nil
 }
+
+// agentChangeSQL runs after agentAdoptSQL for an AGENT setup code: the role
+// must be an agent of this install, and loses every privilege it holds on
+// a table, view or sequence, so the grants that follow are exactly the
+// code's tables. A privilege this admin cannot revoke (granted by someone
+// else) is refused rather than left in place.
+const agentChangeSQL = `
+DO $$
+DECLARE
+    v_role oid := (SELECT r.oid FROM pg_catalog.pg_roles r WHERE r.rolname = '%[1]s');
+    v_rel  pg_catalog.regclass;
+BEGIN
+    IF v_role IS NULL OR NOT pg_catalog.pg_has_role(v_role, '{{agents}}', 'USAGE') THEN
+        RAISE EXCEPTION USING ERRCODE = 'BS008', MESSAGE = 'LEDGER_INPUT_INVALID',
+            DETAIL = '%[1]s is not an agent role of {{agents}}: an AGENT setup code changes only an existing agent';
+    END IF;
+    FOR v_rel IN SELECT DISTINCT c.oid::pg_catalog.regclass FROM pg_catalog.pg_class c
+        WHERE EXISTS (SELECT 1 FROM pg_catalog.aclexplode(c.relacl) a WHERE a.grantee = v_role)
+           OR EXISTS (SELECT 1 FROM pg_catalog.pg_attribute t, LATERAL pg_catalog.aclexplode(t.attacl) a
+                WHERE t.attrelid = c.oid AND a.grantee = v_role) LOOP
+        EXECUTE pg_catalog.format('REVOKE ALL ON %%s FROM %%I', v_rel, '%[1]s');
+    END LOOP;
+    IF EXISTS (SELECT 1 FROM pg_catalog.pg_class c, LATERAL pg_catalog.aclexplode(c.relacl) a WHERE a.grantee = v_role)
+       OR EXISTS (SELECT 1 FROM pg_catalog.pg_attribute t, LATERAL pg_catalog.aclexplode(t.attacl) a WHERE a.grantee = v_role) THEN
+        RAISE EXCEPTION USING ERRCODE = 'BS008', MESSAGE = 'LEDGER_INPUT_INVALID',
+            DETAIL = '%[1]s holds table privileges this admin cannot revoke',
+            HINT = 'Have the role that granted them revoke them, or ask for a code for another agent name.';
+    END IF;
+END $$;`
 
 // checkAgentPassword accepts at most one of a generated password and a
 // verifier, and CreateOnly only with one of them.

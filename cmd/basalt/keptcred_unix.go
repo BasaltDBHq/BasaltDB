@@ -96,13 +96,14 @@ func readOwnCredential(path string) (string, os.FileInfo, error) {
 	})
 }
 
-// readCredentialFile opens path with O_NOFOLLOW, then checks the open
+// readCredentialFile opens path with O_NOFOLLOW and O_NONBLOCK (a FIFO
+// planted at the path must not hang the read), then checks the open
 // descriptor is a regular file with one link (a hard link could make the
 // secret readable, or replaceable, by another path), mode 0600 or tighter,
 // with an owner owner accepts, and reads from that descriptor, so nothing
 // can change between check and read.
 func readCredentialFile(path string, owner func(uid uint32) (ok bool, want string)) (string, os.FileInfo, error) {
-	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return "", nil, err
 	}
@@ -141,14 +142,19 @@ func readCredentialFile(path string, owner func(uid uint32) (ok bool, want strin
 }
 
 // lockFile takes an exclusive advisory lock on path (created 0600, never
-// through a symlink) and returns its release. It does not wait: a lock held
-// by another run is an error.
+// through a symlink, never blocking on a FIFO, and only on a regular file)
+// and returns its release. It does not wait: a lock held by another run is
+// an error.
 func lockFile(path string) (func(), error) {
 	if err := os.MkdirAll(filepath.Dir(path), lockDirMode); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|syscall.O_NOFOLLOW, config.FileMode)
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, config.FileMode)
 	if err != nil {
+		return nil, fmt.Errorf("lock %s: %w", path, err)
+	}
+	if err := checkOpenPlainFile(f); err != nil {
+		_ = f.Close()
 		return nil, fmt.Errorf("lock %s: %w", path, err)
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
@@ -159,4 +165,14 @@ func lockFile(path string) (func(), error) {
 		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 		_ = f.Close()
 	}, nil
+}
+
+// checkOpenPlainFile refuses an open file that is not a regular file with one
+// link, checked through its descriptor.
+func checkOpenPlainFile(f *os.File) error {
+	fi, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	return config.CheckPlainFile(fi)
 }

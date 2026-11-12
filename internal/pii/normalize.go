@@ -3,6 +3,7 @@ package pii
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/nyaruka/phonenumbers"
 	"golang.org/x/text/cases"
@@ -29,9 +30,28 @@ func Normalize(t EntityType, value, phoneRegion string) string {
 	return GenericForm(value)
 }
 
+// normalizeEmail drops ignorables, then NFKC, trims, lower-cases and NFKC
+// again, and writes every dash and the minus sign as '-' and the ideographic
+// full stops as '.', as the detectors see them: "a‐b@corp。ee" is
+// "a-b@corp.ee" (IDNA reads the full stops as a domain's dots).
 func normalizeEmail(value string) string {
 	value = strings.Map(dropIgnorable, value)
-	return norm.NFKC.String(strings.ToLower(strings.TrimSpace(norm.NFKC.String(value))))
+	s := norm.NFKC.String(strings.ToLower(strings.TrimSpace(norm.NFKC.String(value))))
+	return strings.Map(emailPunct, s)
+}
+
+// emailPunct maps a dash or the minus sign to '-' and an ideographic full stop
+// to '.', for strings.Map.
+func emailPunct(r rune) rune {
+	switch {
+	case r < utf8.RuneSelf:
+		return r
+	case isDash(r):
+		return '-'
+	case isFullStop(r):
+		return '.'
+	}
+	return r
 }
 
 // normalizePhone returns the E.164 form and the country calling code (0 when
@@ -41,14 +61,14 @@ func normalizeEmail(value string) string {
 func normalizePhone(value, region string) (string, int32) {
 	// The shape form, as the phone detector saw it: no marks, ASCII digits.
 	caser := cases.Fold()
-	value = strings.TrimSpace(shapeForm(&caser, value))
+	value = iddAsPlus(strings.TrimSpace(shapeForm(&caser, value)))
 	region = strings.ToUpper(strings.TrimSpace(region))
 	if e164, cc, ok := parseE164(value, region); ok {
 		return e164, cc
 	}
 	// Parse the cleaned form too, so the fallback is stable: normalizing it
 	// again takes exactly this path and gives the same text.
-	clean := norm.NFKC.String(phoneFallback(value))
+	clean := iddAsPlus(norm.NFKC.String(phoneFallback(value)))
 	if e164, cc, ok := parseE164(clean, region); ok {
 		return e164, cc
 	}
@@ -69,6 +89,18 @@ func parseE164(value, region string) (string, int32, bool) {
 		return "", 0, false
 	}
 	return e164, num.GetCountryCode(), true
+}
+
+// iddAsPlus writes a leading "00", the international prefix most of the
+// world dials, as "+", so "0044 7700 900123" is the number "+44 7700 900123"
+// whatever the column's region (libphonenumber reads "00" only for regions
+// that dial it). It runs on the cleaned form too, where separators are gone
+// ("0-0-44…"), so the fallback never starts with "00" and stays stable.
+func iddAsPlus(value string) string {
+	if rest, ok := strings.CutPrefix(value, iddPrefix); ok {
+		return "+" + rest
+	}
+	return value
 }
 
 func phoneFallback(value string) string {

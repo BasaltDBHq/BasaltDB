@@ -527,19 +527,63 @@ func dropRole(ctx context.Context, q Querier, role string) error {
 // user "postgres.<ref>" logs in as role postgres of project <ref>.
 const supabasePoolerHost = ".pooler.supabase.com"
 
-// AgentConnString returns adminURL with the agent's user and password. It
-// accepts URL connection strings only (postgres:// or postgresql://).
-// Through Supabase's pooler the agent's user keeps the admin's project
-// ref, so the pooler can route it.
+// agentQueryKeys are the connection string parameters the agent's
+// connection string keeps from the admin's: how to reach and trust the
+// server, never who logs in. Every other parameter is dropped, among them
+// user, password, passfile, sslpassword, service, servicefile, host,
+// port and dbname, which pgx would read in place of the agent's own.
+var agentQueryKeys = map[string]bool{
+	"sslmode":                 true,
+	"sslrootcert":             true,
+	"sslcert":                 true,
+	"sslkey":                  true,
+	"sslcrl":                  true,
+	"sslcertmode":             true,
+	"sslnegotiation":          true,
+	"sslsni":                  true,
+	"channel_binding":         true,
+	"require_auth":            true,
+	"target_session_attrs":    true,
+	"connect_timeout":         true,
+	"application_name":        true,
+	"min_protocol_version":    true,
+	"max_protocol_version":    true,
+	"default_query_exec_mode": true,
+}
+
+// ErrAdminURLForm is returned for an admin connection string that is not
+// a postgres:// URL.
+var ErrAdminURLForm = errors.New("the admin connection string must be a URL (postgres://user:password@host:port/database), not keyword/value pairs")
+
+// AgentConnString builds the agent's connection string from adminURL: its
+// scheme, hosts, ports and database, the agent's user and password, and
+// only the parameters in agentQueryKeys. Nothing else of the admin's
+// connection string is kept, so no admin credential reaches the agent's
+// credential file (CO-9). It accepts URL connection strings only
+// (postgres:// or postgresql://) and refuses keyword/value strings with
+// ErrAdminURLForm. Through Supabase's pooler the agent's user keeps the
+// admin's project ref, so the pooler can route it.
 func AgentConnString(adminURL, role, password string) (string, error) {
 	u, err := url.Parse(adminURL)
 	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") {
-		return "", errors.New("the connection string must be a postgres:// URL")
+		return "", ErrAdminURLForm
 	}
 	user := role
 	if _, ref, ok := strings.Cut(u.User.Username(), "."); ok && strings.HasSuffix(u.Hostname(), supabasePoolerHost) {
 		user = role + "." + ref
 	}
-	u.User = url.UserPassword(user, password)
-	return u.String(), nil
+	query := url.Values{}
+	for key, values := range u.Query() {
+		if agentQueryKeys[key] {
+			query[key] = values
+		}
+	}
+	agent := url.URL{
+		Scheme:   u.Scheme,
+		User:     url.UserPassword(user, password),
+		Host:     u.Host,
+		Path:     u.Path,
+		RawQuery: query.Encode(),
+	}
+	return agent.String(), nil
 }

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -31,20 +32,76 @@ func TestNamesValidate(t *testing.T) {
 
 func TestAgentConnString(t *testing.T) {
 	t.Parallel()
-	cases := map[string]struct{ admin, want string }{
+	const canary = "ADMINSECRET"
+	cases := map[string]struct {
+		admin, want, user string
+		// certFiles: the result names certificate files that do not
+		// exist, which pgx cannot parse.
+		certFiles bool
+	}{
 		"direct": {
-			"postgres://postgres:secret@db.abcd.supabase.co:5432/postgres?sslmode=require",
-			"postgres://basalt_agent_bot:pw@db.abcd.supabase.co:5432/postgres?sslmode=require",
+			admin: "postgres://postgres:" + canary + "@db.abcd.supabase.co:5432/postgres?sslmode=require",
+			want:  "postgres://basalt_agent_bot:pw@db.abcd.supabase.co:5432/postgres?sslmode=require",
+			user:  "basalt_agent_bot",
 		},
 		"supabase pooler keeps the project ref": {
-			"postgresql://postgres.abcd:secret@aws-0-eu-central-1.pooler.supabase.com:5432/postgres",
-			"postgresql://basalt_agent_bot.abcd:pw@aws-0-eu-central-1.pooler.supabase.com:5432/postgres",
+			admin: "postgresql://postgres.abcd:" + canary + "@aws-0-eu-central-1.pooler.supabase.com:5432/postgres",
+			want:  "postgresql://basalt_agent_bot.abcd:pw@aws-0-eu-central-1.pooler.supabase.com:5432/postgres",
+			user:  "basalt_agent_bot.abcd",
 		},
 		"a dot elsewhere is part of the role": {
-			"postgres://ops.admin:secret@127.0.0.1:5432/app",
-			"postgres://basalt_agent_bot:pw@127.0.0.1:5432/app",
+			admin: "postgres://ops.admin:" + canary + "@127.0.0.1:5432/app",
+			want:  "postgres://basalt_agent_bot:pw@127.0.0.1:5432/app",
+			user:  "basalt_agent_bot",
 		},
-		"no user": {"postgres://127.0.0.1/app", "postgres://basalt_agent_bot:pw@127.0.0.1/app"},
+		"no user": {
+			admin: "postgres://127.0.0.1/app",
+			want:  "postgres://basalt_agent_bot:pw@127.0.0.1/app",
+			user:  "basalt_agent_bot",
+		},
+		"user and password in the query are dropped": {
+			admin: "postgres://admin:pw0@db.example.com/app?user=admin&password=" + canary + "&sslmode=verify-full",
+			want:  "postgres://basalt_agent_bot:pw@db.example.com/app?sslmode=verify-full",
+			user:  "basalt_agent_bot",
+		},
+		"credentials only in the query are dropped": {
+			admin: "postgres://db.example.com/app?user=admin&password=" + canary,
+			want:  "postgres://basalt_agent_bot:pw@db.example.com/app",
+			user:  "basalt_agent_bot",
+		},
+		"passfile, service and sslpassword are dropped": {
+			admin: "postgres://admin@db.example.com/app?passfile=/home/admin/.pgpass&service=" + canary + "&servicefile=/x&sslpassword=" + canary,
+			want:  "postgres://basalt_agent_bot:pw@db.example.com/app",
+			user:  "basalt_agent_bot",
+		},
+		"host, port, dbname and runtime parameters are dropped": {
+			admin: "postgres://admin:" + canary + "@db.example.com/app?host=evil&port=1&dbname=other&options=-c%20role%3Dadmin&search_path=x",
+			want:  "postgres://basalt_agent_bot:pw@db.example.com/app",
+			user:  "basalt_agent_bot",
+		},
+		"the allowlisted parameters are kept": {
+			admin: "postgres://admin:" + canary + "@db.example.com/app?sslmode=disable&sslrootcert=/ca.pem&sslcert=/c.pem&sslkey=/k.pem" +
+				"&channel_binding=require&target_session_attrs=read-write&connect_timeout=5&application_name=basalt&default_query_exec_mode=exec",
+			want: "postgres://basalt_agent_bot:pw@db.example.com/app?application_name=basalt&channel_binding=require&connect_timeout=5" +
+				"&default_query_exec_mode=exec&sslcert=%2Fc.pem&sslkey=%2Fk.pem&sslmode=disable&sslrootcert=%2Fca.pem&target_session_attrs=read-write",
+			user:      "basalt_agent_bot",
+			certFiles: true,
+		},
+		"multiple hosts": {
+			admin: "postgres://admin:" + canary + "@db1.example.com:5432,db2.example.com:5433/app?target_session_attrs=primary&password=" + canary,
+			want:  "postgres://basalt_agent_bot:pw@db1.example.com:5432,db2.example.com:5433/app?target_session_attrs=primary",
+			user:  "basalt_agent_bot",
+		},
+		"ipv6": {
+			admin: "postgres://admin:" + canary + "@[::1]:5432/app?user=admin",
+			want:  "postgres://basalt_agent_bot:pw@[::1]:5432/app",
+			user:  "basalt_agent_bot",
+		},
+		"supabase pooler with credentials in the query": {
+			admin: "postgres://postgres.abcd@aws-0-eu-central-1.pooler.supabase.com:6543/postgres?password=" + canary + "&user=postgres.abcd",
+			want:  "postgres://basalt_agent_bot.abcd:pw@aws-0-eu-central-1.pooler.supabase.com:6543/postgres",
+			user:  "basalt_agent_bot.abcd",
+		},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -52,10 +109,24 @@ func TestAgentConnString(t *testing.T) {
 			got, err := guard.AgentConnString(c.admin, "basalt_agent_bot", "pw")
 			require.NoError(t, err)
 			require.Equal(t, c.want, got)
+			require.NotContains(t, got, canary)
+			require.NotContains(t, got, "admin")
+			if c.certFiles {
+				return
+			}
+			cfg, err := pgx.ParseConfig(got)
+			require.NoError(t, err)
+			require.Equal(t, c.user, cfg.User)
+			require.Equal(t, "pw", cfg.Password)
 		})
 	}
-	_, err := guard.AgentConnString("host=db user=postgres", "basalt_agent_bot", "pw")
-	require.Error(t, err)
+	for _, kv := range []string{
+		"host=db user=postgres",
+		"host=db user=admin password=" + canary + " dbname=app",
+	} {
+		_, err := guard.AgentConnString(kv, "basalt_agent_bot", "pw")
+		require.ErrorIs(t, err, guard.ErrAdminURLForm, kv)
+	}
 }
 
 func TestPlanInitRedactsPassword(t *testing.T) {

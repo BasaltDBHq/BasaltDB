@@ -65,6 +65,11 @@ func runInit(c *cliIO, args []string) int {
 	if err != nil {
 		return c.fail(err)
 	}
+	// The agent's connection string is built from the admin's: refuse one
+	// it cannot be built from before anything changes in the database.
+	if _, err := guard.AgentConnString(admin, role, ""); err != nil {
+		return c.fail(err)
+	}
 	conn, err := connect(c.ctx, admin)
 	if err != nil {
 		return c.fail(err)

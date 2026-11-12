@@ -54,8 +54,11 @@ func (t Token) Surface() string { return t.Prefix + t.ID + t.Suffix }
 // MakeToken builds the deterministic token of a value:
 // id = base32(HMAC-SHA256(k_type, Normalize(type, value)))[:12], shaped per
 // type (CONTRACT.md and the M5 design, section 3). phoneRegion is used only for
-// a PHONE written without +cc. Basalt makes every token: detectors only find spans.
+// a PHONE written without +cc. An OTHER value that is a card or an IBAN gets
+// the CARD or IBAN token (tokenType). Basalt makes every token: detectors only
+// find spans.
 func (k *Keys) MakeToken(t EntityType, value, phoneRegion string) (Token, error) {
+	t = tokenType(t, value)
 	key, ok := k.typeKeys[t]
 	if !ok {
 		return Token{}, fmt.Errorf("pii: unknown entity type %q", t)
@@ -77,7 +80,7 @@ func (k *Keys) MakeToken(t EntityType, value, phoneRegion string) (Token, error)
 		tok.ID = personPrefix + id
 	case EntityAddress:
 		tok.ID = addressPrefix + id
-	case EntityOther:
+	case EntityOther, EntityCard, EntityIBAN:
 	}
 	return tok, nil
 }

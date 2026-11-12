@@ -1,6 +1,7 @@
 package pii_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -90,8 +91,8 @@ func TestValidIBAN(t *testing.T) {
 	require.Zero(t, pii.IBANLength("XX"))
 }
 
-// Each card or IBAN is found whole and tokenized as one OTHER value: the
-// tokenizer never shows a digit of it, and a second pass changes nothing.
+// Each card or IBAN is found whole and tokenized as one CARD or IBAN value:
+// the tokenizer never shows a digit of it, and a second pass changes nothing.
 func TestCardsAndIBANsAreTokenized(t *testing.T) {
 	k := newKeys(t, testMaster)
 	tz := patternTokenizer(t)
@@ -109,7 +110,7 @@ func TestCardsAndIBANsAreTokenized(t *testing.T) {
 		{"card then more digits", "card 4111 1111 1111 1111 22", "4111 1111 1111 1111"},
 		{"card after a longer group run", "ref 1234 4111 1111 1111 1111", "4111 1111 1111 1111"},
 		{"card after a country code", "+1 4111 1111 1111 1111", "4111 1111 1111 1111"},
-		{"card of 16 digits after a plus", "card +4111111111111111 ok", "4111111111111111"},
+		{"card of 16 digits after a plus, the plus taken in", "card +4111111111111111 ok", "+4111111111111111"},
 		{"IBAN in groups (QA N13)", "iban EE38 2200 2210 2014 5685", "EE38 2200 2210 2014 5685"},
 		{"IBAN compact", "iban EE382200221020145685.", "EE382200221020145685"},
 		{"IBAN in lower case", "iban ee38 2200 2210 2014 5685 ok", "ee38 2200 2210 2014 5685"},
@@ -118,6 +119,8 @@ func TestCardsAndIBANsAreTokenized(t *testing.T) {
 		{"IBAN of an odd length", "iban FR14 2004 1010 0505 0001 3M02 606 ok", "FR14 2004 1010 0505 0001 3M02 606"},
 		{"shortest IBAN", "konto NO93 8601 1117 947", "NO93 8601 1117 947"},
 		{"IBAN then more groups", "iban EE38 2200 2210 2014 5685 99", "EE38 2200 2210 2014 5685"},
+		{"IBAN with dashes", "iban DE89-3704-0044-0532-0130-00 ok", "DE89-3704-0044-0532-0130-00"},
+		{"IBAN with double spaces", "iban DE89  3704  0044  0532  0130  00 ok", "DE89  3704  0044  0532  0130  00"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -125,7 +128,11 @@ func TestCardsAndIBANsAreTokenized(t *testing.T) {
 			out, reps := tokenize(t, tz, c.in)
 			require.Len(t, reps, 1)
 			require.Equal(t, c.value, c.in[reps[0].Start:reps[0].End], "the whole value")
-			require.Equal(t, mustToken(t, k, pii.EntityOther, c.value, ""), reps[0].Token)
+			typ := pii.EntityCard
+			if strings.ContainsAny(strings.ToUpper(c.value), "ABCDEFGHIJKLMNOPQRSTUVWXYZ") {
+				typ = pii.EntityIBAN
+			}
+			require.Equal(t, mustToken(t, k, typ, c.value, ""), reps[0].Token)
 			require.NotContains(t, out, c.value)
 			require.Zero(t, finalScan(t, tz, out))
 			again, more := tokenize(t, tz, out)
@@ -140,27 +147,30 @@ func TestCardsAndIBANsAreTokenized(t *testing.T) {
 func TestCardAndIBANLookalikesAreLeftAlone(t *testing.T) {
 	tz := patternTokenizer(t)
 	for _, in := range []string{
-		"order 1234567812345670 shipped",             // Luhn-valid, no issuer
-		"order 1234 5678 1234 5670 shipped",          // the same in groups
-		"at 1731400000005 ms",                        // a timestamp, Luhn-valid
-		"id 9999999999999995",                        // Luhn-valid, no issuer
-		"card 4111 1111 1111 1112",                   // Luhn fails
-		"card 4111111111111112",                      // Luhn fails
-		"id 41111111111111111115",                    // 20 digits: an id
-		"sha a4111111111111111f",                     // hex
-		"x4111111111111111",                          // glued to a letter
-		"4111111111111111x",                          // glued to a letter
-		"card 4111 1111-1111 1111",                   // mixed separators
-		"card 4111  1111  1111  1111",                // two spaces
-		"card 41 11 1111 1111 1111",                  // not a card layout
-		"visa 411111111111116",                       // Visa does not issue 15 digits
-		"iban EE38 2200 2210 2014 5686",              // mod-97 fails
-		"iban XX38 2200 2210 2014 5685",              // no such country
-		"iban EE38 2200 2210 2014 568",               // too short
-		"iban EE38 2200 2210 2014 56851",             // glued digit
-		"iban EE382200221020145685X",                 // glued letter
-		"iban xEE382200221020145685",                 // glued letter
-		"iban EE3 82200 2210 2014 5685",              // a space inside a group
+		"order 1234567812345670 shipped",    // Luhn-valid, no issuer
+		"order 1234 5678 1234 5670 shipped", // the same in groups
+		"at 1731400000005 ms",               // a timestamp, Luhn-valid
+		"id 9999999999999995",               // Luhn-valid, no issuer
+		"card 4111 1111 1111 1112",          // Luhn fails
+		"card 4111111111111112",             // Luhn fails
+		"id 41111111111111111115",           // 20 digits: an id
+		"sha a4111111111111111f",            // hex
+		"x4111111111111111",                 // glued to a letter
+		"4111111111111111x",                 // glued to a letter
+		"card 4111 1111-1111 1111",          // mixed separators
+		"card 4111  1111  1111  1111",       // two spaces
+		"card 41 11 1111 1111 1111",         // not a card layout
+		"visa 411111111111116",              // Visa does not issue 15 digits
+		"iban EE38 2200 2210 2014 5686",     // mod-97 fails
+		"iban XX38 2200 2210 2014 5685",     // no such country
+		"iban EE38 2200 2210 2014 568",      // too short
+		"iban EE38 2200 2210 2014 56851",    // glued digit
+		"iban EE382200221020145685X",        // glued letter
+		"iban xEE382200221020145685",        // glued letter
+		"iban EE3 82200 2210 2014 5685",
+		"iban EE38     2200 2210 2014 5685", // five spaces
+		"iban EE38--2200-2210-2014-5685",    // two dashes
+		// a space inside a group
 		"version 2026.11.12 build 20261112093000123", // dates and build numbers
 		"uuid 550e8400-e29b-41d4-a716-446655440000",  // a UUID
 		"price 1,234,567,890,123.45 EUR",             // an amount
@@ -222,5 +232,85 @@ func TestSingleCommonWordsAreMatchedOnlyInFullNames(t *testing.T) {
 		require.Equal(t, c.value, c.in[reps[0].Start:reps[0].End])
 		require.NotContains(t, out, c.value)
 		require.Zero(t, finalScan(t, tz, out))
+	}
+}
+
+// A card or an IBAN gets one token however it is spaced (PT-9), and a card or
+// IBAN stored compact in an OTHER column gets the token of its spaced form.
+func TestCardsAndIBANsGetOneTokenHoweverSpaced(t *testing.T) {
+	k := newKeys(t, testMaster)
+	tz := patternTokenizer(t)
+	groups := [][]string{
+		{"4111 1111 1111 1111", "4111-1111-1111-1111", "4111111111111111", "+4111111111111111", "4111‑1111‑1111‑1111"},
+		{"EE38 2200 2210 2014 5685", "EE382200221020145685", "ee38-2200-2210-2014-5685", "EE38  2200  2210  2014  5685"},
+	}
+	for _, g := range groups {
+		var first pii.Token
+		for i, v := range g {
+			_, reps := tokenize(t, tz, "value "+v+" end")
+			require.Len(t, reps, 1, v)
+			if i == 0 {
+				first = reps[0].Token
+				continue
+			}
+			require.Equal(t, first, reps[0].Token, v)
+		}
+		stored := mustToken(t, k, pii.EntityOther, strings.NewReplacer(" ", "", "-", "", "‑", "", "+", "").Replace(g[1]), "")
+		require.Equal(t, first, stored, "a compact OTHER value is tokenized as the pattern tokenizes it")
+	}
+	require.Equal(t, "4111111111111111", pii.Normalize(pii.EntityCard, "4111 1111-1111 1111", ""))
+	require.Equal(t, "EE382200221020145685", pii.Normalize(pii.EntityIBAN, "ee38 2200-2210 2014 5685", ""))
+	other := mustToken(t, k, pii.EntityOther, "order 1234", "")
+	require.Equal(t, pii.EntityOther, other.Type, "an OTHER value that is no card or IBAN keeps its type")
+}
+
+// A compact IBAN stored in the dictionary (an OTHER column) and the same IBAN
+// written spaced in text get one token, so the engine and the proxy agree.
+func TestAStoredCompactIBANMatchesTheSpacedForm(t *testing.T) {
+	k := newKeys(t, testMaster)
+	d := newMapDict()
+	d.add(k, pii.EntityOther, "EE382200221020145685")
+	tz := pii.NewTokenizer(k, "", append(pii.PatternDetectors(), pii.NewDictionaryDetector(k, d, ""))...)
+	stored := mustToken(t, k, pii.EntityOther, "EE382200221020145685", "")
+	for _, in := range []string{"pay EE38 2200 2210 2014 5685 now", "pay EE382200221020145685 now", "pay EE38-2200-2210-2014-5685 now"} {
+		_, reps := tokenize(t, tz, in)
+		require.Len(t, reps, 1, in)
+		require.Equal(t, stored, reps[0].Token, in)
+	}
+}
+
+// PT-10 (provisional): a single common word is a name after a title, or when
+// it is capitalized and does not start a sentence. The full-name rule stays.
+func TestCommonWordNameCues(t *testing.T) {
+	k := newKeys(t, testMaster)
+	d := newMapDict()
+	for _, v := range []string{"Price", "Brown", "Hope", "Green"} {
+		d.add(k, pii.EntityPersonName, v)
+	}
+	tz := pii.NewTokenizer(k, "", append(pii.PatternDetectors(), pii.NewDictionaryDetector(k, d, ""))...)
+	cases := []struct {
+		in    string
+		names []string
+	}{
+		{"Price called", nil}, // starts a sentence: no sign it is a name (Known limits)
+		{"the price went up", nil},
+		{"We said so. Price called back.", nil},
+		{"Mr. Brown called", []string{"Brown"}},
+		{"mr brown called", []string{"brown"}},
+		{"Dr Hope is in", []string{"Hope"}},
+		{"ask Hope about it", []string{"Hope"}},
+		{"I met Green and Brown", []string{"Green", "Brown"}},
+		{"a green door, a brown fox", nil},
+		{"\"Hope\" is a film", nil},
+	}
+	for _, c := range cases {
+		out, reps := tokenize(t, tz, c.in)
+		require.Len(t, reps, len(c.names), c.in)
+		for i, n := range c.names {
+			require.Equal(t, n, c.in[reps[i].Start:reps[i].End], c.in)
+		}
+		again, more := tokenize(t, tz, out)
+		require.Empty(t, more, c.in)
+		require.Equal(t, out, again, c.in)
 	}
 }

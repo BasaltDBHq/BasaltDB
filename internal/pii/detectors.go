@@ -458,12 +458,40 @@ func NewDictionaryDetector(keys *Keys, dict Dictionary, phoneRegion string) *Dic
 	return &DictionaryDetector{keys: keys, dict: dict, phoneRegion: phoneRegion}
 }
 
-// Detect returns the dictionary n-gram hits in text.
+// Detect returns the dictionary n-gram hits in text. Without the original
+// text it cannot see capitals, so a single common word is matched only after
+// a title (nameCue); the tokenizer calls detectView instead.
 func (d *DictionaryDetector) Detect(text string) []Span {
+	return d.detect(text, func(int, int) bool { return false })
+}
+
+// detectView is Detect over the folded view of orig, reading capitals from
+// orig: a word is capitalized when the first letter it came from is upper or
+// title case.
+func (d *DictionaryDetector) detectView(view foldedView, orig string) []Span {
+	return d.detect(view.text, func(start, end int) bool {
+		from, to := view.original(Span{Start: start, End: end})
+		return startsWithCapital(orig[from:to])
+	})
+}
+
+// startsWithCapital reports whether the first letter of s is upper or title case.
+func startsWithCapital(s string) bool {
+	for _, r := range s {
+		if unicode.IsLetter(r) {
+			return unicode.IsUpper(r) || unicode.IsTitle(r)
+		}
+	}
+	return false
+}
+
+// detect finds the hits in text (folded); capital reports whether the word at
+// [start, end) of text is capitalized in the original.
+func (d *DictionaryDetector) detect(text string, capital func(start, end int) bool) []Span {
 	ws := splitWords(text)
 	var out []Span
 	for i := 0; i < len(ws); {
-		n, typ := d.longestHit(text, ws, i)
+		n, typ := d.longestHit(text, ws, i, capital)
 		if n == 0 {
 			i++
 			continue
@@ -486,14 +514,15 @@ func phoneStart(text string, start int, typ EntityType) int {
 	return start
 }
 
-func (d *DictionaryDetector) longestHit(text string, ws []word, i int) (int, EntityType) {
+func (d *DictionaryDetector) longestHit(text string, ws []word, i int, capital func(start, end int) bool) (int, EntityType) {
 	for n := min(maxNGram, len(ws)-i); n >= 1; n-- {
 		if !tightlyJoined(text, ws[i:i+n]) {
 			continue
 		}
 		form := GenericForm(text[ws[i].start:ws[i+n-1].end])
-		// An empty form (only format characters) is never a value.
-		if form == "" || (n == 1 && isCommonWord(form)) {
+		// An empty form (only format characters) is never a value. A single
+		// common word is one only with a name cue.
+		if form == "" || (n == 1 && isCommonWord(form) && !nameCue(text, ws, i, capital)) {
 			continue
 		}
 		if typ, ok := d.dict.Lookup(d.keys.hash(genericHashPrefix + form)); ok {
@@ -501,6 +530,46 @@ func (d *DictionaryDetector) longestHit(text string, ws []word, i int) (int, Ent
 		}
 	}
 	return 0, ""
+}
+
+// nameTitles are the titles that make the word after them a name ("Mr.
+// Brown"), in generic form.
+var nameTitles = map[string]bool{"mr": true, "mrs": true, "ms": true, "dr": true, "prof": true}
+
+// nameCue reports whether the single common word ws[i] reads as a name
+// (owner decisions, PT-10, provisional): a title comes right before it
+// ("Mr. Brown", "dr hope"), or it is capitalized and does not start a
+// sentence ("ask Hope about it"). A word that starts a sentence ("Price
+// called") is not one: the text gives no sign. The start of the text the
+// detector sees counts as a sentence start, so a second pass, which sees the
+// text cut at the tokens of the first, decides as the first did.
+func nameCue(text string, ws []word, i int, capital func(start, end int) bool) bool {
+	if i > 0 && nameTitles[text[ws[i-1].start:ws[i-1].end]] && titleGap(text[ws[i-1].end:ws[i].start]) {
+		return true
+	}
+	return capital(ws[i].start, ws[i].end) && !sentenceStart(text[:ws[i].start])
+}
+
+// titleGap reports whether gap may stand between a title and a name: an
+// optional '.', then one to three spaces.
+func titleGap(gap string) bool {
+	gap = strings.TrimPrefix(gap, ".")
+	return gap != "" && len(gap) <= maxSeparatorLen && strings.Trim(gap, " ") == ""
+}
+
+// sentenceOpeners are what may stand between a sentence end and its first
+// word: spaces, quotes and opening brackets.
+const sentenceOpeners = " \t\"'([{«“‘*_"
+
+// sentenceStart reports whether a word after before starts a sentence: before
+// is empty or ends in '.', '!', '?' or a line break, once spaces, quotes and
+// opening brackets are trimmed.
+func sentenceStart(before string) bool {
+	before = strings.TrimRight(before, sentenceOpeners)
+	if before == "" {
+		return true
+	}
+	return strings.ContainsRune(".!?\n\r", rune(before[len(before)-1]))
 }
 
 type word struct{ start, end int }

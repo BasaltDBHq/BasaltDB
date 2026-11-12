@@ -45,14 +45,14 @@ type Keys struct {
 }
 
 // NewKeys derives the keys from k_master (MasterKeySize bytes):
-// k_type = HKDF(k_master, "basalt-tok:" + type + ":v1") for every entity type
+// k_type = HKDF(k_master, "basalt-tok:" + type + ":v1") for every token type
 // and k_dict = HKDF(k_master, "basalt-dict:v1"). The caller's slice is not kept.
 func NewKeys(master []byte) (*Keys, error) {
 	if len(master) != MasterKeySize {
 		return nil, fmt.Errorf("pii: master key must be %d bytes, got %d", MasterKeySize, len(master))
 	}
-	k := &Keys{version: KeyVersion, typeKeys: make(map[EntityType][]byte, len(entityTypes))}
-	for _, t := range entityTypes {
+	k := &Keys{version: KeyVersion, typeKeys: make(map[EntityType][]byte, len(tokenTypes))}
+	for _, t := range tokenTypes {
 		dk, err := derive(master, fmt.Sprintf("basalt-tok:%s:v%d", t, KeyVersion))
 		if err != nil {
 			return nil, err

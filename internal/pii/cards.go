@@ -1,6 +1,11 @@
 package pii
 
-import "strings"
+import (
+	"strings"
+	"unicode/utf8"
+
+	"golang.org/x/text/cases"
+)
 
 // cardGroup is the digit group of a card number written in groups
 // ("4111 1111 1111 1111", "4111-1111-1111-1111").
@@ -21,9 +26,10 @@ const (
 // without separators or in groups split by one space or one dash (the same one
 // throughout: 4-4-4-4, 4-4-4-4-3, 4-4-4-1, or 4-6-5 and 4-6-4), that pass
 // ValidCardNumber (a known issuer range and the Luhn check). A run of more
-// than 19 digits is an id, not a card. Every card is an OTHER span, so it gets
-// a pii1_ token; card columns are SECRET (M51-6) and never reach the
-// dictionary, so in free text this pattern is the only defense.
+// than 19 digits is an id, not a card. Every card is a CARD span, so it gets a
+// pii1_ token of its digits alone (cardForm), however it is spaced; card
+// columns are SECRET (M51-6) and never reach the dictionary, so in free text
+// this pattern is the only defense.
 type CardDetector struct{}
 
 func (CardDetector) shapes() {}
@@ -31,7 +37,8 @@ func (CardDetector) shapes() {}
 // Detect returns the card spans in text. No ASCII letter or digit may touch a
 // number on either side, so a run of hex ("a4111111111111111f") is no card. A
 // number right after a '+' with at most 15 digits is a phone's to take
-// ("+4915112345678"), not a card's.
+// ("+4915112345678"), not a card's; with more, the '+' goes into the card's
+// span, so no stray '+' is left before its token.
 func (CardDetector) Detect(text string) []Span {
 	var out []Span
 	for i := 0; i < len(text); i++ {
@@ -39,10 +46,17 @@ func (CardDetector) Detect(text string) []Span {
 			continue
 		}
 		n := cardAt(text[i:])
-		if n == 0 || (i > 0 && text[i-1] == '+' && asciiDigits(text[i:i+n]) <= maxPhoneDigits) {
+		if n == 0 {
 			continue
 		}
-		out = append(out, Span{Start: i, End: i + n, Type: EntityOther})
+		start := i
+		if i > 0 && text[i-1] == '+' {
+			if asciiDigits(text[i:i+n]) <= maxPhoneDigits {
+				continue
+			}
+			start--
+		}
+		out = append(out, Span{Start: start, End: i + n, Type: EntityCard})
 		i += n - 1
 	}
 	return out
@@ -132,9 +146,10 @@ const ibanCountry = 2
 
 // IBANDetector finds IBANs by shape: a country code with IBANs, two check
 // digits, then letters and digits up to that country's IBAN length, written
-// without spaces or in groups of four split by one space, in any case, that
-// pass ValidIBAN (mod-97). No ASCII letter or digit may touch it on either
-// side. IBANs are OTHER spans (M5.1 plan, section 1).
+// without separators or in groups of four split by one dash or one to four
+// spaces, in any case, that pass ValidIBAN (mod-97). No ASCII letter or digit
+// may touch it on either side. IBANs are IBAN spans, tokenized by their
+// letters and digits alone (ibanForm), however they are spaced.
 type IBANDetector struct{}
 
 func (IBANDetector) shapes() {}
@@ -150,14 +165,36 @@ func (IBANDetector) Detect(text string) []Span {
 		if n == 0 {
 			continue
 		}
-		out = append(out, Span{Start: i, End: i + n, Type: EntityOther})
+		out = append(out, Span{Start: i, End: i + n, Type: EntityIBAN})
 		i += n - 1
 	}
 	return out
 }
 
-// ibanAt is the length of the IBAN at the start of s, or 0. A space may stand
-// after every fourth character, never twice in a row or at the end.
+// maxIBANSpaces is the longest run of spaces between two groups of an IBAN.
+const maxIBANSpaces = 4
+
+// ibanSeparator is the length of the separator s starts with when a group of
+// an IBAN may end there: one '-', or one to maxIBANSpaces spaces, followed by
+// a letter or digit; 0 otherwise.
+func ibanSeparator(s string) int {
+	n := 0
+	switch {
+	case strings.HasPrefix(s, "-"):
+		n = 1
+	default:
+		for n < len(s) && n < maxIBANSpaces && s[n] == ' ' {
+			n++
+		}
+	}
+	if n == 0 || !asciiAlnumAt(s, n) {
+		return 0
+	}
+	return n
+}
+
+// ibanAt is the length of the IBAN at the start of s, or 0. A separator
+// (ibanSeparator) may stand after every fourth character, never at the end.
 func ibanAt(s string) int {
 	want := IBANLength(s[:ibanCountry])
 	if want == 0 {
@@ -167,9 +204,11 @@ func ibanAt(s string) int {
 	pos := 0
 	for b.Len() < want && pos < len(s) {
 		c := s[pos]
-		if c == ' ' && b.Len()%cardGroup == 0 && b.Len() > 0 && pos+1 < len(s) && isASCIIAlnum(s[pos+1]) {
-			pos++
-			continue
+		if b.Len()%cardGroup == 0 && b.Len() > 0 {
+			if n := ibanSeparator(s[pos:]); n > 0 {
+				pos += n
+				continue
+			}
 		}
 		if !isASCIIAlnum(c) {
 			return 0
@@ -181,4 +220,61 @@ func ibanAt(s string) int {
 		return 0
 	}
 	return pos
+}
+
+// cardForm is the normal form of a CARD: its ASCII digits alone, after the
+// shape view (so digits of any script count), whatever separates them.
+func cardForm(value string) string {
+	caser := cases.Fold()
+	return strings.Map(keepASCIIDigit, shapeForm(&caser, value))
+}
+
+// ibanForm is the normal form of an IBAN: its letters and digits alone, in
+// upper case, after the shape view.
+func ibanForm(value string) string {
+	caser := cases.Fold()
+	return strings.ToUpper(strings.Map(keepASCIIAlnum, shapeForm(&caser, value)))
+}
+
+func keepASCIIDigit(r rune) rune {
+	if r < utf8.RuneSelf && isASCIIDigit(byte(r)) {
+		return r
+	}
+	return -1
+}
+
+func keepASCIIAlnum(r rune) rune {
+	if r < utf8.RuneSelf && isASCIIAlnum(byte(r)) {
+		return r
+	}
+	return -1
+}
+
+// tokenType is the type a value is tokenized as: an OTHER value written only
+// with digits, spaces and dashes that is a valid card number is a CARD, and
+// one written only with letters, digits, spaces and dashes that is a valid
+// IBAN is an IBAN, so a card or IBAN stored in an OTHER column gets the token
+// the patterns give it in text, however either is spaced. Every other value
+// keeps t.
+func tokenType(t EntityType, value string) EntityType {
+	if t != EntityOther {
+		return t
+	}
+	caser := cases.Fold()
+	bare := strings.Map(dropSeparator, strings.TrimSpace(shapeForm(&caser, value)))
+	switch {
+	case bare == strings.Map(keepASCIIDigit, bare) && ValidCardNumber(bare):
+		return EntityCard
+	case bare == strings.Map(keepASCIIAlnum, bare) && ValidIBAN(bare):
+		return EntityIBAN
+	}
+	return t
+}
+
+// dropSeparator removes spaces and dashes, for strings.Map.
+func dropSeparator(r rune) rune {
+	if r == ' ' || r == '-' {
+		return -1
+	}
+	return r
 }

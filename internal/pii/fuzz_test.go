@@ -32,6 +32,8 @@ var fuzzSeeds = []string{
 	"card 4111 1111 1111 1111, 5555-5555-5555-4444 3782 822463 10005 +4111111111111111 +1 4111 1111 1111 1111 22",
 	"iban EE38 2200 2210 2014 5685 DE89 3704 0044 0532 0130 00 gb82west12345698765432 order 1234567812345670",
 	"the total price is 10 EUR; please park the car near the green door, Alice Tamm",
+	"Rose said hi. Mr. Rose and mrs rose; ask Rose. \"Rose\" pii1_AAAAAAAAAAAA Rose (Rose)",
+	"iban de89-3704-0044-0532-0130-00 EE38  2200  2210  2014  5685 x+4111111111111111",
 	"",
 }
 
@@ -45,7 +47,7 @@ func FuzzNormalizeIsIdempotent(f *testing.F) {
 			t.Skip()
 		}
 		for _, region := range []string{"", "ID", "US"} {
-			for _, typ := range pii.EntityTypes() {
+			for _, typ := range pii.TokenTypes() {
 				once := pii.Normalize(typ, s, region)
 				require.Equal(t, once, pii.Normalize(typ, once, region), "%s %s %q", typ, region, s)
 			}

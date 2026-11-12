@@ -75,6 +75,13 @@ var identifiers = map[string]string{
 // classify writes a class for the readable columns, as basalt classify does.
 func (f fixture) classify(t *testing.T, at time.Time) {
 	t.Helper()
+	f.classifyWith(t, at, nil)
+}
+
+// classifyWith is classify with more IDENTIFIER columns (table.column:
+// entity type) on top of identifiers.
+func (f fixture) classifyWith(t *testing.T, at time.Time, extra map[string]string) {
+	t.Helper()
 	ctx := context.Background()
 	rows, err := f.db.Admin.Query(ctx, `SELECT table_schema, table_name, column_name, data_type
 		FROM basalt_meta.pii_readable_columns() WHERE table_name <> 'plain'`)
@@ -84,6 +91,9 @@ func (f fixture) classify(t *testing.T, at time.Time) {
 		err := r.Scan(&c.Schema, &c.Table, &c.Column, &c.DataType)
 		c.Class = guard.ClassPublic
 		if et, ok := identifiers[c.Table+"."+c.Column]; ok {
+			c.Class, c.EntityType = guard.ClassIdentifier, et
+		}
+		if et, ok := extra[c.Table+"."+c.Column]; ok {
 			c.Class, c.EntityType = guard.ClassIdentifier, et
 		}
 		if c.EntityType == guard.EntityPhone {

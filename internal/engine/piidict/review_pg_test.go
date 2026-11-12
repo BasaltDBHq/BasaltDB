@@ -184,6 +184,39 @@ func TestScanWarnsWhenBuildsKeepFailing(t *testing.T) {
 	}
 }
 
+// A basalt classify that commits between a load's two reads, on a write's
+// read-committed transaction: the marks are read first, so the map holds
+// the older marks and the next tick reloads the new classes.
+func TestClassifyBetweenALoadsReadsIsReloadedAtTheNextTick(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	f.classify(t, time.Now().Add(-time.Hour))
+	ctx := context.Background()
+	m := NewMap(slog.New(slog.DiscardHandler))
+	note := ColumnRef{TableOID: f.oid(t, "public.customers"), Attnum: f.attnum(t, "public.customers", "note")}
+	var once sync.Once
+	m.between = func() {
+		once.Do(func() { f.classifyWith(t, time.Now(), map[string]string{"customers.note": guard.EntityOther}) })
+	}
+
+	tx, err := f.pool.BeginTx(ctx, pgx.TxOptions{}) // read committed, as a write's
+	require.NoError(t, err)
+	got, err := m.Resolve(ctx, tx, []ColumnRef{note})
+	require.NoError(t, err)
+	require.NoError(t, tx.Rollback(ctx))
+	require.Equal(t, guard.ClassIdentifier, got[0].Class, "the classes were read after the classify committed")
+
+	reloaded, err := m.Tick(ctx, f.pool)
+	require.NoError(t, err)
+	require.True(t, reloaded, "the marks were read before it: the tick sees the catalog move and reloads")
+	reloaded, err = m.Tick(ctx, f.pool)
+	require.NoError(t, err)
+	require.False(t, reloaded, "classes and marks agree again")
+	got, err = m.Resolve(ctx, f.pool, []ColumnRef{note})
+	require.NoError(t, err)
+	require.Equal(t, guard.EntityOther, got[0].EntityType)
+}
+
 func TestDictionaryErrorsAreEngineErrors(t *testing.T) {
 	t.Parallel()
 	err := error(&DictionaryError{err: &pgconn.PgError{Code: "42P01", Message: "relation does not exist"}})

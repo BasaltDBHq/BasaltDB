@@ -98,6 +98,8 @@ type Map struct {
 	snap atomic.Pointer[snapshot]
 	// loads counts loads (tests).
 	loads atomic.Int64
+	// between runs between a load's two reads (tests); a no-op otherwise.
+	between func()
 
 	mu        sync.Mutex // guards the fields below; never held during I/O
 	tried     map[uint32]struct{}
@@ -120,7 +122,7 @@ func NewMap(log *slog.Logger) *Map {
 	if log == nil {
 		panic("piidict: logger required")
 	}
-	return &Map{log: log, tried: map[uint32]struct{}{}, warned: map[ColumnRef]struct{}{}, nextSeq: 1}
+	return &Map{log: log, tried: map[uint32]struct{}{}, warned: map[ColumnRef]struct{}{}, nextSeq: 1, between: func() {}}
 }
 
 // Loads is how many times the map was loaded.
@@ -141,7 +143,7 @@ func (m *Map) load(ctx context.Context, db guard.Querier, fresh bool) error {
 		seq := m.nextSeq
 		m.nextSeq++
 		m.mu.Unlock()
-		s, err := readSnapshot(ctx, db)
+		s, err := readSnapshot(ctx, db, m.between)
 		if err != nil {
 			return fmt.Errorf("load the pii classification: %w", err)
 		}
@@ -155,7 +157,9 @@ func (m *Map) load(ctx context.Context, db guard.Querier, fresh bool) error {
 	if !lead {
 		return waitFlight(ctx, f)
 	}
-	s, err := withSnapshot(ctx, db, readSnapshot)
+	s, err := withSnapshot(ctx, db, func(ctx context.Context, q guard.Querier) (*snapshot, error) {
+		return readSnapshot(ctx, q, m.between)
+	})
 	if err != nil {
 		f.err = fmt.Errorf("load the pii classification: %w", err)
 	} else {
@@ -391,7 +395,18 @@ func withSnapshot[T any](ctx context.Context, db guard.Querier, read func(contex
 	return read(ctx, tx)
 }
 
-func readSnapshot(ctx context.Context, db guard.Querier) (*snapshot, error) {
+// readSnapshot reads the marks first, then the classes. Inside a write's
+// read-committed transaction the two are separate statements, and a basalt
+// classify may commit between them: marks read first are then the older
+// ones, so the next hourly tick sees the catalog move and reloads. (Read
+// the other way round, old classes would be kept with new marks and never
+// reloaded.) between runs between the two reads (tests).
+func readSnapshot(ctx context.Context, db guard.Querier, between func()) (*snapshot, error) {
+	mk, err := readMarks(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	between()
 	q, args, err := psql.Select("table_oid", "attnum", "table_schema", "table_name", "column_name",
 		"class", "coalesce(entity_type, '')", "coalesce(phone_region, '')").
 		From("basalt_meta.agent_pii_columns").ToSql()
@@ -402,7 +417,7 @@ func readSnapshot(ctx context.Context, db guard.Querier) (*snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &snapshot{cols: map[ColumnRef]Class{}, oids: map[uint32]struct{}{}}
+	s := &snapshot{cols: map[ColumnRef]Class{}, oids: map[uint32]struct{}{}, marks: mk}
 	var (
 		ref ColumnRef
 		c   Class
@@ -413,9 +428,6 @@ func readSnapshot(ctx context.Context, db guard.Querier) (*snapshot, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, err
-	}
-	if s.marks, err = readMarks(ctx, db); err != nil {
 		return nil, err
 	}
 	return s, nil

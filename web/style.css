@@ -83,6 +83,11 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
 .values th { text-align: left; color: var(--muted); font-weight: 500; font-size: 0.8rem; }
 .values th, .values td { padding: 0.2rem 0.5rem; border-top: 1px solid var(--line); vertical-align: top; word-break: break-word; }
 .values tr.changed td { background: var(--changed); }
+/* Text an agent wrote: right-to-left letters in one value cannot reorder the
+   text around it, and a value's spaces show as they are (two spaces are not
+   one). Hidden characters are escaped as <U+XXXX> before they get here. */
+.values td, .summary dd, .table-name, .headline, #cascade-text { unicode-bidi: isolate; }
+.values td { white-space: pre-wrap; }
 
 button {
   font: inherit;

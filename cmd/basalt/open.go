@@ -1,10 +1,12 @@
 package main
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"net/url"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -25,16 +27,38 @@ type linkPages struct {
 // proof of the item's binding text (CONTRACT.md, Link secrets); issuing it
 // revokes the item's earlier short link. kind is "approvals" or
 // "reverts". When the engine does not issue one, the long link stands.
+// Whatever answers on the pages port is not trusted: the link must be this
+// item's page on the local origin with a well-formed secret, and the
+// answer's message is shown with its control and non-ASCII characters
+// replaced (printableLabel).
 func (p linkPages) short(c *cliIO, kind string, id uuid.UUID, binding, long string) string {
 	if p.local == "" {
 		return long
 	}
 	link, err := c.host.IssueLink(c.ctx, p.local+"/api/v1/"+kind+"/"+id.String()+"/links", links.IssueProof(binding))
+	if err == nil {
+		err = checkIssuedLink(link, p.local, kind, id)
+	}
 	if err != nil {
-		fmt.Fprintf(c.stderr, "basalt: the engine gave no short link (%v); using the long link\n", err)
+		fmt.Fprintf(c.stderr, "basalt: the engine gave no short link (%s); using the long link\n", printableLabel(err.Error()))
 		return long
 	}
 	return link
+}
+
+// checkIssuedLink accepts only <local>/<kind>/<id>#s=<secret>, with secret
+// the base64url of links.SecretBytes bytes.
+func checkIssuedLink(link, local, kind string, id uuid.UUID) error {
+	page := strings.TrimSuffix(local, "/") + "/" + kind + "/" + id.String() + "#s="
+	secret, ok := strings.CutPrefix(link, page)
+	if !ok {
+		return fmt.Errorf("it answered with a link that is not %s %s on %s", strings.TrimSuffix(kind, "s"), id, local)
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(secret)
+	if err != nil || len(raw) != links.SecretBytes {
+		return errors.New("it answered with a link whose secret is malformed")
+	}
+	return nil
 }
 
 // nextStep says what follows the signature: the page relays it when the

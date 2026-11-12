@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/term"
 
@@ -75,6 +77,38 @@ func printableLabel(s string) string {
 		}
 		return r
 	}, s)
+}
+
+// visibleText shows text an agent wrote (values, table names) as it is,
+// except the characters that hide text or change how it reads: controls
+// (C0, DEL, C1, line breaks), format characters (bidi controls such as
+// U+202E, zero-width characters), line and paragraph separators, spaces
+// other than U+0020 and other default-ignorable characters. Each shows as
+// <U+XXXX>, and a byte that is not UTF-8 as <0xNN>, so 0001 with a U+202E
+// in it cannot read as 1000. The web pages escape the same way
+// (web/lib/codec.js, visibleText).
+func visibleText(s string) string {
+	var b strings.Builder
+	for len(s) > 0 {
+		r, size := utf8.DecodeRuneInString(s)
+		switch {
+		case r == utf8.RuneError && size == 1:
+			fmt.Fprintf(&b, "<0x%02X>", s[0])
+		case hiddenRune(r):
+			fmt.Fprintf(&b, "<U+%04X>", r)
+		default:
+			b.WriteRune(r)
+		}
+		s = s[size:]
+	}
+	return b.String()
+}
+
+func hiddenRune(r rune) bool {
+	if r == ' ' {
+		return false
+	}
+	return unicode.In(r, unicode.Cc, unicode.Cf, unicode.Zl, unicode.Zp, unicode.Zs, unicode.Other_Default_Ignorable_Code_Point)
 }
 
 // pagesURLFlag registers --pages-url, which must follow the URL rule and

@@ -117,7 +117,7 @@ func showApproval(c *cliIO, l *agentLedger, idText string, pages linkPages, open
 	}
 	ref := linkRef{setting: "pagesUrl", item: "approval " + id.String(), again: "basalt approve --show " + id.String()}
 	link = pages.short(c, "approvals", a.ID, a.BindingText, link)
-	fmt.Fprintf(c.stderr, "basalt: %s\n", summary.Headline())
+	fmt.Fprintf(c.stderr, "basalt: %s\n", visibleText(summary.Headline()))
 	expires := a.ExpiresAt.UTC().Format(timeLayout)
 	if open {
 		fmt.Fprintf(c.stderr, "basalt: %d rows, held by run %s, expires %s\n", a.Rows, a.RunID, expires)

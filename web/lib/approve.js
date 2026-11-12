@@ -4,35 +4,46 @@
 // From a long link the page sends nothing anywhere and shows a code to
 // paste; from a short link it posts the signature to the engine that served
 // it (same origin), which relays it to Postgres.
-import { approvalResponseJSON, checkApprovalRequest, displayValue, encodeApprovalResponse, parseApprovalRequest, relyingParty } from "./codec.js";
+import {
+  approvalResponseJSON,
+  checkApprovalRequest,
+  displayValue,
+  encodeApprovalResponse,
+  paramsText,
+  parseApprovalRequest,
+  relyingParty,
+  visibleText,
+} from "./codec.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
 import { $, APPROVE_REOPEN, el, fail, linkFailure, loadOrPaste, personText, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
 import { canStartPasskey, cascadeConfirmation, headline, summarize } from "./summary.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
 
-// display shows a column's value as the line carries it (displayValue).
+// display shows a column's value as the line carries it (displayValue), with
+// the characters that hide or reorder text shown as escapes (visibleText).
 function display(line, member, col) {
   const row = line[member] ?? {};
-  return displayValue(row[col], line.texts?.[member]?.get(col));
+  return visibleText(displayValue(row[col], line.texts?.[member]?.get(col)));
 }
 
 function renderSummary(req, summary) {
   const b = req.binding;
-  $("headline").textContent = headline(summary);
+  $("headline").textContent = visibleText(headline(summary));
   $("headline").classList.toggle("cascades", summary.cascadedRows > 0);
-  $("agent").textContent = b.agent;
-  $("database").textContent = b.database;
-  $("intent").textContent = b.intent;
-  $("statement").textContent = b.statement;
-  $("params").textContent = JSON.stringify(b.params);
+  $("agent").textContent = visibleText(b.agent);
+  $("database").textContent = visibleText(b.database);
+  $("intent").textContent = visibleText(b.intent);
+  $("statement").textContent = visibleText(b.statement, { lines: true });
+  // The signed text, not JSON.parse's rounding of it (paramsText).
+  $("params").textContent = visibleText(paramsText(req.bindingText));
   $("rows").textContent = String(b.rows);
   $("expires").textContent = b.expiresAt.toLocaleString();
 }
 
 // rowTable shows a row's values: before only for a DELETE, after only for an
 // INSERT, both for an UPDATE with the assigned columns highlighted.
-function rowTable(line) {
+export function rowTable(line) {
   const showBefore = line.op !== "INSERT";
   const showAfter = line.op !== "DELETE";
   const table = el("table", "values");
@@ -47,7 +58,7 @@ function rowTable(line) {
   for (const col of columns) {
     const assigned = col in after;
     const tr = el("tr", assigned && line.op === "UPDATE" ? "changed" : "");
-    tr.append(el("td", "col", col));
+    tr.append(el("td", "col", visibleText(col)));
     if (showBefore) tr.append(el("td", "", display(line, "old", col)));
     if (showAfter) tr.append(el("td", "", assigned ? display(line, "set", col) : ""));
     table.append(tr);
@@ -59,7 +70,7 @@ function renderLine(line) {
   const card = el("li", "row");
   const title = el("div", "row-title");
   title.append(el("span", `op op-${line.op.toLowerCase()}`, line.op));
-  title.append(el("span", "table-name", line.table));
+  title.append(el("span", "table-name", visibleText(line.table)));
   if (line.cascaded) title.append(el("span", "badge", "cascaded"));
   card.append(title);
   if (line.redacted) {
@@ -84,7 +95,7 @@ function gate(req, summary) {
 function showCascadeConfirmation(summary) {
   const text = cascadeConfirmation(summary);
   if (text === null) return;
-  $("cascade-text").textContent = text;
+  $("cascade-text").textContent = visibleText(text);
   $("cascade-confirm").hidden = false;
 }
 
@@ -186,4 +197,5 @@ async function main() {
   $("approve").addEventListener("click", () => approve(rp, req, summary, relay));
 }
 
-main();
+// Tests import the module without a document; only a page runs main.
+if (typeof document !== "undefined") main();

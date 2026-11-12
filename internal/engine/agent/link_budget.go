@@ -120,15 +120,51 @@ const (
 )
 
 // linkLike is what makes text look like a link or hold a link fragment: a
-// scheme separator, "www.", and the fragment prefixes of the link formats.
-var linkLike = regexp.MustCompile(`(?i)(:?//|www\.|#1\.|#2\.|#s=)`)
+// scheme separator (slashes either way, as browsers read https:\\), "www.",
+// and the fragment prefixes of the link formats.
+var linkLike = regexp.MustCompile(`(?i)(:?[/\\]{2}|www\.|#1\.|#2\.|#s=)`)
+
+// hostDot is a dot between two labels of a host name (evil.io,
+// console.basaltvault.app.evil.io). Chat apps link a bare host, so the dot
+// becomes a middle dot: "evil·io" still reads, and links nowhere. A dot
+// before a digit stays, so numbers like 1.5 keep theirs.
+var hostDot = regexp.MustCompile(`([\p{L}\p{N}_-])\.(\p{L})`)
+
+// middleDot replaces a host dot.
+const middleDot = "$1·$2"
+
+// markdownLink is the join of a markdown link, [text](target); a space
+// breaks it and keeps both parts readable.
+var markdownLink = regexp.MustCompile(`\]\(`)
+
+// lookalikes are characters that read as, or that browsers and linkifiers
+// map to, a slash, a backslash or a dot; they fold to the ASCII character so
+// the patterns above catch them.
+var lookalikes = map[rune]rune{
+	'∕': '/',  // division slash
+	'⁄': '/',  // fraction slash
+	'╱': '/',  // box drawings light diagonal
+	'⧸': '/',  // big solidus
+	'⧵': '\\', // reverse solidus operator
+	'⧹': '\\', // big reverse solidus
+	'∖': '\\', // set minus
+	'﹨': '\\', // small reverse solidus
+	'․': '.',  // one dot leader
+	'。': '.',  // ideographic full stop
+	'﹒': '.',  // small full stop
+	'｡': '.',  // halfwidth ideographic full stop
+}
 
 // plainText makes text from the agent or the database safe inside a line of
 // a personMessage: one line, no format or control character, full-width
-// forms folded, and nothing that reads as a URL or a link fragment (a URL in
-// a message is a link the engine hands over, on a line of its own).
+// forms and lookalike slashes and dots folded, and nothing that reads as a
+// URL, a bare host, a markdown link or a link fragment (a URL in a message
+// is a link the engine hands over, on a line of its own).
 func plainText(s string) string {
 	s = strings.Map(func(r rune) rune {
+		if ascii, ok := lookalikes[r]; ok {
+			return ascii
+		}
 		switch {
 		case unicode.IsSpace(r):
 			return ' '
@@ -139,10 +175,13 @@ func plainText(s string) string {
 		}
 		return r
 	}, s)
-	// Strip until stable: removing one match can join the pieces of another.
+	// Neutralize until stable: one change can join the pieces of another,
+	// and a match consumes the label the next host dot needs.
 	for prev := ""; prev != s; {
 		prev = s
 		s = linkLike.ReplaceAllString(s, " ")
+		s = hostDot.ReplaceAllString(s, middleDot)
+		s = markdownLink.ReplaceAllString(s, "] (")
 	}
 	return strings.Join(strings.Fields(s), " ")
 }

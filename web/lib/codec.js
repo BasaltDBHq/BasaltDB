@@ -372,6 +372,35 @@ export function displayValue(value, text) {
   return text ?? JSON.stringify(value);
 }
 
+// paramsText is a binding's params as the exact text the passkey signs, so
+// the page shows 9007199254740993 and 1e400 as they are (JSON.parse turns
+// them into 9007199254740992 and Infinity, which JSON.stringify prints as
+// null). Only for a binding parseBinding has accepted.
+export function paramsText(bindingText) {
+  return memberTexts(bindingText).get("params") ?? "[]";
+}
+
+// HIDDEN matches what hides text or changes how it reads: controls (C0, DEL,
+// C1), format characters (bidi controls such as U+202E, zero-width
+// characters), line and paragraph separators, spaces other than U+0020,
+// lone surrogates and the other default-ignorable characters. The CLI
+// escapes the same set (cmd/basalt, visibleText).
+const HIDDEN =
+  /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Cs}   -   　͏ᅟᅠ឴឵⁥ㅤﾠ￰-￸\u{e0000}-\u{e00ff}\u{e01f0}-\u{e0fff}]/gu;
+
+function escapeHidden(c) {
+  return `<U+${c.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")}>`;
+}
+
+// visibleText shows text an agent wrote (values, table names, the intent)
+// as it is, except each character HIDDEN matches, shown as <U+XXXX>: 0001
+// with a U+202E in it cannot read as 1000, and a zero-width space or a
+// no-break space shows. With lines set, line feeds and tabs stay (the
+// statement keeps its layout).
+export function visibleText(text, { lines = false } = {}) {
+  return String(text).replace(HIDDEN, (c) => (lines && (c === "\n" || c === "\t") ? c : escapeHidden(c)));
+}
+
 // parseLine parses one preview line for display.
 export function parseLine(text) {
   const raw = parseJSON(requireString(text, "preview line"), "preview line");

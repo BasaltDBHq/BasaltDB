@@ -171,9 +171,19 @@ func passkeyRemove(c *cliIO, args []string) int {
 // base64url includes "-", so about one id in 64 looks like a flag to the
 // flag package and would be refused as one. A single-dash argument is taken
 // as an id only when it is at least minIDPrefix characters of base64url
-// (the dash included) and names no flag.
+// (the dash included) and names no flag. The scan stops at "--" (what follows
+// is already positional) and skips the value of a flag that takes one, so a
+// value that starts with "-" is never taken as the id.
 func idAfterFlags(fs *flag.FlagSet, args []string) []string {
-	for i, a := range args {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			return args
+		}
+		if takesSeparateValue(fs, a) {
+			i++
+			continue
+		}
 		if !looksLikeID(fs, a) {
 			continue
 		}
@@ -181,6 +191,23 @@ func idAfterFlags(fs *flag.FlagSet, args []string) []string {
 		return append(rest, "--", a)
 	}
 	return args
+}
+
+// takesSeparateValue is whether a names a non-boolean flag of fs without an
+// "=value", so the flag package reads the next argument as its value.
+func takesSeparateValue(fs *flag.FlagSet, a string) bool {
+	name := strings.TrimPrefix(strings.TrimPrefix(a, "-"), "-")
+	if name == a || strings.Contains(name, "=") {
+		return false
+	}
+	f := fs.Lookup(name)
+	if f == nil {
+		return false
+	}
+	if b, ok := f.Value.(interface{ IsBoolFlag() bool }); ok && b.IsBoolFlag() {
+		return false
+	}
+	return true
 }
 
 func looksLikeID(fs *flag.FlagSet, a string) bool {

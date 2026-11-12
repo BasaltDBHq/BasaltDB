@@ -5,7 +5,9 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -67,6 +69,52 @@ func TestReadKeptCredentialChecksTheOpenFile(t *testing.T) {
 	require.NoError(t, os.Chmod(path, 0o600))
 	_, err = readKeptCredential(path, "nobody-such-user")
 	require.Error(t, err, "a file owned by someone else is refused")
+}
+
+// fifoWait bounds how long a FIFO test waits before it calls the open hung.
+const fifoWait = 5 * time.Second
+
+// withinFIFOWait runs fn and fails the test if it does not return in time.
+func withinFIFOWait(t *testing.T, fn func() error) error {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() { done <- fn() }()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(fifoWait):
+		t.Fatal("opening a FIFO blocked")
+		return nil
+	}
+}
+
+// The engine's user could plant a FIFO where root reads or locks a file:
+// every open returns an error at once instead of waiting for a writer.
+func TestCredentialOpensRefuseAFIFOWithoutBlocking(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "bot.url")
+	require.NoError(t, syscall.Mkfifo(path, 0o600))
+
+	err := withinFIFOWait(t, func() error {
+		_, err := readKeptCredential(path, me(t))
+		return err
+	})
+	require.ErrorContains(t, err, "not a regular file")
+
+	err = withinFIFOWait(t, func() error {
+		_, _, err := readOwnCredential(path)
+		return err
+	})
+	require.ErrorContains(t, err, "not a regular file")
+
+	err = withinFIFOWait(t, func() error {
+		unlock, err := lockFile(path)
+		if err == nil {
+			unlock()
+		}
+		return err
+	})
+	require.ErrorContains(t, err, "not a regular file")
 }
 
 // TestMain moves temp directories out of a sticky, world-writable /tmp

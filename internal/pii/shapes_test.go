@@ -46,6 +46,13 @@ func TestEmailLocalPartsAreFoundWhole(t *testing.T) {
 		{"bar before the address stays", "| bob@corp.ee |", "bob@corp.ee", "bob@corp.ee"},
 		{"brace before the address stays", "{bob@corp.ee}", "bob@corp.ee", "bob@corp.ee"},
 		{"unclosed quote stays", `mail "bob@corp.ee now`, "bob@corp.ee", "bob@corp.ee"},
+		{"comment", "contact bob(comment)@corp.ee please", "bob(comment)@corp.ee", "bob(comment)@corp.ee"},
+		{"comment with a colon", "contact bob(a:b)@corp.ee please", "bob(a:b)@corp.ee", "bob(a:b)@corp.ee"},
+		{"IPv4 literal", "contact admin@[192.168.0.10] please", "admin@[192.168.0.10]", "admin@[192.168.0.10]"},
+		{"IPv6 literal", "contact admin@[IPv6:2001:db8::1] please", "admin@[IPv6:2001:db8::1]", "admin@[ipv6:2001:db8::1]"},
+		{"git user, no path", "mail git@github.com now", "git@github.com", "git@github.com"},
+		{"git user, colon then space", "from git@corp.ee: hello", "git@corp.ee", "git@corp.ee"},
+		{"another user before a path", "ssh bob@corp.ee:repo.git", "bob@corp.ee", "bob@corp.ee"},
 		{"SQL-escaped apostrophe", "WHERE email = 'o''connor@corp.ee'", "o''connor@corp.ee", "o''connor@corp.ee"},
 		{"apostrophe before the at sign", "mail bob'@corp.ee now", "bob'@corp.ee", "bob'@corp.ee"},
 		{"apostrophes between letters", "mail d'o'brien@corp.ee now", "d'o'brien@corp.ee", "d'o'brien@corp.ee"},
@@ -111,6 +118,8 @@ func TestTextThatIsNoEmailStaysUntouched(t *testing.T) {
 		"zed{q}@other",
 		"x = y & z / 2",
 		"it's {fine} | a=b ~ c?",
+		"git@github.com:org/repo.git",
+		"remote: git@gitlab.example.com:group/sub/repo.git (fetch)",
 	} {
 		out, reps := tokenize(t, tz, in)
 		require.Empty(t, reps, "%q", in)
@@ -135,7 +144,8 @@ func TestPhoneSeparatorsAreFound(t *testing.T) {
 		{"one slash after a space", "+49 89/1234 5678", "+49 89 1234 5678"},
 		{"no-break space", "+44 7700 900123", "+44 7700 900123"},
 		{"00 prefix", "0044 20 7946 0958", "+44 20 7946 0958"},
-		{"00 prefix without spaces", "00442079460958", "+44 20 7946 0958"},
+		{"00 prefix, fictional range", "0044 7700 900123", "+44 7700 900123"},
+		{"00 prefix, Italian leading zero", "0039 06 1234 5678", "+39 06 1234 5678"},
 		{"00 prefix with dashes", "001-202-555-0143", "+1 202 555 0143"},
 		{"US form with two spaces", "(202)  555-0143", "(202) 555-0143"},
 		{"US form with four spaces", "(202)    555-0143", "(202) 555-0143"},
@@ -179,6 +189,12 @@ func TestPhoneShapesKeepFalsePositivesOut(t *testing.T) {
 		"+100\n250\n3000\n42",
 		"+1 202/555/0143",
 		"+1202/5550143",
+		"version 1.0.0+20130313144700",   // semver build metadata (QA F04)
+		"location +48.858370, +2.294481", // coordinates (QA F05)
+		"delta +0.00012345 BTC",          // a signed decimal (QA F06)
+		"tx 00491711234567 ref",          // a 00 digit run with no separator (QA F15)
+		"id 00442079460958",
+		"build 2.1+447700900456",
 	} {
 		out, reps := tokenize(t, tz, in)
 		require.Empty(t, reps, "%q", in)
@@ -196,7 +212,6 @@ func TestPhoneShapeKnownLimits(t *testing.T) {
 		"call +4420794609581234 now",   // digits glued past 15, no separator
 		"call +1     202 555 0143 now", // five spaces between groups
 		"call (202)     555-0143 now",  // five spaces in the US form
-		"call 0044 7700 900123 now",    // not a valid number with + for 00
 	} {
 		_, reps := tokenize(t, tz, in)
 		require.Empty(t, reps, "%q", in)
@@ -235,6 +250,19 @@ func TestAPhoneBeforeASlashOrALineBreak(t *testing.T) {
 		require.Len(t, reps, 1, "pad %d", pad)
 		require.Equal(t, "(202)    555-0143", in[reps[0].Start:reps[0].End], "pad %d", pad)
 		require.NotContains(t, out, "555", "pad %d", pad)
+	}
+}
+
+// Phone shapes still taken for phones although they may be none: a "+"
+// number is found by shape alone, whatever libphonenumber says of it (Known
+// limits). Pinned so a change is a decision.
+func TestPhoneShapeKnownFalsePositives(t *testing.T) {
+	tz := patternTokenizer(t)
+	for _, in := range []string{
+		"score +12 3456 7890 points", // QA F14
+	} {
+		_, reps := tokenize(t, tz, in)
+		require.Len(t, reps, 1, "%q", in)
 	}
 }
 

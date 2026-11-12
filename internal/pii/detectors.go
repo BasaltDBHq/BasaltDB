@@ -80,7 +80,13 @@ const (
 	emailAtom   = `(?:` + emailFirst + `|` + emailApos + `)(?:` + emailInner + `|` + emailApos + `)*`
 	emailQuoted = `"(?:[^"\\]|\\[\s\S])*"`
 	emailWord   = `(?:` + emailAtom + `|` + emailQuoted + `)`
-	emailLocal  = emailWord + `(?:\.` + emailWord + `)*`
+	emailLocal  = emailWord + `(?:\.` + emailWord + `)*` + emailComment + `?`
+	// emailComment is an RFC 5322 comment right before the '@'
+	// (bob(work)@corp.ee); it goes into the token.
+	emailComment = `(?:\([^()\r\n]{0,64}\))`
+	// emailDomain is a host name with a letter or punycode ("xn--") top-level
+	// domain, or an address literal (admin@[192.168.0.10], [ipv6:…]).
+	emailDomain = `(?:[\p{L}\p{M}\p{N}\-]+(?:\.[\p{L}\p{M}\p{N}\-]+)*\.(?:xn--[a-z0-9\-]+|[\p{L}\p{M}]{2,})|\[[\p{L}\p{N}.:\-]{1,64}\])`
 )
 
 var (
@@ -90,7 +96,7 @@ var (
 	// atom characters and quoted strings (emailLocal). Detection runs on
 	// folded text, so case does not matter. Go's regexp is RE2: a match takes
 	// linear time whatever the text, so no input backtracks catastrophically.
-	emailRe = regexp.MustCompile(emailLocal + `@[\p{L}\p{M}\p{N}\-]+(?:\.[\p{L}\p{M}\p{N}\-]+)*\.(?:xn--[a-z0-9\-]+|[\p{L}\p{M}]{2,})`)
+	emailRe = regexp.MustCompile(emailLocal + `@` + emailDomain)
 	// phoneRe's group 1 is the number. It must be followed by a non-digit or
 	// the end, so leftmost-first matching cannot stop inside a number written
 	// without spaces; any character may follow, so a number glued to letters
@@ -138,25 +144,43 @@ func (EmailDetector) Detect(text string) []Span {
 			end++
 		}
 		start := pos + m[0]
-		out = append(out, Span{Start: start + localCut(text[start:pos+m[1]]), End: end, Type: EntityEmail})
+		start += localCut(text[start : pos+m[1]])
+		if isGitRemote(text, start, pos+m[1]) {
+			pos = end
+			continue
+		}
+		out = append(out, Span{Start: start, End: end, Type: EntityEmail})
 		pos = end
 	}
 	return out
 }
 
+// gitUser is the user of an SSH git remote (git@github.com:org/repo.git).
+const gitUser = "git@"
+
+// isGitRemote reports an SSH git remote rather than an address: the user
+// "git", and the host followed by ':' and a path. "git" names no person, and
+// rewriting remotes would break every repository an agent works in.
+func isGitRemote(text string, start, end int) bool {
+	return strings.HasPrefix(text[start:end], gitUser) && end+1 < len(text) && text[end] == ':' &&
+		!unicode.IsSpace(rune(text[end+1]))
+}
+
 // localCut is where the address in match starts: after the last '=', '/',
-// '?' or ':' of its local part outside quotes, or 0. A local part that would
-// be left empty is kept whole.
+// '?' or ':' of its local part outside quotes and comments, or 0. A local
+// part that would be left empty is kept whole.
 func localCut(match string) int {
 	at := strings.LastIndexByte(match, '@')
-	cut, quoted := 0, false
+	cut, quoted, comment := 0, false, false
 	for i := 0; i < at; i++ {
 		switch c := match[i]; {
 		case quoted && c == '\\':
 			i++
-		case c == '"':
+		case !comment && c == '"':
 			quoted = !quoted
-		case !quoted && strings.IndexByte("=/?:", c) >= 0:
+		case !quoted && (c == '(' || c == ')'):
+			comment = c == '('
+		case !quoted && !comment && strings.IndexByte("=/?:", c) >= 0:
 			cut = i + 1
 		}
 	}
@@ -178,6 +202,7 @@ func (PhoneDetector) shapes() {}
 // number, so that character can start the next number ("…0143+1 202…").
 func (PhoneDetector) Detect(text string) []Span {
 	var out []Span
+	prevEnd := -1
 	for pos := 0; pos < len(text); {
 		w := min(len(text), pos+phoneWindow)
 		m := phoneRe.FindStringSubmatchIndex(text[pos:w])
@@ -198,7 +223,7 @@ func (PhoneDetector) Detect(text string) []Span {
 		}
 		start, end := pos+m[2], pos+m[3]
 		n, ok := phoneEnd(text[start:end], end < len(text) && text[end] == '/')
-		if !ok || (isIDDMatch(text[start:end]) && asciiAlnumAt(text, start-1)) {
+		if !ok || (isIDDMatch(text[start:end]) && asciiAlnumAt(text, start-1)) || gluedToANumber(text, start, start+n, prevEnd) {
 			// A match that is no phone (a date, an id, a long number), or a
 			// "00" glued to letters or digits, covers no number: search again
 			// from its next character, so a number inside or after it is
@@ -208,12 +233,38 @@ func (PhoneDetector) Detect(text string) []Span {
 			continue
 		}
 		out = append(out, Span{Start: start, End: start + n, Type: EntityPhone})
+		prevEnd = start + n
 		// A number cut short (more digits followed it) is followed by the
 		// rest of the match, which may hold a "00" number: search on from the
 		// cut, as a second pass, seeing the token there, would.
 		pos = start + n
 	}
 	return out
+}
+
+// gluedToANumber reports a "+" number written without separators right after
+// a digit or a '.', as in a version's build metadata (1.0.0+20130313144700),
+// unless only letters and digits stand between it and the phone before it
+// ("+447700900456+447700900457", "+44…A0+44…"): that phone's token takes
+// them in, so a second pass sees this number at the start of what follows
+// the token. prevEnd is where the phone before ends, or -1.
+func gluedToANumber(text string, start, end, prevEnd int) bool {
+	if start == 0 || text[start] != '+' || asciiDigits(text[start:end]) != end-start-1 {
+		return false
+	}
+	if prevEnd >= 0 && allASCIIAlnum(text[prevEnd:start]) {
+		return false
+	}
+	return isASCIIDigit(text[start-1]) || text[start-1] == '.'
+}
+
+func allASCIIAlnum(s string) bool {
+	for i := range len(s) {
+		if !isASCIIAlnum(s[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 // isIDDMatch reports a match written with the "00" prefix instead of "+".
@@ -226,8 +277,10 @@ func isIDDMatch(match string) bool { return strings.HasPrefix(match, iddPrefix) 
 // than dropping the match makes the result the same whether or not a token
 // follows the number (a second pass over tokenized text). A "00" number is a
 // digit run as often as a phone (an id, an order number), so it counts only
-// when libphonenumber finds a valid number with "+" in its place, and its
-// "00" counts as no digits. slashNext says a '/' follows the match.
+// with a separator in it and when its length is one its country dials
+// (possibleIDD), and its "00" counts as no digits. A number whose only
+// separator is one '.' is a signed decimal (+48.858370), not a phone.
+// slashNext says a '/' follows the match.
 func phoneEnd(match string, slashNext bool) (int, bool) {
 	idd := isIDDMatch(match)
 	for end := len(match); end > 0; end-- {
@@ -250,7 +303,7 @@ func phoneEnd(match string, slashNext bool) (int, bool) {
 		if n < minPhoneDigits {
 			return 0, false
 		}
-		if phoneWholeRe.MatchString(match[:end]) && separatorsOK(match[:end]) && (!idd || validIDD(match[:end])) {
+		if phoneWholeRe.MatchString(match[:end]) && separatorsOK(match[:end]) && !isDecimal(match[:end]) && (!idd || possibleIDD(match[:end])) {
 			return end, true
 		}
 	}
@@ -281,16 +334,25 @@ func separatorsOK(number string) bool {
 	return strings.Count(number, "/") == 1 && strings.ContainsAny(number[:slash], " .-\r\n()")
 }
 
-// validIDD reports whether a "00" number is a valid number with "+" in place
-// of its "00". Valid, not only possible: a possible number is a matter of
-// length (seven digits are a possible US number), which too many ids pass.
-func validIDD(match string) bool {
-	digits := asciiDigitsOf(match[len(iddPrefix):])
-	if !possibleLength(digits) {
-		return false
-	}
-	num, err := phonenumbers.Parse("+"+digits, "")
-	return err == nil && phonenumbers.IsValidNumber(num)
+// isDecimal reports a number whose one separator is a single '.'.
+func isDecimal(number string) bool {
+	seps := strings.Map(func(r rune) rune {
+		if r == '+' || isASCIIDigit(byte(r)) {
+			return -1
+		}
+		return r
+	}, number)
+	return seps == "."
+}
+
+// possibleIDD reports whether a "00" number holds a separator (a run of
+// digits starting "00" is an id: 00491711234567) and is a possible number
+// with "+" in place of its "00". Possible, not valid, so a number in a range
+// libphonenumber does not list (0044 7700 900123) is found as its "+" form is.
+func possibleIDD(match string) bool {
+	rest := match[len(iddPrefix):]
+	digits := asciiDigitsOf(rest)
+	return len(digits) < len(rest) && possibleLength(digits)
 }
 
 // maxCountryCodeLen is the longest country calling code (E.164).

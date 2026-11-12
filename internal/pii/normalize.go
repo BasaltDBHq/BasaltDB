@@ -26,6 +26,10 @@ func Normalize(t EntityType, value, phoneRegion string) string {
 		return e164
 	case EntityPersonName, EntityAddress, EntityOther:
 		return GenericForm(value)
+	case EntityCard:
+		return cardForm(value)
+	case EntityIBAN:
+		return ibanForm(value)
 	}
 	return GenericForm(value)
 }

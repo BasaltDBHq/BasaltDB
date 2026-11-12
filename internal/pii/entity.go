@@ -15,10 +15,29 @@ const (
 	EntityOther      EntityType = "OTHER"
 )
 
+// Token-only entity types (owner decisions, PT-9, provisional). A column is
+// never classified with them: a card or IBAN column is SECRET or OTHER. They
+// exist so a card or an IBAN gets one token however it is spaced: the card
+// and IBAN patterns emit them, and an OTHER value that is a valid card or IBAN
+// is tokenized as one (tokenType).
+const (
+	EntityCard EntityType = "CARD"
+	EntityIBAN EntityType = "IBAN"
+)
+
+// entityTypes are the column entity types, in contract order. The dictionary
+// keeps one filter per type here.
 var entityTypes = []EntityType{EntityEmail, EntityPhone, EntityPersonName, EntityAddress, EntityOther}
 
-// EntityTypes lists every entity type in contract order.
+// tokenTypes are every type a span or a token may have: the column types,
+// then the token-only types.
+var tokenTypes = append(slices.Clone(entityTypes), EntityCard, EntityIBAN)
+
+// EntityTypes lists every column entity type in contract order.
 func EntityTypes() []EntityType { return slices.Clone(entityTypes) }
 
-// Valid reports whether t is one of the entity types.
-func (t EntityType) Valid() bool { return slices.Contains(entityTypes, t) }
+// TokenTypes lists every type a token may have: EntityTypes, then CARD and IBAN.
+func TokenTypes() []EntityType { return slices.Clone(tokenTypes) }
+
+// Valid reports whether t is a type a span or a token may have.
+func (t EntityType) Valid() bool { return slices.Contains(tokenTypes, t) }

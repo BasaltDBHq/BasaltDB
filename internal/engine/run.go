@@ -22,6 +22,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/pages"
+	"github.com/basaltdbhq/basaltdb/internal/engine/peercred"
+	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 	"github.com/basaltdbhq/basaltdb/internal/engine/upkeep"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/links"
@@ -65,8 +67,13 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 	}
 	defer lock.Release()
 
-	agents := make([]Agent, 0, len(cfg.Agents))
-	upkeeps := make([]*upkeep.Upkeep, 0, len(cfg.Agents))
+	// Every configured agent's OS user, before any agent is skipped: the
+	// person socket scopes a peer that runs an agent to that agent (SM-4),
+	// served or not, so a skipped agent's user never looks like the person.
+	agentUIDs, err := agentOSUIDs(cfg.Agents, lookupUID)
+	if err != nil {
+		return err
+	}
 	tg, err := newTelegram(cfg.Notify)
 	if err != nil {
 		return err
@@ -97,35 +104,17 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 	if site != nil {
 		env.pagesOrigin = site.origin
 	}
-	for _, a := range cfg.Agents {
-		uid, err := lookupUID(a.OSUser)
-		if err != nil {
-			return fmt.Errorf("agent %s: %w", a.Name, err)
-		}
-		rt, err := newAgentRuntime(ctx, env, a, log.With("agent", a.Name))
-		var stale *guard.StaleSchemaError
-		if errors.As(err, &stale) {
-			// Refuse this agent only: its guard would fail mid-call on
-			// objects this build reads.
-			log.Error(stale.Error(), "agent", a.Name)
-			continue
-		}
-		if err != nil {
-			return fmt.Errorf("agent %s: %w", a.Name, err)
-		}
-		closers = append(closers, rt.close)
-		upkeeps = append(upkeeps, rt.upkeep)
-		if site != nil {
-			site.pages.Add(rt.svc)
-		}
-		agents = append(agents, Agent{
-			Name:       a.Name,
-			UID:        uid,
-			SocketPath: cfg.SocketPath(a.Name),
-			Server:     mcp.NewServer(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: instructions}, agent.Tools(rt.svc)...),
-		})
+	srv, err := startAgents(ctx, cfg, env, agentUIDs, newAgentRuntime, log)
+	closers = append(closers, srv.closers...)
+	if err != nil {
+		return err
 	}
-
+	agents, ledgers, upkeeps := srv.agents, srv.ledgers, srv.upkeeps
+	if site != nil {
+		for _, svc := range srv.services {
+			site.pages.Add(svc)
+		}
+	}
 	if len(agents) == 0 {
 		return errNoAgent
 	}
@@ -137,10 +126,91 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 	for _, u := range upkeeps {
 		wg.Go(func() { u.Run(ctx, upkeep.DefaultInterval) })
 	}
+	if cfg.Service() {
+		srv, ln, err := listenPerson(cfg, ledgers, agentUIDs, person.PagesDTO{PagesURL: base, LocalOrigin: env.pagesOrigin}, log)
+		if err != nil {
+			return err
+		}
+		wg.Go(func() { srv.Serve(ctx, ln) })
+	}
 	if site != nil {
 		wg.Go(func() { site.serve(ctx, log) })
 	}
 	return New(log, agents).Serve(ctx)
+}
+
+// agentOSUIDs is the uid of every configured agent's OS user, by agent
+// name. An OS user that does not resolve stops the engine: the person
+// socket must never mistake an agent's user for the person (fail closed).
+func agentOSUIDs(agents []config.Agent, lookup func(string) (uint32, error)) (map[string]uint32, error) {
+	out := make(map[string]uint32, len(agents))
+	for _, a := range agents {
+		uid, err := lookup(a.OSUser)
+		if err != nil {
+			return nil, fmt.Errorf("agent %s: %w", a.Name, err)
+		}
+		out[a.Name] = uid
+	}
+	return out, nil
+}
+
+// runtimeFunc builds one agent's runtime (newAgentRuntime outside tests).
+type runtimeFunc func(ctx context.Context, env agentEnv, a config.Agent, log *slog.Logger) (agentRuntime, error)
+
+// startedAgents are the agents the engine serves and what it closes.
+type startedAgents struct {
+	agents   []Agent
+	ledgers  map[string]person.Ledger
+	upkeeps  []*upkeep.Upkeep
+	services []*agent.Service
+	closers  []func()
+}
+
+// startAgents builds each agent's runtime. An agent whose guard is older
+// than this build is skipped (logged); its OS user stays in uids, which
+// the person socket scopes by.
+func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[string]uint32, newRT runtimeFunc, log *slog.Logger) (startedAgents, error) {
+	out := startedAgents{ledgers: make(map[string]person.Ledger, len(cfg.Agents))}
+	for _, a := range cfg.Agents {
+		rt, err := newRT(ctx, env, a, log.With("agent", a.Name))
+		var stale *guard.StaleSchemaError
+		if errors.As(err, &stale) {
+			// Refuse this agent only: its guard would fail mid-call on
+			// objects this build reads.
+			log.Error(stale.Error(), "agent", a.Name)
+			continue
+		}
+		if err != nil {
+			return out, fmt.Errorf("agent %s: %w", a.Name, err)
+		}
+		out.closers = append(out.closers, rt.close)
+		out.ledgers[a.Name] = rt.ledger
+		out.upkeeps = append(out.upkeeps, rt.upkeep)
+		out.services = append(out.services, rt.svc)
+		out.agents = append(out.agents, Agent{
+			Name:       a.Name,
+			UID:        uids[a.Name],
+			SocketPath: cfg.SocketPath(a.Name),
+			Server:     mcp.NewServer(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: instructions}, agent.Tools(rt.svc)...),
+		})
+	}
+	return out, nil
+}
+
+// listenPerson opens the person socket of a service-mode engine (CONTRACT.md,
+// The person socket): mode 0666 like the agent sockets, admitting only the
+// recorded person uids.
+func listenPerson(cfg config.Config, ledgers map[string]person.Ledger, agentUIDs map[string]uint32, pages person.PagesDTO, log *slog.Logger) (*person.Server, *net.UnixListener, error) {
+	path := config.PersonSocketPath(cfg.SocketDir)
+	ln, err := listenSocket(path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("person socket: %w", err)
+	}
+	log.Info("serving the person socket", "socket", path, "personUids", cfg.PersonUIDs)
+	srv := person.NewServer(person.Options{
+		Allow: cfg.PersonUIDs, Agents: ledgers, AgentUIDs: agentUIDs, Pages: pages, PeerUID: peercred.UID, Log: log.With("component", "person"),
+	})
+	return srv, ln, nil
 }
 
 // pagesSite is the bound local pages listener (CONTRACT.md, Local pages).
@@ -199,6 +269,8 @@ const agentPoolConns = 4
 type agentRuntime struct {
 	svc    *agent.Service
 	upkeep *upkeep.Upkeep
+	// ledger serves the person socket on the agent's credential.
+	ledger person.Ledger
 	close  func()
 }
 
@@ -258,6 +330,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	return agentRuntime{
 		svc:    svc,
 		upkeep: upkeep.New(a.Name, buildinfo.Version, pool, log, time.Now).WithPins(env.pins).WithRLSCache(blind),
+		ledger: person.NewDBLedger(pool, time.Now),
 		close:  pool.Close,
 	}, nil
 }

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -62,29 +61,25 @@ func runRevert(c *cliIO, args []string) int {
 	if err != nil {
 		return c.fail(err)
 	}
-	dsn, err := agentURL(c, *agent, *credFile, *configPath)
+	l, err := openLedger(c, *agent, *credFile, *configPath)
 	if err != nil {
 		return c.fail(err)
 	}
-	conn, err := connect(c.ctx, dsn)
-	if err != nil {
-		return c.fail(err)
-	}
-	defer conn.Close(c.ctx)
+	defer l.close()
 	if scope.ID != uuid.Nil && !f.dryRun {
-		f.local = localPages(c, f.pagesURL, *agent, *configPath)
+		f.local = l.localPages(c, f.pagesURL)
 	}
-	f.pagesURL = configuredBase(f.pagesURL, *agent, *configPath)
+	f.pagesURL = l.pagesBase(f.pagesURL)
 
 	switch {
 	case f.status != "":
-		return revertStatus(c, conn, f.status, f.asJSON)
+		return revertStatus(c, l, f.status, f.asJSON)
 	case f.apply != "":
-		return applyRevertCode(c, conn, f.apply, f.asJSON)
+		return applyRevertCode(c, l, f.apply, f.asJSON)
 	case f.dryRun:
-		return previewRevert(c, conn, scope, f.asJSON)
+		return previewRevert(c, l, scope, f.asJSON)
 	}
-	return prepareRevert(c, conn, scope, f)
+	return prepareRevert(c, l, scope, f)
 }
 
 // scope is the one scope the flags name; --apply names none.
@@ -118,8 +113,8 @@ func (f revertFlags) scope() (guard.RevertScope, error) {
 	return named[0], nil
 }
 
-func previewRevert(c *cliIO, conn *pgx.Conn, scope guard.RevertScope, asJSON bool) int {
-	texts, err := guard.PreviewRevert(c.ctx, conn, scope)
+func previewRevert(c *cliIO, l *agentLedger, scope guard.RevertScope, asJSON bool) int {
+	texts, err := l.PreviewRevert(c.ctx, scope)
 	if err != nil {
 		return c.fail(fmt.Errorf("cannot preview the revert: %s", pgDetail(err)))
 	}
@@ -130,12 +125,12 @@ func previewRevert(c *cliIO, conn *pgx.Conn, scope guard.RevertScope, asJSON boo
 	return exitOK
 }
 
-func prepareRevert(c *cliIO, conn *pgx.Conn, scope guard.RevertScope, f revertFlags) int {
+func prepareRevert(c *cliIO, l *agentLedger, scope guard.RevertScope, f revertFlags) int {
 	intent := f.intent
 	if intent == "" {
 		intent = fmt.Sprintf("Revert %s %s", strings.ToLower(string(scope.Kind)), scope.ID)
 	}
-	prep, err := guard.PrepareRevertWithin(c.ctx, conn, scope, intent, guard.CLIPrepareTimeout)
+	prep, err := l.PrepareRevert(c.ctx, scope, intent)
 	if err != nil {
 		return c.fail(fmt.Errorf("cannot prepare the revert: %s", pgDetail(err)))
 	}
@@ -145,7 +140,7 @@ func prepareRevert(c *cliIO, conn *pgx.Conn, scope guard.RevertScope, f revertFl
 	if err := printRevertLines(c, prep.Lines, f.asJSON); err != nil {
 		return c.fail(err)
 	}
-	keys, err := ledger.Passkeys(c.ctx, conn)
+	keys, err := l.credentials(c.ctx)
 	if err != nil {
 		return c.fail(err)
 	}
@@ -175,7 +170,7 @@ func prepareRevert(c *cliIO, conn *pgx.Conn, scope guard.RevertScope, f revertFl
 		}
 	}
 	if f.local != "" {
-		return awaitRevert(c, conn, prep.RevertID, f.asJSON)
+		return awaitRevert(c, l, prep.RevertID, f.asJSON)
 	}
 	fmt.Fprint(c.stderr, "Paste the code the revert page showed: ")
 	code, err := c.line()
@@ -183,18 +178,18 @@ func prepareRevert(c *cliIO, conn *pgx.Conn, scope guard.RevertScope, f revertFl
 		return c.fail(fmt.Errorf("no code given; nothing was reverted. Apply later with basalt revert --apply <code> before %s",
 			prep.ExpiresAt.UTC().Format("15:04 UTC")))
 	}
-	return applyRevertCode(c, conn, code, f.asJSON)
+	return applyRevertCode(c, l, code, f.asJSON)
 }
 
-func applyRevertCode(c *cliIO, conn *pgx.Conn, code string, asJSON bool) int {
+func applyRevertCode(c *cliIO, l *agentLedger, code string, asJSON bool) int {
 	resp, err := revert.ParseResponse(code)
 	if err != nil {
 		return c.fail(fmt.Errorf("%w: %w", errUsage, err))
 	}
-	if err := checkRevertLocally(c, conn, resp); err != nil {
+	if err := checkRevertLocally(c, l, resp); err != nil {
 		return c.fail(err)
 	}
-	out, err := guard.ApplyRevert(c.ctx, conn, resp.RevertID, resp.Assertion())
+	out, err := l.ApplyRevert(c.ctx, resp.RevertID, resp.Assertion())
 	if err != nil {
 		return c.fail(fmt.Errorf("the database refused the revert: %s", pgDetail(err)))
 	}
@@ -229,7 +224,7 @@ const revertPoll = time.Second
 // awaitRevert waits for the revert to be signed on the engine's local page,
 // which relays it, while still taking a pasted code (CONTRACT.md, CLI). It
 // ends when the revert is applied or signed, or when it expires.
-func awaitRevert(c *cliIO, conn *pgx.Conn, id uuid.UUID, asJSON bool) int {
+func awaitRevert(c *cliIO, l *agentLedger, id uuid.UUID, asJSON bool) int {
 	fmt.Fprintln(c.stderr, "basalt: waiting for your signature on the revert page (or paste the code it shows here)...")
 	codes := make(chan string, 1)
 	go func() {
@@ -243,12 +238,12 @@ func awaitRevert(c *cliIO, conn *pgx.Conn, id uuid.UUID, asJSON bool) int {
 	for {
 		select {
 		case code := <-codes:
-			return applyRevertCode(c, conn, code, asJSON)
+			return applyRevertCode(c, l, code, asJSON)
 		case <-c.ctx.Done():
 			return c.fail(c.ctx.Err())
 		case <-tick.C:
 		}
-		r, err := ledger.FindRevert(c.ctx, conn, id)
+		r, err := l.FindRevert(c.ctx, id)
 		if err != nil {
 			return c.fail(err)
 		}
@@ -306,12 +301,12 @@ type skippedLineDTO struct {
 // revertStatus: basalt revert --status. A revert this agent's role
 // prepared: its status, and for a large plan its progress and every line
 // skipped so far.
-func revertStatus(c *cliIO, conn *pgx.Conn, idText string, asJSON bool) int {
+func revertStatus(c *cliIO, l *agentLedger, idText string, asJSON bool) int {
 	id, err := uuid.Parse(idText)
 	if err != nil {
 		return c.fail(fmt.Errorf("%w: --status must be a revert id", errUsage))
 	}
-	r, err := ledger.FindRevert(c.ctx, conn, id)
+	r, err := l.FindRevert(c.ctx, id)
 	if errors.Is(err, ledger.ErrRevertNotFound) {
 		return c.fail(fmt.Errorf("no revert %s prepared with this agent's credential", id))
 	}
@@ -327,7 +322,7 @@ func revertStatus(c *cliIO, conn *pgx.Conn, idText string, asJSON bool) int {
 		out.Restored, out.Skipped = r.Rows, r.Skipped
 	}
 	if r.Batched {
-		if out.SkippedLines, err = skippedLines(c, conn, id); err != nil {
+		if out.SkippedLines, err = skippedLines(c, l, id); err != nil {
 			return c.fail(err)
 		}
 	}
@@ -339,11 +334,11 @@ func revertStatus(c *cliIO, conn *pgx.Conn, idText string, asJSON bool) int {
 }
 
 // skippedLines reads every line of a plan skipped so far, page by page.
-func skippedLines(c *cliIO, conn *pgx.Conn, id uuid.UUID) ([]skippedLineDTO, error) {
+func skippedLines(c *cliIO, l *agentLedger, id uuid.UUID) ([]skippedLineDTO, error) {
 	out := []skippedLineDTO{}
 	p := ledger.RevertLineParams{Params: pagination.Params{Limit: pagination.MaxLimit}, RevertID: id, Outcome: ledger.OutcomeSkipped}
 	for {
-		page, err := ledger.ListRevertLines(c.ctx, conn, p)
+		page, err := l.ListRevertLines(c.ctx, p)
 		if err != nil {
 			return nil, err
 		}
@@ -402,12 +397,12 @@ func withConflict(l revert.Line, conflict, sqlState string) revert.Line {
 // checkRevertLocally verifies the code with the Go mirror of the Postgres
 // check when this role prepared the revert, for a clear message before
 // relaying. Postgres checks again either way.
-func checkRevertLocally(c *cliIO, conn *pgx.Conn, resp revert.Response) error {
-	r, err := ledger.FindRevert(c.ctx, conn, resp.RevertID)
+func checkRevertLocally(c *cliIO, l *agentLedger, resp revert.Response) error {
+	r, err := l.FindRevert(c.ctx, resp.RevertID)
 	if errors.Is(err, ledger.ErrRevertNotFound) {
 		return nil // prepared by another role: only Postgres can check it
 	}
-	return verifyCode(c, conn, err, resp.CredentialID, "reverted", func(k passkey.Credential) error {
+	return verifyCode(c, l, err, resp.CredentialID, "reverted", func(k passkey.Credential) error {
 		_, err := revert.Verify(r.BindingText, k, resp)
 		return err
 	})

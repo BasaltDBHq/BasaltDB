@@ -23,6 +23,10 @@ var fuzzSeeds = []string{
 	"+44 7700 900456ext2",
 	"\uff21\uff4c\uff45\uff58\uff41\uff4e\uff44\uff52\uff41 \uff2a\uff4f\uff4e\uff45\uff53 \uff41\uff4c\uff49\uff43\uff45@example.com \uff0b\uff14\uff14\uff17\uff17\uff10\uff10\uff19\uff10\uff10\uff14\uff15\uff16",
 	"alice@ex\u00e4mple.ee xpii1_ABCDEFGHIJKL@corp.com",
+	"bob.o'connor@corp.ee john&jane@x.ee zed{q}@other.com \"alice\"@corp.ee zed.q@other\u3002com",
+	"email='bob@corp.ee' |x@y.zz| ?e=a@b.cc",
+	"+1  202 555 0143\n+44\u20117700\u2212900123 +1 202/555/0143 0044 20 7946 0958",
+	"0012 (202) 555-0143 2026-11-12 00112233-4455",
 	"",
 }
 

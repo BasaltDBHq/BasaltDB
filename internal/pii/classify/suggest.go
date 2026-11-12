@@ -1,0 +1,330 @@
+package classify
+
+import (
+	"fmt"
+	"slices"
+	"strconv"
+	"strings"
+
+	"github.com/basaltdbhq/basaltdb/internal/guard"
+)
+
+// Thresholds of the M5.1 plan, section 3.
+const (
+	// SampleRows is how many non-null values are sampled per column.
+	SampleRows = 1000
+	// sampleShare is the share of sampled values (percent) a validator must
+	// pass to win.
+	sampleShare = 80
+	// nameShare is the share of values starting with a first name.
+	nameShare = 50
+	// freeTextLen is the mean length (characters) above which spaced text
+	// is free text.
+	freeTextLen = 40
+	// spacedShare is the share of free-text values that hold a space.
+	spacedShare = 50
+	// distinctShare is the share of distinct values of an ambiguous column.
+	distinctShare = 90
+	// fixedLengthShare is the share of values of the commonest length for a
+	// column to count as fixed length.
+	fixedLengthShare = 95
+	// sequentialSpan: distinct integers whose range is at most this many
+	// times their count are sequential (an id or a counter).
+	sequentialSpan = 2
+	// maxSequentialDigits keeps the span arithmetic in uint64.
+	maxSequentialDigits = 18
+	percent             = 100
+)
+
+// Reasons that carry no count.
+const (
+	reasonKey        = "KEY:internal id"
+	reasonSequential = "KEY:sequential values"
+	reasonDecimals   = "SHAPE:decimals or signs"
+	reasonCodes      = "SHAPE:codes only, no spaces"
+	reasonNoValues   = "SAMPLE:no values"
+)
+
+// Column is a column the agents can read.
+type Column struct {
+	Schema, Table, Name string
+	// DataType is format_type without the modifier.
+	DataType string
+	// Key is true when the column is part of a primary or foreign key.
+	Key bool
+}
+
+// QualifiedTable is schema.table.
+func (c Column) QualifiedTable() string { return c.Schema + "." + c.Table }
+
+// FullName is schema.table.column.
+func (c Column) FullName() string { return c.QualifiedTable() + "." + c.Name }
+
+// Sample is what reading a column's values gave.
+type Sample struct {
+	// Values are up to SampleRows non-null values as text.
+	Values []string
+	// Unavailable says why no sample could be read ("" when one was):
+	// it timed out, or the admin may not read it.
+	Unavailable string
+}
+
+// Suggestion is the class suggested for a column and why.
+type Suggestion struct {
+	Class, EntityType string
+	// Reason holds names and counts only, never a value.
+	Reason string
+	// NeedsReview marks the protected guess for an ambiguous column.
+	NeedsReview bool
+	// PhoneRegion is the region the column's numbers parse as (PHONE only;
+	// "" when none could be inferred).
+	PhoneRegion string
+}
+
+// Options are the run's settings.
+type Options struct {
+	// PhoneRegion is the --phone-region for every PHONE column ("" infers it
+	// per column).
+	PhoneRegion string
+	// CallingCodes are the +cc prefixes seen in the database's samples,
+	// which weight region inference.
+	CallingCodes map[int32]int
+}
+
+// Rank orders classes by how much they protect: SECRET, IDENTIFIER,
+// FREE_TEXT, PUBLIC, then UNCLASSIFIED.
+func Rank(class string) int {
+	return slices.Index([]string{guard.ClassUnclassified, guard.ClassPublic, guard.ClassFreeText, guard.ClassIdentifier, guard.ClassSecret}, class)
+}
+
+// Suggest scores one column: a sample validator that passes on enough
+// values wins, unless the name asks for a more protective class; then the
+// name rules; then keys and the shape of numbers. Ambiguous numbers come out
+// IDENTIFIER OTHER for review, never PUBLIC.
+func Suggest(col Column, s Sample, opts Options) Suggestion {
+	k := kindOf(col.DataType)
+	hit, named := matchName(col.Name, k)
+	switch {
+	case !Sampled(col.DataType):
+		if named {
+			return fromName(hit)
+		}
+		return Suggestion{Class: guard.ClassPublic, Reason: "TYPE:" + col.DataType}
+	case s.Unavailable != "":
+		return unsampled(hit, named, "SAMPLE:"+s.Unavailable)
+	}
+	n := len(s.Values)
+	if n == 0 {
+		if col.Key {
+			return Suggestion{Class: guard.ClassPublic, Reason: reasonKey}
+		}
+		return unsampled(hit, named, reasonNoValues)
+	}
+	if v, ok := validate(k, s.Values, hit, named, opts); ok {
+		return v
+	}
+	if named {
+		return byName(hit, s.Values, opts)
+	}
+	if col.Key {
+		return Suggestion{Class: guard.ClassPublic, Reason: reasonKey}
+	}
+	return byShape(s.Values)
+}
+
+func fromName(hit nameHit) Suggestion {
+	return Suggestion{Class: hit.class, EntityType: hit.entity, Reason: "NAME:" + hit.word}
+}
+
+// unsampled is the suggestion for a column with no values to look at: its
+// name's, or the protected guess for review (values may come later).
+func unsampled(hit nameHit, named bool, reason string) Suggestion {
+	if named {
+		s := fromName(hit)
+		s.Reason += "; " + reason
+		return s
+	}
+	return Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityOther, Reason: reason, NeedsReview: true}
+}
+
+// validate runs the sample validators in order, the most protective first.
+func validate(k kind, values []string, hit nameHit, named bool, opts Options) (Suggestion, bool) {
+	n := len(values)
+	enough := func(c int) bool { return c*percent >= sampleShare*n }
+	count := func(f func(string) bool) int {
+		c := 0
+		for _, v := range values {
+			if f(v) {
+				c++
+			}
+		}
+		return c
+	}
+	sampled := func(label string, c int) string { return fmt.Sprintf("SAMPLE:%s %d/%d", label, c, n) }
+	type check struct {
+		label, class, entity string
+		valid                func(string) bool
+	}
+	for _, ch := range []check{
+		{"CARD", guard.ClassSecret, "", validCard},
+		{"NIK", guard.ClassSecret, "", validNIK},
+		{"IBAN", guard.ClassIdentifier, guard.EntityOther, validIBAN},
+		{"EMAIL", guard.ClassIdentifier, guard.EntityEmail, validEmail},
+	} {
+		if c := count(ch.valid); enough(c) {
+			return withName(Suggestion{Class: ch.class, EntityType: ch.entity, Reason: sampled(ch.label, c)}, hit, named), true
+		}
+	}
+	bare := named && hit.entity == guard.EntityPhone
+	if enough(count(func(v string) bool { _, ok := phoneShape(v, bare); return ok })) {
+		r := inferRegion(values, bare, opts.PhoneRegion, opts.CallingCodes)
+		if enough(r.valid) {
+			s := Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityPhone, PhoneRegion: r.region,
+				Reason: sampled("PHONE", r.valid) + regionNote(r, n)}
+			return withName(s, hit, named), true
+		}
+	}
+	if c := count(validIMEI); enough(c) {
+		return withName(Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityOther, Reason: sampled("IMEI", c)}, hit, named), true
+	}
+	if k != kindText {
+		return Suggestion{}, false
+	}
+	if c := count(startsWithFirstName); c*percent >= nameShare*n {
+		s := Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityPersonName, Reason: sampled("PERSON_NAME", c)}
+		return withName(s, hit, named), true
+	}
+	total, spaced := 0, 0
+	for _, v := range values {
+		total += runeLen(v)
+		if hasSpace(v) {
+			spaced++
+		}
+	}
+	if total > freeTextLen*n && spaced*percent > spacedShare*n {
+		s := Suggestion{Class: guard.ClassFreeText, Reason: fmt.Sprintf("SAMPLE:FREE_TEXT mean %d chars, %d/%d with spaces", total/n, spaced, n)}
+		return withName(s, hit, named), true
+	}
+	return Suggestion{}, false
+}
+
+// withName adds the name hit to a sample's suggestion: the sample wins,
+// unless the name asks for a more protective class (a column named
+// password that holds emails stays SECRET).
+func withName(s Suggestion, hit nameHit, named bool) Suggestion {
+	if !named {
+		return s
+	}
+	if Rank(hit.class) > Rank(s.Class) {
+		out := fromName(hit)
+		out.Reason += "; " + s.Reason
+		return out
+	}
+	s.Reason = "NAME:" + hit.word + "; " + s.Reason
+	return s
+}
+
+func regionNote(r regionResult, n int) string {
+	if r.region == "" {
+		return ""
+	}
+	return fmt.Sprintf(", parsed as %s numbers, %d%%", r.region, r.valid*percent/n)
+}
+
+// byName is the name rule's suggestion once no validator won. A FREE_TEXT
+// name over a column of codes is PUBLIC (notes holding only codes); a PHONE
+// name gets its column's region.
+func byName(hit nameHit, values []string, opts Options) Suggestion {
+	s := fromName(hit)
+	switch hit.entity {
+	case guard.EntityPhone:
+		r := inferRegion(values, true, opts.PhoneRegion, opts.CallingCodes)
+		s.PhoneRegion = r.region
+		s.Reason += fmt.Sprintf("; SAMPLE:PHONE %d/%d", r.valid, len(values)) + regionNote(r, len(values))
+		return s
+	case "":
+	default:
+		return s
+	}
+	if hit.class == guard.ClassFreeText && !slices.ContainsFunc(values, func(v string) bool { return !codeLike(v) }) {
+		return Suggestion{Class: guard.ClassPublic, Reason: s.Reason + "; " + reasonCodes}
+	}
+	return s
+}
+
+// byShape judges a column no validator and no name rule claimed: integers
+// that run in sequence are ids, decimals and mixed lengths are amounts and
+// counts, and unique numbers of one length are an identifier to review.
+func byShape(values []string) Suggestion {
+	n := len(values)
+	public := func(reason string) Suggestion { return Suggestion{Class: guard.ClassPublic, Reason: reason} }
+	if !slices.ContainsFunc(values, func(v string) bool { return !allASCIIDigits(strings.TrimSpace(v)) }) {
+		st := numberShape(values)
+		switch {
+		case st.sequential:
+			return public(reasonSequential)
+		case st.distinct*percent >= distinctShare*n && st.modal*percent >= fixedLengthShare*n:
+			return Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityOther, NeedsReview: true,
+				Reason: fmt.Sprintf("SHAPE:%d%% distinct, fixed length %d", st.distinct*percent/n, st.modalLen)}
+		}
+		return public(fmt.Sprintf("SHAPE:%d%% distinct, lengths %d to %d", st.distinct*percent/n, st.minLen, st.maxLen))
+	}
+	if slices.ContainsFunc(values, func(v string) bool { return looksNumeric(strings.TrimSpace(v)) }) &&
+		!slices.ContainsFunc(values, func(v string) bool { return !looksNumeric(strings.TrimSpace(v)) }) {
+		return public(reasonDecimals)
+	}
+	return public(fmt.Sprintf("SAMPLE:no validator matched %d values", n))
+}
+
+// looksNumeric is a signed or decimal number (an amount).
+func looksNumeric(v string) bool {
+	_, err := strconv.ParseFloat(v, 64)
+	return err == nil
+}
+
+type numberStats struct {
+	distinct, modal, modalLen, minLen, maxLen int
+	sequential                                bool
+}
+
+func numberShape(values []string) numberStats {
+	seen := map[string]bool{}
+	lengths := map[int]int{}
+	st := numberStats{minLen: -1}
+	var lo, hi uint64
+	ints, started := true, false
+	for _, raw := range values {
+		v := strings.TrimSpace(raw)
+		if !seen[v] {
+			seen[v] = true
+			st.distinct++
+		}
+		lengths[len(v)]++
+		st.minLen = minLen(st.minLen, len(v))
+		st.maxLen = max(st.maxLen, len(v))
+		if len(v) > maxSequentialDigits || (len(v) > 1 && v[0] == '0') {
+			ints = false
+			continue
+		}
+		x, _ := strconv.ParseUint(v, 10, 64) // all digits, at most 18
+		if !started {
+			lo, hi, started = x, x, true
+		}
+		lo, hi = min(lo, x), max(hi, x)
+	}
+	for l, c := range lengths {
+		if c > st.modal || (c == st.modal && l < st.modalLen) {
+			st.modal, st.modalLen = c, l
+		}
+	}
+	n := len(values)
+	st.sequential = ints && st.distinct*percent >= distinctShare*n && hi-lo < uint64(sequentialSpan*st.distinct)
+	return st
+}
+
+func minLen(cur, l int) int {
+	if cur < 0 {
+		return l
+	}
+	return min(cur, l)
+}

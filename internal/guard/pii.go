@@ -2,6 +2,7 @@ package guard
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -59,16 +60,51 @@ type Classification struct {
 
 // WriteClassification writes c in tx as the guard role, the owner of
 // basalt_meta (SET LOCAL ROLE, as the migrations do): upserts c.Columns,
-// deletes the rows of columns that no longer exist or no agent can read,
-// and sets pii_catalog to pii_fingerprint(). The login role (session_user)
-// must have been granted the guard role, which basalt init does. The
-// caller commits.
+// deletes the rows of columns that no longer exist (a confirmed class
+// survives a revoked grant: owner decision OR-1), and sets pii_catalog to
+// pii_fingerprint(). The login role (session_user) must have been granted
+// the guard role, which basalt init does. The caller commits.
 func WriteClassification(ctx context.Context, tx pgx.Tx, n Names, c Classification) error {
+	return asGuard(ctx, tx, n, func() error {
+		for start := 0; start < len(c.Columns); start += piiUpsertBatch {
+			end := min(start+piiUpsertBatch, len(c.Columns))
+			if err := upsertPIIColumns(ctx, tx, c.Columns[start:end], c.At); err != nil {
+				return err
+			}
+		}
+		// The NOT EXISTS is a raw predicate: squirrel has no anti-join over
+		// the catalog, and the whole subquery is constant text. A column
+		// exists when a relation of a readable kind holds it by these
+		// names, whoever may read it.
+		stale := psql.Delete("basalt_meta.pii_columns p").Where(`NOT EXISTS (SELECT 1
+			FROM pg_catalog.pg_namespace ns
+			JOIN pg_catalog.pg_class c ON c.relnamespace = ns.oid
+			JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid
+			WHERE ns.nspname::text = p.table_schema AND c.relname::text = p.table_name
+			  AND a.attname::text = p.column_name AND a.attnum > 0 AND NOT a.attisdropped
+			  AND c.relkind IN ('r', 'p', 'v', 'm', 'f'))`)
+		if err := execBuilt(ctx, tx, stale); err != nil {
+			return fmt.Errorf("delete stale classes: %w", err)
+		}
+		catalog := psql.Insert("basalt_meta.pii_catalog").
+			Columns("id", "fingerprint", "classified_at", "classified_by").
+			Values(true, sq.Expr("basalt_meta.pii_fingerprint()"), c.At, sq.Expr("session_user")).
+			Suffix(`ON CONFLICT (id) DO UPDATE SET fingerprint = EXCLUDED.fingerprint,
+				classified_at = EXCLUDED.classified_at, classified_by = EXCLUDED.classified_by`)
+		if err := execBuilt(ctx, tx, catalog); err != nil {
+			return fmt.Errorf("set the classification catalog: %w", err)
+		}
+		return nil
+	})
+}
+
+// asGuard runs fn in tx as the guard role with search_path pg_catalog, then
+// puts the caller's role and search_path back, transaction-local as they
+// were (SET LOCAL ones included).
+func asGuard(ctx context.Context, tx pgx.Tx, n Names, fn func() error) error {
 	if err := n.Validate(); err != nil {
 		return err
 	}
-	// Keep the caller's role and search_path (SET LOCAL ones included) to
-	// put back after the write.
 	var role, searchPath string
 	saved := psql.Select().Column("current_setting('role')").Column("current_setting('search_path')")
 	if err := queryBuilt(ctx, tx, saved).Scan(&role, &searchPath); err != nil {
@@ -76,36 +112,104 @@ func WriteClassification(ctx context.Context, tx pgx.Tx, n Names, c Classificati
 	}
 	// Plain SQL: role and setting changes on a validated role name.
 	if _, err := tx.Exec(ctx, n.render(`SET LOCAL ROLE {{guard}}; SET LOCAL search_path = pg_catalog`)); err != nil {
-		return fmt.Errorf("classify as the guard role: %w", err)
+		return fmt.Errorf("act as the guard role: %w", err)
 	}
-	for start := 0; start < len(c.Columns); start += piiUpsertBatch {
-		end := min(start+piiUpsertBatch, len(c.Columns))
-		if err := upsertPIIColumns(ctx, tx, c.Columns[start:end], c.At); err != nil {
-			return err
-		}
+	if err := fn(); err != nil {
+		return err
 	}
-	// The NOT EXISTS is a raw predicate: squirrel has no anti-join over a
-	// set-returning function, and the whole subquery is constant text.
-	stale := psql.Delete("basalt_meta.pii_columns p").Where(`NOT EXISTS (SELECT 1
-		FROM basalt_meta.pii_readable_columns() r
-		WHERE r.table_schema = p.table_schema AND r.table_name = p.table_name AND r.column_name = p.column_name)`)
-	if err := execBuilt(ctx, tx, stale); err != nil {
-		return fmt.Errorf("delete stale classes: %w", err)
-	}
-	catalog := psql.Insert("basalt_meta.pii_catalog").
-		Columns("id", "fingerprint", "classified_at", "classified_by").
-		Values(true, sq.Expr("basalt_meta.pii_fingerprint()"), c.At, sq.Expr("session_user")).
-		Suffix(`ON CONFLICT (id) DO UPDATE SET fingerprint = EXCLUDED.fingerprint,
-			classified_at = EXCLUDED.classified_at, classified_by = EXCLUDED.classified_by`)
-	if err := execBuilt(ctx, tx, catalog); err != nil {
-		return fmt.Errorf("set the classification catalog: %w", err)
-	}
-	// Back to the caller's settings, transaction-local as they were. The
-	// search_path first: setting role 'none' as the guard role is allowed.
+	// The search_path first: setting role 'none' as the guard role is allowed.
 	restore := psql.Select().
 		Column(sq.Expr("set_config('search_path', ?, true)", searchPath)).
 		Column(sq.Expr("set_config('role', ?, true)", role))
 	return execBuilt(ctx, tx, restore)
+}
+
+// ReadableColumn is one row of pii_readable_columns().
+type ReadableColumn struct {
+	TableOID              uint32
+	Attnum                int16
+	Schema, Table, Column string
+	DataType              string
+}
+
+// ColumnKey names a column: schema, table and column.
+type ColumnKey struct{ Schema, Table, Column string }
+
+// ClassificationState is what basalt classify reads before it suggests:
+// the readable columns, the stored classes and both fingerprints.
+type ClassificationState struct {
+	// Readable is pii_readable_columns(), by schema, table and attnum.
+	Readable []ReadableColumn
+	// Stored are the rows of pii_columns.
+	Stored map[ColumnKey]PIIColumn
+	// Fingerprint is pii_fingerprint() now.
+	Fingerprint []byte
+	// Previous is pii_catalog.fingerprint, nil before the first classify.
+	Previous []byte
+}
+
+// ReadClassification reads the classification state in tx as the guard
+// role (the admin may not read basalt_meta's tables or run its functions
+// itself), as WriteClassification writes it.
+func ReadClassification(ctx context.Context, tx pgx.Tx, n Names) (ClassificationState, error) {
+	st := ClassificationState{Stored: map[ColumnKey]PIIColumn{}}
+	err := asGuard(ctx, tx, n, func() error {
+		var err error
+		if st.Readable, err = readableColumns(ctx, tx); err != nil {
+			return err
+		}
+		if err := readStored(ctx, tx, st.Stored); err != nil {
+			return err
+		}
+		if err := queryBuilt(ctx, tx, psql.Select("basalt_meta.pii_fingerprint()")).Scan(&st.Fingerprint); err != nil {
+			return fmt.Errorf("read the fingerprint: %w", err)
+		}
+		err = queryBuilt(ctx, tx, psql.Select("fingerprint").From("basalt_meta.pii_catalog")).Scan(&st.Previous)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return err
+	})
+	return st, err
+}
+
+func readableColumns(ctx context.Context, tx pgx.Tx) ([]ReadableColumn, error) {
+	sql, args, err := psql.Select("table_oid", "attnum", "table_schema", "table_name", "column_name", "data_type").
+		From("basalt_meta.pii_readable_columns()").
+		OrderBy(`table_schema COLLATE "C"`, `table_name COLLATE "C"`, "attnum").ToSql()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tx.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("read the readable columns: %w", err)
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (ReadableColumn, error) {
+		var c ReadableColumn
+		err := r.Scan(&c.TableOID, &c.Attnum, &c.Schema, &c.Table, &c.Column, &c.DataType)
+		return c, err
+	})
+}
+
+func readStored(ctx context.Context, tx pgx.Tx, into map[ColumnKey]PIIColumn) error {
+	sql, args, err := psql.Select("table_schema", "table_name", "column_name", "data_type", "class",
+		"coalesce(entity_type, '')", "coalesce(suggested_class, '')", "coalesce(suggested_entity_type, '')",
+		"coalesce(reason, '')", "needs_review", "coalesce(phone_region, '')").
+		From("basalt_meta.pii_columns").ToSql()
+	if err != nil {
+		return err
+	}
+	rows, err := tx.Query(ctx, sql, args...)
+	if err != nil {
+		return fmt.Errorf("read the stored classes: %w", err)
+	}
+	var c PIIColumn
+	_, err = pgx.ForEachRow(rows, []any{&c.Schema, &c.Table, &c.Column, &c.DataType, &c.Class, &c.EntityType,
+		&c.SuggestedClass, &c.SuggestedEntityType, &c.Reason, &c.NeedsReview, &c.PhoneRegion}, func() error {
+		into[ColumnKey{c.Schema, c.Table, c.Column}] = c
+		return nil
+	})
+	return err
 }
 
 func upsertPIIColumns(ctx context.Context, tx pgx.Tx, cols []PIIColumn, at time.Time) error {

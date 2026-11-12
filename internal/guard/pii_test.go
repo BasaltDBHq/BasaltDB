@@ -364,17 +364,29 @@ func TestWriteClassificationRunsAsGuard(t *testing.T) {
 		return nil
 	}))
 
-	// Rows of columns that are gone or no longer readable are deleted.
+	// Rows of columns that are gone are deleted. A confirmed class survives
+	// a revoked grant (owner decision OR-1): customers.ssn keeps SECRET
+	// although no agent can read it now.
 	p.Exec(t, `ALTER TABLE public.vault DROP COLUMN secret`)
 	p.Exec(t, `REVOKE SELECT ON public.customers FROM `+p.other.Role)
 	p.write(t, nil)
 	require.Zero(t, count(t, p.Admin, `SELECT count(1)::int FROM basalt_meta.pii_columns
-		WHERE (table_name, column_name) IN (('vault', 'secret'), ('customers', 'ssn'))`))
+		WHERE table_name = 'vault' AND column_name = 'secret'`))
+	require.Equal(t, 1, count(t, p.Admin, `SELECT count(1)::int FROM basalt_meta.pii_columns
+		WHERE table_name = 'customers' AND column_name = 'ssn' AND class = 'SECRET'`))
 	require.Equal(t, 1, count(t, p.Admin, `SELECT count(1)::int FROM basalt_meta.pii_columns
 		WHERE table_name = 'customers' AND column_name = 'email'`))
+	// Granted again, the column comes back with its class, not as NEW.
+	p.Exec(t, `GRANT SELECT ON public.customers TO `+p.other.Role)
+	other := p.other.Connect(t)
+	cols, err := guard.PIIUnclassified(ctx, other)
+	require.NoError(t, err)
+	for _, c := range cols {
+		require.NotEqual(t, "public.customers.ssn", c.Name())
+	}
 
 	// The table checks hold: an IDENTIFIER needs an entity type.
-	err := pgx.BeginFunc(ctx, p.Admin, func(tx pgx.Tx) error {
+	err = pgx.BeginFunc(ctx, p.Admin, func(tx pgx.Tx) error {
 		return guard.WriteClassification(ctx, tx, p.Names, guard.Classification{At: time.Now(), Columns: []guard.PIIColumn{
 			{Schema: "public", Table: "leads", Column: "name", DataType: "text", Class: guard.ClassIdentifier},
 		}})

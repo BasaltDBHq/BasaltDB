@@ -50,6 +50,7 @@ func commands() []command {
 		{"revert", "Revert a change, run or task with your passkey; people's later edits are kept", withIO(runRevert)},
 		{"passkey", "List, check or remove your passkeys (list | check | remove <id>)", withIO(runPasskey)},
 		{"status", "Show what is ready for an agent and what to fix, with the commands", withIO(runStatus)},
+		{"classify", "Suggest and confirm the PII class of every column the agents can read", withIO(runClassify)},
 		{"upgrade", "Add the guard migrations this build has and the database lacks", withIO(runUpgrade)},
 		{"uninstall", "Remove the guard, its ledger and its roles from Postgres", withIO(runUninstall)},
 		{"version", "Print the version", runVersion},

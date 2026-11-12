@@ -26,15 +26,20 @@ type ForeignKey struct {
 // ForeignKeys returns the outgoing foreign-key columns of schema.table, in
 // key column order.
 func ForeignKeys(ctx context.Context, db Querier, schema, table string) ([]ForeignKey, error) {
-	// Plain SQL: an information_schema catalog join, not table DML.
-	rows, err := db.Query(ctx, `SELECT kcu.column_name, ccu.table_schema, ccu.table_name, ccu.column_name
-		FROM information_schema.table_constraints tc
-		JOIN information_schema.key_column_usage kcu
-			ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
-		JOIN information_schema.constraint_column_usage ccu
-			ON ccu.constraint_name = tc.constraint_name AND ccu.table_schema = tc.table_schema
-		WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = $1 AND tc.table_name = $2
-		ORDER BY kcu.ordinal_position`, schema, table)
+	// Plain SQL: a pg_constraint join, not table DML. pg_constraint rather
+	// than information_schema, which lists only tables the role owns or
+	// holds a non-SELECT privilege on, so a read-only table showed no keys.
+	rows, err := db.Query(ctx, `SELECT a.attname::text, rn.nspname::text, rc.relname::text, ra.attname::text
+		FROM pg_catalog.pg_constraint k
+		JOIN pg_catalog.pg_class c ON c.oid = k.conrelid
+		JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+		JOIN pg_catalog.pg_class rc ON rc.oid = k.confrelid
+		JOIN pg_catalog.pg_namespace rn ON rn.oid = rc.relnamespace
+		CROSS JOIN LATERAL unnest(k.conkey, k.confkey) WITH ORDINALITY AS u(attnum, refattnum, ord)
+		JOIN pg_catalog.pg_attribute a ON a.attrelid = k.conrelid AND a.attnum = u.attnum
+		JOIN pg_catalog.pg_attribute ra ON ra.attrelid = k.confrelid AND ra.attnum = u.refattnum
+		WHERE k.contype = 'f' AND n.nspname = $1 AND c.relname = $2
+		ORDER BY k.conname, u.ord`, schema, table)
 	if err != nil {
 		return nil, err
 	}

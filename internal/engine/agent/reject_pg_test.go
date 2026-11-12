@@ -192,3 +192,28 @@ func TestRejectRouteOthersRevertsReadAsUnknown(t *testing.T) {
 	require.NoError(t, e.d.Admin.QueryRow(ctx, `SELECT rejected_at IS NOT NULL FROM basalt_meta.reverts WHERE revert_id = $1`, theirs.RevertID).Scan(&rejected))
 	require.False(t, rejected)
 }
+
+// When Postgres refuses the scope token the engine holds for the person's
+// link (the person's scope is gone: here the stored token no longer
+// matches), the engine drops what it held and answers LINK_RESET, as it does
+// when it sees the reset first; the link is revoked as by a reset, and
+// nothing is rejected.
+func TestRejectRouteAnswersLinkResetWhenTheHeldTokenIsRefused(t *testing.T) {
+	t.Parallel()
+	e := newRescopeEnv(t)
+	id, agentSecret := e.request(t)
+	newSecret := newLinkSecret(t)
+	require.Equal(t, http.StatusOK, e.p.post(scopePath(id), pageOrigin, agentSecret,
+		e.widenBody(t, e.person, id, e.nonce(t, id, agentSecret), e.every(), newSecret), nil))
+	e.d.Exec(t, `UPDATE basalt_meta.reverts SET scope_token_hash = sha256('another token'::bytea) WHERE revert_id = $1`, id)
+
+	var perr pageError
+	require.Equal(t, http.StatusNotFound, e.p.post(rejectPath(id), pageOrigin, newSecret, rejectBody(t, nil), &perr))
+	require.Equal(t, "NOT_FOUND", perr.Code)
+	require.Equal(t, "LINK_RESET", perr.Reason)
+	require.NotEmpty(t, perr.PersonMessage)
+	require.Empty(t, e.rejectVia(t), "nothing was rejected")
+	require.Equal(t, http.StatusNotFound, e.p.get(revertPath(id), newSecret, &perr))
+	require.Equal(t, "LINK_RESET", perr.Reason, "the page keeps saying the link was reset")
+	require.Equal(t, "PENDING", revertStatus(t, e.h, id.String()))
+}

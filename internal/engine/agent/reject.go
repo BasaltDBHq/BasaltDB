@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
@@ -60,24 +61,43 @@ func (s *Service) RejectRevert(ctx context.Context, id uuid.UUID, secret string,
 	}
 	out, err := s.Reverts.RejectRevert(ctx, id, note, st.token)
 	if err != nil {
-		return RejectResponse{}, s.rejectError(r, err)
+		return RejectResponse{}, s.rejectError(r, st.token != nil, err)
 	}
 	s.rescopes.drop(id)
 	s.revokeRejected(ctx, id)
 	return RejectResponse{RevertID: out.RevertID.String(), Status: out.Status, RejectedAt: timeText(out.RejectedAt)}, nil
 }
 
-// rejectNote is the person's note as Postgres takes it ("" for none): at
-// most guard.MaxRejectNote characters, not empty when given, no NUL.
+// rejectNote is the person's note as Postgres takes it ("" for none): 1 to
+// guard.MaxRejectNote characters of text. The agent reads it and may show
+// it to the person, so no control character other than a newline or a tab,
+// and no bidirectional control that could make it read otherwise.
 func rejectNote(note *string) (string, error) {
 	if note == nil {
 		return "", nil
 	}
 	n := utf8.RuneCountInString(*note)
-	if n == 0 || n > guard.MaxRejectNote || strings.ContainsRune(*note, 0) {
-		return "", &ArgumentError{Message: "note must be 1 to 500 characters of text"}
+	if n == 0 || n > guard.MaxRejectNote || strings.IndexFunc(*note, refusedInNote) >= 0 {
+		return "", &ArgumentError{Message: "note must be 1 to 500 characters of text, with no control characters other than newlines and tabs"}
 	}
 	return *note, nil
+}
+
+// refusedInNote reports a rune a reject note may not hold: a control
+// character (C0, DEL, C1) other than a newline or a tab, or a bidirectional
+// mark, embedding, override or isolate.
+func refusedInNote(r rune) bool {
+	switch {
+	case r == '\n' || r == '\t':
+		return false
+	case unicode.IsControl(r):
+		return true
+	case r == '\u061c' || r == '\u200e' || r == '\u200f':
+		return true
+	case r >= '\u202a' && r <= '\u202e':
+		return true
+	}
+	return r >= '\u2066' && r <= '\u2069'
 }
 
 // revokeRejected revokes a rejected revert's link. A failure leaves a link
@@ -94,15 +114,26 @@ func (s *Service) revokeRejected(ctx context.Context, id uuid.UUID) {
 	revoke()
 }
 
-// rejectError is the page's answer to a reject Postgres refused: a missing
-// or wrong scope token is one fixed answer, an expiry is REVERT_EXPIRED,
+// rejectError is the page's answer to a reject Postgres refused. A refused
+// token the engine held means the person's scope is gone (the agent role
+// reset the revert directly): LINK_RESET, as heldState answers. A refused
+// reject without a token is one fixed answer. A revert Postgres no longer
+// finds for the role reads as an unknown id, an expiry is REVERT_EXPIRED,
 // and a revert signed or rejected meanwhile is REVERT_INVALID.
-func (s *Service) rejectError(r ledger.Revert, err error) error {
+func (s *Service) rejectError(r ledger.Revert, heldToken bool, err error) error {
 	code, _ := guard.CodeOf(err)
 	var pe *pgconn.PgError
+	detail := ""
+	if errors.As(err, &pe) {
+		detail = pe.Detail
+	}
 	switch {
-	case code == guard.CodeRevertInvalid && errors.As(err, &pe) && pe.Detail == guard.RevertWidenRefused:
+	case code == guard.CodeRevertInvalid && detail == guard.RevertWidenRefused && heldToken:
+		return s.personScopeGone(r)
+	case code == guard.CodeRevertInvalid && detail == guard.RevertWidenRefused:
 		return rejectRefused()
+	case code == guard.CodeRevertInvalid && detail == revertNotFoundDetail:
+		return ErrNotThisAgent
 	case code == guard.CodeRevertExpired:
 		return s.revertExpired(r)
 	case code == guard.CodeRevertInvalid:
@@ -112,6 +143,10 @@ func (s *Service) rejectError(r ledger.Revert, err error) error {
 	}
 	return err
 }
+
+// revertNotFoundDetail is the guard's detail for a revert the calling role
+// did not prepare, or none (_revert_lock_pending).
+const revertNotFoundDetail = "no such revert"
 
 // rejectRefused is a reject Postgres refused for its scope token: after a
 // widen only the page holding the rotated link can reject, and only while

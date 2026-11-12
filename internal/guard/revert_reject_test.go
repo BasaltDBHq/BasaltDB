@@ -169,3 +169,30 @@ func TestRejectRevertRefusals(t *testing.T) {
 	require.False(t, scalarOf[bool](t, e.d.Admin,
 		`SELECT has_function_privilege('public', 'basalt_meta.reject_revert(uuid, text, bytea)', 'EXECUTE')`), "not executable by PUBLIC")
 }
+
+// A widen does not make the reject the person's alone: the agent role can
+// reset the revert (no token, owner Q8), which drops the ceiling, and then
+// reject it with no token. The ledger shows exactly that: REVERT_RESET,
+// then REVERT_REJECTED via LINK_OR_AGENT.
+func TestRejectRevertAfterResetNeedsNoToken(t *testing.T) {
+	t.Parallel()
+	e := newWidenEnv(t)
+	ctx := context.Background()
+	id := e.prep.RevertID
+	e.widen(t, e.every())
+	_, err := guard.RejectRevert(ctx, e.bot.Conn, id, "", nil)
+	requireWidenRefused(t, err)
+
+	_, err = guard.ResetRevert(ctx, e.bot.Conn, id)
+	require.NoError(t, err)
+	_, err = guard.RejectRevert(ctx, e.bot.Conn, id, "", nil)
+	require.NoError(t, err)
+
+	kinds := scalarOf[string](t, e.d.Admin, `SELECT string_agg(kind, ',' ORDER BY seq) FROM basalt_meta.ledger
+		WHERE kind IN ('REVERT_RESCOPED', 'REVERT_RESET', 'REVERT_REJECTED')`)
+	require.Equal(t, "REVERT_RESCOPED,REVERT_RESET,REVERT_REJECTED", kinds)
+	details := ledgerDetails(t, e.d, "REVERT_REJECTED")
+	require.Len(t, details, 1)
+	require.Equal(t, guard.RejectViaLinkOrAgent, details[0]["via"])
+	require.Equal(t, "REJECTED", agentRevertRow(t, e, id).Status)
+}

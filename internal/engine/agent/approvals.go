@@ -155,7 +155,7 @@ func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding stri
 		return heldNotice{}, err
 	}
 	command := s.Commands.Approve(id)
-	short, err := s.shortLink(links.Approval, id, expires, issue)
+	short, err := s.shortLink(ctx, links.Approval, id, expires, issue)
 	if err != nil {
 		return heldNotice{}, err
 	}
@@ -195,10 +195,24 @@ func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding stri
 const personTime = "2006-01-02 15:04 UTC"
 
 // shortLink issues a new short link page(origin, id)#s=<secret> for an
-// item that expires at expires, revoking its earlier one, when this engine
-// serves the pages and issue is set; else "".
-func (s *Service) shortLink(page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time, issue bool) (string, error) {
-	if s.PagesOrigin == "" || !issue {
+// item that expires at expires, revoking its earlier one, when issue is
+// set: the portal's short link when the Vault registered it (relayLink),
+// else one to the pages this engine serves; else "", and the caller hands
+// over the long link.
+func (s *Service) shortLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time, issue bool) (string, error) {
+	if !issue {
+		return "", nil
+	}
+	if link := s.relayLink(ctx, page, id, expires); link != "" {
+		return link, nil
+	}
+	return s.localLink(page, id, expires)
+}
+
+// localLink issues a new short link to the pages this engine serves,
+// revoking the item's earlier link; "" when it serves none.
+func (s *Service) localLink(page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time) (string, error) {
+	if s.PagesOrigin == "" {
 		return "", nil
 	}
 	secret, err := s.Links.Issue(id, expires)

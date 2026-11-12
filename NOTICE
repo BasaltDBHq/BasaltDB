@@ -2,3 +2,7 @@ BasaltDB
 Copyright (c) 2026 Iman Tumorang
 
 https://github.com/BasaltDBHq/BasaltDB
+
+This product includes a common-word list derived from the 12dicts word lists
+by Alan Beale and the Automatically Generated Inflection Database (AGID) by
+Kevin Atkinson. See internal/pii/words/common-words-NOTICE.txt.

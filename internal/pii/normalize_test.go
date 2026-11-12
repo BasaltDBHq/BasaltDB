@@ -54,7 +54,7 @@ func TestNormalize(t *testing.T) {
 
 func TestNormalizeIsIdempotent(t *testing.T) {
 	inputs := []string{"Jose\u0301 Pe\u0301rez", "İstanbul", "Straße", "+44 7700 900123", "A@B.example", "ΟΔΥΣΣΕΥΣ"}
-	for _, typ := range pii.EntityTypes() {
+	for _, typ := range pii.TokenTypes() {
 		for _, in := range inputs {
 			once := pii.Normalize(typ, in, "GB")
 			require.Equal(t, once, pii.Normalize(typ, once, "GB"), "%s %q", typ, in)

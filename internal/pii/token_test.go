@@ -65,7 +65,7 @@ func TestTokensAreDeterministicAndNormalized(t *testing.T) {
 
 func TestTokensOfNFCAndNFDAreEqual(t *testing.T) {
 	k := newKeys(t, testMaster)
-	for _, typ := range pii.EntityTypes() {
+	for _, typ := range pii.TokenTypes() {
 		nfc := mustToken(t, k, typ, "José Pérez", "")
 		nfd := mustToken(t, k, typ, "Jose\u0301 Pe\u0301rez", "")
 		require.Equal(t, nfc, nfd, typ)
@@ -83,7 +83,7 @@ func TestLocalFormatPhoneGetsTheSameTokenAsE164(t *testing.T) {
 
 func TestEveryTokenIDHasTwelveBase32Characters(t *testing.T) {
 	k := newKeys(t, testMaster)
-	for _, typ := range pii.EntityTypes() {
+	for _, typ := range pii.TokenTypes() {
 		tok := mustToken(t, k, typ, "value", "")
 		require.Regexp(t, idRe+`$`, tok.ID, typ)
 	}

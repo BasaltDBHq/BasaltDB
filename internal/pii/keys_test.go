@@ -38,11 +38,11 @@ func TestNewKeysDoesNotKeepTheCallersSlice(t *testing.T) {
 // type + ":v1"), t = HMAC-SHA256(k_type, normalize(value)), id = base32(t)[:12].
 func TestTokenKeyDerivationMatchesTheDesign(t *testing.T) {
 	k := newKeys(t, testMaster)
-	for _, typ := range pii.EntityTypes() {
+	for _, typ := range pii.TokenTypes() {
 		kt, err := hkdf.Key(sha256.New, testMaster, nil, fmt.Sprintf("basalt-tok:%s:v1", typ), sha256.Size)
 		require.NoError(t, err)
 		mac := hmac.New(sha256.New, kt)
-		mac.Write([]byte("x"))
+		mac.Write([]byte(pii.Normalize(typ, "x", "")))
 		want := base32.StdEncoding.EncodeToString(mac.Sum(nil))[:12]
 		tok, err := k.MakeToken(typ, "x", "")
 		require.NoError(t, err)

@@ -88,6 +88,9 @@ type Deps struct {
 	// Links holds the short links' secrets, shared with the pages; a store
 	// of its own when nil.
 	Links *links.Secrets
+	// Relay registers portal short links with the Vault; optional, none
+	// when nil (the Vault is off).
+	Relay LinkRelay
 	// LinkBudget is the longest long link, in characters of the whole URL,
 	// handed to an agent as the way to open a page (CONTRACT.md, The link
 	// budget); links.DefaultBudget when zero.
@@ -147,6 +150,9 @@ func NewService(d Deps) *Service {
 	}
 	if d.Build == "" {
 		d.Build = buildinfo.Version
+	}
+	if d.Relay == nil {
+		d.Relay = noRelay{}
 	}
 	if d.PagesBase == "" {
 		d.PagesBase = links.DefaultLocal

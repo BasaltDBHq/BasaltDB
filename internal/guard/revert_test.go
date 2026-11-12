@@ -20,7 +20,8 @@ import (
 func previewRevert(t *testing.T, q guard.Querier, kind revert.Scope, id uuid.UUID) []revert.Line {
 	t.Helper()
 	texts, err := guard.PreviewRevert(context.Background(), q, guard.RevertScope{Kind: kind, ID: id})
-	require.NoError(t, err)
+	detail, hint, _ := guard.ScopeRefusal(err)
+	require.NoError(t, err, "%s: %s", detail, hint)
 	require.True(t, sort.StringsAreSorted(texts), "lines must be in byte order")
 	out := make([]revert.Line, 0, len(texts))
 	for _, s := range texts {
@@ -61,6 +62,15 @@ func field(t *testing.T, raw json.RawMessage, name string) any {
 	var m map[string]any
 	require.NoError(t, json.Unmarshal(raw, &m))
 	return m[name]
+}
+
+// requireScopeRefused checks err is SCOPE_REFUSED (BS011) with detail.
+func requireScopeRefused(t *testing.T, err error, detail string) {
+	t.Helper()
+	requireCode(t, err, guard.CodeScopeRefused)
+	got, _, ok := guard.ScopeRefusal(err)
+	require.True(t, ok)
+	require.Equal(t, detail, got, err.Error())
 }
 
 func conflictOf(l revert.Line) string {
@@ -111,7 +121,7 @@ func TestRevertLinesUpdate(t *testing.T) {
 
 	got, err := guard.PreviewRevert(ctx, a.Conn, guard.RevertScope{Kind: revert.ScopeRun, ID: uuid.Must(uuid.NewV7())})
 	require.Empty(t, got)
-	requireCode(t, err, guard.CodeNothingToRevert)
+	requireScopeRefused(t, err, guard.ScopeNotOwnRun)
 	_, err = guard.PreviewRevert(ctx, d.Admin, guard.RevertScope{Kind: revert.ScopeRun, ID: in.RunID})
 	requireCode(t, err, guard.CodeNotAllowed)
 }
@@ -306,12 +316,19 @@ func TestRevertTaskScopeAcrossAgents(t *testing.T) {
 	d.Exec(t, `UPDATE public.leads SET name = 'person between' WHERE id = 61`)
 	require.NoError(t, guardtest.Guarded(ctx, b.Conn, inB, `UPDATE public.leads SET status = 'b' WHERE id = 61`))
 
-	all := previewRevert(t, a.Conn, revert.ScopeTask, task)
-	require.Len(t, all, 2)
-	both := lineFor(t, all, "public.leads", `{"id":60}`)
-	require.Nil(t, both.Conflict)
-	require.Equal(t, "open", field(t, both.Set, "status"))
-	require.Len(t, both.ChangeIDs, 2)
-	require.Equal(t, changeIDOf(t, a, inA.RunID), both.ChangeIDs[0])
-	require.Equal(t, revert.ConflictChangedAfter, conflictOf(lineFor(t, all, "public.leads", `{"id":61}`)))
+	// A task proposal holds only the caller's own lines (RS-1): lead 60 is
+	// skipped as changed after, since the other agent wrote it later, and
+	// lead 61 for the person's write between.
+	own := previewRevert(t, a.Conn, revert.ScopeTask, task)
+	require.Len(t, own, 2)
+	for _, l := range own {
+		require.Equal(t, revert.ConflictChangedAfter, conflictOf(l))
+		require.Len(t, l.ChangeIDs, 1, "only bot's own change")
+	}
+	theirs := previewRevert(t, b.Conn, revert.ScopeTask, task)
+	require.Len(t, theirs, 2)
+	lead60 := lineFor(t, theirs, "public.leads", `{"id":60}`)
+	require.Nil(t, lead60.Conflict)
+	require.Equal(t, "a", field(t, lead60.Set, "status"), "the other agent's revert goes back to what bot left")
+	require.Len(t, lead60.ChangeIDs, 1)
 }

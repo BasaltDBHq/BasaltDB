@@ -47,7 +47,7 @@ func revertLines() []string {
 }
 
 func bindingText(lines []string) string {
-	return fmt.Sprintf(`{"kind": "REVERT", "rows": 3, "scope": "RUN", "agents": ["basalt_agent_bot"], "intent": "Undo the bad merge", "scopeId": %q, "skipped": 1, "database": "app", "revertId": %q, "rowsHash": %q, "expiresAt": "2026-11-11T07:02:11.123456Z", "requestedBy": "basalt_agent_bot"}`,
+	return fmt.Sprintf(`{"kind": "REVERT", "rows": 3, "intent": "Undo the bad merge", "select": {"runs": null, "scope": "RUN", "agents": ["basalt_agent_bot"], "tables": null, "scopeId": %q}, "skipped": 1, "widened": false, "database": "app", "revertId": %q, "rowsHash": %q, "expiresAt": "2026-11-11T07:02:11.123456Z", "requestedBy": "basalt_agent_bot"}`,
 		runID.String(), revertID.String(), revert.RowsHash(lines))
 }
 
@@ -74,7 +74,7 @@ func planLines() []string {
 }
 
 func batchedBinding(all, sample []string) string {
-	return fmt.Sprintf(`{"kind": "REVERT", "rows": %d, "scope": "RUN", "agents": ["basalt_agent_bot"], "intent": "Undo the bulk load", "batched": true, "scopeId": %q, "skipped": %d, "database": "app", "revertId": %q, "rowsHash": %q, "expiresAt": "2026-11-11T07:02:11.123456Z", "sampleHash": %q, "requestedBy": "basalt_agent_bot"}`,
+	return fmt.Sprintf(`{"kind": "REVERT", "rows": %d, "intent": "Undo the bulk load", "select": {"runs": null, "scope": "RUN", "agents": ["basalt_agent_bot"], "tables": null, "scopeId": %q}, "batched": true, "skipped": %d, "widened": false, "database": "app", "revertId": %q, "rowsHash": %q, "expiresAt": "2026-11-11T07:02:11.123456Z", "sampleHash": %q, "requestedBy": "basalt_agent_bot"}`,
 		planRestores, runID.String(), planSkips, revertID.String(), revert.RowsHash(all), revert.RowsHash(sample))
 }
 
@@ -141,7 +141,7 @@ const (
 
 // mixedBinding is the binding of a batched plan of mixedLines(skips, rows).
 func mixedBinding(all, sample []string, skips, rows int) string {
-	return fmt.Sprintf(`{"kind": "REVERT", "rows": %d, "scope": "RUN", "agents": ["basalt_agent_bot"], "intent": "Undo the bulk load", "batched": true, "scopeId": %q, "skipped": %d, "database": "app", "revertId": %q, "rowsHash": %q, "expiresAt": "2026-11-11T07:02:11.123456Z", "sampleHash": %q, "requestedBy": "basalt_agent_bot"}`,
+	return fmt.Sprintf(`{"kind": "REVERT", "rows": %d, "intent": "Undo the bulk load", "select": {"runs": null, "scope": "RUN", "agents": ["basalt_agent_bot"], "tables": null, "scopeId": %q}, "batched": true, "skipped": %d, "widened": false, "database": "app", "revertId": %q, "rowsHash": %q, "expiresAt": "2026-11-11T07:02:11.123456Z", "sampleHash": %q, "requestedBy": "basalt_agent_bot"}`,
 		rows, runID.String(), skips, revertID.String(), revert.RowsHash(all), revert.RowsHash(sample))
 }
 
@@ -273,9 +273,11 @@ func TestRequestRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, f.Request.Lines, req.Lines)
 	require.Equal(t, revertID, b.RevertID)
-	require.Equal(t, revert.ScopeRun, b.Scope)
-	require.Equal(t, runID, b.ScopeID)
-	require.Equal(t, []string{"basalt_agent_bot"}, b.Agents)
+	require.Equal(t, revert.ScopeRun, b.Select.Scope)
+	require.Equal(t, runID, b.Select.ScopeID)
+	require.Equal(t, []string{"basalt_agent_bot"}, b.Select.Agents)
+	require.False(t, b.Widened)
+	require.Nil(t, b.Proposed)
 	require.Equal(t, 3, b.Rows)
 	require.Equal(t, 1, b.Skipped)
 	require.Equal(t, "2026-11-11T07:02:11.123456Z", b.ExpiresAt.UTC().Format("2006-01-02T15:04:05.000000Z"))
@@ -327,20 +329,50 @@ func TestBindingLimits(t *testing.T) {
 	t.Parallel()
 	binding := bindingText(revertLines())
 	cases := map[string]struct{ binding, detail string }{
-		"over the line cap":    {strings.Replace(binding, `"skipped": 1`, `"skipped": 998`, 1), "out of 1..1000"},
-		"nothing to restore":   {strings.Replace(binding, `"rows": 3`, `"rows": 0`, 1), "rows 0"},
-		"negative skipped":     {strings.Replace(binding, `"skipped": 1`, `"skipped": -1`, 1), "skipped -1"},
-		"unknown scope":        {strings.Replace(binding, `"RUN"`, `"DATABASE"`, 1), "scope"},
-		"no agents":            {strings.Replace(binding, `["basalt_agent_bot"]`, `[]`, 1), "agents"},
-		"rowsHash not hex":     {strings.Replace(binding, revert.RowsHash(revertLines()), "xyz", 1), "rowsHash"},
-		"unknown field":        {strings.Replace(binding, `{"kind"`, `{"x": 1, "kind"`, 1), "unknown field"},
-		"an approval's fields": {`{"kind": "REVERT", "approvalId": "` + revertID.String() + `"}`, "unknown field"},
+		"over the line cap":        {strings.Replace(binding, `"skipped": 1`, `"skipped": 998`, 1), "out of 1..1000"},
+		"nothing to restore":       {strings.Replace(binding, `"rows": 3`, `"rows": 0`, 1), "rows 0"},
+		"negative skipped":         {strings.Replace(binding, `"skipped": 1`, `"skipped": -1`, 1), "skipped -1"},
+		"unknown scope":            {strings.Replace(binding, `"RUN"`, `"DATABASE"`, 1), "scope"},
+		"no agents":                {strings.Replace(binding, `["basalt_agent_bot"]`, `[]`, 1), "agents"},
+		"rowsHash not hex":         {strings.Replace(binding, revert.RowsHash(revertLines()), "xyz", 1), "rowsHash"},
+		"unknown field":            {strings.Replace(binding, `{"kind"`, `{"x": 1, "kind"`, 1), "unknown field"},
+		"an approval's fields":     {`{"kind": "REVERT", "approvalId": "` + revertID.String() + `"}`, "unknown field"},
+		"the old top-level scope":  {strings.Replace(binding, `"widened": false`, `"widened": false, "scope": "RUN"`, 1), "unknown field"},
+		"the reserved store key":   {strings.Replace(binding, `"tables": null`, `"tables": null, "store": "x"`, 1), "unknown field"},
+		"runs on a run scope":      {strings.Replace(binding, `"runs": null`, `"runs": ["`+runID.String()+`"]`, 1), "lists runs"},
+		"widened not set":          {strings.Replace(binding, `"agents": ["basalt_agent_bot"]`, `"agents": ["basalt_agent_bot", "basalt_agent_sync"]`, 1), "widened false"},
+		"every agent, not widened": {strings.Replace(binding, `"agents": ["basalt_agent_bot"]`, `"agents": null`, 1), "widened false"},
+		"widened without agentRows": {strings.Replace(strings.Replace(binding, `"agents": ["basalt_agent_bot"]`, `"agents": null`, 1),
+			`"widened": false`, `"widened": true`, 1), "agentRows"},
+		"agentRows not widened": {strings.Replace(binding, `"widened": false`, `"widened": false, "agentRows": {"basalt_agent_bot": 4}`, 1), "agentRows"},
+		"empty run proposal":    {strings.Replace(strings.Replace(binding, `"rows": 3`, `"rows": 0`, 1), `"skipped": 1`, `"skipped": 0`, 1), "rows 0"},
 	}
 	for name, tc := range cases {
 		_, err := revert.ParseBinding(tc.binding)
 		require.ErrorIs(t, err, revert.ErrInvalid, name)
 		require.ErrorContains(t, err, tc.detail, name)
 	}
+}
+
+// A widened select and an empty task proposal parse; the binding of a
+// rescoped revert carries what the agent proposed.
+func TestBindingScopes(t *testing.T) {
+	t.Parallel()
+	binding := bindingText(revertLines())
+	widened := strings.Replace(strings.Replace(binding, `"agents": ["basalt_agent_bot"]`, `"agents": null`, 1),
+		`"widened": false`, `"widened": true, "proposed": {"runs": null, "scope": "RUN", "agents": ["basalt_agent_bot"], "tables": ["public.leads"], "scopeId": "`+runID.String()+`"}, "agentRows": {"basalt_agent_bot": 3, "basalt_agent_sync": 1}`, 1)
+	b, err := revert.ParseBinding(widened)
+	require.NoError(t, err)
+	require.True(t, b.Widened)
+	require.Nil(t, b.Select.Agents)
+	require.Equal(t, []string{"public.leads"}, b.Proposed.Tables)
+	require.Equal(t, map[string]int{"basalt_agent_bot": 3, "basalt_agent_sync": 1}, b.AgentRows)
+
+	task := strings.NewReplacer(`"scope": "RUN"`, `"scope": "TASK"`, `"rows": 3`, `"rows": 0`, `"skipped": 1`, `"skipped": 0`).Replace(binding)
+	b, err = revert.ParseBinding(task)
+	require.NoError(t, err)
+	require.True(t, b.Empty())
+	require.Zero(t, b.Lines())
 }
 
 func TestSampleSkipsFirst(t *testing.T) {

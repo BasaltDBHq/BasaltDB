@@ -206,7 +206,9 @@ func TestDemoStepFourRevertSkipsThePersonsLead(t *testing.T) {
 	require.Equal(t, before, tableDigest(t, e.d, "public.leads"), "everything else is as before the run")
 }
 
-// A task across two agents reverts as one: each agent's rows come back.
+// A task proposal reverts only the requesting agent's own lines (RS-1):
+// the helper's rows go back to what bot left them as, and bot's row the
+// helper never touched stays as bot wrote it.
 func TestRevertTaskAcrossAgentsApplies(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
@@ -223,10 +225,11 @@ func TestRevertTaskAcrossAgentsApplies(t *testing.T) {
 	require.NoError(t, guardtest.Guarded(ctx, b.Conn, inB, `UPDATE public.leads SET status = 'b' WHERE id IN (21, 22)`))
 
 	out := revertScope(t, b, p, revert.ScopeTask, task)
-	require.Equal(t, 3, out.Rows)
-	for _, id := range []int{20, 21, 22} {
-		require.Equal(t, "open", leadStatus(t, d, id))
-	}
-	require.Equal(t, "REVERT", scalarOf[string](t, a.Conn, `SELECT op FROM basalt_meta.agent_changes WHERE change_id = $1`, out.ChangeID),
-		"the other agent sees the revert of its changes")
+	require.Equal(t, 2, out.Rows)
+	require.Equal(t, "a", leadStatus(t, d, 20), "bot's own row is not the helper's to revert")
+	require.Equal(t, "a", leadStatus(t, d, 21), "back to what bot left")
+	require.Equal(t, "open", leadStatus(t, d, 22))
+	require.Zero(t, count(t, a.Conn, `SELECT count(change_id)::int FROM basalt_meta.agent_changes WHERE change_id = $1`, out.ChangeID),
+		"bot's changes were not covered, so it does not see the helper's revert")
+	require.Equal(t, "APPLIED", scalarOf[string](t, a.Conn, `SELECT status FROM basalt_meta.agent_changes WHERE run_id = $1`, inA.RunID))
 }

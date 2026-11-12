@@ -621,8 +621,8 @@ func TestServedCatalogLeavesPlannedOut(t *testing.T) {
 	for _, r := range served.Results {
 		require.False(t, r.Planned, r.Tool+"/"+r.Case)
 	}
-	task, ok := served.ErrorEntry("NOT_FOUND", "TASK", "request_revert")
-	require.False(t, ok, "NOT_FOUND TASK is not served yet: %+v", task)
+	reset, ok := served.ErrorEntry("NOT_FOUND", "LINK_RESET", "")
+	require.False(t, ok, "NOT_FOUND LINK_RESET is not served yet: %+v", reset)
 }
 
 // schemaRefs returns every $ref value in a schema, at any depth.

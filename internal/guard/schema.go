@@ -44,6 +44,7 @@ const (
 	versionRevertSample             // M3 follow-up: a large plan's sample shows both restored and skipped rows
 	versionSetupRole                // M4 follow-up: record_setup reads the clock and checks the agent role strictly
 	versionPIIOids                  // M5.1 follow-up: pii_fingerprint names columns by oid and quotes names
+	versionRevertScope              // RS-1 to RS-4: a revert's scope descriptor, own work only for agents
 )
 
 // migrations lists every version in order. M2 appends versions.
@@ -67,6 +68,7 @@ var migrations = []migration{
 	{version: versionRevertSample, sql: v17RevertSample},
 	{version: versionSetupRole, sql: v18RecordSetup},
 	{version: versionPIIOids, sql: v19PIIFingerprint},
+	{version: versionRevertScope, sql: v20Descriptor + v20Tables + v20Chains + v20Prepare + v20Apply},
 }
 
 // LatestVersion is the basalt_meta version this build installs.

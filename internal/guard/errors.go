@@ -26,12 +26,26 @@ const (
 	CodeNothingToRevert     Code = "NOTHING_TO_REVERT"     // BS009
 	CodeRevertCascade       Code = "REVERT_CASCADE"        // BS009, caught inside a revert
 	CodeSetupRefused        Code = "SETUP_REFUSED"         // BS010, to the admin only
+	CodeScopeRefused        Code = "SCOPE_REFUSED"         // BS011
+)
+
+// Details of SCOPE_REFUSED (BS011): why a revert scope descriptor was
+// refused (CONTRACT.md, Guard errors).
+const (
+	ScopeShape         = "SHAPE"
+	ScopeStoreReserved = "STORE_RESERVED"
+	ScopeFilterCap     = "FILTER_CAP"
+	ScopeNotOwnChange  = "NOT_OWN_CHANGE"
+	ScopeNotOwnRun     = "NOT_OWN_RUN"
+	ScopeNotOwnTask    = "NOT_OWN_TASK"
+	ScopeFilter        = "FILTER"
 )
 
 const (
 	sqlstateApproval     = "BS005"
 	sqlstateRevert       = "BS009"
 	sqlstateSetupRefused = "BS010"
+	sqlstateScopeRefused = "BS011"
 )
 
 // byMessage lists the SQLSTATEs that carry several codes, told apart by
@@ -58,6 +72,18 @@ var sqlstateCodes = map[string]Code{
 	"BS008":              CodeLedgerInputInvalid,
 	sqlstateRevert:       CodeNothingToRevert,
 	sqlstateSetupRefused: CodeSetupRefused,
+	sqlstateScopeRefused: CodeScopeRefused,
+}
+
+// ScopeRefusal returns the detail (ScopeShape, ScopeNotOwnRun, ...) and the
+// guard's explanation of a SCOPE_REFUSED error, and false for any other
+// error.
+func ScopeRefusal(err error) (detail, hint string, ok bool) {
+	var pg *pgconn.PgError
+	if !errors.As(err, &pg) || pg.Code != sqlstateScopeRefused {
+		return "", "", false
+	}
+	return pg.Detail, pg.Hint, true
 }
 
 // CodeOf returns the guard-level code (the MESSAGE the guard raised) of

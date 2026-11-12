@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
@@ -38,6 +39,7 @@ type pendingDTO struct {
 	ApproveCommand  string          `json:"approveCommand"`
 	Headline        string          `json:"headline"`
 	PersonMessage   string          `json:"personMessage"`
+	Links           []mcp.Link      `json:"links,omitempty"`
 }
 
 func pendingFromDomain(p PendingItem) pendingDTO {
@@ -45,7 +47,7 @@ func pendingFromDomain(p PendingItem) pendingDTO {
 		ApprovalID: p.ID.String(), RunID: p.RunID.String(), Intent: p.Intent, Statement: p.Statement,
 		Params: p.Params, AssignedColumns: p.Assigned, Rows: p.Rows, Status: p.Status,
 		CreatedAt: timeText(p.CreatedAt), ExpiresAt: timeText(p.ExpiresAt), ApprovalURL: p.Notice.ApprovalURL, ApproveCommand: p.Notice.ApproveCommand,
-		Headline: p.Notice.Headline, PersonMessage: p.Notice.PersonMessage,
+		Headline: p.Notice.Headline, PersonMessage: p.Notice.PersonMessage, Links: p.Notice.Links,
 	}
 	if p.TaskID.Valid {
 		d.TaskID = p.TaskID.UUID.String()

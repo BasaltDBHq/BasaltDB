@@ -42,6 +42,8 @@ type cliIO struct {
 	// interactive is true when a person answers at a terminal: init asks
 	// its setup questions only then.
 	interactive bool
+	// tty overrides the terminal check of printLink; tests set it.
+	tty func(io.Writer) bool
 	// goos is the platform whose paths and service manager init uses.
 	goos string
 	// host runs what init does outside Postgres (sudo, the service probe,

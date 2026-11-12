@@ -1,0 +1,14 @@
+//go:build !unix
+
+package service
+
+import (
+	"errors"
+	"os"
+)
+
+var errUnsupported = errors.New("the engine service installs on linux and darwin only")
+
+func (OSSystem) WriteFile(string, []byte, os.FileMode, string) error { return errUnsupported }
+
+func (OSSystem) Mkdir(string, os.FileMode, string) error { return errUnsupported }

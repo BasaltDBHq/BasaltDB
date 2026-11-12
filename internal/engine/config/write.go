@@ -40,7 +40,7 @@ func UpsertAgent(path string, s Settings, a Agent) error {
 // Upserted is the content UpsertAgent writes, without writing it: the
 // service install writes it itself, owned by the engine's OS user.
 func Upserted(path string, s Settings, a Agent) ([]byte, error) {
-	c, err := Load(path)
+	c, err := LoadNoFollow(path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		c = Config{SocketDir: s.SocketDir, StateDir: s.StateDir}

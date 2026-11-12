@@ -61,8 +61,10 @@ func readCredentialFile(path string, owner func(uid uint32) (ok bool, want strin
 	if err != nil {
 		return "", nil, err
 	}
-	if !fi.Mode().IsRegular() {
-		return "", nil, errors.New("not a regular file")
+	// A regular file with one link: a hardlink to a root-only file the engine
+	// user planted would otherwise be copied out as the credential.
+	if err := config.CheckPlainFile(fi); err != nil {
+		return "", nil, err
 	}
 	if fi.Mode().Perm()&credentialPermMask != 0 {
 		return "", nil, fmt.Errorf("mode %o is more open than 0600", fi.Mode().Perm())

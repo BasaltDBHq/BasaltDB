@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
+	"io"
 	"strings"
 	"testing"
 
@@ -79,8 +81,10 @@ func TestPasskeyRemove(t *testing.T) {
 	credFile, laptop, phone := twoPasskeys(t, d)
 	admin := map[string]string{envAdminURL: d.URL}
 
-	// A prefix too short, and a declined confirmation, remove nothing.
-	r := cli(t, admin, "", "passkey", "remove", id(laptop)[:4])
+	// A prefix too short, and a declined confirmation, remove nothing. The
+	// "--" keeps a prefix that starts with "-" (base64url has one) from
+	// being read as a flag.
+	r := cli(t, admin, "", "passkey", "remove", "--", id(laptop)[:4])
 	require.Equal(t, exitError, r.code)
 	r = cli(t, admin, "n\n", "passkey", "remove", id(laptop)[:10])
 	require.Equal(t, exitError, r.code)
@@ -117,6 +121,58 @@ func TestPasskeyRemove(t *testing.T) {
 	r = cli(t, nil, "", "log", "--credential-file", credFile)
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Contains(t, r.stderr, "warning: no active passkey")
+}
+
+// A credential id can start with "-"; remove must read it as the id, not a
+// flag, wherever it stands among the flags.
+func TestPasskeyRemoveIDStartingWithDash(t *testing.T) {
+	t.Parallel()
+	fs := flag.NewFlagSet("t", flag.ContinueOnError)
+	fs.Bool("yes", false, "")
+	fs.SetOutput(io.Discard)
+	for _, args := range [][]string{{"-abcdefghijk"}, {"--yes", "-abcdefghijk"}, {"-abcdefghijk", "--yes"}} {
+		require.NoError(t, fs.Parse(idAfterFlags(fs, args)), args)
+		require.Equal(t, []string{"-abcdefghijk"}, fs.Args(), args)
+	}
+	// The boundary: minIDPrefix characters, the dash included, is an id.
+	require.True(t, looksLikeID(fs, "-"+strings.Repeat("a", minIDPrefix-1)))
+	require.False(t, looksLikeID(fs, "-"+strings.Repeat("a", minIDPrefix-2)))
+	// A real flag and a too-short or malformed token stay flags.
+	require.False(t, looksLikeID(fs, "-yes"))
+	require.False(t, looksLikeID(fs, "-abc"))
+	require.False(t, looksLikeID(fs, "-abc=defghijk"))
+	require.False(t, looksLikeID(fs, "--abcdefghijk"))
+}
+
+// dashPasskey is a passkey whose credential id text starts with "-".
+func dashPasskey(t *testing.T) *passkeytest.Authenticator {
+	t.Helper()
+	const attempts = 2000 // one id in 64 qualifies; failing all is impossible in practice
+	for range attempts {
+		a, err := passkeytest.New(passkey.Production)
+		require.NoError(t, err)
+		if strings.HasPrefix(id(a), "-") {
+			return a
+		}
+	}
+	t.Fatal("no passkey id starting with a dash")
+	return nil
+}
+
+func TestPasskeyRemoveDashID(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	laptop := dashPasskey(t)
+	phone, err := passkeytest.New(passkey.Production)
+	require.NoError(t, err)
+	initWithPasskey(t, d, laptop)
+	require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, phone.Credential(), "phone"))
+	admin := map[string]string{envAdminURL: d.URL}
+
+	// The shortest accepted prefix (dash included), as typed, with a flag after it.
+	r := cli(t, admin, "", "passkey", "remove", id(laptop)[:minIDPrefix], "--yes", "--pages-url", links.DefaultLocal)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Contains(t, r.stderr, "revoked; it can no longer approve or revert. 1 active passkeys remain")
 }
 
 func TestPasskeyCheck(t *testing.T) {

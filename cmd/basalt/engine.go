@@ -91,7 +91,7 @@ func runService(ctx context.Context, args []string, io stdio) int {
 	var a agentInstall
 	fs.StringVar(&a.name, "agent", "", "install: also place this agent (basalt init runs this under sudo)")
 	fs.StringVar(&a.osUser, "os-user", "", "install --agent: the agent's OS user")
-	fs.StringVar(&a.pagesURL, "pages-url", "", "install --agent: the pages base URL the agent's passkey belongs to")
+	pagesURLFlag(fs, &a.pagesURL, "install --agent: the pages base URL the agent's passkey belongs to")
 	fs.Func(flagInitArg, "install --agent: a flag basalt init saves for the agent (repeatable)", func(v string) error {
 		a.initArgs = append(a.initArgs, v)
 		return nil

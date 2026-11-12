@@ -635,7 +635,7 @@ export function parseRegistrationRequest(fragment) {
 }
 
 // encodeRegistrationResponse builds the code basalt init reads.
-export function encodeRegistrationResponse({ credentialId, clientDataJson, authenticatorData, publicKey, publicKeyAlgorithm }) {
+export function encodeRegistrationResponse({ credentialId, clientDataJson, authenticatorData, publicKey, publicKeyAlgorithm, prfSupported = false }) {
   if (publicKeyAlgorithm !== ALG_ES256) throw new CodeError("the passkey must use ES256");
   const json = JSON.stringify({
     credentialId: b64urlEncode(credentialId),
@@ -643,6 +643,7 @@ export function encodeRegistrationResponse({ credentialId, clientDataJson, authe
     authenticatorData: b64urlEncode(authenticatorData),
     publicKey: b64urlEncode(publicKey),
     publicKeyAlgorithm,
+    ...(prfSupported === true ? { prfSupported: true } : {}),
   });
   return REGISTRATION_RESPONSE_PREFIX + b64urlEncode(utf8(json));
 }

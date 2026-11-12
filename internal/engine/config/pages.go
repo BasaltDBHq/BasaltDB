@@ -32,27 +32,40 @@ type Pages struct {
 func (c Config) PagesBase() (string, error) {
 	switch {
 	case c.PagesURL != "":
-		return checkBase(c.PagesURL)
+		return checkBase("pagesUrl", c.PagesURL)
 	case c.ApprovalPage != "":
+		if err := links.CheckURL(c.ApprovalPage); err != nil {
+			return "", fmt.Errorf("approvalPage: %w; set it to an https:// URL, or http://localhost:<port>, of printable characters", err)
+		}
 		u, err := url.Parse(c.ApprovalPage)
 		if err != nil || u.Scheme == "" || u.Host == "" {
-			return "", fmt.Errorf("approvalPage %q is not a URL", c.ApprovalPage)
+			return "", errors.New("approvalPage is not a URL")
 		}
-		return checkBase(u.Scheme + "://" + u.Host)
+		return checkBase("pagesUrl", u.Scheme+"://"+u.Host)
 	}
 	return links.DefaultLocal, nil
 }
 
 // checkBase accepts the hosted console, the portal or a local http origin
 // (http://localhost:<port>, or a loopback IP): an origin, no path.
-func checkBase(base string) (string, error) {
+// CheckPagesURL is the check config load runs on pagesUrl, for the
+// --pages-url flag to run too; setting names it in the message.
+func CheckPagesURL(setting, base string) error {
+	_, err := checkBase(setting, base)
+	return err
+}
+
+func checkBase(setting, base string) (string, error) {
+	if err := links.CheckBase(strings.TrimSuffix(base, "/")); err != nil {
+		return "", fmt.Errorf("%s: %w; set it to an https:// URL, or http://localhost:<port>, of printable characters", setting, err)
+	}
 	base = strings.TrimSuffix(base, "/")
 	if isHosted(base) {
 		return base, nil
 	}
 	u, err := url.Parse(base)
 	if err != nil || u.Scheme != "http" || !isLoopbackName(u.Hostname()) || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
-		return "", fmt.Errorf("pagesUrl %q: use %s or a local http://localhost:<port>", base, links.HostedConsole)
+		return "", fmt.Errorf("%s %q: use %s or a local http://localhost:<port>", setting, base, links.HostedConsole)
 	}
 	return base, nil
 }

@@ -163,11 +163,11 @@ func TestAgentRLSUnchanged(t *testing.T) {
 	}
 	require.Equal(t, 5, redacted, "the skipped lead 51, the cascaded notes (RLS) and tags (no SELECT)")
 
-	// Another agent that can read leads under the same policy does not see
-	// the values of bot's rows either.
+	// Another agent that can read leads under the same policy cannot
+	// preview bot's run at all (RS-1): it reads like a run that does not
+	// exist.
 	other := d.NewAgent(t, "auditor", nil, leads)
-	for _, l := range previewRevert(t, other.Conn, revert.ScopeRun, in.RunID) {
-		require.True(t, l.Redacted, "%+v", l)
-	}
+	_, err := guard.PreviewRevert(ctx, other.Conn, guard.RevertScope{Kind: revert.ScopeRun, ID: in.RunID})
+	requireScopeRefused(t, err, guard.ScopeNotOwnRun)
 	require.Equal(t, 98, count(t, other.Conn, `SELECT count(1)::int FROM public.leads`), "1 to 100 without the deleted 4 and the moved 51")
 }

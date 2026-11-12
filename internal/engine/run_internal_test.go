@@ -31,7 +31,7 @@ func TestListenPagesRefusesATakenPort(t *testing.T) {
 // What the agent is told).
 func TestInstructionsCarryTheLinkSentence(t *testing.T) {
 	t.Parallel()
-	require.Contains(t, instructions, "When you show the person a link from Basalt, put it on its own line exactly as Basalt gave it, "+
+	require.Contains(t, Instructions, "When you show the person a link from Basalt, put it on its own line exactly as Basalt gave it, "+
 		"or as a Markdown link [label](url) with the label from links. Never put a link in a code block or inline code, "+
 		"never split, wrap, shorten, encode or rewrite it, and put nothing after it on its line. "+
 		"Show personMessage verbatim and keep its line breaks.")

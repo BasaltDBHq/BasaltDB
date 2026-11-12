@@ -309,3 +309,45 @@ func requireRevertInvalid(t *testing.T, err error) {
 	require.True(t, ok, "%v", err)
 	require.Equal(t, guard.CodeRevertInvalid, code, "%v", err)
 }
+
+// preview_revert answers another agent's change, run or task exactly as one
+// that does not exist (RS-1, RS-6): Postgres refuses the scope, and the
+// engine maps it to NOT_FOUND with the same body.
+func TestPreviewRevertOfAnotherAgentsWorkIsNotFound(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	env := agentHarnessFor(t, d, d.NewAgent(t, "bot", leads, leads))
+	other := d.NewAgent(t, "other", leads, leads)
+	ctx := context.Background()
+	in := guard.Intent{RunID: uuid.Must(uuid.NewV7()), TaskID: uuid.Must(uuid.NewV7()), Text: "Other's work"}
+	require.NoError(t, guard.StartRun(ctx, other.Conn, in))
+	require.NoError(t, guardtest.Guarded(ctx, other.Conn, in, `UPDATE public.leads SET status = 'won' WHERE id = 77`))
+	var otherChange uuid.UUID
+	require.NoError(t, other.Conn.QueryRow(ctx, `SELECT change_id FROM basalt_meta.agent_changes WHERE run_id = $1`, in.RunID).Scan(&otherChange))
+
+	cases := []struct {
+		arg, reason string
+		theirs      uuid.UUID
+	}{
+		{"changeId", "CHANGE", otherChange},
+		{"runId", "RUN", in.RunID},
+		{"taskId", "TASK", in.TaskID},
+	}
+	for _, tc := range cases {
+		unknown := uuid.Must(uuid.NewV7())
+		theirs, isError := env.h.call(t, "preview_revert", map[string]any{tc.arg: tc.theirs.String()})
+		steps := requireErrorSteps(t, theirs, isError, "NOT_FOUND", tc.reason)
+		require.Equal(t, "list_runs", steps[0]["tool"])
+		none, isError := env.h.call(t, "preview_revert", map[string]any{tc.arg: unknown.String()})
+		require.True(t, isError)
+		a, err := json.Marshal(theirs)
+		require.NoError(t, err)
+		b, err := json.Marshal(none)
+		require.NoError(t, err)
+		require.Equal(t, strings.ReplaceAll(string(b), unknown.String(), "<id>"), strings.ReplaceAll(string(a), tc.theirs.String(), "<id>"),
+			"another agent's %s and an unknown one read alike", tc.arg)
+	}
+	task, _ := env.h.call(t, "preview_revert", map[string]any{"taskId": in.TaskID.String()})
+	require.Contains(t, str(t, task["personMessage"]), "basalt revert --agent <agent> --task "+in.TaskID.String()+" --open")
+	require.Equal(t, "won", leadStatus(t, d, 77))
+}

@@ -136,6 +136,37 @@ func SetupRecorded(ctx context.Context, q Querier, id uuid.UUID) (bool, error) {
 	return found, err
 }
 
+// AgentSetup is a setup recorded for the calling agent role (or an UPGRADE).
+type AgentSetup struct {
+	SetupID uuid.UUID
+	Kind    string
+}
+
+// LatestAgentSetup is the newest setup the agent connection q sees through
+// basalt_meta.agent_setups: its own setups and every UPGRADE. ok is false
+// when none is recorded or the guard has no setups (before version 16).
+func LatestAgentSetup(ctx context.Context, q Querier) (s AgentSetup, ok bool, err error) {
+	var readable bool
+	// Plain SQL: catalog and privilege lookups, which any role may run.
+	err = q.QueryRow(ctx, `SELECT coalesce(has_table_privilege(to_regclass('basalt_meta.agent_setups'), 'SELECT'), false)`).Scan(&readable)
+	if err != nil || !readable {
+		return AgentSetup{}, false, err
+	}
+	sql, args, err := psql.Select("setup_id", "kind").From("basalt_meta.agent_setups").
+		OrderBy("used_at DESC", "setup_id DESC").Limit(1).ToSql()
+	if err != nil {
+		return AgentSetup{}, false, err
+	}
+	err = q.QueryRow(ctx, sql, args...).Scan(&s.SetupID, &s.Kind)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return AgentSetup{}, false, nil
+	}
+	if err != nil {
+		return AgentSetup{}, false, err
+	}
+	return s, true, nil
+}
+
 // InstalledPrefix is the prefix of the installed basalt_meta, read from
 // the owner of the schema (<prefix>_guard); "" when none is installed. An
 // owner that is not a guard role is returned whole, so it never matches a

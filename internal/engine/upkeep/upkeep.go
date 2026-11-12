@@ -47,6 +47,8 @@ type Upkeep struct {
 	now     func() time.Time
 	pins    Pins
 	rls     Refresher
+	// admit gates every tick (WithGate); it admits every tick when unset.
+	admit func(ctx context.Context) error
 
 	started bool
 	head    *guard.ChainHead
@@ -64,10 +66,11 @@ func New(agent, version string, db guard.Querier, log *slog.Logger, now func() t
 	if agent == "" || db == nil || log == nil || now == nil {
 		panic("upkeep: agent, db, logger and clock required")
 	}
-	return &Upkeep{agent: agent, version: version, db: db, log: log, now: now, pins: &chainpin.Memory{}, rls: noRefresh{}}
+	return &Upkeep{agent: agent, version: version, db: db, log: log, now: now, pins: &chainpin.Memory{}, rls: noRefresh{}, admit: admitAll}
 }
 
-// WithPins keeps verified chain heads in p, so the check survives restarts.
+func admitAll(context.Context) error { return nil }
+
 // Refresher forgets what it learned about row-level security, so the next
 // statement asks the database again.
 type Refresher interface {
@@ -88,6 +91,20 @@ func (u *Upkeep) WithRLSCache(r Refresher) *Upkeep {
 	return u
 }
 
+// WithGate has every tick ask admit first and skip all its work when it
+// refuses: on a guard that is missing or misses a breaking migration the
+// engine writes nothing to the ledger, verifies nothing and pins no chain
+// head from that schema. The first tick after the guard serves the agent
+// runs the full check on start.
+func (u *Upkeep) WithGate(admit func(ctx context.Context) error) *Upkeep {
+	if admit == nil {
+		panic("upkeep: nil gate")
+	}
+	u.admit = admit
+	return u
+}
+
+// WithPins keeps verified chain heads in p, so the check survives restarts.
 func (u *Upkeep) WithPins(p Pins) *Upkeep {
 	if p == nil {
 		panic("upkeep: nil pins")
@@ -117,6 +134,9 @@ func (u *Upkeep) Run(ctx context.Context, interval time.Duration) {
 // the last heartbeat is older than ledger.DeadManAfter, writes a heartbeat,
 // records the unguarded tables when they changed, and prunes old values.
 func (u *Upkeep) Tick(ctx context.Context) error {
+	if err := u.admit(ctx); err != nil {
+		return fmt.Errorf("skipped: the guard does not serve this agent: %w", err)
+	}
 	detail := map[string]any{"engineVersion": u.version}
 	var errs []error
 

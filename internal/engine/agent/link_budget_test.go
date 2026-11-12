@@ -146,7 +146,7 @@ func TestApprovalNoticeStaysWithin500CharactersWhateverIsLong(t *testing.T) {
 func revertOf(t *testing.T, intent string, lines []string, batched bool) ledger.Revert {
 	t.Helper()
 	rows := len(lines)
-	binding := fmt.Sprintf(`{"kind": "REVERT", "rows": %d, "scope": "RUN", "agents": ["basalt_agent_bot"], "intent": %q, "scopeId": %q, "skipped": 0, `+
+	binding := fmt.Sprintf(`{"kind": "REVERT", "rows": %d, "intent": %q, "select": {"runs": null, "scope": "RUN", "agents": ["basalt_agent_bot"], "tables": null, "scopeId": %q}, "skipped": 0, "widened": false, `+
 		`"database": "app", "revertId": %q, "rowsHash": "14caa48f26bad4a8e9febd038704ee65a3922fad6a0a1b5f30d16a49cb27db80", `+
 		`"expiresAt": "2026-11-11T07:02:11.123456Z", "requestedBy": "basalt_agent_bot"}`, rows, intent, caseRunID, caseRevertID)
 	if batched {

@@ -1,0 +1,134 @@
+package guard
+
+import (
+	"context"
+	"slices"
+
+	"github.com/jackc/pgx/v5"
+)
+
+// Guard states the status tool reports (api/mcp/tools/status.json, guard.state).
+const (
+	GuardOK               = "OK"
+	GuardUpgradeAvailable = "UPGRADE_AVAILABLE"
+	GuardOutdated         = "OUTDATED"
+	GuardNewer            = "NEWER"
+	GuardMissing          = "MISSING"
+	GuardUnknown          = "UNKNOWN"
+)
+
+// Migration is one basalt_meta version this build installs and whether an
+// engine can serve an agent without it (CONTRACT.md, basalt_meta, AE-11).
+type Migration struct {
+	Version  int
+	Breaking bool
+}
+
+// Migrations lists every version this build installs, in order. Each one
+// is breaking unless flagged non-breaking; flagging one needs a test that
+// serves an agent on a guard without it (internal/engine/agent,
+// TestEveryNonBreakingMigrationIsServedWithoutIt).
+func Migrations() []Migration {
+	out := make([]Migration, 0, len(migrations))
+	for _, m := range migrations {
+		out = append(out, Migration{Version: m.version, Breaking: !m.nonBreaking})
+	}
+	return out
+}
+
+// Status is the guard as an agent connection sees it, against a build's
+// migrations.
+type Status struct {
+	State string
+	// Installed is the newest installed version (0 without basalt_meta).
+	Installed int
+	// Build is the newest version of the build's migrations.
+	Build              int
+	MissingBreaking    []int
+	MissingNonBreaking []int
+}
+
+// Served reports whether an engine serves the agent's tools on this guard:
+// nothing breaking is missing.
+func (s Status) Served() bool {
+	return s.State != GuardOutdated && s.State != GuardMissing && s.State != GuardUnknown
+}
+
+// AgentStatus reads the guard q (an agent connection) sees and compares it
+// with migs. A missing version is one of migs not recorded in
+// schema_version; an agent that cannot read schema_version has a guard from
+// before versionAgentVersion, so every version from there on is missing.
+func AgentStatus(ctx context.Context, q Querier, migs []Migration) (Status, error) {
+	st := Status{Build: buildVersion(migs)}
+	var exists, readable bool
+	// Plain SQL: catalog and privilege lookups, which any role may run.
+	err := q.QueryRow(ctx, `SELECT to_regclass('basalt_meta.schema_version') IS NOT NULL,
+		coalesce(has_table_privilege(to_regclass('basalt_meta.schema_version'), 'SELECT'), false)`).Scan(&exists, &readable)
+	if err != nil {
+		return Status{}, err
+	}
+	if !exists {
+		st.State = GuardMissing
+		return st, nil
+	}
+	installed, err := installedVersions(ctx, q, readable)
+	if err != nil {
+		return Status{}, err
+	}
+	for _, v := range installed {
+		st.Installed = max(st.Installed, v)
+	}
+	for _, m := range migs {
+		if slices.Contains(installed, m.Version) {
+			continue
+		}
+		if m.Breaking {
+			st.MissingBreaking = append(st.MissingBreaking, m.Version)
+			continue
+		}
+		st.MissingNonBreaking = append(st.MissingNonBreaking, m.Version)
+	}
+	st.State = stateOf(st)
+	return st, nil
+}
+
+func stateOf(st Status) string {
+	switch {
+	case len(st.MissingBreaking) > 0:
+		return GuardOutdated
+	case len(st.MissingNonBreaking) > 0:
+		return GuardUpgradeAvailable
+	case st.Installed > st.Build:
+		return GuardNewer
+	}
+	return GuardOK
+}
+
+// installedVersions are the versions recorded in schema_version, or, when
+// the agent may not read it, every version before versionAgentVersion.
+func installedVersions(ctx context.Context, q Querier, readable bool) ([]int, error) {
+	if !readable {
+		out := make([]int, 0, versionAgentVersion-1)
+		for v := versionGuard; v < versionAgentVersion; v++ {
+			out = append(out, v)
+		}
+		return out, nil
+	}
+	sql, args, err := psql.Select("version").From("basalt_meta.schema_version").OrderBy("version").ToSql()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := q.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[int])
+}
+
+func buildVersion(migs []Migration) int {
+	out := 0
+	for _, m := range migs {
+		out = max(out, m.Version)
+	}
+	return out
+}

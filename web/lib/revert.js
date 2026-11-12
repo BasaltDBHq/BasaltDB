@@ -22,7 +22,7 @@ import { $, REVERT_REOPEN, el, fail, linkFailure, loadOrPaste, personText, showC
 
 const PROMPT_TIMEOUT_MS = 120000;
 
-const SCOPES = { CHANGE: "One change", RUN: "One run", TASK: "One task, every agent" };
+const SCOPES = { CHANGE: "One change", RUN: "One run", TASK: "One task" };
 
 // Why a row is left alone, in words (CONTRACT.md, Revert, Conflicts).
 const CONFLICTS = {
@@ -49,8 +49,8 @@ function plural(n, word) {
 
 function renderSummary(req) {
   const b = req.binding;
-  $("scope").textContent = `${SCOPES[b.scope]} (${b.scopeId})`;
-  $("agents").textContent = visibleText(b.agents.join(", "));
+  $("scope").textContent = `${SCOPES[b.select.scope]} (${b.select.scopeId})`;
+  $("agents").textContent = visibleText((b.select.agents ?? Object.keys(b.agentRows)).join(", "));
   $("database").textContent = visibleText(b.database);
   $("intent").textContent = visibleText(b.intent);
   $("rows").textContent = plural(b.rows, "row");

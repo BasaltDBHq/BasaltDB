@@ -243,6 +243,11 @@ func toError(err error) *Error {
 		if pe.Detail != "" {
 			msg += ": " + pe.Detail
 		}
+		if pe.Hint != "" {
+			// The guard's hint says what to change (a revert scope refused:
+			// SCOPE_REFUSED); it names only what the caller sent.
+			msg += " (" + pe.Hint + ")"
+		}
 		return &Error{Code: CodeRefused, Message: msg}
 	}
 	return &Error{Code: CodeInternal, Message: "the engine could not run the call; see the engine log"}

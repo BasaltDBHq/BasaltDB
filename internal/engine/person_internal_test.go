@@ -16,7 +16,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/person"
-	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 )
 
@@ -56,7 +55,7 @@ type passkeysOnly struct{ person.Ledger }
 
 func (passkeysOnly) ListPasskeys(context.Context) ([]ledger.Passkey, error) { return nil, nil }
 
-func TestAStaleAgentsOSUserStaysScoped(t *testing.T) {
+func TestAnUnservedAgentsOSUserStaysScoped(t *testing.T) {
 	t.Parallel()
 	users := map[string]uint32{"botuser": 5001, "staleuser": 5002}
 	lookup := func(name string) (uint32, error) {
@@ -68,19 +67,16 @@ func TestAStaleAgentsOSUserStaysScoped(t *testing.T) {
 	}
 	bot := config.Agent{Name: "bot", OSUser: "botuser", CredentialFile: "/c/bot.url"}
 	stale := config.Agent{Name: "stale", OSUser: "staleuser", CredentialFile: "/c/stale.url"}
-	cfg := config.Config{SocketDir: "/run/basalt", Agents: []config.Agent{stale}}
 
-	// The stale agent is skipped, but its OS user is still known.
+	// An agent the engine does not serve still has its OS user known.
 	uids, err := agentOSUIDs([]config.Agent{bot, stale}, lookup)
 	require.NoError(t, err)
 	require.Equal(t, map[string]uint32{"bot": 5001, "stale": 5002}, uids)
-	started, err := startAgents(context.Background(), cfg, agentEnv{}, uids,
+	_, err = startAgents(context.Background(), config.Config{SocketDir: "/run/basalt", Agents: []config.Agent{stale}}, agentEnv{}, uids,
 		func(context.Context, agentEnv, config.Agent, *slog.Logger) (agentRuntime, error) {
-			return agentRuntime{}, &guard.StaleSchemaError{Installed: 1, Latest: 2}
+			return agentRuntime{}, errors.New("the credential file is missing")
 		}, slog.New(slog.DiscardHandler))
-	require.NoError(t, err)
-	require.Empty(t, started.agents)
-	require.Empty(t, started.ledgers, "a stale agent serves no ledger")
+	require.ErrorContains(t, err, "agent stale", "an agent the engine cannot build stops it: an outdated guard no longer does (degraded mode)")
 
 	// An OS user that does not resolve stops the engine (fail closed).
 	_, err = agentOSUIDs([]config.Agent{bot, {Name: "ghost", OSUser: "nobody-here"}}, lookup)

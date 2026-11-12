@@ -1,0 +1,220 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/vault-vectors.v1.json",
+  "title": "Vault channel test vectors",
+  "description": "One file of shared test vectors under api/mcp/vault/testdata/, read by the Go tests and by node --test, so the engine and the pages agree byte for byte; a mismatch fails make ci. Bytes are lowercase hex unless a field says base64url. Private keys are 32-byte P-256 scalars in hex (WebCrypto imports them as a JWK with d, x and y). ECDSA signatures are randomized: a vector pins one valid signature, and a writer under test takes it from the vector instead of signing. expect is ACCEPT, REFUSE (a check returns false, nothing is closed) or the close code a receiver must close with. See CONTRACT.md, Vault channel, Test vectors.",
+  "oneOf": [
+    { "$ref": "#/$defs/linkDerivationFile" },
+    { "$ref": "#/$defs/engineIdFile" },
+    { "$ref": "#/$defs/paddingFile" },
+    { "$ref": "#/$defs/handshakeFile" },
+    { "$ref": "#/$defs/frameFile" },
+    { "$ref": "#/$defs/signatureFile" },
+    { "$ref": "#/$defs/receiptFile" }
+  ],
+  "$defs": {
+    "hex": { "type": "string", "pattern": "^([0-9a-f]{2})*$" },
+    "b64url": { "type": "string", "pattern": "^[A-Za-z0-9_-]*$" },
+    "name": { "type": "string", "minLength": 1, "description": "What the case shows, unique in its file." },
+    "expect": {
+      "type": "string",
+      "enum": [
+        "ACCEPT",
+        "REFUSE",
+        "PROTOCOL",
+        "UNSUPPORTED_VERSION",
+        "LINK_REFUSED",
+        "HANDSHAKE_FAILED",
+        "FRAME_INVALID",
+        "TOO_LARGE"
+      ]
+    },
+    "linkDerivationFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "description", "cases"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["LINK_DERIVATION"] },
+        "description": { "type": "string" },
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "secret", "linkToken", "psk"],
+            "properties": {
+              "name": { "$ref": "#/$defs/name" },
+              "secret": { "type": "string", "pattern": "^[A-Za-z0-9_-]{22}$", "description": "The #s= secret as in the link." },
+              "linkToken": { "type": "string", "pattern": "^[A-Za-z0-9_-]{22}$" },
+              "psk": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+            }
+          }
+        }
+      }
+    },
+    "engineIdFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "description", "cases"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["ENGINE_ID"] },
+        "description": { "type": "string" },
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "engineKey", "expect"],
+            "properties": {
+              "name": { "$ref": "#/$defs/name" },
+              "engineKey": { "$ref": "#/$defs/b64url", "description": "A signing public key as SPKI DER, base64url; refusal cases hold a compressed point, explicit parameters, trailing bytes or a point off the curve." },
+              "engineId": { "type": "string", "pattern": "^[A-Za-z0-9_-]{22}$" },
+              "fingerprint": { "type": "string", "pattern": "^[A-Za-z0-9_-]{4}( [A-Za-z0-9_-]{4}){3}$" },
+              "expect": { "$ref": "#/$defs/expect" }
+            }
+          }
+        }
+      }
+    },
+    "paddingFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "description", "cases"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["PADDING"] },
+        "description": { "type": "string" },
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "padded", "expect"],
+            "properties": {
+              "name": { "$ref": "#/$defs/name" },
+              "content": { "$ref": "#/$defs/hex", "description": "The content; present when expect is ACCEPT." },
+              "padded": { "$ref": "#/$defs/hex", "description": "len (4 bytes big-endian) || content || zero bytes, to the canonical size." },
+              "expect": { "$ref": "#/$defs/expect" }
+            }
+          }
+        }
+      }
+    },
+    "handshakeFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "description", "cases"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["HANDSHAKE"] },
+        "description": { "type": "string" },
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "transport", "secret", "pageEphemeralPrivate", "engineEphemeralPrivate", "engineSigningPrivate", "engineKey", "prologue", "message1", "message2", "expect"],
+            "properties": {
+              "name": { "$ref": "#/$defs/name" },
+              "transport": { "type": "string", "enum": ["RELAY", "DIRECT"] },
+              "secret": { "type": "string", "pattern": "^[A-Za-z0-9_-]{22}$" },
+              "pageEphemeralPrivate": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "engineEphemeralPrivate": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "engineSigningPrivate": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "engineKey": { "type": "string", "pattern": "^[A-Za-z0-9_-]{122}$" },
+              "prologue": { "$ref": "#/$defs/hex" },
+              "message1": { "$ref": "#/$defs/hex", "description": "The whole binary message, header included." },
+              "sig": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$", "description": "The signature message 2 carries; a writer under test uses it instead of signing." },
+              "message2": { "$ref": "#/$defs/hex" },
+              "handshakeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "h after the handshake; present when expect is ACCEPT." },
+              "keyPageToEngine": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "keyEngineToPage": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "refusedBy": { "type": "string", "enum": ["PAGE", "ENGINE"], "description": "Which side refuses, when expect is not ACCEPT." },
+              "expect": { "$ref": "#/$defs/expect" }
+            }
+          }
+        }
+      }
+    },
+    "frameFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "description", "cases"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["FRAME"] },
+        "description": { "type": "string" },
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "direction", "key", "counter", "frame", "expect"],
+            "properties": {
+              "name": { "$ref": "#/$defs/name" },
+              "direction": { "type": "string", "enum": ["PAGE_TO_ENGINE", "ENGINE_TO_PAGE"] },
+              "key": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "counter": { "type": "integer", "minimum": 0, "description": "The receiver's expected counter." },
+              "content": { "type": "string", "description": "The frame content (UTF-8 JSON); present when expect is ACCEPT." },
+              "frame": { "$ref": "#/$defs/hex", "description": "The whole binary message, header included." },
+              "expect": { "$ref": "#/$defs/expect" }
+            }
+          }
+        }
+      }
+    },
+    "signatureFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "description", "cases"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["SIGNATURE"] },
+        "description": { "type": "string" },
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "context", "publicKey", "message", "sig", "expect"],
+            "properties": {
+              "name": { "$ref": "#/$defs/name" },
+              "context": { "type": "string", "enum": ["VAULT_AUTH", "SESSION", "RECEIPT", "BOX_KEY", "ROTATE"] },
+              "publicKey": { "type": "string", "pattern": "^[A-Za-z0-9_-]{122}$" },
+              "message": { "$ref": "#/$defs/hex", "description": "The exact signed bytes, context line included." },
+              "sig": { "$ref": "#/$defs/b64url" },
+              "expect": { "$ref": "#/$defs/expect" }
+            }
+          }
+        }
+      }
+    },
+    "receiptFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "description", "cases"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["RECEIPT"] },
+        "description": { "type": "string" },
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "token", "engineKey", "expect"],
+            "properties": {
+              "name": { "$ref": "#/$defs/name" },
+              "token": { "type": "string", "pattern": "^basalt-receipt\\.1\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$" },
+              "engineKey": { "type": "string", "pattern": "^[A-Za-z0-9_-]{122}$", "description": "The expected engine key the verifier holds from outside the receipt; refusal cases include a receipt validly signed by another key." },
+              "payloadJson": { "type": "string", "description": "The decoded payload; present when expect is ACCEPT." },
+              "expect": { "$ref": "#/$defs/expect" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

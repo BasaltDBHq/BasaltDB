@@ -413,7 +413,7 @@ func TestRevertScopeMigration(t *testing.T) {
 	items := []string{"public.items"}
 	pw := guard.NewPassword()
 	spec := guard.AgentSpec{Name: "bot", Password: pw, Write: items, Read: items}
-	plan, err := guard.PlanInit(ctx, d.Admin, guard.InitOptions{Names: d.Names, Agent: spec, UpTo: guard.LatestVersion() - 1})
+	plan, err := guard.PlanInit(ctx, d.Admin, guard.InitOptions{Names: d.Names, Agent: spec, UpTo: guard.VersionRevertScope - 1})
 	require.NoError(t, err)
 	require.NoError(t, pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return plan.Apply(ctx, tx) }))
 	role, err := d.Names.Agent("bot")
@@ -463,8 +463,8 @@ func TestRevertScopeMigration(t *testing.T) {
 	require.Equal(t, "APPLIED", scalarOf[string](t, a.Conn, `SELECT status FROM basalt_meta.agent_reverts WHERE revert_id = $1`, signedID))
 	require.Zero(t, count(t, d.Admin, `SELECT count(id)::int FROM public.items WHERE v <> 'before'`))
 
-	// Running the migration again changes nothing.
-	d.Exec(t, `DELETE FROM basalt_meta.schema_version WHERE version = $1`, guard.LatestVersion())
+	// Running the migration (and every later one) again changes nothing.
+	d.Exec(t, `DELETE FROM basalt_meta.schema_version WHERE version >= $1`, guard.VersionRevertScope)
 	d.Init(t, spec)
 	require.Equal(t, 1, count(t, d.Admin, `SELECT count(seq)::int FROM basalt_meta.ledger WHERE kind = 'MIGRATION'`))
 	require.Nil(t, guardVerify(t, d))

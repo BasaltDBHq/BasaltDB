@@ -78,6 +78,10 @@ func (a *stubAgent) RescopeRevert(context.Context, uuid.UUID, string, agent.Scop
 
 func (a *stubAgent) CheckResetLink(uuid.UUID, string) bool { return false }
 
+func (a *stubAgent) RejectRevert(context.Context, uuid.UUID, string, agent.RejectRequest) (agent.RejectResponse, error) {
+	return agent.RejectResponse{}, agent.ErrNotThisAgent
+}
+
 func (a *stubAgent) RelayRevert(context.Context, revert.Response) (guard.AppliedRevert, error) {
 	return guard.AppliedRevert{}, agent.ErrNotThisAgent
 }

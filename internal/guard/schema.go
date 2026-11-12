@@ -47,6 +47,7 @@ const (
 	versionRevertScope              // RS-1 to RS-4: a revert's scope descriptor, own work only for agents
 	versionRevertWiden              // RS-2, RS-5: the widen proof, rescope and reset, redaction after a widen
 	versionRevertNonce              // RS-2: the requesting role reads its revert's rescope nonce
+	versionRevertReject             // RS-2, Q8: the person rejects a pending revert
 )
 
 // migrations lists every version in order. M2 appends versions.
@@ -73,6 +74,7 @@ var migrations = []migration{
 	{version: versionRevertScope, sql: v20Descriptor + v20Tables + v20Chains + v20Prepare + v20Apply},
 	{version: versionRevertWiden, sql: v21Own + v21Rescope + v21Views},
 	{version: versionRevertNonce, sql: v22RevertNonce},
+	{version: versionRevertReject, sql: v23RejectRevert},
 }
 
 // LatestVersion is the basalt_meta version this build installs.

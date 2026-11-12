@@ -50,6 +50,9 @@ type RevertStore interface {
 	ResetRevert(ctx context.Context, id uuid.UUID, timeout time.Duration) (guard.RescopedRevert, error)
 	// RevertNonce is the rescope nonce of a revert the role prepared.
 	RevertNonce(ctx context.Context, id uuid.UUID) ([]byte, error)
+	// RejectRevert marks a pending revert REJECTED for the person, with the
+	// scope token of a widened revert (nil before a widen).
+	RejectRevert(ctx context.Context, id uuid.UUID, note string, token []byte) (guard.RejectedRevert, error)
 }
 
 // PreviewRevertParams are preview_revert's validated arguments: the scope
@@ -417,6 +420,9 @@ func (s *Service) revertState(ctx context.Context, r ledger.Revert) (RequestedRe
 	case ledger.RevertExpired:
 		out.PersonMessage = outcomeMessage(r)
 		out.NextSteps = expiredSteps(r)
+	case ledger.RevertRejected:
+		out.PersonMessage = rejectedMessage(r)
+		out.NextSteps = rejectedSteps()
 	default:
 		what := "The revert of " + scopeText(r.Scope, r.ScopeID)
 		return s.waitEnded(ctx, out, what)

@@ -106,6 +106,22 @@ func appliedSteps() []mcp.NextStep {
 	return []mcp.NextStep{agentStep(mcp.ActionStop, "The revert is done; do not request it again.")}
 }
 
+// rejectedSteps: the person rejected the revert on the signing page.
+func rejectedSteps() []mcp.NextStep {
+	return []mcp.NextStep{agentStep(mcp.ActionStop,
+		"The person rejected the revert and nothing was reverted. Do not request it again on your own.")}
+}
+
+// rejectedMessage is the line for the person about a rejected revert, with
+// the note they wrote, if any.
+func rejectedMessage(r ledger.Revert) string {
+	msg := "The revert was rejected on the signing page. Nothing was reverted."
+	if r.RejectNote != "" {
+		msg += " Your note: " + r.RejectNote
+	}
+	return msg
+}
+
 func expiredSteps(r ledger.Revert) []mcp.NextStep {
 	return []mcp.NextStep{
 		agentStep(mcp.ActionAskPerson, "Tell the person the revert was not signed in time and ask whether to request it again."),
@@ -188,8 +204,11 @@ func (s *Service) rowsChanged(r ledger.Revert, detail string) error {
 }
 
 func alreadySigned(r ledger.Revert) error {
-	return &mcp.ToolError{Code: CodeRevertInvalid, Reason: reasonPlanFinished, Message: fmt.Sprintf(
-		"revert %s was already signed (status %s); nothing more was applied", r.ID, r.Status),
+	msg := fmt.Sprintf("revert %s was already signed (status %s); nothing more was applied", r.ID, r.Status)
+	if r.Status == ledger.RevertRejected {
+		msg = fmt.Sprintf("revert %s was rejected by the person on the revert page; nothing was reverted", r.ID)
+	}
+	return &mcp.ToolError{Code: CodeRevertInvalid, Reason: reasonPlanFinished, Message: msg,
 		NextSteps: []mcp.NextStep{
 			callTool(toolRequestRevert, map[string]any{argRevertID: r.ID.String(), argWaitForSignature: 0}, "See the revert's state."),
 			agentStep(mcp.ActionStop, "Do not deliver the code again."),

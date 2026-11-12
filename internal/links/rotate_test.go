@@ -91,3 +91,26 @@ func TestResetKeepsTheRevokedLink(t *testing.T) {
 	now = now.Add(2 * time.Hour)
 	require.False(t, again.WasReset(id, secret), "forgotten once the revert expired")
 }
+
+// Revoking an item's link (a rejected revert) drops it whatever it is: a
+// relay link's token is told, another item's link stays, and nothing is
+// kept for WasReset.
+func TestRevokeItemDropsItsLink(t *testing.T) {
+	t.Parallel()
+	s := links.NewSecrets(time.Now, rand.Reader)
+	var dropped []channel.LinkToken
+	s.OnDrop(func(tok channel.LinkToken) { dropped = append(dropped, tok) })
+	expires := time.Now().Add(time.Hour)
+	id, other := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	secret, token, err := s.IssueRelay(id, expires)
+	require.NoError(t, err)
+	kept, err := s.Issue(other, expires)
+	require.NoError(t, err)
+
+	require.NoError(t, s.RevokeItem(id))
+	require.False(t, s.Check(id, secret))
+	require.False(t, s.WasReset(id, secret), "a revoke is not a reset")
+	require.Equal(t, []channel.LinkToken{token}, dropped)
+	require.True(t, s.Check(other, kept))
+	require.NoError(t, s.RevokeItem(id), "nothing left to revoke")
+}

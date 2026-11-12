@@ -210,6 +210,8 @@ type requestRevertResult struct {
 	ChangeID      string             `json:"changeId,omitempty"`
 	ApplyBy       string             `json:"applyBy,omitempty"`
 	Progress      *revertProgressDTO `json:"progress,omitempty"`
+	RejectedAt    string             `json:"rejectedAt,omitempty"`
+	Note          string             `json:"note,omitempty"`
 	NextSteps     []mcp.NextStep     `json:"nextSteps,omitempty"`
 }
 
@@ -232,6 +234,9 @@ func requestRevertFromDomain(r RequestedRevert) requestRevertResult {
 	}
 	if rv.ApplyBy != nil {
 		out.ApplyBy = timeText(*rv.ApplyBy)
+	}
+	if rv.RejectedAt != nil {
+		out.RejectedAt, out.Note = timeText(*rv.RejectedAt), rv.RejectNote
 	}
 	if rv.Batched && rv.SignedAt != nil {
 		out.Progress = &revertProgressDTO{

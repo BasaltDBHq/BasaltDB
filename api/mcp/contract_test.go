@@ -614,7 +614,8 @@ func TestServedCatalogLeavesPlannedOut(t *testing.T) {
 		}
 	}
 	require.Positive(t, plannedErrors, "the revert scope errors are planned")
-	require.Positive(t, plannedResults, "the revert scope results are planned")
+	// Every result case is served since the reject (REJECTED); a planned
+	// result added later is still counted below.
 	require.Len(t, served.Errors, len(all.Errors)-plannedErrors)
 	require.Len(t, served.Results, len(all.Results)-plannedResults)
 	for _, e := range served.Errors {

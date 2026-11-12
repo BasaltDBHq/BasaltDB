@@ -159,9 +159,10 @@ func check(body string) string {
 
 // Decode reads a pasted setup code. Every whitespace character is dropped
 // first, so a wrapped copy still decodes. Refusals, in this order:
-// NOT_A_SETUP_CODE, UNSUPPORTED_FORMAT (layout version), DAMAGED (check),
-// INVALID (base64url, deflate, the 64 KiB cap, JSON), UNSUPPORTED_FORMAT
-// (format), INVALID (schema and rules).
+// NOT_A_SETUP_CODE, INVALID (layout version 1 with nothing after it),
+// UNSUPPORTED_FORMAT (layout version), DAMAGED (check), INVALID
+// (base64url, deflate, the 64 KiB cap, JSON, a duplicate key),
+// UNSUPPORTED_FORMAT (format), INVALID (schema and rules).
 func Decode(code string) (Payload, error) {
 	if len(code) > MaxInputBytes {
 		return Payload{}, refuse(RefusalInvalid, "the pasted text is far longer than any setup code")
@@ -170,6 +171,10 @@ func Decode(code string) (Payload, error) {
 	rest, ok := strings.CutPrefix(code, Prefix)
 	if !ok {
 		return Payload{}, refuse(RefusalNotASetupCode, "")
+	}
+	if rest == strings.TrimSuffix(version, ".") {
+		// basalt-setup.1 is this layout cut short, not a newer one.
+		return Payload{}, refuse(RefusalInvalid, "no payload")
 	}
 	if !strings.HasPrefix(rest, version) {
 		return Payload{}, refuse(RefusalUnsupportedFormat, "")
@@ -221,11 +226,13 @@ func inflate(encoded string) ([]byte, error) {
 	return raw, nil
 }
 
-// decodePayload parses the JSON strictly: format first (a newer format may
-// have keys this build does not know), then a typed decode that must hold
-// exactly what the JSON holds. Go's decoder matches keys case-insensitively,
-// reads null as absent and replaces invalid UTF-8; comparing the typed
-// value, encoded again, with the generic decode refuses all three.
+// decodePayload parses the JSON strictly: no key twice in one object,
+// format first (a newer format may have keys this build does not know),
+// then a typed decode that must hold exactly what the JSON holds. Go's
+// decoder keeps the last of duplicate keys, matches keys
+// case-insensitively, reads null as absent and replaces invalid UTF-8; the
+// duplicate check, and comparing the typed value, encoded again, with the
+// generic decode, refuse all four.
 func decodePayload(raw []byte) (Payload, error) {
 	if !utf8.Valid(raw) {
 		return Payload{}, refuse(RefusalInvalid, "payload is not UTF-8")
@@ -233,6 +240,9 @@ func decodePayload(raw []byte) (Payload, error) {
 	generic, err := unmarshalGeneric(raw)
 	if err != nil {
 		return Payload{}, refuse(RefusalInvalid, "payload is not a JSON object")
+	}
+	if err := checkNoDuplicateKeys(raw); err != nil {
+		return Payload{}, refuse(RefusalInvalid, "payload has a duplicate key")
 	}
 	if !isFormat1(generic["format"]) {
 		return Payload{}, refuse(RefusalUnsupportedFormat, "")
@@ -271,6 +281,61 @@ func unmarshalGeneric(raw []byte) (map[string]any, error) {
 		return nil, errors.New("trailing data")
 	}
 	return m, nil
+}
+
+// jsonContainer is one open object or array while walking JSON tokens;
+// keys is nil for an array.
+type jsonContainer struct {
+	keys    map[string]struct{}
+	wantKey bool
+}
+
+// checkNoDuplicateKeys walks raw's tokens and fails on an object that holds
+// a key twice, at any depth. raw is already known to be valid JSON.
+func checkNoDuplicateKeys(raw []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var stack []*jsonContainer
+	valueDone := func() {
+		if n := len(stack); n > 0 && stack[n-1].keys != nil {
+			stack[n-1].wantKey = true
+		}
+	}
+	for {
+		tok, err := dec.Token()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if n := len(stack); n > 0 && stack[n-1].wantKey {
+			// Token returns an object's keys as strings; the only other
+			// token where a key is due is the object's closing brace.
+			if key, ok := tok.(string); ok {
+				if _, seen := stack[n-1].keys[key]; seen {
+					return fmt.Errorf("duplicate key %q", key)
+				}
+				stack[n-1].keys[key] = struct{}{}
+				stack[n-1].wantKey = false
+				continue
+			}
+		}
+		d, ok := tok.(json.Delim)
+		if !ok {
+			valueDone()
+			continue
+		}
+		switch d {
+		case '{':
+			stack = append(stack, &jsonContainer{keys: map[string]struct{}{}, wantKey: true})
+		case '[':
+			stack = append(stack, &jsonContainer{})
+		default: // '}' or ']'
+			stack = stack[:len(stack)-1]
+			valueDone()
+		}
+	}
 }
 
 func isFormat1(v any) bool {

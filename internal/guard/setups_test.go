@@ -341,10 +341,16 @@ func TestRecordSetupRefusals(t *testing.T) {
 			GuardVersion: guard.LatestVersion(), ExpiresAt: now.Add(time.Hour)}
 		d.Exec(t, `CREATE ROLE `+d.Names.Prefix+`_agent_stranger NOLOGIN`)
 		// A superuser is a member of every role, agents included.
-		d.Exec(t, `CREATE ROLE `+d.Names.Prefix+`_agent_root SUPERUSER NOLOGIN`)
+		d.Exec(t, `CREATE ROLE `+d.Names.Prefix+`_agent_root SUPERUSER LOGIN`)
 		d.Exec(t, `GRANT `+d.Names.Agents()+` TO `+d.Names.Prefix+`_agent_root`)
+		d.Exec(t, `CREATE ROLE `+d.Names.Prefix+`_agent_mute NOLOGIN`)
+		d.Exec(t, `GRANT `+d.Names.Agents()+` TO `+d.Names.Prefix+`_agent_mute`)
+		d.Exec(t, `CREATE ROLE `+d.Names.Prefix+`_agent_maker LOGIN CREATEROLE`)
+		d.Exec(t, `GRANT `+d.Names.Agents()+` TO `+d.Names.Prefix+`_agent_maker`)
 		for name, mutate := range map[string]func(*guard.Setup){
 			"a superuser agent role":     func(s *guard.Setup) { s.Agent = "root" },
+			"a role that cannot log in":  func(s *guard.Setup) { s.Agent = "mute" },
+			"a role with CREATEROLE":     func(s *guard.Setup) { s.Agent = "maker" },
 			"no agent for INSTALL":       func(s *guard.Setup) { s.Agent = "" },
 			"an agent for UPGRADE":       func(s *guard.Setup) { s.Kind = guard.SetupUpgrade },
 			"a role that is no agent":    func(s *guard.Setup) { s.Agent = "stranger" },
@@ -360,6 +366,61 @@ func TestRecordSetupRefusals(t *testing.T) {
 			})
 		}
 	})
+	t.Run("the agents group itself", func(t *testing.T) {
+		// RecordSetup names roles <prefix>_agent_<name>: call the function
+		// directly. The group is refused even when it could log in.
+		_, err := d.Admin.Exec(ctx, `ALTER ROLE `+d.Names.Agents()+` LOGIN`)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			_, err := d.Admin.Exec(ctx, `ALTER ROLE `+d.Names.Agents()+` NOLOGIN`)
+			require.NoError(t, err)
+		})
+		var now time.Time
+		require.NoError(t, d.Admin.QueryRow(ctx, `SELECT now()`).Scan(&now))
+		_, err = d.Admin.Exec(ctx, `SELECT basalt_meta.record_setup($1::uuid, 'INSTALL', $2::name, $3::int, $4::timestamptz)`,
+			uuidAt(t, now), d.Names.Agents(), guard.LatestVersion(), now.Add(time.Hour))
+		requireCode(t, err, guard.CodeLedgerInputInvalid)
+	})
+	t.Run("expired inside a long transaction", func(t *testing.T) {
+		// now() is fixed when the transaction starts; the expiry check
+		// reads the clock, so waiting inside the transaction does not
+		// stretch a code's life.
+		err := pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error {
+			var start, later time.Time
+			if err := tx.QueryRow(ctx, `SELECT now()`).Scan(&start); err != nil {
+				return err
+			}
+			s := guard.Setup{ID: uuidAt(t, start), Kind: guard.SetupUpgrade, GuardVersion: guard.LatestVersion(),
+				ExpiresAt: start.Add(time.Second)}
+			if _, err := tx.Exec(ctx, `SELECT pg_sleep(1.5)`); err != nil {
+				return err
+			}
+			if err := tx.QueryRow(ctx, `SELECT now()`).Scan(&later); err != nil {
+				return err
+			}
+			require.True(t, later.Before(s.ExpiresAt), "now() did not move")
+			_, err := guard.RecordSetup(ctx, tx, d.Names, s)
+			return err
+		})
+		requireRefused(t, err, guard.SetupExpired)
+	})
+}
+
+func TestRecordSetupDefinition(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	d.Init(t, guard.AgentSpec{})
+	// Replaced by version 18: still SECURITY DEFINER with a pinned
+	// search_path, owned by the guard role.
+	var definer bool
+	var config []string
+	var owner string
+	require.NoError(t, d.Admin.QueryRow(context.Background(), `SELECT p.prosecdef, p.proconfig, p.proowner::regrole::text
+		FROM pg_proc p WHERE p.oid = 'basalt_meta.record_setup(uuid, text, name, int, timestamptz)'::regprocedure`).
+		Scan(&definer, &config, &owner))
+	require.True(t, definer)
+	require.Equal(t, []string{"search_path=pg_catalog"}, config)
+	require.Equal(t, d.Names.Guard(), owner)
 }
 
 func TestAgentCannotRecordOrWriteSetups(t *testing.T) {

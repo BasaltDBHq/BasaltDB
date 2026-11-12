@@ -399,13 +399,24 @@ func engineSettings(f initFlags, goos string) config.Settings {
 }
 
 // applyInit runs the script in one transaction and refuses to commit while
-// any agent-writable table or cascade target is left unguarded.
-func applyInit(ctx context.Context, conn *pgx.Conn, script guard.Script) error {
+// any agent-writable table or cascade target is left unguarded. The after
+// statements run last, once that check passed (a setup code's
+// record_setup). basalt init, init --setup-code and upgrade all apply
+// through it.
+func applyInit(ctx context.Context, conn *pgx.Conn, script guard.Script, after ...guard.Statement) error {
 	return pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
 		if err := script.Apply(ctx, tx); err != nil {
 			return err
 		}
-		return checkCovered(ctx, tx)
+		if err := checkCovered(ctx, tx); err != nil {
+			return err
+		}
+		for _, st := range after {
+			if _, err := tx.Exec(ctx, st.SQL); err != nil {
+				return fmt.Errorf("record the setup: %w", err)
+			}
+		}
+		return nil
 	})
 }
 

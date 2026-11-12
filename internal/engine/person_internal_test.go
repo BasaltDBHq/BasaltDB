@@ -26,7 +26,7 @@ func TestListenPersonOpensTheSocketLikeTheAgentSockets(t *testing.T) {
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	cfg := config.Config{SocketDir: filepath.Join(dir, "run"), Mode: config.ModeService, PersonUIDs: []uint32{4242}}
 
-	srv, ln, err := listenPerson(cfg, map[string]person.Ledger{}, map[string]uint32{}, person.PagesDTO{}, slog.New(slog.DiscardHandler))
+	srv, ln, err := listenPerson(cfg, person.Options{}, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 	path := filepath.Join(dir, "run", "person.sock")
 	fi, err := os.Stat(path)

@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -15,6 +16,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
@@ -30,11 +33,16 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/notify/telegram"
 	"github.com/basaltdbhq/basaltdb/internal/server"
+	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/vault"
 )
 
 const lockFileName = "engine.lock"
+
+// LockPath is the engine's lock file in socket directory dir: held while
+// the engine runs, with its pid (basalt status reads both).
+func LockPath(dir string) string { return filepath.Join(dir, lockFileName) }
 
 var errNoAgent = errors.New("no agent to serve: every configured agent was refused (see the errors above)")
 
@@ -63,11 +71,15 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		return errors.New("the engine runs on Linux and macOS only (it needs peer credentials on Unix sockets)")
 	}
-	lock, err := server.AcquireLock(filepath.Join(cfg.SocketDir, lockFileName))
+	lock, err := server.AcquireLock(LockPath(cfg.SocketDir))
 	if err != nil {
 		return err
 	}
 	defer lock.Release()
+	if err := lock.WritePID(os.Getpid()); err != nil {
+		// basalt status then shows the engine running without its pid.
+		log.Warn("could not write the engine's pid to its lock file", "err", err)
+	}
 
 	// Every configured agent's OS user, before any agent is skipped: the
 	// person socket scopes a peer that runs an agent to that agent (SM-4),
@@ -153,7 +165,11 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 		wg.Go(func() { relay.pruneEvery(ctx, pruneInterval) })
 	}
 	if cfg.Service() {
-		srv, ln, err := listenPerson(cfg, ledgers, agentUIDs, person.PagesDTO{PagesURL: base, LocalOrigin: env.pagesOrigin}, log)
+		srv, ln, err := listenPerson(cfg, person.Options{
+			Agents: ledgers, Info: srv.infos, AgentUIDs: agentUIDs,
+			Engine: engineInfo(cfg.SocketDir, env.stateDir),
+			Pages:  person.PagesDTO{PagesURL: base, LocalOrigin: env.pagesOrigin},
+		}, log)
 		if err != nil {
 			return err
 		}
@@ -187,6 +203,7 @@ type runtimeFunc func(ctx context.Context, env agentEnv, a config.Agent, log *sl
 type startedAgents struct {
 	agents   []Agent
 	ledgers  map[string]person.Ledger
+	infos    map[string]person.AgentInfo
 	upkeeps  []*upkeep.Upkeep
 	services []*agent.Service
 	closers  []func()
@@ -197,7 +214,10 @@ type startedAgents struct {
 // installs or upgrades it (agent.Service.Admit). Every configured agent's OS
 // user is in uids, which the person socket scopes by.
 func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[string]uint32, newRT runtimeFunc, log *slog.Logger) (startedAgents, error) {
-	out := startedAgents{ledgers: make(map[string]person.Ledger, len(cfg.Agents))}
+	out := startedAgents{
+		ledgers: make(map[string]person.Ledger, len(cfg.Agents)),
+		infos:   make(map[string]person.AgentInfo, len(cfg.Agents)),
+	}
 	for _, a := range cfg.Agents {
 		rt, err := newRT(ctx, env, a, log.With("agent", a.Name))
 		if err != nil {
@@ -205,6 +225,7 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 		}
 		out.closers = append(out.closers, rt.close)
 		out.ledgers[a.Name] = rt.ledger
+		out.infos[a.Name] = rt.info
 		out.upkeeps = append(out.upkeeps, rt.upkeep)
 		out.services = append(out.services, rt.svc)
 		out.agents = append(out.agents, Agent{
@@ -220,17 +241,25 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 // listenPerson opens the person socket of a service-mode engine (CONTRACT.md,
 // The person socket): mode 0666 like the agent sockets, admitting only the
 // recorded person uids.
-func listenPerson(cfg config.Config, ledgers map[string]person.Ledger, agentUIDs map[string]uint32, pages person.PagesDTO, log *slog.Logger) (*person.Server, *net.UnixListener, error) {
+func listenPerson(cfg config.Config, o person.Options, log *slog.Logger) (*person.Server, *net.UnixListener, error) {
 	path := config.PersonSocketPath(cfg.SocketDir)
 	ln, err := listenSocket(path)
 	if err != nil {
 		return nil, nil, fmt.Errorf("person socket: %w", err)
 	}
 	log.Info("serving the person socket", "socket", path, "personUids", cfg.PersonUIDs)
-	srv := person.NewServer(person.Options{
-		Allow: cfg.PersonUIDs, Agents: ledgers, AgentUIDs: agentUIDs, Pages: pages, PeerUID: peercred.UID, Log: log.With("component", "person"),
-	})
-	return srv, ln, nil
+	o.Allow, o.PeerUID, o.Log = cfg.PersonUIDs, peercred.UID, log.With("component", "person")
+	return person.NewServer(o), ln, nil
+}
+
+// engineInfo is what the person socket's STATUS says about this engine:
+// its pid and OS user, and its socket and state directories.
+func engineInfo(socketDir, stateDir string) person.EngineInfo {
+	name := strconv.Itoa(os.Getuid())
+	if u, err := user.Current(); err == nil {
+		name = u.Username
+	}
+	return person.EngineInfo{Engine: person.EngineDTO{PID: os.Getpid(), OSUser: name}, SocketDir: socketDir, StateDir: stateDir}
 }
 
 // pagesSite is the bound local pages listener (CONTRACT.md, Local pages).
@@ -291,7 +320,9 @@ type agentRuntime struct {
 	upkeep *upkeep.Upkeep
 	// ledger serves the person socket on the agent's credential.
 	ledger person.Ledger
-	close  func()
+	// info answers the person socket's STATUS and TARGET.
+	info  person.AgentInfo
+	close func()
 }
 
 // agentEnv is what every agent's runtime shares.
@@ -370,8 +401,25 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		svc:    svc,
 		upkeep: upkeep.New(a.Name, buildinfo.Version, pool, log, time.Now).WithPins(env.pins).WithRLSCache(blind).WithGate(svc.Admit),
 		ledger: gatedLedger{inner: person.NewDBLedger(pool, time.Now), admit: svc.Admit},
+		info:   agentInfo(svc, pool.Config().ConnConfig.Config),
 		close:  pool.Close,
 	}, nil
+}
+
+// agentInfo answers the person socket's STATUS with the agent's status tool
+// and TARGET with the database its credential connects to.
+func agentInfo(svc *agent.Service, conn pgconn.Config) person.AgentInfo {
+	t := setupcode.ConnTarget(conn.Host, int(conn.Port), conn.Database, conn.User)
+	return person.AgentInfo{
+		Status: func(ctx context.Context) (json.RawMessage, error) {
+			r, err := svc.Status(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(r)
+		},
+		Target: person.TargetDTO(t),
+	}
 }
 
 // logGuard logs the agent's guard as the engine starts serving it. A guard

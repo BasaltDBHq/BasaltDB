@@ -49,7 +49,7 @@ func Summary(p Payload, s SummaryState) []string {
 	case p.Kind == KindAgent:
 		out = append(out, fmt.Sprintf("This changes the tables of the existing agent %s (role %s); its password stays.", name, role))
 	default:
-		out = append(out, fmt.Sprintf("This upgrades Basalt's guard from version %d to %d; no agent changes.", s.GuardVersion, p.Guard.To))
+		out = append(out, UpgradeLine(s.GuardVersion, p.Guard.To))
 	}
 	if p.Agent == nil {
 		out = append(out, fmt.Sprintf("Prefix %s.", p.Prefix))
@@ -99,4 +99,10 @@ func listWords(items []string) string {
 		return strings.Join(items, "")
 	}
 	return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
+}
+
+// UpgradeLine is the fixed sentence for a guard upgrade from version from to
+// version to: an UPGRADE code's summary, and basalt upgrade's.
+func UpgradeLine(from, to int) string {
+	return fmt.Sprintf("This upgrades Basalt's guard from version %d to %d; no agent changes.", from, to)
 }

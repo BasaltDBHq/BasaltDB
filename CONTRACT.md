@@ -524,7 +524,8 @@ The revert page checks `rowsHash` (or, for a large plan, `sampleHash`), refuses 
 N12. A revert with more than 1000 lines is a **batched plan**:
 
 - `prepare_revert` stores every line in the plan, numbered `1..N` in execution order (the order the trial's writes succeeded, then the `SKIP` lines), and builds one binding over all of them: `rowsHash` over every line in signed order, as above, plus `batched: true` and `sampleHash`.
-- **Sample:** the first 1000 lines with `SKIP` lines first, each group in signed order. `sampleHash` = lowercase hex `sha256(utf8(sample joined by "\n"))`. `prepare_revert` returns the sample as `lines`, and the revert request carries it; the page checks `sampleHash`, says how many of the plan's lines it shows and that the signature covers all of them.
+- **Sample** (N12-4, amended by RSS-1): 1000 lines that keep room for both kinds. It takes up to 500 `SKIP` lines and up to 500 `RESTORE` lines; when one kind has fewer, the other fills the rest, up to 1000 in all: `skips = min(skipped, max(500, 1000 - rows))`, `restores = min(rows, 1000 - skips)`, with `skipped` and `rows` the binding's. The sample lists the first `skips` `SKIP` lines, then the first `restores` `RESTORE` lines, each kind in signed order. So 1500 `SKIP` and 50 `RESTORE` lines give 950 and 50; 2000 and 2000 give 500 and 500; 10 and 3000 give 10 and 990. `sampleHash` = lowercase hex `sha256(utf8(sample joined by "\n"))`. `prepare_revert` returns the sample as `lines`, and the revert request carries it. The page (and `revert.Request.Check` in Go) checks `sampleHash` and that the sample splits as the binding's `skipped` and `rows` give, then says how many of the plan's lines it shows and that the signature covers all of them.
+- **What the page counts.** Every count the page shows comes from signed data: the totals from the binding's `rows` and `skipped`, the shown counts from the sample lines, which hash to `sampleHash`. Hidden rows are `rows` less the `RESTORE` lines shown and `skipped` less the `SKIP` lines shown. The request carries no other count, and the page shows no per-table or per-column count of hidden rows: nothing signed gives them.
 - **Signature:** `apply_revert` with the person's code verifies it, opens the revert's change record, marks the `SKIP` lines skipped and records `REVERT_SIGNED`; it writes no row of the person's tables. The plan can then be applied for 24 hours, only by the role that prepared it.
 - **Batches:** `apply_revert_batch` (MCP tool above) applies up to 200 pending lines of the plan. Each line runs at most once; a line whose row changed after the plan was built is skipped (people win). Every batch is one transaction with its `ROW_CHANGE` rows under the revert's change and a `REVERT_BATCH` ledger row; a failed batch leaves nothing, so the agent resumes from the pending lines.
 - **Finish:** when no line is pending, the plan is `APPLIED`, a `REVERTED` ledger row is appended, and each covered change becomes `REVERTED` only if every line naming it was restored.
@@ -1267,6 +1268,15 @@ Planned, M4 ([Setup from your laptop](#setup-from-your-laptop), CO-13). Version 
 | `record_setup(setup_id uuid, kind text, agent name, guard_version int, expires_at timestamptz) returns bigint` | Admin only, not granted to agents. Records the setup and appends an `AGENT_SETUP` ledger row; returns its `seq`. `agent` is the agent role (null for `UPGRADE`, required otherwise; a role that is not a member of `<prefix>_agents` is `BS008`). Refuses, raising `BS010` with detail `USED` (the `setup_id` is recorded), `SUPERSEDED` (a later `setup_id` is recorded for the same role; not checked for `UPGRADE`), `EXPIRED` (`now()` at or past `expires_at`), `SETUP_ID_IN_FUTURE` (the UUIDv7 time of `setup_id`, its first 48 bits as milliseconds, more than 5 minutes after `now()`) or `EXPIRY_TOO_FAR` (`expires_at` more than 24 hours and 5 minutes after `now()`, or more than 24 hours after the `setup_id`'s time). The database's clock decides, not the code's |
 
 Ledger kind `AGENT_SETUP`: `agent` the agent role (for `UPGRADE`, the admin role), detail `setupId`, `kind`, `guardVersion`, `by` (`session_user`). The install also gains one input in Go: the agent role's password given as a SCRAM-SHA-256 verifier instead of a generated one (format checked as in the [setup code](#the-setup-code), rendered as a SQL string literal).
+
+### Version 17: a large plan's sample keeps restored rows
+
+RSS-1 (provisional, amending N12-4). Up to version 16 a batched plan's sample was the first 1000 lines with `SKIP` lines first, so a plan with 1000 or more `SKIP` lines showed no `RESTORE` line.
+
+| Object | Purpose |
+|---|---|
+| `_revert_sample(lines text[], max int) returns text[]` | Internal. The sample of [Large plans](#large-plans): up to `max / 2` lines of each kind, the other kind filling the rest, `SKIP` lines first, each kind in signed order. The same as `revert.Sample` in Go |
+| `prepare_revert` | Replaced: the same as version 9's, with the sample from `_revert_sample` |
 
 ### Guard errors
 

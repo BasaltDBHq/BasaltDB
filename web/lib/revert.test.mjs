@@ -10,6 +10,7 @@ import {
   MAX_REVERT_BATCH,
   MAX_REVERT_LINES,
   REVERT_APPLY_HOURS,
+  REVERT_SAMPLE_SHARE,
   b64urlDecode,
   b64urlEncode,
   encodeRevertResponse,
@@ -17,6 +18,8 @@ import {
   parseRevertBinding,
   parseRevertLine,
   parseRevertRequest,
+  revertSampleCounts,
+  revertShown,
   rowsHash,
 } from "./codec.js";
 // Imported before any document exists, so the page's main() does not run.
@@ -135,6 +138,62 @@ test("a large plan's link carries its sample (N12-4)", async () => {
   }
   assert.throws(() => parseRevertBinding(f.binding.replace('"rows": 1490', '"rows": 990')), /only a plan of more than 1000/);
   assert.throws(() => parseRevertBinding(f.binding.replace('"batched": true', '"batched": false')), /must be true/);
+});
+
+test("a large plan's sample keeps room for restored rows (RSS-1)", async () => {
+  assert.equal(REVERT_SAMPLE_SHARE, 500);
+  assert.deepEqual(revertSampleCounts(1500, 50), { skips: 950, restores: 50 });
+  assert.deepEqual(revertSampleCounts(2000, 2000), { skips: 500, restores: 500 });
+  assert.deepEqual(revertSampleCounts(10, 3000), { skips: 10, restores: 990 });
+  assert.deepEqual(revertSampleCounts(3000, 0), { skips: 1000, restores: 0 });
+
+  // Go built this sample from 1500 SKIP and 50 RESTORE lines: the page
+  // accepts it and shows every RESTORE line.
+  const f = fixtures.batchedSkips;
+  const req = await parseRevertRequest("#" + f.fragment);
+  assert.equal(req.binding.rows, f.rows);
+  assert.equal(req.binding.skipped, f.skipped);
+  assert.equal(req.lines.filter((l) => l.action === "RESTORE").length, 50);
+  assert.equal(req.lines.filter((l) => l.action === "SKIP").length, 950);
+
+  // The sample before RSS-1 (1000 SKIP lines, no RESTORE line) is refused,
+  // even with a binding whose sampleHash matches it.
+  const decoded = JSON.parse(inflateRawSync(Buffer.from(f.fragment.slice(2), "base64url")).toString("utf8"));
+  const skips = decoded.lines.filter((l) => l.includes('"action": "SKIP"'));
+  const old = [...skips, ...skips.slice(0, 50)];
+  const binding = decoded.binding.replace(/"sampleHash": "[0-9a-f]+"/, `"sampleHash": "${await rowsHash(old)}"`);
+  await assert.rejects(
+    parseRevertRequest(requestFragment({ ...decoded, binding, lines: old })),
+    /request has 1000 SKIP lines, the binding's sample 950/,
+  );
+});
+
+test("the batchedSkips sample round-trips in format 2 (RSS-1)", async () => {
+  const f = fixtures.batchedSkips;
+  assert.ok(f.fragment2.startsWith("2."));
+  const v1 = await parseRevertRequest("#" + f.fragment);
+  const v2 = await parseRevertRequest("#" + f.fragment2);
+  assert.equal(v2.bindingText, v1.bindingText);
+  assert.deepEqual(v2.lines, v1.lines);
+  assert.deepEqual(v2.credentialIds, [], "format 2 carries no credential ids");
+  assert.deepEqual(revertShown(v2), { restoreShown: 50, skipShown: 950, restoreHidden: 0, skipHidden: 550 });
+});
+
+test("hidden counts come only from signed data", async () => {
+  const req = await parseRevertRequest("#" + fixtures.batchedSkips.fragment);
+  // The binding's totals less the lines that hash to sampleHash.
+  assert.deepEqual(revertShown(req), { restoreShown: 50, skipShown: 950, restoreHidden: 0, skipHidden: 550 });
+  const big = await parseRevertRequest("#" + fixtures.batched.fragment);
+  assert.deepEqual(revertShown(big), { restoreShown: 990, skipShown: 10, restoreHidden: 500, skipHidden: 0 });
+
+  // A link cannot add its own coverage figures: the request is strict, so
+  // an unsigned field such as sampleCoverage is refused before anything is
+  // shown, and revertShown reads only the binding and the checked lines.
+  const decoded = JSON.parse(inflateRawSync(Buffer.from(fixtures.batchedSkips.fragment.slice(2), "base64url")).toString("utf8"));
+  const forged = { ...decoded, sampleCoverage: { hiddenRestores: 0, hiddenSkips: 0 } };
+  await assert.rejects(parseRevertRequest(requestFragment(forged)), /sampleCoverage|unknown field/);
+  const extra = { ...req, sampleCoverage: { hiddenRestores: 0, hiddenSkips: 0 } };
+  assert.deepEqual(revertShown(extra), revertShown(req));
 });
 
 test("revert lines", () => {

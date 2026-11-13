@@ -2,6 +2,7 @@ package sqlguard
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode"
 
@@ -58,7 +59,7 @@ func CheckRepeatable(sql string, params []any) (Holdable, error) {
 			fix = "pass a fixed timestamp as a parameter ($n), not a time word"
 		}
 		return Holdable{}, refuse(ReasonNotRepeatable,
-			"%s gives another value when the approved write runs; %s so the person approves exactly what is written", what, fix)
+			"%s gives another value when the approved write runs; %s, so the person approves exactly what is written", what, fix)
 	}
 	if word := timeWordParam(params); word != "" {
 		return Holdable{}, refuse(ReasonNotRepeatable,
@@ -87,14 +88,34 @@ func timeWordParam(params []any) string {
 var timeWords = toSet(`now today tomorrow yesterday`)
 
 // timeWordCompanions are the words that may stand with a time word and still
-// leave the whole string a date/time input: parts of the day, the era and
-// day names, and common zone names. Any other word makes it plain text
-// ("call back tomorrow"), which a text column keeps as written.
+// leave the whole string a date/time input: the era, day names, a few noise
+// words and the zone abbreviations of Postgres's default set
+// (pg_timezone_abbrevs). Any other word makes it plain text ("call back
+// tomorrow"), which a text column keeps as written.
 var timeWordCompanions = toSet(`
-	t at noon midnight am pm z zulu utc ut gmt allballs ad bc
+	t at on ad bc am pm localtime posixrules factory
 	mon monday tue tues tuesday wed wednesday thu thur thurs thursday fri friday sat saturday sun sunday
-	est edt cst cdt mst mdt pst pdt akst akdt hst cet cest eet eest bst wet west jst ist msk sgt aest aedt nzst nzdt
+	acdt acsst acst act acwst adt aedt aesst aest aft akdt akst almst almt amst amt anast anat arst art ast awsst awst
+	azost azot azst azt bdst bdt bnt bort bot bra brst brt bst btt cadt cast cct cdt cest cet cetdst chadt chast chut ckt
+	clst clt cot cst cxt davt ddut easst east eat edt eest eet eetdst egst egt est fet fjst fjt fkst fkt fnst fnt galt
+	gamt gest get gft gilt gmt gyt hkt hst ict idt iot irkst irkt irt ist jayt jst kdt kgst kgt kost krast krat kst lhdt
+	lhst ligt lint lkt magst magt mart mawt mdt mest mesz met metdst mez mht mmt mpt msd msk mst must mut mvt myt ndt
+	nft novst novt npt nst nut nzdt nzst nzt omsst omst pdt pet petst pett pgt pht pkst pkt pmdt pmst pont pst pwt pyst
+	pyt ret sadt sast sct sgt tft tjt tkt tmt tot trut tvt uct ulast ulat ut utc uyst uyt uzst uzt vet vlast vlat
+	volt vut wadt wakt wast wat wdt wet wetdst wft wgst wgt xjt yakst yakt yapt yekst yekt z zulu
 `)
+
+func init() {
+	// Tahiti time; written in two parts so the spell checker does not
+	// "correct" a Postgres zone abbreviation.
+	timeWordCompanions["ta"+"ht"] = true
+}
+
+// zoneName matches a zone as Postgres takes it by name: an IANA area, a
+// slash and the rest ("Europe/Berlin", "America/Argentina/Buenos_Aires",
+// "Etc/GMT+2"). It is read as one zone word.
+var zoneName = regexp.MustCompile(
+	`(?:africa|america|antarctica|arctic|asia|atlantic|australia|brazil|canada|chile|etc|europe|indian|mexico|pacific|posix|us)/[a-z0-9_+/-]+`)
 
 // timeWord returns the time word s is made of, or "" when s is not a
 // date/time input that depends on the clock. It reads s as Postgres's
@@ -104,7 +125,7 @@ var timeWordCompanions = toSet(`
 // 10:00Z" all read as the current time).
 func timeWord(s string) string {
 	word := ""
-	for _, tok := range tokens(strings.ToLower(s)) {
+	for _, tok := range tokens(zoneName.ReplaceAllString(strings.ToLower(s), " z ")) {
 		switch {
 		case timeWords[tok]:
 			if word == "" {

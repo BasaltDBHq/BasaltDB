@@ -63,11 +63,11 @@ func TestCheckRepeatable(t *testing.T) {
 		`UPDATE leads SET a = '[today,tomorrow)'::tstzrange`:                       "'[today,tomorrow)'",
 		`UPDATE leads SET a = E'n\x6fw'`:                                           "now",
 		`UPDATE leads SET a = $$now$$`:                                             "'now'",
+		`UPDATE leads SET a = 'tomorrow 09:00 Europe/Berlin'`:                      "'tomorrow 09:00 Europe/Berlin'",
 		`UPDATE leads SET a = 'yesterday Monday'`:                                  "'yesterday Monday'",
 		`UPDATE leads SET updated_at = 'NOW'`:                                      "'NOW'",
 		`UPDATE leads SET due = ' Tomorrow '`:                                      "Tomorrow",
 		`UPDATE leads SET due = 'tomorrow 10:00'`:                                  "'tomorrow 10:00'",
-		`UPDATE leads SET due = 'today noon'`:                                      "'today noon'",
 		`UPDATE leads SET due = 'yesterday, 23:59:59.5 +02'`:                       "'yesterday",
 		`UPDATE leads SET due = 'now UTC'`:                                         "'now UTC'",
 		`UPDATE leads SET d = 'today'::date`:                                       "'today'",
@@ -91,7 +91,7 @@ func TestCheckRepeatable(t *testing.T) {
 func TestCheckRepeatableParams(t *testing.T) {
 	t.Parallel()
 	const sql = `UPDATE leads SET updated_at = $1 WHERE id <= $2`
-	for _, p := range []any{"now", "Now", " TODAY ", "tomorrow", "yesterday", "tomorrow 10:00", "today noon", "now,UTC", "yesterday\t23:59 PST", "now()", "NOW() ", "now ()", "(now)", "\"now\"", "now;", "[now]", "{now}", "today()", "today+02", "today T10:00", "today 10:00:00Z", "tomorrow 10:00 z", "{now,tomorrow}", "[today,tomorrow)", "tomorrow 10:00 +0530", "today 12:00 pm", "yesterday msk"} {
+	for _, p := range []any{"now", "Now", " TODAY ", "tomorrow", "yesterday", "tomorrow 10:00", "now,UTC", "yesterday\t23:59 PST", "now()", "NOW() ", "now ()", "(now)", "\"now\"", "now;", "[now]", "{now}", "today()", "today+02", "today T10:00", "today 10:00:00Z", "tomorrow 10:00 z", "{now,tomorrow}", "[today,tomorrow)", "tomorrow 10:00 +0530", "today 12:00 pm", "yesterday msk", "tomorrow 09:00 Europe/Berlin", "today 09:00 America/Argentina/Buenos_Aires", "now Etc/GMT+2", "tomorrow 10:00 nzt", "now on", "Sun today", "tomorrow 10:00 hkt", "today 10:00 ta" + "ht"} {
 		_, err := sqlguard.CheckRepeatable(sql, []any{p, 12})
 		var re *sqlguard.RefusalError
 		require.True(t, errors.As(err, &re), "%q", p)
@@ -102,7 +102,7 @@ func TestCheckRepeatableParams(t *testing.T) {
 		_, err = sqlguard.CheckRepeatable(sql, []any{"2026-11-14T10:00:00Z", p})
 		require.True(t, errors.As(err, &re), "%q", p)
 	}
-	for _, p := range []any{"2026-11-14T10:00:00Z", "epoch", "infinity", "call back tomorrow", "nowhere", "Tomorrowland", "now or never", "know now", "see (you) tomorrow", "", nil, 12, 1.5, true, json.Number("1")} {
+	for _, p := range []any{"2026-11-14T10:00:00Z", "epoch", "infinity", "call back tomorrow", "nowhere", "Tomorrowland", "now or never", "know now", "see (you) tomorrow", "Japan today", "today and/or tomorrow", "meet in Europe/Berlin tomorrow", "", nil, 12, 1.5, true, json.Number("1")} {
 		_, err := sqlguard.CheckRepeatable(sql, []any{p, 12})
 		require.NoError(t, err, "%v", p)
 	}

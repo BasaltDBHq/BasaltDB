@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -506,4 +507,22 @@ func TestUninstallRemovesEverything(t *testing.T) {
 	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT count(1)::int FROM pg_roles WHERE rolname LIKE $1`, d.Names.Prefix+`\_%`).Scan(&roles))
 	require.Zero(t, schemas)
 	require.Zero(t, roles)
+}
+
+func TestInitRerunsAfterAFailedPasskeyPaste(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	config := tempConfig(t)
+	args := slices.Clip([]string{"init", "--agent", "bot_a", "--write", "public.leads", "--prefix", d.Names.Prefix,
+		"--config", config, "--os-user", "tester", "--yes"})
+	r := cli(t, map[string]string{envAdminURL: d.URL}, "not a passkey code\n", args...)
+	require.Equal(t, exitError, r.code, r.stderr)
+	require.Contains(t, r.stderr, "no passkey was registered (run basalt init again)")
+	// The credential and the config were written before the failure was reported.
+	require.FileExists(t, filepath.Join(filepath.Dir(config), "agents", "bot_a.url"))
+	require.FileExists(t, config)
+
+	// The rerun the message asks for does not refuse the role that exists.
+	r = cli(t, map[string]string{envAdminURL: d.URL}, "", slices.Concat(args, []string{"--skip-passkey"})...)
+	require.Equal(t, exitOK, r.code, r.stderr)
 }

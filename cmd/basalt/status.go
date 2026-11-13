@@ -238,8 +238,16 @@ func withoutPath(err error) error {
 	return err
 }
 
-// printStatus is basalt status for the person.
+// printStatus is basalt status for the person. The report carries text
+// from the engine and the database, so the whole of it is escaped
+// (terminalText).
 func printStatus(w io.Writer, s statusOut) {
+	var b strings.Builder
+	writeStatus(&b, s)
+	fmt.Fprint(w, terminalText(b.String()))
+}
+
+func writeStatus(w io.Writer, s statusOut) {
 	engineLine := "not running"
 	if s.Engine.Unknown {
 		engineLine = fmt.Sprintf("unknown (its lock file, owned by %s, cannot be opened: %s)", s.Engine.OSUser, s.Engine.why)

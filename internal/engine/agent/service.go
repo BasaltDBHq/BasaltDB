@@ -433,7 +433,7 @@ func recorded(code string) bool {
 // keeps, and returns err. A failure to record is logged; the agent still
 // gets the original refusal.
 func (s *Service) refused(ctx context.Context, in guard.Intent, op sqlguard.Op, sql string, params []any, start time.Time, err error) error {
-	te := ToolError(err)
+	te := messageTooLarge(actionTool(op), err, ToolError(err))
 	if !recorded(te.Code) {
 		return err
 	}
@@ -445,6 +445,17 @@ func (s *Service) refused(ctx context.Context, in guard.Intent, op sqlguard.Op, 
 		s.Log.Error("record refusal", "code", te.Code, "err", recErr)
 	}
 	return err
+}
+
+// actionTool is the tool an action came from: query runs only a SELECT
+// (sqlguard refuses anything else as WRONG_TOOL), write everything else.
+// Failure maps the error by tool, so a refusal is recorded with the code
+// the agent gets.
+func actionTool(op sqlguard.Op) string {
+	if op == sqlguard.OpSelect {
+		return toolQuery
+	}
+	return toolWrite
 }
 
 // refusalOp is the op the guard's record_refusal accepts.

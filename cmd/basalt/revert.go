@@ -43,7 +43,7 @@ func runRevert(c *cliIO, args []string) int {
 	var f revertFlags
 	fs.StringVar(&f.change, "change", "", "revert one change (a revert's own change id reverts that revert)")
 	fs.StringVar(&f.run, "run", "", "revert every change of one run")
-	fs.StringVar(&f.task, "task", "", "revert every change of one task, by any agent")
+	fs.StringVar(&f.task, "task", "", "revert the agent's own changes in one task; include other agents' changes on the revert page")
 	fs.StringVar(&f.intent, "intent", "", "why you revert (recorded); default \"Revert <scope> <id>\"")
 	fs.StringVar(&f.apply, "apply", "", "apply a prepared revert with the code the revert page gave you")
 	fs.StringVar(&f.status, "status", "", "show a revert's progress (a large revert is applied by the agent in batches)")
@@ -358,7 +358,7 @@ func skippedLines(c *cliIO, l *agentLedger, id uuid.UUID) ([]skippedLineDTO, err
 }
 
 func printRevertStatus(c *cliIO, s revertStatusDTO) {
-	fmt.Fprintf(c.stdout, "revert %s: %s\n", s.RevertID, s.Status)
+	fmt.Fprintf(c.stdout, "revert %s: %s\n", visibleText(s.RevertID), visibleText(s.Status))
 	if !s.Batched {
 		fmt.Fprintf(c.stdout, "  %d rows, applied in one call by basalt revert; sign by %s\n", s.Lines, s.ExpiresAt.UTC().Format(timeLayout))
 		if s.Status == ledger.RevertApplied {

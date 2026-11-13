@@ -7,7 +7,7 @@ include ./.misc/make/help.Makefile
 # ~~~ Development ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .PHONY: deps
-deps: bin/golangci-lint bin/gotestsum bin/mockery ## Install pinned dev tools into ./bin
+deps: bin/golangci-lint bin/gotestsum ## Install pinned dev tools into ./bin
 
 PKG ?= ./...
 

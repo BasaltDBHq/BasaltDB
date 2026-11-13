@@ -106,22 +106,21 @@ type WriteResult struct {
 // change stamped with statement, parameters and duration before COMMIT. Any
 // error rolls the whole action back.
 func (s *Store) Write(ctx context.Context, in guard.Intent, op sqlguard.Op, sql string, params []any) (WriteResult, error) {
-	return s.write(ctx, op, sql, params, func(tx pgx.Tx) error { return guard.BeginGuarded(ctx, tx, in) })
+	return s.write(ctx, op, sql, params, func(tx pgx.Tx) error { return guard.BeginGuarded(ctx, tx, in, s.limits.StatementTimeout) })
 }
 
 // WriteApproved is Write under a signed approval (basalt.approval_id). The
 // guard commits it only if it is the write the person approved.
 func (s *Store) WriteApproved(ctx context.Context, in guard.Intent, approvalID uuid.UUID, op sqlguard.Op, sql string, params []any) (WriteResult, error) {
-	return s.write(ctx, op, sql, params, func(tx pgx.Tx) error { return guard.BeginApproved(ctx, tx, in, approvalID) })
+	return s.write(ctx, op, sql, params, func(tx pgx.Tx) error {
+		return guard.BeginApproved(ctx, tx, in, s.limits.StatementTimeout, approvalID)
+	})
 }
 
 func (s *Store) write(ctx context.Context, op sqlguard.Op, sql string, params []any, begin func(pgx.Tx) error) (WriteResult, error) {
 	start := s.now()
 	var res WriteResult
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
-		if err := setTimeout(ctx, tx, s.limits); err != nil {
-			return err
-		}
 		if err := begin(tx); err != nil {
 			return err
 		}

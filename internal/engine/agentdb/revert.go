@@ -209,9 +209,20 @@ func (s *Store) ApplyRevertBatch(ctx context.Context, id uuid.UUID, lines []int)
 // ApplyRevert relays the person's signed revert (basalt_meta.apply_revert)
 // on the agent's credential, as basalt revert does: Postgres verifies the
 // passkey assertion and runs the revert, or for a large plan records the
-// signature.
+// signature. It runs in its own transaction with the engine's timeouts
+// (guard.SetTimeouts), so the agent role's own defaults cannot fail the
+// person's revert.
 func (s *Store) ApplyRevert(ctx context.Context, id uuid.UUID, a passkey.Assertion) (guard.AppliedRevert, error) {
-	return guard.ApplyRevert(ctx, s.db, id, a)
+	var out guard.AppliedRevert
+	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
+		if err := guard.SetTimeouts(ctx, tx, s.limits.StatementTimeout); err != nil {
+			return err
+		}
+		var err error
+		out, err = guard.ApplyRevert(ctx, tx, id, a)
+		return err
+	})
+	return out, err
 }
 
 // RevertNonce reads the rescope nonce of a revert the agent's role prepared

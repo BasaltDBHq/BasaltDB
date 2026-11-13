@@ -18,7 +18,7 @@ BasaltDB is **the action ledger for AI agents on your database**. It is not a da
 ```
 cmd/basalt     the one binary
 internal/      engine, guard install, MCP transport, CLI internals
-pkg/           shared libraries (apperrors, uniqueid, pagination, …)
+pkg/           shared libraries (uniqueid, pagination, …)
 docs/redesign  specs, plans and decisions
 scripts/       release and packaging scripts
 ```
@@ -80,7 +80,7 @@ Read **this file before implementing**; do not introduce conventions that confli
 - **No `else` by default.** Set the default first and override in an `if`, or return early. Prefer `switch` over if/else-if chains. `else` only when there is no clean alternative. Enforced via revive (`early-return`, `indent-error-flow`, `superfluous-else`).
 - MCP tool handlers and CLI commands: **parse → validate → one service call → map DTO → render**. No business logic and no repos in handlers.
 - Constructors panic on nil required deps; optional deps get a no-op implementation; no `if x != nil` guards at call sites.
-- One shared **`AppError`** (`pkg/apperrors`: NotFound, BadRequest, Conflict, Forbidden, Validation); handlers return mapped errors; one central place maps them to MCP tool errors and CLI exit codes.
+- Errors that an agent or the person must act on follow the actionable-errors contract above: a stable code, `nextSteps` and, when needed, `personMessage`, with the entry in `api/mcp/errors/next-steps.json`. There is no shared error type.
 - Struct-tag validation (go-playground/validator) over inline checks.
 - Consumer-defined interfaces in the package that uses them.
 - Determinism: anything time-based takes `now func() time.Time`.

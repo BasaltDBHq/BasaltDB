@@ -39,6 +39,9 @@ type cliIO struct {
 	rand io.Reader
 	// terminal is the stdin file when it is a terminal, for hidden input.
 	terminal *os.File
+	// rawRead reads a pasted line from terminal with canonical mode off
+	// (nil: readTerminalLine); tests replace it.
+	rawRead rawLineReader
 	// interactive is true when a person answers at a terminal: init asks
 	// its setup questions only then.
 	interactive bool

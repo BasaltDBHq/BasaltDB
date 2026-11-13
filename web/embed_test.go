@@ -17,13 +17,15 @@ var connectSrc = regexp.MustCompile(`connect-src ([^;"]+)`)
 
 // The approve and revert pages of a short link read the request from the
 // engine and post the signature back (same origin), so their meta CSP must
-// allow connect-src 'self'; a browser blocks the fetch otherwise. The
-// passkey pages never fetch and keep 'none'.
+// allow connect-src 'self'; a browser blocks the fetch otherwise. So must
+// the registration page, which posts the passkey back to basalt init when
+// init serves it. The passkey management page never fetches and keeps
+// 'none'.
 func TestPageCSPConnectSrc(t *testing.T) {
 	cases := map[string]string{
 		"approve/index.html":  "'self'",
 		"revert/index.html":   "'self'",
-		"register/index.html": "'none'",
+		"register/index.html": "'self'",
 		"passkeys/index.html": "'none'",
 	}
 	for page, want := range cases {

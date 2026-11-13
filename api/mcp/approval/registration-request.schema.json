@@ -32,6 +32,11 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 64
+    },
+    "handBack": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$",
+      "description": "16 random bytes, base64url: the secret of the hand-back route of the pages basalt init serves itself. Only init's own server's links carry it; the page then posts the passkey to POST /api/v1/passkeys/register with it in the basalt-link-secret header instead of showing a code to paste. See CONTRACT.md, CLI."
     }
   }
 }

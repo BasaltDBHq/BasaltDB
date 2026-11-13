@@ -352,7 +352,7 @@ func servePagesFor(c *cliIO, base string) (stop func()) {
 	if base == links.HostedConsole || c.host.PagesUp(c.ctx, base) {
 		return func() {}
 	}
-	stop, served := serveLocalPages(base)
+	stop, served := serveLocalPages(base, nil)
 	if !served {
 		fmt.Fprint(c.stderr, serveHint(base))
 	}
@@ -442,7 +442,7 @@ func checkOnBase(c *cliIO, keys []ledger.Passkey, base string, open bool) ([]led
 		return nil, err
 	}
 	fmt.Fprint(c.stderr, "Paste the code the page showed: ")
-	code, err := c.line()
+	code, err := c.pasted(c.ctx)
 	if err != nil || code == "" {
 		return nil, errors.New("no check code given")
 	}

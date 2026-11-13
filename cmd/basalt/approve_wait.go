@@ -20,19 +20,24 @@ const approvalPoll = revertPoll
 // expires, like awaitRevert.
 func awaitApproval(c *cliIO, l *agentLedger, id uuid.UUID) int {
 	fmt.Fprintln(c.stderr, "basalt: waiting for your signature on the approval page (or paste the code it shows here)...")
-	codes := make(chan string, 1)
-	go func() {
-		// A closed or empty stdin just leaves the page to finish it.
-		if code, err := c.line(); err == nil && code != "" {
-			codes <- code
-		}
-	}()
+	// A closed stdin just leaves the page to finish it. The paste is read
+	// as the other prompts read it (CONTRACT.md, CLI, Pasted codes), so a
+	// code over a terminal line's limit does not stall; stopPaste waits for
+	// the read to restore the terminal's modes.
+	pastes, stopPaste := c.pasteInBackground(c.ctx)
+	defer stopPaste()
 	tick := time.NewTicker(approvalPoll)
 	defer tick.Stop()
 	for {
 		select {
-		case code := <-codes:
-			return submitApproval(c, l, code)
+		case p := <-pastes:
+			if p.err == nil {
+				stopPaste()
+				return submitApproval(c, l, p.code)
+			}
+			reportPasteError(c, p.err, "waiting for the approval page")
+			pastes = nil // only the page can finish it now
+			continue
 		case <-c.ctx.Done():
 			return c.fail(c.ctx.Err())
 		case <-tick.C:

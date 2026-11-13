@@ -102,7 +102,7 @@ func approveCode(c *cliIO, args []string, held string) (string, error) {
 		return args[0], nil
 	}
 	fmt.Fprint(c.stderr, "Paste the code the approval page showed: ")
-	return c.line()
+	return c.pasted(c.ctx)
 }
 
 // showApproval prints the approval link of a held write on stdout, or with

@@ -299,13 +299,18 @@ func TestInstallIdempotent(t *testing.T) {
 	require.NoError(t, other.Conn.Ping(ctx))
 }
 
-// initAs plans and applies basalt init for spec as the admin connection c.
+// initAs plans and applies basalt init for spec as the admin connection c,
+// again on a deadlock on the shared role catalog (guardtest.TryInit).
 func initAs(t *testing.T, c *pgx.Conn, n guard.Names, spec guard.AgentSpec) {
 	t.Helper()
 	ctx := context.Background()
-	s, err := guard.PlanInit(ctx, c, guard.InitOptions{Names: n, Agent: spec})
-	require.NoError(t, err)
-	require.NoError(t, pgx.BeginFunc(ctx, c, func(tx pgx.Tx) error { return s.Apply(ctx, tx) }))
+	require.NoError(t, guardtest.RetryDeadlock(func() error {
+		s, err := guard.PlanInit(ctx, c, guard.InitOptions{Names: n, Agent: spec})
+		if err != nil {
+			return err
+		}
+		return pgx.BeginFunc(ctx, c, func(tx pgx.Tx) error { return s.Apply(ctx, tx) })
+	}))
 }
 
 // Every path that creates or takes over an agent role leaves it at

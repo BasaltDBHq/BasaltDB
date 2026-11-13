@@ -130,7 +130,7 @@ func (d *DB) Init(t *testing.T, spec guard.AgentSpec) {
 // plan is rebuilt and applied again.
 func (d *DB) TryInit(spec guard.AgentSpec) error {
 	ctx := context.Background()
-	return retryDeadlock(func() error {
+	return RetryDeadlock(func() error {
 		s, err := guard.PlanInit(ctx, d.Admin, guard.InitOptions{Names: d.Names, Agent: spec})
 		if err != nil {
 			return err
@@ -139,12 +139,12 @@ func (d *DB) TryInit(spec guard.AgentSpec) error {
 	})
 }
 
-// deadlockAttempts bounds retryDeadlock.
+// deadlockAttempts bounds RetryDeadlock.
 const deadlockAttempts = 5
 
-// retryDeadlock runs fn again, with a short growing pause, while it fails
+// RetryDeadlock runs fn again, with a short growing pause, while it fails
 // with a Postgres deadlock (SQLSTATE 40P01). Any other result returns at once.
-func retryDeadlock(fn func() error) error {
+func RetryDeadlock(fn func() error) error {
 	var err error
 	for attempt := 1; attempt <= deadlockAttempts; attempt++ {
 		err = fn()

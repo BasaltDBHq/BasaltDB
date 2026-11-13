@@ -6,7 +6,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -93,11 +92,10 @@ func truncateUTF8(s string, n int) string {
 // one for the local pages does not count for the portal: an engine handed
 // over to an agent needs a portal passkey of its own.
 func hasPasskeyFor(c *cliIO, conn *pgx.Conn, origin string) (bool, error) {
-	keys, err := guard.ActivePasskeys(c.ctx, conn)
-	if err != nil {
-		return false, err
-	}
-	return slices.ContainsFunc(keys, func(k guard.RegisteredPasskey) bool { return k.Origin == origin }), nil
+	var ok bool
+	// Plain SQL: a presence check on the admin connection.
+	err := conn.QueryRow(c.ctx, `SELECT EXISTS (SELECT 1 FROM basalt_meta.passkeys WHERE origin = $1 AND revoked_at IS NULL)`, origin).Scan(&ok)
+	return ok, err
 }
 
 // registerPasskey is basalt init's passkey step: print the registration
@@ -264,8 +262,9 @@ func verifyRegistrationCode(code string, req passkey.RegistrationRequest, rp pas
 	return passkey.VerifyRegistration(req, resp, rp)
 }
 
-// passkeyStep registers the person's passkey unless one is registered
-// already (--add-passkey registers another) or --skip-passkey.
+// passkeyStep registers the person's passkey unless an active one is
+// registered already for the target origin (--add-passkey registers
+// another) or --skip-passkey.
 func passkeyStep(c *cliIO, conn *pgx.Conn, f initFlags) error {
 	if f.skipPasskey {
 		fmt.Fprintln(c.stderr, "basalt: no passkey registered (--skip-passkey); held writes cannot be approved until you run basalt init again without it")

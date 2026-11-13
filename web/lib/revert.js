@@ -252,7 +252,7 @@ async function sign(rp, state) {
       relay,
     );
   } catch (err) {
-    $("sign").disabled = nothingToSign(state.req.binding) !== null;
+    $("sign").disabled = nothingToSign(state.req.binding) !== null || state.expired;
     $("status").textContent = webauthnError(err);
   }
 }
@@ -327,10 +327,15 @@ function render(state) {
   }
   $("skip-section").hidden = req.binding.skipped === 0;
   renderScope(state);
+  // Sign and Reject wait while a scope change is in flight, and stay off
+  // on a revert that had expired when the page loaded.
   const nothing = nothingToSign(req.binding);
-  $("sign").disabled = nothing !== null || state.busy;
-  $("status").textContent = nothing ?? "";
+  $("sign").disabled = nothing !== null || state.busy || state.expired;
+  $("reject").disabled = state.busy || state.expired;
+  $("status").textContent = state.expired ? EXPIRED : (nothing ?? "");
 }
+
+const EXPIRED = "This revert link expired. Nothing was reverted; run basalt revert again.";
 
 // RUN_ID_SHOWN is how much of a run id its chip shows.
 const RUN_ID_SHOWN = 8;
@@ -448,7 +453,8 @@ async function main() {
     fail(describe(err));
     return;
   }
-  const state = { rp, req, relay, catalog: null, known: [], choices: null, busy: false };
+  const expired = req.binding.expiresAt.getTime() <= Date.now();
+  const state = { rp, req, relay, catalog: null, known: [], choices: null, busy: false, expired };
   render(state);
   $("main").hidden = false;
   setInterval(() => {
@@ -459,12 +465,7 @@ async function main() {
   $("scope-line").addEventListener("click", () => openScope(true));
   $("scope-done").addEventListener("click", () => openScope(false));
   $("sheet-dim").addEventListener("click", () => openScope(false));
-  if (req.binding.expiresAt.getTime() <= Date.now()) {
-    $("reject").disabled = true;
-    $("sign").disabled = true;
-    $("status").textContent = "This revert link expired. Nothing was reverted; run basalt revert again.";
-    return;
-  }
+  if (expired) return;
   $("sign").addEventListener("click", () => sign(rp, state));
 }
 

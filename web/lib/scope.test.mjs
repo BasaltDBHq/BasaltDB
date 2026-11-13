@@ -219,6 +219,18 @@ test("ticking a chip builds the next select: null for all, never an empty list",
   assert.deepEqual(cb.runs.map((r) => [r.on, r.fixed]), [[true, false], [false, true]]);
   assert.equal(toggled(botOnly, cb, "runs", "0193a4c2-7d1e-7c3a-9f00-0000000000b3"), null);
   assert.equal(toggled(botOnly, cb, "runs", "0193a4c2-7d1e-7c3a-9f00-0000000000b2"), null, "bot's only run is the last one ticked");
+  // Unticking an agent drops its runs from the list: Postgres takes only
+  // runs of selected agents.
+  const r1 = "0193a4c2-7d1e-7c3a-9f00-0000000000b2";
+  const r3 = "0193a4c2-7d1e-7c3a-9f00-0000000000b3";
+  const runs2 = { ...CATALOG, runs: [...CATALOG.runs, { runId: "0193a4c2-7d1e-7c3a-9f00-0000000000b4", agent: "basalt_agent_bot", startedAt: new Date("2026-11-11T09:40:00Z"), changes: 1 }] };
+  const noR4 = { ...req.binding.select, runs: [r1, r3] };
+  const cr = scopeChoices({ ...req, binding: { ...req.binding, select: noR4 } }, runs2, []);
+  assert.deepEqual(toggled(noR4, cr, "agents", "basalt_agent_sync"), { ...noR4, agents: ["basalt_agent_bot"], runs: [r1] });
+  // Only sync's run listed, sync left out: every run of bot again.
+  const onlyR3 = { ...req.binding.select, runs: [r3] };
+  const c3 = scopeChoices({ ...req, binding: { ...req.binding, select: onlyR3 } }, runs2, []);
+  assert.equal(toggled(onlyR3, c3, "agents", "basalt_agent_sync").runs, null);
   const one = toggled(req.binding.select, c, "tables", "public.leads");
   assert.equal(toggled(one, scopeChoices({ ...req, binding: { ...req.binding, select: one } }, CATALOG, []), "tables", "public.notes"), null,
     "the last ticked chip cannot be left out");

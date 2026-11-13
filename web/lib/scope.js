@@ -188,6 +188,7 @@ export function scopeChoices(req, catalog, known) {
       const agentOn = isOn(sel.agents, r.agent);
       return {
         key: r.runId,
+        agent: r.agent,
         label: `${agentName(r.agent)}, ${plural(r.changes, "change")}, ${pad2(r.startedAt.getHours())}:${pad2(r.startedAt.getMinutes())}`,
         on: agentOn && isOn(sel.runs, r.runId),
         other: r.agent !== b.requestedBy,
@@ -209,7 +210,20 @@ export function toggled(select, choices, kind, key) {
   else on.add(key);
   if (on.size === 0) return null;
   const list = items.map((c) => c.key).filter((k) => on.has(k));
-  return { ...select, [kind]: list.length === items.length ? null : list };
+  const next = { ...select, [kind]: list.length === items.length ? null : list };
+  if (kind === "agents") next.runs = runsOfAgents(select.runs, choices.runs, next.agents);
+  return next;
+}
+
+// runsOfAgents keeps, of the runs a select lists, those of the agents it
+// still selects (agents null: every agent), by the catalog's run to agent
+// map: Postgres refuses a run of an agent left out. When none is left the
+// runs are null, every run of the selected agents.
+function runsOfAgents(runs, runChoices, agents) {
+  if (runs === null || runChoices === null) return runs;
+  const agentOf = new Map(runChoices.map((r) => [r.key, r.agent]));
+  const kept = runs.filter((id) => agents === null || agents.includes(agentOf.get(id)));
+  return kept.length === 0 ? null : kept;
 }
 
 // scopeLine is the phone's one line above the restore list ("bot, 1 table,

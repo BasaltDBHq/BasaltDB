@@ -1,0 +1,29 @@
+name: Nightly full-size tests
+
+# make ci runs the exhaustive loops (the million-value dictionary, every
+# NFKC and ignorable character, the false-positive tour) sampled or smaller,
+# to stay fast. This job runs them at full size, with -race, once a night, so
+# rare leak shapes and statistical drift still get found. A failure fails the
+# scheduled run. Start it by hand from the Actions tab (workflow_dispatch).
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pii-full:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      BASALTDB_TEST_FULL: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # Add a package here when it starts to honour BASALTDB_TEST_FULL.
+      - name: Full-size tests
+        run: go test -race -count=1 -timeout 80m ./internal/pii/...

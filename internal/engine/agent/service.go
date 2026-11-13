@@ -134,6 +134,9 @@ type Deps struct {
 	// Catalog reads the database's structure for describe; optional, and
 	// describe answers INTERNAL when nil.
 	Catalog Catalog
+	// Columns reads each table's columns in table order for the pages;
+	// optional, and the pages show the order the rows carry when nil.
+	Columns ColumnOrder
 	// Classes are the agent's PII classes for describe; optional, and
 	// describe fails closed (INTERNAL) when nil: it cannot tell a SECRET
 	// column.

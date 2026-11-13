@@ -65,7 +65,10 @@ function renderSummary(req, summary) {
   $("item-id").title = req.approvalId;
   $("headline").textContent = visibleText(headline(summary));
   $("headline").classList.toggle("cascades", summary.cascadedRows > 0);
-  $("agent").textContent = visibleText(b.agent);
+  // The agent by its name in the engine's config when the engine says it
+  // (display only); the signed role on hover, and alone on a long link.
+  $("agent").textContent = visibleText(req.agentName ?? b.agent);
+  $("agent").title = visibleText(b.agent);
   $("database").textContent = visibleText(b.database);
   $("intent").textContent = visibleText(b.intent);
   $("statement").textContent = visibleText(b.statement, { lines: true });
@@ -89,12 +92,13 @@ const INSERT_NOTE = "New row. Columns not listed are filled in by the database."
 // them only, and as not checked when Postgres left out secret columns;
 // until then its values show as dots, and on a long link it says where to
 // see them.
-export function lineGroups(lines, shown = new Map(), longLink = false) {
+export function lineGroups(lines, shown = new Map(), longLink = false, columns = new Map()) {
   return changeGroups(
     lines.map((line, index) => ({ line, index })),
     {
       mid: "old",
       shown,
+      columns,
       longLink,
       who: null,
       skipped: () => false,
@@ -199,7 +203,7 @@ const describe = (err) => linkFailure(err, "approval", APPROVE_REOPEN);
 function renderLines(state) {
   const longLink = state.relay === null;
   const shown = state.valuesHidden ? new Map() : state.shown;
-  $("lines").replaceChildren(...lineGroups(state.req.lines, shown, longLink));
+  $("lines").replaceChildren(...lineGroups(state.req.lines, shown, longLink, state.req.columns));
 }
 
 // wireReveal offers Show values on a page the engine served with hidden

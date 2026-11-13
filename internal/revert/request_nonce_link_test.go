@@ -9,8 +9,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 )
 
-// A long link never carries rescopeNonce or revealNonce: only the engine
-// serves them. The Go parser refuses both as the pages do.
+// A long link never carries rescopeNonce, revealNonce or columns: only the
+// engine serves them. The Go parser refuses them as the pages do.
 func TestParseRequestRefusesNonces(t *testing.T) {
 	t.Parallel()
 	lines := revertLines()
@@ -22,6 +22,7 @@ func TestParseRequestRefusesNonces(t *testing.T) {
 	for name, req := range map[string]revert.Request{
 		"rescopeNonce": {RevertID: base.RevertID, Binding: base.Binding, Lines: lines, RescopeNonce: seq(16, 1)},
 		"revealNonce":  {RevertID: base.RevertID, Binding: base.Binding, Lines: lines, RevealNonce: seq(16, 1)},
+		"columns":      {RevertID: base.RevertID, Binding: base.Binding, Lines: lines, Columns: map[string][]string{"public.leads": {"id"}}},
 	} {
 		frag, err := linkcodec.Encode(linkcodec.Format1, req)
 		require.NoError(t, err)

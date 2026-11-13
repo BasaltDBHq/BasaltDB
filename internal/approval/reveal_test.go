@@ -284,9 +284,14 @@ func TestParseRequestRefusesRevealNonce(t *testing.T) {
 	require.NoError(t, err)
 	_, _, err = approval.ParseRequest(frag)
 	require.NoError(t, err)
-	req.RevealNonce = counting(100)
-	frag, err = linkcodec.Encode(linkcodec.Format1, req)
-	require.NoError(t, err)
-	_, _, err = approval.ParseRequest(frag)
-	require.ErrorIs(t, err, approval.ErrInvalid)
+	for name, bad := range map[string]approval.Request{
+		"revealNonce": {ApprovalID: req.ApprovalID, Binding: req.Binding, Lines: lines, RevealNonce: counting(100)},
+		"columns":     {ApprovalID: req.ApprovalID, Binding: req.Binding, Lines: lines, Columns: map[string][]string{"public.leads": {"id"}}},
+		"agentName":   {ApprovalID: req.ApprovalID, Binding: req.Binding, Lines: lines, AgentName: "bot"},
+	} {
+		frag, err = linkcodec.Encode(linkcodec.Format1, bad)
+		require.NoError(t, err)
+		_, _, err = approval.ParseRequest(frag)
+		require.ErrorIs(t, err, approval.ErrInvalid, name)
+	}
 }

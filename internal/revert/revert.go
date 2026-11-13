@@ -283,6 +283,10 @@ type Request struct {
 	// long link.
 	RevealNonce   passkey.Bytes   `json:"revealNonce,omitempty"`
 	CredentialIDs []passkey.Bytes `json:"credentialIds,omitempty"`
+	// Columns orders each table's columns as the table does (attnum), for
+	// the page's display only (CONTRACT.md, Local pages): served only by the
+	// engine, never signed, never carried in a link.
+	Columns map[string][]string `json:"columns,omitempty"`
 }
 
 // Check parses the binding and checks the request against it: same revert,
@@ -390,8 +394,8 @@ func ParseRequest(fragment string) (Request, Binding, error) {
 	if err != nil {
 		return Request{}, Binding{}, invalid("revert request %v", err)
 	}
-	if r.RescopeNonce != nil || r.RevealNonce != nil {
-		return Request{}, Binding{}, invalid("a link carries no rescopeNonce or revealNonce: only the engine serves them")
+	if r.RescopeNonce != nil || r.RevealNonce != nil || r.Columns != nil {
+		return Request{}, Binding{}, invalid("a link carries no rescopeNonce, revealNonce or columns: only the engine serves them")
 	}
 	b, err := r.Check()
 	if err != nil {

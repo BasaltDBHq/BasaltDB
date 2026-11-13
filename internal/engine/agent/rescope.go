@@ -229,7 +229,9 @@ func (s *Service) RescopeRevert(ctx context.Context, id uuid.UUID, secret string
 		return ScopeResponse{}, err
 	}
 	s.rescopes.put(id, next)
-	return ScopeResponse{Request: next.request, Catalog: out.Catalog}, nil
+	resp := next.request
+	resp.Columns = s.columnsOf(ctx, resp.Lines)
+	return ScopeResponse{Request: resp, Catalog: out.Catalog}, nil
 }
 
 // moveLink gives the revert's link the rescoped revert's expiry, and on a

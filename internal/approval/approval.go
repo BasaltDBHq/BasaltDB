@@ -110,6 +110,12 @@ type Request struct {
 	// agent), served only by the engine, never carried in a long link.
 	RevealNonce   passkey.Bytes   `json:"revealNonce,omitempty"`
 	CredentialIDs []passkey.Bytes `json:"credentialIds,omitempty"`
+	// Columns and AgentName are for the page's display only (CONTRACT.md,
+	// Local pages): each table's columns in table order (attnum), and the
+	// agent's name in the engine's config. Served only by the engine, never
+	// signed, never carried in a link.
+	Columns   map[string][]string `json:"columns,omitempty"`
+	AgentName string              `json:"agentName,omitempty"`
 }
 
 // Check parses the binding and checks the request against it: same approval,
@@ -168,6 +174,9 @@ func ParseRequest(fragment string) (Request, Binding, error) {
 	}
 	if r.RevealNonce != nil {
 		return Request{}, Binding{}, invalid("a link carries no revealNonce: only the engine serves it")
+	}
+	if r.Columns != nil || r.AgentName != "" {
+		return Request{}, Binding{}, invalid("a link carries no columns or agentName: only the engine serves them")
 	}
 	b, err := r.Check()
 	if err != nil {

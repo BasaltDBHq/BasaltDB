@@ -238,3 +238,18 @@ test("the engine's request may carry revealNonce; a bad one is refused", async (
   // 22 characters, but not canonical: the last one carries bits past the 16th byte.
   await assert.rejects(checkApprovalRequest({ ...req, revealNonce: nonce.slice(0, 21) + "B" }), CodeError);
 });
+
+test("the engine's request may carry the column order and the agent's name, for display only", async () => {
+  const { approvalId, binding, lines } = fixtures.request;
+  const req = { approvalId, binding, lines };
+  const got = await checkApprovalRequest({ ...req, columns: { "public.leads": ["id", "name", "status"] }, agentName: "bot" });
+  assert.deepEqual([...got.columns], [["public.leads", ["id", "name", "status"]]]);
+  assert.equal(got.agentName, "bot");
+  const bare = await checkApprovalRequest(req);
+  assert.equal(bare.columns.size, 0);
+  assert.equal(bare.agentName, null);
+  for (const columns of [[], null, { t: "id" }, { t: [""] }, { t: [1] }]) {
+    await assert.rejects(checkApprovalRequest({ ...req, columns }), CodeError, JSON.stringify(columns));
+  }
+  await assert.rejects(checkApprovalRequest({ ...req, agentName: 7 }), CodeError);
+});

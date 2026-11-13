@@ -24,10 +24,7 @@ var errPreviewRollback = errors.New("preview rolled back")
 func (s *Store) Preview(ctx context.Context, in guard.Intent, sql string, params []any, assigned []string) ([]string, error) {
 	var lines []string
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
-		if err := setTimeout(ctx, tx, s.limits); err != nil {
-			return err
-		}
-		if err := guard.BeginPreview(ctx, tx, in); err != nil {
+		if err := guard.BeginPreview(ctx, tx, in, s.limits.StatementTimeout); err != nil {
 			return err
 		}
 		if _, _, _, err := runText(ctx, tx, sql, params, s.limits.ReadRowLimit, 0); err != nil {
@@ -48,7 +45,7 @@ func (s *Store) Preview(ctx context.Context, in guard.Intent, sql string, params
 
 // Hold stores a held write for the person's approval.
 func (s *Store) Hold(ctx context.Context, in guard.Intent, r guard.HoldRequest) (guard.Held, error) {
-	return guard.Hold(ctx, s.db, in, r)
+	return guard.Hold(ctx, s.db, in, s.limits.StatementTimeout, r)
 }
 
 // TableColumns returns the columns an INSERT without a column list assigns:

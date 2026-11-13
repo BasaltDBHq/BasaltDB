@@ -231,7 +231,7 @@ func guardDetail(err error) string {
 // revealRefused is every refused proof, key, nonce or ticket: one answer,
 // so the agent holding the link learns nothing from which check failed. Its
 // step opens the page again (link, with the page's own secret: the answer
-// goes back to that page only) to press Show values once more.
+// goes back to that page only) to press Show values with passkey once more.
 func revealRefused(code, link string) error {
 	what := "approval"
 	if code == CodeRevertInvalid {
@@ -241,9 +241,9 @@ func revealRefused(code, link string) error {
 		Code: code, Reason: guard.RevealRefused,
 		Message: "showing the hidden rows was refused: it needs the person's passkey on this page; nothing was shown",
 		PersonMessage: "Basalt could not check your passkey for showing the hidden values, so nothing was shown. " +
-			"Open the link again and press Show values; your " + what + " is not affected.",
+			"Open the link again and press Show values with passkey; your " + what + " is not affected.",
 	}
-	steps, err := NewSteps().OpenLink(link, "", "Open this page again and press Show values once more.").Build()
+	steps, err := NewSteps().OpenLink(link, "", "Open this page again and press Show values with passkey once more.").Build()
 	if err != nil {
 		return err
 	}

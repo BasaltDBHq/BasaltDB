@@ -59,11 +59,16 @@ function view(line, shown, mid) {
   return { line: revealedLine(line, shown, mid), hidden: false, checked: shown.checked, secret: new Set(shown.secretColumns) };
 }
 
-// sides is the row before and after the change: none before for an insert,
-// none after for a delete or a row the revert leaves alone.
+// sides is the row before and after the change. The approval page goes by
+// the op: none before for an insert, none after for a delete. The revert
+// page goes by what the line carries, as its row table always did: the row
+// now when there is one (for a row it leaves alone whatever the op, so a
+// re-insert whose key is taken, KEY_TAKEN, shows the row holding it), and
+// what it goes back to unless it leaves the row alone.
 function sides(line, mid, skipped) {
+  if (mid === "now") return { before: line.now ?? null, after: skipped ? null : (line.set ?? null) };
   const before = line.op !== "INSERT" ? line[mid] : null;
-  const after = line.op !== "DELETE" && !skipped ? line.set : null;
+  const after = line.op !== "DELETE" ? line.set : null;
   return { before: before ?? null, after: after ?? null };
 }
 
@@ -80,7 +85,7 @@ function columnsOf(views, mid, skipped) {
 // cell is col's value in member, or in the key when member leaves the key
 // out; empty when the row has no such column.
 function cell(v, member, col, cls) {
-  const has = (m) => v.line[m] !== null && v.line[m] !== undefined && col in v.line[m];
+  const has = (m) => v.line[m] !== null && v.line[m] !== undefined && Object.hasOwn(v.line[m], col);
   const from = has(member) ? member : has("key") ? "key" : null;
   if (from === null) return el("td", cls);
   return el("td", v.secret.has(col) ? `${cls} secret`.trim() : cls, display(v.line, from, col));
@@ -126,9 +131,9 @@ function diffRows(v, columns, opts) {
   const was = tr("del", MINUS);
   const now = tr("add", "+");
   for (const col of columns) {
-    const changes = col in after && opts.highlights(v, col);
+    const changes = Object.hasOwn(after, col) && opts.highlights(v, col);
     was.append(cell(v, opts.mid, col, changes ? "was" : ""));
-    now.append(col in after ? cell(v, "set", col, changes ? "set" : "") : cell(v, opts.mid, col, ""));
+    now.append(Object.hasOwn(after, col) ? cell(v, "set", col, changes ? "set" : "") : cell(v, opts.mid, col, ""));
   }
   return [was, now];
 }
@@ -193,7 +198,8 @@ export function changeGroups(items, opts) {
 // for each kind of change in lines.
 export function countText(lines, opOf = (l) => l.op) {
   const counts = { DELETE: 0, INSERT: 0, UPDATE: 0 };
-  for (const l of lines) counts[opOf(l)] += 1;
+  // An op outside these three is not counted (no row of the page has one).
+  for (const l of lines) if (Object.hasOwn(counts, opOf(l))) counts[opOf(l)] += 1;
   return ["DELETE", "INSERT", "UPDATE"]
     .filter((op) => counts[op] > 0)
     .map((op) => ({ op, text: `${MARKS[op]}${plural(counts[op], "row")}` }));

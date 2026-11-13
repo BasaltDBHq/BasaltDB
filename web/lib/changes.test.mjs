@@ -84,4 +84,5 @@ test("the count names each kind of change", () => {
     { op: "DELETE", text: "−2 rows" },
     { op: "INSERT", text: "+1 row" },
   ]);
+  assert.deepEqual(countText([lead, { ...lead, op: "MERGE" }]), [{ op: "DELETE", text: "\u22121 row" }], "another op is not counted");
 });

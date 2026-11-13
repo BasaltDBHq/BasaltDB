@@ -150,7 +150,7 @@ Planned (owner decisions AE-1 to AE-14, design [`docs/redesign/specs/2026-11-12-
 | `APPROVAL_INVALID` | `NOT_THIS_AGENT` | — | A `CALL_TOOL` (`list_pending`) |
 | `APPROVAL_INVALID` | `ROWS_CHANGED` | — | A `REVISE_CALL` (`query`), A `REVISE_CALL` (`write`, held anew); +pm |
 | `APPROVAL_INVALID` | `BAD_SIGNATURE` | — | P `OPEN_LINK`, A `END_TURN`; +pm |
-| `APPROVAL_INVALID` | `REVEAL_REFUSED` | — | HR-1, pages API only. P `OPEN_LINK` (the page's own short link, then Show values once more); +pm: Basalt could not check your passkey for showing the hidden values, so nothing was shown. Open the link again and press Show values; your approval is not affected |
+| `APPROVAL_INVALID` | `REVEAL_REFUSED` | — | HR-1, pages API only. P `OPEN_LINK` (the page's own short link, then Show values with passkey once more); +pm: Basalt could not check your passkey for showing the hidden values, so nothing was shown. Open the link again and press Show values with passkey; your approval is not affected |
 | `APPROVAL_INVALID` | `PASSKEY_REVOKED` | — | P `RUN_COMMAND` (`basalt passkey list`), P `RUN_COMMAND` (`basalt init ... --add-passkey`), P `OPEN_LINK`, A `END_TURN`; +pm |
 | `REVERT_INVALID` | `LINE_INVALID` | — | A `CALL_TOOL` (`revert_plan`, pending lines) |
 | `REVERT_INVALID` | `PLAN_NOT_SIGNED` | — | A `CALL_TOOL` (`revert_plan`), A `END_TURN` |
@@ -158,7 +158,7 @@ Planned (owner decisions AE-1 to AE-14, design [`docs/redesign/specs/2026-11-12-
 | `REVERT_INVALID` | `NOT_THIS_AGENT` | — | A `STOP` |
 | `REVERT_INVALID` | `ROWS_CHANGED` | — | A `REVISE_CALL` (`request_revert` again, same scope); +pm |
 | `REVERT_INVALID` | `BAD_SIGNATURE` | — | P `OPEN_LINK` (the revert link), A `END_TURN`; +pm |
-| `REVERT_INVALID` | `REVEAL_REFUSED` | — | HR-1, pages API only. P `OPEN_LINK` (the page's own short link, then Show values once more); +pm: as for `APPROVAL_INVALID`, the revert is not affected |
+| `REVERT_INVALID` | `REVEAL_REFUSED` | — | HR-1, pages API only. P `OPEN_LINK` (the page's own short link, then Show values with passkey once more); +pm: as for `APPROVAL_INVALID`, the revert is not affected |
 | `REVERT_INVALID` | `PASSKEY_REVOKED` | — | P `RUN_COMMAND` (`basalt passkey list`), P `RUN_COMMAND` (`basalt init ... --add-passkey`), P `OPEN_LINK` (the revert link), A `END_TURN`; +pm |
 | `REVERT_EXPIRED` | `NOT_SIGNED` | — | A `ASK_PERSON`, P `RUN_COMMAND` (`basalt revert ... --open`); +pm |
 | `REVERT_EXPIRED` | `NOT_FINISHED` | — | A `ASK_PERSON`, P `RUN_COMMAND` (`basalt revert ... --open`); +pm |

@@ -318,6 +318,48 @@ test("a skipped row that is gone shows its key, not empty cells", async () => {
   assert.equal(rowKeyText({ ...gone, key: null }), "Row key not recorded.");
 });
 
+test("a skipped re-insert whose key is taken shows the row that holds the key now", async () => {
+  globalThis.document = { createElement: fakeElement };
+  const req = await parseRevertRequest("#" + fixtures.request.fragment);
+  const skip = req.lines[3];
+  const taken = { ...skip, op: "INSERT", conflict: "KEY_TAKEN" };
+  const t = tableRows(taken);
+  assert.equal(t.rows.length, 1);
+  assert.equal(t.rows[0].className, "keep");
+  assert.ok(t.rows[0].cells.includes("Edited by a person"), "the row holding the key");
+  assert.ok(!t.rows[0].cells.includes("Lead 7"), "not the row the revert would have written");
+  assert.equal(t.rows[0].cells.at(-1), "Another row now has this key.");
+});
+
+test("every conflict kind shows the row now, or its key when it is gone, whatever the op", async () => {
+  globalThis.document = { createElement: fakeElement };
+  const req = await parseRevertRequest("#" + fixtures.request.fragment);
+  const skip = req.lines[3];
+  const reasons = {
+    CHANGED_AFTER: "Changed after the agent. Kept as it is now.",
+    ROW_GONE: "No longer there, or not visible to the revert.",
+    KEY_TAKEN: "Another row now has this key.",
+    ALREADY_REVERTED: "Already reverted.",
+    VALUES_PRUNED: "Older than 30 days: the old values are gone.",
+    SCHEMA_CHANGED: "The table changed since the agent wrote it.",
+    CASCADE: "Restoring it would change rows that are not part of this revert.",
+    CONSTRAINT: "Restoring it would break a database constraint.",
+  };
+  for (const [conflict, reason] of Object.entries(reasons)) {
+    for (const op of ["INSERT", "UPDATE", "DELETE"]) {
+      const line = { ...skip, op, conflict };
+      const t = tableRows(line);
+      assert.equal(t.rows.length, 1, `${conflict} ${op}`);
+      const now = Object.keys(skip.now).map((c) => t.rows[0].cells[t.header.indexOf(c)]);
+      assert.ok(now.includes("Edited by a person"), `${conflict} ${op} shows the row now`);
+      assert.ok(!t.rows[0].cells.includes("Lead 7"), `${conflict} ${op} hides what it would have written`);
+      assert.equal(t.rows[0].cells.at(-1), reason);
+      const gone = tableRows({ ...line, now: null });
+      assert.deepEqual(gone.rows[0].cells, ["=", rowKeyText(line), reason], `${conflict} ${op} gone`);
+    }
+  }
+});
+
 test("a changed column shows the value now struck through and the value it goes back to", async () => {
   globalThis.document = { createElement: fakeElement };
   const req = await parseRevertRequest("#" + fixtures.request.fragment);

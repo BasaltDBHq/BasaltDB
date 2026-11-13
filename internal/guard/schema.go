@@ -25,37 +25,38 @@ type migration struct {
 
 // basalt_meta versions, in order.
 const (
-	versionGuard          = iota + 1 // M1: guard, ledger, chain, retention
-	versionChainFrom                 // M1 close-out: verify_chain_from, engine events
-	versionReads                     // M1.5: recorded reads and STALE_READ
-	versionApprovals                 // M2: passkeys, held writes and approvals
-	versionRevertPlan                // M3: the revert plan, read-only
-	versionRevertTrial               // M3: the trial run and prepared reverts
-	versionRevertApply               // M3: apply a signed revert
-	versionRLS                       // M3 follow-up: the guard's row-level security policy
-	versionRevertBatches             // M3 follow-up: large reverts, signed once and applied in batches
-	versionAgentsInherit             // M4: agents are roles that inherit the agents group
-	versionAgentPolicy               // M4: ledger row for an agent RLS policy the person confirmed
-	versionPasskeys                  // M4.1: passkey revocation and last use
-	versionAgentVersion              // M4 follow-up: agents read schema_version
-	versionRunsAgent                 // M4.1: index for list_runs, the agent's own runs by id
-	versionPII                       // M5.1: PII classification
-	versionSetups                    // M4: setups recorded by basalt init --setup-code
-	versionRevertSample              // M3 follow-up: a large plan's sample shows both restored and skipped rows
-	versionSetupRole                 // M4 follow-up: record_setup reads the clock and checks the agent role strictly
-	versionPIIOids                   // M5.1 follow-up: pii_fingerprint names columns by oid and quotes names
-	versionRevertScope               // RS-1 to RS-4: a revert's scope descriptor, own work only for agents
-	versionRevertWiden               // RS-2, RS-5: the widen proof, rescope and reset, redaction after a widen
-	versionRevertNonce               // RS-2: the requesting role reads its revert's rescope nonce
-	versionRevertReject              // RS-2, Q8: the person rejects a pending revert
-	versionSearchPath                // the caller's temporary tables never shadow the catalog
-	versionExpiryClock               // approval and revert deadlines read the wall clock
-	versionTriggerAlways             // guard triggers fire under any session_replication_role
-	versionPIIUsage                  // EV-14: a PII column needs USAGE on its schema
-	versionOneClock                  // the person's acts recorded on the wall clock; search_path on every routine
-	versionRevealRevert              // HR-1: the person reveals a revert's redacted lines with a passkey proof
-	versionRevealApproval            // HR-1, HR-2: the person reveals a held approval's redacted lines through a re-run preview
-	versionRevealNoLock              // the approval reveal reads the approval row unlocked, so it never deadlocks with a signature
+	versionGuard               = iota + 1 // M1: guard, ledger, chain, retention
+	versionChainFrom                      // M1 close-out: verify_chain_from, engine events
+	versionReads                          // M1.5: recorded reads and STALE_READ
+	versionApprovals                      // M2: passkeys, held writes and approvals
+	versionRevertPlan                     // M3: the revert plan, read-only
+	versionRevertTrial                    // M3: the trial run and prepared reverts
+	versionRevertApply                    // M3: apply a signed revert
+	versionRLS                            // M3 follow-up: the guard's row-level security policy
+	versionRevertBatches                  // M3 follow-up: large reverts, signed once and applied in batches
+	versionAgentsInherit                  // M4: agents are roles that inherit the agents group
+	versionAgentPolicy                    // M4: ledger row for an agent RLS policy the person confirmed
+	versionPasskeys                       // M4.1: passkey revocation and last use
+	versionAgentVersion                   // M4 follow-up: agents read schema_version
+	versionRunsAgent                      // M4.1: index for list_runs, the agent's own runs by id
+	versionPII                            // M5.1: PII classification
+	versionSetups                         // M4: setups recorded by basalt init --setup-code
+	versionRevertSample                   // M3 follow-up: a large plan's sample shows both restored and skipped rows
+	versionSetupRole                      // M4 follow-up: record_setup reads the clock and checks the agent role strictly
+	versionPIIOids                        // M5.1 follow-up: pii_fingerprint names columns by oid and quotes names
+	versionRevertScope                    // RS-1 to RS-4: a revert's scope descriptor, own work only for agents
+	versionRevertWiden                    // RS-2, RS-5: the widen proof, rescope and reset, redaction after a widen
+	versionRevertNonce                    // RS-2: the requesting role reads its revert's rescope nonce
+	versionRevertReject                   // RS-2, Q8: the person rejects a pending revert
+	versionSearchPath                     // the caller's temporary tables never shadow the catalog
+	versionExpiryClock                    // approval and revert deadlines read the wall clock
+	versionTriggerAlways                  // guard triggers fire under any session_replication_role
+	versionPIIUsage                       // EV-14: a PII column needs USAGE on its schema
+	versionOneClock                       // the person's acts recorded on the wall clock; search_path on every routine
+	versionRevealRevert                   // HR-1: the person reveals a revert's redacted lines with a passkey proof
+	versionRevealApproval                 // HR-1, HR-2: the person reveals a held approval's redacted lines through a re-run preview
+	versionRevealNoLock                   // the approval reveal reads the approval row unlocked, so it never deadlocks with a signature
+	versionCatalogChangeAgents            // Q-11: the proven revert scope catalog maps each change to its agent
 )
 
 // migrations lists every version in order. M2 appends versions.
@@ -91,6 +92,7 @@ var migrations = []migration{
 	{version: versionRevealRevert, sql: v29RevealRevert},
 	{version: versionRevealApproval, sql: v30RevealApproval},
 	{version: versionRevealNoLock, sql: v31RevealApprovalNoLock},
+	{version: versionCatalogChangeAgents, sql: v32CatalogChangeAgents, nonBreaking: true},
 }
 
 // LatestVersion is the basalt_meta version this build installs.

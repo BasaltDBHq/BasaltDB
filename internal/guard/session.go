@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
@@ -59,18 +60,30 @@ func StartRun(ctx context.Context, q Querier, in Intent) error {
 // BeginGuarded sets the session variables of an agent write on tx,
 // transaction-local (set_config(..., true)), so nothing outlives the
 // transaction on a pooled connection. Call it first in the transaction.
-func BeginGuarded(ctx context.Context, tx pgx.Tx, in Intent) error {
+//
+// It also sets statement_timeout, lock_timeout and
+// idle_in_transaction_session_timeout to timeout for the transaction: the
+// agent role can ALTER ROLE ... SET its own defaults (a statement_timeout
+// of 0 would let one transaction live as long as it likes), so a guarded
+// transaction never runs on them.
+func BeginGuarded(ctx context.Context, tx pgx.Tx, in Intent, timeout time.Duration) error {
 	if err := in.validate(); err != nil {
 		return err
+	}
+	if timeout < time.Millisecond {
+		return fmt.Errorf("%w: a guarded transaction needs a timeout of at least 1ms, got %s", ErrInvalidIntent, timeout)
 	}
 	task := ""
 	if in.TaskID != uuid.Nil {
 		task = in.TaskID.String()
 	}
+	ms := strconv.FormatInt(timeout.Milliseconds(), 10)
 	return execCall(ctx, tx, sq.Expr(
-		"set_config('basalt.intent', ?, true), set_config('basalt.run_id', ?, true), "+
+		"pg_catalog.set_config('statement_timeout', ?, true), pg_catalog.set_config('lock_timeout', ?, true), "+
+			"pg_catalog.set_config('idle_in_transaction_session_timeout', ?, true), "+
+			"set_config('basalt.intent', ?, true), set_config('basalt.run_id', ?, true), "+
 			"set_config('basalt.task_id', ?, true), set_config('basalt.mode', ?, true)",
-		in.Text, in.RunID.String(), task, ModeApply))
+		ms, ms, ms, in.Text, in.RunID.String(), task, ModeApply))
 }
 
 // Finish describes the statement that just ran in a guarded transaction.

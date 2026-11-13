@@ -20,6 +20,7 @@
     { "code": "ROW_LIMIT_EXCEEDED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "RETRY_SMALLER_BATCHES" }] },
 
     { "code": "QUERY_TIMEOUT", "reason": "ROW_LIMIT", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "code": "QUERY_TIMEOUT", "reason": "SIZE_LIMIT", "planned": true, "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
     { "code": "QUERY_TIMEOUT", "reason": "TIME_LIMIT", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
     { "code": "QUERY_TIMEOUT", "reason": "TIME_LIMIT", "tool": "preview_revert", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "AGENT", "action": "END_TURN" }] },
     { "code": "QUERY_TIMEOUT", "reason": "TIME_LIMIT", "tool": "request_revert", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "END_TURN" }] },

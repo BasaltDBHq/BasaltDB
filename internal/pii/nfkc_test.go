@@ -43,6 +43,16 @@ func makesWordOrMark(r rune) bool {
 	return strings.IndexFunc(s, func(c rune) bool { return unicode.IsLetter(c) || unicode.IsDigit(c) }) >= 0
 }
 
+// makesDigit reports a character that folds to a digit first: glued to a
+// number with no separator, it makes it a longer number, which is no phone
+// when its length is not one its country dials (owner decision EV-1; Known
+// limits).
+func makesDigit(r rune) bool {
+	s := norm.NFKC.String(cases.Fold().String(norm.NFKC.String(string(r))))
+	first, _ := utf8.DecodeRuneInString(s)
+	return unicode.IsDigit(first)
+}
+
 // Every character NFKC changes, glued between two values, leaves neither value
 // in the output, and tokenizing never fails closed on it.
 func TestNoValueLeaksAroundAnyNFKCCharacter(t *testing.T) {
@@ -57,7 +67,7 @@ func TestNoValueLeaksAroundAnyNFKCCharacter(t *testing.T) {
 	}
 	pairs := []pair{
 		{"emails", "fixture.alice.tamm@gmail.com", "mari.kask@fixture-corp.example", []string{"alice", "mari", "kask"}, nil},
-		{"phones", "+44 7700 900123", "+1 202 555 0143", []string{"900123", "555 0143"}, nil},
+		{"phones", "+44 7911 123123", "+1 202 555 0143", []string{"123123", "555 0143"}, makesDigit},
 		{"names", "Alice Tamm", "Jaan Rebane", []string{"Alice", "Tamm", "Jaan", "Rebane"}, makesWordOrMark},
 		// Every character, with a space on each side, leaves both names found.
 		{"names spaced", "Alice Tamm ", " Jaan Rebane", []string{"Alice", "Tamm", "Jaan", "Rebane"}, nil},

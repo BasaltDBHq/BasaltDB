@@ -25,6 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/pgcatalog"
+	"github.com/basaltdbhq/basaltdb/internal/revert"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
@@ -49,6 +50,8 @@ const (
 	MethodPrepareRevert   Method = "PREPARE_REVERT"
 	MethodApplyRevert     Method = "APPLY_REVERT"
 	MethodListRevertLines Method = "LIST_REVERT_LINES"
+	MethodRescopeRevert   Method = "RESCOPE_REVERT"
+	MethodRejectRevert    Method = "REJECT_REVERT"
 	MethodStatus          Method = "STATUS"
 	MethodTarget          Method = "TARGET"
 )
@@ -147,6 +150,8 @@ type Ledger interface {
 	PrepareRevert(ctx context.Context, s guard.RevertScope, intent string) (guard.PreparedRevert, error)
 	ApplyRevert(ctx context.Context, id uuid.UUID, a passkey.Assertion) (guard.AppliedRevert, error)
 	ListRevertLines(ctx context.Context, p ledger.RevertLineParams) (pagination.Page[ledger.RevertLine], error)
+	RescopeRevert(ctx context.Context, id uuid.UUID, runs []uuid.UUID, tables []string) (guard.PreparedRevert, error)
+	RejectRevert(ctx context.Context, id uuid.UUID, note string) (guard.RejectedRevert, error)
 }
 
 // DB is an agent-credential database handle: a pool in the engine, a
@@ -224,6 +229,24 @@ func (l *DBLedger) PrepareRevert(ctx context.Context, s guard.RevertScope, inten
 // ApplyRevert is guard.ApplyRevert.
 func (l *DBLedger) ApplyRevert(ctx context.Context, id uuid.UUID, a passkey.Assertion) (guard.AppliedRevert, error) {
 	return guard.ApplyRevert(ctx, l.db, id, a)
+}
+
+// RescopeRevert narrows the agent's own pending revert id to runs and
+// tables (nil for all) inside the agent's own work, keeping its scope kind
+// and id: guard.RescopeOwn, which never widens.
+func (l *DBLedger) RescopeRevert(ctx context.Context, id uuid.UUID, runs []uuid.UUID, tables []string) (guard.PreparedRevert, error) {
+	r, err := ledger.FindRevert(ctx, l.db, id)
+	if err != nil {
+		return guard.PreparedRevert{}, err
+	}
+	scope := guard.RevertScope{Kind: revert.Scope(r.Scope), ID: r.ScopeID, Runs: runs, Tables: tables}
+	return guard.RescopeOwn(ctx, l.db, id, scope)
+}
+
+// RejectRevert is guard.RejectRevert with no scope token: it never rejects
+// a revert the person widened.
+func (l *DBLedger) RejectRevert(ctx context.Context, id uuid.UUID, note string) (guard.RejectedRevert, error) {
+	return guard.RejectRevert(ctx, l.db, id, note, nil)
 }
 
 // ListRevertLines is ledger.ListRevertLines.

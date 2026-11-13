@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"log/slog"
 )
 
 // HKDF info strings for a link's token and psk (CONTRACT.md, Vault channel,
@@ -15,11 +16,18 @@ const (
 )
 
 // LinkToken is the Vault's routing key for a link: 16 bytes, base64url on
-// the wire (22 characters). It is not secret (the Vault sees it).
+// the wire (22 characters). It is not secret from the Vault, which sees it,
+// but it is a bearer handle there: whoever holds it can register it from
+// another engine and squat the link. Never log it (LogValue redacts it).
 type LinkToken [LinkTokenLen]byte
 
-// String is the token's base64url text, as in the prologue and the socket path.
+// String is the token's base64url text, as in the prologue and the socket
+// path: for the wire only, never for a log.
 func (t LinkToken) String() string { return b64(t[:]) }
+
+// LogValue keeps the token out of slog output, whatever the call site
+// passes it as.
+func (t LinkToken) LogValue() slog.Value { return slog.StringValue(redacted) }
 
 // ParseLinkToken reads a token's 22-character base64url text.
 func ParseLinkToken(s string) (LinkToken, error) {

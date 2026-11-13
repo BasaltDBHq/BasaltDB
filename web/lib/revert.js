@@ -130,12 +130,16 @@ function renderSummary(req) {
 // update with the columns that change highlighted. A row the revert leaves
 // alone (SKIP) shows only "Now": the revert keeps it as it is, so values it
 // would have written must not look like they will be applied.
+//
+// A skipped row that is gone (ROW_GONE) has neither: rowTable returns null,
+// and the page names the row by its key instead (rowKeyText).
 export function rowTable(line) {
   const now = line.now ?? {};
   const skipped = line.action === "SKIP";
   const after = skipped ? {} : (line.set ?? {});
   const showNow = line.now !== null;
   const showAfter = !skipped && line.set !== null;
+  if (!showNow && !showAfter) return null;
   const table = el("table", "values");
   const head = el("tr");
   head.append(el("th", "", "Column"));
@@ -152,6 +156,14 @@ export function rowTable(line) {
     table.append(tr);
   }
   return table;
+}
+
+// rowKeyText names a row by its primary key, for a row with no values to
+// show: "Row id = 42", or each key column for a composite key.
+export function rowKeyText(line) {
+  const key = line.key ?? {};
+  const parts = Object.keys(key).map((col) => `${visibleText(col)} = ${display(line, "key", col)}`);
+  return parts.length ? `Row ${parts.join(", ")}` : "Row key not recorded.";
 }
 
 function opLabel(line) {
@@ -185,7 +197,8 @@ function renderLine(line, who) {
     return card;
   }
   if (line.op === "DELETE" && line.action === "RESTORE") card.append(el("p", "muted", "The agent inserted this row; the revert deletes it."));
-  card.append(rowTable(line));
+  const table = rowTable(line);
+  card.append(table ?? el("p", "muted", rowKeyText(line)));
   return card;
 }
 

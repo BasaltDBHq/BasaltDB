@@ -23,10 +23,12 @@ func TestLockHandOver(t *testing.T) {
 	}{
 		{name: "root, its own file, the engine's directory", proc: 0, file: 0, dir: engine, owner: -1, want: engine, chown: true},
 		{name: "service install names the engine's user", proc: 0, file: 0, dir: 0, owner: engine, want: engine, chown: true},
-		{name: "root directory, user unknown yet: left for HandTo", proc: 0, file: 0, dir: 0, owner: -1},
 		{name: "already the engine's: left alone", proc: 0, file: engine, dir: engine, owner: -1},
 		{name: "another user's file: never taken over", proc: 0, file: other, dir: engine, owner: engine},
 		{name: "not root: nothing to hand over", proc: engine, file: engine, dir: engine, owner: -1},
+		{name: "named owner, the engine's own directory", proc: 0, file: 0, dir: engine, owner: engine, want: engine, chown: true},
+		{name: "named owner, a third user's directory: not root's to give", proc: 0, file: 0, dir: other, owner: engine},
+		{name: "a root directory, owner unknown: stays root's", proc: 0, file: 0, dir: 0, owner: -1},
 	} {
 		got, chown := lockHandOver(tc.proc, tc.file, tc.dir, tc.owner)
 		require.Equal(t, tc.chown, chown, tc.name)

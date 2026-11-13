@@ -3,6 +3,7 @@ package vault
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -47,6 +48,11 @@ type Link struct {
 	// logged.
 	Item      uuid.UUID
 	ExpiresAt time.Time
+}
+
+// LogValue logs a link by its item and expiry, never its token.
+func (l Link) LogValue() slog.Value {
+	return slog.GroupValue(slog.String("item", l.Item.String()), slog.Time("expiresAt", l.ExpiresAt))
 }
 
 // Links are the engine's live relay links, across its agents.

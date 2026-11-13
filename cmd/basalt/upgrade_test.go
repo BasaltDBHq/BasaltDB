@@ -58,7 +58,7 @@ func latestBreaking(t *testing.T) int {
 // versionsAfter is every version this build has above installed, as basalt
 // upgrade prints them.
 func versionsAfter(installed int) string {
-	parts := []string{}
+	parts := make([]string, 0, guard.LatestVersion()-installed)
 	for v := installed + 1; v <= guard.LatestVersion(); v++ {
 		parts = append(parts, strconv.Itoa(v))
 	}

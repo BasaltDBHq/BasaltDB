@@ -50,6 +50,7 @@ const (
 	versionRevertReject             // RS-2, Q8: the person rejects a pending revert
 	versionSearchPath               // the caller's temporary tables never shadow the catalog
 	versionExpiryClock              // approval and revert deadlines read the wall clock
+	versionTriggerAlways            // guard triggers fire under any session_replication_role
 )
 
 // migrations lists every version in order. M2 appends versions.
@@ -79,6 +80,7 @@ var migrations = []migration{
 	{version: versionRevertReject, sql: v23RejectRevert},
 	{version: versionSearchPath, sql: v24Functions + v24SearchPath},
 	{version: versionExpiryClock, sql: v25Approvals + v25Reverts},
+	{version: versionTriggerAlways, sql: v26Triggers},
 }
 
 // LatestVersion is the basalt_meta version this build installs.

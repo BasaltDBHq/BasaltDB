@@ -190,8 +190,19 @@ func resultCases() map[string]resultCase {
 				person, links, steps, err := s.itemGuidance(pendingItem(s, ledger.ApprovalPending, s.Now().Add(-time.Hour)))
 				require.NoError(t, err)
 				return person, links, steps
-			},
-		},
+			}},
+		resultKey("list_pending", "REVERT_PENDING"): {tool: "list_pending", args: map[string]any{},
+			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+				p := &PendingRevert{Revert: caseRevertWith(t, ledger.RevertPending)}
+				require.NoError(t, s.pendingRevert(context.Background(), p, false))
+				return p.PersonMessage, p.Links, p.NextSteps
+			}},
+		resultKey("list_pending", "REVERT_APPLYING"): {tool: "list_pending", args: map[string]any{},
+			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+				p := &PendingRevert{Revert: caseBatchedRevert(t, ledger.RevertApplying)}
+				require.NoError(t, s.pendingRevert(context.Background(), p, false))
+				return p.PersonMessage, p.Links, p.NextSteps
+			}},
 
 		resultKey("revert_plan", "PENDING"): {
 			tool: "revert_plan", args: revertArgs,

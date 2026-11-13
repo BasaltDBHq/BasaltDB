@@ -236,6 +236,19 @@ func TestUpgradeDryRunChangesNothing(t *testing.T) {
 	require.Equal(t, latest-1, g.version(t))
 }
 
+// A database default of session_replication_role other than origin is a
+// warning on stderr naming the fix; the plan still runs.
+func TestUpgradeWarnsWhenReplicationRoleIsNotOrigin(t *testing.T) {
+	t.Parallel()
+	g := newOlderGuard(t, guard.LatestVersion()-1)
+	g.d.Exec(t, `DO $$ BEGIN EXECUTE format('ALTER DATABASE %I SET session_replication_role = replica', current_database()); END $$`)
+	r := g.upgrade(t, g.d.URL, "", "--dry-run")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Contains(t, r.stderr, "basalt: warning: the database default of session_replication_role is replica, not origin.")
+	require.Contains(t, r.stderr, "RESET session_replication_role;")
+	require.NotContains(t, r.stdout, "warning")
+}
+
 func TestUpgradeAsksBeforeRunning(t *testing.T) {
 	t.Parallel()
 	latest := guard.LatestVersion()

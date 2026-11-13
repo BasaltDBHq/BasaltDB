@@ -51,16 +51,37 @@ type HeldNotice struct {
 	ShortURL string
 }
 
-// Notifier tells the person a write is held (Telegram, when configured).
-// It only delivers the link; the approval needs the person's passkey.
+// RevertNotice is a revert waiting for the person's signature, to tell
+// them about when the agent requests it or has its link issued again
+// (owner decision LP-2).
+type RevertNotice struct {
+	RevertID uuid.UUID
+	Agent    string
+	// Headline is built from what Postgres returned (revertHeadline).
+	Headline  string
+	Intent    string
+	ExpiresAt time.Time
+	// RevertURL is the long link, ShortURL the short one when the engine
+	// serves the pages. Both are empty for a widened revert, whose notice
+	// carries only the headline (LP-3).
+	RevertURL string
+	ShortURL  string
+	Widened   bool
+}
+
+// Notifier tells the person a write is held or a revert waits for them
+// (Telegram, when configured). It only delivers the link; approving and
+// signing need the person's passkey.
 type Notifier interface {
 	NotifyHeld(ctx context.Context, n HeldNotice) error
+	NotifyRevert(ctx context.Context, n RevertNotice) error
 }
 
 // noNotifier is the Notifier when none is configured.
 type noNotifier struct{}
 
-func (noNotifier) NotifyHeld(context.Context, HeldNotice) error { return nil }
+func (noNotifier) NotifyHeld(context.Context, HeldNotice) error     { return nil }
+func (noNotifier) NotifyRevert(context.Context, RevertNotice) error { return nil }
 
 // sqlstateApprovalRequired is the guard's BS002.
 const sqlstateApprovalRequired = "BS002"
@@ -430,32 +451,6 @@ type PendingItem struct {
 	PersonMessage string
 	Links         []mcp.Link
 	NextSteps     []mcp.NextStep
-}
-
-// ListPending returns one page of the agent's open held writes. It touches
-// no link unless reissue is set: then each item gets a new short link and
-// its earlier one stops working (CONTRACT.md, Link secrets).
-func (s *Service) ListPending(ctx context.Context, p ledger.ApprovalListParams, reissue bool) (pagination.Page[PendingItem], error) {
-	if _, err := s.findRun(ctx, p.RunID); err != nil {
-		return pagination.Page[PendingItem]{}, err
-	}
-	page, err := s.Approvals.ListApprovals(ctx, p)
-	if err != nil {
-		return pagination.Page[PendingItem]{}, err
-	}
-	out := pagination.Page[PendingItem]{Items: make([]PendingItem, 0, len(page.Items)), NextCursor: page.NextCursor}
-	for _, a := range page.Items {
-		n, err := s.approvalNotice(ctx, a.ID, a.BindingText, a.Lines, a.ExpiresAt, reissue)
-		if err != nil {
-			return pagination.Page[PendingItem]{}, err
-		}
-		item := PendingItem{Approval: a, Notice: n.ApprovalNotice}
-		if item.PersonMessage, item.Links, item.NextSteps, err = s.itemGuidance(item); err != nil {
-			return pagination.Page[PendingItem]{}, err
-		}
-		out.Items = append(out.Items, item)
-	}
-	return out, nil
 }
 
 // approvalPoll is how often a waiting write checks for the signature.

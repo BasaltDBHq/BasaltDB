@@ -59,6 +59,8 @@ type Revert struct {
 	// none).
 	RejectedAt *time.Time
 	RejectNote string
+	// CreatedAt is when the revert was prepared.
+	CreatedAt time.Time
 }
 
 // RevertProgress counts a batched plan's lines by outcome.
@@ -68,13 +70,26 @@ type RevertProgress struct {
 	Pending  int
 }
 
-// FindRevert returns a revert the calling role prepared.
-func FindRevert(ctx context.Context, q guard.Querier, id uuid.UUID) (Revert, error) {
-	sql, args, err := psql.Select("revert_id", "status", "scope", "scope_id", "intent", "rows", "skipped", "expires_at",
+func revertSelect() sq.SelectBuilder {
+	return psql.Select(colRevertID, "status", "scope", "scope_id", "intent", "rows", "skipped", "expires_at",
 		"coalesce(binding_text, '')", "coalesce(lines, '{}')", "batched", "signed_at", "apply_by", "batches",
 		"coalesce(restored, 0)", "coalesce(skipped_now, 0)", "coalesce(pending, 0)", "change_id", "widened",
-		"rejected_at", "coalesce(reject_note, '')").
-		From("basalt_meta.agent_reverts").Where(sq.Eq{"revert_id": id.String()}).ToSql()
+		"rejected_at", "coalesce(reject_note, '')", "created_at").
+		From("basalt_meta.agent_reverts")
+}
+
+func scanRevert(row pgx.CollectableRow) (Revert, error) {
+	var r Revert
+	err := row.Scan(&r.ID, &r.Status, &r.Scope, &r.ScopeID, &r.Intent, &r.Rows, &r.Skipped, &r.ExpiresAt, &r.BindingText,
+		&r.Lines, &r.Batched, &r.SignedAt, &r.ApplyBy, &r.Batches,
+		&r.Progress.Restored, &r.Progress.Skipped, &r.Progress.Pending, &r.ChangeID, &r.Widened,
+		&r.RejectedAt, &r.RejectNote, &r.CreatedAt)
+	return r, err
+}
+
+// FindRevert returns a revert the calling role prepared.
+func FindRevert(ctx context.Context, q guard.Querier, id uuid.UUID) (Revert, error) {
+	sql, args, err := revertSelect().Where(sq.Eq{colRevertID: id.String()}).ToSql()
 	if err != nil {
 		return Revert{}, err
 	}
@@ -82,18 +97,36 @@ func FindRevert(ctx context.Context, q guard.Querier, id uuid.UUID) (Revert, err
 	if err != nil {
 		return Revert{}, err
 	}
-	r, err := pgx.CollectExactlyOneRow(rows, func(row pgx.CollectableRow) (Revert, error) {
-		var r Revert
-		err := row.Scan(&r.ID, &r.Status, &r.Scope, &r.ScopeID, &r.Intent, &r.Rows, &r.Skipped, &r.ExpiresAt, &r.BindingText,
-			&r.Lines, &r.Batched, &r.SignedAt, &r.ApplyBy, &r.Batches,
-			&r.Progress.Restored, &r.Progress.Skipped, &r.Progress.Pending, &r.ChangeID, &r.Widened,
-			&r.RejectedAt, &r.RejectNote)
-		return r, err
-	})
+	r, err := pgx.CollectExactlyOneRow(rows, scanRevert)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Revert{}, ErrRevertNotFound
 	}
 	return r, err
+}
+
+// RevertListParams lists the calling role's open reverts. Status "" means
+// PENDING and APPLYING.
+type RevertListParams struct {
+	pagination.Params
+	Status string
+}
+
+// colRevertID is the revert id column of basalt_meta.agent_reverts.
+const colRevertID = "revert_id"
+
+// ListOpenReverts returns one page of the calling role's reverts waiting
+// for the person's signature (PENDING, not expired) or for the role's
+// batches (APPLYING), keyset on the revert id as held writes are, so the
+// two lists merge in one order (list_pending, LP-1).
+func ListOpenReverts(ctx context.Context, q guard.Querier, p RevertListParams) (pagination.Page[Revert], error) {
+	switch p.Status {
+	case "", RevertPending, RevertApplying:
+	default:
+		return pagination.Page[Revert]{}, fmt.Errorf("%w: status %q", ErrInvalidParams, p.Status)
+	}
+	l := openList[Revert]{selectAll: revertSelect(), idColumn: colRevertID, statuses: []string{RevertPending, RevertApplying},
+		scan: scanRevert, id: func(r Revert) uuid.UUID { return r.ID }}
+	return l.page(ctx, q, p.Params, p.Status)
 }
 
 // Outcomes of a batched plan's lines.

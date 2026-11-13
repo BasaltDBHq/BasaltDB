@@ -168,6 +168,7 @@ func (l *laptopSetup) run() error {
 		return missingTablesHint(err, l.conn.Config().Database)
 	}
 	fmt.Fprint(c.stdout, script.SQL())
+	printWarnings(c.stderr, script)
 	if l.f.dryRun {
 		fmt.Fprintln(c.stderr, "basalt: dry run; nothing ran")
 		return nil

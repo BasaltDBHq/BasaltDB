@@ -9,11 +9,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/peercred"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
@@ -122,6 +124,7 @@ func (e *Engine) serveConn(ctx context.Context, a Agent, conn *net.UnixConn) {
 	}
 	if uid != a.UID {
 		e.log.Warn("refused connection from another OS user", "agent", a.Name, "peerUid", uid, "wantUid", a.UID)
+		refusePeer(conn, a.Name, uid)
 		return
 	}
 	// Closing the connection on shutdown unblocks the server's read.
@@ -130,6 +133,28 @@ func (e *Engine) serveConn(ctx context.Context, a Agent, conn *net.UnixConn) {
 	if err := a.Server.Serve(ctx, conn, conn); err != nil && ctx.Err() == nil && !errors.Is(err, net.ErrClosed) {
 		e.log.Warn("connection ended", "agent", a.Name, "err", err)
 	}
+}
+
+// refuseDrain bounds how long a refused connection is read before it is
+// closed: closing with the client's request unread would reset it.
+const (
+	refuseDrain      = 2 * time.Second
+	refuseDrainBytes = 64 << 10
+)
+
+// refusePeer answers a peer of another OS user with one refusal line that
+// says who may use the socket, then reads (and drops) what it sent, so the
+// shim sees the refusal instead of a reset. Nothing it sent is served.
+func refusePeer(conn *net.UnixConn, agentName string, uid uint32) {
+	msg := fmt.Sprintf("the basalt engine refused this connection: the socket of agent %q serves only that agent's OS user "+
+		"(osUser in the engine config), and this process runs as uid %d. Start the MCP client as the agent's OS user, "+
+		"or set that user with basalt init --agent %s --os-user <user>", agentName, uid, agentName)
+	if err := mcp.WritePeerRefused(conn, msg); err != nil {
+		return
+	}
+	_ = conn.CloseWrite()
+	_ = conn.SetReadDeadline(time.Now().Add(refuseDrain))
+	_, _ = io.Copy(io.Discard, io.LimitReader(conn, refuseDrainBytes))
 }
 
 // listenSocket listens on path, replacing a stale socket file but never any

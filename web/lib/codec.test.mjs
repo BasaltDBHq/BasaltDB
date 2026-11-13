@@ -9,6 +9,13 @@ import {
   CodeError,
   b64urlDecode,
   b64urlEncode,
+  checkApprovalRequest,
+  checkRevealAnswer,
+  checkRevealedRow,
+  hex,
+  newRevealSecret,
+  revealChallenge,
+  revealKey,
   encodeApprovalResponse,
   encodeRegistrationResponse,
   parseApprovalRequest,
@@ -166,4 +173,66 @@ test("registration response carries prfSupported only when true", () => {
   const json = (code) => JSON.parse(new TextDecoder().decode(b64urlDecode(code.split(".").pop())));
   assert.equal(json(encodeRegistrationResponse({ ...fields, prfSupported: true })).prfSupported, true);
   assert.equal("prfSupported" in json(encodeRegistrationResponse(fields)), false);
+});
+
+// Rows hidden from the agent: the same vectors internal/approval checks.
+const reveal = JSON.parse(
+  readFileSync(new URL("../../internal/approval/testdata/reveal.json", import.meta.url), "utf8"),
+);
+
+test("the reveal key and challenge match Go's for the shared vectors", async () => {
+  assert.ok(reveal.challenges.some((c) => c.kind === "REVERT"), "a revert vector, with a large plan's rowsHash");
+  for (const c of reveal.challenges) {
+    const key = await revealKey(b64urlDecode(c.revealSecret));
+    assert.equal(hex(key), c.revealKey, c.name);
+    const challenge = await revealChallenge(c.kind, c.id, c.nonce, key, c.rowsHash);
+    assert.equal(b64urlEncode(challenge), c.challenge, c.name);
+  }
+});
+
+test("the reveal challenge refuses a bad kind, nonce, key or rowsHash", async () => {
+  const c = reveal.challenges[0];
+  const key = await revealKey(b64urlDecode(c.revealSecret));
+  await assert.rejects(revealChallenge("APPLY", c.id, c.nonce, key, c.rowsHash), CodeError);
+  await assert.rejects(revealChallenge(c.kind, c.id.toUpperCase(), c.nonce, key, c.rowsHash), CodeError);
+  await assert.rejects(revealChallenge(c.kind, c.id, c.nonce.slice(1), key, c.rowsHash), CodeError);
+  await assert.rejects(revealChallenge(c.kind, c.id, c.nonce, key.slice(1), c.rowsHash), CodeError);
+  await assert.rejects(revealChallenge(c.kind, c.id, c.nonce, key, c.rowsHash.toUpperCase()), CodeError);
+  await assert.rejects(revealKey(new Uint8Array(15)), CodeError);
+  assert.equal(newRevealSecret().length, 16);
+});
+
+test("a revealed row is checked, unverified or refused exactly as in Go", async () => {
+  for (const v of reveal.rows) {
+    if (v.result === "REFUSED") {
+      await assert.rejects(checkRevealedRow(v.line, v.row), CodeError, v.name);
+      continue;
+    }
+    const got = await checkRevealedRow(v.line, v.row);
+    assert.equal(got.checked, v.result === "CHECKED", v.name);
+  }
+});
+
+test("a reveal answer covers redacted lines in order, once each", async () => {
+  const ok = reveal.rows.find((v) => v.result === "CHECKED" && v.line.includes('"op": "DELETE"'));
+  const visible = '{"op": "DELETE", "key": {"id": 4}, "old": {"id": 4}, "set": null, "table": "public.leads", "cascaded": false}';
+  const lines = [ok.line, visible, ok.line];
+  const row = (line) => ({ ...ok.row, line });
+  const got = await checkRevealAnswer(lines, { rows: [row(0), row(2)] });
+  assert.deepEqual(got.map((r) => [r.line, r.checked]), [[0, true], [2, true]]);
+  for (const rows of [[row(3)], [row(-1)], [row(1)], [row(0), row(0)], [row(2), row(0)], [{ ...row(0), extra: 1 }]]) {
+    await assert.rejects(checkRevealAnswer(lines, { rows }), CodeError, JSON.stringify(rows.map((r) => r.line)));
+  }
+  await assert.rejects(checkRevealAnswer(lines, { rows: [], more: 1 }), CodeError);
+  await assert.rejects(checkRevealedRow(ok.line, { ...ok.row, secretColumns: [] }), CodeError, "an empty secretColumns");
+});
+
+test("the engine's request may carry revealNonce; a bad one is refused", async () => {
+  const { approvalId, binding, lines } = fixtures.request;
+  const req = { approvalId, binding, lines };
+  const nonce = reveal.challenges[0].nonce;
+  const got = await checkApprovalRequest({ ...req, revealNonce: nonce });
+  assert.equal(got.revealNonce, nonce);
+  assert.equal((await checkApprovalRequest(req)).revealNonce, null);
+  await assert.rejects(checkApprovalRequest({ ...req, revealNonce: "short" }), CodeError);
 });

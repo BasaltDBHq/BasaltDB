@@ -67,19 +67,20 @@ function plural(n, word) {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
-// renderHeader fills the top bar, the headline and the agent's reason. A
+// renderHeader fills the top bar, the headline and the reason given. A
 // widened revert carries the "You widened this" pill.
 function renderHeader(req) {
   const b = req.binding;
-  const requester = visibleText(agentName(b.requestedBy));
   const head = headline(b);
-  $("crumb").textContent = `Revert request from ${requester}`;
+  // Postgres cannot tell whether the person or the agent started the
+  // revert, so the page does not say who asked (owner decision).
+  $("crumb").textContent = "Revert request";
   $("item-id").textContent = req.revertId.slice(-ID_SHOWN);
   $("item-id").title = req.revertId;
   $("headline").textContent = visibleText(head.title);
   $("lede").textContent = visibleText(head.lede);
   $("widened-pill").hidden = !head.widened;
-  $("why-label").textContent = `${requester}'s reason:`;
+  $("why-label").textContent = "Reason given:";
   $("signing").textContent = signingSummary(req);
   showExpiry(b.expiresAt);
 }
@@ -168,10 +169,11 @@ const INSERTED_NOTE = "Rows marked \u2212 were inserted by the agent; the revert
 // to them only, and as not checked when Postgres left out secret columns;
 // until then its values show as dots, and on a long link it says where to
 // see them. A row with no values to show is named by its key.
-export function lineGroups(items, who = null, shown = new Map(), longLink = false) {
+export function lineGroups(items, who = null, shown = new Map(), longLink = false, columns = new Map()) {
   return changeGroups(items, {
     mid: "now",
     shown,
+    columns,
     longLink,
     who: who === null ? null : () => agentTag(who),
     skipped: (line) => line.action === "SKIP",
@@ -325,8 +327,8 @@ function render(state) {
   const shown = state.valuesHidden ? new Map() : state.shown;
   const items = req.lines.map((line, index) => ({ line, index }));
   const restore = items.filter((i) => i.line.action !== "SKIP");
-  $("restore").replaceChildren(...lineGroups(restore, who, shown, longLink));
-  $("skip").replaceChildren(...lineGroups(items.filter((i) => i.line.action === "SKIP"), who, shown, longLink));
+  $("restore").replaceChildren(...lineGroups(restore, who, shown, longLink, req.columns));
+  $("skip").replaceChildren(...lineGroups(items.filter((i) => i.line.action === "SKIP"), who, shown, longLink, req.columns));
   $("restore-count").replaceChildren(...countText(restore.map((i) => i.line)).map((c) => el("span", `count-${c.op.toLowerCase()}`, c.text)));
   $("signed-hash").textContent = signedText(req);
   renderReveal(state);

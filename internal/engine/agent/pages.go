@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -41,7 +42,50 @@ func (s *Service) ApprovalRequest(ctx context.Context, id uuid.UUID) (approval.R
 	if err != nil {
 		return approval.Request{}, err
 	}
-	return approval.Request{ApprovalID: a.ID, Binding: a.BindingText, Lines: a.Lines, RevealNonce: reveal, CredentialIDs: ids}, nil
+	return approval.Request{
+		ApprovalID: a.ID, Binding: a.BindingText, Lines: a.Lines, RevealNonce: reveal, CredentialIDs: ids,
+		Columns: s.columnsOf(ctx, a.Lines),
+	}, nil
+}
+
+// ColumnOrder reads tables' columns in table order (attnum).
+type ColumnOrder interface {
+	// ColumnOrder maps each table name, as the lines spell it, to its
+	// columns; a table it cannot find is left out.
+	ColumnOrder(ctx context.Context, tables []string) (map[string][]string, error)
+}
+
+// columnsOf is the column order of the tables lines name, for the pages'
+// display only (CONTRACT.md, Local pages): never signed, and a failure
+// only costs the order, so it is logged and nil is returned.
+func (s *Service) columnsOf(ctx context.Context, lines []string) approval.ColumnOrder {
+	if s.Columns == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var tables []string
+	for _, l := range lines {
+		var line struct {
+			Table string `json:"table"`
+		}
+		if json.Unmarshal([]byte(l), &line) != nil || line.Table == "" || seen[line.Table] {
+			continue
+		}
+		seen[line.Table] = true
+		tables = append(tables, line.Table)
+	}
+	if len(tables) == 0 {
+		return nil
+	}
+	cols, err := s.Columns.ColumnOrder(ctx, tables)
+	if err != nil {
+		s.Log.WarnContext(ctx, "pages: column order not read; the page shows the rows' order", "err", err)
+		return nil
+	}
+	if len(cols) == 0 {
+		return nil
+	}
+	return cols
 }
 
 // RelayApproval submits the person's signed approval of one of this
@@ -125,12 +169,14 @@ func (s *Service) RevertRequest(ctx context.Context, id uuid.UUID, secret string
 	case r.Widened && held:
 		req := st.request
 		req.CredentialIDs, req.RescopeNonce, req.RevealNonce = ids, nonce, reveal
+		req.Columns = s.columnsOf(ctx, req.Lines)
 		return req, nil
 	case r.Widened:
 		return revert.Request{}, widenAgain(nonce)
 	}
 	return revert.Request{
 		RevertID: r.ID, Binding: r.BindingText, Lines: r.Lines, RescopeNonce: nonce, RevealNonce: reveal, CredentialIDs: ids,
+		Columns: s.columnsOf(ctx, r.Lines),
 	}, nil
 }
 

@@ -110,6 +110,28 @@ type Request struct {
 	// agent), served only by the engine, never carried in a long link.
 	RevealNonce   passkey.Bytes   `json:"revealNonce,omitempty"`
 	CredentialIDs []passkey.Bytes `json:"credentialIds,omitempty"`
+	// Columns orders each table's columns as the table does (attnum), for
+	// the page's display only (CONTRACT.md, Local pages): served only by
+	// the engine, never signed, never carried in a link.
+	Columns ColumnOrder `json:"columns,omitempty"`
+}
+
+// ColumnOrder maps a table, as the lines spell it, to its column names in
+// table order. A present but null value decodes to an empty, non-nil map,
+// so a link that names the field at all is told apart from one without it.
+type ColumnOrder map[string][]string
+
+// UnmarshalJSON decodes the map; null is an empty map, not an absent one.
+func (c *ColumnOrder) UnmarshalJSON(b []byte) error {
+	var m map[string][]string
+	if err := json.Unmarshal(b, &m); err != nil {
+		return err
+	}
+	if m == nil {
+		m = map[string][]string{}
+	}
+	*c = m
+	return nil
 }
 
 // Check parses the binding and checks the request against it: same approval,
@@ -168,6 +190,9 @@ func ParseRequest(fragment string) (Request, Binding, error) {
 	}
 	if r.RevealNonce != nil {
 		return Request{}, Binding{}, invalid("a link carries no revealNonce: only the engine serves it")
+	}
+	if r.Columns != nil {
+		return Request{}, Binding{}, invalid("a link carries no columns: only the engine serves them")
 	}
 	b, err := r.Check()
 	if err != nil {

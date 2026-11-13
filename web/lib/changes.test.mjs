@@ -112,3 +112,11 @@ test("the approve button counts the write's own rows, and the cascade apart", ()
   const update = { ...lead, op: "UPDATE", set: { name: "x" } };
   assert.equal(approveLabel(summarize([update, { ...update, key: { id: 5 } }])), "Approve: update 2 rows");
 });
+
+test("columns follow the table's order when the engine sends it, unlisted ones last; the rows' order without it", () => {
+  globalThis.document = { createElement: fakeElement };
+  const row = { ...lead, old: { id: 4, name: "Dana", score: 3, status: "open", extra: "x" } };
+  const order = new Map([["public.leads", ["id", "name", "status", "score", "gone"]]]);
+  assert.deepEqual(rows(lineGroups([row], new Map(), false, order)[0])[0], ["", "id", "name", "status", "score", "extra"]);
+  assert.deepEqual(rows(lineGroups([row])[0])[0], ["", "id", "name", "score", "status", "extra"], "a long link keeps the rows' order");
+});

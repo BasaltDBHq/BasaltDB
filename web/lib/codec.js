@@ -65,6 +65,7 @@ const B64URL = /^[A-Za-z0-9_-]*$/;
 const HEX64 = /^[0-9a-f]{64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const NONCE = /^[A-Za-z0-9_-]{22}$/;
+const NONCE_BYTES = 16;
 
 // base64url without padding (RFC 4648 §5), strict: no padding, no standard
 // alphabet, no impossible lengths.
@@ -646,13 +647,22 @@ export async function checkRevertRequest(value) {
 }
 
 // checkNonce reads an optional nonce the engine serves (rescopeNonce,
-// revealNonce): 16 bytes, base64url. null when absent.
+// revealNonce): exactly 16 bytes, canonical base64url. null when absent.
 function checkNonce(req, key, what) {
   if (!(key in req)) return null;
-  if (typeof req[key] !== "string" || !NONCE.test(req[key])) {
+  if (typeof req[key] !== "string" || !NONCE.test(req[key]) || !decodesTo(req[key], NONCE_BYTES)) {
     throw new CodeError(`${what} has a bad ${key}`);
   }
   return req[key];
+}
+
+// decodesTo reports whether text is canonical base64url of exactly n bytes.
+function decodesTo(text, n) {
+  try {
+    return b64urlDecode(text).length === n;
+  } catch {
+    return false;
+  }
 }
 
 // checkAllLines: a one-call revert's request carries every line, hashing to
@@ -826,7 +836,7 @@ export function newRevealSecret() {
 export async function revealChallenge(kind, id, nonce, key, hash) {
   if (kind !== KIND_APPROVE && kind !== KIND_REVERT) throw new CodeError(`reveal kind "${kind}"`);
   if (typeof id !== "string" || !UUID.test(id)) throw new CodeError("reveal id is not a lowercase uuid");
-  if (typeof nonce !== "string" || !NONCE.test(nonce)) throw new CodeError("bad reveal nonce");
+  if (typeof nonce !== "string" || !NONCE.test(nonce) || !decodesTo(nonce, NONCE_BYTES)) throw new CodeError("bad reveal nonce");
   if (!(key instanceof Uint8Array) || key.length !== REVEAL_KEY_BITS / 8) throw new CodeError("the reveal key must be 32 bytes");
   if (typeof hash !== "string" || !HEX64.test(hash)) throw new CodeError("rowsHash is not a sha256 hex digest");
   const keyHash = hex(await sha256(key));

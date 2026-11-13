@@ -154,6 +154,34 @@
         "row": "[{\"id\": 8}"
       },
       "result": "REFUSED"
+    },
+    {
+      "name": "an empty secretColumns",
+      "line": "{\"op\": \"DELETE\", \"table\": \"public.lead_notes\", \"rowHash\": \"50728b5685b09931dbe5ce580db1736af673cc5731312300fd1b5a63f7a26e4d\", \"cascaded\": true, \"redacted\": true}",
+      "row": {
+        "line": 0,
+        "row": "[{\"id\": 8}, {\"id\": 8, \"body\": \"call back\", \"lead_id\": 4}, null]",
+        "secretColumns": []
+      },
+      "result": "REFUSED"
+    },
+    {
+      "name": "a line whose keys differ in case",
+      "line": "{\"op\": \"DELETE\", \"table\": \"public.lead_notes\", \"rowHash\": \"50728b5685b09931dbe5ce580db1736af673cc5731312300fd1b5a63f7a26e4d\", \"cascaded\": true, \"REDACTED\": true}",
+      "row": {
+        "line": 0,
+        "row": "[{\"id\": 8}, {\"id\": 8, \"body\": \"call back\", \"lead_id\": 4}, null]"
+      },
+      "result": "REFUSED"
+    },
+    {
+      "name": "a line whose rowHash key differs in case",
+      "line": "{\"op\": \"DELETE\", \"table\": \"public.lead_notes\", \"RowHash\": \"50728b5685b09931dbe5ce580db1736af673cc5731312300fd1b5a63f7a26e4d\", \"cascaded\": true, \"redacted\": true}",
+      "row": {
+        "line": 0,
+        "row": "[{\"id\": 8}, {\"id\": 8, \"body\": \"call back\", \"lead_id\": 4}, null]"
+      },
+      "result": "REFUSED"
     }
   ]
 }

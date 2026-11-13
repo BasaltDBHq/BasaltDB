@@ -237,3 +237,17 @@ func (s *Store) RevertNonce(ctx context.Context, id uuid.UUID) ([]byte, error) {
 func (s *Store) RejectRevert(ctx context.Context, id uuid.UUID, note string, token []byte) (guard.RejectedRevert, error) {
 	return guard.RejectRevert(ctx, s.db, id, note, token)
 }
+
+// RevealNonce reads the reveal nonce of an approval (approval.KindApprove)
+// or revert (approval.KindRevert) the agent's role holds
+// (basalt_meta.reveal_nonce).
+func (s *Store) RevealNonce(ctx context.Context, kind string, id uuid.UUID) ([]byte, error) {
+	return guard.RevealNonce(ctx, s.db, kind, id)
+}
+
+// RevealRevertRows asks Postgres for the values of a pending revert's
+// redacted lines with the person's reveal proof and the key derived from
+// the page's reveal secret (basalt_meta.reveal_revert_rows).
+func (s *Store) RevealRevertRows(ctx context.Context, id uuid.UUID, proof passkey.Assertion, key []byte) (guard.RevealedRevert, error) {
+	return guard.RevealRevertRows(ctx, s.db, id, proof, key)
+}

@@ -71,6 +71,11 @@ type Agent interface {
 	// RejectRevert rejects the revert for the page holding secret and
 	// revokes its link (CONTRACT.md, Rescope, widen and reject).
 	RejectRevert(ctx context.Context, id uuid.UUID, secret string, in agent.RejectRequest) (agent.RejectResponse, error)
+	// RevealApproval and RevealRevert return the values of the item's
+	// redacted lines for the person's reveal proof (CONTRACT.md, Rows hidden
+	// from the agent); RevealRevert for the page holding secret.
+	RevealApproval(ctx context.Context, id uuid.UUID, in agent.RevealRequest) (approval.RevealAnswer, error)
+	RevealRevert(ctx context.Context, id uuid.UUID, secret string, in agent.RevealRequest) (approval.RevealAnswer, error)
 	IssueApprovalLink(ctx context.Context, id uuid.UUID, proof string) (string, error)
 	IssueRevertLink(ctx context.Context, id uuid.UUID, proof string) (string, error)
 	// CheckLink reports whether secret is the live link secret of one of
@@ -136,6 +141,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/reverts/{revertId}/apply", s.postRevert)
 	mux.HandleFunc("POST /api/v1/reverts/{revertId}/scope", s.postScope)
 	mux.HandleFunc("POST /api/v1/reverts/{revertId}/reject", s.postReject)
+	mux.HandleFunc("POST /api/v1/approvals/{approvalId}/reveal", s.postApprovalReveal)
+	mux.HandleFunc("POST /api/v1/reverts/{revertId}/reveal", s.postRevertReveal)
 	mux.HandleFunc("POST /api/v1/approvals/{approvalId}/links", s.postApprovalLink)
 	mux.HandleFunc("POST /api/v1/reverts/{revertId}/links", s.postRevertLink)
 	return mux
@@ -317,6 +324,67 @@ func (s *Server) postReject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.reply(w, out)
+}
+
+// postApprovalReveal and postRevertReveal show the person the values of
+// the item's redacted lines (CONTRACT.md, Local pages, POST …/reveal). The
+// body is decoded strictly, { "proof", "revealSecret" }; Postgres checks
+// the proof. The answer is sent with Cache-Control: no-store (writeJSON)
+// and kept nowhere.
+func (s *Server) postApprovalReveal(w http.ResponseWriter, r *http.Request) {
+	s.reveal(w, r, approvalParam, func(ctx context.Context, a Agent, id uuid.UUID, _ string, in agent.RevealRequest) (approval.RevealAnswer, error) {
+		return a.RevealApproval(ctx, id, in)
+	})
+}
+
+func (s *Server) postRevertReveal(w http.ResponseWriter, r *http.Request) {
+	s.reveal(w, r, revertParam, func(ctx context.Context, a Agent, id uuid.UUID, secret string, in agent.RevealRequest) (approval.RevealAnswer, error) {
+		return a.RevealRevert(ctx, id, secret, in)
+	})
+}
+
+func (s *Server) reveal(w http.ResponseWriter, r *http.Request, name string,
+	ask func(context.Context, Agent, uuid.UUID, string, agent.RevealRequest) (approval.RevealAnswer, error),
+) {
+	id, ok := s.linkedID(w, r, name)
+	if !ok {
+		return
+	}
+	body, ok := s.body(w, r, pageOnly)
+	if !ok {
+		return
+	}
+	in, ok := revealBody(body)
+	if !ok {
+		s.fail(w, &mcp.ToolError{
+			Code:    agent.CodeInvalidArgument,
+			Message: "the body must be {\"proof\", \"revealSecret\"} (reveal-request.schema.json)",
+		})
+		return
+	}
+	secret := r.Header.Get(links.SecretHeader)
+	out, err := find(r.Context(), s, func(ctx context.Context, a Agent) (approval.RevealAnswer, error) {
+		return ask(ctx, a, id, secret, in)
+	})
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.reply(w, out)
+}
+
+// revealBody decodes a reveal body strictly: no unknown key, every proof
+// field and the secret present.
+func revealBody(body []byte) (agent.RevealRequest, bool) {
+	var in agent.RevealRequest
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&in); err != nil || dec.More() {
+		return agent.RevealRequest{}, false
+	}
+	p := in.Proof
+	complete := len(p.CredentialID) > 0 && len(p.AuthenticatorData) > 0 && len(p.ClientDataJSON) > 0 && len(p.Signature) > 0
+	return in, complete && in.RevealSecret != ""
 }
 
 // issueDTO asks for a short link (POST .../links): proof of the item's

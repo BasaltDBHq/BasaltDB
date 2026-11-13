@@ -1,18 +1,21 @@
 package approval_test
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
+	"github.com/basaltdbhq/basaltdb/internal/linkcodec"
 )
 
 const revealFile = "testdata/reveal.json"
@@ -103,10 +106,10 @@ type challengeVector struct {
 // rowVector is one revealed row against the redacted line it answers.
 // Result is CHECKED, UNVERIFIED or REFUSED.
 type rowVector struct {
-	Name   string               `json:"name"`
-	Line   string               `json:"line"`
-	Row    approval.RevealedRow `json:"row"`
-	Result string               `json:"result"`
+	Name   string          `json:"name"`
+	Line   string          `json:"line"`
+	Row    json.RawMessage `json:"row"`
+	Result string          `json:"result"`
 }
 
 const (
@@ -155,9 +158,13 @@ func buildRevealVectors(t *testing.T) revealVectors {
 	secretOld := `[{"id": 9}, {"id": 9, "pin": null, "lead_id": 4}, null]`
 	secretBoth := `[{"id": 9}, {"id": 9, "pin": "1234", "lead_id": 4}, {"pin": null}]`
 	unchecked := approvalLine(rowHashOf(`[{"id": 9}, {"id": 9, "pin": "1234", "lead_id": 4}, null]`))
-	row := func(r string, cols ...string) approval.RevealedRow {
-		return approval.RevealedRow{Row: r, SecretColumns: cols}
+	row := func(r string, cols ...string) json.RawMessage {
+		b, err := json.Marshal(approval.RevealedRow{Row: r, SecretColumns: cols})
+		require.NoError(t, err)
+		return b
 	}
+	noteJSON, err := json.Marshal(note)
+	require.NoError(t, err)
 	v.Rows = []rowVector{
 		{"approval row that hashes to its line", approvalLine(rowHashOf(note)), row(note), resultChecked},
 		{"revert row that hashes to its line", revertLine(rowHashOf(restore)), row(restore), resultChecked},
@@ -172,6 +179,12 @@ func buildRevealVectors(t *testing.T) revealVectors {
 		{"a row that is not three values", approvalLine(rowHashOf(`[{"id": 8}, null]`)), row(`[{"id": 8}, null]`), resultRefused},
 		{"a row with a scalar value", approvalLine(rowHashOf(`[{"id": 8}, 5, null]`)), row(`[{"id": 8}, 5, null]`), resultRefused},
 		{"a row that is not JSON", approvalLine(rowHashOf(`[{"id": 8}`)), row(`[{"id": 8}`), resultRefused},
+		{
+			"an empty secretColumns", approvalLine(rowHashOf(note)),
+			json.RawMessage(`{"line": 0, "row": ` + string(noteJSON) + `, "secretColumns": []}`), resultRefused,
+		},
+		{"a line whose keys differ in case", strings.Replace(approvalLine(rowHashOf(note)), `"redacted"`, `"REDACTED"`, 1), row(note), resultRefused},
+		{"a line whose rowHash key differs in case", strings.Replace(approvalLine(rowHashOf(note)), `"rowHash"`, `"RowHash"`, 1), row(note), resultRefused},
 	}
 	return v
 }
@@ -195,7 +208,7 @@ func TestRevealVectors(t *testing.T) {
 func TestCheckRevealedRow(t *testing.T) {
 	t.Parallel()
 	for _, c := range buildRevealVectors(t).Rows {
-		checked, err := approval.CheckRevealedRow(c.Line, c.Row)
+		checked, err := approval.CheckRevealedRow(c.Line, decodeRow(t, c.Row))
 		switch c.Result {
 		case resultRefused:
 			require.ErrorIs(t, err, approval.ErrInvalid, c.Name)
@@ -207,6 +220,17 @@ func TestCheckRevealedRow(t *testing.T) {
 			require.False(t, checked, c.Name, "a row with SECRET columns is never checked")
 		}
 	}
+}
+
+// decodeRow decodes a vector's row strictly, as the engine's answer is
+// read: unknown or miscased keys are refused.
+func decodeRow(t *testing.T, raw json.RawMessage) approval.RevealedRow {
+	t.Helper()
+	var r approval.RevealedRow
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	require.NoError(t, dec.Decode(&r))
+	return r
 }
 
 func TestCheckRevealAnswer(t *testing.T) {
@@ -248,4 +272,21 @@ func TestRequestRevealNonce(t *testing.T) {
 	var back approval.Request
 	require.NoError(t, json.Unmarshal(out, &back))
 	require.Equal(t, r.RevealNonce, back.RevealNonce)
+}
+
+// A long link never carries revealNonce: only the engine serves it. The
+// Go parser refuses it as the pages do.
+func TestParseRequestRefusesRevealNonce(t *testing.T) {
+	t.Parallel()
+	lines := previewLines()
+	req := approval.Request{ApprovalID: approvalID, Binding: bindingText(lines), Lines: lines}
+	frag, err := linkcodec.Encode(linkcodec.Format1, req)
+	require.NoError(t, err)
+	_, _, err = approval.ParseRequest(frag)
+	require.NoError(t, err)
+	req.RevealNonce = counting(100)
+	frag, err = linkcodec.Encode(linkcodec.Format1, req)
+	require.NoError(t, err)
+	_, _, err = approval.ParseRequest(frag)
+	require.ErrorIs(t, err, approval.ErrInvalid)
 }

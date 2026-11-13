@@ -166,6 +166,9 @@ func ParseRequest(fragment string) (Request, Binding, error) {
 	if err != nil {
 		return Request{}, Binding{}, invalid("approval request %v", err)
 	}
+	if r.RevealNonce != nil {
+		return Request{}, Binding{}, invalid("a link carries no revealNonce: only the engine serves it")
+	}
 	b, err := r.Check()
 	if err != nil {
 		return Request{}, Binding{}, err

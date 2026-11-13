@@ -51,6 +51,7 @@ const (
 	versionSearchPath               // the caller's temporary tables never shadow the catalog
 	versionExpiryClock              // approval and revert deadlines read the wall clock
 	versionTriggerAlways            // guard triggers fire under any session_replication_role
+	versionPIIUsage                 // EV-14: a PII column needs USAGE on its schema
 )
 
 // migrations lists every version in order. M2 appends versions.
@@ -81,6 +82,7 @@ var migrations = []migration{
 	{version: versionSearchPath, sql: v24Functions + v24SearchPath},
 	{version: versionExpiryClock, sql: v25Approvals + v25Reverts},
 	{version: versionTriggerAlways, sql: v26Triggers},
+	{version: versionPIIUsage, sql: v27PIISchemaUsage},
 }
 
 // LatestVersion is the basalt_meta version this build installs.

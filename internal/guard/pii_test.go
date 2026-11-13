@@ -476,3 +476,28 @@ func TestPIIReadableColumnsNeedAnInheritingMember(t *testing.T) {
 	require.Equal(t, 2, count(t, p.Admin, `SELECT count(1)::int FROM basalt_meta.pii_readable_columns()
 		WHERE table_name = 'payroll'`))
 }
+
+// A column in a schema the role has no USAGE on cannot be read, so it is
+// neither a readable column nor unclassified (EV-14). Granting USAGE to the
+// agent makes it both; USAGE granted to another agent, or SELECT through a
+// column grant, changes nothing for a role without it.
+func TestPIIColumnsNeedSchemaUsage(t *testing.T) {
+	t.Parallel()
+	p := newPIIDB(t)
+	p.Exec(t, `CREATE SCHEMA hidden; CREATE TABLE hidden.t (a text)`)
+	p.Exec(t, `GRANT SELECT ON hidden.t TO `+p.bot.Role)
+	hidden := `SELECT count(1)::int FROM basalt_meta.pii_readable_columns() WHERE table_schema = 'hidden'`
+	unclassified := `SELECT count(1)::int FROM basalt_meta.pii_unclassified() WHERE table_schema = 'hidden'`
+
+	require.Zero(t, count(t, p.Admin, hidden), "no agent has USAGE on hidden")
+	require.Zero(t, count(t, p.bot.Conn, unclassified))
+
+	p.Exec(t, `GRANT USAGE ON SCHEMA hidden TO `+p.other.Role)
+	require.Zero(t, count(t, p.Admin, hidden), "other has USAGE but no SELECT; bot SELECT but no USAGE")
+	require.Zero(t, count(t, p.bot.Conn, unclassified))
+
+	p.Exec(t, `GRANT USAGE ON SCHEMA hidden TO `+p.bot.Role)
+	require.Equal(t, 1, count(t, p.Admin, hidden))
+	require.Equal(t, 1, count(t, p.bot.Conn, unclassified))
+	require.Zero(t, count(t, p.other.Conn, unclassified), "other may not select the column")
+}

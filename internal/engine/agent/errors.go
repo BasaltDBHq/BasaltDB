@@ -5,10 +5,12 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgproto3"
 
+	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
@@ -94,6 +96,33 @@ func (e *ArgumentError) Error() string { return e.Message }
 // sizeLimitHint ends a SIZE_LIMIT message with what to change.
 const sizeLimitHint = "; select fewer or shorter columns (for example left(col, 200)) or fewer rows"
 
+// sizeLimitError is QUERY_TIMEOUT SIZE_LIMIT: a result over
+// agentdb.MaxResultBytes.
+func sizeLimitError() *mcp.ToolError {
+	return &mcp.ToolError{Code: CodeQueryTimeout, Reason: ReasonSizeLimit, Message: agentdb.ErrSizeLimit.Error() + sizeLimitHint}
+}
+
+// messageTooLarge maps a Postgres message over the agent connection's cap
+// (pgx MaxProtocolMessageBodyLen: one row too large to read) to SIZE_LIMIT
+// for a tool that declares QUERY_TIMEOUT. Any other tool read the row from
+// the guard's own tables, so it stays the INTERNAL error ToolError made.
+func messageTooLarge(tool string, err error, te *mcp.ToolError) *mcp.ToolError {
+	var me *pgproto3.ExceededMaxBodyLenErr
+	if !errors.As(err, &me) || !declares(tool, CodeQueryTimeout) {
+		return te
+	}
+	return sizeLimitError()
+}
+
+// toolContracts are the tool contracts, loaded once.
+var toolContracts = sync.OnceValue(mcpcontract.MustLoad)
+
+// declares reports whether tool's contract lists code among its errors.
+func declares(tool, code string) bool {
+	c, ok := mcpcontract.Find(toolContracts(), tool)
+	return ok && slices.Contains(c.Errors, code)
+}
+
 // ToolError maps any error from a tool's service call to the contract's
 // error body. Unexpected errors become INTERNAL without their text, which can
 // name hosts or roles; the caller logs the original.
@@ -105,7 +134,6 @@ func ToolError(err error) *mcp.ToolError {
 		pe *pgconn.PgError
 		se *SetupError
 		ce *pgconn.ConnectError
-		me *pgproto3.ExceededMaxBodyLenErr
 	)
 	switch {
 	case errors.As(err, &te):
@@ -114,8 +142,8 @@ func ToolError(err error) *mcp.ToolError {
 		return &mcp.ToolError{Code: CodeStatementRefused, Reason: string(re.Reason), Message: re.Error()}
 	case errors.Is(err, agentdb.ErrRowLimit):
 		return &mcp.ToolError{Code: CodeQueryTimeout, Reason: ReasonRowLimit, Message: err.Error() + "; add a LIMIT or a narrower WHERE"}
-	case errors.Is(err, agentdb.ErrSizeLimit), errors.As(err, &me):
-		return &mcp.ToolError{Code: CodeQueryTimeout, Reason: ReasonSizeLimit, Message: agentdb.ErrSizeLimit.Error() + sizeLimitHint}
+	case errors.Is(err, agentdb.ErrSizeLimit):
+		return sizeLimitError()
 	case errors.As(err, &se):
 		reason := reasonSetupPending
 		if se.Expired {

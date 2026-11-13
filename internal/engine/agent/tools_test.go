@@ -165,7 +165,7 @@ func TestToolErrorMapping(t *testing.T) {
 		{&sqlguard.RefusalError{Reason: sqlguard.ReasonDDL}, CodeStatementRefused, "DDL_NOT_ALLOWED", ""},
 		{fmt.Errorf("read: %w", agentdb.ErrRowLimit), CodeQueryTimeout, ReasonRowLimit, ""},
 		{fmt.Errorf("read: %w", agentdb.ErrSizeLimit), CodeQueryTimeout, ReasonSizeLimit, ""},
-		{fmt.Errorf("read: %w", &pgproto3.ExceededMaxBodyLenErr{MaxExpectedBodyLen: 1, ActualBodyLen: 2}), CodeQueryTimeout, ReasonSizeLimit, ""},
+		{fmt.Errorf("read: %w", &pgproto3.ExceededMaxBodyLenErr{MaxExpectedBodyLen: 1, ActualBodyLen: 2}), CodeInternal, "", ""},
 		{&ArgumentError{Message: "bad"}, CodeInvalidArgument, "", ""},
 		{&mcp.ToolError{Code: CodeNotFound, Reason: reasonRun, Message: "no run"}, CodeNotFound, reasonRun, ""},
 		{context.DeadlineExceeded, CodeUnavailable, reasonDatabaseUnreachable, ""},

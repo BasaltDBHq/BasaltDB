@@ -83,7 +83,7 @@ func (f failure) arg(name string) string {
 // bare. A body that already carries its steps (built where the engine
 // knows the link or the ledger row) keeps them.
 func (s *Service) Failure(tool string, args map[string]any, err error) *mcp.ToolError {
-	te := ToolError(err)
+	te := messageTooLarge(tool, err, ToolError(err))
 	if te.Code == CodeInternal || te.Code == CodeUnavailable {
 		if te.ErrorID == "" {
 			te.ErrorID = uniqueid.New()

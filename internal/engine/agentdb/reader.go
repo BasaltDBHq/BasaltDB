@@ -27,13 +27,13 @@ import (
 // engine's read row limit.
 var ErrRowLimit = errors.New("the query returned more rows than the read row limit")
 
-// ErrSizeLimit is a read canceled because its column values, in text form,
-// came to more than MaxResultBytes (CONTRACT.md, QUERY_TIMEOUT SIZE_LIMIT).
-var ErrSizeLimit = fmt.Errorf("the query returned more than %d MiB of values", MaxResultBytes>>mibShift)
+// ErrSizeLimit is a read canceled because its result came to more than
+// MaxResultBytes (resultCost; CONTRACT.md, QUERY_TIMEOUT SIZE_LIMIT).
+var ErrSizeLimit = fmt.Errorf("the query result is larger than %d MiB", MaxResultBytes>>mibShift)
 
-// MaxResultBytes bounds the column values of one result, summed over its
-// rows: the 16 MiB the shim accepts in one line. The engine stops reading
-// there, so one large value cannot grow its memory.
+// MaxResultBytes bounds what one result costs the engine, summed over its
+// rows (resultCost): the 16 MiB the shim accepts in one line. The engine
+// stops reading there.
 const MaxResultBytes = 16 << mibShift
 
 // mibShift turns bytes into MiB.
@@ -245,14 +245,14 @@ func runText(ctx context.Context, tx pgx.Tx, sql string, params []any, limit, ex
 	cols := columns(tx.Conn().TypeMap(), fds[:visible])
 	out := []map[string]any{}
 	var extras [][][]byte
-	size := 0
+	size, perRow := 0, rowOverhead(cols, len(fds))
 	for rows.Next() {
 		if len(out) == limit {
 			cancel()
 			return nil, nil, nil, ErrRowLimit
 		}
 		raw := rows.RawValues()
-		if size += rawSize(raw); size > MaxResultBytes {
+		if size += perRow + valuesCost(raw); size > MaxResultBytes {
 			cancel()
 			return nil, nil, nil, ErrSizeLimit
 		}
@@ -267,11 +267,38 @@ func runText(ctx context.Context, tx pgx.Tx, sql string, params []any, limit, ex
 	return cols, out, extras, nil
 }
 
-// rawSize is the bytes of a row's values.
-func rawSize(raw [][]byte) int {
+// valueOverhead is what one value costs the engine beyond its bytes: its
+// map entry and Go value in the row, and its key, quotes and comma in the
+// JSON answer. A NULL or empty value costs it too, so a wide result of
+// NULLs is bounded like one of long values.
+const valueOverhead = 128
+
+// jsonEscapeCost is the most bytes JSON adds for one byte it escapes
+// (\u00XX for a control byte, or for <, > and & as Go encodes them).
+const jsonEscapeCost = 5
+
+// rowOverhead is the fixed cost of a row of the result: valueOverhead per
+// column, version columns included, plus each visible column's name, which
+// the JSON answer repeats in every row.
+func rowOverhead(cols []Column, n int) int {
+	cost := n * valueOverhead
+	for _, c := range cols {
+		cost += len(c.Name)
+	}
+	return cost
+}
+
+// valuesCost is the bytes of a row's values, with what JSON adds for the
+// bytes it escapes.
+func valuesCost(raw [][]byte) int {
 	n := 0
 	for _, v := range raw {
 		n += len(v)
+		for _, b := range v {
+			if b < ' ' || b == '"' || b == '\\' || b == '<' || b == '>' || b == '&' {
+				n += jsonEscapeCost
+			}
+		}
 	}
 	return n
 }

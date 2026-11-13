@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/person"
@@ -53,7 +54,9 @@ type agentLedger struct {
 	// same-user mode (the config says).
 	pages             *person.PagesDTO
 	agent, configPath string
-	close             func()
+	// role is the credential's database role in same-user mode.
+	role  string
+	close func()
 }
 
 // openLedger opens the agent's ledger. With the engine service installed,
@@ -77,9 +80,23 @@ func openLedger(c *cliIO, agent, credFile, configPath string) (*agentLedger, err
 		Ledger:     person.NewDBLedger(conn, c.now),
 		pinKey:     fmt.Sprintf("%s\x00%d\x00%s\x00%s", cfg.Host, cfg.Port, cfg.Database, cfg.User),
 		agent:      agent,
+		role:       cfg.User,
 		configPath: configPath,
 		close:      func() { _ = conn.Close(context.WithoutCancel(c.ctx)) },
 	}, nil
+}
+
+// ownAgent is the agent's name: the one given, else the one in the role of
+// the credential (<prefix>_agent_<name>), "" when it cannot be told.
+func (l *agentLedger) ownAgent() string {
+	if l.agent != "" {
+		return l.agent
+	}
+	i := strings.Index(l.role, "_agent_")
+	if i < 0 {
+		return ""
+	}
+	return l.role[i+len("_agent_"):]
 }
 
 // serviceMode reports whether this command goes through the person socket.

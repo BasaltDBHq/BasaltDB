@@ -9,11 +9,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/peercred"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
@@ -44,7 +47,14 @@ type Engine struct {
 	log     *slog.Logger
 	agents  []Agent
 	peerUID PeerUIDFunc
+	// drains holds, per agent, a slot for each refused connection being
+	// drained; when all are taken a refused peer is closed at once.
+	drains map[string]chan struct{}
 }
+
+// refusedDrains is how many refused connections of one agent are drained
+// at a time (refusePeer); more are answered and closed at once.
+const refusedDrains = 8
 
 // New returns an engine for agents. It panics on a nil logger, no agents, or
 // an agent without a socket or server.
@@ -57,7 +67,18 @@ func New(log *slog.Logger, agents []Agent) *Engine {
 			panic("engine: agent needs a name, a socket path and a server")
 		}
 	}
-	return &Engine{log: log, agents: agents, peerUID: peercred.UID}
+	e := &Engine{log: log, agents: agents, peerUID: peercred.UID}
+	return e.WithRefusedDrains(refusedDrains)
+}
+
+// WithRefusedDrains sets how many refused connections of one agent are
+// drained at a time (tests).
+func (e *Engine) WithRefusedDrains(n int) *Engine {
+	e.drains = make(map[string]chan struct{}, len(e.agents))
+	for _, a := range e.agents {
+		e.drains[a.Name] = make(chan struct{}, n)
+	}
+	return e
 }
 
 // WithPeerUID replaces how the peer uid is read (tests).
@@ -98,19 +119,54 @@ func (e *Engine) Serve(ctx context.Context) error {
 	return nil
 }
 
-func (e *Engine) acceptLoop(ctx context.Context, a Agent, ln *net.UnixListener) {
+// unixAccepter is the listener acceptLoop reads (tests fake it).
+type unixAccepter interface {
+	AcceptUnix() (*net.UnixConn, error)
+}
+
+// Accept backoff after a temporary error, as net/http does.
+const (
+	acceptBackoffMin = 5 * time.Millisecond
+	acceptBackoffMax = time.Second
+)
+
+func (e *Engine) acceptLoop(ctx context.Context, a Agent, ln unixAccepter) {
 	var conns sync.WaitGroup
 	defer conns.Wait()
+	var backoff time.Duration
 	for {
 		conn, err := ln.AcceptUnix()
 		if err != nil {
-			if ctx.Err() == nil && !errors.Is(err, net.ErrClosed) {
-				e.log.Error("accept", "agent", a.Name, "err", err)
+			if ctx.Err() != nil || errors.Is(err, net.ErrClosed) {
+				return
 			}
-			return
+			if !temporaryAccept(err) {
+				e.log.Error("accept", "agent", a.Name, "err", err)
+				return
+			}
+			backoff = min(max(2*backoff, acceptBackoffMin), acceptBackoffMax)
+			e.log.Warn("accept failed, retrying", "agent", a.Name, "err", err, "in", backoff)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(backoff):
+			}
+			continue
 		}
+		backoff = 0
 		conns.Go(func() { e.serveConn(ctx, a, conn) })
 	}
+}
+
+// temporaryAccept reports an accept error that passes: out of file
+// descriptors or memory, or a connection aborted before it was taken.
+func temporaryAccept(err error) bool {
+	for _, errno := range []syscall.Errno{syscall.EMFILE, syscall.ENFILE, syscall.ENOBUFS, syscall.ENOMEM, syscall.ECONNABORTED, syscall.EINTR} {
+		if errors.Is(err, errno) {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *Engine) serveConn(ctx context.Context, a Agent, conn *net.UnixConn) {
@@ -122,6 +178,7 @@ func (e *Engine) serveConn(ctx context.Context, a Agent, conn *net.UnixConn) {
 	}
 	if uid != a.UID {
 		e.log.Warn("refused connection from another OS user", "agent", a.Name, "peerUid", uid, "wantUid", a.UID)
+		e.refusePeer(ctx, conn, a.Name, uid)
 		return
 	}
 	// Closing the connection on shutdown unblocks the server's read.
@@ -130,6 +187,39 @@ func (e *Engine) serveConn(ctx context.Context, a Agent, conn *net.UnixConn) {
 	if err := a.Server.Serve(ctx, conn, conn); err != nil && ctx.Err() == nil && !errors.Is(err, net.ErrClosed) {
 		e.log.Warn("connection ended", "agent", a.Name, "err", err)
 	}
+}
+
+// refuseDrain bounds how long a refused connection is read before it is
+// closed: closing with the client's request unread would reset it.
+const (
+	refuseDrain      = 2 * time.Second
+	refuseDrainBytes = 64 << 10
+)
+
+// refusePeer answers a peer of another OS user with one refusal line that
+// says who may use the socket, then reads (and drops) what it sent, so the
+// shim sees the refusal instead of a reset. Nothing it sent is served. At
+// most refusedDrains connections of one agent are drained at a time; past
+// that, and once ctx is done, the connection is closed after the line.
+func (e *Engine) refusePeer(ctx context.Context, conn *net.UnixConn, agentName string, uid uint32) {
+	msg := fmt.Sprintf("the basalt engine refused this connection: the socket of agent %q serves only that agent's OS user "+
+		"(osUser in the engine config), and this process runs as uid %d. Start the MCP client as the agent's OS user, "+
+		"or set that user with basalt init --agent %s --os-user <user>", agentName, uid, agentName)
+	if err := mcp.WritePeerRefused(conn, msg); err != nil {
+		return
+	}
+	_ = conn.CloseWrite()
+	slots := e.drains[agentName]
+	select {
+	case slots <- struct{}{}:
+		defer func() { <-slots }()
+	default:
+		return // enough refused peers are drained already
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(refuseDrain))
+	stop := context.AfterFunc(ctx, func() { _ = conn.SetReadDeadline(time.Now()) })
+	defer stop()
+	_, _ = io.Copy(io.Discard, io.LimitReader(conn, refuseDrainBytes))
 }
 
 // listenSocket listens on path, replacing a stale socket file but never any

@@ -309,7 +309,7 @@ func installService(c *cliIO, f initFlags, dsn string) error {
 		return nil
 	}
 	if err := c.host.Probe(c.ctx, socket); err != nil {
-		return fmt.Errorf("the engine did not answer on %s (%w); see %s", socket, err, engineLogHint(c.goos))
+		return fmt.Errorf("the engine did not answer on %s (%w)%s; see %s", socket, err, engineLogError(c), engineLogHint(c.goos))
 	}
 	fmt.Fprintf(c.stderr, "basalt: engine running as %s; it answered on %s\n", f.engineUser, socket)
 	fmt.Fprint(c.stderr, mcpLine(f, c.goos))
@@ -371,11 +371,52 @@ func applyServiceInstall(c *cliIO, bin, configPath, engineUser string, a agentIn
 	return service.Apply(c.ctx, sys, steps, printOnly, c.stderr)
 }
 
+// darwinEngineLog is the engine service's log on macOS (the unit's
+// StandardErrorPath).
+const darwinEngineLog = "/Library/Logs/Basalt/engine.log"
+
 func engineLogHint(goos string) string {
 	if goos == "darwin" {
-		return "/Library/Logs/Basalt/engine.log"
+		return darwinEngineLog
 	}
 	return "journalctl -u " + service.SystemdUnitName
+}
+
+// engineLogError is ", its log's last error: <line>" when init can read
+// the engine service's log, else "".
+func engineLogError(c *cliIO) string {
+	// An unreadable log leaves only the hint.
+	log, _ := c.host.EngineLog(c.ctx, c.goos)
+	line := lastEngineError(log)
+	if line == "" {
+		return ""
+	}
+	return "; its log's last error: " + line
+}
+
+// lastEngineError is the last line of log that reports an error (slog's
+// level=ERROR, in text or JSON), else its last line, cut to
+// maxEngineLogLine characters and made safe to print.
+func lastEngineError(log string) string {
+	lines := strings.Split(strings.TrimRight(log, "\n"), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.Contains(lines[i], "level=ERROR") || strings.Contains(lines[i], `"level":"ERROR"`) {
+			return visibleText(cutLine(lines[i]))
+		}
+	}
+	return visibleText(cutLine(strings.TrimSpace(lines[len(lines)-1])))
+}
+
+// maxEngineLogLine is the most of a log line init prints, in characters.
+const maxEngineLogLine = 300
+
+// cutLine shortens line to maxEngineLogLine characters, marked with "…".
+func cutLine(line string) string {
+	r := []rune(line)
+	if len(r) <= maxEngineLogLine {
+		return line
+	}
+	return string(r[:maxEngineLogLine]) + "…"
 }
 
 // claudeServerPrefix names the agent's server in Claude Code.

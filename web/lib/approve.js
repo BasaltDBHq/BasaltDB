@@ -17,7 +17,7 @@ import {
 } from "./codec.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
 import { $, APPROVE_REOPEN, el, fail, linkFailure, loadOrPaste, personText, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
-import { canReveal, hiddenLines, NOT_CHECKED, OPEN_FROM_ENGINE, reveal, revealedLine, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
+import { applyReveal, canReveal, hiddenLines, NOT_CHECKED, OPEN_FROM_ENGINE, reveal, revealedLine, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import { canStartPasskey, cascadeConfirmation, headline, summarize } from "./summary.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
@@ -200,7 +200,7 @@ function wireReveal(rp, state) {
     $("reveal").disabled = true;
     $("reveal-status").textContent = "";
     try {
-      state.shown = await reveal({
+      const shown = await reveal({
         kind: KIND_APPROVE,
         id: req.approvalId,
         req,
@@ -210,6 +210,7 @@ function wireReveal(rp, state) {
         fetchFn: engineFetch,
         getAssertion: (options) => navigator.credentials.get(options),
       });
+      applyReveal(state, req, shown);
       renderLines(state);
       $("reveal-box").hidden = true;
     } catch (err) {

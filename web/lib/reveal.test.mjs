@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 
 import { b64urlDecode, hex, KIND_APPROVE, KIND_REVERT, sha256, utf8 } from "./codec.js";
 import { RelayError } from "./local.js";
-import { canReveal, NOT_CHECKED, reveal, revealBody, revealedLine, RevealError, revealFailure, revealPath, SECRET_VALUE } from "./reveal.js";
+import { applyReveal, canReveal, clearReveal, NOT_CHECKED, reveal, revealBody, revealedLine, RevealError, revealFailure, revealPath, SECRET_VALUE } from "./reveal.js";
 
 const ID = "0193a3f0-0000-7000-8000-000000000001";
 const NONCE = "ZGVmZ2hpamtsbW5vcHFycw";
@@ -109,4 +109,34 @@ test("the page says what a refused reveal and changed rows mean", () => {
   const revertChanged = revealFailure(new RelayError("changed", "REVERT_INVALID", 409, { reason: "ROWS_CHANGED" }), KIND_REVERT);
   assert.match(revertChanged.text, /prepare it again\.$/);
   assert.equal(revealFailure(new Error("other"), KIND_APPROVE), null);
+});
+
+test("a rescope during a reveal shows nothing of the old rows; a rescope clears what was shown", async () => {
+  const old = await request();
+  const state = { req: old, shown: new Map(), revealDone: false };
+  let answer;
+  const pending = reveal({
+    kind: KIND_APPROVE, id: ID, req: old, rpId: "localhost", path: "/x", secret: "s",
+    fetchFn: async () => {
+      await new Promise((resolve) => { answer = resolve; });
+      return { ok: true, status: 200, json: async () => ({ rows: [{ line: 1, row: ROW }] }) };
+    },
+    getAssertion: async () => assertion,
+  });
+  // The person rescopes while the reveal is in flight.
+  const fresh = { ...(await request()) };
+  state.req = fresh;
+  clearReveal(state);
+  while (answer === undefined) await new Promise((resolve) => setTimeout(resolve, 1));
+  answer();
+  const shown = await pending;
+  assert.equal(applyReveal(state, old, shown), false, "the old request's rows are dropped");
+  assert.equal(state.shown.size, 0);
+  assert.equal(state.revealDone, false);
+
+  assert.equal(applyReveal(state, fresh, shown), true);
+  assert.equal(state.shown.size, 1);
+  clearReveal(state);
+  assert.equal(state.shown.size, 0, "a rescope clears what was shown");
+  assert.equal(state.revealDone, false);
 });

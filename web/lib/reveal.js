@@ -65,6 +65,7 @@ export async function reveal({ kind, id, req, rpId, path, secret, fetchFn, getAs
   const id_ = kind === KIND_APPROVE ? req.approvalId : req.revertId;
   if (id_ !== id) throw new Error(`the request is for ${id_}, not ${id}`);
   const challenge = await revealChallenge(kind, id, req.revealNonce, key, req.binding.rowsHash);
+  key.fill(0);
   const cred = await getAssertion({
     publicKey: {
       challenge,
@@ -134,4 +135,20 @@ export function revealedLine(line, shown, mid) {
     }
   }
   return { ...line, redacted: false, key, [mid]: middle, set, texts };
+}
+
+// applyReveal keeps the rows a reveal of req returned, unless the page
+// moved on to another request meanwhile (a rescope): rows of the old lines
+// never land on the new ones. It reports whether it kept them.
+export function applyReveal(state, req, shown) {
+  if (state.req !== req) return false;
+  state.shown = shown;
+  state.revealDone = true;
+  return true;
+}
+
+// clearReveal forgets what was shown, for a new request.
+export function clearReveal(state) {
+  state.shown = new Map();
+  state.revealDone = false;
 }

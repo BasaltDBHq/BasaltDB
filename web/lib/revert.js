@@ -27,7 +27,7 @@ import {
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, rejectRevert, revertDone, revertPaths } from "./local.js";
 import { $, REVERT_REOPEN, el, fail, linkFailure, loadOrPaste, personText, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
 import { canWiden, narrow, widen } from "./rescope.js";
-import { canReveal, hiddenLines, NOT_CHECKED, OPEN_FROM_ENGINE, reveal, revealedLine, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
+import { applyReveal, canReveal, clearReveal, hiddenLines, NOT_CHECKED, OPEN_FROM_ENGINE, reveal, revealedLine, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import {
   MAX_NOTE,
   RESET_MESSAGE,
@@ -420,8 +420,7 @@ function renderScope(state) {
 function applyScope(state, out) {
   state.req = out.req;
   // New lines: what was shown belonged to the old ones.
-  state.shown = new Map();
-  state.revealDone = false;
+  clearReveal(state);
   if (out.catalog !== null) state.catalog = out.catalog;
   if (out.secret) state.relay.secret = out.secret;
 }
@@ -480,10 +479,14 @@ function renderReveal(state) {
 // still asks for the passkey again; nothing shown goes into the signature.
 async function showValues(state) {
   const { req, relay } = state;
-  $("reveal").disabled = true;
+  // Busy: the scope chips, Sign and Reject wait for the reveal.
+  state.busy = true;
   $("reveal-status").textContent = "";
+  render(state);
+  let shown = null;
+  let status = "";
   try {
-    state.shown = await reveal({
+    shown = await reveal({
       kind: KIND_REVERT,
       id: req.revertId,
       req,
@@ -493,13 +496,16 @@ async function showValues(state) {
       fetchFn: engineFetch,
       getAssertion: (options) => navigator.credentials.get(options),
     });
-    state.revealDone = true;
   } catch (err) {
     const failure = revealFailure(err, KIND_REVERT);
-    $("reveal-status").textContent = failure?.text ?? (err?.name === "NotAllowedError" ? webauthnError(err) : personText(err) || err.message);
+    status = failure?.text ?? (err?.name === "NotAllowedError" ? webauthnError(err) : personText(err) || err.message);
     if (failure?.final) state.revealFinal = req;
   }
-  if (state.req === req) render(state);
+  state.busy = false;
+  // Rows of an older request never land on the lines shown now.
+  if (shown !== null) applyReveal(state, req, shown);
+  if (state.req === req) $("reveal-status").textContent = status;
+  render(state);
 }
 
 // openScope shows the scope sheet on a phone; on a wide screen the scope is

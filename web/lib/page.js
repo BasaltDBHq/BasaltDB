@@ -168,7 +168,13 @@ export function showCode(code) {
 }
 
 // webauthnError turns a WebAuthn failure into a sentence for the person.
-export function webauthnError(err) {
+// offered is how many of the database's passkeys the prompt allowed: with
+// some, a prompt that ends with none may mean this device has none of them.
+export function webauthnError(err, offered = 0) {
+  if (err && err.name === "NotAllowedError" && offered > 0) {
+    return "Nothing was signed. The prompt was cancelled or timed out, or this device has none of this database's passkeys: " +
+      "use the device or password manager that holds the passkey you registered with basalt init.";
+  }
   if (err && err.name === "NotAllowedError") return "The passkey prompt was cancelled or timed out. Nothing was signed.";
   if (err && err.name === "SecurityError") return "This browser refused the passkey for this site.";
   return `The passkey could not sign: ${err && err.message ? err.message : err}`;

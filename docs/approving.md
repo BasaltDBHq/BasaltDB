@@ -84,7 +84,7 @@ The short link only works on the machine where the engine runs. An optional host
 
 ## Authenticators
 
-Passkeys belong to the origin they were registered on: RP ID `localhost` for the local pages, and RP ID `basaltvault.app` (fixed) for the hosted console at `https://console.basaltvault.app`. Registration asks for one algorithm, ES256 (`pubKeyCredParams: [{ alg: -7 }]` in [`web/lib/register.js`](../web/lib/register.js)), a discoverable credential, and user verification. Every authenticator below supports ES256.
+Passkeys belong to the origin they were registered on: RP ID `localhost` for the local pages, and RP ID `basaltvault.app` (fixed) for the hosted console at `https://console.basaltvault.app`. Registration asks for one algorithm, ES256 (`pubKeyCredParams: [{ alg: -7 }]` in [`web/lib/register.js`](../web/lib/register.js)), a discoverable credential, and user verification. Every authenticator below supports ES256. Every database's local pages share RP ID `localhost`, so a person with several databases has several `localhost` passkeys. `basalt init` names a new one `<database> · <agent> · <date>` (for example `postgres · demo_bot · 2026-11-13`; `--passkey-label` picks another name), and the pages ask only for this database's passkeys: links and the engine's pages carry its active credential ids, which the browser uses to offer only those. If the prompt finds none, the page says this device may not hold this database's passkey.
 
 **macOS.** Touch ID (iCloud Keychain), or any of the options listed for Linux.
 

@@ -179,7 +179,7 @@ func runInit(c *cliIO, args []string) int {
 		return c.fail(err)
 	}
 	if passkeyErr != nil {
-		return c.fail(fmt.Errorf("the guard is installed and the engine is set up, but no passkey was registered (run basalt init again): %w", passkeyErr))
+		return c.fail(fmt.Errorf("the guard is installed and the engine is set up, but no passkey was registered, so held writes cannot be approved until you register one (run basalt init again): %w", passkeyErr))
 	}
 	return exitOK
 }

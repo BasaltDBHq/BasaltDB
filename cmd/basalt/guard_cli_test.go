@@ -517,7 +517,7 @@ func TestInitRerunsAfterAFailedPasskeyPaste(t *testing.T) {
 		"--config", config, "--os-user", "tester", "--yes"})
 	r := cli(t, map[string]string{envAdminURL: d.URL}, "not a passkey code\n", args...)
 	require.Equal(t, exitError, r.code, r.stderr)
-	require.Contains(t, r.stderr, "no passkey was registered (run basalt init again)")
+	require.Contains(t, r.stderr, "held writes cannot be approved until you register one (run basalt init again)")
 	// The credential and the config were written before the failure was reported.
 	require.FileExists(t, filepath.Join(filepath.Dir(config), "agents", "bot_a.url"))
 	require.FileExists(t, config)

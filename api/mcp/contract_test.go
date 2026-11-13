@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/mcp"
 )
 
 var (
@@ -380,6 +381,30 @@ func TestErrorBodyCodes(t *testing.T) {
 		got[s] = true
 	}
 	require.Equal(t, contractErrorCodes(t), got)
+}
+
+// TestErrorCodesHaveDocsAnchors checks every code of CONTRACT.md's "Error
+// codes" has a section on the docs site's errors page (docs-anchors.json
+// lists the page's anchors), and that the link the server writes points at it.
+func TestErrorCodesHaveDocsAnchors(t *testing.T) {
+	t.Parallel()
+	docs := readJSON(t, "errors/docs-anchors.json")
+	raw, ok := docs["anchors"].([]any)
+	require.True(t, ok)
+	anchors := map[string]bool{}
+	for _, a := range raw {
+		s, ok := a.(string)
+		require.True(t, ok)
+		anchors[s] = true
+	}
+	page, ok := docs["page"].(string)
+	require.True(t, ok)
+	for code := range contractErrorCodes(t) {
+		url := mcp.DocsURL(code)
+		anchor := strings.ToLower(strings.ReplaceAll(code, "_", "-"))
+		require.Truef(t, anchors[anchor], "%s has no section on the docs errors page (add #%s there, then to docs-anchors.json)", code, anchor)
+		require.Equal(t, page+"#"+anchor, url)
+	}
 }
 
 // TestNextStepActions checks the next step schema's action enum is exactly

@@ -28,9 +28,11 @@ func NewCatalog(pool Pool, limits sqlguard.Limits, database string) *Catalog {
 	return &Catalog{pool: pool, limits: limits, database: database}
 }
 
-// read runs fn in a read-only transaction within the time limit.
+// read runs fn in a read-only transaction within the time limit. It is
+// REPEATABLE READ, so every statement fn runs reads one snapshot; a
+// read-only transaction never fails to serialize.
 func (c *Catalog) read(ctx context.Context, fn func(pgx.Tx) error) error {
-	tx, err := c.pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+	tx, err := c.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
 		return err
 	}
@@ -60,13 +62,32 @@ func (c *Catalog) Find(ctx context.Context, schema, name string) (r pgcatalog.Re
 	return r, ok, err
 }
 
-// Describe is pgcatalog.DescribeRelation, every read of it in one snapshot.
+// Describe is pgcatalog.DescribeRelation, every read of it in one snapshot
+// (read is REPEATABLE READ).
 func (c *Catalog) Describe(ctx context.Context, oid uint32) (d pgcatalog.Detail, err error) {
 	err = c.read(ctx, func(tx pgx.Tx) error {
 		d, err = pgcatalog.DescribeRelation(ctx, tx, oid)
 		return err
 	})
 	return d, err
+}
+
+// Guarded reports whether oid is in basalt_meta.agent_guarded_tables. A
+// guard older than that view, or a database without it, guards nothing
+// describe can report: false, not an error.
+func (c *Catalog) Guarded(ctx context.Context, oid uint32) (guarded bool, err error) {
+	err = c.read(ctx, func(tx pgx.Tx) error {
+		// Plain SQL: the guard's own view, read on the agent's credential.
+		var view *string
+		if err := tx.QueryRow(ctx, `SELECT pg_catalog.to_regclass('basalt_meta.agent_guarded_tables')::text`).Scan(&view); err != nil {
+			return err
+		}
+		if view == nil {
+			return nil
+		}
+		return tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM basalt_meta.agent_guarded_tables WHERE table_oid = $1)`, oid).Scan(&guarded)
+	})
+	return guarded, err
 }
 
 // Search is pgcatalog.Search.

@@ -35,6 +35,10 @@ type Catalog interface {
 	Find(ctx context.Context, schema, name string) (pgcatalog.Relation, bool, error)
 	// Describe reads one relation Find or Relations returned.
 	Describe(ctx context.Context, oid uint32) (pgcatalog.Detail, error)
+	// Guarded reports whether basalt init guards the relation, so its
+	// writes run under the write policy; false where the guard predates
+	// the record of it.
+	Guarded(ctx context.Context, oid uint32) (bool, error)
 	// Search finds readable relations by name, column or comment; exclude
 	// lists columns never matched or named.
 	Search(ctx context.Context, q string, exclude []pgcatalog.ColumnKey, after *pgcatalog.SearchCursor, limit int) ([]pgcatalog.Match, error)
@@ -74,6 +78,8 @@ func (noCatalog) Find(context.Context, string, string) (pgcatalog.Relation, bool
 func (noCatalog) Describe(context.Context, uint32) (pgcatalog.Detail, error) {
 	return pgcatalog.Detail{}, errNoCatalog
 }
+
+func (noCatalog) Guarded(context.Context, uint32) (bool, error) { return false, errNoCatalog }
 
 func (noCatalog) Search(context.Context, string, []pgcatalog.ColumnKey, *pgcatalog.SearchCursor, int) ([]pgcatalog.Match, error) {
 	return nil, errNoCatalog
@@ -251,7 +257,9 @@ type ResourceDetail struct {
 	Stats              *ResourceStats   `json:"stats,omitempty"`
 	RLS                bool             `json:"rls"`
 	Actions            []string         `json:"actions"`
-	Policy             *WritePolicy     `json:"policy"`
+	// Policy is the write policy on a guarded table the agent can write;
+	// null otherwise.
+	Policy *WritePolicy `json:"policy"`
 }
 
 // Resource is describe's resource form: the detail, or only the name and
@@ -506,6 +514,16 @@ func (s *Service) DescribeResource(ctx context.Context, resource, ifFingerprint 
 		return Resource{}, err
 	}
 	detail := hideColumns(d, classes)
+	if slices.ContainsFunc(detail.Actions, func(a string) bool { return a != privSelect }) {
+		guarded, err := s.Catalog.Guarded(ctx, d.OID)
+		if err != nil {
+			return Resource{}, err
+		}
+		if guarded {
+			p := writePolicy
+			detail.Policy = &p
+		}
+	}
 	out := Resource{Resource: printedName(d.Schema, d.Name), ResourceDetail: &detail}
 	out.Fingerprint, err = resourceFingerprint(out, pii)
 	if err != nil {
@@ -572,10 +590,6 @@ func hideColumns(d pgcatalog.Detail, classes []piidict.Class) ResourceDetail {
 	}
 	if d.Privileges != nil {
 		out.Actions = d.Privileges
-	}
-	if slices.ContainsFunc(out.Actions, func(a string) bool { return a != privSelect }) {
-		p := writePolicy
-		out.Policy = &p
 	}
 	return out
 }

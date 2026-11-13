@@ -180,6 +180,35 @@ func TestDescribeHidesWhatTheAgentCannotRead(t *testing.T) {
 		"absent and unreadable get the same answer")
 }
 
+// TestDescribePolicyOnlyOnGuardedTables: the write policy is the guard's,
+// so a table the agent was granted INSERT on outside basalt init has none,
+// and a table init guards for writes keeps it.
+func TestDescribePolicyOnlyOnGuardedTables(t *testing.T) {
+	t.Parallel()
+	h := describeDB(t)
+	role := pgx.Identifier{h.role}.Sanitize()
+	h.db.Exec(t, `CREATE TABLE shop.notes (id bigint PRIMARY KEY, body text);
+		GRANT SELECT, INSERT ON shop.notes TO `+role)
+
+	notes, isError := h.describe(t, map[string]any{"resource": "shop.notes"})
+	require.False(t, isError, "%v", notes)
+	require.Equal(t, []any{"SELECT", "INSERT"}, notes["actions"])
+	require.Contains(t, notes, "policy")
+	require.Nil(t, notes["policy"], "an unguarded table has no write policy")
+
+	lines, isError := h.describe(t, map[string]any{"resource": "shop.lines"})
+	require.False(t, isError, "%v", lines)
+	require.NotNil(t, lines["policy"], "a guarded writable table has the write policy")
+
+	// A guard from before agent_guarded_tables guards nothing describe can
+	// report: no policy, and no error.
+	h.db.Exec(t, `DROP VIEW basalt_meta.agent_guarded_tables CASCADE`)
+	lines, isError = h.describe(t, map[string]any{"resource": "shop.lines"})
+	require.False(t, isError, "%v", lines)
+	require.Contains(t, lines, "policy")
+	require.Nil(t, lines["policy"])
+}
+
 func TestDescribeIfFingerprint(t *testing.T) {
 	t.Parallel()
 	h := describeDB(t)

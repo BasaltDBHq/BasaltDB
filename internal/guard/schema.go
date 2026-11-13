@@ -48,6 +48,7 @@ const (
 	versionRevertWiden              // RS-2, RS-5: the widen proof, rescope and reset, redaction after a widen
 	versionRevertNonce              // RS-2: the requesting role reads its revert's rescope nonce
 	versionRevertReject             // RS-2, Q8: the person rejects a pending revert
+	versionSearchPath               // the caller's temporary tables never shadow the catalog
 )
 
 // migrations lists every version in order. M2 appends versions.
@@ -75,6 +76,7 @@ var migrations = []migration{
 	{version: versionRevertWiden, sql: v21Own + v21Rescope + v21Views},
 	{version: versionRevertNonce, sql: v22RevertNonce},
 	{version: versionRevertReject, sql: v23RejectRevert},
+	{version: versionSearchPath, sql: v24Functions + v24SearchPath},
 }
 
 // LatestVersion is the basalt_meta version this build installs.

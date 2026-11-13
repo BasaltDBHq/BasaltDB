@@ -419,7 +419,7 @@ func TestRecordSetupDefinition(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	d.Init(t, guard.AgentSpec{})
 	// Replaced by version 18: still SECURITY DEFINER with a pinned
-	// search_path, owned by the guard role.
+	// search_path (pg_temp last from version 24), owned by the guard role.
 	var definer bool
 	var config []string
 	var owner string
@@ -427,7 +427,7 @@ func TestRecordSetupDefinition(t *testing.T) {
 		FROM pg_proc p WHERE p.oid = 'basalt_meta.record_setup(uuid, text, name, int, timestamptz)'::regprocedure`).
 		Scan(&definer, &config, &owner))
 	require.True(t, definer)
-	require.Equal(t, []string{"search_path=pg_catalog"}, config)
+	require.Equal(t, []string{"search_path=pg_catalog, pg_temp"}, config)
 	require.Equal(t, d.Names.Guard(), owner)
 }
 

@@ -56,13 +56,26 @@ func TestHardenedCredential(t *testing.T) {
 			want:   base + "?sslmode=require",
 			probes: []string{"verify-full/require", "require/require"},
 		},
+		{
+			name: "verify-full is never weakened", dsn: base + "?sslmode=verify-full", pass: map[string]bool{sslRequire: true},
+			want:   base + "?sslmode=verify-full",
+			probes: []string{"verify-full/require"},
+		},
+		{
+			name: "verify-full kept, channel binding added", dsn: base + "?sslmode=verify-full", pass: map[string]bool{sslVerifyFull: true},
+			want:   base + "?channel_binding=require&sslmode=verify-full",
+			probes: []string{"verify-full/require"},
+		},
 		{name: "sslmode=disable: unchanged, no probe", dsn: base + "?sslmode=disable", want: base + "?sslmode=disable"},
 		{name: "a Unix socket: unchanged, no probe", dsn: "postgres://basalt_agent_bot:pw@/postgres?host=%2Fvar%2Frun%2Fpostgresql", want: "postgres://basalt_agent_bot:pw@/postgres?host=%2Fvar%2Frun%2Fpostgresql"},
 	} {
-		var seen []string
-		got := hardenedCredential(context.Background(), fakeProbe(t, tc.pass, &seen), tc.dsn)
-		require.Equal(t, tc.want, got, tc.name)
-		require.Equal(t, tc.probes, seen, tc.name)
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var seen []string
+			got := hardenedCredential(context.Background(), fakeProbe(t, tc.pass, &seen), tc.dsn)
+			require.Equal(t, tc.want, got)
+			require.Equal(t, tc.probes, seen)
+		})
 	}
 }
 

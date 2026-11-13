@@ -32,7 +32,8 @@ const (
 // sees one SCRAM exchange of the role can derive its ClientKey and log in.
 // So the connection requires channel binding (SCRAM-SHA-256-PLUS, bound to
 // the server's TLS certificate), with sslmode=verify-full where the
-// server's certificate verifies, else sslmode=require (verify-ca kept).
+// server's certificate verifies, else sslmode=require (verify-ca and
+// verify-full are never weakened).
 // Each candidate is tried first with a login that is bound to fail (the
 // new password is not set yet): only a refused password (28P01) proves
 // the client got through TLS and channel binding. When none does (no TLS,
@@ -49,21 +50,34 @@ func hardenedCredential(ctx context.Context, dial func(context.Context, string) 
 	if mode == sslDisable || strings.HasPrefix(q.Get(paramHost), "/") || (u.Host == "" && q.Get(paramHost) == "") {
 		return dsn
 	}
-	weaker := sslRequire
-	if mode == sslVerifyCA {
-		weaker = sslVerifyCA
-	}
-	for _, m := range []string{sslVerifyFull, weaker} {
+	for _, m := range sslCandidates(mode) {
 		q.Set(paramSSLMode, m)
 		q.Set(paramChannelBinding, bindingRequire)
 		u.RawQuery = strings.ReplaceAll(q.Encode(), "+", "%20")
 		candidate := u.String()
+		// The assumption: a server answers 28P01 only after a SCRAM
+		// exchange (Postgres, PgBouncer); a proxy that sent it before any
+		// SASL message would pass the probe and leave a credential that
+		// cannot log in.
 		var pg *pgconn.PgError
 		if err := dial(ctx, candidate); errors.As(err, &pg) && pg.Code == sqlstateInvalidPassword {
 			return candidate
 		}
 	}
 	return dsn
+}
+
+// sslCandidates are the sslmodes to try, strongest first, never weaker
+// than the admin's mode: verify-full, then verify-ca when that was given,
+// else require (which adds only channel binding to what prefer gave).
+func sslCandidates(mode string) []string {
+	switch mode {
+	case sslVerifyFull:
+		return []string{sslVerifyFull}
+	case sslVerifyCA:
+		return []string{sslVerifyFull, sslVerifyCA}
+	}
+	return []string{sslVerifyFull, sslRequire}
 }
 
 // probeLogin tries a login with dsn and closes it: the error says how far

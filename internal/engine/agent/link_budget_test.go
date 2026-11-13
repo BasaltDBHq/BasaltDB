@@ -321,3 +321,90 @@ func TestMessagesOfferingACommandStayWithinTheLimitWithALongConfigPath(t *testin
 	// The preview timeout holds two commands: it must have been cut.
 	require.Contains(t, messages["timeout "+toolPreviewRevert], commandElsewhere)
 }
+
+// requireSendRequestFirst checks a result over the budget: requestFile beside
+// the hash link, and SEND_REQUEST first, then the catalog's steps, every
+// step obeying the step rules.
+func requireSendRequestFirst(t *testing.T, steps []mcp.NextStep, file *links.RequestFile, where string) {
+	t.Helper()
+	require.NotNil(t, file, where)
+	require.NotEmpty(t, steps, where)
+	require.Equal(t, mcp.ActorAgent, steps[0].Actor, where)
+	require.Equal(t, mcp.ActionSendRequest, steps[0].Action, where)
+	require.Equal(t, sendRequestText(file), steps[0].Text, where)
+	for i, st := range steps {
+		requireStepObeysRules(t, st, catalogCase{tool: toolWrite, args: writeArgs0}, "", fmt.Sprintf("%s step %d", where, i+1))
+	}
+	require.NotEqual(t, mcp.ActionSendRequest, catalogKinds(steps)[0].Action, "the catalog checks skip it")
+}
+
+// TestHashLinkResultsSendTheRequestFirst: on an engine that serves no pages,
+// every result that hands over a hash link carries requestFile and starts
+// with SEND_REQUEST (CONTRACT.md, The request file and pasted blocks).
+func TestHashLinkResultsSendTheRequestFirst(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := noticeService("", links.DefaultBudget)
+
+	n := approvalNoticeOf(t, s, 60, issueLink)
+	te := s.Failure(toolWrite, writeArgs0, approvalRequiredError(n))
+	require.Same(t, n.RequestFile, te.Approval.RequestFile)
+	requireSendRequestFirst(t, te.NextSteps, te.Approval.RequestFile, "write held")
+
+	r := revertOf(t, "Undo the bad merge", revertLines(60), false)
+	out, err := s.revertWithLink(ctx, r)
+	require.NoError(t, err)
+	require.Contains(t, out.RevertURL, "#h=")
+	requireSendRequestFirst(t, out.NextSteps, out.RequestFile, "request_revert")
+
+	p := &PendingRevert{Revert: r}
+	require.NoError(t, s.pendingRevert(ctx, p, false))
+	require.Contains(t, p.RevertURL, "#h=", "a restated link without pages is the hash link")
+	requireSendRequestFirst(t, p.NextSteps, p.RequestFile, "list_pending revert")
+	require.Equal(t, p.RevertURL, p.NextSteps[1].URL)
+
+	item := PendingItem{Notice: n.ApprovalNotice}
+	item.Status, item.ExpiresAt = ledger.ApprovalPending, s.Now().Add(time.Hour)
+	_, _, steps, err := s.itemGuidance(item)
+	require.NoError(t, err)
+	requireSendRequestFirst(t, steps, item.Notice.RequestFile, "list_pending approval")
+}
+
+// TestRestatedLinksWhileServingPagesSendNothing: with the pages served, a
+// list_pending item that only restates its link has no requestFile and its
+// OPEN_LINK carries no url, even when the long link is over the budget.
+func TestRestatedLinksWhileServingPagesSendNothing(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := noticeService(localPages, links.DefaultBudget)
+	r := revertOf(t, "Undo the bad merge", revertLines(60), false)
+	p := &PendingRevert{Revert: r}
+	require.NoError(t, s.pendingRevert(ctx, p, false))
+	require.Nil(t, p.RequestFile)
+	require.Equal(t, mcp.ActionOpenLink, p.NextSteps[0].Action)
+	require.Empty(t, p.NextSteps[0].URL)
+	require.Contains(t, p.RevertURL, "#2.", "the field keeps the long link")
+
+	n := approvalNoticeOf(t, s, 60, keepLink)
+	item := PendingItem{Notice: n.ApprovalNotice, Restated: true}
+	item.Status, item.ExpiresAt = ledger.ApprovalPending, s.Now().Add(time.Hour)
+	_, _, steps, err := s.itemGuidance(item)
+	require.NoError(t, err)
+	require.Len(t, steps, 1)
+	require.Equal(t, mcp.ActionOpenLink, steps[0].Action)
+	require.Empty(t, steps[0].URL)
+}
+
+// TestExpiredItemsCarryNoRequestFile: a held write that no longer waits for
+// the person has nothing to send.
+func TestExpiredItemsCarryNoRequestFile(t *testing.T) {
+	t.Parallel()
+	s := noticeService("", links.DefaultBudget)
+	n := approvalNoticeOf(t, s, 60, issueLink)
+	require.NotNil(t, n.RequestFile)
+	item := PendingItem{Notice: n.ApprovalNotice}
+	item.Status, item.ExpiresAt = ledger.ApprovalPending, s.Now().Add(-time.Hour)
+	require.False(t, s.waitsForPerson(item))
+	item.Status, item.ExpiresAt = ledger.ApprovalApproved, s.Now().Add(time.Hour)
+	require.False(t, s.waitsForPerson(item))
+}

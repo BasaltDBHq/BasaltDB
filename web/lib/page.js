@@ -2,6 +2,7 @@
 // into the page through textContent, never innerHTML: every value on these
 // pages came from a link someone else built.
 import { readPaste, repairHash } from "./repair.js";
+import { BlockAssembler, HASH_PREFIX, MAX_REQUEST_FILE_BYTES, readRequestFile } from "./requestfile.js";
 
 export const $ = (id) => document.getElementById(id);
 
@@ -80,8 +81,10 @@ const NO_LINK_IN_PASTE =
 // page keeps its own origin and path, and never opens or fetches a pasted
 // URL. describe(err) is the message to show for a failure.
 export async function loadOrPaste(load, describe) {
+  const hash = repairHash(window.location.hash);
+  if (hash.startsWith(HASH_PREFIX)) return askForRequest(hash.slice(HASH_PREFIX.length), load, describe);
   try {
-    return await load(repairHash(window.location.hash));
+    return await load(hash);
   } catch (err) {
     if (!pasteHelps(err)) throw err;
     return askForPaste(err, load, describe);
@@ -124,6 +127,71 @@ function askForPaste(err, load, describe) {
         $("paste-status").textContent = describe(e);
       }
       $("paste-read").disabled = false;
+    });
+  });
+}
+
+// The request box of a hash link (CONTRACT.md, The request file and pasted
+// blocks): the person gives the page the file or the text blocks their agent
+// sent; once h matches, the text is loaded as a long link's fragment.
+const REQUEST_MISMATCH = "This does not match the link: it is another request's, or it was cut or changed on the way. Ask the agent to send it again.";
+const REQUEST_TOO_BIG = "That file is too big to be a request from your agent.";
+const BLOCK_REASONS = {
+  NO_BLOCK: "No block found in that text. Paste the blocks your agent sent, each starting with its basalt-request line.",
+  CUT_SHORT: "A block was cut short. Copy that whole block again.",
+  OTHER_REQUEST: "A block belongs to another request. Paste only the blocks sent with this link.",
+};
+
+export function requestProgress(assembler) {
+  const missing = assembler.missing();
+  if (assembler.n === 0) return "";
+  const have = assembler.n - missing.length;
+  if (missing.length === 0) return `All ${assembler.n} blocks are in.`;
+  return `${have} of ${assembler.n} blocks; still missing: ${missing.join(", ")}.`;
+}
+
+function askForRequest(h, load, describe) {
+  $("request-box").hidden = false;
+  const assembler = new BlockAssembler(h);
+  const say = (text) => {
+    $("request-status").textContent = text;
+  };
+  return new Promise((resolve) => {
+    const tryText = async (text) => {
+      try {
+        const loaded = await load(`#${text}`);
+        $("request-box").hidden = true;
+        resolve(loaded);
+      } catch (e) {
+        say(describe(e));
+      }
+    };
+    $("request-file").addEventListener("change", async () => {
+      const file = $("request-file").files?.[0];
+      if (!file) return;
+      if (file.size > MAX_REQUEST_FILE_BYTES) {
+        say(REQUEST_TOO_BIG);
+        return;
+      }
+      const got = await readRequestFile(await file.text(), h);
+      if (got.error) {
+        say(REQUEST_MISMATCH);
+        return;
+      }
+      await tryText(got.text);
+    });
+    $("request-read").addEventListener("click", async () => {
+      const refused = assembler.add($("request-paste").value);
+      $("request-paste").value = "";
+      const progress = requestProgress(assembler);
+      const reasons = [...new Set(refused)].map((r) => BLOCK_REASONS[r]);
+      say([...reasons, progress].filter(Boolean).join(" "));
+      const got = await assembler.text();
+      if (got.error === "MISMATCH") {
+        say(REQUEST_MISMATCH);
+        return;
+      }
+      if (got.text) await tryText(got.text);
     });
   });
 }

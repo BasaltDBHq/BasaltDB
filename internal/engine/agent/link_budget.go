@@ -317,6 +317,7 @@ func revertMessage(summary string, pick handOver, extra ...string) (string, []mc
 	}
 	sign := "Sign it with your passkey here:"
 	switch pick.Kind {
+	case linkShort:
 	case linkHash:
 		sign = "Sign it with your passkey: " + requestBeside(pick.File.Blocks != nil)
 	case linkLong:

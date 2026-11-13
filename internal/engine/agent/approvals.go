@@ -464,6 +464,9 @@ func (s *Service) relay(ctx context.Context, a ledger.Approval, code string) err
 type PendingItem struct {
 	ledger.Approval
 	Notice mcp.ApprovalNotice
+	// Restated is set when list_pending names the item's link without issuing
+	// one while the engine serves the pages: the person has the short link.
+	Restated bool
 	// PersonMessage and NextSteps say what happens next (CONTRACT.md, Next steps).
 	PersonMessage string
 	Links         []mcp.Link

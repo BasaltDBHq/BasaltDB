@@ -487,10 +487,7 @@ func requireObeysCatalog(t *testing.T, kase catalogCase, te *mcp.ToolError, conf
 	require.True(t, ok, "no catalog entry for %s %s %s", te.Code, te.Reason, kase.tool)
 	require.NotEmpty(t, te.Message, "the message stays")
 	require.NotEmpty(t, te.NextSteps, "nextSteps is required")
-	got := make([]mcpcontract.StepKind, 0, len(te.NextSteps))
-	for _, st := range te.NextSteps {
-		got = append(got, mcpcontract.StepKind{Actor: st.Actor, Action: st.Action})
-	}
+	got := catalogKinds(te.NextSteps)
 	want, pm, variant := expectedSteps(t, mcpcontract.VariantError, entry.Code, entry.Reason, entry.Tool, entry.Steps, entry.PersonMessage, operatedBy)
 	require.Equal(t, want, got, "(actor, action) sequence of %s", entryKey(entry))
 	require.Equal(t, pm, te.PersonMessage != "", "personMessage set exactly when the catalog says: %q", te.PersonMessage)

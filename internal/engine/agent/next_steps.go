@@ -344,7 +344,7 @@ func (s *Service) approvalRequiredSteps(b *Steps, te *mcp.ToolError) string {
 		b.OpenLink(n.ApprovalURL, n.ApproveCommand, "Then open the link and approve the held write.")
 		b.EndTurn("End your turn: the person acts next.")
 	case reasonWaitEnded:
-		b.OpenLink(n.ApprovalURL, n.ApproveCommand, "Open the link and approve with your passkey.")
+		s.openHeldLink(b, n, "Open the link and approve with your passkey.")
 		b.TellAgent("Tell the agent when you have approved.")
 		b.EndTurn("Do not wait again: end your turn, showing personMessage.")
 		b.RepeatCall(toolWrite, map[string]any{argApprovalID: n.ApprovalID, argWaitApproval: 0}, 0,

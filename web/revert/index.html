@@ -21,6 +21,17 @@
   </header>
   <div class="page">
 
+  <section id="request-box" class="panel" hidden>
+    <h1>Open the request from your agent</h1>
+    <p>This link carries only a check of the request. Your agent sent the request itself as a file or as text blocks: give it to this page. It is read here and never uploaded.</p>
+    <label class="field">Open the file <input id="request-file" type="file"></label>
+    <h2>Or paste the text blocks</h2>
+    <p class="muted">Paste one or more blocks, in any order. Each starts with a basalt-request line.</p>
+    <textarea id="request-paste" rows="6" aria-label="Text blocks from your agent"></textarea>
+    <div class="buttons"><button id="request-read" type="button">Add the blocks</button></div>
+    <p id="request-status" class="muted" role="status"></p>
+  </section>
+
   <section id="error" class="panel error" hidden>
     <h1>Cannot revert</h1>
     <p id="error-text"></p>

@@ -139,11 +139,34 @@ func (s *Service) itemGuidance(p PendingItem) (string, []mcp.Link, []mcp.NextSte
 		steps, err := b.Build()
 		return approvalExpiredMessage, nil, steps, err
 	case s.waitsForPerson(p):
-		steps, err := NewSteps().SendRequest(p.Notice.RequestFile).OpenLink(p.Notice.ApprovalURL, p.Notice.ApproveCommand,
-			"Open the link, review the rows and approve with your passkey.").Build()
+		b := NewSteps().SendRequest(p.Notice.RequestFile)
+		openItemLink(b, p)
+		steps, err := b.Build()
 		return p.Notice.PersonMessage, p.Notice.Links, steps, err
 	}
 	return p.Notice.PersonMessage, p.Notice.Links, nil, nil
+}
+
+// openItemLink adds a pending item's OPEN_LINK step: with no url when
+// list_pending restates the link while the engine serves the pages.
+func openItemLink(b *Steps, p PendingItem) {
+	if p.Restated {
+		b.OpenGivenLink(p.Notice.ApproveCommand, "Open the link the agent gave you earlier, review the rows and approve with your passkey.")
+		return
+	}
+	b.OpenLink(p.Notice.ApprovalURL, p.Notice.ApproveCommand, "Open the link, review the rows and approve with your passkey.")
+}
+
+// openHeldLink adds the person's OPEN_LINK step after a wait that ran out:
+// with no url while the engine serves the pages (the person has the short
+// link the hold handed over; CONTRACT.md, The request file and pasted
+// blocks), else at the link the hold handed over.
+func (s *Service) openHeldLink(b *Steps, n *mcp.ApprovalNotice, text string) {
+	if s.PagesOrigin != "" {
+		b.OpenGivenLink(n.ApproveCommand, "Open the short link the agent gave you earlier and approve with your passkey.")
+		return
+	}
+	b.OpenLink(n.ApprovalURL, n.ApproveCommand, text)
 }
 
 // expired reports whether a held write ran out before it was approved.

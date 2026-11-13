@@ -87,16 +87,16 @@ type Link struct {
 // approval link (short when the engine serves the pages), the equivalent
 // command, one line for the person, and when it expires.
 type ApprovalNotice struct {
-	ApprovalID     string `json:"approvalId"`
-	ExpiresAt      string `json:"expiresAt"`
-	Rows           int    `json:"rows"`
-	Headline       string `json:"headline"`
-	ApprovalURL    string `json:"approvalUrl"`
+	ApprovalID  string `json:"approvalId"`
+	ExpiresAt   string `json:"expiresAt"`
+	Rows        int    `json:"rows"`
+	Headline    string `json:"headline"`
+	ApprovalURL string `json:"approvalUrl"`
 	// RequestFile is the request beside a hash link in ApprovalURL (CONTRACT.md,
 	// The request file and pasted blocks); nil with any other link.
 	RequestFile    *links.RequestFile `json:"requestFile,omitempty"`
 	ApproveCommand string             `json:"approveCommand"`
-	PersonMessage  string `json:"personMessage"`
+	PersonMessage  string             `json:"personMessage"`
 	// Links equals the body's links: the URLs of PersonMessage.
 	Links []Link `json:"links,omitempty"`
 }

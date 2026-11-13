@@ -65,7 +65,7 @@ func requestBlocks(text, h string) []string {
 	blocks := make([]string, 0, n)
 	for i := range n {
 		piece := text[i*RequestPieceChars : min(len(text), (i+1)*RequestPieceChars)]
-		blocks = append(blocks, fmt.Sprintf("basalt-request %d/%d %s\n%s", i+1, n, h, piece))
+		blocks = append(blocks, fmt.Sprintf("basalt-request %d/%d %s %d\n%s", i+1, n, h, len(piece), piece))
 	}
 	return blocks
 }

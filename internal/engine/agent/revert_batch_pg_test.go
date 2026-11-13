@@ -127,7 +127,12 @@ func TestRevertPlanAndBatchTools(t *testing.T) {
 	require.Equal(t, "public.items", plan["table"])
 	// Not signed yet: the link to sign it, for the agent to hand over.
 	link := str(t, before["revertUrl"])
-	require.True(t, strings.HasPrefix(link, links.DefaultLocal+"/reverts/"+id+"#2."), "no local pages: the long link: %s", link)
+	// No local pages, and a plan sample over the budget: the hash link with
+	// the request beside it (CONTRACT.md, The request file and pasted blocks).
+	require.True(t, strings.HasPrefix(link, links.DefaultLocal+"/reverts/"+id+"#h="), "no local pages: the hash link: %s", link)
+	rf, ok := before["requestFile"].(map[string]any)
+	require.True(t, ok, "requestFile beside the hash link")
+	require.Equal(t, links.DefaultLocal+"/reverts/"+id+"#h="+links.RequestHash(str(t, rf["text"])), link)
 	require.Contains(t, before["personMessage"], "Revert of run "+e.runID.String()+": ")
 	require.Contains(t, before["personMessage"], "Why: Undo the bulk update. ")
 	require.Contains(t, before["personMessage"], "\n\n"+link)

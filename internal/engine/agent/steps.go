@@ -97,6 +97,13 @@ func (b *Steps) OpenLink(url, command, text string) *Steps {
 	return b.add(NextStep{Actor: mcp.ActorPerson, Action: mcp.ActionOpenLink, URL: url, Command: command}, text)
 }
 
+// OpenGivenLink adds a PERSON step with no url: open the short link the
+// agent handed over earlier, which the engine no longer has (it keeps only
+// its hash); command, when not empty, opens the same page from a terminal.
+func (b *Steps) OpenGivenLink(command, text string) *Steps {
+	return b.add(NextStep{Actor: mcp.ActorPerson, Action: mcp.ActionOpenLink, Command: command}, text)
+}
+
 // RunCommand adds a PERSON step: run command in a terminal.
 func (b *Steps) RunCommand(command, text string) *Steps {
 	if command == "" {
@@ -146,9 +153,9 @@ func withSendRequest(steps []NextStep, f *links.RequestFile) []NextStep {
 // The SEND_REQUEST step's text, with and without blocks to paste.
 const (
 	sendRequestWithBlocks = "Send the person requestFile first: attach the file at path (else one named fileName holding exactly text), " +
-		"or else send each of blocks as its own message. Skip it if already sent."
+		"or else each of blocks in a code block, one per message. Skip a file already sent."
 	sendRequestFileOnly = "Send the person requestFile first: attach the file at path (else one named fileName holding exactly text). " +
-		"If you cannot send files, do not show the link: ask the person how to go on."
+		"An agent that cannot send files does not show the link: ask the person how to go on."
 )
 
 func sendRequestText(f *links.RequestFile) string {

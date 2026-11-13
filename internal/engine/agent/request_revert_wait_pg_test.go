@@ -19,6 +19,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/links"
+	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
@@ -143,6 +144,12 @@ func requireSteps(t *testing.T, body map[string]any, want []mcpcontract.StepKind
 		require.NotEmpty(t, text)
 		require.LessOrEqual(t, len(text), maxStepText, text)
 		steps = append(steps, step)
+		if len(steps) == 1 && step["action"] == mcp.ActionSendRequest {
+			// Not in the catalog's sequences: first exactly when the result
+			// carries requestFile (CONTRACT.md, Next steps).
+			require.Contains(t, body, "requestFile", "%v", body)
+			continue
+		}
 		got = append(got, mcpcontract.StepKind{Actor: str(t, step["actor"]), Action: str(t, step["action"])})
 	}
 	require.Equal(t, want, got, "%v", body)

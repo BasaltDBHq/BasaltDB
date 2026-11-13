@@ -107,7 +107,7 @@ func TestInitNamesEveryMissingTableBeforeChangingAnything(t *testing.T) {
 		"--prefix", d.Names.Prefix, "--config", cfg, "--yes", "--skip-passkey")
 	require.Equal(t, exitError, r.code)
 	require.Equal(t, "basalt: tables basalt_demo.leads, basalt_demo.lead_notes not found in database \""+db+
-		"\"; create them first (the M4 demo: docs/m4/seed.sql)\n", r.stderr)
+		"\"; create them first (basalt init --demo creates the sample tables)\n", r.stderr)
 	require.Empty(t, r.stdout, "no SQL is planned")
 	require.NoFileExists(t, cfg)
 	v, err := guard.InstalledVersion(context.Background(), d.Admin)

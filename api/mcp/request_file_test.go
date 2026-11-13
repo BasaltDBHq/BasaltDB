@@ -98,7 +98,7 @@ var (
 	blockHeader = regexp.MustCompile(`(?:^|.* )basalt-request (\d+)/(\d+) ([A-Za-z0-9_-]{22}) (\d+)$`)
 	pieceLine   = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 	pasteBreaks = regexp.MustCompile("\r\n|\n|\r|\u2028")
-	quoteMarks  = strings.NewReplacer(">", "", "*", "", "\\", "")
+	quoteMarks  = strings.NewReplacer(">", "", "*", "", "\\", "", "`", "")
 )
 
 // blockAssembler is the page's paste box: it keeps the blocks pasted so far

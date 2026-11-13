@@ -11,12 +11,26 @@ Held for your approval: Update 27 rows in basalt_demo.leads. Approve: http://loc
 ```
 
 1. Open the link. The engine serves the approval page itself and the page lists every row with its old and new values. Cascaded rows are marked, and you have to confirm them separately.
-2. Approve with your passkey. The page sends the signature to the engine, which hands it to Postgres. The page then says "Approved. The agent will continue."
+2. Press **Approve** (it names the op and the rows, for example "Approve: delete 1 row + 2 cascaded") and confirm with your passkey. The page sends the signature to the engine, which hands it to Postgres. The page then says "Approved. The agent will continue."
 3. The agent has already repeated the write with `approvalId`. That call waits up to 90 seconds for your signature and returns `APPLIED` as soon as you sign, so you do not have to tell it that you approved. If you take longer, the agent does not wait again: it ends its turn saying the write waits for your approval. Approve when you are ready, then tell the agent; its next write with `approvalId` applies at once.
 
 Each short link carries a secret after `#s=`: the id alone opens nothing, and the secret never reaches a server log because browsers do not send the fragment. One link is live per held write, and links survive an engine restart: the engine keeps the secrets' hashes in its state directory (`<stateDir>/<agent>.links.json`, mode `0600`). If the agent lost the link, it calls `list_pending` with `reissueLink: true`, which issues a new link and turns the old one off; a plain `list_pending` touches no link. From the terminal, `basalt approve --open <id> --reissue` does the same. To refuse a write, close the page: the write stays blocked and expires after 24 hours.
 
 A revert works the same way: `basalt revert --agent NAME --run <runId> --open` opens the revert page, you sign it there, and the command prints the result. Pasting the code the page shows into the prompt still works too.
+
+## Rows the agent cannot read
+
+A write can touch rows in tables the agent's role cannot `SELECT`, cascaded rows above all: deleting a lead also deletes its notes, even when the agent may not read notes. The agent never sees those values, and the page first shows such a row with dots (••••••) under its table, tagged "hidden from the agent". You can still see them before you approve or sign.
+
+- **Show values.** On a page the engine served (the short link), above the rows: "2 of these rows are in tables the agent cannot read. You can see their values with your passkey; the agent still cannot." Press **Show values with passkey** and confirm with your passkey. The page never asks on its own.
+- **One prompt for all.** Every hidden row then shows its values, and its table is tagged "shown to you only" ("Shown to you only. The agent cannot read this table." above the rows). Approving or signing still asks for your passkey again: the first prompt only lets you see the rows. **Hide values** hides them on the page again; showing them once more needs no passkey, since the page still has them.
+- **Checked on the page.** Before it shows a row, the page checks that the values are exactly the ones your signature covers (each hidden row carries a hash of them). If the engine sent anything else, the page shows none of them and says "The engine sent values that do not match the rows you sign, so none are shown."
+- **Secret columns.** A column classified `SECRET` ([PII classification](../CONTRACT.md#pii-classification)) is never shown: it reads "secret · not shown". Postgres left the value out, so the page cannot check that row against what you sign, and it says so under the table, naming the row: "Row id = 8 has a secret column, so this page can't check it against what you sign." `IDENTIFIER` and `FREE_TEXT` columns show as they are; the page is yours, and only what goes to the model is tokenized.
+- **When it refuses.** If your passkey could not be checked, the page says "Your passkey didn't confirm. Nothing was shown; try again." and you can press Show values with passkey again. If the hidden rows changed since the agent asked, it says "These rows changed since the agent asked. This approval can no longer apply; ask the agent to try the write again." (for a revert: "ask the agent to prepare it again").
+- **What the agent sees.** Nothing about the values. Its tools, its views in `basalt_meta` and its chat show the rows as hidden, as before. The ledger records that you looked (`ROWS_REVEALED`, with counts and hashes only).
+- **Long links.** A long link (a `#2.` link, for example from Telegram) has no engine behind it, so the rows stay hidden, with "Values are hidden on this link. Open the short link to see them." under the table name. The CLI cannot show them either: `basalt approve --show` prints `[values hidden]`; use `--open` with `--reissue` for the engine's page.
+
+This needs `basalt_meta` versions 29 (reverts), 30 (approvals) and 31 (a fix so a reveal cannot deadlock with your signature). An engine on an older guard serves the agent degraded until you run `basalt upgrade` (see [next-steps.md](next-steps.md)).
 
 ## Reverting from the agent
 
@@ -82,7 +96,7 @@ Passkeys belong to the origin they were registered on: RP ID `localhost` for the
 
 The passkey is bound to the page's origin. A passkey registered on `http://localhost:8787` signs only on `http://localhost:8787`, so always use the same port.
 
-Not yet checked on real devices (held for the owner): phone approval through the QR flow for RP ID `localhost`.
+Checked on real devices (Nov 13, 2026): a Touch ID platform passkey, through the engine's pages, approved a held write and signed a revert. A phone through the QR flow is not offered for RP ID `localhost` (Chrome on macOS shows no phone option), so approving from a phone needs the pages on a real domain: the hosted portal.
 
 ## Engine on a headless Linux server
 

@@ -12,17 +12,12 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 )
 
-// TestInitByCreateRoleAdmin installs the guard as an admin that is not a
-// superuser but has CREATEROLE, like Supabase's postgres. From Postgres 16
-// that admin is granted ADMIN on every role it creates (INHERIT and SET
-// off), so it is a member of the agents group without being an agent. Its
-// own writes must pass unguarded, and tables only it can write must not
-// count as agent-writable.
-func TestInitByCreateRoleAdmin(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t)
+// createRoleAdmin makes a login role that is not a superuser but has
+// CREATEROLE and CREATE on the database, like Supabase's postgres, and
+// connects as it.
+func createRoleAdmin(t *testing.T, d *guardtest.DB) *pgx.Conn {
+	t.Helper()
 	ctx := context.Background()
-
 	// Named to sort after the guard roles, so cleanup drops it last.
 	admin := d.Names.Prefix + "_zadmin"
 	pw := guard.NewPassword()
@@ -35,9 +30,23 @@ func TestInitByCreateRoleAdmin(t *testing.T) {
 	conn, err := pgdial.Connect(ctx, url)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close(context.Background()) })
+	return conn
+}
+
+// TestInitByCreateRoleAdmin installs the guard as an admin that is not a
+// superuser but has CREATEROLE, like Supabase's postgres. From Postgres 16
+// that admin is granted ADMIN on every role it creates (INHERIT and SET
+// off), so it is a member of the agents group without being an agent. Its
+// own writes must pass unguarded, and tables only it can write must not
+// count as agent-writable.
+func TestInitByCreateRoleAdmin(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t)
+	ctx := context.Background()
+	conn := createRoleAdmin(t, d)
 
 	// The admin owns the app's tables, as on Supabase.
-	_, err = conn.Exec(ctx, `
+	_, err := conn.Exec(ctx, `
 		CREATE SCHEMA app;
 		CREATE TABLE app.leads (id int PRIMARY KEY, status text NOT NULL);
 		CREATE TABLE app.notes (id int PRIMARY KEY, lead_id int NOT NULL REFERENCES app.leads ON DELETE CASCADE);

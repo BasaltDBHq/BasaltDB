@@ -8,7 +8,17 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/guard"
 )
+
+// The engine's pool, basalt status and the setup finisher must fit under
+// the role's CONNECTION LIMIT with room for a stale session, or a raised
+// pool size would fail at random under load.
+func TestAgentPoolFitsTheRoleConnectionLimit(t *testing.T) {
+	t.Parallel()
+	const statusAndFinisher = 2
+	require.Less(t, agentPoolConns+statusAndFinisher, guard.AgentConnectionLimit)
+}
 
 func TestListenPagesRefusesATakenPort(t *testing.T) {
 	t.Parallel()

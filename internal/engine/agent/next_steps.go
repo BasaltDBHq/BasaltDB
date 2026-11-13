@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
@@ -538,8 +539,10 @@ const tooManyConnectionsAsk = "Tell the person the agent has used all the databa
 // tooManyConnectionsMessage is the person's message when the agent role is at
 // its connection limit, in an error and in status (CONTRACT.md, Error codes).
 func tooManyConnectionsMessage(cmds Commands) string {
-	return "The agent " + cmds.agent + " has used all 8 database connections Basalt allows it. Another engine for the same agent may be running, " +
-		"or a stopped engine left sessions open. Stop any second engine; stale sessions close on their own within a few minutes."
+	return fmt.Sprintf("The agent %s has used all %d database connections Basalt allows it. "+
+		"Another engine for the same agent may be running, or a stopped engine left sessions open. "+
+		"Stop any second engine; stale sessions close on their own within a few minutes.",
+		cmds.agent, guard.AgentConnectionLimit)
 }
 
 // fixes are the person's command and what it fixes for the machine problems

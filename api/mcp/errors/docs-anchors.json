@@ -1,0 +1,23 @@
+{
+  "page": "https://docs.basaltvault.app/reference/errors/",
+  "anchors": [
+    "intent-required",
+    "stale-read",
+    "statement-refused",
+    "row-limit-exceeded",
+    "query-timeout",
+    "approval-required",
+    "approval-expired",
+    "approval-invalid",
+    "revert-invalid",
+    "revert-expired",
+    "nothing-to-revert",
+    "permission-denied",
+    "not-found",
+    "sql-error",
+    "invalid-argument",
+    "unavailable",
+    "internal",
+    "unknown-token"
+  ]
+}

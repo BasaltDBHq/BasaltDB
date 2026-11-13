@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/links"
@@ -24,6 +25,9 @@ const handBackPath = "/api/v1/passkeys/register"
 
 // maxHandBackBody bounds the posted registration response (about 1 KiB).
 const maxHandBackBody = 16 << 10
+
+// handBackReadTimeout bounds reading a post's body.
+const handBackReadTimeout = 10 * time.Second
 
 // handBackSecretLen is the hand-back secret's length in bytes.
 const handBackSecretLen = 16
@@ -50,9 +54,13 @@ type registrationHandBack struct {
 	// hash is what a post's secret is compared with.
 	secret string
 	hash   [sha256.Size]byte
-	mu     sync.Mutex
+	// mu guards received only: a post reads and verifies its body without
+	// it, so a post whose body stalls holds up no other post and no read.
+	mu sync.Mutex
 	// received holds the verified registrations in arrival order.
 	received []handedBack
+	// full is closed when received reaches maxHandBacks.
+	full chan struct{}
 }
 
 // handedBack is one verified registration and its pairing code (the
@@ -73,6 +81,7 @@ func newRegistrationHandBack(rnd io.Reader, req passkey.RegistrationRequest, rp 
 	req.HandBack = secret
 	return &registrationHandBack{
 		req: req, rp: rp, secret: secret, hash: sha256.Sum256([]byte(secret)),
+		full: make(chan struct{}),
 	}, nil
 }
 
@@ -82,27 +91,30 @@ func newRegistrationHandBack(rnd io.Reader, req passkey.RegistrationRequest, rp 
 // JSON (415) of at most maxHandBackBody bytes (413), it is a registration
 // response (400) and it verifies against the request (400). Only a
 // response that verifies is kept; the same registration posted again is
-// kept once.
+// kept once. The body is read and verified without the lock, within
+// handBackReadTimeout, so a post that stalls its body blocks nothing else.
 func (h *registrationHandBack) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Origin") != h.rp.Origin {
 		writeHandBackError(w, http.StatusForbidden, agent.CodePermissionDenied, "the request does not come from the registration page")
 		return
 	}
 	got := sha256.Sum256([]byte(r.Header.Get(links.SecretHeader)))
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	if subtle.ConstantTimeCompare(got[:], h.hash[:]) != 1 {
 		writeHandBackError(w, http.StatusNotFound, agent.CodeNotFound, "this registration link is not the one basalt init is waiting for")
 		return
 	}
-	if len(h.received) >= maxHandBacks {
-		writeHandBackError(w, http.StatusTooManyRequests, codeRateLimited, "basalt init already holds as many passkeys as it takes; run basalt init again")
+	if h.count() >= maxHandBacks {
+		writeHandBackFull(w)
 		return
 	}
 	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
 		writeHandBackError(w, http.StatusUnsupportedMediaType, agent.CodeInvalidArgument, "the body must be application/json")
 		return
 	}
+	// The page server's ReadTimeout bounds the body too; this holds when
+	// the route is served without it. A writer without deadlines (tests)
+	// leaves it to the server.
+	_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(handBackReadTimeout))
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxHandBackBody))
 	var tooLarge *http.MaxBytesError
 	switch {
@@ -131,14 +143,39 @@ func (h *registrationHandBack) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	code, _ := passkey.NormalizePairingCode(passkey.PairingCode(h.req.Challenge, cred.ID, x, y)) // always canonical
-	if !slices.ContainsFunc(h.received, func(r handedBack) bool {
-		return bytes.Equal(r.cred.ID, cred.ID) && r.cred.PublicKey.Equal(cred.PublicKey)
-	}) {
-		h.received = append(h.received, handedBack{cred: cred, code: code})
+	if !h.keep(handedBack{cred: cred, code: code}) {
+		writeHandBackFull(w)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write([]byte(`{"status":"RECEIVED"}` + "\n"))
+}
+
+// keep adds r unless it is kept already. It returns false, adding
+// nothing, when maxHandBacks are kept.
+func (h *registrationHandBack) keep(r handedBack) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if slices.ContainsFunc(h.received, func(k handedBack) bool {
+		return bytes.Equal(k.cred.ID, r.cred.ID) && k.cred.PublicKey.Equal(r.cred.PublicKey)
+	}) {
+		return true
+	}
+	if len(h.received) >= maxHandBacks {
+		return false
+	}
+	h.received = append(h.received, r)
+	if len(h.received) == maxHandBacks {
+		close(h.full)
+	}
+	return true
+}
+
+// writeHandBackFull refuses a post past maxHandBacks. The page then shows
+// the long code to paste, which init still takes.
+func writeHandBackFull(w http.ResponseWriter) {
+	writeHandBackError(w, http.StatusTooManyRequests, codeRateLimited, "basalt init received more passkeys than it takes")
 }
 
 func writeHandBackError(w http.ResponseWriter, status int, code, message string) {

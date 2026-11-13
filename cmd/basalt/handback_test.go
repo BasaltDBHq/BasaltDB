@@ -121,9 +121,87 @@ func TestHandBackRefusesAFifthRegistration(t *testing.T) {
 			continue
 		}
 		require.Equal(t, http.StatusTooManyRequests, w.Code, w.Body.String())
-		require.JSONEq(t, `{"code":"RATE_LIMITED","message":"basalt init already holds as many passkeys as it takes; run basalt init again"}`, w.Body.String())
+		require.JSONEq(t, `{"code":"RATE_LIMITED","message":"basalt init received more passkeys than it takes"}`, w.Body.String())
 	}
 	require.Equal(t, maxHandBacks, h.count())
+}
+
+// stalledBody is a request body that sends nothing until released.
+type stalledBody struct{ release chan struct{} }
+
+func (b stalledBody) Read([]byte) (int, error) {
+	<-b.release
+	return 0, io.ErrUnexpectedEOF
+}
+
+// TestHandBackStalledBodyBlocksNothing: a post with the link's secret
+// that never sends its body holds up neither the person's post nor init's
+// matching of the typed code.
+func TestHandBackStalledBodyBlocksNothing(t *testing.T) {
+	t.Parallel()
+	h, body, person := handBackFixture(t)
+	release := make(chan struct{})
+	stalled := make(chan int, 1)
+	go func() {
+		r := httptest.NewRequest(http.MethodPost, handBackPath, stalledBody{release})
+		r.Header.Set("Origin", handBackOrigin)
+		r.Header.Set(links.SecretHeader, h.secret)
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		stalled <- w.Code
+	}()
+	time.Sleep(50 * time.Millisecond) // let the rogue's post reach the body read
+
+	code := normalPairing(t, pairingOf(t, h.req, person.Credential()))
+	var w *httptest.ResponseRecorder
+	var cred passkey.Credential
+	var n int
+	within(t, func() {
+		w = handBackPost(h, handBackOrigin, h.secret, "application/json", body)
+		cred, n = h.match(code)
+	})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Equal(t, 1, n)
+	require.Equal(t, person.Credential().ID, cred.ID)
+	close(release)
+	require.Equal(t, http.StatusBadRequest, <-stalled)
+	require.Equal(t, 1, h.count())
+}
+
+// TestReadRegistrationSaysWhenTheHandBackIsFull: once the hand-back holds
+// as many passkeys as it takes, init says to paste the long code.
+func TestReadRegistrationSaysWhenTheHandBackIsFull(t *testing.T) {
+	t.Parallel()
+	h, _, _ := handBackFixture(t)
+	person, err := passkeytest.New(handBackRP)
+	require.NoError(t, err)
+	resp, err := person.Register(h.req, nil)
+	require.NoError(t, err)
+	long, err := resp.Code()
+	require.NoError(t, err)
+	stderr := &lockedBuffer{}
+	in, typed := io.Pipe()
+	c := newIO(context.Background(), stdio{in: in, out: io.Discard, err: stderr}, func(string) string { return "" })
+	rogues := make([][]byte, 0, maxHandBacks)
+	for range maxHandBacks {
+		rogue, _ := registrationBody(t, h.req)
+		rogues = append(rogues, rogue)
+	}
+	go func() {
+		for _, rogue := range rogues {
+			handBackPost(h, handBackOrigin, h.secret, "application/json", rogue)
+		}
+		for !strings.Contains(stderr.String(), "received more passkeys than expected") {
+			time.Sleep(10 * time.Millisecond)
+		}
+		_, _ = io.WriteString(typed, long+"\n")
+	}()
+	var cred passkey.Credential
+	within(t, func() { cred, err = readRegistration(c, h.req, handBackRP, h) })
+	require.NoError(t, err)
+	require.Equal(t, person.Credential().ID, cred.ID)
+	require.Equal(t, 1, strings.Count(stderr.String(), "basalt: basalt init received more passkeys than expected; paste the long code from the page"))
 }
 
 func TestHandBackRefuses(t *testing.T) {
@@ -335,19 +413,24 @@ func TestPasteInBackgroundStopsWithoutRawReads(t *testing.T) {
 }
 
 // TestReadRegistrationReportsAPasteError: a paste that cannot be read is
-// said, and the person can type the code again.
+// said, the person can type the code again, and it is not a wrong try.
 func TestReadRegistrationReportsAPasteError(t *testing.T) {
 	t.Parallel()
 	h, body, person := handBackFixture(t)
 	require.Equal(t, http.StatusOK, handBackPost(h, handBackOrigin, h.secret, "application/json", body).Code)
 	code := pairingOf(t, h.req, person.Credential())
 	var stderr lockedBuffer
+	// Three unreadable pastes and two wrong codes: only the wrong codes
+	// are tries, so the right code still registers.
+	lines := []string{"", "", "", "0000-0000", "1111-1111", code}
 	reads := 0
 	c, _ := fallbackIO(t, &stderr, func(context.Context, *os.File, []byte) (string, error) {
-		if reads++; reads == 1 {
+		line := lines[min(reads, len(lines)-1)]
+		reads++
+		if line == "" {
 			return "", errors.New("the pasted text is longer than 64 KiB")
 		}
-		return code, nil
+		return line, nil
 	})
 	var cred passkey.Credential
 	var err error

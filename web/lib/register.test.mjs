@@ -85,9 +85,9 @@ test("a post init refuses falls back to the long code", async () => {
   const nodes = fakeDocument();
   const { req, fields } = vectorRegistration(vectors.codes[2]);
   const fetchFn = async () =>
-    new Response(JSON.stringify({ code: "RATE_LIMITED", message: "basalt init already holds as many passkeys as it takes" }), { status: 429 });
+    new Response(JSON.stringify({ code: "RATE_LIMITED", message: "basalt init received more passkeys than it takes" }), { status: 429 });
   assert.equal(await sendToInit(fetchFn, req, fields), false);
-  assert.match(nodes["done-text"].textContent, /basalt init did not take the passkey \(basalt init already holds/);
+  assert.match(nodes["done-text"].textContent, /basalt init did not take the passkey \(basalt init received more/);
   assert.equal(nodes.pairing.hidden, true);
   assert.equal(nodes["pairing-code"].textContent, "");
 });

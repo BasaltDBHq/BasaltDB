@@ -169,13 +169,21 @@ func readRegistration(c *cliIO, req passkey.RegistrationRequest, rp passkey.Rely
 		return verifyRegistrationCode(code, req, rp)
 	}
 	fmt.Fprint(c.stderr, "basalt: Type or paste the code the page shows: ")
-	for tries := 0; ; {
-		line, err := readPairingLine(c)
+	full := hb.full
+	for tries, readErrs := 0, 0; ; {
+		line, err := readPairingLine(c, &full)
 		switch {
 		case err != nil && (errors.Is(err, io.EOF) || c.ctx.Err() != nil):
 			return passkey.Credential{}, fmt.Errorf("no passkey code: %w", err)
 		case err != nil:
+			// Not a wrong code: it does not use up a try. The bound only
+			// stops a terminal that fails every read.
+			if readErrs++; readErrs >= maxPasteErrors {
+				return passkey.Credential{}, fmt.Errorf("no passkey code: %w", err)
+			}
 			reportPasteError(c, err, "type the code again")
+			fmt.Fprint(c.stderr, "basalt: Type or paste the code the page shows: ")
+			continue
 		case strings.HasPrefix(line, passkey.RegistrationResponsePrefix):
 			return verifyRegistrationCode(line, req, rp)
 		default:
@@ -194,16 +202,27 @@ func readRegistration(c *cliIO, req passkey.RegistrationRequest, rp passkey.Rely
 // 40-bit code and at most maxHandBacks registrations kept, guessing fails.
 const maxPairingTries = 3
 
+// maxPasteErrors is how many unreadable pastes init takes before it gives
+// up; they are not wrong codes.
+const maxPasteErrors = 10
+
 // readPairingLine reads one non-empty line the person types or pastes. It
 // waits in the background so the command's context still ends the wait.
-func readPairingLine(c *cliIO) (string, error) {
+// When *full closes (the hand-back holds as many passkeys as it takes, so
+// the person's may have been refused) it says to paste the long code, once.
+func readPairingLine(c *cliIO, full *chan struct{}) (string, error) {
 	pastes, stop := c.pasteInBackground(c.ctx)
 	defer stop()
-	select {
-	case p := <-pastes:
-		return p.code, p.err
-	case <-c.ctx.Done():
-		return "", c.ctx.Err()
+	for {
+		select {
+		case p := <-pastes:
+			return p.code, p.err
+		case <-*full:
+			*full = nil
+			fmt.Fprintln(c.stderr, "\nbasalt: basalt init received more passkeys than expected; paste the long code from the page")
+		case <-c.ctx.Done():
+			return "", c.ctx.Err()
+		}
 	}
 }
 
@@ -220,11 +239,7 @@ func matchPairingCode(c *cliIO, hb *registrationHandBack, line string) (passkey.
 		fmt.Fprintln(c.stderr, "basalt: the code matches the passkey the page sent to basalt init")
 		return cred, true
 	case 0:
-		if hb.count() == 0 {
-			fmt.Fprintln(c.stderr, "basalt: that code doesn't match; the page has not sent basalt init a passkey yet; check the page")
-		} else {
-			fmt.Fprintln(c.stderr, "basalt: that code doesn't match; check the page")
-		}
+		fmt.Fprintln(c.stderr, "basalt: that code doesn't match; check the page")
 	default: // two posted keys with one code: refuse rather than pick
 		fmt.Fprintln(c.stderr, "basalt: that code matches more than one passkey sent to basalt init, so it cannot tell which is yours; check the page")
 	}
@@ -298,7 +313,7 @@ func serveLocalPages(origin string, hb *registrationHandBack) (stop func(), serv
 	if err != nil {
 		return noop, false
 	}
-	hs := &http.Server{Handler: h, ReadHeaderTimeout: pageHeaderTimeout}
+	hs := &http.Server{Handler: h, ReadHeaderTimeout: pageHeaderTimeout, ReadTimeout: pageReadTimeout}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -315,6 +330,10 @@ func serveLocalPages(origin string, hb *registrationHandBack) (stop func(), serv
 
 // pageHeaderTimeout bounds a page request's headers.
 const pageHeaderTimeout = 10 * time.Second
+
+// pageReadTimeout bounds a whole page request, body included, so a post to
+// the hand-back route that stalls its body is dropped.
+const pageReadTimeout = pageHeaderTimeout + handBackReadTimeout
 
 // localPagesAddr is the loopback address for a local development origin
 // http://localhost:<port>, the default the engine's config resolves to.

@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgproto3"
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
@@ -163,6 +164,8 @@ func TestToolErrorMapping(t *testing.T) {
 		{pg("23505", "duplicate key"), CodeSQLError, "", "23505"},
 		{&sqlguard.RefusalError{Reason: sqlguard.ReasonDDL}, CodeStatementRefused, "DDL_NOT_ALLOWED", ""},
 		{fmt.Errorf("read: %w", agentdb.ErrRowLimit), CodeQueryTimeout, ReasonRowLimit, ""},
+		{fmt.Errorf("read: %w", agentdb.ErrSizeLimit), CodeQueryTimeout, ReasonSizeLimit, ""},
+		{fmt.Errorf("read: %w", &pgproto3.ExceededMaxBodyLenErr{MaxExpectedBodyLen: 1, ActualBodyLen: 2}), CodeQueryTimeout, ReasonSizeLimit, ""},
 		{&ArgumentError{Message: "bad"}, CodeInvalidArgument, "", ""},
 		{&mcp.ToolError{Code: CodeNotFound, Reason: reasonRun, Message: "no run"}, CodeNotFound, reasonRun, ""},
 		{context.DeadlineExceeded, CodeUnavailable, reasonDatabaseUnreachable, ""},

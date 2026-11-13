@@ -166,6 +166,26 @@ func TestQueryKeepsRepeatedColumnNames(t *testing.T) {
 	require.Equal(t, map[string]any{"id": json.Number("1"), "id_2": json.Number("1")}, rows[0])
 }
 
+// TestQuerySizeLimit: a result over 16 MiB of values, from many rows or one
+// value, is refused with SIZE_LIMIT, and the agent's connections keep
+// working after it.
+func TestQuerySizeLimit(t *testing.T) {
+	t.Parallel()
+	_, agentURL := testDB(t)
+	h := newHarness(t, agentURL, sqlguard.DefaultLimits())
+	for name, sql := range map[string]string{
+		"many rows": "SELECT repeat('x', 1048576) FROM generate_series(1, 17) g",
+		"one value": "SELECT repeat('x', 20000000) AS big",
+	} {
+		body, isError := h.query(t, map[string]any{"sql": sql})
+		requireToolError(t, body, isError, agent.CodeQueryTimeout, agent.ReasonSizeLimit, "")
+		body, isError = h.query(t, map[string]any{"sql": "SELECT 1 AS one"})
+		require.False(t, isError, "%s: the next query works: %v", name, body)
+	}
+	body, isError := h.query(t, map[string]any{"sql": "SELECT repeat('x', 1048576) FROM generate_series(1, 15) g"})
+	require.False(t, isError, "15 MiB fits: %v", body)
+}
+
 func TestQueryLimits(t *testing.T) {
 	t.Parallel()
 	_, agentURL := testDB(t)

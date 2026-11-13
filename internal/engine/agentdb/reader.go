@@ -27,6 +27,28 @@ import (
 // engine's read row limit.
 var ErrRowLimit = errors.New("the query returned more rows than the read row limit")
 
+// ErrSizeLimit is a read canceled because its column values, in text form,
+// came to more than MaxResultBytes (CONTRACT.md, QUERY_TIMEOUT SIZE_LIMIT).
+var ErrSizeLimit = fmt.Errorf("the query returned more than %d MiB of values", MaxResultBytes>>mibShift)
+
+// MaxResultBytes bounds the column values of one result, summed over its
+// rows: the 16 MiB the shim accepts in one line. The engine stops reading
+// there, so one large value cannot grow its memory.
+const MaxResultBytes = 16 << mibShift
+
+// mibShift turns bytes into MiB.
+const mibShift = 20
+
+// maxMessageBytes bounds one message from Postgres on an agent connection
+// (pgx MaxProtocolMessageBodyLen): a row of MaxResultBytes of values plus
+// its framing (a length per column). pgx refuses a longer message before it
+// reads its body, so a row too large for a result is never buffered.
+const maxMessageBytes = MaxResultBytes + messageSlack
+
+// messageSlack covers a row message's framing: 2 bytes for the column
+// count and 4 per column, for at most Postgres's 1664 result columns.
+const messageSlack = 64 << 10
+
 // Column is one result column.
 type Column struct {
 	Name string
@@ -223,12 +245,17 @@ func runText(ctx context.Context, tx pgx.Tx, sql string, params []any, limit, ex
 	cols := columns(tx.Conn().TypeMap(), fds[:visible])
 	out := []map[string]any{}
 	var extras [][][]byte
+	size := 0
 	for rows.Next() {
 		if len(out) == limit {
 			cancel()
 			return nil, nil, nil, ErrRowLimit
 		}
 		raw := rows.RawValues()
+		if size += rawSize(raw); size > MaxResultBytes {
+			cancel()
+			return nil, nil, nil, ErrSizeLimit
+		}
 		out = append(out, rowValues(cols, fds, raw))
 		if extra > 0 {
 			extras = append(extras, cloneRaw(raw[visible:]))
@@ -238,6 +265,15 @@ func runText(ctx context.Context, tx pgx.Tx, sql string, params []any, limit, ex
 		return nil, nil, nil, err
 	}
 	return cols, out, extras, nil
+}
+
+// rawSize is the bytes of a row's values.
+func rawSize(raw [][]byte) int {
+	n := 0
+	for _, v := range raw {
+		n += len(v)
+	}
+	return n
 }
 
 // cloneRaw copies raw values, which pgx reuses for the next row.

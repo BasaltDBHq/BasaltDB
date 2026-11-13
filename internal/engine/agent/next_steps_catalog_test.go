@@ -195,6 +195,7 @@ func catalogCases() map[string]catalogCase {
 			pgFail("BS003", "ROW_LIMIT_EXCEEDED", "more than 50 rows in one action (cascades included)")},
 
 		caseKey("QUERY_TIMEOUT", "ROW_LIMIT", ""):  {"query", queryArgs0, plain(agentdb.ErrRowLimit)},
+		caseKey("QUERY_TIMEOUT", "SIZE_LIMIT", ""): {"query", queryArgs0, plain(agentdb.ErrSizeLimit)},
 		caseKey("QUERY_TIMEOUT", "TIME_LIMIT", ""): {"query", queryArgs0, pgFail("57014", "canceling statement due to statement timeout", "")},
 		caseKey("QUERY_TIMEOUT", "TIME_LIMIT", "preview_revert"): {"preview_revert", map[string]any{"runId": caseRunID},
 			timeoutRevert("preview_revert")},

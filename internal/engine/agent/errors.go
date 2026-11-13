@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgproto3"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -36,6 +37,7 @@ const (
 	CodeInternal          = "INTERNAL"
 	ReasonTimeLimit       = "TIME_LIMIT"
 	ReasonRowLimit        = "ROW_LIMIT"
+	ReasonSizeLimit       = "SIZE_LIMIT"
 	sqlStateQueryCanceled = "57014"
 	sqlStateInsufficient  = "42501"
 	sqlStateInvalidSchema = "3F000"
@@ -89,6 +91,9 @@ type ArgumentError struct {
 
 func (e *ArgumentError) Error() string { return e.Message }
 
+// sizeLimitHint ends a SIZE_LIMIT message with what to change.
+const sizeLimitHint = "; select fewer or shorter columns (for example left(col, 200)) or fewer rows"
+
 // ToolError maps any error from a tool's service call to the contract's
 // error body. Unexpected errors become INTERNAL without their text, which can
 // name hosts or roles; the caller logs the original.
@@ -100,6 +105,7 @@ func ToolError(err error) *mcp.ToolError {
 		pe *pgconn.PgError
 		se *SetupError
 		ce *pgconn.ConnectError
+		me *pgproto3.ExceededMaxBodyLenErr
 	)
 	switch {
 	case errors.As(err, &te):
@@ -108,6 +114,8 @@ func ToolError(err error) *mcp.ToolError {
 		return &mcp.ToolError{Code: CodeStatementRefused, Reason: string(re.Reason), Message: re.Error()}
 	case errors.Is(err, agentdb.ErrRowLimit):
 		return &mcp.ToolError{Code: CodeQueryTimeout, Reason: ReasonRowLimit, Message: err.Error() + "; add a LIMIT or a narrower WHERE"}
+	case errors.Is(err, agentdb.ErrSizeLimit), errors.As(err, &me):
+		return &mcp.ToolError{Code: CodeQueryTimeout, Reason: ReasonSizeLimit, Message: agentdb.ErrSizeLimit.Error() + sizeLimitHint}
 	case errors.As(err, &se):
 		reason := reasonSetupPending
 		if se.Expired {

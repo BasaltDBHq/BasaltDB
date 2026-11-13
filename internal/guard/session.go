@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
@@ -107,7 +108,10 @@ type Refusal struct {
 }
 
 // RecordRefusal writes a REFUSED change record and ledger row. Call it in a
-// new transaction (or autocommit) after the refused one rolled back.
+// new transaction (or autocommit) after the refused one rolled back. A NUL,
+// which Postgres text and jsonb cannot hold, is stored as U+FFFD in every
+// text field and parameter (storable), so a NUL an agent sends cannot keep
+// its refused attempt out of the ledger.
 func RecordRefusal(ctx context.Context, q Querier, r Refusal) (uuid.UUID, error) {
 	params, err := paramsJSON(r.Params)
 	if err != nil {
@@ -115,8 +119,8 @@ func RecordRefusal(ctx context.Context, q Querier, r Refusal) (uuid.UUID, error)
 	}
 	return returnUUID(ctx, q, sq.Expr(
 		"basalt_meta.record_refusal(?::uuid, ?::uuid, ?, ?, ?, nullif(?::jsonb, 'null'), ?, ?, ?::int)",
-		nullUUID(r.Intent.RunID), nullUUID(r.Intent.TaskID), r.Intent.Text, r.Op, r.Statement, params,
-		r.Code, r.Reason, r.Duration.Milliseconds()))
+		nullUUID(r.Intent.RunID), nullUUID(r.Intent.TaskID), storableText(r.Intent.Text), storableText(r.Op),
+		storableText(r.Statement), params, storableText(r.Code), storableText(r.Reason), r.Duration.Milliseconds()))
 }
 
 // EventKind is an engine event record_event accepts.
@@ -153,11 +157,45 @@ func Heartbeat(ctx context.Context, q Querier, detail map[string]any) error {
 // paramsJSON encodes statement parameters as a JSON array; nil params
 // encode as JSON null, stored as SQL NULL.
 func paramsJSON(params []any) (string, error) {
-	b, err := json.Marshal(params)
+	b, err := json.Marshal(storable(params))
 	if err != nil {
 		return "", fmt.Errorf("params: %w", err)
 	}
 	return string(b), nil
+}
+
+// nulReplacement stands for a NUL in what the ledger stores.
+const nulReplacement = "\uFFFD"
+
+// storableText is s with each NUL replaced by U+FFFD: Postgres text cannot
+// hold a NUL, so a statement or reason with one would fail to record.
+func storableText(s string) string {
+	return strings.ReplaceAll(s, "\x00", nulReplacement)
+}
+
+// storable is v, as decoded from JSON, with storableText applied to every
+// string and object key in it: jsonb refuses \u0000.
+func storable(v any) any {
+	switch t := v.(type) {
+	case string:
+		return storableText(t)
+	case []any:
+		if t == nil {
+			return nil // stays JSON null
+		}
+		out := make([]any, len(t))
+		for i, e := range t {
+			out[i] = storable(e)
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, e := range t {
+			out[storableText(k)] = storable(e)
+		}
+		return out
+	}
+	return v
 }
 
 // execCall runs SELECT <call> and discards the result.

@@ -1,5 +1,6 @@
 {
   "code": "NOT_FOUND",
+  "docsUrl": "https://docs.basaltvault.app/reference/errors/#not-found",
   "message": "\"shop.audit\" is not a table this agent can read: it does not exist, or the agent has no access to it",
   "nextSteps": [
     {

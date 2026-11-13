@@ -554,6 +554,7 @@ func (ps *problems) add(code, message string, steps func(*Steps) string) {
 		ps.fail(fmt.Errorf("status problem %s: %w", code, err))
 		return
 	}
+	person = fitToSteps(person, list)
 	if err := CheckPersonMessage(person); err != nil {
 		ps.fail(fmt.Errorf("status problem %s: %w", code, err))
 		return

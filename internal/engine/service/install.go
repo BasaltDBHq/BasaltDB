@@ -282,8 +282,13 @@ func UninstallPlan(s Spec) ([]Step, error) {
 	return nil, fmt.Errorf("the engine service installs on linux and darwin, not %s", s.GOOS)
 }
 
+// ErrStepsSkipped is Apply's error, after every step ran, when a
+// BestEffort step failed.
+var ErrStepsSkipped = errors.New("some steps were skipped")
+
 // Apply prints every step to out, then runs them in order unless dryRun.
-// A failed BestEffort step is named on out as skipped, with its error.
+// A failed BestEffort step is named on out as skipped, with its error, and
+// the rest still run; Apply then returns ErrStepsSkipped.
 func Apply(ctx context.Context, sys System, steps []Step, dryRun bool, out io.Writer) error {
 	for _, st := range steps {
 		fmt.Fprintln(out, "  "+st.String())
@@ -291,17 +296,47 @@ func Apply(ctx context.Context, sys System, steps []Step, dryRun bool, out io.Wr
 	if dryRun {
 		return nil
 	}
+	var skipped []string
 	for _, st := range steps {
 		err := applyStep(ctx, sys, st)
 		switch {
 		case err == nil:
 		case st.BestEffort:
 			fmt.Fprintf(out, "  skipped %s: %v\n", st, err)
+			skipped = append(skipped, st.String())
 		default:
 			return fmt.Errorf("%s: %w", st, err)
 		}
 	}
+	if len(skipped) > 0 {
+		return fmt.Errorf("%w: %s", ErrStepsSkipped, strings.Join(skipped, "; "))
+	}
 	return nil
+}
+
+// Settle is Apply's error as the command reports it: steps skipped where
+// no service manager runs are expected and are not an error; skipped where
+// one runs, the command fails after doing the rest.
+func Settle(err error, sys System, goos string) error {
+	if errors.Is(err, ErrStepsSkipped) && !ManagerRunning(sys, goos) {
+		return nil
+	}
+	return err
+}
+
+// systemdRunning is the directory systemd creates when it is the running
+// init system (sd_booted).
+const systemdRunning = "/run/systemd/system"
+
+// ManagerRunning reports whether the platform's service manager runs here:
+// systemd booted on Linux; launchd always runs on macOS. Where it does not
+// (a container without systemd), a skipped service-manager step is
+// expected.
+func ManagerRunning(sys System, goos string) bool {
+	if goos == goosDarwin {
+		return true
+	}
+	return sys.Exists(systemdRunning)
 }
 
 func applyStep(ctx context.Context, sys System, st Step) error {

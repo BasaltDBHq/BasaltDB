@@ -241,6 +241,31 @@ func TestUninstallPlan(t *testing.T) {
 	require.Equal(t, []string{service.LaunchdPlist}, sys.removed)
 }
 
+// Whether the service manager runs decides whether a skipped step is
+// expected: launchd always runs; systemd only when it booted the system.
+func TestManagerRunning(t *testing.T) {
+	t.Parallel()
+	sys := newFake()
+	require.True(t, service.ManagerRunning(sys, "darwin"))
+	require.False(t, service.ManagerRunning(sys, "linux"), "a container without systemd")
+	sys.exists["/run/systemd/system"] = true
+	require.True(t, service.ManagerRunning(sys, "linux"))
+}
+
+// A skipped step fails uninstall only where the service manager runs.
+func TestSettleSkippedSteps(t *testing.T) {
+	t.Parallel()
+	skipped := fmt.Errorf("%w: systemctl daemon-reload", service.ErrStepsSkipped)
+	other := errors.New("rm failed")
+	sys := newFake()
+	require.NoError(t, service.Settle(skipped, sys, "linux"), "no systemd: expected")
+	require.ErrorIs(t, service.Settle(skipped, sys, "darwin"), service.ErrStepsSkipped, "launchd runs")
+	require.ErrorIs(t, service.Settle(other, sys, "linux"), other)
+	require.NoError(t, service.Settle(nil, sys, "darwin"))
+	sys.exists["/run/systemd/system"] = true
+	require.ErrorIs(t, service.Settle(skipped, sys, "linux"), service.ErrStepsSkipped)
+}
+
 // Without a running service manager (a container without systemd) the
 // unit is still removed; the steps that failed are named as skipped.
 func TestUninstallWithoutAServiceManager(t *testing.T) {
@@ -251,7 +276,7 @@ func TestUninstallWithoutAServiceManager(t *testing.T) {
 		steps, err := service.UninstallPlan(spec)
 		require.NoError(t, err)
 		var out strings.Builder
-		require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out), name)
+		require.ErrorIs(t, service.Apply(context.Background(), sys, steps, false, &out), service.ErrStepsSkipped, name)
 		require.Empty(t, sys.ran, name)
 		require.Len(t, sys.removed, 1, "the unit file is removed: %s", name)
 		require.Contains(t, out.String(), "skipped "+sys.failOn, name)

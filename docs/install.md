@@ -175,7 +175,7 @@ basalt uninstall
 sudo basalt service uninstall
 ```
 
-`basalt uninstall` asks for the admin connection string, then drops the `basalt_meta` schema, the guard's triggers and policies, and the `basalt_*` roles. `service uninstall` stops and removes the engine service. Where `systemctl` or `launchctl` does not run (a container without systemd), it still removes the unit file and names each command it skipped. If you used the demo data, drop it too: `DROP SCHEMA basalt_demo CASCADE;`.
+`basalt uninstall` asks for the admin connection string, then drops the `basalt_meta` schema, the guard's triggers and policies, and the `basalt_*` roles. `service uninstall` stops and removes the engine service. Where `systemctl` or `launchctl` does not run (a container without systemd), it still removes the unit file and names each command it skipped. Where the service manager does run, a skipped command makes it exit with an error after it has removed the rest. If you used the demo data, drop it too: `DROP SCHEMA basalt_demo CASCADE;`.
 
 ## Coming soon
 

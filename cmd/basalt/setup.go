@@ -192,8 +192,10 @@ func agentServiceSpec(goos, bin, configPath, engineUser string, a agentInstall, 
 	// Root reads the existing config from the engine user's directory.
 	open := func(p string) (*os.File, error) { return openEngineFile(p, engineUser) }
 	raw, v, err := config.UpsertedVault(configPath, open,
-		config.Settings{SocketDir: config.DefaultSocketDir(goos), PagesURL: a.pagesURL, Mode: config.ModeService, PersonUIDs: a.personUIDs,
-			Vault: a.vault, VaultDefault: a.vaultDefault, OperatedBy: a.operatedBy},
+		config.Settings{
+			SocketDir: config.DefaultSocketDir(goos), PagesURL: a.pagesURL, Mode: config.ModeService, PersonUIDs: a.personUIDs,
+			Vault: a.vault, VaultDefault: a.vaultDefault, OperatedBy: a.operatedBy,
+		},
 		config.Agent{Name: a.name, OSUser: a.osUser, CredentialFile: cred, InitArgs: a.initArgs})
 	if err != nil {
 		return spec, err
@@ -224,7 +226,8 @@ func (f initFlags) agentInstall(dsn string) agentInstall {
 	return agentInstall{
 		name: f.agent, osUser: f.osUser, pagesURL: f.passkeyOrigin, dsn: dsn,
 		vault: f.vault.given.enum(), vaultDefault: f.vault.def.enum(),
-		initArgs: f.initArgs, keepCredential: f.keepCredential, personUIDs: f.personUIDs, operatedBy: f.operatedBy.settingOf(f.operatedByGiven)}
+		initArgs: f.initArgs, keepCredential: f.keepCredential, personUIDs: f.personUIDs, operatedBy: f.operatedBy.settingOf(f.operatedByGiven),
+	}
 }
 
 // serviceInstallArgs is the one command init runs under sudo. The

@@ -271,7 +271,8 @@ func (s *Service) badSignature(ctx context.Context, r ledger.Revert, message str
 
 // badSignatureWith is REVERT_INVALID BAD_SIGNATURE for the revert page at link.
 func (s *Service) badSignatureWith(link string, r ledger.Revert, message string) error {
-	return &mcp.ToolError{Code: CodeRevertInvalid, Reason: reasonBadSignature, Message: message,
+	return &mcp.ToolError{
+		Code: CodeRevertInvalid, Reason: reasonBadSignature, Message: message,
 		PersonMessage: fmt.Sprintf("The code for %s did not verify, so nothing was reverted. Sign again on "+
 			"the revert page and give the agent the new code.", revertTitle(r)),
 		NextSteps: []mcp.NextStep{
@@ -321,10 +322,12 @@ func (s *Service) rowsChanged(r ledger.Revert, detail string) error {
 // no row to restore. Its detail names the scope, so the answer is built
 // here, without it for a widened revert (RS-5).
 func nothingSigned(r ledger.Revert) error {
-	te := &mcp.ToolError{Code: CodeNothingToRevert, Reason: reasonReadsOnly,
+	te := &mcp.ToolError{
+		Code: CodeNothingToRevert, Reason: reasonReadsOnly,
 		Message:       fmt.Sprintf("revert %s has no row to restore in the scope that was signed; nothing was reverted", r.ID),
 		PersonMessage: sentence(revertTitle(r)) + " has no row to restore in the scope you signed, so nothing was reverted.",
-		NextSteps:     []mcp.NextStep{agentStep(mcp.ActionStop, "There is nothing to revert; do not retry.")}}
+		NextSteps:     []mcp.NextStep{agentStep(mcp.ActionStop, "There is nothing to revert; do not retry.")},
+	}
 	if r.Skipped > 0 {
 		te.Reason = reasonAllChangedByPeople
 		te.PersonMessage = sentence(revertTitle(r)) + " has no row to restore: every row in it was changed since by someone " +
@@ -352,13 +355,15 @@ func (s *Service) revertExpired(r ledger.Revert) error {
 	if r.SignedAt != nil {
 		reason, window = reasonNotFinished, fmt.Sprintf("was not finished within %d hours of the signature", int(revert.ApplyWindow.Hours()))
 	}
-	return &mcp.ToolError{Code: CodeRevertExpired, Reason: reason,
+	return &mcp.ToolError{
+		Code: CodeRevertExpired, Reason: reason,
 		Message:       fmt.Sprintf("revert %s expired at %s; nothing more was reverted", r.ID, timeText(r.ExpiresAt)),
 		PersonMessage: fmt.Sprintf("%s %s, so it expired.", sentence(revertTitle(r)), window),
 		NextSteps: []mcp.NextStep{
 			agentStep(mcp.ActionAskPerson, "Ask the person whether to prepare it again."),
 			runCommand(s.Commands.Revert(proposalOf(r)), "Prepare it again and sign within an hour; rows already restored are skipped."),
-		}}
+		},
+	}
 }
 
 // prepareTimeout: the revert is too large to prepare over MCP; the person

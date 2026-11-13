@@ -215,13 +215,16 @@ func resultCases() map[string]resultCase {
 			tool: "revert_plan", args: revertArgs,
 			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
 				return planGuidanceOf(t, s, caseBatchedRevert(t, ledger.RevertExpired), nil)
-			}},
-		resultKey("revert_plan", "REJECTED"): {tool: "revert_plan", args: revertArgs,
+			},
+		},
+		resultKey("revert_plan", "REJECTED"): {
+			tool: "revert_plan", args: revertArgs,
 			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
 				r := caseBatchedRevert(t, ledger.RevertRejected)
 				r.RejectNote = "Not now."
 				return planGuidanceOf(t, s, r, nil)
-			}},
+			},
+		},
 
 		resultKey("describe", "OVERVIEW_LARGE"): {
 			tool: "describe", args: map[string]any{},

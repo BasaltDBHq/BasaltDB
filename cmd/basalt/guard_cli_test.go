@@ -590,8 +590,10 @@ func TestInitRerunsAfterAFailedPasskeyPaste(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
 	config := tempConfig(t)
-	args := slices.Clip([]string{"init", "--agent", "bot_a", "--write", "public.leads", "--prefix", d.Names.Prefix,
-		"--config", config, "--os-user", "tester", "--yes"})
+	args := slices.Clip([]string{
+		"init", "--agent", "bot_a", "--write", "public.leads", "--prefix", d.Names.Prefix,
+		"--config", config, "--os-user", "tester", "--yes",
+	})
 	r := cli(t, map[string]string{envAdminURL: d.URL}, "not a passkey code\n", args...)
 	require.Equal(t, exitError, r.code, r.stderr)
 	require.Contains(t, r.stderr, "held writes cannot be approved until you register one (run basalt init again)")

@@ -575,8 +575,10 @@ func TestEngineDownOnAnAgentOperatedEngine(t *testing.T) {
 func TestStatusProblemsStayWithinTheLimitWithALongConfigPath(t *testing.T) {
 	t.Parallel()
 	long := "/" + strings.Repeat("a-long-directory-name-of-sixty-characters-in-total-ok-ok-ok-", 4) + "engine.json"
-	saved := []string{"--agent=bot", "--write=public.leads,public.lead_notes", "--read=public.owners", "--prefix=acme",
-		"--passkey-origin=https://portal.basaltvault.app", "--statement-timeout=30s", "--os-user=deploy"}
+	saved := []string{
+		"--agent=bot", "--write=public.leads,public.lead_notes", "--read=public.owners", "--prefix=acme",
+		"--passkey-origin=https://portal.basaltvault.app", "--statement-timeout=30s", "--os-user=deploy",
+	}
 	ok := guardAt(guard.GuardOK, nil, nil)
 	soon := statusNow.Add(time.Hour)
 	reports := map[string]func(t *testing.T) StatusReport{

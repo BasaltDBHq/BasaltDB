@@ -334,11 +334,11 @@ func TestPasskeyListEscapesTheLabel(t *testing.T) {
 	credFile, _, _ := twoPasskeys(t, d)
 	extra, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
-	require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, extra.Credential(), "ph\x1b[2Kone\x1b]0;owned\x07\u009b‮"))
+	require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, extra.Credential(), "ph\x1b[2Kone\x1b]0;owned\x07\u009b\u202e"))
 
 	r := cli(t, nil, "", "passkey", "list", "--credential-file", credFile)
 	require.Equal(t, exitOK, r.code, r.stderr)
-	for _, bad := range []string{"\x1b", "\x07", "\u009b", "‮"} {
+	for _, bad := range []string{"\x1b", "\x07", "\u009b", "\u202e"} {
 		require.NotContains(t, r.stdout, bad)
 	}
 	require.Contains(t, r.stdout, "ph<U+001B>[2Kone<U+001B>]0;owned<U+0007><U+009B><U+202E>")

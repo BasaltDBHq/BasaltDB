@@ -107,7 +107,7 @@ func TestShortLinkOnlyFromThisItemsLocalPage(t *testing.T) {
 // reach the terminal as <U+XXXX> in the classify review (CWE-150).
 func TestClassifyReviewEscapesNamesAndReasons(t *testing.T) {
 	t.Parallel()
-	hostile := "x\x1b[2Ky\x1b]0;owned\x07\u009b‮"
+	hostile := "x\x1b[2Ky\x1b]0;owned\x07\u009b\u202e"
 	col := classify.ReviewColumn{}
 	col.Column.Name = hostile
 	col.Suggestion = classify.Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityEmail, Reason: "looks like " + hostile}
@@ -121,7 +121,7 @@ func TestClassifyReviewEscapesNamesAndReasons(t *testing.T) {
 		require.NotContains(t, got, "\x1b")
 		require.NotContains(t, got, "\x07")
 		require.NotContains(t, got, "\u009b")
-		require.NotContains(t, got, "‮")
+		require.NotContains(t, got, "\u202e")
 		require.Contains(t, got, "x<U+001B>[2Ky<U+001B>]0;owned<U+0007><U+009B><U+202E>")
 	}
 }

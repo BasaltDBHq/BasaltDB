@@ -57,7 +57,9 @@ func (g olderGuard) requireNoSecret(t *testing.T, out string) {
 func TestStatusShowsAnOutdatedGuardAndTheUpgradeCommand(t *testing.T) {
 	t.Parallel()
 	latest := guard.LatestVersion()
-	g := newOlderGuard(t, latest-1)
+	breaking := latestBreaking(t)
+	older := breaking - 1
+	g := newOlderGuard(t, older)
 	upgrade := "basalt upgrade --agent bot --config " + g.configPath
 
 	r := g.status(t, "--json")
@@ -75,8 +77,8 @@ func TestStatusShowsAnOutdatedGuardAndTheUpgradeCommand(t *testing.T) {
 		"no pid or OS user while the engine is not running")
 	gs := out["guard"].(map[string]any)
 	require.Equal(t, guard.GuardOutdated, gs["state"])
-	require.InDelta(t, latest-1, gs["installed"], 0)
-	require.Equal(t, []any{float64(latest)}, gs["missingBreaking"])
+	require.InDelta(t, older, gs["installed"], 0)
+	require.Equal(t, []any{float64(breaking)}, gs["missingBreaking"])
 	codes := map[string]map[string]any{}
 	for _, p := range out["problems"].([]any) {
 		pm := p.(map[string]any)
@@ -95,7 +97,7 @@ func TestStatusShowsAnOutdatedGuardAndTheUpgradeCommand(t *testing.T) {
 	require.Contains(t, text.stdout, "Config:       "+g.configPath)
 	require.Contains(t, text.stdout, "Engine:       not running")
 	require.Contains(t, text.stdout, "Agent bot: not ready")
-	require.Contains(t, text.stdout, fmt.Sprintf("Guard:      version %d, this basalt has %d: upgrade required (missing %d)", latest-1, latest, latest))
+	require.Contains(t, text.stdout, fmt.Sprintf("Guard:      version %d, this basalt has %d: upgrade required (missing %d)", older, latest, breaking))
 	require.Contains(t, text.stdout, "Run: "+upgrade)
 
 	// The command status gives fixes it.
@@ -191,8 +193,8 @@ func dbTarget(t *testing.T, dsn string) person.TargetDTO {
 
 func TestStatusAndUpgradeGoThroughThePersonSocketInServiceMode(t *testing.T) {
 	t.Parallel()
-	latest := guard.LatestVersion()
-	g := newOlderGuard(t, latest-1)
+	older := latestBreaking(t) - 1
+	g := newOlderGuard(t, older)
 	report := outdatedReport(t, g)
 	require.Equal(t, guard.GuardOutdated, report.Guard.State)
 
@@ -233,7 +235,7 @@ func TestStatusAndUpgradeGoThroughThePersonSocketInServiceMode(t *testing.T) {
 		r := serviceCmd(t, runUpgrade, socket, map[string]string{envAdminURL: g.d.URL}, "--agent", "bot", "--yes")
 		require.Equal(t, exitError, r.code)
 		require.Contains(t, r.stderr, "bot connects to database app of db.example.com:5432")
-		require.Equal(t, latest-1, g.version(t))
+		require.Equal(t, older, g.version(t))
 	})
 }
 

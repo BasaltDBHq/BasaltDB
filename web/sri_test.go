@@ -36,7 +36,7 @@ func moduleImports(t *testing.T, file string) []string {
 	b, err := os.ReadFile(filepath.Clean(file))
 	require.NoError(t, err)
 	require.False(t, dynamicImpt.Match(b), "%s: dynamic import() is not covered by SRI", file)
-	var out []string
+	out := make([]string, 0, 8)
 	for _, m := range importFrom.FindAllStringSubmatch(string(b), -1) {
 		spec := m[1] + m[2]
 		require.True(t, strings.HasPrefix(spec, "./") || strings.HasPrefix(spec, "../"), "%s: non-relative import %s", file, spec)
@@ -62,7 +62,7 @@ func TestPortalScriptsHaveIntegrity(t *testing.T) {
 		dir := filepath.Dir(page)
 
 		declared := map[string]string{} // file -> integrity
-		var entries []string
+		entries := make([]string, 0, 1)
 		for _, tag := range scriptTag.FindAllString(html, -1) {
 			src := attrSrc.FindStringSubmatch(tag)
 			require.NotNil(t, src, "%s: script without src: %s", page, tag)

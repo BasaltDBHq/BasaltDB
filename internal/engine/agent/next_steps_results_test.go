@@ -198,6 +198,23 @@ func resultCases() map[string]resultCase {
 				return planGuidanceOf(t, s, caseBatchedRevert(t, ledger.RevertExpired), nil)
 			}},
 
+		resultKey("describe", "OVERVIEW_LARGE"): {tool: "describe", args: map[string]any{},
+			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+				b := NewSteps()
+				overviewLargeSteps(b, []SchemaCount{{Schema: "app", Tables: 40}, {Schema: "billing", Tables: 12}})
+				steps, err := b.Build()
+				require.NoError(t, err)
+				return "", nil, steps
+			}},
+		resultKey("describe", "NOT_GRANTED"): {tool: "describe", args: map[string]any{},
+			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+				b := NewSteps()
+				person := s.notGrantedSteps(b, 3)
+				steps, err := b.Build()
+				require.NoError(t, err)
+				return person, nil, steps
+			}},
+
 		resultKey("apply_revert_batch", "APPLYING"): {tool: "apply_revert_batch", args: map[string]any{"revertId": caseRevertID, "lines": []any{1}},
 			build: batch(ledger.RevertApplying)},
 		resultKey("apply_revert_batch", "APPLIED"): {tool: "apply_revert_batch", args: map[string]any{"revertId": caseRevertID, "lines": []any{1}},

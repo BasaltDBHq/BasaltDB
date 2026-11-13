@@ -8,20 +8,24 @@ import (
 )
 
 // StructureLines returns one sorted line per fact about the structure of the
-// relations session_user can read: the relation and its kind, each
+// relations session_user can read: the relation, its kind, session_user's
+// SELECT, INSERT, UPDATE and DELETE rights on it and its comment, each
 // selectable column with its type and nullability, each constraint and each
 // index definition. The lines are for hashing only: they include constraint
 // definitions that can name tables the role cannot read, so they must never
 // be shown to an agent. Row counts, sizes and scan counts are left out, so the
-// lines change only when the structure does, which is what a fingerprint of
-// the catalog needs.
+// lines change only when the structure, a grant or a table comment does,
+// which is what a fingerprint of the catalog needs.
 func StructureLines(ctx context.Context, db Querier) ([]string, error) {
 	// Plain SQL: a pg_catalog read, not table DML.
 	rows, err := db.Query(ctx, `WITH rel AS (
-			SELECT c.oid, n.nspname || '.' || c.relname AS name, `+relationKind+` AS kind
+			SELECT c.oid, n.nspname || '.' || c.relname AS name, `+relationKind+` AS kind,
+				`+privilegeColumns+`,
+				COALESCE(pg_catalog.obj_description(c.oid, 'pg_class'), '') AS comment
 			`+relationFrom+` AND `+readableTable+`
 		)
-		SELECT name || ':' || kind FROM rel
+		SELECT name || ':' || kind || ':' || p_select::text || ',' || p_insert::text || ',' || p_update::text
+			|| ',' || p_delete::text || ':' || comment FROM rel
 		UNION ALL
 		SELECT rel.name || ':column:' || a.attname || ':' || pg_catalog.format_type(a.atttypid, a.atttypmod)
 				|| ':' || (NOT a.attnotnull)::text

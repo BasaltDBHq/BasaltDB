@@ -524,3 +524,50 @@ func TestWatchWarnsAboutUnclassifiedColumns(t *testing.T) {
 	require.Contains(t, out.String(), "pii: 2 columns unclassified: public.plain.id, public.plain.label")
 	require.Contains(t, out.String(), "pii: classification loaded")
 }
+
+// TestMapListsSecretsAndTheCatalogFingerprint: describe hides SECRET columns
+// and keys its fingerprints on the agent's PII catalog row, so the map lists
+// its SECRET columns and that row's fingerprint (empty before the first
+// classify), loading first when nothing is loaded.
+func TestMapListsSecretsAndTheCatalogFingerprint(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	ctx := context.Background()
+	m := NewMap(slog.New(slog.DiscardHandler)).On(f.pool)
+
+	secrets, err := m.Secrets(ctx)
+	require.NoError(t, err)
+	require.Empty(t, secrets)
+	print0, err := m.CatalogFingerprint(ctx)
+	require.NoError(t, err)
+	require.Empty(t, print0, "no catalog row before the first classify")
+
+	rows, err := f.db.Admin.Query(ctx, `SELECT table_schema, table_name, column_name, data_type FROM basalt_meta.pii_readable_columns()`)
+	require.NoError(t, err)
+	cols, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (guard.PIIColumn, error) {
+		var c guard.PIIColumn
+		err := r.Scan(&c.Schema, &c.Table, &c.Column, &c.DataType)
+		c.Class = guard.ClassPublic
+		if c.Table == "orders" && c.Column == "email" {
+			c.Class = guard.ClassSecret
+		}
+		return c, err
+	})
+	require.NoError(t, err)
+	require.NoError(t, pgx.BeginFunc(ctx, f.db.Admin, func(tx pgx.Tx) error {
+		return guard.WriteClassification(ctx, tx, f.db.Names, guard.Classification{Columns: cols, At: time.Now()})
+	}))
+	_, err = m.m.Tick(ctx, f.pool)
+	require.NoError(t, err)
+
+	secrets, err = m.Secrets(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []ColumnRef{{TableOID: f.oid(t, "public.orders"), Attnum: f.attnum(t, "public.orders", "email")}}, secrets)
+	print1, err := m.CatalogFingerprint(ctx)
+	require.NoError(t, err)
+	require.Regexp(t, `^[0-9a-f]{64}$`, print1)
+
+	got, err := m.Resolve(ctx, secrets)
+	require.NoError(t, err)
+	require.Equal(t, guard.ClassSecret, got[0].Class)
+}

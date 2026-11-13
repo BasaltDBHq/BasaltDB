@@ -1,0 +1,372 @@
+package agent_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
+	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
+	"github.com/basaltdbhq/basaltdb/internal/engine/piidict"
+	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+)
+
+var updateGolden = flag.Bool("update", false, "rewrite testdata/describe/*.json")
+
+// describeSQL is the describe fixture: a quoted schema and table, orders
+// with a SECRET column (card_token), a column the agent is not granted
+// (cost_price), an index and a partial index on them and a generated column
+// over one, lines the agent writes, and audit, which it cannot read and
+// which a delete of an order cascades into.
+const describeSQL = `
+CREATE SCHEMA shop;
+CREATE SCHEMA "Sales";
+CREATE TABLE "Sales"."Order Items" (id bigint PRIMARY KEY, sku text NOT NULL);
+COMMENT ON TABLE "Sales"."Order Items" IS 'Line items, one per product in an order';
+CREATE TABLE shop.orders (
+    id         bigint PRIMARY KEY,
+    card_token text,
+    cost_price numeric,
+    price      numeric NOT NULL DEFAULT 0,
+    margin     numeric GENERATED ALWAYS AS (price - cost_price) STORED,
+    status     text NOT NULL DEFAULT 'new'
+);
+COMMENT ON TABLE shop.orders IS 'Customer orders';
+COMMENT ON COLUMN shop.orders.status IS 'new, paid or shipped';
+CREATE INDEX orders_card_idx ON shop.orders (card_token);
+CREATE INDEX orders_cheap_idx ON shop.orders (price) WHERE cost_price < 1;
+CREATE INDEX orders_status_idx ON shop.orders (status);
+CREATE TABLE shop.lines (
+    id       bigint PRIMARY KEY,
+    order_id bigint NOT NULL REFERENCES shop.orders ON DELETE CASCADE,
+    qty      int NOT NULL
+);
+CREATE TABLE shop.audit (id bigint PRIMARY KEY, order_id bigint REFERENCES shop.orders ON DELETE CASCADE);
+INSERT INTO shop.orders (id, card_token, cost_price, price) SELECT g, 'tok' || g, 1, 10 FROM generate_series(1, 20) g;
+INSERT INTO shop.lines SELECT g, g, 1 FROM generate_series(1, 20) g;
+ANALYZE shop.orders, shop.lines, shop.audit, "Sales"."Order Items";
+`
+
+// hiddenNames must never appear in any describe answer.
+var hiddenNames = []string{"card_token", "cost_price", "orders_card_idx", "orders_cheap_idx", "audit", "tok1"}
+
+type describeHarness struct {
+	harness
+	db   *guardtest.DB
+	role string
+}
+
+func describeDB(t *testing.T) describeHarness {
+	t.Helper()
+	d := guardtest.New(t)
+	d.Exec(t, describeSQL)
+	a := d.NewAgent(t, "bot", []string{"shop.lines"}, []string{"shop.orders"})
+	role := pgx.Identifier{a.Role}.Sanitize()
+	d.Exec(t, `REVOKE SELECT ON shop.orders FROM `+role+`;
+		GRANT SELECT (id, card_token, price, margin, status) ON shop.orders TO `+role+`;
+		GRANT USAGE ON SCHEMA "Sales" TO `+role+`;
+		GRANT SELECT ON "Sales"."Order Items" TO `+role)
+	classifyDescribe(t, d)
+
+	pool, err := agentdb.NewPool(context.Background(), a.URL, 2)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	limits := sqlguard.DefaultLimits()
+	store := agentdb.NewStore(pool, limits, time.Now)
+	svc := agent.NewService(agent.Deps{
+		Name: "bot", Reader: agentdb.NewReader(pool, limits, time.Now), Store: store, Reads: store,
+		Approvals: store, Reverts: store, Log: slog.New(slog.DiscardHandler), Now: time.Now,
+		Catalog: agentdb.NewCatalog(pool, limits, pool.Config().ConnConfig.Database),
+		Classes: piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool),
+	})
+	return describeHarness{harness: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, db: d, role: a.Role}
+}
+
+// classifyDescribe classes every readable column PUBLIC and card_token
+// SECRET, as basalt classify would record it.
+func classifyDescribe(t *testing.T, d *guardtest.DB) {
+	t.Helper()
+	ctx := context.Background()
+	rows, err := d.Admin.Query(ctx, `SELECT table_schema, table_name, column_name, data_type FROM basalt_meta.pii_readable_columns()`)
+	require.NoError(t, err)
+	cols, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (guard.PIIColumn, error) {
+		var c guard.PIIColumn
+		err := r.Scan(&c.Schema, &c.Table, &c.Column, &c.DataType)
+		c.Class = guard.ClassPublic
+		if c.Column == "card_token" {
+			c.Class = guard.ClassSecret
+		}
+		return c, err
+	})
+	require.NoError(t, err)
+	require.NoError(t, pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error {
+		return guard.WriteClassification(ctx, tx, d.Names, guard.Classification{Columns: cols, At: time.Now()})
+	}))
+}
+
+// describe calls the tool and returns the answer, after checking it names
+// nothing the agent cannot read.
+func (h describeHarness) describe(t *testing.T, args map[string]any) (map[string]any, bool) {
+	t.Helper()
+	body, isError := h.call(t, "describe", args)
+	raw, err := json.Marshal(body)
+	require.NoError(t, err)
+	asked := fmt.Sprint(args)
+	for _, name := range hiddenNames {
+		if strings.Contains(asked, name) {
+			continue // the agent's own words are echoed back
+		}
+		require.NotContains(t, string(raw), name, "a hidden name in the answer to %v", args)
+	}
+	return body, isError
+}
+
+func TestDescribeQuotedIdentifiers(t *testing.T) {
+	t.Parallel()
+	h := describeDB(t)
+	found, isError := h.describe(t, map[string]any{"query": "order items"})
+	require.False(t, isError, "%v", found)
+	list := items(t, found)
+	require.NotEmpty(t, list)
+	require.Equal(t, `"Sales"."Order Items"`, list[0]["resource"])
+
+	res, isError := h.describe(t, map[string]any{"resource": list[0]["resource"]})
+	require.False(t, isError, "%v", res)
+	require.Equal(t, `"Sales"."Order Items"`, res["resource"])
+	require.Equal(t, "Line items, one per product in an order", res["comment"])
+}
+
+func TestDescribeHidesWhatTheAgentCannotRead(t *testing.T) {
+	t.Parallel()
+	h := describeDB(t)
+	res, isError := h.describe(t, map[string]any{"resource": "shop.orders"})
+	require.False(t, isError, "%v", res)
+	require.Equal(t, json.Number("2"), res["hiddenFields"])
+	require.Equal(t, json.Number("2"), res["hiddenIndexes"])
+	require.Equal(t, json.Number("1"), res["hiddenForeignKeys"])
+	require.Equal(t, json.Number("1"), res["cascadesIntoHidden"])
+
+	for _, q := range []string{"card", "cost", "audit", "tok"} {
+		found, isError := h.describe(t, map[string]any{"query": q})
+		require.False(t, isError, "%v", found)
+		for _, it := range items(t, found) {
+			require.NotEqual(t, "shop.orders", it["resource"], "%s matched only a hidden column", q)
+		}
+	}
+
+	body, isError := h.describe(t, map[string]any{"resource": "shop.audit"})
+	require.True(t, isError)
+	requireToolError(t, body, isError, agent.CodeNotFound, "", "")
+	absent, _ := h.describe(t, map[string]any{"resource": "shop.nosuch"})
+	hiddenRaw, err := json.Marshal(body)
+	require.NoError(t, err)
+	absentRaw, err := json.Marshal(absent)
+	require.NoError(t, err)
+	require.Equal(t, strings.ReplaceAll(string(hiddenRaw), "audit", "nosuch"), string(absentRaw),
+		"absent and unreadable get the same answer")
+}
+
+func TestDescribeIfFingerprint(t *testing.T) {
+	t.Parallel()
+	h := describeDB(t)
+	res, isError := h.describe(t, map[string]any{"resource": "shop.orders"})
+	require.False(t, isError, "%v", res)
+	fp := str(t, res["fingerprint"])
+
+	// Rows that grow the indexes, and an index scan the statistics count.
+	h.db.Exec(t, `INSERT INTO shop.orders (id, price) SELECT g, 5 FROM generate_series(100, 3000) g; ANALYZE shop.orders`)
+	h.db.Exec(t, `SET enable_seqscan = off`)
+	h.db.Exec(t, `SELECT id FROM shop.orders WHERE status = 'new'`)
+	h.db.Exec(t, `RESET enable_seqscan`)
+	require.Eventually(t, func() bool {
+		var scans int64
+		err := h.db.Admin.QueryRow(context.Background(), `SELECT coalesce(sum(idx_scan), 0) FROM pg_stat_user_indexes
+			WHERE relname = 'orders'`).Scan(&scans)
+		return err == nil && scans > 0
+	}, 10*time.Second, 100*time.Millisecond, "the index scan reaches the statistics")
+	moved, isError := h.describe(t, map[string]any{"resource": "shop.orders"})
+	require.False(t, isError, "%v", moved)
+	require.NotEqual(t, res["indexes"], moved["indexes"], "index sizes or scans moved")
+	same, isError := h.describe(t, map[string]any{"resource": "shop.orders", "ifFingerprint": fp})
+	require.False(t, isError, "%v", same)
+	require.Equal(t, map[string]any{"form": "RESOURCE", "resource": "shop.orders", "fingerprint": fp, "unchanged": true}, same,
+		"row counts, index sizes and scans do not change the fingerprint")
+
+	h.db.Exec(t, `ALTER TABLE shop.orders ADD COLUMN note text`)
+	changed, isError := h.describe(t, map[string]any{"resource": "shop.orders", "ifFingerprint": fp})
+	require.False(t, isError, "%v", changed)
+	require.NotContains(t, changed, "unchanged")
+	require.NotEqual(t, fp, changed["fingerprint"])
+}
+
+func TestDescribeOverviewFingerprintFollowsStructure(t *testing.T) {
+	t.Parallel()
+	h := describeDB(t)
+	first, isError := h.describe(t, map[string]any{})
+	require.False(t, isError, "%v", first)
+	h.db.Exec(t, `INSERT INTO shop.lines VALUES (100, 1, 2); ANALYZE shop.lines`)
+	second, _ := h.describe(t, map[string]any{})
+	require.Equal(t, first["fingerprint"], second["fingerprint"], "rows do not move it")
+	h.db.Exec(t, `CREATE INDEX lines_qty_idx ON shop.lines (qty)`)
+	third, _ := h.describe(t, map[string]any{})
+	require.NotEqual(t, first["fingerprint"], third["fingerprint"], "an index does")
+
+	h.db.Exec(t, `GRANT INSERT ON shop.orders TO `+pgx.Identifier{h.role}.Sanitize())
+	granted, _ := h.describe(t, map[string]any{})
+	require.NotEqual(t, third["fingerprint"], granted["fingerprint"], "a write grant does")
+
+	h.db.Exec(t, `COMMENT ON TABLE shop.lines IS 'Order lines'`)
+	commented, _ := h.describe(t, map[string]any{})
+	require.NotEqual(t, granted["fingerprint"], commented["fingerprint"], "a table comment does")
+}
+
+// TestDescribeDoesNotRecordReads: describe reads the catalog only, so the
+// ledger gets no row for any form (CONTRACT.md, describe, Recording).
+func TestDescribeDoesNotRecordReads(t *testing.T) {
+	t.Parallel()
+	h := describeDB(t)
+	count := func() int {
+		var n int
+		require.NoError(t, h.db.Admin.QueryRow(context.Background(), `SELECT count(*) FROM basalt_meta.ledger`).Scan(&n))
+		return n
+	}
+	before := count()
+	for _, args := range []map[string]any{{}, {"query": "orders"}, {"resource": "shop.orders"}, {"resource": "shop.nosuch"}} {
+		h.describe(t, args)
+		require.Equal(t, before, count(), "%v", args)
+	}
+}
+
+// goldenNormal replaces what changes from run to run (the database name,
+// fingerprints, scan counters and sizes) so the answers can be compared.
+func goldenNormal(v any, key string) any {
+	switch x := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(x))
+		for k, val := range x {
+			out[k] = goldenNormal(val, k)
+		}
+		return out
+	case []any:
+		out := make([]any, len(x))
+		for i, val := range x {
+			out[i] = goldenNormal(val, key)
+		}
+		return out
+	}
+	switch key {
+	case "database", "fingerprint", "tableBytes", "totalBytes", "seqScans", "indexScans", "lastAnalyzed", "sizeBytes", "scans":
+		return "<" + key + ">"
+	}
+	return v
+}
+
+func requireGolden(t *testing.T, name string, body map[string]any) {
+	t.Helper()
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	require.NoError(t, enc.Encode(goldenNormal(body, "")))
+	got := buf.Bytes()
+	file := filepath.Join("testdata", "describe", name+".json")
+	if *updateGolden {
+		require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o755))
+		require.NoError(t, os.WriteFile(file, got, 0o600))
+	}
+	want, err := os.ReadFile(file)
+	require.NoError(t, err, "run with -update to write %s", file)
+	require.Equal(t, string(want), string(got), "%s (run with -update to rewrite)", file)
+}
+
+func TestDescribeServedGolden(t *testing.T) {
+	t.Parallel()
+	h := describeDB(t)
+	for _, c := range []struct {
+		name    string
+		args    map[string]any
+		isError bool
+	}{
+		{"overview", map[string]any{}, false},
+		{"search", map[string]any{"query": "order"}, false},
+		{"resource", map[string]any{"resource": "shop.orders"}, false},
+		{"not_found", map[string]any{"resource": "shop.audit"}, true},
+	} {
+		body, isError := h.describe(t, c.args)
+		require.Equal(t, c.isError, isError, "%s: %v", c.name, body)
+		requireGolden(t, c.name, body)
+	}
+}
+
+// TestDescribeSearchScale is the 5,000-table measurement (design: "Search
+// on thousands of tables must answer within" the statement timeout). Opt-in:
+// BASALTDB_TEST_SCALE=1.
+func TestDescribeSearchScale(t *testing.T) {
+	if os.Getenv("BASALTDB_TEST_SCALE") != "1" {
+		t.Skip("BASALTDB_TEST_SCALE=1 runs the 5,000-table measurement")
+	}
+	// batch tables per statement string: one implicit transaction each, so
+	// the locks fit in max_locks_per_transaction.
+	const tables, columns, batch = 5000, 20, 200
+	d := guardtest.New(t)
+	d.Exec(t, "CREATE SCHEMA big")
+	var ddl bytes.Buffer
+	for i := range tables {
+		fmt.Fprintf(&ddl, "CREATE TABLE big.t%04d (id bigint PRIMARY KEY", i)
+		for c := 1; c < columns; c++ {
+			fmt.Fprintf(&ddl, ", c%02d_t%04d text", c, i)
+		}
+		ddl.WriteString(");\n")
+		if (i+1)%batch == 0 {
+			d.Exec(t, ddl.String())
+			ddl.Reset()
+		}
+	}
+	d.Exec(t, `CREATE TABLE public.anchor (id bigint PRIMARY KEY)`)
+	a := d.NewAgent(t, "bot", []string{"public.anchor"}, nil)
+	d.Exec(t, `GRANT USAGE ON SCHEMA big TO `+pgx.Identifier{a.Role}.Sanitize()+`;
+		GRANT SELECT ON ALL TABLES IN SCHEMA big TO `+pgx.Identifier{a.Role}.Sanitize())
+
+	pool, err := agentdb.NewPool(context.Background(), a.URL, 2)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	limits := sqlguard.DefaultLimits()
+	store := agentdb.NewStore(pool, limits, time.Now)
+	svc := agent.NewService(agent.Deps{
+		Name: "bot", Reader: agentdb.NewReader(pool, limits, time.Now), Store: store, Reads: store,
+		Approvals: store, Reverts: store, Log: slog.New(slog.DiscardHandler), Now: time.Now,
+		Catalog: agentdb.NewCatalog(pool, limits, pool.Config().ConnConfig.Database),
+		Classes: piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool),
+	})
+	h := harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}
+	h.call(t, "describe", map[string]any{"resource": "public.anchor"}) // warm the pool and the class map
+
+	measure := func(name string, args map[string]any) {
+		start := time.Now()
+		body, isError := h.call(t, "describe", args)
+		took := time.Since(start)
+		require.False(t, isError, "%s: %v", name, body)
+		t.Logf("%s: %s", name, took)
+		require.Less(t, took, limits.StatementTimeout, name)
+	}
+	measure("overview", map[string]any{})
+	measure("search table prefix", map[string]any{"query": "t04"})
+	measure("search column", map[string]any{"query": "c19_t4999"})
+	measure("search no match", map[string]any{"query": "zzzz"})
+	measure("search page 200", map[string]any{"query": "t", "limit": 200})
+	measure("resource", map[string]any{"resource": "big.t2500"})
+}

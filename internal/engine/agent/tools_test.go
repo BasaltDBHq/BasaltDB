@@ -102,11 +102,12 @@ func TestArgsStructsMatchTheSchemas(t *testing.T) {
 		"list_runs":      ledger.RunListParams{},
 		"request_revert": requestRevertArgs{},
 		"preview_revert": previewRevertArgs{},
+		"describe":       describeArgs{},
 	}
 	// Fields a struct decodes only to refuse them with a clear message: the
 	// embedded pagination.Params brings sort, which preview_revert refuses
 	// (its lines come in their signed order).
-	refused := map[string][]string{"preview_revert": {"sort"}}
+	refused := map[string][]string{"preview_revert": {"sort"}, "describe": {"sort"}}
 	for name, v := range args {
 		c, ok := mcpcontract.Find(mcpcontract.MustLoad(), name)
 		require.True(t, ok)

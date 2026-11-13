@@ -149,6 +149,10 @@ func (s *Service) errorGuidance(te *mcp.ToolError, f failure) ([]mcp.NextStep, s
 	case CodePermissionDenied:
 		person = s.permissionDeniedSteps(b, te, f)
 	case CodeNotFound:
+		if f.tool == toolDescribe {
+			person = s.describeNotFoundSteps(b, f)
+			break
+		}
 		person = notFoundSteps(b, te, f)
 	case CodeSQLError:
 		sqlErrorSteps(b, te, f)
@@ -278,7 +282,24 @@ func rowLimitSteps(b *Steps) string {
 		"you approve each batch with your passkey.", MaxRetryRows, MaxRetryRows)
 }
 
+// describeTimeoutText is the revision a describe that ran out of time asks
+// for, by form: a narrower search, or a search in place of the whole
+// overview or table.
+func describeTimeoutText(f failure) string {
+	switch {
+	case f.arg(argQuery) != "":
+		return "Search with a longer, more specific query so the catalog answers in time, then call describe again."
+	case f.arg(argResource) != "":
+		return "The catalog was slow: call describe for this table once more, or search with a query for the columns you need."
+	}
+	return "The catalog was slow: call describe once more, or search with a query for the tables you need."
+}
+
 func queryTimeoutSteps(b *Steps, te *mcp.ToolError, f failure) {
+	if f.tool == toolDescribe {
+		b.ReviseCall(f.tool, nil, describeTimeoutText(f))
+		return
+	}
 	if te.Reason == ReasonRowLimit {
 		b.ReviseCall(f.tool, nil, "Add a LIMIT or a narrower WHERE so the call returns fewer rows, then call it again.")
 		return

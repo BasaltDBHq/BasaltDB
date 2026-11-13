@@ -13,9 +13,6 @@ type Match struct {
 	Rank int
 	// Matched is "table", "schema", "column <name>" or "comment".
 	Matched string
-	// Privileges lists SELECT, INSERT, UPDATE and DELETE held by session_user,
-	// by the same rule as Detail.Privileges.
-	Privileges []string
 }
 
 // SearchCursor is the last match of a page; the next page starts after it.

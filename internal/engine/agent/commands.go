@@ -171,6 +171,11 @@ func (c Commands) RevertStatus(id uuid.UUID) string {
 // PasskeyList lists the passkeys the database accepts.
 func (c Commands) PasskeyList() string { return c.verb("passkey list") }
 
+// Access lists the tables the agent can read and write and the ones it
+// cannot read (CONTRACT.md, CLI, basalt access): the person's command, never
+// the agent's, since it names tables describe only counts.
+func (c Commands) Access() string { return c.verb("access") }
+
 // Upgrade upgrades the guard in the person's database.
 func (c Commands) Upgrade() string { return c.verb("upgrade") }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -119,6 +120,24 @@ func TestRelationsHidesUngranted(t *testing.T) {
 	require.Equal(t, "TABLE", relByName(t, rels, "a").Kind)
 	require.GreaterOrEqual(t, notGranted, 1)
 	require.Equal(t, "  Accounts, zqxpadded  ", relByName(t, rels, "a").Comment)
+}
+
+// TestRelationsReportPrivileges: the overview lists each table's access, so
+// Relations and FindRelation report SELECT by the visibility rule (a
+// column grant counts) and the table-level writes.
+func TestRelationsReportPrivileges(t *testing.T) {
+	db := describeFixture(t)
+	ctx := context.Background()
+	rels, _, err := pgcatalog.Relations(ctx, db)
+	require.NoError(t, err)
+	require.Equal(t, []string{"DELETE", "INSERT", "SELECT", "UPDATE"}, sorted(relByName(t, rels, "a").Privileges))
+	require.Equal(t, []string{"SELECT"}, relByName(t, rels, "b").Privileges, "a column grant is SELECT")
+	require.Equal(t, []string{"SELECT"}, relByName(t, rels, "v").Privileges)
+
+	r, ok, err := pgcatalog.FindRelation(ctx, db, describeSchema, "a")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, []string{"DELETE", "INSERT", "SELECT", "UPDATE"}, sorted(r.Privileges))
 }
 
 func TestRelationsEstimatedRowsNilWhenNeverAnalyzed(t *testing.T) {
@@ -372,7 +391,7 @@ func TestStructureLinesChangeOnAddColumn(t *testing.T) {
 	before, err := pgcatalog.StructureLines(ctx, db)
 	require.NoError(t, err)
 	require.True(t, slices.IsSorted(before))
-	require.Contains(t, before, describeSchema+".a:TABLE")
+	require.True(t, slices.ContainsFunc(before, func(l string) bool { return strings.HasPrefix(l, describeSchema+".a:TABLE:") }))
 	for _, l := range before {
 		require.NotContains(t, l, describeSchema+".hidden")
 		require.NotContains(t, l, "zqxsecret:text")
@@ -388,4 +407,40 @@ func TestStructureLinesChangeOnAddColumn(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, before, after)
 	require.Greater(t, len(after), len(before))
+}
+
+// TestStructureLinesFollowGrantsAndComments: the catalog fingerprint moves
+// when the agent gains a write grant or a table comment changes, and not
+// when rows are added.
+func TestStructureLinesFollowGrantsAndComments(t *testing.T) {
+	url := os.Getenv("BASALTDB_TEST_POSTGRES_URL")
+	db := describeFixture(t)
+	ctx := context.Background()
+	admin, err := pgdial.Connect(ctx, url)
+	require.NoError(t, err)
+	defer func() { _ = admin.Close(ctx) }()
+	lines := func() []string {
+		t.Helper()
+		l, err := pgcatalog.StructureLines(ctx, db)
+		require.NoError(t, err)
+		return l
+	}
+	exec := func(sql string) {
+		t.Helper()
+		_, err := admin.Exec(ctx, sql)
+		require.NoError(t, err)
+	}
+
+	base := lines()
+	exec(`INSERT INTO ` + describeSchema + `.a VALUES (2, 'y'), (3, 'z')`)
+	require.Equal(t, base, lines(), "rows do not move it")
+
+	var role string
+	require.NoError(t, db.QueryRow(ctx, `SELECT session_user`).Scan(&role))
+	exec(`GRANT INSERT ON ` + describeSchema + `.zqx_orders TO ` + role)
+	granted := lines()
+	require.NotEqual(t, base, granted, "a write grant moves it")
+
+	exec(`COMMENT ON TABLE ` + describeSchema + `.zqx_orders IS 'orders, one per checkout'`)
+	require.NotEqual(t, granted, lines(), "a table comment moves it")
 }

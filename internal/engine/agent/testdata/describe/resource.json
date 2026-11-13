@@ -1,0 +1,98 @@
+{
+  "actions": [
+    "SELECT"
+  ],
+  "cascadesIntoHidden": 1,
+  "comment": "Customer orders",
+  "fields": [
+    {
+      "default": null,
+      "name": "id",
+      "nullable": false,
+      "pii": {
+        "class": "PUBLIC"
+      },
+      "type": "bigint"
+    },
+    {
+      "default": "0",
+      "name": "price",
+      "nullable": false,
+      "pii": {
+        "class": "PUBLIC"
+      },
+      "type": "numeric"
+    },
+    {
+      "default": null,
+      "expressionHidden": true,
+      "generated": true,
+      "name": "margin",
+      "nullable": true,
+      "pii": {
+        "class": "PUBLIC"
+      },
+      "type": "numeric"
+    },
+    {
+      "comment": "new, paid or shipped",
+      "default": "'new'::text",
+      "name": "status",
+      "nullable": false,
+      "pii": {
+        "class": "PUBLIC"
+      },
+      "type": "text"
+    }
+  ],
+  "fingerprint": "<fingerprint>",
+  "foreignKeys": [
+    {
+      "columns": [
+        "id"
+      ],
+      "direction": "INCOMING",
+      "onDelete": "CASCADE",
+      "onUpdate": "NO_ACTION",
+      "table": "shop.lines"
+    }
+  ],
+  "form": "RESOURCE",
+  "hiddenFields": 2,
+  "hiddenForeignKeys": 1,
+  "hiddenIndexes": 2,
+  "hiddenKeys": 0,
+  "indexes": [
+    {
+      "definition": "CREATE UNIQUE INDEX orders_pkey ON shop.orders USING btree (id)",
+      "name": "orders_pkey",
+      "partial": false,
+      "scans": "<scans>",
+      "sizeBytes": "<sizeBytes>",
+      "unique": true
+    },
+    {
+      "definition": "CREATE INDEX orders_status_idx ON shop.orders USING btree (status)",
+      "name": "orders_status_idx",
+      "partial": false,
+      "scans": "<scans>",
+      "sizeBytes": "<sizeBytes>",
+      "unique": false
+    }
+  ],
+  "kind": "TABLE",
+  "policy": null,
+  "primaryKey": [
+    "id"
+  ],
+  "resource": "shop.orders",
+  "rls": false,
+  "stats": {
+    "estimatedRows": 20,
+    "indexScans": "<indexScans>",
+    "lastAnalyzed": "<lastAnalyzed>",
+    "seqScans": "<seqScans>",
+    "tableBytes": "<tableBytes>",
+    "totalBytes": "<totalBytes>"
+  }
+}

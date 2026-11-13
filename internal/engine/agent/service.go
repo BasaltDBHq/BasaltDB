@@ -131,6 +131,12 @@ type Deps struct {
 	// values of IDENTIFIER columns to the dictionary (M5.1); optional,
 	// nothing is added when nil.
 	PII PIIObserver
+	// Catalog reads the database's structure for describe; optional, and
+	// describe answers INTERNAL when nil.
+	Catalog Catalog
+	// Classes are the agent's PII classes for describe; optional, every
+	// column UNCLASSIFIED and none SECRET when nil.
+	Classes ClassResolver
 }
 
 // PIIObserver adds the PII values of rows the agent is about to get to the
@@ -188,6 +194,12 @@ func NewService(d Deps) *Service {
 	}
 	if d.PII == nil {
 		d.PII = noPII{}
+	}
+	if d.Catalog == nil {
+		d.Catalog = noCatalog{}
+	}
+	if d.Classes == nil {
+		d.Classes = noClasses{}
 	}
 	if d.PagesBase == "" {
 		d.PagesBase = links.DefaultLocal

@@ -75,7 +75,7 @@ From M2, an `APPROVAL_REQUIRED` body also carries `approval: { "approvalId", "ex
 | `STALE_READ` | An `UPDATE` or `DELETE` of a row whose version changed since the run last read or wrote it (`BS004`). A row the run never read is a blind write, not refused |
 | `STATEMENT_REFUSED` | DDL, multiple statements, data-changing `WITH`, `COPY`, or a function outside the allowlist (engine policy, or `BS007` from the guard) |
 | `ROW_LIMIT_EXCEEDED` | More than 50 rows in one action, cascades included (`BS003`) |
-| `QUERY_TIMEOUT` | A `SELECT` hit the row or time limit (time limit: SQLSTATE `57014`); also `request_revert` when preparing the revert hit its 100-second limit (reason `TIME_LIMIT`; the message gives the person's `basalt revert ... --open` command) |
+| `QUERY_TIMEOUT` | A `SELECT` hit the row or time limit (time limit: SQLSTATE `57014`), or, planned, the size limit; also `request_revert` when preparing the revert hit its 100-second limit (reason `TIME_LIMIT`; the message gives the person's `basalt revert ... --open` command) |
 | `APPROVAL_REQUIRED` | The action is held; the result carries the approval id and expiry (`BS002`) |
 | `APPROVAL_EXPIRED` | The approval was not given within 24 hours (`BS005`) |
 | `APPROVAL_INVALID` | The approval does not exist, is used, belongs to another agent, or no longer matches the rows (`BS005`) |
@@ -89,7 +89,7 @@ From M2, an `APPROVAL_REQUIRED` body also carries `approval: { "approvalId", "ex
 | `UNAVAILABLE` | The database or the guard cannot be reached; planned (chat-only operator): also the agent's [setup from the laptop](#setup-from-your-laptop) has not run yet (reasons `SETUP_PENDING`, `SETUP_EXPIRED`) |
 | `INTERNAL` | A defect in the engine or the guard (`BS006`, `BS008`) |
 
-`STATEMENT_REFUSED` reasons: `PARSE_ERROR`, `MULTIPLE_STATEMENTS`, `WRONG_TOOL` (a write sent to `query` or a read sent to `write`), `DDL_NOT_ALLOWED`, `STATEMENT_NOT_ALLOWED` (`SET`, `DO`, `COPY`, `EXPLAIN`, transaction control and other utility statements), `SELECT_INTO`, `LOCKING_READ`, `MERGE_NOT_ALLOWED`, `DATA_MODIFYING_WITH`, `FUNCTION_NOT_ALLOWED`, and from M2 `NOT_REPEATABLE` (a write that would be held contains a value that changes between transactions; pass it as a parameter). `QUERY_TIMEOUT` reasons: `TIME_LIMIT`, `ROW_LIMIT`. Planned (AE-5): `STATEMENT_REFUSED` gains `NO_PRIMARY_KEY` and `NOT_ALLOWED` (the guard's `BS007`, which carries no reason today), and the other codes with more than one case get reasons; [Next steps per code](#next-steps-per-code) lists them all.
+`STATEMENT_REFUSED` reasons: `PARSE_ERROR`, `MULTIPLE_STATEMENTS`, `WRONG_TOOL` (a write sent to `query` or a read sent to `write`), `DDL_NOT_ALLOWED`, `STATEMENT_NOT_ALLOWED` (`SET`, `DO`, `COPY`, `EXPLAIN`, transaction control and other utility statements), `SELECT_INTO`, `LOCKING_READ`, `MERGE_NOT_ALLOWED`, `DATA_MODIFYING_WITH`, `FUNCTION_NOT_ALLOWED`, and from M2 `NOT_REPEATABLE` (a write that would be held contains a value that changes between transactions; pass it as a parameter). `QUERY_TIMEOUT` reasons: `TIME_LIMIT`, `ROW_LIMIT`, and planned `SIZE_LIMIT`: the result costs more than 16 MiB (16 777 216 bytes) as the engine counts it, summed over its rows: each value's bytes in text form, what JSON adds to escape them, a fixed cost per value (NULLs included) and each column's name per row. A single row over 16 MiB on the wire is refused before it is read. The engine stops reading at either point, so one large value, or many small or NULL ones, cannot grow its memory without bound. Planned (AE-5): `STATEMENT_REFUSED` gains `NO_PRIMARY_KEY` and `NOT_ALLOWED` (the guard's `BS007`, which carries no reason today), and the other codes with more than one case get reasons; [Next steps per code](#next-steps-per-code) lists them all.
 
 New codes and reasons go through the contract-first process. Each one needs its entry in [Next steps per code](#next-steps-per-code) and [`api/mcp/errors/next-steps.json`](api/mcp/errors/next-steps.json).
 
@@ -133,6 +133,7 @@ Planned (owner decisions AE-1 to AE-14, design [`docs/redesign/specs/2026-11-12-
 | `STATEMENT_REFUSED` | `NOT_ALLOWED` | — | A `STOP` |
 | `ROW_LIMIT_EXCEEDED` | — | — | A `STOP`, A `ASK_PERSON`, A `RETRY_SMALLER_BATCHES` (`maxRows` 50, only on an explicit yes); +pm |
 | `QUERY_TIMEOUT` | `ROW_LIMIT` | — | A `REVISE_CALL` |
+| `QUERY_TIMEOUT` | `SIZE_LIMIT` | — | Planned (size limit): A `REVISE_CALL` (select fewer or shorter columns, for example `left(col, 200)`, or fewer rows) |
 | `QUERY_TIMEOUT` | `TIME_LIMIT` | — | A `REVISE_CALL` |
 | `QUERY_TIMEOUT` | `TIME_LIMIT` | `preview_revert` | A `STOP`, P `RUN_COMMAND` (`basalt revert ... --dry-run`), P `RUN_COMMAND` (`basalt revert ... --open`), A `END_TURN`; +pm |
 | `QUERY_TIMEOUT` | `TIME_LIMIT` | `request_revert` | A `STOP`, P `RUN_COMMAND` (`basalt revert ... --open`), P `TELL_AGENT` (the revert id it prints), A `END_TURN`; +pm |

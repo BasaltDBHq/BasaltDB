@@ -2,7 +2,68 @@
 
 > The action ledger for AI agents on your database. Not a database: your data stays in your own Postgres. One Go binary next to each agent, reached over MCP, plus a guard installed in your Postgres that records, holds and reverts agent writes.
 
+The public docs are at https://docs.basaltvault.app. Every page is also Markdown at its path with `.md` in place of the trailing slash (the home page is `/index.md`). The whole site in one file is https://docs.basaltvault.app/llms-full.txt, and the site's own index is https://docs.basaltvault.app/llms.txt.
+
 ## Start here
+
+- [What is BasaltDB](https://docs.basaltvault.app/start/what-is-basaltdb.md): what it does for an agent that writes to your Postgres, and where it stops
+- [Install](https://docs.basaltvault.app/start/install.md): install basalt and guard the tables your agent may change
+- [Quickstart](https://docs.basaltvault.app/start/quickstart.md): let an agent change a sample table, get refused, then undo the run and keep your edit
+- [Connect an agent](https://docs.basaltvault.app/start/connect-agent.md): connect OpenCode, Claude Code, Codex or a bot on its own computer over MCP
+
+## For agents
+
+- [For agents](https://docs.basaltvault.app/reference/for-agents.md): start a run with an intent, check status, follow nextSteps, never retry a refusal blindly
+- [MCP tools](https://docs.basaltvault.app/reference/mcp-tools.md): every tool, its arguments, its result and its errors
+- [Error codes](https://docs.basaltvault.app/reference/errors.md): every error code and reason, and what the agent and the person do next
+- [When something is refused](https://docs.basaltvault.app/guides/refused.md): troubleshooting for refused, held, stale read, row limit, intent missing and timeout
+
+## How it works
+
+- [Architecture](https://docs.basaltvault.app/concepts/architecture.md): the engine runs next to your agent, the guard runs inside your Postgres
+- [Runs](https://docs.basaltvault.app/concepts/runs.md): one job with one stated reason; what you review and undo
+- [Rules](https://docs.basaltvault.app/concepts/rules.md): what the agent may do by default, and what is held or refused
+- [Approvals](https://docs.basaltvault.app/concepts/approvals.md): how a held write waits for a passkey signature
+- [The ledger](https://docs.basaltvault.app/concepts/ledger.md): what is recorded for every action, and for how long
+- [Undo](https://docs.basaltvault.app/concepts/undo.md): how undo works when rows changed after the agent
+
+## Guides
+
+- [Hosts](https://docs.basaltvault.app/guides/hosts.md): which connection string and role to use with Supabase, RDS or your own Postgres
+- [A bot on its own computer](https://docs.basaltvault.app/guides/bot-own-computer.md): set up a bot on a machine you cannot reach
+- [Passkeys](https://docs.basaltvault.app/guides/passkeys.md): register, list, check and remove passkeys
+- [See what it did](https://docs.basaltvault.app/guides/see-what-it-did.md): read what an agent did with basalt log
+- [Undo a run](https://docs.basaltvault.app/guides/undo.md): preview, approve and check an undo with basalt revert
+- [Upgrade](https://docs.basaltvault.app/guides/upgrade.md): upgrade basalt and the guard
+- [Remove BasaltDB](https://docs.basaltvault.app/guides/remove.md): remove the guard, ledger and roles with basalt uninstall
+
+## Privacy
+
+- [Privacy](https://docs.basaltvault.app/privacy.md): with supported agents, customer details become placeholders before a request leaves your machine
+- [What the AI sees](https://docs.basaltvault.app/privacy/what-the-ai-sees.md): placeholders and how they turn back into real values
+- [Turn on privacy](https://docs.basaltvault.app/privacy/turn-on.md): run an agent through the local privacy proxy
+- [Mark columns](https://docs.basaltvault.app/privacy/mark-columns.md): review and confirm sensitive columns with basalt classify
+- [Privacy limits](https://docs.basaltvault.app/privacy/limits.md): where real values can still appear
+
+## Reference
+
+- [CLI](https://docs.basaltvault.app/reference/cli.md): every basalt command and flag, credentials and exit codes
+- [Configuration](https://docs.basaltvault.app/reference/config.md): engine.json keys, environment variables, paths and role names
+- [Change record](https://docs.basaltvault.app/reference/change-record.md): the record kept for every action, field by field
+- [Limits and defaults](https://docs.basaltvault.app/reference/limits.md): row limits, hold thresholds, timeouts, expiries and retention
+
+## About
+
+- [FAQ](https://docs.basaltvault.app/faq.md): short answers to common questions
+- [What BasaltDB won't catch](https://docs.basaltvault.app/limits.md): the mistakes it does not stop
+- [Security](https://docs.basaltvault.app/security.md): how to report a vulnerability
+- [License](https://docs.basaltvault.app/license.md): Apache-2.0
+- [BasaltVault](https://docs.basaltvault.app/basaltvault.md): the planned paid service for many agents and machines; BasaltDB is complete on its own
+- [Roadmap](https://docs.basaltvault.app/roadmap.md): what is planned after launch
+
+## For contributors
+
+Design records for people working on the code, not user help.
 
 - [README](README.md): what BasaltDB is, what it is not, and the milestone status
 - [Foundation](docs/redesign/specs/2026-11-11-basalt-foundation-final.md): the product definition, architecture, default policy and change record

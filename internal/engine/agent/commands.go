@@ -206,7 +206,8 @@ var plainTable = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_$]*\.[A-Za-z_][A-Za-z0
 
 // Grant is init with the saved flags and table added to the agent's access
 // list: flag is "read" or "write". A saved list is extended, never replaced
-// (init takes the last value of a flag). The table must be a plain,
+// (init takes the last value of a flag). Two Grants do not stack: each is
+// the saved flags plus its one table. The table must be a plain,
 // schema-qualified name: a list separator or a quote could add another table.
 func (c Commands) Grant(flag, table string) (string, error) {
 	g, err := c.granted(flag, table)

@@ -33,73 +33,12 @@ func (p *Params) ParseSort(spec SortSpec) (ParsedSort, error) {
 
 // Sort query tokens (whitelisted in SortSpec.Allowed).
 const (
-	sortAscID          = "id"
-	sortDescID         = "-id"
-	sortAscCreatedAt   = "createdAt"
-	sortDescCreatedAt  = "-createdAt"
-	sortAscName        = "name"
-	sortDescName       = "-name"
-	sortAscSeq         = "seq"
-	sortDescSeq        = "-seq"
-	sortAscConsumerID  = "consumerId"
-	sortDescConsumerID = "-consumerId"
-	sortAscMachineID   = "machineId"
-	sortDescMachineID  = "-machineId"
-	sortAscOrigin      = "origin"
-	sortDescOrigin     = "-origin"
+	sortAscSeq  = "seq"
+	sortDescSeq = "-seq"
 )
 
-// RecordSortSpec is the default record list ordering (-id = newest first).
-var RecordSortSpec = SortSpec{
-	Default: sortDescID,
-	Allowed: map[string]struct{}{
-		sortAscID: {}, sortDescID: {},
-		sortAscCreatedAt: {}, sortDescCreatedAt: {},
-	},
-}
-
-var CollectionSortSpec = SortSpec{
-	Default: sortAscName,
-	Allowed: map[string]struct{}{sortAscName: {}, sortDescName: {}},
-}
-
+// ChangeSortSpec is the change log ordering (oldest first by default).
 var ChangeSortSpec = SortSpec{
 	Default: sortAscSeq,
 	Allowed: map[string]struct{}{sortAscSeq: {}, sortDescSeq: {}},
-}
-
-var LinkSortSpec = SortSpec{
-	Default: sortDescID,
-	Allowed: map[string]struct{}{sortAscID: {}, sortDescID: {}},
-}
-
-var APIKeySortSpec = SortSpec{
-	Default: sortDescCreatedAt,
-	Allowed: map[string]struct{}{
-		sortAscCreatedAt: {}, sortDescCreatedAt: {},
-		sortAscID: {}, sortDescID: {},
-	},
-}
-
-var ConflictSortSpec = SortSpec{
-	Default: sortDescCreatedAt,
-	Allowed: map[string]struct{}{
-		sortAscCreatedAt: {}, sortDescCreatedAt: {},
-		sortAscID: {}, sortDescID: {},
-	},
-}
-
-var ConsumerCursorSortSpec = SortSpec{
-	Default: sortAscConsumerID,
-	Allowed: map[string]struct{}{sortAscConsumerID: {}, sortDescConsumerID: {}},
-}
-
-var PeerSortSpec = SortSpec{
-	Default: sortAscMachineID,
-	Allowed: map[string]struct{}{sortAscMachineID: {}, sortDescMachineID: {}},
-}
-
-var OriginCursorSortSpec = SortSpec{
-	Default: sortAscOrigin,
-	Allowed: map[string]struct{}{sortAscOrigin: {}, sortDescOrigin: {}},
 }

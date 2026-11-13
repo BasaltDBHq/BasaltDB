@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"strings"
 )
 
 // KeyVersion is the key version in token prefixes (pii1_) and HKDF labels.
@@ -86,10 +87,29 @@ func (k Keys) String() string { return fmt.Sprintf("pii.Keys{v%d, redacted}", k.
 // GoString keeps key material out of %#v.
 func (k Keys) GoString() string { return k.String() }
 
-// GenericHash is the dictionary hash of a value's generic form, the form word
-// n-grams of free text are looked up by.
+// GenericHash is the dictionary hash of a value's generic form in the order
+// written, the form word n-grams of free text are looked up by. A dictionary
+// stores a value under GenericHashes, which adds the reversed order of a
+// two-word name.
 func (k *Keys) GenericHash(value string) Hash {
 	return k.hash(genericHashPrefix + GenericForm(value))
+}
+
+// GenericHashes are the generic-form hashes a value of type t is stored
+// under: its generic form, and for a PERSON_NAME of exactly two words the two
+// words swapped as well, so free text that names the person surname first
+// ("Tamm, Alice", "TAMM Alice") is found at the cost of one more hash per
+// such name. Longer names are stored in their own order only: which word is
+// the surname is not known.
+func (k *Keys) GenericHashes(t EntityType, value string) []Hash {
+	form := GenericForm(value)
+	hs := []Hash{k.hash(genericHashPrefix + form)}
+	if t == EntityPersonName {
+		if first, last, ok := strings.Cut(form, " "); ok && !strings.Contains(last, " ") {
+			hs = append(hs, k.hash(genericHashPrefix+last+" "+first))
+		}
+	}
+	return hs
 }
 
 // TypedHash is the dictionary hash of a value's typed form, the form pattern

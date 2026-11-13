@@ -142,14 +142,23 @@ The result is `"status": "APPLIED"` with `"rows": 3`. A write with no intent is 
 
 A write of 11 to 50 rows, or any `DELETE`, is held. The agent shows you `Held for your approval: ...` with a `http://localhost:8787/approvals/<id>#s=...` link. Open it, check the rows, and approve with your passkey. The agent's write returns `APPLIED` on its own. If you take longer than about 90 seconds, tell the agent you approved and it applies the write. The agent cannot approve; only your passkey can. More in [`approving.md`](approving.md).
 
-**See the record and undo it.** Both commands read the agent's credential, which belongs to the engine's user, so they run as that user (`_basalt` on macOS, `basalt` on Linux). `RUN_ID` is the run id the agent returned from `run_start`.
+**See the record and undo it.** Run both as yourself, without `sudo`. You cannot read the engine's config or the agent's credential, so the commands ask the running engine over its person socket, which admits only the OS users `basalt init` recorded as the person (`--person-uid`, by default the person who ran it). `RUN_ID` is the run id the agent returned from `run_start`.
 
 ```sh
-sudo -u _basalt basalt log --agent demo_bot --run RUN_ID
-sudo -u _basalt basalt revert --agent demo_bot --run RUN_ID
+basalt log --agent demo_bot --run RUN_ID
+basalt revert --agent demo_bot --run RUN_ID
 ```
 
-`revert` prints a link to the revert page. It runs as the engine user, which has no browser session, so open the link yourself, check the rows, and sign with your passkey. The page shows a code; paste it at the `Paste the code the revert page showed:` prompt. Rows a person changed after the agent are left as they are.
+`basalt approve --agent demo_bot` works the same way. `revert` prints a link to the revert page. Open it, check the rows, and sign with your passkey. If the page shows a code, paste it at the `Paste the code the revert page showed:` prompt. Rows a person changed after the agent are left as they are.
+
+If the engine is stopped, these commands say so and print the command that starts it. If your OS user is not recorded, they print the `basalt init --person-uid` command that adds it.
+
+**When the agent runs as you.** If you leave out `--os-user`, the agent runs as your own OS user, and `basalt init` prints a warning beginning `basalt: warning: the agent runs as OS user ..., which is also the person the engine admits on its person socket`. The engine cannot tell two processes of the same OS user apart, so while you and the agent share a user:
+
+- `basalt log`, `approve` and `revert` over the socket see only this agent's ledger.
+- The agent can run these commands too. It still cannot approve a held write or sign a revert, because both need your passkey.
+
+To keep the agent off the person socket, run it as its own OS user: `basalt init --os-user <user>`.
 
 ## Containers without systemd
 
@@ -191,7 +200,7 @@ basalt uninstall
 sudo basalt service uninstall
 ```
 
-`basalt uninstall` asks for the admin connection string, then drops the `basalt_meta` schema, the guard's triggers and policies, and the `basalt_*` roles. `service uninstall` stops and removes the engine service. If you used the demo data, drop it too: `DROP SCHEMA basalt_demo CASCADE;`.
+`basalt uninstall` asks for the admin connection string, then drops the `basalt_meta` schema, the guard's triggers and policies, and the `basalt_*` roles. `service uninstall` stops and removes the engine service. Where `systemctl` or `launchctl` does not run (a container without systemd), it still removes the unit file and names each command it skipped. If you used the demo data, drop it too: `DROP SCHEMA basalt_demo CASCADE;`.
 
 ## Coming soon
 

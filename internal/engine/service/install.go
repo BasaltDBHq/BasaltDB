@@ -70,6 +70,10 @@ type Step struct {
 	Mode os.FileMode
 	// Owner is the OS user that owns what StepWrite or StepMkdir makes.
 	Owner string
+	// BestEffort marks a step whose failure does not stop the plan: Apply
+	// names it as skipped and goes on (an uninstall's service-manager
+	// commands where no service manager runs).
+	BestEffort bool
 }
 
 // String is the step as a person reads it before it runs.
@@ -99,6 +103,9 @@ func quoteArgs(args []string) []string {
 }
 
 func run(args ...string) Step { return Step{Kind: StepRun, Args: args} }
+
+// tryRun is run with BestEffort set.
+func tryRun(args ...string) Step { return Step{Kind: StepRun, Args: args, BestEffort: true} }
 
 // mkdir is a step making a directory owned by user without following a link
 // (install -d would follow one the engine user planted).
@@ -255,18 +262,20 @@ func PickFreeID(dsclOutput string) (int, error) {
 }
 
 // UninstallPlan returns the steps that stop the service and remove its unit.
-// The user, config and credentials stay; basalt init owns them.
+// The user, config and credentials stay; basalt init owns them. The
+// service-manager commands are best effort, so the unit is removed even
+// where systemd or launchd does not run (a container).
 func UninstallPlan(s Spec) ([]Step, error) {
 	switch s.GOOS {
 	case goosLinux:
 		return []Step{
-			run("systemctl", "disable", "--now", SystemdUnitName),
+			tryRun("systemctl", "disable", "--now", SystemdUnitName),
 			{Kind: StepRemove, Path: SystemdUnitPath},
-			run("systemctl", "daemon-reload"),
+			tryRun("systemctl", "daemon-reload"),
 		}, nil
 	case goosDarwin:
 		return []Step{
-			run("launchctl", "bootout", "system/"+LaunchdLabel),
+			tryRun("launchctl", "bootout", "system/"+LaunchdLabel),
 			{Kind: StepRemove, Path: LaunchdPlist},
 		}, nil
 	}
@@ -274,6 +283,7 @@ func UninstallPlan(s Spec) ([]Step, error) {
 }
 
 // Apply prints every step to out, then runs them in order unless dryRun.
+// A failed BestEffort step is named on out as skipped, with its error.
 func Apply(ctx context.Context, sys System, steps []Step, dryRun bool, out io.Writer) error {
 	for _, st := range steps {
 		fmt.Fprintln(out, "  "+st.String())
@@ -282,7 +292,12 @@ func Apply(ctx context.Context, sys System, steps []Step, dryRun bool, out io.Wr
 		return nil
 	}
 	for _, st := range steps {
-		if err := applyStep(ctx, sys, st); err != nil {
+		err := applyStep(ctx, sys, st)
+		switch {
+		case err == nil:
+		case st.BestEffort:
+			fmt.Fprintf(out, "  skipped %s: %v\n", st, err)
+		default:
 			return fmt.Errorf("%s: %w", st, err)
 		}
 	}

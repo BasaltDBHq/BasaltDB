@@ -16,6 +16,8 @@ import (
 	"io"
 	"net"
 	"sync"
+
+	"github.com/basaltdbhq/basaltdb/internal/mcp"
 )
 
 const (
@@ -157,6 +159,10 @@ type session struct {
 	// nil for a clean close.
 	err error
 
+	// refusal is the engine's refusal of this OS user (mcp.PeerRefusal),
+	// "" when it admitted the peer.
+	refusal string
+
 	mu      sync.Mutex
 	ended   bool
 	pending map[string][]byte
@@ -186,6 +192,12 @@ func (s *session) copyAnswers(ctx context.Context, out *lineWriter) {
 	sc := bufio.NewScanner(s.conn)
 	sc.Buffer(make([]byte, scannerInitSize), scannerMaxSize)
 	for sc.Scan() {
+		if msg := mcp.PeerRefusal(sc.Bytes()); msg != "" {
+			// Not a request's answer: the requests left pending get its
+			// message when the engine closes.
+			s.refusal = msg
+			continue
+		}
 		s.answered(sc.Bytes())
 		if err := out.writeLine(sc.Bytes()); err != nil {
 			s.err = fmt.Errorf("write to the MCP client: %w", err)
@@ -194,6 +206,9 @@ func (s *session) copyAnswers(ctx context.Context, out *lineWriter) {
 	}
 	if err := sc.Err(); err != nil && !errors.Is(err, net.ErrClosed) {
 		s.err = fmt.Errorf("relay from engine: %w", err)
+	}
+	if s.refusal != "" {
+		s.err = errors.New(s.refusal)
 	}
 }
 
@@ -205,6 +220,10 @@ func (s *session) abandon(ctx context.Context, out *lineWriter) {
 	s.pending = nil
 	s.mu.Unlock()
 	for _, line := range left {
+		if req, ok := mcp.RequestOf(line); ok && s.refusal != "" {
+			_ = mcp.WriteError(out, req.ID, mcp.ErrCodeServer, s.refusal)
+			continue
+		}
 		_ = s.fallback.Abandoned(context.WithoutCancel(ctx), out, line)
 	}
 }

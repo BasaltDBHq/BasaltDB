@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/compact-request.v2.json",
   "title": "Compact request (format 2)",
-  "description": "What a format 2 approval or revert link carries: <base>/approvals/<approvalId>#2.<base64url(deflate-raw(this JSON))>, or the same under /reverts/<revertId>. [shapes, texts]: the binding text first, then the lines in order, each text either as it is or as a shape and its values, rebuilt to the exact text. No id (the binding has it) and no credentialIds (passkeys are discoverable). Limits a schema cannot state: every shape is used, a shaped text has exactly one value per slot of its shape, a value of {\"raw\": text} is the only object value, and the rebuilt texts total at most 1 MiB. See CONTRACT.md, Approvals, Format 2.",
+  "description": "What a format 2 approval or revert link carries: <base>/approvals/<approvalId>#2.<base64url(deflate-raw(this JSON))>, or the same under /reverts/<revertId>. [shapes, texts] or [shapes, texts, credentialIds]: the binding text first, then the lines in order, each text either as it is or as a shape and its values, rebuilt to the exact text. No id (the binding has it) and, optionally, the database's active credential ids, which the page passes as allowCredentials (unsigned: they only narrow the passkeys the browser offers; Postgres still checks the signature). Limits a schema cannot state: every shape is used, a shaped text has exactly one value per slot of its shape, a value of {\"raw\": text} is the only object value, and the rebuilt texts total at most 1 MiB. See CONTRACT.md, Approvals, Format 2.",
   "type": "array",
   "prefixItems": [
     {
@@ -17,10 +17,19 @@
       "minItems": 2,
       "maxItems": 1001,
       "items": { "$ref": "#/$defs/text" }
+    },
+    {
+      "description": "credentialIds, optional: the database's active passkey credential ids, base64url without padding, each 1 to 1023 bytes, listed once. The page passes them as allowCredentials, so the browser offers only these passkeys.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$", "minLength": 2, "maxLength": 1364 }
     }
   ],
   "items": false,
   "minItems": 2,
+  "maxItems": 3,
   "$defs": {
     "shape": {
       "description": "A text's top-level keys in text order.",

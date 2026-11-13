@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -81,7 +82,7 @@ func TestInitRegistersPasskey(t *testing.T) {
 
 	var label string
 	require.NoError(t, d.Admin.QueryRow(context.Background(), `SELECT label FROM basalt_meta.passkeys WHERE credential_id = $1`, person.ID).Scan(&label))
-	require.Equal(t, dbName(t, d), label)
+	require.Regexp(t, `^`+regexp.QuoteMeta(dbName(t, d)+" · bot · ")+`\d{4}-\d{2}-\d{2}$`, label, "database, agent and date")
 
 	// A second init keeps the registered passkey and asks nothing.
 	r := cli(t, map[string]string{envAdminURL: d.URL}, "",

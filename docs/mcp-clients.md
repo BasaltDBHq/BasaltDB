@@ -11,7 +11,8 @@ Install the engine as a background service? This creates the OS user _basalt and
 ```
 
 - **Yes** (the default): init runs one `sudo basalt service install ... --agent NAME --credential-stdin`, which creates the engine's OS user (`basalt` on Linux, `_basalt` on macOS), writes the engine config and the agent's credential into the service's own directories (`/etc/basalt` with state in `/var/lib/basalt` and sockets in `/run/basalt` on Linux; `/Library/Application Support/Basalt` on macOS), owned by that user with mode 0600, and installs and starts the systemd unit or launchd daemon (or restarts it when it is already installed). The credential goes to sudo on stdin, never on a command line. Init then checks that the engine answers on the agent's socket and prints the MCP command. The agent's OS user cannot read the credential.
-- **No**, `--no-service`, or no terminal without `--yes`: init writes the config and credential under your config directory (`~/.config/basalt` on Linux, `~/Library/Application Support/basalt` on macOS) and prints the one command that runs the engine in the foreground as you. Giving `--config`, `--socket-dir` or `--credential-file` also means you run the engine yourself. That is same-user mode: writes are still guarded in Postgres, but the agent's OS user can read its credential file. [`m4-runbook.md`](m4-runbook.md) walks through it.
+- **No**, or `--no-service`: init writes the config and credential under your config directory (`~/.config/basalt` on Linux, `~/Library/Application Support/basalt` on macOS) and prints the one command that runs the engine in the foreground as you. Giving `--config`, `--socket-dir` or `--credential-file` also means you run the engine yourself. That is same-user mode: writes are still guarded in Postgres, but the agent's OS user can read its credential file. [`m4-runbook.md`](m4-runbook.md) walks through it.
+- **No terminal** (answers piped in) and neither `--yes` nor `--no-service`: init stops before writing anything and asks you to pass one of them. It never picks same-user mode for you.
 
 `--dry-run` prints the SQL and the exact service steps without running anything. If the `claude` CLI is on your `PATH`, init also offers to run `claude mcp add basalt-NAME -- basalt mcp --agent NAME` for you; it never runs it without a yes.
 
@@ -47,7 +48,7 @@ A JSON response naming the server `basalt` means the shim reached the engine. If
 
 ## Reading the ledger
 
-`basalt log --agent NAME` reads the agent's change records with the agent's own credential, so it needs to read the credential file. Once the file belongs to the engine's user, run it as that user (`sudo -u basalt basalt log --agent NAME`) or pass a copy of the URL in `BASALT_DATABASE_URL`.
+`basalt log --agent NAME` reads the agent's change records with the agent's own credential. Run it as yourself. When the engine runs as a service, its credential file belongs to the engine's user, so `basalt log`, `approve` and `revert` ask the running engine over its person socket instead of reading the file ([install.md](install.md), step 6). In same-user mode (`--no-service`) they read the credential file directly.
 
 ## Approving held writes
 

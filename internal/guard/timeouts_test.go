@@ -56,7 +56,7 @@ func TestGuardedTransactionIgnoresTheRolesOwnTimeouts(t *testing.T) {
 		return err
 	})
 	require.Equal(t, map[string]string{
-		"statement_timeout": "1500ms", "lock_timeout": "1500ms", "idle_in_transaction_session_timeout": "1500ms",
+		"statement_timeout": "1500ms", "lock_timeout": "1500ms", "idle_in_transaction_session_timeout": "30s",
 	}, got)
 	var pe *pgconn.PgError
 	require.ErrorAs(t, err, &pe)
@@ -65,6 +65,31 @@ func TestGuardedTransactionIgnoresTheRolesOwnTimeouts(t *testing.T) {
 	var after string
 	require.NoError(t, fresh.QueryRow(ctx, `SHOW statement_timeout`).Scan(&after))
 	require.Equal(t, "0", after, "the settings are transaction-local")
+}
+
+// TestIdleTimeoutHasAFloor: a short statement timeout does not end the
+// session between the engine's statements of one transaction.
+func TestIdleTimeoutHasAFloor(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", leads, nil)
+	ctx := context.Background()
+	for _, c := range []struct {
+		timeout time.Duration
+		want    string
+	}{{50 * time.Millisecond, "30s"}, {time.Minute, "1min"}} {
+		timeout, want := c.timeout, c.want
+		var idle string
+		err := pgx.BeginFunc(ctx, a.Conn, func(tx pgx.Tx) error {
+			if err := guard.SetTimeouts(ctx, tx, timeout); err != nil {
+				return err
+			}
+			time.Sleep(100 * time.Millisecond) // idle longer than the statement timeout
+			return tx.QueryRow(ctx, `SELECT pg_catalog.current_setting('idle_in_transaction_session_timeout')`).Scan(&idle)
+		})
+		require.NoError(t, err, timeout)
+		require.Equal(t, want, idle, timeout)
+	}
 }
 
 func TestBeginGuardedNeedsATimeout(t *testing.T) {

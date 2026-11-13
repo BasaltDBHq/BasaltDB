@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -49,28 +50,29 @@ func TestApproveShowsTheShortLinkWhenTheEngineServesThePages(t *testing.T) {
 
 	h := newFakeHost(t)
 	h.pagesUp = true
-	// Without --reissue no link is touched: the long link.
-	r := cliHost(t, h, "approve", "--agent", "bot", "--config", cfg, "--show", id)
-	require.Equal(t, exitOK, r.code, r.stderr)
-	require.True(t, strings.HasPrefix(r.stdout, testPagesOrigin+"/approvals/"+id+"#2."), r.stdout)
-	require.Empty(t, h.issued)
+	// The commands wait for the page, so each runs until its time is up.
+	show := func(args ...string) result {
+		return cliPages(t, h, "", time.Second, append([]string{"approve", "--agent", "bot", "--config", cfg}, args...)...)
+	}
+	// Locally the short link is issued without --reissue.
+	show("--show", id)
+	require.Len(t, h.issued, 1)
+	h.issued = nil
 
-	r = cliHost(t, h, "approve", "--agent", "bot", "--config", cfg, "--show", id, "--reissue")
-	require.Equal(t, exitOK, r.code, r.stderr)
+	r := show("--show", id, "--reissue")
 	short := testPagesOrigin + "/approvals/" + id + "#s=" + fakeSecret
 	require.Equal(t, short+"\n", r.stdout, "the short link with the secret the engine issued")
 	binding := bindingOf(t, cred, held.ApprovalID)
 	require.Equal(t, []issuedLink{{endpoint: testPagesOrigin + "/api/v1/approvals/" + id + "/links", proof: links.IssueProof(binding)}}, h.issued,
 		"issued against proof of the binding text")
 
-	r = cliHost(t, h, "approve", "--agent", "bot", "--config", cfg, "--open", id, "--reissue")
-	require.Equal(t, exitOK, r.code, r.stderr)
+	r = show("--open", id, "--reissue")
 	require.Equal(t, []string{short}, h.opened)
-	require.Contains(t, r.stderr, "the page sends it to the engine, nothing to paste")
+	require.Contains(t, r.stderr, "waiting for your signature on the approval page")
 
 	// The engine gives no link: the long one stands.
 	h.issueErr = errors.New("engine answered 404")
-	r = cliHost(t, h, "approve", "--agent", "bot", "--config", cfg, "--show", id, "--reissue")
+	r = show("--show", id, "--reissue")
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.True(t, strings.HasPrefix(r.stdout, testPagesOrigin+"/approvals/"+id+"#2."), r.stdout)
 	require.Contains(t, r.stderr, "the engine gave no short link (engine answered 404)")

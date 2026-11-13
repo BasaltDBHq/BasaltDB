@@ -142,7 +142,7 @@ func held(reason string, url string) func(*testing.T, *Service) error {
 
 func approvalLink(reason string) func(*testing.T, *Service) error {
 	return func(_ *testing.T, s *Service) error {
-		n := heldNotice{ApprovalNotice: caseNotice(s, caseShortLink), longURL: caseShortLink}
+		n := heldNotice{ApprovalNotice: caseNotice(s, caseShortLink), longURL: caseShortLink, pick: handOver{URL: caseShortLink, Kind: linkLong}}
 		return s.approvalLinkError(&mcp.ToolError{Code: CodeApprovalInvalid, Reason: reason, Message: "m"}, n)
 	}
 }

@@ -152,6 +152,9 @@ func (s *Service) hold(ctx context.Context, in guard.Intent, p WriteParams, stmt
 // for notifications.
 type heldNotice struct {
 	mcp.ApprovalNotice
+	// pick is the link handed over, as chooseLink chose it (the long link
+	// when a wait or a list only restates it while the engine serves the pages).
+	pick     handOver
 	longURL  string
 	shortURL string // "" when no short link was issued
 	// reason is the APPROVAL_REQUIRED case: HELD, HELD_NO_PAGES or NO_PASSKEY
@@ -189,7 +192,11 @@ func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding stri
 	if err != nil {
 		return heldNotice{}, err
 	}
-	pick, reason := chooseLink(short, long, s.LinkBudget), reasonHeld
+	pick, err := chooseLink(short, long, s.LinkBudget, links.ApprovalFile(id))
+	if err != nil {
+		return heldNotice{}, err
+	}
+	reason := reasonHeld
 	lead := "Held for your approval: " + shown(summary.Headline(), maxHeadlineChars) + "."
 	var text string
 	var msgLinks []mcp.Link
@@ -212,8 +219,9 @@ func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding stri
 		reason: reason,
 		ApprovalNotice: mcp.ApprovalNotice{
 			ApprovalID: id.String(), ExpiresAt: timeText(expires), Rows: len(lines), Headline: summary.Headline(),
-			ApprovalURL: pick.URL, ApproveCommand: command, PersonMessage: text, Links: msgLinks,
+			ApprovalURL: pick.URL, RequestFile: pick.File, ApproveCommand: command, PersonMessage: text, Links: msgLinks,
 		},
+		pick:     pick,
 		longURL:  long,
 		shortURL: short,
 	}, nil

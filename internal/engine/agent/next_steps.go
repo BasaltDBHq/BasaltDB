@@ -325,6 +325,7 @@ func (s *Service) approvalRequiredSteps(b *Steps, te *mcp.ToolError) string {
 		return ""
 	}
 	again := map[string]any{argApprovalID: n.ApprovalID}
+	b.SendRequest(n.RequestFile)
 	switch te.Reason {
 	case reasonHeld:
 		b.OpenLink(n.ApprovalURL, n.ApproveCommand, "Open the link, review the rows and approve with your passkey.")
@@ -627,7 +628,7 @@ func personFix(b *Steps, command, problem string) string {
 // follows the link budget like the hold's; no new short link is issued here.
 func (s *Service) approvalLinkError(te *mcp.ToolError, n heldNotice) *mcp.ToolError {
 	b := NewSteps()
-	pick := chooseLink(n.shortURL, n.longURL, s.LinkBudget)
+	pick := n.pick
 	var lead string
 	switch te.Reason {
 	case reasonNotSigned:

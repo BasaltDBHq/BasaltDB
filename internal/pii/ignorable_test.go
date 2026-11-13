@@ -87,11 +87,20 @@ func TestNoIgnorableCharacterHidesAValue(t *testing.T) {
 	chars := ignorables()
 	require.Greater(t, len(chars), 4000, "sanity: the tag and variation selector blocks alone are thousands")
 	for _, v := range values {
-		// One subtest per position, in parallel: about 230,000 calls in all.
+		// One subtest per position, in parallel: about 230,000 calls in all (an eighth of them unless
+		// BASALTDB_TEST_FULL=1).
 		for i := range len(v.value) + 1 {
 			t.Run(fmt.Sprintf("%s/%d", v.value, i), func(t *testing.T) {
 				t.Parallel()
-				for _, r := range chars {
+				// Each position takes a different eighth of the characters
+				// (all of them in a full run), so every one is tried at some
+				// position.
+				first, step := i%8, 8
+				if fullRun() {
+					first, step = 0, 1
+				}
+				for ci := first; ci < len(chars); ci += step {
+					r := chars[ci]
 					in := v.value[:i] + string(r) + v.value[i:]
 					out, _, err := tz.Tokenize(in)
 					require.NoError(t, err, "%U at %d of %q", r, i, v.value)

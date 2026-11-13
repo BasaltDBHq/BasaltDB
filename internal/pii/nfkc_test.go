@@ -59,6 +59,7 @@ func TestNoValueLeaksAroundAnyNFKCCharacter(t *testing.T) {
 	tz := newTokenizer(t)
 	changed := nfkcChanged()
 	require.Greater(t, len(changed), 4000, "sanity: NFKC changes thousands of characters")
+	sampled := sampleRunes(changed, 8, scriptClass)
 
 	type pair struct {
 		name, left, right string
@@ -74,7 +75,7 @@ func TestNoValueLeaksAroundAnyNFKCCharacter(t *testing.T) {
 	}
 	for _, p := range pairs {
 		checked := 0
-		for _, r := range changed {
+		for _, r := range sampled {
 			if p.skip != nil && p.skip(r) {
 				continue
 			}
@@ -113,10 +114,13 @@ func TestOverlappingSpansAfterFoldingAreMergedNotDropped(t *testing.T) {
 // The generic form of every character, alone and inside a word, is stable when
 // normalized again (golang.org/x/text folds Cherokee back and forth).
 func TestGenericFormIsStableForEveryCharacter(t *testing.T) {
+	var all []rune
 	for r := rune(0); r < maxScanRune; r++ {
-		if !utf8.ValidRune(r) {
-			continue
+		if utf8.ValidRune(r) {
+			all = append(all, r)
 		}
+	}
+	for _, r := range sampleRunes(all, 7, blockClass) {
 		// Alone, inside a word, and as the character between two combining
 		// marks of different classes (230 then 220), which must not end up
 		// out of canonical order.

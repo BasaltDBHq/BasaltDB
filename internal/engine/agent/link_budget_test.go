@@ -268,8 +268,13 @@ func TestMessagesOfferingACommandStayWithinTheLimitWithALongConfigPath(t *testin
 	var te *mcp.ToolError
 	require.ErrorAs(t, err, &te)
 	messages["nothing to revert, task"] = te.PersonMessage
+	require.Contains(t, te.Message, cmds.Revert(scope), "the command stays in message when personMessage points to it")
 	messages["not granted"] = s.notGrantedSteps(NewSteps(), 12)
 	messages["describe not found"] = s.describeNotFoundSteps(NewSteps(), failure{tool: toolDescribe})
+	rls := &Service{Deps: Deps{Commands: cmds, Log: slog.New(slog.DiscardHandler)}}
+	w, err := rls.rlsWarning("public." + strings.Repeat("t", 60))
+	require.NoError(t, err)
+	messages["rls warning"] = w.PersonMessage
 	messages["wait"], _ = waitMessage("Held for your approval: "+strings.Repeat("x", 96)+".", cmds.Approve(uuid.New()), time.Now().Add(time.Hour))
 
 	for name, m := range messages {

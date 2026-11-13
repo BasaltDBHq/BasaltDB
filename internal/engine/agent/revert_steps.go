@@ -392,10 +392,14 @@ func (s *Service) nothingToRevertError(ctx context.Context, tool string, scope g
 	}
 	if scope.Kind == revert.ScopeTask {
 		// The agent's own lines are empty, but other agents' may not be
-		// (RS-6): the person can open the page and widen to them.
+		// (RS-6): the person can open the page and widen to them. The
+		// command is also in message, which has no length limit, so a long
+		// --config path can cut it from personMessage without losing it
+		// (the catalog fixes this error's steps; none can carry it).
 		command := s.Commands.Revert(scope)
 		te.PersonMessage = fitMessage(te.PersonMessage+fmt.Sprintf(" To include other agents' changes in this task, run %s and choose them on the "+
 			"signing page.", command), command)
+		te.Message += fmt.Sprintf(". To include other agents' changes in this task, the person runs: %s", command)
 	}
 	steps, err := b.Build()
 	if err != nil {

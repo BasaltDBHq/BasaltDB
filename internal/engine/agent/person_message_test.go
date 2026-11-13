@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
@@ -127,4 +128,17 @@ func TestRevertStateMessagesObeyTheContract(t *testing.T) {
 			}
 		}
 	}
+}
+
+// The person message states the agent's name and the limit the role SQL
+// sets, word for word as CONTRACT.md has it.
+func TestTooManyConnectionsMessageWords(t *testing.T) {
+	t.Parallel()
+	cmds, err := NewCommands("lead_bot", "", "linux", nil)
+	require.NoError(t, err)
+	require.Equal(t, "The agent lead_bot has used all 8 database connections Basalt allows it. "+
+		"Another engine for the same agent may be running, or a stopped engine left sessions open. "+
+		"Stop any second engine; stale sessions close on their own within a few minutes.",
+		tooManyConnectionsMessage(cmds))
+	require.Equal(t, 8, guard.AgentConnectionLimit, "the message above and the role SQL state the same limit")
 }

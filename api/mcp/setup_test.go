@@ -348,7 +348,7 @@ func laptopSummary(p map[string]any, role string) string {
 		lines = append(lines, fmt.Sprintf("This changes the tables of the existing agent %s (role %s); its password stays.", who, role))
 	}
 	if agent != nil {
-		lines = append(lines, fmt.Sprintf("Prefix %s, statement timeout %v ms.", prefix, agent["statementTimeoutMs"]))
+		lines = append(lines, fmt.Sprintf("Prefix %s, statement timeout %v ms, at most 8 connections.", prefix, agent["statementTimeoutMs"]))
 	}
 	lines = append(lines, fmt.Sprintf("Setup fingerprint: %s. Check that %s shows the same fingerprint.", setupFingerprint(p), who))
 	return strings.Join(lines, "\n")

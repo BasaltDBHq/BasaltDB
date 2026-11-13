@@ -12,6 +12,11 @@ const (
 	summaryHoldRows = 50
 )
 
+// AgentConnectionLimit is the CONNECTION LIMIT init gives every agent
+// role; guard.AgentConnectionLimit is the same value and gives the budget.
+// It is defined here because guard imports this package.
+const AgentConnectionLimit = 8
+
 // publicSchema is the schema whose tables the summary does not flag.
 const publicSchema = "public"
 
@@ -63,7 +68,7 @@ func Summary(p Payload, s SummaryState) []string {
 		if p.Kind == KindAgent {
 			line += timeoutNote(s)
 		}
-		out = append(out, line+".")
+		out = append(out, fmt.Sprintf("%s, at most %d connections.", line, AgentConnectionLimit))
 	}
 	out = append(out, fmt.Sprintf("Setup fingerprint: %s. Check that %s shows the same fingerprint.", p.Fingerprint(), name))
 	if p.Agent == nil {

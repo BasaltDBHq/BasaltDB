@@ -115,7 +115,7 @@ func followLink(dfd int, name, full string, rootOnly bool, rest []string) (strin
 	if err := unix.Fstatat(dfd, name, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 		return "", err
 	}
-	if uint32(st.Mode)&unix.S_IFMT != unix.S_IFLNK {
+	if statMode(st.Mode)&unix.S_IFMT != unix.S_IFLNK {
 		return "", notDir(full)
 	}
 	if !rootOnly || st.Uid != 0 {
@@ -145,7 +145,7 @@ func notDir(full string) error {
 // symlink, or something else.
 func notDirAt(dfd int, name, full string) error {
 	var st unix.Stat_t
-	if err := unix.Fstatat(dfd, name, &st, unix.AT_SYMLINK_NOFOLLOW); err == nil && uint32(st.Mode)&unix.S_IFMT != unix.S_IFLNK {
+	if err := unix.Fstatat(dfd, name, &st, unix.AT_SYMLINK_NOFOLLOW); err == nil && statMode(st.Mode)&unix.S_IFMT != unix.S_IFLNK {
 		return notDir(full)
 	}
 	return symlinkRefused(full)
@@ -180,7 +180,7 @@ func checkDir(fd int, path string, owner int) (rootOnly bool, err error) {
 	if err := fstat(fd, &st); err != nil {
 		return false, err
 	}
-	perm := uint32(st.Mode) & permBits
+	perm := statMode(st.Mode) & permBits
 	writable := perm&groupOtherWrite != 0
 	if writable && dirPolicy.stickyOK && perm&unix.S_ISVTX != 0 && dirPolicy.rootUID(st.Uid) {
 		writable = false
@@ -195,3 +195,9 @@ func checkDir(fd int, path string, owner int) (rootOnly bool, err error) {
 	}
 	return st.Uid == 0 && perm&groupOtherWrite == 0, nil
 }
+
+// statMode is the mode of a unix.Stat_t as uint32. The field is uint16 on
+// darwin and freebsd and uint32 on linux and the other unixes; a generic
+// conversion is needed on the first and is not flagged as unnecessary on the
+// second, so no per-OS file is needed.
+func statMode[T ~uint16 | ~uint32](m T) uint32 { return uint32(m) }

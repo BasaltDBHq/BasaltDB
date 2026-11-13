@@ -362,10 +362,12 @@ func TestThe00PrefixNormalizesAsPlus(t *testing.T) {
 
 // Long runs of what the patterns take, with no match at their end, take
 // linear time (RE2, and every search goes on past what it read): a quadratic
-// pass over these would not finish within the test timeout.
+// pass over these would not finish within the test timeout. The default size
+// is half the full one (BASALTDB_TEST_FULL=1); a relative check between two
+// sizes was tried and is too noisy on a loaded machine to keep.
 func TestLongNearMissesStayFast(t *testing.T) {
 	tz := patternTokenizer(t)
-	n := sized(1<<15, 1<<12)
+	n := sized(1<<15, 1<<14)
 	for _, in := range []string{
 		strings.Repeat("a'", n) + "@",
 		strings.Repeat(`"a`, n) + `"@`,

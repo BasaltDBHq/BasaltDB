@@ -13,8 +13,8 @@ import (
 
 // testMaster is a fixed 32-byte master key for tests only.
 // fullRun reports whether the exhaustive sizes are wanted: set
-// BASALTDB_TEST_FULL=1 to run every case at its full size. The default
-// path runs smaller, sampled loops so a race-enabled run stays short.
+// BASALTDB_TEST_FULL=1 to run every case at its full size. The default path
+// runs smaller, sampled loops so a race-enabled run stays short.
 func fullRun() bool { return os.Getenv("BASALTDB_TEST_FULL") == "1" }
 
 // sized is full when fullRun, light otherwise.
@@ -24,10 +24,6 @@ func sized(full, light int) int {
 	}
 	return light
 }
-
-// stride is 1 when fullRun, light otherwise: every light-th item of an
-// exhaustive list is checked by default.
-func stride(light int) int { return sized(1, light) }
 
 var testMaster = []byte("test-master-key-0123456789abcdef")
 

@@ -79,7 +79,7 @@ To undo what the bot did, ask it. It looks at its own runs, tells you what it su
 2. The page shows a code that starts with `basalt-revert.1.`. Paste it into the chat.
 3. The bot passes it on. Rows that someone changed after the bot are left as they are.
 
-A revert covers only the bot's own work. You may add other agents' changes on the signing page.
+A revert covers only the bot's own work. For a revert of a whole task, you may add other agents' changes on the signing page.
 
 ## 4. Upgrade
 
@@ -93,9 +93,9 @@ The same goes for changing the tables of an agent: ask the bot for a new code an
 
 ## Passkeys
 
-`basalt passkey list` and `basalt passkey check` show the passkeys registered for your agent. If you see one you did not register, remove it with `basalt passkey remove <id>`. These commands need the admin connection string too, so run them on your laptop.
+To remove a passkey you do not recognise, run `basalt passkey remove <id>` on your laptop. It needs the admin connection string.
 
-To add a second passkey, run the setup code with `--add-passkey`.
+To add a second passkey, ask the bot for a new setup code and run it with `--add-passkey`. A code that was used once is refused.
 
 ## If something goes wrong
 

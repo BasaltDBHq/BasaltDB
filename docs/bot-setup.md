@@ -24,13 +24,12 @@ Ask the person for the connection string of their database without the password,
 ```sh
 basalt init --remote --operated-by=agent --vault=off \
   --agent NAME --write schema.table,… --read schema.table,… \
-  --database-url 'postgresql://postgres.<ref>@<host>:6543/postgres' \
-  --config <path to engine.json>
+  --database-url 'postgresql://postgres.<ref>@<host>:6543/postgres'
 ```
 
 - `--write` lists the tables you read and write. `--read` lists the tables you only read.
 - `--vault=off` keeps the free path: the person signs on `portal.basaltvault.app` and pastes codes back. The hosted relay is coming later.
-- Use a `--config` path you can write. If you have no root, pick one in your home directory and use the same path for every `basalt` command here.
+- Leave out `--config`. Without root, init then keeps the config and the sockets in your own config directory. Init does not move the sockets if you give `--config` yourself, and the engine then fails with a permission error. Use `basalt status` to see the config path, and pass that path to the other `basalt` commands.
 - A URL with a password is refused. Do not work around it.
 
 The command prints a setup code (`basalt-setup.1.…`) and a setup fingerprint. It does not install or start the engine. Add `--json` to get a `personMessage` and `nextSteps`.
@@ -49,7 +48,7 @@ Then end your turn. The code works for 24 hours and once.
 
 ## 4. Start the engine
 
-Start the engine on this server while you wait. The engine runs as you here, so use the same `--config`:
+Start the engine on this server while you wait. The engine runs as you here. Use the config path from step 2:
 
 ```sh
 basalt engine --config <path to engine.json>
@@ -77,7 +76,7 @@ Call `status` at the start of every session. Call it again when the person says 
 
 When you install a newer `basalt`, do not restart the engine first.
 
-1. Run the same command as in step 2 with the same `--config`, and no other change. It prints an upgrade code.
+1. Run the same command as in step 2, with no other change. If the new build has a newer guard, it prints an upgrade code. If it prints a code with no change, send that one anyway.
 2. Send it to the person like in step 3. They run it on their own computer.
 3. When they say it is done, call `status`. Then restart the engine on the new binary.
 

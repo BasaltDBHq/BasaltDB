@@ -142,7 +142,8 @@ func passkeyStep(c *cliIO, conn *pgx.Conn, f initFlags) error {
 // origin while basalt init waits for the registration code, so the link
 // works without a separate page server (the engine serves them later,
 // CONTRACT.md, Local pages). It serves nothing for another origin, or when
-// the port is taken (a page server already runs there). stop ends it.
+// the port is taken (a page server already runs there). stop ends it and
+// frees the port.
 func serveLocalPages(origin string) (stop func(), served bool) {
 	noop := func() {}
 	addr, ok := localPagesAddr(origin)
@@ -156,8 +157,18 @@ func serveLocalPages(origin string) (stop func(), served bool) {
 		return noop, false
 	}
 	hs := &http.Server{Handler: h, ReadHeaderTimeout: pageHeaderTimeout}
-	go func() { _ = hs.Serve(ln) }()
-	return func() { _ = hs.Close() }, true
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = hs.Serve(ln)
+	}()
+	// stop releases the port before it returns: the engine service init
+	// installs next listens there, and fails while init still holds it.
+	return func() {
+		_ = hs.Close()
+		_ = ln.Close()
+		<-done
+	}, true
 }
 
 // pageHeaderTimeout bounds a page request's headers.

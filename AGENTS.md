@@ -100,6 +100,7 @@ Read **this file before implementing**; do not introduce conventions that confli
 - Guard, ledger and catalog code is tested against a **real Postgres** (`BASALTDB_TEST_POSTGRES_URL`; locally a Docker container). Tests create their own schema or database and clean up. Mocks only for non-storage deps.
 - Security properties (agent cannot approve, cannot write without intent, cannot bypass row limits) get explicit tests that run as the agent role.
 - **`-race`** on every test run.
+- **Full-size runs:** `BASALTDB_TEST_FULL=1` makes tests that honour it run their exhaustive sizes (default runs are sampled or smaller). `.github/workflows/nightly-full.yml` runs `BASALTDB_TEST_FULL=1 go test -race ./internal/pii/...` every night and on demand (workflow_dispatch); a failure fails that scheduled run. A package that adopts the flag is added to that job.
 
 ## Tooling
 

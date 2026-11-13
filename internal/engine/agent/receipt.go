@@ -88,7 +88,7 @@ func (s *Service) revertReceipt(r ledger.Revert) (Receipt, error) {
 	if r.Status != ledger.RevertApplied && r.Status != ledger.RevertApplying {
 		return Receipt{}, fmt.Errorf("revert %s is %s, not signed", r.ID, r.Status)
 	}
-	if r.Widened || r.BindingText == "" {
+	if r.Widened {
 		return Receipt{Missing: NoReceiptWidened, Line: widenedReceiptLine(r)}, nil
 	}
 	b, err := revert.ParseBinding(r.BindingText)

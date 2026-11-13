@@ -167,7 +167,7 @@ func parseReceipt(payload []byte) (Receipt, error) {
 // required one, and a key given twice (json.Unmarshal keeps the last).
 func checkReceiptKeys(payload []byte, raw map[string]json.RawMessage) error {
 	for k, v := range raw {
-		if _, ok := receiptFields[k]; !ok || string(v) == "null" {
+		if _, ok := receiptFields[k]; !ok || string(v) == "null" || string(v) == `""` && k == "changeId" {
 			return ErrBadReceipt
 		}
 	}

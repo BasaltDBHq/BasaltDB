@@ -116,6 +116,7 @@ func TestVerifyReceiptRefusals(t *testing.T) {
 		"key in other case": strings.Replace(body, `"itemId"`, `"ItemId"`, 1),
 		"duplicate key":     strings.TrimSuffix(body, "}") + `,"agent":"other-bot"}`,
 		"null changeId":     strings.TrimSuffix(body, "}") + `,"changeId":null}`,
+		"empty changeId":    strings.TrimSuffix(body, "}") + `,"changeId":""}`,
 		"missing rowsHash":  strings.Replace(body, `"rowsHash":"`+strings.Repeat("ab", 32)+`",`, "", 1),
 		"format 2":          strings.Replace(body, `"format":1`, `"format":2`, 1),
 		"bad status":        strings.Replace(body, `"APPROVED"`, `"PENDING"`, 1),

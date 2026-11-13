@@ -37,7 +37,9 @@ type Holdable struct {
 // NOT_REPEATABLE when it contains a value that changes between
 // transactions: the time functions, CURRENT_DATE and the other time SQL
 // value functions, random() and UUID generators, age() with one argument,
-// a 'now' or 'today' literal, or the DEFAULT keyword. It returns the
+// a string literal or parameter that is a time word ('now', 'today',
+// 'tomorrow', 'yesterday', alone or with a time of day or zone), or the
+// DEFAULT keyword. It returns the
 // target table and assigned columns otherwise. Anything it misses fails
 // closed at commit (the guard recomputes the preview lines).
 func CheckRepeatable(sql string, params []any) (Holdable, error) {
@@ -51,8 +53,12 @@ func CheckRepeatable(sql string, params []any) (Holdable, error) {
 	}
 	node := stmts[0].GetStmt()
 	if what := nonRepeatable(node.ProtoReflect()); what != "" {
+		fix := "pass the value as a parameter ($n)"
+		if strings.HasPrefix(what, "'") {
+			fix = "pass a fixed timestamp as a parameter ($n), not a time word"
+		}
 		return Holdable{}, refuse(ReasonNotRepeatable,
-			"%s gives another value when the approved write runs; pass the value as a parameter ($n) so the person approves exactly what is written (a date or time word such as 'now' counts: pass a fixed timestamp)", what)
+			"%s gives another value when the approved write runs; %s so the person approves exactly what is written", what, fix)
 	}
 	if word := timeWordParam(params); word != "" {
 		return Holdable{}, refuse(ReasonNotRepeatable,
@@ -80,20 +86,25 @@ func timeWordParam(params []any) string {
 // time of day or zone ('tomorrow 10:00', 'today noon', 'now UTC').
 var timeWords = toSet(`now today tomorrow yesterday`)
 
-// timeWordCompanions are the words that may stand next to a time word and
-// still make the whole string a date/time input: parts of the day and the
-// common zone names. Any other word makes it plain text ("call back
-// tomorrow"), which a text column keeps as written.
+// timeWordCompanions are the words that may stand with a time word and still
+// leave the whole string a date/time input: parts of the day, the era and
+// day names, and common zone names. Any other word makes it plain text
+// ("call back tomorrow"), which a text column keeps as written.
 var timeWordCompanions = toSet(`
-	noon midnight am pm z zulu utc gmt allballs at
-	est edt cst cdt mst mdt pst pdt cet cest eet eest bst wet west jst ist
+	t at noon midnight am pm z zulu utc ut gmt allballs ad bc
+	mon monday tue tues tuesday wed wednesday thu thur thurs thursday fri friday sat saturday sun sunday
+	est edt cst cdt mst mdt pst pdt akst akdt hst cet cest eet eest bst wet west jst ist msk sgt aest aedt nzst nzdt
 `)
 
 // timeWord returns the time word s is made of, or "" when s is not a
-// date/time input that depends on the clock.
+// date/time input that depends on the clock. It reads s as Postgres's
+// date/time input does: runs of letters, and runs of digits with the
+// punctuation of a time or offset (":.+-/"); every other character only
+// separates ("now()", "(now)", "{now,tomorrow}", "today+02" and "today
+// 10:00Z" all read as the current time).
 func timeWord(s string) string {
 	word := ""
-	for _, tok := range strings.FieldsFunc(strings.ToLower(s), func(r rune) bool { return unicode.IsSpace(r) || r == ',' }) {
+	for _, tok := range tokens(strings.ToLower(s)) {
 		switch {
 		case timeWords[tok]:
 			if word == "" {
@@ -107,11 +118,40 @@ func timeWord(s string) string {
 	return word
 }
 
-// clockToken reports whether tok is only digits and the punctuation of a
+// tokens splits s into runs of letters and runs of digits and ":.+-/".
+func tokens(s string) []string {
+	var out []string
+	start, kind := -1, 0 // kind: 1 letters, 2 digits and punctuation
+	flush := func(end int) {
+		if start >= 0 {
+			out = append(out, s[start:end])
+			start, kind = -1, 0
+		}
+	}
+	for i, r := range s {
+		k := 0
+		switch {
+		case unicode.IsLetter(r):
+			k = 1
+		case r >= '0' && r <= '9', r != 0 && strings.ContainsRune(":.+-/", r):
+			k = 2
+		}
+		if k != kind {
+			flush(i)
+			if k != 0 {
+				start, kind = i, k
+			}
+		}
+	}
+	flush(len(s))
+	return out
+}
+
+// clockToken reports whether tok is a run of digits and the punctuation of a
 // time or an offset ("10:00", "10:00:30.5", "+02", "-05:30").
 func clockToken(tok string) bool {
 	for _, r := range tok {
-		if !unicode.IsDigit(r) && !strings.ContainsRune(":.+-/", r) {
+		if !(r >= '0' && r <= '9') && !strings.ContainsRune(":.+-/", r) {
 			return false
 		}
 	}

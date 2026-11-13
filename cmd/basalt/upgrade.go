@@ -274,6 +274,7 @@ func upgradeGuard(c *cliIO, conn *pgx.Conn, f upgradeFlags) error {
 	fmt.Fprintln(c.stdout, setupcode.UpgradeLine(installed, latest))
 	fmt.Fprintf(c.stdout, "Prefix %s. Missing versions: %s.\n\n", prefix, joinInts(missingVersions(installed)))
 	fmt.Fprint(c.stdout, script.SQL())
+	printWarnings(c.stderr, script)
 	if f.dryRun {
 		fmt.Fprintln(c.stderr, "basalt: dry run; nothing ran")
 		return nil

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -116,6 +117,7 @@ func runInit(c *cliIO, args []string) int {
 		return c.fail(missingTablesHint(err, conn.Config().Database))
 	}
 	fmt.Fprint(c.stdout, script.SQL())
+	printWarnings(c.stderr, script)
 	if f.dryRun {
 		if err := printSetupPlan(c, f); err != nil {
 			return c.fail(err)
@@ -487,4 +489,12 @@ func (f initFlags) commands(goos string) (agent.Commands, error) {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// printWarnings prints what the plan wants the person to know before it
+// runs (guard.Script.Warnings), one line each on stderr.
+func printWarnings(w io.Writer, s guard.Script) {
+	for _, warning := range s.Warnings {
+		fmt.Fprintf(w, "basalt: warning: %s\n", warning)
+	}
 }

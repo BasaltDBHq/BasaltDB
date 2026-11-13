@@ -82,7 +82,7 @@ func TestRecordsOldAndNewRows(t *testing.T) {
 
 	var changeID uuid.UUID
 	err := pgx.BeginFunc(ctx, a.Conn, func(tx pgx.Tx) error {
-		if err := guard.BeginGuarded(ctx, tx, in); err != nil {
+		if err := guard.BeginGuarded(ctx, tx, in, guardtest.Timeout); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE public.leads SET status = $1 WHERE id = $2`, "merged", 4); err != nil {

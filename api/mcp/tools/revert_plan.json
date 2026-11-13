@@ -2,7 +2,7 @@
   "name": "revert_plan",
   "status": "IMPLEMENTED",
   "milestone": "M3",
-  "description": "The lines of a large revert plan (more than 1000 lines) that this agent prepared for the person, and its progress. After the person signs the plan with their passkey, apply it with apply_revert_batch: list the pending lines (pending: true, limit: 200) and pass their line numbers, until pending is 0. Lines come in execution order, the order that worked when the revert was tried; apply them in that order. People win: a line whose row changed after the plan was built is skipped, never overwritten. While the plan is not signed (PENDING) the result carries revertUrl and personMessage, the message to show the person verbatim, keeping its line breaks (put each link on a line of its own, exactly as given, or as [label](url) with the label from links) so they can review and sign it. The result carries nextSteps: do them in order.",
+  "description": "The lines of a large revert plan (more than 1000 lines) that this agent prepared for the person, and its progress. After the person signs the plan with their passkey, apply it with apply_revert_batch: list the pending lines (pending: true, limit: 200) and pass their line numbers, until pending is 0. Lines come in execution order, the order that worked when the revert was tried; apply them in that order. People win: a line whose row changed after the plan was built is skipped, never overwritten. While the plan is not signed (PENDING) and the person did not widen it, the result carries revertUrl and personMessage, the message to show the person verbatim, keeping its line breaks (put each link on a line of its own, exactly as given, or as [label](url) with the label from links) so they can review and sign it. The result carries nextSteps: do them in order.",
   "inputSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -36,8 +36,6 @@
     "required": [
       "revertId",
       "status",
-      "scope",
-      "scopeId",
       "lines",
       "restored",
       "skipped",
@@ -57,9 +55,10 @@
           "PENDING",
           "APPLYING",
           "APPLIED",
-          "EXPIRED"
+          "EXPIRED",
+          "REJECTED"
         ],
-        "description": "PENDING until the person signs; APPLYING while lines are pending; APPLIED when none is; EXPIRED when not signed within 1 hour or not finished within 24 hours of the signature."
+        "description": "PENDING until the person signs; APPLYING while lines are pending; APPLIED when none is; EXPIRED when not signed within 1 hour or not finished within 24 hours of the signature. REJECTED when the person rejected it on the signing page; nothing was reverted, and you do not request it again unless the person asks."
       },
       "scope": {
         "type": "string",
@@ -67,11 +66,17 @@
           "CHANGE",
           "RUN",
           "TASK"
-        ]
+        ],
+        "description": "The scope you requested. Absent when widened (RS-5)."
       },
       "scopeId": {
         "type": "string",
-        "format": "uuid"
+        "format": "uuid",
+        "description": "The id you requested. Absent when widened (RS-5)."
+      },
+      "widened": {
+        "type": "boolean",
+        "description": "True when the person included other agents' changes on the signing page. Then there is no scope, scopeId, revertUrl or links, and plan is absent on every line that names a change you did not make: apply the batches by line number. Absent or false otherwise."
       },
       "lines": {
         "type": "integer",
@@ -114,8 +119,7 @@
           "additionalProperties": false,
           "required": [
             "line",
-            "outcome",
-            "plan"
+            "outcome"
           ],
           "properties": {
             "line": {
@@ -155,7 +159,8 @@
               "description": "Set on CONSTRAINT conflicts only."
             },
             "plan": {
-              "$ref": "#/$defs/revertLine"
+              "$ref": "#/$defs/revertLine",
+              "description": "The signed line. Absent on a widened plan's line that names a change you did not make (RS-5)."
             }
           }
         }
@@ -167,7 +172,7 @@
       "revertUrl": {
         "type": "string",
         "format": "uri",
-        "description": "Only while PENDING: the revert page, the short link http://localhost:<port>/reverts/<revertId>#s=<secret> when the engine serves the local pages (newly issued by this call; the earlier one stops working), else <base>/reverts/<revertId>#1.<request>."
+        "description": "Only while PENDING and not widened: the revert page, the short link http://localhost:<port>/reverts/<revertId>#s=<secret> when the engine serves the local pages (newly issued by this call; the earlier one stops working), else <base>/reverts/<revertId>#1.<request>."
       },
       "personMessage": {
         "type": "string",

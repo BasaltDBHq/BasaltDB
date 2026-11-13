@@ -124,8 +124,10 @@ func ListOpenReverts(ctx context.Context, q guard.Querier, p RevertListParams) (
 	default:
 		return pagination.Page[Revert]{}, fmt.Errorf("%w: status %q", ErrInvalidParams, p.Status)
 	}
-	l := openList[Revert]{selectAll: revertSelect(), idColumn: colRevertID, statuses: []string{RevertPending, RevertApplying},
-		scan: scanRevert, id: func(r Revert) uuid.UUID { return r.ID }}
+	l := openList[Revert]{
+		selectAll: revertSelect(), idColumn: colRevertID, statuses: []string{RevertPending, RevertApplying},
+		scan: scanRevert, id: func(r Revert) uuid.UUID { return r.ID },
+	}
 	return l.page(ctx, q, p.Params, p.Status)
 }
 

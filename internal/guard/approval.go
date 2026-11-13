@@ -31,8 +31,8 @@ func RegisterPasskey(ctx context.Context, q Querier, cred passkey.Credential, la
 // BeginPreview sets the session variables of a preview on tx: the guard
 // records the rows as usual and refuses any commit (PREVIEW_CANNOT_COMMIT).
 // Roll tx back after reading PreviewLines.
-func BeginPreview(ctx context.Context, tx pgx.Tx, in Intent) error {
-	if err := BeginGuarded(ctx, tx, in); err != nil {
+func BeginPreview(ctx context.Context, tx pgx.Tx, in Intent, timeout time.Duration) error {
+	if err := BeginGuarded(ctx, tx, in, timeout); err != nil {
 		return err
 	}
 	return execCall(ctx, tx, sq.Expr("set_config('basalt.mode', ?, true)", ModePreview))
@@ -40,8 +40,8 @@ func BeginPreview(ctx context.Context, tx pgx.Tx, in Intent) error {
 
 // BeginApproved sets the session variables of a write applied under a
 // signed approval on tx.
-func BeginApproved(ctx context.Context, tx pgx.Tx, in Intent, approvalID uuid.UUID) error {
-	if err := BeginGuarded(ctx, tx, in); err != nil {
+func BeginApproved(ctx context.Context, tx pgx.Tx, in Intent, timeout time.Duration, approvalID uuid.UUID) error {
+	if err := BeginGuarded(ctx, tx, in, timeout); err != nil {
 		return err
 	}
 	return execCall(ctx, tx, sq.Expr("set_config('basalt.approval_id', ?, true)", approvalID.String()))
@@ -78,8 +78,9 @@ type Held struct {
 }
 
 // Hold stores a held write and its APPROVAL_PENDING change in its own
-// transaction, with the intent's session variables set.
-func Hold(ctx context.Context, db TxBeginner, in Intent, r HoldRequest) (Held, error) {
+// transaction, with the intent's session variables and timeout set
+// (BeginGuarded).
+func Hold(ctx context.Context, db TxBeginner, in Intent, timeout time.Duration, r HoldRequest) (Held, error) {
 	params, err := paramsJSON(r.Params)
 	if err != nil {
 		return Held{}, err
@@ -90,7 +91,7 @@ func Hold(ctx context.Context, db TxBeginner, in Intent, r HoldRequest) (Held, e
 	}
 	var h Held
 	err = pgx.BeginTxFunc(ctx, db, pgx.TxOptions{}, func(tx pgx.Tx) error {
-		if err := BeginGuarded(ctx, tx, in); err != nil {
+		if err := BeginGuarded(ctx, tx, in, timeout); err != nil {
 			return err
 		}
 		// Plain SQL: a set-returning function in FROM.

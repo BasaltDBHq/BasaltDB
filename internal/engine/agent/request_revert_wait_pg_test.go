@@ -171,13 +171,19 @@ func requireResultSteps(t *testing.T, body map[string]any, kase string) []map[st
 // and the catalog's steps for them.
 func requireErrorSteps(t *testing.T, body map[string]any, isError bool, code, reason string) []map[string]any {
 	t.Helper()
+	return requireScopedErrorSteps(t, body, isError, code, reason, "")
+}
+
+// requireScopedErrorSteps is requireErrorSteps for a failure in scope (TASK).
+func requireScopedErrorSteps(t *testing.T, body map[string]any, isError bool, code, reason, scope string) []map[string]any {
+	t.Helper()
 	requireToolError(t, body, isError, code, reason, "")
 	if reason == "" {
 		require.NotContains(t, body, "reason")
 	}
 	c, err := mcpcontract.LoadNextSteps()
 	require.NoError(t, err)
-	e, ok := c.ErrorEntry(code, reason, "request_revert")
+	e, ok := c.ErrorEntryFor(code, reason, "request_revert", scope)
 	require.True(t, ok, "%s %s", code, reason)
 	return requireSteps(t, body, e.Steps, e.PersonMessage)
 }

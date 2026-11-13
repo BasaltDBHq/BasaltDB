@@ -237,8 +237,9 @@ func (a requestRevertArgs) awaitParams() (AwaitRevertParams, error) {
 type requestRevertResult struct {
 	RevertID      string             `json:"revertId"`
 	Status        string             `json:"status"`
-	Scope         string             `json:"scope"`
-	ScopeID       string             `json:"scopeId"`
+	Scope         string             `json:"scope,omitempty"`
+	ScopeID       string             `json:"scopeId,omitempty"`
+	Widened       bool               `json:"widened,omitempty"`
 	Intent        string             `json:"intent"`
 	Batched       bool               `json:"batched"`
 	Rows          int                `json:"rows"`
@@ -274,6 +275,10 @@ func requestRevertFromDomain(r RequestedRevert) requestRevertResult {
 	}
 	if rv.ApplyBy != nil {
 		out.ApplyBy = timeText(*rv.ApplyBy)
+	}
+	if rv.Widened {
+		// Status and totals only: the person's scope is theirs (RS-5).
+		out.Widened, out.Scope, out.ScopeID, out.RevertURL, out.Links = true, "", "", "", nil
 	}
 	if rv.RejectedAt != nil {
 		out.RejectedAt, out.Note = timeText(*rv.RejectedAt), rv.RejectNote

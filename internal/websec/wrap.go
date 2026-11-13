@@ -1,7 +1,6 @@
 package websec
 
 import (
-	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -30,25 +29,6 @@ func DefaultAllowedHosts(bindHost string) []string {
 		}
 	}
 	return hosts
-}
-
-// SelfOrigin builds the exact origin string for loopback listeners (scheme + host + port).
-func SelfOrigin(scheme string, addr net.Addr) string {
-	if scheme == "" {
-		scheme = "http"
-	}
-	tcp, ok := addr.(*net.TCPAddr)
-	if !ok {
-		return fmt.Sprintf("%s://%s", scheme, addr.String())
-	}
-	host := "127.0.0.1"
-	if tcp.IP != nil && !tcp.IP.IsLoopback() {
-		host = tcp.IP.String()
-	}
-	if tcp.Zone != "" {
-		host = fmt.Sprintf("%s%%%s", host, tcp.Zone)
-	}
-	return fmt.Sprintf("%s://%s:%d", scheme, host, tcp.Port)
 }
 
 // ListenHost extracts the host part of a listen address (host:port).

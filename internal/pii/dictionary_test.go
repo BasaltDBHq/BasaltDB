@@ -338,7 +338,8 @@ func TestDictionaryFilesAndReopen(t *testing.T) {
 	var st map[string]any
 	require.NoError(t, json.Unmarshal(raw, &st))
 	require.Equal(t, map[string]any{
-		"dictionaryValues": 3.0, "deltaValues": 1.0, "fingerprintBits": 32.0,
+		// The two-word name is stored both ways: four generic forms.
+		"dictionaryValues": 4.0, "deltaValues": 1.0, "fingerprintBits": 32.0,
 		"lastScanAt": "2026-11-12T10:00:00Z", "lastScanColumns": 3.0, "lastScanRows": 3.0,
 		"updatedAt": "2026-11-12T10:00:00Z",
 	}, st)
@@ -507,4 +508,68 @@ func BenchmarkDictionaryLookup200k(b *testing.B) {
 			d.Lookup(h)
 		}
 	}
+}
+
+// A two-word PERSON_NAME is also found surname first ("Tamm, Alice", "TAMM
+// Alice"), from the delta and from a build, at one extra generic hash per
+// name. The reversed text gets the token of what it says, not of the stored
+// order. Longer names and other types are found only in stored order.
+func TestDictionaryTwoWordNameMatchesReversed(t *testing.T) {
+	k := newKeys(t, testMaster)
+	name := value{pii.EntityPersonName, "Alice Tamm", ""}
+	long := value{pii.EntityPersonName, "Mari Liis Kask", ""}
+	addr := value{pii.EntityAddress, "Fixture Lane", ""}
+	byDelta := openDict(t, t.TempDir(), k, dictOptions())
+	for _, v := range []value{name, long, addr} {
+		require.NoError(t, byDelta.Add(v.typ, v.text, v.region))
+	}
+	byBuild := openDict(t, t.TempDir(), k, dictOptions())
+	require.NoError(t, buildWith(t, byBuild, []value{name, long, addr}))
+	for kind, d := range map[string]*pii.FuseDictionary{"delta": byDelta, "build": byBuild} {
+		tz := pii.NewTokenizer(k, "", append(pii.PatternDetectors(), pii.NewDictionaryDetector(k, d, ""))...)
+		for _, c := range []struct{ in, span string }{
+			{"ask Tamm, Alice about it", "Tamm, Alice"},
+			{"TAMM Alice called", "TAMM Alice"},
+			{"Alice Tamm called", "Alice Tamm"},
+			{"tamm alice", "tamm alice"},
+		} {
+			out, reps, err := tz.Tokenize(c.in)
+			require.NoError(t, err, "%s %q", kind, c.in)
+			require.Len(t, reps, 1, "%s %q", kind, c.in)
+			require.Equal(t, c.span, c.in[reps[0].Start:reps[0].End], "%s %q", kind, c.in)
+			want, err := k.MakeToken(pii.EntityPersonName, c.span, "")
+			require.NoError(t, err)
+			require.Equal(t, want, reps[0].Token, "%s %q", kind, c.in)
+			require.Zero(t, finalScan(t, tz, out), "%s %q", kind, c.in)
+		}
+		for _, in := range []string{"Kask Liis Mari", "Kask, Mari Liis", "Lane Fixture"} {
+			_, reps, err := tz.Tokenize(in)
+			require.NoError(t, err)
+			require.Empty(t, reps, "%s %q", kind, in)
+		}
+	}
+}
+
+// A mapDict stores a two-word name both ways too.
+func TestMapDictMatchesReversedNames(t *testing.T) {
+	k := newKeys(t, testMaster)
+	d := newMapDict()
+	d.add(k, pii.EntityPersonName, "Alice Tamm")
+	_, ok := d.Lookup(k.GenericHash("Tamm Alice"))
+	require.True(t, ok)
+}
+
+// Known limits of the reversed order: a pair of ordinary words reversed is
+// still a match (it errs toward privacy), and a hyphen or an apostrophe
+// splits a word, so such a name has three words and no reversed form.
+func TestReversedNameKnownLimits(t *testing.T) {
+	k := newKeys(t, testMaster)
+	d := newMapDict()
+	d.add(k, pii.EntityPersonName, "Will Smith")
+	d.add(k, pii.EntityPersonName, "Mari-Liis Kask")
+	tz := pii.NewTokenizer(k, "", append(pii.PatternDetectors(), pii.NewDictionaryDetector(k, d, ""))...)
+	_, reps := tokenize(t, tz, "Smith will review it")
+	require.Len(t, reps, 1)
+	_, reps = tokenize(t, tz, "Kask, Mari-Liis")
+	require.Empty(t, reps)
 }

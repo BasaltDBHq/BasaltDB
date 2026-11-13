@@ -668,7 +668,7 @@ func TestWidenedRevertRedacted(t *testing.T) {
 }
 
 // The new functions are SECURITY DEFINER with search_path pinned to
-// pg_catalog, executable by the agents group and not by PUBLIC; the
+// pg_catalog (pg_temp last from version 24), executable by the agents group and not by PUBLIC; the
 // migration adds the (task_id, agent) index and runs again unchanged.
 func TestRevertWidenMigration(t *testing.T) {
 	t.Parallel()
@@ -685,7 +685,7 @@ func TestRevertWidenMigration(t *testing.T) {
 			has_function_privilege($2, p.oid, 'EXECUTE')
 			FROM pg_proc p WHERE p.oid = $1::regprocedure`, fn, e.d.Names.Agents()).Scan(&definer, &config, &publicExec, &agentsExec), fn)
 		require.True(t, definer, fn)
-		require.Equal(t, []string{"search_path=pg_catalog"}, config, fn)
+		require.Equal(t, []string{"search_path=pg_catalog, pg_temp"}, config, fn)
 		require.False(t, publicExec, fn)
 		public := fn == "basalt_meta.rescope_revert(uuid, jsonb, jsonb, bytea, bytea)" || fn == "basalt_meta.reset_revert(uuid)"
 		require.Equal(t, public, agentsExec, "only the two entry points are the agents' %s", fn)

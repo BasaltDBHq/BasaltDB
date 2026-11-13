@@ -106,7 +106,8 @@ func TestPIIFingerprintQuotesNames(t *testing.T) {
 }
 
 // Version 19 replaces the function only: owner, SECURITY INVOKER, the
-// pinned search_path and the grants are the ones version 15 gave it.
+// pinned search_path (pg_temp last from version 24) and the grants are the
+// ones version 15 gave it.
 func TestPIIFingerprintPrivilegesUnchanged(t *testing.T) {
 	t.Parallel()
 	p := newPIIDB(t)
@@ -119,7 +120,7 @@ func TestPIIFingerprintPrivilegesUnchanged(t *testing.T) {
 		FROM pg_proc WHERE oid = 'basalt_meta.pii_fingerprint()'::regprocedure`).Scan(&owner, &definer, &config))
 	require.Equal(t, p.Names.Guard(), owner)
 	require.False(t, definer)
-	require.Equal(t, []string{"search_path=pg_catalog"}, config)
+	require.Equal(t, []string{"search_path=pg_catalog, pg_temp"}, config)
 
 	// The same ACL as pii_unclassified(), which version 19 does not touch:
 	// the owner and the agents group, not PUBLIC.

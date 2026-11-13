@@ -39,16 +39,16 @@ var commonWordList = sync.OnceValue(func() []string {
 
 // isCommonWord reports whether form (a generic form) is a common word. A
 // single-word dictionary value that is one is matched only inside a longer
-// n-gram (the design's common-word rule) or with a name cue (nameCue), so "the
-// total price" and "park the car" are left alone while "Alice Price" and "Mr.
-// Price" are still names.
+// n-gram (the design's common-word rule), never alone in free text (owner
+// decision DD-1), so "the total price" and "park the car" are left alone
+// while "Alice Price" is still a name.
 func isCommonWord(form string) bool {
 	_, ok := slices.BinarySearch(commonWordList(), form)
 	return ok
 }
 
 // IsCommonWord reports whether value, in its generic form, is one common word:
-// a dictionary value that is matched alone only where the text marks it as a
-// name (nameCue), and otherwise only as part of a full name. basalt classify
+// a dictionary value that free text matches only as part of a full name, and
+// that is masked alone only in its own column. basalt classify
 // --check reports such values.
 func IsCommonWord(value string) bool { return isCommonWord(GenericForm(value)) }

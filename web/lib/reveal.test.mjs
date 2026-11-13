@@ -19,7 +19,7 @@ async function request() {
   return {
     approvalId: ID,
     revealNonce: NONCE,
-    credentialIds: [],
+    credentialIds: [new Uint8Array([1, 2, 3]), new Uint8Array([4, 5])],
     binding: { rowsHash: "ab".repeat(32) },
     lines: [
       { op: "DELETE", table: "public.leads", redacted: false, key: { id: 20 }, old: { id: 20 }, set: null, texts: {} },
@@ -70,6 +70,11 @@ test("one prompt shows every hidden row; a secret row is unchecked", async () =>
   assert.equal(seen.length, 1, "one post");
   assert.equal(seen[0].init.headers["basalt-link-secret"], "link-secret");
   assert.equal(options.publicKey.userVerification, "required");
+  assert.deepEqual(
+    options.publicKey.allowCredentials,
+    [{ type: "public-key", id: new Uint8Array([1, 2, 3]) }, { type: "public-key", id: new Uint8Array([4, 5]) }],
+    "only this database's passkeys are offered",
+  );
   assert.equal(shown.get(1).checked, true);
   assert.equal(shown.get(2).checked, false);
   const line = revealedLine(req.lines[2], shown.get(2), "old");

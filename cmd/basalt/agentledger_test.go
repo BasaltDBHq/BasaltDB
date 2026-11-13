@@ -141,6 +141,8 @@ func personCommands() []personCommand {
 		{"log", runLog, []string{"--agent", "bot"}},
 		{"approve", runApprove, []string{"--agent", "bot", "--show", id}},
 		{"revert", runRevert, []string{"--agent", "bot", "--status", id}},
+		{"passkey list", runPasskey, []string{"list", "--agent", "bot"}},
+		{"passkey check", runPasskey, []string{"check", "--agent", "bot"}},
 	}
 }
 

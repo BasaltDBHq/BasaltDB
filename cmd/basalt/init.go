@@ -79,6 +79,9 @@ func runInit(c *cliIO, args []string) int {
 	if _, err := f.commands(c.goos); err != nil {
 		return c.fail(fmt.Errorf("%w: %w", errUsage, err))
 	}
+	if err := checkServiceAnswer(c, f); err != nil {
+		return c.fail(err)
+	}
 	names := guard.Names{Prefix: f.prefix}
 	role, err := names.Agent(f.agent)
 	if err != nil {
@@ -346,7 +349,7 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 	fs.BoolVar(&f.addPasskey, "add-passkey", false, "register another passkey even if one is registered")
 	fs.StringVar(&f.passkeyOrigin, "passkey-origin", links.DefaultLocal,
 		"pages origin the passkey belongs to: the engine's local pages http://localhost:<port> (RP ID localhost), "+links.HostedConsole+", or the portal "+links.Portal+" (RP ID basaltvault.app; the default with --operated-by=agent)")
-	fs.StringVar(&f.passkeyLabel, "passkey-label", "", "name of the passkey in the picker (default: the database name)")
+	fs.StringVar(&f.passkeyLabel, "passkey-label", "", "name of the passkey in the picker (default: <database> · <agent> · <date>)")
 	fs.Func(flagPersonUID, "service: an OS user id the engine's person socket admits for basalt log, approve and revert (repeatable; default: you)", func(v string) error {
 		uid, err := parseUID(v)
 		if err != nil {

@@ -195,7 +195,7 @@ async function approve(rp, req, summary, relay) {
     );
   } catch (err) {
     gate(req, summary);
-    $("status").textContent = webauthnError(err);
+    $("status").textContent = webauthnError(err, req.credentialIds.length);
   }
 }
 
@@ -236,7 +236,7 @@ function wireReveal(rp, state) {
       $("hide-values").hidden = false;
     } catch (err) {
       const failure = revealFailure(err, KIND_APPROVE);
-      $("reveal-status").textContent = failure?.text ?? (err?.name === "NotAllowedError" ? webauthnError(err) : personText(err) || err.message);
+      $("reveal-status").textContent = failure?.text ?? (err?.name === "NotAllowedError" ? webauthnError(err, req.credentialIds.length) : personText(err) || err.message);
       $("reveal").disabled = failure?.final === true;
     }
   });

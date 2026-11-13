@@ -98,7 +98,8 @@ func WriteClassification(ctx context.Context, tx pgx.Tx, n Names, c Classificati
 	})
 }
 
-// asGuard runs fn in tx as the guard role with search_path pg_catalog, then
+// asGuard runs fn in tx as the guard role with search_path pg_catalog,
+// pg_temp (pg_temp last, so no temporary table shadows the catalog), then
 // puts the caller's role and search_path back, transaction-local as they
 // were (SET LOCAL ones included).
 func asGuard(ctx context.Context, tx pgx.Tx, n Names, fn func() error) error {
@@ -111,7 +112,7 @@ func asGuard(ctx context.Context, tx pgx.Tx, n Names, fn func() error) error {
 		return err
 	}
 	// Plain SQL: role and setting changes on a validated role name.
-	if _, err := tx.Exec(ctx, n.render(`SET LOCAL ROLE {{guard}}; SET LOCAL search_path = pg_catalog`)); err != nil {
+	if _, err := tx.Exec(ctx, n.render(`SET LOCAL ROLE {{guard}}; SET LOCAL search_path = pg_catalog, pg_temp`)); err != nil {
 		return fmt.Errorf("act as the guard role: %w", err)
 	}
 	if err := fn(); err != nil {

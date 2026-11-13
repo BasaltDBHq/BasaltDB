@@ -2,7 +2,7 @@ package guard
 
 // The SQL installed in the person's database, in basalt_meta. Every
 // migration runs as the guard role (owner of basalt_meta) with
-// search_path = pg_catalog, so every object is schema-qualified.
+// search_path = pg_catalog, pg_temp, so every object is schema-qualified.
 //
 // Role names reach this SQL only through Names.render, which replaces the
 // {{guard}} and {{agents}} tokens with names that matched identPattern
@@ -51,6 +51,8 @@ const (
 	versionSearchPath               // the caller's temporary tables never shadow the catalog
 	versionExpiryClock              // approval and revert deadlines read the wall clock
 	versionTriggerAlways            // guard triggers fire under any session_replication_role
+	versionPIIUsage                 // EV-14: a PII column needs USAGE on its schema
+	versionOneClock                 // the person's acts recorded on the wall clock; search_path on every routine
 )
 
 // migrations lists every version in order. M2 appends versions.
@@ -81,6 +83,8 @@ var migrations = []migration{
 	{version: versionSearchPath, sql: v24Functions + v24SearchPath},
 	{version: versionExpiryClock, sql: v25Approvals + v25Reverts},
 	{version: versionTriggerAlways, sql: v26Triggers},
+	{version: versionPIIUsage, sql: v27PIISchemaUsage},
+	{version: versionOneClock, sql: v28RecordedTimes + v28SearchPath},
 }
 
 // LatestVersion is the basalt_meta version this build installs.

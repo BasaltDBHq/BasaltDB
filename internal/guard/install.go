@@ -200,10 +200,10 @@ const installRoles = `
 SELECT pg_advisory_xact_lock(hashtext('basalt_meta install'));
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{{guard}}') THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{{guard}}') THEN
         CREATE ROLE {{guard}} NOLOGIN;
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{{agents}}') THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{{agents}}') THEN
         CREATE ROLE {{agents}} NOLOGIN;
     END IF;
 END $$;
@@ -216,7 +216,7 @@ CREATE SCHEMA IF NOT EXISTS basalt_meta AUTHORIZATION {{guard}};`
 // with a safe search_path and records its version (%d in migrationEnd).
 const migrationBegin = `
 SET LOCAL ROLE {{guard}};
-SET LOCAL search_path = pg_catalog;
+SET LOCAL search_path = pg_catalog, pg_temp;
 ` + schemaVersionTable
 
 const migrationEnd = `
@@ -343,7 +343,7 @@ func AgentRoleExists(ctx context.Context, q Querier, n Names, agent string) (boo
 	if err != nil {
 		return false, err
 	}
-	query, args, err := sq.Select("1").Prefix("SELECT EXISTS (").From("pg_roles").
+	query, args, err := sq.Select("1").Prefix("SELECT EXISTS (").From("pg_catalog.pg_roles").
 		Where(sq.Eq{"rolname": role}).Suffix(")").PlaceholderFormat(sq.Dollar).ToSql()
 	if err != nil {
 		return false, err
@@ -450,7 +450,7 @@ ALTER ROLE %[1]s SET statement_timeout = %[2]d;`
 const agentRoleSQL = `
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '%[1]s') THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '%[1]s') THEN
         CREATE ROLE %[1]s LOGIN INHERIT NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD %[2]s;
     ELSE
         ALTER ROLE %[1]s LOGIN PASSWORD %[2]s;

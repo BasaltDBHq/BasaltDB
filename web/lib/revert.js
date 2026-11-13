@@ -5,6 +5,12 @@
 // nothing anywhere and shows a code to paste into `basalt revert`; from a
 // short link it posts the signature to the engine that served it, which
 // relays it to Postgres.
+//
+// From a short link the person may also change the scope (CONTRACT.md,
+// Rescope, widen and reject): untick agents, runs or tables, which posts a
+// narrower select, or include other agents' changes, which first asks the
+// passkey for a widen proof (rescope.js). Each answer is a new request the
+// page checks and shows in full, as on load.
 import {
   MAX_REVERT_BATCH,
   REVERT_APPLY_HOURS,
@@ -19,7 +25,25 @@ import {
 } from "./codec.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, rejectRevert, revertDone, revertPaths } from "./local.js";
 import { $, REVERT_REOPEN, el, fail, linkFailure, loadOrPaste, personText, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
-import { MAX_NOTE, agentName, expiresIn, headline, noteLength, noteProblem, rejectDone, rowAgent, signingSummary } from "./scope.js";
+import { canWiden, narrow, widen } from "./rescope.js";
+import {
+  MAX_NOTE,
+  RESET_MESSAGE,
+  agentName,
+  expiresIn,
+  headline,
+  knownTables,
+  noteLength,
+  noteProblem,
+  nothingToSign,
+  rejectDone,
+  rowAgent,
+  scopeChoices,
+  scopeFailure,
+  scopeLine,
+  signingSummary,
+  toggled,
+} from "./scope.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
 
@@ -60,12 +84,12 @@ function renderHeader(req) {
   $("widened-pill").hidden = !head.widened;
   $("why-label").textContent = `${requester}'s reason:`;
   $("signing").textContent = signingSummary(req);
-  const tick = () => {
-    $("expires-in").textContent = expiresIn(b.expiresAt, new Date());
-  };
-  tick();
-  setInterval(tick, EXPIRY_TICK_MS);
+  $("expires-in").textContent = expiresIn(b.expiresAt, new Date());
 }
+
+const RESTORE_NOTE =
+  "Struck-through values are the row now; highlighted values are what it goes back to, as before the agent. " +
+  "Postgres checks these exact rows again before the revert runs; if any changed, nothing is written.";
 
 // EXPIRY_TICK_MS is how often the top bar's time left is redrawn.
 const EXPIRY_TICK_MS = 30000;
@@ -81,6 +105,9 @@ function renderSummary(req) {
   $("expires").textContent = b.expiresAt.toLocaleString();
   if (!b.batched) {
     $("plan").textContent = `${plural(b.rows + b.skipped, "row")}, all shown below, restored in one step when you sign.`;
+    $("restore-title").textContent = "What goes back";
+    $("skip-title").textContent = "Rows left as they are";
+    $("restore-note").textContent = RESTORE_NOTE;
     return;
   }
   // A large plan (decisions N12-1 to N12-4, RSS-1): the link carries a
@@ -200,7 +227,8 @@ async function finish(response, relay) {
   showCode(encodeRevertResponse(response));
 }
 
-async function sign(rp, req, relay) {
+async function sign(rp, state) {
+  const { req, relay } = state;
   $("sign").disabled = true;
   try {
     const cred = await navigator.credentials.get({
@@ -224,7 +252,7 @@ async function sign(rp, req, relay) {
       relay,
     );
   } catch (err) {
-    $("sign").disabled = false;
+    $("sign").disabled = nothingToSign(state.req.binding) !== null || state.expired;
     $("status").textContent = webauthnError(err);
   }
 }
@@ -248,7 +276,8 @@ function noteChanged() {
 
 // reject posts the person's Reject with their note. No passkey: rejecting
 // can only stop a revert (CONTRACT.md, Rescope, widen and reject).
-async function reject(req, relay) {
+async function reject(state) {
+  const { req, relay } = state;
   const note = $("note").value;
   $("reject-send").disabled = true;
   $("reject-cancel").disabled = true;
@@ -258,7 +287,7 @@ async function reject(req, relay) {
   } catch (err) {
     $("reject-send").disabled = false;
     $("reject-cancel").disabled = false;
-    $("reject-status").textContent = personText(err) || `The engine did not take the reject: ${err.message}`;
+    $("reject-status").textContent = err?.reason === "LINK_RESET" ? RESET_MESSAGE : personText(err) || `The engine did not take the reject: ${err.message}`;
     return;
   }
   $("reject-note").hidden = true;
@@ -268,7 +297,8 @@ async function reject(req, relay) {
 
 // wireReject offers Reject when the page talks to the engine. A long link
 // has no engine to tell: closing the page declines.
-function wireReject(req, relay) {
+function wireReject(state) {
+  const { req, relay } = state;
   if (relay === null) {
     $("decline").textContent = "Close this page to decline; nothing happens unless you sign.";
     return;
@@ -280,10 +310,137 @@ function wireReject(req, relay) {
   $("reject-cancel").addEventListener("click", () => openNote(false));
   $("sheet-dim").addEventListener("click", () => openNote(false));
   $("note").addEventListener("input", noteChanged);
-  $("reject-send").addEventListener("click", () => reject(req, relay));
+  $("reject-send").addEventListener("click", () => reject(state));
 }
 
-const describe = (err) => linkFailure(err, "revert", REVERT_REOPEN);
+// render shows the current request: header, summary, lines, scope and
+// whether it can be signed. It runs on load and after every scope change.
+function render(state) {
+  const { req } = state;
+  renderHeader(req);
+  renderSummary(req);
+  const who = rowAgent(req.binding);
+  $("restore").replaceChildren();
+  $("skip").replaceChildren();
+  for (const line of req.lines) {
+    $(line.action === "SKIP" ? "skip" : "restore").append(renderLine(line, who));
+  }
+  $("skip-section").hidden = req.binding.skipped === 0;
+  renderScope(state);
+  // Sign and Reject wait while a scope change is in flight, and stay off
+  // on a revert that had expired when the page loaded.
+  const nothing = nothingToSign(req.binding);
+  $("sign").disabled = nothing !== null || state.busy || state.expired;
+  $("reject").disabled = state.busy || state.expired;
+  $("status").textContent = state.expired ? EXPIRED : (nothing ?? "");
+}
+
+const EXPIRED = "This revert link expired. Nothing was reverted; run basalt revert again.";
+
+// RUN_ID_SHOWN is how much of a run id its chip shows.
+const RUN_ID_SHOWN = 8;
+
+// chip is one choice of the scope (an agent, a table or a run). A fixed
+// chip, or any chip on a long link, cannot be pressed.
+function chip(choice, kind, state) {
+  const editable = state.relay !== null && !choice.fixed;
+  const b = el("button", `chip${choice.on ? " on" : ""}${choice.other ? " other" : ""}${kind === "runs" ? " run" : ""}`);
+  b.type = "button";
+  b.setAttribute("aria-pressed", String(choice.on));
+  b.disabled = !editable || state.busy;
+  b.append(el("span", "tk", choice.on ? "\u2713" : ""));
+  if (kind === "runs") {
+    // A run by the end of its id (the start of a UUIDv7 is its time, alike
+    // for runs of one morning); the whole id on hover.
+    b.append(el("span", "mono", choice.key.slice(-RUN_ID_SHOWN)));
+    b.append(el("span", "w", visibleText(choice.label)));
+    b.title = choice.key;
+  } else {
+    b.append(el("span", kind === "agents" ? "" : "mono", visibleText(choice.label)));
+    if (choice.count > 0) b.append(el("b", "", String(choice.count)));
+  }
+  if (editable) b.addEventListener("click", () => rescope(state, kind, choice.key));
+  return b;
+}
+
+function renderScope(state) {
+  const { req, catalog } = state;
+  state.known = catalog === null ? knownTables(req, state.known) : state.known;
+  const choices = scopeChoices(req, catalog, state.known);
+  state.choices = choices;
+  const editable = state.relay !== null;
+  $("included-hint").textContent = editable ? "tap to leave out" : "";
+  $("agent-chips").replaceChildren(...choices.agents.map((c) => chip(c, "agents", state)));
+  $("table-chips").replaceChildren(...choices.tables.map((c) => chip(c, "tables", state)));
+  $("runs-section").hidden = choices.runs === null;
+  if (choices.runs !== null) {
+    $("runs-count").textContent = String(choices.runs.length);
+    $("runs").replaceChildren(...choices.runs.map((c) => chip(c, "runs", state)));
+  }
+  $("widen").hidden = !canWiden(req, state.relay, catalog);
+  $("widen").disabled = state.busy;
+  $("widen-text").textContent = `Asks for your passkey. ${visibleText(agentName(req.binding.requestedBy))} won't see what you add.`;
+  $("scope-readonly").hidden = editable;
+  const line = scopeLine(req, catalog, state.known);
+  $("scope-line-text").textContent = visibleText(line.text);
+  $("scope-line-sub").textContent = visibleText(line.sub);
+}
+
+// applyScope shows an answer of the scope route: the new request and, after
+// a widen, the catalog and the link's new secret.
+function applyScope(state, out) {
+  state.req = out.req;
+  if (out.catalog !== null) state.catalog = out.catalog;
+  if (out.secret) state.relay.secret = out.secret;
+}
+
+async function changeScope(state, run) {
+  state.busy = true;
+  $("scope-status").textContent = "Updating the rows…";
+  render(state);
+  try {
+    applyScope(state, await run());
+    $("scope-status").textContent = "";
+  } catch (err) {
+    $("scope-status").textContent = err?.name === "NotAllowedError" || err?.name === "SecurityError" ? webauthnError(err) : scopeFailure(err);
+  }
+  state.busy = false;
+  render(state);
+}
+
+// rescope posts the select with kind's key ticked or unticked. The engine
+// adds the scope token after a widen; no passkey.
+function rescope(state, kind, key) {
+  const select = toggled(state.req.binding.select, state.choices, kind, key);
+  if (select === null) {
+    $("scope-status").textContent = "Keep at least one ticked; to stop the whole revert, use Reject.";
+    return;
+  }
+  return changeScope(state, () => narrow({ req: state.req, secret: state.relay.secret, fetchFn: engineFetch, select }));
+}
+
+// includeOthers widens to every agent's changes in the task: the passkey
+// signs the widen proof first, and nothing is sent without it.
+function includeOthers(state) {
+  return changeScope(state, () =>
+    widen({
+      req: state.req,
+      rpId: state.rp.rpId,
+      secret: state.relay.secret,
+      fetchFn: engineFetch,
+      getAssertion: (options) => navigator.credentials.get(options),
+    }),
+  );
+}
+
+// openScope shows the scope sheet on a phone; on a wide screen the scope is
+// always in the decision panel (style.css).
+function openScope(open) {
+  $("scope-panel").classList.toggle("open", open);
+  $("sheet-dim").hidden = !open;
+}
+
+const describe = (err) => (err?.reason === "LINK_RESET" ? RESET_MESSAGE : linkFailure(err, "revert", REVERT_REOPEN));
 
 async function main() {
   let rp;
@@ -296,22 +453,20 @@ async function main() {
     fail(describe(err));
     return;
   }
-  renderHeader(req);
-  renderSummary(req);
-  const who = rowAgent(req.binding);
-  for (const line of req.lines) {
-    $(line.action === "SKIP" ? "skip" : "restore").append(renderLine(line, who));
-  }
-  $("skip-section").hidden = req.binding.skipped === 0;
+  const expired = req.binding.expiresAt.getTime() <= Date.now();
+  const state = { rp, req, relay, catalog: null, known: [], choices: null, busy: false, expired };
+  render(state);
   $("main").hidden = false;
-  wireReject(req, relay);
-  if (req.binding.expiresAt.getTime() <= Date.now()) {
-    $("reject").disabled = true;
-    $("sign").disabled = true;
-    $("status").textContent = "This revert link expired. Nothing was reverted; run basalt revert again.";
-    return;
-  }
-  $("sign").addEventListener("click", () => sign(rp, req, relay));
+  setInterval(() => {
+    $("expires-in").textContent = expiresIn(state.req.binding.expiresAt, new Date());
+  }, EXPIRY_TICK_MS);
+  wireReject(state);
+  $("widen").addEventListener("click", () => includeOthers(state));
+  $("scope-line").addEventListener("click", () => openScope(true));
+  $("scope-done").addEventListener("click", () => openScope(false));
+  $("sheet-dim").addEventListener("click", () => openScope(false));
+  if (expired) return;
+  $("sign").addEventListener("click", () => sign(rp, state));
 }
 
 // Pages run it; the tests import rowTable without a page.

@@ -44,6 +44,9 @@ type fakeHost struct {
 	// the item's page.
 	issueURL string
 	sys      *fakeSys
+	// probeErr is what Probe returns; engineLog what EngineLog reads.
+	probeErr  error
+	engineLog string
 }
 
 const fakeBin = "/opt/basalt/bin/basalt"
@@ -115,8 +118,10 @@ func (h *fakeHost) System(io.Writer, io.Writer) service.System { return h.sys }
 
 func (h *fakeHost) Probe(_ context.Context, socket string) error {
 	h.probed = append(h.probed, socket)
-	return nil
+	return h.probeErr
 }
+
+func (h *fakeHost) EngineLog(context.Context, string) (string, error) { return h.engineLog, nil }
 
 // fakeSys is a service.System that records steps.
 type fakeSys struct {

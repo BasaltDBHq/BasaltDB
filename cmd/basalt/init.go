@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -36,6 +37,9 @@ type initFlags struct {
 	// pathsGiven is true when --config, --socket-dir or --credential-file
 	// was given: the person runs the engine in the foreground themselves.
 	pathsGiven bool
+	// credFileGiven is true when --credential-file was given: a missing file
+	// there is more likely a typo than a lost credential.
+	credFileGiven bool
 	// rotatePassword sets a new password even when the agent's role exists.
 	rotatePassword bool
 	// keepCredential: the role exists and keeps its password, so the
@@ -108,9 +112,14 @@ func runInit(c *cliIO, args []string) int {
 		return c.fail(err)
 	}
 	f.keepCredential = exists && !f.rotatePassword
-	if f.keepCredential && (f.noService || f.pathsGiven) && !fileExists(f.credFile) {
+	if f.keepCredential && f.credFileGiven && !fileExists(f.credFile) {
 		// A mistyped path must not rotate the password.
 		return c.fail(fmt.Errorf("role %s exists but there is no credential file %s; check the path, or run init with --rotate-password", role, f.credFile))
+	}
+	if f.keepCredential {
+		if f.keepCredential, err = keepOrReplaceCredential(c, f, role); err != nil {
+			return c.fail(err)
+		}
 	}
 	f.rotated = exists && f.rotatePassword
 	if !f.keepCredential {
@@ -369,6 +378,7 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 		switch fl.Name {
 		case "config", "socket-dir", "credential-file":
 			f.pathsGiven = true
+			f.credFileGiven = f.credFileGiven || fl.Name == "credential-file"
 		case "operated-by":
 			f.operatedByGiven = true
 		case "passkey-origin":
@@ -566,6 +576,61 @@ func (f initFlags) commands(goos string) (agent.Commands, error) {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// keepOrReplaceCredential decides, for an agent role that exists, whether
+// init keeps its password (true) or sets a new one. It keeps it unless the
+// credential file is missing everywhere the engine setup may look, as when
+// an earlier init stopped before writing it: then init asks to set a new
+// password (default yes; --yes and --dry-run answer yes) and refuses
+// without a terminal.
+func keepOrReplaceCredential(c *cliIO, f initFlags, role string) (bool, error) {
+	paths := credentialPaths(c, f)
+	for _, p := range paths {
+		if !credentialMissing(p) {
+			return true, nil
+		}
+	}
+	fmt.Fprintf(c.stderr, "basalt: role %s exists but its credential file (%s) is missing; an earlier init may have stopped before writing it\n",
+		role, strings.Join(paths, " or "))
+	refused := fmt.Errorf("role %s keeps its password but has no credential file; run init with --rotate-password to set a new one", role)
+	switch {
+	case f.yes || f.dryRun:
+		return false, nil
+	case !c.interactive:
+		return false, fmt.Errorf("%w (or pass --yes)", refused)
+	}
+	ok, err := c.confirmYes("Set a new password for it and write the credential?")
+	if err != nil {
+		return false, err
+	}
+	if !ok {
+		return false, refused
+	}
+	return false, nil
+}
+
+// credentialPaths are where the engine setup reads the agent's credential:
+// the given or system path, and, unless paths were given, the person's own
+// config directory, where a foreground engine keeps it (perUserPaths; with
+// --no-service too).
+func credentialPaths(c *cliIO, f initFlags) []string {
+	paths := []string{f.credFile}
+	if f.pathsGiven {
+		return paths
+	}
+	if pf, err := perUserPaths(c, f); err == nil && pf.credFile != f.credFile {
+		paths = append(paths, pf.credFile)
+	}
+	return paths
+}
+
+// credentialMissing reports whether path surely does not exist. A file
+// init cannot look at (the service's directories belong to the engine's
+// user) may exist, and is kept.
+func credentialMissing(path string) bool {
+	_, err := os.Stat(path)
+	return errors.Is(err, fs.ErrNotExist)
 }
 
 // printWarnings prints what the plan wants the person to know before it

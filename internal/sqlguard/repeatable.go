@@ -3,6 +3,7 @@ package sqlguard
 import (
 	"fmt"
 	"strings"
+	"unicode"
 
 	pganalyze "github.com/pganalyze/pg_query_go/v6"
 	pgquery "github.com/wasilibs/go-pgquery"
@@ -20,9 +21,6 @@ var nonRepeatableFunctions = toSet(`
 	now statement_timestamp transaction_timestamp clock_timestamp timeofday
 	random random_normal gen_random_uuid uuid_generate_v4
 `)
-
-// timeLiterals are input strings the date/time types read as "now".
-var timeLiterals = toSet(`now today tomorrow yesterday`)
 
 // Holdable is what preview and approval need from a write: the columns
 // whose new values the approval binds.
@@ -42,7 +40,7 @@ type Holdable struct {
 // a 'now' or 'today' literal, or the DEFAULT keyword. It returns the
 // target table and assigned columns otherwise. Anything it misses fails
 // closed at commit (the guard recomputes the preview lines).
-func CheckRepeatable(sql string) (Holdable, error) {
+func CheckRepeatable(sql string, params []any) (Holdable, error) {
 	tree, err := pgquery.Parse(sql)
 	if err != nil {
 		return Holdable{}, &RefusalError{Reason: ReasonParseError, Detail: err.Error()}
@@ -54,9 +52,70 @@ func CheckRepeatable(sql string) (Holdable, error) {
 	node := stmts[0].GetStmt()
 	if what := nonRepeatable(node.ProtoReflect()); what != "" {
 		return Holdable{}, refuse(ReasonNotRepeatable,
-			"%s gives another value when the approved write runs; pass the value as a parameter ($n) so the person approves exactly what is written", what)
+			"%s gives another value when the approved write runs; pass the value as a parameter ($n) so the person approves exactly what is written (a date or time word such as 'now' counts: pass a fixed timestamp)", what)
+	}
+	if word := timeWordParam(params); word != "" {
+		return Holdable{}, refuse(ReasonNotRepeatable,
+			"a parameter is the time word '%s', which Postgres reads as the time the statement runs, so it gives another value when the approved write runs; pass a fixed timestamp as the parameter ($n) so the person approves exactly what is written", word)
 	}
 	return holdable(node), nil
+}
+
+// timeWordParam is the first string parameter that is a time word (see
+// timeWord), or "".
+func timeWordParam(params []any) string {
+	for _, p := range params {
+		if s, ok := p.(string); ok {
+			if word := timeWord(s); word != "" {
+				return word
+			}
+		}
+	}
+	return ""
+}
+
+// timeWords are the values Postgres's date and time input reads as the time
+// the statement runs, not as a fixed one: 'now', 'today', 'tomorrow' and
+// 'yesterday' (case and surrounding spaces do not matter), alone or with a
+// time of day or zone ('tomorrow 10:00', 'today noon', 'now UTC').
+var timeWords = toSet(`now today tomorrow yesterday`)
+
+// timeWordCompanions are the words that may stand next to a time word and
+// still make the whole string a date/time input: parts of the day and the
+// common zone names. Any other word makes it plain text ("call back
+// tomorrow"), which a text column keeps as written.
+var timeWordCompanions = toSet(`
+	noon midnight am pm z zulu utc gmt allballs at
+	est edt cst cdt mst mdt pst pdt cet cest eet eest bst wet west jst ist
+`)
+
+// timeWord returns the time word s is made of, or "" when s is not a
+// date/time input that depends on the clock.
+func timeWord(s string) string {
+	word := ""
+	for _, tok := range strings.FieldsFunc(strings.ToLower(s), func(r rune) bool { return unicode.IsSpace(r) || r == ',' }) {
+		switch {
+		case timeWords[tok]:
+			if word == "" {
+				word = tok
+			}
+		case timeWordCompanions[tok], clockToken(tok):
+		default:
+			return ""
+		}
+	}
+	return word
+}
+
+// clockToken reports whether tok is only digits and the punctuation of a
+// time or an offset ("10:00", "10:00:30.5", "+02", "-05:30").
+func clockToken(tok string) bool {
+	for _, r := range tok {
+		if !unicode.IsDigit(r) && !strings.ContainsRune(":.+-/", r) {
+			return false
+		}
+	}
+	return tok != ""
 }
 
 // nonRepeatable returns a description of the first non-repeatable
@@ -87,9 +146,12 @@ func nonRepeatableNode(m protoreflect.Message) string {
 		}
 	case *pganalyze.SetToDefault:
 		return "DEFAULT"
-	case *pganalyze.TypeCast:
-		if s := v.GetArg().GetAConst().GetSval(); s != nil && timeLiterals[strings.ToLower(strings.TrimSpace(s.GetSval()))] {
-			return fmt.Sprintf("'%s'", s.GetSval())
+	case *pganalyze.A_Const:
+		// Any string literal, cast or not: Postgres reads 'now' as the
+		// current time when it is assigned to, compared with or cast to a
+		// date or time, and the parse tree does not know the column's type.
+		if word := timeWord(v.GetSval().GetSval()); word != "" {
+			return fmt.Sprintf("'%s'", v.GetSval().GetSval())
 		}
 	}
 	return ""

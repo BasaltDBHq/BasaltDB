@@ -356,6 +356,24 @@ func TestHeldWriteNotRepeatable(t *testing.T) {
 	require.False(t, isError, "%v", body)
 }
 
+// A time word as a bare literal or as a parameter is read as the current time
+// when Postgres runs the write, so a held write with one could never apply.
+func TestHeldWriteWithATimeWordNotRepeatable(t *testing.T) {
+	t.Parallel()
+	_, h, _, sent := approvalHarness(t)
+	for _, args := range []map[string]any{
+		{"sql": "UPDATE leads SET status = 'now' WHERE id BETWEEN 40 AND 60", "intent": "stamp"},
+		{"sql": "UPDATE leads SET status = 'Tomorrow 10:00' WHERE id BETWEEN 40 AND 60", "intent": "stamp"},
+		{"sql": "UPDATE leads SET status = $1 WHERE id BETWEEN 40 AND 60", "params": []any{"now"}, "intent": "stamp"},
+		{"sql": "UPDATE leads SET status = $1 WHERE id BETWEEN 40 AND 60", "params": []any{"today"}, "intent": "stamp"},
+	} {
+		body, isError := h.call(t, "write", args)
+		requireToolError(t, body, isError, "STATEMENT_REFUSED", "NOT_REPEATABLE", "")
+		require.Contains(t, body["message"], "parameter")
+	}
+	require.Empty(t, sent.sent)
+}
+
 func TestHeldWriteOverFiftyRowsRefused(t *testing.T) {
 	t.Parallel()
 	_, h, _, sent := approvalHarness(t)

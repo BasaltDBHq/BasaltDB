@@ -258,6 +258,8 @@ func runService(ctx context.Context, args []string, io stdio) int {
 	if cfg, err := config.LoadNoFollow(*configPath); err == nil {
 		spec.MemoryMB = cfg.PIIOrDefault().MaxMemoryMB
 	}
+	// lock is the config lock basalt service install --agent holds.
+	var lock *config.HeldLock
 	if action == "install" && a.name != "" {
 		if len(a.personUIDs) == 0 && os.Getenv(envSudoUID) != "" {
 			uid, err := parseUID(os.Getenv(envSudoUID))
@@ -268,6 +270,15 @@ func runService(ctx context.Context, args []string, io stdio) int {
 		}
 		if !*dryRun {
 			a.report = func(v config.VaultWritten) { _, _ = fmt.Fprint(io.err, a.vaultChoice().line(v)) }
+			// Hold the config lock from reading engine.json until the new
+			// one is in place, as every config writer does; the lock file
+			// goes to the engine's user (CONTRACT.md, Lock files).
+			held, err := config.LockConfigAs(*configPath, service.LookupUID(*user))
+			if err != nil {
+				return fail(io.err, "service", err)
+			}
+			defer held.Release()
+			lock = &held
 		}
 		spec, err = agentSpecFromStdin(io.in, spec, a, *credStdin, *dryRun)
 		if err != nil {
@@ -285,6 +296,12 @@ func runService(ctx context.Context, args []string, io stdio) int {
 	}
 	if err := service.Settle(service.Apply(ctx, sys, steps, *dryRun, io.out), sys, runtime.GOOS); err != nil {
 		return fail(io.err, "service", err)
+	}
+	// The install may have just made the engine's user.
+	if lock != nil {
+		if err := lock.HandTo(service.LookupUID(*user)); err != nil {
+			return fail(io.err, "service", fmt.Errorf("give %s.lock to %s: %w", *configPath, *user, err))
+		}
 	}
 	return exitOK
 }

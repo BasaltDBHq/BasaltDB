@@ -17,18 +17,92 @@ import (
 // holds.
 var ErrLocked = errors.New("locked")
 
+// LockUnusableError is a lock file this process cannot open or use: wrong
+// permissions or owner (one a root process left behind), or not a regular
+// file with one link. Retrying does not help; the engine reports it
+// (CONTRACT.md, On the engine, Lock files).
+type LockUnusableError struct {
+	Path string
+	Err  error
+}
+
+func (e *LockUnusableError) Error() string {
+	return fmt.Sprintf("lock %s: %v", e.Path, e.Err)
+}
+
+func (e *LockUnusableError) Unwrap() error { return e.Err }
+
+// rootUID is the superuser's uid.
+const rootUID = 0
+
+// dirOwner hands a lock file root creates to the owner of its directory.
+const dirOwner = -1
+
 // LockFile takes an exclusive advisory lock on path (created FileMode,
 // never through a symlink, never blocking on a FIFO, and only on a regular
 // file with one link) and returns its release. It does not wait: a lock
 // held elsewhere is ErrLocked. basalt init --remote and the engine take the
 // same lock, <credentialFile>.lock, before they change an agent's
-// credential or its pending setup.
+// credential or its pending setup. A process running as root hands a lock
+// file it creates, or finds owned by root, to the owner of its directory
+// when that owner is not root, so the engine's user can always open it. A
+// lock file that cannot be opened or used is a *LockUnusableError.
 func LockFile(path string) (func(), error) {
+	f, err := lockOpen(path, dirOwner)
+	if err != nil {
+		return nil, err
+	}
+	return HeldLock{f: f}.Release, nil
+}
+
+// HeldLock is a lock this process holds, on its open file.
+type HeldLock struct{ f *os.File }
+
+// Release unlocks and closes it.
+func (h HeldLock) Release() {
+	_ = syscall.Flock(int(h.f.Fd()), syscall.LOCK_UN)
+	_ = h.f.Close()
+}
+
+// HandTo gives the lock file to uid when this process is root and the file
+// is still root's: basalt service install calls it once the install made
+// the engine's user, which may not exist when the lock is taken.
+func (h HeldLock) HandTo(uid int) error {
+	fi, err := h.f.Stat()
+	if err != nil {
+		return err
+	}
+	return handToOwner(h.f, fi, uid)
+}
+
+// LockConfigAs is the config-wide lock (<config>.lock) for a root process
+// that writes the config for the engine's user uid (basalt service
+// install), waiting as every config writer does. A root-owned lock file is
+// handed to uid (to its directory's owner while uid is unknown, < 0);
+// HandTo hands it over again once the user exists.
+func LockConfigAs(path string, uid int) (HeldLock, error) {
+	var held HeldLock
+	_, err := waitLock(func() (func(), error) {
+		f, err := lockOpen(path+".lock", uid)
+		if err != nil {
+			return nil, err
+		}
+		held = HeldLock{f: f}
+		return held.Release, nil
+	})
+	return held, err
+}
+
+// lockOpen opens and locks path, handing a root-owned file to owner.
+func lockOpen(path string, owner int) (*os.File, error) {
 	if err := os.MkdirAll(filepath.Dir(path), dirMode); err != nil {
 		return nil, err
 	}
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, FileMode)
 	if err != nil {
+		if errors.Is(err, os.ErrPermission) || errors.Is(err, syscall.ELOOP) {
+			return nil, &LockUnusableError{Path: path, Err: err}
+		}
 		return nil, fmt.Errorf("lock %s: %w", path, err)
 	}
 	fi, err := f.Stat()
@@ -37,16 +111,17 @@ func LockFile(path string) (func(), error) {
 	}
 	if err != nil {
 		_ = f.Close()
+		return nil, &LockUnusableError{Path: path, Err: err}
+	}
+	if err := handToOwner(f, fi, owner); err != nil {
+		_ = f.Close()
 		return nil, fmt.Errorf("lock %s: %w", path, err)
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		_ = f.Close()
 		return nil, fmt.Errorf("lock %s: %w", path, ErrLocked)
 	}
-	return func() {
-		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
-		_ = f.Close()
-	}, nil
+	return f, nil
 }
 
 // configLockWait is how long a config write waits for another to finish:
@@ -61,14 +136,59 @@ const configLockPoll = 20 * time.Millisecond
 // configLockWait for another writer. Lock order: an agent's lock first,
 // then this one.
 func lockConfig(path string) (func(), error) {
+	return waitLock(func() (func(), error) { return LockFile(path + ".lock") })
+}
+
+// waitLock retries lock while another holder has it, up to
+// configLockWait.
+func waitLock(lock func() (func(), error)) (func(), error) {
 	deadline := time.Now().Add(configLockWait)
 	for {
-		unlock, err := LockFile(path + ".lock")
+		unlock, err := lock()
 		if !errors.Is(err, ErrLocked) || time.Now().After(deadline) {
 			return unlock, err
 		}
 		time.Sleep(configLockPoll)
 	}
+}
+
+// handToOwner gives the open lock file f to owner (dirOwner: the owner of
+// its directory) when this process is root and f is root's, so the
+// engine's user can open it later. Through the descriptor, never the path:
+// the directory may be the engine user's.
+func handToOwner(f *os.File, fi os.FileInfo, owner int) error {
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return nil
+	}
+	dirUID := -1
+	if owner < 0 {
+		dir, err := os.Stat(filepath.Dir(f.Name()))
+		if err != nil {
+			return err
+		}
+		if ds, ok := dir.Sys().(*syscall.Stat_t); ok {
+			dirUID = int(ds.Uid)
+		}
+	}
+	uid, chown := lockHandOver(os.Geteuid(), int(st.Uid), dirUID, owner)
+	if !chown {
+		return nil
+	}
+	return f.Chown(uid, -1)
+}
+
+// lockHandOver decides who a lock file goes to: only a root process hands
+// one over, only a file root owns, to owner, or to the directory's owner
+// (dirUID) when owner is unknown (< 0), and never to root.
+func lockHandOver(procUID, fileUID, dirUID, owner int) (int, bool) {
+	if procUID != rootUID || fileUID != rootUID {
+		return 0, false
+	}
+	if owner < 0 {
+		owner = dirUID
+	}
+	return owner, owner > rootUID
 }
 
 // ReadOwnCredential reads a credential file this process's user owns: a

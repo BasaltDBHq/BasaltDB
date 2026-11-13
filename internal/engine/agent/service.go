@@ -163,6 +163,9 @@ type Service struct {
 	setup   *config.Setup
 	// notRecorded is the held calls' cache of a setup not recorded yet.
 	notRecorded setupCache
+	// lockTrouble is a lock file the engine could not open while finishing
+	// a setup (problem LOCK_FILE_UNUSABLE).
+	lockTrouble lockTrouble
 	// rescopes are the reverts the person rescoped through this engine,
 	// in memory only (CONTRACT.md, Rescope, widen and reject).
 	rescopes *rescopes

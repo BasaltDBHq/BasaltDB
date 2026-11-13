@@ -67,7 +67,7 @@ func TestLargePlanLoopDrivenOnlyByTheSteps(t *testing.T) {
 
 		if link := openLinkWithURL(t, body); link != "" && !signed {
 			id, secret := str(t, body["revertId"]), links.SecretOf(link)
-			relayed := p.relayLater(id, secret, p.signRevertPage(id, secret, e.person))
+			relayed := p.relayLater(id, secret, p.signRevertPage(id, secret, e.person), nil)
 			require.Equal(t, http.StatusOK, <-relayed)
 			signed = true
 		}

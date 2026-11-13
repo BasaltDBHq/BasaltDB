@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/mcp"
 )
 
 var (
@@ -382,6 +383,30 @@ func TestErrorBodyCodes(t *testing.T) {
 	require.Equal(t, contractErrorCodes(t), got)
 }
 
+// TestErrorCodesHaveDocsAnchors checks every code of CONTRACT.md's "Error
+// codes" has a section on the docs site's errors page (docs-anchors.json
+// lists the page's anchors), and that the link the server writes points at it.
+func TestErrorCodesHaveDocsAnchors(t *testing.T) {
+	t.Parallel()
+	docs := readJSON(t, "errors/docs-anchors.json")
+	raw, ok := docs["anchors"].([]any)
+	require.True(t, ok)
+	anchors := map[string]bool{}
+	for _, a := range raw {
+		s, ok := a.(string)
+		require.True(t, ok)
+		anchors[s] = true
+	}
+	page, ok := docs["page"].(string)
+	require.True(t, ok)
+	for code := range contractErrorCodes(t) {
+		url := mcp.DocsURL(code)
+		anchor := strings.ToLower(strings.ReplaceAll(code, "_", "-"))
+		require.Truef(t, anchors[anchor], "%s has no section on the docs errors page (add #%s there, then to docs-anchors.json)", code, anchor)
+		require.Equal(t, page+"#"+anchor, url)
+	}
+}
+
 // TestNextStepActions checks the next step schema's action enum is exactly
 // the actions ActorActions allows.
 func TestNextStepActions(t *testing.T) {
@@ -419,7 +444,7 @@ func TestNextStepsCatalog(t *testing.T) {
 	covered := map[string]bool{}
 	errorKeys := map[string]bool{}
 	for _, e := range catalog.Errors {
-		key := e.Code + "/" + e.Reason + "/" + e.Tool + plannedKey(e.Planned)
+		key := e.Code + "/" + e.Reason + "/" + e.Tool + scopeKey(e.Scope) + plannedKey(e.Planned)
 		require.False(t, errorKeys[key], "duplicate catalog entry %s", key)
 		errorKeys[key] = true
 		require.True(t, codes[e.Code], "catalog code %s is not in CONTRACT.md", e.Code)
@@ -590,7 +615,7 @@ func contractNextSteps(t *testing.T) (map[string]bool, map[string]bool, map[stri
 		switch table {
 		case tableErrors:
 			if m := nextStepsErrorRow.FindStringSubmatch(line); m != nil {
-				errs[m[1]+"/"+m[2]+"/"+m[3]+planned] = true
+				errs[m[1]+"/"+m[2]+"/"+m[3]+scopeKey(strings.TrimSpace(taskScope.FindString(line)))+planned] = true
 			}
 		case tableResults:
 			if m := nextStepsResultRow.FindStringSubmatch(line); m != nil {
@@ -608,6 +633,17 @@ func contractNextSteps(t *testing.T) (map[string]bool, map[string]bool, map[stri
 	require.NotEmpty(t, results, "no result next steps found in CONTRACT.md")
 	require.NotEmpty(t, problems, "no status problems found in CONTRACT.md")
 	return errs, results, problems
+}
+
+// taskScope marks a CONTRACT.md row whose Steps are for a task scope only.
+var taskScope = regexp.MustCompile(`\| Task scope:`)
+
+// scopeKey is the key suffix of an entry narrowed to a scope.
+func scopeKey(scope string) string {
+	if scope == "" {
+		return ""
+	}
+	return "/task"
 }
 
 // plannedKey marks the key of a planned catalog entry, or of a CONTRACT.md

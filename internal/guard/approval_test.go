@@ -39,14 +39,14 @@ func previewAndHold(t *testing.T, c *pgx.Conn, in guard.Intent, stmt string, par
 	ctx := context.Background()
 	tx, err := c.Begin(ctx)
 	require.NoError(t, err)
-	require.NoError(t, guard.BeginPreview(ctx, tx, in))
+	require.NoError(t, guard.BeginPreview(ctx, tx, in, guardtest.Timeout))
 	_, err = tx.Exec(ctx, stmt, params...)
 	require.NoError(t, err)
 	lines, err := guard.PreviewLines(ctx, tx, assigned)
 	require.NoError(t, err)
 	require.NoError(t, tx.Rollback(ctx))
 	require.NotEmpty(t, lines)
-	held, err := guard.Hold(ctx, c, in, guard.HoldRequest{Statement: stmt, Params: params, Assigned: assigned, Lines: lines})
+	held, err := guard.Hold(ctx, c, in, guardtest.Timeout, guard.HoldRequest{Statement: stmt, Params: params, Assigned: assigned, Lines: lines})
 	require.NoError(t, err)
 	return held, lines
 }
@@ -54,7 +54,7 @@ func previewAndHold(t *testing.T, c *pgx.Conn, in guard.Intent, stmt string, par
 // applyApproved runs stmt under the approval as the engine does.
 func applyApproved(ctx context.Context, c *pgx.Conn, in guard.Intent, id uuid.UUID, stmt string, params []any) error {
 	return pgx.BeginFunc(ctx, c, func(tx pgx.Tx) error {
-		if err := guard.BeginApproved(ctx, tx, in, id); err != nil {
+		if err := guard.BeginApproved(ctx, tx, in, guardtest.Timeout, id); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, stmt, params...); err != nil {
@@ -94,7 +94,7 @@ func TestApprovalFlow(t *testing.T) {
 
 	requireCode(t, applyApproved(context.Background(), a.Conn, in, uuid.Must(uuid.NewV7()), stmt, params), guard.CodeApprovalInvalid)
 	err := pgx.BeginFunc(context.Background(), a.Conn, func(tx pgx.Tx) error {
-		if err := guard.BeginGuarded(context.Background(), tx, in); err != nil {
+		if err := guard.BeginGuarded(context.Background(), tx, in, guardtest.Timeout); err != nil {
 			return err
 		}
 		_, err := tx.Exec(context.Background(), stmt, params...)
@@ -338,13 +338,13 @@ func TestHoldValidation(t *testing.T) {
 		{"duplicate assigned columns", in, []string{"a", "a"}, []string{line(1)}},
 	}
 	for _, tc := range cases {
-		_, err := guard.Hold(context.Background(), a.Conn, tc.in, guard.HoldRequest{Statement: "DELETE FROM public.leads", Assigned: tc.assigned, Lines: tc.lines})
+		_, err := guard.Hold(context.Background(), a.Conn, tc.in, guardtest.Timeout, guard.HoldRequest{Statement: "DELETE FROM public.leads", Assigned: tc.assigned, Lines: tc.lines})
 		requireCode(t, err, guard.CodeLedgerInputInvalid)
 	}
 
 	// preview_lines only in a preview.
 	err := pgx.BeginFunc(context.Background(), a.Conn, func(tx pgx.Tx) error {
-		if err := guard.BeginGuarded(context.Background(), tx, in); err != nil {
+		if err := guard.BeginGuarded(context.Background(), tx, in, guardtest.Timeout); err != nil {
 			return err
 		}
 		_, err := guard.PreviewLines(context.Background(), tx, nil)

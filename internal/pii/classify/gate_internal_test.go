@@ -145,7 +145,7 @@ func TestPhonesInAnyFillerAreNeverPublic(t *testing.T) {
 		func(i int) string { return "A-" + strconv.Itoa(100+i%50) },
 		func(i int) string { return "-" + strconv.Itoa(i%300) + ".5" },
 	}
-	for range 120 {
+	for range sized(120, 15) {
 		n := 10 + rng.IntN(200)
 		phonesN := max(1, (n*(10+rng.IntN(91))+99)/100)
 		values := make([]string, 0, n)

@@ -279,12 +279,14 @@ func TestAStoredCompactIBANMatchesTheSpacedForm(t *testing.T) {
 	}
 }
 
-// PT-10 (provisional): a single common word is a name after a title, or when
-// it is capitalized and does not start a sentence. The full-name rule stays.
-func TestCommonWordNameCues(t *testing.T) {
+// Detection is deterministic (owner decision DD-1): a stored one-word name
+// that is also a common word is never tokenized alone in free text, whatever
+// stands around it, while a stored full name is, and so is a stored name
+// that is no common word.
+func TestCommonWordNamesAreNeverGuessed(t *testing.T) {
 	k := newKeys(t, testMaster)
 	d := newMapDict()
-	for _, v := range []string{"Price", "Brown", "Hope", "Green"} {
+	for _, v := range []string{"Price", "Brown", "Hope", "Green", "Rose", "Iman Tumorang", "Tumorang"} {
 		d.add(k, pii.EntityPersonName, v)
 	}
 	tz := pii.NewTokenizer(k, "", append(pii.PatternDetectors(), pii.NewDictionaryDetector(k, d, ""))...)
@@ -292,25 +294,46 @@ func TestCommonWordNameCues(t *testing.T) {
 		in    string
 		names []string
 	}{
-		{"Price called", nil}, // starts a sentence: no sign it is a name (Known limits)
+		{"note: Rose called about the invoice", nil},
+		{"note: Iman Tumorang called about the invoice", []string{"Iman Tumorang"}},
+		{"note: Tumorang, Iman called", []string{"Tumorang, Iman"}},
+		{"ask Tumorang about it", []string{"Tumorang"}},
+		{"Price called", nil},
 		{"the price went up", nil},
-		{"We said so. Price called back.", nil},
-		{"Mr. Brown called", []string{"Brown"}},
-		{"mr brown called", []string{"brown"}},
-		{"Dr Hope is in", []string{"Hope"}},
-		{"ask Hope about it", []string{"Hope"}},
-		{"I met Green and Brown", []string{"Green", "Brown"}},
-		{"a green door, a brown fox", nil},
-		{"\"Hope\" is a film", nil},
+		{"Mr. Brown called", nil},
+		{"Dr Hope is in", nil},
+		{"Bapak Brown datang", nil},
+		{"Dear Rose,", nil},
+		{"ask Hope about it", nil},
+		{"I met Green and Brown", nil},
+		{"Hope Green", nil},
+		{`{"first_name":"Hope"}`, nil},
+		{"Total Price", nil},
+		{"| Price | Qty |", nil},
+		{"## Price", nil},
 	}
 	for _, c := range cases {
 		out, reps := tokenize(t, tz, c.in)
-		require.Len(t, reps, len(c.names), c.in)
+		require.Len(t, reps, len(c.names), "%q", c.in)
 		for i, n := range c.names {
-			require.Equal(t, n, c.in[reps[i].Start:reps[i].End], c.in)
+			require.Equal(t, n, c.in[reps[i].Start:reps[i].End], "%q", c.in)
 		}
 		again, more := tokenize(t, tz, out)
-		require.Empty(t, more, c.in)
-		require.Equal(t, out, again, c.in)
+		require.Empty(t, more, "%q", c.in)
+		require.Equal(t, out, again, "%q", c.in)
 	}
+}
+
+// A common-word value is still masked in its own classified column: the
+// column's value is tokenized as a whole, without detection, and is in the
+// dictionary.
+func TestACommonWordColumnValueIsStillMasked(t *testing.T) {
+	k := newKeys(t, testMaster)
+	d := newMapDict()
+	d.add(k, pii.EntityPersonName, "Rose")
+	tok, err := k.MakeToken(pii.EntityPersonName, "Rose", "")
+	require.NoError(t, err)
+	require.NotContains(t, tok.Surface(), "Rose")
+	require.True(t, d.Contains(pii.EntityPersonName, k.TypedHash(pii.EntityPersonName, "Rose", "")))
+	require.True(t, pii.IsCommonWord("Rose"))
 }

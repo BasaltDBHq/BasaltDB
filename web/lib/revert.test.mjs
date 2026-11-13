@@ -24,7 +24,7 @@ import {
   rowsHash,
 } from "./codec.js";
 // Imported before any document exists, so the page's main() does not run.
-import { rowTable } from "./revert.js";
+import { agentTag, rowTable } from "./revert.js";
 
 const fixtures = JSON.parse(
   readFileSync(new URL("../../internal/revert/testdata/fixtures.json", import.meta.url), "utf8"),
@@ -300,4 +300,27 @@ test("the row table shows After revert for a restored row and not for a skipped 
   const shown = skipped.rows.flatMap((r) => r.cells);
   assert.ok(shown.includes("Edited by a person"));
   assert.ok(!shown.includes("Lead 7"), "the value the revert would have written is not shown");
+});
+
+test("a changed column shows the value now struck through and the value it goes back to", async () => {
+  globalThis.document = { createElement: fakeElement };
+  const req = await parseRevertRequest("#" + fixtures.request.fragment);
+  const table = rowTable(req.lines[2]);
+  const status = table.children.slice(1).find((r) => r.children[0].textContent === "status");
+  assert.deepEqual(status.children.map((c) => c.className), ["col", "now", "back"]);
+  const same = table.children.slice(1).find((r) => r.className === "");
+  assert.deepEqual(same.children.map((c) => c.className), ["col", "", ""]);
+});
+
+test("a row from another agent than the requester is tagged amber", () => {
+  globalThis.document = { createElement: fakeElement };
+  const own = agentTag({ role: "basalt_agent_bot", other: false });
+  assert.equal(own.className, "ag");
+  assert.equal(own.textContent, "bot");
+  assert.equal(own.title, "basalt_agent_bot");
+  const other = agentTag({ role: "basalt_agent_sync", other: true });
+  assert.equal(other.className, "ag other");
+  assert.equal(other.textContent, "sync");
+  // A role name is shown as text with its hidden characters escaped.
+  assert.equal(agentTag({ role: "basalt_agent_a‮b", other: true }).textContent, "a<U+202E>b");
 });

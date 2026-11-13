@@ -53,6 +53,7 @@ const (
 	versionTriggerAlways            // guard triggers fire under any session_replication_role
 	versionPIIUsage                 // EV-14: a PII column needs USAGE on its schema
 	versionOneClock                 // the person's acts recorded on the wall clock; search_path on every routine
+	versionRevealRevert             // HR-1: the person reveals a revert's redacted lines with a passkey proof
 )
 
 // migrations lists every version in order. M2 appends versions.
@@ -85,6 +86,7 @@ var migrations = []migration{
 	{version: versionTriggerAlways, sql: v26Triggers},
 	{version: versionPIIUsage, sql: v27PIISchemaUsage},
 	{version: versionOneClock, sql: v28RecordedTimes + v28SearchPath},
+	{version: versionRevealRevert, sql: v29RevealRevert},
 }
 
 // LatestVersion is the basalt_meta version this build installs.

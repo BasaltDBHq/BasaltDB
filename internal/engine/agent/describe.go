@@ -355,9 +355,9 @@ func (s *Service) notGrantedSteps(b *Steps, notGranted int) string {
 	command := s.Commands.Access()
 	b.RunCommand(command, "Run this to list the tables the agent cannot read, with the basalt init flag that would grant each.")
 	b.TellAgent("Tell the agent when you grant it a table it needs.")
-	return fmt.Sprintf("%d %s in this database %s not granted to the agent, so it cannot see %s. "+
+	return fitMessage(fmt.Sprintf("%d %s in this database %s not granted to the agent, so it cannot see %s. "+
 		"To list the tables the agent cannot read, run: %s",
-		notGranted, plural(notGranted, "table", "tables"), plural(notGranted, "is", "are"), plural(notGranted, "it", "them"), command)
+		notGranted, plural(notGranted, "table", "tables"), plural(notGranted, "is", "are"), plural(notGranted, "it", "them"), command), command)
 }
 
 func plural(n int, one, many string) string {
@@ -383,8 +383,8 @@ func (s *Service) describeNotFoundSteps(b *Steps, f failure) string {
 	command := s.Commands.Access()
 	b.RunCommand(command, "Run this to list the tables the agent cannot read, with the basalt init flag that would grant each.")
 	b.TellAgent("Tell the agent when it has the access, or which table to use instead.")
-	return "The agent asked for a table it cannot see: it does not exist, or the agent may not read it. " +
-		"To list the tables the agent cannot read, run: " + command
+	return fitMessage("The agent asked for a table it cannot see: it does not exist, or the agent may not read it. "+
+		"To list the tables the agent cannot read, run: "+command, command)
 }
 
 // searchTerm is the search for a resource not found: its table name.

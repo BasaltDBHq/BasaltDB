@@ -18,7 +18,7 @@ BasaltDB is **the action ledger for AI agents on your database**. It is not a da
 ```
 cmd/basalt     the one binary
 internal/      engine, guard install, MCP transport, CLI internals
-pkg/           shared libraries (apperrors, uniqueid, pagination, …)
+pkg/           shared libraries (uniqueid, pagination, …)
 docs/redesign  specs, plans and decisions
 scripts/       release and packaging scripts
 ```
@@ -80,7 +80,7 @@ Read **this file before implementing**; do not introduce conventions that confli
 - **No `else` by default.** Set the default first and override in an `if`, or return early. Prefer `switch` over if/else-if chains. `else` only when there is no clean alternative. Enforced via revive (`early-return`, `indent-error-flow`, `superfluous-else`).
 - MCP tool handlers and CLI commands: **parse → validate → one service call → map DTO → render**. No business logic and no repos in handlers.
 - Constructors panic on nil required deps; optional deps get a no-op implementation; no `if x != nil` guards at call sites.
-- One shared **`AppError`** (`pkg/apperrors`: NotFound, BadRequest, Conflict, Forbidden, Validation); handlers return mapped errors; one central place maps them to MCP tool errors and CLI exit codes.
+- Errors that an agent or the person must act on follow the actionable-errors contract above: a stable code, `nextSteps` and, when needed, `personMessage`, with the entry in `api/mcp/errors/next-steps.json`. There is no shared error type.
 - Struct-tag validation (go-playground/validator) over inline checks.
 - Consumer-defined interfaces in the package that uses them.
 - Determinism: anything time-based takes `now func() time.Time`.
@@ -96,10 +96,10 @@ Read **this file before implementing**; do not introduce conventions that confli
 
 ## Testing
 
-- `testing` + **testify/require**; mocks via **mockery v3** (`.mockery.yml`, `make mocks`), no hand-written testify/mock.
+- `testing` + **testify/require**; non-storage dependencies are replaced by small in-repo fakes (`guardtest`, `vaulttest`, `passkeytest`, `pagetest`, `mcptest`), not generated or testify mocks. mockery v3 is configured (`.mockery.yml`, `make mocks`) but generates nothing yet and is not installed by `make deps`; `make mocks` installs it on first use.
 - Guard, ledger and catalog code is tested against a **real Postgres** (`BASALTDB_TEST_POSTGRES_URL`; locally a Docker container). Tests create their own schema or database and clean up. Mocks only for non-storage deps.
 - Security properties (agent cannot approve, cannot write without intent, cannot bypass row limits) get explicit tests that run as the agent role.
-- **`-race`** on every test run.
+- **`-race`** on every test run. Exhaustive loops in `internal/pii` (the million-value dictionary, every NFKC and ignorable character, the false-positive tour) run sampled or smaller by default; `BASALTDB_TEST_FULL=1 go test -race ./internal/pii/...` runs them at full size (slow: run it before changing the tokenizer, dictionary or normalizer). `.github/workflows/nightly-full.yml` runs that command every night and on demand (workflow_dispatch); a failure fails the scheduled run. A package that adopts the flag is added to that job.
 
 ## Tooling
 

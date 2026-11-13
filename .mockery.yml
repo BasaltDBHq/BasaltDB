@@ -1,3 +1,4 @@
-# mockery v3 (`make mocks`). Add consumer-defined interfaces for non-storage
-# deps here as M1 introduces them; storage code is tested against real Postgres.
+# mockery v3 (`make mocks`, which installs it on demand; `make deps` does not).
+# Nothing is generated today. Add consumer-defined interfaces for non-storage
+# deps here as they appear; storage code is tested against real Postgres.
 packages: {}

@@ -173,8 +173,11 @@ func TestQueryKeepsRepeatedColumnNames(t *testing.T) {
 // SIZE_LIMIT, and the agent's connections keep working after it.
 func TestQuerySizeLimit(t *testing.T) {
 	t.Parallel()
-	_, agentURL := testDB(t)
+	adminURL, agentURL := testDB(t)
 	h := newHarness(t, agentURL, sqlguard.DefaultLimits())
+	admin, err := pgdial.Connect(context.Background(), adminURL)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = admin.Close(context.Background()) })
 	nulls := make([]string, 0, wideColumns)
 	for i := range wideColumns {
 		nulls = append(nulls, fmt.Sprintf("NULL c%d", i))
@@ -183,10 +186,18 @@ func TestQuerySizeLimit(t *testing.T) {
 		"many rows":   "SELECT repeat('x', 1048576) FROM generate_series(1, 17) g",
 		"one value":   "SELECT repeat('x', 20000000) AS big",
 		"wide, NULLs": "SELECT " + strings.Join(nulls, ", ") + " FROM generate_series(1, 1000) g",
-		"escapes":     "SELECT repeat(chr(1), 3000000) AS ctl",
+		// JSON escapes these, and the MCP text escapes the backslash again:
+		// 2.7 million bytes make an 18 MiB line the shim would refuse.
+		"control bytes":  "SELECT repeat(chr(1), 2700000) AS ctl",
+		"angle brackets": "SELECT repeat('<', 2700000) AS lt",
 	} {
 		body, isError := h.query(t, map[string]any{"sql": sql})
 		requireToolError(t, body, isError, agent.CodeQueryTimeout, agent.ReasonSizeLimit, "")
+		var refused int
+		require.NoError(t, admin.QueryRow(context.Background(),
+			`SELECT count(change_id)::int FROM basalt_meta.changes
+			 WHERE status = 'REFUSED' AND code = 'QUERY_TIMEOUT' AND statement = $1`, sql).Scan(&refused))
+		require.Equal(t, 1, refused, "%s: the refused read is in the ledger", name)
 		body, isError = h.query(t, map[string]any{"sql": "SELECT 1 AS one"})
 		require.False(t, isError, "%s: the next query works: %v", name, body)
 	}

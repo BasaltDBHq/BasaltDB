@@ -273,9 +273,11 @@ func runText(ctx context.Context, tx pgx.Tx, sql string, params []any, limit, ex
 // NULLs is bounded like one of long values.
 const valueOverhead = 128
 
-// jsonEscapeCost is the most bytes JSON adds for one byte it escapes
-// (\u00XX for a control byte, or for <, > and & as Go encodes them).
-const jsonEscapeCost = 5
+// jsonEscapeCost is the most bytes JSON adds for one byte it escapes: a
+// control byte, <, > or & becomes \u00XX, and the result is JSON again as
+// the text of the MCP content, where the backslash doubles (\\u00XX): 7
+// bytes for 1.
+const jsonEscapeCost = 6
 
 // rowOverhead is the fixed cost of a row of the result: valueOverhead per
 // column, version columns included, plus each visible column's name, which

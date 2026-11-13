@@ -83,7 +83,7 @@ func (f failure) arg(name string) string {
 // bare. A body that already carries its steps (built where the engine
 // knows the link or the ledger row) keeps them.
 func (s *Service) Failure(tool string, args map[string]any, err error) *mcp.ToolError {
-	te := ToolError(err)
+	te := messageTooLarge(tool, err, ToolError(err))
 	if te.Code == CodeInternal || te.Code == CodeUnavailable {
 		if te.ErrorID == "" {
 			te.ErrorID = uniqueid.New()
@@ -112,7 +112,7 @@ func (s *Service) addGuidance(te *mcp.ToolError, f failure) {
 		}
 		te.NextSteps = steps
 		if te.PersonMessage == "" {
-			te.PersonMessage = person
+			te.PersonMessage = fitToSteps(person, steps)
 		}
 	}
 	if err := CheckPersonMessage(te.PersonMessage); err != nil {
@@ -300,8 +300,12 @@ func queryTimeoutSteps(b *Steps, te *mcp.ToolError, f failure) {
 		b.ReviseCall(f.tool, nil, describeTimeoutText(f))
 		return
 	}
-	if te.Reason == ReasonRowLimit {
+	switch te.Reason {
+	case ReasonRowLimit:
 		b.ReviseCall(f.tool, nil, "Add a LIMIT or a narrower WHERE so the call returns fewer rows, then call it again.")
+		return
+	case ReasonSizeLimit:
+		b.ReviseCall(f.tool, nil, "Select fewer or shorter columns (for example left(col, 200)) or fewer rows so the result stays under 16 MiB, then call it again.")
 		return
 	}
 	b.ReviseCall(f.tool, nil, "Narrow the statement (a tighter WHERE, fewer joins, a LIMIT) so it finishes in time, then call it again.")

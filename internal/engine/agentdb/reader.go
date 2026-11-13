@@ -27,6 +27,28 @@ import (
 // engine's read row limit.
 var ErrRowLimit = errors.New("the query returned more rows than the read row limit")
 
+// ErrSizeLimit is a read canceled because its result came to more than
+// MaxResultBytes (resultCost; CONTRACT.md, QUERY_TIMEOUT SIZE_LIMIT).
+var ErrSizeLimit = fmt.Errorf("the query result is larger than %d MiB", MaxResultBytes>>mibShift)
+
+// MaxResultBytes bounds what one result costs the engine, summed over its
+// rows (resultCost): the 16 MiB the shim accepts in one line. The engine
+// stops reading there.
+const MaxResultBytes = 16 << mibShift
+
+// mibShift turns bytes into MiB.
+const mibShift = 20
+
+// maxMessageBytes bounds one message from Postgres on an agent connection
+// (pgx MaxProtocolMessageBodyLen): a row of MaxResultBytes of values plus
+// its framing (a length per column). pgx refuses a longer message before it
+// reads its body, so a row too large for a result is never buffered.
+const maxMessageBytes = MaxResultBytes + messageSlack
+
+// messageSlack covers a row message's framing: 2 bytes for the column
+// count and 4 per column, for at most Postgres's 1664 result columns.
+const messageSlack = 64 << 10
+
 // Column is one result column.
 type Column struct {
 	Name string
@@ -223,12 +245,17 @@ func runText(ctx context.Context, tx pgx.Tx, sql string, params []any, limit, ex
 	cols := columns(tx.Conn().TypeMap(), fds[:visible])
 	out := []map[string]any{}
 	var extras [][][]byte
+	size, perRow := 0, rowOverhead(cols, len(fds))
 	for rows.Next() {
 		if len(out) == limit {
 			cancel()
 			return nil, nil, nil, ErrRowLimit
 		}
 		raw := rows.RawValues()
+		if size += perRow + valuesCost(raw); size > MaxResultBytes {
+			cancel()
+			return nil, nil, nil, ErrSizeLimit
+		}
 		out = append(out, rowValues(cols, fds, raw))
 		if extra > 0 {
 			extras = append(extras, cloneRaw(raw[visible:]))
@@ -238,6 +265,44 @@ func runText(ctx context.Context, tx pgx.Tx, sql string, params []any, limit, ex
 		return nil, nil, nil, err
 	}
 	return cols, out, extras, nil
+}
+
+// valueOverhead is what one value costs the engine beyond its bytes: its
+// map entry and Go value in the row, and its key, quotes and comma in the
+// JSON answer. A NULL or empty value costs it too, so a wide result of
+// NULLs is bounded like one of long values.
+const valueOverhead = 128
+
+// jsonEscapeCost is the most bytes JSON adds for one byte it escapes: a
+// control byte, <, > or & becomes \u00XX, and the result is JSON again as
+// the text of the MCP content, where the backslash doubles (\\u00XX): 7
+// bytes for 1.
+const jsonEscapeCost = 6
+
+// rowOverhead is the fixed cost of a row of the result: valueOverhead per
+// column, version columns included, plus each visible column's name, which
+// the JSON answer repeats in every row.
+func rowOverhead(cols []Column, n int) int {
+	cost := n * valueOverhead
+	for _, c := range cols {
+		cost += len(c.Name)
+	}
+	return cost
+}
+
+// valuesCost is the bytes of a row's values, with what JSON adds for the
+// bytes it escapes.
+func valuesCost(raw [][]byte) int {
+	n := 0
+	for _, v := range raw {
+		n += len(v)
+		for _, b := range v {
+			if b < ' ' || b == '"' || b == '\\' || b == '<' || b == '>' || b == '&' {
+				n += jsonEscapeCost
+			}
+		}
+	}
+	return n
 }
 
 // cloneRaw copies raw values, which pgx reuses for the next row.

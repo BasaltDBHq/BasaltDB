@@ -608,11 +608,12 @@ func keepOrReplaceCredential(c *cliIO, f initFlags, role string) (bool, error) {
 }
 
 // credentialPaths are where the engine setup reads the agent's credential:
-// the given or system path, and the person's own config directory when
-// init may still choose the foreground engine there (perUserPaths).
+// the given or system path, and, unless paths were given, the person's own
+// config directory, where a foreground engine keeps it (perUserPaths; with
+// --no-service too).
 func credentialPaths(c *cliIO, f initFlags) []string {
 	paths := []string{f.credFile}
-	if f.noService || f.pathsGiven {
+	if f.pathsGiven {
 		return paths
 	}
 	if pf, err := perUserPaths(c, f); err == nil && pf.credFile != f.credFile {

@@ -86,3 +86,25 @@ func TestInitRerunWithoutCredentialRefusedKeepsThePassword(t *testing.T) {
 	require.Contains(t, r.stderr, "pass --yes")
 	require.True(t, logsIn(t, old), "nothing changed")
 }
+
+// A foreground engine keeps its credential in the person's config
+// directory: a re-run with --no-service finds it there and keeps the
+// password the running engine uses.
+func TestInitRerunNoServiceKeepsThePerUserCredential(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	h := newFakeHost(t)
+	r := initRun(t, d, h, "linux", false, "", "--yes", "--no-service")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	cred := filepath.Join(h.configDir, perUserDirName, "agents", "bot.url")
+	before, err := os.ReadFile(cred)
+	require.NoError(t, err)
+
+	r = initRun(t, d, h, "linux", false, "", "--yes", "--no-service")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.NotContains(t, r.stderr, "is missing")
+	after, err := os.ReadFile(cred)
+	require.NoError(t, err)
+	require.Equal(t, string(before), string(after), "the credential is kept")
+	require.True(t, logsIn(t, strings.TrimSpace(string(before))), "the password is kept")
+}

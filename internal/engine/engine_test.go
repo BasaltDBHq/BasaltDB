@@ -139,22 +139,39 @@ func TestShimRelaysToTheAgentsSocket(t *testing.T) {
 	require.Contains(t, callThroughShim(t, other.SocketPath), `\"agent\": \"other\"`)
 }
 
-func TestConnectionFromAnotherOSUserIsClosed(t *testing.T) {
+func TestConnectionFromAnotherOSUserIsRefused(t *testing.T) {
 	t.Parallel()
 	dir := shortDir(t)
 	bot := agent("bot", dir, myUID()+1)
 	startEngine(t, bot)
 
+	// The engine answers one refusal line, null id, and runs nothing.
 	conn, err := net.Dial("unix", bot.SocketPath)
 	require.NoError(t, err)
 	defer conn.Close()
 	_, err = conn.Write([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"whoami"}}` + "\n"))
-	if err == nil {
-		require.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
-		_, err = bufio.NewReader(conn).ReadString('\n')
+	require.NoError(t, err)
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(5*time.Second)))
+	line, err := bufio.NewReader(conn).ReadString('\n')
+	require.NoError(t, err)
+	msg := mcp.PeerRefusal([]byte(line))
+	require.Contains(t, msg, `agent "bot"`, line)
+	require.Contains(t, msg, "osUser", "it names who may use the socket")
+	require.NotContains(t, line, `"agent": "bot"`, "nothing ran")
+
+	// Through the shim: each request gets that message, never a reset, and
+	// basalt mcp ends with it.
+	var out strings.Builder
+	rctx, rcancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer rcancel()
+	err = shim.Serve(rctx, bot.SocketPath, fallback, strings.NewReader(shimRequests), &out)
+	require.ErrorContains(t, err, `agent "bot"`)
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	require.Len(t, lines, 2, "one answer per request: %s", out.String())
+	for _, l := range lines {
+		require.Contains(t, l, "osUser")
+		require.NotContains(t, l, "may or may not have run")
 	}
-	require.Error(t, err, "the engine must close the connection without answering")
-	require.NotErrorIs(t, err, os.ErrDeadlineExceeded)
 }
 
 func TestPeerCredentialFailureClosesTheConnection(t *testing.T) {

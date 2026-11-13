@@ -297,11 +297,13 @@ func writeStatus(w io.Writer, s statusOut) {
 		if p.PersonMessage != "" {
 			fmt.Fprintf(w, "      %s\n", strings.ReplaceAll(p.PersonMessage, "\n", "\n      "))
 		}
+		// A command or link the person message already names is not
+		// printed again.
 		for _, st := range p.NextSteps {
 			switch {
-			case st.Command != "":
+			case st.Command != "" && !strings.Contains(p.PersonMessage, st.Command):
 				fmt.Fprintf(w, "      Run: %s\n", st.Command)
-			case st.URL != "":
+			case st.Command == "" && st.URL != "" && !strings.Contains(p.PersonMessage, st.URL):
 				fmt.Fprintf(w, "      Open: %s\n", st.URL)
 			}
 		}

@@ -45,7 +45,7 @@ func TestGuardTriggersFireUnderReplicaRole(t *testing.T) {
 	requireCode(t, err, guard.CodeNotAllowed)
 
 	err = pgx.BeginFunc(ctx, c, func(tx pgx.Tx) error {
-		if err := guard.BeginPreview(ctx, tx, in); err != nil {
+		if err := guard.BeginPreview(ctx, tx, in, guardtest.Timeout); err != nil {
 			return err
 		}
 		_, err := tx.Exec(ctx, `UPDATE public.leads SET status = 'lost' WHERE id = 5`)

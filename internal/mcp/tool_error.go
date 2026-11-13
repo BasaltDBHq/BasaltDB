@@ -1,5 +1,7 @@
 package mcp
 
+import "strings"
+
 // ToolError is a tool failure with a stable code from CONTRACT.md, returned
 // in the tools/call result with isError set. Reason refines some codes
 // (STATEMENT_REFUSED, QUERY_TIMEOUT); SQLState is set when Postgres raised
@@ -20,6 +22,19 @@ type ToolError struct {
 	// ErrorID is set on UNAVAILABLE and INTERNAL: a UUIDv7 the engine logs
 	// with the error, for the person to find the log line.
 	ErrorID string `json:"errorId,omitempty"`
+	// DocsURL is the code's section on the public docs, set by the server
+	// when it writes the error (DocsURL).
+	DocsURL string `json:"docsUrl,omitempty"`
+}
+
+// docsErrorsPage is the public page that explains every error code, with one
+// anchor per code (CONTRACT.md, Error codes).
+const docsErrorsPage = "https://docs.basaltvault.app/reference/errors/"
+
+// DocsURL is the link to code's section on the docs site: the page plus the
+// lowercase code with underscores as hyphens (UNKNOWN_TOKEN is #unknown-token).
+func DocsURL(code string) string {
+	return docsErrorsPage + "#" + strings.ToLower(strings.ReplaceAll(code, "_", "-"))
 }
 
 // Actors and actions of a next step (api/mcp/errors/next-step.schema.json).

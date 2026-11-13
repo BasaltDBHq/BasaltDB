@@ -7,7 +7,7 @@ include ./.misc/make/help.Makefile
 # ~~~ Development ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .PHONY: deps
-deps: bin/golangci-lint bin/gotestsum bin/mockery ## Install pinned dev tools into ./bin
+deps: bin/golangci-lint bin/gotestsum ## Install pinned dev tools into ./bin
 
 PKG ?= ./...
 
@@ -18,7 +18,8 @@ fmt: ## Format with gofmt, gofumpt, goimports
 	@go run golang.org/x/tools/cmd/goimports@v0.39.0 -local github.com/basaltdbhq/basaltdb -w .
 
 .PHONY: lint
-lint: deps ## Run golangci-lint (includes formatters check)
+lint: deps ## Run golangci-lint (includes formatters check and a config check)
+	@$(GOLANGCI) config verify -c .golangci.yml
 	@$(GOLANGCI) run -c .golangci.yml ./...
 
 .PHONY: vet

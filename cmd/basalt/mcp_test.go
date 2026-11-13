@@ -39,12 +39,16 @@ func statusThroughShim(t *testing.T, configPath string) map[string]any {
 
 func TestMCPStatusReadsASameUserConfig(t *testing.T) {
 	t.Parallel()
-	dir, err := os.MkdirTemp("", "bmcp") // short: the config refuses a socket path too long to bind
+	dir := t.TempDir()
+	// The config refuses a socket path too long to bind (103 bytes), and the
+	// test temp dir can be long (a deep checkout, a long TMPDIR), so the
+	// sockets live in a short directory of their own.
+	sockDir, err := os.MkdirTemp("/tmp", "bm")
 	require.NoError(t, err)
-	t.Cleanup(func() { os.RemoveAll(dir) })
+	t.Cleanup(func() { os.RemoveAll(sockDir) })
 	cred := filepath.Join(dir, "agents", "bot.url")
 	path := filepath.Join(dir, "engine.json")
-	cfg := `{"socketDir": "` + filepath.Join(dir, "run") + `", "operatedBy": "AGENT", "mode": "SAME_USER",
+	cfg := `{"socketDir": "` + sockDir + `", "operatedBy": "AGENT", "mode": "SAME_USER",
 		"agents": [{"name": "bot", "osUser": "bot", "credentialFile": "` + cred + `", "initArgs": ["--agent=bot"]}]}`
 	require.NoError(t, os.WriteFile(path, []byte(cfg), 0o600))
 

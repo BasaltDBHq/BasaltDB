@@ -26,12 +26,16 @@ const (
 // exactly the engine's user: not root, since a hardlink to an old root-only
 // file keeps root as its owner. Checks and reads use the same descriptor.
 func openEngineFile(path, engineUser string) (*os.File, error) {
-	uid := service.LookupUID(engineUser)
+	return openOwnedFile(path, service.LookupUID(engineUser), engineUser)
+}
+
+// openOwnedFile is openEngineFile for the user uid, named who in errors.
+func openOwnedFile(path string, uid int, who string) (*os.File, error) {
 	f, err := service.OpenTrustedFile(path, uid)
 	if err != nil {
 		return nil, err
 	}
-	if err := checkEngineFile(f, uid, engineUser); err != nil {
+	if err := checkEngineFile(f, uid, who); err != nil {
 		f.Close()
 		return nil, err
 	}
@@ -59,7 +63,13 @@ func checkEngineFile(f *os.File, uid int, engineUser string) error {
 // readKeptCredential reads the agent's existing credential file as root
 // (openEngineFile), mode 0600 or tighter.
 func readKeptCredential(path, engineUser string) (string, error) {
-	f, err := openEngineFile(path, engineUser)
+	return readOwnedCredential(path, service.LookupUID(engineUser), engineUser)
+}
+
+// readOwnedCredential is readKeptCredential for the user uid, named who in
+// errors.
+func readOwnedCredential(path string, uid int, who string) (string, error) {
+	f, err := openOwnedFile(path, uid, who)
 	if err != nil {
 		return "", err
 	}

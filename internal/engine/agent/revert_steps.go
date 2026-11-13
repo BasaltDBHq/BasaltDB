@@ -367,7 +367,7 @@ func (s *Service) prepareTimeout(tool string, scope guard.RevertScope, sqlState 
 	if tool == toolPreviewRevert {
 		person, b = s.previewTimeoutSteps(scope, command, minutes)
 	}
-	te.PersonMessage = person
+	te.PersonMessage = fitMessage(person, command, s.Commands.RevertDryRun(scope))
 	steps, err := b.EndTurn(stepEndTurnPersonActsNext).Build()
 	if err != nil {
 		return err
@@ -426,9 +426,13 @@ func (s *Service) nothingToRevertError(ctx context.Context, tool string, scope g
 	}
 	if scope.Kind == revert.ScopeTask {
 		// The agent's own lines are empty, but other agents' may not be
-		// (RS-6): the person can open the page and widen to them.
-		te.PersonMessage += fmt.Sprintf(" To include other agents' changes in this task, run %s and choose them on the "+
-			"signing page.", s.Commands.Revert(scope))
+		// (RS-6): the person can open the page and widen to them. The
+		// command is a PERSON step too (the catalog's task-scope entry), so
+		// a long --config path can cut it from personMessage without losing it.
+		command := s.Commands.Revert(scope)
+		te.PersonMessage = fitMessage(te.PersonMessage+fmt.Sprintf(" To include other agents' changes in this task, run %s and choose them on the "+
+			"signing page.", command), command)
+		b.RunCommand(command, "To include other agents' changes, open the revert page and choose them.")
 	}
 	steps, err := b.Build()
 	if err != nil {

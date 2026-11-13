@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
+	"github.com/basaltdbhq/basaltdb/internal/engine/service"
 )
 
 func runArgs(args ...string) (int, string, string) {
@@ -59,13 +61,21 @@ func TestRun(t *testing.T) {
 func TestServiceUninstallDryRun(t *testing.T) {
 	t.Parallel()
 	code, stdout, stderr := runArgs("service", "uninstall", "--dry-run", "--binary", "/usr/local/bin/basalt")
+	// The plan stops the service only when its unit file is on this host.
+	installed := func(path string) bool { _, err := os.Stat(path); return err == nil }
 	switch runtime.GOOS {
 	case "linux":
 		require.Equal(t, exitOK, code, stderr)
-		require.Contains(t, stdout, "systemctl disable --now basalt-engine.service")
+		require.Contains(t, stdout, "rm -f "+service.SystemdUnitPath)
+		if installed(service.SystemdUnitPath) {
+			require.Contains(t, stdout, "systemctl disable --now basalt-engine.service")
+		}
 	case "darwin":
 		require.Equal(t, exitOK, code, stderr)
-		require.Contains(t, stdout, "launchctl bootout system/dev.basaltdb.engine")
+		require.Contains(t, stdout, "rm -f "+service.LaunchdPlist)
+		if installed(service.LaunchdPlist) {
+			require.Contains(t, stdout, "launchctl bootout system/dev.basaltdb.engine")
+		}
 	default:
 		require.Equal(t, exitError, code)
 	}

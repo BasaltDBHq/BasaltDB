@@ -70,6 +70,10 @@ type Step struct {
 	Mode os.FileMode
 	// Owner is the OS user that owns what StepWrite or StepMkdir makes.
 	Owner string
+	// BestEffort marks a step whose failure does not stop the plan: Apply
+	// names it as skipped and goes on (an uninstall's service-manager
+	// commands where no service manager runs).
+	BestEffort bool
 }
 
 // String is the step as a person reads it before it runs.
@@ -99,6 +103,9 @@ func quoteArgs(args []string) []string {
 }
 
 func run(args ...string) Step { return Step{Kind: StepRun, Args: args} }
+
+// tryRun is run with BestEffort set.
+func tryRun(args ...string) Step { return Step{Kind: StepRun, Args: args, BestEffort: true} }
 
 // mkdir is a step making a directory owned by user without following a link
 // (install -d would follow one the engine user planted).
@@ -189,9 +196,9 @@ func darwinInstall(ctx context.Context, sys System, s Spec) ([]Step, error) {
 		// The config dir stays traversable: the socket dir lives inside it,
 		// and credential files inside are 0600.
 		mkdir(openDirMode, s.User, configDir),
-		mkdir(openDirMode, s.User, config.DefaultSocketDir(goosDarwin)),
+		mkdir(runtimeDirMode, s.User, config.DefaultSocketDir(goosDarwin)),
 		mkdir(configDirMode, s.User, darwinLogDir),
-		mkdir(configDirMode, s.User, config.DefaultStateDir(goosDarwin)),
+		mkdir(darwinStateDirMode, s.User, config.DefaultStateDir(goosDarwin)),
 	)
 	steps = append(steps, fileSteps(s)...)
 	steps = append(steps, Step{Kind: StepWrite, Path: LaunchdPlist, Content: LaunchdDaemon(s)})
@@ -255,25 +262,37 @@ func PickFreeID(dsclOutput string) (int, error) {
 }
 
 // UninstallPlan returns the steps that stop the service and remove its unit.
-// The user, config and credentials stay; basalt init owns them.
-func UninstallPlan(s Spec) ([]Step, error) {
+// The user, config and credentials stay; basalt init owns them. The
+// service-manager commands are best effort, so the unit is removed even
+// where systemd or launchd does not run (a container). Without a unit file
+// the service is not installed: there is nothing to stop, so running
+// uninstall again does not fail on systemd's "Unit file does not exist" or
+// launchd's "not loaded".
+func UninstallPlan(sys System, s Spec) ([]Step, error) {
 	switch s.GOOS {
 	case goosLinux:
-		return []Step{
-			run("systemctl", "disable", "--now", SystemdUnitName),
-			{Kind: StepRemove, Path: SystemdUnitPath},
-			run("systemctl", "daemon-reload"),
-		}, nil
+		var steps []Step
+		if sys.Exists(SystemdUnitPath) {
+			steps = append(steps, tryRun("systemctl", "disable", "--now", SystemdUnitName))
+		}
+		return append(steps, Step{Kind: StepRemove, Path: SystemdUnitPath}, tryRun("systemctl", "daemon-reload")), nil
 	case goosDarwin:
-		return []Step{
-			run("launchctl", "bootout", "system/"+LaunchdLabel),
-			{Kind: StepRemove, Path: LaunchdPlist},
-		}, nil
+		var steps []Step
+		if sys.Exists(LaunchdPlist) {
+			steps = append(steps, tryRun("launchctl", "bootout", "system/"+LaunchdLabel))
+		}
+		return append(steps, Step{Kind: StepRemove, Path: LaunchdPlist}), nil
 	}
 	return nil, fmt.Errorf("the engine service installs on linux and darwin, not %s", s.GOOS)
 }
 
+// ErrStepsSkipped is Apply's error, after every step ran, when a
+// BestEffort step failed.
+var ErrStepsSkipped = errors.New("some steps were skipped")
+
 // Apply prints every step to out, then runs them in order unless dryRun.
+// A failed BestEffort step is named on out as skipped, with its error, and
+// the rest still run; Apply then returns ErrStepsSkipped.
 func Apply(ctx context.Context, sys System, steps []Step, dryRun bool, out io.Writer) error {
 	for _, st := range steps {
 		fmt.Fprintln(out, "  "+st.String())
@@ -281,12 +300,47 @@ func Apply(ctx context.Context, sys System, steps []Step, dryRun bool, out io.Wr
 	if dryRun {
 		return nil
 	}
+	var skipped []string
 	for _, st := range steps {
-		if err := applyStep(ctx, sys, st); err != nil {
+		err := applyStep(ctx, sys, st)
+		switch {
+		case err == nil:
+		case st.BestEffort:
+			fmt.Fprintf(out, "  skipped %s: %v\n", st, err)
+			skipped = append(skipped, st.String())
+		default:
 			return fmt.Errorf("%s: %w", st, err)
 		}
 	}
+	if len(skipped) > 0 {
+		return fmt.Errorf("%w: %s", ErrStepsSkipped, strings.Join(skipped, "; "))
+	}
 	return nil
+}
+
+// Settle is Apply's error as the command reports it: steps skipped where
+// no service manager runs are expected and are not an error; skipped where
+// one runs, the command fails after doing the rest.
+func Settle(err error, sys System, goos string) error {
+	if errors.Is(err, ErrStepsSkipped) && !ManagerRunning(sys, goos) {
+		return nil
+	}
+	return err
+}
+
+// systemdRunning is the directory systemd creates when it is the running
+// init system (sd_booted).
+const systemdRunning = "/run/systemd/system"
+
+// ManagerRunning reports whether the platform's service manager runs here:
+// systemd booted on Linux; launchd always runs on macOS. Where it does not
+// (a container without systemd), a skipped service-manager step is
+// expected.
+func ManagerRunning(sys System, goos string) bool {
+	if goos == goosDarwin {
+		return true
+	}
+	return sys.Exists(systemdRunning)
 }
 
 func applyStep(ctx context.Context, sys System, st Step) error {

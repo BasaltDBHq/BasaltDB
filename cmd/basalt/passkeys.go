@@ -57,13 +57,15 @@ func addAgentFlags(c *cliIO, name string) (*flag.FlagSet, agentFlags) {
 	}
 }
 
-// connect opens the agent connection the flags name.
-func (f agentFlags) connect(c *cliIO) (*pgx.Conn, error) {
-	dsn, err := agentURL(c, *f.agent, *f.credFile, *f.configPath)
+// passkeys lists the active passkeys with the agent the flags name: over
+// the person socket in service mode, else with the agent's credential.
+func (f agentFlags) passkeys(c *cliIO) ([]ledger.Passkey, error) {
+	l, err := openLedger(c, *f.agent, *f.credFile, *f.configPath)
 	if err != nil {
 		return nil, err
 	}
-	return connect(c.ctx, dsn)
+	defer l.close()
+	return l.ListPasskeys(c.ctx)
 }
 
 // passkeyDTO is one passkey in basalt passkey list --json: public data
@@ -91,12 +93,7 @@ func passkeyList(c *cliIO, args []string) int {
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
 	}
-	conn, err := af.connect(c)
-	if err != nil {
-		return c.fail(err)
-	}
-	defer conn.Close(c.ctx)
-	keys, err := ledger.ListPasskeys(c.ctx, conn)
+	keys, err := af.passkeys(c)
 	if err != nil {
 		return c.fail(err)
 	}
@@ -375,13 +372,13 @@ func passkeyCheck(c *cliIO, args []string) int {
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
 	}
-	base := strings.TrimSuffix(configuredBase(pagesURL, *af.agent, *af.configPath), "/")
-	conn, err := af.connect(c)
+	l, err := openLedger(c, *af.agent, *af.credFile, *af.configPath)
 	if err != nil {
 		return c.fail(err)
 	}
-	defer conn.Close(c.ctx)
-	keys, err := ledger.ListPasskeys(c.ctx, conn)
+	defer l.close()
+	base := strings.TrimSuffix(l.pagesBase(pagesURL), "/")
+	keys, err := l.ListPasskeys(c.ctx)
 	if err != nil {
 		return c.fail(err)
 	}

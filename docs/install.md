@@ -142,14 +142,48 @@ The result is `"status": "APPLIED"` with `"rows": 3`. A write with no intent is 
 
 A write of 11 to 50 rows, or any `DELETE`, is held. The agent shows you `Held for your approval: ...` with a `http://localhost:8787/approvals/<id>#s=...` link. Open it, check the rows, and approve with your passkey. The agent's write returns `APPLIED` on its own. If you take longer than about 90 seconds, tell the agent you approved and it applies the write. The agent cannot approve; only your passkey can. More in [`approving.md`](approving.md).
 
-**See the record and undo it.** Both commands read the agent's credential, which belongs to the engine's user, so they run as that user (`_basalt` on macOS, `basalt` on Linux). `RUN_ID` is the run id the agent returned from `run_start`.
+**See the record and undo it.** Run both as yourself, without `sudo`. You cannot read the engine's config or the agent's credential, so the commands ask the running engine over its person socket, which admits only the OS users `basalt init` recorded as the person (`--person-uid`, by default the person who ran it). `RUN_ID` is the run id the agent returned from `run_start`.
 
 ```sh
-sudo -u _basalt basalt log --agent demo_bot --run RUN_ID
-sudo -u _basalt basalt revert --agent demo_bot --run RUN_ID
+basalt log --agent demo_bot --run RUN_ID
+basalt revert --agent demo_bot --run RUN_ID
 ```
 
-`revert` prints a link to the revert page. It runs as the engine user, which has no browser session, so open the link yourself, check the rows, and sign with your passkey. The page shows a code; paste it at the `Paste the code the revert page showed:` prompt. Rows a person changed after the agent are left as they are.
+`basalt approve --agent demo_bot` works the same way. `revert` prints a link to the revert page. Open it, check the rows, and sign with your passkey. If the page shows a code, paste it at the `Paste the code the revert page showed:` prompt. Rows a person changed after the agent are left as they are.
+
+If the engine is stopped, these commands say so and print the command that starts it. If your OS user is not recorded, they print the `basalt init --person-uid` command that adds it.
+
+**When the agent runs as you.** If you leave out `--os-user`, the agent runs as your own OS user, and `basalt init` prints a warning beginning `basalt: warning: the agent runs as OS user ..., which is also the person the engine admits on its person socket`. The engine cannot tell two processes of the same OS user apart, so while you and the agent share a user:
+
+- `basalt log`, `approve` and `revert` over the socket see only this agent's ledger.
+- The agent can run these commands too. It still cannot approve a held write or sign a revert, because both need your passkey.
+
+To keep the agent off the person socket, run it as its own OS user: `basalt init --os-user <user>`.
+
+## Containers without systemd
+
+A container usually has no service manager: PID 1 is your process or a small init such as `tini`, so `basalt init` cannot install the engine service there. Run the engine as its own OS user with `basalt engine --user` instead, started as root by the container's entrypoint:
+
+```sh
+tini -- basalt engine --user basalt --config /etc/basalt/engine.json
+```
+
+Before it reads anything, the engine:
+
+1. Refuses to go on unless it runs as root or already as `basalt`, and refuses `--user root` and a user whose group, or one of whose groups, is root's (gid 0).
+2. Refuses a `basalt` binary anyone but root could change (the same check as `basalt service install`, step 1).
+3. Makes `/run/basalt` (`0755`, for the sockets) and `/var/lib/basalt` (`0700`, its state), owned by `basalt`, as the systemd unit would.
+4. Sets the supplementary groups, the group and the user to `basalt`'s, sets the umask to `0077` and, on Linux, `no_new_privs`, then checks that every thread runs as `basalt` with no capability left and that root cannot be taken back.
+
+Only then does it open `engine.json`, the agent's credential, the sockets and the pages port. Its first log line is `basalt engine: dropped root; running as basalt (uid ..., gid ...); no_new_privs set`. A failed step stops it with nothing read.
+
+**What does not apply.** The systemd unit's sandbox (`ProtectSystem`, `ProtectHome`, `PrivateTmp`, `PrivateDevices`, the kernel and cgroup protections) and its memory limits (`MemoryHigh`, `MemoryMax`, see [Engine memory](#engine-memory)) do not exist without systemd. The engine keeps `GOMEMLIMIT`; set a memory limit on the container yourself. In a container, **the OS user split is what protects the credential**: the config and the credential are `0600` files of `basalt`, and the agent must run as another OS user, best in another container that mounts only the socket directory.
+
+**Setup.** Until `basalt init` sets up a container itself, run it once as the engine's user with explicit paths, so the files it writes are that user's: `basalt init --agent NAME --os-user AGENT_USER --config /etc/basalt/engine.json --socket-dir /run/basalt ...`. The `--os-user` must exist in the engine's container with the uid the agent runs as, and `/etc/basalt` must exist, owned by `basalt`, mode `0750`. Init then prints the foreground start command; use `basalt engine --user basalt --config /etc/basalt/engine.json` as the container's command instead.
+
+[`examples/compose`](../examples/compose/README.md) is a tested `docker compose` setup: Postgres, the engine, and an agent container that shares only the socket volume.
+
+On macOS `--user` works the same way when started as root (a launchd job you write yourself), with `/Library/Application Support/Basalt/run` and `.../state` as the directories, but macOS has no `no_new_privs`. The engine runs no other program, so there is nothing for it to stop.
 
 ## If something is off
 
@@ -166,7 +200,7 @@ basalt uninstall
 sudo basalt service uninstall
 ```
 
-`basalt uninstall` asks for the admin connection string, then drops the `basalt_meta` schema, the guard's triggers and policies, and the `basalt_*` roles. `service uninstall` stops and removes the engine service. If you used the demo data, drop it too: `DROP SCHEMA basalt_demo CASCADE;`.
+`basalt uninstall` asks for the admin connection string, then drops the `basalt_meta` schema, the guard's triggers and policies, and the `basalt_*` roles. `service uninstall` stops and removes the engine service. Where `systemctl` or `launchctl` does not run (a container without systemd), it still removes the unit file and names each command it skipped. Where the service manager does run, a skipped command makes it exit with an error after it has removed the rest. Once the unit file is gone there is nothing to stop, so running it again succeeds. If you used the demo data, drop it too: `DROP SCHEMA basalt_demo CASCADE;`.
 
 ## Coming soon
 

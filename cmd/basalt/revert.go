@@ -83,6 +83,14 @@ func runRevert(c *cliIO, args []string) int {
 	if err != nil {
 		return c.fail(err)
 	}
+	if c.needsAgent(*agent, *credFile) {
+		if id, ok := f.namedRevert(); ok {
+			if *agent, err = pickAgent(c, *configPath, "revert "+id.String(), ownsRevert(c, *configPath, id)); err != nil {
+				return c.fail(err)
+			}
+			f.agent = *agent
+		}
+	}
 	l, err := openLedger(c, *agent, *credFile, *configPath)
 	if err != nil {
 		return c.fail(err)
@@ -113,6 +121,22 @@ func runRevert(c *cliIO, args []string) int {
 		return previewRevert(c, l, scope, f.asJSON)
 	}
 	return prepareRevert(c, l, scope, f)
+}
+
+// namedRevert is the revert --apply's code, --status or --reject names,
+// when one of them is given and parses.
+func (f *revertFlags) namedRevert() (uuid.UUID, bool) {
+	if f.apply != "" {
+		resp, err := revert.ParseResponse(f.apply)
+		return resp.RevertID, err == nil
+	}
+	for _, s := range []string{f.status, f.reject} {
+		if s != "" {
+			id, err := uuid.Parse(s)
+			return id, err == nil
+		}
+	}
+	return uuid.Nil, false
 }
 
 // scope is the one scope the flags name, with its runs and tables

@@ -89,14 +89,22 @@ func darwinSpec() service.Spec {
 func TestSystemdUnit(t *testing.T) {
 	t.Parallel()
 	unit := service.SystemdUnit(linuxSpec())
+	// Every directive is set once: a repeated one is at best noise.
+	seen := map[string]bool{}
+	for _, line := range strings.Split(unit, "\n") {
+		key, _, ok := strings.Cut(line, "=")
+		if !ok || strings.HasPrefix(line, "#") {
+			continue
+		}
+		require.False(t, seen[key], "directive %s set twice", key)
+		seen[key] = true
+	}
 	for _, want := range []string{
 		"User=basalt\n",
 		"Group=basalt\n",
 		"ExecStart=/usr/local/bin/basalt engine --config /etc/basalt/engine.json\n",
 		"RuntimeDirectory=basalt\n",
 		"RuntimeDirectoryMode=0755\n",
-		"StateDirectory=basalt\n",
-		"StateDirectoryMode=0700\n",
 		"StateDirectory=basalt\n",
 		"StateDirectoryMode=0700\n",
 		"UMask=0077\n",
@@ -219,18 +227,92 @@ func TestApplyStopsAtTheFirstFailure(t *testing.T) {
 func TestUninstallPlan(t *testing.T) {
 	t.Parallel()
 	sys := newFake()
-	steps, err := service.UninstallPlan(linuxSpec())
+	sys.exists[service.SystemdUnitPath] = true
+	steps, err := service.UninstallPlan(sys, linuxSpec())
 	require.NoError(t, err)
 	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &strings.Builder{}))
 	require.Equal(t, []string{"systemctl disable --now basalt-engine.service", "systemctl daemon-reload"}, sys.ran)
-	require.Equal(t, []string{service.SystemdUnitPath}, sys.removed, "a missing unit file is not an error")
+	require.Equal(t, []string{service.SystemdUnitPath}, sys.removed)
 
 	sys = newFake()
-	steps, err = service.UninstallPlan(darwinSpec())
+	sys.exists[service.LaunchdPlist] = true
+	steps, err = service.UninstallPlan(sys, darwinSpec())
 	require.NoError(t, err)
 	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &strings.Builder{}))
 	require.Equal(t, []string{"launchctl bootout system/dev.basaltdb.engine"}, sys.ran)
 	require.Equal(t, []string{service.LaunchdPlist}, sys.removed)
+}
+
+// Uninstalling again, the unit already gone: nothing to stop, so systemd's
+// "Unit file does not exist" or launchd's "not loaded" never fails it on a
+// host where the service manager runs.
+func TestUninstallAgainSucceeds(t *testing.T) {
+	t.Parallel()
+	for name, spec := range map[string]service.Spec{"linux": linuxSpec(), "darwin": darwinSpec()} {
+		sys := newFake()
+		sys.exists["/run/systemd/system"] = true
+		// Stopping a service that is not there fails, as it does for real.
+		sys.failOn = map[string]string{"linux": "systemctl disable", "darwin": "launchctl bootout"}[name]
+		steps, err := service.UninstallPlan(sys, spec)
+		require.NoError(t, err)
+		err = service.Apply(context.Background(), sys, steps, false, &strings.Builder{})
+		require.NoError(t, service.Settle(err, sys, spec.GOOS), name)
+		for _, ran := range sys.ran {
+			require.NotContains(t, ran, sys.failOn, name)
+		}
+		require.Len(t, sys.removed, 1, "a missing unit file is not an error: %s", name)
+	}
+}
+
+// Whether the service manager runs decides whether a skipped step is
+// expected: launchd always runs; systemd only when it booted the system.
+func TestManagerRunning(t *testing.T) {
+	t.Parallel()
+	sys := newFake()
+	require.True(t, service.ManagerRunning(sys, "darwin"))
+	require.False(t, service.ManagerRunning(sys, "linux"), "a container without systemd")
+	sys.exists["/run/systemd/system"] = true
+	require.True(t, service.ManagerRunning(sys, "linux"))
+}
+
+// A skipped step fails uninstall only where the service manager runs.
+func TestSettleSkippedSteps(t *testing.T) {
+	t.Parallel()
+	skipped := fmt.Errorf("%w: systemctl daemon-reload", service.ErrStepsSkipped)
+	other := errors.New("rm failed")
+	sys := newFake()
+	require.NoError(t, service.Settle(skipped, sys, "linux"), "no systemd: expected")
+	require.ErrorIs(t, service.Settle(skipped, sys, "darwin"), service.ErrStepsSkipped, "launchd runs")
+	require.ErrorIs(t, service.Settle(other, sys, "linux"), other)
+	require.NoError(t, service.Settle(nil, sys, "darwin"))
+	sys.exists["/run/systemd/system"] = true
+	require.ErrorIs(t, service.Settle(skipped, sys, "linux"), service.ErrStepsSkipped)
+}
+
+// Without a running service manager (a container without systemd) the
+// unit is still removed; the steps that failed are named as skipped.
+func TestUninstallWithoutAServiceManager(t *testing.T) {
+	t.Parallel()
+	for name, spec := range map[string]service.Spec{"linux": linuxSpec(), "darwin": darwinSpec()} {
+		sys := newFake()
+		sys.exists[service.SystemdUnitPath], sys.exists[service.LaunchdPlist] = true, true
+		sys.failOn = map[string]string{"linux": "systemctl", "darwin": "launchctl"}[name]
+		steps, err := service.UninstallPlan(sys, spec)
+		require.NoError(t, err)
+		var out strings.Builder
+		require.ErrorIs(t, service.Apply(context.Background(), sys, steps, false, &out), service.ErrStepsSkipped, name)
+		require.Empty(t, sys.ran, name)
+		require.Len(t, sys.removed, 1, "the unit file is removed: %s", name)
+		require.Contains(t, out.String(), "skipped "+sys.failOn, name)
+		require.Contains(t, out.String(), "exit status 1", name)
+	}
+
+	// An install step that fails still stops the install.
+	sys := newFake()
+	sys.failOn = "systemctl"
+	steps, err := service.InstallPlan(context.Background(), sys, linuxSpec())
+	require.NoError(t, err)
+	require.Error(t, service.Apply(context.Background(), sys, steps, false, &strings.Builder{}))
 }
 
 func TestSpecValidate(t *testing.T) {
@@ -246,7 +328,7 @@ func TestSpecValidate(t *testing.T) {
 		_, err := service.InstallPlan(context.Background(), newFake(), s)
 		require.Error(t, err, "%+v", s)
 	}
-	_, err := service.UninstallPlan(service.Spec{GOOS: "windows"})
+	_, err := service.UninstallPlan(newFake(), service.Spec{GOOS: "windows"})
 	require.Error(t, err)
 }
 
@@ -312,4 +394,24 @@ func TestInstallWritesOwnedFilesAndRestartsAnInstalledService(t *testing.T) {
 	require.Equal(t, "_basalt", sys.owners["/Library/Application Support/Basalt/agents/bot.url"])
 	require.Equal(t, "launchctl kickstart -k system/dev.basaltdb.engine", sys.ran[len(sys.ran)-1])
 	require.NotContains(t, sys.ran, "launchctl bootstrap system "+service.LaunchdPlist)
+}
+
+// basalt engine --user makes the directories a container has no service
+// manager to make, with the modes the unit gives them.
+func TestEngineDirsMatchTheUnit(t *testing.T) {
+	dirs := service.EngineDirs("linux")
+	require.Len(t, dirs, 2)
+	unit := service.SystemdUnit(service.Spec{GOOS: "linux", Binary: "/usr/local/libexec/basalt", ConfigPath: "/etc/basalt/engine.json", User: "basalt"})
+	require.Equal(t, "/run/basalt", dirs[0].Path)
+	require.Contains(t, unit, fmt.Sprintf("RuntimeDirectory=basalt\nRuntimeDirectoryMode=%04o\n", dirs[0].Mode))
+	require.Equal(t, "/var/lib/basalt", dirs[1].Path)
+	require.Contains(t, unit, fmt.Sprintf("StateDirectory=basalt\nStateDirectoryMode=%04o\n", dirs[1].Mode))
+
+	sys := newFake()
+	sys.users["_basalt"] = true
+	steps, err := service.InstallPlan(context.Background(), sys, darwinSpec())
+	require.NoError(t, err)
+	for _, d := range service.EngineDirs("darwin") {
+		require.Contains(t, steps, service.Step{Kind: service.StepMkdir, Path: d.Path, Mode: d.Mode, Owner: "_basalt"}, d.Path)
+	}
 }

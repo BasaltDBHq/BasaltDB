@@ -30,6 +30,17 @@ vet: ## go vet
 test: bin/gotestsum portal-build ## Race tests (gotestsum; builds dist/portal first so TestPortalBuildMatchesEmbed never skips)
 	@$(GOTESTSUM) --format pkgname-and-test-fails --hide-summary=skipped -- -race -count=1 -timeout 15m $(PKG)
 
+GO_VERSION := $(shell awk '/^go /{print $$2}' go.mod)
+
+.PHONY: test-privdrop
+test-privdrop: ## basalt engine --user as root in a Linux container without systemd (needs Docker)
+	@docker run --rm -v "$(CURDIR)":/src:ro -v basalt-gomod:/go/pkg/mod -w /src -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false \
+		golang:$(GO_VERSION) go test -count=1 -v -run 'TestDropEveryThread|TestParseOwnStatus' ./internal/engine/privdrop/
+
+.PHONY: test-compose
+test-compose: ## The docker compose example (examples/compose): setup, isolation, restart, removal (needs Docker)
+	@examples/compose/smoke.sh
+
 .PHONY: test-cover
 test-cover: bin/gotestsum ## Tests with coverage.out
 	@$(GOTESTSUM) --format pkgname -- -race -count=1 -timeout 15m -coverprofile=coverage.out -covermode=atomic $(PKG)

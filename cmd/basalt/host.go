@@ -40,6 +40,9 @@ type host interface {
 	System(out, errw io.Writer) service.System
 	// Probe waits until the engine answers MCP initialize on socket.
 	Probe(ctx context.Context, socket string) error
+	// EngineLog reads the end of the engine service's log on goos, when
+	// the person may read it.
+	EngineLog(ctx context.Context, goos string) (string, error)
 	// OpenURL opens link in the person's default browser.
 	OpenURL(ctx context.Context, link string) error
 	// PagesUp reports whether the engine serves its local pages at origin.
@@ -172,6 +175,37 @@ func (osHost) Probe(ctx context.Context, socket string) error {
 		case <-time.After(probeInterval):
 		}
 	}
+}
+
+// engineLogTail is how much of the engine service's log init reads when
+// the engine does not answer: its last start's lines.
+const (
+	engineLogTail      = 64 << 10
+	engineJournalLines = "50"
+)
+
+func (osHost) EngineLog(ctx context.Context, goos string) (string, error) {
+	if goos != "darwin" {
+		out, err := exec.CommandContext(ctx, "journalctl", "-u", service.SystemdUnitName,
+			"-n", engineJournalLines, "-o", "cat", "--no-pager").Output()
+		return string(out), err
+	}
+	f, err := os.Open(darwinEngineLog)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return "", err
+	}
+	if off := fi.Size() - engineLogTail; off > 0 {
+		if _, err := f.Seek(off, io.SeekStart); err != nil {
+			return "", err
+		}
+	}
+	raw, err := io.ReadAll(io.LimitReader(f, engineLogTail))
+	return string(raw), err
 }
 
 // probeInit is the MCP initialize request the probe sends.

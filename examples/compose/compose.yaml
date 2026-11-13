@@ -1,0 +1,60 @@
+# BasaltDB in containers without systemd: Postgres, the engine, and an agent
+# that shares only the engine's socket directory. See README.md.
+name: basalt-example
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_PASSWORD: example-admin-password
+      POSTGRES_DB: app
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "app"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # Started as root by tini; basalt engine --user makes /run/basalt and
+  # /var/lib/basalt, drops to basalt and sets no_new_privs before it reads
+  # /etc/basalt.
+  engine:
+    build:
+      context: ../..
+      dockerfile: examples/compose/Dockerfile
+    image: basalt-example:local
+    command: ["basalt", "engine", "--user", "basalt", "--config", "/etc/basalt/engine.json"]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Only what the drop needs while it is still root: make and hand over the
+    # directories, then change its ids. After the drop it has none.
+    # DAC_READ_SEARCH is only for reopening the state directory on a restart:
+    # it is basalt's and 0700, so root needs it to open it and check it.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER, DAC_READ_SEARCH, SETUID, SETGID]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - config:/etc/basalt
+      - state:/var/lib/basalt
+      - sockets:/run/basalt
+
+  # The agent's container: its MCP client runs basalt mcp --agent demo_bot
+  # as agent. It mounts the socket directory and nothing else of the engine.
+  agent:
+    image: basalt-example:local
+    user: agent
+    command: ["sleep", "infinity"]
+    depends_on: [engine]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    volumes:
+      - sockets:/run/basalt
+
+volumes:
+  pgdata:
+  config:
+  state:
+  sockets:

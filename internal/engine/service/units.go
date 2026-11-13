@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
@@ -24,12 +25,19 @@ const (
 	LaunchdLabel    = "dev.basaltdb.engine"
 	LaunchdPlist    = "/Library/LaunchDaemons/" + LaunchdLabel + ".plist"
 
-	linuxUser      = "basalt"
-	darwinUser     = "_basalt" // macOS system accounts start with '_'
-	darwinLogDir   = "/Library/Logs/Basalt"
-	darwinLogFile  = darwinLogDir + "/engine.log"
-	launchdUmask   = 0o077
-	systemdRunMode = "0755"
+	linuxUser     = "basalt"
+	darwinUser    = "_basalt" // macOS system accounts start with '_'
+	darwinLogDir  = "/Library/Logs/Basalt"
+	darwinLogFile = darwinLogDir + "/engine.log"
+	launchdUmask  = 0o077
+
+	// runtimeDirMode is the socket directory's mode: open, so an agent's
+	// OS user reaches its socket (the socket itself is 0666 and checks the
+	// peer's uid). stateDirMode is the Linux state directory's, the
+	// engine's alone; darwinStateDirMode is the macOS install's.
+	runtimeDirMode     = 0o755
+	stateDirMode       = 0o700
+	darwinStateDirMode = configDirMode
 )
 
 // Spec is what the unit runs.
@@ -108,6 +116,27 @@ func RestartArgs(goos string) []string {
 	return []string{"systemctl", "restart", SystemdUnitName}
 }
 
+// Dir is a directory the engine's OS user owns, with its mode.
+type Dir struct {
+	Path string
+	Mode os.FileMode
+}
+
+// EngineDirs are the engine's socket and state directories on goos, with the
+// modes its service gives them: the systemd unit's RuntimeDirectory and
+// StateDirectory on Linux, the launchd install's directories on macOS.
+// basalt engine --user makes them itself when no service manager does.
+func EngineDirs(goos string) []Dir {
+	state := os.FileMode(stateDirMode)
+	if goos == goosDarwin {
+		state = darwinStateDirMode
+	}
+	return []Dir{
+		{Path: config.DefaultSocketDir(goos), Mode: runtimeDirMode},
+		{Path: config.DefaultStateDir(goos), Mode: state},
+	}
+}
+
 func (s Spec) args() []string {
 	return []string{s.Binary, "engine", "--config", s.ConfigPath}
 }
@@ -134,11 +163,9 @@ ExecStart=%[2]s
 Restart=on-failure
 RestartSec=2s
 RuntimeDirectory=basalt
-RuntimeDirectoryMode=%[3]s
+RuntimeDirectoryMode=%04[3]o
 StateDirectory=basalt
-StateDirectoryMode=0700
-StateDirectory=basalt
-StateDirectoryMode=0700
+StateDirectoryMode=%04[6]o
 UMask=0077
 MemoryHigh=%[4]dM
 MemoryMax=%[5]dM
@@ -154,7 +181,7 @@ LockPersonality=yes
 
 [Install]
 WantedBy=multi-user.target
-`, s.User, strings.Join(quoted, " "), systemdRunMode, high, hard)
+`, s.User, strings.Join(quoted, " "), runtimeDirMode, high, hard, stateDirMode)
 }
 
 // systemdQuote quotes an ExecStart word when it has spaces, quotes or

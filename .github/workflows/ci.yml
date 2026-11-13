@@ -39,6 +39,19 @@ jobs:
       - name: ci
         run: make ci
 
+  # basalt engine --user in containers without systemd: the privilege drop as
+  # root on every thread, then the compose example end to end (setup,
+  # isolation, agent calls, restart, removal).
+  containers:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: privilege drop as root in a container
+        run: make test-privdrop
+      - name: compose example
+        run: make test-compose
+
   # Darwin/amd64 and darwin/arm64 are already in .goreleaser.yaml and on
   # v0.0.1-alpha. This job rebuilds those archives (CGO_ENABLED=0 snapshot,
   # no registry push) so macos-smoke runs the release tarball, not go build.

@@ -64,7 +64,7 @@ func parseInitSetupCode(c *cliIO, args []string) (setupCodeFlags, error) {
 	fs.StringVar(&f.code, flagSetupCode, "", "the setup code your agent gave you (basalt-setup.1....)")
 	fs.BoolVar(&f.yes, "yes", false, "do not ask before running the SQL")
 	fs.BoolVar(&f.addPasskey, "add-passkey", false, "register another portal passkey even if one is registered")
-	fs.StringVar(&f.passkeyLabel, "passkey-label", "", "name of the passkey in the picker (default: the database name)")
+	fs.StringVar(&f.passkeyLabel, "passkey-label", "", "name of the passkey in the picker (default: <database> · <agent> · <date>)")
 	fs.BoolVar(&f.dryRun, "dry-run", false, "print what the code does and its SQL, and run nothing")
 	f.agentRLS = AgentRLSAsk
 	fs.Var(&f.agentRLS, "agent-rls",
@@ -413,7 +413,7 @@ func (l *laptopSetup) passkey() error {
 	}
 	label := l.f.passkeyLabel
 	if label == "" {
-		label = l.conn.Config().Database
+		label = defaultPasskeyLabel(l.conn.Config().Database, l.p.Agent.Name, l.c.now())
 	}
 	if err := registerPasskey(l.c, l.conn, portalRP, label, l.c.interactive); err != nil {
 		return err

@@ -23,10 +23,13 @@ import (
 //     with the agent, which writes the config and the credential into the
 //     service's system directories owned by that user, installs and
 //     starts the unit; init then checks the engine answers on the socket.
-//   - in the foreground as the person (--no-service, an answer of no, a
-//     non-terminal without --yes, or paths given with --config,
-//     --socket-dir or --credential-file): init writes the config and
-//     credential where the person can, and prints the one command.
+//   - in the foreground as the person (--no-service, an answer of no, or
+//     paths given with --config, --socket-dir or --credential-file):
+//     init writes the config and credential where the person can, and
+//     prints the one command.
+//
+// Without a terminal, --yes or --no-service must say which: init never
+// falls back to the foreground on its own (checkServiceAnswer).
 
 // perUserDirName is the per-user config directory under os.UserConfigDir.
 const perUserDirName = "basalt"
@@ -75,14 +78,28 @@ func chooseService(c *cliIO, f initFlags) (bool, error) {
 	case f.yes:
 		return true, nil
 	case !c.interactive:
-		fmt.Fprintln(c.stderr, "basalt: not at a terminal, so the engine service is not installed (pass --yes to install it)")
-		return false, nil
+		return false, errServiceUnanswered
 	}
 	question := fmt.Sprintf("Install the engine as a background service? This creates the OS user %s", f.engineUser)
 	if c.host.Euid() != 0 {
 		question += " and needs your password once."
 	}
 	return c.confirmYes(question)
+}
+
+// errServiceUnanswered: without a terminal init cannot ask whether to
+// install the engine service, and it never picks the weaker same-user mode
+// for the person.
+var errServiceUnanswered = fmt.Errorf("%w: input is not a terminal, so init cannot ask whether to install the engine as a background service; "+
+	"pass --yes to install it, or --no-service to run the engine in the foreground as you (same-user mode)", errUsage)
+
+// checkServiceAnswer refuses, before anything is written, an init whose
+// engine mode only the person can choose and who cannot be asked.
+func checkServiceAnswer(c *cliIO, f initFlags) error {
+	if c.interactive || f.yes || f.noService || f.pathsGiven || f.dryRun {
+		return nil
+	}
+	return errServiceUnanswered
 }
 
 // perUserPaths moves a foreground setup that kept the system defaults to

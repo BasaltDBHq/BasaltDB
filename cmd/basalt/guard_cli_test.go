@@ -548,11 +548,69 @@ func TestInitOperatedByAgentWithTheAdminCredential(t *testing.T) {
 	require.NotContains(t, string(raw), "operatedBy")
 }
 
+// --dev-local-pages lets the owner try an agent-operated engine on local
+// pages; nothing else gets a local or foreign origin (CONTRACT.md, Page
+// origins).
+func TestInitDevLocalPages(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"without an agent-operated engine", []string{"--dev-local-pages"}, "only for --operated-by=agent"},
+		{"with the portal", []string{"--operated-by", "agent", "--dev-local-pages", "--passkey-origin", links.Portal}, "needs a local --passkey-origin"},
+		{"pages.dev, person", []string{"--passkey-origin", "https://basalt-portal.pages.dev"}, "--passkey-origin"},
+		{"pages.dev, agent", []string{"--operated-by", "agent", "--passkey-origin", "https://basalt-portal.pages.dev"}, "portal"},
+		{"pages.dev, dev pages", []string{"--operated-by", "agent", "--dev-local-pages", "--passkey-origin", "https://basalt-portal.pages.dev"}, "--passkey-origin"},
+	} {
+		r := cli(t, nil, "", append([]string{"init", "--agent", "x2"}, tc.args...)...)
+		require.Equal(t, exitUsage, r.code, tc.name+": "+r.stderr)
+		require.Contains(t, r.stderr, tc.want, tc.name)
+	}
+
+	d := guardtest.New(t).WithDemo(t)
+	config := tempConfig(t)
+	base := []string{
+		"init", "--agent", "x1", "--write", "public.leads", "--prefix", d.Names.Prefix, "--operated-by", "agent",
+		"--config", config, "--os-user", "tester", "--yes", "--skip-passkey",
+	}
+	r := cli(t, map[string]string{envAdminURL: d.URL}, "", append(slices.Clone(base), "--dev-local-pages")...)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Contains(t, r.stderr, "DEV_LOCAL_PAGES: these pages are on the agent's machine; never use this with a bot you do not control")
+	var cfg struct {
+		PagesURL      string `json:"pagesUrl"`
+		DevLocalPages bool   `json:"devLocalPages"`
+		Vault         string `json:"vault"`
+		Agents        []struct {
+			InitArgs []string `json:"initArgs"`
+		} `json:"agents"`
+	}
+	raw, err := os.ReadFile(config)
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(raw, &cfg))
+	require.True(t, cfg.DevLocalPages)
+	require.Equal(t, links.DefaultLocal, cfg.PagesURL, "the default origin with --dev-local-pages is local")
+	require.NotEqual(t, "ON", cfg.Vault, "the Vault carries portal links only")
+	require.Contains(t, cfg.Agents[0].InitArgs, "--dev-local-pages=true")
+	cmds, err := agent.NewCommands("x1", config, "linux", cfg.Agents[0].InitArgs)
+	require.NoError(t, err, "the saved flag round-trips")
+	require.NotContains(t, cmds.InitPortal(), "dev-local-pages")
+
+	// Init again without the flag moves the engine to the portal.
+	r = cli(t, map[string]string{envAdminURL: d.URL}, "", base...)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	raw, err = os.ReadFile(config)
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "devLocalPages")
+	require.Contains(t, string(raw), links.Portal)
+}
+
 func TestRelyingPartyAcceptsThePortal(t *testing.T) {
 	t.Parallel()
 	rp, err := relyingParty(links.Portal)
 	require.NoError(t, err)
-	require.Equal(t, portalRP, rp)
+	require.Equal(t, passkey.Production, rp)
 }
 
 func TestInitOperatedByAgentWithAnExplicitPortalOrigin(t *testing.T) {

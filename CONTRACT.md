@@ -237,7 +237,7 @@ Status problems (`status` tool, every one +pm):
 | `SETUP_NOT_RUN` | `ERROR` | P `RUN_COMMAND` (`basalt init --setup-code <the pending code>`, on their own computer), P `TELL_AGENT`, A `END_TURN`, A `CALL_TOOL` (`status`) |
 | `SETUP_EXPIRED` | `ERROR` | O `RUN_COMMAND` (`basalt init --remote --new-code ...`, saved flags), A `END_TURN` |
 | `SETUP_CHANGE_PENDING` | `WARNING` | P `RUN_COMMAND` (`basalt init --setup-code <the pending code>`, on their own computer), P `TELL_AGENT` |
-| `DEV_LOCAL_PAGES` | `WARNING` | Planned ([Page origins](#page-origins)): P `RUN_COMMAND` (`basalt init ... --add-passkey`, saved flags without `--dev-local-pages` and `--passkey-origin`, so the portal's pages and a passkey for them) |
+| `DEV_LOCAL_PAGES` | `WARNING` | P `RUN_COMMAND` (`basalt init ... --add-passkey`, saved flags without `--dev-local-pages` and `--passkey-origin`, so the portal's pages and a passkey for them) |
 
 ### Next steps on an agent-operated engine
 
@@ -722,7 +722,7 @@ Owner decisions, Decided Nov 12. Every link is built from one pages base URL (`p
 
 ### Page origins
 
-Planned, M4 (until the implementation lands, the code still names the hosted pages `console` and checks only the URL rule and the portal-or-local shape). Chat-only operator CO-8 (design [`docs/redesign/specs/2026-11-12-chat-only-operator.md`](docs/redesign/specs/2026-11-12-chat-only-operator.md) section 5.2). The origins a link may point at, and that the engine and the CLI accept for passkeys, are a closed list compiled into the binary (Go `links.CheckOrigin`, JS `relyingParty` in `web/lib/codec.js`):
+Chat-only operator CO-8 (design [`docs/redesign/specs/2026-11-12-chat-only-operator.md`](docs/redesign/specs/2026-11-12-chat-only-operator.md) section 5.2). The origins a link may point at, and that the engine and the CLI accept for passkeys, are a closed list compiled into the binary (Go: `links.Portal` and the checks of `internal/engine/config`; JS: `relyingParty` in `web/lib/codec.js`):
 
 - `https://portal.basaltvault.app`, always (RP ID `basaltvault.app`).
 - `http://localhost:<port>` (for `pagesUrl` and `--pages-url` also `http://127.0.0.1:<port>` and `http://[::1]:<port>`; a passkey's origin, and so the page a link opens, is `localhost` only, RP ID `localhost`: a link on a loopback IP base opens a page that refuses to run), only when `operatedBy` is `PERSON`: the engine runs on the person's own machine, so the loopback page is theirs.

@@ -17,6 +17,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
@@ -48,7 +49,7 @@ func laptopRun(t *testing.T, admin, stdin string, now time.Time, args ...string)
 // code its registration page shows for database db.
 func portalPasskey(t *testing.T, db string) (*passkeytest.Authenticator, string) {
 	t.Helper()
-	person, err := passkeytest.New(portalRP)
+	person, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 	return person, registrationCode(t, person, db)
 }

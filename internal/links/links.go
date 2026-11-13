@@ -1,8 +1,7 @@
 // Package links builds the links to the approval, revert and passkey
 // registration pages (CONTRACT.md, Pages; owner decisions, Decided Nov 12).
 // The pages live at one base URL: the engine's local pages
-// (http://localhost:8787) by default until hosting exists, or the hosted
-// console. Every link has the same RESTful path shape on both.
+// (http://localhost:8787) by default until hosting exists, or the portal. Every link has the same RESTful path shape on both.
 package links
 
 import (
@@ -12,13 +11,9 @@ import (
 )
 
 const (
-	// HostedConsole is the hosted pages' origin (not live yet). Its
+	// Portal is the hosted pages' origin (not live yet), the only one an
+	// agent-operated engine uses (CONTRACT.md, Page origins; CO-8). Its
 	// passkeys use RP ID basaltvault.app, which never changes.
-	HostedConsole = "https://console.basaltvault.app"
-	// Portal is the hosted pages' origin of an agent-operated engine and of
-	// basalt init --remote (CONTRACT.md, Who operates the engine; CO-8).
-	// Same RP ID as HostedConsole; renaming the console to it is its own
-	// change.
 	Portal = "https://portal.basaltvault.app"
 	// DefaultLocal is the engine's local pages, the default base until
 	// hosting exists.
@@ -30,7 +25,7 @@ const (
 // linkBudget, CONTRACT.md, The link budget; owner decision VC-30).
 const DefaultBudget = 1800
 
-// Page paths, the same on the local pages and the hosted console.
+// Page paths, the same on the local pages and the portal.
 const (
 	ApprovalsPath = "/approvals/"
 	RevertsPath   = "/reverts/"

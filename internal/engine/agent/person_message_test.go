@@ -51,7 +51,7 @@ func TestPlainTextKeepsAgentTextOutOfTheURLRule(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, "Fix leads see https evil·example/x and [31mred", plainText("Fix leads\nsee https://evil.example/x and\r\n\x1b[31mred\x07"))
 	for name, probe := range map[string]string{
-		"bare dotted host":         "see console.basaltvault.app.evil.io/x now",
+		"bare dotted host":         "see portal.basaltvault.app.evil.io/x now",
 		"bare host":                "evil.io",
 		"backslash scheme":         `https:\\evil`,
 		"mixed slashes":            `https:/\evil`,
@@ -89,19 +89,19 @@ func TestPlainTextKeepsAgentTextOutOfTheURLRule(t *testing.T) {
 	}
 	// Each form, neutralized and still readable.
 	for probe, want := range map[string]string{
-		"see console.basaltvault.app.evil.io/x now": "see console·basaltvault·app·evil·io/x now",
-		`https:\\evil.io`:                  "https evil·io",
-		"https:\u2215\u2215evil.io\u2215x": "https evil·io/x",
-		"https:\u2044\u2044evil":           "https evil",
-		"https:\u29f8\u29f8evil":           "https evil",
-		"[the page](evil.io)":              "[the page] (evil·io)",
-		"Update 3 rows in public.leads":    "Update 3 rows in public·leads",
-		"raise prices by 1.5 percent":      "raise prices by 1.5 percent",
-		"10.0.0.1:8080/approve":            "10·0·0·1 :8080/approve",
-		"http:1.2.3.4":                     "http :1·2·3·4",
-		"see localhost:8080/x":             "see localhost :8080/x",
-		"localhost:8080":                   "localhost :8080",
-		"meet at 10:30 today":              "meet at 10:30 today",
+		"see portal.basaltvault.app.evil.io/x now": "see console·basaltvault·app·evil·io/x now",
+		`https:\\evil.io`:                          "https evil·io",
+		"https:\u2215\u2215evil.io\u2215x":         "https evil·io/x",
+		"https:\u2044\u2044evil":                   "https evil",
+		"https:\u29f8\u29f8evil":                   "https evil",
+		"[the page](evil.io)":                      "[the page] (evil·io)",
+		"Update 3 rows in public.leads":            "Update 3 rows in public·leads",
+		"raise prices by 1.5 percent":              "raise prices by 1.5 percent",
+		"10.0.0.1:8080/approve":                    "10·0·0·1 :8080/approve",
+		"http:1.2.3.4":                             "http :1·2·3·4",
+		"see localhost:8080/x":                     "see localhost :8080/x",
+		"localhost:8080":                           "localhost :8080",
+		"meet at 10:30 today":                      "meet at 10:30 today",
 	} {
 		require.Equal(t, want, plainText(probe), probe)
 	}

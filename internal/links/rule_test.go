@@ -10,7 +10,7 @@ import (
 func TestCheckURL(t *testing.T) {
 	t.Parallel()
 	for _, ok := range []string{
-		"https://console.basaltvault.app/approvals/x#2.abc-_",
+		"https://portal.basaltvault.app/approvals/x#2.abc-_",
 		"http://localhost:8787/a", "http://127.0.0.1", "http://[::1]:80/x", "https://example.com",
 	} {
 		require.NoError(t, CheckURL(ok), ok)

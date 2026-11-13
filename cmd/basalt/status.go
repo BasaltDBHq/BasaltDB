@@ -160,7 +160,7 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 		return statusOut{}, err
 	}
 	r, err := agent.LocalStatus{
-		Name: a.Name, Commands: cmds, OperatedBy: cfg.OperatedBy, Setup: a.Setup,
+		Name: a.Name, Commands: cmds, OperatedBy: cfg.OperatedBy, DevLocalPages: cfg.DevLocalPages, Setup: a.Setup,
 		PagesBase: base, PagesOrigin: servedPages(c, cfg.Config, eng.Reachable), EngineRunning: eng.Reachable, EngineUnknown: eng.Unknown,
 		Probe:    agent.DBProbe{Q: pool, Migrations: guard.Migrations()},
 		Passkeys: func(ctx context.Context) ([]passkey.Credential, error) { return ledger.Passkeys(ctx, pool) },

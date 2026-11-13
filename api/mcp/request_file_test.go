@@ -89,13 +89,13 @@ func requestBlocks(text string) []string {
 	}
 	blocks := make([]string, 0, len(pieces))
 	for i, p := range pieces {
-		blocks = append(blocks, fmt.Sprintf("basalt-request %d/%d %s\n%s", i+1, len(pieces), h, p))
+		blocks = append(blocks, fmt.Sprintf("basalt-request %d/%d %s %d\n%s", i+1, len(pieces), h, len(p), p))
 	}
 	return blocks
 }
 
 var (
-	blockHeader = regexp.MustCompile(`(?:^|[^A-Za-z0-9_-])basalt-request (\d+)/(\d+) ([A-Za-z0-9_-]{22})$`)
+	blockHeader = regexp.MustCompile(`(?:^|.* )basalt-request (\d+)/(\d+) ([A-Za-z0-9_-]{22}) (\d+)$`)
 	pieceLine   = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 	pasteBreaks = regexp.MustCompile("\r\n|\n|\r|\u2028")
 	quoteMarks  = strings.NewReplacer(">", "", "*", "", "\\", "")
@@ -111,6 +111,7 @@ type blockAssembler struct {
 
 type pastedBlock struct {
 	i, n  int
+	size  int
 	h     string
 	piece strings.Builder
 	open  bool
@@ -121,8 +122,8 @@ func cleanLine(line string) string {
 }
 
 // add reads one paste and reports whether the page refuses it: no header,
-// or a block it refuses (another h, another count, or a piece before the
-// last shorter than requestPieceChars).
+// or a block it refuses (another h, another count, or a piece shorter than
+// its header's length).
 func (a *blockAssembler) add(paste string) bool {
 	var blocks []*pastedBlock
 	var cur *pastedBlock
@@ -131,11 +132,12 @@ func (a *blockAssembler) add(paste string) bool {
 		if m := blockHeader.FindStringSubmatch(clean); m != nil {
 			i, _ := strconv.Atoi(m[1])
 			n, _ := strconv.Atoi(m[2])
-			cur = &pastedBlock{i: i, n: n, h: m[3], open: true}
+			size, _ := strconv.Atoi(m[4])
+			cur = &pastedBlock{i: i, n: n, size: size, h: m[3], open: true}
 			blocks = append(blocks, cur)
 			continue
 		}
-		if cur == nil || !cur.open {
+		if cur == nil || !cur.open || cur.piece.Len() >= cur.size {
 			continue
 		}
 		if !pieceLine.MatchString(clean) {
@@ -150,13 +152,11 @@ func (a *blockAssembler) add(paste string) bool {
 	refused := false
 	for _, b := range blocks {
 		piece := b.piece.String()
-		if b.i < b.n {
-			if len(piece) < requestPieceChars {
-				refused = true
-				continue
-			}
-			piece = piece[:requestPieceChars]
+		if b.size < 1 || b.size > requestPieceChars || len(piece) < b.size {
+			refused = true // cut short
+			continue
 		}
+		piece = piece[:b.size]
 		if b.h != a.h || b.i < 1 || b.i > b.n || b.n > requestMaxBlocks || (a.n != 0 && b.n != a.n) {
 			refused = true
 			continue

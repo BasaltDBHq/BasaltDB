@@ -29,9 +29,9 @@
       "maxItems": 10,
       "items": {
         "type": "string",
-        "pattern": "^basalt-request ([1-9]|10)/([1-9]|10) [A-Za-z0-9_-]{22}\\n[A-Za-z0-9_.-]{1,1800}$"
+        "pattern": "^basalt-request ([1-9]|10)/([1-9]|10) [A-Za-z0-9_-]{22} [1-9][0-9]{0,3}\\n[A-Za-z0-9_.-]{1,1800}$"
       },
-      "description": "text cut into consecutive pieces of exactly 1800 characters (the last 1 to 1800), in order: block i of n is the line basalt-request <i>/<n> <h>, a line break and the piece. Present when n is at most 10; absent above, when the request goes as a file only."
+      "description": "text cut into consecutive pieces of exactly 1800 characters (the last 1 to 1800), in order: block i of n is the line basalt-request <i>/<n> <h> <length> (the piece's length), a line break and the piece. Present when n is at most 10; absent above, when the request goes as a file only."
     }
   }
 }

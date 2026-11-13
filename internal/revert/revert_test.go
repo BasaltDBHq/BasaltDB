@@ -2,6 +2,7 @@ package revert_test
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -131,6 +132,63 @@ type fixtures struct {
 		Rows      int    `json:"rows"`
 		Skipped   int    `json:"skipped"`
 	} `json:"batchedSkips"`
+	// Rescope are widen proofs' challenges (CONTRACT.md, Rescope, widen
+	// and reject): the page builds the normalized select text, derives the
+	// rescope key from the new link secret and hashes the challenge the
+	// passkey signs, byte for byte as the guard checks it.
+	Rescope []rescopeFixture `json:"rescope"`
+}
+
+// rescopeFixture is one widen challenge. Select is the descriptor as a
+// page may send it; SelectText is Postgres's normalized text of it
+// (basalt_meta._revert_select_norm, checked in internal/guard), which the
+// proof signs.
+type rescopeFixture struct {
+	Name       string          `json:"name"`
+	RevertID   string          `json:"revertId"`
+	Nonce      string          `json:"nonce"`
+	NewSecret  string          `json:"newSecret"`
+	Select     json.RawMessage `json:"select"`
+	SelectText string          `json:"selectText"`
+	RescopeKey string          `json:"rescopeKey"`
+	Challenge  string          `json:"challenge"`
+}
+
+// rescopeCases are the widen fixtures' inputs: every agent of a task, the
+// page's widen; and a descriptor whose lists need sorting, deduplicating
+// and lowercasing, so the page's normalization is checked against the
+// guard's.
+var rescopeCases = []struct{ name, sel, text string }{
+	{
+		name: "every agent of a task",
+		sel:  `{"scope": "TASK", "scopeId": "0193a4c2-7d1e-7c3a-9f00-0000000000c1", "agents": null, "runs": null, "tables": null}`,
+		text: `{"runs": null, "scope": "TASK", "agents": null, "tables": null, "scopeId": "0193a4c2-7d1e-7c3a-9f00-0000000000c1"}`,
+	},
+	{
+		name: "lists sorted, deduplicated, ids lowercase",
+		sel: `{"scope": "TASK", "scopeId": "0193A4C2-7D1E-7C3A-9F00-0000000000C1", "agents": ["basalt_agent_sync", "basalt_agent_bot", "basalt_agent_sync"], ` +
+			`"runs": ["0193a4c2-7d1e-7c3a-9f00-0000000000b3", "0193A4C2-7D1E-7C3A-9F00-0000000000B2"], "tables": ["public.notes", "public.Leads", "public.leads", "public.notes"]}`,
+		text: `{"runs": ["0193a4c2-7d1e-7c3a-9f00-0000000000b2", "0193a4c2-7d1e-7c3a-9f00-0000000000b3"], "scope": "TASK", "agents": ["basalt_agent_bot", "basalt_agent_sync"], ` +
+			`"tables": ["public.Leads", "public.leads", "public.notes"], "scopeId": "0193a4c2-7d1e-7c3a-9f00-0000000000c1"}`,
+	},
+}
+
+func buildRescope(t *testing.T) []rescopeFixture {
+	t.Helper()
+	out := make([]rescopeFixture, 0, len(rescopeCases))
+	for i, c := range rescopeCases {
+		secret := seq(16, byte(0x40+i))
+		nonce := seq(16, byte(0x60+i))
+		key, err := revert.RescopeKey(secret)
+		require.NoError(t, err)
+		out = append(out, rescopeFixture{
+			Name: c.name, RevertID: revertID.String(),
+			Nonce: passkey.Bytes(nonce).String(), NewSecret: passkey.Bytes(secret).String(),
+			Select: json.RawMessage(c.sel), SelectText: c.text, RescopeKey: hex.EncodeToString(key),
+			Challenge: passkey.Bytes(revert.RescopeChallenge(revertID, nonce, key, c.text)).String(),
+		})
+	}
+	return out
 }
 
 // Size of the batchedSkips fixture plan.
@@ -199,6 +257,7 @@ func buildFixtures(t *testing.T) fixtures {
 	require.NoError(t, err)
 	f.BatchedSkips.Rows = skipsPlanRestores
 	f.BatchedSkips.Skipped = skipsPlanSkips
+	f.Rescope = buildRescope(t)
 	return f
 }
 

@@ -69,7 +69,7 @@ const Instructions = "BasaltDB records every action you take on this database. "
 // docsInstructions is the one sentence that points an agent to the public
 // docs (CONTRACT.md, What the agent is told). The .md form of each page is
 // written for agents.
-const docsInstructions = "For error codes and troubleshooting, read https://docs.basaltvault.app (add .md to a page's URL for the Markdown form)."
+const docsInstructions = "For error codes and troubleshooting, read https://docs.basaltvault.app/llms.txt (each page is also Markdown at its path with .md in place of the trailing slash, e.g. https://docs.basaltvault.app/reference/errors.md)."
 
 // linkInstructions is the sentence CONTRACT.md (Showing links, What the agent
 // is told) puts in the initialize instructions, unchanged.

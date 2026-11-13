@@ -759,7 +759,7 @@ The tool descriptions say the same where they mention `personMessage`.
 
 It also carries one sentence that points the agent to the public docs, unchanged:
 
-> For error codes and troubleshooting, read https://docs.basaltvault.app (add .md to a page's URL for the Markdown form).
+> For error codes and troubleshooting, read https://docs.basaltvault.app/llms.txt (each page is also Markdown at its path with .md in place of the trailing slash, e.g. https://docs.basaltvault.app/reference/errors.md).
 
 ### The pages repair what they can
 

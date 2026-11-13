@@ -196,7 +196,7 @@ BEGIN
     END IF;
 
     WITH wanted AS (
-        SELECT (u.n - 1)::int AS line, u.t::jsonb ->> 'rowHash' AS row_hash
+        SELECT (u.n - 1)::int AS line, u.t::jsonb ->> 'rowHash' AS row_hash, u.t::jsonb ->> 'table' AS table_name
           FROM pg_catalog.unnest(r.lines) WITH ORDINALITY u(t, n)
          WHERE (u.t::jsonb -> 'redacted') = 'true'::jsonb
     )
@@ -205,7 +205,8 @@ BEGIN
       INTO v_rows
       FROM wanted w
       JOIN LATERAL (SELECT i AS it FROM pg_catalog.unnest(v_items) i
-                     WHERE pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(
+                     WHERE i.table_name = w.table_name
+                       AND pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(
                                pg_catalog.jsonb_build_array(i.key, i.now, i.set)::text, 'UTF8')), 'hex') = w.row_hash
                      LIMIT 1) m ON true;
     v_changed := coalesce(pg_catalog.jsonb_array_length(v_rows), 0) <> v_wanted;

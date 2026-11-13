@@ -389,3 +389,59 @@ func TestRevealMigrationIsIdempotent(t *testing.T) {
 	_, err := guard.RevealRevertRows(context.Background(), e.a.Conn, e.prep.RevertID, as, key)
 	require.NoError(t, err)
 }
+
+// Two tables hold rows with the same key, now and set, so their lines have
+// the same rowHash; only one table has a SECRET column. Each line is rebuilt
+// from its own table's row, so the SECRET rule follows the table.
+func TestRevealRevertRowsMatchTheTable(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t)
+	d.Exec(t, `CREATE TABLE public.parents (id int PRIMARY KEY);
+		CREATE TABLE public.child_a (id int PRIMARY KEY, parent_id int NOT NULL REFERENCES public.parents ON DELETE CASCADE, v text);
+		CREATE TABLE public.child_b (id int PRIMARY KEY, parent_id int NOT NULL REFERENCES public.parents ON DELETE CASCADE, v text);
+		INSERT INTO public.parents VALUES (1);
+		INSERT INTO public.child_a VALUES (1, 1, 'same');
+		INSERT INTO public.child_b VALUES (1, 1, 'same')`)
+	parents := []string{"public.parents"}
+	a := d.NewAgent(t, "bot", parents, parents)
+	d.Exec(t, `INSERT INTO basalt_meta.pii_columns (table_schema, table_name, column_name, data_type, class, confirmed_at, confirmed_by)
+		VALUES ('public', 'child_a', 'v', 'text', 'SECRET', now(), 'test')`)
+	e := revealEnv{d: d, a: a, p: person(t, d), in: newRun(t, a, "Drop parent 1")}
+	approvedWrite(t, a, e.p, e.in, `DELETE FROM public.parents WHERE id = $1`, []any{1}, []string{})
+	d.Exec(t, `UPDATE basalt_meta.passkeys SET sign_count = 0`)
+	prep, err := guard.PrepareRevert(context.Background(), a.Conn, guard.RevertScope{Kind: revert.ScopeRun, ID: e.in.RunID}, "Undo it")
+	require.NoError(t, err)
+	e.prep = prep
+	want := redactedLines(t, prep.Lines)
+	require.Len(t, want, 2)
+	tables := map[int]string{}
+	for i := range want {
+		var l struct {
+			Table string `json:"table"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(prep.Lines[i]), &l))
+		tables[i] = l.Table
+	}
+	hashes := make([]string, 0, len(want))
+	for _, h := range want {
+		hashes = append(hashes, h)
+	}
+	require.Equal(t, hashes[0], hashes[1], "both lines hash the same row text")
+
+	as, key := e.proof(t, prep.RevertID, "secret")
+	out, err := guard.RevealRevertRows(context.Background(), a.Conn, prep.RevertID, as, key)
+	require.NoError(t, err)
+	require.Len(t, out.Rows, 2)
+	for _, r := range out.Rows {
+		switch tables[r.Line] {
+		case "public.child_a":
+			require.Equal(t, []string{"v"}, r.SecretColumns)
+			require.NotContains(t, r.Row, "same")
+		case "public.child_b":
+			require.Empty(t, r.SecretColumns)
+			require.Equal(t, want[r.Line], rowHashOf(r.Row))
+		default:
+			t.Fatalf("unexpected table %q", tables[r.Line])
+		}
+	}
+}

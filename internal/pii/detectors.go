@@ -21,7 +21,9 @@ const (
 const maxNGram = 4
 
 // maxSeparatorLen is the longest run of non-word characters (in runes) allowed
-// between the words of one n-gram ("Alice Tamm", "Tamm, Alice", `"Alice","Tamm"`).
+// between the words of one n-gram ("Alice Tamm", `"Alice","Tamm"`). A
+// two-word name is also stored reversed (Keys.GenericHashes), so "Tamm,
+// Alice" is found too.
 const maxSeparatorLen = 3
 
 // phoneSep is what may stand between the groups of a phone number: a run of

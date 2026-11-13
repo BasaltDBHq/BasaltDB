@@ -207,8 +207,10 @@
                 "NO_PASSKEY",
                 "SETUP_NOT_RUN",
                 "SETUP_EXPIRED",
-                "SETUP_CHANGE_PENDING"
-              ]
+                "SETUP_CHANGE_PENDING",
+                "DEV_LOCAL_PAGES"
+              ],
+              "description": "DEV_LOCAL_PAGES is Planned (CONTRACT.md, Page origins): the engine.json devLocalPages development exception is on, so the pages are on the agent's machine."
             },
             "severity": {
               "type": "string",

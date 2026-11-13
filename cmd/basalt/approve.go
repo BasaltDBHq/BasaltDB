@@ -24,7 +24,7 @@ import (
 func runApprove(c *cliIO, args []string) int {
 	fs := c.flags("approve")
 	show := fs.String("show", "", "print the approval link of this held write (approval id) instead; waits until it is signed or expires, and revokes the agent's link")
-	reissue := fs.Bool("reissue", false, "with --show or --open: issue a new short link (the held write's earlier short link stops working)")
+	reissue := fs.Bool("reissue", false, "with --show or --open: issue a new short link; this is now the default when the engine serves the pages locally (the held write's earlier short link stops working)")
 	open := fs.String("open", "", "open the approval link of this held write (approval id) in your browser instead")
 	var pagesURL string
 	pagesURLFlag(fs, &pagesURL, "pages base URL for --show and --open (default: the engine config's pagesUrl, else "+links.DefaultLocal+")")
@@ -56,13 +56,12 @@ func runApprove(c *cliIO, args []string) int {
 	}
 	defer l.close()
 	if held != "" {
+		// Where the engine serves the pages, a short link is issued, which
+		// revokes the one the agent handed over (CONTRACT.md, Link secrets),
+		// and the page relays the signature; --reissue is the same thing.
 		pages := linkPages{
-			base: l.pagesBase(pagesURL),
-		}
-		if *reissue {
-			// A short link is issued only on request: issuing revokes the
-			// one the agent handed over (CONTRACT.md, Link secrets).
-			pages.local = l.localPages(c, pagesURL)
+			base:  l.pagesBase(pagesURL),
+			local: l.localPages(c, pagesURL),
 		}
 		return showApproval(c, l, held, pages, *open != "")
 	}
@@ -141,13 +140,22 @@ func showApproval(c *cliIO, l *agentLedger, idText string, pages linkPages, open
 		return c.fail(err)
 	}
 	ref := linkRef{setting: "pagesUrl", item: "approval " + id.String(), again: "basalt approve --show " + id.String()}
-	link = pages.short(c, "approvals", a.ID, a.BindingText, link)
+	long := link
+	link = pages.short(c, "approvals", a.ID, a.BindingText, long)
+	if link == long {
+		// No short link was issued, so the page cannot relay: paste it.
+		pages.local = ""
+	}
 	fmt.Fprintf(c.stderr, "basalt: %s\n", visibleText(summary.Headline()))
 	expires := a.ExpiresAt.UTC().Format(timeLayout)
 	if open {
 		fmt.Fprintf(c.stderr, "basalt: %d rows, held by run %s, expires %s\n", a.Rows, a.RunID, expires)
 		if err := openLink(c, link, c.stdout, ref); err != nil {
 			return c.fail(err)
+		}
+		if pages.local != "" {
+			fmt.Fprintln(c.stderr, replacesLink)
+			return awaitApproval(c, l, id)
 		}
 		fmt.Fprintln(c.stderr, pages.nextStep("basalt: check the rows and sign with your passkey", "basalt approve '<code>'"))
 		return exitOK
@@ -157,8 +165,15 @@ func showApproval(c *cliIO, l *agentLedger, idText string, pages linkPages, open
 	if err := printLink(c, c.stdout, link, ref); err != nil {
 		return c.fail(err)
 	}
+	if pages.local != "" {
+		fmt.Fprintln(c.stderr, replacesLink)
+		return awaitApproval(c, l, id)
+	}
 	return exitOK
 }
+
+// replacesLink tells the person the short link took the agent's link's place.
+const replacesLink = "basalt: this link replaces the one the agent showed you; the agent still applies the write by its approval id"
 
 // approvalStatusLine says a held write is no longer pending, with the
 // status from the database escaped (visibleText).
@@ -177,8 +192,12 @@ func submitApproval(c *cliIO, l *agentLedger, code string) int {
 	if _, err := l.SubmitApproval(c.ctx, resp.ApprovalID, resp.Assertion()); err != nil {
 		return c.fail(fmt.Errorf("the database refused the approval: %s", pgDetail(err)))
 	}
-	fmt.Fprintf(c.stderr, "basalt: approval %s signed; the agent applies it by repeating the write with approvalId %s\n",
-		resp.ApprovalID, resp.ApprovalID)
+	return approvalSigned(c, resp.ApprovalID)
+}
+
+// approvalSigned says a held write is signed and what the agent does next.
+func approvalSigned(c *cliIO, id uuid.UUID) int {
+	fmt.Fprintf(c.stderr, "basalt: approval %s signed; the agent applies it by repeating the write with approvalId %s\n", id, id)
 	return exitOK
 }
 

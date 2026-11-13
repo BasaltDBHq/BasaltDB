@@ -358,7 +358,7 @@ func skippedLines(c *cliIO, l *agentLedger, id uuid.UUID) ([]skippedLineDTO, err
 }
 
 func printRevertStatus(c *cliIO, s revertStatusDTO) {
-	fmt.Fprintf(c.stdout, "revert %s: %s\n", s.RevertID, s.Status)
+	fmt.Fprintf(c.stdout, "revert %s: %s\n", visibleText(s.RevertID), visibleText(s.Status))
 	if !s.Batched {
 		fmt.Fprintf(c.stdout, "  %d rows, applied in one call by basalt revert; sign by %s\n", s.Lines, s.ExpiresAt.UTC().Format(timeLayout))
 		if s.Status == ledger.RevertApplied {

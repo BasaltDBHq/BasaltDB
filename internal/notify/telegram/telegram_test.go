@@ -238,3 +238,57 @@ func TestNotifyHeld(t *testing.T) {
 	require.Contains(t, got.body["text"], "approval needed")
 	require.Contains(t, got.body, "reply_markup")
 }
+
+func revertNotice(url string) telegram.RevertNotice {
+	return telegram.RevertNotice{
+		RevertID:  uuid.MustParse("0193a4c2-7d1e-7c3a-9f00-0000000000b2"),
+		Agent:     "bot",
+		Database:  "app",
+		Headline:  "Revert of run 0193a4c2-7d1e-7c3a-9f00-0000000000c3: 2 rows to restore, 0 left as they are (changed after the agent).",
+		Intent:    "Undo the win",
+		ExpiresAt: time.Date(2026, 11, 13, 6, 2, 11, 0, time.UTC),
+		RevertURL: url,
+		ShortURL:  "http://localhost:8787/reverts/0193a4c2-7d1e-7c3a-9f00-0000000000b2#s=secret",
+	}
+}
+
+func TestRevertMessage(t *testing.T) {
+	t.Parallel()
+	t.Run("short link: a button, the short link in the text", func(t *testing.T) {
+		m := telegram.RevertMessage(revertNotice(approvalURL(500)))
+		require.Equal(t, &telegram.Button{Text: telegram.RevertButtonText, URL: approvalURL(500)}, m.Button)
+		require.True(t, strings.HasPrefix(m.Text, "BasaltDB: revert waiting for your signature\n\nRevert of run "), m.Text)
+		require.Contains(t, m.Text, "Agent: bot on app")
+		require.Contains(t, m.Text, "Why: Undo the win")
+		require.Contains(t, m.Text, "Expires: 2026-11-13 06:02 UTC")
+		require.Contains(t, m.Text, "On the engine's computer: http://localhost:8787/reverts/")
+	})
+	t.Run("long link: in the text", func(t *testing.T) {
+		m := telegram.RevertMessage(revertNotice(approvalURL(3000)))
+		require.Nil(t, m.Button)
+		require.Contains(t, m.Text, "Review and sign: "+approvalURL(3000))
+	})
+	t.Run("too long for the text: ask the agent", func(t *testing.T) {
+		m := telegram.RevertMessage(revertNotice(approvalURL(5000)))
+		require.Nil(t, m.Button)
+		require.NotContains(t, m.Text, "#1.")
+		require.Contains(t, m.Text, "ask the agent for it")
+	})
+	t.Run("widened: the headline only", func(t *testing.T) {
+		n := revertNotice(approvalURL(500))
+		n.Widened, n.Headline = true, "Revert widened by the person: 4 rows to restore."
+		m := telegram.RevertMessage(n)
+		require.Nil(t, m.Button)
+		require.Equal(t, "BasaltDB: revert waiting for your signature\n\nRevert widened by the person: 4 rows to restore.", m.Text)
+	})
+}
+
+func TestNotifyRevert(t *testing.T) {
+	t.Parallel()
+	srv, got := server(t, http.StatusOK, `{"ok":true}`)
+	n := telegram.NewNotifier(telegram.NewClient(srv.Client(), srv.URL, token(t), "-100123"))
+	require.NoError(t, n.NotifyRevert(context.Background(), revertNotice(approvalURL(500))))
+	require.Equal(t, "-100123", got.body["chat_id"])
+	require.Contains(t, got.body["text"], "revert waiting for your signature")
+	require.Contains(t, got.body, "reply_markup")
+}

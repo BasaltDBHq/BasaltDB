@@ -8,7 +8,7 @@ BasaltDB is **the action ledger for AI agents on your database**. It is not a da
 
 - Module: `github.com/basaltdbhq/basaltdb`
 - Binary: `cmd/basalt` (CLI, engine and MCP shim in one binary)
-- **Before you open a PR, and before every push:** run `make fmt` and commit what it changes, then `make lint` (0 issues, no warnings). CI fails on gofumpt and goimports drift, so unformatted code does not merge. Formatting-only changes go in their own commit, never mixed into a logic change.
+- **Before you open a PR, and before every push:** run `make fmt` and commit what it changes, then `make lint` (0 issues). CI fails on gofumpt and goimports drift, so unformatted code does not merge.
 - **CI locally:** `make help`, then `make ci` (lint, vet, release-script checks, race tests). Remote GitHub CI is not a gate; `make ci` passing locally is.
 - **Commits and PR titles:** Conventional Commits `type(scope): message`, lowercase imperative, no trailing period.
 - **Stack conflicts:** update a PR branch by merging its **base branch into the PR head** (`git checkout <pr-branch> && git merge origin/<base>`, resolve conflicts, commit the merge). Do **not** rebase and do **not** force-push. Work **bottom-up** through the stack (merge into the lowest conflicted PR first, then the next).

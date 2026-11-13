@@ -390,6 +390,9 @@ func ParseRequest(fragment string) (Request, Binding, error) {
 	if err != nil {
 		return Request{}, Binding{}, invalid("revert request %v", err)
 	}
+	if r.RescopeNonce != nil || r.RevealNonce != nil {
+		return Request{}, Binding{}, invalid("a link carries no rescopeNonce or revealNonce: only the engine serves them")
+	}
 	b, err := r.Check()
 	if err != nil {
 		return Request{}, Binding{}, err

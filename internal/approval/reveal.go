@@ -90,10 +90,19 @@ type RevealedRow struct {
 	SecretColumns []string `json:"secretColumns,omitempty"`
 }
 
-// redactedLine is what a reveal reads of a redacted approval or revert line.
-type redactedLine struct {
-	Redacted bool   `json:"redacted"`
-	RowHash  string `json:"rowHash"`
+// redactedRowHash is the rowHash of a redacted approval or revert line, its
+// keys read exactly as written (encoding/json would also match "RowHash" or
+// "REDACTED"), as the pages read them.
+func redactedRowHash(line string) (string, error) {
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(line), &keys); err != nil {
+		return "", invalid("revealed line: %v", err)
+	}
+	var hash string
+	if !bytes.Equal(keys["redacted"], []byte("true")) || json.Unmarshal(keys["rowHash"], &hash) != nil || !isHashHex(hash) {
+		return "", invalid("revealed line is not a redacted line")
+	}
+	return hash, nil
 }
 
 // CheckRevealAnswer checks an answer against the request's lines: each row
@@ -124,20 +133,20 @@ func CheckRevealAnswer(lines []string, a RevealAnswer) ([]bool, error) {
 // must appear in the row and be null wherever it does, and the row is
 // unverified (false), never shown as checked.
 func CheckRevealedRow(line string, r RevealedRow) (bool, error) {
-	var l redactedLine
-	if err := json.Unmarshal([]byte(line), &l); err != nil {
-		return false, invalid("revealed line: %v", err)
-	}
-	if !l.Redacted || !isHashHex(l.RowHash) {
-		return false, invalid("revealed line is not a redacted line")
+	rowHash, err := redactedRowHash(line)
+	if err != nil {
+		return false, err
 	}
 	values, err := revealedValues(r.Row)
 	if err != nil {
 		return false, err
 	}
-	if len(r.SecretColumns) == 0 {
+	if r.SecretColumns != nil && len(r.SecretColumns) == 0 {
+		return false, invalid("secretColumns is empty: name the SECRET columns, or leave it out")
+	}
+	if r.SecretColumns == nil {
 		sum := sha256.Sum256([]byte(r.Row))
-		if hex.EncodeToString(sum[:]) != l.RowHash {
+		if hex.EncodeToString(sum[:]) != rowHash {
 			return false, invalid("revealed row does not hash to its line's rowHash")
 		}
 		return true, nil

@@ -38,6 +38,8 @@ var sessionRoutes = []sessionRoute{
 	{http.MethodPost, revertsResource, "apply", revertParam, (*Server).postRevert},
 	{http.MethodPost, revertsResource, "scope", revertParam, (*Server).postScope},
 	{http.MethodPost, revertsResource, "reject", revertParam, (*Server).postReject},
+	{http.MethodPost, approvalsResource, "reveal", approvalParam, (*Server).postApprovalReveal},
+	{http.MethodPost, revertsResource, "reveal", revertParam, (*Server).postRevertReveal},
 }
 
 // The resources of the pages API and the path parameters naming an

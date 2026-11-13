@@ -91,6 +91,14 @@ func (a *heldAgent) RejectRevert(context.Context, uuid.UUID, string, agent.Rejec
 	return agent.RejectResponse{}, agent.ErrNotThisAgent
 }
 
+func (a *heldAgent) RevealApproval(context.Context, uuid.UUID, agent.RevealRequest) (approval.RevealAnswer, error) {
+	return approval.RevealAnswer{}, agent.ErrNotThisAgent
+}
+
+func (a *heldAgent) RevealRevert(context.Context, uuid.UUID, string, agent.RevealRequest) (approval.RevealAnswer, error) {
+	return approval.RevealAnswer{}, agent.ErrNotThisAgent
+}
+
 func (a *heldAgent) RelayRevert(context.Context, revert.Response) (guard.AppliedRevert, error) {
 	return guard.AppliedRevert{}, agent.ErrNotThisAgent
 }

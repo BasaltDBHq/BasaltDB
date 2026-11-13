@@ -56,6 +56,11 @@ type RevertStore interface {
 	// ListOpenReverts lists the role's PENDING and APPLYING reverts, keyset
 	// on the revert id (list_pending, LP-1).
 	ListOpenReverts(ctx context.Context, p ledger.RevertListParams) (pagination.Page[ledger.Revert], error)
+	// RevealNonce is the reveal nonce of a revert the role prepared
+	// (approval.KindRevert); RevealRevertRows returns the values of its
+	// redacted lines for the person's reveal proof.
+	RevealNonce(ctx context.Context, kind string, id uuid.UUID) ([]byte, error)
+	RevealRevertRows(ctx context.Context, id uuid.UUID, proof passkey.Assertion, key []byte) (guard.RevealedRevert, error)
 }
 
 // PreviewRevertParams are preview_revert's validated arguments: the scope

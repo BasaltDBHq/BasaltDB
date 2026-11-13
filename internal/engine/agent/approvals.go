@@ -32,6 +32,14 @@ type ApprovalStore interface {
 	FindApproval(ctx context.Context, id uuid.UUID) (ledger.Approval, error)
 	ListApprovals(ctx context.Context, p ledger.ApprovalListParams) (pagination.Page[ledger.Approval], error)
 	Passkeys(ctx context.Context) ([]passkey.Credential, error)
+	// RevealNonce is the reveal nonce of an approval or revert the role
+	// holds (approval.KindApprove or approval.KindRevert).
+	RevealNonce(ctx context.Context, kind string, id uuid.UUID) ([]byte, error)
+	// OpenReveal checks the person's reveal proof for a held write and
+	// returns the ticket of the re-run preview; RevealPreview re-runs the
+	// held write in a preview that rolls back and reads its hidden rows.
+	OpenReveal(ctx context.Context, id uuid.UUID, proof passkey.Assertion, key []byte) ([]byte, error)
+	RevealPreview(ctx context.Context, in guard.Intent, op sqlguard.Op, sql string, params []any, id uuid.UUID, ticket []byte) ([]approval.RevealedRow, error)
 }
 
 // HeldNotice is a held write to tell the person about.

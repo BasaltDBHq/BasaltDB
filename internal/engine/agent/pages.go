@@ -37,7 +37,11 @@ func (s *Service) ApprovalRequest(ctx context.Context, id uuid.UUID) (approval.R
 	if err != nil {
 		return approval.Request{}, err
 	}
-	return approval.Request{ApprovalID: a.ID, Binding: a.BindingText, Lines: a.Lines, CredentialIDs: ids}, nil
+	reveal, err := s.Approvals.RevealNonce(ctx, approval.KindApprove, id)
+	if err != nil {
+		return approval.Request{}, err
+	}
+	return approval.Request{ApprovalID: a.ID, Binding: a.BindingText, Lines: a.Lines, RevealNonce: reveal, CredentialIDs: ids}, nil
 }
 
 // RelayApproval submits the person's signed approval of one of this
@@ -109,18 +113,25 @@ func (s *Service) RevertRequest(ctx context.Context, id uuid.UUID, secret string
 	if err != nil {
 		return revert.Request{}, err
 	}
+	reveal, err := s.Reverts.RevealNonce(ctx, approval.KindRevert, id)
+	if err != nil {
+		return revert.Request{}, err
+	}
 	ids, err := s.credentialIDs(ctx)
 	if err != nil {
 		return revert.Request{}, err
 	}
 	switch {
 	case r.Widened && held:
-		st.request.CredentialIDs, st.request.RescopeNonce = ids, nonce
-		return st.request, nil
+		req := st.request
+		req.CredentialIDs, req.RescopeNonce, req.RevealNonce = ids, nonce, reveal
+		return req, nil
 	case r.Widened:
 		return revert.Request{}, widenAgain(nonce)
 	}
-	return revert.Request{RevertID: r.ID, Binding: r.BindingText, Lines: r.Lines, RescopeNonce: nonce, CredentialIDs: ids}, nil
+	return revert.Request{
+		RevertID: r.ID, Binding: r.BindingText, Lines: r.Lines, RescopeNonce: nonce, RevealNonce: reveal, CredentialIDs: ids,
+	}, nil
 }
 
 // RelayRevert applies the person's signed revert (apply_revert): Postgres

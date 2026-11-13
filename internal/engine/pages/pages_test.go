@@ -33,8 +33,10 @@ type stubAgent struct {
 	known   uuid.UUID
 	err     error
 	relayed []approval.Response
-	secrets *links.Secrets
-	origin  string
+	// revealed are the reveal requests the agent received.
+	revealed []agent.RevealRequest
+	secrets  *links.Secrets
+	origin   string
 }
 
 func (a *stubAgent) IssueApprovalLink(_ context.Context, id uuid.UUID, proof string) (string, error) {
@@ -80,6 +82,21 @@ func (a *stubAgent) CheckResetLink(uuid.UUID, string) bool { return false }
 
 func (a *stubAgent) RejectRevert(context.Context, uuid.UUID, string, agent.RejectRequest) (agent.RejectResponse, error) {
 	return agent.RejectResponse{}, agent.ErrNotThisAgent
+}
+
+func (a *stubAgent) RevealApproval(_ context.Context, id uuid.UUID, in agent.RevealRequest) (approval.RevealAnswer, error) {
+	if id != a.known {
+		return approval.RevealAnswer{}, agent.ErrNotThisAgent
+	}
+	if a.err != nil {
+		return approval.RevealAnswer{}, a.err
+	}
+	a.revealed = append(a.revealed, in)
+	return approval.RevealAnswer{Rows: []approval.RevealedRow{{Line: 1, Row: `[{"id": 9}, {"id": 9}, null]`}}}, nil
+}
+
+func (a *stubAgent) RevealRevert(context.Context, uuid.UUID, string, agent.RevealRequest) (approval.RevealAnswer, error) {
+	return approval.RevealAnswer{}, agent.ErrNotThisAgent
 }
 
 func (a *stubAgent) RelayRevert(context.Context, revert.Response) (guard.AppliedRevert, error) {

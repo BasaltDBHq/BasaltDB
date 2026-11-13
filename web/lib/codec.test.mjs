@@ -235,4 +235,6 @@ test("the engine's request may carry revealNonce; a bad one is refused", async (
   assert.equal(got.revealNonce, nonce);
   assert.equal((await checkApprovalRequest(req)).revealNonce, null);
   await assert.rejects(checkApprovalRequest({ ...req, revealNonce: "short" }), CodeError);
+  // 22 characters, but not canonical: the last one carries bits past the 16th byte.
+  await assert.rejects(checkApprovalRequest({ ...req, revealNonce: nonce.slice(0, 21) + "B" }), CodeError);
 });

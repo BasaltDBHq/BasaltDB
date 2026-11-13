@@ -8,9 +8,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
@@ -41,6 +43,44 @@ func (s *Store) Preview(ctx context.Context, in guard.Intent, sql string, params
 		return nil, err
 	}
 	return lines, nil
+}
+
+// OpenReveal checks the person's reveal proof for a held write and returns
+// the ticket of the re-run preview (basalt_meta.open_reveal), in its own
+// transaction. The caller keeps the ticket in memory for this one request.
+func (s *Store) OpenReveal(ctx context.Context, id uuid.UUID, proof passkey.Assertion, key []byte) ([]byte, error) {
+	return guard.OpenReveal(ctx, s.db, id, proof, key)
+}
+
+// RevealPreview re-runs a held write in a preview transaction exactly as an
+// apply runs it (the statement with its parameters, then finish_change, so
+// the change records them), and reads the held approval's hidden rows with
+// ticket (basalt_meta.reveal_approval_rows). The transaction always rolls
+// back.
+func (s *Store) RevealPreview(ctx context.Context, in guard.Intent, op sqlguard.Op, sql string, params []any,
+	id uuid.UUID, ticket []byte,
+) ([]approval.RevealedRow, error) {
+	var rows []approval.RevealedRow
+	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
+		if err := guard.BeginPreview(ctx, tx, in, s.limits.StatementTimeout); err != nil {
+			return err
+		}
+		if _, _, _, err := runText(ctx, tx, sql, params, s.limits.ReadRowLimit, 0); err != nil {
+			return err
+		}
+		if _, err := guard.FinishChange(ctx, tx, guard.Finish{Op: string(op), Statement: sql, Params: params}); err != nil {
+			return err
+		}
+		var err error
+		if rows, err = guard.RevealApprovalRows(ctx, tx, id, ticket); err != nil {
+			return err
+		}
+		return errPreviewRollback
+	})
+	if !errors.Is(err, errPreviewRollback) {
+		return nil, err
+	}
+	return rows, nil
 }
 
 // Hold stores a held write for the person's approval.

@@ -27,7 +27,7 @@ func runUninstall(c *cliIO, args []string) int {
 		return c.fail(err)
 	}
 	if !*yes {
-		ok, err := c.confirm(fmt.Sprintf("Drop basalt_meta, the ledger and every %s_* role?", names.Prefix))
+		ok, err := c.confirm(fmt.Sprintf("Drop basalt_meta, the ledger, every %s_* role and the demo schema basalt_demo, if init --demo made it?", names.Prefix))
 		if err != nil {
 			return c.fail(err)
 		}
@@ -37,13 +37,29 @@ func runUninstall(c *cliIO, args []string) int {
 	}
 
 	ctx := c.ctx
+	var demoDropped bool
+	var demoKept string
 	conn, err := connect(ctx, admin)
 	if err != nil {
 		return c.fail(err)
 	}
 	defer conn.Close(ctx)
-	if err := pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error { return guard.Uninstall(ctx, tx, names) }); err != nil {
+	err = pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
+		dropped, kept, err := dropDemo(ctx, tx)
+		if err != nil {
+			return err
+		}
+		demoDropped, demoKept = dropped, kept
+		return guard.Uninstall(ctx, tx, names)
+	})
+	if err != nil {
 		return c.fail(err)
+	}
+	if demoKept != "" {
+		fmt.Fprintf(c.stderr, "basalt: demo schema basalt_demo kept: %s\n", demoKept)
+	}
+	if demoDropped {
+		fmt.Fprintln(c.stderr, "basalt: demo schema basalt_demo dropped")
 	}
 	fmt.Fprintln(c.stderr, "basalt: guard uninstalled; credential files of its agents no longer work")
 	return exitOK

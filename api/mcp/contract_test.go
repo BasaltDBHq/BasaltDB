@@ -444,7 +444,7 @@ func TestNextStepsCatalog(t *testing.T) {
 	covered := map[string]bool{}
 	errorKeys := map[string]bool{}
 	for _, e := range catalog.Errors {
-		key := e.Code + "/" + e.Reason + "/" + e.Tool + plannedKey(e.Planned)
+		key := e.Code + "/" + e.Reason + "/" + e.Tool + scopeKey(e.Scope) + plannedKey(e.Planned)
 		require.False(t, errorKeys[key], "duplicate catalog entry %s", key)
 		errorKeys[key] = true
 		require.True(t, codes[e.Code], "catalog code %s is not in CONTRACT.md", e.Code)
@@ -615,7 +615,7 @@ func contractNextSteps(t *testing.T) (map[string]bool, map[string]bool, map[stri
 		switch table {
 		case tableErrors:
 			if m := nextStepsErrorRow.FindStringSubmatch(line); m != nil {
-				errs[m[1]+"/"+m[2]+"/"+m[3]+planned] = true
+				errs[m[1]+"/"+m[2]+"/"+m[3]+scopeKey(strings.TrimSpace(taskScope.FindString(line)))+planned] = true
 			}
 		case tableResults:
 			if m := nextStepsResultRow.FindStringSubmatch(line); m != nil {
@@ -633,6 +633,17 @@ func contractNextSteps(t *testing.T) (map[string]bool, map[string]bool, map[stri
 	require.NotEmpty(t, results, "no result next steps found in CONTRACT.md")
 	require.NotEmpty(t, problems, "no status problems found in CONTRACT.md")
 	return errs, results, problems
+}
+
+// taskScope marks a CONTRACT.md row whose Steps are for a task scope only.
+var taskScope = regexp.MustCompile(`\| Task scope:`)
+
+// scopeKey is the key suffix of an entry narrowed to a scope.
+func scopeKey(scope string) string {
+	if scope == "" {
+		return ""
+	}
+	return "/task"
 }
 
 // plannedKey marks the key of a planned catalog entry, or of a CONTRACT.md

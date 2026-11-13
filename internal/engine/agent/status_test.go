@@ -101,6 +101,12 @@ func engineStatus(probe *fakeProbe, passkeys int, setup *config.Setup) func(t *t
 
 // operatedStatus is engineStatus on an engine whose operatedBy is operatedBy.
 func operatedStatus(probe *fakeProbe, passkeys int, setup *config.Setup, operatedBy string) func(t *testing.T) StatusReport {
+	return operatedStatusWith(probe, passkeys, setup, operatedBy, "", []string{"--agent=bot", "--write=public.leads"})
+}
+
+// operatedStatusWith is operatedStatus with the engine config at configPath
+// and the flags init saved.
+func operatedStatusWith(probe *fakeProbe, passkeys int, setup *config.Setup, operatedBy, configPath string, saved []string) func(t *testing.T) StatusReport {
 	return func(t *testing.T) StatusReport {
 		t.Helper()
 		d := deps()
@@ -111,7 +117,7 @@ func operatedStatus(probe *fakeProbe, passkeys int, setup *config.Setup, operate
 		d.Now = func() time.Time { return statusNow }
 		// The credential file is at init's default, so no saved flag names it
 		// (a saved --credential-file stays in init commands, AE-15).
-		cmds, err := NewCommands("bot", "", "linux", []string{"--agent=bot", "--write=public.leads"})
+		cmds, err := NewCommands("bot", configPath, "linux", saved)
 		require.NoError(t, err)
 		d.Commands = cmds
 		r, err := NewService(d).Status(context.Background())
@@ -556,4 +562,34 @@ func TestEngineDownOnAnAgentOperatedEngine(t *testing.T) {
 	require.Equal(t, mcpcontract.OperatedByAgent, body["operatedBy"])
 	p := body["problems"].([]any)[0].(map[string]any)
 	require.Equal(t, mcpcontract.ActorAgent, p["nextSteps"].([]any)[0].(map[string]any)["actor"])
+}
+
+// TestStatusProblemsStayWithinTheLimitWithALongConfigPath: a 252-character
+// config path and the flags init saves must not make the status call fail
+// on a personMessage over 500 characters; the commands then stand in the
+// PERSON steps only.
+func TestStatusProblemsStayWithinTheLimitWithALongConfigPath(t *testing.T) {
+	t.Parallel()
+	long := "/" + strings.Repeat("a-long-directory-name-of-sixty-characters-in-total-ok-ok-ok-", 4) + "engine.json"
+	saved := []string{"--agent=bot", "--write=public.leads,public.lead_notes", "--read=public.owners", "--prefix=acme",
+		"--passkey-origin=https://portal.basaltvault.app", "--statement-timeout=30s", "--os-user=deploy"}
+	ok := guardAt(guard.GuardOK, nil, nil)
+	soon := statusNow.Add(time.Hour)
+	reports := map[string]func(t *testing.T) StatusReport{
+		"credential rejected":  operatedStatusWith(&fakeProbe{err: &pgconn.PgError{Code: "28P01", Message: "password authentication failed"}}, 1, nil, "", long, saved),
+		"database unreachable": operatedStatusWith(&fakeProbe{err: fmt.Errorf("dial: %w", context.DeadlineExceeded)}, 1, nil, "", long, saved),
+		"guard missing":        operatedStatusWith(&fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}}, 1, nil, "", long, saved),
+		"guard outdated":       operatedStatusWith(&fakeProbe{st: guardAt(guard.GuardOutdated, []int{guard.LatestVersion()}, nil)}, 1, nil, "", long, saved),
+		"upgrade available":    operatedStatusWith(&fakeProbe{st: guardAt(guard.GuardUpgradeAvailable, nil, []int{guard.LatestVersion()})}, 1, nil, "", long, saved),
+		"no passkey":           operatedStatusWith(&fakeProbe{st: ok}, 0, nil, "", long, saved),
+		"setup not run":        operatedStatusWith(&fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}}, 0, pendingSetup(guard.SetupInstall, soon), "", long, saved),
+		"setup change pending": operatedStatusWith(&fakeProbe{st: ok}, 1, pendingSetup(guard.SetupAgent, soon), "", long, saved),
+	}
+	for name, report := range reports {
+		r := report(t)
+		require.NotEmpty(t, r.Problems, name)
+		for _, p := range r.Problems {
+			require.NoError(t, CheckPersonMessage(p.PersonMessage), "%s: %s: %s", name, p.Code, p.PersonMessage)
+		}
+	}
 }

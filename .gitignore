@@ -31,3 +31,4 @@ npm/platforms/*/bin/
 
 # local scratch (plans, specs, briefs)
 tmp/
+/cmd/basalt/basalt

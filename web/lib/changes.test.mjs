@@ -8,6 +8,7 @@ import { countText, HIDDEN_CHIP, HIDDEN_VALUE, SHOWN_CHIP } from "./changes.js";
 import { OPEN_FROM_ENGINE, SECRET_VALUE } from "./reveal.js";
 // Imported before any document exists, so the page's main() does not run.
 import { approveLabel, lineGroups } from "./approve.js";
+import { summarize } from "./summary.js";
 
 function fakeElement(tag) {
   return {
@@ -102,8 +103,12 @@ test("rows list by key, numbers as numbers, the table's own rows before cascaded
   assert.deepEqual(rows(words[0]).slice(1).map((r) => r[1]), ["B", "a", "b"], "text by code point, not locale");
 });
 
-test("the approve button names the op and the rows", () => {
-  assert.equal(approveLabel("DELETE", 3), "Approve: delete 3 rows");
-  assert.equal(approveLabel("UPDATE", 1), "Approve: update 1 row");
-  assert.equal(approveLabel(null, 2), "Approve: 2 rows");
+test("the approve button counts the write's own rows, and the cascade apart", () => {
+  const one = { ...lead, key: { id: 5 }, old: { id: 5 } };
+  assert.equal(approveLabel(summarize([lead])), "Approve: delete 1 row");
+  assert.equal(approveLabel(summarize([lead, one])), "Approve: delete 2 rows");
+  assert.equal(approveLabel(summarize([lead, hidden(1), hidden(2)])), "Approve: delete 1 row + 2 cascaded", "not 3 rows");
+  assert.equal(approveLabel(summarize([lead, hidden(1)])), "Approve: delete 1 row + 1 cascaded");
+  const update = { ...lead, op: "UPDATE", set: { name: "x" } };
+  assert.equal(approveLabel(summarize([update, { ...update, key: { id: 5 } }])), "Approve: update 2 rows");
 });

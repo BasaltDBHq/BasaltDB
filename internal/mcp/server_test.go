@@ -89,7 +89,7 @@ func TestServeInitializeListAndCall(t *testing.T) {
 
 	text, isError = toolText(t, resps[3].Result)
 	require.True(t, isError)
-	require.JSONEq(t, `{"code":"INVALID_ARGUMENT","message":"say is required"}`, text)
+	require.JSONEq(t, `{"code":"INVALID_ARGUMENT","message":"say is required","docsUrl":"https://docs.basaltvault.app/reference/errors/#invalid-argument"}`, text)
 
 	text, isError = toolText(t, resps[4].Result)
 	require.True(t, isError)
@@ -104,4 +104,10 @@ func TestNewServerRefusesDuplicateTools(t *testing.T) {
 	t.Parallel()
 	tool := mcp.Tool{Name: "x", Call: func(context.Context, json.RawMessage) (any, error) { return struct{}{}, nil }}
 	require.Panics(t, func() { mcp.NewServer(mcp.Info{}, tool, tool) })
+}
+
+func TestDocsURLAnchorsTheCode(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, "https://docs.basaltvault.app/reference/errors/#approval-required", mcp.DocsURL("APPROVAL_REQUIRED"))
+	require.Equal(t, "https://docs.basaltvault.app/reference/errors/#internal", mcp.DocsURL("INTERNAL"))
 }

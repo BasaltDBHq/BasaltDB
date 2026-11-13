@@ -44,6 +44,7 @@ func cli(t *testing.T, env map[string]string, stdin string, args ...string) resu
 			}
 			return cache
 		})
+	c.host = systemSocketHost(t)
 	code := guardCommands[args[0]](c, args[1:])
 	return result{code, stdout.String(), stderr.String()}
 }

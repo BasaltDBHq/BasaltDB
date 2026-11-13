@@ -338,3 +338,23 @@ func TestByteWords(t *testing.T) {
 		require.Equal(t, want, byteWords(n))
 	}
 }
+
+func TestStatusConfigFallsBackToThePerUserConfigWhenNotRoot(t *testing.T) {
+	t.Parallel()
+	if _, err := os.Stat(config.DefaultPath(runtime.GOOS)); err == nil {
+		t.Skip("a system engine config is installed on this machine")
+	}
+	h := newFakeHost(t)
+	system := config.DefaultPath(runtime.GOOS)
+	c := &cliIO{host: h}
+
+	require.Equal(t, system, perUserConfigFallback(c, system), "no per-user config yet")
+
+	user := filepath.Join(h.configDir, perUserDirName, "engine.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(user), 0o700))
+	require.NoError(t, os.WriteFile(user, []byte("{}"), 0o600))
+	require.Equal(t, user, perUserConfigFallback(c, system))
+
+	h.euid = 0
+	require.Equal(t, system, perUserConfigFallback(c, system), "root keeps the system path")
+}

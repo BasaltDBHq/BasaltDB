@@ -94,11 +94,6 @@ linters:
         linters:
           - gosec
 
-      - text: "File is not properly formatted"
-        linters:
-          - goimports
-          - gofumpt
-
   disable:
     - gocyclo
     - gochecknoglobals

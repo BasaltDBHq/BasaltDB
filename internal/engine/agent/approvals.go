@@ -279,8 +279,10 @@ const afterWaitRunsOut = "If that call returns APPROVAL_REQUIRED again, its wait
 
 func approvalError(n heldNotice, message string) error {
 	notice := n.ApprovalNotice
-	return &mcp.ToolError{Code: CodeApprovalRequired, Reason: n.reason, Message: message, Approval: &notice,
-		PersonMessage: notice.PersonMessage, Links: notice.Links}
+	return &mcp.ToolError{
+		Code: CodeApprovalRequired, Reason: n.reason, Message: message, Approval: &notice,
+		PersonMessage: notice.PersonMessage, Links: notice.Links,
+	}
 }
 
 // DefaultApprovalWait is how long a write with approvalId waits for the
@@ -359,8 +361,10 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 	if err != nil {
 		return WriteOutcome{}, s.withApprovalLink(ctx, a, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err))
 	}
-	return WriteOutcome{WriteResult: res, RunID: run.ID, Op: stmt.Op, ApprovalID: a.ID,
-		Warnings: s.rlsWarnings(ctx, stmt.Tables, res.Rows)}, nil
+	return WriteOutcome{
+		WriteResult: res, RunID: run.ID, Op: stmt.Op, ApprovalID: a.ID,
+		Warnings: s.rlsWarnings(ctx, stmt.Tables, res.Rows),
+	}, nil
 }
 
 // withApprovalLink gives an approval error that sends the person back to the

@@ -46,8 +46,10 @@ func TestSavedArgsKeepOnlyWhatInitNeedsAgain(t *testing.T) {
 
 func TestInitRefusesSavingASecret(t *testing.T) {
 	t.Parallel()
-	f := initFlags{agent: "bot", osUser: "iman", configPath: "/etc/basalt/engine.json", prefix: guard.DefaultPrefix,
-		engineUser: "basalt", write: "postgres://u:p@h/db", socketDir: config.DefaultSocketDir("linux")}
+	f := initFlags{
+		agent: "bot", osUser: "iman", configPath: "/etc/basalt/engine.json", prefix: guard.DefaultPrefix,
+		engineUser: "basalt", write: "postgres://u:p@h/db", socketDir: config.DefaultSocketDir("linux"),
+	}
 	_, err := f.commands("linux")
 	require.Error(t, err)
 }
@@ -137,6 +139,7 @@ func TestRotatePasswordBreaksTheOldCredentialAndPrintsTheRestart(t *testing.T) {
 		require.NotContains(t, a, "rotate", "--rotate-password is one-shot")
 	}
 }
+
 func TestServiceInstallRefusesAConnectionURLInitArg(t *testing.T) {
 	t.Parallel()
 	cfg := tempConfig(t)
@@ -156,8 +159,10 @@ func TestServiceInstallRefusesAConnectionURLInitArg(t *testing.T) {
 func TestServiceInstallRefusesKeepCredentialWithStdin(t *testing.T) {
 	t.Parallel()
 	var out, errb bytes.Buffer
-	code := runService(context.Background(), []string{"install", "--agent", "bot", "--os-user", "x",
-		"--keep-credential", "--credential-stdin", "--dry-run"}, stdio{in: strings.NewReader(""), out: &out, err: &errb})
+	code := runService(context.Background(), []string{
+		"install", "--agent", "bot", "--os-user", "x",
+		"--keep-credential", "--credential-stdin", "--dry-run",
+	}, stdio{in: strings.NewReader(""), out: &out, err: &errb})
 	require.Equal(t, exitUsage, code)
 }
 

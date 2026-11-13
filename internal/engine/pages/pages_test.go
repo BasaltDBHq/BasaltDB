@@ -174,8 +174,10 @@ func TestPagesServeTheEmbeddedFiles(t *testing.T) {
 		require.Contains(t, body, want, path)
 	}
 	// The old paths and anything else under web/ are not served.
-	for _, path := range []string{"/", "/lib/", "/lib/codec.test.mjs", "/embed.go", "/approve/", "/approve/" + id,
-		"/revert/" + id, "/register/", "/approvals/", "/approve/index.html"} {
+	for _, path := range []string{
+		"/", "/lib/", "/lib/codec.test.mjs", "/embed.go", "/approve/", "/approve/" + id,
+		"/revert/" + id, "/register/", "/approvals/", "/approve/index.html",
+	} {
 		status, _ := s.do(t, http.MethodGet, path, host, "", "", "")
 		require.Equal(t, http.StatusNotFound, status, "%s: no listings, no tests, no sources", path)
 	}

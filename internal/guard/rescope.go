@@ -135,8 +135,10 @@ func RescopeOwn(ctx context.Context, q Querier, revertID uuid.UUID, s RevertScop
 	if err != nil {
 		return PreparedRevert{}, fmt.Errorf("guard returned a bad revert binding: %w", err)
 	}
-	return PreparedRevert{RevertID: out.RevertID, BindingText: out.BindingText, ExpiresAt: out.ExpiresAt, Lines: out.Lines,
-		Batched: b.Batched}, nil
+	return PreparedRevert{
+		RevertID: out.RevertID, BindingText: out.BindingText, ExpiresAt: out.ExpiresAt, Lines: out.Lines,
+		Batched: b.Batched,
+	}, nil
 }
 
 // ResetRevert puts the caller's own pending revert back to its proposal

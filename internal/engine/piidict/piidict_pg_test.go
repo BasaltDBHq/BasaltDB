@@ -402,8 +402,10 @@ func TestScanRebuildsFromEveryKindOfRelation(t *testing.T) {
 	var slept time.Duration
 	clock := time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
 	s := NewScanner(dict, []ScanSource{{Agent: "bot", DB: f.pool, Classes: classes, Limits: sqlguard.DefaultLimits()}},
-		ScanOptions{PageRows: 2, RowsPerSecond: 4, Now: func() time.Time { return clock },
-			Sleep: func(_ context.Context, d time.Duration) error { slept += d; clock = clock.Add(d); return nil }}, log)
+		ScanOptions{
+			PageRows: 2, RowsPerSecond: 4, Now: func() time.Time { return clock },
+			Sleep: func(_ context.Context, d time.Duration) error { slept += d; clock = clock.Add(d); return nil },
+		}, log)
 
 	res, err := s.Cycle(ctx)
 	require.NoError(t, err)

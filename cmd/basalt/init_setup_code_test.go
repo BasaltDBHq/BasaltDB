@@ -162,10 +162,13 @@ func TestInitSetupCodeRefusesBeforeTheDatabase(t *testing.T) {
 		"damaged":         {time.Time{}, damaged(install.res.Code), "basalt: This setup code is damaged; copy it again.\n"},
 		"guard too old": {time.Time{}, oldCode, "basalt: This setup code is for guard version 15, but setup codes need guard version 16 or later. " +
 			"Ask bot for a new code made with an up-to-date basalt.\n"},
-		"wrapped and wrong host": {time.Time{}, install.res.Code[:40] + "\n  " + install.res.Code[40:],
+		"wrapped and wrong host": {
+			time.Time{},
+			install.res.Code[:40] + "\n  " + install.res.Code[40:],
 			"basalt: This setup code is for database app of db.example.com:5432 (the agent connects there). Your admin connection string points at database app of 127.0.0.1:1. " +
 				"Either run this command with the admin connection string of db.example.com:5432, or ask bot for a new code for the database you meant " +
-				"(basalt init --remote --new-code --database-url postgres://admin@127.0.0.1:1/app).\n"},
+				"(basalt init --remote --new-code --database-url postgres://admin@127.0.0.1:1/app).\n",
+		},
 	} {
 		r := laptopRun(t, admin, "", tc.now, "--setup-code", tc.code, "--yes")
 		require.Equal(t, exitError, r.code, name)

@@ -55,8 +55,10 @@ func dbNow(t *testing.T, d *guardtest.DB) time.Time {
 func installSetup(t *testing.T, d *guardtest.DB, agent string) guard.Setup {
 	t.Helper()
 	now := dbNow(t, d)
-	return guard.Setup{ID: uuidAt(t, now), Kind: guard.SetupInstall, Agent: agent,
-		GuardVersion: guard.LatestVersion(), ExpiresAt: now.Add(setupLifetime).Truncate(time.Second)}
+	return guard.Setup{
+		ID: uuidAt(t, now), Kind: guard.SetupInstall, Agent: agent,
+		GuardVersion: guard.LatestVersion(), ExpiresAt: now.Add(setupLifetime).Truncate(time.Second),
+	}
 }
 
 // initFromVerifier installs the guard and the agent bot from a verifier
@@ -167,8 +169,10 @@ func TestAgentLogsInWithVerifierPassword(t *testing.T) {
 	pw := guard.NewPassword()
 	verifier := newVerifier(t, pw)
 
-	s, err := guard.PlanInit(ctx, d.Admin, guard.InitOptions{Names: d.Names,
-		Agent: guard.AgentSpec{Name: "bot", Verifier: verifier, CreateOnly: true, Write: leads, Read: leads}})
+	s, err := guard.PlanInit(ctx, d.Admin, guard.InitOptions{
+		Names: d.Names,
+		Agent: guard.AgentSpec{Name: "bot", Verifier: verifier, CreateOnly: true, Write: leads, Read: leads},
+	})
 	require.NoError(t, err)
 	shown := s.SQL()
 	require.Contains(t, shown, "PASSWORD '"+verifier+"'", "the person reads the verifier")
@@ -199,14 +203,18 @@ func TestInstallVerifierRefusesExistingRole(t *testing.T) {
 	a := d.NewAgent(t, "bot", leads, leads)
 
 	// ROLE_EXISTS, enforced in Postgres: CREATE ROLE fails, nothing changes.
-	err := d.TryInit(guard.AgentSpec{Name: "bot", Verifier: newVerifier(t, guard.NewPassword()),
-		CreateOnly: true, Write: leads, Read: leads})
+	err := d.TryInit(guard.AgentSpec{
+		Name: "bot", Verifier: newVerifier(t, guard.NewPassword()),
+		CreateOnly: true, Write: leads, Read: leads,
+	})
 	require.Equal(t, "42710", guardtest.SQLState(err), "%v", err)
 	requireLogin(t, d, a.Password)
 
 	// ROLE_MISSING: an AGENT verifier for a role that does not exist.
-	err = d.TryInit(guard.AgentSpec{Name: "other", Verifier: newVerifier(t, guard.NewPassword()),
-		Write: leads, Read: leads})
+	err = d.TryInit(guard.AgentSpec{
+		Name: "other", Verifier: newVerifier(t, guard.NewPassword()),
+		Write: leads, Read: leads,
+	})
 	require.Equal(t, "42704", guardtest.SQLState(err), "%v", err)
 	exists, err := guard.AgentRoleExists(context.Background(), d.Admin, d.Names, "other")
 	require.NoError(t, err)
@@ -240,8 +248,10 @@ func TestRecordSetup(t *testing.T) {
 	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT detail FROM basalt_meta.ledger
 		WHERE seq = $1 AND kind = 'AGENT_SETUP' AND agent = $2`, seq, role).Scan(&detail))
 	admin := scalarOf[string](t, d.Admin, `SELECT session_user::text`)
-	require.Equal(t, map[string]any{"setupId": s.ID.String(), "kind": "INSTALL",
-		"guardVersion": float64(guard.LatestVersion()), "by": admin}, detail)
+	require.Equal(t, map[string]any{
+		"setupId": s.ID.String(), "kind": "INSTALL",
+		"guardVersion": float64(guard.LatestVersion()), "by": admin,
+	}, detail)
 	require.Zero(t, count(t, d.Admin, `SELECT count(seq)::int FROM basalt_meta.ledger WHERE detail::text LIKE '%SCRAM%'`),
 		"the ledger never holds a verifier")
 	require.Nil(t, scalarOf[*int64](t, d.Admin, `SELECT basalt_meta.verify_chain()`))
@@ -305,8 +315,10 @@ func TestRecordSetupRefusals(t *testing.T) {
 		require.NoError(t, record(up))
 		// And it supersedes nothing: an agent setup older than a recorded
 		// UPGRADE still runs.
-		later := guard.Setup{ID: uuidAt(t, dbNow(t, d).Add(2*time.Second)), Kind: guard.SetupUpgrade,
-			GuardVersion: guard.LatestVersion(), ExpiresAt: dbNow(t, d).Add(time.Hour)}
+		later := guard.Setup{
+			ID: uuidAt(t, dbNow(t, d).Add(2*time.Second)), Kind: guard.SetupUpgrade,
+			GuardVersion: guard.LatestVersion(), ExpiresAt: dbNow(t, d).Add(time.Hour),
+		}
 		require.NoError(t, record(later))
 		older := installSetup(t, d, "other")
 		older.Kind = guard.SetupAgent
@@ -315,8 +327,10 @@ func TestRecordSetupRefusals(t *testing.T) {
 	})
 	t.Run("expired", func(t *testing.T) {
 		now := dbNow(t, d)
-		s := guard.Setup{ID: uuidAt(t, now.Add(-2*time.Hour)), Kind: guard.SetupUpgrade,
-			GuardVersion: guard.LatestVersion(), ExpiresAt: now.Add(-time.Second)}
+		s := guard.Setup{
+			ID: uuidAt(t, now.Add(-2*time.Hour)), Kind: guard.SetupUpgrade,
+			GuardVersion: guard.LatestVersion(), ExpiresAt: now.Add(-time.Second),
+		}
 		requireRefused(t, record(s), guard.SetupExpired)
 		// Expiry has no skew: a code is expired from expiresAt on.
 		s.ExpiresAt = now
@@ -324,8 +338,10 @@ func TestRecordSetupRefusals(t *testing.T) {
 	})
 	t.Run("setup id in the future", func(t *testing.T) {
 		now := dbNow(t, d)
-		s := guard.Setup{ID: uuidAt(t, now.Add(setupSkew+time.Minute)), Kind: guard.SetupUpgrade,
-			GuardVersion: guard.LatestVersion(), ExpiresAt: now.Add(time.Hour)}
+		s := guard.Setup{
+			ID: uuidAt(t, now.Add(setupSkew+time.Minute)), Kind: guard.SetupUpgrade,
+			GuardVersion: guard.LatestVersion(), ExpiresAt: now.Add(time.Hour),
+		}
 		requireRefused(t, record(s), guard.SetupIDInFuture)
 		// Within the skew it passes.
 		s.ID = uuidAt(t, now.Add(setupSkew-time.Minute))
@@ -333,8 +349,10 @@ func TestRecordSetupRefusals(t *testing.T) {
 	})
 	t.Run("expiry too far", func(t *testing.T) {
 		now := dbNow(t, d).Truncate(time.Millisecond) // the setup id's precision
-		s := guard.Setup{ID: uuidAt(t, now), Kind: guard.SetupUpgrade, GuardVersion: guard.LatestVersion(),
-			ExpiresAt: now.Add(setupLifetime + setupSkew + time.Minute)}
+		s := guard.Setup{
+			ID: uuidAt(t, now), Kind: guard.SetupUpgrade, GuardVersion: guard.LatestVersion(),
+			ExpiresAt: now.Add(setupLifetime + setupSkew + time.Minute),
+		}
 		requireRefused(t, record(s), guard.SetupExpiryTooFar)
 		// More than 24 hours after the setup id's time, though near now.
 		s.ID = uuidAt(t, now.Add(-2*time.Hour))
@@ -345,8 +363,10 @@ func TestRecordSetupRefusals(t *testing.T) {
 	})
 	t.Run("invalid input", func(t *testing.T) {
 		now := dbNow(t, d)
-		base := guard.Setup{ID: uuidAt(t, now), Kind: guard.SetupInstall, Agent: "bot",
-			GuardVersion: guard.LatestVersion(), ExpiresAt: now.Add(time.Hour)}
+		base := guard.Setup{
+			ID: uuidAt(t, now), Kind: guard.SetupInstall, Agent: "bot",
+			GuardVersion: guard.LatestVersion(), ExpiresAt: now.Add(time.Hour),
+		}
 		d.Exec(t, `CREATE ROLE `+d.Names.Prefix+`_agent_stranger NOLOGIN`)
 		// A superuser is a member of every role, agents included.
 		d.Exec(t, `CREATE ROLE `+d.Names.Prefix+`_agent_root SUPERUSER LOGIN`)
@@ -398,8 +418,10 @@ func TestRecordSetupRefusals(t *testing.T) {
 			if err := tx.QueryRow(ctx, `SELECT now()`).Scan(&start); err != nil {
 				return err
 			}
-			s := guard.Setup{ID: uuidAt(t, start), Kind: guard.SetupUpgrade, GuardVersion: guard.LatestVersion(),
-				ExpiresAt: start.Add(time.Second)}
+			s := guard.Setup{
+				ID: uuidAt(t, start), Kind: guard.SetupUpgrade, GuardVersion: guard.LatestVersion(),
+				ExpiresAt: start.Add(time.Second),
+			}
 			if _, err := tx.Exec(ctx, `SELECT pg_sleep(1.5)`); err != nil {
 				return err
 			}

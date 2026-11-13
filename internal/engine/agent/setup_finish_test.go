@@ -85,12 +85,18 @@ func TestASetupIsClearedOnlyWhenTheDatabaseShowsItRecorded(t *testing.T) {
 		{"the role cannot log in yet", &fakeProbe{err: errNoRole, recordedErr: errNoRole}, &fakeFinisher{}, true},
 		{"the role logs in but the setup is not recorded", &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}, &fakeFinisher{}, true},
 		{"the database cannot be reached", &fakeProbe{err: context.DeadlineExceeded, recordedErr: context.DeadlineExceeded}, &fakeFinisher{}, false},
-		{"the pending credential is refused and the engine's finds nothing",
-			&fakeProbe{err: errNoRole, recordedErr: errNoRole}, &fakeFinisher{has: false}, true},
-		{"the pending credential logs in but the setup is not recorded",
-			&fakeProbe{err: errNoRole, recordedErr: errNoRole}, &fakeFinisher{has: true}, true},
-		{"the pending credential's read fails",
-			&fakeProbe{err: errNoRole, recordedErr: errNoRole}, &fakeFinisher{pendingRecorded: true, has: true, pendingErr: errors.New("mode 644")}, true},
+		{
+			"the pending credential is refused and the engine's finds nothing",
+			&fakeProbe{err: errNoRole, recordedErr: errNoRole}, &fakeFinisher{has: false}, true,
+		},
+		{
+			"the pending credential logs in but the setup is not recorded",
+			&fakeProbe{err: errNoRole, recordedErr: errNoRole}, &fakeFinisher{has: true}, true,
+		},
+		{
+			"the pending credential's read fails",
+			&fakeProbe{err: errNoRole, recordedErr: errNoRole}, &fakeFinisher{pendingRecorded: true, has: true, pendingErr: errors.New("mode 644")}, true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

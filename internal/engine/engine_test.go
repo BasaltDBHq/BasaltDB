@@ -93,10 +93,12 @@ func (testFallback) Abandoned(_ context.Context, out io.Writer, line []byte) err
 	return mcp.WriteError(out, req.ID, mcp.ErrCodeServer, "abandoned")
 }
 
-var fallback = testFallback{mcp.NewServer(mcp.Info{Name: "fallback", Version: "test"}, mcp.Tool{Name: "whoami",
+var fallback = testFallback{mcp.NewServer(mcp.Info{Name: "fallback", Version: "test"}, mcp.Tool{
+	Name: "whoami",
 	Call: func(context.Context, json.RawMessage) (any, error) {
 		return map[string]string{"agent": "the shim"}, nil
-	}})}
+	},
+})}
 
 func myUID() uint32 {
 	return uint32(os.Getuid())

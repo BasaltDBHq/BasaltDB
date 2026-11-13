@@ -174,8 +174,10 @@ func catalogCases() map[string]catalogCase {
 	}
 	return map[string]catalogCase{
 		caseKey("INTENT_REQUIRED", "", ""): {"write", map[string]any{"sql": "DELETE FROM leads WHERE id = 1"}, pgFail("BS001", "INTENT_REQUIRED", "")},
-		caseKey("STALE_READ", "", ""): {"write", writeArgs0,
-			pgFail("BS004", "STALE_READ", staleText("public.leads", `{"id": 42}`))},
+		caseKey("STALE_READ", "", ""): {
+			"write", writeArgs0,
+			pgFail("BS004", "STALE_READ", staleText("public.leads", `{"id": 42}`)),
+		},
 
 		caseKey("STATEMENT_REFUSED", "PARSE_ERROR", ""):           {"query", queryArgs0, refusal(sqlguard.ReasonParseError)},
 		caseKey("STATEMENT_REFUSED", "MULTIPLE_STATEMENTS", ""):   {"query", queryArgs0, refusal(sqlguard.ReasonMultipleStatements)},
@@ -188,26 +190,38 @@ func catalogCases() map[string]catalogCase {
 		caseKey("STATEMENT_REFUSED", "DATA_MODIFYING_WITH", ""):   {"query", queryArgs0, refusal(sqlguard.ReasonDataModifyingWith)},
 		caseKey("STATEMENT_REFUSED", "FUNCTION_NOT_ALLOWED", ""):  {"query", queryArgs0, refusal(sqlguard.ReasonFunction)},
 		caseKey("STATEMENT_REFUSED", "NOT_REPEATABLE", ""):        {"write", writeArgs0, refusal(sqlguard.ReasonNotRepeatable)},
-		caseKey("STATEMENT_REFUSED", "NO_PRIMARY_KEY", ""): {"write", writeArgs0,
-			pgFail("BS007", "NOT_ALLOWED", "table public.events has no primary key; the guard keys ledger rows by it")},
+		caseKey("STATEMENT_REFUSED", "NO_PRIMARY_KEY", ""): {
+			"write", writeArgs0,
+			pgFail("BS007", "NOT_ALLOWED", "table public.events has no primary key; the guard keys ledger rows by it"),
+		},
 		caseKey("STATEMENT_REFUSED", "NOT_ALLOWED", ""): {"write", writeArgs0, pgFail("BS007", "NOT_ALLOWED", "TRUNCATE by an agent")},
 
-		caseKey("ROW_LIMIT_EXCEEDED", "", ""): {"write", writeArgs0,
-			pgFail("BS003", "ROW_LIMIT_EXCEEDED", "more than 50 rows in one action (cascades included)")},
+		caseKey("ROW_LIMIT_EXCEEDED", "", ""): {
+			"write", writeArgs0,
+			pgFail("BS003", "ROW_LIMIT_EXCEEDED", "more than 50 rows in one action (cascades included)"),
+		},
 
 		caseKey("QUERY_TIMEOUT", "ROW_LIMIT", ""):  {"query", queryArgs0, plain(agentdb.ErrRowLimit)},
 		caseKey("QUERY_TIMEOUT", "SIZE_LIMIT", ""): {"query", queryArgs0, plain(agentdb.ErrSizeLimit)},
 		caseKey("QUERY_TIMEOUT", "TIME_LIMIT", ""): {"query", queryArgs0, pgFail("57014", "canceling statement due to statement timeout", "")},
-		caseKey("QUERY_TIMEOUT", "TIME_LIMIT", "preview_revert"): {"preview_revert", map[string]any{"runId": caseRunID},
-			timeoutRevert("preview_revert")},
-		caseKey("QUERY_TIMEOUT", "TIME_LIMIT", "request_revert"): {"request_revert", map[string]any{"runId": caseRunID, "intent": "Undo"},
-			timeoutRevert("request_revert")},
+		caseKey("QUERY_TIMEOUT", "TIME_LIMIT", "preview_revert"): {
+			"preview_revert",
+			map[string]any{"runId": caseRunID},
+			timeoutRevert("preview_revert"),
+		},
+		caseKey("QUERY_TIMEOUT", "TIME_LIMIT", "request_revert"): {
+			"request_revert",
+			map[string]any{"runId": caseRunID, "intent": "Undo"},
+			timeoutRevert("request_revert"),
+		},
 
 		caseKey("APPROVAL_REQUIRED", "HELD", ""):          {"write", writeArgs0, held(reasonHeld, caseShortLink)},
 		caseKey("APPROVAL_REQUIRED", "HELD_NO_PAGES", ""): {"write", writeArgs0, held(reasonHeldNoPages, "http://localhost:7878/approvals/"+caseApproval+"#1.abc")},
 		caseKey("APPROVAL_REQUIRED", "NO_PASSKEY", ""):    {"write", writeArgs0, held(reasonNoPasskey, caseShortLink)},
-		caseKey("APPROVAL_REQUIRED", "WAIT_ENDED", ""): {"write", withApproval(writeArgs0),
-			held(reasonWaitEnded, "http://localhost:7878/approvals/"+caseApproval+"#1.abc")},
+		caseKey("APPROVAL_REQUIRED", "WAIT_ENDED", ""): {
+			"write", withApproval(writeArgs0),
+			held(reasonWaitEnded, "http://localhost:7878/approvals/"+caseApproval+"#1.abc"),
+		},
 
 		caseKey("APPROVAL_EXPIRED", "", ""): {"write", withApproval(writeArgs0), asToolError(&mcp.ToolError{Code: CodeApprovalExpired, Message: "approval expired"})},
 
@@ -215,19 +229,33 @@ func catalogCases() map[string]catalogCase {
 		caseKey("APPROVAL_INVALID", "ALREADY_USED", ""):    {"write", withApproval(writeArgs0), guardApproval("approval already used")},
 		caseKey("APPROVAL_INVALID", "DIFFERENT_WRITE", ""): {"write", withApproval(writeArgs0), guardApproval("the statement or its parameters differ from the approval")},
 		caseKey("APPROVAL_INVALID", "NOT_THIS_AGENT", ""):  {"write", withApproval(writeArgs0), guardApproval("approval is for another agent")},
-		caseKey("APPROVAL_INVALID", "ROWS_CHANGED", ""): {"write", withApproval(writeArgs0),
-			guardApproval("rows changed since the preview; a fresh preview and approval are needed")},
+		caseKey("APPROVAL_INVALID", "ROWS_CHANGED", ""): {
+			"write", withApproval(writeArgs0),
+			guardApproval("rows changed since the preview; a fresh preview and approval are needed"),
+		},
 		caseKey("APPROVAL_INVALID", "BAD_SIGNATURE", ""):   {"write", withApproval(writeArgs0), approvalLink(reasonBadSignature)},
 		caseKey("APPROVAL_INVALID", "PASSKEY_REVOKED", ""): {"write", withApproval(writeArgs0), approvalLink(reasonPasskeyRevoked)},
 
-		caseKey("REVERT_INVALID", "LINE_INVALID", ""): {"apply_revert_batch", map[string]any{"revertId": caseRevertID, "lines": []any{1}},
-			guardRevert("line 9 is not in the plan")},
-		caseKey("REVERT_INVALID", "PLAN_NOT_SIGNED", ""): {"apply_revert_batch", map[string]any{"revertId": caseRevertID, "lines": []any{1}},
-			guardRevert("the person has not signed this revert yet (basalt revert)")},
-		caseKey("REVERT_INVALID", "PLAN_FINISHED", ""): {"apply_revert_batch", map[string]any{"revertId": caseRevertID, "lines": []any{1}},
-			guardRevert("revert already applied: no line is pending")},
-		caseKey("REVERT_INVALID", "NOT_THIS_AGENT", ""): {"apply_revert_batch", map[string]any{"revertId": caseRevertID, "lines": []any{1}},
-			guardRevert("no such revert")},
+		caseKey("REVERT_INVALID", "LINE_INVALID", ""): {
+			"apply_revert_batch",
+			map[string]any{"revertId": caseRevertID, "lines": []any{1}},
+			guardRevert("line 9 is not in the plan"),
+		},
+		caseKey("REVERT_INVALID", "PLAN_NOT_SIGNED", ""): {
+			"apply_revert_batch",
+			map[string]any{"revertId": caseRevertID, "lines": []any{1}},
+			guardRevert("the person has not signed this revert yet (basalt revert)"),
+		},
+		caseKey("REVERT_INVALID", "PLAN_FINISHED", ""): {
+			"apply_revert_batch",
+			map[string]any{"revertId": caseRevertID, "lines": []any{1}},
+			guardRevert("revert already applied: no line is pending"),
+		},
+		caseKey("REVERT_INVALID", "NOT_THIS_AGENT", ""): {
+			"apply_revert_batch",
+			map[string]any{"revertId": caseRevertID, "lines": []any{1}},
+			guardRevert("no such revert"),
+		},
 		caseKey("REVERT_INVALID", "ROWS_CHANGED", ""): {"request_revert", revertArgs, func(t *testing.T, s *Service) error {
 			return s.rowsChanged(caseRevert(false), "rows changed")
 		}},
@@ -241,12 +269,21 @@ func catalogCases() map[string]catalogCase {
 		caseKey("REVERT_EXPIRED", "NOT_SIGNED", ""):   {"request_revert", revertArgs, func(t *testing.T, s *Service) error { return s.revertExpired(caseRevert(false)) }},
 		caseKey("REVERT_EXPIRED", "NOT_FINISHED", ""): {"request_revert", revertArgs, func(t *testing.T, s *Service) error { return s.revertExpired(caseRevert(true)) }},
 
-		caseKey("NOTHING_TO_REVERT", "READS_ONLY", ""): {"request_revert", map[string]any{"runId": caseRunID, "intent": "Undo"},
-			nothingToRevert("request_revert", nil, "the run changed no rows", uuid.Nil)},
-		caseKey("NOTHING_TO_REVERT", "ALL_CHANGED_BY_PEOPLE", ""): {"preview_revert", map[string]any{"runId": caseRunID},
-			nothingToRevert("preview_revert", []string{changedAfterLine}, "every line skipped", uuid.Nil)},
-		caseKey("NOTHING_TO_REVERT", "ALREADY_REVERTED", ""): {"preview_revert", map[string]any{"runId": caseRunID},
-			nothingToRevert("preview_revert", []string{alreadyRevertedLine}, "every line skipped", uuid.MustParse(caseChangeID))},
+		caseKey("NOTHING_TO_REVERT", "READS_ONLY", ""): {
+			"request_revert",
+			map[string]any{"runId": caseRunID, "intent": "Undo"},
+			nothingToRevert("request_revert", nil, "the run changed no rows", uuid.Nil),
+		},
+		caseKey("NOTHING_TO_REVERT", "ALL_CHANGED_BY_PEOPLE", ""): {
+			"preview_revert",
+			map[string]any{"runId": caseRunID},
+			nothingToRevert("preview_revert", []string{changedAfterLine}, "every line skipped", uuid.Nil),
+		},
+		caseKey("NOTHING_TO_REVERT", "ALREADY_REVERTED", ""): {
+			"preview_revert",
+			map[string]any{"runId": caseRunID},
+			nothingToRevert("preview_revert", []string{alreadyRevertedLine}, "every line skipped", uuid.MustParse(caseChangeID)),
+		},
 
 		caseKey("PERMISSION_DENIED", "", ""): {"query", queryArgs0, pgFail("42501", "permission denied for table events", "")},
 
@@ -254,28 +291,43 @@ func catalogCases() map[string]catalogCase {
 		caseKey("NOT_FOUND", "CHANGE", ""):   {"request_revert", map[string]any{"changeId": caseChangeID, "intent": "Undo", "runId": caseRunID}, asToolError(&mcp.ToolError{Code: CodeNotFound, Reason: "CHANGE", Message: "no such change"})},
 		caseKey("NOT_FOUND", "APPROVAL", ""): {"write", withApproval(writeArgs0), asToolError(&mcp.ToolError{Code: CodeNotFound, Reason: "APPROVAL", Message: "no such approval"})},
 		caseKey("NOT_FOUND", "REVERT", ""):   {"request_revert", revertArgs, plainFunc(func() error { return revertNotFound(uuid.MustParse(caseRevertID)) })},
-		caseKey("NOT_FOUND", "TASK", ""): {"preview_revert", map[string]any{"taskId": caseRunID},
+		caseKey("NOT_FOUND", "TASK", ""): {
+			"preview_revert",
+			map[string]any{"taskId": caseRunID},
 			plainFunc(func() error {
 				return notOwnTask(guard.RevertScope{Kind: "TASK", ID: uuid.MustParse(caseRunID)})
-			})},
+			}),
+		},
 		caseKey("NOT_FOUND", "LINK", ""):       {"approval_page", nil, asToolError(&mcp.ToolError{Code: CodeNotFound, Reason: "LINK", Message: "no such link"})},
 		caseKey("NOT_FOUND", "LINK_RESET", ""): {"revert_page", nil, asToolError(&mcp.ToolError{Code: CodeNotFound, Reason: "LINK_RESET", Message: "the link was reset"})},
-		caseKey("NOT_FOUND", "", "describe"): {"describe", map[string]any{"resource": "billing.invoices"},
-			plainFunc(func() error { return describeNotFound("billing.invoices") })},
+		caseKey("NOT_FOUND", "", "describe"): {
+			"describe",
+			map[string]any{"resource": "billing.invoices"},
+			plainFunc(func() error { return describeNotFound("billing.invoices") }),
+		},
 
 		caseKey("SQL_ERROR", "", ""):            {"write", writeArgs0, pgFail("42703", `column "x" does not exist`, "")},
 		caseKey("SQL_ERROR", "NO_ROWS_NOW", ""): {"write", writeArgs0, asToolError(&mcp.ToolError{Code: CodeSQLError, Reason: reasonNoRowsNow, Message: "changes no rows now"})},
 		caseKey("INVALID_ARGUMENT", "", ""):     {"write", writeArgs0, plain(&ArgumentError{Message: "invalid arguments"})},
-		caseKey("INVALID_ARGUMENT", "STALE_CURSOR", ""): {"run_history", map[string]any{"runId": caseRunID, "cursor": "x"},
-			plain(fmt.Errorf("%w: %w", ledger.ErrInvalidParams, errors.New("invalid cursor: missing id")))},
-		caseKey("INVALID_ARGUMENT", "SCOPE_FILTER", ""): {"preview_revert", map[string]any{"runId": caseRunID, "tables": []any{"public.ghost"}},
+		caseKey("INVALID_ARGUMENT", "STALE_CURSOR", ""): {
+			"run_history",
+			map[string]any{"runId": caseRunID, "cursor": "x"},
+			plain(fmt.Errorf("%w: %w", ledger.ErrInvalidParams, errors.New("invalid cursor: missing id"))),
+		},
+		caseKey("INVALID_ARGUMENT", "SCOPE_FILTER", ""): {
+			"preview_revert",
+			map[string]any{"runId": caseRunID, "tables": []any{"public.ghost"}},
 			plainFunc(func() error {
 				return scopeRefused(guard.RevertScope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}, &pgconn.PgError{
 					Code: "BS011", Message: "SCOPE_REFUSED", Detail: guard.ScopeFilter, Hint: "public.ghost has no change of yours in this scope",
 				})
-			})},
-		caseKey("INVALID_ARGUMENT", "SCOPE_FILTER_CAP", ""): {"request_revert", map[string]any{"taskId": caseRunID, "intent": "Undo", "tables": []any{"public.leads"}},
-			plainFunc(scopeFilterCapped)},
+			}),
+		},
+		caseKey("INVALID_ARGUMENT", "SCOPE_FILTER_CAP", ""): {
+			"request_revert",
+			map[string]any{"taskId": caseRunID, "intent": "Undo", "tables": []any{"public.leads"}},
+			plainFunc(scopeFilterCapped),
+		},
 
 		caseKey("UNAVAILABLE", "DATABASE_UNREACHABLE", ""): {"query", queryArgs0, plain(context.DeadlineExceeded)},
 		caseKey("UNAVAILABLE", "CREDENTIAL_REJECTED", ""):  {"query", queryArgs0, pgFail("28P01", "password authentication failed", "")},

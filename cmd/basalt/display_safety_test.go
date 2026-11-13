@@ -11,6 +11,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/pii/classify"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 )
 
@@ -99,4 +101,27 @@ func TestShortLinkOnlyFromThisItemsLocalPage(t *testing.T) {
 	require.Equal(t, long, got)
 	require.Equal(t, "basalt: the engine gave no short link (engine answered 500: ?]8;;https://evil.example?\\click???basalt: approved); using the long link\n",
 		stderr.String(), "the engine's message is shown with its control characters replaced")
+}
+
+// ESC, OSC, C1 and bidi characters in a table or column name, or a reason,
+// reach the terminal as <U+XXXX> in the classify review (CWE-150).
+func TestClassifyReviewEscapesNamesAndReasons(t *testing.T) {
+	t.Parallel()
+	hostile := "x\x1b[2Ky\x1b]0;owned\x07\u009b‮"
+	col := classify.ReviewColumn{}
+	col.Column.Name = hostile
+	col.Suggestion = classify.Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityEmail, Reason: "looks like " + hostile}
+	needs := col
+	needs.Suggestion.NeedsReview = true
+	var out bytes.Buffer
+	for _, narrow := range []int{0, 40} {
+		out.Reset()
+		printTable(&out, classify.ReviewTable{Table: "crm." + hostile, Columns: []classify.ReviewColumn{col, needs}}, narrow)
+		got := out.String()
+		require.NotContains(t, got, "\x1b")
+		require.NotContains(t, got, "\x07")
+		require.NotContains(t, got, "\u009b")
+		require.NotContains(t, got, "‮")
+		require.Contains(t, got, "x<U+001B>[2Ky<U+001B>]0;owned<U+0007><U+009B><U+202E>")
+	}
 }

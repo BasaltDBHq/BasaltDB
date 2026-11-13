@@ -110,7 +110,7 @@ func passkeyList(c *cliIO, args []string) int {
 	}
 	for _, k := range out {
 		fmt.Fprintf(c.stdout, "%s  %-20s %-16s registered %s  last used %s\n",
-			k.CredentialID, k.Label, k.RPID, k.CreatedAt.UTC().Format(dateLayout), lastUsed(k.LastUsedAt))
+			k.CredentialID, visibleText(k.Label), visibleText(k.RPID), k.CreatedAt.UTC().Format(dateLayout), lastUsed(k.LastUsedAt))
 	}
 	return exitOK
 }
@@ -281,7 +281,7 @@ func confirmRemoval(c *cliIO, k guard.RegisteredPasskey, last bool, f removeFlag
 		if !f.force {
 			return errors.New("this is the last active passkey: nothing held could be approved or reverted without one. Register another first (basalt init --add-passkey), or pass --force")
 		}
-		fmt.Fprintf(c.stderr, "This is the last active passkey. Type its label (%s) to remove it: ", k.Label)
+		fmt.Fprintf(c.stderr, "This is the last active passkey. Type its label (%s) to remove it: ", visibleText(k.Label))
 		typed, err := c.line()
 		if err != nil || typed != k.Label {
 			return errors.New("the label did not match; nothing was removed")
@@ -461,7 +461,7 @@ func checkOnBase(c *cliIO, keys []ledger.Passkey, base string, open bool) ([]led
 			state = "not found on this device"
 			missing = append(missing, k)
 		}
-		fmt.Fprintf(c.stdout, "%s  %-20s %s\n", passkey.Bytes(k.Credential.ID).String(), k.Label, state)
+		fmt.Fprintf(c.stdout, "%s  %-20s %s\n", passkey.Bytes(k.Credential.ID).String(), visibleText(k.Label), state)
 	}
 	return missing, nil
 }
@@ -477,7 +477,7 @@ func offerRemoval(c *cliIO, missing []ledger.Passkey) error {
 	}()
 	for _, m := range missing {
 		idText := passkey.Bytes(m.Credential.ID).String()
-		ok, err := c.confirm(fmt.Sprintf("Remove %s (%s)? Another device may still hold it.", m.Label, idText))
+		ok, err := c.confirm(fmt.Sprintf("Remove %s (%s)? Another device may still hold it.", visibleText(m.Label), idText))
 		if err != nil {
 			return err
 		}

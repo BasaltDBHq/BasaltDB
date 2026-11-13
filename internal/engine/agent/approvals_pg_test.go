@@ -26,8 +26,23 @@ import (
 
 // notices records what the engine would send to Telegram.
 type notices struct {
-	mu   sync.Mutex
-	sent []agent.HeldNotice
+	mu      sync.Mutex
+	sent    []agent.HeldNotice
+	reverts []agent.RevertNotice
+}
+
+func (n *notices) NotifyRevert(_ context.Context, r agent.RevertNotice) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.reverts = append(n.reverts, r)
+	return nil
+}
+
+// revertNotices returns what the engine sent about reverts so far.
+func (n *notices) revertNotices() []agent.RevertNotice {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return append([]agent.RevertNotice(nil), n.reverts...)
 }
 
 func (n *notices) NotifyHeld(_ context.Context, h agent.HeldNotice) error {

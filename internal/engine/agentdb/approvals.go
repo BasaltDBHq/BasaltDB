@@ -80,6 +80,12 @@ func (s *Store) ListApprovals(ctx context.Context, p ledger.ApprovalListParams) 
 	return ledger.ListOpenApprovals(ctx, s.db, p)
 }
 
+// ListOpenReverts returns one page of the agent's reverts waiting for the
+// person's signature or for its batches (ledger.ListOpenReverts).
+func (s *Store) ListOpenReverts(ctx context.Context, p ledger.RevertListParams) (pagination.Page[ledger.Revert], error) {
+	return ledger.ListOpenReverts(ctx, s.db, p)
+}
+
 // Passkeys returns the registered passkeys' public data.
 func (s *Store) Passkeys(ctx context.Context) ([]passkey.Credential, error) {
 	return ledger.Passkeys(ctx, s.db)

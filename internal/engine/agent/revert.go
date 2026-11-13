@@ -110,7 +110,7 @@ func (s *Service) PreviewRevert(ctx context.Context, p PreviewRevertParams) (Rev
 		if err != nil {
 			return RevertPreview{}, fmt.Errorf("guard returned a bad revert line: %w", err)
 		}
-		lines = append(lines, l)
+		lines = append(lines, l.ForDisplay())
 		if l.Action == revert.ActionRestore {
 			out.Rows++
 		}
@@ -211,7 +211,8 @@ func (s *Service) RevertPlan(ctx context.Context, p RevertPlanParams) (RevertPla
 			if err != nil {
 				return RevertPlan{}, fmt.Errorf("guard returned a bad revert line %d: %w", l.No, err)
 			}
-			line.Plan = &parsed
+			shown := parsed.ForDisplay()
+			line.Plan = &shown
 		}
 		out.Page.Items = append(out.Page.Items, line)
 	}

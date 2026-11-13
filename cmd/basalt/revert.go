@@ -647,7 +647,7 @@ func printRevertLines(c *cliIO, texts []string, asJSON bool) error {
 		if err != nil {
 			return err
 		}
-		lines = append(lines, l)
+		lines = append(lines, l.ForDisplay())
 	}
 	if asJSON {
 		if code := printJSONValue(c, lines); code != exitOK {

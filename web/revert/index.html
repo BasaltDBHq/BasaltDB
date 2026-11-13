@@ -30,6 +30,9 @@
       <h1><span id="headline"></span> <span id="widened-pill" class="pill" hidden>You widened this</span></h1>
       <p id="lede" class="lede"></p>
       <div class="why"><b id="why-label"></b> <span id="intent"></span></div>
+      <button id="scope-line" type="button" class="scope-line">
+        <span><b id="scope-line-text"></b><span id="scope-line-sub" class="s"></span></span><span class="ed">Change</span>
+      </button>
 
       <dl class="summary">
         <dt>Scope</dt><dd id="scope"></dd>
@@ -53,6 +56,22 @@
     </div>
 
     <aside id="decision" class="decision">
+      <section id="scope-panel" class="scope-panel" aria-labelledby="included-title">
+        <div class="grab" aria-hidden="true"></div>
+        <p id="included-title" class="plab">Included <small id="included-hint"></small></p>
+        <div id="agent-chips" class="chips"></div>
+        <div id="table-chips" class="chips"></div>
+        <div id="runs-section" hidden>
+          <p class="plab">Runs <small id="runs-count"></small></p>
+          <div id="runs" class="runs"></div>
+        </div>
+        <button id="widen" type="button" class="widen" hidden>
+          <span class="plus" aria-hidden="true">+</span><span><span class="t">Include other agents' changes</span><span id="widen-text" class="s"></span></span>
+        </button>
+        <p id="scope-readonly" class="muted" hidden>This long link shows the scope as it is. To change it or include other agents' changes, open the revert from the engine's page: ask the agent for its short link.</p>
+        <p id="scope-status" class="muted" role="status"></p>
+        <button id="scope-done" type="button" class="scope-done">Done</button>
+      </section>
       <section id="action" class="decision-bar">
         <p id="signing" class="sum"></p>
         <div class="acts">

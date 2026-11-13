@@ -278,7 +278,7 @@
   "errors": [
     "INVALID_ARGUMENT",
     "NOT_FOUND",
-    "UNAVAILABLE",
+    "QUERY_TIMEOUT", "UNAVAILABLE",
     "INTERNAL"
   ]
 }

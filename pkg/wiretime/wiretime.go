@@ -58,7 +58,7 @@ func atoi(s string) int {
 }
 
 // Value rewrites every string in a JSON-decoded value (map, slice, string)
-// that Text recognises, in place for maps and slices, and returns it.
+// that Text recognizes, in place for maps and slices, and returns it.
 func Value(v any) any {
 	switch x := v.(type) {
 	case string:

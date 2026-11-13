@@ -87,8 +87,10 @@ func (k Keys) String() string { return fmt.Sprintf("pii.Keys{v%d, redacted}", k.
 // GoString keeps key material out of %#v.
 func (k Keys) GoString() string { return k.String() }
 
-// GenericHash is the dictionary hash of a value's generic form, the form word
-// n-grams of free text are looked up by.
+// GenericHash is the dictionary hash of a value's generic form in the order
+// written, the form word n-grams of free text are looked up by. A dictionary
+// stores a value under GenericHashes, which adds the reversed order of a
+// two-word name.
 func (k *Keys) GenericHash(value string) Hash {
 	return k.hash(genericHashPrefix + GenericForm(value))
 }

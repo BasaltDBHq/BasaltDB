@@ -558,3 +558,18 @@ func TestMapDictMatchesReversedNames(t *testing.T) {
 	_, ok := d.Lookup(k.GenericHash("Tamm Alice"))
 	require.True(t, ok)
 }
+
+// Known limits of the reversed order: a pair of ordinary words reversed is
+// still a match (it errs toward privacy), and a hyphen or an apostrophe
+// splits a word, so such a name has three words and no reversed form.
+func TestReversedNameKnownLimits(t *testing.T) {
+	k := newKeys(t, testMaster)
+	d := newMapDict()
+	d.add(k, pii.EntityPersonName, "Will Smith")
+	d.add(k, pii.EntityPersonName, "Mari-Liis Kask")
+	tz := pii.NewTokenizer(k, "", append(pii.PatternDetectors(), pii.NewDictionaryDetector(k, d, ""))...)
+	_, reps := tokenize(t, tz, "Smith will review it")
+	require.Len(t, reps, 1)
+	_, reps = tokenize(t, tz, "Kask, Mari-Liis")
+	require.Empty(t, reps)
+}

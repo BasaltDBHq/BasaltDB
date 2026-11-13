@@ -74,6 +74,7 @@
   },
   "outputSchema": {
     "type": "object",
+    "not": { "required": ["receipt", "noReceipt"] },
     "additionalProperties": false,
     "required": [
       "revertId",
@@ -182,7 +183,7 @@
           "KEY_ERROR",
           "WIDENED"
         ],
-        "description": "Planned (VC1-17): with APPLIED or APPLYING, why there is no receipt: KEY_ERROR, the engine key file is refused; WIDENED, the person widened the revert and the agent's view holds no binding to name its rows. The revert is applied all the same."
+        "description": "Planned (VC1-17): with APPLIED or APPLYING, why there is no receipt: KEY_ERROR, the engine key file is refused; WIDENED (provisional), the revert's scope was widened on the signing page and the agent's view holds no binding to name its rows. The revert is applied all the same."
       },
       "changeId": {
         "type": "string",

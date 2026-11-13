@@ -97,7 +97,7 @@ func showApproval(c *cliIO, l *agentLedger, idText string, pages linkPages, open
 		return c.fail(err)
 	}
 	if a.Status != ledger.ApprovalPending {
-		fmt.Fprintf(c.stderr, "basalt: approval %s is %s\n", id, a.Status)
+		fmt.Fprintln(c.stderr, approvalStatusLine(id, a.Status))
 	}
 	keys, err := l.credentials(c.ctx)
 	if err != nil {
@@ -133,6 +133,12 @@ func showApproval(c *cliIO, l *agentLedger, idText string, pages linkPages, open
 		return c.fail(err)
 	}
 	return exitOK
+}
+
+// approvalStatusLine says a held write is no longer pending, with the
+// status from the database escaped (visibleText).
+func approvalStatusLine(id uuid.UUID, status string) string {
+	return fmt.Sprintf("basalt: approval %s is %s", id, visibleText(status))
 }
 
 func submitApproval(c *cliIO, l *agentLedger, code string) int {

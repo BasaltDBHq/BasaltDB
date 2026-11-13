@@ -97,11 +97,11 @@ func readAgentGuard(c *cliIO, f upgradeFlags) (agentGuard, error) {
 	if c.serviceMode(f.agent, "", f.configPath) {
 		return personAgentGuard(c, f.agent)
 	}
-	cfg, a, err := configAgentOf(f.agent, f.configPath)
+	cfg, a, err := configAgentOf(c, f.agent, f.configPath)
 	if err != nil {
 		return agentGuard{}, err
 	}
-	dsn, err := config.ReadCredential(a.CredentialFile)
+	dsn, err := cfg.credential(a.CredentialFile)
 	if err != nil {
 		return agentGuard{}, err
 	}
@@ -156,17 +156,17 @@ func thisBuildsVerdict(g agent.GuardStatus) guard.Status {
 }
 
 // configAgentOf loads the config and finds agent in it.
-func configAgentOf(agentName, configPath string) (config.Config, config.Agent, error) {
-	cfg, err := config.Load(configPath)
+func configAgentOf(c *cliIO, agentName, configPath string) (engineConfig, config.Agent, error) {
+	cfg, err := loadEngineConfig(c, configPath)
 	if err != nil {
-		return config.Config{}, config.Agent{}, err
+		return engineConfig{}, config.Agent{}, err
 	}
 	for _, a := range cfg.Agents {
 		if a.Name == agentName {
 			return cfg, a, nil
 		}
 	}
-	return config.Config{}, config.Agent{}, fmt.Errorf("agent %q is not in %s; run basalt init --agent %s", agentName, configPath, agentName)
+	return engineConfig{}, config.Agent{}, fmt.Errorf("agent %q is not in %s; run basalt init --agent %s", agentName, configPath, agentName)
 }
 
 func statusFlags(f upgradeFlags, goos string) string {

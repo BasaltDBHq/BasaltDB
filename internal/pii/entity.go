@@ -33,10 +33,8 @@ var entityTypes = []EntityType{EntityEmail, EntityPhone, EntityPersonName, Entit
 // then the token-only types.
 var tokenTypes = append(slices.Clone(entityTypes), EntityCard, EntityIBAN)
 
-// EntityTypes lists every column entity type in contract order.
-func EntityTypes() []EntityType { return slices.Clone(entityTypes) }
-
-// TokenTypes lists every type a token may have: EntityTypes, then CARD and IBAN.
+// TokenTypes lists every type a token may have: the column entity types in
+// contract order (EMAIL, PHONE, PERSON_NAME, ADDRESS, OTHER), then CARD and IBAN.
 func TokenTypes() []EntityType { return slices.Clone(tokenTypes) }
 
 // Valid reports whether t is a type a span or a token may have.

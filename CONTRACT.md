@@ -1338,11 +1338,23 @@ M5.1. Design: [M5 design](docs/redesign/specs/2026-11-12-m5-pii-design.md), sect
 |---|---|
 | `PUBLIC` | Leaves the machine as is |
 | `IDENTIFIER` | One person's value, with an entity type: in the dictionary (M5.1) and tokenized on the wire (M5.3) |
-| `FREE_TEXT` | Text that may mention people: patterns and the dictionary are applied to it (M5.3) |
+| `FREE_TEXT` | Text that may mention people: patterns and the dictionary are applied to it (M5.3). Detection is deterministic: see [What free-text detection masks](#what-free-text-detection-masks) |
 | `SECRET` | The engine refuses to read it at all (M5.2) |
 | `UNCLASSIFIED` | No person has classified it: warned in M5.1, refused from M5.2. A new or renamed column starts here (M51-4) |
 
 CLI spelling: `public`, `identifier`, `free-text`, `secret`, `unclassified`.
+
+#### What free-text detection masks
+
+Owner decision DD-1. Detection in core is deterministic: it masks only what it matches exactly or validates, and never guesses from context.
+
+- **Masked:**
+  - a value stored in an `IDENTIFIER` column, when free text holds it exactly, compared after normalizing (case and width), within the limits in the [M5.1 plan](docs/redesign/plans/2026-11-12-m5-1-classify-dictionary.md)'s Known limits. The main ones: a value is found only when it has at most 4 words with at most 3 characters between them; only a two-word `PERSON_NAME` is also found in reversed order; a single common word never matches alone;
+  - an email address, by its shape;
+  - a phone number: a `+` number that libphonenumber says is valid, or that it says is only possible and has a phone word (`tel`, `phone`, `hp`, `wa`, `call` and the like) next to it; a `00` number that holds a separator and has a length its country dials; and the US form `(202) 555-0143`, by its shape;
+  - a 13 to 19 digit card number from a known issuer range that passes Luhn;
+  - an IBAN that passes its checksum.
+- **Not masked in free text:** a stored one-word value that is also a common word (`Rose`, `Hope`, `Price`), whatever stands around it (a title, a greeting, a capital letter, a JSON field); it is masked in its own column and as part of a stored full name (`Rose Lepik`). A name the database does not hold is not masked. Heuristics that guess names are left to an opt-in plugin.
 
 ### Entity types
 

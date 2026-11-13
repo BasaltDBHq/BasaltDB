@@ -24,13 +24,7 @@ func TestCheckRepeatable(t *testing.T) {
 		{`INSERT INTO leads (id, name) VALUES (1, 'a') ON CONFLICT (id) DO UPDATE SET status = excluded.status`, "leads", []string{"id", "name", "status"}},
 		{`INSERT INTO leads SELECT * FROM staging`, "leads", nil},
 		{`UPDATE leads SET note = 'nowhere' WHERE date_trunc('day', $1::timestamptz) > '2026-01-01'::date`, "leads", []string{"note"}},
-	}
-	// Text that holds a time word among other words is plain text.
-	ok = append(ok, []struct {
-		sql      string
-		table    string
-		assigned []string
-	}{
+		// Text that holds a time word among other words is plain text.
 		{`UPDATE leads SET note = 'call back tomorrow' WHERE id < $1`, "leads", []string{"note"}},
 		{`UPDATE leads SET note = 'now or never'`, "leads", []string{"note"}},
 		{`UPDATE leads SET note = 'nowhere'`, "leads", []string{"note"}},
@@ -38,7 +32,7 @@ func TestCheckRepeatable(t *testing.T) {
 		{`UPDATE leads SET seen = 'epoch'`, "leads", []string{"seen"}},
 		{`UPDATE leads SET seen = 'infinity'`, "leads", []string{"seen"}},
 		{`UPDATE leads SET n = 7 WHERE note = ''`, "leads", []string{"n"}},
-	}...)
+	}
 	for _, tc := range ok {
 		h, err := sqlguard.CheckRepeatable(tc.sql, nil)
 		require.NoError(t, err, tc.sql)

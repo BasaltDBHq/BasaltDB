@@ -27,7 +27,14 @@ const naive = "2006-01-02T15:04:05.999999999"
 var postgresText = regexp.MustCompile(
 	`^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?)([+-])(\d{2})(?::(\d{2}))?(?::(\d{2}))?$`)
 
+// jsonShape is the only form to_jsonb gives a timestamptz: a T, and an
+// offset of +HH:MM (with :SS in a zone that has seconds). Inside stored row
+// values, where no column type is known, only this shape is rewritten, so
+// a text column holding "2026-11-10 06:02:11+02" is left as it is.
+var jsonShape = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?[+-]\d{2}:\d{2}(?::\d{2})?$`)
+
 const (
+	maxYear          = 9999 // RFC 3339 writes four digits
 	secondsPerMinute = 60
 	secondsPerHour   = 3600
 	minOffsetGroups  = 5 // whole match, date, time, sign, hours
@@ -37,7 +44,19 @@ const (
 // jsonb holds it, and reports whether it was one. Anything else, including
 // "infinity", is returned as given.
 func Text(s string) (string, bool) {
-	m := postgresText.FindStringSubmatch(s)
+	return rewrite(s, postgresText)
+}
+
+// jsonText is Text for a string inside stored row values: only jsonShape.
+func jsonText(s string) (string, bool) {
+	if !jsonShape.MatchString(s) {
+		return s, false
+	}
+	return rewrite(s, postgresText)
+}
+
+func rewrite(s string, re *regexp.Regexp) (string, bool) {
+	m := re.FindStringSubmatch(s)
 	if len(m) < minOffsetGroups {
 		return s, false
 	}
@@ -49,7 +68,11 @@ func Text(s string) (string, bool) {
 	if m[3] == "-" {
 		offset = -offset
 	}
-	return t.Add(-time.Duration(offset) * time.Second).UTC().Format(layout), true
+	utc := t.Add(-time.Duration(offset) * time.Second).UTC()
+	if utc.Year() < 1 || utc.Year() > maxYear {
+		return s, false // RFC 3339 cannot write it
+	}
+	return utc.Format(layout), true
 }
 
 func atoi(s string) int {
@@ -58,11 +81,11 @@ func atoi(s string) int {
 }
 
 // Value rewrites every string in a JSON-decoded value (map, slice, string)
-// that Text recognizes, in place for maps and slices, and returns it.
+// in the shape to_jsonb gives a timestamptz (jsonShape), in place for maps and slices, and returns it.
 func Value(v any) any {
 	switch x := v.(type) {
 	case string:
-		out, _ := Text(x)
+		out, _ := jsonText(x)
 		return out
 	case map[string]any:
 		for k, e := range x {
@@ -76,7 +99,8 @@ func Value(v any) any {
 	return v
 }
 
-// Map is Value for a decoded object; a nil map stays nil.
+// Map is Value for a decoded object; a nil map stays nil. It changes the
+// map in place.
 func Map(m map[string]any) map[string]any {
 	for k, e := range m {
 		m[k] = Value(e)
@@ -114,7 +138,7 @@ func JSON(raw json.RawMessage) json.RawMessage {
 func changed(v any) bool {
 	switch x := v.(type) {
 	case string:
-		_, ok := Text(x)
+		_, ok := jsonText(x)
 		return ok
 	case map[string]any:
 		for _, e := range x {

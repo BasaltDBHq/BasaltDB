@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 )
 
@@ -99,4 +100,23 @@ func TestShortLinkOnlyFromThisItemsLocalPage(t *testing.T) {
 	require.Equal(t, long, got)
 	require.Equal(t, "basalt: the engine gave no short link (engine answered 500: ?]8;;https://evil.example?\\click???basalt: approved); using the long link\n",
 		stderr.String(), "the engine's message is shown with its control characters replaced")
+}
+
+// basalt log's text output shows a row's timestamptz values as RFC 3339 UTC.
+func TestLogTextShowsTimestampsAsUTC(t *testing.T) {
+	t.Parallel()
+	line := rowLine(ledger.RowChange{
+		Table: "public.leads", Op: "UPDATE",
+		Key:    map[string]any{"id": 1.0},
+		Before: map[string]any{"updated_at": "2026-11-12T14:08:04.513958+02:00"},
+		After:  map[string]any{"updated_at": "2026-11-12T14:11:27+02:00"},
+	}, false)
+	require.Contains(t, line, "2026-11-12T12:11:27Z")
+	require.NotContains(t, line, "+02:00")
+	full := rowLine(ledger.RowChange{
+		Table: "public.leads", Op: "UPDATE", Key: map[string]any{"id": 1.0},
+		Before: map[string]any{"updated_at": "2026-11-12T14:08:04+02:00"}, After: map[string]any{"updated_at": "2026-11-12T14:11:27+02:00"},
+	}, true)
+	require.NotContains(t, full, "+02:00")
+	require.Contains(t, full, "2026-11-12T12:08:04Z")
 }

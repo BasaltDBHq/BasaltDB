@@ -24,6 +24,7 @@ func TestText(t *testing.T) {
 		"2026-11-10 25:02:11+00":              "",
 		"0044-03-15 00:00:00+00 BC":           "",
 		"note: 2026-11-10 06:02:11+02 (late)": "",
+		"9999-12-31 23:00:00-02":              "",
 	}
 	for in, want := range cases {
 		got, ok := Text(in)
@@ -48,6 +49,15 @@ func TestJSON(t *testing.T) {
 	bad := json.RawMessage(`{nope`)
 	require.Equal(t, string(bad), string(JSON(bad)))
 	require.Nil(t, JSON(nil))
+}
+
+// Inside stored values only to_jsonb's shape is rewritten.
+func TestJSONLeavesOtherShapesAlone(t *testing.T) {
+	for _, in := range []string{`"2026-11-10 06:02:11+02"`, `"2026-11-10T06:02:11+02"`, `"2026-11-10 06:02:11+02:00"`, `"2026-11-10T06:02:11Z"`} {
+		require.Equal(t, in, string(JSON(json.RawMessage(in))), in)
+	}
+	require.Equal(t, `"2026-11-10T04:02:11Z"`, string(JSON(json.RawMessage(`"2026-11-10T06:02:11+02:00"`))))
+	require.Equal(t, `"2026-11-10T04:02:11Z"`, string(JSON(json.RawMessage(`"2026-11-10T06:02:11+02:00:00"`))))
 }
 
 func TestMap(t *testing.T) {

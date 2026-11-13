@@ -576,7 +576,7 @@ func skippedLines(c *cliIO, l *agentLedger, id uuid.UUID) ([]skippedLineDTO, err
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, skippedLineDTO{Line: l.No, Batch: l.Batch, Conflict: l.Conflict, SQLState: l.SQLState, Plan: parsed})
+			out = append(out, skippedLineDTO{Line: l.No, Batch: l.Batch, Conflict: l.Conflict, SQLState: l.SQLState, Plan: parsed.ForDisplay()})
 		}
 		if page.NextCursor == "" {
 			return out, nil

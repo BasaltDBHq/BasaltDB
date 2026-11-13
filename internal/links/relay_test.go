@@ -51,7 +51,7 @@ func TestIssueRelayKeepsTheDerivedTokenAndPSK(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, keys.Token, token, "the token is HKDF(secret, basalt-vault-link.1)")
 	require.True(t, s.Check(id, secret), "a relay link is a short link like any other")
-	require.Equal(t, []links.RelayLink{{Token: token, ExpiresAt: now.Add(time.Hour)}}, s.Relay())
+	require.Equal(t, []links.RelayLink{{Token: token, Item: id, ExpiresAt: now.Add(time.Hour)}}, s.Relay())
 
 	raw, err := os.ReadFile(path)
 	require.NoError(t, err)

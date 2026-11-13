@@ -5,6 +5,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/basaltdbhq/basaltdb/internal/channel"
 )
 
@@ -39,7 +41,11 @@ func IsConflict(err error) bool {
 
 // Link is a live link the engine registers again after every READY.
 type Link struct {
-	Token     channel.LinkToken
+	Token channel.LinkToken
+	// Item is the approval or revert the link opens: what a log names
+	// the link by. The token is a bearer handle at the Vault and is never
+	// logged.
+	Item      uuid.UUID
 	ExpiresAt time.Time
 }
 
@@ -132,11 +138,11 @@ func (c *Client) Unregister(token channel.LinkToken) {
 		return unregisterLinkMsg{Type: typeUnregisterLink, Ref: ref, LinkToken: token.String()}
 	}, func(a answer) {
 		if a.code != "" {
-			log.Warn("vault: unregistering a link was refused", "linkToken", token.String(), "code", a.code)
+			log.Warn("vault: unregistering a link was refused", "code", a.code)
 		}
 	})
 	if err != nil {
-		log.Warn("vault: could not unregister a link; the Vault drops it at its expiry", "linkToken", token.String(), "err", err)
+		log.Warn("vault: could not unregister a link; the Vault drops it at its expiry", "err", err)
 	}
 }
 
@@ -217,16 +223,16 @@ func (cn *conn) registerAll(ctx context.Context) {
 	links := cn.c.opts.Links
 	log := cn.c.opts.Log
 	for _, l := range links.Live() {
-		token := l.Token
+		token, item := l.Token, l.Item.String()
 		err := cn.sendNoWait(ctx, func(ref int64) any { return registerMsg(ref, token, l.ExpiresAt) }, func(a answer) {
 			switch a.code {
 			case "":
 			case CodeLinkConflict:
 				log.Warn("vault: another engine registered this link's token; the link is revoked, "+
-					"and the item's next link (list_pending with reissueLink) gets a new one", "linkToken", token.String())
+					"and the item's next link (list_pending with reissueLink) gets a new one", "item", item)
 				links.Conflict(token)
 			default:
-				log.Warn("vault: the Vault refused a link registered again", "linkToken", token.String(), "code", a.code)
+				log.Warn("vault: the Vault refused a link registered again", "item", item, "code", a.code)
 			}
 		})
 		if err != nil {

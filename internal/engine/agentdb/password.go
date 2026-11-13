@@ -33,6 +33,7 @@ func NewSwitchablePool(ctx context.Context, url string, maxConns int32) (*pgxpoo
 		return nil, nil, errors.New("the agent's credential is not a valid Postgres URL")
 	}
 	cfg.MaxConns = maxConns
+	cfg.ConnConfig.MaxProtocolMessageBodyLen = maxMessageBytes
 	cfg.ConnConfig.RuntimeParams["application_name"] = "basalt-engine"
 	pw := &Password{}
 	pw.Set(cfg.ConnConfig.Password)

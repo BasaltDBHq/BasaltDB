@@ -28,10 +28,10 @@ func TestTokenizeText(t *testing.T) {
 	}
 	require.Contains(t, out, "the rose garden", "common word alone is not matched")
 	require.Contains(t, out, "Will may call in May", "common words untouched")
-	require.NotContains(t, out, "; Rose said", "a capitalized common name mid-sentence is a name (PT-10)")
+	require.Contains(t, out, "; Rose said", "a common-word name alone is never a name in free text (DD-1)")
 	require.Contains(t, out, "pii1_", "tokens present")
 	require.Contains(t, out, "@redacted.invalid", "an unknown domain is not kept")
-	require.Len(t, reps, 9) // 2 emails (one not in the dictionary), 2 phones, 4 names, 1 address
+	require.Len(t, reps, 8) // 2 emails (one not in the dictionary), 2 phones, 3 names, 1 address
 	require.Zero(t, finalScan(t, tz, out))
 	require.Positive(t, finalScan(t, tz, in))
 }
@@ -82,10 +82,10 @@ func TestTokensBackToBackWithTrailingLetters(t *testing.T) {
 // them, so the token is recognized next turn and makes no new address.
 func TestASpanWidensOverGluedLetters(t *testing.T) {
 	tz := newTokenizer(t)
-	in := "0@0.A+00000000"
+	in := "0@0.A+12025550143"
 	out, reps := tokenize(t, tz, in)
 	require.Len(t, reps, 1)
-	require.Equal(t, "A+00000000", in[reps[0].Start:reps[0].End])
+	require.Equal(t, "A+12025550143", in[reps[0].Start:reps[0].End])
 	require.Equal(t, "0@0."+reps[0].Token.Surface(), out)
 	again, more := tokenize(t, tz, out)
 	require.Empty(t, more)
@@ -98,7 +98,7 @@ func TestASpanWidensOverGluedLetters(t *testing.T) {
 func TestAPhonePrefixTouchingAnotherTokenIsClaimed(t *testing.T) {
 	k := newKeys(t, testMaster)
 	tz := pii.NewTokenizer(k, "", append(pii.PatternDetectors(), wordSpan("+44", pii.EntityOther))...)
-	for _, in := range []string{"a@b.cc+447700900456", "+447700900456+447700900457"} {
+	for _, in := range []string{"a@b.cc+447911123456", "+447911123456+447911123457"} {
 		out, reps := tokenize(t, tz, in)
 		require.Len(t, reps, 2, in)
 		require.Equal(t, reps[0].Token.Surface()+reps[1].Token.Surface(), out, in)
@@ -175,11 +175,11 @@ func TestTokenizeNGramsDoNotJoinAcrossWideGaps(t *testing.T) {
 
 func TestTokenizeTypedFormFindsAPhoneWrittenDifferently(t *testing.T) {
 	tz := newTokenizer(t)
-	in := "call +447700900456 now"
+	in := "call +447911123456 now"
 	require.Equal(t, 1, finalScan(t, tz, in), "a phone written without spaces is found")
 	out, reps := tokenize(t, tz, in)
 	require.Len(t, reps, 1)
-	require.Equal(t, "+447700900456", in[reps[0].Start:reps[0].End], "the whole number, not a prefix")
+	require.Equal(t, "+447911123456", in[reps[0].Start:reps[0].End], "the whole number, not a prefix")
 	require.Equal(t, "call "+reps[0].Token.Surface()+" now", out)
 }
 
@@ -298,17 +298,17 @@ func TestNewTokenizerPanicsWithoutDeps(t *testing.T) {
 func TestAPhoneGluedToLettersIsFound(t *testing.T) {
 	tz := newTokenizer(t)
 	for _, c := range []struct{ in, number string }{
-		{"+447700900456x123", "+447700900456x123"}, // widened over the glued letters
-		{"+447700900456_", "+447700900456"},
-		{"+44 7700 900456ext2", "+44 7700 900456ext2"},
-		{"call +44 7700 900456.", "+44 7700 900456"},
-		{"+44 7700 900123+1 202 555 0143", "+44 7700 900123"},
+		{"+447911123456x123", "+447911123456x123"}, // widened over the glued letters
+		{"+447911123456_", "+447911123456"},
+		{"+44 7911 123456ext2", "+44 7911 123456ext2"},
+		{"call +44 7911 123456.", "+44 7911 123456"},
+		{"+44 7911 123123+1 202 555 0143", "+44 7911 123123"},
 	} {
 		require.Positive(t, finalScan(t, tz, c.in), c.in)
 		out, reps := tokenize(t, tz, c.in)
 		require.NotEmpty(t, reps, c.in)
 		require.Equal(t, c.number, c.in[reps[0].Start:reps[0].End], c.in)
-		require.NotContains(t, out, "900", c.in)
+		require.NotContains(t, out, "911", c.in)
 		require.Zero(t, finalScan(t, tz, out), c.in)
 	}
 }
@@ -326,7 +326,7 @@ func TestFullWidthAndCompatibilityFormsAreFound(t *testing.T) {
 	}{
 		{"hi \uff21\uff4c\uff45\uff58\uff41\uff4e\uff44\uff52\uff41 \uff2a\uff4f\uff4e\uff45\uff53!", "\uff21\uff4c\uff45\uff58\uff41\uff4e\uff44\uff52\uff41 \uff2a\uff4f\uff4e\uff45\uff53", pii.EntityPersonName, "Alexandra Jones"},
 		{"to \uff41\uff4c\uff49\uff43\uff45@example.com", "\uff41\uff4c\uff49\uff43\uff45@example.com", pii.EntityEmail, "alice@example.com"},
-		{"call \uff0b\uff14\uff14\uff17\uff17\uff10\uff10\uff19\uff10\uff10\uff14\uff15\uff16 now", "\uff0b\uff14\uff14\uff17\uff17\uff10\uff10\uff19\uff10\uff10\uff14\uff15\uff16", pii.EntityPhone, "+447700900456"},
+		{"call \uff0b\uff14\uff14\uff17\uff19\uff11\uff11\uff11\uff12\uff13\uff14\uff15\uff16 now", "\uff0b\uff14\uff14\uff17\uff19\uff11\uff11\uff11\uff12\uff13\uff14\uff15\uff16", pii.EntityPhone, "+447911123456"},
 		{"ALEXANDRA  jones", "ALEXANDRA  jones", pii.EntityPersonName, "Alexandra Jones"},
 		{"\ufb01 alice@ex\u00e4mple.ee", "alice@ex\u00e4mple.ee", pii.EntityEmail, "alice@ex\u00e4mple.ee"},
 		{"Ali\u0307ce@xn--exmple-cua.ee", "Ali\u0307ce@xn--exmple-cua.ee", pii.EntityEmail, "ali\u0307ce@xn--exmple-cua.ee"},
@@ -358,13 +358,13 @@ func TestFoldedSpansWidenToWholeCharacters(t *testing.T) {
 
 func TestPhonePatternBounds(t *testing.T) {
 	tz := pii.NewTokenizer(newKeys(t, testMaster), "", pii.PatternDetectors()...)
-	_, reps := tokenize(t, tz, "codes +1 234 and +44 7700 900123")
+	_, reps := tokenize(t, tz, "codes +1 234 and +44 7911 123123")
 	require.Len(t, reps, 1, "under 8 digits is not a phone")
 
-	in := "+44 7700 900123 2026 1234+1 202 555 0143"
+	in := "+44 7911 123123 2026 1234+1 202 555 0143"
 	_, reps = tokenize(t, tz, in)
 	require.Len(t, reps, 2, "a phone followed by another number keeps the phone")
-	require.Equal(t, "+44 7700 900123", in[reps[0].Start:reps[0].End])
+	require.Equal(t, "+44 7911 123123", in[reps[0].Start:reps[0].End])
 	require.Equal(t, "1234+1 202 555 0143", in[reps[1].Start:reps[1].End], "widened over the digits glued to it")
 }
 

@@ -120,3 +120,17 @@ func (g gatedLedger) ListRevertLines(ctx context.Context, p ledger.RevertLinePar
 	}
 	return g.inner.ListRevertLines(ctx, p)
 }
+
+func (g gatedLedger) RescopeRevert(ctx context.Context, id uuid.UUID, runs []uuid.UUID, tables []string) (guard.PreparedRevert, error) {
+	if err := g.check(ctx); err != nil {
+		return guard.PreparedRevert{}, err
+	}
+	return g.inner.RescopeRevert(ctx, id, runs, tables)
+}
+
+func (g gatedLedger) RejectRevert(ctx context.Context, id uuid.UUID, note string) (guard.RejectedRevert, error) {
+	if err := g.check(ctx); err != nil {
+		return guard.RejectedRevert{}, err
+	}
+	return g.inner.RejectRevert(ctx, id, note)
+}

@@ -421,7 +421,26 @@ func (r revertDTO) toDomain() ledger.Revert {
 type scopeParams struct {
 	Scope  revert.Scope `json:"scope"`
 	ID     uuid.UUID    `json:"id"`
+	Runs   []uuid.UUID  `json:"runs,omitempty"`
+	Tables []string     `json:"tables,omitempty"`
 	Intent string       `json:"intent,omitempty"`
+}
+
+func scopeParamsFromDomain(s guard.RevertScope, intent string) scopeParams {
+	return scopeParams{Scope: s.Kind, ID: s.ID, Runs: s.Runs, Tables: s.Tables, Intent: intent}
+}
+
+// rescopeParams is RESCOPE_REVERT's: the revert keeps its scope kind and
+// id, and runs and tables narrow it (nil for all).
+type rescopeParams struct {
+	RevertID uuid.UUID   `json:"revertId"`
+	Runs     []uuid.UUID `json:"runs,omitempty"`
+	Tables   []string    `json:"tables,omitempty"`
+}
+
+type rejectParams struct {
+	RevertID uuid.UUID `json:"revertId"`
+	Note     string    `json:"note,omitempty"`
 }
 
 func (p scopeParams) validate() error {
@@ -436,7 +455,9 @@ func (p scopeParams) validate() error {
 	return nil
 }
 
-func (p scopeParams) toDomain() guard.RevertScope { return guard.RevertScope{Kind: p.Scope, ID: p.ID} }
+func (p scopeParams) toDomain() guard.RevertScope {
+	return guard.RevertScope{Kind: p.Scope, ID: p.ID, Runs: p.Runs, Tables: p.Tables}
+}
 
 type previewDTO struct {
 	Lines []string `json:"lines"`

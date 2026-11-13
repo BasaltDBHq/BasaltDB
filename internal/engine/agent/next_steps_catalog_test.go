@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgproto3"
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
@@ -195,6 +196,7 @@ func catalogCases() map[string]catalogCase {
 			pgFail("BS003", "ROW_LIMIT_EXCEEDED", "more than 50 rows in one action (cascades included)")},
 
 		caseKey("QUERY_TIMEOUT", "ROW_LIMIT", ""):  {"query", queryArgs0, plain(agentdb.ErrRowLimit)},
+		caseKey("QUERY_TIMEOUT", "SIZE_LIMIT", ""): {"query", queryArgs0, plain(agentdb.ErrSizeLimit)},
 		caseKey("QUERY_TIMEOUT", "TIME_LIMIT", ""): {"query", queryArgs0, pgFail("57014", "canceling statement due to statement timeout", "")},
 		caseKey("QUERY_TIMEOUT", "TIME_LIMIT", "preview_revert"): {"preview_revert", map[string]any{"runId": caseRunID},
 			timeoutRevert("preview_revert")},
@@ -711,6 +713,25 @@ func TestStaleReadWithAnUnreadableDetailStopsAndAsks(t *testing.T) {
 	require.Len(t, te.NextSteps, 2)
 	require.Equal(t, mcp.ActionStop, te.NextSteps[0].Action)
 	require.Equal(t, mcp.ActionAskPerson, te.NextSteps[1].Action)
+}
+
+// A row too large for the connection's message cap is SIZE_LIMIT on the
+// tools that declare QUERY_TIMEOUT, and the INTERNAL error of any other
+// failed read elsewhere.
+func TestMessageTooLargeIsSizeLimitOnlyWhereDeclared(t *testing.T) {
+	t.Parallel()
+	s := serviceFor(t, "linux", "", nil)
+	tooLarge := fmt.Errorf("read: %w", &pgproto3.ExceededMaxBodyLenErr{MaxExpectedBodyLen: 1, ActualBodyLen: 2})
+	for tool, want := range map[string]string{
+		"query": CodeQueryTimeout, "write": CodeQueryTimeout, "describe": CodeQueryTimeout,
+		"run_history": CodeInternal, "list_pending": CodeInternal, "revert_plan": CodeInternal,
+	} {
+		te := s.Failure(tool, nil, tooLarge)
+		require.Equal(t, want, te.Code, tool)
+		if want == CodeQueryTimeout {
+			require.Equal(t, ReasonSizeLimit, te.Reason, tool)
+		}
+	}
 }
 
 // PERMISSION_DENIED grants only a plain schema.table name; anything else, or a

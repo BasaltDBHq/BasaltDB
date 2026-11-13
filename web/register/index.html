@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex">
   <title>Register your passkey</title>
@@ -37,7 +37,13 @@
 
     <section id="action" class="panel">
       <button id="register" type="button">Create passkey</button>
+      <p class="muted">Your fingerprint or face never leaves this device; Basalt only receives a signature.</p>
       <p id="status" class="muted" role="status"></p>
+    </section>
+
+    <section id="done" class="panel" role="status" hidden>
+      <p id="done-text"></p>
+      <p id="pairing" hidden><output id="pairing-code" class="pairing-code" aria-label="Pairing code"></output></p>
     </section>
 
     <section id="result" class="panel" hidden>

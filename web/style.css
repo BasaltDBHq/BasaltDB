@@ -130,6 +130,7 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
 .error h1 { color: var(--diff-del-fg); }
 /* The engine's message for the person keeps its line breaks: one line per step. */
 #error-text, #done-text { white-space: pre-line; overflow-wrap: anywhere; }
+.pairing-code { display: block; font-family: var(--font-mono); font-size: 28px; font-weight: 500; letter-spacing: 0.12em; user-select: all; }
 
 /* The summary: op badge and headline, the facts, the exact SQL. The most
    dangerous thing on the page is the loudest: the DELETE, not the title. */

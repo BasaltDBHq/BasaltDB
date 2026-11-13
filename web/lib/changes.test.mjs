@@ -105,12 +105,12 @@ test("rows list by key, numbers as numbers, the table's own rows before cascaded
 
 test("the approve button counts the write's own rows, and the cascade apart", () => {
   const one = { ...lead, key: { id: 5 }, old: { id: 5 } };
-  assert.equal(approveLabel(summarize([lead])), "Approve: delete 1 row");
-  assert.equal(approveLabel(summarize([lead, one])), "Approve: delete 2 rows");
-  assert.equal(approveLabel(summarize([lead, hidden(1), hidden(2)])), "Approve: delete 1 row + 2 cascaded", "not 3 rows");
-  assert.equal(approveLabel(summarize([lead, hidden(1)])), "Approve: delete 1 row + 1 cascaded");
+  assert.equal(approveLabel(summarize([lead])), "Sign with your passkey: delete 1 row");
+  assert.equal(approveLabel(summarize([lead, one])), "Sign with your passkey: delete 2 rows");
+  assert.equal(approveLabel(summarize([lead, hidden(1), hidden(2)])), "Sign with your passkey: delete 1 row + 2 cascaded", "not 3 rows");
+  assert.equal(approveLabel(summarize([lead, hidden(1)])), "Sign with your passkey: delete 1 row + 1 cascaded");
   const update = { ...lead, op: "UPDATE", set: { name: "x" } };
-  assert.equal(approveLabel(summarize([update, { ...update, key: { id: 5 } }])), "Approve: update 2 rows");
+  assert.equal(approveLabel(summarize([update, { ...update, key: { id: 5 } }])), "Sign with your passkey: update 2 rows");
 });
 
 test("columns follow the table's order when the engine sends it, unlisted ones last; the rows' order without it", () => {

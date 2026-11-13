@@ -375,7 +375,7 @@ func signPrepared(c *cliIO, l *agentLedger, prep guard.PreparedRevert, f revertF
 		return awaitRevert(c, l, prep.RevertID, f.asJSON)
 	}
 	fmt.Fprint(c.stderr, "Paste the code the revert page showed: ")
-	code, err := c.line()
+	code, err := c.pasted(c.ctx)
 	if err != nil || code == "" {
 		return c.fail(fmt.Errorf("no code given; nothing was reverted. Apply later with basalt revert --apply <code> before %s",
 			prep.ExpiresAt.UTC().Format("15:04 UTC")))
@@ -428,19 +428,21 @@ const revertPoll = time.Second
 // ends when the revert is applied or signed, or when it expires.
 func awaitRevert(c *cliIO, l *agentLedger, id uuid.UUID, asJSON bool) int {
 	fmt.Fprintln(c.stderr, "basalt: waiting for your signature on the revert page (or paste the code it shows here)...")
-	codes := make(chan string, 1)
-	go func() {
-		// A closed or empty stdin just leaves the page to finish it.
-		if code, err := c.line(); err == nil && code != "" {
-			codes <- code
-		}
-	}()
+	// A closed stdin just leaves the page to finish it. stopPaste waits
+	// for the paste read to restore the terminal's modes.
+	pastes, stopPaste := c.pasteInBackground(c.ctx)
+	defer stopPaste()
 	tick := time.NewTicker(revertPoll)
 	defer tick.Stop()
 	for {
 		select {
-		case code := <-codes:
-			return applyRevertCode(c, l, code, asJSON)
+		case p := <-pastes:
+			if p.err == nil {
+				return applyRevertCode(c, l, p.code, asJSON)
+			}
+			reportPasteError(c, p.err, "waiting for the revert page")
+			pastes = nil // only the page can finish it now
+			continue
 		case <-c.ctx.Done():
 			return c.fail(c.ctx.Err())
 		case <-tick.C:

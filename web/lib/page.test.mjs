@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { CodeError, TruncatedLinkError, parseApprovalRequest, parseRevertRequest } from "./codec.js";
-import { APPROVE_REOPEN, REVERT_REOPEN, linkFailure } from "./page.js";
+import { APPROVE_REOPEN, REVERT_REOPEN, linkFailure, whenText } from "./page.js";
 
 const approvalFragment = JSON.parse(
   readFileSync(new URL("../../internal/approval/testdata/fixtures.json", import.meta.url), "utf8"),
@@ -50,4 +50,11 @@ test("a link that decodes but is wrong is not called cut short", async () => {
   assert.ok(err instanceof CodeError);
   assert.ok(!(err instanceof TruncatedLinkError));
   assert.equal(linkFailure(err, "approval", APPROVE_REOPEN), `This approval link cannot be used: ${err.message}`);
+});
+
+test("a pill's time shows its date when it is not today", () => {
+  const now = new Date(2026, 10, 13, 9, 5);
+  assert.equal(whenText(new Date(2026, 10, 13, 17, 37), now), "17:37");
+  assert.equal(whenText(new Date(2026, 10, 14, 7, 3), now), "14 Nov 07:03");
+  assert.equal(whenText(new Date(2027, 10, 13, 17, 37), now), "13 Nov 17:37");
 });

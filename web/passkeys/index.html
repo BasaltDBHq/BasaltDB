@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; base-uri 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex">
   <title>Your passkeys</title>
@@ -11,7 +11,13 @@
   <script type="module" src="../lib/passkeys.js"></script>
 </head>
 <body>
-  <header><span class="brand">BasaltDB</span> passkeys</header>
+  <header class="topbar">
+    <div class="bar">
+      <svg class="logo" width="22" height="22" viewBox="0 0 100 100" role="img" aria-label="Basalt"><polygon class="col-top" points="50,18 65.59,27 65.59,45 50,54 34.41,45 34.41,27"/><polygon class="col-left" points="31.3,50.4 46.89,59.4 46.89,77.4 31.3,86.4 15.71,77.4 15.71,59.4"/><polygon class="col-right" points="68.7,50.4 84.29,59.4 84.29,77.4 68.7,86.4 53.11,77.4 53.11,59.4"/></svg>
+      <span class="brand">BasaltDB</span><span class="sep">/</span><span class="crumb-page">Passkeys</span>
+    </div>
+  </header>
+  <div class="page">
 
   <section id="error" class="panel error" hidden>
     <h1>Cannot use this link</h1>
@@ -54,5 +60,6 @@
       </section>
     </section>
   </main>
+  </div>
 </body>
 </html>

@@ -73,8 +73,8 @@ type Agent interface {
 	RejectRevert(ctx context.Context, id uuid.UUID, secret string, in agent.RejectRequest) (agent.RejectResponse, error)
 	// RevealApproval and RevealRevert return the values of the item's
 	// redacted lines for the person's reveal proof (CONTRACT.md, Rows hidden
-	// from the agent); RevealRevert for the page holding secret.
-	RevealApproval(ctx context.Context, id uuid.UUID, in agent.RevealRequest) (approval.RevealAnswer, error)
+	// from the agent), for the page holding secret.
+	RevealApproval(ctx context.Context, id uuid.UUID, secret string, in agent.RevealRequest) (approval.RevealAnswer, error)
 	RevealRevert(ctx context.Context, id uuid.UUID, secret string, in agent.RevealRequest) (approval.RevealAnswer, error)
 	IssueApprovalLink(ctx context.Context, id uuid.UUID, proof string) (string, error)
 	IssueRevertLink(ctx context.Context, id uuid.UUID, proof string) (string, error)
@@ -128,6 +128,7 @@ func (s *Server) Handler() http.Handler {
 	files := http.FileServerFS(s.files)
 	mux.Handle("GET /lib/{file}", libFile(files))
 	mux.Handle("GET /style.css", files)
+	mux.Handle("GET /fonts/{file}", fontFile(files))
 	for _, r := range PageRoutes {
 		if r.ID {
 			mux.HandleFunc("GET "+r.Path+"{id}", s.page(r.File))
@@ -152,6 +153,22 @@ func (s *Server) Handler() http.Handler {
 func libFile(files http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if path.Ext(r.PathValue("file")) != ".js" {
+			http.NotFound(w, r)
+			return
+		}
+		files.ServeHTTP(w, r)
+	})
+}
+
+// fontFile serves the pages' fonts, fonts/*.woff2, and their license.
+func fontFile(files http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch file := r.PathValue("file"); {
+		case path.Ext(file) == ".woff2":
+			w.Header().Set("Content-Type", "font/woff2")
+		case file == "OFL.txt":
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		default:
 			http.NotFound(w, r)
 			return
 		}
@@ -332,8 +349,8 @@ func (s *Server) postReject(w http.ResponseWriter, r *http.Request) {
 // the proof. The answer is sent with Cache-Control: no-store (writeJSON)
 // and kept nowhere.
 func (s *Server) postApprovalReveal(w http.ResponseWriter, r *http.Request) {
-	s.reveal(w, r, approvalParam, func(ctx context.Context, a Agent, id uuid.UUID, _ string, in agent.RevealRequest) (approval.RevealAnswer, error) {
-		return a.RevealApproval(ctx, id, in)
+	s.reveal(w, r, approvalParam, func(ctx context.Context, a Agent, id uuid.UUID, secret string, in agent.RevealRequest) (approval.RevealAnswer, error) {
+		return a.RevealApproval(ctx, id, secret, in)
 	})
 }
 

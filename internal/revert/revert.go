@@ -286,7 +286,7 @@ type Request struct {
 	// Columns orders each table's columns as the table does (attnum), for
 	// the page's display only (CONTRACT.md, Local pages): served only by the
 	// engine, never signed, never carried in a link.
-	Columns map[string][]string `json:"columns,omitempty"`
+	Columns approval.ColumnOrder `json:"columns,omitempty"`
 }
 
 // Check parses the binding and checks the request against it: same revert,

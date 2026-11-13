@@ -239,17 +239,23 @@ test("the engine's request may carry revealNonce; a bad one is refused", async (
   await assert.rejects(checkApprovalRequest({ ...req, revealNonce: nonce.slice(0, 21) + "B" }), CodeError);
 });
 
-test("the engine's request may carry the column order and the agent's name, for display only", async () => {
+test("the engine's request may carry the column order, for display only, each name once", async () => {
   const { approvalId, binding, lines } = fixtures.request;
   const req = { approvalId, binding, lines };
-  const got = await checkApprovalRequest({ ...req, columns: { "public.leads": ["id", "name", "status"] }, agentName: "bot" });
+  const got = await checkApprovalRequest({ ...req, columns: { "public.leads": ["id", "name", "id", "status"] } });
   assert.deepEqual([...got.columns], [["public.leads", ["id", "name", "status"]]]);
-  assert.equal(got.agentName, "bot");
   const bare = await checkApprovalRequest(req);
   assert.equal(bare.columns.size, 0);
-  assert.equal(bare.agentName, null);
   for (const columns of [[], null, { t: "id" }, { t: [""] }, { t: [1] }]) {
     await assert.rejects(checkApprovalRequest({ ...req, columns }), CodeError, JSON.stringify(columns));
   }
-  await assert.rejects(checkApprovalRequest({ ...req, agentName: 7 }), CodeError);
+  await assert.rejects(checkApprovalRequest({ ...req, agentName: "bot" }), CodeError, "no agentName: the page derives it from the signed role");
+});
+
+test("a long link carries no columns, not even empty ones", async () => {
+  const { approvalId, binding, lines } = fixtures.request;
+  await parseApprovalRequest(requestFragment({ approvalId, binding, lines }));
+  for (const columns of [{ "public.leads": ["id"] }, {}, null, []]) {
+    await assert.rejects(parseApprovalRequest(requestFragment({ approvalId, binding, lines, columns })), CodeError, JSON.stringify(columns));
+  }
 });

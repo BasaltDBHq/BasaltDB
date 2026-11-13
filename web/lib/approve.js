@@ -18,6 +18,7 @@ import {
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
 import { $, APPROVE_REOPEN, el, fail, linkFailure, loadOrPaste, personText, setPill, showCode, showDone, showRelayFailed, webauthnError, whenText } from "./page.js";
 import { applyReveal, canReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
+import { agentName } from "./scope.js";
 import { canStartPasskey, cascadeConfirmation, headline, summarize } from "./summary.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
@@ -65,9 +66,9 @@ function renderSummary(req, summary) {
   $("item-id").title = req.approvalId;
   $("headline").textContent = visibleText(headline(summary));
   $("headline").classList.toggle("cascades", summary.cascadedRows > 0);
-  // The agent by its name in the engine's config when the engine says it
-  // (display only); the signed role on hover, and alone on a long link.
-  $("agent").textContent = visibleText(req.agentName ?? b.agent);
+  // The agent by its name, derived from the signed role (basalt_agent_bot
+  // is bot), with the whole role on hover.
+  $("agent").textContent = visibleText(agentName(b.agent));
   $("agent").title = visibleText(b.agent);
   $("database").textContent = visibleText(b.database);
   $("intent").textContent = visibleText(b.intent);

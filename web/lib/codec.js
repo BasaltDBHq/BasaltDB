@@ -459,7 +459,7 @@ const APPROVAL_REQUEST_FIELDS = ["approvalId", "binding", "lines"];
 // exactly as parseApprovalRequest does. The engine may also send
 // revealNonce; a long link never carries it.
 export async function checkApprovalRequest(value) {
-  const req = strictObject(value, "approval request", APPROVAL_REQUEST_FIELDS, ["credentialIds", "revealNonce", "columns", "agentName"]);
+  const req = strictObject(value, "approval request", APPROVAL_REQUEST_FIELDS, ["credentialIds", "revealNonce", "columns"]);
   const revealNonce = checkNonce(req, "revealNonce", "approval request");
   const binding = parseBinding(req.binding);
   if (req.approvalId !== binding.approvalId) {
@@ -480,14 +480,14 @@ export async function checkApprovalRequest(value) {
     credentialIds: decodeCredentialIds(req.credentialIds),
     revealNonce,
     columns: checkColumns(req, "approval request"),
-    agentName: "agentName" in req ? requireString(req.agentName, "approval request agentName") : null,
     challenge: await challengeFor(req.binding),
   };
 }
 
 // checkColumns reads the optional, unsigned column order the engine serves
 // for the page's display (CONTRACT.md, Local pages): table name to its
-// column names in table order. A Map; empty when absent.
+// column names in table order, each name once (the first place it is
+// listed). A Map; empty when absent.
 function checkColumns(req, what) {
   const out = new Map();
   if (!("columns" in req)) return out;
@@ -497,7 +497,7 @@ function checkColumns(req, what) {
     if (!Array.isArray(names) || names.some((n) => typeof n !== "string" || n === "")) {
       throw new CodeError(`${what} columns of "${table}" is not a list of names`);
     }
-    out.set(table, [...names]);
+    out.set(table, [...new Set(names)]);
   }
   return out;
 }

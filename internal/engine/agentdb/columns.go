@@ -23,8 +23,8 @@ func NewColumnOrder(pool Pool) *ColumnOrder {
 	return &ColumnOrder{pool: pool}
 }
 
-const columnOrderSQL = `SELECT t.name, array_agg(a.attname::text ORDER BY a.attnum)
-FROM unnest($1::text[]) AS t(name)
+const columnOrderSQL = `SELECT t.name, pg_catalog.array_agg(a.attname::pg_catalog.text ORDER BY a.attnum)
+FROM pg_catalog.unnest($1::pg_catalog.text[]) AS t(name)
 CROSS JOIN LATERAL pg_catalog.parse_ident(t.name) AS p(part)
 JOIN pg_catalog.pg_namespace n ON n.nspname = p.part[1]
 JOIN pg_catalog.pg_class c ON c.relnamespace = n.oid AND c.relname = p.part[2]
@@ -39,6 +39,11 @@ func (c *ColumnOrder) ColumnOrder(ctx context.Context, tables []string) (map[str
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	// Every name the query uses is schema-qualified; the path is pinned
+	// too, so no object of another schema can stand in.
+	if _, err := tx.Exec(ctx, "SET LOCAL search_path = pg_catalog, pg_temp"); err != nil {
+		return nil, err
+	}
 	rows, err := tx.Query(ctx, columnOrderSQL, tables)
 	if err != nil {
 		return nil, err

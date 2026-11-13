@@ -44,7 +44,7 @@ func (s *Service) ApprovalRequest(ctx context.Context, id uuid.UUID) (approval.R
 	}
 	return approval.Request{
 		ApprovalID: a.ID, Binding: a.BindingText, Lines: a.Lines, RevealNonce: reveal, CredentialIDs: ids,
-		Columns: s.columnsOf(ctx, a.Lines), AgentName: s.Name,
+		Columns: s.columnsOf(ctx, a.Lines),
 	}, nil
 }
 
@@ -58,7 +58,7 @@ type ColumnOrder interface {
 // columnsOf is the column order of the tables lines name, for the pages'
 // display only (CONTRACT.md, Local pages): never signed, and a failure
 // only costs the order, so it is logged and nil is returned.
-func (s *Service) columnsOf(ctx context.Context, lines []string) map[string][]string {
+func (s *Service) columnsOf(ctx context.Context, lines []string) approval.ColumnOrder {
 	if s.Columns == nil {
 		return nil
 	}

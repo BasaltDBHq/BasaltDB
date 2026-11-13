@@ -286,12 +286,25 @@ func TestParseRequestRefusesRevealNonce(t *testing.T) {
 	require.NoError(t, err)
 	for name, bad := range map[string]approval.Request{
 		"revealNonce": {ApprovalID: req.ApprovalID, Binding: req.Binding, Lines: lines, RevealNonce: counting(100)},
-		"columns":     {ApprovalID: req.ApprovalID, Binding: req.Binding, Lines: lines, Columns: map[string][]string{"public.leads": {"id"}}},
-		"agentName":   {ApprovalID: req.ApprovalID, Binding: req.Binding, Lines: lines, AgentName: "bot"},
+		"columns":     {ApprovalID: req.ApprovalID, Binding: req.Binding, Lines: lines, Columns: approval.ColumnOrder{"public.leads": {"id"}}},
 	} {
 		frag, err = linkcodec.Encode(linkcodec.Format1, bad)
 		require.NoError(t, err)
 		_, _, err = approval.ParseRequest(frag)
 		require.ErrorIs(t, err, approval.ErrInvalid, name)
+	}
+}
+
+// A link that names columns at all is refused, an empty or null one too.
+func TestParseRequestRefusesEmptyColumns(t *testing.T) {
+	t.Parallel()
+	lines := previewLines()
+	for _, columns := range []any{nil, map[string]any{}, []any{}} {
+		frag, err := linkcodec.Encode(linkcodec.Format1, map[string]any{
+			"approvalId": approvalID, "binding": bindingText(lines), "lines": lines, "columns": columns,
+		})
+		require.NoError(t, err)
+		_, _, err = approval.ParseRequest(frag)
+		require.ErrorIs(t, err, approval.ErrInvalid, "%v", columns)
 	}
 }

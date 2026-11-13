@@ -5,11 +5,13 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/approval"
+	"github.com/basaltdbhq/basaltdb/internal/revert"
 )
 
 // The pages' GET requests carry each table's columns in table order
-// (attnum), unsigned and for display only, and the approval the agent's
-// config name. jsonb reorders a row's keys (leads: id, name, score,
+// (attnum), unsigned and for display only. jsonb reorders a row's keys (leads: id, name, score,
 // status), so only this map gives the page the table's order. A table the
 // agent cannot read is listed too: its column names are in pg_attribute,
 // which the agent role reads itself.
@@ -23,10 +25,8 @@ func TestPagesRequestsCarryTheColumnOrder(t *testing.T) {
 	}
 
 	// Lead 20 has notes and no tags; lead 5's revert restores its tags too.
-	req, b := s.approvalRequest(t)
-	require.Equal(t, map[string][]string{"public.leads": want["public.leads"], "public.lead_notes": want["public.lead_notes"]}, req.Columns)
-	require.Equal(t, "bot", req.AgentName)
-	require.NotEqual(t, req.AgentName, b.Agent, "the binding signs the role")
+	req, _ := s.approvalRequest(t)
+	require.Equal(t, approval.ColumnOrder{"public.leads": want["public.leads"], "public.lead_notes": want["public.lead_notes"]}, req.Columns)
 	var line struct {
 		Old json.RawMessage `json:"old"`
 	}
@@ -34,11 +34,18 @@ func TestPagesRequestsCarryTheColumnOrder(t *testing.T) {
 	require.Regexp(t, `"score": \d+, "status"`, string(line.Old), "the rows carry jsonb order, not the table's")
 
 	rv, _ := s.revertRequest(t)
-	require.Equal(t, want, rv.Columns)
+	require.Equal(t, approval.ColumnOrder(want), rv.Columns)
 
-	// Neither field is signed: the binding and the lines are the ones the
-	// long link carries, which has neither.
+	// The order is not signed: the long link carries the binding and the
+	// lines only, and decoded it has no columns.
 	long, err := req.Fragment()
 	require.NoError(t, err)
-	require.NotContains(t, long, "columns")
+	back, _, err := approval.ParseRequest(long)
+	require.NoError(t, err)
+	require.Nil(t, back.Columns)
+	rvLong, err := rv.Fragment()
+	require.NoError(t, err)
+	rvBack, _, err := revert.ParseRequest(rvLong)
+	require.NoError(t, err)
+	require.Nil(t, rvBack.Columns)
 }

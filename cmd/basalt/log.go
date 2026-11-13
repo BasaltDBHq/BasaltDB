@@ -104,13 +104,14 @@ func runLog(c *cliIO, args []string) int {
 // agentURL finds the agent's connection string: --credential-file, then
 // the credential file of --agent in the engine config, then
 // BASALT_DATABASE_URL. A flag always wins over the environment. A
-// credential file readable by group or others is refused.
+// credential file readable by group or others is refused. As root, the
+// files are read without following links (loadEngineConfig).
 func agentURL(c *cliIO, agent, credFile, configPath string) (string, error) {
 	if credFile != "" {
-		return config.ReadCredential(credFile)
+		return readCredentialFlag(c, credFile)
 	}
 	if agent != "" {
-		return agentConfigURL(agent, configPath)
+		return agentConfigURL(c, agent, configPath)
 	}
 	if v := c.getenv(envAgentURL); v != "" {
 		return v, nil
@@ -119,14 +120,14 @@ func agentURL(c *cliIO, agent, credFile, configPath string) (string, error) {
 }
 
 // agentConfigURL reads the credential file the engine config names for agent.
-func agentConfigURL(agent, configPath string) (string, error) {
-	cfg, err := config.Load(configPath)
+func agentConfigURL(c *cliIO, agent, configPath string) (string, error) {
+	cfg, err := loadEngineConfig(c, configPath)
 	if err != nil {
 		return "", err
 	}
 	for _, a := range cfg.Agents {
 		if a.Name == agent {
-			return config.ReadCredential(a.CredentialFile)
+			return cfg.credential(a.CredentialFile)
 		}
 	}
 	return "", fmt.Errorf("agent %q is not in %s; run basalt init --agent %s", agent, configPath, agent)

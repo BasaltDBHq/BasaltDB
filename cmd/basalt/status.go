@@ -129,11 +129,11 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 	if err != nil {
 		return statusOut{}, err
 	}
-	cfg, err := config.Load(abs)
+	cfg, err := loadEngineConfig(c, abs)
 	if err != nil {
 		return statusOut{}, err
 	}
-	a, err := statusAgent(cfg, name, abs)
+	a, err := statusAgent(cfg.Config, name, abs)
 	if err != nil {
 		return statusOut{}, err
 	}
@@ -144,7 +144,7 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 	if !cfg.Service() {
 		cmds = cmds.Foreground()
 	}
-	dsn, err := config.ReadCredential(a.CredentialFile)
+	dsn, err := cfg.credential(a.CredentialFile)
 	if err != nil {
 		return statusOut{}, fmt.Errorf("the credential of agent %s cannot be read: %w", a.Name, withoutPath(err))
 	}
@@ -160,7 +160,7 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 	}
 	r, err := agent.LocalStatus{
 		Name: a.Name, Commands: cmds, OperatedBy: cfg.OperatedBy, Setup: a.Setup,
-		PagesBase: base, PagesOrigin: servedPages(c, cfg, eng.Reachable), EngineRunning: eng.Reachable, EngineUnknown: eng.Unknown,
+		PagesBase: base, PagesOrigin: servedPages(c, cfg.Config, eng.Reachable), EngineRunning: eng.Reachable, EngineUnknown: eng.Unknown,
 		Probe:    agent.DBProbe{Q: pool, Migrations: guard.Migrations()},
 		Passkeys: func(ctx context.Context) ([]passkey.Credential, error) { return ledger.Passkeys(ctx, pool) },
 		Log:      slog.New(slog.DiscardHandler), Now: c.now,
@@ -172,7 +172,7 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 	stateDir := cfg.StateDirFor(c.goos)
 	out := statusOut{StatusReport: r, Engine: eng, ConfigPath: abs, SocketDir: cfg.SocketDir, StateDir: stateDir}
 	if !eng.Unknown {
-		out.Vault, out.vaultID = localVault(cfg, stateDir)
+		out.Vault, out.vaultID = localVault(cfg.Config, stateDir)
 	}
 	return out, nil
 }

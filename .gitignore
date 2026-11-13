@@ -1,5 +1,6 @@
 # Binaries
 /basalt
+/cmd/basalt/basalt
 
 # Local data
 data/

@@ -45,7 +45,7 @@ func TestAccessPrintsGrantCommands(t *testing.T) {
 	// a full init command would reset the agent's saved flags.
 	require.Contains(t, r.stdout, "public.invoices  --read=public.invoices\n")
 	require.NotContains(t, r.stdout, "basalt init --agent")
-	require.Equal(t, 1, strings.Count(r.stdout, "Add this flag to the basalt init command you set this agent up with.\n"))
+	require.Equal(t, 1, strings.Count(r.stdout, "Add each table to this agent's existing --read list (comma-separated) in the basalt init command you set it up with; init keeps only the last --read.\n"))
 	require.NotContains(t, r.stdout, "--read=public.leads")
 	require.True(t, strings.HasSuffix(r.stdout, "These names are not shown to the agent.\n"), r.stdout)
 }
@@ -113,7 +113,7 @@ func TestAccessDirectModeKeepsTheSavedFlagsInTheGrant(t *testing.T) {
 	require.Contains(t, r.stdout, "--read=public.invoices")
 	require.Contains(t, r.stdout, "--prefix")
 	require.Contains(t, r.stdout, "--os-user")
-	require.NotContains(t, r.stdout, "Add this flag")
+	require.NotContains(t, r.stdout, "Add each table to this agent's existing --read list")
 }
 
 func TestAccessAgentOperatedEnginePrintsTheSetupCodeRoute(t *testing.T) {
@@ -127,5 +127,5 @@ func TestAccessAgentOperatedEnginePrintsTheSetupCodeRoute(t *testing.T) {
 	printAccess(&out, pgcatalog.Access{NotGranted: []string{"public.invoices"}}, cmds, true)
 	require.Contains(t, out.String(), want)
 	require.Contains(t, want, "--remote")
-	require.NotContains(t, out.String(), "Add this flag")
+	require.NotContains(t, out.String(), "Add each table to this agent's existing --read list")
 }

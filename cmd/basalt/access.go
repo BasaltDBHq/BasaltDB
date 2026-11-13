@@ -131,7 +131,7 @@ func printAccess(w io.Writer, a pgcatalog.Access, cmds agent.Commands, known boo
 		return "  " + cmd
 	})
 	if !known && len(a.NotGranted) > 0 {
-		fmt.Fprintln(w, "Add this flag to the basalt init command you set this agent up with.")
+		fmt.Fprintln(w, "Add each table to this agent's existing --read list (comma-separated) in the basalt init command you set it up with; init keeps only the last --read.")
 	}
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "These names are not shown to the agent.")

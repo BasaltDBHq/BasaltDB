@@ -21,7 +21,9 @@ const (
 const maxNGram = 4
 
 // maxSeparatorLen is the longest run of non-word characters (in runes) allowed
-// between the words of one n-gram ("Alice Tamm", "Tamm, Alice", `"Alice","Tamm"`).
+// between the words of one n-gram ("Alice Tamm", `"Alice","Tamm"`). A
+// two-word name is also stored reversed (Keys.GenericHashes), so "Tamm,
+// Alice" is found too.
 const maxSeparatorLen = 3
 
 // phoneSep is what may stand between the groups of a phone number: a run of
@@ -497,7 +499,8 @@ func asciiDigits(s string) int {
 // keyed-hash dictionary of known values. Implementations must be safe for
 // concurrent use.
 type Dictionary interface {
-	// Lookup finds a generic-form hash (Keys.GenericHash) and returns its type.
+	// Lookup finds a generic-form hash (one of Keys.GenericHashes: the stored
+	// order, or a two-word name reversed) and returns its type.
 	Lookup(h Hash) (EntityType, bool)
 	// Contains reports whether a typed-form hash (Keys.TypedHash) is known for
 	// t. The tokenizer finds emails and phones by shape whether known or not;

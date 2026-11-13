@@ -49,6 +49,7 @@ const (
 	versionRevertNonce              // RS-2: the requesting role reads its revert's rescope nonce
 	versionRevertReject             // RS-2, Q8: the person rejects a pending revert
 	versionSearchPath               // the caller's temporary tables never shadow the catalog
+	versionExpiryClock              // approval and revert deadlines read the wall clock
 )
 
 // migrations lists every version in order. M2 appends versions.
@@ -77,6 +78,7 @@ var migrations = []migration{
 	{version: versionRevertNonce, sql: v22RevertNonce},
 	{version: versionRevertReject, sql: v23RejectRevert},
 	{version: versionSearchPath, sql: v24Functions + v24SearchPath},
+	{version: versionExpiryClock, sql: v25Approvals + v25Reverts},
 }
 
 // LatestVersion is the basalt_meta version this build installs.

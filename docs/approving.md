@@ -32,7 +32,21 @@ If the link was lost, the agent calls `request_revert` with `reissueLink: true` 
 
 A large plan is signed once, like any other. After you sign, the agent applies it in batches with `apply_revert_batch` until every line is done.
 
-An agent asks for a revert of its own work only: one of its changes, one of its runs, or its own changes in a task it ran in (`taskId`). A change, run or task that is not its own is answered `NOT_FOUND`, the same as an id that does not exist. A task revert holds only that agent's lines. If other agents also changed rows in the task, run `basalt revert --task <taskId>` yourself to include them. If another agent's run looks wrong, ask that agent. Whichever way the revert starts, only you sign it. A revert is a change like any other, so it can itself be reverted the same way.
+An agent asks for a revert of its own work only: one of its changes, one of its runs, or its own changes in a task it ran in (`taskId`). It may narrow that to some of its runs in the task or some tables (`runs`, `tables`). A change, run or task that is not its own is answered `NOT_FOUND`, the same as an id that does not exist. A task revert holds only that agent's lines. To include other agents' changes, widen the revert on its page (below). If another agent's run looks wrong, ask that agent. Whichever way the revert starts, only you sign it. A revert is a change like any other, so it can itself be reverted the same way.
+
+## Changing what a revert covers
+
+The revert page shows what the agent proposed. You can sign it as it is, change its scope, or reject it. On a computer the choices sit in a panel to the right of the rows. On a phone, tap the scope line above the rows ("bot, 1 table · Change") to open them, and use the Sign and Reject buttons at the bottom of the screen.
+
+- **Leave things out.** Under "Included", tap an agent, a table or a run to leave it out. The page asks the engine for the new rows and shows them before you sign. This needs no passkey.
+- **Include other agents' changes.** For a task, the page offers "Include other agents' changes". It asks for your passkey first, then shows every agent's rows in the task, the agents' runs and the tables they wrote. The title then carries "You widened this". You can then leave out agents, runs or tables again without another passkey prompt. Signing the widened revert asks for your passkey a second time: the first prompt only lets you see and choose the rows.
+- **What the agent sees.** The agent that asked never sees what you added. Its link stops working when you widen, and its tools show only the status, the totals and that you widened the revert. Keep the page open until you sign: reloading it needs a new link from the agent, and you would widen again.
+- **If the agent resets it.** If the agent asks for a new link (`reissueLink`), the revert goes back to its own proposal and your page says "The agent reset this revert to its own work." Ask the agent for the new link, and widen again if you still want the other agents' changes.
+- **Reject.** Reject stops the revert. You can leave a note of up to 500 characters, which the agent reads; the page says so. Rejecting needs no passkey, and nothing is reverted. The agent's wait ends with `REJECTED`, and it does not ask again unless you tell it to.
+
+Changing the scope needs the page served by the engine, from the short link the agent gives you. A long link (a `#2.` link, for example from Telegram) shows the scope read only and can only be signed as it is; to decline from it, close the page. A revert you do not sign expires within the hour.
+
+To start a task revert yourself, run `basalt revert --agent NAME --task <taskId> --open` with an agent that ran in the task. It prepares that agent's own lines (possibly none) and opens the page, where you include the others.
 
 ## The CLI path
 

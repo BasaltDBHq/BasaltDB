@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { CodeError, TruncatedLinkError, parseApprovalRequest, parseRevertRequest } from "./codec.js";
-import { APPROVE_REOPEN, REVERT_REOPEN, linkFailure, whenText } from "./page.js";
+import { APPROVE_REOPEN, REVERT_REOPEN, linkFailure, webauthnError, whenText } from "./page.js";
 
 const approvalFragment = JSON.parse(
   readFileSync(new URL("../../internal/approval/testdata/fixtures.json", import.meta.url), "utf8"),
@@ -57,4 +57,10 @@ test("a pill's time shows its date when it is not today", () => {
   assert.equal(whenText(new Date(2026, 10, 13, 17, 37), now), "17:37");
   assert.equal(whenText(new Date(2026, 10, 14, 7, 3), now), "14 Nov 07:03");
   assert.equal(whenText(new Date(2027, 10, 13, 17, 37), now), "13 Nov 17:37");
+});
+
+test("a prompt that offered this database's passkeys says this device may have none of them", () => {
+  const cancelled = { name: "NotAllowedError" };
+  assert.equal(webauthnError(cancelled), "The passkey prompt was cancelled or timed out. Nothing was signed.");
+  assert.match(webauthnError(cancelled, 2), /this device has none of this database's passkeys/);
 });

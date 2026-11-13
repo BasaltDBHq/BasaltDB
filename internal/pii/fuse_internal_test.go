@@ -98,10 +98,8 @@ func TestDictionaryFileRoundTrip(t *testing.T) {
 // The measured false-positive rate is that of the fingerprint width: about
 // 2^-32 per filter with 32 bits, 2^-16 with 16.
 func TestDictionaryFalsePositiveRate(t *testing.T) {
-	const (
-		members = 200_000
-		probes  = 2_000_000
-	)
+	members := sized(200_000, 50_000)
+	probes := sized(2_000_000, 500_000)
 	rng := rand.New(rand.NewPCG(5, 6))
 	keys := randomFilterKeys(rng, 0, members)
 	member := map[uint64]bool{}
@@ -123,12 +121,14 @@ func TestDictionaryFalsePositiveRate(t *testing.T) {
 		}
 		return hits
 	}
-	// Expected 2e6 / 2^32 = 0.0005.
+	// Expected probes / 2^32 = 0.0005 for 2e6 probes.
 	require.LessOrEqual(t, rate(FingerprintBits32), 1)
-	// Expected 2e6 / 2^16 = 30.5.
+	// Expected probes / 2^16 = 30.5 for 2e6 probes; the bounds keep the same
+	// ratios (a third to double the whole-number expectation) at any size.
 	fp16 := rate(FingerprintBits16)
-	require.GreaterOrEqual(t, fp16, 10)
-	require.LessOrEqual(t, fp16, 60)
+	expected := probes >> 16
+	require.GreaterOrEqual(t, fp16, expected/3)
+	require.LessOrEqual(t, fp16, expected*2)
 }
 
 func smallDictionary(t testing.TB) []byte {

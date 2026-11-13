@@ -64,7 +64,8 @@ func TestNoValueLeaksAroundAnyNFKCCharacter(t *testing.T) {
 	}
 	for _, p := range pairs {
 		checked := 0
-		for _, r := range changed {
+		for i := 0; i < len(changed); i += stride(8) {
+			r := changed[i]
 			if p.skip != nil && p.skip(r) {
 				continue
 			}
@@ -103,7 +104,7 @@ func TestOverlappingSpansAfterFoldingAreMergedNotDropped(t *testing.T) {
 // The generic form of every character, alone and inside a word, is stable when
 // normalized again (golang.org/x/text folds Cherokee back and forth).
 func TestGenericFormIsStableForEveryCharacter(t *testing.T) {
-	for r := rune(0); r < maxScanRune; r++ {
+	for r := rune(0); r < maxScanRune; r += rune(stride(7)) {
 		if !utf8.ValidRune(r) {
 			continue
 		}

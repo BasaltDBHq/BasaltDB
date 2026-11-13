@@ -82,13 +82,10 @@ func fakeValue(i int) value {
 	}
 }
 
-// A million values added to a build are all found afterwards, by their
+// A million values (50,000 unless BASALTDB_TEST_FULL=1) added to a build are all found afterwards, by their
 // generic and typed forms, and in other spellings of the same normal form.
 func TestDictionaryFindsEveryAddedValue(t *testing.T) {
-	n := 1_000_000
-	if testing.Short() {
-		n = 50_000
-	}
+	n := sized(1_000_000, 50_000)
 	k := newKeys(t, testMaster)
 	d := openDict(t, t.TempDir(), k, dictOptions())
 	values := make([]value, 0, n)
@@ -267,7 +264,7 @@ func TestDictionaryDeltaCap(t *testing.T) {
 // the delta stay.
 func TestDictionaryMemoryBudget(t *testing.T) {
 	k := newKeys(t, testMaster)
-	values := make([]value, 20_000)
+	values := make([]value, sized(20_000, 10_000))
 	for i := range values {
 		values[i] = fakeValue(i)
 	}

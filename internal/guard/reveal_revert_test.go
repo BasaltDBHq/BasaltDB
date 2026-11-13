@@ -2,9 +2,7 @@ package guard_test
 
 import (
 	"context"
-	"crypto/hkdf"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"strings"
@@ -13,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
@@ -21,22 +20,22 @@ import (
 )
 
 // revealKeyOf is the key the engine derives from the page's reveal secret
-// (CONTRACT.md, Rows hidden from the agent).
+// (16 bytes: the secret text padded or cut).
 func revealKeyOf(t *testing.T, secret string) []byte {
 	t.Helper()
-	key, err := hkdf.Key(sha256.New, []byte(secret), nil, "basalt-reveal-key.1", 32)
+	raw := make([]byte, approval.RevealSecretLen)
+	copy(raw, secret)
+	key, err := approval.RevealKey(raw)
 	require.NoError(t, err)
 	return key
 }
 
 // revealChallenge is the challenge a reveal proof signs.
-func revealChallenge(kind string, id uuid.UUID, nonce, key, rowsHash []byte) []byte {
-	keyHash := sha256.Sum256(key)
-	sum := sha256.Sum256([]byte(strings.Join([]string{
-		"basalt-reveal.1", kind, id.String(),
-		base64.RawURLEncoding.EncodeToString(nonce), hex.EncodeToString(keyHash[:]), hex.EncodeToString(rowsHash),
-	}, "\n")))
-	return sum[:]
+func revealChallenge(t *testing.T, kind string, id uuid.UUID, nonce, key, rowsHash []byte) []byte {
+	t.Helper()
+	ch, err := approval.RevealChallenge(kind, id, nonce, key, hex.EncodeToString(rowsHash))
+	require.NoError(t, err)
+	return ch
 }
 
 // revealEnv: bot may read and write leads only. Its run deleted lead 5
@@ -100,7 +99,7 @@ func revertRowsHash(t *testing.T, d *guardtest.DB, id uuid.UUID) []byte {
 func (e revealEnv) proof(t *testing.T, id uuid.UUID, secret string) (passkey.Assertion, []byte) {
 	t.Helper()
 	key := revealKeyOf(t, secret)
-	as, err := e.p.Sign(revealChallenge(guard.RevealKindRevert, id, revertRevealNonce(t, e.d, id), key, revertRowsHash(t, e.d, id)),
+	as, err := e.p.Sign(revealChallenge(t, approval.KindRevert, id, revertRevealNonce(t, e.d, id), key, revertRowsHash(t, e.d, id)),
 		passkeytest.FlagsUPUV, zeroCounter)
 	require.NoError(t, err)
 	return as, key
@@ -133,7 +132,7 @@ func TestRevealRevertRows(t *testing.T) {
 	e := newRevealEnv(t)
 	ctx := context.Background()
 	id := e.prep.RevertID
-	nonce, err := guard.RevealNonce(ctx, e.a.Conn, guard.RevealKindRevert, id)
+	nonce, err := guard.RevealNonce(ctx, e.a.Conn, approval.KindRevert, id)
 	require.NoError(t, err)
 	require.Equal(t, revertRevealNonce(t, e.d, id), nonce)
 	require.Len(t, nonce, 16)
@@ -203,7 +202,7 @@ func TestRevealRevertRowsRefused(t *testing.T) {
 		require.NoError(t, err)
 		return as
 	}
-	valid := sign(revealChallenge(guard.RevealKindRevert, id, nonce, key, hash))
+	valid := sign(revealChallenge(t, approval.KindRevert, id, nonce, key, hash))
 	otherHash := sha256.Sum256([]byte("another rowsHash"))
 	other, err := guard.PrepareRevert(ctx, e.a.Conn, guard.RevertScope{Kind: revert.ScopeRun, ID: e.in.RunID}, "again")
 	require.NoError(t, err)
@@ -219,10 +218,10 @@ func TestRevealRevertRowsRefused(t *testing.T) {
 		"no key":                        {valid, nil},
 		"a guessed key":                 {valid, revealKeyOf(t, "guess")},
 		"a short key":                   {valid, key[:16]},
-		"a proof over another revert":   {sign(revealChallenge(guard.RevealKindRevert, other.RevertID, nonce, key, hash)), key},
-		"a proof over another nonce":    {sign(revealChallenge(guard.RevealKindRevert, id, make([]byte, 16), key, hash)), key},
-		"a proof over another rowsHash": {sign(revealChallenge(guard.RevealKindRevert, id, nonce, key, otherHash[:])), key},
-		"a proof of the APPROVE kind":   {sign(revealChallenge(guard.RevealKindApprove, id, nonce, key, hash)), key},
+		"a proof over another revert":   {sign(revealChallenge(t, approval.KindRevert, other.RevertID, nonce, key, hash)), key},
+		"a proof over another nonce":    {sign(revealChallenge(t, approval.KindRevert, id, make([]byte, 16), key, hash)), key},
+		"a proof over another rowsHash": {sign(revealChallenge(t, approval.KindRevert, id, nonce, key, otherHash[:])), key},
+		"a proof of the APPROVE kind":   {sign(revealChallenge(t, approval.KindApprove, id, nonce, key, hash)), key},
 		"the revert signature":          {sign(revert.Challenge(e.prep.BindingText)), key},
 		"an approval signature":         {sign(sha256Of(held.BindingText)), key},
 		"a widen proof":                 {sign(revert.RescopeChallenge(id, nonce, widenKey, `{}`)), widenKey},
@@ -256,7 +255,7 @@ func TestRevealRevertRowsRefused(t *testing.T) {
 	requireRevertInvalid(t, theirs, "no such revert")
 	_, unknown := guard.RevealRevertRows(ctx, e.a.Conn, uuid.Must(uuid.NewV7()), valid, key)
 	require.Equal(t, scopeErrorText(t, theirs, id), scopeErrorText(t, unknown))
-	_, err = guard.RevealNonce(ctx, helper.Conn, guard.RevealKindRevert, id)
+	_, err = guard.RevealNonce(ctx, helper.Conn, approval.KindRevert, id)
 	requireRevertInvalid(t, err, "no such revert")
 	_, err = guard.RevealNonce(ctx, e.a.Conn, "OTHER", id)
 	requireCode(t, err, guard.CodeLedgerInputInvalid)

@@ -216,6 +216,40 @@ sudo basalt service uninstall
 
 `basalt uninstall` asks for the admin connection string, then drops the `basalt_meta` schema, the guard's triggers and policies, and the `basalt_*` roles. `service uninstall` stops and removes the engine service. Where `systemctl` or `launchctl` does not run (a container without systemd), it still removes the unit file and names each command it skipped. Where the service manager does run, a skipped command makes it exit with an error after it has removed the rest. Once the unit file is gone there is nothing to stop, so running it again succeeds. If you used the demo data, drop it too: `DROP SCHEMA basalt_demo CASCADE;`.
 
+### What `service uninstall` leaves behind
+
+`service uninstall` removes only the service unit. It keeps the rest on purpose, so that running `basalt init` again finds its config and credentials and does not have to start over:
+
+| Kept | Linux | macOS |
+|---|---|---|
+| Config directory: `engine.json` and `agents/<name>.url`, the agent's database credential | `/etc/basalt` | `/Library/Application Support/Basalt` |
+| State directory: the engine's keys and PII dictionary | `/var/lib/basalt` | `/Library/Application Support/Basalt/state` |
+| Logs | none on disk; the engine logs to the journal (`journalctl -u basalt-engine`), which the system keeps | `/Library/Logs/Basalt` |
+| The engine's OS user and group | `basalt` | `_basalt` |
+
+The socket directory (`/run/basalt` on Linux, `/Library/Application Support/Basalt/run` on macOS) holds only sockets and the engine's lock. It goes away on Linux when the service stops; on macOS it sits inside the config directory and goes with it.
+
+Once you have run `basalt uninstall`, the credential in `agents/<name>.url` no longer works, so nothing in these files is live. To remove them, run this after `sudo basalt service uninstall`.
+
+On Linux:
+
+```sh
+sudo rm -rf /etc/basalt /var/lib/basalt
+sudo userdel basalt
+```
+
+`userdel` also removes the `basalt` group, which `service install` created with the user. Delete the group with `sudo groupdel basalt` if it is still listed.
+
+On macOS:
+
+```sh
+sudo rm -rf "/Library/Application Support/Basalt" /Library/Logs/Basalt
+sudo dscl . -delete /Users/_basalt
+sudo dscl . -delete /Groups/_basalt
+```
+
+Remove the user last, after the files it owns. If you plan to run `basalt init` again, keep all of this.
+
 ## Coming soon
 
 - A release download. The published release predates the guard, so for now you build from source (step 1).

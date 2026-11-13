@@ -103,8 +103,10 @@ func ListOpenApprovals(ctx context.Context, q guard.Querier, p ApprovalListParam
 	if p.RunID != uuid.Nil {
 		b = b.Where(sq.Eq{"run_id": p.RunID.String()})
 	}
-	l := openList[Approval]{selectAll: b, idColumn: "approval_id", statuses: []string{ApprovalPending, ApprovalApproved},
-		scan: scanApproval, id: func(a Approval) uuid.UUID { return a.ID }}
+	l := openList[Approval]{
+		selectAll: b, idColumn: "approval_id", statuses: []string{ApprovalPending, ApprovalApproved},
+		scan: scanApproval, id: func(a Approval) uuid.UUID { return a.ID },
+	}
 	return l.page(ctx, q, p.Params, p.Status)
 }
 

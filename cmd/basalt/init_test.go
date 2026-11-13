@@ -61,8 +61,10 @@ func TestEngineSettings(t *testing.T) {
 
 func TestServiceInstallArgsKeepTheCredentialFileWhenThePasswordIsKept(t *testing.T) {
 	t.Parallel()
-	f := initFlags{agent: "bot", configPath: "/etc/basalt/engine.json", engineUser: "basalt", osUser: "iman",
-		keepCredential: true, initArgs: []string{"--agent=bot", "--os-user=iman"}}
+	f := initFlags{
+		agent: "bot", configPath: "/etc/basalt/engine.json", engineUser: "basalt", osUser: "iman",
+		keepCredential: true, initArgs: []string{"--agent=bot", "--os-user=iman"},
+	}
 	args := serviceInstallArgs(f, "/b")
 	require.Equal(t, []string{"--init-arg", "--agent=bot", "--init-arg", "--os-user=iman", "--keep-credential"}, args[len(args)-5:])
 	require.NotContains(t, args, "--credential-stdin")

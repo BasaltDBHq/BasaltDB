@@ -57,8 +57,10 @@ func newOlderGuard(t *testing.T, upTo int) olderGuard {
 	dir, err := os.MkdirTemp("", "bupg") // short: macOS bounds socket paths
 	require.NoError(t, err)
 	t.Cleanup(func() { os.RemoveAll(dir) })
-	g := olderGuard{d: d, configPath: filepath.Join(dir, "engine.json"), credFile: filepath.Join(dir, "agents", "bot.url"),
-		socketDir: filepath.Join(dir, "run"), dsn: dsn}
+	g := olderGuard{
+		d: d, configPath: filepath.Join(dir, "engine.json"), credFile: filepath.Join(dir, "agents", "bot.url"),
+		socketDir: filepath.Join(dir, "run"), dsn: dsn,
+	}
 	require.NoError(t, os.MkdirAll(filepath.Dir(g.credFile), 0o700))
 	require.NoError(t, os.WriteFile(g.credFile, []byte(dsn+"\n"), config.FileMode))
 	g.writeConfig(t, "PERSON")

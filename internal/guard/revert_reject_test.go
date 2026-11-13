@@ -55,8 +55,10 @@ func TestRejectRevertBeforeWiden(t *testing.T) {
 
 	details := ledgerDetails(t, e.d, "REVERT_REJECTED")
 	require.Len(t, details, 1)
-	require.Equal(t, map[string]any{"revertId": id.String(), "note": "not this one, I fixed it by hand",
-		"via": guard.RejectViaLinkOrAgent}, details[0])
+	require.Equal(t, map[string]any{
+		"revertId": id.String(), "note": "not this one, I fixed it by hand",
+		"via": guard.RejectViaLinkOrAgent,
+	}, details[0])
 
 	_, err = guard.ApplyRevert(ctx, e.bot.Conn, id, sig)
 	requireRevertInvalid(t, err, "rejected")

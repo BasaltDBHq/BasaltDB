@@ -189,9 +189,9 @@ func darwinInstall(ctx context.Context, sys System, s Spec) ([]Step, error) {
 		// The config dir stays traversable: the socket dir lives inside it,
 		// and credential files inside are 0600.
 		mkdir(openDirMode, s.User, configDir),
-		mkdir(openDirMode, s.User, config.DefaultSocketDir(goosDarwin)),
+		mkdir(runtimeDirMode, s.User, config.DefaultSocketDir(goosDarwin)),
 		mkdir(configDirMode, s.User, darwinLogDir),
-		mkdir(configDirMode, s.User, config.DefaultStateDir(goosDarwin)),
+		mkdir(darwinStateDirMode, s.User, config.DefaultStateDir(goosDarwin)),
 	)
 	steps = append(steps, fileSteps(s)...)
 	steps = append(steps, Step{Kind: StepWrite, Path: LaunchdPlist, Content: LaunchdDaemon(s)})

@@ -20,6 +20,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/privdrop"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/shim"
@@ -30,8 +31,14 @@ func runEngine(ctx context.Context, args []string, io stdio) int {
 	fs := flag.NewFlagSet("engine", flag.ContinueOnError)
 	fs.SetOutput(io.err)
 	configPath := fs.String("config", config.DefaultPath(runtime.GOOS), "engine config file")
+	runAs := fs.String("user", "", "start as root, then run as this OS user before reading the config (a container without systemd)")
 	if fs.Parse(args) != nil || fs.NArg() > 0 {
 		return exitUsage
+	}
+	if *runAs != "" {
+		if err := dropToUser(privdrop.OS{}, *runAs, io.err); err != nil {
+			return fail(io.err, "engine", err)
+		}
 	}
 	cfg, err := config.Load(*configPath)
 	if err != nil {
@@ -42,6 +49,41 @@ func runEngine(ctx context.Context, args []string, io stdio) int {
 		return fail(io.err, "engine", err)
 	}
 	return exitOK
+}
+
+// dropToUser is basalt engine --user: before the config, the credential, a
+// socket or a port is opened, the engine makes its directories, gives up
+// root for name and checks it cannot get it back (CONTRACT.md, CLI).
+func dropToUser(sys privdrop.System, name string, w io.Writer) error {
+	res, err := privdrop.Drop(sys, name, engineDirs(runtime.GOOS))
+	if err != nil {
+		return err
+	}
+	a := res.Account
+	how := "already running as"
+	if res.Dropped {
+		how = "dropped root; running as"
+	}
+	_, _ = fmt.Fprintf(w, "basalt engine: %s %s (uid %d, gid %d)%s\n", how, a.Name, a.UID, a.GID, noNewPrivsNote(runtime.GOOS))
+	return nil
+}
+
+// noNewPrivsNote says whether the kernel's no_new_privs is set on goos.
+func noNewPrivsNote(goos string) string {
+	if goos == "linux" {
+		return "; no_new_privs set"
+	}
+	return ""
+}
+
+// engineDirs are the engine's directories as privdrop makes them.
+func engineDirs(goos string) []privdrop.Dir {
+	dirs := service.EngineDirs(goos)
+	out := make([]privdrop.Dir, 0, len(dirs))
+	for _, d := range dirs {
+		out = append(out, privdrop.Dir{Path: d.Path, Mode: d.Mode})
+	}
+	return out
 }
 
 // enginePath is the absolute path of the engine config, which the engine

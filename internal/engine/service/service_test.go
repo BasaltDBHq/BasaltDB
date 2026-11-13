@@ -313,3 +313,23 @@ func TestInstallWritesOwnedFilesAndRestartsAnInstalledService(t *testing.T) {
 	require.Equal(t, "launchctl kickstart -k system/dev.basaltdb.engine", sys.ran[len(sys.ran)-1])
 	require.NotContains(t, sys.ran, "launchctl bootstrap system "+service.LaunchdPlist)
 }
+
+// basalt engine --user makes the directories a container has no service
+// manager to make, with the modes the unit gives them.
+func TestEngineDirsMatchTheUnit(t *testing.T) {
+	dirs := service.EngineDirs("linux")
+	require.Len(t, dirs, 2)
+	unit := service.SystemdUnit(service.Spec{GOOS: "linux", Binary: "/usr/local/libexec/basalt", ConfigPath: "/etc/basalt/engine.json", User: "basalt"})
+	require.Equal(t, "/run/basalt", dirs[0].Path)
+	require.Contains(t, unit, fmt.Sprintf("RuntimeDirectory=basalt\nRuntimeDirectoryMode=%04o\n", dirs[0].Mode))
+	require.Equal(t, "/var/lib/basalt", dirs[1].Path)
+	require.Contains(t, unit, fmt.Sprintf("StateDirectory=basalt\nStateDirectoryMode=%04o\n", dirs[1].Mode))
+
+	sys := newFake()
+	sys.users["_basalt"] = true
+	steps, err := service.InstallPlan(context.Background(), sys, darwinSpec())
+	require.NoError(t, err)
+	for _, d := range service.EngineDirs("darwin") {
+		require.Contains(t, steps, service.Step{Kind: service.StepMkdir, Path: d.Path, Mode: d.Mode, Owner: "_basalt"}, d.Path)
+	}
+}

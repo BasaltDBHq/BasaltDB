@@ -15,7 +15,7 @@ import (
 )
 
 // devLocalSaved are init's saved flags on a development engine.
-var devLocalSaved = []string{"--agent=bot", "--write=public.leads", "--passkey-origin=http://localhost:8787", "--operated-by=agent", "--dev-local-pages=true"}
+var devLocalSaved = []string{"--agent=bot", "--write=public.leads", "--passkey-origin=http://localhost:9000", "--operated-by=agent", "--dev-local-pages=true"}
 
 // devLocalStatus is the status report of an agent-operated engine on
 // development pages.

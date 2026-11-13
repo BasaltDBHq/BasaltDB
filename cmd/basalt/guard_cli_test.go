@@ -597,6 +597,14 @@ func TestInitDevLocalPages(t *testing.T) {
 	require.NoError(t, err, "the saved flag round-trips")
 	require.NotContains(t, cmds.InitPortal(), "dev-local-pages")
 
+	// An explicit local origin, as the contract's command gives it.
+	r = cli(t, map[string]string{envAdminURL: d.URL}, "", append(slices.Clone(base), "--dev-local-pages", "--passkey-origin", "http://localhost:9000")...)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	raw, err = os.ReadFile(config)
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"pagesUrl": "http://localhost:9000"`)
+	require.Contains(t, string(raw), `"devLocalPages": true`)
+
 	// Init again without the flag moves the engine to the portal.
 	r = cli(t, map[string]string{envAdminURL: d.URL}, "", base...)
 	require.Equal(t, exitOK, r.code, r.stderr)

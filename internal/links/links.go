@@ -1,7 +1,8 @@
 // Package links builds the links to the approval, revert and passkey
 // registration pages (CONTRACT.md, Pages; owner decisions, Decided Nov 12).
 // The pages live at one base URL: the engine's local pages
-// (http://localhost:8787) by default until hosting exists, or the portal. Every link has the same RESTful path shape on both.
+// (http://localhost:8787) by default until hosting exists, or the portal.
+// Every link has the same RESTful path shape on both.
 package links
 
 import (

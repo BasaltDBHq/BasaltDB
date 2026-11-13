@@ -89,7 +89,7 @@ func TestPlainTextKeepsAgentTextOutOfTheURLRule(t *testing.T) {
 	}
 	// Each form, neutralized and still readable.
 	for probe, want := range map[string]string{
-		"see portal.basaltvault.app.evil.io/x now": "see console·basaltvault·app·evil·io/x now",
+		"see portal.basaltvault.app.evil.io/x now": "see portal·basaltvault·app·evil·io/x now",
 		`https:\\evil.io`:                          "https evil·io",
 		"https:\u2215\u2215evil.io\u2215x":         "https evil·io/x",
 		"https:\u2044\u2044evil":                   "https evil",

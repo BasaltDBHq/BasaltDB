@@ -260,6 +260,9 @@ func runService(ctx context.Context, args []string, io stdio) int {
 		spec.MemoryMB = cfg.PIIOrDefault().MaxMemoryMB
 	}
 	if action == "install" && a.name != "" {
+		if a.devLocalPages {
+			_, _ = fmt.Fprintln(io.err, "basalt: "+config.DevLocalPagesWarning)
+		}
 		if len(a.personUIDs) == 0 && os.Getenv(envSudoUID) != "" {
 			uid, err := parseUID(os.Getenv(envSudoUID))
 			if err != nil {

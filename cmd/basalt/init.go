@@ -497,6 +497,9 @@ func (f *initFlags) agentPages(originGiven bool) error {
 		f.passkeyOrigin = links.DefaultLocal
 	case f.devLocalPages && f.passkeyOrigin == links.Portal:
 		return fmt.Errorf("%w: --dev-local-pages needs a local --passkey-origin (http://localhost:<port>), not the portal", errUsage)
+	case f.devLocalPages:
+		// relyingParty has checked the origin is the portal or local.
+		return nil
 	case agentOperated && !originGiven:
 		f.passkeyOrigin = links.Portal
 	case agentOperated && f.passkeyOrigin != links.Portal:

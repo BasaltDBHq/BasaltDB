@@ -724,7 +724,8 @@ func parseResource(s string) (schema, name string, err error) {
 	return parts[0], parts[1], nil
 }
 
-// parseIdent reads one identifier from the front of s.
+// parseIdent reads one identifier from the front of s: a quoted one as
+// written, an unquoted one folded as Postgres folds it (foldASCII).
 func parseIdent(s string) (ident, rest string, err error) {
 	if strings.HasPrefix(s, `"`) {
 		var b strings.Builder
@@ -753,7 +754,18 @@ func parseIdent(s string) (ident, rest string, err error) {
 	if ident == "" || strings.ContainsAny(ident, "\" \t\r\n") {
 		return "", "", errors.New("must be schema.table, each part a name or a double-quoted name")
 	}
-	return strings.ToLower(ident), s[end:], nil
+	return foldASCII(ident), s[end:], nil
+}
+
+// foldASCII lower-cases A to Z only, as Postgres folds an unquoted
+// identifier; other letters keep their case.
+func foldASCII(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r >= 'A' && r <= 'Z' {
+			return r + ('a' - 'A')
+		}
+		return r
+	}, s)
 }
 
 // printedName is schema.name as Postgres prints it (quote_ident).

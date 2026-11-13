@@ -2,6 +2,7 @@ package pii_test
 
 import (
 	"fmt"
+	"sync"
 	"unicode"
 )
 
@@ -9,45 +10,51 @@ import (
 // sample keeps what a fixed stride would drop: the first character of every
 // contiguous run, the first of every class key, and a pinned list.
 
-type categoryTable struct {
-	name  string
-	table *unicode.RangeTable
+// charInfo holds the general category and script of every character below
+// maxScanRune, filled once from the unicode tables (a lookup per character
+// would search every script table).
+var charInfo struct {
+	once     sync.Once
+	category [maxScanRune]string
+	script   [maxScanRune]string
 }
 
-var categoryTables = func() []categoryTable {
-	names := []string{"Lu", "Ll", "Lt", "Lm", "Lo", "Mn", "Mc", "Me", "Nd", "Nl", "No",
-		"Pc", "Pd", "Ps", "Pe", "Pi", "Pf", "Po", "Sm", "Sc", "Sk", "So", "Zs", "Zl", "Zp", "Cc", "Cf", "Co"}
-	out := make([]categoryTable, 0, len(names))
-	for _, name := range names {
-		out = append(out, categoryTable{name, unicode.Categories[name]})
-	}
-	return out
-}()
-
-func categoryOf(r rune) string {
-	for _, c := range categoryTables {
-		if unicode.Is(c.table, r) {
-			return c.name
+func loadCharInfo() {
+	charInfo.once.Do(func() {
+		fill := func(dst *[maxScanRune]string, name string, table *unicode.RangeTable) {
+			for _, rg := range table.R16 {
+				for r := rune(rg.Lo); r <= rune(rg.Hi) && r < maxScanRune; r += rune(rg.Stride) {
+					dst[r] = name
+				}
+			}
+			for _, rg := range table.R32 {
+				for r := rune(rg.Lo); r <= rune(rg.Hi) && r < maxScanRune; r += rune(rg.Stride) {
+					dst[r] = name
+				}
+			}
 		}
-	}
-	return "Cn"
-}
-
-func scriptOf(r rune) string {
-	for name, table := range unicode.Scripts {
-		if unicode.Is(table, r) {
-			return name
+		for name, table := range unicode.Categories {
+			if len(name) == 2 { // Lu, Mn, ...; not the one-letter groups
+				fill(&charInfo.category, name, table)
+			}
 		}
-	}
-	return ""
+		for name, table := range unicode.Scripts {
+			fill(&charInfo.script, name, table)
+		}
+	})
 }
 
 // scriptClass keys a character by general category and script.
-func scriptClass(r rune) string { return categoryOf(r) + "/" + scriptOf(r) }
+func scriptClass(r rune) string {
+	loadCharInfo()
+	return charInfo.category[r] + "/" + charInfo.script[r]
+}
 
-// blockClass keys a character by general category and its 256-character block,
-// which is cheap enough to compute for the whole range.
-func blockClass(r rune) string { return fmt.Sprintf("%s/%X", categoryOf(r), r>>8) }
+// blockClass keys a character by general category and its 256-character block.
+func blockClass(r rune) string {
+	loadCharInfo()
+	return fmt.Sprintf("%s/%X", charInfo.category[r], r>>8)
+}
 
 // pinnedRunes are always checked: the digits and punctuation the detectors
 // care most about, in their fullwidth, superscript and subscript forms.
@@ -67,9 +74,9 @@ func pinnedRunes() []rune {
 }
 
 // sampleRunes returns all when fullRun, else every step-th character plus the
-// first of each contiguous run, the first of each class, and the pinned ones.
-// Order is kept.
-func sampleRunes(all []rune, step int, class func(rune) string) []rune {
+// first of each contiguous run, the first of each class under every class
+// function, and the pinned ones. Order is kept.
+func sampleRunes(all []rune, step int, classes ...func(rune) string) []rune {
 	if fullRun() {
 		return all
 	}
@@ -77,13 +84,18 @@ func sampleRunes(all []rune, step int, class func(rune) string) []rune {
 	for _, r := range pinnedRunes() {
 		pinned[r] = true
 	}
-	seen := map[string]bool{}
+	seen := make([]map[string]bool, len(classes))
+	for i := range seen {
+		seen[i] = map[string]bool{}
+	}
 	var out []rune
 	for i, r := range all {
 		keep := i%step == 0 || pinned[r] || i == 0 || all[i-1] != r-1
-		if k := class(r); !seen[k] {
-			seen[k] = true
-			keep = true
+		for ci, class := range classes {
+			if k := class(r); !seen[ci][k] {
+				seen[ci][k] = true
+				keep = true
+			}
 		}
 		if keep {
 			out = append(out, r)

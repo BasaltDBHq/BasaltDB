@@ -458,8 +458,10 @@ func TestRescopeMembership(t *testing.T) {
 	// The agent's own unrelated run: own work, but not this revert's scope.
 	outside := newRun(t, e.bot, "elsewhere")
 	require.NoError(t, guardtest.Guarded(ctx, e.bot.Conn, outside, `UPDATE public.leads SET status = 'o' WHERE id = 35`))
-	_, err := guard.RescopeRevert(ctx, e.bot.Conn, guard.RescopeRequest{RevertID: e.prep.RevertID,
-		Select: revert.Select{Scope: revert.ScopeRun, ScopeID: outside.RunID, Agents: []string{e.bot.Role}}})
+	_, err := guard.RescopeRevert(ctx, e.bot.Conn, guard.RescopeRequest{
+		RevertID: e.prep.RevertID,
+		Select:   revert.Select{Scope: revert.ScopeRun, ScopeID: outside.RunID, Agents: []string{e.bot.Role}},
+	})
 	requireScopeRefused(t, err, guard.ScopeDescriptor)
 	require.Empty(t, ledgerDetails(t, e.d, "REVERT_RESCOPED"))
 }
@@ -511,8 +513,10 @@ func TestResetRevert(t *testing.T) {
 		_, err = guard.ResetRevert(ctx, e.bot.Conn, prep.RevertID)
 		code, _ := guard.CodeOf(err)
 		require.Contains(t, []guard.Code{guard.CodeRevertInvalid, guard.CodeRevertExpired}, code, name)
-		_, err = guard.RescopeRevert(ctx, e.bot.Conn, guard.RescopeRequest{RevertID: prep.RevertID,
-			Select: revert.Select{Scope: revert.ScopeRun, ScopeID: e.botA.RunID, Agents: []string{e.bot.Role}}})
+		_, err = guard.RescopeRevert(ctx, e.bot.Conn, guard.RescopeRequest{
+			RevertID: prep.RevertID,
+			Select:   revert.Select{Scope: revert.ScopeRun, ScopeID: e.botA.RunID, Agents: []string{e.bot.Role}},
+		})
 		code, _ = guard.CodeOf(err)
 		require.Contains(t, []guard.Code{guard.CodeRevertInvalid, guard.CodeRevertExpired}, code, name)
 	}
@@ -559,11 +563,15 @@ func TestUndoWidenedRevertRefused(t *testing.T) {
 	_, err = guard.PrepareRevert(ctx, e.bot.Conn, undo, "redo")
 	requireScopeRefused(t, err, guard.ScopeNotOwnChange)
 	// Nor through rescope_revert of a pending revert, without a proof.
-	pending, err := guard.PrepareRevert(ctx, e.bot.Conn, guard.RevertScope{Kind: revert.ScopeRun,
-		ID: newRunWith(t, e.bot, `UPDATE public.leads SET status = 'p' WHERE id = 37`)}, "x")
+	pending, err := guard.PrepareRevert(ctx, e.bot.Conn, guard.RevertScope{
+		Kind: revert.ScopeRun,
+		ID:   newRunWith(t, e.bot, `UPDATE public.leads SET status = 'p' WHERE id = 37`),
+	}, "x")
 	require.NoError(t, err)
-	_, err = guard.RescopeRevert(ctx, e.bot.Conn, guard.RescopeRequest{RevertID: pending.RevertID,
-		Select: revert.Select{Scope: revert.ScopeChange, ScopeID: applied.ChangeID, Agents: []string{e.bot.Role}}})
+	_, err = guard.RescopeRevert(ctx, e.bot.Conn, guard.RescopeRequest{
+		RevertID: pending.RevertID,
+		Select:   revert.Select{Scope: revert.ScopeChange, ScopeID: applied.ChangeID, Agents: []string{e.bot.Role}},
+	})
 	requireWidenRefused(t, err)
 
 	// An own, not widened revert can still be undone.
@@ -695,8 +703,10 @@ func TestRevertWidenMigration(t *testing.T) {
 
 	e.widen(t, e.every())
 	e.d.Exec(t, `DELETE FROM basalt_meta.schema_version WHERE version = $1`, guard.LatestVersion())
-	e.d.Init(t, guard.AgentSpec{Name: "bot", Write: append(append([]string{}, leads...), "public.lead_owner"),
-		Read: append(append([]string{}, leads...), "public.lead_owner")})
+	e.d.Init(t, guard.AgentSpec{
+		Name: "bot", Write: append(append([]string{}, leads...), "public.lead_owner"),
+		Read: append(append([]string{}, leads...), "public.lead_owner"),
+	})
 	require.Equal(t, guard.LatestVersion(), scalarOf[int](t, e.d.Admin, `SELECT max(version) FROM basalt_meta.schema_version`))
 	_, err := guard.ResetRevert(context.Background(), e.bot.Conn, e.prep.RevertID)
 	require.NoError(t, err)

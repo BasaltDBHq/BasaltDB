@@ -130,11 +130,16 @@ func TestRevertFiltersNarrowTheProposal(t *testing.T) {
 		message string
 	}{
 		{
-			map[string]any{"runId": env.run1, "tables": []any{"public.lead_owner"}}, revert.ScopeRun, nil, []string{"public.lead_owner"},
+			map[string]any{"runId": env.run1, "tables": []any{"public.lead_owner"}},
+			revert.ScopeRun, nil,
+			[]string{"public.lead_owner"},
 			"Revert of run " + env.run1 + ", only table public·lead_owner: 1 rows to restore",
 		},
 		{
-			map[string]any{"taskId": env.taskID, "runs": []any{env.run2}}, revert.ScopeTask, []uuid.UUID{uuid.MustParse(env.run2)}, nil,
+			map[string]any{"taskId": env.taskID, "runs": []any{env.run2}},
+			revert.ScopeTask,
+			[]uuid.UUID{uuid.MustParse(env.run2)},
+			nil,
 			"Revert of task " + env.taskID + ", only 1 of its runs: 1 rows to restore",
 		},
 	} {

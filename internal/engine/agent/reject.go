@@ -137,9 +137,11 @@ func (s *Service) rejectError(r ledger.Revert, heldToken bool, err error) error 
 	case code == guard.CodeRevertExpired:
 		return s.revertExpired(r)
 	case code == guard.CodeRevertInvalid:
-		return &PageError{ToolError: &mcp.ToolError{Code: CodeRevertInvalid,
+		return &PageError{ToolError: &mcp.ToolError{
+			Code:          CodeRevertInvalid,
 			Message:       "the revert can no longer be rejected: it was signed or rejected meanwhile",
-			PersonMessage: "This revert can no longer be rejected: it was signed or rejected meanwhile."}}
+			PersonMessage: "This revert can no longer be rejected: it was signed or rejected meanwhile.",
+		}}
 	}
 	return err
 }
@@ -152,9 +154,11 @@ const revertNotFoundDetail = "no such revert"
 // widen only the page holding the rotated link can reject, and only while
 // the engine holds the token (it lives in memory).
 func rejectRefused() error {
-	return &PageError{ToolError: &mcp.ToolError{Code: CodeRevertInvalid,
+	return &PageError{ToolError: &mcp.ToolError{
+		Code:    CodeRevertInvalid,
 		Message: "the reject was refused: after the person widened this revert, only the page that widened it can reject it; nothing changed",
 		PersonMessage: "This reject was refused, and nothing changed. The engine no longer holds the scope you chose (it restarted): " +
 			"include other agents' changes again on this page to reject it, or close the page. Nothing is reverted unless " +
-			"you sign, and the revert expires within the hour."}}
+			"you sign, and the revert expires within the hour.",
+	}}
 }

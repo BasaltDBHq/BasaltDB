@@ -102,8 +102,10 @@ func fixtureDB(t *testing.T) *guardtest.DB {
 	schema, err := os.ReadFile("testdata/schema.sql")
 	require.NoError(t, err)
 	d.Exec(t, string(schema))
-	d.NewAgent(t, "bot", nil, []string{"public.customers", "public.orders", "public.leads", "public.bad_cast",
-		"public.users", "public.sessions", "public.accounts"})
+	d.NewAgent(t, "bot", nil, []string{
+		"public.customers", "public.orders", "public.leads", "public.bad_cast",
+		"public.users", "public.sessions", "public.accounts",
+	})
 	return d
 }
 
@@ -124,8 +126,10 @@ func suggestAll(t *testing.T, d *guardtest.DB, opts classify.Options, keep bool)
 	cols := make([]classify.Column, 0, len(st.Readable))
 	for _, r := range st.Readable {
 		ref := classify.KeyRef{TableOID: r.TableOID, Attnum: r.Attnum}
-		cols = append(cols, classify.Column{Schema: r.Schema, Table: r.Table, Name: r.Column, DataType: r.DataType,
-			Key: keys[ref].Key, Generated: keys[ref].Generated, BaseType: bases[ref]})
+		cols = append(cols, classify.Column{
+			Schema: r.Schema, Table: r.Table, Name: r.Column, DataType: r.DataType,
+			Key: keys[ref].Key, Generated: keys[ref].Generated, BaseType: bases[ref],
+		})
 	}
 	sampler := classify.Sampler{Conn: d.Admin, Timeout: 5 * time.Second}
 	results, err := classify.SuggestAll(ctx, cols, sampler.Sample, opts,
@@ -204,8 +208,10 @@ func TestSampleTimesOutAndIsReviewed(t *testing.T) {
 	require.Equal(t, classify.UnavailableTimeout, s.Unavailable)
 	require.Empty(t, s.Values)
 	got := classify.Suggest(classify.Column{Schema: "public", Table: "slow", Name: "v", DataType: "text"}, s, classify.Options{})
-	require.Equal(t, classify.Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityOther, NeedsReview: true,
-		Reason: "SAMPLE:timed out"}, got)
+	require.Equal(t, classify.Suggestion{
+		Class: guard.ClassIdentifier, EntityType: guard.EntityOther, NeedsReview: true,
+		Reason: "SAMPLE:timed out",
+	}, got)
 }
 
 // TestSampleErrorKeepsOnlyTheSQLState: an error that would quote a value
@@ -221,8 +227,10 @@ func TestSampleErrorKeepsOnlyTheSQLState(t *testing.T) {
 	s, err := classify.Sampler{Conn: d.Admin, Timeout: 5 * time.Second}.Sample(context.Background(), col)
 	require.NoError(t, err)
 	require.Equal(t, classify.Sample{Unavailable: "error 22P02"}, s)
-	require.Equal(t, classify.Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityOther, NeedsReview: true,
-		Reason: "SAMPLE:error 22P02"}, classify.Suggest(col, s, classify.Options{}))
+	require.Equal(t, classify.Suggestion{
+		Class: guard.ClassIdentifier, EntityType: guard.EntityOther, NeedsReview: true,
+		Reason: "SAMPLE:error 22P02",
+	}, classify.Suggest(col, s, classify.Options{}))
 }
 
 // TestDomainsAreJudgedByTheirBaseType: a domain over citext, and a domain

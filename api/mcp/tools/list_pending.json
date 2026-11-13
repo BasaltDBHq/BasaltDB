@@ -2,23 +2,32 @@
   "name": "list_pending",
   "status": "IMPLEMENTED",
   "milestone": "M2",
-  "description": "This agent's held writes that have not been applied and have not expired: waiting for the person's passkey (PENDING) or approved and ready to apply with write and approvalId (APPROVED). Each carries personMessage, the message to show the person verbatim, keeping its line breaks (put each link on a line of its own, exactly as given, or as [label](url) with the label from links), with the approval link (approvalUrl) and the equivalent basalt command (approveCommand). Listing touches no link: the link already given keeps working. If it was lost, call with reissueLink: true to get a new short link for each item (the earlier one stops working) and hand the person the new one. After showing a PENDING item's personMessage, call write once, in the same turn, with its approvalId and its runId, intent, statement as sql and params: that call waits for the person's approval and applies the write (see write for when the wait runs out). For an APPROVED item, that write applies at once. Newest first, cursor-paginated. Listing never approves anything. An item that needs something done carries nextSteps: do them in order.",
+  "description": "This agent's pending items, held writes and reverts in one list (kind APPROVAL or REVERT). A held write (APPROVAL) has not been applied and has not expired: waiting for the person's passkey (PENDING) or approved and ready to apply with write and approvalId (APPROVED). A revert (REVERT) is waiting for the person's signature (PENDING) or is a signed large plan you apply in batches (APPLYING). Each item carries personMessage, the message to show the person verbatim, keeping its line breaks (put each link on a line of its own, exactly as given, or as [label](url) with the label from links). Listing touches no link: the link already given keeps working. If it was lost, call with reissueLink: true to get a new short link for each PENDING item (the earlier one stops working) and hand the person the new one; for a revert the person widened, that resets it to your own proposal first. After showing a PENDING held write's personMessage, call write once, in the same turn, with its approvalId and its runId, intent, statement as sql and params: that call waits for the person's approval and applies the write (see write for when the wait runs out). For an APPROVED item, that write applies at once. Newest first, cursor-paginated. Listing never approves or signs anything. An item that needs something done carries nextSteps: do them in order.",
   "inputSchema": {
     "type": "object",
     "additionalProperties": false,
     "properties": {
+      "kind": {
+        "type": "string",
+        "enum": [
+          "APPROVAL",
+          "REVERT"
+        ],
+        "description": "Only held writes (APPROVAL) or only reverts (REVERT). Default both."
+      },
       "runId": {
         "type": "string",
         "format": "uuid",
-        "description": "Only held writes of this run."
+        "description": "Only held writes of this run (no reverts)."
       },
       "status": {
         "type": "string",
         "enum": [
           "PENDING",
-          "APPROVED"
+          "APPROVED",
+          "APPLYING"
         ],
-        "description": "Only held writes in this state. Default both."
+        "description": "Only items in this state: PENDING (both kinds, waiting for the person), APPROVED (held writes the person approved), APPLYING (signed large reverts you apply in batches). Default all."
       },
       "limit": {
         "type": "integer",
@@ -36,7 +45,7 @@
       },
       "reissueLink": {
         "type": "boolean",
-        "description": "Issue a new short link for each item returned, revoking its earlier link. Default false: links are left as they are."
+        "description": "Issue a new short link for each PENDING item returned, revoking its earlier link; a revert the person widened is first reset to your own proposal. Default false: links are left as they are."
       }
     }
   },
@@ -50,101 +59,254 @@
       "items": {
         "type": "array",
         "items": {
-          "type": "object",
-          "required": [
-            "approvalId",
-            "runId",
-            "intent",
-            "statement",
-            "rows",
-            "status",
-            "createdAt",
-            "expiresAt",
-            "approvalUrl",
-            "approveCommand"
-          ],
-          "properties": {
-            "approvalId": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "runId": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "taskId": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "intent": {
-              "type": "string"
-            },
-            "statement": {
-              "type": "string"
-            },
-            "params": {
-              "type": "array",
-              "description": "Values bound to $1, $2, ..."
-            },
-            "assignedColumns": {
-              "type": "array",
-              "items": {
-                "type": "string"
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "kind",
+                "approvalId",
+                "runId",
+                "intent",
+                "statement",
+                "rows",
+                "status",
+                "createdAt",
+                "expiresAt",
+                "approvalUrl",
+                "approveCommand"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "APPROVAL"
+                },
+                "approvalId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "runId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "taskId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "intent": {
+                  "type": "string"
+                },
+                "statement": {
+                  "type": "string"
+                },
+                "params": {
+                  "type": "array",
+                  "description": "Values bound to $1, $2, ..."
+                },
+                "assignedColumns": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Columns whose new values the approval binds (CONTRACT.md, Approvals)."
+                },
+                "rows": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Rows the held write changes, cascaded rows included."
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "PENDING",
+                    "APPROVED"
+                  ]
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "expiresAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "approvalUrl": {
+                  "type": "string",
+                  "format": "uri",
+                  "description": "The approval page for this held write: with reissueLink and when the engine serves the local pages, a newly issued short link http://localhost:<port>/approvals/<approvalId>#s=<secret> (the earlier one stops working); otherwise <base>/approvals/<approvalId>#1.<request> (base: the engine config's pagesUrl)."
+                },
+                "approveCommand": {
+                  "type": "string",
+                  "description": "basalt approve --agent <name> [--config <path>] --open <approvalId>: the person runs it in their terminal and it opens the approval page in their browser."
+                },
+                "headline": {
+                  "type": "string",
+                  "description": "The held write in one line, cascaded rows stated (\"Delete 1 row in public.leads + 2 cascaded rows (public.lead_notes 2)\")."
+                },
+                "personMessage": {
+                  "type": "string",
+                  "description": "The message to show the person verbatim, keeping its line breaks: what is held, the approval link on a line of its own, the equivalent command and the expiry."
+                },
+                "links": {
+                  "type": "array",
+                  "minItems": 1,
+                  "description": "The URLs of personMessage with labels, in order; present exactly when personMessage holds a URL.",
+                  "items": {
+                    "$ref": "../links/link.schema.json"
+                  }
+                },
+                "nextSteps": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "$ref": "../errors/next-step.schema.json"
+                  },
+                  "description": "Planned (CONTRACT.md, Next steps): what to do next, first step first."
+                }
               },
-              "description": "Columns whose new values the approval binds (CONTRACT.md, Approvals)."
+              "additionalProperties": false
             },
-            "rows": {
-              "type": "integer",
-              "minimum": 1,
-              "description": "Rows the held write changes, cascaded rows included."
-            },
-            "status": {
-              "type": "string",
-              "enum": [
-                "PENDING",
-                "APPROVED"
-              ]
-            },
-            "createdAt": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "expiresAt": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "approvalUrl": {
-              "type": "string",
-              "format": "uri",
-              "description": "The approval page for this held write: with reissueLink and when the engine serves the local pages, a newly issued short link http://localhost:<port>/approvals/<approvalId>#s=<secret> (the earlier one stops working); otherwise <base>/approvals/<approvalId>#1.<request> (base: the engine config's pagesUrl)."
-            },
-            "approveCommand": {
-              "type": "string",
-              "description": "basalt approve --agent <name> [--config <path>] --open <approvalId>: the person runs it in their terminal and it opens the approval page in their browser."
-            },
-            "headline": {
-              "type": "string",
-              "description": "The held write in one line, cascaded rows stated (\"Delete 1 row in public.leads + 2 cascaded rows (public.lead_notes 2)\")."
-            },
-            "personMessage": {
-              "type": "string",
-              "description": "The message to show the person verbatim, keeping its line breaks: what is held, the approval link on a line of its own, the equivalent command and the expiry."
-            },
-            "links": {
-              "type": "array",
-              "minItems": 1,
-              "description": "The URLs of personMessage with labels, in order; present exactly when personMessage holds a URL.",
-              "items": { "$ref": "../links/link.schema.json" }
-            },
-            "nextSteps": {
-              "type": "array",
-              "minItems": 1,
-              "items": {
-                "$ref": "../errors/next-step.schema.json"
-              },
-              "description": "Planned (CONTRACT.md, Next steps): what to do next, first step first."
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "revertId",
+                "status",
+                "intent",
+                "rows",
+                "skipped",
+                "batched",
+                "widened",
+                "createdAt",
+                "expiresAt",
+                "headline",
+                "personMessage"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "REVERT"
+                },
+                "revertId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "PENDING",
+                    "APPLYING"
+                  ],
+                  "description": "PENDING: waiting for the person's signature. APPLYING: a signed large plan; apply its lines with revert_plan and apply_revert_batch."
+                },
+                "scope": {
+                  "type": "string",
+                  "enum": [
+                    "CHANGE",
+                    "RUN",
+                    "TASK"
+                  ],
+                  "description": "The scope you requested. Absent when widened."
+                },
+                "scopeId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "The id you requested. Absent when widened."
+                },
+                "intent": {
+                  "type": "string"
+                },
+                "rows": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Rows to restore."
+                },
+                "skipped": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Rows left as they are."
+                },
+                "batched": {
+                  "type": "boolean",
+                  "description": "A large plan (over 1000 lines), applied in batches after the signature."
+                },
+                "widened": {
+                  "type": "boolean",
+                  "description": "True when the person included other agents' changes: then no scope, scopeId, revertUrl or links, and the headline names no scope."
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "expiresAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "The person must sign by then."
+                },
+                "applyBy": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "A signed large plan: every line must be applied by then."
+                },
+                "progress": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "restored",
+                    "skipped",
+                    "pending",
+                    "batches"
+                  ],
+                  "properties": {
+                    "restored": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "skipped": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "pending": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "batches": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "description": "A signed large plan's lines so far."
+                },
+                "headline": {
+                  "type": "string",
+                  "description": "The revert in one line, built from what the database returns: \"Revert of run <id>: N rows to restore, M left as they are (changed after the agent).\", or for a widened revert only \"Revert widened by the person: N rows to restore.\""
+                },
+                "revertUrl": {
+                  "type": "string",
+                  "format": "uri",
+                  "description": "A PENDING revert not widened: the revert page, its long link, or with reissueLink a newly issued short link when the engine serves the local pages (the earlier one stops working)."
+                },
+                "personMessage": {
+                  "type": "string",
+                  "description": "The message to show the person verbatim, keeping its line breaks."
+                },
+                "links": {
+                  "type": "array",
+                  "minItems": 1,
+                  "description": "The URLs of personMessage with labels, in order; present exactly when personMessage holds a URL.",
+                  "items": {
+                    "$ref": "../links/link.schema.json"
+                  }
+                },
+                "nextSteps": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "$ref": "../errors/next-step.schema.json"
+                  },
+                  "description": "What to do next, first step first."
+                }
+              }
             }
-          }
+          ]
         }
       },
       "nextCursor": {

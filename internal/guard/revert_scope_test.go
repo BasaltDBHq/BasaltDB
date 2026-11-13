@@ -290,8 +290,10 @@ func TestRevertScopeNormalized(t *testing.T) {
 	if want[0].String() > want[1].String() {
 		want[0], want[1] = want[1], want[0]
 	}
-	require.Equal(t, revert.Select{Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.bot.Role}, Runs: want,
-		Tables: []string{"public.lead_owner", "public.leads"}}, b.Select)
+	require.Equal(t, revert.Select{
+		Scope: revert.ScopeTask, ScopeID: e.task, Agents: []string{e.bot.Role}, Runs: want,
+		Tables: []string{"public.lead_owner", "public.leads"},
+	}, b.Select)
 	require.Contains(t, stored, fmt.Sprintf(`"select": {"runs": [%q, %q], "scope": "TASK", "agents": [%q], "tables": ["public.lead_owner", "public.leads"], "scopeId": %q}`,
 		want[0], want[1], e.bot.Role, e.task))
 }

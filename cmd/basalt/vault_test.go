@@ -99,8 +99,10 @@ func TestEngineSettingsCarryTheVaultChoice(t *testing.T) {
 
 func TestServiceInstallPassesVaultOnlyWhenThePersonGaveIt(t *testing.T) {
 	t.Parallel()
-	f := initFlags{agent: "bot", configPath: "/etc/basalt/engine.json", engineUser: "basalt", osUser: "iman",
-		vault: vaultChoice{def: VaultModeOff, why: personDefaultWhy}}
+	f := initFlags{
+		agent: "bot", configPath: "/etc/basalt/engine.json", engineUser: "basalt", osUser: "iman",
+		vault: vaultChoice{def: VaultModeOff, why: personDefaultWhy},
+	}
 	args := serviceInstallArgs(f, "/b")
 	require.Contains(t, args, "--vault-default=off")
 	for _, a := range args {
@@ -155,12 +157,22 @@ func TestInitRemoteWritesTheVault(t *testing.T) {
 		line  string
 		dials bool
 	}{
-		{"person default", nil, config.VaultOff,
-			"basalt: vault: off (default for --operated-by=person; --vault=on to turn it on)\n", false},
-		{"agent default", []string{"--operated-by", "agent"}, config.VaultOn,
-			"basalt: vault: on (default for --operated-by=agent; --vault=off to turn it off)\n", true},
-		{"agent turns it off", []string{"--operated-by", "agent", "--vault=off"}, config.VaultOff,
-			"basalt: vault: off (--vault=off)\n", false},
+		{
+			"person default", nil, config.VaultOff,
+			"basalt: vault: off (default for --operated-by=person; --vault=on to turn it on)\n", false,
+		},
+		{
+			"agent default",
+			[]string{"--operated-by", "agent"},
+			config.VaultOn,
+			"basalt: vault: on (default for --operated-by=agent; --vault=off to turn it off)\n", true,
+		},
+		{
+			"agent turns it off",
+			[]string{"--operated-by", "agent", "--vault=off"},
+			config.VaultOff,
+			"basalt: vault: off (--vault=off)\n", false,
+		},
 		{"person turns it on", []string{"--vault", "on"}, config.VaultOn, "basalt: vault: on (--vault=on)\n", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

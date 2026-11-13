@@ -42,12 +42,18 @@ func TestPages(t *testing.T) {
 	}{
 		{name: "default: on at 127.0.0.1:8787", want: config.Pages{Addr: "127.0.0.1:8787", Origin: "http://localhost:8787"}},
 		{name: "hosted console: off", url: "https://console.basaltvault.app"},
-		{name: "local port", url: "http://localhost:9000",
-			want: config.Pages{Addr: "127.0.0.1:9000", Origin: "http://localhost:9000"}},
-		{name: "loopback IP origin", url: "http://127.0.0.1:9000",
-			want: config.Pages{Addr: "127.0.0.1:9000", Origin: "http://127.0.0.1:9000"}},
-		{name: "explicit IPv6 loopback", addr: "[::1]:8787",
-			want: config.Pages{Addr: "[::1]:8787", Origin: "http://localhost:8787"}},
+		{
+			name: "local port", url: "http://localhost:9000",
+			want: config.Pages{Addr: "127.0.0.1:9000", Origin: "http://localhost:9000"},
+		},
+		{
+			name: "loopback IP origin", url: "http://127.0.0.1:9000",
+			want: config.Pages{Addr: "127.0.0.1:9000", Origin: "http://127.0.0.1:9000"},
+		},
+		{
+			name: "explicit IPv6 loopback", addr: "[::1]:8787",
+			want: config.Pages{Addr: "[::1]:8787", Origin: "http://localhost:8787"},
+		},
 		{name: "off", addr: "off"},
 		{name: "every interface refused", addr: "0.0.0.0:8787", err: "loopback IP only"},
 		{name: "LAN address refused", addr: "192.168.1.10:8787", err: "loopback IP only"},

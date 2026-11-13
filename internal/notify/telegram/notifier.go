@@ -91,6 +91,57 @@ func HeldMessage(h Notice) Message {
 	return Message{Text: summary + "\n\nThe preview is too large for a Telegram link. On your computer, run:\nbasalt approve --show " + h.ApprovalID.String()}
 }
 
+// RevertButtonText labels the revert link.
+const RevertButtonText = "Review and sign"
+
+// RevertNotice is a revert waiting for the person's signature: prepared by
+// the agent, or its link issued again (owner decision LP-2).
+type RevertNotice struct {
+	RevertID uuid.UUID
+	Agent    string
+	Database string
+	// Headline is built from what Postgres returned for the revert.
+	Headline  string
+	Intent    string
+	ExpiresAt time.Time
+	// RevertURL is the long link; ShortURL the engine's short link with
+	// its secret, when it serves the pages.
+	RevertURL string
+	ShortURL  string
+	// Widened is a revert the person widened: the notice carries only the
+	// headline (LP-3).
+	Widened bool
+}
+
+// NotifyRevert sends a revert's summary and its link.
+func (n *Notifier) NotifyRevert(ctx context.Context, r RevertNotice) error {
+	return n.client.SendMessage(ctx, RevertMessage(r))
+}
+
+// RevertMessage builds the message for a revert, as HeldMessage does for a
+// held write: the link in a button when it is short enough, else in the
+// text, else the person is told to open it from their computer. A widened
+// revert's message is its headline only (LP-3).
+func RevertMessage(r RevertNotice) Message {
+	headline := truncate(r.Headline, maxHeadlineRunes)
+	if r.Widened {
+		return Message{Text: "BasaltDB: revert waiting for your signature\n\n" + headline}
+	}
+	summary := fmt.Sprintf("BasaltDB: revert waiting for your signature\n\n%s\n\nAgent: %s on %s\nWhy: %s\nExpires: %s",
+		headline, r.Agent, r.Database, truncate(r.Intent, maxIntentRunes), r.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC"))
+	if r.ShortURL != "" {
+		summary += "\nOn the engine's computer: " + r.ShortURL
+	}
+	if r.RevertURL != "" && len(r.RevertURL) <= maxButtonURLBytes {
+		return Message{Text: summary, Button: &Button{Text: RevertButtonText, URL: r.RevertURL}}
+	}
+	withLink := summary + "\n\nReview and sign: " + r.RevertURL
+	if r.RevertURL != "" && utf16Len(withLink) <= maxTextUnits {
+		return Message{Text: withLink}
+	}
+	return Message{Text: summary + "\n\nThe revert link is too long for Telegram: ask the agent for it."}
+}
+
 // truncate shortens s to at most n runes, marking the cut.
 func truncate(s string, n int) string {
 	s = strings.TrimSpace(s)

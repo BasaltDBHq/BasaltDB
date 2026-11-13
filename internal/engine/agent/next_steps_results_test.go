@@ -142,89 +142,135 @@ func resultCases() map[string]resultCase {
 		}
 	}
 	return map[string]resultCase{
-		resultKey("preview_revert", "PREVIEW"): {tool: "preview_revert", args: map[string]any{"runId": caseRunID},
+		resultKey("preview_revert", "PREVIEW"): {
+			tool: "preview_revert", args: map[string]any{"runId": caseRunID},
 			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
 				person, steps, err := s.previewGuidance(RevertPreview{Scope: run, Rows: 3, Skipped: 1})
 				require.NoError(t, err)
 				return person, nil, steps
-			}},
-		resultKey("preview_revert", "PREVIEW_TASK"): {tool: "preview_revert", args: map[string]any{"taskId": caseRunID},
+			},
+		},
+		resultKey("preview_revert", "PREVIEW_TASK"): {
+			tool: "preview_revert", args: map[string]any{"taskId": caseRunID},
 			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
 				person, steps, err := s.previewGuidance(RevertPreview{Scope: task, Rows: 3, Skipped: 1})
 				require.NoError(t, err)
 				return person, nil, steps
-			}},
+			},
+		},
 
-		resultKey("request_revert", "REQUESTED"): {tool: "request_revert", args: map[string]any{"runId": caseRunID, "intent": "Undo"},
+		resultKey("request_revert", "REQUESTED"): {
+			tool: "request_revert", args: map[string]any{"runId": caseRunID, "intent": "Undo"},
 			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
 				out, err := s.revertWithLink(context.Background(), caseRevertWith(t, ledger.RevertPending))
 				require.NoError(t, err)
 				return out.PersonMessage, out.Links, out.NextSteps
-			}},
-		resultKey("request_revert", "WAIT_ENDED"): {tool: "request_revert", args: revertArgs, openWithoutURL: true,
-			build: state(ledger.RevertPending)},
+			},
+		},
+		resultKey("request_revert", "WAIT_ENDED"): {
+			tool: "request_revert", args: revertArgs, openWithoutURL: true,
+			build: state(ledger.RevertPending),
+		},
 		resultKey("request_revert", "APPLYING"): {tool: "request_revert", args: revertArgs, build: state(ledger.RevertApplying)},
 		resultKey("request_revert", "APPLIED"):  {tool: "request_revert", args: revertArgs, build: state(ledger.RevertApplied)},
 		resultKey("request_revert", "EXPIRED"):  {tool: "request_revert", args: revertArgs, build: state(ledger.RevertExpired)},
 		resultKey("request_revert", "REJECTED"): {tool: "request_revert", args: revertArgs, build: state(ledger.RevertRejected)},
 
-		resultKey("list_pending", "PENDING"): {tool: "list_pending", args: map[string]any{},
+		resultKey("list_pending", "PENDING"): {
+			tool: "list_pending", args: map[string]any{},
 			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
 				person, links, steps, err := s.itemGuidance(pendingItem(s, ledger.ApprovalPending, s.Now().Add(time.Hour)))
 				require.NoError(t, err)
 				return person, links, steps
-			}},
-		resultKey("list_pending", "EXPIRED"): {tool: "list_pending", args: map[string]any{},
+			},
+		},
+		resultKey("list_pending", "EXPIRED"): {
+			tool: "list_pending", args: map[string]any{},
 			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
 				person, links, steps, err := s.itemGuidance(pendingItem(s, ledger.ApprovalPending, s.Now().Add(-time.Hour)))
 				require.NoError(t, err)
 				return person, links, steps
-			}},
+			},
+		},
+		resultKey("list_pending", "REVERT_PENDING"): {
+			tool: "list_pending", args: map[string]any{},
+			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+				p := &PendingRevert{Revert: caseRevertWith(t, ledger.RevertPending)}
+				require.NoError(t, s.pendingRevert(context.Background(), p, false))
+				return p.PersonMessage, p.Links, p.NextSteps
+			},
+		},
+		resultKey("list_pending", "REVERT_APPLYING"): {
+			tool: "list_pending", args: map[string]any{},
+			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+				p := &PendingRevert{Revert: caseBatchedRevert(t, ledger.RevertApplying)}
+				require.NoError(t, s.pendingRevert(context.Background(), p, false))
+				return p.PersonMessage, p.Links, p.NextSteps
+			},
+		},
 
-		resultKey("revert_plan", "PENDING"): {tool: "revert_plan", args: revertArgs,
+		resultKey("revert_plan", "PENDING"): {
+			tool: "revert_plan", args: revertArgs,
 			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
 				return planGuidanceOf(t, s, caseBatchedRevert(t, ledger.RevertPending), nil)
-			}},
-		resultKey("revert_plan", "APPLYING"): {tool: "revert_plan", args: revertArgs,
+			},
+		},
+		resultKey("revert_plan", "APPLYING"): {
+			tool: "revert_plan", args: revertArgs,
 			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
 				return planGuidanceOf(t, s, caseBatchedRevert(t, ledger.RevertApplying), planItems(ledger.OutcomePending, 202, 203, 204))
-			}},
-		resultKey("revert_plan", "APPLIED"): {tool: "revert_plan", args: revertArgs,
+			},
+		},
+		resultKey("revert_plan", "APPLIED"): {
+			tool: "revert_plan", args: revertArgs,
 			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
 				return planGuidanceOf(t, s, caseBatchedRevert(t, ledger.RevertApplied), nil)
-			}},
-		resultKey("revert_plan", "EXPIRED"): {tool: "revert_plan", args: revertArgs,
+			},
+		},
+		resultKey("revert_plan", "EXPIRED"): {
+			tool: "revert_plan", args: revertArgs,
 			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
 				return planGuidanceOf(t, s, caseBatchedRevert(t, ledger.RevertExpired), nil)
-			}},
-		resultKey("revert_plan", "REJECTED"): {tool: "revert_plan", args: revertArgs,
+			},
+		},
+		resultKey("revert_plan", "REJECTED"): {
+			tool: "revert_plan", args: revertArgs,
 			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
 				r := caseBatchedRevert(t, ledger.RevertRejected)
 				r.RejectNote = "Not now."
 				return planGuidanceOf(t, s, r, nil)
-			}},
+			},
+		},
 
-		resultKey("describe", "OVERVIEW_LARGE"): {tool: "describe", args: map[string]any{},
+		resultKey("describe", "OVERVIEW_LARGE"): {
+			tool: "describe", args: map[string]any{},
 			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
 				b := NewSteps()
 				overviewLargeSteps(b, []SchemaCount{{Schema: "app", Tables: 40}, {Schema: "billing", Tables: 12}})
 				steps, err := b.Build()
 				require.NoError(t, err)
 				return "", nil, steps
-			}},
-		resultKey("describe", "NOT_GRANTED"): {tool: "describe", args: map[string]any{},
+			},
+		},
+		resultKey("describe", "NOT_GRANTED"): {
+			tool: "describe", args: map[string]any{},
 			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
 				b := NewSteps()
 				person := s.notGrantedSteps(b, 3)
 				steps, err := b.Build()
 				require.NoError(t, err)
 				return person, nil, steps
-			}},
+			},
+		},
 
-		resultKey("apply_revert_batch", "APPLYING"): {tool: "apply_revert_batch", args: map[string]any{"revertId": caseRevertID, "lines": []any{1}},
-			build: batch(ledger.RevertApplying)},
-		resultKey("apply_revert_batch", "APPLIED"): {tool: "apply_revert_batch", args: map[string]any{"revertId": caseRevertID, "lines": []any{1}},
-			build: batch(ledger.RevertApplied)},
+		resultKey("apply_revert_batch", "APPLYING"): {
+			tool: "apply_revert_batch", args: map[string]any{"revertId": caseRevertID, "lines": []any{1}},
+			build: batch(ledger.RevertApplying),
+		},
+		resultKey("apply_revert_batch", "APPLIED"): {
+			tool: "apply_revert_batch", args: map[string]any{"revertId": caseRevertID, "lines": []any{1}},
+			build: batch(ledger.RevertApplied),
+		},
 	}
 }
 

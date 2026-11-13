@@ -94,51 +94,20 @@ func FindApproval(ctx context.Context, q guard.Querier, id uuid.UUID) (Approval,
 // are waiting for the person (PENDING) or approved and not yet applied
 // (APPROVED).
 func ListOpenApprovals(ctx context.Context, q guard.Querier, p ApprovalListParams) (pagination.Page[Approval], error) {
-	if p.Limit < 1 || p.Limit > pagination.MaxLimit {
-		return pagination.Page[Approval]{}, fmt.Errorf("%w: limit %d", ErrInvalidParams, p.Limit)
-	}
-	sort, err := p.ParseSort(ApprovalSortSpec)
-	if err != nil {
-		return pagination.Page[Approval]{}, fmt.Errorf("%w: %w", ErrInvalidParams, err)
-	}
-	order := "approval_id"
-	if sort.Desc {
-		order += " DESC"
-	}
-	statuses := []string{ApprovalPending, ApprovalApproved}
 	switch p.Status {
-	case "":
-	case ApprovalPending, ApprovalApproved:
-		statuses = []string{p.Status}
+	case "", ApprovalPending, ApprovalApproved:
 	default:
 		return pagination.Page[Approval]{}, fmt.Errorf("%w: status %q", ErrInvalidParams, p.Status)
 	}
-	b := approvalSelect().Where(sq.Eq{"status": statuses}).OrderBy(order).Limit(uint64(p.Limit) + 1)
+	b := approvalSelect()
 	if p.RunID != uuid.Nil {
 		b = b.Where(sq.Eq{"run_id": p.RunID.String()})
 	}
-	b, err = pagination.ApplyIDKeyset(b, "approval_id", sort.Desc, p.Cursor)
-	if err != nil {
-		return pagination.Page[Approval]{}, fmt.Errorf("%w: %w", ErrInvalidParams, err)
+	l := openList[Approval]{
+		selectAll: b, idColumn: "approval_id", statuses: []string{ApprovalPending, ApprovalApproved},
+		scan: scanApproval, id: func(a Approval) uuid.UUID { return a.ID },
 	}
-	sql, args, err := b.ToSql()
-	if err != nil {
-		return pagination.Page[Approval]{}, err
-	}
-	rows, err := q.Query(ctx, sql, args...)
-	if err != nil {
-		return pagination.Page[Approval]{}, err
-	}
-	items, err := pgx.CollectRows(rows, scanApproval)
-	if err != nil {
-		return pagination.Page[Approval]{}, err
-	}
-	page := pagination.Page[Approval]{Items: items}
-	if len(items) > p.Limit {
-		page.Items = items[:p.Limit]
-		page.NextCursor = pagination.EncodeIDCursor(page.Items[p.Limit-1].ID.String())
-	}
-	return page, nil
+	return l.page(ctx, q, p.Params, p.Status)
 }
 
 // maxPasskeys bounds the passkey list; a database has a handful.

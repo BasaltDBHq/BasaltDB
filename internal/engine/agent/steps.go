@@ -51,8 +51,10 @@ func (b *Steps) RepeatCall(tool string, args map[string]any, waitSeconds int, te
 	if waitSeconds < 0 || waitSeconds > MaxWaitSeconds {
 		return b.fail(fmt.Errorf("wait of %d seconds is outside 0 to %d", waitSeconds, MaxWaitSeconds))
 	}
-	return b.add(NextStep{Actor: mcp.ActorAgent, Action: mcp.ActionCallTool, Tool: tool, Arguments: args,
-		RepeatCall: true, WaitSeconds: waitSeconds}, text)
+	return b.add(NextStep{
+		Actor: mcp.ActorAgent, Action: mcp.ActionCallTool, Tool: tool, Arguments: args,
+		RepeatCall: true, WaitSeconds: waitSeconds,
+	}, text)
 }
 
 // ReviseCall adds an AGENT step: change the call as text says, then call

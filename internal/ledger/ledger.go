@@ -100,7 +100,7 @@ func ListChanges(ctx context.Context, q guard.Querier, p ChangeListParams) (pagi
 	}
 	order := "change_id"
 	if sort.Desc {
-		order += " DESC"
+		order += descending
 	}
 	b := psql.Select("change_id", "at", "agent", "run_id", "task_id", "coalesce(intent, '')", "coalesce(op, '')",
 		"coalesce(table_name, '')", "coalesce(statement, '')", "params", "rows", "cascaded_rows", "duration_ms",

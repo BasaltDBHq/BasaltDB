@@ -27,7 +27,7 @@ func sized(full, light int) int {
 // testMaster is a fixed 32-byte master key for tests only.
 var testMaster = []byte("test-master-key-0123456789abcdef")
 
-func newKeys(t *testing.T, master []byte) *pii.Keys {
+func newKeys(t testing.TB, master []byte) *pii.Keys {
 	t.Helper()
 	k, err := pii.NewKeys(master)
 	require.NoError(t, err)
@@ -64,7 +64,7 @@ func (d *mapDict) Lookup(h pii.Hash) (pii.EntityType, bool) {
 func (d *mapDict) Contains(t pii.EntityType, h pii.Hash) bool { return d.typed[t][h] }
 
 // loadFixture reads testdata/dictionary.tsv (fake values) into a mapDict.
-func loadFixture(t *testing.T, k *pii.Keys) *mapDict {
+func loadFixture(t testing.TB, k *pii.Keys) *mapDict {
 	t.Helper()
 	f, err := os.Open("testdata/dictionary.tsv")
 	require.NoError(t, err)
@@ -94,7 +94,7 @@ func finalScan(t *testing.T, tz *pii.Tokenizer, s string) int {
 
 // newTokenizer is the default tokenizer (patterns, then the dictionary) over
 // the fixture dictionary.
-func newTokenizer(t *testing.T) *pii.Tokenizer {
+func newTokenizer(t testing.TB) *pii.Tokenizer {
 	t.Helper()
 	k := newKeys(t, testMaster)
 	dd := pii.NewDictionaryDetector(k, loadFixture(t, k), "")

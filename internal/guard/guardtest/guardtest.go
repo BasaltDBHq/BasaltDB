@@ -120,14 +120,36 @@ func (d *DB) Init(t *testing.T, spec guard.AgentSpec) {
 	require.NoError(t, d.TryInit(spec))
 }
 
-// TryInit is Init returning the error.
+// TryInit is Init returning the error. Roles are cluster-wide, so parallel
+// test packages creating agent roles can make Postgres report a deadlock
+// (40P01) on the shared role catalog; the transaction rolled back, so the
+// plan is rebuilt and applied again.
 func (d *DB) TryInit(spec guard.AgentSpec) error {
 	ctx := context.Background()
-	s, err := guard.PlanInit(ctx, d.Admin, guard.InitOptions{Names: d.Names, Agent: spec})
-	if err != nil {
-		return err
+	return retryDeadlock(func() error {
+		s, err := guard.PlanInit(ctx, d.Admin, guard.InitOptions{Names: d.Names, Agent: spec})
+		if err != nil {
+			return err
+		}
+		return pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return s.Apply(ctx, tx) })
+	})
+}
+
+// deadlockAttempts bounds retryDeadlock.
+const deadlockAttempts = 5
+
+// retryDeadlock runs fn again, with a short growing pause, while it fails
+// with a Postgres deadlock (SQLSTATE 40P01). Any other result returns at once.
+func retryDeadlock(fn func() error) error {
+	var err error
+	for attempt := 1; attempt <= deadlockAttempts; attempt++ {
+		err = fn()
+		if SQLState(err) != "40P01" {
+			return err
+		}
+		time.Sleep(time.Duration(attempt) * 50 * time.Millisecond)
 	}
-	return pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return s.Apply(ctx, tx) })
+	return err
 }
 
 // Agent is a connected agent role.

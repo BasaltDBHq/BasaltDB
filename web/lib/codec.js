@@ -250,7 +250,32 @@ function expandCompact(json, what, idKey, maxLines, parse) {
   } catch {
     // check*Request parses the binding again and reports why.
   }
-  return { [idKey]: id, binding, lines };
+  const ids = linkCredentialIds(json, what);
+  return ids === null ? { [idKey]: id, binding, lines } : { [idKey]: id, binding, lines, credentialIds: ids };
+}
+
+// MAX_LINK_CREDENTIAL_IDS caps the credential ids a format 2 link carries:
+// the bound the relays read the database's passkeys with.
+const MAX_LINK_CREDENTIAL_IDS = 100;
+const MAX_CREDENTIAL_ID_BYTES = 1023;
+
+// linkCredentialIds reads a format 2 payload's optional third element: the
+// database's credential ids, 1 to 100 distinct base64url ids of 1 to 1023
+// bytes, which the page passes as allowCredentials. null when absent.
+function linkCredentialIds(json, what) {
+  if (json.length < 3) return null;
+  const ids = json[2];
+  if (!Array.isArray(ids) || ids.length === 0 || ids.length > MAX_LINK_CREDENTIAL_IDS) {
+    throw new CodeError(`${what} credentialIds must list 1 to ${MAX_LINK_CREDENTIAL_IDS} ids`);
+  }
+  if (new Set(ids).size !== ids.length) throw new CodeError(`${what} credentialIds names an id twice`);
+  for (const id of ids) {
+    const raw = b64urlDecode(requireString(id, "credential id"));
+    if (raw.length === 0 || raw.length > MAX_CREDENTIAL_ID_BYTES) {
+      throw new CodeError(`${what} has a credential id of ${raw.length} bytes`);
+    }
+  }
+  return ids;
 }
 
 function requireLineStrings(lines, what) {

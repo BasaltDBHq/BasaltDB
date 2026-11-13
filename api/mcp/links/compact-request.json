@@ -454,6 +454,341 @@
         "{\"op\": \"INSERT\", \"key\": null, \"old\": null, \"set\": {}, \"table\": \"public.empty\", \"cascaded\": false}",
         "{\"op\": \"UPDATE\", \"key\": {\"id\": 9}, \"old\": {\"id\": 9, \"big\": 9007199254740993, \"doc\": {\"a\": [1, 2], \"b\": null}, \"neg\": -42, \"flag\": true, \"note\": \"tab\\there \\\"quoted\\\" back\\\\slash \\u0001 é 日本 🚀\", \"tags\": [\"x\", \"y\", []], \"price\": 1.50}, \"set\": {\"price\": 2.00}, \"table\": \"public.items\", \"cascaded\": false}"
       ]
+    },
+    {
+      "name": "an approval with the database's credential ids",
+      "kind": "APPROVE",
+      "fragment": "2.pJPNattMFIZvZTh8y-OgGVmyHfgWbqqSQEtSE1qoEOZIc-SI6A_NKGl3uYcWCiXQVReF3kXvJIusewllJMcpZFFDJQYx5-d5z7yS4jiGy6LWgNA11wYQaMO1ddu-PnHhorZjoKWOKldhyVwOKU2WUjK8bT4mcwEI_L4tOjZL12MsWa7GfmrbrrmicmglY4pNzfqoKfuqNpBgDE0LGMMlf3CPQkMyBEu93SLUVPEW2huXBsN2GCgtXSIjk5FmvSetsa6pZNLrMf833C7TNdfbw-5qEDrWlFkelWIPYXl2tjp9EwH6CCkZKu16MHedNk7GkwufppmazLTkySzzabLIPW_i7a5UAcKKq-aKhb1gYVqqhJsXMPaTfQiZPxoPCH42ZTWVqc86n8p56HkyyJnnnM1ms3Axz3QYhr7UWst5sPCUCmW-UEFIcwrSnKaAoDwVTqScSHXuhYeeOpTyQCp_GoTvAOF59DI6j8SL1ekr0fZpWWQHblYj3h5Hq0gUWvwv_pN7HZwkYOxslA9YZ6KPcET5z-_i7vbj1gZoWq4B674sEf4UBcypNJxgrB4RAQbjaxeBuLv5JO4_f7u__SF-ff1y4_hPKGtXawBt1zuS_0h6qHIFa0ub4cdJ_-0edUYx98UtX0fPni5AWG5OjvZckCS_AwAA__8",
+      "payload": [
+        [
+          [
+            "kind",
+            "rows",
+            "agent",
+            "runId",
+            "intent",
+            "params",
+            "taskId",
+            "database",
+            "rowsHash",
+            "expiresAt",
+            "statement",
+            "approvalId",
+            "assignedColumns"
+          ],
+          [
+            "op",
+            [
+              "key",
+              [
+                "id"
+              ]
+            ],
+            [
+              "old",
+              [
+                "id",
+                "name",
+                "status"
+              ]
+            ],
+            "set",
+            "table",
+            "cascaded"
+          ],
+          [
+            "op",
+            [
+              "key",
+              [
+                "id"
+              ]
+            ],
+            [
+              "old",
+              [
+                "id",
+                "note",
+                "lead_id"
+              ]
+            ],
+            "set",
+            "table",
+            "cascaded"
+          ],
+          [
+            "op",
+            "table",
+            "rowHash",
+            "cascaded",
+            "redacted"
+          ]
+        ],
+        [
+          [
+            0,
+            "APPROVE",
+            3,
+            "basalt_agent_bot",
+            "0193a4c2-7d1e-7c3a-9f00-0000000000b2",
+            "Remove the spam lead",
+            [
+              3
+            ],
+            "0193a4c2-7d1e-7c3a-9f00-0000000000c3",
+            "app",
+            "3c4e241b3edf41860015fee8ec777698cd66631ddd185902261f9256a8a5bfa4",
+            "2026-11-12T06:02:11.123456Z",
+            "DELETE FROM public.leads WHERE id = $1",
+            "0193a4c2-7d1e-7c3a-9f00-0000000000a1",
+            []
+          ],
+          [
+            1,
+            "DELETE",
+            3,
+            3,
+            "Café ✓ lead",
+            "open",
+            null,
+            "public.leads",
+            false
+          ],
+          [
+            2,
+            "DELETE",
+            5,
+            5,
+            "note 5 — 日本 🚀",
+            3,
+            null,
+            "public.lead_notes",
+            true
+          ],
+          [
+            3,
+            "DELETE",
+            "public.note_tags",
+            "abababababababababababababababababababababababababababababababab",
+            true,
+            true
+          ]
+        ],
+        [
+          "AQEBAQEBAQEBAQEBAQEBAQ",
+          "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI"
+        ]
+      ],
+      "binding": "{\"kind\": \"APPROVE\", \"rows\": 3, \"agent\": \"basalt_agent_bot\", \"runId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000b2\", \"intent\": \"Remove the spam lead\", \"params\": [3], \"taskId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000c3\", \"database\": \"app\", \"rowsHash\": \"3c4e241b3edf41860015fee8ec777698cd66631ddd185902261f9256a8a5bfa4\", \"expiresAt\": \"2026-11-12T06:02:11.123456Z\", \"statement\": \"DELETE FROM public.leads WHERE id = $1\", \"approvalId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000a1\", \"assignedColumns\": []}",
+      "lines": [
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 3}, \"old\": {\"id\": 3, \"name\": \"Café ✓ lead\", \"status\": \"open\"}, \"set\": null, \"table\": \"public.leads\", \"cascaded\": false}",
+        "{\"op\": \"DELETE\", \"key\": {\"id\": 5}, \"old\": {\"id\": 5, \"note\": \"note 5 — 日本 🚀\", \"lead_id\": 3}, \"set\": null, \"table\": \"public.lead_notes\", \"cascaded\": true}",
+        "{\"op\": \"DELETE\", \"table\": \"public.note_tags\", \"rowHash\": \"abababababababababababababababababababababababababababababababab\", \"cascaded\": true, \"redacted\": true}"
+      ],
+      "credentialIds": [
+        "AQEBAQEBAQEBAQEBAQEBAQ",
+        "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI"
+      ]
+    },
+    {
+      "name": "a revert with the database's credential ids",
+      "kind": "REVERT",
+      "fragment": "2.pJPBTttMEMdfxZrzBnltJ0645SP-SlRKURJ6qGVFs95xsDC28W6acuMdWqlShdRTD5X6Fn0TDpz7CNWuE6pQECASxVnt7Mz_Nzt_x3EMp3kpgUFTrRQwyEtNpQYWg6KCUrtqlqUJqbSqCRjggkptNjSKgm4jYwlJwkCd5nVNpuIql1TalUSNApVJbugDNXq8UdxHdQIM6GOdN6SG2p44X5LSJP-7gITFUNUbKaOd6rwq2-R1booqRWl10qrMijxtq0hMdbt7guWCxlLdlovhlC7MX94yl9Wq7VivN82WNnoFoZyvT_3DcL-yOi-mGm32o8rxRrrVxDOTpTTqpWrDW0h3wy8jSlgcuwwm0btoMgPmMzguZeXoE3IESueMmgUBK5dFwWByfGgwBCos9NwaYC4qDck67vKBj0HqdULJqROmPnYGmet23NuP8IBxlmGhiAHWZqaPJ8kAGPAgRQz6mdcTKAPs0yAjIV2_H7oBUa-L_sDzMpQ9dJGLbua7kvcwGKTCC6Xou8DAc71eh_MO5zM33HW9Xc53uOcH3d57YPd1FXMGo-ggmkXAoF6KIk93jCPmGhfG8JNoOns7MUEUL_sC082S2mu0q_gJ90Lcjs9jMD6c2ul12wrd1rhO17m-_OzcfPl-c_XT-f3t66Wd77oR62lzbKuTvxj28QwM45yj0dDclW9k9jD79cO5vvrkGCVgYK0k4d5YVVMJW2hbVK1hno31FHORd5c-ZCGDSOaapCMuHHRqapR9r1bmGTI4IJRO-CD29PX4aMMMe_vDw1fRaD78fxZN4Bn4hsu8-8PVm9EDP0iSPwEAAP__",
+      "payload": [
+        [
+          [
+            "kind",
+            "rows",
+            "intent",
+            [
+              "select",
+              [
+                "runs",
+                "scope",
+                "agents",
+                "tables",
+                "scopeId"
+              ]
+            ],
+            "skipped",
+            "widened",
+            "database",
+            "revertId",
+            "rowsHash",
+            "expiresAt",
+            "requestedBy"
+          ],
+          [
+            "op",
+            "table",
+            "action",
+            "rowHash",
+            "cascaded",
+            "conflict",
+            "redacted",
+            "changeIds"
+          ],
+          [
+            "op",
+            [
+              "key",
+              [
+                "id"
+              ]
+            ],
+            "now",
+            [
+              "set",
+              [
+                "id",
+                "note",
+                "lead_id"
+              ]
+            ],
+            "table",
+            "action",
+            "cascaded",
+            "conflict",
+            "sqlState",
+            "changeIds"
+          ],
+          [
+            "op",
+            [
+              "key",
+              [
+                "id"
+              ]
+            ],
+            [
+              "now",
+              [
+                "id",
+                "name",
+                "status"
+              ]
+            ],
+            [
+              "set",
+              [
+                "id",
+                "name",
+                "status"
+              ]
+            ],
+            "table",
+            "action",
+            "cascaded",
+            "conflict",
+            "sqlState",
+            "changeIds"
+          ]
+        ],
+        [
+          [
+            0,
+            "REVERT",
+            3,
+            "Undo the bad merge",
+            null,
+            "RUN",
+            [
+              "basalt_agent_bot"
+            ],
+            null,
+            "0193a4c2-7d1e-7c3a-9f00-0000000000b2",
+            1,
+            false,
+            "app",
+            "0193a4c2-7d1e-7c3a-9f00-0000000000d4",
+            "14caa48f26bad4a8e9febd038704ee65a3922fad6a0a1b5f30d16a49cb27db80",
+            "2026-11-11T07:02:11.123456Z",
+            "basalt_agent_bot"
+          ],
+          [
+            1,
+            "DELETE",
+            "public.note_tags",
+            "RESTORE",
+            "abababababababababababababababababababababababababababababababab",
+            true,
+            null,
+            true,
+            [
+              "0193a4c2-7d1e-7c3a-9f00-0000000000e1"
+            ]
+          ],
+          [
+            2,
+            "INSERT",
+            5,
+            null,
+            5,
+            "note 5 — 日本 🚀",
+            3,
+            "public.lead_notes",
+            "RESTORE",
+            true,
+            null,
+            null,
+            [
+              "0193a4c2-7d1e-7c3a-9f00-0000000000e1"
+            ]
+          ],
+          [
+            3,
+            "UPDATE",
+            3,
+            3,
+            "Café ✓ lead",
+            "merged",
+            3,
+            "Café ✓ lead",
+            "open",
+            "public.leads",
+            "RESTORE",
+            false,
+            null,
+            null,
+            [
+              "0193a4c2-7d1e-7c3a-9f00-0000000000e1",
+              "0193a4c2-7d1e-7c3a-9f00-0000000000e2"
+            ]
+          ],
+          [
+            3,
+            "UPDATE",
+            7,
+            7,
+            "Edited by a person",
+            "won",
+            7,
+            "Lead 7",
+            "open",
+            "public.leads",
+            "SKIP",
+            false,
+            "CHANGED_AFTER",
+            null,
+            [
+              "0193a4c2-7d1e-7c3a-9f00-0000000000e2"
+            ]
+          ]
+        ],
+        [
+          "AwMDAwMDAwMDAwMDAwMDAwMDAwM"
+        ]
+      ],
+      "binding": "{\"kind\": \"REVERT\", \"rows\": 3, \"intent\": \"Undo the bad merge\", \"select\": {\"runs\": null, \"scope\": \"RUN\", \"agents\": [\"basalt_agent_bot\"], \"tables\": null, \"scopeId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000b2\"}, \"skipped\": 1, \"widened\": false, \"database\": \"app\", \"revertId\": \"0193a4c2-7d1e-7c3a-9f00-0000000000d4\", \"rowsHash\": \"14caa48f26bad4a8e9febd038704ee65a3922fad6a0a1b5f30d16a49cb27db80\", \"expiresAt\": \"2026-11-11T07:02:11.123456Z\", \"requestedBy\": \"basalt_agent_bot\"}",
+      "lines": [
+        "{\"op\": \"DELETE\", \"table\": \"public.note_tags\", \"action\": \"RESTORE\", \"rowHash\": \"abababababababababababababababababababababababababababababababab\", \"cascaded\": true, \"conflict\": null, \"redacted\": true, \"changeIds\": [\"0193a4c2-7d1e-7c3a-9f00-0000000000e1\"]}",
+        "{\"op\": \"INSERT\", \"key\": {\"id\": 5}, \"now\": null, \"set\": {\"id\": 5, \"note\": \"note 5 — 日本 🚀\", \"lead_id\": 3}, \"table\": \"public.lead_notes\", \"action\": \"RESTORE\", \"cascaded\": true, \"conflict\": null, \"sqlState\": null, \"changeIds\": [\"0193a4c2-7d1e-7c3a-9f00-0000000000e1\"]}",
+        "{\"op\": \"UPDATE\", \"key\": {\"id\": 3}, \"now\": {\"id\": 3, \"name\": \"Café ✓ lead\", \"status\": \"merged\"}, \"set\": {\"id\": 3, \"name\": \"Café ✓ lead\", \"status\": \"open\"}, \"table\": \"public.leads\", \"action\": \"RESTORE\", \"cascaded\": false, \"conflict\": null, \"sqlState\": null, \"changeIds\": [\"0193a4c2-7d1e-7c3a-9f00-0000000000e1\", \"0193a4c2-7d1e-7c3a-9f00-0000000000e2\"]}",
+        "{\"op\": \"UPDATE\", \"key\": {\"id\": 7}, \"now\": {\"id\": 7, \"name\": \"Edited by a person\", \"status\": \"won\"}, \"set\": {\"id\": 7, \"name\": \"Lead 7\", \"status\": \"open\"}, \"table\": \"public.leads\", \"action\": \"SKIP\", \"cascaded\": false, \"conflict\": \"CHANGED_AFTER\", \"sqlState\": null, \"changeIds\": [\"0193a4c2-7d1e-7c3a-9f00-0000000000e2\"]}"
+      ],
+      "credentialIds": [
+        "AwMDAwMDAwMDAwMDAwMDAwMDAwM"
+      ]
     }
   ],
   "invalid": [
@@ -463,9 +798,39 @@
       "fragment": "2.jFPdatswFH4VIcaukiDJSVybdVC2jPZmK222wapQjq2TVMSxvUjeUkJgbzEYg13tYrC32Lv0eo8wJDk_hRbmi8Tn8_H36fvO8ZpCXS-rT1CcKZpS1l7dB362F-3QTJdKlzOa0rWkc10qSVMi6cn5-cWbdyNJO0TSZfXZODhyBcywtKEpAwOFvfbIdVbZtrspz1oWxpMI-rnoxopjN84j6CbTe2fIRHhJl3ZH-0qvyLN6qXM0z8lTUlYWTeiqYQkLf5Qr0WPMQStJJ-7fgpkH2bIpCocosJCBwUAKdb03cwrmJsA5sIEQTMVTGHIRRQwHSRZDrNhRJDAeQpypBKGPTKhc5AmqGCNXZfwoORpOAyeuar1Ec9IaEEwMu5x3uRizYcpEynmPi6g_GH4I_caCxcXO8NvzlyfjEambrNB5T1tcGHI5GhOfATkmTzh5fzq6GBGtyDFJAsd-2P-bNfD2TWP0rET1oiqaRRnilNSLSTrZ0A4tdImGplduJ6pa0lTSs9eXo4uxpB1J53graepjlrQq1L4w6BytJdUO5JuOm0tWoGdo7VnPkYPJQaFrm0Jh0KluxciBGtnK7cYaBHdlkCTrTViCIEZ2ario7W3gOZAkD2mGKdzT3DohyeZAeo86MNMzf89YzJNEDPpxnyWJ_1RUlbf94EPmHSL8smZbB562RM_Q7QtXTQvwpV026J9WtrVkIZPS3uASiZSSfmwqi8rdkQzyuZRSmgLMDZGyYYxx8ucXufv68-77b_L3x7cvwZiF2Xbgq4D4dK4m_lztDqSE9wZscxjvwTP35T2Stl_dR9OebP4FAAD__w"
     },
     {
-      "name": "credential ids as a third element",
+      "name": "an empty credential id list",
       "kind": "APPROVE",
-      "fragment": "2.jFPBattKFP2V4fJ4q2szM7KtSDQF07gkmzZN3BaqEeFKGjvCsqRqRo2DMfQvCqXQVReF_kX_Jet-QhnJTlLootpI986cOefcM4qiCFZ5mQFCU90YQKClLq0r2_LMtfPS9o2aGlq7HZbMqlvKyFJCRu_Bp2SuAUFv6rzRZuowxpLV6x5Pdd1UH6jooGRMvix19qwq2nVpIMYIqhoQVvoWEKoiA4zAaAsYxbHjTArHk5JJKdPZPSDqERHkGcRds4fmjiXJl05mlQJCqd33oiD3KiurOydLZ6hu8lT36J7xofMX4hijiCNMz88vXr6ZAXoICRkq7FU3uqukcm65CDwapXLgZ0IP_NSjQbDgfMDvn0QCwvN8w550bOYp-585XQYw2kJDNxCCHHIOO4QNxFi2RdFNsVPDx1LyzF_QREjP43ocJD75GT_ypPYn5CdZoGmkucxSmQY687XnqkQcBUeTBSBILicDIQZCzvkk5DIUYiikNxpP3gHC6_OT6XzG6jYp8nSYW7027HI2Z51Udsz-E-zt6exixvKMHbPgnwyT-HO0WwVVrSBUcPbicnYxV4DKpakg7Lwql-VDYbRVEG4V5K4pdqj6cLoT9kJtd8YhKwXhggqjd4CRwD0L9IPsp7mH6XVtbwG7zTFG8uAfMMAAD2EEnPsiCOR45I94EHiwu1_aKiAFIYsEMhkjU5C40pHsYIeDkUTbtLq7Tspe60YzBe_byjqRLKF0pZQpyFwz1XLOBfv5nd19-nb35Qf79fXzRze3DSDc9n_DgVUMx_yRiMNleRzawZS729NXZycQx78DAAD__w"
+      "fragment": "2.jFPRats8FH4Vcfj5r06CJCdxbdZB2TLam6202QazTDm2ldTEsT1LWVNCYG8xGINd7WKwt9i79HqPMCQnbQe7mG_sc6RP3_edT06SBJZlXQBC19wYQKCFrq0r1_WZa5e17RstdbRyOyyZpV8qyFJGRu_Bp2SuAUFv2rLT5sRhjCWrVz2e2rZrPlDloWRMuah18ayp1qvaQIoJNC0gLPUtIDRVAZiA0RYwSVPHmVWOJyeTU6GLe0DSIxIoC0h9s4eWjiUrF05mkwNCrd33vCL3qhurvZOFM9R2Za57dM_40PkLcYpJwhFOzs8vXr2ZAgYIGRmq7JUf3VXWOLdcRAGNcjkIC6EHYR7QIJpzPuD3TyYB4UW5YU88m3nK_mdOlwFMttDRDcQgh5zDDmEDKdbrqvJT9Gr4WEpehHOaCBkEXI-jLKSw4EeB1OGEwqyINI00l0Uu80gXoQ5clYmj6GgyBwTJ5WQgxEDIGZ_EXMZCDIUMRuPJO0B4ff78ZDZl7TqrynxYWr0y7HI6Y14qO2b_Cfb2dHoxZWXBjln0T4ZJ_DnarYKmVRArOHt5Ob2YKUDl0lQQe6_KZflQGG0VxFsFpWuKHao-HH_CXqj1ZxyyUhDPqTJ6B5gI3LNAP8h-mnuYXrX2FtBvTjGRB_-AEUZ4CCPiPBRRJMejcMSjKIDd_dJWASmIWSKQyRSZgsyVjmQHOxyMJNpurf11UvZad5opeL9urBPJMsqXSpmKzDVTa865YD-_s7tP3-6-_GC_vn7-6Oa2AYTb_m84sIrhmD8Scbgsj0M7mEod8HcAAAD__w"
+    },
+    {
+      "name": "a credential id twice",
+      "kind": "APPROVE",
+      "fragment": "2.jFPRats8FH4Vcfj5r06CJCdxbdZBWDPam61rsw1mmXJsK6mJY3uWvKaEwN5iMAa72sVgb7F36fUeYchO2g52sdwo50ifvu87nxxFEazyMgOEproxgEBLXVpXtuWZa-el7Rs1NbR2JyyZVbeVkaWEjN6DT8lcA4Le1HmjzdRhjCWr1z2e6rqpPlDRQcmYfFnq7FlVtOvSQIwRVDUgrPQtIFRFBhiB0RYwimPHmRSOJyWTUqaze0DUIyLIM4i7Zg_NHUuSL53MKgWEUrv_i4LcUlZWd06WzlDd5Knu0T3jQ-cvxDFGEUeYnp9fvHwzA_QQEjJU2KtudFdJ5dxyEXg0SuXAz4Qe-KlHg2DB-YDf_xIJCM_zDXvSsZmn7H_mdBnAaAsN3UAIcsg57BA2EGPZFkU3xU4NH0vJM39BEyE9j-txkPjkZ_zIk9qfkJ9kgaaR5jJLZRrozNeeqxJxFBxNFoAguZwMhBgIOeeTkMtQiKGQ3mg8eQcIr89PpvMZq9ukyNNhbvXasMvZnHVS2TH7T7C3p7OLGcszdsyCfzJM4s_RbhVUtYJQwdmLy9nFXAEql6aCsPOqXJYPhdFWQbhVkLum2KHqw-lu2Au13R2HrBSECyqM3gFGAvcs0A-yn-Yepte1vQXsDscYyYN_wAADPIQRcO6LIJDjkT_iQeDB7n5rq4AUhCwSyGSMTEHiSkeygx0ORhJt0-ruOSl7rRvNFLxvK-tEsoTSlVKmIHPNVMs5F-znd3b36dvdlx_s19fPH93cNoBw238NB1YxHPNHIg6P5XFoB1PubU9fnZ0A9ksc_w4AAP__"
+    },
+    {
+      "name": "a credential id that is not base64url",
+      "kind": "APPROVE",
+      "fragment": "2.jFPBattKFP2V4fJ4q2szM7KtSDw_MK1LsmnTxG2hGhGupLEjLEuqZtQ4GEP_olAKXXVR6F_0X7LuJ5SR7CSFLqqNdO_MmXPOPaMoimCdlxkgNNWNAQRa6dK6si3PXDsvbd-oqaGN22HJrLuljCwlZPQBfErmGhD0ts4bbWYOYyxZvenxVNdN9Z6KDkrG5KtSZ0-qot2UBmKMoKoBYa1vAaEqMsAIjLaAURw7zqRwPCmZlDKd3QOiHhFBnkHcNXto7liSfOVkVikglNp9Lwtyr7KyunOycobqJk91j-4ZHzp_II4xijjC7Pz84sXrOaCHkJChwl51o7tKKueWi8CjUSoHfib0wE89GgRLzgf8_kkkIDzLt-y_js38z_5lTpcBjHbQ0A2EIIecwx5hCzGWbVF0U-zU8LGUPPOXNBHS87geB4lPfsZPPKn9CflJFmgaaS6zVKaBznztuSoRJ8HJZAkIksvJQIiBkAs-CbkMhRgK6Y3Gk7eA8Or86WwxZ3WbFHk6zK3eGHY5X7BOKpuyfwR7czq_mLM8Y1MW_JVhEr-PdqegqhWECs6eX84vFgpQuTQVhJ1X5bJ8KIy2CsKdgtw1xR5VH053wkGo7c44ZqUgXFJh9B4wEnhggX6Q_TQPML2p7S1gtznGSB79AwYY4DGMgHNfBIEcj_wRDwIP9vdLOwWkIGSRQCZjZAoSVzqSPexxMJJom1Z310nZa91opuBdW1knkiWUrpUyBZlrplrOuWA_vrG7j1_vPn9nP798-uDmtgWE2_5vOLKK4Zg_EnG8LI9DO5pyd3v2cjqFOP4VAAD__w"
+    },
+    {
+      "name": "an empty credential id",
+      "kind": "APPROVE",
+      "fragment": "2.jFPRats8FH4Vcfj5r06CJCdxbdZB2TLam6202QazTDm2ldTEsT1LWVNCYG8xGINd7WKwt9i79HqPMCQnbQe7mG_sc6RP3_edT06SBJZlXQBC19wYQKCFrq0r1_WZa5e17RstdbRyOyyZpV8qyFJGRu_Bp2SuAUFv2rLT5sRhjCWrVz2e2rZrPlDloWRMuah18ayp1qvaQIoJNC0gLPUtIDRVAZiA0RYwSVPHmVWOJyeTU6GLe0DSIxIoC0h9s4eWjiUrF05mkwNCrd33vCL3qhurvZOFM9R2Za57dM_40PkLcYpJwhFOzs8vXr2ZAgYIGRmq7JUf3VXWOLdcRAGNcjkIC6EHYR7QIJpzPuD3TyYB4UW5YU88m3nK_mdOlwFMttDRDcQgh5zDDmEDKdbrqvJT9Gr4WEpehHOaCBkEXI-jLKSw4EeB1OGEwqyINI00l0Uu80gXoQ5clYmj6GgyBwTJ5WQgxEDIGZ_EXMZCDIUMRuPJO0B4ff78ZDZl7TqrynxYWr0y7HI6Y14qO2b_Cfb2dHoxZWXBjln0T4ZJ_DnarYKmVRArOHt5Ob2YKUDl0lQQe6_KZflQGG0VxFsFpWuKHao-HH_CXqj1ZxyyUhDPqTJ6B5gI3LNAP8h-mnuYXrX2FtBvTjGRB_-AEUZ4CCPiPBRRJMejcMSjKIDd_dJWASmIWSKQyRSZgsyVjmQHOxyMJNpurf11UvZad5opeL9urBPJMsqXSpmKzDVTa865YD-_s7tP3-6-_GC_vn7-6Oa2AYTb_m84sIrhmD8Scbgsj0M7mHJ3G9L0dwAAAP__"
+    },
+    {
+      "name": "credential ids that are not a list",
+      "kind": "APPROVE",
+      "fragment": "2.jFPBattKFP2V4fJ4q2szM7KtSDQF07gkmzZN3BaqEeFKGjvCsqRqRo2DMfQvCqXQVReF_kX_Jet-QhnJTlLootpI986cOefcM4qiCFZ5mQFCU90YQKClLq0r2_LMtfPS9o2aGlq7HZbMqlvKyFJCRu_Bp2SuAUFv6rzRZuowxpLV6x5Pdd1UH6jooGRMvix19qwq2nVpIMYIqhoQVvoWEKoiA4zAaAsYxbHjTArHk5JJKdPZPSDqERHkGcRds4fmjiXJl05mlQJCqd33oiD3KiurOydLZ6hu8lT36J7xofMX4hijiCNMz88vXr6ZAXoICRkq7FU3uqukcm65CDwapXLgZ0IP_NSjQbDgfMDvn0QCwvN8w550bOYp-585XQYw2kJDNxCCHHIOO4QNxFi2RdFNsVPDx1LyzF_QREjP43ocJD75GT_ypPYn5CdZoGmkucxSmQY687XnqkQcBUeTBSBILicDIQZCzvkk5DIUYiikNxpP3gHC6_OT6XzG6jYp8nSYW7027HI2Z51Udsz-E-zt6exixvKMHbPgnwyT-HO0WwVVrSBUcPbicnYxV4DKpakg7Lwql-VDYbRVEG4V5K4pdqj6cLoT9kJtd8YhKwXhggqjd4CRwD0L9IPsp7mH6XVtbwG7zTFG8uAfMMAAD2EEnPsiCOR45I94EHiwu1_aKiAFIYsEMhkjU5C40pHsYIeDkUTbtLq7Tspe60YzBe_byjqRLKF0pZQpyFwz1XLOBfv5nd19-nb35Qf79fXzRze3DSDc9n_DgVUMx_yRiMNleRzawVSMMH11dgLx7wAAAP__"
+    },
+    {
+      "name": "101 credential ids",
+      "kind": "APPROVE",
+      "fragment": "2.jNPNautGFAfwVxkOpatxGMmOFZnegj_k2Pnw90dyJXEZSWNHRLZcj9wkBEPfolAKXXVR6Fv0Xe66j1BG_zj3FrpoNpOZn47OOXNk3_fpMd0mxGmfP2niJNdqW5jtYds3x-m2wMFO7uXGPFFI_VhSIgsZSa3egntSPxAn9bxL90o3TYwuZKE2iJe73T7_UWZlqNQ6XW9V0s6zw2arKeQ-5Tvi9KheiFOeJcR90qog7oehyRllJk8sdSwTlbwH-IjwKU0oLA8RmposUbo2ZeYxcdoq8_8qk2bZ5oUqO1mbhnb7NFaIRsYvJ_-ROOS-Lzg1R6PJcOERr3KKpJZZ8am8uk9RbroVlluVtdiuOImlKk5clRV3JURFvP9FNnHqps_suzKb_p59y0xdmrj_Snv5RA2yz4SgI6dnCvn2kGXlLZbViHPbFomzknXLrlaFOncjRzqJuKjayqlLJ0pcJWtK2Elsx65KHFU1u8i6cC_qK-JkC7tesayKZc9EvSHshmWdWXa1dl7_SJzmo05z5rHdIcrS-Cwt1EazqTdjZansA_vGYsueN_FYmrAPzP1fDUvr31f7GlC-C6gRUH8w9SazgHhgphlQo-w1MLP8stGqCKjxGlBqDq0jDzCc8g1vhRblO06zCqixkplWR-K-xd-yEC4St_kWpja74oV4-XDIffvUP3GXu_w0DFcIx3Jd-7zm1ITrVun4Tq8ByYAazLc4s0POAorM1iQ50pFXajYv9gdVfk5B8aD2igX0wyEvTJEskvFjEOhM6gcWHIQQFvvrD_b5598___on-_u3X34y9_ZMnF7wazhltc7OxVdFnD6Wr4d2asp8281ms0WcmmMsayxP5dKCtWAtWAvWhrVhbVgb1oF1YB1YB-bBPJgH82BdWBfWhXVhl7BL2CXsEtaD9WA9WA_Wh_VhfVgfdgW7gl3BrmDXsGvYNewadgO7gd3AbmC3sFvYLewWNoANYAPYADaEDWFD2BA2go1gI9gINoaNYWPYGDaBTWAT2AQ2hU1hU9gUNoPNYDPYDDaHzWFz2By2gC1gC9gCtoQtYUvYEnYHu4Pdwe5g97B72D3sHvbRWBj-EwAA__8"
+    },
+    {
+      "name": "a fourth element",
+      "kind": "APPROVE",
+      "fragment": "2.jFPRats8FH4Vcfj5r06CJCdxbdZBWDPam61rsw1mmXJsK6mJY3uWvKaEwN5iMAa72sVgb7F36fUeYchO2g52sdzE50ifvu87nxRFEazyMgOEproxgEBLXVpXtuWZa-el7Rs1NbR2OyyZVbeUkaWEjN6DT8lcA4Le1HmjzdRhjCWr1z2e6rqpPlDRQcmYfFnq7FlVtOvSQIwRVDUgrPQtIFRFBhiB0RYwimPHmRSOJyWTUqaze0DUIyLIM4i7Zg_NHUuSL53MKgWEUrvvRUHur6ys7pwsnaG6yVPdo3vGh85fiGOMIo4wPT-_ePlmBughJGSosFfd6K6SyrnlIvBolMqBnwk98FOPBsGC8wG__yUSEJ7nG_akYzNP2f_M6TKA0RYauoEQ5JBz2CFsIMayLYpuip0aPpaSZ_6CJkJ6HtfjIPHJz_iRJ7U_IT_JAk0jzWWWyjTQma89VyXiKDiaLABBcjkZCDEQcs4nIZehEEMhvdF48g4QXp-fTOczVrdJkafD3Oq1YZezOeuksmP2n2BvT2cXM5Zn7JgF_2SYxJ-j3SqoagWhgrMXl7OLuQJULk0FYedVuSwfCqOtgnCrIHdNsUPVh9OdsBdquzMOWSkIF1QYvQOMBO5ZoB9kP809TK9rewvYbY4xkgf_gAEGeAgj4NwXQSDHI3_Eg8CD3f3SVgEpCFkkkMkYmYLElY5kBzscjCTaptXddVL2WjeaKXjfVtaJZAmlK6VMQeaaqZZzLtjP7-zu07e7Lz_Yr6-fP7q5bQDhtn8NB1YxHPNHIg6X5XFoB1Pubk9fnZ24dxPHvwMAAP__"
     },
     {
       "name": "an object instead of [shapes, texts]",

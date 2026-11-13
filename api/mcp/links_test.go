@@ -220,6 +220,8 @@ type compactVector struct {
 	Payload  json.RawMessage `json:"payload"`
 	Binding  string          `json:"binding"`
 	Lines    []string        `json:"lines"`
+	// CredentialIDs are the ids a valid vector's link carries, if any.
+	CredentialIDs []string `json:"credentialIds,omitempty"`
 }
 
 type compactVectors struct {
@@ -231,7 +233,8 @@ type compactVectors struct {
 // TestCompactRequestVectors checks format 2's shared vectors (CONTRACT.md,
 // Approvals, Format 2) against the parts of the format that need no
 // rebuild: every valid fragment is 2. and the base64url of the deflate-raw
-// of its payload, a [shapes, texts] pair, and its lines hash to its
+// of its payload, [shapes, texts] (with the credential ids third when it
+// names any), and its lines hash to its
 // binding's rowsHash. The codec's own tests (internal/linkcodec and the
 // pages) rebuild every vector.
 func TestCompactRequestVectors(t *testing.T) {
@@ -261,7 +264,14 @@ func TestCompactRequestVectors(t *testing.T) {
 
 		var pair []json.RawMessage
 		require.NoError(t, json.Unmarshal(tc.Payload, &pair), tc.Name)
-		require.Len(t, pair, 2, "%s: [shapes, texts]", tc.Name)
+		if len(tc.CredentialIDs) == 0 {
+			require.Len(t, pair, 2, "%s: [shapes, texts]", tc.Name)
+		} else {
+			require.Len(t, pair, 3, "%s: [shapes, texts, credentialIds]", tc.Name)
+			var ids []string
+			require.NoError(t, json.Unmarshal(pair[2], &ids), tc.Name)
+			require.Equal(t, tc.CredentialIDs, ids, tc.Name)
+		}
 
 		var binding struct {
 			Kind     string `json:"kind"`

@@ -53,7 +53,7 @@ func signRevertLink(t *testing.T, person *passkeytest.Authenticator, fragment st
 	t.Helper()
 	req, b, err := revert.ParseRequest(fragment)
 	require.NoError(t, err)
-	require.Empty(t, req.CredentialIDs, "a format 2 link carries no credential ids: the passkeys are discoverable")
+	require.Contains(t, req.CredentialIDs, passkey.Bytes(person.Credential().ID), "the link names the database's passkeys, for allowCredentials")
 	as, err := person.Sign(revert.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	code, err := revert.NewResponse(b.RevertID, as).Code()

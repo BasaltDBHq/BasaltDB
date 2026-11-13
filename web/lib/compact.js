@@ -110,8 +110,10 @@ function build(shape, values, budget) {
 // texts, every shape used, each shaped text with exactly its shape's slots,
 // and at most MAX_TEXTS_BYTES in all.
 export function rebuildTexts(payload, maxTexts) {
-  if (!Array.isArray(payload) || payload.length !== 2 || !Array.isArray(payload[0]) || !Array.isArray(payload[1])) {
-    fail("is not [shapes, lines]");
+  // A third element, the credential ids, is read by the codec
+  // (linkCredentialIds); only the texts rebuild here.
+  if (!Array.isArray(payload) || payload.length < 2 || payload.length > 3 || !Array.isArray(payload[0]) || !Array.isArray(payload[1])) {
+    fail("is not [shapes, lines] or [shapes, lines, credentialIds]");
   }
   const [shapes, texts] = payload;
   if (texts.length === 0) fail("has no lines");

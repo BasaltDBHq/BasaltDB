@@ -237,6 +237,27 @@ func TestRegistrationCodes(t *testing.T) {
 	requireRejected(t, err, "labels")
 }
 
+// TestRegistrationHandBack: the request may carry the secret of basalt
+// init's hand-back route, 16 bytes base64url, and round-trips it.
+func TestRegistrationHandBack(t *testing.T) {
+	t.Parallel()
+	req := newRequest(t)
+	req.HandBack = passkey.Bytes(make([]byte, 16)).String()
+	frag, err := req.Fragment()
+	require.NoError(t, err)
+	got, err := passkey.ParseRegistrationRequest(frag)
+	require.NoError(t, err)
+	require.Equal(t, req, got)
+
+	for _, bad := range []string{"short", strings.Repeat("A", 23), strings.Repeat("+", 22)} {
+		req.HandBack = bad
+		frag, err := req.Fragment()
+		require.NoError(t, err)
+		_, err = passkey.ParseRegistrationRequest(frag)
+		requireRejected(t, err, "handBack")
+	}
+}
+
 func TestBytesJSON(t *testing.T) {
 	t.Parallel()
 	raw, err := json.Marshal(struct {

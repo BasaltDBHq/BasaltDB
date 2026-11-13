@@ -6,6 +6,7 @@ require (
 	github.com/FastFilter/xorfilter v0.5.1
 	github.com/Masterminds/squirrel v1.5.4
 	github.com/coder/websocket v1.8.15
+	github.com/creack/pty v1.1.24
 	github.com/go-playground/validator/v10 v10.30.6
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.12.0

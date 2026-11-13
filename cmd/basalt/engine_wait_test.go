@@ -30,7 +30,7 @@ func TestServeLocalPagesFreesThePortOnStop(t *testing.T) {
 		addr, ok := localPagesAddr(origin)
 		require.True(t, ok)
 
-		stop, served := serveLocalPages(origin)
+		stop, served := serveLocalPages(origin, nil)
 		require.True(t, served)
 		stop()
 		again, err := net.Listen("tcp", addr)

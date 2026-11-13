@@ -5,11 +5,13 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -219,4 +221,91 @@ func TestInitTakesThePasskeyFromThePage(t *testing.T) {
 	}
 	require.Contains(t, stderr.String(), "passkey registered for localhost")
 	require.Equal(t, 1, count(t, d, `SELECT count(credential_id) FROM basalt_meta.passkeys`))
+}
+
+// fallbackIO is a cliIO whose stdin is a terminal whose modes cannot be
+// set (as on a platform without raw reads), with nothing ever typed: a
+// plain line read of it blocks until the test ends.
+func fallbackIO(t *testing.T, stderr io.Writer, raw rawLineReader) *cliIO {
+	t.Helper()
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = w.Close()
+		_ = r.Close()
+	})
+	c := newIO(context.Background(), stdio{in: r, out: io.Discard, err: stderr}, func(string) string { return "" })
+	c.terminal = r
+	c.rawRead = raw
+	return c
+}
+
+func noRawRead(context.Context, *os.File, []byte) (string, error) { return "", errNoRawRead }
+
+// within fails the test when f does not return in time, instead of
+// letting a hang run into the test binary's timeout.
+func within(t *testing.T, f func()) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		f()
+	}()
+	select {
+	case <-done:
+	case <-time.After(20 * time.Second):
+		t.Fatal("did not return in time: a read waits for input that never comes")
+	}
+}
+
+// TestReadRegistrationWithoutRawReads: where the terminal's modes cannot
+// be set, the paste is a plain line read that nothing can stop; the page's
+// hand-back must still end the wait.
+func TestReadRegistrationWithoutRawReads(t *testing.T) {
+	t.Parallel()
+	h, body, person := handBackFixture(t)
+	c := fallbackIO(t, io.Discard, noRawRead)
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		handBackPost(h, handBackOrigin, h.secret, "application/json", body)
+	}()
+	var cred passkey.Credential
+	var err error
+	within(t, func() { cred, err = readRegistration(c, h.req, handBackRP, h) })
+	require.NoError(t, err)
+	require.Equal(t, person.Credential().ID, cred.ID)
+}
+
+func TestPasteInBackgroundStopsWithoutRawReads(t *testing.T) {
+	t.Parallel()
+	c := fallbackIO(t, io.Discard, noRawRead)
+	_, stop := c.pasteInBackground(context.Background())
+	time.Sleep(20 * time.Millisecond) // let the read start
+	within(t, stop)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := c.pasted(ctx)
+	require.ErrorIs(t, err, context.Canceled, "an ended context reads nothing")
+}
+
+// TestReadRegistrationReportsAPasteError: a paste that cannot be read is
+// said, and the page can still answer.
+func TestReadRegistrationReportsAPasteError(t *testing.T) {
+	t.Parallel()
+	h, body, person := handBackFixture(t)
+	var stderr lockedBuffer
+	c := fallbackIO(t, &stderr, func(context.Context, *os.File, []byte) (string, error) {
+		return "", errors.New("the pasted text is longer than 64 KiB")
+	})
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		handBackPost(h, handBackOrigin, h.secret, "application/json", body)
+	}()
+	var cred passkey.Credential
+	var err error
+	within(t, func() { cred, err = readRegistration(c, h.req, handBackRP, h) })
+	require.NoError(t, err)
+	require.Equal(t, person.Credential().ID, cred.ID)
+	require.Contains(t, stderr.String(), "basalt: the pasted code was not read (the pasted text is longer than 64 KiB); waiting for the page")
 }

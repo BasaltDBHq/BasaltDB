@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -405,37 +404,21 @@ const revertPoll = time.Second
 // ends when the revert is applied or signed, or when it expires.
 func awaitRevert(c *cliIO, l *agentLedger, id uuid.UUID, asJSON bool) int {
 	fmt.Fprintln(c.stderr, "basalt: waiting for your signature on the revert page (or paste the code it shows here)...")
-	codes := make(chan string, 1)
-	ctx, cancel := context.WithCancel(c.ctx)
-	pasteDone := make(chan struct{})
-	// At a terminal, wait for the paste read to restore the terminal's
-	// modes before anything else runs; a read of a pipe ends with the pipe.
-	defer func() {
-		cancel()
-		if c.terminal != nil {
-			<-pasteDone
-		}
-	}()
-	go func() {
-		defer close(pasteDone)
-		// A closed stdin just leaves the page to finish it.
-		for {
-			code, err := c.pasted(ctx)
-			if err != nil {
-				return
-			}
-			if code != "" {
-				codes <- code
-				return
-			}
-		}
-	}()
+	// A closed stdin just leaves the page to finish it. stopPaste waits
+	// for the paste read to restore the terminal's modes.
+	pastes, stopPaste := c.pasteInBackground(c.ctx)
+	defer stopPaste()
 	tick := time.NewTicker(revertPoll)
 	defer tick.Stop()
 	for {
 		select {
-		case code := <-codes:
-			return applyRevertCode(c, l, code, asJSON)
+		case p := <-pastes:
+			if p.err == nil {
+				return applyRevertCode(c, l, p.code, asJSON)
+			}
+			reportPasteError(c, p.err, "waiting for the revert page")
+			pastes = nil // only the page can finish it now
+			continue
 		case <-c.ctx.Done():
 			return c.fail(c.ctx.Err())
 		case <-tick.C:

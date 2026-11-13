@@ -103,6 +103,16 @@ func ptyIO(term *terminal, stdout, stderr io.Writer) *cliIO {
 	return c
 }
 
+// inTime is f's result; the test fails when f does not return in time, so
+// a regression to a read that waits for ever fails instead of hanging.
+func inTime[T any](t *testing.T, f func() (T, error)) (T, error) {
+	t.Helper()
+	var v T
+	var err error
+	within(t, func() { v, err = f() })
+	return v, err
+}
+
 func longCode() string {
 	return "basalt-x.1." + strings.Repeat("A", overLineLimit)
 }
@@ -113,7 +123,7 @@ func TestPastedReadsALineOverTheTerminalLimit(t *testing.T) {
 	c := ptyIO(term, io.Discard, io.Discard)
 	code := longCode()
 	go term.typeIn(code + "\r")
-	got, err := c.pasted(context.Background())
+	got, err := inTime(t, func() (string, error) { return c.pasted(context.Background()) })
 	require.NoError(t, err)
 	require.Equal(t, code, got)
 	require.True(t, term.canonical(), "the terminal's modes are restored")
@@ -126,12 +136,12 @@ func TestPastedEditsTheLine(t *testing.T) {
 	term := newTerminal(t)
 	c := ptyIO(term, io.Discard, io.Discard)
 	go term.typeIn("  abx\x7fc\x7f\x7f\x7f\x7f\x7fdef \n")
-	got, err := c.pasted(context.Background())
+	got, err := inTime(t, func() (string, error) { return c.pasted(context.Background()) })
 	require.NoError(t, err)
 	require.Equal(t, "def", got, "backspace erases, surrounding space is trimmed")
 
 	go term.typeIn("\x04")
-	_, err = c.pasted(context.Background())
+	_, err = inTime(t, func() (string, error) { return c.pasted(context.Background()) })
 	require.ErrorIs(t, err, io.EOF, "Ctrl-D on an empty line ends the input")
 	require.True(t, term.canonical())
 }
@@ -163,11 +173,11 @@ func TestPastedKeepsTypedAheadInput(t *testing.T) {
 	c := ptyIO(term, io.Discard, io.Discard)
 	_, err := io.WriteString(term.master, "yes\nab")
 	require.NoError(t, err)
-	answer, err := c.line()
+	answer, err := inTime(t, func() (string, error) { return c.line() })
 	require.NoError(t, err)
 	require.Equal(t, "yes", answer)
 	go term.typeIn("cd\n")
-	got, err := c.pasted(context.Background())
+	got, err := inTime(t, func() (string, error) { return c.pasted(context.Background()) })
 	require.NoError(t, err)
 	require.Equal(t, "abcd", got, "bytes the line reader buffered start the paste")
 }
@@ -179,7 +189,7 @@ func TestApprovePromptTakesALongCode(t *testing.T) {
 	c := ptyIO(term, io.Discard, &stderr)
 	code := longCode()
 	go term.typeIn(code + "\n")
-	got, err := approveCode(c, nil, "")
+	got, err := inTime(t, func() (string, error) { return approveCode(c, nil, "") })
 	require.NoError(t, err)
 	require.Equal(t, code, got)
 	require.Contains(t, stderr.String(), "Paste the code the approval page showed: ")
@@ -202,7 +212,7 @@ func TestInitPromptTakesALongCode(t *testing.T) {
 	// line longer than the limit whatever the code's own length.
 	pasted := strings.Repeat(" ", overLineLimit) + code
 	go term.typeIn(pasted + "\n")
-	cred, err := readRegistration(c, req, passkey.Production, nil)
+	cred, err := inTime(t, func() (passkey.Credential, error) { return readRegistration(c, req, passkey.Production, nil) })
 	require.NoError(t, err)
 	require.Equal(t, person.Credential().ID, cred.ID)
 	require.Contains(t, stderr.String(), "Paste the code the page shows: ")
@@ -261,7 +271,9 @@ func TestPasskeyCheckPromptTakesALongCode(t *testing.T) {
 		term.awaitCanonical()
 		_, _ = io.WriteString(term.master, "n\n") // keep the phone's passkey
 	}()
-	exit := runPasskey(c, []string{"check", "--credential-file", credFile, "--pages-url", links.HostedConsole})
+	exit, _ := inTime(t, func() (int, error) {
+		return runPasskey(c, []string{"check", "--credential-file", credFile, "--pages-url", links.HostedConsole}), nil
+	})
 	require.Equal(t, exitOK, exit, stderr.String())
 	require.Contains(t, stderr.String(), "Paste the code the page showed: ")
 	require.Contains(t, stdout.String(), "found on this device")
@@ -289,7 +301,9 @@ func TestRevertPromptTakesALongCode(t *testing.T) {
 		}
 		term.typeIn(strings.Repeat(" ", overLineLimit) + signRevertLink(t, person, frag) + "\n")
 	}()
-	exit := runRevert(c, []string{"--run", run.String(), "--credential-file", cred})
+	exit, _ := inTime(t, func() (int, error) {
+		return runRevert(c, []string{"--run", run.String(), "--credential-file", cred}), nil
+	})
 	require.Equal(t, exitOK, exit, stderr.String())
 	require.Contains(t, stderr.String(), "Paste the code the revert page showed: ")
 	require.Equal(t, "open", leadStatusOf(t, d, 40))

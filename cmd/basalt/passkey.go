@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -124,33 +123,8 @@ func readRegistration(c *cliIO, req passkey.RegistrationRequest, rp passkey.Rely
 		return verifyRegistrationCode(code, req, rp)
 	}
 	fmt.Fprint(c.stderr, "basalt: waiting for the page to send the passkey to basalt init (or paste the code it shows here): ")
-	ctx, cancel := context.WithCancel(c.ctx)
-	defer cancel()
-	type paste struct {
-		code string
-		err  error
-	}
-	pastes := make(chan paste, 1)
-	pasteDone := make(chan struct{})
-	go func() {
-		defer close(pasteDone)
-		for {
-			code, err := c.pasted(ctx)
-			if err != nil || code != "" {
-				pastes <- paste{code, err}
-				return
-			}
-		}
-	}()
-	// stopPaste ends the paste read; at a terminal it waits for the read to
-	// restore the terminal's modes. A read of a pipe cannot be stopped and
-	// is left to end with the pipe.
-	stopPaste := func() {
-		cancel()
-		if c.terminal != nil {
-			<-pasteDone
-		}
-	}
+	pastes, stopPaste := c.pasteInBackground(c.ctx)
+	defer stopPaste()
 	for {
 		select {
 		case cred := <-hb.received:
@@ -165,7 +139,8 @@ func readRegistration(c *cliIO, req passkey.RegistrationRequest, rp passkey.Rely
 			if c.ctx.Err() != nil {
 				return passkey.Credential{}, fmt.Errorf("no passkey code: %w", c.ctx.Err())
 			}
-			pastes = nil // stdin is closed: only the page can answer now
+			reportPasteError(c, p.err, "waiting for the page")
+			pastes = nil // only the page can answer now
 		case <-c.ctx.Done():
 			stopPaste()
 			return passkey.Credential{}, fmt.Errorf("no passkey code: %w", c.ctx.Err())

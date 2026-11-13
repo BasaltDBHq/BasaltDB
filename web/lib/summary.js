@@ -1,7 +1,7 @@
 // What a held write changes, counted from its bound preview lines (owner
 // decision, Nov 12): the headline at the top of the approval page and the
 // extra confirmation cascades need before the passkey prompt. The headline
-// is the same text Telegram and `basalt approve --show` print
+// is the same text `basalt approve --show` prints
 // (internal/approval/summary.go). Redacted lines count like any other: the
 // counts are exact even when the values are hidden.
 

@@ -8,31 +8,31 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 )
 
-func TestLoadNotifyAndApprovalPage(t *testing.T) {
+func TestLoadApprovalPage(t *testing.T) {
 	t.Parallel()
 	c, err := config.Load(write(t, "engine.json", `{
 		"socketDir": "/s",
 		"agents": [{"name": "a", "osUser": "u", "credentialFile": "/c"}],
-		"approvalPage": "http://localhost:8787/approve/",
-		"notify": {"telegram": {"botTokenFile": "/etc/basalt/telegram.token", "chatId": "-100123"}}
+		"approvalPage": "http://localhost:8787/approve/"
 	}`, 0o600))
 	require.NoError(t, err)
 	require.Equal(t, "http://localhost:8787/approve/", c.ApprovalPage)
 	base, err := c.PagesBase()
 	require.NoError(t, err)
 	require.Equal(t, "http://localhost:8787", base, "the older approvalPage key gives its origin")
-	require.Equal(t, &config.Telegram{BotTokenFile: "/etc/basalt/telegram.token", ChatID: "-100123"}, c.Notify.Telegram)
+}
 
-	plain, err := config.Load(write(t, "engine.json", `{"socketDir": "/s", "agents": [{"name": "a", "osUser": "u", "credentialFile": "/c"}]}`, 0o600))
-	require.NoError(t, err)
-	require.Nil(t, plain.Notify.Telegram)
-
+// The Telegram notifier is parked outside the engine: a config that still
+// has notify is refused, as any unknown key is, with a message naming it.
+func TestLoadRefusesParkedNotify(t *testing.T) {
+	t.Parallel()
 	for name, notify := range map[string]string{
-		"no token file":   `{"telegram": {"chatId": "1"}}`,
-		"no chat":         `{"telegram": {"botTokenFile": "/t"}}`,
-		"token in config": `{"telegram": {"botTokenFile": "/t", "chatId": "1", "botToken": "123:abc"}}`,
+		"telegram": `{"telegram": {"botTokenFile": "/t", "chatId": "1"}}`,
+		"empty":    `{}`,
+		"null":     `null`,
 	} {
 		_, err := config.Load(write(t, "engine.json", `{"socketDir": "/s", "agents": [{"name": "a", "osUser": "u", "credentialFile": "/c"}], "notify": `+notify+`}`, 0o600))
-		require.Error(t, err, name)
+		require.ErrorContains(t, err, `"notify" is no longer supported`, name)
+		require.ErrorContains(t, err, "Telegram", name)
 	}
 }

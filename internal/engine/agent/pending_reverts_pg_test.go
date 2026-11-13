@@ -41,7 +41,7 @@ func TestListPendingListsRevertsWithHeldWrites(t *testing.T) {
 	require.Equal(t, revertID, sent[0].RevertID.String())
 	require.Equal(t, "Revert of run "+run+": 2 rows to restore, 0 left as they are (changed after the agent).", sent[0].Headline)
 	require.Equal(t, "Undo the win", sent[0].Intent)
-	require.Contains(t, sent[0].RevertURL, "#2.", "Telegram's button gets the long link")
+	require.Contains(t, sent[0].RevertURL, "#2.", "the notice gets the long link")
 	require.False(t, sent[0].Widened)
 
 	_, list := listPending(t, env.h, map[string]any{})

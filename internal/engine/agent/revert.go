@@ -719,7 +719,7 @@ func revertHeadline(r ledger.Revert) (string, error) {
 	return bindingHeadline(b, r), nil
 }
 
-// notifyRevert tells the person on Telegram, when configured, that r waits
+// notifyRevert tells the person, through the Notifier, that r waits
 // for their signature (LP-2). A failed notice is logged; it never fails the
 // call.
 func (s *Service) notifyRevert(ctx context.Context, r ledger.Revert, n revertLink) {

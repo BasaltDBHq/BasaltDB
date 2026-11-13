@@ -77,9 +77,10 @@ type RevertNotice struct {
 	Widened   bool
 }
 
-// Notifier tells the person a write is held or a revert waits for them
-// (Telegram, when configured). It only delivers the link; approving and
-// signing need the person's passkey.
+// Notifier tells the person a write is held or a revert waits for them.
+// The engine has no notifier today, so it is noNotifier; it is the seam a
+// notification channel plugs into later. It only delivers the link;
+// approving and signing need the person's passkey.
 type Notifier interface {
 	NotifyHeld(ctx context.Context, n HeldNotice) error
 	NotifyRevert(ctx context.Context, n RevertNotice) error
@@ -132,8 +133,8 @@ func (s *Service) hold(ctx context.Context, in guard.Intent, p WriteParams, stmt
 	if err != nil {
 		return uuid.Nil, err
 	}
-	// Telegram's button gets the long link: the short one works only on
-	// this machine; its text carries the short one too (CONTRACT.md, Link
+	// The notice carries the long link, which works anywhere, and the
+	// short one, which works only on this machine (CONTRACT.md, Link
 	// secrets).
 	sent := HeldNotice{
 		ApprovalID: held.ApprovalID, Agent: s.Name, Intent: p.Intent, Statement: p.SQL,

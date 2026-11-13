@@ -100,8 +100,6 @@ type Config struct {
 	// link budget). A pointer so that a written 0 is refused rather than read
 	// as unset; nil means links.DefaultBudget. See LinkBudgetOrDefault.
 	LinkBudget *int `json:"linkBudget,omitempty"`
-	// Notify says where the person hears about held writes.
-	Notify Notify `json:"notify,omitzero"`
 	// OperatedBy is who runs machine steps on this engine's machine:
 	// PERSON (also when empty) or AGENT (CONTRACT.md, Who operates the
 	// engine).
@@ -189,18 +187,6 @@ func PersonSocketPath(dir string) string {
 
 // AgentOperated reports whether the agent runs this engine's machine steps.
 func (c Config) AgentOperated() bool { return c.OperatedBy == mcpcontract.OperatedByAgent }
-
-// Notify configures notifications. Every field is optional.
-type Notify struct {
-	Telegram *Telegram `json:"telegram,omitempty"`
-}
-
-// Telegram sends held-write links through a bot to one chat. The bot token
-// sits in its own file, mode 0600, never in this config.
-type Telegram struct {
-	BotTokenFile string `json:"botTokenFile" validate:"required"`
-	ChatID       string `json:"chatId" validate:"required,max=64"`
-}
 
 // Agent is one agent the engine serves.
 type Agent struct {
@@ -327,6 +313,9 @@ func load(path string, open func(string) (*os.File, error)) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	if err := refuseParked(raw); err != nil {
+		return Config{}, fmt.Errorf("config %s: %w", path, err)
+	}
 	var c Config
 	dec := json.NewDecoder(strings.NewReader(string(raw)))
 	dec.DisallowUnknownFields()
@@ -349,6 +338,24 @@ func load(path string, open func(string) (*os.File, error)) (Config, error) {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	return c, nil
+}
+
+// errNotifyParked refuses the notify key. It configured the Telegram
+// notifier, which is parked outside the engine; unknown keys are refused,
+// and this one says why.
+var errNotifyParked = errors.New(`"notify" is no longer supported: the Telegram notifier was removed from the engine; ` +
+	`remove the "notify" key from the config`)
+
+// refuseParked refuses a config whose top level has a key of a removed
+// feature. A config that is not a JSON object is left to the decoder.
+func refuseParked(raw []byte) error {
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &keys); err == nil {
+		if _, ok := keys["notify"]; ok {
+			return errNotifyParked
+		}
+	}
+	return nil
 }
 
 // LinkBudgetOrDefault is the configured link budget, or links.DefaultBudget

@@ -28,7 +28,7 @@ A write can touch rows in tables the agent's role cannot `SELECT`, cascaded rows
 - **Secret columns.** A column classified `SECRET` ([PII classification](../CONTRACT.md#pii-classification)) is never shown: it reads "secret · not shown". Postgres left the value out, so the page cannot check that row against what you sign, and it says so under the table, naming the row: "Row id = 8 has a secret column, so this page can't check it against what you sign." `IDENTIFIER` and `FREE_TEXT` columns show as they are; the page is yours, and only what goes to the model is tokenized.
 - **When it refuses.** If your passkey could not be checked, the page says "Your passkey didn't confirm. Nothing was shown; try again." and you can press Show values with passkey again. If the hidden rows changed since the agent asked, it says "These rows changed since the agent asked. This approval can no longer apply; ask the agent to try the write again." (for a revert: "ask the agent to prepare it again").
 - **What the agent sees.** Nothing about the values. Its tools, its views in `basalt_meta` and its chat show the rows as hidden, as before. The ledger records that you looked (`ROWS_REVEALED`, with counts and hashes only).
-- **Long links.** A long link (a `#2.` link, for example from Telegram) has no engine behind it, so the rows stay hidden, with "Values are hidden on this link. Open the short link to see them." under the table name. The CLI cannot show them either: `basalt approve --show` prints `[values hidden]`; use `--open` with `--reissue` for the engine's page.
+- **Long links.** A long link (a `#2.` link) has no engine behind it, so the rows stay hidden, with "Values are hidden on this link. Open the short link to see them." under the table name. The CLI cannot show them either: `basalt approve --show` prints `[values hidden]`; use `--open` with `--reissue` for the engine's page.
 
 This needs `basalt_meta` versions 29 (reverts), 30 (approvals) and 31 (a fix so a reveal cannot deadlock with your signature). An engine on an older guard serves the agent degraded until you run `basalt upgrade` (see [next-steps.md](next-steps.md)).
 
@@ -58,7 +58,7 @@ The revert page shows what the agent proposed. You can sign it as it is, change 
 - **If the agent resets it.** If the agent asks for a new link (`reissueLink`), the revert goes back to its own proposal and your page says "The agent reset this revert to its own work." Ask the agent for the new link, and widen again if you still want the other agents' changes.
 - **Reject.** Reject stops the revert. You can leave a note of up to 500 characters, which the agent reads; the page says so. Rejecting needs no passkey, and nothing is reverted. The agent's wait ends with `REJECTED`, and it does not ask again unless you tell it to.
 
-Changing the scope needs the page served by the engine, from the short link the agent gives you. A long link (a `#2.` link, for example from Telegram) shows the scope read only and can only be signed as it is; to decline from it, close the page. A revert you do not sign expires within the hour.
+Changing the scope needs the page served by the engine, from the short link the agent gives you. A long link (a `#2.` link) shows the scope read only and can only be signed as it is; to decline from it, close the page. A revert you do not sign expires within the hour.
 
 To start a task revert yourself, run `basalt revert --agent NAME --task <taskId> --open` with an agent that ran in the task. It prepares that agent's own lines (possibly none) and opens the page, where you include the others.
 
@@ -68,7 +68,7 @@ The CLI path is a full alternative to the link:
 
 - `basalt approve --agent NAME --open <approvalId>` opens the approval page in your default browser (`open` on macOS, `xdg-open` on Linux). Add `--reissue` for a new short link, whose page sends the signature to the engine (the agent's earlier link stops working); without it you get the long link, whose page shows a code to paste.
 - `basalt approve --agent NAME --show <approvalId>` prints the link, for use on another device.
-- `basalt approve --agent NAME '<code>'` relays the code that a long-link page shows, for example a page opened from a Telegram message.
+- `basalt approve --agent NAME '<code>'` relays the code that a long-link page shows, for example a page opened on another device.
 
 Add `--config PATH` when the engine runs from a non-default config. The commands that the agent passes on already include it.
 
@@ -80,7 +80,7 @@ Every link is built from one base URL, `pagesUrl` in `engine.json`. `basalt init
 - If the port is taken (an old `make serve-web` from an earlier checkout, or a second engine), the engine refuses to start and names the address. `lsof -nP -iTCP:8787 -sTCP:LISTEN` shows what holds it; stop that process and start the engine again.
 - With the hosted console as the base (`https://console.basaltvault.app`, not live yet), the engine serves no pages, and held writes carry the long link (`/approvals/<id>#2....`) that holds the whole preview. Open that link with `basalt approve --open` rather than copying it, because terminals and chats can cut it short. The page says so when it gets a truncated link.
 
-Telegram always sends the long link. The short link only works on the machine where the engine runs. An optional hosted relay, the Vault, is meant to carry portal short links to an engine with no inbound port; it is off by default and its page side is not finished. See [vault.md](vault.md).
+The short link only works on the machine where the engine runs. An optional hosted relay, the Vault, is meant to carry portal short links to an engine with no inbound port; it is off by default and its page side is not finished. See [vault.md](vault.md).
 
 ## Authenticators
 

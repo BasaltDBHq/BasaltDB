@@ -145,8 +145,8 @@ func TestShortLinkApprovedThroughTheRelay(t *testing.T) {
 	mcptest.Require(t, msg, mcptest.LinksOf(t, ap))
 	require.Equal(t, []mcp.Link{{Label: "Approve the held write", URL: link}}, mcptest.LinksOf(t, ap))
 	require.Len(t, env.sent.sent, 1)
-	require.Contains(t, env.sent.sent[0].ApprovalURL, "#2.", "Telegram's button keeps the long link")
-	require.Equal(t, link, env.sent.sent[0].ShortURL, "Telegram's text carries the short link")
+	require.Contains(t, env.sent.sent[0].ApprovalURL, "#2.", "the notice keeps the long link")
+	require.Equal(t, link, env.sent.sent[0].ShortURL, "the notice carries the short link")
 
 	// The page itself is served for the short link.
 	resp, err := http.Get(p.srv.URL + "/approvals/" + id) //nolint:noctx // a test against a local httptest server

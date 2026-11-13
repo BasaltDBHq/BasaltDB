@@ -125,3 +125,16 @@ func TestClassifyReviewEscapesNamesAndReasons(t *testing.T) {
 		require.Contains(t, got, "x<U+001B>[2Ky<U+001B>]0;owned<U+0007><U+009B><U+202E>")
 	}
 }
+
+// classify --check prints the column's full name: escaped too.
+func TestClassifyChecksEscapeColumnNames(t *testing.T) {
+	t.Parallel()
+	col := classify.ReviewColumn{}
+	col.Column.Schema, col.Column.Table, col.Column.Name = "crm", "leads", "x\x1b[2Ky\u202e"
+	var out bytes.Buffer
+	printChecks(&out, []classify.ReviewTable{{Table: "crm.leads", Columns: []classify.ReviewColumn{col}}},
+		map[string]classify.CheckResult{col.Column.FullName(): {Sampled: 3}})
+	require.NotContains(t, out.String(), "\x1b")
+	require.NotContains(t, out.String(), "\u202e")
+	require.Contains(t, out.String(), "x<U+001B>[2Ky<U+202E>")
+}

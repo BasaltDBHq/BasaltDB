@@ -257,7 +257,7 @@ func findPasskey(keys []guard.RegisteredPasskey, id string) (guard.RegisteredPas
 // link for the devices that hold it.
 func removePasskey(c *cliIO, conn *pgx.Conn, keys []guard.RegisteredPasskey, k guard.RegisteredPasskey, f removeFlags) error {
 	idText := passkey.Bytes(k.ID).String()
-	fmt.Fprintf(c.stderr, "basalt: passkey %q (%s) for %s, registered %s, last used %s\n",
+	fprintSafef(c.stderr, "basalt: passkey %q (%s) for %s, registered %s, last used %s\n",
 		k.Label, idText, k.RPID, k.CreatedAt.UTC().Format(dateLayout), lastUsed(k.LastUsedAt))
 	last := len(keys) == 1
 	if err := confirmRemoval(c, k, last, f); err != nil {
@@ -311,7 +311,7 @@ func forgetLink(c *cliIO, keys []guard.RegisteredPasskey, removed guard.Register
 		base = removed.Origin
 	}
 	if base != removed.Origin {
-		fmt.Fprintf(c.stderr, "basalt: the passkey belongs to %s, not %s; delete it by hand in your password manager, or run with --pages-url %s for a forget link\n",
+		fprintSafef(c.stderr, "basalt: the passkey belongs to %s, not %s; delete it by hand in your password manager, or run with --pages-url %s for a forget link\n",
 			removed.Origin, base, removed.Origin)
 		return nil
 	}
@@ -409,7 +409,7 @@ func onBase(c *cliIO, keys []ledger.Passkey, base string) []ledger.Passkey {
 			here = append(here, k)
 			continue
 		}
-		fmt.Fprintf(c.stderr, "basalt: passkey %q is registered on %s; check it with --pages-url %s\n",
+		fprintSafef(c.stderr, "basalt: passkey %q is registered on %s; check it with --pages-url %s\n",
 			k.Label, k.Credential.Relying.Origin, k.Credential.Relying.Origin)
 	}
 	return here
@@ -433,7 +433,7 @@ func checkOnBase(c *cliIO, keys []ledger.Passkey, base string, open bool) ([]led
 	if err != nil {
 		return nil, err
 	}
-	fmt.Fprintf(c.stderr, "basalt: open this link on the device to check (%d passkeys for %s). It asks each passkey to sign a check that authorizes nothing:\n",
+	fprintSafef(c.stderr, "basalt: open this link on the device to check (%d passkeys for %s). It asks each passkey to sign a check that authorizes nothing:\n",
 		len(keys), keys[0].Credential.Relying.RPID)
 	stop := servePagesFor(c, base)
 	defer stop()

@@ -1304,7 +1304,7 @@ Up to version 24 every approval and revert deadline was compared with `now()`, w
 
 | Object | Purpose |
 |---|---|
-| `submit_approval`, `_check_approval`, `_commit_approval`, `apply_revert`, `apply_revert_batch`, `_revert_lock_pending` | Replaced, same signatures, `SECURITY DEFINER`, owner and grants as their latest version, `SET search_path = pg_catalog, pg_temp`. Each deadline check reads `clock_timestamp()`, after the row lock where the function takes one: `APPROVAL_EXPIRED` once `expires_at` is at or before it, `REVERT_EXPIRED` likewise for a revert's `expires_at` and `apply_by`. `submit_approval` records that same reading as `approved_at` and returns it. `_check_approval` is now `VOLATILE` (it was `STABLE`) since it reads the clock. `_commit_approval` runs at commit, so a write under an approval that expired while its transaction was open fails at `COMMIT` and nothing lands. `_revert_lock_pending` is the check behind `rescope_revert`, `reset_revert` and `reject_revert` |
+| `submit_approval`, `_check_approval`, `_commit_approval`, `apply_revert`, `apply_revert_batch`, `_revert_lock_pending` | Replaced, same signatures, `SECURITY DEFINER`, owner and grants as their latest version, `SET search_path = pg_catalog, pg_temp`. Each deadline check reads `clock_timestamp()`, after the row lock where the function takes one: `APPROVAL_EXPIRED` once `expires_at` is at or before it, `REVERT_EXPIRED` likewise for a revert's `expires_at` and `apply_by`. `submit_approval` records that same reading as `approved_at` and returns it. `_check_approval` is now `VOLATILE` (it was `STABLE`) since it reads the clock. `_commit_approval` runs at commit, so a write under an approval that expired while its transaction was open fails at `COMMIT` and nothing lands. `_revert_lock_pending` is the check behind `rescope_revert`, `reset_revert` and `reject_revert`. A revert has no commit-time recheck, unlike an approval: `apply_revert` and `apply_revert_batch` write the rows inside the call, after the deadline check |
 
 ### Version 26: guard triggers fire under any session_replication_role
 
@@ -1324,6 +1324,15 @@ Owner decision EV-14. Up to version 26 a column an agent role could `SELECT`, in
 | `pii_readable_columns` | Replaced, same signature, `SECURITY INVOKER`, `STABLE`, owner and grants as version 24's, `SET search_path = pg_catalog, pg_temp`. A column counts only when the member of `<prefix>_agents` that may `SELECT` it also has `USAGE` on its schema ([Readable columns](#readable-columns-and-the-fingerprint)) |
 | `pii_unclassified` | Replaced, same signature, `SECURITY INVOKER`, `STABLE`, owner and grants as version 15's, `SET search_path = pg_catalog, pg_temp`. Lists a column only when `session_user` has `USAGE` on its schema as well as `SELECT` on it |
 | `pii_fingerprint` | Not replaced: it is built from `pii_readable_columns`, so a column without schema `USAGE` leaves it too. The fingerprint stored in `pii_catalog` is never compared with the live one, so nothing is rewritten |
+
+### Version 28: one clock for the person's acts, search_path on every routine
+
+Up to version 27 `approved_at` (from version 25) read the wall clock, but `applied_at`, `signed_at` (with the `apply_by` window that starts at it) and `rejected_at` recorded `now()`, the transaction's start, which can be earlier than the deadline check that let the act through. Every time recorded for an act of the person now reads `clock_timestamp()`. Deadlines a function sets for later (`expires_at` of a held write or a prepared revert) still start at `now()`: a transaction that started earlier only shortens them. **Breaking** (AE-11), the default. Idempotent.
+
+| Object | Purpose |
+|---|---|
+| `apply_revert`, `_revert_sign`, `_revert_finish`, `reject_revert` | Replaced, same signatures, `SECURITY DEFINER`, owner and grants as their latest version, `SET search_path = pg_catalog, pg_temp`. `apply_revert` and `_revert_finish` (the last batch) set `applied_at = clock_timestamp()`; `_revert_sign` sets `signed_at` and `apply_by = signed_at + 24 hours` from one reading; `reject_revert` reads `rejected_at` after locking the revert and returns that value as `rejectedAt` |
+| every function and procedure in `basalt_meta` | `search_path` set to `pg_catalog, pg_temp` (`ALTER ROUTINE`, over `prokind` `f` and `p`; version 24's loop took `f` only) |
 
 ### Guard errors
 

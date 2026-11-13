@@ -98,6 +98,7 @@ type rescopeEnv struct {
 	task        uuid.UUID
 	linksPath   string
 	calls       *pgCalls
+	sent        *notices
 
 	svc *agent.Service
 	h   harness
@@ -110,7 +111,7 @@ func newRescopeEnv(t *testing.T) *rescopeEnv {
 	all := []string{"public.leads", "public.lead_owner"}
 	e := &rescopeEnv{
 		d: d, bot: d.NewAgent(t, "bot", all, all), helper: d.NewAgent(t, "helper", all, all),
-		task: uuid.Must(uuid.NewV7()), linksPath: filepath.Join(t.TempDir(), "bot.links.json"), calls: &pgCalls{},
+		task: uuid.Must(uuid.NewV7()), linksPath: filepath.Join(t.TempDir(), "bot.links.json"), calls: &pgCalls{}, sent: &notices{},
 	}
 	person, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
@@ -154,7 +155,7 @@ func (e *rescopeEnv) start(t *testing.T, wrap func(agent.RevertStore) agent.Reve
 	}
 	e.svc = agent.NewService(agent.Deps{
 		Name: "bot", Reader: agentdb.NewReader(pool, limits, time.Now), Store: store, Reads: store, Approvals: store,
-		Reverts: reverts, Log: slog.New(slog.DiscardHandler), Now: time.Now, PagesOrigin: pageOrigin, Links: secrets,
+		Reverts: reverts, Notifier: e.sent, Log: slog.New(slog.DiscardHandler), Now: time.Now, PagesOrigin: pageOrigin, Links: secrets,
 		Poll: testPoll,
 	})
 	e.h = harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(e.svc)...)}

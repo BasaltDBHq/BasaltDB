@@ -171,6 +171,8 @@ type agentInstall struct {
 	keepCredential bool
 	// personUIDs are added to the config's personUids.
 	personUIDs []uint32
+	// operatedBy replaces the config's operatedBy when set (PERSON or AGENT).
+	operatedBy string
 }
 
 // agentServiceSpec is the service install spec with the agent's files in
@@ -191,7 +193,7 @@ func agentServiceSpec(goos, bin, configPath, engineUser string, a agentInstall, 
 	open := func(p string) (*os.File, error) { return openEngineFile(p, engineUser) }
 	raw, v, err := config.UpsertedVault(configPath, open,
 		config.Settings{SocketDir: config.DefaultSocketDir(goos), PagesURL: a.pagesURL, Mode: config.ModeService, PersonUIDs: a.personUIDs,
-			Vault: a.vault, VaultDefault: a.vaultDefault},
+			Vault: a.vault, VaultDefault: a.vaultDefault, OperatedBy: a.operatedBy},
 		config.Agent{Name: a.name, OSUser: a.osUser, CredentialFile: cred, InitArgs: a.initArgs})
 	if err != nil {
 		return spec, err
@@ -221,7 +223,7 @@ func (a agentInstall) vaultChoice() vaultChoice {
 func (f initFlags) agentInstall(dsn string) agentInstall {
 	return agentInstall{name: f.agent, osUser: f.osUser, pagesURL: f.passkeyOrigin, dsn: dsn,
 		vault: f.vault.given.enum(), vaultDefault: f.vault.def.enum(),
-		initArgs: f.initArgs, keepCredential: f.keepCredential, personUIDs: f.personUIDs}
+		initArgs: f.initArgs, keepCredential: f.keepCredential, personUIDs: f.personUIDs, operatedBy: f.operatedBy.settingOf(f.operatedByGiven)}
 }
 
 // serviceInstallArgs is the one command init runs under sudo. The
@@ -240,6 +242,9 @@ func serviceInstallArgs(f initFlags, bin string) []string {
 		args = append(args, "--"+flagVault+"="+string(f.vault.given))
 	case f.vault.def != "":
 		args = append(args, "--"+flagVaultDefault+"="+string(f.vault.def))
+	}
+	if f.operatedByGiven {
+		args = append(args, "--operated-by", string(f.operatedBy))
 	}
 	for _, a := range f.initArgs {
 		args = append(args, "--"+flagInitArg, a)

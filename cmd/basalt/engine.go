@@ -176,6 +176,14 @@ func runService(ctx context.Context, args []string, io stdio) int {
 		a.vaultDefault = m.enum()
 		return nil
 	})
+	fs.Func("operated-by", "install --agent: person or agent, the config's operatedBy (default: keep the config's)", func(v string) error {
+		var o OperatedBy
+		if err := o.Set(v); err != nil {
+			return err
+		}
+		a.operatedBy = o.enum()
+		return nil
+	})
 	fs.Func(flagInitArg, "install --agent: a flag basalt init saves for the agent (repeatable)", func(v string) error {
 		a.initArgs = append(a.initArgs, v)
 		return nil

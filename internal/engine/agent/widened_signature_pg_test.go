@@ -91,6 +91,7 @@ func TestRequestRevertRefusesBadCodesForAWidenedRevert(t *testing.T) {
 		t.Helper()
 		body, isError := e.h.call(t, "request_revert", map[string]any{"revertId": id.String(), "signature": code})
 		requireNoLink(t, requireErrorSteps(t, body, isError, "REVERT_INVALID", reason))
+		require.NotContains(t, str(t, body["personMessage"]), e.task.String(), "the person's scope is not named")
 	}
 
 	tampered := signBinding(t, e.person, binding)
@@ -114,4 +115,15 @@ func TestRequestRevertRefusesBadCodesForAWidenedRevert(t *testing.T) {
 	body, isError := e.h.call(t, "request_revert", map[string]any{"revertId": id.String(), "waitForSignature": 0})
 	require.False(t, isError, "%v", body)
 	requireWidenedAnswer(t, body, "PENDING")
+	require.NotContains(t, str(t, body["personMessage"]), e.task.String())
+
+	// Expired: the message names no scope; asking again names bot's own
+	// task, with no filters.
+	e.d.Exec(t, `UPDATE basalt_meta.reverts SET expires_at = now() - interval '1 second' WHERE revert_id = $1`, id)
+	body, isError = e.h.call(t, "request_revert", map[string]any{"revertId": id.String(), "waitForSignature": 0})
+	require.False(t, isError, "%v", body)
+	requireWidenedAnswer(t, body, "EXPIRED")
+	require.NotContains(t, str(t, body["personMessage"]), e.task.String())
+	steps := requireResultSteps(t, body, "EXPIRED")
+	require.Equal(t, map[string]any{"taskId": e.task.String()}, steps[1]["arguments"])
 }

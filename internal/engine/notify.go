@@ -51,3 +51,12 @@ func (t telegramNotifier) NotifyHeld(ctx context.Context, h agent.HeldNotice) er
 		ShortURL: h.ShortURL,
 	})
 }
+
+func (t telegramNotifier) NotifyRevert(ctx context.Context, r agent.RevertNotice) error {
+	ctx, cancel := context.WithTimeout(ctx, notifyTimeout)
+	defer cancel()
+	return t.n.NotifyRevert(ctx, telegram.RevertNotice{
+		RevertID: r.RevertID, Agent: r.Agent, Database: t.database, Headline: r.Headline, Intent: r.Intent,
+		ExpiresAt: r.ExpiresAt, RevertURL: r.RevertURL, ShortURL: r.ShortURL, Widened: r.Widened,
+	})
+}

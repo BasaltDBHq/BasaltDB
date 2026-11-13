@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -94,6 +95,11 @@ type secretEntry struct {
 	// keys are a relay link's Vault token and psk; nil for a link to the
 	// engine's local pages.
 	keys *channel.LinkKeys
+}
+
+// LogValue logs a relay link by its item and expiry, never its token.
+func (l RelayLink) LogValue() slog.Value {
+	return slog.GroupValue(slog.String("item", l.Item.String()), slog.Time("expiresAt", l.ExpiresAt))
 }
 
 // RelayLink is a live relay link: its token and expiry.

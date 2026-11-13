@@ -95,17 +95,24 @@ func terminalWidth(w io.Writer) int {
 // errUsage marks an error as a usage error (exit 2).
 var errUsage = errors.New("usage")
 
-// fail prints err and returns its exit code.
+// fail prints err and returns its exit code. An error can carry database
+// text (a Postgres detail quotes the values an agent wrote), so it is
+// escaped (terminalText) and its later lines are indented: no line of it
+// can pass for a line basalt printed.
 func (c *cliIO) fail(err error) int {
 	if errors.Is(err, flag.ErrHelp) {
 		return exitOK // the flag set already printed its usage
 	}
-	fmt.Fprintf(c.stderr, "basalt: %v\n", err)
+	msg := strings.ReplaceAll(terminalText(err.Error()), "\n", "\n"+failIndent)
+	fmt.Fprintf(c.stderr, "basalt: %s\n", msg)
 	if errors.Is(err, errUsage) {
 		return exitUsage
 	}
 	return exitError
 }
+
+// failIndent starts each later line of an error printed by fail.
+const failIndent = "  "
 
 func (c *cliIO) flags(name string) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)

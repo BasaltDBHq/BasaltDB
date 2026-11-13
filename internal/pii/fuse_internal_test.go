@@ -98,10 +98,8 @@ func TestDictionaryFileRoundTrip(t *testing.T) {
 // The measured false-positive rate is that of the fingerprint width: about
 // 2^-32 per filter with 32 bits, 2^-16 with 16.
 func TestDictionaryFalsePositiveRate(t *testing.T) {
-	const (
-		members = 200_000
-		probes  = 2_000_000
-	)
+	members := sized(200_000, 50_000)
+	const probes = 2_000_000
 	rng := rand.New(rand.NewPCG(5, 6))
 	keys := randomFilterKeys(rng, 0, members)
 	member := map[uint64]bool{}

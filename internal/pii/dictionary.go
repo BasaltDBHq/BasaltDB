@@ -67,7 +67,9 @@ type ScanStats struct {
 	Rows    int64
 }
 
-// DictionaryStatus is <stateDir>/pii/status.json: counts and times only.
+// DictionaryStatus is <stateDir>/pii/status.json: counts and times only. The
+// value counts are of generic forms, so a two-word PERSON_NAME, stored both
+// ways (Keys.GenericHashes), counts twice.
 type DictionaryStatus struct {
 	DictionaryValues uint64     `json:"dictionaryValues"`
 	DeltaValues      int        `json:"deltaValues"`
@@ -167,7 +169,7 @@ func (d *FuseDictionary) Add(t EntityType, value, phoneRegion string) error {
 	if !ok {
 		return fmt.Errorf("pii: unknown entity type %q", t)
 	}
-	g, ty := d.keys.GenericHash(value), d.keys.TypedHash(t, value, phoneRegion)
+	gs, ty := d.keys.GenericHashes(t, value), d.keys.TypedHash(t, value, phoneRegion)
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	n := d.deltaSizeLocked()
@@ -175,8 +177,8 @@ func (d *FuseDictionary) Add(t EntityType, value, phoneRegion string) error {
 		d.signalRebuild()
 		return ErrDeltaFull
 	}
-	d.active.add(ti, g, ty)
-	if n+1 >= d.opts.MaxDeltaEntries {
+	d.active.add(ti, gs, ty)
+	if n+len(gs) >= d.opts.MaxDeltaEntries {
 		d.signalRebuild()
 	}
 	return nil
@@ -293,14 +295,17 @@ func (b *DictionaryBuild) Add(t EntityType, value, phoneRegion string) error {
 	if !ok {
 		return fmt.Errorf("pii: unknown entity type %q", t)
 	}
-	g, ty := b.d.keys.GenericHash(value), b.d.keys.TypedHash(t, value, phoneRegion)
+	gs, ty := b.d.keys.GenericHashes(t, value), b.d.keys.TypedHash(t, value, phoneRegion)
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.done {
 		return ErrBuildDone
 	}
-	gi, tyi := filterIndex(ti, g), filterIndex(ti, ty)
-	b.generic[gi] = append(b.generic[gi], uint64(g))
+	for _, g := range gs {
+		gi := filterIndex(ti, g)
+		b.generic[gi] = append(b.generic[gi], uint64(g))
+	}
+	tyi := filterIndex(ti, ty)
 	b.typed[tyi] = append(b.typed[tyi], uint64(ty))
 	return nil
 }
@@ -375,7 +380,7 @@ func (b *DictionaryBuild) Abort() {
 }
 
 // mergeKeys returns each filter's distinct keys (generic and typed forms) and
-// the number of distinct values (generic forms per entity type).
+// the number of distinct generic forms per entity type (DictionaryStatus).
 func (b *DictionaryBuild) mergeKeys() ([][]uint64, uint64) {
 	keys := make([][]uint64, len(b.generic))
 	var values uint64
@@ -472,12 +477,14 @@ func newDelta() *delta {
 	return &delta{generic: map[Hash]typeMask{}, typed: map[Hash]typeMask{}}
 }
 
-func (dl *delta) add(ti int, g, ty Hash) {
-	dl.generic[g] |= 1 << ti
+func (dl *delta) add(ti int, gs []Hash, ty Hash) {
+	for _, g := range gs {
+		dl.generic[g] |= 1 << ti
+	}
 	dl.typed[ty] |= 1 << ti
 }
 
-// size counts values (generic forms).
+// size counts generic forms: one per value, two for a two-word name.
 func (dl *delta) size() int { return len(dl.generic) }
 
 func (dl *delta) merge(o *delta) {

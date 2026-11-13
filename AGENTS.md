@@ -96,10 +96,10 @@ Read **this file before implementing**; do not introduce conventions that confli
 
 ## Testing
 
-- `testing` + **testify/require**; mocks via **mockery v3** (`.mockery.yml`, `make mocks`), no hand-written testify/mock.
+- `testing` + **testify/require**; non-storage dependencies are replaced by small in-repo fakes (`guardtest`, `vaulttest`, `passkeytest`, `pagetest`, `mcptest`), not generated or testify mocks. mockery v3 is configured (`.mockery.yml`, `make mocks`) but generates nothing yet and is not installed by `make deps`; `make mocks` installs it on first use.
 - Guard, ledger and catalog code is tested against a **real Postgres** (`BASALTDB_TEST_POSTGRES_URL`; locally a Docker container). Tests create their own schema or database and clean up. Mocks only for non-storage deps.
 - Security properties (agent cannot approve, cannot write without intent, cannot bypass row limits) get explicit tests that run as the agent role.
-- **`-race`** on every test run.
+- **`-race`** on every test run. Exhaustive loops in `internal/pii` (the million-value dictionary, every NFKC and ignorable character, the false-positive tour) run sampled or smaller by default; `BASALTDB_TEST_FULL=1 go test -race ./internal/pii/...` runs them at full size (slow: run it before changing the tokenizer, dictionary or normalizer).
 
 ## Tooling
 

@@ -119,7 +119,7 @@ func (tz *Tokenizer) detect(text string) ([]Span, error) {
 // claimed span (a token already in the text or
 // another found span). A token is only recognized again when nothing
 // alphanumeric touches it (existingTokens), so a token written against
-// letters ("0@0.A+00000000" gives "0@0.Apii1_…") would be read as part of a
+// letters ("0@0.A+12025550143" gives "0@0.Apii1_…") would be read as part of a
 // new address next turn. Spans that touch another span stay as they are: back
 // to back tokens recognize each other. claimed is sorted and holds found.
 func widenToBoundaries(text string, found, claimed []Span) {
@@ -180,7 +180,7 @@ func detectFree(d Detector, text string, claimed []Span) ([]Span, error) {
 	var out []Span
 	for _, seg := range freeSegments(len(text), claimed) {
 		view := foldForDetection(text[seg.Start:seg.End], wantsShapes(d))
-		for _, sp := range detectIn(d, view, text[seg.Start:seg.End]) {
+		for _, sp := range d.Detect(view.text) {
 			if err := checkSpan(view.text, sp); err != nil {
 				return nil, err
 			}
@@ -189,20 +189,6 @@ func detectFree(d Detector, text string, claimed []Span) ([]Span, error) {
 		}
 	}
 	return out, nil
-}
-
-// viewDetector is a built-in detector that also reads the original text
-// behind the folded view (DictionaryDetector: capitals).
-type viewDetector interface {
-	detectView(view foldedView, orig string) []Span
-}
-
-// detectIn runs d over view, the folded view of orig.
-func detectIn(d Detector, view foldedView, orig string) []Span {
-	if vd, ok := d.(viewDetector); ok {
-		return vd.detectView(view, orig)
-	}
-	return d.Detect(view.text)
 }
 
 func checkSpan(text string, sp Span) error {

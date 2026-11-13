@@ -18,7 +18,8 @@ fmt: ## Format with gofmt, gofumpt, goimports
 	@go run golang.org/x/tools/cmd/goimports@v0.39.0 -local github.com/basaltdbhq/basaltdb -w .
 
 .PHONY: lint
-lint: deps ## Run golangci-lint (includes formatters check)
+lint: deps ## Run golangci-lint (includes formatters check and a config check)
+	@$(GOLANGCI) config verify -c .golangci.yml
 	@$(GOLANGCI) run -c .golangci.yml ./...
 
 .PHONY: vet

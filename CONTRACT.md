@@ -757,6 +757,10 @@ The engine's MCP `initialize` result carries, in its `instructions`, this text u
 
 The tool descriptions say the same where they mention `personMessage`.
 
+It also carries one sentence that points the agent to the public docs, unchanged:
+
+> For error codes and troubleshooting, read https://docs.basaltvault.app (add .md to a page's URL for the Markdown form).
+
 ### The pages repair what they can
 
 Before decoding, the approval, revert and passkey pages repair the fragment (`location.hash`):

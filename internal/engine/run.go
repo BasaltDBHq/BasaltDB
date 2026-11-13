@@ -63,7 +63,13 @@ const Instructions = "BasaltDB records every action you take on this database. "
 	"Over 50 rows, DDL and functions outside the allowlist are refused. " +
 	"To undo your own work, find the run with list_runs, check it with preview_revert and query, tell the person what you recommend, then call request_revert: show its personMessage, then call request_revert once with revertId to wait for their passkey; if that wait runs out, do not wait again. " +
 	"You can never approve a write or sign a revert. " +
+	docsInstructions + " " +
 	linkInstructions
+
+// docsInstructions is the one sentence that points an agent to the public
+// docs (CONTRACT.md, What the agent is told). The .md form of each page is
+// written for agents.
+const docsInstructions = "For error codes and troubleshooting, read https://docs.basaltvault.app (add .md to a page's URL for the Markdown form)."
 
 // linkInstructions is the sentence CONTRACT.md (Showing links, What the agent
 // is told) puts in the initialize instructions, unchanged.

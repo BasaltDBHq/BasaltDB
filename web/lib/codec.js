@@ -64,6 +64,7 @@ export class TruncatedLinkError extends CodeError {
 const B64URL = /^[A-Za-z0-9_-]*$/;
 const HEX64 = /^[0-9a-f]{64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const NONCE = /^[A-Za-z0-9_-]{22}$/;
 
 // base64url without padding (RFC 4648 §5), strict: no padding, no standard
 // alphabet, no impossible lengths.
@@ -454,9 +455,11 @@ const APPROVAL_REQUEST_FIELDS = ["approvalId", "binding", "lines"];
 
 // checkApprovalRequest checks a decoded approval request, from a link
 // fragment or from the engine's local pages (GET /api/v1/approvals/{id}),
-// exactly as parseApprovalRequest does.
+// exactly as parseApprovalRequest does. The engine may also send
+// revealNonce; a long link never carries it.
 export async function checkApprovalRequest(value) {
-  const req = strictObject(value, "approval request", APPROVAL_REQUEST_FIELDS, ["credentialIds"]);
+  const req = strictObject(value, "approval request", APPROVAL_REQUEST_FIELDS, ["credentialIds", "revealNonce"]);
+  const revealNonce = checkNonce(req, "revealNonce", "approval request");
   const binding = parseBinding(req.binding);
   if (req.approvalId !== binding.approvalId) {
     throw new CodeError(`request is for approval ${req.approvalId}, binding for ${binding.approvalId}`);
@@ -474,6 +477,7 @@ export async function checkApprovalRequest(value) {
     binding,
     lines: req.lines.map(parseLine),
     credentialIds: decodeCredentialIds(req.credentialIds),
+    revealNonce,
     challenge: await challengeFor(req.binding),
   };
 }
@@ -616,13 +620,13 @@ const REVERT_REQUEST_FIELDS = ["revertId", "binding", "lines"];
 
 // checkRevertRequest checks a decoded revert request, from a link fragment
 // or from the engine's local pages, exactly as parseRevertRequest does. The
-// engine may also send rescopeNonce, the nonce of the next widen proof; a
-// long link never carries it (decodeRequest refuses it there).
+// engine may also send rescopeNonce, the nonce of the next widen proof, and
+// revealNonce, the nonce of a reveal proof; a long link carries neither
+// (decodeRequest refuses them there).
 export async function checkRevertRequest(value) {
-  const req = strictObject(value, "revert request", REVERT_REQUEST_FIELDS, ["credentialIds", "rescopeNonce"]);
-  if ("rescopeNonce" in req && (typeof req.rescopeNonce !== "string" || !/^[A-Za-z0-9_-]{22}$/.test(req.rescopeNonce))) {
-    throw new CodeError("revert request has a bad rescopeNonce");
-  }
+  const req = strictObject(value, "revert request", REVERT_REQUEST_FIELDS, ["credentialIds", "rescopeNonce", "revealNonce"]);
+  const rescopeNonce = checkNonce(req, "rescopeNonce", "revert request");
+  const revealNonce = checkNonce(req, "revealNonce", "revert request");
   const binding = parseRevertBinding(req.binding);
   if (req.revertId !== binding.revertId) {
     throw new CodeError(`request is for revert ${req.revertId}, binding for ${binding.revertId}`);
@@ -635,9 +639,20 @@ export async function checkRevertRequest(value) {
     binding,
     lines,
     credentialIds: decodeCredentialIds(req.credentialIds),
-    rescopeNonce: req.rescopeNonce ?? null,
+    rescopeNonce,
+    revealNonce,
     challenge: await challengeFor(req.binding),
   };
+}
+
+// checkNonce reads an optional nonce the engine serves (rescopeNonce,
+// revealNonce): 16 bytes, base64url. null when absent.
+function checkNonce(req, key, what) {
+  if (!(key in req)) return null;
+  if (typeof req[key] !== "string" || !NONCE.test(req[key])) {
+    throw new CodeError(`${what} has a bad ${key}`);
+  }
+  return req[key];
 }
 
 // checkAllLines: a one-call revert's request carries every line, hashing to
@@ -770,4 +785,127 @@ export function relyingParty(loc) {
     return { rpId: "localhost", origin: `http://localhost:${loc.port}` };
   }
   throw new CodeError(`this page only runs at ${HOSTED_CONSOLE} or http://localhost:<port>`);
+}
+
+// Rows hidden from the agent (CONTRACT.md, Approvals; owner decision HR-1):
+// the reveal proof's challenge, and the check of each revealed row before
+// the page shows any value. Same as internal/approval/reveal.go, against the
+// shared vectors (internal/approval/testdata/reveal.json).
+const REVEAL_PREFIX = "basalt-reveal.1";
+const REVEAL_KEY_INFO = "basalt-reveal-key.1";
+const REVEAL_KEY_BITS = 256;
+const REVEAL_SECRET_BYTES = 16;
+const REVEAL_ROW_VALUES = 3; // key, then old or now, then set
+
+// revealKey is HKDF-SHA-256 of the page's reveal secret, salt empty, info
+// "basalt-reveal-key.1", 32 bytes: what the engine sends Postgres instead of
+// the secret.
+export async function revealKey(secret) {
+  if (!(secret instanceof Uint8Array) || secret.length !== REVEAL_SECRET_BYTES) {
+    throw new CodeError("the reveal secret must be 16 bytes");
+  }
+  const subtle = globalThis.crypto.subtle;
+  const ikm = await subtle.importKey("raw", secret, "HKDF", false, ["deriveBits"]);
+  const bits = await subtle.deriveBits(
+    { name: "HKDF", hash: "SHA-256", salt: new Uint8Array(0), info: utf8(REVEAL_KEY_INFO) },
+    ikm,
+    REVEAL_KEY_BITS,
+  );
+  return new Uint8Array(bits);
+}
+
+// newRevealSecret is a fresh reveal secret: 16 random bytes, made for one
+// reveal and sent only to the engine with the proof.
+export function newRevealSecret() {
+  return globalThis.crypto.getRandomValues(new Uint8Array(REVEAL_SECRET_BYTES));
+}
+
+// revealChallenge is the challenge a reveal proof signs: sha256 of
+// "basalt-reveal.1", the kind, the id, the nonce (base64url), the hex
+// sha256 of the reveal key and the binding's rowsHash, one per line.
+export async function revealChallenge(kind, id, nonce, key, hash) {
+  if (kind !== KIND_APPROVE && kind !== KIND_REVERT) throw new CodeError(`reveal kind "${kind}"`);
+  if (typeof id !== "string" || !UUID.test(id)) throw new CodeError("reveal id is not a lowercase uuid");
+  if (typeof nonce !== "string" || !NONCE.test(nonce)) throw new CodeError("bad reveal nonce");
+  if (!(key instanceof Uint8Array) || key.length !== REVEAL_KEY_BITS / 8) throw new CodeError("the reveal key must be 32 bytes");
+  if (typeof hash !== "string" || !HEX64.test(hash)) throw new CodeError("rowsHash is not a sha256 hex digest");
+  const keyHash = hex(await sha256(key));
+  return sha256(utf8([REVEAL_PREFIX, kind, id, nonce, keyHash, hash].join("\n")));
+}
+
+// checkRevealedRow checks one revealed row against the redacted line it
+// answers and says whether its values were checked. A row without
+// secretColumns must hash to the line's rowHash ("checked"): only then are
+// its values the ones bound into what the person signs. A row with
+// secretColumns cannot be checked: every named column must be in the row
+// and null wherever it is, and the row is "unverified", shown as "Not
+// checked against what you sign", never as checked. Anything else throws.
+export async function checkRevealedRow(lineText, revealed) {
+  const line = parseJSON(requireString(lineText, "revealed line"), "revealed line");
+  if (line === null || typeof line !== "object" || line.redacted !== true || typeof line.rowHash !== "string" || !HEX64.test(line.rowHash)) {
+    throw new CodeError("revealed line is not a redacted line");
+  }
+  const r = strictObject(revealed, "revealed row", ["line", "row"], ["secretColumns"]);
+  const values = revealedValues(requireString(r.row, "revealed row"));
+  if (!("secretColumns" in r)) {
+    if (hex(await sha256(utf8(r.row))) !== line.rowHash) {
+      throw new CodeError("revealed row does not hash to its line's rowHash");
+    }
+    return { checked: true, values };
+  }
+  checkSecretColumns(values, r.secretColumns);
+  return { checked: false, values };
+}
+
+// checkRevealAnswer checks the reveal answer against the request's lines:
+// rows in line order, each a redacted line at most once, each passing
+// checkRevealedRow. It returns, per row, the line and whether it was checked.
+export async function checkRevealAnswer(lineTexts, answer) {
+  const a = strictObject(answer, "reveal answer", ["rows"]);
+  if (!Array.isArray(a.rows)) throw new CodeError("reveal answer rows is not a list");
+  const out = [];
+  let last = -1;
+  for (const r of a.rows) {
+    const line = r?.line;
+    if (!Number.isInteger(line) || line <= last || line >= lineTexts.length) {
+      throw new CodeError(`revealed line ${line} is out of order or out of range`);
+    }
+    last = line;
+    out.push({ line, ...(await checkRevealedRow(lineTexts[line], r)) });
+  }
+  return out;
+}
+
+// revealedValues parses a row: three values, each an object or null.
+function revealedValues(row) {
+  const values = parseJSON(row, "revealed row");
+  if (!Array.isArray(values) || values.length !== REVEAL_ROW_VALUES) {
+    throw new CodeError("revealed row is not three values");
+  }
+  for (const v of values) {
+    if (v !== null && (typeof v !== "object" || Array.isArray(v))) {
+      throw new CodeError("revealed row value is not an object or null");
+    }
+  }
+  return values;
+}
+
+// checkSecretColumns: a non-empty list, each column named once, present in
+// the row and null wherever it appears.
+function checkSecretColumns(values, cols) {
+  if (!Array.isArray(cols) || cols.length === 0) throw new CodeError("secretColumns is not a non-empty list");
+  const seen = new Set();
+  for (const col of cols) {
+    if (typeof col !== "string" || col === "" || seen.has(col)) {
+      throw new CodeError(`secret column "${col}" is empty or named twice`);
+    }
+    seen.add(col);
+    let found = false;
+    for (const v of values) {
+      if (v === null || !Object.hasOwn(v, col)) continue;
+      if (v[col] !== null) throw new CodeError(`secret column "${col}" has a value`);
+      found = true;
+    }
+    if (!found) throw new CodeError(`secret column "${col}" is not in the row`);
+  }
 }

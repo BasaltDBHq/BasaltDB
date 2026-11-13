@@ -209,7 +209,12 @@ func TestRevealRacesTheApproval(t *testing.T) {
 		return h
 	}
 
-	// The reveal first: it shows the rows; the signature after it counts.
+	// The reveal first: only open_reveal's wait on the approval row is
+	// ordered. After it commits, the reveal's second transaction reads
+	// the approval unlocked, so whether it reads before or after the
+	// signature commits is timing: it shows the rows, or gets the
+	// approval's normal answer. Either way no deadlock, and the signature
+	// after it counts.
 	h := e.hold(t, 20)
 	as, key := proof(h)
 	sig := e.signature(t, h)
@@ -219,8 +224,11 @@ func TestRevealRacesTheApproval(t *testing.T) {
 		rows, err = e.revealApproval(h, as, key)
 		return err
 	}, func() error { return e.sign(h, sig) })
-	require.NoError(t, errReveal)
-	require.Len(t, rows, 2, "notes 39 and 40")
+	if errReveal == nil {
+		require.Len(t, rows, 2, "notes 39 and 40")
+	} else {
+		requireRefused(t, errReveal, guard.CodeApprovalInvalid, "approval already approved")
+	}
 	require.NoError(t, errSign)
 	require.NoError(t, e.apply(h), "the signed write applies")
 

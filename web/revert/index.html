@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
   <meta name="robots" content="noindex">
   <title>Revert agent changes</title>
@@ -11,7 +11,15 @@
   <script type="module" src="../lib/revert.js"></script>
 </head>
 <body class="revert-page">
-  <header class="topbar"><span class="brand">Basalt</span> <span id="crumb" class="crumb">revert</span><span id="expires-in" class="exp"></span></header>
+  <header class="topbar">
+    <div class="bar">
+      <svg class="logo" width="22" height="22" viewBox="0 0 100 100" role="img" aria-label="Basalt"><polygon class="col-top" points="50,18 65.59,27 65.59,45 50,54 34.41,45 34.41,27"/><polygon class="col-left" points="31.3,50.4 46.89,59.4 46.89,77.4 31.3,86.4 15.71,77.4 15.71,59.4"/><polygon class="col-right" points="68.7,50.4 84.29,59.4 84.29,77.4 68.7,86.4 53.11,77.4 53.11,59.4"/></svg>
+      <span class="brand">BasaltDB</span><span class="sep">/</span><span class="crumb-page">Revert</span><span id="item-id" class="item-id"></span>
+      <span id="crumb" class="crumb">revert</span>
+      <span id="expires-in" class="pill hold"></span>
+    </div>
+  </header>
+  <div class="page">
 
   <section id="error" class="panel error" hidden>
     <h1>Cannot revert</h1>
@@ -27,36 +35,44 @@
 
   <main id="main" class="revert-grid" hidden>
     <div class="revert-main">
-      <h1><span id="headline"></span> <span id="widened-pill" class="pill" hidden>You widened this</span></h1>
-      <p id="lede" class="lede"></p>
-      <div class="why"><b id="why-label"></b> <span id="intent"></span></div>
-      <button id="scope-line" type="button" class="scope-line">
-        <span><b id="scope-line-text"></b><span id="scope-line-sub" class="s"></span></span><span class="ed">Change</span>
-      </button>
+      <section class="panel summary-panel">
+        <div class="title-row"><span class="op-badge op-restore">RESTORE</span><h1><span id="headline"></span> <span id="widened-pill" class="pill hold" hidden>You widened this</span></h1></div>
+        <p id="lede" class="lede"></p>
+        <div class="why"><b id="why-label"></b> <span id="intent"></span></div>
+        <button id="scope-line" type="button" class="scope-line">
+          <span><b id="scope-line-text"></b><span id="scope-line-sub" class="s"></span></span><span class="ed">Change</span>
+        </button>
+        <dl class="summary">
+          <div><dt>Scope</dt><dd id="scope"></dd></div>
+          <div><dt>Agents</dt><dd id="agents"></dd></div>
+          <div><dt>Database</dt><dd id="database"></dd></div>
+          <div><dt>Sign by</dt><dd id="expires"></dd></div>
+          <div><dt>Restored</dt><dd id="rows"></dd></div>
+          <div><dt>Left alone</dt><dd id="skipped"></dd></div>
+          <div class="wide"><dt>Plan</dt><dd id="plan"></dd></div>
+        </dl>
+      </section>
 
-      <dl class="summary">
-        <dt>Scope</dt><dd id="scope"></dd>
-        <dt>Agents</dt><dd id="agents"></dd>
-        <dt>Database</dt><dd id="database"></dd>
-        <dt>Restored</dt><dd id="rows"></dd>
-        <dt>Left alone</dt><dd id="skipped"></dd>
-        <dt>Plan</dt><dd id="plan"></dd>
-        <dt>Sign by</dt><dd id="expires"></dd>
-      </dl>
+      <section class="panel changes">
+        <div class="panel-head">
+          <h2 id="restore-title">What goes back</h2><span id="restore-count" class="counts"></span>
+          <span id="restore-note" class="panel-note">Struck-through values are the row now; highlighted values are what it goes back to, as before the agent. Postgres checks these exact rows again before the revert runs; if any changed, nothing is written.</span>
+        </div>
+        <div id="reveal-box" class="reveal" hidden>
+          <p id="reveal-text" class="reveal-text"></p>
+          <button id="reveal" type="button" class="secondary"><svg class="icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Show values with passkey</button>
+          <button id="hide-values" type="button" class="secondary" aria-pressed="false" hidden><svg class="icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><path d="M3 3l18 18"/></svg><span id="hide-values-text">Hide values</span></button>
+          <p id="reveal-status" class="reveal-status" role="status"></p>
+        </div>
+        <div id="restore" class="groups"></div>
+      </section>
 
-      <h2 id="restore-title">What goes back</h2>
-      <p id="restore-note" class="muted">Struck-through values are the row now; highlighted values are what it goes back to, as before the agent. Postgres checks these exact rows again before the revert runs; if any changed, nothing is written.</p>
-      <div id="reveal-box" class="reveal" hidden>
-        <p id="reveal-text" class="muted"></p>
-        <button id="reveal" type="button" class="secondary">Show values</button>
-        <p id="reveal-status" class="muted" role="status"></p>
-      </div>
-      <ol id="restore" class="rows"></ol>
-
-      <section id="skip-section" hidden>
-        <h2 id="skip-title">Rows left as they are</h2>
-        <p class="muted">Someone changed these rows after the agent, or they cannot be restored. People win: the revert does not touch them.</p>
-        <ol id="skip" class="rows"></ol>
+      <section id="skip-section" class="panel changes" hidden>
+        <div class="panel-head">
+          <h2 id="skip-title">Rows left as they are</h2>
+          <span class="panel-note">Someone changed these rows after the agent, or they cannot be restored. People win: the revert does not touch them.</span>
+        </div>
+        <div id="skip" class="groups"></div>
       </section>
     </div>
 
@@ -85,6 +101,7 @@
         </div>
         <p id="status" class="muted" role="status"></p>
         <p id="decline" class="muted">To cancel, close this page. Without your passkey nothing is reverted, and this link expires on its own.</p>
+        <p id="signed-hash" class="sign-foot"></p>
       </section>
 
       <section id="reject-note" class="note-sheet" role="dialog" aria-labelledby="reject-title" hidden>
@@ -117,6 +134,7 @@
       </section>
     </aside>
   </main>
+  </div>
   <div id="sheet-dim" class="dim" hidden></div>
 </body>
 </html>

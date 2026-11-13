@@ -74,7 +74,8 @@ test("one prompt shows every hidden row; a secret row is unchecked", async () =>
   assert.equal(shown.get(2).checked, false);
   const line = revealedLine(req.lines[2], shown.get(2), "old");
   assert.equal(line.redacted, false);
-  assert.equal(line.texts.old.get("note"), SECRET_VALUE, "a secret column reads secret, not shown");
+  assert.equal(line.texts.old.get("note"), SECRET_VALUE, "a secret column says Postgres withholds it");
+  assert.equal(SECRET_VALUE, "secret \u00b7 withheld by Postgres");
   assert.equal(line.texts.old.get("lead_id"), "20");
   assert.match(NOT_CHECKED, /^Not checked against what you sign/);
 });
@@ -134,9 +135,13 @@ test("a rescope during a reveal shows nothing of the old rows; a rescope clears 
   assert.equal(state.shown.size, 0);
   assert.equal(state.revealDone, false);
 
+  state.valuesHidden = true;
   assert.equal(applyReveal(state, fresh, shown), true);
   assert.equal(state.shown.size, 1);
+  assert.equal(state.valuesHidden, false, "a new reveal shows its values");
+  state.valuesHidden = true;
   clearReveal(state);
   assert.equal(state.shown.size, 0, "a rescope clears what was shown");
   assert.equal(state.revealDone, false);
+  assert.equal(state.valuesHidden, false, "and the Hide values toggle");
 });

@@ -7,8 +7,8 @@ import { readFileSync } from "node:fs";
 
 import { paramsText, parseBinding, parseLine, parseRevertLine, visibleText } from "./codec.js";
 // Imported before any document exists, so the pages' main() does not run.
-import { rowTable as approvalTable } from "./approve.js";
-import { rowTable as revertTable } from "./revert.js";
+import { lineGroups as approvalGroups } from "./approve.js";
+import { lineGroups as revertGroups } from "./revert.js";
 
 const BINDING =
   '{"kind": "APPROVE", "rows": 1, "agent": "basalt_agent_bot", "runId": "0190a3f2-7c1e-7000-8000-000000000003", ' +
@@ -85,8 +85,12 @@ function fakeElement(tag) {
   };
 }
 
-function cells(table) {
-  return table.children.slice(1).map((r) => r.children.map((c) => c.textContent));
+// cells reads the one table of rendered groups back as the page shows it:
+// the header, then per row its cell texts.
+function cells(groups) {
+  assert.equal(groups.length, 1);
+  const table = groups[0].children.find((c) => c.className === "scroll").children[0];
+  return table.children.map((r) => r.children.map((c) => c.textContent));
 }
 
 test("the approval page shows hidden characters in values and columns as escapes, and exact numbers", () => {
@@ -95,10 +99,10 @@ test("the approval page shows hidden characters in values and columns as escapes
     '{"op": "UPDATE", "key": {"id": 9007199254740993}, "old": {"code": "1000", "n": 1e400}, ' +
       '"set": {"code": "0001\u202e\u200b\u009b", "n\u202e": 9007199254740993}, "table": "public.leads", "cascaded": false}',
   );
-  assert.deepEqual(cells(approvalTable(line)), [
-    ["code", "1000", "0001<U+202E><U+200B><U+009B>"],
-    ["n", "1e400", ""],
-    ["n<U+202E>", "", "9007199254740993"],
+  assert.deepEqual(cells(approvalGroups([line])), [
+    ["", "id", "code", "n", "n<U+202E>"],
+    ["\u2212", "9007199254740993", "1000", "1e400", ""],
+    ["+", "9007199254740993", "0001<U+202E><U+200B><U+009B>", "1e400", "9007199254740993"],
   ]);
 });
 
@@ -108,5 +112,9 @@ test("the revert page shows hidden characters in values as escapes", () => {
     '{"op": "UPDATE", "key": {"id": 1}, "now": {"code": "1000"}, "set": {"code": "0001\u202e"}, "table": "public.leads", ' +
       '"action": "RESTORE", "cascaded": false, "conflict": null, "sqlState": null, "changeIds": ["0190a3f2-7c1e-7000-8000-000000000002"]}',
   );
-  assert.deepEqual(cells(revertTable(line)), [["code", "1000", "0001<U+202E>"]]);
+  assert.deepEqual(cells(revertGroups([{ line, index: 0 }])), [
+    ["", "id", "code"],
+    ["\u2212", "1", "1000"],
+    ["+", "1", "0001<U+202E>"],
+  ]);
 });

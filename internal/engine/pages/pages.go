@@ -128,6 +128,7 @@ func (s *Server) Handler() http.Handler {
 	files := http.FileServerFS(s.files)
 	mux.Handle("GET /lib/{file}", libFile(files))
 	mux.Handle("GET /style.css", files)
+	mux.Handle("GET /fonts/{file}", fontFile(files))
 	for _, r := range PageRoutes {
 		if r.ID {
 			mux.HandleFunc("GET "+r.Path+"{id}", s.page(r.File))
@@ -152,6 +153,22 @@ func (s *Server) Handler() http.Handler {
 func libFile(files http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if path.Ext(r.PathValue("file")) != ".js" {
+			http.NotFound(w, r)
+			return
+		}
+		files.ServeHTTP(w, r)
+	})
+}
+
+// fontFile serves the pages' fonts, fonts/*.woff2, and their license.
+func fontFile(files http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch file := r.PathValue("file"); {
+		case path.Ext(file) == ".woff2":
+			w.Header().Set("Content-Type", "font/woff2")
+		case file == "OFL.txt":
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		default:
 			http.NotFound(w, r)
 			return
 		}

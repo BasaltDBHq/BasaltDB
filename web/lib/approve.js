@@ -4,11 +4,11 @@
 // From a long link the page sends nothing anywhere and shows a code to
 // paste; from a short link it posts the signature to the engine that served
 // it (same origin), which relays it to Postgres.
+import { changeGroups, countText } from "./changes.js";
 import {
   KIND_APPROVE,
   approvalResponseJSON,
   checkApprovalRequest,
-  displayValue,
   encodeApprovalResponse,
   paramsText,
   parseApprovalRequest,
@@ -17,20 +17,45 @@ import {
 } from "./codec.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
 import { $, APPROVE_REOPEN, el, fail, linkFailure, loadOrPaste, personText, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
-import { applyReveal, canReveal, hiddenLines, NOT_CHECKED, OPEN_FROM_ENGINE, reveal, revealedLine, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
+import { applyReveal, canReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import { canStartPasskey, cascadeConfirmation, headline, summarize } from "./summary.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
 
-// display shows a column's value as the line carries it (displayValue), with
-// the characters that hide or reorder text shown as escapes (visibleText).
-function display(line, member, col) {
-  const row = line[member] ?? {};
-  return visibleText(displayValue(row[col], line.texts?.[member]?.get(col)));
+const VERBS = { DELETE: "delete", UPDATE: "update", INSERT: "insert" };
+
+// mainOp is the write's own op: of its first direct row, else of its first
+// cascaded one.
+export function mainOp(summary) {
+  return summary.direct[0]?.op ?? summary.cascaded[0]?.op ?? null;
 }
+
+// approveLabel is the passkey button's text; a delete's button is red.
+export function approveLabel(op) {
+  return VERBS[op] ? `Approve ${VERBS[op]} with passkey` : "Approve with passkey";
+}
+
+function hex(bytes) {
+  return Array.from(new Uint8Array(bytes), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// signedText is the footer: the hash the passkey signs, shortened.
+export function signedText(challenge, rows) {
+  const h = hex(challenge);
+  return `You sign sha256:${h.slice(0, 4)}\u2026${h.slice(-4)} over the statement, its parameters and these ${rows === 1 ? "1 row" : `${rows} rows`}.`;
+}
+
+// ID_SHOWN is how much of the approval id the top bar shows; all of it on hover.
+const ID_SHOWN = 8;
 
 function renderSummary(req, summary) {
   const b = req.binding;
+  const op = mainOp(summary);
+  $("op").textContent = op ?? "";
+  $("op").className = `op-badge op-${(op ?? "").toLowerCase()}`;
+  $("op").hidden = op === null;
+  $("item-id").textContent = req.approvalId.slice(-ID_SHOWN);
+  $("item-id").title = req.approvalId;
   $("headline").textContent = visibleText(headline(summary));
   $("headline").classList.toggle("cascades", summary.cascadedRows > 0);
   $("agent").textContent = visibleText(b.agent);
@@ -41,58 +66,39 @@ function renderSummary(req, summary) {
   $("params").textContent = visibleText(paramsText(req.bindingText));
   $("rows").textContent = String(b.rows);
   $("expires").textContent = b.expiresAt.toLocaleString();
+  const expired = b.expiresAt.getTime() <= Date.now();
+  const time = b.expiresAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  $("state").textContent = expired ? "Expired" : `Held \u00b7 expires ${time}`;
+  $("state").className = expired ? "pill bad" : "pill hold";
+  $("state").hidden = false;
+  $("approve").textContent = approveLabel(op);
+  $("approve").classList.toggle("danger", op === "DELETE");
+  $("change-count").replaceChildren(...countText(req.lines).map((c) => el("span", `count-${c.op.toLowerCase()}`, c.text)));
+  $("signed-hash").textContent = signedText(req.challenge, b.rows);
 }
 
-// rowTable shows a row's values: before only for a DELETE, after only for an
-// INSERT, both for an UPDATE with the assigned columns highlighted.
-export function rowTable(line) {
-  const showBefore = line.op !== "INSERT";
-  const showAfter = line.op !== "DELETE";
-  const table = el("table", "values");
-  const head = el("tr");
-  head.append(el("th", "", "Column"));
-  if (showBefore) head.append(el("th", "", "Before"));
-  if (showAfter) head.append(el("th", "", "After"));
-  table.append(head);
-  const before = line.old ?? {};
-  const after = line.set ?? {};
-  const columns = [...new Set([...Object.keys(before), ...Object.keys(after)])];
-  for (const col of columns) {
-    const assigned = col in after;
-    const tr = el("tr", assigned && line.op === "UPDATE" ? "changed" : "");
-    tr.append(el("td", "col", visibleText(col)));
-    if (showBefore) tr.append(el("td", "", display(line, "old", col)));
-    if (showAfter) tr.append(el("td", "", assigned ? display(line, "set", col) : ""));
-    table.append(tr);
-  }
-  return table;
-}
+const INSERT_NOTE = "New row. Columns not listed are filled in by the database.";
 
-// renderLine shows one row. A hidden row shows its values once the person
-// revealed them (shown), labelled as shown to them only, and as not checked
-// when Postgres left out secret columns; until then it says the values are
-// hidden, and on a long link where to see them.
-export function renderLine(line, shown = null, longLink = false) {
-  const card = el("li", "row");
-  const title = el("div", "row-title");
-  title.append(el("span", `op op-${line.op.toLowerCase()}`, line.op));
-  title.append(el("span", "table-name", visibleText(line.table)));
-  if (line.cascaded) title.append(el("span", "badge", "cascaded"));
-  card.append(title);
-  if (line.redacted && shown) {
-    card.append(el("p", "muted", SHOWN_TO_YOU));
-    if (!shown.checked) card.append(el("p", "conflict", NOT_CHECKED));
-    card.append(rowTable(revealedLine(line, shown, "old")));
-    return card;
-  }
-  if (line.redacted) {
-    const hidden = "Values hidden: the agent cannot read this table.";
-    card.append(el("p", "muted", longLink ? `${hidden} ${OPEN_FROM_ENGINE}` : hidden));
-    return card;
-  }
-  if (line.op === "INSERT") card.append(el("p", "muted", "New row. Columns not listed are filled in by the database."));
-  card.append(rowTable(line));
-  return card;
+// lineGroups renders the rows as one table per table. A hidden row shows
+// its values once the person revealed them (shown), labelled as shown to
+// them only, and as not checked when Postgres left out secret columns;
+// until then its values show as dots, and on a long link it says where to
+// see them.
+export function lineGroups(lines, shown = new Map(), longLink = false) {
+  return changeGroups(
+    lines.map((line, index) => ({ line, index })),
+    {
+      mid: "old",
+      shown,
+      longLink,
+      who: null,
+      skipped: () => false,
+      why: () => null,
+      // Highlighted values are what the statement sets.
+      highlights: () => true,
+      notes: (ls) => (ls.some((l) => l.op === "INSERT") ? [INSERT_NOTE] : []),
+    },
+  );
 }
 
 // gate enables the passkey button once the person may start the prompt: a
@@ -185,7 +191,8 @@ const describe = (err) => linkFailure(err, "approval", APPROVE_REOPEN);
 
 function renderLines(state) {
   const longLink = state.relay === null;
-  $("lines").replaceChildren(...state.req.lines.map((line, i) => renderLine(line, state.shown.get(i) ?? null, longLink)));
+  const shown = state.valuesHidden ? new Map() : state.shown;
+  $("lines").replaceChildren(...lineGroups(state.req.lines, shown, longLink));
 }
 
 // wireReveal offers Show values on a page the engine served with hidden
@@ -212,12 +219,22 @@ function wireReveal(rp, state) {
       });
       applyReveal(state, req, shown);
       renderLines(state);
-      $("reveal-box").hidden = true;
+      $("reveal").hidden = true;
+      $("reveal-text").textContent = SHOWN_TO_YOU;
+      $("hide-values").hidden = false;
     } catch (err) {
       const failure = revealFailure(err, KIND_APPROVE);
       $("reveal-status").textContent = failure?.text ?? (err?.name === "NotAllowedError" ? webauthnError(err) : personText(err) || err.message);
       $("reveal").disabled = failure?.final === true;
     }
+  });
+  // Hide values only hides them on this page; showing them again needs no
+  // passkey: the page still has them.
+  $("hide-values").addEventListener("click", () => {
+    state.valuesHidden = !state.valuesHidden;
+    $("hide-values-text").textContent = state.valuesHidden ? "Show values" : "Hide values";
+    $("hide-values").setAttribute("aria-pressed", String(state.valuesHidden));
+    renderLines(state);
   });
 }
 

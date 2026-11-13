@@ -89,9 +89,10 @@ PORTAL_DIR ?= dist/portal
 .PHONY: portal-build
 portal-build: ## Copy only the served portal files to dist/portal (Cloudflare Pages output)
 	@rm -rf "$(PORTAL_DIR)"
-	@mkdir -p "$(PORTAL_DIR)/lib"
+	@mkdir -p "$(PORTAL_DIR)/lib" "$(PORTAL_DIR)/fonts"
 	@for d in approve revert register passkeys; do mkdir -p "$(PORTAL_DIR)/$$d" && cp "web/$$d/index.html" "$(PORTAL_DIR)/$$d/index.html" || exit 1; done
 	@for f in web/lib/*.js; do cp "$$f" "$(PORTAL_DIR)/lib/" || exit 1; done
+	@cp web/fonts/*.woff2 web/fonts/OFL.txt "$(PORTAL_DIR)/fonts/"
 	@cp web/style.css web/_headers web/_redirects "$(PORTAL_DIR)/"
 	@if find "$(PORTAL_DIR)" \( -name '*.test.mjs' -o -name '*.go' \) | grep -q .; then echo 'portal-build: test or Go files in output' >&2; exit 1; fi
 

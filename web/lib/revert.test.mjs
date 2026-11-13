@@ -24,7 +24,7 @@ import {
   rowsHash,
 } from "./codec.js";
 // Imported before any document exists, so the page's main() does not run.
-import { agentTag, rowKeyText, rowTable } from "./revert.js";
+import { agentTag, lineGroups, rowKeyText } from "./revert.js";
 
 const fixtures = JSON.parse(
   readFileSync(new URL("../../internal/revert/testdata/fixtures.json", import.meta.url), "utf8"),
@@ -265,17 +265,20 @@ function fakeElement(tag) {
   };
 }
 
-// tableRows reads a rendered row table back as the page shows it: the
-// header cells and, per row, its class and cell texts.
-function tableRows(table) {
+// tableRows reads the one rendered table of a line back as the page shows
+// it: the header cells and, per row, its class, cell texts and cell classes.
+function tableRows(line) {
+  const groups = lineGroups([{ line, index: 0 }]);
+  assert.equal(groups.length, 1);
+  const table = groups[0].children.find((c) => c.className === "scroll").children[0];
   const [head, ...rows] = table.children;
   return {
     header: head.children.map((c) => c.textContent),
-    rows: rows.map((r) => ({ className: r.className, cells: r.children.map((c) => c.textContent) })),
+    rows: rows.map((r) => ({ className: r.className, cells: r.children.map((c) => c.textContent), classes: r.children.map((c) => c.className) })),
   };
 }
 
-test("the row table shows After revert for a restored row and not for a skipped one", async () => {
+test("a restored row shows now (\u2212) and after the revert (+); a skipped row only now, with why", async () => {
   globalThis.document = { createElement: fakeElement };
   const req = await parseRevertRequest("#" + fixtures.request.fragment);
   const restore = req.lines[2];
@@ -283,47 +286,48 @@ test("the row table shows After revert for a restored row and not for a skipped 
   assert.equal(restore.action, "RESTORE");
   assert.equal(skip.action, "SKIP");
 
-  const restored = tableRows(rowTable(restore));
-  assert.deepEqual(restored.header, ["Column", "Now", "After revert"]);
-  const status = restored.rows.find((r) => r.cells[0] === "status");
-  assert.equal(status.className, "changed");
-  assert.equal(status.cells.length, 3);
-  assert.notEqual(status.cells[1], status.cells[2]);
+  const restored = tableRows(restore);
+  assert.deepEqual(restored.rows.map((r) => [r.className, r.cells[0]]), [["del", "\u2212"], ["add", "+"]]);
+  const status = restored.header.indexOf("status");
+  assert.ok(status > 0);
+  assert.notEqual(restored.rows[0].cells[status], restored.rows[1].cells[status]);
+  assert.ok(!restored.header.includes("Why"));
 
-  const skipped = tableRows(rowTable(skip));
-  assert.deepEqual(skipped.header, ["Column", "Now"]);
-  assert.equal(skipped.rows.length, Object.keys(skip.now).length);
-  for (const row of skipped.rows) {
-    assert.equal(row.className, "");
-    assert.equal(row.cells.length, 2);
-  }
-  const shown = skipped.rows.flatMap((r) => r.cells);
+  const skipped = tableRows(skip);
+  assert.equal(skipped.header.at(-1), "Why");
+  assert.equal(skipped.rows.length, 1);
+  assert.equal(skipped.rows[0].className, "keep");
+  assert.equal(skipped.rows[0].cells[0], "=");
+  const shown = skipped.rows[0].cells;
   assert.ok(shown.includes("Edited by a person"));
   assert.ok(!shown.includes("Lead 7"), "the value the revert would have written is not shown");
+  assert.equal(shown.at(-1), "Changed after the agent. Kept as it is now.");
 });
 
-test("a skipped row that is gone shows its key, not an empty table", async () => {
+test("a skipped row that is gone shows its key, not empty cells", async () => {
   globalThis.document = { createElement: fakeElement };
   const req = await parseRevertRequest("#" + fixtures.request.fragment);
   const skip = req.lines[3];
   const gone = { ...skip, conflict: "ROW_GONE", now: null };
-  assert.equal(rowTable(gone), null, "no table with only a Column header");
   const text = rowKeyText(gone);
   assert.ok(text.startsWith("Row "), text);
   for (const col of Object.keys(skip.key)) {
     assert.ok(text.includes(col), `${text} names ${col}`);
   }
+  assert.deepEqual(tableRows(gone).rows[0].cells, ["=", text, "No longer there, or not visible to the revert."]);
   assert.equal(rowKeyText({ ...gone, key: null }), "Row key not recorded.");
 });
 
 test("a changed column shows the value now struck through and the value it goes back to", async () => {
   globalThis.document = { createElement: fakeElement };
   const req = await parseRevertRequest("#" + fixtures.request.fragment);
-  const table = rowTable(req.lines[2]);
-  const status = table.children.slice(1).find((r) => r.children[0].textContent === "status");
-  assert.deepEqual(status.children.map((c) => c.className), ["col", "now", "back"]);
-  const same = table.children.slice(1).find((r) => r.className === "");
-  assert.deepEqual(same.children.map((c) => c.className), ["col", "", ""]);
+  const t = tableRows(req.lines[2]);
+  const status = t.header.indexOf("status");
+  assert.equal(t.rows[0].classes[status], "was");
+  assert.equal(t.rows[1].classes[status], "set");
+  const same = t.header.findIndex((col, i) => i > 0 && t.rows[0].cells[i] === t.rows[1].cells[i]);
+  assert.ok(same > 0, "some column does not change");
+  assert.deepEqual([t.rows[0].classes[same], t.rows[1].classes[same]], ["", ""]);
 });
 
 test("a row from another agent than the requester is tagged amber", () => {

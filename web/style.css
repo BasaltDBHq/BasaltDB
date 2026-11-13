@@ -1,88 +1,213 @@
+/* The pages in Basalt's Product UI layer: Geist for the interface, Geist
+   Mono for everything the database returns or the agent sends, neutral
+   panels with one 1px border, diffs in red, green and amber. Dark mode is
+   the same layout with the tokens switched. The fonts are served with the
+   pages (fonts/, SIL OFL 1.1): the CSP loads nothing from elsewhere. */
+@font-face { font-family: "Geist"; font-weight: 400; font-style: normal; font-display: swap; src: url("fonts/Geist-400.woff2") format("woff2"); }
+@font-face { font-family: "Geist"; font-weight: 500; font-style: normal; font-display: swap; src: url("fonts/Geist-500.woff2") format("woff2"); }
+@font-face { font-family: "Geist"; font-weight: 600; font-style: normal; font-display: swap; src: url("fonts/Geist-600.woff2") format("woff2"); }
+@font-face { font-family: "Geist Mono"; font-weight: 400; font-style: normal; font-display: swap; src: url("fonts/GeistMono-400.woff2") format("woff2"); }
+@font-face { font-family: "Geist Mono"; font-weight: 500; font-style: normal; font-display: swap; src: url("fonts/GeistMono-500.woff2") format("woff2"); }
+
 :root {
-  --bg: #f7f6f3;
-  --fg: #1d1c1a;
-  --muted: #6b6862;
-  --line: #dcd8d0;
-  --panel: #ffffff;
-  --accent: #2d4a3e;
-  --accent-fg: #ffffff;
-  --changed: #fff3c4;
-  --delete: #9b2c2c;
-  --update: #8a5a00;
-  --insert: #2d6a3e;
-  --error: #9b2c2c;
+  --ui-bg: #f6f8f8;
+  --ui-panel: #ffffff;
+  --ui-subtle: #f0f3f3;
+  --ui-border: #dde3e4;
+  --ui-border-strong: #c3cdcf;
+  --ui-text: #0b1f24;
+  --ui-text-2: #4b5f63;
+  --ui-primary: #0e3e48;
+  --ui-on-primary: #ffffff;
+  --ui-focus: #08d1d0;
+  --diff-del-bg: #fdecec;
+  --diff-del-fg: #b42318;
+  --diff-del-line: #f6d5d3;
+  --diff-add-bg: #e7f6ec;
+  --diff-add-fg: #1a7f37;
+  --diff-hold-bg: #fff4e0;
+  --diff-hold-fg: #8a5300;
+  --on-danger: #ffffff;
+  --on-badge: #ffffff;
+  --logo-top: #08d1d0;
+  --logo-left: #0e3e48;
+  --logo-right: #0e3e48;
+  --dim: rgba(11, 31, 36, 0.4);
+  --radius-ui-sm: 4px;
+  --radius-ui: 6px;
+  --row-height: 34px;
+  --font-ui: Geist, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, Menlo, Consolas, monospace;
   color-scheme: light dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #171716;
-    --fg: #ecebe8;
-    --muted: #a19d95;
-    --line: #34322e;
-    --panel: #201f1d;
-    --accent: #7fb59b;
-    --accent-fg: #10140f;
-    --changed: #3d3415;
-    --delete: #e08a8a;
-    --update: #e0b25c;
-    --insert: #8fcf9f;
-    --error: #e08a8a;
+    --ui-bg: #0b1417;
+    --ui-panel: #101c20;
+    --ui-subtle: #15252a;
+    --ui-border: #22343a;
+    --ui-border-strong: #33494f;
+    --ui-text: #e3eef0;
+    --ui-text-2: #9db2b6;
+    --ui-primary: #08d1d0;
+    --ui-on-primary: #06242a;
+    --diff-del-bg: #3a1716;
+    --diff-del-fg: #ff8a80;
+    --diff-del-line: #22343a;
+    --diff-add-bg: #10301c;
+    --diff-add-fg: #7ee2a0;
+    --diff-hold-bg: #3a2a0c;
+    --diff-hold-fg: #f5c26b;
+    --on-danger: #2a0b0a;
+    --on-badge: #0b1417;
+    --logo-left: #96e5ac;
+    --logo-right: #ffffff;
+    --dim: rgba(0, 0, 0, 0.6);
   }
 }
 
 * { box-sizing: border-box; }
+/* Components set their own display; hidden still wins. */
+[hidden] { display: none !important; }
 
 body {
-  margin: 0 auto;
-  max-width: 46rem;
-  padding: 1rem;
-  background: var(--bg);
-  color: var(--fg);
-  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  margin: 0;
+  min-height: 100vh;
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font: 14px/1.5 var(--font-ui);
 }
 
-header { color: var(--muted); font-size: 0.9rem; margin-bottom: 1rem; }
-.brand { font-weight: 700; color: var(--fg); }
-h1 { font-size: 1.4rem; line-height: 1.25; margin: 0 0 1rem; }
-h2 { font-size: 1.1rem; margin: 1.5rem 0 0.5rem; }
-.muted { color: var(--muted); font-size: 0.9rem; }
+a { color: var(--ui-primary); }
+:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
 
-pre, code, textarea, .col, .table-name {
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 0.85rem;
+/* The top bar: logo, BasaltDB / page, the item's id and its state. */
+.topbar { background: var(--ui-panel); border-bottom: 1px solid var(--ui-border); padding: 0 16px; }
+.bar { max-width: 880px; margin: 0 auto; min-height: 52px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 0; }
+.revert-page .bar { max-width: 1180px; }
+.logo { flex: none; }
+.logo .col-top { fill: var(--logo-top); }
+.logo .col-left { fill: var(--logo-left); }
+.logo .col-right { fill: var(--logo-right); }
+.brand { font-weight: 600; }
+.sep, .crumb-page, .crumb { color: var(--ui-text-2); }
+.item-id { font-size: 12px; color: var(--ui-text-2); }
+.crumb { font-size: 13px; unicode-bidi: isolate; }
+.bar .pill { margin-left: auto; }
+.pill { display: inline-block; border-radius: var(--radius-ui-sm); padding: 2px 8px; font-size: 12px; font-weight: 500; background: var(--ui-subtle); color: var(--ui-text-2); vertical-align: middle; }
+.pill.hold { background: var(--diff-hold-bg); color: var(--diff-hold-fg); }
+.pill.bad { background: var(--diff-del-bg); color: var(--diff-del-fg); }
+
+.page { max-width: 880px; margin: 0 auto; padding: 24px 16px 40px; display: flex; flex-direction: column; gap: 16px; }
+.revert-page .page { max-width: 1180px; }
+main { display: flex; flex-direction: column; gap: 16px; }
+
+h1 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.3; }
+h2 { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.4; }
+p { margin: 0; }
+.muted { color: var(--ui-text-2); font-size: 13px; }
+
+pre, code, textarea, .col, .table-name, .item-id {
+  font-family: var(--font-mono);
 }
+pre, code, textarea { font-size: 13px; }
+code { background: var(--ui-subtle); border-radius: var(--radius-ui-sm); padding: 0 4px; }
 pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
 
-.summary { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.35rem 1rem; margin: 0; }
-.summary dt { color: var(--muted); }
-.summary dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
-
+/* One level of container: panels, never a rounded card inside one. */
 .panel {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 1rem;
-  margin: 1.25rem 0;
+  background: var(--ui-panel);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-ui);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
-.error { border-color: var(--error); }
-.error h1 { color: var(--error); }
+.error { border-color: var(--diff-del-fg); }
+.error h1 { color: var(--diff-del-fg); }
 /* The engine's message for the person keeps its line breaks: one line per step. */
 #error-text, #done-text { white-space: pre-line; overflow-wrap: anywhere; }
 
-.rows { list-style: none; padding: 0; margin: 0; }
-.row { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 0.75rem; margin-bottom: 0.75rem; overflow-x: auto; }
-.row-title { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline; margin-bottom: 0.5rem; }
-.op { font-weight: 700; font-size: 0.8rem; letter-spacing: 0.04em; }
-.op-delete { color: var(--delete); }
-.op-update { color: var(--update); }
-.op-insert { color: var(--insert); }
-.badge { font-size: 0.75rem; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 0.5rem; }
+/* The summary: op badge and headline, the facts, the exact SQL. The most
+   dangerous thing on the page is the loudest: the DELETE, not the title. */
+.summary-panel { gap: 16px; }
+.title-row { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.title-row h1 { flex: 1 1 20rem; min-width: 0; }
+.op-badge { font-family: var(--font-mono); font-size: 13px; font-weight: 500; border-radius: var(--radius-ui-sm); padding: 2px 8px; color: var(--ui-text); background: var(--ui-subtle); }
+.op-delete { background: var(--diff-del-fg); color: var(--on-danger); }
+.op-insert, .op-restore { background: var(--diff-add-fg); color: var(--on-badge); }
+.op-update { background: var(--diff-hold-fg); color: var(--on-badge); }
+.headline { overflow-wrap: anywhere; }
+.lede { color: var(--ui-text-2); }
 
-.values { border-collapse: collapse; width: 100%; }
-.values th { text-align: left; color: var(--muted); font-weight: 500; font-size: 0.8rem; }
-.values th, .values td { padding: 0.2rem 0.5rem; border-top: 1px solid var(--line); vertical-align: top; word-break: break-word; }
-.values tr.changed td { background: var(--changed); }
+.summary { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 24px; }
+.summary > div { display: flex; gap: 12px; min-width: 0; }
+.summary > div.wide { grid-column: span 2; }
+.summary dt { width: 72px; flex: none; font-size: 12px; font-weight: 500; color: var(--ui-text-2); padding-top: 1px; }
+.summary dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: 13px; }
+.summary dd#intent, .summary dd#plan, .summary dd#scope { font-family: var(--font-ui); font-size: 14px; }
+
+.sql { background: var(--ui-subtle); border: 1px solid var(--ui-border); border-radius: var(--radius-ui-sm); padding: 12px 14px; overflow-x: auto; }
+.sql pre { line-height: 1.6; }
+.sql-params { display: flex; gap: 8px; align-items: baseline; margin-top: 4px; }
+.sql-c { font-family: var(--font-mono); font-size: 13px; color: var(--ui-text-2); flex: none; }
+.sql-params pre { color: var(--ui-text-2); min-width: 0; }
+
+.why { background: var(--ui-subtle); border: 1px solid var(--ui-border); border-radius: var(--radius-ui-sm); padding: 10px 12px; overflow-wrap: anywhere; }
+
+/* Changes: a header, then one table per table. */
+.changes { padding: 0; gap: 0; overflow: hidden; }
+.panel-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px 20px; border-bottom: 1px solid var(--ui-border); }
+.panel-note { margin-left: auto; font-size: 12px; color: var(--ui-text-2); flex: 1 1 18rem; text-align: right; }
+.counts { display: inline-flex; gap: 8px; font-family: var(--font-mono); font-size: 13px; }
+.count-delete { color: var(--diff-del-fg); }
+.count-insert { color: var(--diff-add-fg); }
+.count-update { color: var(--diff-hold-fg); }
+
+/* Show values (HR-4): above the tables, until the person reveals them;
+   then Hide values, which only hides them on this page. */
+.reveal { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; padding: 12px 20px; border-bottom: 1px solid var(--ui-border); background: var(--ui-subtle); }
+.reveal-text { font-size: 13px; color: var(--ui-text-2); flex: 1 1 20rem; }
+.reveal-status { flex-basis: 100%; font-size: 13px; color: var(--diff-hold-fg); }
+.reveal-status:empty { display: none; }
+
+.groups { padding: 4px 0 8px; }
+.groups:empty { display: none; }
+.group { padding: 12px 20px; display: flex; flex-direction: column; gap: 8px; }
+.group-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.table-name { font-size: 13px; font-weight: 500; unicode-bidi: isolate; overflow-wrap: anywhere; }
+.count { font-size: 12px; color: var(--ui-text-2); }
+.tag { background: var(--ui-subtle); border: 1px solid var(--ui-border); border-radius: var(--radius-ui-sm); padding: 0 6px; font-size: 12px; color: var(--ui-text-2); }
+.tag.shown { color: var(--ui-text); border-color: var(--ui-border-strong); }
+.group-note { font-size: 12px; color: var(--ui-text-2); }
+.callout { background: var(--diff-hold-bg); color: var(--diff-hold-fg); border-radius: var(--radius-ui-sm); padding: 10px 12px; font-size: 13px; overflow-wrap: anywhere; }
+/* A wide table scrolls in its box, never the page. */
+.scroll { overflow-x: auto; }
+
+.values { border-collapse: collapse; width: 100%; border: 1px solid var(--ui-border); font-family: var(--font-mono); font-size: 13px; }
+.values th { text-align: left; background: var(--ui-subtle); color: var(--ui-text-2); font-weight: 500; height: 32px; border-bottom: 1px solid var(--ui-border); padding: 0 12px; white-space: nowrap; }
+.values td { height: var(--row-height); padding: 6px 12px; vertical-align: middle; min-width: 6ch; max-width: 32ch; }
+.values tr + tr td { border-top: 1px solid var(--ui-border); }
+.values .mk { width: 28px; min-width: 0; padding: 0 8px; text-align: center; font-weight: 600; }
+.values tr.del { background: var(--diff-del-bg); }
+.values tr.del + tr.del td { border-top-color: var(--diff-del-line); }
+.values tr.add { background: var(--diff-add-bg); }
+.values tr.upd { background: var(--diff-hold-bg); }
+.values tr.del .mk { color: var(--diff-del-fg); }
+.values tr.add .mk { color: var(--diff-add-fg); }
+.values tr.upd .mk { color: var(--diff-hold-fg); }
+.values tr.keep .mk { color: var(--ui-text-2); }
+/* An update's changed cells: the value now struck through, the value it
+   takes highlighted. */
+.values td.was { text-decoration: line-through; text-decoration-color: var(--diff-del-fg); color: var(--ui-text-2); }
+.values td.set { color: var(--diff-add-fg); font-weight: 500; box-shadow: inset 0 0 0 1px var(--diff-add-fg); }
+.values td.hidden-value { color: var(--ui-text-2); letter-spacing: 0.1em; }
+.values td.secret { color: var(--diff-hold-fg); }
+.values td.key { color: var(--ui-text-2); }
+.values .why { font-family: var(--font-ui); font-size: 13px; color: var(--diff-hold-fg); min-width: 16ch; }
+.values tr.unchecked .mk { box-shadow: inset 3px 0 0 var(--diff-hold-fg); }
 /* Text an agent wrote: right-to-left letters in one value cannot reorder the
    text around it, and a value's spaces show as they are (two spaces are not
    one). Hidden characters are escaped as <U+XXXX> before they get here, and
@@ -97,180 +222,125 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
    web/lib/display.test.mjs checks the selectors. */
 .values td, #params, #statement, #intent { direction: ltr; unicode-bidi: isolate-override; }
 
+/* Buttons: primary in ui-primary, a destructive confirm in diff-del-fg. */
 button {
   font: inherit;
   font-weight: 600;
-  background: var(--accent);
-  color: var(--accent-fg);
+  background: var(--ui-primary);
+  color: var(--ui-on-primary);
   border: 0;
-  border-radius: 8px;
-  padding: 0.75rem 1.25rem;
+  border-radius: var(--radius-ui-sm);
+  padding: 0 18px;
   min-height: 44px;
   cursor: pointer;
 }
 button:disabled { opacity: 0.5; cursor: default; }
-#approve, #register, #sign { width: 100%; }
-.headline { font-size: 1.05rem; font-weight: 600; margin: 0 0 1rem; overflow-wrap: anywhere; }
-.headline.cascades { border-left: 4px solid var(--delete); padding-left: 0.75rem; }
-.confirm { display: flex; gap: 0.6rem; align-items: flex-start; margin-bottom: 1rem; font-weight: 600; cursor: pointer; }
-.confirm input { width: 1.25rem; height: 1.25rem; margin: 0.15rem 0 0; flex: none; }
-.conflict { color: var(--update); font-weight: 600; margin: 0 0 0.5rem; }
-/* Show values (HR-4): above the rows, until the person reveals them. */
-.reveal { margin: 0 0 0.75rem; }
-.reveal button { min-height: 40px; padding: 0.5rem 1rem; }
-.buttons { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+button.danger { background: var(--diff-del-fg); color: var(--on-danger); }
+button.secondary { background: var(--ui-panel); color: var(--ui-text); border: 1px solid var(--ui-border-strong); font-weight: 500; }
+button.reject { color: var(--diff-del-fg); }
+.reveal button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 10px; font-size: 13px; }
+.icon { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.buttons { display: flex; gap: 8px; flex-wrap: wrap; }
 
 textarea {
   width: 100%;
-  background: var(--bg);
-  color: var(--fg);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 0.5rem;
+  background: var(--ui-subtle);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-border-strong);
+  border-radius: var(--radius-ui-sm);
+  padding: 8px;
   word-break: break-all;
 }
 
-/* The revert page (owner decision, Nov 12: docs/redesign/specs/mockups/
-   2026-11-12-revert-page-*.html), in the Basalt brand tokens. Other pages
-   keep the tokens above. The page's CSP loads no web font, so the type is
-   the system stack. */
-:root {
-  --brand-ink: #0e3e48;
-  --brand-aqua: #08d1d0;
-  --brand-ground: #f4f8f8;
-  --brand-surface: #ffffff;
-  --brand-soft: #eaf1f1;
-  --brand-tint: #ddf7f7;
-  --brand-line: #dce8e8;
-  --brand-muted: #4a6a70;
-  --brand-link: #0a6f70;
-  --brand-ok-bg: #e0f7ea;
-  --brand-ok-fg: #1c6b3a;
-  --brand-warn-bg: #fbf0dc;
-  --brand-warn-fg: #7a4a00;
-  --brand-bad: #a5281b;
-  --brand-on-ink: #ffffff;
-  --brand-dim: rgba(14, 62, 72, 0.38);
-}
+/* The decision: the cascade box, the passkey button, the signed hash. */
+.confirm { display: flex; gap: 10px; align-items: flex-start; font-weight: 500; cursor: pointer; }
+.confirm input { width: 18px; height: 18px; margin: 1px 0 0; flex: none; accent-color: var(--diff-del-fg); }
+.act-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.sign-foot { border-top: 1px solid var(--ui-border); padding-top: 10px; font-size: 12px; color: var(--ui-text-2); }
+.sign-foot:empty, #status:empty { display: none; }
+#register, #sign { width: 100%; }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --brand-ink: #e3f1f1;
-    --brand-ground: #0b1d22;
-    --brand-surface: #11282e;
-    --brand-soft: #173239;
-    --brand-tint: #0f3b40;
-    --brand-line: #24454c;
-    --brand-muted: #9db8bc;
-    --brand-link: #4fd6d5;
-    --brand-ok-bg: #143a28;
-    --brand-ok-fg: #8fdcab;
-    --brand-warn-bg: #3a2c10;
-    --brand-warn-fg: #f0c374;
-    --brand-bad: #f08a7e;
-    --brand-on-ink: #0b1d22;
-    --brand-dim: rgba(0, 0, 0, 0.55);
-  }
-}
+/* Lists of the other pages (passkeys): one bordered line each. */
+.rows { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.row { background: var(--ui-panel); border: 1px solid var(--ui-border); border-radius: var(--radius-ui); padding: 12px; overflow-x: auto; }
+.row-title { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; margin-bottom: 8px; }
 
-.revert-page {
-  --bg: var(--brand-ground);
-  --fg: var(--brand-ink);
-  --muted: var(--brand-muted);
-  --line: var(--brand-line);
-  --panel: var(--brand-surface);
-  --accent: var(--brand-ink);
-  --accent-fg: var(--brand-on-ink);
-  --changed: var(--brand-ok-bg);
-  --error: var(--brand-bad);
-  max-width: 1180px;
-}
-/* The components below set their own display; hidden still wins. */
-.revert-page [hidden] { display: none !important; }
+/* The revert page: the rows on the left, the scope and the decision on
+   the right; on a phone, the decision in a bar fixed to the bottom and the
+   scope and the Reject note in sheets over the page. */
+.revert-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+.revert-main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.ag { font-size: 12px; padding: 0 6px; border-radius: var(--radius-ui-sm); background: var(--ui-subtle); border: 1px solid var(--ui-border); color: var(--ui-text); margin-left: auto; unicode-bidi: isolate; }
+.ag.other { background: var(--diff-hold-bg); color: var(--diff-hold-fg); border-color: transparent; }
 
-.topbar { display: flex; align-items: baseline; gap: 0.75rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--line); }
-.topbar .brand { font-weight: 800; letter-spacing: -0.02em; }
-.topbar .exp { margin-left: auto; }
-
-.revert-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 1.75rem; align-items: start; }
-.revert-page h1 { font-size: 2rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1.12; margin-bottom: 0.5rem; }
-.lede { color: var(--muted); margin: 0 0 1rem; max-width: 62ch; }
-.why { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 0.85rem 1.1rem; margin-bottom: 1.25rem; max-width: 72ch; }
-.pill { display: inline-block; font-size: 0.8rem; font-weight: 700; letter-spacing: 0; padding: 0.15rem 0.75rem; border-radius: 999px; background: var(--brand-warn-bg); color: var(--brand-warn-fg); vertical-align: middle; }
-.ag { font-size: 0.75rem; padding: 0.1rem 0.55rem; border-radius: 999px; background: var(--brand-soft); color: var(--fg); margin-left: auto; unicode-bidi: isolate; }
-.ag.other { background: var(--brand-warn-bg); color: var(--brand-warn-fg); }
-
-.revert-page .values tr.changed td { background: transparent; }
-.revert-page .values tr.changed td.now { text-decoration: line-through; text-decoration-color: var(--brand-bad); color: var(--muted); }
-.revert-page .values tr.changed td.back { background: var(--brand-ok-bg); color: var(--brand-ok-fg); font-weight: 500; }
-
-.decision { position: sticky; top: 1.25rem; }
-.decision-bar, .note-sheet { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 1.25rem; }
-.sum { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.75rem; }
-.acts { display: flex; flex-direction: column; gap: 0.5rem; }
+.decision { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 16px; }
+.decision-bar, .note-sheet { background: var(--ui-panel); border: 1px solid var(--ui-border); border-radius: var(--radius-ui); padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.sum { color: var(--ui-text-2); font-size: 13px; }
+.acts { display: flex; flex-direction: column; gap: 8px; }
 .acts button { width: 100%; }
-button.secondary { background: var(--panel); color: var(--fg); border: 1px solid var(--line); }
-button.reject { color: var(--brand-bad); }
-button.danger { background: var(--brand-bad); color: var(--brand-on-ink); }
-.note-sheet h2 { margin-top: 0; }
-.note-label { display: block; font-size: 0.9rem; font-weight: 600; margin: 0.5rem 0 0.35rem; }
-.note-sheet textarea { font-family: inherit; font-size: 0.95rem; word-break: normal; background: var(--panel); border: 1.5px solid var(--brand-aqua); border-radius: 10px; min-height: 5rem; }
-.hint { display: flex; gap: 0.5rem; font-size: 0.8rem; color: var(--muted); margin: 0.35rem 0 0.75rem; }
+.note-label { display: block; font-size: 12px; font-weight: 500; color: var(--ui-text-2); }
+.note-sheet textarea { font-family: var(--font-ui); font-size: 14px; word-break: normal; background: var(--ui-panel); min-height: 5rem; }
+.hint { display: flex; gap: 8px; font-size: 12px; color: var(--ui-text-2); }
 .hint span:last-child { margin-left: auto; }
 .grab { display: none; }
 .dim { display: none; }
 .code-label { font-weight: 600; }
 
-/* Phone (layout A, EV-18): Sign and Reject in a bar fixed to the bottom,
-   the Reject note in a sheet over the page. */
-@media (max-width: 760px) {
-  .revert-grid { display: block; padding-bottom: 9rem; }
-  .revert-page h1 { font-size: 1.4rem; }
-  .decision { position: static; }
-  .decision-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 2; border-radius: 0; border-width: 1px 0 0; padding: 0.6rem 0.9rem 0.9rem; }
-  .decision-bar .sum { font-size: 0.8rem; margin-bottom: 0.5rem; }
-  .decision-bar .acts { flex-direction: row-reverse; }
-  .decision-bar #sign { flex: 1; }
-  .decision-bar #reject { width: auto; }
-  .decision-bar #status:empty { display: none; }
-  .note-sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 4; border-radius: 22px 22px 0 0; max-height: 85vh; overflow-y: auto; }
-  .note-sheet .acts { flex-direction: row-reverse; }
-  .note-sheet .acts #reject-send { flex: 1; }
-  .note-sheet .acts #reject-cancel { width: auto; }
-  .grab { display: block; width: 40px; height: 4px; border-radius: 4px; background: var(--line); margin: 0 auto 0.6rem; }
-  .dim { display: block; position: fixed; inset: 0; z-index: 3; background: var(--brand-dim); }
-}
-
 /* The scope (owner decision, Nov 12): chips, runs and the widen, in the
-   decision panel on a wide screen, in a bottom sheet on a phone. */
-.scope-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 1.25rem; margin-bottom: 1rem; }
-.plab { font-size: 0.9rem; font-weight: 700; margin: 0 0 0.5rem; }
-.plab small { font-weight: 400; color: var(--muted); }
-.chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; }
-button.chip { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 38px; padding: 0 0.75rem; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--fg); font-weight: 400; font-size: 0.9rem; }
-button.chip.on { border-color: var(--brand-aqua); background: var(--brand-tint); }
+   decision column on a wide screen, in a bottom sheet on a phone. */
+.scope-panel { background: var(--ui-panel); border: 1px solid var(--ui-border); border-radius: var(--radius-ui); padding: 16px; }
+.plab { font-size: 12px; font-weight: 500; color: var(--ui-text-2); margin: 0 0 8px; }
+.plab small { font-weight: 400; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+button.chip { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 10px; border: 1px solid var(--ui-border-strong); border-radius: var(--radius-ui-sm); background: var(--ui-panel); color: var(--ui-text); font-weight: 400; font-size: 13px; }
+button.chip.on { border-color: var(--ui-focus); background: var(--ui-subtle); }
+button.chip.other { color: var(--diff-hold-fg); }
 button.chip:disabled { opacity: 1; cursor: default; }
-button.chip .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.85rem; unicode-bidi: isolate; }
-.tk { width: 16px; height: 16px; border-radius: 5px; border: 1px solid var(--line); font-size: 11px; display: grid; place-items: center; flex: none; }
-.chip.on .tk { background: var(--brand-ink); border-color: var(--brand-ink); color: var(--brand-on-ink); }
-.runs { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 1rem; overflow: hidden; }
-.runs button.chip { width: 100%; border: 0; border-top: 1px solid var(--line); border-radius: 0; min-height: 42px; background: var(--panel); }
+button.chip .mono { font-family: var(--font-mono); font-size: 13px; unicode-bidi: isolate; }
+.tk { width: 16px; height: 16px; border-radius: 3px; border: 1px solid var(--ui-border-strong); font-size: 11px; display: grid; place-items: center; flex: none; }
+.chip.on .tk { background: var(--ui-primary); border-color: var(--ui-primary); color: var(--ui-on-primary); }
+.runs { display: flex; flex-direction: column; border: 1px solid var(--ui-border); border-radius: var(--radius-ui-sm); margin-bottom: 12px; overflow: hidden; }
+.runs button.chip { width: 100%; border: 0; border-top: 1px solid var(--ui-border); border-radius: 0; min-height: 40px; }
 .runs button.chip:first-child { border-top: 0; }
-button.widen { display: flex; gap: 0.75rem; align-items: center; width: 100%; min-height: 56px; border: 1.5px dashed var(--brand-link); border-radius: 12px; background: transparent; color: var(--fg); padding: 0.6rem 0.9rem; text-align: left; font-weight: 400; margin-bottom: 0.75rem; }
-.plus { width: 28px; height: 28px; border-radius: 8px; background: var(--brand-tint); display: grid; place-items: center; font-weight: 800; flex: none; }
-.widen .t { display: block; font-weight: 700; }
-.widen .s { display: block; color: var(--muted); font-size: 0.8rem; }
+.runs button.chip .w { margin-left: auto; color: var(--ui-text-2); font-size: 13px; }
+button.widen { display: flex; gap: 12px; align-items: center; width: 100%; min-height: 56px; border: 1px dashed var(--ui-border-strong); border-radius: var(--radius-ui-sm); background: transparent; color: var(--ui-text); padding: 8px 12px; text-align: left; font-weight: 400; margin-bottom: 12px; }
+.plus { width: 28px; height: 28px; border-radius: var(--radius-ui-sm); background: var(--ui-subtle); border: 1px solid var(--ui-border); display: grid; place-items: center; font-weight: 600; flex: none; }
+.widen .t { display: block; font-weight: 600; }
+.widen .s { display: block; color: var(--ui-text-2); font-size: 12px; }
 #scope-status:empty { display: none; }
 .scope-line, .scope-done { display: none; }
 
+/* Phone: a 16px gutter, one column, tables scroll in their box. */
 @media (max-width: 760px) {
-  .topbar .crumb { display: none; }
-  button.scope-line { display: flex; align-items: center; gap: 0.75rem; width: 100%; min-height: 48px; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; padding: 0.5rem 0.75rem; text-align: left; font-weight: 400; font-size: 0.85rem; margin-bottom: 0.75rem; }
-  .scope-line b { display: block; font-size: 0.9rem; }
-  .scope-line .s { color: var(--muted); }
-  .scope-line .ed { margin-left: auto; color: var(--brand-link); font-weight: 700; }
+  .panel { padding: 16px; }
+  .changes { padding: 0; }
+  .panel-head, .reveal, .group { padding-left: 16px; padding-right: 16px; }
+  .panel-note { text-align: left; margin-left: 0; }
+  .summary { grid-template-columns: minmax(0, 1fr); }
+  .summary > div.wide { grid-column: auto; }
+  .act-row button { width: 100%; }
+
+  .crumb { display: none; }
+  .revert-grid { display: block; padding-bottom: 9rem; }
+  .decision { position: static; }
+  .decision-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 2; border-radius: 0; border-width: 1px 0 0; padding: 10px 16px 14px; gap: 6px; }
+  .decision-bar .sum { font-size: 12px; }
+  .decision-bar .acts { flex-direction: row-reverse; }
+  .decision-bar #sign { flex: 1; }
+  .decision-bar #reject { width: auto; }
+  .decision-bar .sign-foot, .decision-bar #decline { display: none; }
+  .note-sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 4; border-radius: var(--radius-ui) var(--radius-ui) 0 0; max-height: 85vh; overflow-y: auto; }
+  .note-sheet .acts { flex-direction: row-reverse; }
+  .note-sheet .acts #reject-send { flex: 1; }
+  .note-sheet .acts #reject-cancel { width: auto; }
+  .grab { display: block; width: 40px; height: 4px; border-radius: 4px; background: var(--ui-border-strong); margin: 0 auto 8px; }
+  .dim { display: block; position: fixed; inset: 0; z-index: 3; background: var(--dim); }
+
+  button.scope-line { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; background: var(--ui-panel); color: var(--ui-text); border: 1px solid var(--ui-border-strong); border-radius: var(--radius-ui-sm); padding: 8px 12px; text-align: left; font-weight: 400; font-size: 13px; }
+  .scope-line b { display: block; font-size: 14px; }
+  .scope-line .s { color: var(--ui-text-2); }
+  .scope-line .ed { margin-left: auto; color: var(--ui-primary); font-weight: 600; }
   .scope-panel { display: none; }
-  .scope-panel.open { display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 4; margin: 0; border-radius: 22px 22px 0 0; max-height: 85vh; overflow-y: auto; }
+  .scope-panel.open { display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 4; margin: 0; border-radius: var(--radius-ui) var(--radius-ui) 0 0; max-height: 85vh; overflow-y: auto; }
   button.scope-done { display: block; width: 100%; }
 }
-.runs button.chip .w { margin-left: auto; color: var(--muted); font-size: 0.85rem; }

@@ -16,7 +16,6 @@ import {
   MAX_REVERT_BATCH,
   REVERT_APPLY_HOURS,
   checkRevertRequest,
-  displayValue,
   encodeRevertResponse,
   parseRevertRequest,
   relyingParty,
@@ -27,7 +26,8 @@ import {
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, rejectRevert, revertDone, revertPaths } from "./local.js";
 import { $, REVERT_REOPEN, el, fail, linkFailure, loadOrPaste, personText, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
 import { canWiden, narrow, widen } from "./rescope.js";
-import { applyReveal, canReveal, clearReveal, hiddenLines, NOT_CHECKED, OPEN_FROM_ENGINE, reveal, revealedLine, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
+import { applyReveal, canReveal, clearReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
+import { changeGroups, countText, display, rowKeyText } from "./changes.js";
 import {
   MAX_NOTE,
   RESET_MESSAGE,
@@ -63,13 +63,6 @@ const CONFLICTS = {
   CONSTRAINT: "Restoring it would break a database constraint.",
 };
 
-// display shows a column's value as the line carries it (displayValue), with
-// the characters that hide or reorder text shown as escapes (visibleText).
-function display(line, member, col) {
-  const row = line[member] ?? {};
-  return visibleText(displayValue(row[col], line.texts?.[member]?.get(col)));
-}
-
 function plural(n, word) {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
@@ -81,12 +74,31 @@ function renderHeader(req) {
   const requester = visibleText(agentName(b.requestedBy));
   const head = headline(b);
   $("crumb").textContent = `Revert request from ${requester}`;
+  $("item-id").textContent = req.revertId.slice(-ID_SHOWN);
+  $("item-id").title = req.revertId;
   $("headline").textContent = visibleText(head.title);
   $("lede").textContent = visibleText(head.lede);
   $("widened-pill").hidden = !head.widened;
   $("why-label").textContent = `${requester}'s reason:`;
   $("signing").textContent = signingSummary(req);
-  $("expires-in").textContent = expiresIn(b.expiresAt, new Date());
+  showExpiry(b.expiresAt);
+}
+
+// showExpiry is the top bar's pill: amber while the link holds, red once it
+// expired.
+function showExpiry(expiresAt) {
+  const now = new Date();
+  $("expires-in").textContent = expiresIn(expiresAt, now);
+  $("expires-in").className = expiresAt.getTime() <= now.getTime() ? "pill bad" : "pill hold";
+}
+
+// ID_SHOWN is how much of the revert id the top bar shows; all of it on hover.
+const ID_SHOWN = 8;
+
+// signedText is the footer: the hash the passkey signs, shortened.
+export function signedText(req) {
+  const h = Array.from(new Uint8Array(req.challenge), (b) => b.toString(16).padStart(2, "0")).join("");
+  return `You sign sha256:${h.slice(0, 4)}\u2026${h.slice(-4)} over this revert of ${plural(req.binding.rows, "row")}.`;
 }
 
 const RESTORE_NOTE =
@@ -127,52 +139,8 @@ function renderSummary(req) {
     "Struck-through values are the row now; highlighted values are what it goes back to. Each row is checked again with its row locked when its batch runs; a row someone changed by then is left as it is.";
 }
 
-// rowTable shows a row now and after the revert: only "Now" for a row the
-// revert deletes, only "After revert" for a row it re-inserts, both for an
-// update with the columns that change highlighted. A row the revert leaves
-// alone (SKIP) shows only "Now": the revert keeps it as it is, so values it
-// would have written must not look like they will be applied.
-//
-// A skipped row that is gone (ROW_GONE) has neither: rowTable returns null,
-// and the page names the row by its key instead (rowKeyText).
-export function rowTable(line) {
-  const now = line.now ?? {};
-  const skipped = line.action === "SKIP";
-  const after = skipped ? {} : (line.set ?? {});
-  const showNow = line.now !== null;
-  const showAfter = !skipped && line.set !== null;
-  if (!showNow && !showAfter) return null;
-  const table = el("table", "values");
-  const head = el("tr");
-  head.append(el("th", "", "Column"));
-  if (showNow) head.append(el("th", "", "Now"));
-  if (showAfter) head.append(el("th", "", "After revert"));
-  table.append(head);
-  const columns = [...new Set([...Object.keys(now), ...Object.keys(after)])];
-  for (const col of columns) {
-    const changes = showNow && showAfter && col in after && display(line, "now", col) !== display(line, "set", col);
-    const tr = el("tr", changes ? "changed" : "");
-    tr.append(el("td", "col", visibleText(col)));
-    if (showNow) tr.append(el("td", changes ? "now" : "", display(line, "now", col)));
-    if (showAfter) tr.append(el("td", changes ? "back" : "", display(line, "set", col)));
-    table.append(tr);
-  }
-  return table;
-}
-
-// rowKeyText names a row by its primary key, for a row with no values to
-// show: "Row id = 42", or each key column for a composite key.
-export function rowKeyText(line) {
-  const key = line.key ?? {};
-  const parts = Object.keys(key).map((col) => `${visibleText(col)} = ${display(line, "key", col)}`);
-  return parts.length ? `Row ${parts.join(", ")}` : "Row key not recorded.";
-}
-
-function opLabel(line) {
-  if (line.op === "DELETE") return "DELETE";
-  if (line.op === "INSERT") return "RE-INSERT";
-  return "RESTORE";
-}
+// rowKeyText names a row by its primary key (changes.js).
+export { rowKeyText };
 
 // agentTag is a row's "changed by" tag: amber for an agent other than the
 // one that requested the revert.
@@ -182,38 +150,30 @@ export function agentTag(who) {
   return tag;
 }
 
-// renderLine shows one row. A hidden row shows its values once the person
-// revealed them (shown), labelled as shown to them only, and as not checked
-// when Postgres left out secret columns; until then it says the values are
-// hidden, and on a long link where to see them.
-export function renderLine(line, who, shown = null, longLink = false) {
-  const card = el("li", "row");
-  const title = el("div", "row-title");
-  title.append(el("span", `op op-${line.op.toLowerCase()}`, opLabel(line)));
-  title.append(el("span", "table-name", visibleText(line.table)));
-  if (line.cascaded) title.append(el("span", "badge", "cascaded"));
-  if (who !== null) title.append(agentTag(who));
-  card.append(title);
-  if (line.action === "SKIP") {
-    const reason = CONFLICTS[line.conflict];
-    card.append(el("p", "conflict", line.sqlState ? `${reason} (SQLSTATE ${visibleText(line.sqlState)})` : reason));
-  }
-  if (line.redacted && shown) {
-    card.append(el("p", "muted", SHOWN_TO_YOU));
-    if (!shown.checked) card.append(el("p", "conflict", NOT_CHECKED));
-    const shownLine = revealedLine(line, shown, "now");
-    card.append(rowTable(shownLine) ?? el("p", "muted", rowKeyText(shownLine)));
-    return card;
-  }
-  if (line.redacted) {
-    const hidden = "Values hidden: the role that prepared this revert cannot read this table.";
-    card.append(el("p", "muted", longLink ? `${hidden} ${OPEN_FROM_ENGINE}` : hidden));
-    return card;
-  }
-  if (line.op === "DELETE" && line.action === "RESTORE") card.append(el("p", "muted", "The agent inserted this row; the revert deletes it."));
-  const table = rowTable(line);
-  card.append(table ?? el("p", "muted", rowKeyText(line)));
-  return card;
+const INSERTED_NOTE = "Rows marked \u2212 were inserted by the agent; the revert deletes them.";
+
+// lineGroups renders the revert's rows as one table per table: the rows it
+// restores, or (skip) the rows it leaves alone, each with why. A hidden row
+// shows its values once the person revealed them (shown), labelled as shown
+// to them only, and as not checked when Postgres left out secret columns;
+// until then its values show as dots, and on a long link it says where to
+// see them. A row with no values to show is named by its key.
+export function lineGroups(items, who = null, shown = new Map(), longLink = false) {
+  return changeGroups(items, {
+    mid: "now",
+    shown,
+    longLink,
+    who: who === null ? null : () => agentTag(who),
+    skipped: (line) => line.action === "SKIP",
+    why: (line) => {
+      if (line.action !== "SKIP") return null;
+      const reason = CONFLICTS[line.conflict];
+      return line.sqlState ? `${reason} (SQLSTATE ${visibleText(line.sqlState)})` : reason;
+    },
+    // Only the columns whose value changes are highlighted.
+    highlights: (v, col) => display(v.line, "now", col) !== display(v.line, "set", col),
+    notes: (ls) => (ls.some((l) => l.op === "DELETE" && l.action === "RESTORE") ? [INSERTED_NOTE] : []),
+  });
 }
 
 // engineFetch is fetch bound to the window, for the local relay.
@@ -347,12 +307,14 @@ function render(state) {
   renderHeader(req);
   renderSummary(req);
   const who = rowAgent(req.binding);
-  $("restore").replaceChildren();
-  $("skip").replaceChildren();
   const longLink = state.relay === null;
-  req.lines.forEach((line, i) => {
-    $(line.action === "SKIP" ? "skip" : "restore").append(renderLine(line, who, state.shown.get(i) ?? null, longLink));
-  });
+  const shown = state.valuesHidden ? new Map() : state.shown;
+  const items = req.lines.map((line, index) => ({ line, index }));
+  const restore = items.filter((i) => i.line.action !== "SKIP");
+  $("restore").replaceChildren(...lineGroups(restore, who, shown, longLink));
+  $("skip").replaceChildren(...lineGroups(items.filter((i) => i.line.action === "SKIP"), who, shown, longLink));
+  $("restore-count").replaceChildren(...countText(restore.map((i) => i.line)).map((c) => el("span", `count-${c.op.toLowerCase()}`, c.text)));
+  $("signed-hash").textContent = signedText(req);
   renderReveal(state);
   $("skip-section").hidden = req.binding.skipped === 0;
   renderScope(state);
@@ -468,11 +430,24 @@ function includeOthers(state) {
 // rows, until the person revealed them. It never prompts on its own (HR-4).
 function renderReveal(state) {
   const { req } = state;
-  const offer = canReveal(req, state.relay) && !state.revealDone;
+  const offer = canReveal(req, state.relay);
   $("reveal-box").hidden = !offer;
   if (!offer) return;
-  $("reveal-text").textContent = `${hiddenLines(req)} of these rows are in tables the agent cannot read. You can see their values with your passkey; the agent still cannot.`;
+  $("reveal").hidden = state.revealDone;
+  $("hide-values").hidden = !state.revealDone;
+  $("hide-values-text").textContent = state.valuesHidden ? "Show values" : "Hide values";
+  $("hide-values").setAttribute("aria-pressed", String(state.valuesHidden === true));
+  $("reveal-text").textContent = state.revealDone
+    ? SHOWN_TO_YOU
+    : `${hiddenLines(req)} of these rows are in tables the agent cannot read. You can see their values with your passkey; the agent still cannot.`;
   $("reveal").disabled = state.busy || state.revealFinal === req;
+}
+
+// toggleValues hides the revealed values on this page, or shows them again
+// without a passkey: the page still has them.
+function toggleValues(state) {
+  state.valuesHidden = !state.valuesHidden;
+  render(state);
 }
 
 // showValues asks the passkey once and shows every hidden row. Signing
@@ -529,15 +504,16 @@ async function main() {
     return;
   }
   const expired = req.binding.expiresAt.getTime() <= Date.now();
-  const state = { rp, req, relay, catalog: null, known: [], choices: null, busy: false, expired, shown: new Map(), revealDone: false };
+  const state = { rp, req, relay, catalog: null, known: [], choices: null, busy: false, expired, shown: new Map(), revealDone: false, valuesHidden: false };
   render(state);
   $("main").hidden = false;
   setInterval(() => {
-    $("expires-in").textContent = expiresIn(state.req.binding.expiresAt, new Date());
+    showExpiry(state.req.binding.expiresAt);
   }, EXPIRY_TICK_MS);
   wireReject(state);
   $("widen").addEventListener("click", () => includeOthers(state));
   $("reveal").addEventListener("click", () => showValues(state));
+  $("hide-values").addEventListener("click", () => toggleValues(state));
   $("scope-line").addEventListener("click", () => openScope(true));
   $("scope-done").addEventListener("click", () => openScope(false));
   $("sheet-dim").addEventListener("click", () => openScope(false));
@@ -545,5 +521,5 @@ async function main() {
   $("sign").addEventListener("click", () => sign(rp, state));
 }
 
-// Pages run it; the tests import rowTable without a page.
+// Pages run it; the tests import lineGroups without a page.
 if (typeof document !== "undefined") main();

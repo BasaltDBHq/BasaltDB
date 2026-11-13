@@ -20,7 +20,7 @@ const PROMPT_TIMEOUT_MS = 120000;
 // The texts the pages show (CONTRACT.md and the plan's task 6).
 export const SHOWN_TO_YOU = "Shown to you only. The agent cannot read this table.";
 export const NOT_CHECKED = "Not checked against what you sign: Postgres left out this row's secret columns, so the page cannot compare it.";
-export const SECRET_VALUE = "secret, not shown";
+export const SECRET_VALUE = "secret \u00b7 withheld by Postgres";
 export const OPEN_FROM_ENGINE = "Open this link from the engine to see them.";
 const BAD_ANSWER = "The engine sent values that do not match the rows you sign, so none are shown. Nothing changed; you can still decide without them.";
 
@@ -125,7 +125,7 @@ export function revealFailure(err, kind) {
 
 // revealedLine is line with the revealed values in place of its redaction,
 // for the page's row table: key, then old (approval) or now (revert), then
-// set; a SECRET column reads "secret, not shown".
+// set; a SECRET column reads "secret · withheld by Postgres".
 export function revealedLine(line, shown, mid) {
   const [key, middle, set] = shown.values;
   const texts = { key: new Map(shown.texts[0]), [mid]: new Map(shown.texts[1]), set: new Map(shown.texts[2]) };
@@ -144,6 +144,7 @@ export function applyReveal(state, req, shown) {
   if (state.req !== req) return false;
   state.shown = shown;
   state.revealDone = true;
+  state.valuesHidden = false;
   return true;
 }
 
@@ -151,4 +152,5 @@ export function applyReveal(state, req, shown) {
 export function clearReveal(state) {
   state.shown = new Map();
   state.revealDone = false;
+  state.valuesHidden = false;
 }

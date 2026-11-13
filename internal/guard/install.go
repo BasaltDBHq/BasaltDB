@@ -53,7 +53,8 @@ type AgentSpec struct {
 	Password string
 	// Verifier is the password as a SCRAM-SHA-256 verifier (a setup code,
 	// checked by CheckVerifier), set in place of Password, which stays
-	// empty. The person reads it in the SQL: it lets nobody log in.
+	// empty. The person reads it in the SQL. It is sensitive: with one
+	// observed SCRAM exchange of the role it lets its holder log in.
 	Verifier string
 	// CreateOnly creates the role with a plain CREATE ROLE, which Postgres
 	// refuses when the role exists (an INSTALL setup code). Without it a

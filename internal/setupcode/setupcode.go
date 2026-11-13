@@ -4,8 +4,9 @@
 //
 //	basalt-setup.1.<b64url(deflate-raw(json))>.<check>
 //
-// The code holds only non-secret parameters: never the agent's password
-// (its SCRAM-SHA-256 verifier instead) and never anything of the admin.
+// The code never holds the agent's password (its SCRAM-SHA-256 verifier
+// instead, which is sensitive: CONTRACT.md, The setup code) and never
+// anything of the admin.
 // The code-maker writes every field, so nothing in it is trusted: Decode
 // refuses anything outside setup-code.schema.json and the rules the schema
 // cannot state, and CheckLocal and CheckDatabase apply the clock and the

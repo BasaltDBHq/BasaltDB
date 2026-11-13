@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -42,6 +43,13 @@ const (
 	problemSetupChangePending  = "SETUP_CHANGE_PENDING"
 )
 
+// Retention of the ledger (CONTRACT.md, Configuration and status): the
+// guard prunes values after 30 days and deletes records after 365.
+const (
+	ledgerValuesKeptDays  = 30
+	ledgerRecordsKeptDays = 365
+)
+
 // Enforcement values of the status tool.
 const (
 	EnforcementEngineAndGuard = "ENGINE_AND_GUARD"
@@ -63,6 +71,8 @@ type Probe interface {
 	GuardStatus(ctx context.Context) (guard.Status, error)
 	SetupRecorded(ctx context.Context, id uuid.UUID) (bool, error)
 	LatestSetup(ctx context.Context) (guard.AgentSetup, bool, error)
+	// LedgerBytes is the size of basalt_meta (status.ledger).
+	LedgerBytes(ctx context.Context) (int64, error)
 }
 
 type noProbe struct{}
@@ -77,6 +87,12 @@ func (noProbe) SetupRecorded(context.Context, uuid.UUID) (bool, error) { return 
 func (noProbe) LatestSetup(context.Context) (guard.AgentSetup, bool, error) {
 	return guard.AgentSetup{}, false, nil
 }
+
+// errNoProbe: without a real probe there is no size to report, and status
+// leaves the ledger out rather than say 0.
+var errNoProbe = errors.New("no probe reads the ledger size")
+
+func (noProbe) LedgerBytes(context.Context) (int64, error) { return 0, errNoProbe }
 
 // DBProbe is the Probe on an agent connection or pool, against the build's
 // migrations (guard.Migrations outside tests).
@@ -98,6 +114,11 @@ func (p DBProbe) SetupRecorded(ctx context.Context, id uuid.UUID) (bool, error) 
 // LatestSetup is the agent's newest recorded setup.
 func (p DBProbe) LatestSetup(ctx context.Context) (guard.AgentSetup, bool, error) {
 	return guard.LatestAgentSetup(ctx, p.Q)
+}
+
+// LedgerBytes is the size of basalt_meta.
+func (p DBProbe) LedgerBytes(ctx context.Context) (int64, error) {
+	return guard.LedgerBytes(ctx, p.Q)
 }
 
 // VaultReporter says how the engine's connection to the hosted Vault stands
@@ -128,6 +149,7 @@ type StatusReport struct {
 	Pages       PagesStatus    `json:"pages"`
 	Vault       *VaultStatus   `json:"vault,omitempty"`
 	Passkeys    PasskeysStatus `json:"passkeys"`
+	Ledger      *LedgerStatus  `json:"ledger,omitempty"`
 	Problems    []Problem      `json:"problems"`
 }
 
@@ -166,6 +188,14 @@ type PagesStatus struct {
 type PasskeysStatus struct {
 	Registered bool `json:"registered"`
 	Active     *int `json:"active,omitempty"`
+}
+
+// LedgerStatus is status.ledger: absent when the guard or its size cannot
+// be read.
+type LedgerStatus struct {
+	Bytes           int64 `json:"bytes"`
+	ValuesKeptDays  int   `json:"valuesKeptDays"`
+	RecordsKeptDays int   `json:"recordsKeptDays"`
 }
 
 // Problem is one entry of status.problems.
@@ -300,6 +330,9 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 	if err == nil && st.State != guard.GuardMissing {
 		r.Passkeys = s.countPasskeys(ctx, &ps)
 	}
+	if err == nil {
+		r.Ledger = s.ledgerStatus(ctx, st)
+	}
 	list, err := ps.sorted()
 	if err != nil {
 		return StatusReport{}, err
@@ -387,6 +420,21 @@ func guardStatusDTO(st guard.Status) GuardStatus {
 		out.Installed = &installed
 	}
 	return out
+}
+
+// ledgerStatus is the ledger's size and retention. A missing guard has no
+// ledger, and a size that cannot be read is logged and left out: it is
+// never a problem.
+func (s statusDeps) ledgerStatus(ctx context.Context, st guard.Status) *LedgerStatus {
+	if st.State == guard.GuardMissing {
+		return nil
+	}
+	n, err := s.probe.LedgerBytes(ctx)
+	if err != nil {
+		s.log.Debug("status: read the ledger size", "err", err)
+		return nil
+	}
+	return &LedgerStatus{Bytes: n, ValuesKeptDays: ledgerValuesKeptDays, RecordsKeptDays: ledgerRecordsKeptDays}
 }
 
 // passkeys counts the active passkeys; none is NO_PASSKEY. A count that

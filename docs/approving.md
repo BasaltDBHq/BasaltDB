@@ -110,5 +110,5 @@ Then open the short link (`http://localhost:8787/approvals/<id>#s=<secret>`) in 
 
 - The port has to match on both ends. A tunnel from local port 9000 gives the page the origin `http://localhost:9000`, and the engine refuses the signature relay from it (`403`).
 - Register the passkey through the same tunnel. Keep it open while `basalt init` waits for the code, since init serves the registration page on the server's port in the same way.
-- `basalt approve --show <id>` on the server prints the short link to open on your side.
+- `basalt approve --show <id>` on the server prints the short link to open on your side. It waits until you sign or the approval expires, and the link the agent showed stops working.
 - Without a tunnel there is no page to open on your computer until the hosted console is live, so keep the tunnel open while you approve.

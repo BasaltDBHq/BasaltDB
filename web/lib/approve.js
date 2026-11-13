@@ -31,9 +31,8 @@ export function mainOp(summary) {
   return summary.direct[0]?.op ?? summary.cascaded[0]?.op ?? null;
 }
 
-// approveLabel is the passkey button's text: the write's own rows of its
-// op, then the cascade, "Sign with your passkey: delete 1 row + 2 cascaded". The cascaded
-// rows are never counted as the write's own. A delete's button is red.
+// approveLabel is the passkey button's text: the write's own rows of its op,
+// then the cascade (never counted as its own). A delete's button is red.
 export function approveLabel(summary) {
   const rows = (n) => (n === 1 ? "1 row" : `${n} rows`);
   const op = mainOp(summary);

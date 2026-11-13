@@ -23,7 +23,7 @@ import (
 // that link in the browser.
 func runApprove(c *cliIO, args []string) int {
 	fs := c.flags("approve")
-	show := fs.String("show", "", "print the approval link of this held write (approval id) instead")
+	show := fs.String("show", "", "print the approval link of this held write (approval id) instead; waits until it is signed or expires, and revokes the agent's link")
 	reissue := fs.Bool("reissue", false, "with --show or --open: issue a new short link (the held write's earlier short link stops working)")
 	open := fs.String("open", "", "open the approval link of this held write (approval id) in your browser instead")
 	var pagesURL string

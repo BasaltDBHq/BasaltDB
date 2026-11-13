@@ -164,8 +164,11 @@ func TestSuggestShapes(t *testing.T) {
 		{Column{Name: "id", DataType: "bigint", Key: true, Generated: true}, seq, Suggestion{Class: guard.ClassPublic, Reason: reasonSequential}},
 		{col("id", "uuid"), nil, Suggestion{Class: guard.ClassPublic, Reason: "TYPE:uuid"}},
 		{col("secret_email", "text"), []string{"a@example.com"}, Suggestion{Class: guard.ClassSecret}},
-		{col("full_name", "text"), []string{"a long sentence that is not really a name of anyone at all, really"},
-			Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityPersonName}},
+		{
+			col("full_name", "text"),
+			[]string{"a long sentence that is not really a name of anyone at all, really"},
+			Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityPersonName},
+		},
 		{col("notes", "text"), []string{"A-1", "B-2"}, Suggestion{Class: guard.ClassPublic}},
 		{col("notes", "text"), []string{"call Alice"}, Suggestion{Class: guard.ClassFreeText}},
 		{col("notes", "text"), []string{"A-1", "B-2", "6281234567801"}, Suggestion{Class: guard.ClassFreeText}},
@@ -201,8 +204,10 @@ func TestSuggestShapes(t *testing.T) {
 func TestProtectedNeverLowersAConfirmedClass(t *testing.T) {
 	t.Parallel()
 	c := ReviewColumn{
-		Result: Result{Column: Column{Schema: "public", Table: "t", Name: "c", DataType: "text"},
-			Suggestion: Suggestion{Class: guard.ClassPublic}},
+		Result: Result{
+			Column:     Column{Schema: "public", Table: "t", Name: "c", DataType: "text"},
+			Suggestion: Suggestion{Class: guard.ClassPublic},
+		},
 		Stored: &guard.PIIColumn{Class: guard.ClassIdentifier, EntityType: guard.EntityEmail, DataType: "text"},
 	}
 	require.Equal(t, Decision{Class: guard.ClassIdentifier, EntityType: guard.EntityEmail}, c.Protected())
@@ -220,8 +225,10 @@ func TestRowsKeepConfirmedClasses(t *testing.T) {
 	tables := []ReviewTable{{Table: "public.t", Columns: []ReviewColumn{
 		{Result: Result{Column: col("a"), Suggestion: Suggestion{Class: guard.ClassPublic, Reason: "r"}}},
 		{Result: Result{Column: col("b"), Suggestion: Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityOther, NeedsReview: true}}},
-		{Result: Result{Column: col("c"), Suggestion: Suggestion{Class: guard.ClassPublic}},
-			Stored: &guard.PIIColumn{Class: guard.ClassSecret, DataType: "text"}},
+		{
+			Result: Result{Column: col("c"), Suggestion: Suggestion{Class: guard.ClassPublic}},
+			Stored: &guard.PIIColumn{Class: guard.ClassSecret, DataType: "text"},
+		},
 	}}}
 	rows := Rows(tables, map[string]Decision{"public.t.a": {Class: guard.ClassPublic}})
 	require.Len(t, rows, 2, "c keeps its confirmed row")

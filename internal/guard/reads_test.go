@@ -294,8 +294,10 @@ func TestResolveGuarded(t *testing.T) {
 	a := d.NewAgent(t, "bot", leads, []string{"public.payroll", "public.open_leads"})
 	ctx := context.Background()
 
-	got, err := guard.ResolveGuarded(ctx, a.Conn, []string{`"leads"`, `public.leads`, `public.payroll`, `public.open_leads`,
-		`public.lead_notes`, `public.missing`})
+	got, err := guard.ResolveGuarded(ctx, a.Conn, []string{
+		`"leads"`, `public.leads`, `public.payroll`, `public.open_leads`,
+		`public.lead_notes`, `public.missing`,
+	})
 	require.NoError(t, err)
 	var leadsOID uint32
 	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT 'public.leads'::regclass::oid`).Scan(&leadsOID))

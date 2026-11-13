@@ -529,8 +529,10 @@ var fixes = map[string]struct {
 	command func(Commands) string
 	problem string
 }{
-	reasonCredentialRejected: {func(c Commands) string { return c.Init("--rotate-password") },
-		"The database refused the agent's credential (its password changed or was never right); this sets a new one and prints the restart command."},
+	reasonCredentialRejected: {
+		func(c Commands) string { return c.Init("--rotate-password") },
+		"The database refused the agent's credential (its password changed or was never right); this sets a new one and prints the restart command.",
+	},
 	reasonGuardMissing:  {func(c Commands) string { return c.Init("") }, "The guard is not installed in this database (or was removed); this installs it again with the saved flags."},
 	reasonGuardOutdated: {Commands.Upgrade, "The guard in this database is older than this engine needs; this upgrades it."},
 }

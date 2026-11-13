@@ -505,12 +505,14 @@ const taskWidenPointer = "You can include other agents' changes in this task on 
 // unknown one, on preview_revert and request_revert alike.
 func notOwnScope(scope guard.RevertScope) error {
 	kind := strings.ToLower(string(scope.Kind))
-	return &mcp.ToolError{Code: CodeNotFound, Reason: string(scope.Kind), Message: fmt.Sprintf(
-		"%s %s is not one of this agent's %ss; nothing was prepared. An agent reverts only its own changes, runs and tasks it "+
-			"ran in: check the id in run_history. If another agent's work looks wrong, ask that agent to request the revert; "+
-			"a person can revert any change, run or task with basalt revert", kind, scope.ID, kind),
+	return &mcp.ToolError{
+		Code: CodeNotFound, Reason: string(scope.Kind), Message: fmt.Sprintf(
+			"%s %s is not one of this agent's %ss; nothing was prepared. An agent reverts only its own changes, runs and tasks it "+
+				"ran in: check the id in run_history. If another agent's work looks wrong, ask that agent to request the revert; "+
+				"a person can revert any change, run or task with basalt revert", kind, scope.ID, kind),
 		NextSteps: []mcp.NextStep{callTool(toolListRuns, map[string]any{},
-			"This id is not one of your runs or changes; list your runs.")}}
+			"This id is not one of your runs or changes; list your runs.")},
+	}
 }
 
 // notOwnTask is a task this agent has no run in (RS-6): NOT_FOUND reason
@@ -518,14 +520,16 @@ func notOwnScope(scope guard.RevertScope) error {
 // leaves the agent for the person to fill in: this agent cannot see who ran
 // in the task (N12-R1).
 func notOwnTask(scope guard.RevertScope) error {
-	return &mcp.ToolError{Code: CodeNotFound, Reason: string(revert.ScopeTask), Message: fmt.Sprintf(
-		"task %s has no run of this agent; nothing was prepared. An agent reverts only its own work: "+
-			"check the task id in list_runs", scope.ID),
+	return &mcp.ToolError{
+		Code: CodeNotFound, Reason: string(revert.ScopeTask), Message: fmt.Sprintf(
+			"task %s has no run of this agent; nothing was prepared. An agent reverts only its own work: "+
+				"check the task id in list_runs", scope.ID),
 		PersonMessage: fmt.Sprintf("This agent has no run in task %s. To revert work in that task, run "+
 			"basalt revert --agent <agent> --task %s --open with an agent that ran in it, or ask that agent to request the revert.",
 			scope.ID, scope.ID),
 		NextSteps: []mcp.NextStep{callTool(toolListRuns, map[string]any{},
-			"This task has none of your runs; list your runs.")}}
+			"This task has none of your runs; list your runs.")},
+	}
 }
 
 // scopeRefused answers a scope the guard refused (BS011, CONTRACT.md,

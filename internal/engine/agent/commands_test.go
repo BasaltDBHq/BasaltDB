@@ -126,19 +126,35 @@ func TestCommandsNeverCarryACredentialValue(t *testing.T) {
 func TestCommandsAllowOnlyTheFlagsInitSaves(t *testing.T) {
 	t.Parallel()
 	for _, ok := range [][]string{
-		{"--write", "public.leads"}, {"-write", "public.leads"}, {"--write=public.leads"}, {"-write=public.leads"},
+		{"--write", "public.leads"},
+		{"-write", "public.leads"},
+		{"--write=public.leads"},
+		{"-write=public.leads"},
 		{"--agent", "bot", "--agent-rls", "all-rows", "--operated-by=person"},
 		{"--credential-file", "/etc/basalt/agents/bot.cred"},
-		{"--statement-timeout", "5s", "--engine-user", "basalt", "--os-user", "me", "--socket-dir", "/run/basalt",
-			"--passkey-origin", "http://localhost:8787", "--prefix", "basalt", "--read", "public.a"},
+		{
+			"--statement-timeout", "5s", "--engine-user", "basalt", "--os-user", "me", "--socket-dir", "/run/basalt",
+			"--passkey-origin", "http://localhost:8787", "--prefix", "basalt", "--read", "public.a",
+		},
 	} {
 		_, err := NewCommands("bot", "", "linux", ok)
 		require.NoError(t, err, "%v", ok)
 	}
 	for _, bad := range [][]string{
-		{"--admin-url", "x"}, {"-password", "x"}, {"--password=x"}, {"--yes"}, {"--dry-run"}, {"--rotate-password"},
-		{"--write"}, {"public.leads"}, {"--passkey-origin", "https://u:p@host"}, {"--prefix", "http://x"}, {"--write", "postgres://u:p@h/d"}, {"--write=host=h password=x"},
-		{"--agent", "other"}, {"--config", "/x"},
+		{"--admin-url", "x"},
+		{"-password", "x"},
+		{"--password=x"},
+		{"--yes"},
+		{"--dry-run"},
+		{"--rotate-password"},
+		{"--write"},
+		{"public.leads"},
+		{"--passkey-origin", "https://u:p@host"},
+		{"--prefix", "http://x"},
+		{"--write", "postgres://u:p@h/d"},
+		{"--write=host=h password=x"},
+		{"--agent", "other"},
+		{"--config", "/x"},
 	} {
 		_, err := NewCommands("bot", "", "linux", bad)
 		require.Error(t, err, "%v", bad)

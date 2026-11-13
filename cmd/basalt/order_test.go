@@ -88,8 +88,10 @@ func TestCompactRows(t *testing.T) {
 	require.Equal(t, `UPDATE public.leads (read at xmin:7) {"id":4} note "a b" -> null, status NEW -> CONTACTED`, rowLine(r, false))
 	require.Contains(t, rowLine(r, true), `before={"id":4,"note":"a b","score":1,"status":"NEW"}`)
 
-	del := ledger.RowChange{Op: "DELETE", Table: "public.notes", Key: map[string]any{"id": float64(5)}, Cascaded: true,
-		Before: map[string]any{"id": float64(5), "body": "x"}}
+	del := ledger.RowChange{
+		Op: "DELETE", Table: "public.notes", Key: map[string]any{"id": float64(5)}, Cascaded: true,
+		Before: map[string]any{"id": float64(5), "body": "x"},
+	}
 	require.Equal(t, `DELETE public.notes (cascaded) {"id":5}`, rowLine(del, false))
 	require.Equal(t, `"true"`, displayValue("true"))
 	require.Equal(t, `"12"`, displayValue("12"))

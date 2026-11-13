@@ -45,8 +45,10 @@ func newRemoteAgent(t *testing.T, dsn, kind string) remoteAgent {
 	require.NoError(t, config.WriteFile(r.credFile, []byte(dsn+"\n")))
 	r.setupID = uuid.Must(uuid.NewV7())
 	r.expires = time.Now().Add(time.Hour).UTC().Truncate(time.Second)
-	r.setup = config.Setup{SetupID: r.setupID.String(), Kind: kind, GuardVersion: guard.LatestVersion(),
-		ExpiresAt: r.expires.Format(time.RFC3339), Code: "basalt-setup.1.abc.def", Fingerprint: "a1b2 c3d4 e5f6 0718 293a"}
+	r.setup = config.Setup{
+		SetupID: r.setupID.String(), Kind: kind, GuardVersion: guard.LatestVersion(),
+		ExpiresAt: r.expires.Format(time.RFC3339), Code: "basalt-setup.1.abc.def", Fingerprint: "a1b2 c3d4 e5f6 0718 293a",
+	}
 	setup := r.setup
 	require.NoError(t, config.UpsertAgent(r.cfgPath, config.Settings{SocketDir: "/run/basalt", StateDir: dir, OperatedBy: mcpcontract.OperatedByAgent},
 		config.Agent{Name: "bot", OSUser: "bot", CredentialFile: r.credFile, InitArgs: []string{"--agent=bot", "--write=public.leads"}, Setup: &setup}))

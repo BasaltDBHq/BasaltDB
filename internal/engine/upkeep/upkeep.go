@@ -70,8 +70,10 @@ func New(agent, version string, db guard.Querier, log *slog.Logger, now func() t
 	if agent == "" || db == nil || log == nil || now == nil {
 		panic("upkeep: agent, db, logger and clock required")
 	}
-	return &Upkeep{agent: agent, version: version, operatedBy: operatedByPerson, db: db, log: log, now: now,
-		pins: &chainpin.Memory{}, rls: noRefresh{}, pii: noPII{}, admit: admitAll}
+	return &Upkeep{
+		agent: agent, version: version, operatedBy: operatedByPerson, db: db, log: log, now: now,
+		pins: &chainpin.Memory{}, rls: noRefresh{}, pii: noPII{}, admit: admitAll,
+	}
 }
 
 // operatedByPerson is the heartbeat's operatedBy until WithOperatedBy.

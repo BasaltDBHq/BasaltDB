@@ -656,6 +656,7 @@ type errCatalog struct {
 func (e *errCatalog) Relations(context.Context) ([]pgcatalog.Relation, int, error) {
 	return nil, 0, e.err
 }
+
 func (e *errCatalog) Find(context.Context, string, string) (pgcatalog.Relation, bool, error) {
 	return pgcatalog.Relation{}, false, e.err
 }

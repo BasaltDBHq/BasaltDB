@@ -141,8 +141,10 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			return r
 		}},
 		problemDatabaseUnreachable: {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: fmt.Errorf("dial %s: %w", statusCredential, context.DeadlineExceeded)}, 1, nil)},
-		problemCredentialRejected: {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: &pgconn.PgError{Code: "28P01",
-			Message: "password authentication failed (" + statusCredential + ")"}}, 1, nil)},
+		problemCredentialRejected: {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: &pgconn.PgError{
+			Code:    "28P01",
+			Message: "password authentication failed (" + statusCredential + ")",
+		}}, 1, nil)},
 		problemGuardMissing:       {state: guard.GuardMissing, report: engineStatus(&fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}}, 1, nil)},
 		problemGuardOutdated:      {state: guard.GuardOutdated, report: engineStatus(&fakeProbe{st: guardAt(guard.GuardOutdated, []int{guard.LatestVersion()}, nil)}, 1, nil)},
 		problemUpgradeAvailable:   {state: guard.GuardUpgradeAvailable, report: engineStatus(&fakeProbe{st: guardAt(guard.GuardUpgradeAvailable, nil, []int{guard.LatestVersion()})}, 1, nil)},
@@ -534,8 +536,10 @@ func TestEngineDownOnAnAgentOperatedEngine(t *testing.T) {
 	t.Parallel()
 	cmds, err := NewCommands("bot", "", "linux", nil)
 	require.NoError(t, err)
-	cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: mcpcontract.OperatedByAgent, Mode: config.ModeService,
-		Agents: []config.Agent{{Name: "bot", OSUser: "bot", CredentialFile: statusCredential}}}
+	cfg := &config.Config{
+		SocketDir: "/run/basalt", OperatedBy: mcpcontract.OperatedByAgent, Mode: config.ModeService,
+		Agents: []config.Agent{{Name: "bot", OSUser: "bot", CredentialFile: statusCredential}},
+	}
 	down := EngineDown{Name: "bot", Commands: cmds, Config: cfg, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
 	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, down.Tools()...)
 

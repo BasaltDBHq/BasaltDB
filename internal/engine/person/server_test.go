@@ -307,12 +307,16 @@ func TestThePersonSocketRoundTripsWhatTheCLIPrints(t *testing.T) {
 	require.NoError(t, err)
 	used := time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC)
 	keys := []ledger.Passkey{{
-		Credential: passkey.Credential{ID: []byte{9, 8, 7}, PublicKey: &key.PublicKey, SignCount: 4,
-			Relying: passkey.Relying{RPID: "localhost", Origin: "http://localhost:8787"}, UserHandle: []byte{1}},
+		Credential: passkey.Credential{
+			ID: []byte{9, 8, 7}, PublicKey: &key.PublicKey, SignCount: 4,
+			Relying: passkey.Relying{RPID: "localhost", Origin: "http://localhost:8787"}, UserHandle: []byte{1},
+		},
 		Label: "laptop", CreatedAt: used.Add(-time.Hour), LastUsedAt: &used,
 	}}
-	approval := ledger.Approval{ID: uuid.Must(uuid.NewV7()), RunID: uuid.Must(uuid.NewV7()), Rows: 12, Status: "PENDING",
-		ExpiresAt: used, BindingText: "binding", Lines: []string{"a", "b"}, Params: json.RawMessage(`[1]`), Assigned: []string{}}
+	approval := ledger.Approval{
+		ID: uuid.Must(uuid.NewV7()), RunID: uuid.Must(uuid.NewV7()), Rows: 12, Status: "PENDING",
+		ExpiresAt: used, BindingText: "binding", Lines: []string{"a", "b"}, Params: json.RawMessage(`[1]`), Assigned: []string{},
+	}
 	l := &fakeLedger{keys: keys, approval: approval}
 	c := serve(t, []uint32{personUID}, peerIs(personUID), l)
 

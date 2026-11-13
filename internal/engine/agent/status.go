@@ -626,8 +626,10 @@ func (s *Service) Admit(ctx context.Context) error {
 			"the guard in this database misses breaking migrations %s of this engine; only status works until the person upgrades it",
 			versions(st.MissingBreaking))}
 	case guard.GuardMissing:
-		return &mcp.ToolError{Code: CodeUnavailable, Reason: reasonGuardMissing,
-			Message: "the guard is not installed in this database; only status works until the person installs it"}
+		return &mcp.ToolError{
+			Code: CodeUnavailable, Reason: reasonGuardMissing,
+			Message: "the guard is not installed in this database; only status works until the person installs it",
+		}
 	}
 	return nil
 }

@@ -190,8 +190,10 @@ func agentServiceSpec(goos, bin, configPath, engineUser string, a agentInstall, 
 	// Root reads the existing config from the engine user's directory.
 	open := func(p string) (*os.File, error) { return openEngineFile(p, engineUser) }
 	raw, v, err := config.UpsertedVault(configPath, open,
-		config.Settings{SocketDir: config.DefaultSocketDir(goos), PagesURL: a.pagesURL, Mode: config.ModeService, PersonUIDs: a.personUIDs,
-			Vault: a.vault, VaultDefault: a.vaultDefault},
+		config.Settings{
+			SocketDir: config.DefaultSocketDir(goos), PagesURL: a.pagesURL, Mode: config.ModeService, PersonUIDs: a.personUIDs,
+			Vault: a.vault, VaultDefault: a.vaultDefault,
+		},
 		config.Agent{Name: a.name, OSUser: a.osUser, CredentialFile: cred, InitArgs: a.initArgs})
 	if err != nil {
 		return spec, err
@@ -219,17 +221,21 @@ func (a agentInstall) vaultChoice() vaultChoice {
 
 // agentInstall is what `service install --agent` needs for this init.
 func (f initFlags) agentInstall(dsn string) agentInstall {
-	return agentInstall{name: f.agent, osUser: f.osUser, pagesURL: f.passkeyOrigin, dsn: dsn,
+	return agentInstall{
+		name: f.agent, osUser: f.osUser, pagesURL: f.passkeyOrigin, dsn: dsn,
 		vault: f.vault.given.enum(), vaultDefault: f.vault.def.enum(),
-		initArgs: f.initArgs, keepCredential: f.keepCredential, personUIDs: f.personUIDs}
+		initArgs: f.initArgs, keepCredential: f.keepCredential, personUIDs: f.personUIDs,
+	}
 }
 
 // serviceInstallArgs is the one command init runs under sudo. The
 // credential goes on its stdin, never on the command line; when the role
 // kept its password the credential file stays and nothing goes on stdin.
 func serviceInstallArgs(f initFlags, bin string) []string {
-	args := []string{bin, "service", "install", "--config", f.configPath, "--user", f.engineUser,
-		"--agent", f.agent, "--os-user", f.osUser}
+	args := []string{
+		bin, "service", "install", "--config", f.configPath, "--user", f.engineUser,
+		"--agent", f.agent, "--os-user", f.osUser,
+	}
 	if f.passkeyOrigin != "" {
 		args = append(args, "--pages-url", f.passkeyOrigin)
 	}

@@ -162,7 +162,8 @@ func TestInitInstallsAndWritesCredential(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, config.DefaultSocketDir(runtime.GOOS), cfg.SocketDir)
 	require.Equal(t, []config.Agent{{Name: "bot", OSUser: "tester", CredentialFile: path, InitArgs: []string{
-		"--agent=bot", "--write=public.leads", "--prefix=" + d.Names.Prefix, "--os-user=tester"}}}, cfg.Agents)
+		"--agent=bot", "--write=public.leads", "--prefix=" + d.Names.Prefix, "--os-user=tester",
+	}}}, cfg.Agents)
 	raw, err := os.ReadFile(cfgPath)
 	require.NoError(t, err)
 	require.NotContains(t, string(raw), "basalt@", "the config holds no credential")

@@ -46,6 +46,7 @@ func (nopStore) RecordRefusal(context.Context, guard.Refusal) error { return nil
 func (nopStore) History(context.Context, ledger.ChangeListParams) (agentdb.History, error) {
 	return agentdb.History{}, nil
 }
+
 func (nopStore) ListRuns(context.Context, ledger.RunListParams) (pagination.Page[agentdb.RunSummary], error) {
 	return pagination.Page[agentdb.RunSummary]{}, nil
 }

@@ -88,8 +88,10 @@ func startShim(t *testing.T, socket string) (*client, <-chan error) {
 // fakeEngine serves a query tool on socket until the test ends.
 func fakeEngine(t *testing.T, socket string) {
 	t.Helper()
-	srv := mcp.NewServer(mcp.Info{Name: "basalt", Version: "engine"}, mcp.Tool{Name: "query",
-		Call: func(context.Context, json.RawMessage) (any, error) { return map[string]string{"from": "engine"}, nil }})
+	srv := mcp.NewServer(mcp.Info{Name: "basalt", Version: "engine"}, mcp.Tool{
+		Name: "query",
+		Call: func(context.Context, json.RawMessage) (any, error) { return map[string]string{"from": "engine"}, nil },
+	})
 	ln, err := net.Listen("unix", socket)
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -150,8 +152,10 @@ func TestShimWithoutAnEngineAnswersItselfThenUsesTheEngineOnceItIsUp(t *testing.
 func TestShimFallsBackWhenTheEngineGoesAway(t *testing.T) {
 	t.Parallel()
 	socket := filepath.Join(socketDir(t), "bot.sock")
-	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.Tool{Name: "query",
-		Call: func(context.Context, json.RawMessage) (any, error) { return map[string]string{"from": "engine"}, nil }})
+	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, mcp.Tool{
+		Name: "query",
+		Call: func(context.Context, json.RawMessage) (any, error) { return map[string]string{"from": "engine"}, nil },
+	})
 	ln, err := net.Listen("unix", socket)
 	require.NoError(t, err)
 	engineDone := make(chan struct{})

@@ -225,8 +225,10 @@ func TestInitRemoteFirstRunMakesAnInstallCode(t *testing.T) {
 	require.Equal(t, links.Portal, r.cfg.PagesURL)
 	a := r.cfg.Agents[0]
 	require.Equal(t, filepath.Join(filepath.Dir(cfg), "agents", "lead_bot.url"), a.CredentialFile)
-	require.Equal(t, &config.Setup{SetupID: p.SetupID, Kind: "INSTALL", GuardVersion: guard.LatestVersion(),
-		ExpiresAt: p.ExpiresAt, Code: r.res.Code, Fingerprint: r.res.Fingerprint}, a.Setup)
+	require.Equal(t, &config.Setup{
+		SetupID: p.SetupID, Kind: "INSTALL", GuardVersion: guard.LatestVersion(),
+		ExpiresAt: p.ExpiresAt, Code: r.res.Code, Fingerprint: r.res.Fingerprint,
+	}, a.Setup)
 	require.Contains(t, a.InitArgs, "--operated-by=agent")
 	_, err = agent.NewCommands(a.Name, cfg, "linux", a.InitArgs)
 	require.NoError(t, err, "the saved flags are ones the engine accepts")
@@ -449,9 +451,11 @@ func runCode(t *testing.T, d *guardtest.DB, p setupcode.Payload) {
 	agentName := ""
 	if p.Agent != nil {
 		agentName = p.Agent.Name
-		spec = guard.AgentSpec{Name: p.Agent.Name, Write: p.Agent.Write, Read: p.Agent.Read,
+		spec = guard.AgentSpec{
+			Name: p.Agent.Name, Write: p.Agent.Write, Read: p.Agent.Read,
 			Verifier: p.Agent.Verifier, CreateOnly: p.Kind == setupcode.KindInstall,
-			StatementTimeout: time.Duration(p.Agent.StatementTimeoutMs) * time.Millisecond}
+			StatementTimeout: time.Duration(p.Agent.StatementTimeoutMs) * time.Millisecond,
+		}
 	}
 	expires, err := p.ExpiresTime()
 	require.NoError(t, err)
@@ -467,8 +471,10 @@ func runCode(t *testing.T, d *guardtest.DB, p setupcode.Payload) {
 				return err
 			}
 		}
-		_, err := guard.RecordSetup(ctx, tx, d.Names, guard.Setup{ID: id, Kind: string(p.Kind), Agent: agentName,
-			GuardVersion: p.Guard.To, ExpiresAt: expires})
+		_, err := guard.RecordSetup(ctx, tx, d.Names, guard.Setup{
+			ID: id, Kind: string(p.Kind), Agent: agentName,
+			GuardVersion: p.Guard.To, ExpiresAt: expires,
+		})
 		return err
 	}))
 }

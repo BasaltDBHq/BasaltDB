@@ -89,14 +89,16 @@ func requestBlocks(text string) []string {
 	}
 	blocks := make([]string, 0, len(pieces))
 	for i, p := range pieces {
-		blocks = append(blocks, fmt.Sprintf("basalt-request %d/%d %s\n%s", i+1, len(pieces), h, p))
+		blocks = append(blocks, fmt.Sprintf("basalt-request %d/%d %s %d\n%s", i+1, len(pieces), h, len(p), p))
 	}
 	return blocks
 }
 
 var (
-	blockHeader = regexp.MustCompile(`basalt-request (\d+)/(\d+) ([A-Za-z0-9_-]{22})`)
-	notPiece    = regexp.MustCompile(`[^A-Za-z0-9_.-]`)
+	blockHeader = regexp.MustCompile(`(?:^|.* )basalt-request (\d+)/(\d+) ([A-Za-z0-9_-]{22}) (\d+)$`)
+	pieceLine   = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
+	pasteBreaks = regexp.MustCompile("\r\n|\n|\r|\u2028")
+	quoteMarks  = strings.NewReplacer(">", "", "*", "", "\\", "")
 )
 
 // blockAssembler is the page's paste box: it keeps the blocks pasted so far
@@ -107,28 +109,60 @@ type blockAssembler struct {
 	pieces map[int]string
 }
 
+type pastedBlock struct {
+	i, n  int
+	size  int
+	h     string
+	piece strings.Builder
+	open  bool
+}
+
+func cleanLine(line string) string {
+	return strings.TrimFunc(quoteMarks.Replace(line), func(r rune) bool { return unicode.Is(unicode.White_Space, r) })
+}
+
 // add reads one paste and reports whether the page refuses it: no header,
-// or a block of another request (another h, or another count).
+// or a block it refuses (another h, another count, or a piece shorter than
+// its header's length).
 func (a *blockAssembler) add(paste string) bool {
-	heads := blockHeader.FindAllStringSubmatchIndex(paste, -1)
-	if len(heads) == 0 {
+	var blocks []*pastedBlock
+	var cur *pastedBlock
+	for _, line := range pasteBreaks.Split(paste, -1) {
+		clean := cleanLine(line)
+		if m := blockHeader.FindStringSubmatch(clean); m != nil {
+			i, _ := strconv.Atoi(m[1])
+			n, _ := strconv.Atoi(m[2])
+			size, _ := strconv.Atoi(m[4])
+			cur = &pastedBlock{i: i, n: n, size: size, h: m[3], open: true}
+			blocks = append(blocks, cur)
+			continue
+		}
+		if cur == nil || !cur.open || cur.piece.Len() >= cur.size {
+			continue
+		}
+		if !pieceLine.MatchString(clean) {
+			cur.open = false
+			continue
+		}
+		cur.piece.WriteString(clean)
+	}
+	if len(blocks) == 0 {
 		return true
 	}
 	refused := false
-	for k, m := range heads {
-		end := len(paste)
-		if k+1 < len(heads) {
-			end = heads[k+1][0]
+	for _, b := range blocks {
+		piece := b.piece.String()
+		if b.size < 1 || b.size > requestPieceChars || len(piece) < b.size {
+			refused = true // cut short
+			continue
 		}
-		i, _ := strconv.Atoi(paste[m[2]:m[3]])
-		n, _ := strconv.Atoi(paste[m[4]:m[5]])
-		h := paste[m[6]:m[7]]
-		if h != a.h || i < 1 || i > n || n > requestMaxBlocks || (a.n != 0 && n != a.n) {
+		piece = piece[:b.size]
+		if b.h != a.h || b.i < 1 || b.i > b.n || b.n > requestMaxBlocks || (a.n != 0 && b.n != a.n) {
 			refused = true
 			continue
 		}
-		a.n = n
-		a.pieces[i] = notPiece.ReplaceAllString(paste[m[1]:end], "")
+		a.n = b.n
+		a.pieces[b.i] = piece
 	}
 	return refused
 }
@@ -149,6 +183,7 @@ func (a *blockAssembler) text() (string, string) {
 }
 
 func readRequestFile(content, h string) (string, string) {
+	content = strings.TrimPrefix(content, "\ufeff")
 	text := strings.Map(func(r rune) rune {
 		if unicode.Is(unicode.White_Space, r) {
 			return -1

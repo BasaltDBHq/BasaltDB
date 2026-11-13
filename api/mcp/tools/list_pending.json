@@ -131,7 +131,7 @@
                 "approvalUrl": {
                   "type": "string",
                   "format": "uri",
-                  "description": "The approval page for this held write: with reissueLink and when the engine serves the local pages, a newly issued short link http://localhost:<port>/approvals/<approvalId>#s=<secret> (the earlier one stops working); otherwise <base>/approvals/<approvalId>#1.<request> (base: the engine config's pagesUrl). When that long link is over the link budget: the hash link <base>/approvals/<approvalId>#h=<h>, with requestFile beside it."
+                  "description": "The approval page for this held write: with reissueLink and when the engine serves the local pages, a newly issued short link http://localhost:<port>/approvals/<approvalId>#s=<secret> (the earlier one stops working); otherwise <base>/approvals/<approvalId>#1.<request> (base: the engine config's pagesUrl). When that long link is over the link budget: the hash link <base>/approvals/<approvalId>#h=<h>, with requestFile beside it, except while the engine serves the local pages and reissueLink is not set: then the long link, no requestFile, and the OPEN_LINK step has no url (the person has the short link)."
                 },
                 "requestFile": {
                   "$ref": "../links/request-file.schema.json",
@@ -286,7 +286,7 @@
                 "revertUrl": {
                   "type": "string",
                   "format": "uri",
-                  "description": "A PENDING revert not widened: the revert page, its long link, or with reissueLink a newly issued short link when the engine serves the local pages (the earlier one stops working). When that long link is over the link budget: the hash link <base>/reverts/<revertId>#h=<h>, with requestFile beside it."
+                  "description": "A PENDING revert not widened: the revert page, its long link, or with reissueLink a newly issued short link when the engine serves the local pages (the earlier one stops working). When that long link is over the link budget: the hash link <base>/reverts/<revertId>#h=<h>, with requestFile beside it, except while the engine serves the local pages and reissueLink is not set: then the long link, no requestFile, and the OPEN_LINK step has no url (the person has the short link)."
                 },
                 "requestFile": {
                   "$ref": "../links/request-file.schema.json",

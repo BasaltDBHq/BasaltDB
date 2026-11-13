@@ -17,15 +17,21 @@
       "pattern": "^2\\.[A-Za-z0-9_-]+$",
       "description": "The request text: the long link's fragment without its #, 2.<request> (CONTRACT.md, Format 2). The whole content of the file, with no line break at its end."
     },
+    "path": {
+      "type": "string",
+      "minLength": 2,
+      "pattern": "^/[^\\u0000]*$",
+      "description": "Set by basalt mcp, never by the engine: the absolute path of a file on the agent's machine that holds exactly text (mode 0600, the agent's OS user), under <user cache dir>/basalt/requests/, named fileName. The agent attaches it instead of copying text. Absent when basalt mcp could not write it."
+    },
     "blocks": {
       "type": "array",
       "minItems": 1,
       "maxItems": 10,
       "items": {
         "type": "string",
-        "pattern": "^basalt-request ([1-9]|10)/([1-9]|10) [A-Za-z0-9_-]{22}\\n[A-Za-z0-9_.-]{1,1800}$"
+        "pattern": "^basalt-request ([1-9]|10)/([1-9]|10) [A-Za-z0-9_-]{22} [1-9][0-9]{0,3}\\n[A-Za-z0-9_.-]{1,1800}$"
       },
-      "description": "text cut into consecutive pieces of at most 1800 characters, in order: block i of n is the line basalt-request <i>/<n> <h>, a line break and the piece. Present when n is at most 10; absent above, when the request goes as a file only."
+      "description": "text cut into consecutive pieces of exactly 1800 characters (the last 1 to 1800), in order: block i of n is the line basalt-request <i>/<n> <h> <length> (the piece's length), a line break and the piece. Present when n is at most 10; absent above, when the request goes as a file only."
     }
   }
 }

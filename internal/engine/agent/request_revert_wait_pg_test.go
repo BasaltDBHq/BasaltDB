@@ -29,10 +29,6 @@ import (
 // tests, so a signature lands well inside the wait.
 const testPoll = 20 * time.Millisecond
 
-// relayDelay is how long the person takes to sign after the agent starts
-// waiting.
-const relayDelay = 300 * time.Millisecond
-
 // signRevertPage is the revert page on the local pages: read the request
 // for id with the link's secret, check it and sign it with the person's
 // passkey; it returns the response JSON the page posts to the relay.
@@ -49,13 +45,15 @@ func (p localPages) signRevertPage(id, secret string, person *passkeytest.Authen
 	return body
 }
 
-// relayLater posts the page's signed response to the relay after
-// relayDelay, while the agent waits, and sends the HTTP status (0 when the
-// request failed).
-func (p localPages) relayLater(id, secret string, body []byte) <-chan int {
+// relayLater posts the page's signed response to the relay once after
+// returns (nil: at once), while the agent waits, and sends the HTTP status
+// (0 when the request failed).
+func (p localPages) relayLater(id, secret string, body []byte, after func()) <-chan int {
 	done := make(chan int, 1)
 	go func() {
-		time.Sleep(relayDelay)
+		if after != nil {
+			after()
+		}
 		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
 			p.srv.URL+"/api/v1/reverts/"+id+"/apply", bytes.NewReader(body))
 		if err != nil {
@@ -173,13 +171,19 @@ func requireResultSteps(t *testing.T, body map[string]any, kase string) []map[st
 // and the catalog's steps for them.
 func requireErrorSteps(t *testing.T, body map[string]any, isError bool, code, reason string) []map[string]any {
 	t.Helper()
+	return requireScopedErrorSteps(t, body, isError, code, reason, "")
+}
+
+// requireScopedErrorSteps is requireErrorSteps for a failure in scope (TASK).
+func requireScopedErrorSteps(t *testing.T, body map[string]any, isError bool, code, reason, scope string) []map[string]any {
+	t.Helper()
 	requireToolError(t, body, isError, code, reason, "")
 	if reason == "" {
 		require.NotContains(t, body, "reason")
 	}
 	c, err := mcpcontract.LoadNextSteps()
 	require.NoError(t, err)
-	e, ok := c.ErrorEntry(code, reason, "request_revert")
+	e, ok := c.ErrorEntryFor(code, reason, "request_revert", scope)
 	require.True(t, ok, "%s %s", code, reason)
 	return requireSteps(t, body, e.Steps, e.PersonMessage)
 }
@@ -194,7 +198,7 @@ func TestRequestRevertWaitsForTheRelayedSignature(t *testing.T) {
 	req := requestRevert(t, env.h, map[string]any{"runId": runID, "intent": "Undo the merge"})
 	id, secret := str(t, req["revertId"]), links.SecretOf(str(t, req["revertUrl"]))
 
-	relayed := p.relayLater(id, secret, p.signRevertPage(id, secret, env.person))
+	relayed := p.relayLater(id, secret, p.signRevertPage(id, secret, env.person), env.afterRevertPolls())
 	start := time.Now()
 	body := requestRevert(t, env.h, map[string]any{"revertId": id})
 	require.Less(t, time.Since(start), 30*time.Second, "returns as soon as the person signs")
@@ -226,7 +230,7 @@ func TestRequestRevertWaitForALargePlan(t *testing.T) {
 	steps := requireResultSteps(t, req, "REQUESTED")
 	require.Equal(t, req["revertUrl"], steps[0]["url"])
 
-	relayed := p.relayLater(id, secret, p.signRevertPage(id, secret, e.person))
+	relayed := p.relayLater(id, secret, p.signRevertPage(id, secret, e.person), e.afterRevertPolls())
 	body := requestRevert(t, e.h, map[string]any{"revertId": id, "waitForSignature": 30})
 	require.Equal(t, http.StatusOK, <-relayed)
 	requireApplying(t, body)
@@ -376,7 +380,8 @@ func TestRequestRevertWaitCancelled(t *testing.T) {
 	id := uuid.MustParse(str(t, requestRevert(t, env.h, map[string]any{"runId": runID, "intent": "Undo"})["revertId"]))
 
 	ctx, cancel := context.WithCancel(context.Background())
-	time.AfterFunc(relayDelay, cancel)
+	afterPolls := env.afterRevertPolls()
+	go func() { afterPolls(); cancel() }()
 	start := time.Now()
 	_, err := env.svc.AwaitRevert(ctx, agent.AwaitRevertParams{RevertID: id, Wait: agent.DefaultRevertWait})
 	require.ErrorIs(t, err, context.Canceled)

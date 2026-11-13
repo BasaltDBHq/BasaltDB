@@ -8,7 +8,8 @@ formatters:
 
   settings:
     goimports:
-      local-prefixes: github.com/basaltdbhq/basaltdb
+      local-prefixes:
+        - github.com/basaltdbhq/basaltdb
 
 linters:
   default: standard
@@ -62,10 +63,6 @@ linters:
     warn-unused: true
     paths:
       - bin
-      - tmp
-      - vendor
-      - ".*\\.pb\\.go$"
-      - ".*\\.gen\\.go$"
     rules:
       - path: _test\.go
         linters:
@@ -93,46 +90,14 @@ linters:
         linters:
           - errcheck
 
-      - text: "Error return value of `c.JSON` is not checked"
-        linters:
-          - errcheck
-
-      - text: "unnecessary leading newline"
-        linters:
-          - whitespace
-
       - text: "G104:"
         linters:
           - gosec
-
-      - text: "ST1000:"
-        linters:
-          - stylecheck
-
-      - source: "//\\s*go:generate\\s"
-        linters:
-          - lll
-
-      - source: "^\\s*//\\s*(nolint|TODO|FIXME)"
-        linters:
-          - godot
 
       - text: "File is not properly formatted"
         linters:
           - goimports
           - gofumpt
-
-      - text: "import .* imported without alias"
-        linters:
-          - importas
-
-      - text: "string-format:"
-        linters:
-          - perfsprint
-
-      - text: "integer-format:"
-        linters:
-          - perfsprint
 
   disable:
     - gocyclo
@@ -197,7 +162,7 @@ linters:
 
     misspell:
       locale: US
-      ignore-words:
+      ignore-rules:
         - cancelled
 
     mnd:
@@ -306,8 +271,9 @@ issues:
 
 output:
   formats:
-    colored-line-number:
+    text:
       path: stdout
+      colors: true
   sort-order:
     - linter
     - severity

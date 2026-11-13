@@ -268,7 +268,7 @@ func TestMessagesOfferingACommandStayWithinTheLimitWithALongConfigPath(t *testin
 	var te *mcp.ToolError
 	require.ErrorAs(t, err, &te)
 	messages["nothing to revert, task"] = te.PersonMessage
-	require.Contains(t, te.Message, cmds.Revert(scope), "the command stays in message when personMessage points to it")
+	require.Equal(t, cmds.Revert(scope), te.NextSteps[len(te.NextSteps)-1].Command, "the command stays in a PERSON step")
 	messages["not granted"] = s.notGrantedSteps(NewSteps(), 12)
 	messages["describe not found"] = s.describeNotFoundSteps(NewSteps(), failure{tool: toolDescribe})
 	rls := &Service{Deps: Deps{Commands: cmds, Log: slog.New(slog.DiscardHandler)}}

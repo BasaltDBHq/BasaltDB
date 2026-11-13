@@ -53,6 +53,9 @@
     { "code": "NOTHING_TO_REVERT", "reason": "READS_ONLY", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] },
     { "code": "NOTHING_TO_REVERT", "reason": "ALL_CHANGED_BY_PEOPLE", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] },
     { "code": "NOTHING_TO_REVERT", "reason": "ALREADY_REVERTED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "code": "NOTHING_TO_REVERT", "reason": "READS_ONLY", "scope": "TASK", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "PERSON", "action": "RUN_COMMAND" }] },
+    { "code": "NOTHING_TO_REVERT", "reason": "ALL_CHANGED_BY_PEOPLE", "scope": "TASK", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "PERSON", "action": "RUN_COMMAND" }] },
+    { "code": "NOTHING_TO_REVERT", "reason": "ALREADY_REVERTED", "scope": "TASK", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "REVISE_CALL" }, { "actor": "PERSON", "action": "RUN_COMMAND" }] },
 
     { "code": "PERMISSION_DENIED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }] },
 

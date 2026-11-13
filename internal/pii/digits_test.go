@@ -38,14 +38,14 @@ func digitZeros() []rune {
 func TestMarksAndNonASCIIDigitsDoNotHideAPhone(t *testing.T) {
 	k := newKeys(t, testMaster)
 	tz := newTokenizer(t)
-	plain := mustToken(t, k, pii.EntityPhone, "+447700900456", "")
+	plain := mustToken(t, k, pii.EntityPhone, "+447911123456", "")
 	for _, in := range []string{
-		"+4477\u030100900456",             // a combining acute on a digit
-		"+4477009004\u20e356",             // a keycap mark
-		"+44 7700 900456\u20e3",           // a keycap at the end
-		inDigits("+447700900456", 0x0660), // Arabic-Indic
-		inDigits("+447700900456", 0x06F0), // Persian
-		inDigits("+447700900456", 0x0966), // Devanagari
+		"+4479\u030111123456",             // a combining acute on a digit
+		"+4479111234\u20e356",             // a keycap mark
+		"+44 7911 123456\u20e3",           // a keycap at the end
+		inDigits("+447911123456", 0x0660), // Arabic-Indic
+		inDigits("+447911123456", 0x06F0), // Persian
+		inDigits("+447911123456", 0x0966), // Devanagari
 	} {
 		require.Positive(t, finalScan(t, tz, in), "%q", in)
 		out, reps := tokenize(t, tz, in)
@@ -86,7 +86,7 @@ func TestNoCombiningMarkHidesAPhoneOrAnEmail(t *testing.T) {
 		value string
 		leaks []string
 	}{
-		{"+44 7700 900123", []string{"7700", "900123"}},
+		{"+44 7911 123123", []string{"7911", "123123"}},
 		{"fixture.alice.tamm@gmail.com", []string{"fixture", "alice", "tamm"}},
 	}
 	for _, v := range values {

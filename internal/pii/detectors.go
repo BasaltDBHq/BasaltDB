@@ -221,7 +221,8 @@ func (PhoneDetector) Detect(text string) []Span {
 			break
 		}
 		start, end := pos+m[2], pos+m[3]
-		n, ok := phoneEnd(text[start:end], end < len(text) && text[end] == '/')
+		evidence := func(n int) bool { return plusNumberIsAPhone(text, start, start+n) }
+		n, ok := phoneEnd(text[start:end], end < len(text) && text[end] == '/', evidence)
 		if !ok || (isIDDMatch(text[start:end]) && asciiAlnumAt(text, start-1)) || gluedToANumber(text, start, start+n, prevEnd) {
 			// A match that is no phone (a date, an id, a long number), or a
 			// "00" glued to letters or digits, covers no number: search again
@@ -272,6 +273,65 @@ func allASCIIAlnum(s string) bool {
 	return true
 }
 
+// plusNumberIsAPhone reports whether the number at text[start:end] has the
+// evidence a "+" number needs to be a phone (owner decision EV-1): its digits
+// are a valid number, as libphonenumber reads them, or a possible one with a
+// phone word next to it (hasPhoneWordNear). Shape alone took signed figures
+// for phones ("score +12 3456 7890 points"). Numbers written with "00" or in
+// the US form are not "+" numbers and need no more evidence than their shape.
+// The check reads only the text around the number up to the claimed spans on
+// either side, and a second pass claims more of that text, never less, so it
+// rejects what the first one did.
+func plusNumberIsAPhone(text string, start, end int) bool {
+	if text[start] != '+' {
+		return true
+	}
+	num, err := phonenumbers.Parse("+"+asciiDigitsOf(text[start:end]), "")
+	if err != nil || !phonenumbers.IsPossibleNumber(num) {
+		return false
+	}
+	return phonenumbers.IsValidNumber(num) || hasPhoneWordNear(text, start, end)
+}
+
+// phoneWords are words that mark a number next to them as a phone, in English
+// and Indonesian, lower case (the shape view folds case).
+var phoneWords = map[string]bool{
+	"tel": true, "telp": true, "telephone": true, "telepon": true, "phone": true, "phones": true,
+	"ph": true, "mobile": true, "mob": true, "cell": true, "cellphone": true, "hp": true,
+	"handphone": true, "ponsel": true, "wa": true, "whatsapp": true, "call": true, "fax": true,
+	"sms": true, "hubungi": true,
+}
+
+// Where hasPhoneWordNear looks for a phone word: the phoneWordsBefore nearest
+// words in the phoneWordReachBefore bytes before a number, and the first word
+// in the phoneWordReachAfter bytes after it. A word is a run of ASCII letters;
+// digits and punctuation between are skipped, so a label still counts across
+// a list of numbers ("phones: +44 …, +44 …") or a JSON key ("phone_number":).
+// The reach bounds the work per number.
+const (
+	phoneWordsBefore     = 3
+	phoneWordReachBefore = 64
+	phoneWordReachAfter  = 32
+)
+
+// hasPhoneWordNear reports a phone word next to the number at text[start:end]
+// ("tel +44 …", "call me at +44 …", "+44 … (WA)").
+func hasPhoneWordNear(text string, start, end int) bool {
+	before := letterWords(text[max(0, start-phoneWordReachBefore):start])
+	for i := len(before) - 1; i >= 0 && i >= len(before)-phoneWordsBefore; i-- {
+		if phoneWords[before[i]] {
+			return true
+		}
+	}
+	after := letterWords(text[end:min(len(text), end+phoneWordReachAfter)])
+	return len(after) > 0 && phoneWords[after[0]]
+}
+
+// letterWords are the runs of ASCII letters in s, in order.
+func letterWords(s string) []string {
+	return strings.FieldsFunc(s, func(r rune) bool { return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') })
+}
+
 // isIDDMatch reports a match written with the "00" prefix instead of "+".
 func isIDDMatch(match string) bool { return strings.HasPrefix(match, iddPrefix) }
 
@@ -284,9 +344,12 @@ func isIDDMatch(match string) bool { return strings.HasPrefix(match, iddPrefix) 
 // digit run as often as a phone (an id, an order number), so it counts only
 // with a separator in it and when its length is one its country dials
 // (possibleIDD), and its "00" counts as no digits. A number whose only
-// separator is one '.' is a signed decimal (+48.858370), not a phone.
-// slashNext says a '/' follows the match.
-func phoneEnd(match string, slashNext bool) (int, bool) {
+// separator is one '.' is a signed decimal (+48.858370), not a phone. A "+"
+// number also needs evidence (plusNumberIsAPhone), told by evidence for the
+// prefix of each length; a prefix without it is passed over for a shorter
+// one, so a phone followed by a lone group ("+1 202 555 0143 99") is still
+// found, without the group. slashNext says a '/' follows the match.
+func phoneEnd(match string, slashNext bool, evidence func(n int) bool) (int, bool) {
 	idd := isIDDMatch(match)
 	for end := len(match); end > 0; end-- {
 		// A cut ends on a digit before a separator, and before a '/' only
@@ -308,7 +371,7 @@ func phoneEnd(match string, slashNext bool) (int, bool) {
 		if n < minPhoneDigits {
 			return 0, false
 		}
-		if phoneWholeRe.MatchString(match[:end]) && separatorsOK(match[:end]) && !isDecimal(match[:end]) && (!idd || possibleIDD(match[:end])) {
+		if phoneWholeRe.MatchString(match[:end]) && separatorsOK(match[:end]) && !isDecimal(match[:end]) && (!idd || possibleIDD(match[:end])) && evidence(end) {
 			return end, true
 		}
 	}
@@ -461,40 +524,12 @@ func NewDictionaryDetector(keys *Keys, dict Dictionary, phoneRegion string) *Dic
 	return &DictionaryDetector{keys: keys, dict: dict, phoneRegion: phoneRegion}
 }
 
-// Detect returns the dictionary n-gram hits in text. Without the original
-// text it cannot see capitals, so a single common word is matched only after
-// a title (nameCue); the tokenizer calls detectView instead.
+// Detect returns the dictionary n-gram hits in text, longest first.
 func (d *DictionaryDetector) Detect(text string) []Span {
-	return d.detect(text, func(int, int) bool { return false })
-}
-
-// detectView is Detect over the folded view of orig, reading capitals from
-// orig: a word is capitalized when the first letter it came from is upper or
-// title case.
-func (d *DictionaryDetector) detectView(view foldedView, orig string) []Span {
-	return d.detect(view.text, func(start, end int) bool {
-		from, to := view.original(Span{Start: start, End: end})
-		return startsWithCapital(orig[from:to])
-	})
-}
-
-// startsWithCapital reports whether the first letter of s is upper or title case.
-func startsWithCapital(s string) bool {
-	for _, r := range s {
-		if unicode.IsLetter(r) {
-			return unicode.IsUpper(r) || unicode.IsTitle(r)
-		}
-	}
-	return false
-}
-
-// detect finds the hits in text (folded); capital reports whether the word at
-// [start, end) of text is capitalized in the original.
-func (d *DictionaryDetector) detect(text string, capital func(start, end int) bool) []Span {
 	ws := splitWords(text)
 	var out []Span
 	for i := 0; i < len(ws); {
-		n, typ := d.longestHit(text, ws, i, capital)
+		n, typ := d.longestHit(text, ws, i)
 		if n == 0 {
 			i++
 			continue
@@ -517,15 +552,16 @@ func phoneStart(text string, start int, typ EntityType) int {
 	return start
 }
 
-func (d *DictionaryDetector) longestHit(text string, ws []word, i int, capital func(start, end int) bool) (int, EntityType) {
+func (d *DictionaryDetector) longestHit(text string, ws []word, i int) (int, EntityType) {
 	for n := min(maxNGram, len(ws)-i); n >= 1; n-- {
 		if !tightlyJoined(text, ws[i:i+n]) {
 			continue
 		}
 		form := GenericForm(text[ws[i].start:ws[i+n-1].end])
-		// An empty form (only format characters) is never a value. A single
-		// common word is one only with a name cue.
-		if form == "" || (n == 1 && isCommonWord(form) && !nameCue(text, ws, i, capital)) {
+		// An empty form (only format characters) is never a value, and a
+		// single common word is never one in free text: detection does not
+		// guess from context whether it names someone (owner decision DD-1).
+		if form == "" || (n == 1 && isCommonWord(form)) {
 			continue
 		}
 		if typ, ok := d.dict.Lookup(d.keys.hash(genericHashPrefix + form)); ok {
@@ -533,46 +569,6 @@ func (d *DictionaryDetector) longestHit(text string, ws []word, i int, capital f
 		}
 	}
 	return 0, ""
-}
-
-// nameTitles are the titles that make the word after them a name ("Mr.
-// Brown"), in generic form.
-var nameTitles = map[string]bool{"mr": true, "mrs": true, "ms": true, "dr": true, "prof": true}
-
-// nameCue reports whether the single common word ws[i] reads as a name
-// (owner decisions, PT-10, provisional): a title comes right before it
-// ("Mr. Brown", "dr hope"), or it is capitalized and does not start a
-// sentence ("ask Hope about it"). A word that starts a sentence ("Price
-// called") is not one: the text gives no sign. The start of the text the
-// detector sees counts as a sentence start, so a second pass, which sees the
-// text cut at the tokens of the first, decides as the first did.
-func nameCue(text string, ws []word, i int, capital func(start, end int) bool) bool {
-	if i > 0 && nameTitles[text[ws[i-1].start:ws[i-1].end]] && titleGap(text[ws[i-1].end:ws[i].start]) {
-		return true
-	}
-	return capital(ws[i].start, ws[i].end) && !sentenceStart(text[:ws[i].start])
-}
-
-// titleGap reports whether gap may stand between a title and a name: an
-// optional '.', then one to three spaces.
-func titleGap(gap string) bool {
-	gap = strings.TrimPrefix(gap, ".")
-	return gap != "" && len(gap) <= maxSeparatorLen && strings.Trim(gap, " ") == ""
-}
-
-// sentenceOpeners are what may stand between a sentence end and its first
-// word: spaces, quotes and opening brackets.
-const sentenceOpeners = " \t\"'([{«“‘*_"
-
-// sentenceStart reports whether a word after before starts a sentence: before
-// is empty or ends in '.', '!', '?' or a line break, once spaces, quotes and
-// opening brackets are trimmed.
-func sentenceStart(before string) bool {
-	before = strings.TrimRight(before, sentenceOpeners)
-	if before == "" {
-		return true
-	}
-	return strings.ContainsRune(".!?\n\r", rune(before[len(before)-1]))
 }
 
 type word struct{ start, end int }

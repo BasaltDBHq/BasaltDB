@@ -46,11 +46,8 @@ func runAccess(c *cliIO, args []string) int {
 			NotGranted []string `json:"notGranted"`
 		}{orEmpty(access.Read), orEmpty(access.Write), orEmpty(access.NotGranted)}))
 	}
-	cmds, err := accessCommands(c, *name, *configPath)
-	if err != nil {
-		return c.fail(err)
-	}
-	printAccess(c.stdout, access, cmds)
+	cmds, known := accessCommands(c, *name, *configPath)
+	printAccess(c.stdout, access, cmds, known)
 	return exitOK
 }
 
@@ -61,30 +58,33 @@ func orEmpty(s []string) []string {
 	return s
 }
 
-// accessCommands are the agent's commands with its saved init flags when the
-// config can be read; in service mode it is the engine's, so the grant
-// command then carries only the agent and the table.
-func accessCommands(c *cliIO, name, configPath string) (agent.Commands, error) {
-	var initArgs []string
+// accessCommands are the agent's commands built from its saved init flags,
+// and whether those flags were read. In service mode the person usually
+// cannot read engine.json; a command built without them would reset the
+// agent's saved flags, so the caller then prints only the flag to add.
+func accessCommands(c *cliIO, name, configPath string) (cmds agent.Commands, known bool) {
 	abs, err := filepath.Abs(configPath)
-	if err == nil {
-		if cfg, err := config.Load(abs); err == nil {
-			for _, a := range cfg.Agents {
-				if a.Name == name {
-					initArgs = a.InitArgs
-				}
-			}
-		}
-		configPath = abs
-	}
-	cmds, err := agent.NewCommands(name, configPath, c.goos, initArgs)
 	if err != nil {
-		return agent.NewCommands(name, configPath, c.goos, nil)
+		return agent.Commands{}, false
 	}
-	return cmds, nil
+	cfg, err := config.Load(abs)
+	if err != nil {
+		return agent.Commands{}, false
+	}
+	for _, a := range cfg.Agents {
+		if a.Name != name {
+			continue
+		}
+		cmds, err := agent.NewCommands(name, abs, c.goos, a.InitArgs)
+		if err != nil {
+			return agent.Commands{}, false
+		}
+		return cmds.OperatedBy(cfg.OperatedBy), true
+	}
+	return agent.Commands{}, false
 }
 
-func printAccess(w io.Writer, a pgcatalog.Access, cmds agent.Commands) {
+func printAccess(w io.Writer, a pgcatalog.Access, cmds agent.Commands, known bool) {
 	several := schemaCount(a) > 1
 	section := func(title string, tables []string, suffix func(string) string) {
 		fmt.Fprintln(w, title)
@@ -112,12 +112,27 @@ func printAccess(w io.Writer, a pgcatalog.Access, cmds agent.Commands) {
 	section("Can write", a.Write, none)
 	fmt.Fprintln(w)
 	section("Not granted", a.NotGranted, func(t string) string {
-		cmd, err := cmds.Grant("read", t)
+		grant := cmds.Grant
+		if cmds.AgentOperated() {
+			grant = cmds.RemoteGrant
+		}
+		if !known {
+			grant = func(flag, table string) (string, error) {
+				if _, err := (agent.Commands{}).Grant(flag, table); err != nil {
+					return "", err
+				}
+				return "--" + flag + "=" + table, nil
+			}
+		}
+		cmd, err := grant("read", t)
 		if err != nil { // agent.ErrBadTable: not a plain schema.table
 			return "  grant by hand"
 		}
 		return "  " + cmd
 	})
+	if !known && len(a.NotGranted) > 0 {
+		fmt.Fprintln(w, "Add this flag to the basalt init command you set this agent up with.")
+	}
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "These names are not shown to the agent.")
 }

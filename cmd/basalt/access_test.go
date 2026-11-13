@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/pgcatalog"
 )
@@ -40,8 +41,12 @@ func TestAccessPrintsGrantCommands(t *testing.T) {
 	require.Contains(t, r.stdout, "public.leads")
 	require.Contains(t, r.stdout, "public.orders")
 	require.Contains(t, r.stdout, "public.invoices")
-	require.Contains(t, r.stdout, "basalt init --agent bot --read=public.invoices")
-	require.NotContains(t, r.stdout, "--read public.leads")
+	// The saved init flags are unreadable here, so only the flag is printed:
+	// a full init command would reset the agent's saved flags.
+	require.Contains(t, r.stdout, "public.invoices  --read=public.invoices\n")
+	require.NotContains(t, r.stdout, "basalt init --agent")
+	require.Equal(t, 1, strings.Count(r.stdout, "Add this flag to the basalt init command you set this agent up with.\n"))
+	require.NotContains(t, r.stdout, "--read=public.leads")
 	require.True(t, strings.HasSuffix(r.stdout, "These names are not shown to the agent.\n"), r.stdout)
 }
 
@@ -51,7 +56,7 @@ func TestAccessBadTableName(t *testing.T) {
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Contains(t, r.stdout, `public."odd name"`)
 	require.Contains(t, r.stdout, "grant by hand")
-	require.NotContains(t, r.stdout, "basalt init")
+	require.NotContains(t, r.stdout, "--read=")
 }
 
 func TestAccessGroupsBySchemaWhenThereAreSeveral(t *testing.T) {
@@ -92,4 +97,35 @@ func TestAccessDirectModeUsesTheAgentCredential(t *testing.T) {
 	require.Contains(t, r.stdout, "public.leads")
 	require.NotContains(t, r.stdout, "basalt_meta")
 	require.True(t, strings.HasSuffix(r.stdout, "These names are not shown to the agent.\n"), r.stdout)
+}
+
+func TestAccessDirectModeKeepsTheSavedFlagsInTheGrant(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	cfgPath := tempConfig(t)
+	initAgent(t, d, cfgPath)
+	d.Exec(t, `CREATE TABLE public.invoices (id int)`)
+
+	r := cli(t, nil, "", "access", "--agent", "bot", "--config", cfgPath)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Contains(t, r.stdout, "public.invoices  basalt init ")
+	require.Contains(t, r.stdout, "--write=public.leads", "the saved write list is extended, not replaced")
+	require.Contains(t, r.stdout, "--read=public.invoices")
+	require.Contains(t, r.stdout, "--prefix")
+	require.Contains(t, r.stdout, "--os-user")
+	require.NotContains(t, r.stdout, "Add this flag")
+}
+
+func TestAccessAgentOperatedEnginePrintsTheSetupCodeRoute(t *testing.T) {
+	t.Parallel()
+	cmds, err := agent.NewCommands("bot", "", "linux", []string{"--write=public.leads"})
+	require.NoError(t, err)
+	cmds = cmds.OperatedBy("AGENT")
+	want, err := cmds.RemoteGrant("read", "public.invoices")
+	require.NoError(t, err)
+	var out strings.Builder
+	printAccess(&out, pgcatalog.Access{NotGranted: []string{"public.invoices"}}, cmds, true)
+	require.Contains(t, out.String(), want)
+	require.Contains(t, want, "--remote")
+	require.NotContains(t, out.String(), "Add this flag")
 }

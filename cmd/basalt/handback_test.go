@@ -48,6 +48,34 @@ func handBackFixture(t *testing.T) (*registrationHandBack, []byte, *passkeytest.
 	return h, body, person
 }
 
+// registrationBody is a new authenticator's registration for req, as the
+// page posts it.
+func registrationBody(t *testing.T, req passkey.RegistrationRequest) ([]byte, *passkeytest.Authenticator) {
+	t.Helper()
+	a, err := passkeytest.New(handBackRP)
+	require.NoError(t, err)
+	resp, err := a.Register(req, nil)
+	require.NoError(t, err)
+	body, err := json.Marshal(resp)
+	require.NoError(t, err)
+	return body, a
+}
+
+// pairingOf is the pairing code the page shows for cred, "XXXX-XXXX".
+func pairingOf(t *testing.T, req passkey.RegistrationRequest, cred passkey.Credential) string {
+	t.Helper()
+	x, y, err := cred.XY()
+	require.NoError(t, err)
+	return passkey.PairingCode(req.Challenge, cred.ID, x, y)
+}
+
+func normalPairing(t *testing.T, code string) string {
+	t.Helper()
+	n, ok := passkey.NormalizePairingCode(code)
+	require.True(t, ok)
+	return n
+}
+
 func handBackPost(h http.Handler, origin, secret, contentType string, body []byte) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(http.MethodPost, handBackPath, bytes.NewReader(body))
 	if origin != "" {
@@ -62,7 +90,7 @@ func handBackPost(h http.Handler, origin, secret, contentType string, body []byt
 	return w
 }
 
-func TestHandBackTakesThePasskeyOnce(t *testing.T) {
+func TestHandBackKeepsAVerifiedPasskey(t *testing.T) {
 	t.Parallel()
 	h, body, person := handBackFixture(t)
 	require.Regexp(t, `^[A-Za-z0-9_-]{22}$`, h.secret, "16 random bytes, base64url")
@@ -70,15 +98,32 @@ func TestHandBackTakesThePasskeyOnce(t *testing.T) {
 	w := handBackPost(h, handBackOrigin, h.secret, "application/json", body)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	require.JSONEq(t, `{"status":"RECEIVED"}`, w.Body.String())
-	select {
-	case cred := <-h.received:
-		require.Equal(t, person.Credential().ID, cred.ID)
-	default:
-		t.Fatal("the verified passkey was not handed to init")
-	}
+	require.Equal(t, 1, h.count(), "the verified passkey is kept for init")
+	cred, n := h.match(normalPairing(t, pairingOf(t, h.req, person.Credential())))
+	require.Equal(t, 1, n)
+	require.Equal(t, person.Credential().ID, cred.ID)
 
 	w = handBackPost(h, handBackOrigin, h.secret, "application/json", body)
-	require.Equal(t, http.StatusNotFound, w.Code, "the secret works once")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Equal(t, 1, h.count(), "the same registration posted again is kept once")
+}
+
+// TestHandBackRefusesAFifthRegistration: init keeps at most four verified
+// registrations; the fifth post is refused and changes nothing.
+func TestHandBackRefusesAFifthRegistration(t *testing.T) {
+	t.Parallel()
+	h, _, _ := handBackFixture(t)
+	for i := range maxHandBacks + 1 {
+		body, _ := registrationBody(t, h.req)
+		w := handBackPost(h, handBackOrigin, h.secret, "application/json", body)
+		if i < maxHandBacks {
+			require.Equal(t, http.StatusOK, w.Code, "post %d: %s", i+1, w.Body.String())
+			continue
+		}
+		require.Equal(t, http.StatusTooManyRequests, w.Code, w.Body.String())
+		require.JSONEq(t, `{"code":"RATE_LIMITED","message":"basalt init already holds as many passkeys as it takes; run basalt init again"}`, w.Body.String())
+	}
+	require.Equal(t, maxHandBacks, h.count())
 }
 
 func TestHandBackRefuses(t *testing.T) {
@@ -112,7 +157,7 @@ func TestHandBackRefuses(t *testing.T) {
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &e), tc.name)
 		require.NotEmpty(t, e.Message, tc.name)
 	}
-	require.Empty(t, h.received, "nothing reached init")
+	require.Zero(t, h.count(), "nothing reached init")
 
 	// A refused post does not use the secret up.
 	w := handBackPost(h, handBackOrigin, h.secret, "application/json", body)
@@ -122,18 +167,36 @@ func TestHandBackRefuses(t *testing.T) {
 func TestReadRegistrationTakesThePageHandBack(t *testing.T) {
 	t.Parallel()
 	h, body, person := handBackFixture(t)
-	var stderr bytes.Buffer
-	// A closed stdin is no answer: init keeps waiting for the page.
-	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: io.Discard, err: &stderr}, func(string) string { return "" })
+	stderr := &lockedBuffer{}
+	in, typed := io.Pipe()
+	c := newIO(context.Background(), stdio{in: in, out: io.Discard, err: stderr}, func(string) string { return "" })
+	code := strings.ToLower(pairingOf(t, h.req, person.Credential()))
 	go func() {
+		// The registration arrives while init waits, then the person types
+		// the code the page shows.
 		time.Sleep(50 * time.Millisecond)
 		handBackPost(h, handBackOrigin, h.secret, "application/json", body)
+		_, _ = io.WriteString(typed, code+"\n")
 	}()
-	cred, err := readRegistration(c, h.req, handBackRP, h)
+	var cred passkey.Credential
+	var err error
+	within(t, func() { cred, err = readRegistration(c, h.req, handBackRP, h) })
 	require.NoError(t, err)
 	require.Equal(t, person.Credential().ID, cred.ID)
-	require.Contains(t, stderr.String(), "or paste the code it shows here")
-	require.Contains(t, stderr.String(), "the page sent the passkey to basalt init")
+	require.Contains(t, stderr.String(), "basalt: Type or paste the code the page shows: ")
+	require.Contains(t, stderr.String(), "the code matches the passkey the page sent to basalt init")
+}
+
+// TestReadRegistrationNeedsTheCode: the page's post alone registers
+// nothing; a closed stdin, with no code typed, ends init.
+func TestReadRegistrationNeedsTheCode(t *testing.T) {
+	t.Parallel()
+	h, body, _ := handBackFixture(t)
+	require.Equal(t, http.StatusOK, handBackPost(h, handBackOrigin, h.secret, "application/json", body).Code)
+	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: io.Discard, err: io.Discard}, func(string) string { return "" })
+	var err error
+	within(t, func() { _, err = readRegistration(c, h.req, handBackRP, h) })
+	require.ErrorContains(t, err, "no passkey code")
 }
 
 // freeLocalOrigin is http://localhost:<a port nothing listens on>.
@@ -167,7 +230,8 @@ func (b *lockedBuffer) String() string {
 var registerLink = regexp.MustCompile(`/passkeys/register#(1\.[A-Za-z0-9_-]+)`)
 
 // TestInitTakesThePasskeyFromThePage: when init serves the registration
-// page, the page posts the passkey back and nothing is pasted.
+// page, the page posts the passkey back and the person types only the
+// short pairing code the page shows.
 func TestInitTakesThePasskeyFromThePage(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
@@ -177,7 +241,8 @@ func TestInitTakesThePasskeyFromThePage(t *testing.T) {
 	require.NoError(t, err)
 
 	stderr := &lockedBuffer{}
-	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: io.Discard, err: stderr},
+	in, typed := io.Pipe()
+	c := newIO(context.Background(), stdio{in: in, out: io.Discard, err: stderr},
 		func(k string) string { return map[string]string{envAdminURL: d.URL}[k] })
 	codes := make(chan int, 1)
 	go func() {
@@ -187,46 +252,24 @@ func TestInitTakesThePasskeyFromThePage(t *testing.T) {
 		})
 	}()
 
-	var frag string
-	require.Eventually(t, func() bool {
-		m := registerLink.FindStringSubmatch(stderr.String())
-		if m != nil {
-			frag = m[1]
-		}
-		return m != nil
-	}, 30*time.Second, 20*time.Millisecond, "init printed no registration link")
-	req, err := passkey.ParseRegistrationRequest(frag)
+	req := handBackFromInit(t, stderr, origin, person)
+	_, err = io.WriteString(typed, pairingOf(t, req, person.Credential())+"\n")
 	require.NoError(t, err)
-	require.NotEmpty(t, req.HandBack, "the link carries the hand-back secret")
-	resp, err := person.Register(req, nil)
-	require.NoError(t, err)
-	body, err := json.Marshal(resp)
-	require.NoError(t, err)
-
-	post, err := http.NewRequest(http.MethodPost, origin+handBackPath, bytes.NewReader(body))
-	require.NoError(t, err)
-	post.Header.Set("Origin", origin)
-	post.Header.Set("Content-Type", "application/json")
-	post.Header.Set(links.SecretHeader, req.HandBack)
-	res, err := http.DefaultClient.Do(post)
-	require.NoError(t, err)
-	require.NoError(t, res.Body.Close())
-	require.Equal(t, http.StatusOK, res.StatusCode)
 
 	select {
 	case code := <-codes:
 		require.Equal(t, exitOK, code, stderr.String())
 	case <-time.After(30 * time.Second):
-		t.Fatal("init did not finish after the page handed the passkey back")
+		t.Fatal("init did not finish after the person typed the pairing code")
 	}
 	require.Contains(t, stderr.String(), "passkey registered for localhost")
 	require.Equal(t, 1, count(t, d, `SELECT count(credential_id) FROM basalt_meta.passkeys`))
 }
 
 // fallbackIO is a cliIO whose stdin is a terminal whose modes cannot be
-// set (as on a platform without raw reads), with nothing ever typed: a
-// plain line read of it blocks until the test ends.
-func fallbackIO(t *testing.T, stderr io.Writer, raw rawLineReader) *cliIO {
+// set (as on a platform without raw reads): a plain line read of it blocks
+// until a line is written to the returned end or the test ends.
+func fallbackIO(t *testing.T, stderr io.Writer, raw rawLineReader) (*cliIO, *os.File) {
 	t.Helper()
 	r, w, err := os.Pipe()
 	require.NoError(t, err)
@@ -237,7 +280,7 @@ func fallbackIO(t *testing.T, stderr io.Writer, raw rawLineReader) *cliIO {
 	c := newIO(context.Background(), stdio{in: r, out: io.Discard, err: stderr}, func(string) string { return "" })
 	c.terminal = r
 	c.rawRead = raw
-	return c
+	return c, w
 }
 
 func noRawRead(context.Context, *os.File, []byte) (string, error) { return "", errNoRawRead }
@@ -264,10 +307,12 @@ func within(t *testing.T, f func()) {
 func TestReadRegistrationWithoutRawReads(t *testing.T) {
 	t.Parallel()
 	h, body, person := handBackFixture(t)
-	c := fallbackIO(t, io.Discard, noRawRead)
+	c, typed := fallbackIO(t, io.Discard, noRawRead)
+	code := pairingOf(t, h.req, person.Credential())
 	go func() {
 		time.Sleep(50 * time.Millisecond)
 		handBackPost(h, handBackOrigin, h.secret, "application/json", body)
+		_, _ = io.WriteString(typed, code+"\n")
 	}()
 	var cred passkey.Credential
 	var err error
@@ -278,7 +323,7 @@ func TestReadRegistrationWithoutRawReads(t *testing.T) {
 
 func TestPasteInBackgroundStopsWithoutRawReads(t *testing.T) {
 	t.Parallel()
-	c := fallbackIO(t, io.Discard, noRawRead)
+	c, _ := fallbackIO(t, io.Discard, noRawRead)
 	_, stop := c.pasteInBackground(context.Background())
 	time.Sleep(20 * time.Millisecond) // let the read start
 	within(t, stop)
@@ -290,22 +335,24 @@ func TestPasteInBackgroundStopsWithoutRawReads(t *testing.T) {
 }
 
 // TestReadRegistrationReportsAPasteError: a paste that cannot be read is
-// said, and the page can still answer.
+// said, and the person can type the code again.
 func TestReadRegistrationReportsAPasteError(t *testing.T) {
 	t.Parallel()
 	h, body, person := handBackFixture(t)
+	require.Equal(t, http.StatusOK, handBackPost(h, handBackOrigin, h.secret, "application/json", body).Code)
+	code := pairingOf(t, h.req, person.Credential())
 	var stderr lockedBuffer
-	c := fallbackIO(t, &stderr, func(context.Context, *os.File, []byte) (string, error) {
-		return "", errors.New("the pasted text is longer than 64 KiB")
+	reads := 0
+	c, _ := fallbackIO(t, &stderr, func(context.Context, *os.File, []byte) (string, error) {
+		if reads++; reads == 1 {
+			return "", errors.New("the pasted text is longer than 64 KiB")
+		}
+		return code, nil
 	})
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		handBackPost(h, handBackOrigin, h.secret, "application/json", body)
-	}()
 	var cred passkey.Credential
 	var err error
 	within(t, func() { cred, err = readRegistration(c, h.req, handBackRP, h) })
 	require.NoError(t, err)
 	require.Equal(t, person.Credential().ID, cred.ID)
-	require.Contains(t, stderr.String(), "basalt: the pasted code was not read (the pasted text is longer than 64 KiB); waiting for the page")
+	require.Contains(t, stderr.String(), "basalt: the pasted code was not read (the pasted text is longer than 64 KiB); type the code again")
 }

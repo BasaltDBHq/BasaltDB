@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -216,6 +217,25 @@ func TestInitPromptTakesALongCode(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, person.Credential().ID, cred.ID)
 	require.Contains(t, stderr.String(), "Paste the code the page shows: ")
+}
+
+// TestInitPromptTakesAPairingCode: with the hand-back on, the person types
+// the short code at a terminal, after a wrong one, and init keeps their
+// registration over one another program posted first.
+func TestInitPromptTakesAPairingCode(t *testing.T) {
+	t.Parallel()
+	term := newTerminal(t)
+	var stderr bytes.Buffer
+	c := ptyIO(term, io.Discard, &stderr)
+	h, personBody, person := handBackFixture(t)
+	rogueBody, _ := registrationBody(t, h.req)
+	require.Equal(t, http.StatusOK, handBackPost(h, handBackOrigin, h.secret, "application/json", rogueBody).Code)
+	require.Equal(t, http.StatusOK, handBackPost(h, handBackOrigin, h.secret, "application/json", personBody).Code)
+	go term.typeIn("0000-0000\n" + strings.ToLower(pairingOf(t, h.req, person.Credential())) + "\n")
+	cred, err := inTime(t, func() (passkey.Credential, error) { return readRegistration(c, h.req, handBackRP, h) })
+	require.NoError(t, err)
+	require.Equal(t, person.Credential().ID, cred.ID)
+	require.Contains(t, stderr.String(), "basalt: that code doesn't match; check the page")
 }
 
 func TestPastedWithoutATerminalReadsALine(t *testing.T) {

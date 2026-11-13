@@ -149,13 +149,20 @@ func checkHealth(c *cliIO, l *agentLedger, full bool) (ledger.Health, error) {
 		fmt.Fprintf(c.stderr, "warning: ledger pin unreadable, checking the whole chain: %v\n", err)
 	}
 	if ok {
-		opts.Pin = &pin
+		opts.Pin, opts.PinInstall = &pin.Head, pin.Install
 	}
 	h, err := l.CheckHealth(c.ctx, opts)
-	if err != nil || !h.Chain.Intact {
+	if err != nil {
 		return h, err
 	}
-	if err := pins.Save(name, h.Head); err != nil {
+	if h.PinSetAside {
+		fmt.Fprintln(c.stderr, "note: Basalt's guard was installed again since your last basalt log; "+
+			"the old ledger is gone, so this check starts from the new one.")
+	}
+	if !h.Chain.Intact {
+		return h, nil
+	}
+	if err := pins.Save(name, chainpin.Pin{Head: h.Head, Install: h.Install}); err != nil {
 		fmt.Fprintf(c.stderr, "warning: could not save the ledger pin: %v\n", err)
 	}
 	return h, nil

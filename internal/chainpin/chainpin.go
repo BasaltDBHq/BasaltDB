@@ -32,10 +32,23 @@ var namePattern = regexp.MustCompile(`^[a-z0-9_]{1,64}$`)
 // ErrInvalidName is a pin name that is not a plain file name.
 var ErrInvalidName = errors.New("invalid pin name")
 
+// Pin is a verified chain head and the install of the guard it belongs to
+// (guard.InstallID; 0 for a pin saved before installs were told apart).
+type Pin struct {
+	Head    guard.ChainHead
+	Install uint32
+}
+
+// Of reports whether p belongs to install: a pin of another install is of a
+// ledger that no longer exists, and is set aside, not checked. A pin with
+// no install is taken as this one's.
+func (p Pin) Of(install uint32) bool { return p.Install == 0 || p.Install == install }
+
 // pinFile is the file format: the head as JSON, the hash in hex.
 type pinFile struct {
-	Seq  int64  `json:"seq"`
-	Hash string `json:"hash"`
+	Seq     int64  `json:"seq"`
+	Hash    string `json:"hash"`
+	Install uint32 `json:"install,omitempty"`
 }
 
 // File keeps pins as <Dir>/<name>.head.json, mode 0600.
@@ -51,31 +64,32 @@ func (f File) path(name string) (string, error) {
 }
 
 // Load returns the pin named name, and false when there is none yet.
-func (f File) Load(name string) (guard.ChainHead, bool, error) {
+func (f File) Load(name string) (Pin, bool, error) {
 	path, err := f.path(name)
 	if err != nil {
-		return guard.ChainHead{}, false, err
+		return Pin{}, false, err
 	}
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return guard.ChainHead{}, false, nil
+		return Pin{}, false, nil
 	}
 	if err != nil {
-		return guard.ChainHead{}, false, err
+		return Pin{}, false, err
 	}
 	var p pinFile
 	if err := json.Unmarshal(raw, &p); err != nil {
-		return guard.ChainHead{}, false, fmt.Errorf("pin %s: %w", path, err)
+		return Pin{}, false, fmt.Errorf("pin %s: %w", path, err)
 	}
 	hash, err := hex.DecodeString(p.Hash)
 	if err != nil || p.Seq < 0 {
-		return guard.ChainHead{}, false, fmt.Errorf("pin %s is not a chain head", path)
+		return Pin{}, false, fmt.Errorf("pin %s is not a chain head", path)
 	}
-	return guard.ChainHead{Seq: p.Seq, Hash: hash}, true, nil
+	return Pin{Head: guard.ChainHead{Seq: p.Seq, Hash: hash}, Install: p.Install}, true, nil
 }
 
 // Save replaces the pin named name atomically (write, then rename).
-func (f File) Save(name string, h guard.ChainHead) error {
+func (f File) Save(name string, pin Pin) error {
+	h := pin.Head
 	path, err := f.path(name)
 	if err != nil {
 		return err
@@ -83,7 +97,7 @@ func (f File) Save(name string, h guard.ChainHead) error {
 	if err := os.MkdirAll(f.Dir, dirMode); err != nil {
 		return err
 	}
-	raw, err := json.Marshal(pinFile{Seq: h.Seq, Hash: hex.EncodeToString(h.Hash)})
+	raw, err := json.Marshal(pinFile{Seq: h.Seq, Hash: hex.EncodeToString(h.Hash), Install: pin.Install})
 	if err != nil {
 		return err
 	}
@@ -110,11 +124,11 @@ func (f File) Save(name string, h guard.ChainHead) error {
 // written, and tests.
 type Memory struct {
 	mu   sync.Mutex
-	pins map[string]guard.ChainHead
+	pins map[string]Pin
 }
 
 // Load returns the pin named name, and false when there is none yet.
-func (m *Memory) Load(name string) (guard.ChainHead, bool, error) {
+func (m *Memory) Load(name string) (Pin, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	h, ok := m.pins[name]
@@ -122,12 +136,12 @@ func (m *Memory) Load(name string) (guard.ChainHead, bool, error) {
 }
 
 // Save replaces the pin named name.
-func (m *Memory) Save(name string, h guard.ChainHead) error {
+func (m *Memory) Save(name string, p Pin) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.pins == nil {
-		m.pins = map[string]guard.ChainHead{}
+		m.pins = map[string]Pin{}
 	}
-	m.pins[name] = h
+	m.pins[name] = p
 	return nil
 }

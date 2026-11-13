@@ -52,10 +52,12 @@ func (h headDTO) toDomain() guard.ChainHead    { return guard.ChainHead{Seq: h.S
 type healthParams struct {
 	Full bool     `json:"full"`
 	Pin  *headDTO `json:"pin"`
+	// PinInstall is ledger.HealthOptions.PinInstall.
+	PinInstall uint32 `json:"pinInstall,omitempty"`
 }
 
 func healthParamsFromDomain(o ledger.HealthOptions) healthParams {
-	p := healthParams{Full: o.Full}
+	p := healthParams{Full: o.Full, PinInstall: o.PinInstall}
 	if o.Pin != nil {
 		h := headFromDomain(*o.Pin)
 		p.Pin = &h
@@ -64,7 +66,7 @@ func healthParamsFromDomain(o ledger.HealthOptions) healthParams {
 }
 
 func (p healthParams) toDomain() ledger.HealthOptions {
-	o := ledger.HealthOptions{Full: p.Full}
+	o := ledger.HealthOptions{Full: p.Full, PinInstall: p.PinInstall}
 	if p.Pin != nil {
 		h := p.Pin.toDomain()
 		o.Pin = &h
@@ -91,6 +93,8 @@ type deadManDTO struct {
 type healthDTO struct {
 	Chain          chainDTO       `json:"chain"`
 	Head           headDTO        `json:"head"`
+	Install        uint32         `json:"install"`
+	PinSetAside    bool           `json:"pinSetAside,omitempty"`
 	Uncovered      []uncoveredDTO `json:"uncovered"`
 	RLSBlind       []string       `json:"rlsBlind"`
 	LastHeartbeat  time.Time      `json:"lastHeartbeat"`
@@ -154,6 +158,7 @@ func nonNil(s []string) []string {
 func healthFromDomain(h ledger.Health) healthDTO {
 	out := healthDTO{
 		Chain: chainDTO{Intact: h.Chain.Intact, BrokenAt: h.Chain.BrokenAt}, Head: headFromDomain(h.Head),
+		Install: h.Install, PinSetAside: h.PinSetAside,
 		Uncovered: make([]uncoveredDTO, 0, len(h.Uncovered)), RLSBlind: h.RLSBlind,
 		LastHeartbeat: h.LastHeartbeat, HeartbeatStale: h.HeartbeatStale, PII: piiHealthFromDomain(h.PII),
 	}
@@ -170,6 +175,7 @@ func healthFromDomain(h ledger.Health) healthDTO {
 func (h healthDTO) toDomain() ledger.Health {
 	out := ledger.Health{
 		Chain: guard.ChainStatus{Intact: h.Chain.Intact, BrokenAt: h.Chain.BrokenAt}, Head: h.Head.toDomain(),
+		Install: h.Install, PinSetAside: h.PinSetAside,
 		RLSBlind: h.RLSBlind, LastHeartbeat: h.LastHeartbeat, HeartbeatStale: h.HeartbeatStale,
 		PII: h.PII.toDomain(),
 	}

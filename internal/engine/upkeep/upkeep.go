@@ -32,8 +32,8 @@ var psql = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
 // Pins keeps the last verified chain head per agent (chainpin.File in the
 // engine's state directory).
 type Pins interface {
-	Load(name string) (guard.ChainHead, bool, error)
-	Save(name string, h guard.ChainHead) error
+	Load(name string) (chainpin.Pin, bool, error)
+	Save(name string, p chainpin.Pin) error
 }
 
 // Upkeep runs the timer work for one agent on its own credential: the
@@ -56,6 +56,9 @@ type Upkeep struct {
 
 	started bool
 	head    *guard.ChainHead
+	// install is the guard install the chain belongs to (guard.InstallID),
+	// saved with every pin.
+	install uint32
 	// startBroken is where the full check on start found the chain broken;
 	// it is reported on every tick until the engine restarts.
 	startBroken *int64
@@ -235,7 +238,7 @@ func (u *Upkeep) checkChain(ctx context.Context) (guard.ChainStatus, error) {
 		return st, err
 	}
 	u.head = &head
-	if err := u.pins.Save(u.agent, head); err != nil {
+	if err := u.pins.Save(u.agent, chainpin.Pin{Head: head, Install: u.install}); err != nil {
 		return guard.ChainStatus{}, fmt.Errorf("save the chain head: %w", err)
 	}
 	return st, nil
@@ -246,6 +249,17 @@ func (u *Upkeep) start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("load the chain head: %w", err)
 	}
+	if u.install, err = guard.InstallID(ctx, u.db); err != nil {
+		return fmt.Errorf("guard install: %w", err)
+	}
+	if ok && !pin.Of(u.install) {
+		// The guard was installed again since the pin (basalt uninstall,
+		// then basalt init): the pinned ledger is gone, and a new chain
+		// starts. Not a tamper: the full check below covers the new one.
+		u.log.Warn("the guard was installed again since the last verified chain head; starting a new pin",
+			"agent", u.agent, "pinnedSeq", pin.Head.Seq, "pinnedInstall", pin.Install, "install", u.install)
+		ok = false
+	}
 	if ok {
 		full, err := guard.VerifyChain(ctx, u.db)
 		if err != nil {
@@ -254,7 +268,7 @@ func (u *Upkeep) start(ctx context.Context) error {
 		if !full.Intact {
 			u.startBroken = &full.BrokenAt
 		}
-		u.head = &pin
+		u.head = &pin.Head
 	}
 	u.started = true
 	return nil

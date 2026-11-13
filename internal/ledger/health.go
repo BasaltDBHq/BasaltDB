@@ -3,6 +3,7 @@ package ledger
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"time"
 
@@ -24,6 +25,9 @@ type HealthOptions struct {
 	Pin *guard.ChainHead
 	// Full recomputes the whole chain from the anchor even with a pin.
 	Full bool
+	// PinInstall is the guard install Pin was verified on (guard.InstallID);
+	// 0 when unknown. A pin of another install is set aside.
+	PinInstall uint32
 }
 
 // DeadMan is the last DEAD_MAN row: the engine checked in after a silence
@@ -39,8 +43,15 @@ type Health struct {
 	Chain guard.ChainStatus
 	// Head is the head the check verified, to pin for the next check. It
 	// is the pin passed in when the chain is broken.
-	Head      guard.ChainHead
-	Uncovered []guard.Uncovered
+	Head guard.ChainHead
+	// Install is the guard install checked (guard.InstallID), to pin with
+	// Head.
+	Install uint32
+	// PinSetAside is set when the pin was of an earlier install of the guard
+	// (basalt uninstall, then basalt init): that ledger is gone, and the new
+	// one was checked from its start instead.
+	PinSetAside bool
+	Uncovered   []guard.Uncovered
 	// RLSBlind are tables the agent can SELECT where row-level security
 	// hides every row from it (schema.table).
 	RLSBlind []string
@@ -138,6 +149,12 @@ func appendName(names []string, n string) []string {
 func CheckHealth(ctx context.Context, q guard.Querier, now time.Time, opts HealthOptions) (Health, error) {
 	var h Health
 	var err error
+	if h.Install, err = guard.InstallID(ctx, q); err != nil {
+		return Health{}, fmt.Errorf("guard install: %w", err)
+	}
+	if opts.Pin != nil && opts.PinInstall != 0 && opts.PinInstall != h.Install {
+		opts.Pin, h.PinSetAside = nil, true
+	}
 	if h.Chain, h.Head, err = verify(ctx, q, opts); err != nil {
 		return Health{}, err
 	}

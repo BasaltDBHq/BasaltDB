@@ -104,13 +104,14 @@ func runLog(c *cliIO, args []string) int {
 // agentURL finds the agent's connection string: --credential-file, then
 // the credential file of --agent in the engine config, then
 // BASALT_DATABASE_URL. A flag always wins over the environment. A
-// credential file readable by group or others is refused.
+// credential file readable by group or others is refused. As root, the
+// files are read without following links (loadEngineConfig).
 func agentURL(c *cliIO, agent, credFile, configPath string) (string, error) {
 	if credFile != "" {
-		return config.ReadCredential(credFile)
+		return readCredentialFlag(c, credFile)
 	}
 	if agent != "" {
-		return agentConfigURL(agent, configPath)
+		return agentConfigURL(c, agent, configPath)
 	}
 	if v := c.getenv(envAgentURL); v != "" {
 		return v, nil
@@ -119,14 +120,14 @@ func agentURL(c *cliIO, agent, credFile, configPath string) (string, error) {
 }
 
 // agentConfigURL reads the credential file the engine config names for agent.
-func agentConfigURL(agent, configPath string) (string, error) {
-	cfg, err := config.Load(configPath)
+func agentConfigURL(c *cliIO, agent, configPath string) (string, error) {
+	cfg, err := loadEngineConfig(c, configPath)
 	if err != nil {
 		return "", err
 	}
 	for _, a := range cfg.Agents {
 		if a.Name == agent {
-			return config.ReadCredential(a.CredentialFile)
+			return cfg.credential(a.CredentialFile)
 		}
 	}
 	return "", fmt.Errorf("agent %q is not in %s; run basalt init --agent %s", agent, configPath, agent)
@@ -180,20 +181,20 @@ const pinNameBytes = 16
 
 func warn(c *cliIO, h ledger.Health) {
 	if !h.Chain.Intact {
-		fmt.Fprintf(c.stderr, "warning: ledger chain broken at seq %d; ledger rows were changed or removed outside basalt\n", h.Chain.BrokenAt)
+		fprintSafef(c.stderr, "warning: ledger chain broken at seq %d; ledger rows were changed or removed outside basalt\n", h.Chain.BrokenAt)
 	}
 	if h.DeadMan != nil {
-		fmt.Fprintf(c.stderr, "warning: the engine was silent for %d hours (last heartbeat %s) until %s (dead-man row)\n",
+		fprintSafef(c.stderr, "warning: the engine was silent for %d hours (last heartbeat %s) until %s (dead-man row)\n",
 			h.DeadMan.SilentHours, h.DeadMan.LastHeartbeat, h.DeadMan.At.UTC().Format(time.RFC3339))
 	}
 	for _, u := range h.Uncovered {
-		fmt.Fprintf(c.stderr, "warning: table %s is not guarded (%s); run basalt init again\n", u.Table, u.Why)
+		fprintSafef(c.stderr, "warning: table %s is not guarded (%s); run basalt init again\n", u.Table, u.Why)
 	}
 	for _, t := range h.RLSBlind {
-		fmt.Fprintf(c.stderr, "warning: row-level security is on for %s and no policy lets this agent see rows; it reads 0 rows there\n", t)
+		fprintSafef(c.stderr, "warning: row-level security is on for %s and no policy lets this agent see rows; it reads 0 rows there\n", t)
 	}
 	if h.HeartbeatStale {
-		fmt.Fprintf(c.stderr, "warning: no engine heartbeat since %s; the engine may have stopped\n",
+		fprintSafef(c.stderr, "warning: no engine heartbeat since %s; the engine may have stopped\n",
 			h.LastHeartbeat.UTC().Format(time.RFC3339))
 	}
 }
@@ -234,13 +235,13 @@ func printPII(c *cliIO, p *ledger.PIIHealth, configPath string) {
 	if dict != nil && dict.LastScanAt != nil {
 		tail = fmt.Sprintf("dictionary of %d values, last scan %s", dict.Values, dict.LastScanAt.UTC().Format(time.RFC3339))
 	}
-	fmt.Fprintf(c.stderr, "PII: %d columns classified, %d unclassified; %s\n", p.Classified, p.Unclassified, tail)
+	fprintSafef(c.stderr, "PII: %d columns classified, %d unclassified; %s\n", p.Classified, p.Unclassified, tail)
 	if p.Unclassified > 0 {
-		fmt.Fprintf(c.stderr, "basalt: warning: %d columns the agent can read are not classified yet: %s; run basalt classify\n",
+		fprintSafef(c.stderr, "basalt: warning: %d columns the agent can read are not classified yet: %s; run basalt classify\n",
 			p.Unclassified, piiNames(p.UnclassifiedNames, p.Unclassified))
 	}
 	if p.Review > 0 {
-		fmt.Fprintf(c.stderr, "basalt: warning: %d columns need a classification review (type changed or flagged): %s; run basalt classify\n",
+		fprintSafef(c.stderr, "basalt: warning: %d columns need a classification review (type changed or flagged): %s; run basalt classify\n",
 			p.Review, piiNames(p.ReviewNames, p.Review))
 	}
 }
@@ -282,16 +283,16 @@ func printText(c *cliIO, changes []ledger.Change, rows map[uuid.UUID][]ledger.Ro
 	for i := 0; i < len(changes); i++ {
 		ch := changes[i]
 		if n := readRun(changes[i:]); !full && n > 1 {
-			fmt.Fprintln(c.stdout, readsLine(changes[i:i+n]))
+			printLine(c.stdout, readsLine(changes[i:i+n]))
 			i += n - 1
 			continue
 		}
-		fmt.Fprintln(c.stdout, changeLine(ch))
+		printLine(c.stdout, changeLine(ch))
 		if ch.Code != "" {
-			fmt.Fprintf(c.stdout, "    refused: %s %s\n", ch.Code, ch.Reason)
+			printLine(c.stdout, "    refused: "+ch.Code+" "+ch.Reason)
 		}
 		for _, r := range rows[ch.ID] {
-			fmt.Fprintf(c.stdout, "    %s\n", rowLine(r, full))
+			printLine(c.stdout, "    "+rowLine(r, full))
 		}
 	}
 }

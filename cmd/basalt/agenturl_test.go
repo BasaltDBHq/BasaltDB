@@ -64,7 +64,7 @@ func TestAgentURLPrecedence(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			c := &cliIO{getenv: tc.getenv}
+			c := &cliIO{host: newFakeHost(t), getenv: tc.getenv}
 			got, err := agentURL(c, tc.agent, tc.credFile, configPath)
 			require.NoError(t, err)
 			require.Equal(t, tc.want, got)
@@ -74,7 +74,7 @@ func TestAgentURLPrecedence(t *testing.T) {
 
 func TestAgentURLNothingGiven(t *testing.T) {
 	t.Parallel()
-	c := &cliIO{getenv: func(string) string { return "" }}
+	c := &cliIO{host: newFakeHost(t), getenv: func(string) string { return "" }}
 	_, err := agentURL(c, "", "", "")
 	require.ErrorIs(t, err, errUsage)
 }
@@ -82,7 +82,7 @@ func TestAgentURLNothingGiven(t *testing.T) {
 func TestAgentURLUnknownAgentIgnoresEnv(t *testing.T) {
 	t.Parallel()
 	_, configPath := writeAgentFixture(t)
-	c := &cliIO{getenv: func(string) string { return envURL }}
+	c := &cliIO{host: newFakeHost(t), getenv: func(string) string { return envURL }}
 	_, err := agentURL(c, "nobody", "", configPath)
 	require.ErrorContains(t, err, `agent "nobody" is not in`)
 }

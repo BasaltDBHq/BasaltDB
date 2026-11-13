@@ -96,14 +96,14 @@ func printAccess(w io.Writer, a pgcatalog.Access, cmds agent.Commands, known boo
 		for _, t := range tables {
 			schema, _, _ := strings.Cut(t, ".")
 			if several && schema != last {
-				fmt.Fprintf(w, "  %s\n", schema)
+				printLine(w, "  "+schema)
 				last = schema
 			}
 			indent := "  "
 			if several {
 				indent = "    "
 			}
-			fmt.Fprintf(w, "%s%s%s\n", indent, t, suffix(t))
+			printLine(w, indent+t+suffix(t))
 		}
 	}
 	none := func(string) string { return "" }

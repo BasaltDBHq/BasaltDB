@@ -86,7 +86,7 @@ type CheckResult struct {
 	Sampled           int
 	RoundTripFailures int
 	// CommonWordRule is how many failures are single common words, which
-	// free text matches alone only with a sign that they are a name.
+	// free text never matches alone (owner decision DD-1).
 	CommonWordRule int
 }
 
@@ -169,8 +169,10 @@ func newMemDict() *memDict {
 }
 
 func (d *memDict) add(k *pii.Keys, t pii.EntityType, value, region string) {
-	if _, ok := d.generic[k.GenericHash(value)]; !ok {
-		d.generic[k.GenericHash(value)] = t
+	for _, h := range k.GenericHashes(t, value) {
+		if _, ok := d.generic[h]; !ok {
+			d.generic[h] = t
+		}
 	}
 	if d.typed[t] == nil {
 		d.typed[t] = map[pii.Hash]bool{}

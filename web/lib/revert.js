@@ -17,8 +17,9 @@ import {
   revertShown,
   visibleText,
 } from "./codec.js";
-import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths, revertDone } from "./local.js";
+import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, rejectRevert, revertDone, revertPaths } from "./local.js";
 import { $, REVERT_REOPEN, el, fail, linkFailure, loadOrPaste, personText, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
+import { MAX_NOTE, agentName, expiresIn, headline, noteLength, noteProblem, rejectDone, rowAgent, signingSummary } from "./scope.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
 
@@ -47,6 +48,28 @@ function plural(n, word) {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
+// renderHeader fills the top bar, the headline and the agent's reason. A
+// widened revert carries the "You widened this" pill.
+function renderHeader(req) {
+  const b = req.binding;
+  const requester = visibleText(agentName(b.requestedBy));
+  const head = headline(b);
+  $("crumb").textContent = `Revert request from ${requester}`;
+  $("headline").textContent = visibleText(head.title);
+  $("lede").textContent = visibleText(head.lede);
+  $("widened-pill").hidden = !head.widened;
+  $("why-label").textContent = `${requester}'s reason:`;
+  $("signing").textContent = signingSummary(req);
+  const tick = () => {
+    $("expires-in").textContent = expiresIn(b.expiresAt, new Date());
+  };
+  tick();
+  setInterval(tick, EXPIRY_TICK_MS);
+}
+
+// EXPIRY_TICK_MS is how often the top bar's time left is redrawn.
+const EXPIRY_TICK_MS = 30000;
+
 function renderSummary(req) {
   const b = req.binding;
   $("scope").textContent = `${SCOPES[b.select.scope]} (${b.select.scopeId})`;
@@ -69,10 +92,10 @@ function renderSummary(req) {
     `Not shown: ${plural(shown.restoreHidden, "row")} to restore and ${plural(shown.skipHidden, "row")} left as they are. ` +
     `After you sign, the agent restores them in batches of up to ${MAX_REVERT_BATCH} rows ` +
     `within ${REVERT_APPLY_HOURS} hours. Follow it with basalt revert --status ${b.revertId}.`;
-  $("restore-title").textContent = `Rows that will be restored (${shown.restoreShown} of ${b.rows} shown)`;
+  $("restore-title").textContent = `What goes back (${shown.restoreShown} of ${b.rows} shown)`;
   $("skip-title").textContent = `Rows left as they are (${shown.skipShown} of ${b.skipped} shown)`;
   $("restore-note").textContent =
-    "Highlighted values change back to what they were before the agent. Each row is checked again with its row locked when its batch runs; a row someone changed by then is left as it is.";
+    "Struck-through values are the row now; highlighted values are what it goes back to. Each row is checked again with its row locked when its batch runs; a row someone changed by then is left as it is.";
 }
 
 // rowTable shows a row now and after the revert: only "Now" for a row the
@@ -101,8 +124,8 @@ export function rowTable(line) {
     const changes = showNow && showAfter && col in after && display(line, "now", col) !== display(line, "set", col);
     const tr = el("tr", changes ? "changed" : "");
     tr.append(el("td", "col", visibleText(col)));
-    if (showNow) tr.append(el("td", "", display(line, "now", col)));
-    if (showAfter) tr.append(el("td", "", display(line, "set", col)));
+    if (showNow) tr.append(el("td", changes ? "now" : "", display(line, "now", col)));
+    if (showAfter) tr.append(el("td", changes ? "back" : "", display(line, "set", col)));
     table.append(tr);
   }
   return table;
@@ -122,12 +145,21 @@ function opLabel(line) {
   return "RESTORE";
 }
 
-function renderLine(line) {
+// agentTag is a row's "changed by" tag: amber for an agent other than the
+// one that requested the revert.
+export function agentTag(who) {
+  const tag = el("span", who.other ? "ag other" : "ag", visibleText(agentName(who.role)));
+  tag.title = visibleText(who.role);
+  return tag;
+}
+
+function renderLine(line, who) {
   const card = el("li", "row");
   const title = el("div", "row-title");
   title.append(el("span", `op op-${line.op.toLowerCase()}`, opLabel(line)));
   title.append(el("span", "table-name", visibleText(line.table)));
   if (line.cascaded) title.append(el("span", "badge", "cascaded"));
+  if (who !== null) title.append(agentTag(who));
   card.append(title);
   if (line.action === "SKIP") {
     const reason = CONFLICTS[line.conflict];
@@ -158,13 +190,13 @@ async function loadRequest(hash) {
     if (req.revertId !== id) throw new Error(`the link is for revert ${req.revertId}, its path for ${id}`);
     return { req, relay: null };
   }
-  const paths = relayPaths("reverts", id);
+  const paths = revertPaths(id);
   // A short link: #s=<secret>. Without it the engine answers as for an
   // unknown id.
   const secret = linkSecret(hash);
   const req = await checkRevertRequest(await fetchRequest(engineFetch, paths.request, secret));
   if (req.revertId !== id) throw new Error(`the engine sent revert ${req.revertId}, not ${id}`);
-  return { req, relay: { path: paths.relay, secret } };
+  return { req, relay: { path: paths.relay, secret, id } };
 }
 
 // finish relays the signed response when the page came from a short link,
@@ -210,6 +242,60 @@ async function sign(rp, req, relay) {
   }
 }
 
+// openNote shows the Reject note: inline in the decision panel on a wide
+// screen, as a sheet over the page on a phone (style.css).
+function openNote(open) {
+  $("action").hidden = open;
+  $("reject-note").hidden = !open;
+  $("sheet-dim").hidden = !open;
+  if (open) $("note").focus();
+}
+
+function noteChanged() {
+  const text = $("note").value;
+  $("note-count").textContent = `${noteLength(text)} / ${MAX_NOTE}`;
+  const problem = noteProblem(text);
+  $("reject-status").textContent = problem ?? "";
+  $("reject-send").disabled = problem !== null;
+}
+
+// reject posts the person's Reject with their note. No passkey: rejecting
+// can only stop a revert (CONTRACT.md, Rescope, widen and reject).
+async function reject(req, relay) {
+  const note = $("note").value;
+  $("reject-send").disabled = true;
+  $("reject-cancel").disabled = true;
+  $("reject-status").textContent = "";
+  try {
+    await rejectRevert(engineFetch, relay.id, relay.secret, note);
+  } catch (err) {
+    $("reject-send").disabled = false;
+    $("reject-cancel").disabled = false;
+    $("reject-status").textContent = personText(err) || `The engine did not take the reject: ${err.message}`;
+    return;
+  }
+  $("reject-note").hidden = true;
+  $("sheet-dim").hidden = true;
+  showDone(rejectDone(note.trim() !== "", req.binding.requestedBy));
+}
+
+// wireReject offers Reject when the page talks to the engine. A long link
+// has no engine to tell: closing the page declines.
+function wireReject(req, relay) {
+  if (relay === null) {
+    $("decline").textContent = "Close this page to decline; nothing happens unless you sign.";
+    return;
+  }
+  $("decline").hidden = true;
+  $("reject").hidden = false;
+  $("note-reader").textContent = `${visibleText(agentName(req.binding.requestedBy))} will read this note.`;
+  $("reject").addEventListener("click", () => openNote(true));
+  $("reject-cancel").addEventListener("click", () => openNote(false));
+  $("sheet-dim").addEventListener("click", () => openNote(false));
+  $("note").addEventListener("input", noteChanged);
+  $("reject-send").addEventListener("click", () => reject(req, relay));
+}
+
 const describe = (err) => linkFailure(err, "revert", REVERT_REOPEN);
 
 async function main() {
@@ -223,13 +309,17 @@ async function main() {
     fail(describe(err));
     return;
   }
+  renderHeader(req);
   renderSummary(req);
+  const who = rowAgent(req.binding);
   for (const line of req.lines) {
-    $(line.action === "SKIP" ? "skip" : "restore").append(renderLine(line));
+    $(line.action === "SKIP" ? "skip" : "restore").append(renderLine(line, who));
   }
   $("skip-section").hidden = req.binding.skipped === 0;
   $("main").hidden = false;
+  wireReject(req, relay);
   if (req.binding.expiresAt.getTime() <= Date.now()) {
+    $("reject").disabled = true;
     $("sign").disabled = true;
     $("status").textContent = "This revert link expired. Nothing was reverted; run basalt revert again.";
     return;

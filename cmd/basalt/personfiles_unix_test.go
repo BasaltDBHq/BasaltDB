@@ -147,22 +147,44 @@ func TestRootCLIConfigReadsDoNotFollowLinksOrBlockOnAFIFO(t *testing.T) {
 	link := filepath.Join(dir, "link.json")
 	require.NoError(t, os.Symlink(hosted, link))
 
-	done := make(chan struct{})
+	// The reads run on another goroutine so a hang fails the test instead
+	// of blocking it; their results are checked back here.
+	type result struct {
+		path, base, local string
+		known             bool
+		dictNil           bool
+	}
+	results := make(chan []result, 1)
 	go func() {
-		defer close(done)
-		for _, path := range []string{fifo, link} {
-			require.Equal(t, links.DefaultLocal, configuredBase(f.c, "", "bot", path), path)
-			require.Empty(t, localPages(f.c, "", "bot", path), path)
+		paths := []string{fifo, link}
+		out := make([]result, 0, len(paths))
+		for _, path := range paths {
 			_, known := accessCommands(f.c, "bot", path)
-			require.False(t, known, path)
-			require.Nil(t, statusDictionary(f.c, path), path)
+			out = append(out, result{
+				path: path, base: configuredBase(f.c, "", "bot", path), local: localPages(f.c, "", "bot", path),
+				known: known, dictNil: statusDictionary(f.c, path) == nil,
+			})
 		}
+		results <- out
 	}()
 	select {
-	case <-done:
+	case got := <-results:
+		for _, r := range got {
+			require.Equal(t, links.DefaultLocal, r.base, r.path)
+			require.Empty(t, r.local, r.path)
+			require.False(t, r.known, r.path)
+			require.True(t, r.dictNil, r.path)
+		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("a config read blocked on the FIFO")
 	}
+
+	// A plain config in the same directory is read as root.
+	plain := filepath.Join(dir, "plain.json")
+	raw, err := os.ReadFile(hosted)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(plain, raw, 0o600))
+	require.Equal(t, links.HostedConsole, configuredBase(f.c, "", "bot", plain), "the hardened read still reads a plain config")
 
 	user := &cliIO{host: newFakeHost(t), getenv: func(string) string { return "" }}
 	require.Equal(t, links.HostedConsole, configuredBase(user, "", "bot", link), "not as root: the plain read follows the link")

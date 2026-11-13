@@ -105,9 +105,13 @@ func TestAnAgentHoldingTheLinkCannotWiden(t *testing.T) {
 		"no proof": scopeBody(t, agent.ScopeRequest{Select: e.every()}),
 		"the pasted proof, with a secret of the agent's own": scopeBody(t, ownSecret),
 		"another revert's proof":                             scopeBody(t, foreign),
-		"a signature over a binding as the proof": scopeBody(t, agent.ScopeRequest{Select: e.every(), NewSecret: newLinkSecret(t),
-			Proof: &agent.ScopeProof{CredentialID: approvalLike.CredentialID, AuthenticatorData: approvalLike.AuthenticatorData,
-				ClientDataJSON: approvalLike.ClientDataJSON, Signature: approvalLike.Signature}}),
+		"a signature over a binding as the proof": scopeBody(t, agent.ScopeRequest{
+			Select: e.every(), NewSecret: newLinkSecret(t),
+			Proof: &agent.ScopeProof{
+				CredentialID: approvalLike.CredentialID, AuthenticatorData: approvalLike.AuthenticatorData,
+				ClientDataJSON: approvalLike.ClientDataJSON, Signature: approvalLike.Signature,
+			},
+		}),
 	}
 	for name, body := range cases {
 		var out map[string]any

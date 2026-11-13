@@ -218,8 +218,10 @@ func (s *Service) RescopeRevert(ctx context.Context, id uuid.UUID, secret string
 	if err != nil {
 		return ScopeResponse{}, err
 	}
-	next := rescoped{link: sha256.Sum256([]byte(secret)), token: req.Token, catalog: out.Catalog, expires: out.ExpiresAt,
-		request: revert.Request{RevertID: id, Binding: out.BindingText, Lines: out.Lines, RescopeNonce: out.RescopeNonce, CredentialIDs: ids}}
+	next := rescoped{
+		link: sha256.Sum256([]byte(secret)), token: req.Token, catalog: out.Catalog, expires: out.ExpiresAt,
+		request: revert.Request{RevertID: id, Binding: out.BindingText, Lines: out.Lines, RescopeNonce: out.RescopeNonce, CredentialIDs: ids},
+	}
 	if widen {
 		next.link, next.token = sha256.Sum256([]byte(in.NewSecret)), out.ScopeToken
 	}
@@ -321,28 +323,34 @@ func (e *PageError) Unwrap() error { return e.ToolError }
 // order 3): one fixed answer, so the agent holding the link learns nothing
 // about other agents' runs or tables from it.
 func widenRefused() error {
-	return &PageError{ToolError: &mcp.ToolError{Code: CodeRevertInvalid,
+	return &PageError{ToolError: &mcp.ToolError{
+		Code:    CodeRevertInvalid,
 		Message: "the scope change was refused: it needs the person's passkey proof, or the page that proved one; nothing changed",
 		PersonMessage: "This scope change was refused, and nothing changed. To include other agents' changes, choose them " +
-			"again on this page and confirm with your passkey."}}
+			"again on this page and confirm with your passkey.",
+	}}
 }
 
 // rescopeTimeout is a rescope that ran past RescopeTimeout (N12-R9).
 func rescopeTimeout() error {
-	return &PageError{ToolError: &mcp.ToolError{Code: CodeQueryTimeout, Reason: ReasonTimeLimit,
+	return &PageError{ToolError: &mcp.ToolError{
+		Code: CodeQueryTimeout, Reason: ReasonTimeLimit,
 		Message: "the scope change took longer than 100 seconds and was stopped; nothing changed",
 		PersonMessage: "Changing the scope took longer than 100 seconds and was stopped. Nothing changed. " +
-			"Choose fewer agents, runs or tables, or try again."}}
+			"Choose fewer agents, runs or tables, or try again.",
+	}}
 }
 
 // widenAgain is a widened revert whose lines this engine no longer holds:
 // it restarted since the person widened it (owner, Q13). The answer
 // carries the nonce the person's new widen proof signs.
 func widenAgain(nonce []byte) error {
-	return &PageError{RescopeNonce: nonce, ToolError: &mcp.ToolError{Code: CodeRevertInvalid,
+	return &PageError{RescopeNonce: nonce, ToolError: &mcp.ToolError{
+		Code:    CodeRevertInvalid,
 		Message: "the engine restarted since the person widened this revert, and holds its lines in memory only",
 		PersonMessage: "The scope you chose on this page is no longer held by the engine (it restarted). Include other " +
-			"agents' changes again to see the lines, or ask the agent for a new link to its own proposal."}}
+			"agents' changes again to see the lines, or ask the agent for a new link to its own proposal.",
+	}}
 }
 
 // heldState is what the engine holds for revert r and the page's link

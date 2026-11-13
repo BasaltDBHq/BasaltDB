@@ -403,25 +403,45 @@ func TestThe00PrefixNormalizesAsPlus(t *testing.T) {
 }
 
 // Long runs of what the patterns take, with no match at their end, take
-// linear time (RE2, and every search goes on past what it read): a quadratic
-// pass over these would not finish within the test timeout. The default size
-// is half the full one (BASALTDB_TEST_FULL=1); a relative check between two
-// sizes was tried and is too noisy on a loaded machine to keep.
+// linear time (RE2, and every search goes on past what it read). The test
+// times each input at n and at 8n and requires less than 32 times as long:
+// linear growth measured 4.5 to 16 times, a quadratic pass would be about 64.
+// The larger size is 1<<15 units with BASALTDB_TEST_FULL=1 and 1<<13 by
+// default. The ratio is only asserted under -race (make test always passes
+// it): without it the small run takes a few milliseconds and the ratio is
+// noise on a busy machine; the inputs still all run.
 func TestLongNearMissesStayFast(t *testing.T) {
 	tz := patternTokenizer(t)
-	n := sized(1<<15, 1<<14)
-	for _, in := range []string{
-		strings.Repeat("a'", n) + "@",
-		strings.Repeat(`"a`, n) + `"@`,
-		"+1" + strings.Repeat(" ", n) + "2",
-		strings.Repeat("00 ", n),
-		strings.Repeat("0012 ", n),
-		strings.Repeat("+1\n", n),
-		strings.Repeat("a.", n) + "@corp",
-		strings.Repeat(`"a".`, n) + "@corp",
-	} {
-		_, _, err := tz.Tokenize(in)
-		require.NoError(t, err)
+	large := sized(1<<15, 1<<13)
+	small := large / 8
+	inputs := []func(n int) string{
+		func(n int) string { return strings.Repeat("a'", n) + "@" },
+		func(n int) string { return strings.Repeat(`"a`, n) + `"@` },
+		func(n int) string { return "+1" + strings.Repeat(" ", n) + "2" },
+		func(n int) string { return strings.Repeat("00 ", n) },
+		func(n int) string { return strings.Repeat("0012 ", n) },
+		func(n int) string { return strings.Repeat("+1\n", n) },
+		func(n int) string { return strings.Repeat("a.", n) + "@corp" },
+		func(n int) string { return strings.Repeat(`"a".`, n) + "@corp" },
+	}
+	// The fastest of three runs, so a pause in one does not fail the test;
+	// the floor keeps a very fast small run from making the ratio noise.
+	timed := func(in string) time.Duration {
+		best := time.Duration(math.MaxInt64)
+		for range 3 {
+			start := time.Now()
+			_, _, err := tz.Tokenize(in)
+			require.NoError(t, err)
+			best = min(best, time.Since(start))
+		}
+		return max(best, 5*time.Millisecond)
+	}
+	for i, in := range inputs {
+		fast, slow := timed(in(small)), timed(in(large))
+		if !raceEnabled {
+			continue
+		}
+		require.Less(t, slow, 32*fast, "input %d: eight times the input took %v against %v", i, slow, fast)
 	}
 }
 

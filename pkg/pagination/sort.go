@@ -30,15 +30,3 @@ func (p *Params) ParseSort(spec SortSpec) (ParsedSort, error) {
 	col := strings.TrimPrefix(sort, "-")
 	return ParsedSort{Column: col, Desc: desc}, nil
 }
-
-// Sort query tokens (whitelisted in SortSpec.Allowed).
-const (
-	sortAscSeq  = "seq"
-	sortDescSeq = "-seq"
-)
-
-// ChangeSortSpec is the change log ordering (oldest first by default).
-var ChangeSortSpec = SortSpec{
-	Default: sortAscSeq,
-	Allowed: map[string]struct{}{sortAscSeq: {}, sortDescSeq: {}},
-}

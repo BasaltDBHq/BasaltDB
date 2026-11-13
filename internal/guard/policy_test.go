@@ -53,8 +53,11 @@ func TestRowLimits(t *testing.T) {
 		{"delete 1 held", nil, `DELETE FROM public.leads WHERE id = 150`, guard.CodeApprovalRequired},
 		{"preview 51 refused", preview, `UPDATE public.leads SET score = 2 WHERE id BETWEEN 101 AND 151`, guard.CodeRowLimitExceeded},
 		{"preview never commits", preview, `UPDATE public.leads SET score = 3 WHERE id = 101`, guard.CodePreviewCannotCommit},
-		{"unknown approval", map[string]string{"basalt.approval_id": "0193a4c2-0000-7000-8000-000000000000"},
-			`UPDATE public.leads SET score = 3 WHERE id = 101`, guard.CodeApprovalInvalid},
+		{
+			"unknown approval",
+			map[string]string{"basalt.approval_id": "0193a4c2-0000-7000-8000-000000000000"},
+			`UPDATE public.leads SET score = 3 WHERE id = 101`, guard.CodeApprovalInvalid,
+		},
 		{"unknown mode", map[string]string{"basalt.mode": "OFF"}, `UPDATE public.leads SET score = 3 WHERE id = 101`, guard.CodeNotAllowed},
 		{"bad run id", map[string]string{"basalt.run_id": "run_7f3k"}, `UPDATE public.leads SET score = 3 WHERE id = 101`, guard.CodeLedgerInputInvalid},
 	}

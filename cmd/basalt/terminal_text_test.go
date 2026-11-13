@@ -48,8 +48,10 @@ func TestLogTextEscapesControlCharacters(t *testing.T) {
 	at := time.Date(2026, 11, 11, 6, 2, 11, 0, time.UTC)
 	id := uuid.Must(uuid.NewV7())
 	changes := []ledger.Change{
-		{ID: id, At: at, Op: "UPDATE", Status: "REFUSED", Table: "public.le" + evil, Intent: "fix typo" + evil,
-			Code: "ROW_LIMIT_EXCEEDED", Reason: "too many rows " + evil},
+		{
+			ID: id, At: at, Op: "UPDATE", Status: "REFUSED", Table: "public.le" + evil, Intent: "fix typo" + evil,
+			Code: "ROW_LIMIT_EXCEEDED", Reason: "too many rows " + evil,
+		},
 		{ID: uuid.Must(uuid.NewV7()), At: at, Op: "SELECT", Status: "APPLIED", Table: "public.a" + evil},
 		{ID: uuid.Must(uuid.NewV7()), At: at, Op: "SELECT", Status: "APPLIED", Table: "public.b"},
 	}

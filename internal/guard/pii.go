@@ -205,8 +205,10 @@ func readStored(ctx context.Context, tx pgx.Tx, into map[ColumnKey]PIIColumn) er
 		return fmt.Errorf("read the stored classes: %w", err)
 	}
 	var c PIIColumn
-	_, err = pgx.ForEachRow(rows, []any{&c.Schema, &c.Table, &c.Column, &c.DataType, &c.Class, &c.EntityType,
-		&c.SuggestedClass, &c.SuggestedEntityType, &c.Reason, &c.NeedsReview, &c.PhoneRegion}, func() error {
+	_, err = pgx.ForEachRow(rows, []any{
+		&c.Schema, &c.Table, &c.Column, &c.DataType, &c.Class, &c.EntityType,
+		&c.SuggestedClass, &c.SuggestedEntityType, &c.Reason, &c.NeedsReview, &c.PhoneRegion,
+	}, func() error {
 		into[ColumnKey{c.Schema, c.Table, c.Column}] = c
 		return nil
 	})

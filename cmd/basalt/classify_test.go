@@ -126,8 +126,10 @@ type reviewOut struct {
 	}
 }
 
-var reviewColumnKeys = []string{"column", "dataType", "status", "class", "entityType", "suggestedClass",
-	"suggestedEntityType", "reason", "needsReview", "phoneRegion", "check"}
+var reviewColumnKeys = []string{
+	"column", "dataType", "status", "class", "entityType", "suggestedClass",
+	"suggestedEntityType", "reason", "needsReview", "phoneRegion", "check",
+}
 
 // decodeReview decodes the --json review and checks it against the rules of
 // classify-review.schema.json: known keys only, entityType exactly with
@@ -408,8 +410,10 @@ func TestClassifyPrintsNoValue(t *testing.T) {
 		}
 	}
 	// The words of names and addresses are values too.
-	for _, w := range []string{"Alice", "Tamm", "Olivia", "Wijaya", "Jalan", "Melati", "Bandung", "courier", "@example",
-		"Blue Widget", "Widget", "invalid input", "CB-1", "62812", "62815", "62813"} {
+	for _, w := range []string{
+		"Alice", "Tamm", "Olivia", "Wijaya", "Jalan", "Melati", "Bandung", "courier", "@example",
+		"Blue Widget", "Widget", "invalid input", "CB-1", "62812", "62815", "62813",
+	} {
 		require.NotContains(t, all, w)
 	}
 }

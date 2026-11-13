@@ -24,7 +24,7 @@ import {
   rowsHash,
 } from "./codec.js";
 // Imported before any document exists, so the page's main() does not run.
-import { agentTag, rowTable } from "./revert.js";
+import { agentTag, rowKeyText, rowTable } from "./revert.js";
 
 const fixtures = JSON.parse(
   readFileSync(new URL("../../internal/revert/testdata/fixtures.json", import.meta.url), "utf8"),
@@ -300,6 +300,20 @@ test("the row table shows After revert for a restored row and not for a skipped 
   const shown = skipped.rows.flatMap((r) => r.cells);
   assert.ok(shown.includes("Edited by a person"));
   assert.ok(!shown.includes("Lead 7"), "the value the revert would have written is not shown");
+});
+
+test("a skipped row that is gone shows its key, not an empty table", async () => {
+  globalThis.document = { createElement: fakeElement };
+  const req = await parseRevertRequest("#" + fixtures.request.fragment);
+  const skip = req.lines[3];
+  const gone = { ...skip, conflict: "ROW_GONE", now: null };
+  assert.equal(rowTable(gone), null, "no table with only a Column header");
+  const text = rowKeyText(gone);
+  assert.ok(text.startsWith("Row "), text);
+  for (const col of Object.keys(skip.key)) {
+    assert.ok(text.includes(col), `${text} names ${col}`);
+  }
+  assert.equal(rowKeyText({ ...gone, key: null }), "Row key not recorded.");
 });
 
 test("a changed column shows the value now struck through and the value it goes back to", async () => {

@@ -194,14 +194,14 @@ func (a *AgentClient) FindRevert(ctx context.Context, id uuid.UUID) (ledger.Reve
 // PreviewRevert asks PREVIEW_REVERT.
 func (a *AgentClient) PreviewRevert(ctx context.Context, s guard.RevertScope) ([]string, error) {
 	var out previewDTO
-	err := a.c.call(ctx, a.agent, MethodPreviewRevert, scopeParams{Scope: s.Kind, ID: s.ID}, &out)
+	err := a.c.call(ctx, a.agent, MethodPreviewRevert, scopeParamsFromDomain(s, ""), &out)
 	return out.Lines, err
 }
 
 // PrepareRevert asks PREPARE_REVERT.
 func (a *AgentClient) PrepareRevert(ctx context.Context, s guard.RevertScope, intent string) (guard.PreparedRevert, error) {
 	var out preparedDTO
-	err := a.c.call(ctx, a.agent, MethodPrepareRevert, scopeParams{Scope: s.Kind, ID: s.ID, Intent: intent}, &out)
+	err := a.c.call(ctx, a.agent, MethodPrepareRevert, scopeParamsFromDomain(s, intent), &out)
 	return guard.PreparedRevert(out), err
 }
 
@@ -209,6 +209,20 @@ func (a *AgentClient) PrepareRevert(ctx context.Context, s guard.RevertScope, in
 func (a *AgentClient) ApplyRevert(ctx context.Context, id uuid.UUID, as passkey.Assertion) (guard.AppliedRevert, error) {
 	var out guard.AppliedRevert
 	err := a.c.call(ctx, a.agent, MethodApplyRevert, applyRevertParams{RevertID: id, Assertion: assertionFromDomain(as)}, &out)
+	return out, err
+}
+
+// RescopeRevert asks RESCOPE_REVERT.
+func (a *AgentClient) RescopeRevert(ctx context.Context, id uuid.UUID, runs []uuid.UUID, tables []string) (guard.PreparedRevert, error) {
+	var out preparedDTO
+	err := a.c.call(ctx, a.agent, MethodRescopeRevert, rescopeParams{RevertID: id, Runs: runs, Tables: tables}, &out)
+	return guard.PreparedRevert(out), err
+}
+
+// RejectRevert asks REJECT_REVERT.
+func (a *AgentClient) RejectRevert(ctx context.Context, id uuid.UUID, note string) (guard.RejectedRevert, error) {
+	var out guard.RejectedRevert
+	err := a.c.call(ctx, a.agent, MethodRejectRevert, rejectParams{RevertID: id, Note: note}, &out)
 	return out, err
 }
 

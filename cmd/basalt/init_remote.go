@@ -83,6 +83,14 @@ func (o *OperatedBy) Set(v string) error {
 	return fmt.Errorf("must be %s or %s", OperatedByPerson, OperatedByAgent)
 }
 
+// settingOf is the enum when given, else "" (the config's stays).
+func (o OperatedBy) settingOf(given bool) string {
+	if !given {
+		return ""
+	}
+	return o.enum()
+}
+
 // enum is the value engine.json stores.
 func (o OperatedBy) enum() string {
 	if o == OperatedByAgent {

@@ -45,21 +45,34 @@ func (s *Service) previewGuidance(p RevertPreview) (string, []mcp.NextStep, erro
 func (s *Service) planGuidance(plan RevertPlan) (string, []mcp.NextStep, error) {
 	r := plan.Revert
 	b := NewSteps()
-	switch r.Status {
-	case ledger.RevertPending:
+	switch {
+	case r.Status == ledger.RevertPending && r.Widened:
+		// No link to give (RS-5): the step names the page, without a URL,
+		// which the step builder requires.
+		steps := []mcp.NextStep{
+			openLink("", "Sign the plan once with your passkey on the page where you changed the scope."),
+			personStep(mcp.ActionTellAgent, "Tell the agent when you have signed."),
+			agentStep(mcp.ActionEndTurn, "End your turn: apply the lines only after the person says they signed."),
+		}
+		return fmt.Sprintf("%s waits for your passkey on the page where you changed the scope, until %s.",
+			sentence(revertTitle(r)), r.ExpiresAt.UTC().Format(personTime)), steps, nil
+	case r.Status == ledger.RevertPending:
 		b.OpenLink(plan.RevertURL, "", "Open the link, review the plan and sign it once with your passkey.").
 			TellAgent("Tell the agent when you have signed.").
 			EndTurn("End your turn: apply the lines only after the person says they signed.")
 		steps, err := b.Build()
 		return plan.PersonMessage, steps, err
-	case ledger.RevertApplying:
+	case r.Status == ledger.RevertApplying:
 		steps, err := s.applyBatchSteps(plan)
 		return "", steps, err
-	case ledger.RevertApplied:
+	case r.Status == ledger.RevertApplied:
 		steps, err := b.Stop("The revert is done; do not request it again.").Build()
 		return outcomeMessage(r), steps, err
+	case r.Status == ledger.RevertRejected:
+		steps, err := b.Stop("The person rejected the revert and nothing was reverted. Do not request it again on your own.").Build()
+		return rejectedMessage(r), steps, err
 	}
-	command := s.Commands.Revert(guard.RevertScope{Kind: revert.Scope(r.Scope), ID: r.ScopeID})
+	command := s.Commands.Revert(proposalOf(r))
 	steps, err := b.AskPerson("Tell the person the revert expired and ask whether to prepare it again.").
 		RunCommand(command, "Prepare it again and sign within an hour; rows already restored are skipped.").Build()
 	return outcomeMessage(r), steps, err
@@ -101,7 +114,7 @@ func outcomeMessage(r ledger.Revert) string {
 	if r.Batched {
 		restored, skipped = r.Progress.Restored, r.Progress.Skipped
 	}
-	what := "The revert of " + scopeText(r.Scope, r.ScopeID)
+	what := sentence(revertTitle(r))
 	switch {
 	case r.Status == ledger.RevertApplied:
 		return fmt.Sprintf("Reverted: %d rows restored, %d left as they are because someone changed them after the agent (people win).",

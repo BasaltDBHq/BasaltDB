@@ -210,8 +210,10 @@ func validate(k kind, values []string, hit nameHit, named bool, opts Options) (S
 	if namedPhone || enough(count(func(v string) bool { _, ok := phoneShape(v, false); return ok })) {
 		r := inferRegion(values, namedPhone, opts.PhoneRegion, opts.CallingCodes)
 		if enough(r.valid) {
-			s := Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityPhone, PhoneRegion: r.region,
-				Reason: sampled("PHONE", r.valid) + regionNote(r, n)}
+			s := Suggestion{
+				Class: guard.ClassIdentifier, EntityType: guard.EntityPhone, PhoneRegion: r.region,
+				Reason: sampled("PHONE", r.valid) + regionNote(r, n),
+			}
 			return withName(s, hit, named), true
 		}
 	}
@@ -221,8 +223,10 @@ func validate(k kind, values []string, hit nameHit, named bool, opts Options) (S
 	if !namedPhone && enough(count(bareDigits)) {
 		r := inferRegion(values, true, opts.PhoneRegion, opts.CallingCodes)
 		if enough(r.valid) {
-			s := Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityPhone, PhoneRegion: r.region, NeedsReview: true,
-				Reason: sampled("PHONE", r.valid) + " bare digits" + regionNote(r, n)}
+			s := Suggestion{
+				Class: guard.ClassIdentifier, EntityType: guard.EntityPhone, PhoneRegion: r.region, NeedsReview: true,
+				Reason: sampled("PHONE", r.valid) + " bare digits" + regionNote(r, n),
+			}
 			return withName(s, hit, named), true
 		}
 	}
@@ -347,11 +351,15 @@ func longValues(values []string, opts Options) (Suggestion, bool) {
 		return Suggestion{}, false
 	}
 	if r := inferRegion(long, true, opts.PhoneRegion, opts.CallingCodes); r.valid*percent >= sampleShare*len(long) {
-		return Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityPhone, PhoneRegion: r.region, NeedsReview: true,
-			Reason: fmt.Sprintf("SAMPLE:PHONE %d/%d of the %d values with long digits", r.valid, len(long), n) + regionNote(r, len(long))}, true
+		return Suggestion{
+			Class: guard.ClassIdentifier, EntityType: guard.EntityPhone, PhoneRegion: r.region, NeedsReview: true,
+			Reason: fmt.Sprintf("SAMPLE:PHONE %d/%d of the %d values with long digits", r.valid, len(long), n) + regionNote(r, len(long)),
+		}, true
 	}
-	return Suggestion{Class: guard.ClassIdentifier, EntityType: guard.EntityOther, NeedsReview: true,
-		Reason: fmt.Sprintf("SHAPE:%d of %d values hold long digit runs or pass a validator", len(long), n)}, true
+	return Suggestion{
+		Class: guard.ClassIdentifier, EntityType: guard.EntityOther, NeedsReview: true,
+		Reason: fmt.Sprintf("SHAPE:%d of %d values hold long digit runs or pass a validator", len(long), n),
+	}, true
 }
 
 // longCandidate reports whether v holds a digit run of minPhoneDigits digits

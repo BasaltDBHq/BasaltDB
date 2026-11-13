@@ -90,7 +90,7 @@ func (r *relayLinks) Live() []vault.Link {
 	var out []vault.Link
 	for _, s := range r.all() {
 		for _, l := range s.Relay() {
-			out = append(out, vault.Link{Token: l.Token, ExpiresAt: l.ExpiresAt})
+			out = append(out, vault.Link{Token: l.Token, Item: l.Item, ExpiresAt: l.ExpiresAt})
 		}
 	}
 	return out

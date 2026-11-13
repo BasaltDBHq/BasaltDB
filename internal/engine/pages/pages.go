@@ -269,8 +269,10 @@ func (s *Server) postScope(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&in); err != nil || dec.More() || (in.Proof == nil) != (in.NewSecret == "") {
-		s.fail(w, &mcp.ToolError{Code: agent.CodeInvalidArgument,
-			Message: "the body must be {\"select\", \"proof\"?, \"newSecret\"?} (revert-scope-request.schema.json), proof and newSecret together"})
+		s.fail(w, &mcp.ToolError{
+			Code:    agent.CodeInvalidArgument,
+			Message: "the body must be {\"select\", \"proof\"?, \"newSecret\"?} (revert-scope-request.schema.json), proof and newSecret together",
+		})
 		return
 	}
 	secret := r.Header.Get(links.SecretHeader)
@@ -300,8 +302,10 @@ func (s *Server) postReject(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(bytes.NewReader(body))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&in); err != nil || dec.More() {
-		s.fail(w, &mcp.ToolError{Code: agent.CodeInvalidArgument,
-			Message: "the body must be {\"note\"?} (revert-reject-request.schema.json)"})
+		s.fail(w, &mcp.ToolError{
+			Code:    agent.CodeInvalidArgument,
+			Message: "the body must be {\"note\"?} (revert-reject-request.schema.json)",
+		})
 		return
 	}
 	secret := r.Header.Get(links.SecretHeader)
@@ -341,7 +345,8 @@ func (s *Server) postRevertLink(w http.ResponseWriter, r *http.Request) {
 // issueLink issues a short link for the CLI, to a caller that shows proof
 // of the item's binding text; a wrong proof is answered as an unknown id.
 func (s *Server) issueLink(w http.ResponseWriter, r *http.Request, name string,
-	issue func(context.Context, Agent, uuid.UUID, string) (string, error)) {
+	issue func(context.Context, Agent, uuid.UUID, string) (string, error),
+) {
 	id, ok := s.pathID(w, r, name)
 	if !ok {
 		return

@@ -237,3 +237,37 @@ button.danger { background: var(--brand-bad); color: var(--brand-on-ink); }
   .grab { display: block; width: 40px; height: 4px; border-radius: 4px; background: var(--line); margin: 0 auto 0.6rem; }
   .dim { display: block; position: fixed; inset: 0; z-index: 3; background: var(--brand-dim); }
 }
+
+/* The scope (owner decision, Nov 12): chips, runs and the widen, in the
+   decision panel on a wide screen, in a bottom sheet on a phone. */
+.scope-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 1.25rem; margin-bottom: 1rem; }
+.plab { font-size: 0.9rem; font-weight: 700; margin: 0 0 0.5rem; }
+.plab small { font-weight: 400; color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; }
+button.chip { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 38px; padding: 0 0.75rem; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--fg); font-weight: 400; font-size: 0.9rem; }
+button.chip.on { border-color: var(--brand-aqua); background: var(--brand-tint); }
+button.chip:disabled { opacity: 1; cursor: default; }
+button.chip .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.85rem; unicode-bidi: isolate; }
+.tk { width: 16px; height: 16px; border-radius: 5px; border: 1px solid var(--line); font-size: 11px; display: grid; place-items: center; flex: none; }
+.chip.on .tk { background: var(--brand-ink); border-color: var(--brand-ink); color: var(--brand-on-ink); }
+.runs { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 1rem; overflow: hidden; }
+.runs button.chip { width: 100%; border: 0; border-top: 1px solid var(--line); border-radius: 0; min-height: 42px; background: var(--panel); }
+.runs button.chip:first-child { border-top: 0; }
+button.widen { display: flex; gap: 0.75rem; align-items: center; width: 100%; min-height: 56px; border: 1.5px dashed var(--brand-link); border-radius: 12px; background: transparent; color: var(--fg); padding: 0.6rem 0.9rem; text-align: left; font-weight: 400; margin-bottom: 0.75rem; }
+.plus { width: 28px; height: 28px; border-radius: 8px; background: var(--brand-tint); display: grid; place-items: center; font-weight: 800; flex: none; }
+.widen .t { display: block; font-weight: 700; }
+.widen .s { display: block; color: var(--muted); font-size: 0.8rem; }
+#scope-status:empty { display: none; }
+.scope-line, .scope-done { display: none; }
+
+@media (max-width: 760px) {
+  .topbar .crumb { display: none; }
+  button.scope-line { display: flex; align-items: center; gap: 0.75rem; width: 100%; min-height: 48px; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; padding: 0.5rem 0.75rem; text-align: left; font-weight: 400; font-size: 0.85rem; margin-bottom: 0.75rem; }
+  .scope-line b { display: block; font-size: 0.9rem; }
+  .scope-line .s { color: var(--muted); }
+  .scope-line .ed { margin-left: auto; color: var(--brand-link); font-weight: 700; }
+  .scope-panel { display: none; }
+  .scope-panel.open { display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 4; margin: 0; border-radius: 22px 22px 0 0; max-height: 85vh; overflow-y: auto; }
+  button.scope-done { display: block; width: 100%; }
+}
+.runs button.chip .w { margin-left: auto; color: var(--muted); font-size: 0.85rem; }

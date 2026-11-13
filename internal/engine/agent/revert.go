@@ -53,6 +53,9 @@ type RevertStore interface {
 	// RejectRevert marks a pending revert REJECTED for the person, with the
 	// scope token of a widened revert (nil before a widen).
 	RejectRevert(ctx context.Context, id uuid.UUID, note string, token []byte) (guard.RejectedRevert, error)
+	// ListOpenReverts lists the role's PENDING and APPLYING reverts, keyset
+	// on the revert id (list_pending, LP-1).
+	ListOpenReverts(ctx context.Context, p ledger.RevertListParams) (pagination.Page[ledger.Revert], error)
 }
 
 // PreviewRevertParams are preview_revert's validated arguments: the scope
@@ -147,10 +150,12 @@ func lineHash(text string) string {
 // and one page of its lines (only pending ones with Outcome PENDING).
 type RevertPlanParams = ledger.RevertLineParams
 
-// RevertPlanLine is one line of a batched plan with its signed line parsed.
+// RevertPlanLine is one line of a batched plan with its signed line
+// parsed. Plan is nil on a widened plan's line that names a change the
+// agent did not make: the agent's view leaves its text out (RS-5).
 type RevertPlanLine struct {
 	ledger.RevertLine
-	Plan revert.Line
+	Plan *revert.Line
 }
 
 // RevertPlan is a batched plan's state and one page of its lines; while
@@ -184,7 +189,9 @@ func (s *Service) RevertPlan(ctx context.Context, p RevertPlanParams) (RevertPla
 		return RevertPlan{}, err
 	}
 	out := RevertPlan{Revert: r, Page: pagination.Page[RevertPlanLine]{NextCursor: page.NextCursor}}
-	if r.Status == ledger.RevertPending {
+	if r.Status == ledger.RevertPending && !r.Widened {
+		// A widened plan issues no link: the person signs on the page they
+		// widened on (RS-5).
 		n, err := s.revertNotice(ctx, r)
 		if err != nil {
 			return RevertPlan{}, err
@@ -193,14 +200,21 @@ func (s *Service) RevertPlan(ctx context.Context, p RevertPlanParams) (RevertPla
 	}
 	out.Page.Items = make([]RevertPlanLine, 0, len(page.Items))
 	for _, l := range page.Items {
-		parsed, err := revert.ParseLine(l.Text)
-		if err != nil {
-			return RevertPlan{}, fmt.Errorf("guard returned a bad revert line %d: %w", l.No, err)
+		line := RevertPlanLine{RevertLine: l}
+		if l.Text != "" {
+			parsed, err := revert.ParseLine(l.Text)
+			if err != nil {
+				return RevertPlan{}, fmt.Errorf("guard returned a bad revert line %d: %w", l.No, err)
+			}
+			line.Plan = &parsed
 		}
-		out.Page.Items = append(out.Page.Items, RevertPlanLine{RevertLine: l, Plan: parsed})
+		out.Page.Items = append(out.Page.Items, line)
 	}
 	if out.PersonMessage, out.NextSteps, err = s.planGuidance(out); err != nil {
 		return RevertPlan{}, err
+	}
+	if r.Widened {
+		out.PersonMessage = strings.TrimSpace(widenedMessage + " " + out.PersonMessage)
 	}
 	return out, nil
 }
@@ -267,6 +281,18 @@ func (s *Service) RequestRevert(ctx context.Context, p RequestRevertParams) (Req
 	return s.revertWithLink(ctx, r)
 }
 
+// prepareReissue readies a pending revert for a new link the agent asked
+// for: a widened revert is reset to its proposal, since the agent gets no
+// link to the person's scope (owner, Q8); otherwise the person's scope the
+// engine still holds is retired (retirePersonScope). It returns the revert
+// as it now stands.
+func (s *Service) prepareReissue(ctx context.Context, r ledger.Revert) (ledger.Revert, error) {
+	if r.Widened {
+		return s.resetToProposal(ctx, r)
+	}
+	return r, s.retirePersonScope(ctx, r)
+}
+
 // revertWithLink issues r's link (revoking an earlier one) and returns it
 // with the message that carries it: the REQUESTED steps, the person signs
 // and the agent waits once.
@@ -275,6 +301,7 @@ func (s *Service) revertWithLink(ctx context.Context, r ledger.Revert) (Requeste
 	if err != nil {
 		return RequestedRevert{}, err
 	}
+	s.notifyRevert(ctx, r, n)
 	return RequestedRevert{Revert: r, RevertURL: n.URL, PersonMessage: n.Message, Links: n.Links, NextSteps: requestedSteps(r.ID, n.URL)}, nil
 }
 
@@ -309,15 +336,9 @@ func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Request
 	switch {
 	case p.Signature != nil:
 		return s.deliverRevertSignature(ctx, r, *p.Signature)
-	case p.Reissue && r.Status == ledger.RevertPending && r.Widened:
-		// No link to the person's scope for the agent: the reissue resets the
-		// revert to its proposal (owner, Q8).
-		if r, err = s.resetToProposal(ctx, r); err != nil {
-			return RequestedRevert{}, err
-		}
-		return s.revertWithLink(ctx, r)
 	case p.Reissue && r.Status == ledger.RevertPending:
-		if err := s.retirePersonScope(ctx, r); err != nil {
+		r, err = s.prepareReissue(ctx, r)
+		if err != nil {
 			return RequestedRevert{}, err
 		}
 		return s.revertWithLink(ctx, r)
@@ -393,8 +414,11 @@ func (s *Service) checkRevertCode(ctx context.Context, r ledger.Revert, code rev
 // or a signature only Postgres could judge.
 func (s *Service) applyRevertError(ctx context.Context, r ledger.Revert, err error) error {
 	code, ok := guard.CodeOf(err)
-	if ok && code == guard.CodeRevertExpired {
+	switch {
+	case ok && code == guard.CodeRevertExpired:
 		return s.revertExpired(r)
+	case ok && code == guard.CodeNothingToRevert:
+		return nothingSigned(r)
 	}
 	var pe *pgconn.PgError
 	if !ok || code != guard.CodeRevertInvalid || !errors.As(err, &pe) {
@@ -441,8 +465,7 @@ func (s *Service) revertStateOf(ctx context.Context, r ledger.Revert) (Requested
 		out.PersonMessage = rejectedMessage(r)
 		out.NextSteps = rejectedSteps()
 	default:
-		what := "The revert of " + scopeText(r.Scope, r.ScopeID)
-		return s.waitEnded(ctx, out, what)
+		return s.waitEnded(ctx, out, sentence(revertTitle(r)))
 	}
 	return out, nil
 }
@@ -530,12 +553,14 @@ const taskWidenPointer = "You can include other agents' changes in this task on 
 // unknown one, on preview_revert and request_revert alike.
 func notOwnScope(scope guard.RevertScope) error {
 	kind := strings.ToLower(string(scope.Kind))
-	return &mcp.ToolError{Code: CodeNotFound, Reason: string(scope.Kind), Message: fmt.Sprintf(
-		"%s %s is not one of this agent's %ss; nothing was prepared. An agent reverts only its own changes, runs and tasks it "+
-			"ran in: check the id in run_history. If another agent's work looks wrong, ask that agent to request the revert; "+
-			"a person can revert any change, run or task with basalt revert", kind, scope.ID, kind),
+	return &mcp.ToolError{
+		Code: CodeNotFound, Reason: string(scope.Kind), Message: fmt.Sprintf(
+			"%s %s is not one of this agent's %ss; nothing was prepared. An agent reverts only its own changes, runs and tasks it "+
+				"ran in: check the id in run_history. If another agent's work looks wrong, ask that agent to request the revert; "+
+				"a person can revert any change, run or task with basalt revert", kind, scope.ID, kind),
 		NextSteps: []mcp.NextStep{callTool(toolListRuns, map[string]any{},
-			"This id is not one of your runs or changes; list your runs.")}}
+			"This id is not one of your runs or changes; list your runs.")},
+	}
 }
 
 // notOwnTask is a task this agent has no run in (RS-6): NOT_FOUND reason
@@ -543,14 +568,16 @@ func notOwnScope(scope guard.RevertScope) error {
 // leaves the agent for the person to fill in: this agent cannot see who ran
 // in the task (N12-R1).
 func notOwnTask(scope guard.RevertScope) error {
-	return &mcp.ToolError{Code: CodeNotFound, Reason: string(revert.ScopeTask), Message: fmt.Sprintf(
-		"task %s has no run of this agent; nothing was prepared. An agent reverts only its own work: "+
-			"check the task id in list_runs", scope.ID),
+	return &mcp.ToolError{
+		Code: CodeNotFound, Reason: string(revert.ScopeTask), Message: fmt.Sprintf(
+			"task %s has no run of this agent; nothing was prepared. An agent reverts only its own work: "+
+				"check the task id in list_runs", scope.ID),
 		PersonMessage: fmt.Sprintf("This agent has no run in task %s. To revert work in that task, run "+
 			"basalt revert --agent <agent> --task %s --open with an agent that ran in it, or ask that agent to request the revert.",
 			scope.ID, scope.ID),
 		NextSteps: []mcp.NextStep{callTool(toolListRuns, map[string]any{},
-			"This task has none of your runs; list your runs.")}}
+			"This task has none of your runs; list your runs.")},
+	}
 }
 
 // scopeRefused answers a scope the guard refused (BS011, CONTRACT.md,
@@ -621,6 +648,10 @@ type revertLink struct {
 	URL     string
 	Message string
 	Links   []mcp.Link
+	// Headline is the revert in one line (revertHeadline); long and short
+	// are its two links, for the person's notification.
+	Headline    string
+	long, short string
 }
 
 // revertNotice is the link to sign a prepared revert (chooseLink: a newly
@@ -642,9 +673,8 @@ func (s *Service) revertNotice(ctx context.Context, r ledger.Revert) (revertLink
 		return revertLink{}, err
 	}
 	pick := chooseLink(short, long, s.LinkBudget)
-	filters := filterText(guard.RevertScope{Runs: b.Select.Runs, Tables: b.Select.Tables})
-	summary := fmt.Sprintf("Revert of %s %s%s: %d rows to restore, %d left as they are (changed after the agent). Why: %s. %s",
-		strings.ToLower(string(b.Select.Scope)), b.Select.ScopeID, filters, r.Rows, r.Skipped, shown(strings.TrimRight(b.Intent, ". "), maxIntentChars), expiryLine(r.ExpiresAt))
+	headline := bindingHeadline(b, r)
+	summary := fmt.Sprintf("%s Why: %s. %s", headline, shown(strings.TrimRight(b.Intent, ". "), maxIntentChars), expiryLine(r.ExpiresAt))
 	var extra []string
 	if b.Select.Scope == revert.ScopeTask {
 		extra = append(extra, taskWidenPointer)
@@ -654,5 +684,45 @@ func (s *Service) revertNotice(ctx context.Context, r ledger.Revert) (revertLink
 			b.Lines(), int(revert.ApplyWindow.Hours())))
 	}
 	msg, msgLinks := revertMessage(summary, pick, extra...)
-	return revertLink{URL: pick.URL, Message: msg, Links: msgLinks}, nil
+	return revertLink{URL: pick.URL, Message: msg, Links: msgLinks, Headline: headline, long: long, short: short}, nil
+}
+
+// bindingHeadline is the headline of a revert not widened, from its
+// binding: the scope and filters it covers and its totals.
+func bindingHeadline(b revert.Binding, r ledger.Revert) string {
+	filters := filterText(guard.RevertScope{Runs: b.Select.Runs, Tables: b.Select.Tables})
+	return fmt.Sprintf("Revert of %s %s%s: %d rows to restore, %d left as they are (changed after the agent).",
+		strings.ToLower(string(b.Select.Scope)), b.Select.ScopeID, filters, r.Rows, r.Skipped)
+}
+
+// widenedHeadline is the headline of a revert the person widened: totals
+// only, no scope (RS-5, LP-3).
+func widenedHeadline(r ledger.Revert) string {
+	return fmt.Sprintf("Revert widened by the person: %d rows to restore.", r.Rows)
+}
+
+// revertHeadline is r's headline for list_pending and the person's
+// notifications, built from what Postgres returned.
+func revertHeadline(r ledger.Revert) (string, error) {
+	if r.Widened {
+		return widenedHeadline(r), nil
+	}
+	b, err := revert.ParseBinding(r.BindingText)
+	if err != nil {
+		return "", fmt.Errorf("guard returned a bad revert binding: %w", err)
+	}
+	return bindingHeadline(b, r), nil
+}
+
+// notifyRevert tells the person on Telegram, when configured, that r waits
+// for their signature (LP-2). A failed notice is logged; it never fails the
+// call.
+func (s *Service) notifyRevert(ctx context.Context, r ledger.Revert, n revertLink) {
+	sent := RevertNotice{RevertID: r.ID, Agent: s.Name, Headline: n.Headline, ExpiresAt: r.ExpiresAt, Widened: r.Widened}
+	if !r.Widened {
+		sent.Intent, sent.RevertURL, sent.ShortURL = r.Intent, n.long, n.short
+	}
+	if err := s.Notifier.NotifyRevert(context.WithoutCancel(ctx), sent); err != nil {
+		s.Log.Error("notify revert", "revertId", r.ID, "err", err)
+	}
 }

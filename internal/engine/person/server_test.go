@@ -98,6 +98,14 @@ func (f *fakeLedger) ApplyRevert(context.Context, uuid.UUID, passkey.Assertion) 
 	return guard.AppliedRevert{}, f.hit()
 }
 
+func (f *fakeLedger) RescopeRevert(context.Context, uuid.UUID, []uuid.UUID, []string) (guard.PreparedRevert, error) {
+	return guard.PreparedRevert{}, f.hit()
+}
+
+func (f *fakeLedger) RejectRevert(context.Context, uuid.UUID, string) (guard.RejectedRevert, error) {
+	return guard.RejectedRevert{}, f.hit()
+}
+
 func (f *fakeLedger) ListRevertLines(context.Context, ledger.RevertLineParams) (pagination.Page[ledger.RevertLine], error) {
 	return pagination.Page[ledger.RevertLine]{}, f.hit()
 }
@@ -307,12 +315,16 @@ func TestThePersonSocketRoundTripsWhatTheCLIPrints(t *testing.T) {
 	require.NoError(t, err)
 	used := time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC)
 	keys := []ledger.Passkey{{
-		Credential: passkey.Credential{ID: []byte{9, 8, 7}, PublicKey: &key.PublicKey, SignCount: 4,
-			Relying: passkey.Relying{RPID: "localhost", Origin: "http://localhost:8787"}, UserHandle: []byte{1}},
+		Credential: passkey.Credential{
+			ID: []byte{9, 8, 7}, PublicKey: &key.PublicKey, SignCount: 4,
+			Relying: passkey.Relying{RPID: "localhost", Origin: "http://localhost:8787"}, UserHandle: []byte{1},
+		},
 		Label: "laptop", CreatedAt: used.Add(-time.Hour), LastUsedAt: &used,
 	}}
-	approval := ledger.Approval{ID: uuid.Must(uuid.NewV7()), RunID: uuid.Must(uuid.NewV7()), Rows: 12, Status: "PENDING",
-		ExpiresAt: used, BindingText: "binding", Lines: []string{"a", "b"}, Params: json.RawMessage(`[1]`), Assigned: []string{}}
+	approval := ledger.Approval{
+		ID: uuid.Must(uuid.NewV7()), RunID: uuid.Must(uuid.NewV7()), Rows: 12, Status: "PENDING",
+		ExpiresAt: used, BindingText: "binding", Lines: []string{"a", "b"}, Params: json.RawMessage(`[1]`), Assigned: []string{},
+	}
 	l := &fakeLedger{keys: keys, approval: approval}
 	c := serve(t, []uint32{personUID}, peerIs(personUID), l)
 
@@ -389,6 +401,14 @@ func agentCalls() map[person.Method]func(context.Context, *person.AgentClient) e
 			_, err := a.ListRevertLines(c, ledger.RevertLineParams{RevertID: id, Params: pagination.Params{Limit: 10}})
 			return err
 		},
+		person.MethodRescopeRevert: func(c context.Context, a *person.AgentClient) error {
+			_, err := a.RescopeRevert(c, id, []uuid.UUID{id}, []string{"public.leads"})
+			return err
+		},
+		person.MethodRejectRevert: func(c context.Context, a *person.AgentClient) error {
+			_, err := a.RejectRevert(c, id, "not now")
+			return err
+		},
 	}
 }
 
@@ -397,7 +417,7 @@ func agentCalls() map[person.Method]func(context.Context, *person.AgentClient) e
 // every call is scoped to that agent; another agent's ledger is refused.
 func TestAnAgentSharingThePersonsUIDSeesOnlyItsOwnLedger(t *testing.T) {
 	t.Parallel()
-	require.Len(t, agentCalls(), 12, "every agent-scoped method")
+	require.Len(t, agentCalls(), 14, "every agent-scoped method")
 	for m, call := range agentCalls() {
 		t.Run(string(m), func(t *testing.T) {
 			t.Parallel()

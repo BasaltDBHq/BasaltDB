@@ -108,12 +108,12 @@
           "RUN",
           "TASK"
         ],
-        "description": "The scope you requested (TASK with taskId). Planned (revert scope, RS-5): absent when widened."
+        "description": "The scope you requested (TASK with taskId). Absent when widened (RS-5)."
       },
       "scopeId": {
         "type": "string",
         "format": "uuid",
-        "description": "The id you requested. Planned (revert scope): absent when widened (RS-5)."
+        "description": "The id you requested. Absent when widened (RS-5)."
       },
       "select": {
         "$ref": "../revert/revert-select.schema.json",
@@ -121,7 +121,7 @@
       },
       "widened": {
         "type": "boolean",
-        "description": "Planned (revert scope, RS-5): true when the person included other agents' changes. You then get only revertId, status, intent, batched, rows, skipped, expiresAt, personMessage and, for a large plan, changeId, applyBy and progress: no scope, select, lines or link. Absent or false otherwise."
+        "description": "True when the person included other agents' changes. You then get only revertId, status, intent, batched, rows, skipped, expiresAt, personMessage and, for a large plan, changeId, applyBy and progress: no scope, select, lines or link. Absent or false otherwise."
       },
       "rejectedAt": {
         "type": "string",

@@ -97,6 +97,26 @@ func waitEndedSteps(id uuid.UUID, link, open string) []mcp.NextStep {
 	}
 }
 
+// widenedMessage opens every wait-form personMessage for a revert the
+// person widened (CONTRACT.md, request_revert, Wait form).
+const widenedMessage = "You changed the scope on the signing page; the agent cannot see what you added."
+
+// widenedWaitSteps: a widened revert not signed yet. The steps of
+// waitEndedSteps, but the person signs on the page they widened on (the
+// agent holds no link to it), and a reissue resets the revert to the
+// agent's proposal (owner, Q8).
+func widenedWaitSteps(id uuid.UUID) []mcp.NextStep {
+	return []mcp.NextStep{
+		openLink("", "Sign with your passkey on the page where you changed the scope."),
+		personStep(mcp.ActionTellAgent, "Tell the agent when you have signed."),
+		agentStep(mcp.ActionEndTurn, "Do not wait again: end your turn, showing personMessage; you have no link to the person's scope."),
+		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argWaitForSignature: 0},
+			"When the person says they signed, call it once more; it returns at once."),
+		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), "reissueLink": true},
+			"Only if the person asks for a new link: it resets the revert to your own work, dropping what they added."),
+	}
+}
+
 func applyingSteps(id uuid.UUID) []mcp.NextStep {
 	return []mcp.NextStep{callTool(toolRevertPlan, map[string]any{argRevertID: id.String(), "pending": true, "limit": revert.MaxBatch},
 		"Get the pending lines and apply them with apply_revert_batch, until pending is 0.")}
@@ -210,8 +230,18 @@ func revertNotFound(id uuid.UUID) error {
 			"Ask the person for the revert id that basalt revert printed; this agent prepared no revert with that id.")}}
 }
 
+// signingLink is the link a refusal of the person's code sends them back
+// to: r's long link, or none for a widened revert, whose only link is the
+// page the person widened on (the agent cannot read its binding, RS-5).
+func (s *Service) signingLink(ctx context.Context, r ledger.Revert) (string, error) {
+	if r.Widened {
+		return "", nil
+	}
+	return s.longRevertLink(ctx, r)
+}
+
 func (s *Service) badSignature(ctx context.Context, r ledger.Revert, message string) error {
-	link, err := s.longRevertLink(ctx, r)
+	link, err := s.signingLink(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -230,7 +260,7 @@ func (s *Service) badSignatureWith(link string, r ledger.Revert, message string)
 }
 
 func (s *Service) passkeyRevoked(ctx context.Context, r ledger.Revert) error {
-	link, err := s.longRevertLink(ctx, r)
+	link, err := s.signingLink(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -303,7 +333,7 @@ func (s *Service) prepareTimeout(tool string, scope guard.RevertScope, sqlState 
 	if tool == toolPreviewRevert {
 		person, b = s.previewTimeoutSteps(scope, command, minutes)
 	}
-	te.PersonMessage = person
+	te.PersonMessage = fitMessage(person, command, s.Commands.RevertDryRun(scope))
 	steps, err := b.EndTurn(stepEndTurnPersonActsNext).Build()
 	if err != nil {
 		return err
@@ -362,9 +392,13 @@ func (s *Service) nothingToRevertError(ctx context.Context, tool string, scope g
 	}
 	if scope.Kind == revert.ScopeTask {
 		// The agent's own lines are empty, but other agents' may not be
-		// (RS-6): the person can open the page and widen to them.
-		te.PersonMessage += fmt.Sprintf(" To include other agents' changes in this task, run %s and choose them on the "+
-			"signing page.", s.Commands.Revert(scope))
+		// (RS-6): the person can open the page and widen to them. The
+		// command is a PERSON step too (the catalog's task-scope entry), so
+		// a long --config path can cut it from personMessage without losing it.
+		command := s.Commands.Revert(scope)
+		te.PersonMessage = fitMessage(te.PersonMessage+fmt.Sprintf(" To include other agents' changes in this task, run %s and choose them on the "+
+			"signing page.", command), command)
+		b.RunCommand(command, "To include other agents' changes, open the revert page and choose them.")
 	}
 	steps, err := b.Build()
 	if err != nil {

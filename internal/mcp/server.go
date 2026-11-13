@@ -199,9 +199,19 @@ func (s *Server) callTool(ctx context.Context, params json.RawMessage) (any, *RP
 	}
 	var te *ToolError
 	if errors.As(err, &te) {
-		return toolResult(te, true), nil
+		return errorResult(te), nil
 	}
 	return toolResult(map[string]string{"message": err.Error()}, true), nil
+}
+
+// errorResult is the tools/call result of te, with docsUrl set from its code
+// (on a copy: te may be shared).
+func errorResult(te *ToolError) map[string]any {
+	out := *te
+	if out.DocsURL == "" && out.Code != "" {
+		out.DocsURL = DocsURL(out.Code)
+	}
+	return toolResult(&out, true)
 }
 
 func toolResult(v any, isError bool) map[string]any {
@@ -231,7 +241,7 @@ const ErrCodeServer = -32000
 // WriteToolError writes the tools/call answer for request id that carries
 // te, with isError set.
 func WriteToolError(w io.Writer, id any, te *ToolError) error {
-	return writeResponse(w, id, toolResult(te, true), nil)
+	return writeResponse(w, id, errorResult(te), nil)
 }
 
 // WriteError writes a JSON-RPC error answer for request id.

@@ -5,7 +5,6 @@ package server
 import (
 	"os"
 	"strconv"
-	"strings"
 )
 
 // Lock only records the pid on platforms without flock; it does not prevent
@@ -21,11 +20,3 @@ func (l *Lock) WritePID(pid int) error {
 func (l *Lock) Release() { os.Remove(l.path) }
 
 func Running(path string) (int, bool, error) { return 0, false, nil }
-
-func ReadPID(path string) (int, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return 0, err
-	}
-	return strconv.Atoi(strings.TrimSpace(string(b)))
-}

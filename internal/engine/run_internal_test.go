@@ -37,6 +37,14 @@ func TestInstructionsCarryTheLinkSentence(t *testing.T) {
 		"Show personMessage verbatim and keep its line breaks.")
 }
 
+// TestInstructionsPointToTheDocs checks the instructions send the agent to the
+// docs site (CONTRACT.md, What the agent is told).
+func TestInstructionsPointToTheDocs(t *testing.T) {
+	t.Parallel()
+	require.Contains(t, Instructions, "https://docs.basaltvault.app/llms.txt")
+	require.Contains(t, Instructions, "For error codes and troubleshooting, read https://docs.basaltvault.app/llms.txt (each page is also Markdown at its path with .md in place of the trailing slash, e.g. https://docs.basaltvault.app/reference/errors.md).")
+}
+
 // TestInstructionsTeachNextSteps checks the instructions tell the agent to
 // call status and to follow nextSteps (actionable-errors design, section 5).
 func TestInstructionsTeachNextSteps(t *testing.T) {

@@ -274,62 +274,18 @@ func allASCIIAlnum(s string) bool {
 }
 
 // plusNumberIsAPhone reports whether the number at text[start:end] has the
-// evidence a "+" number needs to be a phone (owner decision EV-1): its digits
-// are a valid number, as libphonenumber reads them, or a possible one with a
-// phone word next to it (hasPhoneWordNear). Shape alone took signed figures
-// for phones ("score +12 3456 7890 points"). Numbers written with "00" or in
-// the US form are not "+" numbers and need no more evidence than their shape.
-// The check reads only the text around the number up to the claimed spans on
-// either side, and a second pass claims more of that text, never less, so it
-// rejects what the first one did.
+// evidence a "+" number needs to be a phone: libphonenumber says its digits
+// are a valid number (owner decisions EV-1 and Q-14). Shape alone took signed
+// figures for phones ("score +12 3456 7890 points"), and a number that is
+// only possible is not taken either, whatever word stands next to it: core
+// does not guess from context. Numbers written with "00" or in the US form
+// are not "+" numbers and need no more evidence than their shape.
 func plusNumberIsAPhone(text string, start, end int) bool {
 	if text[start] != '+' {
 		return true
 	}
 	num, err := phonenumbers.Parse("+"+asciiDigitsOf(text[start:end]), "")
-	if err != nil || !phonenumbers.IsPossibleNumber(num) {
-		return false
-	}
-	return phonenumbers.IsValidNumber(num) || hasPhoneWordNear(text, start, end)
-}
-
-// phoneWords are words that mark a number next to them as a phone, in English
-// and Indonesian, lower case (the shape view folds case).
-var phoneWords = map[string]bool{
-	"tel": true, "telp": true, "telephone": true, "telepon": true, "phone": true, "phones": true,
-	"ph": true, "mobile": true, "mob": true, "cell": true, "cellphone": true, "hp": true,
-	"handphone": true, "ponsel": true, "wa": true, "whatsapp": true, "call": true, "fax": true,
-	"sms": true, "hubungi": true,
-}
-
-// Where hasPhoneWordNear looks for a phone word: the phoneWordsBefore nearest
-// words in the phoneWordReachBefore bytes before a number, and the first word
-// in the phoneWordReachAfter bytes after it. A word is a run of ASCII letters;
-// digits and punctuation between are skipped, so a label still counts across
-// a list of numbers ("phones: +44 …, +44 …") or a JSON key ("phone_number":).
-// The reach bounds the work per number.
-const (
-	phoneWordsBefore     = 3
-	phoneWordReachBefore = 64
-	phoneWordReachAfter  = 32
-)
-
-// hasPhoneWordNear reports a phone word next to the number at text[start:end]
-// ("tel +44 …", "call me at +44 …", "+44 … (WA)").
-func hasPhoneWordNear(text string, start, end int) bool {
-	before := letterWords(text[max(0, start-phoneWordReachBefore):start])
-	for i := len(before) - 1; i >= 0 && i >= len(before)-phoneWordsBefore; i-- {
-		if phoneWords[before[i]] {
-			return true
-		}
-	}
-	after := letterWords(text[end:min(len(text), end+phoneWordReachAfter)])
-	return len(after) > 0 && phoneWords[after[0]]
-}
-
-// letterWords are the runs of ASCII letters in s, in order.
-func letterWords(s string) []string {
-	return strings.FieldsFunc(s, func(r rune) bool { return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') })
+	return err == nil && phonenumbers.IsValidNumber(num)
 }
 
 // isIDDMatch reports a match written with the "00" prefix instead of "+".

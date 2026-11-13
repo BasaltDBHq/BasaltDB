@@ -175,11 +175,11 @@ func TestTokenizeNGramsDoNotJoinAcrossWideGaps(t *testing.T) {
 
 func TestTokenizeTypedFormFindsAPhoneWrittenDifferently(t *testing.T) {
 	tz := newTokenizer(t)
-	in := "call +447700900456 now"
+	in := "call +447911123456 now"
 	require.Equal(t, 1, finalScan(t, tz, in), "a phone written without spaces is found")
 	out, reps := tokenize(t, tz, in)
 	require.Len(t, reps, 1)
-	require.Equal(t, "+447700900456", in[reps[0].Start:reps[0].End], "the whole number, not a prefix")
+	require.Equal(t, "+447911123456", in[reps[0].Start:reps[0].End], "the whole number, not a prefix")
 	require.Equal(t, "call "+reps[0].Token.Surface()+" now", out)
 }
 
@@ -326,7 +326,7 @@ func TestFullWidthAndCompatibilityFormsAreFound(t *testing.T) {
 	}{
 		{"hi \uff21\uff4c\uff45\uff58\uff41\uff4e\uff44\uff52\uff41 \uff2a\uff4f\uff4e\uff45\uff53!", "\uff21\uff4c\uff45\uff58\uff41\uff4e\uff44\uff52\uff41 \uff2a\uff4f\uff4e\uff45\uff53", pii.EntityPersonName, "Alexandra Jones"},
 		{"to \uff41\uff4c\uff49\uff43\uff45@example.com", "\uff41\uff4c\uff49\uff43\uff45@example.com", pii.EntityEmail, "alice@example.com"},
-		{"call \uff0b\uff14\uff14\uff17\uff17\uff10\uff10\uff19\uff10\uff10\uff14\uff15\uff16 now", "\uff0b\uff14\uff14\uff17\uff17\uff10\uff10\uff19\uff10\uff10\uff14\uff15\uff16", pii.EntityPhone, "+447700900456"},
+		{"call \uff0b\uff14\uff14\uff17\uff19\uff11\uff11\uff11\uff12\uff13\uff14\uff15\uff16 now", "\uff0b\uff14\uff14\uff17\uff19\uff11\uff11\uff11\uff12\uff13\uff14\uff15\uff16", pii.EntityPhone, "+447911123456"},
 		{"ALEXANDRA  jones", "ALEXANDRA  jones", pii.EntityPersonName, "Alexandra Jones"},
 		{"\ufb01 alice@ex\u00e4mple.ee", "alice@ex\u00e4mple.ee", pii.EntityEmail, "alice@ex\u00e4mple.ee"},
 		{"Ali\u0307ce@xn--exmple-cua.ee", "Ali\u0307ce@xn--exmple-cua.ee", pii.EntityEmail, "ali\u0307ce@xn--exmple-cua.ee"},

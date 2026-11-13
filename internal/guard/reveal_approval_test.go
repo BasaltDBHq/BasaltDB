@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
@@ -73,14 +74,15 @@ func (e heldEnv) open(t *testing.T) []byte {
 	return ticket
 }
 
-// rerun is the engine's second transaction: a preview of stmt with params,
-// recorded with finish_change unless skipFinish, then reveal_approval_rows,
-// always rolled back.
+// rerun is the engine's second transaction: a preview of stmt with params
+// in run in, recorded with finish_change unless skipFinish, then after (if
+// set), then reveal_approval_rows; always rolled back.
 type rerun struct {
 	stmt       string
 	params     []any
+	in         *guard.Intent
 	skipFinish bool
-	mode       string // "" for PREVIEW; APPLY for an ordinary transaction
+	after      func(ctx context.Context, tx pgx.Tx)
 }
 
 func (e heldEnv) reveal(t *testing.T, ticket []byte, r rerun) ([]approval.RevealedRow, error) {
@@ -89,19 +91,22 @@ func (e heldEnv) reveal(t *testing.T, ticket []byte, r rerun) ([]approval.Reveal
 	if r.stmt == "" {
 		r.stmt, r.params = heldDelete, heldParams
 	}
+	in := e.in
+	if r.in != nil {
+		in = *r.in
+	}
 	tx, err := e.a.Conn.Begin(ctx)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, tx.Rollback(ctx)) }()
-	if r.mode == "" {
-		require.NoError(t, guard.BeginPreview(ctx, tx, e.in, guardtest.Timeout))
-		_, err = tx.Exec(ctx, r.stmt, r.params...)
+	require.NoError(t, guard.BeginPreview(ctx, tx, in, guardtest.Timeout))
+	_, err = tx.Exec(ctx, r.stmt, r.params...)
+	require.NoError(t, err)
+	if !r.skipFinish {
+		_, err = guard.FinishChange(ctx, tx, guard.Finish{Op: "DELETE", Statement: r.stmt, Params: r.params})
 		require.NoError(t, err)
-		if !r.skipFinish {
-			_, err = guard.FinishChange(ctx, tx, guard.Finish{Op: "DELETE", Statement: r.stmt, Params: r.params})
-			require.NoError(t, err)
-		}
-	} else {
-		require.NoError(t, guard.BeginGuarded(ctx, tx, e.in, guardtest.Timeout))
+	}
+	if r.after != nil {
+		r.after(ctx, tx)
 	}
 	// A savepoint keeps the transaction usable after a refusal, so the
 	// deferred rollback runs cleanly.
@@ -113,6 +118,15 @@ func (e heldEnv) reveal(t *testing.T, ticket []byte, r rerun) ([]approval.Reveal
 		require.NoError(t, err)
 	}
 	return rows, rerr
+}
+
+// setMode switches basalt.mode for the rest of the transaction.
+func setMode(t *testing.T, mode string) func(ctx context.Context, tx pgx.Tx) {
+	t.Helper()
+	return func(ctx context.Context, tx pgx.Tx) {
+		_, err := tx.Exec(ctx, `SELECT set_config('basalt.mode', $1, true)`, mode)
+		require.NoError(t, err)
+	}
 }
 
 func requireApprovalInvalid(t *testing.T, err error, detail string) {
@@ -180,13 +194,17 @@ func TestRevealApprovalRowsRefused(t *testing.T) {
 	e := newHeldEnv(t)
 	ticket := e.open(t)
 	wrong := make([]byte, 16)
+	otherRun := newRun(t, e.a, "another run")
 	cases := map[string]struct {
 		ticket []byte
 		r      rerun
 	}{
-		"no ticket":                     {nil, rerun{}},
-		"a wrong ticket":                {wrong, rerun{}},
-		"outside PREVIEW":               {ticket, rerun{mode: "APPLY"}},
+		"no ticket":      {nil, rerun{}},
+		"a wrong ticket": {wrong, rerun{}},
+		// The held statement re-ran and was recorded in a preview, but the
+		// transaction is no longer a preview when it asks.
+		"outside PREVIEW":               {ticket, rerun{after: setMode(t, guard.ModeApply)}},
+		"a preview in another run":      {ticket, rerun{in: &otherRun}},
 		"a preview of other parameters": {ticket, rerun{params: []any{21}, stmt: heldDelete}},
 		"a preview of another statement": {ticket, rerun{
 			stmt: `DELETE FROM public.leads WHERE id = $1 AND status = 'open'`, params: heldParams,
@@ -333,4 +351,23 @@ func TestRevealApprovalMigrationIsIdempotent(t *testing.T) {
 	require.Equal(t, guard.LatestVersion(), scalarOf[int](t, e.d.Admin, `SELECT max(version) FROM basalt_meta.schema_version`))
 	_, err := e.reveal(t, ticket, rerun{})
 	require.NoError(t, err)
+}
+
+// The change compared is the transaction's latest PREVIEW change: an
+// ordinary write recorded after the preview, in the same transaction, is
+// not the one checked against the held approval.
+func TestRevealApprovalRowsReadsThePreviewChange(t *testing.T) {
+	t.Parallel()
+	e := newHeldEnv(t)
+	rows, err := e.reveal(t, e.open(t), rerun{after: func(ctx context.Context, tx pgx.Tx) {
+		setMode(t, guard.ModeApply)(ctx, tx)
+		const write = `UPDATE public.leads SET score = 1 WHERE id = 1`
+		_, err := tx.Exec(ctx, write)
+		require.NoError(t, err)
+		_, err = guard.FinishChange(ctx, tx, guard.Finish{Op: "UPDATE", Statement: write})
+		require.NoError(t, err)
+		setMode(t, guard.ModePreview)(ctx, tx)
+	}})
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
 }

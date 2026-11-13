@@ -68,8 +68,8 @@ const RevealRowsChanged = "ROWS_CHANGED"
 
 // OpenReveal checks the person's reveal proof for the caller's own pending
 // approval (basalt_meta.open_reveal, version 30) with the key the engine
-// derived from the page's reveal secret, and returns a ticket good for one
-// re-run preview within 2 minutes. Every proof or key failure is
+// derived from the page's reveal secret, and returns a ticket good for 2
+// minutes: any number of re-run previews may use it inside that window. Every proof or key failure is
 // APPROVAL_INVALID detail RevealRefused and changes nothing. Run it in its
 // own transaction; keep the ticket in memory for this one request.
 func OpenReveal(ctx context.Context, q Querier, approvalID uuid.UUID, proof passkey.Assertion, key []byte) ([]byte, error) {

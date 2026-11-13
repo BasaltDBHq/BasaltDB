@@ -88,6 +88,9 @@ type Statement struct {
 // Script is the ordered SQL basalt init runs, in one transaction.
 type Script struct {
 	Statements []Statement
+	// Warnings are for the person, shown before the script runs; none
+	// stops it.
+	Warnings []string
 }
 
 // SQL renders the script for the person to read, secrets redacted.
@@ -157,6 +160,13 @@ func PlanInit(ctx context.Context, q Querier, opts InitOptions) (Script, error) 
 		return Script{}, err
 	}
 	var s Script
+	warning, err := replicationRoleWarning(ctx, q)
+	if err != nil {
+		return Script{}, err
+	}
+	if warning != "" {
+		s.Warnings = append(s.Warnings, warning)
+	}
 	add := func(sql string) { s.Statements = append(s.Statements, Statement{SQL: n.render(sql)}) }
 	add(installRoles)
 	add(installSchema)

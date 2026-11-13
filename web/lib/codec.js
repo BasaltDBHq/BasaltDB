@@ -850,26 +850,53 @@ export async function revealChallenge(kind, id, nonce, key, hash) {
 // secretColumns cannot be checked: every named column must be in the row
 // and null wherever it is, and the row is "unverified", shown as "Not
 // checked against what you sign", never as checked. Anything else throws.
-export async function checkRevealedRow(lineText, revealed) {
-  const line = parseJSON(requireString(lineText, "revealed line"), "revealed line");
-  if (line === null || typeof line !== "object" || line.redacted !== true || typeof line.rowHash !== "string" || !HEX64.test(line.rowHash)) {
-    throw new CodeError("revealed line is not a redacted line");
-  }
+export async function checkRevealedRow(line, revealed) {
+  const rowHash = redactedHash(line);
   const r = strictObject(revealed, "revealed row", ["line", "row"], ["secretColumns"]);
   const values = revealedValues(requireString(r.row, "revealed row"));
+  const texts = rowTexts(r.row);
   if (!("secretColumns" in r)) {
-    if (hex(await sha256(utf8(r.row))) !== line.rowHash) {
+    if (hex(await sha256(utf8(r.row))) !== rowHash) {
       throw new CodeError("revealed row does not hash to its line's rowHash");
     }
-    return { checked: true, values };
+    return { checked: true, values, texts, secretColumns: [] };
   }
   checkSecretColumns(values, r.secretColumns);
-  return { checked: false, values };
+  return { checked: false, values, texts, secretColumns: [...r.secretColumns] };
 }
 
-// checkRevealAnswer checks the reveal answer against the request's lines:
-// rows in line order, each a redacted line at most once, each passing
-// checkRevealedRow. It returns, per row, the line and whether it was checked.
+// redactedHash is the rowHash of a redacted line, given as its text or as
+// parseLine parsed it; anything else throws.
+function redactedHash(line) {
+  const l = typeof line === "string" ? parseJSON(line, "revealed line") : line;
+  if (l === null || typeof l !== "object" || l.redacted !== true || typeof l.rowHash !== "string" || !HEX64.test(l.rowHash)) {
+    throw new CodeError("revealed line is not a redacted line");
+  }
+  return l.rowHash;
+}
+
+// rowTexts is, for each of a revealed row's three values that is an
+// object, its columns' exact text (valueTexts), so a revealed number shows
+// as Postgres printed it. Only for a row revealedValues accepted.
+function rowTexts(row) {
+  const out = [];
+  let i = skipSpace(row, 0) + 1;
+  for (let n = 0; n < REVEAL_ROW_VALUES; n++) {
+    i = skipSpace(row, i);
+    const end = valueEnd(row, i);
+    const text = row.slice(i, end).trim();
+    out.push(text.startsWith("{") ? memberTexts(text) : new Map());
+    i = skipSpace(row, end);
+    if (row[i] === ",") i++;
+  }
+  return out;
+}
+
+// checkRevealAnswer checks the reveal answer against the request's lines
+// (their texts, or the lines parseLine and parseRevertLine return): rows in
+// line order, each a redacted line at most once, each passing
+// checkRevealedRow. It returns, per row, the line, whether it was checked,
+// its values and their exact texts, and its SECRET columns.
 export async function checkRevealAnswer(lineTexts, answer) {
   const a = strictObject(answer, "reveal answer", ["rows"]);
   if (!Array.isArray(a.rows)) throw new CodeError("reveal answer rows is not a list");

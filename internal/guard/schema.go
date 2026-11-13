@@ -55,6 +55,7 @@ const (
 	versionOneClock                  // the person's acts recorded on the wall clock; search_path on every routine
 	versionRevealRevert              // HR-1: the person reveals a revert's redacted lines with a passkey proof
 	versionRevealApproval            // HR-1, HR-2: the person reveals a held approval's redacted lines through a re-run preview
+	versionRevealNoLock              // the approval reveal reads the approval row unlocked, so it never deadlocks with a signature
 )
 
 // migrations lists every version in order. M2 appends versions.
@@ -89,6 +90,7 @@ var migrations = []migration{
 	{version: versionOneClock, sql: v28RecordedTimes + v28SearchPath},
 	{version: versionRevealRevert, sql: v29RevealRevert},
 	{version: versionRevealApproval, sql: v30RevealApproval},
+	{version: versionRevealNoLock, sql: v31RevealApprovalNoLock},
 }
 
 // LatestVersion is the basalt_meta version this build installs.

@@ -201,7 +201,7 @@ func TestReadRegistrationSaysWhenTheHandBackIsFull(t *testing.T) {
 	within(t, func() { cred, err = readRegistration(c, h.req, handBackRP, h) })
 	require.NoError(t, err)
 	require.Equal(t, person.Credential().ID, cred.ID)
-	require.Equal(t, 1, strings.Count(stderr.String(), "basalt: basalt init received more passkeys than expected; paste the long code from the page"))
+	require.Equal(t, 1, strings.Count(stderr.String(), "basalt: basalt init received more passkeys than expected; if the page shows no pairing code, paste the long code from it"))
 }
 
 func TestHandBackRefuses(t *testing.T) {

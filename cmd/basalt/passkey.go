@@ -209,7 +209,8 @@ const maxPasteErrors = 10
 // readPairingLine reads one non-empty line the person types or pastes. It
 // waits in the background so the command's context still ends the wait.
 // When *full closes (the hand-back holds as many passkeys as it takes, so
-// the person's may have been refused) it says to paste the long code, once.
+// the person's may have been refused) it says, once, to paste the long code
+// if the page shows no pairing code.
 func readPairingLine(c *cliIO, full *chan struct{}) (string, error) {
 	pastes, stop := c.pasteInBackground(c.ctx)
 	defer stop()
@@ -219,7 +220,7 @@ func readPairingLine(c *cliIO, full *chan struct{}) (string, error) {
 			return p.code, p.err
 		case <-*full:
 			*full = nil
-			fmt.Fprintln(c.stderr, "\nbasalt: basalt init received more passkeys than expected; paste the long code from the page")
+			fmt.Fprintln(c.stderr, "\nbasalt: basalt init received more passkeys than expected; if the page shows no pairing code, paste the long code from it")
 		case <-c.ctx.Done():
 			return "", c.ctx.Err()
 		}

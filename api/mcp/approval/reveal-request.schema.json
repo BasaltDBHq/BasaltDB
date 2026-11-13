@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/reveal-request.v1.json",
+  "title": "Reveal request",
+  "description": "Planned (owner decision HR-1, basalt_meta versions 29 and 30). The body of POST /api/v1/approvals/{approvalId}/reveal and POST /api/v1/reverts/{revertId}/reveal, which the approval and revert pages send to the engine that served them, on loopback or inside a Vault link session, under the link's secret, when the person presses Show values. Byte fields are base64url without padding. See CONTRACT.md, Approvals, Rows hidden from the agent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "proof",
+    "revealSecret"
+  ],
+  "properties": {
+    "proof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "credentialId",
+        "authenticatorData",
+        "clientDataJson",
+        "signature"
+      ],
+      "description": "The reveal proof: a WebAuthn assertion by the person's passkey whose challenge is sha256(utf8(\"basalt-reveal.1\\n\" + kind + \"\\n\" + id + \"\\n\" + revealNonce + \"\\n\" + hex(sha256(revealKey)) + \"\\n\" + rowsHash)), with kind APPROVE or REVERT, id the approvalId or revertId in canonical lowercase form, revealNonce as the request carries it (base64url), revealKey = HKDF-SHA-256(ikm the 16 decoded bytes of revealSecret, salt empty, info \"basalt-reveal-key.1\", 32 bytes), hex lowercase, and rowsHash the binding's (lowercase hex; a large plan's rowsHash, not its sampleHash). The same fields as an approval response, without approvalId.",
+      "properties": {
+        "credentialId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "authenticatorData": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "clientDataJson": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "signature": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "description": "ASN.1 DER ECDSA signature (ES256)."
+        }
+      }
+    },
+    "revealSecret": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$",
+      "description": "16 random bytes the page made for this reveal (crypto.getRandomValues), base64url, 22 characters. Sent only to the engine, never shown; the engine passes Postgres only revealKey, derived from it, and never logs or stores either. Without it a reveal proof is worthless."
+    }
+  }
+}

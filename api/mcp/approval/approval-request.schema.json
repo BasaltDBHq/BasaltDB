@@ -29,6 +29,11 @@
         "type": "string"
       }
     },
+    "revealNonce": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$",
+      "description": "Planned (HR-1). The approval's current single-use reveal nonce, 16 bytes base64url, which a reveal proof signs. The column exists from basalt_meta version 29, but the engine serves it, and an approval reveal, only once version 30 is installed (open_reveal, reveal_approval_rows). Served only by the engine at GET /api/v1/approvals/{approvalId} (read with basalt_meta.reveal_nonce), never carried in a long link: a long link cannot reveal. See CONTRACT.md, Approvals, Rows hidden from the agent."
+    },
     "credentialIds": {
       "type": "array",
       "description": "Registered passkey credential ids, base64url, used as allowCredentials. May be empty.",

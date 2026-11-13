@@ -4,6 +4,8 @@
 // signs, posts the response back for the engine to relay. Same origin only.
 // Pure functions with the fetch passed in, so they run under `node --test`.
 
+import { rejectBody } from "./scope.js";
+
 const UUID_PATH = "([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})";
 
 // RelayError is an answer from the engine that is not a success, or no
@@ -41,6 +43,13 @@ export function pageId(pathname, page) {
 export function relayPaths(page, id) {
   const action = page === "approvals" ? "approve" : "apply";
   return { request: `/api/v1/${page}/${id}`, relay: `/api/v1/${page}/${id}/${action}` };
+}
+
+// revertPaths are a revert's routes on the engine (CONTRACT.md, Local
+// pages): the request, the signature relay, Reject and the scope route.
+export function revertPaths(id) {
+  const base = `/api/v1/reverts/${id}`;
+  return { request: base, relay: `${base}/apply`, reject: `${base}/reject`, scope: `${base}/scope` };
 }
 
 const UNREACHABLE = "cannot reach the BasaltDB engine: is it still running?";
@@ -126,6 +135,12 @@ export function postResponse(fetchFn, path, secret, json) {
       credentials: "omit",
     }),
   );
+}
+
+// rejectRevert posts the person's Reject, with the note when they wrote one,
+// under the link's secret. Never retried, like the relay.
+export function rejectRevert(fetchFn, id, secret, note) {
+  return postResponse(fetchFn, revertPaths(id).reject, secret, rejectBody(note));
 }
 
 // revertDone says what a relayed revert did (the result of apply_revert).

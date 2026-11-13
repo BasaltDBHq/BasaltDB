@@ -611,7 +611,7 @@ func TestBatchedRequestFormat2(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, b.Batched)
 	require.Equal(t, sample, req.Lines)
-	require.Empty(t, req.CredentialIDs, "format 2 leaves out credential ids: the passkeys are discoverable")
+	require.Equal(t, []passkey.Bytes{seq(16, 1)}, req.CredentialIDs, "format 2 carries the credential ids, so the page offers only those passkeys")
 }
 
 // TestBatchedSkipsFormat2: the batchedSkips fixture round-trips in format 2

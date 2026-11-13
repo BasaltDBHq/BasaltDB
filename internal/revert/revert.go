@@ -361,16 +361,16 @@ func (r Request) checkSample(b Binding) error {
 }
 
 // Fragment returns the link fragment (without '#') in format 2, as for
-// approvals: the binding and the lines in compact form, no credential ids
-// and no separate revert id.
+// approvals: the binding and the lines in compact form, then the
+// database's credential ids, and no separate revert id.
 func (r Request) Fragment() (string, error) {
-	return linkcodec.EncodeRequest(r.Binding, r.Lines)
+	return linkcodec.EncodeRequest(r.Binding, r.Lines, r.CredentialIDs)
 }
 
 // fromCompact is the request a format 2 link carries, its id read from the
 // binding; Check refuses a binding that does not parse.
-func fromCompact(binding string, lines []string) Request {
-	r := Request{Binding: binding, Lines: lines}
+func fromCompact(binding string, lines []string, ids []passkey.Bytes) Request {
+	r := Request{Binding: binding, Lines: lines, CredentialIDs: ids}
 	if b, err := ParseBinding(binding); err == nil {
 		r.RevertID = b.RevertID
 	}

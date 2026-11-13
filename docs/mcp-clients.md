@@ -48,7 +48,7 @@ A JSON response naming the server `basalt` means the shim reached the engine. If
 
 ## Reading the ledger
 
-`basalt log --agent NAME` reads the agent's change records with the agent's own credential, so it needs to read the credential file. Once the file belongs to the engine's user, run it as that user (`sudo -u basalt basalt log --agent NAME`) or pass a copy of the URL in `BASALT_DATABASE_URL`.
+`basalt log --agent NAME` reads the agent's change records with the agent's own credential. Run it as yourself. When the engine runs as a service, its credential file belongs to the engine's user, so `basalt log`, `approve` and `revert` ask the running engine over its person socket instead of reading the file ([install.md](install.md), step 6). In same-user mode (`--no-service`) they read the credential file directly.
 
 ## Approving held writes
 

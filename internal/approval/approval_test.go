@@ -278,7 +278,7 @@ func TestFormat2IsShorter(t *testing.T) {
 	got, _, err := approval.ParseRequest(v2)
 	require.NoError(t, err)
 	require.Equal(t, req.Lines, got.Lines)
-	require.Empty(t, got.CredentialIDs, "format 2 leaves out credential ids: the passkeys are discoverable")
+	require.Equal(t, []passkey.Bytes{seq(16, 1)}, got.CredentialIDs, "format 2 carries the credential ids, so the page offers only those passkeys")
 }
 
 // FuzzParseRequest: whatever an approval link carries, parsing never

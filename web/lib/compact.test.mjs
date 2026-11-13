@@ -20,7 +20,7 @@ for (const v of vectors.valid) {
     const req = await parsers[v.kind]("#" + v.fragment);
     assert.equal(req.bindingText, v.binding);
     assert.deepEqual(req.lines.length, v.lines.length);
-    assert.deepEqual(req.credentialIds, [], "format 2 carries no credential ids");
+    assert.deepEqual(req.credentialIds.map(b64urlEncode), v.credentialIds ?? [], "the link's credential ids, or none");
     assert.deepEqual(rebuildTexts(v.payload, v.lines.length + 1), [v.binding, ...v.lines]);
   });
 }

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 
@@ -45,6 +46,46 @@ func serveHint(origin string) string {
 	port := origin[strings.LastIndex(origin, ":")+1:]
 	return fmt.Sprintf("  (port %s is taken, so basalt init cannot serve this page: stop what holds it (lsof -nP -iTCP:%s -sTCP:LISTEN), "+
 		"or open the link while the engine serves the pages there)\n", port, port)
+}
+
+// defaultPasskeyLabel names a new passkey so the picker tells it apart from
+// the person's other ones for the same site (every local database's pages
+// are on localhost): "<database> · <agent> · <date>", the date local. A
+// label past maxPasskeyLabel bytes shortens the database name, then drops
+// the agent.
+func defaultPasskeyLabel(db, agent string, now time.Time) string {
+	const sep = " · "
+	date := now.Format(time.DateOnly)
+	parts := []string{db}
+	if agent != "" {
+		parts = append(parts, agent)
+	}
+	parts = append(parts, date)
+	label := strings.Join(parts, sep)
+	if len(label) <= maxPasskeyLabel {
+		return label
+	}
+	rest := strings.Join(parts[1:], sep)
+	room := maxPasskeyLabel - len(sep) - len(rest)
+	if room < 8 && agent != "" {
+		rest = date
+		room = maxPasskeyLabel - len(sep) - len(rest)
+	}
+	return truncateUTF8(db, room) + sep + rest
+}
+
+// truncateUTF8 is s cut to at most n bytes on a character boundary, with
+// "…" in place of what was cut.
+func truncateUTF8(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	const ellipsis = "…"
+	cut := n - len(ellipsis)
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:max(cut, 0)] + ellipsis
 }
 
 // hasPasskey reports whether a passkey is registered for this database.
@@ -129,7 +170,7 @@ func passkeyStep(c *cliIO, conn *pgx.Conn, f initFlags) error {
 	}
 	label := f.passkeyLabel
 	if label == "" {
-		label = conn.Config().Database
+		label = defaultPasskeyLabel(conn.Config().Database, f.agent, c.now())
 	}
 	if err := registerPasskey(c, conn, rp, label, false); err != nil {
 		return err

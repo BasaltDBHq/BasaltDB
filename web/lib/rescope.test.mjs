@@ -20,6 +20,7 @@ import {
   widenChallenge,
   widenSelect,
 } from "./rescope.js";
+import { sameOriginSession } from "./transport.js";
 
 const fixtures = JSON.parse(
   readFileSync(new URL("../../internal/revert/testdata/fixtures.json", import.meta.url), "utf8"),
@@ -149,7 +150,7 @@ test("a widen asks the passkey over the widen challenge, then posts the proof wi
   const { obj, req } = await taskRequest();
   const engine = fakeEngine(async () => ({ status: 200, body: { request: { ...obj, rescopeNonce: "BBECAwQFBgcICQoLDA0ODw" }, catalog: CATALOG } }));
   const pk = fakePasskey();
-  const out = await widen({ req, rpId: "localhost", secret: "oldSecret", fetchFn: engine.fetchFn, getAssertion: pk.get });
+  const out = await widen({ req, rpId: "localhost", secret: "oldSecret", session: sameOriginSession(engine.fetchFn), getAssertion: pk.get });
 
   assert.equal(pk.seen.length, 1);
   assert.equal(engine.calls.length, 1);
@@ -186,11 +187,11 @@ test("no passkey, no widen: a cancelled prompt sends nothing", async () => {
   const cancel = async () => {
     throw Object.assign(new Error("cancelled"), { name: "NotAllowedError" });
   };
-  await assert.rejects(widen({ req, rpId: "localhost", secret: "s", fetchFn: engine.fetchFn, getAssertion: cancel }), { name: "NotAllowedError" });
+  await assert.rejects(widen({ req, rpId: "localhost", secret: "s", session: sameOriginSession(engine.fetchFn), getAssertion: cancel }), { name: "NotAllowedError" });
   assert.equal(engine.calls.length, 0);
   // Nor without the nonce the proof must name.
   await assert.rejects(
-    widen({ req: { ...req, rescopeNonce: null }, rpId: "localhost", secret: "s", fetchFn: engine.fetchFn, getAssertion: fakePasskey().get }),
+    widen({ req: { ...req, rescopeNonce: null }, rpId: "localhost", secret: "s", session: sameOriginSession(engine.fetchFn), getAssertion: fakePasskey().get }),
     /nonce/,
   );
   assert.equal(engine.calls.length, 0);
@@ -200,7 +201,7 @@ test("a narrow posts only the select, never a proof or secret, under the current
   const { obj, req } = await taskRequest();
   const engine = fakeEngine(async () => ({ status: 200, body: { request: obj } }));
   const select = { ...widenSelect(req.binding), agents: ["basalt_agent_bot"], tables: ["public.leads"] };
-  const out = await narrow({ req, secret: "s", fetchFn: engine.fetchFn, select });
+  const out = await narrow({ req, secret: "s", session: sameOriginSession(engine.fetchFn), select });
   assert.equal(engine.calls.length, 1);
   assert.equal(engine.calls[0].init.headers["basalt-link-secret"], "s");
   assert.deepEqual(JSON.parse(engine.calls[0].init.body), { select });
@@ -211,11 +212,11 @@ test("a narrow posts only the select, never a proof or secret, under the current
 test("an answer for another revert, or one that does not hash, is refused", async () => {
   const { obj, req } = await taskRequest();
   const other = fakeEngine(async () => ({ status: 200, body: { request: { ...obj, binding: obj.binding.replace(ID, "0193a4c2-7d1e-7c3a-9f00-0000000000ff"), revertId: "0193a4c2-7d1e-7c3a-9f00-0000000000ff" } } }));
-  await assert.rejects(narrow({ req, secret: "s", fetchFn: other.fetchFn, select: widenSelect(req.binding) }), /another revert/);
+  await assert.rejects(narrow({ req, secret: "s", session: sameOriginSession(other.fetchFn), select: widenSelect(req.binding) }), /another revert/);
   const lines = [...obj.lines];
   lines[3] = lines[3].replace('"won"', '"lost"');
   const tampered = fakeEngine(async () => ({ status: 200, body: { request: { ...obj, lines } } }));
-  await assert.rejects(narrow({ req, secret: "s", fetchFn: tampered.fetchFn, select: widenSelect(req.binding) }), /rowsHash/);
+  await assert.rejects(narrow({ req, secret: "s", session: sameOriginSession(tampered.fetchFn), select: widenSelect(req.binding) }), /rowsHash/);
 });
 
 test("a refused scope comes back as the engine's error", async () => {
@@ -224,7 +225,7 @@ test("a refused scope comes back as the engine's error", async () => {
     status: 404,
     body: { code: "NOT_FOUND", reason: "LINK_RESET", message: "reset", personMessage: "The agent reset this revert to its own work." },
   }));
-  await assert.rejects(narrow({ req, secret: "s", fetchFn: engine.fetchFn, select: widenSelect(req.binding) }), (err) => {
+  await assert.rejects(narrow({ req, secret: "s", session: sameOriginSession(engine.fetchFn), select: widenSelect(req.binding) }), (err) => {
     assert.equal(err.reason, "LINK_RESET");
     return true;
   });

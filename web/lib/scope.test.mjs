@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 
 import { parseRevertBinding, parseRevertRequest } from "./codec.js";
 import { revertPaths, rejectRevert } from "./local.js";
+import { sameOriginSession } from "./transport.js";
 import {
   MAX_NOTE,
   RESET_MESSAGE,
@@ -132,24 +133,24 @@ test("Reject posts the note to the engine under the link's secret, and nothing e
     calls.push({ path, init });
     return new Response(JSON.stringify({ revertId: ID, status: "REJECTED", rejectedAt: "2026-11-11T06:10:00Z" }));
   };
-  const out = await rejectRevert(fetchFn, ID, "s3cr3t", "Merge them instead");
+  const out = await rejectRevert(sameOriginSession(fetchFn), ID, "s3cr3t", "Merge them instead");
   assert.equal(out.status, "REJECTED");
   assert.equal(calls.length, 1);
   assert.equal(calls[0].path, paths.reject);
   assert.equal(calls[0].init.method, "POST");
   assert.equal(calls[0].init.headers["basalt-link-secret"], "s3cr3t");
-  assert.equal(calls[0].init.headers["Content-Type"], "application/json");
+  assert.equal(calls[0].init.headers["content-type"], "application/json");
   assert.equal(calls[0].init.body, '{"note":"Merge them instead"}');
   assert.equal(calls[0].init.credentials, "omit");
 
-  await rejectRevert(fetchFn, ID, "s3cr3t", "");
+  await rejectRevert(sameOriginSession(fetchFn), ID, "s3cr3t", "");
   assert.equal(calls[1].init.body, "{}");
 });
 
 test("a refused reject reaches the page as the engine's error", async () => {
   const fetchFn = async () =>
     new Response(JSON.stringify({ code: "REVERT_INVALID", message: "signed meanwhile", personMessage: "This revert can no longer be rejected." }), { status: 409 });
-  await assert.rejects(rejectRevert(fetchFn, ID, "s3cr3t", ""), (err) => {
+  await assert.rejects(rejectRevert(sameOriginSession(fetchFn), ID, "s3cr3t", ""), (err) => {
     assert.equal(err.name, "RelayError");
     assert.equal(err.code, "REVERT_INVALID");
     assert.equal(err.personMessage, "This revert can no longer be rejected.");

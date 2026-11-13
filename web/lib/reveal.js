@@ -64,7 +64,7 @@ export function revealBody(assertion, secret) {
 // reveal secret, and checks every row of the answer against its line. It
 // returns a Map from line index to { checked, values, texts, secretColumns }.
 // A row that fails the check fails the whole answer: nothing is shown.
-export async function reveal({ kind, id, req, rpId, path, secret, fetchFn, getAssertion }) {
+export async function reveal({ kind, id, req, rpId, path, secret, session, getAssertion }) {
   const revealSecret = newRevealSecret();
   const key = await revealKey(revealSecret);
   const id_ = kind === KIND_APPROVE ? req.approvalId : req.revertId;
@@ -91,7 +91,7 @@ export async function reveal({ kind, id, req, rpId, path, secret, fetchFn, getAs
     revealSecret,
   );
   revealSecret.fill(0);
-  const answer = await postResponse(fetchFn, path, secret, body);
+  const answer = await postResponse(session, path, secret, body);
   let rows;
   try {
     rows = await checkRevealAnswer(req.lines, answer);

@@ -179,6 +179,7 @@ func TestPagesServeTheEmbeddedFiles(t *testing.T) {
 		"/passkeys/":             "404",
 		"/lib/approve.js":        "pageId",
 		"/lib/local.js":          "RelayError",
+		"/lib/transport.js":      "sameOriginSession",
 		"/style.css":             "{",
 		"/fonts/Geist-400.woff2": "wOF2",
 		"/fonts/OFL.txt":         "SIL Open Font License",

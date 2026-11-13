@@ -15,6 +15,7 @@ import {
   relyingParty,
   visibleText,
 } from "./codec.js";
+import { pageTransport } from "./transport.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
 import { $, APPROVE_REOPEN, el, fail, linkFailure, loadOrPaste, personText, setPill, showCode, showDone, showRelayFailed, webauthnError, whenText } from "./page.js";
 import { applyReveal, canReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
@@ -127,12 +128,10 @@ function showCascadeConfirmation(summary) {
   $("cascade-confirm").hidden = false;
 }
 
-// engineFetch is fetch bound to the window, for the local relay.
-const engineFetch = (path, init) => window.fetch(path, init);
-
 // loadRequest reads the request: from the fragment of a long link, or from
-// the engine for a short link. relay is the path to post the signature to,
-// null for a long link.
+// the engine for a short link. relay holds the path to post the signature
+// to, the link's secret and the session to the engine (transport.js), null
+// for a long link.
 async function loadRequest(hash) {
   // Every link names its approval in the path; a long link's request must
   // name the same one.
@@ -146,9 +145,12 @@ async function loadRequest(hash) {
   // A short link: #s=<secret>. Without it the engine answers as for an
   // unknown id.
   const secret = linkSecret(hash);
-  const req = await checkApprovalRequest(await fetchRequest(engineFetch, paths.request, secret));
+  // Every later call for this link (Show values, the relay) uses the same
+  // session.
+  const session = await pageTransport().open({ page: "approvals", id, secret });
+  const req = await checkApprovalRequest(await fetchRequest(session, paths.request, secret));
   if (req.approvalId !== id) throw new Error(`the engine sent approval ${req.approvalId}, not ${id}`);
-  return { req, relay: { path: paths.relay, secret } };
+  return { req, relay: { path: paths.relay, secret, session } };
 }
 
 // finish relays the signed response when the page came from a short link,
@@ -156,7 +158,7 @@ async function loadRequest(hash) {
 async function finish(response, relay) {
   if (relay !== null) {
     try {
-      await postResponse(engineFetch, relay.path, relay.secret, approvalResponseJSON(response));
+      await postResponse(relay.session, relay.path, relay.secret, approvalResponseJSON(response));
       showDone("Approved. The agent will continue.");
       setPill("state", "Approved", "ok");
       return;
@@ -225,7 +227,7 @@ function wireReveal(rp, state) {
         rpId: rp.rpId,
         path: revealPath("approvals", req.approvalId),
         secret: relay.secret,
-        fetchFn: engineFetch,
+        session: relay.session,
         getAssertion: (options) => navigator.credentials.get(options),
       });
       applyReveal(state, req, shown);

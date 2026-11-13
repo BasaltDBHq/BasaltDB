@@ -7,14 +7,12 @@ import (
 )
 
 type cursorKey struct {
-	ID    string `json:"id,omitempty"`
-	Seq   int64  `json:"seq,omitempty"`
-	Name  string `json:"name,omitempty"`
-	Sort  any    `json:"sort,omitempty"`
-	SortS string `json:"sortS,omitempty"`
+	ID   string `json:"id,omitempty"`
+	Seq  int64  `json:"seq,omitempty"`
+	Name string `json:"name,omitempty"`
 }
 
-// EncodeIDCursor builds an opaque cursor from a record/collection id.
+// EncodeIDCursor builds an opaque cursor from a row id (change, approval, run).
 func EncodeIDCursor(id string) string {
 	return encodeCursor(cursorKey{ID: id})
 }
@@ -31,12 +29,12 @@ func DecodeIDCursor(cursor string) (string, error) {
 	return k.ID, nil
 }
 
-// EncodeNameCursor builds a cursor for name-ordered lists (collections).
+// EncodeNameCursor builds a cursor for name-ordered lists (revert lines, by line hash).
 func EncodeNameCursor(name string) string {
 	return encodeCursor(cursorKey{Name: name})
 }
 
-// DecodeNameCursor returns the collection name from a cursor.
+// DecodeNameCursor returns the name from a cursor.
 func DecodeNameCursor(cursor string) (string, error) {
 	k, err := decodeCursor(cursor)
 	if err != nil {
@@ -48,7 +46,7 @@ func DecodeNameCursor(cursor string) (string, error) {
 	return k.Name, nil
 }
 
-// EncodeSeqCursor builds a cursor for seq-ordered change logs.
+// EncodeSeqCursor builds a cursor for seq-ordered lists.
 func EncodeSeqCursor(seq int64) string {
 	return encodeCursor(cursorKey{Seq: seq})
 }
@@ -63,37 +61,6 @@ func DecodeSeqCursor(cursor string) (int64, error) {
 		return 0, fmt.Errorf("invalid cursor: missing seq")
 	}
 	return k.Seq, nil
-}
-
-// EncodeValueCursor builds a keyset cursor from a sort value and record id.
-func EncodeValueCursor(value any, id string) string {
-	var k cursorKey
-	k.ID = id
-	switch v := value.(type) {
-	case string:
-		k.SortS = v
-	default:
-		k.Sort = value
-	}
-	return encodeCursor(k)
-}
-
-// DecodeValueCursor returns the sort value and id from a composite cursor.
-func DecodeValueCursor(cursor string) (sortValue any, id string, err error) {
-	k, err := decodeCursor(cursor)
-	if err != nil {
-		return nil, "", err
-	}
-	if k.ID == "" {
-		return nil, "", fmt.Errorf("invalid cursor: missing id")
-	}
-	if k.SortS != "" {
-		return k.SortS, k.ID, nil
-	}
-	if k.Sort != nil {
-		return k.Sort, k.ID, nil
-	}
-	return nil, k.ID, nil
 }
 
 func encodeCursor(k cursorKey) string {

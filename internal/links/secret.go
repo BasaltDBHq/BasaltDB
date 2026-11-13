@@ -98,7 +98,10 @@ type secretEntry struct {
 
 // RelayLink is a live relay link: its token and expiry.
 type RelayLink struct {
-	Token     channel.LinkToken
+	Token channel.LinkToken
+	// Item is the approval or revert the link opens; logs name a link by
+	// it, never by its token (a bearer handle at the Vault).
+	Item      uuid.UUID
 	ExpiresAt time.Time
 }
 
@@ -373,9 +376,9 @@ func (s *Secrets) Relay() []RelayLink {
 	s.mu.Lock()
 	dropped := s.prune()
 	out := make([]RelayLink, 0, len(s.live))
-	for _, e := range s.live {
+	for id, e := range s.live {
 		if e.keys != nil {
-			out = append(out, RelayLink{Token: e.keys.Token, ExpiresAt: e.expires})
+			out = append(out, RelayLink{Token: e.keys.Token, Item: id, ExpiresAt: e.expires})
 		}
 	}
 	f := s.onDrop

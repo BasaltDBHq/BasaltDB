@@ -11,6 +11,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/pgcatalog"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
@@ -48,6 +49,13 @@ func (g gatedLedger) ListChanges(ctx context.Context, p ledger.ChangeListParams)
 		return pagination.Page[ledger.Change]{}, err
 	}
 	return g.inner.ListChanges(ctx, p)
+}
+
+func (g gatedLedger) ListAccess(ctx context.Context) (pgcatalog.Access, error) {
+	if err := g.check(ctx); err != nil {
+		return pgcatalog.Access{}, err
+	}
+	return g.inner.ListAccess(ctx)
 }
 
 func (g gatedLedger) RowChanges(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID][]ledger.RowChange, error) {

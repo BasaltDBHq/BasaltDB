@@ -296,6 +296,10 @@ var handlers = map[Method]handler{
 		page, err := l.ListChanges(ctx, p.toDomain())
 		return mapPage(page, changeFromDomain), err
 	}),
+	MethodListAccess: call(func(ctx context.Context, l Ledger, _ emptyParams) (any, error) {
+		a, err := l.ListAccess(ctx)
+		return accessFromDomain(a), err
+	}),
 	MethodRowChanges: call(func(ctx context.Context, l Ledger, p rowChangesParams) (any, error) {
 		if len(p.ChangeIDs) > maxRowChangeIDs {
 			return nil, invalid(fmt.Errorf("at most %d change ids", maxRowChangeIDs))

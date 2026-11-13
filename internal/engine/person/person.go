@@ -24,6 +24,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/pgcatalog"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
@@ -38,6 +39,7 @@ const (
 	MethodPages           Method = "PAGES"
 	MethodCheckHealth     Method = "CHECK_HEALTH"
 	MethodListChanges     Method = "LIST_CHANGES"
+	MethodListAccess      Method = "LIST_ACCESS"
 	MethodRowChanges      Method = "ROW_CHANGES"
 	MethodListPasskeys    Method = "LIST_PASSKEYS"
 	MethodFindApproval    Method = "FIND_APPROVAL"
@@ -135,6 +137,7 @@ var ErrUIDNotAllowed = errors.New("the engine does not admit this OS user on its
 type Ledger interface {
 	CheckHealth(ctx context.Context, opts ledger.HealthOptions) (ledger.Health, error)
 	ListChanges(ctx context.Context, p ledger.ChangeListParams) (pagination.Page[ledger.Change], error)
+	ListAccess(ctx context.Context) (pgcatalog.Access, error)
 	RowChanges(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID][]ledger.RowChange, error)
 	ListPasskeys(ctx context.Context) ([]ledger.Passkey, error)
 	FindApproval(ctx context.Context, id uuid.UUID) (ledger.Approval, error)
@@ -175,6 +178,12 @@ func (l *DBLedger) CheckHealth(ctx context.Context, opts ledger.HealthOptions) (
 // ListChanges is ledger.ListChanges.
 func (l *DBLedger) ListChanges(ctx context.Context, p ledger.ChangeListParams) (pagination.Page[ledger.Change], error) {
 	return ledger.ListChanges(ctx, l.db, p)
+}
+
+// ListAccess is pgcatalog.ListAccess: session_user's privileges, so the
+// agent's own.
+func (l *DBLedger) ListAccess(ctx context.Context) (pgcatalog.Access, error) {
+	return pgcatalog.ListAccess(ctx, l.db)
 }
 
 // RowChanges is ledger.RowChanges.

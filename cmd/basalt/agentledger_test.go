@@ -24,6 +24,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/pgcatalog"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
@@ -37,6 +38,10 @@ func (emptyLedger) CheckHealth(context.Context, ledger.HealthOptions) (ledger.He
 
 func (emptyLedger) ListChanges(context.Context, ledger.ChangeListParams) (pagination.Page[ledger.Change], error) {
 	return pagination.Page[ledger.Change]{}, nil
+}
+
+func (emptyLedger) ListAccess(context.Context) (pgcatalog.Access, error) {
+	return pgcatalog.Access{}, nil
 }
 
 func (emptyLedger) RowChanges(context.Context, []uuid.UUID) (map[uuid.UUID][]ledger.RowChange, error) {
@@ -80,6 +85,12 @@ const personUIDForTest = 4242
 // seeing every peer as peer.
 func personSocket(t *testing.T, peer uint32) string {
 	t.Helper()
+	return personSocketFor(t, peer, emptyLedger{})
+}
+
+// personSocketFor is personSocket with agent bot's ledger given.
+func personSocketFor(t *testing.T, peer uint32, l person.Ledger) string {
+	t.Helper()
 	dir, err := os.MkdirTemp("", "bcs")
 	require.NoError(t, err)
 	t.Cleanup(func() { os.RemoveAll(dir) })
@@ -87,7 +98,7 @@ func personSocket(t *testing.T, peer uint32) string {
 	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
 	require.NoError(t, err)
 	srv := person.NewServer(person.Options{
-		Allow: []uint32{personUIDForTest}, Agents: map[string]person.Ledger{"bot": emptyLedger{}},
+		Allow: []uint32{personUIDForTest}, Agents: map[string]person.Ledger{"bot": l},
 		PeerUID: func(*net.UnixConn) (uint32, error) { return peer, nil },
 		Log:     slog.New(slog.DiscardHandler),
 	})

@@ -16,6 +16,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/pgcatalog"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
@@ -128,6 +129,15 @@ func (a *AgentClient) ListChanges(ctx context.Context, p ledger.ChangeListParams
 		return pagination.Page[ledger.Change]{}, err
 	}
 	return pagination.Page[ledger.Change]{Items: mapSlice(out.Items, changeDTO.toDomain), NextCursor: out.NextCursor}, nil
+}
+
+// ListAccess asks LIST_ACCESS.
+func (a *AgentClient) ListAccess(ctx context.Context) (pgcatalog.Access, error) {
+	var out accessDTO
+	if err := a.c.call(ctx, a.agent, MethodListAccess, emptyParams{}, &out); err != nil {
+		return pgcatalog.Access{}, err
+	}
+	return out.toDomain(), nil
 }
 
 // RowChanges asks ROW_CHANGES.

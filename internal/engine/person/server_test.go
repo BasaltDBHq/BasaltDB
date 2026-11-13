@@ -28,6 +28,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/pgcatalog"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
@@ -46,6 +47,7 @@ type fakeLedger struct {
 	changes  []ledger.Change
 	keys     []ledger.Passkey
 	approval ledger.Approval
+	access   pgcatalog.Access
 	err      error
 }
 
@@ -60,6 +62,10 @@ func (f *fakeLedger) ListChanges(_ context.Context, p ledger.ChangeListParams) (
 		return pagination.Page[ledger.Change]{}, errors.New("limit not defaulted")
 	}
 	return pagination.Page[ledger.Change]{Items: f.changes, NextCursor: "next"}, f.hit()
+}
+
+func (f *fakeLedger) ListAccess(context.Context) (pgcatalog.Access, error) {
+	return f.access, f.hit()
 }
 
 func (f *fakeLedger) RowChanges(context.Context, []uuid.UUID) (map[uuid.UUID][]ledger.RowChange, error) {
@@ -330,7 +336,7 @@ func TestThePersonSocketRoundTripsWhatTheCLIPrints(t *testing.T) {
 	require.Equal(t, guard.ChainHead{Seq: 7, Hash: []byte{1, 2}}, h.Head)
 }
 
-// agentCalls are the 11 agent-scoped calls; PAGES names no agent.
+// agentCalls are the 12 agent-scoped calls; PAGES names no agent.
 func agentCalls() map[person.Method]func(context.Context, *person.AgentClient) error {
 	id := uuid.Must(uuid.NewV7())
 	scope := guard.RevertScope{Kind: "RUN", ID: id}
@@ -341,6 +347,10 @@ func agentCalls() map[person.Method]func(context.Context, *person.AgentClient) e
 		},
 		person.MethodListChanges: func(c context.Context, a *person.AgentClient) error {
 			_, err := a.ListChanges(c, ledger.ChangeListParams{})
+			return err
+		},
+		person.MethodListAccess: func(c context.Context, a *person.AgentClient) error {
+			_, err := a.ListAccess(c)
 			return err
 		},
 		person.MethodRowChanges: func(c context.Context, a *person.AgentClient) error {
@@ -387,7 +397,7 @@ func agentCalls() map[person.Method]func(context.Context, *person.AgentClient) e
 // every call is scoped to that agent; another agent's ledger is refused.
 func TestAnAgentSharingThePersonsUIDSeesOnlyItsOwnLedger(t *testing.T) {
 	t.Parallel()
-	require.Len(t, agentCalls(), 11, "every agent-scoped method")
+	require.Len(t, agentCalls(), 12, "every agent-scoped method")
 	for m, call := range agentCalls() {
 		t.Run(string(m), func(t *testing.T) {
 			t.Parallel()
@@ -446,4 +456,27 @@ func TestAPeerRunningTwoAgentsReachesExactlyThoseTwo(t *testing.T) {
 	require.Equal(t, int32(1), one.calls.Load())
 	require.Equal(t, int32(1), two.calls.Load())
 	require.Zero(t, third.calls.Load())
+}
+
+func TestListAccessOverSocket(t *testing.T) {
+	t.Parallel()
+	want := pgcatalog.Access{
+		Read:       []string{"public.leads", "public.orders"},
+		Write:      []string{"public.leads"},
+		NotGranted: []string{"auth.users"},
+	}
+	c := serve(t, []uint32{personUID}, peerIs(personUID), &fakeLedger{access: want})
+	got, err := c.Agent("bot").ListAccess(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestListAccessEmptyListsStayLists(t *testing.T) {
+	t.Parallel()
+	c := serve(t, []uint32{personUID}, peerIs(personUID), &fakeLedger{})
+	got, err := c.Agent("bot").ListAccess(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, got.Read)
+	require.NotNil(t, got.Write)
+	require.NotNil(t, got.NotGranted)
 }

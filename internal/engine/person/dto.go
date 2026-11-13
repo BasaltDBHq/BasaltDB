@@ -10,6 +10,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/pgcatalog"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
@@ -24,6 +25,21 @@ type PagesDTO struct {
 }
 
 type emptyParams struct{}
+
+// accessDTO is LIST_ACCESS's result; the lists are never null.
+type accessDTO struct {
+	Read       []string `json:"read"`
+	Write      []string `json:"write"`
+	NotGranted []string `json:"notGranted"`
+}
+
+func accessFromDomain(a pgcatalog.Access) accessDTO {
+	return accessDTO{Read: nonNil(a.Read), Write: nonNil(a.Write), NotGranted: nonNil(a.NotGranted)}
+}
+
+func (d accessDTO) toDomain() pgcatalog.Access {
+	return pgcatalog.Access{Read: d.Read, Write: d.Write, NotGranted: d.NotGranted}
+}
 
 type headDTO struct {
 	Seq  int64         `json:"seq"`

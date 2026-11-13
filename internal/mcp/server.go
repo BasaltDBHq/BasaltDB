@@ -238,6 +238,30 @@ func RequestOf(line []byte) (req Request, ok bool) {
 // could not answer (the shim, for one its engine took and dropped).
 const ErrCodeServer = -32000
 
+// ErrCodePeerRefused is the one line the engine writes, with a null id,
+// before it closes a connection from an OS user other than the agent's
+// (CONTRACT.md, Next steps, Startup failures). The shim answers the
+// client's requests with its message.
+const ErrCodePeerRefused = -32001
+
+// WritePeerRefused writes the engine's refusal of a peer.
+func WritePeerRefused(w io.Writer, message string) error {
+	return WriteError(w, nil, ErrCodePeerRefused, message)
+}
+
+// PeerRefusal is the message of an engine's refusal line; "" for any other
+// line.
+func PeerRefusal(line []byte) string {
+	var r struct {
+		ID    any       `json:"id"`
+		Error *RPCError `json:"error"`
+	}
+	if json.Unmarshal(line, &r) != nil || r.ID != nil || r.Error == nil || r.Error.Code != ErrCodePeerRefused {
+		return ""
+	}
+	return r.Error.Message
+}
+
 // WriteToolError writes the tools/call answer for request id that carries
 // te, with isError set.
 func WriteToolError(w io.Writer, id any, te *ToolError) error {

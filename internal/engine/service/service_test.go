@@ -89,14 +89,22 @@ func darwinSpec() service.Spec {
 func TestSystemdUnit(t *testing.T) {
 	t.Parallel()
 	unit := service.SystemdUnit(linuxSpec())
+	// Every directive is set once: a repeated one is at best noise.
+	seen := map[string]bool{}
+	for _, line := range strings.Split(unit, "\n") {
+		key, _, ok := strings.Cut(line, "=")
+		if !ok || strings.HasPrefix(line, "#") {
+			continue
+		}
+		require.False(t, seen[key], "directive %s set twice", key)
+		seen[key] = true
+	}
 	for _, want := range []string{
 		"User=basalt\n",
 		"Group=basalt\n",
 		"ExecStart=/usr/local/bin/basalt engine --config /etc/basalt/engine.json\n",
 		"RuntimeDirectory=basalt\n",
 		"RuntimeDirectoryMode=0755\n",
-		"StateDirectory=basalt\n",
-		"StateDirectoryMode=0700\n",
 		"StateDirectory=basalt\n",
 		"StateDirectoryMode=0700\n",
 		"UMask=0077\n",
@@ -231,6 +239,31 @@ func TestUninstallPlan(t *testing.T) {
 	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &strings.Builder{}))
 	require.Equal(t, []string{"launchctl bootout system/dev.basaltdb.engine"}, sys.ran)
 	require.Equal(t, []string{service.LaunchdPlist}, sys.removed)
+}
+
+// Without a running service manager (a container without systemd) the
+// unit is still removed; the steps that failed are named as skipped.
+func TestUninstallWithoutAServiceManager(t *testing.T) {
+	t.Parallel()
+	for name, spec := range map[string]service.Spec{"linux": linuxSpec(), "darwin": darwinSpec()} {
+		sys := newFake()
+		sys.failOn = map[string]string{"linux": "systemctl", "darwin": "launchctl"}[name]
+		steps, err := service.UninstallPlan(spec)
+		require.NoError(t, err)
+		var out strings.Builder
+		require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out), name)
+		require.Empty(t, sys.ran, name)
+		require.Len(t, sys.removed, 1, "the unit file is removed: %s", name)
+		require.Contains(t, out.String(), "skipped "+sys.failOn, name)
+		require.Contains(t, out.String(), "exit status 1", name)
+	}
+
+	// An install step that fails still stops the install.
+	sys := newFake()
+	sys.failOn = "systemctl"
+	steps, err := service.InstallPlan(context.Background(), sys, linuxSpec())
+	require.NoError(t, err)
+	require.Error(t, service.Apply(context.Background(), sys, steps, false, &strings.Builder{}))
 }
 
 func TestSpecValidate(t *testing.T) {

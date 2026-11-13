@@ -338,7 +338,7 @@ function render(state) {
   // on a revert that had expired when the page loaded.
   const nothing = nothingToSign(req.binding);
   // N is the rows the revert writes.
-  $("sign").textContent = `Sign revert: ${plural(req.binding.rows, "row")}`;
+  $("sign").textContent = `Sign with your passkey: ${plural(req.binding.rows, "row")}`;
   $("sign").disabled = nothing !== null || state.busy || state.expired;
   $("reject").disabled = state.busy || state.expired;
   $("status").textContent = state.expired ? EXPIRED : (nothing ?? "");

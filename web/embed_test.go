@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -63,4 +64,24 @@ func TestPortalBuildMatchesEmbed(t *testing.T) {
 		return err
 	}))
 	require.ElementsMatch(t, want, got)
+}
+
+// Signing is "sign with your passkey", never a brand's biometric name, and
+// every signing page says the biometrics stay on the device.
+func TestSigningPagesSayBiometricsStayOnTheDevice(t *testing.T) {
+	const line = "Your fingerprint or face never leaves this device; Basalt only receives a signature."
+	require.NoError(t, fs.WalkDir(web.Files, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || (!strings.HasSuffix(p, ".html") && !strings.HasSuffix(p, ".js")) {
+			return err
+		}
+		body, rerr := web.Files.ReadFile(p)
+		require.NoError(t, rerr)
+		require.NotContains(t, strings.ToLower(string(body)), "touch id", p)
+		return nil
+	}))
+	for _, page := range []string{"approve", "revert", "register", "passkeys"} {
+		body, err := web.Files.ReadFile(page + "/index.html")
+		require.NoError(t, err)
+		require.Contains(t, string(body), line, page)
+	}
 }

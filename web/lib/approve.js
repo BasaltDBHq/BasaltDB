@@ -18,6 +18,7 @@ import {
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
 import { $, APPROVE_REOPEN, el, fail, linkFailure, loadOrPaste, personText, setPill, showCode, showDone, showRelayFailed, webauthnError, whenText } from "./page.js";
 import { applyReveal, canReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
+import { agentName } from "./scope.js";
 import { canStartPasskey, cascadeConfirmation, headline, summarize } from "./summary.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
@@ -65,7 +66,10 @@ function renderSummary(req, summary) {
   $("item-id").title = req.approvalId;
   $("headline").textContent = visibleText(headline(summary));
   $("headline").classList.toggle("cascades", summary.cascadedRows > 0);
-  $("agent").textContent = visibleText(b.agent);
+  // The agent by its name, derived from the signed role (basalt_agent_bot
+  // is bot), with the whole role on hover.
+  $("agent").textContent = visibleText(agentName(b.agent));
+  $("agent").title = visibleText(b.agent);
   $("database").textContent = visibleText(b.database);
   $("intent").textContent = visibleText(b.intent);
   $("statement").textContent = visibleText(b.statement, { lines: true });
@@ -89,12 +93,13 @@ const INSERT_NOTE = "New row. Columns not listed are filled in by the database."
 // them only, and as not checked when Postgres left out secret columns;
 // until then its values show as dots, and on a long link it says where to
 // see them.
-export function lineGroups(lines, shown = new Map(), longLink = false) {
+export function lineGroups(lines, shown = new Map(), longLink = false, columns = new Map()) {
   return changeGroups(
     lines.map((line, index) => ({ line, index })),
     {
       mid: "old",
       shown,
+      columns,
       longLink,
       who: null,
       skipped: () => false,
@@ -199,7 +204,7 @@ const describe = (err) => linkFailure(err, "approval", APPROVE_REOPEN);
 function renderLines(state) {
   const longLink = state.relay === null;
   const shown = state.valuesHidden ? new Map() : state.shown;
-  $("lines").replaceChildren(...lineGroups(state.req.lines, shown, longLink));
+  $("lines").replaceChildren(...lineGroups(state.req.lines, shown, longLink, state.req.columns));
 }
 
 // wireReveal offers Show values on a page the engine served with hidden

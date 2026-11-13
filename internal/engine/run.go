@@ -443,6 +443,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		Finisher:    finisher,
 		PII:         observer.On(pool),
 		Catalog:     agentdb.NewCatalog(pool, limits, pool.Config().ConnConfig.Database),
+		Columns:     agentdb.NewColumnOrder(pool),
 		Classes:     classes.On(pool),
 	})
 	return agentRuntime{

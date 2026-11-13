@@ -110,14 +110,20 @@ function sides(line, mid, skipped) {
   return { before: before ?? null, after: after ?? null };
 }
 
-function columnsOf(views, mid, skipped) {
+// columnsOf is the group's columns: in table order when the engine sent it
+// (order, unsigned and for display only), any column it does not list after
+// them in the order the rows carry; in the rows' order without it (a long
+// link). Every column the rows carry is shown either way.
+function columnsOf(views, mid, skipped, order = []) {
   const cols = new Set();
   for (const v of views) {
     if (v.hidden) continue;
     const { before, after } = sides(v.line, mid, skipped(v.line));
     for (const row of [v.line.key, before, after]) for (const c of Object.keys(row ?? {})) cols.add(c);
   }
-  return [...cols];
+  const listed = order.filter((c) => cols.has(c));
+  const rest = [...cols].filter((c) => !listed.includes(c));
+  return [...listed, ...rest];
 }
 
 // cell is col's value in member, or in the key when member leaves the key
@@ -178,7 +184,7 @@ function diffRows(v, columns, opts) {
 
 // groupTable is one group's rows as a table: a header row, then the rows.
 export function groupTable(views, opts) {
-  const columns = columnsOf(views, opts.mid, opts.skipped);
+  const columns = columnsOf(views, opts.mid, opts.skipped, opts.order);
   const why = views.some((v) => opts.why(v.line) !== null);
   const table = el("table", "values");
   const head = el("tr");
@@ -207,6 +213,7 @@ export function groupTable(views, opts) {
 //   why         line => the reason it is left alone, or null
 //   highlights  (view, col) => whether an update changes col
 //   notes       lines => notes under the table, for the group's lines
+//   columns     Map from table to its columns in table order (engine only)
 export function changeGroups(items, opts) {
   return tableGroups(items).map((g) => {
     const views = g.items
@@ -225,7 +232,7 @@ export function changeGroups(items, opts) {
     box.append(head);
     if (hidden && opts.longLink) box.append(el("p", "group-note", OPEN_FROM_ENGINE));
     const scroll = el("div", "scroll");
-    scroll.append(groupTable(views, opts));
+    scroll.append(groupTable(views, { ...opts, order: opts.columns?.get(g.table) ?? [] }));
     box.append(scroll);
     for (const text of opts.notes(g.items.map((i) => i.line))) box.append(el("p", "group-note", text));
     for (const v of views) {

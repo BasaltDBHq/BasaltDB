@@ -98,6 +98,14 @@ func (f *fakeLedger) ApplyRevert(context.Context, uuid.UUID, passkey.Assertion) 
 	return guard.AppliedRevert{}, f.hit()
 }
 
+func (f *fakeLedger) RescopeRevert(context.Context, uuid.UUID, []uuid.UUID, []string) (guard.PreparedRevert, error) {
+	return guard.PreparedRevert{}, f.hit()
+}
+
+func (f *fakeLedger) RejectRevert(context.Context, uuid.UUID, string) (guard.RejectedRevert, error) {
+	return guard.RejectedRevert{}, f.hit()
+}
+
 func (f *fakeLedger) ListRevertLines(context.Context, ledger.RevertLineParams) (pagination.Page[ledger.RevertLine], error) {
 	return pagination.Page[ledger.RevertLine]{}, f.hit()
 }
@@ -389,6 +397,14 @@ func agentCalls() map[person.Method]func(context.Context, *person.AgentClient) e
 			_, err := a.ListRevertLines(c, ledger.RevertLineParams{RevertID: id, Params: pagination.Params{Limit: 10}})
 			return err
 		},
+		person.MethodRescopeRevert: func(c context.Context, a *person.AgentClient) error {
+			_, err := a.RescopeRevert(c, id, []uuid.UUID{id}, []string{"public.leads"})
+			return err
+		},
+		person.MethodRejectRevert: func(c context.Context, a *person.AgentClient) error {
+			_, err := a.RejectRevert(c, id, "not now")
+			return err
+		},
 	}
 }
 
@@ -397,7 +413,7 @@ func agentCalls() map[person.Method]func(context.Context, *person.AgentClient) e
 // every call is scoped to that agent; another agent's ledger is refused.
 func TestAnAgentSharingThePersonsUIDSeesOnlyItsOwnLedger(t *testing.T) {
 	t.Parallel()
-	require.Len(t, agentCalls(), 12, "every agent-scoped method")
+	require.Len(t, agentCalls(), 14, "every agent-scoped method")
 	for m, call := range agentCalls() {
 		t.Run(string(m), func(t *testing.T) {
 			t.Parallel()

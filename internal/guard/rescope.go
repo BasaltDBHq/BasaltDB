@@ -3,6 +3,7 @@ package guard
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -110,6 +111,32 @@ func RescopeRevert(ctx context.Context, q Querier, req RescopeRequest) (Rescoped
 		return RescopedRevert{}, err
 	}
 	return out, nil
+}
+
+// RescopeOwn changes the scope of the caller's own pending revert to s, the
+// caller's own work (agents = [session_user]), with no proof or token
+// (basalt_meta.rescope_revert): the person's CLI narrowing a revert, never
+// widening it. A select outside the caller's own work, or any rescope of a
+// widened revert, fails as REVERT_INVALID detail RevertWidenRefused. Run it
+// in its own transaction.
+func RescopeOwn(ctx context.Context, q Querier, revertID uuid.UUID, s RevertScope) (PreparedRevert, error) {
+	args, err := s.args()
+	if err != nil {
+		return PreparedRevert{}, err
+	}
+	var out RescopedRevert
+	// Plain SQL: one function call over a built descriptor, returning jsonb.
+	err = q.QueryRow(ctx, `SELECT basalt_meta.rescope_revert($5::uuid, `+ownSelect+`, NULL, NULL, NULL)`,
+		append(args, revertID.String())...).Scan(&out)
+	if err != nil {
+		return PreparedRevert{}, err
+	}
+	b, err := revert.ParseBinding(out.BindingText)
+	if err != nil {
+		return PreparedRevert{}, fmt.Errorf("guard returned a bad revert binding: %w", err)
+	}
+	return PreparedRevert{RevertID: out.RevertID, BindingText: out.BindingText, ExpiresAt: out.ExpiresAt, Lines: out.Lines,
+		Batched: b.Batched}, nil
 }
 
 // ResetRevert puts the caller's own pending revert back to its proposal

@@ -351,6 +351,13 @@ var handlers = map[Method]handler{
 	MethodApplyRevert: call(func(ctx context.Context, l Ledger, p applyRevertParams) (any, error) {
 		return l.ApplyRevert(ctx, p.RevertID, p.Assertion.toDomain())
 	}),
+	MethodRescopeRevert: call(func(ctx context.Context, l Ledger, p rescopeParams) (any, error) {
+		prep, err := l.RescopeRevert(ctx, p.RevertID, p.Runs, p.Tables)
+		return preparedDTO(prep), err
+	}),
+	MethodRejectRevert: call(func(ctx context.Context, l Ledger, p rejectParams) (any, error) {
+		return l.RejectRevert(ctx, p.RevertID, p.Note)
+	}),
 	MethodListRevertLines: call(func(ctx context.Context, l Ledger, p revertLineParams) (any, error) {
 		page, err := l.ListRevertLines(ctx, p.toDomain())
 		return mapPage(page, func(r ledger.RevertLine) revertLineDTO { return revertLineDTO(r) }), err

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -24,14 +25,28 @@ import (
 // revertFlags are basalt revert's options.
 type revertFlags struct {
 	change, run, task string
+	runs, tables      string // the scope filters, comma-separated
+	agents            string // the agents to include, comma-separated or "all"
 	intent            string
 	apply             string
 	status            string
+	rescope, reject   string
+	note              string
+	agent             string // the --agent name, "" with a credential file
 	pagesURL          string
 	local             string // origin of the engine's local pages, "" when not served
 	dryRun, asJSON    bool
 	open              bool
+	// widen is --agents naming more than the credential's own agent: the
+	// CLI prepares its own work and opens the page for the person to widen.
+	widen bool
 }
+
+// maxNoteChars is the longest note --reject takes (reject_revert).
+const maxNoteChars = 500
+
+// allAgents is --agents' value for every agent in the scope.
+const allAgents = "all"
 
 // runRevert: basalt revert. The person's command (M3): it prepares the
 // revert with the agent credential, shows what will be restored and what
@@ -43,7 +58,13 @@ func runRevert(c *cliIO, args []string) int {
 	var f revertFlags
 	fs.StringVar(&f.change, "change", "", "revert one change (a revert's own change id reverts that revert)")
 	fs.StringVar(&f.run, "run", "", "revert every change of one run")
-	fs.StringVar(&f.task, "task", "", "revert every change of one task, by any agent")
+	fs.StringVar(&f.task, "task", "", "revert your agent's changes in one task (add other agents' on the revert page)")
+	fs.StringVar(&f.runs, "runs", "", "with --task: only these of your agent's runs (comma-separated ids, at most 20)")
+	fs.StringVar(&f.tables, "tables", "", "only these tables (comma-separated schema.table, at most 20)")
+	fs.StringVar(&f.agents, "agents", "", "agents to include (comma-separated, or all); others than --agent are added on the revert page")
+	fs.StringVar(&f.rescope, "rescope", "", "change the scope of a pending revert your agent prepared, within its own work")
+	fs.StringVar(&f.reject, "reject", "", "reject a pending revert; nothing is reverted and the agent's wait returns REJECTED")
+	fs.StringVar(&f.note, "note", "", "with --reject: a note for the agent (at most 500 characters)")
 	fs.StringVar(&f.intent, "intent", "", "why you revert (recorded); default \"Revert <scope> <id>\"")
 	fs.StringVar(&f.apply, "apply", "", "apply a prepared revert with the code the revert page gave you")
 	fs.StringVar(&f.status, "status", "", "show a revert's progress (a large revert is applied by the agent in batches)")
@@ -57,6 +78,7 @@ func runRevert(c *cliIO, args []string) int {
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
 	}
+	f.agent = *agent
 	scope, err := f.scope()
 	if err != nil {
 		return c.fail(err)
@@ -66,12 +88,23 @@ func runRevert(c *cliIO, args []string) int {
 		return c.fail(err)
 	}
 	defer l.close()
-	if scope.ID != uuid.Nil && !f.dryRun {
+	if (scope.ID != uuid.Nil || f.rescope != "") && !f.dryRun {
 		f.local = l.localPages(c, f.pagesURL)
 	}
 	f.pagesURL = l.pagesBase(f.pagesURL)
+	if f.widen {
+		if f.local == "" {
+			return c.fail(fmt.Errorf("%w: --agents beyond %s needs the revert page from the engine, which does not serve "+
+				"its local pages here; leave out --agents to revert your agent's own work", errUsage, f.ownName()))
+		}
+		f.open = true
+	}
 
 	switch {
+	case f.reject != "":
+		return rejectRevert(c, l, f)
+	case f.rescope != "":
+		return rescopeRevert(c, l, scope, f)
 	case f.status != "":
 		return revertStatus(c, l, f.status, f.asJSON)
 	case f.apply != "":
@@ -82,8 +115,10 @@ func runRevert(c *cliIO, args []string) int {
 	return prepareRevert(c, l, scope, f)
 }
 
-// scope is the one scope the flags name; --apply names none.
-func (f revertFlags) scope() (guard.RevertScope, error) {
+// scope is the one scope the flags name, with its runs and tables
+// filters; --apply, --status and --reject name none, and --rescope only
+// its filters (the revert keeps its scope).
+func (f *revertFlags) scope() (guard.RevertScope, error) {
 	var named []guard.RevertScope
 	for _, s := range []struct {
 		kind revert.Scope
@@ -98,11 +133,22 @@ func (f revertFlags) scope() (guard.RevertScope, error) {
 		}
 		named = append(named, guard.RevertScope{Kind: s.kind, ID: id})
 	}
-	if f.apply != "" || f.status != "" {
-		if len(named) > 0 || f.dryRun || f.open || (f.apply != "" && f.status != "") {
-			return guard.RevertScope{}, fmt.Errorf("%w: --apply takes only the code, --status only the revert id", errUsage)
-		}
+	if f.note != "" && f.reject == "" {
+		return guard.RevertScope{}, fmt.Errorf("%w: --note goes only with --reject", errUsage)
+	}
+	if err := f.checkModes(len(named)); err != nil {
+		return guard.RevertScope{}, err
+	}
+	filtered := f.runs != "" || f.tables != "" || f.agents != ""
+	switch {
+	case f.reject != "":
+		return guard.RevertScope{}, f.checkReject(len(named) > 0 || filtered)
+	case f.apply != "" || f.status != "":
 		return guard.RevertScope{}, nil
+	case f.rescope != "":
+		// The revert keeps its scope kind; Postgres refuses --runs on a
+		// change or run revert.
+		return f.filters(guard.RevertScope{Kind: revert.ScopeTask})
 	}
 	if f.open && f.dryRun {
 		return guard.RevertScope{}, fmt.Errorf("%w: --dry-run makes no link to open", errUsage)
@@ -110,13 +156,105 @@ func (f revertFlags) scope() (guard.RevertScope, error) {
 	if len(named) != 1 {
 		return guard.RevertScope{}, fmt.Errorf("%w: give exactly one of --change, --run, --task", errUsage)
 	}
-	return named[0], nil
+	return f.filters(named[0])
 }
+
+// checkModes refuses flags that do not go together: --apply, --status,
+// --rescope and --reject each stand alone, and none takes a scope.
+func (f *revertFlags) checkModes(scopes int) error {
+	modes := 0
+	for _, m := range []string{f.apply, f.status, f.rescope, f.reject} {
+		if m != "" {
+			modes++
+		}
+	}
+	switch {
+	case modes > 1:
+		return fmt.Errorf("%w: give only one of --apply, --status, --rescope, --reject", errUsage)
+	case modes == 1 && scopes > 0:
+		return fmt.Errorf("%w: --apply, --status, --rescope and --reject name a revert; they take no --change, --run or --task", errUsage)
+	case (f.apply != "" || f.status != "") && (f.dryRun || f.open || f.runs != "" || f.tables != "" || f.agents != ""):
+		return fmt.Errorf("%w: --apply takes only the code, --status only the revert id", errUsage)
+	case f.rescope != "" && f.dryRun:
+		return fmt.Errorf("%w: --rescope changes the revert; preview a scope with --dry-run and --change, --run or --task", errUsage)
+	}
+	return nil
+}
+
+// checkReject checks --reject's revert id and note; it takes no scope
+// flag.
+func (f *revertFlags) checkReject(scoped bool) error {
+	switch {
+	case scoped || f.dryRun || f.open || f.intent != "":
+		return fmt.Errorf("%w: --reject takes only the revert id and --note", errUsage)
+	case len([]rune(f.note)) > maxNoteChars:
+		return fmt.Errorf("%w: --note is at most %d characters", errUsage, maxNoteChars)
+	}
+	if _, err := uuid.Parse(f.reject); err != nil {
+		return fmt.Errorf("%w: --reject must be a revert id", errUsage)
+	}
+	return nil
+}
+
+// filters adds --runs and --tables to scope and reads --agents. They
+// stay inside the credential's own work; Postgres checks each entry.
+func (f *revertFlags) filters(scope guard.RevertScope) (guard.RevertScope, error) {
+	runs, tables := splitList(f.runs), splitList(f.tables)
+	switch {
+	case len(runs) > revert.MaxFilter || len(tables) > revert.MaxFilter:
+		return guard.RevertScope{}, fmt.Errorf("%w: --runs and --tables take at most %d entries each; narrow further on the revert page",
+			errUsage, revert.MaxFilter)
+	case len(runs) > 0 && scope.Kind != revert.ScopeTask:
+		return guard.RevertScope{}, fmt.Errorf("%w: --runs goes only with --task (a change or a run is one run already); narrow it with --tables", errUsage)
+	}
+	for _, r := range runs {
+		id, err := uuid.Parse(r)
+		if err != nil {
+			return guard.RevertScope{}, fmt.Errorf("%w: --runs takes run ids, not %q", errUsage, r)
+		}
+		scope.Runs = append(scope.Runs, id)
+	}
+	for _, t := range tables {
+		if !filterTable.MatchString(t) {
+			return guard.RevertScope{}, fmt.Errorf("%w: --tables takes schema.table names such as public.leads, not %q", errUsage, t)
+		}
+	}
+	scope.Tables = tables
+	for _, a := range splitList(f.agents) {
+		f.widen = f.widen || a == allAgents || a != f.agent
+	}
+	if f.widen && f.dryRun {
+		return guard.RevertScope{}, fmt.Errorf("%w: --dry-run shows your agent's own work; other agents are added on the revert page", errUsage)
+	}
+	return scope, nil
+}
+
+// ownName is the credential's agent for messages.
+func (f *revertFlags) ownName() string {
+	if f.agent == "" {
+		return "your agent"
+	}
+	return f.agent
+}
+
+// revertDetail is pgDetail with the guard's explanation of a refused scope
+// (SCOPE_REFUSED): which runs or tables are outside the agent's own work,
+// in the guard's fixed text.
+func revertDetail(err error) string {
+	if _, hint, ok := guard.ScopeRefusal(err); ok && hint != "" {
+		return pgDetail(err) + ": " + hint
+	}
+	return pgDetail(err)
+}
+
+// filterTable is a schema.table name as --tables takes it (the MCP tools'
+// rule): no dot, whitespace or semicolon inside either part.
+var filterTable = regexp.MustCompile(`^[^.\s;]+\.[^.\s;]+$`)
 
 func previewRevert(c *cliIO, l *agentLedger, scope guard.RevertScope, asJSON bool) int {
 	texts, err := l.PreviewRevert(c.ctx, scope)
 	if err != nil {
-		return c.fail(fmt.Errorf("cannot preview the revert: %s", pgDetail(err)))
+		return c.fail(fmt.Errorf("cannot preview the revert: %s", revertDetail(err)))
 	}
 	if err := printRevertLines(c, texts, asJSON); err != nil {
 		return c.fail(err)
@@ -132,8 +270,45 @@ func prepareRevert(c *cliIO, l *agentLedger, scope guard.RevertScope, f revertFl
 	}
 	prep, err := l.PrepareRevert(c.ctx, scope, intent)
 	if err != nil {
-		return c.fail(fmt.Errorf("cannot prepare the revert: %s", pgDetail(err)))
+		return c.fail(fmt.Errorf("cannot prepare the revert: %s", revertDetail(err)))
 	}
+	return signPrepared(c, l, prep, f)
+}
+
+// rescopeRevert changes the scope of a pending revert the credential
+// prepared, inside its own work (the revert keeps its scope kind and id),
+// then hands it to the person as a new one.
+func rescopeRevert(c *cliIO, l *agentLedger, filter guard.RevertScope, f revertFlags) int {
+	id, err := uuid.Parse(f.rescope)
+	if err != nil {
+		return c.fail(fmt.Errorf("%w: --rescope must be a revert id", errUsage))
+	}
+	prep, err := l.RescopeRevert(c.ctx, id, filter.Runs, filter.Tables)
+	if err != nil {
+		return c.fail(fmt.Errorf("cannot change the scope of revert %s: %s. Only %s's own work can be chosen here; if the "+
+			"person widened it on the revert page, change its scope there", id, revertDetail(err), f.ownName()))
+	}
+	return signPrepared(c, l, prep, f)
+}
+
+// rejectRevert rejects a pending revert the credential prepared, as the
+// page's Reject does, with no scope token: a widened revert is the page's.
+func rejectRevert(c *cliIO, l *agentLedger, f revertFlags) int {
+	id := uuid.MustParse(f.reject) // checked by checkReject
+	out, err := l.RejectRevert(c.ctx, id, f.note)
+	if err != nil {
+		return c.fail(fmt.Errorf("cannot reject revert %s: %s", id, pgDetail(err)))
+	}
+	if f.asJSON {
+		return printJSONValue(c, out)
+	}
+	fmt.Fprintf(c.stderr, "basalt: revert %s rejected at %s; nothing was reverted\n", id, out.RejectedAt.UTC().Format(timeLayout))
+	return exitOK
+}
+
+// signPrepared shows a prepared or rescoped revert and hands it to the
+// person: the lines, the link, then the page's relay or a pasted code.
+func signPrepared(c *cliIO, l *agentLedger, prep guard.PreparedRevert, f revertFlags) int {
 	if prep.Batched {
 		printPlanSize(c, prep)
 	}
@@ -156,6 +331,9 @@ func prepareRevert(c *cliIO, l *agentLedger, scope guard.RevertScope, f revertFl
 	ref := linkRef{setting: "pagesUrl", item: "revert " + prep.RevertID.String(), again: "the same basalt revert command"}
 	link = pages.short(c, "reverts", prep.RevertID, prep.BindingText, link)
 	expires := prep.ExpiresAt.UTC().Format(timeLayout)
+	if f.widen {
+		fmt.Fprintln(c.stderr, `basalt: choose "Include other agents' changes" on the revert page to add other agents' changes`)
+	}
 	switch {
 	case f.open:
 		fmt.Fprintf(c.stderr, "basalt: revert %s expires %s. Check the rows on the revert page and sign with your passkey.\n", prep.RevertID, expires)
@@ -252,6 +430,8 @@ func awaitRevert(c *cliIO, l *agentLedger, id uuid.UUID, asJSON bool) int {
 			return c.fail(errors.New("the revert expired unsigned; nothing was reverted. Run basalt revert again"))
 		case r.Status == ledger.RevertPending:
 			continue
+		case r.Status == ledger.RevertRejected:
+			return c.fail(errors.New("the revert was rejected on the revert page; nothing was reverted"))
 		}
 		return printApplied(c, id, guard.AppliedRevert{
 			Rows: r.Rows, Skipped: r.Skipped, Batched: r.Batched, Pending: r.Progress.Pending, ApplyBy: r.ApplyBy,

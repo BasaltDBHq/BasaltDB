@@ -14,6 +14,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 )
@@ -187,4 +188,69 @@ func TestRevertRescope(t *testing.T) {
 
 	r = cli(t, nil, "", "revert", "--rescope", id.String(), "--runs", uuid.Must(uuid.NewV7()).String(), "--credential-file", cred)
 	require.Equal(t, exitError, r.code, "a run revert takes no --runs: Postgres refuses it")
+}
+
+// With --credential-file there is no --agent, so --agents naming the
+// credential's own agent is the agent's own work, not a widen: the revert
+// is prepared as usual, without the page or --open.
+func TestRevertAgentsOwnNameIsOwnWork(t *testing.T) {
+	t.Parallel()
+	d, _, cred, run := revertSetup(t)
+	r := cli(t, nil, "", "revert", "--run", run.String(), "--agents", "bot", "--credential-file", cred, "--dry-run")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Equal(t, 6, strings.Count(r.stdout, "restore    public.leads"))
+
+	r = cli(t, nil, "", "revert", "--run", run.String(), "--agents", "bot", "--credential-file", cred)
+	require.Equal(t, exitError, r.code, "no code pasted")
+	require.NotContains(t, r.stderr, "needs the revert page")
+	require.NotNil(t, revertLink.FindStringSubmatch(r.stderr), r.stderr)
+	var n int
+	require.NoError(t, d.Admin.QueryRow(context.Background(), `SELECT count(revert_id)::int FROM basalt_meta.reverts`).Scan(&n))
+	require.Equal(t, 1, n, "the agent's own revert was prepared")
+
+	r = cli(t, nil, "", "revert", "--run", run.String(), "--agents", "bot,other", "--credential-file", cred)
+	require.Equal(t, exitUsage, r.code, "another agent in the list still widens: %s", r.stderr)
+	require.Contains(t, r.stderr, "needs the revert page from the engine")
+}
+
+// Once the person has widened a revert on the page, --rescope is refused
+// with the guard's message and the revert keeps its widened scope.
+func TestRevertRescopeRefusedAfterWiden(t *testing.T) {
+	t.Parallel()
+	d, person, cred, _ := revertSetup(t)
+	ctx := context.Background()
+	helper := d.NewAgent(t, "helper", []string{"public.leads"}, []string{"public.leads"})
+	conn := credConn(t, cred)
+	task := uuid.Must(uuid.NewV7())
+	mine := guard.Intent{RunID: uuid.Must(uuid.NewV7()), TaskID: task, Text: "first part"}
+	theirs := guard.Intent{RunID: uuid.Must(uuid.NewV7()), TaskID: task, Text: "helping"}
+	require.NoError(t, guard.StartRun(ctx, conn, mine))
+	require.NoError(t, guard.StartRun(ctx, helper.Conn, theirs))
+	require.NoError(t, guardtest.Guarded(ctx, conn, mine, `UPDATE public.leads SET status = 'a' WHERE id = 30`))
+	require.NoError(t, guardtest.Guarded(ctx, helper.Conn, theirs, `UPDATE public.leads SET status = 'h' WHERE id = 32`))
+	prep, err := guard.PrepareRevert(ctx, conn, guard.RevertScope{Kind: revert.ScopeTask, ID: task}, "Undo the task")
+	require.NoError(t, err)
+
+	// The widen, as the page makes it: the whole task, signed by the person.
+	sel := revert.Select{Scope: revert.ScopeTask, ScopeID: task}
+	selJSON, err := json.Marshal(sel)
+	require.NoError(t, err)
+	var norm string
+	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT basalt_meta._revert_select_norm($1::jsonb)::text`, string(selJSON)).Scan(&norm))
+	var nonce []byte
+	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT rescope_nonce FROM basalt_meta.reverts WHERE revert_id = $1`, prep.RevertID).Scan(&nonce))
+	key, err := revert.RescopeKey([]byte("the page's new secret"))
+	require.NoError(t, err)
+	as, err := person.Sign(revert.RescopeChallenge(prep.RevertID, nonce, key, norm), passkeytest.FlagsUPUV, nil)
+	require.NoError(t, err)
+	_, err = guard.RescopeRevert(ctx, conn, guard.RescopeRequest{RevertID: prep.RevertID, Select: sel, Proof: &as, RescopeKey: key})
+	require.NoError(t, err)
+	_, before, _ := storedRevert(t, d, prep.RevertID)
+
+	r := cli(t, nil, "", "revert", "--rescope", prep.RevertID.String(), "--tables", "public.leads", "--credential-file", cred)
+	require.Equal(t, exitError, r.code, r.stderr)
+	require.Contains(t, r.stderr, "cannot change the scope of revert "+prep.RevertID.String())
+	require.Contains(t, r.stderr, "if the person widened it on the revert page, change its scope there")
+	_, after, _ := storedRevert(t, d, prep.RevertID)
+	require.Equal(t, before, after, "the widened scope is untouched")
 }

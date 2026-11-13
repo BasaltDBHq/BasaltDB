@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
@@ -46,19 +47,73 @@ func RevealNonce(ctx context.Context, q Querier, kind string, id uuid.UUID) ([]b
 // REVERT_INVALID detail RevealRefused and changes nothing. Run it in its
 // own transaction.
 func RevealRevertRows(ctx context.Context, q Querier, revertID uuid.UUID, proof passkey.Assertion, key []byte) (RevealedRevert, error) {
-	b, err := json.Marshal(rescopeProof{
-		CredentialID: proof.CredentialID, AuthenticatorData: proof.AuthenticatorData,
-		ClientDataJSON: proof.ClientDataJSON, Signature: proof.Signature,
-	})
+	b, err := proofJSON(proof)
 	if err != nil {
 		return RevealedRevert{}, err
 	}
 	var out RevealedRevert
 	// Plain SQL: one function call returning jsonb.
 	err = q.QueryRow(ctx, `SELECT basalt_meta.reveal_revert_rows($1::uuid, $2::jsonb, $3::bytea)`,
-		revertID.String(), string(b), key).Scan(&out)
+		revertID.String(), b, key).Scan(&out)
 	if err != nil {
 		return RevealedRevert{}, err
 	}
 	return out, nil
+}
+
+// RevealRowsChanged is the detail of APPROVAL_INVALID when a re-run preview's
+// lines no longer match the held approval's (reveal_approval_rows): the
+// approval can no longer apply.
+const RevealRowsChanged = "ROWS_CHANGED"
+
+// OpenReveal checks the person's reveal proof for the caller's own pending
+// approval (basalt_meta.open_reveal, version 30) with the key the engine
+// derived from the page's reveal secret, and returns a ticket good for one
+// re-run preview within 2 minutes. Every proof or key failure is
+// APPROVAL_INVALID detail RevealRefused and changes nothing. Run it in its
+// own transaction; keep the ticket in memory for this one request.
+func OpenReveal(ctx context.Context, q Querier, approvalID uuid.UUID, proof passkey.Assertion, key []byte) ([]byte, error) {
+	b, err := proofJSON(proof)
+	if err != nil {
+		return nil, err
+	}
+	var ticket []byte
+	// Plain SQL: one function call returning bytea.
+	err = q.QueryRow(ctx, `SELECT basalt_meta.open_reveal($1::uuid, $2::jsonb, $3::bytea)`,
+		approvalID.String(), b, key).Scan(&ticket)
+	if err != nil {
+		return nil, err
+	}
+	return ticket, nil
+}
+
+// RevealApprovalRows returns the values of the held approval's redacted
+// lines (basalt_meta.reveal_approval_rows, version 30). tx is a preview
+// (BeginPreview) that re-ran the held statement with its parameters and
+// recorded it with FinishChange, exactly as an apply does; roll it back
+// afterwards. A missing, wrong or expired ticket, or a preview of another
+// statement, parameters or run, is APPROVAL_INVALID detail RevealRefused;
+// rows that changed since the hold are APPROVAL_INVALID detail
+// RevealRowsChanged.
+func RevealApprovalRows(ctx context.Context, tx pgx.Tx, approvalID uuid.UUID, ticket []byte) ([]approval.RevealedRow, error) {
+	var out struct {
+		Rows []approval.RevealedRow `json:"rows"`
+	}
+	// Plain SQL: one function call returning jsonb.
+	err := tx.QueryRow(ctx, `SELECT basalt_meta.reveal_approval_rows($1::uuid, $2::bytea)`,
+		approvalID.String(), ticket).Scan(&out)
+	if err != nil {
+		return nil, err
+	}
+	return out.Rows, nil
+}
+
+// proofJSON is a passkey assertion as the guard's proof functions read it:
+// base64url fields (rescope_revert, reveal_revert_rows, open_reveal).
+func proofJSON(a passkey.Assertion) (string, error) {
+	b, err := json.Marshal(rescopeProof{
+		CredentialID: a.CredentialID, AuthenticatorData: a.AuthenticatorData,
+		ClientDataJSON: a.ClientDataJSON, Signature: a.Signature,
+	})
+	return string(b), err
 }

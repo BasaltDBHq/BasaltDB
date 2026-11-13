@@ -94,14 +94,11 @@ func RescopeRevert(ctx context.Context, q Querier, req RescopeRequest) (Rescoped
 	}
 	var proof any
 	if req.Proof != nil {
-		b, err := json.Marshal(rescopeProof{
-			CredentialID: req.Proof.CredentialID, AuthenticatorData: req.Proof.AuthenticatorData,
-			ClientDataJSON: req.Proof.ClientDataJSON, Signature: req.Proof.Signature,
-		})
+		b, err := proofJSON(*req.Proof)
 		if err != nil {
 			return RescopedRevert{}, err
 		}
-		proof = string(b)
+		proof = b
 	}
 	var out RescopedRevert
 	// Plain SQL: one function call returning jsonb.

@@ -32,7 +32,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/notify/telegram"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/server"
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
@@ -107,10 +106,6 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 	if err != nil {
 		return err
 	}
-	tg, err := newTelegram(cfg.Notify)
-	if err != nil {
-		return err
-	}
 	var closers []func()
 	defer func() {
 		for _, c := range closers {
@@ -133,7 +128,7 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 	if err != nil {
 		return err
 	}
-	env := agentEnv{cfg: cfg, configPath: configPath, pagesBase: base, stateDir: cfg.StateDirFor(runtime.GOOS), pins: statePins(cfg.StateDirFor(runtime.GOOS), log), tg: tg}
+	env := agentEnv{cfg: cfg, configPath: configPath, pagesBase: base, stateDir: cfg.StateDirFor(runtime.GOOS), pins: statePins(cfg.StateDirFor(runtime.GOOS), log)}
 	piiCfg := cfg.PIIOrDefault()
 	piiLog := log.With("component", "pii")
 	// A key file wider than 0600, or PII state the engine cannot open,
@@ -372,7 +367,6 @@ type agentEnv struct {
 	pagesOrigin string
 	stateDir    string
 	pins        upkeep.Pins
-	tg          *telegram.Notifier
 	// vault reports the Vault connection in every agent's status.
 	vault agent.VaultReporter
 	// relay and relayLinks are set when the engine dials out to the Vault:
@@ -432,7 +426,6 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		Reads:       store,
 		Approvals:   store,
 		Reverts:     store,
-		Notifier:    agentNotifier(env.tg, pool.Config().ConnConfig.Database),
 		PagesBase:   env.pagesBase,
 		LinkBudget:  env.cfg.LinkBudgetOrDefault(),
 		Commands:    cmds,

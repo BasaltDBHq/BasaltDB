@@ -1,6 +1,6 @@
 // Runs with `node --test web/lib/*.test.mjs` (make web-check). The headline
 // cases come from the Go tests (internal/approval/summary_test.go), so the
-// page, Telegram and `basalt approve --show` say the same thing.
+// page and `basalt approve --show` say the same thing.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

@@ -27,7 +27,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 )
 
-// notices records what the engine would send to Telegram.
+// notices records what the engine hands its Notifier.
 type notices struct {
 	mu      sync.Mutex
 	sent    []agent.HeldNotice

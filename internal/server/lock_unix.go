@@ -80,9 +80,6 @@ func Running(path string) (pid int, running bool, err error) {
 	return 0, false, nil
 }
 
-// ReadPID reads the pid a server wrote, without touching the lock.
-func ReadPID(path string) (int, error) { return readPID(path) }
-
 func readPID(path string) (int, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {

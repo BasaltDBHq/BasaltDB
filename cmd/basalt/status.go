@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -338,16 +339,16 @@ func guardWords(g agent.GuardStatus) string {
 // daysPerYear says 365 days of record retention as 1 year.
 const daysPerYear = 365
 
+// decimalScale rounds to one decimal.
+const decimalScale = 10
+
 func ledgerWords(l agent.LedgerStatus) string {
 	return fmt.Sprintf("%s in basalt_meta; values kept %d days, records %s", byteWords(l.Bytes), l.ValuesKeptDays, keptWords(l.RecordsKeptDays))
 }
 
 func keptWords(days int) string {
-	switch {
-	case days == daysPerYear:
+	if days == daysPerYear {
 		return "1 year"
-	case days%daysPerYear == 0:
-		return fmt.Sprintf("%d years", days/daysPerYear)
 	}
 	return fmt.Sprintf("%d days", days)
 }
@@ -358,14 +359,15 @@ func byteWords(n int64) string {
 	if n < unit {
 		return fmt.Sprintf("%d B", n)
 	}
-	v, suffix := float64(n)/unit, "KB"
-	for _, next := range []string{"MB", "GB"} {
-		if v < unit {
-			break
+	v := float64(n) / unit
+	for _, suffix := range []string{"KB", "MB"} {
+		// Round first: 1048575 B is 1023.999 KB, which prints as 1.0 MB.
+		if math.Round(v*decimalScale)/decimalScale < unit {
+			return fmt.Sprintf("%.1f %s", v, suffix)
 		}
-		v, suffix = v/unit, next
+		v /= unit
 	}
-	return fmt.Sprintf("%.1f %s", v, suffix)
+	return fmt.Sprintf("%.1f GB", v)
 }
 
 func passkeyWords(p agent.PasskeysStatus) string {

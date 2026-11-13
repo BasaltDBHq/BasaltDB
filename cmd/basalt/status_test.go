@@ -334,7 +334,7 @@ func TestWriteStatusShowsTheLedger(t *testing.T) {
 
 func TestByteWords(t *testing.T) {
 	t.Parallel()
-	for n, want := range map[int64]string{0: "0 B", 1023: "1023 B", 1024: "1.0 KB", 1536: "1.5 KB", 1 << 20: "1.0 MB", 5 << 30: "5.0 GB", 2048 << 30: "2048.0 GB"} {
+	for n, want := range map[int64]string{0: "0 B", 1023: "1023 B", 1024: "1.0 KB", 1536: "1.5 KB", 1 << 20: "1.0 MB", 1<<20 - 1: "1.0 MB", 1<<30 - 1: "1.0 GB", 5 << 30: "5.0 GB", 2048 << 30: "2048.0 GB"} {
 		require.Equal(t, want, byteWords(n))
 	}
 }

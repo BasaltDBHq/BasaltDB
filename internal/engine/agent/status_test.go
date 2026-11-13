@@ -279,6 +279,12 @@ func TestStatusLeavesLedgerOutWhenTheGuardCannotBeRead(t *testing.T) {
 	require.False(t, r.Ready)
 }
 
+func TestStatusLeavesLedgerOutWhenTheGuardIsMissing(t *testing.T) {
+	t.Parallel()
+	r := engineStatus(&fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}, ledger: 123456}, 1, pendingSetup(guard.SetupAgent, statusNow.Add(time.Hour)))(t)
+	require.Nil(t, r.Ledger)
+}
+
 func TestStatusLedgerReadFailureIsNotAProblem(t *testing.T) {
 	t.Parallel()
 	ok := engineStatus(&fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}, 2, nil)(t)

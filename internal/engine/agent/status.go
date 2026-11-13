@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -87,7 +88,11 @@ func (noProbe) LatestSetup(context.Context) (guard.AgentSetup, bool, error) {
 	return guard.AgentSetup{}, false, nil
 }
 
-func (noProbe) LedgerBytes(context.Context) (int64, error) { return 0, nil }
+// errNoProbe: without a real probe there is no size to report, and status
+// leaves the ledger out rather than say 0.
+var errNoProbe = errors.New("no probe reads the ledger size")
+
+func (noProbe) LedgerBytes(context.Context) (int64, error) { return 0, errNoProbe }
 
 // DBProbe is the Probe on an agent connection or pool, against the build's
 // migrations (guard.Migrations outside tests).

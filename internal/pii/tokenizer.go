@@ -119,7 +119,7 @@ func (tz *Tokenizer) detect(text string) ([]Span, error) {
 // claimed span (a token already in the text or
 // another found span). A token is only recognized again when nothing
 // alphanumeric touches it (existingTokens), so a token written against
-// letters ("0@0.A+00000000" gives "0@0.Apii1_…") would be read as part of a
+// letters ("0@0.A+12025550143" gives "0@0.Apii1_…") would be read as part of a
 // new address next turn. Spans that touch another span stay as they are: back
 // to back tokens recognize each other. claimed is sorted and holds found.
 func widenToBoundaries(text string, found, claimed []Span) {

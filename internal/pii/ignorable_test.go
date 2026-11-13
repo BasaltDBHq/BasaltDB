@@ -59,7 +59,7 @@ func TestAnInvisibleCharacterInsideAValueDoesNotHideIt(t *testing.T) {
 			{"alice@co" + c + "rp.ee", "alice@corp.ee", pii.EntityEmail},
 			{"alice" + c + "@corp.ee", "alice@corp.ee", pii.EntityEmail},
 			{"ali" + c + "ce@corp.ee", "alice@corp.ee", pii.EntityEmail},
-			{"+4477" + c + "00900456", "+447700900456", pii.EntityPhone},
+			{"+4479" + c + "11123456", "+447911123456", pii.EntityPhone},
 		}
 		for _, tc := range cases {
 			require.Positive(t, finalScan(t, tz, tc.in), "%U %q", h, tc.in)

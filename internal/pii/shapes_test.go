@@ -198,6 +198,9 @@ func TestPhoneShapesKeepFalsePositivesOut(t *testing.T) {
 		"tx 00491711234567 ref",          // a 00 digit run with no separator (QA F15)
 		"id 00442079460958",
 		"build 2.1+447700900456",
+		"score +12 3456 7890 points",   // no possible number (QA F14)
+		"score +44 7700 900123 points", // possible, not valid, no phone word
+		"the phone list was long, score +44 7700 900123",
 	} {
 		out, reps := tokenize(t, tz, in)
 		require.Empty(t, reps, "%q", in)
@@ -237,7 +240,7 @@ func TestAPhoneBeforeASlashOrALineBreak(t *testing.T) {
 		{"call +44 20\n7946\n0958", "+44 20\n7946"},
 		// A number glued to a slash and another number: both are tokens, and
 		// the second pass finds nothing more.
-		{"+00000000/0+00000000", "+00000000"},
+		{"+12025550143/0+12025550144", "+12025550143"},
 	}
 	for _, c := range cases {
 		out, reps := tokenize(t, tz, c.in)
@@ -266,9 +269,9 @@ func TestAGluedPhoneAfterAWordIsFound(t *testing.T) {
 		in      string
 		numbers []string
 	}{
-		{"Tel.+447700900123", []string{"+447700900123"}},
+		{"Tel.+447911123123", []string{"+447911123123"}},
 		{"Nr.+4915112345678", []string{"+4915112345678"}},
-		{"+447700900456.+447700900457", []string{"+447700900456", "+447700900457"}},
+		{"+447911123456.+447911123457", []string{"+447911123456", "+447911123457"}},
 	}
 	for _, c := range cases {
 		out, reps := tokenize(t, tz, c.in)
@@ -283,17 +286,58 @@ func TestAGluedPhoneAfterAWordIsFound(t *testing.T) {
 	}
 }
 
-// Phone shapes still taken for phones although they may be none: a "+"
-// number is found by shape alone, whatever libphonenumber says of it (Known
+// Phone shapes still taken for phones although they may be none (Known
 // limits). Pinned so a change is a decision.
 func TestPhoneShapeKnownFalsePositives(t *testing.T) {
 	tz := patternTokenizer(t)
 	for _, in := range []string{
-		"score +12 3456 7890 points", // QA F14
-		"id 0049 1234 5678",          // a 00 id of a possible length
+		"id 0049 1234 5678",             // a 00 id of a possible length
+		"score +44 20 7946 0958 points", // a figure shaped like a valid number
 	} {
 		_, reps := tokenize(t, tz, in)
 		require.Len(t, reps, 1, "%q", in)
+	}
+}
+
+// A "+" number is a phone when libphonenumber says it is a valid number, or
+// when it is only a possible number and a phone word stands next to it: one
+// of the three words before it or the word after it (owner decision EV-1).
+func TestAPlusNumberNeedsAValidNumberOrAPhoneWord(t *testing.T) {
+	k := newKeys(t, testMaster)
+	tz := patternTokenizer(t)
+	cases := []struct{ in, number string }{
+		// Valid: no phone word needed.
+		{"ref +44 20 7946 0958 ok", "+44 20 7946 0958"},
+		{"+1 202 555 0143", "+1 202 555 0143"},
+		// Possible but not valid (a drama range): a phone word next to it.
+		{"tel +44 7700 900123", "+44 7700 900123"},
+		{"Phone: +44 7700 900123", "+44 7700 900123"},
+		{"TELP. +44 7700 900123", "+44 7700 900123"},
+		{"call me at +44 7700 900123 today", "+44 7700 900123"},
+		{`{"phone_number": "+447700900123"}`, "+447700900123"},
+		{"+44 7700 900123 (WA)", "+44 7700 900123"},
+		{"No. HP +44 7700 900123", "+44 7700 900123"},
+		{"hubungi +44 7700 900123", "+44 7700 900123"},
+		// A lone group that makes the number impossible is left out of it.
+		{"dial +1 202 555 0143 99 times", "+1 202 555 0143"},
+	}
+	for _, c := range cases {
+		out, reps := tokenize(t, tz, c.in)
+		require.Len(t, reps, 1, "%q", c.in)
+		require.Equal(t, c.number, c.in[reps[0].Start:reps[0].End], "%q", c.in)
+		require.Equal(t, mustToken(t, k, pii.EntityPhone, c.number, ""), reps[0].Token, "%q", c.in)
+		again, more := tokenize(t, tz, out)
+		require.Empty(t, more, "%q", c.in)
+		require.Equal(t, out, again, "%q", c.in)
+	}
+	// A phone word further away, or no possible number at all, is not enough.
+	for _, in := range []string{
+		"phone them later, my score +44 7700 900123",
+		"tel +12 3456 7890",
+		"telephoto +44 7700 900123",
+	} {
+		_, reps := tokenize(t, tz, in)
+		require.Empty(t, reps, "%q", in)
 	}
 }
 

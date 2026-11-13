@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -83,5 +84,7 @@ func TestLastEngineError(t *testing.T) {
 	require.Empty(t, lastEngineError(""))
 	require.Equal(t, "panic: boom", lastEngineError("ok\npanic: boom\n\n"), "no error line: the last line")
 	require.Equal(t, `{"level":"ERROR","msg":"x"}`, lastEngineError(`{"level":"ERROR","msg":"x"}`+"\n"+`{"level":"INFO","msg":"y"}`))
+	long := "level=ERROR msg=" + strings.Repeat("x", 1000)
+	require.Equal(t, long[:maxEngineLogLine]+"…", lastEngineError(long+"\n"), "a long line is cut")
 	require.Equal(t, "level=ERROR msg=<U+001B>[31m", lastEngineError("level=ERROR msg=\x1b[31m\n"), "made safe for the terminal")
 }

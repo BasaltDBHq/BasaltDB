@@ -378,15 +378,28 @@ func engineLogError(c *cliIO) string {
 }
 
 // lastEngineError is the last line of log that reports an error (slog's
-// level=ERROR, in text or JSON), else its last line, made safe to print.
+// level=ERROR, in text or JSON), else its last line, cut to
+// maxEngineLogLine characters and made safe to print.
 func lastEngineError(log string) string {
 	lines := strings.Split(strings.TrimRight(log, "\n"), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
 		if strings.Contains(lines[i], "level=ERROR") || strings.Contains(lines[i], `"level":"ERROR"`) {
-			return visibleText(lines[i])
+			return visibleText(cutLine(lines[i]))
 		}
 	}
-	return visibleText(strings.TrimSpace(lines[len(lines)-1]))
+	return visibleText(cutLine(strings.TrimSpace(lines[len(lines)-1])))
+}
+
+// maxEngineLogLine is the most of a log line init prints, in characters.
+const maxEngineLogLine = 300
+
+// cutLine shortens line to maxEngineLogLine characters, marked with "…".
+func cutLine(line string) string {
+	r := []rune(line)
+	if len(r) <= maxEngineLogLine {
+		return line
+	}
+	return string(r[:maxEngineLogLine]) + "…"
 }
 
 // claudeServerPrefix names the agent's server in Claude Code.

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 )
@@ -29,6 +30,9 @@ const (
 	maxLabelLen  = 64
 )
 
+// handBackSecret is a hand-back secret: 16 bytes, base64url.
+var handBackSecret = regexp.MustCompile(`^[A-Za-z0-9_-]{22}$`)
+
 // AlgES256 is the COSE algorithm id of ES256, the only one accepted.
 const AlgES256 = -7
 
@@ -38,6 +42,11 @@ type RegistrationRequest struct {
 	UserID      Bytes  `json:"userId"`
 	UserName    string `json:"userName"`
 	DisplayName string `json:"displayName"`
+	// HandBack, when set, is the secret of the hand-back route of the
+	// pages basalt init serves itself: the page posts the passkey back to
+	// init with it instead of showing a code to paste (CONTRACT.md, CLI).
+	// 16 random bytes, base64url without padding.
+	HandBack string `json:"handBack,omitempty"`
 }
 
 // NewRegistrationRequest draws a fresh challenge and user id from rnd
@@ -61,6 +70,9 @@ func NewRegistrationRequest(rnd io.Reader, userName, displayName string) (Regist
 func (r RegistrationRequest) validate() error {
 	if len(r.Challenge) != challengeLen || len(r.UserID) != userIDLen {
 		return rejected("registration request needs a %d-byte challenge and a %d-byte user id", challengeLen, userIDLen)
+	}
+	if r.HandBack != "" && !handBackSecret.MatchString(r.HandBack) {
+		return rejected("registration handBack must be 16 bytes, base64url")
 	}
 	for _, label := range []string{r.UserName, r.DisplayName} {
 		if label == "" || len(label) > maxLabelLen || !utf8.ValidString(label) {

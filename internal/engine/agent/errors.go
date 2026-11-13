@@ -44,7 +44,10 @@ const (
 	sqlStateInsufficient  = "42501"
 	sqlStateInvalidSchema = "3F000"
 	sqlStateClassAuth     = "28"
-	guardSchema           = "basalt_meta"
+	// sqlStateTooManyConnections is too_many_connections: the agent role is at
+	// its CONNECTION LIMIT, checked by Postgres at login.
+	sqlStateTooManyConnections = "53300"
+	guardSchema                = "basalt_meta"
 
 	ReasonStaleCursor  = "STALE_CURSOR"
 	ReasonNoPrimaryKey = "NO_PRIMARY_KEY"
@@ -202,9 +205,12 @@ func pgToolError(pe *pgconn.PgError) *mcp.ToolError {
 	return te
 }
 
-// unavailableReason tells a refused credential (class 28) from a database
-// the engine cannot reach.
+// unavailableReason tells a role at its connection limit (53300) and a
+// refused credential (class 28) from a database the engine cannot reach.
 func unavailableReason(sqlState string) string {
+	if sqlState == sqlStateTooManyConnections {
+		return reasonTooManyConnections
+	}
 	if strings.HasPrefix(sqlState, sqlStateClassAuth) {
 		return reasonCredentialRejected
 	}

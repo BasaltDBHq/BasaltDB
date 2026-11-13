@@ -22,6 +22,7 @@ import {
   parseBinding,
   parseLine,
   parseRegistrationRequest,
+  registrationResponseJson,
   relyingParty,
   rowsHash,
   utf8,
@@ -109,6 +110,32 @@ test("registration request from Go decodes", () => {
   assert.throws(() => parseRegistrationRequest(short), /32-byte challenge/);
   const empty = "1." + b64urlEncode(utf8(JSON.stringify({ challenge: f.challenge, userId: f.userId, userName: "", displayName: "a" })));
   assert.throws(() => parseRegistrationRequest(empty), /userName/);
+});
+
+test("registration request carries basalt init's hand-back secret", () => {
+  const f = fixtures.registrationRequest;
+  const encode = (extra) =>
+    "1." + b64urlEncode(utf8(JSON.stringify({ challenge: f.challenge, userId: f.userId, userName: "a", displayName: "a", ...extra })));
+  assert.equal(parseRegistrationRequest(encode({})).handBack, "", "no hand-back: the page shows the code");
+  const secret = "A".repeat(21) + "_";
+  assert.equal(parseRegistrationRequest(encode({ handBack: secret })).handBack, secret);
+  for (const bad of ["short", "A".repeat(23), "+".repeat(22), 7]) {
+    assert.throws(() => parseRegistrationRequest(encode({ handBack: bad })), /handBack/);
+  }
+  assert.throws(() => parseRegistrationRequest(encode({ other: 1 })), /unknown field/);
+});
+
+test("registration response JSON is what the code carries", () => {
+  const fields = {
+    credentialId: new Uint8Array([1, 2]),
+    clientDataJson: new Uint8Array([3]),
+    authenticatorData: new Uint8Array([4]),
+    publicKey: new Uint8Array([5]),
+    publicKeyAlgorithm: -7,
+  };
+  const json = registrationResponseJson(fields);
+  assert.deepEqual(JSON.parse(json), { credentialId: "AQI", clientDataJson: "Aw", authenticatorData: "BA", publicKey: "BQ", publicKeyAlgorithm: -7 });
+  assert.equal(encodeRegistrationResponse(fields), "basalt-passkey.1." + b64urlEncode(utf8(json)));
 });
 
 test("registration response matches Go byte for byte", () => {

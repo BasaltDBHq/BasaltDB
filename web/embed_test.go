@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -16,13 +17,15 @@ var connectSrc = regexp.MustCompile(`connect-src ([^;"]+)`)
 
 // The approve and revert pages of a short link read the request from the
 // engine and post the signature back (same origin), so their meta CSP must
-// allow connect-src 'self'; a browser blocks the fetch otherwise. The
-// passkey pages never fetch and keep 'none'.
+// allow connect-src 'self'; a browser blocks the fetch otherwise. So must
+// the registration page, which posts the passkey back to basalt init when
+// init serves it. The passkey management page never fetches and keeps
+// 'none'.
 func TestPageCSPConnectSrc(t *testing.T) {
 	cases := map[string]string{
 		"approve/index.html":  "'self'",
 		"revert/index.html":   "'self'",
-		"register/index.html": "'none'",
+		"register/index.html": "'self'",
 		"passkeys/index.html": "'none'",
 	}
 	for page, want := range cases {
@@ -61,4 +64,24 @@ func TestPortalBuildMatchesEmbed(t *testing.T) {
 		return err
 	}))
 	require.ElementsMatch(t, want, got)
+}
+
+// Signing is "sign with your passkey", never a brand's biometric name, and
+// every signing page says the biometrics stay on the device.
+func TestSigningPagesSayBiometricsStayOnTheDevice(t *testing.T) {
+	const line = "Your fingerprint or face never leaves this device; Basalt only receives a signature."
+	require.NoError(t, fs.WalkDir(web.Files, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || (!strings.HasSuffix(p, ".html") && !strings.HasSuffix(p, ".js")) {
+			return err
+		}
+		body, rerr := web.Files.ReadFile(p)
+		require.NoError(t, rerr)
+		require.NotContains(t, strings.ToLower(string(body)), "touch id", p)
+		return nil
+	}))
+	for _, page := range []string{"approve", "revert", "register", "passkeys"} {
+		body, err := web.Files.ReadFile(page + "/index.html")
+		require.NoError(t, err)
+		require.Contains(t, string(body), line, page)
+	}
 }

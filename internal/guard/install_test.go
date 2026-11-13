@@ -21,6 +21,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 )
 
 func TestNamesValidate(t *testing.T) {
@@ -296,6 +297,109 @@ func TestInstallIdempotent(t *testing.T) {
 		`SELECT count(1)::int FROM pg_trigger WHERE tgname = 'basalt_guard'`).Scan(&triggers))
 	require.Equal(t, 4, triggers)
 	require.NoError(t, other.Conn.Ping(ctx))
+}
+
+// initAs plans and applies basalt init for spec as the admin connection c,
+// again on a deadlock on the shared role catalog (guardtest.TryInit).
+func initAs(t *testing.T, c *pgx.Conn, n guard.Names, spec guard.AgentSpec) {
+	t.Helper()
+	ctx := context.Background()
+	require.NoError(t, guardtest.RetryDeadlock(func() error {
+		s, err := guard.PlanInit(ctx, c, guard.InitOptions{Names: n, Agent: spec})
+		if err != nil {
+			return err
+		}
+		return pgx.BeginFunc(ctx, c, func(tx pgx.Tx) error { return s.Apply(ctx, tx) })
+	}))
+}
+
+// Every path that creates or takes over an agent role leaves it at
+// guard.AgentConnectionLimit, whatever limit an existing role had:
+// CONNECTION LIMIT is a role attribute, which agentAdoptSQL's RESET ALL
+// does not touch. The admin is a superuser, or a CREATEROLE admin that is
+// not one (Supabase's postgres).
+func TestAgentRoleHasConnectionLimit(t *testing.T) {
+	t.Parallel()
+	appLeads := []string{"app.leads"}
+	cases := []struct {
+		name   string
+		exists bool // the role exists before init, at CONNECTION LIMIT start
+		start  int
+		spec   func(t *testing.T) guard.AgentSpec
+	}{
+		{name: "fresh", spec: func(*testing.T) guard.AgentSpec {
+			return guard.AgentSpec{Password: guard.NewPassword()}
+		}},
+		{name: "keeper", exists: true, start: -1, spec: func(*testing.T) guard.AgentSpec {
+			return guard.AgentSpec{}
+		}},
+		{name: "rotator", exists: true, start: 100, spec: func(*testing.T) guard.AgentSpec {
+			return guard.AgentSpec{Password: guard.NewPassword()}
+		}},
+		{name: "installer", spec: func(t *testing.T) guard.AgentSpec {
+			return guard.AgentSpec{Verifier: newVerifier(t, guard.NewPassword()), CreateOnly: true}
+		}},
+		{name: "changer", exists: true, start: -1, spec: func(t *testing.T) guard.AgentSpec {
+			return guard.AgentSpec{Verifier: newVerifier(t, guard.NewPassword()), Change: true}
+		}},
+		{name: "changer100", exists: true, start: 100, spec: func(t *testing.T) guard.AgentSpec {
+			return guard.AgentSpec{Verifier: newVerifier(t, guard.NewPassword()), Change: true}
+		}},
+	}
+	admins := map[string]func(t *testing.T, d *guardtest.DB) *pgx.Conn{
+		"superuser":  func(_ *testing.T, d *guardtest.DB) *pgx.Conn { return d.Admin },
+		"createrole": createRoleAdmin,
+	}
+	for adminName, newAdmin := range admins {
+		t.Run(adminName, func(t *testing.T) {
+			t.Parallel()
+			d := guardtest.New(t)
+			admin := newAdmin(t, d)
+			_, err := admin.Exec(context.Background(), `CREATE SCHEMA app; CREATE TABLE app.leads (id int PRIMARY KEY)`)
+			require.NoError(t, err)
+			for _, c := range cases {
+				t.Run(c.name, func(t *testing.T) {
+					role, err := d.Names.Agent(c.name)
+					require.NoError(t, err)
+					if c.exists {
+						initAs(t, admin, d.Names, guard.AgentSpec{Name: c.name, Password: guard.NewPassword(), Write: appLeads})
+						_, err := admin.Exec(context.Background(), fmt.Sprintf(`ALTER ROLE %s CONNECTION LIMIT %d`, role, c.start))
+						require.NoError(t, err)
+					}
+					spec := c.spec(t)
+					spec.Name, spec.Write, spec.Read = c.name, appLeads, appLeads
+					initAs(t, admin, d.Names, spec)
+					require.Equal(t, int32(guard.AgentConnectionLimit), scalarOf[int32](t, admin,
+						`SELECT rolconnlimit FROM pg_catalog.pg_roles WHERE rolname = $1`, role))
+				})
+			}
+		})
+	}
+}
+
+// The agent cannot raise its own limit (it has no CREATEROLE), and
+// Postgres refuses its connection past the limit with 53300.
+func TestAgentCannotGetPastItsConnectionLimit(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", leads, nil)
+	ctx := context.Background()
+
+	_, err := a.Conn.Exec(ctx, `ALTER ROLE CURRENT_USER CONNECTION LIMIT -1`)
+	require.Equal(t, "42501", guardtest.SQLState(err), "insufficient privilege")
+	_, err = a.Conn.Exec(ctx, `ALTER ROLE `+a.Role+` CONNECTION LIMIT 100`)
+	require.Equal(t, "42501", guardtest.SQLState(err), "insufficient privilege")
+	require.Equal(t, int32(guard.AgentConnectionLimit), scalarOf[int32](t, a.Conn,
+		`SELECT rolconnlimit FROM pg_catalog.pg_roles WHERE rolname = current_user`))
+
+	for range guard.AgentConnectionLimit - 1 { // a.Conn is the first
+		a.Connect(t)
+	}
+	c, err := pgdial.Connect(ctx, a.URL)
+	if err == nil {
+		_ = c.Close(ctx)
+	}
+	require.Equal(t, "53300", guardtest.SQLState(err), "too many connections for the role")
 }
 
 func TestInitPicksUpNewCascade(t *testing.T) {

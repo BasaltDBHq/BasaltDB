@@ -30,7 +30,14 @@ const (
 	passwordBytes = 32
 	// DefaultStatementTimeout is the agent role's query time limit.
 	DefaultStatementTimeout = 30 * time.Second
-	redacted                = "********"
+	// AgentConnectionLimit is the agent role's CONNECTION LIMIT: the
+	// engine's pool (4), basalt status (1), the setup finisher (1), and 2
+	// spare for sessions a crashed engine leaves open until TCP keepalive
+	// closes them. Postgres enforces it at login, whatever the engine does.
+	// The value lives in setupcode, whose summary states it (setupcode
+	// cannot import guard).
+	AgentConnectionLimit = setupcode.AgentConnectionLimit
+	redacted             = "********"
 )
 
 // ErrInvalidAgent is returned for an agent spec that cannot be installed.
@@ -311,7 +318,7 @@ func checkAgentPassword(spec AgentSpec) error {
 // verifier as is.
 func agentRoleStatement(n Names, role string, spec AgentSpec, timeoutMs int64) (Statement, error) {
 	if spec.Password == "" && spec.Verifier == "" {
-		return Statement{SQL: n.render(fmt.Sprintf(agentKeepRoleSQL, role, timeoutMs))}, nil
+		return Statement{SQL: n.render(fmt.Sprintf(agentKeepRoleSQL, role, timeoutMs, AgentConnectionLimit))}, nil
 	}
 	tmpl := agentRoleSQL
 	switch {
@@ -321,7 +328,7 @@ func agentRoleStatement(n Names, role string, spec AgentSpec, timeoutMs int64) (
 		tmpl = agentAlterRoleSQL
 	}
 	render := func(verifier string) string {
-		return n.render(fmt.Sprintf(tmpl, role, quoteLiteral(verifier), timeoutMs))
+		return n.render(fmt.Sprintf(tmpl, role, quoteLiteral(verifier), timeoutMs, AgentConnectionLimit))
 	}
 	if spec.Verifier != "" {
 		return Statement{SQL: render(spec.Verifier)}, nil
@@ -438,15 +445,18 @@ func agentAdoptStatement(n Names, role string, spec AgentSpec) (Statement, error
 }
 
 // agentKeepRoleSQL updates an agent role that exists without touching its
-// password. %[1]s is the validated role, %[2]d the statement timeout in ms.
+// password. %[1]s is the validated role, %[2]d the statement timeout in ms,
+// %[3]d the connection limit (AgentConnectionLimit).
 const agentKeepRoleSQL = `
 ALTER ROLE %[1]s LOGIN;
 GRANT {{agents}} TO %[1]s;
-ALTER ROLE %[1]s SET statement_timeout = %[2]d;`
+ALTER ROLE %[1]s SET statement_timeout = %[2]d;
+ALTER ROLE %[1]s CONNECTION LIMIT %[3]d;`
 
 // agentRoleSQL creates or rotates one agent role. %[1]s is the validated
 // role, %[2]s the SCRAM-SHA-256 verifier as a SQL literal, %[3]d the
-// statement timeout in ms.
+// statement timeout in ms, %[4]d the connection limit
+// (AgentConnectionLimit).
 const agentRoleSQL = `
 DO $$
 BEGIN
@@ -457,16 +467,18 @@ BEGIN
     END IF;
 END $$;
 GRANT {{agents}} TO %[1]s;
-ALTER ROLE %[1]s SET statement_timeout = %[3]d;`
+ALTER ROLE %[1]s SET statement_timeout = %[3]d;
+ALTER ROLE %[1]s CONNECTION LIMIT %[4]d;`
 
 // agentCreateRoleSQL creates a new agent role with a plain CREATE ROLE, so
 // a role that exists is refused (an INSTALL setup code never takes over a
 // role). %[1]s is the validated role, %[2]s the verifier as a SQL literal,
-// %[3]d the statement timeout in ms.
+// %[3]d the statement timeout in ms, %[4]d the connection limit.
 const agentCreateRoleSQL = `
 CREATE ROLE %[1]s LOGIN INHERIT NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD %[2]s;
 GRANT {{agents}} TO %[1]s;
-ALTER ROLE %[1]s SET statement_timeout = %[3]d;`
+ALTER ROLE %[1]s SET statement_timeout = %[3]d;
+ALTER ROLE %[1]s CONNECTION LIMIT %[4]d;`
 
 // agentAlterRoleSQL sets the password of an agent role that exists; a
 // role that does not exist is refused. Arguments as agentCreateRoleSQL.
@@ -485,7 +497,8 @@ BEGIN
 END $$;
 ALTER ROLE %[1]s LOGIN PASSWORD %[2]s;
 GRANT {{agents}} TO %[1]s;
-ALTER ROLE %[1]s SET statement_timeout = %[3]d;`
+ALTER ROLE %[1]s SET statement_timeout = %[3]d;
+ALTER ROLE %[1]s CONNECTION LIMIT %[4]d;`
 
 // tableRef is a parsed "schema.table".
 type tableRef struct{ schema, table string }

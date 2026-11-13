@@ -16,7 +16,7 @@ func TestRetryDeadlock(t *testing.T) {
 	t.Run("retries a deadlock until it passes", func(t *testing.T) {
 		t.Parallel()
 		calls := 0
-		err := retryDeadlock(func() error {
+		err := RetryDeadlock(func() error {
 			calls++
 			if calls < 3 {
 				return deadlock
@@ -29,14 +29,14 @@ func TestRetryDeadlock(t *testing.T) {
 	t.Run("gives up on a deadlock that persists", func(t *testing.T) {
 		t.Parallel()
 		calls := 0
-		err := retryDeadlock(func() error { calls++; return deadlock })
+		err := RetryDeadlock(func() error { calls++; return deadlock })
 		require.Equal(t, "40P01", SQLState(err))
 		require.Equal(t, deadlockAttempts, calls)
 	})
 	t.Run("does not retry other errors", func(t *testing.T) {
 		t.Parallel()
 		calls := 0
-		err := retryDeadlock(func() error { calls++; return other })
+		err := RetryDeadlock(func() error { calls++; return other })
 		require.ErrorIs(t, err, other)
 		require.Equal(t, 1, calls)
 	})

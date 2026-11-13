@@ -350,7 +350,7 @@ func TestInitSetupCodeAgentCodeReplacesTheTables(t *testing.T) {
 	r := laptopRun(t, d.URL, "", time.Time{}, "--setup-code", change.res.Code, "--yes")
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Contains(t, r.stdout, "This changes the tables of the existing agent bot (role "+role+"); its password stays.")
-	require.Contains(t, r.stdout, "statement timeout 30000 ms (now 15000 ms).")
+	require.Contains(t, r.stdout, "statement timeout 30000 ms (now 15000 ms), at most 8 connections.")
 	require.NotContains(t, r.stderr, "/passkeys/register", "a portal passkey is registered already")
 
 	// A statement_timeout set for this database only wins over the
@@ -359,7 +359,7 @@ func TestInitSetupCodeAgentCodeReplacesTheTables(t *testing.T) {
 	again := remoteDBRun(t, cfg, "--agent", "bot", "--read", "public.leads", "--prefix", d.Names.Prefix, "--new-code")
 	r = laptopRun(t, d.URL, "", time.Time{}, "--setup-code", again.res.Code, "--dry-run")
 	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Contains(t, r.stdout, "statement timeout 30000 ms (5000 ms set for this database only, which takes precedence).")
+	require.Contains(t, r.stdout, "statement timeout 30000 ms (5000 ms set for this database only, which takes precedence), at most 8 connections.")
 
 	privilege := func(table, priv string) bool {
 		var ok bool

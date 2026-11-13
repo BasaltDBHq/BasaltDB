@@ -336,6 +336,7 @@ func catalogCases() map[string]catalogCase {
 		},
 
 		caseKey("UNAVAILABLE", "DATABASE_UNREACHABLE", ""): {"query", queryArgs0, plain(context.DeadlineExceeded)},
+		caseKey("UNAVAILABLE", "TOO_MANY_CONNECTIONS", ""): {"query", queryArgs0, pgFail("53300", `too many connections for role "basalt_agent_bot"`, "")},
 		caseKey("UNAVAILABLE", "CREDENTIAL_REJECTED", ""):  {"query", queryArgs0, pgFail("28P01", "password authentication failed", "")},
 		caseKey("UNAVAILABLE", "GUARD_MISSING", ""):        {"query", queryArgs0, pgFail("3F000", `schema "basalt_meta" does not exist`, "")},
 		caseKey("UNAVAILABLE", "GUARD_OUTDATED", ""):       {"query", queryArgs0, asToolError(&mcp.ToolError{Code: CodeUnavailable, Reason: reasonGuardOutdated, Message: "the guard is outdated"})},

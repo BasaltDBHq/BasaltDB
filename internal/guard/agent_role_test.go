@@ -33,7 +33,10 @@ func requireSentAsVerifier(t *testing.T, d *guardtest.DB, spec guard.AgentSpec) 
 	require.Contains(t, sent.String(), "PASSWORD '"+scramPrefix)
 	require.Contains(t, s.SQL(), "PASSWORD '********'", "the person sees the verifier redacted")
 	require.NotContains(t, s.SQL(), scramPrefix)
-	require.NoError(t, pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return s.Apply(ctx, tx) }))
+	// Roles are cluster-wide: a parallel test can deadlock the role catalog.
+	require.NoError(t, guardtest.RetryDeadlock(func() error {
+		return pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return s.Apply(ctx, tx) })
+	}))
 }
 
 func TestInitSendsVerifierNotPassword(t *testing.T) {

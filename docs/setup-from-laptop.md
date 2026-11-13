@@ -93,7 +93,7 @@ The same goes for changing the tables of an agent: ask the bot for a new code an
 
 ## Passkeys
 
-To remove a passkey you do not recognise, run `basalt passkey remove <id>` on your laptop. It needs the admin connection string.
+To find the id of a passkey, ask the bot to run `basalt passkey list`. To remove one you do not recognise, run `basalt passkey remove <id>` on your laptop. It needs the admin connection string.
 
 To add a second passkey, ask the bot for a new setup code and run it with `--add-passkey`. A code that was used once is refused.
 

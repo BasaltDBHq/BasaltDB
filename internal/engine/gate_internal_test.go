@@ -72,6 +72,7 @@ func TestGatedLedgerRefusesEveryCall(t *testing.T) {
 	calls := map[string]func() error{
 		"CheckHealth":     func() error { _, err := g.CheckHealth(ctx, ledger.HealthOptions{}); return err },
 		"ListChanges":     func() error { _, err := g.ListChanges(ctx, ledger.ChangeListParams{}); return err },
+		"ListAccess":      func() error { _, err := g.ListAccess(ctx); return err },
 		"RowChanges":      func() error { _, err := g.RowChanges(ctx, []uuid.UUID{id}); return err },
 		"ListPasskeys":    func() error { _, err := g.ListPasskeys(ctx); return err },
 		"FindApproval":    func() error { _, err := g.FindApproval(ctx, id); return err },

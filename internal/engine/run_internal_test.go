@@ -61,6 +61,24 @@ func TestInstructionsTeachNextSteps(t *testing.T) {
 	}
 }
 
+// TestInstructionsTeachRevertScope checks the instructions tell the agent
+// what the revert scope rules mean for what it says and does (owner
+// decisions RS-1 to RS-7): it proposes only its own work, the person may
+// widen it (and the agent then sees totals only), reject it with a note,
+// and a reissue after a widen resets the person's scope.
+func TestInstructionsTeachRevertScope(t *testing.T) {
+	t.Parallel()
+	for _, want := range []string{
+		"A revert covers only your own work",
+		"they can include other agents' changes on the signing page",
+		"you see only status and totals (widened: true) and get no link",
+		"the wait returns REJECTED with their note: stop",
+		"reissueLink on a widened revert resets it to your own work",
+	} {
+		require.Contains(t, Instructions, want)
+	}
+}
+
 func TestListenPagesServesAFreePort(t *testing.T) {
 	t.Parallel()
 	site, err := listenPages(config.Pages{Addr: "127.0.0.1:0", Origin: "http://localhost:8787"}, slog.New(slog.DiscardHandler))

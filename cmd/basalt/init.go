@@ -164,9 +164,10 @@ func runInit(c *cliIO, args []string) int {
 	}
 	fmt.Fprintf(c.stderr, "basalt: guard installed; agent role %s\n", role)
 	warnRLSBlind(c, conn, role, f.spec)
-	if err := passkeyStep(c, conn, f); err != nil {
-		return c.fail(fmt.Errorf("the guard is installed but no passkey was registered (run basalt init again): %w", err))
-	}
+	// A failed passkey step must not leave the role without its credential
+	// file: the rerun it asks for would refuse a role that exists. The
+	// engine is set up first, then the failure is reported.
+	passkeyErr := passkeyStep(c, conn, f)
 	if f.demo {
 		leads, notes, err := demoCounts(c.ctx, conn)
 		if err != nil {
@@ -176,6 +177,9 @@ func runInit(c *cliIO, args []string) int {
 	}
 	if err := setupEngine(c, f, dsn); err != nil {
 		return c.fail(err)
+	}
+	if passkeyErr != nil {
+		return c.fail(fmt.Errorf("the guard is installed and the engine is set up, but no passkey was registered, so held writes cannot be approved until you register one (run basalt init again): %w", passkeyErr))
 	}
 	return exitOK
 }

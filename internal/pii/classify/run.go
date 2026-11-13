@@ -86,7 +86,7 @@ type CheckResult struct {
 	Sampled           int
 	RoundTripFailures int
 	// CommonWordRule is how many failures are single common words, which
-	// free text matches alone only with a sign that they are a name.
+	// free text never matches alone (owner decision DD-1).
 	CommonWordRule int
 }
 

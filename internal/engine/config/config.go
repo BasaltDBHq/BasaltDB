@@ -315,6 +315,13 @@ func LoadNoFollow(path string) (Config, error) {
 	return load(path, openNoFollow)
 }
 
+// LoadOpen is Load with the file opened by open: a root process opens it
+// without following links (service.OpenTrustedFile) and checks the open
+// file before it is read.
+func LoadOpen(path string, open func(string) (*os.File, error)) (Config, error) {
+	return load(path, open)
+}
+
 func load(path string, open func(string) (*os.File, error)) (Config, error) {
 	raw, err := readSmall(path, open)
 	if err != nil {

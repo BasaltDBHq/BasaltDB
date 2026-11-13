@@ -244,3 +244,62 @@ func TestNewPanicsWithoutAgents(t *testing.T) {
 	require.Panics(t, func() { engine.New(nil, []engine.Agent{agent("a", "/tmp", 0)}) })
 	require.Panics(t, func() { engine.New(slog.New(slog.DiscardHandler), []engine.Agent{{Name: "a"}}) })
 }
+
+// Refused peers are drained a few at a time per agent; past the cap the
+// engine answers and closes at once, and stopping the engine ends the
+// drains.
+func TestRefusedDrainsAreCapped(t *testing.T) {
+	t.Parallel()
+	dir := shortDir(t)
+	bot := agent("bot", dir, myUID()+1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	e := engine.New(slog.New(slog.DiscardHandler), []engine.Agent{bot}).WithRefusedDrains(2)
+	done := make(chan struct{})
+	go func() { _ = e.Serve(ctx); close(done) }()
+	waitListening(t, bot.SocketPath)
+
+	// refused dials and reads the refusal line, the connection kept open
+	// for writing (so the engine drains until EOF).
+	refused := func() *net.UnixConn {
+		c, err := net.DialUnix("unix", nil, &net.UnixAddr{Name: bot.SocketPath, Net: "unix"})
+		require.NoError(t, err)
+		t.Cleanup(func() { c.Close() })
+		r := bufio.NewReader(c)
+		require.NoError(t, c.SetReadDeadline(time.Now().Add(5*time.Second)))
+		line, err := r.ReadString('\n')
+		require.NoError(t, err)
+		require.NotEmpty(t, mcp.PeerRefusal([]byte(line)))
+		return c
+	}
+	// stillOpen reports whether the engine still reads c: writes to a
+	// connection the engine closed fail within a few tries.
+	stillOpen := func(c *net.UnixConn) bool {
+		require.NoError(t, c.SetWriteDeadline(time.Now().Add(time.Second)))
+		for range 10 {
+			if _, err := c.Write([]byte("x\n")); err != nil {
+				return false
+			}
+			time.Sleep(30 * time.Millisecond)
+		}
+		return true
+	}
+
+	first := refused()
+	second := refused()
+	third := refused()
+	require.True(t, stillOpen(first), "drained")
+	require.True(t, stillOpen(second), "drained")
+	require.False(t, stillOpen(third), "over the cap: closed at once")
+
+	// Stopping the engine ends the drains well before their 2 seconds.
+	stopped := time.Now()
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the engine did not stop")
+	}
+	require.Less(t, time.Since(stopped), 1500*time.Millisecond)
+	require.False(t, stillOpen(first))
+}

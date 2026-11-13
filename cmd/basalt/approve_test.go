@@ -131,13 +131,13 @@ func holdDelete(t *testing.T, credFile string) guard.Held {
 	const stmt = `DELETE FROM public.leads WHERE id = 9`
 	tx, err := conn.Begin(ctx)
 	require.NoError(t, err)
-	require.NoError(t, guard.BeginPreview(ctx, tx, in))
+	require.NoError(t, guard.BeginPreview(ctx, tx, in, guardtest.Timeout))
 	_, err = tx.Exec(ctx, stmt)
 	require.NoError(t, err)
 	lines, err := guard.PreviewLines(ctx, tx, nil)
 	require.NoError(t, err)
 	require.NoError(t, tx.Rollback(ctx))
-	held, err := guard.Hold(ctx, conn, in, guard.HoldRequest{Statement: stmt, Lines: lines})
+	held, err := guard.Hold(ctx, conn, in, guardtest.Timeout, guard.HoldRequest{Statement: stmt, Lines: lines})
 	require.NoError(t, err)
 	return held
 }

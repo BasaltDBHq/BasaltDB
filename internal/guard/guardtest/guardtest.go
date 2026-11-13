@@ -50,6 +50,10 @@ func New(t *testing.T) *DB {
 	// Plain SQL: test fixture DDL on a generated name.
 	_, err = server.Exec(ctx, "CREATE DATABASE "+dbName)
 	require.NoError(t, err)
+	// Tests assert timestamps as Postgres prints them, so the database
+	// prints in UTC whatever TimeZone the test server was initialized with.
+	_, err = server.Exec(ctx, "ALTER DATABASE "+dbName+" SET TimeZone TO 'UTC'")
+	require.NoError(t, err)
 	_ = server.Close(ctx)
 
 	u, err := url.Parse(base)

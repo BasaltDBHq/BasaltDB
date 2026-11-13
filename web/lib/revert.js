@@ -255,7 +255,7 @@ async function sign(rp, state) {
     );
   } catch (err) {
     $("sign").disabled = nothingToSign(state.req.binding) !== null || state.expired;
-    $("status").textContent = webauthnError(err);
+    $("status").textContent = webauthnError(err, state.req.credentialIds.length);
   }
 }
 
@@ -413,7 +413,7 @@ async function changeScope(state, run) {
     applyScope(state, await run());
     $("scope-status").textContent = "";
   } catch (err) {
-    $("scope-status").textContent = err?.name === "NotAllowedError" || err?.name === "SecurityError" ? webauthnError(err) : scopeFailure(err);
+    $("scope-status").textContent = err?.name === "NotAllowedError" || err?.name === "SecurityError" ? webauthnError(err, state.req.credentialIds.length) : scopeFailure(err);
   }
   state.busy = false;
   render(state);
@@ -491,7 +491,7 @@ async function showValues(state) {
     });
   } catch (err) {
     const failure = revealFailure(err, KIND_REVERT);
-    status = failure?.text ?? (err?.name === "NotAllowedError" ? webauthnError(err) : personText(err) || err.message);
+    status = failure?.text ?? (err?.name === "NotAllowedError" ? webauthnError(err, req.credentialIds.length) : personText(err) || err.message);
     if (failure?.final) state.revealFinal = req;
   }
   state.busy = false;

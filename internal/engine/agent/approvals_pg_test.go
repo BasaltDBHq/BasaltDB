@@ -185,7 +185,7 @@ func signLink(t *testing.T, link string, signer *passkeytest.Authenticator) stri
 	frag := link[strings.Index(link, "#")+1:]
 	req, b, err := approval.ParseRequest(frag)
 	require.NoError(t, err)
-	require.Empty(t, req.CredentialIDs, "a format 2 link carries no credential ids: the passkeys are discoverable")
+	require.NotEmpty(t, req.CredentialIDs, "the link names the database's passkeys, for allowCredentials")
 	as, err := signer.Sign(approval.Challenge(req.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
 	code, err := approval.NewResponse(b.ApprovalID, as).Code()

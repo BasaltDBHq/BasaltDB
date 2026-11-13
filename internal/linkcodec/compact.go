@@ -9,6 +9,8 @@ import (
 	"math"
 	"strconv"
 	"strings"
+
+	"github.com/basaltdbhq/basaltdb/internal/passkey"
 )
 
 const (
@@ -26,31 +28,47 @@ const (
 	// maxSafeInteger is 2^53 - 1, the largest integer a JavaScript number
 	// holds exactly (Number.MAX_SAFE_INTEGER).
 	maxSafeInteger = 1<<53 - 1
+	// MaxCredentialIDs caps the credential ids a link carries: the bound
+	// the relays read the database's passkeys with.
+	MaxCredentialIDs = 100
+	// withCredentialIDs is the length of [shapes, lines, credentialIds].
+	withCredentialIDs = 3
+	// maxCredentialID is WebAuthn's longest credential id, in bytes.
+	maxCredentialID = 1023
 )
 
 // Lines is format 2's compact form of a request's texts (CONTRACT.md,
 // Codes, Format 2): the binding text, then the lines. Each text is either
 // itself, or a shape and that shape's values; the shapes are the distinct
-// key layouts of the texts, each listed once. JSON: [shapes, lines].
+// key layouts of the texts, each listed once. JSON: [shapes, lines], or
+// [shapes, lines, credentialIds] when the link names the database's
+// passkeys: the page passes them as allowCredentials, so the browser offers
+// only those. They are not signed; Postgres still checks the passkey.
 type Lines struct {
-	Shapes []Shape
-	Lines  []Line
+	Shapes        []Shape
+	Lines         []Line
+	CredentialIDs []passkey.Bytes
 }
 
-// MarshalJSON writes [shapes, lines].
+// MarshalJSON writes [shapes, lines], with the credential ids third when
+// there are any.
 func (c Lines) MarshalJSON() ([]byte, error) {
 	shapes := c.Shapes
 	if shapes == nil {
 		shapes = []Shape{}
 	}
+	if len(c.CredentialIDs) > 0 {
+		return marshal([]any{shapes, c.Lines, c.CredentialIDs})
+	}
 	return marshal([]any{shapes, c.Lines})
 }
 
-// UnmarshalJSON reads [shapes, lines], both arrays.
+// UnmarshalJSON reads [shapes, lines], both arrays, and an optional third
+// array of 1 to MaxCredentialIDs distinct credential ids.
 func (c *Lines) UnmarshalJSON(raw []byte) error {
 	var pair []json.RawMessage
-	if first(raw) != '[' || json.Unmarshal(raw, &pair) != nil || len(pair) != 2 || first(pair[0]) != '[' || first(pair[1]) != '[' {
-		return errors.New("is not [shapes, lines]")
+	if first(raw) != '[' || json.Unmarshal(raw, &pair) != nil || len(pair) < 2 || len(pair) > withCredentialIDs || first(pair[0]) != '[' || first(pair[1]) != '[' {
+		return errors.New("is not [shapes, lines] or [shapes, lines, credentialIds]")
 	}
 	*c = Lines{}
 	if err := json.Unmarshal(pair[0], &c.Shapes); err != nil {
@@ -59,7 +77,40 @@ func (c *Lines) UnmarshalJSON(raw []byte) error {
 	if err := json.Unmarshal(pair[1], &c.Lines); err != nil {
 		return fmt.Errorf("lines: %w", err)
 	}
+	if len(pair) == withCredentialIDs {
+		ids, err := credentialIDs(pair[2])
+		if err != nil {
+			return fmt.Errorf("credentialIds: %w", err)
+		}
+		c.CredentialIDs = ids
+	}
 	return nil
+}
+
+// credentialIDs reads a link's credential ids: an array of 1 to
+// MaxCredentialIDs distinct base64url ids of 1 to 1023 bytes.
+func credentialIDs(raw json.RawMessage) ([]passkey.Bytes, error) {
+	var ids []passkey.Bytes
+	if first(raw) != '[' {
+		return nil, errors.New("is not an array")
+	}
+	if err := json.Unmarshal(raw, &ids); err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 || len(ids) > MaxCredentialIDs {
+		return nil, fmt.Errorf("has %d ids, want 1 to %d", len(ids), MaxCredentialIDs)
+	}
+	seen := map[string]bool{}
+	for _, id := range ids {
+		if len(id) == 0 || len(id) > maxCredentialID {
+			return nil, fmt.Errorf("has an id of %d bytes, want 1 to %d", len(id), maxCredentialID)
+		}
+		if seen[string(id)] {
+			return nil, errors.New("names an id twice")
+		}
+		seen[string(id)] = true
+	}
+	return ids, nil
 }
 
 // Shape is a line's top-level keys in text order.

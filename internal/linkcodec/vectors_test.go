@@ -42,6 +42,9 @@ type validVector struct {
 	Payload  json.RawMessage `json:"payload"`
 	Binding  string          `json:"binding"`
 	Lines    []string        `json:"lines"`
+	// CredentialIDs are the ids the link carries, base64url; none when
+	// absent.
+	CredentialIDs []string `json:"credentialIds,omitempty"`
 }
 
 type invalidVector struct {
@@ -107,13 +110,19 @@ func rawFragment(t *testing.T, text string, trailing string) string {
 	return linkcodec.Format2 + passkey.Bytes(buf.Bytes()).String()
 }
 
-func validOf(t *testing.T, name, kind, binding string, lines []string) validVector {
+func validOf(t *testing.T, name, kind, binding string, lines []string, ids ...passkey.Bytes) validVector {
 	t.Helper()
-	frag, err := linkcodec.EncodeRequest(binding, lines)
+	frag, err := linkcodec.EncodeRequest(binding, lines, ids)
 	require.NoError(t, err)
-	payload, err := json.Marshal(linkcodec.Compact(append([]string{binding}, lines...)))
+	c := linkcodec.Compact(append([]string{binding}, lines...))
+	c.CredentialIDs = ids
+	payload, err := json.Marshal(c)
 	require.NoError(t, err)
-	return validVector{Name: name, Kind: kind, Fragment: frag, Payload: payload, Binding: binding, Lines: lines}
+	v := validVector{Name: name, Kind: kind, Fragment: frag, Payload: payload, Binding: binding, Lines: lines}
+	for _, id := range ids {
+		v.CredentialIDs = append(v.CredentialIDs, id.String())
+	}
+	return v
 }
 
 // shaped returns the compact form of the binding and lines, for a test to
@@ -134,6 +143,8 @@ func buildVectors(t *testing.T) vectors {
 			validOf(t, "an approval: the pages' fixture", kindApprove, aBinding, aLines),
 			validOf(t, "a revert: the pages' fixture", kindRevert, rBinding, rLines),
 			validOf(t, "every kind of value, and a line that travels as its text", kindApprove, vBinding, vLines),
+			validOf(t, "an approval with the database's credential ids", kindApprove, aBinding, aLines, idOf(1, 16), idOf(2, 32)),
+			validOf(t, "a revert with the database's credential ids", kindRevert, rBinding, rLines, idOf(3, 20)),
 		},
 	}
 
@@ -165,7 +176,16 @@ func buildVectors(t *testing.T) vectors {
 	last(&changed).Values[0] = json.RawMessage(`"DELETE"`)
 
 	add("format 1 JSON after 2.", kindApprove, linkcodec.Format2+strings.TrimPrefix(format1, linkcodec.Format1))
-	add("credential ids as a third element", kindApprove, fragmentOf(t, []any{shaped(vBinding, vLines).Shapes, shaped(vBinding, vLines).Lines, []string{"AQID"}}))
+	withIDs := func(ids any) string {
+		return fragmentOf(t, []any{shaped(vBinding, vLines).Shapes, shaped(vBinding, vLines).Lines, ids})
+	}
+	add("an empty credential id list", kindApprove, withIDs([]string{}))
+	add("a credential id twice", kindApprove, withIDs([]string{"AQID", "AQID"}))
+	add("a credential id that is not base64url", kindApprove, withIDs([]string{"AQ=="}))
+	add("an empty credential id", kindApprove, withIDs([]string{""}))
+	add("credential ids that are not a list", kindApprove, withIDs("AQID"))
+	add("101 credential ids", kindApprove, withIDs(manyIDs(linkcodec.MaxCredentialIDs+1)))
+	add("a fourth element", kindApprove, fragmentOf(t, []any{shaped(vBinding, vLines).Shapes, shaped(vBinding, vLines).Lines, []string{"AQID"}, []string{}}))
 	add("an object instead of [shapes, texts]", kindApprove, fragmentOf(t, map[string]any{"shapes": shaped(vBinding, vLines).Shapes, "lines": shaped(vBinding, vLines).Lines}))
 	add("only the binding", kindApprove, fragmentOf(t, linkcodec.Compact([]string{vBinding})))
 	add("51 preview lines", kindApprove, fragmentOf(t, linkcodec.Compact(append([]string{approvalBinding(tooMany)}, tooMany...))))
@@ -190,6 +210,32 @@ func buildVectors(t *testing.T) vectors {
 	return v
 }
 
+// idTexts is ids in base64url, nil for none.
+func idTexts(ids []passkey.Bytes) []string {
+	if len(ids) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, id.String())
+	}
+	return out
+}
+
+// idOf is an n-byte credential id filled with b.
+func idOf(b byte, n int) passkey.Bytes {
+	return bytes.Repeat([]byte{b}, n)
+}
+
+// manyIDs is n distinct credential ids, base64url.
+func manyIDs(n int) []string {
+	out := make([]string, n)
+	for i := range out {
+		out[i] = passkey.Bytes{byte(i), byte(i >> 8), 1}.String()
+	}
+	return out
+}
+
 func mustJSON(t *testing.T, v any) []byte {
 	t.Helper()
 	raw, err := json.Marshal(v)
@@ -197,13 +243,13 @@ func mustJSON(t *testing.T, v any) []byte {
 	return raw
 }
 
-func parse(kind, fragment string) (string, []string, error) {
+func parse(kind, fragment string) (string, []string, []passkey.Bytes, error) {
 	if kind == kindRevert {
 		r, _, err := revert.ParseRequest(fragment)
-		return r.Binding, r.Lines, err
+		return r.Binding, r.Lines, r.CredentialIDs, err
 	}
 	r, _, err := approval.ParseRequest(fragment)
-	return r.Binding, r.Lines, err
+	return r.Binding, r.Lines, r.CredentialIDs, err
 }
 
 // TestVectors keeps the shared vectors in step with the Go encoder and runs
@@ -223,15 +269,16 @@ func TestVectors(t *testing.T) {
 	var v vectors
 	require.NoError(t, json.Unmarshal(want, &v))
 	for _, tc := range v.Valid {
-		binding, lines, err := parse(tc.Kind, tc.Fragment)
+		binding, lines, ids, err := parse(tc.Kind, tc.Fragment)
 		require.NoError(t, err, tc.Name)
+		require.Equal(t, tc.CredentialIDs, idTexts(ids), tc.Name)
 		require.Equal(t, tc.Binding, binding, tc.Name)
 		require.Equal(t, tc.Lines, lines, tc.Name)
 		sum := sha256.Sum256([]byte(strings.Join(lines, "\n")))
 		require.Contains(t, binding, hex.EncodeToString(sum[:]), tc.Name)
 	}
 	for _, tc := range v.Invalid {
-		_, _, err := parse(tc.Kind, tc.Fragment)
+		_, _, _, err := parse(tc.Kind, tc.Fragment)
 		require.ErrorIs(t, err, approval.ErrInvalid, tc.Name)
 	}
 }

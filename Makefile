@@ -89,9 +89,14 @@ npm-check: ## Syntax-check the npm shim, MCP registry and publish scripts
 	@if MCP_REGISTRY_TOKEN=x sh scripts/mcp-registry-publish.sh nightly; then echo 'mcp-registry-publish must refuse nightly' >&2; exit 1; fi
 
 .PHONY: web-check
-web-check: ## Syntax-check the approval and revert pages and run their codec tests against the Go fixtures
+web-check: ## Syntax-check the approval and revert pages, run their codec tests against the Go fixtures, and check the integrity hashes
 	@for f in web/lib/*.js; do node --check "$$f" || exit 1; done
 	@node --test web/lib/*.test.mjs >/dev/null || node --test web/lib/*.test.mjs
+	@node scripts/web-sri.mjs --check
+
+.PHONY: web-sri
+web-sri: ## Rewrite the subresource-integrity hashes in web/*/index.html after editing web/lib/*.js
+	@node scripts/web-sri.mjs --write
 
 # The portal's static host serves only the files the engine's embed serves
 # (web/embed.go), plus the Pages config. Tests and Go files stay out.

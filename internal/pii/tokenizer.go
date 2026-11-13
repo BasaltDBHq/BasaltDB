@@ -180,7 +180,7 @@ func detectFree(d Detector, text string, claimed []Span) ([]Span, error) {
 	var out []Span
 	for _, seg := range freeSegments(len(text), claimed) {
 		view := foldForDetection(text[seg.Start:seg.End], wantsShapes(d))
-		for _, sp := range detectIn(d, view, text[seg.Start:seg.End]) {
+		for _, sp := range d.Detect(view.text) {
 			if err := checkSpan(view.text, sp); err != nil {
 				return nil, err
 			}
@@ -189,20 +189,6 @@ func detectFree(d Detector, text string, claimed []Span) ([]Span, error) {
 		}
 	}
 	return out, nil
-}
-
-// viewDetector is a built-in detector that also reads the original text
-// behind the folded view (DictionaryDetector: capitals).
-type viewDetector interface {
-	detectView(view foldedView, orig string) []Span
-}
-
-// detectIn runs d over view, the folded view of orig.
-func detectIn(d Detector, view foldedView, orig string) []Span {
-	if vd, ok := d.(viewDetector); ok {
-		return vd.detectView(view, orig)
-	}
-	return d.Detect(view.text)
 }
 
 func checkSpan(text string, sp Span) error {

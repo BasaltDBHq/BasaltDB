@@ -28,10 +28,10 @@ func TestTokenizeText(t *testing.T) {
 	}
 	require.Contains(t, out, "the rose garden", "common word alone is not matched")
 	require.Contains(t, out, "Will may call in May", "common words untouched")
-	require.NotContains(t, out, "; Rose said", "a capitalized common name mid-sentence is a name (PT-10)")
+	require.Contains(t, out, "; Rose said", "a common-word name alone is never a name in free text (DD-1)")
 	require.Contains(t, out, "pii1_", "tokens present")
 	require.Contains(t, out, "@redacted.invalid", "an unknown domain is not kept")
-	require.Len(t, reps, 9) // 2 emails (one not in the dictionary), 2 phones, 4 names, 1 address
+	require.Len(t, reps, 8) // 2 emails (one not in the dictionary), 2 phones, 3 names, 1 address
 	require.Zero(t, finalScan(t, tz, out))
 	require.Positive(t, finalScan(t, tz, in))
 }

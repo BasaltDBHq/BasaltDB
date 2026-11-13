@@ -15,7 +15,7 @@ import (
 // variables set transaction-local, and commits.
 func withVars(ctx context.Context, c *pgx.Conn, in guard.Intent, vars map[string]string, stmt string) error {
 	return pgx.BeginFunc(ctx, c, func(tx pgx.Tx) error {
-		if err := guard.BeginGuarded(ctx, tx, in); err != nil {
+		if err := guard.BeginGuarded(ctx, tx, in, guardtest.Timeout); err != nil {
 			return err
 		}
 		for k, v := range vars {
@@ -98,7 +98,7 @@ func previewRows(t *testing.T, a *guardtest.Agent, in guard.Intent, stmt string)
 	tx, err := a.Conn.Begin(ctx)
 	require.NoError(t, err)
 	defer func() { _ = tx.Rollback(ctx) }()
-	require.NoError(t, guard.BeginGuarded(ctx, tx, in))
+	require.NoError(t, guard.BeginGuarded(ctx, tx, in, guardtest.Timeout))
 	_, err = tx.Exec(ctx, `SELECT set_config('basalt.mode', 'PREVIEW', true)`)
 	require.NoError(t, err)
 	if _, err := tx.Exec(ctx, stmt); err != nil {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -60,8 +61,14 @@ func StartRun(ctx context.Context, q Querier, in Intent) error {
 // BeginGuarded sets the session variables of an agent write on tx,
 // transaction-local (set_config(..., true)), so nothing outlives the
 // transaction on a pooled connection. Call it first in the transaction.
-func BeginGuarded(ctx context.Context, tx pgx.Tx, in Intent) error {
+//
+// It also sets the transaction's timeouts (SetTimeouts), so a guarded
+// transaction never runs on the agent role's own defaults.
+func BeginGuarded(ctx context.Context, tx pgx.Tx, in Intent, timeout time.Duration) error {
 	if err := in.validate(); err != nil {
+		return err
+	}
+	if err := SetTimeouts(ctx, tx, timeout); err != nil {
 		return err
 	}
 	task := ""
@@ -72,6 +79,30 @@ func BeginGuarded(ctx context.Context, tx pgx.Tx, in Intent) error {
 		"set_config('basalt.intent', ?, true), set_config('basalt.run_id', ?, true), "+
 			"set_config('basalt.task_id', ?, true), set_config('basalt.mode', ?, true)",
 		in.Text, in.RunID.String(), task, ModeApply))
+}
+
+// IdleFloor is the least idle_in_transaction_session_timeout SetTimeouts
+// sets: the engine's round trips between statements of one transaction
+// count as idle, and a short statement timeout against a distant database
+// must not end the session between them (25P03).
+const IdleFloor = 30 * time.Second
+
+// SetTimeouts sets statement_timeout and lock_timeout to timeout, and
+// idle_in_transaction_session_timeout to timeout or IdleFloor, whichever
+// is longer, for tx only. The agent role can ALTER ROLE ... SET its own
+// defaults (a statement_timeout of 0 would let one transaction live as
+// long as it likes, a lock_timeout of 1ms would fail every write), so the
+// engine's transactions on the agent's credential never run on them.
+func SetTimeouts(ctx context.Context, tx pgx.Tx, timeout time.Duration) error {
+	if timeout < time.Millisecond {
+		return fmt.Errorf("%w: a guarded transaction needs a timeout of at least 1ms, got %s", ErrInvalidIntent, timeout)
+	}
+	ms := strconv.FormatInt(timeout.Milliseconds(), 10)
+	idle := strconv.FormatInt(max(timeout, IdleFloor).Milliseconds(), 10)
+	return execCall(ctx, tx, sq.Expr(
+		"pg_catalog.set_config('statement_timeout', ?, true), pg_catalog.set_config('lock_timeout', ?, true), "+
+			"pg_catalog.set_config('idle_in_transaction_session_timeout', ?, true)",
+		ms, ms, idle))
 }
 
 // Finish describes the statement that just ran in a guarded transaction.

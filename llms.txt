@@ -39,7 +39,7 @@ The public docs are at https://docs.basaltvault.app. Every page is also Markdown
 
 ## Privacy
 
-- [Privacy](https://docs.basaltvault.app/privacy.md): customer details become placeholders before a request leaves your machine
+- [Privacy](https://docs.basaltvault.app/privacy.md): with supported agents, customer details become placeholders before a request leaves your machine
 - [What the AI sees](https://docs.basaltvault.app/privacy/what-the-ai-sees.md): placeholders and how they turn back into real values
 - [Turn on privacy](https://docs.basaltvault.app/privacy/turn-on.md): run an agent through the local privacy proxy
 - [Mark columns](https://docs.basaltvault.app/privacy/mark-columns.md): review and confirm sensitive columns with basalt classify
@@ -58,6 +58,7 @@ The public docs are at https://docs.basaltvault.app. Every page is also Markdown
 - [What BasaltDB won't catch](https://docs.basaltvault.app/limits.md): the mistakes it does not stop
 - [Security](https://docs.basaltvault.app/security.md): how to report a vulnerability
 - [License](https://docs.basaltvault.app/license.md): Apache-2.0
+- [BasaltVault](https://docs.basaltvault.app/basaltvault.md): the planned paid service for many agents and machines; BasaltDB is complete on its own
 - [Roadmap](https://docs.basaltvault.app/roadmap.md): what is planned after launch
 
 ## For contributors

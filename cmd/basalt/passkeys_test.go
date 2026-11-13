@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 	"flag"
 	"io"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
 
@@ -303,6 +306,22 @@ func TestLogWarnsAboutAnUnusedPasskey(t *testing.T) {
 
 	r := cli(t, nil, "", "log", "--credential-file", credFile)
 	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Contains(t, r.stderr, "warning: passkey \""+dbName(t, d)+"\" ("+id(laptop)+") has not signed anything for 90 days or more")
+	require.Regexp(t, regexp.QuoteMeta("warning: passkey \""+dbName(t, d)+" · bot · ")+`\d{4}-\d{2}-\d{2}`+regexp.QuoteMeta("\" ("+id(laptop)+") has not signed anything for 90 days or more"), r.stderr)
 	require.NotContains(t, r.stderr, "\"phone\"")
+}
+
+// A new passkey's default label tells it apart from the person's other
+// passkeys on the same site: database, agent and date, within 64 bytes.
+func TestDefaultPasskeyLabel(t *testing.T) {
+	t.Parallel()
+	day := time.Date(2026, 11, 13, 23, 30, 0, 0, time.Local)
+	require.Equal(t, "postgres · demo_bot · 2026-11-13", defaultPasskeyLabel("postgres", "demo_bot", day))
+	require.Equal(t, "app · 2026-11-13", defaultPasskeyLabel("app", "", day))
+	long := defaultPasskeyLabel(strings.Repeat("d", 63), "demo_bot", day)
+	require.LessOrEqual(t, len(long), maxPasskeyLabel)
+	require.True(t, strings.HasSuffix(long, "… · demo_bot · 2026-11-13"), long)
+	accents := defaultPasskeyLabel(strings.Repeat("é", 40), strings.Repeat("a", 54), day)
+	require.LessOrEqual(t, len(accents), maxPasskeyLabel)
+	require.True(t, utf8.ValidString(accents), accents)
+	require.True(t, strings.HasSuffix(accents, " · 2026-11-13"), accents)
 }

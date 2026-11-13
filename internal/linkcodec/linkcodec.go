@@ -137,16 +137,23 @@ func inflate(compressed []byte) ([]byte, error) {
 
 // EncodeRequest returns the format 2 fragment (without '#') for a binding
 // text and its lines: the compact form of the binding followed by the
-// lines.
-func EncodeRequest(binding string, lines []string) (string, error) {
-	return Encode(Format2, Compact(append([]string{binding}, lines...)))
+// lines, and the database's credential ids when there are any (at most
+// MaxCredentialIDs).
+func EncodeRequest(binding string, lines []string, ids []passkey.Bytes) (string, error) {
+	if len(ids) > MaxCredentialIDs {
+		return "", fmt.Errorf("encode request: %d credential ids, at most %d", len(ids), MaxCredentialIDs)
+	}
+	c := Compact(append([]string{binding}, lines...))
+	c.CredentialIDs = ids
+	return Encode(Format2, c)
 }
 
 // DecodeRequest decodes a request fragment of either format, with or
 // without '#'. Format 1 decodes into R as it is. Format 2 rebuilds the
-// binding text and at most maxLines lines and hands them to expand. The
-// caller still checks the request against its binding.
-func DecodeRequest[R any](fragment string, maxLines int, expand func(binding string, lines []string) R) (R, error) {
+// binding text and at most maxLines lines and hands them, with the
+// credential ids it carries (nil for none), to expand. The caller still
+// checks the request against its binding.
+func DecodeRequest[R any](fragment string, maxLines int, expand func(binding string, lines []string, ids []passkey.Bytes) R) (R, error) {
 	var zero R
 	format, payload, err := Split(fragment)
 	if err != nil {
@@ -174,5 +181,5 @@ func DecodeRequest[R any](fragment string, maxLines int, expand func(binding str
 	if err != nil {
 		return zero, err
 	}
-	return expand(lines[0], lines[1:]), nil
+	return expand(lines[0], lines[1:], c.CredentialIDs), nil
 }

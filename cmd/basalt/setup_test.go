@@ -272,11 +272,20 @@ func TestInitWithoutATerminalNeverAsks(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
 	h := newFakeHost(t)
 	h.claude = "/usr/local/bin/claude"
+	// Piped answers without --yes or --no-service: init does not pick the
+	// engine's mode for the person, and stops before anything is written.
 	r := initRun(t, d, h, "linux", false, "y\n")
-	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Equal(t, exitUsage, r.code, r.stderr)
+	require.Contains(t, r.stderr, "--yes")
+	require.Contains(t, r.stderr, "--no-service")
+	require.Empty(t, r.stdout, "no SQL shown")
 	require.Empty(t, h.sudo)
 	require.Empty(t, h.ran)
-	require.Contains(t, r.stderr, "not at a terminal, so the engine service is not installed (pass --yes to install it)")
+	require.NoDirExists(t, filepath.Join(h.configDir, perUserDirName), "no credential in the person's home")
+	var installed bool
+	require.NoError(t, d.Admin.QueryRow(context.Background(),
+		`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'basalt_meta')`).Scan(&installed))
+	require.False(t, installed, "the database is left as it was")
 	require.NotContains(t, r.stderr, "[Y/n]")
 
 	// --yes installs it without asking; Claude Code still is not touched.

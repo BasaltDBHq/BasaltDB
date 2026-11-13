@@ -48,8 +48,8 @@ const (
 // phoneCore is a phone shape: an international prefix ("+" or "00"), the
 // country code and up to five digit groups of one to four digits, or a US
 // "(202) 555-0143". A group of one digit counts ("… 45 6"), so a number never
-// leaves its last digit behind; a lone digit after a number ("… 456 7 items")
-// is taken into the token, which only covers more.
+// leaves its last digit behind; a lone digit after a "+" number that makes it
+// invalid ("+44 7911 123456 7 items") is cut off again by phoneEnd.
 const phoneCore = `(?:\+|00)\d{1,3}` + phoneSep + `?\(?\d{1,4}\)?(?:` + phoneSep + `?\d{1,4}){1,4}|\(\d{3}\) {0,4}\d{3}` + phoneSep + `\d{4}`
 
 // iddPrefix is the international dialing prefix most of the world writes
@@ -244,9 +244,9 @@ func (PhoneDetector) Detect(text string) []Span {
 
 // gluedToANumber reports a "+" number written without separators right after
 // a digit, or after a '.' that follows a digit, as in a version's build
-// metadata (1.0.0+20130313144700). After a word ("Tel.+44…", "Nr.+49…") it is
-// a phone. So is one where only letters and digits, and then maybe a '.',
-// stand between it and the phone before it ("+447700900456+447700900457",
+// metadata (1.0.0+20130313144700). After letters ("Tel.+44…", "Nr.+49…") it
+// may be a phone. So may one where only letters and digits, and then maybe a
+// '.', stand between it and the phone before it ("+447911123456+447911123457",
 // "+44…456.+44…"): that phone's token takes the letters and digits in, so a
 // second pass sees this number right after the token. prevEnd is where the
 // phone before ends, or -1.
@@ -274,62 +274,18 @@ func allASCIIAlnum(s string) bool {
 }
 
 // plusNumberIsAPhone reports whether the number at text[start:end] has the
-// evidence a "+" number needs to be a phone (owner decision EV-1): its digits
-// are a valid number, as libphonenumber reads them, or a possible one with a
-// phone word next to it (hasPhoneWordNear). Shape alone took signed figures
-// for phones ("score +12 3456 7890 points"). Numbers written with "00" or in
-// the US form are not "+" numbers and need no more evidence than their shape.
-// The check reads only the text around the number up to the claimed spans on
-// either side, and a second pass claims more of that text, never less, so it
-// rejects what the first one did.
+// evidence a "+" number needs to be a phone: libphonenumber says its digits
+// are a valid number (owner decisions EV-1 and Q-14). Shape alone took signed
+// figures for phones ("score +12 3456 7890 points"), and a number that is
+// only possible is not taken either, whatever word stands next to it: core
+// does not guess from context. Numbers written with "00" or in the US form
+// are not "+" numbers and need no more evidence than their shape.
 func plusNumberIsAPhone(text string, start, end int) bool {
 	if text[start] != '+' {
 		return true
 	}
 	num, err := phonenumbers.Parse("+"+asciiDigitsOf(text[start:end]), "")
-	if err != nil || !phonenumbers.IsPossibleNumber(num) {
-		return false
-	}
-	return phonenumbers.IsValidNumber(num) || hasPhoneWordNear(text, start, end)
-}
-
-// phoneWords are words that mark a number next to them as a phone, in English
-// and Indonesian, lower case (the shape view folds case).
-var phoneWords = map[string]bool{
-	"tel": true, "telp": true, "telephone": true, "telepon": true, "phone": true, "phones": true,
-	"ph": true, "mobile": true, "mob": true, "cell": true, "cellphone": true, "hp": true,
-	"handphone": true, "ponsel": true, "wa": true, "whatsapp": true, "call": true, "fax": true,
-	"sms": true, "hubungi": true,
-}
-
-// Where hasPhoneWordNear looks for a phone word: the phoneWordsBefore nearest
-// words in the phoneWordReachBefore bytes before a number, and the first word
-// in the phoneWordReachAfter bytes after it. A word is a run of ASCII letters;
-// digits and punctuation between are skipped, so a label still counts across
-// a list of numbers ("phones: +44 …, +44 …") or a JSON key ("phone_number":).
-// The reach bounds the work per number.
-const (
-	phoneWordsBefore     = 3
-	phoneWordReachBefore = 64
-	phoneWordReachAfter  = 32
-)
-
-// hasPhoneWordNear reports a phone word next to the number at text[start:end]
-// ("tel +44 …", "call me at +44 …", "+44 … (WA)").
-func hasPhoneWordNear(text string, start, end int) bool {
-	before := letterWords(text[max(0, start-phoneWordReachBefore):start])
-	for i := len(before) - 1; i >= 0 && i >= len(before)-phoneWordsBefore; i-- {
-		if phoneWords[before[i]] {
-			return true
-		}
-	}
-	after := letterWords(text[end:min(len(text), end+phoneWordReachAfter)])
-	return len(after) > 0 && phoneWords[after[0]]
-}
-
-// letterWords are the runs of ASCII letters in s, in order.
-func letterWords(s string) []string {
-	return strings.FieldsFunc(s, func(r rune) bool { return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') })
+	return err == nil && phonenumbers.IsValidNumber(num)
 }
 
 // isIDDMatch reports a match written with the "00" prefix instead of "+".
@@ -405,13 +361,13 @@ func separatorsOK(number string) bool {
 // minDottedPhoneDigits is how many digits a number written with one '.' needs
 // to be a phone rather than a signed decimal: a coordinate has up to eight
 // (+48.858370, possible for Poland), a phone with its country code ten or
-// more (+44.7700900123, +1.2025550143).
+// more (+44.7911123123, +1.2025550143).
 const minDottedPhoneDigits = 10
 
 // isDecimal reports a signed decimal: a number whose one separator is a
 // single '.', and whose digits are too few for a phone or, read after "+",
-// no possible number (+48.858370, +0.00012345). Otherwise it is a phone
-// written with a dot (+44.7700900123).
+// no possible number (+48.858370, +0.00012345). Otherwise it may be a phone
+// written with a dot (+44.7911123123), if it is valid.
 func isDecimal(number string) bool {
 	if !isDotted(number) {
 		return false
@@ -434,7 +390,8 @@ func isDotted(number string) bool {
 // possibleIDD reports whether a "00" number holds a separator (a run of
 // digits starting "00" is an id: 00491711234567) and is a possible number
 // with "+" in place of its "00". Possible, not valid, so a number in a range
-// libphonenumber does not list (0044 7700 900123) is found as its "+" form is.
+// libphonenumber does not list (0044 7700 900123) is found by its "00" shape,
+// although its "+" form is not (owner decision Q-14).
 func possibleIDD(match string) bool {
 	rest := match[len(iddPrefix):]
 	digits := asciiDigitsOf(rest)
@@ -524,40 +481,12 @@ func NewDictionaryDetector(keys *Keys, dict Dictionary, phoneRegion string) *Dic
 	return &DictionaryDetector{keys: keys, dict: dict, phoneRegion: phoneRegion}
 }
 
-// Detect returns the dictionary n-gram hits in text. Without the original
-// text it cannot see capitals, so a single common word is matched only after
-// a title (nameCue); the tokenizer calls detectView instead.
+// Detect returns the dictionary n-gram hits in text, longest first.
 func (d *DictionaryDetector) Detect(text string) []Span {
-	return d.detect(text, func(int, int) bool { return false })
-}
-
-// detectView is Detect over the folded view of orig, reading capitals from
-// orig: a word is capitalized when the first letter it came from is upper or
-// title case.
-func (d *DictionaryDetector) detectView(view foldedView, orig string) []Span {
-	return d.detect(view.text, func(start, end int) bool {
-		from, to := view.original(Span{Start: start, End: end})
-		return startsWithCapital(orig[from:to])
-	})
-}
-
-// startsWithCapital reports whether the first letter of s is upper or title case.
-func startsWithCapital(s string) bool {
-	for _, r := range s {
-		if unicode.IsLetter(r) {
-			return unicode.IsUpper(r) || unicode.IsTitle(r)
-		}
-	}
-	return false
-}
-
-// detect finds the hits in text (folded); capital reports whether the word at
-// [start, end) of text is capitalized in the original.
-func (d *DictionaryDetector) detect(text string, capital func(start, end int) bool) []Span {
 	ws := splitWords(text)
 	var out []Span
 	for i := 0; i < len(ws); {
-		n, typ := d.longestHit(text, ws, i, capital)
+		n, typ := d.longestHit(text, ws, i)
 		if n == 0 {
 			i++
 			continue
@@ -580,15 +509,16 @@ func phoneStart(text string, start int, typ EntityType) int {
 	return start
 }
 
-func (d *DictionaryDetector) longestHit(text string, ws []word, i int, capital func(start, end int) bool) (int, EntityType) {
+func (d *DictionaryDetector) longestHit(text string, ws []word, i int) (int, EntityType) {
 	for n := min(maxNGram, len(ws)-i); n >= 1; n-- {
 		if !tightlyJoined(text, ws[i:i+n]) {
 			continue
 		}
 		form := GenericForm(text[ws[i].start:ws[i+n-1].end])
-		// An empty form (only format characters) is never a value. A single
-		// common word is one only with a name cue.
-		if form == "" || (n == 1 && isCommonWord(form) && !nameCue(text, ws, i, capital)) {
+		// An empty form (only format characters) is never a value, and a
+		// single common word is never one in free text: detection does not
+		// guess from context whether it names someone (owner decision DD-1).
+		if form == "" || (n == 1 && isCommonWord(form)) {
 			continue
 		}
 		if typ, ok := d.dict.Lookup(d.keys.hash(genericHashPrefix + form)); ok {
@@ -596,46 +526,6 @@ func (d *DictionaryDetector) longestHit(text string, ws []word, i int, capital f
 		}
 	}
 	return 0, ""
-}
-
-// nameTitles are the titles that make the word after them a name ("Mr.
-// Brown"), in generic form.
-var nameTitles = map[string]bool{"mr": true, "mrs": true, "ms": true, "dr": true, "prof": true}
-
-// nameCue reports whether the single common word ws[i] reads as a name
-// (owner decisions, PT-10, provisional): a title comes right before it
-// ("Mr. Brown", "dr hope"), or it is capitalized and does not start a
-// sentence ("ask Hope about it"). A word that starts a sentence ("Price
-// called") is not one: the text gives no sign. The start of the text the
-// detector sees counts as a sentence start, so a second pass, which sees the
-// text cut at the tokens of the first, decides as the first did.
-func nameCue(text string, ws []word, i int, capital func(start, end int) bool) bool {
-	if i > 0 && nameTitles[text[ws[i-1].start:ws[i-1].end]] && titleGap(text[ws[i-1].end:ws[i].start]) {
-		return true
-	}
-	return capital(ws[i].start, ws[i].end) && !sentenceStart(text[:ws[i].start])
-}
-
-// titleGap reports whether gap may stand between a title and a name: an
-// optional '.', then one to three spaces.
-func titleGap(gap string) bool {
-	gap = strings.TrimPrefix(gap, ".")
-	return gap != "" && len(gap) <= maxSeparatorLen && strings.Trim(gap, " ") == ""
-}
-
-// sentenceOpeners are what may stand between a sentence end and its first
-// word: spaces, quotes and opening brackets.
-const sentenceOpeners = " \t\"'([{«“‘*_"
-
-// sentenceStart reports whether a word after before starts a sentence: before
-// is empty or ends in '.', '!', '?' or a line break, once spaces, quotes and
-// opening brackets are trimmed.
-func sentenceStart(before string) bool {
-	before = strings.TrimRight(before, sentenceOpeners)
-	if before == "" {
-		return true
-	}
-	return strings.ContainsRune(".!?\n\r", rune(before[len(before)-1]))
 }
 
 type word struct{ start, end int }

@@ -59,11 +59,11 @@ func TestMarksAndNonASCIIDigitsDoNotHideAPhone(t *testing.T) {
 func TestEveryDecimalDigitBlockIsAPhone(t *testing.T) {
 	k := newKeys(t, testMaster)
 	tz := newTokenizer(t)
-	plain := mustToken(t, k, pii.EntityPhone, "+44 7700 900456", "")
+	plain := mustToken(t, k, pii.EntityPhone, "+44 7911 123456", "")
 	zeros := digitZeros()
 	require.Greater(t, len(zeros), 60, "sanity: Unicode has dozens of digit blocks")
 	for _, z := range zeros {
-		in := "call " + inDigits("+44 7700 900456", z) + " now"
+		in := "call " + inDigits("+44 7911 123456", z) + " now"
 		out, reps := tokenize(t, tz, in)
 		require.Len(t, reps, 1, "%U", z)
 		require.Equal(t, plain, reps[0].Token, "%U", z)
@@ -131,8 +131,8 @@ func TestNameDetectionKeepsMarks(t *testing.T) {
 func TestAOneDigitLastGroupIsPartOfThePhone(t *testing.T) {
 	k := newKeys(t, testMaster)
 	tz := newTokenizer(t)
-	plain := mustToken(t, k, pii.EntityPhone, "+447700900456", "")
-	for _, in := range []string{"+44 7700 900 45 6", inDigits("+44 7700 900 45 6", 0x0660)} {
+	plain := mustToken(t, k, pii.EntityPhone, "+447911123456", "")
+	for _, in := range []string{"+44 7911 123 45 6", inDigits("+44 7911 123 45 6", 0x0660)} {
 		out, reps := tokenize(t, tz, "call "+in+" now")
 		require.Len(t, reps, 1, "%q", in)
 		require.Equal(t, plain, reps[0].Token, "%q", in)

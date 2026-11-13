@@ -134,18 +134,18 @@ func TestPhoneSeparatorsAreFound(t *testing.T) {
 	cases := []struct{ name, number, plain string }{
 		{"double spaces", "+1  202  555  0143", "+1 202 555 0143"},
 		{"four spaces", "+1    202 555 0143", "+1 202 555 0143"},
-		{"newline", "+44 7700\n900123", "+44 7700 900123"},
-		{"CRLF", "+44 7700\r\n900123", "+44 7700 900123"},
-		{"hyphen U+2010", "+44‐7700‐900123", "+44 7700 900123"},
-		{"non-breaking hyphen U+2011", "+44‑7700‑900123", "+44 7700 900123"},
-		{"en dash", "+44–7700–900123", "+44 7700 900123"},
-		{"em dash", "+44—7700—900123", "+44 7700 900123"},
-		{"minus sign U+2212", "+44−7700−900123", "+44 7700 900123"},
+		{"newline", "+44 7911\n123123", "+44 7911 123123"},
+		{"CRLF", "+44 7911\r\n123123", "+44 7911 123123"},
+		{"hyphen U+2010", "+44‐7911‐123123", "+44 7911 123123"},
+		{"non-breaking hyphen U+2011", "+44‑7911‑123123", "+44 7911 123123"},
+		{"en dash", "+44–7911–123123", "+44 7911 123123"},
+		{"em dash", "+44—7911—123123", "+44 7911 123123"},
+		{"minus sign U+2212", "+44−7911−123123", "+44 7911 123123"},
 		{"one slash after a space", "+49 89/1234 5678", "+49 89 1234 5678"},
-		{"no-break space", "+44 7700 900123", "+44 7700 900123"},
+		{"no-break space", "+44 7911 123123", "+44 7911 123123"},
 		{"00 prefix", "0044 20 7946 0958", "+44 20 7946 0958"},
 		{"00 prefix, fictional range", "0044 7700 900123", "+44 7700 900123"},
-		{"one dot, UK", "+44.7700900123", "+44 7700 900123"},
+		{"one dot, UK", "+44.7911123123", "+44 7911 123123"},
 		{"one dot, US", "+1.2025550143", "+1 202 555 0143"},
 		{"one dot, France", "+33.123456789", "+33 1 23 45 67 89"},
 		{"00 prefix, Italian leading zero", "0039 06 1234 5678", "+39 06 1234 5678"},
@@ -199,7 +199,7 @@ func TestPhoneShapesKeepFalsePositivesOut(t *testing.T) {
 		"id 00442079460958",
 		"build 2.1+447700900456",
 		"score +12 3456 7890 points",   // no possible number (QA F14)
-		"score +44 7700 900123 points", // possible, not valid, no phone word
+		"score +44 7700 900123 points", // possible, not valid
 		"the phone list was long, score +44 7700 900123",
 	} {
 		out, reps := tokenize(t, tz, in)
@@ -217,8 +217,8 @@ func TestPhoneShapeKnownLimits(t *testing.T) {
 		"call x0044 20 7946 0958 now",  // 00 touching a letter
 		"call +4420794609581234 now",   // digits glued past 15, no separator
 		"call +1     202 555 0143 now", // five spaces between groups
-		"id:1+447700900123",            // a + number glued to a digit
-		"0+447700900123",               // a + number glued to a digit
+		"id:1+447911123456",            // a + number glued to a digit
+		"0+447911123456",               // a + number glued to a digit
 		"call (202)     555-0143 now",  // five spaces in the US form
 	} {
 		_, reps := tokenize(t, tz, in)
@@ -237,7 +237,7 @@ func TestAPhoneBeforeASlashOrALineBreak(t *testing.T) {
 		{"call +44 20 7946 0958/12/26 now", "+44 20 7946 0958"},
 		// A number split over two line breaks keeps its last group out
 		// (Known limits).
-		{"call +44 20\n7946\n0958", "+44 20\n7946"},
+		{"call +1 202 555\n0143\n99", "+1 202 555\n0143"},
 		// A number glued to a slash and another number: both are tokens, and
 		// the second pass finds nothing more.
 		{"+12025550143/0+12025550144", "+12025550143"},
@@ -299,25 +299,18 @@ func TestPhoneShapeKnownFalsePositives(t *testing.T) {
 	}
 }
 
-// A "+" number is a phone when libphonenumber says it is a valid number, or
-// when it is only a possible number and a phone word stands next to it: one
-// of the three words before it or the word after it (owner decision EV-1).
-func TestAPlusNumberNeedsAValidNumberOrAPhoneWord(t *testing.T) {
+// A "+" number is a phone only when libphonenumber says it is a valid number
+// (owner decisions EV-1 and Q-14): a number that is only possible is left in
+// the text, whatever word stands next to it, since core does not guess from
+// context.
+func TestAPlusNumberMustBeValid(t *testing.T) {
 	k := newKeys(t, testMaster)
 	tz := patternTokenizer(t)
 	cases := []struct{ in, number string }{
-		// Valid: no phone word needed.
 		{"ref +44 20 7946 0958 ok", "+44 20 7946 0958"},
 		{"+1 202 555 0143", "+1 202 555 0143"},
-		// Possible but not valid (a drama range): a phone word next to it.
-		{"tel +44 7700 900123", "+44 7700 900123"},
-		{"Phone: +44 7700 900123", "+44 7700 900123"},
-		{"TELP. +44 7700 900123", "+44 7700 900123"},
-		{"call me at +44 7700 900123 today", "+44 7700 900123"},
-		{`{"phone_number": "+447700900123"}`, "+447700900123"},
-		{"+44 7700 900123 (WA)", "+44 7700 900123"},
-		{"No. HP +44 7700 900123", "+44 7700 900123"},
-		{"hubungi +44 7700 900123", "+44 7700 900123"},
+		{"tel +44 20 7946 0958", "+44 20 7946 0958"},
+		{"tel +44 7911 123456", "+44 7911 123456"},
 		// A lone group that makes the number impossible is left out of it.
 		{"dial +1 202 555 0143 99 times", "+1 202 555 0143"},
 	}
@@ -330,11 +323,16 @@ func TestAPlusNumberNeedsAValidNumberOrAPhoneWord(t *testing.T) {
 		require.Empty(t, more, "%q", c.in)
 		require.Equal(t, out, again, "%q", c.in)
 	}
-	// A phone word further away, or no possible number at all, is not enough.
+	// Possible but not valid (+44 7700 900123 is in a drama range): not a
+	// phone, even with a phone word next to it. Nor is an impossible number.
 	for _, in := range []string{
-		"phone them later, my score +44 7700 900123",
+		"tel +44 7700 900123",
+		"Phone: +44 7700 900123",
+		"call me at +44 7700 900123 today",
+		`{"phone_number": "+447700900123"}`,
+		"+44 7700 900123 (WA)",
+		"score +44 7700 900123 points",
 		"tel +12 3456 7890",
-		"telephoto +44 7700 900123",
 	} {
 		_, reps := tokenize(t, tz, in)
 		require.Empty(t, reps, "%q", in)

@@ -31,6 +31,7 @@ const toolStatus = "status"
 const (
 	problemEngineUnreachable   = reasonEngineUnreachable
 	problemDatabaseUnreachable = reasonDatabaseUnreachable
+	problemTooManyConnections  = reasonTooManyConnections
 	problemCredentialRejected  = reasonCredentialRejected
 	problemGuardMissing        = reasonGuardMissing
 	problemGuardOutdated       = reasonGuardOutdated
@@ -425,6 +426,12 @@ func (s statusDeps) addUnreachable(ps *problems, err error) {
 	case reasonCredentialRejected:
 		ps.add(problemCredentialRejected, "the database refuses the agent's credential",
 			func(b *Steps) string { return fixSteps(b, s.cmds, reasonCredentialRejected) })
+	case reasonTooManyConnections:
+		ps.add(problemTooManyConnections, "the agent's role has used all the database connections it is allowed",
+			func(b *Steps) string {
+				b.AskPerson(tooManyConnectionsAsk)
+				return tooManyConnectionsMessage(s.cmds)
+			})
 	case reasonGuardMissing:
 		ps.add(problemGuardMissing, "the guard is not installed in this database",
 			func(b *Steps) string { return fixSteps(b, s.cmds, reasonGuardMissing) })

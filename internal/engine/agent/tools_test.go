@@ -162,6 +162,8 @@ func TestToolErrorMapping(t *testing.T) {
 		{pg("08006", "connection failure"), CodeUnavailable, reasonDatabaseUnreachable, "08006"},
 		{pg("28P01", "password authentication failed"), CodeUnavailable, reasonCredentialRejected, "28P01"},
 		{pg("57P01", "terminating connection due to administrator command"), CodeUnavailable, reasonDatabaseUnreachable, "57P01"},
+		{pg("53300", `too many connections for role "basalt_agent_bot"`), CodeUnavailable, reasonTooManyConnections, "53300"},
+		{pg("53100", "could not extend file: No space left on device"), CodeUnavailable, reasonDatabaseUnreachable, "53100"},
 		{pg("23505", "duplicate key"), CodeSQLError, "", "23505"},
 		{&sqlguard.RefusalError{Reason: sqlguard.ReasonDDL}, CodeStatementRefused, "DDL_NOT_ALLOWED", ""},
 		{fmt.Errorf("read: %w", agentdb.ErrRowLimit), CodeQueryTimeout, ReasonRowLimit, ""},

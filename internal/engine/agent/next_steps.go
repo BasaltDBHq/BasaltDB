@@ -32,6 +32,7 @@ const (
 	reasonLineInvalid         = "LINE_INVALID"
 	reasonPlanNotSigned       = "PLAN_NOT_SIGNED"
 	reasonDatabaseUnreachable = "DATABASE_UNREACHABLE"
+	reasonTooManyConnections  = "TOO_MANY_CONNECTIONS"
 	reasonCredentialRejected  = "CREDENTIAL_REJECTED" //nolint:gosec // a catalog reason, not a credential
 	reasonGuardMissing        = "GUARD_MISSING"
 	reasonGuardOutdated       = "GUARD_OUTDATED"
@@ -508,6 +509,10 @@ func (s *Service) unavailableSteps(b *Steps, te *mcp.ToolError, f failure) strin
 		b.RepeatCall(f.tool, nil, 0, "Try the same call once more, in case the database was only briefly busy.")
 		b.AskPerson("Then tell the person the database cannot be reached and ask them to check that Postgres is running.")
 		return databaseUnreachableMessage
+	case reasonTooManyConnections:
+		b.RepeatCall(f.tool, nil, 0, "Try the same call once more: a connection may have closed since.")
+		b.AskPerson(tooManyConnectionsAsk)
+		return tooManyConnectionsMessage(s.Commands)
 	case reasonCredentialRejected, reasonGuardMissing, reasonGuardOutdated:
 		return fixSteps(b, s.Commands, te.Reason)
 	case reasonEngineUnreachable:
@@ -525,6 +530,17 @@ func (s *Service) unavailableSteps(b *Steps, te *mcp.ToolError, f failure) strin
 // databaseUnreachableMessage is the person's message when the database
 // cannot be reached, in an error and in status.
 const databaseUnreachableMessage = "The agent cannot reach the database. Check that Postgres is running and reachable from the machine the engine runs on."
+
+// tooManyConnectionsAsk is the ASK_PERSON step when the agent role is at its
+// connection limit, in an error and in status.
+const tooManyConnectionsAsk = "Tell the person the agent has used all the database connections Basalt allows it, and ask them to stop any second engine for this agent."
+
+// tooManyConnectionsMessage is the person's message when the agent role is at
+// its connection limit, in an error and in status (CONTRACT.md, Error codes).
+func tooManyConnectionsMessage(cmds Commands) string {
+	return "The agent " + cmds.agent + " has used all 8 database connections Basalt allows it. Another engine for the same agent may be running, " +
+		"or a stopped engine left sessions open. Stop any second engine; stale sessions close on their own within a few minutes."
+}
 
 // fixes are the person's command and what it fixes for the machine problems
 // of the guard and the credential, shared by the UNAVAILABLE errors and the

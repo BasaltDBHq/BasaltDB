@@ -165,6 +165,27 @@
           }
         }
       },
+      "ledger": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["bytes", "valuesKeptDays", "recordsKeptDays"],
+        "description": "How much space the ledger takes and how long it is kept. Absent when the guard cannot be read.",
+        "properties": {
+          "bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "The size of every table, index and TOAST table in basalt_meta, in bytes."
+          },
+          "valuesKeptDays": {
+            "type": "integer",
+            "description": "Days a change's old and new values are kept before they are pruned (30)."
+          },
+          "recordsKeptDays": {
+            "type": "integer",
+            "description": "Days a ledger record is kept before it is deleted (365)."
+          }
+        }
+      },
       "problems": {
         "type": "array",
         "description": "Empty when everything is ready. Errors first.",
@@ -178,6 +199,7 @@
               "enum": [
                 "ENGINE_UNREACHABLE",
                 "DATABASE_UNREACHABLE",
+                "TOO_MANY_CONNECTIONS",
                 "CREDENTIAL_REJECTED",
                 "GUARD_MISSING",
                 "GUARD_OUTDATED",

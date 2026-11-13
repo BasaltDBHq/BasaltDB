@@ -147,6 +147,10 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			return r
 		}},
 		problemDatabaseUnreachable: {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: fmt.Errorf("dial %s: %w", statusCredential, context.DeadlineExceeded)}, 1, nil)},
+		problemTooManyConnections: {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: &pgconn.PgError{
+			Code:    "53300",
+			Message: `too many connections for role "basalt_agent_bot"`,
+		}}, 1, nil)},
 		problemCredentialRejected: {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: &pgconn.PgError{
 			Code:    "28P01",
 			Message: "password authentication failed (" + statusCredential + ")",

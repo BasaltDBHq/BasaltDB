@@ -60,7 +60,7 @@ func runApprove(c *cliIO, args []string) int {
 		// revokes the one the agent handed over (CONTRACT.md, Link secrets),
 		// and the page relays the signature; --reissue is the same thing.
 		pages := linkPages{
-			base:  l.pagesBase(pagesURL),
+			base:  l.pagesBase(c, pagesURL),
 			local: l.localPages(c, pagesURL),
 		}
 		return showApproval(c, l, held, pages, *open != "")

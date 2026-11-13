@@ -38,6 +38,7 @@
     { "code": "APPROVAL_INVALID", "reason": "NOT_THIS_AGENT", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }] },
     { "code": "APPROVAL_INVALID", "reason": "ROWS_CHANGED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }, { "actor": "AGENT", "action": "REVISE_CALL" }] },
     { "code": "APPROVAL_INVALID", "reason": "BAD_SIGNATURE", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "AGENT", "action": "END_TURN" }] },
+    { "code": "APPROVAL_INVALID", "reason": "REVEAL_REFUSED", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }], "planned": true },
     { "code": "APPROVAL_INVALID", "reason": "PASSKEY_REVOKED", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "AGENT", "action": "END_TURN" }] },
 
     { "code": "REVERT_INVALID", "reason": "LINE_INVALID", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }] },
@@ -46,6 +47,7 @@
     { "code": "REVERT_INVALID", "reason": "NOT_THIS_AGENT", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "STOP" }] },
     { "code": "REVERT_INVALID", "reason": "ROWS_CHANGED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
     { "code": "REVERT_INVALID", "reason": "BAD_SIGNATURE", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "AGENT", "action": "END_TURN" }] },
+    { "code": "REVERT_INVALID", "reason": "REVEAL_REFUSED", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }], "planned": true },
     { "code": "REVERT_INVALID", "reason": "PASSKEY_REVOKED", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "AGENT", "action": "END_TURN" }] },
 
     { "code": "REVERT_EXPIRED", "reason": "NOT_SIGNED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "PERSON", "action": "RUN_COMMAND" }] },

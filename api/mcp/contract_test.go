@@ -237,25 +237,32 @@ func TestApprovalSchemas(t *testing.T) {
 }
 
 // TestRevealSchemas pins the reveal payloads (owner decision HR-1, CONTRACT.md,
-// Rows hidden from the agent): the request carries only the proof, the answer
-// only line, row and secretColumns, and revealNonce is optional in both
-// requests, since a long link carries none.
+// Rows hidden from the agent): the request carries the proof and the page's
+// reveal secret, whose key the challenge binds, the answer only line, row and
+// secretColumns, and revealNonce is optional in both requests, since a long
+// link carries none.
 func TestRevealSchemas(t *testing.T) {
 	t.Parallel()
 	req := readJSON(t, filepath.Join("approval", "reveal-request.schema.json"))
-	require.ElementsMatch(t, []string{"proof"}, propertyNames(t, req))
-	require.ElementsMatch(t, []any{"proof"}, req["required"])
+	require.ElementsMatch(t, []string{"proof", "revealSecret"}, propertyNames(t, req))
+	require.ElementsMatch(t, []any{"proof", "revealSecret"}, req["required"])
+	secret := mustMap(t, mustMap(t, req["properties"])["revealSecret"])
+	require.Equal(t, "^[A-Za-z0-9_-]{22}$", secret["pattern"], "revealSecret: 16 bytes base64url")
 	proof := mustMap(t, mustMap(t, req["properties"])["proof"])
 	proofProps := []string{"credentialId", "authenticatorData", "clientDataJson", "signature"}
 	require.ElementsMatch(t, proofProps, propertyNames(t, proof))
 	require.ElementsMatch(t, proofProps, proof["required"], "every assertion field is required")
 	require.Contains(t, proof["description"], `basalt-reveal.1\n`, "the reveal challenge prefix")
+	require.Contains(t, proof["description"], "hex(sha256(revealKey))", "the challenge binds the reveal key")
+	require.Contains(t, proof["description"], `"basalt-reveal-key.1"`, "the reveal key's HKDF info")
 
 	resp := readJSON(t, filepath.Join("approval", "reveal-response.schema.json"))
 	require.ElementsMatch(t, []string{"rows"}, propertyNames(t, resp))
 	item := mustMap(t, mustMap(t, mustMap(t, resp["properties"])["rows"])["items"])
 	require.ElementsMatch(t, []string{"line", "row", "secretColumns"}, propertyNames(t, item))
 	require.ElementsMatch(t, []any{"line", "row"}, item["required"], "secretColumns is optional")
+	secretCols := mustMap(t, mustMap(t, item["properties"])["secretColumns"])
+	require.Contains(t, secretCols["description"], "unverified", "a row with SECRET columns is never shown as checked")
 
 	for _, file := range []string{
 		filepath.Join("approval", "approval-request.schema.json"),

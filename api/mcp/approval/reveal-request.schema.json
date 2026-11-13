@@ -6,7 +6,8 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "proof"
+    "proof",
+    "revealSecret"
   ],
   "properties": {
     "proof": {
@@ -18,7 +19,7 @@
         "clientDataJson",
         "signature"
       ],
-      "description": "The reveal proof: a WebAuthn assertion by the person's passkey whose challenge is sha256(utf8(\"basalt-reveal.1\\n\" + kind + \"\\n\" + id + \"\\n\" + revealNonce + \"\\n\" + rowsHash)), with kind APPROVE or REVERT, id the approvalId or revertId in canonical lowercase form, revealNonce as the request carries it (base64url) and rowsHash the binding's (lowercase hex; a large plan's rowsHash, not its sampleHash). The same fields as an approval response, without approvalId.",
+      "description": "The reveal proof: a WebAuthn assertion by the person's passkey whose challenge is sha256(utf8(\"basalt-reveal.1\\n\" + kind + \"\\n\" + id + \"\\n\" + revealNonce + \"\\n\" + hex(sha256(revealKey)) + \"\\n\" + rowsHash)), with kind APPROVE or REVERT, id the approvalId or revertId in canonical lowercase form, revealNonce as the request carries it (base64url), revealKey = HKDF-SHA-256(ikm the 16 decoded bytes of revealSecret, salt empty, info \"basalt-reveal-key.1\", 32 bytes), hex lowercase, and rowsHash the binding's (lowercase hex; a large plan's rowsHash, not its sampleHash). The same fields as an approval response, without approvalId.",
       "properties": {
         "credentialId": {
           "type": "string",
@@ -38,6 +39,11 @@
           "description": "ASN.1 DER ECDSA signature (ES256)."
         }
       }
+    },
+    "revealSecret": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{22}$",
+      "description": "16 random bytes the page made for this reveal (crypto.getRandomValues), base64url, 22 characters. Sent only to the engine, never shown; the engine passes Postgres only revealKey, derived from it, and never logs or stores either. Without it a reveal proof is worthless."
     }
   }
 }

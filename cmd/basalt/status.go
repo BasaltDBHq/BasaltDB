@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -285,6 +286,9 @@ func writeStatus(w io.Writer, s statusOut) {
 	fmt.Fprintf(w, "\nAgent %s: %s\n", s.Agent, ready)
 	fmt.Fprintf(w, "  Guard:      %s\n", guardWords(s.Guard))
 	fmt.Fprintf(w, "  Passkeys:   %s\n", passkeyWords(s.Passkeys))
+	if s.Ledger != nil {
+		fmt.Fprintf(w, "  Ledger:     %s\n", ledgerWords(*s.Ledger))
+	}
 	if s.Setup.State != "NONE" {
 		fmt.Fprintf(w, "  Setup:      %s %s code %s\n", s.Setup.State, s.Setup.Kind, s.Setup.SetupID)
 	}
@@ -330,6 +334,40 @@ func guardWords(g agent.GuardStatus) string {
 		return "not installed"
 	}
 	return "unknown (the database did not answer)"
+}
+
+// daysPerYear says 365 days of record retention as 1 year.
+const daysPerYear = 365
+
+// decimalScale rounds to one decimal.
+const decimalScale = 10
+
+func ledgerWords(l agent.LedgerStatus) string {
+	return fmt.Sprintf("%s in basalt_meta; values kept %d days, records %s", byteWords(l.Bytes), l.ValuesKeptDays, keptWords(l.RecordsKeptDays))
+}
+
+func keptWords(days int) string {
+	if days == daysPerYear {
+		return "1 year"
+	}
+	return fmt.Sprintf("%d days", days)
+}
+
+// byteWords is n with one decimal in B, KB, MB or GB (powers of 1024).
+func byteWords(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	v := float64(n) / unit
+	for _, suffix := range []string{"KB", "MB"} {
+		// Round first: 1048575 B is 1023.999 KB, which prints as 1.0 MB.
+		if math.Round(v*decimalScale)/decimalScale < unit {
+			return fmt.Sprintf("%.1f %s", v, suffix)
+		}
+		v /= unit
+	}
+	return fmt.Sprintf("%.1f GB", v)
 }
 
 func passkeyWords(p agent.PasskeysStatus) string {

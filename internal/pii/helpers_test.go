@@ -34,7 +34,9 @@ func newMapDict() *mapDict {
 
 // add stores a value. Values here are written with +cc, so no phone region.
 func (d *mapDict) add(k *pii.Keys, t pii.EntityType, value string) {
-	d.generic[k.GenericHash(value)] = t
+	for _, h := range k.GenericHashes(t, value) {
+		d.generic[h] = t
+	}
 	if d.typed[t] == nil {
 		d.typed[t] = map[pii.Hash]bool{}
 	}

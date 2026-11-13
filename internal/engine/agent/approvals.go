@@ -168,9 +168,11 @@ func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding stri
 		// A wait or a list that issues no new link: the link already handed
 		// over still works, so the message adds no URL.
 		pick = handOver{URL: long, Kind: linkLong}
-		text, msgLinks = newMessage().Text(lead).
-			Text("Approve with the link you were given, or run: " + command).
-			Text(expiryLine(expires)).Build()
+		text, msgLinks = fitCommand(func(c commandPhrases) (string, []mcp.Link) {
+			return newMessage().Text(lead).Text(c.orRun).Text(expiryLine(expires)).Build()
+		},
+			commandPhrases{orRun: "Approve with the link you were given, or run: " + command},
+			commandPhrases{orRun: "Approve with the link you were given, or run the approve command the agent shows you."})
 	default:
 		if short == "" {
 			reason = reasonHeldNoPages

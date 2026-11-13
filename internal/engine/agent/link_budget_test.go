@@ -213,3 +213,32 @@ func TestRevertNoticeStaysWithin500CharactersWhateverIsLong(t *testing.T) {
 		}
 	}
 }
+
+// TestApprovalMessageStaysWithinTheLimitWithALongConfigPath: the approve
+// command names --config, so a long path would push the message over 500
+// characters; the message then points to the command in the step instead.
+func TestApprovalMessageStaysWithinTheLimitWithALongConfigPath(t *testing.T) {
+	t.Parallel()
+	long := "/" + strings.Repeat("a-long-directory-name-of-sixty-characters-in-total-ok-ok-ok-", 4) + "engine.json"
+	cmds, err := NewCommands("pbot", long, "linux", nil)
+	require.NoError(t, err)
+	id := uuid.New()
+	command := cmds.Approve(id)
+	require.Contains(t, command, long)
+	lead := "Held for your approval: " + strings.Repeat("Delete 1 row in a table with many cascaded rows ", 2)[:96] + "."
+	for _, pick := range []handOver{
+		{URL: "https://portal.basaltvault.app/approvals/" + id.String() + "#s=q3Jv8sLk2mT0xYp1aBcD9w", Kind: linkShort},
+		{URL: "https://portal.basaltvault.app/approvals/" + id.String() + "#" + strings.Repeat("A", 300), Kind: linkOverBudget},
+	} {
+		text, _ := approvalMessage(lead, pick, command, "Expires 2026-11-12 07:02 UTC.")
+		require.NoError(t, CheckPersonMessage(text), text)
+		require.Contains(t, text, "approve command the agent shows you")
+		require.NotContains(t, text, long)
+	}
+
+	// A short path keeps the command in the message.
+	short, err := NewCommands("pbot", "/etc/basalt/engine.json", "linux", nil)
+	require.NoError(t, err)
+	text, _ := approvalMessage(lead, handOver{URL: "https://portal.basaltvault.app/approvals/" + id.String() + "#s=q3Jv8sLk2mT0xYp1aBcD9w", Kind: linkShort}, short.Approve(id))
+	require.Contains(t, text, short.Approve(id))
+}

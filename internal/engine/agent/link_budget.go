@@ -227,10 +227,35 @@ func shown(s string, n int) string { return clip(plainText(s), n) }
 // over: lead says what happened, tail lines follow the link. An over-budget
 // link comes after a warning and the command (VC-28).
 func approvalMessage(lead string, pick handOver, command string, tail ...string) (string, []mcp.Link) {
+	return fitCommand(
+		func(c commandPhrases) (string, []mcp.Link) { return buildApprovalMessage(lead, pick, c, tail) },
+		commandPhrases{instead: "Run this instead: " + command, orRun: "Or run: " + command},
+		commandPhrases{instead: "Run this instead: the approve command the agent shows you.", orRun: "Or run the approve command the agent shows you."},
+	)
+}
+
+// commandPhrases are the two lines of a message that offer the approve
+// command: the one after an over-budget link's warning and the one after the
+// link.
+type commandPhrases struct{ instead, orRun string }
+
+// fitCommand builds a message with the full command and, when that breaks
+// the 500-character limit (a long --config path), again with a line that
+// sends the person to the command in the step the agent shows. The full
+// command stays in approval.approveCommand and in the step.
+func fitCommand(build func(commandPhrases) (string, []mcp.Link), full, short commandPhrases) (string, []mcp.Link) {
+	text, ls := build(full)
+	if CheckPersonMessage(text) == nil {
+		return text, ls
+	}
+	return build(short)
+}
+
+func buildApprovalMessage(lead string, pick handOver, c commandPhrases, tail []string) (string, []mcp.Link) {
 	msg := newMessage()
 	switch pick.Kind {
 	case linkOverBudget:
-		msg.Text(overBudgetWarning).Text("Run this instead: " + command).Text(lead).Text("The whole link:")
+		msg.Text(overBudgetWarning).Text(c.instead).Text(lead).Text("The whole link:")
 	case linkLong:
 		msg.Text(lead).Text("Approve it with your passkey here; the page then shows a code for the agent:")
 	default:
@@ -238,7 +263,7 @@ func approvalMessage(lead string, pick handOver, command string, tail ...string)
 	}
 	msg.Link(labelApprove, pick.URL)
 	if pick.Kind != linkOverBudget {
-		msg.Text("Or run: " + command)
+		msg.Text(c.orRun)
 	}
 	for _, line := range tail {
 		msg.Text(line)

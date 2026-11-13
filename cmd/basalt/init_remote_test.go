@@ -662,3 +662,16 @@ func clearSetup(t *testing.T, cfg string) {
 	require.NoError(t, err)
 	require.NoError(t, config.WriteFile(cfg, raw))
 }
+
+func TestCheckBuildVersion(t *testing.T) {
+	t.Parallel()
+	for _, ok := range []string{"0.0.1", "0.0.1-alpha.2", "0.0.1-alpha.1-295-gced6c31", "1.2.3"} {
+		require.NoError(t, checkBuildVersion(ok), ok)
+	}
+	for _, bad := range []string{"dev", "master-ced6c31", "", "0.0"} {
+		err := checkBuildVersion(bad)
+		require.Error(t, err, bad)
+		require.NotErrorIs(t, err, errUsage)
+		require.Contains(t, err.Error(), "install a release build")
+	}
+}

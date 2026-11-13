@@ -244,7 +244,7 @@ func TestWaitingWriteAppliesWhenThePersonApproves(t *testing.T) {
 		b, e := env.h.call(t, "write", args)
 		done <- answer{b, e}
 	}()
-	time.Sleep(1500 * time.Millisecond)
+	env.waitPolling(t)
 	require.Equal(t, http.StatusOK, p.post("/api/v1/approvals/"+id+"/approve", pageOrigin, secret, p.signApproval(id, secret, env.person), nil))
 	got := <-done
 	require.False(t, got.isError, "%v", got.body)

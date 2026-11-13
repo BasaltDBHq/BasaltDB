@@ -343,7 +343,7 @@ func TestValuesReadAreInTheDictionaryAndTokenizedConsistently(t *testing.T) {
 	require.Equal(t, pii.EntityPersonName, typ)
 	_, ok = dict.Lookup(keys.GenericHash("hi"))
 	require.False(t, ok, "a PUBLIC column is not added")
-	require.Equal(t, 5, dict.Status().DeltaValues, "two emails, one phone, two names; NULL and empty skipped")
+	require.Equal(t, 7, dict.Status().DeltaValues, "two emails, one phone, two two-word names stored both ways; NULL and empty skipped")
 
 	// A value read is now found in free text, with the same token each time.
 	tz := pii.NewTokenizer(keys, "", append(pii.PatternDetectors(), pii.NewDictionaryDetector(keys, dict, ""))...)

@@ -237,9 +237,12 @@ type StepKind struct {
 // (empty for the code's only or default case) and, where a tool's steps
 // differ, that tool.
 type ErrorSteps struct {
-	Code          string     `json:"code"`
-	Reason        string     `json:"reason,omitempty"`
-	Tool          string     `json:"tool,omitempty"`
+	Code   string `json:"code"`
+	Reason string `json:"reason,omitempty"`
+	Tool   string `json:"tool,omitempty"`
+	// Scope narrows an entry to the scope kind of the revert that failed
+	// (TASK); an entry without one is for every scope.
+	Scope         string     `json:"scope,omitempty"`
 	PersonMessage bool       `json:"personMessage"`
 	Steps         []StepKind `json:"steps"`
 	// Planned marks an entry the engine does not return yet. It may stand
@@ -360,9 +363,24 @@ func LoadAllNextSteps() (NextSteps, error) {
 // ErrorEntry returns the entry for code and reason as returned by tool: the
 // tool's own entry when it has one, else the entry for every tool.
 func (c NextSteps) ErrorEntry(code, reason, tool string) (ErrorSteps, bool) {
+	return c.ErrorEntryFor(code, reason, tool, "")
+}
+
+// ErrorEntryFor is ErrorEntry for a failure in scope (TASK): the entry
+// narrowed to that scope when there is one, else the general entry.
+func (c NextSteps) ErrorEntryFor(code, reason, tool, scope string) (ErrorSteps, bool) {
+	if scope != "" {
+		if e, ok := c.errorEntry(code, reason, tool, scope); ok {
+			return e, true
+		}
+	}
+	return c.errorEntry(code, reason, tool, "")
+}
+
+func (c NextSteps) errorEntry(code, reason, tool, scope string) (ErrorSteps, bool) {
 	var fallback *ErrorSteps
 	for i, e := range c.Errors {
-		if e.Code != code || e.Reason != reason {
+		if e.Code != code || e.Reason != reason || e.Scope != scope {
 			continue
 		}
 		if e.Tool == tool {

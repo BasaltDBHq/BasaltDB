@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
@@ -59,8 +61,14 @@ func StartRun(ctx context.Context, q Querier, in Intent) error {
 // BeginGuarded sets the session variables of an agent write on tx,
 // transaction-local (set_config(..., true)), so nothing outlives the
 // transaction on a pooled connection. Call it first in the transaction.
-func BeginGuarded(ctx context.Context, tx pgx.Tx, in Intent) error {
+//
+// It also sets the transaction's timeouts (SetTimeouts), so a guarded
+// transaction never runs on the agent role's own defaults.
+func BeginGuarded(ctx context.Context, tx pgx.Tx, in Intent, timeout time.Duration) error {
 	if err := in.validate(); err != nil {
+		return err
+	}
+	if err := SetTimeouts(ctx, tx, timeout); err != nil {
 		return err
 	}
 	task := ""
@@ -71,6 +79,30 @@ func BeginGuarded(ctx context.Context, tx pgx.Tx, in Intent) error {
 		"set_config('basalt.intent', ?, true), set_config('basalt.run_id', ?, true), "+
 			"set_config('basalt.task_id', ?, true), set_config('basalt.mode', ?, true)",
 		in.Text, in.RunID.String(), task, ModeApply))
+}
+
+// IdleFloor is the least idle_in_transaction_session_timeout SetTimeouts
+// sets: the engine's round trips between statements of one transaction
+// count as idle, and a short statement timeout against a distant database
+// must not end the session between them (25P03).
+const IdleFloor = 30 * time.Second
+
+// SetTimeouts sets statement_timeout and lock_timeout to timeout, and
+// idle_in_transaction_session_timeout to timeout or IdleFloor, whichever
+// is longer, for tx only. The agent role can ALTER ROLE ... SET its own
+// defaults (a statement_timeout of 0 would let one transaction live as
+// long as it likes, a lock_timeout of 1ms would fail every write), so the
+// engine's transactions on the agent's credential never run on them.
+func SetTimeouts(ctx context.Context, tx pgx.Tx, timeout time.Duration) error {
+	if timeout < time.Millisecond {
+		return fmt.Errorf("%w: a guarded transaction needs a timeout of at least 1ms, got %s", ErrInvalidIntent, timeout)
+	}
+	ms := strconv.FormatInt(timeout.Milliseconds(), 10)
+	idle := strconv.FormatInt(max(timeout, IdleFloor).Milliseconds(), 10)
+	return execCall(ctx, tx, sq.Expr(
+		"pg_catalog.set_config('statement_timeout', ?, true), pg_catalog.set_config('lock_timeout', ?, true), "+
+			"pg_catalog.set_config('idle_in_transaction_session_timeout', ?, true)",
+		ms, ms, idle))
 }
 
 // Finish describes the statement that just ran in a guarded transaction.
@@ -107,7 +139,10 @@ type Refusal struct {
 }
 
 // RecordRefusal writes a REFUSED change record and ledger row. Call it in a
-// new transaction (or autocommit) after the refused one rolled back.
+// new transaction (or autocommit) after the refused one rolled back. A NUL,
+// which Postgres text and jsonb cannot hold, is stored as U+FFFD in every
+// text field and parameter (storable), so a NUL an agent sends cannot keep
+// its refused attempt out of the ledger.
 func RecordRefusal(ctx context.Context, q Querier, r Refusal) (uuid.UUID, error) {
 	params, err := paramsJSON(r.Params)
 	if err != nil {
@@ -115,8 +150,8 @@ func RecordRefusal(ctx context.Context, q Querier, r Refusal) (uuid.UUID, error)
 	}
 	return returnUUID(ctx, q, sq.Expr(
 		"basalt_meta.record_refusal(?::uuid, ?::uuid, ?, ?, ?, nullif(?::jsonb, 'null'), ?, ?, ?::int)",
-		nullUUID(r.Intent.RunID), nullUUID(r.Intent.TaskID), r.Intent.Text, r.Op, r.Statement, params,
-		r.Code, r.Reason, r.Duration.Milliseconds()))
+		nullUUID(r.Intent.RunID), nullUUID(r.Intent.TaskID), storableText(r.Intent.Text), storableText(r.Op),
+		storableText(r.Statement), params, storableText(r.Code), storableText(r.Reason), r.Duration.Milliseconds()))
 }
 
 // EventKind is an engine event record_event accepts.
@@ -153,11 +188,45 @@ func Heartbeat(ctx context.Context, q Querier, detail map[string]any) error {
 // paramsJSON encodes statement parameters as a JSON array; nil params
 // encode as JSON null, stored as SQL NULL.
 func paramsJSON(params []any) (string, error) {
-	b, err := json.Marshal(params)
+	b, err := json.Marshal(storable(params))
 	if err != nil {
 		return "", fmt.Errorf("params: %w", err)
 	}
 	return string(b), nil
+}
+
+// nulReplacement stands for a NUL in what the ledger stores.
+const nulReplacement = "\uFFFD"
+
+// storableText is s with each NUL replaced by U+FFFD: Postgres text cannot
+// hold a NUL, so a statement or reason with one would fail to record.
+func storableText(s string) string {
+	return strings.ReplaceAll(s, "\x00", nulReplacement)
+}
+
+// storable is v, as decoded from JSON, with storableText applied to every
+// string and object key in it: jsonb refuses \u0000.
+func storable(v any) any {
+	switch t := v.(type) {
+	case string:
+		return storableText(t)
+	case []any:
+		if t == nil {
+			return nil // stays JSON null
+		}
+		out := make([]any, len(t))
+		for i, e := range t {
+			out[i] = storable(e)
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, e := range t {
+			out[storableText(k)] = storable(e)
+		}
+		return out
+	}
+	return v
 }
 
 // execCall runs SELECT <call> and discards the result.

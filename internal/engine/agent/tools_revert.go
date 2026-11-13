@@ -237,8 +237,9 @@ func (a requestRevertArgs) awaitParams() (AwaitRevertParams, error) {
 type requestRevertResult struct {
 	RevertID      string             `json:"revertId"`
 	Status        string             `json:"status"`
-	Scope         string             `json:"scope"`
-	ScopeID       string             `json:"scopeId"`
+	Scope         string             `json:"scope,omitempty"`
+	ScopeID       string             `json:"scopeId,omitempty"`
+	Widened       bool               `json:"widened,omitempty"`
 	Intent        string             `json:"intent"`
 	Batched       bool               `json:"batched"`
 	Rows          int                `json:"rows"`
@@ -274,6 +275,10 @@ func requestRevertFromDomain(r RequestedRevert) requestRevertResult {
 	}
 	if rv.ApplyBy != nil {
 		out.ApplyBy = timeText(*rv.ApplyBy)
+	}
+	if rv.Widened {
+		// Status and totals only: the person's scope is theirs (RS-5).
+		out.Widened, out.Scope, out.ScopeID, out.RevertURL, out.Links = true, "", "", "", nil
 	}
 	if rv.RejectedAt != nil {
 		out.RejectedAt, out.Note = timeText(*rv.RejectedAt), rv.RejectNote
@@ -336,8 +341,9 @@ type revertPlanArgs struct {
 type revertPlanResult struct {
 	RevertID      string              `json:"revertId"`
 	Status        string              `json:"status"`
-	Scope         string              `json:"scope"`
-	ScopeID       string              `json:"scopeId"`
+	Scope         string              `json:"scope,omitempty"`
+	ScopeID       string              `json:"scopeId,omitempty"`
+	Widened       bool                `json:"widened,omitempty"`
 	Lines         int                 `json:"lines"`
 	Restored      int                 `json:"restored"`
 	Skipped       int                 `json:"skipped"`
@@ -356,12 +362,12 @@ type revertPlanResult struct {
 // revertPlanItemDTO is one line of a batched plan: its number, what
 // happened to it, and the signed line as an object.
 type revertPlanItemDTO struct {
-	Line     int           `json:"line"`
-	Outcome  string        `json:"outcome"`
-	Batch    *int          `json:"batch,omitempty"`
-	Conflict string        `json:"conflict,omitempty"`
-	SQLState string        `json:"sqlState,omitempty"`
-	Plan     revertLineDTO `json:"plan"`
+	Line     int            `json:"line"`
+	Outcome  string         `json:"outcome"`
+	Batch    *int           `json:"batch,omitempty"`
+	Conflict string         `json:"conflict,omitempty"`
+	SQLState string         `json:"sqlState,omitempty"`
+	Plan     *revertLineDTO `json:"plan,omitempty"`
 }
 
 func revertPlanFromDomain(p RevertPlan) revertPlanResult {
@@ -376,11 +382,17 @@ func revertPlanFromDomain(p RevertPlan) revertPlanResult {
 	if r.ApplyBy != nil {
 		out.ApplyBy = timeText(*r.ApplyBy)
 	}
+	if r.Widened {
+		// Status and totals only: the person's scope is theirs (RS-5).
+		out.Widened, out.Scope, out.ScopeID, out.RevertURL, out.Links = true, "", "", "", nil
+	}
 	for _, l := range p.Page.Items {
-		out.Items = append(out.Items, revertPlanItemDTO{
-			Line: l.No, Outcome: l.Outcome, Batch: l.Batch, Conflict: l.Conflict, SQLState: l.SQLState,
-			Plan: revertLineFromDomain(l.Plan),
-		})
+		item := revertPlanItemDTO{Line: l.No, Outcome: l.Outcome, Batch: l.Batch, Conflict: l.Conflict, SQLState: l.SQLState}
+		if l.Plan != nil {
+			d := revertLineFromDomain(*l.Plan)
+			item.Plan = &d
+		}
+		out.Items = append(out.Items, item)
 	}
 	return out
 }

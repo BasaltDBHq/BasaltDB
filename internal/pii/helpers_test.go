@@ -11,10 +11,23 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 )
 
+// fullRun reports whether the exhaustive sizes are wanted: set
+// BASALTDB_TEST_FULL=1 to run every case at its full size. The default path
+// runs smaller, sampled loops so a race-enabled run stays short.
+func fullRun() bool { return os.Getenv("BASALTDB_TEST_FULL") == "1" }
+
+// sized is full when fullRun, light otherwise.
+func sized(full, light int) int {
+	if fullRun() {
+		return full
+	}
+	return light
+}
+
 // testMaster is a fixed 32-byte master key for tests only.
 var testMaster = []byte("test-master-key-0123456789abcdef")
 
-func newKeys(t *testing.T, master []byte) *pii.Keys {
+func newKeys(t testing.TB, master []byte) *pii.Keys {
 	t.Helper()
 	k, err := pii.NewKeys(master)
 	require.NoError(t, err)
@@ -34,7 +47,9 @@ func newMapDict() *mapDict {
 
 // add stores a value. Values here are written with +cc, so no phone region.
 func (d *mapDict) add(k *pii.Keys, t pii.EntityType, value string) {
-	d.generic[k.GenericHash(value)] = t
+	for _, h := range k.GenericHashes(t, value) {
+		d.generic[h] = t
+	}
 	if d.typed[t] == nil {
 		d.typed[t] = map[pii.Hash]bool{}
 	}
@@ -49,7 +64,7 @@ func (d *mapDict) Lookup(h pii.Hash) (pii.EntityType, bool) {
 func (d *mapDict) Contains(t pii.EntityType, h pii.Hash) bool { return d.typed[t][h] }
 
 // loadFixture reads testdata/dictionary.tsv (fake values) into a mapDict.
-func loadFixture(t *testing.T, k *pii.Keys) *mapDict {
+func loadFixture(t testing.TB, k *pii.Keys) *mapDict {
 	t.Helper()
 	f, err := os.Open("testdata/dictionary.tsv")
 	require.NoError(t, err)
@@ -79,7 +94,7 @@ func finalScan(t *testing.T, tz *pii.Tokenizer, s string) int {
 
 // newTokenizer is the default tokenizer (patterns, then the dictionary) over
 // the fixture dictionary.
-func newTokenizer(t *testing.T) *pii.Tokenizer {
+func newTokenizer(t testing.TB) *pii.Tokenizer {
 	t.Helper()
 	k := newKeys(t, testMaster)
 	dd := pii.NewDictionaryDetector(k, loadFixture(t, k), "")

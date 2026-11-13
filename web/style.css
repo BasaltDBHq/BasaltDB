@@ -126,3 +126,148 @@ textarea {
   padding: 0.5rem;
   word-break: break-all;
 }
+
+/* The revert page (owner decision, Nov 12: docs/redesign/specs/mockups/
+   2026-11-12-revert-page-*.html), in the Basalt brand tokens. Other pages
+   keep the tokens above. The page's CSP loads no web font, so the type is
+   the system stack. */
+:root {
+  --brand-ink: #0e3e48;
+  --brand-aqua: #08d1d0;
+  --brand-ground: #f4f8f8;
+  --brand-surface: #ffffff;
+  --brand-soft: #eaf1f1;
+  --brand-tint: #ddf7f7;
+  --brand-line: #dce8e8;
+  --brand-muted: #4a6a70;
+  --brand-link: #0a6f70;
+  --brand-ok-bg: #e0f7ea;
+  --brand-ok-fg: #1c6b3a;
+  --brand-warn-bg: #fbf0dc;
+  --brand-warn-fg: #7a4a00;
+  --brand-bad: #a5281b;
+  --brand-on-ink: #ffffff;
+  --brand-dim: rgba(14, 62, 72, 0.38);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --brand-ink: #e3f1f1;
+    --brand-ground: #0b1d22;
+    --brand-surface: #11282e;
+    --brand-soft: #173239;
+    --brand-tint: #0f3b40;
+    --brand-line: #24454c;
+    --brand-muted: #9db8bc;
+    --brand-link: #4fd6d5;
+    --brand-ok-bg: #143a28;
+    --brand-ok-fg: #8fdcab;
+    --brand-warn-bg: #3a2c10;
+    --brand-warn-fg: #f0c374;
+    --brand-bad: #f08a7e;
+    --brand-on-ink: #0b1d22;
+    --brand-dim: rgba(0, 0, 0, 0.55);
+  }
+}
+
+.revert-page {
+  --bg: var(--brand-ground);
+  --fg: var(--brand-ink);
+  --muted: var(--brand-muted);
+  --line: var(--brand-line);
+  --panel: var(--brand-surface);
+  --accent: var(--brand-ink);
+  --accent-fg: var(--brand-on-ink);
+  --changed: var(--brand-ok-bg);
+  --error: var(--brand-bad);
+  max-width: 1180px;
+}
+/* The components below set their own display; hidden still wins. */
+.revert-page [hidden] { display: none !important; }
+
+.topbar { display: flex; align-items: baseline; gap: 0.75rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--line); }
+.topbar .brand { font-weight: 800; letter-spacing: -0.02em; }
+.topbar .exp { margin-left: auto; }
+
+.revert-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 1.75rem; align-items: start; }
+.revert-page h1 { font-size: 2rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1.12; margin-bottom: 0.5rem; }
+.lede { color: var(--muted); margin: 0 0 1rem; max-width: 62ch; }
+.why { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 0.85rem 1.1rem; margin-bottom: 1.25rem; max-width: 72ch; }
+.pill { display: inline-block; font-size: 0.8rem; font-weight: 700; letter-spacing: 0; padding: 0.15rem 0.75rem; border-radius: 999px; background: var(--brand-warn-bg); color: var(--brand-warn-fg); vertical-align: middle; }
+.ag { font-size: 0.75rem; padding: 0.1rem 0.55rem; border-radius: 999px; background: var(--brand-soft); color: var(--fg); margin-left: auto; unicode-bidi: isolate; }
+.ag.other { background: var(--brand-warn-bg); color: var(--brand-warn-fg); }
+
+.revert-page .values tr.changed td { background: transparent; }
+.revert-page .values tr.changed td.now { text-decoration: line-through; text-decoration-color: var(--brand-bad); color: var(--muted); }
+.revert-page .values tr.changed td.back { background: var(--brand-ok-bg); color: var(--brand-ok-fg); font-weight: 500; }
+
+.decision { position: sticky; top: 1.25rem; }
+.decision-bar, .note-sheet { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 1.25rem; }
+.sum { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.75rem; }
+.acts { display: flex; flex-direction: column; gap: 0.5rem; }
+.acts button { width: 100%; }
+button.secondary { background: var(--panel); color: var(--fg); border: 1px solid var(--line); }
+button.reject { color: var(--brand-bad); }
+button.danger { background: var(--brand-bad); color: var(--brand-on-ink); }
+.note-sheet h2 { margin-top: 0; }
+.note-label { display: block; font-size: 0.9rem; font-weight: 600; margin: 0.5rem 0 0.35rem; }
+.note-sheet textarea { font-family: inherit; font-size: 0.95rem; word-break: normal; background: var(--panel); border: 1.5px solid var(--brand-aqua); border-radius: 10px; min-height: 5rem; }
+.hint { display: flex; gap: 0.5rem; font-size: 0.8rem; color: var(--muted); margin: 0.35rem 0 0.75rem; }
+.hint span:last-child { margin-left: auto; }
+.grab { display: none; }
+.dim { display: none; }
+.code-label { font-weight: 600; }
+
+/* Phone (layout A, EV-18): Sign and Reject in a bar fixed to the bottom,
+   the Reject note in a sheet over the page. */
+@media (max-width: 760px) {
+  .revert-grid { display: block; padding-bottom: 9rem; }
+  .revert-page h1 { font-size: 1.4rem; }
+  .decision { position: static; }
+  .decision-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 2; border-radius: 0; border-width: 1px 0 0; padding: 0.6rem 0.9rem 0.9rem; }
+  .decision-bar .sum { font-size: 0.8rem; margin-bottom: 0.5rem; }
+  .decision-bar .acts { flex-direction: row-reverse; }
+  .decision-bar #sign { flex: 1; }
+  .decision-bar #reject { width: auto; }
+  .decision-bar #status:empty { display: none; }
+  .note-sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 4; border-radius: 22px 22px 0 0; max-height: 85vh; overflow-y: auto; }
+  .note-sheet .acts { flex-direction: row-reverse; }
+  .note-sheet .acts #reject-send { flex: 1; }
+  .note-sheet .acts #reject-cancel { width: auto; }
+  .grab { display: block; width: 40px; height: 4px; border-radius: 4px; background: var(--line); margin: 0 auto 0.6rem; }
+  .dim { display: block; position: fixed; inset: 0; z-index: 3; background: var(--brand-dim); }
+}
+
+/* The scope (owner decision, Nov 12): chips, runs and the widen, in the
+   decision panel on a wide screen, in a bottom sheet on a phone. */
+.scope-panel { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 1.25rem; margin-bottom: 1rem; }
+.plab { font-size: 0.9rem; font-weight: 700; margin: 0 0 0.5rem; }
+.plab small { font-weight: 400; color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; }
+button.chip { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 38px; padding: 0 0.75rem; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--fg); font-weight: 400; font-size: 0.9rem; }
+button.chip.on { border-color: var(--brand-aqua); background: var(--brand-tint); }
+button.chip:disabled { opacity: 1; cursor: default; }
+button.chip .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.85rem; unicode-bidi: isolate; }
+.tk { width: 16px; height: 16px; border-radius: 5px; border: 1px solid var(--line); font-size: 11px; display: grid; place-items: center; flex: none; }
+.chip.on .tk { background: var(--brand-ink); border-color: var(--brand-ink); color: var(--brand-on-ink); }
+.runs { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 1rem; overflow: hidden; }
+.runs button.chip { width: 100%; border: 0; border-top: 1px solid var(--line); border-radius: 0; min-height: 42px; background: var(--panel); }
+.runs button.chip:first-child { border-top: 0; }
+button.widen { display: flex; gap: 0.75rem; align-items: center; width: 100%; min-height: 56px; border: 1.5px dashed var(--brand-link); border-radius: 12px; background: transparent; color: var(--fg); padding: 0.6rem 0.9rem; text-align: left; font-weight: 400; margin-bottom: 0.75rem; }
+.plus { width: 28px; height: 28px; border-radius: 8px; background: var(--brand-tint); display: grid; place-items: center; font-weight: 800; flex: none; }
+.widen .t { display: block; font-weight: 700; }
+.widen .s { display: block; color: var(--muted); font-size: 0.8rem; }
+#scope-status:empty { display: none; }
+.scope-line, .scope-done { display: none; }
+
+@media (max-width: 760px) {
+  .topbar .crumb { display: none; }
+  button.scope-line { display: flex; align-items: center; gap: 0.75rem; width: 100%; min-height: 48px; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; padding: 0.5rem 0.75rem; text-align: left; font-weight: 400; font-size: 0.85rem; margin-bottom: 0.75rem; }
+  .scope-line b { display: block; font-size: 0.9rem; }
+  .scope-line .s { color: var(--muted); }
+  .scope-line .ed { margin-left: auto; color: var(--brand-link); font-weight: 700; }
+  .scope-panel { display: none; }
+  .scope-panel.open { display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 4; margin: 0; border-radius: 22px 22px 0 0; max-height: 85vh; overflow-y: auto; }
+  button.scope-done { display: block; width: 100%; }
+}
+.runs button.chip .w { margin-left: auto; color: var(--muted); font-size: 0.85rem; }

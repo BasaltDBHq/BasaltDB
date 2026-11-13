@@ -239,7 +239,8 @@ func TestRequestRevertOfOwnTaskWithNothingToRevert(t *testing.T) {
 	require.False(t, isError, "%v", read)
 	taskID := str(t, run["taskId"])
 	body, isError := env.h.call(t, "request_revert", map[string]any{"taskId": taskID, "intent": "Undo"})
-	requireErrorSteps(t, body, isError, "NOTHING_TO_REVERT", "READS_ONLY")
+	steps := requireScopedErrorSteps(t, body, isError, "NOTHING_TO_REVERT", "READS_ONLY", "TASK")
+	require.Contains(t, steps[1]["command"], "--task "+taskID)
 	require.Contains(t, str(t, body["personMessage"]), "To include other agents' changes in this task, run "+
 		"basalt revert --agent bot --config /etc/basalt-test/engine.json --task "+taskID+" --open")
 	var n int

@@ -82,7 +82,7 @@ func TestRecordsOldAndNewRows(t *testing.T) {
 
 	var changeID uuid.UUID
 	err := pgx.BeginFunc(ctx, a.Conn, func(tx pgx.Tx) error {
-		if err := guard.BeginGuarded(ctx, tx, in); err != nil {
+		if err := guard.BeginGuarded(ctx, tx, in, guardtest.Timeout); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE public.leads SET status = $1 WHERE id = $2`, "merged", 4); err != nil {
@@ -214,6 +214,36 @@ func TestRecordRefusal(t *testing.T) {
 	requireCode(t, err, guard.CodeLedgerInputInvalid)
 	_, err = guard.RecordRefusal(ctx, a.Conn, guard.Refusal{Intent: in, Op: "OTHER", Code: "lower"})
 	requireCode(t, err, guard.CodeLedgerInputInvalid)
+}
+
+// TestRecordRefusalStoresANUL: Postgres text and jsonb cannot hold a NUL,
+// so one in the intent, statement, reason or params is stored as U+FFFD
+// rather than making the refused attempt disappear from the ledger.
+func TestRecordRefusalStoresANUL(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", leads, nil)
+	ctx := context.Background()
+	in := newRun(t, a, "clean up")
+	nul := in
+	nul.Text = "drop \x00 it"
+	id, err := guard.RecordRefusal(ctx, a.Conn, guard.Refusal{
+		Intent: nul, Op: "OTHER", Statement: "DROP TABLE public.leads -- \x00",
+		Params: []any{"\x00", map[string]any{"k\x00": []any{"a\x00b", 1.0}}, `\u0000`},
+		Code:   "STATEMENT_REFUSED", Reason: "refused \x00",
+	})
+	require.NoError(t, err)
+
+	var intent, statement, reason, params string
+	require.NoError(t, d.Admin.QueryRow(ctx,
+		`SELECT intent, statement, reason, params::text FROM basalt_meta.changes WHERE change_id = $1`, id).
+		Scan(&intent, &statement, &reason, &params))
+	require.Equal(t, "drop \uFFFD it", intent)
+	require.Equal(t, "DROP TABLE public.leads -- \uFFFD", statement)
+	require.Equal(t, "refused \uFFFD", reason)
+	require.JSONEq(t, `["\uFFFD", {"k\uFFFD": ["a\uFFFDb", 1]}, "\\u0000"]`, params,
+		"a literal backslash-u0000 stays as written")
+	require.Equal(t, 1, count(t, d.Admin, `SELECT count(1)::int FROM basalt_meta.ledger WHERE kind = 'REFUSED' AND change_id = $1`, id))
 }
 
 func TestHeartbeat(t *testing.T) {

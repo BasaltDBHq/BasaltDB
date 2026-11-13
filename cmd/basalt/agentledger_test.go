@@ -74,6 +74,14 @@ func (emptyLedger) ApplyRevert(context.Context, uuid.UUID, passkey.Assertion) (g
 	return guard.AppliedRevert{}, nil
 }
 
+func (emptyLedger) RescopeRevert(context.Context, uuid.UUID, []uuid.UUID, []string) (guard.PreparedRevert, error) {
+	return guard.PreparedRevert{}, nil
+}
+
+func (emptyLedger) RejectRevert(context.Context, uuid.UUID, string) (guard.RejectedRevert, error) {
+	return guard.RejectedRevert{}, nil
+}
+
 func (emptyLedger) ListRevertLines(context.Context, ledger.RevertLineParams) (pagination.Page[ledger.RevertLine], error) {
 	return pagination.Page[ledger.RevertLine]{}, nil
 }

@@ -27,6 +27,11 @@ type initFlags struct {
 	agentRLS                                                                        AgentRLSMode
 	spec                                                                            guard.AgentSpec
 	dryRun, yes, skipPasskey, addPasskey, noService                                 bool
+	// operatedBy is --operated-by; operatedByGiven is true when it was passed.
+	operatedBy      OperatedBy
+	operatedByGiven bool
+	// demo is --demo: create and guard the sample schema (demo.go).
+	demo bool
 	// pathsGiven is true when --config, --socket-dir or --credential-file
 	// was given: the person runs the engine in the foreground themselves.
 	pathsGiven bool
@@ -107,15 +112,29 @@ func runInit(c *cliIO, args []string) int {
 	if !f.keepCredential {
 		f.spec.Password = guard.NewPassword()
 	}
-	policies, err := agentPolicies(c, conn, names, f)
+	// With --demo the plan needs the sample tables to exist, so it is made in
+	// a transaction that is rolled back; the apply below seeds again in a
+	// fresh one. Nothing is held open while the person decides.
+	var q guard.Querier = conn
+	var demoSQL string
+	rollback := func() {}
+	if f.demo {
+		q, demoSQL, rollback, err = planDemoTx(c, conn)
+		if err != nil {
+			return c.fail(err)
+		}
+		defer rollback()
+	}
+	policies, err := agentPolicies(c, q, names, f)
 	if err != nil {
 		return c.fail(missingTablesHint(err, conn.Config().Database))
 	}
-	script, err := guard.PlanInit(c.ctx, conn, guard.InitOptions{Names: names, Agent: f.spec, AgentPolicies: policies})
+	script, err := guard.PlanInit(c.ctx, q, guard.InitOptions{Names: names, Agent: f.spec, AgentPolicies: policies})
 	if err != nil {
 		return c.fail(missingTablesHint(err, conn.Config().Database))
 	}
-	fmt.Fprint(c.stdout, script.SQL())
+	rollback() // the plan is made; hold nothing open while the person decides
+	fmt.Fprint(c.stdout, demoSQL+script.SQL())
 	if f.dryRun {
 		if err := printSetupPlan(c, f); err != nil {
 			return c.fail(err)
@@ -131,7 +150,12 @@ func runInit(c *cliIO, args []string) int {
 			return c.fail(errors.New("init canceled; nothing changed"))
 		}
 	}
-	if err := applyInit(c.ctx, conn, script); err != nil {
+	if f.demo {
+		err = applyDemo(c.ctx, conn, script)
+	} else {
+		err = applyInit(c.ctx, conn, script)
+	}
+	if err != nil {
 		return c.fail(err)
 	}
 	var dsn string
@@ -143,11 +167,22 @@ func runInit(c *cliIO, args []string) int {
 	}
 	fmt.Fprintf(c.stderr, "basalt: guard installed; agent role %s\n", role)
 	warnRLSBlind(c, conn, role, f.spec)
-	if err := passkeyStep(c, conn, f); err != nil {
-		return c.fail(fmt.Errorf("the guard is installed but no passkey was registered (run basalt init again): %w", err))
+	// A failed passkey step must not leave the role without its credential
+	// file: the rerun it asks for would refuse a role that exists. The
+	// engine is set up first, then the failure is reported.
+	passkeyErr := passkeyStep(c, conn, f)
+	if f.demo {
+		leads, notes, err := demoCounts(c.ctx, conn)
+		if err != nil {
+			return c.fail(err)
+		}
+		fmt.Fprintf(c.stderr, "basalt: demo ready: leads %d, lead_notes %d\n", leads, notes)
 	}
 	if err := setupEngine(c, f, dsn); err != nil {
 		return c.fail(err)
+	}
+	if passkeyErr != nil {
+		return c.fail(fmt.Errorf("the guard is installed and the engine is set up, but no passkey was registered, so held writes cannot be approved until you register one (run basalt init again): %w", passkeyErr))
 	}
 	return exitOK
 }
@@ -189,7 +224,7 @@ func (a *AgentRLSMode) Set(v string) error {
 // default no; never without a terminal, with --yes or on a dry run unless
 // --agent-rls=all-rows. Tables without RLS are never asked about. The
 // rest get warnRLSBlind's warning after init.
-func agentPolicies(c *cliIO, conn *pgx.Conn, names guard.Names, f initFlags) ([]guard.BlindTable, error) {
+func agentPolicies(c *cliIO, conn guard.Querier, names guard.Names, f initFlags) ([]guard.BlindTable, error) {
 	if f.agentRLS == AgentRLSNone {
 		return nil, nil
 	}
@@ -295,10 +330,11 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 	fs.BoolVar(&f.dryRun, "dry-run", false, "print the SQL and the engine setup, and exit")
 	fs.BoolVar(&f.yes, "yes", false, "do not ask before running the SQL or installing the engine service")
 	fs.BoolVar(&f.noService, "no-service", false, "do not install the engine service; print the foreground command")
+	fs.BoolVar(&f.demo, "demo", false, "create and guard the sample schema basalt_demo and an agent (demo_bot) that can write only there")
 	fs.BoolVar(&f.skipPasskey, "skip-passkey", false, "do not register the passkey that approves held writes now")
 	fs.BoolVar(&f.addPasskey, "add-passkey", false, "register another passkey even if one is registered")
 	fs.StringVar(&f.passkeyOrigin, "passkey-origin", links.DefaultLocal,
-		"pages origin the passkey belongs to: the engine's local pages http://localhost:<port> (RP ID localhost), or "+links.HostedConsole+" (RP ID basaltvault.app)")
+		"pages origin the passkey belongs to: the engine's local pages http://localhost:<port> (RP ID localhost), "+links.HostedConsole+", or the portal "+links.Portal+" (RP ID basaltvault.app; the default with --operated-by=agent)")
 	fs.StringVar(&f.passkeyLabel, "passkey-label", "", "name of the passkey in the picker (default: the database name)")
 	fs.Func(flagPersonUID, "service: an OS user id the engine's person socket admits for basalt log, approve and revert (repeatable; default: you)", func(v string) error {
 		uid, err := parseUID(v)
@@ -311,24 +347,55 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 	f.agentRLS = AgentRLSAsk
 	fs.Var(&f.agentRLS, "agent-rls",
 		"on agent tables where row-level security hides every row: ask at a terminal, all-rows adds a policy letting the agent see them all, none skips the question")
-	fs.Var(&f.vaultFlag, flagVault, "on or off: whether the engine reaches the portal's pages through the Vault (default off; on needs the portal's pages)")
+	fs.Var(&f.vaultFlag, flagVault, "on or off: whether the engine reaches the portal's pages through the Vault (default off, on with --operated-by=agent)")
+	f.operatedBy = OperatedByPerson
+	fs.Var(&f.operatedBy, "operated-by", "who runs this engine's machine steps: person or agent (agent: you run init here, then hand the engine to a bot; the pages are the portal's)")
+	fs.Usage = func() {
+		fmt.Fprint(c.stderr, "usage: basalt init --agent NAME [--write schema.table,...] [--read schema.table,...] [flags]\n"+
+			"       basalt init --remote [flags]            the engine's machine, for a bot that sets up with a code (see basalt init --remote -h)\n"+
+			"       basalt init --setup-code CODE [flags]   run the setup code an agent made (see basalt init --setup-code -h)\n\nflags:\n")
+		fs.PrintDefaults()
+	}
 	if err := parse(fs, args); err != nil {
 		return f, err
 	}
+	var originGiven bool
 	fs.Visit(func(fl *flag.Flag) {
 		switch fl.Name {
 		case "config", "socket-dir", "credential-file":
 			f.pathsGiven = true
+		case "operated-by":
+			f.operatedByGiven = true
+		case "passkey-origin":
+			originGiven = true
 		}
 	})
+	if f.demo {
+		if f.write != "" || f.read != "" {
+			return f, fmt.Errorf("%w: --demo sets the agent's tables; drop --write and --read", errUsage)
+		}
+		if f.agent == "" {
+			f.agent = demoAgent
+		}
+		f.write = demoTables
+	}
 	if f.agent == "" {
 		return f, fmt.Errorf("%w: --agent is required", errUsage)
 	}
 	if _, err := relyingParty(f.passkeyOrigin); err != nil {
 		return f, err
 	}
-	// basalt init is person-operated: --operated-by=agent is init --remote's.
-	vc, err := chooseVault(f.vaultFlag, OperatedByPerson, f.passkeyOrigin, personDefaultWhy)
+	// An agent-operated engine serves the portal's pages (CONTRACT.md, Who
+	// operates the engine): the bot's machine has no pages the person can reach.
+	if f.operatedBy == OperatedByAgent {
+		switch {
+		case !originGiven:
+			f.passkeyOrigin = links.Portal
+		case f.passkeyOrigin != links.Portal:
+			return f, fmt.Errorf("%w: --operated-by=agent uses the portal's pages (%s); drop --passkey-origin or set it to that", errUsage, links.Portal)
+		}
+	}
+	vc, err := chooseVault(f.vaultFlag, f.operatedBy, f.passkeyOrigin, personDefaultWhy)
 	if err != nil {
 		return f, err
 	}
@@ -386,7 +453,7 @@ func missingTablesHint(err error, database string) error {
 	msg := fmt.Sprintf("%s %s not found in database %q; create %s first", noun, strings.Join(missing.Tables, ", "), database, verb)
 	for _, t := range missing.Tables {
 		if strings.HasPrefix(t, demoSchema) {
-			msg += " (the M4 demo: docs/m4/seed.sql)"
+			msg += " (basalt init --demo creates the sample tables)"
 			break
 		}
 	}
@@ -408,6 +475,9 @@ func engineSettings(f initFlags, goos string) config.Settings {
 		s.StateDir = filepath.Join(filepath.Dir(f.configPath), stateDirName)
 	}
 	s.PagesURL = f.passkeyOrigin
+	if f.operatedByGiven {
+		s.OperatedBy = f.operatedBy.enum()
+	}
 	return s
 }
 
@@ -417,20 +487,23 @@ func engineSettings(f initFlags, goos string) config.Settings {
 // record_setup). basalt init, init --setup-code and upgrade all apply
 // through it.
 func applyInit(ctx context.Context, conn *pgx.Conn, script guard.Script, after ...guard.Statement) error {
-	return pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
-		if err := script.Apply(ctx, tx); err != nil {
-			return err
+	return pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error { return applyInitTx(ctx, tx, script, after...) })
+}
+
+// applyInitTx is applyInit on a transaction the caller commits.
+func applyInitTx(ctx context.Context, tx pgx.Tx, script guard.Script, after ...guard.Statement) error {
+	if err := script.Apply(ctx, tx); err != nil {
+		return err
+	}
+	if err := checkCovered(ctx, tx); err != nil {
+		return err
+	}
+	for _, st := range after {
+		if _, err := tx.Exec(ctx, st.SQL); err != nil {
+			return fmt.Errorf("record the setup: %w", err)
 		}
-		if err := checkCovered(ctx, tx); err != nil {
-			return err
-		}
-		for _, st := range after {
-			if _, err := tx.Exec(ctx, st.SQL); err != nil {
-				return fmt.Errorf("record the setup: %w", err)
-			}
-		}
-		return nil
-	})
+	}
+	return nil
 }
 
 // checkCovered refuses, inside the install's transaction, while any
@@ -469,6 +542,7 @@ func (f initFlags) savedArgs(goos string) []string {
 	addIf("engine-user", f.engineUser, service.DefaultUser(goos))
 	addIf("credential-file", f.credFile, filepath.Join(filepath.Dir(f.configPath), "agents", f.agent+".url"))
 	addIf("passkey-origin", f.passkeyOrigin, links.DefaultLocal)
+	addIf("operated-by", string(f.operatedBy), string(OperatedByPerson))
 	addIf("agent-rls", string(f.agentRLS), string(AgentRLSAsk))
 	return args
 }

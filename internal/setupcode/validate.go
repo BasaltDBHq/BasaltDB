@@ -52,6 +52,10 @@ func (p Payload) Validate() error {
 	return nil
 }
 
+// ValidBuild reports whether v is a version a setup code can carry (the
+// payload's build: major.minor.patch, with an optional pre-release).
+func ValidBuild(v string) bool { return buildPattern.MatchString(v) }
+
 func invalid(detail string) error { return refuse(RefusalInvalid, detail) }
 
 func (p Payload) validateHeader() error {

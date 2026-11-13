@@ -134,18 +134,18 @@ func TestPhoneSeparatorsAreFound(t *testing.T) {
 	cases := []struct{ name, number, plain string }{
 		{"double spaces", "+1  202  555  0143", "+1 202 555 0143"},
 		{"four spaces", "+1    202 555 0143", "+1 202 555 0143"},
-		{"newline", "+44 7700\n900123", "+44 7700 900123"},
-		{"CRLF", "+44 7700\r\n900123", "+44 7700 900123"},
-		{"hyphen U+2010", "+44‐7700‐900123", "+44 7700 900123"},
-		{"non-breaking hyphen U+2011", "+44‑7700‑900123", "+44 7700 900123"},
-		{"en dash", "+44–7700–900123", "+44 7700 900123"},
-		{"em dash", "+44—7700—900123", "+44 7700 900123"},
-		{"minus sign U+2212", "+44−7700−900123", "+44 7700 900123"},
+		{"newline", "+44 7911\n123123", "+44 7911 123123"},
+		{"CRLF", "+44 7911\r\n123123", "+44 7911 123123"},
+		{"hyphen U+2010", "+44‐7911‐123123", "+44 7911 123123"},
+		{"non-breaking hyphen U+2011", "+44‑7911‑123123", "+44 7911 123123"},
+		{"en dash", "+44–7911–123123", "+44 7911 123123"},
+		{"em dash", "+44—7911—123123", "+44 7911 123123"},
+		{"minus sign U+2212", "+44−7911−123123", "+44 7911 123123"},
 		{"one slash after a space", "+49 89/1234 5678", "+49 89 1234 5678"},
-		{"no-break space", "+44 7700 900123", "+44 7700 900123"},
+		{"no-break space", "+44 7911 123123", "+44 7911 123123"},
 		{"00 prefix", "0044 20 7946 0958", "+44 20 7946 0958"},
 		{"00 prefix, fictional range", "0044 7700 900123", "+44 7700 900123"},
-		{"one dot, UK", "+44.7700900123", "+44 7700 900123"},
+		{"one dot, UK", "+44.7911123123", "+44 7911 123123"},
 		{"one dot, US", "+1.2025550143", "+1 202 555 0143"},
 		{"one dot, France", "+33.123456789", "+33 1 23 45 67 89"},
 		{"00 prefix, Italian leading zero", "0039 06 1234 5678", "+39 06 1234 5678"},
@@ -198,6 +198,9 @@ func TestPhoneShapesKeepFalsePositivesOut(t *testing.T) {
 		"tx 00491711234567 ref",          // a 00 digit run with no separator (QA F15)
 		"id 00442079460958",
 		"build 2.1+447700900456",
+		"score +12 3456 7890 points",   // no possible number (QA F14)
+		"score +44 7700 900123 points", // possible, not valid
+		"the phone list was long, score +44 7700 900123",
 	} {
 		out, reps := tokenize(t, tz, in)
 		require.Empty(t, reps, "%q", in)
@@ -214,8 +217,8 @@ func TestPhoneShapeKnownLimits(t *testing.T) {
 		"call x0044 20 7946 0958 now",  // 00 touching a letter
 		"call +4420794609581234 now",   // digits glued past 15, no separator
 		"call +1     202 555 0143 now", // five spaces between groups
-		"id:1+447700900123",            // a + number glued to a digit
-		"0+447700900123",               // a + number glued to a digit
+		"id:1+447911123456",            // a + number glued to a digit
+		"0+447911123456",               // a + number glued to a digit
 		"call (202)     555-0143 now",  // five spaces in the US form
 	} {
 		_, reps := tokenize(t, tz, in)
@@ -234,10 +237,10 @@ func TestAPhoneBeforeASlashOrALineBreak(t *testing.T) {
 		{"call +44 20 7946 0958/12/26 now", "+44 20 7946 0958"},
 		// A number split over two line breaks keeps its last group out
 		// (Known limits).
-		{"call +44 20\n7946\n0958", "+44 20\n7946"},
+		{"call +1 202 555\n0143\n99", "+1 202 555\n0143"},
 		// A number glued to a slash and another number: both are tokens, and
 		// the second pass finds nothing more.
-		{"+00000000/0+00000000", "+00000000"},
+		{"+12025550143/0+12025550144", "+12025550143"},
 	}
 	for _, c := range cases {
 		out, reps := tokenize(t, tz, c.in)
@@ -266,9 +269,9 @@ func TestAGluedPhoneAfterAWordIsFound(t *testing.T) {
 		in      string
 		numbers []string
 	}{
-		{"Tel.+447700900123", []string{"+447700900123"}},
+		{"Tel.+447911123123", []string{"+447911123123"}},
 		{"Nr.+4915112345678", []string{"+4915112345678"}},
-		{"+447700900456.+447700900457", []string{"+447700900456", "+447700900457"}},
+		{"+447911123456.+447911123457", []string{"+447911123456", "+447911123457"}},
 	}
 	for _, c := range cases {
 		out, reps := tokenize(t, tz, c.in)
@@ -283,17 +286,56 @@ func TestAGluedPhoneAfterAWordIsFound(t *testing.T) {
 	}
 }
 
-// Phone shapes still taken for phones although they may be none: a "+"
-// number is found by shape alone, whatever libphonenumber says of it (Known
+// Phone shapes still taken for phones although they may be none (Known
 // limits). Pinned so a change is a decision.
 func TestPhoneShapeKnownFalsePositives(t *testing.T) {
 	tz := patternTokenizer(t)
 	for _, in := range []string{
-		"score +12 3456 7890 points", // QA F14
-		"id 0049 1234 5678",          // a 00 id of a possible length
+		"id 0049 1234 5678",             // a 00 id of a possible length
+		"score +44 20 7946 0958 points", // a figure shaped like a valid number
 	} {
 		_, reps := tokenize(t, tz, in)
 		require.Len(t, reps, 1, "%q", in)
+	}
+}
+
+// A "+" number is a phone only when libphonenumber says it is a valid number
+// (owner decisions EV-1 and Q-14): a number that is only possible is left in
+// the text, whatever word stands next to it, since core does not guess from
+// context.
+func TestAPlusNumberMustBeValid(t *testing.T) {
+	k := newKeys(t, testMaster)
+	tz := patternTokenizer(t)
+	cases := []struct{ in, number string }{
+		{"ref +44 20 7946 0958 ok", "+44 20 7946 0958"},
+		{"+1 202 555 0143", "+1 202 555 0143"},
+		{"tel +44 20 7946 0958", "+44 20 7946 0958"},
+		{"tel +44 7911 123456", "+44 7911 123456"},
+		// A lone group that makes the number impossible is left out of it.
+		{"dial +1 202 555 0143 99 times", "+1 202 555 0143"},
+	}
+	for _, c := range cases {
+		out, reps := tokenize(t, tz, c.in)
+		require.Len(t, reps, 1, "%q", c.in)
+		require.Equal(t, c.number, c.in[reps[0].Start:reps[0].End], "%q", c.in)
+		require.Equal(t, mustToken(t, k, pii.EntityPhone, c.number, ""), reps[0].Token, "%q", c.in)
+		again, more := tokenize(t, tz, out)
+		require.Empty(t, more, "%q", c.in)
+		require.Equal(t, out, again, "%q", c.in)
+	}
+	// Possible but not valid (+44 7700 900123 is in a drama range): not a
+	// phone, even with a phone word next to it. Nor is an impossible number.
+	for _, in := range []string{
+		"tel +44 7700 900123",
+		"Phone: +44 7700 900123",
+		"call me at +44 7700 900123 today",
+		`{"phone_number": "+447700900123"}`,
+		"+44 7700 900123 (WA)",
+		"score +44 7700 900123 points",
+		"tel +12 3456 7890",
+	} {
+		_, reps := tokenize(t, tz, in)
+		require.Empty(t, reps, "%q", in)
 	}
 }
 
@@ -361,23 +403,45 @@ func TestThe00PrefixNormalizesAsPlus(t *testing.T) {
 }
 
 // Long runs of what the patterns take, with no match at their end, take
-// linear time (RE2, and every search goes on past what it read): a quadratic
-// pass over these would not finish within the test timeout.
+// linear time (RE2, and every search goes on past what it read). The test
+// times each input at n and at 8n and requires less than 32 times as long:
+// linear growth measured 4.5 to 16 times, a quadratic pass would be about 64.
+// The larger size is 1<<15 units with BASALTDB_TEST_FULL=1 and 1<<13 by
+// default. The ratio is only asserted under -race (make test always passes
+// it): without it the small run takes a few milliseconds and the ratio is
+// noise on a busy machine; the inputs still all run.
 func TestLongNearMissesStayFast(t *testing.T) {
 	tz := patternTokenizer(t)
-	const n = 1 << 15
-	for _, in := range []string{
-		strings.Repeat("a'", n) + "@",
-		strings.Repeat(`"a`, n) + `"@`,
-		"+1" + strings.Repeat(" ", n) + "2",
-		strings.Repeat("00 ", n),
-		strings.Repeat("0012 ", n),
-		strings.Repeat("+1\n", n),
-		strings.Repeat("a.", n) + "@corp",
-		strings.Repeat(`"a".`, n) + "@corp",
-	} {
-		_, _, err := tz.Tokenize(in)
-		require.NoError(t, err)
+	large := sized(1<<15, 1<<13)
+	small := large / 8
+	inputs := []func(n int) string{
+		func(n int) string { return strings.Repeat("a'", n) + "@" },
+		func(n int) string { return strings.Repeat(`"a`, n) + `"@` },
+		func(n int) string { return "+1" + strings.Repeat(" ", n) + "2" },
+		func(n int) string { return strings.Repeat("00 ", n) },
+		func(n int) string { return strings.Repeat("0012 ", n) },
+		func(n int) string { return strings.Repeat("+1\n", n) },
+		func(n int) string { return strings.Repeat("a.", n) + "@corp" },
+		func(n int) string { return strings.Repeat(`"a".`, n) + "@corp" },
+	}
+	// The fastest of three runs, so a pause in one does not fail the test;
+	// the floor keeps a very fast small run from making the ratio noise.
+	timed := func(in string) time.Duration {
+		best := time.Duration(math.MaxInt64)
+		for range 3 {
+			start := time.Now()
+			_, _, err := tz.Tokenize(in)
+			require.NoError(t, err)
+			best = min(best, time.Since(start))
+		}
+		return max(best, 5*time.Millisecond)
+	}
+	for i, in := range inputs {
+		fast, slow := timed(in(small)), timed(in(large))
+		if !raceEnabled {
+			continue
+		}
+		require.Less(t, slow, 32*fast, "input %d: eight times the input took %v against %v", i, slow, fast)
 	}
 }
 
@@ -387,10 +451,8 @@ func TestLongNearMissesStayFast(t *testing.T) {
 // take about 2.5 times as long as plain text, parsing every run took 25 times.
 func TestManyRejected00RunsStayCheap(t *testing.T) {
 	tz := patternTokenizer(t)
-	const (
-		size        = 128 << 10
-		maxSlowdown = 8
-	)
+	const maxSlowdown = 8
+	size := sized(128<<10, 32<<10)
 	// The fastest of three runs, so a pause in one does not fail the test.
 	timed := func(unit string) time.Duration {
 		in := strings.Repeat(unit, size/len(unit))

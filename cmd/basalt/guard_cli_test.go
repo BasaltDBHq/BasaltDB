@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -15,10 +16,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
@@ -107,7 +110,7 @@ func TestInitNamesEveryMissingTableBeforeChangingAnything(t *testing.T) {
 		"--prefix", d.Names.Prefix, "--config", cfg, "--yes", "--skip-passkey")
 	require.Equal(t, exitError, r.code)
 	require.Equal(t, "basalt: tables basalt_demo.leads, basalt_demo.lead_notes not found in database \""+db+
-		"\"; create them first (the M4 demo: docs/m4/seed.sql)\n", r.stderr)
+		"\"; create them first (basalt init --demo creates the sample tables)\n", r.stderr)
 	require.Empty(t, r.stdout, "no SQL is planned")
 	require.NoFileExists(t, cfg)
 	v, err := guard.InstalledVersion(context.Background(), d.Admin)
@@ -507,4 +510,96 @@ func TestUninstallRemovesEverything(t *testing.T) {
 	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT count(1)::int FROM pg_roles WHERE rolname LIKE $1`, d.Names.Prefix+`\_%`).Scan(&roles))
 	require.Zero(t, schemas)
 	require.Zero(t, roles)
+}
+
+func TestInitHelpListsTheOtherModes(t *testing.T) {
+	t.Parallel()
+	r := cli(t, nil, "", "init", "-h")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	for _, want := range []string{"--remote", "--setup-code", "-operated-by"} {
+		require.Contains(t, r.stderr, want)
+	}
+}
+
+func TestInitOperatedByAgentWithTheAdminCredential(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	config := tempConfig(t)
+	r := cli(t, map[string]string{envAdminURL: d.URL}, "",
+		"init", "--agent", "x1", "--write", "public.leads", "--prefix", d.Names.Prefix, "--operated-by", "agent",
+		"--config", config, "--os-user", "tester", "--yes", "--skip-passkey")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	raw, err := os.ReadFile(config)
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"operatedBy": "AGENT"`)
+	require.Contains(t, string(raw), "https://portal.basaltvault.app")
+	require.Contains(t, string(raw), "--operated-by=agent")
+
+	// A local passkey origin does not fit an engine the bot operates.
+	r = cli(t, nil, "", "init", "--agent", "x2", "--operated-by", "agent", "--passkey-origin", "http://localhost:8787")
+	require.Equal(t, exitUsage, r.code, r.stderr)
+	require.Contains(t, r.stderr, "portal")
+
+	// The default leaves operatedBy alone.
+	config = tempConfig(t)
+	initAgent(t, d, config)
+	raw, err = os.ReadFile(config)
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "operatedBy")
+}
+
+func TestRelyingPartyAcceptsThePortal(t *testing.T) {
+	t.Parallel()
+	rp, err := relyingParty(links.Portal)
+	require.NoError(t, err)
+	require.Equal(t, portalRP, rp)
+}
+
+func TestInitOperatedByAgentWithAnExplicitPortalOrigin(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	config := tempConfig(t)
+	r := cli(t, map[string]string{envAdminURL: d.URL}, "",
+		"init", "--agent", "x1", "--write", "public.leads", "--prefix", d.Names.Prefix, "--operated-by", "agent",
+		"--passkey-origin", links.Portal, "--config", config, "--os-user", "tester", "--yes", "--skip-passkey")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	raw, err := os.ReadFile(config)
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"operatedBy": "AGENT"`)
+	// The saved flags round-trip into the commands the CLI prints.
+	var cfg struct {
+		Agents []struct {
+			InitArgs []string `json:"initArgs"`
+		} `json:"agents"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &cfg))
+	_, err = agent.NewCommands("x1", config, "linux", cfg.Agents[0].InitArgs)
+	require.NoError(t, err)
+
+	// Switched back by an explicit --operated-by person.
+	r = cli(t, map[string]string{envAdminURL: d.URL}, "",
+		"init", "--agent", "x1", "--write", "public.leads", "--prefix", d.Names.Prefix, "--operated-by", "person",
+		"--config", config, "--os-user", "tester", "--yes", "--skip-passkey")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	raw, err = os.ReadFile(config)
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"operatedBy": "PERSON"`)
+}
+
+func TestInitRerunsAfterAFailedPasskeyPaste(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	config := tempConfig(t)
+	args := slices.Clip([]string{"init", "--agent", "bot_a", "--write", "public.leads", "--prefix", d.Names.Prefix,
+		"--config", config, "--os-user", "tester", "--yes"})
+	r := cli(t, map[string]string{envAdminURL: d.URL}, "not a passkey code\n", args...)
+	require.Equal(t, exitError, r.code, r.stderr)
+	require.Contains(t, r.stderr, "held writes cannot be approved until you register one (run basalt init again)")
+	// The credential and the config were written before the failure was reported.
+	require.FileExists(t, filepath.Join(filepath.Dir(config), "agents", "bot_a.url"))
+	require.FileExists(t, config)
+
+	// The rerun the message asks for does not refuse the role that exists.
+	r = cli(t, map[string]string{envAdminURL: d.URL}, "", slices.Concat(args, []string{"--skip-passkey"})...)
+	require.Equal(t, exitOK, r.code, r.stderr)
 }

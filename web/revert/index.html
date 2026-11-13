@@ -10,8 +10,8 @@
   <link rel="stylesheet" href="../style.css">
   <script type="module" src="../lib/revert.js"></script>
 </head>
-<body>
-  <header><span class="brand">BasaltDB</span> revert</header>
+<body class="revert-page">
+  <header class="topbar"><span class="brand">Basalt</span> <span id="crumb" class="crumb">revert</span><span id="expires-in" class="exp"></span></header>
 
   <section id="error" class="panel error" hidden>
     <h1>Cannot revert</h1>
@@ -25,48 +25,93 @@
     </div>
   </section>
 
-  <main id="main" hidden>
-    <h1>Revert what the agent changed</h1>
-    <dl class="summary">
-      <dt>Scope</dt><dd id="scope"></dd>
-      <dt>Agents</dt><dd id="agents"></dd>
-      <dt>Database</dt><dd id="database"></dd>
-      <dt>Why</dt><dd id="intent"></dd>
-      <dt>Restored</dt><dd id="rows"></dd>
-      <dt>Left alone</dt><dd id="skipped"></dd>
-      <dt>Plan</dt><dd id="plan"></dd>
-      <dt>Sign by</dt><dd id="expires"></dd>
-    </dl>
+  <main id="main" class="revert-grid" hidden>
+    <div class="revert-main">
+      <h1><span id="headline"></span> <span id="widened-pill" class="pill" hidden>You widened this</span></h1>
+      <p id="lede" class="lede"></p>
+      <div class="why"><b id="why-label"></b> <span id="intent"></span></div>
+      <button id="scope-line" type="button" class="scope-line">
+        <span><b id="scope-line-text"></b><span id="scope-line-sub" class="s"></span></span><span class="ed">Change</span>
+      </button>
 
-    <h2 id="restore-title">Rows that will be restored</h2>
-    <p id="restore-note" class="muted">Highlighted values change back to what they were before the agent. Postgres checks these exact rows again before the revert runs; if any changed, nothing is written.</p>
-    <ol id="restore" class="rows"></ol>
+      <dl class="summary">
+        <dt>Scope</dt><dd id="scope"></dd>
+        <dt>Agents</dt><dd id="agents"></dd>
+        <dt>Database</dt><dd id="database"></dd>
+        <dt>Restored</dt><dd id="rows"></dd>
+        <dt>Left alone</dt><dd id="skipped"></dd>
+        <dt>Plan</dt><dd id="plan"></dd>
+        <dt>Sign by</dt><dd id="expires"></dd>
+      </dl>
 
-    <section id="skip-section" hidden>
-      <h2 id="skip-title">Rows left as they are</h2>
-      <p class="muted">Someone changed these rows after the agent, or they cannot be restored. People win: the revert does not touch them.</p>
-      <ol id="skip" class="rows"></ol>
-    </section>
+      <h2 id="restore-title">What goes back</h2>
+      <p id="restore-note" class="muted">Struck-through values are the row now; highlighted values are what it goes back to, as before the agent. Postgres checks these exact rows again before the revert runs; if any changed, nothing is written.</p>
+      <ol id="restore" class="rows"></ol>
 
-    <section id="action" class="panel">
-      <button id="sign" type="button">Revert with my passkey</button>
-      <p id="status" class="muted" role="status"></p>
-      <p class="muted">To cancel, close this page. Without your passkey nothing is reverted, and this link expires on its own.</p>
-    </section>
+      <section id="skip-section" hidden>
+        <h2 id="skip-title">Rows left as they are</h2>
+        <p class="muted">Someone changed these rows after the agent, or they cannot be restored. People win: the revert does not touch them.</p>
+        <ol id="skip" class="rows"></ol>
+      </section>
+    </div>
 
-    <section id="done" class="panel" role="status" hidden>
-      <p id="done-text"></p>
-    </section>
+    <aside id="decision" class="decision">
+      <section id="scope-panel" class="scope-panel" aria-labelledby="included-title">
+        <div class="grab" aria-hidden="true"></div>
+        <p id="included-title" class="plab">Included <small id="included-hint"></small></p>
+        <div id="agent-chips" class="chips"></div>
+        <div id="table-chips" class="chips"></div>
+        <div id="runs-section" hidden>
+          <p class="plab">Runs <small id="runs-count"></small></p>
+          <div id="runs" class="runs"></div>
+        </div>
+        <button id="widen" type="button" class="widen" hidden>
+          <span class="plus" aria-hidden="true">+</span><span><span class="t">Include other agents' changes</span><span id="widen-text" class="s"></span></span>
+        </button>
+        <p id="scope-readonly" class="muted" hidden>This long link shows the scope as it is. To change it or include other agents' changes, open the revert from the engine's page: ask the agent for its short link.</p>
+        <p id="scope-status" class="muted" role="status"></p>
+        <button id="scope-done" type="button" class="scope-done">Done</button>
+      </section>
+      <section id="action" class="decision-bar">
+        <p id="signing" class="sum"></p>
+        <div class="acts">
+          <button id="sign" type="button">Sign with passkey</button>
+          <button id="reject" type="button" class="secondary reject" hidden>Reject</button>
+        </div>
+        <p id="status" class="muted" role="status"></p>
+        <p id="decline" class="muted">To cancel, close this page. Without your passkey nothing is reverted, and this link expires on its own.</p>
+      </section>
 
-    <section id="result" class="panel" hidden>
-      <h2>Signed</h2>
-      <p>Paste this code into <code>basalt revert</code> on your computer. It only works for this revert.</p>
-      <textarea id="code" readonly rows="5"></textarea>
-      <div class="buttons">
-        <button id="copy" type="button">Copy</button>
-        <button id="share" type="button" hidden>Share</button>
-      </div>
-    </section>
+      <section id="reject-note" class="note-sheet" role="dialog" aria-labelledby="reject-title" hidden>
+        <div class="grab" aria-hidden="true"></div>
+        <h2 id="reject-title">Reject this revert</h2>
+        <p class="muted">Nothing is reverted. No passkey needed.</p>
+        <label for="note" class="note-label">Note for the agent (optional)</label>
+        <textarea id="note" rows="4"></textarea>
+        <div class="hint"><span id="note-reader"></span><span id="note-count">0 / 500</span></div>
+        <div class="acts">
+          <button id="reject-send" type="button" class="danger">Reject revert</button>
+          <button id="reject-cancel" type="button" class="secondary">Cancel</button>
+        </div>
+        <p id="reject-status" class="muted" role="status"></p>
+      </section>
+
+      <section id="done" class="panel" role="status" hidden>
+        <p id="done-text"></p>
+      </section>
+
+      <section id="result" class="panel" hidden>
+        <h2>Signed</h2>
+        <p>Paste this code into <code>basalt revert</code> on your computer. It only works for this revert.</p>
+        <p class="code-label">You can give this to the agent.</p>
+        <textarea id="code" readonly rows="5"></textarea>
+        <div class="buttons">
+          <button id="copy" type="button">Copy</button>
+          <button id="share" type="button" hidden>Share</button>
+        </div>
+      </section>
+    </aside>
   </main>
+  <div id="sheet-dim" class="dim" hidden></div>
 </body>
 </html>

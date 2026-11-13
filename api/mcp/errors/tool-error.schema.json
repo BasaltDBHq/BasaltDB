@@ -43,6 +43,12 @@
       "pattern": "^[0-9A-Z]{5}$",
       "description": "Set when Postgres raised the error."
     },
+    "docsUrl": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://docs\\.basaltvault\\.app/reference/errors/#[a-z]+(-[a-z]+)*$",
+      "description": "The code's section on the public docs: https://docs.basaltvault.app/reference/errors/# followed by the code in lowercase with underscores as hyphens. The server adds it to every tool error."
+    },
     "errorId": {
       "type": "string",
       "format": "uuid",

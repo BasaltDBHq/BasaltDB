@@ -168,9 +168,7 @@ func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding stri
 		// A wait or a list that issues no new link: the link already handed
 		// over still works, so the message adds no URL.
 		pick = handOver{URL: long, Kind: linkLong}
-		text, msgLinks = newMessage().Text(lead).
-			Text("Approve with the link you were given, or run: " + command).
-			Text(expiryLine(expires)).Build()
+		text, msgLinks = waitMessage(lead, command, expires)
 	default:
 		if short == "" {
 			reason = reasonHeldNoPages
@@ -189,6 +187,16 @@ func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding stri
 		longURL:  long,
 		shortURL: short,
 	}, nil
+}
+
+// waitMessage is the personMessage of a wait or a list that issues no new
+// link: the link already handed over still works.
+func waitMessage(lead, command string, expires time.Time) (string, []mcp.Link) {
+	return fitCommand(func(c commandPhrases) (string, []mcp.Link) {
+		return newMessage().Text(lead).Text(c.orRun).Text(expiryLine(expires)).Build()
+	},
+		commandPhrases{orRun: "Approve with the link you were given, or run: " + command},
+		commandPhrases{orRun: "Approve with the link you were given, or run the approve command the agent shows you."})
 }
 
 // personTime is how a person-facing message states a deadline.
@@ -238,7 +246,7 @@ func approvalStillPendingError(n heldNotice) error {
 	n.reason = reasonWaitEnded
 	return approvalError(n, fmt.Sprintf("still waiting for the person's approval of %d rows; nothing was applied. "+
 		"Do not call write to wait again. End your turn: tell the person the write is waiting for their approval "+
-		"(approval.personMessage has the link and the command), that it expires at %s, and that you apply it when they "+
+		"(approval.personMessage has the link; approval.approveCommand has the command), that it expires at %s, and that you apply it when they "+
 		"tell you they approved. Then call write with the same arguments plus approvalId: it applies at once.",
 		n.Rows, n.ExpiresAt))
 }

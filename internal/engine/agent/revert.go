@@ -147,10 +147,12 @@ func lineHash(text string) string {
 // and one page of its lines (only pending ones with Outcome PENDING).
 type RevertPlanParams = ledger.RevertLineParams
 
-// RevertPlanLine is one line of a batched plan with its signed line parsed.
+// RevertPlanLine is one line of a batched plan with its signed line
+// parsed. Plan is nil on a widened plan's line that names a change the
+// agent did not make: the agent's view leaves its text out (RS-5).
 type RevertPlanLine struct {
 	ledger.RevertLine
-	Plan revert.Line
+	Plan *revert.Line
 }
 
 // RevertPlan is a batched plan's state and one page of its lines; while
@@ -184,7 +186,9 @@ func (s *Service) RevertPlan(ctx context.Context, p RevertPlanParams) (RevertPla
 		return RevertPlan{}, err
 	}
 	out := RevertPlan{Revert: r, Page: pagination.Page[RevertPlanLine]{NextCursor: page.NextCursor}}
-	if r.Status == ledger.RevertPending {
+	if r.Status == ledger.RevertPending && !r.Widened {
+		// A widened plan issues no link: the person signs on the page they
+		// widened on (RS-5).
 		n, err := s.revertNotice(ctx, r)
 		if err != nil {
 			return RevertPlan{}, err
@@ -193,14 +197,21 @@ func (s *Service) RevertPlan(ctx context.Context, p RevertPlanParams) (RevertPla
 	}
 	out.Page.Items = make([]RevertPlanLine, 0, len(page.Items))
 	for _, l := range page.Items {
-		parsed, err := revert.ParseLine(l.Text)
-		if err != nil {
-			return RevertPlan{}, fmt.Errorf("guard returned a bad revert line %d: %w", l.No, err)
+		line := RevertPlanLine{RevertLine: l}
+		if l.Text != "" {
+			parsed, err := revert.ParseLine(l.Text)
+			if err != nil {
+				return RevertPlan{}, fmt.Errorf("guard returned a bad revert line %d: %w", l.No, err)
+			}
+			line.Plan = &parsed
 		}
-		out.Page.Items = append(out.Page.Items, RevertPlanLine{RevertLine: l, Plan: parsed})
+		out.Page.Items = append(out.Page.Items, line)
 	}
 	if out.PersonMessage, out.NextSteps, err = s.planGuidance(out); err != nil {
 		return RevertPlan{}, err
+	}
+	if r.Widened {
+		out.PersonMessage = strings.TrimSpace(widenedMessage + " " + out.PersonMessage)
 	}
 	return out, nil
 }
@@ -339,7 +350,8 @@ func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Request
 // deliverRevertSignature submits the person's code for r, as basalt revert
 // --apply does: the engine checks it names r and verifies against a
 // registered passkey (for a clear refusal), then apply_revert verifies it in
-// Postgres, which is the boundary.
+// Postgres, which is the boundary. For a widened revert the agent role
+// cannot read the binding, so only Postgres verifies the signature.
 func (s *Service) deliverRevertSignature(ctx context.Context, r ledger.Revert, code revert.Response) (RequestedRevert, error) {
 	if err := s.checkRevertCode(ctx, r, code); err != nil {
 		return RequestedRevert{}, err
@@ -372,6 +384,12 @@ func (s *Service) checkRevertCode(ctx context.Context, r ledger.Revert, code rev
 		if !bytes.Equal(k.ID, code.CredentialID) {
 			continue
 		}
+		if r.Widened {
+			// The agent's view hides a widened revert's binding (RS-5):
+			// apply_revert verifies the signature, and applyRevertError maps
+			// its refusal to the same answers.
+			return nil
+		}
 		if _, err := revert.Verify(r.BindingText, k, code); err != nil {
 			return s.badSignature(ctx, r, fmt.Sprintf("the code does not verify against the person's passkey, nothing was "+
 				"reverted: %v", err))
@@ -386,8 +404,11 @@ func (s *Service) checkRevertCode(ctx context.Context, r ledger.Revert, code rev
 // or a signature only Postgres could judge.
 func (s *Service) applyRevertError(ctx context.Context, r ledger.Revert, err error) error {
 	code, ok := guard.CodeOf(err)
-	if ok && code == guard.CodeRevertExpired {
+	switch {
+	case ok && code == guard.CodeRevertExpired:
 		return s.revertExpired(r)
+	case ok && code == guard.CodeNothingToRevert:
+		return nothingSigned(r)
 	}
 	var pe *pgconn.PgError
 	if !ok || code != guard.CodeRevertInvalid || !errors.As(err, &pe) {
@@ -406,8 +427,18 @@ func (s *Service) applyRevertError(ctx context.Context, r ledger.Revert, err err
 }
 
 // revertState is the answer for r without a new link: what happened, for
-// the person, and the agent's next steps.
+// the person, and the agent's next steps. For a widened revert the person
+// is told the agent cannot see what they added (RS-5).
 func (s *Service) revertState(ctx context.Context, r ledger.Revert) (RequestedRevert, error) {
+	out, err := s.revertStateOf(ctx, r)
+	if err != nil || !r.Widened {
+		return out, err
+	}
+	out.PersonMessage = strings.TrimSpace(widenedMessage + " " + out.PersonMessage)
+	return out, nil
+}
+
+func (s *Service) revertStateOf(ctx context.Context, r ledger.Revert) (RequestedRevert, error) {
 	out := RequestedRevert{Revert: r}
 	switch r.Status {
 	case ledger.RevertApplied:
@@ -424,8 +455,7 @@ func (s *Service) revertState(ctx context.Context, r ledger.Revert) (RequestedRe
 		out.PersonMessage = rejectedMessage(r)
 		out.NextSteps = rejectedSteps()
 	default:
-		what := "The revert of " + scopeText(r.Scope, r.ScopeID)
-		return s.waitEnded(ctx, out, what)
+		return s.waitEnded(ctx, out, sentence(revertTitle(r)))
 	}
 	return out, nil
 }
@@ -437,6 +467,14 @@ func (s *Service) revertState(ctx context.Context, r ledger.Revert) (RequestedRe
 func (s *Service) waitEnded(ctx context.Context, out RequestedRevert, what string) (RequestedRevert, error) {
 	r := out.Revert
 	expires := r.ExpiresAt.UTC().Format(personTime)
+	if r.Widened {
+		// The person holds the only link to the scope they chose: the page
+		// they widened on. The agent has none to give (RS-5).
+		out.PersonMessage = fmt.Sprintf("%s waits for your passkey on the page where you changed the scope, until %s. Tell "+
+			"the agent when you have signed.", what, expires)
+		out.NextSteps = widenedWaitSteps(r.ID)
+		return out, nil
+	}
 	if s.PagesOrigin != "" {
 		out.PersonMessage = fmt.Sprintf("%s waits for your passkey at the short link the agent gave you, until %s. Tell the "+
 			"agent when you have signed, or ask it for a new link if you lost that one.", what, expires)

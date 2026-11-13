@@ -48,8 +48,8 @@ const (
 // phoneCore is a phone shape: an international prefix ("+" or "00"), the
 // country code and up to five digit groups of one to four digits, or a US
 // "(202) 555-0143". A group of one digit counts ("… 45 6"), so a number never
-// leaves its last digit behind; a lone digit after a number ("… 456 7 items")
-// is taken into the token, which only covers more.
+// leaves its last digit behind; a lone digit after a "+" number that makes it
+// invalid ("+44 7911 123456 7 items") is cut off again by phoneEnd.
 const phoneCore = `(?:\+|00)\d{1,3}` + phoneSep + `?\(?\d{1,4}\)?(?:` + phoneSep + `?\d{1,4}){1,4}|\(\d{3}\) {0,4}\d{3}` + phoneSep + `\d{4}`
 
 // iddPrefix is the international dialing prefix most of the world writes
@@ -244,9 +244,9 @@ func (PhoneDetector) Detect(text string) []Span {
 
 // gluedToANumber reports a "+" number written without separators right after
 // a digit, or after a '.' that follows a digit, as in a version's build
-// metadata (1.0.0+20130313144700). After a word ("Tel.+44…", "Nr.+49…") it is
-// a phone. So is one where only letters and digits, and then maybe a '.',
-// stand between it and the phone before it ("+447700900456+447700900457",
+// metadata (1.0.0+20130313144700). After letters ("Tel.+44…", "Nr.+49…") it
+// may be a phone. So may one where only letters and digits, and then maybe a
+// '.', stand between it and the phone before it ("+447911123456+447911123457",
 // "+44…456.+44…"): that phone's token takes the letters and digits in, so a
 // second pass sees this number right after the token. prevEnd is where the
 // phone before ends, or -1.
@@ -361,13 +361,13 @@ func separatorsOK(number string) bool {
 // minDottedPhoneDigits is how many digits a number written with one '.' needs
 // to be a phone rather than a signed decimal: a coordinate has up to eight
 // (+48.858370, possible for Poland), a phone with its country code ten or
-// more (+44.7700900123, +1.2025550143).
+// more (+44.7911123123, +1.2025550143).
 const minDottedPhoneDigits = 10
 
 // isDecimal reports a signed decimal: a number whose one separator is a
 // single '.', and whose digits are too few for a phone or, read after "+",
-// no possible number (+48.858370, +0.00012345). Otherwise it is a phone
-// written with a dot (+44.7700900123).
+// no possible number (+48.858370, +0.00012345). Otherwise it may be a phone
+// written with a dot (+44.7911123123), if it is valid.
 func isDecimal(number string) bool {
 	if !isDotted(number) {
 		return false
@@ -390,7 +390,8 @@ func isDotted(number string) bool {
 // possibleIDD reports whether a "00" number holds a separator (a run of
 // digits starting "00" is an id: 00491711234567) and is a possible number
 // with "+" in place of its "00". Possible, not valid, so a number in a range
-// libphonenumber does not list (0044 7700 900123) is found as its "+" form is.
+// libphonenumber does not list (0044 7700 900123) is found by its "00" shape,
+// although its "+" form is not (owner decision Q-14).
 func possibleIDD(match string) bool {
 	rest := match[len(iddPrefix):]
 	digits := asciiDigitsOf(rest)

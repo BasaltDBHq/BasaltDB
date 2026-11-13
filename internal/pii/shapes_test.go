@@ -217,8 +217,8 @@ func TestPhoneShapeKnownLimits(t *testing.T) {
 		"call x0044 20 7946 0958 now",  // 00 touching a letter
 		"call +4420794609581234 now",   // digits glued past 15, no separator
 		"call +1     202 555 0143 now", // five spaces between groups
-		"id:1+447700900123",            // a + number glued to a digit
-		"0+447700900123",               // a + number glued to a digit
+		"id:1+447911123456",            // a + number glued to a digit
+		"0+447911123456",               // a + number glued to a digit
 		"call (202)     555-0143 now",  // five spaces in the US form
 	} {
 		_, reps := tokenize(t, tz, in)

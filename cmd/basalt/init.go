@@ -75,6 +75,9 @@ func runInit(c *cliIO, args []string) int {
 	if _, err := f.commands(c.goos); err != nil {
 		return c.fail(fmt.Errorf("%w: %w", errUsage, err))
 	}
+	if err := checkServiceAnswer(c, f); err != nil {
+		return c.fail(err)
+	}
 	names := guard.Names{Prefix: f.prefix}
 	role, err := names.Agent(f.agent)
 	if err != nil {

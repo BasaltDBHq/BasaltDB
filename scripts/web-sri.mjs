@@ -55,10 +55,13 @@ function block(page) {
   const entry = normalize(join(dir, m[1]));
   const href = (f) => m[1].replace(/[^/]+$/, "") + f.slice(dirname(entry).length + 1);
   const lines = [BEGIN];
-  lines.push(`<script type="module" src="${m[1]}" integrity="${integrity(entry)}"></script>`);
+  // The preloads come first: each import is then already being fetched with
+  // its hash when the entry script starts fetching its graph. After the
+  // entry script, a fast fetch could pull an import in without a check.
   for (const dep of closure(entry)) {
     lines.push(`<link rel="modulepreload" href="${href(dep)}" integrity="${integrity(dep)}">`);
   }
+  lines.push(`<script type="module" src="${m[1]}" integrity="${integrity(entry)}"></script>`);
   lines.push(END);
   return { html, text: lines.map((l, i) => (i ? "  " : "") + l).join("\n"), script: m[0] };
 }

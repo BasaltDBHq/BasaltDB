@@ -73,6 +73,13 @@ func TestPortalScriptsHaveIntegrity(t *testing.T) {
 			entries = append(entries, file)
 		}
 		require.NotEmpty(t, entries, page)
+		// Preloads must precede the first script, or an import could be
+		// fetched without a check before its preload is processed.
+		if first := scriptTag.FindStringIndex(html); first != nil {
+			for _, loc := range preloadTag.FindAllStringIndex(html, -1) {
+				require.Less(t, loc[0], first[0], "%s: modulepreload after the module script", page)
+			}
+		}
 		for _, tag := range preloadTag.FindAllString(html, -1) {
 			href := attrHref.FindStringSubmatch(tag)
 			hash := attrIntegr.FindStringSubmatch(tag)

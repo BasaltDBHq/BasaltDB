@@ -1,7 +1,13 @@
 // The passkey registration page `basalt init` opens: create an ES256 passkey
-// for this relying party and show the code `basalt init` reads.
-import { ALG_ES256, encodeRegistrationResponse, parseRegistrationRequest, relyingParty } from "./codec.js";
-import { $, fail, loadOrPaste, showCode, webauthnError } from "./page.js";
+// for this relying party and show the code `basalt init` reads, or, when
+// init serves the page itself, post the passkey back to init.
+import { ALG_ES256, encodeRegistrationResponse, parseRegistrationRequest, registrationResponseJson, relyingParty } from "./codec.js";
+import { postResponse } from "./local.js";
+import { $, fail, loadOrPaste, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
+
+// HAND_BACK_PATH is basalt init's hand-back route, on the pages init serves
+// itself: a request with a handBack secret came from there.
+const HAND_BACK_PATH = "/api/v1/passkeys/register";
 
 const PROMPT_TIMEOUT_MS = 120000;
 
@@ -37,20 +43,33 @@ async function register(rp, req) {
     if (typeof r.getPublicKey !== "function" || typeof r.getAuthenticatorData !== "function") {
       throw new Error("this browser is too old to export the passkey's public key");
     }
-    showCode(
-      encodeRegistrationResponse({
-        credentialId: new Uint8Array(cred.rawId),
-        clientDataJson: new Uint8Array(r.clientDataJSON),
-        authenticatorData: new Uint8Array(r.getAuthenticatorData()),
-        publicKey: new Uint8Array(r.getPublicKey()),
-        publicKeyAlgorithm: r.getPublicKeyAlgorithm(),
-        prfSupported: prfEnabled(cred),
-      }),
-    );
+    const fields = {
+      credentialId: new Uint8Array(cred.rawId),
+      clientDataJson: new Uint8Array(r.clientDataJSON),
+      authenticatorData: new Uint8Array(r.getAuthenticatorData()),
+      publicKey: new Uint8Array(r.getPublicKey()),
+      publicKeyAlgorithm: r.getPublicKeyAlgorithm(),
+      prfSupported: prfEnabled(cred),
+    };
+    if (req.handBack !== "" && (await handBack(req.handBack, fields))) return;
+    showCode(encodeRegistrationResponse(fields));
   } catch (err) {
     $("register").disabled = false;
     $("status").textContent = webauthnError(err);
   }
+}
+
+// handBack posts the passkey to basalt init, which waits for it: nothing to
+// paste. When init does not take it, the page says so and shows the code.
+async function handBack(secret, fields) {
+  try {
+    await postResponse((path, init) => window.fetch(path, init), HAND_BACK_PATH, secret, registrationResponseJson(fields));
+  } catch (err) {
+    showRelayFailed(`basalt init did not take the passkey (${err.message}). Paste the code below into its prompt instead.`);
+    return false;
+  }
+  showDone("Passkey created and sent to basalt init. Go back to the terminal; you can close this page.");
+  return true;
 }
 
 const describe = (err) => `This registration link cannot be used: ${err.message}`;

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -351,7 +352,7 @@ func signPrepared(c *cliIO, l *agentLedger, prep guard.PreparedRevert, f revertF
 		return awaitRevert(c, l, prep.RevertID, f.asJSON)
 	}
 	fmt.Fprint(c.stderr, "Paste the code the revert page showed: ")
-	code, err := c.line()
+	code, err := c.pasted(c.ctx)
 	if err != nil || code == "" {
 		return c.fail(fmt.Errorf("no code given; nothing was reverted. Apply later with basalt revert --apply <code> before %s",
 			prep.ExpiresAt.UTC().Format("15:04 UTC")))
@@ -405,10 +406,28 @@ const revertPoll = time.Second
 func awaitRevert(c *cliIO, l *agentLedger, id uuid.UUID, asJSON bool) int {
 	fmt.Fprintln(c.stderr, "basalt: waiting for your signature on the revert page (or paste the code it shows here)...")
 	codes := make(chan string, 1)
+	ctx, cancel := context.WithCancel(c.ctx)
+	pasteDone := make(chan struct{})
+	// At a terminal, wait for the paste read to restore the terminal's
+	// modes before anything else runs; a read of a pipe ends with the pipe.
+	defer func() {
+		cancel()
+		if c.terminal != nil {
+			<-pasteDone
+		}
+	}()
 	go func() {
-		// A closed or empty stdin just leaves the page to finish it.
-		if code, err := c.line(); err == nil && code != "" {
-			codes <- code
+		defer close(pasteDone)
+		// A closed stdin just leaves the page to finish it.
+		for {
+			code, err := c.pasted(ctx)
+			if err != nil {
+				return
+			}
+			if code != "" {
+				codes <- code
+				return
+			}
 		}
 	}()
 	tick := time.NewTicker(revertPoll)

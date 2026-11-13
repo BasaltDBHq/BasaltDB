@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -70,6 +71,21 @@ func registerPasskey(c *cliIO, conn *pgx.Conn, rp passkey.Relying, label string,
 	if err != nil {
 		return err
 	}
+	// When init serves the page itself, the page posts the passkey back
+	// through the hand-back route: nothing to paste.
+	var hb *registrationHandBack
+	if _, local := localPagesAddr(rp.Origin); local {
+		if hb, err = newRegistrationHandBack(c.rand, req, rp); err != nil {
+			return err
+		}
+	}
+	stop, served := serveLocalPages(rp.Origin, hb)
+	defer stop()
+	if served && hb != nil {
+		req = hb.req
+	} else {
+		hb = nil
+	}
 	frag, err := req.Fragment()
 	if err != nil {
 		return err
@@ -85,28 +101,88 @@ func registerPasskey(c *cliIO, conn *pgx.Conn, rp passkey.Relying, label string,
 			fmt.Fprintf(c.stderr, "basalt: could not open a browser (%v); open the link above yourself\n", err)
 		}
 	}
-	stop, served := serveLocalPages(rp.Origin)
-	defer stop()
 	if rp != passkey.Production && !served {
 		fmt.Fprint(c.stderr, serveHint(rp.Origin))
 	}
-	fmt.Fprint(c.stderr, "Paste the code the page shows: ")
-	code, err := c.line()
-	if err != nil {
-		return fmt.Errorf("no passkey code: %w", err)
-	}
-	if strings.TrimSpace(code) == "" {
-		return errors.New("no passkey code given")
-	}
-	resp, err := passkey.ParseRegistrationResponse(code)
-	if err != nil {
-		return err
-	}
-	cred, err := passkey.VerifyRegistration(req, resp, rp)
+	cred, err := readRegistration(c, req, rp, hb)
 	if err != nil {
 		return err
 	}
 	return guard.RegisterPasskey(c.ctx, conn, cred, label)
+}
+
+// readRegistration waits for the passkey of req: from the page through hb
+// when init serves the page, or as a pasted code, which is also taken while
+// waiting for the page. A closed stdin leaves the page to send it.
+func readRegistration(c *cliIO, req passkey.RegistrationRequest, rp passkey.Relying, hb *registrationHandBack) (passkey.Credential, error) {
+	if hb == nil {
+		fmt.Fprint(c.stderr, "Paste the code the page shows: ")
+		code, err := c.pasted(c.ctx)
+		if err != nil {
+			return passkey.Credential{}, fmt.Errorf("no passkey code: %w", err)
+		}
+		return verifyRegistrationCode(code, req, rp)
+	}
+	fmt.Fprint(c.stderr, "basalt: waiting for the page to send the passkey to basalt init (or paste the code it shows here): ")
+	ctx, cancel := context.WithCancel(c.ctx)
+	defer cancel()
+	type paste struct {
+		code string
+		err  error
+	}
+	pastes := make(chan paste, 1)
+	pasteDone := make(chan struct{})
+	go func() {
+		defer close(pasteDone)
+		for {
+			code, err := c.pasted(ctx)
+			if err != nil || code != "" {
+				pastes <- paste{code, err}
+				return
+			}
+		}
+	}()
+	// stopPaste ends the paste read; at a terminal it waits for the read to
+	// restore the terminal's modes. A read of a pipe cannot be stopped and
+	// is left to end with the pipe.
+	stopPaste := func() {
+		cancel()
+		if c.terminal != nil {
+			<-pasteDone
+		}
+	}
+	for {
+		select {
+		case cred := <-hb.received:
+			stopPaste()
+			fmt.Fprintln(c.stderr)
+			fmt.Fprintln(c.stderr, "basalt: the page sent the passkey to basalt init")
+			return cred, nil
+		case p := <-pastes:
+			if p.err == nil {
+				return verifyRegistrationCode(p.code, req, rp)
+			}
+			if c.ctx.Err() != nil {
+				return passkey.Credential{}, fmt.Errorf("no passkey code: %w", c.ctx.Err())
+			}
+			pastes = nil // stdin is closed: only the page can answer now
+		case <-c.ctx.Done():
+			stopPaste()
+			return passkey.Credential{}, fmt.Errorf("no passkey code: %w", c.ctx.Err())
+		}
+	}
+}
+
+// verifyRegistrationCode checks a pasted registration code against req.
+func verifyRegistrationCode(code string, req passkey.RegistrationRequest, rp passkey.Relying) (passkey.Credential, error) {
+	if strings.TrimSpace(code) == "" {
+		return passkey.Credential{}, errors.New("no passkey code given")
+	}
+	resp, err := passkey.ParseRegistrationResponse(code)
+	if err != nil {
+		return passkey.Credential{}, err
+	}
+	return passkey.VerifyRegistration(req, resp, rp)
 }
 
 // passkeyStep registers the person's passkey unless one is registered
@@ -143,7 +219,9 @@ func passkeyStep(c *cliIO, conn *pgx.Conn, f initFlags) error {
 // works without a separate page server (the engine serves them later,
 // CONTRACT.md, Local pages). It serves nothing for another origin, or when
 // the port is taken (a page server already runs there). stop ends it.
-func serveLocalPages(origin string) (stop func(), served bool) {
+// With hb it also serves the registration hand-back route (CONTRACT.md,
+// CLI).
+func serveLocalPages(origin string, hb *registrationHandBack) (stop func(), served bool) {
 	noop := func() {}
 	addr, ok := localPagesAddr(origin)
 	if !ok {
@@ -151,7 +229,14 @@ func serveLocalPages(origin string) (stop func(), served bool) {
 	}
 	// No agents: the registration page only, no short links.
 	site := pages.New(origin, slog.New(slog.DiscardHandler))
-	ln, h, err := server.Listen(server.Options{}, "registration page", addr, site.Handler())
+	routes := site.Handler()
+	if hb != nil {
+		mux := http.NewServeMux()
+		mux.Handle("POST "+handBackPath, hb)
+		mux.Handle("/", routes)
+		routes = mux
+	}
+	ln, h, err := server.Listen(server.Options{}, "registration page", addr, routes)
 	if err != nil {
 		return noop, false
 	}

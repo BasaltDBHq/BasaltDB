@@ -103,9 +103,12 @@ func RowsHash(lines []string) string {
 // Request is the approval request: what the engine's local pages serve, and
 // what a format 1 link carries.
 type Request struct {
-	ApprovalID    uuid.UUID       `json:"approvalId"`
-	Binding       string          `json:"binding"`
-	Lines         []string        `json:"lines"`
+	ApprovalID uuid.UUID `json:"approvalId"`
+	Binding    string    `json:"binding"`
+	Lines      []string  `json:"lines"`
+	// RevealNonce is the nonce a reveal proof signs (Rows hidden from the
+	// agent), served only by the engine, never carried in a long link.
+	RevealNonce   passkey.Bytes   `json:"revealNonce,omitempty"`
 	CredentialIDs []passkey.Bytes `json:"credentialIds,omitempty"`
 }
 

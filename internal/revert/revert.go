@@ -277,7 +277,11 @@ type Request struct {
 	Lines    []string  `json:"lines"`
 	// RescopeNonce is the nonce a widen proof signs, served only by the
 	// engine, never carried in a long link.
-	RescopeNonce  passkey.Bytes   `json:"rescopeNonce,omitempty"`
+	RescopeNonce passkey.Bytes `json:"rescopeNonce,omitempty"`
+	// RevealNonce is the nonce a reveal proof signs (CONTRACT.md, Rows
+	// hidden from the agent), served only by the engine, never carried in a
+	// long link.
+	RevealNonce   passkey.Bytes   `json:"revealNonce,omitempty"`
 	CredentialIDs []passkey.Bytes `json:"credentialIds,omitempty"`
 }
 

@@ -279,7 +279,6 @@ func TestAStoredCompactIBANMatchesTheSpacedForm(t *testing.T) {
 	}
 }
 
-// PT-10 (provisional): a single common word is a name after a title, or when
 // Detection is deterministic (owner decision DD-1): a stored one-word name
 // that is also a common word is never tokenized alone in free text, whatever
 // stands around it, while a stored full name is, and so is a stored name

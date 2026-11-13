@@ -2,6 +2,7 @@ package guard_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -110,8 +111,46 @@ func TestEveryGuardFunctionPutsPgTempLast(t *testing.T) {
 	}
 }
 
-// No function in basalt_meta names a catalog relation without
-// pg_catalog., so it never depends on search_path to find it.
+// unqualifiedRelation is a Postgres regular expression, used with ~*
+// (case-insensitive, as SQL names are), that finds the catalog relation
+// named by its one argument in a function body without pg_catalog. before
+// it. Spaces around the dot and quotes on either name count as qualified:
+// pg_catalog . pg_roles, "pg_catalog".pg_roles, pg_catalog."pg_roles".
+const unqualifiedRelation = `('(?<!pg_catalog"?\s*\.\s*"?)\m' || $1 || '\M')`
+
+// The lint below is only as good as its pattern: it flags these and lets
+// these pass.
+func TestUnqualifiedRelationPattern(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t)
+	cases := map[string]bool{
+		`SELECT 1 FROM pg_roles r`:                  true,
+		`SELECT 1 FROM PG_ROLES r`:                  true,
+		`SELECT 1 FROM "pg_roles" r`:                true,
+		`JOIN pg_roles ON true`:                     true,
+		`SELECT 1 FROM pg_catalog.pg_roles r`:       false,
+		`SELECT 1 FROM PG_CATALOG.PG_ROLES r`:       false,
+		`SELECT 1 FROM pg_catalog . pg_roles r`:     false,
+		`SELECT 1 FROM pg_catalog."pg_roles" r`:     false,
+		`SELECT 1 FROM "pg_catalog".pg_roles r`:     false,
+		`SELECT 1 FROM "pg_catalog"."pg_roles" r`:   false,
+		`SELECT 1 FROM pg_catalog.pg_roles_extra r`: false,
+	}
+	for src, want := range cases {
+		var got bool
+		// Plain SQL: the lint's own regular expression on a sample.
+		require.NoError(t, d.Admin.QueryRow(context.Background(),
+			`SELECT $2::text ~* `+unqualifiedRelation, "pg_roles", src).Scan(&got))
+		require.Equal(t, want, got, src)
+	}
+}
+
+// A lint, not a proof: no function body in basalt_meta names a catalog
+// relation without pg_catalog. before it, by the pattern above. It reads
+// the source text, so it cannot see a name built at run time (EXECUTE
+// format(...)), and a comment that names a catalog relation trips it.
+// search_path = pg_catalog, pg_temp on every function is what holds when
+// it misses one (TestEveryGuardFunctionPutsPgTempLast).
 func TestGuardFunctionsQualifyCatalogRelations(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
@@ -123,7 +162,7 @@ func TestGuardFunctionsQualifyCatalogRelations(t *testing.T) {
 		  FROM pg_proc p
 		  JOIN pg_class c ON c.relnamespace = 'pg_catalog'::regnamespace
 		 WHERE p.pronamespace = 'basalt_meta'::regnamespace
-		   AND p.prosrc ~ ('(?<!pg_catalog\.)\m' || c.relname || '\M')
+		   AND p.prosrc ~* `+strings.Replace(unqualifiedRelation, "$1", "c.relname", 1)+`
 		 ORDER BY 1`)
 	require.NoError(t, err)
 	unqualified, err := pgx.CollectRows(rows, pgx.RowTo[string])

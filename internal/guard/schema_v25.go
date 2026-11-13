@@ -125,6 +125,9 @@ BEGIN
 END $$;
 `
 
+// v25Reverts is the revert half of version 25: _revert_lock_pending,
+// apply_revert and apply_revert_batch check their deadlines with
+// clock_timestamp().
 const v25Reverts = `
 -- The caller's own revert p_revert_id, locked, while its scope may still
 -- change (version 21): not applied, rejected, signed or expired. Another

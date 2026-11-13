@@ -112,7 +112,7 @@ func (s *Service) addGuidance(te *mcp.ToolError, f failure) {
 		}
 		te.NextSteps = steps
 		if te.PersonMessage == "" {
-			te.PersonMessage = person
+			te.PersonMessage = fitToSteps(person, steps)
 		}
 	}
 	if err := CheckPersonMessage(te.PersonMessage); err != nil {

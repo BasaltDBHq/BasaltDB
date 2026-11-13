@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -198,11 +199,15 @@ func (d *DB) WithDemo(t *testing.T) *DB {
 	return d
 }
 
+// Timeout is the statement timeout tests run guarded transactions with
+// (the engine's default).
+const Timeout = 5 * time.Second
+
 // Guarded runs stmts in one transaction as the engine does: BeginGuarded,
 // then each statement followed by FinishChange, then COMMIT.
 func Guarded(ctx context.Context, c *pgx.Conn, in guard.Intent, stmts ...string) error {
 	return pgx.BeginFunc(ctx, c, func(tx pgx.Tx) error {
-		if err := guard.BeginGuarded(ctx, tx, in); err != nil {
+		if err := guard.BeginGuarded(ctx, tx, in, Timeout); err != nil {
 			return err
 		}
 		for _, s := range stmts {

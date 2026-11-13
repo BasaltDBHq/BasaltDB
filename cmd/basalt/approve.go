@@ -45,6 +45,11 @@ func runApprove(c *cliIO, args []string) int {
 	if err != nil {
 		return c.fail(err)
 	}
+	if c.needsAgent(*agent, *credFile) {
+		if *agent, err = approvalAgent(c, *configPath, held, code); err != nil {
+			return c.fail(err)
+		}
+	}
 	l, err := openLedger(c, *agent, *credFile, *configPath)
 	if err != nil {
 		return c.fail(err)
@@ -62,6 +67,26 @@ func runApprove(c *cliIO, args []string) int {
 		return showApproval(c, l, held, pages, *open != "")
 	}
 	return submitApproval(c, l, code)
+}
+
+// approvalAgent picks the agent of a code, or of the held write --show
+// or --open names, when none was named (pickAgent).
+func approvalAgent(c *cliIO, configPath, held, code string) (string, error) {
+	var id uuid.UUID
+	if held != "" {
+		parsed, err := uuid.Parse(held)
+		if err != nil {
+			return "", fmt.Errorf("%w: --show and --open need an approval id", errUsage)
+		}
+		id = parsed
+	} else {
+		resp, err := approval.ParseResponse(code)
+		if err != nil {
+			return "", fmt.Errorf("%w: %w", errUsage, err)
+		}
+		id = resp.ApprovalID
+	}
+	return pickAgent(c, configPath, ownsApproval(c, configPath, id))
 }
 
 // approveCode is the response code: the one argument, or a line from stdin

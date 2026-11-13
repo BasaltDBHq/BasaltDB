@@ -507,3 +507,39 @@ func TestUninstallRemovesEverything(t *testing.T) {
 	require.Zero(t, schemas)
 	require.Zero(t, roles)
 }
+
+func TestInitHelpListsTheOtherModes(t *testing.T) {
+	t.Parallel()
+	r := cli(t, nil, "", "init", "-h")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	for _, want := range []string{"--remote", "--setup-code", "-operated-by"} {
+		require.Contains(t, r.stderr, want)
+	}
+}
+
+func TestInitOperatedByAgentWithTheAdminCredential(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	config := tempConfig(t)
+	r := cli(t, map[string]string{envAdminURL: d.URL}, "",
+		"init", "--agent", "x1", "--write", "public.leads", "--prefix", d.Names.Prefix, "--operated-by", "agent",
+		"--config", config, "--os-user", "tester", "--yes", "--skip-passkey")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	raw, err := os.ReadFile(config)
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"operatedBy": "AGENT"`)
+	require.Contains(t, string(raw), "https://portal.basaltvault.app")
+	require.Contains(t, string(raw), "--operated-by=agent")
+
+	// A local passkey origin does not fit an engine the bot operates.
+	r = cli(t, nil, "", "init", "--agent", "x2", "--operated-by", "agent", "--passkey-origin", "http://localhost:8787")
+	require.Equal(t, exitUsage, r.code, r.stderr)
+	require.Contains(t, r.stderr, "portal")
+
+	// The default leaves operatedBy alone.
+	config = tempConfig(t)
+	initAgent(t, d, config)
+	raw, err = os.ReadFile(config)
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "operatedBy")
+}

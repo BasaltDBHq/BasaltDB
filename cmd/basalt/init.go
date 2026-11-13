@@ -27,6 +27,9 @@ type initFlags struct {
 	agentRLS                                                                        AgentRLSMode
 	spec                                                                            guard.AgentSpec
 	dryRun, yes, skipPasskey, addPasskey, noService                                 bool
+	// operatedBy is --operated-by; operatedByGiven is true when it was passed.
+	operatedBy      OperatedBy
+	operatedByGiven bool
 	// pathsGiven is true when --config, --socket-dir or --credential-file
 	// was given: the person runs the engine in the foreground themselves.
 	pathsGiven bool
@@ -311,14 +314,27 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 	f.agentRLS = AgentRLSAsk
 	fs.Var(&f.agentRLS, "agent-rls",
 		"on agent tables where row-level security hides every row: ask at a terminal, all-rows adds a policy letting the agent see them all, none skips the question")
-	fs.Var(&f.vaultFlag, flagVault, "on or off: whether the engine reaches the portal's pages through the Vault (default off; on needs the portal's pages)")
+	fs.Var(&f.vaultFlag, flagVault, "on or off: whether the engine reaches the portal's pages through the Vault (default off, on with --operated-by=agent)")
+	f.operatedBy = OperatedByPerson
+	fs.Var(&f.operatedBy, "operated-by", "who runs this engine's machine steps: person or agent (agent: you run init here, then hand the engine to a bot; the pages are the portal's)")
+	fs.Usage = func() {
+		fmt.Fprint(c.stderr, "usage: basalt init --agent NAME [--write schema.table,...] [--read schema.table,...] [flags]\n"+
+			"       basalt init --remote [flags]            the engine's machine, for a bot that sets up with a code (see basalt init --remote -h)\n"+
+			"       basalt init --setup-code CODE [flags]   run the setup code an agent made (see basalt init --setup-code -h)\n\nflags:\n")
+		fs.PrintDefaults()
+	}
 	if err := parse(fs, args); err != nil {
 		return f, err
 	}
+	var originGiven bool
 	fs.Visit(func(fl *flag.Flag) {
 		switch fl.Name {
 		case "config", "socket-dir", "credential-file":
 			f.pathsGiven = true
+		case "operated-by":
+			f.operatedByGiven = true
+		case "passkey-origin":
+			originGiven = true
 		}
 	})
 	if f.agent == "" {
@@ -327,8 +343,17 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 	if _, err := relyingParty(f.passkeyOrigin); err != nil {
 		return f, err
 	}
-	// basalt init is person-operated: --operated-by=agent is init --remote's.
-	vc, err := chooseVault(f.vaultFlag, OperatedByPerson, f.passkeyOrigin, personDefaultWhy)
+	// An agent-operated engine serves the portal's pages (CONTRACT.md, Who
+	// operates the engine): the bot's machine has no pages the person can reach.
+	if f.operatedBy == OperatedByAgent {
+		switch {
+		case !originGiven:
+			f.passkeyOrigin = links.Portal
+		case f.passkeyOrigin != links.Portal:
+			return f, fmt.Errorf("%w: --operated-by=agent uses the portal's pages (%s); drop --passkey-origin or set it to that", errUsage, links.Portal)
+		}
+	}
+	vc, err := chooseVault(f.vaultFlag, f.operatedBy, f.passkeyOrigin, personDefaultWhy)
 	if err != nil {
 		return f, err
 	}
@@ -408,6 +433,9 @@ func engineSettings(f initFlags, goos string) config.Settings {
 		s.StateDir = filepath.Join(filepath.Dir(f.configPath), stateDirName)
 	}
 	s.PagesURL = f.passkeyOrigin
+	if f.operatedByGiven {
+		s.OperatedBy = f.operatedBy.enum()
+	}
 	return s
 }
 
@@ -469,6 +497,7 @@ func (f initFlags) savedArgs(goos string) []string {
 	addIf("engine-user", f.engineUser, service.DefaultUser(goos))
 	addIf("credential-file", f.credFile, filepath.Join(filepath.Dir(f.configPath), "agents", f.agent+".url"))
 	addIf("passkey-origin", f.passkeyOrigin, links.DefaultLocal)
+	addIf("operated-by", string(f.operatedBy), string(OperatedByPerson))
 	addIf("agent-rls", string(f.agentRLS), string(AgentRLSAsk))
 	return args
 }

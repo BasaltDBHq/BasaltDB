@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -38,7 +39,12 @@ type fakeProbe struct {
 	// recordedErr fails SetupRecorded.
 	recordedErr error
 	latest      *guard.AgentSetup
+	// ledger is LedgerBytes's answer; ledgerErr fails it.
+	ledger    int64
+	ledgerErr error
 }
+
+func (p *fakeProbe) LedgerBytes(context.Context) (int64, error) { return p.ledger, p.ledgerErr }
 
 func (p *fakeProbe) GuardStatus(context.Context) (guard.Status, error) { return p.st, p.err }
 
@@ -249,7 +255,7 @@ func requireStatusSchema(t *testing.T, tool mcpcontract.Tool, r StatusReport) st
 
 func TestStatusWhenEverythingIsReady(t *testing.T) {
 	t.Parallel()
-	r := engineStatus(&fakeProbe{st: guardAt(guard.GuardOK, nil, nil), latest: &guard.AgentSetup{SetupID: uuid.MustParse(caseRunID), Kind: guard.SetupAgent}}, 2, nil)(t)
+	r := engineStatus(&fakeProbe{st: guardAt(guard.GuardOK, nil, nil), ledger: 123456, latest: &guard.AgentSetup{SetupID: uuid.MustParse(caseRunID), Kind: guard.SetupAgent}}, 2, nil)(t)
 	statusTool, _ := mcpcontract.Find(mcpcontract.MustLoad(), toolStatus)
 	requireStatusSchema(t, statusTool, r)
 	require.True(t, r.Ready)
@@ -263,6 +269,23 @@ func TestStatusWhenEverythingIsReady(t *testing.T) {
 	require.Equal(t, PasskeysStatus{Registered: true, Active: ptr(2)}, r.Passkeys)
 	require.Equal(t, SetupStatus{State: setupDone, SetupID: caseRunID, Kind: guard.SetupAgent}, r.Setup)
 	require.Nil(t, r.Vault, "no vault reporter yet: vault is left out")
+	require.Equal(t, &LedgerStatus{Bytes: 123456, ValuesKeptDays: 30, RecordsKeptDays: 365}, r.Ledger)
+}
+
+func TestStatusLeavesLedgerOutWhenTheGuardCannotBeRead(t *testing.T) {
+	t.Parallel()
+	r := engineStatus(&fakeProbe{err: context.DeadlineExceeded, ledger: 123456}, 1, pendingSetup(guard.SetupAgent, statusNow.Add(time.Hour)))(t)
+	require.Nil(t, r.Ledger)
+	require.False(t, r.Ready)
+}
+
+func TestStatusLedgerReadFailureIsNotAProblem(t *testing.T) {
+	t.Parallel()
+	ok := engineStatus(&fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}, 2, nil)(t)
+	r := engineStatus(&fakeProbe{st: guardAt(guard.GuardOK, nil, nil), ledgerErr: errors.New("boom")}, 2, nil)(t)
+	require.Nil(t, r.Ledger)
+	require.Equal(t, ok.Problems, r.Problems)
+	require.True(t, r.Ready)
 }
 
 func ptr[T any](v T) *T { return &v }

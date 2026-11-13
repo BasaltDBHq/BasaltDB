@@ -315,3 +315,26 @@ func TestStatusSaysUnknownForALockFileItCannotOpen(t *testing.T) {
 	require.Contains(t, text.stdout, "Engine:       unknown (its lock file, owned by ")
 	require.NotContains(t, text.stdout, "not running")
 }
+
+func TestWriteStatusShowsTheLedger(t *testing.T) {
+	t.Parallel()
+	s := statusOut{StatusReport: agent.StatusReport{
+		Agent:  "bot",
+		Ledger: &agent.LedgerStatus{Bytes: 5_242_880, ValuesKeptDays: 30, RecordsKeptDays: 365},
+	}}
+	var b strings.Builder
+	writeStatus(&b, s)
+	require.Contains(t, b.String(), "  Passkeys:   unknown\n  Ledger:     5.0 MB in basalt_meta; values kept 30 days, records 1 year\n")
+
+	s.Ledger = nil
+	b.Reset()
+	writeStatus(&b, s)
+	require.NotContains(t, b.String(), "Ledger:")
+}
+
+func TestByteWords(t *testing.T) {
+	t.Parallel()
+	for n, want := range map[int64]string{0: "0 B", 1023: "1023 B", 1024: "1.0 KB", 1536: "1.5 KB", 1 << 20: "1.0 MB", 5 << 30: "5.0 GB", 2048 << 30: "2048.0 GB"} {
+		require.Equal(t, want, byteWords(n))
+	}
+}

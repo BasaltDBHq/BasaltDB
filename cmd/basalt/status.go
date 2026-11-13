@@ -285,6 +285,9 @@ func writeStatus(w io.Writer, s statusOut) {
 	fmt.Fprintf(w, "\nAgent %s: %s\n", s.Agent, ready)
 	fmt.Fprintf(w, "  Guard:      %s\n", guardWords(s.Guard))
 	fmt.Fprintf(w, "  Passkeys:   %s\n", passkeyWords(s.Passkeys))
+	if s.Ledger != nil {
+		fmt.Fprintf(w, "  Ledger:     %s\n", ledgerWords(*s.Ledger))
+	}
 	if s.Setup.State != "NONE" {
 		fmt.Fprintf(w, "  Setup:      %s %s code %s\n", s.Setup.State, s.Setup.Kind, s.Setup.SetupID)
 	}
@@ -330,6 +333,39 @@ func guardWords(g agent.GuardStatus) string {
 		return "not installed"
 	}
 	return "unknown (the database did not answer)"
+}
+
+// daysPerYear says 365 days of record retention as 1 year.
+const daysPerYear = 365
+
+func ledgerWords(l agent.LedgerStatus) string {
+	return fmt.Sprintf("%s in basalt_meta; values kept %d days, records %s", byteWords(l.Bytes), l.ValuesKeptDays, keptWords(l.RecordsKeptDays))
+}
+
+func keptWords(days int) string {
+	switch {
+	case days == daysPerYear:
+		return "1 year"
+	case days%daysPerYear == 0:
+		return fmt.Sprintf("%d years", days/daysPerYear)
+	}
+	return fmt.Sprintf("%d days", days)
+}
+
+// byteWords is n with one decimal in B, KB, MB or GB (powers of 1024).
+func byteWords(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	v, suffix := float64(n)/unit, "KB"
+	for _, next := range []string{"MB", "GB"} {
+		if v < unit {
+			break
+		}
+		v, suffix = v/unit, next
+	}
+	return fmt.Sprintf("%.1f %s", v, suffix)
 }
 
 func passkeyWords(p agent.PasskeysStatus) string {

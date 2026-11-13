@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgproto3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
@@ -164,6 +166,64 @@ func TestQueryKeepsRepeatedColumnNames(t *testing.T) {
 	rows, ok := body["rows"].([]any)
 	require.True(t, ok)
 	require.Equal(t, map[string]any{"id": json.Number("1"), "id_2": json.Number("1")}, rows[0])
+}
+
+// TestQuerySizeLimit: a result that would cost the engine over 16 MiB, from
+// many rows, one value, or many small or NULL values, is refused with
+// SIZE_LIMIT, and the agent's connections keep working after it.
+func TestQuerySizeLimit(t *testing.T) {
+	t.Parallel()
+	adminURL, agentURL := testDB(t)
+	h := newHarness(t, agentURL, sqlguard.DefaultLimits())
+	admin, err := pgdial.Connect(context.Background(), adminURL)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = admin.Close(context.Background()) })
+	nulls := make([]string, 0, wideColumns)
+	for i := range wideColumns {
+		nulls = append(nulls, fmt.Sprintf("NULL c%d", i))
+	}
+	for name, sql := range map[string]string{
+		"many rows":   "SELECT repeat('x', 1048576) FROM generate_series(1, 17) g",
+		"one value":   "SELECT repeat('x', 20000000) AS big",
+		"wide, NULLs": "SELECT " + strings.Join(nulls, ", ") + " FROM generate_series(1, 1000) g",
+		// JSON escapes these, and the MCP text escapes the backslash again:
+		// 2.7 million bytes make an 18 MiB line the shim would refuse.
+		"control bytes":  "SELECT repeat(chr(1), 2700000) AS ctl",
+		"angle brackets": "SELECT repeat('<', 2700000) AS lt",
+	} {
+		body, isError := h.query(t, map[string]any{"sql": sql})
+		requireToolError(t, body, isError, agent.CodeQueryTimeout, agent.ReasonSizeLimit, "")
+		var refused int
+		require.NoError(t, admin.QueryRow(context.Background(),
+			`SELECT count(change_id)::int FROM basalt_meta.changes
+			 WHERE status = 'REFUSED' AND code = 'QUERY_TIMEOUT' AND statement = $1`, sql).Scan(&refused))
+		require.Equal(t, 1, refused, "%s: the refused read is in the ledger", name)
+		body, isError = h.query(t, map[string]any{"sql": "SELECT 1 AS one"})
+		require.False(t, isError, "%s: the next query works: %v", name, body)
+	}
+	body, isError := h.query(t, map[string]any{"sql": "SELECT repeat('x', 1048576) FROM generate_series(1, 15) g"})
+	require.False(t, isError, "15 MiB fits: %v", body)
+}
+
+// wideColumns is enough NULL columns that 1000 rows of them pass 16 MiB
+// in what they cost, with 0 bytes of values, in a statement under the
+// query tool's 16 KiB.
+const wideColumns = 300
+
+// TestOneValueOverTheMessageCapIsNeverRead: pgx refuses a row message over
+// the agent connection's cap before it reads the body (MaxProtocolMessageBodyLen),
+// so the engine never buffers the value.
+func TestOneValueOverTheMessageCapIsNeverRead(t *testing.T) {
+	t.Parallel()
+	_, agentURL := testDB(t)
+	pool, err := agentdb.NewPool(context.Background(), agentURL, 1)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	r := agentdb.NewReader(pool, sqlguard.DefaultLimits(), time.Now)
+	_, err = r.Read(context.Background(), "SELECT repeat('x', 20000000) AS big", nil, nil)
+	var tooLarge *pgproto3.ExceededMaxBodyLenErr
+	require.ErrorAs(t, err, &tooLarge)
+	require.Greater(t, tooLarge.ActualBodyLen, agentdb.MaxResultBytes)
 }
 
 func TestQueryLimits(t *testing.T) {

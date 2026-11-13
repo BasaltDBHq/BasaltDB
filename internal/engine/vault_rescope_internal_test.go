@@ -126,6 +126,14 @@ func TestVaultSessionWidensARevert(t *testing.T) {
 	require.Equal(t, http.StatusConflict, refused.Status, refused.Body)
 	require.Equal(t, status, refused.Status)
 	require.Equal(t, body, refused.Body, "the session answers as loopback")
+	// Whoever opened the session holds only the link secret (the agent can):
+	// the refusal returns none of what a proven widen does.
+	var refusal map[string]any
+	require.NoError(t, json.Unmarshal([]byte(refused.Body), &refusal))
+	require.Contains(t, refusal, "code")
+	for _, key := range []string{"request", "lines", "catalog", "binding", "scopeToken"} {
+		require.NotContains(t, refusal, key)
+	}
 
 	// The person's proven widen, with the page's new secret.
 	raw := make([]byte, links.SecretBytes)

@@ -167,6 +167,9 @@ func runInitRemote(c *cliIO, args []string) int {
 	if err != nil {
 		return c.fail(err)
 	}
+	if err := checkBuildVersion(buildVersion()); err != nil {
+		return c.fail(err)
+	}
 	r, err := newRemoteInit(c, f)
 	if err != nil {
 		return c.fail(err)
@@ -654,6 +657,15 @@ func buildVersion() string {
 	v := strings.TrimPrefix(buildinfo.Version, "v")
 	v, _, _ = strings.Cut(v, "+")
 	return v
+}
+
+// checkBuildVersion refuses, before anything is written, a build whose
+// version a setup code cannot carry (a source build without tags: "dev").
+func checkBuildVersion(version string) error {
+	if setupcode.ValidBuild(version) {
+		return nil
+	}
+	return fmt.Errorf("this build of basalt has no release version (it reports %q), so it cannot make a setup code; install a release build", version)
 }
 
 // run makes (or reuses) the code, writes the credential and the config,

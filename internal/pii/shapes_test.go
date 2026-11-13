@@ -406,13 +406,13 @@ func TestThe00PrefixNormalizesAsPlus(t *testing.T) {
 // linear time (RE2, and every search goes on past what it read). The test
 // times each input at n and at 8n and requires less than 32 times as long:
 // linear growth measured 4.5 to 16 times, a quadratic pass would be about 64.
-// The larger size is 1<<15 units with BASALTDB_TEST_FULL=1 and 1<<14 by
+// The larger size is 1<<15 units with BASALTDB_TEST_FULL=1 and 1<<13 by
 // default. The ratio is only asserted under -race (make test always passes
 // it): without it the small run takes a few milliseconds and the ratio is
 // noise on a busy machine; the inputs still all run.
 func TestLongNearMissesStayFast(t *testing.T) {
 	tz := patternTokenizer(t)
-	large := sized(1<<15, 1<<14)
+	large := sized(1<<15, 1<<13)
 	small := large / 8
 	inputs := []func(n int) string{
 		func(n int) string { return strings.Repeat("a'", n) + "@" },

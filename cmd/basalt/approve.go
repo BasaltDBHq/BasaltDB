@@ -86,7 +86,7 @@ func approvalAgent(c *cliIO, configPath, held, code string) (string, error) {
 		}
 		id = resp.ApprovalID
 	}
-	return pickAgent(c, configPath, ownsApproval(c, configPath, id))
+	return pickAgent(c, configPath, "approval "+id.String(), ownsApproval(c, configPath, id))
 }
 
 // approveCode is the response code: the one argument, or a line from stdin

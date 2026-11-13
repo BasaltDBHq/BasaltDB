@@ -85,7 +85,7 @@ func runRevert(c *cliIO, args []string) int {
 	}
 	if c.needsAgent(*agent, *credFile) {
 		if id, ok := f.namedRevert(); ok {
-			if *agent, err = pickAgent(c, *configPath, ownsRevert(c, *configPath, id)); err != nil {
+			if *agent, err = pickAgent(c, *configPath, "revert "+id.String(), ownsRevert(c, *configPath, id)); err != nil {
 				return c.fail(err)
 			}
 			f.agent = *agent

@@ -234,7 +234,7 @@ func runService(ctx context.Context, args []string, io stdio) int {
 	}
 	sys := service.OSSystem{Stdout: io.out, Stderr: io.err}
 
-	steps, err := service.UninstallPlan(spec)
+	steps, err := service.UninstallPlan(sys, spec)
 	if action == "install" {
 		steps, err = service.InstallPlan(ctx, sys, spec)
 	}

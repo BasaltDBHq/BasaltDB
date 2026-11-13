@@ -39,12 +39,13 @@ func TestPickAgentFindsTheOwner(t *testing.T) {
 		return func(a string) (bool, error) { return a == want, nil }
 	}
 
-	got, err := pickAgent(c, cfg, owner("helper"))
+	const item = "approval 0193"
+	got, err := pickAgent(c, cfg, item, owner("helper"))
 	require.NoError(t, err)
 	require.Equal(t, "helper", got, "the agent whose ledger has the item")
 
 	// An agent that cannot be read is skipped.
-	got, err = pickAgent(c, cfg, func(a string) (bool, error) {
+	got, err = pickAgent(c, cfg, item, func(a string) (bool, error) {
 		if a == "bot" {
 			return false, errors.New("down")
 		}
@@ -53,15 +54,23 @@ func TestPickAgentFindsTheOwner(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "helper", got)
 
-	// Nobody, or both, own it: name the agents and ask for --agent.
-	for _, owns := range []func(string) (bool, error){owner("nobody"), func(string) (bool, error) { return true, nil }} {
-		_, err = pickAgent(c, cfg, owns)
-		require.ErrorIs(t, err, errUsage)
-		require.ErrorContains(t, err, "the engine serves bot, helper; give --agent")
-	}
+	// No agent holds it: said so, naming the agents.
+	_, err = pickAgent(c, cfg, item, owner("nobody"))
+	require.EqualError(t, err, "no agent here holds approval 0193 (the engine serves bot, helper)")
+
+	// Both hold it: ask for --agent.
+	_, err = pickAgent(c, cfg, item, func(string) (bool, error) { return true, nil })
+	require.ErrorIs(t, err, errUsage)
+	require.ErrorContains(t, err, "approval 0193 is in the ledgers of bot, helper; give --agent")
+
+	// No agent could be asked (the engine stopped): its error, not a
+	// usage error.
+	stopped := errors.New("the engine is not running; start it")
+	_, err = pickAgent(c, cfg, item, func(string) (bool, error) { return false, stopped })
+	require.ErrorIs(t, err, stopped)
 
 	// A config that cannot be read: the usage error as before.
-	_, err = pickAgent(c, filepath.Join(t.TempDir(), "missing.json"), owner("bot"))
+	_, err = pickAgent(c, filepath.Join(t.TempDir(), "missing.json"), item, owner("bot"))
 	require.ErrorContains(t, err, "give --agent, --credential-file or "+envAgentURL)
 }
 

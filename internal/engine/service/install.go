@@ -264,20 +264,24 @@ func PickFreeID(dsclOutput string) (int, error) {
 // UninstallPlan returns the steps that stop the service and remove its unit.
 // The user, config and credentials stay; basalt init owns them. The
 // service-manager commands are best effort, so the unit is removed even
-// where systemd or launchd does not run (a container).
-func UninstallPlan(s Spec) ([]Step, error) {
+// where systemd or launchd does not run (a container). Without a unit file
+// the service is not installed: there is nothing to stop, so running
+// uninstall again does not fail on systemd's "Unit file does not exist" or
+// launchd's "not loaded".
+func UninstallPlan(sys System, s Spec) ([]Step, error) {
 	switch s.GOOS {
 	case goosLinux:
-		return []Step{
-			tryRun("systemctl", "disable", "--now", SystemdUnitName),
-			{Kind: StepRemove, Path: SystemdUnitPath},
-			tryRun("systemctl", "daemon-reload"),
-		}, nil
+		var steps []Step
+		if sys.Exists(SystemdUnitPath) {
+			steps = append(steps, tryRun("systemctl", "disable", "--now", SystemdUnitName))
+		}
+		return append(steps, Step{Kind: StepRemove, Path: SystemdUnitPath}, tryRun("systemctl", "daemon-reload")), nil
 	case goosDarwin:
-		return []Step{
-			tryRun("launchctl", "bootout", "system/"+LaunchdLabel),
-			{Kind: StepRemove, Path: LaunchdPlist},
-		}, nil
+		var steps []Step
+		if sys.Exists(LaunchdPlist) {
+			steps = append(steps, tryRun("launchctl", "bootout", "system/"+LaunchdLabel))
+		}
+		return append(steps, Step{Kind: StepRemove, Path: LaunchdPlist}), nil
 	}
 	return nil, fmt.Errorf("the engine service installs on linux and darwin, not %s", s.GOOS)
 }

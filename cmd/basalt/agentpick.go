@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"os"
@@ -55,8 +56,10 @@ var errNoAgentNamed = fmt.Errorf("%w: give --agent, --credential-file or %s", er
 
 // pickAgent is the agent a code belongs to when the person named none:
 // the only configured agent, else the one whose ledger owns the item the
-// code signs (owns opens that agent's ledger and looks the item up).
-func pickAgent(c *cliIO, configPath string, owns func(agent string) (bool, error)) (string, error) {
+// code signs (owns opens that agent's ledger and looks the item up). item
+// names it in messages ("approval <id>"). When no agent could be asked
+// (the engine stopped), it returns the first agent's error.
+func pickAgent(c *cliIO, configPath, item string, owns func(agent string) (bool, error)) (string, error) {
 	names, err := c.configuredAgents(configPath)
 	if err != nil || len(names) == 0 {
 		return "", errNoAgentNamed
@@ -66,19 +69,29 @@ func pickAgent(c *cliIO, configPath string, owns func(agent string) (bool, error
 	}
 	slices.Sort(names)
 	var found []string
+	var firstErr error
+	failed := 0
 	for _, n := range names {
 		ok, err := owns(n)
 		if err != nil {
-			continue // that agent cannot be read now; another may own it
+			// That agent cannot be read now; another may own it.
+			failed++
+			firstErr = cmp.Or(firstErr, err)
+			continue
 		}
 		if ok {
 			found = append(found, n)
 		}
 	}
-	if len(found) == 1 {
+	switch {
+	case len(found) == 1:
 		return found[0], nil
+	case len(found) > 1:
+		return "", fmt.Errorf("%w: %s is in the ledgers of %s; give --agent", errUsage, item, strings.Join(found, ", "))
+	case failed == len(names):
+		return "", firstErr
 	}
-	return "", fmt.Errorf("%w: the engine serves %s; give --agent", errUsage, strings.Join(names, ", "))
+	return "", fmt.Errorf("no agent here holds %s (the engine serves %s)", item, strings.Join(names, ", "))
 }
 
 // ownsApproval reports whether agent's ledger holds approval id.

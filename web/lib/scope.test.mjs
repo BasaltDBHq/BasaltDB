@@ -85,13 +85,14 @@ test("what the person signs counts rows and the tables they are in", async () =>
   assert.equal(signingSummary(big), `You're signing ${big.binding.rows} rows.`);
 });
 
-test("the link's time left reads in minutes", () => {
-  const now = new Date("2026-11-11T06:10:00Z");
-  assert.equal(expiresIn(new Date("2026-11-11T07:02:11Z"), now), "Link expires in 53 min");
-  assert.equal(expiresIn(new Date("2026-11-11T06:10:30Z"), now), "Link expires in 1 min");
-  assert.equal(expiresIn(new Date("2026-11-11T06:09:00Z"), now), "Link expired");
-  const later = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 17, 37);
-  assert.equal(expiresIn(later, now), `Link expires ${later.getDate()} ${later.toDateString().slice(4, 7)} 17:37`, "another day shows its date");
+// The dates are built in local time, so the same-day test holds in every
+// time zone.
+test("the link's time left reads in minutes, and shows its date on another day", () => {
+  const now = new Date(2026, 10, 11, 6, 10, 0);
+  assert.equal(expiresIn(new Date(2026, 10, 11, 7, 2, 11), now), "Link expires in 53 min");
+  assert.equal(expiresIn(new Date(2026, 10, 11, 6, 10, 30), now), "Link expires in 1 min");
+  assert.equal(expiresIn(new Date(2026, 10, 11, 6, 9, 0), now), "Link expired");
+  assert.equal(expiresIn(new Date(2026, 10, 12, 17, 37), now), "Link expires 12 Nov 17:37");
 });
 
 test("the note follows the engine's rules: 500 characters, no control characters", () => {

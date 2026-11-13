@@ -741,3 +741,54 @@ func TestParseResource(t *testing.T) {
 		require.Error(t, err, bad)
 	}
 }
+
+// manySchemas is one table in each of n schemas, plus extra tables in the
+// schemas named by bigger.
+func manySchemas(n int, bigger map[string]int) []pgcatalog.Relation {
+	var out []pgcatalog.Relation
+	oid := uint32(1000)
+	add := func(schema string, tables int) {
+		for i := range tables {
+			oid++
+			out = append(out, rel(oid, schema, fmt.Sprintf("t%d", i)))
+		}
+	}
+	for i := range n {
+		name := fmt.Sprintf("tenant_%05d", i)
+		add(name, 1+bigger[name])
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Schema+"."+out[i].Name < out[j].Schema+"."+out[j].Name })
+	return out
+}
+
+func TestOverviewCapsTheSchemaList(t *testing.T) {
+	t.Parallel()
+	// 5,000 schemas; tenant_00007 has 9 tables, tenant_04999 has 5, the
+	// rest one each.
+	cat := &fakeCatalog{visible: manySchemas(5000, map[string]int{"tenant_00007": 8, "tenant_04999": 4})}
+	body, isError := callDescribe(t, describeService(t, cat, fakeClasses{}, ""), map[string]any{})
+	require.False(t, isError, body)
+	m := decodeBody(t, body)
+	schemas := m["schemas"].([]any)
+	require.Len(t, schemas, 50)
+	require.Equal(t, map[string]any{"schema": "tenant_00007", "tables": 9.0}, schemas[0])
+	require.Equal(t, map[string]any{"schema": "tenant_04999", "tables": 5.0}, schemas[1])
+	require.Equal(t, map[string]any{"schema": "tenant_00000", "tables": 1.0}, schemas[2], "ties by schema name")
+	require.Equal(t, map[string]any{"schema": "tenant_00048", "tables": 1.0}, schemas[49])
+	require.Equal(t, map[string]any{"schemas": 4950.0, "tables": 4950.0}, m["otherSchemas"])
+	require.Equal(t, 5000.0, m["counts"].(map[string]any)["schemas"], "the full count")
+	require.Equal(t, 5012.0, m["counts"].(map[string]any)["tables"])
+	step := m["nextSteps"].([]any)[0].(map[string]any)
+	require.Equal(t, map[string]any{"query": "tenant_00007"}, step["arguments"], "the largest schema")
+	require.Less(t, len(body), 8<<10, "the answer stays small")
+}
+
+func TestOverviewWithFiftySchemasHasNoOtherSchemas(t *testing.T) {
+	t.Parallel()
+	cat := &fakeCatalog{visible: manySchemas(50, map[string]int{"tenant_00003": 1})}
+	body, isError := callDescribe(t, describeService(t, cat, fakeClasses{}, ""), map[string]any{})
+	require.False(t, isError, body)
+	m := decodeBody(t, body)
+	require.Len(t, m["schemas"], 50)
+	require.NotContains(t, m, "otherSchemas")
+}

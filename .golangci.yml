@@ -21,6 +21,7 @@ linters:
     - bodyclose
     - contextcheck
     - copyloopvar
+    - depguard
     - dogsled
     - dupl
     - durationcheck
@@ -159,6 +160,16 @@ linters:
     - gocognit
 
   settings:
+    depguard:
+      rules:
+        # vaulttest is the fake vault for tests; it must never be linked into
+        # the engine binary, so only _test.go files may import it.
+        no-fake-vault-in-production:
+          files:
+            - "!$test"
+          deny:
+            - pkg: github.com/basaltdbhq/basaltdb/internal/vault/vaulttest
+              desc: vaulttest is a test fake; import it from _test.go files only
     errcheck:
       check-type-assertions: true
       check-blank: false

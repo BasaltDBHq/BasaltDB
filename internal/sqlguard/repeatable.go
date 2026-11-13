@@ -151,7 +151,7 @@ func tokens(s string) []string {
 // time or an offset ("10:00", "10:00:30.5", "+02", "-05:30").
 func clockToken(tok string) bool {
 	for _, r := range tok {
-		if !(r >= '0' && r <= '9') && !strings.ContainsRune(":.+-/", r) {
+		if (r < '0' || r > '9') && !strings.ContainsRune(":.+-/", r) {
 			return false
 		}
 	}

@@ -69,7 +69,7 @@ The last line shows the second layer: even inside the engine's container, the ag
 
 ## Your commands
 
-There is no service unit in a container, so the CLI runs in same-user mode. Run it in the engine container as the engine's user:
+For now this setup is same-user mode: `init` wrote `"mode": "SAME_USER"` and no `personUids`, so there is no person socket, and the CLI reads the config and the credential itself. That is a temporary limit until `basalt init` can set up a container (with the person's uid and the person socket, as for a service). Until then, run the CLI in the engine container as the engine's user:
 
 ```sh
 docker compose exec --user basalt -e XDG_CACHE_HOME=/var/lib/basalt/cli engine \
@@ -97,6 +97,6 @@ docker compose down -v
 
 ## Hardening in `compose.yaml`
 
-- The engine keeps only `CHOWN`, `FOWNER`, `DAC_READ_SEARCH`, `SETUID` and `SETGID`, which it needs while it is still root to make its directories and change its ids. After the drop it has no capability at all.
+- The engine keeps only `CHOWN`, `FOWNER`, `DAC_READ_SEARCH`, `SETUID` and `SETGID`, which it needs while it is still root to make its directories and change its ids. `DAC_READ_SEARCH` is only for a restart: the state directory is then `basalt`'s and `0700`, and root needs it to reopen and check that directory. After the drop the engine has no capability at all.
 - `no-new-privileges:true` on both containers, besides the engine's own `no_new_privs`.
 - The Postgres password is an example. Use your own database and pass the admin connection string from a secret store; it is only needed for `init` and `uninstall`.

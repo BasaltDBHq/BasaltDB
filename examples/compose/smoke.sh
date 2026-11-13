@@ -81,7 +81,9 @@ status=$(dc exec -T engine sh -c 'for f in /proc/[0-9]*/status; do grep -q "^Nam
 echo "$status" | grep -q "^Uid:[[:space:]]*$basalt_uid[[:space:]]*$basalt_uid[[:space:]]*$basalt_uid[[:space:]]*$basalt_uid$" ||
 	fail "engine uids: $(echo "$status" | grep '^Uid:')"
 echo "$status" | grep -q "^NoNewPrivs:[[:space:]]*1$" || fail "no_new_privs is not set"
-echo "$status" | grep -q "^CapEff:[[:space:]]*0000000000000000$" || fail "the engine kept capabilities"
+for cap in CapPrm CapEff CapAmb; do
+	echo "$status" | grep -q "^$cap:[[:space:]]*0000000000000000$" || fail "the engine kept capabilities: $(echo "$status" | grep "^$cap:")"
+done
 dc logs engine 2>&1 | grep -q "dropped root; running as basalt" || fail "no drop line in the engine log"
 
 step "isolation: the agent sees the socket and nothing else of the engine"

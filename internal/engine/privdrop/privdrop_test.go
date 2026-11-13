@@ -59,7 +59,11 @@ var (
 )
 
 func newFake(euid uint32) *fakeSystem {
-	return &fakeSystem{euid: euid, accounts: map[string]Account{"basalt": basalt, "root": root}}
+	return &fakeSystem{euid: euid, accounts: map[string]Account{
+		"basalt": basalt, "root": root,
+		"rootgroup":   {Name: "rootgroup", UID: 991, GID: 0, Groups: []uint32{0}},
+		"wheelmember": {Name: "wheelmember", UID: 992, GID: 992, Groups: []uint32{992, 0}},
+	}}
 }
 
 func TestDropAsRootRunsEveryStepInOrder(t *testing.T) {
@@ -99,6 +103,9 @@ func TestDropRefusesBeforeAnyChange(t *testing.T) {
 		{"root target", "root", 0, "--user root is root (uid 0)"},
 		{"root target as user", "root", 1000, "--user root is root (uid 0)"},
 		{"unknown user", "nobody-here", 0, "--user nobody-here: user: unknown user"},
+		{"root primary group", "rootgroup", 0, "--user rootgroup has the root group (gid 0) as its group"},
+		{"root supplementary group", "wheelmember", 0, "--user wheelmember is a member of the root group (gid 0)"},
+		{"root group as the user", "wheelmember", 992, "--user wheelmember is a member of the root group (gid 0)"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

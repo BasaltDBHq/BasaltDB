@@ -31,6 +31,8 @@ services:
         condition: service_healthy
     # Only what the drop needs while it is still root: make and hand over the
     # directories, then change its ids. After the drop it has none.
+    # DAC_READ_SEARCH is only for reopening the state directory on a restart:
+    # it is basalt's and 0700, so root needs it to open it and check it.
     cap_drop: [ALL]
     cap_add: [CHOWN, FOWNER, DAC_READ_SEARCH, SETUID, SETGID]
     security_opt: ["no-new-privileges:true"]

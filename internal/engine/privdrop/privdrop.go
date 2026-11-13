@@ -116,6 +116,10 @@ func decide(acct Account, euid uint32) (dropping bool, err error) {
 	switch {
 	case acct.UID == 0:
 		return false, fmt.Errorf("--user %s is root (uid 0); the engine runs as its own OS user, so the agent's credential is that user's alone", acct.Name)
+	case acct.GID == 0:
+		return false, fmt.Errorf("--user %s has the root group (gid 0) as its group; give the engine's OS user its own group, so it cannot change root's files", acct.Name)
+	case slices.Contains(acct.Groups, 0):
+		return false, fmt.Errorf("--user %s is a member of the root group (gid 0); remove it from that group, so the engine cannot change root's files", acct.Name)
 	case euid == 0:
 		return true, nil
 	case euid == acct.UID:

@@ -161,7 +161,7 @@ tini -- basalt engine --user basalt --config /etc/basalt/engine.json
 
 Before it reads anything, the engine:
 
-1. Refuses to go on unless it runs as root or already as `basalt`, and refuses `--user root`.
+1. Refuses to go on unless it runs as root or already as `basalt`, and refuses `--user root` and a user whose group, or one of whose groups, is root's (gid 0).
 2. Refuses a `basalt` binary anyone but root could change (the same check as `basalt service install`, step 1).
 3. Makes `/run/basalt` (`0755`, for the sockets) and `/var/lib/basalt` (`0700`, its state), owned by `basalt`, as the systemd unit would.
 4. Sets the supplementary groups, the group and the user to `basalt`'s, sets the umask to `0077` and, on Linux, `no_new_privs`, then checks that every thread runs as `basalt` with no capability left and that root cannot be taken back.

@@ -18,6 +18,20 @@ Each short link carries a secret after `#s=`: the id alone opens nothing, and th
 
 A revert works the same way: `basalt revert --agent NAME --run <runId> --open` opens the revert page, you sign it there, and the command prints the result. Pasting the code the page shows into the prompt still works too.
 
+## Rows the agent cannot read
+
+A write can touch rows in tables the agent's role cannot `SELECT`, cascaded rows above all: deleting a lead also deletes its notes, even when the agent may not read notes. The agent never sees those values, and the page first shows such a row as "Values hidden: the agent cannot read this table." You can still see them before you approve or sign.
+
+- **Show values.** On a page the engine served (the short link), above the rows: "2 of these rows are in tables the agent cannot read. You can see their values with your passkey; the agent still cannot." Press **Show values** and confirm with your passkey. The page never asks on its own.
+- **One prompt for all.** Every hidden row then shows its values, labelled "Shown to you only. The agent cannot read this table." Approving or signing still asks for your passkey again: the first prompt only lets you see the rows.
+- **Checked on the page.** Before it shows a row, the page checks that the values are exactly the ones your signature covers (each hidden row carries a hash of them). If the engine sent anything else, the page shows none of them and says "The engine sent values that do not match the rows you sign, so none are shown."
+- **Secret columns.** A column classified `SECRET` ([PII classification](../CONTRACT.md#pii-classification)) is never shown: it reads "secret, not shown". Postgres left the value out, so the page cannot check that row against what you sign, and it says so: "Not checked against what you sign: Postgres left out this row's secret columns, so the page cannot compare it." `IDENTIFIER` and `FREE_TEXT` columns show as they are; the page is yours, and only what goes to the model is tokenized.
+- **When it refuses.** If your passkey could not be checked, the page says "Basalt could not check your passkey for showing the hidden values, so nothing was shown." and you can press Show values again. If the hidden rows changed since the agent asked, it says "These rows changed since the agent asked. This approval can no longer apply; ask the agent to try the write again." (for a revert: "ask the agent to prepare it again").
+- **What the agent sees.** Nothing new. Its tools, its views in `basalt_meta` and its chat show the rows as hidden, as before. The ledger records that you looked (`ROWS_REVEALED`, with counts and hashes only).
+- **Long links.** A long link (a `#2.` link, for example from Telegram) has no engine behind it, so the rows stay hidden: "Values hidden: the agent cannot read this table. Open this link from the engine to see them." The CLI cannot show them either: `basalt approve --show` prints `[values hidden]`; use `--open` with `--reissue` for the engine's page.
+
+This needs `basalt_meta` versions 29 (reverts) and 30 (approvals). An engine on an older guard serves the agent degraded until you run `basalt upgrade` (see [next-steps.md](next-steps.md)).
+
 ## Reverting from the agent
 
 You can ask the agent to undo a run without opening a terminal ("revert the run that qualified this week's leads"). The agent prepares the revert; only you can sign it.
@@ -82,7 +96,7 @@ Passkeys belong to the origin they were registered on: RP ID `localhost` for the
 
 The passkey is bound to the page's origin. A passkey registered on `http://localhost:8787` signs only on `http://localhost:8787`, so always use the same port.
 
-Not yet checked on real devices (held for the owner): phone approval through the QR flow for RP ID `localhost`.
+Checked on real devices (Nov 13, 2026): a Touch ID platform passkey, through the engine's pages, approved a held write and signed a revert. A phone through the QR flow is not offered for RP ID `localhost` (Chrome on macOS shows no phone option), so approving from a phone needs the pages on a real domain: the hosted portal.
 
 ## Engine on a headless Linux server
 

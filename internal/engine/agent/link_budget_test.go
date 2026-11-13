@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -12,9 +13,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/revert"
 )
 
 func TestChooseLink(t *testing.T) {
@@ -241,4 +244,37 @@ func TestApprovalMessageStaysWithinTheLimitWithALongConfigPath(t *testing.T) {
 	require.NoError(t, err)
 	text, _ := approvalMessage(lead, handOver{URL: "https://portal.basaltvault.app/approvals/" + id.String() + "#s=q3Jv8sLk2mT0xYp1aBcD9w", Kind: linkShort}, short.Approve(id))
 	require.Contains(t, text, short.Approve(id))
+}
+
+// TestMessagesOfferingACommandStayWithinTheLimitWithALongConfigPath builds
+// every personMessage that carries a command named after --config with a
+// 252-character path.
+func TestMessagesOfferingACommandStayWithinTheLimitWithALongConfigPath(t *testing.T) {
+	t.Parallel()
+	long := "/" + strings.Repeat("a-long-directory-name-of-sixty-characters-in-total-ok-ok-ok-", 4) + "engine.json"
+	cmds, err := NewCommands("pbot", long, "linux", nil)
+	require.NoError(t, err)
+	s := &Service{Deps: Deps{Commands: cmds, Log: slog.New(slog.DiscardHandler)}}
+	scope := guard.RevertScope{Kind: revert.ScopeTask, ID: uuid.New()}
+
+	messages := map[string]string{}
+	for _, tool := range []string{toolPreviewRevert, toolRequestRevert} {
+		err := s.prepareTimeout(tool, scope, "57014")
+		var te *mcp.ToolError
+		require.ErrorAs(t, err, &te)
+		messages["timeout "+tool] = te.PersonMessage
+	}
+	err = s.nothingToRevertError(context.Background(), toolPreviewRevert, scope, reasonReadsOnly, "changed no rows")
+	var te *mcp.ToolError
+	require.ErrorAs(t, err, &te)
+	messages["nothing to revert, task"] = te.PersonMessage
+	messages["not granted"] = s.notGrantedSteps(NewSteps(), 12)
+	messages["describe not found"] = s.describeNotFoundSteps(NewSteps(), failure{tool: toolDescribe})
+	messages["wait"], _ = waitMessage("Held for your approval: "+strings.Repeat("x", 96)+".", cmds.Approve(uuid.New()), time.Now().Add(time.Hour))
+
+	for name, m := range messages {
+		require.NoError(t, CheckPersonMessage(m), "%s: %s", name, m)
+	}
+	// The preview timeout holds two commands: it must have been cut.
+	require.Contains(t, messages["timeout "+toolPreviewRevert], commandElsewhere)
 }

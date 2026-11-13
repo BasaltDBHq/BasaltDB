@@ -230,7 +230,7 @@ func approvalMessage(lead string, pick handOver, command string, tail ...string)
 	return fitCommand(
 		func(c commandPhrases) (string, []mcp.Link) { return buildApprovalMessage(lead, pick, c, tail) },
 		commandPhrases{instead: "Run this instead: " + command, orRun: "Or run: " + command},
-		commandPhrases{instead: "Run this instead: the approve command the agent shows you.", orRun: "Or run the approve command the agent shows you."},
+		commandPhrases{instead: "Run the approve command the agent shows you instead.", orRun: "Or run the approve command the agent shows you."},
 	)
 }
 
@@ -249,6 +249,35 @@ func fitCommand(build func(commandPhrases) (string, []mcp.Link), full, short com
 		return text, ls
 	}
 	return build(short)
+}
+
+// commandElsewhere stands for a command a message would offer when the
+// message with the command is over the limit (a long --config path). The
+// full command is in the PERSON step the agent shows.
+const commandElsewhere = "the command the agent shows you"
+
+// fitMessage returns message, or, when it is over the 500-character limit,
+// message with each of commands replaced by commandElsewhere. Every command
+// a message offers also stands in a PERSON RUN_COMMAND step, in full.
+func fitMessage(message string, commands ...string) string {
+	if CheckPersonMessage(message) == nil {
+		return message
+	}
+	for _, c := range commands {
+		if c != "" {
+			message = strings.ReplaceAll(message, c, commandElsewhere)
+		}
+	}
+	return message
+}
+
+// fitToSteps is fitMessage with the commands of steps.
+func fitToSteps(message string, steps []NextStep) string {
+	commands := make([]string, 0, len(steps))
+	for _, st := range steps {
+		commands = append(commands, st.Command)
+	}
+	return fitMessage(message, commands...)
 }
 
 func buildApprovalMessage(lead string, pick handOver, c commandPhrases, tail []string) (string, []mcp.Link) {

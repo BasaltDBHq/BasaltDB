@@ -5,9 +5,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { countText, HIDDEN_CHIP, HIDDEN_VALUE, SHOWN_CHIP } from "./changes.js";
-import { NOT_CHECKED, OPEN_FROM_ENGINE, SECRET_VALUE } from "./reveal.js";
+import { OPEN_FROM_ENGINE, SECRET_VALUE } from "./reveal.js";
 // Imported before any document exists, so the page's main() does not run.
-import { lineGroups } from "./approve.js";
+import { approveLabel, lineGroups } from "./approve.js";
 
 function fakeElement(tag) {
   return {
@@ -53,6 +53,7 @@ test("a hidden row shows dots, never an empty cell, and a long link says where t
   assert.ok(!texts(g).includes(OPEN_FROM_ENGINE));
   const [long] = lineGroups([hidden(1)], new Map(), true);
   assert.ok(texts(long).includes(OPEN_FROM_ENGINE));
+  assert.equal(OPEN_FROM_ENGINE, "Values are hidden on this link. Open the short link to see them.");
 });
 
 test("revealed values are shown to the person only; a secret column is withheld and its row not checked", () => {
@@ -67,7 +68,7 @@ test("revealed values are shown to the person only; a secret column is withheld 
   const [, , secretRow] = table(g).children;
   assert.equal(secretRow.className, "del unchecked");
   assert.equal(secretRow.children[2].className, "secret");
-  assert.ok(texts(g).includes(`Row id = 8. ${NOT_CHECKED}`));
+  assert.ok(texts(g).includes("Row id = 8 has a secret column, so this page can't check it against what you sign."));
 });
 
 test("an update shows the row before and after, the set columns highlighted", () => {
@@ -85,4 +86,24 @@ test("the count names each kind of change", () => {
     { op: "INSERT", text: "+1 row" },
   ]);
   assert.deepEqual(countText([lead, { ...lead, op: "MERGE" }]), [{ op: "DELETE", text: "\u22121 row" }], "another op is not counted");
+});
+
+test("rows list by key, numbers as numbers, the table's own rows before cascaded ones", () => {
+  globalThis.document = { createElement: fakeElement };
+  const row = (id, extra = {}) => ({ ...lead, key: { id }, old: { id, name: `n${id}` }, ...extra });
+  const groups = lineGroups([hidden(1), row(10), row(9), row(100), { ...row(5), table: "public.a_first" }]);
+  assert.deepEqual(groups.map((g) => g.children[0].children[0].textContent), ["public.a_first", "public.leads", "public.lead_notes"]);
+  assert.deepEqual(rows(groups[1]).slice(1).map((r) => r[1]), ["9", "10", "100"]);
+  const big = [row(9007199254740993), row(9007199254740992)];
+  big[0].texts = { key: new Map([["id", "9007199254740993"]]), old: new Map([["id", "9007199254740993"]]) };
+  big[1].texts = { key: new Map([["id", "9007199254740992"]]), old: new Map([["id", "9007199254740992"]]) };
+  assert.deepEqual(rows(lineGroups(big)[0]).slice(1).map((r) => r[1]), ["9007199254740992", "9007199254740993"], "past 2^53 by the exact text");
+  const words = lineGroups([row("b"), row("B"), row("a")]);
+  assert.deepEqual(rows(words[0]).slice(1).map((r) => r[1]), ["B", "a", "b"], "text by code point, not locale");
+});
+
+test("the approve button names the op and the rows", () => {
+  assert.equal(approveLabel("DELETE", 3), "Approve: delete 3 rows");
+  assert.equal(approveLabel("UPDATE", 1), "Approve: update 1 row");
+  assert.equal(approveLabel(null, 2), "Approve: 2 rows");
 });

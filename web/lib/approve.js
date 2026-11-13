@@ -16,7 +16,7 @@ import {
   visibleText,
 } from "./codec.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
-import { $, APPROVE_REOPEN, el, fail, linkFailure, loadOrPaste, personText, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
+import { $, APPROVE_REOPEN, el, fail, linkFailure, loadOrPaste, personText, setPill, showCode, showDone, showRelayFailed, webauthnError, whenText } from "./page.js";
 import { applyReveal, canReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import { canStartPasskey, cascadeConfirmation, headline, summarize } from "./summary.js";
 
@@ -30,9 +30,11 @@ export function mainOp(summary) {
   return summary.direct[0]?.op ?? summary.cascaded[0]?.op ?? null;
 }
 
-// approveLabel is the passkey button's text; a delete's button is red.
-export function approveLabel(op) {
-  return VERBS[op] ? `Approve ${VERBS[op]} with passkey` : "Approve with passkey";
+// approveLabel is the passkey button's text, "Approve: delete 3 rows"; a
+// delete's button is red.
+export function approveLabel(op, rows) {
+  const n = rows === 1 ? "1 row" : `${rows} rows`;
+  return VERBS[op] ? `Approve: ${VERBS[op]} ${n}` : `Approve: ${n}`;
 }
 
 function hex(bytes) {
@@ -66,12 +68,10 @@ function renderSummary(req, summary) {
   $("params").textContent = visibleText(paramsText(req.bindingText));
   $("rows").textContent = String(b.rows);
   $("expires").textContent = b.expiresAt.toLocaleString();
-  const expired = b.expiresAt.getTime() <= Date.now();
-  const time = b.expiresAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  $("state").textContent = expired ? "Expired" : `Held \u00b7 expires ${time}`;
-  $("state").className = expired ? "pill bad" : "pill hold";
-  $("state").hidden = false;
-  $("approve").textContent = approveLabel(op);
+  const now = new Date();
+  if (b.expiresAt.getTime() <= now.getTime()) setPill("state", "Expired", "bad");
+  else setPill("state", `Held \u00b7 expires ${whenText(b.expiresAt, now)}`, "hold");
+  $("approve").textContent = approveLabel(op, b.rows);
   $("approve").classList.toggle("danger", op === "DELETE");
   $("change-count").replaceChildren(...countText(req.lines).map((c) => el("span", `count-${c.op.toLowerCase()}`, c.text)));
   $("signed-hash").textContent = signedText(req.challenge, b.rows);
@@ -149,12 +149,14 @@ async function finish(response, relay) {
     try {
       await postResponse(engineFetch, relay.path, relay.secret, approvalResponseJSON(response));
       showDone("Approved. The agent will continue.");
+      setPill("state", "Approved", "ok");
       return;
     } catch (err) {
       showRelayFailed(`The engine did not take the approval: ${personText(err) || err.message}. To finish by hand, paste the code below into basalt approve.`);
     }
   }
   showCode(encodeApprovalResponse(response));
+  setPill("state", "Signed", "ok");
 }
 
 async function approve(rp, req, summary, relay) {

@@ -24,7 +24,7 @@ import {
   visibleText,
 } from "./codec.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, rejectRevert, revertDone, revertPaths } from "./local.js";
-import { $, REVERT_REOPEN, el, fail, linkFailure, loadOrPaste, personText, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
+import { $, REVERT_REOPEN, el, fail, linkFailure, loadOrPaste, personText, setPill, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
 import { canWiden, narrow, widen } from "./rescope.js";
 import { applyReveal, canReveal, clearReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import { changeGroups, countText, display, rowKeyText } from "./changes.js";
@@ -84,9 +84,19 @@ function renderHeader(req) {
   showExpiry(b.expiresAt);
 }
 
+// settled is the pill's last word once the person signed or rejected: the
+// expiry tick no longer overwrites it.
+let settled = false;
+
+function settle(text, tone) {
+  settled = true;
+  setPill("expires-in", text, tone);
+}
+
 // showExpiry is the top bar's pill: amber while the link holds, red once it
 // expired.
 function showExpiry(expiresAt) {
+  if (settled) return;
   const now = new Date();
   $("expires-in").textContent = expiresIn(expiresAt, now);
   $("expires-in").className = expiresAt.getTime() <= now.getTime() ? "pill bad" : "pill hold";
@@ -205,13 +215,16 @@ async function loadRequest(hash) {
 async function finish(response, relay) {
   if (relay !== null) {
     try {
-      showDone(revertDone(await postResponse(engineFetch, relay.path, relay.secret, revertResponseJSON(response))));
+      const result = await postResponse(engineFetch, relay.path, relay.secret, revertResponseJSON(response));
+      showDone(revertDone(result));
+      settle(result?.batched ? "Signed" : "Reverted", "ok");
       return;
     } catch (err) {
       showRelayFailed(`The engine did not take the revert: ${personText(err) || err.message}. To finish by hand, paste the code below into basalt revert --apply.`);
     }
   }
   showCode(encodeRevertResponse(response));
+  settle("Signed", "ok");
 }
 
 async function sign(rp, state) {
@@ -280,6 +293,7 @@ async function reject(state) {
   $("reject-note").hidden = true;
   $("sheet-dim").hidden = true;
   showDone(rejectDone(note.trim() !== "", req.binding.requestedBy));
+  settle("Rejected", "bad");
 }
 
 // wireReject offers Reject when the page talks to the engine. A long link
@@ -321,6 +335,8 @@ function render(state) {
   // Sign and Reject wait while a scope change is in flight, and stay off
   // on a revert that had expired when the page loaded.
   const nothing = nothingToSign(req.binding);
+  // N is the rows the revert writes.
+  $("sign").textContent = `Sign revert: ${plural(req.binding.rows, "row")}`;
   $("sign").disabled = nothing !== null || state.busy || state.expired;
   $("reject").disabled = state.busy || state.expired;
   $("status").textContent = state.expired ? EXPIRED : (nothing ?? "");

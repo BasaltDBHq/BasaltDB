@@ -3,7 +3,7 @@
 // the Reject note. Pure functions over the checked request, so they run
 // under `node --test`; revert.js puts their text on the page.
 
-import { personText } from "./page.js";
+import { personText, whenText } from "./page.js";
 
 const SCOPE_WORDS = { CHANGE: "change", RUN: "run", TASK: "task" };
 
@@ -78,6 +78,8 @@ const MINUTE_MS = 60000;
 export function expiresIn(expiresAt, now) {
   const left = expiresAt.getTime() - now.getTime();
   if (left <= 0) return "Link expired";
+  const when = whenText(expiresAt, now);
+  if (when.includes(" ")) return `Link expires ${when}`;
   return `Link expires in ${Math.ceil(left / MINUTE_MS)} min`;
 }
 

@@ -4,7 +4,7 @@
 // cells that change highlighted. Text only goes in through textContent.
 import { displayValue, visibleText } from "./codec.js";
 import { el } from "./page.js";
-import { NOT_CHECKED, OPEN_FROM_ENGINE, revealedLine } from "./reveal.js";
+import { notChecked, OPEN_FROM_ENGINE, revealedLine } from "./reveal.js";
 
 // HIDDEN_VALUE stands in for every value of a row hidden from the agent:
 // never an empty cell.
@@ -29,6 +29,11 @@ export function rowKeyText(line) {
   return parts.length ? `Row ${parts.join(", ")}` : "Row key not recorded.";
 }
 
+// rowName is "Row id = 8" for a row with a key, else "This row".
+function rowName(line) {
+  return Object.keys(line.key ?? {}).length ? rowKeyText(line) : "This row";
+}
+
 function plural(n, word) {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
@@ -48,7 +53,40 @@ export function tableGroups(items) {
     }
     g.items.push(item);
   }
-  return groups;
+  // The approval and the revert page list the same rows in the same order:
+  // the table's own rows first, then cascaded ones, each by table name.
+  return groups.sort((a, b) => Number(a.cascaded) - Number(b.cascaded) || compareText(a.table, b.table));
+}
+
+function compareText(a, b) {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+const INTEGER = /^-?\d+$/;
+const NUMBER = /^-?\d+(\.\d+)?([eE][-+]?\d+)?$/;
+
+function compareValues(a, b) {
+  if (INTEGER.test(a) && INTEGER.test(b)) {
+    const x = BigInt(a);
+    const y = BigInt(b);
+    return x < y ? -1 : x > y ? 1 : 0;
+  }
+  if (NUMBER.test(a) && NUMBER.test(b)) return Number(a) - Number(b) || compareText(a, b);
+  return compareText(a, b);
+}
+
+// compareRows orders rows by their key, column by column (numbers as
+// numbers); a row whose key the page does not have yet (hidden) comes after,
+// in line order.
+function compareRows(x, y) {
+  const kx = x.view.line.key;
+  const ky = y.view.line.key;
+  if (!kx || !ky) return Number(!kx) - Number(!ky) || x.index - y.index;
+  for (const col of Object.keys(kx)) {
+    const c = compareValues(display(x.view.line, "key", col), display(y.view.line, "key", col));
+    if (c !== 0) return c;
+  }
+  return x.index - y.index;
 }
 
 // view is what the page shows of one line: its values, or, for a line hidden
@@ -171,7 +209,10 @@ export function groupTable(views, opts) {
 //   notes       lines => notes under the table, for the group's lines
 export function changeGroups(items, opts) {
   return tableGroups(items).map((g) => {
-    const views = g.items.map(({ line, index }) => view(line, opts.shown.get(index), opts.mid));
+    const views = g.items
+      .map(({ line, index }) => ({ index, view: view(line, opts.shown.get(index), opts.mid) }))
+      .sort(compareRows)
+      .map((r) => r.view);
     const box = el("div", "group");
     const head = el("div", "group-head");
     head.append(el("span", "table-name", visibleText(g.table)));
@@ -188,7 +229,7 @@ export function changeGroups(items, opts) {
     box.append(scroll);
     for (const text of opts.notes(g.items.map((i) => i.line))) box.append(el("p", "group-note", text));
     for (const v of views) {
-      if (!v.checked) box.append(el("p", "callout", `${rowKeyText(v.line)}. ${NOT_CHECKED}`));
+      if (!v.checked) box.append(el("p", "callout", notChecked(rowName(v.line))));
     }
     return box;
   });

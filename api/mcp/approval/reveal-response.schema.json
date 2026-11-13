@@ -39,7 +39,7 @@
               "type": "string",
               "minLength": 1
             },
-            "description": "The SECRET columns (PII classification) set to null in row, by column name. Absent when there are none. Such a row cannot hash to its rowHash and is unverified on the page: shown with those columns as 'secret · withheld by Postgres', and the row labelled not checked against what the person signs."
+            "description": "The SECRET columns (PII classification) set to null in row, by column name. Absent when there are none. Such a row cannot hash to its rowHash and is unverified on the page: shown with those columns as 'secret · not shown', and the row labelled not checked against what the person signs."
           }
         }
       }

@@ -90,6 +90,8 @@ test("the link's time left reads in minutes", () => {
   assert.equal(expiresIn(new Date("2026-11-11T07:02:11Z"), now), "Link expires in 53 min");
   assert.equal(expiresIn(new Date("2026-11-11T06:10:30Z"), now), "Link expires in 1 min");
   assert.equal(expiresIn(new Date("2026-11-11T06:09:00Z"), now), "Link expired");
+  const later = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 17, 37);
+  assert.equal(expiresIn(later, now), `Link expires ${later.getDate()} ${later.toDateString().slice(4, 7)} 17:37`, "another day shows its date");
 });
 
 test("the note follows the engine's rules: 500 characters, no control characters", () => {

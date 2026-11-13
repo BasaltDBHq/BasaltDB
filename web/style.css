@@ -98,6 +98,7 @@ a { color: var(--ui-primary); }
 .pill { display: inline-block; border-radius: var(--radius-ui-sm); padding: 2px 8px; font-size: 12px; font-weight: 500; background: var(--ui-subtle); color: var(--ui-text-2); vertical-align: middle; }
 .pill.hold { background: var(--diff-hold-bg); color: var(--diff-hold-fg); }
 .pill.bad { background: var(--diff-del-bg); color: var(--diff-del-fg); }
+.pill.ok { background: var(--diff-add-bg); color: var(--diff-add-fg); }
 
 .page { max-width: 880px; margin: 0 auto; padding: 24px 16px 40px; display: flex; flex-direction: column; gap: 16px; }
 .revert-page .page { max-width: 1180px; }

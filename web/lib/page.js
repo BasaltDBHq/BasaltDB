@@ -5,6 +5,24 @@ import { readPaste, repairHash } from "./repair.js";
 
 export const $ = (id) => document.getElementById(id);
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// whenText is a moment in local time for a pill: "17:37" today, else with
+// its date, "14 Nov 17:37".
+export function whenText(at, now) {
+  const time = `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
+  const today = at.getFullYear() === now.getFullYear() && at.getMonth() === now.getMonth() && at.getDate() === now.getDate();
+  return today ? time : `${at.getDate()} ${MONTHS[at.getMonth()]} ${time}`;
+}
+
+// setPill sets the top bar's state pill: hold (amber), ok (green) or bad
+// (red).
+export function setPill(id, text, tone) {
+  $(id).textContent = text;
+  $(id).className = `pill ${tone}`;
+  $(id).hidden = false;
+}
+
 export function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;

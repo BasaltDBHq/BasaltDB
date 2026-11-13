@@ -233,15 +233,10 @@ func guardDetail(err error) string {
 // step opens the page again (link, with the page's own secret: the answer
 // goes back to that page only) to press Show values with passkey once more.
 func revealRefused(code, link string) error {
-	what := "approval"
-	if code == CodeRevertInvalid {
-		what = "revert"
-	}
 	te := &mcp.ToolError{
 		Code: code, Reason: guard.RevealRefused,
-		Message: "showing the hidden rows was refused: it needs the person's passkey on this page; nothing was shown",
-		PersonMessage: "Basalt could not check your passkey for showing the hidden values, so nothing was shown. " +
-			"Open the link again and press Show values with passkey; your " + what + " is not affected.",
+		Message:       "showing the hidden rows was refused: it needs the person's passkey on this page; nothing was shown",
+		PersonMessage: "Your passkey didn't confirm. Nothing was shown; try again.",
 	}
 	steps, err := NewSteps().OpenLink(link, "", "Open this page again and press Show values with passkey once more.").Build()
 	if err != nil {

@@ -19,9 +19,14 @@ const PROMPT_TIMEOUT_MS = 120000;
 
 // The texts the pages show (CONTRACT.md and the plan's task 6).
 export const SHOWN_TO_YOU = "Shown to you only. The agent cannot read this table.";
-export const NOT_CHECKED = "Not checked against what you sign: Postgres left out this row's secret columns, so the page cannot compare it.";
-export const SECRET_VALUE = "secret \u00b7 withheld by Postgres";
-export const OPEN_FROM_ENGINE = "Open this link from the engine to see them.";
+// notChecked is the callout under a revealed row with SECRET columns: the
+// page cannot check it against what the person signs. row names it by key.
+export function notChecked(row) {
+  return `${row} has a secret column, so this page can't check it against what you sign.`;
+}
+export const SECRET_VALUE = "secret \u00b7 not shown";
+export const OPEN_FROM_ENGINE = "Values are hidden on this link. Open the short link to see them.";
+export const REVEAL_REFUSED_TEXT = "Your passkey didn't confirm. Nothing was shown; try again.";
 const BAD_ANSWER = "The engine sent values that do not match the rows you sign, so none are shown. Nothing changed; you can still decide without them.";
 
 // hiddenLines counts the request's redacted lines.
@@ -118,14 +123,14 @@ export function revealFailure(err, kind) {
     return { text: `These rows changed since the agent asked. ${then}`, final: true };
   }
   if (err?.reason === "REVEAL_REFUSED") {
-    return { text: err.personMessage || "Basalt could not check your passkey, so nothing was shown.", final: false };
+    return { text: err.personMessage || REVEAL_REFUSED_TEXT, final: false };
   }
   return null;
 }
 
 // revealedLine is line with the revealed values in place of its redaction,
 // for the page's row table: key, then old (approval) or now (revert), then
-// set; a SECRET column reads "secret · withheld by Postgres".
+// set; a SECRET column reads "secret · not shown".
 export function revealedLine(line, shown, mid) {
   const [key, middle, set] = shown.values;
   const texts = { key: new Map(shown.texts[0]), [mid]: new Map(shown.texts[1]), set: new Map(shown.texts[2]) };

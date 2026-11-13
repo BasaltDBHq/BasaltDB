@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 
 import { b64urlDecode, hex, KIND_APPROVE, KIND_REVERT, sha256, utf8 } from "./codec.js";
 import { RelayError } from "./local.js";
-import { applyReveal, canReveal, clearReveal, NOT_CHECKED, reveal, revealBody, revealedLine, RevealError, revealFailure, revealPath, SECRET_VALUE } from "./reveal.js";
+import { applyReveal, canReveal, clearReveal, notChecked, reveal, revealBody, revealedLine, RevealError, revealFailure, revealPath, SECRET_VALUE } from "./reveal.js";
 
 const ID = "0193a3f0-0000-7000-8000-000000000001";
 const NONCE = "ZGVmZ2hpamtsbW5vcHFycw";
@@ -75,9 +75,9 @@ test("one prompt shows every hidden row; a secret row is unchecked", async () =>
   const line = revealedLine(req.lines[2], shown.get(2), "old");
   assert.equal(line.redacted, false);
   assert.equal(line.texts.old.get("note"), SECRET_VALUE, "a secret column says Postgres withholds it");
-  assert.equal(SECRET_VALUE, "secret \u00b7 withheld by Postgres");
+  assert.equal(SECRET_VALUE, "secret \u00b7 not shown");
   assert.equal(line.texts.old.get("lead_id"), "20");
-  assert.match(NOT_CHECKED, /^Not checked against what you sign/);
+  assert.equal(notChecked("Row id = 8"), "Row id = 8 has a secret column, so this page can't check it against what you sign.");
 });
 
 test("a row that does not hash to its line shows nothing at all", async () => {
@@ -102,8 +102,10 @@ test("a row that does not hash to its line shows nothing at all", async () => {
 });
 
 test("the page says what a refused reveal and changed rows mean", () => {
-  const refused = revealFailure(new RelayError("refused", "APPROVAL_INVALID", 409, { reason: "REVEAL_REFUSED", personMessage: "Basalt could not check your passkey." }), KIND_APPROVE);
-  assert.deepEqual(refused, { text: "Basalt could not check your passkey.", final: false });
+  const refused = revealFailure(new RelayError("refused", "APPROVAL_INVALID", 409, { reason: "REVEAL_REFUSED", personMessage: "Your passkey didn't confirm. Nothing was shown; try again." }), KIND_APPROVE);
+  assert.deepEqual(refused, { text: "Your passkey didn't confirm. Nothing was shown; try again.", final: false });
+  const bare = revealFailure(new RelayError("refused", "APPROVAL_INVALID", 409, { reason: "REVEAL_REFUSED" }), KIND_APPROVE);
+  assert.equal(bare.text, "Your passkey didn't confirm. Nothing was shown; try again.");
   const changed = revealFailure(new RelayError("changed", "APPROVAL_INVALID", 409, { reason: "ROWS_CHANGED" }), KIND_APPROVE);
   assert.equal(changed.text, "These rows changed since the agent asked. This approval can no longer apply; ask the agent to try the write again.");
   assert.equal(changed.final, true);

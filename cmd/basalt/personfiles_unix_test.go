@@ -6,9 +6,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/links"
 )
 
 const rootOnlySecret = "user=ROOT-ONLY-SECRET"
@@ -112,4 +116,54 @@ func TestPersonCLIStillReadsItsOwnFilesAsUsual(t *testing.T) {
 	got, err := agentURL(f.c, testAgentKey, "", f.configPath)
 	require.NoError(t, err)
 	require.Equal(t, agentCfgURL, got)
+}
+
+// The ownership rule at the core of readCredentialAsRoot: a plain file with
+// one link, mode 0600, is still refused when it does not belong to the
+// trusted user.
+func TestRootCLIRefusesACredentialOwnedByAnotherUser(t *testing.T) {
+	t.Parallel()
+	f := newRootCLIFixture(t)
+	_, err := readCredentialAsRoot(f.cred, os.Getuid()+1, true)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "refused")
+	got, err := readCredentialAsRoot(f.cred, os.Getuid(), true)
+	require.NoError(t, err, "the same file passes for its owner")
+	require.Equal(t, agentCfgURL, got)
+}
+
+// As root, the config reads behind log's dictionary line, access's commands
+// and the pages links go through the hardened read: a FIFO swapped in for
+// the config does not hang them, and a link is not followed.
+func TestRootCLIConfigReadsDoNotFollowLinksOrBlockOnAFIFO(t *testing.T) {
+	t.Parallel()
+	f := newRootCLIFixture(t)
+	dir := filepath.Dir(f.configPath)
+	fifo := filepath.Join(dir, "fifo.json")
+	require.NoError(t, syscall.Mkfifo(fifo, 0o600))
+	hosted := filepath.Join(t.TempDir(), "hosted.json")
+	require.NoError(t, os.WriteFile(hosted, []byte(`{"socketDir": "/s", "pagesUrl": "https://console.basaltvault.app",
+		"agents": [{"name": "bot", "osUser": "u", "credentialFile": "/c"}]}`), 0o600))
+	link := filepath.Join(dir, "link.json")
+	require.NoError(t, os.Symlink(hosted, link))
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for _, path := range []string{fifo, link} {
+			require.Equal(t, links.DefaultLocal, configuredBase(f.c, "", "bot", path), path)
+			require.Empty(t, localPages(f.c, "", "bot", path), path)
+			_, known := accessCommands(f.c, "bot", path)
+			require.False(t, known, path)
+			require.Nil(t, statusDictionary(f.c, path), path)
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("a config read blocked on the FIFO")
+	}
+
+	user := &cliIO{host: newFakeHost(t), getenv: func(string) string { return "" }}
+	require.Equal(t, links.HostedConsole, configuredBase(user, "", "bot", link), "not as root: the plain read follows the link")
 }

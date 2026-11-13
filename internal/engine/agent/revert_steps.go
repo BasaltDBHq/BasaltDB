@@ -174,8 +174,9 @@ func scopeArgs(scope guard.RevertScope) map[string]any {
 func proposalOf(r ledger.Revert) guard.RevertScope {
 	scope := guard.RevertScope{Kind: revert.Scope(r.Scope), ID: r.ScopeID}
 	// The agent's view hides a widened revert's binding (version 20): a new
-	// request then names only the agent's own scope, which the guard limits
-	// to its own work.
+	// request then names only the revert's scope, a change, run or task of
+	// the agent's own (the person widens a run at most to its task), which
+	// the guard limits to the agent's own work.
 	if r.BindingText == "" {
 		return scope
 	}
@@ -240,6 +241,24 @@ func (s *Service) signingLink(ctx context.Context, r ledger.Revert) (string, err
 	return s.longRevertLink(ctx, r)
 }
 
+// revertTitle names revert r for the person, starting lowercase: its scope,
+// or for a widened revert no scope, since the agent relays the message and
+// the scope the person chose is theirs (RS-5).
+func revertTitle(r ledger.Revert) string {
+	if r.Widened {
+		return "the revert you widened on the signing page"
+	}
+	return "the revert of " + scopeText(r.Scope, r.ScopeID)
+}
+
+// sentence starts s with a capital letter.
+func sentence(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
 func (s *Service) badSignature(ctx context.Context, r ledger.Revert, message string) error {
 	link, err := s.signingLink(ctx, r)
 	if err != nil {
@@ -251,8 +270,8 @@ func (s *Service) badSignature(ctx context.Context, r ledger.Revert, message str
 // badSignatureWith is REVERT_INVALID BAD_SIGNATURE for the revert page at link.
 func (s *Service) badSignatureWith(link string, r ledger.Revert, message string) error {
 	return &mcp.ToolError{Code: CodeRevertInvalid, Reason: reasonBadSignature, Message: message,
-		PersonMessage: fmt.Sprintf("The code for the revert of %s %s did not verify, so nothing was reverted. Sign again on "+
-			"the revert page and give the agent the new code.", strings.ToLower(r.Scope), r.ScopeID),
+		PersonMessage: fmt.Sprintf("The code for %s did not verify, so nothing was reverted. Sign again on "+
+			"the revert page and give the agent the new code.", revertTitle(r)),
 		NextSteps: []mcp.NextStep{
 			openLink(link, "Sign again on the page; the code did not verify."),
 			agentStep(mcp.ActionEndTurn, stepEndTurnPersonActsNext),
@@ -271,9 +290,9 @@ func (s *Service) passkeyRevoked(ctx context.Context, r ledger.Revert) error {
 func (s *Service) passkeyRevokedWith(link string, r ledger.Revert) error {
 	return &mcp.ToolError{Code: CodeRevertInvalid, Reason: reasonPasskeyRevoked,
 		Message: "the code was signed by a passkey this database does not know or that was revoked; nothing was reverted",
-		PersonMessage: fmt.Sprintf("The revert of %s %s was signed with a passkey this database does not accept (unknown or "+
+		PersonMessage: fmt.Sprintf("%s was signed with a passkey this database does not accept (unknown or "+
 			"revoked), so nothing was reverted. Check your passkeys, register one if needed, then sign again.",
-			strings.ToLower(r.Scope), r.ScopeID),
+			sentence(revertTitle(r))),
 		NextSteps: []mcp.NextStep{
 			runCommand(s.Commands.PasskeyList(), "See which passkeys this database accepts."),
 			runCommand(s.Commands.Init("--add-passkey"), "Register your passkey with this command: it adds the one you use and changes nothing else."),
@@ -285,10 +304,26 @@ func (s *Service) passkeyRevokedWith(link string, r ledger.Revert) error {
 func (s *Service) rowsChanged(r ledger.Revert, detail string) error {
 	return &mcp.ToolError{Code: CodeRevertInvalid, Reason: reasonRowsChanged,
 		Message: "the database refused the revert, nothing was reverted: " + detail,
-		PersonMessage: fmt.Sprintf("Rows changed after the preview of the revert of %s %s%s, so nothing was reverted. The agent "+
-			"requests it again for you to sign the current rows.", strings.ToLower(r.Scope), r.ScopeID, filterText(proposalOf(r))),
+		PersonMessage: fmt.Sprintf("Rows changed after the preview of %s%s, so nothing was reverted. The agent "+
+			"requests it again for you to sign the current rows.", revertTitle(r), filterText(proposalOf(r))),
 		NextSteps: []mcp.NextStep{reviseRequestRevert(scopeArgs(proposalOf(r)),
 			"Rows changed after the preview, so nothing was reverted; request it again so the person signs the current rows.")}}
+}
+
+// nothingSigned is apply_revert's NOTHING_TO_REVERT: the signed scope has
+// no row to restore. Its detail names the scope, so the answer is built
+// here, without it for a widened revert (RS-5).
+func nothingSigned(r ledger.Revert) error {
+	te := &mcp.ToolError{Code: CodeNothingToRevert, Reason: reasonReadsOnly,
+		Message:       fmt.Sprintf("revert %s has no row to restore in the scope that was signed; nothing was reverted", r.ID),
+		PersonMessage: sentence(revertTitle(r)) + " has no row to restore in the scope you signed, so nothing was reverted.",
+		NextSteps:     []mcp.NextStep{agentStep(mcp.ActionStop, "There is nothing to revert; do not retry.")}}
+	if r.Skipped > 0 {
+		te.Reason = reasonAllChangedByPeople
+		te.PersonMessage = sentence(revertTitle(r)) + " has no row to restore: every row in it was changed since by someone " +
+			"else, and Basalt never overwrites them (people win). Nothing was reverted."
+	}
+	return te
 }
 
 func alreadySigned(r ledger.Revert) error {
@@ -308,13 +343,12 @@ func (s *Service) revertExpired(r ledger.Revert) error {
 	if r.SignedAt != nil {
 		reason, window = reasonNotFinished, fmt.Sprintf("was not finished within %d hours of the signature", int(revert.ApplyWindow.Hours()))
 	}
-	scope := guard.RevertScope{Kind: revert.Scope(r.Scope), ID: r.ScopeID}
 	return &mcp.ToolError{Code: CodeRevertExpired, Reason: reason,
 		Message:       fmt.Sprintf("revert %s expired at %s; nothing more was reverted", r.ID, timeText(r.ExpiresAt)),
-		PersonMessage: fmt.Sprintf("The revert of %s %s %s, so it expired.", strings.ToLower(r.Scope), r.ScopeID, window),
+		PersonMessage: fmt.Sprintf("%s %s, so it expired.", sentence(revertTitle(r)), window),
 		NextSteps: []mcp.NextStep{
 			agentStep(mcp.ActionAskPerson, "Ask the person whether to prepare it again."),
-			runCommand(s.Commands.Revert(scope), "Prepare it again and sign within an hour; rows already restored are skipped."),
+			runCommand(s.Commands.Revert(proposalOf(r)), "Prepare it again and sign within an hour; rows already restored are skipped."),
 		}}
 }
 

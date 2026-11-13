@@ -147,10 +147,12 @@ func lineHash(text string) string {
 // and one page of its lines (only pending ones with Outcome PENDING).
 type RevertPlanParams = ledger.RevertLineParams
 
-// RevertPlanLine is one line of a batched plan with its signed line parsed.
+// RevertPlanLine is one line of a batched plan with its signed line
+// parsed. Plan is nil on a widened plan's line that names a change the
+// agent did not make: the agent's view leaves its text out (RS-5).
 type RevertPlanLine struct {
 	ledger.RevertLine
-	Plan revert.Line
+	Plan *revert.Line
 }
 
 // RevertPlan is a batched plan's state and one page of its lines; while
@@ -184,7 +186,9 @@ func (s *Service) RevertPlan(ctx context.Context, p RevertPlanParams) (RevertPla
 		return RevertPlan{}, err
 	}
 	out := RevertPlan{Revert: r, Page: pagination.Page[RevertPlanLine]{NextCursor: page.NextCursor}}
-	if r.Status == ledger.RevertPending {
+	if r.Status == ledger.RevertPending && !r.Widened {
+		// A widened plan issues no link: the person signs on the page they
+		// widened on (RS-5).
 		n, err := s.revertNotice(ctx, r)
 		if err != nil {
 			return RevertPlan{}, err
@@ -193,14 +197,21 @@ func (s *Service) RevertPlan(ctx context.Context, p RevertPlanParams) (RevertPla
 	}
 	out.Page.Items = make([]RevertPlanLine, 0, len(page.Items))
 	for _, l := range page.Items {
-		parsed, err := revert.ParseLine(l.Text)
-		if err != nil {
-			return RevertPlan{}, fmt.Errorf("guard returned a bad revert line %d: %w", l.No, err)
+		line := RevertPlanLine{RevertLine: l}
+		if l.Text != "" {
+			parsed, err := revert.ParseLine(l.Text)
+			if err != nil {
+				return RevertPlan{}, fmt.Errorf("guard returned a bad revert line %d: %w", l.No, err)
+			}
+			line.Plan = &parsed
 		}
-		out.Page.Items = append(out.Page.Items, RevertPlanLine{RevertLine: l, Plan: parsed})
+		out.Page.Items = append(out.Page.Items, line)
 	}
 	if out.PersonMessage, out.NextSteps, err = s.planGuidance(out); err != nil {
 		return RevertPlan{}, err
+	}
+	if r.Widened {
+		out.PersonMessage = strings.TrimSpace(widenedMessage + " " + out.PersonMessage)
 	}
 	return out, nil
 }
@@ -393,8 +404,11 @@ func (s *Service) checkRevertCode(ctx context.Context, r ledger.Revert, code rev
 // or a signature only Postgres could judge.
 func (s *Service) applyRevertError(ctx context.Context, r ledger.Revert, err error) error {
 	code, ok := guard.CodeOf(err)
-	if ok && code == guard.CodeRevertExpired {
+	switch {
+	case ok && code == guard.CodeRevertExpired:
 		return s.revertExpired(r)
+	case ok && code == guard.CodeNothingToRevert:
+		return nothingSigned(r)
 	}
 	var pe *pgconn.PgError
 	if !ok || code != guard.CodeRevertInvalid || !errors.As(err, &pe) {
@@ -441,8 +455,7 @@ func (s *Service) revertStateOf(ctx context.Context, r ledger.Revert) (Requested
 		out.PersonMessage = rejectedMessage(r)
 		out.NextSteps = rejectedSteps()
 	default:
-		what := "The revert of " + scopeText(r.Scope, r.ScopeID)
-		return s.waitEnded(ctx, out, what)
+		return s.waitEnded(ctx, out, sentence(revertTitle(r)))
 	}
 	return out, nil
 }

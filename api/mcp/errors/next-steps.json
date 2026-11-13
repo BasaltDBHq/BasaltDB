@@ -105,6 +105,7 @@
     { "tool": "revert_plan", "case": "APPLYING", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }] },
     { "tool": "revert_plan", "case": "APPLIED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] },
     { "tool": "revert_plan", "case": "EXPIRED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "PERSON", "action": "RUN_COMMAND" }] },
+    { "tool": "revert_plan", "case": "REJECTED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] },
     { "tool": "apply_revert_batch", "case": "APPLYING", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }] },
     { "tool": "apply_revert_batch", "case": "APPLIED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] }
   ],

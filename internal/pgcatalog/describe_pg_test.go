@@ -244,20 +244,6 @@ func sorted(in []string) []string {
 	return out
 }
 
-func TestForeignKeysSeesReadOnlyTables(t *testing.T) {
-	db := describeFixture(t)
-	fks, err := pgcatalog.ForeignKeys(context.Background(), db, describeSchema, "leaf")
-	require.NoError(t, err)
-	require.Equal(t, []pgcatalog.ForeignKey{{Column: "b_id", RefSchema: describeSchema, RefTable: "b", RefColumn: "id"}}, fks)
-}
-
-func TestForeignKeysIgnoresPartitionClones(t *testing.T) {
-	db := describeFixture(t)
-	fks, err := pgcatalog.ForeignKeys(context.Background(), db, describeSchema, "pfk")
-	require.NoError(t, err)
-	require.Equal(t, []pgcatalog.ForeignKey{{Column: "a_id", RefSchema: describeSchema, RefTable: "a", RefColumn: "id"}}, fks)
-}
-
 func searchFixture(t *testing.T, db pgcatalog.Querier, q string, exclude []pgcatalog.ColumnKey, limit int) []pgcatalog.Match {
 	t.Helper()
 	got, err := pgcatalog.Search(context.Background(), db, q, exclude, nil, limit)

@@ -25,10 +25,11 @@ type Relation struct {
 }
 
 // userSchemaFilter keeps a query to user schemas: not the system schemas,
-// toast and temp schemas, basalt_meta, or a schema that is itself a member of
-// an extension. A schema an extension merely installs into (public, say)
-// stays; the relations the extension owns are dropped by notExtensionRelation. It expects the pg_namespace row to be aliased n. The underscores in
-// the LIKE patterns are escaped because the schema names mean them literally.
+// toast and temp schemas, basalt_meta, or a schema that is itself a member
+// of an extension. A schema an extension merely installs into (public, say)
+// stays; notExtensionRelation drops the relations the extension owns. It
+// expects the pg_namespace row aliased n. The underscores in the LIKE
+// patterns are escaped because the schema names mean them literally.
 const userSchemaFilter = `n.nspname NOT IN ('pg_catalog', 'information_schema', 'basalt_meta')
 	AND n.nspname NOT LIKE 'pg\_toast%' AND n.nspname NOT LIKE 'pg\_temp%'
 	AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d WHERE d.classid = 'pg_catalog.pg_namespace'::regclass
@@ -44,14 +45,14 @@ const notExtensionRelation = `NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend xd
 // is visible, only its ungranted columns are not).
 const readableTable = `pg_catalog.has_any_column_privilege(session_user, c.oid, 'SELECT')`
 
-// relationColumns and relationFrom select the Relation fields over every
-// user-schema relation that is not a partition. A partitioned parent reports
-// its own estimate when it has one, else the summed estimate of its analyzed
-// leaves.
 // relationKind maps pg_class.relkind to the Relation.Kind names.
 const relationKind = `CASE c.relkind WHEN 'r' THEN 'TABLE' WHEN 'v' THEN 'VIEW'
 		WHEN 'm' THEN 'MATERIALIZED_VIEW' ELSE 'PARTITIONED_TABLE' END`
 
+// relationColumns and relationFrom select the Relation fields over every
+// user-schema relation that is not a partition. A partitioned parent reports
+// its own estimate when it has one, else the summed estimate of its analyzed
+// leaves.
 const relationColumns = `c.oid, n.nspname AS nspname, c.relname AS relname,
 	` + relationKind + ` AS kind,
 	CASE WHEN c.reltuples >= 0 THEN c.reltuples::bigint

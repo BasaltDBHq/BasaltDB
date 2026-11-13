@@ -45,6 +45,7 @@ func TestAccessPrintsGrantCommands(t *testing.T) {
 	// a full init command would reset the agent's saved flags.
 	require.Contains(t, r.stdout, "public.invoices  --read=public.invoices\n")
 	require.NotContains(t, r.stdout, "basalt init --agent")
+	require.NotContains(t, r.stdout, grantsDoNotStack, "the flag-only path keeps its own hint")
 	require.Equal(t, 1, strings.Count(r.stdout, "Add each table to this agent's existing --read list (comma-separated) in the basalt init command you set it up with; init keeps only the last --read.\n"))
 	require.NotContains(t, r.stdout, "--read=public.leads")
 	require.True(t, strings.HasSuffix(r.stdout, "These names are not shown to the agent.\n"), r.stdout)
@@ -52,9 +53,10 @@ func TestAccessPrintsGrantCommands(t *testing.T) {
 
 func TestAccessBadTableName(t *testing.T) {
 	t.Parallel()
-	r := runAccessOver(t, pgcatalog.Access{NotGranted: []string{`public."odd name"`}})
+	// The name as Postgres prints it, quoted where it must be.
+	r := runAccessOver(t, pgcatalog.Access{NotGranted: []string{`"Sales"."Order Items"`}})
 	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Contains(t, r.stdout, `public."odd name"`)
+	require.Contains(t, r.stdout, `"Sales"."Order Items"  grant by hand`)
 	require.Contains(t, r.stdout, "grant by hand")
 	require.NotContains(t, r.stdout, "--read=")
 }
@@ -114,6 +116,37 @@ func TestAccessDirectModeKeepsTheSavedFlagsInTheGrant(t *testing.T) {
 	require.Contains(t, r.stdout, "--prefix")
 	require.Contains(t, r.stdout, "--os-user")
 	require.NotContains(t, r.stdout, "Add each table to this agent's existing --read list")
+	require.Contains(t, r.stdout, grantsDoNotStack)
+}
+
+// grantsDoNotStack is the line under Not granted when it prints runnable
+// commands: each is the saved setup plus one table, so running two leaves
+// only the second.
+const grantsDoNotStack = "Each command adds one table to the saved setup as it is now; to grant several, list them comma-separated in one command, or run basalt access again after each grant.\n"
+
+func TestAccessSaysGrantCommandsDoNotStack(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	cfgPath := tempConfig(t)
+	initAgent(t, d, cfgPath)
+	d.Exec(t, `CREATE TABLE public.invoices (id int); CREATE TABLE public.refunds (id int)`)
+
+	r := cli(t, nil, "", "access", "--agent", "bot", "--config", cfgPath)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Contains(t, r.stdout, "public.invoices  basalt init ")
+	require.Contains(t, r.stdout, "public.refunds  basalt init ")
+	require.Equal(t, 1, strings.Count(r.stdout, grantsDoNotStack), r.stdout)
+	require.NotContains(t, r.stdout, "Add each table to this agent's existing --read list")
+}
+
+func TestAccessSaysNothingOnStackingWithoutARunnableCommand(t *testing.T) {
+	t.Parallel()
+	cmds, err := agent.NewCommands("bot", "", "linux", []string{"--write=public.leads"})
+	require.NoError(t, err)
+	var out strings.Builder
+	printAccess(&out, pgcatalog.Access{NotGranted: []string{`"Sales"."Order Items"`, `"Sales"."Refunds"`}}, cmds, true)
+	require.Contains(t, out.String(), "grant by hand")
+	require.NotContains(t, out.String(), grantsDoNotStack)
 }
 
 func TestAccessAgentOperatedEnginePrintsTheSetupCodeRoute(t *testing.T) {
@@ -127,5 +160,6 @@ func TestAccessAgentOperatedEnginePrintsTheSetupCodeRoute(t *testing.T) {
 	printAccess(&out, pgcatalog.Access{NotGranted: []string{"public.invoices"}}, cmds, true)
 	require.Contains(t, out.String(), want)
 	require.Contains(t, want, "--remote")
+	require.Contains(t, out.String(), grantsDoNotStack)
 	require.NotContains(t, out.String(), "Add each table to this agent's existing --read list")
 }

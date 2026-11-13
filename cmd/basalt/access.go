@@ -111,6 +111,7 @@ func printAccess(w io.Writer, a pgcatalog.Access, cmds agent.Commands, known boo
 	fmt.Fprintln(w)
 	section("Can write", a.Write, none)
 	fmt.Fprintln(w)
+	runnable := false
 	section("Not granted", a.NotGranted, func(t string) string {
 		grant := cmds.Grant
 		if cmds.AgentOperated() {
@@ -128,8 +129,14 @@ func printAccess(w io.Writer, a pgcatalog.Access, cmds agent.Commands, known boo
 		if err != nil { // agent.ErrBadTable: not a plain schema.table
 			return "  grant by hand"
 		}
+		runnable = runnable || known
 		return "  " + cmd
 	})
+	if runnable {
+		// Each command is the saved flags plus one table, so a second one
+		// run after the first drops the first table again.
+		fmt.Fprintln(w, "Each command adds one table to the saved setup as it is now; to grant several, list them comma-separated in one command, or run basalt access again after each grant.")
+	}
 	if !known && len(a.NotGranted) > 0 {
 		fmt.Fprintln(w, "Add each table to this agent's existing --read list (comma-separated) in the basalt init command you set it up with; init keeps only the last --read.")
 	}

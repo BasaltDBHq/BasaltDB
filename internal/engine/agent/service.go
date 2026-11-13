@@ -134,8 +134,9 @@ type Deps struct {
 	// Catalog reads the database's structure for describe; optional, and
 	// describe answers INTERNAL when nil.
 	Catalog Catalog
-	// Classes are the agent's PII classes for describe; optional, every
-	// column UNCLASSIFIED and none SECRET when nil.
+	// Classes are the agent's PII classes for describe; optional, and
+	// describe fails closed (INTERNAL) when nil: it cannot tell a SECRET
+	// column.
 	Classes ClassResolver
 }
 

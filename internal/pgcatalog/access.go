@@ -5,7 +5,8 @@ import (
 	"sort"
 )
 
-// Access lists user-schema relations as schema.table, sorted: what
+// Access lists user-schema relations as schema.table, each part quoted
+// where Postgres would quote it (as describe names them), sorted: what
 // session_user can read, what it can write, and what it cannot read.
 type Access struct {
 	Read       []string
@@ -17,7 +18,7 @@ type Access struct {
 // privileges. Write means INSERT, UPDATE or DELETE.
 func ListAccess(ctx context.Context, db Querier) (Access, error) {
 	// Plain SQL: a pg_catalog read, not table DML.
-	rows, err := db.Query(ctx, `SELECT n.nspname || '.' || c.relname, `+readableTable+`,
+	rows, err := db.Query(ctx, `SELECT pg_catalog.quote_ident(n.nspname) || '.' || pg_catalog.quote_ident(c.relname), `+readableTable+`,
 			pg_catalog.has_table_privilege(session_user, c.oid, 'INSERT')
 			OR pg_catalog.has_table_privilege(session_user, c.oid, 'UPDATE')
 			OR pg_catalog.has_table_privilege(session_user, c.oid, 'DELETE')

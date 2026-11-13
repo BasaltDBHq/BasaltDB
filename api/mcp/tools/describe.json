@@ -151,7 +151,7 @@
       },
       "items": {
         "type": "array",
-        "description": "SEARCH: a ranked page (exact table name, name prefix, name contains, column name, comment; ties by schema.table).",
+        "description": "SEARCH: a ranked page (exact table name, table name prefix, table name contains, schema name contains, column name, comment; ties by schema.table).",
         "items": {
           "$ref": "#/$defs/searchItem"
         }
@@ -417,7 +417,7 @@
             "type": "null"
           }
         ],
-        "description": "RESOURCE: the write policy as it applies to this table. Null on a read-only table."
+        "description": "RESOURCE: the write policy as it applies to this table, when Basalt guards it and you can write it. Null on a read-only table and on a table you can write outside the guard."
       },
       "personMessage": {
         "type": "string",
@@ -525,7 +525,7 @@
           },
           "matched": {
             "type": "string",
-            "description": "SEARCH: what matched, such as \"column invoice_id\". Never a hidden column."
+            "description": "SEARCH: what matched: \"table\", \"schema\", \"column <name>\" (such as \"column invoice_id\") or \"comment\". Never a hidden column."
           },
           "access": {
             "$ref": "#/$defs/actions"

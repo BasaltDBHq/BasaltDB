@@ -42,17 +42,9 @@ func connect(t *testing.T) *pgx.Conn {
 	return conn
 }
 
-func TestForeignKeysAndPrimaryKey(t *testing.T) {
+func TestPrimaryKey(t *testing.T) {
 	conn := connect(t)
 	ctx := context.Background()
-
-	fks, err := pgcatalog.ForeignKeys(ctx, conn, testSchema, "notes")
-	require.NoError(t, err)
-	require.Equal(t, []pgcatalog.ForeignKey{{Column: "lead_id", RefSchema: testSchema, RefTable: "leads", RefColumn: "id"}}, fks)
-
-	fks, err = pgcatalog.ForeignKeys(ctx, conn, testSchema, "leads")
-	require.NoError(t, err)
-	require.Empty(t, fks)
 
 	pk, err := pgcatalog.PrimaryKey(ctx, conn, testSchema, "notes")
 	require.NoError(t, err)

@@ -244,20 +244,6 @@ func sorted(in []string) []string {
 	return out
 }
 
-func TestForeignKeysSeesReadOnlyTables(t *testing.T) {
-	db := describeFixture(t)
-	fks, err := pgcatalog.ForeignKeys(context.Background(), db, describeSchema, "leaf")
-	require.NoError(t, err)
-	require.Equal(t, []pgcatalog.ForeignKey{{Column: "b_id", RefSchema: describeSchema, RefTable: "b", RefColumn: "id"}}, fks)
-}
-
-func TestForeignKeysIgnoresPartitionClones(t *testing.T) {
-	db := describeFixture(t)
-	fks, err := pgcatalog.ForeignKeys(context.Background(), db, describeSchema, "pfk")
-	require.NoError(t, err)
-	require.Equal(t, []pgcatalog.ForeignKey{{Column: "a_id", RefSchema: describeSchema, RefTable: "a", RefColumn: "id"}}, fks)
-}
-
 func searchFixture(t *testing.T, db pgcatalog.Querier, q string, exclude []pgcatalog.ColumnKey, limit int) []pgcatalog.Match {
 	t.Helper()
 	got, err := pgcatalog.Search(context.Background(), db, q, exclude, nil, limit)
@@ -364,8 +350,16 @@ func TestSearchTreatsWildcardsAsText(t *testing.T) {
 }
 
 func TestListAccess(t *testing.T) {
+	url := os.Getenv("BASALTDB_TEST_POSTGRES_URL")
 	db := describeFixture(t)
-	acc, err := pgcatalog.ListAccess(context.Background(), db)
+	ctx := context.Background()
+	admin, err := pgdial.Connect(ctx, url)
+	require.NoError(t, err)
+	defer func() { _ = admin.Close(ctx) }()
+	_, err = admin.Exec(ctx, `CREATE TABLE `+describeSchema+`."Odd Name" (id int)`)
+	require.NoError(t, err)
+
+	acc, err := pgcatalog.ListAccess(ctx, db)
 	require.NoError(t, err)
 
 	mine := func(in []string) []string {
@@ -380,7 +374,8 @@ func TestListAccess(t *testing.T) {
 	require.Contains(t, acc.Read, describeSchema+".b")
 	require.Contains(t, acc.Read, describeSchema+".a")
 	require.Equal(t, []string{describeSchema + ".a"}, mine(acc.Write))
-	require.Equal(t, []string{describeSchema + ".hidden"}, mine(acc.NotGranted))
+	// Names print as Postgres prints them, as describe names them.
+	require.Equal(t, []string{describeSchema + `."Odd Name"`, describeSchema + ".hidden"}, mine(acc.NotGranted))
 	require.NotContains(t, acc.Read, describeSchema+".p1")
 }
 

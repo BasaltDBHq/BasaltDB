@@ -27,6 +27,8 @@ type fakeCatalog struct {
 	details    map[uint32]pgcatalog.Detail
 	matches    []pgcatalog.Match
 	lines      []string
+	// guarded are the tables basalt init guards.
+	guarded map[uint32]bool
 	// searched records the exclude list of the last search.
 	searched []pgcatalog.ColumnKey
 }
@@ -46,6 +48,10 @@ func (f *fakeCatalog) Find(_ context.Context, schema, name string) (pgcatalog.Re
 
 func (f *fakeCatalog) Describe(_ context.Context, oid uint32) (pgcatalog.Detail, error) {
 	return f.details[oid], nil
+}
+
+func (f *fakeCatalog) Guarded(_ context.Context, oid uint32) (bool, error) {
+	return f.guarded[oid], nil
 }
 
 func (f *fakeCatalog) Search(_ context.Context, _ string, exclude []pgcatalog.ColumnKey, after *pgcatalog.SearchCursor, limit int) ([]pgcatalog.Match, error) {
@@ -161,6 +167,7 @@ func ordersCatalog() (*fakeCatalog, fakeClasses) {
 		visible: []pgcatalog.Relation{rel(ordersOID, "shop", "orders", "SELECT", "UPDATE"), rel(101, "shop", "lines")},
 		details: map[uint32]pgcatalog.Detail{ordersOID: ordersDetail()},
 		lines:   []string{"shop.orders:TABLE"},
+		guarded: map[uint32]bool{ordersOID: true},
 	}
 	classes := fakeClasses{classes: map[piidict.ColumnRef]piidict.Class{
 		{TableOID: ordersOID, Attnum: 1}: {Class: guard.ClassPublic},
@@ -272,6 +279,8 @@ func TestHideColumnsDropsAPrimaryKeyOnAHiddenColumn(t *testing.T) {
 	require.EqualValues(t, 1, m["hiddenKeys"])
 }
 
+// TestReadOnlyTableHasNullPolicy: a guarded table the agent only reads has
+// no write policy.
 func TestReadOnlyTableHasNullPolicy(t *testing.T) {
 	t.Parallel()
 	cat, classes := ordersCatalog()
@@ -281,6 +290,20 @@ func TestReadOnlyTableHasNullPolicy(t *testing.T) {
 	body, isError := callDescribe(t, describeService(t, cat, classes, ""), map[string]any{"resource": "shop.orders"})
 	require.False(t, isError, body)
 	m := decodeBody(t, body)
+	require.Contains(t, m, "policy")
+	require.Nil(t, m["policy"])
+}
+
+// TestUnguardedWritableTableHasNullPolicy: the write policy is the guard's,
+// so a table the agent can write outside basalt init has none.
+func TestUnguardedWritableTableHasNullPolicy(t *testing.T) {
+	t.Parallel()
+	cat, classes := ordersCatalog()
+	cat.guarded = nil
+	body, isError := callDescribe(t, describeService(t, cat, classes, ""), map[string]any{"resource": "shop.orders"})
+	require.False(t, isError, body)
+	m := decodeBody(t, body)
+	require.Equal(t, []any{"SELECT", "UPDATE"}, m["actions"])
 	require.Contains(t, m, "policy")
 	require.Nil(t, m["policy"])
 }
@@ -694,5 +717,26 @@ func TestDescribeWithoutClassesFailsClosed(t *testing.T) {
 		require.True(t, isError, "%v", args)
 		require.Equal(t, CodeInternal, decodeBody(t, body)["code"], "%v", args)
 		require.NotContains(t, body, "card_token")
+	}
+}
+
+// TestParseResource: an unquoted name folds to lower case as Postgres folds
+// it, ASCII A to Z only; a quoted one is kept as written.
+func TestParseResource(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ in, schema, name string }{
+		{"shop.orders", "shop", "orders"},
+		{"Shop.ORDERS", "shop", "orders"},
+		{`"Sales"."Order Items"`, "Sales", "Order Items"},
+		{`"a""b".t`, `a"b`, "t"},
+		{"Café.Ärger", "café", "Ärger"}, // non-ASCII letters keep their case
+	} {
+		schema, name, err := parseResource(tc.in)
+		require.NoError(t, err, tc.in)
+		require.Equal(t, []string{tc.schema, tc.name}, []string{schema, name}, tc.in)
+	}
+	for _, bad := range []string{"orders", `"shop.orders`, `"".t`, "a b.t", "a.b.c"} {
+		_, _, err := parseResource(bad)
+		require.Error(t, err, bad)
 	}
 }

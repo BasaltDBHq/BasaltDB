@@ -1266,6 +1266,14 @@ Up to version 23 every function in `basalt_meta` ran with `SET search_path = pg_
 
 Revoking `TEMPORARY` on the database from `<prefix>_agents` is not part of it: Postgres grants `TEMPORARY` to `PUBLIC` by default, so a revoke from the group changes nothing while `PUBLIC` holds it, and revoking it from `PUBLIC` would change what the person's own roles and app may do.
 
+### Version 25: approval and revert deadlines read the wall clock
+
+Up to version 24 every approval and revert deadline was compared with `now()`, which Postgres fixes when the transaction starts. An agent role that began a transaction before an approval's `expires_at`, a revert's `expires_at` or a signed batched revert's `apply_by` could keep it open past that time and still submit the signature, apply the write or revert, and commit; a fresh connection was already refused. **Breaking** (AE-11), the default: on an older guard an agent can still use a signature the person meant to be dead, so the engine serves it degraded (`GUARD_OUTDATED`) until `basalt upgrade` or an `UPGRADE` setup code applies this version. Idempotent.
+
+| Object | Purpose |
+|---|---|
+| `submit_approval`, `_check_approval`, `_commit_approval`, `apply_revert`, `apply_revert_batch`, `_revert_lock_pending` | Replaced, same signatures, `SECURITY DEFINER`, owner and grants as their latest version, `SET search_path = pg_catalog, pg_temp`. Each deadline check reads `clock_timestamp()`, after the row lock where the function takes one: `APPROVAL_EXPIRED` once `expires_at` is at or before it, `REVERT_EXPIRED` likewise for a revert's `expires_at` and `apply_by`. `submit_approval` records that same reading as `approved_at` and returns it. `_check_approval` is now `VOLATILE` (it was `STABLE`) since it reads the clock. `_commit_approval` runs at commit, so a write under an approval that expired while its transaction was open fails at `COMMIT` and nothing lands. `_revert_lock_pending` is the check behind `rescope_revert`, `reset_revert` and `reject_revert` |
+
 ### Guard errors
 
 Raised by the guard with SQLSTATE class `BS`. The tool code each maps to is in [Error codes](#error-codes), the only mapping table.

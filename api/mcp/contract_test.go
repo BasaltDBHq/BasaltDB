@@ -232,7 +232,52 @@ func TestApprovalSchemas(t *testing.T) {
 	checkPayloadSchemas(t, "approval", []string{
 		"approval-request.schema.json", "approval-response.schema.json", "binding.schema.json",
 		"preview-line.schema.json", "registration-request.schema.json", "registration-response.schema.json",
+		"reveal-request.schema.json", "reveal-response.schema.json",
 	})
+}
+
+// TestRevealSchemas pins the reveal payloads (owner decision HR-1, CONTRACT.md,
+// Rows hidden from the agent): the request carries only the proof, the answer
+// only line, row and secretColumns, and revealNonce is optional in both
+// requests, since a long link carries none.
+func TestRevealSchemas(t *testing.T) {
+	t.Parallel()
+	req := readJSON(t, filepath.Join("approval", "reveal-request.schema.json"))
+	require.ElementsMatch(t, []string{"proof"}, propertyNames(t, req))
+	require.ElementsMatch(t, []any{"proof"}, req["required"])
+	proof := mustMap(t, mustMap(t, req["properties"])["proof"])
+	proofProps := []string{"credentialId", "authenticatorData", "clientDataJson", "signature"}
+	require.ElementsMatch(t, proofProps, propertyNames(t, proof))
+	require.ElementsMatch(t, proofProps, proof["required"], "every assertion field is required")
+	require.Contains(t, proof["description"], `basalt-reveal.1\n`, "the reveal challenge prefix")
+
+	resp := readJSON(t, filepath.Join("approval", "reveal-response.schema.json"))
+	require.ElementsMatch(t, []string{"rows"}, propertyNames(t, resp))
+	item := mustMap(t, mustMap(t, mustMap(t, resp["properties"])["rows"])["items"])
+	require.ElementsMatch(t, []string{"line", "row", "secretColumns"}, propertyNames(t, item))
+	require.ElementsMatch(t, []any{"line", "row"}, item["required"], "secretColumns is optional")
+
+	for _, file := range []string{
+		filepath.Join("approval", "approval-request.schema.json"),
+		filepath.Join("revert", "revert-request.schema.json"),
+	} {
+		schema := readJSON(t, file)
+		nonce := mustMap(t, mustMap(t, schema["properties"])["revealNonce"])
+		require.Equal(t, "^[A-Za-z0-9_-]{22}$", nonce["pattern"], "%s: 16 bytes base64url", file)
+		required, _ := schema["required"].([]any)
+		require.NotContains(t, required, "revealNonce", "%s: a long link carries no revealNonce", file)
+	}
+}
+
+// propertyNames lists the names an object schema declares.
+func propertyNames(t *testing.T, schema map[string]any) []string {
+	t.Helper()
+	props := mustMap(t, schema["properties"])
+	names := make([]string, 0, len(props))
+	for name := range props {
+		names = append(names, name)
+	}
+	return names
 }
 
 // TestRevertSchemas checks the revert-flow payload schemas (CONTRACT.md,

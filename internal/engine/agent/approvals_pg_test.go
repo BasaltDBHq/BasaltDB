@@ -6,9 +6,11 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
@@ -16,6 +18,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/mcp/mcptest"
@@ -54,6 +57,66 @@ type agentEnv struct {
 	sent   *notices
 	svc    *agent.Service
 	blind  *agent.BlindCache
+	// finds counts the agent's approval reads: one when a call looks its
+	// approval up, one more for every poll while it waits.
+	finds *finds
+	// revertFinds is the same for the revert the agent waits on.
+	revertFinds *revertFinds
+}
+
+// finds wraps the approval store and counts FindApproval calls, so a test
+// can tell that the agent is waiting without guessing a delay.
+type finds struct {
+	agent.ApprovalStore
+	n atomic.Int64
+}
+
+func (f *finds) FindApproval(ctx context.Context, id uuid.UUID) (ledger.Approval, error) {
+	f.n.Add(1)
+	return f.ApprovalStore.FindApproval(ctx, id)
+}
+
+// revertFinds wraps the revert store and counts FindRevert calls.
+type revertFinds struct {
+	agent.RevertStore
+	n atomic.Int64
+}
+
+func (f *revertFinds) FindRevert(ctx context.Context, id uuid.UUID) (ledger.Revert, error) {
+	f.n.Add(1)
+	return f.RevertStore.FindRevert(ctx, id)
+}
+
+// pollUntil reports whether cond became true within d, checking often. It
+// does not fail the test, so goroutines can use it.
+func pollUntil(d time.Duration, cond func() bool) bool {
+	deadline := time.Now().Add(d)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return true
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return cond()
+}
+
+// afterRevertPolls returns a function that blocks until the agent, from
+// now on, has looked its revert up and polled once for the signature: it is
+// in its wait. The baseline is read now, so call this before starting the
+// agent's call, and run the returned function in the goroutine that signs.
+func (e agentEnv) afterRevertPolls() func() {
+	base := e.revertFinds.n.Load()
+	return func() {
+		pollUntil(10*time.Second, func() bool { return e.revertFinds.n.Load() >= base+2 })
+	}
+}
+
+// waitPolling blocks until the agent has polled for the signature at least
+// once, which means it is in its wait.
+func (e agentEnv) waitPolling(t *testing.T) {
+	t.Helper()
+	require.Eventually(t, func() bool { return e.finds.n.Load() >= 2 }, 10*time.Second, 5*time.Millisecond,
+		"the agent never started polling for the signature")
 }
 
 func agentHarness(t *testing.T) agentEnv {
@@ -79,15 +142,17 @@ func agentHarnessFor(t *testing.T, d *guardtest.DB, a *guardtest.Agent, pagesOri
 	limits := sqlguard.DefaultLimits()
 	store := agentdb.NewStore(pool, limits, time.Now)
 	sent := &notices{}
+	watched := &finds{ApprovalStore: store}
+	watchedReverts := &revertFinds{RevertStore: store}
 	blind := agent.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
 		return guard.RLSBlindTables(ctx, pool, "", tables)
 	})
 	svc := agent.NewService(agent.Deps{
-		Name: "bot", Reader: agentdb.NewReader(pool, limits, time.Now), Store: store, Reads: store, Approvals: store,
-		Reverts: store, Notifier: sent, Log: slog.New(slog.DiscardHandler), Now: time.Now,
+		Name: "bot", Reader: agentdb.NewReader(pool, limits, time.Now), Store: store, Reads: store, Approvals: watched,
+		Reverts: watchedReverts, Notifier: sent, Log: slog.New(slog.DiscardHandler), Now: time.Now,
 		Commands: cmds, PagesOrigin: strings.Join(pagesOrigin, ""), Poll: testPoll, RLS: blind,
 	})
-	return agentEnv{d: d, a: a, h: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, person: person, sent: sent, svc: svc, blind: blind}
+	return agentEnv{d: d, a: a, h: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, person: person, sent: sent, svc: svc, blind: blind, finds: watched, revertFinds: watchedReverts}
 }
 
 func approvalOf(t *testing.T, body map[string]any) map[string]any {

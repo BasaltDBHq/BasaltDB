@@ -136,6 +136,7 @@ func (s *Service) rlsWarning(dbName string) (mcp.Warning, error) {
 	if err != nil {
 		return mcp.Warning{}, err
 	}
+	person = fitToSteps(person, steps)
 	return mcp.Warning{
 		Code:  mcp.WarningRLSHidesRows,
 		Table: dbName,

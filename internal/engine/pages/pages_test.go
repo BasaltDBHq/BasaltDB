@@ -84,7 +84,7 @@ func (a *stubAgent) RejectRevert(context.Context, uuid.UUID, string, agent.Rejec
 	return agent.RejectResponse{}, agent.ErrNotThisAgent
 }
 
-func (a *stubAgent) RevealApproval(_ context.Context, id uuid.UUID, in agent.RevealRequest) (approval.RevealAnswer, error) {
+func (a *stubAgent) RevealApproval(_ context.Context, id uuid.UUID, _ string, in agent.RevealRequest) (approval.RevealAnswer, error) {
 	if id != a.known {
 		return approval.RevealAnswer{}, agent.ErrNotThisAgent
 	}

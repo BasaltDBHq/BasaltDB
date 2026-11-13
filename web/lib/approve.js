@@ -5,6 +5,7 @@
 // paste; from a short link it posts the signature to the engine that served
 // it (same origin), which relays it to Postgres.
 import {
+  KIND_APPROVE,
   approvalResponseJSON,
   checkApprovalRequest,
   displayValue,
@@ -16,6 +17,7 @@ import {
 } from "./codec.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
 import { $, APPROVE_REOPEN, el, fail, linkFailure, loadOrPaste, personText, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
+import { canReveal, hiddenLines, NOT_CHECKED, OPEN_FROM_ENGINE, reveal, revealedLine, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import { canStartPasskey, cascadeConfirmation, headline, summarize } from "./summary.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
@@ -66,15 +68,26 @@ export function rowTable(line) {
   return table;
 }
 
-function renderLine(line) {
+// renderLine shows one row. A hidden row shows its values once the person
+// revealed them (shown), labelled as shown to them only, and as not checked
+// when Postgres left out secret columns; until then it says the values are
+// hidden, and on a long link where to see them.
+export function renderLine(line, shown = null, longLink = false) {
   const card = el("li", "row");
   const title = el("div", "row-title");
   title.append(el("span", `op op-${line.op.toLowerCase()}`, line.op));
   title.append(el("span", "table-name", visibleText(line.table)));
   if (line.cascaded) title.append(el("span", "badge", "cascaded"));
   card.append(title);
+  if (line.redacted && shown) {
+    card.append(el("p", "muted", SHOWN_TO_YOU));
+    if (!shown.checked) card.append(el("p", "conflict", NOT_CHECKED));
+    card.append(rowTable(revealedLine(line, shown, "old")));
+    return card;
+  }
   if (line.redacted) {
-    card.append(el("p", "muted", "Values hidden: the agent cannot read this table."));
+    const hidden = "Values hidden: the agent cannot read this table.";
+    card.append(el("p", "muted", longLink ? `${hidden} ${OPEN_FROM_ENGINE}` : hidden));
     return card;
   }
   if (line.op === "INSERT") card.append(el("p", "muted", "New row. Columns not listed are filled in by the database."));
@@ -170,6 +183,43 @@ async function approve(rp, req, summary, relay) {
 
 const describe = (err) => linkFailure(err, "approval", APPROVE_REOPEN);
 
+function renderLines(state) {
+  const longLink = state.relay === null;
+  $("lines").replaceChildren(...state.req.lines.map((line, i) => renderLine(line, state.shown.get(i) ?? null, longLink)));
+}
+
+// wireReveal offers Show values on a page the engine served with hidden
+// rows: one passkey prompt shows every hidden row. It never prompts on its
+// own (HR-4), and signing still asks for the passkey again.
+function wireReveal(rp, state) {
+  const { req, relay } = state;
+  if (!canReveal(req, relay)) return;
+  $("reveal-text").textContent = `${hiddenLines(req)} of these rows are in tables the agent cannot read. You can see their values with your passkey; the agent still cannot.`;
+  $("reveal-box").hidden = false;
+  $("reveal").addEventListener("click", async () => {
+    $("reveal").disabled = true;
+    $("reveal-status").textContent = "";
+    try {
+      state.shown = await reveal({
+        kind: KIND_APPROVE,
+        id: req.approvalId,
+        req,
+        rpId: rp.rpId,
+        path: revealPath("approvals", req.approvalId),
+        secret: relay.secret,
+        fetchFn: engineFetch,
+        getAssertion: (options) => navigator.credentials.get(options),
+      });
+      renderLines(state);
+      $("reveal-box").hidden = true;
+    } catch (err) {
+      const failure = revealFailure(err, KIND_APPROVE);
+      $("reveal-status").textContent = failure?.text ?? (err?.name === "NotAllowedError" ? webauthnError(err) : personText(err) || err.message);
+      $("reveal").disabled = failure?.final === true;
+    }
+  });
+}
+
 async function main() {
   let rp;
   let req;
@@ -183,8 +233,9 @@ async function main() {
   }
   const summary = summarize(req.lines);
   renderSummary(req, summary);
-  const list = $("lines");
-  for (const line of req.lines) list.append(renderLine(line));
+  const state = { req, relay, shown: new Map() };
+  renderLines(state);
+  wireReveal(rp, state);
   $("main").hidden = false;
   if (req.binding.expiresAt.getTime() <= Date.now()) {
     $("approve").disabled = true;

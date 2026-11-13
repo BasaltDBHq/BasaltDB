@@ -40,6 +40,11 @@
 
     <h2>Every row it will change</h2>
     <p class="muted">Highlighted values are what the statement sets. Postgres checks these exact rows again before the change commits.</p>
+    <div id="reveal-box" class="reveal" hidden>
+      <p id="reveal-text" class="muted"></p>
+      <button id="reveal" type="button" class="secondary">Show values</button>
+      <p id="reveal-status" class="muted" role="status"></p>
+    </div>
     <ol id="lines" class="rows"></ol>
 
     <section id="action" class="panel">

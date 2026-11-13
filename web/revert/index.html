@@ -46,6 +46,11 @@
 
       <h2 id="restore-title">What goes back</h2>
       <p id="restore-note" class="muted">Struck-through values are the row now; highlighted values are what it goes back to, as before the agent. Postgres checks these exact rows again before the revert runs; if any changed, nothing is written.</p>
+      <div id="reveal-box" class="reveal" hidden>
+        <p id="reveal-text" class="muted"></p>
+        <button id="reveal" type="button" class="secondary">Show values</button>
+        <p id="reveal-status" class="muted" role="status"></p>
+      </div>
       <ol id="restore" class="rows"></ol>
 
       <section id="skip-section" hidden>

@@ -300,6 +300,12 @@ func catalogCases() map[string]catalogCase {
 		},
 		caseKey("NOT_FOUND", "LINK", ""):       {"approval_page", nil, asToolError(&mcp.ToolError{Code: CodeNotFound, Reason: "LINK", Message: "no such link"})},
 		caseKey("NOT_FOUND", "LINK_RESET", ""): {"revert_page", nil, asToolError(&mcp.ToolError{Code: CodeNotFound, Reason: "LINK_RESET", Message: "the link was reset"})},
+		caseKey("APPROVAL_INVALID", "REVEAL_REFUSED", ""): {"approval_page", nil, func(*testing.T, *Service) error {
+			return revealRefused(CodeApprovalInvalid, "http://localhost:8787/approvals/0193a3f0-0000-7000-8000-000000000001#s=AAECAwQFBgcICQoLDA0ODw")
+		}},
+		caseKey("REVERT_INVALID", "REVEAL_REFUSED", ""): {"revert_page", nil, func(*testing.T, *Service) error {
+			return revealRefused(CodeRevertInvalid, "http://localhost:8787/reverts/0193a3f0-0000-7000-8000-000000000001#s=AAECAwQFBgcICQoLDA0ODw")
+		}},
 		caseKey("NOT_FOUND", "", "describe"): {
 			"describe",
 			map[string]any{"resource": "billing.invoices"},

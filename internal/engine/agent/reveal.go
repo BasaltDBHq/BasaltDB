@@ -47,8 +47,9 @@ func (in RevealRequest) revealKey() ([]byte, error) {
 // writes to the person on the approval page: open_reveal checks the proof
 // and gives a ticket, then the held write re-runs in a preview that rolls
 // back, recorded as an apply records it, and reveal_approval_rows reads
-// the rows there. The ticket lives in this call only.
-func (s *Service) RevealApproval(ctx context.Context, id uuid.UUID, in RevealRequest) (approval.RevealAnswer, error) {
+// the rows there, for the page holding secret, the approval's live link
+// secret. The ticket lives in this call only.
+func (s *Service) RevealApproval(ctx context.Context, id uuid.UUID, secret string, in RevealRequest) (approval.RevealAnswer, error) {
 	key, err := in.revealKey()
 	if err != nil {
 		return approval.RevealAnswer{}, err
@@ -64,12 +65,12 @@ func (s *Service) RevealApproval(ctx context.Context, id uuid.UUID, in RevealReq
 	}
 	ticket, err := s.Approvals.OpenReveal(ctx, id, in.Proof.assertion(), key)
 	if err != nil {
-		return approval.RevealAnswer{}, s.revealApprovalError(err)
+		return approval.RevealAnswer{}, s.revealApprovalError(err, s.pageLink(links.Approval, id, secret))
 	}
 	defer clear(ticket)
 	rows, err := s.Approvals.RevealPreview(ctx, held.intent, held.op, held.sql, held.params, id, ticket)
 	if err != nil {
-		return approval.RevealAnswer{}, s.revealApprovalError(err)
+		return approval.RevealAnswer{}, s.revealApprovalError(err, s.pageLink(links.Approval, id, secret))
 	}
 	return checkedAnswer(a.Lines, rows)
 }
@@ -111,7 +112,7 @@ func (s *Service) RevealRevert(ctx context.Context, id uuid.UUID, secret string,
 	}
 	out, err := s.Reverts.RevealRevertRows(ctx, id, in.Proof.assertion(), key)
 	if err != nil {
-		return approval.RevealAnswer{}, s.revealRevertError(r, err)
+		return approval.RevealAnswer{}, s.revealRevertError(r, err, s.pageLink(links.Revert, id, secret))
 	}
 	if out.RowsChanged {
 		return approval.RevealAnswer{}, revealRowsChanged(CodeRevertInvalid, "revert", "Prepare it again")
@@ -173,12 +174,12 @@ func heldWrite(a ledger.Approval) (heldRun, error) {
 }
 
 // revealApprovalError is the page's answer to a reveal Postgres refused.
-func (s *Service) revealApprovalError(err error) error {
+func (s *Service) revealApprovalError(err error, link string) error {
 	code, _ := guard.CodeOf(err)
 	detail := guardDetail(err)
 	switch {
 	case code == guard.CodeApprovalInvalid && detail == guard.RevealRefused:
-		return revealRefused(CodeApprovalInvalid)
+		return revealRefused(CodeApprovalInvalid, link)
 	case code == guard.CodeApprovalInvalid && detail == guard.RevealRowsChanged:
 		return revealRowsChanged(CodeApprovalInvalid, "approval", "This approval can no longer apply; ask the agent to try the write again")
 	case code == guard.CodeApprovalInvalid && detail == approvalNotFoundDetail:
@@ -195,12 +196,12 @@ func (s *Service) revealApprovalError(err error) error {
 
 // revealRevertError is the page's answer to a revert reveal Postgres
 // refused.
-func (s *Service) revealRevertError(r ledger.Revert, err error) error {
+func (s *Service) revealRevertError(r ledger.Revert, err error, link string) error {
 	code, _ := guard.CodeOf(err)
 	detail := guardDetail(err)
 	switch {
 	case code == guard.CodeRevertInvalid && detail == guard.RevealRefused:
-		return revealRefused(CodeRevertInvalid)
+		return revealRefused(CodeRevertInvalid, link)
 	case code == guard.CodeRevertInvalid && detail == revertNotFoundDetail:
 		return ErrNotThisAgent
 	case code == guard.CodeRevertExpired:
@@ -228,14 +229,31 @@ func guardDetail(err error) string {
 }
 
 // revealRefused is every refused proof, key, nonce or ticket: one answer,
-// so the agent holding the link learns nothing from which check failed.
-func revealRefused(code string) error {
-	return &PageError{ToolError: &mcp.ToolError{
+// so the agent holding the link learns nothing from which check failed. Its
+// step opens the page again (link, with the page's own secret: the answer
+// goes back to that page only) to press Show values once more.
+func revealRefused(code, link string) error {
+	what := "approval"
+	if code == CodeRevertInvalid {
+		what = "revert"
+	}
+	te := &mcp.ToolError{
 		Code: code, Reason: guard.RevealRefused,
 		Message: "showing the hidden rows was refused: it needs the person's passkey on this page; nothing was shown",
 		PersonMessage: "Basalt could not check your passkey for showing the hidden values, so nothing was shown. " +
-			"Press Show values again; your approval or revert is not affected.",
-	}}
+			"Open the link again and press Show values; your " + what + " is not affected.",
+	}
+	steps, err := NewSteps().OpenLink(link, "", "Open this page again and press Show values once more.").Build()
+	if err != nil {
+		return err
+	}
+	te.NextSteps = steps
+	return &PageError{ToolError: te}
+}
+
+// pageLink is the page's own short link, with the secret it holds.
+func (s *Service) pageLink(page func(string, uuid.UUID) string, id uuid.UUID, secret string) string {
+	return links.WithSecret(page(s.PagesBase, id), secret)
 }
 
 // revealRowsChanged is a reveal whose hidden rows changed since the agent

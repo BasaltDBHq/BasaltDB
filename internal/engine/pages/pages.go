@@ -73,8 +73,8 @@ type Agent interface {
 	RejectRevert(ctx context.Context, id uuid.UUID, secret string, in agent.RejectRequest) (agent.RejectResponse, error)
 	// RevealApproval and RevealRevert return the values of the item's
 	// redacted lines for the person's reveal proof (CONTRACT.md, Rows hidden
-	// from the agent); RevealRevert for the page holding secret.
-	RevealApproval(ctx context.Context, id uuid.UUID, in agent.RevealRequest) (approval.RevealAnswer, error)
+	// from the agent), for the page holding secret.
+	RevealApproval(ctx context.Context, id uuid.UUID, secret string, in agent.RevealRequest) (approval.RevealAnswer, error)
 	RevealRevert(ctx context.Context, id uuid.UUID, secret string, in agent.RevealRequest) (approval.RevealAnswer, error)
 	IssueApprovalLink(ctx context.Context, id uuid.UUID, proof string) (string, error)
 	IssueRevertLink(ctx context.Context, id uuid.UUID, proof string) (string, error)
@@ -332,8 +332,8 @@ func (s *Server) postReject(w http.ResponseWriter, r *http.Request) {
 // the proof. The answer is sent with Cache-Control: no-store (writeJSON)
 // and kept nowhere.
 func (s *Server) postApprovalReveal(w http.ResponseWriter, r *http.Request) {
-	s.reveal(w, r, approvalParam, func(ctx context.Context, a Agent, id uuid.UUID, _ string, in agent.RevealRequest) (approval.RevealAnswer, error) {
-		return a.RevealApproval(ctx, id, in)
+	s.reveal(w, r, approvalParam, func(ctx context.Context, a Agent, id uuid.UUID, secret string, in agent.RevealRequest) (approval.RevealAnswer, error) {
+		return a.RevealApproval(ctx, id, secret, in)
 	})
 }
 

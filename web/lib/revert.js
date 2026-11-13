@@ -12,6 +12,7 @@
 // passkey for a widen proof (rescope.js). Each answer is a new request the
 // page checks and shows in full, as on load.
 import {
+  KIND_REVERT,
   MAX_REVERT_BATCH,
   REVERT_APPLY_HOURS,
   checkRevertRequest,
@@ -26,6 +27,7 @@ import {
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, rejectRevert, revertDone, revertPaths } from "./local.js";
 import { $, REVERT_REOPEN, el, fail, linkFailure, loadOrPaste, personText, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
 import { canWiden, narrow, widen } from "./rescope.js";
+import { canReveal, hiddenLines, NOT_CHECKED, OPEN_FROM_ENGINE, reveal, revealedLine, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import {
   MAX_NOTE,
   RESET_MESSAGE,
@@ -180,7 +182,11 @@ export function agentTag(who) {
   return tag;
 }
 
-function renderLine(line, who) {
+// renderLine shows one row. A hidden row shows its values once the person
+// revealed them (shown), labelled as shown to them only, and as not checked
+// when Postgres left out secret columns; until then it says the values are
+// hidden, and on a long link where to see them.
+export function renderLine(line, who, shown = null, longLink = false) {
   const card = el("li", "row");
   const title = el("div", "row-title");
   title.append(el("span", `op op-${line.op.toLowerCase()}`, opLabel(line)));
@@ -192,8 +198,16 @@ function renderLine(line, who) {
     const reason = CONFLICTS[line.conflict];
     card.append(el("p", "conflict", line.sqlState ? `${reason} (SQLSTATE ${visibleText(line.sqlState)})` : reason));
   }
+  if (line.redacted && shown) {
+    card.append(el("p", "muted", SHOWN_TO_YOU));
+    if (!shown.checked) card.append(el("p", "conflict", NOT_CHECKED));
+    const shownLine = revealedLine(line, shown, "now");
+    card.append(rowTable(shownLine) ?? el("p", "muted", rowKeyText(shownLine)));
+    return card;
+  }
   if (line.redacted) {
-    card.append(el("p", "muted", "Values hidden: the role that prepared this revert cannot read this table."));
+    const hidden = "Values hidden: the role that prepared this revert cannot read this table.";
+    card.append(el("p", "muted", longLink ? `${hidden} ${OPEN_FROM_ENGINE}` : hidden));
     return card;
   }
   if (line.op === "DELETE" && line.action === "RESTORE") card.append(el("p", "muted", "The agent inserted this row; the revert deletes it."));
@@ -335,9 +349,11 @@ function render(state) {
   const who = rowAgent(req.binding);
   $("restore").replaceChildren();
   $("skip").replaceChildren();
-  for (const line of req.lines) {
-    $(line.action === "SKIP" ? "skip" : "restore").append(renderLine(line, who));
-  }
+  const longLink = state.relay === null;
+  req.lines.forEach((line, i) => {
+    $(line.action === "SKIP" ? "skip" : "restore").append(renderLine(line, who, state.shown.get(i) ?? null, longLink));
+  });
+  renderReveal(state);
   $("skip-section").hidden = req.binding.skipped === 0;
   renderScope(state);
   // Sign and Reject wait while a scope change is in flight, and stay off
@@ -403,6 +419,9 @@ function renderScope(state) {
 // a widen, the catalog and the link's new secret.
 function applyScope(state, out) {
   state.req = out.req;
+  // New lines: what was shown belonged to the old ones.
+  state.shown = new Map();
+  state.revealDone = false;
   if (out.catalog !== null) state.catalog = out.catalog;
   if (out.secret) state.relay.secret = out.secret;
 }
@@ -446,6 +465,43 @@ function includeOthers(state) {
   );
 }
 
+// renderReveal offers Show values on a page the engine served with hidden
+// rows, until the person revealed them. It never prompts on its own (HR-4).
+function renderReveal(state) {
+  const { req } = state;
+  const offer = canReveal(req, state.relay) && !state.revealDone;
+  $("reveal-box").hidden = !offer;
+  if (!offer) return;
+  $("reveal-text").textContent = `${hiddenLines(req)} of these rows are in tables the agent cannot read. You can see their values with your passkey; the agent still cannot.`;
+  $("reveal").disabled = state.busy || state.revealFinal === req;
+}
+
+// showValues asks the passkey once and shows every hidden row. Signing
+// still asks for the passkey again; nothing shown goes into the signature.
+async function showValues(state) {
+  const { req, relay } = state;
+  $("reveal").disabled = true;
+  $("reveal-status").textContent = "";
+  try {
+    state.shown = await reveal({
+      kind: KIND_REVERT,
+      id: req.revertId,
+      req,
+      rpId: state.rp.rpId,
+      path: revealPath("reverts", req.revertId),
+      secret: relay.secret,
+      fetchFn: engineFetch,
+      getAssertion: (options) => navigator.credentials.get(options),
+    });
+    state.revealDone = true;
+  } catch (err) {
+    const failure = revealFailure(err, KIND_REVERT);
+    $("reveal-status").textContent = failure?.text ?? (err?.name === "NotAllowedError" ? webauthnError(err) : personText(err) || err.message);
+    if (failure?.final) state.revealFinal = req;
+  }
+  if (state.req === req) render(state);
+}
+
 // openScope shows the scope sheet on a phone; on a wide screen the scope is
 // always in the decision panel (style.css).
 function openScope(open) {
@@ -467,7 +523,7 @@ async function main() {
     return;
   }
   const expired = req.binding.expiresAt.getTime() <= Date.now();
-  const state = { rp, req, relay, catalog: null, known: [], choices: null, busy: false, expired };
+  const state = { rp, req, relay, catalog: null, known: [], choices: null, busy: false, expired, shown: new Map(), revealDone: false };
   render(state);
   $("main").hidden = false;
   setInterval(() => {
@@ -475,6 +531,7 @@ async function main() {
   }, EXPIRY_TICK_MS);
   wireReject(state);
   $("widen").addEventListener("click", () => includeOthers(state));
+  $("reveal").addEventListener("click", () => showValues(state));
   $("scope-line").addEventListener("click", () => openScope(true));
   $("scope-done").addEventListener("click", () => openScope(false));
   $("sheet-dim").addEventListener("click", () => openScope(false));

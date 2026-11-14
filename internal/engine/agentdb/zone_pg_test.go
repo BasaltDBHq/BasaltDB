@@ -288,3 +288,107 @@ func images(t *testing.T, d *guardtest.DB, run uuid.UUID) []string {
 	require.NoError(t, err)
 	return out
 }
+
+// handConn is the agent's own connection, as in psql, from Asia/Jakarta,
+// with intervals in iso_8601, extra_float_digits 0 and bytea_output escape:
+// no setting the engine pins has its value but DateStyle's ISO, which the
+// Go callers need to read the timestamps the guard functions return
+// (ISO, DMY: the order differs).
+func handConn(t *testing.T, agentURL string) *pgx.Conn {
+	t.Helper()
+	u, err := url.Parse(zoned(t, agentURL, "Asia/Jakarta"))
+	require.NoError(t, err)
+	q := u.Query()
+	q.Set("extra_float_digits", "0")
+	q.Set("bytea_output", "escape")
+	q.Set("datestyle", "ISO,DMY")
+	u.RawQuery = q.Encode()
+	c, err := pgdial.Connect(context.Background(), u.String())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = c.Close(context.Background()) })
+	return c
+}
+
+// blobDB is a guarded table with a bytea column next to the zone and float
+// ones, four rows alike but for id, and an agent that writes it.
+func blobDB(t *testing.T) (*guardtest.DB, *guardtest.Agent, *passkeytest.Authenticator) {
+	t.Helper()
+	d := guardtest.New(t)
+	d.Exec(t, `CREATE TABLE public.files (
+		id bigint PRIMARY KEY, at timestamptz NOT NULL, took interval NOT NULL,
+		ratio float8 NOT NULL, body bytea NOT NULL, note text NOT NULL);
+		INSERT INTO public.files SELECT g, timestamptz '2026-11-10 06:02:11.5+00', interval '90 minutes',
+			0.1::float8 + 0.2::float8, '\x00ff41'::bytea, 'note' FROM generate_series(1, 4) g`)
+	tables := []string{"public.files"}
+	a := d.NewAgent(t, "bot", tables, tables)
+	signer, err := passkeytest.New(passkey.Production)
+	require.NoError(t, err)
+	require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, signer.Credential(), "app"))
+	return d, a, signer
+}
+
+// A write that skips the engine with bytea_output escape stores the bytea
+// column as the engine does (hex), and the engine reverts it cleanly.
+func TestAWriteThatSkipsTheEngineStoresByteaAsTheEngine(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	d, a, signer := blobDB(t)
+	direct := handConn(t, a.URL)
+	in := guard.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Tag files by hand"}
+	require.NoError(t, guard.StartRun(ctx, direct, in))
+	require.NoError(t, guardtest.Guarded(ctx, direct, in, `UPDATE public.files SET note = 'tagged' WHERE id IN (1, 2)`))
+	var shown string
+	require.NoError(t, direct.QueryRow(ctx, `SELECT body::text FROM public.files WHERE id = 1`).Scan(&shown))
+	require.Equal(t, `\000\377A`, shown, "the agent's session keeps its bytea_output")
+
+	engine := agentdb.NewStore(zonedPool(t, a.URL, "UTC"), sqlguard.DefaultLimits(), time.Now)
+	viaEngine := write(t, engine, `UPDATE public.files SET note = 'tagged' WHERE id IN (3, 4)`)
+	got := images(t, d, in.RunID)
+	require.Len(t, got, 2)
+	require.Equal(t, images(t, d, viaEngine), got)
+	require.Contains(t, strings.Join(got, "\n"), `"body": "\\x00ff41"`)
+
+	scope := guard.RevertScope{Kind: revert.ScopeRun, ID: in.RunID}
+	prep, err := engine.PrepareRevert(ctx, scope, "Undo", time.Minute)
+	require.NoError(t, err)
+	requireNoSkip(t, prep.Lines)
+	as, err := signer.Sign(revert.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+	require.NoError(t, err)
+	applied, err := person.NewDBLedger(zonedConn(t, a.URL, "UTC"), time.Now).ApplyRevert(ctx, prep.RevertID, as)
+	require.NoError(t, err)
+	require.Equal(t, 2, applied.Rows)
+	require.Zero(t, applied.Skipped)
+}
+
+// The revert functions called by hand, from a session in none of the
+// engine's settings, find no false conflict with a write through the
+// engine, and restore the rows as they were.
+func TestRevertFunctionsCalledByHandDoNotDependOnTheSession(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	d, a, signer := blobDB(t)
+	engine := agentdb.NewStore(zonedPool(t, a.URL, "UTC"), sqlguard.DefaultLimits(), time.Now)
+	run := write(t, engine, `UPDATE public.files SET note = 'tagged', ratio = ratio * 3, body = body || '\x01'::bytea,
+		at = at + interval '1 day', took = took * 2 WHERE id IN (1, 2)`)
+
+	hand := handConn(t, a.URL)
+	scope := guard.RevertScope{Kind: revert.ScopeRun, ID: run}
+	lines, err := guard.PreviewRevert(ctx, hand, scope)
+	require.NoError(t, err)
+	requireNoSkip(t, lines)
+	prep, err := guard.PrepareRevert(ctx, hand, scope, "Undo by hand")
+	require.NoError(t, err)
+	requireNoSkip(t, prep.Lines)
+	as, err := signer.Sign(revert.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+	require.NoError(t, err)
+	applied, err := guard.ApplyRevert(ctx, hand, prep.RevertID, as)
+	require.NoError(t, err)
+	require.Equal(t, 2, applied.Rows)
+	require.Zero(t, applied.Skipped)
+
+	var same int
+	// Plain SQL: a fixture read as the admin.
+	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT count(*)::int FROM public.files a JOIN public.files b ON b.id = 3
+		WHERE a.id IN (1, 2) AND (a.at, a.took, a.ratio, a.body, a.note) = (b.at, b.took, b.ratio, b.body, b.note)`).Scan(&same))
+	require.Equal(t, 2, same, "the reverted rows are as they were")
+}

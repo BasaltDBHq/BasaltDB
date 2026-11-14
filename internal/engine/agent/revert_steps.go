@@ -234,15 +234,30 @@ func revertNotFound(id uuid.UUID) error {
 	}
 }
 
-// signingLink is the link a refusal of the person's code sends them back
-// to: r's long link, or none for a widened revert, whose only link is the
-// page the person widened on (the agent cannot read its binding, RS-5).
-func (s *Service) signingLink(ctx context.Context, r ledger.Revert) (string, error) {
-	if r.Widened {
-		return "", nil
+// signingLink is the OPEN_LINK step of a refusal that sends the person back
+// to sign r again, with text after what the step says first. It follows the
+// link budget (CONTRACT.md, The request file and pasted blocks): while the
+// engine serves the pages the person has the short link, so the step carries
+// no url and never the long link; without them it carries the link the
+// request handed over (the long link within the budget, else the hash link,
+// whose request file the agent already sent; no requestFile again). A
+// widened revert has no link: its only one is the page the person widened
+// on (the agent cannot read its binding, RS-5).
+func (s *Service) signingLink(ctx context.Context, r ledger.Revert, text string) (mcp.NextStep, error) {
+	switch {
+	case r.Widened:
+		return openLink("", text), nil
+	case s.PagesOrigin != "":
+		return openLink("", "Open the short link the agent gave you earlier. "+text), nil
 	}
 	pick, err := s.restatedRevertLink(ctx, r)
-	return pick.URL, err
+	if err != nil {
+		return mcp.NextStep{}, err
+	}
+	if pick.Kind == linkHash {
+		text = "Open the link with the request file the agent sent you earlier. " + text
+	}
+	return openLink(pick.URL, text), nil
 }
 
 // restatedRevertLink is r's link in a result that names it without issuing
@@ -280,36 +295,44 @@ func sentence(s string) string {
 }
 
 func (s *Service) badSignature(ctx context.Context, r ledger.Revert, message string) error {
-	link, err := s.signingLink(ctx, r)
+	open, err := s.signingLink(ctx, r, signAgainText)
 	if err != nil {
 		return err
 	}
-	return s.badSignatureWith(link, r, message)
+	return s.badSignatureWith(open, r, message)
 }
 
-// badSignatureWith is REVERT_INVALID BAD_SIGNATURE for the revert page at link.
-func (s *Service) badSignatureWith(link string, r ledger.Revert, message string) error {
+// The OPEN_LINK texts of the refusals that send the person back to sign.
+const (
+	signAgainText   = "Sign again on the page; the code did not verify."
+	signRevokedText = "Then sign the revert again with that passkey."
+)
+
+// badSignatureWith is REVERT_INVALID BAD_SIGNATURE with open, the step to
+// the revert page (signingLink).
+func (s *Service) badSignatureWith(open mcp.NextStep, r ledger.Revert, message string) error {
 	return &mcp.ToolError{
 		Code: CodeRevertInvalid, Reason: reasonBadSignature, Message: message,
 		PersonMessage: fmt.Sprintf("The code for %s did not verify, so nothing was reverted. Sign again on "+
 			"the revert page and give the agent the new code.", revertTitle(r)),
 		NextSteps: []mcp.NextStep{
-			openLink(link, "Sign again on the page; the code did not verify."),
+			open,
 			agentStep(mcp.ActionEndTurn, stepEndTurnPersonActsNext),
 		},
 	}
 }
 
 func (s *Service) passkeyRevoked(ctx context.Context, r ledger.Revert) error {
-	link, err := s.signingLink(ctx, r)
+	open, err := s.signingLink(ctx, r, signRevokedText)
 	if err != nil {
 		return err
 	}
-	return s.passkeyRevokedWith(link, r)
+	return s.passkeyRevokedWith(open, r)
 }
 
-// passkeyRevokedWith is REVERT_INVALID PASSKEY_REVOKED for the revert page at link.
-func (s *Service) passkeyRevokedWith(link string, r ledger.Revert) error {
+// passkeyRevokedWith is REVERT_INVALID PASSKEY_REVOKED with open, the step
+// to the revert page (signingLink).
+func (s *Service) passkeyRevokedWith(open mcp.NextStep, r ledger.Revert) error {
 	return &mcp.ToolError{
 		Code: CodeRevertInvalid, Reason: reasonPasskeyRevoked,
 		Message: "the code was signed by a passkey this database does not know or that was revoked; nothing was reverted",
@@ -319,7 +342,7 @@ func (s *Service) passkeyRevokedWith(link string, r ledger.Revert) error {
 		NextSteps: []mcp.NextStep{
 			runCommand(s.Commands.PasskeyList(), "See which passkeys this database accepts."),
 			runCommand(s.Commands.Init("--add-passkey"), "Register your passkey with this command: it adds the one you use and changes nothing else."),
-			openLink(link, "Then sign the revert again with that passkey."),
+			open,
 			agentStep(mcp.ActionEndTurn, stepEndTurnPersonActsNext),
 		},
 	}

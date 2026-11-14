@@ -260,10 +260,10 @@ func catalogCases() map[string]catalogCase {
 			return s.rowsChanged(caseRevert(false), "rows changed")
 		}},
 		caseKey("REVERT_INVALID", "BAD_SIGNATURE", ""): {"request_revert", revertArgs, func(t *testing.T, s *Service) error {
-			return s.badSignatureWith(caseShortLink, caseRevert(false), "the code does not verify")
+			return s.badSignatureWith(openLink(caseShortLink, signAgainText), caseRevert(false), "the code does not verify")
 		}},
 		caseKey("REVERT_INVALID", "PASSKEY_REVOKED", ""): {"request_revert", revertArgs, func(t *testing.T, s *Service) error {
-			return s.passkeyRevokedWith(caseShortLink, caseRevert(false))
+			return s.passkeyRevokedWith(openLink(caseShortLink, signRevokedText), caseRevert(false))
 		}},
 
 		caseKey("REVERT_EXPIRED", "NOT_SIGNED", ""):   {"request_revert", revertArgs, func(t *testing.T, s *Service) error { return s.revertExpired(caseRevert(false)) }},
@@ -544,7 +544,10 @@ func requireStepObeysRules(t *testing.T, st mcp.NextStep, kase catalogCase, conf
 	}
 }
 
-var serviceManager = regexp.MustCompile(`^sudo (systemctl|launchctl) `)
+// serviceManager is a root command on the engine's machine: the service
+// manager, or giving a lock file back to the engine's user
+// (LOCK_FILE_UNUSABLE).
+var serviceManager = regexp.MustCompile(`^sudo (systemctl|launchctl|chown) `)
 
 func requireCommand(t *testing.T, command, config, where string) {
 	t.Helper()

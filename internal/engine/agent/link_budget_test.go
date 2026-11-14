@@ -434,3 +434,63 @@ func TestApprovalInvalidRestatesTheHoldsLink(t *testing.T) {
 		require.NotContains(t, te.PersonMessage, "sends you")
 	}
 }
+
+// REVERT_INVALID refusals that send the person back to the revert page
+// (BAD_SIGNATURE, PASSKEY_REVOKED) follow the link budget like the request:
+// with the pages served, the short link the person has (no url, never the
+// long link over the budget); without them, the hash link on the step only,
+// naming the request file the agent already sent, and no SEND_REQUEST.
+func TestRevertInvalidRestatesTheRequestsLink(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	big := revertOf(t, "Undo the bad merge", revertLines(60), false)
+	for _, origin := range []string{localPages, ""} {
+		s := noticeService(origin, links.DefaultBudget)
+		long, err := s.longRevertLink(ctx, big)
+		require.NoError(t, err)
+		require.Greater(t, len(long), links.DefaultBudget, "the fixture must be over budget")
+		for name, refuse := range map[string]func() error{
+			reasonBadSignature:   func() error { return s.badSignature(ctx, big, "the code does not verify") },
+			reasonPasskeyRevoked: func() error { return s.passkeyRevoked(ctx, big) },
+		} {
+			te := ToolError(refuse())
+			require.Equal(t, CodeRevertInvalid, te.Code, name)
+			requirePersonMessage(t, te.PersonMessage, te.Links)
+			require.NotContains(t, te.PersonMessage, "#2.", "%s %q: no long link in the message", name, origin)
+			var open *mcp.NextStep
+			for i := range te.NextSteps {
+				step := te.NextSteps[i]
+				require.NotEqual(t, mcp.ActionSendRequest, step.Action, "%s %q: the file was sent with the request", name, origin)
+				require.LessOrEqual(t, len(step.URL), links.DefaultBudget, "%s %q: no step carries a link over the budget", name, origin)
+				if step.Action == mcp.ActionOpenLink {
+					open = &step
+				}
+			}
+			require.NotNil(t, open, name)
+			if origin != "" {
+				require.Empty(t, open.URL, "%s: the short link the person has", name)
+				require.Contains(t, open.Text, "short link the agent gave you earlier", name)
+				continue
+			}
+			hash, _, err := links.HashLink(long, links.RevertFile(big.ID))
+			require.NoError(t, err)
+			require.Equal(t, hash, open.URL, "%s: the hash link the request handed over", name)
+			require.Contains(t, open.Text, "request file the agent sent you earlier", name)
+		}
+	}
+}
+
+// A widened revert's refusal names no link: the person signs on the page
+// they widened on (RS-5), whether or not the engine serves the pages.
+func TestWidenedRevertInvalidNamesNoLink(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	r := revertOf(t, "Undo the bad merge", revertLines(2), false)
+	r.Widened = true
+	for _, origin := range []string{localPages, ""} {
+		te := ToolError(noticeService(origin, links.DefaultBudget).badSignature(ctx, r, "m"))
+		require.Equal(t, mcp.ActionOpenLink, te.NextSteps[0].Action)
+		require.Empty(t, te.NextSteps[0].URL, origin)
+		require.NotContains(t, te.NextSteps[0].Text, "short link the agent gave you", origin)
+	}
+}

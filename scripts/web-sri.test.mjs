@@ -20,7 +20,8 @@ function check(edit) {
   try {
     cpSync(web, root, { recursive: true });
     const page = join(root, "approve", "index.html");
-    writeFileSync(page, edit(readFileSync(page, "utf8"), root));
+    const out = edit(readFileSync(page, "utf8"), root);
+    writeFileSync(page, typeof out === "string" ? out : Buffer.from(out));
     console.error = (m) => logged.push(String(m));
     return { code: run("--check", root), out: logged.join("\n") };
   } finally {
@@ -97,4 +98,34 @@ test("a modulepreload after the script fails", () => {
   const r = check((h, root) => h.replace("<!-- sri:end -->", `<!-- sri:end -->\n  <link rel="modulepreload" href="../lib/approve.js" integrity="${sri(readFileSync(join(root, "lib", "approve.js")))}">`));
   assert.equal(r.code, 1);
   assert.match(r.out, /after the module script/);
+});
+
+test("a page the browser could decode differently fails", () => {
+  const withRepro = (h, root) => h.replace("<!-- sri:end -->", "<!-- sri:end -->\n  " + notEmbedded(root));
+  const utf16 = (s) => Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(s, "utf16le")]);
+  const cases = [
+    [(h, root) => utf16(withRepro(h, root)), /not valid UTF-8/],
+    [(h) => "\uFEFF" + h, /byte-order mark/],
+    [(h) => h.replace("<!-- sri:end -->", "<!-- sri:end -->\n<scr\x1b(Bipt>"), /control byte 0x1b/],
+    [(h) => h.replace('<meta charset="utf-8">', '<meta charset="utf-8">\n<meta charset="ISO-2022-JP">'), /exactly one charset/],
+    [(h) => h.replace('<meta charset="utf-8">', ""), /exactly one charset/],
+  ];
+  for (const [edit, want] of cases) {
+    const r = check(edit);
+    assert.equal(r.code, 1);
+    assert.match(r.out, want);
+  }
+});
+
+test("a reference not in clean form fails", () => {
+  const r = check((h) => h.replace('href="../lib/changes.js"', 'href="../lib//changes.js"'));
+  assert.equal(r.code, 1);
+  assert.match(r.out, /not in clean form/);
+});
+
+test("a second entry script must have its imports preloaded", () => {
+  const r = check((h, root) => h.replace("<!-- sri:end -->",
+    `<!-- sri:end -->\n  <script type="module" src="../lib/revert.js" integrity="${sri(readFileSync(join(root, "lib", "revert.js")))}"></script>`));
+  assert.equal(r.code, 1);
+  assert.match(r.out, /has no modulepreload with integrity/);
 });

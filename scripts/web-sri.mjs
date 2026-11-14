@@ -19,10 +19,12 @@ const integrity = (file) => "sha384-" + createHash("sha384").update(readFileSync
 // //go:embed line in web/embed.go, expanded (a literal path or dir/*.ext).
 export function embedded(root) {
   const src = readFileSync(join(root, "embed.go"), "utf8");
-  const m = src.match(/^\/\/go:embed (.+)$/m);
-  if (!m) throw new Error(`${root}/embed.go: no //go:embed line`);
+  const lines = [...src.matchAll(/^\/\/go:embed (.+)$/gm)];
+  if (lines.length !== 1) throw new Error(`${root}/embed.go: want exactly one //go:embed line, found ${lines.length}`);
+  const m = lines[0];
   const out = new Set();
   for (const pat of m[1].trim().split(/\s+/)) {
+    if (/[?[\\"`]/.test(pat)) throw new Error(`unsupported embed pattern ${pat}`);
     const star = pat.indexOf("*");
     if (star < 0) { out.add(pat); continue; }
     const dir = posix.dirname(pat);
@@ -40,6 +42,8 @@ export function embedded(root) {
 // throws when it is not relative, leaves root, or names a file not embedded.
 function resolveRef(root, files, from, ref) {
   if (/^[a-z][a-z0-9+.-]*:|^\/\//i.test(ref) || ref.startsWith("/")) throw new Error(`${from}: reference ${ref} is not relative to the page`);
+  const clean = posix.normalize(ref);
+  if (clean !== ref && "./" + clean !== ref) throw new Error(`${from}: reference ${ref} is not in clean form`);
   const rel = posix.normalize(posix.join(posix.dirname(relative(root, from).split(sep).join("/")), ref));
   if (rel.startsWith("../") || rel === "..") throw new Error(`${from}: reference ${ref} leaves the embedded files`);
   if (!files.has(rel)) throw new Error(`${from}: reference ${ref} is not an embedded file`);
@@ -71,7 +75,7 @@ function closure(root, files, entry) {
 }
 
 function block(root, files, page) {
-  const html = readFileSync(page, "utf8");
+  const html = plainUTF8(page);
   const m = html.match(/<script type="module" src="([^"]+)"[^>]*><\/script>/);
   if (!m) throw new Error(`${page}: no module script`);
   const entry = resolveRef(root, files, page, m[1]);
@@ -106,22 +110,54 @@ const SCRIPT = /^<script type="module" src="([^"&]+)" integrity="(sha384-[A-Za-z
 const PRELOAD = /^<link rel="modulepreload" href="([^"&]+)" integrity="(sha384-[A-Za-z0-9+/]+=*)">/;
 const STYLE = /^<link rel="stylesheet" href="([^"&]+)">/;
 
+// plainUTF8 refuses a page the browser might decode differently from the
+// check: a byte-order mark (it overrides the declared charset, so a UTF-16
+// page would hide its tags from this scan), invalid UTF-8, control bytes
+// other than tab, LF and CR (ESC switches ISO-2022 encodings), or any charset
+// other than one <meta charset="utf-8"> in the first 1024 bytes.
+export function plainUTF8(page) {
+  const bytes = readFileSync(page);
+  let html;
+  try {
+    html = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch {
+    throw new Error(`${page}: not valid UTF-8`);
+  }
+  if (html.startsWith("\uFEFF")) throw new Error(`${page}: starts with a byte-order mark`);
+  const ctrl = html.match(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/);
+  if (ctrl) throw new Error(`${page}: control byte 0x${ctrl[0].charCodeAt(0).toString(16).padStart(2, "0")}`);
+  const meta = '<meta charset="utf-8">';
+  const at = bytes.indexOf(meta);
+  if (at < 0 || at + meta.length > 1024 || (html.match(/charset/gi) || []).length !== 1) {
+    throw new Error(`${page}: must declare exactly one charset, ${meta}, in its first 1024 bytes`);
+  }
+  return html;
+}
+
 export function verify(root, files, page) {
-  const html = readFileSync(page, "utf8");
   const problems = [];
+  let html;
+  try {
+    html = plainUTF8(page);
+  } catch (e) {
+    return [e.message];
+  }
+  const entries = [];
+  const declared = new Set();
   const pinned = (ref, hash) => {
     const file = resolveRef(root, files, page, ref);
     if (integrity(file) !== hash) throw new Error(`${page}: stale integrity for ${ref}`);
+    return file;
   };
   let scripts = 0;
   for (const t of html.matchAll(/<(script|link)\b/gi)) {
     const rest = html.slice(t.index);
     try {
       let m;
-      if ((m = rest.match(SCRIPT))) { pinned(m[1], m[2]); scripts++; }
+      if ((m = rest.match(SCRIPT))) { entries.push(pinned(m[1], m[2])); scripts++; }
       else if ((m = rest.match(PRELOAD))) {
         if (scripts) throw new Error(`${page}: modulepreload after the module script`);
-        pinned(m[1], m[2]);
+        declared.add(pinned(m[1], m[2]));
       } else if ((m = rest.match(STYLE))) resolveRef(root, files, page, m[1]);
       else throw new Error(`${page}: tag is not in a checked form (run make web-sri): ${rest.split(">")[0]}>`);
     } catch (e) {
@@ -129,7 +165,18 @@ export function verify(root, files, page) {
     }
   }
   if (!scripts) problems.push(`${page}: no script`);
-  return problems;
+  // Every module any entry script imports, directly or not, needs a preload
+  // with integrity: the generated block covers the first script only.
+  for (const entry of entries) {
+    try {
+      for (const dep of closure(root, files, entry)) {
+        if (!declared.has(dep)) problems.push(`${page}: imported module ${relative(root, dep)} has no modulepreload with integrity`);
+      }
+    } catch (e) {
+      problems.push(e.message);
+    }
+  }
+  return [...new Set(problems)];
 }
 
 export function run(mode, root) {
@@ -147,7 +194,7 @@ export function run(mode, root) {
     }
     if (want !== readFileSync(p, "utf8")) {
       if (mode === "--write") writeFileSync(p, want);
-      else { console.error(`${p}: integrity block out of date; run: make web-sri`); bad++; continue; }
+      else { console.error(`${p}: integrity block out of date; run: make web-sri`); bad++; }
     }
     for (const problem of verify(root, files, p)) { console.error(problem); bad++; }
   }

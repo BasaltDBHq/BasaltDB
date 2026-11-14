@@ -11,6 +11,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
+	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 )
 
 // loadConfigAsRoot reads the engine config for a root person CLI (sudo
@@ -59,7 +60,10 @@ func checkConfigFile(f *os.File, trusted int) error {
 // reached without following a link, a regular file with one link, mode
 // 0600 or tighter, owned by trusted (readOwnedCredential). trusted is the
 // config's (loadConfigAsRoot), or, for --credential-file, the owner of
-// the file's directory.
+// the file's directory. Root connects with what it reads, and pgx reads
+// files for the caller from some parameters, so a file another user owns
+// (trusted is not root) must pass pgdial.CheckForeignDSN, as root's init
+// --remote and root engine reads do.
 func readCredentialAsRoot(path string, trusted int, fromConfig bool) (string, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -73,6 +77,12 @@ func readCredentialAsRoot(path string, trusted int, fromConfig bool) (string, er
 	line, err := readOwnedCredential(abs, trusted, fmt.Sprintf("uid %d", trusted))
 	if err != nil {
 		return "", fmt.Errorf("credential file %s is refused: %w", path, err)
+	}
+	if trusted != 0 {
+		if err := pgdial.CheckForeignDSN(line); err != nil {
+			return "", fmt.Errorf("credential file %s belongs to uid %d, not root: as root, basalt takes from it %w; "+
+				"run the command as that user (sudo -u <user>), or fix the file", path, trusted, err)
+		}
 	}
 	return line, nil
 }

@@ -33,6 +33,9 @@ const (
 	// directHeaderTimeout and directHeaderBytes bound a request's headers.
 	directHeaderTimeout = 5 * time.Second
 	directHeaderBytes   = 8 << 10
+	// headerSlop is what net/http reads past Server.MaxHeaderBytes before
+	// it answers 431, so the server is given directHeaderBytes less it.
+	headerSlop = 4 << 10
 	// directConns is the most connections open on the listener.
 	directConns = 64
 	// recordReadTimeout bounds one read of the engine's record.
@@ -155,7 +158,10 @@ func (r *engineRecords) hostAllowed(ctx context.Context, host string) bool {
 	if ok || !stale {
 		return ok
 	}
-	r.refresh(ctx)
+	// The read is not the request's: a client that goes away at once
+	// would otherwise fail it and keep a just-recorded address out until
+	// the next window.
+	r.refresh(context.WithoutCancel(ctx))
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.hosts[host]
@@ -319,7 +325,13 @@ func (d *directHandler) session(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	stop := context.AfterFunc(d.ctx, cancel) //nolint:contextcheck // the engine stopping ends the socket too, not only the request
 	defer stop()
-	d.sess.Serve(ctx, ws, d.records.admit(r.Host))
+	// The handshake ends with the record's check (message 2 follows at
+	// once), so the slot is free for the next socket from then on.
+	admit := d.records.admit(r.Host)
+	d.sess.Serve(ctx, ws, func(actx context.Context, l vault.SessionLink) channel.CloseError {
+		defer release()
+		return admit(actx, l)
+	})
 }
 
 // allowUpgrade counts an upgrade against directUpgradesPerMinute.
@@ -358,7 +370,7 @@ func listenDirect(addr string) (*directSite, error) {
 func newDirectServer(h http.Handler) *http.Server {
 	return &http.Server{
 		Handler: h, ReadHeaderTimeout: directHeaderTimeout, ReadTimeout: directReadTimeout, WriteTimeout: directWriteTimeout,
-		IdleTimeout: directIdleTimeout, MaxHeaderBytes: directHeaderBytes,
+		IdleTimeout: directIdleTimeout, MaxHeaderBytes: directHeaderBytes - headerSlop,
 	}
 }
 

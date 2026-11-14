@@ -106,7 +106,7 @@ func (d *TrustedDir) OpenFile(name string, flag int, perm os.FileMode) (*os.File
 	full := filepath.Join(d.path, name)
 	fd, err := unix.Openat(d.fd, name, flag|unix.O_NOFOLLOW|unix.O_CLOEXEC, uint32(perm.Perm()))
 	if errors.Is(err, unix.ELOOP) {
-		return nil, fmt.Errorf("%s is a symlink, which is refused", full)
+		return nil, symlinkError(full)
 	}
 	if err != nil {
 		return nil, &os.PathError{Op: opOpen, Path: full, Err: err}
@@ -149,6 +149,15 @@ func (d *TrustedDir) WriteFile(name string, data []byte, mode os.FileMode, owner
 	}
 	return nil
 }
+
+// symlinkError is a name OpenFile refused for being a symlink; it wraps
+// ELOOP, so a caller can tell it apart (config.LockAt: a lock file that
+// cannot be used).
+type symlinkError string
+
+func (e symlinkError) Error() string { return string(e) + " is a symlink, which is refused" }
+
+func (e symlinkError) Unwrap() error { return unix.ELOOP }
 
 // Rename renames from over to, both in the directory.
 func (d *TrustedDir) Rename(from, to string) error {

@@ -13,7 +13,15 @@ type engineConfig struct {
 
 // loadEngineConfig reads the engine config at path for this person CLI.
 func loadEngineConfig(c *cliIO, path string) (engineConfig, error) {
-	if c.host.Euid() != 0 {
+	return loadEngineConfigAs(c.host.Euid(), path)
+}
+
+// loadEngineConfigAs reads the engine config at path for a process with
+// effective uid euid: config.Load, or as root the hardened read
+// (loadConfigAsRoot). basalt engine started as root without --user reads
+// its config here too.
+func loadEngineConfigAs(euid int, path string) (engineConfig, error) {
+	if euid != 0 {
 		cfg, err := config.Load(path)
 		return engineConfig{Config: cfg}, err
 	}

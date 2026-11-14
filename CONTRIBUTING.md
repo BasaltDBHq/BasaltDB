@@ -5,7 +5,7 @@ Thanks for wanting to help. BasaltDB is open source under the [Apache License 2.
 ## How we work
 
 - Read [AGENTS.md](AGENTS.md) first; it holds the code, SQL, testing and review rules.
-- The product definition lives in [docs/redesign](docs/redesign/README.md). Specs, plans and decisions are committed there.
+- The wire rules every surface follows are in [CONTRACT.md](CONTRACT.md). A change to a surface updates it in the same PR.
 - Follow [Conventional Commits](https://www.conventionalcommits.org/) for commits and PR titles: `type(scope): message`.
 - Include tests for new behaviour. Guard and ledger tests run against a real Postgres.
 - Run `make ci` before opening a PR against `master`. Do not rebase or force-push shared branches; merge the base in.

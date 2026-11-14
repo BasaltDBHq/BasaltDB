@@ -20,7 +20,7 @@
       "operatedBy": {
         "type": "string",
         "enum": ["PERSON", "AGENT"],
-        "description": "Who runs the engine's machine (engine.json operatedBy, docs/redesign/specs/2026-11-12-chat-only-operator.md). PERSON (default, and when the shim cannot read the config): machine steps are the person's. AGENT: machine steps are the agent's (AGENT RUN_COMMAND); steps that need the admin stay the person's, on their own computer."
+        "description": "Who runs the engine's machine (engine.json operatedBy). PERSON (default, and when the shim cannot read the config): machine steps are the person's. AGENT: machine steps are the agent's (AGENT RUN_COMMAND); steps that need the admin stay the person's, on their own computer."
       },
       "enforcement": {
         "type": "string",

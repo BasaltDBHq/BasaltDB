@@ -462,7 +462,7 @@ func invokingUser() (string, error) {
 	return u.Username, nil
 }
 
-// demoSchema is the schema of the M4 demo data (docs/m4/seed.sql).
+// demoSchema is the schema of the M4 demo data (examples/demo/seed.sql).
 const demoSchema = "basalt_demo."
 
 // missingTablesHint turns the guard's list of missing --write and --read

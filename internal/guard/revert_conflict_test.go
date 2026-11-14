@@ -51,7 +51,7 @@ func statusIs(id int, want string) func(t *testing.T, e suiteEnv) {
 	}
 }
 
-// TestRevertConflictSuite is M3's gate (roadmap): every way a row can
+// TestRevertConflictSuite is M3's gate: every way a row can
 // change after the agent is skipped and named, never overwritten, and the
 // rest of the revert still lands, through the full signed path.
 func TestRevertConflictSuite(t *testing.T) {

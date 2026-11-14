@@ -1,7 +1,6 @@
 package guard
 
-// Version 20: revert scope, the core (owner decisions RS-1 to RS-4; plan
-// docs/redesign/plans/2026-11-12-revert-scope-person-chooses.md, task 2;
+// Version 20: revert scope, the core (owner decisions RS-1 to RS-4;
 // CONTRACT.md, basalt_meta "Version 20" and Revert "The scope descriptor").
 //
 // What a revert covers is now its scope descriptor (reverts.selection): a

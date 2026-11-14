@@ -60,7 +60,7 @@ A revert is a new set of changes that restores the old values; it never rewrites
 
 ## Status
 
-Milestones are gated by evidence, not dates. Progress is tracked in the [roadmap](docs/redesign/plans/2026-11-11-roadmap-m0-m3.md).
+Milestones are gated by evidence, not dates.
 
 | Milestone | Delivers |
 |---|---|
@@ -71,7 +71,7 @@ Milestones are gated by evidence, not dates. Progress is tracked in the [roadmap
 | M3. Revert | Revert by change and by run, preview, people-win conflict checks |
 | M4. Show it | The two-minute demo on a real Supabase project; an [install guide](docs/install.md) |
 
-The product definition, decisions and plans live in [docs/redesign](docs/redesign/README.md).
+The surfaces and their wire rules are specified in [CONTRACT.md](CONTRACT.md).
 
 ## Development
 

@@ -28,6 +28,9 @@ type Page struct {
 	// Welcome is what message 2 told the page about the engine.
 	Welcome channel.Welcome
 	nextID  int
+	// transport is the prologue's: RELAY through a Vault, DIRECT to the
+	// engine's own listener.
+	transport channel.Transport
 }
 
 // Dial opens the page socket for token at a Vault's ws:// base URL, from the
@@ -43,7 +46,27 @@ func Dial(ctx context.Context, vaultURL string, token channel.LinkToken) (*Page,
 		return nil, err
 	}
 	ws.SetReadLimit(readLimit)
-	return &Page{ws: ws}, nil
+	return &Page{ws: ws, transport: channel.TransportRelay}, nil
+}
+
+// DialDirect opens a page socket to an engine's direct session route
+// (ws://host/v1/session) from the portal's origin, without sending
+// anything. Its handshake uses transport DIRECT.
+func DialDirect(ctx context.Context, sessionURL string, header http.Header) (*Page, error) {
+	h := http.Header{}
+	h.Set("Origin", links.Portal)
+	for k, v := range header {
+		h[k] = v
+	}
+	ws, resp, err := websocket.Dial(ctx, sessionURL, &websocket.DialOptions{HTTPHeader: h, Host: h.Get("Host")})
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
+		return nil, err
+	}
+	ws.SetReadLimit(readLimit)
+	return &Page{ws: ws, transport: channel.TransportDirect}, nil
 }
 
 // Open dials and runs the handshake for a link's keys.
@@ -61,7 +84,7 @@ func Open(ctx context.Context, vaultURL string, keys channel.LinkKeys) (*Page, e
 
 // Handshake sends message 1 for keys and reads message 2.
 func (p *Page) Handshake(ctx context.Context, keys channel.LinkKeys) error {
-	ini, msg1, err := channel.WriteHello(channel.TransportRelay, keys)
+	ini, msg1, err := channel.WriteHello(p.transport, keys)
 	if err != nil {
 		return err
 	}

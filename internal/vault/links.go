@@ -247,3 +247,21 @@ func (cn *conn) registerAll(ctx context.Context) {
 		}
 	}
 }
+
+// EndSessions ends every session of token on the current socket with
+// LINK_REFUSED, without unregistering it: a widen rotated the link away
+// from token in a session on another transport (DIRECT).
+func (c *Client) EndSessions(token channel.LinkToken) {
+	if cn := c.current(); cn != nil {
+		cn.endLink(token)
+	}
+}
+
+// endRotated ends a rotated-away token's other sessions on this socket and
+// tells OnRotate, for the engine's other transport.
+func (c *Client) endRotated(old channel.LinkToken) {
+	c.EndSessions(old)
+	if c.opts.OnRotate != nil {
+		c.opts.OnRotate(old)
+	}
+}

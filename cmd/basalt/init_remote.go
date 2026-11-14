@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -19,6 +20,7 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
+	"github.com/basaltdbhq/basaltdb/internal/channel"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -289,9 +291,12 @@ type remoteInit struct {
 	settings config.Settings
 	entry    *config.Agent
 	credFile string
-	osUser   string
-	base     *url.URL
-	target   setupcode.Target
+	// files reads and writes credFile, its .pending and its .lock: by
+	// path, or as root through agents/ opened without following a link.
+	files  credFiles
+	osUser string
+	base   *url.URL
+	target setupcode.Target
 	// password is the agent's password this machine holds for this
 	// database: the one that logs in, else the newest (.pending first);
 	// "" when it holds none.
@@ -299,13 +304,16 @@ type remoteInit struct {
 	// credExists: the credential file exists, so a new password goes to
 	// .pending (writeCredential).
 	credExists bool
-	// unlock releases the lock that keeps two runs for the agent apart.
+	// unlock releases the lock that keeps two runs for the agent apart,
+	// and closes files.
 	unlock func()
 	// loggedIn: the role logs in with the credential (or its .pending one,
 	// then moved over the credential file). installed is the guard version
 	// it sees, recorded whether the pending setup is recorded.
 	loggedIn, recorded bool
 	installed          int
+	// stateDir is the engine's state directory, where its key file is.
+	stateDir string
 }
 
 func newRemoteInit(c *cliIO, f remoteFlags) (*remoteInit, error) {
@@ -314,13 +322,17 @@ func newRemoteInit(c *cliIO, f remoteFlags) (*remoteInit, error) {
 	if err := r.paths(); err != nil {
 		return nil, err
 	}
-	unlock, err := lockFile(r.credFile + lockSuffix)
+	unlock, err := r.files.lock(r.credFile + lockSuffix)
 	if err != nil {
+		r.files.close()
 		return nil, err
 	}
-	r.unlock = unlock
-	if err := r.connection(); err != nil {
+	r.unlock = func() {
 		unlock()
+		r.files.close()
+	}
+	if err := r.connection(); err != nil {
+		r.unlock()
 		return nil, err
 	}
 	return r, nil
@@ -329,6 +341,7 @@ func newRemoteInit(c *cliIO, f remoteFlags) (*remoteInit, error) {
 // paths finds the config, the agent's entry, its credential file and the
 // settings of a new config. Without --config and not as root, the config
 // lives in the user's own config directory, as init's foreground setup.
+// With --config and not as root, the sockets live next to that config.
 func (r *remoteInit) paths() error {
 	dir := filepath.Dir(r.f.configPath)
 	r.settings = r.f.vault.settings(config.Settings{SocketDir: config.DefaultSocketDir(r.c.goos), PagesURL: links.Portal, OperatedBy: r.f.operatedBy.enum()})
@@ -342,14 +355,24 @@ func (r *remoteInit) paths() error {
 		r.settings.SocketDir = filepath.Join(dir, "run")
 	}
 	if r.f.configPath != config.DefaultPath(r.c.goos) {
+		if r.f.configGiven && r.c.host.Euid() != 0 {
+			// Not root, the system socket directory is not writable: keep
+			// the sockets next to the config the person chose.
+			r.settings.SocketDir = filepath.Join(dir, "run")
+		}
 		r.settings.StateDir = filepath.Join(dir, stateDirName)
 	}
-	cfg, err := config.Load(r.f.configPath)
+	r.stateDir = config.Config{StateDir: r.settings.StateDir}.StateDirFor(r.c.goos)
+	// As root, the hardened read (loadEngineConfig): the config must be a
+	// plain file owned by root or its directory's owner, not writable by
+	// group or others and reached without links, before any field is read.
+	cfg, err := loadEngineConfig(r.c, r.f.configPath)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 	case err != nil:
 		return err
 	default:
+		r.stateDir = cfg.StateDirFor(r.c.goos)
 		r.settings.SocketDir = cfg.SocketDir
 		for i := range cfg.Agents {
 			if cfg.Agents[i].Name == r.f.agent {
@@ -360,10 +383,28 @@ func (r *remoteInit) paths() error {
 	if err := config.CheckSocketPath(config.SocketPath(r.settings.SocketDir, r.f.agent)); err != nil {
 		return fmt.Errorf("%w; pass --config in a shorter directory", err)
 	}
+	asRoot := r.c.host.Euid() == 0
+	if asRoot {
+		abs, err := filepath.Abs(dir)
+		if err != nil {
+			return err
+		}
+		dir = abs
+	}
 	r.credFile = filepath.Join(dir, "agents", r.f.agent+".url")
 	r.osUser = ""
 	if r.entry != nil {
-		r.credFile, r.osUser = r.entry.CredentialFile, r.entry.OSUser
+		if asRoot {
+			// As root the computed path is used, never the config's
+			// string: agents/sub/../bot.url passes the check but would
+			// resolve through agents/sub.
+			if err := sameCredentialPath(r.entry.CredentialFile, r.credFile); err != nil {
+				return err
+			}
+		} else {
+			r.credFile = r.entry.CredentialFile
+		}
+		r.osUser = r.entry.OSUser
 	}
 	if r.osUser == "" {
 		u, err := invokingUser()
@@ -371,6 +412,71 @@ func (r *remoteInit) paths() error {
 			return err
 		}
 		r.osUser = u
+	}
+	r.files = pathCredFiles{}
+	if asRoot {
+		files, err := openRootCredFiles(filepath.Dir(r.credFile))
+		if err != nil {
+			return err
+		}
+		r.files = files
+	}
+	return nil
+}
+
+// credFiles reads and writes the agent's credential file, its .pending and
+// its .lock for init --remote, each named by its full path.
+type credFiles interface {
+	lock(path string) (func(), error)
+	// read reads a credential file this process wrote (readOwnCredential's
+	// checks); an error wrapping fs.ErrNotExist when there is none.
+	read(path string) (string, os.FileInfo, error)
+	// stat is the file at path, not following a link.
+	stat(path string) (os.FileInfo, error)
+	write(path string, data []byte) error
+	rename(from, to string) error
+	close()
+}
+
+// pathCredFiles reaches the credential files by path: init --remote not as
+// root, in the user's own directories.
+type pathCredFiles struct{}
+
+func (pathCredFiles) lock(path string) (func(), error) { return lockFile(path) }
+
+func (pathCredFiles) read(path string) (string, os.FileInfo, error) {
+	if _, err := os.Lstat(path); err != nil {
+		return "", nil, err
+	}
+	return readOwnCredential(path)
+}
+
+func (pathCredFiles) stat(path string) (os.FileInfo, error) { return os.Lstat(path) }
+
+func (pathCredFiles) write(path string, data []byte) error { return config.WriteFile(path, data) }
+
+func (pathCredFiles) rename(from, to string) error { return os.Rename(from, to) }
+
+func (pathCredFiles) close() {}
+
+// sameCredentialPath refuses, as root, a credential file the config names
+// anywhere but where basalt init puts it (want, agents/<agent>.url next to
+// the config). The config may belong to its directory's owner (the engine's
+// user), who must not be able to send root's credential reads and writes
+// to another file, such as another agent's credential or a file only root
+// reads.
+func sameCredentialPath(named, want string) error {
+	a, err := filepath.Abs(named)
+	if err != nil {
+		return err
+	}
+	b, err := filepath.Abs(want)
+	if err != nil {
+		return err
+	}
+	if a != b {
+		return fmt.Errorf("the config names the credential file %s, not %s where basalt init puts it; "+
+			"as root, basalt init --remote uses only that path. Fix the agent's credentialFile in the config", named, want)
 	}
 	return nil
 }
@@ -395,11 +501,11 @@ func (c *credential) password() string {
 // credential file's. It logs in as the agent with the credentials for that
 // database, .pending first.
 func (r *remoteInit) connection() error {
-	cred, err := readCredentialIfAny(r.credFile)
+	cred, err := readCredentialIfAny(r.files, r.credFile)
 	if err != nil {
 		return err
 	}
-	pending, err := readCredentialIfAny(r.credFile + pendingSuffix)
+	pending, err := readCredentialIfAny(r.files, r.credFile+pendingSuffix)
 	if err != nil {
 		return err
 	}
@@ -433,11 +539,11 @@ func (r *remoteInit) connection() error {
 
 // readCredentialIfAny reads a credential file with the no-follow checks,
 // or nil when there is none.
-func readCredentialIfAny(path string) (*credential, error) {
-	if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
+func readCredentialIfAny(files credFiles, path string) (*credential, error) {
+	dsn, fi, err := files.read(path)
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil //nolint:nilnil // no file is no credential
 	}
-	dsn, fi, err := readOwnCredential(path)
 	if err != nil {
 		return nil, fmt.Errorf("the credential file %s is not usable: %w", path, err)
 	}
@@ -498,14 +604,14 @@ func (r *remoteInit) login(pending, cred *credential) error {
 // credential file, once the .pending path still names the file read.
 func (r *remoteInit) promote(pending *credential) error {
 	pendingFile := r.credFile + pendingSuffix
-	now, err := os.Lstat(pendingFile)
+	now, err := r.files.stat(pendingFile)
 	if err != nil {
 		return err
 	}
 	if !os.SameFile(now, pending.file) {
 		return fmt.Errorf("%s changed while basalt init ran; nothing changed, run it again", pendingFile)
 	}
-	if err := os.Rename(pendingFile, r.credFile); err != nil {
+	if err := r.files.rename(pendingFile, r.credFile); err != nil {
 		return err
 	}
 	r.credExists = true
@@ -645,6 +751,7 @@ func (r *remoteInit) payload(p plan) (setupcode.Payload, error) {
 	out := setupcode.Payload{
 		Format: setupcode.Format, SetupID: id, Kind: p.kind, Prefix: r.f.prefix, Target: r.target,
 		Guard: setupcode.Guard{From: p.from, To: guard.LatestVersion()}, Build: buildVersion(), ExpiresAt: expires,
+		Engine: r.engineKey(),
 	}
 	if p.kind == setupcode.KindUpgrade {
 		return out, nil
@@ -730,11 +837,12 @@ func (r *remoteInit) writeCredential(p plan) error {
 	if err != nil {
 		return err
 	}
+	dsn = hardenedCredential(r.c.ctx, probeLogin(r.c), dsn)
 	path := r.credFile
 	if r.credExists {
 		path += pendingSuffix
 	}
-	return config.WriteFile(path, []byte(dsn+"\n"))
+	return r.files.write(path, []byte(dsn+"\n"))
 }
 
 // writeConfig upserts the agent and prints the vault value it wrote.
@@ -804,4 +912,30 @@ func printRemoteResult(c *cliIO, f remoteFlags, res RemoteInitResult) error {
 	_, err = fmt.Fprintf(c.stdout, "Setup code for %s (%s), valid until %s:\n\n%s\n\nSetup fingerprint: %s\n\n%s\n",
 		res.Agent, res.Kind, expires.UTC().Format("2006-01-02 15:04 UTC"), res.Code, res.Fingerprint, res.PersonMessage)
 	return err
+}
+
+// stateDirMode is the engine's state directory's mode when init makes it,
+// as the engine does: only its OS user.
+const stateDirMode = 0o700
+
+// engineKey is the engine's signing key for the code (M4.1, CO-18), made
+// as the engine makes it on its first start when the key file is missing.
+// Run as root, init cannot make a file the engine's OS user owns, and an
+// unreadable or refused file is never replaced: then the code carries no
+// engine key, and init says why on stderr.
+func (r *remoteInit) engineKey() *setupcode.Engine {
+	if r.c.host.Euid() == 0 {
+		fmt.Fprintf(r.c.stderr, "basalt: the code carries no engine key: run basalt init --remote as %s (the engine's OS user) so it can read the engine's key file\n", r.osUser)
+		return nil
+	}
+	if err := os.MkdirAll(r.stateDir, stateDirMode); err != nil {
+		fmt.Fprintf(r.c.stderr, "basalt: the code carries no engine key: %v\n", err)
+		return nil
+	}
+	keys, err := channel.LoadOrCreateKeys(filepath.Join(r.stateDir, channel.KeyFileName), r.c.now)
+	if err != nil {
+		fmt.Fprintf(r.c.stderr, "basalt: the code carries no engine key: the engine's key file is refused (%v); basalt status shows KEY_ERROR\n", err)
+		return nil
+	}
+	return &setupcode.Engine{PublicKey: base64.RawURLEncoding.EncodeToString(keys.PublicKeySPKI())}
 }

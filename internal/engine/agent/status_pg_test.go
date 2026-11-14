@@ -54,9 +54,22 @@ func withNonBreaking(migs []guard.Migration, version int) []guard.Migration {
 	return out
 }
 
+// latestBreaking is the newest version this build flags breaking.
+func latestBreaking(t *testing.T) int {
+	t.Helper()
+	migs := guard.Migrations()
+	for i := len(migs) - 1; i >= 0; i-- {
+		if migs[i].Breaking {
+			return migs[i].Version
+		}
+	}
+	t.Fatal("no breaking migration")
+	return 0
+}
+
 func TestAGuardMissingABreakingMigrationServesOnlyStatus(t *testing.T) {
 	t.Parallel()
-	latest := guard.LatestVersion()
+	latest := latestBreaking(t)
 	h, d := guardWithout(t, latest, guard.Migrations())
 
 	for _, tool := range []struct {

@@ -5,10 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"time"
 	"unicode/utf8"
 
-	"github.com/coder/websocket"
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/channel"
@@ -24,6 +24,8 @@ import (
 // SessionLink is the live relay link a message 1's token names.
 type SessionLink struct {
 	Token channel.LinkToken
+	// Agent is the agent whose store holds the link.
+	Agent string
 	// Item is the approval or revert the link is for: a session serves
 	// that item only.
 	Item uuid.UUID
@@ -31,6 +33,21 @@ type SessionLink struct {
 	// the tag is checked.
 	PSK       channel.PSK
 	ExpiresAt time.Time
+}
+
+// LogValue logs the item and the expiry only: never the token, a bearer
+// handle at the Vault, or the key.
+// String names the item and the expiry, never the token or the key.
+func (l SessionLink) String() string {
+	return "session link for " + l.Item.String() + " until " + l.ExpiresAt.UTC().Format(time.RFC3339)
+}
+
+// GoString is String: %#v would print the token and the key's fields.
+func (l SessionLink) GoString() string { return l.String() }
+
+// LogValue is the item and the expiry, as String.
+func (l SessionLink) LogValue() slog.Value {
+	return slog.GroupValue(slog.String("item", l.Item.String()), slog.Time("expiresAt", l.ExpiresAt))
 }
 
 // SessionLinks find the live relay link of a token. *links.Secrets, across
@@ -128,8 +145,12 @@ func (cn *conn) handshake(ctx context.Context, ss *session, msg []byte) error {
 		link = l
 		return psk, ok
 	}
-	token := ss.token
-	resp, err := channel.ReadHello(msg, channel.HelloCheck{Transport: channel.TransportRelay, SessionToken: &token, Lookup: lookup})
+	check := channel.HelloCheck{Transport: cn.transport, Lookup: lookup}
+	if cn.transport == channel.TransportRelay {
+		token := ss.token
+		check.SessionToken = &token
+	}
+	resp, err := channel.ReadHello(msg, check)
 	if err != nil {
 		code := channel.ErrLinkRefused
 		var ce channel.CloseError
@@ -137,6 +158,11 @@ func (cn *conn) handshake(ctx context.Context, ss *session, msg []byte) error {
 			code = ce
 		}
 		return cn.end(ctx, ss.id, code)
+	}
+	if cn.admit != nil {
+		if code := cn.admit(ctx, link); code != 0 {
+			return cn.end(ctx, ss.id, code)
+		}
 	}
 	o := cn.c.opts
 	sctx, cancel := context.WithCancel(ctx)
@@ -374,9 +400,14 @@ func (cn *conn) rotate(ss *session, token channel.LinkToken) {
 	ss.token = token
 	cn.sessions.mu.Unlock()
 	ss.est.link.Token = token
-	if old != token {
-		cn.endLink(old)
+	if old == token {
+		return
 	}
+	if cn.endOld != nil {
+		cn.endOld(old)
+		return
+	}
+	cn.endLink(old)
 }
 
 // respond sends resp as a RESPONSE and as many CONTINUEs as its body needs,
@@ -463,15 +494,10 @@ func (cn *conn) sendFrame(ctx context.Context, ss *session, content []byte) erro
 	return cn.writeRoute(context.WithoutCancel(ctx), ss.id, frame)
 }
 
-// writeRoute sends payload to session id's page as a ROUTE message.
+// writeRoute sends payload to session id's page: a ROUTE message on the
+// Vault's socket, the page's own socket on DIRECT.
 func (cn *conn) writeRoute(ctx context.Context, id sid, payload []byte) error {
-	msg := make([]byte, 0, routeHeaderLen+len(payload))
-	msg = append(msg, wireVersion, typeRoute)
-	msg = append(msg, id[:]...)
-	msg = append(msg, payload...)
-	wctx, cancel := context.WithTimeout(ctx, writeTimeout)
-	defer cancel()
-	return cn.ws.Write(wctx, websocket.MessageBinary, msg)
+	return cn.out.send(ctx, id, payload)
 }
 
 // idleCheck ends a session that went IdleTimeout without a frame, and

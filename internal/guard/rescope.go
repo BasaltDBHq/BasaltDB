@@ -52,11 +52,15 @@ type CatalogTable struct {
 }
 
 // RevertCatalog lists the agents, runs and tables inside the select the
-// person proved. Only a proven or token-bearing rescope returns it.
+// person proved, and from basalt_meta version 32 the agent role of each
+// change in it (owner decision Q-11), so the page can tag every row. Only a
+// proven or token-bearing rescope returns it; ChangeAgents is nil on an
+// older guard.
 type RevertCatalog struct {
-	Agents []CatalogAgent `json:"agents"`
-	Runs   []CatalogRun   `json:"runs"`
-	Tables []CatalogTable `json:"tables"`
+	Agents       []CatalogAgent       `json:"agents"`
+	Runs         []CatalogRun         `json:"runs"`
+	Tables       []CatalogTable       `json:"tables"`
+	ChangeAgents map[uuid.UUID]string `json:"changeAgents,omitempty"`
 }
 
 // RescopedRevert is a revert after rescope_revert or reset_revert: the new

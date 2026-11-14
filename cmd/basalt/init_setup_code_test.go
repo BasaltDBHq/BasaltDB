@@ -17,6 +17,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
@@ -48,7 +49,7 @@ func laptopRun(t *testing.T, admin, stdin string, now time.Time, args ...string)
 // code its registration page shows for database db.
 func portalPasskey(t *testing.T, db string) (*passkeytest.Authenticator, string) {
 	t.Helper()
-	person, err := passkeytest.New(portalRP)
+	person, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 	return person, registrationCode(t, person, db)
 }
@@ -435,4 +436,19 @@ func TestSetupRefusedMessage(t *testing.T) {
 	require.True(t, strings.HasSuffix(err.Error(), ": the detail. Do this. Nothing changed."), err.Error())
 	err = l.refused(&pgconn.PgError{Message: "boom", Hint: "Do this"})
 	require.True(t, strings.HasSuffix(err.Error(), ": Do this. Nothing changed."), err.Error())
+}
+
+func TestSetupPasskeyLabelUpgradeCodeHasNoAgent(t *testing.T) {
+	now := time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC)
+	up := setupcode.Payload{Kind: setupcode.KindUpgrade}
+	if got, want := setupPasskeyLabel("", up, "mydb", now), "mydb · 2026-11-14"; got != want {
+		t.Fatalf("upgrade default label = %q, want %q", got, want)
+	}
+	ag := setupcode.Payload{Kind: setupcode.KindAgent, Agent: &setupcode.Agent{Name: "bot"}}
+	if got, want := setupPasskeyLabel("", ag, "mydb", now), "mydb · bot · 2026-11-14"; got != want {
+		t.Fatalf("agent default label = %q, want %q", got, want)
+	}
+	if got := setupPasskeyLabel("mine", up, "mydb", now); got != "mine" {
+		t.Fatalf("flag label = %q", got)
+	}
 }

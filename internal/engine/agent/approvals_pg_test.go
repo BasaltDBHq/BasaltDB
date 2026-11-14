@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
+	"github.com/basaltdbhq/basaltdb/internal/channel"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -77,6 +78,9 @@ type agentEnv struct {
 	finds *finds
 	// revertFinds is the same for the revert the agent waits on.
 	revertFinds *revertFinds
+	// keys sign the engine's receipts; nil for an engine whose key file is
+	// refused (KEY_ERROR).
+	keys *channel.EngineKeys
 }
 
 // finds wraps the approval store and counts FindApproval calls, so a test
@@ -145,6 +149,19 @@ func agentHarness(t *testing.T) agentEnv {
 // the engine's local pages, for short links.
 func agentHarnessFor(t *testing.T, d *guardtest.DB, a *guardtest.Agent, pagesOrigin ...string) agentEnv {
 	t.Helper()
+	keys, err := channel.GenerateEngineKeys(time.Now)
+	require.NoError(t, err)
+	return agentHarnessKeys(t, d, a, keys, pagesOrigin...)
+}
+
+// agentHarnessKeys is agentHarnessFor with the engine's keys: nil is an
+// engine whose key file is refused (KEY_ERROR), which signs no receipt.
+func agentHarnessKeys(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys *channel.EngineKeys, pagesOrigin ...string) agentEnv {
+	t.Helper()
+	var receipts agent.ReceiptSigner
+	if keys != nil {
+		receipts = keys
+	}
 	person, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 	require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, person.Credential(), "app"))
@@ -166,9 +183,9 @@ func agentHarnessFor(t *testing.T, d *guardtest.DB, a *guardtest.Agent, pagesOri
 		Name: "bot", Reader: agentdb.NewReader(pool, limits, time.Now), Store: store, Reads: store, Approvals: watched,
 		Reverts: watchedReverts, Notifier: sent, Log: slog.New(slog.DiscardHandler), Now: time.Now,
 		Columns:  agentdb.NewColumnOrder(pool),
-		Commands: cmds, PagesOrigin: strings.Join(pagesOrigin, ""), Poll: testPoll, RLS: blind,
+		Commands: cmds, PagesOrigin: strings.Join(pagesOrigin, ""), Poll: testPoll, RLS: blind, Receipts: receipts,
 	})
-	return agentEnv{d: d, a: a, h: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, person: person, sent: sent, svc: svc, blind: blind, finds: watched, revertFinds: watchedReverts}
+	return agentEnv{d: d, a: a, h: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, person: person, sent: sent, svc: svc, blind: blind, finds: watched, revertFinds: watchedReverts, keys: keys}
 }
 
 func approvalOf(t *testing.T, body map[string]any) map[string]any {
@@ -354,6 +371,24 @@ func TestHeldWriteNotRepeatable(t *testing.T) {
 		"sql": "UPDATE leads SET name = name || to_char(now(), 'YYYY') WHERE id = 40", "intent": "stamp one",
 	})
 	require.False(t, isError, "%v", body)
+}
+
+// A time word as a bare literal or as a parameter is read as the current time
+// when Postgres runs the write, so a held write with one could never apply.
+func TestHeldWriteWithATimeWordNotRepeatable(t *testing.T) {
+	t.Parallel()
+	_, h, _, sent := approvalHarness(t)
+	for _, args := range []map[string]any{
+		{"sql": "UPDATE leads SET status = 'now' WHERE id BETWEEN 40 AND 60", "intent": "stamp"},
+		{"sql": "UPDATE leads SET status = 'Tomorrow 10:00' WHERE id BETWEEN 40 AND 60", "intent": "stamp"},
+		{"sql": "UPDATE leads SET status = $1 WHERE id BETWEEN 40 AND 60", "params": []any{"now"}, "intent": "stamp"},
+		{"sql": "UPDATE leads SET status = $1 WHERE id BETWEEN 40 AND 60", "params": []any{"today"}, "intent": "stamp"},
+	} {
+		body, isError := h.call(t, "write", args)
+		requireToolError(t, body, isError, "STATEMENT_REFUSED", "NOT_REPEATABLE", "")
+		require.Contains(t, body["message"], "parameter")
+	}
+	require.Empty(t, sent.sent)
 }
 
 func TestHeldWriteOverFiftyRowsRefused(t *testing.T) {

@@ -130,12 +130,26 @@ function strictItems(list, what, keys, check) {
 const count = (n) => Number.isInteger(n) && n >= 0;
 const name = (s) => typeof s === "string" && s !== "";
 
+// changeAgents checks the catalog's change id to agent map (basalt_meta
+// version 32) and returns it as a Map.
+function changeAgents(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) throw catalogError("change map");
+  const out = new Map();
+  for (const [id, agent] of Object.entries(value)) {
+    if (!UUID.test(id) || !name(agent)) throw catalogError("change map");
+    out.set(id, agent);
+  }
+  return out;
+}
+
 // parseCatalog checks the catalog a proven scope call returns
 // (revert-scope-response.schema.json), or null when there is none.
 export function parseCatalog(value) {
   if (value === undefined || value === null) return null;
-  if (typeof value !== "object" || Object.keys(value).sort().join() !== "agents,runs,tables") throw catalogError("shape");
+  const keys = typeof value === "object" ? Object.keys(value).sort().join() : "";
+  if (keys !== "agents,runs,tables" && keys !== "agents,changeAgents,runs,tables") throw catalogError("shape");
   return {
+    changeAgents: keys === "agents,runs,tables" ? null : changeAgents(value.changeAgents),
     agents: strictItems(value.agents, "agent", ["agent", "changes"], (a) => name(a.agent) && count(a.changes)),
     runs: strictItems(value.runs, "run", ["runId", "agent", "startedAt", "changes"], (r) =>
       UUID.test(r.runId) && name(r.agent) && count(r.changes) && !Number.isNaN(Date.parse(r.startedAt)),

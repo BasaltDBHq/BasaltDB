@@ -33,7 +33,7 @@ var (
 // the wire rules.
 func TestLinkSchemas(t *testing.T) {
 	t.Parallel()
-	checkPayloadSchemas(t, "links", []string{"link.schema.json", "compact-request.schema.json"})
+	checkPayloadSchemas(t, "links", []string{"link.schema.json", "compact-request.schema.json", "request-file.schema.json"})
 }
 
 // TestLinksBesidePersonMessage checks every personMessage in the tool and
@@ -150,9 +150,11 @@ func repairFragment(f string) string {
 			return prefix + base64urlRun(rest)
 		}
 	}
-	if rest, ok := strings.CutPrefix(f, "s="); ok {
-		if run := base64urlRun(rest); len(run) >= shortSecretLen {
-			return "s=" + run[:shortSecretLen]
+	for _, prefix := range []string{"s=", "h="} {
+		if rest, ok := strings.CutPrefix(f, prefix); ok {
+			if run := base64urlRun(rest); len(run) >= shortSecretLen {
+				return prefix + run[:shortSecretLen]
+			}
 		}
 	}
 	return f
@@ -180,7 +182,7 @@ func linkFromPaste(text string) (string, bool) {
 				run += next
 			}
 		}
-		if prefix == "#s=" && len(run) > shortSecretLen {
+		if (prefix == "#s=" || prefix == "#h=") && len(run) > shortSecretLen {
 			run = run[:shortSecretLen]
 		}
 		return repairFragment(strings.TrimPrefix(prefix, "#") + run), true
@@ -188,11 +190,11 @@ func linkFromPaste(text string) (string, bool) {
 	return "", false
 }
 
-// firstLinkPrefix returns where the earliest of #1., #2. and #s= starts in
+// firstLinkPrefix returns where the earliest of #1., #2., #s= and #h= starts in
 // line, and which it is; -1 when there is none.
 func firstLinkPrefix(line string) (int, string) {
 	start, prefix := -1, ""
-	for _, p := range []string{"#1.", "#2.", "#s="} {
+	for _, p := range []string{"#1.", "#2.", "#s=", "#h="} {
 		if i := strings.Index(line, p); i >= 0 && (start < 0 || i < start) {
 			start, prefix = i, p
 		}

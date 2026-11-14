@@ -6,9 +6,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/links"
 )
 
 const rootOnlySecret = "user=ROOT-ONLY-SECRET"
@@ -112,4 +116,140 @@ func TestPersonCLIStillReadsItsOwnFilesAsUsual(t *testing.T) {
 	got, err := agentURL(f.c, testAgentKey, "", f.configPath)
 	require.NoError(t, err)
 	require.Equal(t, agentCfgURL, got)
+}
+
+// The ownership rule at the core of readCredentialAsRoot: a plain file with
+// one link, mode 0600, is still refused when it does not belong to the
+// trusted user.
+func TestRootCLIRefusesACredentialOwnedByAnotherUser(t *testing.T) {
+	t.Parallel()
+	f := newRootCLIFixture(t)
+	_, err := readCredentialAsRoot(f.cred, os.Getuid()+1, true)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "refused")
+	got, err := readCredentialAsRoot(f.cred, os.Getuid(), true)
+	require.NoError(t, err, "the same file passes for its owner")
+	require.Equal(t, agentCfgURL, got)
+}
+
+// As root, the config reads behind log's dictionary line, access's commands
+// and the pages links go through the hardened read: a FIFO swapped in for
+// the config does not hang them, and a link is not followed.
+func TestRootCLIConfigReadsDoNotFollowLinksOrBlockOnAFIFO(t *testing.T) {
+	t.Parallel()
+	f := newRootCLIFixture(t)
+	dir := filepath.Dir(f.configPath)
+	fifo := filepath.Join(dir, "fifo.json")
+	require.NoError(t, syscall.Mkfifo(fifo, 0o600))
+	hosted := filepath.Join(t.TempDir(), "hosted.json")
+	require.NoError(t, os.WriteFile(hosted, []byte(`{"socketDir": "/s", "pagesUrl": "https://portal.basaltvault.app",
+		"agents": [{"name": "bot", "osUser": "u", "credentialFile": "/c"}]}`), 0o600))
+	link := filepath.Join(dir, "link.json")
+	require.NoError(t, os.Symlink(hosted, link))
+
+	// The reads run on another goroutine so a hang fails the test instead
+	// of blocking it; their results are checked back here.
+	type result struct {
+		path, base, local string
+		known             bool
+		dictNil           bool
+	}
+	results := make(chan []result, 1)
+	go func() {
+		paths := []string{fifo, link}
+		out := make([]result, 0, len(paths))
+		for _, path := range paths {
+			_, known := accessCommands(f.c, "bot", path)
+			out = append(out, result{
+				path: path, base: configuredBase(f.c, "", "bot", path), local: localPages(f.c, "", "bot", path),
+				known: known, dictNil: statusDictionary(f.c, path) == nil,
+			})
+		}
+		results <- out
+	}()
+	select {
+	case got := <-results:
+		for _, r := range got {
+			require.Equal(t, links.DefaultLocal, r.base, r.path)
+			require.Empty(t, r.local, r.path)
+			require.False(t, r.known, r.path)
+			require.True(t, r.dictNil, r.path)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("a config read blocked on the FIFO")
+	}
+
+	// A plain config in the same directory is read as root.
+	plain := filepath.Join(dir, "plain.json")
+	raw, err := os.ReadFile(hosted)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(plain, raw, 0o600))
+	require.Equal(t, links.Portal, configuredBase(f.c, "", "bot", plain), "the hardened read still reads a plain config")
+
+	user := &cliIO{host: newFakeHost(t), getenv: func(string) string { return "" }}
+	require.Equal(t, links.Portal, configuredBase(user, "", "bot", link), "not as root: the plain read follows the link")
+}
+
+// sudo basalt init --remote reads the config with the hardened read before
+// it trusts any field: a config writable by others, or a link to a config
+// elsewhere, is refused, and the credential file and OS user it names are
+// never used.
+func TestInitRemoteAsRootRefusesAnUntrustedConfig(t *testing.T) {
+	t.Parallel()
+	for name, plant := range map[string]func(t *testing.T, cfg, planted string){
+		"writable by others": func(t *testing.T, cfg, planted string) {
+			writeEngineJSON(t, cfg, planted)
+			require.NoError(t, os.Chmod(cfg, 0o666))
+		},
+		"credential file outside the config's directory": func(t *testing.T, cfg, planted string) {
+			// A plain 0600 config its directory's owner wrote: the hardened
+			// read accepts it, but root writes only where basalt put the
+			// credential, never where the config says.
+			writeEngineJSON(t, cfg, planted)
+		},
+		"symlink": func(t *testing.T, cfg, planted string) {
+			other := filepath.Join(t.TempDir(), "engine.json")
+			writeEngineJSON(t, other, planted)
+			require.NoError(t, os.Remove(cfg))
+			require.NoError(t, os.Symlink(other, cfg))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cfg := tempConfig(t)
+			remote(t, cfg, "--agent", testAgentKey, "--write", "public.leads", "--database-url", supabaseURL)
+			planted := filepath.Join(t.TempDir(), "planted.url")
+			plant(t, cfg, planted)
+
+			r := cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", testAgentKey, "--write", "public.leads",
+				"--database-url", supabaseURL)
+			require.Equal(t, exitError, r.code, r.stdout)
+			_, err := os.Lstat(planted)
+			require.ErrorIs(t, err, os.ErrNotExist, "the credential file the config names is never written")
+			_, err = os.Lstat(planted + pendingSuffix)
+			require.ErrorIs(t, err, os.ErrNotExist)
+		})
+	}
+}
+
+// checkConfigFile, the hardened read's file check, refuses a config owned
+// by anyone but root or the trusted user, and one writable by group or
+// others, and accepts the plain 0600 file of its owner.
+func TestRootConfigCheckRefusesAnotherOwnerOrAnOpenMode(t *testing.T) {
+	t.Parallel()
+	f := newRootCLIFixture(t)
+	open := func() *os.File {
+		fh, err := os.Open(f.configPath)
+		require.NoError(t, err)
+		t.Cleanup(func() { fh.Close() })
+		return fh
+	}
+	require.NoError(t, checkConfigFile(open(), os.Getuid()))
+	require.ErrorContains(t, checkConfigFile(open(), os.Getuid()+1), "owned by uid")
+	for _, mode := range []os.FileMode{0o620, 0o602, 0o666} {
+		require.NoError(t, os.Chmod(f.configPath, mode))
+		require.ErrorContains(t, checkConfigFile(open(), os.Getuid()), "writable by group or others", "mode %o", mode)
+	}
+	require.NoError(t, os.Chmod(f.configPath, 0o644))
+	require.NoError(t, checkConfigFile(open(), os.Getuid()), "readable by others is not refused")
 }

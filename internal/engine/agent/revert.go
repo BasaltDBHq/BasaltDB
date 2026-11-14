@@ -110,7 +110,7 @@ func (s *Service) PreviewRevert(ctx context.Context, p PreviewRevertParams) (Rev
 		if err != nil {
 			return RevertPreview{}, fmt.Errorf("guard returned a bad revert line: %w", err)
 		}
-		lines = append(lines, l)
+		lines = append(lines, l.ForDisplay())
 		if l.Action == revert.ActionRestore {
 			out.Rows++
 		}
@@ -166,9 +166,11 @@ type RevertPlanLine struct {
 // RevertPlan is a batched plan's state and one page of its lines; while
 // the person has not signed it, the link to sign it and one line for them.
 type RevertPlan struct {
-	Revert        ledger.Revert
-	Page          pagination.Page[RevertPlanLine]
-	RevertURL     string
+	Revert    ledger.Revert
+	Page      pagination.Page[RevertPlanLine]
+	RevertURL string
+	// RequestFile is the request beside a hash link in RevertURL.
+	RequestFile   *links.RequestFile
 	PersonMessage string
 	NextSteps     []mcp.NextStep
 	Links         []mcp.Link
@@ -201,7 +203,7 @@ func (s *Service) RevertPlan(ctx context.Context, p RevertPlanParams) (RevertPla
 		if err != nil {
 			return RevertPlan{}, err
 		}
-		out.RevertURL, out.PersonMessage, out.Links = n.URL, n.Message, n.Links
+		out.RevertURL, out.RequestFile, out.PersonMessage, out.Links = n.URL, n.File, n.Message, n.Links
 	}
 	out.Page.Items = make([]RevertPlanLine, 0, len(page.Items))
 	for _, l := range page.Items {
@@ -211,7 +213,8 @@ func (s *Service) RevertPlan(ctx context.Context, p RevertPlanParams) (RevertPla
 			if err != nil {
 				return RevertPlan{}, fmt.Errorf("guard returned a bad revert line %d: %w", l.No, err)
 			}
-			line.Plan = &parsed
+			shown := parsed.ForDisplay()
+			line.Plan = &shown
 		}
 		out.Page.Items = append(out.Page.Items, line)
 	}
@@ -264,11 +267,15 @@ type RequestRevertParams struct {
 // agent_reverts shows it, the link when one was issued, the line for the
 // person and the agent's next steps (CONTRACT.md, Next steps).
 type RequestedRevert struct {
-	Revert        ledger.Revert
-	RevertURL     string
+	Revert    ledger.Revert
+	RevertURL string
+	// RequestFile is the request beside a hash link in RevertURL.
+	RequestFile   *links.RequestFile
 	PersonMessage string
 	Links         []mcp.Link
 	NextSteps     []mcp.NextStep
+	// Receipt is the signed revert's receipt (APPLIED, APPLYING).
+	Receipt *Receipt
 }
 
 func (s *Service) RequestRevert(ctx context.Context, p RequestRevertParams) (RequestedRevert, error) {
@@ -307,7 +314,10 @@ func (s *Service) revertWithLink(ctx context.Context, r ledger.Revert) (Requeste
 		return RequestedRevert{}, err
 	}
 	s.notifyRevert(ctx, r, n)
-	return RequestedRevert{Revert: r, RevertURL: n.URL, PersonMessage: n.Message, Links: n.Links, NextSteps: requestedSteps(r.ID, n.URL)}, nil
+	return RequestedRevert{
+		Revert: r, RevertURL: n.URL, RequestFile: n.File, PersonMessage: n.Message, Links: n.Links,
+		NextSteps: withSendRequest(requestedSteps(r.ID, n.URL), n.File),
+	}, nil
 }
 
 // DefaultRevertWait is how long request_revert with revertId waits for the
@@ -446,10 +456,23 @@ func (s *Service) applyRevertError(ctx context.Context, r ledger.Revert, err err
 // is told the agent cannot see what they added (RS-5).
 func (s *Service) revertState(ctx context.Context, r ledger.Revert) (RequestedRevert, error) {
 	out, err := s.revertStateOf(ctx, r)
-	if err != nil || !r.Widened {
+	if err != nil {
 		return out, err
 	}
-	out.PersonMessage = strings.TrimSpace(widenedMessage + " " + out.PersonMessage)
+	if r.Widened {
+		out.PersonMessage = strings.TrimSpace(widenedMessage + " " + out.PersonMessage)
+	}
+	if r.Status != ledger.RevertApplied && r.Status != ledger.RevertApplying {
+		return out, nil
+	}
+	// A signed revert: its receipt, from Postgres's record, the line first
+	// (CONTRACT.md, Vault channel, Receipts).
+	receipt, err := s.revertReceipt(r)
+	if err != nil {
+		return RequestedRevert{}, err
+	}
+	out.Receipt = &receipt
+	out.PersonMessage = withReceiptLine(receipt.Line, out.PersonMessage)
 	return out, nil
 }
 
@@ -496,13 +519,13 @@ func (s *Service) waitEnded(ctx context.Context, out RequestedRevert, what strin
 		out.NextSteps = waitEndedSteps(r.ID, "", waitEndedShortLink)
 		return out, nil
 	}
-	link, err := s.longRevertLink(ctx, r)
+	link, err := s.restatedRevertLink(ctx, r)
 	if err != nil {
 		return RequestedRevert{}, err
 	}
 	out.PersonMessage = fmt.Sprintf("%s waits for your passkey at the link the agent gave you, until %s. Tell the agent "+
 		"when you have signed, or give it the code the page shows.", what, expires)
-	out.NextSteps = waitEndedSteps(r.ID, link, waitEndedLongLink)
+	out.NextSteps = waitEndedSteps(r.ID, link.URL, waitEndedLongLink)
 	return out, nil
 }
 
@@ -650,7 +673,9 @@ func (s *Service) prepareError(ctx context.Context, tool string, scope guard.Rev
 // revertLink is what the agent hands the person to sign a prepared revert:
 // the link chosen by the link budget and the message that carries it.
 type revertLink struct {
-	URL     string
+	URL string
+	// File is the request beside a hash link in URL; nil otherwise.
+	File    *links.RequestFile
 	Message string
 	Links   []mcp.Link
 	// Headline is the revert in one line (revertHeadline); long and short
@@ -677,7 +702,10 @@ func (s *Service) revertNotice(ctx context.Context, r ledger.Revert) (revertLink
 	if err != nil {
 		return revertLink{}, err
 	}
-	pick := chooseLink(short, long, s.LinkBudget)
+	pick, err := chooseLink(short, long, s.LinkBudget, links.RevertFile(r.ID))
+	if err != nil {
+		return revertLink{}, err
+	}
 	headline := bindingHeadline(b, r)
 	summary := fmt.Sprintf("%s Why: %s. %s", headline, shown(strings.TrimRight(b.Intent, ". "), maxIntentChars), expiryLine(r.ExpiresAt))
 	var extra []string
@@ -689,7 +717,7 @@ func (s *Service) revertNotice(ctx context.Context, r ledger.Revert) (revertLink
 			b.Lines(), int(revert.ApplyWindow.Hours())))
 	}
 	msg, msgLinks := revertMessage(summary, pick, extra...)
-	return revertLink{URL: pick.URL, Message: msg, Links: msgLinks, Headline: headline, long: long, short: short}, nil
+	return revertLink{URL: pick.URL, File: pick.File, Message: msg, Links: msgLinks, Headline: headline, long: long, short: short}, nil
 }
 
 // bindingHeadline is the headline of a revert not widened, from its

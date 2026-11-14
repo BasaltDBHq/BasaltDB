@@ -41,6 +41,7 @@ const (
 	problemSetupNotRun         = "SETUP_NOT_RUN"
 	problemSetupExpired        = "SETUP_EXPIRED"
 	problemSetupChangePending  = "SETUP_CHANGE_PENDING"
+	problemLockFileUnusable    = "LOCK_FILE_UNUSABLE"
 )
 
 // Retention of the ledger (CONTRACT.md, Configuration and status): the
@@ -222,6 +223,7 @@ type statusDeps struct {
 	pagesBase, pagesOrigin    string
 	sameUser, engineReachable bool
 	engineUnknown             bool
+	devLocalPages             bool
 	vault                     VaultReporter
 	cmds                      Commands
 	setup                     *config.Setup
@@ -233,6 +235,8 @@ type statusDeps struct {
 	// notRecorded remembers, for a few seconds, that a held call found the
 	// pending setup not recorded (setupGate).
 	notRecorded *setupCache
+	// lockTrouble is the lock file finishing a setup could not open.
+	lockTrouble *lockTrouble
 	passkeys    func(context.Context) ([]passkey.Credential, error)
 	log         *slog.Logger
 	now         func() time.Time
@@ -241,8 +245,8 @@ type statusDeps struct {
 func (s *Service) statusDeps() statusDeps {
 	return statusDeps{
 		name: s.Name, operatedBy: s.OperatedBy, build: s.Build, pagesBase: s.PagesBase, pagesOrigin: s.PagesOrigin,
-		sameUser: s.SameUser, engineReachable: true, vault: s.Vault, cmds: s.Commands, setup: s.pendingSetup(), probe: s.Probe,
-		finisher: s.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, passkeys: s.Approvals.Passkeys, log: s.Log, now: s.Now,
+		sameUser: s.SameUser, devLocalPages: s.DevLocalPages, engineReachable: true, vault: s.Vault, cmds: s.Commands, setup: s.pendingSetup(), probe: s.Probe,
+		finisher: s.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, lockTrouble: &s.lockTrouble, passkeys: s.Approvals.Passkeys, log: s.Log, now: s.Now,
 	}
 }
 
@@ -263,6 +267,8 @@ type LocalStatus struct {
 	// EngineUnknown: whether the engine runs cannot be told, so there is
 	// no ENGINE_UNREACHABLE problem (engine.reachable stays false).
 	EngineUnknown bool
+	// DevLocalPages is the config's devLocalPages (problem DEV_LOCAL_PAGES).
+	DevLocalPages bool
 	Probe         Probe
 	Passkeys      func(context.Context) ([]passkey.Credential, error)
 	Log           *slog.Logger
@@ -281,9 +287,9 @@ func (l LocalStatus) Report(ctx context.Context) (StatusReport, error) {
 	}
 	return statusDeps{
 		name: l.Name, operatedBy: l.OperatedBy, build: buildinfo.Version, pagesBase: base, pagesOrigin: l.PagesOrigin,
-		sameUser: true, engineReachable: l.EngineRunning, engineUnknown: l.EngineUnknown, cmds: l.Commands, setup: l.Setup, probe: l.Probe,
+		sameUser: true, devLocalPages: l.DevLocalPages, engineReachable: l.EngineRunning, engineUnknown: l.EngineUnknown, cmds: l.Commands, setup: l.Setup, probe: l.Probe,
 		// basalt status reads; the running engine finishes the setup.
-		finisher: noFinisher{}, finished: func(string) {}, notRecorded: &setupCache{}, passkeys: l.Passkeys, log: l.Log, now: l.Now,
+		finisher: noFinisher{}, finished: func(string) {}, notRecorded: &setupCache{}, lockTrouble: &lockTrouble{}, passkeys: l.Passkeys, log: l.Log, now: l.Now,
 	}.report(ctx)
 }
 
@@ -299,12 +305,20 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 		r.Vault = &v
 	}
 	ps := problems{cmds: s.cmds}
+	if s.devLocalPages {
+		ps.add(problemDevLocalPages, "the pages are development pages on this machine, not the portal",
+			func(b *Steps) string { return devLocalPagesSteps(b, s.cmds) })
+	}
 	if !s.engineReachable && !s.engineUnknown {
 		ps.add(problemEngineUnreachable, "the engine is not running, so the agent's tools do not answer",
 			func(b *Steps) string { return engineUnreachableSteps(b, s.cmds, toolStatus) })
 	}
 	setup, known := s.setupView(ctx)
 	r.Setup = setup.status
+	if path := s.lockTrouble.get(); path != "" {
+		ps.add(problemLockFileUnusable, "the engine cannot open "+path+", so a finished setup is not written back",
+			func(b *Steps) string { return lockFileSteps(b, path) })
+	}
 	if known {
 		// A setup whose recorded state could not be read (the database is
 		// down) gets no problem: the code may have been used already.

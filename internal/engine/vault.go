@@ -23,6 +23,18 @@ type engineVault struct {
 	client *vault.Client
 	// status is vault in status: KEY_ERROR, OFF, or the socket's state.
 	status func() vault.Status
+	// keys are the engine's keys, nil when the key file is refused
+	// (KEY_ERROR): they sign receipts whatever vault says.
+	keys *channel.EngineKeys
+}
+
+// receipts is the signer of the agents' receipts: none (a nil interface)
+// when the key file is refused, and the answers then carry noReceipt.
+func (v engineVault) receipts() agent.ReceiptSigner {
+	if v.keys == nil {
+		return nil
+	}
+	return v.keys
 }
 
 // openVault loads the engine's keys, making them on the first start whatever
@@ -39,20 +51,20 @@ func openVault(cfg config.Config, stateDir string, now func() time.Time, log *sl
 			"correct the file's owner (the engine's OS user) and mode (0600), it is never replaced", "err", err)
 		return engineVault{status: vault.KeyErrorStatus}
 	}
-	off := engineVault{status: func() vault.Status { return vault.OffStatus(keys) }}
+	off := engineVault{status: func() vault.Status { return vault.OffStatus(keys) }, keys: keys}
 	if !cfg.VaultEnabled() {
 		return off
 	}
 	opts := vault.Options{URL: cfg.VaultURL, Keys: keys, Log: log.With("component", "vault"), Now: now, Pages: pages}
 	if live != nil {
-		opts.Links, opts.SessionLinks = live, live
+		opts.Links, opts.SessionLinks, opts.OnRotate = live, live, live.endDirect
 	}
 	client, err := vault.New(opts)
 	if err != nil {
 		log.Error("the Vault stays off", "err", err)
 		return off
 	}
-	return engineVault{client: client, status: client.Status}
+	return engineVault{client: client, status: client.Status, keys: keys}
 }
 
 // pruneInterval is how often the engine drops expired links, so an expired
@@ -66,17 +78,41 @@ type relayLinks struct {
 	log    *slog.Logger
 	mu     sync.Mutex
 	stores []*links.Secrets
+	// agents names each store's agent, by index.
+	agents []string
+	// direct is the direct transport's sessions, nil without directAddr.
+	direct *vault.Direct
+}
+
+// setDirect gives the direct transport's sessions, so a widen through the
+// Vault ends the old token's direct sessions too.
+func (r *relayLinks) setDirect(d *vault.Direct) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.direct = d
+}
+
+// endDirect ends the direct sessions of a token a widen rotated away from
+// in a session through the Vault.
+func (r *relayLinks) endDirect(old channel.LinkToken) {
+	r.mu.Lock()
+	d := r.direct
+	r.mu.Unlock()
+	if d != nil {
+		d.EndLink(old)
+	}
 }
 
 func newRelayLinks(log *slog.Logger) *relayLinks { return &relayLinks{log: log} }
 
 // add takes an agent's store; its dropped relay links are unregistered
 // with unregister.
-func (r *relayLinks) add(s *links.Secrets, unregister func(channel.LinkToken)) {
+func (r *relayLinks) add(agent string, s *links.Secrets, unregister func(channel.LinkToken)) {
 	s.OnDrop(unregister)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.stores = append(r.stores, s)
+	r.agents = append(r.agents, agent)
 }
 
 func (r *relayLinks) all() []*links.Secrets {
@@ -102,10 +138,13 @@ func (r *relayLinks) Live() []vault.Link {
 func (r *relayLinks) Session(token channel.LinkToken) (vault.SessionLink, bool) {
 	var out vault.SessionLink
 	found := false
-	for _, s := range r.all() {
+	r.mu.Lock()
+	stores, agents := slices.Clone(r.stores), slices.Clone(r.agents)
+	r.mu.Unlock()
+	for i, s := range stores {
 		l, ok := s.Session(token)
 		if ok && !found {
-			out = vault.SessionLink{Token: l.Keys.Token, Item: l.Item, PSK: l.Keys.PSK, ExpiresAt: l.ExpiresAt}
+			out = vault.SessionLink{Token: l.Keys.Token, Agent: agents[i], Item: l.Item, PSK: l.Keys.PSK, ExpiresAt: l.ExpiresAt}
 			found = true
 		}
 		l.Keys.PSK.Zero()

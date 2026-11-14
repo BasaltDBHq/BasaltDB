@@ -37,6 +37,7 @@ func parseUpgrade(c *cliIO, args []string) (upgradeFlags, error) {
 	if err := parse(fs, args); err != nil {
 		return f, err
 	}
+	f.configPath = configOrFallback(c.host, fs, f.configPath)
 	if !config.ValidAgentName(f.agent) {
 		return f, fmt.Errorf("%w: --agent is required (the agent whose database's guard to upgrade)", errUsage)
 	}
@@ -289,7 +290,7 @@ func upgradeGuard(c *cliIO, conn *pgx.Conn, f upgradeFlags) error {
 		}
 	}
 	if err := applyInit(ctx, conn, script); err != nil {
-		return fmt.Errorf("%w; nothing changed", err)
+		return nothingChanged(err)
 	}
 	fmt.Fprintf(c.stderr, "basalt: guard upgraded from version %d to %d (applied %s); the engine serves %s again without a restart\n",
 		installed, latest, joinInts(missingVersions(installed)), f.agent)

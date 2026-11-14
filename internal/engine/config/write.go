@@ -26,6 +26,9 @@ type Settings struct {
 	// exception goes with the pages it is for.
 	PagesURL      string
 	DevLocalPages bool
+	// DirectAddr replaces directAddr when not empty ("off" turns it off);
+	// empty keeps what engine.json has.
+	DirectAddr string
 	// OperatedBy replaces the config's operatedBy when set.
 	OperatedBy string
 	// Mode replaces the config's mode when set.
@@ -132,6 +135,9 @@ func UpsertedVault(path string, open func(string) (*os.File, error), s Settings,
 	c.Vault = vault.Vault
 	if s.PagesURL != "" {
 		c.PagesURL, c.ApprovalPage, c.DevLocalPages = s.PagesURL, "", s.DevLocalPages
+	}
+	if s.DirectAddr != "" {
+		c.DirectAddr = s.DirectAddr
 	}
 	if s.OperatedBy != "" {
 		c.OperatedBy = s.OperatedBy

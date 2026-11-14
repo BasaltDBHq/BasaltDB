@@ -29,3 +29,24 @@ func TestStatusPrintsEachCommandOnce(t *testing.T) {
 	require.Equal(t, 1, strings.Count(out, cmd), out)
 	require.Contains(t, out, "Run: basalt upgrade --agent bot", "a step the message does not name is printed")
 }
+
+// The engine's record is printed with its address, and the REVOKED line
+// says approvals go on.
+func TestStatusPrintsTheEngineRecord(t *testing.T) {
+	t.Parallel()
+	for state, want := range map[string]string{
+		"RECORDED":     "Engine key:   RECORDED in the agent's database, engine.example.com (since 2026-11-12T09:00:00Z)",
+		"REVOKED":      "Engine key:   REVOKED 2026-11-12T10:00:00Z",
+		"NOT_RECORDED": "Engine key:   NOT_RECORDED",
+		"UNKNOWN":      "Engine key:   UNKNOWN",
+	} {
+		var b strings.Builder
+		writeStatus(&b, statusOut{StatusReport: agent.StatusReport{Agent: "bot", EngineRecord: &agent.EngineRecordStatus{
+			State: state, URL: "https://engine.example.com", RecordedAt: "2026-11-12T09:00:00Z", RevokedAt: "2026-11-12T10:00:00Z",
+		}}})
+		require.Contains(t, b.String(), want, state)
+	}
+	var b strings.Builder
+	writeStatus(&b, statusOut{StatusReport: agent.StatusReport{Agent: "bot"}})
+	require.NotContains(t, b.String(), "Engine key:", "an engine that is down has no record to print")
+}

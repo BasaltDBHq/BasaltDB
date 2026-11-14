@@ -43,6 +43,14 @@ const (
 	// directIdleTimeout closes a kept-alive connection with no next
 	// request, so idle connections cannot hold the connection cap.
 	directIdleTimeout = 5 * time.Second
+	// directReadTimeout and directWriteTimeout bound a whole request's read
+	// and a response's write. They are the backstop where a response
+	// writer cannot set its own deadline (refuse), and keep a local
+	// process that pipelines probes and never reads from holding a
+	// connection slot. A WebSocket upgrade hijacks the connection, which
+	// clears them.
+	directReadTimeout  = 10 * time.Second
+	directWriteTimeout = 10 * time.Second
 	// directShutdownTimeout bounds the listener's shutdown.
 	directShutdownTimeout = 5 * time.Second
 	httpsPort             = "443"
@@ -229,9 +237,20 @@ func (d *directHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodGet && r.URL.Path == "/v1/session":
 		d.session(w, r)
 	default:
-		_ = http.NewResponseController(w).SetReadDeadline(time.Now())
+		stopReading(w)
 		w.Header().Set("Connection", "close")
 		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+// stopReading sets the request's read deadline to now, so net/http does
+// not wait to drain a body the client never sends. A response writer that
+// cannot set it (a wrapper without Unwrap) leaves the server's
+// directReadTimeout to bound the read: the refusal is still answered and
+// the connection closed, only later.
+func stopReading(w http.ResponseWriter) {
+	if err := http.NewResponseController(w).SetReadDeadline(time.Now()); err != nil {
+		slog.Debug("direct: stop reading a refused request", "err", err)
 	}
 }
 
@@ -239,7 +258,7 @@ func (d *directHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // deadline is set to now first, so net/http does not wait to drain a
 // request body the client never sends.
 func refuse(w http.ResponseWriter, msg string, status int) {
-	_ = http.NewResponseController(w).SetReadDeadline(time.Now())
+	stopReading(w)
 	w.Header().Set("Connection", "close")
 	http.Error(w, msg, status)
 }
@@ -337,7 +356,10 @@ func listenDirect(addr string) (*directSite, error) {
 // directHeaderTimeout, an idle kept-alive connection closed after
 // directIdleTimeout.
 func newDirectServer(h http.Handler) *http.Server {
-	return &http.Server{Handler: h, ReadHeaderTimeout: directHeaderTimeout, IdleTimeout: directIdleTimeout, MaxHeaderBytes: directHeaderBytes}
+	return &http.Server{
+		Handler: h, ReadHeaderTimeout: directHeaderTimeout, ReadTimeout: directReadTimeout, WriteTimeout: directWriteTimeout,
+		IdleTimeout: directIdleTimeout, MaxHeaderBytes: directHeaderBytes,
+	}
 }
 
 // serve answers on the listener until ctx ends, then ends the direct

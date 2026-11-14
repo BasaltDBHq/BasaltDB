@@ -49,12 +49,14 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 	}
 	// After the drop, so a bot's own user finds the config init left.
 	*configPath = configOrFallback(h, fs, *configPath)
-	cfg, err := config.Load(*configPath)
+	// Started as root without --user, the hardened read: the config's
+	// directory may belong to another user, who could plant a link there.
+	cfg, err := loadEngineConfigAs(h.Euid(), *configPath)
 	if err != nil {
 		return fail(io.err, "engine", err)
 	}
 	log := slog.New(slog.NewTextHandler(io.err, nil))
-	if err := engine.Run(ctx, cfg, enginePath(*configPath), log); err != nil {
+	if err := engine.Run(ctx, cfg.Config, enginePath(*configPath), log); err != nil {
 		return fail(io.err, "engine", err)
 	}
 	return exitOK

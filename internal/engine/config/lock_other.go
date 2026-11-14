@@ -19,6 +19,9 @@ func lockConfig(string) (func(), error) { return func() {}, nil }
 // LockFile: see lock_unix.go.
 func LockFile(string) (func(), error) { return nil, errNoLock }
 
+// LockOpenFile: see lock_unix.go.
+func LockOpenFile(*os.File) (func(), error) { return nil, errNoLock }
+
 // ReadOwnCredential: see lock_unix.go.
 func ReadOwnCredential(string) (string, os.FileInfo, error) { return "", nil, errNoLock }
 

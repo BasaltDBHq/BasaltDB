@@ -31,6 +31,14 @@ func LockFile(path string) (func(), error) {
 	if err != nil {
 		return nil, fmt.Errorf("lock %s: %w", path, err)
 	}
+	return LockOpenFile(f)
+}
+
+// LockOpenFile is LockFile on a lock file already opened (read-write, not
+// following a link): a root caller opens it relative to a directory it
+// reached without following one. It takes f: on an error f is closed.
+func LockOpenFile(f *os.File) (func(), error) {
+	path := f.Name()
 	fi, err := f.Stat()
 	if err == nil {
 		err = CheckPlainFile(fi)

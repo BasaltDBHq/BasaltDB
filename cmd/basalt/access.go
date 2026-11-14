@@ -67,7 +67,9 @@ func accessCommands(c *cliIO, name, configPath string) (cmds agent.Commands, kno
 	if err != nil {
 		return agent.Commands{}, false
 	}
-	cfg, err := config.Load(abs)
+	// As root, the hardened read (loadEngineConfig): no link followed, no
+	// FIFO opened.
+	cfg, err := loadEngineConfig(c, abs)
 	if err != nil {
 		return agent.Commands{}, false
 	}

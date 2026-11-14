@@ -132,6 +132,9 @@ func (t Transport) valid() bool { return t == TransportRelay || t == TransportDi
 // redacted is what every secret-holding value prints as.
 const redacted = "[redacted]"
 
+// redactedJSON is redacted as a JSON string.
+var redactedJSON = []byte(`"` + redacted + `"`)
+
 func b64(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
 
 // unb64 decodes base64url without padding and refuses a non-canonical form.

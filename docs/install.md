@@ -253,4 +253,6 @@ Remove the user last, after the files it owns. If you plan to run `basalt init` 
 ## Coming soon
 
 - A release download. The published release predates the guard, so for now you build from source (step 1).
-- Setting up the guard from a laptop for an engine on another machine, and a status command.
+- Browser-only setup, for a person without a terminal, and the hosted relay that removes the pasting of approval codes.
+
+For a bot on a server you cannot log in to, see [`setup-from-laptop.md`](setup-from-laptop.md) (for you) and [`bot-setup.md`](bot-setup.md) (for the bot).

@@ -57,6 +57,7 @@ const (
 	versionRevealApproval                 // HR-1, HR-2: the person reveals a held approval's redacted lines through a re-run preview
 	versionRevealNoLock                   // the approval reveal reads the approval row unlocked, so it never deadlocks with a signature
 	versionCatalogChangeAgents            // Q-11: the proven revert scope catalog maps each change to its agent
+	versionEngines                        // VC-21: engine keys, the pinned address and revocation
 )
 
 // migrations lists every version in order. M2 appends versions.
@@ -93,6 +94,7 @@ var migrations = []migration{
 	{version: versionRevealApproval, sql: v30RevealApproval},
 	{version: versionRevealNoLock, sql: v31RevealApprovalNoLock},
 	{version: versionCatalogChangeAgents, sql: v32CatalogChangeAgents, nonBreaking: true},
+	{version: versionEngines, sql: v33Tables + v33Functions + v33Views, nonBreaking: true},
 }
 
 // LatestVersion is the basalt_meta version this build installs.

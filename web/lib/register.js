@@ -112,5 +112,5 @@ async function main() {
   $("register").addEventListener("click", () => register(rp, req));
 }
 
-// Only in a browser: the tests import this module without a document.
+// Only in a browser: the tests load this module without a document.
 if (typeof document !== "undefined") main();

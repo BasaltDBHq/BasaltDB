@@ -92,6 +92,7 @@ npm-check: ## Syntax-check the npm shim, MCP registry and publish scripts
 web-check: ## Syntax-check the approval and revert pages, run their codec tests against the Go fixtures, and check the integrity hashes
 	@for f in web/lib/*.js web/edge/*.js functions/*.js; do node --check "$$f" || exit 1; done
 	@node --test web/lib/*.test.mjs web/edge/*.test.mjs >/dev/null || node --test web/lib/*.test.mjs web/edge/*.test.mjs
+	@node --test scripts/web-sri.test.mjs >/dev/null || node --test scripts/web-sri.test.mjs
 	@node scripts/web-sri.mjs --check
 	@node scripts/web-manifest.mjs --check
 

@@ -280,5 +280,5 @@ async function main() {
   $("approve").addEventListener("click", () => approve(rp, req, summary, relay));
 }
 
-// Tests import the module without a document; only a page runs main.
+// Tests load the module without a document; only a page runs main.
 if (typeof document !== "undefined") main();

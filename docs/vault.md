@@ -84,6 +84,12 @@ The engine id is a fingerprint of the engine's public key. Compare it across `ba
 
 For an engine that runs as a service, `basalt status` asks the engine, so it prints the live state. For an engine you start by hand, `basalt status` reads `engine.json` and the key file instead. It prints `OFF` or `KEY_ERROR` as above. When the setting is `ON`, it prints `Vault:        ON in the config; only the running engine knows whether it is connected (the agent's status tool reports it)` with the engine id, and the live state comes from the agent's `status` tool. No Vault state is reported as a problem: approvals work in all of them.
 
+## Check the portal
+
+The pages you sign on come from the portal's static host. `basalt portal verify` fetches every page file from `https://portal.basaltvault.app` and compares it with the copy embedded in your `basalt` binary, fetches the routes you open pages at, and checks the response's content security policy. It prints `OK`, `DIFFERS`, `MISSING`, `HEADER`, `UNEXPECTED` or `ERROR` for each file and exits `1` when anything is not `OK`. It needs no database and no engine.
+
+It catches a portal that was changed for everyone. It cannot catch a page served to you alone, or one that treats a command-line client differently from your browser, since it sees only what the host serves it, and it trusts the binary it runs in. Run it from a machine and network other than the ones you sign on, and use a binary you downloaded from the release. See [Deploy the portal](deploy-portal.md#6-verify). The engine does not run this check on its own yet.
+
 ## The engine's key file
 
 The engine makes its key file at its first start, whatever the `vault` setting says, because the same key will sign receipts. It is `<stateDir>/channel.json`, owned by the engine's OS user, mode `0600`. Anyone who can read it can pose as your engine to the Vault. They still cannot read a session without its link secret, and they cannot approve anything, because only your passkey signs and Postgres verifies it.

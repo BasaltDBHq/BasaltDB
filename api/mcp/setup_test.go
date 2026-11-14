@@ -104,6 +104,11 @@ func loadSetupFixtures(t *testing.T) setupFixtures {
 	return f
 }
 
+func TestPortalSchemas(t *testing.T) {
+	t.Parallel()
+	checkPayloadSchemas(t, "portal", []string{"portal-verify-result.schema.json"})
+}
+
 func TestSetupSchemas(t *testing.T) {
 	t.Parallel()
 	checkPayloadSchemas(t, "setup", []string{"remote-init-result.schema.json", "setup-code.schema.json"})

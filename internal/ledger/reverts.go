@@ -62,6 +62,10 @@ type Revert struct {
 	RejectNote string
 	// CreatedAt is when the revert was prepared.
 	CreatedAt time.Time
+	// LinesLeftOut and LinesCost are as on Approval: an agent's read left
+	// the lines out (Lines are their heads), and what they cost.
+	LinesLeftOut bool
+	LinesCost    int64
 }
 
 // RevertProgress counts a batched plan's lines by outcome.
@@ -71,26 +75,26 @@ type RevertProgress struct {
 	Pending  int
 }
 
-func revertSelect() sq.SelectBuilder {
-	return psql.Select(colRevertID, "status", "scope", "scope_id", "intent", "rows", "skipped", "expires_at",
-		"coalesce(binding_text, '')", "coalesce(lines, '{}')", "batched", "signed_at", "apply_by", "batches",
+func revertSelect(ctx context.Context) sq.SelectBuilder {
+	return withRequest(ctx, psql.Select(colRevertID, "status", "scope", "scope_id", "intent", "rows", "skipped", "expires_at",
+		"coalesce(binding_text, '')", "batched", "signed_at", "apply_by", "batches",
 		"coalesce(restored, 0)", "coalesce(skipped_now, 0)", "coalesce(pending, 0)", "change_id", "widened",
 		"rejected_at", "coalesce(reject_note, '')", "created_at").
-		From("basalt_meta.agent_reverts")
+		From("basalt_meta.agent_reverts"))
 }
 
 func scanRevert(row pgx.CollectableRow) (Revert, error) {
 	var r Revert
 	err := row.Scan(&r.ID, &r.Status, &r.Scope, &r.ScopeID, &r.Intent, &r.Rows, &r.Skipped, &r.ExpiresAt, &r.BindingText,
-		&r.Lines, &r.Batched, &r.SignedAt, &r.ApplyBy, &r.Batches,
+		&r.Batched, &r.SignedAt, &r.ApplyBy, &r.Batches,
 		&r.Progress.Restored, &r.Progress.Skipped, &r.Progress.Pending, &r.ChangeID, &r.Widened,
-		&r.RejectedAt, &r.RejectNote, &r.CreatedAt)
+		&r.RejectedAt, &r.RejectNote, &r.CreatedAt, &r.Lines, &r.LinesLeftOut, &r.LinesCost)
 	return r, err
 }
 
 // FindRevert returns a revert the calling role prepared.
 func FindRevert(ctx context.Context, q guard.Querier, id uuid.UUID) (Revert, error) {
-	sql, args, err := revertSelect().Where(sq.Eq{colRevertID: id.String()}).ToSql()
+	sql, args, err := revertSelect(ctx).Where(sq.Eq{colRevertID: id.String()}).ToSql()
 	if err != nil {
 		return Revert{}, err
 	}
@@ -126,7 +130,7 @@ func ListOpenReverts(ctx context.Context, q guard.Querier, p RevertListParams) (
 		return pagination.Page[Revert]{}, fmt.Errorf("%w: status %q", ErrInvalidParams, p.Status)
 	}
 	l := openList[Revert]{
-		selectAll: revertSelect(), idColumn: colRevertID, statuses: []string{RevertPending, RevertApplying},
+		selectAll: revertSelect(ctx), idColumn: colRevertID, statuses: []string{RevertPending, RevertApplying},
 		scan: scanRevert, id: func(r Revert) uuid.UUID { return r.ID },
 	}
 	return l.page(ctx, q, p.Params, p.Status)

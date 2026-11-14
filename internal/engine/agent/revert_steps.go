@@ -93,7 +93,7 @@ func waitEndedSteps(id uuid.UUID, link, open string) []mcp.NextStep {
 		agentStep(mcp.ActionEndTurn, "Do not wait again: end your turn, showing personMessage and the revert link you gave earlier."),
 		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argWaitForSignature: 0},
 			"When the person says they signed, call it once more; it returns at once."),
-		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), "reissueLink": true},
+		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argReissueLink: true},
 			"For a lost link, or when the person asks for a new one, call this: it gives a fresh link and the old one stops working."),
 	}
 }
@@ -113,7 +113,7 @@ func widenedWaitSteps(id uuid.UUID) []mcp.NextStep {
 		agentStep(mcp.ActionEndTurn, "Do not wait again: end your turn, showing personMessage; you have no link to the person's scope."),
 		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argWaitForSignature: 0},
 			"When the person says they signed, call it once more; it returns at once."),
-		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), "reissueLink": true},
+		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argReissueLink: true},
 			"Only if the person asks for a new link: it resets the revert to your own work, dropping what they added."),
 	}
 }
@@ -254,6 +254,9 @@ func (s *Service) signingLink(ctx context.Context, r ledger.Revert, text string)
 	if err != nil {
 		return mcp.NextStep{}, err
 	}
+	if pick.Kind == linkPage || pick.Kind == linkNone {
+		return openLink("", "Open the short link the agent gave you earlier. "+text), nil
+	}
 	if pick.Kind == linkHash {
 		text = "Open the link with the request file the agent sent you earlier. " + text
 	}
@@ -265,10 +268,22 @@ func (s *Service) signingLink(ctx context.Context, r ledger.Revert, text string)
 // the short link), else the link the budget chooses, which over the budget
 // is the hash link with its request (CONTRACT.md, The request file and
 // pasted blocks).
+//
+// A request too large for a long link is restated as the page's address:
+// linkPage when a short link given earlier carries it, else linkNone
+// (CONTRACT.md, Large values, rule 3).
 func (s *Service) restatedRevertLink(ctx context.Context, r ledger.Revert) (handOver, error) {
-	long, err := s.longRevertLink(ctx, r)
+	req := revertRequestOf(r)
+	long, tooLarge, err := longOrTooLarge(req, func() (string, error) { return s.longRevertLink(ctx, r) })
 	if err != nil {
 		return handOver{}, err
+	}
+	if tooLarge {
+		kind := linkNone
+		if s.carriesLarge(req.Cost) {
+			kind = linkPage
+		}
+		return handOver{URL: s.pageAddress(links.Revert, r.ID), Kind: kind}, nil
 	}
 	if s.PagesOrigin != "" {
 		return handOver{URL: long, Kind: linkLong}, nil

@@ -356,3 +356,11 @@ func Size(n int) string {
 	}
 	return fmt.Sprintf("%d bytes", n)
 }
+
+// Unbudgeted is ctx with no budget: the reads made with it are not
+// charged. For reads the engine keeps to itself and never hands to the
+// agent, such as a held write's preview lines on their way back to
+// Postgres (CONTRACT.md, Large values, rule 6).
+func Unbudgeted(ctx context.Context) context.Context {
+	return context.WithValue(ctx, budgetKey{}, (*Budget)(nil))
+}

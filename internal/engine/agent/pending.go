@@ -117,12 +117,15 @@ func (s *Service) ListPending(ctx context.Context, p PendingParams) (pagination.
 // pendingGuidance fills e with its link, message and next steps.
 func (s *Service) pendingGuidance(ctx context.Context, e PendingEntry, reissue bool) error {
 	if a := e.Approval; a != nil {
-		n, err := s.approvalNotice(ctx, a.ID, a.BindingText, a.Lines, a.ExpiresAt, reissue)
+		n, err := s.approvalNotice(ctx, a.ID, a.RunID, requestOf(a.Approval), a.ExpiresAt, reissue)
 		if err != nil {
 			return err
 		}
 		a.Notice = n.ApprovalNotice
-		a.Restated = !reissue && s.PagesOrigin != ""
+		a.Restated = !reissue && (s.PagesOrigin != "" || isPageAddress(n.ApprovalURL))
+		if n.reason == reasonRequestTooLarge {
+			a.tooLargeSteps = n.steps
+		}
 		if !s.waitsForPerson(*a) {
 			a.Notice.RequestFile = nil // nothing left to sign: no request to send
 		}
@@ -157,6 +160,9 @@ func (s *Service) pendingRevert(ctx context.Context, p *PendingRevert, reissue b
 		if err != nil {
 			return err
 		}
+		if n.tooLarge {
+			return s.pendingRevertTooLarge(p, r, n.URL, n.cost)
+		}
 		s.notifyRevert(ctx, r, n)
 		p.Revert, p.Headline, p.RevertURL, p.RequestFile, p.PersonMessage, p.Links = r, n.Headline, n.URL, n.File, n.Message, n.Links
 		p.NextSteps = withSendRequest(pendingRevertSteps(r.ID, n.URL, "Open the new link, review the rows and sign with your passkey."), n.File)
@@ -174,13 +180,18 @@ func (s *Service) pendingRevert(ctx context.Context, p *PendingRevert, reissue b
 		p.NextSteps = pendingRevertSteps(p.ID, "", "Sign with your passkey on the page where you changed the scope.")
 		return nil
 	}
-	if err := s.restateRevertLink(ctx, p); err != nil {
+	pick, err := s.restatedRevertLink(ctx, p.Revert)
+	if err != nil {
 		return err
 	}
+	if pick.Kind == linkNone {
+		return s.pendingRevertTooLarge(p, p.Revert, pick.URL, revertRequestOf(p.Revert).Cost)
+	}
+	p.RevertURL, p.RequestFile = pick.URL, pick.File
 	p.PersonMessage = fmt.Sprintf("%s It waits for your passkey at the link the agent gave you, until %s. If you lost it, "+
 		"ask the agent for a new one.", headline, expires)
 	open := p.RevertURL
-	if s.PagesOrigin != "" {
+	if s.PagesOrigin != "" || pick.Kind == linkPage {
 		open = "" // the person has the short link the agent handed over
 	}
 	p.NextSteps = withSendRequest(pendingRevertSteps(p.ID, open,
@@ -188,14 +199,21 @@ func (s *Service) pendingRevert(ctx context.Context, p *PendingRevert, reissue b
 	return nil
 }
 
-// restateRevertLink sets the link of a pending revert that list_pending
-// names without issuing a new one (restatedRevertLink).
-func (s *Service) restateRevertLink(ctx context.Context, p *PendingRevert) error {
-	pick, err := s.restatedRevertLink(ctx, p.Revert)
+// pendingRevertTooLarge fills a pending revert whose request no link this
+// engine has can carry (REQUEST_TOO_LARGE): the page's address, no
+// request file, and the setup change as message and steps.
+func (s *Service) pendingRevertTooLarge(p *PendingRevert, r ledger.Revert, address string, cost int64) error {
+	headline, err := revertHeadline(r)
 	if err != nil {
 		return err
 	}
-	p.RevertURL, p.RequestFile = pick.URL, pick.File
+	steps, err := revertTooLargeSteps(r.ID, false)
+	if err != nil {
+		return err
+	}
+	p.Revert, p.Headline, p.RevertURL, p.RequestFile, p.Links = r, headline, address, nil, nil
+	p.PersonMessage = s.tooLargeMessage(sentence(revertTitle(r)), cost, r.ExpiresAt, true)
+	p.NextSteps = steps
 	return nil
 }
 

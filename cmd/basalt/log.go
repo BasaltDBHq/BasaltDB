@@ -19,6 +19,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
@@ -391,10 +392,10 @@ func rowLine(r ledger.RowChange, full bool) string {
 	case r.Pruned:
 		return prefix + " " + compactJSON(r.Key) + " values pruned after 30 days"
 	case full:
-		return prefix + " " + compactJSON(r.Key) + " before=" + compactJSON(r.Before) + " after=" + compactJSON(r.After)
+		return prefix + " " + markedJSON(r.Key, r.Marks.Key) + " before=" + markedJSON(r.Before, r.Marks.Before) + " after=" + markedJSON(r.After, r.Marks.After)
 	}
-	line := prefix + " " + compactJSON(r.Key)
-	if changed := changedValues(r.Before, r.After); r.Op == "UPDATE" && len(changed) > 0 {
+	line := prefix + " " + markedJSON(r.Key, r.Marks.Key)
+	if changed := changedValues(r.Before, r.After, r.Marks); r.Op == "UPDATE" && len(changed) > 0 {
 		line += " " + strings.Join(changed, ", ")
 	}
 	return line
@@ -402,7 +403,7 @@ func rowLine(r ledger.RowChange, full bool) string {
 
 // changedValues lists "col old -> new" for the columns whose values
 // differ, by column name.
-func changedValues(before, after map[string]any) []string {
+func changedValues(before, after map[string]any, marks largevalue.Marks) []string {
 	cols := make([]string, 0, len(after))
 	for col, v := range after {
 		if old, ok := before[col]; !ok || !reflect.DeepEqual(old, v) {
@@ -412,7 +413,7 @@ func changedValues(before, after map[string]any) []string {
 	sort.Strings(cols)
 	out := make([]string, 0, len(cols))
 	for _, col := range cols {
-		out = append(out, col+" "+displayValue(before[col])+" -> "+displayValue(after[col]))
+		out = append(out, col+" "+withMark(displayValue(before[col]), marks.Before[col])+" -> "+withMark(displayValue(after[col]), marks.After[col]))
 	}
 	return out
 }
@@ -432,6 +433,42 @@ func displayValue(v any) string {
 		return "?"
 	}
 	return string(b)
+}
+
+// withMark is a printed value followed by the summary of its size and
+// sha256 when it is over 1 MiB (largevalue.Summary), "" for any other.
+func withMark(text, mark string) string {
+	if mark == "" {
+		return text
+	}
+	return text + " " + mark
+}
+
+// markedJSON is compactJSON with each large value followed by its
+// summary, inside the object, the way the person reads it beside the
+// agent's marker. With no large value it is compactJSON.
+func markedJSON(v map[string]any, marks map[string]string) string {
+	if len(marks) == 0 || v == nil {
+		return compactJSON(v)
+	}
+	cols := make([]string, 0, len(v))
+	for col := range v {
+		cols = append(cols, col)
+	}
+	sort.Strings(cols)
+	parts := make([]string, 0, len(cols))
+	for _, col := range cols {
+		k, err := json.Marshal(col)
+		if err != nil {
+			return "?"
+		}
+		val, err := json.Marshal(v[col])
+		if err != nil {
+			return "?"
+		}
+		parts = append(parts, string(k)+":"+withMark(string(val), marks[col]))
+	}
+	return "{" + strings.Join(parts, ",") + "}"
 }
 
 func compactJSON(v map[string]any) string {

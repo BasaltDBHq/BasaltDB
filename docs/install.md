@@ -248,7 +248,7 @@ sudo dscl . -delete /Users/_basalt
 sudo dscl . -delete /Groups/_basalt
 ```
 
-Remove the user last, after the files it owns. If you plan to run `basalt init` again, you can keep the config directory, the user and the state directory. The state directory holds each agent's ledger chain head; after a new install the engine sees that the head belongs to the old ledger, logs a warning and starts a new one.
+Remove the user last, after the files it owns. If you plan to run `basalt init` again, you can keep the config directory, the user and the state directory. The state directory holds each agent's ledger chain head. After a new install the engine sees that the head belongs to the old ledger, records that in the new ledger and starts a new head. `basalt status` and `basalt log` then show a notice that the ledger was reinstalled, so that a reinstall nobody on your team made does not go unnoticed.
 
 ## Coming soon
 

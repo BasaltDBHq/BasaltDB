@@ -45,9 +45,6 @@ const (
 	phaseOpen
 )
 
-// sessions are the sessions the Vault opened on one socket. The read loop
-// opens, handshakes and reads them; workers, timers and revocations end
-// them, so the map is locked.
 // Tally counts the sessions open on every transport of one engine, so the
 // per-engine and per-link limits hold across the Vault's socket and the
 // direct listener together (CONTRACT.md, Direct transport, Limits). One
@@ -85,6 +82,17 @@ func (t *Tally) release(token channel.LinkToken, established bool) {
 	}
 }
 
+// move gives an established session's link slot from old to new: a widen
+// rotated its token.
+func (t *Tally) move(old, next channel.LinkToken) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.established[old]--; t.established[old] <= 0 {
+		delete(t.established, old)
+	}
+	t.established[next]++
+}
+
 // establish takes one of the link's slots; false at the limit.
 func (t *Tally) establish(token channel.LinkToken) bool {
 	t.mu.Lock()
@@ -96,6 +104,9 @@ func (t *Tally) establish(token channel.LinkToken) bool {
 	return true
 }
 
+// sessions are the sessions the Vault opened on one socket. The read loop
+// opens, handshakes and reads them; workers, timers and revocations end
+// them, so the map is locked.
 type sessions struct {
 	timeout time.Duration
 	now     func() time.Time
@@ -165,14 +176,14 @@ func (s *sessions) add(id sid, token channel.LinkToken) (channel.CloseError, *se
 	return 0, nil
 }
 
-// take removes a session and returns it, nil when it is not held: whoever
-// takes it ends it, once.
 // drop removes a session from the table and the tally; s.mu is held.
 func (s *sessions) drop(id sid, ss *session) {
 	delete(s.open, id)
 	s.tally.release(ss.token, ss.est != nil)
 }
 
+// take removes a session and returns it, nil when it is not held: whoever
+// takes it ends it, once.
 func (s *sessions) take(id sid) *session {
 	s.mu.Lock()
 	defer s.mu.Unlock()

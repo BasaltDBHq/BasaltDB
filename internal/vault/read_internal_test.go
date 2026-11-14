@@ -197,3 +197,59 @@ func TestSessionLimitsCountBothTransports(t *testing.T) {
 	}
 	t.Fatal("the engine's limit never held across both tables")
 }
+
+// A widen moves the session's link slot to the new token: the new token's
+// count includes it, the old token keeps none, and the session ending
+// frees the new token's slot.
+func TestSessionLimitFollowsARotatedToken(t *testing.T) {
+	t.Parallel()
+	s := newSessions(10*time.Second, time.Now, NewTally())
+	oldTok, newTok := channel.LinkToken{1}, channel.LinkToken{2}
+	code, _ := s.add(sid{1}, oldTok)
+	require.Zero(t, code)
+	_, ss := s.lookup(sid{1})
+	ok, _ := s.establish(ss, &established{})
+	require.True(t, ok)
+
+	cn := &conn{sessions: s}
+	ss.est.link = SessionLink{}
+	cn.rotate(ss, newTok)
+	require.Zero(t, s.tally.established[oldTok], "the old token holds no slot")
+	for i := 1; i < MaxSessionsPerLink; i++ {
+		code, _ := s.add(sid{10, byte(i)}, newTok)
+		require.Zero(t, code)
+		_, o := s.lookup(sid{10, byte(i)})
+		ok, _ := s.establish(o, &established{})
+		require.True(t, ok)
+	}
+	code, _ = s.add(sid{20}, newTok)
+	require.Zero(t, code)
+	_, o := s.lookup(sid{20})
+	ok, code = s.establish(o, &established{})
+	require.False(t, ok, "the rotated session counts: a fifth is refused")
+	require.Equal(t, channel.ErrSessionLimit, code)
+
+	s.take(sid{1})
+	require.Equal(t, MaxSessionsPerLink-1, s.tally.established[newTok])
+	require.Zero(t, s.tally.established[oldTok])
+}
+
+// A widen that finishes after its session ended moves no slot: the session
+// is gone from the table, so the new token gains nothing that nothing
+// would release.
+func TestRotateAfterTheSessionEndedMovesNoSlot(t *testing.T) {
+	t.Parallel()
+	s := newSessions(10*time.Second, time.Now, NewTally())
+	oldTok, newTok := channel.LinkToken{1}, channel.LinkToken{2}
+	code, _ := s.add(sid{1}, oldTok)
+	require.Zero(t, code)
+	_, ss := s.lookup(sid{1})
+	ok, _ := s.establish(ss, &established{})
+	require.True(t, ok)
+	require.NotNil(t, s.take(sid{1}))
+
+	(&conn{sessions: s}).rotate(ss, newTok)
+	require.Zero(t, s.tally.established[newTok])
+	require.Zero(t, s.tally.established[oldTok])
+	require.Zero(t, s.tally.total)
+}

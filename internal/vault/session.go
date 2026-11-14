@@ -398,6 +398,9 @@ func (cn *conn) rotate(ss *session, token channel.LinkToken) {
 	cn.sessions.mu.Lock()
 	old := ss.token
 	ss.token = token
+	if cn.sessions.open[ss.id] == ss && ss.est != nil && old != token {
+		cn.sessions.tally.move(old, token)
+	}
 	cn.sessions.mu.Unlock()
 	ss.est.link.Token = token
 	if old == token {

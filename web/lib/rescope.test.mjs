@@ -109,6 +109,14 @@ test("the catalog is checked before the page uses it", () => {
   assert.throws(() => parseCatalog({ ...ok, extra: 1 }), /catalog/);
   assert.throws(() => parseCatalog({ ...ok, runs: [{ ...ok.runs[0], runId: "x" }] }), /catalog/);
   assert.throws(() => parseCatalog({ ...ok, tables: [{ table: "public.leads", rows: -1 }] }), /catalog/);
+  assert.equal(c.changeAgents, null, "a guard older than version 32 sends no map");
+
+  const mapped = parseCatalog({ ...ok, changeAgents: { [TASK]: "basalt_agent_bot" } });
+  assert.deepEqual([...mapped.changeAgents], [[TASK, "basalt_agent_bot"]]);
+  assert.throws(() => parseCatalog({ ...ok, changeAgents: { "not-a-uuid": "basalt_agent_bot" } }), /catalog/);
+  assert.throws(() => parseCatalog({ ...ok, changeAgents: { [TASK]: "" } }), /catalog/);
+  assert.throws(() => parseCatalog({ ...ok, changeAgents: [] }), /catalog/);
+  assert.throws(() => parseCatalog({ ...ok, changeAgents: null }), /catalog/);
 });
 
 // fakeEngine answers the scope route with answer(body) and records calls.

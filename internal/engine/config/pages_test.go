@@ -14,7 +14,7 @@ func TestPagesBase(t *testing.T) {
 		name, url, legacy, want, err string
 	}{
 		{name: "default: the engine's local pages", want: "http://localhost:8787"},
-		{name: "hosted console", url: "https://console.basaltvault.app", want: "https://console.basaltvault.app"},
+		{name: "portal", url: "https://portal.basaltvault.app", want: "https://portal.basaltvault.app"},
 		{name: "local port", url: "http://localhost:9000/", want: "http://localhost:9000"},
 		{name: "older approvalPage key", legacy: "http://localhost:8787/approve/", want: "http://localhost:8787"},
 		{name: "pagesUrl wins", url: "http://localhost:9000", legacy: "http://localhost:8787/approve/", want: "http://localhost:9000"},
@@ -41,7 +41,7 @@ func TestPages(t *testing.T) {
 		err             string
 	}{
 		{name: "default: on at 127.0.0.1:8787", want: config.Pages{Addr: "127.0.0.1:8787", Origin: "http://localhost:8787"}},
-		{name: "hosted console: off", url: "https://console.basaltvault.app"},
+		{name: "portal: off", url: "https://portal.basaltvault.app"},
 		{
 			name: "local port", url: "http://localhost:9000",
 			want: config.Pages{Addr: "127.0.0.1:9000", Origin: "http://localhost:9000"},
@@ -58,7 +58,7 @@ func TestPages(t *testing.T) {
 		{name: "every interface refused", addr: "0.0.0.0:8787", err: "loopback IP only"},
 		{name: "LAN address refused", addr: "192.168.1.10:8787", err: "loopback IP only"},
 		{name: "hostname refused", addr: "localhost:8787", err: "loopback IP only"},
-		{name: "pages need a local base", url: "https://console.basaltvault.app", addr: "127.0.0.1:8787", err: "needs a local pagesUrl"},
+		{name: "pages need a local base", url: "https://portal.basaltvault.app", addr: "127.0.0.1:8787", err: "needs a local pagesUrl"},
 	} {
 		got, err := config.Config{PagesURL: tc.url, PagesAddr: tc.addr}.Pages()
 		if tc.err != "" {

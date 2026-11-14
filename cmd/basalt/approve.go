@@ -34,6 +34,7 @@ func runApprove(c *cliIO, args []string) int {
 	if err := fs.Parse(args); err != nil {
 		return c.fail(fmt.Errorf("%w: %w", errUsage, err))
 	}
+	*configPath = configOrFallback(c.host, fs, *configPath)
 	if *show != "" && *open != "" {
 		return c.fail(fmt.Errorf("%w: give --show or --open, not both", errUsage))
 	}
@@ -60,7 +61,7 @@ func runApprove(c *cliIO, args []string) int {
 		// revokes the one the agent handed over (CONTRACT.md, Link secrets),
 		// and the page relays the signature; --reissue is the same thing.
 		pages := linkPages{
-			base:  l.pagesBase(pagesURL),
+			base:  l.pagesBase(c, pagesURL),
 			local: l.localPages(c, pagesURL),
 		}
 		return showApproval(c, l, held, pages, *open != "")

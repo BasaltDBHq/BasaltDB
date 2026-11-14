@@ -28,6 +28,11 @@ import (
 
 // runEngine runs the engine service; the launchd or systemd unit starts it.
 func runEngine(ctx context.Context, args []string, io stdio) int {
+	return runEngineOn(ctx, args, io, osHost{})
+}
+
+// runEngineOn is runEngine with the host that tells root and the config dir.
+func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 	fs := flag.NewFlagSet("engine", flag.ContinueOnError)
 	fs.SetOutput(io.err)
 	configPath := fs.String("config", config.DefaultPath(runtime.GOOS), "engine config file")
@@ -40,6 +45,8 @@ func runEngine(ctx context.Context, args []string, io stdio) int {
 			return fail(io.err, "engine", err)
 		}
 	}
+	// After the drop, so a bot's own user finds the config init left.
+	*configPath = configOrFallback(h, fs, *configPath)
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		return fail(io.err, "engine", err)
@@ -202,6 +209,7 @@ func runService(ctx context.Context, args []string, io stdio) int {
 	fs.StringVar(&a.name, "agent", "", "install: also place this agent (basalt init runs this under sudo)")
 	fs.StringVar(&a.osUser, "os-user", "", "install --agent: the agent's OS user")
 	pagesURLFlag(fs, &a.pagesURL, "install --agent: the pages base URL the agent's passkey belongs to")
+	fs.BoolVar(&a.devLocalPages, flagDevLocalPages, false, "install --agent: the config's devLocalPages, as basalt init --dev-local-pages sets it")
 	fs.Func(flagVault, "install --agent: on or off, the config's vault as the person chose it (default: keep the config's)", func(v string) error {
 		var m VaultMode
 		if err := m.Set(v); err != nil {
@@ -259,6 +267,9 @@ func runService(ctx context.Context, args []string, io stdio) int {
 		spec.MemoryMB = cfg.PIIOrDefault().MaxMemoryMB
 	}
 	if action == "install" && a.name != "" {
+		if a.devLocalPages {
+			_, _ = fmt.Fprintln(io.err, "basalt: "+config.DevLocalPagesWarning)
+		}
 		if len(a.personUIDs) == 0 && os.Getenv(envSudoUID) != "" {
 			uid, err := parseUID(os.Getenv(envSudoUID))
 			if err != nil {

@@ -35,6 +35,13 @@ type result struct {
 // cli runs basalt with stdin and an environment holding only env.
 func cli(t *testing.T, env map[string]string, stdin string, args ...string) result {
 	t.Helper()
+	return cliOn(t, systemSocketHost(t), env, stdin, args...)
+}
+
+// cliOn is cli on host h: pass newFakeHost(t) for a person who is not root,
+// whose config dir is short enough for the sockets next to the config.
+func cliOn(t *testing.T, h *fakeHost, env map[string]string, stdin string, args ...string) result {
+	t.Helper()
 	var stdout, stderr bytes.Buffer
 	cache := t.TempDir()
 	c := newIO(context.Background(), stdio{in: strings.NewReader(stdin), out: &stdout, err: &stderr},
@@ -44,6 +51,7 @@ func cli(t *testing.T, env map[string]string, stdin string, args ...string) resu
 			}
 			return cache
 		})
+	c.host = h
 	code := guardCommands[args[0]](c, args[1:])
 	return result{code, stdout.String(), stderr.String()}
 }
@@ -548,11 +556,77 @@ func TestInitOperatedByAgentWithTheAdminCredential(t *testing.T) {
 	require.NotContains(t, string(raw), "operatedBy")
 }
 
+// --dev-local-pages lets the owner try an agent-operated engine on local
+// pages; nothing else gets a local or foreign origin (CONTRACT.md, Page
+// origins).
+func TestInitDevLocalPages(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"without an agent-operated engine", []string{"--dev-local-pages"}, "only for --operated-by=agent"},
+		{"with the portal", []string{"--operated-by", "agent", "--dev-local-pages", "--passkey-origin", links.Portal}, "needs a local --passkey-origin"},
+		{"pages.dev, person", []string{"--passkey-origin", "https://basalt-portal.pages.dev"}, "--passkey-origin"},
+		{"pages.dev, agent", []string{"--operated-by", "agent", "--passkey-origin", "https://basalt-portal.pages.dev"}, "portal"},
+		{"pages.dev, dev pages", []string{"--operated-by", "agent", "--dev-local-pages", "--passkey-origin", "https://basalt-portal.pages.dev"}, "--passkey-origin"},
+	} {
+		r := cli(t, nil, "", append([]string{"init", "--agent", "x2"}, tc.args...)...)
+		require.Equal(t, exitUsage, r.code, tc.name+": "+r.stderr)
+		require.Contains(t, r.stderr, tc.want, tc.name)
+	}
+
+	d := guardtest.New(t).WithDemo(t)
+	config := tempConfig(t)
+	base := []string{
+		"init", "--agent", "x1", "--write", "public.leads", "--prefix", d.Names.Prefix, "--operated-by", "agent",
+		"--config", config, "--os-user", "tester", "--yes", "--skip-passkey",
+	}
+	r := cli(t, map[string]string{envAdminURL: d.URL}, "", append(slices.Clone(base), "--dev-local-pages")...)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Contains(t, r.stderr, "DEV_LOCAL_PAGES: these pages are on the agent's machine; never use this with a bot you do not control")
+	var cfg struct {
+		PagesURL      string `json:"pagesUrl"`
+		DevLocalPages bool   `json:"devLocalPages"`
+		Vault         string `json:"vault"`
+		Agents        []struct {
+			InitArgs []string `json:"initArgs"`
+		} `json:"agents"`
+	}
+	raw, err := os.ReadFile(config)
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(raw, &cfg))
+	require.True(t, cfg.DevLocalPages)
+	require.Equal(t, links.DefaultLocal, cfg.PagesURL, "the default origin with --dev-local-pages is local")
+	require.NotEqual(t, "ON", cfg.Vault, "the Vault carries portal links only")
+	require.Contains(t, cfg.Agents[0].InitArgs, "--dev-local-pages=true")
+	cmds, err := agent.NewCommands("x1", config, "linux", cfg.Agents[0].InitArgs)
+	require.NoError(t, err, "the saved flag round-trips")
+	require.NotContains(t, cmds.InitPortal(), "dev-local-pages")
+
+	// An explicit local origin, as the contract's command gives it.
+	r = cli(t, map[string]string{envAdminURL: d.URL}, "", append(slices.Clone(base), "--dev-local-pages", "--passkey-origin", "http://localhost:9000")...)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	raw, err = os.ReadFile(config)
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"pagesUrl": "http://localhost:9000"`)
+	require.Contains(t, string(raw), `"devLocalPages": true`)
+
+	// Init again without the flag moves the engine to the portal.
+	r = cli(t, map[string]string{envAdminURL: d.URL}, "", base...)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	raw, err = os.ReadFile(config)
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "devLocalPages")
+	require.Contains(t, string(raw), links.Portal)
+}
+
 func TestRelyingPartyAcceptsThePortal(t *testing.T) {
 	t.Parallel()
 	rp, err := relyingParty(links.Portal)
 	require.NoError(t, err)
-	require.Equal(t, portalRP, rp)
+	require.Equal(t, passkey.Production, rp)
 }
 
 func TestInitOperatedByAgentWithAnExplicitPortalOrigin(t *testing.T) {
@@ -604,4 +678,24 @@ func TestInitRerunsAfterAFailedPasskeyPaste(t *testing.T) {
 	// The rerun the message asks for does not refuse the role that exists.
 	r = cli(t, map[string]string{envAdminURL: d.URL}, "", slices.Concat(args, []string{"--skip-passkey"})...)
 	require.Equal(t, exitOK, r.code, r.stderr)
+}
+
+// A table the guard cannot key (no primary key) fails the install; init says
+// which table and how to fix it, not only "NOT_ALLOWED (SQLSTATE BS007)".
+func TestInitShowsTheGuardsDetailAndHint(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	d.Exec(t, `CREATE TABLE public.nopk (a int, b text)`)
+	cfg := tempConfig(t)
+
+	r := cli(t, map[string]string{envAdminURL: d.URL}, "",
+		"init", "--agent", "bot", "--write", "public.leads,public.nopk",
+		"--prefix", d.Names.Prefix, "--config", cfg, "--yes", "--skip-passkey", "--no-service")
+	require.Equal(t, exitError, r.code, r.stderr)
+	require.Contains(t, r.stderr, "NOT_ALLOWED")
+	require.Contains(t, r.stderr, "table public.nopk has no primary key; the guard keys ledger rows by it.")
+	require.Contains(t, r.stderr, "add a primary key, or revoke the agent's write privileges on it.")
+	v, err := guard.InstalledVersion(context.Background(), d.Admin)
+	require.NoError(t, err)
+	require.Zero(t, v, "the transaction rolled back")
 }

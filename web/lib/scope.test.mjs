@@ -23,6 +23,7 @@ import {
   noteProblem,
   rejectBody,
   rejectDone,
+  lineAgents,
   rowAgent,
   signingSummary,
 } from "./scope.js";
@@ -59,6 +60,32 @@ test("a row is tagged with its agent only when the signed select names one", () 
   assert.equal(rowAgent(widen({ basalt_agent_bot: 3, basalt_agent_sync: 1 })), null);
   // agents null with a single agent in the scope.
   assert.deepEqual(rowAgent(widen({ basalt_agent_sync: 4 })), { role: "basalt_agent_sync", other: true });
+});
+
+test("with the catalog's change map every row of a multi-agent select is tagged with its agents", () => {
+  const BOT = "0193a000-0000-7000-8000-000000000001";
+  const SYNC = "0193a000-0000-7000-8000-000000000002";
+  const OTHER = "0193a000-0000-7000-8000-000000000003";
+  const wide = widen({ basalt_agent_bot: 3, basalt_agent_sync: 1 });
+  const catalog = { changeAgents: new Map([[BOT, "basalt_agent_bot"], [SYNC, "basalt_agent_sync"]]) };
+  const of = lineAgents(wide, catalog);
+  assert.deepEqual(of({ changeIds: [BOT] }), [{ role: "basalt_agent_bot", other: false }]);
+  assert.deepEqual(of({ changeIds: [SYNC] }), [{ role: "basalt_agent_sync", other: true }]);
+  // A row two agents changed names both, each once, in a stable order.
+  assert.deepEqual(of({ changeIds: [SYNC, BOT, SYNC] }), [
+    { role: "basalt_agent_bot", other: false },
+    { role: "basalt_agent_sync", other: true },
+  ]);
+  // A change the map does not name, or no change at all: no tag rather
+  // than a guessed one.
+  assert.equal(of({ changeIds: [BOT, OTHER] }), null);
+  assert.equal(of({ changeIds: [] }), null);
+  // No catalog (before a widen) or a catalog without the map (a guard
+  // older than version 32): no per-row tags; rowAgent covers one agent.
+  assert.equal(lineAgents(wide, null), null);
+  assert.equal(lineAgents(wide, { agents: [], runs: [], tables: [] }), null);
+  // One agent in the select: the one tag for every row stays.
+  assert.equal(lineAgents(parseRevertBinding(BINDING), catalog), null);
 });
 
 test("the headline says whose rows and when the person widened", () => {

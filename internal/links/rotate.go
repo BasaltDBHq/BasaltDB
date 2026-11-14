@@ -5,6 +5,8 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"errors"
+	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -42,6 +44,16 @@ type Rotated struct {
 	Token    channel.LinkToken
 	OldToken channel.LinkToken
 }
+
+// LogValue logs whether the link is a relay link, never its tokens: the
+// item and expiry are the caller's to log.
+func (r Rotated) LogValue() slog.Value { return slog.GroupValue(slog.Bool("relay", r.Relay)) }
+
+// String and GoString never show the tokens either.
+func (r Rotated) String() string { return fmt.Sprintf("rotated link (relay %t)", r.Relay) }
+
+// GoString is String.
+func (r Rotated) GoString() string { return r.String() }
 
 // Rotate replaces item id's live link with secret, a secret the person's
 // page made, valid until expires. The old secret stops working at once. A

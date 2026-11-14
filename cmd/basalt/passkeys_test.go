@@ -41,7 +41,7 @@ func id(p *passkeytest.Authenticator) string { return passkey.Bytes(p.ID).String
 // console (the test passkeys' origin).
 func linkRequest(t *testing.T, link, page string, v any) {
 	t.Helper()
-	frag, ok := strings.CutPrefix(strings.TrimSpace(link), "https://console.basaltvault.app/passkeys/"+page+"#")
+	frag, ok := strings.CutPrefix(strings.TrimSpace(link), "https://portal.basaltvault.app/passkeys/"+page+"#")
 	require.True(t, ok, link)
 	require.NoError(t, passkey.DecodeCode(passkey.ManageRequestPrefix, frag, v))
 }
@@ -118,7 +118,7 @@ func TestPasskeyRemove(t *testing.T) {
 	r = cli(t, admin, "phone\n", "passkey", "remove", "--force", "--pages-url", links.DefaultLocal, id(phone))
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Empty(t, r.stdout, "no forget link on another origin than the passkey's")
-	require.Contains(t, r.stderr, "the passkey belongs to "+links.HostedConsole)
+	require.Contains(t, r.stderr, "the passkey belongs to "+links.Portal)
 	require.Contains(t, r.stderr, "0 active passkeys remain")
 	require.Contains(t, r.stderr, "basalt init --add-passkey")
 
@@ -266,12 +266,12 @@ func TestPasskeyCheck(t *testing.T) {
 	// them: the CLI names the --pages-url that checks them.
 	r := cliRand(t, nil, "", "passkey", "check", "--credential-file", credFile)
 	require.Equal(t, exitError, r.code)
-	require.Contains(t, r.stderr, "check it with --pages-url "+links.HostedConsole)
+	require.Contains(t, r.stderr, "check it with --pages-url "+links.Portal)
 
 	// Decline the removal: nothing changes.
-	r = cliRand(t, nil, code+"\nn\n", "passkey", "check", "--credential-file", credFile, "--pages-url", links.HostedConsole)
+	r = cliRand(t, nil, code+"\nn\n", "passkey", "check", "--credential-file", credFile, "--pages-url", links.Portal)
 	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Contains(t, r.stderr, "https://console.basaltvault.app/passkeys/check#1.")
+	require.Contains(t, r.stderr, "https://portal.basaltvault.app/passkeys/check#1.")
 	require.Contains(t, r.stdout, id(laptop)+"  "+dbName(t, d))
 	require.Contains(t, r.stdout, "found on this device")
 	require.Contains(t, r.stdout, id(phone)+"  phone                not found on this device")
@@ -280,7 +280,7 @@ func TestPasskeyCheck(t *testing.T) {
 	require.Len(t, keys, 2)
 
 	// Accept it: the phone's passkey is revoked with the admin connection.
-	r = cliRand(t, map[string]string{envAdminURL: d.URL}, code+"\ny\n", "passkey", "check", "--credential-file", credFile, "--pages-url", links.HostedConsole)
+	r = cliRand(t, map[string]string{envAdminURL: d.URL}, code+"\ny\n", "passkey", "check", "--credential-file", credFile, "--pages-url", links.Portal)
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Contains(t, r.stderr, `passkey "phone" revoked`)
 	keys, err = guard.ActivePasskeys(context.Background(), d.Admin)
@@ -293,7 +293,7 @@ func TestPasskeyCheck(t *testing.T) {
 		CredentialID: as.CredentialID, AuthenticatorData: as.AuthenticatorData, ClientDataJSON: as.ClientDataJSON, Signature: as.Signature[:len(as.Signature)-1],
 	}}}.Code()
 	require.NoError(t, err)
-	r = cliRand(t, nil, tampered+"\n", "passkey", "check", "--credential-file", credFile, "--pages-url", links.HostedConsole)
+	r = cliRand(t, nil, tampered+"\n", "passkey", "check", "--credential-file", credFile, "--pages-url", links.Portal)
 	require.Equal(t, exitError, r.code)
 	require.Contains(t, r.stderr, "does not verify")
 }
@@ -324,4 +324,22 @@ func TestDefaultPasskeyLabel(t *testing.T) {
 	require.LessOrEqual(t, len(accents), maxPasskeyLabel)
 	require.True(t, utf8.ValidString(accents), accents)
 	require.True(t, strings.HasSuffix(accents, " · 2026-11-13"), accents)
+}
+
+// A passkey label is written by whoever registered the passkey: control and
+// bidi characters in it show as <U+XXXX> in passkey list (CWE-150).
+func TestPasskeyListEscapesTheLabel(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	credFile, _, _ := twoPasskeys(t, d)
+	extra, err := passkeytest.New(passkey.Production)
+	require.NoError(t, err)
+	require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, extra.Credential(), "ph\x1b[2Kone\x1b]0;owned\x07\u009b\u202e"))
+
+	r := cli(t, nil, "", "passkey", "list", "--credential-file", credFile)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	for _, bad := range []string{"\x1b", "\x07", "\u009b", "\u202e"} {
+		require.NotContains(t, r.stdout, bad)
+	}
+	require.Contains(t, r.stdout, "ph<U+001B>[2Kone<U+001B>]0;owned<U+0007><U+009B><U+202E>")
 }

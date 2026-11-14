@@ -210,6 +210,11 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
 .values td.key { color: var(--ui-text-2); }
 .values .why { font-family: var(--font-ui); font-size: 13px; color: var(--diff-hold-fg); min-width: 16ch; }
 .values tr.unchecked .mk { box-shadow: inset 3px 0 0 var(--diff-hold-fg); }
+/* "Changed by" on a revert of several agents: one cell per row, spanning
+   its lines, a tag per agent (amber for one that did not ask). */
+.values td.who { background: var(--ui-panel); white-space: nowrap; max-width: none; }
+.values td.who .ag { margin-left: 0; }
+.values td.who .ag + .ag { margin-left: 4px; }
 /* Text an agent wrote: right-to-left letters in one value cannot reorder the
    text around it, and a value's spaces show as they are (two spaces are not
    one). Hidden characters are escaped as <U+XXXX> before they get here, and
@@ -272,7 +277,7 @@ textarea {
    scope and the Reject note in sheets over the page. */
 .revert-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
 .revert-main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-.ag { font-size: 12px; padding: 0 6px; border-radius: var(--radius-ui-sm); background: var(--ui-subtle); border: 1px solid var(--ui-border); color: var(--ui-text); margin-left: auto; unicode-bidi: isolate; }
+.ag { font-family: var(--font-mono); font-size: 13px; padding: 0 6px; border-radius: var(--radius-ui-sm); background: var(--ui-subtle); border: 1px solid var(--ui-border); color: var(--ui-text); margin-left: auto; unicode-bidi: isolate; }
 .ag.other { background: var(--diff-hold-bg); color: var(--diff-hold-fg); border-color: transparent; }
 
 .decision { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 16px; }

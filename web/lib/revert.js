@@ -38,6 +38,7 @@ import {
   noteLength,
   noteProblem,
   nothingToSign,
+  lineAgents,
   rejectDone,
   rowAgent,
   scopeChoices,
@@ -153,11 +154,12 @@ function renderSummary(req) {
 // rowKeyText names a row by its primary key (changes.js).
 export { rowKeyText };
 
-// agentTag is a row's "changed by" tag: amber for an agent other than the
-// one that requested the revert.
+// agentTag is a row's "changed by" tag: the agent's short name, amber for
+// an agent other than the one that requested the revert, which its title
+// also says in words.
 export function agentTag(who) {
   const tag = el("span", who.other ? "ag other" : "ag", visibleText(agentName(who.role)));
-  tag.title = visibleText(who.role);
+  tag.title = visibleText(who.role) + (who.other ? ", not the agent that asked for this revert" : "");
   return tag;
 }
 
@@ -169,13 +171,15 @@ const INSERTED_NOTE = "Rows marked \u2212 were inserted by the agent; the revert
 // to them only, and as not checked when Postgres left out secret columns;
 // until then its values show as dots, and on a long link it says where to
 // see them. A row with no values to show is named by its key.
-export function lineGroups(items, who = null, shown = new Map(), longLink = false, columns = new Map()) {
+export function lineGroups(items, who = null, shown = new Map(), longLink = false, columns = new Map(), agents = null) {
   return changeGroups(items, {
     mid: "now",
     shown,
     columns,
     longLink,
     who: who === null ? null : () => agentTag(who),
+    agents,
+    agentTag,
     skipped: (line) => line.action === "SKIP",
     why: (line) => {
       if (line.action !== "SKIP") return null;
@@ -323,12 +327,13 @@ function render(state) {
   renderHeader(req);
   renderSummary(req);
   const who = rowAgent(req.binding);
+  const agents = lineAgents(req.binding, state.catalog);
   const longLink = state.relay === null;
   const shown = state.valuesHidden ? new Map() : state.shown;
   const items = req.lines.map((line, index) => ({ line, index }));
   const restore = items.filter((i) => i.line.action !== "SKIP");
-  $("restore").replaceChildren(...lineGroups(restore, who, shown, longLink, req.columns));
-  $("skip").replaceChildren(...lineGroups(items.filter((i) => i.line.action === "SKIP"), who, shown, longLink, req.columns));
+  $("restore").replaceChildren(...lineGroups(restore, who, shown, longLink, req.columns, agents));
+  $("skip").replaceChildren(...lineGroups(items.filter((i) => i.line.action === "SKIP"), who, shown, longLink, req.columns, agents));
   $("restore-count").replaceChildren(...countText(restore.map((i) => i.line)).map((c) => el("span", `count-${c.op.toLowerCase()}`, c.text)));
   $("signed-hash").textContent = signedText(req);
   renderReveal(state);

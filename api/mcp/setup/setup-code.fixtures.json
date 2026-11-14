@@ -145,7 +145,7 @@
       "binaryGuardVersion": 16,
       "summary": [
         "This creates the agent lead_bot (role basalt_agent_lead_bot).",
-        "Setup fingerprint: 25df 4a2b 0e93 3ad7 2d8c.",
+        "Setup fingerprint: fa5f e056 8f56 83a9 fc8c.",
         "Prefix basalt, statement timeout 30000 ms, at most 8 connections."
       ]
     },
@@ -181,7 +181,7 @@
       "summary": [
         "This replaces the password of the existing agent lead_bot (role basalt_agent_lead_bot): only whoever made this code can then log in as basalt_agent_lead_bot.",
         "Run it only if lead_bot itself gave you this code.",
-        "Setup fingerprint: 8125 94b4 9a30 63a1 c20e."
+        "Setup fingerprint: ddd5 cfd6 f7f7 e84b 95f4."
       ]
     },
     {
@@ -199,7 +199,7 @@
       "binaryGuardVersion": 16,
       "summary": [
         "This changes the tables of the existing agent lead_bot (role basalt_agent_lead_bot); its password stays.",
-        "Setup fingerprint: f444 8b4f 16f3 9138 e28b."
+        "Setup fingerprint: fc74 47b9 e2bb c919 8073."
       ]
     },
     {
@@ -337,7 +337,7 @@
       "binaryGuardVersion": 16,
       "summary": [
         "This upgrades Basalt's guard from version 14 to 16; no agent changes.",
-        "Setup fingerprint: b540 eba0 bf5d f9de 640f."
+        "Setup fingerprint: c2dd f4c5 6451 4657 8998."
       ]
     }
   ],
@@ -345,7 +345,7 @@
     {
       "name": "install through the Supabase pooler",
       "code": "basalt-setup.1.TFFdb9pAEPwvq7z1zrkD48BJPDiQECg0fFWEVFV1ttfmiu0zd2c-EvHfKyO16j7u7M7O7HxCqk0hHQhOwKKrq3ECAhiXPMZOjz60oi59iNuS9lLGKPtXCQcCe1U20-Nvq3U4nQKBymCqziAgklbmDgg4aTJ0ID5hp60DAfJkKaNY0xhLZ2ROuVdpnaPxbF3JSFr0Yl00XNo4EEHHbxNIpLtBIKDS1mUGLRD4u7DEtCGO4gTTbKd-7_Oi1NXBWAdXAlktTdIISI0uQDACToPgwZVAVKv8ZtfreAwIyAzLm9ZSFs2tHGXyK9KNj5NRDkH8gKqOchV7DWThJwGDMvmvH-uikqXCG3ZEo1KFBgSsBstwRlcvIW11gjuf9QIRLsbDx_D76PGUTQaZnQ0X_vwp7PfvLv7beXv_UVbH4fzLZj_R87dntZCj-692kq8PU93dvY_yQa1fu32RdfLtsJz4Gz0zfqA2u8thW8ZymCxj_TD7OPLnS_byetG7-6d-8zMnHRZYurUqUNduZkG0m0CvBPBcKYM2bGJqsVZAOae8vWaBYC3B-Ttc_wQAAP__.UO3iZg",
-      "fingerprint": "25df 4a2b 0e93 3ad7 2d8c",
+      "fingerprint": "fa5f e056 8f56 83a9 fc8c",
       "payload": {
         "agent": {
           "name": "lead_bot",
@@ -379,7 +379,7 @@
     {
       "name": "install on a plain host, read list empty",
       "code": "basalt-setup.1.PJDBbuIwEIbfZdTbOmCHJIAlDilpKSzZQmFFaVWtnGQSrCZxajsUWvHuq3Do3Eaa759P_zfkSlfCAmcEDNq2mWfAgTLBUvTHztBNRs4wHQhnnFPq0J_JXCDwLuvuev5nsw2XSyDQaMzlCTiItEIgYIUu0AL_hoMyFjhkSQ9PompK7KWq6gilLXDfG7gEMmFFIgx2fNPAhUDRCp11eK5VBZx5BKwCzoILgaSV5dW15_coEBAF1tdXtai6iFR3-Z9aWgT-Ck2blDLtlSgyAwSMKNFct3-1smjgjYBGkQF_fSNwRC1ziRo4bKZPYexsHkLH9YMbj44DHq7n0W34d3b7WSymhYmjtbe6CyeTm7P3fNr3v-rmGK1-7d4XavV8L9di1v9tFuX2Y6lGh5dZOW3V42jCC7_cR_XC26lYe4HcHc4f-zoVUfaUqmH8dWT35-Lh8awO_btJJ2yFxQpru5UVqtbGBjjzKaUXAnhqpEYTdg271A0cxhw22NKAU5cz9gKX_wEAAP__.gCqaIQ",
-      "fingerprint": "207e 0e5c 74cb fd81 c202",
+      "fingerprint": "98c4 1851 cdd8 0774 6e16",
       "payload": {
         "agent": {
           "name": "crm",
@@ -411,7 +411,7 @@
     {
       "name": "agent change with a new password",
       "code": "basalt-setup.1.TFHbbts6EPyXRd4OqehmxSbgB8HHtZPGcesbkBRFQElLmTElKiQVuwn87wVdtAhfCGKGszM7HyC0abgDFhGw6PrutgIGYcSjKrkRtMRiSG_KhNORCEMa_jtVAgQOsvXsfDZ92ACBzqCQJ2BQcMuVAwKOmxodsA_Ya-uAAT9aGlLsaYmtM1zRKOi0VmgC23e84BaDUjdeSxsHLBukCYGKuwsEDDptXW3QAoG_H1YovHBRVijqvXw5qKbV3auxDs4E6p6byhsQRjfAooyA0_4-Eyh6qS5pg0EQAgFeY3sx2_LGD1PIq-dC-yBHIx0C-wFdXyhZBh7yJj49n1vt0MJPAgZ59Ylb6qbjrfyDvaGRQqIBBuvJKl_Q9Tyn8SC7SsNRxr5v7_5fTXezVbi_Wx_cYrMdfNvm4_FV-_XX7GU0H8Sn-2yXJkOhsFju3r_k94-HbP7kHl6lPlZx3fWPY5a-19et2JTT9UpNJ8lSLZvb_5rF7vok9spNJ2kl84gPF7O349gv0nGHDbZuIxvUvVtYYInv-EwAT500aHPfXRzGGY0iGqWbMGNhzKLoCc6_AwAA__8.XThWVw",
-      "fingerprint": "8125 94b4 9a30 63a1 c20e",
+      "fingerprint": "ddd5 cfd6 f7f7 e84b 95f4",
       "payload": {
         "agent": {
           "name": "lead_bot",
@@ -446,7 +446,7 @@
     {
       "name": "agent change keeping the password",
       "code": "basalt-setup.1.TFBNb9QwFPwvc7Yje3e7Bd96QIgDHNCeQAi9xC-pafyB_aJWqvLfkSNA9cXSzHg8M6-Yc40kcFahsWzlk4eDsWT9-X7WE4_v9P10Jv1-Nkab_8dfoPAUUlc_fPzw5QaFUnkOL3AYqdEqUBCqCwvcKx5zEzjQc9NG86YnTlJp1XYoOa9ch7YVGqnxMOXYvXIVuOvd5azgSQ4KDiU3WSo3KPx78JXnbjxOnuflMfx6WmPK5Xdtgl1h2aj6HmCuOcLZq4Lkfu8K4xbWo-1wNxgo0MLpCJso9s9WJv9zzL3Icw3CcN9RtnEN09Cphh8Klcm_waccC6VwBPwLVV5CToe4CQlHTnILkfMmnxvcua-5K_BLCZXbQ1_pZE5Xba22l5u5OnNy1n7D_icAAP__.R8k8LA",
-      "fingerprint": "f444 8b4f 16f3 9138 e28b",
+      "fingerprint": "fc74 47b9 e2bb c919 8073",
       "payload": {
         "agent": {
           "name": "lead_bot",
@@ -480,7 +480,7 @@
     {
       "name": "upgrade, no agent part",
       "code": "basalt-setup.1.PI_BTsMwEET_Zc52ZKdtKL5VAiFuqIILt028TkOT2tgbUanKv6NUgr3uzNObG0LMEwmcVSgsc3r1cDCWrN9To2tq9_qh25B-DMZo839-B4XzcFnTH28vx8PTMxRS5jBc4dBSoVGgIJR7FrgbTrEIHOinaKN51h1fJNOobZViHDlXZU7UUuGqi9PKilngmt12o-BJ7i84pFikz1yg8Fc4cljBbec59Kfh6zxOl5i-cxEsCv1M2a8CIccJzm4VJMLZZlFo52G8762aykCBr2nIXA6raG3qRlur7e7dNM7UztpPLL8BAAD__w.jMtAkg",
-      "fingerprint": "b540 eba0 bf5d f9de 640f",
+      "fingerprint": "c2dd f4c5 6451 4657 8998",
       "payload": {
         "build": "0.6.0",
         "expiresAt": "2026-11-15T06:02:11Z",
@@ -503,7 +503,7 @@
     {
       "name": "wrapped copy with spaces and line breaks",
       "code": "  basalt-setup.1.TFFdb9pAEPwvq7z1zrkD48BJPDiQECg0fFWEVFV1ttfmi\nu0zd2c-EvHfKyO16j7u7M7O7HxCqk0hHQhOwKKrq3ECAhiXPMZOjz60oi59i\nNuS9lLGKPtXCQcCe1U20-Nvq3U4nQKBymCqziAgklbmDgg4aTJ0ID5hp60DA\nfJkKaNY0xhLZ2ROuVdpnaPxbF3JSFr0Yl00XNo4EEHHbxNIpLtBIKDS1mUGL\nRD4u7DEtCGO4gTTbKd-7_Oi1NXBWAdXAlktTdIISI0uQDACToPgwZVAVKv8Z\ntfreAwIyAzLm9ZSFs2tHGXyK9KNj5NRDkH8gKqOchV7DWThJwGDMvmvH-uik\nqXCG3ZEo1KFBgSsBstwRlcvIW11gjuf9QIRLsbDx_D76PGUTQaZnQ0X_vwp7\nPfvLv7beXv_UVbH4fzLZj_R87dntZCj-692kq8PU93dvY_yQa1fu32RdfLts\nJz4Gz0zfqA2u8thW8ZymCxj_TD7OPLnS_byetG7-6d-8zMnHRZYurUqUNduZ\nkG0m0CvBPBcKYM2bGJqsVZAOae8vWaBYC3B-Ttc_wQAAP__.UO3iZg \n",
-      "fingerprint": "25df 4a2b 0e93 3ad7 2d8c",
+      "fingerprint": "fa5f e056 8f56 83a9 fc8c",
       "payload": {
         "agent": {
           "name": "lead_bot",

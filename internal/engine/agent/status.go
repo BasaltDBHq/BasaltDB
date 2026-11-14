@@ -223,6 +223,7 @@ type statusDeps struct {
 	pagesBase, pagesOrigin    string
 	sameUser, engineReachable bool
 	engineUnknown             bool
+	devLocalPages             bool
 	vault                     VaultReporter
 	cmds                      Commands
 	setup                     *config.Setup
@@ -244,7 +245,7 @@ type statusDeps struct {
 func (s *Service) statusDeps() statusDeps {
 	return statusDeps{
 		name: s.Name, operatedBy: s.OperatedBy, build: s.Build, pagesBase: s.PagesBase, pagesOrigin: s.PagesOrigin,
-		sameUser: s.SameUser, engineReachable: true, vault: s.Vault, cmds: s.Commands, setup: s.pendingSetup(), probe: s.Probe,
+		sameUser: s.SameUser, devLocalPages: s.DevLocalPages, engineReachable: true, vault: s.Vault, cmds: s.Commands, setup: s.pendingSetup(), probe: s.Probe,
 		finisher: s.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, lockTrouble: &s.lockTrouble, passkeys: s.Approvals.Passkeys, log: s.Log, now: s.Now,
 	}
 }
@@ -266,6 +267,8 @@ type LocalStatus struct {
 	// EngineUnknown: whether the engine runs cannot be told, so there is
 	// no ENGINE_UNREACHABLE problem (engine.reachable stays false).
 	EngineUnknown bool
+	// DevLocalPages is the config's devLocalPages (problem DEV_LOCAL_PAGES).
+	DevLocalPages bool
 	Probe         Probe
 	Passkeys      func(context.Context) ([]passkey.Credential, error)
 	Log           *slog.Logger
@@ -284,7 +287,7 @@ func (l LocalStatus) Report(ctx context.Context) (StatusReport, error) {
 	}
 	return statusDeps{
 		name: l.Name, operatedBy: l.OperatedBy, build: buildinfo.Version, pagesBase: base, pagesOrigin: l.PagesOrigin,
-		sameUser: true, engineReachable: l.EngineRunning, engineUnknown: l.EngineUnknown, cmds: l.Commands, setup: l.Setup, probe: l.Probe,
+		sameUser: true, devLocalPages: l.DevLocalPages, engineReachable: l.EngineRunning, engineUnknown: l.EngineUnknown, cmds: l.Commands, setup: l.Setup, probe: l.Probe,
 		// basalt status reads; the running engine finishes the setup.
 		finisher: noFinisher{}, finished: func(string) {}, notRecorded: &setupCache{}, lockTrouble: &lockTrouble{}, passkeys: l.Passkeys, log: l.Log, now: l.Now,
 	}.report(ctx)
@@ -302,6 +305,10 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 		r.Vault = &v
 	}
 	ps := problems{cmds: s.cmds}
+	if s.devLocalPages {
+		ps.add(problemDevLocalPages, "the pages are development pages on this machine, not the portal",
+			func(b *Steps) string { return devLocalPagesSteps(b, s.cmds) })
+	}
 	if !s.engineReachable && !s.engineUnknown {
 		ps.add(problemEngineUnreachable, "the engine is not running, so the agent's tools do not answer",
 			func(b *Steps) string { return engineUnreachableSteps(b, s.cmds, toolStatus) })

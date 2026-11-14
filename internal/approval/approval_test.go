@@ -195,9 +195,9 @@ func TestPreviewLinesAreInCOrder(t *testing.T) {
 func TestRequestRoundTrip(t *testing.T) {
 	t.Parallel()
 	f := buildFixtures(t)
-	url, err := approval.Request{ApprovalID: approvalID, Binding: f.Request.Binding, Lines: f.Request.Lines}.URL(links.HostedConsole)
+	url, err := approval.Request{ApprovalID: approvalID, Binding: f.Request.Binding, Lines: f.Request.Lines}.URL(links.Portal)
 	require.NoError(t, err)
-	require.True(t, strings.HasPrefix(url, "https://console.basaltvault.app/approvals/"+approvalID.String()+"#2."), url)
+	require.True(t, strings.HasPrefix(url, "https://portal.basaltvault.app/approvals/"+approvalID.String()+"#2."), url)
 
 	_, frag, ok := strings.Cut(url, "#")
 	require.True(t, ok)

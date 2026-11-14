@@ -23,9 +23,10 @@
         "STOP",
         "OPEN_LINK",
         "RUN_COMMAND",
-        "TELL_AGENT"
+        "TELL_AGENT",
+        "SEND_REQUEST"
       ],
-      "description": "AGENT: CALL_TOOL, REVISE_CALL, RETRY_SMALLER_BATCHES, ASK_PERSON, END_TURN, STOP, and RUN_COMMAND only when the engine's operatedBy is AGENT (a machine step on the engine's machine, never one that needs the admin). PERSON: OPEN_LINK, RUN_COMMAND, TELL_AGENT."
+      "description": "AGENT: CALL_TOOL, REVISE_CALL, RETRY_SMALLER_BATCHES, ASK_PERSON, END_TURN, STOP, SEND_REQUEST (send the person the requestFile beside a hash link, as a file or its text blocks; first step, only when requestFile is present), and RUN_COMMAND only when the engine's operatedBy is AGENT (a machine step on the engine's machine, never one that needs the admin). PERSON: OPEN_LINK, RUN_COMMAND, TELL_AGENT."
     },
     "text": {
       "type": "string",

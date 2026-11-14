@@ -138,12 +138,12 @@ func personError(c *cliIO, agent string, err error) error {
 
 // pagesBase is the pages base URL links use: --pages-url, else the
 // engine's (service mode) or the config's pagesUrl, else the local pages.
-func (l *agentLedger) pagesBase(flag string) string {
+func (l *agentLedger) pagesBase(c *cliIO, flag string) string {
 	switch {
 	case flag != "":
 		return flag
 	case l.pages == nil:
-		return configuredBase("", l.agent, l.configPath)
+		return configuredBase(c, "", l.agent, l.configPath)
 	case l.pages.PagesURL == "":
 		return links.DefaultLocal
 	}

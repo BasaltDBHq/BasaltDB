@@ -114,8 +114,12 @@ type Deps struct {
 	// empty).
 	OperatedBy string
 	SameUser   bool
-	Setup      *config.Setup
-	Build      string
+	// DevLocalPages is engine.json devLocalPages: every personMessage starts
+	// with the DEV_LOCAL_PAGES warning and status reports the problem
+	// (CONTRACT.md, Page origins).
+	DevLocalPages bool
+	Setup         *config.Setup
+	Build         string
 	// Probe reads the guard's state and the agent's setups on its
 	// credential, for status and to admit each call; a current guard when
 	// nil.
@@ -123,6 +127,11 @@ type Deps struct {
 	// Vault reports the engine's Vault connection for status; status leaves
 	// vault out when nil.
 	Vault VaultReporter
+	// Receipts is the engine's signing key, which signs the receipt of
+	// every signature the engine relays (CONTRACT.md, Vault channel,
+	// Receipts). Nil when the key file is refused (KEY_ERROR): answers then
+	// carry noReceipt.
+	Receipts ReceiptSigner
 	// Finisher finishes a setup the database shows recorded: it promotes a
 	// rotated credential and clears setup from engine.json. Optional: the
 	// setup is then only forgotten in memory.
@@ -343,6 +352,8 @@ type WriteOutcome struct {
 	// ApprovalID is set when the write applied under an approval.
 	ApprovalID uuid.UUID
 	Warnings   []mcp.Warning
+	// Receipt is the approval's receipt when the write applied under one.
+	Receipt *Receipt
 }
 
 // Write checks sql against the policy and runs it through the guard with

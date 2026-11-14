@@ -86,7 +86,7 @@ type Config struct {
 	StateDir string `json:"stateDir,omitempty"`
 	// PagesURL is the base URL of the approval, revert and registration
 	// pages (links): http://localhost:<port> for the engine's own pages,
-	// the default (links.DefaultLocal), or the hosted console. See
+	// the default (links.DefaultLocal), or the portal. See
 	// PagesBase.
 	PagesURL string `json:"pagesUrl,omitempty"`
 	// ApprovalPage is the older key: only its origin is used, when
@@ -104,6 +104,10 @@ type Config struct {
 	// PERSON (also when empty) or AGENT (CONTRACT.md, Who operates the
 	// engine).
 	OperatedBy string `json:"operatedBy,omitempty" validate:"omitempty,oneof=PERSON AGENT"`
+	// DevLocalPages lets an agent-operated engine use local pages, for
+	// development only (basalt init --dev-local-pages; CONTRACT.md, Page
+	// origins). Every personMessage then carries DevLocalPagesWarning.
+	DevLocalPages bool `json:"devLocalPages,omitempty"`
 	// Mode is ModeService when basalt init installed the background
 	// service, else ModeSameUser (also when empty). Only ModeService opens
 	// the person socket.
@@ -332,6 +336,9 @@ func load(path string, open func(string) (*os.File, error)) (Config, error) {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	if _, err := c.Pages(); err != nil {
+		return Config{}, fmt.Errorf("config %s: %w", path, err)
+	}
+	if err := c.checkOrigins(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	if err := CheckVaultURL(c.VaultURL); err != nil {

@@ -125,7 +125,7 @@ const (
 var linkLike = regexp.MustCompile(`(?i)(:?[/\\]{2}|www\.|#1\.|#2\.|#s=)`)
 
 // hostDot is a dot between two labels of a host name (evil.io,
-// console.basaltvault.app.evil.io). Chat apps link a bare host, so the dot
+// portal.basaltvault.app.evil.io). Chat apps link a bare host, so the dot
 // becomes a middle dot: "evil·io" still reads, and links nowhere. A dot
 // before a digit stays, so numbers like 1.5 keep theirs.
 var hostDot = regexp.MustCompile(`([\p{L}\p{N}_-])\.(\p{L})`)

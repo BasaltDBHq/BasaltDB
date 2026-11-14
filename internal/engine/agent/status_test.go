@@ -173,6 +173,10 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			t.Helper()
 			return lockTroubleStatus(t, operatedBy)
 		}},
+		problemDevLocalPages: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+			t.Helper()
+			return devLocalStatus(t, operatedBy)
+		}},
 	}
 }
 

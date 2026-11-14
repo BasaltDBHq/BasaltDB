@@ -190,6 +190,8 @@ type agentInstall struct {
 	personUIDs []uint32
 	// operatedBy replaces the config's operatedBy when set (PERSON or AGENT).
 	operatedBy string
+	// devLocalPages is written with pagesURL (CONTRACT.md, Page origins).
+	devLocalPages bool
 }
 
 // agentServiceSpec is the service install spec with the agent's files in
@@ -210,7 +212,7 @@ func agentServiceSpec(goos, bin, configPath, engineUser string, a agentInstall, 
 	open := func(p string) (*os.File, error) { return openEngineFile(p, engineUser) }
 	raw, v, err := config.UpsertedVault(configPath, open,
 		config.Settings{
-			SocketDir: config.DefaultSocketDir(goos), PagesURL: a.pagesURL, Mode: config.ModeService, PersonUIDs: a.personUIDs,
+			SocketDir: config.DefaultSocketDir(goos), PagesURL: a.pagesURL, DevLocalPages: a.devLocalPages, Mode: config.ModeService, PersonUIDs: a.personUIDs,
 			Vault: a.vault, VaultDefault: a.vaultDefault, OperatedBy: a.operatedBy,
 		},
 		config.Agent{Name: a.name, OSUser: a.osUser, CredentialFile: cred, InitArgs: a.initArgs})
@@ -244,6 +246,7 @@ func (f initFlags) agentInstall(dsn string) agentInstall {
 		name: f.agent, osUser: f.osUser, pagesURL: f.passkeyOrigin, dsn: dsn,
 		vault: f.vault.given.enum(), vaultDefault: f.vault.def.enum(),
 		initArgs: f.initArgs, keepCredential: f.keepCredential, personUIDs: f.personUIDs, operatedBy: f.operatedBy.settingOf(f.operatedByGiven),
+		devLocalPages: f.devLocalPages,
 	}
 }
 
@@ -257,6 +260,9 @@ func serviceInstallArgs(f initFlags, bin string) []string {
 	}
 	if f.passkeyOrigin != "" {
 		args = append(args, "--pages-url", f.passkeyOrigin)
+	}
+	if f.devLocalPages {
+		args = append(args, "--"+flagDevLocalPages)
 	}
 	// --vault only when the person gave it; else the default, which the
 	// install applies only when the config has no vault yet.

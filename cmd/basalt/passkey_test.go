@@ -17,10 +17,10 @@ func TestServeHintNamesThePort(t *testing.T) {
 
 func TestRelyingParty(t *testing.T) {
 	t.Parallel()
-	rp, err := relyingParty(links.HostedConsole)
+	rp, err := relyingParty(links.Portal)
 	require.NoError(t, err)
-	require.Equal(t, passkey.Relying{RPID: "basaltvault.app", Origin: "https://console.basaltvault.app"}, rp,
-		"the hosted console signs for RP ID basaltvault.app")
+	require.Equal(t, passkey.Relying{RPID: "basaltvault.app", Origin: "https://portal.basaltvault.app"}, rp,
+		"the portal signs for RP ID basaltvault.app")
 	rp, err = relyingParty(links.DefaultLocal)
 	require.NoError(t, err)
 	require.Equal(t, passkey.Relying{RPID: "localhost", Origin: "http://localhost:8787"}, rp, "the default: the engine's local pages")

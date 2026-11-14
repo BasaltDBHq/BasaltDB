@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -71,7 +72,7 @@ func runStatus(c *cliIO, args []string) int {
 	if *name != "" && !config.ValidAgentName(*name) {
 		return c.fail(fmt.Errorf("%w: agent name %q is not valid", errUsage, *name))
 	}
-	out, err := readStatus(c, *name, *configPath)
+	out, err := readStatus(c, *name, configOrFallback(c.host, fs, *configPath))
 	if err != nil {
 		return c.fail(err)
 	}
@@ -82,6 +83,38 @@ func runStatus(c *cliIO, args []string) int {
 	}
 	printStatus(c.stdout, out)
 	return exitOK
+}
+
+// configOrFallback is the config a person command reads: the --config value,
+// or, when --config was not given, perUserConfigFallback of the default.
+func configOrFallback(h host, fs *flag.FlagSet, path string) string {
+	given := false
+	fs.Visit(func(fl *flag.Flag) { given = given || fl.Name == "config" })
+	if given {
+		return path
+	}
+	return perUserConfigFallback(h, path)
+}
+
+// perUserConfigFallback is the config a command reads when --config is not
+// given: the system path, unless this is not root, nothing is installed
+// there, and init left a config in the user's own config directory.
+func perUserConfigFallback(h host, system string) string {
+	if h.Euid() == 0 {
+		return system
+	}
+	if _, err := os.Stat(system); !errors.Is(err, fs.ErrNotExist) {
+		return system
+	}
+	base, err := h.UserConfigDir()
+	if err != nil {
+		return system
+	}
+	user := filepath.Join(base, perUserDirName, "engine.json")
+	if _, err := os.Stat(user); err != nil {
+		return system
+	}
+	return user
 }
 
 // readStatus asks the engine over the person socket in service mode, else
@@ -160,7 +193,7 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 		return statusOut{}, err
 	}
 	r, err := agent.LocalStatus{
-		Name: a.Name, Commands: cmds, OperatedBy: cfg.OperatedBy, Setup: a.Setup,
+		Name: a.Name, Commands: cmds, OperatedBy: cfg.OperatedBy, DevLocalPages: cfg.DevLocalPages, Setup: a.Setup,
 		PagesBase: base, PagesOrigin: servedPages(c, cfg.Config, eng.Reachable), EngineRunning: eng.Reachable, EngineUnknown: eng.Unknown,
 		Probe:    agent.DBProbe{Q: pool, Migrations: guard.Migrations()},
 		Passkeys: func(ctx context.Context) ([]passkey.Credential, error) { return ledger.Passkeys(ctx, pool) },

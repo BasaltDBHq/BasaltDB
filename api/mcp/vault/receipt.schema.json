@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/vault-receipt.v1.json",
   "title": "Receipt payload",
-  "description": "The payload of an engine-signed receipt, basalt-receipt.1.<payload>.<sig>: payload is base64url of these exact JSON bytes, sig is ECDSA P-256 SHA-256 (64 bytes r||s, base64url) over the UTF-8 bytes of \"basalt-receipt.1\\n\" followed by the same JSON bytes. Verify against an expected engine key from outside the receipt (pinned on DIRECT, else the engine status reports), then that engineId is that key's id, then parse; a receipt checked only against a key that came with it proves nothing about which engine signed it. See CONTRACT.md, Vault channel, Receipts.",
+  "description": "The payload of an engine-signed receipt, basalt-receipt.1.<payload>.<sig>: payload is base64url of these exact JSON bytes, sig is ECDSA P-256 SHA-256 (64 bytes r||s, base64url) over the UTF-8 bytes of \"basalt-receipt.1\\n\" followed by the same JSON bytes. Verify the signature against an expected engine key from outside the receipt (pinned on DIRECT, else the engine status reports), then parse, then check that engineId is that key's id, then this closed schema; a receipt checked only against a key that came with it proves nothing about which engine signed it. See CONTRACT.md, Vault channel, Receipts.",
   "type": "object",
   "additionalProperties": false,
   "required": ["format", "kind", "itemId", "status", "headline", "rowsHash", "agent", "engineId", "at"],
@@ -47,7 +47,9 @@
     },
     "at": {
       "type": "string",
-      "format": "date-time"
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+      "description": "When the engine made the receipt: UTC, whole seconds."
     },
     "changeId": {
       "type": "string",

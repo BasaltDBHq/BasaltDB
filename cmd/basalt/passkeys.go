@@ -110,7 +110,7 @@ func passkeyList(c *cliIO, args []string) int {
 	}
 	for _, k := range out {
 		fmt.Fprintf(c.stdout, "%s  %-20s %-16s registered %s  last used %s\n",
-			k.CredentialID, k.Label, k.RPID, k.CreatedAt.UTC().Format(dateLayout), lastUsed(k.LastUsedAt))
+			k.CredentialID, visibleText(k.Label), visibleText(k.RPID), k.CreatedAt.UTC().Format(dateLayout), lastUsed(k.LastUsedAt))
 	}
 	return exitOK
 }
@@ -257,7 +257,7 @@ func findPasskey(keys []guard.RegisteredPasskey, id string) (guard.RegisteredPas
 // link for the devices that hold it.
 func removePasskey(c *cliIO, conn *pgx.Conn, keys []guard.RegisteredPasskey, k guard.RegisteredPasskey, f removeFlags) error {
 	idText := passkey.Bytes(k.ID).String()
-	fmt.Fprintf(c.stderr, "basalt: passkey %q (%s) for %s, registered %s, last used %s\n",
+	fprintSafef(c.stderr, "basalt: passkey %q (%s) for %s, registered %s, last used %s\n",
 		k.Label, idText, k.RPID, k.CreatedAt.UTC().Format(dateLayout), lastUsed(k.LastUsedAt))
 	last := len(keys) == 1
 	if err := confirmRemoval(c, k, last, f); err != nil {
@@ -281,7 +281,7 @@ func confirmRemoval(c *cliIO, k guard.RegisteredPasskey, last bool, f removeFlag
 		if !f.force {
 			return errors.New("this is the last active passkey: nothing held could be approved or reverted without one. Register another first (basalt init --add-passkey), or pass --force")
 		}
-		fmt.Fprintf(c.stderr, "This is the last active passkey. Type its label (%s) to remove it: ", k.Label)
+		fmt.Fprintf(c.stderr, "This is the last active passkey. Type its label (%s) to remove it: ", visibleText(k.Label))
 		typed, err := c.line()
 		if err != nil || typed != k.Label {
 			return errors.New("the label did not match; nothing was removed")
@@ -311,7 +311,7 @@ func forgetLink(c *cliIO, keys []guard.RegisteredPasskey, removed guard.Register
 		base = removed.Origin
 	}
 	if base != removed.Origin {
-		fmt.Fprintf(c.stderr, "basalt: the passkey belongs to %s, not %s; delete it by hand in your password manager, or run with --pages-url %s for a forget link\n",
+		fprintSafef(c.stderr, "basalt: the passkey belongs to %s, not %s; delete it by hand in your password manager, or run with --pages-url %s for a forget link\n",
 			removed.Origin, base, removed.Origin)
 		return nil
 	}
@@ -347,9 +347,9 @@ func showLink(c *cliIO, link string, open bool, w io.Writer, ref linkRef) error 
 
 // servePagesFor serves the embedded pages on a local base while a command
 // waits, when nothing answers there yet (the engine not running), as
-// basalt init does for registration. The hosted console needs nothing.
+// basalt init does for registration. The portal needs nothing.
 func servePagesFor(c *cliIO, base string) (stop func()) {
-	if base == links.HostedConsole || c.host.PagesUp(c.ctx, base) {
+	if base == links.Portal || c.host.PagesUp(c.ctx, base) {
 		return func() {}
 	}
 	stop, served := serveLocalPages(base, nil)
@@ -377,7 +377,7 @@ func passkeyCheck(c *cliIO, args []string) int {
 		return c.fail(err)
 	}
 	defer l.close()
-	base := strings.TrimSuffix(l.pagesBase(pagesURL), "/")
+	base := strings.TrimSuffix(l.pagesBase(c, pagesURL), "/")
 	keys, err := l.ListPasskeys(c.ctx)
 	if err != nil {
 		return c.fail(err)
@@ -409,7 +409,7 @@ func onBase(c *cliIO, keys []ledger.Passkey, base string) []ledger.Passkey {
 			here = append(here, k)
 			continue
 		}
-		fmt.Fprintf(c.stderr, "basalt: passkey %q is registered on %s; check it with --pages-url %s\n",
+		fprintSafef(c.stderr, "basalt: passkey %q is registered on %s; check it with --pages-url %s\n",
 			k.Label, k.Credential.Relying.Origin, k.Credential.Relying.Origin)
 	}
 	return here
@@ -433,7 +433,7 @@ func checkOnBase(c *cliIO, keys []ledger.Passkey, base string, open bool) ([]led
 	if err != nil {
 		return nil, err
 	}
-	fmt.Fprintf(c.stderr, "basalt: open this link on the device to check (%d passkeys for %s). It asks each passkey to sign a check that authorizes nothing:\n",
+	fprintSafef(c.stderr, "basalt: open this link on the device to check (%d passkeys for %s). It asks each passkey to sign a check that authorizes nothing:\n",
 		len(keys), keys[0].Credential.Relying.RPID)
 	stop := servePagesFor(c, base)
 	defer stop()
@@ -461,7 +461,7 @@ func checkOnBase(c *cliIO, keys []ledger.Passkey, base string, open bool) ([]led
 			state = "not found on this device"
 			missing = append(missing, k)
 		}
-		fmt.Fprintf(c.stdout, "%s  %-20s %s\n", passkey.Bytes(k.Credential.ID).String(), k.Label, state)
+		fmt.Fprintf(c.stdout, "%s  %-20s %s\n", passkey.Bytes(k.Credential.ID).String(), visibleText(k.Label), state)
 	}
 	return missing, nil
 }
@@ -477,7 +477,7 @@ func offerRemoval(c *cliIO, missing []ledger.Passkey) error {
 	}()
 	for _, m := range missing {
 		idText := passkey.Bytes(m.Credential.ID).String()
-		ok, err := c.confirm(fmt.Sprintf("Remove %s (%s)? Another device may still hold it.", m.Label, idText))
+		ok, err := c.confirm(fmt.Sprintf("Remove %s (%s)? Another device may still hold it.", visibleText(m.Label), idText))
 		if err != nil {
 			return err
 		}

@@ -104,6 +104,11 @@ func loadSetupFixtures(t *testing.T) setupFixtures {
 	return f
 }
 
+func TestPortalSchemas(t *testing.T) {
+	t.Parallel()
+	checkPayloadSchemas(t, "portal", []string{"portal-verify-result.schema.json"})
+}
+
 func TestSetupSchemas(t *testing.T) {
 	t.Parallel()
 	checkPayloadSchemas(t, "setup", []string{"remote-init-result.schema.json", "setup-code.schema.json"})
@@ -128,7 +133,7 @@ func TestSetupCodeFixtures(t *testing.T) {
 			require.Empty(t, refusal)
 			require.Equal(t, v.Payload, got)
 			require.LessOrEqual(t, len(stripSpace(v.Code)), setupCodeMaxLen)
-			require.Equal(t, v.Fingerprint, setupFingerprint(got))
+			require.Equal(t, v.Fingerprint, setupFingerprint(t, got))
 			if agent, ok := got["agent"].(map[string]any); ok {
 				if verifier, ok := agent["verifier"].(string); ok {
 					require.True(t, verifiers[verifier], "the payload's verifier is one of the verifier fixtures")
@@ -238,15 +243,47 @@ func uuidV7Time(id string) time.Time {
 	return time.UnixMilli(ms).UTC()
 }
 
-// setupFingerprint is the setup fingerprint (CONTRACT.md, The setup code):
-// the first 10 bytes of sha256 over the setup id and the verifier, in five
-// groups of four hex digits.
-func setupFingerprint(p map[string]any) string {
-	verifier := ""
-	if agent, ok := p["agent"].(map[string]any); ok {
-		verifier, _ = agent["verifier"].(string)
+// setupKeyOrder is setup-code.schema.json's key order per object: the
+// order the compact JSON of a code is written in.
+var setupKeyOrder = map[string][]string{
+	"":       {"format", "setupId", "kind", "prefix", "target", "guard", "build", "agent", "expiresAt"},
+	"target": {"host", "port", "database", "supabaseRef"},
+	"guard":  {"from", "to"},
+	"agent":  {"name", "write", "read", "verifier", "statementTimeoutMs"},
+}
+
+// compactSetupJSON writes the decoded payload p back as compact JSON in
+// the schema's key order, absent keys left out.
+func compactSetupJSON(t *testing.T, object string, p map[string]any) string {
+	t.Helper()
+	parts := make([]string, 0, len(p))
+	for _, k := range setupKeyOrder[object] {
+		v, ok := p[k]
+		if !ok {
+			continue
+		}
+		var js string
+		if inner, isObject := v.(map[string]any); isObject {
+			js = compactSetupJSON(t, k, inner)
+		} else {
+			var buf bytes.Buffer
+			enc := json.NewEncoder(&buf)
+			enc.SetEscapeHTML(false)
+			require.NoError(t, enc.Encode(v))
+			js = strings.TrimSuffix(buf.String(), "\n")
+		}
+		parts = append(parts, fmt.Sprintf("%q:%s", k, js))
 	}
-	sum := sha256.Sum256([]byte("basalt-setup-fingerprint.1\n" + p["setupId"].(string) + "\n" + verifier))
+	require.Len(t, parts, len(p), "every key of %q is in the schema's order", object)
+	return "{" + strings.Join(parts, ",") + "}"
+}
+
+// setupFingerprint is the setup fingerprint (CONTRACT.md, The setup code):
+// the first 10 bytes of sha256 over the payload's compact JSON in the
+// schema's key order, in five groups of four hex digits.
+func setupFingerprint(t *testing.T, p map[string]any) string {
+	t.Helper()
+	sum := sha256.Sum256([]byte("basalt-setup-fingerprint.2\n" + compactSetupJSON(t, "", p)))
 	h := hex.EncodeToString(sum[:fingerprintBytes])
 	groups := make([]string, 0, len(h)/fingerprintGroup)
 	for i := 0; i < len(h); i += fingerprintGroup {
@@ -273,7 +310,7 @@ func TestSetupLaptopFixtures(t *testing.T) {
 			require.Empty(t, refusal)
 			now, err := time.Parse(time.RFC3339, l.Now)
 			require.NoError(t, err)
-			got, summary := laptopDecision(p, l, now)
+			got, summary := laptopDecision(t, p, l, now)
 			require.Equal(t, l.Refusal, got)
 			for _, line := range l.Summary {
 				require.Contains(t, summary, line)
@@ -285,7 +322,7 @@ func TestSetupLaptopFixtures(t *testing.T) {
 	}
 }
 
-func laptopDecision(p map[string]any, l laptopFixture, now time.Time) (string, string) {
+func laptopDecision(t *testing.T, p map[string]any, l laptopFixture, now time.Time) (string, string) {
 	expires, _ := time.Parse(time.RFC3339, p["expiresAt"].(string))
 	id, kind, prefix := p["setupId"].(string), p["kind"].(string), p["prefix"].(string)
 	to := int(p["guard"].(map[string]any)["to"].(float64))
@@ -323,10 +360,10 @@ func laptopDecision(p map[string]any, l laptopFixture, now time.Time) (string, s
 	case kind == "AGENT" && !exists:
 		return "ROLE_MISSING", ""
 	}
-	return "", laptopSummary(p, role)
+	return "", laptopSummary(t, p, role)
 }
 
-func laptopSummary(p map[string]any, role string) string {
+func laptopSummary(t *testing.T, p map[string]any, role string) string {
 	kind, prefix := p["kind"].(string), p["prefix"].(string)
 	guard := p["guard"].(map[string]any)
 	who := "your agent"
@@ -350,7 +387,7 @@ func laptopSummary(p map[string]any, role string) string {
 	if agent != nil {
 		lines = append(lines, fmt.Sprintf("Prefix %s, statement timeout %v ms, at most 8 connections.", prefix, agent["statementTimeoutMs"]))
 	}
-	lines = append(lines, fmt.Sprintf("Setup fingerprint: %s. Check that %s shows the same fingerprint.", setupFingerprint(p), who))
+	lines = append(lines, fmt.Sprintf("Setup fingerprint: %s. Check that %s shows the same fingerprint.", setupFingerprint(t, p), who))
 	return strings.Join(lines, "\n")
 }
 

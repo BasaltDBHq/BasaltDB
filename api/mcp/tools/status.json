@@ -211,7 +211,7 @@
                 "DEV_LOCAL_PAGES",
                 "LOCK_FILE_UNUSABLE"
               ],
-              "description": "DEV_LOCAL_PAGES is Planned (CONTRACT.md, Page origins): the engine.json devLocalPages development exception is on, so the pages are on the agent's machine. LOCK_FILE_UNUSABLE (CONTRACT.md, On the engine, Lock files): the engine cannot open engine.json.lock or the agent's credential lock, so a finished setup is not written back."
+              "description": "DEV_LOCAL_PAGES (CONTRACT.md, Page origins): the engine.json devLocalPages development exception is on, so the pages are on the agent's machine. LOCK_FILE_UNUSABLE (CONTRACT.md, On the engine, Lock files): the engine cannot open engine.json.lock or the agent's credential lock, so a finished setup is not written back."
             },
             "severity": {
               "type": "string",

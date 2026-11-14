@@ -80,7 +80,7 @@ func TestLinkDerivationVectors(t *testing.T) {
 	for _, c := range loadVectors[linkCase](t, "link-derivation.json", "LINK_DERIVATION") {
 		lk, err := DeriveLink(c.Secret)
 		require.NoError(t, err, c.Name)
-		require.Equal(t, c.LinkToken, lk.Token.String(), c.Name)
+		require.Equal(t, c.LinkToken, lk.Token.Wire(), c.Name)
 		require.Equal(t, c.PSK, hx(lk.PSK[:]), c.Name)
 		parsed, err := ParseLinkToken(c.LinkToken)
 		require.NoError(t, err, c.Name)

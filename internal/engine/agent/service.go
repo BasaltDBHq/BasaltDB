@@ -127,6 +127,10 @@ type Deps struct {
 	// Vault reports the engine's Vault connection for status; status leaves
 	// vault out when nil.
 	Vault VaultReporter
+	// Portal reports the engine's last daily portal check for status
+	// (problem PORTAL_MISMATCH); status says nothing about the portal when
+	// nil.
+	Portal PortalReporter
 	// Receipts is the engine's signing key, which signs the receipt of
 	// every signature the engine relays (CONTRACT.md, Vault channel,
 	// Receipts). Nil when the key file is refused (KEY_ERROR): answers then

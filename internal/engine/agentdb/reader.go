@@ -84,12 +84,14 @@ type Reader struct {
 	now    func() time.Time
 }
 
-// NewReader returns a reader on pool with limits. It panics on a nil pool.
+// NewReader returns a reader on pool with limits. Every read runs pinned
+// (guard.PinSession), so values print the same whatever the session's
+// TimeZone or styles. It panics on a nil pool.
 func NewReader(pool Pool, limits sqlguard.Limits, now func() time.Time) *Reader {
 	if pool == nil || now == nil {
 		panic("agentdb: pool and clock required")
 	}
-	return &Reader{pool: pool, limits: limits, now: now}
+	return &Reader{pool: guard.PinnedBeginner{TxBeginner: pool}, limits: limits, now: now}
 }
 
 // psql builds the engine's own statements with Postgres placeholders.

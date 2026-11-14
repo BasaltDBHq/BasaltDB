@@ -247,7 +247,14 @@ func (s *Store) RevealNonce(ctx context.Context, kind string, id uuid.UUID) ([]b
 
 // RevealRevertRows asks Postgres for the values of a pending revert's
 // redacted lines with the person's reveal proof and the key derived from
-// the page's reveal secret (basalt_meta.reveal_revert_rows).
+// the page's reveal secret (basalt_meta.reveal_revert_rows), in its own
+// pinned transaction: it rebuilds the lines' rows to match their hashes.
 func (s *Store) RevealRevertRows(ctx context.Context, id uuid.UUID, proof passkey.Assertion, key []byte) (guard.RevealedRevert, error) {
-	return guard.RevealRevertRows(ctx, s.db, id, proof, key)
+	var out guard.RevealedRevert
+	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
+		var err error
+		out, err = guard.RevealRevertRows(ctx, tx, id, proof, key)
+		return err
+	})
+	return out, err
 }

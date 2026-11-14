@@ -343,6 +343,8 @@ func TestLevelPolicyMarks(t *testing.T) {
 		"a marked **permissive** source policy is left out",
 		"gets a restrictive copy `USING (false)` for the group, permissive or restrictive alike",
 		"an **allow list**, not a deny list",
+		"one **currency guard** `<prefix>_lvl_<oid>_cur`, `AS RESTRICTIVE FOR ALL TO <group>",
+		"`attach` creates it for every enrolled level",
 		"an unmarked restrictive copy can never be left out",
 		"`session_user` is a member of `<prefix>_lvl_<p_role>`",
 	} {

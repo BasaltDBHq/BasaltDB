@@ -91,8 +91,9 @@
               "properties": {
                 "name": {
                   "type": "string",
-                  "pattern": "^[a-z0-9_]+_lvl_[0-9]+_([0-9a-f]{8}|all)$",
-                  "description": "<prefix>_lvl_<oid>_<first 8 hex of sha256(source name)>, or <prefix>_lvl_<oid>_all for ALL_ROWS."
+                  "description": "<prefix>_lvl_<oid>_cur (the currency guard every table gets), <prefix>_lvl_<oid>_all for ALL_ROWS, or <prefix>_lvl_<oid>_<8 or more hex of sha256(source name)>; for a KEEP entry of an unmarked policy TO PUBLIC or TO <prefix>_agents, that policy's own name.",
+                  "minLength": 1,
+                  "maxLength": 63
                 },
                 "source": {
                   "type": [
@@ -100,7 +101,7 @@
                     "null"
                   ],
                   "maxLength": 63,
-                  "description": "The source policy's name (a policy TO PUBLIC or TO <prefix>_agents included); null for the ALL_ROWS policy."
+                  "description": "The source policy's name (a policy TO PUBLIC or TO <prefix>_agents included); null for the currency guard and the ALL_ROWS policy."
                 },
                 "permissive": {
                   "type": "boolean",
@@ -121,7 +122,7 @@
                     "string",
                     "null"
                   ],
-                  "description": "The CREATE POLICY statement the admin runs, with the level_current guard ANDed into each clause, or USING (false) for a marked restrictive copy without a replacement; null for OMIT."
+                  "description": "The CREATE POLICY statement the admin runs: the currency guard, a copy with the level_current guard ANDed into each clause, or USING (false) for a marked restrictive source without a replacement; null for OMIT and for KEEP of a policy Basalt does not write."
                 },
                 "action": {
                   "type": "string",
@@ -132,7 +133,7 @@
                     "KEEP",
                     "OMIT"
                   ],
-                  "description": "What the plan does with the copy; OMIT: a marked permissive source left out, shown so the admin sees what agents will not get. enroll plans only CREATE and OMIT."
+                  "description": "What the plan does with the entry. OMIT: a marked permissive source left out. KEEP: unchanged, or an unmarked policy TO PUBLIC or TO <prefix>_agents, listed because the fingerprint covers it (sql null)."
                 },
                 "reviewNeeded": {
                   "type": "array",

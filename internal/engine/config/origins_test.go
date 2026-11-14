@@ -44,7 +44,7 @@ func TestPageOriginsAreAClosedList(t *testing.T) {
 		{name: "agent: portal", keys: map[string]any{"operatedBy": "AGENT", "pagesUrl": portal}},
 		{name: "agent: local refused", keys: map[string]any{"operatedBy": "AGENT", "pagesUrl": local}, err: "an agent-operated engine uses the portal's pages"},
 		{name: "agent: default local refused", keys: map[string]any{"operatedBy": "AGENT"}, err: "an agent-operated engine uses the portal's pages"},
-		{name: "agent: loopback IP refused", keys: map[string]any{"operatedBy": "AGENT", "pagesUrl": "http://127.0.0.1:8787"}, err: "local pages would be on the agent's machine"},
+		{name: "agent: loopback IP refused", keys: map[string]any{"operatedBy": "AGENT", "pagesUrl": "http://127.0.0.1:8787"}, err: "the local pages run only at localhost"},
 		{name: "agent: local with devLocalPages", keys: map[string]any{"operatedBy": "AGENT", "pagesUrl": local, "devLocalPages": true}},
 		{name: "devLocalPages on a person's engine refused", keys: map[string]any{"pagesUrl": local, "devLocalPages": true}, err: "only for an agent-operated engine"},
 		{name: "devLocalPages on the portal refused", keys: map[string]any{"operatedBy": "AGENT", "pagesUrl": portal, "devLocalPages": true}, err: "needs a local pagesUrl"},

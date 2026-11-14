@@ -747,7 +747,7 @@ Owner decisions, Decided Nov 12. Every link is built from one pages base URL (`p
 Chat-only operator CO-8 (design [`docs/redesign/specs/2026-11-12-chat-only-operator.md`](docs/redesign/specs/2026-11-12-chat-only-operator.md) section 5.2). The origins a link may point at, and that the engine and the CLI accept for passkeys, are a closed list compiled into the binary (Go: `links.Portal` and the checks of `internal/engine/config`; JS: `relyingParty` in `web/lib/codec.js`):
 
 - `https://portal.basaltvault.app`, always (RP ID `basaltvault.app`).
-- `http://localhost:<port>` (for `pagesUrl` and `--pages-url` also `http://127.0.0.1:<port>` and `http://[::1]:<port>`; a passkey's origin, and so the page a link opens, is `localhost` only, RP ID `localhost`: a link on a loopback IP base opens a page that refuses to run), only when `operatedBy` is `PERSON`: the engine runs on the person's own machine, so the loopback page is theirs.
+- `http://localhost:<port>` (the host is `localhost` exactly: a passkey's origin, and so the page a link opens, is `localhost` only, RP ID `localhost`, so a `pagesUrl`, `approvalPage` or `--pages-url` on `127.0.0.1`, `[::1]` or another spelling is refused, not rewritten, with `the local pages run only at localhost; use http://localhost:<port>`), only when `operatedBy` is `PERSON`: the engine runs on the person's own machine, so the loopback page is theirs.
 
 Neither `engine.json`, a flag, nor the bot can add an origin. `*.pages.dev` (Cloudflare's preview and branch URLs, which serve the same files but whose passkeys would not belong to `basaltvault.app`) and every other host are refused in both modes. Where the list is checked:
 

@@ -22,6 +22,14 @@ func TestPagesBase(t *testing.T) {
 		{name: "old hosted page refused", legacy: "https://basaltvault.app/approve/", err: "pagesUrl"},
 		{name: "a path refused", url: "http://localhost:8787/approvals", err: "pagesUrl"},
 		{name: "another host refused", url: "http://example.com:8787", err: "pagesUrl"},
+		// The pages, and a passkey's origin, run only at localhost (RP ID
+		// localhost): a loopback IP base would open a page that refuses to run.
+		{name: "IPv4 loopback refused", url: "http://127.0.0.1:8787", err: `pagesUrl "http://127.0.0.1:8787": the local pages run only at localhost; use http://localhost:8787`},
+		{name: "IPv6 loopback refused", url: "http://[::1]:9000", err: `pagesUrl "http://[::1]:9000": the local pages run only at localhost; use http://localhost:9000`},
+		{name: "another loopback IP refused", url: "http://127.0.0.2:8787", err: "pagesUrl"},
+		{name: "upper-case localhost refused", url: "http://LOCALHOST:8787", err: "use http://localhost:8787"},
+		{name: "no port: the default", url: "http://127.0.0.1", err: "use http://localhost:<port>"},
+		{name: "older approvalPage on a loopback IP refused", legacy: "http://127.0.0.1:8787/approve/", err: "use http://localhost:8787"},
 	} {
 		got, err := config.Config{PagesURL: tc.url, ApprovalPage: tc.legacy}.PagesBase()
 		if tc.err != "" {
@@ -46,10 +54,7 @@ func TestPages(t *testing.T) {
 			name: "local port", url: "http://localhost:9000",
 			want: config.Pages{Addr: "127.0.0.1:9000", Origin: "http://localhost:9000"},
 		},
-		{
-			name: "loopback IP origin", url: "http://127.0.0.1:9000",
-			want: config.Pages{Addr: "127.0.0.1:9000", Origin: "http://127.0.0.1:9000"},
-		},
+		{name: "loopback IP origin refused", url: "http://127.0.0.1:9000", err: "the local pages run only at localhost"},
 		{
 			name: "explicit IPv6 loopback", addr: "[::1]:8787",
 			want: config.Pages{Addr: "[::1]:8787", Origin: "http://localhost:8787"},

@@ -17,7 +17,9 @@ import (
 const pgdialImport = "github.com/basaltdbhq/basaltdb/internal/pgdial"
 
 // credentialReaders are the functions that read an agent's credential file:
-// the config package's, and this package's own.
+// the config package's, and this package's own. A new reader must be added
+// here, or the guard cannot see its callers. The guard works per function:
+// one CheckForeignDSN call in a function marks every read in it checked.
 var (
 	configCredentialReaders = map[string]bool{"ReadCredential": true, "ReadCredentialAt": true, "ReadOwnCredential": true}
 	localCredentialReaders  = map[string]bool{

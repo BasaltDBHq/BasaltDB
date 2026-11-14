@@ -47,7 +47,7 @@ func TestVerifyCheck(t *testing.T) {
 
 	link, err := req.URL(passkey.Origin + "/")
 	require.NoError(t, err)
-	require.True(t, strings.HasPrefix(link, "https://console.basaltvault.app/passkeys/check#1."), link)
+	require.True(t, strings.HasPrefix(link, "https://portal.basaltvault.app/passkeys/check#1."), link)
 
 	resp := checkAnswer(t, req, laptop)
 	resp.Missing = []passkey.Bytes{phone.ID}

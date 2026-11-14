@@ -73,12 +73,12 @@
     },
     {
       "name": "a no-break space is removed",
-      "input": "2.AbC\u00a0-d_9",
+      "input": "2.AbC -d_9",
       "want": "2.AbC-d_9"
     },
     {
       "name": "a line separator is removed",
-      "input": "2.AbC\u2028-d_9",
+      "input": "2.AbC -d_9",
       "want": "2.AbC-d_9"
     },
     {
@@ -110,6 +110,16 @@
       "name": "an empty fragment stays empty",
       "input": "",
       "want": ""
+    },
+    {
+      "name": "a hash link keeps h= and its 22 characters",
+      "input": "h=q3Jv8sLk2mT0xYp1aBcD9w).",
+      "want": "h=q3Jv8sLk2mT0xYp1aBcD9w"
+    },
+    {
+      "name": "a hash link wrapped by a terminal",
+      "input": "h=q3Jv8sLk2mT0\n   xYp1aBcD9w",
+      "want": "h=q3Jv8sLk2mT0xYp1aBcD9w"
     }
   ],
   "pastes": [
@@ -175,7 +185,7 @@
     },
     {
       "name": "a line separator ends a line",
-      "input": "Approve here:\u2028\u2028https://portal.basaltvault.app/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#2.AbC\u2028DeF\u2028\u2028Expires soon.",
+      "input": "Approve here:  https://portal.basaltvault.app/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#2.AbC DeF  Expires soon.",
       "want": "2.AbCDeF"
     },
     {
@@ -192,6 +202,11 @@
       "name": "a message without a link",
       "input": "Thanks, I approved it.",
       "want": null
+    },
+    {
+      "name": "a hash link in the agent's message",
+      "input": "Approve it with your passkey: open this link, then open the request file the agent sends you.\n\nhttps://portal.basaltvault.app/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#h=q3Jv8sLk2mT0\nxYp1aBcD9w\n\nExpires soon.",
+      "want": "h=q3Jv8sLk2mT0xYp1aBcD9w"
     }
   ]
 }

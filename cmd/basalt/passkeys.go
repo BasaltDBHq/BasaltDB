@@ -348,9 +348,9 @@ func showLink(c *cliIO, link string, open bool, w io.Writer, ref linkRef) error 
 
 // servePagesFor serves the embedded pages on a local base while a command
 // waits, when nothing answers there yet (the engine not running), as
-// basalt init does for registration. The hosted console needs nothing.
+// basalt init does for registration. The portal needs nothing.
 func servePagesFor(c *cliIO, base string) (stop func()) {
-	if base == links.HostedConsole || c.host.PagesUp(c.ctx, base) {
+	if base == links.Portal || c.host.PagesUp(c.ctx, base) {
 		return func() {}
 	}
 	stop, served := serveLocalPages(base, nil)

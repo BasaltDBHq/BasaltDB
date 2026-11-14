@@ -6,6 +6,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 )
 
@@ -16,8 +17,8 @@ import (
 //     portal's short link over the Vault later, which only changes what the
 //     caller passes as short);
 //  2. else the long link, when it is at most the budget;
-//  3. else the long link, over budget: the interim hand-over of owner
-//     decision VC-28, with a warning in front of it.
+//  3. else the hash link, <page>#h=<h>, with the request beside it as a
+//     file and text blocks (CONTRACT.md, The request file and pasted blocks).
 
 // linkKind says which of the three the engine handed over.
 type linkKind int
@@ -27,28 +28,37 @@ const (
 	linkShort linkKind = iota + 1
 	// linkLong is a long link within the budget.
 	linkLong
-	// linkOverBudget is a long link over the budget, handed over because
-	// nothing else opens the page (VC-28).
-	linkOverBudget
+	// linkHash is the hash link that stands in for a long link over the
+	// budget; File carries the request.
+	linkHash
 )
 
-// handOver is the link the engine hands over and which of the three it is.
+// handOver is the link the engine hands over, which of the three it is,
+// and, for a hash link, the request to send beside it.
 type handOver struct {
 	URL  string
 	Kind linkKind
+	File *links.RequestFile
+	// sent is set when the agent already sent File's request with an
+	// earlier result: the message points back to it.
+	sent bool
 }
 
 // chooseLink picks the link to hand over: short when it is not empty, else
 // long, measured in characters of the whole URL (every link is ASCII) against
-// budget.
-func chooseLink(short, long string, budget int) handOver {
+// budget, else the hash link with the request file named fileName.
+func chooseLink(short, long string, budget int, fileName string) (handOver, error) {
 	switch {
 	case short != "":
-		return handOver{URL: short, Kind: linkShort}
+		return handOver{URL: short, Kind: linkShort}, nil
 	case len(long) <= budget:
-		return handOver{URL: long, Kind: linkLong}
+		return handOver{URL: long, Kind: linkLong}, nil
 	}
-	return handOver{URL: long, Kind: linkOverBudget}
+	hash, file, err := links.HashLink(long, fileName)
+	if err != nil {
+		return handOver{}, err
+	}
+	return handOver{URL: hash, Kind: linkHash, File: &file}, nil
 }
 
 // Labels of links next to a personMessage: what opening the link does
@@ -58,9 +68,18 @@ const (
 	labelRevert  = "Review and sign the revert"
 )
 
-// overBudgetWarning is the first line of a message that hands over an
-// over-budget long link (VC-28).
-const overBudgetWarning = "Warning: this link is long and may arrive cut or broken."
+// requestBeside is how a message that hands over a hash link tells the
+// person where the request comes from; withBlocks when the agent may paste
+// it as text blocks too.
+func requestBeside(withBlocks, sent bool) string {
+	if sent {
+		return "open this link, then open the request file the agent sent you earlier (or paste its text blocks). The page then shows a code for the agent:"
+	}
+	if withBlocks {
+		return "open this link, then open the request file the agent sends you (or paste its text blocks). The page then shows a code for the agent:"
+	}
+	return "open this link, then open the request file the agent sends you. The page then shows a code for the agent:"
+}
 
 // Limits that keep what the agent supplies, and what the database names,
 // from pushing a message over its 500 characters.
@@ -122,10 +141,10 @@ const (
 // linkLike is what makes text look like a link or hold a link fragment: a
 // scheme separator (slashes either way, as browsers read https:\\), "www.",
 // and the fragment prefixes of the link formats.
-var linkLike = regexp.MustCompile(`(?i)(:?[/\\]{2}|www\.|#1\.|#2\.|#s=)`)
+var linkLike = regexp.MustCompile(`(?i)(:?[/\\]{2}|www\.|#1\.|#2\.|#s=|#h=)`)
 
 // hostDot is a dot between two labels of a host name (evil.io,
-// console.basaltvault.app.evil.io). Chat apps link a bare host, so the dot
+// portal.basaltvault.app.evil.io). Chat apps link a bare host, so the dot
 // becomes a middle dot: "evil·io" still reads, and links nowhere. A dot
 // before a digit stays, so numbers like 1.5 keep theirs.
 var hostDot = regexp.MustCompile(`([\p{L}\p{N}_-])\.(\p{L})`)
@@ -224,20 +243,18 @@ const ellipsis = "..."
 func shown(s string, n int) string { return clip(plainText(s), n) }
 
 // approvalMessage is the personMessage of a held write at the link handed
-// over: lead says what happened, tail lines follow the link. An over-budget
-// link comes after a warning and the command (VC-28).
+// over: lead says what happened, tail lines follow the link.
 func approvalMessage(lead string, pick handOver, command string, tail ...string) (string, []mcp.Link) {
 	return fitCommand(
 		func(c commandPhrases) (string, []mcp.Link) { return buildApprovalMessage(lead, pick, c, tail) },
-		commandPhrases{instead: "Run this instead: " + command, orRun: "Or run: " + command},
-		commandPhrases{instead: "Run the approve command the agent shows you instead.", orRun: "Or run the approve command the agent shows you."},
+		commandPhrases{orRun: "Or run: " + command},
+		commandPhrases{orRun: "Or run the approve command the agent shows you."},
 	)
 }
 
-// commandPhrases are the two lines of a message that offer the approve
-// command: the one after an over-budget link's warning and the one after the
-// link.
-type commandPhrases struct{ instead, orRun string }
+// commandPhrases is the line of a message that offers the approve command,
+// after the link.
+type commandPhrases struct{ orRun string }
 
 // fitCommand builds a message with the full command and, when that breaks
 // the 500-character limit (a long --config path), again with a line that
@@ -281,19 +298,16 @@ func fitToSteps(message string, steps []NextStep) string {
 }
 
 func buildApprovalMessage(lead string, pick handOver, c commandPhrases, tail []string) (string, []mcp.Link) {
-	msg := newMessage()
+	msg := newMessage().Text(lead)
 	switch pick.Kind {
-	case linkOverBudget:
-		msg.Text(overBudgetWarning).Text(c.instead).Text(lead).Text("The whole link:")
+	case linkHash:
+		msg.Text("Approve it with your passkey: " + requestBeside(pick.File.Blocks != nil, pick.sent))
 	case linkLong:
-		msg.Text(lead).Text("Approve it with your passkey here; the page then shows a code for the agent:")
+		msg.Text("Approve it with your passkey here; the page then shows a code for the agent:")
 	default:
-		msg.Text(lead).Text("Approve it with your passkey here:")
+		msg.Text("Approve it with your passkey here:")
 	}
-	msg.Link(labelApprove, pick.URL)
-	if pick.Kind != linkOverBudget {
-		msg.Text(c.orRun)
-	}
+	msg.Link(labelApprove, pick.URL).Text(c.orRun)
 	for _, line := range tail {
 		msg.Text(line)
 	}
@@ -301,20 +315,18 @@ func buildApprovalMessage(lead string, pick handOver, c commandPhrases, tail []s
 }
 
 // revertMessage is the personMessage of a prepared revert at the link handed
-// over: what it restores, why, and when it expires, then the link. An
-// over-budget link comes after a warning only: a revert has no command to
-// offer in its place (VC-28).
+// over: what it restores, why, and when it expires, then the link.
 func revertMessage(summary string, pick handOver, extra ...string) (string, []mcp.Link) {
-	msg := newMessage()
-	if pick.Kind == linkOverBudget {
-		msg.Text(overBudgetWarning)
-	}
-	msg.Text(summary)
+	msg := newMessage().Text(summary)
 	for _, line := range extra {
 		msg.Text(line)
 	}
 	sign := "Sign it with your passkey here:"
-	if pick.Kind != linkShort {
+	switch pick.Kind {
+	case linkShort:
+	case linkHash:
+		sign = "Sign it with your passkey: " + requestBeside(pick.File.Blocks != nil, pick.sent)
+	case linkLong:
 		sign = "Sign it with your passkey here; the page then shows a code for the agent:"
 	}
 	return msg.Text(sign).Link(labelRevert, pick.URL).Build()

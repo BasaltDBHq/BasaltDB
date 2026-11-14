@@ -2,7 +2,7 @@
 
 The portal is the static copy of the approval, revert and passkey pages (`web/`) served at `https://portal.basaltvault.app`. There is no server code, no database and no accounts. A passkey made on the portal belongs to the `basaltvault.app` relying party, so the host has to be locked down: whoever can change these files can change what a person signs.
 
-**Known gap until the domain rename lands.** `web/lib/codec.js` currently accepts only `console.basaltvault.app` as the hosted origin (`HOSTED_CONSOLE`), so the pages will not work end to end on `portal.basaltvault.app` until the domain rename task changes it. Deploying this headers file and the project before then is fine, but do not point people at the portal yet.
+The pages run only at `https://portal.basaltvault.app` (`PORTAL` in `web/lib/codec.js`) or `http://localhost:<port>`, and refuse any other origin before they touch a passkey.
 
 Design: [chat-only operator, section 5](redesign/specs/2026-11-12-chat-only-operator.md#5-the-portal-cloudflare-pages).
 
@@ -56,7 +56,7 @@ Then in the project settings, Builds and deployments:
 
 ## 5. Ignore `*.pages.dev`
 
-Cloudflare also serves the project at `<project>.pages.dev`, plus a URL per deployment. Those are **not page origins**. A passkey made there would not belong to `basaltvault.app`, and the engine's compiled-in origin list will refuse them (that list does not exist yet; it arrives with the domain rename task, so until then nothing in the engine rejects a `*.pages.dev` link). Never put one in a link, a doc or a chat message. Optionally add a Cloudflare redirect rule from the `*.pages.dev` host to `https://portal.basaltvault.app`.
+Cloudflare also serves the project at `<project>.pages.dev`, plus a URL per deployment. Those are **not page origins**. A passkey made there would not belong to `basaltvault.app`, and the compiled-in origin list refuses them: the pages will not run there, and the engine and the CLI refuse a `*.pages.dev` `pagesUrl`, `--pages-url` or `--passkey-origin`. Never put one in a link, a doc or a chat message. Optionally add a Cloudflare redirect rule from the `*.pages.dev` host to `https://portal.basaltvault.app`.
 
 ## 6. Verify
 

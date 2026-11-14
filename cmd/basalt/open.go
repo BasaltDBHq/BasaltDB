@@ -10,7 +10,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 )
 
@@ -88,7 +87,7 @@ func localPages(c *cliIO, pagesURL, agent, configPath string) string {
 	if pagesURL != "" || agent == "" {
 		return ""
 	}
-	cfg, err := config.Load(configPath)
+	cfg, err := loadEngineConfig(c, configPath)
 	if err != nil {
 		return ""
 	}
@@ -136,14 +135,14 @@ func checkWebLink(link string) error {
 // configuredBase is the base URL a link points to: --pages-url when
 // given, else the engine config's (PagesBase) when the agent comes from
 // that config, else the engine's local pages, the default until hosting.
-func configuredBase(pagesURL, agent, configPath string) string {
+func configuredBase(c *cliIO, pagesURL, agent, configPath string) string {
 	if pagesURL != "" {
 		return pagesURL
 	}
 	if agent == "" {
 		return links.DefaultLocal
 	}
-	cfg, err := config.Load(configPath)
+	cfg, err := loadEngineConfig(c, configPath)
 	if err != nil {
 		return links.DefaultLocal // agentURL already reported a config it could not load
 	}

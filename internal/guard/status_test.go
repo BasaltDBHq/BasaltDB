@@ -40,6 +40,7 @@ func TestAgentStatus(t *testing.T) {
 			gap = m.Version
 		}
 	}
+	require.NotZero(t, gap)
 	d.Exec(t, `DELETE FROM basalt_meta.schema_version WHERE version = $1`, gap)
 	st, err = guard.AgentStatus(ctx, a.Conn, migs)
 	require.NoError(t, err)

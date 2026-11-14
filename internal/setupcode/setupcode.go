@@ -81,6 +81,16 @@ type Payload struct {
 	Build     string `json:"build"`
 	Agent     *Agent `json:"agent,omitempty"`
 	ExpiresAt string `json:"expiresAt"`
+	// Engine is the engine's identity key (M4.1, CO-18), absent when the
+	// code-maker's key file could not be read. Last in the schema's order.
+	Engine *Engine `json:"engine,omitempty"`
+}
+
+// Engine is the engine part of a code: its signing key, which the person's
+// computer records in basalt_meta (version 33).
+type Engine struct {
+	// PublicKey is the signing key's SPKI DER, base64url without padding.
+	PublicKey string `json:"publicKey"`
 }
 
 // Target is the database the bot's engine connects to.

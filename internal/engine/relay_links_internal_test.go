@@ -27,11 +27,11 @@ func TestRelayLinksAcrossAgents(t *testing.T) {
 	t.Cleanup(v.Close)
 	relay := newRelayLinks(quietLog())
 	cfg := config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}
-	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), relay, nil)
+	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), relay, nil, nil)
 	require.NotNil(t, ev.client)
 	engineID := ev.status().EngineID
 	owner := func(tok channel.LinkToken) string {
-		id, _ := v.LinkOwner(tok.String())
+		id, _ := v.LinkOwner(tok.Wire())
 		return id
 	}
 
@@ -53,7 +53,7 @@ func TestRelayLinksAcrossAgents(t *testing.T) {
 	require.NoError(t, err)
 	_, c, err := ops.IssueRelay(uuid.Must(uuid.NewV7()), now.Add(time.Hour))
 	require.NoError(t, err)
-	v.Bind(c.String(), "AAAAAAAAAAAAAAAAAAAAAA", now.Add(time.Hour))
+	v.Bind(c.Wire(), "AAAAAAAAAAAAAAAAAAAAAA", now.Add(time.Hour))
 	require.Len(t, relay.Live(), 3)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -102,14 +102,14 @@ func TestManyConflictsDoNotStallReads(t *testing.T) {
 	t.Cleanup(func() { close(stall) })
 	relay := newRelayLinks(quietLog())
 	cfg := config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}
-	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), relay, nil)
+	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), relay, nil, nil)
 	require.NotNil(t, ev.client)
 	store := links.NewSecrets(time.Now, rand.Reader)
 	relay.add("bot", store, ev.client.Unregister)
 	for range conflicts {
 		_, tok, err := store.IssueRelay(uuid.Must(uuid.NewV7()), time.Now().Add(time.Hour))
 		require.NoError(t, err)
-		v.Bind(tok.String(), "AAAAAAAAAAAAAAAAAAAAAA", time.Now().Add(time.Hour))
+		v.Bind(tok.Wire(), "AAAAAAAAAAAAAAAAAAAAAA", time.Now().Add(time.Hour))
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

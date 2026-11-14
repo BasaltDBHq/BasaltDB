@@ -17,27 +17,28 @@ import (
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
-// PreviewRevert returns the revert lines of scope (basalt_meta
-// preview_revert) on the agent's credential. The guard runs the revert on
-// trial and undoes it; this transaction is read-write for that, and is
-// rolled back anyway.
-func (s *Store) PreviewRevert(ctx context.Context, scope guard.RevertScope) ([]string, error) {
-	var lines []string
+// PreviewRevert returns one page of the preview of scope (basalt_meta
+// preview_revert) on the agent's credential, after the line whose hash is
+// after, with the preview's totals (guard.PreviewRevertPage). The guard
+// runs the revert on trial and undoes it; this transaction is read-write
+// for that, and is rolled back anyway.
+func (s *Store) PreviewRevert(ctx context.Context, scope guard.RevertScope, after string, limit int) (guard.PreviewPage, error) {
+	var page guard.PreviewPage
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		if err := setTimeout(ctx, tx, s.limits); err != nil {
 			return err
 		}
 		var err error
-		lines, err = guard.PreviewRevert(ctx, tx, scope)
+		page, err = guard.PreviewRevertPage(ctx, tx, scope, after, limit)
 		if err != nil {
 			return err
 		}
 		return errPreviewRollback
 	})
 	if !errors.Is(err, errPreviewRollback) {
-		return nil, err
+		return guard.PreviewPage{}, err
 	}
-	return lines, nil
+	return page, nil
 }
 
 // ErrEmptyProposal is a task revert with no line of the agent's own. The
@@ -59,7 +60,7 @@ func (s *Store) PrepareRevert(ctx context.Context, scope guard.RevertScope, inte
 		if err != nil {
 			return err
 		}
-		if len(p.Lines) == 0 {
+		if p.LineCount == 0 {
 			return ErrEmptyProposal
 		}
 		return nil
@@ -185,9 +186,10 @@ func (s *Store) FindRevert(ctx context.Context, id uuid.UUID) (ledger.Revert, er
 	return ledger.FindRevert(ctx, s.db, id)
 }
 
-// RevertLines returns one page of a batched plan's lines.
+// RevertLines returns one page of a batched plan's lines, with values too
+// large for the agent left out (CONTRACT.md, Large values).
 func (s *Store) RevertLines(ctx context.Context, p ledger.RevertLineParams) (pagination.Page[ledger.RevertLine], error) {
-	return ledger.ListRevertLines(ctx, s.db, p)
+	return ledger.ListRevertLinesMarked(ctx, s.db, p)
 }
 
 // ApplyRevertBatch applies lines of a signed plan in one transaction on the

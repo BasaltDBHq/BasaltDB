@@ -220,7 +220,7 @@ func (s *Secrets) save() error {
 	for id, e := range s.live {
 		entry := secretFileEntry{ID: id, Hash: hex.EncodeToString(e.hash[:]), ExpiresAt: e.expires}
 		if e.keys != nil {
-			entry.LinkToken = e.keys.Token.String()
+			entry.LinkToken = e.keys.Token.Wire()
 			entry.PSK = base64.RawURLEncoding.EncodeToString(e.keys.PSK[:])
 		}
 		file.Links = append(file.Links, entry)

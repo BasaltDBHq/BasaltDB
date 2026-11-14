@@ -6,6 +6,7 @@ import { ALG_ES256, encodeRegistrationResponse, parseRegistrationRequest, regist
 import { postResponse } from "./local.js";
 import { $, fail, loadOrPaste, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
 import { pairingCode, pairingCoordinates } from "./pairing.js";
+import { sameOriginSession } from "./transport.js";
 
 // HAND_BACK_PATH is basalt init's hand-back route, on the pages init serves
 // itself: a request with a handBack secret came from there.
@@ -53,7 +54,7 @@ async function register(rp, req) {
       publicKeyAlgorithm: r.getPublicKeyAlgorithm(),
       prfSupported: prfEnabled(cred),
     };
-    if (req.handBack !== "" && (await sendToInit((path, init) => window.fetch(path, init), req, fields))) return;
+    if (req.handBack !== "" && (await sendToInit(sameOriginSession(), req, fields))) return;
     showCode(encodeRegistrationResponse(fields));
   } catch (err) {
     $("register").disabled = false;
@@ -71,10 +72,13 @@ function initEnded(err) {
 // sendToInit posts the passkey to basalt init, which keeps it until the
 // person types the pairing code this page then shows (CONTRACT.md, CLI).
 // The code appears only after init answered that it took the passkey. It
-// returns false when the person should paste the long code instead.
-export async function sendToInit(fetchFn, req, fields) {
+// returns false when the person should paste the long code instead. The
+// hand-back always goes to basalt init on this page's own origin, never
+// through the engine or the Vault (registration stays a static page), so
+// the caller passes a same-origin session (transport.js).
+export async function sendToInit(session, req, fields) {
   try {
-    await postResponse(fetchFn, HAND_BACK_PATH, req.handBack, registrationResponseJson(fields));
+    await postResponse(session, HAND_BACK_PATH, req.handBack, registrationResponseJson(fields));
   } catch (err) {
     if (initEnded(err)) {
       showDone("basalt init is no longer waiting; run it again, and register with the link it opens.");
@@ -108,5 +112,5 @@ async function main() {
   $("register").addEventListener("click", () => register(rp, req));
 }
 
-// Only in a browser: the tests import this module without a document.
+// Only in a browser: the tests load this module without a document.
 if (typeof document !== "undefined") main();

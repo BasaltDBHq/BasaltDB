@@ -148,6 +148,9 @@ type Options struct {
 	// when zero. Tests shorten them.
 	IdleTimeout     time.Duration
 	SessionLifetime time.Duration
+	// Tally counts sessions together with the other transport's (give the
+	// same Tally to DirectOptions); nil counts this socket's alone.
+	Tally *Tally
 }
 
 func (o *Options) defaults() {

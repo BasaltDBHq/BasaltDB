@@ -322,6 +322,12 @@ func (cn *conn) work(ctx context.Context, ss *session) {
 		case <-ctx.Done():
 			return
 		case req := <-e.work:
+			if cn.recheck != nil {
+				if code := cn.recheck(ctx, e.link); code != 0 {
+					cn.endAsync(ss.id, code)
+					return
+				}
+			}
 			after := &afterAnswer{}
 			dctx := context.WithValue(ctx, rotateKey{}, rotator(func(token channel.LinkToken) { cn.rotate(ss, token) }))
 			dctx = context.WithValue(dctx, afterKey{}, after)
@@ -393,11 +399,15 @@ func RotateSession(ctx context.Context, token channel.LinkToken) bool {
 }
 
 // rotate is RotateSession for ss, on its worker: only the worker reads
-// est.link, and ss.token is read under the sessions' lock.
+// est.link.Token (others read est.link.Agent alone, which never changes),
+// and ss.token is read under the sessions' lock.
 func (cn *conn) rotate(ss *session, token channel.LinkToken) {
 	cn.sessions.mu.Lock()
 	old := ss.token
 	ss.token = token
+	if cn.sessions.open[ss.id] == ss && ss.est != nil && old != token {
+		cn.sessions.tally.move(old, token)
+	}
 	cn.sessions.mu.Unlock()
 	ss.est.link.Token = token
 	if old == token {

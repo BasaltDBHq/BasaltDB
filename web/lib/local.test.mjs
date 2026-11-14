@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 
 import { approvalResponseJSON, b64urlDecode, checkApprovalRequest, parseApprovalRequest } from "./codec.js";
 import { REQUEST_ATTEMPTS, REQUEST_RETRY_MS, RelayError, SECRET_HEADER, fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths, revertDone, shortLinkId } from "./local.js";
+import { sameOriginSession } from "./transport.js";
 import { linkFailure, personText, APPROVE_REOPEN } from "./page.js";
 
 const fixtures = JSON.parse(
@@ -54,7 +55,7 @@ test("a short link's id comes from its path", () => {
 test("the request read from the engine passes the same checks as the long link", async () => {
   const obj = await requestObject();
   const { fetchFn, calls } = fakeEngine({ [`GET /api/v1/approvals/${id}`]: { body: obj } });
-  const req = await checkApprovalRequest(await fetchRequest(fetchFn, relayPaths("approvals", id).request, "s3cr3t"));
+  const req = await checkApprovalRequest(await fetchRequest(sameOriginSession(fetchFn), relayPaths("approvals", id).request, "s3cr3t"));
   const fromLink = await parseApprovalRequest("#" + fixtures.request.fragment);
   assert.equal(req.bindingText, fromLink.bindingText);
   assert.deepEqual(req.challenge, fromLink.challenge);
@@ -77,10 +78,10 @@ test("the signed response is posted as JSON to the relay", async () => {
   };
   const path = relayPaths("approvals", id).relay;
   const { fetchFn, calls } = fakeEngine({ [`POST ${path}`]: { body: { approvalId: id, status: "APPROVED" } } });
-  const out = await postResponse(fetchFn, path, "s3cr3t", approvalResponseJSON(response));
+  const out = await postResponse(sameOriginSession(fetchFn), path, "s3cr3t", approvalResponseJSON(response));
   assert.equal(out.status, "APPROVED");
   assert.equal(calls[0].init.method, "POST");
-  assert.equal(calls[0].init.headers["Content-Type"], "application/json");
+  assert.equal(calls[0].init.headers["content-type"], "application/json");
   assert.equal(calls[0].init.headers[SECRET_HEADER], "s3cr3t");
   assert.deepEqual(Object.keys(JSON.parse(calls[0].init.body)), ["approvalId", "credentialId", "authenticatorData", "clientDataJson", "signature"]);
 });
@@ -102,7 +103,7 @@ test("engine errors carry the person's message and steps, and the page shows the
       body: { code: "NOT_FOUND", message: "no such link", reason: "LINK", personMessage: "This link is incomplete, expired or was replaced.", nextSteps: [] },
     },
   });
-  const err = await fetchRequest(fetchFn, `/api/v1/reverts/${id}`, "s3cr3t").catch((e) => e);
+  const err = await fetchRequest(sameOriginSession(fetchFn), `/api/v1/reverts/${id}`, "s3cr3t").catch((e) => e);
   assert.equal(err.reason, "NOT_SIGNED");
   assert.equal(err.personMessage, "The revert of run r1 was not signed within an hour, so it expired.");
   assert.equal(err.nextSteps.length, 1);
@@ -111,7 +112,7 @@ test("engine errors carry the person's message and steps, and the page shows the
     "The revert of run r1 was not signed within an hour, so it expired.\nPrepare it again. Run: basalt revert --agent bot --run r1 --open",
   );
 
-  const link = await fetchRequest(fetchFn, `/api/v1/approvals/${id}`, "").catch((e) => e);
+  const link = await fetchRequest(sameOriginSession(fetchFn), `/api/v1/approvals/${id}`, "").catch((e) => e);
   assert.equal(linkFailure(link, "approval", APPROVE_REOPEN), "This link is incomplete, expired or was replaced.\nOr " + APPROVE_REOPEN + ".");
 
   const bare = new RelayError("plain");
@@ -123,23 +124,23 @@ test("engine errors come back with their code and message", async () => {
   const { fetchFn } = fakeEngine({
     [`GET /api/v1/approvals/${id}`]: { status: 410, body: { code: "APPROVAL_EXPIRED", message: "this approval expired" } },
   });
-  const err = await fetchRequest(fetchFn, `/api/v1/approvals/${id}`, "s3cr3t").catch((e) => e);
+  const err = await fetchRequest(sameOriginSession(fetchFn), `/api/v1/approvals/${id}`, "s3cr3t").catch((e) => e);
   assert.ok(err instanceof RelayError);
   assert.equal(err.code, "APPROVAL_EXPIRED");
   assert.equal(err.status, 410);
   assert.equal(linkFailure(err, "approval", APPROVE_REOPEN), "This approval cannot be shown: this approval expired");
 
-  const unknown = await fetchRequest(fetchFn, "/api/v1/approvals/x", "").catch((e) => e);
+  const unknown = await fetchRequest(sameOriginSession(fetchFn), "/api/v1/approvals/x", "").catch((e) => e);
   assert.equal(unknown.code, "NOT_FOUND");
   assert.match(linkFailure(unknown, "approval", APPROVE_REOPEN), /^This approval link is incomplete, was replaced by a newer one/);
 
   const waited = [];
   let calls = 0;
   const down = await fetchRequest(
-    async () => {
+    sameOriginSession(async () => {
       calls++;
       throw new TypeError("fetch failed");
-    },
+    }),
     "/x",
     "",
     async (ms) => waited.push(ms),
@@ -163,7 +164,7 @@ test("reading the request waits out an engine restart", async () => {
     return fetchFn(...args);
   };
   const waited = [];
-  const err = await fetchRequest(restarting, `/api/v1/approvals/${id}`, "s3cr3t", async (ms) => waited.push(ms)).catch((e) => e);
+  const err = await fetchRequest(sameOriginSession(restarting), `/api/v1/approvals/${id}`, "s3cr3t", async (ms) => waited.push(ms)).catch((e) => e);
   assert.equal(calls, 3);
   assert.equal(waited.length, 2);
   assert.equal(err.code, "APPROVAL_EXPIRED", "an engine answer is not retried");
@@ -171,10 +172,10 @@ test("reading the request waits out an engine restart", async () => {
 
 test("the relay is never retried", async () => {
   let calls = 0;
-  const err = await postResponse(async () => {
+  const err = await postResponse(sameOriginSession(async () => {
     calls++;
     throw new TypeError("fetch failed");
-  }, "/x", "", "{}").catch((e) => e);
+  }), "/x", "", "{}").catch((e) => e);
   assert.match(err.message, /cannot reach the BasaltDB engine/);
   assert.equal(calls, 1);
 });

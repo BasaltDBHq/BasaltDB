@@ -184,6 +184,9 @@ func PlanInit(ctx context.Context, q Querier, opts InitOptions) (Script, error) 
 		}
 		add(migrationBegin + m.sql + fmt.Sprintf(migrationEnd, m.version))
 	}
+	if recordsInstalls(version, opts.UpTo) {
+		add(recordInstall)
+	}
 	if opts.Agent.Name != "" {
 		agent, err := planAgent(ctx, q, n, opts.Agent)
 		if err != nil {
@@ -200,6 +203,17 @@ func PlanInit(ctx context.Context, q Querier, opts InitOptions) (Script, error) 
 	}
 	add(attachAll)
 	return s, nil
+}
+
+// recordsInstalls reports whether the guard has installs (version 36) once
+// the script ran: every install then writes its row, so a re-init after a
+// pg_restore, which has none for the new schema, records one.
+func recordsInstalls(installed, upTo int) bool {
+	target := LatestVersion()
+	if upTo > 0 {
+		target = min(target, upTo)
+	}
+	return max(installed, target) >= versionReinstalls
 }
 
 // installRoles creates the owner and group roles once, and lets the admin

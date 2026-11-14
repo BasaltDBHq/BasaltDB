@@ -33,6 +33,23 @@ type Uncovered struct {
 	Why   string
 }
 
+// InstallID identifies this install of the guard: the oid of the
+// basalt_meta schema, which a new install (after basalt uninstall, or DROP
+// SCHEMA) gets anew. A chain pin carries it, so a pin of an earlier install
+// is set aside instead of checked against a new ledger.
+func InstallID(ctx context.Context, q Querier) (uint32, error) {
+	sql, args, err := psql.Select("n.oid").From("pg_catalog.pg_namespace n").
+		Where(sq.Eq{"n.nspname": "basalt_meta"}).ToSql()
+	if err != nil {
+		return 0, err
+	}
+	var id uint32
+	if err := q.QueryRow(ctx, sql, args...).Scan(&id); err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
 // VerifyChain recomputes the ledger hash chain from its anchor (D8).
 func VerifyChain(ctx context.Context, q Querier) (ChainStatus, error) {
 	sql, args, err := psql.Select("basalt_meta.verify_chain()").ToSql()

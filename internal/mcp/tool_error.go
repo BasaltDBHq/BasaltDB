@@ -91,7 +91,7 @@ type ApprovalNotice struct {
 	ExpiresAt   string `json:"expiresAt"`
 	Rows        int    `json:"rows"`
 	Headline    string `json:"headline"`
-	ApprovalURL string `json:"approvalUrl"`
+	ApprovalURL string `json:"approvalUrl,omitempty"`
 	// RequestFile is the request beside a hash link in ApprovalURL (CONTRACT.md,
 	// The request file and pasted blocks); nil with any other link.
 	RequestFile    *links.RequestFile `json:"requestFile,omitempty"`

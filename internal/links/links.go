@@ -35,6 +35,11 @@ const (
 	// which passkeys a device has, and forgetting a removed one.
 	CheckPath  = "/passkeys/check"
 	ForgetPath = "/passkeys/forget"
+	// EnginesPath and EnginesAddPath are the portal's pin page (M4.1,
+	// CONTRACT.md, Direct transport): the engines this device pinned, and
+	// pinning one. Portal only: the engine's local pages never serve them.
+	EnginesPath    = "/engines"
+	EnginesAddPath = "/engines/add"
 )
 
 // Approval is the approval page of a held write: <base>/approvals/<id>.

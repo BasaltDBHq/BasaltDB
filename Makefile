@@ -90,8 +90,9 @@ npm-check: ## Syntax-check the npm shim, MCP registry and publish scripts
 
 .PHONY: web-check
 web-check: ## Syntax-check the approval and revert pages, run their codec tests against the Go fixtures, and check the integrity hashes
-	@for f in web/lib/*.js; do node --check "$$f" || exit 1; done
-	@node --test web/lib/*.test.mjs >/dev/null || node --test web/lib/*.test.mjs
+	@for f in web/lib/*.js web/edge/*.js functions/*.js; do node --check "$$f" || exit 1; done
+	@node --test web/lib/*.test.mjs web/edge/*.test.mjs >/dev/null || node --test web/lib/*.test.mjs web/edge/*.test.mjs
+	@node --test scripts/web-sri.test.mjs >/dev/null || node --test scripts/web-sri.test.mjs
 	@node scripts/web-sri.mjs --check
 	@node scripts/web-manifest.mjs --check
 
@@ -108,10 +109,10 @@ PORTAL_DIR ?= dist/portal
 portal-build: ## Copy only the served portal files to dist/portal (Cloudflare Pages output)
 	@rm -rf "$(PORTAL_DIR)"
 	@mkdir -p "$(PORTAL_DIR)/lib" "$(PORTAL_DIR)/fonts"
-	@for d in approve revert register passkeys; do mkdir -p "$(PORTAL_DIR)/$$d" && cp "web/$$d/index.html" "$(PORTAL_DIR)/$$d/index.html" || exit 1; done
+	@for d in approve revert register passkeys engines; do mkdir -p "$(PORTAL_DIR)/$$d" && cp "web/$$d/index.html" "$(PORTAL_DIR)/$$d/index.html" || exit 1; done
 	@for f in web/lib/*.js; do cp "$$f" "$(PORTAL_DIR)/lib/" || exit 1; done
 	@cp web/fonts/*.woff2 web/fonts/OFL.txt "$(PORTAL_DIR)/fonts/"
-	@cp web/style.css web/_headers web/_redirects "$(PORTAL_DIR)/"
+	@cp web/style.css web/_headers web/_redirects web/_routes.json "$(PORTAL_DIR)/"
 	@if find "$(PORTAL_DIR)" \( -name '*.test.mjs' -o -name '*.go' \) | grep -q .; then echo 'portal-build: test or Go files in output' >&2; exit 1; fi
 
 .PHONY: ci

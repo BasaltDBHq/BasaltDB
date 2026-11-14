@@ -62,6 +62,20 @@ func PreviewLines(ctx context.Context, tx pgx.Tx, assigned []string) ([]string, 
 	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
+// MaxHeldLinesBytes is the most a held write's preview lines may hold, in
+// bytes of their text summed (basalt_meta version 37; CONTRACT.md, Large
+// values). Over it, preview_lines and hold_action refuse with BS007
+// NOT_ALLOWED and detail DetailHoldTooLarge.
+const MaxHeldLinesBytes = 64 << 20
+
+// MaxHeldLineBytesBefore37 is the most one preview line may hold on a
+// guard before version 37; hold_action refuses a longer one with BS008.
+const MaxHeldLineBytesBefore37 = 64 << 10
+
+// DetailHoldTooLarge is the detail of the guard's refusal of preview lines
+// over MaxHeldLinesBytes.
+const DetailHoldTooLarge = "HOLD_TOO_LARGE"
+
 // HoldRequest is a write to hold for the person's approval.
 type HoldRequest struct {
 	Statement string

@@ -85,9 +85,9 @@ type countedReverts struct {
 func (countedReverts) HasChange(context.Context, uuid.UUID) (bool, error)  { return false, nil }
 func (countedReverts) HasTaskRun(context.Context, uuid.UUID) (bool, error) { return false, nil }
 
-func (r countedReverts) PreviewRevert(context.Context, guard.RevertScope) ([]string, error) {
+func (r countedReverts) PreviewRevert(context.Context, guard.RevertScope, string, int) (guard.PreviewPage, error) {
 	*r.guardCalls++
-	return nil, nil
+	return guard.PreviewPage{}, nil
 }
 
 func (r countedReverts) PrepareRevert(context.Context, guard.RevertScope, string, time.Duration) (guard.PreparedRevert, error) {

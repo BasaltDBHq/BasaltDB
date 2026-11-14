@@ -190,7 +190,7 @@
         "type": "object",
         "additionalProperties": false,
         "required": ["state"],
-        "description": "Planned (M4.1). CONTRACT.md, Direct transport and Version 33: this engine's key as the agent's database records it. Absent when the engine is down.",
+        "description": "CONTRACT.md, Direct transport and Version 33: this engine's key as the agent's database records it. Absent when the engine is down.",
         "properties": {
           "state": {
             "type": "string",
@@ -240,10 +240,12 @@
                 "ENGINE_REVOKED",
                 "DIRECT_NOT_SERVED",
                 "LOCK_FILE_UNUSABLE",
+                "LEDGER_REINSTALLED",
+                "PORTAL_MISMATCH",
                 "LEVEL_UNENROLLED",
                 "LEVEL_POLICIES_STALE"
               ],
-              "description": "DEV_LOCAL_PAGES (CONTRACT.md, Page origins): the engine.json devLocalPages development exception is on, so the pages are on the agent's machine. ENGINE_REVOKED (planned, M4.1; CONTRACT.md, Direct transport): the agent's database revoked this engine's key. DIRECT_NOT_SERVED (planned, M4.1): the agent's database records an address for this engine, but directAddr is off, so a tunnel has nothing to forward to. LOCK_FILE_UNUSABLE (CONTRACT.md, On the engine, Lock files): the engine cannot open engine.json.lock or the agent's credential lock, so a finished setup is not written back. LEVEL_UNENROLLED and LEVEL_POLICIES_STALE (planned, Access and audit; CONTRACT.md, Agent groups and mirrored policies): the agent's enrolled role was unenrolled, so its writes are refused; the agent group's copied row-level security policies are stale on some of the agent's tables, so it sees no rows there until the admin runs basalt access sync."
+              "description": "PORTAL_MISMATCH (CONTRACT.md, CLI, basalt portal verify): the engine's daily check found the portal serving pages other than the ones this build embeds. DEV_LOCAL_PAGES (CONTRACT.md, Page origins): the engine.json devLocalPages development exception is on, so the pages are on the agent's machine. ENGINE_REVOKED (CONTRACT.md, Direct transport): the agent's database revoked this engine's key. DIRECT_NOT_SERVED (CONTRACT.md, Direct transport): the agent's database records an address for this engine, but directAddr is off, so a tunnel has nothing to forward to. LOCK_FILE_UNUSABLE (CONTRACT.md, On the engine, Lock files): the engine cannot open engine.json.lock or the agent's credential lock, so a finished setup is not written back. LEDGER_REINSTALLED (CONTRACT.md, Version 36): the ledger records that the guard was installed again and an engine set its pin of the old ledger aside; personMessage is the reinstall notice, to show the person as it is. LEVEL_UNENROLLED and LEVEL_POLICIES_STALE (planned, Access and audit; CONTRACT.md, Agent groups and mirrored policies): the agent's enrolled role was unenrolled, so its writes are refused; the agent group's copied row-level security policies are stale on some of the agent's tables, so it sees no rows there until the admin runs basalt access sync."
             },
             "severity": {
               "type": "string",

@@ -48,7 +48,7 @@ const (
 var savedInitFlags = map[string]bool{
 	flagAgent: true, flagWrite: true, flagRead: true, "prefix": true, "statement-timeout": true,
 	"socket-dir": true, "os-user": true, "engine-user": true, "credential-file": true,
-	flagPasskeyOrigin: true, "agent-rls": true, "operated-by": true, flagDevLocalPages: true,
+	flagPasskeyOrigin: true, "agent-rls": true, "operated-by": true, flagDevLocalPages: true, "direct-addr": true,
 }
 
 // flagDevLocalPages is init's development exception (CONTRACT.md, Page

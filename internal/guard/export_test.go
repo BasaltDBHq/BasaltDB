@@ -22,3 +22,18 @@ const VersionPinnedTrigger = versionPinnedTrigger
 
 // VersionPinnedReverts is basalt_meta version 35, for the migration tests.
 const VersionPinnedReverts = versionPinnedReverts
+
+// VersionReinstalls is basalt_meta version 36, for the migration tests.
+const VersionReinstalls = versionReinstalls
+
+// ReportRow and InstallRecord are what ReadReinstalls reads, for the tests
+// of AssembleReinstalls.
+type (
+	ReportRow     = reportRow
+	InstallRecord = installRecord
+)
+
+// AssembleReinstalls is assembleReinstalls.
+func AssembleReinstalls(self string, rows []ReportRow, recs map[uint32]InstallRecord, kept []SetAside) Reinstalls {
+	return assembleReinstalls(self, rows, recs, kept)
+}

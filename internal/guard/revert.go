@@ -12,7 +12,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/basaltdbhq/basaltdb/internal/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 )
 
@@ -67,6 +69,84 @@ func PreviewRevert(ctx context.Context, q Querier, s RevertScope) ([]string, err
 	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
+// PreviewPage is one page of a preview as an agent reads it (preview_revert):
+// the totals of the whole preview and the page's lines, with values too
+// large for the agent left out (CONTRACT.md, Large values).
+type PreviewPage struct {
+	// Lines and Restore count every line of the preview, and
+	// AllAlreadyReverted says whether every one is a SKIP of a row a revert
+	// of the scope already restored.
+	Lines              int
+	Restore            int
+	AllAlreadyReverted bool
+	// CursorFound is false when a cursor was given and no line of the
+	// preview has its hash: the rows changed between pages.
+	CursorFound bool
+	// Page are the lines after the cursor, at most the limit, each with the
+	// hash of its full signed text (the next cursor); More says another
+	// page follows.
+	Page []PreviewLine
+	More bool
+}
+
+// PreviewLine is one line of a PreviewPage: its text with large values
+// left out, and the SHA-256 (lowercase hex) of the full text.
+type PreviewLine struct {
+	Text string
+	Hash string
+}
+
+// PreviewRevertPage previews the caller's own scope s as PreviewRevert does,
+// and reads only the totals and the limit lines after the line whose hash
+// is after ("" for the first page). Postgres counts, hashes and elides,
+// so a large preview or value never crosses the wire on an agent's call.
+func PreviewRevertPage(ctx context.Context, q Querier, s RevertScope, after string, limit int) (PreviewPage, error) {
+	args, err := s.args()
+	if err != nil {
+		return PreviewPage{}, err
+	}
+	// Plain SQL: a set-returning function over a built descriptor, under a
+	// recursive CTE (largevalue.ElideLines).
+	sql := largevalue.With + `pv_all AS MATERIALIZED (
+			SELECT p.n, p.t, ` + largevalue.SHA256Of("p.t") + ` AS hash, p.t::jsonb AS j
+			FROM basalt_meta.preview_revert(` + ownSelect + `) WITH ORDINALITY AS p(t, n)
+		), pv_tot AS MATERIALIZED (
+			SELECT count(n) AS lines, count(n) FILTER (WHERE j->>'action' = 'RESTORE') AS restore,
+				coalesce(bool_and(coalesce(j->>'conflict', '') = 'ALREADY_REVERTED'), false) AS reverted
+			FROM pv_all
+		), pv_cur AS MATERIALIZED (
+			SELECT min(n) AS n FROM pv_all WHERE $5 <> '' AND hash = $5
+		), pv_page AS MATERIALIZED (
+			SELECT n, hash, j FROM pv_all WHERE n > coalesce((SELECT n FROM pv_cur), 0) ORDER BY n LIMIT $6
+		), ` + largevalue.ElideLines(`SELECT n AS item, j AS line FROM pv_page`) + `
+		SELECT t.lines, t.restore, t.reverted, $5 = '' OR (SELECT n FROM pv_cur) IS NOT NULL,
+			(SELECT count(a.n) FROM pv_all a WHERE a.n > coalesce((SELECT n FROM pv_cur), 0)) > $6, p.hash, l.line::text
+		FROM pv_tot t
+		LEFT JOIN (pv_page p JOIN lv_lines l ON l.item = p.n) ON true
+		ORDER BY p.n`
+	// Only the page's lines are read; more is counted in Postgres, so a
+	// page at limit 1 holds one line.
+	rows, err := q.Query(ctx, sql, append(args, after, limit)...)
+	if err != nil {
+		return PreviewPage{}, err
+	}
+	defer rows.Close()
+	var out PreviewPage
+	for rows.Next() {
+		var hash, text *string
+		if err := rows.Scan(&out.Lines, &out.Restore, &out.AllAlreadyReverted, &out.CursorFound, &out.More, &hash, &text); err != nil {
+			return PreviewPage{}, err
+		}
+		if text != nil {
+			out.Page = append(out.Page, PreviewLine{Text: *text, Hash: *hash})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return PreviewPage{}, err
+	}
+	return out, nil
+}
+
 // PreparedRevert is a revert stored for the person to sign. Lines are every
 // line of a one-call revert, or the sample of a batched plan (Batched).
 type PreparedRevert struct {
@@ -75,6 +155,11 @@ type PreparedRevert struct {
 	ExpiresAt   time.Time
 	Lines       []string
 	Batched     bool
+	// LineCount is how many lines the revert has. On an agent's call (a
+	// context with a result budget) Lines is nil: the agent reads them
+	// measured, with the revert (ledger.FindRevert), so a large revert's
+	// lines never cross the wire on its call (CONTRACT.md, Large values).
+	LineCount int
 }
 
 // PrepareRevert stores the caller's own proposal s for the person to sign
@@ -91,9 +176,11 @@ func PrepareRevert(ctx context.Context, q Querier, s RevertScope, intent string)
 	}
 	var p PreparedRevert
 	// Plain SQL: a set-returning function in FROM over a built descriptor.
-	err = q.QueryRow(ctx, `SELECT r.revert_id, r.binding_text, r.expires_at, r.lines
-		FROM basalt_meta.prepare_revert(`+ownSelect+`, $5) AS r`, append(args, intent)...).
-		Scan(&p.RevertID, &p.BindingText, &p.ExpiresAt, &p.Lines)
+	withLines := resultsize.From(ctx) == nil
+	err = q.QueryRow(ctx, `SELECT r.revert_id, r.binding_text, r.expires_at, CASE WHEN $6 THEN r.lines END,
+			coalesce(cardinality(r.lines), 0)
+		FROM basalt_meta.prepare_revert(`+ownSelect+`, $5) AS r`, append(args, intent, withLines)...).
+		Scan(&p.RevertID, &p.BindingText, &p.ExpiresAt, &p.Lines, &p.LineCount)
 	if err != nil {
 		return PreparedRevert{}, err
 	}

@@ -22,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/privdrop"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
+	"github.com/basaltdbhq/basaltdb/internal/logredact"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/shim"
 )
@@ -60,7 +61,7 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 	if err != nil {
 		return fail(io.err, "engine", err)
 	}
-	log := slog.New(slog.NewTextHandler(io.err, nil))
+	log := engineLog(io.err)
 	if err := engine.Run(ctx, cfg.Config, enginePath(*configPath), log); err != nil {
 		return fail(io.err, "engine", err)
 	}
@@ -174,7 +175,7 @@ func runMCPOn(ctx context.Context, args []string, io stdio, h host) int {
 		}
 		path = config.SocketPath(*socketDir, *name)
 	}
-	fallback, err := engineDownServer(shimAgent(*name, path), enginePath(*configPath), slog.New(slog.NewTextHandler(io.err, nil)))
+	fallback, err := engineDownServer(shimAgent(*name, path), enginePath(*configPath), engineLog(io.err))
 	if err != nil {
 		return fail(io.err, "mcp", err)
 	}
@@ -452,3 +453,7 @@ func checkServicePersons(uids []uint32, engineUser string) error {
 	}
 	return nil
 }
+
+// engineLog is the engine's and basalt mcp's log on w: a text handler that
+// scrubs link secrets from what it writes (logredact).
+func engineLog(w io.Writer) *slog.Logger { return slog.New(logredact.NewTextHandler(w, nil)) }

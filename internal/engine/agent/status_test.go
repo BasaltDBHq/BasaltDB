@@ -20,6 +20,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 )
@@ -43,9 +44,13 @@ type fakeProbe struct {
 	// ledger is LedgerBytes's answer; ledgerErr fails it.
 	ledger    int64
 	ledgerErr error
+	// reinstalls is Reinstalls's answer.
+	reinstalls guard.Reinstalls
 }
 
 func (p *fakeProbe) LedgerBytes(context.Context) (int64, error) { return p.ledger, p.ledgerErr }
+
+func (p *fakeProbe) Reinstalls(context.Context) (guard.Reinstalls, error) { return p.reinstalls, nil }
 
 func (p *fakeProbe) GuardStatus(context.Context) (guard.Status, error) { return p.st, p.err }
 
@@ -173,10 +178,54 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			t.Helper()
 			return lockTroubleStatus(t, operatedBy)
 		}},
+		problemPortalMismatch: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+			t.Helper()
+			return portalStatus(t, operatedBy, fakePortal{ok: true, f: PortalFinding{CheckedAt: statusNow, Mismatch: true, Summary: "2 DIFFERS, 1 MISSING"}})
+		}},
 		problemDevLocalPages: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
 			t.Helper()
 			return devLocalStatus(t, operatedBy)
 		}},
+		problemEngineRevoked: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+			t.Helper()
+			return engineRecordStatusOf(t, operatedBy, recordOf("https://engine.example.com", true), false)
+		}},
+		problemDirectNotServed: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+			t.Helper()
+			return engineRecordStatusOf(t, operatedBy, recordOf("https://engine.example.com", false), false)
+		}},
+		problemLedgerReinstalled: {state: guard.GuardOK, report: engineStatus(&fakeProbe{st: ok, reinstalls: sampleReinstalls()}, 1, nil)},
+	}
+}
+
+// sampleReinstalls is one reinstall reported by two agents.
+func sampleReinstalls() guard.Reinstalls {
+	installed := statusNow.Add(-time.Hour)
+	hash := make([]byte, 32)
+	return guard.Reinstalls{List: []guard.Reinstall{{
+		Install: 16999, InstalledAt: &installed, InstalledBy: "postgres",
+		Reports: []guard.ReinstallReport{
+			{Agent: "basalt_agent_bot", At: statusNow, PinnedSeq: 42, PinnedHash: hash},
+			{Agent: "basalt_agent_other", At: statusNow, PinnedSeq: 40, PinnedHash: hash},
+		},
+	}}}
+}
+
+// LEDGER_REINSTALLED carries the newest reinstall's first notice line and
+// points to basalt log; the tools keep working. No reinstall, no problem.
+func TestStatusLedgerReinstalled(t *testing.T) {
+	t.Parallel()
+	ok := guardAt(guard.GuardOK, nil, nil)
+	r := engineStatus(&fakeProbe{st: ok, reinstalls: sampleReinstalls()}, 1, nil)(t)
+	p := findProblem(t, r, problemLedgerReinstalled)
+	require.True(t, r.Ready)
+	require.Equal(t, mcpcontract.SeverityWarning, p.Severity)
+	require.Equal(t, ledger.ReinstallNotice(sampleReinstalls().List[0])[0]+"\nRun basalt log to see every report.", p.PersonMessage)
+	require.NotContains(t, p.PersonMessage, "basalt_agent_other")
+
+	r = engineStatus(&fakeProbe{st: ok}, 1, nil)(t)
+	for _, p := range r.Problems {
+		require.NotEqual(t, problemLedgerReinstalled, p.Code)
 	}
 }
 
@@ -659,4 +708,159 @@ func lockTroubleStatus(t *testing.T, operatedBy string) StatusReport {
 	r, err := NewService(d).Status(context.Background())
 	require.NoError(t, err)
 	return r
+}
+
+// engineID is the id the test engine reports.
+const testEngineID = "AAAAAAAAAAAAAAAAAAAAAA"
+
+func recordOf(url string, revoked bool) func(context.Context, string) (*guard.RecordedEngine, error) {
+	return func(_ context.Context, id string) (*guard.RecordedEngine, error) {
+		e := &guard.RecordedEngine{ID: id, RecordedAt: statusNow.Add(-48 * time.Hour)}
+		if url != "" {
+			e.URL = &url
+		}
+		if revoked {
+			at := statusNow.Add(-time.Hour)
+			e.RevokedAt = &at
+		}
+		return e, nil
+	}
+}
+
+// engineRecordStatusOf is the status of a ready agent on an engine with a
+// Vault reporter whose record is read by read.
+func engineRecordStatusOf(t *testing.T, operatedBy string, read EngineRecordReader, directServed bool) StatusReport {
+	t.Helper()
+	d := deps()
+	d.OperatedBy = operatedBy
+	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+	d.Approvals = keys{n: 1}
+	d.Now = func() time.Time { return statusNow }
+	d.Vault = fixedVault{VaultStatus{State: "OFF", EngineID: testEngineID}}
+	d.EngineRecord, d.DirectServed = read, directServed
+	cmds, err := NewCommands("bot", "", "linux", []string{"--agent=bot", "--write=public.leads"})
+	require.NoError(t, err)
+	d.Commands = cmds
+	r, err := NewService(d).Status(context.Background())
+	require.NoError(t, err)
+	return r
+}
+
+func TestStatusEngineRecord(t *testing.T) {
+	t.Parallel()
+	statusTool, _ := mcpcontract.Find(mcpcontract.MustLoad(), toolStatus)
+	url := "https://engine.example.com"
+	recorded := statusNow.Add(-48 * time.Hour).Format(time.RFC3339)
+	revokedAt := statusNow.Add(-time.Hour).Format(time.RFC3339)
+	for name, tc := range map[string]struct {
+		read   EngineRecordReader
+		served bool
+		want   EngineRecordStatus
+		code   string
+	}{
+		"recorded and served":         {read: recordOf(url, false), served: true, want: EngineRecordStatus{State: engineRecorded, URL: url, RecordedAt: recorded}},
+		"recorded without an address": {read: recordOf("", false), want: EngineRecordStatus{State: engineRecorded, RecordedAt: recorded}},
+		"recorded, direct off":        {read: recordOf(url, false), want: EngineRecordStatus{State: engineRecorded, URL: url, RecordedAt: recorded}, code: problemDirectNotServed},
+		"revoked":                     {read: recordOf(url, true), served: true, want: EngineRecordStatus{State: engineRevoked, URL: url, RecordedAt: recorded, RevokedAt: revokedAt}, code: problemEngineRevoked},
+		"not recorded":                {read: notRecorded, want: EngineRecordStatus{State: engineNotRecorded}},
+		"unreadable (a guard before version 33)": {read: func(context.Context, string) (*guard.RecordedEngine, error) {
+			return nil, errors.New("relation does not exist")
+		}, want: EngineRecordStatus{State: engineUnknown}},
+		"no reader": {want: EngineRecordStatus{State: engineUnknown}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			r := engineRecordStatusOf(t, "", tc.read, tc.served)
+			require.Equal(t, &tc.want, r.EngineRecord)
+			requireStatusSchema(t, statusTool, r)
+			var codes []string
+			for _, p := range r.Problems {
+				codes = append(codes, p.Code)
+			}
+			if tc.code == "" {
+				require.Empty(t, codes)
+				return
+			}
+			require.Equal(t, []string{tc.code}, codes)
+			require.True(t, r.Ready, "both are warnings")
+		})
+	}
+
+	t.Run("the key file is refused", func(t *testing.T) {
+		t.Parallel()
+		d := deps()
+		d.Approvals = keys{n: 1}
+		d.Vault = fixedVault{VaultStatus{State: "KEY_ERROR"}}
+		d.EngineRecord = recordOf(url, true)
+		r, err := NewService(d).Status(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, &EngineRecordStatus{State: engineUnknown}, r.EngineRecord)
+		require.Empty(t, r.Problems)
+	})
+	t.Run("no vault reporter: left out", func(t *testing.T) {
+		t.Parallel()
+		d := deps()
+		d.Approvals = keys{n: 1}
+		r, err := NewService(d).Status(context.Background())
+		require.NoError(t, err)
+		require.Nil(t, r.EngineRecord)
+	})
+}
+
+// basalt status on an engine run in the foreground reads the record too:
+// the engine id from the running engine's key file, the record through the
+// agent's own database, with the same problems as the status tool.
+func TestLocalStatusEngineRecord(t *testing.T) {
+	t.Parallel()
+	url := "https://engine.example.com"
+	local := func(key *string, read EngineRecordReader, served bool) StatusReport {
+		t.Helper()
+		cmds, err := NewCommands("bot", "", "linux", []string{"--agent=bot", "--write=public.leads"})
+		require.NoError(t, err)
+		r, err := LocalStatus{
+			Name: "bot", Commands: cmds, EngineRunning: true, EngineKey: key, EngineRecord: read, DirectServed: served,
+			Probe:    &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)},
+			Passkeys: func(context.Context) ([]passkey.Credential, error) { return []passkey.Credential{{}}, nil },
+			Log:      slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
+		}.Report(context.Background())
+		require.NoError(t, err)
+		return r
+	}
+	id := testEngineID
+	r := local(&id, recordOf(url, false), false)
+	require.Equal(t, engineRecorded, r.EngineRecord.State)
+	require.Equal(t, url, r.EngineRecord.URL)
+	findProblem(t, r, problemDirectNotServed)
+
+	r = local(&id, recordOf(url, false), true)
+	require.Equal(t, engineRecorded, r.EngineRecord.State)
+	require.Empty(t, r.Problems)
+
+	r = local(&id, recordOf(url, true), true)
+	require.Equal(t, engineRevoked, r.EngineRecord.State)
+	findProblem(t, r, problemEngineRevoked)
+
+	refused := ""
+	r = local(&refused, recordOf(url, true), true)
+	require.Equal(t, &EngineRecordStatus{State: engineUnknown}, r.EngineRecord, "the key file is refused")
+	require.Empty(t, r.Problems)
+
+	require.Nil(t, local(nil, recordOf(url, true), false).EngineRecord, "an engine that is down has none")
+}
+
+// DIRECT_NOT_SERVED asks for init --remote with the address, which leaves
+// the saved direct-addr out so the flag is not given twice.
+func TestDirectNotServedStepsCommand(t *testing.T) {
+	t.Parallel()
+	r := engineRecordStatusOf(t, "", recordOf("https://engine.example.com", false), false)
+	p := findProblem(t, r, problemDirectNotServed)
+	require.Len(t, p.NextSteps, 1)
+	require.Contains(t, p.NextSteps[0].Command, "--direct-addr 127.0.0.1:8787")
+	require.Contains(t, p.NextSteps[0].Command, "init --remote")
+	require.Contains(t, p.PersonMessage, "restart the engine")
+}
+
+// notRecorded is a database that holds no row for the engine.
+func notRecorded(context.Context, string) (*guard.RecordedEngine, error) {
+	return nil, nil //nolint:nilnil // a missing row is the answer, not an error
 }

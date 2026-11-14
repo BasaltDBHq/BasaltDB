@@ -433,7 +433,7 @@ func printChecks(w io.Writer, tables []classify.ReviewTable, checks map[string]c
 			if !ok {
 				continue
 			}
-			line := fmt.Sprintf("  %s: %d sampled, %d do not round-trip", col.Column.FullName(), ck.Sampled, ck.RoundTripFailures)
+			line := fmt.Sprintf("  %s: %d sampled, %d do not round-trip", visibleText(col.Column.FullName()), ck.Sampled, ck.RoundTripFailures)
 			if ck.CommonWordRule > 0 {
 				line += fmt.Sprintf(" (%d single common words: the common-word rule)", ck.CommonWordRule)
 			}

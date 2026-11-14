@@ -43,14 +43,8 @@ type rootCredFiles struct {
 }
 
 // openRootCredFiles opens dir, the agents directory, as root, making it
-// (and the config directory) when missing. The trusted owner is the config
-// directory's, or, when it does not exist yet, that of the nearest
-// directory above it that does.
-func openRootCredFiles(dir string) (credFiles, error) {
-	trusted, err := existingOwner(filepath.Dir(dir))
-	if err != nil {
-		return nil, err
-	}
+// (and the config directory) when missing. trusted is rootTrustedOwner's.
+func openRootCredFiles(dir string, trusted int) (credFiles, error) {
 	d, err := service.OpenTrustedDir(dir, trusted, true)
 	if err != nil {
 		return nil, fmt.Errorf("the credential directory %s is refused: %w", dir, err)
@@ -62,6 +56,38 @@ func openRootCredFiles(dir string) (credFiles, error) {
 	}
 	return rootCredFiles{dir: d, owner: credentialOwner(dirUID), self: os.Geteuid()}, nil
 }
+
+// rootConfigDir is the config directory init --remote opened as root
+// (service.OpenTrustedDir, the trusted owner as openRootCredFiles): it
+// locks, reads and writes engine.json relative to it.
+type rootConfigDir struct {
+	dir     *service.TrustedDir
+	trusted int
+}
+
+// rootTrustedOwner is the owner root trusts on the way to the config
+// directory dir: dir's, or, when it does not exist yet, that of the
+// nearest directory above it that does. Read once, before either
+// directory is made.
+func rootTrustedOwner(dir string) (int, error) { return existingOwner(dir) }
+
+// openRootConfigDir opens dir, the config directory, as root, making it
+// when missing.
+func openRootConfigDir(dir string, trusted int) (*rootConfigDir, error) {
+	d, err := service.OpenTrustedDir(dir, trusted, true)
+	if err != nil {
+		return nil, fmt.Errorf("the config directory %s is refused: %w", dir, err)
+	}
+	return &rootConfigDir{dir: d, trusted: trusted}, nil
+}
+
+// upsert is config.UpsertAgentVault on the config file name, relative to
+// the opened directory, the file checked as the hardened read checks it.
+func (d *rootConfigDir) upsert(name string, s config.Settings, a config.Agent) (config.VaultWritten, error) {
+	return config.UpsertAgentVaultAt(d.dir, name, func(f *os.File) error { return checkConfigFile(f, d.trusted) }, s, a)
+}
+
+func (d *rootConfigDir) close() { _ = d.dir.Close() }
 
 // credentialOwner is who gets the credential files root writes in a
 // directory dirUID owns: that owner, never root (-1: keep root's).
@@ -117,17 +143,9 @@ func (r rootCredFiles) lock(path string) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	dirUID, err := r.dir.Owner()
-	if err != nil {
-		return nil, err
-	}
-	f, err := r.dir.OpenFile(name, os.O_RDWR|os.O_CREATE|syscall.O_NONBLOCK, config.FileMode)
-	if err != nil {
-		return nil, fmt.Errorf("lock %s: %w", path, err)
-	}
 	// A lock file root makes, or finds root's, goes to agents/' owner (the
 	// engine's user), as config.LockFile does, so the engine can open it.
-	unlock, err := config.LockOpenFile(f, dirUID)
+	unlock, err := config.LockAt(r.dir, name)
 	if errors.Is(err, config.ErrLocked) {
 		return nil, fmt.Errorf("another basalt init --remote is running for this agent, or the engine is finishing its setup (%s is locked); run it again in a moment", path)
 	}

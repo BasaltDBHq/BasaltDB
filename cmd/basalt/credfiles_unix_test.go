@@ -26,7 +26,7 @@ func TestCredentialOwner(t *testing.T) {
 func TestRootCredFilesReadsRootOrTheDirOwner(t *testing.T) {
 	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "agents")
-	files, err := openRootCredFiles(dir)
+	files, err := openRootCredFiles(dir, trustedOwnerOf(t, dir))
 	require.NoError(t, err)
 	defer files.close()
 	r, ok := files.(rootCredFiles)
@@ -52,7 +52,7 @@ func TestRootCredFilesReadsRootOrTheDirOwner(t *testing.T) {
 func TestRootCredFilesChecksTheOwnersCredential(t *testing.T) {
 	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "agents")
-	files, err := openRootCredFiles(dir)
+	files, err := openRootCredFiles(dir, trustedOwnerOf(t, dir))
 	require.NoError(t, err)
 	defer files.close()
 	r := files.(rootCredFiles)
@@ -108,7 +108,7 @@ func TestRootCredFilesWriteHandsOver(t *testing.T) {
 		t.Skip("root may give a file away")
 	}
 	dir := filepath.Join(t.TempDir(), "agents")
-	files, err := openRootCredFiles(dir)
+	files, err := openRootCredFiles(dir, trustedOwnerOf(t, dir))
 	require.NoError(t, err)
 	defer files.close()
 	r := files.(rootCredFiles)
@@ -126,7 +126,7 @@ func TestRootCredFilesHandsTheFilesToTheDirOwner(t *testing.T) {
 	t.Parallel()
 	dir := filepath.Join(t.TempDir(), "agents")
 	cred := filepath.Join(dir, "bot.url")
-	files, err := openRootCredFiles(dir)
+	files, err := openRootCredFiles(dir, trustedOwnerOf(t, dir))
 	require.NoError(t, err)
 	defer files.close()
 	owner := files.(rootCredFiles).owner
@@ -159,7 +159,7 @@ func TestRootCredFilesHandOverAsRoot(t *testing.T) {
 	dir := filepath.Join(base, "agents")
 	require.NoError(t, os.Mkdir(dir, 0o700))
 	require.NoError(t, os.Chown(dir, engineUID, -1))
-	files, err := openRootCredFiles(dir)
+	files, err := openRootCredFiles(dir, trustedOwnerOf(t, dir))
 	require.NoError(t, err)
 	defer files.close()
 	cred := filepath.Join(dir, "bot.url")
@@ -182,4 +182,40 @@ func requireOwner(t *testing.T, path string, uid int) {
 	st, ok := fi.Sys().(*syscall.Stat_t)
 	require.True(t, ok)
 	require.Equal(t, uint32(uid), st.Uid, path)
+}
+
+// trustedOwnerOf is rootTrustedOwner for the agents directory dir.
+func trustedOwnerOf(t *testing.T, dir string) int {
+	t.Helper()
+	owner, err := rootTrustedOwner(filepath.Dir(dir))
+	require.NoError(t, err)
+	return owner
+}
+
+// As root, init --remote writes engine.json through the config directory
+// it opened in paths: a config directory swapped for a symlink before the
+// write (the engine's user owning a directory above it) redirects nothing.
+func TestRootConfigDirWritesWhereItOpened(t *testing.T) {
+	t.Parallel()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	dir, elsewhere := filepath.Join(root, "basalt"), filepath.Join(root, "elsewhere")
+	require.NoError(t, os.Mkdir(elsewhere, 0o700))
+	trusted, err := rootTrustedOwner(dir)
+	require.NoError(t, err)
+	d, err := openRootConfigDir(dir, trusted)
+	require.NoError(t, err)
+	defer d.close()
+
+	require.NoError(t, os.Rename(dir, dir+".moved"))
+	require.NoError(t, os.Symlink(elsewhere, dir))
+	_, err = d.upsert("engine.json", config.Settings{SocketDir: "/run/basalt"}, config.Agent{Name: "bot", OSUser: "bot", CredentialFile: filepath.Join(dir, "agents", "bot.url")})
+	require.NoError(t, err)
+	entries, err := os.ReadDir(elsewhere)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+	require.FileExists(t, filepath.Join(dir+".moved", "engine.json"))
+
+	_, err = openRootConfigDir(dir, trusted)
+	require.ErrorContains(t, err, "a symlink is refused")
 }

@@ -293,10 +293,14 @@ type remoteInit struct {
 	credFile string
 	// files reads and writes credFile, its .pending and its .lock: by
 	// path, or as root through agents/ opened without following a link.
-	files  credFiles
-	osUser string
-	base   *url.URL
-	target setupcode.Target
+	files credFiles
+	// configDir is, as root, the config directory opened without following
+	// a link anyone but root controls: engine.json is locked, read and
+	// written relative to it (nil not as root: by path).
+	configDir *rootConfigDir
+	osUser    string
+	base      *url.URL
+	target    setupcode.Target
 	// password is the agent's password this machine holds for this
 	// database: the one that logs in, else the newest (.pending first);
 	// "" when it holds none.
@@ -330,6 +334,9 @@ func newRemoteInit(c *cliIO, f remoteFlags) (*remoteInit, error) {
 	r.unlock = func() {
 		unlock()
 		r.files.close()
+		if r.configDir != nil {
+			r.configDir.close()
+		}
 	}
 	if err := r.connection(); err != nil {
 		r.unlock()
@@ -415,11 +422,19 @@ func (r *remoteInit) paths() error {
 	}
 	r.files = pathCredFiles{}
 	if asRoot {
-		files, err := openRootCredFiles(filepath.Dir(r.credFile))
+		trusted, err := rootTrustedOwner(dir)
+		if err != nil {
+			return err
+		}
+		files, err := openRootCredFiles(filepath.Dir(r.credFile), trusted)
 		if err != nil {
 			return err
 		}
 		r.files = files
+		if r.configDir, err = openRootConfigDir(dir, trusted); err != nil {
+			files.close()
+			return err
+		}
 	}
 	return nil
 }
@@ -837,7 +852,8 @@ func (r *remoteInit) writeCredential(p plan) error {
 	if err != nil {
 		return err
 	}
-	dsn = hardenedCredential(r.c.ctx, probeLogin(r.c), dsn)
+	dsn, applied := hardenedCredential(r.c.ctx, r.c.probe, dsn)
+	fmt.Fprint(r.c.stderr, applied.line())
 	path := r.credFile
 	if r.credExists {
 		path += pendingSuffix
@@ -847,9 +863,16 @@ func (r *remoteInit) writeCredential(p plan) error {
 
 // writeConfig upserts the agent and prints the vault value it wrote.
 func (r *remoteInit) writeConfig(saved []string, s *config.Setup) error {
-	v, err := config.UpsertAgentVault(r.f.configPath, r.settings, config.Agent{
-		Name: r.f.agent, OSUser: r.osUser, CredentialFile: r.credFile, InitArgs: saved, Setup: s,
-	})
+	a := config.Agent{Name: r.f.agent, OSUser: r.osUser, CredentialFile: r.credFile, InitArgs: saved, Setup: s}
+	var v config.VaultWritten
+	var err error
+	if r.configDir != nil {
+		// As root, through the directory opened in paths: a config
+		// directory swapped for a symlink since then redirects nothing.
+		v, err = r.configDir.upsert(filepath.Base(r.f.configPath), r.settings, a)
+	} else {
+		v, err = config.UpsertAgentVault(r.f.configPath, r.settings, a)
+	}
 	if err != nil {
 		return err
 	}

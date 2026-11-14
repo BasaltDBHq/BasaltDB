@@ -60,6 +60,9 @@ type cliIO struct {
 	agentLogin func(ctx context.Context, dsn string) (agentConn, error)
 	// dial opens a database connection (connect outside tests).
 	dial func(ctx context.Context, dsn string) (*pgx.Conn, error)
+	// probe tries a login bound to fail, to confirm a credential's TLS
+	// protection (hardenedCredential); probeLogin outside tests.
+	probe func(ctx context.Context, dsn string) error
 	// engine tells service mode from same-user mode and finds the person
 	// socket (log, approve, revert); tests replace it.
 	engine engineAccess
@@ -74,6 +77,7 @@ func newIO(ctx context.Context, std stdio, getenv func(string) string) *cliIO {
 		engine:     osEngineAccess(runtime.GOOS),
 		width:      func() int { return terminalWidth(std.out) },
 	}
+	c.probe = probeLogin(c)
 	stdin := std.in
 	if f, ok := stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
 		c.terminal = f

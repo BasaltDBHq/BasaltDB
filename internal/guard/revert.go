@@ -118,11 +118,14 @@ func PreviewRevertPage(ctx context.Context, q Querier, s RevertScope, after stri
 		), pv_page AS MATERIALIZED (
 			SELECT n, hash, j FROM pv_all WHERE n > coalesce((SELECT n FROM pv_cur), 0) ORDER BY n LIMIT $6
 		), ` + largevalue.ElideLines(`SELECT n AS item, j AS line FROM pv_page`) + `
-		SELECT t.lines, t.restore, t.reverted, $5 = '' OR (SELECT n FROM pv_cur) IS NOT NULL, p.hash, l.line::text
+		SELECT t.lines, t.restore, t.reverted, $5 = '' OR (SELECT n FROM pv_cur) IS NOT NULL,
+			(SELECT count(a.n) FROM pv_all a WHERE a.n > coalesce((SELECT n FROM pv_cur), 0)) > $6, p.hash, l.line::text
 		FROM pv_tot t
 		LEFT JOIN (pv_page p JOIN lv_lines l ON l.item = p.n) ON true
 		ORDER BY p.n`
-	rows, err := q.Query(ctx, sql, append(args, after, limit+1)...)
+	// Only the page's lines are read; more is counted in Postgres, so a
+	// page at limit 1 holds one line.
+	rows, err := q.Query(ctx, sql, append(args, after, limit)...)
 	if err != nil {
 		return PreviewPage{}, err
 	}
@@ -130,7 +133,7 @@ func PreviewRevertPage(ctx context.Context, q Querier, s RevertScope, after stri
 	var out PreviewPage
 	for rows.Next() {
 		var hash, text *string
-		if err := rows.Scan(&out.Lines, &out.Restore, &out.AllAlreadyReverted, &out.CursorFound, &hash, &text); err != nil {
+		if err := rows.Scan(&out.Lines, &out.Restore, &out.AllAlreadyReverted, &out.CursorFound, &out.More, &hash, &text); err != nil {
 			return PreviewPage{}, err
 		}
 		if text != nil {
@@ -139,9 +142,6 @@ func PreviewRevertPage(ctx context.Context, q Querier, s RevertScope, after stri
 	}
 	if err := rows.Err(); err != nil {
 		return PreviewPage{}, err
-	}
-	if len(out.Page) > limit {
-		out.Page, out.More = out.Page[:limit], true
 	}
 	return out, nil
 }

@@ -100,14 +100,14 @@ func scanMarkedApproval(row pgx.CollectableRow) (Approval, error) {
 // markedApprovals reads a page of approvals with a statement or params
 // too large for the agent left out (CONTRACT.md, Large values: a held
 // write's statement, then its params).
-func markedApprovals(page string, desc bool) string {
+func markedApprovals(page string, desc bool, limit int) string {
 	order := colApprovalID
 	if desc {
 		order += descending
 	}
-	return markedPage(page, colApprovalID, order, "p.approval_id", "p.run_id", "p.task_id", "p.intent", markedStatement,
+	return markedPage(page, colApprovalID, order, limit, "p.approval_id", "p.run_id", "p.task_id", "p.intent", markedStatement,
 		markedParams, "p.assigned_columns", "p.rows", "p.status", "p.created_at", "p.expires_at", "p.approved_at",
-		"p.binding_text", "p.lines", markedLarge)
+		pageOnly("p.binding_text", "''"), pageOnly("p.lines", "'{}'::text[]"), markedLarge)
 }
 
 // FindApproval returns one of the calling agent's approvals.

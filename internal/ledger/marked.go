@@ -37,19 +37,32 @@ func headerImages(rel, id string) string {
 }
 
 // The statement and params of a markedPage row as an agent reads them, and
-// their largeValues.
+// their largeValues. The row past the limit, read only to tell that
+// another page follows, has no statement (no lv_head image) and no params.
 var (
 	markedStatement = `coalesce(st.img #>> '{}', '')`
-	markedParams    = `CASE WHEN pa.item IS NULL THEN p.params ELSE pa.img END`
+	markedParams    = `CASE WHEN p.lv_more THEN NULL WHEN pa.item IS NULL THEN p.params ELSE pa.img END`
 	markedLarge     = largevalue.Join("st.large_values", "pa.large_values")
 )
 
+// pageOnly is the SQL of expr for a page row, and empty for the row past
+// the limit (markedPage's lv_more): that row only tells that another page
+// follows, and its values are never read (CONTRACT.md, Large values: a page
+// at limit 1 holds one item).
+func pageOnly(expr, empty string) string {
+	return fmt.Sprintf("CASE WHEN p.lv_more THEN %s ELSE %s END", empty, expr)
+}
+
 // markedPage reads the rows page selects (each with id, statement and
-// params) as cols, in order, with the statement and params of each elided
-// as one item (markedStatement, markedParams, markedLarge).
-func markedPage(page, id, order string, cols ...string) string {
+// params; at most limit and one more, in order) as cols, in order, with
+// the statement and params of each elided as one item (markedStatement,
+// markedParams, markedLarge). The row past limit has lv_more set and none
+// of its values elided or read.
+func markedPage(page, id, order string, limit int, cols ...string) string {
 	// Plain SQL: a recursive CTE over the page (largevalue.Elide).
-	return largevalue.With + `lv_page AS MATERIALIZED (` + page + `), lv_head AS MATERIALIZED (` + headerImages("lv_page", id) + `), ` +
+	return largevalue.With + `lv_page AS MATERIALIZED (SELECT x.*, row_number() OVER (ORDER BY ` + order + `) > ` +
+		fmt.Sprint(limit) + ` AS lv_more FROM (` + page + `) x), lv_head AS MATERIALIZED (` +
+		headerImages("(SELECT * FROM lv_page WHERE NOT lv_more) h", id) + `), ` +
 		largevalue.Elide(`SELECT * FROM lv_head`) + fmt.Sprintf(`
 		SELECT %[1]s FROM lv_page p
 		LEFT JOIN lv_out st ON st.item = p.%[2]s AND st.ord = %[3]d
@@ -69,7 +82,7 @@ func ListChangesMarked(ctx context.Context, q guard.Querier, p ChangeListParams)
 	if desc {
 		order += descending
 	}
-	sql := markedPage(page, colChangeID, order, "p.change_id", "p.at", "p.agent", "p.run_id", "p.task_id", "p.intent", "p.op",
+	sql := markedPage(page, colChangeID, order, p.Limit, "p.change_id", "p.at", "p.agent", "p.run_id", "p.task_id", "p.intent", "p.op",
 		"p.table_name", markedStatement, markedParams, "p.rows", "p.cascaded_rows", "p.duration_ms", "p.status", "p.code",
 		"p.reason", "p.actor_kind", "p.revert_id", "p.reverted_by", markedLarge)
 	return collectChanges(ctx, q, p, sql, args, func(row pgx.CollectableRow, c *Change) error {

@@ -21,7 +21,7 @@
 // the session stays open; later requests carry the new secret.
 
 import { PORTAL } from "./codec.js";
-import { directTransport } from "./direct.js";
+import { directTransport, policyAllows } from "./direct.js";
 import { pinStore } from "./pins.js";
 
 export const SAME_ORIGIN = "SAME_ORIGIN";
@@ -92,6 +92,12 @@ function reloadOnce(loc, storage) {
   return true;
 }
 
+// pagePolicy is the page's own meta CSP, which the portal's edge function
+// rewrites together with the header: what this page load may connect to.
+function pagePolicy() {
+  return globalThis.document?.querySelector('meta[http-equiv="Content-Security-Policy"]')?.getAttribute("content") ?? "";
+}
+
 // pageTransport is the transport the approval and revert pages use: on the
 // portal, DIRECT over this device's pinned engines (the relay transport
 // comes with its own ticket); on the engine's own local pages, the same
@@ -103,6 +109,7 @@ export function pageTransport(loc = globalThis.window?.location) {
     store: pinStore(),
     fetchFn: browserFetch,
     socket: browserSocket,
+    cspAllows: (addresses) => policyAllows(pagePolicy(), addresses),
     onStaleCookie: () => reloadOnce(loc, tab),
     onOpened: () => {
       try {

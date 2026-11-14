@@ -52,6 +52,23 @@ export async function probe(fetchFn, address, ms = PROBE_MS) {
   }
 }
 
+// connectSources are the sources of the connect-src directive in a CSP
+// text, or null when it has none.
+export function connectSources(policy) {
+  for (const d of String(policy ?? "").split(";")) {
+    const parts = d.trim().split(/\s+/);
+    if (parts[0] === "connect-src") return parts.slice(1);
+  }
+  return null;
+}
+
+// policyAllows reports whether a CSP text lets the page reach every
+// address: its https origin (the probe) and its wss origin (the session).
+export function policyAllows(policy, addresses) {
+  const sources = new Set(connectSources(policy) ?? []);
+  return addresses.every((a) => sources.has(a) && sources.has(socketOrigin(a)));
+}
+
 // checkEngineAnswer checks a probe's answer (direct-engine.schema.json):
 // exactly engineKey and engineId, the key a P-256 SPKI, and the id that
 // key's id. It resolves with { engineKey, engineId, fingerprint }, or null
@@ -159,18 +176,29 @@ class DirectSession {
 // pins, the page's CSP was built without them: open rewrites the cookie and
 // calls onStaleCookie, which reloads the page (true) or lets it go on.
 // onOpened runs once a session opened.
-export function directTransport({ store, fetchFn, socket, probeMs = PROBE_MS, onStaleCookie = () => false, onOpened = () => {}, open = openChannel }) {
+export function directTransport({
+  store,
+  fetchFn,
+  socket,
+  probeMs = PROBE_MS,
+  cspAllows = () => true,
+  onStaleCookie = () => false,
+  onOpened = () => {},
+  open = openChannel,
+}) {
   const connect = (pin, secret) => open(() => socket(`${socketOrigin(pin.address)}/v1/session`), { transport: DIRECT, secret, expectEngineId: pin.engineId });
 
   return {
     kind: DIRECT,
     async open(link) {
-      if (!store.inCookie()) {
+      const pins = byLastUse(store.list());
+      // The edge function built this page's policy from the cookie it
+      // received; when that policy does not list every pin (a stale cookie,
+      // or one the browser did not send), rewrite it and reload once.
+      if (!store.inCookie() || !cspAllows(pins.map((p) => p.address))) {
         store.syncCookie();
-        // The page reloads with a CSP that lists the pins.
         if (onStaleCookie()) return new Promise(() => {});
       }
-      const pins = byLastUse(store.list());
       const outcomes = [];
       for (const pin of pins) {
         const answer = await probe(fetchFn, pin.address, probeMs);

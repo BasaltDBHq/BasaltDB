@@ -504,7 +504,8 @@ export async function openChannel(connect, { transport, secret, expectEngineId =
     const e = err instanceof ChannelError ? err : new ChannelError("HANDSHAKE_FAILED");
     reader.fail(e);
     // The page closes with HANDSHAKE_FAILED for anything wrong in message 2
-    // (a different key included) and leaves a socket the other side closed.
+    // (a different key included); closing a socket that already ended does
+    // nothing.
     if (reader.ended === e) closeSocket(ws, e.code === "TIMEOUT" ? CLOSE.TIMEOUT : CLOSE.HANDSHAKE_FAILED);
     throw e;
   }
@@ -594,7 +595,12 @@ export class Session {
 
   async exchange(method, path, headers, body) {
     if (this.reader.ended !== null) throw this.reader.ended;
-    if (this.nextId >= MAX_REQUESTS) throw new ChannelError("RATE_LIMITED");
+    // The engine allows 64 requests per session: end this one normally,
+    // so the transport opens a new session for the next request.
+    if (this.nextId >= MAX_REQUESTS) {
+      this.close();
+      throw this.reader.ended;
+    }
     const id = ++this.nextId;
     try {
       const pieces = splitBody(body ?? "");
@@ -617,13 +623,15 @@ export class Session {
     const first = frameContent(await openFrame(this.keys, await this.reader.next(RESPONSE_MS)));
     checkResponse(first, id);
     let body = first.body;
-    if (body.length > RESPONSE_MAX) throw new ChannelError("TOO_LARGE");
+    let bytes = utf8(first.body).length;
+    if (bytes > RESPONSE_MAX) throw new ChannelError("TOO_LARGE");
     let more = first.more;
     while (more) {
       const next = frameContent(await openFrame(this.keys, await this.reader.next(RESPONSE_MS)));
       checkContinue(next, id);
       body += next.body;
-      if (body.length > RESPONSE_MAX) throw new ChannelError("TOO_LARGE");
+      bytes += utf8(next.body).length;
+      if (bytes > RESPONSE_MAX) throw new ChannelError("TOO_LARGE");
       more = next.more;
     }
     return { status: first.status, headers: { ...first.headers }, body };

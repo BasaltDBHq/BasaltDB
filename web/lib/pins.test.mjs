@@ -47,13 +47,13 @@ test("byLastUse puts the pin that last opened a session first", () => {
   assert.deepEqual(byLastUse([a, b, c]).map((p) => p.address), ["https://b.example.com", "https://c.example.com", "https://a.example.com"]);
 });
 
-test("the cookie is __Host-, Secure, Path=/, SameSite=Strict, with no Domain", () => {
+test("the cookie is __Host-, Secure, Path=/, SameSite=Lax, with no Domain", () => {
   const pins = addPin(addPin([], fields("https://a.example.com"), NOW), fields("https://b.example.com:8443"), NOW);
   const c = pinsCookie(pins);
   assert.match(c, /^__Host-basalt-engines=https:\/\/a\.example\.com\|https:\/\/b\.example\.com:8443; /);
-  assert.match(c, /; Path=\/; Secure; SameSite=Strict; Max-Age=34560000$/);
+  assert.match(c, /; Path=\/; Secure; SameSite=Lax; Max-Age=34560000$/);
   assert.doesNotMatch(c, /Domain/i);
-  assert.match(pinsCookie([]), /^__Host-basalt-engines=; Path=\/; Secure; SameSite=Strict; Max-Age=0$/);
+  assert.match(pinsCookie([]), /^__Host-basalt-engines=; Path=\/; Secure; SameSite=Lax; Max-Age=0$/);
 });
 
 test("cookieIn reads only the pins cookie", () => {

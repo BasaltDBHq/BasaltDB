@@ -215,3 +215,16 @@ test("other paths pass through untouched, and a missing page keeps the default",
   const missing = await handle(request(`/approvals/${ID}/extra`, "https://a.example.com"), next);
   assert.equal(missing.headers.get("Vary"), null, "not a page path");
 });
+
+test("the asset's own answer is never changed in place", async () => {
+  for (const cookie of ["https://a.example.com", null]) {
+    const cached = new Response(APPROVE_HTML, { status: 200, headers: { ...DEFAULT_HEADERS, "Content-Type": "text/html", Vary: "Accept-Encoding" } });
+    const res = await handle(request(`/approvals/${ID}`, cookie), async () => cached);
+    assert.notEqual(res, cached);
+    assert.notEqual(res.headers, cached.headers);
+    assert.equal(cached.headers.get("Content-Security-Policy"), DEFAULT_CSP);
+    assert.equal(cached.headers.get("Cache-Control"), null);
+    assert.equal(cached.headers.get("Vary"), "Accept-Encoding");
+    assert.equal(res.headers.get("Vary"), "Accept-Encoding, Cookie", "Vary keeps what the asset varies on");
+  }
+});

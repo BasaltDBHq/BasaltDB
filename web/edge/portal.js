@@ -109,7 +109,11 @@ export function rewriteMeta(html, sources) {
 function personal(headers) {
   for (const [k, v] of Object.entries(DEFAULT_HEADERS)) headers.set(k, v);
   headers.set("Cache-Control", "no-store");
-  headers.set("Vary", "Cookie");
+  const vary = (headers.get("Vary") ?? "")
+    .split(",")
+    .map((v) => v.trim())
+    .filter((v) => v !== "" && v.toLowerCase() !== "cookie");
+  headers.set("Vary", [...vary, "Cookie"].join(", "));
 }
 
 // handle answers one request: next(request) fetches the static asset.

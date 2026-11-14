@@ -120,11 +120,14 @@ export function cookieValue(pins) {
 // pinsCookie is the document.cookie assignment that stores pins' addresses,
 // or deletes the cookie when there are none. __Host- makes the browser
 // refuse it unless it is Secure, Path=/ and without Domain, so no other
-// basaltvault.app host can set it.
+// basaltvault.app host can set it. SameSite=Lax, not Strict: a link the
+// person clicks in a web chat is a cross-site navigation, and the edge
+// function must see the cookie on it. The cookie carries no authority; it
+// only lets the person's own page connect to their own engines.
 export function pinsCookie(pins) {
   const value = cookieValue(pins);
   const age = value === "" ? 0 : COOKIE_MAX_AGE;
-  return `${PINS_COOKIE}=${value}; Path=/; Secure; SameSite=Strict; Max-Age=${age}`;
+  return `${PINS_COOKIE}=${value}; Path=/; Secure; SameSite=Lax; Max-Age=${age}`;
 }
 
 // cookieIn is the cookie's value in a document.cookie string, or "".

@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ChannelError } from "./channel.js";
-import { directTransport, failure } from "./direct.js";
+import { directTransport, failure, policyAllows } from "./direct.js";
 import { RelayError } from "./local.js";
 
 const KEY_A = "A".repeat(122);
@@ -213,4 +213,33 @@ test("a session that cannot reopen because the link is gone is a final answer", 
   const session = await t.open({ page: "approvals", id: "x", secret: SECRET });
   first.ended = new ChannelError("TIMEOUT");
   await assert.rejects(session.request("GET", "/api/v1/approvals/x", { "basalt-link-secret": SECRET }), (e) => e instanceof RelayError && e.code === "NOT_FOUND");
+});
+
+test("a page whose policy does not list the pins rewrites the cookie and reloads, even when the cookie looks right", async () => {
+  const store = fakeStore([pin("https://a.example.com", KEY_A, ID_A)], true);
+  const net = fakeNet({ "https://a.example.com": KEY_A });
+  const { open } = fakeOpen([fakeChannel()]);
+  let reloads = 0;
+  const policy = "default-src 'none'; connect-src 'self'; base-uri 'none'";
+  const t = directTransport({
+    store,
+    fetchFn: net.fetchFn,
+    socket: net.socket,
+    open,
+    cspAllows: (a) => policyAllows(policy, a),
+    onStaleCookie: () => ++reloads > 0,
+  });
+  void t.open({ page: "approvals", id: "x", secret: SECRET });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.equal(store.synced, 1);
+  assert.equal(reloads, 1);
+  assert.equal(net.probes.length, 0);
+});
+
+test("policyAllows needs both the https and the wss origin of every pin", () => {
+  const p = "default-src 'none'; connect-src 'self' https://a.example.com wss://a.example.com https://b.example.com; base-uri 'none'";
+  assert.equal(policyAllows(p, ["https://a.example.com"]), true);
+  assert.equal(policyAllows(p, ["https://a.example.com", "https://b.example.com"]), false);
+  assert.equal(policyAllows("default-src 'self'", ["https://a.example.com"]), false);
+  assert.equal(policyAllows(p, []), true);
 });

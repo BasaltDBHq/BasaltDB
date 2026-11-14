@@ -186,6 +186,34 @@
           }
         }
       },
+      "engineRecord": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["state"],
+        "description": "Planned (M4.1). CONTRACT.md, Direct transport and Version 33: this engine's key as the agent's database records it. Absent when the engine is down.",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": ["RECORDED", "NOT_RECORDED", "REVOKED", "UNKNOWN"],
+            "description": "RECORDED: the agent's database records this engine's key and has not revoked it. NOT_RECORDED: it does not record it (no setup code carried it, or the key was rotated since). REVOKED: the person revoked it; the engine hands over long links for this agent and refuses its portal sessions. UNKNOWN: the guard is older than version 33, the key file is refused, or the record could not be read."
+          },
+          "url": {
+            "type": "string",
+            "pattern": "^https://([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?(:[1-9][0-9]{0,4})?$",
+            "description": "The engine address recorded with the key, when there is one."
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the key was recorded (RECORDED, REVOKED)."
+          },
+          "revokedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the person revoked it (REVOKED)."
+          }
+        }
+      },
       "problems": {
         "type": "array",
         "description": "Empty when everything is ready. Errors first.",
@@ -208,9 +236,12 @@
                 "SETUP_NOT_RUN",
                 "SETUP_EXPIRED",
                 "SETUP_CHANGE_PENDING",
-                "DEV_LOCAL_PAGES"
+                "DEV_LOCAL_PAGES",
+                "ENGINE_REVOKED",
+                "DIRECT_NOT_SERVED",
+                "LOCK_FILE_UNUSABLE"
               ],
-              "description": "DEV_LOCAL_PAGES (CONTRACT.md, Page origins): the engine.json devLocalPages development exception is on, so the pages are on the agent's machine."
+              "description": "DEV_LOCAL_PAGES (CONTRACT.md, Page origins): the engine.json devLocalPages development exception is on, so the pages are on the agent's machine. ENGINE_REVOKED (planned, M4.1; CONTRACT.md, Direct transport): the agent's database revoked this engine's key. DIRECT_NOT_SERVED (planned, M4.1): the agent's database records an address for this engine, but directAddr is off, so a tunnel has nothing to forward to. LOCK_FILE_UNUSABLE is Planned (CONTRACT.md, On the engine, Lock files): the engine cannot open engine.json.lock or the agent's credential lock, so a finished setup is not written back."
             },
             "severity": {
               "type": "string",

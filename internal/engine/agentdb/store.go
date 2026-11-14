@@ -36,12 +36,15 @@ type Store struct {
 // handle is applied or returned (fail closed).
 type ReturnedFunc func(ctx context.Context, tx pgx.Tx, cols []Column, rows []map[string]any) error
 
-// NewStore returns a store on db. It panics on a nil db or clock.
+// NewStore returns a store on db. Every transaction it begins is pinned
+// (guard.PinSession), so the row images the guard stores, the lines a
+// person signs and a revert's conflict check do not depend on the
+// session's TimeZone or styles. It panics on a nil db or clock.
 func NewStore(db DB, limits sqlguard.Limits, now func() time.Time) *Store {
 	if db == nil || now == nil {
 		panic("agentdb: db and clock required")
 	}
-	return &Store{db: db, limits: limits, now: now, returned: noReturned}
+	return &Store{db: guard.Pinned(db), limits: limits, now: now, returned: noReturned}
 }
 
 func noReturned(context.Context, pgx.Tx, []Column, []map[string]any) error { return nil }

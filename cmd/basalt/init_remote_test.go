@@ -19,6 +19,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
@@ -50,8 +51,19 @@ type remoteRun struct {
 // (its role does not exist yet), so tests without Postgres reach no network.
 func refusedLogin(context.Context, string) (agentConn, error) { return nil, errLoginRefused }
 
+// noNetworkProbe stands in for the TLS probe of a new credential
+// (hardenedCredential): a database that cannot be reached, so tests without
+// Postgres never dial the example hosts (Supabase's pooler among them).
+func noNetworkProbe(context.Context, string) error { return context.DeadlineExceeded }
+
 // cliNoDB runs basalt init with every agent login refused.
 func cliNoDB(t *testing.T, args ...string) result {
+	t.Helper()
+	return cliNoDBProbe(t, noNetworkProbe, args...)
+}
+
+// cliNoDBProbe is cliNoDB with probe answering the TLS probes.
+func cliNoDBProbe(t *testing.T, probe func(context.Context, string) error, args ...string) result {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr},
@@ -62,6 +74,7 @@ func cliNoDB(t *testing.T, args ...string) result {
 			return ""
 		})
 	c.agentLogin = refusedLogin
+	c.probe = probe
 	c.host = systemSocketHost(t)
 	code := runInit(c, args[1:])
 	return result{code, stdout.String(), stderr.String()}
@@ -271,6 +284,34 @@ func requireSetupGuidance(t *testing.T, res RemoteInitResult) {
 	require.Equal(t, want, got, "P RUN_COMMAND, P TELL_AGENT, A END_TURN, A CALL_TOOL status")
 	require.Equal(t, "basalt init --setup-code "+res.Code, res.NextSteps[0].Command)
 	require.Equal(t, "status", res.NextSteps[3].Tool)
+}
+
+// A new credential keeps the strongest TLS protection the probe confirms,
+// and init says which in one line: through Supabase's pooler, which
+// answers before any SASL message, a verified certificate without channel
+// binding.
+func TestInitRemoteHardensTheCredentialThroughThePooler(t *testing.T) {
+	t.Parallel()
+	cfg := tempConfig(t)
+	var probed []string
+	probe := func(_ context.Context, dsn string) error {
+		u, err := url.Parse(dsn)
+		require.NoError(t, err)
+		probed = append(probed, u.Query().Get(paramSSLMode)+"/"+u.Query().Get(paramChannelBinding))
+		return &pgconn.PgError{Code: sqlstateInternal, Message: supavisorNoTenant}
+	}
+	run := func(t *testing.T, args ...string) result { t.Helper(); return cliNoDBProbe(t, probe, args...) }
+	r := remoteWith(t, run, cfg, "--agent", "bot", "--write", "public.leads", "--database-url", supabaseURL)
+	require.Equal(t, []string{"verify-full/require", "verify-full/"}, probed)
+	raw, err := os.ReadFile(r.credFile)
+	require.NoError(t, err)
+	u, err := url.Parse(strings.TrimSpace(string(raw)))
+	require.NoError(t, err)
+	require.Equal(t, sslVerifyFull, u.Query().Get(paramSSLMode))
+	require.Empty(t, u.Query().Get(paramChannelBinding))
+	const line = "basalt: connection protected: database identity verified (channel binding not available through the Supabase pooler)\n"
+	require.Equal(t, 1, strings.Count(r.stderr, line), r.stderr)
+	requireNoSecret(t, r, cfg, credentialPassword(t, r.credFile))
 }
 
 func TestInitRemoteCredentialDropsTheURLsLoginParams(t *testing.T) {

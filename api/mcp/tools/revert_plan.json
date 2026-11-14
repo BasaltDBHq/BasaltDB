@@ -284,6 +284,11 @@
               "$ref": "../values/large-value.schema.json"
             },
             "description": "Planned (result budget, CONTRACT.md Large values): the values (key, now, set) of this line left out because they are too large for you to read, each with its size and sha256; absent when none was. A value left out is absent from its object, never null: it is stored in full and a revert restores it from the stored row. An image with largeValues is not the whole row: never rebuild a row or a write from it."
+          },
+          "moreChangeIds": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Planned (result budget, CONTRACT.md Large values): changeIds holds at most the first 100 changes that touched this row; this counts the rest. Absent when none was left out."
           }
         }
       }

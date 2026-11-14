@@ -113,9 +113,10 @@ func TestUserConfigDirIn(t *testing.T) {
 }
 
 // With XDG_CONFIG_HOME set, the directory init uses (os.UserConfigDir) and the
-// one engine --user looks in are the same, off macOS; a relative value is
-// ignored by both, and macOS ignores the variable.
-func TestUserConfigDirInHonoursXDGLikeInit(t *testing.T) {
+// one engine --user looks in are the same, off macOS. A relative value is
+// refused by init (os.UserConfigDir errors) and engine --user falls back to
+// the home; macOS ignores the variable.
+func TestUserConfigDirInHonorsXDGLikeInit(t *testing.T) {
 	t.Parallel()
 	got, err := userConfigDirIn("linux", "/home/bot", "/srv/cfg")
 	require.NoError(t, err)

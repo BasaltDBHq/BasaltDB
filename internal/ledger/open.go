@@ -26,7 +26,7 @@ type openList[T any] struct {
 	id       func(T) uuid.UUID
 	// wrap, when set, is the statement that reads the page whose SQL it
 	// is given, in the same order (desc: newest first).
-	wrap func(page string, desc bool) string
+	wrap func(page string, desc bool, limit int) string
 }
 
 // page returns one page of l with status ("" for every open status).
@@ -55,7 +55,7 @@ func (l openList[T]) page(ctx context.Context, q guard.Querier, p pagination.Par
 		return pagination.Page[T]{}, err
 	}
 	if l.wrap != nil {
-		sql = l.wrap(sql, sort.Desc)
+		sql = l.wrap(sql, sort.Desc, p.Limit)
 	}
 	rows, err := q.Query(ctx, sql, args...)
 	if err != nil {

@@ -14,6 +14,7 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 	"github.com/basaltdbhq/basaltdb/pkg/uniqueid"
@@ -325,11 +326,19 @@ var rowTooLargeTools = map[string]bool{toolQuery: true, toolWrite: true}
 // refuses (CONTRACT.md, QUERY_TIMEOUT ROW_TOO_LARGE); any other tool's
 // read too large for the budget is SIZE_LIMIT.
 func rowTooLargeFor(tool string, te *mcp.ToolError) *mcp.ToolError {
-	if te.Code != CodeQueryTimeout || te.Reason != ReasonRowTooLarge || rowTooLargeTools[tool] {
-		return te
+	if te.Code == CodeQueryTimeout && te.Reason == ReasonRowTooLarge && !rowTooLargeTools[tool] {
+		te = sizeLimitError()
 	}
-	return sizeLimitError()
+	if te.Code == CodeQueryTimeout && te.Reason == ReasonSizeLimit && pagedTools[tool] {
+		// A paged tool's message names its step, not the columns of a query.
+		te.Message = resultsize.ErrSizeLimit.Error() + "; call it again with a smaller limit, down to 1"
+	}
+	return te
 }
+
+// pagedTools page ledger items with limit: a smaller limit ends a
+// SIZE_LIMIT (CONTRACT.md, Large values).
+var pagedTools = map[string]bool{toolRunHistory: true, toolListPending: true, toolPreviewRevert: true, toolRevertPlan: true}
 
 // sizeLimitText is what the agent revises after SIZE_LIMIT, by tool
 // (CONTRACT.md, Next steps per code): a smaller page for the paged tools, a

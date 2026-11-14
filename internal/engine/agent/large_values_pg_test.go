@@ -330,3 +330,38 @@ func TestWriteReturningOneRowTooLarge(t *testing.T) {
 	require.NoError(t, d.Admin.QueryRow(context.Background(), `SELECT body FROM public.docs WHERE id = 2`).Scan(&v))
 	require.Equal(t, "two", v, "the write was rolled back")
 }
+
+// TestALimitOfOneReadsOneItemOnly: two lines in a row whose images are each
+// just under 8 MiB page at limit 1. The line past the limit only tells that
+// another page follows: its values are never read, so the page fits.
+func TestALimitOfOneReadsOneItemOnly(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t)
+	cols := make([]string, 0, 8)
+	sets := make([]string, 0, 8)
+	for i := range 8 {
+		cols = append(cols, fmt.Sprintf("c%d text", i))
+		sets = append(sets, fmt.Sprintf("c%d = repeat('x', 1040000)", i))
+	}
+	d.Exec(t, `CREATE TABLE public.big (id int PRIMARY KEY, `+strings.Join(cols, ", ")+`);
+		INSERT INTO public.big (id) VALUES (1), (2)`)
+	tables := []string{"public.big"}
+	e := agentHarnessFor(t, d, d.NewAgent(t, "bot", tables, tables))
+	ctx := context.Background()
+	in := guard.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Fill"}
+	require.NoError(t, guard.StartRun(ctx, e.a.Conn, in))
+	require.NoError(t, guardtest.Guarded(ctx, e.a.Conn, in, `UPDATE public.big SET `+strings.Join(sets, ", ")))
+
+	args := map[string]any{"runId": in.RunID.String(), "limit": 1}
+	n := 0
+	for {
+		page := callFits(t, e.h, "preview_revert", args)
+		n += len(items(t, page))
+		next, ok := page["nextCursor"].(string)
+		if !ok {
+			break
+		}
+		args["cursor"] = next
+	}
+	require.Equal(t, 2, n)
+}

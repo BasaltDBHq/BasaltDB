@@ -105,3 +105,28 @@ func RecordEngineStatement(publicKey []byte, url *string) Statement {
 func RevokeEngineStatement(engineID string) Statement {
 	return Statement{SQL: fmt.Sprintf("\nSELECT basalt_meta.revoke_engine(%s::text);", quoteLiteral(engineID))}
 }
+
+// EngineRecord is engineID's row in basalt_meta.agent_engines, read with an
+// agent's connection: nil when the database does not record it.
+func EngineRecord(ctx context.Context, q Querier, engineID string) (*RecordedEngine, error) {
+	sql, args, err := psql.Select("engine_id", "public_key", "url", "recorded_at", "revoked_at").
+		From("basalt_meta.agent_engines").
+		Where(sq.Eq{"engine_id": engineID}).
+		ToSql()
+	if err != nil {
+		return nil, err
+	}
+	rows, err := q.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (RecordedEngine, error) {
+		var e RecordedEngine
+		err := row.Scan(&e.ID, &e.PublicKey, &e.URL, &e.RecordedAt, &e.RevokedAt)
+		return e, err
+	})
+	if err != nil || len(out) == 0 {
+		return nil, err
+	}
+	return &out[0], nil
+}

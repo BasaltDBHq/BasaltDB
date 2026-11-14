@@ -64,10 +64,17 @@ type handlers struct {
 func (h handlers) wrap(tool string, call func(context.Context, json.RawMessage) (any, error)) func(context.Context, json.RawMessage) (any, error) {
 	return func(ctx context.Context, args json.RawMessage) (any, error) {
 		out, err := h.admitted(ctx, tool, args, call)
-		if err == nil {
+		switch {
+		case err == nil && h.svc.DevLocalPages:
+			return devLocalResult(out)
+		case err == nil:
 			return out, nil
 		}
-		return nil, h.svc.Failure(tool, callArgs(args), err)
+		te := h.svc.Failure(tool, callArgs(args), err)
+		if h.svc.DevLocalPages {
+			return nil, devLocalError(te)
+		}
+		return nil, te
 	}
 }
 

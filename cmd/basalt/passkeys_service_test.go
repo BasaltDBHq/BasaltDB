@@ -28,7 +28,7 @@ func (l passkeyLedger) ListPasskeys(context.Context) ([]ledger.Passkey, error) {
 // revert do.
 func TestServiceModePasskeyListAndCheckUseThePersonSocket(t *testing.T) {
 	t.Parallel()
-	a, err := passkeytest.New(passkey.Relying{RPID: "console.basaltvault.app", Origin: links.HostedConsole})
+	a, err := passkeytest.New(passkey.Relying{RPID: "portal.basaltvault.app", Origin: links.Portal})
 	require.NoError(t, err)
 	key := ledger.Passkey{Credential: a.Credential(), Label: "laptop", CreatedAt: time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC)}
 	socket := personSocketFor(t, personUIDForTest, passkeyLedger{keys: []ledger.Passkey{key}})
@@ -41,9 +41,9 @@ func TestServiceModePasskeyListAndCheckUseThePersonSocket(t *testing.T) {
 
 	// check lists the passkeys over the socket and prints the check link;
 	// no code is pasted here.
-	r = serviceRun(t, socket, runPasskey, "check", "--agent", "bot", "--pages-url", links.HostedConsole)
+	r = serviceRun(t, socket, runPasskey, "check", "--agent", "bot", "--pages-url", links.Portal)
 	require.Equal(t, exitError, r.code)
-	require.Contains(t, r.stderr, links.HostedConsole+"/passkeys/check#1.")
+	require.Contains(t, r.stderr, links.Portal+"/passkeys/check#1.")
 	require.Contains(t, r.stderr, "no check code given")
 	require.NotContains(t, r.stderr, "engine.json")
 }

@@ -142,7 +142,7 @@ func TestRootCLIConfigReadsDoNotFollowLinksOrBlockOnAFIFO(t *testing.T) {
 	fifo := filepath.Join(dir, "fifo.json")
 	require.NoError(t, syscall.Mkfifo(fifo, 0o600))
 	hosted := filepath.Join(t.TempDir(), "hosted.json")
-	require.NoError(t, os.WriteFile(hosted, []byte(`{"socketDir": "/s", "pagesUrl": "https://console.basaltvault.app",
+	require.NoError(t, os.WriteFile(hosted, []byte(`{"socketDir": "/s", "pagesUrl": "https://portal.basaltvault.app",
 		"agents": [{"name": "bot", "osUser": "u", "credentialFile": "/c"}]}`), 0o600))
 	link := filepath.Join(dir, "link.json")
 	require.NoError(t, os.Symlink(hosted, link))
@@ -184,8 +184,8 @@ func TestRootCLIConfigReadsDoNotFollowLinksOrBlockOnAFIFO(t *testing.T) {
 	raw, err := os.ReadFile(hosted)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(plain, raw, 0o600))
-	require.Equal(t, links.HostedConsole, configuredBase(f.c, "", "bot", plain), "the hardened read still reads a plain config")
+	require.Equal(t, links.Portal, configuredBase(f.c, "", "bot", plain), "the hardened read still reads a plain config")
 
 	user := &cliIO{host: newFakeHost(t), getenv: func(string) string { return "" }}
-	require.Equal(t, links.HostedConsole, configuredBase(user, "", "bot", link), "not as root: the plain read follows the link")
+	require.Equal(t, links.Portal, configuredBase(user, "", "bot", link), "not as root: the plain read follows the link")
 }

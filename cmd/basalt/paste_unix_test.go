@@ -321,7 +321,7 @@ func TestPasskeyCheckPromptTakesALongCode(t *testing.T) {
 		_, _ = io.WriteString(term.master, "n\n") // keep the phone's passkey
 	}()
 	exit, _ := inTime(t, func() (int, error) {
-		return runPasskey(c, []string{"check", "--credential-file", credFile, "--pages-url", links.HostedConsole}), nil
+		return runPasskey(c, []string{"check", "--credential-file", credFile, "--pages-url", links.Portal}), nil
 	})
 	require.Equal(t, exitOK, exit, stderr.String())
 	require.Contains(t, stderr.String(), "Paste the code the page showed: ")

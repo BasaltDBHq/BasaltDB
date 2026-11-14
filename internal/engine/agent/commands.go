@@ -48,8 +48,12 @@ const (
 var savedInitFlags = map[string]bool{
 	flagAgent: true, flagWrite: true, flagRead: true, "prefix": true, "statement-timeout": true,
 	"socket-dir": true, "os-user": true, "engine-user": true, "credential-file": true,
-	flagPasskeyOrigin: true, "agent-rls": true, "operated-by": true,
+	flagPasskeyOrigin: true, "agent-rls": true, "operated-by": true, flagDevLocalPages: true,
 }
+
+// flagDevLocalPages is init's development exception (CONTRACT.md, Page
+// origins); InitPortal leaves it out.
+const flagDevLocalPages = "dev-local-pages"
 
 // NewCommands returns the commands for agent. configPath is the absolute
 // path the engine was started with ("" when the default); goos picks the
@@ -196,6 +200,29 @@ func (c Commands) Init(change string) string {
 		parts = append(parts, change)
 	}
 	return strings.Join(parts, " ")
+}
+
+// InitPortal is Init with the saved flags minus --dev-local-pages and
+// --passkey-origin, so the engine moves to the portal's pages, plus
+// --add-passkey: a passkey made on development pages cannot sign there.
+func (c Commands) InitPortal() string {
+	args := make([]string, 0, len(c.initArgs))
+	for i := 0; i < len(c.initArgs); i++ {
+		a := c.initArgs[i]
+		name, _, hasValue := strings.Cut(strings.TrimLeft(a, "-"), "=")
+		drop := name == flagDevLocalPages || name == flagPasskeyOrigin
+		if !drop {
+			args = append(args, a)
+		}
+		if !hasValue && i+1 < len(c.initArgs) {
+			i++ // the flag's value is the next argument
+			if !drop {
+				args = append(args, c.initArgs[i])
+			}
+		}
+	}
+	c.initArgs = args
+	return c.Init("--add-passkey")
 }
 
 // ErrBadTable is a table name Grant refuses: not a plain schema.table, so it

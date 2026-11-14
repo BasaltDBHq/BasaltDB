@@ -25,6 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 )
@@ -103,6 +104,9 @@ func (g olderGuard) writeConfig(t *testing.T, operatedBy string) {
 			"name": "bot", "osUser": me.Username, "credentialFile": g.credFile,
 			"initArgs": []string{"--agent=bot", "--write=public.leads", "--prefix=" + g.d.Names.Prefix},
 		}},
+	}
+	if operatedBy == "AGENT" {
+		cfg["pagesUrl"] = links.Portal // an agent-operated engine uses the portal (CO-8)
 	}
 	raw, err := json.Marshal(cfg)
 	require.NoError(t, err)

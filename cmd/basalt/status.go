@@ -72,13 +72,7 @@ func runStatus(c *cliIO, args []string) int {
 	if *name != "" && !config.ValidAgentName(*name) {
 		return c.fail(fmt.Errorf("%w: agent name %q is not valid", errUsage, *name))
 	}
-	given := false
-	fs.Visit(func(fl *flag.Flag) { given = given || fl.Name == "config" })
-	path := *configPath
-	if !given {
-		path = perUserConfigFallback(c, path)
-	}
-	out, err := readStatus(c, *name, path)
+	out, err := readStatus(c, *name, configOrFallback(c.host, fs, *configPath))
 	if err != nil {
 		return c.fail(err)
 	}
@@ -91,17 +85,28 @@ func runStatus(c *cliIO, args []string) int {
 	return exitOK
 }
 
-// perUserConfigFallback is the config status reads when --config is not
+// configOrFallback is the config a person command reads: the --config value,
+// or, when --config was not given, perUserConfigFallback of the default.
+func configOrFallback(h host, fs *flag.FlagSet, path string) string {
+	given := false
+	fs.Visit(func(fl *flag.Flag) { given = given || fl.Name == "config" })
+	if given {
+		return path
+	}
+	return perUserConfigFallback(h, path)
+}
+
+// perUserConfigFallback is the config a command reads when --config is not
 // given: the system path, unless this is not root, nothing is installed
 // there, and init left a config in the user's own config directory.
-func perUserConfigFallback(c *cliIO, system string) string {
-	if c.host.Euid() == 0 {
+func perUserConfigFallback(h host, system string) string {
+	if h.Euid() == 0 {
 		return system
 	}
 	if _, err := os.Stat(system); !errors.Is(err, fs.ErrNotExist) {
 		return system
 	}
-	base, err := c.host.UserConfigDir()
+	base, err := h.UserConfigDir()
 	if err != nil {
 		return system
 	}

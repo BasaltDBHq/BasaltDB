@@ -64,7 +64,14 @@ func TestAgentStatus(t *testing.T) {
 	st, err = guard.AgentStatus(ctx, a.Conn, migs)
 	require.NoError(t, err)
 	require.Equal(t, guard.GuardOutdated, st.State)
-	require.Contains(t, st.MissingBreaking, latest)
+	const agentsReadVersion = 13 // versionAgentVersion: agents read schema_version from here on
+	for _, m := range migs[agentsReadVersion-1:] {
+		missing := st.MissingNonBreaking
+		if m.Breaking {
+			missing = st.MissingBreaking
+		}
+		require.Contains(t, missing, m.Version)
+	}
 	require.NotContains(t, st.MissingBreaking, 1)
 }
 

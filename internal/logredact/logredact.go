@@ -10,6 +10,7 @@
 package logredact
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -31,8 +32,10 @@ func Scrub(s string) string {
 }
 
 // ReplaceAttr scrubs a's value: a string, an error's text, or any other
-// value's %+v text (what the text handler prints). A value that carries no
-// secret is left as it was; one that does becomes the scrubbed string.
+// value's %+v text (what the text handler prints). Another value also counts
+// as carrying a secret when its JSON (what the JSON handler prints, which
+// follows pointers %+v shows as addresses) does. A value that carries no
+// secret is left as it was; one that does becomes its scrubbed %+v text.
 func ReplaceAttr(_ []string, a slog.Attr) slog.Attr {
 	var s string
 	switch a.Value.Kind() {
@@ -43,6 +46,10 @@ func ReplaceAttr(_ []string, a slog.Attr) slog.Attr {
 			s = err.Error()
 		} else {
 			s = fmt.Sprintf("%+v", a.Value.Any())
+			if j, err := json.Marshal(a.Value.Any()); err == nil && Scrub(string(j)) != string(j) {
+				a.Value = slog.StringValue(Scrub(s))
+				return a
+			}
 		}
 	default:
 		return a

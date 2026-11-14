@@ -85,6 +85,18 @@ func TestHandlersRedactLinkSecrets(t *testing.T) {
 	}
 }
 
+// The JSON handler follows a pointer that %+v prints as an address: a
+// struct whose pointer field holds a link is scrubbed too.
+func TestJSONHandlerScrubsThroughPointers(t *testing.T) {
+	t.Parallel()
+	short := links.WithSecret(page, secret)
+	for name, h := range handlers {
+		var out bytes.Buffer
+		slog.New(h(&out)).Info("m", "v", struct{ P *string }{&short})
+		require.NotContains(t, out.String(), secret, "%s: %s", name, out.String())
+	}
+}
+
 // A value with no secret in it is logged as it was: an error stays an error,
 // a struct keeps the JSON handler's object form.
 func TestHandlersLeaveOtherValuesAlone(t *testing.T) {

@@ -9,6 +9,7 @@ Design: [chat-only operator, section 5](redesign/specs/2026-11-12-chat-only-oper
 ## What gets served
 
 - `make portal-build` copies only the served files into `dist/portal`: `approve/`, `revert/`, `register/`, `passkeys/` (each `index.html`), `lib/*.js` (no `*.test.mjs`), `style.css`, `_headers` and `_redirects`. These are the files the engine embeds (`web/embed.go`); `embed.go`, `embed_test.go` and the tests are not published. Cloudflare serves `dist/portal`, not `web/`.
+- Every script is pinned with subresource integrity. Each page lists its entry `<script type="module">` and one `<link rel="modulepreload">` per module it imports (directly or not), all with a `sha384` `integrity` hash, between `sri:begin` and `sri:end` comments, preloads first. The preload links are what make the browser check imported modules; an import map would need an inline script, which the CSP forbids. After editing `web/lib/*.js`, run `make web-sri` to refresh the hashes; `make web-check` and `go test ./web` fail on a missing or stale hash.
 - `web/_redirects` rewrites (status 200) the engine's page paths to the page files: `/approvals/<id>` to `approve/`, `/reverts/<id>` to `revert/`, `/passkeys/register` to `register/`, `/passkeys/check` and `/passkeys/forget` to `passkeys/`. The pages load their scripts with `../lib/...`, which resolves to `/lib/...` from those paths. A test (`go test ./internal/engine/pages`) fails if the rules drift from the routes the engine serves.
 - `web/_headers` sets the same headers the engine's own pages send (`internal/websec`): `Content-Security-Policy: default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, `Cross-Origin-Opener-Policy: same-origin`, and `.js` as `text/javascript`. On top it sets `Strict-Transport-Security: max-age=31536000; includeSubDomains` (portal only; the engine serves plain http). It is sent by `portal.basaltvault.app`, so `includeSubDomains` covers only that host's subdomains, never the rest of `basaltvault.app`. There is no `preload`.
 - The policy allows scripts, styles and `fetch` from the page's own origin only. The pages have no inline scripts, inline styles or event handlers, and a test (`go test ./internal/websec`) fails if one is added or if `_headers` drifts from the engine's headers.
@@ -68,6 +69,14 @@ curl -sI "https://portal.basaltvault.app/approvals/$ID" | grep -iE 'content-secu
 curl -sI https://portal.basaltvault.app/lib/codec.js | grep -i content-type
 curl -s -o /dev/null -w '%{http_code}\n' https://portal.basaltvault.app/lib/codec.test.mjs
 ```
+
+Or let the binary check the files for you. `basalt portal verify` fetches every file embedded in the `basalt` binary (the four pages, `lib/*.js`, `style.css`, the fonts) from `https://portal.basaltvault.app`, compares their bytes, checks that each response carries the engine's `Content-Security-Policy` and that scripts are `text/javascript`, and fetches the routes people load (`/approvals/<id>`, `/reverts/<id>`, `/passkeys/...`, the ones `_redirects` rewrites to the pages) and compares those too, and flags a few paths the build never publishes (`embed.go`, the `*.test.mjs` files) if the host serves them. It prints one line per file (`OK`, `DIFFERS`, `MISSING`, `HEADER`, `UNEXPECTED`, `ERROR`) and exits `0` only when all is well; `--json` gives the same data. It needs no database and no engine, and with `--manifest FILE` it also checks the binary's pages against a release manifest (`web/portal.sha256` in the repository, a `sha256  path` list).
+
+```sh
+basalt portal verify
+```
+
+What it cannot catch: a portal that serves the right files to most people and different ones to one person, or different ones to a command-line client than to a browser (it sees only what it is served to it), a host that serves extra files under names it does not probe (a static host has no listing), and a compromised `basalt` download, since it trusts the pages inside the binary. After editing anything under `web/`, run `make web-sri`: it refreshes the integrity hashes in the pages and the manifest, and `make web-check` fails when they are stale.
 
 Expected: `200` on the first line, all six headers above, `content-type: text/javascript` on modules, and `404` for `codec.test.mjs`. Repeat for `/reverts/$ID` and `/passkeys/register`. Open `/passkeys/register` in a browser and confirm the console shows no CSP violations.
 

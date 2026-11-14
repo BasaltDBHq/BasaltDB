@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -71,7 +72,13 @@ func runStatus(c *cliIO, args []string) int {
 	if *name != "" && !config.ValidAgentName(*name) {
 		return c.fail(fmt.Errorf("%w: agent name %q is not valid", errUsage, *name))
 	}
-	out, err := readStatus(c, *name, *configPath)
+	given := false
+	fs.Visit(func(fl *flag.Flag) { given = given || fl.Name == "config" })
+	path := *configPath
+	if !given {
+		path = perUserConfigFallback(c, path)
+	}
+	out, err := readStatus(c, *name, path)
 	if err != nil {
 		return c.fail(err)
 	}
@@ -82,6 +89,27 @@ func runStatus(c *cliIO, args []string) int {
 	}
 	printStatus(c.stdout, out)
 	return exitOK
+}
+
+// perUserConfigFallback is the config status reads when --config is not
+// given: the system path, unless this is not root, nothing is installed
+// there, and init left a config in the user's own config directory.
+func perUserConfigFallback(c *cliIO, system string) string {
+	if c.host.Euid() == 0 {
+		return system
+	}
+	if _, err := os.Stat(system); !errors.Is(err, fs.ErrNotExist) {
+		return system
+	}
+	base, err := c.host.UserConfigDir()
+	if err != nil {
+		return system
+	}
+	user := filepath.Join(base, perUserDirName, "engine.json")
+	if _, err := os.Stat(user); err != nil {
+		return system
+	}
+	return user
 }
 
 // readStatus asks the engine over the person socket in service mode, else

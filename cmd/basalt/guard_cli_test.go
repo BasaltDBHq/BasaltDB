@@ -44,6 +44,7 @@ func cli(t *testing.T, env map[string]string, stdin string, args ...string) resu
 			}
 			return cache
 		})
+	c.host = systemSocketHost(t)
 	code := guardCommands[args[0]](c, args[1:])
 	return result{code, stdout.String(), stderr.String()}
 }
@@ -604,4 +605,24 @@ func TestInitRerunsAfterAFailedPasskeyPaste(t *testing.T) {
 	// The rerun the message asks for does not refuse the role that exists.
 	r = cli(t, map[string]string{envAdminURL: d.URL}, "", slices.Concat(args, []string{"--skip-passkey"})...)
 	require.Equal(t, exitOK, r.code, r.stderr)
+}
+
+// A table the guard cannot key (no primary key) fails the install; init says
+// which table and how to fix it, not only "NOT_ALLOWED (SQLSTATE BS007)".
+func TestInitShowsTheGuardsDetailAndHint(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	d.Exec(t, `CREATE TABLE public.nopk (a int, b text)`)
+	cfg := tempConfig(t)
+
+	r := cli(t, map[string]string{envAdminURL: d.URL}, "",
+		"init", "--agent", "bot", "--write", "public.leads,public.nopk",
+		"--prefix", d.Names.Prefix, "--config", cfg, "--yes", "--skip-passkey", "--no-service")
+	require.Equal(t, exitError, r.code, r.stderr)
+	require.Contains(t, r.stderr, "NOT_ALLOWED")
+	require.Contains(t, r.stderr, "table public.nopk has no primary key; the guard keys ledger rows by it.")
+	require.Contains(t, r.stderr, "add a primary key, or revoke the agent's write privileges on it.")
+	v, err := guard.InstalledVersion(context.Background(), d.Admin)
+	require.NoError(t, err)
+	require.Zero(t, v, "the transaction rolled back")
 }

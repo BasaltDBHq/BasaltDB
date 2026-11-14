@@ -175,7 +175,9 @@ func TestShortLinkApprovedThroughTheRelay(t *testing.T) {
 
 	var ok map[string]any
 	require.Equal(t, http.StatusOK, p.post("/api/v1/approvals/"+id+"/approve", pageOrigin, secret, signed, &ok))
-	require.Equal(t, map[string]any{"approvalId": id, "status": "APPROVED"}, ok)
+	require.Equal(t, id, ok["approvalId"])
+	require.Equal(t, "APPROVED", ok["status"])
+	require.Contains(t, ok, "receipt", "the relay answers with the engine's receipt")
 
 	// Signed: the page no longer offers it, and a replay is refused.
 	require.Equal(t, http.StatusConflict, p.get("/api/v1/approvals/"+id, secret, &perr))

@@ -14,7 +14,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "web");
 const out = join(root, "portal.sha256");
 
 const files = [
-  ...["approve", "revert", "register", "passkeys"].map((d) => `${d}/index.html`),
+  ...["approve", "revert", "register", "passkeys", "engines"].map((d) => `${d}/index.html`),
   ...readdirSync(join(root, "lib")).filter((f) => f.endsWith(".js")).map((f) => `lib/${f}`),
   "style.css",
   ...readdirSync(join(root, "fonts")).filter((f) => f.endsWith(".woff2") || f === "OFL.txt").map((f) => `fonts/${f}`),

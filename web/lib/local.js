@@ -1,8 +1,10 @@
 // The engine's local pages (CONTRACT.md, Local pages): a short link
 // /approvals/<id> or /reverts/<id> opens a page the engine serves itself. The
 // page reads the request for that id from the engine and, after the passkey
-// signs, posts the response back for the engine to relay. Same origin only.
-// Pure functions with the fetch passed in, so they run under `node --test`.
+// signs, posts the response back for the engine to relay. Every request goes
+// through the page's session to the engine (transport.js), passed in, so
+// these run under `node --test` and above the session nothing knows which
+// transport carries it.
 
 import { rejectBody } from "./scope.js";
 
@@ -66,7 +68,10 @@ async function reach(call, attempts, wait) {
   for (let i = 1; ; i++) {
     try {
       return await call();
-    } catch {
+    } catch (err) {
+      // A transport that already knows the answer (the engine no longer
+      // holds the link, or is revoked) says so with a RelayError: final.
+      if (err instanceof RelayError) throw err;
       if (i >= attempts) {
         throw new RelayError(UNREACHABLE);
       }
@@ -75,15 +80,18 @@ async function reach(call, attempts, wait) {
   }
 }
 
+// answer reads the engine's answer to a session request: its JSON body on
+// a 2xx status, and otherwise a RelayError with the engine's code and
+// messages.
 async function answer(call, attempts = 1, wait = sleep) {
   const res = await reach(call, attempts, wait);
   let body = null;
   try {
-    body = await res.json();
+    body = JSON.parse(res.body);
   } catch {
     // An answer without a JSON body: the status says enough.
   }
-  if (!res.ok) {
+  if (res.status < 200 || res.status > 299) {
     throw new RelayError(body?.message ?? `the engine answered ${res.status}`, body?.code ?? "", res.status, body ?? {});
   }
   return body;
@@ -92,7 +100,7 @@ async function answer(call, attempts = 1, wait = sleep) {
 // SECRET_HEADER carries a short link's secret to the engine (CONTRACT.md,
 // Link secrets). The secret lives in the link's fragment, which the browser
 // never sends, so it stays out of logs; the page passes it here, to the
-// same origin only.
+// engine only, inside the page's session.
 export const SECRET_HEADER = "basalt-link-secret";
 
 // linkSecret is the secret a short link's fragment carries (#s=<secret>),
@@ -108,39 +116,23 @@ export function isLongLink(hash) {
   return /^#?[12]\./.test(String(hash ?? ""));
 }
 
-// fetchRequest reads the request a short link stands for.
-// fetchRequest reads the request; wait (ms) => Promise is injected by
-// tests and defaults to a timer.
-export function fetchRequest(fetchFn, path, secret, wait = sleep) {
-  return answer(
-    () =>
-      fetchFn(path, {
-        headers: { Accept: "application/json", [SECRET_HEADER]: secret },
-        cache: "no-store",
-        credentials: "omit",
-      }),
-    REQUEST_ATTEMPTS,
-    wait,
-  );
+// fetchRequest reads the request a short link stands for, through session
+// (transport.js); wait (ms) => Promise is injected by tests and defaults to
+// a timer.
+export function fetchRequest(session, path, secret, wait = sleep) {
+  return answer(() => session.request("GET", path, { [SECRET_HEADER]: secret }), REQUEST_ATTEMPTS, wait);
 }
 
-// postResponse relays the signed response JSON to the engine.
-export function postResponse(fetchFn, path, secret, json) {
-  return answer(() =>
-    fetchFn(path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json", [SECRET_HEADER]: secret },
-      body: json,
-      cache: "no-store",
-      credentials: "omit",
-    }),
-  );
+// postResponse relays the signed response JSON to the engine through
+// session.
+export function postResponse(session, path, secret, json) {
+  return answer(() => session.request("POST", path, { "content-type": "application/json", [SECRET_HEADER]: secret }, json));
 }
 
 // rejectRevert posts the person's Reject, with the note when they wrote one,
 // under the link's secret. Never retried, like the relay.
-export function rejectRevert(fetchFn, id, secret, note) {
-  return postResponse(fetchFn, revertPaths(id).reject, secret, rejectBody(note));
+export function rejectRevert(session, id, secret, note) {
+  return postResponse(session, revertPaths(id).reject, secret, rejectBody(note));
 }
 
 // revertDone says what a relayed revert did (the result of apply_revert).

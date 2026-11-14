@@ -92,7 +92,43 @@ Every link is built from one base URL, `pagesUrl` in `engine.json`. `basalt init
 
 The pages run on two origins only, compiled into `basalt`: the portal, and `http://localhost:<port>` when you operate the engine yourself. An engine handed to an agent (`--operated-by=agent`) uses the portal, since local pages would sit on the agent's machine. Cloudflare's `*.pages.dev` addresses and every other host are refused. To try agent mode against local pages on your own laptop, `basalt init --operated-by=agent --dev-local-pages` allows it, and every message the agent shows you then starts with a `DEV_LOCAL_PAGES` warning. Never use it with a bot you do not control.
 
-The short link only works on the machine where the engine runs. An optional hosted relay, the Vault, is meant to carry portal short links to an engine with no inbound port; it is off by default and its page side is not finished. See [vault.md](vault.md).
+The short link only works on the machine where the engine runs. An optional hosted relay, the Vault, is meant to carry portal short links to an engine with no inbound port; it is off by default and its page side is not finished. See [vault.md](vault.md). The free alternative is your own tunnel: see [Your own tunnel, without the Vault](#your-own-tunnel-without-the-vault).
+
+## Your own tunnel, without the Vault
+
+For an engine on a server you cannot sit at, you can approve from the portal without the hosted Vault. You run a tunnel (Cloudflare Tunnel, Tailscale Funnel or a reverse proxy such as Caddy) from an https address of your own to a second, loopback-only listener of the engine. The portal page opens the session straight to your address. Everything in the session is encrypted end to end, so the tunnel sees only ciphertext, the same as the Vault does. This is the free path, and it needs no account. The pages must be the portal's, so it is for an engine you hand to an agent (`--operated-by=agent`) or set up with `basalt init --remote`.
+
+**1. Give the engine a listener.** On the engine's machine, set `directAddr` to a loopback address and port, then restart the engine:
+
+```sh
+basalt init --remote --agent NAME ... --direct-addr 127.0.0.1:8787
+```
+
+(`basalt init --operated-by=agent ... --direct-addr 127.0.0.1:8787` does the same for an agent-operated init.) `off` turns it off again. The listener serves only `GET /v1/engine` and the session route; it answers no other path and serves no page. Until you set it, `basalt status` reports `DIRECT_NOT_SERVED` once your database records an address.
+
+**2. Publish it.** `basalt tunnel` prints the exact commands for the three tunnels, forwarding to your `directAddr`:
+
+```sh
+basalt tunnel --address https://engine.example.com
+```
+
+Whatever you use must pass the public `Host` on unchanged and upgrade WebSockets (the three above do by default). With `--address`, the command then fetches `/v1/engine` from that address and checks that it answers with this engine's key; it prints the engine's fingerprint and what to do next. If it says the engine does not know the address, record it first (step 3) and run it again.
+
+**3. Record the address in your database.** On your own computer, with the admin connection string, as part of the setup code the agent gave you:
+
+```sh
+basalt init --setup-code <code> --engine-url https://engine.example.com
+```
+
+The engine answers only on an address your database records. With the Vault off this record is required: the agent hands over portal short links only when the database records this engine's key, not revoked, with an address, and otherwise hands over long links. The record is the one place the agent cannot change: it has no admin rights. While the engine is running, `basalt status` shows it as `Engine key:` (`RECORDED`, `NOT_RECORDED`, `REVOKED` or `UNKNOWN`); a stopped engine prints no such line. The agent's `status` tool shows it as `engineRecord`.
+
+**4. Pin the engine on each device.** On the portal, `https://portal.basaltvault.app/engines/add`: type the address and compare the fingerprint it shows with the one `basalt init --setup-code` or `basalt tunnel` printed on your own computer. A device trusts only an engine it pinned, and the page checks the engine's key in every session. Pin it once per device and browser. From then on, the portal short links the agent hands over open straight through your tunnel: approve or revert from that device, with nothing to paste.
+
+**Revoking an engine.** If the server is lost or compromised, `basalt engine list --admin` shows the engines your database records, and `basalt engine revoke` revokes one from your own computer. A revoked engine stops serving portal sessions (`ENGINE_REVOKED`), `status` says so, and approvals go on through long links. Each device should also remove its pin on `https://portal.basaltvault.app/engines`. A compromised server can ignore the flag, but it still cannot sign anything you did not.
+
+**What the tunnel provider sees:** your engine's address, who connects to it and when, and the size and timing of messages. Never a link secret, a row or a signature.
+
+**Limits.** The listener takes at most 4 sessions per link and 64 per engine, counted together with any sessions through the Vault, and 600 session upgrades a minute in all: it cannot tell clients apart behind a tunnel.
 
 ## Authenticators
 
@@ -112,7 +148,7 @@ Checked on real devices (Nov 13, 2026): a Touch ID platform passkey, through the
 
 ## Engine on a headless Linux server
 
-The engine's pages listen on the server's loopback only. Until a hosted relay exists (parked in the roadmap), approve from your own computer through an SSH tunnel that uses **the same port on both ends**:
+The engine's pages listen on the server's loopback only. Unless you set up your own tunnel to the portal (see [Your own tunnel, without the Vault](#your-own-tunnel-without-the-vault)), approve from your own computer through an SSH tunnel that uses **the same port on both ends**:
 
 ```sh
 ssh -N -L 8787:127.0.0.1:8787 you@server

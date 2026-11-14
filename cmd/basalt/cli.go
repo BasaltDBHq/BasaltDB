@@ -63,6 +63,9 @@ type cliIO struct {
 	// engine tells service mode from same-user mode and finds the person
 	// socket (log, approve, revert); tests replace it.
 	engine engineAccess
+	// probe fetches an engine address's /v1/engine for basalt tunnel
+	// (engineProbe outside tests).
+	probe func(ctx context.Context, url string) (probeAnswer, error)
 }
 
 func newIO(ctx context.Context, std stdio, getenv func(string) string) *cliIO {
@@ -72,6 +75,7 @@ func newIO(ctx context.Context, std stdio, getenv func(string) string) *cliIO {
 		agentLogin: loginAsAgent,
 		dial:       connect,
 		engine:     osEngineAccess(runtime.GOOS),
+		probe:      engineProbe,
 		width:      func() int { return terminalWidth(std.out) },
 	}
 	stdin := std.in

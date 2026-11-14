@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 
 import { b64urlDecode, hex, KIND_APPROVE, KIND_REVERT, sha256, utf8 } from "./codec.js";
 import { RelayError } from "./local.js";
+import { sameOriginSession } from "./transport.js";
 import { applyReveal, canReveal, clearReveal, notChecked, reveal, revealBody, revealedLine, RevealError, revealFailure, revealPath, SECRET_VALUE } from "./reveal.js";
 
 const ID = "0193a3f0-0000-7000-8000-000000000001";
@@ -35,10 +36,10 @@ const assertion = {
 };
 
 function engine(status, body, seen) {
-  return async (path, init) => {
+  return sameOriginSession(async (path, init) => {
     seen.push({ path, init });
-    return { ok: status === 200, status, json: async () => body };
-  };
+    return new Response(JSON.stringify(body), { status });
+  });
 }
 
 test("Show values is offered only from the engine, with a nonce and a hidden row", async () => {
@@ -64,7 +65,7 @@ test("one prompt shows every hidden row; a secret row is unchecked", async () =>
   let options;
   const shown = await reveal({
     kind: KIND_APPROVE, id: ID, req, rpId: "localhost", path: revealPath("approvals", ID), secret: "link-secret",
-    fetchFn: engine(200, { rows: [{ line: 1, row: ROW }, { line: 2, row: SECRET_ROW, secretColumns: ["note"] }] }, seen),
+    session: engine(200, { rows: [{ line: 1, row: ROW }, { line: 2, row: SECRET_ROW, secretColumns: ["note"] }] }, seen),
     getAssertion: async (o) => { options = o; return assertion; },
   });
   assert.equal(seen.length, 1, "one post");
@@ -90,7 +91,7 @@ test("a row that does not hash to its line shows nothing at all", async () => {
   await assert.rejects(
     reveal({
       kind: KIND_APPROVE, id: ID, req, rpId: "localhost", path: "/x", secret: "s",
-      fetchFn: engine(200, { rows: [{ line: 1, row: ROW.replace("note 39", "forged") }] }, []),
+      session: engine(200, { rows: [{ line: 1, row: ROW.replace("note 39", "forged") }] }, []),
       getAssertion: async () => assertion,
     }),
     (err) => err instanceof RevealError && err.final,
@@ -98,7 +99,7 @@ test("a row that does not hash to its line shows nothing at all", async () => {
   await assert.rejects(
     reveal({
       kind: KIND_APPROVE, id: ID, req, rpId: "localhost", path: "/x", secret: "s",
-      fetchFn: engine(200, { rows: [{ line: 1, row: SECRET_ROW, secretColumns: ["ssn"] }] }, []),
+      session: engine(200, { rows: [{ line: 1, row: SECRET_ROW, secretColumns: ["ssn"] }] }, []),
       getAssertion: async () => assertion,
     }),
     RevealError,
@@ -125,10 +126,10 @@ test("a rescope during a reveal shows nothing of the old rows; a rescope clears 
   let answer;
   const pending = reveal({
     kind: KIND_APPROVE, id: ID, req: old, rpId: "localhost", path: "/x", secret: "s",
-    fetchFn: async () => {
+    session: sameOriginSession(async () => {
       await new Promise((resolve) => { answer = resolve; });
-      return { ok: true, status: 200, json: async () => ({ rows: [{ line: 1, row: ROW }] }) };
-    },
+      return new Response(JSON.stringify({ rows: [{ line: 1, row: ROW }] }));
+    }),
     getAssertion: async () => assertion,
   });
   // The person rescopes while the reveal is in flight.

@@ -44,7 +44,7 @@ func (v engineVault) receipts() agent.ReceiptSigner {
 // pages as usual, never dials out, and status says KEY_ERROR. Sessions
 // resolve their token in live and are answered by pages; with either nil,
 // every session is refused at message 1.
-func openVault(cfg config.Config, stateDir string, now func() time.Time, log *slog.Logger, live *relayLinks, pages vault.Dispatcher) engineVault {
+func openVault(cfg config.Config, stateDir string, now func() time.Time, log *slog.Logger, live *relayLinks, pages vault.Dispatcher, tally *vault.Tally) engineVault {
 	keys, err := loadEngineKeys(stateDir, now)
 	if err != nil {
 		log.Error("engine key file refused: the Vault stays off and links are long links until it is fixed; "+
@@ -55,7 +55,7 @@ func openVault(cfg config.Config, stateDir string, now func() time.Time, log *sl
 	if !cfg.VaultEnabled() {
 		return off
 	}
-	opts := vault.Options{URL: cfg.VaultURL, Keys: keys, Log: log.With("component", "vault"), Now: now, Pages: pages}
+	opts := vault.Options{URL: cfg.VaultURL, Keys: keys, Log: log.With("component", "vault"), Now: now, Pages: pages, Tally: tally}
 	if live != nil {
 		opts.Links, opts.SessionLinks, opts.OnRotate = live, live, live.endDirect
 	}

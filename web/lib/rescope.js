@@ -160,8 +160,8 @@ export function parseCatalog(value) {
 
 // post sends a scope body and checks the answer: the request for this
 // revert, hashing to its binding, and the catalog when there is one.
-async function post(req, secret, fetchFn, body) {
-  const out = await postResponse(fetchFn, revertPaths(req.revertId).scope, secret, body);
+async function post(req, secret, session, body) {
+  const out = await postResponse(session, revertPaths(req.revertId).scope, secret, body);
   const next = await checkRevertRequest(out?.request);
   if (next.revertId !== req.revertId) throw new CodeError(`the engine answered for another revert, ${next.revertId}`);
   return { req: next, catalog: parseCatalog(out.catalog) };
@@ -169,15 +169,15 @@ async function post(req, secret, fetchFn, body) {
 
 // narrow changes the scope within what needs no new proof: the agent's own
 // work, or the person's widened scope (the engine adds its token).
-export function narrow({ req, secret, fetchFn, select }) {
-  return post(req, secret, fetchFn, scopeBody(select));
+export function narrow({ req, secret, session, select }) {
+  return post(req, secret, session, scopeBody(select));
 }
 
 // widen asks the person's passkey for the widen proof and posts it with a
 // new link secret. Nothing is sent unless the passkey signed. The answer
 // carries the rebuilt request and the catalog; the page continues under
 // the new secret, which it returns.
-export async function widen({ req, rpId, secret, fetchFn, getAssertion }) {
+export async function widen({ req, rpId, secret, session, getAssertion }) {
   if (req.rescopeNonce === null) throw new CodeError("the engine gave no nonce for a widen");
   const newSecret = newLinkSecret();
   const key = await rescopeKey(b64urlDecode(newSecret));
@@ -199,6 +199,6 @@ export async function widen({ req, rpId, secret, fetchFn, getAssertion }) {
     clientDataJson: new Uint8Array(r.clientDataJSON),
     signature: new Uint8Array(r.signature),
   };
-  const out = await post(req, secret, fetchFn, scopeBody(select, proof, newSecret));
+  const out = await post(req, secret, session, scopeBody(select, proof, newSecret));
   return { ...out, secret: newSecret };
 }

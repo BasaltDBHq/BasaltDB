@@ -30,6 +30,9 @@ func TestPageCSPConnectSrc(t *testing.T) {
 		"revert/index.html":   "'self'",
 		"register/index.html": "'self'",
 		"passkeys/index.html": "'none'",
+		// The pin page reaches only the address it checks, which the
+		// portal's edge function adds for that request.
+		"engines/index.html": "'none'",
 	}
 	for page, want := range cases {
 		t.Run(page, func(t *testing.T) {
@@ -50,7 +53,7 @@ func TestPortalBuildMatchesEmbed(t *testing.T) {
 	if _, err := os.Stat(dist); err != nil {
 		t.Skip("run make portal-build first")
 	}
-	want := []string{"_headers", "_redirects"}
+	want := []string{"_headers", "_redirects", "_routes.json"}
 	require.NoError(t, fs.WalkDir(web.Files, ".", func(p string, d fs.DirEntry, err error) error {
 		if err == nil && !d.IsDir() {
 			want = append(want, p)

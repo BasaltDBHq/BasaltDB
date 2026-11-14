@@ -74,7 +74,7 @@ func TestFullJitter(t *testing.T) {
 
 func TestSessionPhaseLimits(t *testing.T) {
 	t.Parallel()
-	s := newSessions(time.Second, time.Now)
+	s := newSessions(time.Second, time.Now, nil)
 	ph, _ := s.lookup(sid{1})
 	require.Equal(t, phaseNone, ph)
 	code, _ := s.add(sid{1}, channel.LinkToken{9})
@@ -92,7 +92,7 @@ func TestSessionPhaseLimits(t *testing.T) {
 func TestSessionLate(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC)
-	s := newSessions(10*time.Second, func() time.Time { return now })
+	s := newSessions(10*time.Second, func() time.Time { return now }, nil)
 	code, _ := s.add(sid{1}, channel.LinkToken{})
 	require.Zero(t, code)
 	_, ss := s.lookup(sid{1})
@@ -107,7 +107,7 @@ func TestSessionLate(t *testing.T) {
 func TestHandshakeRate(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC)
-	s := newSessions(10*time.Second, func() time.Time { return now })
+	s := newSessions(10*time.Second, func() time.Time { return now }, nil)
 	for range HandshakesPerLink {
 		require.True(t, s.allowHandshake(channel.LinkToken{1}))
 	}
@@ -128,7 +128,7 @@ func TestHandshakeRate(t *testing.T) {
 // The session limit per link counts established sessions of the token.
 func TestSessionsPerLink(t *testing.T) {
 	t.Parallel()
-	s := newSessions(10*time.Second, time.Now)
+	s := newSessions(10*time.Second, time.Now, nil)
 	for i := range MaxSessionsPerLink + 1 {
 		code, _ := s.add(sid{byte(i)}, channel.LinkToken{7})
 		require.Zero(t, code)
@@ -143,4 +143,113 @@ func TestSessionsPerLink(t *testing.T) {
 	require.False(t, ok)
 	require.Equal(t, channel.ErrSessionLimit, code)
 	require.Len(t, s.ofToken(channel.LinkToken{7}), MaxSessionsPerLink+1)
+}
+
+// Two tables given one Tally (the Vault's socket and the direct listener)
+// count together: the engine's 64 and a link's 4 hold across both, and a
+// slot comes back when a session ends on either.
+func TestSessionLimitsCountBothTransports(t *testing.T) {
+	t.Parallel()
+	tally := NewTally()
+	relay := newSessions(10*time.Second, time.Now, tally)
+	direct := newSessions(10*time.Second, time.Now, tally)
+
+	tok := channel.LinkToken{7}
+	for i := range MaxSessionsPerLink {
+		table := relay
+		if i%2 == 1 {
+			table = direct
+		}
+		code, _ := table.add(sid{byte(i)}, tok)
+		require.Zero(t, code)
+		_, ss := table.lookup(sid{byte(i)})
+		ok, code := table.establish(ss, &established{})
+		require.True(t, ok)
+		require.Zero(t, code)
+	}
+	code, _ := direct.add(sid{50}, tok)
+	require.Zero(t, code, "a fifth session may start its handshake")
+	_, ss := direct.lookup(sid{50})
+	ok, code := direct.establish(ss, &established{})
+	require.False(t, ok)
+	require.Equal(t, channel.ErrSessionLimit, code, "the link's fourth is across both transports")
+	require.NotNil(t, direct.take(sid{50}))
+
+	relay.take(sid{0})
+	code, _ = direct.add(sid{51}, tok)
+	require.Zero(t, code)
+	_, ss = direct.lookup(sid{51})
+	ok, _ = direct.establish(ss, &established{})
+	require.True(t, ok, "a session ending on the relay frees the link's slot")
+
+	// Fill to the engine's limit from both tables.
+	for i := range MaxSessions {
+		table := relay
+		if i%2 == 0 {
+			table = direct
+		}
+		code, _ = table.add(sid{100, byte(i)}, channel.LinkToken{8, byte(i)})
+		if code != 0 {
+			require.Equal(t, channel.ErrSessionLimit, code)
+			require.Greater(t, i, 0)
+			return
+		}
+	}
+	t.Fatal("the engine's limit never held across both tables")
+}
+
+// A widen moves the session's link slot to the new token: the new token's
+// count includes it, the old token keeps none, and the session ending
+// frees the new token's slot.
+func TestSessionLimitFollowsARotatedToken(t *testing.T) {
+	t.Parallel()
+	s := newSessions(10*time.Second, time.Now, NewTally())
+	oldTok, newTok := channel.LinkToken{1}, channel.LinkToken{2}
+	code, _ := s.add(sid{1}, oldTok)
+	require.Zero(t, code)
+	_, ss := s.lookup(sid{1})
+	ok, _ := s.establish(ss, &established{})
+	require.True(t, ok)
+
+	cn := &conn{sessions: s}
+	ss.est.link = SessionLink{}
+	cn.rotate(ss, newTok)
+	require.Zero(t, s.tally.established[oldTok], "the old token holds no slot")
+	for i := 1; i < MaxSessionsPerLink; i++ {
+		code, _ := s.add(sid{10, byte(i)}, newTok)
+		require.Zero(t, code)
+		_, o := s.lookup(sid{10, byte(i)})
+		ok, _ := s.establish(o, &established{})
+		require.True(t, ok)
+	}
+	code, _ = s.add(sid{20}, newTok)
+	require.Zero(t, code)
+	_, o := s.lookup(sid{20})
+	ok, code = s.establish(o, &established{})
+	require.False(t, ok, "the rotated session counts: a fifth is refused")
+	require.Equal(t, channel.ErrSessionLimit, code)
+
+	s.take(sid{1})
+	require.Equal(t, MaxSessionsPerLink-1, s.tally.established[newTok])
+	require.Zero(t, s.tally.established[oldTok])
+}
+
+// A widen that finishes after its session ended moves no slot: the session
+// is gone from the table, so the new token gains nothing that nothing
+// would release.
+func TestRotateAfterTheSessionEndedMovesNoSlot(t *testing.T) {
+	t.Parallel()
+	s := newSessions(10*time.Second, time.Now, NewTally())
+	oldTok, newTok := channel.LinkToken{1}, channel.LinkToken{2}
+	code, _ := s.add(sid{1}, oldTok)
+	require.Zero(t, code)
+	_, ss := s.lookup(sid{1})
+	ok, _ := s.establish(ss, &established{})
+	require.True(t, ok)
+	require.NotNil(t, s.take(sid{1}))
+
+	(&conn{sessions: s}).rotate(ss, newTok)
+	require.Zero(t, s.tally.established[newTok])
+	require.Zero(t, s.tally.established[oldTok])
+	require.Zero(t, s.tally.total)
 }

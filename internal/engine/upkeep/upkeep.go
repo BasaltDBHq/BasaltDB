@@ -230,15 +230,23 @@ func (u *Upkeep) checkChain(ctx context.Context) (guard.ChainStatus, error) {
 	if err != nil {
 		return guard.ChainStatus{}, fmt.Errorf("guard install: %w", err)
 	}
-	if !u.started {
+	starting := !u.started
+	if starting {
 		if err := u.start(ctx, install); err != nil {
 			return guard.ChainStatus{}, err
 		}
 	}
-	if u.head != nil && u.install != install {
+	if !starting && u.head != nil && u.install != install {
 		if err := u.settle(ctx, install); err != nil {
 			return guard.ChainStatus{}, err
 		}
+	}
+	if u.head != nil && u.install != install {
+		// A pin of another install that could not be reported (step 3):
+		// never verified from (verify_chain_from accepts any pin before the
+		// anchor) nor replaced. The chain is reported broken at it until
+		// the report succeeds.
+		return guard.ChainStatus{BrokenAt: u.head.Seq}, nil
 	}
 	if u.startBroken != nil {
 		return guard.ChainStatus{BrokenAt: *u.startBroken}, nil
@@ -315,7 +323,7 @@ func (u *Upkeep) settle(ctx context.Context, install uint32) error {
 		}).SetAside
 		u.head, u.install, u.startBroken = nil, install, nil
 	default:
-		u.log.Error("the guard was installed again, and the chain head pin could not be reported in the ledger; it is kept and checked as before",
+		u.log.Error("the guard was installed again, and the chain head pin could not be reported in the ledger; it is kept and the chain reported broken at it",
 			"agent", u.agent, "pinnedInstall", from, "install", install, "err", s.RecordErr)
 	}
 	return nil

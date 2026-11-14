@@ -174,8 +174,11 @@ func ReadReinstalls(ctx context.Context, q Querier, kept []SetAside) (Reinstalls
 		return Reinstalls{}, err
 	}
 	var has bool
-	// Plain SQL: a catalog lookup of the version 36 view.
-	if err := q.QueryRow(ctx, `SELECT to_regclass('basalt_meta.agent_reinstalls') IS NOT NULL`).Scan(&has); err != nil {
+	sql, args, err = psql.Select("to_regclass('basalt_meta.agent_reinstalls') IS NOT NULL").ToSql()
+	if err != nil {
+		return Reinstalls{}, err
+	}
+	if err := q.QueryRow(ctx, sql, args...).Scan(&has); err != nil {
 		return Reinstalls{}, err
 	}
 	if !has {

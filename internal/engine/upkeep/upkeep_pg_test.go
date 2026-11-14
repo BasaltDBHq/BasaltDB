@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -459,40 +460,98 @@ func TestPinAtOrBeforeAMovedAnchorIsRecorded(t *testing.T) {
 	}
 }
 
-// On a guard older than version 36 nothing can be recorded: the engine
-// keeps the pin and reports the broken chain, as before, and tries again on
-// the next tick.
-func TestOlderGuardKeepsThePin(t *testing.T) {
+// keptPinFixture pins a real head of install+1 and moves the anchor past
+// it, so verify_chain_from would accept it: a restored, rewritten ledger
+// whose anchor moved. Returns the pin.
+func keptPinFixture(t *testing.T, d *guardtest.DB, a *guardtest.Agent, pins chainpin.File) chainpin.Pin {
+	t.Helper()
+	ctx := context.Background()
+	first := newUpkeep(a.Conn, time.Now).WithPins(pins)
+	require.NoError(t, first.Tick(ctx))
+	require.NoError(t, first.Tick(ctx))
+	pin := otherInstall(t, pins)
+	require.Positive(t, pin.Head.Seq)
+	require.NoError(t, guard.Heartbeat(ctx, a.Conn, nil))
+	d.Exec(t, `SELECT basalt_meta._prune(now() + interval '2 years')`)
+	return pin
+}
+
+// noReport makes record_pin_set_aside fail for the agents, as on a guard
+// older than version 36 (where it does not exist): kind is "revoke" or
+// "older" (the version 36 objects dropped).
+func noReport(t *testing.T, d *guardtest.DB, kind string) {
+	t.Helper()
+	if kind == "revoke" {
+		d.Exec(t, `REVOKE EXECUTE ON FUNCTION basalt_meta.record_pin_set_aside(bigint, bytea, oid) FROM `+d.Names.Agents())
+		return
+	}
+	d.Exec(t, `DROP VIEW basalt_meta.agent_reinstalls;
+		DROP FUNCTION basalt_meta.record_pin_set_aside(bigint, bytea, oid);
+		DROP FUNCTION basalt_meta.pin_on_chain(bigint, bytea)`)
+}
+
+// When the pin of another install cannot be reported (step 3), the engine
+// keeps it and reports the chain broken at it on every tick: it never
+// verifies from it (a pin before the anchor would pass) and never replaces
+// it. Once the report works, it is recorded and set aside.
+func TestUnreportedPinIsKeptAndReportedBroken(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{"revoke", "older"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+			d := guardtest.New(t).WithDemo(t)
+			a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
+			ctx := context.Background()
+			pins := chainpin.File{Dir: t.TempDir()}
+			pin := keptPinFixture(t, d, a, pins)
+			noReport(t, d, kind)
+
+			var logs bytes.Buffer
+			u := upkeep.New("bot", "test", a.Conn, slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
+			for range 2 {
+				require.NoError(t, u.Tick(ctx))
+				hb := heartbeats(t, a.Conn)
+				require.InDelta(t, float64(pin.Head.Seq), hb[len(hb)-1].detail["chainBrokenAt"], 0)
+			}
+			require.Equal(t, 2, strings.Count(logs.String(), "could not be reported in the ledger"), "one report attempt per tick")
+			after, _, err := pins.Load("bot")
+			require.NoError(t, err)
+			require.Equal(t, pin, after, "the pin is kept")
+			if kind == "older" {
+				return
+			}
+			rs, err := guard.ReadReinstalls(ctx, a.Conn, nil)
+			require.NoError(t, err)
+			require.Empty(t, rs.List)
+
+			d.Exec(t, `GRANT EXECUTE ON FUNCTION basalt_meta.record_pin_set_aside(bigint, bytea, oid) TO `+d.Names.Agents())
+			require.NoError(t, u.Tick(ctx))
+			require.Len(t, events(t, a.Conn, "PIN_SET_ASIDE"), 1)
+			hb := heartbeats(t, a.Conn)
+			require.NotContains(t, hb[len(hb)-1].detail, "chainBrokenAt")
+		})
+	}
+}
+
+// basalt log's check keeps an unreported pin the same way: the chain is
+// broken at it, and nothing tells basalt log to save a new pin.
+func TestCheckHealthKeepsAnUnreportedPin(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
 	ctx := context.Background()
 	pins := chainpin.File{Dir: t.TempDir()}
-	require.NoError(t, newUpkeep(a.Conn, time.Now).WithPins(pins).Tick(ctx))
+	pin := keptPinFixture(t, d, a, pins)
+	noReport(t, d, "revoke")
 
-	b := reinstall(t, d, a)
-	d.Exec(t, `DROP VIEW basalt_meta.agent_reinstalls;
-		DROP FUNCTION basalt_meta.record_pin_set_aside(bigint, bytea, oid);
-		DROP FUNCTION basalt_meta.pin_on_chain(bigint, bytea)`)
-	before, _, err := pins.Load("bot")
+	h, err := ledger.CheckHealth(ctx, a.Conn, time.Now(), ledger.HealthOptions{Pin: &pin.Head, PinInstall: pin.Install})
 	require.NoError(t, err)
-	// A pin past the new ledger's head, as an older ledger's often is.
-	before.Head.Seq += 100
-	require.NoError(t, pins.Save("bot", before))
-
-	var logs bytes.Buffer
-	u := upkeep.New("bot", "test", b.Conn, slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
-	require.NoError(t, u.Tick(ctx))
-	require.NoError(t, u.Tick(ctx))
-	hb := heartbeats(t, b.Conn)
-	require.Contains(t, hb[len(hb)-1].detail, "chainBrokenAt", "the reinstall shows as a broken chain")
-	require.Contains(t, logs.String(), "could not be reported in the ledger")
-	after, _, err := pins.Load("bot")
-	require.NoError(t, err)
-	require.Equal(t, before, after, "the pin is kept")
-	rs, err := guard.ReadReinstalls(ctx, b.Conn, nil)
-	require.NoError(t, err)
-	require.Empty(t, rs.List, "no notice on an older guard")
+	require.False(t, h.Chain.Intact)
+	require.Equal(t, pin.Head.Seq, h.Chain.BrokenAt)
+	require.Equal(t, pin.Head, h.Head, "the pin, not a new head")
+	require.False(t, h.PinSetAside)
+	require.False(t, h.PinMoved)
+	require.Empty(t, events(t, a.Conn, "PIN_SET_ASIDE"))
 }
 
 // basalt log's check (CHECK_HEALTH) runs the same steps for its own pin and

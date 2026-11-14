@@ -163,13 +163,16 @@ func CheckHealth(ctx context.Context, q guard.Querier, now time.Time, opts Healt
 	if h.Install, err = guard.InstallID(ctx, q); err != nil {
 		return Health{}, fmt.Errorf("guard install: %w", err)
 	}
+	kept := false
 	if opts.Pin != nil && opts.PinInstall != 0 && opts.PinInstall != h.Install {
-		if err := settle(ctx, q, &h, &opts); err != nil {
+		if kept, err = settle(ctx, q, &h, &opts); err != nil {
 			return Health{}, err
 		}
 	}
-	if h.Chain, h.Head, err = verify(ctx, q, opts); err != nil {
-		return Health{}, err
+	if !kept {
+		if h.Chain, h.Head, err = verify(ctx, q, opts); err != nil {
+			return Health{}, err
+		}
 	}
 	if h.Reinstalls, err = guard.ReadReinstalls(ctx, q, opts.SetAside); err != nil {
 		return Health{}, fmt.Errorf("reinstalls: %w", err)
@@ -207,12 +210,14 @@ func CheckHealth(ctx context.Context, q guard.Querier, now time.Time, opts Healt
 }
 
 // settle handles a pin of another install (SettlePin) and sets the pin to
-// verify from: the moved head, none after a set-aside (the full check), or
-// the pin itself when it could not be reported.
-func settle(ctx context.Context, q guard.Querier, h *Health, opts *HealthOptions) error {
+// verify from: the moved head, or none after a set-aside (the full check).
+// A pin that could not be reported is kept (true): it is never verified
+// from, since verify_chain_from accepts any pin before the anchor, and the
+// chain is reported broken at it (step 3), so the caller saves no new pin.
+func settle(ctx context.Context, q guard.Querier, h *Health, opts *HealthOptions) (bool, error) {
 	s, err := SettlePin(ctx, q, *opts.Pin, opts.PinInstall)
 	if err != nil {
-		return err
+		return false, err
 	}
 	switch s.Fate {
 	case PinMoved:
@@ -220,8 +225,10 @@ func settle(ctx context.Context, q guard.Querier, h *Health, opts *HealthOptions
 	case PinSetAside:
 		h.PinSetAside, opts.Pin = true, nil
 	case PinKept:
+		h.Chain, h.Head = guard.ChainStatus{BrokenAt: opts.Pin.Seq}, *opts.Pin
+		return true, nil
 	}
-	return nil
+	return false, nil
 }
 
 // verify runs the full check from the genesis when there is no pin or

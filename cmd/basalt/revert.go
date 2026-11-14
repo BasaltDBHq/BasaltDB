@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -99,7 +100,10 @@ func runRevert(c *cliIO, args []string) int {
 	if (scope.ID != uuid.Nil || f.rescope != "") && !f.dryRun {
 		f.local = l.localPages(c, f.pagesURL)
 	}
-	f.pagesURL = l.pagesBase(f.pagesURL)
+	f.pagesURL = l.pagesBase(c, f.pagesURL)
+	if err := f.resolveWiden(l); err != nil {
+		return c.fail(err)
+	}
 	if f.widen {
 		if f.local == "" {
 			return c.fail(fmt.Errorf("%w: --agents beyond %s needs the revert page from the engine, which does not serve "+
@@ -244,13 +248,31 @@ func (f *revertFlags) filters(scope guard.RevertScope) (guard.RevertScope, error
 		}
 	}
 	scope.Tables = tables
-	for _, a := range splitList(f.agents) {
-		f.widen = f.widen || a == allAgents || a != f.agent
-	}
+	// "all" widens whoever the credential is; a name is judged once the
+	// credential's own agent is known (resolveWiden).
+	f.widen = slices.Contains(splitList(f.agents), allAgents)
 	if f.widen && f.dryRun {
-		return guard.RevertScope{}, fmt.Errorf("%w: --dry-run shows your agent's own work; other agents are added on the revert page", errUsage)
+		return guard.RevertScope{}, errDryRunWiden
 	}
 	return scope, nil
+}
+
+var errDryRunWiden = fmt.Errorf("%w: --dry-run shows your agent's own work; other agents are added on the revert page", errUsage)
+
+// resolveWiden settles whether --agents names an agent other than the
+// credential's own. With --credential-file there is no --agent, so the
+// own name comes from the credential's role.
+func (f *revertFlags) resolveWiden(l *agentLedger) error {
+	if f.agent == "" {
+		f.agent = l.ownAgent()
+	}
+	for _, a := range splitList(f.agents) {
+		f.widen = f.widen || a != f.agent
+	}
+	if f.widen && f.dryRun {
+		return errDryRunWiden
+	}
+	return nil
 }
 
 // ownName is the credential's agent for messages.

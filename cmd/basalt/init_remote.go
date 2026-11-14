@@ -112,6 +112,8 @@ type remoteFlags struct {
 	// asks the config's vault to be (chooseVault).
 	vaultFlag VaultMode
 	vault     vaultChoice
+	// directAddr is --direct-addr as given ("" when not).
+	directAddr string
 }
 
 // RemoteInitResult is what basalt init --remote --json prints
@@ -212,14 +214,24 @@ func parseInitRemote(c *cliIO, args []string) (remoteFlags, error) {
 	fs.StringVar(&f.configPath, "config", config.DefaultPath(c.goos), "engine config file")
 	fs.BoolVar(&f.json, "json", false, "print the result as JSON (remote-init-result.schema.json)")
 	fs.Var(&f.vaultFlag, flagVault, "on or off: whether the engine reaches the portal's pages through the Vault (default on with --operated-by=agent, else off)")
+	fs.StringVar(&f.directAddr, flagDirectAddr, "", directAddrUsage)
 	if err := parse(fs, args); err != nil {
 		return f, err
 	}
+	var directGiven bool
 	fs.Visit(func(fl *flag.Flag) {
-		if fl.Name == "config" {
+		switch fl.Name {
+		case "config":
 			f.configGiven = true
+		case flagDirectAddr:
+			directGiven = true
 		}
 	})
+	if directGiven {
+		if err := checkDirectAddr(f.directAddr); err != nil {
+			return f, err
+		}
+	}
 	if f.agent == "" {
 		return f, fmt.Errorf("%w: --agent is required", errUsage)
 	}
@@ -254,6 +266,7 @@ func (f remoteFlags) savedArgs(osUser string) []string {
 	addIf("statement-timeout", f.timeout.String(), guard.DefaultStatementTimeout.String())
 	addIf("os-user", osUser, "")
 	addIf("operated-by", string(f.operatedBy), string(OperatedByPerson))
+	addIf(flagDirectAddr, f.directAddr, "")
 	return args
 }
 
@@ -354,7 +367,7 @@ func newRemoteInit(c *cliIO, f remoteFlags) (*remoteInit, error) {
 // With --config and not as root, the sockets live next to that config.
 func (r *remoteInit) paths() error {
 	dir := filepath.Dir(r.f.configPath)
-	r.settings = r.f.vault.settings(config.Settings{SocketDir: config.DefaultSocketDir(r.c.goos), PagesURL: links.Portal, OperatedBy: r.f.operatedBy.enum()})
+	r.settings = r.f.vault.settings(config.Settings{SocketDir: config.DefaultSocketDir(r.c.goos), PagesURL: links.Portal, OperatedBy: r.f.operatedBy.enum(), DirectAddr: r.f.directAddr})
 	if !r.f.configGiven && r.c.host.Euid() != 0 {
 		base, err := r.c.host.UserConfigDir()
 		if err != nil {

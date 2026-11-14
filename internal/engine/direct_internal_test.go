@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
@@ -30,6 +31,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/vault"
 	"github.com/basaltdbhq/basaltdb/internal/vault/pagetest"
+	"github.com/basaltdbhq/basaltdb/internal/websec"
 )
 
 // directLinks hold one link of agent bot.
@@ -57,9 +59,24 @@ type directFixture struct {
 	keys    *channel.EngineKeys
 	links   *directLinks
 	records *engineRecords
+	sess    *vault.Direct
 }
 
 func newDirectFixture(t *testing.T) *directFixture {
+	t.Helper()
+	return newDirectFixtureWith(t, okPages{})
+}
+
+// newDirectFixtureWith is newDirectFixture with pages answering the
+// session's requests, behind the listener's connection cap.
+func newDirectFixtureWith(t *testing.T, pages vault.Dispatcher) *directFixture {
+	t.Helper()
+	return newDirectFixtureHold(t, pages, vault.Message1Timeout)
+}
+
+// newDirectFixtureHold is newDirectFixtureWith with a socket holding its
+// pending slot for hold at most without reaching the record's check.
+func newDirectFixtureHold(t *testing.T, pages vault.Dispatcher, hold time.Duration) *directFixture {
 	t.Helper()
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", []string{"public.leads"}, []string{"public.leads"})
@@ -68,14 +85,28 @@ func newDirectFixture(t *testing.T) *directFixture {
 	log := slog.New(slog.DiscardHandler)
 	f := &directFixture{db: d, keys: keys, links: &directLinks{m: map[channel.LinkToken]vault.SessionLink{}}}
 	f.records = newEngineRecords(keys.EngineID(), time.Now, log)
-	f.records.add("bot", a.Conn)
-	sess := vault.NewDirect(vault.DirectOptions{Keys: keys, Log: log, SessionLinks: f.links, Pages: okPages{}})
+	f.records.add("bot", agentPool(t, a.URL))
+	sess := vault.NewDirect(vault.DirectOptions{Keys: keys, Log: log, SessionLinks: f.links, Pages: pages, Recheck: f.records.revoked})
+	f.sess = sess
 	ctx, cancel := context.WithCancel(context.Background())
 	f.srv = httptest.NewUnstartedServer(nil)
-	f.srv.Config = newDirectServer(newDirectHandler(ctx, f.records, keys.PublicKeySPKI(), sess, time.Now))
+	f.srv.Listener = &limitListener{Listener: f.srv.Listener, sem: make(chan struct{}, directConns)}
+	routes := newDirectRoutes(ctx, f.records, keys.PublicKeySPKI(), sess, time.Now)
+	routes.hold = hold
+	f.srv.Config = newDirectServer(websec.Headers()(routes))
 	f.srv.Start()
 	t.Cleanup(func() { cancel(); f.srv.Close() })
 	return f
+}
+
+// agentPool is a pool of the agent's connections, as the engine reads the
+// record with: sessions read it concurrently.
+func agentPool(t *testing.T, url string) *pgxpool.Pool {
+	t.Helper()
+	pool, err := pgxpool.New(context.Background(), url)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	return pool
 }
 
 func (f *directFixture) record(t *testing.T, url string) {
@@ -122,11 +153,11 @@ func (f *directFixture) holdLink(t *testing.T) (channel.LinkKeys, string, uuid.U
 	return keys, secret, item
 }
 
-func (f *directFixture) dial(t *testing.T, host string) *pagetest.Page {
+func (f *directFixture) dial(t *testing.T) *pagetest.Page {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	p, err := pagetest.DialDirect(ctx, "ws"+strings.TrimPrefix(f.srv.URL, "http")+"/v1/session", http.Header{"Host": {host}})
+	p, err := pagetest.DialDirect(ctx, "ws"+strings.TrimPrefix(f.srv.URL, "http")+"/v1/session", http.Header{"Host": {"engine.example.com"}})
 	require.NoError(t, err)
 	t.Cleanup(p.Close)
 	return p
@@ -180,7 +211,7 @@ func TestDirectSessionFollowsTheRecord(t *testing.T) {
 	f.record(t, "https://engine.example.com")
 	keys, secret, item := f.holdLink(t)
 
-	p := f.dial(t, "engine.example.com")
+	p := f.dial(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	require.NoError(t, p.Handshake(ctx, keys))
@@ -192,13 +223,59 @@ func TestDirectSessionFollowsTheRecord(t *testing.T) {
 	// Another address recorded for the agent: the old one still reaches the
 	// listener (its Host was read) but the session is refused.
 	f.record(t, "https://moved.example.com")
-	p = f.dial(t, "engine.example.com")
+	p = f.dial(t)
 	require.Equal(t, int(channel.ErrLinkRefused), refusedWith(ctx, t, p, p.Handshake(ctx, keys)))
 
 	_, err = guard.RevokeEngine(context.Background(), f.db.Admin, f.keys.EngineID())
 	require.NoError(t, err)
-	p = f.dial(t, "engine.example.com")
+	p = f.dial(t)
 	require.Equal(t, int(channel.ErrEngineRevoked), refusedWith(ctx, t, p, p.Handshake(ctx, keys)))
+}
+
+// A revoke closes the open direct sessions of the revoking database's
+// agents with ENGINE_REVOKED (CONTRACT.md, Direct transport, Revocation by
+// the person): one that sends a request at its next request, unanswered;
+// an idle one at the next re-read of the record. An agent of another
+// database keeps its session.
+func TestDirectRevokeEndsOpenSessions(t *testing.T) {
+	t.Parallel()
+	f := newDirectFixture(t)
+	f.record(t, "https://engine.example.com")
+	other := f.addAgent(t, "other")
+	url := "https://engine.example.com"
+	_, err := guard.RecordEngine(context.Background(), other.Admin, f.keys.PublicKeySPKI(), &url)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	open := func(p *pagetest.Page, agent string) (*pagetest.Page, string, uuid.UUID) {
+		keys, secret := f.holdLinkOf(t, agent)
+		f.links.mu.Lock()
+		item := f.links.m[keys.Token].Item
+		f.links.mu.Unlock()
+		require.NoError(t, p.Handshake(ctx, keys))
+		r, err := p.Do(ctx, http.MethodGet, "/api/v1/approvals/"+item.String(), pagetest.Headers(secret), "", 0)
+		require.NoError(t, err, agent)
+		require.Equal(t, item.String(), r.Body, agent)
+		return p, secret, item
+	}
+	busy, busySecret, busyItem := open(f.dial(t), "bot")
+	idle, _, _ := open(f.dial(t), "bot")
+	kept, keptSecret, keptItem := open(f.dial(t), "other")
+
+	_, err = guard.RevokeEngine(context.Background(), f.db.Admin, f.keys.EngineID())
+	require.NoError(t, err)
+
+	_, err = busy.Do(ctx, http.MethodGet, "/api/v1/approvals/"+busyItem.String(), pagetest.Headers(busySecret), "", 0)
+	require.Equal(t, int(channel.ErrEngineRevoked), refusedWith(ctx, t, busy, err), "the next request after the revoke")
+
+	f.records.endRevoked(ctx, f.sess)
+	require.Equal(t, int(channel.ErrEngineRevoked), int(idle.Closed(ctx)), "an idle session at the next re-read")
+
+	r, err := kept.Do(ctx, http.MethodGet, "/api/v1/approvals/"+keptItem.String(), pagetest.Headers(keptSecret), "", 0)
+	require.NoError(t, err, "another database did not revoke the engine")
+	require.Equal(t, keptItem.String(), r.Body)
+	require.Equal(t, []string{"other"}, f.sess.Agents())
 }
 
 // refusedWith is the close code a failed handshake got.
@@ -285,4 +362,36 @@ func TestDirectRefusesARequestBody(t *testing.T) {
 		require.ErrorIs(t, err, io.EOF, "the connection is closed")
 		_ = conn.Close()
 	}
+}
+
+// A widen in a session through the Vault ends the old token's direct
+// sessions: the relay links tell the direct transport (the Vault-to-direct
+// direction of a rotation).
+func TestRelayRotationEndsDirectSessions(t *testing.T) {
+	t.Parallel()
+	f := newDirectFixture(t)
+	f.record(t, "https://engine.example.com")
+	keys, _, _ := f.holdLink(t)
+	relay := newRelayLinks(slog.New(slog.DiscardHandler))
+	relay.setDirect(f.sess)
+
+	p := f.dial(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, p.Handshake(ctx, keys))
+
+	relay.endDirect(keys.Token)
+	require.Equal(t, int(channel.ErrLinkRefused), int(p.Closed(ctx)), "the old token's direct session ended with LINK_REFUSED")
+}
+
+// The direct server bounds a request's read and a response's write, so a
+// local process that never reads cannot hold a connection slot, and a
+// refusal behind a response writer that cannot set a deadline still ends.
+func TestDirectServerTimeouts(t *testing.T) {
+	t.Parallel()
+	hs := newDirectServer(http.NotFoundHandler())
+	require.Equal(t, directReadTimeout, hs.ReadTimeout)
+	require.Equal(t, directWriteTimeout, hs.WriteTimeout)
+	require.NotZero(t, hs.ReadTimeout)
+	require.NotZero(t, hs.WriteTimeout)
 }

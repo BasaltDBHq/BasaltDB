@@ -195,6 +195,12 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 	if err != nil {
 		return statusOut{}, err
 	}
+	stateDir := cfg.StateDirFor(c.goos)
+	var vaultReport, vaultID *agent.VaultStatus
+	if !eng.Unknown {
+		vaultReport, vaultID = localVault(cfg.Config, stateDir)
+	}
+	key, directServed := runningEngineKey(eng, vaultReport, vaultID, cfg.Config)
 	r, err := agent.LocalStatus{
 		Portal: savedPortalCheck(cfg.StateDirFor(c.goos), base),
 		Name:   a.Name, Commands: cmds, OperatedBy: cfg.OperatedBy, DevLocalPages: cfg.DevLocalPages, Setup: a.Setup,
@@ -203,19 +209,41 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 			Q: pool, Migrations: guard.Migrations(),
 			Kept: engine.KeptSetAside(chainpin.File{Dir: cfg.StateDirFor(c.goos)}, a.Name, slog.New(slog.DiscardHandler)),
 		},
-		Passkeys: func(ctx context.Context) ([]passkey.Credential, error) { return ledger.Passkeys(ctx, pool) },
-		Log:      slog.New(slog.DiscardHandler), Now: c.now,
+		Passkeys:  func(ctx context.Context) ([]passkey.Credential, error) { return ledger.Passkeys(ctx, pool) },
+		EngineKey: key, DirectServed: directServed,
+		EngineRecord: func(ctx context.Context, id string) (*guard.RecordedEngine, error) {
+			return guard.EngineRecord(ctx, pool, id)
+		},
+		Log: slog.New(slog.DiscardHandler), Now: c.now,
 	}.Report(c.ctx)
 	if err != nil {
 		return statusOut{}, err
 	}
 	eng.Build = r.Engine.Build
-	stateDir := cfg.StateDirFor(c.goos)
 	out := statusOut{StatusReport: r, Engine: eng, ConfigPath: abs, SocketDir: cfg.SocketDir, StateDir: stateDir}
-	if !eng.Unknown {
-		out.Vault, out.vaultID = localVault(cfg.Config, stateDir)
-	}
+	out.Vault, out.vaultID = vaultReport, vaultID
 	return out, nil
+}
+
+// runningEngineKey is the engine id a running engine serves with, read
+// from its key file ("" when the file is refused), and whether it has a
+// direct listener: what status.engineRecord needs (CONTRACT.md,
+// Configuration and status). Nil for an engine that is down or whose key
+// file this user cannot read: the report then has no engineRecord.
+func runningEngineKey(eng engineOut, report, identity *agent.VaultStatus, cfg config.Config) (*string, bool) {
+	var id string
+	switch {
+	case !eng.Reachable:
+		return nil, false
+	case identity != nil:
+		id = identity.EngineID
+	case report != nil:
+		id = report.EngineID
+	default:
+		return nil, false
+	}
+	addr, err := cfg.Direct()
+	return &id, id != "" && err == nil && addr != ""
 }
 
 // statusAgent is the named agent, or the config's only one.
@@ -319,6 +347,9 @@ func writeStatus(w io.Writer, s statusOut) {
 		fmt.Fprintln(w, "Vault:        ON in the config; only the running engine knows whether it is connected (the agent's status tool reports it)")
 		fmt.Fprintf(w, "Engine id:    %s\n", engineIDWords(*s.vaultID))
 	}
+	if s.EngineRecord != nil {
+		fmt.Fprintf(w, "Engine key:   %s\n", engineRecordWords(*s.EngineRecord))
+	}
 	ready := "ready"
 	if !s.Ready {
 		ready = "not ready"
@@ -352,6 +383,24 @@ func writeStatus(w io.Writer, s statusOut) {
 			}
 		}
 	}
+}
+
+// engineRecordWords is status.engineRecord in words (CONTRACT.md, Direct
+// transport): this engine's key as the agent's database records it.
+func engineRecordWords(r agent.EngineRecordStatus) string {
+	at := "no address"
+	if r.URL != "" {
+		at = strings.TrimPrefix(r.URL, "https://")
+	}
+	switch r.State {
+	case "RECORDED":
+		return fmt.Sprintf("RECORDED in the agent's database, %s (since %s)", at, r.RecordedAt)
+	case "REVOKED":
+		return fmt.Sprintf("REVOKED %s (portal links stop working; approvals go on through long links)", r.RevokedAt)
+	case "NOT_RECORDED":
+		return "NOT_RECORDED (the agent's database does not hold this engine's key)"
+	}
+	return "UNKNOWN (the guard is older than version 33, the key file is refused, or the record could not be read)"
 }
 
 // guardWords is the guard's version against the build's, in words.

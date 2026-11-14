@@ -114,7 +114,7 @@ func resultOf(rep *portalverify.Report, now time.Time) Result {
 // same.
 func Options(base string) portalverify.Options {
 	o := portalverify.Options{Base: base, Files: web.Files, Headers: websec.Expected()}
-	for _, r := range pages.PageRoutes {
+	for _, r := range pages.PortalPages() {
 		o.Routes = append(o.Routes, portalverify.Route{Path: r.Path, ID: r.ID, File: r.File})
 	}
 	return o

@@ -109,10 +109,10 @@ h2 { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.4; }
 p { margin: 0; }
 .muted { color: var(--ui-text-2); font-size: 13px; }
 
-pre, code, textarea, .col, .table-name, .item-id {
+pre, code, textarea, input.text, .col, .table-name, .item-id {
   font-family: var(--font-mono);
 }
-pre, code, textarea { font-size: 13px; }
+pre, code, textarea, input.text { font-size: 13px; }
 code { background: var(--ui-subtle); border-radius: var(--radius-ui-sm); padding: 0 4px; }
 pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
 
@@ -251,7 +251,7 @@ button.reject { color: var(--diff-del-fg); }
 .icon { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .buttons { display: flex; gap: 8px; flex-wrap: wrap; }
 
-textarea {
+textarea, input.text {
   width: 100%;
   background: var(--ui-subtle);
   color: var(--ui-text);

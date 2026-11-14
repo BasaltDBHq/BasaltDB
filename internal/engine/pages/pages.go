@@ -53,6 +53,21 @@ var PageRoutes = []PageRoute{
 	{Path: links.ForgetPath, File: "passkeys/index.html"},
 }
 
+// PortalRoutes are pages only the portal serves: the pin page of the
+// DIRECT transport (CONTRACT.md, Direct transport). The engine embeds the
+// file, so basalt portal verify checks it, but never serves it: a pin
+// belongs to the portal's origin, and the local pages have no DIRECT.
+var PortalRoutes = []PageRoute{
+	{Path: links.EnginesPath, File: "engines/index.html"},
+	{Path: links.EnginesAddPath, File: "engines/index.html"},
+}
+
+// PortalPages are every page the portal serves: PageRoutes, then
+// PortalRoutes.
+func PortalPages() []PageRoute {
+	return append(append([]PageRoute{}, PageRoutes...), PortalRoutes...)
+}
+
 // maxBody bounds a relayed signature (the response JSON is about 1 KiB).
 const maxBody = 16 << 10
 

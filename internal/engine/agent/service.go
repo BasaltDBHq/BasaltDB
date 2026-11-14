@@ -131,6 +131,11 @@ type Deps struct {
 	// (problem PORTAL_MISMATCH); status says nothing about the portal when
 	// nil.
 	Portal PortalReporter
+	// EngineRecord reads this engine's row in the agent's database for the
+	// status tool's engineRecord; nil makes its state UNKNOWN. DirectServed
+	// is whether the engine has a direct listener (directAddr is not off).
+	EngineRecord EngineRecordReader
+	DirectServed bool
 	// Receipts is the engine's signing key, which signs the receipt of
 	// every signature the engine relays (CONTRACT.md, Vault channel,
 	// Receipts). Nil when the key file is refused (KEY_ERROR): answers then

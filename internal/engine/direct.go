@@ -33,6 +33,9 @@ const (
 	// directHeaderTimeout and directHeaderBytes bound a request's headers.
 	directHeaderTimeout = 5 * time.Second
 	directHeaderBytes   = 8 << 10
+	// headerSlop is what net/http reads past Server.MaxHeaderBytes before
+	// it answers 431, so the server is given directHeaderBytes less it.
+	headerSlop = 4 << 10
 	// directConns is the most connections open on the listener.
 	directConns = 64
 	// recordReadTimeout bounds one read of the engine's record.
@@ -43,6 +46,18 @@ const (
 	// directIdleTimeout closes a kept-alive connection with no next
 	// request, so idle connections cannot hold the connection cap.
 	directIdleTimeout = 5 * time.Second
+	// directReadTimeout and directWriteTimeout bound a whole request's read
+	// and a response's write. They are the backstop where a response
+	// writer cannot set its own deadline (refuse), and keep a local
+	// process that pipelines probes and never reads from holding a
+	// connection slot. A WebSocket upgrade hijacks the connection, which
+	// clears them.
+	directReadTimeout  = 10 * time.Second
+	directWriteTimeout = 10 * time.Second
+	// directRecheckEvery is how often the engine reads its record for the
+	// agents with an open direct session, so a session that sends nothing
+	// is still closed with ENGINE_REVOKED soon after a revoke.
+	directRecheckEvery = time.Minute
 	// directShutdownTimeout bounds the listener's shutdown.
 	directShutdownTimeout = 5 * time.Second
 	httpsPort             = "443"
@@ -147,7 +162,10 @@ func (r *engineRecords) hostAllowed(ctx context.Context, host string) bool {
 	if ok || !stale {
 		return ok
 	}
-	r.refresh(ctx)
+	// The read is not the request's: a client that goes away at once
+	// would otherwise fail it and keep a just-recorded address out until
+	// the next window.
+	r.refresh(context.WithoutCancel(ctx))
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.hosts[host]
@@ -185,6 +203,54 @@ func (r *engineRecords) admit(host string) func(context.Context, vault.SessionLi
 	}
 }
 
+// revoked is the check before each request of an open direct session: the
+// link's agent's database revoked this engine since the session opened
+// (CONTRACT.md, Direct transport, Revocation by the person). Only a revoke
+// ends the session: a failed read answers the request, which reads that
+// database itself, and an address recorded since applies to new sessions.
+func (r *engineRecords) revoked(ctx context.Context, l vault.SessionLink) channel.CloseError {
+	if r.isRevoked(ctx, l.Agent) {
+		return channel.ErrEngineRevoked
+	}
+	return 0
+}
+
+// isRevoked reads agent's record: whether its database revoked this engine.
+// A failed read is not a revoke.
+func (r *engineRecords) isRevoked(ctx context.Context, agent string) bool {
+	e, err := r.read(ctx, agent)
+	if err != nil {
+		r.log.Debug("direct: re-read the engine's record", "agent", agent, "err", err)
+		return false
+	}
+	return e != nil && e.RevokedAt != nil
+}
+
+// endRevoked closes, with ENGINE_REVOKED, the open direct sessions of every
+// agent whose database revoked this engine.
+func (r *engineRecords) endRevoked(ctx context.Context, sess *vault.Direct) {
+	for _, agent := range sess.Agents() {
+		if r.isRevoked(ctx, agent) {
+			r.log.Info("direct: the agent's database revoked this engine; its sessions are closed", "agent", agent)
+			sess.EndAgent(agent, channel.ErrEngineRevoked)
+		}
+	}
+}
+
+// watchRevoked runs endRevoked every interval until ctx ends.
+func (r *engineRecords) watchRevoked(ctx context.Context, sess *vault.Direct, every time.Duration) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			r.endRevoked(ctx, sess)
+		}
+	}
+}
+
 // directHandler serves the direct listener's two routes.
 type directHandler struct {
 	records *engineRecords
@@ -193,6 +259,9 @@ type directHandler struct {
 	ctx     context.Context
 	now     func() time.Time
 	pending chan struct{}
+	// hold is the longest a socket holds its pending slot without reaching
+	// the record's check: vault.Message1Timeout, longer in tests.
+	hold time.Duration
 
 	mu          sync.Mutex
 	windowStart time.Time
@@ -200,8 +269,15 @@ type directHandler struct {
 }
 
 func newDirectHandler(ctx context.Context, records *engineRecords, key []byte, sess *vault.Direct, now func() time.Time) http.Handler {
-	d := &directHandler{records: records, key: key, sess: sess, ctx: ctx, now: now, pending: make(chan struct{}, directPending)}
-	return websec.Headers()(d)
+	return websec.Headers()(newDirectRoutes(ctx, records, key, sess, now))
+}
+
+// newDirectRoutes is newDirectHandler without the security headers.
+func newDirectRoutes(ctx context.Context, records *engineRecords, key []byte, sess *vault.Direct, now func() time.Time) *directHandler {
+	return &directHandler{
+		records: records, key: key, sess: sess, ctx: ctx, now: now, pending: make(chan struct{}, directPending),
+		hold: vault.Message1Timeout,
+	}
 }
 
 // probe is GET /v1/engine's answer (api/mcp/vault/direct-engine.schema.json).
@@ -229,9 +305,20 @@ func (d *directHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodGet && r.URL.Path == "/v1/session":
 		d.session(w, r)
 	default:
-		_ = http.NewResponseController(w).SetReadDeadline(time.Now())
+		stopReading(w)
 		w.Header().Set("Connection", "close")
 		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+// stopReading sets the request's read deadline to now, so net/http does
+// not wait to drain a body the client never sends. A response writer that
+// cannot set it (a wrapper without Unwrap) leaves the server's
+// directReadTimeout to bound the read: the refusal is still answered and
+// the connection closed, only later.
+func stopReading(w http.ResponseWriter) {
+	if err := http.NewResponseController(w).SetReadDeadline(time.Now()); err != nil {
+		slog.Debug("direct: stop reading a refused request", "err", err)
 	}
 }
 
@@ -239,7 +326,7 @@ func (d *directHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // deadline is set to now first, so net/http does not wait to drain a
 // request body the client never sends.
 func refuse(w http.ResponseWriter, msg string, status int) {
-	_ = http.NewResponseController(w).SetReadDeadline(time.Now())
+	stopReading(w)
 	w.Header().Set("Connection", "close")
 	http.Error(w, msg, status)
 }
@@ -293,14 +380,20 @@ func (d *directHandler) session(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// A socket holds its pending slot only while message 1 may still come.
-	t := time.AfterFunc(vault.Message1Timeout, release)
+	t := time.AfterFunc(d.hold, release)
 	defer t.Stop()
 	// The socket ends with the request or with the engine.
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	stop := context.AfterFunc(d.ctx, cancel) //nolint:contextcheck // the engine stopping ends the socket too, not only the request
 	defer stop()
-	d.sess.Serve(ctx, ws, d.records.admit(r.Host))
+	// The handshake ends with the record's check (message 2 follows at
+	// once), so the slot is free for the next socket from then on.
+	admit := d.records.admit(r.Host)
+	d.sess.Serve(ctx, ws, func(actx context.Context, l vault.SessionLink) channel.CloseError {
+		defer release()
+		return admit(actx, l)
+	})
 }
 
 // allowUpgrade counts an upgrade against directUpgradesPerMinute.
@@ -337,7 +430,10 @@ func listenDirect(addr string) (*directSite, error) {
 // directHeaderTimeout, an idle kept-alive connection closed after
 // directIdleTimeout.
 func newDirectServer(h http.Handler) *http.Server {
-	return &http.Server{Handler: h, ReadHeaderTimeout: directHeaderTimeout, IdleTimeout: directIdleTimeout, MaxHeaderBytes: directHeaderBytes}
+	return &http.Server{
+		Handler: h, ReadHeaderTimeout: directHeaderTimeout, ReadTimeout: directReadTimeout, WriteTimeout: directWriteTimeout,
+		IdleTimeout: directIdleTimeout, MaxHeaderBytes: directHeaderBytes - headerSlop,
+	}
 }
 
 // serve answers on the listener until ctx ends, then ends the direct

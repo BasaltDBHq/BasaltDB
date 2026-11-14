@@ -20,8 +20,8 @@ import (
 // and lines whole, and a page decodes at most 1 MiB of them (Format 2,
 // Limits). A larger request reaches a page only on a short link whose page
 // fetches it from the engine: the engine's local pages, or the portal over
-// the Vault when its lines cost at most maxPortalRequestCost (the direct
-// transport issues no short link yet). With neither, the answer is
+// the Vault when its lines cost at most maxPortalRequestCost (not yet the
+// direct transport's short link, a follow-up). With neither, the answer is
 // REQUEST_TOO_LARGE.
 
 // argReissueLink is list_pending's and request_revert's argument that
@@ -148,8 +148,8 @@ func (s *Service) tooLargeText(what string, cost int64, expires time.Time, isRev
 		return lead + " To open it, turn on the engine's local pages (pagesAddr in engine.json), restart the engine, then tell the agent." +
 			narrower + until
 	case cost <= maxPortalRequestCost:
-		// Only the Vault issues the portal's short link today: the direct
-		// transport carries no short link yet.
+		// Only the Vault carries a too-large request's portal short link
+		// today, not yet the direct transport.
 		return lead + " To open it, turn on the Vault: " + init("--vault=on") + " then tell the agent." + narrower + until
 	case s.Commands.AgentOperated():
 		return what + " is too large for any page this engine can serve: only local pages can carry it, and an agent-operated " +

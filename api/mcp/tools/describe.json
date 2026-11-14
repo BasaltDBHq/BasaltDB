@@ -130,7 +130,7 @@
       },
       "schemas": {
         "type": "array",
-        "description": "OVERVIEW with more than 50 visible tables: one item per schema. Search for the rest.",
+        "description": "OVERVIEW with more than 50 visible tables: one item per schema (until the cap is served, every schema by name; then at most 50, the most visible tables first, ties by schema name). With more than 50 visible schemas the rest are counted in otherSchemas, not listed. Search for them.",
         "items": {
           "type": "object",
           "additionalProperties": false,
@@ -146,6 +146,25 @@
               "type": "integer",
               "minimum": 0
             }
+          }
+        }
+      },
+      "otherSchemas": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Planned (cap on schemas). OVERVIEW with more than 50 visible schemas: the schemas not listed in schemas, and the visible tables in them. Absent otherwise.",
+        "required": [
+          "schemas",
+          "tables"
+        ],
+        "properties": {
+          "schemas": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "tables": {
+            "type": "integer",
+            "minimum": 1
           }
         }
       },

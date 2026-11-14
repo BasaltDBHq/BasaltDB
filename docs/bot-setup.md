@@ -60,7 +60,7 @@ Keep it running in the background: use a supervisor, `tmux` or whatever this ser
 
 Do not install the engine as a system service on a bot server yet. `sudo basalt service install` makes a service that runs as its own OS user (`basalt` on Linux), but `basalt init --remote` run as root writes `engine.json` and the agent's credential file owned by root, and the service cannot read them. It also leaves the engine key out of the setup code when it runs as root. `basalt init --remote` is meant to run as the user that runs the engine, and that user keeps the config and the sockets in its own config directory (step 2).
 
-To keep the engine up across reboots, run `basalt engine --config <path to engine.json>` as that same user under a supervisor you already have: a systemd user unit (`systemctl --user`, with `loginctl enable-linger`), a systemd system unit with `User=` set to that user, `tmux`, or whatever this server uses. For a container, see "Containers without systemd" in [install.md](install.md). A service for the bot path is planned.
+To keep the engine up across reboots, run `basalt engine --config <path to engine.json>` as that same user under a supervisor you already have: a systemd user unit (`systemctl --user`, with `loginctl enable-linger`), a systemd system unit with `User=` set to that user, `tmux`, or whatever this server uses. For a container, only the `basalt engine --user basalt` start in "Containers without systemd" in [install.md](install.md) applies; make the setup code with `basalt init --remote` as step 2 says, not with the `basalt init` command shown there. A service for the bot path is planned.
 
 ## 5. Check the setup
 

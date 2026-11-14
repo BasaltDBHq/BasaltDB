@@ -57,23 +57,21 @@ const IMPORT_FROM = /(?:^|\n)[ \t]*(?:import|export)\b[^"';()`/]*?\bfrom[ \t]*["
 // import( with white space or // comments between (block comments are
 // refused outright, see imports).
 const DYNAMIC_IMPORT = /\bimport(?:\s|\/\/[^\n]*\n)*\(/;
-// A line that starts with //: a comment, or text in a string or template
-// literal, never a static import. Modules use LF only and no block comments,
-// so a line here is a line to the JavaScript parser too, and its // really
-// starts a comment or text.
-const LINE_COMMENT = /^[ \t]*\/\/[^\n]*$/gm;
 // An import or export-from IMPORT_FROM did not read: one not at the start of
-// a line, import.meta, or the word in a string.
+// a line, import.meta, or the word in a string or comment. Comments are not
+// skipped: a line that starts with // can still end a template literal or a
+// continued string and go on as code.
 const STRAY_IMPORT = /\bimport\b|\bfrom\s*["'`]/;
 // A way to run code or load a document that no modulepreload integrity
-// covers: script elements, workers, worklets, frames, objects and embeds. It
+// covers: script elements (any "script" string, createElementNS for the SVG
+// one), workers, worklets, frames, objects and embeds. It
 // catches a mistake, not deliberate obfuscation ("scr" + "ipt"). The pages'
 // meta CSP (default-src 'none') blocks frames and objects as well, but not
 // script elements or workers: script-src 'self' admits any same-origin
 // script without integrity.
 const UNPINNED_LOAD = new RegExp(
-  "\\b(?:worker|sharedworker|serviceworker|importscripts|[a-z]*worklet|addmodule|iframe|frameset|srcdoc|htmliframeelement|htmlobjectelement|htmlembedelement|htmlscriptelement)\\b" +
-  "|<\\s*(?:script|frame|object|embed|portal|applet)\\b|\\(\\s*[\"'`](?:script|frame|object|embed|portal|applet)[\"'`]", "i");
+  "\\b(?:worker|sharedworker|serviceworker|importscripts|[a-z]*worklet|addmodule|iframe|frameset|srcdoc|htmliframeelement|htmlobjectelement|htmlembedelement|htmlscriptelement|svgscriptelement|createelementns)\\b" +
+  "|[\"'`]script[\"'`]|<\\s*(?:script|frame|object|embed|portal|applet)\\b|\\(\\s*[\"'`](?:frame|object|embed|portal|applet)[\"'`]", "i");
 
 // imports returns the embedded files a module imports, and throws on any way
 // it could load code that no modulepreload integrity covers, or on an import
@@ -82,17 +80,13 @@ export function imports(root, files, file) {
   const src = readFileSync(file, "utf8");
   // JavaScript ends a line (and a // comment) at each of these.
   if (/[\r\u2028\u2029]/.test(src)) throw new Error(`${file}: line terminator other than LF`);
-  // A block comment can hide code from the line-based reading below ("/*"
-  // then "// */ import ..."), so modules use // comments only.
+  // A block comment can make the line-based reading below see code as
+  // commented out, or the other way round, so modules use // only.
   if (src.includes("/*")) throw new Error(`${file}: block comment (use // comments)`);
-  // These two read the whole source, comments included: a line that starts
-  // with // inside a template literal can still hold a ${...} expression.
   if (DYNAMIC_IMPORT.test(src)) throw new Error(`${file}: dynamic import() is not covered by SRI`);
   const load = src.match(UNPINNED_LOAD);
   if (load) throw new Error(`${file}: ${load[0]} loads code or a document that SRI does not cover`);
-  // A static import cannot sit in a ${...} expression, so whole-line comments
-  // can go before looking for imports the scanner did not read.
-  const code = src.replace(LINE_COMMENT, "");
+  const code = src;
   const stray = code.replace(IMPORT_FROM, " ").match(STRAY_IMPORT);
   if (stray) throw new Error(`${file}: an import the scanner cannot account for (${stray[0]}); write each import at the start of a line`);
   const out = [];

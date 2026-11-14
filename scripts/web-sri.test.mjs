@@ -203,8 +203,8 @@ test("the module scanner reads ordinary modules", () => {
     'import { a } from "./a.js";\nexport const b = a;\n',
     'import {\n  a,\n} from "./a.js";\n',
     'export { a } from "./a.js";\n',
-    "// Tests import this module without a document.\nimport { a } from \"./a.js\";\n",
-    '  // WebAuthn does not tell "x" from "y".\nconst k = await subtle.importKey("raw", s, "HKDF", false, []);\nif (typeof v === "object") {}\n',
+    "// Tests load this module without a document.\nimport { a } from \"./a.js\";\n",
+    '  // WebAuthn reports "x" and "y" the same way.\nconst k = await subtle.importKey("raw", s, "HKDF", false, []);\nif (typeof v === "object") {}\n',
   ]) assert.equal(scan(src), "", src);
 });
 
@@ -223,6 +223,12 @@ test("the module scanner refuses what it cannot account for", () => {
     ['const s = `\n// ${await import\u00a0("./a.js")}\n`;\n', /dynamic import/],
     ['\u00a0import { a } from "./a.js";\n', /cannot account for/],
     ['const s = document.createElement("script");\n', /SRI does not cover/],
+    ['const h = `\n// `; import { a } from "./a.js";\n', /cannot account for/],
+    ['const h = "\\\n// "; import "./a.js";\n', /cannot account for/],
+    ["// Tests import this module.\nconst a = 1;\n", /cannot account for/],
+    ['document.createElementNS("http://www.w3.org/2000/svg", "script");\n', /SRI does not cover/],
+    ['const tag = "script";\ndocument.createElement(tag);\n', /SRI does not cover/],
+    ["document.createElementNS(ns, tag);\n", /SRI does not cover/],
     ['d.innerHTML = "<script src=x></script>";\n', /SRI does not cover/],
     ["const u = import.meta.url;\n", /cannot account for/],
     ['const s = "x"; const t = "import";\n', /cannot account for/],

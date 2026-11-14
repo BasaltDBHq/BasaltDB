@@ -258,6 +258,11 @@
               "$ref": "../values/large-value.schema.json"
             },
             "description": "Planned (result budget, CONTRACT.md Large values): the values (statement, params) of this record left out because they are too large for you to read, each with its size and sha256; absent when none was. A value left out is absent, never null: it is stored in full."
+          },
+          "moreRowChanges": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Planned (result budget, CONTRACT.md Large values): rowChanges holds at most the first 1000 rows of a record (a large revert's change); this counts the rest. Read them with revert_plan of the record's revertId. Absent when none was left out."
           }
         }
       },

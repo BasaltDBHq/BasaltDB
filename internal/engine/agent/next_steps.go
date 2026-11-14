@@ -135,6 +135,10 @@ func (s *Service) errorGuidance(te *mcp.ToolError, f failure) ([]mcp.NextStep, s
 	case CodeStaleRead:
 		s.staleReadSteps(b, te, f)
 	case CodeStatementRefused:
+		if te.Reason == ReasonHoldTooLarge {
+			person = s.holdTooLargeSteps(b, te)
+			break
+		}
 		person = refusedSteps(b, te, f)
 	case CodeRowLimitExceeded:
 		person = rowLimitSteps(b)

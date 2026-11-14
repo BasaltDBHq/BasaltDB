@@ -234,6 +234,9 @@ func guardReason(code, detail string) string {
 		if strings.Contains(detail, "has no primary key") {
 			return ReasonNoPrimaryKey
 		}
+		if detail == guard.DetailHoldTooLarge {
+			return ReasonHoldTooLarge
+		}
 		return ReasonNotAllowed
 	case CodeApprovalInvalid:
 		return detailReason(detail, approvalDetails, reasonBadSignature)

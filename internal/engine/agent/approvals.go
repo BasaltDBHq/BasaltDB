@@ -126,8 +126,14 @@ func (s *Service) hold(ctx context.Context, in guard.Intent, p WriteParams, stmt
 		// The rows went away between the attempt and the preview.
 		return uuid.Nil, &mcp.ToolError{Code: CodeSQLError, Reason: reasonNoRowsNow, Message: "the write changes no rows now; read again and decide"}
 	}
+	if te := holdTooLarge(lines, nil); te != nil {
+		return uuid.Nil, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
+	}
 	held, err := s.Approvals.Hold(ctx, in, guard.HoldRequest{Statement: p.SQL, Params: p.Params, Assigned: assigned, Lines: lines})
 	if err != nil {
+		if te := holdTooLarge(lines, err); te != nil {
+			return uuid.Nil, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
+		}
 		return uuid.Nil, err
 	}
 	req := sizedRequest{Binding: held.BindingText, Lines: lines, Cost: textsCost(lines)}

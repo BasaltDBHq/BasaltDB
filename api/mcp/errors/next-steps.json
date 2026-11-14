@@ -16,6 +16,7 @@
     { "code": "STATEMENT_REFUSED", "reason": "NOT_REPEATABLE", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
     { "code": "STATEMENT_REFUSED", "reason": "NO_PRIMARY_KEY", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] },
     { "code": "STATEMENT_REFUSED", "reason": "NOT_ALLOWED", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "STOP" }] },
+    { "code": "STATEMENT_REFUSED", "reason": "HOLD_TOO_LARGE", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }] },
 
     { "code": "ROW_LIMIT_EXCEEDED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "RETRY_SMALLER_BATCHES" }] },
 

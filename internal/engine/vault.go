@@ -78,17 +78,20 @@ type relayLinks struct {
 	log    *slog.Logger
 	mu     sync.Mutex
 	stores []*links.Secrets
+	// agents names each store's agent, by index.
+	agents []string
 }
 
 func newRelayLinks(log *slog.Logger) *relayLinks { return &relayLinks{log: log} }
 
 // add takes an agent's store; its dropped relay links are unregistered
 // with unregister.
-func (r *relayLinks) add(s *links.Secrets, unregister func(channel.LinkToken)) {
+func (r *relayLinks) add(agent string, s *links.Secrets, unregister func(channel.LinkToken)) {
 	s.OnDrop(unregister)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.stores = append(r.stores, s)
+	r.agents = append(r.agents, agent)
 }
 
 func (r *relayLinks) all() []*links.Secrets {
@@ -114,10 +117,13 @@ func (r *relayLinks) Live() []vault.Link {
 func (r *relayLinks) Session(token channel.LinkToken) (vault.SessionLink, bool) {
 	var out vault.SessionLink
 	found := false
-	for _, s := range r.all() {
+	r.mu.Lock()
+	stores, agents := slices.Clone(r.stores), slices.Clone(r.agents)
+	r.mu.Unlock()
+	for i, s := range stores {
 		l, ok := s.Session(token)
 		if ok && !found {
-			out = vault.SessionLink{Token: l.Keys.Token, Item: l.Item, PSK: l.Keys.PSK, ExpiresAt: l.ExpiresAt}
+			out = vault.SessionLink{Token: l.Keys.Token, Agent: agents[i], Item: l.Item, PSK: l.Keys.PSK, ExpiresAt: l.ExpiresAt}
 			found = true
 		}
 		l.Keys.PSK.Zero()

@@ -192,7 +192,7 @@ func serveOverVault(t *testing.T, w *wire, a pages.Agent, store *links.Secrets, 
 	cfg := config.Config{Vault: config.VaultOn, PagesURL: links.Portal, VaultURL: v.URL()}
 	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), relay, site)
 	require.NotNil(t, ev.client)
-	relay.add(store, ev.client.Unregister)
+	relay.add("bot", store, ev.client.Unregister)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
@@ -430,7 +430,7 @@ func TestVaultSessionDeadTokenTiming(t *testing.T) {
 	relay := newRelayLinks(quietLog())
 	for range 2 {
 		store := links.NewSecrets(time.Now, rand.Reader)
-		relay.add(store, func(channel.LinkToken) {})
+		relay.add("bot", store, func(channel.LinkToken) {})
 		for range 50 {
 			_, _, err := store.IssueRelay(uuid.Must(uuid.NewV7()), time.Now().Add(time.Hour))
 			require.NoError(t, err)

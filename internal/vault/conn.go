@@ -69,6 +69,15 @@ type conn struct {
 	c        *Client
 	ws       *websocket.Conn
 	sessions *sessions
+	// out carries the sessions' bytes and ends to their pages: ROUTE and
+	// SESSION_CLOSE on the Vault's socket, the page's own socket on DIRECT.
+	out carrier
+	// transport is the prologue's transport: RELAY, or DIRECT.
+	transport channel.Transport
+	// admit, when set, decides after message 1's tag and point whether the
+	// engine serves the link's session (DIRECT: the engine's record in the
+	// link's agent's database); 0 lets it through.
+	admit func(ctx context.Context, link SessionLink) channel.CloseError
 	// ctx is the socket's own context, set before serving: what ends a
 	// session from outside the read loop writes with it.
 	ctx context.Context
@@ -94,6 +103,7 @@ func (c *Client) connect(ctx context.Context) (bool, error) {
 	}
 	cn := &conn{
 		c: c, ws: ws, sessions: newSessions(c.opts.HandshakeTimeout, c.opts.Now),
+		out: vaultCarrier{ws: ws}, transport: channel.TransportRelay,
 		ctx: ctx, done: make(chan struct{}), pending: map[int64]func(answer){},
 	}
 	c.setConn(cn)
@@ -377,8 +387,33 @@ func (cn *conn) oversize(ctx context.Context, r io.Reader, id sid, limit int, aw
 
 // closeSession tells the Vault a session ended with code.
 func (cn *conn) closeSession(ctx context.Context, id sid, code channel.CloseError) error {
+	return cn.out.closeSession(ctx, id, code)
+}
+
+// carrier is how a session's messages and its end reach the page.
+type carrier interface {
+	// send writes one of the engine's session messages (message 2, a frame).
+	send(ctx context.Context, id sid, payload []byte) error
+	// closeSession tells the page the session ended with code.
+	closeSession(ctx context.Context, id sid, code channel.CloseError) error
+}
+
+// vaultCarrier is the Vault's socket: ROUTE messages and SESSION_CLOSE.
+type vaultCarrier struct{ ws *websocket.Conn }
+
+func (v vaultCarrier) send(ctx context.Context, id sid, payload []byte) error {
+	msg := make([]byte, 0, routeHeaderLen+len(payload))
+	msg = append(msg, wireVersion, typeRoute)
+	msg = append(msg, id[:]...)
+	msg = append(msg, payload...)
+	wctx, cancel := context.WithTimeout(ctx, writeTimeout)
+	defer cancel()
+	return v.ws.Write(wctx, websocket.MessageBinary, msg)
+}
+
+func (v vaultCarrier) closeSession(ctx context.Context, id sid, code channel.CloseError) error {
 	c := int(code)
-	return writeJSON(ctx, cn.ws, sessionCloseMsg{Type: typeSessionClose, SID: id.String(), Code: &c})
+	return writeJSON(ctx, v.ws, sessionCloseMsg{Type: typeSessionClose, SID: id.String(), Code: &c})
 }
 
 func writeJSON(ctx context.Context, ws *websocket.Conn, msg any) error {

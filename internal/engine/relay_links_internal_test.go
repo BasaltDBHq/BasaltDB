@@ -45,8 +45,8 @@ func TestRelayLinksAcrossAgents(t *testing.T) {
 		return now
 	}
 	bot, ops := links.NewSecrets(clock, rand.Reader), links.NewSecrets(clock, rand.Reader)
-	relay.add(bot, ev.client.Unregister)
-	relay.add(ops, ev.client.Unregister)
+	relay.add("bot", bot, ev.client.Unregister)
+	relay.add("ops", ops, ev.client.Unregister)
 	_, a, err := bot.IssueRelay(uuid.Must(uuid.NewV7()), now.Add(time.Hour))
 	require.NoError(t, err)
 	_, b, err := ops.IssueRelay(uuid.Must(uuid.NewV7()), now.Add(time.Minute))
@@ -105,7 +105,7 @@ func TestManyConflictsDoNotStallReads(t *testing.T) {
 	ev := openVault(cfg, t.TempDir(), time.Now, quietLog(), relay, nil)
 	require.NotNil(t, ev.client)
 	store := links.NewSecrets(time.Now, rand.Reader)
-	relay.add(store, ev.client.Unregister)
+	relay.add("bot", store, ev.client.Unregister)
 	for range conflicts {
 		_, tok, err := store.IssueRelay(uuid.Must(uuid.NewV7()), time.Now().Add(time.Hour))
 		require.NoError(t, err)

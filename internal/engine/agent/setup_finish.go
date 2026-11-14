@@ -3,6 +3,9 @@ package agent
 import (
 	"context"
 	"errors"
+	"os"
+	"os/user"
+	"strconv"
 	"sync"
 	"time"
 
@@ -129,16 +132,64 @@ func (s statusDeps) recordedAsAgent(ctx context.Context, id uuid.UUID) (bool, er
 // finish clears the recorded setup from the config and forgets it. The setup
 // stays pending in memory, so the next call or heartbeat tries again, when
 // the credential could not be promoted (the engine still logs in with the
-// old one) or the agent's lock was held (basalt init --remote is running).
-// Any other failure, such as a config the engine cannot write, is logged and
+// old one), the agent's lock was held (basalt init --remote is running), or
+// a lock file cannot be opened at all: status then reports
+// LOCK_FILE_UNUSABLE until a try opens it (CONTRACT.md, Lock files). Any
+// other failure, such as a config the engine cannot write, is logged and
 // the setup forgotten: the database, not the file, decides that it is done.
 func (s statusDeps) finish(ctx context.Context, promote bool) {
 	id := s.setup.SetupID
-	if err := s.finisher.Finish(ctx, id, promote); err != nil {
+	err := s.finisher.Finish(ctx, id, promote)
+	var unusable *config.LockUnusableError
+	switch {
+	case errors.As(err, &unusable):
+		s.lockTrouble.set(unusable.Path)
+	case err == nil || !errors.Is(err, config.ErrLocked):
+		s.lockTrouble.set("")
+	}
+	if err != nil {
 		s.log.Error("finish the agent's setup", "setupId", id, "promote", promote, "err", err)
-		if promote || errors.Is(err, config.ErrLocked) {
+		if promote || errors.Is(err, config.ErrLocked) || unusable != nil {
 			return
 		}
 	}
 	s.finished(id)
+}
+
+// lockTrouble is the lock file the last try to finish a setup could not
+// open, "" when none.
+type lockTrouble struct {
+	mu   sync.Mutex
+	path string
+}
+
+func (l *lockTrouble) set(path string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.path = path
+}
+
+func (l *lockTrouble) get() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.path
+}
+
+// lockFileSteps: the person gives the lock file back to the engine's user
+// with root, on the engine's machine. A PERSON step on an agent-operated
+// engine too: it needs root.
+func lockFileSteps(b *Steps, path string) string {
+	cmd := "sudo chown " + engineUserName() + " " + shellQuote(path)
+	b.RunCommand(cmd, "Run this on the engine's machine: the engine cannot open this lock file.")
+	b.TellAgent("Tell the agent when it is done.")
+	return "The engine cannot open its lock file " + path + " (a root process left it behind), so it cannot finish the agent's setup. On the engine's machine, run: " + cmd + " then tell the agent."
+}
+
+// engineUserName is the engine's OS user, by name when it has one, else
+// its uid (chown takes both).
+func engineUserName() string {
+	if u, err := user.Current(); err == nil && u.Username != "" {
+		return u.Username
+	}
+	return strconv.Itoa(os.Geteuid())
 }

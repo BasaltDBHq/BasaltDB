@@ -23,15 +23,13 @@ import (
 // maxPasskeyLabel is the registration request's label limit in bytes.
 const maxPasskeyLabel = 64
 
-// relyingParty is the hosted console, or the portal an agent-operated engine
-// uses (both RP ID basaltvault.app), for their origins, else the engine's local pages at origin (http://localhost:<port>,
-// RP ID localhost), the default until hosting exists.
+// relyingParty is the portal (RP ID basaltvault.app) for its origin, else
+// the engine's local pages at origin (http://localhost:<port>, RP ID
+// localhost), the default until hosting exists. Any other origin is refused
+// (CONTRACT.md, Page origins).
 func relyingParty(origin string) (passkey.Relying, error) {
-	if origin == links.HostedConsole {
-		return passkey.Production, nil
-	}
 	if origin == links.Portal {
-		return portalRP, nil
+		return passkey.Production, nil
 	}
 	rp, err := passkey.Local(origin)
 	if err != nil {

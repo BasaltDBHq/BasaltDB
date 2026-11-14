@@ -66,9 +66,9 @@ func initWithPasskey(t *testing.T, d *guardtest.DB, person *passkeytest.Authenti
 	configPath := filepath.Join(t.TempDir(), "engine.json")
 	r := cliRand(t, map[string]string{envAdminURL: d.URL}, registrationCode(t, person, dbName(t, d))+"\n",
 		"init", "--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix,
-		"--config", configPath, "--os-user", "tester", "--yes", "--passkey-origin", links.HostedConsole)
+		"--config", configPath, "--os-user", "tester", "--yes", "--passkey-origin", links.Portal)
 	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Contains(t, r.stderr, "https://console.basaltvault.app/passkeys/register#1.")
+	require.Contains(t, r.stderr, "https://portal.basaltvault.app/passkeys/register#1.")
 	require.Contains(t, r.stderr, "passkey registered for basaltvault.app")
 	return filepath.Join(filepath.Dir(configPath), "agents", "bot.url")
 }

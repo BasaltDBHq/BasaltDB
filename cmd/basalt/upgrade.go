@@ -37,6 +37,7 @@ func parseUpgrade(c *cliIO, args []string) (upgradeFlags, error) {
 	if err := parse(fs, args); err != nil {
 		return f, err
 	}
+	f.configPath = configOrFallback(c.host, fs, f.configPath)
 	if !config.ValidAgentName(f.agent) {
 		return f, fmt.Errorf("%w: --agent is required (the agent whose database's guard to upgrade)", errUsage)
 	}

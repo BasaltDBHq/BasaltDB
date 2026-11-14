@@ -114,8 +114,12 @@ type Deps struct {
 	// empty).
 	OperatedBy string
 	SameUser   bool
-	Setup      *config.Setup
-	Build      string
+	// DevLocalPages is engine.json devLocalPages: every personMessage starts
+	// with the DEV_LOCAL_PAGES warning and status reports the problem
+	// (CONTRACT.md, Page origins).
+	DevLocalPages bool
+	Setup         *config.Setup
+	Build         string
 	// Probe reads the guard's state and the agent's setups on its
 	// credential, for status and to admit each call; a current guard when
 	// nil.
@@ -168,6 +172,9 @@ type Service struct {
 	setup   *config.Setup
 	// notRecorded is the held calls' cache of a setup not recorded yet.
 	notRecorded setupCache
+	// lockTrouble is a lock file the engine could not open while finishing
+	// a setup (problem LOCK_FILE_UNUSABLE).
+	lockTrouble lockTrouble
 	// rescopes are the reverts the person rescoped through this engine,
 	// in memory only (CONTRACT.md, Rescope, widen and reject).
 	rescopes *rescopes

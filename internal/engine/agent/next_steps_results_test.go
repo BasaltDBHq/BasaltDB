@@ -193,7 +193,7 @@ func resultCases() map[string]resultCase {
 			},
 		},
 		resultKey("list_pending", "REVERT_PENDING"): {
-			tool: "list_pending", args: map[string]any{},
+			tool: "list_pending", args: map[string]any{}, openWithoutURL: true,
 			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
 				p := &PendingRevert{Revert: caseRevertWith(t, ledger.RevertPending)}
 				require.NoError(t, s.pendingRevert(context.Background(), p, false))
@@ -331,10 +331,7 @@ func TestEveryCatalogResultGivesTheCatalogsSteps(t *testing.T) {
 // steps against its catalog entry and the rules every step follows.
 func requireObeysCatalogSteps(t *testing.T, entry mcpcontract.ErrorSteps, kase catalogCase, person string, links []mcp.Link, steps []mcp.NextStep, config string, openWithoutURL bool) {
 	t.Helper()
-	got := make([]mcpcontract.StepKind, 0, len(steps))
-	for _, st := range steps {
-		got = append(got, mcpcontract.StepKind{Actor: st.Actor, Action: st.Action})
-	}
+	got := catalogKinds(steps)
 	require.Equal(t, mcpcontract.Resolve(entry.Steps, mcpcontract.OperatedByPerson), got, "(actor, action) sequence")
 	require.Equal(t, entry.PersonMessage, person != "", "personMessage set exactly when the catalog says: %q", person)
 	mcptest.Require(t, person, links)
@@ -593,4 +590,18 @@ func urlLinesOf(message string) []string {
 		}
 	}
 	return out
+}
+
+// catalogKinds is the (actor, action) sequence of steps as the catalog lists
+// it: without the SEND_REQUEST step the engine puts first when a result
+// carries requestFile (CONTRACT.md, Next steps).
+func catalogKinds(steps []mcp.NextStep) []mcpcontract.StepKind {
+	got := make([]mcpcontract.StepKind, 0, len(steps))
+	for i, st := range steps {
+		if i == 0 && st.Action == mcp.ActionSendRequest {
+			continue
+		}
+		got = append(got, mcpcontract.StepKind{Actor: st.Actor, Action: st.Action})
+	}
+	return got
 }

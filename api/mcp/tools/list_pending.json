@@ -95,7 +95,7 @@
                 },
                 "statement": {
                   "type": "string",
-                  "description": "The held statement. Planned (result budget): absent when it is over 1 MiB, named in largeValues; you hold it already, as you must repeat it to apply the write."
+                  "description": "The held statement. Planned (result budget): absent when it is left out as a large value (in practice never: write takes at most 16384 characters of sql), named in largeValues."
                 },
                 "params": {
                   "type": "array",
@@ -171,7 +171,7 @@
                   "items": {
                     "$ref": "../values/large-value.schema.json"
                   },
-                  "description": "Planned (result budget, CONTRACT.md Large values): the values (statement, params) of this held write left out because they are too large for you to read, each with its size and sha256; absent when none was. A value left out is absent, never null: it is stored in full, and the approval binds the full value."
+                  "description": "Planned (result budget, CONTRACT.md Large values): the values (statement, params) of this held write left out because they are too large for you to read, each with its size and sha256; absent when none was. A value left out is absent, never null: it is stored in full, and the approval binds the full value. Without the full params you cannot repeat this write to apply it: write it again as a new hold."
                 }
               },
               "additionalProperties": false

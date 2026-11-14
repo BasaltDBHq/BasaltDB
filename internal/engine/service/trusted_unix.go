@@ -167,7 +167,7 @@ func OpenTrustedFile(path string, owner int) (*os.File, error) {
 		return nil, fmt.Errorf("%s is a symlink, which is refused", path)
 	}
 	if err != nil {
-		return nil, &os.PathError{Op: "open", Path: path, Err: err}
+		return nil, &os.PathError{Op: opOpen, Path: path, Err: err}
 	}
 	return os.NewFile(uintptr(fd), path), nil
 }

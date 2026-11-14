@@ -97,10 +97,13 @@ func readOwnedCredential(path string, uid int, who string) (string, error) {
 // user, with readCredentialFile's checks. It returns the file read, so a
 // caller can check the path still names it before moving it.
 func readOwnCredential(path string) (string, os.FileInfo, error) {
+	return readCredentialFile(path, ownedByThisUser)
+}
+
+// ownedByThisUser accepts a file owned by this process's user.
+func ownedByThisUser(uid uint32) (bool, string) {
 	euid := os.Geteuid()
-	return readCredentialFile(path, func(uid uint32) (bool, string) {
-		return euid >= 0 && uint64(uid) == uint64(euid), "you"
-	})
+	return euid >= 0 && uint64(uid) == uint64(euid), "you"
 }
 
 // readCredentialFile opens path with O_NOFOLLOW and O_NONBLOCK (a FIFO
@@ -115,6 +118,11 @@ func readCredentialFile(path string, owner func(uid uint32) (ok bool, want strin
 		return "", nil, err
 	}
 	defer f.Close()
+	return readCredentialFrom(f, owner)
+}
+
+// readCredentialFrom is readCredentialFile's checks and read on the open f.
+func readCredentialFrom(f *os.File, owner func(uid uint32) (ok bool, want string)) (string, os.FileInfo, error) {
 	fi, err := f.Stat()
 	if err != nil {
 		return "", nil, err

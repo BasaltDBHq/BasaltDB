@@ -101,7 +101,7 @@ func TestAttachLeavesOtherAnswersAlone(t *testing.T) {
 	notJSON := []byte(`{"requestFile": nope`)
 	require.Equal(t, notJSON, f.attach(notJSON))
 	off := requestFiles{}
-	withFile := toolAnswer(t, besideHash(rfText))
+	withFile := toolAnswer(t, requestBody())
 	require.Equal(t, withFile, off.attach(withFile), "no cache dir: the agent copies text")
 }
 
@@ -133,7 +133,7 @@ func TestAttachPrunesOldRequestFiles(t *testing.T) {
 	now := time.Now()
 	require.NoError(t, os.Chtimes(old, now.Add(-25*time.Hour), now.Add(-25*time.Hour)))
 	f := requestFiles{dir: dir, now: func() time.Time { return now }}
-	f.attach(toolAnswer(t, besideHash(rfText)))
+	f.attach(toolAnswer(t, requestBody()))
 	_, err := os.Stat(old)
 	require.True(t, os.IsNotExist(err))
 	_, err = os.Stat(fresh)
@@ -145,12 +145,12 @@ func TestAttachPrunesOldRequestFiles(t *testing.T) {
 	}
 }
 
-// besideHash is a revert_plan-like body: rfName's requestFile beside the hash link
+// requestBody is a revert_plan-like body: rfName's requestFile beside the hash link
 // of its own text.
-func besideHash(text string) map[string]any {
+func requestBody() map[string]any {
 	return map[string]any{
-		"revertUrl":   "https://portal.basaltvault.app/reverts/y#h=" + links.RequestHash(text),
-		"requestFile": map[string]any{"fileName": rfName, "text": text},
+		"revertUrl":   "https://portal.basaltvault.app/reverts/y#h=" + links.RequestHash(rfText),
+		"requestFile": map[string]any{"fileName": rfName, "text": rfText},
 	}
 }
 
@@ -177,7 +177,7 @@ func TestAttachIgnoresRequestFilesInData(t *testing.T) {
 
 	// A real request file whose name the data repeats: the shim cannot tell
 	// which line is the requestFile, so it adds no path.
-	body := besideHash(rfText)
+	body := requestBody()
 	body["items"] = []any{map[string]any{"plan": map[string]any{"fileName": rfName, "x": 1}}}
 	line := toolAnswer(t, body)
 	require.Equal(t, line, f.attach(line))
@@ -190,7 +190,7 @@ func TestAttachRefusesAnOpenDirectory(t *testing.T) {
 	require.NoError(t, os.MkdirAll(dir, 0o777))
 	require.NoError(t, os.Chmod(dir, 0o777))
 	f := requestFiles{dir: dir, now: time.Now}
-	line := toolAnswer(t, besideHash(rfText))
+	line := toolAnswer(t, requestBody())
 	require.Equal(t, line, f.attach(line))
 	_, err := os.Stat(filepath.Join(dir, rfName))
 	require.True(t, os.IsNotExist(err))

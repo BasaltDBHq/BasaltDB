@@ -77,6 +77,15 @@ func mkdirTrusted(dir string, owner int) (int, error) {
 // Path is the directory's path as opened.
 func (d *TrustedDir) Path() string { return d.path }
 
+// Owner is the uid that owns the directory, read through its descriptor.
+func (d *TrustedDir) Owner() (int, error) {
+	var st unix.Stat_t
+	if err := fstat(d.fd, &st); err != nil {
+		return 0, err
+	}
+	return int(st.Uid), nil
+}
+
 // Close closes the directory's descriptor.
 func (d *TrustedDir) Close() error { return unix.Close(d.fd) }
 

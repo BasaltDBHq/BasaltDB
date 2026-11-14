@@ -159,3 +159,22 @@ func TestMissingDemoTablesSuggestInitDemo(t *testing.T) {
 	err := missingTablesHint(&guard.MissingTablesError{Tables: []string{"basalt_demo.leads"}}, "db")
 	require.Contains(t, err.Error(), "basalt init --demo")
 }
+
+// A sample table the guard cannot key (here the person's own basalt_demo
+// tables, without a primary key) fails init --demo with the guard's detail
+// and hint, as plain init shows them.
+func TestInitDemoShowsTheGuardsDetailAndHint(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t)
+	d.Exec(t, `CREATE SCHEMA basalt_demo;
+		CREATE TABLE basalt_demo.leads (id integer, name text);
+		CREATE TABLE basalt_demo.lead_notes (id integer, lead_id integer, body text)`)
+	r := demoInit(t, d, tempConfig(t), "--yes", "--no-service")
+	require.Equal(t, exitError, r.code, r.stderr)
+	require.Contains(t, r.stderr, "NOT_ALLOWED")
+	require.Contains(t, r.stderr, "has no primary key; the guard keys ledger rows by it.")
+	require.Contains(t, r.stderr, "add a primary key, or revoke the agent's write privileges on it.")
+	v, err := guard.InstalledVersion(context.Background(), d.Admin)
+	require.NoError(t, err)
+	require.Zero(t, v, "the transaction rolled back")
+}

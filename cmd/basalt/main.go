@@ -41,7 +41,7 @@ type command struct {
 
 func commands() []command {
 	return []command{
-		{"engine", "Run the engine service in the foreground", runEngine},
+		{"engine", "Run the engine service in the foreground (or list | revoke the recorded engines)", runEngine},
 		{"mcp", "MCP server for an agent: relays stdio to the engine", runMCP},
 		{"service", "Install or uninstall the engine service (install | uninstall)", runService},
 		{"init", "Install the guard in Postgres and add an agent to the engine config", withIO(runInit)},

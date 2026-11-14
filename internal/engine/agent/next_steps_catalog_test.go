@@ -544,7 +544,10 @@ func requireStepObeysRules(t *testing.T, st mcp.NextStep, kase catalogCase, conf
 	}
 }
 
-var serviceManager = regexp.MustCompile(`^sudo (systemctl|launchctl) `)
+// serviceManager is a root command on the engine's machine: the service
+// manager, or giving a lock file back to the engine's user
+// (LOCK_FILE_UNUSABLE).
+var serviceManager = regexp.MustCompile(`^sudo (systemctl|launchctl|chown) `)
 
 func requireCommand(t *testing.T, command, config, where string) {
 	t.Helper()

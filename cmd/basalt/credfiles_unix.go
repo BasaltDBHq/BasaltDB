@@ -74,11 +74,17 @@ func (r rootCredFiles) lock(path string) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
+	dirUID, err := r.dir.Owner()
+	if err != nil {
+		return nil, err
+	}
 	f, err := r.dir.OpenFile(name, os.O_RDWR|os.O_CREATE|syscall.O_NONBLOCK, config.FileMode)
 	if err != nil {
 		return nil, fmt.Errorf("lock %s: %w", path, err)
 	}
-	unlock, err := config.LockOpenFile(f)
+	// A lock file root makes, or finds root's, goes to agents/' owner (the
+	// engine's user), as config.LockFile does, so the engine can open it.
+	unlock, err := config.LockOpenFile(f, dirUID)
 	if errors.Is(err, config.ErrLocked) {
 		return nil, fmt.Errorf("another basalt init --remote is running for this agent, or the engine is finishing its setup (%s is locked); run it again in a moment", path)
 	}

@@ -79,7 +79,7 @@ func (h engineUserHost) UserConfigDir() (string, error) {
 }
 
 // userConfigDirIn is os.UserConfigDir for a user whose home is home. Like
-// os.UserConfigDir it honours an absolute XDG_CONFIG_HOME (xdg) off macOS, so
+// os.UserConfigDir it honors an absolute XDG_CONFIG_HOME (xdg) off macOS, so
 // init, run with that variable set, and engine --user, started with the same
 // environment, read and write the same directory.
 func userConfigDirIn(goos, home, xdg string) (string, error) {

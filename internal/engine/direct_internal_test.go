@@ -57,6 +57,7 @@ type directFixture struct {
 	keys    *channel.EngineKeys
 	links   *directLinks
 	records *engineRecords
+	sess    *vault.Direct
 }
 
 func newDirectFixture(t *testing.T) *directFixture {
@@ -70,6 +71,7 @@ func newDirectFixture(t *testing.T) *directFixture {
 	f.records = newEngineRecords(keys.EngineID(), time.Now, log)
 	f.records.add("bot", a.Conn)
 	sess := vault.NewDirect(vault.DirectOptions{Keys: keys, Log: log, SessionLinks: f.links, Pages: okPages{}})
+	f.sess = sess
 	ctx, cancel := context.WithCancel(context.Background())
 	f.srv = httptest.NewUnstartedServer(nil)
 	f.srv.Config = newDirectServer(newDirectHandler(ctx, f.records, keys.PublicKeySPKI(), sess, time.Now))
@@ -122,11 +124,11 @@ func (f *directFixture) holdLink(t *testing.T) (channel.LinkKeys, string, uuid.U
 	return keys, secret, item
 }
 
-func (f *directFixture) dial(t *testing.T, host string) *pagetest.Page {
+func (f *directFixture) dial(t *testing.T) *pagetest.Page {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	p, err := pagetest.DialDirect(ctx, "ws"+strings.TrimPrefix(f.srv.URL, "http")+"/v1/session", http.Header{"Host": {host}})
+	p, err := pagetest.DialDirect(ctx, "ws"+strings.TrimPrefix(f.srv.URL, "http")+"/v1/session", http.Header{"Host": {"engine.example.com"}})
 	require.NoError(t, err)
 	t.Cleanup(p.Close)
 	return p
@@ -180,7 +182,7 @@ func TestDirectSessionFollowsTheRecord(t *testing.T) {
 	f.record(t, "https://engine.example.com")
 	keys, secret, item := f.holdLink(t)
 
-	p := f.dial(t, "engine.example.com")
+	p := f.dial(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	require.NoError(t, p.Handshake(ctx, keys))
@@ -192,12 +194,12 @@ func TestDirectSessionFollowsTheRecord(t *testing.T) {
 	// Another address recorded for the agent: the old one still reaches the
 	// listener (its Host was read) but the session is refused.
 	f.record(t, "https://moved.example.com")
-	p = f.dial(t, "engine.example.com")
+	p = f.dial(t)
 	require.Equal(t, int(channel.ErrLinkRefused), refusedWith(ctx, t, p, p.Handshake(ctx, keys)))
 
 	_, err = guard.RevokeEngine(context.Background(), f.db.Admin, f.keys.EngineID())
 	require.NoError(t, err)
-	p = f.dial(t, "engine.example.com")
+	p = f.dial(t)
 	require.Equal(t, int(channel.ErrEngineRevoked), refusedWith(ctx, t, p, p.Handshake(ctx, keys)))
 }
 
@@ -285,4 +287,36 @@ func TestDirectRefusesARequestBody(t *testing.T) {
 		require.ErrorIs(t, err, io.EOF, "the connection is closed")
 		_ = conn.Close()
 	}
+}
+
+// A widen in a session through the Vault ends the old token's direct
+// sessions: the relay links tell the direct transport (the Vault-to-direct
+// direction of a rotation).
+func TestRelayRotationEndsDirectSessions(t *testing.T) {
+	t.Parallel()
+	f := newDirectFixture(t)
+	f.record(t, "https://engine.example.com")
+	keys, _, _ := f.holdLink(t)
+	relay := newRelayLinks(slog.New(slog.DiscardHandler))
+	relay.setDirect(f.sess)
+
+	p := f.dial(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, p.Handshake(ctx, keys))
+
+	relay.endDirect(keys.Token)
+	require.Equal(t, int(channel.ErrLinkRefused), int(p.Closed(ctx)), "the old token's direct session ended with LINK_REFUSED")
+}
+
+// The direct server bounds a request's read and a response's write, so a
+// local process that never reads cannot hold a connection slot, and a
+// refusal behind a response writer that cannot set a deadline still ends.
+func TestDirectServerTimeouts(t *testing.T) {
+	t.Parallel()
+	hs := newDirectServer(http.NotFoundHandler())
+	require.Equal(t, directReadTimeout, hs.ReadTimeout)
+	require.Equal(t, directWriteTimeout, hs.WriteTimeout)
+	require.NotZero(t, hs.ReadTimeout)
+	require.NotZero(t, hs.WriteTimeout)
 }

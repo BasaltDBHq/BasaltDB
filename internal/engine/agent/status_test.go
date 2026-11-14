@@ -177,6 +177,14 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			t.Helper()
 			return devLocalStatus(t, operatedBy)
 		}},
+		problemEngineRevoked: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+			t.Helper()
+			return engineRecordStatusOf(t, operatedBy, recordOf("https://engine.example.com", true), false)
+		}},
+		problemDirectNotServed: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+			t.Helper()
+			return engineRecordStatusOf(t, operatedBy, recordOf("https://engine.example.com", false), false)
+		}},
 	}
 }
 
@@ -659,4 +667,118 @@ func lockTroubleStatus(t *testing.T, operatedBy string) StatusReport {
 	r, err := NewService(d).Status(context.Background())
 	require.NoError(t, err)
 	return r
+}
+
+// engineID is the id the test engine reports.
+const testEngineID = "AAAAAAAAAAAAAAAAAAAAAA"
+
+func recordOf(url string, revoked bool) func(context.Context, string) (*guard.RecordedEngine, error) {
+	return func(_ context.Context, id string) (*guard.RecordedEngine, error) {
+		e := &guard.RecordedEngine{ID: id, RecordedAt: statusNow.Add(-48 * time.Hour)}
+		if url != "" {
+			e.URL = &url
+		}
+		if revoked {
+			at := statusNow.Add(-time.Hour)
+			e.RevokedAt = &at
+		}
+		return e, nil
+	}
+}
+
+// engineRecordStatusOf is the status of a ready agent on an engine with a
+// Vault reporter whose record is read by read.
+func engineRecordStatusOf(t *testing.T, operatedBy string, read EngineRecordReader, directServed bool) StatusReport {
+	t.Helper()
+	d := deps()
+	d.OperatedBy = operatedBy
+	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+	d.Approvals = keys{n: 1}
+	d.Now = func() time.Time { return statusNow }
+	d.Vault = fixedVault{VaultStatus{State: "OFF", EngineID: testEngineID}}
+	d.EngineRecord, d.DirectServed = read, directServed
+	cmds, err := NewCommands("bot", "", "linux", []string{"--agent=bot", "--write=public.leads"})
+	require.NoError(t, err)
+	d.Commands = cmds
+	r, err := NewService(d).Status(context.Background())
+	require.NoError(t, err)
+	return r
+}
+
+func TestStatusEngineRecord(t *testing.T) {
+	t.Parallel()
+	statusTool, _ := mcpcontract.Find(mcpcontract.MustLoad(), toolStatus)
+	url := "https://engine.example.com"
+	recorded := statusNow.Add(-48 * time.Hour).Format(time.RFC3339)
+	revokedAt := statusNow.Add(-time.Hour).Format(time.RFC3339)
+	for name, tc := range map[string]struct {
+		read   EngineRecordReader
+		served bool
+		want   EngineRecordStatus
+		code   string
+	}{
+		"recorded and served":         {read: recordOf(url, false), served: true, want: EngineRecordStatus{State: engineRecorded, URL: url, RecordedAt: recorded}},
+		"recorded without an address": {read: recordOf("", false), want: EngineRecordStatus{State: engineRecorded, RecordedAt: recorded}},
+		"recorded, direct off":        {read: recordOf(url, false), want: EngineRecordStatus{State: engineRecorded, URL: url, RecordedAt: recorded}, code: problemDirectNotServed},
+		"revoked":                     {read: recordOf(url, true), served: true, want: EngineRecordStatus{State: engineRevoked, URL: url, RecordedAt: recorded, RevokedAt: revokedAt}, code: problemEngineRevoked},
+		"not recorded":                {read: notRecorded, want: EngineRecordStatus{State: engineNotRecorded}},
+		"unreadable (a guard before version 33)": {read: func(context.Context, string) (*guard.RecordedEngine, error) {
+			return nil, errors.New("relation does not exist")
+		}, want: EngineRecordStatus{State: engineUnknown}},
+		"no reader": {want: EngineRecordStatus{State: engineUnknown}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			r := engineRecordStatusOf(t, "", tc.read, tc.served)
+			require.Equal(t, &tc.want, r.EngineRecord)
+			requireStatusSchema(t, statusTool, r)
+			var codes []string
+			for _, p := range r.Problems {
+				codes = append(codes, p.Code)
+			}
+			if tc.code == "" {
+				require.Empty(t, codes)
+				return
+			}
+			require.Equal(t, []string{tc.code}, codes)
+			require.True(t, r.Ready, "both are warnings")
+		})
+	}
+
+	t.Run("the key file is refused", func(t *testing.T) {
+		t.Parallel()
+		d := deps()
+		d.Approvals = keys{n: 1}
+		d.Vault = fixedVault{VaultStatus{State: "KEY_ERROR"}}
+		d.EngineRecord = recordOf(url, true)
+		r, err := NewService(d).Status(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, &EngineRecordStatus{State: engineUnknown}, r.EngineRecord)
+		require.Empty(t, r.Problems)
+	})
+	t.Run("no vault reporter: left out", func(t *testing.T) {
+		t.Parallel()
+		d := deps()
+		d.Approvals = keys{n: 1}
+		r, err := NewService(d).Status(context.Background())
+		require.NoError(t, err)
+		require.Nil(t, r.EngineRecord)
+	})
+}
+
+// DIRECT_NOT_SERVED asks for init --remote with the address, which leaves
+// the saved direct-addr out so the flag is not given twice.
+func TestDirectNotServedStepsCommand(t *testing.T) {
+	t.Parallel()
+	r := engineRecordStatusOf(t, "", recordOf("https://engine.example.com", false), false)
+	p := findProblem(t, r, problemDirectNotServed)
+	require.Len(t, p.NextSteps, 1)
+	require.Contains(t, p.NextSteps[0].Command, "--direct-addr 127.0.0.1:8787")
+	require.Contains(t, p.NextSteps[0].Command, "init --remote")
+	require.Contains(t, p.PersonMessage, "restart the engine")
+}
+
+// notRecorded is a database that holds no row for the engine.
+func notRecorded(context.Context, string) (*guard.RecordedEngine, error) {
+	return nil, nil //nolint:nilnil // a missing row is the answer, not an error
 }

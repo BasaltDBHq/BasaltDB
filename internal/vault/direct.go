@@ -33,6 +33,10 @@ type DirectOptions struct {
 	// session, after the other direct sessions of it ended, so the engine
 	// ends the token's sessions through the Vault too.
 	OnRotate func(old channel.LinkToken)
+	// Tally is shared with the Vault client's Options so sessions on both
+	// transports count together towards the limits; nil counts direct
+	// sessions alone.
+	Tally *Tally
 	// Message1Timeout, IdleTimeout and SessionLifetime default to the
 	// contract's values when zero. Tests shorten them.
 	Message1Timeout time.Duration
@@ -61,12 +65,12 @@ func NewDirect(o DirectOptions) *Direct {
 	}
 	opts := Options{
 		Keys: o.Keys, Log: o.Log, Now: o.Now, SessionLinks: o.SessionLinks, Pages: o.Pages,
-		IdleTimeout: o.IdleTimeout, SessionLifetime: o.SessionLifetime, HandshakeTimeout: o.Message1Timeout,
+		IdleTimeout: o.IdleTimeout, SessionLifetime: o.SessionLifetime, HandshakeTimeout: o.Message1Timeout, Tally: o.Tally,
 	}
 	setDefault(&opts.HandshakeTimeout, Message1Timeout)
 	opts.defaults()
 	return &Direct{
-		c: &Client{opts: opts}, sessions: newSessions(opts.HandshakeTimeout, opts.Now),
+		c: &Client{opts: opts}, sessions: newSessions(opts.HandshakeTimeout, opts.Now, opts.Tally),
 		timeout: opts.HandshakeTimeout, conns: map[sid]*conn{}, onRotate: o.OnRotate,
 	}
 }

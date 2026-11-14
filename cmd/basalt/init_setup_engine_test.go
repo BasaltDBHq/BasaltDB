@@ -107,7 +107,9 @@ func TestInitRemoteAsRootCarriesTheEngineKey(t *testing.T) {
 	// The service manager makes the state directory, not init.
 	noState := remote(t, cfg, args...)
 	require.Nil(t, noState.payload.Engine)
-	require.Contains(t, noState.stderr, "does not exist yet; start the engine's service once")
+	// A config outside the default place keeps its state next to it, which
+	// no service manager makes: init says how to make it.
+	require.Contains(t, noState.stderr, "does not exist yet; make it for the engine's user (sudo install -d -m 0700 -o ")
 	require.NoDirExists(t, noState.cfg.StateDirFor(runtime.GOOS))
 	require.NoError(t, os.Mkdir(noState.cfg.StateDirFor(runtime.GOOS), 0o700))
 

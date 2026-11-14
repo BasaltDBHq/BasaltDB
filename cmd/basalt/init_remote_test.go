@@ -775,6 +775,7 @@ func TestInitRemoteAsRootRecordsTheSudoUser(t *testing.T) {
 	r := remoteWith(t, run(map[string]string{envSudoUID: "1234"}), cfg, args...)
 	require.Equal(t, []uint32{1234}, r.cfg.PersonUIDs)
 	require.True(t, r.cfg.Service(), "a config directory another user owns (the engine's) is a service config")
+	require.Contains(t, r.stderr, "not root or you (uid 1234): this config is a service one (mode SERVICE)", "said, not silent")
 	r = remoteWith(t, run(map[string]string{envSudoUID: "1235"}), cfg, append(args, "--new-code")...)
 	require.Equal(t, []uint32{1234, 1235}, r.cfg.PersonUIDs, "a rerun keeps the recorded ones")
 
@@ -796,4 +797,5 @@ func TestInitRemoteAsRootInTheSudoUsersDirectoryIsNoService(t *testing.T) {
 		return cliNoDBEnv(t, noNetworkProbe, map[string]string{envSudoUID: me}, a...)
 	}, tempConfig(t), "--agent", "bot", "--write", "public.leads", "--database-url", "postgres://u@db.example.com:5432/app")
 	require.False(t, r.cfg.Service())
+	require.NotContains(t, r.stderr, "service one")
 }

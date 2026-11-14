@@ -3,13 +3,18 @@
 package main
 
 import (
+	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/channel"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 )
 
@@ -218,4 +223,72 @@ func TestRootConfigDirWritesWhereItOpened(t *testing.T) {
 
 	_, err = openRootConfigDir(dir, trusted)
 	require.ErrorContains(t, err, "a symlink is refused")
+}
+
+// As root, the engine's key goes only in a state directory the config
+// directory's owner owns: /usr (root's) is refused for a config directory
+// this user owns, and nothing is made there.
+func TestRootEngineKeyNeedsTheConfigOwnersStateDirectory(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("root owns both")
+	}
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	dir := filepath.Join(root, "basalt")
+	trusted, err := rootTrustedOwner(dir)
+	require.NoError(t, err)
+	d, err := openRootConfigDir(dir, trusted)
+	require.NoError(t, err)
+	defer d.close()
+	_, err = rootEngineKey("/usr", runtime.GOOS, d, time.Now)
+	require.ErrorContains(t, err, fmt.Sprintf("the state directory /usr is owned by uid 0, not uid %d (the owner of the config directory %s)", os.Geteuid(), dir))
+	require.NoFileExists(t, filepath.Join("/usr", channel.KeyFileName))
+
+	// Its own state directory: the key is made there.
+	state := filepath.Join(dir, "state")
+	require.NoError(t, os.Mkdir(state, 0o700))
+	spki, err := rootEngineKey(state, runtime.GOOS, d, time.Now)
+	require.NoError(t, err)
+	require.NotEmpty(t, spki)
+}
+
+// A missing state directory: the service manager makes only the default
+// one; one next to a --config is made by hand.
+func TestMissingStateDirHint(t *testing.T) {
+	t.Parallel()
+	def := config.DefaultStateDir(runtime.GOOS)
+	require.ErrorContains(t, missingStateDir(def, runtime.GOOS, 998), "start the engine's service once")
+	err := missingStateDir("/srv/bot/state", runtime.GOOS, 998)
+	require.ErrorContains(t, err, "sudo install -d -m 0700 -o 998 /srv/bot/state")
+	require.NotContains(t, err.Error(), "service once")
+}
+
+// As root, writeConfig writes engine.json through the config directory
+// paths opened, not by path: the directory swapped for a symlink before the
+// write redirects nothing.
+func TestRootWriteConfigUsesTheOpenedConfigDir(t *testing.T) {
+	t.Parallel()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	dir, elsewhere := filepath.Join(root, "basalt"), filepath.Join(root, "elsewhere")
+	require.NoError(t, os.Mkdir(elsewhere, 0o700))
+	trusted, err := rootTrustedOwner(dir)
+	require.NoError(t, err)
+	d, err := openRootConfigDir(dir, trusted)
+	require.NoError(t, err)
+	defer d.close()
+	var stderr bytes.Buffer
+	r := &remoteInit{
+		c: &cliIO{stderr: &stderr}, configDir: d, osUser: "bot", credFile: filepath.Join(dir, "agents", "bot.url"),
+		f:        remoteFlags{agent: "bot", configPath: filepath.Join(dir, "engine.json")},
+		settings: config.Settings{SocketDir: "/run/basalt"},
+	}
+	require.NoError(t, os.Rename(dir, dir+".moved"))
+	require.NoError(t, os.Symlink(elsewhere, dir))
+	require.NoError(t, r.writeConfig([]string{"--agent=bot"}, nil))
+	requireEmptyDir(t, elsewhere)
+	c, err := config.Load(filepath.Join(dir+".moved", "engine.json"))
+	require.NoError(t, err)
+	require.Equal(t, "bot", c.Agents[0].Name)
 }

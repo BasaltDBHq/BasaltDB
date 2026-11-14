@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -144,4 +145,50 @@ func TestEngineAsRootUsesTheHardenedConfigRead(t *testing.T) {
 		require.NotEqual(t, exitOK, code)
 		require.Contains(t, stderr, "writable by group or others")
 	})
+}
+
+// The whole path of a password rotation on a bot server: root's basalt init
+// --remote writes the .pending credential, the person runs the code, and
+// the engine, started on that config as the owner of the config directory
+// (the service user; this test's user), promotes the .pending credential
+// and clears the setup from engine.json. Root hands every file it writes
+// there to that owner, so the engine can read, lock and replace them.
+func TestEngineFinishesARootInitRotation(t *testing.T) {
+	t.Parallel()
+	d, dbURL := remoteDB(t)
+	dir, err := os.MkdirTemp("", "brot") // short: macOS bounds socket paths
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	cfg := filepath.Join(dir, "basalt", "engine.json")
+	install := installed(t, d, dbURL, cfg, "--write", "public.leads")
+	rotate := remoteDBRun(t, cfg, "--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix, "--new-code")
+	require.Equal(t, "AGENT", rotate.res.Kind)
+	pending := install.credFile + pendingSuffix
+	newPassword := credentialPassword(t, pending)
+	r := laptopRun(t, d.URL, "", time.Time{}, "--setup-code", rotate.res.Code, "--yes")
+	require.Equal(t, exitOK, r.code, r.stderr)
+
+	// Sockets the test can make and no pages server; the rest as root
+	// wrote it.
+	raw, err := os.ReadFile(cfg)
+	require.NoError(t, err)
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(raw, &doc))
+	doc["socketDir"], doc["pagesAddr"] = filepath.Join(dir, "run"), "off"
+	raw, err = json.Marshal(doc)
+	require.NoError(t, err)
+	require.NoError(t, config.WriteFile(cfg, raw))
+
+	require.FileExists(t, pending, "nothing promoted it before the engine")
+	before, err := config.Load(cfg)
+	require.NoError(t, err)
+	require.NotNil(t, before.Agents[0].Setup)
+	g := olderGuard{d: d, configPath: cfg, socketDir: filepath.Join(dir, "run")}
+	g.startEngine(t)
+	g.callTool(t, toolStatus)
+	require.NoFileExists(t, pending, "promoted")
+	require.Equal(t, newPassword, credentialPassword(t, install.credFile))
+	c, err := config.Load(cfg)
+	require.NoError(t, err)
+	require.Nil(t, c.Agents[0].Setup, "the setup is cleared from engine.json")
 }

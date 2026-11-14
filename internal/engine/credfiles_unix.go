@@ -11,6 +11,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
+	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 )
 
 // rootFiles reaches the files of an engine started as root without --user
@@ -27,6 +28,9 @@ type rootFiles struct {
 	// trusted is the config directory's owner: the config must be owned
 	// by root or that user (config.CheckTrustedConfig).
 	trusted int
+	// self is this process's uid: a credential file it does not own (the
+	// owner of agents/ wrote it) is checked with pgdial.CheckForeignDSN.
+	self int
 }
 
 // openRootFiles opens the files of agent for a root engine: credFile must
@@ -50,7 +54,7 @@ func openRootFiles(configPath, agent, credFile string) (agentFiles, error) {
 		_ = cd.Close()
 		return nil, fmt.Errorf("the credential directory %s is refused: %w", filepath.Dir(path), err)
 	}
-	return &rootFiles{configDir: cd, agentsDir: ad, configName: filepath.Base(configPath), name: filepath.Base(path), trusted: trusted}, nil
+	return &rootFiles{configDir: cd, agentsDir: ad, configName: filepath.Base(configPath), name: filepath.Base(path), trusted: trusted, self: os.Geteuid()}, nil
 }
 
 // ownerOf is path's owner, not following a link.
@@ -67,12 +71,31 @@ func ownerOf(path string) (int, error) {
 }
 
 func (r *rootFiles) readCredential() (string, error) {
-	dsn, _, err := config.ReadCredentialAt(r.agentsDir, r.name)
+	dsn, _, err := r.read(r.name)
 	return dsn, err
 }
 
 func (r *rootFiles) readPending() (string, os.FileInfo, error) {
-	return config.ReadCredentialAt(r.agentsDir, r.name+pendingSuffix)
+	return r.read(r.name + pendingSuffix)
+}
+
+// read reads the credential file name in agents/ (config.ReadCredentialAt:
+// root's or the owner of agents/'s). Root connects with what it reads, and
+// pgx reads files for the caller from some parameters, so a file the owner
+// of agents/ wrote must pass pgdial.CheckForeignDSN, as basalt init
+// --remote's read as root does.
+func (r *rootFiles) read(name string) (string, os.FileInfo, error) {
+	dsn, fi, err := config.ReadCredentialAt(r.agentsDir, name)
+	if err != nil {
+		return "", nil, err
+	}
+	if st, ok := fi.Sys().(*syscall.Stat_t); !ok || r.self < 0 || uint64(st.Uid) != uint64(r.self) {
+		if err := pgdial.CheckForeignDSN(dsn); err != nil {
+			return "", nil, fmt.Errorf("the credential file %s belongs to the owner of %s, not root: as root, basalt engine takes from it %w; "+
+				"start the engine with --user (as basalt service install does), or fix the file", filepath.Join(r.agentsDir.Path(), name), r.agentsDir.Path(), err)
+		}
+	}
+	return dsn, fi, nil
 }
 
 func (r *rootFiles) promote(pending os.FileInfo) error {

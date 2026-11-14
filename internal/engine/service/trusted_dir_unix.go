@@ -5,14 +5,12 @@ package service
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
 	"golang.org/x/sys/unix"
 )
-
-// emptyDirLinks is the link count of an empty directory (. and its name).
-const emptyDirLinks = 2
 
 // privateDirCreateMode is the mode of a directory OpenTrustedDir makes, as
 // config.WriteFile makes one.
@@ -109,10 +107,31 @@ func handDirOver(pfd, fd, owner int) error {
 	if err := fstat(fd, &made); err != nil {
 		return err
 	}
-	if int(made.Uid) != os.Geteuid() || statMode(made.Mode)&permBits != privateDirCreateMode || made.Nlink != emptyDirLinks {
+	if int(made.Uid) != os.Geteuid() || statMode(made.Mode)&permBits != privateDirCreateMode {
 		return nil
 	}
+	// Empty by its entries, not its link count: btrfs reports one link for
+	// every directory.
+	if empty, err := emptyDir(fd); err != nil || !empty {
+		return err
+	}
 	return unix.Fchown(fd, owner, keepID)
+}
+
+// emptyDir reports whether the directory open at fd has no entries but .
+// and .., read through a new descriptor for it so fd's offset stays.
+func emptyDir(fd int) (bool, error) {
+	dfd, err := unix.Openat(fd, ".", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return false, err
+	}
+	f := os.NewFile(uintptr(dfd), ".")
+	defer f.Close()
+	_, err = f.Readdirnames(1)
+	if errors.Is(err, io.EOF) {
+		return true, nil
+	}
+	return false, err
 }
 
 // Path is the directory's path as opened.

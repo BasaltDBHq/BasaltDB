@@ -7,20 +7,15 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
-
-	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/channel"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
+	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 )
 
 // rootCredFiles reaches init --remote's credential files as root. The config
@@ -41,7 +36,7 @@ type rootCredFiles struct {
 	// owner gets the files root writes; -1 when agents/ is root's.
 	owner int
 	// self is this process's uid: a file it does not own is checked with
-	// checkForeignCredential.
+	// pgdial.CheckForeignDSN.
 	self int
 }
 
@@ -113,7 +108,7 @@ func (d *rootConfigDir) close() { _ = d.dir.Close() }
 // own checks (channel.ParseKeyFile). A new one is given to that owner
 // before it appears under its name, so the engine loads it as its own; one
 // made meanwhile by the engine is kept.
-func rootEngineKey(stateDir string, cfg *rootConfigDir, now func() time.Time) ([]byte, error) {
+func rootEngineKey(stateDir, goos string, cfg *rootConfigDir, now func() time.Time) ([]byte, error) {
 	if cfg == nil {
 		return nil, errors.New("the config directory is not open")
 	}
@@ -123,20 +118,18 @@ func rootEngineKey(stateDir string, cfg *rootConfigDir, now func() time.Time) ([
 	}
 	d, err := service.OpenTrustedDir(stateDir, cfg.trusted, false)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("the state directory %s does not exist yet; start the engine's service once (it makes it), then run basalt init --remote again", stateDir)
+		return nil, missingStateDir(stateDir, goos, want)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("the state directory %s is refused: %w", stateDir, err)
 	}
 	defer d.Close()
-	if owner, err := d.Owner(); err != nil {
-		return nil, err
-	} else if owner != want {
-		return nil, fmt.Errorf("the state directory %s is owned by uid %d, not uid %d (the owner of the config directory %s)", stateDir, owner, want, cfg.dir.Path())
-	}
 	dirUID, err := d.Owner()
 	if err != nil {
 		return nil, err
+	}
+	if dirUID != want {
+		return nil, fmt.Errorf("the state directory %s is owned by uid %d, not uid %d (the owner of the config directory %s)", stateDir, dirUID, want, cfg.dir.Path())
 	}
 	for range 2 {
 		keys, err := readRootKeyFile(d, dirUID)
@@ -160,6 +153,18 @@ func rootEngineKey(stateDir string, cfg *rootConfigDir, now func() time.Time) ([
 		}
 	}
 	return nil, errors.New("the engine's key file keeps changing; run basalt init --remote again")
+}
+
+// missingStateDir says how to make a missing state directory. The service
+// manager makes only the default one (systemd's StateDirectory, the launchd
+// install's directories); a config elsewhere (--config) keeps its state
+// next to it, which nothing makes for the engine's user (owner).
+func missingStateDir(stateDir, goos string, owner int) error {
+	if stateDir == config.DefaultStateDir(goos) {
+		return fmt.Errorf("the state directory %s does not exist yet; start the engine's service once (it makes it), then run basalt init --remote again", stateDir)
+	}
+	return fmt.Errorf("the state directory %s does not exist yet; make it for the engine's user (sudo install -d -m %04o -o %d %s), then run basalt init --remote again",
+		stateDir, stateDirMode, owner, stateDir)
 }
 
 // readRootKeyFile reads the key file in the state directory d, owned by
@@ -279,106 +284,13 @@ func (r rootCredFiles) read(path string) (string, os.FileInfo, error) {
 		return "", nil, err
 	}
 	if st, ok := fi.Sys().(*syscall.Stat_t); !ok || r.self < 0 || uint64(st.Uid) != uint64(r.self) {
-		if err := checkForeignCredential(dsn); err != nil {
-			return "", nil, fmt.Errorf("it belongs to the owner of %s, not root: %w", r.dir.Path(), err)
+		if err := pgdial.CheckForeignDSN(dsn); err != nil {
+			return "", nil, fmt.Errorf("it belongs to the owner of %s, not root: as root, basalt init --remote takes from it %w; "+
+				"run basalt init --remote as that user (sudo -u <user>), or fix the file", r.dir.Path(), err)
 		}
 	}
 	return dsn, fi, nil
 }
-
-// foreignCredentialKeys are the only parameters root takes from a
-// credential file it did not write. pgx reads files for the caller from
-// others (passfile, service, servicefile, sslkey, sslcert, sslrootcert,
-// sslcrl), so root, connecting with a string the engine's user wrote, would
-// read root-only files for that user, or block on a FIFO it names.
-var foreignCredentialKeys = map[string]bool{
-	"sslmode":                 true,
-	"sslnegotiation":          true,
-	"sslsni":                  true,
-	"channel_binding":         true,
-	"require_auth":            true,
-	"target_session_attrs":    true,
-	"connect_timeout":         true,
-	"application_name":        true,
-	"min_protocol_version":    true,
-	"max_protocol_version":    true,
-	"default_query_exec_mode": true,
-}
-
-// foreignURLKeys are the URL parts pgx reads as keys besides the
-// parameters: who logs in, where, and the database.
-var foreignURLKeys = []string{"user", "password", "host", "port", "dbname"}
-
-// errForeignCredential is the refusal of a credential string root does not
-// take; it never echoes the string, which holds a password.
-var errForeignCredential = errors.New("as root, basalt init --remote takes from it only a postgres:// or postgresql:// URL " +
-	"with a password, no # or ;, and only the parameters " + strings.Join(sortedKeys(foreignCredentialKeys), ", ") +
-	"; run basalt init --remote as that user (sudo -u <user>), or fix the file")
-
-func sortedKeys(m map[string]bool) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-// checkForeignCredential accepts, from a credential file root did not
-// write, only what pgx reads no file for: a URL with an exact lower-case
-// postgres:// or postgresql:// prefix (pgx parses any other string as
-// keyword/value), no '#' or ';' (where Go's and pgx's URL parsers
-// disagree), a password (without one pgx falls back to root's ~/.pgpass),
-// and only foreignCredentialKeys. pgx's own parser is the authority, with
-// ConnStringAllowedKeys refusing any other key before it touches the file
-// system; it must then agree with Go's parse on the host, port, database
-// and password, which is what the rest of init --remote reads.
-func checkForeignCredential(dsn string) error {
-	if (!strings.HasPrefix(dsn, "postgres://") && !strings.HasPrefix(dsn, "postgresql://")) ||
-		strings.ContainsAny(dsn, "#;") || strings.ContainsFunc(dsn, func(r rune) bool { return r <= ' ' || r == 0x7f }) {
-		return errForeignCredential
-	}
-	u, err := url.Parse(dsn)
-	if err != nil {
-		return errForeignCredential
-	}
-	pw, ok := u.User.Password()
-	if !ok || pw == "" {
-		return errForeignCredential
-	}
-	for k := range u.Query() {
-		if !foreignCredentialKeys[k] {
-			return errForeignCredential
-		}
-	}
-	allowed := append(sortedKeys(foreignCredentialKeys), foreignURLKeys...)
-	cfg, err := pgconn.ParseConfigWithOptions(dsn, pgconn.ParseConfigOptions{ConnStringAllowedKeys: allowed})
-	if err != nil {
-		return errForeignCredential
-	}
-	port := uint16(defaultPostgresPort)
-	if p := u.Port(); p != "" {
-		n, err := strconv.ParseUint(p, 10, 16)
-		if err != nil {
-			return errForeignCredential
-		}
-		port = uint16(n)
-	}
-	if cfg.Password != pw || cfg.Host != u.Hostname() || cfg.Port != port ||
-		cfg.Database != strings.TrimPrefix(u.Path, "/") {
-		return errForeignCredential
-	}
-	for _, fb := range cfg.Fallbacks {
-		// sslmode=prefer tries TLS then plain, to the same host and port.
-		if fb.Host != cfg.Host || fb.Port != cfg.Port {
-			return errForeignCredential
-		}
-	}
-	return nil
-}
-
-// defaultPostgresPort is the port a URL without one connects to.
-const defaultPostgresPort = 5432
 
 func (r rootCredFiles) stat(path string) (os.FileInfo, error) {
 	f, err := r.open(path)

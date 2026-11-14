@@ -57,6 +57,6 @@ func (*rootConfigDir) upsert(string, config.Settings, config.Agent) (config.Vaul
 func (*rootConfigDir) close() {}
 
 // rootEngineKey: see errRemoteUnsupported.
-func rootEngineKey(string, *rootConfigDir, func() time.Time) ([]byte, error) {
+func rootEngineKey(string, string, *rootConfigDir, func() time.Time) ([]byte, error) {
 	return nil, errRemoteUnsupported
 }

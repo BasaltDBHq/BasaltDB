@@ -27,9 +27,12 @@ import (
 type initFlags struct {
 	agent, write, read, prefix, configPath, socketDir, osUser, credFile, engineUser string
 	passkeyOrigin, passkeyLabel                                                     string
-	agentRLS                                                                        AgentRLSMode
-	spec                                                                            guard.AgentSpec
-	dryRun, yes, skipPasskey, addPasskey, noService                                 bool
+	// devLocalPages is --dev-local-pages: an agent-operated engine on local
+	// pages, for development only (CONTRACT.md, Page origins).
+	devLocalPages                                   bool
+	agentRLS                                        AgentRLSMode
+	spec                                            guard.AgentSpec
+	dryRun, yes, skipPasskey, addPasskey, noService bool
 	// operatedBy is --operated-by; operatedByGiven is true when it was passed.
 	operatedBy      OperatedBy
 	operatedByGiven bool
@@ -79,6 +82,9 @@ func runInit(c *cliIO, args []string) int {
 	}
 	if _, err := f.commands(c.goos); err != nil {
 		return c.fail(fmt.Errorf("%w: %w", errUsage, err))
+	}
+	if f.devLocalPages {
+		fmt.Fprintln(c.stderr, "basalt: "+config.DevLocalPagesWarning)
 	}
 	if err := checkServiceAnswer(c, f); err != nil {
 		return c.fail(err)
@@ -349,7 +355,9 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 	fs.BoolVar(&f.skipPasskey, "skip-passkey", false, "do not register the passkey that approves held writes now")
 	fs.BoolVar(&f.addPasskey, "add-passkey", false, "register another passkey even if one is registered")
 	fs.StringVar(&f.passkeyOrigin, "passkey-origin", links.DefaultLocal,
-		"pages origin the passkey belongs to: the engine's local pages http://localhost:<port> (RP ID localhost), "+links.HostedConsole+", or the portal "+links.Portal+" (RP ID basaltvault.app; the default with --operated-by=agent)")
+		"pages origin the passkey belongs to: the engine's local pages http://localhost:<port> (RP ID localhost), or the portal "+links.Portal+" (RP ID basaltvault.app; the default with --operated-by=agent)")
+	fs.BoolVar(&f.devLocalPages, flagDevLocalPages, false,
+		"development only, with --operated-by=agent: use local pages (--passkey-origin http://localhost:<port>) instead of the portal; never with a bot you do not control")
 	fs.StringVar(&f.passkeyLabel, "passkey-label", "", "name of the passkey in the picker (default: <database> · <agent> · <date>)")
 	fs.Func(flagPersonUID, "service: an OS user id the engine's person socket admits for basalt log, approve and revert (repeatable; default: you)", func(v string) error {
 		uid, err := parseUID(v)
@@ -403,13 +411,8 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 	}
 	// An agent-operated engine serves the portal's pages (CONTRACT.md, Who
 	// operates the engine): the bot's machine has no pages the person can reach.
-	if f.operatedBy == OperatedByAgent {
-		switch {
-		case !originGiven:
-			f.passkeyOrigin = links.Portal
-		case f.passkeyOrigin != links.Portal:
-			return f, fmt.Errorf("%w: --operated-by=agent uses the portal's pages (%s); drop --passkey-origin or set it to that", errUsage, links.Portal)
-		}
+	if err := f.agentPages(originGiven); err != nil {
+		return f, err
 	}
 	vc, err := chooseVault(f.vaultFlag, f.operatedBy, f.passkeyOrigin, personDefaultWhy)
 	if err != nil {
@@ -479,6 +482,34 @@ func missingTablesHint(err error, database string) error {
 // stateDirName is the engine's state directory next to a per-user config.
 const stateDirName = "state"
 
+// flagDevLocalPages is init's and service install's development exception.
+const flagDevLocalPages = "dev-local-pages"
+
+// agentPages applies the closed origin list to init's flags (CONTRACT.md,
+// Page origins; CO-8): an agent-operated engine uses the portal's pages,
+// the default with --operated-by=agent, and local pages only with
+// --dev-local-pages, which is for nothing else.
+func (f *initFlags) agentPages(originGiven bool) error {
+	agentOperated := f.operatedBy == OperatedByAgent
+	switch {
+	case f.devLocalPages && !agentOperated:
+		return fmt.Errorf("%w: --dev-local-pages is only for --operated-by=agent; a person-operated engine uses local pages without it", errUsage)
+	case f.devLocalPages && !originGiven:
+		f.passkeyOrigin = links.DefaultLocal
+	case f.devLocalPages && f.passkeyOrigin == links.Portal:
+		return fmt.Errorf("%w: --dev-local-pages needs a local --passkey-origin (http://localhost:<port>), not the portal", errUsage)
+	case f.devLocalPages:
+		// relyingParty has checked the origin is the portal or local.
+		return nil
+	case agentOperated && !originGiven:
+		f.passkeyOrigin = links.Portal
+	case agentOperated && f.passkeyOrigin != links.Portal:
+		return fmt.Errorf("%w: --operated-by=agent uses the portal's pages (%s); drop --passkey-origin or set it to that "+
+			"(local pages would be on the agent's machine)", errUsage, links.Portal)
+	}
+	return nil
+}
+
 // engineSettings are what init writes to the engine config besides the
 // agent. A config outside the platform default is a per-user setup, run
 // with basalt engine in the foreground, so its state directory sits next
@@ -490,7 +521,7 @@ func engineSettings(f initFlags, goos string) config.Settings {
 	if f.configPath != config.DefaultPath(goos) {
 		s.StateDir = filepath.Join(filepath.Dir(f.configPath), stateDirName)
 	}
-	s.PagesURL = f.passkeyOrigin
+	s.PagesURL, s.DevLocalPages = f.passkeyOrigin, f.devLocalPages
 	if f.operatedByGiven {
 		s.OperatedBy = f.operatedBy.enum()
 	}
@@ -586,6 +617,9 @@ func (f initFlags) savedArgs(goos string) []string {
 	addIf("passkey-origin", f.passkeyOrigin, links.DefaultLocal)
 	addIf("operated-by", string(f.operatedBy), string(OperatedByPerson))
 	addIf("agent-rls", string(f.agentRLS), string(AgentRLSAsk))
+	if f.devLocalPages {
+		args = append(args, "--"+flagDevLocalPages+"=true")
+	}
 	return args
 }
 

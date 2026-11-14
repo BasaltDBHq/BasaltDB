@@ -65,12 +65,12 @@ func TestConfiguredBase(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	hosted := filepath.Join(dir, "engine.json")
-	require.NoError(t, os.WriteFile(hosted, []byte(`{"socketDir": "/s", "pagesUrl": "https://console.basaltvault.app",
+	require.NoError(t, os.WriteFile(hosted, []byte(`{"socketDir": "/s", "pagesUrl": "https://portal.basaltvault.app",
 		"agents": [{"name": "bot", "osUser": "u", "credentialFile": "/c"}]}`), 0o600))
 	plain := filepath.Join(dir, "plain.json")
 	require.NoError(t, os.WriteFile(plain, []byte(`{"socketDir": "/s", "agents": [{"name": "bot", "osUser": "u", "credentialFile": "/c"}]}`), 0o600))
 
-	require.Equal(t, links.HostedConsole, configuredBase(nonRoot(t), "", "bot", hosted), "the config's pagesUrl")
+	require.Equal(t, links.Portal, configuredBase(nonRoot(t), "", "bot", hosted), "the config's pagesUrl")
 	require.Equal(t, "http://localhost:9000", configuredBase(nonRoot(t), "http://localhost:9000", "bot", hosted), "--pages-url wins")
 	require.Equal(t, links.DefaultLocal, configuredBase(nonRoot(t), "", "", hosted), "no --agent, no config: the local pages")
 	require.Equal(t, links.DefaultLocal, configuredBase(nonRoot(t), "", "bot", plain), "the default until hosting")

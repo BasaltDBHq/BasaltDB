@@ -168,6 +168,10 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 		problemSetupNotRun:        {state: guard.GuardMissing, report: engineStatus(&fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}}, 0, pendingSetup(guard.SetupInstall, soon))},
 		problemSetupExpired:       {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: &pgconn.PgError{Code: "28000", Message: "role does not exist"}}, 0, pendingSetup(guard.SetupInstall, past))},
 		problemSetupChangePending: {state: guard.GuardOK, report: engineStatus(&fakeProbe{st: ok}, 1, pendingSetup(guard.SetupAgent, soon))},
+		problemDevLocalPages: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+			t.Helper()
+			return devLocalStatus(t, operatedBy)
+		}},
 	}
 }
 

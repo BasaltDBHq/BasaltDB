@@ -12,11 +12,11 @@
 import { CompactError, rebuildTexts } from "./compact.js";
 import { DeflateError, deflateEnd } from "./deflate.js";
 
-// The hosted console and its passkeys' RP ID (owner decisions, Decided
+// The portal and its passkeys' RP ID (owner decisions, Decided
 // Nov 12): RP ID basaltvault.app never changes. Until hosting exists the
 // pages run on the engine's local pages, http://localhost:<port>.
 export const PROD_RP_ID = "basaltvault.app";
-export const HOSTED_CONSOLE = "https://console.basaltvault.app";
+export const PORTAL = "https://portal.basaltvault.app";
 
 // Approval and revert links: format 2 (the compact request) is what the
 // engine writes; format 1 is still read.
@@ -847,17 +847,17 @@ export function registrationResponseJson({ credentialId, clientDataJson, authent
 }
 
 // relyingParty returns the RP ID and origin for the page's location: the
-// hosted console (RP ID basaltvault.app), or the engine's local pages at
+// portal (RP ID basaltvault.app), or the engine's local pages at
 // http://localhost:<port> (RP ID localhost). Anywhere else the pages refuse
 // to run.
 export function relyingParty(loc) {
-  if (`${loc.protocol}//${loc.hostname}` === HOSTED_CONSOLE && loc.port === "") {
-    return { rpId: PROD_RP_ID, origin: HOSTED_CONSOLE };
+  if (`${loc.protocol}//${loc.hostname}` === PORTAL && loc.port === "") {
+    return { rpId: PROD_RP_ID, origin: PORTAL };
   }
   if (loc.protocol === "http:" && loc.hostname === "localhost" && loc.port !== "") {
     return { rpId: "localhost", origin: `http://localhost:${loc.port}` };
   }
-  throw new CodeError(`this page only runs at ${HOSTED_CONSOLE} or http://localhost:<port>`);
+  throw new CodeError(`this page only runs at ${PORTAL} or http://localhost:<port>`);
 }
 
 // Rows hidden from the agent (CONTRACT.md, Approvals; owner decision HR-1):

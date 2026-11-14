@@ -121,7 +121,8 @@ func (v VaultMode) other() VaultMode {
 
 // chooseVault is the vault choice for an engine whose pages base is
 // pagesURL: --vault when given, else the default (on with
-// --operated-by=agent, off otherwise). --vault=on needs the portal's
+// --operated-by=agent on the portal's pages, off otherwise, as with
+// --dev-local-pages). --vault=on needs the portal's
 // pages: a passkey on any other origin cannot sign on the portal, and the
 // engine never dials out for them, so it is a usage error (exit 2).
 // defaultWhy says why the default is off.
@@ -130,7 +131,7 @@ func chooseVault(given VaultMode, operatedBy OperatedBy, pagesURL, defaultWhy st
 		return vaultChoice{}, fmt.Errorf("%w: --vault=on needs the portal's pages (%s), and these are %s: "+
 			"a passkey registered there cannot sign on the portal, so the engine would not use the Vault", errUsage, links.Portal, pagesURL)
 	}
-	if operatedBy == OperatedByAgent {
+	if operatedBy == OperatedByAgent && pagesURL == links.Portal {
 		return vaultChoice{given: given, def: VaultModeOn, why: "default for --operated-by=agent; --vault=off to turn it off"}, nil
 	}
 	return vaultChoice{given: given, def: VaultModeOff, why: defaultWhy}, nil

@@ -46,8 +46,10 @@ func (c Config) PagesBase() (string, error) {
 	return links.DefaultLocal, nil
 }
 
-// checkBase accepts the hosted console, the portal or a local http origin
-// (http://localhost:<port>, or a loopback IP): an origin, no path.
+// checkBase accepts the closed list of page origins (CONTRACT.md, Page
+// origins; CO-8): the portal, or a local http origin
+// (http://localhost:<port>, or a loopback IP), no path. Whether a local
+// origin is allowed for this engine's operator is checkOrigins'.
 // CheckPagesURL is the check config load runs on pagesUrl, for the
 // --pages-url flag to run too; setting names it in the message.
 func CheckPagesURL(setting, base string) error {
@@ -65,14 +67,14 @@ func checkBase(setting, base string) (string, error) {
 	}
 	u, err := url.Parse(base)
 	if err != nil || u.Scheme != "http" || !isLoopbackName(u.Hostname()) || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
-		return "", fmt.Errorf("%s %q: use %s or a local http://localhost:<port>", setting, base, links.HostedConsole)
+		return "", fmt.Errorf("%s %q: use %s or a local http://localhost:<port>", setting, base, links.Portal)
 	}
 	return base, nil
 }
 
 // Pages resolves pagesAddr against the pages' base URL. Default: on, at
 // 127.0.0.1 and the base's port, when the base is local; off for the
-// hosted console. A non-loopback or hostname address is refused: names are
+// portal. A non-loopback or hostname address is refused: names are
 // never trusted for listen policy, and this listener has no TLS.
 func (c Config) Pages() (Pages, error) {
 	base, err := c.PagesBase()
@@ -106,10 +108,39 @@ func (c Config) Pages() (Pages, error) {
 	return Pages{Addr: addr, Origin: base}, nil
 }
 
-// isHosted reports whether base is a hosted pages origin, which the engine
-// does not serve.
+// isHosted reports whether base is the portal, which the engine does not
+// serve.
 func isHosted(base string) bool {
-	return base == links.HostedConsole || base == links.Portal
+	return base == links.Portal
+}
+
+// DevLocalPagesWarning is the line every personMessage starts with, and
+// what init and the engine's log say, while devLocalPages is on
+// (CONTRACT.md, Page origins).
+const DevLocalPagesWarning = "DEV_LOCAL_PAGES: these pages are on the agent's machine; never use this with a bot you do not control"
+
+// checkOrigins applies the operator half of the closed origin list (CO-8):
+// an agent-operated engine uses the portal, since local pages would be on
+// the agent's machine, unless devLocalPages is on; devLocalPages holds
+// only for an agent-operated engine serving local pages on loopback.
+func (c Config) checkOrigins() error {
+	base, err := c.PagesBase()
+	if err != nil {
+		return err
+	}
+	local := !isHosted(base)
+	switch {
+	case c.DevLocalPages && !c.AgentOperated():
+		return errors.New(`devLocalPages is only for an agent-operated engine ("operatedBy": "AGENT"); remove it`)
+	case c.DevLocalPages && !local:
+		return fmt.Errorf("devLocalPages needs a local pagesUrl (http://localhost:<port>), not %s; remove it", base)
+	case c.DevLocalPages && c.PagesAddr == PagesOff:
+		return fmt.Errorf("devLocalPages needs the engine to serve the pages on loopback; remove \"pagesAddr\": %q or devLocalPages", PagesOff)
+	case c.AgentOperated() && local && !c.DevLocalPages:
+		return fmt.Errorf("pagesUrl %s: an agent-operated engine uses the portal's pages (%s); local pages would be on the agent's machine",
+			base, links.Portal)
+	}
+	return nil
 }
 
 // isLoopbackName reports whether host names this machine in a URL.

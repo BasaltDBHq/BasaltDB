@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 )
 
 const finishSetupID = "0193a4c2-7d1e-7c3a-9f00-0000000000e5"
@@ -30,7 +31,7 @@ func TestClearSetupClearsOnlyThatSetup(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "engine.json")
 	bot, other := pendingAgent("bot"), pendingAgent("other")
-	require.NoError(t, config.UpsertAgent(path, config.Settings{SocketDir: "/run/basalt", OperatedBy: "AGENT"}, bot))
+	require.NoError(t, config.UpsertAgent(path, config.Settings{SocketDir: "/run/basalt", OperatedBy: "AGENT", PagesURL: links.Portal}, bot))
 	require.NoError(t, config.UpsertAgent(path, config.Settings{}, other))
 
 	// Another setup id (init --remote made a new code meanwhile): unchanged.

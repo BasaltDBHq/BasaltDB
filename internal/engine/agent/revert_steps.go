@@ -439,11 +439,11 @@ func (s *Service) nothingToRevert(ctx context.Context, tool string, scope guard.
 	if strings.Contains(detail, "changed no rows") {
 		return s.nothingToRevertError(ctx, tool, scope, reasonReadsOnly, detail)
 	}
-	texts, perr := s.Reverts.PreviewRevert(ctx, scope)
+	pv, perr := s.Reverts.PreviewRevert(ctx, scope, "", 1)
 	if perr != nil {
-		texts = nil
+		pv = guard.PreviewPage{}
 	}
-	return s.nothingToRevertError(ctx, tool, scope, skipReason(texts), detail)
+	return s.nothingToRevertError(ctx, tool, scope, skipReason(pv), detail)
 }
 
 // nothingToRevertError builds NOTHING_TO_REVERT for reason.
@@ -500,30 +500,11 @@ func (s *Service) nothingToRevertError(ctx context.Context, tool string, scope g
 // skipReason is why a preview with no line to restore has nothing to revert:
 // every line skipped because it was reverted already, or because people
 // changed the rows since.
-func skipReason(texts []string) string {
-	if len(texts) == 0 {
-		return reasonAllChangedByPeople
+func skipReason(pv guard.PreviewPage) string {
+	if pv.Lines > 0 && pv.AllAlreadyReverted {
+		return reasonAlreadyReverted
 	}
-	for _, t := range texts {
-		l, err := revert.ParseLine(t)
-		if err != nil || l.Conflict == nil || *l.Conflict != revert.ConflictAlreadyReverted {
-			return reasonAllChangedByPeople
-		}
-	}
-	return reasonAlreadyReverted
-}
-
-// allSkipped reports whether a preview's lines restore nothing.
-func allSkipped(texts []string) bool {
-	if len(texts) == 0 {
-		return false
-	}
-	for _, t := range texts {
-		if l, err := revert.ParseLine(t); err != nil || l.Action != revert.ActionSkip {
-			return false
-		}
-	}
-	return true
+	return reasonAllChangedByPeople
 }
 
 // requestTimeoutSteps: the person prepares and signs the revert in a

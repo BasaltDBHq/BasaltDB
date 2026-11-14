@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/pgcatalog"
@@ -309,6 +310,8 @@ type changeDTO struct {
 	ActorKind    string          `json:"actorKind"`
 	RevertID     uuid.NullUUID   `json:"revertId"`
 	RevertedBy   []uuid.UUID     `json:"revertedBy"`
+	// LargeValues is set on agent reads only; the person reads in full.
+	LargeValues []largevalue.Entry `json:"-"`
 }
 
 type pageDTO[T any] struct {
@@ -351,6 +354,9 @@ type rowChangeDTO struct {
 	Pruned     bool            `json:"pruned"`
 	BasedOn    *ledger.BasedOn `json:"basedOn"`
 	BlindWrite bool            `json:"blindWrite"`
+	// LargeValues and the left-out flags are set on agent reads only.
+	LargeValues                             []largevalue.Entry `json:"-"`
+	KeyLeftOut, BeforeLeftOut, AfterLeftOut bool               `json:"-"`
 }
 
 type rowChangesDTO struct {
@@ -440,6 +446,8 @@ type approvalDTO struct {
 	ApprovedAt  *time.Time      `json:"approvedAt"`
 	BindingText string          `json:"bindingText"`
 	Lines       []string        `json:"lines"`
+	// LargeValues is set on agent reads only; the person reads in full.
+	LargeValues []largevalue.Entry `json:"-"`
 }
 
 type assertionDTO struct {

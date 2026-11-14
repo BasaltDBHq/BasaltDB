@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/largevalue"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
@@ -160,13 +161,45 @@ type RevertLineParams struct {
 // ListRevertLines returns one page of the lines of a batched plan the
 // calling role prepared, keyset on the line number.
 func ListRevertLines(ctx context.Context, q guard.Querier, p RevertLineParams) (pagination.Page[RevertLine], error) {
+	sql, args, err := revertLinePage(p)
+	if err != nil {
+		return pagination.Page[RevertLine]{}, err
+	}
+	return collectRevertLines(ctx, q, p, sql, args)
+}
+
+// ListRevertLinesMarked is ListRevertLines for an agent (revert_plan): each
+// line's values and images too large for the agent are left out and named
+// in its largeValues, and its changeIds cut to the first
+// largevalue.MaxChangeIDs (CONTRACT.md, Large values).
+func ListRevertLinesMarked(ctx context.Context, q guard.Querier, p RevertLineParams) (pagination.Page[RevertLine], error) {
+	page, args, err := revertLinePage(p)
+	if err != nil {
+		return pagination.Page[RevertLine]{}, err
+	}
+	// Plain SQL: a recursive CTE over the page (largevalue.ElideLines).
+	// The line past the limit only tells that another page follows: its
+	// text is never read (a page at limit 1 holds one line).
+	sql := largevalue.With + `lv_page AS MATERIALIZED (SELECT x.*, row_number() OVER (ORDER BY line_no) > ` +
+		fmt.Sprint(p.Limit) + ` AS lv_more FROM (` + page + `) x), ` +
+		largevalue.ElideLines(`SELECT line_no AS item, line::jsonb AS line FROM lv_page WHERE line <> '' AND NOT lv_more`) + `
+		SELECT p.line_no, CASE WHEN p.lv_more THEN '' ELSE coalesce(e.line::text, p.line) END, p.outcome, p.conflict, p.sql_state, p.batch
+		FROM lv_page p LEFT JOIN lv_lines e ON e.item = p.line_no
+		ORDER BY p.line_no`
+	return collectRevertLines(ctx, q, p, sql, args)
+}
+
+// revertLinePage is the SQL of one page of a plan's lines, one more than
+// the limit.
+func revertLinePage(p RevertLineParams) (string, []any, error) {
 	if p.Limit < 1 || p.Limit > pagination.MaxLimit {
-		return pagination.Page[RevertLine]{}, fmt.Errorf("%w: limit %d", ErrInvalidParams, p.Limit)
+		return "", nil, fmt.Errorf("%w: limit %d", ErrInvalidParams, p.Limit)
 	}
 	if p.Sort != "" {
-		return pagination.Page[RevertLine]{}, fmt.Errorf("%w: plan lines come in execution order; no sort", ErrInvalidParams)
+		return "", nil, fmt.Errorf("%w: plan lines come in execution order; no sort", ErrInvalidParams)
 	}
-	b := psql.Select("line_no", "coalesce(line, '')", "outcome", "coalesce(conflict, '')", "coalesce(sql_state, '')", "batch").
+	b := psql.Select("line_no", "coalesce(line, '') AS line", "outcome", "coalesce(conflict, '') AS conflict",
+		"coalesce(sql_state, '') AS sql_state", "batch").
 		From("basalt_meta.agent_revert_lines").Where(sq.Eq{"revert_id": p.RevertID.String()}).
 		OrderBy("line_no").Limit(uint64(p.Limit) + 1)
 	switch p.Outcome {
@@ -174,16 +207,17 @@ func ListRevertLines(ctx context.Context, q guard.Querier, p RevertLineParams) (
 	case OutcomePending, OutcomeRestored, OutcomeSkipped:
 		b = b.Where(sq.Eq{"outcome": p.Outcome})
 	default:
-		return pagination.Page[RevertLine]{}, fmt.Errorf("%w: outcome %q", ErrInvalidParams, p.Outcome)
+		return "", nil, fmt.Errorf("%w: outcome %q", ErrInvalidParams, p.Outcome)
 	}
 	b, err := pagination.ApplySeqKeyset(b, "line_no", false, p.Cursor)
 	if err != nil {
-		return pagination.Page[RevertLine]{}, fmt.Errorf("%w: %w", ErrInvalidParams, err)
+		return "", nil, fmt.Errorf("%w: %w", ErrInvalidParams, err)
 	}
-	sql, args, err := b.ToSql()
-	if err != nil {
-		return pagination.Page[RevertLine]{}, err
-	}
+	return b.ToSql()
+}
+
+// collectRevertLines runs sql and returns its rows as one page of p.
+func collectRevertLines(ctx context.Context, q guard.Querier, p RevertLineParams, sql string, args []any) (pagination.Page[RevertLine], error) {
 	rows, err := q.Query(ctx, sql, args...)
 	if err != nil {
 		return pagination.Page[RevertLine]{}, err

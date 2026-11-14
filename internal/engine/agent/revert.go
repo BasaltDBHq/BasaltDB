@@ -3,8 +3,6 @@ package agent
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -30,7 +28,10 @@ import (
 // local pages (CONTRACT.md, Local pages); no MCP tool reaches it, and
 // Postgres verifies the signature.
 type RevertStore interface {
-	PreviewRevert(ctx context.Context, scope guard.RevertScope) ([]string, error)
+	// PreviewRevert reads one page of the preview of scope, after the line
+	// whose hash is after, with the preview's totals and large values left
+	// out (guard.PreviewRevertPage).
+	PreviewRevert(ctx context.Context, scope guard.RevertScope, after string, limit int) (guard.PreviewPage, error)
 	// RevertedBy is the change record of the latest revert that covered scope
 	// (a revert's own change, which request_revert accepts to redo the work),
 	// or uuid.Nil when none did.
@@ -91,35 +92,32 @@ func (s *Service) PreviewRevert(ctx context.Context, p PreviewRevertParams) (Rev
 	if err := s.checkOwnScope(ctx, p.Scope); err != nil {
 		return RevertPreview{}, err
 	}
-	texts, err := s.Reverts.PreviewRevert(ctx, p.Scope)
-	if err != nil {
-		return RevertPreview{}, s.prepareError(ctx, toolPreviewRevert, p.Scope, err)
-	}
-	start, err := lineAfter(texts, p.Cursor)
+	after, err := cursorHash(p.Cursor)
 	if err != nil {
 		return RevertPreview{}, err
 	}
-	if allSkipped(texts) {
-		// Every line is skipped: nothing a revert could restore (AE-8, AE-14).
-		return RevertPreview{}, s.nothingToRevertError(ctx, toolPreviewRevert, p.Scope, skipReason(texts), "every row is skipped")
+	pv, err := s.Reverts.PreviewRevert(ctx, p.Scope, after, p.Limit)
+	if err != nil {
+		return RevertPreview{}, s.prepareError(ctx, toolPreviewRevert, p.Scope, err)
 	}
-	out := RevertPreview{Scope: p.Scope, Command: s.Commands.Revert(p.Scope)}
-	lines := make([]revert.Line, 0, len(texts))
-	for _, text := range texts {
-		l, err := revert.ParseLine(text)
+	if !pv.CursorFound {
+		return RevertPreview{}, &ArgumentError{Message: "the cursor's line is no longer in the preview: the rows changed, start from the first page", Reason: ReasonStaleCursor}
+	}
+	if pv.Lines > 0 && pv.Restore == 0 {
+		// Every line is skipped: nothing a revert could restore (AE-8, AE-14).
+		return RevertPreview{}, s.nothingToRevertError(ctx, toolPreviewRevert, p.Scope, skipReason(pv), "every row is skipped")
+	}
+	out := RevertPreview{Scope: p.Scope, Command: s.Commands.Revert(p.Scope), Rows: pv.Restore, Skipped: pv.Lines - pv.Restore}
+	out.Page.Items = make([]revert.Line, 0, len(pv.Page))
+	for _, pl := range pv.Page {
+		l, err := revert.ParseMarkedLine(pl.Text)
 		if err != nil {
 			return RevertPreview{}, fmt.Errorf("guard returned a bad revert line: %w", err)
 		}
-		lines = append(lines, l.ForDisplay())
-		if l.Action == revert.ActionRestore {
-			out.Rows++
-		}
+		out.Page.Items = append(out.Page.Items, l.ForDisplay())
 	}
-	out.Skipped = len(lines) - out.Rows
-	end := min(start+p.Limit, len(lines))
-	out.Page.Items = lines[start:end]
-	if end < len(lines) {
-		out.Page.NextCursor = pagination.EncodeNameCursor(lineHash(texts[end-1]))
+	if pv.More {
+		out.Page.NextCursor = pagination.EncodeNameCursor(pv.Page[len(pv.Page)-1].Hash)
 	}
 	if out.PersonMessage, out.NextSteps, err = s.previewGuidance(out); err != nil {
 		return RevertPreview{}, err
@@ -127,28 +125,19 @@ func (s *Service) PreviewRevert(ctx context.Context, p PreviewRevertParams) (Rev
 	return out, nil
 }
 
-// lineAfter is the index of the first line after the cursor's line. The
-// cursor names a line by its hash (keyset on the signed line order), so a
-// preview that changed between pages is refused rather than skipped over.
-func lineAfter(texts []string, cursor string) (int, error) {
+// cursorHash is the hash of the line a preview cursor names ("" for the
+// first page). The cursor names a line by the hash of its signed text
+// (keyset on the signed line order), so a preview that changed between
+// pages is refused rather than skipped over.
+func cursorHash(cursor string) (string, error) {
 	if cursor == "" {
-		return 0, nil
+		return "", nil
 	}
 	hash, err := pagination.DecodeNameCursor(cursor)
-	if err != nil {
-		return 0, &ArgumentError{Message: "invalid cursor", Reason: ReasonStaleCursor}
+	if err != nil || hash == "" {
+		return "", &ArgumentError{Message: "invalid cursor", Reason: ReasonStaleCursor}
 	}
-	for i, t := range texts {
-		if lineHash(t) == hash {
-			return i + 1, nil
-		}
-	}
-	return 0, &ArgumentError{Message: "the cursor's line is no longer in the preview: the rows changed, start from the first page", Reason: ReasonStaleCursor}
-}
-
-func lineHash(text string) string {
-	sum := sha256.Sum256([]byte(text))
-	return hex.EncodeToString(sum[:])
+	return hash, nil
 }
 
 // RevertPlanParams are revert_plan's validated arguments: a batched plan
@@ -209,7 +198,7 @@ func (s *Service) RevertPlan(ctx context.Context, p RevertPlanParams) (RevertPla
 	for _, l := range page.Items {
 		line := RevertPlanLine{RevertLine: l}
 		if l.Text != "" {
-			parsed, err := revert.ParseLine(l.Text)
+			parsed, err := revert.ParseMarkedLine(l.Text)
 			if err != nil {
 				return RevertPlan{}, fmt.Errorf("guard returned a bad revert line %d: %w", l.No, err)
 			}

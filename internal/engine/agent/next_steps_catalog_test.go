@@ -22,6 +22,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/resultsize"
+	"github.com/basaltdbhq/basaltdb/internal/revert"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 )
 
@@ -64,8 +66,19 @@ type catalogReverts struct {
 	by    uuid.UUID
 }
 
-func (r catalogReverts) PreviewRevert(context.Context, guard.RevertScope) ([]string, error) {
-	return r.lines, nil
+func (r catalogReverts) PreviewRevert(context.Context, guard.RevertScope, string, int) (guard.PreviewPage, error) {
+	out := guard.PreviewPage{Lines: len(r.lines), AllAlreadyReverted: true, CursorFound: true}
+	for _, text := range r.lines {
+		l, err := revert.ParseLine(text)
+		if err != nil {
+			return guard.PreviewPage{}, err
+		}
+		if l.Action == revert.ActionRestore {
+			out.Restore++
+		}
+		out.AllAlreadyReverted = out.AllAlreadyReverted && l.Conflict != nil && *l.Conflict == revert.ConflictAlreadyReverted
+	}
+	return out, nil
 }
 
 func (r catalogReverts) RevertedBy(context.Context, guard.RevertScope) (uuid.UUID, error) {
@@ -203,6 +216,10 @@ func catalogCases() map[string]catalogCase {
 
 		caseKey("QUERY_TIMEOUT", "ROW_LIMIT", ""):  {"query", queryArgs0, plain(agentdb.ErrRowLimit)},
 		caseKey("QUERY_TIMEOUT", "SIZE_LIMIT", ""): {"query", queryArgs0, plain(agentdb.ErrSizeLimit)},
+		caseKey("QUERY_TIMEOUT", "ROW_TOO_LARGE", ""): {
+			"query", queryArgs0,
+			plain(&resultsize.RowTooLargeError{Bytes: 20 << 20, Columns: []resultsize.ColumnSize{{Name: "body", Bytes: 20 << 20}}}),
+		},
 		caseKey("QUERY_TIMEOUT", "TIME_LIMIT", ""): {"query", queryArgs0, pgFail("57014", "canceling statement due to statement timeout", "")},
 		caseKey("QUERY_TIMEOUT", "TIME_LIMIT", "preview_revert"): {
 			"preview_revert",
@@ -783,12 +800,34 @@ func TestMessageTooLargeIsSizeLimitOnlyWhereDeclared(t *testing.T) {
 	tooLarge := fmt.Errorf("read: %w", &pgproto3.ExceededMaxBodyLenErr{MaxExpectedBodyLen: 1, ActualBodyLen: 2})
 	for tool, want := range map[string]string{
 		"query": CodeQueryTimeout, "write": CodeQueryTimeout, "describe": CodeQueryTimeout,
-		"run_history": CodeInternal, "list_pending": CodeInternal, "revert_plan": CodeInternal,
+		"run_history": CodeQueryTimeout, "list_pending": CodeQueryTimeout, "revert_plan": CodeQueryTimeout,
+		"list_runs": CodeInternal, "status": CodeInternal,
 	} {
 		te := s.Failure(tool, nil, tooLarge)
 		require.Equal(t, want, te.Code, tool)
 		if want == CodeQueryTimeout {
 			require.Equal(t, ReasonSizeLimit, te.Reason, tool)
+		}
+	}
+}
+
+// One row over the budget alone is ROW_TOO_LARGE for the tools whose own
+// statement it refuses (query, a write's RETURNING), naming the columns,
+// and SIZE_LIMIT for any other tool.
+func TestRowTooLargeOnlyForTheAgentsOwnStatement(t *testing.T) {
+	t.Parallel()
+	s := serviceFor(t, "linux", "", nil)
+	row := fmt.Errorf("read: %w", &resultsize.RowTooLargeError{Bytes: 20 << 20, Columns: []resultsize.ColumnSize{{Name: "body", Bytes: 20 << 20}}})
+	for tool, want := range map[string]string{
+		"query": ReasonRowTooLarge, "write": ReasonRowTooLarge,
+		"run_history": ReasonSizeLimit, "describe": ReasonSizeLimit, "preview_revert": ReasonSizeLimit,
+	} {
+		te := s.Failure(tool, nil, row)
+		require.Equal(t, CodeQueryTimeout, te.Code, tool)
+		require.Equal(t, want, te.Reason, tool)
+		if want == ReasonRowTooLarge {
+			require.Contains(t, te.Message, "body (20.0 MiB)", tool)
+			require.Contains(t, te.Message, "substr(col, 1, 100000)", tool)
 		}
 	}
 }

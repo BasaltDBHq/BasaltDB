@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
+	"github.com/basaltdbhq/basaltdb/internal/largevalue"
 	"github.com/basaltdbhq/basaltdb/pkg/wiretime"
 )
 
@@ -49,11 +50,31 @@ type Line struct {
 	ChangeIDs []uuid.UUID     `json:"changeIds"`
 	Redacted  bool            `json:"redacted,omitempty"`
 	RowHash   string          `json:"rowHash,omitempty"`
+	// LargeValues and MoreChangeIDs are on a line an agent reads only
+	// (ParseMarkedLine; CONTRACT.md, Large values): the values left out of
+	// key, now and set, and how many changeIds follow the first
+	// largevalue.MaxChangeIDs. A signed line never has them.
+	LargeValues   []largevalue.Entry `json:"largeValues,omitempty"`
+	MoreChangeIDs int                `json:"moreChangeIds,omitempty"`
 }
 
 // ParseLine parses one revert line for display and checks its action and
 // conflict agree: a RESTORE line has no conflict, a SKIP line names one.
 func ParseLine(text string) (Line, error) {
+	l, err := ParseMarkedLine(text)
+	if err != nil {
+		return Line{}, err
+	}
+	if l.LargeValues != nil || l.MoreChangeIDs != 0 {
+		return Line{}, invalid("revert line with largeValues or moreChangeIds: not a signed line")
+	}
+	return l, nil
+}
+
+// ParseMarkedLine is ParseLine for a line as an agent reads it, with large
+// values left out and named (ledger.ListRevertLinesMarked,
+// guard.PreviewRevertPage).
+func ParseMarkedLine(text string) (Line, error) {
 	var l Line
 	dec := json.NewDecoder(bytes.NewReader([]byte(text)))
 	dec.DisallowUnknownFields()

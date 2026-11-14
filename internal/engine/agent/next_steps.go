@@ -14,6 +14,7 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 	"github.com/basaltdbhq/basaltdb/pkg/uniqueid"
@@ -85,7 +86,7 @@ func (f failure) arg(name string) string {
 // bare. A body that already carries its steps (built where the engine
 // knows the link or the ledger row) keeps them.
 func (s *Service) Failure(tool string, args map[string]any, err error) *mcp.ToolError {
-	te := messageTooLarge(tool, err, ToolError(err))
+	te := rowTooLargeFor(tool, messageTooLarge(tool, err, ToolError(err)))
 	if te.Code == CodeInternal || te.Code == CodeUnavailable {
 		if te.ErrorID == "" {
 			te.ErrorID = uniqueid.New()
@@ -307,10 +308,49 @@ func queryTimeoutSteps(b *Steps, te *mcp.ToolError, f failure) {
 		b.ReviseCall(f.tool, nil, "Add a LIMIT or a narrower WHERE so the call returns fewer rows, then call it again.")
 		return
 	case ReasonSizeLimit:
-		b.ReviseCall(f.tool, nil, "Select fewer or shorter columns (for example left(col, 200)) or fewer rows so the result stays under 16 MiB, then call it again.")
+		b.ReviseCall(f.tool, nil, sizeLimitText(f.tool))
+		return
+	case ReasonRowTooLarge:
+		b.ReviseCall(f.tool, nil, "One row is too large to read whole: select fewer columns, the size of a large one "+
+			"(length(col)) or a slice of it (substr(col, 1, 100000)), then call it again.")
 		return
 	}
 	b.ReviseCall(f.tool, nil, "Narrow the statement (a tighter WHERE, fewer joins, a LIMIT) so it finishes in time, then call it again.")
+}
+
+// rowTooLargeTools are the tools whose own statement's rows the agent
+// reads: query, and a write's RETURNING.
+var rowTooLargeTools = map[string]bool{toolQuery: true, toolWrite: true}
+
+// rowTooLargeFor keeps ROW_TOO_LARGE for the tools whose statement it
+// refuses (CONTRACT.md, QUERY_TIMEOUT ROW_TOO_LARGE); any other tool's
+// read too large for the budget is SIZE_LIMIT.
+func rowTooLargeFor(tool string, te *mcp.ToolError) *mcp.ToolError {
+	if te.Code == CodeQueryTimeout && te.Reason == ReasonRowTooLarge && !rowTooLargeTools[tool] {
+		te = sizeLimitError()
+	}
+	if te.Code == CodeQueryTimeout && te.Reason == ReasonSizeLimit && pagedTools[tool] {
+		// A paged tool's message names its step, not the columns of a query.
+		te.Message = resultsize.ErrSizeLimit.Error() + "; call it again with a smaller limit, down to 1"
+	}
+	return te
+}
+
+// pagedTools page ledger items with limit: a smaller limit ends a
+// SIZE_LIMIT (CONTRACT.md, Large values).
+var pagedTools = map[string]bool{toolRunHistory: true, toolListPending: true, toolPreviewRevert: true, toolRevertPlan: true}
+
+// sizeLimitText is what the agent revises after SIZE_LIMIT, by tool
+// (CONTRACT.md, Next steps per code): a smaller page for the paged tools, a
+// narrower revert for request_revert, fewer or shorter values otherwise.
+func sizeLimitText(tool string) string {
+	switch tool {
+	case toolRunHistory, toolListPending, toolPreviewRevert, toolRevertPlan:
+		return "Call it again with a smaller limit (half of it, for example) so the result stays under 16 MiB."
+	case toolRequestRevert:
+		return "Request a narrower revert, with runs or tables, so its lines stay under 16 MiB."
+	}
+	return "Select fewer or shorter columns (for example left(col, 200)) or fewer rows so the result stays under 16 MiB, then call it again."
 }
 
 func approvalExpiredSteps(b *Steps) {

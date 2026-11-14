@@ -178,9 +178,10 @@ type History struct {
 	Rows map[uuid.UUID][]ledger.RowChange
 }
 
-// History reads one page of change records through the agent views.
+// History reads one page of change records through the agent views, with
+// values too large for the agent left out (CONTRACT.md, Large values).
 func (s *Store) History(ctx context.Context, p ledger.ChangeListParams) (History, error) {
-	page, err := ledger.ListChanges(ctx, s.db, p)
+	page, err := ledger.ListChangesMarked(ctx, s.db, p)
 	if err != nil {
 		return History{}, err
 	}
@@ -188,7 +189,7 @@ func (s *Store) History(ctx context.Context, p ledger.ChangeListParams) (History
 	for _, ch := range page.Items {
 		ids = append(ids, ch.ID)
 	}
-	rows, err := ledger.RowChanges(ctx, s.db, ids)
+	rows, err := ledger.RowChangesMarked(ctx, s.db, ids)
 	if err != nil {
 		return History{}, err
 	}

@@ -34,6 +34,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
+	"github.com/basaltdbhq/basaltdb/internal/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/server"
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
@@ -457,14 +458,19 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		login: targetOf(pool.Config().ConnConfig), password: password, reset: pool.Reset,
 		connect: connectAgent, log: log,
 	}
-	probe := agent.DBProbe{Q: pool, Migrations: guard.Migrations(), Kept: KeptSetAside(env.pins, a.Name, log)}
+	// Every read a tool call makes on the agent's connection is charged to
+	// the call's result budget (CONTRACT.md, QUERY_TIMEOUT SIZE_LIMIT, one
+	// budget per call). Reads outside a call (upkeep, the person's socket)
+	// carry no budget and are not charged.
+	budgeted := resultsize.Budgeted(pool)
+	probe := agent.DBProbe{Q: budgeted, Migrations: guard.Migrations(), Kept: KeptSetAside(env.pins, a.Name, log)}
 	logGuard(ctx, probe, log)
 	// The agent's classification map, and the values of IDENTIFIER columns
 	// it reads added to the dictionary before they leave the engine: query
 	// rows in the service, RETURNING rows inside the write's transaction.
 	classes := piidict.NewMap(log.With("component", "pii"))
 	observer := piidict.NewObserver(classes, env.dict)
-	store := agentdb.NewStore(pool, limits, time.Now).WithReturned(observer.Returned)
+	store := agentdb.NewStore(budgeted, limits, time.Now).WithReturned(observer.Returned)
 	secrets := linkSecrets(env.stateDir, a.Name, log)
 	var relay agent.LinkRelay
 	if env.relay != nil {
@@ -477,11 +483,11 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		env.records.add(a.Name, pool)
 	}
 	blind := agent.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
-		return guard.RLSBlindTables(ctx, pool, "", tables)
+		return guard.RLSBlindTables(ctx, budgeted, "", tables)
 	})
 	svc := agent.NewService(agent.Deps{
 		Name:          a.Name,
-		Reader:        agentdb.NewReader(pool, limits, time.Now),
+		Reader:        agentdb.NewReader(budgeted, limits, time.Now),
 		Store:         store,
 		Reads:         store,
 		Approvals:     store,
@@ -504,8 +510,8 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		Receipts:      env.receipts,
 		Finisher:      finisher,
 		PII:           observer.On(pool),
-		Catalog:       agentdb.NewCatalog(pool, limits, pool.Config().ConnConfig.Database),
-		Columns:       agentdb.NewColumnOrder(pool),
+		Catalog:       agentdb.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database),
+		Columns:       agentdb.NewColumnOrder(budgeted),
 		Classes:       classes.On(pool),
 	})
 	return agentRuntime{

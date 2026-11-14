@@ -330,7 +330,7 @@ func TestQueryReturnsTimestamptzAsUTC(t *testing.T) {
 	})
 	require.False(t, isError, "%v", body)
 	row := body["rows"].([]any)[0].(map[string]any)
-	require.Equal(t, "2026-11-12 14:08:04.513958+02", row["shown"], "text columns are as Postgres printed them")
+	require.Equal(t, "2026-11-12 12:08:04.513958+00", row["shown"], "text columns are as Postgres printed them, in the engine's UTC whatever the role's TimeZone")
 	require.Equal(t, "2026-11-12T12:08:04.513958Z", row["created"])
 }
 

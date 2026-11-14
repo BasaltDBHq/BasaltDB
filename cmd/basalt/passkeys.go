@@ -93,6 +93,7 @@ func passkeyList(c *cliIO, args []string) int {
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
 	}
+	*af.configPath = configOrFallback(c.host, fs, *af.configPath)
 	keys, err := af.passkeys(c)
 	if err != nil {
 		return c.fail(err)
@@ -372,6 +373,7 @@ func passkeyCheck(c *cliIO, args []string) int {
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
 	}
+	*af.configPath = configOrFallback(c.host, fs, *af.configPath)
 	l, err := openLedger(c, *af.agent, *af.credFile, *af.configPath)
 	if err != nil {
 		return c.fail(err)

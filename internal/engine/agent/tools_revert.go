@@ -10,6 +10,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
@@ -246,6 +247,7 @@ type requestRevertResult struct {
 	Skipped       int                `json:"skipped"`
 	ExpiresAt     string             `json:"expiresAt"`
 	RevertURL     string             `json:"revertUrl,omitempty"`
+	RequestFile   *links.RequestFile `json:"requestFile,omitempty"`
 	PersonMessage string             `json:"personMessage"`
 	Links         []mcp.Link         `json:"links,omitempty"`
 	ChangeID      string             `json:"changeId,omitempty"`
@@ -270,7 +272,7 @@ func requestRevertFromDomain(r RequestedRevert) requestRevertResult {
 	out := requestRevertResult{
 		RevertID: rv.ID.String(), Status: rv.Status, Scope: rv.Scope, ScopeID: rv.ScopeID.String(),
 		Intent: rv.Intent, Batched: rv.Batched, Rows: rv.Rows, Skipped: rv.Skipped,
-		ExpiresAt: timeText(rv.ExpiresAt), RevertURL: r.RevertURL, PersonMessage: r.PersonMessage, Links: r.Links, NextSteps: r.NextSteps,
+		ExpiresAt: timeText(rv.ExpiresAt), RevertURL: r.RevertURL, RequestFile: r.RequestFile, PersonMessage: r.PersonMessage, Links: r.Links, NextSteps: r.NextSteps,
 	}
 	if rv.ChangeID != nil {
 		out.ChangeID = rv.ChangeID.String()
@@ -280,7 +282,7 @@ func requestRevertFromDomain(r RequestedRevert) requestRevertResult {
 	}
 	if rv.Widened {
 		// Status and totals only: the person's scope is theirs (RS-5).
-		out.Widened, out.Scope, out.ScopeID, out.RevertURL, out.Links = true, "", "", "", nil
+		out.Widened, out.Scope, out.ScopeID, out.RevertURL, out.RequestFile, out.Links = true, "", "", "", nil, nil
 	}
 	if rv.RejectedAt != nil {
 		out.RejectedAt, out.Note = timeText(*rv.RejectedAt), rv.RejectNote
@@ -357,6 +359,7 @@ type revertPlanResult struct {
 	ApplyBy       string              `json:"applyBy,omitempty"`
 	MaxBatch      int                 `json:"maxBatch"`
 	RevertURL     string              `json:"revertUrl,omitempty"`
+	RequestFile   *links.RequestFile  `json:"requestFile,omitempty"`
 	PersonMessage string              `json:"personMessage,omitempty"`
 	Links         []mcp.Link          `json:"links,omitempty"`
 	Items         []revertPlanItemDTO `json:"items"`
@@ -382,14 +385,14 @@ func revertPlanFromDomain(p RevertPlan) revertPlanResult {
 		Lines: r.Rows + r.Skipped, Restored: r.Progress.Restored, Skipped: r.Progress.Skipped, Pending: r.Progress.Pending,
 		ExpiresAt: timeText(r.ExpiresAt), MaxBatch: revert.MaxBatch,
 		Items: make([]revertPlanItemDTO, 0, len(p.Page.Items)), NextCursor: p.Page.NextCursor,
-		RevertURL: p.RevertURL, PersonMessage: p.PersonMessage, Links: p.Links, NextSteps: p.NextSteps,
+		RevertURL: p.RevertURL, RequestFile: p.RequestFile, PersonMessage: p.PersonMessage, Links: p.Links, NextSteps: p.NextSteps,
 	}
 	if r.ApplyBy != nil {
 		out.ApplyBy = timeText(*r.ApplyBy)
 	}
 	if r.Widened {
 		// Status and totals only: the person's scope is theirs (RS-5).
-		out.Widened, out.Scope, out.ScopeID, out.RevertURL, out.Links = true, "", "", "", nil
+		out.Widened, out.Scope, out.ScopeID, out.RevertURL, out.RequestFile, out.Links = true, "", "", "", nil, nil
 	}
 	for _, l := range p.Page.Items {
 		item := revertPlanItemDTO{Line: l.No, Outcome: l.Outcome, Batch: l.Batch, Conflict: l.Conflict, SQLState: l.SQLState}

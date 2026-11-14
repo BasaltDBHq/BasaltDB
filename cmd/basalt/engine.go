@@ -44,6 +44,8 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 		if err := dropToUser(privdrop.OS{}, *runAs, io.err); err != nil {
 			return fail(io.err, "engine", err)
 		}
+		// The inherited HOME is still root's; look in the engine user's own.
+		h = engineUserHost{host: h, name: *runAs}
 	}
 	// After the drop, so a bot's own user finds the config init left.
 	*configPath = configOrFallback(h, fs, *configPath)
@@ -61,6 +63,38 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 // dropToUser is basalt engine --user: before the config, the credential, a
 // socket or a port is opened, the engine makes its directories, gives up
 // root for name and checks it cannot get it back (CONTRACT.md, CLI).
+// engineUserHost is a host whose config directory is the home of the OS
+// user the engine dropped to, not the HOME it inherited from root.
+type engineUserHost struct {
+	host
+	name string
+}
+
+func (h engineUserHost) UserConfigDir() (string, error) {
+	u, err := user.Lookup(h.name)
+	if err != nil {
+		return "", err
+	}
+	return userConfigDirIn(runtime.GOOS, u.HomeDir, os.Getenv("XDG_CONFIG_HOME"))
+}
+
+// userConfigDirIn is os.UserConfigDir for a user whose home is home. Like
+// os.UserConfigDir it honors an absolute XDG_CONFIG_HOME (xdg) off macOS, so
+// init, run with that variable set, and engine --user, started with the same
+// environment, read and write the same directory.
+func userConfigDirIn(goos, home, xdg string) (string, error) {
+	if goos != "darwin" && filepath.IsAbs(xdg) {
+		return xdg, nil
+	}
+	if home == "" {
+		return "", errors.New("the engine user has no home directory")
+	}
+	if goos == "darwin" {
+		return filepath.Join(home, "Library", "Application Support"), nil
+	}
+	return filepath.Join(home, ".config"), nil
+}
+
 func dropToUser(sys privdrop.System, name string, w io.Writer) error {
 	res, err := privdrop.Drop(sys, name, engineDirs(runtime.GOOS))
 	if err != nil {
@@ -108,6 +142,11 @@ func enginePath(path string) string {
 // answers every other call UNAVAILABLE ENGINE_UNREACHABLE (CONTRACT.md, Next
 // steps, Startup failures).
 func runMCP(ctx context.Context, args []string, io stdio) int {
+	return runMCPOn(ctx, args, io, osHost{})
+}
+
+// runMCPOn is runMCP with the host that tells root and the config dir.
+func runMCPOn(ctx context.Context, args []string, io stdio, h host) int {
 	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
 	fs.SetOutput(io.err)
 	name := fs.String("agent", "", "agent name (socket <socket-dir>/<agent>.sock)")
@@ -117,6 +156,9 @@ func runMCP(ctx context.Context, args []string, io stdio) int {
 	if fs.Parse(args) != nil || fs.NArg() > 0 {
 		return exitUsage
 	}
+	// A rootless bot has no --config to give: init left its config in its
+	// own config directory, which status can read while the engine is down.
+	*configPath = configOrFallback(h, fs, *configPath)
 	path := *socket
 	if path == "" {
 		if !config.ValidAgentName(*name) {
@@ -266,6 +308,8 @@ func runService(ctx context.Context, args []string, io stdio) int {
 	if cfg, err := config.LoadNoFollow(*configPath); err == nil {
 		spec.MemoryMB = cfg.PIIOrDefault().MaxMemoryMB
 	}
+	// lock is the config lock basalt service install --agent holds.
+	var lock *config.HeldLock
 	if action == "install" && a.name != "" {
 		if a.devLocalPages {
 			_, _ = fmt.Fprintln(io.err, "basalt: "+config.DevLocalPagesWarning)
@@ -279,6 +323,15 @@ func runService(ctx context.Context, args []string, io stdio) int {
 		}
 		if !*dryRun {
 			a.report = func(v config.VaultWritten) { _, _ = fmt.Fprint(io.err, a.vaultChoice().line(v)) }
+			// Hold the config lock from reading engine.json until the new
+			// one is in place, as every config writer does; the lock file
+			// goes to the engine's user (CONTRACT.md, Lock files).
+			held, err := config.LockConfigAs(*configPath, service.LookupUID(*user))
+			if err != nil {
+				return fail(io.err, "service", err)
+			}
+			defer held.Release()
+			lock = &held
 		}
 		spec, err = agentSpecFromStdin(io.in, spec, a, *credStdin, *dryRun)
 		if err != nil {
@@ -296,6 +349,12 @@ func runService(ctx context.Context, args []string, io stdio) int {
 	}
 	if err := service.Settle(service.Apply(ctx, sys, steps, *dryRun, io.out), sys, runtime.GOOS); err != nil {
 		return fail(io.err, "service", err)
+	}
+	// The install may have just made the engine's user.
+	if lock != nil {
+		if err := lock.HandTo(service.LookupUID(*user)); err != nil {
+			return fail(io.err, "service", fmt.Errorf("give %s.lock to %s: %w", *configPath, *user, err))
+		}
 	}
 	return exitOK
 }

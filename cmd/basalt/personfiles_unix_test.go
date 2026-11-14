@@ -189,3 +189,67 @@ func TestRootCLIConfigReadsDoNotFollowLinksOrBlockOnAFIFO(t *testing.T) {
 	user := &cliIO{host: newFakeHost(t), getenv: func(string) string { return "" }}
 	require.Equal(t, links.Portal, configuredBase(user, "", "bot", link), "not as root: the plain read follows the link")
 }
+
+// sudo basalt init --remote reads the config with the hardened read before
+// it trusts any field: a config writable by others, or a link to a config
+// elsewhere, is refused, and the credential file and OS user it names are
+// never used.
+func TestInitRemoteAsRootRefusesAnUntrustedConfig(t *testing.T) {
+	t.Parallel()
+	for name, plant := range map[string]func(t *testing.T, cfg, planted string){
+		"writable by others": func(t *testing.T, cfg, planted string) {
+			writeEngineJSON(t, cfg, planted)
+			require.NoError(t, os.Chmod(cfg, 0o666))
+		},
+		"credential file outside the config's directory": func(t *testing.T, cfg, planted string) {
+			// A plain 0600 config its directory's owner wrote: the hardened
+			// read accepts it, but root writes only where basalt put the
+			// credential, never where the config says.
+			writeEngineJSON(t, cfg, planted)
+		},
+		"symlink": func(t *testing.T, cfg, planted string) {
+			other := filepath.Join(t.TempDir(), "engine.json")
+			writeEngineJSON(t, other, planted)
+			require.NoError(t, os.Remove(cfg))
+			require.NoError(t, os.Symlink(other, cfg))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cfg := tempConfig(t)
+			remote(t, cfg, "--agent", testAgentKey, "--write", "public.leads", "--database-url", supabaseURL)
+			planted := filepath.Join(t.TempDir(), "planted.url")
+			plant(t, cfg, planted)
+
+			r := cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", testAgentKey, "--write", "public.leads",
+				"--database-url", supabaseURL)
+			require.Equal(t, exitError, r.code, r.stdout)
+			_, err := os.Lstat(planted)
+			require.ErrorIs(t, err, os.ErrNotExist, "the credential file the config names is never written")
+			_, err = os.Lstat(planted + pendingSuffix)
+			require.ErrorIs(t, err, os.ErrNotExist)
+		})
+	}
+}
+
+// checkConfigFile, the hardened read's file check, refuses a config owned
+// by anyone but root or the trusted user, and one writable by group or
+// others, and accepts the plain 0600 file of its owner.
+func TestRootConfigCheckRefusesAnotherOwnerOrAnOpenMode(t *testing.T) {
+	t.Parallel()
+	f := newRootCLIFixture(t)
+	open := func() *os.File {
+		fh, err := os.Open(f.configPath)
+		require.NoError(t, err)
+		t.Cleanup(func() { fh.Close() })
+		return fh
+	}
+	require.NoError(t, checkConfigFile(open(), os.Getuid()))
+	require.ErrorContains(t, checkConfigFile(open(), os.Getuid()+1), "owned by uid")
+	for _, mode := range []os.FileMode{0o620, 0o602, 0o666} {
+		require.NoError(t, os.Chmod(f.configPath, mode))
+		require.ErrorContains(t, checkConfigFile(open(), os.Getuid()), "writable by group or others", "mode %o", mode)
+	}
+	require.NoError(t, os.Chmod(f.configPath, 0o644))
+	require.NoError(t, checkConfigFile(open(), os.Getuid()), "readable by others is not refused")
+}

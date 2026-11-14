@@ -142,7 +142,7 @@ func held(reason string, url string) func(*testing.T, *Service) error {
 
 func approvalLink(reason string) func(*testing.T, *Service) error {
 	return func(_ *testing.T, s *Service) error {
-		n := heldNotice{ApprovalNotice: caseNotice(s, caseShortLink), longURL: caseShortLink}
+		n := heldNotice{ApprovalNotice: caseNotice(s, caseShortLink), longURL: caseShortLink, pick: handOver{URL: caseShortLink, Kind: linkLong}}
 		return s.approvalLinkError(&mcp.ToolError{Code: CodeApprovalInvalid, Reason: reason, Message: "m"}, n)
 	}
 }
@@ -260,10 +260,10 @@ func catalogCases() map[string]catalogCase {
 			return s.rowsChanged(caseRevert(false), "rows changed")
 		}},
 		caseKey("REVERT_INVALID", "BAD_SIGNATURE", ""): {"request_revert", revertArgs, func(t *testing.T, s *Service) error {
-			return s.badSignatureWith(caseShortLink, caseRevert(false), "the code does not verify")
+			return s.badSignatureWith(openLink(caseShortLink, signAgainText), caseRevert(false), "the code does not verify")
 		}},
 		caseKey("REVERT_INVALID", "PASSKEY_REVOKED", ""): {"request_revert", revertArgs, func(t *testing.T, s *Service) error {
-			return s.passkeyRevokedWith(caseShortLink, caseRevert(false))
+			return s.passkeyRevokedWith(openLink(caseShortLink, signRevokedText), caseRevert(false))
 		}},
 
 		caseKey("REVERT_EXPIRED", "NOT_SIGNED", ""):   {"request_revert", revertArgs, func(t *testing.T, s *Service) error { return s.revertExpired(caseRevert(false)) }},
@@ -487,10 +487,7 @@ func requireObeysCatalog(t *testing.T, kase catalogCase, te *mcp.ToolError, conf
 	require.True(t, ok, "no catalog entry for %s %s %s", te.Code, te.Reason, kase.tool)
 	require.NotEmpty(t, te.Message, "the message stays")
 	require.NotEmpty(t, te.NextSteps, "nextSteps is required")
-	got := make([]mcpcontract.StepKind, 0, len(te.NextSteps))
-	for _, st := range te.NextSteps {
-		got = append(got, mcpcontract.StepKind{Actor: st.Actor, Action: st.Action})
-	}
+	got := catalogKinds(te.NextSteps)
 	want, pm, variant := expectedSteps(t, mcpcontract.VariantError, entry.Code, entry.Reason, entry.Tool, entry.Steps, entry.PersonMessage, operatedBy)
 	require.Equal(t, want, got, "(actor, action) sequence of %s", entryKey(entry))
 	require.Equal(t, pm, te.PersonMessage != "", "personMessage set exactly when the catalog says: %q", te.PersonMessage)
@@ -547,7 +544,10 @@ func requireStepObeysRules(t *testing.T, st mcp.NextStep, kase catalogCase, conf
 	}
 }
 
-var serviceManager = regexp.MustCompile(`^sudo (systemctl|launchctl) `)
+// serviceManager is a root command on the engine's machine: the service
+// manager, or giving a lock file back to the engine's user
+// (LOCK_FILE_UNUSABLE).
+var serviceManager = regexp.MustCompile(`^sudo (systemctl|launchctl|chown) `)
 
 func requireCommand(t *testing.T, command, config, where string) {
 	t.Helper()

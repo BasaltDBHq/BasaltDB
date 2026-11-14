@@ -41,6 +41,7 @@ const (
 	problemSetupNotRun         = "SETUP_NOT_RUN"
 	problemSetupExpired        = "SETUP_EXPIRED"
 	problemSetupChangePending  = "SETUP_CHANGE_PENDING"
+	problemLockFileUnusable    = "LOCK_FILE_UNUSABLE"
 )
 
 // Retention of the ledger (CONTRACT.md, Configuration and status): the
@@ -234,6 +235,8 @@ type statusDeps struct {
 	// notRecorded remembers, for a few seconds, that a held call found the
 	// pending setup not recorded (setupGate).
 	notRecorded *setupCache
+	// lockTrouble is the lock file finishing a setup could not open.
+	lockTrouble *lockTrouble
 	passkeys    func(context.Context) ([]passkey.Credential, error)
 	log         *slog.Logger
 	now         func() time.Time
@@ -243,7 +246,7 @@ func (s *Service) statusDeps() statusDeps {
 	return statusDeps{
 		name: s.Name, operatedBy: s.OperatedBy, build: s.Build, pagesBase: s.PagesBase, pagesOrigin: s.PagesOrigin,
 		sameUser: s.SameUser, devLocalPages: s.DevLocalPages, engineReachable: true, vault: s.Vault, cmds: s.Commands, setup: s.pendingSetup(), probe: s.Probe,
-		finisher: s.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, passkeys: s.Approvals.Passkeys, log: s.Log, now: s.Now,
+		finisher: s.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, lockTrouble: &s.lockTrouble, passkeys: s.Approvals.Passkeys, log: s.Log, now: s.Now,
 	}
 }
 
@@ -286,7 +289,7 @@ func (l LocalStatus) Report(ctx context.Context) (StatusReport, error) {
 		name: l.Name, operatedBy: l.OperatedBy, build: buildinfo.Version, pagesBase: base, pagesOrigin: l.PagesOrigin,
 		sameUser: true, devLocalPages: l.DevLocalPages, engineReachable: l.EngineRunning, engineUnknown: l.EngineUnknown, cmds: l.Commands, setup: l.Setup, probe: l.Probe,
 		// basalt status reads; the running engine finishes the setup.
-		finisher: noFinisher{}, finished: func(string) {}, notRecorded: &setupCache{}, passkeys: l.Passkeys, log: l.Log, now: l.Now,
+		finisher: noFinisher{}, finished: func(string) {}, notRecorded: &setupCache{}, lockTrouble: &lockTrouble{}, passkeys: l.Passkeys, log: l.Log, now: l.Now,
 	}.report(ctx)
 }
 
@@ -312,6 +315,10 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 	}
 	setup, known := s.setupView(ctx)
 	r.Setup = setup.status
+	if path := s.lockTrouble.get(); path != "" {
+		ps.add(problemLockFileUnusable, "the engine cannot open "+path+", so a finished setup is not written back",
+			func(b *Steps) string { return lockFileSteps(b, path) })
+	}
 	if known {
 		// A setup whose recorded state could not be read (the database is
 		// down) gets no problem: the code may have been used already.

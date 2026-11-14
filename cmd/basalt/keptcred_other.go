@@ -32,3 +32,8 @@ func readOwnCredential(string) (string, os.FileInfo, error) {
 func lockFile(string) (func(), error) {
 	return nil, errRemoteUnsupported
 }
+
+// openRootCredFiles: see errRemoteUnsupported.
+func openRootCredFiles(string) (credFiles, error) {
+	return nil, errRemoteUnsupported
+}

@@ -291,9 +291,12 @@ type remoteInit struct {
 	settings config.Settings
 	entry    *config.Agent
 	credFile string
-	osUser   string
-	base     *url.URL
-	target   setupcode.Target
+	// files reads and writes credFile, its .pending and its .lock: by
+	// path, or as root through agents/ opened without following a link.
+	files  credFiles
+	osUser string
+	base   *url.URL
+	target setupcode.Target
 	// password is the agent's password this machine holds for this
 	// database: the one that logs in, else the newest (.pending first);
 	// "" when it holds none.
@@ -301,7 +304,8 @@ type remoteInit struct {
 	// credExists: the credential file exists, so a new password goes to
 	// .pending (writeCredential).
 	credExists bool
-	// unlock releases the lock that keeps two runs for the agent apart.
+	// unlock releases the lock that keeps two runs for the agent apart,
+	// and closes files.
 	unlock func()
 	// loggedIn: the role logs in with the credential (or its .pending one,
 	// then moved over the credential file). installed is the guard version
@@ -318,13 +322,17 @@ func newRemoteInit(c *cliIO, f remoteFlags) (*remoteInit, error) {
 	if err := r.paths(); err != nil {
 		return nil, err
 	}
-	unlock, err := lockFile(r.credFile + lockSuffix)
+	unlock, err := r.files.lock(r.credFile + lockSuffix)
 	if err != nil {
+		r.files.close()
 		return nil, err
 	}
-	r.unlock = unlock
-	if err := r.connection(); err != nil {
+	r.unlock = func() {
 		unlock()
+		r.files.close()
+	}
+	if err := r.connection(); err != nil {
+		r.unlock()
 		return nil, err
 	}
 	return r, nil
@@ -375,15 +383,28 @@ func (r *remoteInit) paths() error {
 	if err := config.CheckSocketPath(config.SocketPath(r.settings.SocketDir, r.f.agent)); err != nil {
 		return fmt.Errorf("%w; pass --config in a shorter directory", err)
 	}
+	asRoot := r.c.host.Euid() == 0
+	if asRoot {
+		abs, err := filepath.Abs(dir)
+		if err != nil {
+			return err
+		}
+		dir = abs
+	}
 	r.credFile = filepath.Join(dir, "agents", r.f.agent+".url")
 	r.osUser = ""
 	if r.entry != nil {
-		if r.c.host.Euid() == 0 {
+		if asRoot {
+			// As root the computed path is used, never the config's
+			// string: agents/sub/../bot.url passes the check but would
+			// resolve through agents/sub.
 			if err := sameCredentialPath(r.entry.CredentialFile, r.credFile); err != nil {
 				return err
 			}
+		} else {
+			r.credFile = r.entry.CredentialFile
 		}
-		r.credFile, r.osUser = r.entry.CredentialFile, r.entry.OSUser
+		r.osUser = r.entry.OSUser
 	}
 	if r.osUser == "" {
 		u, err := invokingUser()
@@ -392,8 +413,51 @@ func (r *remoteInit) paths() error {
 		}
 		r.osUser = u
 	}
+	r.files = pathCredFiles{}
+	if asRoot {
+		files, err := openRootCredFiles(filepath.Dir(r.credFile))
+		if err != nil {
+			return err
+		}
+		r.files = files
+	}
 	return nil
 }
+
+// credFiles reads and writes the agent's credential file, its .pending and
+// its .lock for init --remote, each named by its full path.
+type credFiles interface {
+	lock(path string) (func(), error)
+	// read reads a credential file this process wrote (readOwnCredential's
+	// checks); an error wrapping fs.ErrNotExist when there is none.
+	read(path string) (string, os.FileInfo, error)
+	// stat is the file at path, not following a link.
+	stat(path string) (os.FileInfo, error)
+	write(path string, data []byte) error
+	rename(from, to string) error
+	close()
+}
+
+// pathCredFiles reaches the credential files by path: init --remote not as
+// root, in the user's own directories.
+type pathCredFiles struct{}
+
+func (pathCredFiles) lock(path string) (func(), error) { return lockFile(path) }
+
+func (pathCredFiles) read(path string) (string, os.FileInfo, error) {
+	if _, err := os.Lstat(path); err != nil {
+		return "", nil, err
+	}
+	return readOwnCredential(path)
+}
+
+func (pathCredFiles) stat(path string) (os.FileInfo, error) { return os.Lstat(path) }
+
+func (pathCredFiles) write(path string, data []byte) error { return config.WriteFile(path, data) }
+
+func (pathCredFiles) rename(from, to string) error { return os.Rename(from, to) }
+
+func (pathCredFiles) close() {}
 
 // sameCredentialPath refuses, as root, a credential file the config names
 // anywhere but where basalt init puts it (want, agents/<agent>.url next to
@@ -437,11 +501,11 @@ func (c *credential) password() string {
 // credential file's. It logs in as the agent with the credentials for that
 // database, .pending first.
 func (r *remoteInit) connection() error {
-	cred, err := readCredentialIfAny(r.credFile)
+	cred, err := readCredentialIfAny(r.files, r.credFile)
 	if err != nil {
 		return err
 	}
-	pending, err := readCredentialIfAny(r.credFile + pendingSuffix)
+	pending, err := readCredentialIfAny(r.files, r.credFile+pendingSuffix)
 	if err != nil {
 		return err
 	}
@@ -475,11 +539,11 @@ func (r *remoteInit) connection() error {
 
 // readCredentialIfAny reads a credential file with the no-follow checks,
 // or nil when there is none.
-func readCredentialIfAny(path string) (*credential, error) {
-	if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
+func readCredentialIfAny(files credFiles, path string) (*credential, error) {
+	dsn, fi, err := files.read(path)
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil //nolint:nilnil // no file is no credential
 	}
-	dsn, fi, err := readOwnCredential(path)
 	if err != nil {
 		return nil, fmt.Errorf("the credential file %s is not usable: %w", path, err)
 	}
@@ -540,14 +604,14 @@ func (r *remoteInit) login(pending, cred *credential) error {
 // credential file, once the .pending path still names the file read.
 func (r *remoteInit) promote(pending *credential) error {
 	pendingFile := r.credFile + pendingSuffix
-	now, err := os.Lstat(pendingFile)
+	now, err := r.files.stat(pendingFile)
 	if err != nil {
 		return err
 	}
 	if !os.SameFile(now, pending.file) {
 		return fmt.Errorf("%s changed while basalt init ran; nothing changed, run it again", pendingFile)
 	}
-	if err := os.Rename(pendingFile, r.credFile); err != nil {
+	if err := r.files.rename(pendingFile, r.credFile); err != nil {
 		return err
 	}
 	r.credExists = true
@@ -778,7 +842,7 @@ func (r *remoteInit) writeCredential(p plan) error {
 	if r.credExists {
 		path += pendingSuffix
 	}
-	return config.WriteFile(path, []byte(dsn+"\n"))
+	return r.files.write(path, []byte(dsn+"\n"))
 }
 
 // writeConfig upserts the agent and prints the vault value it wrote.

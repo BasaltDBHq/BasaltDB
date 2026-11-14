@@ -1,0 +1,147 @@
+//go:build unix
+
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+)
+
+// requireEmptyDir fails when dir holds anything: root wrote nothing there.
+func requireEmptyDir(t *testing.T, dir string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	require.Empty(t, names, "root wrote through the planted link into %s", dir)
+}
+
+// As root, init --remote reaches agents/ from / without following a link:
+// the engine's user, who may own the config directory, can swap agents/ for
+// a symlink, and root must then neither lock, read nor write the credential
+// files through it, on the first run or a later one.
+func TestInitRemoteAsRootRefusesASymlinkedAgentsDir(t *testing.T) {
+	t.Parallel()
+	for name, firstRun := range map[string]bool{"first run": true, "later run": false} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cfg := tempConfig(t)
+			agents := filepath.Join(filepath.Dir(cfg), "agents")
+			if firstRun {
+				require.NoError(t, os.MkdirAll(filepath.Dir(cfg), 0o700))
+			} else {
+				remote(t, cfg, "--agent", testAgentKey, "--write", "public.leads", "--database-url", supabaseURL)
+				require.NoError(t, os.RemoveAll(agents))
+			}
+			elsewhere := t.TempDir()
+			require.NoError(t, os.Symlink(elsewhere, agents))
+
+			r := cliNoDB(t, "init", "--remote", "--config", cfg, "--agent", testAgentKey, "--write", "public.leads",
+				"--database-url", supabaseURL, "--new-code")
+			require.Equal(t, exitError, r.code, r.stdout)
+			require.Contains(t, r.stderr, "a symlink is refused")
+			requireEmptyDir(t, elsewhere)
+		})
+	}
+}
+
+// A credentialFile with .. segments passes the lexical check (it cleans to
+// agents/<agent>.url) but would resolve through whatever agents/sub is. As
+// root, init --remote uses the path it computed, never the config's string,
+// and writes that path back to the config.
+func TestInitRemoteAsRootUsesTheComputedCredentialPath(t *testing.T) {
+	t.Parallel()
+	cfg := tempConfig(t)
+	first := remote(t, cfg, "--agent", testAgentKey, "--write", "public.leads", "--database-url", supabaseURL)
+	want := filepath.Join(filepath.Dir(cfg), "agents", testAgentKey+".url")
+	require.Equal(t, want, first.credFile)
+
+	// agents/sub -> outside/inner, so agents/sub/../bot.url resolves to
+	// outside/bot.url.
+	outside := t.TempDir()
+	inner := filepath.Join(outside, "inner")
+	require.NoError(t, os.Mkdir(inner, 0o700))
+	require.NoError(t, os.Symlink(inner, filepath.Join(filepath.Dir(want), "sub")))
+	dotted := filepath.Join(filepath.Dir(want), "sub") + "/../" + testAgentKey + ".url"
+	setCredentialFile(t, cfg, dotted)
+
+	again := remote(t, cfg, "--agent", testAgentKey, "--write", "public.leads", "--new-code")
+	require.Equal(t, want, again.credFile, "the config gets the computed path back")
+	requireEmptyDir(t, inner)
+	entries, err := os.ReadDir(outside)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "only inner/: nothing written next to it")
+}
+
+// setCredentialFile rewrites the agent's credentialFile in the config at
+// cfg, keeping the rest and its mode 0600.
+func setCredentialFile(t *testing.T, cfg, path string) {
+	t.Helper()
+	raw, err := os.ReadFile(cfg)
+	require.NoError(t, err)
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(raw, &doc))
+	agents, ok := doc["agents"].([]any)
+	require.True(t, ok)
+	agent, ok := agents[0].(map[string]any)
+	require.True(t, ok)
+	agent["credentialFile"] = path
+	raw, err = json.Marshal(doc)
+	require.NoError(t, err)
+	require.NoError(t, config.WriteFile(cfg, raw))
+}
+
+// basalt engine started as root without --user reads its config with the
+// hardened read: a link is not followed and a config writable by group or
+// others is refused, before the engine starts. Not as root, the plain read
+// is unchanged.
+func TestEngineAsRootUsesTheHardenedConfigRead(t *testing.T) {
+	t.Parallel()
+	// Not a config at all: the plain read gets as far as parsing it and
+	// fails there, so a refusal before reading proves the hardened read.
+	const notJSON = "not a config\n"
+	run := func(t *testing.T, euid int, path string) (int, string) {
+		t.Helper()
+		h := newFakeHost(t)
+		h.euid = euid
+		var stdout, stderr bytes.Buffer
+		code := runEngineOn(context.Background(), []string{"--config", path},
+			stdio{in: strings.NewReader(""), out: &stdout, err: &stderr}, h)
+		return code, stderr.String()
+	}
+	t.Run("symlink", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		other := filepath.Join(t.TempDir(), "engine.json")
+		require.NoError(t, os.WriteFile(other, []byte(notJSON), 0o600))
+		link := filepath.Join(dir, "engine.json")
+		require.NoError(t, os.Symlink(other, link))
+		code, stderr := run(t, 0, link)
+		require.NotEqual(t, exitOK, code)
+		require.Contains(t, stderr, "a symlink, which is refused")
+		code, stderr = run(t, 501, link)
+		require.NotEqual(t, exitOK, code)
+		require.Contains(t, stderr, "invalid character", "not as root, the plain read follows the link")
+	})
+	t.Run("writable by others", func(t *testing.T) {
+		t.Parallel()
+		path := filepath.Join(t.TempDir(), "engine.json")
+		require.NoError(t, os.WriteFile(path, []byte(notJSON), 0o600))
+		require.NoError(t, os.Chmod(path, 0o666))
+		code, stderr := run(t, 0, path)
+		require.NotEqual(t, exitOK, code)
+		require.Contains(t, stderr, "writable by group or others")
+	})
+}

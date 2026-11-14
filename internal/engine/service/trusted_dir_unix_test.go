@@ -197,5 +197,5 @@ func TestEmptyDirReadsTheEntries(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "f"), nil, 0o600))
 	empty, err := emptyDir(fd)
 	require.NoError(t, err)
-	require.False(t, empty, "a file in it, with the link count still 2")
+	require.False(t, empty, "a file in it: a file adds no link to its directory, so only the entries tell")
 }

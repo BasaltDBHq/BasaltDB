@@ -27,7 +27,12 @@ import (
 )
 
 // runEngine runs the engine service; the launchd or systemd unit starts it.
+// basalt engine list and revoke are the person's commands for the engines
+// recorded in their database.
 func runEngine(ctx context.Context, args []string, io stdio) int {
+	if isEngineRecordsCommand(args) {
+		return withIO(runEngineRecords)(ctx, args, io)
+	}
 	return runEngineOn(ctx, args, io, osHost{})
 }
 

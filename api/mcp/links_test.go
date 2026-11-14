@@ -33,7 +33,7 @@ var (
 // the wire rules.
 func TestLinkSchemas(t *testing.T) {
 	t.Parallel()
-	checkPayloadSchemas(t, "links", []string{"link.schema.json", "compact-request.schema.json"})
+	checkPayloadSchemas(t, "links", []string{"link.schema.json", "compact-request.schema.json", "request-file.schema.json"})
 }
 
 // TestLinksBesidePersonMessage checks every personMessage in the tool and

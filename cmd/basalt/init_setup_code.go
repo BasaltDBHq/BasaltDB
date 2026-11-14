@@ -374,6 +374,10 @@ func (l *laptopSetup) refused(err error) error {
 		}
 	}
 	var pg *pgconn.PgError
+	var done *detailedError
+	if errors.As(err, &done) {
+		return fmt.Errorf("%w Nothing changed.", err) //nolint:staticcheck // full sentences after the database's message, shown as is
+	}
 	if errors.As(err, &pg) && (pg.Detail != "" || pg.Hint != "") {
 		return fmt.Errorf("%w: %s Nothing changed.", err, sentences(pg.Detail, pg.Hint)) //nolint:staticcheck // full sentences after Postgres's message, shown as is
 	}

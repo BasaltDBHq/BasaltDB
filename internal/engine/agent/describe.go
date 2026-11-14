@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -106,6 +107,9 @@ const (
 	// overviewInlineMax is the most visible tables the overview lists
 	// inline; above it lists schemas and points to search.
 	overviewInlineMax = 50
+	// overviewSchemasMax is the most schemas the large overview lists (D-3):
+	// the ones with the most visible tables; the rest are counted.
+	overviewSchemasMax = 50
 	// resourceCommentMax and searchCommentMax cap comments, in characters
 	// (D-4): the full form and a search item.
 	resourceCommentMax = 500
@@ -174,6 +178,13 @@ type SchemaCount struct {
 	Tables int    `json:"tables"`
 }
 
+// OtherSchemas counts the schemas a large overview leaves out, and the
+// visible tables in them.
+type OtherSchemas struct {
+	Schemas int `json:"schemas"`
+	Tables  int `json:"tables"`
+}
+
 // Overview is describe's first form.
 type Overview struct {
 	Store         StoreInfo      `json:"store"`
@@ -182,6 +193,7 @@ type Overview struct {
 	Limits        OverviewLimits `json:"limits"`
 	Resources     []SearchItem   `json:"resources,omitzero"`
 	Schemas       []SchemaCount  `json:"schemas,omitzero"`
+	OtherSchemas  *OtherSchemas  `json:"otherSchemas,omitempty"`
 	PersonMessage string         `json:"personMessage,omitempty"`
 	NextSteps     []mcp.NextStep `json:"nextSteps,omitempty"`
 }
@@ -300,8 +312,8 @@ func (s *Service) DescribeOverview(ctx context.Context) (Overview, error) {
 	b := NewSteps()
 	switch {
 	case len(visible) > overviewInlineMax:
-		o.Schemas = schemas
-		overviewLargeSteps(b, schemas)
+		o.Schemas, o.OtherSchemas = capSchemas(schemas)
+		overviewLargeSteps(b, o.Schemas)
 	default:
 		o.Resources = make([]SearchItem, 0, len(visible))
 		for _, r := range visible {
@@ -331,6 +343,24 @@ func schemaCounts(visible []pgcatalog.Relation) []SchemaCount {
 		out = append(out, SchemaCount{Schema: r.Schema, Tables: 1})
 	}
 	return out
+}
+
+// capSchemas keeps the overviewSchemasMax schemas with the most visible
+// tables, most first (ties by schema name), and counts the rest. nil when
+// nothing was left out.
+func capSchemas(schemas []SchemaCount) ([]SchemaCount, *OtherSchemas) {
+	sorted := slices.Clone(schemas)
+	slices.SortFunc(sorted, func(a, b SchemaCount) int {
+		return cmp.Or(cmp.Compare(b.Tables, a.Tables), cmp.Compare(a.Schema, b.Schema))
+	})
+	if len(sorted) <= overviewSchemasMax {
+		return sorted, nil
+	}
+	other := &OtherSchemas{Schemas: len(sorted) - overviewSchemasMax}
+	for _, sc := range sorted[overviewSchemasMax:] {
+		other.Tables += sc.Tables
+	}
+	return sorted[:overviewSchemasMax], other
 }
 
 // overviewLargeSteps (OVERVIEW_LARGE): search instead of listing. The

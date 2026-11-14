@@ -129,7 +129,8 @@
     { "code": "NO_PASSKEY", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }] },
     { "code": "SETUP_NOT_RUN", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "END_TURN" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },
     { "code": "SETUP_EXPIRED", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "OPERATOR", "action": "RUN_COMMAND" }, { "actor": "AGENT", "action": "END_TURN" }] },
-    { "code": "SETUP_CHANGE_PENDING", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }] }
+    { "code": "SETUP_CHANGE_PENDING", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }] },
+    { "code": "DEV_LOCAL_PAGES", "severity": "WARNING", "personMessage": true, "planned": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }] }
   ],
   "agentOperated": [
     { "kind": "ERROR", "code": "PERMISSION_DENIED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "END_TURN" }, { "actor": "AGENT", "action": "RUN_COMMAND" }] },

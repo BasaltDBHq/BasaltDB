@@ -125,6 +125,18 @@ func isPageAddress(url string) bool {
 // write, or a revert), whose lines cost cost and which expires at expires,
 // by the engine's setup (CONTRACT.md, Large values, rule 5).
 func (s *Service) tooLargeMessage(what string, cost int64, expires time.Time, isRevert bool) string {
+	msg := s.tooLargeText(what, cost, expires, isRevert, s.Commands.Init)
+	if CheckPersonMessage(msg) != nil {
+		// A long config path or saved flags: name the change, not the
+		// whole command, so the message keeps to its limit.
+		msg = s.tooLargeText(what, cost, expires, isRevert, func(change string) string { return "basalt init ... " + change })
+	}
+	return msg
+}
+
+// tooLargeText is tooLargeMessage with init building the init command for a
+// change.
+func (s *Service) tooLargeText(what string, cost int64, expires time.Time, isRevert bool, init func(string) string) string {
 	lead := what + " is too large for a link, so no link was given."
 	until := " It expires at " + expires.UTC().Format(personTime) + "."
 	narrower := ""
@@ -138,13 +150,13 @@ func (s *Service) tooLargeMessage(what string, cost int64, expires time.Time, is
 	case cost <= maxPortalRequestCost:
 		// Only the Vault issues the portal's short link today: the direct
 		// transport carries no short link yet.
-		return lead + " To open it, turn on the Vault: " + s.Commands.Init("--vault=on") + " then tell the agent." + narrower + until
+		return lead + " To open it, turn on the Vault: " + init("--vault=on") + " then tell the agent." + narrower + until
 	case s.Commands.AgentOperated():
 		return what + " is too large for any page this engine can serve: only local pages can carry it, and an agent-operated " +
 			"engine has none. It cannot be opened on this setup unless the setup changes; otherwise it expires." + narrower + until
 	}
-	return lead + " Only the engine's local pages can carry it: set a local pagesUrl and pagesAddr in engine.json, restart the engine, " +
-		"register a passkey for that page origin (" + s.Commands.Init("--add-passkey") + "), then tell the agent." + narrower + until
+	return lead + " Only local pages can carry it: set a local pagesUrl and pagesAddr in engine.json, restart the engine, " +
+		"register a passkey for that origin (" + init("--add-passkey") + "), then tell the agent." + narrower + until
 }
 
 // tooLargeAsk is the ASK_PERSON text of REQUEST_TOO_LARGE.

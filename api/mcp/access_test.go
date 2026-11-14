@@ -322,3 +322,28 @@ func contractSection(t *testing.T, heading string) string {
 	}
 	return rest
 }
+
+// TestLevelPolicyMarks pins the rule that keeps a copy from showing an agent
+// more rows than its role: every review mark exists in the plan schema, a
+// marked restrictive copy is written as USING (false), and a marked
+// permissive copy is left out unless the admin replaces it.
+func TestLevelPolicyMarks(t *testing.T) {
+	t.Parallel()
+	schema := readJSON(t, filepath.Join("access", "level-policies.schema.json"))
+	copyItem := mustMap(t, mustMap(t, mustMap(t, mustMap(t, mustMap(t, mustMap(t, mustMap(t,
+		schema["properties"])["tables"])["items"])["properties"])["policies"])["items"])["properties"])
+	marks := mustMap(t, mustMap(t, copyItem["reviewNeeded"])["items"])["enum"]
+	require.ElementsMatch(t, []any{"IDENTITY", "SUBQUERY", "FUNCTION"}, marks)
+	_, ok := copyItem["replacement"]
+	require.True(t, ok, "a marked copy can take the admin's replacement")
+
+	section := contractSection(t, "### Agent groups and mirrored policies (AA-17)")
+	for _, want := range []string{
+		"a marked **restrictive** copy is written as `USING (false)`",
+		"a marked **permissive** copy is left out",
+		"an unmarked restrictive copy can never be left out",
+		"`session_user` is a member of `<prefix>_lvl_<p_role>`",
+	} {
+		require.Contains(t, section, want)
+	}
+}

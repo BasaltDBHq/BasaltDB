@@ -85,7 +85,8 @@
                 "command",
                 "sql",
                 "action",
-                "reviewNeeded"
+                "reviewNeeded",
+                "replacement"
               ],
               "properties": {
                 "name": {
@@ -117,7 +118,7 @@
                 },
                 "sql": {
                   "type": "string",
-                  "description": "The CREATE POLICY statement the admin runs, with the level_current guard ANDed into each clause."
+                  "description": "The CREATE POLICY statement the admin runs, with the level_current guard ANDed into each clause; for a marked restrictive copy without a replacement, USING (false)."
                 },
                 "action": {
                   "type": "string",
@@ -136,10 +137,18 @@
                     "type": "string",
                     "enum": [
                       "IDENTITY",
-                      "SUBQUERY"
+                      "SUBQUERY",
+                      "FUNCTION"
                     ]
                   },
-                  "description": "IDENTITY: the expression depends on who is connected and evaluates as the agent role in the copy. SUBQUERY: it reads another relation, which the agent needs SELECT on."
+                  "description": "IDENTITY: the expression depends on who is connected. SUBQUERY: it reads another relation. FUNCTION: it calls a function outside pg_catalog. A marked restrictive copy is written as USING (false), a marked permissive copy is left out, unless the admin gives a replacement."
+                },
+                "replacement": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The admin's own expression for a marked copy, written for the group; null when Basalt writes the copy (or false, or leaves it out). The fingerprint covers it."
                 }
               }
             }

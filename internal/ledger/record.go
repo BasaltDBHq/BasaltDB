@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/basaltdbhq/basaltdb/pkg/wiretime"
 )
 
 // ActorKindAgent is the actor kind of every change an agent made.
@@ -104,7 +106,7 @@ func RecordFromDomain(ch Change, rows []RowChange) Record {
 	direct := 0
 	for _, r := range rows {
 		row := RecordRow{
-			Table: r.Table, Op: r.Op, Key: r.Key, Before: r.Before, After: r.After,
+			Table: r.Table, Op: r.Op, Key: wiretime.Map(r.Key), Before: wiretime.Map(r.Before), After: wiretime.Map(r.After),
 			Cascaded: r.Cascaded, Redacted: r.Redacted, Pruned: r.Pruned,
 			BasedOn: basedOnFromDomain(r.BasedOn), BlindWrite: r.BlindWrite,
 		}

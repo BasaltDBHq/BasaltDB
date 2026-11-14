@@ -107,7 +107,7 @@ func approvalRequired(err error) bool {
 // approval id with the APPROVAL_REQUIRED error, or uuid.Nil and the error
 // that kept it from being held.
 func (s *Service) hold(ctx context.Context, in guard.Intent, p WriteParams, stmt sqlguard.Statement, start time.Time) (uuid.UUID, error) {
-	h, err := sqlguard.CheckRepeatable(p.SQL)
+	h, err := sqlguard.CheckRepeatable(p.SQL, p.Params)
 	if err != nil {
 		return uuid.Nil, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
 	}

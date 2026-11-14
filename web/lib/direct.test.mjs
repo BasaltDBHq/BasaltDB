@@ -114,6 +114,21 @@ test("an address that answers with another key is never connected to, and the pa
   assert.equal(net.sockets.length, 0);
 });
 
+test("a hijacked address that answers the probe with the pinned key but handshakes as another engine gets nothing", async () => {
+  const store = fakeStore([pin("https://a.example.com", KEY_A, ID_A, "2026-11-13T00:00:00Z"), pin("https://b.example.com", KEY_B, ID_B, "2026-11-12T00:00:00Z")]);
+  // The key is public: a fake engine can echo it in the probe.
+  const net = fakeNet({ "https://a.example.com": KEY_A, "https://b.example.com": KEY_B });
+  const ch = fakeChannel();
+  const { calls, open } = fakeOpen(["ENGINE_KEY_CHANGED", ch]);
+  const t = directTransport({ store, fetchFn: net.fetchFn, socket: net.socket, open });
+  const session = await t.open({ page: "approvals", id: "x", secret: SECRET });
+  assert.equal(calls[0].expectEngineId, ID_A, "the handshake checks the pin, not the probe");
+  assert.equal(session.engine.address, "https://b.example.com");
+  assert.deepEqual(store.touched, ["https://b.example.com"], "the hijacked pin is not marked used");
+  assert.equal(store.pins.length, 2, "and not removed");
+  for (const p of net.probes) assert.equal(p.init.redirect, "error", "a probe never follows a redirect elsewhere");
+});
+
 test("a refused link or a revoked engine moves on to the next pin", async () => {
   const store = fakeStore([
     pin("https://a.example.com", KEY_A, ID_A, "2026-11-13T00:00:00Z"),

@@ -45,17 +45,26 @@ export const DEFAULT_HEADERS = Object.freeze({
 const SESSION_PAGE = /^\/(approvals|reverts)\/[^/]+$/;
 const PIN_PAGE = "/engines/add";
 
+// Cookie pairs are separated by "; " and only spaces and tabs are trimmed
+// (RFC 6265). String.trim would also strip Unicode spaces, so a cookie
+// another host set as "\u00a0__Host-basalt-engines" (no __Host- rules for
+// the browser) would read as ours.
+const OWS = /^[ \t]+|[ \t]+$/g;
+
 // cookieOrigins reads the pinned engine origins from a Cookie header: only
-// written engine addresses, each once, at most MAX_ORIGINS.
+// written engine addresses, each once, at most MAX_ORIGINS. The page sets
+// one cookie of that name; two in one header mean another host planted one
+// (a nameless cookie whose value starts with the name reads the same), so
+// neither is used and the strict default is served.
 export function cookieOrigins(cookieHeader) {
-  let value = "";
+  let value = null;
   for (const part of String(cookieHeader ?? "").split(";")) {
     const at = part.indexOf("=");
-    if (at < 0 || part.slice(0, at).trim() !== PINS_COOKIE) continue;
-    value = part.slice(at + 1).trim();
-    break;
+    if (at < 0 || part.slice(0, at).replace(OWS, "") !== PINS_COOKIE) continue;
+    if (value !== null) return [];
+    value = part.slice(at + 1).replace(OWS, "");
   }
-  if (value === "" || value.length > MAX_COOKIE_VALUE) return [];
+  if (value === null || value === "" || value.length > MAX_COOKIE_VALUE) return [];
   const out = [];
   for (const raw of value.split(COOKIE_SEPARATOR)) {
     // Only an address already in its written form: nothing is repaired.

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
@@ -62,6 +63,13 @@ type directFixture struct {
 
 func newDirectFixture(t *testing.T) *directFixture {
 	t.Helper()
+	return newDirectFixtureWith(t, okPages{})
+}
+
+// newDirectFixtureWith is newDirectFixture with pages answering the
+// session's requests, behind the listener's connection cap.
+func newDirectFixtureWith(t *testing.T, pages vault.Dispatcher) *directFixture {
+	t.Helper()
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", []string{"public.leads"}, []string{"public.leads"})
 	keys, err := channel.GenerateEngineKeys(time.Now)
@@ -69,15 +77,26 @@ func newDirectFixture(t *testing.T) *directFixture {
 	log := slog.New(slog.DiscardHandler)
 	f := &directFixture{db: d, keys: keys, links: &directLinks{m: map[channel.LinkToken]vault.SessionLink{}}}
 	f.records = newEngineRecords(keys.EngineID(), time.Now, log)
-	f.records.add("bot", a.Conn)
-	sess := vault.NewDirect(vault.DirectOptions{Keys: keys, Log: log, SessionLinks: f.links, Pages: okPages{}})
+	f.records.add("bot", agentPool(t, a.URL))
+	sess := vault.NewDirect(vault.DirectOptions{Keys: keys, Log: log, SessionLinks: f.links, Pages: pages})
 	f.sess = sess
 	ctx, cancel := context.WithCancel(context.Background())
 	f.srv = httptest.NewUnstartedServer(nil)
+	f.srv.Listener = &limitListener{Listener: f.srv.Listener, sem: make(chan struct{}, directConns)}
 	f.srv.Config = newDirectServer(newDirectHandler(ctx, f.records, keys.PublicKeySPKI(), sess, time.Now))
 	f.srv.Start()
 	t.Cleanup(func() { cancel(); f.srv.Close() })
 	return f
+}
+
+// agentPool is a pool of the agent's connections, as the engine reads the
+// record with: sessions read it concurrently.
+func agentPool(t *testing.T, url string) *pgxpool.Pool {
+	t.Helper()
+	pool, err := pgxpool.New(context.Background(), url)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	return pool
 }
 
 func (f *directFixture) record(t *testing.T, url string) {

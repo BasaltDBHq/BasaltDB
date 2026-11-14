@@ -350,7 +350,10 @@ func (r *remoteInit) paths() error {
 		}
 		r.settings.StateDir = filepath.Join(dir, stateDirName)
 	}
-	cfg, err := config.Load(r.f.configPath)
+	// As root, the hardened read (loadEngineConfig): the config must be a
+	// plain file owned by root or its directory's owner, not writable by
+	// group or others and reached without links, before any field is read.
+	cfg, err := loadEngineConfig(r.c, r.f.configPath)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 	case err != nil:
@@ -369,6 +372,11 @@ func (r *remoteInit) paths() error {
 	r.credFile = filepath.Join(dir, "agents", r.f.agent+".url")
 	r.osUser = ""
 	if r.entry != nil {
+		if r.c.host.Euid() == 0 {
+			if err := sameCredentialPath(r.entry.CredentialFile, r.credFile); err != nil {
+				return err
+			}
+		}
 		r.credFile, r.osUser = r.entry.CredentialFile, r.entry.OSUser
 	}
 	if r.osUser == "" {
@@ -377,6 +385,28 @@ func (r *remoteInit) paths() error {
 			return err
 		}
 		r.osUser = u
+	}
+	return nil
+}
+
+// sameCredentialPath refuses, as root, a credential file the config names
+// anywhere but where basalt init puts it (want, agents/<agent>.url next to
+// the config). The config may belong to its directory's owner (the engine's
+// user), who must not be able to send root's credential reads and writes
+// to another file, such as another agent's credential or a file only root
+// reads.
+func sameCredentialPath(named, want string) error {
+	a, err := filepath.Abs(named)
+	if err != nil {
+		return err
+	}
+	b, err := filepath.Abs(want)
+	if err != nil {
+		return err
+	}
+	if a != b {
+		return fmt.Errorf("the config names the credential file %s, not %s where basalt init puts it; "+
+			"as root, basalt init --remote uses only that path. Fix the agent's credentialFile in the config", named, want)
 	}
 	return nil
 }

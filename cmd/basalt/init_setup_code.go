@@ -391,13 +391,9 @@ func sentences(parts ...string) string {
 // passkey registers a portal passkey when no active one belongs to the
 // portal, or with --add-passkey (step 7).
 func (l *laptopSetup) passkey() error {
-	keys, err := guard.ActivePasskeys(l.c.ctx, l.conn)
+	has, err := hasPasskeyFor(l.c, l.conn, passkey.Production.Origin)
 	if err != nil {
 		return err
-	}
-	has := false
-	for _, k := range keys {
-		has = has || k.Origin == passkey.Production.Origin
 	}
 	if has && !l.f.addPasskey {
 		return nil

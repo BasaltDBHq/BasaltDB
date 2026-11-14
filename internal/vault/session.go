@@ -399,7 +399,8 @@ func RotateSession(ctx context.Context, token channel.LinkToken) bool {
 }
 
 // rotate is RotateSession for ss, on its worker: only the worker reads
-// est.link, and ss.token is read under the sessions' lock.
+// est.link.Token (others read est.link.Agent alone, which never changes),
+// and ss.token is read under the sessions' lock.
 func (cn *conn) rotate(ss *session, token channel.LinkToken) {
 	cn.sessions.mu.Lock()
 	old := ss.token

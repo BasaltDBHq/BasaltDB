@@ -156,7 +156,6 @@ type VaultStatus struct {
 	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
-// StatusReport is the status tool's result.
 // EngineRecordStatus is status.engineRecord: this engine's key as the
 // agent's database records it (CONTRACT.md, Direct transport).
 type EngineRecordStatus struct {
@@ -166,6 +165,7 @@ type EngineRecordStatus struct {
 	RevokedAt  string `json:"revokedAt,omitempty"`
 }
 
+// StatusReport is the status tool's result.
 type StatusReport struct {
 	Agent       string         `json:"agent"`
 	OperatedBy  string         `json:"operatedBy"`

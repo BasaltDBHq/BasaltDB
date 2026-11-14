@@ -233,3 +233,23 @@ func TestSessionLimitFollowsARotatedToken(t *testing.T) {
 	require.Equal(t, MaxSessionsPerLink-1, s.tally.established[newTok])
 	require.Zero(t, s.tally.established[oldTok])
 }
+
+// A widen that finishes after its session ended moves no slot: the session
+// is gone from the table, so the new token gains nothing that nothing
+// would release.
+func TestRotateAfterTheSessionEndedMovesNoSlot(t *testing.T) {
+	t.Parallel()
+	s := newSessions(10*time.Second, time.Now, NewTally())
+	oldTok, newTok := channel.LinkToken{1}, channel.LinkToken{2}
+	code, _ := s.add(sid{1}, oldTok)
+	require.Zero(t, code)
+	_, ss := s.lookup(sid{1})
+	ok, _ := s.establish(ss, &established{})
+	require.True(t, ok)
+	require.NotNil(t, s.take(sid{1}))
+
+	(&conn{sessions: s}).rotate(ss, newTok)
+	require.Zero(t, s.tally.established[newTok])
+	require.Zero(t, s.tally.established[oldTok])
+	require.Zero(t, s.tally.total)
+}

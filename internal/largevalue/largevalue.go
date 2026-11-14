@@ -113,39 +113,51 @@ const With = "WITH RECURSIVE "
 // replaces its values' entries.
 func Elide(src string) string {
 	return fmt.Sprintf(elideSQL, src,
-		TextOf("v.val"), BytesOf("txt"), CostOf("js", "col"), SHA256Of("txt"),
+		TextOf("c.val"), BytesOf("t.txt"), quickCost("v.js", "v.col"), SHA256Of("t.txt"),
 		ValueCap, entryCost, ItemCap, BytesOf(TextOf("i.img")), SHA256Of(TextOf("i.img")))
+}
+
+// quickCost is CostOf for the JSON text js in column col, without counting
+// escapes when its bytes alone are already over ValueCap: such a value is
+// left out whatever it costs, and counting escapes over megabytes is what
+// takes the time.
+func quickCost(js, col string) string {
+	plain := fmt.Sprintf(`(octet_length(%[1]s) + %[2]d + octet_length(coalesce(%[3]s, '')))`, js, valueOverhead, col)
+	return fmt.Sprintf(`(CASE WHEN %[1]s > %[2]d THEN %[1]s ELSE %[3]s END)`, plain, ValueCap, CostOf(js, col))
 }
 
 // elideSQL is Elide's template. lv_keep is a recursive CTE: whether an
 // image is kept depends on the images kept before it. Every step is
 // MATERIALIZED: the planner cannot know how many rows a page has, and
-// must not rescan an aggregate for each of them.
+// must not rescan an aggregate for each of them. lv_vals keeps each
+// value's JSON text, so it is built once, not once per reference (Postgres
+// does not share a repeated expression); the marker's text, size and hash
+// are computed only for the values left out.
 const elideSQL = `lv_src AS MATERIALIZED (
 	SELECT s.item, s.ord::bigint AS ord, s.part, s.img FROM (%[1]s) s
 	WHERE s.img IS NOT NULL AND jsonb_typeof(s.img) <> 'null'
+), lv_vals AS MATERIALIZED (
+	SELECT s.item, s.ord, v.col, v.idx, v.val, v.val::text AS js
+	FROM lv_src s
+	CROSS JOIN LATERAL (
+		SELECT e.key AS col, NULL::int AS idx, e.value AS val
+		FROM jsonb_each(CASE WHEN jsonb_typeof(s.img) = 'object' THEN s.img END) AS e
+		UNION ALL
+		SELECT NULL, (a.n - 1)::int, a.value
+		FROM jsonb_array_elements(CASE WHEN s.part = 'PARAMS' AND jsonb_typeof(s.img) = 'array' THEN s.img END)
+			WITH ORDINALITY AS a(value, n)
+		UNION ALL
+		SELECT NULL, NULL, s.img WHERE s.part = 'STATEMENT'
+	) v
 ), lv_cost AS MATERIALIZED (
-	SELECT item, ord, col, idx, txt, %[3]s::bigint AS bytes, %[4]s::bigint AS cost
-	FROM (
-		SELECT s.item, s.ord, v.col, v.idx, %[2]s AS txt, v.val::text AS js
-		FROM lv_src s
-		CROSS JOIN LATERAL (
-			SELECT e.key AS col, NULL::int AS idx, e.value AS val
-			FROM jsonb_each(CASE WHEN jsonb_typeof(s.img) = 'object' THEN s.img END) AS e
-			UNION ALL
-			SELECT NULL, (a.n - 1)::int, a.value
-			FROM jsonb_array_elements(CASE WHEN s.part = 'PARAMS' AND jsonb_typeof(s.img) = 'array' THEN s.img END)
-				WITH ORDINALITY AS a(value, n)
-			UNION ALL
-			SELECT NULL, NULL, s.img WHERE s.part = 'STATEMENT'
-		) v
-	) vals
+	SELECT v.item, v.ord, v.col, v.idx, v.val, %[4]s::bigint AS cost FROM lv_vals v
 ), lv_large AS MATERIALIZED (
-	SELECT item, ord,
-		array_agg(col) FILTER (WHERE col IS NOT NULL) AS cols,
-		jsonb_agg(jsonb_strip_nulls(jsonb_build_object('column', col, 'index', idx, 'bytes', bytes, 'sha256', %[5]s))
-			ORDER BY idx, col COLLATE "C") AS entries
-	FROM lv_cost WHERE cost > %[6]d GROUP BY item, ord
+	SELECT c.item, c.ord,
+		array_agg(c.col) FILTER (WHERE c.col IS NOT NULL) AS cols,
+		jsonb_agg(jsonb_strip_nulls(jsonb_build_object('column', c.col, 'index', c.idx, 'bytes', %[3]s, 'sha256', %[5]s))
+			ORDER BY c.idx, c.col COLLATE "C") AS entries
+	FROM lv_cost c CROSS JOIN LATERAL (SELECT %[2]s AS txt OFFSET 0) t
+	WHERE c.cost > %[6]d GROUP BY c.item, c.ord
 ), lv_img AS MATERIALIZED (
 	SELECT s.item, s.ord, s.part, s.img,
 		coalesce(c.nlarge, 0) AS nlarge,

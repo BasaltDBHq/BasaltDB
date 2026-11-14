@@ -182,9 +182,12 @@ func ListRevertLinesMarked(ctx context.Context, q guard.Querier, p RevertLinePar
 		return pagination.Page[RevertLine]{}, err
 	}
 	// Plain SQL: a recursive CTE over the page (largevalue.ElideLines).
-	sql := largevalue.With + `lv_page AS MATERIALIZED (` + page + `), ` +
-		largevalue.ElideLines(`SELECT line_no AS item, line::jsonb AS line FROM lv_page WHERE line <> ''`) + `
-		SELECT p.line_no, coalesce(e.line::text, p.line), p.outcome, p.conflict, p.sql_state, p.batch
+	// The line past the limit only tells that another page follows: its
+	// text is never read (a page at limit 1 holds one line).
+	sql := largevalue.With + `lv_page AS MATERIALIZED (SELECT x.*, row_number() OVER (ORDER BY line_no) > ` +
+		fmt.Sprint(p.Limit) + ` AS lv_more FROM (` + page + `) x), ` +
+		largevalue.ElideLines(`SELECT line_no AS item, line::jsonb AS line FROM lv_page WHERE line <> '' AND NOT lv_more`) + `
+		SELECT p.line_no, CASE WHEN p.lv_more THEN '' ELSE coalesce(e.line::text, p.line) END, p.outcome, p.conflict, p.sql_state, p.batch
 		FROM lv_page p LEFT JOIN lv_lines e ON e.item = p.line_no
 		ORDER BY p.line_no`
 	return collectRevertLines(ctx, q, p, sql, args)

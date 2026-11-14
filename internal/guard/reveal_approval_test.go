@@ -19,7 +19,7 @@ import (
 
 const heldDelete = `DELETE FROM public.leads WHERE id = $1`
 
-// heldEnv is runbook 6.5's shape: bot may read and write leads only, and
+// heldEnv: bot may read and write leads only, and
 // holds a delete of lead 20, which cascades to notes 39 and 40 that bot
 // cannot read. Three lines, two of them redacted.
 type heldEnv struct {

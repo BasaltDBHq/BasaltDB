@@ -86,7 +86,7 @@ SELECT g, 1 + g % 200, 1000 + (g * 37) % 300, (g * 3.75)::numeric(10, 2), 1 + g 
        (ARRAY['Blue Widget', 'Steel Bolt'])[1 + g % 2], timestamptz '2026-01-01' + g * interval '1 hour', g % 2 = 0
   FROM generate_series(1, 300) g;
 
--- Review findings on #260: domains, bare-digit phones with no name, a
+-- Harder cases found in review: domains, bare-digit phones with no name, a
 -- qualified name, a notes column that is not only codes, and a view whose
 -- sample fails with an error that would quote a value.
 CREATE EXTENSION IF NOT EXISTS citext;

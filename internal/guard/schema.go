@@ -783,7 +783,7 @@ END $$;
 `
 
 const v1Views = `
--- The only objects an agent can SELECT (spike finding: the raw ledger
+-- The only objects an agent can SELECT (the raw ledger
 -- exposes cascaded old values of tables the agent cannot read). Rows of
 -- the calling agent only; row keys and values of tables the agent cannot
 -- SELECT are redacted. security_barrier keeps the caller's own functions

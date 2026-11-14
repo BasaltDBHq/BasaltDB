@@ -1,7 +1,7 @@
 package guard
 
 // Version 21 (RS-2, RS-5): the person's widen proof in Postgres
-// (CONTRACT.md, basalt_meta "Version 21"; plan task 3). rescope_revert
+// (CONTRACT.md, basalt_meta "Version 21"). rescope_revert
 // changes a pending revert's scope: inside the requesting role's own work
 // with no proof while nobody widened it, beyond it only with the person's
 // passkey proof over a single-use nonce and the hash of a key derived from
@@ -12,7 +12,7 @@ package guard
 // and a task proposal is looked up by (task_id, agent).
 const v21Own = `
 -- The task proposal's lookup by (task_id, agent), so its cost does not grow
--- with other agents' changes in the task (a timing signal, #247 review).
+-- with other agents' changes in the task (that growth would be a timing signal).
 CREATE INDEX IF NOT EXISTS changes_task_agent ON basalt_meta.changes (task_id, agent, change_id);
 
 -- Version 20's _revert_scope, with a TASK of listed agents looked up by

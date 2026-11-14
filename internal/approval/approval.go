@@ -36,8 +36,8 @@ const KindApprove = "APPROVE"
 
 // Limits from the default policy and for decoding untrusted codes.
 const (
-	// MaxRows is the most rows one held action can change (foundation,
-	// Default policy: over 50 is refused).
+	// MaxRows is the most rows one held action can change; the default
+	// policy refuses more than 50.
 	MaxRows = 50
 )
 

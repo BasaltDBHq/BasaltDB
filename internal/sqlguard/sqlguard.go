@@ -1,7 +1,7 @@
 // Package sqlguard is the engine's SQL policy: it parses one agent statement
 // with the pure-Go wasm build of libpg_query, classifies it, collects the
 // tables and functions it names, and refuses what the default policy does
-// not allow (foundation, "Default policy"; owner decisions #1 and #11).
+// not allow (owner decisions #1 and #11).
 //
 // The first parse in a process compiles the wasm module (about 0.6 s), so
 // only the long-running engine imports this package; the MCP shim and the

@@ -53,7 +53,7 @@ func (b *syncBuffer) String() string {
 }
 
 // revealEnv: bot may read and write leads only; it holds a delete of lead
-// 20, which cascades to notes 39 and 40 that it cannot read (runbook 6.5),
+// 20, which cascades to notes 39 and 40 that it cannot read,
 // and has prepared the revert of an earlier run that deleted lead 5 with
 // the person's approval (notes 9 and 10 and their tags, hidden). The
 // service logs at debug level into logs.

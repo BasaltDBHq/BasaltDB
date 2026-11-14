@@ -80,7 +80,7 @@ func requireInvalid(t *testing.T, err error, detail string) {
 	require.Contains(t, pg.Detail, detail)
 }
 
-// The spike's TestQ5PasskeyApproval, on the installed guard: a held DELETE
+// On the installed guard: a held DELETE
 // with cascades, signed with the person's passkey, relayed by the agent.
 func TestApprovalFlow(t *testing.T) {
 	t.Parallel()

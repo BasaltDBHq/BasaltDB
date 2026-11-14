@@ -61,7 +61,7 @@ const (
 	ReasonScopeFilterCap = "SCOPE_FILTER_CAP"
 )
 
-// guardCodes maps the guard's SQLSTATEs (M0 spike, section 2) to contract
+// guardCodes maps the guard's SQLSTATEs to contract
 // codes. BS005 is split by message below.
 var guardCodes = map[string]string{
 	"BS001": CodeIntentRequired,

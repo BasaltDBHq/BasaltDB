@@ -34,8 +34,7 @@ func requireRejected(t *testing.T, err error, detail string) {
 	require.ErrorContains(t, err, detail)
 }
 
-// The same cases the spike's TestQ5PasskeyApproval runs against
-// basalt_meta.submit_approval.
+// The same cases basalt_meta.submit_approval verifies in Postgres.
 func TestVerifyAssertion(t *testing.T) {
 	t.Parallel()
 	person := newAuthenticator(t, passkey.Production)

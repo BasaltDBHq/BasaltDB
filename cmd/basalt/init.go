@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
@@ -497,6 +498,9 @@ func (f *initFlags) agentPages(originGiven bool) error {
 		f.passkeyOrigin = links.DefaultLocal
 	case f.devLocalPages && f.passkeyOrigin == links.Portal:
 		return fmt.Errorf("%w: --dev-local-pages needs a local --passkey-origin (http://localhost:<port>), not the portal", errUsage)
+	case f.devLocalPages:
+		// relyingParty has checked the origin is the portal or local.
+		return nil
 	case agentOperated && !originGiven:
 		f.passkeyOrigin = links.Portal
 	case agentOperated && f.passkeyOrigin != links.Portal:
@@ -530,7 +534,33 @@ func engineSettings(f initFlags, goos string) config.Settings {
 // record_setup). basalt init, init --setup-code and upgrade all apply
 // through it.
 func applyInit(ctx context.Context, conn *pgx.Conn, script guard.Script, after ...guard.Statement) error {
-	return pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error { return applyInitTx(ctx, tx, script, after...) })
+	err := pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error { return applyInitTx(ctx, tx, script, after...) })
+	return withGuardDetail(err)
+}
+
+// detailedError is a database error followed by the Detail and Hint the
+// guard raised with it, which pgconn.PgError.Error leaves out.
+type detailedError struct {
+	err    error
+	detail string
+}
+
+func (e *detailedError) Error() string { return e.err.Error() + ": " + e.detail }
+
+func (e *detailedError) Unwrap() error { return e.err }
+
+// withGuardDetail adds the Detail and Hint of a database error to its text,
+// so a refusal says which table is wrong and how to fix it ("table crm.nopk
+// has no primary key; ..." and "add a primary key, or revoke ..."), not only
+// "NOT_ALLOWED (SQLSTATE BS007)". An error with neither, or already
+// carrying them, is returned as it is.
+func withGuardDetail(err error) error {
+	var pg *pgconn.PgError
+	var done *detailedError
+	if err == nil || errors.As(err, &done) || !errors.As(err, &pg) || (pg.Detail == "" && pg.Hint == "") {
+		return err
+	}
+	return &detailedError{err: err, detail: sentences(pg.Detail, pg.Hint)}
 }
 
 // applyInitTx is applyInit on a transaction the caller commits.

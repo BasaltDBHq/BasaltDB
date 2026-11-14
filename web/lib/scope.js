@@ -35,6 +35,25 @@ export function rowAgent(binding) {
   return { role: agents[0], other: agents[0] !== binding.requestedBy };
 }
 
+// lineAgents returns, for a select of several agents whose catalog maps
+// each change to its agent (changeAgents, basalt_meta version 32, Q-11),
+// the agents of one line: each role its changeIds name, once, sorted, and
+// whether it is another agent than the requester. A line naming a change
+// the map does not hold gets null: no tag rather than a guessed one.
+// Without the map (before a widen, or an older guard), or for a select of
+// one agent (rowAgent tags every row), it returns null.
+export function lineAgents(binding, catalog) {
+  const map = catalog?.changeAgents;
+  if (!map || rowAgent(binding) !== null) return null;
+  return (line) => {
+    const ids = line.changeIds ?? [];
+    if (ids.length === 0 || ids.some((id) => !map.has(id))) return null;
+    return [...new Set(ids.map((id) => map.get(id)))]
+      .sort(byText)
+      .map((role) => ({ role, other: role !== binding.requestedBy }));
+  };
+}
+
 // headline is the page's title and the sentence under it. A widened revert
 // says what the agent proposed, what the person added, and that the agent
 // cannot see it (RS-5).

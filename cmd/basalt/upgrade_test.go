@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -39,6 +40,30 @@ type olderGuard struct {
 	credFile   string
 	socketDir  string
 	dsn        string
+}
+
+// latestBreaking is the newest version this build flags breaking: a guard
+// one below it is outdated, whatever non-breaking versions follow.
+func latestBreaking(t *testing.T) int {
+	t.Helper()
+	migs := guard.Migrations()
+	for i := len(migs) - 1; i >= 0; i-- {
+		if migs[i].Breaking {
+			return migs[i].Version
+		}
+	}
+	t.Fatal("no breaking migration")
+	return 0
+}
+
+// versionsAfter is every version this build has above installed, as basalt
+// upgrade prints them.
+func versionsAfter(installed int) string {
+	parts := make([]string, 0, guard.LatestVersion()-installed)
+	for v := installed + 1; v <= guard.LatestVersion(); v++ {
+		parts = append(parts, strconv.Itoa(v))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func newOlderGuard(t *testing.T, upTo int) olderGuard {
@@ -174,16 +199,18 @@ func (g olderGuard) callTool(t *testing.T, tool string) string {
 func TestUpgradeServesTheRunningEngineAgainWithoutARestart(t *testing.T) {
 	t.Parallel()
 	latest := guard.LatestVersion()
-	g := newOlderGuard(t, latest-1)
+	older := latestBreaking(t) - 1
+	missing := versionsAfter(older)
+	g := newOlderGuard(t, older)
 	require.Equal(t, guard.GuardOutdated, g.agentStatus(t).State)
 	g.startEngine(t)
 	require.Contains(t, g.callTool(t, "list_runs"), "GUARD_OUTDATED", "the engine serves the agent degraded")
 
 	r := g.upgrade(t, g.d.URL, "", "--yes")
 	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Contains(t, r.stdout, setupcode.UpgradeLine(latest-1, latest))
-	require.Contains(t, r.stdout, fmt.Sprintf("Missing versions: %d.", latest))
-	require.Contains(t, r.stderr, fmt.Sprintf("guard upgraded from version %d to %d (applied %d)", latest-1, latest, latest))
+	require.Contains(t, r.stdout, setupcode.UpgradeLine(older, latest))
+	require.Contains(t, r.stdout, fmt.Sprintf("Missing versions: %s.", missing))
+	require.Contains(t, r.stderr, fmt.Sprintf("guard upgraded from version %d to %d (applied %s)", older, latest, missing))
 	require.NotContains(t, r.stdout+r.stderr, g.d.URL, "the admin connection string is never printed")
 	require.Equal(t, latest, g.version(t))
 

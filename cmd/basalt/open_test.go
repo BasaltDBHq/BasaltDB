@@ -70,11 +70,11 @@ func TestConfiguredBase(t *testing.T) {
 	plain := filepath.Join(dir, "plain.json")
 	require.NoError(t, os.WriteFile(plain, []byte(`{"socketDir": "/s", "agents": [{"name": "bot", "osUser": "u", "credentialFile": "/c"}]}`), 0o600))
 
-	require.Equal(t, links.Portal, configuredBase("", "bot", hosted), "the config's pagesUrl")
-	require.Equal(t, "http://localhost:9000", configuredBase("http://localhost:9000", "bot", hosted), "--pages-url wins")
-	require.Equal(t, links.DefaultLocal, configuredBase("", "", hosted), "no --agent, no config: the local pages")
-	require.Equal(t, links.DefaultLocal, configuredBase("", "bot", plain), "the default until hosting")
-	require.Equal(t, links.DefaultLocal, configuredBase("", "bot", filepath.Join(dir, "missing.json")))
+	require.Equal(t, links.Portal, configuredBase(nonRoot(t), "", "bot", hosted), "the config's pagesUrl")
+	require.Equal(t, "http://localhost:9000", configuredBase(nonRoot(t), "http://localhost:9000", "bot", hosted), "--pages-url wins")
+	require.Equal(t, links.DefaultLocal, configuredBase(nonRoot(t), "", "", hosted), "no --agent, no config: the local pages")
+	require.Equal(t, links.DefaultLocal, configuredBase(nonRoot(t), "", "bot", plain), "the default until hosting")
+	require.Equal(t, links.DefaultLocal, configuredBase(nonRoot(t), "", "bot", filepath.Join(dir, "missing.json")))
 }
 
 func TestEnginePathIsAbsolute(t *testing.T) {
@@ -83,4 +83,10 @@ func TestEnginePathIsAbsolute(t *testing.T) {
 	abs, err := filepath.Abs("engine.json")
 	require.NoError(t, err)
 	require.Equal(t, abs, enginePath("engine.json"), "a relative path works from any directory")
+}
+
+// nonRoot is a CLI that does not run as root.
+func nonRoot(t *testing.T) *cliIO {
+	t.Helper()
+	return &cliIO{host: newFakeHost(t), getenv: func(string) string { return "" }}
 }

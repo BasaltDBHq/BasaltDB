@@ -44,7 +44,7 @@ const (
 
 // savedInitFlags are the init flags a saved plan may carry (CONTRACT.md,
 // Planned: init saves its flags). --credential-file is a path, not a secret
-// (AE-15, provisional). Anything else is refused.
+// (AE-15). Anything else is refused.
 var savedInitFlags = map[string]bool{
 	flagAgent: true, flagWrite: true, flagRead: true, "prefix": true, "statement-timeout": true,
 	"socket-dir": true, "os-user": true, "engine-user": true, "credential-file": true,

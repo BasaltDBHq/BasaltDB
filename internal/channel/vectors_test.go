@@ -3,7 +3,6 @@ package channel
 // The shared Vault channel vectors (api/mcp/vault/testdata, CONTRACT.md,
 // Vault channel, Test vectors) run through this package: every byte the
 // engine writes must match, and every refusal must close with the pinned code.
-// RECEIPT vectors belong to the receipts task and are not run here.
 
 import (
 	"bytes"

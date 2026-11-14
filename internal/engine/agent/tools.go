@@ -236,13 +236,22 @@ type writeResult struct {
 	Status     string           `json:"status"`
 	Returning  []map[string]any `json:"returning,omitempty"`
 	Warnings   []mcp.Warning    `json:"warnings,omitempty"`
+	// PersonMessage, Receipt and NoReceipt: a held write's receipt
+	// (CONTRACT.md, Vault channel, Receipts).
+	PersonMessage string `json:"personMessage,omitempty"`
+	Receipt       string `json:"receipt,omitempty"`
+	NoReceipt     string `json:"noReceipt,omitempty"`
 }
 
 func writeResultFromDomain(o WriteOutcome) writeResult {
-	return writeResult{
+	out := writeResult{
 		ChangeID: o.ChangeID.String(), RunID: o.RunID.String(), Op: string(o.Op), Rows: o.Rows,
 		DurationMs: o.Duration.Milliseconds(), Status: StatusApplied, Returning: o.Returning, Warnings: o.Warnings,
 	}
+	if o.Receipt != nil {
+		out.PersonMessage, out.Receipt, out.NoReceipt = o.Receipt.Line, o.Receipt.Token, o.Receipt.Missing
+	}
+	return out
 }
 
 func (h handlers) write(ctx context.Context, raw json.RawMessage) (any, error) {

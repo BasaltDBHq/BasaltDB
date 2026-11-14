@@ -369,6 +369,10 @@ func (l *laptopSetup) refused(err error) error {
 		}
 	}
 	var pg *pgconn.PgError
+	var done *detailedError
+	if errors.As(err, &done) {
+		return fmt.Errorf("%w Nothing changed.", err) //nolint:staticcheck // full sentences after the database's message, shown as is
+	}
 	if errors.As(err, &pg) && (pg.Detail != "" || pg.Hint != "") {
 		return fmt.Errorf("%w: %s Nothing changed.", err, sentences(pg.Detail, pg.Hint)) //nolint:staticcheck // full sentences after Postgres's message, shown as is
 	}
@@ -402,15 +406,25 @@ func (l *laptopSetup) passkey() error {
 	if has && !l.f.addPasskey {
 		return nil
 	}
-	label := l.f.passkeyLabel
-	if label == "" {
-		label = defaultPasskeyLabel(l.conn.Config().Database, l.p.Agent.Name, l.c.now())
-	}
+	label := setupPasskeyLabel(l.f.passkeyLabel, l.p, l.conn.Config().Database, l.c.now())
 	if err := registerPasskey(l.c, l.conn, passkey.Production, label, l.c.interactive); err != nil {
 		return err
 	}
 	fmt.Fprintf(l.c.stderr, "basalt: passkey registered for %s\n", passkey.Production.RPID)
 	return nil
+}
+
+// setupPasskeyLabel is the passkey's name: the flag, or the default. An
+// UPGRADE code carries no agent, so its default has no agent part.
+func setupPasskeyLabel(flagLabel string, p setupcode.Payload, database string, now time.Time) string {
+	if flagLabel != "" {
+		return flagLabel
+	}
+	agent := ""
+	if p.Agent != nil {
+		agent = p.Agent.Name
+	}
+	return defaultPasskeyLabel(database, agent, now)
 }
 
 // checkSetupTarget refuses an admin connection string that names another

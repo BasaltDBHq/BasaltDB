@@ -2,7 +2,7 @@
   "name": "write",
   "status": "IMPLEMENTED",
   "milestone": "M1",
-  "description": "Run one INSERT, UPDATE or DELETE with bound parameters ($1, $2, ...) and an intent. The guard in the database records old and new rows. DDL, multiple statements, data-changing WITH, COPY and functions outside the allowlist are refused. A write of 11 to 50 rows, or any DELETE, is held: the result is APPROVAL_REQUIRED with approval.personMessage, the message to show the person verbatim, keeping its line breaks (put each link on a line of its own, exactly as given, or as [label](url) with the label from links) (what is held, the approval link, the equivalent basalt command). Show it, then, without ending your turn, call write once with the same arguments plus approvalId: that call waits up to waitForApproval seconds (default 90) for the person's passkey and returns APPLIED as soon as they approve. If that wait runs out, the result is APPROVAL_REQUIRED again: do not wait again (a review can take long). End your turn, telling the person the write waits for their approval, with the link and the expiry, and that you apply it when they tell you they approved; then a write with approvalId applies at once. If the person gives you an approval code instead, pass it as approval. Any other error or warning carries nextSteps: do them in order, and show personMessage verbatim. If a call fails with UNAVAILABLE, call status.",
+  "description": "Run one INSERT, UPDATE or DELETE with bound parameters ($1, $2, ...) and an intent. The guard in the database records old and new rows. DDL, multiple statements, data-changing WITH, COPY and functions outside the allowlist are refused. A write of 11 to 50 rows, or any DELETE, is held: the result is APPROVAL_REQUIRED with approval.personMessage, the message to show the person verbatim, keeping its line breaks (put each link on a line of its own, exactly as given, or as [label](url) with the label from links) (what is held, the approval link, the equivalent basalt command). Show it, then, without ending your turn, call write once with the same arguments plus approvalId: that call waits up to waitForApproval seconds (default 90) for the person's passkey and returns APPLIED as soon as they approve. If that wait runs out, the result is APPROVAL_REQUIRED again: do not wait again (a review can take long). End your turn, telling the person the write waits for their approval, with the link and the expiry, and that you apply it when they tell you they approved; then a write with approvalId applies at once. An APPLIED held write carries personMessage, the engine's receipt line naming what the person approved: show it verbatim. If the person gives you an approval code instead, pass it as approval. Any other error or warning carries nextSteps: do them in order, and show personMessage verbatim. If a call fails with UNAVAILABLE, call status.",
   "inputSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -63,6 +63,7 @@
   },
   "outputSchema": {
     "type": "object",
+    "not": { "required": ["receipt", "noReceipt"] },
     "additionalProperties": false,
     "required": [
       "changeId",
@@ -118,6 +119,29 @@
           "$ref": "../errors/warning.schema.json"
         },
         "description": "Planned (CONTRACT.md, Next steps): warnings about a result that worked but is probably not what the agent expects (RLS_HIDES_ROWS). Absent when empty."
+      },
+      "personMessage": {
+        "type": "string",
+        "description": "with approvalId, the receipt line to show the person verbatim (CONTRACT.md, Vault channel, Receipts): what the person approved, as Postgres records it, or why there is no receipt. Absent on a write that was not held."
+      },
+      "links": {
+        "type": "array",
+        "minItems": 1,
+        "description": "The URLs of personMessage with labels, in order; present exactly when personMessage holds a URL; never present today (the receipt line holds none).",
+        "items": { "$ref": "../links/link.schema.json" }
+      },
+      "receipt": {
+        "type": "string",
+        "maxLength": 4096,
+        "pattern": "^basalt-receipt\\.1\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$",
+        "description": "with approvalId, the engine-signed receipt basalt-receipt.1.<payload>.<sig> of the approval this write applied (api/mcp/vault/receipt.schema.json), built from Postgres's record of it. Absent with noReceipt."
+      },
+      "noReceipt": {
+        "type": "string",
+        "enum": [
+          "KEY_ERROR"
+        ],
+        "description": "with approvalId, why there is no receipt: KEY_ERROR, the engine key file is refused. The write is applied all the same."
       }
     }
   },

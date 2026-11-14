@@ -133,7 +133,8 @@ func runBrowser(t *testing.T, browser, url string) (string, string, error) {
 // runKillable runs name and returns its stdout and stderr. After timeout it
 // kills the whole process group (a browser's helpers can keep stdout open
 // after the main process dies) and stops waiting for output, so a hung
-// child cannot outlast the limit.
+// child cannot outlast the limit; after a normal exit it kills any helper
+// left in the group.
 func runKillable(timeout time.Duration, name string, args ...string) (string, string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -143,6 +144,11 @@ func runKillable(timeout time.Duration, name string, args ...string) (string, st
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	err := cmd.Run()
+	if cmd.Process != nil {
+		// A helper may outlive a browser that exited on its own; on unix
+		// this kills what is left of the group (nothing, usually).
+		_ = cmd.Cancel()
+	}
 	if ctx.Err() != nil {
 		err = ctx.Err()
 	}

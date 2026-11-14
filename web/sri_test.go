@@ -29,24 +29,33 @@ var (
 	preloadForm = regexp.MustCompile(`^<link rel="modulepreload" href="([^"&]+)" integrity="(sha384-[A-Za-z0-9+/]+=*)">`)
 	styleForm   = regexp.MustCompile(`^<link rel="stylesheet" href="([^"&]+)">`)
 	// importFrom reads a static import (or export ... from) that starts a
-	// line. Its clause holds no quote, semicolon or parenthesis, so it cannot
-	// swallow an import() call or a second statement.
-	importFrom  = regexp.MustCompile("(?m)^\\s*(?:import|export)\\b[^\"';()`]*?\\bfrom\\s*[\"']([^\"']+)[\"']|^\\s*import\\s*[\"']([^\"']+)[\"']")
-	dynamicImpt = regexp.MustCompile(`\bimport\s*(?:/\*[\s\S]*?\*/\s*)*\(`)
+	// line. Its clause holds no quote, semicolon, parenthesis or slash, so it
+	// cannot swallow an import() call, a second statement or a comment.
+	importFrom = regexp.MustCompile("(?m)^[ \t]*(?:import|export)\\b[^\"';()`/]*?\\bfrom[ \t]*[\"']([^\"']+)[\"']|^[ \t]*import[ \t]*[\"']([^\"']+)[\"']")
+	// dynamicImpt is import( with JavaScript white space or // comments
+	// between (block comments are refused outright, see moduleImports).
+	dynamicImpt = regexp.MustCompile(`\bimport(?:` + jsSpace + `|//[^\n]*\n)*\(`)
 	// lineComment is a line that starts with //: a comment, or text in a
-	// string or comment, never a static import. Modules use LF only (see
-	// moduleImports), so a line here is a line to the JavaScript parser too.
+	// string or template literal, never a static import. Modules use LF only
+	// and no block comments (see moduleImports), so a line here is a line to
+	// the JavaScript parser too, and its // really starts a comment or text.
 	lineComment = regexp.MustCompile(`(?m)^[ \t]*//.*$`)
 	// strayImport is an import or export-from that importFrom did not read:
 	// one not at the start of a line, import.meta, or the word in a string.
-	strayImport = regexp.MustCompile("\\bimport\\b|\\bfrom\\s*[\"'`]")
+	strayImport = regexp.MustCompile("\\bimport\\b|\\bfrom" + jsSpace + "*[\"'`]")
 	// unpinnedLoad is a way to run code or load a document that no
-	// modulepreload integrity covers: workers, worklets, frames, objects
-	// and embeds. The pages' meta CSP (default-src 'none') blocks frames and
-	// objects as well; this keeps a module from trying.
-	unpinnedLoad = regexp.MustCompile("(?i)\\b(?:worker|sharedworker|serviceworker|importscripts|[a-z]*worklet|addmodule|iframe|frameset|srcdoc|htmliframeelement|htmlobjectelement|htmlembedelement)\\b" +
-		"|<\\s*(?:frame|object|embed|portal|applet)\\b|\\(\\s*[\"'`](?:frame|object|embed|portal|applet)[\"'`]")
+	// modulepreload integrity covers: script elements, workers, worklets,
+	// frames, objects and embeds. It catches a mistake, not deliberate
+	// obfuscation ("scr" + "ipt"). The pages' meta CSP (default-src 'none')
+	// blocks frames and objects as well, but not script elements or workers:
+	// script-src 'self' admits any same-origin script without integrity.
+	unpinnedLoad = regexp.MustCompile("(?i)\\b(?:worker|sharedworker|serviceworker|importscripts|[a-z]*worklet|addmodule|iframe|frameset|srcdoc|htmliframeelement|htmlobjectelement|htmlembedelement|htmlscriptelement)\\b" +
+		"|<" + jsSpace + "*(?:script|frame|object|embed|portal|applet)\\b|\\(" + jsSpace + "*[\"'`](?:script|frame|object|embed|portal|applet)[\"'`]")
 )
+
+// jsSpace is one character JavaScript's \s matches (U+2028, U+2029 and CR
+// are refused in modules), so the Go and node checks agree.
+const jsSpace = "[\\t\\n\\v\\f \\x{a0}\\x{1680}\\x{2000}-\\x{200a}\\x{202f}\\x{205f}\\x{3000}\\x{feff}]"
 
 // resolve turns a reference in a page or module into a path inside fsys and
 // fails when that file is not there. The tests read web.Files, so a
@@ -118,9 +127,10 @@ var headLine = regexp.MustCompile(`^(?:` + strings.Join([]string{
 }, "|") + `)$`)
 
 // cspLine is the meta CSP every page carries, before its sri block: it
-// falls back to default-src 'none', so frames, objects and workers stay
-// blocked even where a host serves the page under a looser header (the
-// portal's _headers falls back to 'self'). Only connect-src may differ.
+// falls back to default-src 'none', so frames and objects stay blocked even
+// where a host serves the page under a looser header (the portal's _headers
+// falls back to 'self'). It does not block workers or script elements
+// (script-src 'self'). Only connect-src may differ.
 var cspLine = regexp.MustCompile(`^<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src '(?:self|none)'; base-uri 'none'; form-action 'none'">$`)
 
 var (
@@ -201,6 +211,11 @@ func moduleImports(fsys fs.FS, file string) ([]string, error) {
 	if strings.ContainsAny(src, "\r\u2028\u2029") {
 		// JavaScript ends a line (and a // comment) at each of these.
 		return nil, fmt.Errorf("%s: line terminator other than LF", file)
+	}
+	if strings.Contains(src, "/*") {
+		// A block comment can hide code from the line-based reading below
+		// ("/*" then "// */ import ..."), so modules use // comments only.
+		return nil, fmt.Errorf("%s: block comment (use // comments)", file)
 	}
 	// These two read the whole source, comments included: a line that starts
 	// with // inside a template literal can still hold a ${...} expression.
@@ -533,32 +548,39 @@ func TestPortalModuleScanRejects(t *testing.T) {
 		require.NoError(t, err, src)
 	}
 	cases := map[string]struct{ src, want string }{
-		"import not at line start":       {"const x = 1; import { a } from \"./a.js\";\n", "cannot account for"},
-		"export-from not at line start":  {"const x = 1; export { a } from \"./a.js\";\n", "cannot account for"},
-		"import after a block comment":   {"/* x */ import { a } from \"./a.js\";\n", "cannot account for"},
-		"import call hidden in a clause": {"import(x)\nfrom\n\"./a.js\";\n", "dynamic import"},
-		"dynamic import":                 {"await import(\"./a.js\");\n", "dynamic import"},
-		"dynamic import with a comment":  {"await import/**/(\"./a.js\");\n", "dynamic import"},
-		"dynamic import with comments":   {"await import /* a */ /* b */ (\"./a.js\");\n", "dynamic import"},
-		"import.meta":                    {"const u = import.meta.url;\n", "cannot account for"},
-		"import in a string":             {"const s = \"x\"; const t = \"import\";\n", "cannot account for"},
-		"line comment ended by U+2028":   {"// note await import(\"./a.js\");\n", "line terminator"},
-		"carriage return":                {"// note\rawait import(\"./a.js\");\n", "line terminator"},
-		"import call in a template line": {"const s = `\n// ${await import(\"./a.js\")}\n`;\n", "dynamic import"},
-		"worker in a template line":      {"const s = `\n// ${new Worker(\"./a.js\")}\n`;\n", "SRI does not cover"},
-		"module worker":                  {"new Worker(\"./a.js\", { type: \"module\" });\n", "SRI does not cover"},
-		"shared worker":                  {"new SharedWorker(\"./a.js\");\n", "SRI does not cover"},
-		"worker by name":                 {"new self[\"Worker\"](\"./a.js\");\n", "SRI does not cover"},
-		"service worker":                 {"navigator.serviceWorker.register(\"./a.js\");\n", "SRI does not cover"},
-		"importScripts":                  {"importScripts(\"./a.js\");\n", "SRI does not cover"},
-		"worklet":                        {"CSS.paintWorklet.addModule(\"./a.js\");\n", "SRI does not cover"},
-		"iframe element":                 {"document.body.append(el(\"iframe\"));\n", "SRI does not cover"},
-		"srcdoc property":                {"f.srcdoc = s;\n", "SRI does not cover"},
-		"object element":                 {"document.createElement(\"object\");\n", "SRI does not cover"},
-		"embed element":                  {"document.createElement('embed');\n", "SRI does not cover"},
-		"embed in markup":                {"d.innerHTML = \"<embed src=x>\";\n", "SRI does not cover"},
-		"object in markup":               {"d.innerHTML = `<object data=x>`;\n", "SRI does not cover"},
-		"frame in markup":                {"d.innerHTML = \"< frame src=x>\";\n", "SRI does not cover"},
+		"import not at line start":        {"const x = 1; import { a } from \"./a.js\";\n", "cannot account for"},
+		"export-from not at line start":   {"const x = 1; export { a } from \"./a.js\";\n", "cannot account for"},
+		"import after a block comment":    {"/* x */ import { a } from \"./a.js\";\n", "block comment"},
+		"import call hidden in a clause":  {"import(x)\nfrom\n\"./a.js\";\n", "dynamic import"},
+		"dynamic import":                  {"await import(\"./a.js\");\n", "dynamic import"},
+		"dynamic import with a comment":   {"await import/**/(\"./a.js\");\n", "block comment"},
+		"dynamic import with comments":    {"await import /* a */ /* b */ (\"./a.js\");\n", "block comment"},
+		"import.meta":                     {"const u = import.meta.url;\n", "cannot account for"},
+		"import in a string":              {"const s = \"x\"; const t = \"import\";\n", "cannot account for"},
+		"line comment ended by U+2028":    {"// note await import(\"./a.js\");\n", "line terminator"},
+		"carriage return":                 {"// note\rawait import(\"./a.js\");\n", "line terminator"},
+		"import call in a template line":  {"const s = `\n// ${await import(\"./a.js\")}\n`;\n", "dynamic import"},
+		"worker in a template line":       {"const s = `\n// ${new Worker(\"./a.js\")}\n`;\n", "SRI does not cover"},
+		"import after a // */ line":       {"/*\n// */ import { a } from \"./a.js\";\n", "block comment"},
+		"import() behind a // from":       {"import // from \"./a.js\"\n(\"./a.js\");\n", "dynamic import"},
+		"bare import behind a /* from */": {"import /* from \"./a.js\" */ \"./a.js\";\n", "block comment"},
+		"import() with a nbsp":            {"const s = `\n// ${await import\u00a0(\"./a.js\")}\n`;\n", "dynamic import"},
+		"nbsp before an import":           {"\u00a0import { a } from \"./a.js\";\n", "cannot account for"},
+		"script element":                  {"const s = document.createElement(\"script\");\n", "SRI does not cover"},
+		"script in markup":                {"d.innerHTML = \"<script src=x></script>\";\n", "SRI does not cover"},
+		"module worker":                   {"new Worker(\"./a.js\", { type: \"module\" });\n", "SRI does not cover"},
+		"shared worker":                   {"new SharedWorker(\"./a.js\");\n", "SRI does not cover"},
+		"worker by name":                  {"new self[\"Worker\"](\"./a.js\");\n", "SRI does not cover"},
+		"service worker":                  {"navigator.serviceWorker.register(\"./a.js\");\n", "SRI does not cover"},
+		"importScripts":                   {"importScripts(\"./a.js\");\n", "SRI does not cover"},
+		"worklet":                         {"CSS.paintWorklet.addModule(\"./a.js\");\n", "SRI does not cover"},
+		"iframe element":                  {"document.body.append(el(\"iframe\"));\n", "SRI does not cover"},
+		"srcdoc property":                 {"f.srcdoc = s;\n", "SRI does not cover"},
+		"object element":                  {"document.createElement(\"object\");\n", "SRI does not cover"},
+		"embed element":                   {"document.createElement('embed');\n", "SRI does not cover"},
+		"embed in markup":                 {"d.innerHTML = \"<embed src=x>\";\n", "SRI does not cover"},
+		"object in markup":                {"d.innerHTML = `<object data=x>`;\n", "SRI does not cover"},
+		"frame in markup":                 {"d.innerHTML = \"< frame src=x>\";\n", "SRI does not cover"},
 	}
 	for name, c := range cases {
 		_, err := moduleImports(fstest.MapFS{"lib/m.js": {Data: []byte(c.src)}, "lib/a.js": {Data: []byte(dep)}}, "lib/m.js")

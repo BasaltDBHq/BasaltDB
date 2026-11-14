@@ -100,7 +100,7 @@ func runRevert(c *cliIO, args []string) int {
 	if (scope.ID != uuid.Nil || f.rescope != "") && !f.dryRun {
 		f.local = l.localPages(c, f.pagesURL)
 	}
-	f.pagesURL = l.pagesBase(f.pagesURL)
+	f.pagesURL = l.pagesBase(c, f.pagesURL)
 	if err := f.resolveWiden(l); err != nil {
 		return c.fail(err)
 	}

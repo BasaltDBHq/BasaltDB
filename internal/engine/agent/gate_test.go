@@ -37,10 +37,11 @@ func TestPagesRelayNothingOnAnOutdatedGuard(t *testing.T) {
 	t.Parallel()
 	s, ctx, id := gatedService(t), context.Background(), uuid.New()
 
-	requireGuardOutdated(t, s.RelayApproval(ctx, approval.Response{ApprovalID: id}), "pages approve")
-	_, err := s.ApprovalRequest(ctx, id)
+	_, err := s.RelayApproval(ctx, approval.Response{ApprovalID: id})
+	requireGuardOutdated(t, err, "pages approve")
+	_, err = s.ApprovalRequest(ctx, id)
 	requireGuardOutdated(t, err, "approval page")
-	_, err = s.RelayRevert(ctx, revert.Response{RevertID: id})
+	_, _, err = s.RelayRevert(ctx, revert.Response{RevertID: id})
 	requireGuardOutdated(t, err, "pages revert")
 	_, err = s.RevertRequest(ctx, id, "secret")
 	requireGuardOutdated(t, err, "revert page")
@@ -48,7 +49,8 @@ func TestPagesRelayNothingOnAnOutdatedGuard(t *testing.T) {
 	requireGuardOutdated(t, err, "pages scope")
 
 	// The page shows the person the upgrade command.
-	pf := s.PageFailure(s.RelayApproval(ctx, approval.Response{ApprovalID: id}))
+	_, err = s.RelayApproval(ctx, approval.Response{ApprovalID: id})
+	pf := s.PageFailure(err)
 	require.Contains(t, pf.PersonMessage, "basalt upgrade --agent bot")
 }
 

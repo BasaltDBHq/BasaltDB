@@ -6,9 +6,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/links"
 )
 
 const rootOnlySecret = "user=ROOT-ONLY-SECRET"
@@ -112,4 +116,76 @@ func TestPersonCLIStillReadsItsOwnFilesAsUsual(t *testing.T) {
 	got, err := agentURL(f.c, testAgentKey, "", f.configPath)
 	require.NoError(t, err)
 	require.Equal(t, agentCfgURL, got)
+}
+
+// The ownership rule at the core of readCredentialAsRoot: a plain file with
+// one link, mode 0600, is still refused when it does not belong to the
+// trusted user.
+func TestRootCLIRefusesACredentialOwnedByAnotherUser(t *testing.T) {
+	t.Parallel()
+	f := newRootCLIFixture(t)
+	_, err := readCredentialAsRoot(f.cred, os.Getuid()+1, true)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "refused")
+	got, err := readCredentialAsRoot(f.cred, os.Getuid(), true)
+	require.NoError(t, err, "the same file passes for its owner")
+	require.Equal(t, agentCfgURL, got)
+}
+
+// As root, the config reads behind log's dictionary line, access's commands
+// and the pages links go through the hardened read: a FIFO swapped in for
+// the config does not hang them, and a link is not followed.
+func TestRootCLIConfigReadsDoNotFollowLinksOrBlockOnAFIFO(t *testing.T) {
+	t.Parallel()
+	f := newRootCLIFixture(t)
+	dir := filepath.Dir(f.configPath)
+	fifo := filepath.Join(dir, "fifo.json")
+	require.NoError(t, syscall.Mkfifo(fifo, 0o600))
+	hosted := filepath.Join(t.TempDir(), "hosted.json")
+	require.NoError(t, os.WriteFile(hosted, []byte(`{"socketDir": "/s", "pagesUrl": "https://console.basaltvault.app",
+		"agents": [{"name": "bot", "osUser": "u", "credentialFile": "/c"}]}`), 0o600))
+	link := filepath.Join(dir, "link.json")
+	require.NoError(t, os.Symlink(hosted, link))
+
+	// The reads run on another goroutine so a hang fails the test instead
+	// of blocking it; their results are checked back here.
+	type result struct {
+		path, base, local string
+		known             bool
+		dictNil           bool
+	}
+	results := make(chan []result, 1)
+	go func() {
+		paths := []string{fifo, link}
+		out := make([]result, 0, len(paths))
+		for _, path := range paths {
+			_, known := accessCommands(f.c, "bot", path)
+			out = append(out, result{
+				path: path, base: configuredBase(f.c, "", "bot", path), local: localPages(f.c, "", "bot", path),
+				known: known, dictNil: statusDictionary(f.c, path) == nil,
+			})
+		}
+		results <- out
+	}()
+	select {
+	case got := <-results:
+		for _, r := range got {
+			require.Equal(t, links.DefaultLocal, r.base, r.path)
+			require.Empty(t, r.local, r.path)
+			require.False(t, r.known, r.path)
+			require.True(t, r.dictNil, r.path)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("a config read blocked on the FIFO")
+	}
+
+	// A plain config in the same directory is read as root.
+	plain := filepath.Join(dir, "plain.json")
+	raw, err := os.ReadFile(hosted)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(plain, raw, 0o600))
+	require.Equal(t, links.HostedConsole, configuredBase(f.c, "", "bot", plain), "the hardened read still reads a plain config")
+
+	user := &cliIO{host: newFakeHost(t), getenv: func(string) string { return "" }}
+	require.Equal(t, links.HostedConsole, configuredBase(user, "", "bot", link), "not as root: the plain read follows the link")
 }

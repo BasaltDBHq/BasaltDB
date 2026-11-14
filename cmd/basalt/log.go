@@ -230,7 +230,7 @@ func printPII(c *cliIO, p *ledger.PIIHealth, configPath string) {
 	}
 	dict := p.Dictionary
 	if dict == nil {
-		dict = statusDictionary(configPath)
+		dict = statusDictionary(c, configPath)
 	}
 	tail := "dictionary not built yet"
 	if dict != nil && dict.LastScanAt != nil {
@@ -259,11 +259,12 @@ func piiNames(names []string, total int) string {
 }
 
 // statusDictionary reads the engine's status.json from the state directory
-// the config names (the platform default when the config cannot be read);
+// the config names (the platform default when the config cannot be read),
+// the config read as loadEngineConfig does (hardened as root);
 // nil when it cannot be read.
-func statusDictionary(configPath string) *ledger.DictionaryHealth {
+func statusDictionary(c *cliIO, configPath string) *ledger.DictionaryHealth {
 	dir := config.DefaultStateDir(runtime.GOOS)
-	if cfg, err := config.Load(configPath); err == nil {
+	if cfg, err := loadEngineConfig(c, configPath); err == nil {
 		dir = cfg.StateDirFor(runtime.GOOS)
 	}
 	st, ok := pii.ReadStatus(dir)

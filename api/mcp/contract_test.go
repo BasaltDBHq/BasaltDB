@@ -299,6 +299,25 @@ func TestRevertSchemas(t *testing.T) {
 	})
 }
 
+// TestRevertScopeCatalogChangeAgents checks the scope response's catalog
+// carries changeAgents (CONTRACT.md, Rescope, widen and reject, "The agent
+// of each row"): change id to agent role, optional because a guard older
+// than version 32 leaves it out, and only inside catalog, which only a
+// proven or token-bearing call gets.
+func TestRevertScopeCatalogChangeAgents(t *testing.T) {
+	t.Parallel()
+	schema := readJSON(t, "revert/revert-scope-response.schema.json")
+	require.Equal(t, []any{"request"}, schema["required"], "the catalog, and so the map, is optional in every answer")
+	props := mustMap(t, schema["properties"])
+	require.NotContains(t, props, "changeAgents", "the map lives only inside the catalog")
+	catalog := mustMap(t, props["catalog"])
+	require.NotContains(t, catalog["required"], "changeAgents", "a guard older than version 32 has no map")
+	m := mustMap(t, mustMap(t, catalog["properties"])["changeAgents"])
+	require.Equal(t, "object", m["type"])
+	require.Equal(t, map[string]any{"format": "uuid"}, m["propertyNames"])
+	require.Equal(t, "string", mustMap(t, m["additionalProperties"])["type"])
+}
+
 // checkPayloadSchemas checks dir holds exactly the named schema files and that
 // each has an $id and a description, camelCase properties, SCREAMING_SNAKE_CASE
 // enums and closed objects.
@@ -534,10 +553,11 @@ func TestNextStepsCatalog(t *testing.T) {
 	require.Equal(t, schemaEnum(t, readJSON(t, "errors/warning.schema.json"), "code"), warningCodes,
 		"every warning code needs next steps, and only those")
 
-	problemKeys := map[string]bool{}
+	problemKeys, problemCodes := map[string]bool{}, map[string]bool{}
 	for _, p := range catalog.Problems {
-		require.False(t, problemKeys[p.Code], "duplicate problem %s", p.Code)
-		problemKeys[p.Code] = true
+		require.False(t, problemCodes[p.Code], "duplicate problem %s", p.Code)
+		problemCodes[p.Code] = true
+		problemKeys[p.Code+plannedKey(p.Planned)] = true
 		require.Contains(t, []string{mcpcontract.SeverityError, mcpcontract.SeverityWarning}, p.Severity, p.Code)
 		require.True(t, p.PersonMessage, "%s: a status problem always tells the person", p.Code)
 		requireSteps(t, p.Code, p.Steps)
@@ -545,7 +565,7 @@ func TestNextStepsCatalog(t *testing.T) {
 	status, ok := mcpcontract.Find(tools, "status")
 	require.True(t, ok)
 	problems := mustMap(t, mustMap(t, mustMap(t, status.OutputSchema["properties"])["problems"])["items"])
-	require.Equal(t, schemaEnum(t, problems, "code"), problemKeys, "every status problem code needs next steps, and only those")
+	require.Equal(t, schemaEnum(t, problems, "code"), problemCodes, "every status problem code needs next steps, and only those")
 
 	docErrors, docResults, docProblems := contractNextSteps(t)
 	require.Equal(t, errorKeys, docErrors, "CONTRACT.md \"Next steps per code\" and next-steps.json differ")
@@ -677,7 +697,7 @@ func contractNextSteps(t *testing.T) (map[string]bool, map[string]bool, map[stri
 			}
 		case tableProblems:
 			if m := nextStepsProblemRow.FindStringSubmatch(line); m != nil {
-				problems[m[1]] = true
+				problems[m[1]+planned] = true
 			}
 		}
 	}

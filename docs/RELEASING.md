@@ -37,7 +37,7 @@ git push origin "$NEXT_TAG"
 That push is the only trigger for a GitHub Release. The [Release](../.github/workflows/release.yml) workflow then:
 
 1. Builds linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64 (`CGO_ENABLED=0`).
-2. Attaches tar.gz (zip on Windows) holding the one `basalt` binary, `SHA256SUMS`, and `.deb` / `.rpm` / `.apk`. Darwin tarballs are `CGO_ENABLED=0` static builds. They are unsigned (no Apple Developer account, codesign, or notarization). After a browser download, clear Gatekeeper quarantine **per binary** the operator verified (`xattr -d com.apple.quarantine ./basalt`), never recursively. CI `macos-smoke` runs those archives on `macos-15` (`uname -m` arm64) and `macos-15-intel` (`uname -m` x86_64).
+2. Attaches tar.gz (zip on Windows) holding the one `basalt` binary, `SHA256SUMS`, and `.deb` / `.rpm` / `.apk`. It also attaches `portal.sha256`, a copy of `web/portal.sha256` from the tagged commit (the hashes of the portal pages that release embeds), for `basalt portal verify --manifest portal.sha256`. Darwin tarballs are `CGO_ENABLED=0` static builds. They are unsigned (no Apple Developer account, codesign, or notarization). After a browser download, clear Gatekeeper quarantine **per binary** the operator verified (`xattr -d com.apple.quarantine ./basalt`), never recursively. CI `macos-smoke` runs those archives on `macos-15` (`uname -m` arm64) and `macos-15-intel` (`uname -m` x86_64).
 3. Marks the GitHub Release as a **prerelease** when the tag has a semver prerelease suffix (`-alpha`, `-beta`, `-rc`). `prerelease: auto` in GoReleaser.
 
 There is no container image: `basalt` runs next to the agent as a local service, not as a hosted server.

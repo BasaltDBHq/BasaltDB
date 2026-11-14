@@ -60,20 +60,28 @@ type cliIO struct {
 	agentLogin func(ctx context.Context, dsn string) (agentConn, error)
 	// dial opens a database connection (connect outside tests).
 	dial func(ctx context.Context, dsn string) (*pgx.Conn, error)
+	// probe tries a login bound to fail, to confirm a credential's TLS
+	// protection (hardenedCredential); probeLogin outside tests.
+	probe func(ctx context.Context, dsn string) error
 	// engine tells service mode from same-user mode and finds the person
 	// socket (log, approve, revert); tests replace it.
 	engine engineAccess
+	// tunnelProbe fetches an engine address's /v1/engine for basalt tunnel
+	// (engineProbe outside tests).
+	tunnelProbe func(ctx context.Context, url string) (probeAnswer, error)
 }
 
 func newIO(ctx context.Context, std stdio, getenv func(string) string) *cliIO {
 	c := &cliIO{
 		ctx: ctx, stdin: bufio.NewReader(std.in), stdout: std.out, stderr: std.err,
 		getenv: getenv, now: time.Now, rand: rand.Reader, goos: runtime.GOOS, host: osHost{},
-		agentLogin: loginAsAgent,
-		dial:       connect,
-		engine:     osEngineAccess(runtime.GOOS),
-		width:      func() int { return terminalWidth(std.out) },
+		agentLogin:  loginAsAgent,
+		dial:        connect,
+		engine:      osEngineAccess(runtime.GOOS),
+		tunnelProbe: engineProbe,
+		width:       func() int { return terminalWidth(std.out) },
 	}
+	c.probe = probeLogin(c)
 	stdin := std.in
 	if f, ok := stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
 		c.terminal = f

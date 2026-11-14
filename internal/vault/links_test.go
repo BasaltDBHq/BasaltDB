@@ -36,7 +36,7 @@ func connected(t *testing.T, opts vault.Options) *vault.Client {
 }
 
 func owner(v *vaulttest.Vault, tok channel.LinkToken) string {
-	id, _ := v.LinkOwner(tok.String())
+	id, _ := v.LinkOwner(tok.Wire())
 	return id
 }
 
@@ -113,7 +113,7 @@ func TestRegisterConflict(t *testing.T) {
 	t.Cleanup(v.Close)
 	c := connected(t, fastOptions(v.URL(), newKeys(t)))
 	tok := newToken(t)
-	v.Bind(tok.String(), otherEngine, time.Now().Add(time.Hour))
+	v.Bind(tok.Wire(), otherEngine, time.Now().Add(time.Hour))
 
 	err := c.Register(context.Background(), tok, time.Now().Add(time.Hour))
 	require.True(t, vault.IsConflict(err), "got %v", err)
@@ -162,7 +162,7 @@ func TestEveryLiveLinkIsRegisteredAgainAfterReady(t *testing.T) {
 	t.Cleanup(v.Close)
 	keys := newKeys(t)
 	mine, theirs := newToken(t), newToken(t)
-	v.Bind(theirs.String(), otherEngine, time.Now().Add(time.Hour))
+	v.Bind(theirs.Wire(), otherEngine, time.Now().Add(time.Hour))
 	live := &liveLinks{links: []vault.Link{
 		{Token: mine, ExpiresAt: time.Now().Add(time.Hour)},
 		{Token: theirs, ExpiresAt: time.Now().Add(time.Hour)},

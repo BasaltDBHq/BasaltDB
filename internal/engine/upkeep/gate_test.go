@@ -11,8 +11,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/engine/upkeep"
-	"github.com/basaltdbhq/basaltdb/internal/guard"
 )
 
 // noDB fails the test on any statement: a gated tick must not reach the
@@ -37,9 +37,9 @@ func (d noDB) QueryRow(context.Context, string, ...any) pgx.Row {
 // savedPins records every pin.
 type savedPins struct{ saved int }
 
-func (p *savedPins) Load(string) (guard.ChainHead, bool, error) { return guard.ChainHead{}, false, nil }
+func (p *savedPins) Load(string) (chainpin.Pin, bool, error) { return chainpin.Pin{}, false, nil }
 
-func (p *savedPins) Save(string, guard.ChainHead) error {
+func (p *savedPins) Save(string, chainpin.Pin) error {
 	p.saved++
 	return nil
 }

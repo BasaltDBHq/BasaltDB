@@ -21,9 +21,14 @@ const (
 // another engine and squat the link. Never log it (LogValue redacts it).
 type LinkToken [LinkTokenLen]byte
 
-// String is the token's base64url text, as in the prologue and the socket
-// path: for the wire only, never for a log.
-func (t LinkToken) String() string { return b64(t[:]) }
+// Wire is the token's base64url text, as in the prologue, the Vault's
+// messages and the page socket's path: for the wire and the engine's files
+// only, never for a log.
+func (t LinkToken) Wire() string { return b64(t[:]) }
+
+// String keeps the token out of %v and %s, and so out of an error that
+// wraps it that way: the wire form is Wire.
+func (LinkToken) String() string { return redacted }
 
 // LogValue keeps the token out of slog output, whatever the call site
 // passes it as.
@@ -34,7 +39,7 @@ func (LinkToken) GoString() string { return redacted }
 
 // MarshalJSON keeps the token out of JSON, where slog's JSON handler puts a
 // value nested in a map or struct without asking LogValue. The wire and
-// the engine's files carry its String in their own string fields.
+// the engine's files carry its Wire text in their own string fields.
 func (LinkToken) MarshalJSON() ([]byte, error) { return redactedJSON, nil }
 
 // ParseLinkToken reads a token's 22-character base64url text.

@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 
 import { b64urlDecode } from "./codec.js";
 import { SECRET_HEADER } from "./local.js";
+import { sameOriginSession } from "./transport.js";
 // Imported before any document exists, so the page's main() does not run.
 import { HAND_BACK_PATH, sendToInit } from "./register.js";
 
@@ -52,7 +53,7 @@ test("after init takes the passkey, the page shows the pairing code to type", as
     assert.equal(nodes["pairing-code"].textContent, "");
     return new Response(JSON.stringify({ status: "RECEIVED" }), { status: 200 });
   };
-  assert.equal(await sendToInit(fetchFn, req, fields), true);
+  assert.equal(await sendToInit(sameOriginSession(fetchFn), req, fields), true);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].path, HAND_BACK_PATH);
   assert.equal(calls[0].init.headers[SECRET_HEADER], req.handBack);
@@ -73,7 +74,7 @@ test("handBack after init ended: the page says init is no longer waiting", async
   ]) {
     const nodes = fakeDocument();
     const { req, fields } = vectorRegistration(vectors.codes[1]);
-    assert.equal(await sendToInit(fetchFn, req, fields), true);
+    assert.equal(await sendToInit(sameOriginSession(fetchFn), req, fields), true);
     assert.match(nodes["done-text"].textContent, /basalt init is no longer waiting; run it again/);
     assert.doesNotMatch(nodes["done-text"].textContent, /sent to basalt init|Type or paste/);
     assert.equal(nodes.pairing.hidden, true, "no pairing code: init has nothing to match it with");
@@ -86,7 +87,7 @@ test("a post init refuses falls back to the long code", async () => {
   const { req, fields } = vectorRegistration(vectors.codes[2]);
   const fetchFn = async () =>
     new Response(JSON.stringify({ code: "RATE_LIMITED", message: "basalt init received more passkeys than it takes" }), { status: 429 });
-  assert.equal(await sendToInit(fetchFn, req, fields), false);
+  assert.equal(await sendToInit(sameOriginSession(fetchFn), req, fields), false);
   assert.match(nodes["done-text"].textContent, /basalt init did not take the passkey \(basalt init received more/);
   assert.equal(nodes.pairing.hidden, true);
   assert.equal(nodes["pairing-code"].textContent, "");

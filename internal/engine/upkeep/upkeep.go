@@ -32,8 +32,8 @@ var psql = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
 // Pins keeps the last verified chain head per agent (chainpin.File in the
 // engine's state directory).
 type Pins interface {
-	Load(name string) (guard.ChainHead, bool, error)
-	Save(name string, h guard.ChainHead) error
+	Load(name string) (chainpin.Pin, bool, error)
+	Save(name string, p chainpin.Pin) error
 }
 
 // Upkeep runs the timer work for one agent on its own credential: the
@@ -56,6 +56,12 @@ type Upkeep struct {
 
 	started bool
 	head    *guard.ChainHead
+	// install is the guard install the pinned head was verified on
+	// (guard.InstallID), saved with every pin.
+	install uint32
+	// kept are the pins this engine set aside after reinstalls, saved with
+	// every pin (chainpin.Pin.SetAside).
+	kept []guard.SetAside
 	// startBroken is where the full check on start found the chain broken;
 	// it is reported on every tick until the engine restarts.
 	startBroken *int64
@@ -216,12 +222,31 @@ func (u *Upkeep) Tick(ctx context.Context) error {
 // runs the full check too: the pin catches a consistent rewrite made while
 // the engine was stopped, the full check an edit behind the pin. Later
 // ticks verify from the last pin only. On a break the old pin is kept, so
-// the break is reported on every tick until a person looks.
+// the break is reported on every tick until a person looks. A pin of
+// another install (the guard was installed again, on start or since the
+// last tick) is moved or reported and set aside first (settle).
 func (u *Upkeep) checkChain(ctx context.Context) (guard.ChainStatus, error) {
-	if !u.started {
-		if err := u.start(ctx); err != nil {
+	install, err := guard.InstallID(ctx, u.db)
+	if err != nil {
+		return guard.ChainStatus{}, fmt.Errorf("guard install: %w", err)
+	}
+	starting := !u.started
+	if starting {
+		if err := u.start(ctx, install); err != nil {
 			return guard.ChainStatus{}, err
 		}
+	}
+	if !starting && u.head != nil && u.install != install {
+		if err := u.settle(ctx, install); err != nil {
+			return guard.ChainStatus{}, err
+		}
+	}
+	if u.head != nil && u.install != install {
+		// A pin of another install that could not be reported (step 3):
+		// never verified from (verify_chain_from accepts any pin before the
+		// anchor) nor replaced. The chain is reported broken at it until
+		// the report succeeds.
+		return guard.ChainStatus{BrokenAt: u.head.Seq}, nil
 	}
 	if u.startBroken != nil {
 		return guard.ChainStatus{BrokenAt: *u.startBroken}, nil
@@ -234,17 +259,27 @@ func (u *Upkeep) checkChain(ctx context.Context) (guard.ChainStatus, error) {
 	if err != nil || !st.Intact {
 		return st, err
 	}
-	u.head = &head
-	if err := u.pins.Save(u.agent, head); err != nil {
+	u.head, u.install = &head, install
+	if err := u.pins.Save(u.agent, chainpin.Pin{Head: head, Install: u.install, SetAside: u.kept}); err != nil {
 		return guard.ChainStatus{}, fmt.Errorf("save the chain head: %w", err)
 	}
 	return st, nil
 }
 
-func (u *Upkeep) start(ctx context.Context) error {
+// start loads the pin and runs the full check when there is one. A pin
+// without an install is taken as install's.
+func (u *Upkeep) start(ctx context.Context, install uint32) error {
 	pin, ok, err := u.pins.Load(u.agent)
 	if err != nil {
 		return fmt.Errorf("load the chain head: %w", err)
+	}
+	u.install, u.kept = install, pin.SetAside
+	if ok && !pin.Of(install) {
+		u.head, u.install = &pin.Head, pin.Install
+		if err := u.settle(ctx, install); err != nil {
+			return err
+		}
+		ok = u.head != nil
 	}
 	if ok {
 		full, err := guard.VerifyChain(ctx, u.db)
@@ -254,9 +289,43 @@ func (u *Upkeep) start(ctx context.Context) error {
 		if !full.Intact {
 			u.startBroken = &full.BrokenAt
 		}
-		u.head = &pin
+		if u.head == nil {
+			u.head = &pin.Head
+		}
 	}
 	u.started = true
+	return nil
+}
+
+// settle runs steps 1 to 3 of "Who sets a pin aside" (CONTRACT.md, Version
+// 36) for the pin u.head of install u.install, now that the guard is
+// install: it moves the pin across a faithful restore, with a warning
+// naming both installs; or it reports the pin in the ledger, keeps a copy
+// and sets it aside, so the new chain is checked from its start; or, when
+// the report fails, it keeps the pin, which then shows as a broken chain,
+// and tries again on the next tick.
+func (u *Upkeep) settle(ctx context.Context, install uint32) error {
+	pinned, from := *u.head, u.install
+	s, err := ledger.SettlePin(ctx, u.db, pinned, from)
+	if err != nil {
+		return fmt.Errorf("check the pin of guard install %d: %w", from, err)
+	}
+	switch s.Fate {
+	case ledger.PinMoved:
+		u.log.Warn("the guard's schema was dropped and restored with the same ledger; the chain head pin moves to the new install",
+			"agent", u.agent, "pinnedInstall", from, "install", install, "pinnedSeq", pinned.Seq)
+		u.head, u.install = &s.Head, install
+	case ledger.PinSetAside:
+		u.log.Warn("the guard was installed again; the chain head pinned on the earlier install is set aside and reported in the ledger",
+			"agent", u.agent, "pinnedInstall", from, "install", install, "pinnedSeq", pinned.Seq)
+		u.kept = chainpin.Pin{SetAside: u.kept}.Kept(guard.SetAside{
+			PinnedSeq: pinned.Seq, PinnedHash: pinned.Hash, PinnedInstall: from, Install: install, At: u.now().UTC(),
+		}).SetAside
+		u.head, u.install, u.startBroken = nil, install, nil
+	default:
+		u.log.Error("the guard was installed again, and the chain head pin could not be reported in the ledger; it is kept and the chain reported broken at it",
+			"agent", u.agent, "pinnedInstall", from, "install", install, "err", s.RecordErr)
+	}
 	return nil
 }
 

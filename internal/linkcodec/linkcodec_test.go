@@ -223,3 +223,28 @@ func FuzzRebuild(f *testing.F) {
 		}
 	})
 }
+
+// TestEncodeRequestRefusesWhatAPageCannotDecode: a request whose texts
+// rebuild past 1 MiB, or whose JSON inflates past 1 MiB, is
+// ErrRequestTooLarge, never a fragment the page would refuse; one just
+// under both encodes and decodes.
+func TestEncodeRequestRefusesWhatAPageCannotDecode(t *testing.T) {
+	t.Parallel()
+	binding := `{"kind": "APPROVE"}`
+	_, err := linkcodec.EncodeRequest(binding, []string{strings.Repeat("x", linkcodec.MaxLinesBytes)}, nil)
+	require.ErrorIs(t, err, linkcodec.ErrRequestTooLarge, "texts past 1 MiB")
+
+	// Under 1 MiB of text, but every '"' takes two bytes in the JSON.
+	_, err = linkcodec.EncodeRequest(binding, []string{strings.Repeat(`"`, 600000)}, nil)
+	require.ErrorIs(t, err, linkcodec.ErrRequestTooLarge, "JSON past 1 MiB")
+
+	frag, err := linkcodec.EncodeRequest(binding, []string{strings.Repeat("x", 500000)}, nil)
+	require.NoError(t, err)
+	var got []string
+	_, err = linkcodec.DecodeRequest(frag, 1, func(b string, lines []string, _ []passkey.Bytes) struct{} {
+		got = append([]string{b}, lines...)
+		return struct{}{}
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{binding, strings.Repeat("x", 500000)}, got)
+}

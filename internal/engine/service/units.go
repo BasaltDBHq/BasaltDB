@@ -10,6 +10,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
@@ -142,7 +143,10 @@ func (s Spec) args() []string {
 }
 
 // SystemdUnit renders the Linux unit. The engine gets /run/basalt for its
-// sockets and lock, and a read-only view of everything else.
+// sockets and lock, its state directory, its config directory (where it
+// takes an agent's lock, promotes a .pending credential and clears a
+// finished setup from engine.json), and a read-only view of everything
+// else.
 func SystemdUnit(s Spec) string {
 	quoted := make([]string, 0, len(s.args()))
 	for _, a := range s.args() {
@@ -171,6 +175,7 @@ MemoryHigh=%[4]dM
 MemoryMax=%[5]dM
 NoNewPrivileges=yes
 ProtectSystem=strict
+ReadWritePaths=%[7]s
 ProtectHome=yes
 PrivateTmp=yes
 PrivateDevices=yes
@@ -181,7 +186,7 @@ LockPersonality=yes
 
 [Install]
 WantedBy=multi-user.target
-`, s.User, strings.Join(quoted, " "), runtimeDirMode, high, hard, stateDirMode)
+`, s.User, strings.Join(quoted, " "), runtimeDirMode, high, hard, stateDirMode, systemdQuote(filepath.Dir(s.ConfigPath)))
 }
 
 // systemdQuote quotes an ExecStart word when it has spaces, quotes or

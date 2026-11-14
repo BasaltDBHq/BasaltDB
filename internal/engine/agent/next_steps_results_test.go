@@ -141,7 +141,47 @@ func resultCases() map[string]resultCase {
 			return person, nil, steps
 		}
 	}
+	tooLargeRevert := func(t *testing.T, s *Service) ledger.Revert {
+		s.PagesOrigin = ""
+		r := caseRevertWith(t, ledger.RevertPending)
+		r.Lines, r.LinesLeftOut, r.LinesCost = nil, true, 2<<20
+		return r
+	}
 	return map[string]resultCase{
+		resultKey("request_revert", "REQUEST_TOO_LARGE"): {
+			tool: "request_revert", args: map[string]any{"revertId": caseRevertID, "reissueLink": true},
+			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+				out, err := s.revertWithLink(context.Background(), tooLargeRevert(t, s))
+				require.NoError(t, err)
+				require.Equal(t, "http://localhost:8787/reverts/"+caseRevertID, out.RevertURL, "the page's address, no fragment")
+				return out.PersonMessage, out.Links, out.NextSteps
+			},
+		},
+		resultKey("revert_plan", "REQUEST_TOO_LARGE"): {
+			tool: "revert_plan", args: revertArgs,
+			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+				r := tooLargeRevert(t, s)
+				n, err := s.revertNotice(context.Background(), r)
+				require.NoError(t, err)
+				require.True(t, n.tooLarge)
+				person, steps, err := s.planGuidance(RevertPlan{Revert: r, RevertURL: n.URL, PersonMessage: n.Message, tooLarge: true})
+				require.NoError(t, err)
+				return person, nil, steps
+			},
+		},
+		resultKey("list_pending", "REQUEST_TOO_LARGE"): {
+			tool: "list_pending", args: map[string]any{},
+			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
+				n := tooLargeNotice(t, s, keepLink)
+				item := PendingItem{
+					Approval: ledger.Approval{ID: uuid.MustParse(caseApproval), Status: ledger.ApprovalPending, ExpiresAt: s.Now().Add(time.Hour)},
+					Notice:   n.ApprovalNotice, tooLargeSteps: n.steps,
+				}
+				person, links, steps, err := s.itemGuidance(item)
+				require.NoError(t, err)
+				return person, links, steps
+			},
+		},
 		resultKey("preview_revert", "PREVIEW"): {
 			tool: "preview_revert", args: map[string]any{"runId": caseRunID},
 			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {

@@ -56,6 +56,9 @@ func (s *Service) planGuidance(plan RevertPlan) (string, []mcp.NextStep, error) 
 		}
 		return fmt.Sprintf("%s waits for your passkey on the page where you changed the scope, until %s.",
 			sentence(revertTitle(r)), r.ExpiresAt.UTC().Format(personTime)), steps, nil
+	case r.Status == ledger.RevertPending && plan.tooLarge:
+		steps, err := revertTooLargeSteps(r.ID, false)
+		return plan.PersonMessage, steps, err
 	case r.Status == ledger.RevertPending:
 		b.SendRequest(plan.RequestFile).
 			OpenLink(plan.RevertURL, "", "Open the link, review the plan and sign it once with your passkey.").
@@ -138,6 +141,8 @@ func (s *Service) itemGuidance(p PendingItem) (string, []mcp.Link, []mcp.NextSte
 		approvalExpiredSteps(b)
 		steps, err := b.Build()
 		return approvalExpiredMessage, nil, steps, err
+	case s.waitsForPerson(p) && p.tooLargeSteps != nil:
+		return p.Notice.PersonMessage, nil, p.tooLargeSteps, nil
 	case s.waitsForPerson(p):
 		b := NewSteps().SendRequest(p.Notice.RequestFile)
 		openItemLink(b, p)
@@ -162,7 +167,7 @@ func openItemLink(b *Steps, p PendingItem) {
 // link the hold handed over; CONTRACT.md, The request file and pasted
 // blocks), else at the link the hold handed over.
 func (s *Service) openHeldLink(b *Steps, n *mcp.ApprovalNotice, text string) {
-	if s.PagesOrigin != "" {
+	if s.PagesOrigin != "" || isPageAddress(n.ApprovalURL) {
 		b.OpenGivenLink(n.ApproveCommand, "Open the short link the agent gave you earlier and approve with your passkey.")
 		return
 	}

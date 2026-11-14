@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
@@ -122,12 +123,17 @@ type revertLineDTO struct {
 	Redacted  bool            `json:"redacted,omitempty"`
 	RowHash   string          `json:"rowHash,omitempty"`
 	ChangeIDs []string        `json:"changeIds"`
+	// LargeValues and MoreChangeIDs: what an agent's read left out
+	// (CONTRACT.md, Large values).
+	LargeValues   []largevalue.Entry `json:"largeValues,omitempty"`
+	MoreChangeIDs int                `json:"moreChangeIds,omitempty"`
 }
 
 func revertLineFromDomain(l revert.Line) revertLineDTO {
 	d := revertLineDTO{
 		Action: l.Action, Op: l.Op, Table: l.Table, Key: l.Key, Now: l.Now, Set: l.Set,
 		Cascaded: l.Cascaded, Redacted: l.Redacted, RowHash: l.RowHash, ChangeIDs: make([]string, 0, len(l.ChangeIDs)),
+		LargeValues: l.LargeValues, MoreChangeIDs: l.MoreChangeIDs,
 	}
 	if l.Conflict != nil {
 		d.Conflict = *l.Conflict

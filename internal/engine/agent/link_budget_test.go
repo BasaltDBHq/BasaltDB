@@ -75,7 +75,7 @@ const localPages = "http://localhost:8787"
 
 func approvalNoticeOf(t *testing.T, s *Service, rows int, issue bool) heldNotice {
 	t.Helper()
-	n, err := s.approvalNotice(context.Background(), uuid.MustParse(caseApproval), noticeBinding, bigLines(rows),
+	n, err := s.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), sizedRequest{Binding: noticeBinding, Lines: bigLines(rows)},
 		time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC), issue)
 	require.NoError(t, err)
 	requirePersonMessage(t, n.PersonMessage, n.Links)
@@ -158,7 +158,7 @@ func TestApprovalNoticeStaysWithin500CharactersWhateverIsLong(t *testing.T) {
 	for _, origin := range []string{localPages, ""} {
 		s := noticeService(origin, 1)
 		s.Commands = cmds
-		n, err := s.approvalNotice(context.Background(), uuid.MustParse(caseApproval), noticeBinding, lines,
+		n, err := s.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), sizedRequest{Binding: noticeBinding, Lines: lines},
 			time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC), issueLink)
 		require.NoError(t, err)
 		requirePersonMessage(t, n.PersonMessage, n.Links)

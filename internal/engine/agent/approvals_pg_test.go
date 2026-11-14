@@ -25,6 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
+	"github.com/basaltdbhq/basaltdb/internal/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 )
 
@@ -172,7 +173,9 @@ func agentHarnessKeys(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys *c
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	limits := sqlguard.DefaultLimits()
-	store := agentdb.NewStore(pool, limits, time.Now)
+	// As the engine runs it: every read of a call charged to its budget.
+	budgeted := resultsize.Budgeted(pool)
+	store := agentdb.NewStore(budgeted, limits, time.Now)
 	sent := &notices{}
 	watched := &finds{ApprovalStore: store}
 	watchedReverts := &revertFinds{RevertStore: store}
@@ -180,7 +183,7 @@ func agentHarnessKeys(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys *c
 		return guard.RLSBlindTables(ctx, pool, "", tables)
 	})
 	svc := agent.NewService(agent.Deps{
-		Name: "bot", Reader: agentdb.NewReader(pool, limits, time.Now), Store: store, Reads: store, Approvals: watched,
+		Name: "bot", Reader: agentdb.NewReader(budgeted, limits, time.Now), Store: store, Reads: store, Approvals: watched,
 		Reverts: watchedReverts, Notifier: sent, Log: slog.New(slog.DiscardHandler), Now: time.Now,
 		Columns:  agentdb.NewColumnOrder(pool),
 		Commands: cmds, PagesOrigin: strings.Join(pagesOrigin, ""), Poll: testPoll, RLS: blind, Receipts: receipts,

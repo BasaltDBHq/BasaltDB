@@ -18,6 +18,8 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
@@ -151,13 +153,32 @@ func checkHealth(c *cliIO, l *agentLedger, full bool) (ledger.Health, error) {
 		fmt.Fprintf(c.stderr, "warning: ledger pin unreadable, checking the whole chain: %v\n", err)
 	}
 	if ok {
-		opts.Pin = &pin
+		opts.Pin, opts.PinInstall = &pin.Head, pin.Install
 	}
+	opts.SetAside = pin.SetAside
 	h, err := l.CheckHealth(c.ctx, opts)
-	if err != nil || !h.Chain.Intact {
+	if err != nil {
 		return h, err
 	}
-	if err := pins.Save(name, h.Head); err != nil {
+	switch {
+	case h.PinMoved:
+		fprintSafef(c.stderr, "warning: the guard's schema was dropped and restored with the same ledger (guard install %d is now %d); the ledger pin moved to the new install\n",
+			pin.Install, h.Install)
+	case h.PinSetAside:
+		pin = pin.Kept(guard.SetAside{
+			PinnedSeq: pin.Head.Seq, PinnedHash: pin.Head.Hash, PinnedInstall: pin.Install, Install: h.Install, At: c.now().UTC(),
+		})
+	}
+	next := chainpin.Pin{Head: h.Head, Install: h.Install, SetAside: pin.SetAside}
+	if !h.Chain.Intact {
+		if !h.PinSetAside {
+			return h, nil
+		}
+		// Keep the old pin with the copy of what was reported: the next run
+		// reports it again (already recorded) and checks the new chain.
+		next = pin
+	}
+	if err := pins.Save(name, next); err != nil {
 		fmt.Fprintf(c.stderr, "warning: could not save the ledger pin: %v\n", err)
 	}
 	return h, nil
@@ -182,6 +203,9 @@ func logPins(c *cliIO, key string) (chainpin.File, string, error) {
 const pinNameBytes = 16
 
 func warn(c *cliIO, h ledger.Health) {
+	for _, line := range ledger.ReinstallNotices(h.Reinstalls) {
+		fprintSafef(c.stderr, "%s\n", line)
+	}
 	if !h.Chain.Intact {
 		fprintSafef(c.stderr, "warning: ledger chain broken at seq %d; ledger rows were changed or removed outside basalt\n", h.Chain.BrokenAt)
 	}
@@ -368,10 +392,10 @@ func rowLine(r ledger.RowChange, full bool) string {
 	case r.Pruned:
 		return prefix + " " + compactJSON(r.Key) + " values pruned after 30 days"
 	case full:
-		return prefix + " " + compactJSON(r.Key) + " before=" + compactJSON(r.Before) + " after=" + compactJSON(r.After)
+		return prefix + " " + markedJSON(r.Key, r.Marks.Key) + " before=" + markedJSON(r.Before, r.Marks.Before) + " after=" + markedJSON(r.After, r.Marks.After)
 	}
-	line := prefix + " " + compactJSON(r.Key)
-	if changed := changedValues(r.Before, r.After); r.Op == "UPDATE" && len(changed) > 0 {
+	line := prefix + " " + markedJSON(r.Key, r.Marks.Key)
+	if changed := changedValues(r.Before, r.After, r.Marks); r.Op == "UPDATE" && len(changed) > 0 {
 		line += " " + strings.Join(changed, ", ")
 	}
 	return line
@@ -379,7 +403,7 @@ func rowLine(r ledger.RowChange, full bool) string {
 
 // changedValues lists "col old -> new" for the columns whose values
 // differ, by column name.
-func changedValues(before, after map[string]any) []string {
+func changedValues(before, after map[string]any, marks largevalue.Marks) []string {
 	cols := make([]string, 0, len(after))
 	for col, v := range after {
 		if old, ok := before[col]; !ok || !reflect.DeepEqual(old, v) {
@@ -389,7 +413,7 @@ func changedValues(before, after map[string]any) []string {
 	sort.Strings(cols)
 	out := make([]string, 0, len(cols))
 	for _, col := range cols {
-		out = append(out, col+" "+displayValue(before[col])+" -> "+displayValue(after[col]))
+		out = append(out, col+" "+withMark(displayValue(before[col]), marks.Before[col])+" -> "+withMark(displayValue(after[col]), marks.After[col]))
 	}
 	return out
 }
@@ -409,6 +433,42 @@ func displayValue(v any) string {
 		return "?"
 	}
 	return string(b)
+}
+
+// withMark is a printed value followed by the summary of its size and
+// sha256 when it is over 1 MiB (largevalue.Summary), "" for any other.
+func withMark(text, mark string) string {
+	if mark == "" {
+		return text
+	}
+	return text + " " + mark
+}
+
+// markedJSON is compactJSON with each large value followed by its
+// summary, inside the object, the way the person reads it beside the
+// agent's marker. With no large value it is compactJSON.
+func markedJSON(v map[string]any, marks map[string]string) string {
+	if len(marks) == 0 || v == nil {
+		return compactJSON(v)
+	}
+	cols := make([]string, 0, len(v))
+	for col := range v {
+		cols = append(cols, col)
+	}
+	sort.Strings(cols)
+	parts := make([]string, 0, len(cols))
+	for _, col := range cols {
+		k, err := json.Marshal(col)
+		if err != nil {
+			return "?"
+		}
+		val, err := json.Marshal(v[col])
+		if err != nil {
+			return "?"
+		}
+		parts = append(parts, string(k)+":"+withMark(string(val), marks[col]))
+	}
+	return "{" + strings.Join(parts, ",") + "}"
 }
 
 func compactJSON(v map[string]any) string {

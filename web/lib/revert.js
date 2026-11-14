@@ -23,11 +23,12 @@ import {
   revertShown,
   visibleText,
 } from "./codec.js";
+import { pageTransport } from "./transport.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, rejectRevert, revertDone, revertPaths } from "./local.js";
-import { $, REVERT_REOPEN, el, fail, linkFailure, loadOrPaste, personText, setPill, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
+import { $, REVERT_REOPEN, el, fail, linkFailure, loadOrPaste, personText, setPill, showCode, showDone, showEngine, showRelayFailed, webauthnError } from "./page.js";
 import { canWiden, narrow, widen } from "./rescope.js";
 import { applyReveal, canReveal, clearReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
-import { changeGroups, countText, display, rowKeyText } from "./changes.js";
+import { changeGroups, countText, rawText, rowKeyText } from "./changes.js";
 import {
   MAX_NOTE,
   RESET_MESSAGE,
@@ -187,17 +188,15 @@ export function lineGroups(items, who = null, shown = new Map(), longLink = fals
       return line.sqlState ? `${reason} (SQLSTATE ${visibleText(line.sqlState)})` : reason;
     },
     // Only the columns whose value changes are highlighted.
-    highlights: (v, col) => display(v.line, "now", col) !== display(v.line, "set", col),
+    highlights: (v, col) => rawText(v.line, "now", col) !== rawText(v.line, "set", col),
     notes: (ls) => (ls.some((l) => l.op === "DELETE" && l.action === "RESTORE") ? [INSERTED_NOTE] : []),
   });
 }
 
-// engineFetch is fetch bound to the window, for the local relay.
-const engineFetch = (path, init) => window.fetch(path, init);
-
 // loadRequest reads the request: from the fragment of a long link, or from
-// the engine for a short link. relay is the path to post the signature to,
-// null for a long link.
+// the engine for a short link. relay holds the path to post the signature
+// to, the link's secret and the session to the engine (transport.js), null
+// for a long link.
 async function loadRequest(hash) {
   // Every link names its revert in the path; a long link's request must
   // name the same one.
@@ -211,9 +210,12 @@ async function loadRequest(hash) {
   // A short link: #s=<secret>. Without it the engine answers as for an
   // unknown id.
   const secret = linkSecret(hash);
-  const req = await checkRevertRequest(await fetchRequest(engineFetch, paths.request, secret));
+  // Every later call for this link (scope, Show values, Reject, the relay)
+  // uses the same session; a widen changes the secret, not the session.
+  const session = await pageTransport().open({ page: "reverts", id, secret });
+  const req = await checkRevertRequest(await fetchRequest(session, paths.request, secret));
   if (req.revertId !== id) throw new Error(`the engine sent revert ${req.revertId}, not ${id}`);
-  return { req, relay: { path: paths.relay, secret, id } };
+  return { req, relay: { path: paths.relay, secret, id, session } };
 }
 
 // finish relays the signed response when the page came from a short link,
@@ -221,7 +223,7 @@ async function loadRequest(hash) {
 async function finish(response, relay) {
   if (relay !== null) {
     try {
-      const result = await postResponse(engineFetch, relay.path, relay.secret, revertResponseJSON(response));
+      const result = await postResponse(relay.session, relay.path, relay.secret, revertResponseJSON(response));
       showDone(revertDone(result));
       settle(result?.batched ? "Signed" : "Reverted", "ok");
       return;
@@ -289,7 +291,7 @@ async function reject(state) {
   $("reject-cancel").disabled = true;
   $("reject-status").textContent = "";
   try {
-    await rejectRevert(engineFetch, relay.id, relay.secret, note);
+    await rejectRevert(relay.session, relay.id, relay.secret, note);
   } catch (err) {
     $("reject-send").disabled = false;
     $("reject-cancel").disabled = false;
@@ -432,7 +434,7 @@ function rescope(state, kind, key) {
     $("scope-status").textContent = "Keep at least one ticked; to stop the whole revert, use Reject.";
     return;
   }
-  return changeScope(state, () => narrow({ req: state.req, secret: state.relay.secret, fetchFn: engineFetch, select }));
+  return changeScope(state, () => narrow({ req: state.req, secret: state.relay.secret, session: state.relay.session, select }));
 }
 
 // includeOthers widens to every agent's changes in the task: the passkey
@@ -443,7 +445,7 @@ function includeOthers(state) {
       req: state.req,
       rpId: state.rp.rpId,
       secret: state.relay.secret,
-      fetchFn: engineFetch,
+      session: state.relay.session,
       getAssertion: (options) => navigator.credentials.get(options),
     }),
   );
@@ -491,7 +493,7 @@ async function showValues(state) {
       rpId: state.rp.rpId,
       path: revealPath("reverts", req.revertId),
       secret: relay.secret,
-      fetchFn: engineFetch,
+      session: relay.session,
       getAssertion: (options) => navigator.credentials.get(options),
     });
   } catch (err) {
@@ -530,6 +532,7 @@ async function main() {
   const state = { rp, req, relay, catalog: null, known: [], choices: null, busy: false, expired, shown: new Map(), revealDone: false, valuesHidden: false };
   render(state);
   $("main").hidden = false;
+  showEngine(relay?.session);
   setInterval(() => {
     showExpiry(state.req.binding.expiresAt);
   }, EXPIRY_TICK_MS);

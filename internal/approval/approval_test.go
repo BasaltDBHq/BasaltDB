@@ -304,10 +304,14 @@ func FuzzParseRequest(f *testing.F) {
 	})
 }
 
+// A fragment whose JSON inflates past the page's limit is refused. The
+// encoder refuses to build one (ErrRequestTooLarge), so the test deflates
+// the compact request itself, as a forged link would.
 func TestRequestRefusesInflationBomb(t *testing.T) {
 	t.Parallel()
-	big := approval.Request{ApprovalID: approvalID, Binding: strings.Repeat(" ", 2<<20), Lines: previewLines()}
-	frag, err := big.Fragment()
+	_, err := approval.Request{ApprovalID: approvalID, Binding: strings.Repeat(" ", 2<<20), Lines: previewLines()}.Fragment()
+	require.ErrorIs(t, err, linkcodec.ErrRequestTooLarge)
+	frag, err := linkcodec.Encode(linkcodec.Format2, linkcodec.Compact(append([]string{strings.Repeat(" ", 2<<20)}, previewLines()...)))
 	require.NoError(t, err)
 	_, _, err = approval.ParseRequest(frag)
 	require.ErrorContains(t, err, "inflates past")

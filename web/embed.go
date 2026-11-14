@@ -10,3 +10,11 @@ import "embed"
 //
 //go:embed approve/index.html revert/index.html register/index.html passkeys/index.html lib/*.js style.css fonts/*.woff2 fonts/OFL.txt
 var Files embed.FS
+
+// Manifest lists the SHA-256 of every file in Files ("sha256  path", sorted),
+// written by `make web-sri` (scripts/web-manifest.mjs). `basalt portal
+// verify` checks the embedded pages against it, and against a manifest the
+// person fetched from a release with --manifest. It is not itself served.
+//
+//go:embed portal.sha256
+var Manifest []byte

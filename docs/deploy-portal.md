@@ -70,6 +70,14 @@ curl -sI https://portal.basaltvault.app/lib/codec.js | grep -i content-type
 curl -s -o /dev/null -w '%{http_code}\n' https://portal.basaltvault.app/lib/codec.test.mjs
 ```
 
+Or let the binary check the files for you. `basalt portal verify` fetches every file embedded in the `basalt` binary (the four pages, `lib/*.js`, `style.css`, the fonts) from `https://portal.basaltvault.app`, compares their bytes, checks that each response carries the engine's `Content-Security-Policy` and that scripts are `text/javascript`, and flags a few paths the build never publishes (`embed.go`, the `*.test.mjs` files) if the host serves them. It prints one line per file (`OK`, `DIFFERS`, `MISSING`, `HEADER`, `UNEXPECTED`, `ERROR`) and exits `0` only when all is well; `--json` gives the same data. It needs no database and no engine, and it also checks the binary's pages against the release manifest `web/portal.sha256` (or one you pass with `--manifest`).
+
+```sh
+basalt portal verify
+```
+
+What it cannot catch: a portal that serves the right files to most people and different ones to one person (it sees only what it is served), a host that serves extra files under names it does not probe (a static host has no listing), and a compromised `basalt` download, since it trusts the pages inside the binary. After editing anything under `web/`, run `make web-sri`: it refreshes the integrity hashes in the pages and the manifest, and `make web-check` fails when they are stale.
+
 Expected: `200` on the first line, all six headers above, `content-type: text/javascript` on modules, and `404` for `codec.test.mjs`. Repeat for `/reverts/$ID` and `/passkeys/register`. Open `/passkeys/register` in a browser and confirm the console shows no CSP violations.
 
 ## Changing the portal

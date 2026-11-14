@@ -1,10 +1,13 @@
 package web_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 
@@ -84,4 +87,31 @@ func TestSigningPagesSayBiometricsStayOnTheDevice(t *testing.T) {
 		require.NoError(t, err)
 		require.Contains(t, string(body), line, page)
 	}
+}
+
+// web/portal.sha256 (embedded as web.Manifest, the release manifest that
+// `basalt portal verify` checks the binary's pages against) lists exactly
+// the embedded files with their SHA-256. Run make web-sri after editing web/.
+func TestManifestMatchesEmbed(t *testing.T) {
+	want := map[string]string{}
+	require.NoError(t, fs.WalkDir(web.Files, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		b, rerr := web.Files.ReadFile(p)
+		sum := sha256.Sum256(b)
+		want[p] = hex.EncodeToString(sum[:])
+		return rerr
+	}))
+	got := map[string]string{}
+	lines := strings.Split(strings.TrimSuffix(string(web.Manifest), "\n"), "\n")
+	order := make([]string, 0, len(lines))
+	for _, l := range lines {
+		h, p, ok := strings.Cut(l, "  ")
+		require.True(t, ok, l)
+		got[p] = h
+		order = append(order, p)
+	}
+	require.True(t, sort.StringsAreSorted(order), "manifest is sorted by path")
+	require.Equal(t, want, got, "web/portal.sha256 is out of date; run make web-sri")
 }

@@ -25,3 +25,15 @@ func Headers() func(http.Handler) http.Handler {
 		})
 	}
 }
+
+// Expected is the header set Headers sends, for a check that a page served
+// from somewhere else (the hosted portal) carries the same policy.
+func Expected() http.Header {
+	return http.Header{
+		"Content-Security-Policy":    {cspPolicy},
+		"X-Frame-Options":            {frameOptions},
+		"Referrer-Policy":            {referrerPolicy},
+		"X-Content-Type-Options":     {contentTypeOpt},
+		"Cross-Origin-Opener-Policy": {openerPolicy},
+	}
+}

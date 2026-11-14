@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/large-value.v1.json",
+  "title": "LargeValue",
+  "description": "A value, or a whole image, a ledger tool left out because it is too large for the agent to read (CONTRACT.md, Large values). The value itself is stored in full: a revert runs from the stored rows, and the person reads it with the CLI.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["in", "bytes", "sha256"],
+  "properties": {
+    "in": {
+      "type": "string",
+      "enum": ["KEY", "BEFORE", "AFTER", "NOW", "SET", "STATEMENT", "PARAMS"],
+      "description": "Where the value was: a row image (KEY, BEFORE, AFTER on a change; KEY, NOW, SET on a revert line), the statement, or the parameters."
+    },
+    "column": {
+      "type": "string",
+      "description": "The column left out of the image. Absent when the whole image (or the statement, or the whole parameter list) was left out."
+    },
+    "index": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "With in PARAMS: the 0-based index of a parameter over 1 MiB. The whole params array is then left out."
+    },
+    "bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "The size of the value's text in bytes: a JSON string's characters in UTF-8, any other value (and an image) its jsonb text, the statement its text."
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Lowercase hex SHA-256 of that same text, computed by Postgres."
+    }
+  }
+}

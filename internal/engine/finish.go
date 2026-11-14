@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"os"
 	"sync"
@@ -14,7 +13,6 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 )
@@ -44,6 +42,10 @@ func connectAgent(ctx context.Context, dsn string) (agentLogin, error) {
 // config entry, its credential file and the pool the engine serves it on.
 type setupFinisher struct {
 	configPath, agent, credFile string
+	// files reaches the credential files and the config: by path, or for
+	// an engine running as root through directories it opened without
+	// following a link (rootFiles). nil: by path.
+	files agentFiles
 	// login is who the engine's credential logs in as and where: a
 	// .pending credential is used only for the same.
 	login loginTarget
@@ -93,11 +95,11 @@ var errInvalidCredential = errors.New("the credential is not a valid Postgres UR
 // 0600, when it names the same database and role as the engine's own.
 func (f *setupFinisher) PendingRecorded(ctx context.Context, id uuid.UUID) (recorded, has bool, err error) {
 	path := f.credFile + pendingSuffix
-	if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
+	dsn, fi, err := f.fs().readPending()
+	switch {
+	case errNotExist(err):
 		return false, false, nil
-	}
-	dsn, fi, err := config.ReadOwnCredential(path)
-	if err != nil {
+	case err != nil:
 		return false, false, err
 	}
 	cc, err := pgdial.ConnConfig(dsn)
@@ -138,7 +140,7 @@ func (f *setupFinisher) PendingRecorded(ctx context.Context, id uuid.UUID) (reco
 func (f *setupFinisher) Finish(_ context.Context, id string, promote bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	unlock, err := config.LockFile(f.credFile + lockSuffix)
+	unlock, err := f.fs().lock()
 	if err != nil {
 		return err
 	}
@@ -148,12 +150,20 @@ func (f *setupFinisher) Finish(_ context.Context, id string, promote bool) error
 			return err
 		}
 	}
-	cleared, err := config.ClearSetup(f.configPath, f.agent, id)
+	cleared, err := f.fs().clearSetup(f.agent, id)
 	if err != nil {
 		return fmt.Errorf("clear the setup from %s: %w", f.configPath, err)
 	}
 	f.log.Info("the agent's setup is recorded; serving it", "setupId", id, "clearedFromConfig", cleared, "promotedCredential", promote)
 	return nil
+}
+
+// fs is the finisher's files: by path unless set.
+func (f *setupFinisher) fs() agentFiles {
+	if f.files != nil {
+		return f.files
+	}
+	return pathFiles{configPath: f.configPath, credFile: f.credFile}
 }
 
 // warnOtherDB logs, once per setup, that the .pending credential names
@@ -182,11 +192,7 @@ func (f *setupFinisher) promote(id string) error {
 	case p == nil || p.setupID != id:
 		return errors.New("no pending credential logged in for this setup")
 	}
-	path := f.credFile + pendingSuffix
-	if err := config.SameCredentialFile(path, p.file); err != nil {
-		return err
-	}
-	if err := os.Rename(path, f.credFile); err != nil {
+	if err := f.fs().promote(p.file); err != nil {
 		return err
 	}
 	f.pending, f.promoted = nil, id

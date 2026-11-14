@@ -54,13 +54,42 @@ Start the engine on this server while you wait. The engine runs as you here. Use
 basalt engine --config <path to engine.json>
 ```
 
-Keep it running in the background: use a supervisor, `tmux` or whatever this server uses (see below). Until the person finishes, the engine answers only `status`, and every other tool says `UNAVAILABLE` with reason `SETUP_PENDING`.
+Keep it running in the background: use a supervisor, `tmux` or whatever this server uses, or install it as a system service (see below). Until the person finishes, the engine answers only `status`, and every other tool says `UNAVAILABLE` with reason `SETUP_PENDING`.
 
-### Why not `basalt service install` here
+### Run it as a system service (Linux)
 
-Do not install the engine as a system service on a bot server yet. `sudo basalt service install` makes a service that runs as its own OS user (`basalt` on Linux), but `basalt init --remote` run as root writes `engine.json` and the agent's credential file owned by root, and the service cannot read them. It also leaves the engine key out of the setup code when it runs as root. `basalt init --remote` is meant to run as the user that runs the engine, and that user keeps the config and the sockets in its own config directory (step 2).
+To keep the engine up across reboots on a Linux server with systemd, install it as a service instead of starting it yourself. The service runs as its own OS user, `basalt`. Do these in order, as the same user each time (the one you work as), with `sudo`:
 
-To keep the engine up across reboots, run `basalt engine --config <path to engine.json>` as that same user under a supervisor you already have: a systemd user unit (`systemctl --user`, with `loginctl enable-linger`), a systemd system unit with `User=` set to that user, `tmux`, or whatever this server uses. For a container, only the `basalt engine --user basalt` start in "Containers without systemd" in [install.md](install.md) applies; make the setup code with `basalt init --remote` as step 2 says, not with the `basalt init` command shown there. A service for the bot path is planned.
+1. Install the service before making the setup code:
+
+   ```sh
+   sudo basalt service install
+   ```
+
+   This makes the `basalt` user, the config directory `/etc/basalt` (owned by `basalt`) and the `basalt-engine` unit, and starts it. Starting it makes the engine's state directory, where step 2 puts the engine's key. It has no config yet, so it stops after a few tries. That is expected.
+
+2. Make the setup code as step 2 says, with `sudo` and without `--config`:
+
+   ```sh
+   sudo basalt init --remote --operated-by=agent --vault=off \
+     --agent NAME --write schema.table,… --read schema.table,… \
+     --database-url 'postgresql://postgres.<ref>@<host>:6543/postgres'
+   ```
+
+   As root, init writes `/etc/basalt/engine.json` and `/etc/basalt/agents/NAME.url` owned by `basalt`, so the service can read them. It puts the engine's key in the setup code, and it records you (the user who ran `sudo`) as the person who may run `basalt status`, `log`, `approve` and `revert` here. Send the code to the person as step 3 says.
+
+3. Start the engine with its new config:
+
+   ```sh
+   sudo systemctl restart basalt-engine
+   basalt status --agent NAME
+   ```
+
+   `basalt status --agent NAME` needs no `sudo`. Point your MCP client at `basalt mcp --agent NAME`.
+
+Run `sudo basalt init --remote` again with the same flags when you need a new code, then restart the service as in step 3, so the engine reads the new config.
+
+Without systemd (a container, or a server where you cannot use `sudo`), skip this. Run `basalt engine --config <path to engine.json>` as the user who ran step 2, under a supervisor you already have: a systemd user unit (`systemctl --user`, with `loginctl enable-linger`), `tmux`, or whatever this server uses. For a container, only the `basalt engine --user basalt` start in "Containers without systemd" in [install.md](install.md) applies. Make the setup code with `basalt init --remote` as step 2 says, not with the `basalt init` command shown there.
 
 ## 5. Check the setup
 

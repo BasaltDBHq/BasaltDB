@@ -458,3 +458,33 @@ func parseP256PKCS8(raw json.RawMessage) (*ecdsa.PrivateKey, error) {
 	}
 	return ec, nil
 }
+
+// ParseKeyFile checks the content of a key file a caller read itself (a
+// root process reading the engine's key file through a directory it opened
+// without following a link) as LoadKeys checks the file's: the schema, the
+// engineId and the box key's signature. The caller checks the file's
+// owner, mode and size; path names the file in errors.
+func ParseKeyFile(path string, raw []byte) (*EngineKeys, error) {
+	if len(raw) > keyFileMax {
+		return nil, keyFileErr(path, "%d bytes is too large for a key file", len(raw))
+	}
+	return parseKeyFile(path, raw)
+}
+
+// NewKeyFile is the content of a new key file with fresh keys, for a root
+// process that writes it for the engine's user (CreateFile on a held
+// directory) rather than through LoadOrCreateKeys.
+func NewKeyFile(now func() time.Time) ([]byte, *EngineKeys, error) {
+	keys, err := GenerateEngineKeys(now)
+	if err != nil {
+		return nil, nil, err
+	}
+	raw, err := marshalKeyFile(keys)
+	if err != nil {
+		return nil, nil, err
+	}
+	return raw, keys, nil
+}
+
+// KeyFileMode is the mode of the key file.
+const KeyFileMode = keyFileMode

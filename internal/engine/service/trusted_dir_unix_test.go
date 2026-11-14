@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 // OpenTrustedDir refuses a symlinked directory, makes a missing one (and
@@ -99,4 +100,82 @@ func fileUID(t *testing.T, fi os.FileInfo) uint32 {
 	st, ok := fi.Sys().(*syscall.Stat_t)
 	require.True(t, ok)
 	return st.Uid
+}
+
+// Owner reads the directory's owner through its descriptor, and a symlink
+// OpenFile refuses wraps ELOOP, so a lock caller can tell it apart.
+func TestTrustedDirOwnerAndSymlinkError(t *testing.T) {
+	t.Parallel()
+	dir := realTempDir(t)
+	d, err := OpenTrustedDir(dir, os.Geteuid(), false)
+	require.NoError(t, err)
+	defer d.Close()
+	owner, err := d.Owner()
+	require.NoError(t, err)
+	require.Equal(t, os.Geteuid(), owner)
+
+	require.NoError(t, os.Symlink(filepath.Join(dir, "x"), filepath.Join(dir, "link")))
+	_, err = d.OpenFile("link", os.O_RDONLY, 0)
+	require.ErrorIs(t, err, unix.ELOOP)
+	require.ErrorContains(t, err, "is a symlink, which is refused")
+}
+
+// CreateFile writes a file whole under a new name only: an existing one is
+// kept (fs.ErrExist), a symlink at the name is not followed, and no
+// temporary file is left.
+func TestTrustedDirCreateFile(t *testing.T) {
+	t.Parallel()
+	dir := realTempDir(t)
+	d, err := OpenTrustedDir(dir, os.Geteuid(), false)
+	require.NoError(t, err)
+	defer d.Close()
+	require.NoError(t, d.CreateFile("key.json", []byte("one"), 0o600, -1))
+	err = d.CreateFile("key.json", []byte("two"), 0o600, -1)
+	require.ErrorIs(t, err, fs.ErrExist)
+	raw, err := os.ReadFile(filepath.Join(dir, "key.json"))
+	require.NoError(t, err)
+	require.Equal(t, "one", string(raw))
+	fi, err := os.Stat(filepath.Join(dir, "key.json"))
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), fi.Mode().Perm())
+
+	target := filepath.Join(realTempDir(t), "target")
+	require.NoError(t, os.Symlink(target, filepath.Join(dir, "link.json")))
+	require.ErrorIs(t, d.CreateFile("link.json", []byte("x"), 0o600, -1), fs.ErrExist)
+	require.NoFileExists(t, target)
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 2, "no temporary file left")
+}
+
+// As real root only: a directory OpenTrustedDir makes in a directory the
+// trusted owner owns is handed to that owner, and one made in a root-owned
+// directory stays root's; CreateFile gives the file to its owner.
+func TestTrustedDirHandsNewDirectoriesToTheOwnerAsRoot(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("needs root")
+	}
+	const nobody = 65534
+	dir := realTempDir(t)
+	cfg := filepath.Join(dir, "basalt")
+	require.NoError(t, os.Mkdir(cfg, 0o700))
+	require.NoError(t, os.Chown(cfg, nobody, -1))
+	d, err := OpenTrustedDir(filepath.Join(cfg, "agents"), nobody, true)
+	require.NoError(t, err)
+	defer d.Close()
+	owner, err := d.Owner()
+	require.NoError(t, err)
+	require.Equal(t, nobody, owner)
+	require.NoError(t, d.CreateFile("k", []byte("x"), 0o600, nobody))
+	fi, err := os.Stat(filepath.Join(cfg, "agents", "k"))
+	require.NoError(t, err)
+	require.Equal(t, uint32(nobody), fi.Sys().(*syscall.Stat_t).Uid)
+
+	r, err := OpenTrustedDir(filepath.Join(dir, "rootowned"), nobody, true)
+	require.NoError(t, err)
+	defer r.Close()
+	owner, err = r.Owner()
+	require.NoError(t, err)
+	require.Equal(t, 0, owner, "made in a root-owned directory: root's")
 }

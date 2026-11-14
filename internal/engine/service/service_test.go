@@ -110,6 +110,7 @@ func TestSystemdUnit(t *testing.T) {
 		"UMask=0077\n",
 		"NoNewPrivileges=yes\n",
 		"ProtectSystem=strict\n",
+		"ReadWritePaths=/etc/basalt\n",
 		"ProtectHome=yes\n",
 		"WantedBy=multi-user.target\n",
 	} {
@@ -119,6 +120,7 @@ func TestSystemdUnit(t *testing.T) {
 	spaced := linuxSpec()
 	spaced.ConfigPath = `/etc/my basalt/engine "x".json`
 	require.Contains(t, service.SystemdUnit(spaced), `ExecStart=/usr/local/bin/basalt engine --config "/etc/my basalt/engine \"x\".json"`)
+	require.Contains(t, service.SystemdUnit(spaced), "ReadWritePaths=\"/etc/my basalt\"\n")
 }
 
 func TestLaunchdDaemon(t *testing.T) {

@@ -48,7 +48,7 @@ func (c Config) PagesBase() (string, error) {
 
 // checkBase accepts the closed list of page origins (CONTRACT.md, Page
 // origins; CO-8): the portal, or a local http origin
-// (http://localhost:<port>, or a loopback IP), no path. Whether a local
+// (http://localhost:<port>, localhost exactly), no path. Whether a local
 // origin is allowed for this engine's operator is checkOrigins'.
 // CheckPagesURL is the check config load runs on pagesUrl, for the
 // --pages-url flag to run too; setting names it in the message.
@@ -69,8 +69,22 @@ func checkBase(setting, base string) (string, error) {
 	if err != nil || u.Scheme != "http" || !isLoopbackName(u.Hostname()) || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
 		return "", fmt.Errorf("%s %q: use %s or a local http://localhost:<port>", setting, base, links.Portal)
 	}
+	if u.Hostname() != localPagesHost {
+		// A passkey's origin, and so every page a link opens, is
+		// http://localhost:<port> (RP ID localhost): a page opened on a
+		// loopback IP, or another spelling, refuses to run. Refused, not
+		// rewritten, so the config says what the engine uses.
+		port := u.Port()
+		if port == "" {
+			port = "<port>"
+		}
+		return "", fmt.Errorf("%s %q: the local pages run only at localhost; use http://localhost:%s", setting, base, port)
+	}
 	return base, nil
 }
+
+// localPagesHost is the only host of a local pages base.
+const localPagesHost = "localhost"
 
 // Pages resolves pagesAddr against the pages' base URL. Default: on, at
 // 127.0.0.1 and the base's port, when the base is local; off for the
@@ -143,7 +157,8 @@ func (c Config) checkOrigins() error {
 	return nil
 }
 
-// isLoopbackName reports whether host names this machine in a URL.
+// isLoopbackName reports whether host names this machine in a URL; a
+// local pages base must then be localhost itself (checkBase).
 func isLoopbackName(host string) bool {
 	if strings.EqualFold(host, "localhost") {
 		return true

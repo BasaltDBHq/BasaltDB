@@ -48,7 +48,7 @@ func (c Config) PagesBase() (string, error) {
 
 // checkBase accepts the closed list of page origins (CONTRACT.md, Page
 // origins; CO-8): the portal, or a local http origin
-// (http://localhost:<port>, or a loopback IP), no path. Whether a local
+// (http://localhost:<port>, localhost exactly), no path. Whether a local
 // origin is allowed for this engine's operator is checkOrigins'.
 // CheckPagesURL is the check config load runs on pagesUrl, for the
 // --pages-url flag to run too; setting names it in the message.

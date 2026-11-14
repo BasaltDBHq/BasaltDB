@@ -6,8 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"syscall"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
@@ -31,6 +34,9 @@ type rootCredFiles struct {
 	dir *service.TrustedDir
 	// owner gets the files root writes; -1 when agents/ is root's.
 	owner int
+	// self is this process's uid: a file it does not own is checked with
+	// checkForeignCredential.
+	self int
 }
 
 // openRootCredFiles opens dir, the agents directory, as root, making it
@@ -51,7 +57,7 @@ func openRootCredFiles(dir string) (credFiles, error) {
 		_ = d.Close()
 		return nil, err
 	}
-	return rootCredFiles{dir: d, owner: credentialOwner(dirUID)}, nil
+	return rootCredFiles{dir: d, owner: credentialOwner(dirUID), self: os.Geteuid()}, nil
 }
 
 // credentialOwner is who gets the credential files root writes in a
@@ -66,7 +72,7 @@ func credentialOwner(dirUID int) int {
 // ownedBy accepts a credential file owned by this process's user or by the
 // directory's owner, the engine's user root hands them to.
 func (r rootCredFiles) ownedBy(uid uint32) (bool, string) {
-	if ok, _ := ownedByThisUser(uid); ok || (r.owner >= 0 && uint64(uid) == uint64(r.owner)) {
+	if (r.self >= 0 && uint64(uid) == uint64(r.self)) || (r.owner >= 0 && uint64(uid) == uint64(r.owner)) {
 		return true, ""
 	}
 	if r.owner < 0 {
@@ -139,7 +145,60 @@ func (r rootCredFiles) read(path string) (string, os.FileInfo, error) {
 		return "", nil, err
 	}
 	defer f.Close()
-	return readCredentialFrom(f, r.ownedBy)
+	dsn, fi, err := readCredentialFrom(f, r.ownedBy)
+	if err != nil {
+		return "", nil, err
+	}
+	if st, ok := fi.Sys().(*syscall.Stat_t); !ok || r.self < 0 || uint64(st.Uid) != uint64(r.self) {
+		if err := checkForeignCredential(dsn); err != nil {
+			return "", nil, fmt.Errorf("it belongs to the owner of %s, not root: %w", r.dir.Path(), err)
+		}
+	}
+	return dsn, fi, nil
+}
+
+// foreignCredentialKeys are the only parameters root takes from a
+// credential file it did not write. pgx reads files for the caller from
+// others (passfile, service, servicefile, sslkey, sslcert, sslrootcert,
+// sslcrl), so root, connecting with a string the engine's user wrote, would
+// read root-only files for that user, or block on a FIFO it names.
+var foreignCredentialKeys = map[string]bool{
+	"sslmode":                 true,
+	"sslnegotiation":          true,
+	"sslsni":                  true,
+	"channel_binding":         true,
+	"require_auth":            true,
+	"target_session_attrs":    true,
+	"connect_timeout":         true,
+	"application_name":        true,
+	"min_protocol_version":    true,
+	"max_protocol_version":    true,
+	"default_query_exec_mode": true,
+}
+
+// checkForeignCredential accepts, from a credential file root did not
+// write, only a postgres:// URL with a password (without one pgx falls
+// back to root's ~/.pgpass) and foreignCredentialKeys. It never echoes the
+// string, which holds a password.
+func checkForeignCredential(dsn string) error {
+	u, err := url.Parse(dsn)
+	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") {
+		return errors.New("as root, basalt init --remote takes only a postgres:// URL from it")
+	}
+	if pw, ok := u.User.Password(); !ok || pw == "" {
+		return errors.New("as root, basalt init --remote takes it only with a password in the URL")
+	}
+	keys := make([]string, 0, len(u.Query()))
+	for k := range u.Query() {
+		if !foreignCredentialKeys[k] {
+			keys = append(keys, k)
+		}
+	}
+	if len(keys) > 0 {
+		sort.Strings(keys)
+		return fmt.Errorf("as root, basalt init --remote does not take the parameter %s from it, since Postgres would read a file root can read for its owner; run basalt init --remote as that user (sudo -u <user>), or remove it", strings.Join(keys, ", "))
+	}
+	return nil
 }
 
 func (r rootCredFiles) stat(path string) (os.FileInfo, error) {

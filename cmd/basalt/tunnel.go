@@ -32,6 +32,14 @@ const tunnelProbeTimeout = 10 * time.Second
 // answer is two short fields.
 const maxProbeAnswer = 4 << 10
 
+// directHostRefusal is the whole body of the direct listener's refusal of a
+// Host it does not record. The local pages answer "host not allowed: <host>",
+// so a match on the whole body tells the two listeners apart.
+const directHostRefusal = "host not allowed"
+
+// cloudflareTunnelDown is Cloudflare's status for a tunnel that is not connected.
+const cloudflareTunnelDown = 530
+
 // probeAnswer is what GET <address>/v1/engine gave: the status, the body
 // (at most maxProbeAnswer bytes) and whether it was JSON.
 type probeAnswer struct {
@@ -91,7 +99,11 @@ func runTunnel(c *cliIO, args []string) int {
 	if public != "" {
 		host = strings.TrimPrefix(public, "https://")
 	}
-	fmt.Fprint(c.stdout, tunnelGuide(to, host, public == ""))
+	// DNS names have no port.
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	fmt.Fprint(c.stdout, tunnelGuide(to, host, public))
 	if public == "" {
 		return exitOK
 	}
@@ -153,7 +165,7 @@ func (c *cliIO) checkTunnel(public, wantID string) int {
 	}
 	fmt.Fprintf(c.stdout, "Engine fingerprint: %s\n\n", channel.FingerprintOf(id))
 	fmt.Fprintf(c.stdout, "Next, on your own computer:\n"+
-		"  1. Record the address: basalt init --setup-code <the agent's code> --engine-url %s\n"+
+		"  1. For each agent whose database does not record the address yet: basalt init --setup-code <the agent's code> --engine-url %s\n"+
 		"  2. On each device you approve from, pin it at %s/add and compare the fingerprint above.\n", public, pinPageURL)
 	return exitOK
 }
@@ -162,11 +174,12 @@ func (c *cliIO) checkTunnel(public, wantID string) int {
 // what is wrong in terms of the tunnel.
 func judgeProbe(public string, ans probeAnswer) (string, error) {
 	switch {
-	case ans.status == http.StatusBadRequest && strings.Contains(string(ans.body), "host not allowed"):
-		return "", fmt.Errorf("%s reaches the engine, but the engine does not know the address: record it first with "+
-			"basalt init --setup-code <the agent's code> --engine-url %s on your own computer, then run this again (the engine reads the record every 10 seconds)", public, public)
-	case ans.status == http.StatusBadGateway || ans.status == http.StatusServiceUnavailable || ans.status == http.StatusGatewayTimeout:
-		return "", fmt.Errorf("%s answers %d: the tunnel is up but cannot reach the engine's direct listener; check that the engine runs with directAddr and that the tunnel forwards to it", public, ans.status)
+	case ans.status == http.StatusBadRequest && strings.TrimSpace(string(ans.body)) == directHostRefusal:
+		return "", fmt.Errorf("%s reaches the engine's direct listener, but the engine does not know the Host it was given: record the address first with "+
+			"basalt init --setup-code <the agent's code> --engine-url %s on your own computer and run this again (the engine reads the records every 10 seconds); "+
+			"if you recorded it already, the tunnel does not pass the public Host on unchanged, or the recorded address has another port", public, public)
+	case ans.status == http.StatusBadGateway || ans.status == http.StatusServiceUnavailable || ans.status == http.StatusGatewayTimeout || ans.status == cloudflareTunnelDown:
+		return "", fmt.Errorf("%s answers %d: the tunnel is not connected to the engine's direct listener; check that the tunnel runs, that the engine runs with directAddr, and that the tunnel forwards to it", public, ans.status)
 	case ans.status != http.StatusOK:
 		return "", fmt.Errorf("%s answers %d to /v1/engine: that is not the engine's direct listener (the tunnel may forward to the local pages instead of directAddr)", public, ans.status)
 	case !ans.json:
@@ -189,18 +202,17 @@ func judgeProbe(public string, ans probeAnswer) (string, error) {
 // tunnelGuide is the three ways to publish to, in the order the contract
 // names them. Each must pass the public Host on unchanged: the engine
 // answers only on the address the database records.
-func tunnelGuide(to, host string, placeholder bool) string {
+func tunnelGuide(to, host, public string) string {
 	var b strings.Builder
-	_, port, _ := net.SplitHostPort(to)
 	fmt.Fprintf(&b, "Publish the engine's direct listener, %s, at an https address of your own. Pick one.\n", to)
 	b.WriteString("The tunnel must pass the public Host unchanged and upgrade WebSockets; all three do by default.\n\n")
 	b.WriteString("Cloudflare Tunnel (a domain on Cloudflare):\n")
-	fmt.Fprintf(&b, "  cloudflared tunnel create basalt-engine\n  cloudflared tunnel route dns basalt-engine %s\n  cloudflared tunnel run --url http://%s basalt-engine\n\n", host, to)
-	b.WriteString("Tailscale Funnel (an address like <machine>.<tailnet>.ts.net, with Funnel enabled for it):\n")
-	fmt.Fprintf(&b, "  tailscale funnel --bg %s\n  tailscale funnel status    # shows the address\n\n", port)
+	fmt.Fprintf(&b, "  cloudflared tunnel login    # once\n  cloudflared tunnel create basalt-engine\n  cloudflared tunnel route dns basalt-engine %s\n  cloudflared tunnel run --url http://%s basalt-engine\n\n", host, to)
+	b.WriteString("Tailscale Funnel (an address like <machine>.<tailnet>.ts.net, with Funnel enabled for it; Funnel serves on 443, 8443 and 10000):\n")
+	fmt.Fprintf(&b, "  tailscale funnel --bg http://%s\n  tailscale funnel status    # shows the address\n\n", to)
 	b.WriteString("Caddy (a server with a public name pointing at it; Caddy gets the certificate):\n")
 	fmt.Fprintf(&b, "  %s {\n      reverse_proxy %s\n  }\n\n", host, to)
-	if placeholder {
+	if public == "" {
 		fmt.Fprintf(&b, "Then run basalt tunnel --address https://%s with your own address to check it.\n", host)
 	}
 	return b.String()

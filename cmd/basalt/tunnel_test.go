@@ -76,7 +76,8 @@ func TestTunnelPrintsTheCommands(t *testing.T) {
 		"127.0.0.1:9100",
 		"cloudflared tunnel run --url http://127.0.0.1:9100 basalt-engine",
 		"cloudflared tunnel route dns basalt-engine engine.example.com",
-		"tailscale funnel --bg 9100",
+		"tailscale funnel --bg http://127.0.0.1:9100",
+		"cloudflared tunnel login",
 		"engine.example.com {\n      reverse_proxy 127.0.0.1:9100\n  }",
 		"pass the public Host unchanged",
 	} {
@@ -169,8 +170,11 @@ func TestTunnelRefusesWhatItCannotTrust(t *testing.T) {
 		"unreachable":           {err: errors.New("dial tcp: no such host"), want: "does not answer"},
 		"another engine's key":  {answer: probeAnswer{status: 200, json: true, body: otherBody}, want: "another engine's key"},
 		"id is not the hash":    {answer: probeAnswer{status: 200, json: true, body: forgedBody}, want: "not the hash of its key"},
-		"host not recorded":     {answer: probeAnswer{status: 400, body: []byte("host not allowed\n")}, want: "record it first"},
-		"tunnel cannot connect": {answer: probeAnswer{status: 502}, want: "cannot reach the engine's direct listener"},
+		"host not recorded":     {answer: probeAnswer{status: 400, body: []byte("host not allowed\n")}, want: "record the address first"},
+		"Host rewritten":        {answer: probeAnswer{status: 400, body: []byte("host not allowed\n")}, want: "does not pass the public Host on unchanged"},
+		"local pages listener":  {answer: probeAnswer{status: 400, body: []byte("host not allowed: engine.example.com\n")}, want: "not the engine's direct listener"},
+		"tunnel not connected":  {answer: probeAnswer{status: 530}, want: "not connected"},
+		"tunnel cannot connect": {answer: probeAnswer{status: 502}, want: "not connected to the engine's direct listener"},
 		"wrong service":         {answer: probeAnswer{status: 404}, want: "not the engine's direct listener"},
 		"not JSON":              {answer: probeAnswer{status: 200, body: []byte("<html>")}, want: "not JSON"},
 		"JSON of another shape": {answer: probeAnswer{status: 200, json: true, body: []byte("[1]")}, want: "cannot read"},
@@ -198,4 +202,13 @@ func TestTunnelWithoutTheLocalKey(t *testing.T) {
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Contains(t, r.stdout, "this machine's key file was not read")
 	require.Contains(t, r.stdout, channel.FingerprintOf(other.EngineID()))
+}
+
+func TestTunnelStripsThePortFromTheDNSName(t *testing.T) {
+	t.Parallel()
+	e := newTunnelEnv(t, "[::1]:9100")
+	r := e.run(t, func(string) (probeAnswer, error) { return e.answer(t), nil }, "--address", "https://engine.example.com:8443")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Contains(t, r.stdout, "route dns basalt-engine engine.example.com\n")
+	require.Contains(t, r.stdout, "tailscale funnel --bg http://[::1]:9100")
 }

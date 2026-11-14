@@ -85,7 +85,14 @@ func (r *rootFiles) promote(pending os.FileInfo) error {
 func (r *rootFiles) lock() (func(), error) { return config.LockAt(r.agentsDir, r.name+lockSuffix) }
 
 func (r *rootFiles) clearSetup(agent, id string) (bool, error) {
-	return config.ClearSetupAt(r.configDir, r.configName, func(f *os.File) error { return config.CheckTrustedConfig(f, r.trusted) }, agent, id)
+	owner, err := r.configDir.Owner()
+	if err != nil {
+		return false, err
+	}
+	if owner <= 0 {
+		owner = -1 // root's directory: the file stays root's
+	}
+	return config.ClearSetupAt(r.configDir, r.configName, func(f *os.File) error { return config.CheckTrustedConfig(f, r.trusted) }, owner, agent, id)
 }
 
 func (r *rootFiles) close() {

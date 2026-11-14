@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -92,11 +95,30 @@ func remoteAsUser(t *testing.T, h *fakeHost, cfg string, args ...string) remoteR
 	return remoteWith(t, run, cfg, args...)
 }
 
-// As root, init cannot make a key file the engine's user owns: the code
-// carries no engine key, and init says how to get one.
-func TestInitRemoteAsRootCarriesNoEngineKey(t *testing.T) {
+// As root, init reads or makes the engine's key file through the state
+// directory it opened (the engine's user owns both in service mode): the
+// code carries the engine key, the file is the state directory owner's,
+// and a second run carries the same key.
+func TestInitRemoteAsRootCarriesTheEngineKey(t *testing.T) {
 	t.Parallel()
-	install := remote(t, tempConfig(t), "--agent", "bot", "--write", "public.leads", "--database-url", "postgres://u@db.example.com:5432/app")
-	require.Nil(t, install.payload.Engine)
-	require.Contains(t, install.stderr, "the code carries no engine key: run basalt init --remote as")
+	cfg := tempConfig(t)
+	args := []string{"--agent", "bot", "--write", "public.leads", "--database-url", "postgres://u@db.example.com:5432/app"}
+	install := remote(t, cfg, args...)
+	require.NotNil(t, install.payload.Engine, install.stderr)
+	require.NotContains(t, install.stderr, "carries no engine key")
+	keyFile := filepath.Join(install.cfg.StateDirFor(runtime.GOOS), channel.KeyFileName)
+	keys, err := channel.LoadKeys(keyFile)
+	require.NoError(t, err, "the engine loads the key file root made")
+	require.Equal(t, base64.RawURLEncoding.EncodeToString(keys.PublicKeySPKI()), install.payload.Engine.PublicKey)
+
+	again := remote(t, cfg, append(args, "--new-code")...)
+	require.Equal(t, install.payload.Engine, again.payload.Engine)
+
+	// A key file the engine's user replaced with a symlink is refused, and
+	// the code carries no key.
+	require.NoError(t, os.Rename(keyFile, keyFile+".moved"))
+	require.NoError(t, os.Symlink(keyFile+".moved", keyFile))
+	refused := remote(t, cfg, append(args, "--new-code")...)
+	require.Nil(t, refused.payload.Engine)
+	require.Contains(t, refused.stderr, "is a symlink, which is refused")
 }

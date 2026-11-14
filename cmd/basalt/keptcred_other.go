@@ -5,6 +5,7 @@ package main
 import (
 	"errors"
 	"os"
+	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 )
@@ -54,3 +55,6 @@ func (*rootConfigDir) upsert(string, config.Settings, config.Agent) (config.Vaul
 }
 
 func (*rootConfigDir) close() {}
+
+// rootEngineKey: see errRemoteUnsupported.
+func rootEngineKey(string, func() time.Time) ([]byte, error) { return nil, errRemoteUnsupported }

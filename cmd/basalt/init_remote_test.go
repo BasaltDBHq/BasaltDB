@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -65,13 +66,19 @@ func cliNoDB(t *testing.T, args ...string) result {
 // cliNoDBProbe is cliNoDB with probe answering the TLS probes.
 func cliNoDBProbe(t *testing.T, probe func(context.Context, string) error, args ...string) result {
 	t.Helper()
+	return cliNoDBEnv(t, probe, nil, args...)
+}
+
+// cliNoDBEnv is cliNoDBProbe with env added to the environment.
+func cliNoDBEnv(t *testing.T, probe func(context.Context, string) error, env map[string]string, args ...string) result {
+	t.Helper()
 	var stdout, stderr bytes.Buffer
 	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr},
 		func(k string) string {
 			if k == envAdminURL {
 				return "postgres://admin:adminsecret@db.example.com/postgres"
 			}
-			return ""
+			return env[k]
 		})
 	c.agentLogin = refusedLogin
 	c.probe = probe
@@ -752,4 +759,40 @@ func systemSocketHost(t *testing.T) *fakeHost {
 	h := newFakeHost(t)
 	h.euid = 0
 	return h
+}
+
+// As root (sudo), init --remote records the user who ran sudo as a person
+// the engine's person socket admits, so basalt status --agent works there
+// against a service engine; without SUDO_UID, or SUDO_UID 0, it records
+// none.
+func TestInitRemoteAsRootRecordsTheSudoUser(t *testing.T) {
+	t.Parallel()
+	cfg := tempConfig(t)
+	args := []string{"--agent", "bot", "--write", "public.leads", "--database-url", "postgres://u@db.example.com:5432/app"}
+	run := func(env map[string]string) func(*testing.T, ...string) result {
+		return func(t *testing.T, a ...string) result { t.Helper(); return cliNoDBEnv(t, noNetworkProbe, env, a...) }
+	}
+	r := remoteWith(t, run(map[string]string{envSudoUID: "1234"}), cfg, args...)
+	require.Equal(t, []uint32{1234}, r.cfg.PersonUIDs)
+	require.True(t, r.cfg.Service(), "a config directory another user owns (the engine's) is a service config")
+	r = remoteWith(t, run(map[string]string{envSudoUID: "1235"}), cfg, append(args, "--new-code")...)
+	require.Equal(t, []uint32{1234, 1235}, r.cfg.PersonUIDs, "a rerun keeps the recorded ones")
+
+	other := tempConfig(t)
+	r = remoteWith(t, run(map[string]string{envSudoUID: "0"}), other, args...)
+	require.Empty(t, r.cfg.PersonUIDs, "never root")
+	r = remoteWith(t, run(nil), other, append(args, "--new-code")...)
+	require.Empty(t, r.cfg.PersonUIDs)
+}
+
+// As root, a config directory the user who ran sudo owns is that user's own
+// engine (same-user mode), not a service one.
+func TestInitRemoteAsRootInTheSudoUsersDirectoryIsNoService(t *testing.T) {
+	t.Parallel()
+	me := strconv.Itoa(os.Geteuid())
+	r := remoteWith(t, func(t *testing.T, a ...string) result {
+		t.Helper()
+		return cliNoDBEnv(t, noNetworkProbe, map[string]string{envSudoUID: me}, a...)
+	}, tempConfig(t), "--agent", "bot", "--write", "public.leads", "--database-url", "postgres://u@db.example.com:5432/app")
+	require.False(t, r.cfg.Service())
 }

@@ -211,8 +211,16 @@ type probe struct {
 }
 
 func (d *directHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Both routes are a GET with no body. A body is refused before anything
+	// else, with the connection closed: net/http would otherwise wait,
+	// without a deadline, to drain a body that never comes, holding a slot
+	// of the connection cap.
+	if r.ContentLength != 0 || len(r.TransferEncoding) > 0 {
+		refuse(w, "no request body here", http.StatusBadRequest)
+		return
+	}
 	if !d.records.hostAllowed(r.Context(), r.Host) {
-		http.Error(w, "host not allowed", http.StatusBadRequest)
+		refuse(w, "host not allowed", http.StatusBadRequest)
 		return
 	}
 	switch {
@@ -221,8 +229,19 @@ func (d *directHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodGet && r.URL.Path == "/v1/session":
 		d.session(w, r)
 	default:
+		_ = http.NewResponseController(w).SetReadDeadline(time.Now())
+		w.Header().Set("Connection", "close")
 		w.WriteHeader(http.StatusNotFound)
 	}
+}
+
+// refuse answers a refusal and closes the connection after it. The read
+// deadline is set to now first, so net/http does not wait to drain a
+// request body the client never sends.
+func refuse(w http.ResponseWriter, msg string, status int) {
+	_ = http.NewResponseController(w).SetReadDeadline(time.Now())
+	w.Header().Set("Connection", "close")
+	http.Error(w, msg, status)
 }
 
 func (d *directHandler) probe(w http.ResponseWriter, r *http.Request) {
@@ -232,7 +251,7 @@ func (d *directHandler) probe(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", links.Portal)
 		w.Header().Set("Vary", "Origin")
 	default:
-		http.Error(w, "origin not allowed", http.StatusForbidden)
+		refuse(w, "origin not allowed", http.StatusForbidden)
 		return
 	}
 	body, err := json.Marshal(probe{EngineKey: base64.RawURLEncoding.EncodeToString(d.key), EngineID: channel.EngineIDOf(d.key)})
@@ -247,21 +266,21 @@ func (d *directHandler) probe(w http.ResponseWriter, r *http.Request) {
 
 func (d *directHandler) session(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Origin") != links.Portal {
-		http.Error(w, "origin not allowed", http.StatusForbidden)
+		refuse(w, "origin not allowed", http.StatusForbidden)
 		return
 	}
 	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
-		http.Error(w, "a WebSocket upgrade only", http.StatusBadRequest)
+		refuse(w, "a WebSocket upgrade only", http.StatusBadRequest)
 		return
 	}
 	if !d.allowUpgrade() {
-		http.Error(w, "too many sessions; try later", http.StatusServiceUnavailable)
+		refuse(w, "too many sessions; try later", http.StatusServiceUnavailable)
 		return
 	}
 	select {
 	case d.pending <- struct{}{}:
 	default:
-		http.Error(w, "too many sessions; try later", http.StatusServiceUnavailable)
+		refuse(w, "too many sessions; try later", http.StatusServiceUnavailable)
 		return
 	}
 	var once sync.Once

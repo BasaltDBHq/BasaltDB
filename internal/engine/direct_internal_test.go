@@ -260,3 +260,29 @@ func TestDirectHostMissesReadOnce(t *testing.T) {
 	require.Equal(t, int32(1), q.n.Load())
 	require.True(t, r.hostAllowed(context.Background(), "engine.example.com"), "a failed read keeps the agent's address")
 }
+
+// A request that announces a body that never comes is refused at once and
+// its connection closed: it cannot hold a slot of the connection cap.
+func TestDirectRefusesARequestBody(t *testing.T) {
+	t.Parallel()
+	f := newDirectFixture(t)
+	for _, head := range []string{
+		"POST /v1/engine HTTP/1.1\r\nHost: anything\r\nContent-Length: 1000\r\n\r\n",
+		"GET /v1/engine HTTP/1.1\r\nHost: anything\r\nTransfer-Encoding: chunked\r\n\r\n",
+	} {
+		conn, err := net.Dial("tcp", strings.TrimPrefix(f.srv.URL, "http://"))
+		require.NoError(t, err)
+		require.NoError(t, conn.SetDeadline(time.Now().Add(3*time.Second)))
+		_, err = conn.Write([]byte(head))
+		require.NoError(t, err)
+		r := bufio.NewReader(conn)
+		resp, err := http.ReadResponse(r, nil)
+		require.NoError(t, err, head)
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+		_, err = r.ReadByte()
+		require.ErrorIs(t, err, io.EOF, "the connection is closed")
+		_ = conn.Close()
+	}
+}

@@ -195,3 +195,96 @@ func TestQueryDoesNotDependOnTheSessionStyle(t *testing.T) {
 	require.Equal(t, "2026-11-10T07:02:11.5Z", res.Rows[0]["at"])
 	require.Equal(t, "01:30:00", res.Rows[0]["took"])
 }
+
+// A write that skips the engine (the agent's credential used directly, as
+// in psql) from a session in Asia/Jakarta, in other date and interval
+// styles and with extra_float_digits 0, stores the same row images as the
+// same write through the engine, and reverts from the engine without a
+// false conflict. The guard's trigger sets the session settings only while
+// it runs: the agent's own SQL after the write still sees its own.
+func TestAWriteThatSkipsTheEngineStoresTheEngineImages(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	d := guardtest.New(t)
+	d.Exec(t, `CREATE TABLE public.readings (
+		id bigint PRIMARY KEY, at timestamptz NOT NULL, took interval NOT NULL,
+		ratio float8 NOT NULL, price money NOT NULL, note text NOT NULL);
+		INSERT INTO public.readings SELECT g, timestamptz '2026-11-10 06:02:11.5+00', interval '90 minutes',
+			0.1::float8 + 0.2::float8, 1234.5, 'note' FROM generate_series(1, 4) g`)
+	tables := []string{"public.readings"}
+	a := d.NewAgent(t, "bot", tables, tables)
+	signer, err := passkeytest.New(passkey.Production)
+	require.NoError(t, err)
+	require.NoError(t, guard.RegisterPasskey(ctx, d.Admin, signer.Credential(), "app"))
+
+	u, err := url.Parse(zoned(t, a.URL, "Asia/Jakarta"))
+	require.NoError(t, err)
+	q := u.Query()
+	q.Set("extra_float_digits", "0")
+	u.RawQuery = q.Encode()
+	direct, err := pgdial.Connect(ctx, u.String())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = direct.Close(context.Background()) })
+
+	in := guard.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Tag readings by hand"}
+	require.NoError(t, guard.StartRun(ctx, direct, in))
+	require.NoError(t, pgx.BeginFunc(ctx, direct, func(tx pgx.Tx) error {
+		require.NoError(t, guard.BeginGuarded(ctx, tx, in, guardtest.Timeout))
+		if _, err := tx.Exec(ctx, `UPDATE public.readings SET note = 'tagged' WHERE id IN (1, 2)`); err != nil {
+			return err
+		}
+		if _, err := guard.FinishChange(ctx, tx, guard.Finish{Op: "UPDATE", Statement: "UPDATE"}); err != nil {
+			return err
+		}
+		// The trigger ran; the agent's session settings are its own again.
+		var zone, digits, at, ratio string
+		require.NoError(t, tx.QueryRow(ctx, `SELECT current_setting('TimeZone'), current_setting('extra_float_digits'),
+			at::text, ratio::text FROM public.readings WHERE id = 1`).Scan(&zone, &digits, &at, &ratio))
+		require.Equal(t, "Asia/Jakarta", zone)
+		require.Equal(t, "0", digits)
+		require.Equal(t, "10/11/2026 13:02:11.5 WIB", at)
+		require.Equal(t, "0.3", ratio)
+		return nil
+	}))
+
+	engine := agentdb.NewStore(zonedPool(t, a.URL, "UTC"), sqlguard.DefaultLimits(), time.Now)
+	viaEngine := write(t, engine, `UPDATE public.readings SET note = 'tagged' WHERE id IN (3, 4)`)
+
+	// The images, without the key, are the same either way.
+	direct2 := images(t, d, in.RunID)
+	require.Len(t, direct2, 2)
+	require.Equal(t, images(t, d, viaEngine), direct2)
+	all := strings.Join(direct2, "\n")
+	require.Contains(t, all, `"at": "2026-11-10T06:02:11.5+00:00"`)
+	require.Contains(t, all, `"took": "01:30:00"`)
+	require.Contains(t, all, `"ratio": 0.30000000000000004`)
+
+	// The engine reverts the direct write without a false conflict.
+	scope := guard.RevertScope{Kind: revert.ScopeRun, ID: in.RunID}
+	lines, err := engine.PreviewRevert(ctx, scope)
+	require.NoError(t, err)
+	requireNoSkip(t, lines)
+	prep, err := engine.PrepareRevert(ctx, scope, "Undo", time.Minute)
+	require.NoError(t, err)
+	requireNoSkip(t, prep.Lines)
+	as, err := signer.Sign(revert.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
+	require.NoError(t, err)
+	applied, err := person.NewDBLedger(zonedConn(t, a.URL, "UTC"), time.Now).ApplyRevert(ctx, prep.RevertID, as)
+	require.NoError(t, err)
+	require.Equal(t, 2, applied.Rows)
+	require.Zero(t, applied.Skipped)
+}
+
+// images is the old and new row images, without id, the guard stored for
+// run's row changes, in ledger order.
+func images(t *testing.T, d *guardtest.DB, run uuid.UUID) []string {
+	t.Helper()
+	// Plain SQL: a fixture read of the ledger as the admin.
+	rows, err := d.Admin.Query(context.Background(), `SELECT (l.old_row - 'id')::text || ' -> ' || (l.new_row - 'id')::text
+		FROM basalt_meta.ledger l JOIN basalt_meta.changes c ON c.change_id = l.change_id
+		WHERE c.run_id = $1 AND l.kind = 'ROW_CHANGE' ORDER BY l.seq`, run)
+	require.NoError(t, err)
+	out, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	require.NoError(t, err)
+	return out
+}

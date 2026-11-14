@@ -23,21 +23,26 @@ import (
 func TestChooseLink(t *testing.T) {
 	t.Parallel()
 	const short, long = "http://localhost:8787/approvals/1#s=abc", "http://localhost:8787/approvals/1#2.abcdef"
+	hash, file, err := links.HashLink(long, "f.txt")
+	require.NoError(t, err)
 	for _, tc := range []struct {
 		name        string
 		short, long string
 		budget      int
 		want        handOver
 	}{
-		{"a short link comes first", short, long, 1800, handOver{short, linkShort}},
-		{"a short link is never measured", short, long, 1, handOver{short, linkShort}},
-		{"a long link within the budget", "", long, 1800, handOver{long, linkLong}},
-		{"a long link at the budget", "", long, len(long), handOver{long, linkLong}},
-		{"a long link one over the budget", "", long, len(long) - 1, handOver{long, linkOverBudget}},
-		{"the interim hand-over of an over-budget link (VC-28)", "", long, 1, handOver{long, linkOverBudget}},
+		{"a short link comes first", short, long, 1800, handOver{URL: short, Kind: linkShort}},
+		{"a short link is never measured", short, long, 1, handOver{URL: short, Kind: linkShort}},
+		{"a long link within the budget", "", long, 1800, handOver{URL: long, Kind: linkLong}},
+		{"a long link at the budget", "", long, len(long), handOver{URL: long, Kind: linkLong}},
+		{"a long link one over the budget becomes the hash link", "", long, len(long) - 1, handOver{URL: hash, Kind: linkHash, File: &file}},
+		{"far over the budget", "", long, 1, handOver{URL: hash, Kind: linkHash, File: &file}},
 	} {
-		require.Equal(t, tc.want, chooseLink(tc.short, tc.long, tc.budget), tc.name)
+		got, err := chooseLink(tc.short, tc.long, tc.budget, "f.txt")
+		require.NoError(t, err, tc.name)
+		require.Equal(t, tc.want, got, tc.name)
 	}
+	require.Equal(t, "http://localhost:8787/approvals/1#h="+links.RequestHash("2.abcdef"), hash)
 }
 
 // bigLines are n distinct approval preview lines that do not compress, so a
@@ -103,18 +108,32 @@ func TestApprovalNoticeHandsOverALongLinkWithinTheBudget(t *testing.T) {
 	require.NotContains(t, n.PersonMessage, "may arrive", "no warning within the budget")
 }
 
-func TestApprovalNoticeWarnsBeforeAnOverBudgetLongLink(t *testing.T) {
+func TestApprovalNoticeHandsOverTheHashLinkOverTheBudget(t *testing.T) {
 	t.Parallel()
 	n := approvalNoticeOf(t, noticeService("", links.DefaultBudget), 60, issueLink)
 
 	require.Greater(t, len(n.longURL), links.DefaultBudget, "the fixture must be over budget")
-	require.Equal(t, n.longURL, n.ApprovalURL, "VC-28: the over-budget long link is still handed over")
-	lines := strings.Split(n.PersonMessage, "\n")
-	require.Contains(t, lines[0], "long and may arrive cut or broken", "the warning comes first")
-	require.Contains(t, lines[1], n.ApproveCommand, "then the command")
-	require.True(t, strings.HasSuffix(n.PersonMessage, "\n\n"+n.longURL+"\n\n"+lines[len(lines)-1]) ||
-		strings.HasSuffix(n.PersonMessage, "\n\n"+n.longURL), "then the link")
-	require.Equal(t, []mcp.Link{{Label: "Approve the held write", URL: n.longURL}}, n.Links)
+	hash, file, err := links.HashLink(n.longURL, links.ApprovalFile(uuid.MustParse(caseApproval)))
+	require.NoError(t, err)
+	require.Equal(t, hash, n.ApprovalURL, "the hash link stands in for the long link")
+	require.Less(t, len(n.ApprovalURL), 120, "about 110 characters")
+	require.Regexp(t, `/approvals/`+caseApproval+`#h=[A-Za-z0-9_-]{22}$`, n.ApprovalURL)
+	require.Equal(t, &file, n.RequestFile)
+	require.Equal(t, n.longURL[strings.Index(n.longURL, "#")+1:], n.RequestFile.Text, "the file carries the long link's request")
+	require.NotEmpty(t, n.RequestFile.Blocks)
+	require.NotContains(t, n.PersonMessage, "#2.", "no result hands over a long link over the budget")
+	require.Contains(t, n.PersonMessage, "open the request file the agent sends you (or paste its text blocks)")
+	require.Contains(t, n.PersonMessage, "\n\n"+n.ApprovalURL+"\n\n")
+	require.Contains(t, n.PersonMessage, "Or run: "+n.ApproveCommand)
+	require.Equal(t, []mcp.Link{{Label: "Approve the held write", URL: n.ApprovalURL}}, n.Links)
+}
+
+func TestApprovalNoticeWithinTheBudgetCarriesNoRequestFile(t *testing.T) {
+	t.Parallel()
+	require.Nil(t, approvalNoticeOf(t, noticeService("", links.DefaultBudget), 3, issueLink).RequestFile)
+	require.Nil(t, approvalNoticeOf(t, noticeService(localPages, 1), 60, issueLink).RequestFile, "a short link")
+	require.Nil(t, approvalNoticeOf(t, noticeService(localPages, links.DefaultBudget), 60, keepLink).RequestFile,
+		"a restated link while the pages are served")
 }
 
 func TestApprovalNoticeWithoutANewLinkAddsNoURL(t *testing.T) {
@@ -183,25 +202,44 @@ func TestRevertNoticeFollowsTheHandOverOrder(t *testing.T) {
 	require.Contains(t, short.URL, "#s=", "a short link is never measured")
 	require.Equal(t, []mcp.Link{{Label: "Review and sign the revert", URL: short.URL}}, short.Links)
 	require.Contains(t, short.Message, "\n\n"+short.URL)
-	require.NotContains(t, short.Message, "may arrive")
+	require.Nil(t, short.File)
 	requirePersonMessage(t, short.Message, short.Links)
 
 	within, err := noticeService("", links.DefaultBudget).revertNotice(ctx, small)
 	require.NoError(t, err)
 	require.Contains(t, within.URL, "#2.")
 	require.LessOrEqual(t, len(within.URL), links.DefaultBudget)
-	require.NotContains(t, within.Message, "may arrive")
+	require.Nil(t, within.File)
 	require.Equal(t, []mcp.Link{{Label: "Review and sign the revert", URL: within.URL}}, within.Links)
 	requirePersonMessage(t, within.Message, within.Links)
 
 	over, err := noticeService("", links.DefaultBudget).revertNotice(ctx, big)
 	require.NoError(t, err)
-	require.Greater(t, len(over.URL), links.DefaultBudget, "the fixture must be over budget")
-	require.Contains(t, strings.Split(over.Message, "\n")[0], "long and may arrive cut or broken", "the warning comes first")
-	require.Contains(t, over.Message, "\n\n"+over.URL, "VC-28: the over-budget long link is still handed over, in revertUrl and in the message")
-	require.NotContains(t, over.Message, "basalt revert", "a revert gets only the warning (VC-28)")
+	require.Greater(t, len(over.long), links.DefaultBudget, "the fixture must be over budget")
+	require.Regexp(t, `/reverts/`+caseRevertID+`#h=[A-Za-z0-9_-]{22}$`, over.URL)
+	require.NotNil(t, over.File)
+	require.Equal(t, links.RevertFile(uuid.MustParse(caseRevertID)), over.File.FileName)
+	require.Equal(t, links.RequestHash(over.File.Text), over.URL[strings.Index(over.URL, "#h=")+3:])
+	require.Contains(t, over.Message, "Sign it with your passkey: open this link, then open the request file the agent sends you")
+	require.Contains(t, over.Message, "\n\n"+over.URL)
+	require.NotContains(t, over.Message, "#2.")
 	require.Equal(t, []mcp.Link{{Label: "Review and sign the revert", URL: over.URL}}, over.Links)
 	requirePersonMessage(t, over.Message, over.Links)
+}
+
+// TestRevertNoticeNamesOnlyTheFileWithoutBlocks: a request too long for ten
+// blocks goes as a file only, and the message says so.
+func TestRevertNoticeNamesOnlyTheFileWithoutBlocks(t *testing.T) {
+	t.Parallel()
+	huge := revertOf(t, "Undo the bad merge", revertLines(200), false)
+	n, err := noticeService("", links.DefaultBudget).revertNotice(context.Background(), huge)
+	require.NoError(t, err)
+	require.NotNil(t, n.File)
+	require.Greater(t, len(n.File.Text), links.RequestPieceChars*links.RequestMaxBlocks, "the fixture must need more than ten blocks")
+	require.Nil(t, n.File.Blocks)
+	require.Contains(t, n.Message, "open the request file the agent sends you. The page")
+	require.NotContains(t, n.Message, "text blocks")
+	requirePersonMessage(t, n.Message, n.Links)
 }
 
 func TestRevertNoticeStaysWithin500CharactersWhateverIsLong(t *testing.T) {
@@ -231,7 +269,7 @@ func TestApprovalMessageStaysWithinTheLimitWithALongConfigPath(t *testing.T) {
 	lead := "Held for your approval: " + strings.Repeat("Delete 1 row in a table with many cascaded rows ", 2)[:96] + "."
 	for _, pick := range []handOver{
 		{URL: "https://portal.basaltvault.app/approvals/" + id.String() + "#s=q3Jv8sLk2mT0xYp1aBcD9w", Kind: linkShort},
-		{URL: "https://portal.basaltvault.app/approvals/" + id.String() + "#" + strings.Repeat("A", 300), Kind: linkOverBudget},
+		{URL: "https://portal.basaltvault.app/approvals/" + id.String() + "#h=q3Jv8sLk2mT0xYp1aBcD9w", Kind: linkHash, File: &links.RequestFile{Blocks: []string{"b"}}},
 	} {
 		text, _ := approvalMessage(lead, pick, command, "Expires 2026-11-12 07:02 UTC.")
 		require.NoError(t, CheckPersonMessage(text), text)
@@ -282,4 +320,117 @@ func TestMessagesOfferingACommandStayWithinTheLimitWithALongConfigPath(t *testin
 	}
 	// The preview timeout holds two commands: it must have been cut.
 	require.Contains(t, messages["timeout "+toolPreviewRevert], commandElsewhere)
+}
+
+// requireSendRequestFirst checks a result over the budget: requestFile beside
+// the hash link, and SEND_REQUEST first, then the catalog's steps, every
+// step obeying the step rules.
+func requireSendRequestFirst(t *testing.T, steps []mcp.NextStep, file *links.RequestFile, where string) {
+	t.Helper()
+	require.NotNil(t, file, where)
+	require.NotEmpty(t, steps, where)
+	require.Equal(t, mcp.ActorAgent, steps[0].Actor, where)
+	require.Equal(t, mcp.ActionSendRequest, steps[0].Action, where)
+	require.Equal(t, sendRequestText(file), steps[0].Text, where)
+	for i, st := range steps {
+		requireStepObeysRules(t, st, catalogCase{tool: toolWrite, args: writeArgs0}, "", fmt.Sprintf("%s step %d", where, i+1))
+	}
+	require.NotEqual(t, mcp.ActionSendRequest, catalogKinds(steps)[0].Action, "the catalog checks skip it")
+}
+
+// TestHashLinkResultsSendTheRequestFirst: on an engine that serves no pages,
+// every result that hands over a hash link carries requestFile and starts
+// with SEND_REQUEST (CONTRACT.md, The request file and pasted blocks).
+func TestHashLinkResultsSendTheRequestFirst(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := noticeService("", links.DefaultBudget)
+
+	n := approvalNoticeOf(t, s, 60, issueLink)
+	te := s.Failure(toolWrite, writeArgs0, approvalRequiredError(n))
+	require.Same(t, n.RequestFile, te.Approval.RequestFile)
+	requireSendRequestFirst(t, te.NextSteps, te.Approval.RequestFile, "write held")
+
+	r := revertOf(t, "Undo the bad merge", revertLines(60), false)
+	out, err := s.revertWithLink(ctx, r)
+	require.NoError(t, err)
+	require.Contains(t, out.RevertURL, "#h=")
+	requireSendRequestFirst(t, out.NextSteps, out.RequestFile, "request_revert")
+
+	p := &PendingRevert{Revert: r}
+	require.NoError(t, s.pendingRevert(ctx, p, false))
+	require.Contains(t, p.RevertURL, "#h=", "a restated link without pages is the hash link")
+	requireSendRequestFirst(t, p.NextSteps, p.RequestFile, "list_pending revert")
+	require.Equal(t, p.RevertURL, p.NextSteps[1].URL)
+
+	item := PendingItem{Notice: n.ApprovalNotice}
+	item.Status, item.ExpiresAt = ledger.ApprovalPending, s.Now().Add(time.Hour)
+	_, _, steps, err := s.itemGuidance(item)
+	require.NoError(t, err)
+	requireSendRequestFirst(t, steps, item.Notice.RequestFile, "list_pending approval")
+}
+
+// TestRestatedLinksWhileServingPagesSendNothing: with the pages served, a
+// list_pending item that only restates its link has no requestFile and its
+// OPEN_LINK carries no url, even when the long link is over the budget.
+func TestRestatedLinksWhileServingPagesSendNothing(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := noticeService(localPages, links.DefaultBudget)
+	r := revertOf(t, "Undo the bad merge", revertLines(60), false)
+	p := &PendingRevert{Revert: r}
+	require.NoError(t, s.pendingRevert(ctx, p, false))
+	require.Nil(t, p.RequestFile)
+	require.Equal(t, mcp.ActionOpenLink, p.NextSteps[0].Action)
+	require.Empty(t, p.NextSteps[0].URL)
+	require.Contains(t, p.RevertURL, "#2.", "the field keeps the long link")
+
+	n := approvalNoticeOf(t, s, 60, keepLink)
+	item := PendingItem{Notice: n.ApprovalNotice, Restated: true}
+	item.Status, item.ExpiresAt = ledger.ApprovalPending, s.Now().Add(time.Hour)
+	_, _, steps, err := s.itemGuidance(item)
+	require.NoError(t, err)
+	require.Len(t, steps, 1)
+	require.Equal(t, mcp.ActionOpenLink, steps[0].Action)
+	require.Empty(t, steps[0].URL)
+}
+
+// TestExpiredItemsCarryNoRequestFile: a held write that no longer waits for
+// the person has nothing to send.
+func TestExpiredItemsCarryNoRequestFile(t *testing.T) {
+	t.Parallel()
+	s := noticeService("", links.DefaultBudget)
+	n := approvalNoticeOf(t, s, 60, issueLink)
+	require.NotNil(t, n.RequestFile)
+	item := PendingItem{Notice: n.ApprovalNotice}
+	item.Status, item.ExpiresAt = ledger.ApprovalPending, s.Now().Add(-time.Hour)
+	require.False(t, s.waitsForPerson(item))
+	item.Status, item.ExpiresAt = ledger.ApprovalApproved, s.Now().Add(time.Hour)
+	require.False(t, s.waitsForPerson(item))
+}
+
+// APPROVAL_INVALID sends the person back to the page the hold handed over:
+// with the pages served, to the short link they have (no url, no long link
+// over the budget); without them, to the hash link, naming the request file
+// the agent already sent.
+func TestApprovalInvalidRestatesTheHoldsLink(t *testing.T) {
+	t.Parallel()
+	for _, origin := range []string{localPages, ""} {
+		s := noticeService(origin, links.DefaultBudget)
+		n := approvalNoticeOf(t, s, 60, keepLink)
+		te := s.approvalLinkError(&mcp.ToolError{Code: CodeApprovalInvalid, Reason: reasonNotSigned, Message: "m"}, n)
+		requirePersonMessage(t, te.PersonMessage, te.Links)
+		require.NotContains(t, te.PersonMessage, "#2.", "%s: no long link over the budget", origin)
+		open := te.NextSteps[0]
+		require.Equal(t, mcp.ActionOpenLink, open.Action)
+		if origin != "" {
+			require.Empty(t, open.URL, "the short link the person has")
+			require.Empty(t, te.Links)
+			require.Contains(t, te.PersonMessage, "Approve with the link you were given")
+			continue
+		}
+		require.Contains(t, open.URL, "#h=")
+		require.Contains(t, te.PersonMessage, "the request file the agent sent you earlier")
+		require.NotContains(t, te.PersonMessage, "sends you")
+	}
 }

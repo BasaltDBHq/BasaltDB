@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
@@ -50,8 +51,10 @@ func (e PendingEntry) id() uuid.UUID {
 // message and the next steps.
 type PendingRevert struct {
 	ledger.Revert
-	Headline      string
-	RevertURL     string
+	Headline  string
+	RevertURL string
+	// RequestFile is the request beside a hash link in RevertURL.
+	RequestFile   *links.RequestFile
 	PersonMessage string
 	Links         []mcp.Link
 	NextSteps     []mcp.NextStep
@@ -119,6 +122,10 @@ func (s *Service) pendingGuidance(ctx context.Context, e PendingEntry, reissue b
 			return err
 		}
 		a.Notice = n.ApprovalNotice
+		a.Restated = !reissue && s.PagesOrigin != ""
+		if !s.waitsForPerson(*a) {
+			a.Notice.RequestFile = nil // nothing left to sign: no request to send
+		}
 		a.PersonMessage, a.Links, a.NextSteps, err = s.itemGuidance(*a)
 		return err
 	}
@@ -151,8 +158,8 @@ func (s *Service) pendingRevert(ctx context.Context, p *PendingRevert, reissue b
 			return err
 		}
 		s.notifyRevert(ctx, r, n)
-		p.Revert, p.Headline, p.RevertURL, p.PersonMessage, p.Links = r, n.Headline, n.URL, n.Message, n.Links
-		p.NextSteps = pendingRevertSteps(r.ID, n.URL, "Open the new link, review the rows and sign with your passkey.")
+		p.Revert, p.Headline, p.RevertURL, p.RequestFile, p.PersonMessage, p.Links = r, n.Headline, n.URL, n.File, n.Message, n.Links
+		p.NextSteps = withSendRequest(pendingRevertSteps(r.ID, n.URL, "Open the new link, review the rows and sign with your passkey."), n.File)
 		return nil
 	}
 	headline, err := revertHeadline(p.Revert)
@@ -167,12 +174,28 @@ func (s *Service) pendingRevert(ctx context.Context, p *PendingRevert, reissue b
 		p.NextSteps = pendingRevertSteps(p.ID, "", "Sign with your passkey on the page where you changed the scope.")
 		return nil
 	}
-	if p.RevertURL, err = s.longRevertLink(ctx, p.Revert); err != nil {
+	if err := s.restateRevertLink(ctx, p); err != nil {
 		return err
 	}
 	p.PersonMessage = fmt.Sprintf("%s It waits for your passkey at the link the agent gave you, until %s. If you lost it, "+
 		"ask the agent for a new one.", headline, expires)
-	p.NextSteps = pendingRevertSteps(p.ID, p.RevertURL, "Open the revert link the agent gave you, review the rows and sign with your passkey.")
+	open := p.RevertURL
+	if s.PagesOrigin != "" {
+		open = "" // the person has the short link the agent handed over
+	}
+	p.NextSteps = withSendRequest(pendingRevertSteps(p.ID, open,
+		"Open the revert link the agent gave you, review the rows and sign with your passkey."), p.RequestFile)
+	return nil
+}
+
+// restateRevertLink sets the link of a pending revert that list_pending
+// names without issuing a new one (restatedRevertLink).
+func (s *Service) restateRevertLink(ctx context.Context, p *PendingRevert) error {
+	pick, err := s.restatedRevertLink(ctx, p.Revert)
+	if err != nil {
+		return err
+	}
+	p.RevertURL, p.RequestFile = pick.URL, pick.File
 	return nil
 }
 

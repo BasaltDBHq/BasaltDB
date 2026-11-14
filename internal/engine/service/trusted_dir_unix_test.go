@@ -3,8 +3,10 @@
 package service
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -35,12 +37,12 @@ func TestTrustedDir(t *testing.T) {
 		require.Zero(t, fi.Mode().Perm()&0o077, p)
 	}
 
-	require.NoError(t, d.WriteFile("bot.url", []byte("one"), 0o600))
+	require.NoError(t, d.WriteFile("bot.url", []byte("one"), 0o600, keepID))
 	// Swap the opened directory for a symlink: writes, reads and renames
 	// still go to the directory held open.
 	require.NoError(t, os.Rename(made, made+".held"))
 	require.NoError(t, os.Symlink(elsewhere, made))
-	require.NoError(t, d.WriteFile("bot.url.pending", []byte("two"), 0o600))
+	require.NoError(t, d.WriteFile("bot.url.pending", []byte("two"), 0o600, keepID))
 	require.NoError(t, d.Rename("bot.url.pending", "bot.url"))
 	f, err := d.OpenFile("bot.url", os.O_RDONLY, 0)
 	require.NoError(t, err)
@@ -57,9 +59,44 @@ func TestTrustedDir(t *testing.T) {
 	require.NoError(t, os.Symlink(filepath.Join(elsewhere, "x"), filepath.Join(made+".held", "planted")))
 	_, err = d.OpenFile("planted", os.O_RDONLY, 0)
 	require.ErrorContains(t, err, "is a symlink, which is refused")
-	require.ErrorContains(t, d.WriteFile("planted", []byte("x"), 0o600), "not a regular file")
+	require.ErrorContains(t, d.WriteFile("planted", []byte("x"), 0o600, keepID), "not a regular file")
 	for _, bad := range []string{"", ".", "..", "../x", "a/b"} {
 		_, err = d.OpenFile(bad, os.O_RDONLY, 0)
 		require.ErrorContains(t, err, "is not a file name", bad)
 	}
+}
+
+// WriteFile hands the new file to the owner it is given through the temp
+// file's descriptor, before the rename: a hand-over that fails (here, not
+// root giving a file away) leaves nothing at the name.
+func TestTrustedDirWriteFileOwner(t *testing.T) {
+	dir := realTempDir(t)
+	d, err := OpenTrustedDir(dir, keepID, false)
+	require.NoError(t, err)
+	defer d.Close()
+	owner, err := d.Owner()
+	require.NoError(t, err)
+	require.Equal(t, os.Getuid(), owner)
+
+	require.NoError(t, d.WriteFile("mine", []byte("x"), 0o600, os.Getuid()))
+	fi, err := os.Lstat(filepath.Join(dir, "mine"))
+	require.NoError(t, err)
+	require.Equal(t, uint32(os.Getuid()), fileUID(t, fi))
+
+	if os.Getuid() == 0 {
+		t.Skip("root may give a file away")
+	}
+	require.Error(t, d.WriteFile("theirs", []byte("x"), 0o600, os.Getuid()+1))
+	_, err = os.Lstat(filepath.Join(dir, "theirs"))
+	require.ErrorIs(t, err, fs.ErrNotExist)
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "the temp file is removed")
+}
+
+func fileUID(t *testing.T, fi os.FileInfo) uint32 {
+	t.Helper()
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	require.True(t, ok)
+	return st.Uid
 }

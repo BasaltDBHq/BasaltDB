@@ -21,8 +21,16 @@ import (
 // directory on the way owned by root or the config directory's owner, not
 // writable by group or others) and every file is then reached relative to
 // it, never by path.
+//
+// The files belong to the engine's user, the owner of agents/ read from its
+// open descriptor (the same rule as the lock files): root hands every file
+// it writes, and the lock file, to that owner, so the engine can read its
+// credential and promote a .pending one. Root reads files owned by root or
+// that owner. In a root-owned agents/ the files stay root's.
 type rootCredFiles struct {
 	dir *service.TrustedDir
+	// owner gets the files root writes; -1 when agents/ is root's.
+	owner int
 }
 
 // openRootCredFiles opens dir, the agents directory, as root, making it
@@ -38,7 +46,33 @@ func openRootCredFiles(dir string) (credFiles, error) {
 	if err != nil {
 		return nil, fmt.Errorf("the credential directory %s is refused: %w", dir, err)
 	}
-	return rootCredFiles{dir: d}, nil
+	dirUID, err := d.Owner()
+	if err != nil {
+		_ = d.Close()
+		return nil, err
+	}
+	return rootCredFiles{dir: d, owner: credentialOwner(dirUID)}, nil
+}
+
+// credentialOwner is who gets the credential files root writes in a
+// directory dirUID owns: that owner, never root (-1: keep root's).
+func credentialOwner(dirUID int) int {
+	if dirUID <= 0 {
+		return -1
+	}
+	return dirUID
+}
+
+// ownedBy accepts a credential file owned by this process's user or by the
+// directory's owner, the engine's user root hands them to.
+func (r rootCredFiles) ownedBy(uid uint32) (bool, string) {
+	if ok, _ := ownedByThisUser(uid); ok || (r.owner >= 0 && uint64(uid) == uint64(r.owner)) {
+		return true, ""
+	}
+	if r.owner < 0 {
+		return false, "root"
+	}
+	return false, fmt.Sprintf("root or uid %d (the owner of %s)", r.owner, r.dir.Path())
 }
 
 // existingOwner is the owner of path or, when it does not exist, of the
@@ -105,7 +139,7 @@ func (r rootCredFiles) read(path string) (string, os.FileInfo, error) {
 		return "", nil, err
 	}
 	defer f.Close()
-	return readCredentialFrom(f, ownedByThisUser)
+	return readCredentialFrom(f, r.ownedBy)
 }
 
 func (r rootCredFiles) stat(path string) (os.FileInfo, error) {
@@ -122,7 +156,7 @@ func (r rootCredFiles) write(path string, data []byte) error {
 	if err != nil {
 		return err
 	}
-	return r.dir.WriteFile(name, data, config.FileMode)
+	return r.dir.WriteFile(name, data, config.FileMode, r.owner)
 }
 
 func (r rootCredFiles) rename(from, to string) error {

@@ -114,11 +114,13 @@ func (d *TrustedDir) OpenFile(name string, flag int, perm os.FileMode) (*os.File
 	return os.NewFile(uintptr(fd), full), nil
 }
 
-// WriteFile writes data to name atomically with mode, owned by this
-// process: a new temp file created exclusively in the directory, then
-// renamed over name, which replaces a link rather than following it. A
-// name that is not a regular file is refused, as config.WriteFile does.
-func (d *TrustedDir) WriteFile(name string, data []byte, mode os.FileMode) error {
+// WriteFile writes data to name atomically with mode, owned by owner (this
+// process when owner < 0): a new temp file created exclusively in the
+// directory, given to owner through its descriptor, then renamed over
+// name, which replaces a link rather than following it. A name that is not
+// a regular file is refused, as config.WriteFile does. Only the uid
+// changes; the group stays the process's.
+func (d *TrustedDir) WriteFile(name string, data []byte, mode os.FileMode, owner int) error {
 	if err := d.name(name); err != nil {
 		return err
 	}
@@ -134,7 +136,10 @@ func (d *TrustedDir) WriteFile(name string, data []byte, mode os.FileMode) error
 	if err != nil {
 		return err
 	}
-	if err := fillTemp(f, data, mode, ownerIDs{uid: keepID, gid: keepID}); err != nil {
+	if owner < 0 {
+		owner = keepID
+	}
+	if err := fillTemp(f, data, mode, ownerIDs{uid: owner, gid: keepID}); err != nil {
 		_ = unix.Unlinkat(d.fd, tmp, 0)
 		return err
 	}

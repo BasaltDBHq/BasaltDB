@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
@@ -13,6 +14,9 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 )
+
+// bigRowTimeout is the statement timeout of a test that moves 64 MiB.
+const bigRowTimeout = time.Minute
 
 // docsAgent is an agent on a table docs whose row 1 has a body of size
 // bytes.
@@ -61,16 +65,16 @@ func TestHoldKeepsALargeLine(t *testing.T) {
 // Lines over the cap are refused with NOT_ALLOWED HOLD_TOO_LARGE, by
 // preview_lines before the engine reads them and by hold_action for lines
 // it is handed: never LEDGER_INPUT_INVALID, which the agent sees as
-// INTERNAL.
+// INTERNAL. Not parallel, and with a long statement timeout: it moves
+// 64 MiB rows, which a loaded machine can take seconds over.
 func TestHoldRefusesLinesOverTheCap(t *testing.T) {
-	t.Parallel()
 	_, a := docsAgent(t, guard.MaxHeldLinesBytes)
 	in := newRun(t, a, "drop the huge doc")
 	ctx := context.Background()
 
 	tx, err := a.Conn.Begin(ctx)
 	require.NoError(t, err)
-	require.NoError(t, guard.BeginPreview(ctx, tx, in, guardtest.Timeout))
+	require.NoError(t, guard.BeginPreview(ctx, tx, in, bigRowTimeout))
 	_, err = tx.Exec(ctx, `DELETE FROM public.docs WHERE id = 1`)
 	require.NoError(t, err)
 	_, err = guard.PreviewLines(ctx, tx, []string{})
@@ -79,7 +83,7 @@ func TestHoldRefusesLinesOverTheCap(t *testing.T) {
 
 	line := `{"op": "DELETE", "key": {"id": 1}, "old": {"id": 1, "body": "` + strings.Repeat("x", guard.MaxHeldLinesBytes) +
 		`"}, "set": null, "table": "public.docs", "cascaded": false}`
-	_, err = guard.Hold(ctx, a.Conn, in, guardtest.Timeout, guard.HoldRequest{
+	_, err = guard.Hold(ctx, a.Conn, in, bigRowTimeout, guard.HoldRequest{
 		Statement: `DELETE FROM public.docs WHERE id = $1`, Params: []any{1}, Assigned: []string{}, Lines: []string{line},
 	})
 	requireHoldTooLarge(t, err)

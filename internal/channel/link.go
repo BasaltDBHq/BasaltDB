@@ -29,6 +29,14 @@ func (t LinkToken) String() string { return b64(t[:]) }
 // passes it as.
 func (t LinkToken) LogValue() slog.Value { return slog.StringValue(redacted) }
 
+// GoString keeps the token out of %#v, which does not call String.
+func (LinkToken) GoString() string { return redacted }
+
+// MarshalJSON keeps the token out of JSON, where slog's JSON handler puts a
+// value nested in a map or struct without asking LogValue. The wire and
+// the engine's files carry its String in their own string fields.
+func (LinkToken) MarshalJSON() ([]byte, error) { return redactedJSON, nil }
+
 // ParseLinkToken reads a token's 22-character base64url text.
 func ParseLinkToken(s string) (LinkToken, error) {
 	raw, err := unb64(s)
@@ -50,6 +58,13 @@ func (PSK) String() string { return redacted }
 // GoString never shows the key.
 func (PSK) GoString() string { return redacted }
 
+// LogValue keeps the key out of slog output: without it, slog's JSON
+// handler marshals the array and prints every byte.
+func (PSK) LogValue() slog.Value { return slog.StringValue(redacted) }
+
+// MarshalJSON keeps the key out of JSON, nested values included.
+func (PSK) MarshalJSON() ([]byte, error) { return redactedJSON, nil }
+
 // Zero overwrites the key.
 func (p *PSK) Zero() { clear(p[:]) }
 
@@ -59,6 +74,16 @@ type LinkKeys struct {
 	Token LinkToken
 	PSK   PSK
 }
+
+// String, GoString and LogValue never show the token or the key: %v would
+// print the token's base64url through its String.
+func (LinkKeys) String() string { return redacted }
+
+// GoString never shows the token or the key.
+func (LinkKeys) GoString() string { return redacted }
+
+// LogValue keeps the token and the key out of slog output.
+func (LinkKeys) LogValue() slog.Value { return slog.StringValue(redacted) }
 
 // DeriveLink computes a link's token and psk from its secret, the 22-character
 // base64url value of the link's #s= fragment: HKDF-SHA-256 with an empty salt

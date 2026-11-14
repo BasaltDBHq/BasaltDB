@@ -48,9 +48,58 @@ const (
 // sessions are the sessions the Vault opened on one socket. The read loop
 // opens, handshakes and reads them; workers, timers and revocations end
 // them, so the map is locked.
+// Tally counts the sessions open on every transport of one engine, so the
+// per-engine and per-link limits hold across the Vault's socket and the
+// direct listener together (CONTRACT.md, Direct transport, Limits). One
+// Tally is given to the Client and to Direct; a table made without one
+// counts only its own sessions.
+type Tally struct {
+	mu          sync.Mutex
+	total       int
+	established map[channel.LinkToken]int
+}
+
+// NewTally returns an empty Tally.
+func NewTally() *Tally { return &Tally{established: map[channel.LinkToken]int{}} }
+
+// reserve takes one of the engine's session slots; false at the limit.
+func (t *Tally) reserve() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.total >= MaxSessions {
+		return false
+	}
+	t.total++
+	return true
+}
+
+// release gives a slot back, and the link's if the session was established.
+func (t *Tally) release(token channel.LinkToken, established bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.total--
+	if established {
+		if t.established[token]--; t.established[token] <= 0 {
+			delete(t.established, token)
+		}
+	}
+}
+
+// establish takes one of the link's slots; false at the limit.
+func (t *Tally) establish(token channel.LinkToken) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.established[token] >= MaxSessionsPerLink {
+		return false
+	}
+	t.established[token]++
+	return true
+}
+
 type sessions struct {
 	timeout time.Duration
 	now     func() time.Time
+	tally   *Tally
 
 	mu   sync.Mutex
 	open map[sid]*session
@@ -89,9 +138,12 @@ type established struct {
 	building *Request
 }
 
-func newSessions(timeout time.Duration, now func() time.Time) *sessions {
+func newSessions(timeout time.Duration, now func() time.Time, tally *Tally) *sessions {
+	if tally == nil {
+		tally = NewTally()
+	}
 	return &sessions{
-		timeout: timeout, now: now,
+		timeout: timeout, now: now, tally: tally,
 		open: map[sid]*session{}, handshakes: map[channel.LinkToken][]time.Time{},
 	}
 }
@@ -103,10 +155,10 @@ func (s *sessions) add(id sid, token channel.LinkToken) (channel.CloseError, *se
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if old, dup := s.open[id]; dup {
-		delete(s.open, id)
+		s.drop(id, old)
 		return channel.ErrProtocol, old
 	}
-	if len(s.open) >= MaxSessions {
+	if !s.tally.reserve() {
 		return channel.ErrSessionLimit, nil
 	}
 	s.open[id] = &session{id: id, token: token, openedAt: s.now()}
@@ -115,11 +167,19 @@ func (s *sessions) add(id sid, token channel.LinkToken) (channel.CloseError, *se
 
 // take removes a session and returns it, nil when it is not held: whoever
 // takes it ends it, once.
+// drop removes a session from the table and the tally; s.mu is held.
+func (s *sessions) drop(id sid, ss *session) {
+	delete(s.open, id)
+	s.tally.release(ss.token, ss.est != nil)
+}
+
 func (s *sessions) take(id sid) *session {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ss := s.open[id]
-	delete(s.open, id)
+	if ss != nil {
+		s.drop(id, ss)
+	}
 	return ss
 }
 
@@ -130,7 +190,7 @@ func (s *sessions) takeAll() []*session {
 	out := make([]*session, 0, len(s.open))
 	for id, ss := range s.open {
 		out = append(out, ss)
-		delete(s.open, id)
+		s.drop(id, ss)
 	}
 	return out
 }
@@ -158,7 +218,7 @@ func (s *sessions) expired() []sid {
 	for id, ss := range s.open {
 		if ss.est == nil && now.Sub(ss.openedAt) >= s.timeout {
 			out = append(out, id)
-			delete(s.open, id)
+			s.drop(id, ss)
 		}
 	}
 	return out
@@ -238,13 +298,7 @@ func (s *sessions) establish(ss *session, est *established) (bool, channel.Close
 	if s.open[ss.id] != ss {
 		return false, 0
 	}
-	n := 0
-	for _, o := range s.open {
-		if o.est != nil && o.token == ss.token {
-			n++
-		}
-	}
-	if n >= MaxSessionsPerLink {
+	if !s.tally.establish(ss.token) {
 		return false, channel.ErrSessionLimit
 	}
 	ss.est = est

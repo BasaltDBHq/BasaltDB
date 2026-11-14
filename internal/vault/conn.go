@@ -105,7 +105,7 @@ func (c *Client) connect(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	cn := &conn{
-		c: c, ws: ws, sessions: newSessions(c.opts.HandshakeTimeout, c.opts.Now),
+		c: c, ws: ws, sessions: newSessions(c.opts.HandshakeTimeout, c.opts.Now, c.opts.Tally),
 		out: vaultCarrier{ws: ws}, transport: channel.TransportRelay,
 		endOld: c.endRotated,
 		ctx:    ctx, done: make(chan struct{}), pending: map[int64]func(answer){},

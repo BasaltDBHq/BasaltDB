@@ -312,6 +312,9 @@ func writeStatus(w io.Writer, s statusOut) {
 		fmt.Fprintln(w, "Vault:        ON in the config; only the running engine knows whether it is connected (the agent's status tool reports it)")
 		fmt.Fprintf(w, "Engine id:    %s\n", engineIDWords(*s.vaultID))
 	}
+	if s.EngineRecord != nil {
+		fmt.Fprintf(w, "Engine key:   %s\n", engineRecordWords(*s.EngineRecord))
+	}
 	ready := "ready"
 	if !s.Ready {
 		ready = "not ready"
@@ -345,6 +348,24 @@ func writeStatus(w io.Writer, s statusOut) {
 			}
 		}
 	}
+}
+
+// engineRecordWords is status.engineRecord in words (CONTRACT.md, Direct
+// transport): this engine's key as the agent's database records it.
+func engineRecordWords(r agent.EngineRecordStatus) string {
+	at := "no address"
+	if r.URL != "" {
+		at = strings.TrimPrefix(r.URL, "https://")
+	}
+	switch r.State {
+	case "RECORDED":
+		return fmt.Sprintf("RECORDED in the agent's database, %s (since %s)", at, r.RecordedAt)
+	case "REVOKED":
+		return fmt.Sprintf("REVOKED %s (portal links stop working; approvals go on through long links)", r.RevokedAt)
+	case "NOT_RECORDED":
+		return "NOT_RECORDED (the agent's database does not hold this engine's key)"
+	}
+	return "UNKNOWN (the guard is older than version 33, the key file is refused, or the record could not be read)"
 }
 
 // guardWords is the guard's version against the build's, in words.

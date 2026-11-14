@@ -160,7 +160,8 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 		sessionPages = pages.New(base, log.With("component", "vault-pages"))
 		dispatch = sessionPages
 	}
-	ev := openVault(cfg, env.stateDir, time.Now, log, relay, dispatch)
+	tally := vault.NewTally()
+	ev := openVault(cfg, env.stateDir, time.Now, log, relay, dispatch, tally)
 	env.vault, env.receipts = ev, ev.receipts()
 	if ev.client != nil {
 		env.relay, env.relayLinks = ev.client, relay
@@ -173,7 +174,7 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 		env.records = newEngineRecords(ev.keys.EngineID(), time.Now, log.With("component", "direct"))
 		client := ev.client
 		env.direct = vault.NewDirect(vault.DirectOptions{
-			Keys: ev.keys, Log: log.With("component", "direct"), SessionLinks: relay, Pages: dispatch,
+			Keys: ev.keys, Log: log.With("component", "direct"), SessionLinks: relay, Pages: dispatch, Tally: tally,
 			// A widen in a direct session ends the old token's sessions
 			// through the Vault too, without unregistering it.
 			OnRotate: func(old channel.LinkToken) {
@@ -492,12 +493,16 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		Setup:         a.Setup,
 		Probe:         probe,
 		Vault:         env.vault,
-		Receipts:      env.receipts,
-		Finisher:      finisher,
-		PII:           observer.On(pool),
-		Catalog:       agentdb.NewCatalog(pool, limits, pool.Config().ConnConfig.Database),
-		Columns:       agentdb.NewColumnOrder(pool),
-		Classes:       classes.On(pool),
+		EngineRecord: func(ctx context.Context, id string) (*guard.RecordedEngine, error) {
+			return guard.EngineRecord(ctx, pool, id)
+		},
+		DirectServed: env.direct != nil,
+		Receipts:     env.receipts,
+		Finisher:     finisher,
+		PII:          observer.On(pool),
+		Catalog:      agentdb.NewCatalog(pool, limits, pool.Config().ConnConfig.Database),
+		Columns:      agentdb.NewColumnOrder(pool),
+		Classes:      classes.On(pool),
 	})
 	return agentRuntime{
 		svc: svc,

@@ -47,8 +47,9 @@ var requestJoin = fmt.Sprintf(`CROSS JOIN LATERAL (
 ) rq`, MaxRequestText, MaxRequestCost, textCost("coalesce(binding_text, '')"), textCost("u.x"))
 
 // headsOf is the SQL of the lines' heads: each line without its value
-// images.
-const headsOf = `ARRAY(SELECT (h.x::jsonb - 'key' - 'old' - 'set' - 'now')::text
+// images and its changeIds (unbounded on a revert line; a head only counts
+// rows by op and table).
+const headsOf = `ARRAY(SELECT (h.x::jsonb - 'key' - 'old' - 'set' - 'now' - 'changeIds')::text
 	FROM unnest(coalesce(lines, '{}')) WITH ORDINALITY AS h(x, n) ORDER BY h.n)`
 
 // withRequest adds the lines and their measure to b, which reads from a

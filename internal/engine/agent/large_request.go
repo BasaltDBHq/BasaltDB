@@ -136,14 +136,15 @@ func (s *Service) tooLargeMessage(what string, cost int64, expires time.Time, is
 		return lead + " To open it, turn on the engine's local pages (pagesAddr in engine.json), restart the engine, then tell the agent." +
 			narrower + until
 	case cost <= maxPortalRequestCost:
-		return lead + " To open it, turn on the Vault (basalt init --vault=on) or the direct transport (basalt init --direct-addr), " +
-			"then tell the agent." + narrower + until
+		// Only the Vault issues the portal's short link today: the direct
+		// transport carries no short link yet.
+		return lead + " To open it, turn on the Vault: " + s.Commands.Init("--vault=on") + " then tell the agent." + narrower + until
 	case s.Commands.AgentOperated():
 		return what + " is too large for any page this engine can serve: only local pages can carry it, and an agent-operated " +
 			"engine has none. It cannot be opened on this setup unless the setup changes; otherwise it expires." + narrower + until
 	}
 	return lead + " Only the engine's local pages can carry it: set a local pagesUrl and pagesAddr in engine.json, restart the engine, " +
-		"register a passkey for that page origin (basalt init --add-passkey), then tell the agent." + narrower + until
+		"register a passkey for that page origin (" + s.Commands.Init("--add-passkey") + "), then tell the agent." + narrower + until
 }
 
 // tooLargeAsk is the ASK_PERSON text of REQUEST_TOO_LARGE.

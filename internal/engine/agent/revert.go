@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
@@ -367,7 +368,9 @@ func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Request
 		return s.revertWithLink(ctx, r)
 	}
 	err = s.awaitWhile(ctx, p.Wait, func() bool { return r.Status == ledger.RevertPending }, func(ctx context.Context) error {
-		next, err := s.Reverts.FindRevert(ctx, r.ID)
+		// Each poll is one measured read with a budget of its own (as the
+		// waiting write's).
+		next, err := s.Reverts.FindRevert(resultsize.With(ctx), r.ID)
 		if err != nil {
 			return err
 		}

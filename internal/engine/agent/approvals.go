@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
@@ -599,7 +600,9 @@ func (s *Service) awaitWhile(ctx context.Context, wait time.Duration, pending fu
 
 func (s *Service) awaitSigned(ctx context.Context, a ledger.Approval, wait time.Duration) (ledger.Approval, error) {
 	err := s.awaitWhile(ctx, wait, func() bool { return a.Status == ledger.ApprovalPending }, func(ctx context.Context) error {
-		next, err := s.Approvals.FindApproval(ctx, a.ID)
+		// Each poll is one measured read with a budget of its own: polls
+		// for 90 seconds must not add up against the call's budget.
+		next, err := s.Approvals.FindApproval(resultsize.With(ctx), a.ID)
 		if err != nil {
 			return err
 		}

@@ -125,3 +125,28 @@ func TestARevertTooLargeForALink(t *testing.T) {
 		require.Contains(t, body["personMessage"], "narrower revert")
 	}
 }
+
+// TestAWaitReadsEachPollOnItsOwnBudget: a wait polls the revert many times;
+// each poll is charged to a budget of its own, so lines of about 620 KB read on
+// every poll never add up to SIZE_LIMIT on the call.
+func TestAWaitReadsEachPollOnItsOwnBudget(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t)
+	d.Exec(t, `CREATE TABLE public.notes (id int PRIMARY KEY, body text);
+		INSERT INTO public.notes SELECT g, repeat('x', 1500) FROM generate_series(1, 200) g`)
+	tables := []string{"public.notes"}
+	e := agentHarnessFor(t, d, d.NewAgent(t, "bot", tables, tables), "http://localhost:7878")
+	ctx := context.Background()
+	in := guard.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Rewrite"}
+	require.NoError(t, guard.StartRun(ctx, e.a.Conn, in))
+	stmts := make([]string, 0, 20)
+	for i := range 20 {
+		stmts = append(stmts, fmt.Sprintf(`UPDATE public.notes SET body = repeat('y', 1500) WHERE id BETWEEN %d AND %d`, i*10+1, i*10+10))
+	}
+	require.NoError(t, guardtest.Guarded(ctx, e.a.Conn, in, stmts...))
+	body, isError := e.h.call(t, "request_revert", map[string]any{"runId": in.RunID.String(), "intent": "Undo"})
+	require.False(t, isError, "%v", body)
+	body, isError = e.h.call(t, "request_revert", map[string]any{"revertId": str(t, body["revertId"]), "waitForSignature": 3})
+	require.False(t, isError, "the wait ends PENDING, not SIZE_LIMIT: %v", body)
+	require.Equal(t, "PENDING", body["status"])
+}

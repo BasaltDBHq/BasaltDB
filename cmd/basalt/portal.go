@@ -39,7 +39,7 @@ func portalVerify(c *cliIO, args []string) int {
 		return c.fail(fmt.Errorf("%w: --portal-url: %w", errUsage, err))
 	}
 	opts := portalverify.Options{Base: base, Files: web.Files, Headers: websec.Expected()}
-	for _, r := range pages.PageRoutes {
+	for _, r := range pages.PortalPages() {
 		opts.Routes = append(opts.Routes, portalverify.Route{Path: r.Path, ID: r.ID, File: r.File})
 	}
 	if *manifestPath != "" {

@@ -68,7 +68,10 @@ async function reach(call, attempts, wait) {
   for (let i = 1; ; i++) {
     try {
       return await call();
-    } catch {
+    } catch (err) {
+      // A transport that already knows the answer (the engine no longer
+      // holds the link, or is revoked) says so with a RelayError: final.
+      if (err instanceof RelayError) throw err;
       if (i >= attempts) {
         throw new RelayError(UNREACHABLE);
       }

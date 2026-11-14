@@ -2,7 +2,7 @@
 // it knows which transport carries a request (design: vault channel,
 // section 4.1):
 //
-//   transport.kind                              SAME_ORIGIN (later RELAY, DIRECT)
+//   transport.kind                              SAME_ORIGIN, DIRECT (later RELAY)
 //   transport.open(link) -> Promise<session>    link: { page, id, secret }
 //   session.request(method, path, headers, body)
 //     -> Promise<{ status, headers, body }>
@@ -20,9 +20,17 @@
 // and the relay of the signature. A widen gives the link a new secret, and
 // the session stays open; later requests carry the new secret.
 
+import { PORTAL } from "./codec.js";
+import { directTransport } from "./direct.js";
+import { pinStore } from "./pins.js";
+
 export const SAME_ORIGIN = "SAME_ORIGIN";
 
+// The browser's network calls. Only the transports (this file, direct.js
+// and channel.js) reach the network; the pages call them.
 const windowFetch = (path, init) => window.fetch(path, init);
+export const browserFetch = windowFetch;
+export const browserSocket = (url) => new window.WebSocket(url);
 
 async function bodyText(res) {
   try {
@@ -65,9 +73,43 @@ export function sameOriginTransport(fetchFn = windowFetch) {
   };
 }
 
-// pageTransport is the transport the approval and revert pages use. Today
-// it is always the engine's own origin; the portal's link session through
-// the Vault comes with its own transport.
-export function pageTransport() {
-  return sameOriginTransport();
+// RELOADED marks, for this tab, that the page already reloaded once to
+// bring its CSP up to date with the pins, so it never loops.
+const RELOADED = "basalt-engines-reloaded";
+
+// reloadOnce reloads the page once per tab after the pins cookie was
+// rewritten: the portal's edge function builds this load's connect-src
+// from the cookie it received, so a stale cookie means a CSP without the
+// pins. true when it reloads.
+function reloadOnce(loc, storage) {
+  try {
+    if (storage.getItem(RELOADED) === "1") return false;
+    storage.setItem(RELOADED, "1");
+  } catch {
+    return false;
+  }
+  loc.reload();
+  return true;
+}
+
+// pageTransport is the transport the approval and revert pages use: on the
+// portal, DIRECT over this device's pinned engines (the relay transport
+// comes with its own ticket); on the engine's own local pages, the same
+// origin.
+export function pageTransport(loc = globalThis.window?.location) {
+  if (loc?.origin !== PORTAL) return sameOriginTransport();
+  const tab = globalThis.sessionStorage;
+  return directTransport({
+    store: pinStore(),
+    fetchFn: browserFetch,
+    socket: browserSocket,
+    onStaleCookie: () => reloadOnce(loc, tab),
+    onOpened: () => {
+      try {
+        tab.removeItem(RELOADED);
+      } catch {
+        // Nothing to clear.
+      }
+    },
+  });
 }

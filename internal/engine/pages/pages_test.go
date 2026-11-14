@@ -311,7 +311,7 @@ func TestRedirectsMatchRoutes(t *testing.T) {
 		got[f[0]] = f[1]
 	}
 	want := map[string]string{}
-	for _, r := range pages.PageRoutes {
+	for _, r := range pages.PortalPages() {
 		src := r.Path
 		if r.ID {
 			src += "*"

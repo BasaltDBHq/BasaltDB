@@ -77,10 +77,23 @@ test("the pages use the same-origin transport", () => {
   assert.equal(pageTransport().kind, SAME_ORIGIN);
 });
 
+// The transports: transport.js holds the browser's network calls and hands
+// them to the link session (channel.js) and the direct transport
+// (direct.js), which take them as arguments.
+const TRANSPORTS = new Set(["transport.js", "channel.js", "direct.js"]);
+
 test("no page reaches the engine except through the transport", () => {
+  const dir = new URL("./", import.meta.url);
+  for (const f of readdirSync(dir).filter((n) => n.endsWith(".js") && !TRANSPORTS.has(n))) {
+    const src = readFileSync(new URL(f, dir), "utf8");
+    assert.doesNotMatch(src, /\bfetch\s*\(|XMLHttpRequest|WebSocket|EventSource|sendBeacon/, `${f} calls the network itself`);
+  }
+});
+
+test("only transport.js touches the browser's network globals", () => {
   const dir = new URL("./", import.meta.url);
   for (const f of readdirSync(dir).filter((n) => n.endsWith(".js") && n !== "transport.js")) {
     const src = readFileSync(new URL(f, dir), "utf8");
-    assert.doesNotMatch(src, /\bfetch\s*\(|XMLHttpRequest|WebSocket|EventSource|sendBeacon/, `${f} calls the network itself`);
+    assert.doesNotMatch(src, /window\.fetch|new\s+(window\.)?WebSocket\s*\(|globalThis\.fetch/, `${f} uses the browser's network itself`);
   }
 });

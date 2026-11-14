@@ -130,13 +130,22 @@ export function pinsCookie(pins) {
   return `${PINS_COOKIE}=${value}; Path=/; Secure; SameSite=Lax; Max-Age=${age}`;
 }
 
-// cookieIn is the cookie's value in a document.cookie string, or "".
+// Cookie pairs are trimmed of spaces and tabs only (RFC 6265), as the edge
+// function reads them: String.trim would also strip Unicode spaces.
+const OWS = /^[ \t]+|[ \t]+$/g;
+
+// cookieIn is the cookie's value in a document.cookie string, or "", read
+// by the edge function's rule: two cookies of that name mean another host
+// planted one, so neither is used.
 export function cookieIn(cookies) {
+  let value = null;
   for (const part of String(cookies ?? "").split(";")) {
-    const [name, ...rest] = part.trim().split("=");
-    if (name === PINS_COOKIE) return rest.join("=");
+    const at = part.indexOf("=");
+    if (at < 0 || part.slice(0, at).replace(OWS, "") !== PINS_COOKIE) continue;
+    if (value !== null) return "";
+    value = part.slice(at + 1).replace(OWS, "");
   }
-  return "";
+  return value ?? "";
 }
 
 // pinStore wraps the page's own storage and cookie. Every write updates

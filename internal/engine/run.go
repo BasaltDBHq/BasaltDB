@@ -175,6 +175,7 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 		client := ev.client
 		env.direct = vault.NewDirect(vault.DirectOptions{
 			Keys: ev.keys, Log: log.With("component", "direct"), SessionLinks: relay, Pages: dispatch, Tally: tally,
+			Recheck: env.records.revoked,
 			// A widen in a direct session ends the old token's sessions
 			// through the Vault too, without unregistering it.
 			OnRotate: func(old channel.LinkToken) {
@@ -244,6 +245,7 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 	if direct != nil {
 		h := newDirectHandler(ctx, env.records, ev.keys.PublicKeySPKI(), env.direct, time.Now)
 		wg.Go(func() { env.records.refresh(ctx) })
+		wg.Go(func() { env.records.watchRevoked(ctx, env.direct, directRecheckEvery) })
 		wg.Go(func() { direct.serve(ctx, h, env.direct, log) })
 	}
 	return New(log, agents).Serve(ctx)

@@ -31,6 +31,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/vault"
 	"github.com/basaltdbhq/basaltdb/internal/vault/pagetest"
+	"github.com/basaltdbhq/basaltdb/internal/websec"
 )
 
 // directLinks hold one link of agent bot.
@@ -70,6 +71,13 @@ func newDirectFixture(t *testing.T) *directFixture {
 // session's requests, behind the listener's connection cap.
 func newDirectFixtureWith(t *testing.T, pages vault.Dispatcher) *directFixture {
 	t.Helper()
+	return newDirectFixtureHold(t, pages, vault.Message1Timeout)
+}
+
+// newDirectFixtureHold is newDirectFixtureWith with a socket holding its
+// pending slot for hold at most without reaching the record's check.
+func newDirectFixtureHold(t *testing.T, pages vault.Dispatcher, hold time.Duration) *directFixture {
+	t.Helper()
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", []string{"public.leads"}, []string{"public.leads"})
 	keys, err := channel.GenerateEngineKeys(time.Now)
@@ -78,12 +86,14 @@ func newDirectFixtureWith(t *testing.T, pages vault.Dispatcher) *directFixture {
 	f := &directFixture{db: d, keys: keys, links: &directLinks{m: map[channel.LinkToken]vault.SessionLink{}}}
 	f.records = newEngineRecords(keys.EngineID(), time.Now, log)
 	f.records.add("bot", agentPool(t, a.URL))
-	sess := vault.NewDirect(vault.DirectOptions{Keys: keys, Log: log, SessionLinks: f.links, Pages: pages})
+	sess := vault.NewDirect(vault.DirectOptions{Keys: keys, Log: log, SessionLinks: f.links, Pages: pages, Recheck: f.records.revoked})
 	f.sess = sess
 	ctx, cancel := context.WithCancel(context.Background())
 	f.srv = httptest.NewUnstartedServer(nil)
 	f.srv.Listener = &limitListener{Listener: f.srv.Listener, sem: make(chan struct{}, directConns)}
-	f.srv.Config = newDirectServer(newDirectHandler(ctx, f.records, keys.PublicKeySPKI(), sess, time.Now))
+	routes := newDirectRoutes(ctx, f.records, keys.PublicKeySPKI(), sess, time.Now)
+	routes.hold = hold
+	f.srv.Config = newDirectServer(websec.Headers()(routes))
 	f.srv.Start()
 	t.Cleanup(func() { cancel(); f.srv.Close() })
 	return f
@@ -220,6 +230,52 @@ func TestDirectSessionFollowsTheRecord(t *testing.T) {
 	require.NoError(t, err)
 	p = f.dial(t)
 	require.Equal(t, int(channel.ErrEngineRevoked), refusedWith(ctx, t, p, p.Handshake(ctx, keys)))
+}
+
+// A revoke closes the open direct sessions of the revoking database's
+// agents with ENGINE_REVOKED (CONTRACT.md, Direct transport, Revocation by
+// the person): one that sends a request at its next request, unanswered;
+// an idle one at the next re-read of the record. An agent of another
+// database keeps its session.
+func TestDirectRevokeEndsOpenSessions(t *testing.T) {
+	t.Parallel()
+	f := newDirectFixture(t)
+	f.record(t, "https://engine.example.com")
+	other := f.addAgent(t, "other")
+	url := "https://engine.example.com"
+	_, err := guard.RecordEngine(context.Background(), other.Admin, f.keys.PublicKeySPKI(), &url)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	open := func(p *pagetest.Page, agent string) (*pagetest.Page, string, uuid.UUID) {
+		keys, secret := f.holdLinkOf(t, agent)
+		f.links.mu.Lock()
+		item := f.links.m[keys.Token].Item
+		f.links.mu.Unlock()
+		require.NoError(t, p.Handshake(ctx, keys))
+		r, err := p.Do(ctx, http.MethodGet, "/api/v1/approvals/"+item.String(), pagetest.Headers(secret), "", 0)
+		require.NoError(t, err, agent)
+		require.Equal(t, item.String(), r.Body, agent)
+		return p, secret, item
+	}
+	busy, busySecret, busyItem := open(f.dial(t), "bot")
+	idle, _, _ := open(f.dial(t), "bot")
+	kept, keptSecret, keptItem := open(f.dial(t), "other")
+
+	_, err = guard.RevokeEngine(context.Background(), f.db.Admin, f.keys.EngineID())
+	require.NoError(t, err)
+
+	_, err = busy.Do(ctx, http.MethodGet, "/api/v1/approvals/"+busyItem.String(), pagetest.Headers(busySecret), "", 0)
+	require.Equal(t, int(channel.ErrEngineRevoked), refusedWith(ctx, t, busy, err), "the next request after the revoke")
+
+	f.records.endRevoked(ctx, f.sess)
+	require.Equal(t, int(channel.ErrEngineRevoked), int(idle.Closed(ctx)), "an idle session at the next re-read")
+
+	r, err := kept.Do(ctx, http.MethodGet, "/api/v1/approvals/"+keptItem.String(), pagetest.Headers(keptSecret), "", 0)
+	require.NoError(t, err, "another database did not revoke the engine")
+	require.Equal(t, keptItem.String(), r.Body)
+	require.Equal(t, []string{"other"}, f.sess.Agents())
 }
 
 // refusedWith is the close code a failed handshake got.

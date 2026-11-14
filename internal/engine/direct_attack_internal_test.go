@@ -261,11 +261,13 @@ func TestDirectCapsSocketsBeforeTheHandshake(t *testing.T) {
 // have not finished the handshake, not open sessions.
 func TestDirectHandshakeFreesItsPendingSlot(t *testing.T) {
 	t.Parallel()
-	f := newDirectFixture(t)
+	// A socket would hold its slot for a minute without the handshake
+	// freeing it, so the last session below opens only because the ones
+	// before it freed theirs, however slow the machine.
+	f := newDirectFixtureHold(t, okPages{}, time.Minute)
 	f.record(t, "https://engine.example.com")
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	started := time.Now()
 	for range directPending / 4 {
 		keys, _, _ := f.holdLink(t)
 		for range 4 {
@@ -274,7 +276,6 @@ func TestDirectHandshakeFreesItsPendingSlot(t *testing.T) {
 	}
 	keys, _, _ := f.holdLink(t)
 	require.NoError(t, f.dial(t).Handshake(ctx, keys))
-	require.Less(t, time.Since(started), vault.Message1Timeout, "the sessions above opened within one message-1 window")
 }
 
 // At most directUpgradesPerMinute upgrades a minute, for the whole

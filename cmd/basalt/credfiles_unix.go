@@ -10,8 +10,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
@@ -176,30 +179,80 @@ var foreignCredentialKeys = map[string]bool{
 	"default_query_exec_mode": true,
 }
 
+// foreignURLKeys are the URL parts pgx reads as keys besides the
+// parameters: who logs in, where, and the database.
+var foreignURLKeys = []string{"user", "password", "host", "port", "dbname"}
+
+// errForeignCredential is the refusal of a credential string root does not
+// take; it never echoes the string, which holds a password.
+var errForeignCredential = errors.New("as root, basalt init --remote takes from it only a postgres:// or postgresql:// URL " +
+	"with a password, no # or ;, and only the parameters " + strings.Join(sortedKeys(foreignCredentialKeys), ", ") +
+	"; run basalt init --remote as that user (sudo -u <user>), or fix the file")
+
+func sortedKeys(m map[string]bool) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 // checkForeignCredential accepts, from a credential file root did not
-// write, only a postgres:// URL with a password (without one pgx falls
-// back to root's ~/.pgpass) and foreignCredentialKeys. It never echoes the
-// string, which holds a password.
+// write, only what pgx reads no file for: a URL with an exact lower-case
+// postgres:// or postgresql:// prefix (pgx parses any other string as
+// keyword/value), no '#' or ';' (where Go's and pgx's URL parsers
+// disagree), a password (without one pgx falls back to root's ~/.pgpass),
+// and only foreignCredentialKeys. pgx's own parser is the authority, with
+// ConnStringAllowedKeys refusing any other key before it touches the file
+// system; it must then agree with Go's parse on the host, port, database
+// and password, which is what the rest of init --remote reads.
 func checkForeignCredential(dsn string) error {
+	if (!strings.HasPrefix(dsn, "postgres://") && !strings.HasPrefix(dsn, "postgresql://")) ||
+		strings.ContainsAny(dsn, "#;") || strings.ContainsFunc(dsn, func(r rune) bool { return r <= ' ' || r == 0x7f }) {
+		return errForeignCredential
+	}
 	u, err := url.Parse(dsn)
-	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") {
-		return errors.New("as root, basalt init --remote takes only a postgres:// URL from it")
+	if err != nil {
+		return errForeignCredential
 	}
-	if pw, ok := u.User.Password(); !ok || pw == "" {
-		return errors.New("as root, basalt init --remote takes it only with a password in the URL")
+	pw, ok := u.User.Password()
+	if !ok || pw == "" {
+		return errForeignCredential
 	}
-	keys := make([]string, 0, len(u.Query()))
 	for k := range u.Query() {
 		if !foreignCredentialKeys[k] {
-			keys = append(keys, k)
+			return errForeignCredential
 		}
 	}
-	if len(keys) > 0 {
-		sort.Strings(keys)
-		return fmt.Errorf("as root, basalt init --remote does not take the parameter %s from it, since Postgres would read a file root can read for its owner; run basalt init --remote as that user (sudo -u <user>), or remove it", strings.Join(keys, ", "))
+	allowed := append(sortedKeys(foreignCredentialKeys), foreignURLKeys...)
+	cfg, err := pgconn.ParseConfigWithOptions(dsn, pgconn.ParseConfigOptions{ConnStringAllowedKeys: allowed})
+	if err != nil {
+		return errForeignCredential
+	}
+	port := uint16(defaultPostgresPort)
+	if p := u.Port(); p != "" {
+		n, err := strconv.ParseUint(p, 10, 16)
+		if err != nil {
+			return errForeignCredential
+		}
+		port = uint16(n)
+	}
+	if cfg.Password != pw || cfg.Host != u.Hostname() || cfg.Port != port ||
+		cfg.Database != strings.TrimPrefix(u.Path, "/") {
+		return errForeignCredential
+	}
+	for _, fb := range cfg.Fallbacks {
+		// sslmode=prefer tries TLS then plain, to the same host and port.
+		if fb.Host != cfg.Host || fb.Port != cfg.Port {
+			return errForeignCredential
+		}
 	}
 	return nil
 }
+
+// defaultPostgresPort is the port a URL without one connects to.
+const defaultPostgresPort = 5432
 
 func (r rootCredFiles) stat(path string) (os.FileInfo, error) {
 	f, err := r.open(path)

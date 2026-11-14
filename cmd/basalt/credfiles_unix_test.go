@@ -3,7 +3,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -58,37 +57,47 @@ func TestRootCredFilesChecksTheOwnersCredential(t *testing.T) {
 	defer files.close()
 	r := files.(rootCredFiles)
 	cred := filepath.Join(dir, "bot.url")
-	const host = "postgres://basalt_agent_bot%s@db.example.com:5432/crm%s"
-	for _, tc := range []struct{ pw, query, err string }{
-		{pw: ":pw", query: "?sslmode=verify-full&channel_binding=require&application_name=x"},
-		{pw: ":pw"},
-		{pw: "", err: "only with a password"},
-		{pw: ":", err: "only with a password"},
-		{pw: ":pw", query: "?passfile=/root/.pgpass", err: "the parameter passfile"},
-		{pw: ":pw", query: "?sslmode=require&sslkey=/etc/ssl/private/k&service=x", err: "the parameter service, sslkey"},
-		{pw: ":pw", query: "?sslrootcert=/tmp/fifo", err: "the parameter sslrootcert"},
-		{pw: ":pw", query: "?servicefile=/x&sslcert=/y&sslcrl=/z&sslpassword=s", err: "servicefile, sslcert, sslcrl, sslpassword"},
+	const refused = "takes from it only a postgres:// or postgresql:// URL"
+	for _, tc := range []struct {
+		dsn string
+		ok  bool
+	}{
+		{dsn: "postgres://basalt_agent_bot:pw@db.example.com:5432/crm?sslmode=verify-full&channel_binding=require&application_name=x", ok: true},
+		{dsn: "postgresql://basalt_agent_bot:pw@db.example.com/crm", ok: true},
+		{dsn: "postgres://basalt_agent_bot:pw@db.example.com:5432/crm?sslmode=prefer", ok: true},
+		{dsn: "postgres://basalt_agent_bot@db.example.com:5432/crm"},
+		{dsn: "postgres://basalt_agent_bot:@db.example.com:5432/crm"},
+		{dsn: "postgres://basalt_agent_bot:pw@db.example.com:5432/crm?passfile=/root/.pgpass"},
+		{dsn: "postgres://basalt_agent_bot:pw@db.example.com:5432/crm?sslmode=require&sslkey=/k&service=x"},
+		{dsn: "postgres://basalt_agent_bot:pw@db.example.com:5432/crm?sslrootcert=/tmp/fifo"},
+		{dsn: "postgres://basalt_agent_bot:pw@db.example.com:5432/crm?servicefile=/x&sslcert=/y&sslcrl=/z&sslpassword=s"},
+		{dsn: "postgres://basalt_agent_bot:pw@db.example.com:5432/crm?host=evil.example.com"},
+		{dsn: "postgres://basalt_agent_bot:pw@db.example.com:5432/crm?options=-c%20x%3Dy"},
+		// Where Go's URL parser and pgx's disagree.
+		{dsn: "postgres://basalt_agent_bot:pw@db.example.com/crm?application_name=a#&password=&host=evil.example.com&passfile=/root/.pgpass"},
+		{dsn: "postgres://basalt_agent_bot:pw@db.example.com/crm#?passfile=/root/.pgpass&password="},
+		{dsn: "postgres://basalt_agent_bot:pw@db.example.com/crm?sslmode=require&sslrootcert=/nonexistent/x;"},
+		{dsn: "postgres://basalt_agent_bot:pw@db.example.com/crm?sslmode=require&pass%66ile=/root/.pgpass"},
+		{dsn: "POSTGRES://basalt_agent_bot:pw@db.example.com/crm password= host=evil.example.com passfile=/root/.pgpass"},
+		{dsn: "postgres://basalt_agent_bot:pw@db.example.com,evil.example.com/crm"},
+		{dsn: "host=db.example.com password=pw dbname=crm"},
 	} {
-		dsn := fmt.Sprintf(host, tc.pw, tc.query)
-		require.NoError(t, os.WriteFile(cred, []byte(dsn+"\n"), config.FileMode))
+		require.NoError(t, os.WriteFile(cred, []byte(tc.dsn+"\n"), config.FileMode))
 
 		r.self = os.Geteuid() // root wrote it: taken as it is
 		_, _, err := r.read(cred)
-		require.NoError(t, err, dsn)
+		require.NoError(t, err, tc.dsn)
 
 		r.self = os.Geteuid() + 1 // the owner of agents/ wrote it
 		got, _, err := r.read(cred)
-		if tc.err == "" {
-			require.NoError(t, err, dsn)
-			require.Equal(t, dsn, got)
+		if tc.ok {
+			require.NoError(t, err, tc.dsn)
+			require.Equal(t, tc.dsn, got)
 			continue
 		}
-		require.ErrorContains(t, err, tc.err, dsn)
+		require.ErrorContains(t, err, refused, tc.dsn)
 		require.NotContains(t, err.Error(), ":pw", "the password is not echoed")
 	}
-	require.NoError(t, os.WriteFile(cred, []byte("host=db.example.com password=pw\n"), config.FileMode))
-	_, _, err = r.read(cred)
-	require.ErrorContains(t, err, "only a postgres:// URL")
 }
 
 // A hand-over this process may not make (it is not root) fails the write

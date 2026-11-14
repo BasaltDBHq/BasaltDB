@@ -44,6 +44,7 @@ const (
 	problemSetupChangePending  = "SETUP_CHANGE_PENDING"
 	problemLockFileUnusable    = "LOCK_FILE_UNUSABLE"
 	problemLedgerReinstalled   = "LEDGER_REINSTALLED"
+	problemPortalMismatch      = "PORTAL_MISMATCH"
 )
 
 // Retention of the ledger (CONTRACT.md, Configuration and status): the
@@ -157,6 +158,22 @@ type VaultStatus struct {
 	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
+// PortalFinding is what the engine's daily portal check last found
+// (CONTRACT.md, CLI, basalt portal verify). Mismatch is true when the portal
+// serves other pages than this build embeds; Summary counts them by status,
+// for example "2 DIFFERS, 1 MISSING".
+type PortalFinding struct {
+	CheckedAt time.Time
+	Mismatch  bool
+	Summary   string
+}
+
+// PortalReporter gives the last daily portal check. Optional: without one,
+// or before the first check, status says nothing about the portal.
+type PortalReporter interface {
+	PortalFinding() (PortalFinding, bool)
+}
+
 // StatusReport is the status tool's result.
 type StatusReport struct {
 	Agent       string         `json:"agent"`
@@ -244,6 +261,7 @@ type statusDeps struct {
 	engineUnknown             bool
 	devLocalPages             bool
 	vault                     VaultReporter
+	portal                    PortalReporter
 	cmds                      Commands
 	setup                     *config.Setup
 	probe                     Probe
@@ -264,7 +282,7 @@ type statusDeps struct {
 func (s *Service) statusDeps() statusDeps {
 	return statusDeps{
 		name: s.Name, operatedBy: s.OperatedBy, build: s.Build, pagesBase: s.PagesBase, pagesOrigin: s.PagesOrigin,
-		sameUser: s.SameUser, devLocalPages: s.DevLocalPages, engineReachable: true, vault: s.Vault, cmds: s.Commands, setup: s.pendingSetup(), probe: s.Probe,
+		sameUser: s.SameUser, devLocalPages: s.DevLocalPages, engineReachable: true, vault: s.Vault, portal: s.Portal, cmds: s.Commands, setup: s.pendingSetup(), probe: s.Probe,
 		finisher: s.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, lockTrouble: &s.lockTrouble, passkeys: s.Approvals.Passkeys, log: s.Log, now: s.Now,
 	}
 }
@@ -288,10 +306,13 @@ type LocalStatus struct {
 	EngineUnknown bool
 	// DevLocalPages is the config's devLocalPages (problem DEV_LOCAL_PAGES).
 	DevLocalPages bool
-	Probe         Probe
-	Passkeys      func(context.Context) ([]passkey.Credential, error)
-	Log           *slog.Logger
-	Now           func() time.Time
+	// Portal is the last daily portal check the engine saved (problem
+	// PORTAL_MISMATCH); nil when the config names no portal.
+	Portal   PortalReporter
+	Probe    Probe
+	Passkeys func(context.Context) ([]passkey.Credential, error)
+	Log      *slog.Logger
+	Now      func() time.Time
 }
 
 // Report is the status report. It panics on a missing probe, passkey
@@ -306,7 +327,7 @@ func (l LocalStatus) Report(ctx context.Context) (StatusReport, error) {
 	}
 	return statusDeps{
 		name: l.Name, operatedBy: l.OperatedBy, build: buildinfo.Version, pagesBase: base, pagesOrigin: l.PagesOrigin,
-		sameUser: true, devLocalPages: l.DevLocalPages, engineReachable: l.EngineRunning, engineUnknown: l.EngineUnknown, cmds: l.Commands, setup: l.Setup, probe: l.Probe,
+		sameUser: true, devLocalPages: l.DevLocalPages, portal: l.Portal, engineReachable: l.EngineRunning, engineUnknown: l.EngineUnknown, cmds: l.Commands, setup: l.Setup, probe: l.Probe,
 		// basalt status reads; the running engine finishes the setup.
 		finisher: noFinisher{}, finished: func(string) {}, notRecorded: &setupCache{}, lockTrouble: &lockTrouble{}, passkeys: l.Passkeys, log: l.Log, now: l.Now,
 	}.report(ctx)
@@ -332,6 +353,7 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 		ps.add(problemEngineUnreachable, "the engine is not running, so the agent's tools do not answer",
 			func(b *Steps) string { return engineUnreachableSteps(b, s.cmds, toolStatus) })
 	}
+	s.addPortalProblem(&ps)
 	setup, known := s.setupView(ctx)
 	r.Setup = setup.status
 	if path := s.lockTrouble.get(); path != "" {

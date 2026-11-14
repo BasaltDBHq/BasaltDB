@@ -615,6 +615,9 @@ func requireCommand(t *testing.T, command, config, where string) {
 	if strings.HasPrefix(command, "basalt engine ") { // the foreground engine names its config itself
 		return
 	}
+	if command == "basalt portal verify" { // reads public pages only: no agent, no config
+		return
+	}
 	require.Regexp(t, `--agent[ =]bot`, command, where)
 	require.NotContains(t, command, "<", "%s: no placeholders: %q", where, command)
 	if config == "" {

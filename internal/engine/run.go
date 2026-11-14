@@ -29,6 +29,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/peercred"
 	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 	"github.com/basaltdbhq/basaltdb/internal/engine/piidict"
+	"github.com/basaltdbhq/basaltdb/internal/engine/portalcheck"
 	"github.com/basaltdbhq/basaltdb/internal/engine/upkeep"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/links"
@@ -134,6 +135,10 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 		return err
 	}
 	env := agentEnv{cfg: cfg, configPath: configPath, asRoot: os.Geteuid() == 0, pagesBase: base, stateDir: cfg.StateDirFor(runtime.GOOS), pins: statePins(cfg.StateDirFor(runtime.GOOS), log)}
+	portal := newPortalChecker(base, env.stateDir, log, time.Now)
+	if portal != nil {
+		env.portal = portal
+	}
 	piiCfg := cfg.PIIOrDefault()
 	piiLog := log.With("component", "pii")
 	// A key file wider than 0600, or PII state the engine cannot open,
@@ -223,6 +228,9 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 		RowsPerSecond: piiCfg.ScanRowsPerSecond, MaxMemoryBytes: piiCfg.MaxMemoryBytes(),
 	}, piiLog)
 	wg.Go(func() { scanner.Run(ctx) })
+	if portal != nil {
+		wg.Go(func() { portal.Run(ctx, portalcheck.Interval) })
+	}
 	if ev.client != nil {
 		wg.Go(func() { _ = ev.client.Run(ctx) })
 		wg.Go(func() { relay.pruneEvery(ctx, pruneInterval) })
@@ -409,6 +417,9 @@ type agentEnv struct {
 	pins        upkeep.Pins
 	// vault reports the Vault connection in every agent's status.
 	vault agent.VaultReporter
+	// portal reports the daily portal check in every agent's status; nil
+	// without a portal in the config.
+	portal agent.PortalReporter
 	// receipts signs the receipt of every relayed signature; nil when the
 	// engine key file is refused (KEY_ERROR).
 	receipts agent.ReceiptSigner
@@ -507,6 +518,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		Setup:         a.Setup,
 		Probe:         probe,
 		Vault:         env.vault,
+		Portal:        env.portal,
 		Receipts:      env.receipts,
 		Finisher:      finisher,
 		PII:           observer.On(pool),

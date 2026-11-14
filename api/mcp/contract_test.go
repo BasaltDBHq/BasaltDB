@@ -299,6 +299,25 @@ func TestRevertSchemas(t *testing.T) {
 	})
 }
 
+// TestRevertScopeCatalogChangeAgents checks the scope response's catalog
+// carries changeAgents (CONTRACT.md, Rescope, widen and reject, "The agent
+// of each row"): change id to agent role, optional because a guard older
+// than version 32 leaves it out, and only inside catalog, which only a
+// proven or token-bearing call gets.
+func TestRevertScopeCatalogChangeAgents(t *testing.T) {
+	t.Parallel()
+	schema := readJSON(t, "revert/revert-scope-response.schema.json")
+	require.Equal(t, []any{"request"}, schema["required"], "the catalog, and so the map, is optional in every answer")
+	props := mustMap(t, schema["properties"])
+	require.NotContains(t, props, "changeAgents", "the map lives only inside the catalog")
+	catalog := mustMap(t, props["catalog"])
+	require.NotContains(t, catalog["required"], "changeAgents", "a guard older than version 32 has no map")
+	m := mustMap(t, mustMap(t, catalog["properties"])["changeAgents"])
+	require.Equal(t, "object", m["type"])
+	require.Equal(t, map[string]any{"format": "uuid"}, m["propertyNames"])
+	require.Equal(t, "string", mustMap(t, m["additionalProperties"])["type"])
+}
+
 // checkPayloadSchemas checks dir holds exactly the named schema files and that
 // each has an $id and a description, camelCase properties, SCREAMING_SNAKE_CASE
 // enums and closed objects.

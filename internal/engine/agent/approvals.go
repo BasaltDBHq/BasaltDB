@@ -252,14 +252,17 @@ const personTime = "2006-01-02 15:04 UTC"
 
 // shortLink issues a new short link page(origin, id)#s=<secret> for an
 // item that expires at expires, revoking its earlier one, when issue is
-// set: the portal's short link when the Vault registered it (relayLink),
-// else one to the pages this engine serves; else "", and the caller hands
-// over the long link.
+// set: the portal's short link when the Vault registered it (relayLink) or
+// the agent is direct-ready (directLink), else one to the pages this engine
+// serves; else "", and the caller hands over the long link.
 func (s *Service) shortLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time, issue bool) (string, error) {
 	if !issue {
 		return "", nil
 	}
 	if link := s.relayLink(ctx, page, id, expires); link != "" {
+		return link, nil
+	}
+	if link := s.directLink(ctx, page, id, expires); link != "" {
 		return link, nil
 	}
 	return s.localLink(page, id, expires)

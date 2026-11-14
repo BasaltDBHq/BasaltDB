@@ -19,3 +19,6 @@ const VersionRevertScope = versionRevertScope
 
 // VersionPinnedTrigger is basalt_meta version 34, for the migration tests.
 const VersionPinnedTrigger = versionPinnedTrigger
+
+// VersionPinnedReverts is basalt_meta version 35, for the migration tests.
+const VersionPinnedReverts = versionPinnedReverts

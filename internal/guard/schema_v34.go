@@ -16,7 +16,7 @@ package guard
 // returns, so the agent's own SQL in the same transaction is unchanged.
 // ALTER FUNCTION keeps the body, owner, grants and search_path. A later
 // CREATE OR REPLACE of guard_row must restate these SET clauses (it resets
-// what it does not name); TestGuardRowPinsTheSessionSettings checks it.
+// what it does not name); TestGuardPinsTheSessionSettings checks it.
 //
 // guard_truncate and _at_commit build no row image and are not changed.
 // Non-breaking: on an older guard a write through the engine is pinned by

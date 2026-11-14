@@ -255,12 +255,16 @@ type statusDeps struct {
 	engineUnknown             bool
 	devLocalPages             bool
 	vault                     VaultReporter
-	engineRecord              EngineRecordReader
-	directServed              bool
-	cmds                      Commands
-	setup                     *config.Setup
-	probe                     Probe
-	finisher                  SetupFinisher
+	// engineKey is the engine id basalt status read from the running
+	// engine's key file ("" when it is refused), nil when it reports no
+	// engine record (LocalStatus.EngineKey); the engine uses vault.
+	engineKey    *string
+	engineRecord EngineRecordReader
+	directServed bool
+	cmds         Commands
+	setup        *config.Setup
+	probe        Probe
+	finisher     SetupFinisher
 	// finished forgets the pending setup once the database shows it
 	// recorded.
 	finished func(id string)
@@ -302,10 +306,18 @@ type LocalStatus struct {
 	EngineUnknown bool
 	// DevLocalPages is the config's devLocalPages (problem DEV_LOCAL_PAGES).
 	DevLocalPages bool
-	Probe         Probe
-	Passkeys      func(context.Context) ([]passkey.Credential, error)
-	Log           *slog.Logger
-	Now           func() time.Time
+	// EngineKey, for an engine that runs and whose key file this user
+	// reads, is its engine id ("" when the key file is refused): the report
+	// then has engineRecord, read with EngineRecord, and its problems, with
+	// DirectServed telling whether the engine has a direct listener. Nil
+	// leaves engineRecord out, as for an engine that is down.
+	EngineKey    *string
+	EngineRecord EngineRecordReader
+	DirectServed bool
+	Probe        Probe
+	Passkeys     func(context.Context) ([]passkey.Credential, error)
+	Log          *slog.Logger
+	Now          func() time.Time
 }
 
 // Report is the status report. It panics on a missing probe, passkey
@@ -321,6 +333,7 @@ func (l LocalStatus) Report(ctx context.Context) (StatusReport, error) {
 	return statusDeps{
 		name: l.Name, operatedBy: l.OperatedBy, build: buildinfo.Version, pagesBase: base, pagesOrigin: l.PagesOrigin,
 		sameUser: true, devLocalPages: l.DevLocalPages, engineReachable: l.EngineRunning, engineUnknown: l.EngineUnknown, cmds: l.Commands, setup: l.Setup, probe: l.Probe,
+		engineKey: l.EngineKey, engineRecord: l.EngineRecord, directServed: l.DirectServed,
 		// basalt status reads; the running engine finishes the setup.
 		finisher: noFinisher{}, finished: func(string) {}, notRecorded: &setupCache{}, lockTrouble: &lockTrouble{}, passkeys: l.Passkeys, log: l.Log, now: l.Now,
 	}.report(ctx)
@@ -380,8 +393,11 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 	if err == nil {
 		r.Ledger = s.ledgerStatus(ctx, st)
 	}
-	if s.vault != nil && r.Vault != nil {
-		r.EngineRecord = s.engineRecordStatus(ctx, r.Vault.EngineID, err == nil && st.State != guard.GuardMissing, &ps)
+	switch readable := err == nil && st.State != guard.GuardMissing; {
+	case s.vault != nil && r.Vault != nil:
+		r.EngineRecord = s.engineRecordStatus(ctx, r.Vault.EngineID, readable, &ps)
+	case s.engineKey != nil:
+		r.EngineRecord = s.engineRecordStatus(ctx, *s.engineKey, readable, &ps)
 	}
 	list, err := ps.sorted()
 	if err != nil {

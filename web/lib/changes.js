@@ -23,7 +23,7 @@ export function display(line, member, col) {
   return info === null ? visibleText(text) : largeShown(text, info);
 }
 
-function rawText(line, member, col) {
+export function rawText(line, member, col) {
   const row = line[member] ?? {};
   return displayValue(row[col], line.texts?.[member]?.get(col));
 }

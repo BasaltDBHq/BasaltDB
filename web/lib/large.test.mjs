@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { displayValue, valueTexts } from "./codec.js";
-import { LARGE_LIMIT, largeHash, largeInfo, showText, sizeText, tooLargeText, valueTextOf } from "./large.js";
+import { LARGE_LIMIT, largeHash, largeInfo, sizeText, tooLargeText, valueTextOf } from "./large.js";
 
 const vectors = JSON.parse(readFileSync(new URL("../../api/mcp/values/large-value.json", import.meta.url), "utf8")).vectors;
 
@@ -51,14 +51,10 @@ test("the text for a large value", async () => {
   assert.equal(tooLargeText(2 * LARGE_LIMIT, h), `too large to show: 2.0 MiB, sha256 ${h}\nYour signature covers the full value.`);
 });
 
-test("showText shows small text as given and large text by size and hash", async () => {
-  const node = { textContent: "" };
-  showText(node, "select 1", (t) => t.toUpperCase());
-  assert.equal(node.textContent, "SELECT 1");
-  const big = "b".repeat(LARGE_LIMIT + 1);
-  showText(node, big, (t) => t);
-  assert.match(node.textContent, /^too large to show: 1\.0 MiB, sha256 /);
-  const h = await largeHash(big);
-  await new Promise((r) => setTimeout(r, 0));
-  assert.equal(node.textContent, tooLargeText(LARGE_LIMIT + 1, h));
+test("the digest cache keeps only the last few texts", async () => {
+  const first = "q".repeat(LARGE_LIMIT + 1);
+  await largeHash(first);
+  assert.ok(largeHash.cached(first) !== undefined);
+  for (let i = 0; i < 16; i++) await largeHash(`t${i}`);
+  assert.equal(largeHash.cached(first), undefined);
 });

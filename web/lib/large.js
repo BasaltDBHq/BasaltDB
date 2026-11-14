@@ -9,6 +9,9 @@ export const LARGE_LIMIT = 1 << 20;
 
 const KIB = 1 << 10;
 const encoder = new TextEncoder();
+// hashes keeps the last few digests, so a page does not hold every large
+// text it has shown. A Map iterates in insertion order.
+const HASHES_KEPT = 16;
 const hashes = new Map();
 
 // valueTextOf is a value's text as the marker measures it: a string's
@@ -42,6 +45,7 @@ export async function largeHash(text) {
   if (h === undefined) {
     h = hex(await crypto.subtle.digest("SHA-256", encoder.encode(text)));
     hashes.set(text, h);
+    if (hashes.size > HASHES_KEPT) hashes.delete(hashes.keys().next().value);
   }
   return h;
 }
@@ -51,18 +55,4 @@ largeHash.cached = (text) => hashes.get(text);
 // tooLargeText is what the page shows in place of a large value.
 export function tooLargeText(bytes, hash) {
   return `too large to show: ${sizeText(bytes)}, sha256 ${hash}\nYour signature covers the full value.`;
-}
-
-// showText puts text in node, as shown (the shown function) unless it is
-// over 1 MiB, when it shows by size and hash like a value.
-export function showText(node, text, shown) {
-  const info = largeInfo(text);
-  if (info === null) {
-    node.textContent = shown(text);
-    return;
-  }
-  node.textContent = tooLargeText(info.bytes, hashes.get(text) ?? "…");
-  largeHash(text).then((h) => {
-    node.textContent = tooLargeText(info.bytes, h);
-  });
 }

@@ -40,20 +40,38 @@ func TestRevertTextMarksLargeValues(t *testing.T) {
 	big := strings.Repeat("<", largevalue.ValueCap/7+1)
 	sum := largevalue.Summary([]byte(`"`+big+`"`), "body")
 	require.NotEmpty(t, sum)
-	l := revert.Line{
-		Op: "UPDATE", Table: "public.docs", Action: revert.ActionRestore,
-		Key: json.RawMessage(`{"id": 1}`),
-		Now: json.RawMessage(`{"body": "` + big + `", "id": 1}`),
-		Set: json.RawMessage(`{"body": "small", "id": 1}`),
+	display := func(key, now, set string) revert.Line {
+		return revert.Line{
+			Op: "UPDATE", Table: "public.docs", Action: revert.ActionRestore,
+			Key: json.RawMessage(key), Now: json.RawMessage(now), Set: json.RawMessage(set),
+		}.ForDisplay()
 	}
-	got := revertLine(l)
-	require.True(t, got == `restore    public.docs {"id": 1}: body: "`+big+`" `+sum+` -> "small"`, "now's large value is followed by its summary")
-
-	l.Now, l.Set = l.Set, l.Now
-	require.True(t, revertLine(l) == `restore    public.docs {"id": 1}: body: "small" -> "`+big+`" `+sum, "set's large value is followed by its summary")
+	got := revertLine(display(`{"id": 1}`, `{"body": "`+big+`", "id": 1}`, `{"body": "small", "id": 1}`))
+	require.True(t, strings.Contains(got, `body: "`+big+`" `+sum+` -> "small"`), "now's large value is followed by its summary")
+	got = revertLine(display(`{"id": 1}`, `{"body": "small", "id": 1}`, `{"body": "`+big+`", "id": 1}`))
+	require.True(t, strings.HasSuffix(got, `body: "small" -> "`+big+`" `+sum), "set's large value is followed by its summary")
 
 	// A large key value is followed by its column and summary.
-	l.Key = json.RawMessage(`{"id": "` + big + `"}`)
-	l.Now, l.Set = nil, nil
-	require.True(t, strings.HasSuffix(revertLine(l), `"} id `+sum), "the key's summary follows the key")
+	got = revertLine(display(`{"id": "`+big+`"}`, `{}`, `{}`))
+	require.True(t, strings.HasSuffix(got, `"} id `+sum), "the key's summary follows the key")
+}
+
+// The size and hash are those of the text as signed, which is the text the
+// agent's marker measures, even when the image holds a timestamptz that the
+// display re-encodes (spacing and key order change).
+func TestRevertTextMarksMatchTheSignedTextNotTheDisplay(t *testing.T) {
+	t.Parallel()
+	nums := strings.TrimSuffix(strings.Repeat("1.10, ", 250000), ", ")
+	payload := `{"k": [` + nums + `], "a": 1}`
+	now := `{"id": 1, "payload": ` + payload + `, "updated_at": "2026-11-12T14:08:04.513958+02:00"}`
+	set := `{"id": 1, "payload": {"k": [1], "a": 1}, "updated_at": "2026-11-12T14:11:27+02:00"}`
+	want := largevalue.Summary([]byte(payload), "payload")
+	require.NotEmpty(t, want)
+	l := revert.Line{
+		Op: "UPDATE", Table: "public.docs", Action: revert.ActionRestore,
+		Key: json.RawMessage(`{"id": 1}`), Now: json.RawMessage(now), Set: json.RawMessage(set),
+	}.ForDisplay()
+	got := revertLine(l)
+	require.True(t, strings.Contains(got, want), "the summary is of the signed payload text")
+	require.Equal(t, 1, strings.Count(got, "sha256"))
 }

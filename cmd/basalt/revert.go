@@ -677,7 +677,7 @@ func revertLineText(l revert.Line) string {
 
 func revertLine(l revert.Line) string {
 	verb := map[string]string{"UPDATE": "restore", "INSERT": "re-insert", "DELETE": "delete"}[l.Op]
-	key := string(l.Key) + keyMarks(l.Key)
+	key := string(l.Key) + keyMarks(l.Marks.Key)
 	if l.Redacted {
 		key = "(values hidden: you cannot read this table)"
 	}
@@ -689,7 +689,7 @@ func revertLine(l revert.Line) string {
 		return fmt.Sprintf("skip       %s %s: %s", l.Table, key, reason)
 	}
 	head := fmt.Sprintf("%-10s %s %s", verb, l.Table, key)
-	changes := changedColumns(l.Now, l.Set)
+	changes := changedColumns(l.Now, l.Set, l.Marks)
 	if l.Op != "UPDATE" || len(changes) == 0 {
 		return head
 	}
@@ -697,7 +697,7 @@ func revertLine(l revert.Line) string {
 }
 
 // changedColumns lists "col: now -> restored" for the columns that differ.
-func changedColumns(now, set json.RawMessage) []string {
+func changedColumns(now, set json.RawMessage, marks largevalue.Marks) []string {
 	var before, after map[string]json.RawMessage
 	if json.Unmarshal(now, &before) != nil || json.Unmarshal(set, &after) != nil {
 		return nil
@@ -705,8 +705,8 @@ func changedColumns(now, set json.RawMessage) []string {
 	out := make([]string, 0, len(after))
 	for col, v := range after {
 		if !bytes.Equal(before[col], v) {
-			out = append(out, fmt.Sprintf("%s: %s -> %s", col, withMark(string(before[col]), largevalue.Summary(before[col], col)),
-				withMark(string(v), largevalue.Summary(v, col))))
+			out = append(out, fmt.Sprintf("%s: %s -> %s", col, withMark(string(before[col]), marks.Before[col]),
+				withMark(string(v), marks.After[col])))
 		}
 	}
 	sort.Strings(out)
@@ -724,11 +724,7 @@ func printJSONValue(c *cliIO, v any) int {
 
 // keyMarks is the summaries of a row key's large values, each after the
 // key with its column, in column order ("" when none is large).
-func keyMarks(key json.RawMessage) string {
-	marks, err := largevalue.ImageMarks(key)
-	if err != nil || len(marks) == 0 {
-		return ""
-	}
+func keyMarks(marks map[string]string) string {
 	cols := make([]string, 0, len(marks))
 	for col := range marks {
 		cols = append(cols, col)

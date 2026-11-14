@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/confirm-request.v1.json",
+  "title": "Passkey confirmation request",
+  "description": "What basalt passkey confirm and reject put in the confirm page link: <base>/passkeys/confirm#1.<base64url(this JSON)>. The page shows the parsed binding (person, level, fingerprint, expiry), asks for a passkey from credentialIds, and outputs a confirm response. CONTRACT.md, Access and audit, People and passkeys.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "binding",
+    "credentialIds",
+    "rpId"
+  ],
+  "properties": {
+    "binding": {
+      "type": "string",
+      "pattern": "^basalt-passkey-confirm\\.1\\n\\{",
+      "description": "The full binding text from passkey_binding."
+    },
+    "credentialIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_-]+$"
+      },
+      "description": "Active passkeys of the page's origin that may be trusted for the level: ADMIN ones, and the level's own once it has one. Postgres decides; this only fills allowCredentials."
+    },
+    "rpId": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

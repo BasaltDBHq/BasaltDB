@@ -399,3 +399,57 @@ func TestDescribeSearchScale(t *testing.T) {
 	measure("search page 200", map[string]any{"query": "t", "limit": 200})
 	measure("resource", map[string]any{"resource": "big.t2500"})
 }
+
+// TestDescribeOverviewScaleSchemas is the one-schema-per-tenant measurement
+// (D-3): 5,000 schemas with one table each. The overview lists 50 schemas,
+// counts the rest, is small and answers within the statement timeout.
+// Opt-in: BASALTDB_TEST_SCALE=1.
+func TestDescribeOverviewScaleSchemas(t *testing.T) {
+	if os.Getenv("BASALTDB_TEST_SCALE") != "1" {
+		t.Skip("BASALTDB_TEST_SCALE=1 runs the 5,000-schema measurement")
+	}
+	const schemas = 5000
+	d := guardtest.New(t)
+	d.Exec(t, `CREATE TABLE public.anchor (id bigint PRIMARY KEY)`)
+	a := d.NewAgent(t, "bot", []string{"public.anchor"}, nil)
+	role := pgx.Identifier{a.Role}.Sanitize()
+	// One statement per 250 schemas: the locks fit in max_locks_per_transaction.
+	for from := 0; from < schemas; from += 250 {
+		d.Exec(t, fmt.Sprintf(`DO $$ BEGIN
+			FOR i IN %d..%d LOOP
+				EXECUTE format('CREATE SCHEMA %%I', 'tenant_' || lpad(i::text, 5, '0'));
+				EXECUTE format('CREATE TABLE %%I.accounts (id bigint PRIMARY KEY, name text)', 'tenant_' || lpad(i::text, 5, '0'));
+				EXECUTE format('GRANT USAGE ON SCHEMA %%I TO %s', 'tenant_' || lpad(i::text, 5, '0'));
+				EXECUTE format('GRANT SELECT ON %%I.accounts TO %s', 'tenant_' || lpad(i::text, 5, '0'));
+			END LOOP; END $$`, from, from+249, role, role))
+	}
+
+	pool, err := agentdb.NewPool(context.Background(), a.URL, 2)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	limits := sqlguard.DefaultLimits()
+	store := agentdb.NewStore(pool, limits, time.Now)
+	svc := agent.NewService(agent.Deps{
+		Name: "bot", Reader: agentdb.NewReader(pool, limits, time.Now), Store: store, Reads: store,
+		Approvals: store, Reverts: store, Log: slog.New(slog.DiscardHandler), Now: time.Now,
+		Catalog: agentdb.NewCatalog(pool, limits, pool.Config().ConnConfig.Database),
+		Classes: piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool),
+	})
+	h := harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}
+	h.call(t, "describe", map[string]any{"resource": "public.anchor"}) // warm the pool and the class map
+
+	start := time.Now()
+	body, isError := h.call(t, "describe", map[string]any{})
+	took := time.Since(start)
+	require.False(t, isError, "%v", body)
+	t.Logf("overview of %d schemas: %s", schemas, took)
+	require.Less(t, took, limits.StatementTimeout)
+	require.Len(t, body["schemas"], 50)
+	n, err := body["counts"].(map[string]any)["schemas"].(json.Number).Int64()
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, n, int64(schemas), "counts.schemas is the full number")
+	require.NotNil(t, body["otherSchemas"])
+	raw, err := json.Marshal(body)
+	require.NoError(t, err)
+	require.Less(t, len(raw), 16<<10, "the overview stays small")
+}

@@ -23,6 +23,18 @@ type engineVault struct {
 	client *vault.Client
 	// status is vault in status: KEY_ERROR, OFF, or the socket's state.
 	status func() vault.Status
+	// keys are the engine's keys, nil when the key file is refused
+	// (KEY_ERROR): they sign receipts whatever vault says.
+	keys *channel.EngineKeys
+}
+
+// receipts is the signer of the agents' receipts: none (a nil interface)
+// when the key file is refused, and the answers then carry noReceipt.
+func (v engineVault) receipts() agent.ReceiptSigner {
+	if v.keys == nil {
+		return nil
+	}
+	return v.keys
 }
 
 // openVault loads the engine's keys, making them on the first start whatever
@@ -39,7 +51,7 @@ func openVault(cfg config.Config, stateDir string, now func() time.Time, log *sl
 			"correct the file's owner (the engine's OS user) and mode (0600), it is never replaced", "err", err)
 		return engineVault{status: vault.KeyErrorStatus}
 	}
-	off := engineVault{status: func() vault.Status { return vault.OffStatus(keys) }}
+	off := engineVault{status: func() vault.Status { return vault.OffStatus(keys) }, keys: keys}
 	if !cfg.VaultEnabled() {
 		return off
 	}
@@ -52,7 +64,7 @@ func openVault(cfg config.Config, stateDir string, now func() time.Time, log *sl
 		log.Error("the Vault stays off", "err", err)
 		return off
 	}
-	return engineVault{client: client, status: client.Status}
+	return engineVault{client: client, status: client.Status, keys: keys}
 }
 
 // pruneInterval is how often the engine drops expired links, so an expired

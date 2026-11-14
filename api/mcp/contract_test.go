@@ -553,10 +553,11 @@ func TestNextStepsCatalog(t *testing.T) {
 	require.Equal(t, schemaEnum(t, readJSON(t, "errors/warning.schema.json"), "code"), warningCodes,
 		"every warning code needs next steps, and only those")
 
-	problemKeys := map[string]bool{}
+	problemKeys, problemCodes := map[string]bool{}, map[string]bool{}
 	for _, p := range catalog.Problems {
-		require.False(t, problemKeys[p.Code], "duplicate problem %s", p.Code)
-		problemKeys[p.Code] = true
+		require.False(t, problemCodes[p.Code], "duplicate problem %s", p.Code)
+		problemCodes[p.Code] = true
+		problemKeys[p.Code+plannedKey(p.Planned)] = true
 		require.Contains(t, []string{mcpcontract.SeverityError, mcpcontract.SeverityWarning}, p.Severity, p.Code)
 		require.True(t, p.PersonMessage, "%s: a status problem always tells the person", p.Code)
 		requireSteps(t, p.Code, p.Steps)
@@ -564,7 +565,7 @@ func TestNextStepsCatalog(t *testing.T) {
 	status, ok := mcpcontract.Find(tools, "status")
 	require.True(t, ok)
 	problems := mustMap(t, mustMap(t, mustMap(t, status.OutputSchema["properties"])["problems"])["items"])
-	require.Equal(t, schemaEnum(t, problems, "code"), problemKeys, "every status problem code needs next steps, and only those")
+	require.Equal(t, schemaEnum(t, problems, "code"), problemCodes, "every status problem code needs next steps, and only those")
 
 	docErrors, docResults, docProblems := contractNextSteps(t)
 	require.Equal(t, errorKeys, docErrors, "CONTRACT.md \"Next steps per code\" and next-steps.json differ")
@@ -696,7 +697,7 @@ func contractNextSteps(t *testing.T) (map[string]bool, map[string]bool, map[stri
 			}
 		case tableProblems:
 			if m := nextStepsProblemRow.FindStringSubmatch(line); m != nil {
-				problems[m[1]] = true
+				problems[m[1]+planned] = true
 			}
 		}
 	}

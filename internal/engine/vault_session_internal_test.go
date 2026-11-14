@@ -43,6 +43,8 @@ type heldAgent struct {
 	binding string
 	lines   []string
 	cred    passkey.Credential
+	// receipt is what RelayApproval returns.
+	receipt agent.Receipt
 
 	mu       sync.Mutex
 	approved bool
@@ -55,20 +57,20 @@ func (a *heldAgent) ApprovalRequest(_ context.Context, id uuid.UUID) (approval.R
 	return approval.Request{ApprovalID: id, Binding: a.binding, Lines: a.lines}, nil
 }
 
-func (a *heldAgent) RelayApproval(_ context.Context, r approval.Response) error {
+func (a *heldAgent) RelayApproval(_ context.Context, r approval.Response) (agent.Receipt, error) {
 	if r.ApprovalID != a.id {
-		return agent.ErrNotThisAgent
+		return agent.Receipt{}, agent.ErrNotThisAgent
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.approved {
-		return &mcp.ToolError{Code: agent.CodeApprovalInvalid, Message: "this approval was already used"}
+		return agent.Receipt{}, &mcp.ToolError{Code: agent.CodeApprovalInvalid, Message: "this approval was already used"}
 	}
 	if _, err := approval.Verify(a.binding, a.cred, r); err != nil {
-		return &mcp.ToolError{Code: agent.CodeApprovalInvalid, Message: "the signature does not verify"}
+		return agent.Receipt{}, &mcp.ToolError{Code: agent.CodeApprovalInvalid, Message: "the signature does not verify"}
 	}
 	a.approved = true
-	return nil
+	return a.receipt, nil
 }
 
 func (a *heldAgent) isApproved() bool {
@@ -99,8 +101,8 @@ func (a *heldAgent) RevealRevert(context.Context, uuid.UUID, string, agent.Revea
 	return approval.RevealAnswer{}, agent.ErrNotThisAgent
 }
 
-func (a *heldAgent) RelayRevert(context.Context, revert.Response) (guard.AppliedRevert, error) {
-	return guard.AppliedRevert{}, agent.ErrNotThisAgent
+func (a *heldAgent) RelayRevert(context.Context, revert.Response) (guard.AppliedRevert, agent.Receipt, error) {
+	return guard.AppliedRevert{}, agent.Receipt{}, agent.ErrNotThisAgent
 }
 
 func (a *heldAgent) IssueApprovalLink(context.Context, uuid.UUID, string) (string, error) {
@@ -169,7 +171,10 @@ func newVaultSession(t *testing.T) *vaultSession {
 	id := uuid.Must(uuid.NewV7())
 	lines := []string{`{"op":"UPDATE","table":"public.leads","cascaded":false}`}
 	store := links.NewSecrets(time.Now, rand.Reader)
-	held := &heldAgent{secrets: store, id: id, binding: heldBinding(id, lines), lines: lines, cred: person.Credential()}
+	held := &heldAgent{
+		secrets: store, id: id, binding: heldBinding(id, lines), lines: lines, cred: person.Credential(),
+		receipt: agent.Receipt{Token: "basalt-receipt.1.cA.cw"},
+	}
 	s := serveOverVault(t, w, held, store, id)
 	s.agent, s.person = held, person
 	return s
@@ -268,7 +273,7 @@ func TestVaultSessionApprovesAHeldWrite(t *testing.T) {
 	r, err = p.Do(ctx, http.MethodPost, s.approvalPath()+"/approve", pagetest.PostHeaders(s.secret), signed(t, s.person, req), 0)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, r.Status, r.Body)
-	require.JSONEq(t, fmt.Sprintf(`{"approvalId":%q,"status":"APPROVED"}`, s.agent.id), r.Body)
+	require.JSONEq(t, fmt.Sprintf(`{"approvalId":%q,"status":"APPROVED","receipt":"basalt-receipt.1.cA.cw"}`, s.agent.id), r.Body)
 	require.True(t, s.agent.isApproved())
 
 	r, err = p.Do(ctx, http.MethodPost, s.approvalPath()+"/approve", pagetest.PostHeaders(s.secret), signed(t, s.person, req), 0)

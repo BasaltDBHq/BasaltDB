@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/confirm-binding.v1.json",
+  "title": "Passkey confirmation binding",
+  "description": "The JSON part of the binding passkey_binding returns: the text is \"basalt-passkey-confirm.1\\n\" followed by this object's jsonb text exactly as Postgres prints it. The WebAuthn challenge is sha256 of the whole text's UTF-8 bytes. Clients parse it for display and never re-serialise it. Vectors: confirm-vectors.json. CONTRACT.md, Access and audit, People and passkeys.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "database",
+    "credentialId",
+    "fingerprint",
+    "personId",
+    "personName",
+    "level",
+    "roleOid",
+    "roleName",
+    "registeredBy",
+    "registeredAt",
+    "expiresAt"
+  ],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "CONFIRM",
+        "REJECT"
+      ]
+    },
+    "database": {
+      "type": "string",
+      "description": "current_database()."
+    },
+    "credentialId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "description": "The waiting passkey's credential id, base64url."
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){3}$",
+      "description": "Passkey fingerprint: Crockford base32 of the first 10 bytes of sha256(\"basalt-passkey-fp.1\\n\" || credentialId || x || y), four groups of four joined by '-'. CONTRACT.md, Access and audit, People and passkeys."
+    },
+    "personId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "description": "UUIDv7, canonical lowercase."
+    },
+    "personName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+      "description": "The person's display name: 1 to 64 characters, no control characters."
+    },
+    "level": {
+      "type": "string",
+      "enum": [
+        "ADMIN",
+        "ROLE"
+      ],
+      "description": "ADMIN, or an enrolled role (ROLE, named by roleOid and roleName)."
+    },
+    "roleOid": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "maximum": 4294967295,
+      "description": "The enrolled role's oid; null for ADMIN."
+    },
+    "roleName": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "maxLength": 63,
+      "description": "The enrolled role's name at the time; null for ADMIN."
+    },
+    "registeredBy": {
+      "type": "string",
+      "description": "session_user of the registration."
+    },
+    "registeredAt": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z$",
+      "description": "RFC 3339 UTC with six fraction digits and Z."
+    },
+    "expiresAt": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z$",
+      "description": "RFC 3339 UTC with six fraction digits and Z, 7 days after registeredAt."
+    }
+  }
+}

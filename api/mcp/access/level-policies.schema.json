@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/level-policies.v1.json",
+  "title": "Agent group policy plan",
+  "description": "What level_policy_plan and level_policy_status return, and what basalt access enroll --json and basalt access sync --json print: per guarded table, the row-level security policies the enrolled role's agent group needs (owner decision AA-17). The admin confirms once; record_level_policies stores each table's fingerprint. CONTRACT.md, Access and audit, Agent groups and mirrored policies.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "roleOid",
+    "roleName",
+    "group",
+    "planHash",
+    "tables"
+  ],
+  "properties": {
+    "roleOid": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295
+    },
+    "roleName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63
+    },
+    "group": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+_lvl_[0-9]+$"
+    },
+    "planHash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Lowercase hex sha256 of the plan; record_level_policies refuses a plan the catalog no longer matches (BS012 PLAN_CHANGED)."
+    },
+    "tables": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "table",
+          "tableOid",
+          "state",
+          "status",
+          "policies"
+        ],
+        "properties": {
+          "table": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 200,
+            "description": "schema.table as Postgres quotes it (quote_ident on each part)."
+          },
+          "tableOid": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "NO_RLS",
+              "ALL_ROWS",
+              "MIRRORED"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "CURRENT",
+              "STALE",
+              "NOT_SYNCED",
+              "MIRROR_CHANGED"
+            ],
+            "description": "Against what was last recorded; NOT_SYNCED before the first sync of this table."
+          },
+          "policies": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "source",
+                "permissive",
+                "command",
+                "sql",
+                "action",
+                "reviewNeeded"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9_]+_lvl_[0-9]+_([0-9a-f]{8}|all)$",
+                  "description": "<prefix>_lvl_<oid>_<first 8 hex of sha256(source name)>, or <prefix>_lvl_<oid>_all for ALL_ROWS."
+                },
+                "source": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 63,
+                  "description": "The source policy's name; null for the ALL_ROWS policy."
+                },
+                "permissive": {
+                  "type": "boolean",
+                  "description": "false: AS RESTRICTIVE, which can never be left out."
+                },
+                "command": {
+                  "type": "string",
+                  "enum": [
+                    "ALL",
+                    "SELECT",
+                    "INSERT",
+                    "UPDATE",
+                    "DELETE"
+                  ]
+                },
+                "sql": {
+                  "type": "string",
+                  "description": "The CREATE POLICY statement the admin runs, with the level_current guard ANDed into each clause."
+                },
+                "action": {
+                  "type": "string",
+                  "enum": [
+                    "CREATE",
+                    "REPLACE",
+                    "DROP",
+                    "KEEP"
+                  ],
+                  "description": "What the plan does with the copy; enroll plans only CREATE."
+                },
+                "reviewNeeded": {
+                  "type": "array",
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "IDENTITY",
+                      "SUBQUERY"
+                    ]
+                  },
+                  "description": "IDENTITY: the expression depends on who is connected and evaluates as the agent role in the copy. SUBQUERY: it reads another relation, which the agent needs SELECT on."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,315 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/access-list.v1.json",
+  "title": "basalt access list",
+  "description": "What basalt access list --json prints: enrolled roles with their policy state, agents with their level and grants, and people with their passkeys. With the admin connection, everything; with an enrolled credential, the levels it acts for. CONTRACT.md, Access and audit, CLI.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "roles",
+    "agents",
+    "people"
+  ],
+  "properties": {
+    "roles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "roleOid",
+          "roleName",
+          "group",
+          "agentCap",
+          "agents",
+          "enrolledAt",
+          "enrolledBy",
+          "unenrolledAt",
+          "staleTables"
+        ],
+        "properties": {
+          "roleOid": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "roleName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63
+          },
+          "group": {
+            "type": "string"
+          },
+          "agentCap": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "agents": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "enrolledAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "enrolledBy": {
+            "type": "string"
+          },
+          "unenrolledAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "staleTables": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 3,
+              "maxLength": 200,
+              "description": "schema.table as Postgres quotes it (quote_ident on each part)."
+            }
+          }
+        }
+      }
+    },
+    "agents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "agent",
+          "level",
+          "roleName",
+          "registeredAt",
+          "registeredBy",
+          "engineId",
+          "grants",
+          "levelPrivilegeLost"
+        ],
+        "properties": {
+          "agent": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "ADMIN",
+              "ROLE"
+            ],
+            "description": "ADMIN, or an enrolled role (ROLE, named by roleOid and roleName)."
+          },
+          "roleName": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 63,
+            "description": "The enrolled role's name at the time; null for ADMIN."
+          },
+          "registeredAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "Null for an admin-level agent recorded on upgrade."
+          },
+          "registeredBy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "engineId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "As claimed at registration."
+          },
+          "grants": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "table",
+                "privileges"
+              ],
+              "properties": {
+                "table": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 200,
+                  "description": "schema.table as Postgres quotes it (quote_ident on each part)."
+                },
+                "privileges": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 4,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "SELECT",
+                      "INSERT",
+                      "UPDATE",
+                      "DELETE"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "levelPrivilegeLost": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "table",
+                "privileges"
+              ],
+              "properties": {
+                "table": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 200,
+                  "description": "schema.table as Postgres quotes it (quote_ident on each part)."
+                },
+                "privileges": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 4,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "SELECT",
+                      "INSERT",
+                      "UPDATE",
+                      "DELETE"
+                    ]
+                  }
+                }
+              }
+            },
+            "description": "Privileges the agent holds that its level no longer holds (reads keep working until basalt access sync or update_agent revokes them)."
+          }
+        }
+      }
+    },
+    "people": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "personId",
+          "personName",
+          "passkeys"
+        ],
+        "properties": {
+          "personId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "description": "UUIDv7, canonical lowercase."
+          },
+          "personName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+            "description": "The person's display name: 1 to 64 characters, no control characters."
+          },
+          "passkeys": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "credentialId",
+                "fingerprint",
+                "level",
+                "roleName",
+                "status",
+                "rpId",
+                "createdAt",
+                "lastUsedAt",
+                "expiresAt"
+              ],
+              "properties": {
+                "credentialId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]+$"
+                },
+                "fingerprint": {
+                  "type": "string",
+                  "pattern": "^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){3}$",
+                  "description": "Passkey fingerprint: Crockford base32 of the first 10 bytes of sha256(\"basalt-passkey-fp.1\\n\" || credentialId || x || y), four groups of four joined by '-'. CONTRACT.md, Access and audit, People and passkeys."
+                },
+                "level": {
+                  "type": "string",
+                  "enum": [
+                    "ADMIN",
+                    "ROLE"
+                  ],
+                  "description": "ADMIN, or an enrolled role (ROLE, named by roleOid and roleName)."
+                },
+                "roleName": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 63,
+                  "description": "The enrolled role's name at the time; null for ADMIN."
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "PENDING",
+                    "ACTIVE",
+                    "REJECTED",
+                    "EXPIRED",
+                    "REVOKED"
+                  ]
+                },
+                "rpId": {
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "lastUsedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "expiresAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time",
+                  "description": "For a PENDING passkey."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

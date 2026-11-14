@@ -1,0 +1,731 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/ledger-detail.v1.json",
+  "title": "Access and audit ledger details",
+  "description": "The detail of each ledger kind Access and audit adds, by kind (x-kinds maps each kind to its $defs entry), and signer, which the rows that record a signature gain. CONTRACT.md, Access and audit, The audit chain.",
+  "x-kinds": {
+    "ROLE_ENROLLED": "roleEnrolled",
+    "ROLE_UNENROLLED": "roleUnenrolled",
+    "LEVEL_POLICIES_SYNCED": "levelPoliciesSynced",
+    "AGENT_REGISTERED": "agentRegistered",
+    "AGENT_UPDATED": "agentUpdated",
+    "AGENT_REMOVED": "agentRemoved",
+    "PASSKEY_REGISTERED": "passkeyRegistered",
+    "PASSKEY_CONFIRMED": "passkeyDecided",
+    "PASSKEY_REJECTED": "passkeyDecided",
+    "VAULT_ACTION": "vaultAction"
+  },
+  "$defs": {
+    "roleEnrolled": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "roleOid",
+        "roleName",
+        "group",
+        "agentCap",
+        "by"
+      ],
+      "properties": {
+        "roleOid": {
+          "type": "integer"
+        },
+        "roleName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63
+        },
+        "group": {
+          "type": "string"
+        },
+        "agentCap": {
+          "type": "integer"
+        },
+        "by": {
+          "type": "string",
+          "description": "session_user."
+        }
+      }
+    },
+    "roleUnenrolled": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "roleOid",
+        "roleName",
+        "agents",
+        "by"
+      ],
+      "properties": {
+        "roleOid": {
+          "type": "integer"
+        },
+        "roleName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63
+        },
+        "agents": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "by": {
+          "type": "string",
+          "description": "session_user."
+        }
+      }
+    },
+    "levelPoliciesSynced": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "roleOid",
+        "roleName",
+        "planHash",
+        "tables",
+        "by"
+      ],
+      "properties": {
+        "roleOid": {
+          "type": "integer"
+        },
+        "roleName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63
+        },
+        "planHash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "tables": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "table",
+              "tableOid",
+              "state",
+              "policies",
+              "fingerprint"
+            ],
+            "properties": {
+              "table": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 200,
+                "description": "schema.table as Postgres quotes it (quote_ident on each part)."
+              },
+              "tableOid": {
+                "type": "integer"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "NO_RLS",
+                  "ALL_ROWS",
+                  "MIRRORED"
+                ]
+              },
+              "policies": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "fingerprint": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        },
+        "by": {
+          "type": "string",
+          "description": "session_user."
+        }
+      }
+    },
+    "agentRegistered": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "level",
+        "roleOid",
+        "roleName",
+        "grants",
+        "sequences",
+        "by"
+      ],
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": [
+            "ADMIN",
+            "ROLE"
+          ],
+          "description": "ADMIN, or an enrolled role (ROLE, named by roleOid and roleName)."
+        },
+        "roleOid": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 4294967295,
+          "description": "The enrolled role's oid; null for ADMIN."
+        },
+        "roleName": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 63,
+          "description": "The enrolled role's name at the time; null for ADMIN."
+        },
+        "grants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "table",
+              "privileges"
+            ],
+            "properties": {
+              "table": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 200,
+                "description": "schema.table as Postgres quotes it (quote_ident on each part)."
+              },
+              "privileges": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 4,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "SELECT",
+                    "INSERT",
+                    "UPDATE",
+                    "DELETE"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "sequences": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "sequence",
+              "privileges"
+            ],
+            "properties": {
+              "sequence": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 200,
+                "description": "schema.table as Postgres quotes it (quote_ident on each part)."
+              },
+              "privileges": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "USAGE",
+                    "SELECT"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "engineId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{22}$",
+          "description": "Engine id (CONTRACT.md, Engine keys)."
+        },
+        "by": {
+          "type": "string",
+          "description": "session_user."
+        }
+      }
+    },
+    "agentUpdated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "level",
+        "roleOid",
+        "roleName",
+        "passwordChanged",
+        "by"
+      ],
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": [
+            "ADMIN",
+            "ROLE"
+          ],
+          "description": "ADMIN, or an enrolled role (ROLE, named by roleOid and roleName)."
+        },
+        "roleOid": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 4294967295,
+          "description": "The enrolled role's oid; null for ADMIN."
+        },
+        "roleName": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 63,
+          "description": "The enrolled role's name at the time; null for ADMIN."
+        },
+        "grants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "table",
+              "privileges"
+            ],
+            "properties": {
+              "table": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 200,
+                "description": "schema.table as Postgres quotes it (quote_ident on each part)."
+              },
+              "privileges": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 4,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "SELECT",
+                    "INSERT",
+                    "UPDATE",
+                    "DELETE"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "oldGrants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "table",
+              "privileges"
+            ],
+            "properties": {
+              "table": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 200,
+                "description": "schema.table as Postgres quotes it (quote_ident on each part)."
+              },
+              "privileges": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 4,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "SELECT",
+                    "INSERT",
+                    "UPDATE",
+                    "DELETE"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "passwordChanged": {
+          "type": "boolean"
+        },
+        "by": {
+          "type": "string",
+          "description": "session_user."
+        }
+      }
+    },
+    "agentRemoved": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "level",
+        "roleOid",
+        "roleName",
+        "by"
+      ],
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": [
+            "ADMIN",
+            "ROLE"
+          ],
+          "description": "ADMIN, or an enrolled role (ROLE, named by roleOid and roleName)."
+        },
+        "roleOid": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 4294967295,
+          "description": "The enrolled role's oid; null for ADMIN."
+        },
+        "roleName": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 63,
+          "description": "The enrolled role's name at the time; null for ADMIN."
+        },
+        "by": {
+          "type": "string",
+          "description": "session_user."
+        }
+      }
+    },
+    "passkeyRegistered": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "credentialId",
+        "fingerprint",
+        "personId",
+        "personName",
+        "level",
+        "roleOid",
+        "roleName",
+        "rpId",
+        "status",
+        "by"
+      ],
+      "properties": {
+        "credentialId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){3}$",
+          "description": "Passkey fingerprint: Crockford base32 of the first 10 bytes of sha256(\"basalt-passkey-fp.1\\n\" || credentialId || x || y), four groups of four joined by '-'. CONTRACT.md, Access and audit, People and passkeys."
+        },
+        "personId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "description": "UUIDv7, canonical lowercase."
+        },
+        "personName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+          "description": "The person's display name: 1 to 64 characters, no control characters."
+        },
+        "level": {
+          "type": "string",
+          "enum": [
+            "ADMIN",
+            "ROLE"
+          ],
+          "description": "ADMIN, or an enrolled role (ROLE, named by roleOid and roleName)."
+        },
+        "roleOid": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 4294967295,
+          "description": "The enrolled role's oid; null for ADMIN."
+        },
+        "roleName": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 63,
+          "description": "The enrolled role's name at the time; null for ADMIN."
+        },
+        "rpId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "PENDING",
+            "ACTIVE"
+          ]
+        },
+        "by": {
+          "type": "string",
+          "description": "session_user."
+        }
+      }
+    },
+    "passkeyDecided": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "credentialId",
+        "fingerprint",
+        "personId",
+        "personName",
+        "level",
+        "roleOid",
+        "roleName",
+        "signer"
+      ],
+      "properties": {
+        "credentialId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){3}$",
+          "description": "Passkey fingerprint: Crockford base32 of the first 10 bytes of sha256(\"basalt-passkey-fp.1\\n\" || credentialId || x || y), four groups of four joined by '-'. CONTRACT.md, Access and audit, People and passkeys."
+        },
+        "personId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "description": "UUIDv7, canonical lowercase."
+        },
+        "personName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+          "description": "The person's display name: 1 to 64 characters, no control characters."
+        },
+        "level": {
+          "type": "string",
+          "enum": [
+            "ADMIN",
+            "ROLE"
+          ],
+          "description": "ADMIN, or an enrolled role (ROLE, named by roleOid and roleName)."
+        },
+        "roleOid": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 4294967295,
+          "description": "The enrolled role's oid; null for ADMIN."
+        },
+        "roleName": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 63,
+          "description": "The enrolled role's name at the time; null for ADMIN."
+        },
+        "signer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "credentialId",
+            "personId",
+            "personName",
+            "level",
+            "roleName"
+          ],
+          "properties": {
+            "credentialId": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "personId": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+              "description": "UUIDv7, canonical lowercase."
+            },
+            "personName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+              "description": "The person's display name: 1 to 64 characters, no control characters."
+            },
+            "level": {
+              "type": "string",
+              "enum": [
+                "ADMIN",
+                "ROLE"
+              ],
+              "description": "ADMIN, or an enrolled role (ROLE, named by roleOid and roleName)."
+            },
+            "roleName": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1,
+              "maxLength": 63,
+              "description": "The enrolled role's name at the time; null for ADMIN."
+            }
+          }
+        }
+      }
+    },
+    "vaultAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "vaultUser",
+        "credentialId",
+        "target"
+      ],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "INSTALL",
+            "UPGRADE",
+            "ENROLL",
+            "UNENROLL",
+            "SYNC_POLICIES",
+            "REGISTER_AGENT",
+            "UPDATE_AGENT",
+            "REMOVE_AGENT",
+            "PAUSE_AGENT",
+            "INVITE",
+            "REVOKE_ENGINE",
+            "REVERT"
+          ]
+        },
+        "vaultUser": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "credentialId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "description": "The passkey that confirmed it; null only for the first install."
+        },
+        "target": {
+          "type": "string",
+          "description": "What it acted on: a role, an agent, an engine id or a revert id."
+        }
+      },
+      "description": "Reserved for the Vault (Relay and Vault milestone)."
+    },
+    "signer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "credentialId",
+        "personId",
+        "personName",
+        "level",
+        "roleName"
+      ],
+      "properties": {
+        "credentialId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "personId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "description": "UUIDv7, canonical lowercase."
+        },
+        "personName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+          "description": "The person's display name: 1 to 64 characters, no control characters."
+        },
+        "level": {
+          "type": "string",
+          "enum": [
+            "ADMIN",
+            "ROLE"
+          ],
+          "description": "ADMIN, or an enrolled role (ROLE, named by roleOid and roleName)."
+        },
+        "roleName": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "maxLength": 63,
+          "description": "The enrolled role's name at the time; null for ADMIN."
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/agentRegistered"
+    },
+    {
+      "$ref": "#/$defs/agentRemoved"
+    },
+    {
+      "$ref": "#/$defs/agentUpdated"
+    },
+    {
+      "$ref": "#/$defs/levelPoliciesSynced"
+    },
+    {
+      "$ref": "#/$defs/passkeyDecided"
+    },
+    {
+      "$ref": "#/$defs/passkeyRegistered"
+    },
+    {
+      "$ref": "#/$defs/roleEnrolled"
+    },
+    {
+      "$ref": "#/$defs/roleUnenrolled"
+    },
+    {
+      "$ref": "#/$defs/vaultAction"
+    }
+  ]
+}

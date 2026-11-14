@@ -34,6 +34,7 @@ func runApprove(c *cliIO, args []string) int {
 	if err := fs.Parse(args); err != nil {
 		return c.fail(fmt.Errorf("%w: %w", errUsage, err))
 	}
+	*configPath = configOrFallback(c.host, fs, *configPath)
 	if *show != "" && *open != "" {
 		return c.fail(fmt.Errorf("%w: give --show or --open, not both", errUsage))
 	}

@@ -346,15 +346,41 @@ func TestStatusConfigFallsBackToThePerUserConfigWhenNotRoot(t *testing.T) {
 	}
 	h := newFakeHost(t)
 	system := config.DefaultPath(runtime.GOOS)
-	c := &cliIO{host: h}
 
-	require.Equal(t, system, perUserConfigFallback(c, system), "no per-user config yet")
+	require.Equal(t, system, perUserConfigFallback(h, system), "no per-user config yet")
 
 	user := filepath.Join(h.configDir, perUserDirName, "engine.json")
 	require.NoError(t, os.MkdirAll(filepath.Dir(user), 0o700))
 	require.NoError(t, os.WriteFile(user, []byte("{}"), 0o600))
-	require.Equal(t, user, perUserConfigFallback(c, system))
+	require.Equal(t, user, perUserConfigFallback(h, system))
 
 	h.euid = 0
-	require.Equal(t, system, perUserConfigFallback(c, system), "root keeps the system path")
+	require.Equal(t, system, perUserConfigFallback(h, system), "root keeps the system path")
+}
+
+// runStatus must read the per-user config only when --config was not given.
+func TestRunStatusUsesThePerUserConfigOnlyWithoutTheConfigFlag(t *testing.T) {
+	t.Parallel()
+	if _, err := os.Stat(config.DefaultPath(runtime.GOOS)); err == nil {
+		t.Skip("a system engine config is installed on this machine")
+	}
+	h := newFakeHost(t)
+	user := filepath.Join(h.configDir, perUserDirName, "engine.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(user), 0o700))
+	require.NoError(t, os.WriteFile(user, []byte(`{"agents":[]}`), 0o600))
+	other := filepath.Join(h.configDir, "other.json")
+
+	run := func(args ...string) result {
+		var stdout, stderr bytes.Buffer
+		c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr}, func(string) string { return "" })
+		c.engine = engineAccess{unitInstalled: func() bool { return false }}
+		c.host = h
+		code := runStatus(c, args)
+		return result{code, stdout.String(), stderr.String()}
+	}
+
+	without := run()
+	require.NotContains(t, without.stderr, config.DefaultPath(runtime.GOOS), "read the per-user config, not the system path")
+	given := run("--config", other)
+	require.Contains(t, given.stderr, other, "an explicit --config is read as given")
 }

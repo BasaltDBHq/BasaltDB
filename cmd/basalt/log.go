@@ -42,6 +42,7 @@ func runLog(c *cliIO, args []string) int {
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
 	}
+	*configPath = configOrFallback(c.host, fs, *configPath)
 	params := ledger.ChangeListParams{Params: pagination.Params{Limit: *limit, Cursor: *cursor, Sort: *sortFlag}}
 	if _, err := params.ParseSort(ledger.ChangeSortSpec); err != nil || *sortFlag == "" {
 		return c.fail(fmt.Errorf("%w: --sort must be id or -id, got %q", errUsage, *sortFlag))

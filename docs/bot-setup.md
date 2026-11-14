@@ -29,7 +29,7 @@ basalt init --remote --operated-by=agent --vault=off \
 
 - `--write` lists the tables you read and write. `--read` lists the tables you only read.
 - `--vault=off` keeps the free path: the person signs on `portal.basaltvault.app` and pastes codes back. The hosted relay is coming later.
-- Without root, init keeps the config and the sockets in your own config directory: `engine.json` in `basalt` inside your user config directory (`${XDG_CONFIG_HOME:-$HOME/.config}/basalt/engine.json` on Linux, `$HOME/Library/Application Support/basalt/engine.json` on macOS). Init does not print it. With `--config <dir>/engine.json`, the config goes there and the sockets go in `<dir>/run`. Plain `basalt status` finds the per-user config when no system config is installed; pass `--config` to `basalt engine`.
+- Without root, init keeps the config and the sockets in your own config directory: `engine.json` in `basalt` inside your user config directory (`${XDG_CONFIG_HOME:-$HOME/.config}/basalt/engine.json` on Linux, `$HOME/Library/Application Support/basalt/engine.json` on macOS). Init does not print it. With `--config <dir>/engine.json`, the config goes there and the sockets go in `<dir>/run`. Without `--config`, `basalt status`, `log`, `approve`, `revert` and `engine` find the per-user config when no system config is installed.
 - A URL with a password is refused. Do not work around it.
 
 The command prints a setup code (`basalt-setup.1.…`) and a setup fingerprint. It does not install or start the engine. Add `--json` to get a `personMessage` and `nextSteps`.

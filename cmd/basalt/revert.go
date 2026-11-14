@@ -79,6 +79,7 @@ func runRevert(c *cliIO, args []string) int {
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
 	}
+	*configPath = configOrFallback(c.host, fs, *configPath)
 	f.agent = *agent
 	scope, err := f.scope()
 	if err != nil {

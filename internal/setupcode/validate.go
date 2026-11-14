@@ -1,10 +1,14 @@
 package setupcode
 
 import (
+	"encoding/base64"
+	"fmt"
 	"regexp"
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/basaltdbhq/basaltdb/internal/channel"
 )
 
 // Limits from setup-code.schema.json and CONTRACT.md.
@@ -43,7 +47,7 @@ var (
 // later than the setupId's time plus 24 hours). Failing one is INVALID.
 // None of these depend on the clock.
 func (p Payload) Validate() error {
-	checks := []func() error{p.validateHeader, p.validateTarget, p.validateGuard, p.validateAgent, p.validateExpiry}
+	checks := []func() error{p.validateHeader, p.validateTarget, p.validateGuard, p.validateAgent, p.validateExpiry, p.validateEngine}
 	for _, c := range checks {
 		if err := c(); err != nil {
 			return err
@@ -197,4 +201,35 @@ func (p Payload) validateExpiry() error {
 		return invalid("expiresAt is more than 24 hours after the code was made")
 	}
 	return nil
+}
+
+// EngineGuardVersion is the first basalt_meta version that records engine
+// keys: a code that carries one must upgrade to at least it.
+const EngineGuardVersion = 33
+
+// validateEngine checks the engine part: a guard that can record it, and a
+// P-256 SPKI with an uncompressed point on the curve.
+func (p Payload) validateEngine() error {
+	if p.Engine == nil {
+		return nil
+	}
+	if p.Guard.To < EngineGuardVersion {
+		return invalid(fmt.Sprintf("engine needs guard.to %d or later", EngineGuardVersion))
+	}
+	if _, err := p.Engine.Key(); err != nil {
+		return invalid("engine.publicKey is not a P-256 public key")
+	}
+	return nil
+}
+
+// Key is the engine key's SPKI DER, checked as an engine key.
+func (e Engine) Key() ([]byte, error) {
+	der, err := base64.RawURLEncoding.Strict().DecodeString(e.PublicKey)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := channel.ParseEngineKey(der); err != nil {
+		return nil, err
+	}
+	return der, nil
 }

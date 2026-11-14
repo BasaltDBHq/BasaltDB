@@ -126,23 +126,45 @@ func lockOpen(path string, owner int) (*os.File, int, error) {
 		return nil, 0, fmt.Errorf("lock %s: %w", path, err)
 	}
 	f := os.NewFile(uintptr(fd), path)
+	if err := lockOpened(f, int(dst.Uid), owner); err != nil {
+		return nil, 0, err
+	}
+	return f, int(dst.Uid), nil
+}
+
+// LockOpenFile is LockFile on a lock file already opened (read-write, not
+// following a link) in a directory owned by dirUID: a root caller opens it
+// relative to a directory it reached without following one. A root-owned
+// file is handed to dirUID as LockFile does. It takes f: on an error f is
+// closed.
+func LockOpenFile(f *os.File, dirUID int) (func(), error) {
+	if err := lockOpened(f, dirUID, dirOwner); err != nil {
+		return nil, err
+	}
+	return HeldLock{f: f, dirUID: dirUID}.Release, nil
+}
+
+// lockOpened checks the open lock file f (a regular file with one link),
+// hands it over (handToOwner) and locks it; on an error f is closed.
+func lockOpened(f *os.File, dirUID, owner int) error {
+	path := f.Name()
 	fi, err := f.Stat()
 	if err == nil {
 		err = CheckPlainFile(fi)
 	}
 	if err != nil {
 		_ = f.Close()
-		return nil, 0, &LockUnusableError{Path: path, Err: err}
+		return &LockUnusableError{Path: path, Err: err}
 	}
-	if err := handToOwner(f, fi, int(dst.Uid), owner); err != nil {
+	if err := handToOwner(f, fi, dirUID, owner); err != nil {
 		_ = f.Close()
-		return nil, 0, fmt.Errorf("lock %s: %w", path, err)
+		return fmt.Errorf("lock %s: %w", path, err)
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		_ = f.Close()
-		return nil, 0, fmt.Errorf("lock %s: %w", path, ErrLocked)
+		return fmt.Errorf("lock %s: %w", path, ErrLocked)
 	}
-	return f, int(dst.Uid), nil
+	return nil
 }
 
 // configLockWait is how long a config write waits for another to finish:

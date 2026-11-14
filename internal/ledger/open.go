@@ -24,6 +24,9 @@ type openList[T any] struct {
 	statuses []string
 	scan     func(pgx.CollectableRow) (T, error)
 	id       func(T) uuid.UUID
+	// wrap, when set, is the statement that reads the page whose SQL it
+	// is given, in the same order (desc: newest first).
+	wrap func(page string, desc bool) string
 }
 
 // page returns one page of l with status ("" for every open status).
@@ -50,6 +53,9 @@ func (l openList[T]) page(ctx context.Context, q guard.Querier, p pagination.Par
 	sql, args, err := b.ToSql()
 	if err != nil {
 		return pagination.Page[T]{}, err
+	}
+	if l.wrap != nil {
+		sql = l.wrap(sql, sort.Desc)
 	}
 	rows, err := q.Query(ctx, sql, args...)
 	if err != nil {

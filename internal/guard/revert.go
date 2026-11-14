@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/basaltdbhq/basaltdb/internal/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 )
@@ -65,6 +66,84 @@ func PreviewRevert(ctx context.Context, q Querier, s RevertScope) ([]string, err
 		return nil, err
 	}
 	return pgx.CollectRows(rows, pgx.RowTo[string])
+}
+
+// PreviewPage is one page of a preview as an agent reads it (preview_revert):
+// the totals of the whole preview and the page's lines, with values too
+// large for the agent left out (CONTRACT.md, Large values).
+type PreviewPage struct {
+	// Lines and Restore count every line of the preview, and
+	// AllAlreadyReverted says whether every one is a SKIP of a row a revert
+	// of the scope already restored.
+	Lines              int
+	Restore            int
+	AllAlreadyReverted bool
+	// CursorFound is false when a cursor was given and no line of the
+	// preview has its hash: the rows changed between pages.
+	CursorFound bool
+	// Page are the lines after the cursor, at most the limit, each with the
+	// hash of its full signed text (the next cursor); More says another
+	// page follows.
+	Page []PreviewLine
+	More bool
+}
+
+// PreviewLine is one line of a PreviewPage: its text with large values
+// left out, and the SHA-256 (lowercase hex) of the full text.
+type PreviewLine struct {
+	Text string
+	Hash string
+}
+
+// PreviewRevertPage previews the caller's own scope s as PreviewRevert does,
+// and reads only the totals and the limit lines after the line whose hash
+// is after ("" for the first page). Postgres counts, hashes and elides,
+// so a large preview or value never crosses the wire on an agent's call.
+func PreviewRevertPage(ctx context.Context, q Querier, s RevertScope, after string, limit int) (PreviewPage, error) {
+	args, err := s.args()
+	if err != nil {
+		return PreviewPage{}, err
+	}
+	// Plain SQL: a set-returning function over a built descriptor, under a
+	// recursive CTE (largevalue.ElideLines).
+	sql := largevalue.With + `pv_all AS MATERIALIZED (
+			SELECT p.n, p.t, ` + largevalue.SHA256Of("p.t") + ` AS hash, p.t::jsonb AS j
+			FROM basalt_meta.preview_revert(` + ownSelect + `) WITH ORDINALITY AS p(t, n)
+		), pv_tot AS MATERIALIZED (
+			SELECT count(n) AS lines, count(n) FILTER (WHERE j->>'action' = 'RESTORE') AS restore,
+				coalesce(bool_and(coalesce(j->>'conflict', '') = 'ALREADY_REVERTED'), false) AS reverted
+			FROM pv_all
+		), pv_cur AS MATERIALIZED (
+			SELECT min(n) AS n FROM pv_all WHERE $5 <> '' AND hash = $5
+		), pv_page AS MATERIALIZED (
+			SELECT n, hash, j FROM pv_all WHERE n > coalesce((SELECT n FROM pv_cur), 0) ORDER BY n LIMIT $6
+		), ` + largevalue.ElideLines(`SELECT n AS item, j AS line FROM pv_page`) + `
+		SELECT t.lines, t.restore, t.reverted, $5 = '' OR (SELECT n FROM pv_cur) IS NOT NULL, p.hash, l.line::text
+		FROM pv_tot t
+		LEFT JOIN (pv_page p JOIN lv_lines l ON l.item = p.n) ON true
+		ORDER BY p.n`
+	rows, err := q.Query(ctx, sql, append(args, after, limit+1)...)
+	if err != nil {
+		return PreviewPage{}, err
+	}
+	defer rows.Close()
+	var out PreviewPage
+	for rows.Next() {
+		var hash, text *string
+		if err := rows.Scan(&out.Lines, &out.Restore, &out.AllAlreadyReverted, &out.CursorFound, &hash, &text); err != nil {
+			return PreviewPage{}, err
+		}
+		if text != nil {
+			out.Page = append(out.Page, PreviewLine{Text: *text, Hash: *hash})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return PreviewPage{}, err
+	}
+	if len(out.Page) > limit {
+		out.Page, out.More = out.Page[:limit], true
+	}
+	return out, nil
 }
 
 // PreparedRevert is a revert stored for the person to sign. Lines are every

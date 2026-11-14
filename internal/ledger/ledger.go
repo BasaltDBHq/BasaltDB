@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/largevalue"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
@@ -62,6 +63,9 @@ type Change struct {
 	RevertID uuid.NullUUID
 	// RevertedBy lists the revert changes that restored rows of this one.
 	RevertedBy []uuid.UUID
+	// LargeValues names the statement or params left out of an agent's read
+	// (ListChangesMarked; CONTRACT.md, Large values); nil on the person's.
+	LargeValues []largevalue.Entry
 }
 
 // RowChange is one row a change wrote, cascades included. Key, Before and
@@ -81,6 +85,11 @@ type RowChange struct {
 	// the run never read it (BlindWrite) or for an insert or cascaded row.
 	BasedOn    *BasedOn
 	BlindWrite bool
+	// LargeValues names the values left out of an agent's read
+	// (RowChangesMarked), and KeyLeftOut, BeforeLeftOut and AfterLeftOut
+	// the images left out whole: absent on the wire, never null.
+	LargeValues                             []largevalue.Entry
+	KeyLeftOut, BeforeLeftOut, AfterLeftOut bool
 }
 
 // BasedOn is the row version a write was based on (CONTRACT.md).
@@ -91,43 +100,80 @@ type BasedOn struct {
 
 // ListChanges returns one page of the calling agent's change records.
 func ListChanges(ctx context.Context, q guard.Querier, p ChangeListParams) (pagination.Page[Change], error) {
+	sql, args, _, err := changePage(p)
+	if err != nil {
+		return pagination.Page[Change]{}, err
+	}
+	return collectChanges(ctx, q, p, sql, args, func(row pgx.CollectableRow, c *Change) error {
+		return row.Scan(changeDest(c)...)
+	})
+}
+
+// Column names the change lists share.
+const (
+	colChangeID = "change_id"
+	colRunID    = "run_id"
+)
+
+// changeColumns are the change record's columns, named so a statement over
+// the page can select them again.
+var changeColumns = []string{
+	colChangeID, "at", "agent", colRunID, "task_id", "coalesce(intent, '') AS intent", "coalesce(op, '') AS op",
+	"coalesce(table_name, '') AS table_name", "coalesce(statement, '') AS statement", "params", "rows", "cascaded_rows",
+	"duration_ms", "status", "coalesce(code, '') AS code", "coalesce(reason, '') AS reason", "actor_kind", "revert_id",
+	"reverted_by",
+}
+
+// changePage is the SQL of one page of change records (one row more than
+// the limit, to tell whether another page follows), and whether it is
+// sorted newest first.
+func changePage(p ChangeListParams) (string, []any, bool, error) {
 	if p.Limit < 1 || p.Limit > pagination.MaxLimit {
-		return pagination.Page[Change]{}, fmt.Errorf("%w: limit %d", ErrInvalidParams, p.Limit)
+		return "", nil, false, fmt.Errorf("%w: limit %d", ErrInvalidParams, p.Limit)
 	}
 	sort, err := p.ParseSort(ChangeSortSpec)
 	if err != nil {
-		return pagination.Page[Change]{}, fmt.Errorf("%w: %w", ErrInvalidParams, err)
+		return "", nil, false, fmt.Errorf("%w: %w", ErrInvalidParams, err)
 	}
-	order := "change_id"
+	order := colChangeID
 	if sort.Desc {
 		order += descending
 	}
-	b := psql.Select("change_id", "at", "agent", "run_id", "task_id", "coalesce(intent, '')", "coalesce(op, '')",
-		"coalesce(table_name, '')", "coalesce(statement, '')", "params", "rows", "cascaded_rows", "duration_ms",
-		"status", "coalesce(code, '')", "coalesce(reason, '')", "actor_kind", "revert_id", "reverted_by").
+	b := psql.Select(changeColumns...).
 		From("basalt_meta.agent_changes").
 		OrderBy(order).
 		Limit(uint64(p.Limit) + 1)
 	if p.RunID != uuid.Nil {
-		b = b.Where(sq.Eq{"run_id": p.RunID.String()})
+		b = b.Where(sq.Eq{colRunID: p.RunID.String()})
 	}
-	b, err = pagination.ApplyIDKeyset(b, "change_id", sort.Desc, p.Cursor)
+	b, err = pagination.ApplyIDKeyset(b, colChangeID, sort.Desc, p.Cursor)
 	if err != nil {
-		return pagination.Page[Change]{}, fmt.Errorf("%w: %w", ErrInvalidParams, err)
+		return "", nil, false, fmt.Errorf("%w: %w", ErrInvalidParams, err)
 	}
 	sql, args, err := b.ToSql()
-	if err != nil {
-		return pagination.Page[Change]{}, err
+	return sql, args, sort.Desc, err
+}
+
+// changeDest are the scan destinations of changeColumns.
+func changeDest(c *Change) []any {
+	return []any{
+		&c.ID, &c.At, &c.Agent, &c.RunID, &c.TaskID, &c.Intent, &c.Op, &c.Table, &c.Statement,
+		&c.Params, &c.Rows, &c.CascadedRows, &c.DurationMs, &c.Status, &c.Code, &c.Reason,
+		&c.ActorKind, &c.RevertID, &c.RevertedBy,
 	}
+}
+
+// collectChanges runs sql and returns its rows as one page of p.
+func collectChanges(ctx context.Context, q guard.Querier, p ChangeListParams, sql string, args []any,
+	scan func(pgx.CollectableRow, *Change) error,
+) (pagination.Page[Change], error) {
 	rows, err := q.Query(ctx, sql, args...)
 	if err != nil {
 		return pagination.Page[Change]{}, err
 	}
 	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Change, error) {
 		var c Change
-		err := row.Scan(&c.ID, &c.At, &c.Agent, &c.RunID, &c.TaskID, &c.Intent, &c.Op, &c.Table, &c.Statement,
-			&c.Params, &c.Rows, &c.CascadedRows, &c.DurationMs, &c.Status, &c.Code, &c.Reason,
-			&c.ActorKind, &c.RevertID, &c.RevertedBy)
+		err := scan(row, &c)
 		return c, err
 	})
 	if err != nil {
@@ -150,17 +196,7 @@ func RowChanges(ctx context.Context, q guard.Querier, changeIDs []uuid.UUID) (ma
 	if len(changeIDs) == 0 {
 		return out, nil
 	}
-	ids := make([]string, 0, len(changeIDs))
-	for _, id := range changeIDs {
-		ids = append(ids, id.String())
-	}
-	sql, args, err := psql.Select("change_id", "seq", "coalesce(table_name, '')", "coalesce(op, '')",
-		"row_key", "old_row", "new_row", "coalesce((detail->>'cascaded')::boolean, false)", "redacted", "values_pruned",
-		"detail->'basedOn'", "coalesce((detail->>'blindWrite')::boolean, false)").
-		From("basalt_meta.agent_ledger").
-		Where(sq.Eq{"kind": "ROW_CHANGE", "change_id": ids}).
-		OrderBy("seq").
-		ToSql()
+	sql, args, err := rowChangeSelect(changeIDs).OrderBy("seq").ToSql()
 	if err != nil {
 		return nil, err
 	}
@@ -179,4 +215,18 @@ func RowChanges(ctx context.Context, q guard.Querier, changeIDs []uuid.UUID) (ma
 		out[id] = append(out[id], r)
 	}
 	return out, rows.Err()
+}
+
+// rowChangeSelect selects the ROW_CHANGE ledger rows of changeIDs, columns
+// named so a statement over them can select them again.
+func rowChangeSelect(changeIDs []uuid.UUID) sq.SelectBuilder {
+	ids := make([]string, 0, len(changeIDs))
+	for _, id := range changeIDs {
+		ids = append(ids, id.String())
+	}
+	return psql.Select(colChangeID, "seq", "coalesce(table_name, '') AS table_name", "coalesce(op, '') AS op",
+		"row_key", "old_row", "new_row", "coalesce((detail->>'cascaded')::boolean, false) AS cascaded", "redacted",
+		"values_pruned", "detail->'basedOn' AS based_on", "coalesce((detail->>'blindWrite')::boolean, false) AS blind_write").
+		From("basalt_meta.agent_ledger").
+		Where(sq.Eq{"kind": "ROW_CHANGE", colChangeID: ids})
 }

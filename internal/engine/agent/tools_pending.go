@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/basaltdbhq/basaltdb/internal/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
@@ -30,7 +31,7 @@ type pendingDTO struct {
 	RunID           string             `json:"runId"`
 	TaskID          string             `json:"taskId,omitempty"`
 	Intent          string             `json:"intent"`
-	Statement       string             `json:"statement"`
+	Statement       string             `json:"statement,omitempty"`
 	Params          json.RawMessage    `json:"params,omitempty"`
 	AssignedColumns []string           `json:"assignedColumns"`
 	Rows            int                `json:"rows"`
@@ -44,6 +45,9 @@ type pendingDTO struct {
 	PersonMessage   string             `json:"personMessage"`
 	NextSteps       []mcp.NextStep     `json:"nextSteps,omitempty"`
 	Links           []mcp.Link         `json:"links,omitempty"`
+	// LargeValues names the statement or params left out (CONTRACT.md,
+	// Large values).
+	LargeValues []largevalue.Entry `json:"largeValues,omitempty"`
 }
 
 func pendingFromDomain(p PendingItem) pendingDTO {
@@ -53,6 +57,7 @@ func pendingFromDomain(p PendingItem) pendingDTO {
 		Params: p.Params, AssignedColumns: p.Assigned, Rows: p.Rows, Status: p.Status,
 		CreatedAt: timeText(p.CreatedAt), ExpiresAt: timeText(p.ExpiresAt), ApprovalURL: p.Notice.ApprovalURL, RequestFile: p.Notice.RequestFile, ApproveCommand: p.Notice.ApproveCommand,
 		Headline: p.Notice.Headline, PersonMessage: p.PersonMessage, Links: p.Links, NextSteps: p.NextSteps,
+		LargeValues: p.LargeValues,
 	}
 	if p.TaskID.Valid {
 		d.TaskID = p.TaskID.UUID.String()

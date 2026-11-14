@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
@@ -44,6 +45,9 @@ type Approval struct {
 	ApprovedAt  *time.Time
 	BindingText string
 	Lines       []string
+	// LargeValues names the statement or params left out of an agent's
+	// list (CONTRACT.md, Large values): Statement is then empty, Params nil.
+	LargeValues []largevalue.Entry
 }
 
 // ApprovalSortSpec whitelists the approval list sort: by id, newest first
@@ -59,18 +63,51 @@ type ApprovalListParams struct {
 	Status string
 }
 
+// colApprovalID is the approval id column of basalt_meta.agent_approvals.
+const colApprovalID = "approval_id"
+
 func approvalSelect() sq.SelectBuilder {
-	return psql.Select("approval_id", "run_id", "task_id", "intent", "coalesce(statement, '')", "params",
+	return psql.Select(colApprovalID, colRunID, "task_id", "intent", "coalesce(statement, '') AS statement", "params",
 		"assigned_columns", "rows", "status", "created_at", "expires_at", "approved_at",
-		"coalesce(binding_text, '')", "coalesce(lines, '{}')").
+		"coalesce(binding_text, '') AS binding_text", "coalesce(lines, '{}') AS lines").
 		From("basalt_meta.agent_approvals")
 }
 
 func scanApproval(row pgx.CollectableRow) (Approval, error) {
 	var a Approval
-	err := row.Scan(&a.ID, &a.RunID, &a.TaskID, &a.Intent, &a.Statement, &a.Params, &a.Assigned, &a.Rows, &a.Status,
-		&a.CreatedAt, &a.ExpiresAt, &a.ApprovedAt, &a.BindingText, &a.Lines)
+	err := row.Scan(approvalDest(&a)...)
 	return a, err
+}
+
+func approvalDest(a *Approval) []any {
+	return []any{
+		&a.ID, &a.RunID, &a.TaskID, &a.Intent, &a.Statement, &a.Params, &a.Assigned, &a.Rows, &a.Status,
+		&a.CreatedAt, &a.ExpiresAt, &a.ApprovedAt, &a.BindingText, &a.Lines,
+	}
+}
+
+// scanMarkedApproval scans markedApprovals' row: the approval, then its
+// largeValues.
+func scanMarkedApproval(row pgx.CollectableRow) (Approval, error) {
+	var a Approval
+	var large []byte
+	if err := row.Scan(append(approvalDest(&a), &large)...); err != nil {
+		return Approval{}, err
+	}
+	return a, unmarshalEntries(large, &a.LargeValues)
+}
+
+// markedApprovals reads a page of approvals with a statement or params
+// too large for the agent left out (CONTRACT.md, Large values: a held
+// write's statement, then its params).
+func markedApprovals(page string, desc bool) string {
+	order := colApprovalID
+	if desc {
+		order += descending
+	}
+	return markedPage(page, colApprovalID, order, "p.approval_id", "p.run_id", "p.task_id", "p.intent", markedStatement,
+		markedParams, "p.assigned_columns", "p.rows", "p.status", "p.created_at", "p.expires_at", "p.approved_at",
+		"p.binding_text", "p.lines", markedLarge)
 }
 
 // FindApproval returns one of the calling agent's approvals.
@@ -92,7 +129,8 @@ func FindApproval(ctx context.Context, q guard.Querier, id uuid.UUID) (Approval,
 
 // ListOpenApprovals returns one page of the calling agent's held writes that
 // are waiting for the person (PENDING) or approved and not yet applied
-// (APPROVED).
+// (APPROVED). Only list_pending reads it: a statement or params too large
+// for the agent is left out and named in LargeValues.
 func ListOpenApprovals(ctx context.Context, q guard.Querier, p ApprovalListParams) (pagination.Page[Approval], error) {
 	switch p.Status {
 	case "", ApprovalPending, ApprovalApproved:
@@ -101,11 +139,11 @@ func ListOpenApprovals(ctx context.Context, q guard.Querier, p ApprovalListParam
 	}
 	b := approvalSelect()
 	if p.RunID != uuid.Nil {
-		b = b.Where(sq.Eq{"run_id": p.RunID.String()})
+		b = b.Where(sq.Eq{colRunID: p.RunID.String()})
 	}
 	l := openList[Approval]{
-		selectAll: b, idColumn: "approval_id", statuses: []string{ApprovalPending, ApprovalApproved},
-		scan: scanApproval, id: func(a Approval) uuid.UUID { return a.ID },
+		selectAll: b, idColumn: colApprovalID, statuses: []string{ApprovalPending, ApprovalApproved},
+		scan: scanMarkedApproval, id: func(a Approval) uuid.UUID { return a.ID }, wrap: markedApprovals,
 	}
 	return l.page(ctx, q, p.Params, p.Status)
 }

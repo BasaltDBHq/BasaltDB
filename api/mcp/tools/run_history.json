@@ -229,7 +229,7 @@
                   "items": {
                     "$ref": "../values/large-value.schema.json"
                   },
-                  "description": "Planned (result budget, CONTRACT.md Large values): the values (key, before, after) of this row left out because they are too large for you to read, each with its size and sha256; absent when none was. A value left out is absent from its object, never null: it is stored in full and a revert restores it from the stored row. An image with largeValues is not the whole row: never rebuild a row or a write from it."
+                  "description": "CONTRACT.md, Large values: the values (key, before, after) of this row left out because they are too large for you to read, each with its size and sha256; absent when none was. A value left out is absent from its object, never null: it is stored in full and a revert restores it from the stored row. An image with largeValues is not the whole row: never rebuild a row or a write from it."
                 }
               }
             }
@@ -257,7 +257,7 @@
             "items": {
               "$ref": "../values/large-value.schema.json"
             },
-            "description": "Planned (result budget, CONTRACT.md Large values): the values (statement, params) of this record left out because they are too large for you to read, each with its size and sha256; absent when none was. A value left out is absent, never null: it is stored in full."
+            "description": "CONTRACT.md, Large values: the values (statement, params) of this record left out because they are too large for you to read, each with its size and sha256; absent when none was. A value left out is absent, never null: it is stored in full."
           }
         }
       },
@@ -284,6 +284,7 @@
   "errors": [
     "INVALID_ARGUMENT",
     "NOT_FOUND",
+    "QUERY_TIMEOUT",
     "UNAVAILABLE",
     "INTERNAL"
   ]

@@ -25,7 +25,7 @@
     { "code": "QUERY_TIMEOUT", "reason": "TIME_LIMIT", "tool": "preview_revert", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "AGENT", "action": "END_TURN" }] },
     { "code": "QUERY_TIMEOUT", "reason": "TIME_LIMIT", "tool": "request_revert", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "END_TURN" }] },
     { "code": "QUERY_TIMEOUT", "reason": "REQUEST_TOO_LARGE", "tool": "request_revert", "planned": true, "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "END_TURN" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },
-    { "code": "QUERY_TIMEOUT", "reason": "ROW_TOO_LARGE", "planned": true, "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "code": "QUERY_TIMEOUT", "reason": "ROW_TOO_LARGE", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
 
     { "code": "APPROVAL_REQUIRED", "reason": "HELD", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },
     { "code": "APPROVAL_REQUIRED", "reason": "HELD_NO_PAGES", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },

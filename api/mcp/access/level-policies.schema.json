@@ -100,7 +100,7 @@
                     "null"
                   ],
                   "maxLength": 63,
-                  "description": "The source policy's name; null for the ALL_ROWS policy."
+                  "description": "The source policy's name (a policy TO PUBLIC or TO <prefix>_agents included); null for the ALL_ROWS policy."
                 },
                 "permissive": {
                   "type": "boolean",
@@ -117,8 +117,11 @@
                   ]
                 },
                 "sql": {
-                  "type": "string",
-                  "description": "The CREATE POLICY statement the admin runs, with the level_current guard ANDed into each clause; for a marked restrictive copy without a replacement, USING (false)."
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The CREATE POLICY statement the admin runs, with the level_current guard ANDed into each clause, or USING (false) for a marked restrictive copy without a replacement; null for OMIT."
                 },
                 "action": {
                   "type": "string",
@@ -126,9 +129,10 @@
                     "CREATE",
                     "REPLACE",
                     "DROP",
-                    "KEEP"
+                    "KEEP",
+                    "OMIT"
                   ],
-                  "description": "What the plan does with the copy; enroll plans only CREATE."
+                  "description": "What the plan does with the copy; OMIT: a marked permissive source left out, shown so the admin sees what agents will not get. enroll plans only CREATE and OMIT."
                 },
                 "reviewNeeded": {
                   "type": "array",
@@ -141,7 +145,7 @@
                       "FUNCTION"
                     ]
                   },
-                  "description": "IDENTITY: the expression depends on who is connected. SUBQUERY: it reads another relation. FUNCTION: it calls a function outside pg_catalog. A marked restrictive copy is written as USING (false), a marked permissive copy is left out, unless the admin gives a replacement."
+                  "description": "Marks from an allow list over the stored expression tree. IDENTITY: a CURRENT_USER-like value. SUBQUERY: a sublink. FUNCTION: any function reached (operators, casts, I/O coercions, aggregates included) that is not in pg_catalog and IMMUTABLE, nor one of the STABLE clock functions. A marked restrictive source, and any marked policy TO PUBLIC or TO <prefix>_agents, gets a restrictive USING (false) copy; a marked permissive source is left out (action OMIT); unless the admin gives a replacement."
                 },
                 "replacement": {
                   "type": [

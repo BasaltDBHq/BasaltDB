@@ -339,8 +339,10 @@ func TestLevelPolicyMarks(t *testing.T) {
 
 	section := contractSection(t, "### Agent groups and mirrored policies (AA-17)")
 	for _, want := range []string{
-		"a marked **restrictive** copy is written as `USING (false)`",
-		"a marked **permissive** copy is left out",
+		"a marked **restrictive** source policy gets a restrictive copy `USING (false)`",
+		"a marked **permissive** source policy is left out",
+		"gets a restrictive copy `USING (false)` for the group, permissive or restrictive alike",
+		"an **allow list**, not a deny list",
 		"an unmarked restrictive copy can never be left out",
 		"`session_user` is a member of `<prefix>_lvl_<p_role>`",
 	} {

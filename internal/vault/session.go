@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"time"
 	"unicode/utf8"
 
@@ -31,6 +32,21 @@ type SessionLink struct {
 	// the tag is checked.
 	PSK       channel.PSK
 	ExpiresAt time.Time
+}
+
+// LogValue logs the item and the expiry only: never the token, a bearer
+// handle at the Vault, or the key.
+// String names the item and the expiry, never the token or the key.
+func (l SessionLink) String() string {
+	return "session link for " + l.Item.String() + " until " + l.ExpiresAt.UTC().Format(time.RFC3339)
+}
+
+// GoString is String: %#v would print the token and the key's fields.
+func (l SessionLink) GoString() string { return l.String() }
+
+// LogValue is the item and the expiry, as String.
+func (l SessionLink) LogValue() slog.Value {
+	return slog.GroupValue(slog.String("item", l.Item.String()), slog.Time("expiresAt", l.ExpiresAt))
 }
 
 // SessionLinks find the live relay link of a token. *links.Secrets, across

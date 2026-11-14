@@ -37,6 +37,8 @@ type stubAgent struct {
 	revealed []agent.RevealRequest
 	secrets  *links.Secrets
 	origin   string
+	// receipt is what RelayApproval returns.
+	receipt agent.Receipt
 }
 
 func (a *stubAgent) IssueApprovalLink(_ context.Context, id uuid.UUID, proof string) (string, error) {
@@ -62,12 +64,12 @@ func (a *stubAgent) ApprovalRequest(_ context.Context, id uuid.UUID) (approval.R
 	return approval.Request{ApprovalID: id, Binding: "{}", Lines: []string{}}, a.err
 }
 
-func (a *stubAgent) RelayApproval(_ context.Context, r approval.Response) error {
+func (a *stubAgent) RelayApproval(_ context.Context, r approval.Response) (agent.Receipt, error) {
 	if r.ApprovalID != a.known {
-		return agent.ErrNotThisAgent
+		return agent.Receipt{}, agent.ErrNotThisAgent
 	}
 	a.relayed = append(a.relayed, r)
-	return a.err
+	return a.receipt, a.err
 }
 
 func (a *stubAgent) RevertRequest(context.Context, uuid.UUID, string) (revert.Request, error) {
@@ -99,8 +101,8 @@ func (a *stubAgent) RevealRevert(context.Context, uuid.UUID, string, agent.Revea
 	return approval.RevealAnswer{}, agent.ErrNotThisAgent
 }
 
-func (a *stubAgent) RelayRevert(context.Context, revert.Response) (guard.AppliedRevert, error) {
-	return guard.AppliedRevert{}, agent.ErrNotThisAgent
+func (a *stubAgent) RelayRevert(context.Context, revert.Response) (guard.AppliedRevert, agent.Receipt, error) {
+	return guard.AppliedRevert{}, agent.Receipt{}, agent.ErrNotThisAgent
 }
 
 // site is the pages behind the real listener policy on a loopback port, as
@@ -241,10 +243,21 @@ func TestPagesRelayChecks(t *testing.T) {
 
 	// The page's own post: through the tunnel the browser's Origin is
 	// http://localhost:<port>, the page origin.
+	// The answer carries the engine's receipt of the signature.
+	a.receipt = agent.Receipt{Token: "basalt-receipt.1.cA.cw", Line: "Approved: ..."}
 	status, out = s.do(t, http.MethodPost, path, host, s.origin, "application/json", body, secret)
 	require.Equal(t, http.StatusOK, status, out)
-	require.JSONEq(t, fmt.Sprintf(`{"approvalId":%q,"status":"APPROVED"}`, id), out)
+	require.JSONEq(t, fmt.Sprintf(`{"approvalId":%q,"status":"APPROVED","receipt":"basalt-receipt.1.cA.cw"}`, id), out)
 	require.Len(t, a.relayed, 1)
+
+	// Without a usable engine key the approval still goes through, and the
+	// answer says why there is no receipt.
+	a.receipt = agent.Receipt{Missing: agent.NoReceiptKeyError, Line: "No receipt: ..."}
+	status, out = s.do(t, http.MethodPost, path, host, s.origin, "application/json", body, secret)
+	require.Equal(t, http.StatusOK, status, out)
+	require.JSONEq(t, fmt.Sprintf(`{"approvalId":%q,"status":"APPROVED","noReceipt":"KEY_ERROR"}`, id), out)
+	require.Len(t, a.relayed, 2)
+	a.relayed = a.relayed[:1]
 
 	// Errors keep the contract's code and map to a status.
 	a.err = &mcp.ToolError{Code: agent.CodeApprovalExpired, Message: "this approval expired"}

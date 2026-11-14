@@ -14,6 +14,16 @@ Held for your approval: Update 27 rows in basalt_demo.leads. Approve: http://loc
 2. Press **Approve** (it names the op and the rows, for example "Approve: delete 1 row + 2 cascaded") and confirm with your passkey. The page sends the signature to the engine, which hands it to Postgres. The page then says "Approved. The agent will continue."
 3. The agent has already repeated the write with `approvalId`. That call waits up to 90 seconds for your signature and returns `APPLIED` as soon as you sign, so you do not have to tell it that you approved. If you take longer, the agent does not wait again: it ends its turn saying the write waits for your approval. Approve when you are ready, then tell the agent; its next write with `approvalId` applies at once.
 
+### Check the receipt
+
+After every signature the engine reads what Postgres recorded and signs a receipt of it with its own key. The agent's next result carries it, with one line for you at the top of its `personMessage`:
+
+```
+Approved: Update 27 rows in basalt_demo·leads (approval <id>), receipt from engine R68W FYxA cGgI jMEN.
+```
+
+A revert's line starts with `Signed:` instead. **Compare it with what you meant to sign:** the rows and table, the id from the page's address, and the engine fingerprint with the one `basalt status` shows. The line comes from Postgres, not from the page, so a page that made you sign something else is caught here: the line names what was actually signed. If it does not match, tell the agent to stop and revert the change. If you see `No receipt: the engine's key file is refused`, your signature still applied, but nothing confirms what it was: fix the key file (`basalt status` says how). A revert whose scope was changed on the signing page has no receipt either (the agent cannot see what it covers); if you did not change it, say so at once.
+
 Each short link carries a secret after `#s=`: the id alone opens nothing, and the secret never reaches a server log because browsers do not send the fragment. One link is live per held write, and links survive an engine restart: the engine keeps the secrets' hashes in its state directory (`<stateDir>/<agent>.links.json`, mode `0600`). If the agent lost the link, it calls `list_pending` with `reissueLink: true`, which issues a new link and turns the old one off; a plain `list_pending` touches no link. From the terminal, `basalt approve --open <id>` does the same when the engine serves the pages. To refuse a write, close the page: the write stays blocked and expires after 24 hours.
 
 A revert works the same way: `basalt revert --agent NAME --run <runId> --open` opens the revert page, you sign it there, and the command prints the result. Pasting the code the page shows into the prompt still works too.

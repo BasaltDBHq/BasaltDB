@@ -156,7 +156,7 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 		dispatch = sessionPages
 	}
 	ev := openVault(cfg, env.stateDir, time.Now, log, relay, dispatch)
-	env.vault = ev
+	env.vault, env.receipts = ev, ev.receipts()
 	if ev.client != nil {
 		env.relay, env.relayLinks = ev.client, relay
 	}
@@ -372,6 +372,9 @@ type agentEnv struct {
 	pins        upkeep.Pins
 	// vault reports the Vault connection in every agent's status.
 	vault agent.VaultReporter
+	// receipts signs the receipt of every relayed signature; nil when the
+	// engine key file is refused (KEY_ERROR).
+	receipts agent.ReceiptSigner
 	// relay and relayLinks are set when the engine dials out to the Vault:
 	// each agent registers its portal short links there.
 	relay      *vault.Client
@@ -444,6 +447,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		Setup:         a.Setup,
 		Probe:         probe,
 		Vault:         env.vault,
+		Receipts:      env.receipts,
 		Finisher:      finisher,
 		PII:           observer.On(pool),
 		Catalog:       agentdb.NewCatalog(pool, limits, pool.Config().ConnConfig.Database),

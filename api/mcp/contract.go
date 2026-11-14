@@ -197,10 +197,16 @@ const (
 // engine's operatedBy is AGENT, and the only action of an OPERATOR step.
 const ActionRunCommand = "RUN_COMMAND"
 
+// ActionSendRequest is the AGENT step that sends the person the request file,
+// or its text blocks, beside a hash link. The catalog's sequences leave it out:
+// the engine puts it first exactly when a result carries requestFile
+// (CONTRACT.md, The request file and pasted blocks).
+const ActionSendRequest = "SEND_REQUEST"
+
 // ActorActions lists the actions each actor may take in a next step
 // (CONTRACT.md, Next steps).
 var ActorActions = map[string][]string{
-	ActorAgent:    {"CALL_TOOL", "REVISE_CALL", "RETRY_SMALLER_BATCHES", "ASK_PERSON", "END_TURN", "STOP", ActionRunCommand},
+	ActorAgent:    {"CALL_TOOL", "REVISE_CALL", "RETRY_SMALLER_BATCHES", "ASK_PERSON", "END_TURN", "STOP", ActionSendRequest, ActionRunCommand},
 	ActorPerson:   {"OPEN_LINK", ActionRunCommand, "TELL_AGENT"},
 	ActorOperator: {ActionRunCommand},
 }

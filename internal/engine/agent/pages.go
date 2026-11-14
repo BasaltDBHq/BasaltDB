@@ -90,12 +90,16 @@ func (s *Service) columnsOf(ctx context.Context, lines []string) approval.Column
 
 // RelayApproval submits the person's signed approval of one of this
 // agent's held writes (submit_approval).
-func (s *Service) RelayApproval(ctx context.Context, r approval.Response) error {
+func (s *Service) RelayApproval(ctx context.Context, r approval.Response) (Receipt, error) {
 	if _, err := s.openApproval(ctx, r.ApprovalID, nil); err != nil {
-		return err
+		return Receipt{}, err
 	}
-	_, err := s.Approvals.SubmitApproval(ctx, r.ApprovalID, r.Assertion())
-	return err
+	if _, err := s.Approvals.SubmitApproval(ctx, r.ApprovalID, r.Assertion()); err != nil {
+		return Receipt{}, err
+	}
+	// Postgres accepted the signature: the receipt names the approval as
+	// Postgres records it, never as the page sent it.
+	return s.approvalReceipt(ctx, r.ApprovalID)
 }
 
 // openApproval is one of this agent's held writes that can still be
@@ -183,16 +187,26 @@ func (s *Service) RevertRequest(ctx context.Context, id uuid.UUID, secret string
 // RelayRevert applies the person's signed revert (apply_revert): Postgres
 // verifies the signature and runs the revert, or for a large plan records
 // it for the agent's batches.
-func (s *Service) RelayRevert(ctx context.Context, r revert.Response) (guard.AppliedRevert, error) {
+func (s *Service) RelayRevert(ctx context.Context, r revert.Response) (guard.AppliedRevert, Receipt, error) {
 	open, err := s.openRevert(ctx, r.RevertID, nil)
 	if err != nil {
-		return guard.AppliedRevert{}, err
+		return guard.AppliedRevert{}, Receipt{}, err
 	}
 	applied, err := s.Reverts.ApplyRevert(ctx, r.RevertID, r.Assertion())
 	if err != nil {
-		return guard.AppliedRevert{}, s.applyRevertError(ctx, open, err)
+		return guard.AppliedRevert{}, Receipt{}, s.applyRevertError(ctx, open, err)
 	}
-	return applied, nil
+	// Postgres accepted the signature: the receipt names the revert as
+	// Postgres records it now.
+	signed, err := s.Reverts.FindRevert(ctx, r.RevertID)
+	if err != nil {
+		return guard.AppliedRevert{}, Receipt{}, err
+	}
+	receipt, err := s.revertReceipt(signed)
+	if err != nil {
+		return guard.AppliedRevert{}, Receipt{}, err
+	}
+	return applied, receipt, nil
 }
 
 // openRevert is a revert this agent's role prepared that can still be

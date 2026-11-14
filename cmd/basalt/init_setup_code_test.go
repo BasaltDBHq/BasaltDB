@@ -437,3 +437,18 @@ func TestSetupRefusedMessage(t *testing.T) {
 	err = l.refused(&pgconn.PgError{Message: "boom", Hint: "Do this"})
 	require.True(t, strings.HasSuffix(err.Error(), ": Do this. Nothing changed."), err.Error())
 }
+
+func TestSetupPasskeyLabelUpgradeCodeHasNoAgent(t *testing.T) {
+	now := time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC)
+	up := setupcode.Payload{Kind: setupcode.KindUpgrade}
+	if got, want := setupPasskeyLabel("", up, "mydb", now), "mydb · 2026-11-14"; got != want {
+		t.Fatalf("upgrade default label = %q, want %q", got, want)
+	}
+	ag := setupcode.Payload{Kind: setupcode.KindAgent, Agent: &setupcode.Agent{Name: "bot"}}
+	if got, want := setupPasskeyLabel("", ag, "mydb", now), "mydb · bot · 2026-11-14"; got != want {
+		t.Fatalf("agent default label = %q, want %q", got, want)
+	}
+	if got := setupPasskeyLabel("mine", up, "mydb", now); got != "mine" {
+		t.Fatalf("flag label = %q", got)
+	}
+}

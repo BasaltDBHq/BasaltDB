@@ -66,6 +66,11 @@ func TestMarkedReadsLeaveOutLargeValuesThePersonsReadsDoNot(t *testing.T) {
 	require.Equal(t, big, fullRows[full.Items[0].ID][0].After["body"])
 	require.Len(t, fullRows[full.Items[1].ID][0].After, 6)
 	require.Nil(t, fullRows[full.Items[0].ID][0].LargeValues)
+	// The person's read carries a summary of each value over 1 MiB for the
+	// CLI to print, matching the marker the agent sees.
+	require.Equal(t, "(1.0 MiB, sha256 "+hexSHA(big)+")", fullRows[full.Items[0].ID][0].Marks.After["body"])
+	require.Empty(t, fullRows[full.Items[0].ID][0].Marks.Before)
+	require.Empty(t, fullRows[full.Items[0].ID][0].Marks.Key)
 
 	marked, err := ledger.ListChangesMarked(ctx, a.Conn, p)
 	require.NoError(t, err)

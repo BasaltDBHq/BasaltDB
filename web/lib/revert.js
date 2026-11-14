@@ -27,7 +27,7 @@ import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, rejectRever
 import { $, REVERT_REOPEN, el, fail, linkFailure, loadOrPaste, personText, setPill, showCode, showDone, showRelayFailed, webauthnError } from "./page.js";
 import { canWiden, narrow, widen } from "./rescope.js";
 import { applyReveal, canReveal, clearReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
-import { changeGroups, countText, display, rowKeyText } from "./changes.js";
+import { changeGroups, countText, rawText, rowKeyText } from "./changes.js";
 import {
   MAX_NOTE,
   RESET_MESSAGE,
@@ -187,7 +187,7 @@ export function lineGroups(items, who = null, shown = new Map(), longLink = fals
       return line.sqlState ? `${reason} (SQLSTATE ${visibleText(line.sqlState)})` : reason;
     },
     // Only the columns whose value changes are highlighted.
-    highlights: (v, col) => display(v.line, "now", col) !== display(v.line, "set", col),
+    highlights: (v, col) => rawText(v.line, "now", col) !== rawText(v.line, "set", col),
     notes: (ls) => (ls.some((l) => l.op === "DELETE" && l.action === "RESTORE") ? [INSERTED_NOTE] : []),
   });
 }

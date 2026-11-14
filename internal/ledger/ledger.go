@@ -90,6 +90,9 @@ type RowChange struct {
 	// the images left out whole: absent on the wire, never null.
 	LargeValues                             []largevalue.Entry
 	KeyLeftOut, BeforeLeftOut, AfterLeftOut bool
+	// Marks summarize the values over 1 MiB of the person's read, for the
+	// CLI to print after them (largevalue.Summary).
+	Marks largevalue.Marks
 }
 
 // BasedOn is the row version a write was based on (CONTRACT.md).
@@ -208,8 +211,14 @@ func RowChanges(ctx context.Context, q guard.Querier, changeIDs []uuid.UUID) (ma
 	for rows.Next() {
 		var id uuid.UUID
 		var r RowChange
-		if err := rows.Scan(&id, &r.Seq, &r.Table, &r.Op, &r.Key, &r.Before, &r.After,
+		var key, before, after json.RawMessage
+		if err := rows.Scan(&id, &r.Seq, &r.Table, &r.Op, &key, &before, &after,
 			&r.Cascaded, &r.Redacted, &r.Pruned, &r.BasedOn, &r.BlindWrite); err != nil {
+			return nil, err
+		}
+		// The images as Postgres printed them: decoded for the row, and
+		// measured byte for byte for the summaries of its large values.
+		if err := decodeImages(&r, key, before, after); err != nil {
 			return nil, err
 		}
 		out[id] = append(out[id], r)
@@ -229,4 +238,27 @@ func rowChangeSelect(changeIDs []uuid.UUID) sq.SelectBuilder {
 		"values_pruned", "detail->'basedOn' AS based_on", "coalesce((detail->>'blindWrite')::boolean, false) AS blind_write").
 		From("basalt_meta.agent_ledger").
 		Where(sq.Eq{"kind": "ROW_CHANGE", colChangeID: ids})
+}
+
+// decodeImages sets r's key, before and after maps from the images' JSON
+// text and the summaries of the values in them that cost over 1 MiB.
+func decodeImages(r *RowChange, key, before, after json.RawMessage) error {
+	for _, img := range []struct {
+		text  json.RawMessage
+		into  *map[string]any
+		marks *map[string]string
+	}{{key, &r.Key, &r.Marks.Key}, {before, &r.Before, &r.Marks.Before}, {after, &r.After, &r.Marks.After}} {
+		if len(img.text) == 0 {
+			continue
+		}
+		if err := json.Unmarshal(img.text, img.into); err != nil {
+			return err
+		}
+		marks, err := largevalue.ImageMarks(img.text)
+		if err != nil {
+			return err
+		}
+		*img.marks = marks
+	}
+	return nil
 }

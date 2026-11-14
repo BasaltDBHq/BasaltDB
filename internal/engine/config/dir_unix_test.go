@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -53,7 +54,7 @@ func TestUpsertAgentVaultAtStaysInTheOpenedDirectory(t *testing.T) {
 	require.NoError(t, os.Rename(cfgDir, moved))
 	require.NoError(t, os.Symlink(elsewhere, cfgDir))
 
-	_, err := config.UpsertAgentVaultAt(d, "engine.json", trustedCheck, config.Settings{}, config.Agent{Name: "two", OSUser: "bot", CredentialFile: "/c/two.url"})
+	_, err := config.UpsertAgentVaultAt(d, "engine.json", trustedCheck, -1, config.Settings{}, config.Agent{Name: "two", OSUser: "bot", CredentialFile: "/c/two.url"})
 	require.NoError(t, err)
 	entries, err := os.ReadDir(elsewhere)
 	require.NoError(t, err)
@@ -66,7 +67,7 @@ func TestUpsertAgentVaultAtStaysInTheOpenedDirectory(t *testing.T) {
 	_, err = service.OpenTrustedDir(cfgDir, os.Geteuid(), false)
 	require.ErrorContains(t, err, "a symlink is refused")
 
-	cleared, err := config.ClearSetupAt(d, "engine.json", trustedCheck, "two", "none")
+	cleared, err := config.ClearSetupAt(d, "engine.json", trustedCheck, -1, "two", "none")
 	require.NoError(t, err)
 	require.False(t, cleared)
 }
@@ -83,12 +84,12 @@ func TestUpsertAgentVaultAtRefusesAnUntrustedConfig(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, os.Chmod(cfg, 0o620))
-	_, err = config.UpsertAgentVaultAt(d, "engine.json", trustedCheck, config.Settings{}, config.Agent{Name: "two", OSUser: "bot", CredentialFile: "/c/two.url"})
+	_, err = config.UpsertAgentVaultAt(d, "engine.json", trustedCheck, -1, config.Settings{}, config.Agent{Name: "two", OSUser: "bot", CredentialFile: "/c/two.url"})
 	require.ErrorContains(t, err, "writable by group or others")
 	require.NoError(t, os.Chmod(cfg, 0o600))
 
 	require.NoError(t, os.Link(cfg, filepath.Join(dir, "hard")))
-	_, err = config.UpsertAgentVaultAt(d, "engine.json", trustedCheck, config.Settings{}, config.Agent{Name: "two", OSUser: "bot", CredentialFile: "/c/two.url"})
+	_, err = config.UpsertAgentVaultAt(d, "engine.json", trustedCheck, -1, config.Settings{}, config.Agent{Name: "two", OSUser: "bot", CredentialFile: "/c/two.url"})
 	require.ErrorContains(t, err, "more than one hard link")
 	require.NoError(t, os.Remove(filepath.Join(dir, "hard")))
 
@@ -99,7 +100,7 @@ func TestUpsertAgentVaultAtRefusesAnUntrustedConfig(t *testing.T) {
 	other := filepath.Join(realDir(t), "engine.json")
 	require.NoError(t, os.Rename(cfg, other))
 	require.NoError(t, os.Symlink(other, cfg))
-	_, err = config.ClearSetupAt(d, "engine.json", trustedCheck, "one", "x")
+	_, err = config.ClearSetupAt(d, "engine.json", trustedCheck, -1, "one", "x")
 	require.ErrorContains(t, err, "is a symlink, which is refused")
 }
 
@@ -181,4 +182,28 @@ func TestReadCredentialAt(t *testing.T) {
 	require.NoError(t, os.Symlink(filepath.Join(dir, "bot.url"), filepath.Join(dir, "link.url")))
 	_, _, err = config.ReadCredentialAt(d, "link.url")
 	require.ErrorContains(t, err, "is a symlink, which is refused")
+}
+
+// As real root only: the config UpsertAgentVaultAt and ClearSetupAt write
+// is given to the owner they are passed (the config directory's), before
+// it appears under its name.
+func TestUpsertAgentVaultAtGivesTheConfigToItsOwnerAsRoot(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("needs root")
+	}
+	const nobody = 65534
+	dir := realDir(t)
+	require.NoError(t, os.Chown(dir, nobody, -1))
+	d, err := service.OpenTrustedDir(dir, nobody, false)
+	require.NoError(t, err)
+	defer d.Close()
+	check := func(f *os.File) error { return config.CheckTrustedConfig(f, nobody) }
+	_, err = config.UpsertAgentVaultAt(d, "engine.json", check, nobody, config.Settings{SocketDir: "/run/basalt"},
+		config.Agent{Name: "one", OSUser: "bot", CredentialFile: "/c/one.url"})
+	require.NoError(t, err)
+	fi, err := os.Stat(filepath.Join(dir, "engine.json"))
+	require.NoError(t, err)
+	require.Equal(t, uint32(nobody), fi.Sys().(*syscall.Stat_t).Uid)
+	_, err = config.ClearSetupAt(d, "engine.json", check, nobody, "one", "x")
+	require.NoError(t, err)
 }

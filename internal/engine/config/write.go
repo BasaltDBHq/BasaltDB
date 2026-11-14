@@ -100,9 +100,10 @@ func UpsertAgentVault(path string, s Settings, a Agent) (VaultWritten, error) {
 // engine's user controls (service.TrustedDir): the lock, the read and the
 // write are all relative to d, so swapping the config directory for a
 // symlink meanwhile redirects nothing. check vets the opened config before
-// it is read (owner and mode); the file is written owned by this process.
-func UpsertAgentVaultAt(d Dir, name string, check func(*os.File) error, s Settings, a Agent) (VaultWritten, error) {
-	return upsertWith(dirFile{d: d, name: name, check: check}, s, a)
+// it is read (owner and mode); the file is written owned by owner (this
+// process when < 0).
+func UpsertAgentVaultAt(d Dir, name string, check func(*os.File) error, owner int, s Settings, a Agent) (VaultWritten, error) {
+	return upsertWith(dirFile{d: d, name: name, check: check, owner: owner}, s, a)
 }
 
 // upsertWith is UpsertAgentVault on f, under f's config lock.
@@ -157,10 +158,8 @@ type dirFile struct {
 	d     Dir
 	name  string
 	check func(*os.File) error
+	owner int
 }
-
-// keepOwner leaves a file Dir.WriteFile writes to this process.
-const keepOwner = -1
 
 func (f dirFile) path() string { return filepath.Join(f.d.Path(), f.name) }
 func (f dirFile) lock() (func(), error) {
@@ -170,7 +169,7 @@ func (f dirFile) lock() (func(), error) {
 func (f dirFile) open(string) (*os.File, error) {
 	return OpenPlainAt(f.d, f.name, f.check)
 }
-func (f dirFile) write(raw []byte) error { return f.d.WriteFile(f.name, raw, FileMode, keepOwner) }
+func (f dirFile) write(raw []byte) error { return f.d.WriteFile(f.name, raw, FileMode, f.owner) }
 
 // Upserted is the content UpsertAgent writes, without writing it: the
 // service install writes it itself, owned by the engine's OS user.
@@ -246,8 +245,8 @@ func ClearSetup(path, agent, id string) (cleared bool, err error) {
 
 // ClearSetupAt is ClearSetup for a root process on the config file name in
 // d (see UpsertAgentVaultAt).
-func ClearSetupAt(d Dir, name string, check func(*os.File) error, agent, id string) (bool, error) {
-	return clearSetupWith(dirFile{d: d, name: name, check: check}, agent, id)
+func ClearSetupAt(d Dir, name string, check func(*os.File) error, owner int, agent, id string) (bool, error) {
+	return clearSetupWith(dirFile{d: d, name: name, check: check, owner: owner}, agent, id)
 }
 
 func clearSetupWith(f configFile, agent, id string) (cleared bool, err error) {

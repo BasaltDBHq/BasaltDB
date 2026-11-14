@@ -392,6 +392,13 @@ func (r *remoteInit) paths() error {
 	}
 	asRoot := r.c.host.Euid() == 0
 	if asRoot {
+		// The user who ran sudo runs basalt status, log, approve and
+		// revert on this machine: the person socket of a service engine
+		// admits it (CONTRACT.md, Recording the person). Never root.
+		person, err := invokingUID(r.c)
+		if err == nil && person != 0 {
+			r.settings.PersonUIDs = []uint32{person}
+		}
 		abs, err := filepath.Abs(dir)
 		if err != nil {
 			return err
@@ -425,6 +432,15 @@ func (r *remoteInit) paths() error {
 		trusted, err := rootTrustedOwner(dir)
 		if err != nil {
 			return err
+		}
+		// A config directory another OS user owns (not root, not the user
+		// who ran sudo) is an engine user's, as basalt service install
+		// makes it: the engine runs as that user and serves the person
+		// socket, so the config is a service one. Only with a person to
+		// admit (SUDO_UID): without one, a service config's person socket
+		// would admit nobody.
+		if trusted > 0 && len(r.settings.PersonUIDs) > 0 && uint32(trusted) != r.settings.PersonUIDs[0] {
+			r.settings.Mode = config.ModeService
 		}
 		files, err := openRootCredFiles(filepath.Dir(r.credFile), trusted)
 		if err != nil {
@@ -948,8 +964,14 @@ const stateDirMode = 0o700
 // engine key, and init says why on stderr.
 func (r *remoteInit) engineKey() *setupcode.Engine {
 	if r.c.host.Euid() == 0 {
-		fmt.Fprintf(r.c.stderr, "basalt: the code carries no engine key: run basalt init --remote as %s (the engine's OS user) so it can read the engine's key file\n", r.osUser)
-		return nil
+		// As root, through the state directory opened without following a
+		// link the engine's user controls; a new key file is that user's.
+		spki, err := rootEngineKey(r.stateDir, r.configDir, r.c.now)
+		if err != nil {
+			fmt.Fprintf(r.c.stderr, "basalt: the code carries no engine key: the engine's key file is refused (%v); basalt status shows KEY_ERROR\n", err)
+			return nil
+		}
+		return &setupcode.Engine{PublicKey: base64.RawURLEncoding.EncodeToString(spki)}
 	}
 	if err := os.MkdirAll(r.stateDir, stateDirMode); err != nil {
 		fmt.Fprintf(r.c.stderr, "basalt: the code carries no engine key: %v\n", err)

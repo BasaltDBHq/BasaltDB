@@ -125,3 +125,29 @@ func TestRootEngineReachesItsFilesThroughTheOpenedDirectories(t *testing.T) {
 	var unusable *config.LockUnusableError
 	require.True(t, errors.As(err, &unusable), err)
 }
+
+// A root engine clears a setup in the config directory it opened at start:
+// the config directory swapped for a symlink afterwards redirects nothing.
+func TestRootEngineClearsTheSetupInTheOpenedConfigDirectory(t *testing.T) {
+	t.Parallel()
+	id := uuid.Must(uuid.NewV7())
+	cfgPath, credFile := rootLayout(t, id)
+	files, err := openRootFiles(cfgPath, "bot", credFile)
+	require.NoError(t, err)
+	defer files.close()
+	dir := filepath.Dir(cfgPath)
+	elsewhere := filepath.Join(filepath.Dir(dir), "elsewhere")
+	require.NoError(t, os.Mkdir(elsewhere, 0o700))
+	require.NoError(t, os.Rename(dir, dir+".moved"))
+	require.NoError(t, os.Symlink(elsewhere, dir))
+
+	cleared, err := files.clearSetup("bot", id.String())
+	require.NoError(t, err)
+	require.True(t, cleared)
+	entries, err := os.ReadDir(elsewhere)
+	require.NoError(t, err)
+	require.Empty(t, entries)
+	c, err := config.Load(filepath.Join(dir+".moved", "engine.json"))
+	require.NoError(t, err)
+	require.Nil(t, c.Agents[0].Setup)
+}

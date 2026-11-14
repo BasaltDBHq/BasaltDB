@@ -16,7 +16,6 @@ Built on `master`:
 Not built yet:
 
 - **The portal page does not open a Vault session yet.** The page-side client (`web/`) is still to come, so a portal short link cannot complete an approval end to end today. Leave the Vault off unless you are testing it.
-- The receipt the engine signs after each relayed signature is not shown in the chat yet.
 - `basalt engine rotate-key`, and the engine id on portal pages.
 
 ## What leaves your machine

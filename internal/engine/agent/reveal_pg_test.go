@@ -29,7 +29,7 @@ import (
 )
 
 // The agent cannot reveal hidden rows (CONTRACT.md, Approvals, Rows hidden
-// from the agent; plan task 7): holding the link secret, or its own role's
+// from the agent): holding the link secret, or its own role's
 // credential, it gets no value without the person's passkey proof, and
 // after the person revealed rows everything the agent reads stays as it
 // was.

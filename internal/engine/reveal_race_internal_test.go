@@ -25,7 +25,7 @@ import (
 )
 
 // A reveal racing the approval's signature or apply, or the revert's
-// signature, serializes on the item's row lock (plan task 5): whichever
+// signature, serializes on the item's row lock: whichever
 // takes the lock second gets the item's normal answer, and neither
 // deadlocks. The order is made, not timed: an admin transaction holds the
 // item's row, the first call is started and seen waiting on the lock

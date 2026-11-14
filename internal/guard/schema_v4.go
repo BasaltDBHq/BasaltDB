@@ -3,7 +3,7 @@ package guard
 // Version 4 (M2): approvals. A held write is stored with its preview lines
 // and a binding built in Postgres; the person's passkey signs sha256 of the
 // binding text; submit_approval verifies the WebAuthn assertion with a
-// P-256 verifier in plain PL/pgSQL (M0 spike, section 5); applying with
+// P-256 verifier in plain PL/pgSQL; applying with
 // basalt.approval_id commits only if the statement, parameters and the
 // recomputed lines match (decision M2-1). Same rules as schema.go:
 // forward-only, schema-qualified, role names only through Names.render.

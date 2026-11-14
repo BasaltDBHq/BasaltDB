@@ -187,7 +187,7 @@ func newSuiteEnv(t *testing.T) suiteEnv {
 	return suiteEnv{d: d, a: a, p: person(t, d), in: newRun(t, a, "Suite run")}
 }
 
-// The two-minute demo, step 4 (foundation): a bot updates leads in one
+// The two-minute demo, step 4: a bot updates leads in one
 // run, a person edits one of them, and reverting the run restores the rest
 // and skips the person's lead.
 func TestDemoStepFourRevertSkipsThePersonsLead(t *testing.T) {

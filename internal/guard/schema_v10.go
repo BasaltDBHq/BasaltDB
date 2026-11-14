@@ -1,6 +1,6 @@
 package guard
 
-// Version 10 (M4 runbook): an agent is a role that inherits the agents
+// Version 10 (M4): an agent is a role that inherits the agents
 // group, not any member of it. From Postgres 16, CREATE ROLE by a role
 // with CREATEROLE that is not a superuser (Supabase's postgres) also
 // grants the creator ADMIN on the new role, with INHERIT and SET off.

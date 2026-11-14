@@ -242,7 +242,7 @@ Status problems (`status` tool, every one +pm):
 | `DEV_LOCAL_PAGES` | `WARNING` | P `RUN_COMMAND` (`basalt init ... --add-passkey`, saved flags without `--dev-local-pages` and `--passkey-origin`, so the portal's pages and a passkey for them) |
 | `ENGINE_REVOKED` | `WARNING` | Planned (M4.1, [Direct transport](#direct-transport)). A `ASK_PERSON` (whether they revoked this engine on purpose; until a new key is recorded the agent hands over long links, and a replacement means `basalt engine rotate-key` and a new setup code), A `END_TURN` |
 | `DIRECT_NOT_SERVED` | `WARNING` | Planned (M4.1, [Direct transport](#direct-transport)). O `RUN_COMMAND` (`basalt init ... --direct-addr 127.0.0.1:8787`, saved flags, then restart the engine), so the tunnel has a listener to forward to |
-| `LEDGER_REINSTALLED` | `WARNING` | Planned ([version 36](#version-36-reinstalls-on-the-record)). A `ASK_PERSON` (show the notice; whether someone on their team reinstalled Basalt. The tools keep working, and the notice stays until an admin acknowledges it) |
+| `LEDGER_REINSTALLED` | `WARNING` | Planned ([version 36](#version-36-reinstalls-on-the-record)). A `ASK_PERSON` (show the notice and ask whether someone on their team reinstalled Basalt; the tools keep working, and the notice stays until an admin acknowledges it) |
 
 ### Next steps on an agent-operated engine
 
@@ -1591,9 +1591,9 @@ Ledger kind `PIN_SET_ASIDE`: `agent` the caller (`session_user`), detail `pinned
 **Who sets a pin aside.**
 
 - **The engine** (upkeep, on start and every hour), with a pin of another install:
-  1. It first checks the pin against the current chain with `verify_chain_from`. When the pinned entry is still there with the same hash and the chain from it is intact, this is the same ledger under a new oid: a `pg_dump` and `pg_restore`, or a move to another host. The engine moves the pin to the new install and records nothing.
+  1. It first checks the pin against the current chain. This step counts only when the ledger row at the pinned `seq` exists (the pinned `seq` is at or after `chain_anchor`; `verify_chain_from` alone treats an older pin as verifying from the anchor, which a forger who moved the anchor would pass), that row holds the pinned hash, and `verify_chain_from` from it is intact. Then this is the same ledger under a new oid: a `pg_dump` and `pg_restore`, or a move to another host. The engine moves the pin to the new install, records nothing in the ledger, and logs a warning naming both oids (the only trace that the schema was dropped and restored). A pin older than the anchor goes to step 2 and is recorded. A legitimate restore loses nothing by this, because a pin is at most an hour old and retention deletes rows only after a year.
   2. Otherwise it reports the pin with `record_pin_set_aside` and then sets it aside. The full check covers the new chain, and every new pin carries the new install. A restored ledger whose history was rewritten fails step 1, so it gets the notice.
-  3. When the call fails (the database is down, or the guard is older than version 36), the engine keeps the pin and checks it as before, reporting the broken chain (`chainBrokenAt`). It never sets aside a pin it did not record.
+  3. A call that returns false (this report is already recorded, for example when the pin file write failed after an earlier call) counts as recorded. When the call fails (the database is down, or the guard is older than version 36), the engine keeps the pin and checks it as before, reporting the broken chain (`chainBrokenAt`). It never sets aside a pin it did not record.
   4. It also keeps each set-aside it recorded in its own pin file (`setAside`: `pinnedSeq`, `pinnedHash`, `pinnedInstall`, `install`, `at`). It shows the notice from that copy as well as from the ledger, so deleting the rows or changing the view in the database does not hide what this witness saw.
 - **`basalt log`**: the same steps for its own pin, on the credential it reads with (in service mode through `CHECK_HEALTH`, below), with its copy kept in its pin under the user cache directory.
 
@@ -1605,11 +1605,11 @@ This database's ledger was reinstalled on <installedAt> by <installedBy> (via Va
 
 - `(via Vault: <vaultUser>)` appears only when `vault_user` is set. `<installedAt>` is RFC 3339 UTC.
 - When `installs` has no row for the install, the first sentence reads "This database's ledger was recreated or restored outside basalt init (no install record), first reported <at>."
-- Each witness keeps its own `<n>` and `<h>`. The notice uses the report of the reader's own credential when there is one, otherwise the earliest report. It is followed by one line per other witness, at most 5: "Also reported with the credential of <agent>: entry <n> (hash <h>)." Then "and N more reports" when there are more.
+- Each witness keeps its own `<n>` and `<h>`. The notice uses the report of the reader's own credential when there is one, otherwise the earliest report. It is followed by one line per other agent credential that reported this reinstall, at most 5, each with that agent's earliest report and a count of its further ones: "Also reported with the credential of <agent>: entry <n> (hash <h>)[, and N more reports]." Then "and N more agents" when there are more. One agent's many reports therefore take one line and cannot crowd out real witnesses.
 - No report replaces another, so an agent role that reports a false pin cannot overwrite a real witness's entry and hash.
 - `<n>` is the last entry that witness verified, not necessarily the last the old ledger held.
 
-The notice stays until an admin acknowledges it with an admin passkey, recorded in the ledger (Access and audit, a follow-up). Until then nothing clears it. The `status` tool carries it as the problem `LEDGER_REINSTALLED` ([Configuration and status](#configuration-and-status)). Its `personMessage` is the notice of the newest reinstall: the first notice line only, then "Run basalt log to see every report." `basalt status` prints that problem with the other problems. `basalt log` prints every notice in full on stderr before the change records, with the other warnings.
+The notice stays until an admin acknowledges it with an admin passkey, recorded in the ledger (Access and audit, a follow-up). Until then nothing clears it. The `status` tool carries it as the problem `LEDGER_REINSTALLED` ([Configuration and status](#configuration-and-status)). Its `personMessage` is the notice of the newest reinstall: the first notice line only, then "Run basalt log to see every report." `vaultUser` is cut to 64 characters, so the message stays under 500 characters. `basalt status` prints that problem with the other problems. `basalt log` prints every notice in full on stderr before the change records, with the other warnings.
 
 **Only an admin reinstalls** (Access and audit, AA-2). Both `basalt uninstall` and the install need the admin connection string. Dropping `basalt_meta` needs its owner, and the install creates roles. An agent role owns nothing in `basalt_meta` and can do neither.
 
@@ -1617,6 +1617,9 @@ The notice stays until an admin acknowledges it with an admin passkey, recorded 
 
 - An agent role can call `record_pin_set_aside` with a pin it never held. That raises a false notice of its own, which names the agent's credential, and it changes no other witness's report. It can also append any number of such rows: a ledger write like any other agent write, with no rate limit.
 - `installs` is only as trustworthy as the admin. Someone with the admin connection can write a row that names another user or Vault user.
+- A restore that keeps every pinned entry and rewrites only later ones moves the pin with no notice, exactly as a rewrite in place would. Entries after the last pin are unprotected either way.
+- An admin can move `chain_anchor` in place on an unchanged install; a pin older than the anchor then verifies from it. That gap predates version 36 and is not covered here (a follow-up).
+- The install identity is the schema oid. A wrapped oid counter could hand a new install the old oid; the failure is loud (a broken chain), never silent.
 - That admin can also delete `PIN_SET_ASIDE` rows. Doing so changes the chain after the witness pinned it, so the witness's next check of the same install reports a broken chain, and its own kept copy keeps the notice.
 - The witnesses rely on the guard's own code. `verify_chain_from` and `agent_reinstalls` run in the database, and an admin who can replace `basalt_meta` can also redefine them. The engine's kept copy covers a hidden view. Only a witness outside the database that recomputes the hashes itself covers a rewritten verifier (the Vault, later). This is no weaker than before version 36.
 

@@ -15,9 +15,8 @@ import (
 
 // largeRequestEnv is an agent whose table docs has a row with a 2 MB body
 // (a revert of an UPDATE to it carries that value in its lines) and 20 rows
-// of 60 000 '<' (a held DELETE of them carries 1.2 MB of lines; the guard
-// takes a held line of at most 64 KiB). Both are past what a page decodes
-// from a link.
+// of 60 000 '<' (a held DELETE of them carries 1.2 MB of lines). Both are
+// past what a page decodes from a link.
 func largeRequestEnv(t *testing.T, pagesOrigin ...string) agentEnv {
 	t.Helper()
 	d := guardtest.New(t)

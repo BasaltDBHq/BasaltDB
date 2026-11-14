@@ -20,8 +20,9 @@ import (
 // and lines whole, and a page decodes at most 1 MiB of them (Format 2,
 // Limits). A larger request reaches a page only on a short link whose page
 // fetches it from the engine: the engine's local pages, or the portal over
-// the Vault or the direct transport when its lines cost at most
-// maxPortalRequestCost. With neither, the answer is REQUEST_TOO_LARGE.
+// the Vault when its lines cost at most maxPortalRequestCost (the direct
+// transport issues no short link yet). With neither, the answer is
+// REQUEST_TOO_LARGE.
 
 // argReissueLink is list_pending's and request_revert's argument that
 // issues a new link.
@@ -33,8 +34,7 @@ const reasonRequestTooLarge = "REQUEST_TOO_LARGE"
 
 // maxPortalRequestCost is the most a request's lines may cost, in the
 // budget's unit, on the portal's short link: the page's response over the
-// Vault or the direct transport is at most 16 MiB, and the rest of it fits
-// in the remaining 1 MiB.
+// Vault is at most 16 MiB, and the rest of it fits in the remaining 1 MiB.
 const maxPortalRequestCost = 15 << 20
 
 // textOverhead is what one text costs beyond its bytes (resultsize's
@@ -82,8 +82,8 @@ func longOrTooLarge(r sizedRequest, build func() (string, error)) (string, bool,
 
 // largeShortLink issues a new short link that can carry a request too large
 // for any other link (revoking the item's earlier one): the portal's when
-// the Vault or the direct transport registers it and the lines cost at most
-// maxPortalRequestCost, else one to the local pages; "" when there is none.
+// the Vault registers it and the lines cost at most maxPortalRequestCost,
+// else one to the local pages; "" when there is none.
 func (s *Service) largeShortLink(ctx context.Context, page func(string, uuid.UUID) string, id uuid.UUID, expires time.Time, cost int64) (string, error) {
 	if cost <= maxPortalRequestCost {
 		if link := s.relayLink(ctx, page, id, expires); link != "" {
@@ -95,7 +95,7 @@ func (s *Service) largeShortLink(ctx context.Context, page func(string, uuid.UUI
 
 // carriesLarge reports whether a short link this engine hands over can
 // carry a request whose lines cost cost: the local pages always, the
-// portal's over a READY Vault or direct socket up to maxPortalRequestCost.
+// portal's over a READY Vault up to maxPortalRequestCost.
 func (s *Service) carriesLarge(cost int64) bool {
 	return s.PagesOrigin != "" || (cost <= maxPortalRequestCost && s.Relay.Connected())
 }

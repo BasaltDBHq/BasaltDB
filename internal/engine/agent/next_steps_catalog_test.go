@@ -226,7 +226,8 @@ func catalogCases() map[string]catalogCase {
 			"write", writeArgs0,
 			pgFail("BS007", "NOT_ALLOWED", "table public.events has no primary key; the guard keys ledger rows by it"),
 		},
-		caseKey("STATEMENT_REFUSED", "NOT_ALLOWED", ""): {"write", writeArgs0, pgFail("BS007", "NOT_ALLOWED", "TRUNCATE by an agent")},
+		caseKey("STATEMENT_REFUSED", "NOT_ALLOWED", ""):    {"write", writeArgs0, pgFail("BS007", "NOT_ALLOWED", "TRUNCATE by an agent")},
+		caseKey("STATEMENT_REFUSED", "HOLD_TOO_LARGE", ""): {"write", writeArgs0, pgFail("BS007", "NOT_ALLOWED", guard.DetailHoldTooLarge)},
 
 		caseKey("ROW_LIMIT_EXCEEDED", "", ""): {
 			"write", writeArgs0,

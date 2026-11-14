@@ -180,3 +180,28 @@ func checkLoopbackAddr(addr string) error {
 	}
 	return nil
 }
+
+// Direct is directAddr checked: "" when off (the default, or "off"). It
+// needs the portal as pagesUrl (a localhost passkey cannot sign there, and
+// a local pagesUrl has the local pages instead) and a literal loopback IP
+// and port: the tunnel ends TLS, this listener has none.
+func (c Config) Direct() (string, error) {
+	if c.DirectAddr == "" || c.DirectAddr == PagesOff {
+		return "", nil
+	}
+	base, err := c.PagesBase()
+	if err != nil {
+		return "", err
+	}
+	if !isHosted(base) {
+		return "", fmt.Errorf("directAddr needs the portal as pagesUrl (%s), not %s: the direct transport serves the portal's pages", links.Portal, base)
+	}
+	host, _, err := net.SplitHostPort(c.DirectAddr)
+	if err != nil {
+		return "", fmt.Errorf("directAddr %q: %w", c.DirectAddr, err)
+	}
+	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
+		return "", fmt.Errorf("directAddr %q: the direct listener listens on a loopback IP only (127.0.0.1 or ::1); your tunnel forwards to it", c.DirectAddr)
+	}
+	return c.DirectAddr, nil
+}

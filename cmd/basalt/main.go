@@ -49,6 +49,7 @@ func commands() []command {
 		{"access", "List the tables an agent can read, can write and is not granted", withIO(runAccess)},
 		{"approve", "Relay the code the approval page gave you to Postgres (or --show a held write's link)", withIO(runApprove)},
 		{"revert", "Revert a change, run or task with your passkey; people's later edits are kept", withIO(runRevert)},
+		{"tunnel", "Print the commands that publish the engine's direct listener through your own tunnel, and check the address", withIO(runTunnel)},
 		{"portal", "Check the hosted portal's pages against this binary's copy (verify)", withIO(runPortal)},
 		{"passkey", "List, check or remove your passkeys (list | check | remove <id>)", withIO(runPasskey)},
 		{"status", "Show what is ready for an agent and what to fix, with the commands", withIO(runStatus)},

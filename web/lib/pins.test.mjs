@@ -62,6 +62,15 @@ test("cookieIn reads only the pins cookie", () => {
   assert.equal(cookieIn(""), "");
 });
 
+test("cookieIn reads the cookie as the edge function does", () => {
+  const mine = `${PINS_COOKIE}=https://a.example.com`;
+  assert.equal(cookieIn(`\t${mine} `), "https://a.example.com", "spaces and tabs are trimmed");
+  assert.equal(cookieIn(`\u00a0${mine}`), "", "a Unicode space is not");
+  assert.equal(cookieIn(`${mine}; ${PINS_COOKIE}=https://evil.example.com`), "", "two of the name: neither");
+  assert.equal(cookieIn(`${PINS_COOKIE}=https://evil.example.com; ${mine}`), "");
+  assert.equal(cookieIn(`theme=dark; ${mine}; other=1`), "https://a.example.com");
+});
+
 test("the store writes storage and cookie together", () => {
   const storage = memory();
   const doc = { cookie: "" };

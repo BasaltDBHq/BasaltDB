@@ -54,6 +54,10 @@ const (
 	// clears them.
 	directReadTimeout  = 10 * time.Second
 	directWriteTimeout = 10 * time.Second
+	// directRecheckEvery is how often the engine reads its record for the
+	// agents with an open direct session, so a session that sends nothing
+	// is still closed with ENGINE_REVOKED soon after a revoke.
+	directRecheckEvery = time.Minute
 	// directShutdownTimeout bounds the listener's shutdown.
 	directShutdownTimeout = 5 * time.Second
 	httpsPort             = "443"
@@ -199,6 +203,54 @@ func (r *engineRecords) admit(host string) func(context.Context, vault.SessionLi
 	}
 }
 
+// revoked is the check before each request of an open direct session: the
+// link's agent's database revoked this engine since the session opened
+// (CONTRACT.md, Direct transport, Revocation by the person). Only a revoke
+// ends the session: a failed read answers the request, which reads that
+// database itself, and an address recorded since applies to new sessions.
+func (r *engineRecords) revoked(ctx context.Context, l vault.SessionLink) channel.CloseError {
+	if r.isRevoked(ctx, l.Agent) {
+		return channel.ErrEngineRevoked
+	}
+	return 0
+}
+
+// isRevoked reads agent's record: whether its database revoked this engine.
+// A failed read is not a revoke.
+func (r *engineRecords) isRevoked(ctx context.Context, agent string) bool {
+	e, err := r.read(ctx, agent)
+	if err != nil {
+		r.log.Debug("direct: re-read the engine's record", "agent", agent, "err", err)
+		return false
+	}
+	return e != nil && e.RevokedAt != nil
+}
+
+// endRevoked closes, with ENGINE_REVOKED, the open direct sessions of every
+// agent whose database revoked this engine.
+func (r *engineRecords) endRevoked(ctx context.Context, sess *vault.Direct) {
+	for _, agent := range sess.Agents() {
+		if r.isRevoked(ctx, agent) {
+			r.log.Info("direct: the agent's database revoked this engine; its sessions are closed", "agent", agent)
+			sess.EndAgent(agent, channel.ErrEngineRevoked)
+		}
+	}
+}
+
+// watchRevoked runs endRevoked every interval until ctx ends.
+func (r *engineRecords) watchRevoked(ctx context.Context, sess *vault.Direct, every time.Duration) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			r.endRevoked(ctx, sess)
+		}
+	}
+}
+
 // directHandler serves the direct listener's two routes.
 type directHandler struct {
 	records *engineRecords
@@ -207,6 +259,9 @@ type directHandler struct {
 	ctx     context.Context
 	now     func() time.Time
 	pending chan struct{}
+	// hold is the longest a socket holds its pending slot without reaching
+	// the record's check: vault.Message1Timeout, longer in tests.
+	hold time.Duration
 
 	mu          sync.Mutex
 	windowStart time.Time
@@ -214,8 +269,15 @@ type directHandler struct {
 }
 
 func newDirectHandler(ctx context.Context, records *engineRecords, key []byte, sess *vault.Direct, now func() time.Time) http.Handler {
-	d := &directHandler{records: records, key: key, sess: sess, ctx: ctx, now: now, pending: make(chan struct{}, directPending)}
-	return websec.Headers()(d)
+	return websec.Headers()(newDirectRoutes(ctx, records, key, sess, now))
+}
+
+// newDirectRoutes is newDirectHandler without the security headers.
+func newDirectRoutes(ctx context.Context, records *engineRecords, key []byte, sess *vault.Direct, now func() time.Time) *directHandler {
+	return &directHandler{
+		records: records, key: key, sess: sess, ctx: ctx, now: now, pending: make(chan struct{}, directPending),
+		hold: vault.Message1Timeout,
+	}
 }
 
 // probe is GET /v1/engine's answer (api/mcp/vault/direct-engine.schema.json).
@@ -318,7 +380,7 @@ func (d *directHandler) session(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// A socket holds its pending slot only while message 1 may still come.
-	t := time.AfterFunc(vault.Message1Timeout, release)
+	t := time.AfterFunc(d.hold, release)
 	defer t.Stop()
 	// The socket ends with the request or with the engine.
 	ctx, cancel := context.WithCancel(r.Context())

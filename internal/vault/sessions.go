@@ -206,6 +206,36 @@ func (s *sessions) takeAll() []*session {
 	return out
 }
 
+// ofAgent lists the established sessions of agent's links. A session's
+// link, and so its agent, is set before it is established and the agent
+// never changes.
+func (s *sessions) ofAgent(agent string) []sid {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []sid
+	for id, ss := range s.open {
+		if ss.est != nil && ss.est.link.Agent == agent {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// agents lists the agents with an established session, each once.
+func (s *sessions) agents() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	seen := map[string]bool{}
+	var out []string
+	for _, ss := range s.open {
+		if ss.est != nil && !seen[ss.est.link.Agent] {
+			seen[ss.est.link.Agent] = true
+			out = append(out, ss.est.link.Agent)
+		}
+	}
+	return out
+}
+
 // ofToken lists the sessions of token, waiting or established.
 func (s *sessions) ofToken(token channel.LinkToken) []sid {
 	s.mu.Lock()

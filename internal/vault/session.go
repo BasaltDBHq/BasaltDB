@@ -322,6 +322,12 @@ func (cn *conn) work(ctx context.Context, ss *session) {
 		case <-ctx.Done():
 			return
 		case req := <-e.work:
+			if cn.recheck != nil {
+				if code := cn.recheck(ctx, e.link); code != 0 {
+					cn.endAsync(ss.id, code)
+					return
+				}
+			}
 			after := &afterAnswer{}
 			dctx := context.WithValue(ctx, rotateKey{}, rotator(func(token channel.LinkToken) { cn.rotate(ss, token) }))
 			dctx = context.WithValue(dctx, afterKey{}, after)

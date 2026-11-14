@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-// Default limits for agent statements (foundation, "Default policy": a
-// SELECT runs within a row limit and a time limit).
+// Default limits for agent statements (the default
+// policy: a SELECT runs within a row limit and a time limit).
 const (
 	DefaultStatementTimeout = 5 * time.Second
 	DefaultReadRowLimit     = 1000

@@ -53,7 +53,7 @@ func (t Token) Surface() string { return t.Prefix + t.ID + t.Suffix }
 
 // MakeToken builds the deterministic token of a value:
 // id = base32(HMAC-SHA256(k_type, Normalize(type, value)))[:12], shaped per
-// type (CONTRACT.md and the M5 design, section 3). phoneRegion is used only for
+// type. phoneRegion is used only for
 // a PHONE written without +cc. An OTHER value that is a card or an IBAN gets
 // the CARD or IBAN token (tokenType). Basalt makes every token: detectors only
 // find spans.

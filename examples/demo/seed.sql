@@ -6,8 +6,8 @@
 -- lead_notes    notes on leads 1 to 10 (two each), ON DELETE CASCADE from
 --               leads, so deleting a lead shows the cascaded rows
 --
--- Row-level security stays off here so the demo shows every value; the
--- runbook's RLS check turns it on later. basalt_demo has no USAGE grant
+-- Row-level security stays off here so the demo shows every value.
+-- basalt_demo has no USAGE grant
 -- for anon or authenticated, so the Data API cannot reach these tables.
 
 BEGIN;
@@ -35,7 +35,7 @@ CREATE INDEX lead_notes_lead_id ON basalt_demo.lead_notes (lead_id);
 
 -- A host can enable RLS on every new table (Supabase has a project setting); with no
 -- policy the agent then reads 0 rows. The demo keeps RLS off on purpose;
--- runbook step 7.4 turns it on, with a policy for the agent.
+-- when RLS is on, basalt init offers a policy for the agent (docs/install.md).
 ALTER TABLE basalt_demo.leads DISABLE ROW LEVEL SECURITY;
 ALTER TABLE basalt_demo.lead_notes DISABLE ROW LEVEL SECURITY;
 

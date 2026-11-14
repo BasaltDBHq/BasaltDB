@@ -1,6 +1,6 @@
 // Package service installs the engine as a system service under its own OS
-// user: a systemd unit on Linux, a launchd daemon on macOS (foundation,
-// "Credentials": one sudo prompt at basalt init). Install and uninstall are
+// user: a systemd unit on Linux, a launchd daemon on macOS, set up with
+// one sudo prompt at basalt init. Install and uninstall are
 // plans of steps, printed before they run, so a person sees every command
 // that needs root.
 package service

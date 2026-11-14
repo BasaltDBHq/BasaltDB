@@ -628,24 +628,23 @@ func personFix(b *Steps, command, problem string) string {
 // follows the link budget like the hold's; no new short link is issued here.
 func (s *Service) approvalLinkError(te *mcp.ToolError, n heldNotice) *mcp.ToolError {
 	b := NewSteps()
-	pick := n.pick
 	var lead string
 	switch te.Reason {
 	case reasonNotSigned:
-		b.OpenLink(n.ApprovalURL, n.ApproveCommand, "Open the link and approve with your passkey: the write is not approved yet.")
+		s.openApprovalAgain(b, n, "Open the link and approve with your passkey: the write is not approved yet.")
 		lead = "The held write was not approved yet, so nothing was applied."
 	case reasonBadSignature:
-		b.OpenLink(n.ApprovalURL, n.ApproveCommand, "Approve again on the page; the code did not verify.")
+		s.openApprovalAgain(b, n, "Approve again on the page; the code did not verify.")
 		lead = "The approval code did not verify, so nothing was applied."
 	case reasonPasskeyRevoked:
 		b.RunCommand(s.Commands.PasskeyList(), "See which passkeys this database accepts.")
 		b.RunCommand(s.Commands.Init("--add-passkey"), "Register your passkey with this command: it adds the one you use and changes nothing else.")
-		b.OpenLink(n.ApprovalURL, n.ApproveCommand, "Then approve the held write with that passkey.")
+		s.openApprovalAgain(b, n, "Then approve the held write with that passkey.")
 		lead = "That passkey is not accepted here (unknown or revoked), so nothing was applied. Check your passkeys, register one if needed, then approve again."
 	default:
 		return te
 	}
-	te.PersonMessage, te.Links = approvalMessage(lead, pick, n.ApproveCommand)
+	te.PersonMessage, te.Links = s.approvalAgainMessage(lead, n)
 	b.EndTurn("End your turn: the person acts next.")
 	steps, err := b.Build()
 	if err != nil {
@@ -654,6 +653,31 @@ func (s *Service) approvalLinkError(te *mcp.ToolError, n heldNotice) *mcp.ToolEr
 	}
 	te.NextSteps = steps
 	return te
+}
+
+// openApprovalAgain sends the person back to the approval page the hold
+// handed over. With the pages served that is the short link they have, which
+// the engine no longer holds: the step names no url, and no long link over
+// the budget is handed over (CONTRACT.md, The request file and pasted
+// blocks). Otherwise it is the link the hold chose: the long link within the
+// budget, or the hash link, whose request file the agent already sent.
+func (s *Service) openApprovalAgain(b *Steps, n heldNotice, text string) {
+	if s.PagesOrigin != "" {
+		b.OpenGivenLink(n.ApproveCommand, "Open the short link the agent gave you earlier. "+text)
+		return
+	}
+	b.OpenLink(n.ApprovalURL, n.ApproveCommand, text)
+}
+
+// approvalAgainMessage is the personMessage of an APPROVAL_INVALID that sends
+// the person back to the page: a pointer to the short link they have while
+// the pages are served, else the hold's link (a hash link names the request
+// file the agent already sent).
+func (s *Service) approvalAgainMessage(lead string, n heldNotice) (string, []mcp.Link) {
+	if s.PagesOrigin != "" {
+		return pointBackMessage(lead, n.ApproveCommand)
+	}
+	return approvalMessage(lead, handOver{URL: n.pick.URL, Kind: n.pick.Kind, File: n.pick.File, sent: true}, n.ApproveCommand)
 }
 
 // SetupError is a call refused because the agent's setup from the laptop has

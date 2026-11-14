@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/basaltdbhq/basaltdb/internal/links"
 )
 
 // The request file beside a hash link (CONTRACT.md, The request file and
@@ -24,7 +26,7 @@ const (
 
 var (
 	requestFileName = regexp.MustCompile(`^basalt-(approval|revert)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.txt$`)
-	requestFileText = regexp.MustCompile(`^[12]\.[A-Za-z0-9_-]+$`)
+	requestFileText = regexp.MustCompile(`^2\.[A-Za-z0-9_-]+$`)
 	requestFileKey  = []byte(`requestFile`)
 )
 
@@ -117,56 +119,82 @@ func (f requestFiles) attachText(text string) (string, bool) {
 	return text, true
 }
 
-// collectRequestFiles finds every requestFile object in v: file name to
-// text, both checked against the schema's patterns.
+// collectRequestFiles finds the requestFile objects of a tool result, only
+// where the contract puts them (CONTRACT.md, The request file and pasted
+// blocks): beside approvalUrl in APPROVAL_REQUIRED's approval, beside
+// revertUrl at the top of revert_plan and request_revert, and in each
+// list_pending item. Each must sit beside the hash link of its own text, so
+// a requestFile-shaped value in data (a jsonb column a query returned) is
+// never acted on. File name to text.
 func collectRequestFiles(v any, files map[string]string) {
-	switch node := v.(type) {
-	case map[string]any:
-		if rf, ok := node["requestFile"].(map[string]any); ok {
-			name, _ := rf["fileName"].(string)
-			text, _ := rf["text"].(string)
-			if requestFileName.MatchString(name) && requestFileText.MatchString(text) {
-				files[name] = text
-			}
-		}
-		for _, child := range node {
-			collectRequestFiles(child, files)
-		}
-	case []any:
-		for _, child := range node {
-			collectRequestFiles(child, files)
+	body, ok := v.(map[string]any)
+	if !ok {
+		return
+	}
+	if approval, ok := body["approval"].(map[string]any); ok {
+		besideLink(approval, files)
+	}
+	besideLink(body, files)
+	items, ok := body["items"].([]any)
+	if !ok {
+		return
+	}
+	for _, it := range items {
+		if item, ok := it.(map[string]any); ok {
+			besideLink(item, files)
 		}
 	}
 }
 
-// insertPath adds "path" after each "fileName": "<name>", line of text,
-// at the same indent.
+// besideLink adds obj's requestFile when it is well formed and obj's
+// approvalUrl or revertUrl is the hash link of its text.
+func besideLink(obj map[string]any, files map[string]string) {
+	rf, ok := obj["requestFile"].(map[string]any)
+	if !ok {
+		return
+	}
+	name, _ := rf["fileName"].(string)
+	text, _ := rf["text"].(string)
+	if !requestFileName.MatchString(name) || !requestFileText.MatchString(text) {
+		return
+	}
+	link, _ := obj["approvalUrl"].(string)
+	if link == "" {
+		link, _ = obj["revertUrl"].(string)
+	}
+	if !strings.HasSuffix(link, "#h="+links.RequestHash(text)) {
+		return
+	}
+	files[name] = text
+}
+
+// insertPath adds "path" after the one "fileName": "<name>", line of text,
+// at the same indent. It refuses a text that holds that line more than once
+// or not at all: then it cannot tell which object is the requestFile.
 func insertPath(text, name, path string) (string, error) {
 	quoted, err := json.Marshal(path)
 	if err != nil {
 		return "", err
 	}
 	field := `"fileName": "` + name + `",`
-	var b strings.Builder
-	for rest := text; ; {
-		i := strings.Index(rest, field)
-		if i < 0 {
-			b.WriteString(rest)
-			return b.String(), nil
-		}
-		lineStart := strings.LastIndex(rest[:i], "\n") + 1
-		indent := rest[lineStart:i]
-		b.WriteString(rest[:i+len(field)])
-		b.WriteString("\n" + indent + `"path": ` + string(quoted) + ",")
-		rest = rest[i+len(field):]
+	if strings.Count(text, field) != 1 {
+		return "", fmt.Errorf("request file %s is named %d times", name, strings.Count(text, field))
 	}
+	i := strings.Index(text, field)
+	lineStart := strings.LastIndex(text[:i], "\n") + 1
+	indent := text[lineStart:i]
+	if strings.TrimSpace(indent) != "" {
+		return "", fmt.Errorf("request file %s is not on a line of its own", name)
+	}
+	end := i + len(field)
+	return text[:end] + "\n" + indent + `"path": ` + string(quoted) + "," + text[end:], nil
 }
 
 // write puts content in dir/name, mode 0600, through a temporary file so a
 // reader never sees half of it.
 func (f requestFiles) write(name, content string) (string, error) {
-	if err := os.MkdirAll(f.dir, requestDirMode); err != nil {
-		return "", fmt.Errorf("request file dir: %w", err)
+	if err := f.ownDir(); err != nil {
+		return "", err
 	}
 	tmp, err := os.CreateTemp(f.dir, ".request-*")
 	if err != nil {
@@ -189,6 +217,28 @@ func (f requestFiles) write(name, content string) (string, error) {
 		return "", fmt.Errorf("request file: %w", err)
 	}
 	return path, nil
+}
+
+// ownDir makes the request file directory, and refuses one that is a link,
+// not this user's, or open to others (an XDG_CACHE_HOME pointing at a shared
+// place): the files hold requests the person signs.
+func (f requestFiles) ownDir() error {
+	if err := os.MkdirAll(f.dir, requestDirMode); err != nil {
+		return fmt.Errorf("request file dir: %w", err)
+	}
+	fi, err := os.Lstat(f.dir)
+	if err != nil {
+		return fmt.Errorf("request file dir: %w", err)
+	}
+	switch {
+	case !fi.IsDir():
+		return fmt.Errorf("request file dir %s is not a directory", f.dir)
+	case !ownedByMe(fi):
+		return fmt.Errorf("request file dir %s is not this user's", f.dir)
+	case fi.Mode().Perm()&^requestDirMode != 0:
+		return fmt.Errorf("request file dir %s is open to other users", f.dir)
+	}
+	return nil
 }
 
 // prune removes request files older than requestFilesKeep. Failures are

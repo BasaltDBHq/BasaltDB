@@ -152,10 +152,10 @@ func withSendRequest(steps []NextStep, f *links.RequestFile) []NextStep {
 
 // The SEND_REQUEST step's text, with and without blocks to paste.
 const (
-	sendRequestWithBlocks = "Send the person requestFile first: attach the file at path (else one named fileName holding exactly text), " +
-		"or else each of blocks in a code block, one per message. Skip a file already sent."
-	sendRequestFileOnly = "Send the person requestFile first: attach the file at path (else one named fileName holding exactly text). " +
-		"An agent that cannot send files does not show the link: ask the person how to go on."
+	sendRequestWithBlocks = "Send requestFile to the person first, once per item: attach the file at path (else one named fileName " +
+		"holding exactly text), or else each of blocks in a code block, one per message."
+	sendRequestFileOnly = "Send requestFile to the person first, once per item: attach the file at path (else fileName holding " +
+		"exactly text). An agent that cannot send files does not show the link: ask the person."
 )
 
 func sendRequestText(f *links.RequestFile) string {

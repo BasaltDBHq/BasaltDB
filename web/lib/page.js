@@ -82,7 +82,9 @@ const NO_LINK_IN_PASTE =
 // URL. describe(err) is the message to show for a failure.
 export async function loadOrPaste(load, describe) {
   const hash = repairHash(window.location.hash);
-  if (hash.startsWith(HASH_PREFIX)) return askForRequest(hash.slice(HASH_PREFIX.length), load, describe);
+  // Only the approval and revert pages have the request box; elsewhere a
+  // hash link fails to load like any other fragment it cannot read.
+  if (hash.startsWith(HASH_PREFIX) && $("request-box")) return askForRequest(hash.slice(HASH_PREFIX.length), load, describe);
   try {
     return await load(hash);
   } catch (err) {

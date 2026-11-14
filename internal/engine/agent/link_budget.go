@@ -39,6 +39,9 @@ type handOver struct {
 	URL  string
 	Kind linkKind
 	File *links.RequestFile
+	// sent is set when the agent already sent File's request with an
+	// earlier result: the message points back to it.
+	sent bool
 }
 
 // chooseLink picks the link to hand over: short when it is not empty, else
@@ -68,7 +71,10 @@ const (
 // requestBeside is how a message that hands over a hash link tells the
 // person where the request comes from; withBlocks when the agent may paste
 // it as text blocks too.
-func requestBeside(withBlocks bool) string {
+func requestBeside(withBlocks, sent bool) string {
+	if sent {
+		return "open this link, then open the request file the agent sent you earlier (or paste its text blocks). The page then shows a code for the agent:"
+	}
 	if withBlocks {
 		return "open this link, then open the request file the agent sends you (or paste its text blocks). The page then shows a code for the agent:"
 	}
@@ -295,7 +301,7 @@ func buildApprovalMessage(lead string, pick handOver, c commandPhrases, tail []s
 	msg := newMessage().Text(lead)
 	switch pick.Kind {
 	case linkHash:
-		msg.Text("Approve it with your passkey: " + requestBeside(pick.File.Blocks != nil))
+		msg.Text("Approve it with your passkey: " + requestBeside(pick.File.Blocks != nil, pick.sent))
 	case linkLong:
 		msg.Text("Approve it with your passkey here; the page then shows a code for the agent:")
 	default:
@@ -319,7 +325,7 @@ func revertMessage(summary string, pick handOver, extra ...string) (string, []mc
 	switch pick.Kind {
 	case linkShort:
 	case linkHash:
-		sign = "Sign it with your passkey: " + requestBeside(pick.File.Blocks != nil)
+		sign = "Sign it with your passkey: " + requestBeside(pick.File.Blocks != nil, pick.sent)
 	case linkLong:
 		sign = "Sign it with your passkey here; the page then shows a code for the agent:"
 	}

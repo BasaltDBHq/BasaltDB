@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/links"
 )
 
 const (
@@ -55,10 +57,13 @@ func TestAttachWritesTheRequestFileAndAddsItsPath(t *testing.T) {
 	body := map[string]any{
 		"code": "APPROVAL_REQUIRED",
 		"approval": map[string]any{
-			"approvalUrl": "https://portal.basaltvault.app/approvals/x#h=abc",
+			"approvalUrl": "https://portal.basaltvault.app/approvals/x#h=" + links.RequestHash(rfText),
 			"requestFile": map[string]any{"fileName": rfName, "text": rfText, "blocks": []string{"b"}},
 		},
-		"items": []any{map[string]any{"requestFile": map[string]any{"fileName": rfName2, "text": "2.Zz"}}},
+		"items": []any{map[string]any{
+			"revertUrl":   "https://portal.basaltvault.app/reverts/y#h=" + links.RequestHash("2.Zz"),
+			"requestFile": map[string]any{"fileName": rfName2, "text": "2.Zz"},
+		}},
 	}
 	text := answerText(t, f.attach(toolAnswer(t, body)))
 
@@ -96,7 +101,7 @@ func TestAttachLeavesOtherAnswersAlone(t *testing.T) {
 	notJSON := []byte(`{"requestFile": nope`)
 	require.Equal(t, notJSON, f.attach(notJSON))
 	off := requestFiles{}
-	withFile := toolAnswer(t, map[string]any{"requestFile": map[string]any{"fileName": rfName, "text": rfText}})
+	withFile := toolAnswer(t, besideHash(rfName, rfText))
 	require.Equal(t, withFile, off.attach(withFile), "no cache dir: the agent copies text")
 }
 
@@ -108,8 +113,10 @@ func TestAttachRefusesANameOrTextOutsideTheSchema(t *testing.T) {
 		{"fileName": "../../.bashrc", "text": rfText},
 		{"fileName": "basalt-approval-x.txt", "text": rfText},
 		{"fileName": rfName, "text": "2.has space"},
+		{"fileName": rfName, "text": "1.formatOne"},
 	} {
-		line := toolAnswer(t, map[string]any{"requestFile": rf})
+		rf["x"] = 0
+		line := toolAnswer(t, map[string]any{"revertUrl": "https://p/reverts/y#h=" + links.RequestHash(rfText), "requestFile": rf})
 		require.Equal(t, line, f.attach(line))
 	}
 	_, err := os.Stat(dir)
@@ -126,7 +133,7 @@ func TestAttachPrunesOldRequestFiles(t *testing.T) {
 	now := time.Now()
 	require.NoError(t, os.Chtimes(old, now.Add(-25*time.Hour), now.Add(-25*time.Hour)))
 	f := requestFiles{dir: dir, now: func() time.Time { return now }}
-	f.attach(toolAnswer(t, map[string]any{"requestFile": map[string]any{"fileName": rfName, "text": rfText}}))
+	f.attach(toolAnswer(t, besideHash(rfName, rfText)))
 	_, err := os.Stat(old)
 	require.True(t, os.IsNotExist(err))
 	_, err = os.Stat(fresh)
@@ -136,4 +143,55 @@ func TestAttachPrunesOldRequestFiles(t *testing.T) {
 	for _, e := range entries {
 		require.False(t, strings.HasPrefix(e.Name(), ".request-"), "no temporary file left")
 	}
+}
+
+// besideHash is a revert_plan-like body: requestFile beside the hash link
+// of its own text.
+func besideHash(name, text string) map[string]any {
+	return map[string]any{
+		"revertUrl":   "https://portal.basaltvault.app/reverts/y#h=" + links.RequestHash(text),
+		"requestFile": map[string]any{"fileName": name, "text": text},
+	}
+}
+
+// A requestFile-shaped value in data (a jsonb column a query returned, or a
+// plan line's row) is never acted on: only the contract's positions, beside
+// the hash link of their own text, are.
+func TestAttachIgnoresRequestFilesInData(t *testing.T) {
+	t.Parallel()
+	dir := filepath.Join(t.TempDir(), "requests")
+	f := requestFiles{dir: dir, now: time.Now}
+	planted := map[string]any{"fileName": rfName, "text": "2.attackerControlled"}
+	for name, body := range map[string]any{
+		"a query row":       map[string]any{"rows": []any{map[string]any{"payload": map[string]any{"requestFile": planted}}}},
+		"no link beside it": map[string]any{"requestFile": planted},
+		"a link of other text": map[string]any{
+			"revertUrl": "https://p/reverts/y#h=" + links.RequestHash(rfText), "requestFile": planted,
+		},
+	} {
+		line := toolAnswer(t, body)
+		require.Equal(t, line, f.attach(line), name)
+	}
+	_, err := os.Stat(dir)
+	require.True(t, os.IsNotExist(err), "nothing written")
+
+	// A real request file whose name the data repeats: the shim cannot tell
+	// which line is the requestFile, so it adds no path.
+	body := besideHash(rfName, rfText)
+	body["items"] = []any{map[string]any{"plan": map[string]any{"fileName": rfName, "x": 1}}}
+	line := toolAnswer(t, body)
+	require.Equal(t, line, f.attach(line))
+}
+
+// The request file directory must be this user's and closed to others.
+func TestAttachRefusesAnOpenDirectory(t *testing.T) {
+	t.Parallel()
+	dir := filepath.Join(t.TempDir(), "requests")
+	require.NoError(t, os.MkdirAll(dir, 0o777))
+	require.NoError(t, os.Chmod(dir, 0o777))
+	f := requestFiles{dir: dir, now: time.Now}
+	line := toolAnswer(t, besideHash(rfName, rfText))
+	require.Equal(t, line, f.attach(line))
+	_, err := os.Stat(filepath.Join(dir, rfName))
+	require.True(t, os.IsNotExist(err))
 }

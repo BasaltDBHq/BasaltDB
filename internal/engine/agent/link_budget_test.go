@@ -408,3 +408,29 @@ func TestExpiredItemsCarryNoRequestFile(t *testing.T) {
 	item.Status, item.ExpiresAt = ledger.ApprovalApproved, s.Now().Add(time.Hour)
 	require.False(t, s.waitsForPerson(item))
 }
+
+// APPROVAL_INVALID sends the person back to the page the hold handed over:
+// with the pages served, to the short link they have (no url, no long link
+// over the budget); without them, to the hash link, naming the request file
+// the agent already sent.
+func TestApprovalInvalidRestatesTheHoldsLink(t *testing.T) {
+	t.Parallel()
+	for _, origin := range []string{localPages, ""} {
+		s := noticeService(origin, links.DefaultBudget)
+		n := approvalNoticeOf(t, s, 60, keepLink)
+		te := s.approvalLinkError(&mcp.ToolError{Code: CodeApprovalInvalid, Reason: reasonNotSigned, Message: "m"}, n)
+		requirePersonMessage(t, te.PersonMessage, te.Links)
+		require.NotContains(t, te.PersonMessage, "#2.", "%s: no long link over the budget", origin)
+		open := te.NextSteps[0]
+		require.Equal(t, mcp.ActionOpenLink, open.Action)
+		if origin != "" {
+			require.Empty(t, open.URL, "the short link the person has")
+			require.Empty(t, te.Links)
+			require.Contains(t, te.PersonMessage, "Approve with the link you were given")
+			continue
+		}
+		require.Contains(t, open.URL, "#h=")
+		require.Contains(t, te.PersonMessage, "the request file the agent sent you earlier")
+		require.NotContains(t, te.PersonMessage, "sends you")
+	}
+}

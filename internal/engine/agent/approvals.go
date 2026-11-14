@@ -230,8 +230,18 @@ func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding stri
 // waitMessage is the personMessage of a wait or a list that issues no new
 // link: the link already handed over still works.
 func waitMessage(lead, command string, expires time.Time) (string, []mcp.Link) {
+	return pointBackMessage(lead, command, expiryLine(expires))
+}
+
+// pointBackMessage is lead, then a pointer to the approval link the person
+// was given, with the approve command, then tail.
+func pointBackMessage(lead, command string, tail ...string) (string, []mcp.Link) {
 	return fitCommand(func(c commandPhrases) (string, []mcp.Link) {
-		return newMessage().Text(lead).Text(c.orRun).Text(expiryLine(expires)).Build()
+		msg := newMessage().Text(lead).Text(c.orRun)
+		for _, line := range tail {
+			msg.Text(line)
+		}
+		return msg.Build()
 	},
 		commandPhrases{orRun: "Approve with the link you were given, or run: " + command},
 		commandPhrases{orRun: "Approve with the link you were given, or run the approve command the agent shows you."})

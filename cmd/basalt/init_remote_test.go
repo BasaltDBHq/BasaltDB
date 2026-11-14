@@ -787,6 +787,42 @@ func TestInitRemoteAsRootRecordsTheSudoUser(t *testing.T) {
 	require.False(t, r.cfg.Service(), "no person to admit: not a service config")
 }
 
+// As root, the service-mode note comes only once engine.json is written:
+// never on a run refused before, whether at agents/ (a symlink) or after
+// both directories opened (a symlinked lock file).
+func TestInitRemoteAsRootNotesServiceModeOnlyAfterWriting(t *testing.T) {
+	t.Parallel()
+	run := func(t *testing.T, a ...string) result {
+		t.Helper()
+		return cliNoDBEnv(t, noNetworkProbe, map[string]string{envSudoUID: "1234"}, a...)
+	}
+	cfg := tempConfig(t)
+	require.NoError(t, os.MkdirAll(filepath.Dir(cfg), 0o700))
+	require.NoError(t, os.Symlink(t.TempDir(), filepath.Join(filepath.Dir(cfg), "agents")))
+	r := run(t, "init", "--remote", "--config", cfg, "--json", "--agent", "bot", "--write", "public.leads",
+		"--database-url", "postgres://u@db.example.com:5432/app")
+	require.Equal(t, exitError, r.code, r.stdout)
+	require.Contains(t, r.stderr, "a symlink is refused")
+	require.NotContains(t, r.stderr, "service one", "refused at agents/: nothing written")
+
+	cfg = tempConfig(t)
+	agents := filepath.Join(filepath.Dir(cfg), "agents")
+	require.NoError(t, os.MkdirAll(agents, 0o700))
+	require.NoError(t, os.Symlink(filepath.Join(t.TempDir(), "lock"), filepath.Join(agents, "bot.url"+lockSuffix)))
+	r = run(t, "init", "--remote", "--config", cfg, "--json", "--agent", "bot", "--write", "public.leads",
+		"--database-url", "postgres://u@db.example.com:5432/app")
+	require.Equal(t, exitError, r.code, r.stderr)
+	require.NotContains(t, r.stderr, "service one", "refused at the lock, after opening the directories: nothing written")
+	_, err := os.Stat(cfg)
+	require.ErrorIs(t, err, os.ErrNotExist)
+
+	require.NoError(t, os.Remove(filepath.Join(agents, "bot.url"+lockSuffix)))
+	r = run(t, "init", "--remote", "--config", cfg, "--json", "--agent", "bot", "--write", "public.leads",
+		"--database-url", "postgres://u@db.example.com:5432/app")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Equal(t, 1, strings.Count(r.stderr, "this config is a service one (mode SERVICE)"), "said once, after writing: %s", r.stderr)
+}
+
 // As root, a config directory the user who ran sudo owns is that user's own
 // engine (same-user mode), not a service one.
 func TestInitRemoteAsRootInTheSudoUsersDirectoryIsNoService(t *testing.T) {

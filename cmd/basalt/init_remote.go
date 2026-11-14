@@ -318,6 +318,9 @@ type remoteInit struct {
 	installed          int
 	// stateDir is the engine's state directory, where its key file is.
 	stateDir string
+	// serviceNote says root's run made the config a service one (paths);
+	// writeConfig prints it once engine.json is written. "" otherwise.
+	serviceNote string
 }
 
 func newRemoteInit(c *cliIO, f remoteFlags) (*remoteInit, error) {
@@ -439,9 +442,11 @@ func (r *remoteInit) paths() error {
 		// socket, so the config is a service one. Only with a person to
 		// admit (SUDO_UID): without one, a service config's person socket
 		// would admit nobody.
+		// writeConfig says so once engine.json is written, never on a run
+		// that refuses before writing it.
 		if trusted > 0 && len(r.settings.PersonUIDs) > 0 && uint32(trusted) != r.settings.PersonUIDs[0] {
 			r.settings.Mode = config.ModeService
-			fmt.Fprintf(r.c.stderr, "basalt: %s belongs to uid %d, not root or you (uid %d): this config is a service one (mode %s). "+
+			r.serviceNote = fmt.Sprintf("basalt: %s belongs to uid %d, not root or you (uid %d): this config is a service one (mode %s). "+
 				"The engine runs as uid %d and admits you on its person socket; restart its service after this run\n",
 				dir, trusted, r.settings.PersonUIDs[0], config.ModeService, trusted)
 		}
@@ -873,6 +878,7 @@ func (r *remoteInit) writeConfig(saved []string, s *config.Setup) error {
 	if err != nil {
 		return err
 	}
+	fmt.Fprint(r.c.stderr, r.serviceNote)
 	fmt.Fprint(r.c.stderr, r.f.vault.line(v))
 	return nil
 }

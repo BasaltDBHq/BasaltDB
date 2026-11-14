@@ -13,9 +13,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/links"
+	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 )
 
 const rootOnlySecret = "user=ROOT-ONLY-SECRET"
+
+// rootCredURL is the fixture's credential: a URL root takes from a file
+// another user owns (pgdial.CheckForeignDSN).
+const rootCredURL = "postgres://bot:pw@db.example.com/app?sslmode=require"
 
 // rootCLIFixture is an engine config dir as basalt init lays it out
 // (engine.json, agents/bot.url), and a secret elsewhere that only root
@@ -31,7 +36,7 @@ func newRootCLIFixture(t *testing.T) rootCLIFixture {
 	agents := filepath.Join(dir, "agents")
 	require.NoError(t, os.Mkdir(agents, 0o700))
 	cred := filepath.Join(agents, "bot.url")
-	require.NoError(t, os.WriteFile(cred, []byte(agentCfgURL+"\n"), 0o600))
+	require.NoError(t, os.WriteFile(cred, []byte(rootCredURL+"\n"), 0o600))
 	secretDir := filepath.Join(dir, "rootonly")
 	require.NoError(t, os.Mkdir(secretDir, 0o700))
 	secret := filepath.Join(secretDir, "secret")
@@ -58,10 +63,49 @@ func TestRootCLIReadsAPlainCredential(t *testing.T) {
 	f := newRootCLIFixture(t)
 	got, err := agentURL(f.c, testAgentKey, "", f.configPath)
 	require.NoError(t, err)
-	require.Equal(t, agentCfgURL, got)
+	require.Equal(t, rootCredURL, got)
 	got, err = agentURL(f.c, "", f.cred, f.configPath)
 	require.NoError(t, err)
-	require.Equal(t, agentCfgURL, got)
+	require.Equal(t, rootCredURL, got)
+}
+
+// As root, the person CLI connects with the credential it reads, and pgx
+// reads files for the caller from some parameters: a credential file
+// another user owns (here the test's user, not root) must pass
+// pgdial.CheckForeignDSN, read through the config (log, status, upgrade)
+// or --credential-file. The refusal never echoes the string. Not as root,
+// the same file is the user's own and is taken as it is.
+func TestRootCLIChecksAnotherUsersCredential(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("as real root the fixture's files are root's own")
+	}
+	for name, dsn := range map[string]string{
+		"sslrootcert": "postgres://bot:pw@db.example.com/app?sslrootcert=/root/ca.pem",
+		"passfile":    "postgres://bot:pw@db.example.com/app?passfile=/root/.pgpass",
+		"no password": "postgres://bot@db.example.com/app",
+		"key/value":   "host=db.example.com user=bot password=pw sslkey=/root/k",
+		"a fragment":  "postgres://bot:pw@db.example.com/app#&passfile=/root/.pgpass",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			f := newRootCLIFixture(t)
+			require.NoError(t, os.WriteFile(f.cred, []byte(dsn+"\n"), 0o600))
+			for _, via := range []struct{ agent, flag string }{{testAgentKey, ""}, {"", f.cred}} {
+				got, err := agentURL(f.c, via.agent, via.flag, f.configPath)
+				require.ErrorIs(t, err, pgdial.ErrForeignDSN)
+				require.Empty(t, got)
+				require.ErrorContains(t, err, "not root")
+				require.ErrorContains(t, err, "sudo -u <user>")
+				require.NotContains(t, err.Error(), "pw@")
+				require.NotContains(t, err.Error(), "/root/")
+			}
+			f.c.host.(*fakeHost).euid = os.Geteuid()
+			got, err := agentURL(f.c, testAgentKey, "", f.configPath)
+			require.NoError(t, err, "not as root: the user's own file")
+			require.Equal(t, dsn, got)
+		})
+	}
 }
 
 func TestRootCLIRefusesLinkedEngineFiles(t *testing.T) {
@@ -115,7 +159,7 @@ func TestPersonCLIStillReadsItsOwnFilesAsUsual(t *testing.T) {
 	f.c.host.(*fakeHost).euid = 501
 	got, err := agentURL(f.c, testAgentKey, "", f.configPath)
 	require.NoError(t, err)
-	require.Equal(t, agentCfgURL, got)
+	require.Equal(t, rootCredURL, got)
 }
 
 // The ownership rule at the core of readCredentialAsRoot: a plain file with
@@ -129,7 +173,7 @@ func TestRootCLIRefusesACredentialOwnedByAnotherUser(t *testing.T) {
 	require.Contains(t, err.Error(), "refused")
 	got, err := readCredentialAsRoot(f.cred, os.Getuid(), true)
 	require.NoError(t, err, "the same file passes for its owner")
-	require.Equal(t, agentCfgURL, got)
+	require.Equal(t, rootCredURL, got)
 }
 
 // As root, the config reads behind log's dictionary line, access's commands

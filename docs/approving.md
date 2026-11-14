@@ -120,17 +120,15 @@ Whatever you use must pass the public `Host` on unchanged and upgrade WebSockets
 basalt init --setup-code <code> --engine-url https://engine.example.com
 ```
 
-The engine answers only on an address your database records, and the agent hands over portal links only when the database records this engine's key with an address. The record is the one place the agent cannot change: it has no admin rights. `basalt status` shows it as `Engine key:` (`RECORDED`, `NOT_RECORDED`, `REVOKED` or `UNKNOWN`), and the agent's `status` tool as `engineRecord`.
+The engine answers only on an address your database records. With the Vault off this record is required: the agent hands over portal short links only when the database records this engine's key, not revoked, with an address, and otherwise hands over long links. The record is the one place the agent cannot change: it has no admin rights. While the engine is running, `basalt status` shows it as `Engine key:` (`RECORDED`, `NOT_RECORDED`, `REVOKED` or `UNKNOWN`); a stopped engine prints no such line. The agent's `status` tool shows it as `engineRecord`.
 
-**4. Pin the engine on each device.** On the portal, `https://portal.basaltvault.app/engines/add`: type the address and compare the fingerprint it shows with the one `basalt init --setup-code` or `basalt tunnel` printed on your own computer. A device trusts only an engine it pinned, and the page checks the engine's key in every session. Pin it once per device and browser.
+**4. Pin the engine on each device.** On the portal, `https://portal.basaltvault.app/engines/add`: type the address and compare the fingerprint it shows with the one `basalt init --setup-code` or `basalt tunnel` printed on your own computer. A device trusts only an engine it pinned, and the page checks the engine's key in every session. Pin it once per device and browser. From then on, the portal short links the agent hands over open straight through your tunnel: approve or revert from that device, with nothing to paste.
 
 **Revoking an engine.** If the server is lost or compromised, `basalt engine list --admin` shows the engines your database records, and `basalt engine revoke` revokes one from your own computer. A revoked engine stops serving portal sessions (`ENGINE_REVOKED`), `status` says so, and approvals go on through long links. Each device should also remove its pin on `https://portal.basaltvault.app/engines`. A compromised server can ignore the flag, but it still cannot sign anything you did not.
 
 **What the tunnel provider sees:** your engine's address, who connects to it and when, and the size and timing of messages. Never a link secret, a row or a signature.
 
 **Limits.** The listener takes at most 4 sessions per link and 64 per engine, counted together with any sessions through the Vault, and 600 session upgrades a minute in all: it cannot tell clients apart behind a tunnel.
-
-> Not finished yet: the portal's pin page and direct connection, and the engine handing over portal short links when the Vault is off, are still being built. Until both ship, an agent with the Vault off hands over long links, which `basalt approve --open` opens, and the steps above set the path up ahead of them. Steps 1 to 3 and `basalt tunnel` work now.
 
 ## Authenticators
 

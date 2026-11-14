@@ -72,10 +72,10 @@ func printSummary(w io.Writer, tables []classify.ReviewTable) bool {
 // printTable prints one table: settled suggestions by class, then the
 // needs-review columns.
 func printTable(w io.Writer, t classify.ReviewTable, width int) {
-	fmt.Fprintf(w, "\n%s\n", t.Table)
+	fmt.Fprintf(w, "\n%s\n", visibleText(t.Table))
 	nameWidth, entityWidth := 0, 0
 	for _, c := range t.Columns {
-		nameWidth = max(nameWidth, len(c.Column.Name))
+		nameWidth = max(nameWidth, len(visibleText(c.Column.Name)))
 		entityWidth = max(entityWidth, len(entityLabel(c)))
 	}
 	narrow := width > 0 && width < narrowTerminal
@@ -85,7 +85,7 @@ func printTable(w io.Writer, t classify.ReviewTable, width int) {
 			if c.Suggestion.Class != class || c.Suggestion.NeedsReview {
 				continue
 			}
-			line := fmt.Sprintf("  %-*s %-*s  %-*s", classColumn, label, nameWidth, c.Column.Name, entityWidth, entityLabel(c))
+			line := fmt.Sprintf("  %-*s %-*s  %-*s", classColumn, label, nameWidth, visibleText(c.Column.Name), entityWidth, entityLabel(c))
 			printWithReason(w, line, reasonText(c), narrow)
 			label = ""
 		}
@@ -94,12 +94,13 @@ func printTable(w io.Writer, t classify.ReviewTable, width int) {
 		if !c.Suggestion.NeedsReview {
 			continue
 		}
-		line := fmt.Sprintf("  %s %s → %s?", reviewMark, c.Column.Name, suggestionLabel(c.Suggestion))
+		line := fmt.Sprintf("  %s %s → %s?", reviewMark, visibleText(c.Column.Name), suggestionLabel(c.Suggestion))
 		printWithReason(w, line, reasonText(c), narrow)
 	}
 }
 
 func printWithReason(w io.Writer, line, reason string, narrow bool) {
+	reason = visibleText(reason)
 	if narrow {
 		fmt.Fprintf(w, "%s\n%s%s\n", strings.TrimRight(line, " "), reasonIndent, reason)
 		return
@@ -177,7 +178,7 @@ func askTable(c *cliIO, t classify.ReviewTable, decided map[string]classify.Deci
 		return nil
 	}
 	for {
-		fmt.Fprintf(c.stderr, "Accept the rest for %s? [Y/e/s] ", t.Table)
+		fmt.Fprintf(c.stderr, "Accept the rest for %s? [Y/e/s] ", visibleText(t.Table))
 		answer, err := c.line()
 		if err != nil {
 			return errCanceled
@@ -191,7 +192,7 @@ func askTable(c *cliIO, t classify.ReviewTable, decided map[string]classify.Deci
 			}
 			return nil
 		case "s", "skip":
-			fmt.Fprintf(c.stderr, "basalt: skipped %s; its columns without a class stay UNCLASSIFIED\n", t.Table)
+			fmt.Fprintf(c.stderr, "basalt: skipped %s; its columns without a class stay UNCLASSIFIED\n", visibleText(t.Table))
 			return nil
 		case "e", "edit":
 			if err := askEdit(c, t, decided); err != nil {
@@ -206,7 +207,7 @@ func askTable(c *cliIO, t classify.ReviewTable, decided map[string]classify.Deci
 // askNeedsReview asks about one needs-review column: yes keeps the
 // protected suggestion; no asks for the class.
 func askNeedsReview(c *cliIO, col classify.ReviewColumn, decided map[string]classify.Decision) error {
-	fmt.Fprintf(c.stderr, "Protect %s as %s? [Y/n] ", col.Column.Name, col.Suggestion.Class)
+	fmt.Fprintf(c.stderr, "Protect %s as %s? [Y/n] ", visibleText(col.Column.Name), col.Suggestion.Class)
 	answer, err := c.line()
 	if err != nil {
 		return errCanceled
@@ -216,7 +217,7 @@ func askNeedsReview(c *cliIO, col classify.ReviewColumn, decided map[string]clas
 		return nil
 	}
 	for {
-		fmt.Fprintf(c.stderr, "Class for %s (class[:entity-type]; empty leaves it UNCLASSIFIED): ", col.Column.Name)
+		fmt.Fprintf(c.stderr, "Class for %s (class[:entity-type]; empty leaves it UNCLASSIFIED): ", visibleText(col.Column.Name))
 		answer, err := c.line()
 		if err != nil {
 			return errCanceled
@@ -254,11 +255,11 @@ func askEdit(c *cliIO, t classify.ReviewTable, decided map[string]classify.Decis
 	for _, col := range t.Columns {
 		if col.Column.Name == strings.TrimSpace(name) {
 			decided[col.Column.FullName()] = decisionFor(col, class, entity)
-			fmt.Fprintf(c.stderr, "basalt: %s set to %s\n", col.Column.Name, suggestionLabel(classify.Suggestion{Class: class, EntityType: entity}))
+			fmt.Fprintf(c.stderr, "basalt: %s set to %s\n", visibleText(col.Column.Name), suggestionLabel(classify.Suggestion{Class: class, EntityType: entity}))
 			return nil
 		}
 	}
-	fmt.Fprintf(c.stderr, "basalt: %s has no column %s in this review\n", t.Table, strings.TrimSpace(name))
+	fmt.Fprintf(c.stderr, "basalt: %s has no column %s in this review\n", visibleText(t.Table), visibleText(strings.TrimSpace(name)))
 	return nil
 }
 

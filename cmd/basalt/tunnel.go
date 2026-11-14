@@ -99,10 +99,6 @@ func runTunnel(c *cliIO, args []string) int {
 	if public != "" {
 		host = strings.TrimPrefix(public, "https://")
 	}
-	// DNS names have no port.
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
 	fmt.Fprint(c.stdout, tunnelGuide(to, host, public))
 	if public == "" {
 		return exitOK
@@ -204,10 +200,15 @@ func judgeProbe(public string, ans probeAnswer) (string, error) {
 // answers only on the address the database records.
 func tunnelGuide(to, host, public string) string {
 	var b strings.Builder
+	// A DNS record names a host, not a port; Caddy's site address keeps it.
+	dns := host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		dns = h
+	}
 	fmt.Fprintf(&b, "Publish the engine's direct listener, %s, at an https address of your own. Pick one.\n", to)
 	b.WriteString("The tunnel must pass the public Host unchanged and upgrade WebSockets; all three do by default.\n\n")
 	b.WriteString("Cloudflare Tunnel (a domain on Cloudflare):\n")
-	fmt.Fprintf(&b, "  cloudflared tunnel login    # once\n  cloudflared tunnel create basalt-engine\n  cloudflared tunnel route dns basalt-engine %s\n  cloudflared tunnel run --url http://%s basalt-engine\n\n", host, to)
+	fmt.Fprintf(&b, "  cloudflared tunnel login    # once\n  cloudflared tunnel create basalt-engine\n  cloudflared tunnel route dns basalt-engine %s\n  cloudflared tunnel run --url http://%s basalt-engine\n\n", dns, to)
 	b.WriteString("Tailscale Funnel (an address like <machine>.<tailnet>.ts.net, with Funnel enabled for it; Funnel serves on 443, 8443 and 10000):\n")
 	fmt.Fprintf(&b, "  tailscale funnel --bg http://%s\n  tailscale funnel status    # shows the address\n\n", to)
 	b.WriteString("Caddy (a server with a public name pointing at it; Caddy gets the certificate):\n")

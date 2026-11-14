@@ -211,4 +211,5 @@ func TestTunnelStripsThePortFromTheDNSName(t *testing.T) {
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Contains(t, r.stdout, "route dns basalt-engine engine.example.com\n")
 	require.Contains(t, r.stdout, "tailscale funnel --bg http://[::1]:9100")
+	require.Contains(t, r.stdout, "  engine.example.com:8443 {\n      reverse_proxy [::1]:9100", "Caddy keeps the port")
 }

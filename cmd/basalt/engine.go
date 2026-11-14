@@ -75,11 +75,17 @@ func (h engineUserHost) UserConfigDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return userConfigDirIn(runtime.GOOS, u.HomeDir)
+	return userConfigDirIn(runtime.GOOS, u.HomeDir, os.Getenv("XDG_CONFIG_HOME"))
 }
 
-// userConfigDirIn is os.UserConfigDir for a user whose home is home.
-func userConfigDirIn(goos, home string) (string, error) {
+// userConfigDirIn is os.UserConfigDir for a user whose home is home. Like
+// os.UserConfigDir it honours an absolute XDG_CONFIG_HOME (xdg) off macOS, so
+// init, run with that variable set, and engine --user, started with the same
+// environment, read and write the same directory.
+func userConfigDirIn(goos, home, xdg string) (string, error) {
+	if goos != "darwin" && filepath.IsAbs(xdg) {
+		return xdg, nil
+	}
 	if home == "" {
 		return "", errors.New("the engine user has no home directory")
 	}
@@ -136,6 +142,11 @@ func enginePath(path string) string {
 // answers every other call UNAVAILABLE ENGINE_UNREACHABLE (CONTRACT.md, Next
 // steps, Startup failures).
 func runMCP(ctx context.Context, args []string, io stdio) int {
+	return runMCPOn(ctx, args, io, osHost{})
+}
+
+// runMCPOn is runMCP with the host that tells root and the config dir.
+func runMCPOn(ctx context.Context, args []string, io stdio, h host) int {
 	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
 	fs.SetOutput(io.err)
 	name := fs.String("agent", "", "agent name (socket <socket-dir>/<agent>.sock)")
@@ -145,6 +156,9 @@ func runMCP(ctx context.Context, args []string, io stdio) int {
 	if fs.Parse(args) != nil || fs.NArg() > 0 {
 		return exitUsage
 	}
+	// A rootless bot has no --config to give: init left its config in its
+	// own config directory, which status can read while the engine is down.
+	*configPath = configOrFallback(h, fs, *configPath)
 	path := *socket
 	if path == "" {
 		if !config.ValidAgentName(*name) {

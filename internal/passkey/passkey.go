@@ -23,10 +23,10 @@ import (
 
 // The hosted relying party (owner decisions, Decided Nov 12): RP ID
 // basaltvault.app, fixed for good since registered passkeys depend on it,
-// and the hosted console's origin.
+// and the portal's origin.
 const (
 	RPID   = "basaltvault.app"
-	Origin = links.HostedConsole
+	Origin = links.Portal
 )
 
 // localRPID is the development relying party: the pages served from
@@ -40,8 +40,8 @@ type Relying struct {
 	Origin string
 }
 
-// Production is the hosted console: RP ID basaltvault.app, origin
-// https://console.basaltvault.app.
+// Production is the portal: RP ID basaltvault.app, origin
+// https://portal.basaltvault.app.
 var Production = Relying{RPID: RPID, Origin: Origin}
 
 // Local returns the development relying party for the pages served at origin,

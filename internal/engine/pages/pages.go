@@ -60,11 +60,13 @@ const maxBody = 16 << 10
 // agent.ErrNotThisAgent means the id is not this agent's.
 type Agent interface {
 	ApprovalRequest(ctx context.Context, id uuid.UUID) (approval.Request, error)
-	RelayApproval(ctx context.Context, r approval.Response) error
+	// RelayApproval and RelayRevert relay the person's signature and return
+	// the engine's receipt of it (CONTRACT.md, Vault channel, Receipts).
+	RelayApproval(ctx context.Context, r approval.Response) (agent.Receipt, error)
 	// RevertRequest is the request for the page holding secret, the
 	// revert's live link secret.
 	RevertRequest(ctx context.Context, id uuid.UUID, secret string) (revert.Request, error)
-	RelayRevert(ctx context.Context, r revert.Response) (guard.AppliedRevert, error)
+	RelayRevert(ctx context.Context, r revert.Response) (guard.AppliedRevert, agent.Receipt, error)
 	// RescopeRevert changes the revert's scope for the page holding secret
 	// (CONTRACT.md, Rescope, widen and reject).
 	RescopeRevert(ctx context.Context, id uuid.UUID, secret string, in agent.ScopeRequest) (agent.ScopeResponse, error)
@@ -226,17 +228,35 @@ func (s *Server) postApproval(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, &mcp.ToolError{Code: agent.CodeInvalidArgument, Message: "the body is not this approval's signed response"})
 		return
 	}
-	if _, err := find(r.Context(), s, func(ctx context.Context, a Agent) (struct{}, error) { return struct{}{}, a.RelayApproval(ctx, resp) }); err != nil {
+	receipt, err := find(r.Context(), s, func(ctx context.Context, a Agent) (agent.Receipt, error) { return a.RelayApproval(ctx, resp) })
+	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	s.reply(w, approvedDTO{ApprovalID: id.String(), Status: "APPROVED"})
+	s.reply(w, approvedDTO{ApprovalID: id.String(), Status: "APPROVED", Receipt: receipt.Token, NoReceipt: receipt.Missing})
 }
 
-// approvedDTO is the relay's answer for an approval.
+// approvedDTO is the relay's answer for an approval, with the engine's
+// receipt or why there is none.
 type approvedDTO struct {
 	ApprovalID string `json:"approvalId"`
 	Status     string `json:"status"`
+	Receipt    string `json:"receipt,omitempty"`
+	NoReceipt  string `json:"noReceipt,omitempty"`
+}
+
+// appliedDTO is the relay's answer for a revert: the result basalt revert
+// --apply --json prints, with the engine's receipt or why there is none.
+type appliedDTO struct {
+	guard.AppliedRevert
+	Receipt   string `json:"receipt,omitempty"`
+	NoReceipt string `json:"noReceipt,omitempty"`
+}
+
+// relayedRevert is what RelayRevert returns, for find.
+type relayedRevert struct {
+	applied guard.AppliedRevert
+	receipt agent.Receipt
 }
 
 func (s *Server) getRevert(w http.ResponseWriter, r *http.Request) {
@@ -267,12 +287,15 @@ func (s *Server) postRevert(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, &mcp.ToolError{Code: agent.CodeInvalidArgument, Message: "the body is not this revert's signed response"})
 		return
 	}
-	out, err := find(r.Context(), s, func(ctx context.Context, a Agent) (guard.AppliedRevert, error) { return a.RelayRevert(ctx, resp) })
+	out, err := find(r.Context(), s, func(ctx context.Context, a Agent) (relayedRevert, error) {
+		applied, receipt, err := a.RelayRevert(ctx, resp)
+		return relayedRevert{applied: applied, receipt: receipt}, err
+	})
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	s.reply(w, out)
+	s.reply(w, appliedDTO{AppliedRevert: out.applied, Receipt: out.receipt.Token, NoReceipt: out.receipt.Missing})
 }
 
 // postScope narrows or widens a revert's scope for the page (CONTRACT.md,

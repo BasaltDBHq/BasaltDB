@@ -29,7 +29,7 @@ basalt init --remote --operated-by=agent --vault=off \
 
 - `--write` lists the tables you read and write. `--read` lists the tables you only read.
 - `--vault=off` keeps the free path: the person signs on `portal.basaltvault.app` and pastes codes back. The hosted relay is coming later.
-- Leave out `--config`. Without root, init then keeps the config and the sockets in your own config directory. Init does not move the sockets if you give `--config` yourself, and the engine then fails with a permission error. Without root the config is `engine.json` in `basalt` inside your user config directory: `${XDG_CONFIG_HOME:-$HOME/.config}/basalt/engine.json` on Linux, `$HOME/Library/Application Support/basalt/engine.json` on macOS. Init does not print it. Pass it as `--config` to `basalt status` and `basalt engine`; plain `basalt status` looks at the system path and fails.
+- Without root, init keeps the config and the sockets in your own config directory: `engine.json` in `basalt` inside your user config directory (`${XDG_CONFIG_HOME:-$HOME/.config}/basalt/engine.json` on Linux, `$HOME/Library/Application Support/basalt/engine.json` on macOS). Init does not print it. With `--config <dir>/engine.json`, the config goes there and the sockets go in `<dir>/run`. Without `--config`, `basalt status`, `log`, `approve`, `revert`, `access`, `upgrade`, `passkey list`, `passkey check`, `mcp` and `engine` find the per-user config when no system config is installed.
 - A URL with a password is refused. Do not work around it.
 
 The command prints a setup code (`basalt-setup.1.…`) and a setup fingerprint. It does not install or start the engine. Add `--json` to get a `personMessage` and `nextSteps`.
@@ -54,7 +54,13 @@ Start the engine on this server while you wait. The engine runs as you here. Use
 basalt engine --config <path to engine.json>
 ```
 
-Keep it running in the background (a service, `tmux`, or whatever this server uses). Until the person finishes, the engine answers only `status`, and every other tool says `UNAVAILABLE` with reason `SETUP_PENDING`.
+Keep it running in the background: use a supervisor, `tmux` or whatever this server uses (see below). Until the person finishes, the engine answers only `status`, and every other tool says `UNAVAILABLE` with reason `SETUP_PENDING`.
+
+### Why not `basalt service install` here
+
+Do not install the engine as a system service on a bot server yet. `sudo basalt service install` makes a service that runs as its own OS user (`basalt` on Linux), but `basalt init --remote` run as root writes `engine.json` and the agent's credential file owned by root, and the service cannot read them. It also leaves the engine key out of the setup code when it runs as root. `basalt init --remote` is meant to run as the user that runs the engine, and that user keeps the config and the sockets in its own config directory (step 2).
+
+To keep the engine up across reboots, run `basalt engine --config <path to engine.json>` as that same user under a supervisor you already have: a systemd user unit (`systemctl --user`, with `loginctl enable-linger`), a systemd system unit with `User=` set to that user, `tmux`, or whatever this server uses. For a container, only the `basalt engine --user basalt` start in "Containers without systemd" in [install.md](install.md) applies; make the setup code with `basalt init --remote` as step 2 says, not with the `basalt init` command shown there. A service for the bot path is planned.
 
 ## 5. Check the setup
 

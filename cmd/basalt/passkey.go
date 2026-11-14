@@ -23,15 +23,13 @@ import (
 // maxPasskeyLabel is the registration request's label limit in bytes.
 const maxPasskeyLabel = 64
 
-// relyingParty is the hosted console, or the portal an agent-operated engine
-// uses (both RP ID basaltvault.app), for their origins, else the engine's local pages at origin (http://localhost:<port>,
-// RP ID localhost), the default until hosting exists.
+// relyingParty is the portal (RP ID basaltvault.app) for its origin, else
+// the engine's local pages at origin (http://localhost:<port>, RP ID
+// localhost), the default until hosting exists. Any other origin is refused
+// (CONTRACT.md, Page origins).
 func relyingParty(origin string) (passkey.Relying, error) {
-	if origin == links.HostedConsole {
-		return passkey.Production, nil
-	}
 	if origin == links.Portal {
-		return portalRP, nil
+		return passkey.Production, nil
 	}
 	rp, err := passkey.Local(origin)
 	if err != nil {
@@ -89,11 +87,14 @@ func truncateUTF8(s string, n int) string {
 	return s[:max(cut, 0)] + ellipsis
 }
 
-// hasPasskey reports whether a passkey is registered for this database.
-func hasPasskey(c *cliIO, conn *pgx.Conn) (bool, error) {
+// hasPasskeyFor reports whether an active passkey of this database belongs
+// to origin. A passkey signs only on the origin it was registered on, so
+// one for the local pages does not count for the portal: an engine handed
+// over to an agent needs a portal passkey of its own.
+func hasPasskeyFor(c *cliIO, conn *pgx.Conn, origin string) (bool, error) {
 	var ok bool
 	// Plain SQL: a presence check on the admin connection.
-	err := conn.QueryRow(c.ctx, `SELECT EXISTS (SELECT 1 FROM basalt_meta.passkeys)`).Scan(&ok)
+	err := conn.QueryRow(c.ctx, `SELECT EXISTS (SELECT 1 FROM basalt_meta.passkeys WHERE origin = $1 AND revoked_at IS NULL)`, origin).Scan(&ok)
 	return ok, err
 }
 
@@ -142,7 +143,9 @@ func registerPasskey(c *cliIO, conn *pgx.Conn, rp passkey.Relying, label string,
 			fmt.Fprintf(c.stderr, "basalt: could not open a browser (%v); open the link above yourself\n", err)
 		}
 	}
-	if rp != passkey.Production && !served {
+	// Only a local origin is served by init, so only there can a taken
+	// port explain a page that does not answer.
+	if _, local := localPagesAddr(rp.Origin); local && !served {
 		fmt.Fprint(c.stderr, serveHint(rp.Origin))
 	}
 	cred, err := readRegistration(c, req, rp, hb)
@@ -259,23 +262,24 @@ func verifyRegistrationCode(code string, req passkey.RegistrationRequest, rp pas
 	return passkey.VerifyRegistration(req, resp, rp)
 }
 
-// passkeyStep registers the person's passkey unless one is registered
-// already (--add-passkey registers another) or --skip-passkey.
+// passkeyStep registers the person's passkey unless an active one is
+// registered already for the target origin (--add-passkey registers
+// another) or --skip-passkey.
 func passkeyStep(c *cliIO, conn *pgx.Conn, f initFlags) error {
 	if f.skipPasskey {
 		fmt.Fprintln(c.stderr, "basalt: no passkey registered (--skip-passkey); held writes cannot be approved until you run basalt init again without it")
 		return nil
 	}
-	has, err := hasPasskey(c, conn)
+	rp, err := relyingParty(f.passkeyOrigin)
+	if err != nil {
+		return err
+	}
+	has, err := hasPasskeyFor(c, conn, rp.Origin)
 	if err != nil {
 		return err
 	}
 	if has && !f.addPasskey {
 		return nil
-	}
-	rp, err := relyingParty(f.passkeyOrigin)
-	if err != nil {
-		return err
 	}
 	label := f.passkeyLabel
 	if label == "" {

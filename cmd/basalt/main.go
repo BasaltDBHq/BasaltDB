@@ -41,7 +41,7 @@ type command struct {
 
 func commands() []command {
 	return []command{
-		{"engine", "Run the engine service in the foreground", runEngine},
+		{"engine", "Run the engine service in the foreground (or list | revoke the recorded engines)", runEngine},
 		{"mcp", "MCP server for an agent: relays stdio to the engine", runMCP},
 		{"service", "Install or uninstall the engine service (install | uninstall)", runService},
 		{"init", "Install the guard in Postgres and add an agent to the engine config", withIO(runInit)},
@@ -49,6 +49,7 @@ func commands() []command {
 		{"access", "List the tables an agent can read, can write and is not granted", withIO(runAccess)},
 		{"approve", "Relay the code the approval page gave you to Postgres (or --show a held write's link)", withIO(runApprove)},
 		{"revert", "Revert a change, run or task with your passkey; people's later edits are kept", withIO(runRevert)},
+		{"portal", "Check the hosted portal's pages against this binary's copy (verify)", withIO(runPortal)},
 		{"passkey", "List, check or remove your passkeys (list | check | remove <id>)", withIO(runPasskey)},
 		{"status", "Show what is ready for an agent and what to fix, with the commands", withIO(runStatus)},
 		{"classify", "Suggest and confirm the PII class of every column the agents can read", withIO(runClassify)},

@@ -21,6 +21,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+	"github.com/basaltdbhq/basaltdb/pkg/wiretime"
 )
 
 // ErrRowLimit is a read canceled because it returned more rows than the
@@ -83,12 +84,14 @@ type Reader struct {
 	now    func() time.Time
 }
 
-// NewReader returns a reader on pool with limits. It panics on a nil pool.
+// NewReader returns a reader on pool with limits. Every read runs pinned
+// (guard.PinSession), so values print the same whatever the session's
+// TimeZone or styles. It panics on a nil pool.
 func NewReader(pool Pool, limits sqlguard.Limits, now func() time.Time) *Reader {
 	if pool == nil || now == nil {
 		panic("agentdb: pool and clock required")
 	}
-	return &Reader{pool: pool, limits: limits, now: now}
+	return &Reader{pool: guard.PinnedBeginner{TxBeginner: pool}, limits: limits, now: now}
 }
 
 // psql builds the engine's own statements with Postgres placeholders.
@@ -346,8 +349,9 @@ func rowValues(cols []Column, fds []pgconn.FieldDescription, raw [][]byte) map[s
 }
 
 // textValue maps one text-format value to JSON: booleans and finite numbers
-// as JSON values, json and jsonb inline, NULL as null, everything else as
-// the string Postgres printed.
+// as JSON values, json and jsonb inline, NULL as null, a timestamptz as RFC
+// 3339 UTC with Z whatever the session's TimeZone, everything else as the
+// string Postgres printed.
 func textValue(oid uint32, raw []byte) any {
 	if raw == nil {
 		return nil
@@ -363,6 +367,9 @@ func textValue(oid uint32, raw []byte) any {
 			return s
 		}
 		return json.Number(s)
+	case pgtype.TimestamptzOID:
+		out, _ := wiretime.Text(s) // infinity and the like stay as printed
+		return out
 	case pgtype.JSONOID, pgtype.JSONBOID:
 		return json.RawMessage(bytes.Clone(raw)) // pgx reuses raw for the next read on the connection
 	}

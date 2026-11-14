@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgproto3"
 	"github.com/stretchr/testify/require"
 
@@ -140,7 +142,7 @@ func TestQueryReturnsRowsAsJSON(t *testing.T) {
 	require.Equal(t, json.Number("0.5"), first["ratio"])
 	require.Equal(t, true, first["ok"])
 	require.Equal(t, map[string]any{"src": "web"}, first["meta"])
-	require.Equal(t, "2026-11-10 06:02:11+00", first["created"])
+	require.Equal(t, "2026-11-10T06:02:11Z", first["created"])
 	require.Equal(t, "{a,b}", first["tags"])
 	require.Equal(t, "ada", first["lname"])
 
@@ -307,4 +309,34 @@ func TestQueryWhenTheDatabaseIsDown(t *testing.T) {
 	body, isError := h.query(t, map[string]any{"sql": "SELECT 1"})
 	requireToolError(t, body, isError, agent.CodeUnavailable, "", "")
 	require.NotContains(t, body["message"], "nobody", "no connection details in the error")
+}
+
+// A timestamptz is RFC 3339 UTC with Z whatever zone the session prints in,
+// and keeps its fractional seconds (CONTRACT.md, Wire format).
+func TestQueryReturnsTimestamptzAsUTC(t *testing.T) {
+	t.Parallel()
+	adminURL, agentURL := testDB(t)
+	admin, err := pgdial.Connect(context.Background(), adminURL)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = admin.Close(context.Background()) })
+	_, err = admin.Exec(context.Background(), `ALTER ROLE `+pgx.Identifier{agentRole(t, agentURL)}.Sanitize()+` SET TimeZone TO 'Europe/Tallinn'`)
+	require.NoError(t, err)
+	_, err = admin.Exec(context.Background(), `UPDATE leads SET created = '2026-11-12 12:08:04.513958+00' WHERE id = 1`)
+	require.NoError(t, err)
+	h := newHarness(t, agentURL, sqlguard.DefaultLimits())
+
+	body, isError := h.query(t, map[string]any{
+		"sql": "SELECT created, created::text AS shown FROM leads WHERE id = 1",
+	})
+	require.False(t, isError, "%v", body)
+	row := body["rows"].([]any)[0].(map[string]any)
+	require.Equal(t, "2026-11-12 12:08:04.513958+00", row["shown"], "text columns are as Postgres printed them, in the engine's UTC whatever the role's TimeZone")
+	require.Equal(t, "2026-11-12T12:08:04.513958Z", row["created"])
+}
+
+func agentRole(t *testing.T, agentURL string) string {
+	t.Helper()
+	u, err := url.Parse(agentURL)
+	require.NoError(t, err)
+	return u.User.Username()
 }

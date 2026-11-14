@@ -64,7 +64,7 @@ func TestChooseVault(t *testing.T) {
 	require.Equal(t, "basalt: vault: off (--vault=off)\n",
 		vaultChoice{VaultModeOff, VaultModeOn, agentWhy}.line(config.VaultWritten{Vault: config.VaultOff}))
 
-	for _, pages := range []string{links.DefaultLocal, "http://localhost:7777", links.HostedConsole} {
+	for _, pages := range []string{links.DefaultLocal, "http://localhost:7777"} {
 		_, err := chooseVault(VaultModeOn, OperatedByPerson, pages, personWhy)
 		require.ErrorIs(t, err, errUsage, "--vault=on needs the portal's pages, not %s", pages)
 	}
@@ -75,7 +75,7 @@ func TestInitRefusesVaultOnWithLocalPagesBeforeAnything(t *testing.T) {
 	for _, args := range [][]string{
 		{"--vault=on"},
 		{"--vault", "on", "--passkey-origin", "http://localhost:7777"},
-		{"--vault=on", "--passkey-origin", links.HostedConsole},
+		{"--vault=on", "--passkey-origin", "https://console.basaltvault.app"},
 		{"--vault=maybe"},
 	} {
 		cfg := tempConfig(t)
@@ -224,7 +224,7 @@ func TestConfigUpsertAppliesTheVaultDefaultOnlyWhenThereIsNone(t *testing.T) {
 		return v
 	}
 	require.Equal(t, config.VaultWritten{Vault: config.VaultOn},
-		upsert(config.Settings{SocketDir: "/s", OperatedBy: "AGENT", VaultDefault: config.VaultOn}), "a new config: the default")
+		upsert(config.Settings{SocketDir: "/s", PagesURL: links.Portal, OperatedBy: "AGENT", VaultDefault: config.VaultOn}), "a new config: the default")
 	require.Equal(t, config.VaultWritten{Vault: config.VaultOff}, upsert(config.Settings{OperatedBy: "AGENT", Vault: config.VaultOff}))
 	require.Equal(t, config.VaultWritten{Vault: config.VaultOff, Kept: true},
 		upsert(config.Settings{OperatedBy: "AGENT", VaultDefault: config.VaultOn}), "same operatedBy: the person's choice stays")

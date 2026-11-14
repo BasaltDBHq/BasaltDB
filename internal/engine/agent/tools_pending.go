@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
@@ -24,24 +25,25 @@ type listPendingArgs struct {
 
 // pendingDTO is one item of list_pending's output.
 type pendingDTO struct {
-	Kind            string          `json:"kind"`
-	ApprovalID      string          `json:"approvalId"`
-	RunID           string          `json:"runId"`
-	TaskID          string          `json:"taskId,omitempty"`
-	Intent          string          `json:"intent"`
-	Statement       string          `json:"statement"`
-	Params          json.RawMessage `json:"params,omitempty"`
-	AssignedColumns []string        `json:"assignedColumns"`
-	Rows            int             `json:"rows"`
-	Status          string          `json:"status"`
-	CreatedAt       string          `json:"createdAt"`
-	ExpiresAt       string          `json:"expiresAt"`
-	ApprovalURL     string          `json:"approvalUrl"`
-	ApproveCommand  string          `json:"approveCommand"`
-	Headline        string          `json:"headline"`
-	PersonMessage   string          `json:"personMessage"`
-	NextSteps       []mcp.NextStep  `json:"nextSteps,omitempty"`
-	Links           []mcp.Link      `json:"links,omitempty"`
+	Kind            string             `json:"kind"`
+	ApprovalID      string             `json:"approvalId"`
+	RunID           string             `json:"runId"`
+	TaskID          string             `json:"taskId,omitempty"`
+	Intent          string             `json:"intent"`
+	Statement       string             `json:"statement"`
+	Params          json.RawMessage    `json:"params,omitempty"`
+	AssignedColumns []string           `json:"assignedColumns"`
+	Rows            int                `json:"rows"`
+	Status          string             `json:"status"`
+	CreatedAt       string             `json:"createdAt"`
+	ExpiresAt       string             `json:"expiresAt"`
+	ApprovalURL     string             `json:"approvalUrl"`
+	RequestFile     *links.RequestFile `json:"requestFile,omitempty"`
+	ApproveCommand  string             `json:"approveCommand"`
+	Headline        string             `json:"headline"`
+	PersonMessage   string             `json:"personMessage"`
+	NextSteps       []mcp.NextStep     `json:"nextSteps,omitempty"`
+	Links           []mcp.Link         `json:"links,omitempty"`
 }
 
 func pendingFromDomain(p PendingItem) pendingDTO {
@@ -49,7 +51,7 @@ func pendingFromDomain(p PendingItem) pendingDTO {
 		Kind:       KindApproval,
 		ApprovalID: p.ID.String(), RunID: p.RunID.String(), Intent: p.Intent, Statement: p.Statement,
 		Params: p.Params, AssignedColumns: p.Assigned, Rows: p.Rows, Status: p.Status,
-		CreatedAt: timeText(p.CreatedAt), ExpiresAt: timeText(p.ExpiresAt), ApprovalURL: p.Notice.ApprovalURL, ApproveCommand: p.Notice.ApproveCommand,
+		CreatedAt: timeText(p.CreatedAt), ExpiresAt: timeText(p.ExpiresAt), ApprovalURL: p.Notice.ApprovalURL, RequestFile: p.Notice.RequestFile, ApproveCommand: p.Notice.ApproveCommand,
 		Headline: p.Notice.Headline, PersonMessage: p.PersonMessage, Links: p.Links, NextSteps: p.NextSteps,
 	}
 	if p.TaskID.Valid {
@@ -77,6 +79,7 @@ type pendingRevertDTO struct {
 	Progress      *revertProgressDTO `json:"progress,omitempty"`
 	Headline      string             `json:"headline"`
 	RevertURL     string             `json:"revertUrl,omitempty"`
+	RequestFile   *links.RequestFile `json:"requestFile,omitempty"`
 	PersonMessage string             `json:"personMessage"`
 	Links         []mcp.Link         `json:"links,omitempty"`
 	NextSteps     []mcp.NextStep     `json:"nextSteps,omitempty"`
@@ -86,7 +89,7 @@ func pendingRevertFromDomain(p PendingRevert) pendingRevertDTO {
 	d := pendingRevertDTO{
 		Kind: KindRevert, RevertID: p.ID.String(), Status: p.Status, Intent: p.Intent, Rows: p.Rows, Skipped: p.Skipped,
 		Batched: p.Batched, Widened: p.Widened, CreatedAt: timeText(p.CreatedAt), ExpiresAt: timeText(p.ExpiresAt),
-		Headline: p.Headline, RevertURL: p.RevertURL, PersonMessage: p.PersonMessage, Links: p.Links, NextSteps: p.NextSteps,
+		Headline: p.Headline, RevertURL: p.RevertURL, RequestFile: p.RequestFile, PersonMessage: p.PersonMessage, Links: p.Links, NextSteps: p.NextSteps,
 	}
 	if !p.Widened {
 		d.Scope, d.ScopeID = p.Scope, p.ScopeID.String()

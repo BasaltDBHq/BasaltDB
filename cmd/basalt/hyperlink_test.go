@@ -133,3 +133,17 @@ func TestPrintableLabel(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, "a?b?c?d?", printableLabel("a\x1bb\nc\u009bd\x07"))
 }
+
+// The local pages run only at localhost, so --pages-url on a loopback IP is
+// a usage error naming the localhost base to use instead.
+func TestPagesURLFlagRefusesALoopbackIP(t *testing.T) {
+	t.Parallel()
+	for base, want := range map[string]string{
+		"http://127.0.0.1:8787": "use http://localhost:8787",
+		"http://[::1]:9000":     "use http://localhost:9000",
+	} {
+		r := cli(t, nil, "", "approve", "--pages-url", base, "--show", "0190a3f2-7c1e-7000-8000-000000000001")
+		require.Equal(t, exitUsage, r.code, base)
+		require.Contains(t, r.stderr, want, base)
+	}
+}

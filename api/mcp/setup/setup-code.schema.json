@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/setup-code.v1.json",
   "title": "Setup code",
-  "description": "The JSON inside a setup code, basalt-setup.1.<b64url(deflate-raw(json))>.<check> (CONTRACT.md, Setup from your laptop). basalt init --remote makes it on the bot's machine; basalt init --setup-code reads it on the person's own computer. Only non-secret parameters: never the agent's password (its SCRAM-SHA-256 verifier instead) and never anything of the admin. Closed: an unknown key is refused. Rules a schema cannot state (guard.from <= guard.to, and < for UPGRADE; at least one table; a table in only one of write and read; the agent role <prefix>_agent_<name> at most 63 bytes; expiresAt no later than the setupId's UUIDv7 time plus 24 hours) are in CONTRACT.md. Golden fixtures: setup-code.fixtures.json.",
+  "description": "The JSON inside a setup code, basalt-setup.1.<b64url(deflate-raw(json))>.<check> (CONTRACT.md, Setup from your laptop). basalt init --remote makes it on the bot's machine; basalt init --setup-code reads it on the person's own computer. Never the agent's password (its SCRAM-SHA-256 verifier instead, which is sensitive) and never anything of the admin. Closed: an unknown key is refused. Rules a schema cannot state (guard.from <= guard.to, and < for UPGRADE; at least one table; a table in only one of write and read; the agent role <prefix>_agent_<name> at most 63 bytes; expiresAt no later than the setupId's UUIDv7 time plus 24 hours) are in CONTRACT.md. Golden fixtures: setup-code.fixtures.json.",
   "oneOf": [
     { "$ref": "#/$defs/install" },
     { "$ref": "#/$defs/agentChange" },
@@ -23,7 +23,8 @@
         "guard": { "$ref": "#/$defs/guard" },
         "build": { "$ref": "#/$defs/build" },
         "agent": { "$ref": "#/$defs/newAgent" },
-        "expiresAt": { "$ref": "#/$defs/expiresAt" }
+        "expiresAt": { "$ref": "#/$defs/expiresAt" },
+        "engine": { "$ref": "#/$defs/engine" }
       }
     },
     "agentChange": {
@@ -40,7 +41,8 @@
         "guard": { "$ref": "#/$defs/guard" },
         "build": { "$ref": "#/$defs/build" },
         "agent": { "$ref": "#/$defs/changedAgent" },
-        "expiresAt": { "$ref": "#/$defs/expiresAt" }
+        "expiresAt": { "$ref": "#/$defs/expiresAt" },
+        "engine": { "$ref": "#/$defs/engine" }
       }
     },
     "upgrade": {
@@ -56,7 +58,21 @@
         "target": { "$ref": "#/$defs/target" },
         "guard": { "$ref": "#/$defs/guard" },
         "build": { "$ref": "#/$defs/build" },
-        "expiresAt": { "$ref": "#/$defs/expiresAt" }
+        "expiresAt": { "$ref": "#/$defs/expiresAt" },
+        "engine": { "$ref": "#/$defs/engine" }
+      }
+    },
+    "engine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["publicKey"],
+      "description": "Planned (M4.1, CONTRACT.md, The setup code and Direct transport). The engine's identity, which the person's computer records in basalt_meta (version 33) with the address given as --engine-url, never in the code. Optional in every kind. A code with engine and guard.to below 33 is INVALID, as is a key that is not an uncompressed P-256 point on the curve.",
+      "properties": {
+        "publicKey": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{122}$",
+          "description": "The engine's signing key: its 91-byte SubjectPublicKeyInfo DER (id-ecPublicKey, prime256v1, uncompressed point), base64url without padding."
+        }
       }
     },
     "format": {
@@ -126,7 +142,7 @@
     "verifier": {
       "type": "string",
       "pattern": "^SCRAM-SHA-256\\$4096:[A-Za-z0-9+/]{22}==\\$[A-Za-z0-9+/]{43}=:[A-Za-z0-9+/]{43}=$",
-      "description": "The agent password's SCRAM-SHA-256 verifier (RFC 5802, RFC 7677), as Postgres stores it: SCRAM-SHA-256$4096:<salt>$<StoredKey>:<ServerKey>, standard base64, a 16-byte random salt and 4096 iterations. It lets nobody log in."
+      "description": "The agent password's SCRAM-SHA-256 verifier (RFC 5802, RFC 7677), as Postgres stores it: SCRAM-SHA-256$4096:<salt>$<StoredKey>:<ServerKey>, standard base64, a 16-byte random salt and 4096 iterations. Sensitive: it is not the password, but with one observed SCRAM exchange of the role it lets its holder log in as the agent (CONTRACT.md, The setup code)."
     },
     "statementTimeoutMs": {
       "type": "integer",

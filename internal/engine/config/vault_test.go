@@ -26,12 +26,11 @@ func TestVaultEnabled(t *testing.T) {
 		cfg  config.Config
 		want bool
 	}{
-		"on with the portal":      {config.Config{Vault: config.VaultOn, PagesURL: "https://portal.basaltvault.app"}, true},
-		"off with the portal":     {config.Config{Vault: config.VaultOff, PagesURL: "https://portal.basaltvault.app"}, false},
-		"unset with the portal":   {config.Config{PagesURL: "https://portal.basaltvault.app"}, false},
-		"on with local pages":     {config.Config{Vault: config.VaultOn, PagesURL: "http://localhost:7777"}, false},
-		"on with the old console": {config.Config{Vault: config.VaultOn, PagesURL: "https://console.basaltvault.app"}, false},
-		"on with the default":     {config.Config{Vault: config.VaultOn}, false},
+		"on with the portal":    {config.Config{Vault: config.VaultOn, PagesURL: "https://portal.basaltvault.app"}, true},
+		"off with the portal":   {config.Config{Vault: config.VaultOff, PagesURL: "https://portal.basaltvault.app"}, false},
+		"unset with the portal": {config.Config{PagesURL: "https://portal.basaltvault.app"}, false},
+		"on with local pages":   {config.Config{Vault: config.VaultOn, PagesURL: "http://localhost:7777"}, false},
+		"on with the default":   {config.Config{Vault: config.VaultOn}, false},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

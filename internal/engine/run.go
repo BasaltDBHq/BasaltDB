@@ -21,6 +21,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
+	"github.com/basaltdbhq/basaltdb/internal/channel"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
@@ -116,6 +117,9 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 	if err != nil {
 		return err
 	}
+	if cfg.DevLocalPages {
+		log.Warn(config.DevLocalPagesWarning, "pagesUrl", cfg.PagesURL)
+	}
 	var site *pagesSite
 	if pagesCfg.Addr != "" {
 		site, err = listenPages(pagesCfg, log)
@@ -146,16 +150,46 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 	// Link sessions through the Vault are answered by the pages API on the
 	// portal's origin (CONTRACT.md, Vault channel, Frames), with no
 	// listener: only the session reaches these handlers.
+	directAddr, err := cfg.Direct()
+	if err != nil {
+		return err
+	}
 	var sessionPages *pages.Server
 	var dispatch vault.Dispatcher
-	if cfg.VaultEnabled() {
+	if cfg.VaultEnabled() || directAddr != "" {
 		sessionPages = pages.New(base, log.With("component", "vault-pages"))
 		dispatch = sessionPages
 	}
 	ev := openVault(cfg, env.stateDir, time.Now, log, relay, dispatch)
-	env.vault = ev
+	env.vault, env.receipts = ev, ev.receipts()
 	if ev.client != nil {
 		env.relay, env.relayLinks = ev.client, relay
+	}
+	var direct *directSite
+	if directAddr != "" && ev.keys == nil {
+		log.Error("directAddr is set but the engine key file is refused: no direct listener until it is fixed", "addr", directAddr)
+	}
+	if directAddr != "" && ev.keys != nil {
+		env.records = newEngineRecords(ev.keys.EngineID(), time.Now, log.With("component", "direct"))
+		client := ev.client
+		env.direct = vault.NewDirect(vault.DirectOptions{
+			Keys: ev.keys, Log: log.With("component", "direct"), SessionLinks: relay, Pages: dispatch,
+			// A widen in a direct session ends the old token's sessions
+			// through the Vault too, without unregistering it.
+			OnRotate: func(old channel.LinkToken) {
+				if client != nil {
+					client.EndSessions(old)
+				}
+			},
+		})
+		relay.setDirect(env.direct)
+		env.relayLinks = relay
+		direct, err = listenDirect(directAddr)
+		if err != nil {
+			return err
+		}
+		closers = append(closers, func() { _ = direct.ln.Close() })
+		log.Info("direct listener", "addr", directAddr)
 	}
 	st := ev.status()
 	log.Info("vault", "state", st.State, "engineId", st.EngineID, "fingerprint", st.Fingerprint)
@@ -205,6 +239,11 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 	}
 	if site != nil {
 		wg.Go(func() { site.serve(ctx, log) })
+	}
+	if direct != nil {
+		h := newDirectHandler(ctx, env.records, ev.keys.PublicKeySPKI(), env.direct, time.Now)
+		wg.Go(func() { env.records.refresh(ctx) })
+		wg.Go(func() { direct.serve(ctx, h, env.direct, log) })
 	}
 	return New(log, agents).Serve(ctx)
 }
@@ -369,10 +408,17 @@ type agentEnv struct {
 	pins        upkeep.Pins
 	// vault reports the Vault connection in every agent's status.
 	vault agent.VaultReporter
+	// receipts signs the receipt of every relayed signature; nil when the
+	// engine key file is refused (KEY_ERROR).
+	receipts agent.ReceiptSigner
 	// relay and relayLinks are set when the engine dials out to the Vault:
 	// each agent registers its portal short links there.
 	relay      *vault.Client
 	relayLinks *relayLinks
+	// direct serves the direct transport's sessions and records reads the
+	// engine's record per agent database; both nil without directAddr.
+	direct  *vault.Direct
+	records *engineRecords
 	// dict is the engine's PII dictionary, shared by every agent.
 	dict *pii.FuseDictionary
 }
@@ -414,37 +460,44 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	var relay agent.LinkRelay
 	if env.relay != nil {
 		relay = env.relay
-		env.relayLinks.add(secrets, env.relay.Unregister)
+	}
+	if env.relayLinks != nil {
+		env.relayLinks.add(a.Name, secrets, env.dropLink)
+	}
+	if env.records != nil {
+		env.records.add(a.Name, pool)
 	}
 	blind := agent.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
 		return guard.RLSBlindTables(ctx, pool, "", tables)
 	})
 	svc := agent.NewService(agent.Deps{
-		Name:        a.Name,
-		Reader:      agentdb.NewReader(pool, limits, time.Now),
-		Store:       store,
-		Reads:       store,
-		Approvals:   store,
-		Reverts:     store,
-		PagesBase:   env.pagesBase,
-		LinkBudget:  env.cfg.LinkBudgetOrDefault(),
-		Commands:    cmds,
-		PagesOrigin: env.pagesOrigin,
-		Links:       secrets,
-		Relay:       relay,
-		RLS:         blind,
-		Log:         log,
-		Now:         time.Now,
-		OperatedBy:  env.cfg.OperatedBy,
-		SameUser:    !env.cfg.Service(),
-		Setup:       a.Setup,
-		Probe:       probe,
-		Vault:       env.vault,
-		Finisher:    finisher,
-		PII:         observer.On(pool),
-		Catalog:     agentdb.NewCatalog(pool, limits, pool.Config().ConnConfig.Database),
-		Columns:     agentdb.NewColumnOrder(pool),
-		Classes:     classes.On(pool),
+		Name:          a.Name,
+		Reader:        agentdb.NewReader(pool, limits, time.Now),
+		Store:         store,
+		Reads:         store,
+		Approvals:     store,
+		Reverts:       store,
+		PagesBase:     env.pagesBase,
+		LinkBudget:    env.cfg.LinkBudgetOrDefault(),
+		Commands:      cmds,
+		PagesOrigin:   env.pagesOrigin,
+		Links:         secrets,
+		Relay:         relay,
+		RLS:           blind,
+		Log:           log,
+		Now:           time.Now,
+		OperatedBy:    env.cfg.OperatedBy,
+		DevLocalPages: env.cfg.DevLocalPages,
+		SameUser:      !env.cfg.Service(),
+		Setup:         a.Setup,
+		Probe:         probe,
+		Vault:         env.vault,
+		Receipts:      env.receipts,
+		Finisher:      finisher,
+		PII:           observer.On(pool),
+		Catalog:       agentdb.NewCatalog(pool, limits, pool.Config().ConnConfig.Database),
+		Columns:       agentdb.NewColumnOrder(pool),
+		Classes:       classes.On(pool),
 	})
 	return agentRuntime{
 		svc: svc,
@@ -551,3 +604,14 @@ func linkSecrets(dir, agent string, log *slog.Logger) *links.Secrets {
 // linkSecretsSuffix names an agent's link-secret file in the state
 // directory: <stateDir>/<agent>.links.json.
 const linkSecretsSuffix = ".links.json"
+
+// dropLink ends what a dropped link has: its token at the Vault and its
+// direct sessions.
+func (env agentEnv) dropLink(token channel.LinkToken) {
+	if env.relay != nil {
+		env.relay.Unregister(token)
+	}
+	if env.direct != nil {
+		env.direct.EndLink(token)
+	}
+}

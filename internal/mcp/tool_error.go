@@ -1,6 +1,10 @@
 package mcp
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/basaltdbhq/basaltdb/internal/links"
+)
 
 // ToolError is a tool failure with a stable code from CONTRACT.md, returned
 // in the tools/call result with isError set. Reason refines some codes
@@ -51,6 +55,7 @@ const (
 	ActionOpenLink            = "OPEN_LINK"
 	ActionRunCommand          = "RUN_COMMAND"
 	ActionTellAgent           = "TELL_AGENT"
+	ActionSendRequest         = "SEND_REQUEST"
 )
 
 // NextStep is one step of nextSteps in an error body or a result: who does
@@ -82,13 +87,16 @@ type Link struct {
 // approval link (short when the engine serves the pages), the equivalent
 // command, one line for the person, and when it expires.
 type ApprovalNotice struct {
-	ApprovalID     string `json:"approvalId"`
-	ExpiresAt      string `json:"expiresAt"`
-	Rows           int    `json:"rows"`
-	Headline       string `json:"headline"`
-	ApprovalURL    string `json:"approvalUrl"`
-	ApproveCommand string `json:"approveCommand"`
-	PersonMessage  string `json:"personMessage"`
+	ApprovalID  string `json:"approvalId"`
+	ExpiresAt   string `json:"expiresAt"`
+	Rows        int    `json:"rows"`
+	Headline    string `json:"headline"`
+	ApprovalURL string `json:"approvalUrl"`
+	// RequestFile is the request beside a hash link in ApprovalURL (CONTRACT.md,
+	// The request file and pasted blocks); nil with any other link.
+	RequestFile    *links.RequestFile `json:"requestFile,omitempty"`
+	ApproveCommand string             `json:"approveCommand"`
+	PersonMessage  string             `json:"personMessage"`
 	// Links equals the body's links: the URLs of PersonMessage.
 	Links []Link `json:"links,omitempty"`
 }

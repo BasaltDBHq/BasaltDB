@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
@@ -167,12 +168,15 @@ type DBLedger struct {
 	now func() time.Time
 }
 
-// NewDBLedger is the Ledger over db.
+// NewDBLedger is the Ledger over db. Every transaction it begins is pinned
+// (guard.PinSession); the calls that build row images or lines (preview,
+// prepare, apply and rescope of a revert) run in one, so the person's
+// session zone and styles change neither the lines nor the conflict check.
 func NewDBLedger(db DB, now func() time.Time) *DBLedger {
 	if db == nil || now == nil {
 		panic("person: db and clock required")
 	}
-	return &DBLedger{db: db, now: now}
+	return &DBLedger{db: guard.Pinned(db), now: now}
 }
 
 // CheckHealth is ledger.CheckHealth now.
@@ -216,9 +220,15 @@ func (l *DBLedger) FindRevert(ctx context.Context, id uuid.UUID) (ledger.Revert,
 	return ledger.FindRevert(ctx, l.db, id)
 }
 
-// PreviewRevert is guard.PreviewRevert.
+// PreviewRevert is guard.PreviewRevert, in a pinned transaction.
 func (l *DBLedger) PreviewRevert(ctx context.Context, s guard.RevertScope) ([]string, error) {
-	return guard.PreviewRevert(ctx, l.db, s)
+	var lines []string
+	err := pgx.BeginTxFunc(ctx, l.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
+		var err error
+		lines, err = guard.PreviewRevert(ctx, tx, s)
+		return err
+	})
+	return lines, err
 }
 
 // PrepareRevert is guard.PrepareRevertWithin the CLI's time limit.
@@ -226,9 +236,15 @@ func (l *DBLedger) PrepareRevert(ctx context.Context, s guard.RevertScope, inten
 	return guard.PrepareRevertWithin(ctx, l.db, s, intent, guard.CLIPrepareTimeout)
 }
 
-// ApplyRevert is guard.ApplyRevert.
+// ApplyRevert is guard.ApplyRevert, in its own pinned transaction.
 func (l *DBLedger) ApplyRevert(ctx context.Context, id uuid.UUID, a passkey.Assertion) (guard.AppliedRevert, error) {
-	return guard.ApplyRevert(ctx, l.db, id, a)
+	var out guard.AppliedRevert
+	err := pgx.BeginTxFunc(ctx, l.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
+		var err error
+		out, err = guard.ApplyRevert(ctx, tx, id, a)
+		return err
+	})
+	return out, err
 }
 
 // RescopeRevert narrows the agent's own pending revert id to runs and
@@ -240,7 +256,13 @@ func (l *DBLedger) RescopeRevert(ctx context.Context, id uuid.UUID, runs []uuid.
 		return guard.PreparedRevert{}, err
 	}
 	scope := guard.RevertScope{Kind: revert.Scope(r.Scope), ID: r.ScopeID, Runs: runs, Tables: tables}
-	return guard.RescopeOwn(ctx, l.db, id, scope)
+	var out guard.PreparedRevert
+	err = pgx.BeginTxFunc(ctx, l.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
+		var err error
+		out, err = guard.RescopeOwn(ctx, tx, id, scope)
+		return err
+	})
+	return out, err
 }
 
 // RejectRevert is guard.RejectRevert with no scope token: it never rejects

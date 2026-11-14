@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"net"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -66,9 +69,9 @@ func initWithPasskey(t *testing.T, d *guardtest.DB, person *passkeytest.Authenti
 	configPath := filepath.Join(t.TempDir(), "engine.json")
 	r := cliRand(t, map[string]string{envAdminURL: d.URL}, registrationCode(t, person, dbName(t, d))+"\n",
 		"init", "--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix,
-		"--config", configPath, "--os-user", "tester", "--yes", "--passkey-origin", links.HostedConsole)
+		"--config", configPath, "--os-user", "tester", "--yes", "--passkey-origin", links.Portal)
 	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Contains(t, r.stderr, "https://console.basaltvault.app/passkeys/register#1.")
+	require.Contains(t, r.stderr, "https://portal.basaltvault.app/passkeys/register#1.")
 	require.Contains(t, r.stderr, "passkey registered for basaltvault.app")
 	return filepath.Join(filepath.Dir(configPath), "agents", "bot.url")
 }
@@ -87,8 +90,51 @@ func TestInitRegistersPasskey(t *testing.T) {
 	// A second init keeps the registered passkey and asks nothing.
 	r := cli(t, map[string]string{envAdminURL: d.URL}, "",
 		"init", "--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix,
-		"--config", filepath.Join(t.TempDir(), "engine.json"), "--os-user", "tester", "--yes",
+		"--config", filepath.Join(t.TempDir(), "engine.json"), "--os-user", "tester", "--yes", "--passkey-origin", links.Portal,
 		"--rotate-password") // a new config dir has no credential file to keep
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.NotContains(t, r.stderr, "/passkeys/register")
+}
+
+// Handing an engine over to an agent moves it to the portal's pages, where a
+// passkey made on the local pages cannot sign: init registers a portal
+// passkey even though a local one exists, and prints no port hint for the
+// portal.
+func TestInitHandOverRegistersAPortalPasskey(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	// Hold the local port, so init does not serve the page (no hand-back)
+	// and takes the pasted code.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ln.Close() })
+	origin := fmt.Sprintf("http://localhost:%d", ln.Addr().(*net.TCPAddr).Port)
+	rp, err := passkey.Local(origin)
+	require.NoError(t, err)
+	local, err := passkeytest.New(rp)
+	require.NoError(t, err)
+	configPath := filepath.Join(t.TempDir(), "engine.json")
+	base := []string{
+		"init", "--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix,
+		"--config", configPath, "--os-user", "tester", "--yes",
+	}
+	r := cliRand(t, map[string]string{envAdminURL: d.URL}, registrationCode(t, local, dbName(t, d))+"\n",
+		append(slices.Clone(base), "--passkey-origin", origin)...)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Contains(t, r.stderr, "passkey registered for localhost")
+	require.Contains(t, r.stderr, "is taken", "a local origin whose port is taken gets the hint")
+
+	portal, err := passkeytest.New(passkey.Production)
+	require.NoError(t, err)
+	r = cliRand(t, map[string]string{envAdminURL: d.URL}, registrationCode(t, portal, dbName(t, d))+"\n",
+		append(slices.Clone(base), "--operated-by", "agent")...)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Contains(t, r.stderr, "https://portal.basaltvault.app/passkeys/register#1.")
+	require.Contains(t, r.stderr, "passkey registered for basaltvault.app")
+	require.NotContains(t, r.stderr, "is taken", "no port hint for the portal")
+
+	// The portal passkey is there now: a rerun registers nothing.
+	r = cli(t, map[string]string{envAdminURL: d.URL}, "", append(slices.Clone(base), "--operated-by", "agent")...)
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.NotContains(t, r.stderr, "/passkeys/register")
 }

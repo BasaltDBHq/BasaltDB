@@ -15,7 +15,7 @@ const (
 	EntityOther      EntityType = "OTHER"
 )
 
-// Token-only entity types (owner decisions, PT-9, provisional). A column is
+// Token-only entity types (owner decisions, PT-9). A column is
 // never classified with them: a card or IBAN column is SECRET or OTHER. They
 // exist so a card or an IBAN gets one token however it is spaced: the card
 // and IBAN patterns emit them, and an OTHER value that is a valid card or IBAN

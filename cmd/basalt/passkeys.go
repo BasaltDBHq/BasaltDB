@@ -377,7 +377,7 @@ func passkeyCheck(c *cliIO, args []string) int {
 		return c.fail(err)
 	}
 	defer l.close()
-	base := strings.TrimSuffix(l.pagesBase(pagesURL), "/")
+	base := strings.TrimSuffix(l.pagesBase(c, pagesURL), "/")
 	keys, err := l.ListPasskeys(c.ctx)
 	if err != nil {
 		return c.fail(err)

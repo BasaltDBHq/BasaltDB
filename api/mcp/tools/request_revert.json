@@ -74,6 +74,7 @@
   },
   "outputSchema": {
     "type": "object",
+    "not": { "required": ["receipt", "noReceipt"] },
     "additionalProperties": false,
     "required": [
       "revertId",
@@ -158,17 +159,35 @@
       "revertUrl": {
         "type": "string",
         "format": "uri",
-        "description": "When the revert was just requested, or with reissueLink while PENDING: the revert page, the short link http://localhost:<port>/reverts/<revertId>#s=<secret> when the engine serves the local pages, else the long link <base>/reverts/<revertId>#1.<request>. Absent otherwise: the link already given keeps working."
+        "description": "When the revert was just requested, or with reissueLink while PENDING: the revert page, the short link http://localhost:<port>/reverts/<revertId>#s=<secret> when the engine serves the local pages, else the long link <base>/reverts/<revertId>#1.<request>. Absent otherwise: the link already given keeps working. When that long link is over the link budget: the hash link <base>/reverts/<revertId>#h=<h>, with requestFile beside it."
+      },
+      "requestFile": {
+        "$ref": "../links/request-file.schema.json",
+        "description": "Only with a hash link in revertUrl: the request to send the person as a file or text blocks (CONTRACT.md, The request file and pasted blocks)."
       },
       "personMessage": {
         "type": "string",
-        "description": "The message to show the person verbatim, keeping its line breaks: while PENDING what the revert restores and skips, the link on a line of its own (or a pointer to the link already given) and the expiry; otherwise the outcome."
+        "description": "The message to show the person verbatim, keeping its line breaks: while PENDING what the revert restores and skips, the link on a line of its own (or a pointer to the link already given) and the expiry; otherwise the outcome. APPLIED and APPLYING answers start with the receipt line (planned, VC1-17; CONTRACT.md, Vault channel, Receipts)."
       },
       "links": {
         "type": "array",
         "minItems": 1,
         "description": "The URLs of personMessage with labels, in order; present exactly when personMessage holds a URL.",
         "items": { "$ref": "../links/link.schema.json" }
+      },
+      "receipt": {
+        "type": "string",
+        "maxLength": 4096,
+        "pattern": "^basalt-receipt\\.1\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$",
+        "description": "Planned (VC1-17): with APPLIED or APPLYING, the engine-signed receipt basalt-receipt.1.<payload>.<sig> of the signed revert (api/mcp/vault/receipt.schema.json), built from Postgres's record of it. Absent with noReceipt."
+      },
+      "noReceipt": {
+        "type": "string",
+        "enum": [
+          "KEY_ERROR",
+          "WIDENED"
+        ],
+        "description": "Planned (VC1-17): with APPLIED or APPLYING, why there is no receipt: KEY_ERROR, the engine key file is refused; WIDENED (provisional), the revert's scope was widened on the signing page and the agent's view holds no binding to name its rows. The revert is applied all the same."
       },
       "changeId": {
         "type": "string",

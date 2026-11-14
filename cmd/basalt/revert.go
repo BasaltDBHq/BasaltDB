@@ -16,6 +16,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
@@ -676,7 +677,7 @@ func revertLineText(l revert.Line) string {
 
 func revertLine(l revert.Line) string {
 	verb := map[string]string{"UPDATE": "restore", "INSERT": "re-insert", "DELETE": "delete"}[l.Op]
-	key := string(l.Key)
+	key := string(l.Key) + keyMarks(l.Key)
 	if l.Redacted {
 		key = "(values hidden: you cannot read this table)"
 	}
@@ -704,7 +705,8 @@ func changedColumns(now, set json.RawMessage) []string {
 	out := make([]string, 0, len(after))
 	for col, v := range after {
 		if !bytes.Equal(before[col], v) {
-			out = append(out, fmt.Sprintf("%s: %s -> %s", col, before[col], v))
+			out = append(out, fmt.Sprintf("%s: %s -> %s", col, withMark(string(before[col]), largevalue.Summary(before[col], col)),
+				withMark(string(v), largevalue.Summary(v, col))))
 		}
 	}
 	sort.Strings(out)
@@ -718,4 +720,23 @@ func printJSONValue(c *cliIO, v any) int {
 		return c.fail(err)
 	}
 	return exitOK
+}
+
+// keyMarks is the summaries of a row key's large values, each after the
+// key with its column, in column order ("" when none is large).
+func keyMarks(key json.RawMessage) string {
+	marks, err := largevalue.ImageMarks(key)
+	if err != nil || len(marks) == 0 {
+		return ""
+	}
+	cols := make([]string, 0, len(marks))
+	for col := range marks {
+		cols = append(cols, col)
+	}
+	sort.Strings(cols)
+	var b strings.Builder
+	for _, col := range cols {
+		b.WriteString(" " + col + " " + marks[col])
+	}
+	return b.String()
 }

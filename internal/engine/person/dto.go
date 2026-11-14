@@ -357,6 +357,8 @@ type rowChangeDTO struct {
 	// LargeValues and the left-out flags are set on agent reads only.
 	LargeValues                             []largevalue.Entry `json:"-"`
 	KeyLeftOut, BeforeLeftOut, AfterLeftOut bool               `json:"-"`
+	// Marks summarize the values over 1 MiB, for the CLI's text output.
+	Marks largevalue.Marks `json:"marks"`
 }
 
 type rowChangesDTO struct {

@@ -15,6 +15,7 @@ import {
   relyingParty,
   visibleText,
 } from "./codec.js";
+import { showText } from "./large.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
 import { $, APPROVE_REOPEN, el, fail, linkFailure, loadOrPaste, personText, setPill, showCode, showDone, showRelayFailed, webauthnError, whenText } from "./page.js";
 import { applyReveal, canReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
@@ -71,9 +72,9 @@ function renderSummary(req, summary) {
   $("agent").title = visibleText(b.agent);
   $("database").textContent = visibleText(b.database);
   $("intent").textContent = visibleText(b.intent);
-  $("statement").textContent = visibleText(b.statement, { lines: true });
+  showText($("statement"), b.statement, (t) => visibleText(t, { lines: true }));
   // The signed text, not JSON.parse's rounding of it (paramsText).
-  $("params").textContent = visibleText(paramsText(req.bindingText));
+  showText($("params"), paramsText(req.bindingText), visibleText);
   $("rows").textContent = String(b.rows);
   $("expires").textContent = b.expiresAt.toLocaleString();
   const now = new Date();

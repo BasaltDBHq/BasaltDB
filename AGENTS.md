@@ -2,7 +2,7 @@
 
 BasaltDB is **the action ledger for AI agents on your database**. It is not a database: data stays in the person's own Postgres. One Go binary runs next to each agent as its MCP server (the edge engine), and a guard installed in the person's Postgres (`basalt_meta`: roles, triggers, ledger) records, holds and reverts agent writes. Surfaces: **MCP tools**, the **`basalt` CLI**, and the **approval and revert pages**. There is no REST API.
 
-**Source of truth:** [`docs/redesign/specs/2026-11-11-basalt-foundation-final.md`](docs/redesign/specs/2026-11-11-basalt-foundation-final.md), with binding owner answers in [`2026-11-11-owner-decisions.md`](docs/redesign/specs/2026-11-11-owner-decisions.md) and status in the [roadmap](docs/redesign/plans/2026-11-11-roadmap-m0-m3.md). Read them before working on the engine, the guard or the CLI. **Specs, plans and decisions are committed under `docs/redesign`.** Contracts: [CONTRACT.md](CONTRACT.md).
+**Source of truth:** [CONTRACT.md](CONTRACT.md) fixes every surface: MCP tools, the CLI, the pages and `basalt_meta`. Read it before working on the engine, the guard or the CLI, and update it in the same PR as any change to a surface.
 
 ## Repo quick facts
 
@@ -20,7 +20,7 @@ BasaltDB is **the action ledger for AI agents on your database**. It is not a da
 cmd/basalt     the one binary
 internal/      engine, guard install, MCP transport, CLI internals
 pkg/           shared libraries (uniqueid, pagination, …)
-docs/redesign  specs, plans and decisions
+docs/          user guides: install, approving, MCP clients, releasing
 scripts/       release and packaging scripts
 ```
 

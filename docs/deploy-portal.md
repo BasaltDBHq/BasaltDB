@@ -4,8 +4,6 @@ The portal is the static copy of the approval, revert, passkey and engine pin pa
 
 The pages run only at `https://portal.basaltvault.app` (`PORTAL` in `web/lib/codec.js`) or `http://localhost:<port>`, and refuse any other origin before they touch a passkey.
 
-Design: [chat-only operator, section 5](redesign/specs/2026-11-12-chat-only-operator.md#5-the-portal-cloudflare-pages).
-
 ## What gets served
 
 - `make portal-build` copies only the served files into `dist/portal`: `approve/`, `revert/`, `register/`, `passkeys/`, `engines/` (each `index.html`), `lib/*.js` (no `*.test.mjs`), `style.css`, `_headers`, `_redirects` and `_routes.json`. These are the files the engine embeds (`web/embed.go`); `embed.go`, `embed_test.go` and the tests are not published. Cloudflare serves `dist/portal`, not `web/`.

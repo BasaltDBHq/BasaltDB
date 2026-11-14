@@ -64,10 +64,10 @@ When an agent hits its cap, `basalt status` reports `TOO_MANY_CONNECTIONS` with 
 
 ## 3. Create a table to guard (skip if you have one)
 
-[`docs/m4/seed.sql`](m4/seed.sql) creates a schema `basalt_demo` with `leads` (30 rows) and `lead_notes` (20 rows). Nothing else is touched.
+[`examples/demo/seed.sql`](../examples/demo/seed.sql) creates a schema `basalt_demo` with `leads` (30 rows) and `lead_notes` (20 rows). Nothing else is touched.
 
 - Supabase: paste the file into the SQL editor and run it.
-- Plain Postgres: `psql -h HOST -U postgres DBNAME -f docs/m4/seed.sql` (psql asks for the password).
+- Plain Postgres: `psql -h HOST -U postgres DBNAME -f examples/demo/seed.sql` (psql asks for the password).
 
 To guard your own tables instead, use them in step 4 in place of `basalt_demo.leads` and `basalt_demo.lead_notes`.
 

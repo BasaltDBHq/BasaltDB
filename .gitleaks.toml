@@ -1,0 +1,14 @@
+# .gitleaks.toml — keep the default rules, allow only test fixtures
+title = "BasaltDB gitleaks config"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Test fixtures and test vectors: synthetic keys, never real credentials"
+paths = [
+  '''(^|/)testdata/''',
+  '''_test\.go$''',
+  '''\.test\.mjs$''',
+  '''\.fixtures\.json$''',
+]

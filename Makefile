@@ -93,10 +93,12 @@ web-check: ## Syntax-check the approval and revert pages, run their codec tests 
 	@for f in web/lib/*.js; do node --check "$$f" || exit 1; done
 	@node --test web/lib/*.test.mjs >/dev/null || node --test web/lib/*.test.mjs
 	@node scripts/web-sri.mjs --check
+	@node scripts/web-manifest.mjs --check
 
 .PHONY: web-sri
-web-sri: ## Rewrite the subresource-integrity hashes in web/*/index.html after editing web/lib/*.js
+web-sri: ## After editing web/: rewrite the integrity hashes in web/*/index.html and the portal manifest web/portal.sha256
 	@node scripts/web-sri.mjs --write
+	@node scripts/web-manifest.mjs --write
 
 # The portal's static host serves only the files the engine's embed serves
 # (web/embed.go), plus the Pages config. Tests and Go files stay out.

@@ -62,6 +62,7 @@ func cliNoDB(t *testing.T, args ...string) result {
 			return ""
 		})
 	c.agentLogin = refusedLogin
+	c.host = systemSocketHost(t)
 	code := runInit(c, args[1:])
 	return result{code, stdout.String(), stderr.String()}
 }
@@ -674,4 +675,40 @@ func TestCheckBuildVersion(t *testing.T) {
 		require.NotErrorIs(t, err, errUsage)
 		require.Contains(t, err.Error(), "install a release build")
 	}
+}
+
+// A rootless bot's engine must be able to bind its sockets: with --config
+// and no root, init keeps them in a run directory next to the config.
+func TestInitRemoteKeepsARootlessSocketDirNextToTheConfig(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost(t)
+	cfg := filepath.Join(h.configDir, "bot", "engine.json")
+	var stdout, stderr bytes.Buffer
+	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr},
+		func(k string) string {
+			if k == envAdminURL {
+				return "postgres://admin:adminsecret@db.example.com/postgres"
+			}
+			return ""
+		})
+	c.host = h
+	c.agentLogin = refusedLogin
+	code := runInit(c, []string{
+		"--remote", "--config", cfg, "--json", "--agent", "bot", "--write", "public.leads",
+		"--database-url", "postgres://postgres@db.example.com:5432/postgres",
+	})
+	require.Equal(t, exitOK, code, stderr.String())
+	loaded, err := config.Load(cfg)
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(filepath.Dir(cfg), "run"), loaded.SocketDir)
+}
+
+// systemSocketHost is a host that keeps the sockets in the system directory
+// the way root's init does, so tests with long temp directories keep short
+// socket paths. The test for the rootless path builds its own host.
+func systemSocketHost(t *testing.T) *fakeHost {
+	t.Helper()
+	h := newFakeHost(t)
+	h.euid = 0
+	return h
 }

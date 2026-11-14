@@ -255,6 +255,8 @@ type requestRevertResult struct {
 	Progress      *revertProgressDTO `json:"progress,omitempty"`
 	RejectedAt    string             `json:"rejectedAt,omitempty"`
 	Note          string             `json:"note,omitempty"`
+	Receipt       string             `json:"receipt,omitempty"`
+	NoReceipt     string             `json:"noReceipt,omitempty"`
 	NextSteps     []mcp.NextStep     `json:"nextSteps,omitempty"`
 }
 
@@ -284,6 +286,9 @@ func requestRevertFromDomain(r RequestedRevert) requestRevertResult {
 	}
 	if rv.RejectedAt != nil {
 		out.RejectedAt, out.Note = timeText(*rv.RejectedAt), rv.RejectNote
+	}
+	if r.Receipt != nil {
+		out.Receipt, out.NoReceipt = r.Receipt.Token, r.Receipt.Missing
 	}
 	if rv.Batched && rv.SignedAt != nil {
 		out.Progress = &revertProgressDTO{

@@ -22,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
+	"github.com/basaltdbhq/basaltdb/pkg/wiretime"
 )
 
 // runLog: basalt log. Reads the agent's change records with the agent's
@@ -42,6 +43,7 @@ func runLog(c *cliIO, args []string) int {
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
 	}
+	*configPath = configOrFallback(c.host, fs, *configPath)
 	params := ledger.ChangeListParams{Params: pagination.Params{Limit: *limit, Cursor: *cursor, Sort: *sortFlag}}
 	if _, err := params.ParseSort(ledger.ChangeSortSpec); err != nil || *sortFlag == "" {
 		return c.fail(fmt.Errorf("%w: --sort must be id or -id, got %q", errUsage, *sortFlag))
@@ -349,6 +351,7 @@ func readsLine(reads []ledger.Change) string {
 // rowLine is one row a change wrote: compact (key, and for an update the
 // columns that changed) or full (whole before and after rows).
 func rowLine(r ledger.RowChange, full bool) string {
+	r.Key, r.Before, r.After = wiretime.Map(r.Key), wiretime.Map(r.Before), wiretime.Map(r.After)
 	prefix := r.Op + " " + r.Table
 	if r.Cascaded {
 		prefix += " (cascaded)"

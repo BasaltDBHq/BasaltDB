@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
+	"github.com/basaltdbhq/basaltdb/pkg/wiretime"
 )
 
 // What a revert does with a row.
@@ -83,4 +84,14 @@ func ParseLine(text string) (Line, error) {
 		return Line{}, invalid("revert line action %q", l.Action)
 	}
 	return l, nil
+}
+
+// ForDisplay returns the line with its row values as the wire format has
+// them (RFC 3339 UTC for a timestamptz). The signed text, which the passkey
+// signature and the hashes cover, is never changed: only what is shown.
+func (l Line) ForDisplay() Line {
+	l.Key = wiretime.JSON(l.Key)
+	l.Now = wiretime.JSON(l.Now)
+	l.Set = wiretime.JSON(l.Set)
+	return l
 }

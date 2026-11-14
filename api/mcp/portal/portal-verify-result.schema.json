@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/portal-verify-result.v1.json",
+  "title": "basalt portal verify --json",
+  "description": "What basalt portal verify --json prints on stdout (CONTRACT.md, CLI): one entry per file the binary embeds, plus any extra file the portal serves, and with --manifest the check of the embedded pages against that release manifest. Exit 0 when ok is true, 1 when anything differs, is missing, unexpected or could not be checked.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["portalUrl", "ok", "checked", "files"],
+  "properties": {
+    "portalUrl": {
+      "type": "string",
+      "description": "The origin that was checked: https://portal.basaltvault.app, or --portal-url."
+    },
+    "ok": {
+      "type": "boolean",
+      "description": "True when every file is OK and the manifest check, when present, is OK."
+    },
+    "checked": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "How many files the binary embeds (and so were fetched). files may hold more entries: UNEXPECTED ones."
+    },
+    "files": {
+      "type": "array",
+      "description": "One entry per embedded file, sorted by path, then one per page route (/approvals/<sample id>, /reverts/<sample id>, /passkeys/register, /passkeys/check, /passkeys/forget), then the UNEXPECTED and ERROR entries for paths the build never publishes.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "status"],
+        "properties": {
+          "path": { "type": "string", "description": "Relative to the portal origin; approve/index.html is fetched at /approve/. A page route starts with a slash." },
+          "status": {
+            "type": "string",
+            "enum": ["OK", "DIFFERS", "MISSING", "UNEXPECTED", "HEADER", "ERROR"],
+            "description": "DIFFERS: different bytes (SHA-256). MISSING: not served. UNEXPECTED: served but not embedded. HEADER: right bytes, but the Content-Security-Policy differs from the engine's or a .js file is not text/javascript. ERROR: could not be checked (network, HTTP status, a redirect to another origin)."
+          },
+          "detail": { "type": "string", "description": "Why, when the status is not OK. Names the header for HEADER." }
+        }
+      }
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "status"],
+      "description": "Present with --manifest: the embedded files checked against that \"sha256  path\" manifest.",
+      "properties": {
+        "source": { "type": "string", "description": "The --manifest path." },
+        "status": { "type": "string", "enum": ["OK", "DIFFERS", "ERROR"] },
+        "mismatches": { "type": "array", "items": { "type": "string" }, "description": "One line per path that differs, is missing from either side, or the parse error." }
+      }
+    }
+  }
+}

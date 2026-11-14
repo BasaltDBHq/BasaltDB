@@ -21,7 +21,7 @@
         "runs",
         "tables"
       ],
-      "description": "What the person may choose from inside the widest select they proved: the agents with changes in the scope, their runs and the tables written. Present only on a proven widen and on a narrow under its token.",
+      "description": "What the person may choose from inside the widest select they proved: the agents with changes in it, their runs, the tables written, and from basalt_meta version 32 the agent of each change. Present only on a proven widen and on a narrow under its token; every other answer, and every view or tool the requesting agent reads, has no catalog and so no changeAgents.",
       "properties": {
         "agents": {
           "type": "array",
@@ -96,6 +96,18 @@
               }
             }
           }
+        },
+        "changeAgents": {
+          "type": "object",
+          "propertyNames": {
+            "format": "uuid",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "description": "The agent role that made the change."
+          },
+          "description": "basalt_meta version 32 (owner decision Q-11): every change in the widest select the person proved, by change id, to the agent role that made it. It covers every change id the request's lines name, so the page tags each row with its agents. Absent on a guard older than version 32; the page then tags rows only when the select names exactly one agent."
         }
       }
     }

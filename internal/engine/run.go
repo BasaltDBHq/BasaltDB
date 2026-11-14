@@ -457,7 +457,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		login: targetOf(pool.Config().ConnConfig), password: password, reset: pool.Reset,
 		connect: connectAgent, log: log,
 	}
-	probe := agent.DBProbe{Q: pool, Migrations: guard.Migrations()}
+	probe := agent.DBProbe{Q: pool, Migrations: guard.Migrations(), Kept: KeptSetAside(env.pins, a.Name, log)}
 	logGuard(ctx, probe, log)
 	// The agent's classification map, and the values of IDENTIFIER columns
 	// it reads added to the dictionary before they leave the engine: query
@@ -578,6 +578,19 @@ func statePins(dir string, log *slog.Logger) upkeep.Pins {
 		return &chainpin.Memory{}
 	}
 	return chainpin.File{Dir: dir}
+}
+
+// KeptSetAside reads the pins agent set aside after reinstalls from its
+// pin (chainpin.Pin.SetAside), for the reinstall notice. A pin that cannot
+// be read is logged and adds nothing: the ledger still shows the notice.
+func KeptSetAside(pins upkeep.Pins, agent string, log *slog.Logger) func() []guard.SetAside {
+	return func() []guard.SetAside {
+		p, _, err := pins.Load(agent)
+		if err != nil {
+			log.Warn("read the kept copy of set-aside pins", "agent", agent, "err", err)
+		}
+		return p.SetAside
+	}
 }
 
 // sqlLimits applies the configured limits over the defaults.

@@ -5,6 +5,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -60,18 +61,77 @@ func mkdirTrusted(dir string, owner int) (int, error) {
 	}
 	defer unix.Close(pfd)
 	base := filepath.Base(dir)
-	if err := unix.Mkdirat(pfd, base, privateDirCreateMode); err != nil && !errors.Is(err, unix.EEXIST) {
+	made := true
+	if err := unix.Mkdirat(pfd, base, privateDirCreateMode); errors.Is(err, unix.EEXIST) {
+		made = false
+	} else if err != nil {
 		return -1, &os.PathError{Op: "mkdir", Path: dir, Err: err}
 	}
 	fd, err := openDirAt(pfd, base, dir)
 	if err != nil {
 		return -1, err
 	}
+	if made {
+		if err := handDirOver(pfd, fd, owner); err != nil {
+			unix.Close(fd)
+			return -1, &os.PathError{Op: "chown", Path: dir, Err: err}
+		}
+	}
 	if _, err := checkDir(fd, dir, owner); err != nil {
 		unix.Close(fd)
 		return -1, err
 	}
 	return fd, nil
+}
+
+// handDirOver gives a directory root just made (fd) to the trusted owner
+// when its parent (pfd) is that owner's and the owner is not root: a new
+// agents/ in a config directory the engine's user owns is that user's, as
+// the files root writes in it are. Through the descriptor, never the path.
+func handDirOver(pfd, fd, owner int) error {
+	if owner <= 0 {
+		return nil
+	}
+	var st unix.Stat_t
+	if err := fstat(pfd, &st); err != nil {
+		return err
+	}
+	if int(st.Uid) != owner {
+		return nil
+	}
+	// Only the directory this process just made: the parent's owner could
+	// rename another directory onto the name between the mkdir and the
+	// open (one root made earlier, say), which is never given away. A new
+	// one is this process's, mode 0700 and empty.
+	var made unix.Stat_t
+	if err := fstat(fd, &made); err != nil {
+		return err
+	}
+	if int(made.Uid) != os.Geteuid() || statMode(made.Mode)&permBits != privateDirCreateMode {
+		return nil
+	}
+	// Empty by its entries, not its link count: btrfs reports one link for
+	// every directory.
+	if empty, err := emptyDir(fd); err != nil || !empty {
+		return err
+	}
+	return unix.Fchown(fd, owner, keepID)
+}
+
+// emptyDir reports whether the directory open at fd has no entries but .
+// and .., read through a new descriptor for it so fd's offset stays.
+func emptyDir(fd int) (bool, error) {
+	dfd, err := unix.Openat(fd, ".", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return false, err
+	}
+	f := os.NewFile(uintptr(dfd), ".")
+	defer f.Close()
+	_, err = f.Readdirnames(1)
+	if errors.Is(err, io.EOF) {
+		return true, nil
+	}
+	return false, err
 }
 
 // Path is the directory's path as opened.
@@ -106,7 +166,7 @@ func (d *TrustedDir) OpenFile(name string, flag int, perm os.FileMode) (*os.File
 	full := filepath.Join(d.path, name)
 	fd, err := unix.Openat(d.fd, name, flag|unix.O_NOFOLLOW|unix.O_CLOEXEC, uint32(perm.Perm()))
 	if errors.Is(err, unix.ELOOP) {
-		return nil, fmt.Errorf("%s is a symlink, which is refused", full)
+		return nil, symlinkError(full)
 	}
 	if err != nil {
 		return nil, &os.PathError{Op: opOpen, Path: full, Err: err}
@@ -146,6 +206,41 @@ func (d *TrustedDir) WriteFile(name string, data []byte, mode os.FileMode, owner
 	if err := unix.Renameat(d.fd, tmp, d.fd, name); err != nil {
 		_ = unix.Unlinkat(d.fd, tmp, 0)
 		return err
+	}
+	return nil
+}
+
+// symlinkError is a name OpenFile refused for being a symlink; it wraps
+// ELOOP, so a caller can tell it apart (config.LockAt: a lock file that
+// cannot be used).
+type symlinkError string
+
+func (e symlinkError) Error() string { return string(e) + " is a symlink, which is refused" }
+
+func (e symlinkError) Unwrap() error { return unix.ELOOP }
+
+// CreateFile writes data to name only when name does not exist yet: a
+// temp file created exclusively in the directory, given mode and owner
+// (this process when owner < 0) through its descriptor, then hard-linked
+// to name, so name appears whole or not at all and a file made meanwhile
+// is kept (an error wrapping fs.ErrExist).
+func (d *TrustedDir) CreateFile(name string, data []byte, mode os.FileMode, owner int) error {
+	if err := d.name(name); err != nil {
+		return err
+	}
+	f, tmp, err := createTempAt(d.fd, name)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unix.Unlinkat(d.fd, tmp, 0) }()
+	if owner < 0 {
+		owner = keepID
+	}
+	if err := fillTemp(f, data, mode, ownerIDs{uid: owner, gid: keepID}); err != nil {
+		return err
+	}
+	if err := unix.Linkat(d.fd, tmp, d.fd, name, 0); err != nil {
+		return &os.LinkError{Op: "link", Old: filepath.Join(d.path, tmp), New: filepath.Join(d.path, name), Err: err}
 	}
 	return nil
 }

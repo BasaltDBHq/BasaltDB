@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
@@ -42,6 +43,7 @@ const (
 	problemSetupExpired        = "SETUP_EXPIRED"
 	problemSetupChangePending  = "SETUP_CHANGE_PENDING"
 	problemLockFileUnusable    = "LOCK_FILE_UNUSABLE"
+	problemLedgerReinstalled   = "LEDGER_REINSTALLED"
 	problemPortalMismatch      = "PORTAL_MISMATCH"
 )
 
@@ -75,6 +77,9 @@ type Probe interface {
 	LatestSetup(ctx context.Context) (guard.AgentSetup, bool, error)
 	// LedgerBytes is the size of basalt_meta (status.ledger).
 	LedgerBytes(ctx context.Context) (int64, error)
+	// Reinstalls are the reinstalls the ledger and the engine's kept copy
+	// record (problem LEDGER_REINSTALLED).
+	Reinstalls(ctx context.Context) (guard.Reinstalls, error)
 }
 
 type noProbe struct{}
@@ -96,11 +101,16 @@ var errNoProbe = errors.New("no probe reads the ledger size")
 
 func (noProbe) LedgerBytes(context.Context) (int64, error) { return 0, errNoProbe }
 
+func (noProbe) Reinstalls(context.Context) (guard.Reinstalls, error) { return guard.Reinstalls{}, nil }
+
 // DBProbe is the Probe on an agent connection or pool, against the build's
 // migrations (guard.Migrations outside tests).
 type DBProbe struct {
 	Q          guard.Querier
 	Migrations []guard.Migration
+	// Kept is the engine's kept copy of the pins it set aside (its pin
+	// file's setAside); nil when there is none to read.
+	Kept func() []guard.SetAside
 }
 
 // GuardStatus reads schema_version.
@@ -121,6 +131,15 @@ func (p DBProbe) LatestSetup(ctx context.Context) (guard.AgentSetup, bool, error
 // LedgerBytes is the size of basalt_meta.
 func (p DBProbe) LedgerBytes(ctx context.Context) (int64, error) {
 	return guard.LedgerBytes(ctx, p.Q)
+}
+
+// Reinstalls reads agent_reinstalls with the kept copy merged in.
+func (p DBProbe) Reinstalls(ctx context.Context) (guard.Reinstalls, error) {
+	var kept []guard.SetAside
+	if p.Kept != nil {
+		kept = p.Kept()
+	}
+	return guard.ReadReinstalls(ctx, p.Q, kept)
 }
 
 // VaultReporter says how the engine's connection to the hosted Vault stands
@@ -369,6 +388,9 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 	if err == nil {
 		r.Ledger = s.ledgerStatus(ctx, st)
 	}
+	if err == nil && st.State != guard.GuardMissing {
+		s.addReinstalled(ctx, &ps)
+	}
 	list, err := ps.sorted()
 	if err != nil {
 		return StatusReport{}, err
@@ -471,6 +493,30 @@ func (s statusDeps) ledgerStatus(ctx context.Context, st guard.Status) *LedgerSt
 		return nil
 	}
 	return &LedgerStatus{Bytes: n, ValuesKeptDays: ledgerValuesKeptDays, RecordsKeptDays: ledgerRecordsKeptDays}
+}
+
+// reinstalledAsk is LEDGER_REINSTALLED's ASK_PERSON step.
+const reinstalledAsk = "Show the person this notice and ask whether someone on their team reinstalled Basalt. " +
+	"The tools keep working, and the notice stays until an admin acknowledges it."
+
+// addReinstalled is LEDGER_REINSTALLED when the ledger or the engine's kept
+// copy records a reinstall. A guard older than version 36 records none; a
+// read that fails is logged and adds nothing.
+func (s statusDeps) addReinstalled(ctx context.Context, ps *problems) {
+	rs, err := s.probe.Reinstalls(ctx)
+	if err != nil {
+		s.log.Error("status: read the reinstalls", "err", err)
+		return
+	}
+	msg, ok := ledger.ReinstallPersonMessage(rs, MaxPersonMessageLength)
+	if !ok {
+		return
+	}
+	ps.add(problemLedgerReinstalled, "the guard was installed again and a pin of the old ledger was set aside; the tools keep working",
+		func(b *Steps) string {
+			b.AskPerson(reinstalledAsk)
+			return msg
+		})
 }
 
 // passkeys counts the active passkeys; none is NO_PASSKEY. A count that

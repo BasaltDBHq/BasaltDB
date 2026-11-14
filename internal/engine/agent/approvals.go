@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
@@ -125,11 +126,18 @@ func (s *Service) hold(ctx context.Context, in guard.Intent, p WriteParams, stmt
 		// The rows went away between the attempt and the preview.
 		return uuid.Nil, &mcp.ToolError{Code: CodeSQLError, Reason: reasonNoRowsNow, Message: "the write changes no rows now; read again and decide"}
 	}
+	if te := holdTooLarge(lines, nil); te != nil {
+		return uuid.Nil, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
+	}
 	held, err := s.Approvals.Hold(ctx, in, guard.HoldRequest{Statement: p.SQL, Params: p.Params, Assigned: assigned, Lines: lines})
 	if err != nil {
+		if te := holdTooLarge(lines, err); te != nil {
+			return uuid.Nil, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
+		}
 		return uuid.Nil, err
 	}
-	notice, err := s.approvalNotice(ctx, held.ApprovalID, held.BindingText, lines, held.ExpiresAt, issueLink)
+	req := sizedRequest{Binding: held.BindingText, Lines: lines, Cost: textsCost(lines)}
+	notice, err := s.approvalNotice(ctx, held.ApprovalID, in.RunID, req, held.ExpiresAt, issueLink)
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -157,9 +165,12 @@ type heldNotice struct {
 	pick     handOver
 	longURL  string
 	shortURL string // "" when no short link was issued
-	// reason is the APPROVAL_REQUIRED case: HELD, HELD_NO_PAGES or NO_PASSKEY
-	// (WAIT_ENDED is set by the wait that ran out).
+	// reason is the APPROVAL_REQUIRED case: HELD, HELD_NO_PAGES, NO_PASSKEY
+	// or REQUEST_TOO_LARGE (WAIT_ENDED is set by the wait that ran out).
 	reason string
+	// steps are the next steps of a REQUEST_TOO_LARGE notice, built where
+	// the run is known; nil otherwise.
+	steps []mcp.NextStep
 }
 
 // Whether building a notice issues a new short link, revoking the item's
@@ -174,20 +185,26 @@ const (
 // newly issued short link when this engine serves the pages and issue is
 // set, else the long one), the equivalent command and the message to show
 // verbatim.
-func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding string, lines []string, expires time.Time, issue bool) (heldNotice, error) {
+func (s *Service) approvalNotice(ctx context.Context, id, runID uuid.UUID, req sizedRequest, expires time.Time, issue bool) (heldNotice, error) {
 	ids, err := s.credentialIDs(ctx)
 	if err != nil {
 		return heldNotice{}, err
 	}
-	long, err := approval.Request{ApprovalID: id, Binding: binding, Lines: lines, CredentialIDs: ids}.URL(s.PagesBase)
+	long, tooLarge, err := longOrTooLarge(req, func() (string, error) {
+		return approval.Request{ApprovalID: id, Binding: req.Binding, Lines: req.Lines, CredentialIDs: ids}.URL(s.PagesBase)
+	})
 	if err != nil {
 		return heldNotice{}, err
 	}
-	summary, err := approval.SummarizeText(lines)
+	// The lines' heads (a request left out) count the rows as well.
+	summary, err := approval.SummarizeText(req.Lines)
 	if err != nil {
 		return heldNotice{}, err
 	}
 	command := s.Commands.Approve(id)
+	if tooLarge {
+		return s.largeApprovalNotice(ctx, id, runID, req, summary, command, expires, issue, len(ids) == 0)
+	}
 	short, err := s.shortLink(ctx, links.Approval, id, expires, issue)
 	if err != nil {
 		return heldNotice{}, err
@@ -218,7 +235,7 @@ func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding stri
 	return heldNotice{
 		reason: reason,
 		ApprovalNotice: mcp.ApprovalNotice{
-			ApprovalID: id.String(), ExpiresAt: timeText(expires), Rows: len(lines), Headline: summary.Headline(),
+			ApprovalID: id.String(), ExpiresAt: timeText(expires), Rows: len(req.Lines), Headline: summary.Headline(),
 			ApprovalURL: pick.URL, RequestFile: pick.File, ApproveCommand: command, PersonMessage: text, Links: msgLinks,
 		},
 		pick:     pick,
@@ -306,10 +323,72 @@ const afterWaitRunsOut = "If that call returns APPROVAL_REQUIRED again, its wait
 
 func approvalError(n heldNotice, message string) error {
 	notice := n.ApprovalNotice
+	if n.reason == reasonRequestTooLarge {
+		// No link can carry it: the hold has no link at all (CONTRACT.md,
+		// Large values, rule 4), and the wait that ran out says the same.
+		notice.ApprovalURL = ""
+		return &mcp.ToolError{
+			Code: CodeApprovalRequired, Reason: reasonRequestTooLarge, Approval: &notice,
+			Message: fmt.Sprintf("held for the person's approval: %d rows, but they are too large for any link this engine has "+
+				"(a page decodes at most 1 MiB from a link). It stays held until it expires at %s; do not wait for it. "+
+				"Do what nextSteps say.", n.Rows, n.ExpiresAt),
+			PersonMessage: notice.PersonMessage, NextSteps: n.steps,
+		}
+	}
 	return &mcp.ToolError{
 		Code: CodeApprovalRequired, Reason: n.reason, Message: message, Approval: &notice,
 		PersonMessage: notice.PersonMessage, Links: notice.Links,
 	}
+}
+
+// requestOf is a's request as the agent's read returned it.
+func requestOf(a ledger.Approval) sizedRequest {
+	return sizedRequest{Binding: a.BindingText, Lines: a.Lines, LeftOut: a.LinesLeftOut, Cost: max(a.LinesCost, textsCost(a.Lines))}
+}
+
+// largeApprovalNotice is approvalNotice for a request too large for a long
+// link, a hash link or a request file (CONTRACT.md, Large values, rules 3
+// to 5): a new short link that can carry it when issue is set and there is
+// one; the page's address when a short link given earlier carries it; else
+// REQUEST_TOO_LARGE.
+func (s *Service) largeApprovalNotice(ctx context.Context, id, runID uuid.UUID, req sizedRequest, summary approval.Summary,
+	command string, expires time.Time, issue, noPasskey bool,
+) (heldNotice, error) {
+	lead := "Held for your approval: " + shown(summary.Headline(), maxHeadlineChars) + "."
+	n := heldNotice{
+		reason: reasonHeld,
+		ApprovalNotice: mcp.ApprovalNotice{
+			ApprovalID: id.String(), ExpiresAt: timeText(expires), Rows: len(req.Lines), Headline: summary.Headline(),
+			ApprovalURL: s.pageAddress(links.Approval, id), ApproveCommand: command,
+		},
+	}
+	short := ""
+	if issue {
+		var err error
+		if short, err = s.largeShortLink(ctx, links.Approval, id, expires, req.Cost); err != nil {
+			return heldNotice{}, err
+		}
+	}
+	switch {
+	case short != "":
+		n.pick, n.shortURL, n.ApprovalURL = handOver{URL: short, Kind: linkShort}, short, short
+		n.PersonMessage, n.Links = approvalMessage(lead, n.pick, command, expiryLine(expires))
+	case !issue && s.carriesLarge(req.Cost):
+		// The short link handed over still works: the message points back.
+		n.PersonMessage, n.Links = waitMessage(lead, command, expires)
+	default:
+		steps, err := approvalTooLargeSteps(runID)
+		if err != nil {
+			return heldNotice{}, err
+		}
+		n.reason, n.steps = reasonRequestTooLarge, steps
+		n.PersonMessage = s.tooLargeMessage("The held write", req.Cost, expires, false)
+		return n, nil
+	}
+	if noPasskey {
+		n.reason = reasonNoPasskey
+	}
+	return n, nil
 }
 
 // DefaultApprovalWait is how long a write with approvalId waits for the
@@ -421,7 +500,7 @@ func (s *Service) withApprovalLink(ctx context.Context, a ledger.Approval, err e
 	default:
 		return err
 	}
-	n, linkErr := s.approvalNotice(ctx, a.ID, a.BindingText, a.Lines, a.ExpiresAt, keepLink)
+	n, linkErr := s.approvalNotice(ctx, a.ID, a.RunID, requestOf(a), a.ExpiresAt, keepLink)
 	if linkErr != nil {
 		return linkErr
 	}
@@ -491,6 +570,9 @@ type PendingItem struct {
 	// Restated is set when list_pending names the item's link without issuing
 	// one while the engine serves the pages: the person has the short link.
 	Restated bool
+	// tooLargeSteps are the steps of an item whose request no link this
+	// engine has can carry (REQUEST_TOO_LARGE); nil otherwise.
+	tooLargeSteps []mcp.NextStep
 	// PersonMessage and NextSteps say what happens next (CONTRACT.md, Next steps).
 	PersonMessage string
 	Links         []mcp.Link
@@ -524,7 +606,9 @@ func (s *Service) awaitWhile(ctx context.Context, wait time.Duration, pending fu
 
 func (s *Service) awaitSigned(ctx context.Context, a ledger.Approval, wait time.Duration) (ledger.Approval, error) {
 	err := s.awaitWhile(ctx, wait, func() bool { return a.Status == ledger.ApprovalPending }, func(ctx context.Context) error {
-		next, err := s.Approvals.FindApproval(ctx, a.ID)
+		// Each poll is one measured read with a budget of its own: polls
+		// for 90 seconds must not add up against the call's budget.
+		next, err := s.Approvals.FindApproval(resultsize.With(ctx), a.ID)
 		if err != nil {
 			return err
 		}
@@ -543,7 +627,7 @@ func (s *Service) waitForSignature(ctx context.Context, a ledger.Approval, p Wri
 		return a, err
 	}
 	if a.Status == ledger.ApprovalPending {
-		n, err := s.approvalNotice(ctx, a.ID, a.BindingText, a.Lines, a.ExpiresAt, keepLink)
+		n, err := s.approvalNotice(ctx, a.ID, a.RunID, requestOf(a), a.ExpiresAt, keepLink)
 		if err != nil {
 			return a, err
 		}

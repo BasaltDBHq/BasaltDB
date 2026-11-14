@@ -41,6 +41,10 @@ func (unsafeGuard) LatestSetup(context.Context) (guard.AgentSetup, bool, error) 
 
 func (unsafeGuard) LedgerBytes(context.Context) (int64, error) { return 0, nil }
 
+func (unsafeGuard) Reinstalls(context.Context) (guard.Reinstalls, error) {
+	return guard.Reinstalls{}, nil
+}
+
 // gatedService is a real agent service on an unsafe guard. Its stores are
 // empty interfaces: a call that got past Admit would panic, so a test that
 // passes relayed nothing.

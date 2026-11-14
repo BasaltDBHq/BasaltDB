@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
@@ -50,8 +52,25 @@ type remoteRun struct {
 // (its role does not exist yet), so tests without Postgres reach no network.
 func refusedLogin(context.Context, string) (agentConn, error) { return nil, errLoginRefused }
 
+// noNetworkProbe stands in for the TLS probe of a new credential
+// (hardenedCredential): a database that cannot be reached, so tests without
+// Postgres never dial the example hosts (Supabase's pooler among them).
+func noNetworkProbe(context.Context, string) error { return context.DeadlineExceeded }
+
 // cliNoDB runs basalt init with every agent login refused.
 func cliNoDB(t *testing.T, args ...string) result {
+	t.Helper()
+	return cliNoDBProbe(t, noNetworkProbe, args...)
+}
+
+// cliNoDBProbe is cliNoDB with probe answering the TLS probes.
+func cliNoDBProbe(t *testing.T, probe func(context.Context, string) error, args ...string) result {
+	t.Helper()
+	return cliNoDBEnv(t, probe, nil, args...)
+}
+
+// cliNoDBEnv is cliNoDBProbe with env added to the environment.
+func cliNoDBEnv(t *testing.T, probe func(context.Context, string) error, env map[string]string, args ...string) result {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr},
@@ -59,9 +78,10 @@ func cliNoDB(t *testing.T, args ...string) result {
 			if k == envAdminURL {
 				return "postgres://admin:adminsecret@db.example.com/postgres"
 			}
-			return ""
+			return env[k]
 		})
 	c.agentLogin = refusedLogin
+	c.probe = probe
 	c.host = systemSocketHost(t)
 	code := runInit(c, args[1:])
 	return result{code, stdout.String(), stderr.String()}
@@ -271,6 +291,34 @@ func requireSetupGuidance(t *testing.T, res RemoteInitResult) {
 	require.Equal(t, want, got, "P RUN_COMMAND, P TELL_AGENT, A END_TURN, A CALL_TOOL status")
 	require.Equal(t, "basalt init --setup-code "+res.Code, res.NextSteps[0].Command)
 	require.Equal(t, "status", res.NextSteps[3].Tool)
+}
+
+// A new credential keeps the strongest TLS protection the probe confirms,
+// and init says which in one line: through Supabase's pooler, which
+// answers before any SASL message, a verified certificate without channel
+// binding.
+func TestInitRemoteHardensTheCredentialThroughThePooler(t *testing.T) {
+	t.Parallel()
+	cfg := tempConfig(t)
+	var probed []string
+	probe := func(_ context.Context, dsn string) error {
+		u, err := url.Parse(dsn)
+		require.NoError(t, err)
+		probed = append(probed, u.Query().Get(paramSSLMode)+"/"+u.Query().Get(paramChannelBinding))
+		return &pgconn.PgError{Code: sqlstateInternal, Message: supavisorNoTenant}
+	}
+	run := func(t *testing.T, args ...string) result { t.Helper(); return cliNoDBProbe(t, probe, args...) }
+	r := remoteWith(t, run, cfg, "--agent", "bot", "--write", "public.leads", "--database-url", supabaseURL)
+	require.Equal(t, []string{"verify-full/require", "verify-full/"}, probed)
+	raw, err := os.ReadFile(r.credFile)
+	require.NoError(t, err)
+	u, err := url.Parse(strings.TrimSpace(string(raw)))
+	require.NoError(t, err)
+	require.Equal(t, sslVerifyFull, u.Query().Get(paramSSLMode))
+	require.Empty(t, u.Query().Get(paramChannelBinding))
+	const line = "basalt: connection protected: database identity verified (channel binding not available through the Supabase pooler)\n"
+	require.Equal(t, 1, strings.Count(r.stderr, line), r.stderr)
+	requireNoSecret(t, r, cfg, credentialPassword(t, r.credFile))
 }
 
 func TestInitRemoteCredentialDropsTheURLsLoginParams(t *testing.T) {
@@ -711,4 +759,79 @@ func systemSocketHost(t *testing.T) *fakeHost {
 	h := newFakeHost(t)
 	h.euid = 0
 	return h
+}
+
+// As root (sudo), init --remote records the user who ran sudo as a person
+// the engine's person socket admits, so basalt status --agent works there
+// against a service engine; without SUDO_UID, or SUDO_UID 0, it records
+// none.
+func TestInitRemoteAsRootRecordsTheSudoUser(t *testing.T) {
+	t.Parallel()
+	cfg := tempConfig(t)
+	args := []string{"--agent", "bot", "--write", "public.leads", "--database-url", "postgres://u@db.example.com:5432/app"}
+	run := func(env map[string]string) func(*testing.T, ...string) result {
+		return func(t *testing.T, a ...string) result { t.Helper(); return cliNoDBEnv(t, noNetworkProbe, env, a...) }
+	}
+	r := remoteWith(t, run(map[string]string{envSudoUID: "1234"}), cfg, args...)
+	require.Equal(t, []uint32{1234}, r.cfg.PersonUIDs)
+	require.True(t, r.cfg.Service(), "a config directory another user owns (the engine's) is a service config")
+	require.Contains(t, r.stderr, "not root or you (uid 1234): this config is a service one (mode SERVICE)", "said, not silent")
+	r = remoteWith(t, run(map[string]string{envSudoUID: "1235"}), cfg, append(args, "--new-code")...)
+	require.Equal(t, []uint32{1234, 1235}, r.cfg.PersonUIDs, "a rerun keeps the recorded ones")
+
+	other := tempConfig(t)
+	r = remoteWith(t, run(map[string]string{envSudoUID: "0"}), other, args...)
+	require.Empty(t, r.cfg.PersonUIDs, "never root")
+	r = remoteWith(t, run(nil), other, append(args, "--new-code")...)
+	require.Empty(t, r.cfg.PersonUIDs)
+	require.False(t, r.cfg.Service(), "no person to admit: not a service config")
+}
+
+// As root, the service-mode note comes only once engine.json is written:
+// never on a run refused before, whether at agents/ (a symlink) or after
+// both directories opened (a symlinked lock file).
+func TestInitRemoteAsRootNotesServiceModeOnlyAfterWriting(t *testing.T) {
+	t.Parallel()
+	run := func(t *testing.T, a ...string) result {
+		t.Helper()
+		return cliNoDBEnv(t, noNetworkProbe, map[string]string{envSudoUID: "1234"}, a...)
+	}
+	cfg := tempConfig(t)
+	require.NoError(t, os.MkdirAll(filepath.Dir(cfg), 0o700))
+	require.NoError(t, os.Symlink(t.TempDir(), filepath.Join(filepath.Dir(cfg), "agents")))
+	r := run(t, "init", "--remote", "--config", cfg, "--json", "--agent", "bot", "--write", "public.leads",
+		"--database-url", "postgres://u@db.example.com:5432/app")
+	require.Equal(t, exitError, r.code, r.stdout)
+	require.Contains(t, r.stderr, "a symlink is refused")
+	require.NotContains(t, r.stderr, "service one", "refused at agents/: nothing written")
+
+	cfg = tempConfig(t)
+	agents := filepath.Join(filepath.Dir(cfg), "agents")
+	require.NoError(t, os.MkdirAll(agents, 0o700))
+	require.NoError(t, os.Symlink(filepath.Join(t.TempDir(), "lock"), filepath.Join(agents, "bot.url"+lockSuffix)))
+	r = run(t, "init", "--remote", "--config", cfg, "--json", "--agent", "bot", "--write", "public.leads",
+		"--database-url", "postgres://u@db.example.com:5432/app")
+	require.Equal(t, exitError, r.code, r.stderr)
+	require.NotContains(t, r.stderr, "service one", "refused at the lock, after opening the directories: nothing written")
+	_, err := os.Stat(cfg)
+	require.ErrorIs(t, err, os.ErrNotExist)
+
+	require.NoError(t, os.Remove(filepath.Join(agents, "bot.url"+lockSuffix)))
+	r = run(t, "init", "--remote", "--config", cfg, "--json", "--agent", "bot", "--write", "public.leads",
+		"--database-url", "postgres://u@db.example.com:5432/app")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Equal(t, 1, strings.Count(r.stderr, "this config is a service one (mode SERVICE)"), "said once, after writing: %s", r.stderr)
+}
+
+// As root, a config directory the user who ran sudo owns is that user's own
+// engine (same-user mode), not a service one.
+func TestInitRemoteAsRootInTheSudoUsersDirectoryIsNoService(t *testing.T) {
+	t.Parallel()
+	me := strconv.Itoa(os.Geteuid())
+	r := remoteWith(t, func(t *testing.T, a ...string) result {
+		t.Helper()
+		return cliNoDBEnv(t, noNetworkProbe, map[string]string{envSudoUID: me}, a...)
+	}, tempConfig(t), "--agent", "bot", "--write", "public.leads", "--database-url", "postgres://u@db.example.com:5432/app")
+	require.False(t, r.cfg.Service())
+	require.NotContains(t, r.stderr, "service one")
 }

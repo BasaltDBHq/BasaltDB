@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -485,6 +487,82 @@ func TestLogVerifiesFromItsPin(t *testing.T) {
 		require.Equal(t, exitOK, r.code, r.stderr)
 		require.Contains(t, r.stderr, "warning: ledger chain broken at seq ", args)
 	}
+}
+
+// logPin is the one pin basalt log keeps in cache.
+func logPin(t *testing.T, cache string) (chainpin.File, string) {
+	t.Helper()
+	dir := filepath.Join(cache, "ledger-pins")
+	files, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+	return chainpin.File{Dir: dir}, strings.TrimSuffix(files[0].Name(), ".head.json")
+}
+
+// A reinstall over basalt log's pin is reported in the new ledger and shown
+// on every run as the reinstall notice, never as a broken chain; the pin
+// keeps a copy of the report.
+func TestLogShowsAReinstall(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
+	registerTestPasskey(t, d)
+	ctx := context.Background()
+	require.NoError(t, guard.Heartbeat(ctx, a.Conn, nil))
+	cache := t.TempDir()
+	r := cli(t, map[string]string{envAgentURL: a.URL, envCacheDir: cache}, "", "log")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	pins, name := logPin(t, cache)
+	old, _, err := pins.Load(name)
+	require.NoError(t, err)
+
+	require.NoError(t, a.Conn.Close(ctx))
+	require.NoError(t, guard.Uninstall(ctx, d.Admin, d.Names))
+	b := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
+	registerTestPasskey(t, d)
+	env := map[string]string{envAgentURL: b.URL, envCacheDir: cache}
+	notice := fmt.Sprintf("Previous ledger ended at entry %d (hash %s), as reported with the credential of %s. "+
+		"If nobody on your team reinstalled Basalt, treat this as tampering.\n", old.Head.Seq, hex.EncodeToString(old.Head.Hash), b.Role)
+	for range 2 {
+		r = cli(t, env, "", "log")
+		require.Equal(t, exitOK, r.code, r.stderr)
+		require.NotContains(t, r.stderr, "chain broken")
+		require.Contains(t, r.stderr, "This database's ledger was reinstalled on ")
+		require.Contains(t, r.stderr, notice)
+	}
+	now, _, err := pins.Load(name)
+	require.NoError(t, err)
+	require.NotEqual(t, old.Install, now.Install)
+	require.Len(t, now.SetAside, 1)
+	require.Equal(t, old.Head.Seq, now.SetAside[0].PinnedSeq)
+}
+
+// The same ledger under another oid (a pg_dump and pg_restore) moves basalt
+// log's pin with a warning on stderr, and records nothing.
+func TestLogMovesItsPinAcrossARestore(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
+	registerTestPasskey(t, d)
+	cache := t.TempDir()
+	env := map[string]string{envAgentURL: a.URL, envCacheDir: cache}
+	r := cli(t, env, "", "log")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	pins, name := logPin(t, cache)
+	p, _, err := pins.Load(name)
+	require.NoError(t, err)
+	p.Install++
+	require.NoError(t, pins.Save(name, p))
+
+	r = cli(t, env, "", "log")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Contains(t, r.stderr, fmt.Sprintf("warning: the guard's schema was dropped and restored with the same ledger (guard install %d is now %d)",
+		p.Install, p.Install-1))
+	require.NotContains(t, r.stderr, "reinstalled")
+	require.NotContains(t, r.stderr, "chain broken")
+	now, _, err := pins.Load(name)
+	require.NoError(t, err)
+	require.Equal(t, p.Install-1, now.Install)
 }
 
 func TestLogShowsTheDeadManRow(t *testing.T) {

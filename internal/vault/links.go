@@ -141,7 +141,7 @@ func (c *Client) Unregister(token channel.LinkToken) {
 	cn.endLink(token)
 	log := c.opts.Log
 	err := cn.sendNoWait(context.Background(), func(ref int64) any {
-		return unregisterLinkMsg{Type: typeUnregisterLink, Ref: ref, LinkToken: token.String()}
+		return unregisterLinkMsg{Type: typeUnregisterLink, Ref: ref, LinkToken: token.Wire()}
 	}, func(a answer) {
 		if a.code != "" {
 			log.Warn("vault: unregistering a link was refused", "code", a.code)
@@ -157,7 +157,7 @@ func (c *Client) Unregister(token channel.LinkToken) {
 // before the engine drops the link, never after.
 func registerMsg(ref int64, token channel.LinkToken, expiresAt time.Time) registerLinkMsg {
 	return registerLinkMsg{
-		Type: typeRegisterLink, Ref: ref, LinkToken: token.String(),
+		Type: typeRegisterLink, Ref: ref, LinkToken: token.Wire(),
 		ExpiresAt: expiresAt.UTC().Truncate(time.Second).Format(time.RFC3339),
 	}
 }

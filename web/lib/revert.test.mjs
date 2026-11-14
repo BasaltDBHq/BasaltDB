@@ -422,3 +422,19 @@ test("another agent's tag says so in words, not only in amber", () => {
   assert.equal(agentTag({ role: "basalt_agent_bot", other: false }).title, "basalt_agent_bot");
   assert.equal(agentTag({ role: "basalt_agent_sync", other: true }).title, "basalt_agent_sync, not the agent that asked for this revert");
 });
+
+test("two different values over 1 MiB of the same size: the changed column is still highlighted", () => {
+  globalThis.document = { createElement: fakeElement };
+  const size = (1 << 20) + 10;
+  const line = {
+    op: "UPDATE", table: "public.docs", action: "RESTORE", cascaded: false, redacted: false, conflict: null, sqlState: null,
+    key: { id: 1 }, now: { id: 1, body: "a".repeat(size) }, set: { id: 1, body: "b".repeat(size) }, texts: null, changeIds: [],
+  };
+  const { rows } = tableRows(line);
+  const body = rows[0].classes.length - 1;
+  assert.equal(rows[0].classes[body].trim(), "was large");
+  assert.equal(rows[1].classes[body].trim(), "set large");
+  // The same value on both sides is not highlighted.
+  const same = tableRows({ ...line, set: { id: 1, body: "a".repeat(size) } });
+  assert.equal(same.rows[0].classes[body].trim(), "large");
+});

@@ -5,6 +5,9 @@ package main
 import (
 	"errors"
 	"os"
+	"time"
+
+	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 )
 
 // errRemoteUnsupported: basalt init --remote runs on linux and darwin only.
@@ -34,6 +37,26 @@ func lockFile(string) (func(), error) {
 }
 
 // openRootCredFiles: see errRemoteUnsupported.
-func openRootCredFiles(string) (credFiles, error) {
+func openRootCredFiles(string, int) (credFiles, error) {
+	return nil, errRemoteUnsupported
+}
+
+// rootConfigDir: see errRemoteUnsupported.
+type rootConfigDir struct{}
+
+// openRootConfigDir: see errRemoteUnsupported.
+func openRootConfigDir(string, int) (*rootConfigDir, error) { return nil, errRemoteUnsupported }
+
+// rootTrustedOwner: see errRemoteUnsupported.
+func rootTrustedOwner(string) (int, error) { return 0, errRemoteUnsupported }
+
+func (*rootConfigDir) upsert(string, config.Settings, config.Agent) (config.VaultWritten, error) {
+	return config.VaultWritten{}, errRemoteUnsupported
+}
+
+func (*rootConfigDir) close() {}
+
+// rootEngineKey: see errRemoteUnsupported.
+func rootEngineKey(string, string, *rootConfigDir, func() time.Time) ([]byte, error) {
 	return nil, errRemoteUnsupported
 }

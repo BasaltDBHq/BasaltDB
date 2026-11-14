@@ -20,6 +20,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 )
@@ -43,9 +44,13 @@ type fakeProbe struct {
 	// ledger is LedgerBytes's answer; ledgerErr fails it.
 	ledger    int64
 	ledgerErr error
+	// reinstalls is Reinstalls's answer.
+	reinstalls guard.Reinstalls
 }
 
 func (p *fakeProbe) LedgerBytes(context.Context) (int64, error) { return p.ledger, p.ledgerErr }
+
+func (p *fakeProbe) Reinstalls(context.Context) (guard.Reinstalls, error) { return p.reinstalls, nil }
 
 func (p *fakeProbe) GuardStatus(context.Context) (guard.Status, error) { return p.st, p.err }
 
@@ -181,6 +186,38 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			t.Helper()
 			return devLocalStatus(t, operatedBy)
 		}},
+		problemLedgerReinstalled: {state: guard.GuardOK, report: engineStatus(&fakeProbe{st: ok, reinstalls: sampleReinstalls()}, 1, nil)},
+	}
+}
+
+// sampleReinstalls is one reinstall reported by two agents.
+func sampleReinstalls() guard.Reinstalls {
+	installed := statusNow.Add(-time.Hour)
+	hash := make([]byte, 32)
+	return guard.Reinstalls{List: []guard.Reinstall{{
+		Install: 16999, InstalledAt: &installed, InstalledBy: "postgres",
+		Reports: []guard.ReinstallReport{
+			{Agent: "basalt_agent_bot", At: statusNow, PinnedSeq: 42, PinnedHash: hash},
+			{Agent: "basalt_agent_other", At: statusNow, PinnedSeq: 40, PinnedHash: hash},
+		},
+	}}}
+}
+
+// LEDGER_REINSTALLED carries the newest reinstall's first notice line and
+// points to basalt log; the tools keep working. No reinstall, no problem.
+func TestStatusLedgerReinstalled(t *testing.T) {
+	t.Parallel()
+	ok := guardAt(guard.GuardOK, nil, nil)
+	r := engineStatus(&fakeProbe{st: ok, reinstalls: sampleReinstalls()}, 1, nil)(t)
+	p := findProblem(t, r, problemLedgerReinstalled)
+	require.True(t, r.Ready)
+	require.Equal(t, mcpcontract.SeverityWarning, p.Severity)
+	require.Equal(t, ledger.ReinstallNotice(sampleReinstalls().List[0])[0]+"\nRun basalt log to see every report.", p.PersonMessage)
+	require.NotContains(t, p.PersonMessage, "basalt_agent_other")
+
+	r = engineStatus(&fakeProbe{st: ok}, 1, nil)(t)
+	for _, p := range r.Problems {
+		require.NotEqual(t, problemLedgerReinstalled, p.Code)
 	}
 }
 

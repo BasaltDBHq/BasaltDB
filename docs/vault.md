@@ -1,6 +1,6 @@
 # The Vault: what it sees and how to turn it off
 
-The Vault is a hosted relay at `relay.basaltvault.app`. It exists for one case: an engine that has no inbound port, such as one on a server or in a container, and a person who wants to approve a held write or a revert from a browser anywhere. The engine dials out to the Vault. The portal page (`https://portal.basaltvault.app`) dials in. The Vault pairs the two sockets and passes bytes between them. It is optional and off unless you or your agent's setup turned it on. Approvals work without it: when it is off or down, the engine hands over long links instead ([approving.md](approving.md)).
+The Vault is a hosted relay at `relay.basaltvault.app`. It exists for one case: an engine that has no inbound port, such as one on a server or in a container, and a person who wants to approve a held write or a revert from a browser anywhere. The engine dials out to the Vault. The portal page (`https://portal.basaltvault.app`) dials in. The Vault pairs the two sockets and passes bytes between them. It is optional: on by default when an agent operates the engine (`--operated-by=agent`), off otherwise, and you can turn it off with `--vault=off`. Approvals work without it: when it is off or down, the engine hands over long links instead ([approving.md](approving.md)).
 
 The protocol is in [CONTRACT.md, Vault channel](../CONTRACT.md#vault-channel). The Vault service itself is closed source and is not in this repository, so this page describes what the engine does and what the protocol allows the Vault to see. It cannot show what the service does with what it sees.
 
@@ -49,7 +49,7 @@ It can refuse service, so that the page cannot reach the engine. It can also try
 
 ## Turn it on or off
 
-The setting is `vault` in `engine.json`: `ON` or `OFF`. If it is missing, the Vault is off.
+The setting is `vault` in `engine.json`: `ON` or `OFF`. If the value is missing from the file, the Vault is off; `basalt init` writes it, with the defaults below.
 
 ```sh
 basalt init --agent NAME --vault=off

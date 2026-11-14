@@ -11,6 +11,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
+	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 )
 
 // loadConfigAsRoot reads the engine config for a root person CLI (sudo
@@ -52,32 +53,17 @@ func loadConfigAsRoot(path string) (cfg config.Config, trusted int, err error) {
 // checkConfigFile checks the opened config before it is read: a plain
 // file, owned by root or trusted, not writable by group or others.
 func checkConfigFile(f *os.File, trusted int) error {
-	fi, err := f.Stat()
-	if err != nil {
-		return err
-	}
-	if err := config.CheckPlainFile(fi); err != nil {
-		return fmt.Errorf("%s: %w", f.Name(), err)
-	}
-	st, ok := fi.Sys().(*syscall.Stat_t)
-	if !ok {
-		return errors.New("cannot read the file's owner")
-	}
-	if uid := int(st.Uid); uid != 0 && uid != trusted {
-		return fmt.Errorf("%s is owned by uid %d, not root or uid %d (its directory's owner)", f.Name(), uid, trusted)
-	}
-	if perm := fi.Mode().Perm(); perm&0o022 != 0 {
-		return fmt.Errorf("%s is writable by group or others (mode %04o), so another user could change what root trusts in it; "+
-			"remove that access (sudo chmod go-w %s)", f.Name(), perm, f.Name())
-	}
-	return nil
+	return config.CheckTrustedConfig(f, trusted)
 }
 
 // readCredentialAsRoot reads an agent's credential for a root person CLI:
 // reached without following a link, a regular file with one link, mode
 // 0600 or tighter, owned by trusted (readOwnedCredential). trusted is the
 // config's (loadConfigAsRoot), or, for --credential-file, the owner of
-// the file's directory.
+// the file's directory. Root connects with what it reads, and pgx reads
+// files for the caller from some parameters, so a file another user owns
+// (trusted is not root) must pass pgdial.CheckForeignDSN, as root's init
+// --remote and root engine reads do.
 func readCredentialAsRoot(path string, trusted int, fromConfig bool) (string, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -91,6 +77,12 @@ func readCredentialAsRoot(path string, trusted int, fromConfig bool) (string, er
 	line, err := readOwnedCredential(abs, trusted, fmt.Sprintf("uid %d", trusted))
 	if err != nil {
 		return "", fmt.Errorf("credential file %s is refused: %w", path, err)
+	}
+	if trusted != 0 {
+		if err := pgdial.CheckForeignDSN(line); err != nil {
+			return "", fmt.Errorf("credential file %s belongs to uid %d, not root: as root, basalt takes from it %w; "+
+				"run the command as that user (sudo -u <user>), or fix the file", path, trusted, err)
+		}
 	}
 	return line, nil
 }

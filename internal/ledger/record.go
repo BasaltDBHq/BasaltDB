@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/largevalue"
 	"github.com/basaltdbhq/basaltdb/pkg/wiretime"
 )
 
@@ -38,6 +39,9 @@ type Record struct {
 	// RevertedBy lists the revert changes that restored rows of this
 	// change; status is REVERTED only when all its rows were restored.
 	RevertedBy []string `json:"revertedBy,omitempty"`
+	// LargeValues names the statement or params left out of an agent's read
+	// (CONTRACT.md, Large values); absent on the person's.
+	LargeValues []largevalue.Entry `json:"largeValues,omitempty"`
 }
 
 // RecordBasedOn is the version of a row the run read before writing it.
@@ -77,6 +81,31 @@ type RecordRow struct {
 	Pruned     bool           `json:"pruned"`
 	BasedOn    *RecordBasedOn `json:"basedOn,omitempty"`
 	BlindWrite bool           `json:"blindWrite,omitempty"`
+	// LargeValues names the values of this row left out of an agent's read.
+	LargeValues []largevalue.Entry `json:"largeValues,omitempty"`
+	// leftOut are the JSON names of the images left out whole: absent from
+	// the row, never null.
+	leftOut []string
+}
+
+// recordRowFields is RecordRow without its MarshalJSON.
+type recordRowFields RecordRow
+
+// MarshalJSON leaves out the images left out whole; a row with none
+// marshals as its fields.
+func (r RecordRow) MarshalJSON() ([]byte, error) {
+	raw, err := json.Marshal(recordRowFields(r))
+	if err != nil || len(r.leftOut) == 0 {
+		return raw, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	for _, name := range r.leftOut {
+		delete(fields, name)
+	}
+	return json.Marshal(fields)
 }
 
 // RecordFromDomain maps a change and its rows to the wire record.
@@ -86,7 +115,7 @@ func RecordFromDomain(ch Change, rows []RowChange) Record {
 		Actor:  RecordActor{Kind: actorKind(ch.ActorKind), Name: ch.Agent},
 		Intent: ch.Intent, Target: RecordTarget{Table: ch.Table}, Op: ch.Op, Statement: ch.Statement,
 		Params: ch.Params, DurationMs: ch.DurationMs, Rows: ch.Rows, CascadedRows: ch.CascadedRows,
-		Status: ch.Status, RowChanges: make([]RecordRow, 0, len(rows)),
+		Status: ch.Status, RowChanges: make([]RecordRow, 0, len(rows)), LargeValues: ch.LargeValues,
 	}
 	if ch.RunID.Valid {
 		rec.Actor.RunID = ch.RunID.UUID.String()
@@ -109,6 +138,7 @@ func RecordFromDomain(ch Change, rows []RowChange) Record {
 			Table: r.Table, Op: r.Op, Key: wiretime.Map(r.Key), Before: wiretime.Map(r.Before), After: wiretime.Map(r.After),
 			Cascaded: r.Cascaded, Redacted: r.Redacted, Pruned: r.Pruned,
 			BasedOn: basedOnFromDomain(r.BasedOn), BlindWrite: r.BlindWrite,
+			LargeValues: r.LargeValues, leftOut: leftOutImages(r),
 		}
 		rec.RowChanges = append(rec.RowChanges, row)
 		if !r.Cascaded {
@@ -139,4 +169,18 @@ func actorKind(kind string) string {
 		return ActorKindAgent
 	}
 	return kind
+}
+
+// leftOutImages are the JSON names of r's images left out whole.
+func leftOutImages(r RowChange) []string {
+	var out []string
+	for _, img := range []struct {
+		name string
+		out  bool
+	}{{"key", r.KeyLeftOut}, {"before", r.BeforeLeftOut}, {"after", r.AfterLeftOut}} {
+		if img.out {
+			out = append(out, img.name)
+		}
+	}
+	return out
 }

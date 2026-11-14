@@ -3,6 +3,7 @@ package ledger
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"time"
 
@@ -24,6 +25,13 @@ type HealthOptions struct {
 	Pin *guard.ChainHead
 	// Full recomputes the whole chain from the anchor even with a pin.
 	Full bool
+	// PinInstall is the guard install Pin was verified on (guard.InstallID);
+	// 0 when unknown, taken as the current install. A pin of another
+	// install is moved, or reported and set aside (SettlePin).
+	PinInstall uint32
+	// SetAside is the reader's kept copy of the pins it set aside, shown in
+	// the notice with what the ledger records.
+	SetAside []guard.SetAside
 }
 
 // DeadMan is the last DEAD_MAN row: the engine checked in after a silence
@@ -39,8 +47,22 @@ type Health struct {
 	Chain guard.ChainStatus
 	// Head is the head the check verified, to pin for the next check. It
 	// is the pin passed in when the chain is broken.
-	Head      guard.ChainHead
-	Uncovered []guard.Uncovered
+	Head guard.ChainHead
+	// Install is the guard install checked (guard.InstallID), to pin with
+	// Head.
+	Install uint32
+	// PinSetAside is set when the pin was of another install, was not on
+	// the current chain, and was reported with record_pin_set_aside on the
+	// agent's credential: the new chain was checked from its start.
+	PinSetAside bool
+	// PinMoved is set when the pin was of another install and still
+	// verified on the current chain (a pg_dump and pg_restore): it moved to
+	// Install and nothing was recorded.
+	PinMoved bool
+	// Reinstalls are the reinstalls the ledger and the reader's kept copy
+	// record, for the notice.
+	Reinstalls guard.Reinstalls
+	Uncovered  []guard.Uncovered
 	// RLSBlind are tables the agent can SELECT where row-level security
 	// hides every row from it (schema.table).
 	RLSBlind []string
@@ -138,8 +160,22 @@ func appendName(names []string, n string) []string {
 func CheckHealth(ctx context.Context, q guard.Querier, now time.Time, opts HealthOptions) (Health, error) {
 	var h Health
 	var err error
-	if h.Chain, h.Head, err = verify(ctx, q, opts); err != nil {
-		return Health{}, err
+	if h.Install, err = guard.InstallID(ctx, q); err != nil {
+		return Health{}, fmt.Errorf("guard install: %w", err)
+	}
+	kept := false
+	if opts.Pin != nil && opts.PinInstall != 0 && opts.PinInstall != h.Install {
+		if kept, err = settle(ctx, q, &h, &opts); err != nil {
+			return Health{}, err
+		}
+	}
+	if !kept {
+		if h.Chain, h.Head, err = verify(ctx, q, opts); err != nil {
+			return Health{}, err
+		}
+	}
+	if h.Reinstalls, err = guard.ReadReinstalls(ctx, q, opts.SetAside); err != nil {
+		return Health{}, fmt.Errorf("reinstalls: %w", err)
 	}
 	if h.Uncovered, err = guard.UncoveredTables(ctx, q); err != nil {
 		return Health{}, err
@@ -171,6 +207,28 @@ func CheckHealth(ctx context.Context, q guard.Querier, now time.Time, opts Healt
 		return Health{}, err
 	}
 	return h, nil
+}
+
+// settle handles a pin of another install (SettlePin) and sets the pin to
+// verify from: the moved head, or none after a set-aside (the full check).
+// A pin that could not be reported is kept (true): it is never verified
+// from, since verify_chain_from accepts any pin before the anchor, and the
+// chain is reported broken at it (step 3), so the caller saves no new pin.
+func settle(ctx context.Context, q guard.Querier, h *Health, opts *HealthOptions) (bool, error) {
+	s, err := SettlePin(ctx, q, *opts.Pin, opts.PinInstall)
+	if err != nil {
+		return false, err
+	}
+	switch s.Fate {
+	case PinMoved:
+		h.PinMoved, opts.Pin = true, &s.Head
+	case PinSetAside:
+		h.PinSetAside, opts.Pin = true, nil
+	case PinKept:
+		h.Chain, h.Head = guard.ChainStatus{BrokenAt: opts.Pin.Seq}, *opts.Pin
+		return true, nil
+	}
+	return false, nil
 }
 
 // verify runs the full check from the genesis when there is no pin or

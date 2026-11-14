@@ -102,23 +102,38 @@ func (d *rootConfigDir) close() { _ = d.dir.Close() }
 
 // rootEngineKey is the engine's public key for a root init --remote: the
 // key file in the engine's state directory, read or (when there is none)
-// created relative to the directory opened from / without following a
-// link anyone but root controls (made 0700 when missing). The file must be
-// a regular file with one link, owned by the state directory's owner (the
-// engine's user in service mode), mode 0600 or narrower, and pass the
-// engine's own checks (channel.ParseKeyFile). A new one is given to that
-// owner before it appears under its name, so the engine loads it as its
-// own; one made meanwhile by the engine is kept.
-func rootEngineKey(stateDir string, now func() time.Time) ([]byte, error) {
-	trusted, err := existingOwner(stateDir)
+// created relative to that directory, opened from / without following a
+// link anyone but root controls. stateDir comes from engine.json, which
+// the config directory's owner may write, so it is trusted no further than
+// the config directory: every directory on the way must be owned by root
+// or that owner (cfg.trusted), the state directory itself by the config
+// directory's owner, and it is never made here (the service manager makes
+// it when the service starts). The file must be a regular file with one
+// link, owned by that owner, mode 0600 or narrower, and pass the engine's
+// own checks (channel.ParseKeyFile). A new one is given to that owner
+// before it appears under its name, so the engine loads it as its own; one
+// made meanwhile by the engine is kept.
+func rootEngineKey(stateDir string, cfg *rootConfigDir, now func() time.Time) ([]byte, error) {
+	if cfg == nil {
+		return nil, errors.New("the config directory is not open")
+	}
+	want, err := cfg.dir.Owner()
 	if err != nil {
 		return nil, err
 	}
-	d, err := service.OpenTrustedDir(stateDir, trusted, true)
+	d, err := service.OpenTrustedDir(stateDir, cfg.trusted, false)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("the state directory %s does not exist yet; start the engine's service once (it makes it), then run basalt init --remote again", stateDir)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("the state directory %s is refused: %w", stateDir, err)
 	}
 	defer d.Close()
+	if owner, err := d.Owner(); err != nil {
+		return nil, err
+	} else if owner != want {
+		return nil, fmt.Errorf("the state directory %s is owned by uid %d, not uid %d (the owner of the config directory %s)", stateDir, owner, want, cfg.dir.Path())
+	}
 	dirUID, err := d.Owner()
 	if err != nil {
 		return nil, err

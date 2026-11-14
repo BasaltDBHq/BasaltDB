@@ -11,6 +11,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// emptyDirLinks is the link count of an empty directory (. and its name).
+const emptyDirLinks = 2
+
 // privateDirCreateMode is the mode of a directory OpenTrustedDir makes, as
 // config.WriteFile makes one.
 const privateDirCreateMode = 0o700
@@ -96,6 +99,17 @@ func handDirOver(pfd, fd, owner int) error {
 		return err
 	}
 	if int(st.Uid) != owner {
+		return nil
+	}
+	// Only the directory this process just made: the parent's owner could
+	// rename another directory onto the name between the mkdir and the
+	// open (one root made earlier, say), which is never given away. A new
+	// one is this process's, mode 0700 and empty.
+	var made unix.Stat_t
+	if err := fstat(fd, &made); err != nil {
+		return err
+	}
+	if int(made.Uid) != os.Geteuid() || statMode(made.Mode)&permBits != privateDirCreateMode || made.Nlink != emptyDirLinks {
 		return nil
 	}
 	return unix.Fchown(fd, owner, keepID)

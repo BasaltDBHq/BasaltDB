@@ -66,7 +66,7 @@ To keep the engine up across reboots on a Linux server with systemd, install it 
    sudo basalt service install
    ```
 
-   This makes the `basalt` user, the config directory `/etc/basalt` (owned by `basalt`) and the `basalt-engine` unit, and starts it. It has no config yet, so it stops after a few tries. That is expected.
+   This makes the `basalt` user, the config directory `/etc/basalt` (owned by `basalt`) and the `basalt-engine` unit, and starts it. Starting it makes the engine's state directory, where step 2 puts the engine's key. It has no config yet, so it stops after a few tries. That is expected.
 
 2. Make the setup code as step 2 says, with `sudo` and without `--config`:
 

@@ -436,8 +436,10 @@ func (r *remoteInit) paths() error {
 		// A config directory another OS user owns (not root, not the user
 		// who ran sudo) is an engine user's, as basalt service install
 		// makes it: the engine runs as that user and serves the person
-		// socket, so the config is a service one.
-		if trusted > 0 && (len(r.settings.PersonUIDs) == 0 || uint32(trusted) != r.settings.PersonUIDs[0]) {
+		// socket, so the config is a service one. Only with a person to
+		// admit (SUDO_UID): without one, a service config's person socket
+		// would admit nobody.
+		if trusted > 0 && len(r.settings.PersonUIDs) > 0 && uint32(trusted) != r.settings.PersonUIDs[0] {
 			r.settings.Mode = config.ModeService
 		}
 		files, err := openRootCredFiles(filepath.Dir(r.credFile), trusted)
@@ -964,7 +966,7 @@ func (r *remoteInit) engineKey() *setupcode.Engine {
 	if r.c.host.Euid() == 0 {
 		// As root, through the state directory opened without following a
 		// link the engine's user controls; a new key file is that user's.
-		spki, err := rootEngineKey(r.stateDir, r.c.now)
+		spki, err := rootEngineKey(r.stateDir, r.configDir, r.c.now)
 		if err != nil {
 			fmt.Fprintf(r.c.stderr, "basalt: the code carries no engine key: the engine's key file is refused (%v); basalt status shows KEY_ERROR\n", err)
 			return nil

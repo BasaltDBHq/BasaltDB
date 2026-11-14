@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -181,4 +182,28 @@ func TestReadCredentialAt(t *testing.T) {
 	require.NoError(t, os.Symlink(filepath.Join(dir, "bot.url"), filepath.Join(dir, "link.url")))
 	_, _, err = config.ReadCredentialAt(d, "link.url")
 	require.ErrorContains(t, err, "is a symlink, which is refused")
+}
+
+// As real root only: the config UpsertAgentVaultAt and ClearSetupAt write
+// is given to the owner they are passed (the config directory's), before
+// it appears under its name.
+func TestUpsertAgentVaultAtGivesTheConfigToItsOwnerAsRoot(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("needs root")
+	}
+	const nobody = 65534
+	dir := realDir(t)
+	require.NoError(t, os.Chown(dir, nobody, -1))
+	d, err := service.OpenTrustedDir(dir, nobody, false)
+	require.NoError(t, err)
+	defer d.Close()
+	check := func(f *os.File) error { return config.CheckTrustedConfig(f, nobody) }
+	_, err = config.UpsertAgentVaultAt(d, "engine.json", check, nobody, config.Settings{SocketDir: "/run/basalt"},
+		config.Agent{Name: "one", OSUser: "bot", CredentialFile: "/c/one.url"})
+	require.NoError(t, err)
+	fi, err := os.Stat(filepath.Join(dir, "engine.json"))
+	require.NoError(t, err)
+	require.Equal(t, uint32(nobody), fi.Sys().(*syscall.Stat_t).Uid)
+	_, err = config.ClearSetupAt(d, "engine.json", check, nobody, "one", "x")
+	require.NoError(t, err)
 }

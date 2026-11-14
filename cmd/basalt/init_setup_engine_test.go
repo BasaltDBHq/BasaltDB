@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -103,7 +104,14 @@ func TestInitRemoteAsRootCarriesTheEngineKey(t *testing.T) {
 	t.Parallel()
 	cfg := tempConfig(t)
 	args := []string{"--agent", "bot", "--write", "public.leads", "--database-url", "postgres://u@db.example.com:5432/app"}
-	install := remote(t, cfg, args...)
+	// The service manager makes the state directory, not init.
+	noState := remote(t, cfg, args...)
+	require.Nil(t, noState.payload.Engine)
+	require.Contains(t, noState.stderr, "does not exist yet; start the engine's service once")
+	require.NoDirExists(t, noState.cfg.StateDirFor(runtime.GOOS))
+	require.NoError(t, os.Mkdir(noState.cfg.StateDirFor(runtime.GOOS), 0o700))
+
+	install := remote(t, cfg, append(args, "--new-code")...)
 	require.NotNil(t, install.payload.Engine, install.stderr)
 	require.NotContains(t, install.stderr, "carries no engine key")
 	keyFile := filepath.Join(install.cfg.StateDirFor(runtime.GOOS), channel.KeyFileName)
@@ -121,4 +129,30 @@ func TestInitRemoteAsRootCarriesTheEngineKey(t *testing.T) {
 	refused := remote(t, cfg, append(args, "--new-code")...)
 	require.Nil(t, refused.payload.Engine)
 	require.Contains(t, refused.stderr, "is a symlink, which is refused")
+}
+
+// The state directory comes from engine.json, which the config directory's
+// owner may write: as root, init reads or makes a key file only in a state
+// directory that owner owns, and never makes one.
+func TestInitRemoteAsRootKeepsTheKeyToTheConfigOwnersStateDirectory(t *testing.T) {
+	t.Parallel()
+	cfg := tempConfig(t)
+	args := append(make([]string, 0, 8), "--agent", "bot", "--write", "public.leads", "--database-url", "postgres://u@db.example.com:5432/app")
+	remote(t, cfg, args...)
+	raw, err := os.ReadFile(cfg)
+	require.NoError(t, err)
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(raw, &doc))
+	missing := filepath.Join(t.TempDir(), "x", "y")
+	for _, stateDir := range []string{"/usr", missing} {
+		doc["stateDir"] = stateDir
+		out, err := json.MarshalIndent(doc, "", "  ")
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(cfg, out, 0o600))
+		r := remote(t, cfg, append(args, "--new-code")...)
+		require.Nil(t, r.payload.Engine, stateDir)
+		require.Contains(t, r.stderr, "the code carries no engine key", stateDir)
+	}
+	require.NoFileExists(t, filepath.Join("/usr", channel.KeyFileName))
+	require.NoDirExists(t, filepath.Dir(missing), "nothing is made on the way")
 }

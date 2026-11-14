@@ -783,6 +783,7 @@ func TestInitRemoteAsRootRecordsTheSudoUser(t *testing.T) {
 	require.Empty(t, r.cfg.PersonUIDs, "never root")
 	r = remoteWith(t, run(nil), other, append(args, "--new-code")...)
 	require.Empty(t, r.cfg.PersonUIDs)
+	require.False(t, r.cfg.Service(), "no person to admit: not a service config")
 }
 
 // As root, a config directory the user who ran sudo owns is that user's own

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 )
@@ -60,20 +59,12 @@ func (pathFiles) close() {}
 func errNotExist(err error) bool { return errors.Is(err, fs.ErrNotExist) }
 
 // rootCredentialPath is the only credential file an engine running as root
-// reads for agent: agents/<agent>.url next to configPath, where basalt init
-// and basalt service install put it. The config may belong to its
-// directory's owner, who must not be able to send root's reads and writes
-// to another file. named is the agent's credentialFile; a spelling of the
-// same path (agents/sub/../bot.url) is accepted.
+// reads for agent: config.RootCredentialPath, agents/<agent>.url next to
+// configPath.
 func rootCredentialPath(configPath, agent, named string) (string, error) {
-	want := filepath.Join(filepath.Dir(configPath), "agents", agent+".url")
-	got, err := filepath.Abs(named)
+	path, err := config.RootCredentialPath(configPath, agent, named)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%w; as root, basalt engine uses only that path. Fix the agent's credentialFile in the config, or start the engine with --user", err)
 	}
-	if got != want {
-		return "", fmt.Errorf("the config names the credential file %s, not %s where basalt init puts it; "+
-			"as root, basalt engine uses only that path. Fix the agent's credentialFile in the config, or start the engine with --user", named, want)
-	}
-	return want, nil
+	return path, nil
 }

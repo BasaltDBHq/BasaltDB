@@ -412,8 +412,8 @@ func (r *remoteInit) paths() error {
 			// As root the computed path is used, never the config's
 			// string: agents/sub/../bot.url passes the check but would
 			// resolve through agents/sub.
-			if err := sameCredentialPath(r.entry.CredentialFile, r.credFile); err != nil {
-				return err
+			if _, err := config.RootCredentialPath(r.f.configPath, r.f.agent, r.entry.CredentialFile); err != nil {
+				return fmt.Errorf("%w; as root, basalt init --remote uses only that path. Fix the agent's credentialFile in the config", err)
 			}
 		} else {
 			r.credFile = r.entry.CredentialFile
@@ -441,6 +441,9 @@ func (r *remoteInit) paths() error {
 		// would admit nobody.
 		if trusted > 0 && len(r.settings.PersonUIDs) > 0 && uint32(trusted) != r.settings.PersonUIDs[0] {
 			r.settings.Mode = config.ModeService
+			fmt.Fprintf(r.c.stderr, "basalt: %s belongs to uid %d, not root or you (uid %d): this config is a service one (mode %s). "+
+				"The engine runs as uid %d and admits you on its person socket; restart its service after this run\n",
+				dir, trusted, r.settings.PersonUIDs[0], config.ModeService, trusted)
 		}
 		files, err := openRootCredFiles(filepath.Dir(r.credFile), trusted)
 		if err != nil {
@@ -489,28 +492,6 @@ func (pathCredFiles) write(path string, data []byte) error { return config.Write
 func (pathCredFiles) rename(from, to string) error { return os.Rename(from, to) }
 
 func (pathCredFiles) close() {}
-
-// sameCredentialPath refuses, as root, a credential file the config names
-// anywhere but where basalt init puts it (want, agents/<agent>.url next to
-// the config). The config may belong to its directory's owner (the engine's
-// user), who must not be able to send root's credential reads and writes
-// to another file, such as another agent's credential or a file only root
-// reads.
-func sameCredentialPath(named, want string) error {
-	a, err := filepath.Abs(named)
-	if err != nil {
-		return err
-	}
-	b, err := filepath.Abs(want)
-	if err != nil {
-		return err
-	}
-	if a != b {
-		return fmt.Errorf("the config names the credential file %s, not %s where basalt init puts it; "+
-			"as root, basalt init --remote uses only that path. Fix the agent's credentialFile in the config", named, want)
-	}
-	return nil
-}
 
 // credential is a credential file as read: its connection string, the
 // database it names, and the file it was read from (to check, before
@@ -966,7 +947,7 @@ func (r *remoteInit) engineKey() *setupcode.Engine {
 	if r.c.host.Euid() == 0 {
 		// As root, through the state directory opened without following a
 		// link the engine's user controls; a new key file is that user's.
-		spki, err := rootEngineKey(r.stateDir, r.configDir, r.c.now)
+		spki, err := rootEngineKey(r.stateDir, r.c.goos, r.configDir, r.c.now)
 		if err != nil {
 			fmt.Fprintf(r.c.stderr, "basalt: the code carries no engine key: the engine's key file is refused (%v); basalt status shows KEY_ERROR\n", err)
 			return nil

@@ -179,3 +179,23 @@ func TestTrustedDirHandsNewDirectoriesToTheOwnerAsRoot(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, owner, "made in a root-owned directory: root's")
 }
+
+// handDirOver gives away only an empty directory, read by its entries: a
+// link count of 2 is no proof (btrfs reports one link for a directory, and
+// files never add links), and the descriptor's offset is left as it was.
+func TestEmptyDirReadsTheEntries(t *testing.T) {
+	t.Parallel()
+	dir := realTempDir(t)
+	fd, err := unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	require.NoError(t, err)
+	defer unix.Close(fd)
+	for range 2 {
+		empty, err := emptyDir(fd)
+		require.NoError(t, err)
+		require.True(t, empty)
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "f"), nil, 0o600))
+	empty, err := emptyDir(fd)
+	require.NoError(t, err)
+	require.False(t, empty, "a file in it, with the link count still 2")
+}

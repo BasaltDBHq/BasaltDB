@@ -14,6 +14,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/channel"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 )
 
@@ -163,4 +164,59 @@ func TestDirectLinkOnlyWhenALinkIsIssued(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, link)
 	require.Zero(t, e.reads.Load())
+}
+
+// With the Vault off, only an engine the agent's own database records,
+// with an address and not revoked, hands over the portal short link: read
+// through the agent's role, as the engine does. Each case is an engine key
+// of its own in one database.
+func TestDirectReadyFollowsTheAgentsDatabase(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", []string{"public.leads"}, []string{"public.leads"})
+	ctx := context.Background()
+	key := func(url string, revoke bool) string {
+		k, err := channel.GenerateEngineKeys(time.Now)
+		require.NoError(t, err)
+		if url == "-" {
+			return k.EngineID()
+		}
+		var u *string
+		if url != "" {
+			u = &url
+		}
+		_, err = guard.RecordEngine(ctx, d.Admin, k.PublicKeySPKI(), u)
+		require.NoError(t, err)
+		if revoke {
+			_, err = guard.RevokeEngine(ctx, d.Admin, k.EngineID())
+			require.NoError(t, err)
+		}
+		return k.EngineID()
+	}
+	cases := []struct {
+		name     string
+		engineID string
+		short    bool
+	}{
+		{"recorded with an address", key("https://engine.example.com", false), true},
+		{"recorded without an address", key("", false), false},
+		{"recorded, then revoked", key("https://revoked.example.com", true), false},
+		{"another engine's record only", key("-", false), false},
+	}
+	for _, c := range cases {
+		e := newDirectEnv(t, nil, func(dp *Deps) {
+			dp.Vault = offVault{id: c.engineID}
+			dp.EngineRecord = func(ctx context.Context, id string) (*guard.RecordedEngine, error) {
+				return guard.EngineRecord(ctx, a.Conn, id)
+			}
+		})
+		n := e.notice(t)
+		if c.short {
+			require.True(t, strings.HasPrefix(n.ApprovalURL, links.Portal+"/approvals/"), c.name)
+			require.Len(t, e.svc.Links.Relay(), 1, c.name)
+			continue
+		}
+		require.Equal(t, n.longURL, n.ApprovalURL, c.name)
+		require.Empty(t, e.svc.Links.Relay(), "%s: no secret is issued", c.name)
+	}
 }

@@ -71,6 +71,38 @@ test("only written engine addresses are read from the cookie", () => {
   assert.deepEqual(cookieOrigins(c("https://a.example.com|" + "x".repeat(5000))), []);
 });
 
+test("a cookie planted by another host adds nothing", () => {
+  const mine = `${PINS_COOKIE}=https://a.example.com`;
+  // Two of the name (a sibling host's nameless "=__Host-basalt-engines=..."
+  // is sent as one more pair): neither is used.
+  assert.deepEqual(cookieOrigins(`${PINS_COOKIE}=https://evil.example.com; ${mine}`), []);
+  assert.deepEqual(cookieOrigins(`${mine}; ${PINS_COOKIE}=https://evil.example.com`), []);
+  assert.deepEqual(cookieOrigins(`${mine}; ${PINS_COOKIE}=`), []);
+  // A name that only looks like ours once Unicode or control spaces are
+  // stripped is another cookie: browsers apply no __Host- rules to it.
+  for (const pad of ["\u00a0", "\u2000", "\u3000", "\ufeff", "\v", "\f", "\u0085"]) {
+    assert.deepEqual(cookieOrigins(`${pad}${PINS_COOKIE}=https://evil.example.com`), [], JSON.stringify(pad));
+    assert.deepEqual(cookieOrigins(`${PINS_COOKIE}${pad}=https://evil.example.com`), [], JSON.stringify(pad));
+    assert.deepEqual(cookieOrigins(`${pad}${PINS_COOKIE}=https://evil.example.com; ${mine}`), ["https://a.example.com"], JSON.stringify(pad));
+  }
+  // Spaces and tabs around the pair are the header's own.
+  assert.deepEqual(cookieOrigins(`theme=dark;\t ${mine} \t`), ["https://a.example.com"]);
+  // Quoting, encoding or a value that smuggles a directive is not an address.
+  for (const v of ['"https://a.example.com"', "https%3A%2F%2Fa.example.com", "https://a.example.com,https://b.example.com"]) {
+    assert.deepEqual(cookieOrigins(`${PINS_COOKIE}=${v}`), [], v);
+  }
+});
+
+test("a HEAD request gets the same per-person headers and no body", async () => {
+  const { next } = asset();
+  const res = await handle(new Request(`${BASE}/approvals/${ID}`, { method: "HEAD", headers: { Cookie: `${PINS_COOKIE}=https://a.example.com` } }), next);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("Content-Security-Policy"), policyWith(["https://a.example.com", "wss://a.example.com"]));
+  assert.equal(res.headers.get("Cache-Control"), "no-store");
+  assert.equal(res.headers.get("Vary"), "Cookie");
+  assert.equal(await res.text(), "");
+});
+
 test("the cookie the page writes is the one the function reads", () => {
   const pins = [
     { address: "https://a.example.com", engineKey: "A".repeat(122), engineId: "a".repeat(22), addedAt: "2026-11-14T10:00:00Z", lastUsedAt: null },

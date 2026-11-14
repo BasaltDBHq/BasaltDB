@@ -337,11 +337,14 @@ func TestLevelPolicyMarks(t *testing.T) {
 	_, ok := copyItem["replacement"]
 	require.True(t, ok, "a marked copy can take the admin's replacement")
 
+	require.Contains(t, contractSection(t, "### Registering an agent"),
+		"`GRANT <prefix>_agents TO <agent> WITH INHERIT TRUE, SET FALSE`", "an agent can SET ROLE to nothing")
 	section := contractSection(t, "### Agent groups and mirrored policies (AA-17)")
 	for _, want := range []string{
 		"a marked **restrictive** source policy gets a restrictive copy `USING (false)`",
 		"a marked **permissive** source policy is left out",
-		"one **bound** `<prefix>_lvl_<oid>_b<cmd>`, `AS RESTRICTIVE FOR <cmd> TO <group>",
+		"one **bound** `<prefix>_lvl_<oid>_b<cmd>`, `AS RESTRICTIVE FOR <cmd> TO <group>`",
+		"every admin `replacement` for a marked permissive one",
 		"a marked **restrictive** policy that applies to the agents as written",
 		"an **allow list**, not a deny list",
 		"one **currency guard** `<prefix>_lvl_<oid>_cur`, `AS RESTRICTIVE FOR ALL TO <group>",

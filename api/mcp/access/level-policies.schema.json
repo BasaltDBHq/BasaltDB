@@ -146,7 +146,7 @@
                       "FUNCTION"
                     ]
                   },
-                  "description": "Marks from an allow list over the stored expression tree. IDENTITY: a CURRENT_USER-like value. SUBQUERY: a sublink. FUNCTION: any function reached (operators, casts, I/O coercions, aggregates included) that is not in pg_catalog and IMMUTABLE, nor one of the STABLE clock functions. A marked restrictive source, and any marked policy TO PUBLIC or TO <prefix>_agents, gets a restrictive USING (false) copy; a marked permissive source is left out (action OMIT); unless the admin gives a replacement."
+                  "description": "Marks from an allow list over the stored expression tree. IDENTITY: a CURRENT_USER-like value. SUBQUERY: a sublink. FUNCTION: any function reached (operators, casts, I/O coercions, aggregates included) that is not in pg_catalog and IMMUTABLE, nor one of the STABLE clock functions. A marked restrictive source, and a marked restrictive policy that applies to the agents as written, gets a restrictive USING (false) copy; a marked permissive source is left out (action OMIT) and left out of the bound; unless the admin gives a replacement, which then also joins the bound."
                 },
                 "replacement": {
                   "type": [

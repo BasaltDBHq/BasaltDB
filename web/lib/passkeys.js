@@ -33,7 +33,7 @@ async function checkOne(rp, req, cred, results, state, button) {
     });
     state.textContent = FOUND;
   } catch {
-    // WebAuthn does not tell "not on this device" from "cancelled".
+    // WebAuthn reports "not on this device" and "cancelled" the same way.
     results.delete(cred.credentialId);
     state.textContent = `${MISSING} (or the prompt was cancelled)`;
     button.textContent = "Try again";

@@ -26,10 +26,18 @@ import (
 	"github.com/basaltdbhq/basaltdb/web"
 )
 
-// headlessBrowser finds a Chromium that can run headless: $BASALT_TEST_BROWSER,
-// then Playwright's cached chromium-headless-shell or chromium, then a Chrome
-// or Chromium on the PATH or in /Applications. It returns "" when none is
-// found.
+// headlessBrowser finds a Chromium that can run headless, in this order:
+//
+//  1. $BASALT_TEST_BROWSER;
+//  2. Playwright's cache ($PLAYWRIGHT_BROWSERS_PATH, then
+//     ~/Library/Caches/ms-playwright or ~/.cache/ms-playwright):
+//     chromium-headless-shell, then chromium;
+//  3. on the PATH: google-chrome, google-chrome-stable, chromium,
+//     chromium-browser (Chrome first: Ubuntu's chromium is often a snap
+//     wrapper);
+//  4. Google Chrome, then Chromium, in /Applications.
+//
+// It returns "" when none is found.
 func headlessBrowser() string {
 	if p := os.Getenv("BASALT_TEST_BROWSER"); p != "" {
 		return p
@@ -56,7 +64,7 @@ func headlessBrowser() string {
 			}
 		}
 	}
-	for _, name := range []string{"chromium", "chromium-browser", "google-chrome", "google-chrome-stable"} {
+	for _, name := range []string{"google-chrome", "google-chrome-stable", "chromium", "chromium-browser"} {
 		if p, err := exec.LookPath(name); err == nil {
 			return p
 		}
@@ -70,6 +78,21 @@ func headlessBrowser() string {
 		}
 	}
 	return ""
+}
+
+// browserMissing says why the browser test cannot run with browser (what
+// headlessBrowser found), or "" when it can, and whether that fails the test:
+// with no browser on CI (CI=true) it fails, since make ci hides skipped tests
+// and a skip there would pass unseen. BASALT_TEST_BROWSER=none always skips.
+func browserMissing(browser string) (reason string, fail bool) {
+	switch {
+	case browser == "none":
+		return "BASALT_TEST_BROWSER=none", false
+	case browser != "":
+		return "", false
+	}
+	reason = "no headless Chromium found: run `npx playwright install chromium-headless-shell` or set BASALT_TEST_BROWSER to a Chrome or Chromium binary"
+	return reason, os.Getenv("CI") == "true"
 }
 
 // dumpDOM loads url in a headless browser and returns the DOM after the load
@@ -90,21 +113,42 @@ func dumpDOM(t *testing.T, browser, url string) (dom, log string) {
 	}
 }
 
+// browserTimeout bounds one browser run.
+const browserTimeout = 30 * time.Second
+
 func runBrowser(t *testing.T, browser, url string) (string, string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, browser, // #nosec G204 -- the browser path is the tester's
+	args := []string{
 		"--headless", "--disable-gpu", "--no-first-run", "--no-default-browser-check",
-		"--user-data-dir="+t.TempDir(), "--enable-logging=stderr", "--v=0",
-		"--virtual-time-budget=5000", "--dump-dom", url)
+		"--user-data-dir=" + t.TempDir(), "--enable-logging=stderr", "--v=0",
+		"--virtual-time-budget=5000", "--dump-dom", url,
+	}
 	if runtime.GOOS == "linux" {
 		// CI runners (and root) often cannot start Chromium's sandbox; the
 		// pages loaded here are the repository's own, served on localhost.
-		cmd.Args = append(cmd.Args, "--no-sandbox")
+		args = append(args, "--no-sandbox")
 	}
+	return runKillable(browserTimeout, browser, args...)
+}
+
+// runKillable runs name and returns its stdout and stderr. After timeout it
+// kills the whole process group (a browser's helpers can keep stdout open
+// after the main process dies) and stops waiting for output, so a hung
+// child cannot outlast the limit; after a normal exit it kills any helper
+// left in the group.
+func runKillable(timeout time.Duration, name string, args ...string) (string, string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...) // #nosec G204 -- the browser path is the tester's
+	killGroupOnCancel(cmd)
+	cmd.WaitDelay = 5 * time.Second
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	err := cmd.Run()
+	if cmd.Process != nil {
+		// A helper may outlive a browser that exited on its own; on unix
+		// this kills what is left of the group (nothing, usually).
+		_ = cmd.Cancel()
+	}
 	if ctx.Err() != nil {
 		err = ctx.Err()
 	}
@@ -144,7 +188,8 @@ func serve(t *testing.T, files fs.FS) string {
 // approval id), and runs nothing when a module was swapped behind an
 // unchanged page or the page carries a wrong hash for its entry script.
 //
-// It needs a headless Chromium and skips without one. To run it:
+// It needs a headless Chromium (see headlessBrowser for the lookup order)
+// and skips without one, except on CI (CI=true), where it fails. To run it:
 //
 //	npx playwright install chromium-headless-shell
 //	go test -count=1 -run TestPortalSRIBlocksScriptInBrowser -v ./web
@@ -156,8 +201,10 @@ func TestPortalSRIBlocksScriptInBrowser(t *testing.T) {
 		t.Skip("starts a browser; skipped with -short")
 	}
 	browser := headlessBrowser()
-	if browser == "" || browser == "none" {
-		t.Skip("no headless Chromium found: run `npx playwright install chromium-headless-shell` or set BASALT_TEST_BROWSER to a Chrome or Chromium binary")
+	if reason, fail := browserMissing(browser); fail {
+		t.Fatal(reason)
+	} else if reason != "" {
+		t.Skip(reason)
 	}
 	t.Logf("browser: %s", browser)
 	const page = "approve/index.html"
@@ -203,4 +250,40 @@ func TestPortalSRIBlocksScriptInBrowser(t *testing.T) {
 				"the browser did not report blocking %s for its integrity", c.blocked)
 		})
 	}
+}
+
+// On PATH, google-chrome comes before chromium (on Ubuntu, chromium is often
+// a snap wrapper that cannot run headless under a test runner), and
+// BASALT_TEST_BROWSER comes before everything.
+func TestHeadlessBrowserLookupOrder(t *testing.T) {
+	bin := t.TempDir()
+	t.Setenv("PATH", bin)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("PLAYWRIGHT_BROWSERS_PATH", "")
+	t.Setenv("BASALT_TEST_BROWSER", "")
+	for _, name := range []string{"chromium", "chromium-browser", "google-chrome-stable", "google-chrome"} {
+		require.NoError(t, os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"), 0o700)) // #nosec G306 -- must be executable
+	}
+	for _, want := range []string{"google-chrome", "google-chrome-stable", "chromium", "chromium-browser"} {
+		require.Equal(t, filepath.Join(bin, want), headlessBrowser())
+		require.NoError(t, os.Remove(filepath.Join(bin, want)))
+	}
+	t.Setenv("BASALT_TEST_BROWSER", "/some/chrome")
+	require.Equal(t, "/some/chrome", headlessBrowser())
+}
+
+// Without a browser the test skips on a workstation but fails on CI, where a
+// skip would pass unseen (make ci hides skipped tests).
+func TestMissingBrowserFailsOnCI(t *testing.T) {
+	t.Setenv("CI", "true")
+	_, fail := browserMissing("")
+	require.True(t, fail)
+	_, fail = browserMissing("none")
+	require.False(t, fail, "BASALT_TEST_BROWSER=none is an explicit opt-out")
+	t.Setenv("CI", "")
+	reason, fail := browserMissing("")
+	require.False(t, fail)
+	require.Contains(t, reason, "playwright install")
+	reason, _ = browserMissing("/some/chrome")
+	require.Empty(t, reason)
 }

@@ -50,15 +50,51 @@ function resolveRef(root, files, from, ref) {
   return join(root, rel);
 }
 
-function imports(root, files, file) {
+// IMPORT_FROM reads a static import (or export ... from) that starts a line.
+// Its clause holds no quote, semicolon, parenthesis or slash, so it cannot
+// swallow an import() call, a second statement or a comment.
+const IMPORT_FROM = /(?:^|\n)[ \t]*(?:import|export)\b[^"';()`/]*?\bfrom[ \t]*["']([^"']+)["']|(?:^|\n)[ \t]*import[ \t]*["']([^"']+)["']/g;
+// import( with white space or // comments between (block comments are
+// refused outright, see imports).
+const DYNAMIC_IMPORT = /\bimport(?:\s|\/\/[^\n]*\n)*\(/;
+// An import or export-from IMPORT_FROM did not read: one not at the start of
+// a line, import.meta, or the word in a string or comment. Comments are not
+// skipped: a line that starts with // can still end a template literal or a
+// continued string and go on as code.
+const STRAY_IMPORT = /\bimport\b|\bfrom\s*["'`]/;
+// A way to run code or load a document that no modulepreload integrity
+// covers: script elements (any "script" string, createElementNS for the SVG
+// one), workers, worklets, frames, objects and embeds. It
+// catches a mistake, not deliberate obfuscation ("scr" + "ipt"). The pages'
+// meta CSP (default-src 'none') blocks frames and objects as well, but not
+// script elements or workers: script-src 'self' admits any same-origin
+// script without integrity.
+const UNPINNED_LOAD = new RegExp(
+  "\\b(?:worker|sharedworker|serviceworker|importscripts|[a-z]*worklet|addmodule|iframe|frameset|srcdoc|htmliframeelement|htmlobjectelement|htmlembedelement|htmlscriptelement|svgscriptelement|createelementns)\\b" +
+  "|[\"'`]script[\"'`]|<\\s*(?:script|frame|object|embed|portal|applet)\\b|\\(\\s*[\"'`](?:frame|object|embed|portal|applet)[\"'`]", "i");
+
+// imports returns the embedded files a module imports, and throws on any way
+// it could load code that no modulepreload integrity covers, or on an import
+// it cannot read.
+export function imports(root, files, file) {
   const src = readFileSync(file, "utf8");
+  // JavaScript ends a line (and a // comment) at each of these.
+  if (/[\r\u2028\u2029]/.test(src)) throw new Error(`${file}: line terminator other than LF`);
+  // A block comment can make the line-based reading below see code as
+  // commented out, or the other way round, so modules use // only.
+  if (src.includes("/*")) throw new Error(`${file}: block comment (use // comments)`);
+  if (DYNAMIC_IMPORT.test(src)) throw new Error(`${file}: dynamic import() is not covered by SRI`);
+  const load = src.match(UNPINNED_LOAD);
+  if (load) throw new Error(`${file}: ${load[0]} loads code or a document that SRI does not cover`);
+  const code = src;
+  const stray = code.replace(IMPORT_FROM, " ").match(STRAY_IMPORT);
+  if (stray) throw new Error(`${file}: an import the scanner cannot account for (${stray[0]}); write each import at the start of a line`);
   const out = [];
-  for (const m of src.matchAll(/(?:^|\n)\s*(?:import|export)\b[^"';]*?\bfrom\s*["']([^"']+)["']|(?:^|\n)\s*import\s*["']([^"']+)["']/g)) {
+  for (const m of code.matchAll(IMPORT_FROM)) {
     const spec = m[1] ?? m[2];
     if (!spec.startsWith("./") && !spec.startsWith("../")) throw new Error(`${file}: non-relative import ${spec}`);
     out.push(resolveRef(root, files, file, spec));
   }
-  if (/\bimport\s*\(/.test(src)) throw new Error(`${file}: dynamic import() is not covered by SRI`);
   return out;
 }
 
@@ -141,29 +177,43 @@ export function plainUTF8(page) {
 const HEAD_LINE = new RegExp("^(?:" + [
   '<meta charset="utf-8">',
   '<meta name="viewport" content="width=device-width, initial-scale=1">',
-  "<meta http-equiv=\"Content-Security-Policy\" content=\"[a-z0-9 ;:'-]+\">",
   '<meta name="referrer" content="no-referrer">',
   '<meta name="robots" content="noindex">',
   '<title>[^<>&"]*</title>',
   '<link rel="stylesheet" href="[^"&]+">',
 ].join("|") + ")$");
+// The meta CSP every page carries, before its sri block: it falls back to
+// default-src 'none', so frames and objects stay blocked even where a host
+// serves the page under a looser header (the portal's _headers falls back to
+// 'self'). It does not block workers or script elements (script-src 'self').
+// Only connect-src may differ.
+const CSP_LINE = /^<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src '(?:self|none)'; base-uri 'none'; form-action 'none'">$/;
+const CSP_PREFIX = '<meta http-equiv="Content-Security-Policy"';
+// A tag the body may not hold: one that loads a script, sets page metadata,
+// or frames or embeds another document (an <iframe srcdoc> would run markup
+// that no integrity check reads).
+const BODY_TAG = /<(script|link|meta|base|head|iframe|frame|frameset|object|embed|portal|applet)\b/i;
 const PRELOAD_LINE = new RegExp(PRELOAD.source + "$");
 const SCRIPT_LINE = new RegExp(SCRIPT.source + "$");
 const PROLOGUE = '<!doctype html>\n<html lang="en">\n<head>\n';
 
 // pageShape pins where the sri block sits: the fixed prologue, a head of
-// allow-listed lines with exactly one sri block (the preloads, then one
-// module script), and no script, link, meta, base or head tag after </head>.
+// allow-listed lines with exactly one meta CSP line (CSP_LINE) and exactly
+// one sri block (the preloads, then one module script), and no BODY_TAG
+// after </head>.
 function pageShape(page, html) {
   if (!html.startsWith(PROLOGUE)) throw new Error(`${page}: does not start with the fixed prologue`);
   const end = html.indexOf("\n</head>\n", PROLOGUE.length);
   if (end < 0) throw new Error(`${page}: no </head> line`);
-  const tag = html.slice(end + 9).match(/<(script|link|meta|base|head)\b/i);
+  const tag = html.slice(end + 9).match(BODY_TAG);
   if (tag) throw new Error(`${page}: ${tag[0]} after the head`);
   let state = "before";
+  let csp = 0;
   for (let line of html.slice(PROLOGUE.length, end).split("\n")) {
     line = line.replace(/^ +/, "");
-    if (state === "before" && line === BEGIN) state = "preloads";
+    if (state === "before" && CSP_LINE.test(line)) csp++;
+    else if (line.startsWith(CSP_PREFIX)) throw new Error(`${page}: the meta CSP line must be the fixed one, with default-src 'none', before the sri block: ${line}`);
+    else if (state === "before" && line === BEGIN) state = "preloads";
     else if (state === "preloads" && PRELOAD_LINE.test(line)) continue;
     else if (state === "preloads" && SCRIPT_LINE.test(line)) state = "script";
     else if (state === "script" && line === END) state = "after";
@@ -171,6 +221,7 @@ function pageShape(page, html) {
     else throw new Error(`${page}: head line is not in a checked form (run make web-sri): ${line}`);
   }
   if (state !== "after") throw new Error(`${page}: no complete sri block in the head`);
+  if (csp !== 1) throw new Error(`${page}: needs exactly one meta CSP line with default-src 'none', before the sri block (found ${csp})`);
 }
 
 export function verify(root, files, page) {

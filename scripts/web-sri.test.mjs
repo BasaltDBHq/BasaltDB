@@ -1,12 +1,13 @@
 // node --test scripts/web-sri.test.mjs (run by make web-check)
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { run } from "./web-sri.mjs";
+import { imports, run } from "./web-sri.mjs";
 
 const web = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
 const sri = (b) => "sha384-" + createHash("sha384").update(b).digest("base64");
@@ -148,4 +149,123 @@ test("a meta tag after the head fails", () => {
   const r = check((h) => h.replace("</body>", '<meta http-equiv="content-type" content="text/html; ch&#97;rset=Shift_JIS">\n</body>'));
   assert.equal(r.code, 1);
   assert.match(r.out, /<meta after the head/);
+});
+
+const CSP = /^ *<meta http-equiv="Content-Security-Policy"[^\n]*\n/m;
+
+test("a page without the fixed meta CSP line (default-src 'none') fails", () => {
+  const edits = [
+    (h) => h.replace(CSP, ""),
+    (h) => h.replace("default-src 'none'", "default-src 'self'"),
+    (h) => h.replace("form-action 'none'\">", "form-action 'none'; frame-src 'self'\">"),
+    (h) => { const l = h.match(CSP)[0]; return h.replace(l, "").replace("<!-- sri:end -->\n", "<!-- sri:end -->\n" + l); },
+    (h) => h.replace("  <!-- sri:begin", h.match(CSP)[0] + "  <!-- sri:begin"),
+  ];
+  for (const edit of edits) {
+    const r = check(edit);
+    assert.equal(r.code, 1, edit.toString());
+    assert.match(r.out, /meta CSP line/, edit.toString());
+  }
+});
+
+test("an iframe, object, embed or frame in the body fails", () => {
+  const tags = [
+    ['<iframe srcdoc="&lt;script type=module src=../portal.sha256&gt;&lt;/script&gt;"></iframe>', /<iframe after the head/],
+    ['<object data="../portal.sha256"></object>', /<object after the head/],
+    ['<EMBED src="../portal.sha256">', /<EMBED after the head/],
+    ['<frameset><frame src="../portal.sha256"></frameset>', /<frame/],
+  ];
+  for (const [tag, want] of tags) {
+    const r = check((h) => h.replace("</body>", tag + "\n</body>"));
+    assert.equal(r.code, 1, tag);
+    assert.match(r.out, want, tag);
+  }
+});
+
+// scan runs the module scanner on one module (lib/m.js, next to lib/a.js).
+function scan(src) {
+  const root = mkdtempSync(join(tmpdir(), "web-sri-mod-"));
+  try {
+    mkdirSync(join(root, "lib"));
+    writeFileSync(join(root, "lib", "a.js"), "export const a = 1;\n");
+    writeFileSync(join(root, "lib", "m.js"), src);
+    imports(root, new Set(["lib/a.js", "lib/m.js"]), join(root, "lib", "m.js"));
+    return "";
+  } catch (e) {
+    return e.message;
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test("the module scanner reads ordinary modules", () => {
+  for (const src of [
+    'import { a } from "./a.js";\nexport const b = a;\n',
+    'import {\n  a,\n} from "./a.js";\n',
+    'export { a } from "./a.js";\n',
+    "// Tests load this module without a document.\nimport { a } from \"./a.js\";\n",
+    '  // WebAuthn reports "x" and "y" the same way.\nconst k = await subtle.importKey("raw", s, "HKDF", false, []);\nif (typeof v === "object") {}\n',
+  ]) assert.equal(scan(src), "", src);
+});
+
+test("the module scanner refuses what it cannot account for", () => {
+  const cases = [
+    ['const x = 1; import { a } from "./a.js";\n', /cannot account for/],
+    ['const x = 1; export { a } from "./a.js";\n', /cannot account for/],
+    ['/* x */ import { a } from "./a.js";\n', /block comment/],
+    ['import(x)\nfrom\n"./a.js";\n', /dynamic import/],
+    ['await import("./a.js");\n', /dynamic import/],
+    ['await import/**/("./a.js");\n', /block comment/],
+    ['await import /* a */ /* b */ ("./a.js");\n', /block comment/],
+    ['/*\n// */ import { a } from "./a.js";\n', /block comment/],
+    ['import // from "./a.js"\n("./a.js");\n', /dynamic import/],
+    ['import /* from "./a.js" */ "./a.js";\n', /block comment/],
+    ['const s = `\n// ${await import\u00a0("./a.js")}\n`;\n', /dynamic import/],
+    ['\u00a0import { a } from "./a.js";\n', /cannot account for/],
+    ['const s = document.createElement("script");\n', /SRI does not cover/],
+    ['const h = `\n// `; import { a } from "./a.js";\n', /cannot account for/],
+    ['const h = "\\\n// "; import "./a.js";\n', /cannot account for/],
+    ["// Tests import this module.\nconst a = 1;\n", /cannot account for/],
+    ['document.createElementNS("http://www.w3.org/2000/svg", "script");\n', /SRI does not cover/],
+    ['const tag = "script";\ndocument.createElement(tag);\n', /SRI does not cover/],
+    ["document.createElementNS(ns, tag);\n", /SRI does not cover/],
+    ['d.innerHTML = "<script src=x></script>";\n', /SRI does not cover/],
+    ["const u = import.meta.url;\n", /cannot account for/],
+    ['const s = "x"; const t = "import";\n', /cannot account for/],
+    ['// note await import("./a.js");\n', /line terminator/],
+    ['// note\rawait import("./a.js");\n', /line terminator/],
+    ['const s = `\n// ${await import("./a.js")}\n`;\n', /dynamic import/],
+    ['const s = `\n// ${new Worker("./a.js")}\n`;\n', /SRI does not cover/],
+    ['new Worker("./a.js", { type: "module" });\n', /SRI does not cover/],
+    ['new SharedWorker("./a.js");\n', /SRI does not cover/],
+    ['new self["Worker"]("./a.js");\n', /SRI does not cover/],
+    ['navigator.serviceWorker.register("./a.js");\n', /SRI does not cover/],
+    ['importScripts("./a.js");\n', /SRI does not cover/],
+    ['CSS.paintWorklet.addModule("./a.js");\n', /SRI does not cover/],
+    ['document.body.append(el("iframe"));\n', /SRI does not cover/],
+    ["f.srcdoc = s;\n", /SRI does not cover/],
+    ['document.createElement("object");\n', /SRI does not cover/],
+    ["document.createElement('embed');\n", /SRI does not cover/],
+    ['d.innerHTML = "<embed src=x>";\n', /SRI does not cover/],
+    ["d.innerHTML = `<object data=x>`;\n", /SRI does not cover/],
+    ['d.innerHTML = "< frame src=x>";\n', /SRI does not cover/],
+  ];
+  for (const [src, want] of cases) assert.match(scan(src), want, src);
+});
+
+test("the portal manifest lists exactly the files web/embed.go embeds", () => {
+  const root = mkdtempSync(join(tmpdir(), "web-manifest-"));
+  const manifest = (mode) => spawnSync(process.execPath, [join(dirname(fileURLToPath(import.meta.url)), "web-manifest.mjs"), mode, root], { encoding: "utf8" });
+  try {
+    cpSync(web, root, { recursive: true });
+    assert.equal(manifest("--check").status, 0);
+    writeFileSync(join(root, "extra.txt"), "x\n");
+    const embed = readFileSync(join(root, "embed.go"), "utf8");
+    writeFileSync(join(root, "embed.go"), embed.replace("fonts/OFL.txt", "fonts/OFL.txt extra.txt"));
+    assert.equal(manifest("--check").status, 1);
+    assert.equal(manifest("--write").status, 0);
+    assert.match(readFileSync(join(root, "portal.sha256"), "utf8"), /  extra\.txt\n/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

@@ -544,5 +544,5 @@ async function main() {
   $("sign").addEventListener("click", () => sign(rp, state));
 }
 
-// Pages run it; the tests import lineGroups without a page.
+// Pages run it; the tests load lineGroups without a page.
 if (typeof document !== "undefined") main();

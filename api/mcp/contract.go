@@ -280,6 +280,8 @@ type ProblemSteps struct {
 	Severity      string     `json:"severity"`
 	PersonMessage bool       `json:"personMessage"`
 	Steps         []StepKind `json:"steps"`
+	// Planned as for ErrorSteps.
+	Planned bool `json:"planned,omitempty"`
 }
 
 // Kinds of entry an agent-operated variant replaces.
@@ -344,7 +346,13 @@ func LoadNextSteps() (NextSteps, error) {
 			results = append(results, r)
 		}
 	}
-	c.Errors, c.Results = errs, results
+	problems := make([]ProblemSteps, 0, len(c.Problems))
+	for _, p := range c.Problems {
+		if !p.Planned {
+			problems = append(problems, p)
+		}
+	}
+	c.Errors, c.Results, c.Problems = errs, results, problems
 	return c, nil
 }
 

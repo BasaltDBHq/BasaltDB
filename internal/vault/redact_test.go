@@ -16,8 +16,8 @@ import (
 )
 
 // TestLinkTokensRedactInLogs: a token logged as itself, or in a vault.Link
-// or links.RelayLink, never prints, in text or JSON logs; String stays the
-// wire form.
+// or links.RelayLink, never prints, in text or JSON logs; Wire is the wire
+// form.
 func TestLinkTokensRedactInLogs(t *testing.T) {
 	t.Parallel()
 	var tok channel.LinkToken
@@ -34,11 +34,11 @@ func TestLinkTokensRedactInLogs(t *testing.T) {
 		log.Info("token", "linkToken", tok)
 		log.Info("link", "link", vault.Link{Token: tok, Item: item, ExpiresAt: at})
 		log.Info("relay", "link", links.RelayLink{Token: tok, Item: item, ExpiresAt: at})
-		require.NotContains(t, out.String(), tok.String(), name)
+		require.NotContains(t, out.String(), tok.Wire(), name)
 		require.Contains(t, out.String(), "[redacted]", name)
 		require.Contains(t, out.String(), item.String(), "%s: a link is named by its item", name)
 	}
-	parsed, err := channel.ParseLinkToken(tok.String())
+	parsed, err := channel.ParseLinkToken(tok.Wire())
 	require.NoError(t, err)
-	require.Equal(t, tok, parsed, "String stays the wire form")
+	require.Equal(t, tok, parsed, "Wire is the wire form")
 }

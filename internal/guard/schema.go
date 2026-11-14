@@ -60,6 +60,8 @@ const (
 	versionEngines                        // VC-21: engine keys, the pinned address and revocation
 	versionPinnedTrigger                  // guard_row stores row images in fixed TimeZone, styles, float digits and lc_monetary
 	versionPinnedReverts                  // bytea_output pinned too; the revert's row reads and restores pinned like guard_row
+	versionReinstalls                     // reinstalls on the record: installs, record_pin_set_aside, pin_on_chain, agent_reinstalls
+	versionHeldLines                      // a held write keeps preview lines over 64 KiB, up to 64 MiB in all
 )
 
 // migrations lists every version in order. M2 appends versions.
@@ -99,6 +101,8 @@ var migrations = []migration{
 	{version: versionEngines, sql: v33Tables + v33Functions + v33Views, nonBreaking: true},
 	{version: versionPinnedTrigger, sql: v34PinnedTrigger, nonBreaking: true},
 	{version: versionPinnedReverts, sql: v35PinnedReverts, nonBreaking: true},
+	{version: versionReinstalls, sql: v36Tables + v36Functions + v36Views, nonBreaking: true},
+	{version: versionHeldLines, sql: v37HeldLines, nonBreaking: true},
 }
 
 // LatestVersion is the basalt_meta version this build installs.

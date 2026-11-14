@@ -149,6 +149,7 @@ func TestInitSetupCodeRefusesBeforeTheDatabase(t *testing.T) {
 	const admin = "postgres://admin:adminsecret@127.0.0.1:1/app"
 	old := install.payload
 	old.Guard.From, old.Guard.To = 0, setupcode.MinGuardVersion-1
+	old.Engine = nil // a code that old carries no engine key
 	oldCode, err := setupcode.Encode(old)
 	require.NoError(t, err)
 

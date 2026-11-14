@@ -6,11 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/pages"
+	"github.com/basaltdbhq/basaltdb/internal/engine/portalcheck"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/portalverify"
-	"github.com/basaltdbhq/basaltdb/internal/websec"
-	"github.com/basaltdbhq/basaltdb/web"
 )
 
 // runPortal is basalt portal (verify).
@@ -38,10 +36,7 @@ func portalVerify(c *cliIO, args []string) int {
 	if err != nil {
 		return c.fail(fmt.Errorf("%w: --portal-url: %w", errUsage, err))
 	}
-	opts := portalverify.Options{Base: base, Files: web.Files, Headers: websec.Expected()}
-	for _, r := range pages.PortalPages() {
-		opts.Routes = append(opts.Routes, portalverify.Route{Path: r.Path, ID: r.ID, File: r.File})
-	}
+	opts := portalcheck.Options(base)
 	if *manifestPath != "" {
 		b, rerr := os.ReadFile(filepath.Clean(*manifestPath))
 		if rerr != nil {

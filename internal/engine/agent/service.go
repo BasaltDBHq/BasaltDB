@@ -127,6 +127,10 @@ type Deps struct {
 	// Vault reports the engine's Vault connection for status; status leaves
 	// vault out when nil.
 	Vault VaultReporter
+	// Portal reports the engine's last daily portal check for status
+	// (problem PORTAL_MISMATCH); status says nothing about the portal when
+	// nil.
+	Portal PortalReporter
 	// EngineRecord reads this engine's row in the agent's database for the
 	// status tool's engineRecord; nil makes its state UNKNOWN. DirectServed
 	// is whether the engine has a direct listener (directAddr is not off).

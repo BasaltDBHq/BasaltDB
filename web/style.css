@@ -208,6 +208,8 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
 .values td.hidden-value { color: var(--ui-text-2); letter-spacing: 0.1em; }
 .values td.secret { color: var(--diff-hold-fg); }
 .values td.key { color: var(--ui-text-2); }
+/* A value over 1 MiB of text: its size and sha256 on two lines, muted. */
+.values td.large { color: var(--ui-text-2); white-space: pre-line; overflow-wrap: anywhere; }
 .values .why { font-family: var(--font-ui); font-size: 13px; color: var(--diff-hold-fg); min-width: 16ch; }
 .values tr.unchecked .mk { box-shadow: inset 3px 0 0 var(--diff-hold-fg); }
 /* "Changed by" on a revert of several agents: one cell per row, spanning

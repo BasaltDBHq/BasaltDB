@@ -41,13 +41,13 @@ func TestLinkTokensAreNotLogged(t *testing.T) {
 	t.Parallel()
 	limited, conflicting := newToken(t), newToken(t)
 	v := vaulttest.New(vaulttest.Options{OnRegister: func(_ string, m vaulttest.RegisterLink) vaulttest.Verdict {
-		if m.LinkToken == limited.String() {
+		if m.LinkToken == limited.Wire() {
 			return vaulttest.Verdict{Code: vaulttest.ErrLinkLimit}
 		}
 		return vaulttest.Verdict{}
 	}})
 	t.Cleanup(v.Close)
-	v.Bind(conflicting.String(), otherEngine, time.Now().Add(time.Hour))
+	v.Bind(conflicting.Wire(), otherEngine, time.Now().Add(time.Hour))
 	limitedItem, conflictItem := uuid.New(), uuid.New()
 	live := &liveLinks{links: []vault.Link{
 		{Token: limited, Item: limitedItem, ExpiresAt: time.Now().Add(time.Hour)},
@@ -72,7 +72,7 @@ func TestLinkTokensAreNotLogged(t *testing.T) {
 
 	out := logs.String()
 	require.Contains(t, out, limitedItem.String(), "the refused link is named by its item")
-	for _, tok := range []string{limited.String(), conflicting.String()} {
+	for _, tok := range []string{limited.Wire(), conflicting.Wire()} {
 		require.NotContains(t, out, tok)
 	}
 	require.NotContains(t, out, "linkToken")

@@ -89,7 +89,9 @@ func newDirectEnv(t *testing.T, record func() (*guard.RecordedEngine, error), tu
 
 func (e *directEnv) notice(t *testing.T) heldNotice {
 	t.Helper()
-	n, err := e.svc.approvalNotice(context.Background(), uuid.MustParse(caseApproval), noticeBinding, bigLines(3), time.Now().Add(time.Hour), issueLink)
+	lines := bigLines(3)
+	req := sizedRequest{Binding: noticeBinding, Lines: lines, Cost: textsCost(lines)}
+	n, err := e.svc.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), req, time.Now().Add(time.Hour), issueLink)
 	require.NoError(t, err)
 	requirePersonMessage(t, n.PersonMessage, n.Links)
 	return n

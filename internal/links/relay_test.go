@@ -55,7 +55,7 @@ func TestIssueRelayKeepsTheDerivedTokenAndPSK(t *testing.T) {
 
 	raw, err := os.ReadFile(path)
 	require.NoError(t, err)
-	require.Contains(t, string(raw), token.String(), "the token is kept next to the hash")
+	require.Contains(t, string(raw), token.Wire(), "the token is kept next to the hash")
 	require.Contains(t, string(raw), base64.RawURLEncoding.EncodeToString(keys.PSK[:]), "and so is the psk")
 	require.NotContains(t, string(raw), secret, "never the secret")
 

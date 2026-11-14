@@ -120,3 +120,20 @@ test("columns follow the table's order when the engine sends it, unlisted ones l
   assert.deepEqual(rows(lineGroups([row], new Map(), false, order)[0])[0], ["", "id", "name", "status", "score", "extra"]);
   assert.deepEqual(rows(lineGroups([row])[0])[0], ["", "id", "name", "score", "status", "extra"], "a long link keeps the rows' order");
 });
+
+test("a value over 1 MiB of text shows by size and sha256, the hash filled in once computed", async () => {
+  globalThis.document = { createElement: fakeElement };
+  const big = "a".repeat((1 << 20) + 1);
+  const row = { ...lead, old: { id: 4, body: big }, texts: null };
+  const [g] = lineGroups([row]);
+  const cell = table(g).children[1].children[2];
+  assert.equal(cell.className, "large");
+  assert.match(cell.textContent, /^too large to show: 1\.0 MiB, sha256 (…|[0-9a-f]{64})\nYour signature covers the full value\.$/);
+  const { largeHash } = await import("./large.js");
+  const hash = await largeHash(big);
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(cell.textContent, `too large to show: 1.0 MiB, sha256 ${hash}\nYour signature covers the full value.`);
+  // Exactly 1 MiB is drawn.
+  const [h] = lineGroups([{ ...lead, old: { id: 4, body: "a".repeat(1 << 20) } }]);
+  assert.equal(table(h).children[1].children[2].textContent.length, 1 << 20);
+});

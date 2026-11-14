@@ -14,13 +14,16 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/basaltdbhq/basaltdb/internal/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/person"
+	"github.com/basaltdbhq/basaltdb/internal/engine/portalcheck"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/server"
 )
@@ -199,9 +202,13 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 	}
 	key, directServed := runningEngineKey(eng, vaultReport, vaultID, cfg.Config)
 	r, err := agent.LocalStatus{
-		Name: a.Name, Commands: cmds, OperatedBy: cfg.OperatedBy, DevLocalPages: cfg.DevLocalPages, Setup: a.Setup,
+		Portal: savedPortalCheck(cfg.StateDirFor(c.goos), base),
+		Name:   a.Name, Commands: cmds, OperatedBy: cfg.OperatedBy, DevLocalPages: cfg.DevLocalPages, Setup: a.Setup,
 		PagesBase: base, PagesOrigin: servedPages(c, cfg.Config, eng.Reachable), EngineRunning: eng.Reachable, EngineUnknown: eng.Unknown,
-		Probe:     agent.DBProbe{Q: pool, Migrations: guard.Migrations()},
+		Probe: agent.DBProbe{
+			Q: pool, Migrations: guard.Migrations(),
+			Kept: engine.KeptSetAside(chainpin.File{Dir: cfg.StateDirFor(c.goos)}, a.Name, slog.New(slog.DiscardHandler)),
+		},
 		Passkeys:  func(ctx context.Context) ([]passkey.Credential, error) { return ledger.Passkeys(ctx, pool) },
 		EngineKey: key, DirectServed: directServed,
 		EngineRecord: func(ctx context.Context, id string) (*guard.RecordedEngine, error) {
@@ -462,4 +469,24 @@ func passkeyWords(p agent.PasskeysStatus) string {
 		return "1 active"
 	}
 	return fmt.Sprintf("%d active", *p.Active)
+}
+
+// savedPortalCheck is the last daily portal check the running engine saved
+// in its state directory, for an engine that runs as the person. Nil when
+// the config names no portal (no check runs).
+func savedPortalCheck(stateDir, base string) agent.PortalReporter {
+	if base != links.Portal {
+		return nil
+	}
+	return savedPortal{stateDir: stateDir, base: base}
+}
+
+type savedPortal struct{ stateDir, base string }
+
+func (p savedPortal) PortalFinding() (agent.PortalFinding, bool) {
+	r, ok := portalcheck.Load(p.stateDir, p.base)
+	if !ok {
+		return agent.PortalFinding{}, false
+	}
+	return agent.PortalFinding{CheckedAt: r.CheckedAt, Mismatch: r.Mismatch(), Summary: r.Summary()}, true
 }

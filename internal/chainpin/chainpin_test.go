@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -20,7 +21,7 @@ func TestFileRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, ok, "no pin yet")
 
-	head := guard.ChainHead{Seq: 42, Hash: []byte{1, 2, 3}}
+	head := chainpin.Pin{Head: guard.ChainHead{Seq: 42, Hash: []byte{1, 2, 3}}, Install: 16384}
 	require.NoError(t, f.Save("bot", head))
 	got, ok, err := f.Load("bot")
 	require.NoError(t, err)
@@ -34,7 +35,7 @@ func TestFileRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o700), dirInfo.Mode().Perm())
 
-	next := guard.ChainHead{Seq: 43, Hash: []byte{4}}
+	next := chainpin.Pin{Head: guard.ChainHead{Seq: 43, Hash: []byte{4}}}
 	require.NoError(t, f.Save("bot", next))
 	got, _, err = f.Load("bot")
 	require.NoError(t, err)
@@ -49,7 +50,7 @@ func TestFileRefusesBadNamesAndContent(t *testing.T) {
 	dir := t.TempDir()
 	f := chainpin.File{Dir: dir}
 	for _, name := range []string{"", "../x", "a/b", "Bot", "a.b"} {
-		require.ErrorIs(t, f.Save(name, guard.Genesis()), chainpin.ErrInvalidName, name)
+		require.ErrorIs(t, f.Save(name, chainpin.Pin{Head: guard.Genesis()}), chainpin.ErrInvalidName, name)
 	}
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "bad.head.json"), []byte(`{"seq":1,"hash":"zz"}`), 0o600))
 	_, _, err := f.Load("bad")
@@ -62,9 +63,41 @@ func TestMemory(t *testing.T) {
 	_, ok, err := m.Load("bot")
 	require.NoError(t, err)
 	require.False(t, ok)
-	require.NoError(t, m.Save("bot", guard.Genesis()))
+	require.NoError(t, m.Save("bot", chainpin.Pin{Head: guard.Genesis(), Install: 7}))
 	got, ok, err := m.Load("bot")
 	require.NoError(t, err)
 	require.True(t, ok)
-	require.Equal(t, guard.Genesis(), got)
+	require.Equal(t, chainpin.Pin{Head: guard.Genesis(), Install: 7}, got)
+}
+
+// A pin belongs to the install it was saved on; one saved before installs
+// were told apart (0) is taken as the current one.
+func TestPinOfInstall(t *testing.T) {
+	t.Parallel()
+	require.True(t, chainpin.Pin{Install: 5}.Of(5))
+	require.False(t, chainpin.Pin{Install: 5}.Of(6))
+	require.True(t, chainpin.Pin{}.Of(6))
+}
+
+// A pin keeps each set-aside once, and the file round-trips them.
+func TestPinKeepsItsSetAside(t *testing.T) {
+	t.Parallel()
+	at := time.Date(2026, 11, 14, 9, 30, 0, 0, time.UTC)
+	s := guard.SetAside{PinnedSeq: 42, PinnedHash: []byte{1, 2}, PinnedInstall: 16384, Install: 16999, At: at}
+	p := chainpin.Pin{Head: guard.Genesis(), Install: 16999}.Kept(s).Kept(s)
+	require.Len(t, p.SetAside, 1)
+	other := s
+	other.PinnedSeq = 43
+	p = p.Kept(other)
+	require.Len(t, p.SetAside, 2)
+
+	f := chainpin.File{Dir: t.TempDir()}
+	require.NoError(t, f.Save("bot", p))
+	got, ok, err := f.Load("bot")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, p, got)
+	raw, err := os.ReadFile(filepath.Join(f.Dir, "bot.head.json"))
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"setAside":[{"pinnedSeq":42,"pinnedHash":"0102","pinnedInstall":16384,"install":16999,"at":"2026-11-14T09:30:00Z"}`)
 }

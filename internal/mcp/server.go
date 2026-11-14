@@ -13,6 +13,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"github.com/basaltdbhq/basaltdb/internal/resultsize"
 )
 
 const defaultProtocolVersion = "2025-03-26"
@@ -193,7 +195,9 @@ func (s *Server) callTool(ctx context.Context, params json.RawMessage) (any, *RP
 	if len(req.Arguments) == 0 {
 		req.Arguments = json.RawMessage(`{}`)
 	}
-	out, err := tool.Call(ctx, req.Arguments)
+	// One result budget for every read the call makes (CONTRACT.md,
+	// QUERY_TIMEOUT SIZE_LIMIT).
+	out, err := tool.Call(resultsize.With(ctx), req.Arguments)
 	if err == nil {
 		return toolResult(out, false), nil
 	}

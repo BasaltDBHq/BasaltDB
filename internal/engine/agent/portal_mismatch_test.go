@@ -1,0 +1,65 @@
+package agent
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/guard"
+)
+
+type fakePortal struct {
+	f  PortalFinding
+	ok bool
+}
+
+func (p fakePortal) PortalFinding() (PortalFinding, bool) { return p.f, p.ok }
+
+func portalStatus(t *testing.T, operatedBy string, p PortalReporter) StatusReport {
+	t.Helper()
+	d := deps()
+	d.OperatedBy = operatedBy
+	d.Portal = p
+	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+	d.Approvals = keys{n: 1}
+	d.Now = func() time.Time { return statusNow }
+	cmds, err := NewCommands("bot", "", "linux", nil)
+	require.NoError(t, err)
+	d.Commands = cmds
+	r, err := NewService(d).Status(context.Background())
+	require.NoError(t, err)
+	return r
+}
+
+func portalCodes(r StatusReport) []string {
+	out := make([]string, 0, len(r.Problems))
+	for _, p := range r.Problems {
+		out = append(out, p.Code)
+	}
+	return out
+}
+
+func TestAMismatchingPortalIsAWarningWithTheVerifyCommand(t *testing.T) {
+	t.Parallel()
+	r := portalStatus(t, "", fakePortal{ok: true, f: PortalFinding{CheckedAt: statusNow, Mismatch: true, Summary: "2 DIFFERS, 1 MISSING"}})
+	require.Equal(t, []string{problemPortalMismatch}, portalCodes(r))
+	p := r.Problems[0]
+	require.Equal(t, "WARNING", p.Severity)
+	require.True(t, r.Ready, "a warning does not stop the tools")
+	require.Contains(t, p.Message, "2 DIFFERS, 1 MISSING")
+	require.Len(t, p.NextSteps, 1)
+	require.Equal(t, "basalt portal verify", p.NextSteps[0].Command)
+}
+
+func TestNoPortalProblemWithoutAMismatch(t *testing.T) {
+	t.Parallel()
+	for name, p := range map[string]PortalReporter{
+		"no reporter":   nil,
+		"no check yet":  fakePortal{},
+		"a clean check": fakePortal{ok: true, f: PortalFinding{CheckedAt: statusNow}},
+	} {
+		require.Empty(t, portalCodes(portalStatus(t, "", p)), name)
+	}
+}

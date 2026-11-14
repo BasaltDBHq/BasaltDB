@@ -46,6 +46,11 @@ func Encode(format string, v any) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("encode request: %w", err)
 	}
+	return deflate(format, raw)
+}
+
+// deflate returns format, then the base64url of the deflate-raw of raw.
+func deflate(format string, raw []byte) (string, error) {
 	var buf bytes.Buffer
 	w, err := flate.NewWriter(&buf, flate.BestCompression)
 	if err != nil {
@@ -139,14 +144,44 @@ func inflate(compressed []byte) ([]byte, error) {
 // text and its lines: the compact form of the binding followed by the
 // lines, and the database's credential ids when there are any (at most
 // MaxCredentialIDs).
+//
+// It returns ErrRequestTooLarge when a page would refuse the fragment: its
+// texts rebuild past MaxLinesBytes, its JSON past MaxInflatedBytes, or its
+// payload past MaxFragmentLen (CONTRACT.md, Format 2, Limits).
 func EncodeRequest(binding string, lines []string, ids []passkey.Bytes) (string, error) {
 	if len(ids) > MaxCredentialIDs {
 		return "", fmt.Errorf("encode request: %d credential ids, at most %d", len(ids), MaxCredentialIDs)
 	}
+	total := len(binding)
+	for _, l := range lines {
+		total += len(l)
+	}
+	if total > MaxLinesBytes {
+		return "", fmt.Errorf("%w: its texts are %d bytes, at most %d", ErrRequestTooLarge, total, MaxLinesBytes)
+	}
 	c := Compact(append([]string{binding}, lines...))
 	c.CredentialIDs = ids
-	return Encode(Format2, c)
+	raw, err := marshal(c)
+	if err != nil {
+		return "", fmt.Errorf("encode request: %w", err)
+	}
+	if len(raw) > MaxInflatedBytes {
+		return "", fmt.Errorf("%w: its JSON is %d bytes, at most %d", ErrRequestTooLarge, len(raw), MaxInflatedBytes)
+	}
+	frag, err := deflate(Format2, raw)
+	if err != nil {
+		return "", err
+	}
+	if n := len(frag) - len(Format2); n > MaxFragmentLen {
+		return "", fmt.Errorf("%w: its payload is %d characters, at most %d", ErrRequestTooLarge, n, MaxFragmentLen)
+	}
+	return frag, nil
 }
+
+// ErrRequestTooLarge is a request too large for any link: a page would
+// refuse to decode it. Only a short link to pages that fetch the request
+// from the engine can carry it (CONTRACT.md, Large values).
+var ErrRequestTooLarge = errors.New("the request is too large for a link")
 
 // DecodeRequest decodes a request fragment of either format, with or
 // without '#'. Format 1 decodes into R as it is. Format 2 rebuilds the

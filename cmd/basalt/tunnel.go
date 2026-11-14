@@ -141,7 +141,7 @@ func tunnelTarget(c *cliIO, given, cfgPath string) (string, error) {
 // is the id of the key (wantID, "" when this machine's key file was not
 // read), and prints what the person does next. It returns the exit code.
 func (c *cliIO) checkTunnel(public, wantID string) int {
-	ans, err := c.probe(c.ctx, public+"/v1/engine")
+	ans, err := c.tunnelProbe(c.ctx, public+"/v1/engine")
 	if err != nil {
 		return c.fail(fmt.Errorf("%s does not answer: %w (is the tunnel running, and does its name point at it?)", public, err))
 	}

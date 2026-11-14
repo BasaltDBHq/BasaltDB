@@ -224,7 +224,7 @@ func TestSessionRefusesDeadTokensAlike(t *testing.T) {
 	e.links.m[expired.keys.Token] = l
 	e.links.mu.Unlock()
 	// The Vault routes the unknown token to this engine as if it held it.
-	e.v.Bind(unknown.keys.Token.String(), e.keys.EngineID(), time.Now().Add(time.Hour))
+	e.v.Bind(unknown.keys.Token.Wire(), e.keys.EngineID(), time.Now().Add(time.Hour))
 
 	wrongPSK := live.keys
 	_, err := rand.Read(wrongPSK.PSK[:])

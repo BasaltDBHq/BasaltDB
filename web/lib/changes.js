@@ -3,6 +3,7 @@
 // column. An update is two lines: the row before (−) and after (+), with the
 // cells that change highlighted. Text only goes in through textContent.
 import { displayValue, visibleText } from "./codec.js";
+import { largeHash, largeInfo, tooLargeText } from "./large.js";
 import { el } from "./page.js";
 import { notChecked, OPEN_FROM_ENGINE, revealedLine } from "./reveal.js";
 
@@ -17,8 +18,21 @@ const MINUS = "−";
 // display shows a column's value as the line carries it (displayValue), with
 // the characters that hide or reorder text shown as escapes (visibleText).
 export function display(line, member, col) {
+  const text = rawText(line, member, col);
+  const info = largeInfo(text);
+  return info === null ? visibleText(text) : largeShown(text, info);
+}
+
+export function rawText(line, member, col) {
   const row = line[member] ?? {};
-  return visibleText(displayValue(row[col], line.texts?.[member]?.get(col)));
+  return displayValue(row[col], line.texts?.[member]?.get(col));
+}
+
+// largeShown is what stands in for a value over 1 MiB of text: its size and
+// sha256 (an ellipsis until the hash is computed) and the line saying the
+// signature covers it (large.js).
+function largeShown(text, info) {
+  return tooLargeText(info.bytes, largeHash.cached(text) ?? "\u2026");
 }
 
 // rowKeyText names a row by its primary key, for a row with no values to
@@ -132,7 +146,16 @@ function cell(v, member, col, cls) {
   const has = (m) => v.line[m] !== null && v.line[m] !== undefined && Object.hasOwn(v.line[m], col);
   const from = has(member) ? member : has("key") ? "key" : null;
   if (from === null) return el("td", cls);
-  return el("td", v.secret.has(col) ? `${cls} secret`.trim() : cls, display(v.line, from, col));
+  const text = rawText(v.line, from, col);
+  const info = largeInfo(text);
+  if (info === null) return el("td", v.secret.has(col) ? `${cls} secret`.trim() : cls, visibleText(text));
+  // A value over 1 MiB of text shows by size and hash; the hash fills in
+  // when the digest is done.
+  const td = el("td", `${cls} large`.trim(), largeShown(text, info));
+  largeHash(text).then((h) => {
+    td.textContent = tooLargeText(info.bytes, h);
+  });
+  return td;
 }
 
 function tr(cls, marker) {

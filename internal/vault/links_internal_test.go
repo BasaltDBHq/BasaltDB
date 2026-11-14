@@ -109,7 +109,7 @@ func TestRegisterSendsExpiryInWholeSecondsRoundedDown(t *testing.T) {
 	require.Eventually(t, c.Connected, 5*time.Second, 5*time.Millisecond)
 	expires := time.Now().Add(time.Hour).Truncate(time.Second).Add(700 * time.Millisecond)
 	require.NoError(t, c.Register(context.Background(), tok, expires))
-	owner, ok := v.LinkOwner(tok.String())
+	owner, ok := v.LinkOwner(tok.Wire())
 	require.True(t, ok)
 	require.Equal(t, keys.EngineID(), owner)
 }

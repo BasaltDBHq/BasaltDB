@@ -17,6 +17,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
@@ -42,6 +43,8 @@ const (
 	problemSetupExpired        = "SETUP_EXPIRED"
 	problemSetupChangePending  = "SETUP_CHANGE_PENDING"
 	problemLockFileUnusable    = "LOCK_FILE_UNUSABLE"
+	problemLedgerReinstalled   = "LEDGER_REINSTALLED"
+	problemPortalMismatch      = "PORTAL_MISMATCH"
 	problemEngineRevoked       = "ENGINE_REVOKED"
 	problemDirectNotServed     = "DIRECT_NOT_SERVED"
 )
@@ -92,6 +95,9 @@ type Probe interface {
 	LatestSetup(ctx context.Context) (guard.AgentSetup, bool, error)
 	// LedgerBytes is the size of basalt_meta (status.ledger).
 	LedgerBytes(ctx context.Context) (int64, error)
+	// Reinstalls are the reinstalls the ledger and the engine's kept copy
+	// record (problem LEDGER_REINSTALLED).
+	Reinstalls(ctx context.Context) (guard.Reinstalls, error)
 }
 
 type noProbe struct{}
@@ -113,11 +119,16 @@ var errNoProbe = errors.New("no probe reads the ledger size")
 
 func (noProbe) LedgerBytes(context.Context) (int64, error) { return 0, errNoProbe }
 
+func (noProbe) Reinstalls(context.Context) (guard.Reinstalls, error) { return guard.Reinstalls{}, nil }
+
 // DBProbe is the Probe on an agent connection or pool, against the build's
 // migrations (guard.Migrations outside tests).
 type DBProbe struct {
 	Q          guard.Querier
 	Migrations []guard.Migration
+	// Kept is the engine's kept copy of the pins it set aside (its pin
+	// file's setAside); nil when there is none to read.
+	Kept func() []guard.SetAside
 }
 
 // GuardStatus reads schema_version.
@@ -140,6 +151,15 @@ func (p DBProbe) LedgerBytes(ctx context.Context) (int64, error) {
 	return guard.LedgerBytes(ctx, p.Q)
 }
 
+// Reinstalls reads agent_reinstalls with the kept copy merged in.
+func (p DBProbe) Reinstalls(ctx context.Context) (guard.Reinstalls, error) {
+	var kept []guard.SetAside
+	if p.Kept != nil {
+		kept = p.Kept()
+	}
+	return guard.ReadReinstalls(ctx, p.Q, kept)
+}
+
 // VaultReporter says how the engine's connection to the hosted Vault stands
 // (status.vault, CONTRACT.md, Vault channel, Configuration and status).
 // Optional: without one, status leaves vault out.
@@ -154,6 +174,22 @@ type VaultStatus struct {
 	State       string `json:"state"`
 	EngineID    string `json:"engineId,omitempty"`
 	Fingerprint string `json:"fingerprint,omitempty"`
+}
+
+// PortalFinding is what the engine's daily portal check last found
+// (CONTRACT.md, CLI, basalt portal verify). Mismatch is true when the portal
+// serves other pages than this build embeds; Summary counts them by status,
+// for example "2 DIFFERS, 1 MISSING".
+type PortalFinding struct {
+	CheckedAt time.Time
+	Mismatch  bool
+	Summary   string
+}
+
+// PortalReporter gives the last daily portal check. Optional: without one,
+// or before the first check, status says nothing about the portal.
+type PortalReporter interface {
+	PortalFinding() (PortalFinding, bool)
 }
 
 // EngineRecordStatus is status.engineRecord: this engine's key as the
@@ -255,6 +291,7 @@ type statusDeps struct {
 	engineUnknown             bool
 	devLocalPages             bool
 	vault                     VaultReporter
+	portal                    PortalReporter
 	// engineKey is the engine id basalt status read from the running
 	// engine's key file ("" when it is refused), nil when it reports no
 	// engine record (LocalStatus.EngineKey); the engine uses vault.
@@ -281,7 +318,7 @@ type statusDeps struct {
 func (s *Service) statusDeps() statusDeps {
 	return statusDeps{
 		name: s.Name, operatedBy: s.OperatedBy, build: s.Build, pagesBase: s.PagesBase, pagesOrigin: s.PagesOrigin,
-		sameUser: s.SameUser, devLocalPages: s.DevLocalPages, engineReachable: true, vault: s.Vault,
+		sameUser: s.SameUser, devLocalPages: s.DevLocalPages, engineReachable: true, vault: s.Vault, portal: s.Portal,
 		engineRecord: s.EngineRecord, directServed: s.DirectServed, cmds: s.Commands, setup: s.pendingSetup(), probe: s.Probe,
 		finisher: s.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, lockTrouble: &s.lockTrouble, passkeys: s.Approvals.Passkeys, log: s.Log, now: s.Now,
 	}
@@ -306,6 +343,9 @@ type LocalStatus struct {
 	EngineUnknown bool
 	// DevLocalPages is the config's devLocalPages (problem DEV_LOCAL_PAGES).
 	DevLocalPages bool
+	// Portal is the last daily portal check the engine saved (problem
+	// PORTAL_MISMATCH); nil when the config names no portal.
+	Portal PortalReporter
 	// EngineKey, for an engine that runs and whose key file this user
 	// reads, is its engine id ("" when the key file is refused): the report
 	// then has engineRecord, read with EngineRecord, and its problems, with
@@ -332,7 +372,7 @@ func (l LocalStatus) Report(ctx context.Context) (StatusReport, error) {
 	}
 	return statusDeps{
 		name: l.Name, operatedBy: l.OperatedBy, build: buildinfo.Version, pagesBase: base, pagesOrigin: l.PagesOrigin,
-		sameUser: true, devLocalPages: l.DevLocalPages, engineReachable: l.EngineRunning, engineUnknown: l.EngineUnknown, cmds: l.Commands, setup: l.Setup, probe: l.Probe,
+		sameUser: true, devLocalPages: l.DevLocalPages, portal: l.Portal, engineReachable: l.EngineRunning, engineUnknown: l.EngineUnknown, cmds: l.Commands, setup: l.Setup, probe: l.Probe,
 		engineKey: l.EngineKey, engineRecord: l.EngineRecord, directServed: l.DirectServed,
 		// basalt status reads; the running engine finishes the setup.
 		finisher: noFinisher{}, finished: func(string) {}, notRecorded: &setupCache{}, lockTrouble: &lockTrouble{}, passkeys: l.Passkeys, log: l.Log, now: l.Now,
@@ -359,6 +399,7 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 		ps.add(problemEngineUnreachable, "the engine is not running, so the agent's tools do not answer",
 			func(b *Steps) string { return engineUnreachableSteps(b, s.cmds, toolStatus) })
 	}
+	s.addPortalProblem(&ps)
 	setup, known := s.setupView(ctx)
 	r.Setup = setup.status
 	if path := s.lockTrouble.get(); path != "" {
@@ -393,7 +434,11 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 	if err == nil {
 		r.Ledger = s.ledgerStatus(ctx, st)
 	}
-	switch readable := err == nil && st.State != guard.GuardMissing; {
+	readable := err == nil && st.State != guard.GuardMissing
+	if readable {
+		s.addReinstalled(ctx, &ps)
+	}
+	switch {
 	case s.vault != nil && r.Vault != nil:
 		r.EngineRecord = s.engineRecordStatus(ctx, r.Vault.EngineID, readable, &ps)
 	case s.engineKey != nil:
@@ -501,6 +546,30 @@ func (s statusDeps) ledgerStatus(ctx context.Context, st guard.Status) *LedgerSt
 		return nil
 	}
 	return &LedgerStatus{Bytes: n, ValuesKeptDays: ledgerValuesKeptDays, RecordsKeptDays: ledgerRecordsKeptDays}
+}
+
+// reinstalledAsk is LEDGER_REINSTALLED's ASK_PERSON step.
+const reinstalledAsk = "Show the person this notice and ask whether someone on their team reinstalled Basalt. " +
+	"The tools keep working, and the notice stays until an admin acknowledges it."
+
+// addReinstalled is LEDGER_REINSTALLED when the ledger or the engine's kept
+// copy records a reinstall. A guard older than version 36 records none; a
+// read that fails is logged and adds nothing.
+func (s statusDeps) addReinstalled(ctx context.Context, ps *problems) {
+	rs, err := s.probe.Reinstalls(ctx)
+	if err != nil {
+		s.log.Error("status: read the reinstalls", "err", err)
+		return
+	}
+	msg, ok := ledger.ReinstallPersonMessage(rs, MaxPersonMessageLength)
+	if !ok {
+		return
+	}
+	ps.add(problemLedgerReinstalled, "the guard was installed again and a pin of the old ledger was set aside; the tools keep working",
+		func(b *Steps) string {
+			b.AskPerson(reinstalledAsk)
+			return msg
+		})
 }
 
 // passkeys counts the active passkeys; none is NO_PASSKEY. A count that

@@ -31,7 +31,7 @@ func TestRelayLinksAcrossAgents(t *testing.T) {
 	require.NotNil(t, ev.client)
 	engineID := ev.status().EngineID
 	owner := func(tok channel.LinkToken) string {
-		id, _ := v.LinkOwner(tok.String())
+		id, _ := v.LinkOwner(tok.Wire())
 		return id
 	}
 
@@ -53,7 +53,7 @@ func TestRelayLinksAcrossAgents(t *testing.T) {
 	require.NoError(t, err)
 	_, c, err := ops.IssueRelay(uuid.Must(uuid.NewV7()), now.Add(time.Hour))
 	require.NoError(t, err)
-	v.Bind(c.String(), "AAAAAAAAAAAAAAAAAAAAAA", now.Add(time.Hour))
+	v.Bind(c.Wire(), "AAAAAAAAAAAAAAAAAAAAAA", now.Add(time.Hour))
 	require.Len(t, relay.Live(), 3)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -109,7 +109,7 @@ func TestManyConflictsDoNotStallReads(t *testing.T) {
 	for range conflicts {
 		_, tok, err := store.IssueRelay(uuid.Must(uuid.NewV7()), time.Now().Add(time.Hour))
 		require.NoError(t, err)
-		v.Bind(tok.String(), "AAAAAAAAAAAAAAAAAAAAAA", time.Now().Add(time.Hour))
+		v.Bind(tok.Wire(), "AAAAAAAAAAAAAAAAAAAAAA", time.Now().Add(time.Hour))
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

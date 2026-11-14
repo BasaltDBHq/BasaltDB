@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/pgcatalog"
@@ -49,16 +50,39 @@ type headDTO struct {
 func headFromDomain(h guard.ChainHead) headDTO { return headDTO{Seq: h.Seq, Hash: h.Hash} }
 func (h headDTO) toDomain() guard.ChainHead    { return guard.ChainHead{Seq: h.Seq, Hash: h.Hash} }
 
+// pinDTO is CHECK_HEALTH's pin: a head and the guard install it was
+// verified on, absent when unknown.
+type pinDTO struct {
+	Seq     int64         `json:"seq"`
+	Hash    passkey.Bytes `json:"hash"`
+	Install uint32        `json:"install,omitempty"`
+}
+
+// setAsideDTO is one pin the reader set aside and kept (chainpin's
+// setAside), sent so the engine's notice shows the reader's kept copy too.
+type setAsideDTO struct {
+	PinnedSeq     int64         `json:"pinnedSeq"`
+	PinnedHash    passkey.Bytes `json:"pinnedHash"`
+	PinnedInstall uint32        `json:"pinnedInstall"`
+	Install       uint32        `json:"install"`
+	At            time.Time     `json:"at"`
+}
+
 type healthParams struct {
-	Full bool     `json:"full"`
-	Pin  *headDTO `json:"pin"`
+	Full     bool          `json:"full"`
+	Pin      *pinDTO       `json:"pin"`
+	SetAside []setAsideDTO `json:"setAside,omitempty"`
 }
 
 func healthParamsFromDomain(o ledger.HealthOptions) healthParams {
 	p := healthParams{Full: o.Full}
 	if o.Pin != nil {
-		h := headFromDomain(*o.Pin)
-		p.Pin = &h
+		p.Pin = &pinDTO{Seq: o.Pin.Seq, Hash: o.Pin.Hash, Install: o.PinInstall}
+	}
+	for _, s := range o.SetAside {
+		p.SetAside = append(p.SetAside, setAsideDTO{
+			PinnedSeq: s.PinnedSeq, PinnedHash: s.PinnedHash, PinnedInstall: s.PinnedInstall, Install: s.Install, At: s.At,
+		})
 	}
 	return p
 }
@@ -66,10 +90,66 @@ func healthParamsFromDomain(o ledger.HealthOptions) healthParams {
 func (p healthParams) toDomain() ledger.HealthOptions {
 	o := ledger.HealthOptions{Full: p.Full}
 	if p.Pin != nil {
-		h := p.Pin.toDomain()
-		o.Pin = &h
+		o.Pin, o.PinInstall = &guard.ChainHead{Seq: p.Pin.Seq, Hash: p.Pin.Hash}, p.Pin.Install
+	}
+	for _, s := range p.SetAside {
+		o.SetAside = append(o.SetAside, guard.SetAside{
+			PinnedSeq: s.PinnedSeq, PinnedHash: s.PinnedHash, PinnedInstall: s.PinnedInstall, Install: s.Install, At: s.At,
+		})
 	}
 	return o
+}
+
+// reinstallDTO is one entry of CHECK_HEALTH's reinstalls: the notice's
+// data. more and moreAgents carry the counts the notice prints.
+type reinstallDTO struct {
+	Install     uint32               `json:"install"`
+	InstalledAt *time.Time           `json:"installedAt"`
+	InstalledBy string               `json:"installedBy,omitempty"`
+	VaultUser   string               `json:"vaultUser,omitempty"`
+	Reports     []reinstallReportDTO `json:"reports"`
+	MoreAgents  int                  `json:"moreAgents,omitempty"`
+}
+
+type reinstallReportDTO struct {
+	Agent      string        `json:"agent"`
+	At         time.Time     `json:"at"`
+	PinnedSeq  int64         `json:"pinnedSeq"`
+	PinnedHash passkey.Bytes `json:"pinnedHash"`
+	More       int           `json:"more,omitempty"`
+}
+
+func reinstallsFromDomain(rs guard.Reinstalls) []reinstallDTO {
+	out := make([]reinstallDTO, 0, len(rs.List))
+	for _, r := range rs.List {
+		d := reinstallDTO{
+			Install: r.Install, InstalledAt: r.InstalledAt, InstalledBy: r.InstalledBy, VaultUser: r.VaultUser,
+			Reports: make([]reinstallReportDTO, 0, len(r.Reports)), MoreAgents: r.MoreAgents,
+		}
+		for _, rep := range r.Reports {
+			d.Reports = append(d.Reports, reinstallReportDTO{
+				Agent: rep.Agent, At: rep.At, PinnedSeq: rep.PinnedSeq, PinnedHash: rep.PinnedHash, More: rep.More,
+			})
+		}
+		out = append(out, d)
+	}
+	return out
+}
+
+func reinstallsToDomain(list []reinstallDTO, earlier int) guard.Reinstalls {
+	out := guard.Reinstalls{Earlier: earlier}
+	for _, d := range list {
+		r := guard.Reinstall{
+			Install: d.Install, InstalledAt: d.InstalledAt, InstalledBy: d.InstalledBy, VaultUser: d.VaultUser, MoreAgents: d.MoreAgents,
+		}
+		for _, rep := range d.Reports {
+			r.Reports = append(r.Reports, guard.ReinstallReport{
+				Agent: rep.Agent, At: rep.At, PinnedSeq: rep.PinnedSeq, PinnedHash: rep.PinnedHash, More: rep.More,
+			})
+		}
+		out.List = append(out.List, r)
+	}
+	return out
 }
 
 type chainDTO struct {
@@ -89,13 +169,19 @@ type deadManDTO struct {
 }
 
 type healthDTO struct {
-	Chain          chainDTO       `json:"chain"`
-	Head           headDTO        `json:"head"`
-	Uncovered      []uncoveredDTO `json:"uncovered"`
-	RLSBlind       []string       `json:"rlsBlind"`
-	LastHeartbeat  time.Time      `json:"lastHeartbeat"`
-	HeartbeatStale bool           `json:"heartbeatStale"`
-	DeadMan        *deadManDTO    `json:"deadMan"`
+	Chain       chainDTO       `json:"chain"`
+	Head        headDTO        `json:"head"`
+	Install     uint32         `json:"install"`
+	PinSetAside bool           `json:"pinSetAside"`
+	PinMoved    bool           `json:"pinMoved"`
+	Reinstalls  []reinstallDTO `json:"reinstalls"`
+	// EarlierReinstalls counts the reinstalls past those in Reinstalls.
+	EarlierReinstalls int            `json:"earlierReinstalls"`
+	Uncovered         []uncoveredDTO `json:"uncovered"`
+	RLSBlind          []string       `json:"rlsBlind"`
+	LastHeartbeat     time.Time      `json:"lastHeartbeat"`
+	HeartbeatStale    bool           `json:"heartbeatStale"`
+	DeadMan           *deadManDTO    `json:"deadMan"`
 	// PII is absent before guard version 15.
 	PII *piiHealthDTO `json:"pii,omitempty"`
 }
@@ -154,6 +240,8 @@ func nonNil(s []string) []string {
 func healthFromDomain(h ledger.Health) healthDTO {
 	out := healthDTO{
 		Chain: chainDTO{Intact: h.Chain.Intact, BrokenAt: h.Chain.BrokenAt}, Head: headFromDomain(h.Head),
+		Install: h.Install, PinSetAside: h.PinSetAside, PinMoved: h.PinMoved,
+		Reinstalls: reinstallsFromDomain(h.Reinstalls), EarlierReinstalls: h.Reinstalls.Earlier,
 		Uncovered: make([]uncoveredDTO, 0, len(h.Uncovered)), RLSBlind: h.RLSBlind,
 		LastHeartbeat: h.LastHeartbeat, HeartbeatStale: h.HeartbeatStale, PII: piiHealthFromDomain(h.PII),
 	}
@@ -170,7 +258,9 @@ func healthFromDomain(h ledger.Health) healthDTO {
 func (h healthDTO) toDomain() ledger.Health {
 	out := ledger.Health{
 		Chain: guard.ChainStatus{Intact: h.Chain.Intact, BrokenAt: h.Chain.BrokenAt}, Head: h.Head.toDomain(),
-		RLSBlind: h.RLSBlind, LastHeartbeat: h.LastHeartbeat, HeartbeatStale: h.HeartbeatStale,
+		Install: h.Install, PinSetAside: h.PinSetAside, PinMoved: h.PinMoved,
+		Reinstalls: reinstallsToDomain(h.Reinstalls, h.EarlierReinstalls),
+		RLSBlind:   h.RLSBlind, LastHeartbeat: h.LastHeartbeat, HeartbeatStale: h.HeartbeatStale,
 		PII: h.PII.toDomain(),
 	}
 	for _, u := range h.Uncovered {
@@ -220,6 +310,8 @@ type changeDTO struct {
 	ActorKind    string          `json:"actorKind"`
 	RevertID     uuid.NullUUID   `json:"revertId"`
 	RevertedBy   []uuid.UUID     `json:"revertedBy"`
+	// LargeValues is set on agent reads only; the person reads in full.
+	LargeValues []largevalue.Entry `json:"-"`
 }
 
 type pageDTO[T any] struct {
@@ -262,6 +354,11 @@ type rowChangeDTO struct {
 	Pruned     bool            `json:"pruned"`
 	BasedOn    *ledger.BasedOn `json:"basedOn"`
 	BlindWrite bool            `json:"blindWrite"`
+	// LargeValues and the left-out flags are set on agent reads only.
+	LargeValues                             []largevalue.Entry `json:"-"`
+	KeyLeftOut, BeforeLeftOut, AfterLeftOut bool               `json:"-"`
+	// Marks summarize the values over 1 MiB, for the CLI's text output.
+	Marks largevalue.Marks `json:"marks"`
 }
 
 type rowChangesDTO struct {
@@ -351,6 +448,11 @@ type approvalDTO struct {
 	ApprovedAt  *time.Time      `json:"approvedAt"`
 	BindingText string          `json:"bindingText"`
 	Lines       []string        `json:"lines"`
+	// LargeValues, LinesLeftOut and LinesCost are set on agent reads only;
+	// the person reads in full.
+	LargeValues  []largevalue.Entry `json:"-"`
+	LinesLeftOut bool               `json:"-"`
+	LinesCost    int64              `json:"-"`
 }
 
 type assertionDTO struct {
@@ -469,6 +571,7 @@ type preparedDTO struct {
 	ExpiresAt   time.Time `json:"expiresAt"`
 	Lines       []string  `json:"lines"`
 	Batched     bool      `json:"batched"`
+	LineCount   int       `json:"lineCount"`
 }
 
 type applyRevertParams struct {

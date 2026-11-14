@@ -95,17 +95,84 @@ func UpsertAgent(path string, s Settings, a Agent) error {
 // the config's lock (lockConfig) from the read to the write, so a setup the
 // engine clears meanwhile is not lost, nor this agent by the engine's write.
 func UpsertAgentVault(path string, s Settings, a Agent) (VaultWritten, error) {
-	unlock, err := lockConfig(path)
+	return upsertWith(pathFile(path), s, a)
+}
+
+// UpsertAgentVaultAt is UpsertAgentVault for a root process on the config
+// file name in d, a directory it opened without following a link the
+// engine's user controls (service.TrustedDir): the lock, the read and the
+// write are all relative to d, so swapping the config directory for a
+// symlink meanwhile redirects nothing. check vets the opened config before
+// it is read (owner and mode); the file is written owned by owner (this
+// process when < 0).
+func UpsertAgentVaultAt(d Dir, name string, check func(*os.File) error, owner int, s Settings, a Agent) (VaultWritten, error) {
+	return upsertWith(dirFile{d: d, name: name, check: check, owner: owner}, s, a)
+}
+
+// upsertWith is UpsertAgentVault on f, under f's config lock.
+func upsertWith(f configFile, s Settings, a Agent) (VaultWritten, error) {
+	unlock, err := f.lock()
 	if err != nil {
 		return VaultWritten{}, err
 	}
 	defer unlock()
-	raw, v, err := UpsertedVault(path, openNoFollow, s, a)
+	raw, v, err := UpsertedVault(f.path(), f.open, s, a)
 	if err != nil {
 		return VaultWritten{}, err
 	}
-	return v, WriteFile(path, raw)
+	return v, f.write(raw)
 }
+
+// Dir is a directory a root process opened once, from / without following
+// a link anyone but root controls (service.TrustedDir); its files are
+// reached relative to the open descriptor, never by path.
+type Dir interface {
+	Path() string
+	// Owner is the directory's owner, read through its descriptor.
+	Owner() (int, error)
+	// OpenFile opens name in the directory, never following a symlink.
+	OpenFile(name string, flag int, perm os.FileMode) (*os.File, error)
+	// WriteFile replaces name atomically, owned by owner (< 0: this
+	// process).
+	WriteFile(name string, data []byte, mode os.FileMode, owner int) error
+	// Rename renames from over to, both in the directory.
+	Rename(from, to string) error
+}
+
+// configFile is the engine config a read-modify-write reaches: by path, or
+// in a Dir.
+type configFile interface {
+	path() string
+	lock() (func(), error)
+	open(string) (*os.File, error)
+	write([]byte) error
+}
+
+// pathFile is the config at a path: openNoFollow, config.WriteFile.
+type pathFile string
+
+func (p pathFile) path() string                  { return string(p) }
+func (p pathFile) lock() (func(), error)         { return lockConfig(string(p)) }
+func (p pathFile) open(string) (*os.File, error) { return openNoFollow(string(p)) }
+func (p pathFile) write(raw []byte) error        { return WriteFile(string(p), raw) }
+
+// dirFile is the config file name in d (UpsertAgentVaultAt).
+type dirFile struct {
+	d     Dir
+	name  string
+	check func(*os.File) error
+	owner int
+}
+
+func (f dirFile) path() string { return filepath.Join(f.d.Path(), f.name) }
+func (f dirFile) lock() (func(), error) {
+	return waitLock(func() (func(), error) { return LockAt(f.d, f.name+".lock") })
+}
+
+func (f dirFile) open(string) (*os.File, error) {
+	return OpenPlainAt(f.d, f.name, f.check)
+}
+func (f dirFile) write(raw []byte) error { return f.d.WriteFile(f.name, raw, FileMode, f.owner) }
 
 // Upserted is the content UpsertAgent writes, without writing it: the
 // service install writes it itself, owned by the engine's OS user.
@@ -179,12 +246,22 @@ func UpsertedVault(path string, open func(string) (*os.File, error), s Settings,
 // agent made meanwhile is never lost. The caller also holds the agent's lock
 // (LockFile), as basalt init --remote does.
 func ClearSetup(path, agent, id string) (cleared bool, err error) {
-	unlock, err := lockConfig(path)
+	return clearSetupWith(pathFile(path), agent, id)
+}
+
+// ClearSetupAt is ClearSetup for a root process on the config file name in
+// d (see UpsertAgentVaultAt).
+func ClearSetupAt(d Dir, name string, check func(*os.File) error, owner int, agent, id string) (bool, error) {
+	return clearSetupWith(dirFile{d: d, name: name, check: check, owner: owner}, agent, id)
+}
+
+func clearSetupWith(f configFile, agent, id string) (cleared bool, err error) {
+	unlock, err := f.lock()
 	if err != nil {
 		return false, err
 	}
 	defer unlock()
-	c, err := load(path, openNoFollow)
+	c, err := load(f.path(), f.open)
 	if err != nil {
 		return false, err
 	}
@@ -197,7 +274,7 @@ func ClearSetup(path, agent, id string) (cleared bool, err error) {
 	if err != nil {
 		return false, err
 	}
-	return true, WriteFile(path, append(raw, '\n'))
+	return true, f.write(append(raw, '\n'))
 }
 
 // WriteFile writes data to path atomically with FileMode, creating the

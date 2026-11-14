@@ -47,7 +47,7 @@ func (e tunnelEnv) run(t *testing.T, probe func(string) (probeAnswer, error), ar
 	var stdout, stderr bytes.Buffer
 	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr}, func(string) string { return "" })
 	c.host = systemSocketHost(t)
-	c.probe = func(_ context.Context, url string) (probeAnswer, error) { return probe(url) }
+	c.tunnelProbe = func(_ context.Context, url string) (probeAnswer, error) { return probe(url) }
 	code := runTunnel(c, append([]string{"--config", e.config}, args...))
 	return result{code, stdout.String(), stderr.String()}
 }

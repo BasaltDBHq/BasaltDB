@@ -42,21 +42,23 @@ var plainConfigLoads = map[string]string{
 // file:function:loader (function is "<package>" outside a function), through
 // the config package's import name, an alias, or a dot-import.
 func configLoadsIn(name string, f *ast.File) []string {
-	pkg, dot := "", false
+	// Every name the package is imported under: a file may import it
+	// more than once.
+	pkgs, dot := map[string]bool{}, false
 	for _, imp := range f.Imports {
 		if strings.Trim(imp.Path.Value, `"`) != configImport {
 			continue
 		}
 		switch {
 		case imp.Name == nil:
-			pkg = "config"
+			pkgs["config"] = true
 		case imp.Name.Name == ".":
 			dot = true
-		default:
-			pkg = imp.Name.Name
+		case imp.Name.Name != "_":
+			pkgs[imp.Name.Name] = true
 		}
 	}
-	if pkg == "" && !dot {
+	if len(pkgs) == 0 && !dot {
 		return nil
 	}
 	var found []string
@@ -65,7 +67,7 @@ func configLoadsIn(name string, f *ast.File) []string {
 		visit = func(n ast.Node) bool {
 			switch n := n.(type) {
 			case *ast.SelectorExpr:
-				if id, ok := n.X.(*ast.Ident); ok && pkg != "" && id.Name == pkg && configLoaders[n.Sel.Name] {
+				if id, ok := n.X.(*ast.Ident); ok && pkgs[id.Name] && configLoaders[n.Sel.Name] {
 					found = append(found, name+":"+where+":"+n.Sel.Name)
 				}
 				// The selected name is a field or method, never the
@@ -152,6 +154,13 @@ import . "`+configImport+`"
 func a() { LoadOpen("p", nil) }
 func b() { var m sync.Map; m.Load("k"); Load("p") }
 `)))
+	require.Equal(t, []string{"x.go:a:Load", "x.go:a:LoadOpen"}, configLoadsIn("x.go", parse(`package main
+import (
+	"`+configImport+`"
+	other "`+configImport+`"
+)
+func a() { config.Load("p"); other.LoadOpen("p", nil) }
+`)), "a package imported under two names is seen under both")
 	require.Empty(t, configLoadsIn("x.go", parse(`package main
 import "sync"
 func a() { var m sync.Map; m.Load("k") }

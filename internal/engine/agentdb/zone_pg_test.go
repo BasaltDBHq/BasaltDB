@@ -113,15 +113,15 @@ func TestRevertDoesNotDependOnTheSessionZone(t *testing.T) {
 			scope := guard.RevertScope{Kind: revert.ScopeRun, ID: run}
 
 			engine := agentdb.NewStore(zonedPool(t, a.URL, zones[1]), limits, time.Now)
-			lines, err := engine.PreviewRevert(ctx, scope)
+			pv, err := engine.PreviewRevert(ctx, scope, "", 10)
 			require.NoError(t, err)
-			requireNoSkip(t, lines)
+			requireNoSkip(t, previewTexts(pv))
 			prep, err := engine.PrepareRevert(ctx, scope, "Undo", time.Minute)
 			require.NoError(t, err)
 			requireNoSkip(t, prep.Lines)
 
 			cli := person.NewDBLedger(zonedConn(t, a.URL, zones[1]), time.Now)
-			lines, err = cli.PreviewRevert(ctx, scope)
+			lines, err := cli.PreviewRevert(ctx, scope)
 			require.NoError(t, err)
 			requireNoSkip(t, lines)
 			prep, err = cli.PrepareRevert(ctx, scope, "Undo")
@@ -160,15 +160,24 @@ func TestSignedLinesDoNotDependOnTheSessionZone(t *testing.T) {
 
 		// The row images the guard stores, read back as revert lines.
 		run := write(t, store, `UPDATE public.events SET note = note || '.' WHERE id = 1`)
-		lines, err = store.PreviewRevert(ctx, guard.RevertScope{Kind: revert.ScopeRun, ID: run})
+		pv, err := store.PreviewRevert(ctx, guard.RevertScope{Kind: revert.ScopeRun, ID: run}, "", 10)
 		require.NoError(t, err)
-		requireUTC(t, lines)
+		requireUTC(t, previewTexts(pv))
 	}
 	for i := range held {
 		requireUTC(t, held[i])
 		require.Equal(t, held[0], held[i], "held lines, so rowsHash, do not depend on the zone")
 		require.Equal(t, approval.RowsHash(held[0]), approval.RowsHash(held[i]))
 	}
+}
+
+// previewTexts are the texts of a preview page's lines.
+func previewTexts(pv guard.PreviewPage) []string {
+	out := make([]string, 0, len(pv.Page))
+	for _, l := range pv.Page {
+		out = append(out, l.Text)
+	}
+	return out
 }
 
 // requireUTC fails unless lines print timestamptz values in UTC and
@@ -261,9 +270,9 @@ func TestAWriteThatSkipsTheEngineStoresTheEngineImages(t *testing.T) {
 
 	// The engine reverts the direct write without a false conflict.
 	scope := guard.RevertScope{Kind: revert.ScopeRun, ID: in.RunID}
-	lines, err := engine.PreviewRevert(ctx, scope)
+	pv, err := engine.PreviewRevert(ctx, scope, "", 10)
 	require.NoError(t, err)
-	requireNoSkip(t, lines)
+	requireNoSkip(t, previewTexts(pv))
 	prep, err := engine.PrepareRevert(ctx, scope, "Undo", time.Minute)
 	require.NoError(t, err)
 	requireNoSkip(t, prep.Lines)

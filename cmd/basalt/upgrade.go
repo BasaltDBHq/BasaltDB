@@ -290,7 +290,7 @@ func upgradeGuard(c *cliIO, conn *pgx.Conn, f upgradeFlags) error {
 		}
 	}
 	if err := applyInit(ctx, conn, script); err != nil {
-		return fmt.Errorf("%w; nothing changed", err)
+		return nothingChanged(err)
 	}
 	fmt.Fprintf(c.stderr, "basalt: guard upgraded from version %d to %d (applied %s); the engine serves %s again without a restart\n",
 		installed, latest, joinInts(missingVersions(installed)), f.agent)

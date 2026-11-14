@@ -368,15 +368,7 @@ func (l *laptopSetup) refused(err error) error {
 			return fmt.Errorf("the database's clock refuses this setup code (%s): check the database's and this computer's clocks, or ask %s for a new code", detail, agent)
 		}
 	}
-	var pg *pgconn.PgError
-	var done *detailedError
-	if errors.As(err, &done) {
-		return fmt.Errorf("%w Nothing changed.", err) //nolint:staticcheck // full sentences after the database's message, shown as is
-	}
-	if errors.As(err, &pg) && (pg.Detail != "" || pg.Hint != "") {
-		return fmt.Errorf("%w: %s Nothing changed.", err, sentences(pg.Detail, pg.Hint)) //nolint:staticcheck // full sentences after Postgres's message, shown as is
-	}
-	return fmt.Errorf("%w; nothing changed", err)
+	return nothingChanged(withGuardDetail(err))
 }
 
 // sentences joins the non-empty parts with one space, each ending with a
@@ -399,13 +391,9 @@ func sentences(parts ...string) string {
 // passkey registers a portal passkey when no active one belongs to the
 // portal, or with --add-passkey (step 7).
 func (l *laptopSetup) passkey() error {
-	keys, err := guard.ActivePasskeys(l.c.ctx, l.conn)
+	has, err := hasPasskeyFor(l.c, l.conn, passkey.Production.Origin)
 	if err != nil {
 		return err
-	}
-	has := false
-	for _, k := range keys {
-		has = has || k.Origin == passkey.Production.Origin
 	}
 	if has && !l.f.addPasskey {
 		return nil

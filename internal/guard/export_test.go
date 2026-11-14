@@ -16,3 +16,6 @@ func AgentAdoptSQL(n Names, agent string, spec AgentSpec) (string, error) {
 
 // VersionRevertScope is basalt_meta version 20, for the migration tests.
 const VersionRevertScope = versionRevertScope
+
+// VersionPinnedTrigger is basalt_meta version 34, for the migration tests.
+const VersionPinnedTrigger = versionPinnedTrigger

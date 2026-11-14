@@ -59,6 +59,7 @@ const (
 	versionCatalogChangeAgents            // Q-11: the proven revert scope catalog maps each change to its agent
 	versionEngines                        // VC-21: engine keys, the pinned address and revocation
 	versionPinnedTrigger                  // guard_row stores row images in fixed TimeZone, styles, float digits and lc_monetary
+	versionPinnedReverts                  // bytea_output pinned too; the revert's row reads and restores pinned like guard_row
 )
 
 // migrations lists every version in order. M2 appends versions.
@@ -97,6 +98,7 @@ var migrations = []migration{
 	{version: versionCatalogChangeAgents, sql: v32CatalogChangeAgents, nonBreaking: true},
 	{version: versionEngines, sql: v33Tables + v33Functions + v33Views, nonBreaking: true},
 	{version: versionPinnedTrigger, sql: v34PinnedTrigger, nonBreaking: true},
+	{version: versionPinnedReverts, sql: v35PinnedReverts, nonBreaking: true},
 }
 
 // LatestVersion is the basalt_meta version this build installs.

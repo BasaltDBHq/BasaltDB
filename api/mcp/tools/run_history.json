@@ -222,6 +222,14 @@
                 "blindWrite": {
                   "type": "boolean",
                   "description": "UPDATE or DELETE of a row the run never read: allowed and marked."
+                },
+                "largeValues": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "$ref": "../values/large-value.schema.json"
+                  },
+                  "description": "Planned (result budget, CONTRACT.md Large values): the values (key, before, after) of this row left out because they are too large for you to read, each with its size and sha256; absent when none was. A value left out is absent from its object, never null: it is stored in full and a revert restores it from the stored row."
                 }
               }
             }
@@ -242,6 +250,14 @@
               "format": "uuid"
             },
             "description": "Revert changes that restored rows of this change. Status is REVERTED only when every row was restored; a partly reverted change stays APPLIED."
+          },
+          "largeValues": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "../values/large-value.schema.json"
+            },
+            "description": "Planned (result budget, CONTRACT.md Large values): the values (statement, params) of this record left out because they are too large for you to read, each with its size and sha256; absent when none was. A value left out is absent, never null: it is stored in full."
           }
         }
       },
@@ -268,7 +284,8 @@
   "errors": [
     "INVALID_ARGUMENT",
     "NOT_FOUND",
-    "QUERY_TIMEOUT", "UNAVAILABLE",
+    "QUERY_TIMEOUT",
+    "UNAVAILABLE",
     "INTERNAL"
   ]
 }

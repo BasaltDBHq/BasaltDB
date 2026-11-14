@@ -80,6 +80,10 @@
         "rows": { "type": "integer", "minimum": 1 },
         "headline": { "type": "string" },
         "approvalUrl": { "type": "string", "format": "uri" },
+        "requestFile": {
+          "$ref": "../links/request-file.schema.json",
+          "description": "Only with a hash link in approvalUrl: the request to send the person as a file or text blocks (CONTRACT.md, The request file and pasted blocks)."
+        },
         "approveCommand": { "type": "string" },
         "personMessage": { "type": "string" },
         "links": {

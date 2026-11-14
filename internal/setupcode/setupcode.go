@@ -4,8 +4,9 @@
 //
 //	basalt-setup.1.<b64url(deflate-raw(json))>.<check>
 //
-// The code holds only non-secret parameters: never the agent's password
-// (its SCRAM-SHA-256 verifier instead) and never anything of the admin.
+// The code never holds the agent's password (its SCRAM-SHA-256 verifier
+// instead, which is sensitive: CONTRACT.md, The setup code) and never
+// anything of the admin.
 // The code-maker writes every field, so nothing in it is trusted: Decode
 // refuses anything outside setup-code.schema.json and the rules the schema
 // cannot state, and CheckLocal and CheckDatabase apply the clock and the
@@ -52,7 +53,7 @@ const (
 	fingerprintBytes = 10
 	// fingerprintGroup is the hex digits per group in the fingerprint.
 	fingerprintGroup = 4
-	fingerprintLabel = "basalt-setup-fingerprint.1\n"
+	fingerprintLabel = "basalt-setup-fingerprint.2\n"
 )
 
 // Kind is what a code sets up (CO-14).
@@ -110,19 +111,12 @@ type Agent struct {
 // key order, deflated at level 9, base64url without padding, and the
 // check. Nil table lists are written as empty lists.
 func Encode(p Payload) (string, error) {
-	if p.Agent != nil {
-		a := *p.Agent
-		a.Write = nonNil(a.Write)
-		a.Read = nonNil(a.Read)
-		p.Agent = &a
-	}
+	p = p.normalized()
 	if err := p.Validate(); err != nil {
 		return "", err
 	}
-	var js bytes.Buffer
-	enc := json.NewEncoder(&js)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(p); err != nil {
+	js, err := p.compactJSON()
+	if err != nil {
 		return "", fmt.Errorf("setup code: %w", err)
 	}
 	var z bytes.Buffer
@@ -130,8 +124,7 @@ func Encode(p Payload) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("setup code: %w", err)
 	}
-	// Encoder.Encode ends with a newline: not part of the compact JSON.
-	if _, err := w.Write(bytes.TrimSuffix(js.Bytes(), []byte("\n"))); err != nil {
+	if _, err := w.Write(js); err != nil {
 		return "", fmt.Errorf("setup code: %w", err)
 	}
 	if err := w.Close(); err != nil {
@@ -143,6 +136,31 @@ func Encode(p Payload) (string, error) {
 		return "", ErrCodeTooLong
 	}
 	return code, nil
+}
+
+// normalized is p with nil table lists as empty lists, as the code
+// writes them.
+func (p Payload) normalized() Payload {
+	if p.Agent != nil {
+		a := *p.Agent
+		a.Write = nonNil(a.Write)
+		a.Read = nonNil(a.Read)
+		p.Agent = &a
+	}
+	return p
+}
+
+// compactJSON is the payload's JSON as a code carries it: compact, in the
+// schema's key order, HTML characters unescaped.
+func (p Payload) compactJSON() ([]byte, error) {
+	var js bytes.Buffer
+	enc := json.NewEncoder(&js)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(p); err != nil {
+		return nil, err
+	}
+	// Encoder.Encode ends with a newline: not part of the compact JSON.
+	return bytes.TrimSuffix(js.Bytes(), []byte("\n")), nil
 }
 
 func nonNil(s []string) []string {
@@ -356,15 +374,19 @@ func (p Payload) Role() string {
 }
 
 // Fingerprint is the setup fingerprint: the first 10 bytes of
-// sha256("basalt-setup-fingerprint.1\n" + setupId + "\n" + verifier) in
-// lowercase hex, five groups of four. A matching aid for the person, not
-// proof of who made the code.
+// sha256("basalt-setup-fingerprint.2\n" + the payload's compact JSON) in
+// lowercase hex, five groups of four. The JSON is the one Encode writes
+// (schema key order), rebuilt from the decoded payload, so it covers every
+// field of the code (agent, tables, kind, timeout, target, guard, expiry)
+// whatever key order or deflate stream the code-maker used. A matching aid
+// for the person, not proof of who made the code.
 func (p Payload) Fingerprint() string {
-	verifier := ""
-	if p.Agent != nil {
-		verifier = p.Agent.Verifier
+	js, err := p.normalized().compactJSON()
+	if err != nil {
+		// Unreachable: the payload is plain strings, numbers and lists.
+		panic("setupcode: payload JSON: " + err.Error())
 	}
-	sum := sha256.Sum256([]byte(fingerprintLabel + p.SetupID + "\n" + verifier))
+	sum := sha256.Sum256(append([]byte(fingerprintLabel), js...))
 	h := hex.EncodeToString(sum[:fingerprintBytes])
 	groups := make([]string, 0, len(h)/fingerprintGroup)
 	for i := 0; i < len(h); i += fingerprintGroup {

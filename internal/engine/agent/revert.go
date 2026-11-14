@@ -110,7 +110,7 @@ func (s *Service) PreviewRevert(ctx context.Context, p PreviewRevertParams) (Rev
 		if err != nil {
 			return RevertPreview{}, fmt.Errorf("guard returned a bad revert line: %w", err)
 		}
-		lines = append(lines, l)
+		lines = append(lines, l.ForDisplay())
 		if l.Action == revert.ActionRestore {
 			out.Rows++
 		}
@@ -211,7 +211,8 @@ func (s *Service) RevertPlan(ctx context.Context, p RevertPlanParams) (RevertPla
 			if err != nil {
 				return RevertPlan{}, fmt.Errorf("guard returned a bad revert line %d: %w", l.No, err)
 			}
-			line.Plan = &parsed
+			shown := parsed.ForDisplay()
+			line.Plan = &shown
 		}
 		out.Page.Items = append(out.Page.Items, line)
 	}
@@ -269,6 +270,8 @@ type RequestedRevert struct {
 	PersonMessage string
 	Links         []mcp.Link
 	NextSteps     []mcp.NextStep
+	// Receipt is the signed revert's receipt (APPLIED, APPLYING).
+	Receipt *Receipt
 }
 
 func (s *Service) RequestRevert(ctx context.Context, p RequestRevertParams) (RequestedRevert, error) {
@@ -446,10 +449,23 @@ func (s *Service) applyRevertError(ctx context.Context, r ledger.Revert, err err
 // is told the agent cannot see what they added (RS-5).
 func (s *Service) revertState(ctx context.Context, r ledger.Revert) (RequestedRevert, error) {
 	out, err := s.revertStateOf(ctx, r)
-	if err != nil || !r.Widened {
+	if err != nil {
 		return out, err
 	}
-	out.PersonMessage = strings.TrimSpace(widenedMessage + " " + out.PersonMessage)
+	if r.Widened {
+		out.PersonMessage = strings.TrimSpace(widenedMessage + " " + out.PersonMessage)
+	}
+	if r.Status != ledger.RevertApplied && r.Status != ledger.RevertApplying {
+		return out, nil
+	}
+	// A signed revert: its receipt, from Postgres's record, the line first
+	// (CONTRACT.md, Vault channel, Receipts).
+	receipt, err := s.revertReceipt(r)
+	if err != nil {
+		return RequestedRevert{}, err
+	}
+	out.Receipt = &receipt
+	out.PersonMessage = withReceiptLine(receipt.Line, out.PersonMessage)
 	return out, nil
 }
 

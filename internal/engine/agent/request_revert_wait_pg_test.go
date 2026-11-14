@@ -213,7 +213,7 @@ func TestRequestRevertWaitsForTheRelayedSignature(t *testing.T) {
 	require.NoError(t, err, "the revert's own change record")
 	require.NotContains(t, body, "revertUrl")
 	require.NotContains(t, body, "progress")
-	require.Equal(t, "Reverted: 2 rows restored, 1 left as they are because someone changed them after the agent (people win).", body["personMessage"])
+	require.Equal(t, "Reverted: 2 rows restored, 1 left as they are because someone changed them after the agent (people win).", afterReceiptLine(t, body["personMessage"]))
 	requireResultSteps(t, body, "APPLIED")
 	require.Equal(t, "open", leadStatus(t, d, 81))
 	require.Equal(t, "person", leadStatus(t, d, 83), "people win")
@@ -241,7 +241,7 @@ func TestRequestRevertWaitForALargePlan(t *testing.T) {
 	done := requestRevert(t, e.h, map[string]any{"revertId": id, "waitForSignature": 0})
 	require.Equal(t, "APPLIED", done["status"])
 	require.Equal(t, fmt.Sprintf("Reverted: %d rows restored, 0 left as they are because someone changed them after the agent (people win).",
-		planRows), done["personMessage"])
+		planRows), afterReceiptLine(t, done["personMessage"]))
 	requireResultSteps(t, done, "APPLIED")
 	require.Equal(t, body["changeId"], done["changeId"])
 }
@@ -261,7 +261,10 @@ func requireApplying(t *testing.T, body map[string]any) {
 	steps := requireResultSteps(t, body, "APPLYING")
 	require.Equal(t, "revert_plan", steps[0]["tool"])
 	require.Equal(t, map[string]any{"revertId": body["revertId"], "pending": true, "limit": json.Number("200")}, steps[0]["arguments"])
-	require.Empty(t, str(t, body["personMessage"]), "APPLYING has nothing to tell the person yet: the last batch does")
+	msg := str(t, body["personMessage"])
+	require.True(t, strings.HasPrefix(msg, "Signed: "), "APPLYING tells the person only the receipt line: the last batch tells the rest: %s", msg)
+	require.NotContains(t, msg, "\n")
+	require.NotEmpty(t, body["receipt"])
 }
 
 // One wait, then end the turn: a wait that runs out returns PENDING, with
@@ -403,7 +406,7 @@ func TestRequestRevertDeliversTheSignature(t *testing.T) {
 	require.Equal(t, "APPLIED", body["status"])
 	require.EqualValues(t, "1", body["rows"])
 	require.EqualValues(t, "1", body["skipped"])
-	require.Equal(t, "Reverted: 1 rows restored, 1 left as they are because someone changed them after the agent (people win).", body["personMessage"])
+	require.Equal(t, "Reverted: 1 rows restored, 1 left as they are because someone changed them after the agent (people win).", afterReceiptLine(t, body["personMessage"]))
 	requireResultSteps(t, body, "APPLIED")
 	require.Equal(t, "open", leadStatus(t, env.d, 87))
 	require.Equal(t, "person", leadStatus(t, env.d, 88))
@@ -517,4 +520,14 @@ func TestRequestRevertRefusesCodesThePersonDidNotSignForIt(t *testing.T) {
 	require.Equal(t, guard.CodeRevertExpired, code)
 	require.Equal(t, "won", leadStatus(t, env.d, 90))
 	require.Equal(t, "EXPIRED", revertStatus(t, env.h, idB.String()))
+}
+
+// afterReceiptLine is a signed item's personMessage after its receipt line
+// (CONTRACT.md, Vault channel, Receipts), which comes first.
+func afterReceiptLine(t *testing.T, msg any) string {
+	t.Helper()
+	line, rest, ok := strings.Cut(str(t, msg), "\n")
+	require.True(t, ok, "%v", msg)
+	require.True(t, strings.HasPrefix(line, "Signed: ") || strings.HasPrefix(line, "No receipt: "), line)
+	return rest
 }

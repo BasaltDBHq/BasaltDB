@@ -41,8 +41,9 @@ func NewPassword() (string, error) {
 
 // NewVerifier returns the SCRAM-SHA-256 verifier of password with a fresh
 // random 16-byte salt: SCRAM-SHA-256$4096:<salt>$<StoredKey>:<ServerKey>.
-// It is what Postgres stores in pg_authid.rolpassword; it lets nobody log
-// in. The password is never part of an error.
+// It is what Postgres stores in pg_authid.rolpassword. It is sensitive:
+// with one observed SCRAM exchange of the role it lets its holder log in
+// (CONTRACT.md, The setup code). The password is never part of an error.
 func NewVerifier(password string) (string, error) {
 	salt := make([]byte, ScramSaltBytes)
 	if _, err := rand.Read(salt); err != nil {

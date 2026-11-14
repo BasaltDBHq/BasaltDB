@@ -360,6 +360,20 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 	if a, err = s.waitForSignature(ctx, a, p); err != nil {
 		return WriteOutcome{}, err
 	}
+	// The receipt is built from Postgres's record of the approval after the
+	// signature (CONTRACT.md, Receipts), and handed over only once the write
+	// is applied.
+	if a, err = s.Approvals.FindApproval(ctx, a.ID); err != nil {
+		return WriteOutcome{}, err
+	}
+	var receipt *Receipt
+	if a.Status == ledger.ApprovalApproved {
+		r, err := s.approvalReceiptOf(a)
+		if err != nil {
+			return WriteOutcome{}, err
+		}
+		receipt = &r
+	}
 	in := guard.Intent{RunID: run.ID, TaskID: run.TaskID, Text: p.Intent}
 	start := s.Now()
 	stmt, err := sqlguard.Check(p.SQL, sqlguard.ToolWrite)
@@ -372,7 +386,7 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 	}
 	return WriteOutcome{
 		WriteResult: res, RunID: run.ID, Op: stmt.Op, ApprovalID: a.ID,
-		Warnings: s.rlsWarnings(ctx, stmt.Tables, res.Rows),
+		Warnings: s.rlsWarnings(ctx, stmt.Tables, res.Rows), Receipt: receipt,
 	}, nil
 }
 

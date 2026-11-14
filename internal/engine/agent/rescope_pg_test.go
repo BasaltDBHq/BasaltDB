@@ -279,6 +279,11 @@ func TestScopeRouteWidenRotatesTheLink(t *testing.T) {
 	require.Equal(t, map[string]int{e.bot.Role: 1, e.helper.Role: 1}, b.AgentRows)
 	require.NotNil(t, wide.Catalog)
 	require.Len(t, wide.Catalog.Agents, 2)
+	agents := map[string]int{}
+	for _, role := range wide.Catalog.ChangeAgents {
+		agents[role]++
+	}
+	require.Equal(t, map[string]int{e.bot.Role: 1, e.helper.Role: 1}, agents, "the proven answer maps each change to its agent")
 	require.NotEqual(t, own.Request.RescopeNonce, wide.Request.RescopeNonce, "the proof consumed the nonce")
 
 	// The agent's link is dead: read and relay alike read as an unknown id.

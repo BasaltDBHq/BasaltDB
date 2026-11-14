@@ -57,7 +57,9 @@ func (g olderGuard) requireNoSecret(t *testing.T, out string) {
 func TestStatusShowsAnOutdatedGuardAndTheUpgradeCommand(t *testing.T) {
 	t.Parallel()
 	latest := guard.LatestVersion()
-	g := newOlderGuard(t, latest-1)
+	breaking := latestBreaking(t)
+	older := breaking - 1
+	g := newOlderGuard(t, older)
 	upgrade := "basalt upgrade --agent bot --config " + g.configPath
 
 	r := g.status(t, "--json")
@@ -75,8 +77,8 @@ func TestStatusShowsAnOutdatedGuardAndTheUpgradeCommand(t *testing.T) {
 		"no pid or OS user while the engine is not running")
 	gs := out["guard"].(map[string]any)
 	require.Equal(t, guard.GuardOutdated, gs["state"])
-	require.InDelta(t, latest-1, gs["installed"], 0)
-	require.Equal(t, []any{float64(latest)}, gs["missingBreaking"])
+	require.InDelta(t, older, gs["installed"], 0)
+	require.Equal(t, []any{float64(breaking)}, gs["missingBreaking"])
 	codes := map[string]map[string]any{}
 	for _, p := range out["problems"].([]any) {
 		pm := p.(map[string]any)
@@ -95,7 +97,7 @@ func TestStatusShowsAnOutdatedGuardAndTheUpgradeCommand(t *testing.T) {
 	require.Contains(t, text.stdout, "Config:       "+g.configPath)
 	require.Contains(t, text.stdout, "Engine:       not running")
 	require.Contains(t, text.stdout, "Agent bot: not ready")
-	require.Contains(t, text.stdout, fmt.Sprintf("Guard:      version %d, this basalt has %d: upgrade required (missing %d)", latest-1, latest, latest))
+	require.Contains(t, text.stdout, fmt.Sprintf("Guard:      version %d, this basalt has %d: upgrade required (missing %d)", older, latest, breaking))
 	require.Contains(t, text.stdout, "Run: "+upgrade)
 
 	// The command status gives fixes it.
@@ -191,8 +193,8 @@ func dbTarget(t *testing.T, dsn string) person.TargetDTO {
 
 func TestStatusAndUpgradeGoThroughThePersonSocketInServiceMode(t *testing.T) {
 	t.Parallel()
-	latest := guard.LatestVersion()
-	g := newOlderGuard(t, latest-1)
+	older := latestBreaking(t) - 1
+	g := newOlderGuard(t, older)
 	report := outdatedReport(t, g)
 	require.Equal(t, guard.GuardOutdated, report.Guard.State)
 
@@ -233,7 +235,7 @@ func TestStatusAndUpgradeGoThroughThePersonSocketInServiceMode(t *testing.T) {
 		r := serviceCmd(t, runUpgrade, socket, map[string]string{envAdminURL: g.d.URL}, "--agent", "bot", "--yes")
 		require.Equal(t, exitError, r.code)
 		require.Contains(t, r.stderr, "bot connects to database app of db.example.com:5432")
-		require.Equal(t, latest-1, g.version(t))
+		require.Equal(t, older, g.version(t))
 	})
 }
 
@@ -337,4 +339,50 @@ func TestByteWords(t *testing.T) {
 	for n, want := range map[int64]string{0: "0 B", 1023: "1023 B", 1024: "1.0 KB", 1536: "1.5 KB", 1 << 20: "1.0 MB", 1<<20 - 1: "1.0 MB", 1<<30 - 1: "1.0 GB", 5 << 30: "5.0 GB", 2048 << 30: "2048.0 GB"} {
 		require.Equal(t, want, byteWords(n))
 	}
+}
+
+func TestStatusConfigFallsBackToThePerUserConfigWhenNotRoot(t *testing.T) {
+	t.Parallel()
+	if _, err := os.Stat(config.DefaultPath(runtime.GOOS)); err == nil {
+		t.Skip("a system engine config is installed on this machine")
+	}
+	h := newFakeHost(t)
+	system := config.DefaultPath(runtime.GOOS)
+
+	require.Equal(t, system, perUserConfigFallback(h, system), "no per-user config yet")
+
+	user := filepath.Join(h.configDir, perUserDirName, "engine.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(user), 0o700))
+	require.NoError(t, os.WriteFile(user, []byte("{}"), 0o600))
+	require.Equal(t, user, perUserConfigFallback(h, system))
+
+	h.euid = 0
+	require.Equal(t, system, perUserConfigFallback(h, system), "root keeps the system path")
+}
+
+// runStatus must read the per-user config only when --config was not given.
+func TestRunStatusUsesThePerUserConfigOnlyWithoutTheConfigFlag(t *testing.T) {
+	t.Parallel()
+	if _, err := os.Stat(config.DefaultPath(runtime.GOOS)); err == nil {
+		t.Skip("a system engine config is installed on this machine")
+	}
+	h := newFakeHost(t)
+	user := filepath.Join(h.configDir, perUserDirName, "engine.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(user), 0o700))
+	require.NoError(t, os.WriteFile(user, []byte(`{"agents":[]}`), 0o600))
+	other := filepath.Join(h.configDir, "other.json")
+
+	run := func(args ...string) result {
+		var stdout, stderr bytes.Buffer
+		c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr}, func(string) string { return "" })
+		c.engine = engineAccess{unitInstalled: func() bool { return false }}
+		c.host = h
+		code := runStatus(c, args)
+		return result{code, stdout.String(), stderr.String()}
+	}
+
+	without := run()
+	require.NotContains(t, without.stderr, config.DefaultPath(runtime.GOOS), "read the per-user config, not the system path")
+	given := run("--config", other)
+	require.Contains(t, given.stderr, other, "an explicit --config is read as given")
 }

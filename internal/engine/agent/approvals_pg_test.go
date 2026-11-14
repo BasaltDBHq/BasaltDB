@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
+	"github.com/basaltdbhq/basaltdb/internal/channel"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -77,6 +78,9 @@ type agentEnv struct {
 	finds *finds
 	// revertFinds is the same for the revert the agent waits on.
 	revertFinds *revertFinds
+	// keys sign the engine's receipts; nil for an engine whose key file is
+	// refused (KEY_ERROR).
+	keys *channel.EngineKeys
 }
 
 // finds wraps the approval store and counts FindApproval calls, so a test
@@ -145,6 +149,19 @@ func agentHarness(t *testing.T) agentEnv {
 // the engine's local pages, for short links.
 func agentHarnessFor(t *testing.T, d *guardtest.DB, a *guardtest.Agent, pagesOrigin ...string) agentEnv {
 	t.Helper()
+	keys, err := channel.GenerateEngineKeys(time.Now)
+	require.NoError(t, err)
+	return agentHarnessKeys(t, d, a, keys, pagesOrigin...)
+}
+
+// agentHarnessKeys is agentHarnessFor with the engine's keys: nil is an
+// engine whose key file is refused (KEY_ERROR), which signs no receipt.
+func agentHarnessKeys(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys *channel.EngineKeys, pagesOrigin ...string) agentEnv {
+	t.Helper()
+	var receipts agent.ReceiptSigner
+	if keys != nil {
+		receipts = keys
+	}
 	person, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 	require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, person.Credential(), "app"))
@@ -166,9 +183,9 @@ func agentHarnessFor(t *testing.T, d *guardtest.DB, a *guardtest.Agent, pagesOri
 		Name: "bot", Reader: agentdb.NewReader(pool, limits, time.Now), Store: store, Reads: store, Approvals: watched,
 		Reverts: watchedReverts, Notifier: sent, Log: slog.New(slog.DiscardHandler), Now: time.Now,
 		Columns:  agentdb.NewColumnOrder(pool),
-		Commands: cmds, PagesOrigin: strings.Join(pagesOrigin, ""), Poll: testPoll, RLS: blind,
+		Commands: cmds, PagesOrigin: strings.Join(pagesOrigin, ""), Poll: testPoll, RLS: blind, Receipts: receipts,
 	})
-	return agentEnv{d: d, a: a, h: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, person: person, sent: sent, svc: svc, blind: blind, finds: watched, revertFinds: watchedReverts}
+	return agentEnv{d: d, a: a, h: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, person: person, sent: sent, svc: svc, blind: blind, finds: watched, revertFinds: watchedReverts, keys: keys}
 }
 
 func approvalOf(t *testing.T, body map[string]any) map[string]any {

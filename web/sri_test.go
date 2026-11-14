@@ -1,6 +1,7 @@
 package web_test
 
 import (
+	"bytes"
 	"crypto/sha512"
 	"encoding/base64"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/require"
 
@@ -38,6 +40,11 @@ func resolve(fsys fs.FS, from, ref string) (string, error) {
 	if strings.Contains(ref, "://") || strings.HasPrefix(ref, "//") || strings.HasPrefix(ref, "/") {
 		return "", fmt.Errorf("%s: reference %s is not relative to the page", from, ref)
 	}
+	if c := path.Clean(ref); c != ref && "./"+c != ref {
+		// The browser keys a module by its URL as written: a preload of
+		// ../lib//x.js would not cover the import of ../lib/x.js.
+		return "", fmt.Errorf("%s: reference %s is not in clean form", from, ref)
+	}
 	p := path.Join(path.Dir(from), ref)
 	if !fs.ValidPath(p) {
 		return "", fmt.Errorf("%s: reference %s leaves the embedded files", from, ref)
@@ -46,6 +53,33 @@ func resolve(fsys fs.FS, from, ref string) (string, error) {
 		return "", fmt.Errorf("%s: reference %s is not an embedded file", from, ref)
 	}
 	return p, nil
+}
+
+var charsetDecl = regexp.MustCompile(`(?i)charset`)
+
+// plainUTF8 refuses a page the browser might decode differently from the
+// check: a byte-order mark (it overrides the declared charset, so a UTF-16
+// page would hide its tags from a byte-level scan), invalid UTF-8, control
+// bytes other than tab, LF and CR (ESC switches ISO-2022 encodings), or any
+// charset other than one <meta charset="utf-8"> in the first 1024 bytes.
+func plainUTF8(page string, b []byte) error {
+	if !utf8.Valid(b) {
+		return fmt.Errorf("%s: not valid UTF-8", page)
+	}
+	if bytes.HasPrefix(b, []byte("\uFEFF")) {
+		return fmt.Errorf("%s: starts with a byte-order mark", page)
+	}
+	for _, c := range b {
+		if (c < 0x20 && c != '\t' && c != '\n' && c != '\r') || c == 0x7f {
+			return fmt.Errorf("%s: control byte 0x%02x", page, c)
+		}
+	}
+	const meta = `<meta charset="utf-8">`
+	i := bytes.Index(b, []byte(meta))
+	if i < 0 || i+len(meta) > 1024 || len(charsetDecl.FindAllIndex(b, -1)) != 1 {
+		return fmt.Errorf("%s: must declare exactly one charset, %s, in its first 1024 bytes", page, meta)
+	}
+	return nil
 }
 
 func sri(fsys fs.FS, file string) (string, error) {
@@ -105,6 +139,9 @@ func pinned(fsys fs.FS, page, ref, hash string) (string, error) {
 func checkPageSRI(fsys fs.FS, page string) error {
 	b, err := fs.ReadFile(fsys, page)
 	if err != nil {
+		return err
+	}
+	if err := plainUTF8(page, b); err != nil {
 		return err
 	}
 	html := string(b)
@@ -262,6 +299,18 @@ func TestPortalSRICheckRejects(t *testing.T) {
 			strings.Replace(html, "<!-- sri:end -->", "<!-- sri:end -->\n"+
 				`<link rel="modulepreload" href="../lib/approve.js" integrity="`+approveHash+`">`, 1), "after the module script",
 		},
+		"utf-16 page with a byte-order mark": {
+			utf16le(strings.Replace(html, "<!-- sri:end -->", "<!-- sri:end -->\n"+notEmbedded, 1)), "not valid UTF-8",
+		},
+		"utf-8 byte-order mark": {"\uFEFF" + html, "byte-order mark"},
+		"escape byte":           {strings.Replace(html, "<!-- sri:end -->", "<!-- sri:end -->\n<scr\x1b(Bipt>", 1), "control byte"},
+		"second charset": {
+			strings.Replace(html, `<meta charset="utf-8">`, `<meta charset="utf-8">`+"\n"+`<meta charset="ISO-2022-JP">`, 1), "exactly one charset",
+		},
+		"no charset": {strings.Replace(html, `<meta charset="utf-8">`, "", 1), "exactly one charset"},
+		"preload not in clean form": {
+			strings.Replace(html, `href="../lib/changes.js"`, `href="../lib//changes.js"`, 1), "not in clean form",
+		},
 		"stale hash": {
 			strings.Replace(html, approveHash, good, 1), "stale integrity",
 		},
@@ -277,4 +326,15 @@ func TestPortalSRICheckRejects(t *testing.T) {
 		require.Error(t, err, name)
 		require.Contains(t, err.Error(), c.want, name)
 	}
+}
+
+// utf16le encodes s as UTF-16LE with a byte-order mark, as a browser would
+// decode it regardless of the declared charset.
+func utf16le(s string) string {
+	out := make([]byte, 0, 2+2*len(s))
+	out = append(out, 0xff, 0xfe)
+	for _, r := range s {
+		out = append(out, byte(r), byte(r>>8))
+	}
+	return string(out)
 }

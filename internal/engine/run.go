@@ -132,7 +132,7 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 	if err != nil {
 		return err
 	}
-	env := agentEnv{cfg: cfg, configPath: configPath, pagesBase: base, stateDir: cfg.StateDirFor(runtime.GOOS), pins: statePins(cfg.StateDirFor(runtime.GOOS), log)}
+	env := agentEnv{cfg: cfg, configPath: configPath, asRoot: os.Geteuid() == 0, pagesBase: base, stateDir: cfg.StateDirFor(runtime.GOOS), pins: statePins(cfg.StateDirFor(runtime.GOOS), log)}
 	piiCfg := cfg.PIIOrDefault()
 	piiLog := log.With("component", "pii")
 	// A key file wider than 0600, or PII state the engine cannot open,
@@ -421,6 +421,9 @@ type agentEnv struct {
 	records *engineRecords
 	// dict is the engine's PII dictionary, shared by every agent.
 	dict *pii.FuseDictionary
+	// asRoot: the engine runs as root (started without --user); it then
+	// reaches each agent's files through openRootFiles.
+	asRoot bool
 }
 
 func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slog.Logger) (agentRuntime, error) {
@@ -435,16 +438,22 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	if !env.cfg.Service() {
 		cmds = cmds.Foreground()
 	}
-	url, err := config.ReadCredential(a.CredentialFile)
+	files, err := agentFilesFor(env, a)
 	if err != nil {
+		return agentRuntime{}, err
+	}
+	url, err := files.readCredential()
+	if err != nil {
+		files.close()
 		return agentRuntime{}, err
 	}
 	pool, password, err := agentdb.NewSwitchablePool(ctx, url, agentPoolConns)
 	if err != nil {
+		files.close()
 		return agentRuntime{}, err
 	}
 	finisher := &setupFinisher{
-		configPath: env.configPath, agent: a.Name, credFile: a.CredentialFile,
+		configPath: env.configPath, agent: a.Name, credFile: a.CredentialFile, files: files,
 		login: targetOf(pool.Config().ConnConfig), password: password, reset: pool.Reset,
 		connect: connectAgent, log: log,
 	}
@@ -507,8 +516,21 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		ledger: piiLedger{Ledger: gatedLedger{inner: person.NewDBLedger(pool, time.Now), admit: svc.Admit}, dict: env.dict},
 		info:   agentInfo(svc, pool.Config().ConnConfig.Config),
 		scan:   piidict.ScanSource{Agent: a.Name, DB: pool, Classes: classes, Limits: limits},
-		close:  pool.Close,
+		close: func() {
+			pool.Close()
+			files.close()
+		},
 	}, nil
+}
+
+// agentFilesFor is how the engine reaches agent a's files: by path, or,
+// started as root without --user, through directories opened without
+// following a link, from the computed credential path only (rootFiles).
+func agentFilesFor(env agentEnv, a config.Agent) (agentFiles, error) {
+	if !env.asRoot {
+		return pathFiles{configPath: env.configPath, credFile: a.CredentialFile}, nil
+	}
+	return openRootFiles(env.configPath, a.Name, a.CredentialFile)
 }
 
 // agentInfo answers the person socket's STATUS with the agent's status tool

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 // OpenTrustedDir refuses a symlinked directory, makes a missing one (and
@@ -99,4 +100,22 @@ func fileUID(t *testing.T, fi os.FileInfo) uint32 {
 	st, ok := fi.Sys().(*syscall.Stat_t)
 	require.True(t, ok)
 	return st.Uid
+}
+
+// Owner reads the directory's owner through its descriptor, and a symlink
+// OpenFile refuses wraps ELOOP, so a lock caller can tell it apart.
+func TestTrustedDirOwnerAndSymlinkError(t *testing.T) {
+	t.Parallel()
+	dir := realTempDir(t)
+	d, err := OpenTrustedDir(dir, os.Geteuid(), false)
+	require.NoError(t, err)
+	defer d.Close()
+	owner, err := d.Owner()
+	require.NoError(t, err)
+	require.Equal(t, os.Geteuid(), owner)
+
+	require.NoError(t, os.Symlink(filepath.Join(dir, "x"), filepath.Join(dir, "link")))
+	_, err = d.OpenFile("link", os.O_RDONLY, 0)
+	require.ErrorIs(t, err, unix.ELOOP)
+	require.ErrorContains(t, err, "is a symlink, which is refused")
 }

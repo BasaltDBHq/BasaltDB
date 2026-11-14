@@ -59,11 +59,8 @@ func TestSlogNeverPrintsAKeyOrAToken(t *testing.T) {
 		slog.New(slog.NewTextHandler(&out, nil)).Info("m", "v", v)
 		slog.New(slog.NewJSONHandler(&out, nil)).Info("m", "v", v)
 		slog.New(slog.NewJSONHandler(&out, nil)).Info("m", slog.Any("nested", map[string]any{"v": v}))
-		if name != "token" {
-			// A bare token's String is its wire form, by design (the prologue,
-			// the socket path); only slog and %#v must not show it.
-			fmt.Fprintf(&out, "%v %+v %#v %s\n", v, v, v, v)
-		}
+		fmt.Fprintf(&out, "%v %+v %#v %s\n", v, v, v, v)
+		fmt.Fprintf(&out, "%v\n", fmt.Errorf("wrapped: %v", v))
 		fmt.Fprintf(&out, "%#v\n", v)
 		for _, f := range forbidden {
 			require.NotContains(t, out.String(), f, "%s: %s", name, out.String())

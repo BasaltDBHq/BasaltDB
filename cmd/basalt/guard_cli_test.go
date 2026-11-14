@@ -35,6 +35,13 @@ type result struct {
 // cli runs basalt with stdin and an environment holding only env.
 func cli(t *testing.T, env map[string]string, stdin string, args ...string) result {
 	t.Helper()
+	return cliOn(t, systemSocketHost(t), env, stdin, args...)
+}
+
+// cliOn is cli on host h: pass newFakeHost(t) for a person who is not root,
+// whose config dir is short enough for the sockets next to the config.
+func cliOn(t *testing.T, h *fakeHost, env map[string]string, stdin string, args ...string) result {
+	t.Helper()
 	var stdout, stderr bytes.Buffer
 	cache := t.TempDir()
 	c := newIO(context.Background(), stdio{in: strings.NewReader(stdin), out: &stdout, err: &stderr},
@@ -44,6 +51,7 @@ func cli(t *testing.T, env map[string]string, stdin string, args ...string) resu
 			}
 			return cache
 		})
+	c.host = h
 	code := guardCommands[args[0]](c, args[1:])
 	return result{code, stdout.String(), stderr.String()}
 }

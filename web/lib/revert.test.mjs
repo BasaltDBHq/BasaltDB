@@ -262,6 +262,9 @@ function fakeElement(tag) {
     append(...nodes) {
       this.children.push(...nodes);
     },
+    replaceChildren(...nodes) {
+      this.children = nodes;
+    },
   };
 }
 
@@ -383,4 +386,39 @@ test("a row from another agent than the requester is tagged amber", () => {
   assert.equal(other.textContent, "sync");
   // A role name is shown as text with its hidden characters escaped.
   assert.equal(agentTag({ role: "basalt_agent_a‮b", other: true }).textContent, "a<U+202E>b");
+});
+
+test("with per-row agents each row carries its own tag, amber for another agent", async () => {
+  globalThis.document = { createElement: fakeElement };
+  const req = await parseRevertRequest("#" + fixtures.request.fragment);
+  const restore = req.lines[2];
+  const skip = req.lines[3];
+  const agents = (line) =>
+    line === restore
+      ? [{ role: "basalt_agent_bot", other: false }]
+      : [{ role: "basalt_agent_bot", other: false }, { role: "basalt_agent_sync", other: true }];
+  for (const [line, want] of [[restore, [["ag", "bot"]]], [skip, [["ag", "bot"], ["ag other", "sync"]]]]) {
+    const groups = lineGroups([{ line, index: 0 }], null, new Map(), false, new Map(), agents);
+    const head = groups[0].children[0];
+    assert.ok(!head.children.some((c) => c.className.startsWith("ag")), "no group tag when rows are tagged");
+    const table = groups[0].children.find((c) => c.className === "scroll").children[0];
+    const [header, first, ...rest] = table.children;
+    const col = header.children.findIndex((c) => c.textContent === "Changed by");
+    assert.equal(col, 1, "the agent column comes right after the marker");
+    const cell = first.children[col];
+    assert.equal(cell.className, "who");
+    assert.equal(cell.rowSpan, 1 + rest.length, "one cell spans the row's lines");
+    assert.deepEqual(cell.children.map((t) => [t.className, t.textContent]), want);
+    for (const r of rest) assert.equal(r.children.length, first.children.length - 1);
+  }
+  // A row the map cannot place gets an empty cell, not a guess.
+  const groups = lineGroups([{ line: restore, index: 0 }], null, new Map(), false, new Map(), () => null);
+  const table = groups[0].children.find((c) => c.className === "scroll").children[0];
+  assert.deepEqual(table.children[1].children[1].children, []);
+});
+
+test("another agent's tag says so in words, not only in amber", () => {
+  globalThis.document = { createElement: fakeElement };
+  assert.equal(agentTag({ role: "basalt_agent_bot", other: false }).title, "basalt_agent_bot");
+  assert.equal(agentTag({ role: "basalt_agent_sync", other: true }).title, "basalt_agent_sync, not the agent that asked for this revert");
 });

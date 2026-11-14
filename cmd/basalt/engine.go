@@ -28,6 +28,11 @@ import (
 
 // runEngine runs the engine service; the launchd or systemd unit starts it.
 func runEngine(ctx context.Context, args []string, io stdio) int {
+	return runEngineOn(ctx, args, io, osHost{})
+}
+
+// runEngineOn is runEngine with the host that tells root and the config dir.
+func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 	fs := flag.NewFlagSet("engine", flag.ContinueOnError)
 	fs.SetOutput(io.err)
 	configPath := fs.String("config", config.DefaultPath(runtime.GOOS), "engine config file")
@@ -40,6 +45,8 @@ func runEngine(ctx context.Context, args []string, io stdio) int {
 			return fail(io.err, "engine", err)
 		}
 	}
+	// After the drop, so a bot's own user finds the config init left.
+	*configPath = configOrFallback(h, fs, *configPath)
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		return fail(io.err, "engine", err)

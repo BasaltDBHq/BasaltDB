@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"sort"
 	"strings"
 	"testing"
@@ -168,6 +169,10 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 		problemSetupNotRun:        {state: guard.GuardMissing, report: engineStatus(&fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}}, 0, pendingSetup(guard.SetupInstall, soon))},
 		problemSetupExpired:       {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: &pgconn.PgError{Code: "28000", Message: "role does not exist"}}, 0, pendingSetup(guard.SetupInstall, past))},
 		problemSetupChangePending: {state: guard.GuardOK, report: engineStatus(&fakeProbe{st: ok}, 1, pendingSetup(guard.SetupAgent, soon))},
+		problemLockFileUnusable: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+			t.Helper()
+			return lockTroubleStatus(t, operatedBy)
+		}},
 		problemDevLocalPages: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
 			t.Helper()
 			return devLocalStatus(t, operatedBy)
@@ -635,4 +640,23 @@ func TestStatusProblemsStayWithinTheLimitWithALongConfigPath(t *testing.T) {
 			require.NoError(t, CheckPersonMessage(p.PersonMessage), "%s: %s: %s", name, p.Code, p.PersonMessage)
 		}
 	}
+}
+
+// lockTroubleStatus is the status of an engine whose setup is recorded but
+// whose config lock file a root process left unopenable.
+func lockTroubleStatus(t *testing.T, operatedBy string) StatusReport {
+	t.Helper()
+	d := deps()
+	d.OperatedBy = operatedBy
+	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil), recorded: true}
+	d.Approvals = keys{n: 1}
+	d.Setup = pendingSetup(guard.SetupAgent, statusNow.Add(time.Hour))
+	d.Now = func() time.Time { return statusNow }
+	d.Finisher = &fakeFinisher{finishErr: &config.LockUnusableError{Path: "/etc/basalt/engine.json.lock", Err: os.ErrPermission}}
+	cmds, err := NewCommands("bot", "", "linux", []string{"--agent=bot", "--write=public.leads"})
+	require.NoError(t, err)
+	d.Commands = cmds
+	r, err := NewService(d).Status(context.Background())
+	require.NoError(t, err)
+	return r
 }

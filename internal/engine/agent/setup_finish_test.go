@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -261,4 +262,45 @@ func TestHeldCallsTrustANotRecordedAnswerBriefly(t *testing.T) {
 func serverOf(svc *Service) (*mcp.Server, []mcp.Tool) {
 	tools := Tools(svc)
 	return mcp.NewServer(mcp.Info{Name: "basalt"}, tools...), tools
+}
+
+// A lock file the engine cannot open is reported, not retried in silence,
+// and the setup stays pending until a try opens it (CONTRACT.md, Lock
+// files).
+func TestUnusableLockFileIsAStatusProblem(t *testing.T) {
+	t.Parallel()
+	const lock = "/etc/basalt/engine.json.lock"
+	d := deps()
+	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil), recorded: true}
+	d.Approvals = keys{n: 1}
+	d.Setup = pendingSetup(guard.SetupAgent, statusNow.Add(time.Hour))
+	d.Now = func() time.Time { return statusNow }
+	fin := &fakeFinisher{finishErr: &config.LockUnusableError{Path: lock, Err: os.ErrPermission}}
+	d.Finisher = fin
+	svc := NewService(d)
+
+	r, err := svc.Status(context.Background())
+	require.NoError(t, err)
+	var found *Problem
+	for i := range r.Problems {
+		if r.Problems[i].Code == problemLockFileUnusable {
+			found = &r.Problems[i]
+		}
+	}
+	require.NotNil(t, found, "%+v", r.Problems)
+	require.Contains(t, found.PersonMessage, lock)
+	require.Equal(t, "sudo chown "+engineUserName()+" "+lock, found.NextSteps[0].Command)
+	require.Equal(t, mcp.ActorPerson, found.NextSteps[0].Actor)
+	require.NotNil(t, svc.pendingSetup(), "still pending: the next call tries again")
+
+	fin.mu.Lock()
+	fin.finishErr = nil
+	fin.mu.Unlock()
+	r, err = svc.Status(context.Background())
+	require.NoError(t, err)
+	for _, p := range r.Problems {
+		require.NotEqual(t, problemLockFileUnusable, p.Code, "fixed: no problem")
+	}
+	require.Nil(t, svc.pendingSetup(), "finished once the lock opens")
+	require.Len(t, fin.finished(), 2)
 }

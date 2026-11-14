@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -76,4 +77,27 @@ func TestPinOfInstall(t *testing.T) {
 	require.True(t, chainpin.Pin{Install: 5}.Of(5))
 	require.False(t, chainpin.Pin{Install: 5}.Of(6))
 	require.True(t, chainpin.Pin{}.Of(6))
+}
+
+// A pin keeps each set-aside once, and the file round-trips them.
+func TestPinKeepsItsSetAside(t *testing.T) {
+	t.Parallel()
+	at := time.Date(2026, 11, 14, 9, 30, 0, 0, time.UTC)
+	s := guard.SetAside{PinnedSeq: 42, PinnedHash: []byte{1, 2}, PinnedInstall: 16384, Install: 16999, At: at}
+	p := chainpin.Pin{Head: guard.Genesis(), Install: 16999}.Kept(s).Kept(s)
+	require.Len(t, p.SetAside, 1)
+	other := s
+	other.PinnedSeq = 43
+	p = p.Kept(other)
+	require.Len(t, p.SetAside, 2)
+
+	f := chainpin.File{Dir: t.TempDir()}
+	require.NoError(t, f.Save("bot", p))
+	got, ok, err := f.Load("bot")
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, p, got)
+	raw, err := os.ReadFile(filepath.Join(f.Dir, "bot.head.json"))
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"setAside":[{"pinnedSeq":42,"pinnedHash":"0102","pinnedInstall":16384,"install":16999,"at":"2026-11-14T09:30:00Z"}`)
 }

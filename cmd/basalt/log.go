@@ -18,6 +18,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
@@ -153,18 +154,30 @@ func checkHealth(c *cliIO, l *agentLedger, full bool) (ledger.Health, error) {
 	if ok {
 		opts.Pin, opts.PinInstall = &pin.Head, pin.Install
 	}
+	opts.SetAside = pin.SetAside
 	h, err := l.CheckHealth(c.ctx, opts)
 	if err != nil {
 		return h, err
 	}
-	if h.PinSetAside {
-		fmt.Fprintln(c.stderr, "note: Basalt's guard was installed again since your last basalt log; "+
-			"the old ledger is gone, so this check starts from the new one.")
+	switch {
+	case h.PinMoved:
+		fprintSafef(c.stderr, "warning: the guard's schema was dropped and restored with the same ledger (guard install %d is now %d); the ledger pin moved to the new install\n",
+			pin.Install, h.Install)
+	case h.PinSetAside:
+		pin = pin.Kept(guard.SetAside{
+			PinnedSeq: pin.Head.Seq, PinnedHash: pin.Head.Hash, PinnedInstall: pin.Install, Install: h.Install, At: c.now().UTC(),
+		})
 	}
+	next := chainpin.Pin{Head: h.Head, Install: h.Install, SetAside: pin.SetAside}
 	if !h.Chain.Intact {
-		return h, nil
+		if !h.PinSetAside {
+			return h, nil
+		}
+		// Keep the old pin with the copy of what was reported: the next run
+		// reports it again (already recorded) and checks the new chain.
+		next = pin
 	}
-	if err := pins.Save(name, chainpin.Pin{Head: h.Head, Install: h.Install}); err != nil {
+	if err := pins.Save(name, next); err != nil {
 		fmt.Fprintf(c.stderr, "warning: could not save the ledger pin: %v\n", err)
 	}
 	return h, nil
@@ -189,6 +202,9 @@ func logPins(c *cliIO, key string) (chainpin.File, string, error) {
 const pinNameBytes = 16
 
 func warn(c *cliIO, h ledger.Health) {
+	for _, line := range ledger.ReinstallNotices(h.Reinstalls) {
+		fprintSafef(c.stderr, "%s\n", line)
+	}
 	if !h.Chain.Intact {
 		fprintSafef(c.stderr, "warning: ledger chain broken at seq %d; ledger rows were changed or removed outside basalt\n", h.Chain.BrokenAt)
 	}

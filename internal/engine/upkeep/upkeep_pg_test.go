@@ -3,11 +3,14 @@ package upkeep_test
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
+	"fmt"
 	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
@@ -268,11 +271,22 @@ func TestTickRefreshesTheRLSCache(t *testing.T) {
 	require.Equal(t, 2, r.n)
 }
 
-// A reinstall over a kept state directory (basalt uninstall, then basalt
-// init on the same database) sets the old install's pin aside instead of
-// raising a tamper alarm against the new ledger, and the new pin carries
-// the new install. A rewrite of the new ledger is still caught.
-func TestReinstallOverAKeptPinStartsANewPin(t *testing.T) {
+// reinstall drops the guard and installs it again for the agent bot:
+// basalt uninstall, then basalt init, on the same database.
+func reinstall(t *testing.T, d *guardtest.DB, a *guardtest.Agent) *guardtest.Agent {
+	t.Helper()
+	ctx := context.Background()
+	require.NoError(t, a.Conn.Close(ctx))
+	require.NoError(t, guard.Uninstall(ctx, d.Admin, d.Names))
+	return d.NewAgent(t, "bot", []string{"public.leads"}, nil)
+}
+
+// A reinstall over a kept state directory sets the old install's pin aside
+// without a tamper alarm, never silently: the engine reports it in the new
+// ledger (PIN_SET_ASIDE with the pinned head), keeps a copy in its pin
+// file, and the notice shows. The new pin carries the new install, and a
+// rewrite of the new ledger is still caught.
+func TestReinstallOverAKeptPinIsRecorded(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
@@ -288,22 +302,38 @@ func TestReinstallOverAKeptPinStartsANewPin(t *testing.T) {
 	require.True(t, ok)
 	require.NotZero(t, old.Install, "a pin names its install")
 
-	require.NoError(t, a.Conn.Close(ctx))
-	require.NoError(t, guard.Uninstall(ctx, d.Admin, d.Names))
-	b := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
-
+	b := reinstall(t, d, a)
 	var logs bytes.Buffer
 	again := upkeep.New("bot", "test", b.Conn, slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
 	require.NoError(t, again.Tick(ctx))
 	require.NoError(t, again.Tick(ctx))
 	for _, hb := range heartbeats(t, b.Conn) {
-		require.NotContains(t, hb.detail, "chainBrokenAt", "no tamper alarm on a clean reinstall")
+		require.NotContains(t, hb.detail, "chainBrokenAt", "no tamper alarm on a reinstall")
 	}
-	require.Contains(t, logs.String(), "the guard was installed again", "a clear notice instead")
+	require.Contains(t, logs.String(), "set aside and reported in the ledger")
+
+	set := events(t, b.Conn, "PIN_SET_ASIDE")
+	require.Len(t, set, 1, "reported once")
+	require.InDelta(t, float64(old.Head.Seq), set[0].detail["pinnedSeq"], 0)
+	require.Equal(t, hex.EncodeToString(old.Head.Hash), set[0].detail["pinnedHash"])
+	require.InDelta(t, float64(old.Install), set[0].detail["pinnedInstall"], 0)
+	require.NotEmpty(t, set[0].detail["installedAt"])
+
 	fresh, ok, err := pins.Load("bot")
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.NotEqual(t, old.Install, fresh.Install)
+	require.Len(t, fresh.SetAside, 1, "the engine keeps its own copy")
+	require.Equal(t, old.Head.Seq, fresh.SetAside[0].PinnedSeq)
+	require.Equal(t, fresh.Install, fresh.SetAside[0].Install)
+
+	rs, err := guard.ReadReinstalls(ctx, b.Conn, fresh.SetAside)
+	require.NoError(t, err)
+	lines := ledger.ReinstallNotices(rs)
+	require.Len(t, lines, 1)
+	require.Contains(t, lines[0], "This database's ledger was reinstalled on ")
+	require.Contains(t, lines[0], fmt.Sprintf("Previous ledger ended at entry %d (hash %s), as reported with the credential of %s.",
+		old.Head.Seq, hex.EncodeToString(old.Head.Hash), b.Role))
 
 	// The new chain is pinned and checked like any other.
 	d.Exec(t, `UPDATE basalt_meta.ledger SET hash = sha256(hash) WHERE seq = $1`, fresh.Head.Seq)
@@ -312,8 +342,162 @@ func TestReinstallOverAKeptPinStartsANewPin(t *testing.T) {
 	require.InDelta(t, float64(fresh.Head.Seq), hb[len(hb)-1].detail["chainBrokenAt"], 0)
 }
 
-// basalt log's check sets a pin of an earlier install aside the same way.
-func TestCheckHealthSetsAsideAPinOfAnEarlierInstall(t *testing.T) {
+// A running engine notices a reinstall since its last tick the same way.
+func TestReinstallWhileRunningIsRecorded(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
+	ctx := context.Background()
+	pins := chainpin.File{Dir: t.TempDir()}
+	sw := &switchDB{q: a.Conn}
+	u := upkeep.New("bot", "test", sw, slog.New(slog.DiscardHandler), time.Now).WithPins(pins)
+	// Twice: the second pins the first heartbeat, past the genesis.
+	require.NoError(t, u.Tick(ctx))
+	require.NoError(t, u.Tick(ctx))
+
+	b := reinstall(t, d, a)
+	sw.q = b.Conn
+	require.NoError(t, u.Tick(ctx))
+	require.Len(t, events(t, b.Conn, "PIN_SET_ASIDE"), 1)
+	for _, hb := range heartbeats(t, b.Conn) {
+		require.NotContains(t, hb.detail, "chainBrokenAt")
+	}
+}
+
+// switchDB is a guard.Querier whose connection a test replaces.
+type switchDB struct{ q guard.Querier }
+
+func (s *switchDB) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	return s.q.Exec(ctx, sql, args...)
+}
+
+func (s *switchDB) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	return s.q.Query(ctx, sql, args...)
+}
+
+func (s *switchDB) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+	return s.q.QueryRow(ctx, sql, args...)
+}
+
+// otherInstall is a pin of install current+1: the same chain under another
+// oid, as a pg_dump and pg_restore leaves it.
+func otherInstall(t *testing.T, pins chainpin.File) chainpin.Pin {
+	t.Helper()
+	p, ok, err := pins.Load("bot")
+	require.NoError(t, err)
+	require.True(t, ok)
+	moved := chainpin.Pin{Head: p.Head, Install: p.Install + 1}
+	require.NoError(t, pins.Save("bot", moved))
+	return moved
+}
+
+// A faithful restore (the same chain under a new oid) moves the pin with a
+// warning naming both installs, and records nothing.
+func TestFaithfulRestoreMovesThePin(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
+	ctx := context.Background()
+	pins := chainpin.File{Dir: t.TempDir()}
+	first := newUpkeep(a.Conn, time.Now).WithPins(pins)
+	require.NoError(t, first.Tick(ctx))
+	require.NoError(t, first.Tick(ctx))
+	moved := otherInstall(t, pins)
+	require.Positive(t, moved.Head.Seq, "a pinned row, not the genesis")
+
+	var logs bytes.Buffer
+	u := upkeep.New("bot", "test", a.Conn, slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
+	require.NoError(t, u.Tick(ctx))
+	require.Empty(t, events(t, a.Conn, "PIN_SET_ASIDE"), "nothing recorded")
+	for _, hb := range heartbeats(t, a.Conn) {
+		require.NotContains(t, hb.detail, "chainBrokenAt")
+	}
+	require.Contains(t, logs.String(), "dropped and restored with the same ledger")
+	require.Contains(t, logs.String(), fmt.Sprintf("pinnedInstall=%d install=%d", moved.Install, moved.Install-1))
+	now, _, err := pins.Load("bot")
+	require.NoError(t, err)
+	require.Equal(t, moved.Install-1, now.Install)
+	require.Empty(t, now.SetAside)
+	require.Greater(t, now.Head.Seq, moved.Head.Seq)
+}
+
+// A pin before an anchor that moved, or at a later anchor, is not on the
+// chain any more: the history before the anchor was cut. It is recorded,
+// never moved.
+func TestPinAtOrBeforeAMovedAnchorIsRecorded(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"before", "at"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			d := guardtest.New(t).WithDemo(t)
+			a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
+			ctx := context.Background()
+			pins := chainpin.File{Dir: t.TempDir()}
+			require.NoError(t, newUpkeep(a.Conn, time.Now).WithPins(pins).Tick(ctx))
+			// The pin is the head, past the genesis; "before" adds a row
+			// after it, so retention's anchor lands past the pin.
+			head, err := guard.Head(ctx, a.Conn)
+			require.NoError(t, err)
+			require.Positive(t, head.Seq)
+			install, err := guard.InstallID(ctx, a.Conn)
+			require.NoError(t, err)
+			pin := chainpin.Pin{Head: head, Install: install + 1}
+			require.NoError(t, pins.Save("bot", pin))
+			if name == "before" {
+				require.NoError(t, guard.Heartbeat(ctx, a.Conn, nil))
+			}
+			d.Exec(t, `SELECT basalt_meta._prune(now() + interval '2 years')`)
+
+			require.NoError(t, newUpkeep(a.Conn, time.Now).WithPins(pins).Tick(ctx))
+			set := events(t, a.Conn, "PIN_SET_ASIDE")
+			require.Len(t, set, 1)
+			require.InDelta(t, float64(pin.Head.Seq), set[0].detail["pinnedSeq"], 0)
+			for _, hb := range heartbeats(t, a.Conn) {
+				require.NotContains(t, hb.detail, "chainBrokenAt")
+			}
+		})
+	}
+}
+
+// On a guard older than version 36 nothing can be recorded: the engine
+// keeps the pin and reports the broken chain, as before, and tries again on
+// the next tick.
+func TestOlderGuardKeepsThePin(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
+	ctx := context.Background()
+	pins := chainpin.File{Dir: t.TempDir()}
+	require.NoError(t, newUpkeep(a.Conn, time.Now).WithPins(pins).Tick(ctx))
+
+	b := reinstall(t, d, a)
+	d.Exec(t, `DROP VIEW basalt_meta.agent_reinstalls;
+		DROP FUNCTION basalt_meta.record_pin_set_aside(bigint, bytea, oid);
+		DROP FUNCTION basalt_meta.pin_on_chain(bigint, bytea)`)
+	before, _, err := pins.Load("bot")
+	require.NoError(t, err)
+	// A pin past the new ledger's head, as an older ledger's often is.
+	before.Head.Seq += 100
+	require.NoError(t, pins.Save("bot", before))
+
+	var logs bytes.Buffer
+	u := upkeep.New("bot", "test", b.Conn, slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
+	require.NoError(t, u.Tick(ctx))
+	require.NoError(t, u.Tick(ctx))
+	hb := heartbeats(t, b.Conn)
+	require.Contains(t, hb[len(hb)-1].detail, "chainBrokenAt", "the reinstall shows as a broken chain")
+	require.Contains(t, logs.String(), "could not be reported in the ledger")
+	after, _, err := pins.Load("bot")
+	require.NoError(t, err)
+	require.Equal(t, before, after, "the pin is kept")
+	rs, err := guard.ReadReinstalls(ctx, b.Conn, nil)
+	require.NoError(t, err)
+	require.Empty(t, rs.List, "no notice on an older guard")
+}
+
+// basalt log's check (CHECK_HEALTH) runs the same steps for its own pin and
+// shows its kept copy even when the ledger rows are gone.
+func TestCheckHealthSettlesAPinOfAnotherInstall(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
@@ -322,19 +506,37 @@ func TestCheckHealthSetsAsideAPinOfAnEarlierInstall(t *testing.T) {
 	first, err := ledger.CheckHealth(ctx, a.Conn, time.Now(), ledger.HealthOptions{})
 	require.NoError(t, err)
 	require.NotZero(t, first.Install)
+	require.Empty(t, first.Reinstalls.List)
 
 	pin := first.Head
 	same, err := ledger.CheckHealth(ctx, a.Conn, time.Now(), ledger.HealthOptions{Pin: &pin, PinInstall: first.Install})
 	require.NoError(t, err)
 	require.False(t, same.PinSetAside)
+	require.False(t, same.PinMoved)
 
 	far := guard.ChainHead{Seq: first.Head.Seq + 100, Hash: first.Head.Hash}
 	broken, err := ledger.CheckHealth(ctx, a.Conn, time.Now(), ledger.HealthOptions{Pin: &far, PinInstall: first.Install})
 	require.NoError(t, err)
 	require.False(t, broken.Chain.Intact, "a pin of this install still catches a ledger that went backwards")
 
+	moved, err := ledger.CheckHealth(ctx, a.Conn, time.Now(), ledger.HealthOptions{Pin: &pin, PinInstall: first.Install + 1})
+	require.NoError(t, err)
+	require.True(t, moved.PinMoved, "the same chain under another oid")
+	require.True(t, moved.Chain.Intact)
+	require.Empty(t, moved.Reinstalls.List)
+
 	other, err := ledger.CheckHealth(ctx, a.Conn, time.Now(), ledger.HealthOptions{Pin: &far, PinInstall: first.Install + 1})
 	require.NoError(t, err)
 	require.True(t, other.PinSetAside)
 	require.True(t, other.Chain.Intact, "the new ledger is checked from its start")
+	require.Len(t, other.Reinstalls.List, 1)
+	require.Equal(t, far.Seq, other.Reinstalls.List[0].Reports[0].PinnedSeq)
+
+	// The rows deleted: the kept copy still shows the notice.
+	d.Exec(t, `DELETE FROM basalt_meta.ledger WHERE kind = 'PIN_SET_ASIDE'`)
+	kept := []guard.SetAside{{PinnedSeq: far.Seq, PinnedHash: far.Hash, PinnedInstall: first.Install + 1, Install: first.Install, At: time.Now()}}
+	h, err := ledger.CheckHealth(ctx, a.Conn, time.Now(), ledger.HealthOptions{SetAside: kept})
+	require.NoError(t, err)
+	require.Len(t, h.Reinstalls.List, 1)
+	require.Contains(t, ledger.ReinstallNotices(h.Reinstalls)[0], "(no install record)")
 }

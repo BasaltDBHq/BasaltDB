@@ -8,6 +8,7 @@
 package chainpin
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -15,7 +16,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sync"
+	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 )
@@ -37,6 +40,23 @@ var ErrInvalidName = errors.New("invalid pin name")
 type Pin struct {
 	Head    guard.ChainHead
 	Install uint32
+	// SetAside are the pins this witness set aside after a reinstall and
+	// reported in the ledger, kept so the notice stays whatever happens to
+	// the ledger rows (CONTRACT.md, Version 36, step 4).
+	SetAside []guard.SetAside
+}
+
+// Kept returns p with s in its SetAside, once: the same pin set aside on
+// the same install is kept once.
+func (p Pin) Kept(s guard.SetAside) Pin {
+	for _, k := range p.SetAside {
+		if k.PinnedSeq == s.PinnedSeq && k.PinnedInstall == s.PinnedInstall && k.Install == s.Install &&
+			bytes.Equal(k.PinnedHash, s.PinnedHash) {
+			return p
+		}
+	}
+	p.SetAside = append(slices.Clone(p.SetAside), s)
+	return p
 }
 
 // Of reports whether p belongs to install: a pin of another install is of a
@@ -44,11 +64,36 @@ type Pin struct {
 // no install is taken as this one's.
 func (p Pin) Of(install uint32) bool { return p.Install == 0 || p.Install == install }
 
-// pinFile is the file format: the head as JSON, the hash in hex.
+// pinFile is the file format: the head as JSON, hashes in hex.
 type pinFile struct {
-	Seq     int64  `json:"seq"`
-	Hash    string `json:"hash"`
-	Install uint32 `json:"install,omitempty"`
+	Seq      int64          `json:"seq"`
+	Hash     string         `json:"hash"`
+	Install  uint32         `json:"install,omitempty"`
+	SetAside []setAsideFile `json:"setAside,omitempty"`
+}
+
+// setAsideFile is one guard.SetAside in the pin file.
+type setAsideFile struct {
+	PinnedSeq     int64     `json:"pinnedSeq"`
+	PinnedHash    string    `json:"pinnedHash"`
+	PinnedInstall uint32    `json:"pinnedInstall"`
+	Install       uint32    `json:"install"`
+	At            time.Time `json:"at"`
+}
+
+func setAsideToFile(s guard.SetAside) setAsideFile {
+	return setAsideFile{
+		PinnedSeq: s.PinnedSeq, PinnedHash: hex.EncodeToString(s.PinnedHash),
+		PinnedInstall: s.PinnedInstall, Install: s.Install, At: s.At.UTC(),
+	}
+}
+
+func (s setAsideFile) toDomain() (guard.SetAside, error) {
+	hash, err := hex.DecodeString(s.PinnedHash)
+	if err != nil || s.PinnedSeq < 0 {
+		return guard.SetAside{}, errors.New("a set-aside pin is not a chain head")
+	}
+	return guard.SetAside{PinnedSeq: s.PinnedSeq, PinnedHash: hash, PinnedInstall: s.PinnedInstall, Install: s.Install, At: s.At}, nil
 }
 
 // File keeps pins as <Dir>/<name>.head.json, mode 0600.
@@ -84,7 +129,15 @@ func (f File) Load(name string) (Pin, bool, error) {
 	if err != nil || p.Seq < 0 {
 		return Pin{}, false, fmt.Errorf("pin %s is not a chain head", path)
 	}
-	return Pin{Head: guard.ChainHead{Seq: p.Seq, Hash: hash}, Install: p.Install}, true, nil
+	pin := Pin{Head: guard.ChainHead{Seq: p.Seq, Hash: hash}, Install: p.Install}
+	for _, s := range p.SetAside {
+		kept, err := s.toDomain()
+		if err != nil {
+			return Pin{}, false, fmt.Errorf("pin %s: %w", path, err)
+		}
+		pin.SetAside = append(pin.SetAside, kept)
+	}
+	return pin, true, nil
 }
 
 // Save replaces the pin named name atomically (write, then rename).
@@ -97,7 +150,11 @@ func (f File) Save(name string, pin Pin) error {
 	if err := os.MkdirAll(f.Dir, dirMode); err != nil {
 		return err
 	}
-	raw, err := json.Marshal(pinFile{Seq: h.Seq, Hash: hex.EncodeToString(h.Hash), Install: pin.Install})
+	file := pinFile{Seq: h.Seq, Hash: hex.EncodeToString(h.Hash), Install: pin.Install}
+	for _, s := range pin.SetAside {
+		file.SetAside = append(file.SetAside, setAsideToFile(s))
+	}
+	raw, err := json.Marshal(file)
 	if err != nil {
 		return err
 	}

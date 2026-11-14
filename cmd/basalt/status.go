@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/basaltdbhq/basaltdb/internal/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
@@ -195,7 +196,10 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 	r, err := agent.LocalStatus{
 		Name: a.Name, Commands: cmds, OperatedBy: cfg.OperatedBy, DevLocalPages: cfg.DevLocalPages, Setup: a.Setup,
 		PagesBase: base, PagesOrigin: servedPages(c, cfg.Config, eng.Reachable), EngineRunning: eng.Reachable, EngineUnknown: eng.Unknown,
-		Probe:    agent.DBProbe{Q: pool, Migrations: guard.Migrations()},
+		Probe: agent.DBProbe{
+			Q: pool, Migrations: guard.Migrations(),
+			Kept: engine.KeptSetAside(chainpin.File{Dir: cfg.StateDirFor(c.goos)}, a.Name, slog.New(slog.DiscardHandler)),
+		},
 		Passkeys: func(ctx context.Context) ([]passkey.Credential, error) { return ledger.Passkeys(ctx, pool) },
 		Log:      slog.New(slog.DiscardHandler), Now: c.now,
 	}.Report(c.ctx)

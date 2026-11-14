@@ -14,8 +14,9 @@
   <link rel="modulepreload" href="../lib/compact.js" integrity="sha384-fuduyHELZPN04P63QueohM1bUIUVXRfvWGzR9uHrfZbGZbiB5EEmKmZRwailqr0p">
   <link rel="modulepreload" href="../lib/deflate.js" integrity="sha384-jYvkCzNHlr7rnXMbluHr7+f08Oo3djFPnbjD4hlC5cKer+nCf+uLf2CZYslw19rU">
   <link rel="modulepreload" href="../lib/local.js" integrity="sha384-eYuZkkBsjJSuLatLr+mzuOIprrNq4v2qzDebeX7TJT3lTRcmbS7cnKGwVu6mDWMC">
-  <link rel="modulepreload" href="../lib/page.js" integrity="sha384-ROoZ/la7+oETzYmjLnTel78Y0qWhZWxtCwea0/8xVBhPvI6plU1Bl4Nd5JMOW9i+">
-  <link rel="modulepreload" href="../lib/repair.js" integrity="sha384-DKXT/jnJU0G2BcoUfAUdp66PLxdX3gDu9MlXn3St18MSUWs99e58FNXw6bHJjDwf">
+  <link rel="modulepreload" href="../lib/page.js" integrity="sha384-OwuYwxvYYlLPG+ZOMzE6Jp3RNidtkuCFkXc9CETpjq/QTBbDNXncvGAGJVqahW+u">
+  <link rel="modulepreload" href="../lib/repair.js" integrity="sha384-HkJl9aDNug2+VopgohfSBPxXO+/AOQLiGndqOl2w/dv8zQ3JJzzjif2AyVXG19tI">
+  <link rel="modulepreload" href="../lib/requestfile.js" integrity="sha384-xiJ/EJcVadxBsme/5iGzfgTEkh7Z8n3zEK7cAKo2UVGeU6MXwWS+7s1XVP6Cbarn">
   <link rel="modulepreload" href="../lib/rescope.js" integrity="sha384-gyqPvP1DUDlvpctE0fIUvN8UsagDAvG/Ls2LIoi1V4YJM8GbSO48EPmoZIY10lL6">
   <link rel="modulepreload" href="../lib/reveal.js" integrity="sha384-vVaxlsgZYwNxh2KMhVp4XE2wdX6QnBdVNq7VShtlPwHhxzrm8w1ZvOiang8AZ25c">
   <link rel="modulepreload" href="../lib/scope.js" integrity="sha384-EnkYGm9Ai69Q58X/Exq7GM242BywacFmsG4+nrCuDTuhcTC5dSTTg6sRcYrOkv8l">
@@ -32,6 +33,17 @@
     </div>
   </header>
   <div class="page">
+
+  <section id="request-box" class="panel" hidden>
+    <h1>Open the request from your agent</h1>
+    <p>This link carries only a check of the request. Your agent sent the request itself as a file or as text blocks: give it to this page. It is read here and never uploaded.</p>
+    <label class="field">Open the file <input id="request-file" type="file"></label>
+    <h2>Or paste the text blocks</h2>
+    <p class="muted">Paste one or more blocks, in any order. Each starts with a basalt-request line.</p>
+    <textarea id="request-paste" rows="6" aria-label="Text blocks from your agent"></textarea>
+    <div class="buttons"><button id="request-read" type="button">Add the blocks</button></div>
+    <p id="request-status" class="muted" role="status"></p>
+  </section>
 
   <section id="error" class="panel error" hidden>
     <h1>Cannot revert</h1>

@@ -9,15 +9,16 @@ const ENCODED_BREAKS = /%(?:20|09|0a|0d)/gi;
 // quote, emphasis or Markdown escape leaves in a link.
 const WHITESPACE_AND_MARKS = /[\p{White_Space}>*\\]/gu;
 const LONG_PREFIX = /^[12]\.[A-Za-z0-9_-]*/;
-const SHORT_LINK = /^s=[A-Za-z0-9_-]{22}/;
-const PASTE_START = /#([12]\.|s=)/;
+const SHORT_LINK = /^[sh]=[A-Za-z0-9_-]{22}/;
+const PASTE_START = /#([12]\.|s=|h=)/;
 const SECRET_LENGTH = 22;
 const BASE64URL_LINE = /^[A-Za-z0-9_-]+$/;
 const BASE64URL_RUN = /^[A-Za-z0-9_-]*/;
 const LINE_BREAKS = /\r\n|[\n\r\u2028]/;
 const MARKS = /[>*\\]/g;
 const EDGE_WHITESPACE = /^\p{White_Space}+|\p{White_Space}+$/gu;
-const SHORT_PREFIX = "s=";
+// A short link's secret and a hash link's h are both 22 characters.
+const FIXED_PREFIXES = new Set(["s=", "h="]);
 
 // repairFragment repairs the text after the first # of a link.
 export function repairFragment(text) {
@@ -59,6 +60,6 @@ export function readPaste(text) {
       found += next;
     }
   }
-  if (prefix === SHORT_PREFIX) found = found.slice(0, SECRET_LENGTH);
+  if (FIXED_PREFIXES.has(prefix)) found = found.slice(0, SECRET_LENGTH);
   return repairFragment(prefix + found);
 }

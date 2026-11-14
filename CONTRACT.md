@@ -48,7 +48,7 @@ One record per action an agent asks for, whether applied, held or refused. Shape
 | `actor.kind` | `AGENT`, `PERSON` |
 | `policy.decision` | `ALLOW`, `HOLD`, `REFUSE` |
 
-As served by `run_history` and `basalt log --json`, a record also carries `revertId` (on a revert's own record) and `revertedBy` (the revert changes that restored rows of it), `params`, `cascadedRows` and `rowChanges` (one entry per row written, cascades included, with `key`, `before`, `after`, and `redacted` or `pruned` when values are hidden). Planned (result budget): on `run_history`, a value or image too large for the agent is left out and named in `largeValues` ([Large values](#large-values)); `basalt log` prints it in full. `before`, `after` and `policy` at the top level arrive with M2.
+As served by `run_history` and `basalt log --json`, a record also carries `revertId` (on a revert's own record) and `revertedBy` (the revert changes that restored rows of it), `params`, `cascadedRows` and `rowChanges` (one entry per row written, cascades included, with `key`, `before`, `after`, and `redacted` or `pruned` when values are hidden). On `run_history`, a value or image too large for the agent is left out and named in `largeValues` ([Large values](#large-values)); `basalt log` prints it in full. `before`, `after` and `policy` at the top level arrive with M2.
 
 Reads (M1.5): every `query` the engine runs is a change record with `op: SELECT`, `status: APPLIED`, `rows` = rows returned, its statement, parameters and duration, and no `rowChanges`; it carries the run's `intent` when it ran in a run. The rows it saw are kept by version in `basalt_meta` (see `reads` and the `READ` ledger row).
 
@@ -336,7 +336,7 @@ The first release serves exactly these tools (foundation, "First release", plus 
 
 ### Large values
 
-Owner decision of 14 Nov 2026: "make agents' mistakes reversible; if we keep hiding things, it's scary". Served: `query`'s refusal, the ledger tools' markers (Cost, Which values, The marker) and the cut `changeIds`; planned (result budget): the bullets marked so below. A value can be far larger than an agent should read in one call: a change whose old and new rows hold 15 MB each, written by the agent itself. The rules split by what the agent does with the value.
+Owner decision of 14 Nov 2026: "make agents' mistakes reversible; if we keep hiding things, it's scary". A value can be far larger than an agent should read in one call: a change whose old and new rows hold 15 MB each, written by the agent itself. The rules split by what the agent does with the value.
 
 - **`query` never shortens.** A row over the result budget is refused with `QUERY_TIMEOUT` `ROW_TOO_LARGE` ([Error codes](#error-codes)), naming the columns and sizes. The agent reads what it asked for, whole, or nothing: it never holds a shortened value it could write back as if it were the real one.
 - **The ledger tools mark, they do not fail.** `run_history`, `list_pending` (a held write's `statement` and `params`), `preview_revert` and `revert_plan` read history the agent cannot change, and a large value must not stop the agent from paging it or from applying a signed revert. They replace a large value with a marker and return everything else of the item: ids, cursor, line numbers, op, table, outcome and the other values. A revert never runs from what the agent read: Postgres applies it from the stored rows, so a marker changes nothing about what is restored.

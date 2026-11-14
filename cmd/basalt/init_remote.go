@@ -350,7 +350,11 @@ func (r *remoteInit) paths() error {
 		}
 		r.settings.StateDir = filepath.Join(dir, stateDirName)
 	}
-	cfg, err := config.Load(r.f.configPath)
+	// As root, the hardened read (loadEngineConfig): the config must be a
+	// plain file owned by root or its directory's owner, not writable by
+	// others and reached without links, before CredentialFile and OSUser
+	// are trusted.
+	cfg, err := loadEngineConfig(r.c, r.f.configPath)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 	case err != nil:

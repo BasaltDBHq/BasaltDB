@@ -341,7 +341,8 @@ func TestLevelPolicyMarks(t *testing.T) {
 	for _, want := range []string{
 		"a marked **restrictive** source policy gets a restrictive copy `USING (false)`",
 		"a marked **permissive** source policy is left out",
-		"gets a restrictive copy `USING (false)` for the group, permissive or restrictive alike",
+		"one **bound** `<prefix>_lvl_<oid>_b<cmd>`, `AS RESTRICTIVE FOR <cmd> TO <group>",
+		"a marked **restrictive** policy that applies to the agents as written",
 		"an **allow list**, not a deny list",
 		"one **currency guard** `<prefix>_lvl_<oid>_cur`, `AS RESTRICTIVE FOR ALL TO <group>",
 		"`attach` creates it for every enrolled level",

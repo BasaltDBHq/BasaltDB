@@ -91,7 +91,7 @@
               "properties": {
                 "name": {
                   "type": "string",
-                  "description": "<prefix>_lvl_<oid>_cur (the currency guard every table gets), <prefix>_lvl_<oid>_all for ALL_ROWS, or <prefix>_lvl_<oid>_<8 or more hex of sha256(source name)>; for a KEEP entry of an unmarked policy TO PUBLIC or TO <prefix>_agents, that policy's own name.",
+                  "description": "<prefix>_lvl_<oid>_cur (the currency guard every table gets), <prefix>_lvl_<oid>_b<cmd> (the bound per command on a MIRRORED table, cmd select, insert, update or delete), <prefix>_lvl_<oid>_all for ALL_ROWS, or <prefix>_lvl_<oid>_<8 or more hex of sha256(source name)>; for a KEEP entry of a policy that applies to the agents as written, that policy's own name.",
                   "minLength": 1,
                   "maxLength": 63
                 },
@@ -101,7 +101,7 @@
                     "null"
                   ],
                   "maxLength": 63,
-                  "description": "The source policy's name (a policy TO PUBLIC or TO <prefix>_agents included); null for the currency guard and the ALL_ROWS policy."
+                  "description": "The source policy's name (a policy that applies to the agents as written included); null for the currency guard, the bounds and the ALL_ROWS policy."
                 },
                 "permissive": {
                   "type": "boolean",
@@ -133,7 +133,7 @@
                     "KEEP",
                     "OMIT"
                   ],
-                  "description": "What the plan does with the entry. OMIT: a marked permissive source left out. KEEP: unchanged, or an unmarked policy TO PUBLIC or TO <prefix>_agents, listed because the fingerprint covers it (sql null)."
+                  "description": "What the plan does with the entry. OMIT: a marked permissive source left out. KEEP: unchanged, or a policy that applies to the agents as written (TO PUBLIC, TO <prefix>_agents, or another role the agents have the privileges of), listed because the fingerprint covers it (sql null)."
                 },
                 "reviewNeeded": {
                   "type": "array",

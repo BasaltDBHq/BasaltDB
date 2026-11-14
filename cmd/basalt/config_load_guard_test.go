@@ -17,12 +17,14 @@ import (
 // the engine config with plain config.Load, which follows links and blocks
 // on a FIFO. Every other read goes through loadEngineConfig, the hardened
 // read as root. Each entry is file:function, with the reason it is safe.
+const configImport = "github.com/basaltdbhq/basaltdb/internal/engine/config"
+
 var plainConfigLoads = map[string]string{
 	// The non-root branch: euid is not 0.
 	"personfiles.go:loadEngineConfig": "only when not root",
 	// No root on that platform.
 	"personfiles_other.go:loadConfigAsRoot": "platform without root",
-	// The engine reads its own config, after --user drops root.
+	// The engine reads its own config (after --user drops root, when given).
 	"engine.go:runEngineOn": "the engine's own config",
 	// basalt mcp runs as the agent's OS user.
 	"engine.go:engineDownServer": "basalt mcp, as the agent's user",
@@ -44,6 +46,18 @@ func TestNoRootPathUsesPlainConfigLoad(t *testing.T) {
 		require.NoError(t, err)
 		f, err := parser.ParseFile(fset, name, src, 0)
 		require.NoError(t, err)
+		pkg := ""
+		for _, imp := range f.Imports {
+			if strings.Trim(imp.Path.Value, `"`) == configImport {
+				pkg = "config"
+				if imp.Name != nil {
+					pkg = imp.Name.Name
+				}
+			}
+		}
+		if pkg == "" {
+			continue
+		}
 		for _, decl := range f.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
 			if !ok || fn.Body == nil {
@@ -54,7 +68,7 @@ func TestNoRootPathUsesPlainConfigLoad(t *testing.T) {
 				if !ok || sel.Sel.Name != "Load" {
 					return true
 				}
-				if id, ok := sel.X.(*ast.Ident); ok && id.Name == "config" {
+				if id, ok := sel.X.(*ast.Ident); ok && id.Name == pkg {
 					found = append(found, name+":"+fn.Name.Name)
 				}
 				return true

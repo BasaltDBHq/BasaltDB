@@ -201,6 +201,12 @@ func TestInitRemoteAsRootRefusesAnUntrustedConfig(t *testing.T) {
 			writeEngineJSON(t, cfg, planted)
 			require.NoError(t, os.Chmod(cfg, 0o666))
 		},
+		"credential file outside the config's directory": func(t *testing.T, cfg, planted string) {
+			// A plain 0600 config its directory's owner wrote: the hardened
+			// read accepts it, but root writes only where basalt put the
+			// credential, never where the config says.
+			writeEngineJSON(t, cfg, planted)
+		},
 		"symlink": func(t *testing.T, cfg, planted string) {
 			other := filepath.Join(t.TempDir(), "engine.json")
 			writeEngineJSON(t, other, planted)

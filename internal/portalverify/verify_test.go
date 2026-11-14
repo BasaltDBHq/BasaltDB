@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -65,5 +66,18 @@ func TestValidateURL(t *testing.T) {
 	} {
 		_, err := portalverify.ValidateURL(in)
 		require.Error(t, err, in)
+	}
+}
+
+func TestParseManifest(t *testing.T) {
+	t.Parallel()
+	h := "ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789"
+	m, err := portalverify.ParseManifest([]byte(h + "  a.js\r\n" + h + "  b.js\r\n"))
+	require.NoError(t, err)
+	require.Equal(t, strings.ToLower(h), m["a.js"])
+	require.Len(t, m, 2)
+	for _, bad := range []string{h + " a.js\n", "zz  a.js\n", h + "  a.js\n" + h + "  a.js\n", strings.Repeat("g", 64) + "  a.js\n"} {
+		_, err := portalverify.ParseManifest([]byte(bad))
+		require.Error(t, err, bad)
 	}
 }

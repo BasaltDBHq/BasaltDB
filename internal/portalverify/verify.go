@@ -76,11 +76,29 @@ type Options struct {
 	// Headers are the response headers every file must carry; only
 	// Content-Security-Policy is compared, plus the media type of .js.
 	Headers http.Header
+	// Routes are the paths people load a page at (the engine's PageRoutes,
+	// which the portal's _redirects rewrites to page files). Each is fetched
+	// and compared with its embedded File, so a rewrite to another page is
+	// seen.
+	Routes []Route
 	// Manifest, when set, is a "sha256  path" list the embedded files are
 	// checked against; ManifestSource names it in the report.
 	Manifest       []byte
 	ManifestSource string
 }
+
+// Route is a path a page is served at: Path, or Path followed by an id
+// (Path ends in a slash) when ID is set,
+// with the bytes of File.
+type Route struct {
+	Path string
+	ID   bool
+	File string
+}
+
+// ProbeID stands in for the id of an ID route; the portal's static rewrite
+// ignores it.
+const ProbeID = "00000000-0000-7000-8000-000000000000"
 
 // ValidateURL accepts an https URL, or an http URL on a loopback host (a
 // test server), with no path, query, fragment or credentials. It returns
@@ -122,7 +140,7 @@ func NewClient(base string) *http.Client {
 	return &http.Client{
 		Timeout: requestTimeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if u == nil || req.URL.Scheme != u.Scheme || req.URL.Host != u.Host {
+			if u == nil || !sameOrigin(req.URL, u) {
 				return errOffOrigin
 			}
 			if len(via) >= maxRedirects {
@@ -131,6 +149,22 @@ func NewClient(base string) *http.Client {
 			return nil
 		},
 	}
+}
+
+// sameOrigin compares scheme, lower-cased host and port, the default port
+// being implied.
+func sameOrigin(a, b *url.URL) bool {
+	return a.Scheme == b.Scheme && strings.EqualFold(a.Hostname(), b.Hostname()) && port(a) == port(b)
+}
+
+func port(u *url.URL) string {
+	if p := u.Port(); p != "" {
+		return p
+	}
+	if u.Scheme == "https" {
+		return "443"
+	}
+	return "80"
 }
 
 // probes are paths the portal build never publishes (tests and Go files); a
@@ -187,7 +221,18 @@ func Verify(ctx context.Context, o Options) (*Report, error) {
 		if err != nil {
 			return nil, err
 		}
-		r.Files = append(r.Files, checkFile(ctx, client, o, p, want))
+		r.Files = append(r.Files, checkFile(ctx, client, o, p, "/"+requestPath(p), want))
+	}
+	for _, rt := range o.Routes {
+		want, err := fs.ReadFile(o.Files, rt.File)
+		if err != nil {
+			return nil, err
+		}
+		u := rt.Path
+		if rt.ID {
+			u += ProbeID
+		}
+		r.Files = append(r.Files, checkFile(ctx, client, o, u, u, want))
 	}
 	for _, p := range probes(paths) {
 		if f, bad := checkExtra(ctx, client, o.Base, p); bad {
@@ -216,8 +261,8 @@ type answer struct {
 	body   []byte
 }
 
-func get(ctx context.Context, c *http.Client, base, p string) (answer, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/"+requestPath(p), http.NoBody)
+func get(ctx context.Context, c *http.Client, base, urlPath string) (answer, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+urlPath, http.NoBody)
 	if err != nil {
 		return answer{}, err
 	}
@@ -231,8 +276,9 @@ func get(ctx context.Context, c *http.Client, base, p string) (answer, error) {
 	return answer{resp.StatusCode, resp.Header, body}, err
 }
 
-func checkFile(ctx context.Context, c *http.Client, o Options, p string, want []byte) File {
-	a, err := get(ctx, c, o.Base, p)
+// checkFile fetches urlPath and compares it with want; p names the result.
+func checkFile(ctx context.Context, c *http.Client, o Options, p, urlPath string, want []byte) File {
+	a, err := get(ctx, c, o.Base, urlPath)
 	if err != nil {
 		return File{Path: p, Status: StatusError, Detail: errText(err)}
 	}
@@ -272,7 +318,7 @@ func headerProblem(got, want http.Header, p string) string {
 }
 
 func checkExtra(ctx context.Context, c *http.Client, base, p string) (File, bool) {
-	a, err := get(ctx, c, base, p)
+	a, err := get(ctx, c, base, "/"+p)
 	switch {
 	case err != nil:
 		return File{Path: p, Status: StatusError, Detail: errText(err)}, true
@@ -305,7 +351,8 @@ func short(b []byte) string {
 // ParseManifest reads "sha256  path" lines.
 func ParseManifest(b []byte) (map[string]string, error) {
 	out := map[string]string{}
-	for i, line := range strings.Split(strings.TrimRight(string(b), "\n"), "\n") {
+	for i, line := range strings.Split(strings.TrimRight(string(b), "\r\n"), "\n") {
+		line = strings.TrimSuffix(line, "\r")
 		if line == "" {
 			continue
 		}
@@ -316,7 +363,10 @@ func ParseManifest(b []byte) (map[string]string, error) {
 		if _, err := hex.DecodeString(h); err != nil {
 			return nil, fmt.Errorf("manifest line %d: bad sha256", i+1)
 		}
-		out[p] = h
+		if _, dup := out[p]; dup {
+			return nil, fmt.Errorf("manifest line %d: %s is listed twice", i+1, p)
+		}
+		out[p] = strings.ToLower(h)
 	}
 	return out, nil
 }

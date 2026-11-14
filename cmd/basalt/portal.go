@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/basaltdbhq/basaltdb/internal/engine/pages"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/portalverify"
 	"github.com/basaltdbhq/basaltdb/internal/websec"
@@ -28,7 +29,7 @@ func runPortal(c *cliIO, args []string) int {
 func portalVerify(c *cliIO, args []string) int {
 	fs := c.flags("portal verify")
 	rawURL := fs.String("portal-url", links.Portal, "portal origin to check: an https URL, or an http URL on a loopback host (for tests)")
-	manifestPath := fs.String("manifest", "", "also check the embedded pages against this \"sha256  path\" manifest (for example one downloaded from the release)")
+	manifestPath := fs.String("manifest", "", "also check the embedded pages against this \"sha256  path\" manifest (for example web/portal.sha256 from the release)")
 	asJSON := fs.Bool("json", false, "print the result as JSON")
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
@@ -37,9 +38,9 @@ func portalVerify(c *cliIO, args []string) int {
 	if err != nil {
 		return c.fail(fmt.Errorf("%w: --portal-url: %w", errUsage, err))
 	}
-	opts := portalverify.Options{
-		Base: base, Files: web.Files, Headers: websec.Expected(),
-		Manifest: web.Manifest, ManifestSource: "embedded",
+	opts := portalverify.Options{Base: base, Files: web.Files, Headers: websec.Expected()}
+	for _, r := range pages.PageRoutes {
+		opts.Routes = append(opts.Routes, portalverify.Route{Path: r.Path, ID: r.ID, File: r.File})
 	}
 	if *manifestPath != "" {
 		b, rerr := os.ReadFile(filepath.Clean(*manifestPath))
@@ -86,7 +87,7 @@ func portalVerify(c *cliIO, args []string) int {
 		}
 	}
 	if report.OK {
-		fmt.Fprintf(c.stdout, "basalt: %s serves the %d files embedded in this binary\n", report.PortalURL, report.Checked)
+		fmt.Fprintf(c.stdout, "basalt: %s serves the %d files embedded in this binary and its page routes\n", report.PortalURL, report.Checked)
 	} else {
 		fmt.Fprintf(c.stdout, "basalt: %s does not match this binary: %d problem(s) in %d embedded files\n", report.PortalURL, problems, report.Checked)
 	}

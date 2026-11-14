@@ -89,10 +89,12 @@ func TestSigningPagesSayBiometricsStayOnTheDevice(t *testing.T) {
 	}
 }
 
-// web/portal.sha256 (embedded as web.Manifest, the release manifest that
+// web/portal.sha256, the release manifest that
 // `basalt portal verify` checks the binary's pages against) lists exactly
 // the embedded files with their SHA-256. Run make web-sri after editing web/.
 func TestManifestMatchesEmbed(t *testing.T) {
+	manifest, err := os.ReadFile("portal.sha256")
+	require.NoError(t, err)
 	want := map[string]string{}
 	require.NoError(t, fs.WalkDir(web.Files, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -104,7 +106,7 @@ func TestManifestMatchesEmbed(t *testing.T) {
 		return rerr
 	}))
 	got := map[string]string{}
-	lines := strings.Split(strings.TrimSuffix(string(web.Manifest), "\n"), "\n")
+	lines := strings.Split(strings.TrimSuffix(string(manifest), "\n"), "\n")
 	order := make([]string, 0, len(lines))
 	for _, l := range lines {
 		h, p, ok := strings.Cut(l, "  ")

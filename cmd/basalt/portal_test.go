@@ -16,6 +16,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/engine/pages"
+	"github.com/basaltdbhq/basaltdb/internal/portalverify"
 	"github.com/basaltdbhq/basaltdb/internal/websec"
 	"github.com/basaltdbhq/basaltdb/web"
 )
@@ -52,7 +54,24 @@ func portalFS(t *testing.T) fstest.MapFS {
 // _headers does. A test server stands in for portal.basaltvault.app.
 func portalHost(t *testing.T, files fs.FS, wrap func(http.Handler) http.Handler) string {
 	t.Helper()
-	h := websec.Headers()(http.FileServer(http.FS(files)))
+	// The portal's _redirects: each page route is rewritten (200) to its file.
+	static := http.FileServer(http.FS(files))
+	rewrite := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, rt := range pages.PageRoutes {
+			if r.URL.Path == rt.Path || (rt.ID && strings.HasPrefix(r.URL.Path, rt.Path)) {
+				b, err := fs.ReadFile(files, rt.File)
+				if err != nil {
+					http.NotFound(w, r)
+					return
+				}
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				_, _ = w.Write(b)
+				return
+			}
+		}
+		static.ServeHTTP(w, r)
+	})
+	h := websec.Headers()(rewrite)
 	if wrap != nil {
 		h = wrap(h)
 	}
@@ -83,7 +102,6 @@ func TestPortalVerifyMatches(t *testing.T) {
 		requireLine(t, r.stdout, "OK", p)
 	}
 	require.NotContains(t, r.stdout, "DIFFERS")
-	require.Contains(t, r.stdout, "release manifest")
 }
 
 // make portal-build output is what the portal publishes; verify must pass
@@ -273,20 +291,29 @@ func TestPortalVerifyUsage(t *testing.T) {
 func TestPortalVerifyManifest(t *testing.T) {
 	t.Parallel()
 	url := portalHost(t, portalFS(t), nil)
-	// The manifest built into the binary matches the embedded pages.
+	// Without --manifest there is no manifest line: the binary would only
+	// be checking itself.
 	r := runPortalVerify(t, "--portal-url", url, "--json")
+	require.Equal(t, exitOK, r.code, r.stdout)
+	require.NotContains(t, r.stdout, "manifest")
+
+	// The committed manifest matches the binary's pages (CRLF and upper-case
+	// hex, as another tool may write them, are accepted).
+	good, err := os.ReadFile("../../web/portal.sha256")
+	require.NoError(t, err)
+	path := filepath.Join(t.TempDir(), "manifest")
+	require.NoError(t, os.WriteFile(path, bytes.ReplaceAll(good, []byte("\n"), []byte("\r\n")), 0o600))
+	r = runPortalVerify(t, "--portal-url", url, "--manifest", path, "--json")
 	require.Equal(t, exitOK, r.code, r.stdout)
 	var rep struct {
 		Manifest struct{ Source, Status string }
 	}
 	require.NoError(t, json.Unmarshal([]byte(r.stdout), &rep))
-	require.Equal(t, "embedded", rep.Manifest.Source)
+	require.Equal(t, path, rep.Manifest.Source)
 	require.Equal(t, "OK", rep.Manifest.Status)
 
-	// A manifest from elsewhere that disagrees with the binary fails.
-	good := string(web.Manifest)
-	bad := strings.Replace(good, good[:64], strings.Repeat("0", 64), 1)
-	path := filepath.Join(t.TempDir(), "manifest")
+	// A manifest that disagrees with the binary fails.
+	bad := strings.Replace(string(good), string(good[:64]), strings.Repeat("0", 64), 1)
 	require.NoError(t, os.WriteFile(path, []byte(bad), 0o600))
 	r = runPortalVerify(t, "--portal-url", url, "--manifest", path)
 	require.Equal(t, exitError, r.code)
@@ -295,9 +322,51 @@ func TestPortalVerifyManifest(t *testing.T) {
 	// The pages themselves still match the portal.
 	require.NotContains(t, r.stdout, "\nDIFFERS    approve")
 
-	// A malformed manifest is a usage error.
-	require.NoError(t, os.WriteFile(path, []byte("not a manifest\n"), 0o600))
-	require.Equal(t, exitUsage, runPortalVerify(t, "--portal-url", url, "--manifest", path).code)
+	// A malformed or duplicated manifest is a usage error.
+	for _, body := range []string{"not a manifest\n", string(good) + string(good[:66]) + "approve/index.html\n"} {
+		require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+		require.Equal(t, exitUsage, runPortalVerify(t, "--portal-url", url, "--manifest", path).code)
+	}
+}
+
+// People load the pages at the routes the _redirects rewrites, not at
+// /approve/: a portal that rewrites a route to another page, or sends a
+// weaker policy only there, must fail even when the page files are intact.
+func TestPortalVerifyChecksTheRoutesPeopleLoad(t *testing.T) {
+	t.Parallel()
+	good := portalHost(t, portalFS(t), nil)
+	r := runPortalVerify(t, "--portal-url", good)
+	require.Equal(t, exitOK, r.code, r.stdout)
+	requireLine(t, r.stdout, "OK", "/approvals/"+portalverify.ProbeID)
+	requireLine(t, r.stdout, "OK", "/passkeys/forget")
+
+	evil := portalHost(t, portalFS(t), func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, "/approvals/") {
+				_, _ = w.Write([]byte("<html>sign here</html>"))
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	})
+	r = runPortalVerify(t, "--portal-url", evil)
+	require.Equal(t, exitError, r.code)
+	requireLine(t, r.stdout, "DIFFERS", "/approvals/"+portalverify.ProbeID)
+	requireLine(t, r.stdout, "OK", "approve/index.html")
+
+	weak := portalHost(t, portalFS(t), func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(&headerEdit{ResponseWriter: w, edit: func(h http.Header) {
+				if strings.HasPrefix(r.URL.Path, "/reverts/") {
+					h.Set("Content-Security-Policy", "default-src *")
+				}
+			}}, r)
+		})
+	})
+	r = runPortalVerify(t, "--portal-url", weak)
+	require.Equal(t, exitError, r.code)
+	requireLine(t, r.stdout, "HEADER", "/reverts/"+portalverify.ProbeID)
+	requireLine(t, r.stdout, "OK", "revert/index.html")
 }
 
 func TestPortalVerifyJSONMatchesSchema(t *testing.T) {

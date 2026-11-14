@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/portal-verify-result.v1.json",
   "title": "basalt portal verify --json",
-  "description": "What basalt portal verify --json prints on stdout (CONTRACT.md, CLI): one entry per file the binary embeds, plus any extra file the portal serves, and the check of the embedded pages against the release manifest. Exit 0 when ok is true, 1 when anything differs, is missing, unexpected or could not be checked.",
+  "description": "What basalt portal verify --json prints on stdout (CONTRACT.md, CLI): one entry per file the binary embeds, plus any extra file the portal serves, and with --manifest the check of the embedded pages against that release manifest. Exit 0 when ok is true, 1 when anything differs, is missing, unexpected or could not be checked.",
   "type": "object",
   "additionalProperties": false,
   "required": ["portalUrl", "ok", "checked", "files"],
@@ -22,13 +22,13 @@
     },
     "files": {
       "type": "array",
-      "description": "One entry per embedded file, sorted by path, then the UNEXPECTED and ERROR entries for paths the build never publishes.",
+      "description": "One entry per embedded file, sorted by path, then one per page route (/approvals/<sample id>, /reverts/<sample id>, /passkeys/register, /passkeys/check, /passkeys/forget), then the UNEXPECTED and ERROR entries for paths the build never publishes.",
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["path", "status"],
         "properties": {
-          "path": { "type": "string", "description": "Relative to the portal origin; approve/index.html is fetched at /approve/." },
+          "path": { "type": "string", "description": "Relative to the portal origin; approve/index.html is fetched at /approve/. A page route starts with a slash." },
           "status": {
             "type": "string",
             "enum": ["OK", "DIFFERS", "MISSING", "UNEXPECTED", "HEADER", "ERROR"],
@@ -42,9 +42,9 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["source", "status"],
-      "description": "The embedded files checked against a \"sha256  path\" manifest: the one built into the binary, or --manifest.",
+      "description": "Present with --manifest: the embedded files checked against that \"sha256  path\" manifest.",
       "properties": {
-        "source": { "type": "string", "description": "embedded, or the --manifest path." },
+        "source": { "type": "string", "description": "The --manifest path." },
         "status": { "type": "string", "enum": ["OK", "DIFFERS", "ERROR"] },
         "mismatches": { "type": "array", "items": { "type": "string" }, "description": "One line per path that differs, is missing from either side, or the parse error." }
       }

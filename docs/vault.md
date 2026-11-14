@@ -87,9 +87,9 @@ For an engine that runs as a service, `basalt status` asks the engine, so it pri
 
 ## Check the portal
 
-The pages you sign on come from the portal's static host. `basalt portal verify` fetches every page file from `https://portal.basaltvault.app` and compares it with the copy embedded in your `basalt` binary, and checks the response's content security policy. It prints `OK`, `DIFFERS`, `MISSING`, `HEADER`, `UNEXPECTED` or `ERROR` for each file and exits `1` when anything is not `OK`. It needs no database and no engine.
+The pages you sign on come from the portal's static host. `basalt portal verify` fetches every page file from `https://portal.basaltvault.app` and compares it with the copy embedded in your `basalt` binary, fetches the routes you open pages at, and checks the response's content security policy. It prints `OK`, `DIFFERS`, `MISSING`, `HEADER`, `UNEXPECTED` or `ERROR` for each file and exits `1` when anything is not `OK`. It needs no database and no engine.
 
-It catches a portal that was changed for everyone. It cannot catch a page served to you alone, since it sees only what the host serves it, and it trusts the binary it runs in. Run it from a machine and network other than the ones you sign on, and use a binary you downloaded from the release. See [Deploy the portal](deploy-portal.md#6-verify). The engine does not run this check on its own yet.
+It catches a portal that was changed for everyone. It cannot catch a page served to you alone, or one that treats a command-line client differently from your browser, since it sees only what the host serves it, and it trusts the binary it runs in. Run it from a machine and network other than the ones you sign on, and use a binary you downloaded from the release. See [Deploy the portal](deploy-portal.md#6-verify). The engine does not run this check on its own yet.
 
 ## The engine's key file
 

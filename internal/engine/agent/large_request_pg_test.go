@@ -13,14 +13,17 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 )
 
-// largeRequestEnv is an agent whose table docs has a row with a 2 MB body:
-// a held DELETE of it, or a revert of an UPDATE to it, carries that value
-// in its lines, past what a page decodes from a link.
+// largeRequestEnv is an agent whose table docs has a row with a 2 MB body
+// (a revert of an UPDATE to it carries that value in its lines) and 20 rows
+// of 60 000 '<' (a held DELETE of them carries 1.2 MB of lines; the guard
+// takes a held line of at most 64 KiB). Both are past what a page decodes
+// from a link.
 func largeRequestEnv(t *testing.T, pagesOrigin ...string) agentEnv {
 	t.Helper()
 	d := guardtest.New(t)
 	d.Exec(t, fmt.Sprintf(`CREATE TABLE public.docs (id int PRIMARY KEY, body text);
-		INSERT INTO public.docs VALUES (1, repeat('x', %d)), (2, 'two')`, bigValue))
+		INSERT INTO public.docs VALUES (1, repeat('x', %d)), (2, 'two');
+		INSERT INTO public.docs SELECT g, repeat('<', 60000) FROM generate_series(101, 120) g`, bigValue))
 	tables := []string{"public.docs"}
 	return agentHarnessFor(t, d, d.NewAgent(t, "bot", tables, tables), pagesOrigin...)
 }
@@ -40,23 +43,24 @@ func steps(t *testing.T, body map[string]any) []map[string]any {
 
 func actions(t *testing.T, body map[string]any) []string {
 	t.Helper()
-	var out []string
-	for _, s := range steps(t, body) {
+	all := steps(t, body)
+	out := make([]string, 0, len(all))
+	for _, s := range all {
 		out = append(out, str(t, s["action"]))
 	}
 	return out
 }
 
-// TestAHeldWriteTooLargeForALink: a held DELETE of a row with a 2 MB value
-// is held, not refused for its size (its preview lines are not charged to
-// the call), and with no local pages and no Vault it is REQUEST_TOO_LARGE:
+// TestAHeldWriteTooLargeForALink: a held DELETE of rows with 1.2 MB of
+// values is held, not refused for its size (its preview lines are not
+// charged to the call), and with no local pages and no Vault it is REQUEST_TOO_LARGE:
 // no link, the setup change, then list_pending with reissueLink.
 // list_pending restates it with the page's address and the same steps,
 // within the budget.
 func TestAHeldWriteTooLargeForALink(t *testing.T) {
 	t.Parallel()
 	e := largeRequestEnv(t)
-	body, isError := e.h.call(t, "write", map[string]any{"sql": "DELETE FROM public.docs WHERE id = 1", "intent": "Drop the large doc"})
+	body, isError := e.h.call(t, "write", map[string]any{"sql": "DELETE FROM public.docs WHERE id > 100", "intent": "Drop the large docs"})
 	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "REQUEST_TOO_LARGE", "")
 	approval, ok := body["approval"].(map[string]any)
 	require.True(t, ok, "%v", body)
@@ -85,7 +89,7 @@ func TestAHeldWriteTooLargeForALink(t *testing.T) {
 func TestAHeldWriteTooLargeForALinkGetsTheLocalShortLink(t *testing.T) {
 	t.Parallel()
 	e := largeRequestEnv(t, "http://localhost:7878")
-	body, isError := e.h.call(t, "write", map[string]any{"sql": "DELETE FROM public.docs WHERE id = 1", "intent": "Drop the large doc"})
+	body, isError := e.h.call(t, "write", map[string]any{"sql": "DELETE FROM public.docs WHERE id > 100", "intent": "Drop the large docs"})
 	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "HELD", "")
 	approval, ok := body["approval"].(map[string]any)
 	require.True(t, ok)

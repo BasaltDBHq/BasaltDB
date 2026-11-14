@@ -23,6 +23,10 @@ import (
 // the Vault or the direct transport when its lines cost at most
 // maxPortalRequestCost. With neither, the answer is REQUEST_TOO_LARGE.
 
+// argReissueLink is list_pending's and request_revert's argument that
+// issues a new link.
+const argReissueLink = "reissueLink"
+
 // reasonRequestTooLarge is APPROVAL_REQUIRED's and QUERY_TIMEOUT's reason,
 // and the results case, for a request no link this engine has can carry.
 const reasonRequestTooLarge = "REQUEST_TOO_LARGE"
@@ -33,12 +37,16 @@ const reasonRequestTooLarge = "REQUEST_TOO_LARGE"
 // in the remaining 1 MiB.
 const maxPortalRequestCost = 15 << 20
 
+// textOverhead is what one text costs beyond its bytes (resultsize's
+// per-value cost).
+const textOverhead = 128
+
 // textsCost is what texts cost in the budget's unit (ledger.textCost): each
 // one's bytes, 6 more for each byte JSON escapes, and 128.
 func textsCost(texts []string) int64 {
 	var n int64
 	for _, t := range texts {
-		n += int64(len(t)) + 128
+		n += int64(len(t)) + textOverhead
 		for i := range len(t) {
 			if c := t[i]; c < ' ' || c == '"' || c == '\\' || c == '<' || c == '>' || c == '&' {
 				n += 6
@@ -156,7 +164,7 @@ const endTurnSetup = "End your turn: the person changes the setup first."
 // run's pending holds.
 func approvalTooLargeSteps(runID uuid.UUID) ([]mcp.NextStep, error) {
 	return NewSteps().AskPerson(tooLargeAsk(false)).EndTurn(endTurnSetup).
-		CallTool(toolListPending, map[string]any{"kind": KindApproval, "status": "PENDING", argRunID: runID.String(), "reissueLink": true},
+		CallTool(toolListPending, map[string]any{"kind": KindApproval, "status": "PENDING", argRunID: runID.String(), argReissueLink: true},
 			"Once the person says they changed the setup, call this once: it gives the held write a new link.").
 		Build()
 }
@@ -171,7 +179,7 @@ func revertTooLargeSteps(id uuid.UUID, stop bool) ([]mcp.NextStep, error) {
 		b.Stop("Do not retry now: no link this engine has can carry this revert.")
 	}
 	return b.AskPerson(tooLargeAsk(true)).EndTurn(endTurnSetup).
-		CallTool(toolRequestRevert, map[string]any{argRevertID: id.String(), "reissueLink": true},
+		CallTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argReissueLink: true},
 			"Once the person says they changed the setup, call this once: it gives this revert a new link.").
 		Build()
 }

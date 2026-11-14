@@ -93,7 +93,7 @@ func waitEndedSteps(id uuid.UUID, link, open string) []mcp.NextStep {
 		agentStep(mcp.ActionEndTurn, "Do not wait again: end your turn, showing personMessage and the revert link you gave earlier."),
 		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argWaitForSignature: 0},
 			"When the person says they signed, call it once more; it returns at once."),
-		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), "reissueLink": true},
+		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argReissueLink: true},
 			"For a lost link, or when the person asks for a new one, call this: it gives a fresh link and the old one stops working."),
 	}
 }
@@ -113,7 +113,7 @@ func widenedWaitSteps(id uuid.UUID) []mcp.NextStep {
 		agentStep(mcp.ActionEndTurn, "Do not wait again: end your turn, showing personMessage; you have no link to the person's scope."),
 		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argWaitForSignature: 0},
 			"When the person says they signed, call it once more; it returns at once."),
-		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), "reissueLink": true},
+		callTool(toolRequestRevert, map[string]any{argRevertID: id.String(), argReissueLink: true},
 			"Only if the person asks for a new link: it resets the revert to your own work, dropping what they added."),
 	}
 }

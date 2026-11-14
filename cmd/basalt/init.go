@@ -532,6 +532,17 @@ func withGuardDetail(err error) error {
 	return &detailedError{err: err, detail: sentences(pg.Detail, pg.Hint)}
 }
 
+// nothingChanged ends a failed install's error with "nothing changed": as a
+// sentence after the guard's detail and hint (which end with a period), or
+// after a semicolon otherwise.
+func nothingChanged(err error) error {
+	var done *detailedError
+	if errors.As(err, &done) {
+		return fmt.Errorf("%w Nothing changed.", err) //nolint:staticcheck // full sentences after the database's message, shown as is
+	}
+	return fmt.Errorf("%w; nothing changed", err)
+}
+
 // applyInitTx is applyInit on a transaction the caller commits.
 func applyInitTx(ctx context.Context, tx pgx.Tx, script guard.Script, after ...guard.Statement) error {
 	if err := script.Apply(ctx, tx); err != nil {

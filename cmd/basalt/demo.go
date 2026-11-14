@@ -159,7 +159,7 @@ func planDemoTx(c *cliIO, conn *pgx.Conn) (q guard.Querier, shown string, rollba
 // applies the install in it (the schema may have changed while the person
 // decided; checkCovered catches drift).
 func applyDemo(ctx context.Context, conn *pgx.Conn, script guard.Script) error {
-	return pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
+	return withGuardDetail(pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
 		plan, err := planDemo(ctx, tx)
 		if err != nil {
 			return err
@@ -168,5 +168,5 @@ func applyDemo(ctx context.Context, conn *pgx.Conn, script guard.Script) error {
 			return err
 		}
 		return applyInitTx(ctx, tx, script)
-	})
+	}))
 }

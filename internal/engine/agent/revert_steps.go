@@ -254,6 +254,9 @@ func (s *Service) signingLink(ctx context.Context, r ledger.Revert, text string)
 	if err != nil {
 		return mcp.NextStep{}, err
 	}
+	if pick.Kind == linkPage || pick.Kind == linkNone {
+		return openLink("", "Open the short link the agent gave you earlier. "+text), nil
+	}
 	if pick.Kind == linkHash {
 		text = "Open the link with the request file the agent sent you earlier. " + text
 	}
@@ -265,10 +268,22 @@ func (s *Service) signingLink(ctx context.Context, r ledger.Revert, text string)
 // the short link), else the link the budget chooses, which over the budget
 // is the hash link with its request (CONTRACT.md, The request file and
 // pasted blocks).
+//
+// A request too large for a long link is restated as the page's address:
+// linkPage when a short link given earlier carries it, else linkNone
+// (CONTRACT.md, Large values, rule 3).
 func (s *Service) restatedRevertLink(ctx context.Context, r ledger.Revert) (handOver, error) {
-	long, err := s.longRevertLink(ctx, r)
+	req := revertRequestOf(r)
+	long, tooLarge, err := longOrTooLarge(req, func() (string, error) { return s.longRevertLink(ctx, r) })
 	if err != nil {
 		return handOver{}, err
+	}
+	if tooLarge {
+		kind := linkNone
+		if s.carriesLarge(req.Cost) {
+			kind = linkPage
+		}
+		return handOver{URL: s.pageAddress(links.Revert, r.ID), Kind: kind}, nil
 	}
 	if s.PagesOrigin != "" {
 		return handOver{URL: long, Kind: linkLong}, nil

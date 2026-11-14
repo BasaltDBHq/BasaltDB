@@ -14,6 +14,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 )
 
@@ -154,6 +155,11 @@ type PreparedRevert struct {
 	ExpiresAt   time.Time
 	Lines       []string
 	Batched     bool
+	// LineCount is how many lines the revert has. On an agent's call (a
+	// context with a result budget) Lines is nil: the agent reads them
+	// measured, with the revert (ledger.FindRevert), so a large revert's
+	// lines never cross the wire on its call (CONTRACT.md, Large values).
+	LineCount int
 }
 
 // PrepareRevert stores the caller's own proposal s for the person to sign
@@ -170,9 +176,11 @@ func PrepareRevert(ctx context.Context, q Querier, s RevertScope, intent string)
 	}
 	var p PreparedRevert
 	// Plain SQL: a set-returning function in FROM over a built descriptor.
-	err = q.QueryRow(ctx, `SELECT r.revert_id, r.binding_text, r.expires_at, r.lines
-		FROM basalt_meta.prepare_revert(`+ownSelect+`, $5) AS r`, append(args, intent)...).
-		Scan(&p.RevertID, &p.BindingText, &p.ExpiresAt, &p.Lines)
+	withLines := resultsize.From(ctx) == nil
+	err = q.QueryRow(ctx, `SELECT r.revert_id, r.binding_text, r.expires_at, CASE WHEN $6 THEN r.lines END,
+			coalesce(cardinality(r.lines), 0)
+		FROM basalt_meta.prepare_revert(`+ownSelect+`, $5) AS r`, append(args, intent, withLines)...).
+		Scan(&p.RevertID, &p.BindingText, &p.ExpiresAt, &p.Lines, &p.LineCount)
 	if err != nil {
 		return PreparedRevert{}, err
 	}

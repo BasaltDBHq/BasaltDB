@@ -658,6 +658,11 @@ func personFix(b *Steps, command, problem string) string {
 // database refused, or a passkey it does not accept. The link in its message
 // follows the link budget like the hold's; no new short link is issued here.
 func (s *Service) approvalLinkError(te *mcp.ToolError, n heldNotice) *mcp.ToolError {
+	if n.reason == reasonRequestTooLarge {
+		// No link can carry it: the same message and steps as the hold's.
+		te.PersonMessage, te.NextSteps = n.PersonMessage, n.steps
+		return te
+	}
 	b := NewSteps()
 	var lead string
 	switch te.Reason {
@@ -693,7 +698,7 @@ func (s *Service) approvalLinkError(te *mcp.ToolError, n heldNotice) *mcp.ToolEr
 // blocks). Otherwise it is the link the hold chose: the long link within the
 // budget, or the hash link, whose request file the agent already sent.
 func (s *Service) openApprovalAgain(b *Steps, n heldNotice, text string) {
-	if s.PagesOrigin != "" {
+	if s.PagesOrigin != "" || isPageAddress(n.ApprovalURL) {
 		b.OpenGivenLink(n.ApproveCommand, "Open the short link the agent gave you earlier. "+text)
 		return
 	}

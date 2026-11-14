@@ -60,7 +60,7 @@ func (s *Store) PrepareRevert(ctx context.Context, scope guard.RevertScope, inte
 		if err != nil {
 			return err
 		}
-		if len(p.Lines) == 0 {
+		if p.LineCount == 0 {
 			return ErrEmptyProposal
 		}
 		return nil

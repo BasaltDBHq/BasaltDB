@@ -31,6 +31,12 @@ const (
 	// linkHash is the hash link that stands in for a long link over the
 	// budget; File carries the request.
 	linkHash
+	// linkPage is a page's address with no fragment, for a request too
+	// large for a long link that a short link given earlier carries.
+	linkPage
+	// linkNone is the page's address of a request that no link this engine
+	// has can carry (REQUEST_TOO_LARGE).
+	linkNone
 )
 
 // handOver is the link the engine hands over, which of the three it is,

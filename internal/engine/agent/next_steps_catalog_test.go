@@ -176,6 +176,25 @@ const changedAfterLine = `{"op": "UPDATE", "key": {"id": 3}, "now": {"id": 3}, "
 
 func caseKey(code, reason, tool string) string { return code + "|" + reason + "|" + tool }
 
+// tooLargeHeads are the heads of a held write's lines an agent's read left
+// out (ledger.withRequest).
+var tooLargeHeads = []string{`{"op": "DELETE", "table": "public.leads", "cascaded": false}`}
+
+// tooLargeNotice is the notice of a held write whose request no link this
+// engine has can carry: no local pages, no Vault.
+func tooLargeNotice(t *testing.T, s *Service, issue bool) heldNotice {
+	t.Helper()
+	s.PagesOrigin = ""
+	if s.Approvals == nil {
+		s.Approvals = catalogApprovals{}
+	}
+	req := sizedRequest{Binding: "{}", Lines: tooLargeHeads, LeftOut: true, Cost: 2 << 20}
+	n, err := s.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), req,
+		time.Now().Add(time.Hour), issue)
+	require.NoError(t, err)
+	return n
+}
+
 // catalogCases has one case per error entry of the catalog. A new code or
 // reason needs its case here or TestEveryCatalogErrorHasACase fails.
 func catalogCases() map[string]catalogCase {
@@ -232,6 +251,18 @@ func catalogCases() map[string]catalogCase {
 			timeoutRevert("request_revert"),
 		},
 
+		caseKey("QUERY_TIMEOUT", "REQUEST_TOO_LARGE", "request_revert"): {
+			"request_revert",
+			map[string]any{"runId": caseRunID, "intent": "Undo"},
+			func(t *testing.T, s *Service) error {
+				return s.revertTooLargeError(uuid.MustParse(caseRevertID), 2<<20, time.Now().Add(time.Hour))
+			},
+		},
+		caseKey("APPROVAL_REQUIRED", "REQUEST_TOO_LARGE", ""): {"write", writeArgs0, func(t *testing.T, s *Service) error {
+			n := tooLargeNotice(t, s, issueLink)
+			require.Equal(t, reasonRequestTooLarge, n.reason)
+			return approvalError(n, "")
+		}},
 		caseKey("APPROVAL_REQUIRED", "HELD", ""):          {"write", writeArgs0, held(reasonHeld, caseShortLink)},
 		caseKey("APPROVAL_REQUIRED", "HELD_NO_PAGES", ""): {"write", writeArgs0, held(reasonHeldNoPages, "http://localhost:7878/approvals/"+caseApproval+"#1.abc")},
 		caseKey("APPROVAL_REQUIRED", "NO_PASSKEY", ""):    {"write", writeArgs0, held(reasonNoPasskey, caseShortLink)},

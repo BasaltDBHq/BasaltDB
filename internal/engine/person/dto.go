@@ -446,8 +446,11 @@ type approvalDTO struct {
 	ApprovedAt  *time.Time      `json:"approvedAt"`
 	BindingText string          `json:"bindingText"`
 	Lines       []string        `json:"lines"`
-	// LargeValues is set on agent reads only; the person reads in full.
-	LargeValues []largevalue.Entry `json:"-"`
+	// LargeValues, LinesLeftOut and LinesCost are set on agent reads only;
+	// the person reads in full.
+	LargeValues  []largevalue.Entry `json:"-"`
+	LinesLeftOut bool               `json:"-"`
+	LinesCost    int64              `json:"-"`
 }
 
 type assertionDTO struct {
@@ -566,6 +569,7 @@ type preparedDTO struct {
 	ExpiresAt   time.Time `json:"expiresAt"`
 	Lines       []string  `json:"lines"`
 	Batched     bool      `json:"batched"`
+	LineCount   int       `json:"lineCount"`
 }
 
 type applyRevertParams struct {

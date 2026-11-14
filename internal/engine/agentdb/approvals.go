@@ -12,6 +12,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
@@ -32,8 +33,12 @@ func (s *Store) Preview(ctx context.Context, in guard.Intent, sql string, params
 		if _, _, _, err := runText(ctx, tx, sql, params, s.limits.ReadRowLimit, 0); err != nil {
 			return err
 		}
+		// The lines go back to Postgres with the hold and never to the
+		// agent: they are not charged to the call's budget, so a held
+		// DELETE of a row with a large value is held, not refused
+		// (CONTRACT.md, Large values, rule 6).
 		var err error
-		lines, err = guard.PreviewLines(ctx, tx, assigned)
+		lines, err = guard.PreviewLines(resultsize.Unbudgeted(ctx), tx, assigned)
 		if err != nil {
 			return err
 		}

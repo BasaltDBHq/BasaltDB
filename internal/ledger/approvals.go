@@ -48,6 +48,12 @@ type Approval struct {
 	// LargeValues names the statement or params left out of an agent's
 	// list (CONTRACT.md, Large values): Statement is then empty, Params nil.
 	LargeValues []largevalue.Entry
+	// LinesLeftOut says an agent's read left the lines out because the
+	// request is too large for a link (withRequest): Lines are then the
+	// lines' heads. LinesCost is the lines' cost in the budget's unit, 0 on
+	// a read with no budget.
+	LinesLeftOut bool
+	LinesCost    int64
 }
 
 // ApprovalSortSpec whitelists the approval list sort: by id, newest first
@@ -66,11 +72,11 @@ type ApprovalListParams struct {
 // colApprovalID is the approval id column of basalt_meta.agent_approvals.
 const colApprovalID = "approval_id"
 
-func approvalSelect() sq.SelectBuilder {
-	return psql.Select(colApprovalID, colRunID, "task_id", "intent", "coalesce(statement, '') AS statement", "params",
+func approvalSelect(ctx context.Context) sq.SelectBuilder {
+	return withRequest(ctx, psql.Select(colApprovalID, colRunID, "task_id", "intent", "coalesce(statement, '') AS statement", "params",
 		"assigned_columns", "rows", "status", "created_at", "expires_at", "approved_at",
-		"coalesce(binding_text, '') AS binding_text", "coalesce(lines, '{}') AS lines").
-		From("basalt_meta.agent_approvals")
+		"coalesce(binding_text, '') AS binding_text").
+		From("basalt_meta.agent_approvals"))
 }
 
 func scanApproval(row pgx.CollectableRow) (Approval, error) {
@@ -82,7 +88,7 @@ func scanApproval(row pgx.CollectableRow) (Approval, error) {
 func approvalDest(a *Approval) []any {
 	return []any{
 		&a.ID, &a.RunID, &a.TaskID, &a.Intent, &a.Statement, &a.Params, &a.Assigned, &a.Rows, &a.Status,
-		&a.CreatedAt, &a.ExpiresAt, &a.ApprovedAt, &a.BindingText, &a.Lines,
+		&a.CreatedAt, &a.ExpiresAt, &a.ApprovedAt, &a.BindingText, &a.Lines, &a.LinesLeftOut, &a.LinesCost,
 	}
 }
 
@@ -107,12 +113,12 @@ func markedApprovals(page string, desc bool) string {
 	}
 	return markedPage(page, colApprovalID, order, "p.approval_id", "p.run_id", "p.task_id", "p.intent", markedStatement,
 		markedParams, "p.assigned_columns", "p.rows", "p.status", "p.created_at", "p.expires_at", "p.approved_at",
-		"p.binding_text", "p.lines", markedLarge)
+		"p.binding_text", "p.lines", "p.lines_left_out", "p.lines_cost", markedLarge)
 }
 
 // FindApproval returns one of the calling agent's approvals.
 func FindApproval(ctx context.Context, q guard.Querier, id uuid.UUID) (Approval, error) {
-	sql, args, err := approvalSelect().Where(sq.Eq{"approval_id": id.String()}).ToSql()
+	sql, args, err := approvalSelect(ctx).Where(sq.Eq{"approval_id": id.String()}).ToSql()
 	if err != nil {
 		return Approval{}, err
 	}
@@ -137,7 +143,7 @@ func ListOpenApprovals(ctx context.Context, q guard.Querier, p ApprovalListParam
 	default:
 		return pagination.Page[Approval]{}, fmt.Errorf("%w: status %q", ErrInvalidParams, p.Status)
 	}
-	b := approvalSelect()
+	b := approvalSelect(ctx)
 	if p.RunID != uuid.Nil {
 		b = b.Where(sq.Eq{colRunID: p.RunID.String()})
 	}

@@ -163,6 +163,9 @@ type RevertPlan struct {
 	PersonMessage string
 	NextSteps     []mcp.NextStep
 	Links         []mcp.Link
+	// tooLarge is set on a PENDING plan whose request no link this engine
+	// has can carry (REQUEST_TOO_LARGE).
+	tooLarge bool
 }
 
 // RevertPlan returns a large revert plan this agent prepared, its progress
@@ -193,6 +196,7 @@ func (s *Service) RevertPlan(ctx context.Context, p RevertPlanParams) (RevertPla
 			return RevertPlan{}, err
 		}
 		out.RevertURL, out.RequestFile, out.PersonMessage, out.Links = n.URL, n.File, n.Message, n.Links
+		out.tooLarge = n.tooLarge
 	}
 	out.Page.Items = make([]RevertPlanLine, 0, len(page.Items))
 	for _, l := range page.Items {
@@ -265,6 +269,8 @@ type RequestedRevert struct {
 	NextSteps     []mcp.NextStep
 	// Receipt is the signed revert's receipt (APPLIED, APPLYING).
 	Receipt *Receipt
+	// tooLarge is the notice when no link can carry the request.
+	tooLarge revertLink
 }
 
 func (s *Service) RequestRevert(ctx context.Context, p RequestRevertParams) (RequestedRevert, error) {
@@ -279,7 +285,11 @@ func (s *Service) RequestRevert(ctx context.Context, p RequestRevertParams) (Req
 	if err != nil {
 		return RequestedRevert{}, err
 	}
-	return s.revertWithLink(ctx, r)
+	out, err := s.revertWithLink(ctx, r)
+	if err == nil && out.tooLarge.tooLarge {
+		return RequestedRevert{}, s.revertTooLargeError(r.ID, out.tooLarge.cost, r.ExpiresAt)
+	}
+	return out, err
 }
 
 // prepareReissue readies a pending revert for a new link the agent asked
@@ -301,6 +311,15 @@ func (s *Service) revertWithLink(ctx context.Context, r ledger.Revert) (Requeste
 	n, err := s.revertNotice(ctx, r)
 	if err != nil {
 		return RequestedRevert{}, err
+	}
+	if n.tooLarge {
+		// The results case REQUEST_TOO_LARGE (request_revert's reissue);
+		// RequestRevert answers the error instead.
+		steps, err := revertTooLargeSteps(r.ID, false)
+		if err != nil {
+			return RequestedRevert{}, err
+		}
+		return RequestedRevert{Revert: r, RevertURL: n.URL, PersonMessage: n.Message, NextSteps: steps, tooLarge: n}, nil
 	}
 	s.notifyRevert(ctx, r, n)
 	return RequestedRevert{
@@ -502,15 +521,23 @@ func (s *Service) waitEnded(ctx context.Context, out RequestedRevert, what strin
 		out.NextSteps = widenedWaitSteps(r.ID)
 		return out, nil
 	}
-	if s.PagesOrigin != "" {
+	link, err := s.restatedRevertLink(ctx, r)
+	if err != nil {
+		return RequestedRevert{}, err
+	}
+	if link.Kind == linkNone {
+		steps, err := revertTooLargeSteps(r.ID, false)
+		if err != nil {
+			return RequestedRevert{}, err
+		}
+		out.RevertURL, out.PersonMessage, out.NextSteps = link.URL, s.tooLargeMessage(what, revertRequestOf(r).Cost, r.ExpiresAt, true), steps
+		return out, nil
+	}
+	if s.PagesOrigin != "" || link.Kind == linkPage {
 		out.PersonMessage = fmt.Sprintf("%s waits for your passkey at the short link the agent gave you, until %s. Tell the "+
 			"agent when you have signed, or ask it for a new link if you lost that one.", what, expires)
 		out.NextSteps = waitEndedSteps(r.ID, "", waitEndedShortLink)
 		return out, nil
-	}
-	link, err := s.restatedRevertLink(ctx, r)
-	if err != nil {
-		return RequestedRevert{}, err
 	}
 	out.PersonMessage = fmt.Sprintf("%s waits for your passkey at the link the agent gave you, until %s. Tell the agent "+
 		"when you have signed, or give it the code the page shows.", what, expires)
@@ -671,6 +698,11 @@ type revertLink struct {
 	// are its two links, for the person's notification.
 	Headline    string
 	long, short string
+	// tooLarge is set when no link this engine has can carry the request
+	// (REQUEST_TOO_LARGE): URL is then the page's address with no fragment,
+	// Message says what the person changes, and Cost is what its lines cost.
+	tooLarge bool
+	cost     int64
 }
 
 // revertNotice is the link to sign a prepared revert (chooseLink: a newly
@@ -679,7 +711,8 @@ type revertLink struct {
 // skips, why, the expiry, and for a large plan that they sign it once, then
 // the link.
 func (s *Service) revertNotice(ctx context.Context, r ledger.Revert) (revertLink, error) {
-	long, err := s.longRevertLink(ctx, r)
+	req := revertRequestOf(r)
+	long, tooLarge, err := longOrTooLarge(req, func() (string, error) { return s.longRevertLink(ctx, r) })
 	if err != nil {
 		return revertLink{}, err
 	}
@@ -687,9 +720,20 @@ func (s *Service) revertNotice(ctx context.Context, r ledger.Revert) (revertLink
 	if err != nil {
 		return revertLink{}, fmt.Errorf("guard returned a bad revert binding: %w", err)
 	}
-	short, err := s.shortLink(ctx, links.Revert, r.ID, r.ExpiresAt, issueLink)
+	var short string
+	if tooLarge {
+		short, err = s.largeShortLink(ctx, links.Revert, r.ID, r.ExpiresAt, req.Cost)
+	} else {
+		short, err = s.shortLink(ctx, links.Revert, r.ID, r.ExpiresAt, issueLink)
+	}
 	if err != nil {
 		return revertLink{}, err
+	}
+	if tooLarge && short == "" {
+		return revertLink{
+			URL: s.pageAddress(links.Revert, r.ID), Headline: bindingHeadline(b, r), tooLarge: true, cost: req.Cost,
+			Message: s.tooLargeMessage(sentence(revertTitle(r)), req.Cost, r.ExpiresAt, true),
+		}, nil
 	}
 	pick, err := chooseLink(short, long, s.LinkBudget, links.RevertFile(r.ID))
 	if err != nil {

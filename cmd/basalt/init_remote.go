@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -19,6 +20,7 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
+	"github.com/basaltdbhq/basaltdb/internal/channel"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -306,6 +308,8 @@ type remoteInit struct {
 	// it sees, recorded whether the pending setup is recorded.
 	loggedIn, recorded bool
 	installed          int
+	// stateDir is the engine's state directory, where its key file is.
+	stateDir string
 }
 
 func newRemoteInit(c *cliIO, f remoteFlags) (*remoteInit, error) {
@@ -350,12 +354,14 @@ func (r *remoteInit) paths() error {
 		}
 		r.settings.StateDir = filepath.Join(dir, stateDirName)
 	}
+	r.stateDir = config.Config{StateDir: r.settings.StateDir}.StateDirFor(r.c.goos)
 	cfg, err := config.Load(r.f.configPath)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 	case err != nil:
 		return err
 	default:
+		r.stateDir = cfg.StateDirFor(r.c.goos)
 		r.settings.SocketDir = cfg.SocketDir
 		for i := range cfg.Agents {
 			if cfg.Agents[i].Name == r.f.agent {
@@ -651,6 +657,7 @@ func (r *remoteInit) payload(p plan) (setupcode.Payload, error) {
 	out := setupcode.Payload{
 		Format: setupcode.Format, SetupID: id, Kind: p.kind, Prefix: r.f.prefix, Target: r.target,
 		Guard: setupcode.Guard{From: p.from, To: guard.LatestVersion()}, Build: buildVersion(), ExpiresAt: expires,
+		Engine: r.engineKey(),
 	}
 	if p.kind == setupcode.KindUpgrade {
 		return out, nil
@@ -811,4 +818,30 @@ func printRemoteResult(c *cliIO, f remoteFlags, res RemoteInitResult) error {
 	_, err = fmt.Fprintf(c.stdout, "Setup code for %s (%s), valid until %s:\n\n%s\n\nSetup fingerprint: %s\n\n%s\n",
 		res.Agent, res.Kind, expires.UTC().Format("2006-01-02 15:04 UTC"), res.Code, res.Fingerprint, res.PersonMessage)
 	return err
+}
+
+// stateDirMode is the engine's state directory's mode when init makes it,
+// as the engine does: only its OS user.
+const stateDirMode = 0o700
+
+// engineKey is the engine's signing key for the code (M4.1, CO-18), made
+// as the engine makes it on its first start when the key file is missing.
+// Run as root, init cannot make a file the engine's OS user owns, and an
+// unreadable or refused file is never replaced: then the code carries no
+// engine key, and init says why on stderr.
+func (r *remoteInit) engineKey() *setupcode.Engine {
+	if r.c.host.Euid() == 0 {
+		fmt.Fprintf(r.c.stderr, "basalt: the code carries no engine key: run basalt init --remote as %s (the engine's OS user) so it can read the engine's key file\n", r.osUser)
+		return nil
+	}
+	if err := os.MkdirAll(r.stateDir, stateDirMode); err != nil {
+		fmt.Fprintf(r.c.stderr, "basalt: the code carries no engine key: %v\n", err)
+		return nil
+	}
+	keys, err := channel.LoadOrCreateKeys(filepath.Join(r.stateDir, channel.KeyFileName), r.c.now)
+	if err != nil {
+		fmt.Fprintf(r.c.stderr, "basalt: the code carries no engine key: the engine's key file is refused (%v); basalt status shows KEY_ERROR\n", err)
+		return nil
+	}
+	return &setupcode.Engine{PublicKey: base64.RawURLEncoding.EncodeToString(keys.PublicKeySPKI())}
 }

@@ -314,7 +314,8 @@ func TestRevertScopeCatalogChangeAgents(t *testing.T) {
 	require.NotContains(t, catalog["required"], "changeAgents", "a guard older than version 32 has no map")
 	m := mustMap(t, mustMap(t, catalog["properties"])["changeAgents"])
 	require.Equal(t, "object", m["type"])
-	require.Equal(t, map[string]any{"format": "uuid"}, m["propertyNames"])
+	require.Equal(t, map[string]any{"format": "uuid", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"}, m["propertyNames"],
+		"lowercase canonical UUID text, enforced, not only annotated")
 	require.Equal(t, "string", mustMap(t, m["additionalProperties"])["type"])
 }
 

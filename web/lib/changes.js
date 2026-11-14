@@ -183,18 +183,33 @@ function diffRows(v, columns, opts) {
 }
 
 // groupTable is one group's rows as a table: a header row, then the rows.
+// agentsCell is a row's "Changed by" cell, spanning the row's lines: a tag
+// per agent opts.agents names for the line, empty when it names none.
+function agentsCell(opts, line, span) {
+  const cell = el("td", "who");
+  cell.rowSpan = span;
+  for (const who of opts.agents(line) ?? []) cell.append(opts.agentTag(who));
+  return cell;
+}
+
 export function groupTable(views, opts) {
   const columns = columnsOf(views, opts.mid, opts.skipped, opts.order);
   const why = views.some((v) => opts.why(v.line) !== null);
   const table = el("table", "values");
   const head = el("tr");
   head.append(el("th", "mk", ""));
+  if (opts.agents) head.append(el("th", "who", "Changed by"));
   if (columns.length === 0) head.append(el("th", "", "values"));
   for (const col of columns) head.append(el("th", "", visibleText(col)));
   if (why) head.append(el("th", "why", "Why"));
   table.append(head);
   for (const v of views) {
-    for (const row of diffRows(v, columns, opts)) {
+    const rows = diffRows(v, columns, opts);
+    if (opts.agents) {
+      const [mark, ...rest] = rows[0].children;
+      rows[0].replaceChildren(mark, agentsCell(opts, v.line, rows.length), ...rest);
+    }
+    for (const row of rows) {
       if (why) row.append(el("td", "why", opts.why(v.line) ?? ""));
       if (!v.checked) row.className += " unchecked";
       table.append(row);
@@ -209,6 +224,8 @@ export function groupTable(views, opts) {
 //   shown       Map from line index to its revealed row
 //   longLink    the page came from a long link (no reveal there)
 //   who         the agent tag of every row, or null
+//   agents      line => the agents of that row ({role, other}), or null; with
+//               agentTag, a "Changed by" column instead of the group's tag
 //   skipped     line => whether the revert leaves it alone
 //   why         line => the reason it is left alone, or null
 //   highlights  (view, col) => whether an update changes col

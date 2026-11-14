@@ -129,3 +129,23 @@ test("a second entry script must have its imports preloaded", () => {
   assert.equal(r.code, 1);
   assert.match(r.out, /has no modulepreload with integrity/);
 });
+
+test("a block made inert by its context fails", () => {
+  const entry = (root) => `<script type="module" src="../lib/approve.js" integrity="${sri(readFileSync(join(root, "lib", "approve.js")))}"></script>`;
+  const wraps = [
+    ["<template>", "</template>"],
+    ["<noscript>", "</noscript>"],
+    ["<meta name='x' content='", "'>"],
+  ];
+  for (const [open, close] of wraps) {
+    const r = check((h, root) => h.replace("<!-- sri:begin", open + "\n  <!-- sri:begin").replace("<!-- sri:end -->", "<!-- sri:end -->\n  " + close + "\n  " + entry(root)));
+    assert.equal(r.code, 1, open);
+    assert.match(r.out, /head line is not in a checked form/, open);
+  }
+});
+
+test("a meta tag after the head fails", () => {
+  const r = check((h) => h.replace("</body>", '<meta http-equiv="content-type" content="text/html; ch&#97;rset=Shift_JIS">\n</body>'));
+  assert.equal(r.code, 1);
+  assert.match(r.out, /<meta after the head/);
+});

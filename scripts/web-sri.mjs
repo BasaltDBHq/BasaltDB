@@ -134,6 +134,45 @@ export function plainUTF8(page) {
   return html;
 }
 
+// The only lines a page head may hold besides the sri block. Each is a whole,
+// self-contained tag: none can open a context (template, noscript, an
+// attribute value, title text) that would make the block inert to the
+// browser while this check still reads it.
+const HEAD_LINE = new RegExp("^(?:" + [
+  '<meta charset="utf-8">',
+  '<meta name="viewport" content="width=device-width, initial-scale=1">',
+  "<meta http-equiv=\"Content-Security-Policy\" content=\"[a-z0-9 ;:'-]+\">",
+  '<meta name="referrer" content="no-referrer">',
+  '<meta name="robots" content="noindex">',
+  '<title>[^<>&"]*</title>',
+  '<link rel="stylesheet" href="[^"&]+">',
+].join("|") + ")$");
+const PRELOAD_LINE = new RegExp(PRELOAD.source + "$");
+const SCRIPT_LINE = new RegExp(SCRIPT.source + "$");
+const PROLOGUE = '<!doctype html>\n<html lang="en">\n<head>\n';
+
+// pageShape pins where the sri block sits: the fixed prologue, a head of
+// allow-listed lines with exactly one sri block (the preloads, then one
+// module script), and no script, link, meta, base or head tag after </head>.
+function pageShape(page, html) {
+  if (!html.startsWith(PROLOGUE)) throw new Error(`${page}: does not start with the fixed prologue`);
+  const end = html.indexOf("\n</head>\n", PROLOGUE.length);
+  if (end < 0) throw new Error(`${page}: no </head> line`);
+  const tag = html.slice(end + 9).match(/<(script|link|meta|base|head)\b/i);
+  if (tag) throw new Error(`${page}: ${tag[0]} after the head`);
+  let state = "before";
+  for (let line of html.slice(PROLOGUE.length, end).split("\n")) {
+    line = line.replace(/^ +/, "");
+    if (state === "before" && line === BEGIN) state = "preloads";
+    else if (state === "preloads" && PRELOAD_LINE.test(line)) continue;
+    else if (state === "preloads" && SCRIPT_LINE.test(line)) state = "script";
+    else if (state === "script" && line === END) state = "after";
+    else if ((state === "before" || state === "after") && HEAD_LINE.test(line)) continue;
+    else throw new Error(`${page}: head line is not in a checked form (run make web-sri): ${line}`);
+  }
+  if (state !== "after") throw new Error(`${page}: no complete sri block in the head`);
+}
+
 export function verify(root, files, page) {
   const problems = [];
   let html;
@@ -175,6 +214,11 @@ export function verify(root, files, page) {
     } catch (e) {
       problems.push(e.message);
     }
+  }
+  try {
+    pageShape(page, html);
+  } catch (e) {
+    problems.push(e.message);
   }
   return [...new Set(problems)];
 }

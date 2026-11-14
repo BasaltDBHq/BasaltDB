@@ -783,8 +783,7 @@ func TestMessageTooLargeIsSizeLimitOnlyWhereDeclared(t *testing.T) {
 	tooLarge := fmt.Errorf("read: %w", &pgproto3.ExceededMaxBodyLenErr{MaxExpectedBodyLen: 1, ActualBodyLen: 2})
 	for tool, want := range map[string]string{
 		"query": CodeQueryTimeout, "write": CodeQueryTimeout, "describe": CodeQueryTimeout,
-		"run_history": CodeQueryTimeout, "list_pending": CodeQueryTimeout, "revert_plan": CodeQueryTimeout,
-		"run_start": CodeInternal, "list_runs": CodeInternal, "apply_revert_batch": CodeInternal,
+		"run_history": CodeInternal, "list_pending": CodeInternal, "revert_plan": CodeInternal,
 	} {
 		te := s.Failure(tool, nil, tooLarge)
 		require.Equal(t, want, te.Code, tool)

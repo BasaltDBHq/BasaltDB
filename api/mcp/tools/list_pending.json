@@ -334,7 +334,6 @@
   "errors": [
     "INVALID_ARGUMENT",
     "NOT_FOUND",
-    "QUERY_TIMEOUT",
     "UNAVAILABLE",
     "INTERNAL"
   ]

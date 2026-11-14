@@ -14,7 +14,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
-	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 )
@@ -32,10 +31,6 @@ const flagSetupCode = "setup-code"
 // setupCodeOS are the platforms basalt init --setup-code runs on in M4
 // (CO-19).
 var setupCodeOS = map[string]bool{"darwin": true, "linux": true}
-
-// portalRP is the relying party of an agent-operated engine's passkeys:
-// the portal, RP ID basaltvault.app (CO-8).
-var portalRP = passkey.Relying{RPID: passkey.RPID, Origin: links.Portal}
 
 // setupCodeFlags are basalt init --setup-code's flags after parsing.
 type setupCodeFlags struct {
@@ -410,16 +405,16 @@ func (l *laptopSetup) passkey() error {
 	}
 	has := false
 	for _, k := range keys {
-		has = has || k.Origin == portalRP.Origin
+		has = has || k.Origin == passkey.Production.Origin
 	}
 	if has && !l.f.addPasskey {
 		return nil
 	}
 	label := setupPasskeyLabel(l.f.passkeyLabel, l.p, l.conn.Config().Database, l.c.now())
-	if err := registerPasskey(l.c, l.conn, portalRP, label, l.c.interactive); err != nil {
+	if err := registerPasskey(l.c, l.conn, passkey.Production, label, l.c.interactive); err != nil {
 		return err
 	}
-	fmt.Fprintf(l.c.stderr, "basalt: passkey registered for %s\n", portalRP.RPID)
+	fmt.Fprintf(l.c.stderr, "basalt: passkey registered for %s\n", passkey.Production.RPID)
 	return nil
 }
 

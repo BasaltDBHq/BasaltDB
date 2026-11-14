@@ -21,8 +21,11 @@ const (
 type Settings struct {
 	// SocketDir and StateDir are used only when the config file is new.
 	SocketDir, StateDir string
-	// PagesURL replaces the config's pages base URL when set.
-	PagesURL string
+	// PagesURL replaces the config's pages base URL when set, and
+	// DevLocalPages replaces devLocalPages along with it: the development
+	// exception goes with the pages it is for.
+	PagesURL      string
+	DevLocalPages bool
 	// OperatedBy replaces the config's operatedBy when set.
 	OperatedBy string
 	// Mode replaces the config's mode when set.
@@ -128,7 +131,7 @@ func UpsertedVault(path string, open func(string) (*os.File, error), s Settings,
 	vault := s.vaultFor(c, existed)
 	c.Vault = vault.Vault
 	if s.PagesURL != "" {
-		c.PagesURL, c.ApprovalPage = s.PagesURL, ""
+		c.PagesURL, c.ApprovalPage, c.DevLocalPages = s.PagesURL, "", s.DevLocalPages
 	}
 	if s.OperatedBy != "" {
 		c.OperatedBy = s.OperatedBy
@@ -147,6 +150,10 @@ func UpsertedVault(path string, open func(string) (*os.File, error), s Settings,
 		c.Agents = append(c.Agents, a)
 	}
 	if err := validate.Struct(c); err != nil {
+		return nil, VaultWritten{}, fmt.Errorf("config %s: %w", path, err)
+	}
+	// Never write a config the engine would refuse to load.
+	if err := c.checkOrigins(); err != nil {
 		return nil, VaultWritten{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	raw, err := json.MarshalIndent(c, "", "  ")

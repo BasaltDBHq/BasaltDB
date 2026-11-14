@@ -9,6 +9,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 )
@@ -240,7 +241,24 @@ func (s *Service) signingLink(ctx context.Context, r ledger.Revert) (string, err
 	if r.Widened {
 		return "", nil
 	}
-	return s.longRevertLink(ctx, r)
+	pick, err := s.restatedRevertLink(ctx, r)
+	return pick.URL, err
+}
+
+// restatedRevertLink is r's link in a result that names it without issuing
+// a new one: the long link while the engine serves the pages (the person has
+// the short link), else the link the budget chooses, which over the budget
+// is the hash link with its request (CONTRACT.md, The request file and
+// pasted blocks).
+func (s *Service) restatedRevertLink(ctx context.Context, r ledger.Revert) (handOver, error) {
+	long, err := s.longRevertLink(ctx, r)
+	if err != nil {
+		return handOver{}, err
+	}
+	if s.PagesOrigin != "" {
+		return handOver{URL: long, Kind: linkLong}, nil
+	}
+	return chooseLink("", long, s.LinkBudget, links.RevertFile(r.ID))
 }
 
 // revertTitle names revert r for the person, starting lowercase: its scope,

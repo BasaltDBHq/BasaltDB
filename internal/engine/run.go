@@ -116,6 +116,9 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 	if err != nil {
 		return err
 	}
+	if cfg.DevLocalPages {
+		log.Warn(config.DevLocalPagesWarning, "pagesUrl", cfg.PagesURL)
+	}
 	var site *pagesSite
 	if pagesCfg.Addr != "" {
 		site, err = listenPages(pagesCfg, log)
@@ -423,32 +426,33 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		return guard.RLSBlindTables(ctx, pool, "", tables)
 	})
 	svc := agent.NewService(agent.Deps{
-		Name:        a.Name,
-		Reader:      agentdb.NewReader(pool, limits, time.Now),
-		Store:       store,
-		Reads:       store,
-		Approvals:   store,
-		Reverts:     store,
-		PagesBase:   env.pagesBase,
-		LinkBudget:  env.cfg.LinkBudgetOrDefault(),
-		Commands:    cmds,
-		PagesOrigin: env.pagesOrigin,
-		Links:       secrets,
-		Relay:       relay,
-		RLS:         blind,
-		Log:         log,
-		Now:         time.Now,
-		OperatedBy:  env.cfg.OperatedBy,
-		SameUser:    !env.cfg.Service(),
-		Setup:       a.Setup,
-		Probe:       probe,
-		Vault:       env.vault,
-		Receipts:    env.receipts,
-		Finisher:    finisher,
-		PII:         observer.On(pool),
-		Catalog:     agentdb.NewCatalog(pool, limits, pool.Config().ConnConfig.Database),
-		Columns:     agentdb.NewColumnOrder(pool),
-		Classes:     classes.On(pool),
+		Name:          a.Name,
+		Reader:        agentdb.NewReader(pool, limits, time.Now),
+		Store:         store,
+		Reads:         store,
+		Approvals:     store,
+		Reverts:       store,
+		PagesBase:     env.pagesBase,
+		LinkBudget:    env.cfg.LinkBudgetOrDefault(),
+		Commands:      cmds,
+		PagesOrigin:   env.pagesOrigin,
+		Links:         secrets,
+		Relay:         relay,
+		RLS:           blind,
+		Log:           log,
+		Now:           time.Now,
+		OperatedBy:    env.cfg.OperatedBy,
+		DevLocalPages: env.cfg.DevLocalPages,
+		SameUser:      !env.cfg.Service(),
+		Setup:         a.Setup,
+		Probe:         probe,
+		Vault:         env.vault,
+		Receipts:      env.receipts,
+		Finisher:      finisher,
+		PII:           observer.On(pool),
+		Catalog:       agentdb.NewCatalog(pool, limits, pool.Config().ConnConfig.Database),
+		Columns:       agentdb.NewColumnOrder(pool),
+		Classes:       classes.On(pool),
 	})
 	return agentRuntime{
 		svc: svc,

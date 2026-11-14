@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -376,14 +377,23 @@ func TestRequestRevertOfALargeRun(t *testing.T) {
 	require.EqualValues(t, fmt.Sprint(planRows), body["rows"])
 	msg := str(t, body["personMessage"])
 	require.Contains(t, msg, fmt.Sprintf("It covers %d rows: you sign once", planRows))
-	// No local pages and a plan this large: the long link is over the budget.
-	// Until the fallback lands (VC-28) it is still handed over, after a
-	// warning, in revertUrl and in the message, and the message keeps its limit.
+	// No local pages and a plan this large: the long link is over the budget,
+	// so the engine hands over the hash link with the request beside it
+	// (CONTRACT.md, The request file and pasted blocks).
 	link := str(t, body["revertUrl"])
-	require.Greater(t, len(link), links.DefaultBudget)
-	require.True(t, strings.HasPrefix(link, links.DefaultLocal+"/reverts/"), link)
-	require.True(t, strings.HasPrefix(msg, "Warning: this link is long and may arrive cut or broken.\nRevert of run "), msg)
+	require.Regexp(t, `^`+regexp.QuoteMeta(links.DefaultLocal)+`/reverts/[0-9a-f-]{36}#h=[A-Za-z0-9_-]{22}$`, link)
+	rf, ok := body["requestFile"].(map[string]any)
+	require.True(t, ok, "%v", body)
+	text := str(t, rf["text"])
+	require.Greater(t, len(links.DefaultLocal+"/reverts/")+36+1+len(text), links.DefaultBudget, "the long link was over the budget")
+	require.True(t, strings.HasSuffix(link, "#h="+links.RequestHash(text)), link)
+	require.True(t, strings.HasPrefix(msg, "Revert of run "), msg)
 	require.True(t, strings.HasSuffix(msg, "\n\n"+link), "the link comes last, on its own line")
+	steps, ok := body["nextSteps"].([]any)
+	require.True(t, ok)
+	first, ok := steps[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, mcp.ActionSendRequest, first["action"], "the agent sends the request first")
 	mcptest.Require(t, msg, mcptest.LinksOf(t, body))
 	require.Equal(t, []mcp.Link{{Label: "Review and sign the revert", URL: link}}, mcptest.LinksOf(t, body))
 	requireResultSteps(t, body, "REQUESTED")

@@ -44,6 +44,8 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 		if err := dropToUser(privdrop.OS{}, *runAs, io.err); err != nil {
 			return fail(io.err, "engine", err)
 		}
+		// The inherited HOME is still root's; look in the engine user's own.
+		h = engineUserHost{host: h, name: *runAs}
 	}
 	// After the drop, so a bot's own user finds the config init left.
 	*configPath = configOrFallback(h, fs, *configPath)
@@ -61,6 +63,32 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 // dropToUser is basalt engine --user: before the config, the credential, a
 // socket or a port is opened, the engine makes its directories, gives up
 // root for name and checks it cannot get it back (CONTRACT.md, CLI).
+// engineUserHost is a host whose config directory is the home of the OS
+// user the engine dropped to, not the HOME it inherited from root.
+type engineUserHost struct {
+	host
+	name string
+}
+
+func (h engineUserHost) UserConfigDir() (string, error) {
+	u, err := user.Lookup(h.name)
+	if err != nil {
+		return "", err
+	}
+	return userConfigDirIn(runtime.GOOS, u.HomeDir)
+}
+
+// userConfigDirIn is os.UserConfigDir for a user whose home is home.
+func userConfigDirIn(goos, home string) (string, error) {
+	if home == "" {
+		return "", errors.New("the engine user has no home directory")
+	}
+	if goos == "darwin" {
+		return filepath.Join(home, "Library", "Application Support"), nil
+	}
+	return filepath.Join(home, ".config"), nil
+}
+
 func dropToUser(sys privdrop.System, name string, w io.Writer) error {
 	res, err := privdrop.Drop(sys, name, engineDirs(runtime.GOOS))
 	if err != nil {
@@ -209,6 +237,7 @@ func runService(ctx context.Context, args []string, io stdio) int {
 	fs.StringVar(&a.name, "agent", "", "install: also place this agent (basalt init runs this under sudo)")
 	fs.StringVar(&a.osUser, "os-user", "", "install --agent: the agent's OS user")
 	pagesURLFlag(fs, &a.pagesURL, "install --agent: the pages base URL the agent's passkey belongs to")
+	fs.BoolVar(&a.devLocalPages, flagDevLocalPages, false, "install --agent: the config's devLocalPages, as basalt init --dev-local-pages sets it")
 	fs.Func(flagVault, "install --agent: on or off, the config's vault as the person chose it (default: keep the config's)", func(v string) error {
 		var m VaultMode
 		if err := m.Set(v); err != nil {
@@ -266,6 +295,9 @@ func runService(ctx context.Context, args []string, io stdio) int {
 		spec.MemoryMB = cfg.PIIOrDefault().MaxMemoryMB
 	}
 	if action == "install" && a.name != "" {
+		if a.devLocalPages {
+			_, _ = fmt.Fprintln(io.err, "basalt: "+config.DevLocalPagesWarning)
+		}
 		if len(a.personUIDs) == 0 && os.Getenv(envSudoUID) != "" {
 			uid, err := parseUID(os.Getenv(envSudoUID))
 			if err != nil {

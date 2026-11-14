@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"unicode/utf8"
 
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 )
 
@@ -96,6 +97,13 @@ func (b *Steps) OpenLink(url, command, text string) *Steps {
 	return b.add(NextStep{Actor: mcp.ActorPerson, Action: mcp.ActionOpenLink, URL: url, Command: command}, text)
 }
 
+// OpenGivenLink adds a PERSON step with no url: open the short link the
+// agent handed over earlier, which the engine no longer has (it keeps only
+// its hash); command, when not empty, opens the same page from a terminal.
+func (b *Steps) OpenGivenLink(command, text string) *Steps {
+	return b.add(NextStep{Actor: mcp.ActorPerson, Action: mcp.ActionOpenLink, Command: command}, text)
+}
+
 // RunCommand adds a PERSON step: run command in a terminal.
 func (b *Steps) RunCommand(command, text string) *Steps {
 	if command == "" {
@@ -122,6 +130,39 @@ func (b *Steps) MachineCommand(cmds Commands, command, personText, agentText str
 		return b.AgentRunCommand(command, agentText)
 	}
 	return b.RunCommand(command, personText)
+}
+
+// SendRequest adds the AGENT SEND_REQUEST step for f, which goes first
+// (CONTRACT.md, The request file and pasted blocks); nothing when f is nil.
+func (b *Steps) SendRequest(f *links.RequestFile) *Steps {
+	if f == nil {
+		return b
+	}
+	return b.add(NextStep{Actor: mcp.ActorAgent, Action: mcp.ActionSendRequest}, sendRequestText(f))
+}
+
+// withSendRequest puts the SEND_REQUEST step for f in front of steps; steps
+// as they are when f is nil.
+func withSendRequest(steps []NextStep, f *links.RequestFile) []NextStep {
+	if f == nil {
+		return steps
+	}
+	return append([]NextStep{agentStep(mcp.ActionSendRequest, sendRequestText(f))}, steps...)
+}
+
+// The SEND_REQUEST step's text, with and without blocks to paste.
+const (
+	sendRequestWithBlocks = "Send requestFile to the person first, once per item: attach the file at path (else one named fileName " +
+		"holding exactly text), or else each of blocks in a code block, one per message."
+	sendRequestFileOnly = "Send requestFile to the person first, once per item: attach the file at path (else fileName holding " +
+		"exactly text). An agent that cannot send files does not show the link: ask the person."
+)
+
+func sendRequestText(f *links.RequestFile) string {
+	if f.Blocks == nil {
+		return sendRequestFileOnly
+	}
+	return sendRequestWithBlocks
 }
 
 // TellAgent adds a PERSON step: the person tells the agent to go on.

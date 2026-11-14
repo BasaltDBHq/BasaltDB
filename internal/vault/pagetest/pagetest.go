@@ -38,7 +38,7 @@ type Page struct {
 func Dial(ctx context.Context, vaultURL string, token channel.LinkToken) (*Page, error) {
 	h := http.Header{}
 	h.Set("Origin", links.Portal)
-	ws, resp, err := websocket.Dial(ctx, vaultURL+"/v1/links/"+token.String(), &websocket.DialOptions{HTTPHeader: h})
+	ws, resp, err := websocket.Dial(ctx, vaultURL+"/v1/links/"+token.Wire(), &websocket.DialOptions{HTTPHeader: h})
 	if resp != nil && resp.Body != nil {
 		_ = resp.Body.Close()
 	}

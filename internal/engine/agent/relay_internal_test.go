@@ -180,7 +180,7 @@ func (e *relayEnv) notice(t *testing.T) heldNotice {
 }
 
 func (e *relayEnv) owner(tok channel.LinkToken) string {
-	id, _ := e.v.LinkOwner(tok.String())
+	id, _ := e.v.LinkOwner(tok.Wire())
 	return id
 }
 
@@ -231,7 +231,7 @@ func TestRelayHandsOverTheRegisteredPortalShortLink(t *testing.T) {
 	require.Equal(t, e.keys.EngineID(), e.owner(keys.Token), "registered before it was handed over")
 	require.True(t, e.svc.Links.Check(uuid.MustParse(caseApproval), secret))
 	require.Equal(t, 1, e.frames.count(`"type":"REGISTER_LINK"`))
-	require.Equal(t, 1, e.frames.count(keys.Token.String()), "the token is what the Vault sees")
+	require.Equal(t, 1, e.frames.count(keys.Token.Wire()), "the token is what the Vault sees")
 
 	// A revert's link goes the same way.
 	id := uuid.Must(uuid.NewV7())
@@ -273,7 +273,7 @@ func TestRelayTimeoutFallsBackToTheLongLink(t *testing.T) {
 	_, keys := shortSecret(t, links.WithSecret(links.Portal, secrets[0]))
 	require.Eventually(t, func() bool { return e.frames.count(`"type":"UNREGISTER_LINK"`) == 1 }, relayWait, relayTick,
 		"a registration that may have landed late is taken back")
-	require.Equal(t, 2, e.frames.count(keys.Token.String()))
+	require.Equal(t, 2, e.frames.count(keys.Token.Wire()))
 }
 
 func TestRelayRefusedFallsBackToTheLongLink(t *testing.T) {
@@ -306,7 +306,7 @@ func TestRelayConflictRevokesTheLink(t *testing.T) {
 	keys, err := channel.DeriveLink(next)
 	require.NoError(t, err)
 	// Someone who saw a link registered its token with their own engine first (VC-42).
-	e.v.Bind(keys.Token.String(), rivalEngine, time.Now().Add(time.Hour))
+	e.v.Bind(keys.Token.Wire(), rivalEngine, time.Now().Add(time.Hour))
 
 	n := e.notice(t)
 	require.Empty(t, n.shortURL)

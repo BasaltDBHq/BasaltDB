@@ -17,7 +17,7 @@ const prologueLine = "basalt-vault-prologue.1\n"
 // prologue binds the version, the transport and the link's token (as its
 // base64url text) into h.
 func prologue(transport Transport, token LinkToken) []byte {
-	return []byte(prologueLine + string(transport) + "\n" + token.String())
+	return []byte(prologueLine + string(transport) + "\n" + token.Wire())
 }
 
 // readHeader checks a message's version, then its type.

@@ -10,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"math/big"
 	"net"
 	"net/url"
@@ -168,6 +169,34 @@ func TestHardenedCredentialStopsAtAnUnreachableDatabase(t *testing.T) {
 		require.Equal(t, 1, probes, "one probe that cannot reach the server is enough")
 		require.Contains(t, p.line(), "could not be reached")
 	}
+}
+
+// One address that cannot be dialed does not end the probing when another
+// address of the host was reached: pgx joins one error per address.
+func TestHardenedCredentialProbesOnWhenOneAddressIsReached(t *testing.T) {
+	t.Parallel()
+	refused := &net.OpError{Op: "dial", Err: errors.New("connection refused")}
+	require.True(t, unreachable(fmt.Errorf("connect: %w", errors.Join(refused, context.DeadlineExceeded))))
+	require.False(t, unreachable(fmt.Errorf("connect: %w", errors.Join(errors.New("tls: failed to verify certificate"), refused))))
+
+	ca := newTestCA(t, "db.example.test")
+	port := startFakePostgres(t, ca, postgresPlus)
+	closed, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.2:0")
+	if err != nil {
+		closed, err = (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+	}
+	require.NoError(t, err)
+	deadPort := closed.Addr().(*net.TCPAddr).Port
+	require.NoError(t, closed.Close())
+	// A multi-host URL: the live server (untrusted certificate, channel
+	// binding) and a closed port.
+	dsn := "postgres://basalt_agent_bot:pw@db.example.test:" + strconv.Itoa(port) + ",db.example.test:" + strconv.Itoa(deadPort) + "/postgres?sslmode=prefer"
+	got, p := hardenedCredential(context.Background(), loopbackProbe, dsn)
+	u, err := url.Parse(got)
+	require.NoError(t, err)
+	require.Equal(t, sslRequire, u.Query().Get(paramSSLMode), got)
+	require.Equal(t, bindingRequire, u.Query().Get(paramChannelBinding), got)
+	require.Contains(t, p.line(), "encrypted with channel binding")
 }
 
 // fakeServer is what a TLS Postgres front answers after the startup message.

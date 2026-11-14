@@ -78,7 +78,7 @@ type protection struct {
 func hardenedCredential(ctx context.Context, dial func(context.Context, string) error, dsn string) (string, protection) {
 	u, err := url.Parse(dsn)
 	if err != nil {
-		return dsn, protection{skip: "the connection string could not be read"}
+		return dsn, protection{mode: sslDefault, skip: "the connection string could not be read"}
 	}
 	q := u.Query()
 	mode := q.Get(paramSSLMode)
@@ -152,14 +152,30 @@ func proves(c tlsCandidate, err error) bool {
 		(pg.Code == sqlstateInternal && strings.Contains(pg.Message, supavisorNoTenant)))
 }
 
-// unreachable is a probe that never reached the server (a timeout, or a
-// dial that failed): later candidates would wait the same way.
+// unreachable is a probe that reached no server: every address pgx tried
+// (it joins one error per host and address) failed to dial or timed out.
+// One address reached (a TLS or a server error) keeps the probing going,
+// as a dual-stack host without an IPv6 route or a multi-host URL with one
+// replica down would otherwise stop it early.
 func unreachable(err error) bool {
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		return true
+	switch e := err.(type) { //nolint:errorlint // walks the tree one level at a time
+	case nil:
+		return false
+	case interface{ Unwrap() []error }:
+		errs := e.Unwrap()
+		for _, x := range errs {
+			if !unreachable(x) {
+				return false
+			}
+		}
+		return len(errs) > 0
+	case *net.OpError:
+		return e.Op == "dial"
 	}
-	var op *net.OpError
-	return errors.As(err, &op) && op.Op == "dial"
+	if u := errors.Unwrap(err); u != nil {
+		return unreachable(u)
+	}
+	return errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)
 }
 
 // line is the one line init --remote prints about the agent's connection.
@@ -185,7 +201,8 @@ func (p protection) line() string {
 			"(to check it, add sslrootcert=<CA file> to the connection string)\n"
 	}
 	return fmt.Sprintf("basalt: connection not protected further: TLS with a verified certificate or channel binding could not be confirmed "+
-		"(no TLS, the certificate did not verify and no channel binding, or the database could not be reached; sslmode=%s kept)\n", p.mode)
+		"(no TLS, the certificate did not verify and no channel binding, or the database could not be reached; sslmode=%s kept; "+
+		"for a certificate from the provider's own CA, add sslrootcert=<CA file> to the connection string)\n", p.mode)
 }
 
 // probeLogin tries a login with dsn and closes it: the error says how far

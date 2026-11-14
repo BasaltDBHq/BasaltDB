@@ -28,6 +28,7 @@ func runAccess(c *cliIO, args []string) int {
 	if !config.ValidAgentName(*name) {
 		return c.fail(fmt.Errorf("%w: give --agent NAME", errUsage))
 	}
+	*configPath = configOrFallback(c.host, fs, *configPath)
 	l, err := openLedger(c, *name, "", *configPath)
 	if err != nil {
 		return c.fail(err)

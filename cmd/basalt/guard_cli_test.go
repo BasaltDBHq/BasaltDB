@@ -57,7 +57,7 @@ func cliOn(t *testing.T, h *fakeHost, env map[string]string, stdin string, args 
 }
 
 var guardCommands = map[string]func(*cliIO, []string) int{
-	"init": runInit, "log": runLog, "uninstall": runUninstall, "approve": runApprove, "revert": runRevert, "passkey": runPasskey, "access": runAccess,
+	"init": runInit, "log": runLog, "uninstall": runUninstall, "approve": runApprove, "revert": runRevert, "passkey": runPasskey, "access": runAccess, "upgrade": runUpgrade,
 }
 
 // initAgent runs basalt init --yes for agent bot writing public.leads with

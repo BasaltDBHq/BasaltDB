@@ -152,6 +152,9 @@ func (s *Service) hold(ctx context.Context, in guard.Intent, p WriteParams, stmt
 // for notifications.
 type heldNotice struct {
 	mcp.ApprovalNotice
+	// pick is the link handed over, as chooseLink chose it (the long link
+	// when a wait or a list only restates it while the engine serves the pages).
+	pick     handOver
 	longURL  string
 	shortURL string // "" when no short link was issued
 	// reason is the APPROVAL_REQUIRED case: HELD, HELD_NO_PAGES or NO_PASSKEY
@@ -189,7 +192,11 @@ func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding stri
 	if err != nil {
 		return heldNotice{}, err
 	}
-	pick, reason := chooseLink(short, long, s.LinkBudget), reasonHeld
+	pick, err := chooseLink(short, long, s.LinkBudget, links.ApprovalFile(id))
+	if err != nil {
+		return heldNotice{}, err
+	}
+	reason := reasonHeld
 	lead := "Held for your approval: " + shown(summary.Headline(), maxHeadlineChars) + "."
 	var text string
 	var msgLinks []mcp.Link
@@ -212,8 +219,9 @@ func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding stri
 		reason: reason,
 		ApprovalNotice: mcp.ApprovalNotice{
 			ApprovalID: id.String(), ExpiresAt: timeText(expires), Rows: len(lines), Headline: summary.Headline(),
-			ApprovalURL: pick.URL, ApproveCommand: command, PersonMessage: text, Links: msgLinks,
+			ApprovalURL: pick.URL, RequestFile: pick.File, ApproveCommand: command, PersonMessage: text, Links: msgLinks,
 		},
+		pick:     pick,
 		longURL:  long,
 		shortURL: short,
 	}, nil
@@ -222,8 +230,18 @@ func (s *Service) approvalNotice(ctx context.Context, id uuid.UUID, binding stri
 // waitMessage is the personMessage of a wait or a list that issues no new
 // link: the link already handed over still works.
 func waitMessage(lead, command string, expires time.Time) (string, []mcp.Link) {
+	return pointBackMessage(lead, command, expiryLine(expires))
+}
+
+// pointBackMessage is lead, then a pointer to the approval link the person
+// was given, with the approve command, then tail.
+func pointBackMessage(lead, command string, tail ...string) (string, []mcp.Link) {
 	return fitCommand(func(c commandPhrases) (string, []mcp.Link) {
-		return newMessage().Text(lead).Text(c.orRun).Text(expiryLine(expires)).Build()
+		msg := newMessage().Text(lead).Text(c.orRun)
+		for _, line := range tail {
+			msg.Text(line)
+		}
+		return msg.Build()
 	},
 		commandPhrases{orRun: "Approve with the link you were given, or run: " + command},
 		commandPhrases{orRun: "Approve with the link you were given, or run the approve command the agent shows you."})
@@ -470,6 +488,9 @@ func (s *Service) relay(ctx context.Context, a ledger.Approval, code string) err
 type PendingItem struct {
 	ledger.Approval
 	Notice mcp.ApprovalNotice
+	// Restated is set when list_pending names the item's link without issuing
+	// one while the engine serves the pages: the person has the short link.
+	Restated bool
 	// PersonMessage and NextSteps say what happens next (CONTRACT.md, Next steps).
 	PersonMessage string
 	Links         []mcp.Link

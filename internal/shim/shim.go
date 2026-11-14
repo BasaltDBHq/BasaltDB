@@ -51,7 +51,7 @@ func Serve(ctx context.Context, socketPath string, fallback Fallback, in io.Read
 	if fallback == nil {
 		panic("shim: fallback server required")
 	}
-	r := &relay{path: socketPath, fallback: fallback, out: &lineWriter{w: out}}
+	r := &relay{path: socketPath, fallback: fallback, out: &lineWriter{w: out}, files: defaultRequestFiles()}
 	defer r.close()
 
 	lines := make(chan []byte)
@@ -102,6 +102,8 @@ type relay struct {
 	fallback Fallback
 	out      *lineWriter
 	sess     *session
+	// files writes the request files of hash links (request_files.go).
+	files requestFiles
 }
 
 // send forwards line to the engine, dialing when there is no live
@@ -112,7 +114,7 @@ func (r *relay) send(ctx context.Context, line []byte) error {
 		return nil
 	}
 	r.close()
-	sess, err := dial(ctx, r.path, r.out, r.fallback)
+	sess, err := dial(ctx, r.path, r.out, r.fallback, r.files)
 	if err == nil {
 		r.sess = sess
 		if sess.forward(line) {
@@ -154,6 +156,7 @@ func (r *relay) close() {
 type session struct {
 	conn     *net.UnixConn
 	fallback Fallback
+	files    requestFiles
 	done     chan struct{}
 	// err is the read error that ended the session, set before done closes;
 	// nil for a clean close.
@@ -168,7 +171,7 @@ type session struct {
 	pending map[string][]byte
 }
 
-func dial(ctx context.Context, path string, out *lineWriter, fallback Fallback) (*session, error) {
+func dial(ctx context.Context, path string, out *lineWriter, fallback Fallback, files requestFiles) (*session, error) {
 	var d net.Dialer
 	c, err := d.DialContext(ctx, "unix", path)
 	if err != nil {
@@ -179,7 +182,7 @@ func dial(ctx context.Context, path string, out *lineWriter, fallback Fallback) 
 		c.Close()
 		return nil, fmt.Errorf("%s is not a Unix socket", path)
 	}
-	s := &session{conn: conn, fallback: fallback, done: make(chan struct{}), pending: map[string][]byte{}}
+	s := &session{conn: conn, fallback: fallback, files: files, done: make(chan struct{}), pending: map[string][]byte{}}
 	go s.copyAnswers(ctx, out)
 	return s, nil
 }
@@ -199,7 +202,7 @@ func (s *session) copyAnswers(ctx context.Context, out *lineWriter) {
 			continue
 		}
 		s.answered(sc.Bytes())
-		if err := out.writeLine(sc.Bytes()); err != nil {
+		if err := out.writeLine(s.files.attach(sc.Bytes())); err != nil {
 			s.err = fmt.Errorf("write to the MCP client: %w", err)
 			return
 		}

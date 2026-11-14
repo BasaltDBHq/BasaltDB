@@ -57,7 +57,8 @@ func (s *Service) planGuidance(plan RevertPlan) (string, []mcp.NextStep, error) 
 		return fmt.Sprintf("%s waits for your passkey on the page where you changed the scope, until %s.",
 			sentence(revertTitle(r)), r.ExpiresAt.UTC().Format(personTime)), steps, nil
 	case r.Status == ledger.RevertPending:
-		b.OpenLink(plan.RevertURL, "", "Open the link, review the plan and sign it once with your passkey.").
+		b.SendRequest(plan.RequestFile).
+			OpenLink(plan.RevertURL, "", "Open the link, review the plan and sign it once with your passkey.").
 			TellAgent("Tell the agent when you have signed.").
 			EndTurn("End your turn: apply the lines only after the person says they signed.")
 		steps, err := b.Build()
@@ -132,17 +133,51 @@ func outcomeMessage(r ledger.Revert) string {
 // person, and the agent applies it as the tool says.
 func (s *Service) itemGuidance(p PendingItem) (string, []mcp.Link, []mcp.NextStep, error) {
 	switch {
-	case p.Status == ledger.ApprovalExpired || !s.Now().Before(p.ExpiresAt):
+	case s.expired(p):
 		b := NewSteps()
 		approvalExpiredSteps(b)
 		steps, err := b.Build()
 		return approvalExpiredMessage, nil, steps, err
-	case p.Status == ledger.ApprovalPending:
-		steps, err := NewSteps().OpenLink(p.Notice.ApprovalURL, p.Notice.ApproveCommand,
-			"Open the link, review the rows and approve with your passkey.").Build()
+	case s.waitsForPerson(p):
+		b := NewSteps().SendRequest(p.Notice.RequestFile)
+		openItemLink(b, p)
+		steps, err := b.Build()
 		return p.Notice.PersonMessage, p.Notice.Links, steps, err
 	}
 	return p.Notice.PersonMessage, p.Notice.Links, nil, nil
+}
+
+// openItemLink adds a pending item's OPEN_LINK step: with no url when
+// list_pending restates the link while the engine serves the pages.
+func openItemLink(b *Steps, p PendingItem) {
+	if p.Restated {
+		b.OpenGivenLink(p.Notice.ApproveCommand, "Open the link the agent gave you earlier, review the rows and approve with your passkey.")
+		return
+	}
+	b.OpenLink(p.Notice.ApprovalURL, p.Notice.ApproveCommand, "Open the link, review the rows and approve with your passkey.")
+}
+
+// openHeldLink adds the person's OPEN_LINK step after a wait that ran out:
+// with no url while the engine serves the pages (the person has the short
+// link the hold handed over; CONTRACT.md, The request file and pasted
+// blocks), else at the link the hold handed over.
+func (s *Service) openHeldLink(b *Steps, n *mcp.ApprovalNotice, text string) {
+	if s.PagesOrigin != "" {
+		b.OpenGivenLink(n.ApproveCommand, "Open the short link the agent gave you earlier and approve with your passkey.")
+		return
+	}
+	b.OpenLink(n.ApprovalURL, n.ApproveCommand, text)
+}
+
+// expired reports whether a held write ran out before it was approved.
+func (s *Service) expired(p PendingItem) bool {
+	return p.Status == ledger.ApprovalExpired || !s.Now().Before(p.ExpiresAt)
+}
+
+// waitsForPerson reports whether a held write still waits for the person's
+// passkey: only then does it need its request sent.
+func (s *Service) waitsForPerson(p PendingItem) bool {
+	return p.Status == ledger.ApprovalPending && !s.expired(p)
 }
 
 const approvalExpiredMessage = "The held write expired before it was approved, so nothing was applied. Ask the agent to send it again if you still want it."

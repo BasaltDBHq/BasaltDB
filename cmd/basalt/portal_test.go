@@ -57,7 +57,7 @@ func portalHost(t *testing.T, files fs.FS, wrap func(http.Handler) http.Handler)
 	// The portal's _redirects: each page route is rewritten (200) to its file.
 	static := http.FileServer(http.FS(files))
 	rewrite := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		for _, rt := range pages.PageRoutes {
+		for _, rt := range pages.PortalPages() {
 			if r.URL.Path == rt.Path || (rt.ID && strings.HasPrefix(r.URL.Path, rt.Path)) {
 				b, err := fs.ReadFile(files, rt.File)
 				if err != nil {

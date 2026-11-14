@@ -33,6 +33,15 @@ type DirectOptions struct {
 	// session, after the other direct sessions of it ended, so the engine
 	// ends the token's sessions through the Vault too.
 	OnRotate func(old channel.LinkToken)
+	// Recheck, when set, runs before each request of an established
+	// session is answered: a non-zero code (ENGINE_REVOKED once the link's
+	// agent's database revoked the engine) ends the session with it and the
+	// request goes unanswered. Nil answers every request.
+	Recheck func(ctx context.Context, l SessionLink) channel.CloseError
+	// Tally is shared with the Vault client's Options so sessions on both
+	// transports count together towards the limits; nil counts direct
+	// sessions alone.
+	Tally *Tally
 	// Message1Timeout, IdleTimeout and SessionLifetime default to the
 	// contract's values when zero. Tests shorten them.
 	Message1Timeout time.Duration
@@ -48,6 +57,7 @@ type Direct struct {
 	sessions *sessions
 	timeout  time.Duration
 	onRotate func(old channel.LinkToken)
+	recheck  func(ctx context.Context, l SessionLink) channel.CloseError
 
 	mu    sync.Mutex
 	conns map[sid]*conn
@@ -61,13 +71,13 @@ func NewDirect(o DirectOptions) *Direct {
 	}
 	opts := Options{
 		Keys: o.Keys, Log: o.Log, Now: o.Now, SessionLinks: o.SessionLinks, Pages: o.Pages,
-		IdleTimeout: o.IdleTimeout, SessionLifetime: o.SessionLifetime, HandshakeTimeout: o.Message1Timeout,
+		IdleTimeout: o.IdleTimeout, SessionLifetime: o.SessionLifetime, HandshakeTimeout: o.Message1Timeout, Tally: o.Tally,
 	}
 	setDefault(&opts.HandshakeTimeout, Message1Timeout)
 	opts.defaults()
 	return &Direct{
-		c: &Client{opts: opts}, sessions: newSessions(opts.HandshakeTimeout, opts.Now),
-		timeout: opts.HandshakeTimeout, conns: map[sid]*conn{}, onRotate: o.OnRotate,
+		c: &Client{opts: opts}, sessions: newSessions(opts.HandshakeTimeout, opts.Now, opts.Tally),
+		timeout: opts.HandshakeTimeout, conns: map[sid]*conn{}, onRotate: o.OnRotate, recheck: o.Recheck,
 	}
 }
 
@@ -132,7 +142,7 @@ func (d *Direct) Serve(ctx context.Context, ws *websocket.Conn, admit func(conte
 	out := newDirectCarrier(ws)
 	cn := &conn{
 		c: d.c, ws: ws, sessions: d.sessions, ctx: sctx, done: make(chan struct{}),
-		out: out, transport: channel.TransportDirect, admit: admit, endOld: d.endRotated,
+		out: out, transport: channel.TransportDirect, admit: admit, recheck: d.recheck, endOld: d.endRotated,
 	}
 	d.track(id, cn)
 	defer func() {
@@ -248,6 +258,24 @@ func (d *Direct) EndLink(token channel.LinkToken) {
 		d.mu.Unlock()
 		if cn != nil {
 			cn.endAsync(id, channel.ErrLinkRefused)
+		}
+	}
+}
+
+// Agents lists the agents with an established direct session, each once.
+func (d *Direct) Agents() []string {
+	return d.sessions.agents()
+}
+
+// EndAgent ends every established direct session of agent's links with
+// code: ENGINE_REVOKED when the agent's database revoked the engine.
+func (d *Direct) EndAgent(agent string, code channel.CloseError) {
+	for _, id := range d.sessions.ofAgent(agent) {
+		d.mu.Lock()
+		cn := d.conns[id]
+		d.mu.Unlock()
+		if cn != nil {
+			cn.endAsync(id, code)
 		}
 	}
 }

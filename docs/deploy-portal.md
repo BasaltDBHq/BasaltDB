@@ -1,6 +1,6 @@
 # Deploy the portal on Cloudflare Pages
 
-The portal is the static copy of the approval, revert and passkey pages (`web/`) served at `https://portal.basaltvault.app`. There is no server code, no database and no accounts. A passkey made on the portal belongs to the `basaltvault.app` relying party, so the host has to be locked down: whoever can change these files can change what a person signs.
+The portal is the static copy of the approval, revert, passkey and engine pin pages (`web/`) served at `https://portal.basaltvault.app`. Its only server code is one small edge function that adds a person's pinned engines to the page's `connect-src` (below). There is no database and no accounts. A passkey made on the portal belongs to the `basaltvault.app` relying party, so the host has to be locked down: whoever can change these files can change what a person signs.
 
 The pages run only at `https://portal.basaltvault.app` (`PORTAL` in `web/lib/codec.js`) or `http://localhost:<port>`, and refuse any other origin before they touch a passkey.
 
@@ -8,12 +8,25 @@ Design: [chat-only operator, section 5](redesign/specs/2026-11-12-chat-only-oper
 
 ## What gets served
 
-- `make portal-build` copies only the served files into `dist/portal`: `approve/`, `revert/`, `register/`, `passkeys/` (each `index.html`), `lib/*.js` (no `*.test.mjs`), `style.css`, `_headers` and `_redirects`. These are the files the engine embeds (`web/embed.go`); `embed.go`, `embed_test.go` and the tests are not published. Cloudflare serves `dist/portal`, not `web/`.
+- `make portal-build` copies only the served files into `dist/portal`: `approve/`, `revert/`, `register/`, `passkeys/`, `engines/` (each `index.html`), `lib/*.js` (no `*.test.mjs`), `style.css`, `_headers`, `_redirects` and `_routes.json`. These are the files the engine embeds (`web/embed.go`); `embed.go`, `embed_test.go` and the tests are not published. Cloudflare serves `dist/portal`, not `web/`.
 - Every script is pinned with subresource integrity. Each page lists its entry `<script type="module">` and one `<link rel="modulepreload">` per module it imports (directly or not), all with a `sha384` `integrity` hash, between `sri:begin` and `sri:end` comments, preloads first. The preload links are what make the browser check imported modules; an import map would need an inline script, which the CSP forbids. After editing `web/lib/*.js`, run `make web-sri` to refresh the hashes; `make web-check` and `go test ./web` fail on a missing or stale hash.
-- `web/_redirects` rewrites (status 200) the engine's page paths to the page files: `/approvals/<id>` to `approve/`, `/reverts/<id>` to `revert/`, `/passkeys/register` to `register/`, `/passkeys/check` and `/passkeys/forget` to `passkeys/`. The pages load their scripts with `../lib/...`, which resolves to `/lib/...` from those paths. A test (`go test ./internal/engine/pages`) fails if the rules drift from the routes the engine serves.
+- `web/_redirects` rewrites (status 200) the engine's page paths to the page files: `/approvals/<id>` to `approve/`, `/reverts/<id>` to `revert/`, `/passkeys/register` to `register/`, `/passkeys/check` and `/passkeys/forget` to `passkeys/`, and the portal's own pin page, `/engines` and `/engines/add`, to `engines/` (the engine embeds that page, so `basalt portal verify` checks it, but never serves it). The pages load their scripts with `../lib/...`, which resolves to `/lib/...` from those paths. A test (`go test ./internal/engine/pages`) fails if the rules drift from the routes the engine serves.
 - `web/_headers` sets the same headers the engine's own pages send (`internal/websec`): `Content-Security-Policy: default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, `Cross-Origin-Opener-Policy: same-origin`, and `.js` as `text/javascript`. On top it sets `Strict-Transport-Security: max-age=31536000; includeSubDomains` (portal only; the engine serves plain http). It is sent by `portal.basaltvault.app`, so `includeSubDomains` covers only that host's subdomains, never the rest of `basaltvault.app`. There is no `preload`.
 - The policy allows scripts, styles and `fetch` from the page's own origin only. The pages have no inline scripts, inline styles or event handlers, and a test (`go test ./internal/websec`) fails if one is added or if `_headers` drifts from the engine's headers.
 - `same-origin` COOP is safe here: the pages open no other windows, and the passkey calls (`navigator.credentials`) are same-origin WebAuthn in the page itself.
+
+## The edge function: each person's engines in `connect-src`
+
+On the tunnel path (`DIRECT`, [CONTRACT.md, Direct transport](../CONTRACT.md#direct-transport)) the approval and revert pages open a WebSocket to the person's own engine, at the address they pinned on this device. A static `_headers` file cannot list that address per person, and the owner rejected a broad `connect-src https:` (it would loosen the lock for everyone). So:
+
+- When the person pins or removes an engine on `/engines/add` or `/engines`, the page writes the pinned addresses to the cookie `__Host-basalt-engines` (`Secure`, `Path=/`, no `Domain`, `SameSite=Lax`, so a link clicked in a web chat still carries it). Only the portal page sets it.
+- `functions/_middleware.js` (Cloudflare Pages Functions; the logic and its tests are in `web/edge/portal.js`) runs only for `/approvals/*`, `/reverts/*` and `/engines/add` (`web/_routes.json`). It adds an address from the cookie to `connect-src` (its `https://` and `wss://` origins) only when it passes the engine address grammar, the same cases laptop init and Postgres apply (`internal/engineaddr/testdata/addresses.json`). Anything else is dropped; with nothing left, the strict default is served unchanged. It adds the same sources to the page's own `<meta>` policy, which the browser enforces too.
+- `/engines/add?address=<address>` gets that one `https://` origin, so the pin page can ask a new address which engine answers before anything is pinned.
+- Every answer the function builds carries `Cache-Control: no-store` and `Vary: Cookie`, sets all the `_headers` security headers itself, and is built for its request alone. `web/edge/portal.test.mjs` sends many people's requests at once through one cached asset and checks that nobody gets another person's origins.
+
+**This CSP is defence in depth.** It limits where a page that is already ours can connect. It is not what makes a signature safe: that rests on subresource integrity on every script, the engine record pinned in the person's Postgres (with the pinned key checked in every session's handshake), and the person's passkey, which Postgres verifies. A cookie someone forged in their own browser only changes their own page's policy, and the grammar keeps out anything but a public `https` origin.
+
+The function needs no bindings, environment variables or secrets. Cloudflare builds `functions/` from the repository root with the rest of the project; nothing else changes in the steps below.
 
 ## 1. Lock down the accounts first
 
@@ -79,6 +92,18 @@ basalt portal verify
 What it cannot catch: a portal that serves the right files to most people and different ones to one person, or different ones to a command-line client than to a browser (it sees only what it is served to it), a host that serves extra files under names it does not probe (a static host has no listing), and a compromised `basalt` download, since it trusts the pages inside the binary. After editing anything under `web/`, run `make web-sri`: it refreshes the integrity hashes in the pages and the manifest, and `make web-check` fails when they are stale.
 
 Expected: `200` on the first line, all six headers above, `content-type: text/javascript` on modules, and `404` for `codec.test.mjs`. Repeat for `/reverts/$ID` and `/passkeys/register`. Open `/passkeys/register` in a browser and confirm the console shows no CSP violations.
+
+Then check the edge function: a pinned address appears in `connect-src` only for the request that carries it, never broader, never cached, and a bad value falls back to the default.
+
+```sh
+H='__Host-basalt-engines'
+curl -sI -H "Cookie: $H=https://engine.example.com" "https://portal.basaltvault.app/approvals/$ID" | grep -iE 'content-security-policy|cache-control|vary'
+# connect-src 'self' https://engine.example.com wss://engine.example.com; Cache-Control: no-store; Vary: Cookie
+curl -sI -H "Cookie: $H=https:" "https://portal.basaltvault.app/approvals/$ID" | grep -i content-security-policy
+# the default: no connect-src
+curl -sI "https://portal.basaltvault.app/engines/add?address=https%3A%2F%2Fengine.example.com" | grep -i content-security-policy
+# connect-src 'self' https://engine.example.com
+```
 
 ## Changing the portal
 

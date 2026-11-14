@@ -766,6 +766,47 @@ func TestStatusEngineRecord(t *testing.T) {
 	})
 }
 
+// basalt status on an engine run in the foreground reads the record too:
+// the engine id from the running engine's key file, the record through the
+// agent's own database, with the same problems as the status tool.
+func TestLocalStatusEngineRecord(t *testing.T) {
+	t.Parallel()
+	url := "https://engine.example.com"
+	local := func(key *string, read EngineRecordReader, served bool) StatusReport {
+		t.Helper()
+		cmds, err := NewCommands("bot", "", "linux", []string{"--agent=bot", "--write=public.leads"})
+		require.NoError(t, err)
+		r, err := LocalStatus{
+			Name: "bot", Commands: cmds, EngineRunning: true, EngineKey: key, EngineRecord: read, DirectServed: served,
+			Probe:    &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)},
+			Passkeys: func(context.Context) ([]passkey.Credential, error) { return []passkey.Credential{{}}, nil },
+			Log:      slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
+		}.Report(context.Background())
+		require.NoError(t, err)
+		return r
+	}
+	id := testEngineID
+	r := local(&id, recordOf(url, false), false)
+	require.Equal(t, engineRecorded, r.EngineRecord.State)
+	require.Equal(t, url, r.EngineRecord.URL)
+	findProblem(t, r, problemDirectNotServed)
+
+	r = local(&id, recordOf(url, false), true)
+	require.Equal(t, engineRecorded, r.EngineRecord.State)
+	require.Empty(t, r.Problems)
+
+	r = local(&id, recordOf(url, true), true)
+	require.Equal(t, engineRevoked, r.EngineRecord.State)
+	findProblem(t, r, problemEngineRevoked)
+
+	refused := ""
+	r = local(&refused, recordOf(url, true), true)
+	require.Equal(t, &EngineRecordStatus{State: engineUnknown}, r.EngineRecord, "the key file is refused")
+	require.Empty(t, r.Problems)
+
+	require.Nil(t, local(nil, recordOf(url, true), false).EngineRecord, "an engine that is down has none")
+}
+
 // DIRECT_NOT_SERVED asks for init --remote with the address, which leaves
 // the saved direct-addr out so the flag is not given twice.
 func TestDirectNotServedStepsCommand(t *testing.T) {

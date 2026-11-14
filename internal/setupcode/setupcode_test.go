@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -404,4 +405,85 @@ func TestRole(t *testing.T) {
 	require.Equal(t, "basalt_agent_lead_bot", p.Role())
 	p.Agent = nil
 	require.Empty(t, p.Role())
+}
+
+// The fingerprint covers the whole code (owner decision, Nov 12): a code
+// reposted with any field changed shows another fingerprint.
+func TestFingerprintCoversTheWholeCode(t *testing.T) {
+	t.Parallel()
+	base := validPayload(t)
+	require.NotNil(t, base.Agent)
+	withAgent := func(change func(a *setupcode.Agent)) setupcode.Payload {
+		p := base
+		a := *base.Agent
+		change(&a)
+		p.Agent = &a
+		return p
+	}
+	changed := map[string]setupcode.Payload{
+		"write tables": withAgent(func(a *setupcode.Agent) { a.Write = append(slices.Clone(a.Write), "public.secrets") }),
+		"read tables":  withAgent(func(a *setupcode.Agent) { a.Read = append(slices.Clone(a.Read), "public.secrets") }),
+		"agent name":   withAgent(func(a *setupcode.Agent) { a.Name += "x" }),
+		"timeout":      withAgent(func(a *setupcode.Agent) { a.StatementTimeoutMs++ }),
+		"verifier":     withAgent(func(a *setupcode.Agent) { a.Verifier = "" }),
+		"kind": func() setupcode.Payload {
+			p := base
+			p.Kind = setupcode.KindAgent
+			if base.Kind == setupcode.KindAgent {
+				p.Kind = setupcode.KindInstall
+			}
+			return p
+		}(),
+		"target": func() setupcode.Payload { p := base; p.Target.Database += "x"; return p }(),
+		"expiry": func() setupcode.Payload { p := base; p.ExpiresAt = "2026-01-01T00:00:00Z"; return p }(),
+	}
+	seen := map[string]string{base.Fingerprint(): "base"}
+	for name, p := range changed {
+		fp := p.Fingerprint()
+		require.NotContains(t, seen, fp, "%s keeps the fingerprint of %s", name, seen[fp])
+		seen[fp] = name
+	}
+}
+
+// An agent code without a verifier (kept password) still gets a fingerprint
+// of its payload, and the decoded code gives the code-maker's fingerprint
+// whatever key order the code was written in (status returns the one
+// init --remote saved).
+func TestFingerprintOfTheDecodedCode(t *testing.T) {
+	t.Parallel()
+	p := validPayload(t)
+	a := *p.Agent
+	a.Verifier = ""
+	p.Agent = &a
+	p.Kind = setupcode.KindAgent
+	other := p
+	other.SetupID = validPayload(t).SetupID
+	b := *p.Agent
+	b.Write = append(slices.Clone(b.Write), "public.secrets")
+	other.Agent = &b
+	require.NotEqual(t, p.Fingerprint(), other.Fingerprint(), "no verifier: the tables still count")
+
+	// Keys in reverse order: the same payload, the same fingerprint.
+	var m map[string]any
+	js, err := json.Marshal(p)
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(js, &m))
+	keys := []string{"expiresAt", "agent", "build", "guard", "target", "prefix", "kind", "setupId", "format"}
+	var sb strings.Builder
+	sb.WriteString("{")
+	for i, k := range keys {
+		if _, ok := m[k]; !ok {
+			continue
+		}
+		v, err := json.Marshal(m[k])
+		require.NoError(t, err)
+		if i > 0 && sb.Len() > 1 {
+			sb.WriteString(",")
+		}
+		fmt.Fprintf(&sb, "%q:%s", k, v)
+	}
+	sb.WriteString("}")
+	decoded, err := setupcode.Decode(rawCode(t, []byte(sb.String())))
+	require.NoError(t, err)
+	require.Equal(t, p.Fingerprint(), decoded.Fingerprint())
 }

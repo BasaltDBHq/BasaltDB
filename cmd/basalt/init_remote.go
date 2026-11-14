@@ -329,6 +329,7 @@ func newRemoteInit(c *cliIO, f remoteFlags) (*remoteInit, error) {
 // paths finds the config, the agent's entry, its credential file and the
 // settings of a new config. Without --config and not as root, the config
 // lives in the user's own config directory, as init's foreground setup.
+// With --config and not as root, the sockets live next to that config.
 func (r *remoteInit) paths() error {
 	dir := filepath.Dir(r.f.configPath)
 	r.settings = r.f.vault.settings(config.Settings{SocketDir: config.DefaultSocketDir(r.c.goos), PagesURL: links.Portal, OperatedBy: r.f.operatedBy.enum()})
@@ -342,6 +343,11 @@ func (r *remoteInit) paths() error {
 		r.settings.SocketDir = filepath.Join(dir, "run")
 	}
 	if r.f.configPath != config.DefaultPath(r.c.goos) {
+		if r.f.configGiven && r.c.host.Euid() != 0 {
+			// Not root, the system socket directory is not writable: keep
+			// the sockets next to the config the person chose.
+			r.settings.SocketDir = filepath.Join(dir, "run")
+		}
 		r.settings.StateDir = filepath.Join(dir, stateDirName)
 	}
 	cfg, err := config.Load(r.f.configPath)

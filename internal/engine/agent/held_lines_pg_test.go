@@ -63,9 +63,9 @@ func TestAHeldDeleteOfALargeValueIsApproved(t *testing.T) {
 }
 
 // A held write's lines over the cap are refused as STATEMENT_REFUSED
-// HOLD_TOO_LARGE, with the person told why: never INTERNAL.
+// HOLD_TOO_LARGE, with the person told why: never INTERNAL. Not parallel:
+// it moves a 64 MiB row under the engine's statement timeout.
 func TestAHeldWriteOverTheLineCapIsRefused(t *testing.T) {
-	t.Parallel()
 	d := guardtest.New(t)
 	d.Exec(t, `CREATE TABLE public.docs (id int PRIMARY KEY, body text);
 		INSERT INTO public.docs VALUES (1, repeat('x', 67108864)), (2, 'two')`)

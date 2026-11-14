@@ -1,18 +1,24 @@
 package engine
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/coder/websocket"
 	"github.com/google/uuid"
@@ -65,7 +71,9 @@ func newDirectFixture(t *testing.T) *directFixture {
 	f.records.add("bot", a.Conn)
 	sess := vault.NewDirect(vault.DirectOptions{Keys: keys, Log: log, SessionLinks: f.links, Pages: okPages{}})
 	ctx, cancel := context.WithCancel(context.Background())
-	f.srv = httptest.NewServer(newDirectHandler(ctx, f.records, keys.PublicKeySPKI(), sess, time.Now))
+	f.srv = httptest.NewUnstartedServer(nil)
+	f.srv.Config = newDirectServer(newDirectHandler(ctx, f.records, keys.PublicKeySPKI(), sess, time.Now))
+	f.srv.Start()
 	t.Cleanup(func() { cancel(); f.srv.Close() })
 	return f
 }
@@ -201,4 +209,54 @@ func refusedWith(ctx context.Context, t *testing.T, p *pagetest.Page, err error)
 		return int(c)
 	}
 	return int(p.Closed(ctx))
+}
+
+// An idle kept-alive connection is closed, so idle clients cannot hold
+// the listener's connection cap.
+func TestDirectClosesIdleConnections(t *testing.T) {
+	t.Parallel()
+	f := newDirectFixture(t)
+	conn, err := net.Dial("tcp", strings.TrimPrefix(f.srv.URL, "http://"))
+	require.NoError(t, err)
+	defer conn.Close()
+	_, err = conn.Write([]byte("GET /v1/engine HTTP/1.1\r\nHost: other.example.com\r\n\r\n"))
+	require.NoError(t, err)
+	r := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(r, nil)
+	require.NoError(t, err)
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	require.NoError(t, conn.SetReadDeadline(time.Now().Add(directIdleTimeout+3*time.Second)))
+	_, err = r.ReadByte()
+	require.ErrorIs(t, err, io.EOF, "the server closed the idle connection")
+}
+
+// countingQuerier fails every read, slowly, and counts them.
+type countingQuerier struct {
+	guard.Querier
+	n atomic.Int32
+}
+
+func (q *countingQuerier) Query(context.Context, string, ...any) (pgx.Rows, error) {
+	q.n.Add(1)
+	time.Sleep(50 * time.Millisecond)
+	return nil, errors.New("database down")
+}
+
+// Many requests with an unknown Host at once read the records once, and an
+// agent whose read fails keeps the address it had.
+func TestDirectHostMissesReadOnce(t *testing.T) {
+	t.Parallel()
+	q := &countingQuerier{}
+	r := newEngineRecords("AAAAAAAAAAAAAAAAAAAAAA", time.Now, slog.New(slog.DiscardHandler))
+	r.add("bot", q)
+	r.byAgent["bot"], r.hosts["engine.example.com"] = "engine.example.com", true
+	var wg sync.WaitGroup
+	for range 20 {
+		wg.Go(func() { r.hostAllowed(context.Background(), "nope.example.com") })
+	}
+	wg.Wait()
+	require.Equal(t, int32(1), q.n.Load())
+	require.True(t, r.hostAllowed(context.Background(), "engine.example.com"), "a failed read keeps the agent's address")
 }

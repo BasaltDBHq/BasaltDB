@@ -29,6 +29,10 @@ type DirectOptions struct {
 	// refused at message 1.
 	SessionLinks SessionLinks
 	Pages        Dispatcher
+	// OnRotate is told the old token of a link a widen rotated in a direct
+	// session, after the other direct sessions of it ended, so the engine
+	// ends the token's sessions through the Vault too.
+	OnRotate func(old channel.LinkToken)
 	// Message1Timeout, IdleTimeout and SessionLifetime default to the
 	// contract's values when zero. Tests shorten them.
 	Message1Timeout time.Duration
@@ -43,6 +47,7 @@ type Direct struct {
 	c        *Client
 	sessions *sessions
 	timeout  time.Duration
+	onRotate func(old channel.LinkToken)
 
 	mu    sync.Mutex
 	conns map[sid]*conn
@@ -62,22 +67,50 @@ func NewDirect(o DirectOptions) *Direct {
 	opts.defaults()
 	return &Direct{
 		c: &Client{opts: opts}, sessions: newSessions(opts.HandshakeTimeout, opts.Now),
-		timeout: opts.HandshakeTimeout, conns: map[sid]*conn{},
+		timeout: opts.HandshakeTimeout, conns: map[sid]*conn{}, onRotate: o.OnRotate,
 	}
 }
 
 // directCarrier is the page's own socket: the engine's messages as they
 // are, and the session's end as the socket's close code.
-type directCarrier struct{ ws *websocket.Conn }
+type directCarrier struct {
+	ws *websocket.Conn
+	// once starts the one close; closed is done when it finished.
+	once   sync.Once
+	closed chan struct{}
+}
 
-func (d directCarrier) send(ctx context.Context, _ sid, payload []byte) error {
+func newDirectCarrier(ws *websocket.Conn) *directCarrier {
+	return &directCarrier{ws: ws, closed: make(chan struct{})}
+}
+
+// wait waits for the close closeSession started; without one, it drops
+// the socket.
+func (d *directCarrier) wait() {
+	d.once.Do(func() {
+		_ = d.ws.CloseNow()
+		close(d.closed)
+	})
+	<-d.closed
+}
+
+func (d *directCarrier) send(ctx context.Context, _ sid, payload []byte) error {
 	wctx, cancel := context.WithTimeout(ctx, writeTimeout)
 	defer cancel()
 	return d.ws.Write(wctx, websocket.MessageBinary, payload)
 }
 
-func (d directCarrier) closeSession(_ context.Context, _ sid, code channel.CloseError) error {
-	closeWith(d.ws, code)
+// closeSession closes the socket in the background: a close waits for the
+// page's close frame (up to the library's 5 seconds), and a page that does
+// not read must not hold the worker that ended its session, which may be
+// another session's.
+func (d *directCarrier) closeSession(_ context.Context, _ sid, code channel.CloseError) error {
+	d.once.Do(func() {
+		go func() {
+			defer close(d.closed)
+			closeWith(d.ws, code)
+		}()
+	})
 	return nil
 }
 
@@ -96,9 +129,10 @@ func (d *Direct) Serve(ctx context.Context, ws *websocket.Conn, admit func(conte
 		closeWith(ws, channel.ErrProtocol)
 		return
 	}
+	out := newDirectCarrier(ws)
 	cn := &conn{
 		c: d.c, ws: ws, sessions: d.sessions, ctx: sctx, done: make(chan struct{}),
-		out: directCarrier{ws: ws}, transport: channel.TransportDirect, admit: admit,
+		out: out, transport: channel.TransportDirect, admit: admit, endOld: d.endRotated,
 	}
 	d.track(id, cn)
 	defer func() {
@@ -108,14 +142,14 @@ func (d *Direct) Serve(ctx context.Context, ws *websocket.Conn, admit func(conte
 		}
 		cn.workers.Wait()
 		close(cn.done)
-		_ = ws.CloseNow()
+		out.wait()
 	}()
-	stop := context.AfterFunc(ctx, func() { closeWith(ws, channel.ErrEngineShutdown) })
+	stop := context.AfterFunc(ctx, func() { _ = out.closeSession(ctx, id, channel.ErrEngineShutdown) })
 	defer stop()
 
-	msg, code := d.readHello(sctx, ws)
+	msg, code := d.readHello(sctx, ws, out)
 	if code != 0 {
-		closeWith(ws, code)
+		_ = out.closeSession(sctx, id, code)
 		return
 	}
 	var token channel.LinkToken
@@ -123,7 +157,7 @@ func (d *Direct) Serve(ctx context.Context, ws *websocket.Conn, admit func(conte
 		copy(token[:], msg[2:2+channel.LinkTokenLen])
 	}
 	if code, _ := d.sessions.add(id, token); code != 0 {
-		closeWith(ws, code)
+		_ = out.closeSession(sctx, id, code)
 		return
 	}
 	_, ss := d.sessions.lookup(id)
@@ -153,8 +187,8 @@ func (d *Direct) Serve(ctx context.Context, ws *websocket.Conn, admit func(conte
 // closed with TIMEOUT (a read's own deadline would drop the socket with no
 // code). A message over its size is refused as the handshake's own check
 // would: PROTOCOL.
-func (d *Direct) readHello(ctx context.Context, ws *websocket.Conn) ([]byte, channel.CloseError) {
-	late := time.AfterFunc(d.timeout, func() { closeWith(ws, channel.ErrTimeout) })
+func (d *Direct) readHello(ctx context.Context, ws *websocket.Conn, out *directCarrier) ([]byte, channel.CloseError) {
+	late := time.AfterFunc(d.timeout, func() { _ = out.closeSession(ctx, sid{}, channel.ErrTimeout) })
 	defer late.Stop()
 	msg, code := readDirect(ctx, ws, channel.Message1Len)
 	switch {
@@ -215,6 +249,15 @@ func (d *Direct) EndLink(token channel.LinkToken) {
 		if cn != nil {
 			cn.endAsync(id, channel.ErrLinkRefused)
 		}
+	}
+}
+
+// endRotated ends the other direct sessions of a token a widen rotated
+// away from, each through its own socket, then tells OnRotate.
+func (d *Direct) endRotated(old channel.LinkToken) {
+	d.EndLink(old)
+	if d.onRotate != nil {
+		d.onRotate(old)
 	}
 }
 

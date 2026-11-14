@@ -57,7 +57,7 @@ func openVault(cfg config.Config, stateDir string, now func() time.Time, log *sl
 	}
 	opts := vault.Options{URL: cfg.VaultURL, Keys: keys, Log: log.With("component", "vault"), Now: now, Pages: pages}
 	if live != nil {
-		opts.Links, opts.SessionLinks = live, live
+		opts.Links, opts.SessionLinks, opts.OnRotate = live, live, live.endDirect
 	}
 	client, err := vault.New(opts)
 	if err != nil {
@@ -80,6 +80,27 @@ type relayLinks struct {
 	stores []*links.Secrets
 	// agents names each store's agent, by index.
 	agents []string
+	// direct is the direct transport's sessions, nil without directAddr.
+	direct *vault.Direct
+}
+
+// setDirect gives the direct transport's sessions, so a widen through the
+// Vault ends the old token's direct sessions too.
+func (r *relayLinks) setDirect(d *vault.Direct) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.direct = d
+}
+
+// endDirect ends the direct sessions of a token a widen rotated away from
+// in a session through the Vault.
+func (r *relayLinks) endDirect(old channel.LinkToken) {
+	r.mu.Lock()
+	d := r.direct
+	r.mu.Unlock()
+	if d != nil {
+		d.EndLink(old)
+	}
 }
 
 func newRelayLinks(log *slog.Logger) *relayLinks { return &relayLinks{log: log} }

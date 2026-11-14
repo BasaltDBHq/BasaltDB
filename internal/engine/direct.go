@@ -40,7 +40,12 @@ const (
 	// recordRereadAfter is how soon a Host not among the addresses read
 	// makes the engine read them again.
 	recordRereadAfter = 10 * time.Second
-	httpsPort         = "443"
+	// directIdleTimeout closes a kept-alive connection with no next
+	// request, so idle connections cannot hold the connection cap.
+	directIdleTimeout = 5 * time.Second
+	// directShutdownTimeout bounds the listener's shutdown.
+	directShutdownTimeout = 5 * time.Second
+	httpsPort             = "443"
 )
 
 // engineRecords are this engine's record in each agent's database
@@ -53,14 +58,18 @@ type engineRecords struct {
 
 	mu     sync.Mutex
 	agents map[string]guard.Querier
-	// hosts are the recorded addresses' host[:port] (no :443), revoked or
-	// not, from the last read; readAt is when.
-	hosts  map[string]bool
-	readAt time.Time
+	// byAgent is each agent's recorded address host[:port] (no :443),
+	// revoked or not, from its last good read; hosts is their set.
+	byAgent map[string]string
+	hosts   map[string]bool
+	// readAt is when the last read started; reading is set while one runs,
+	// so concurrent misses wait for the next window instead of reading too.
+	readAt  time.Time
+	reading bool
 }
 
 func newEngineRecords(engineID string, now func() time.Time, log *slog.Logger) *engineRecords {
-	return &engineRecords{engineID: engineID, now: now, log: log, agents: map[string]guard.Querier{}, hosts: map[string]bool{}}
+	return &engineRecords{engineID: engineID, now: now, log: log, agents: map[string]guard.Querier{}, byAgent: map[string]string{}, hosts: map[string]bool{}}
 }
 
 // add takes an agent's database connection.
@@ -84,37 +93,56 @@ func (r *engineRecords) read(ctx context.Context, agent string) (*guard.Recorded
 }
 
 // refresh reads every agent's record and keeps the addresses. An agent
-// whose read fails keeps none until the next read.
+// whose read fails keeps the address of its last good read.
 func (r *engineRecords) refresh(ctx context.Context) {
 	r.mu.Lock()
 	names := make([]string, 0, len(r.agents))
 	for n := range r.agents {
 		names = append(names, n)
 	}
+	r.reading, r.readAt = true, r.now()
 	r.mu.Unlock()
-	hosts := map[string]bool{}
+	read := map[string]string{}
+	failed := map[string]bool{}
 	for _, n := range names {
 		e, err := r.read(ctx, n)
-		if err != nil {
+		switch {
+		case err != nil:
 			r.log.Debug("direct: read the engine's record", "agent", n, "err", err)
-			continue
-		}
-		if e != nil && e.URL != nil {
-			hosts[strings.TrimPrefix(*e.URL, "https://")] = true
+			failed[n] = true
+		case e != nil && e.URL != nil:
+			read[n] = strings.TrimPrefix(*e.URL, "https://")
 		}
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.hosts, r.readAt = hosts, r.now()
+	for _, n := range names {
+		if !failed[n] {
+			r.byAgent[n] = read[n]
+		}
+	}
+	hosts := map[string]bool{}
+	for _, h := range r.byAgent {
+		if h != "" {
+			hosts[h] = true
+		}
+	}
+	r.hosts, r.reading = hosts, false
 }
 
 // hostAllowed is whether host (a request's Host) is an address recorded
-// for this engine, revoked or not. A host not among the last read makes it
-// read again, at most every recordRereadAfter.
+// for this engine, revoked or not. A host not among the last read makes the
+// engine read again, at most once every recordRereadAfter whatever the
+// number of requests: a miss while a read runs or within the window
+// answers from what was last read.
 func (r *engineRecords) hostAllowed(ctx context.Context, host string) bool {
 	host = normalHost(host)
 	r.mu.Lock()
-	ok, stale := r.hosts[host], r.now().Sub(r.readAt) >= recordRereadAfter
+	ok := r.hosts[host]
+	stale := !r.reading && r.now().Sub(r.readAt) >= recordRereadAfter
+	if !ok && stale {
+		r.reading, r.readAt = true, r.now()
+	}
 	r.mu.Unlock()
 	if ok || !stale {
 		return ok
@@ -274,27 +302,38 @@ func (d *directHandler) allowUpgrade() bool {
 // directSite is the bound direct listener.
 type directSite struct {
 	ln net.Listener
-	hs *http.Server
 }
 
 // listenDirect binds the direct listener. An address it cannot bind stops
 // the engine, as for the pages.
-func listenDirect(addr string, h http.Handler) (*directSite, error) {
+func listenDirect(addr string) (*directSite, error) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("directAddr %s: %w (find what holds it with `lsof -nP -iTCP -sTCP:LISTEN`)", addr, err)
 	}
-	ln = &limitListener{Listener: ln, sem: make(chan struct{}, directConns)}
-	hs := &http.Server{Handler: h, ReadHeaderTimeout: directHeaderTimeout, MaxHeaderBytes: directHeaderBytes}
-	return &directSite{ln: ln, hs: hs}, nil
+	return &directSite{ln: &limitListener{Listener: ln, sem: make(chan struct{}, directConns)}}, nil
 }
 
-func (s *directSite) serve(ctx context.Context, log *slog.Logger) {
+// newDirectServer is the listener's HTTP server: headers within
+// directHeaderTimeout, an idle kept-alive connection closed after
+// directIdleTimeout.
+func newDirectServer(h http.Handler) *http.Server {
+	return &http.Server{Handler: h, ReadHeaderTimeout: directHeaderTimeout, IdleTimeout: directIdleTimeout, MaxHeaderBytes: directHeaderBytes}
+}
+
+// serve answers on the listener until ctx ends, then ends the direct
+// sessions (ENGINE_SHUTDOWN) and shuts the server down within
+// directShutdownTimeout.
+func (s *directSite) serve(ctx context.Context, h http.Handler, sess *vault.Direct, log *slog.Logger) {
+	hs := newDirectServer(h)
 	go func() {
 		<-ctx.Done()
-		_ = s.hs.Shutdown(context.WithoutCancel(ctx))
+		sess.EndAll(channel.ErrEngineShutdown)
+		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), directShutdownTimeout)
+		defer cancel()
+		_ = hs.Shutdown(sctx)
 	}()
-	if err := s.hs.Serve(s.ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := hs.Serve(s.ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Error("direct listener stopped", "err", err)
 	}
 }

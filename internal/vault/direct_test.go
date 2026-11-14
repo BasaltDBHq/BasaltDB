@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -129,4 +130,54 @@ func TestDirectSessionRefusals(t *testing.T) {
 		p := e.dial(t)
 		require.Equal(t, code(channel.ErrTimeout), pageClosed(t, p))
 	})
+}
+
+// widenPages rotate the session's link to to on "/widen", as a proven
+// widen does, and answer the rest as echoPages.
+type widenPages struct {
+	echoPages
+	to channel.LinkToken
+}
+
+func (p *widenPages) Dispatch(ctx context.Context, l vault.SessionLink, req vault.Request) vault.Response {
+	if req.Path == "/widen" {
+		vault.RotateSession(ctx, p.to)
+		return vault.Response{Status: http.StatusOK, ContentType: "text/plain", Body: []byte("widened")}
+	}
+	return p.echoPages.Dispatch(ctx, l, req)
+}
+
+// A widen in one direct session keeps that session open and ends the
+// link's other direct sessions with LINK_REFUSED, each through its own
+// socket, and tells OnRotate for the other transport.
+func TestDirectWidenEndsTheOtherSessions(t *testing.T) {
+	t.Parallel()
+	l := newLink(t)
+	next := newLink(t)
+	pages := &widenPages{to: next.keys.Token}
+	var rotated channel.LinkToken
+	var mu sync.Mutex
+	e := newDirectEngine(t, func(o *vault.DirectOptions) {
+		o.Pages = pages
+		o.OnRotate = func(old channel.LinkToken) {
+			mu.Lock()
+			defer mu.Unlock()
+			rotated = old
+		}
+	}, nil)
+	e.hold(l)
+	a, b := e.dial(t), e.dial(t)
+	require.NoError(t, a.Handshake(ctxWait(t), l.keys))
+	require.NoError(t, b.Handshake(ctxWait(t), l.keys))
+
+	r, err := a.Do(ctxWait(t), http.MethodPost, "/widen", pagetest.PostHeaders(l.secret), "{}", 0)
+	require.NoError(t, err)
+	require.Equal(t, "widened", r.Body, "the widening session got its answer")
+	require.Equal(t, code(channel.ErrLinkRefused), pageClosed(t, b), "the other session's own socket closed")
+	r, err = a.Do(ctxWait(t), http.MethodGet, "/after", pagetest.Headers(next.secret), "", 0)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, r.Status, "the widening session stays open")
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, l.keys.Token, rotated)
 }

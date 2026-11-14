@@ -166,11 +166,25 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 		env.relay, env.relayLinks = ev.client, relay
 	}
 	var direct *directSite
+	if directAddr != "" && ev.keys == nil {
+		log.Error("directAddr is set but the engine key file is refused: no direct listener until it is fixed", "addr", directAddr)
+	}
 	if directAddr != "" && ev.keys != nil {
 		env.records = newEngineRecords(ev.keys.EngineID(), time.Now, log.With("component", "direct"))
-		env.direct = vault.NewDirect(vault.DirectOptions{Keys: ev.keys, Log: log.With("component", "direct"), SessionLinks: relay, Pages: dispatch})
+		client := ev.client
+		env.direct = vault.NewDirect(vault.DirectOptions{
+			Keys: ev.keys, Log: log.With("component", "direct"), SessionLinks: relay, Pages: dispatch,
+			// A widen in a direct session ends the old token's sessions
+			// through the Vault too, without unregistering it.
+			OnRotate: func(old channel.LinkToken) {
+				if client != nil {
+					client.EndSessions(old)
+				}
+			},
+		})
+		relay.setDirect(env.direct)
 		env.relayLinks = relay
-		direct, err = listenDirect(directAddr, newDirectHandler(ctx, env.records, ev.keys.PublicKeySPKI(), env.direct, time.Now))
+		direct, err = listenDirect(directAddr)
 		if err != nil {
 			return err
 		}
@@ -227,8 +241,9 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 		wg.Go(func() { site.serve(ctx, log) })
 	}
 	if direct != nil {
+		h := newDirectHandler(ctx, env.records, ev.keys.PublicKeySPKI(), env.direct, time.Now)
 		wg.Go(func() { env.records.refresh(ctx) })
-		wg.Go(func() { direct.serve(ctx, log) })
+		wg.Go(func() { direct.serve(ctx, h, env.direct, log) })
 	}
 	return New(log, agents).Serve(ctx)
 }

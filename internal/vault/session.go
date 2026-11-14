@@ -400,9 +400,14 @@ func (cn *conn) rotate(ss *session, token channel.LinkToken) {
 	ss.token = token
 	cn.sessions.mu.Unlock()
 	ss.est.link.Token = token
-	if old != token {
-		cn.endLink(old)
+	if old == token {
+		return
 	}
+	if cn.endOld != nil {
+		cn.endOld(old)
+		return
+	}
+	cn.endLink(old)
 }
 
 // respond sends resp as a RESPONSE and as many CONTINUEs as its body needs,

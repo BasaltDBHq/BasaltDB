@@ -78,6 +78,9 @@ type conn struct {
 	// engine serves the link's session (DIRECT: the engine's record in the
 	// link's agent's database); 0 lets it through.
 	admit func(ctx context.Context, link SessionLink) channel.CloseError
+	// endOld ends every other session of a token a widen rotated away from,
+	// on every transport; nil ends this socket's own (endLink).
+	endOld func(old channel.LinkToken)
 	// ctx is the socket's own context, set before serving: what ends a
 	// session from outside the read loop writes with it.
 	ctx context.Context
@@ -104,7 +107,8 @@ func (c *Client) connect(ctx context.Context) (bool, error) {
 	cn := &conn{
 		c: c, ws: ws, sessions: newSessions(c.opts.HandshakeTimeout, c.opts.Now),
 		out: vaultCarrier{ws: ws}, transport: channel.TransportRelay,
-		ctx: ctx, done: make(chan struct{}), pending: map[int64]func(answer){},
+		endOld: c.endRotated,
+		ctx:    ctx, done: make(chan struct{}), pending: map[int64]func(answer){},
 	}
 	c.setConn(cn)
 	defer func() {

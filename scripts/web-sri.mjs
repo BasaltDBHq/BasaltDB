@@ -95,28 +95,40 @@ function rewrite(root, files, page) {
   return html.replace(script, text);
 }
 
-// verify checks every script and modulepreload tag of a page, wherever it
-// sits (inside the generated block or not): integrity present, matching the
-// embedded file it names. Returns the problems found.
+// verify checks every script and link tag of a page, wherever it sits
+// (inside the generated block or not). Each must have one of the exact forms
+// the generator writes (or a plain stylesheet link): any other shape fails,
+// so a decoy attribute (data-src=, a src="..." inside another value) cannot
+// point the check at one file while the browser loads another. Scripts and
+// modulepreloads must name an embedded file and carry its hash, and the
+// preloads must come before the first script. Returns the problems found.
+const SCRIPT = /^<script type="module" src="([^"&]+)" integrity="(sha384-[A-Za-z0-9+/]+=*)"><\/script>/;
+const PRELOAD = /^<link rel="modulepreload" href="([^"&]+)" integrity="(sha384-[A-Za-z0-9+/]+=*)">/;
+const STYLE = /^<link rel="stylesheet" href="([^"&]+)">/;
+
 export function verify(root, files, page) {
   const html = readFileSync(page, "utf8");
   const problems = [];
-  const tags = [
-    ...[...html.matchAll(/<script\b[^>]*>/gis)].map((t) => [t[0], /\bsrc="([^"]+)"/]),
-    ...[...html.matchAll(/<link\b[^>]*\bmodulepreload\b[^>]*>/gis)].map((t) => [t[0], /\bhref="([^"]+)"/]),
-  ];
-  for (const [tag, attr] of tags) {
-    const ref = tag.match(attr);
-    const hash = tag.match(/\bintegrity="(sha384-[A-Za-z0-9+/]+=*)"/);
-    if (!ref) { problems.push(`${page}: tag without a reference: ${tag}`); continue; }
-    if (!hash) { problems.push(`${page}: tag without integrity: ${tag}`); continue; }
+  const pinned = (ref, hash) => {
+    const file = resolveRef(root, files, page, ref);
+    if (integrity(file) !== hash) throw new Error(`${page}: stale integrity for ${ref}`);
+  };
+  let scripts = 0;
+  for (const t of html.matchAll(/<(script|link)\b/gi)) {
+    const rest = html.slice(t.index);
     try {
-      const file = resolveRef(root, files, page, ref[1]);
-      if (integrity(file) !== hash[1]) problems.push(`${page}: stale integrity for ${ref[1]}`);
+      let m;
+      if ((m = rest.match(SCRIPT))) { pinned(m[1], m[2]); scripts++; }
+      else if ((m = rest.match(PRELOAD))) {
+        if (scripts) throw new Error(`${page}: modulepreload after the module script`);
+        pinned(m[1], m[2]);
+      } else if ((m = rest.match(STYLE))) resolveRef(root, files, page, m[1]);
+      else throw new Error(`${page}: tag is not in a checked form (run make web-sri): ${rest.split(">")[0]}>`);
     } catch (e) {
       problems.push(e.message);
     }
   }
+  if (!scripts) problems.push(`${page}: no script`);
   return problems;
 }
 

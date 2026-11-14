@@ -17,11 +17,15 @@ import (
 )
 
 var (
-	scriptTag   = regexp.MustCompile(`(?is)<script\b[^>]*>`)
-	preloadTag  = regexp.MustCompile(`(?is)<link\b[^>]*\bmodulepreload\b[^>]*>`)
-	attrSrc     = regexp.MustCompile(`\bsrc="([^"]+)"`)
-	attrHref    = regexp.MustCompile(`\bhref="([^"]+)"`)
-	attrIntegr  = regexp.MustCompile(`\bintegrity="(sha384-[A-Za-z0-9+/]+=*)"`)
+	// anyTag finds every script or link tag, in any case or spelling. Each
+	// must have exactly one of the forms below (what scripts/web-sri.mjs
+	// writes); any other shape fails, so a decoy attribute (data-src=, a
+	// src="..." inside another value) cannot point the check at one file
+	// while the browser loads another.
+	anyTag      = regexp.MustCompile(`(?i)<(script|link)\b`)
+	scriptForm  = regexp.MustCompile(`^<script type="module" src="([^"&]+)" integrity="(sha384-[A-Za-z0-9+/]+=*)"></script>`)
+	preloadForm = regexp.MustCompile(`^<link rel="modulepreload" href="([^"&]+)" integrity="(sha384-[A-Za-z0-9+/]+=*)">`)
+	styleForm   = regexp.MustCompile(`^<link rel="stylesheet" href="([^"&]+)">`)
 	importFrom  = regexp.MustCompile(`(?m)^\s*(?:import|export)\b[^"';]*?\bfrom\s*["']([^"']+)["']|^\s*import\s*["']([^"']+)["']`)
 	dynamicImpt = regexp.MustCompile(`\bimport\s*\(`)
 )
@@ -76,18 +80,10 @@ func moduleImports(fsys fs.FS, file string) ([]string, error) {
 	return out, nil
 }
 
-// pinned checks one script or modulepreload tag: it names an embedded file
-// and carries that file's sha384 integrity hash. It returns the file.
-func pinned(fsys fs.FS, page, tag string, attr *regexp.Regexp) (string, error) {
-	ref := attr.FindStringSubmatch(tag)
-	if ref == nil {
-		return "", fmt.Errorf("%s: tag without a reference: %s", page, tag)
-	}
-	hash := attrIntegr.FindStringSubmatch(tag)
-	if hash == nil {
-		return "", fmt.Errorf("%s: tag without integrity: %s", page, tag)
-	}
-	file, err := resolve(fsys, page, ref[1])
+// pinned checks that ref names an embedded file whose sha384 is hash, and
+// returns the file.
+func pinned(fsys fs.FS, page, ref, hash string) (string, error) {
+	file, err := resolve(fsys, page, ref)
 	if err != nil {
 		return "", err
 	}
@@ -95,16 +91,17 @@ func pinned(fsys fs.FS, page, tag string, attr *regexp.Regexp) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if want != hash[1] {
-		return "", fmt.Errorf("%s: stale integrity for %s", page, ref[1])
+	if want != hash {
+		return "", fmt.Errorf("%s: stale integrity for %s", page, ref)
 	}
 	return file, nil
 }
 
-// checkPageSRI checks every script and modulepreload tag of one page,
-// anywhere in the page (inside the generated sri block or not), against the
-// files in fsys, and that every module the scripts import, directly or not,
-// has a modulepreload with integrity placed before the first script.
+// checkPageSRI checks every script and link tag of one page, anywhere in the
+// page (inside the generated sri block or not): each has one of the exact
+// forms above, every script and modulepreload names an embedded file and
+// carries its hash, the preloads come before the first script, and every
+// module the scripts import, directly or not, has a modulepreload.
 func checkPageSRI(fsys fs.FS, page string) error {
 	b, err := fs.ReadFile(fsys, page)
 	if err != nil {
@@ -114,28 +111,38 @@ func checkPageSRI(fsys fs.FS, page string) error {
 
 	declared := map[string]bool{}
 	entries := make([]string, 0, 1)
-	for _, tag := range scriptTag.FindAllString(html, -1) {
-		file, err := pinned(fsys, page, tag, attrSrc)
-		if err != nil {
-			return err
+	for _, loc := range anyTag.FindAllStringIndex(html, -1) {
+		rest := html[loc[0]:]
+		tag, _, _ := strings.Cut(rest, ">")
+		if m := scriptForm.FindStringSubmatch(rest); m != nil {
+			file, err := pinned(fsys, page, m[1], m[2])
+			if err != nil {
+				return err
+			}
+			entries = append(entries, file)
+			continue
 		}
-		entries = append(entries, file)
+		if m := preloadForm.FindStringSubmatch(rest); m != nil {
+			if len(entries) > 0 {
+				return fmt.Errorf("%s: modulepreload after the module script", page)
+			}
+			file, err := pinned(fsys, page, m[1], m[2])
+			if err != nil {
+				return err
+			}
+			declared[file] = true
+			continue
+		}
+		if m := styleForm.FindStringSubmatch(rest); m != nil {
+			if _, err := resolve(fsys, page, m[1]); err != nil {
+				return err
+			}
+			continue
+		}
+		return fmt.Errorf("%s: tag is not in a checked form (run make web-sri): %s>", page, tag)
 	}
 	if len(entries) == 0 {
 		return fmt.Errorf("%s: no script", page)
-	}
-	first := scriptTag.FindStringIndex(html)
-	for _, loc := range preloadTag.FindAllStringIndex(html, -1) {
-		if loc[0] > first[0] {
-			return fmt.Errorf("%s: modulepreload after the module script", page)
-		}
-	}
-	for _, tag := range preloadTag.FindAllString(html, -1) {
-		file, err := pinned(fsys, page, tag, attrHref)
-		if err != nil {
-			return err
-		}
-		declared[file] = true
 	}
 
 	seen := map[string]bool{}
@@ -231,7 +238,29 @@ func TestPortalSRICheckRejects(t *testing.T) {
 		},
 		"script after the block without integrity": {
 			strings.Replace(html, "<!-- sri:end -->", "<!-- sri:end -->\n"+
-				`<script type="module" src="../lib/approve.js"></script>`, 1), "without integrity",
+				`<script type="module" src="../lib/approve.js"></script>`, 1), "not in a checked form",
+		},
+		"decoy data- attributes": {
+			strings.Replace(html, "<!-- sri:end -->", "<!-- sri:end -->\n"+
+				`<script type="module" data-src="../lib/approve.js" data-integrity="`+approveHash+`" src="../portal.sha256" integrity="`+good+`"></script>`, 1), "not in a checked form",
+		},
+		"decoy inside another attribute": {
+			strings.Replace(html, "<!-- sri:end -->", "<!-- sri:end -->\n"+
+				`<script type="module" title='src="../lib/approve.js" integrity="`+approveHash+`"' src="../portal.sha256" integrity="`+good+`"></script>`, 1), "not in a checked form",
+		},
+		"entity-encoded modulepreload": {
+			strings.Replace(html, "<!-- sri:begin", `<link rel="module&#112;reload" href="../portal.sha256">`+"\n<!-- sri:begin", 1), "not in a checked form",
+		},
+		"uppercase script tag": {
+			strings.Replace(html, "<!-- sri:end -->", "<!-- sri:end -->\n"+
+				`<SCRIPT type="module" src="../portal.sha256" integrity="`+good+`"></SCRIPT>`, 1), "not in a checked form",
+		},
+		"stylesheet not embedded": {
+			strings.Replace(html, `href="../style.css"`, `href="../portal.sha256"`, 1), "not an embedded file",
+		},
+		"modulepreload after the script": {
+			strings.Replace(html, "<!-- sri:end -->", "<!-- sri:end -->\n"+
+				`<link rel="modulepreload" href="../lib/approve.js" integrity="`+approveHash+`">`, 1), "after the module script",
 		},
 		"stale hash": {
 			strings.Replace(html, approveHash, good, 1), "stale integrity",

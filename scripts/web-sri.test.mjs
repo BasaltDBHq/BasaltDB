@@ -67,8 +67,34 @@ test("a reference outside web/ or to another origin fails", () => {
 test("a script after the sri block without integrity, or with a stale hash, fails", () => {
   let r = check((h) => h.replace("<!-- sri:end -->", '<!-- sri:end -->\n  <script type="module" src="../lib/approve.js"></script>'));
   assert.equal(r.code, 1);
-  assert.match(r.out, /without integrity/);
+  assert.match(r.out, /not in a checked form/);
   r = check((h) => h.replace("<!-- sri:end -->", '<!-- sri:end -->\n  <script type="module" src="../lib/approve.js" integrity="sha384-AAAA"></script>'));
   assert.equal(r.code, 1);
   assert.match(r.out, /stale integrity/);
+});
+
+test("a decoy attribute cannot point the check at another file", () => {
+  const decoys = [
+    (h, root) => `<script type="module" data-src="../lib/approve.js" data-integrity="${sri(readFileSync(join(root, "lib", "approve.js")))}" src="../portal.sha256" integrity="${sri(readFileSync(join(root, "portal.sha256")))}"></script>`,
+    (h, root) => `<script type="module" title='src="../lib/approve.js" integrity="${sri(readFileSync(join(root, "lib", "approve.js")))}"' src="../portal.sha256" integrity="${sri(readFileSync(join(root, "portal.sha256")))}"></script>`,
+    (h, root) => `<SCRIPT type="module" src="../portal.sha256" integrity="${sri(readFileSync(join(root, "portal.sha256")))}"></SCRIPT>`,
+    () => `<link rel="module&#112;reload" href="../portal.sha256">`,
+  ];
+  for (const tag of decoys) {
+    const r = check((h, root) => h.replace("<!-- sri:end -->", "<!-- sri:end -->\n  " + tag(h, root)));
+    assert.equal(r.code, 1);
+    assert.match(r.out, /not in a checked form/);
+  }
+});
+
+test("a stylesheet naming a file that is not embedded fails", () => {
+  const r = check((h) => h.replace('href="../style.css"', 'href="../portal.sha256"'));
+  assert.equal(r.code, 1);
+  assert.match(r.out, /is not an embedded file/);
+});
+
+test("a modulepreload after the script fails", () => {
+  const r = check((h, root) => h.replace("<!-- sri:end -->", `<!-- sri:end -->\n  <link rel="modulepreload" href="../lib/approve.js" integrity="${sri(readFileSync(join(root, "lib", "approve.js")))}">`));
+  assert.equal(r.code, 1);
+  assert.match(r.out, /after the module script/);
 });

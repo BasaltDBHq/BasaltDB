@@ -10,9 +10,50 @@ permissions:
   contents: read
 
 jobs:
-  check:
+  # The pull request path runs side by side: lint, vet, the script checks and
+  # the test shards (each with its own Postgres). make ci runs all of it in
+  # one go locally. The final job, check, is the one required status.
+  lint:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make lint
+
+  vet:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: make vet shard-check
+
+  scripts:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # 22 or later: the portal page tests use Node's global WebSocket.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: make script-checks
+
+  test:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: test (${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Packages per shard: scripts/test-shards.txt. "rest" runs every
+        # package no shard lists, so each package runs in exactly one shard.
+        shard: ["1", "2", "3", rest]
     services:
       postgres:
         image: postgres:16
@@ -40,34 +81,44 @@ jobs:
       # The trusted-path checks refuse a directory below one that group or
       # others can write, as /tmp is (mode 1777), so the tests' temp files go
       # below a directory only the runner's user can write.
-      - name: env
+      - name: tests
         run: |
-          mkdir -p "$HOME/.cache/basalt-tmp"; chmod 700 "$HOME/.cache/basalt-tmp"
-          echo "TMPDIR=$HOME/.cache/basalt-tmp" >> "$GITHUB_ENV"
-      - name: deps
-        run: make deps
-      - name: lint
-        run: make lint
-      - name: vet
-        run: make vet
-      - name: scripts
-        run: make install-sh-check npm-check web-check portal-build
-      - name: test
-        run: |
-          ./bin/gotestsum --jsonfile "$RUNNER_TEMP/t.json" --format pkgname-and-test-fails --hide-summary=skipped -- -race -count=1 -timeout 15m ./...
+          export TMPDIR="$HOME/.cache/basalt-tmp"
+          mkdir -p "$TMPDIR"
+          chmod 700 "$TMPDIR"
+          make test-shard SHARD=${{ matrix.shard }} SHARD_JSON="$RUNNER_TEMP/test.json"
       - name: timings
         if: always()
         run: |
-          ./bin/gotestsum tool slowest --jsonfile "$RUNNER_TEMP/t.json" --threshold 5s | sort -k2 -rn | head -60
-          python3 - "$RUNNER_TEMP/t.json" <<'PY'
+          python3 - "$RUNNER_TEMP/test.json" <<'PY'
           import json,sys
-          d={}
+          pk={};ts=[]
           for l in open(sys.argv[1]):
               e=json.loads(l)
-              if e.get("Action") in("pass","fail") and not e.get("Test"):
-                  d[e["Package"]]=e["Elapsed"]
-          for k,v in sorted(d.items(),key=lambda x:-x[1]): print("PKG %7.1f %s"%(v,k))
+              if e.get("Action") in("pass","fail"):
+                  if e.get("Test"): ts.append((e["Elapsed"],e["Package"],e["Test"]))
+                  else: pk[e["Package"]]=e["Elapsed"]
+          for k,v in sorted(pk.items(),key=lambda x:-x[1]): print("PKG %7.1f %s"%(v,k))
+          for v,p,t in sorted(ts,reverse=True)[:15]: print("TEST %7.1f %s %s"%(v,p,t))
           PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-timings-${{ matrix.shard }}
+          path: ${{ runner.temp }}/test.json
+
+  # The one required status: fails if any job above failed or was skipped.
+  check:
+    if: always()
+    needs: [lint, vet, scripts, test, containers, darwin-archives, macos-smoke]
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo '${{ toJSON(needs) }}'
+          if [ '${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}' = true ]; then exit 1; fi
+          if [ '${{ github.event_name }}' != pull_request ] || [ '${{ github.event.pull_request.draft }}' = false ]; then
+            if [ '${{ contains(needs.*.result, 'skipped') }}' = true ]; then exit 1; fi
+          fi
 
   # basalt engine --user in containers without systemd: the privilege drop as
   # root on every thread, then the compose example end to end (setup,

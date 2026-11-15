@@ -30,7 +30,8 @@ vet: ## go vet
 test: bin/gotestsum portal-build ## Race tests (gotestsum; builds dist/portal first so TestPortalBuildMatchesEmbed never skips)
 	@$(GOTESTSUM) --format pkgname-and-test-fails --hide-summary=skipped -- -race -count=1 -timeout 15m $(PKG)
 
-GO_VERSION := $(shell awk '/^go /{print $$2}' go.mod)
+# The toolchain line wins over the go line, so the container tests run the same patched Go as CI.
+GO_VERSION := $(shell awk '/^toolchain go/{sub(/^go/,"",$$2); print $$2; f=1} /^go /{g=$$2} END{if(!f)print g}' go.mod)
 
 .PHONY: test-privdrop
 test-privdrop: ## basalt engine --user as root in a Linux container without systemd (needs Docker)

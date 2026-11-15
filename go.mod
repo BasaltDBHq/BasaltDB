@@ -2,6 +2,8 @@ module github.com/basaltdbhq/basaltdb
 
 go 1.26.0
 
+toolchain go1.26.11
+
 require (
 	github.com/FastFilter/xorfilter v0.5.1
 	github.com/Masterminds/squirrel v1.5.4

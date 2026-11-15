@@ -1,7 +1,7 @@
 # One image for both containers of the example: the engine container runs it
 # as root under tini and basalt engine --user drops to basalt; the agent
 # container runs it as agent. Build context: the repository root.
-ARG GO_VERSION=1.26.0
+ARG GO_VERSION=1.26.11
 
 FROM golang:${GO_VERSION}-bookworm AS build
 WORKDIR /src

@@ -8,19 +8,26 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/channel"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
+	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 )
 
 // bigValue is over the 1 MiB a value may cost and still be read.
 const bigValue = 2000000
+
+// largeValuesStatementTimeout replaces the agent's default statement timeout
+// in newLargeEnv.
+const largeValuesStatementTimeout = time.Minute
 
 func sum256(s string) string {
 	h := sha256.Sum256([]byte(s))
@@ -53,7 +60,14 @@ func newLargeEnv(t *testing.T) largeEnv {
 		INSERT INTO public.wide SELECT 1, repeat('a', 1000000), repeat('b', 1000000), repeat('c', 1000000),
 			repeat('d', 1000000), repeat('e', 1000000)`)
 	tables := []string{"public.docs", "public.angles", "public.wide"}
-	e := agentHarnessFor(t, d, d.NewAgent(t, "bot", tables, tables))
+	keys, err := channel.GenerateEngineKeys(time.Now)
+	require.NoError(t, err)
+	// The tools here read megabytes of values (a preview runs the revert on
+	// trial), which can take longer than the default statement timeout on a
+	// loaded machine. The time limit is not what these tests check.
+	limits := sqlguard.DefaultLimits()
+	limits.StatementTimeout = largeValuesStatementTimeout
+	e := agentHarnessLimits(t, d, d.NewAgent(t, "bot", tables, tables), keys, limits)
 	ctx := context.Background()
 	in := guard.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Large values"}
 	require.NoError(t, guard.StartRun(ctx, e.a.Conn, in))

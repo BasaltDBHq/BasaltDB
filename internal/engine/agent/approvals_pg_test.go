@@ -159,6 +159,12 @@ func agentHarnessFor(t *testing.T, d *guardtest.DB, a *guardtest.Agent, pagesOri
 // engine whose key file is refused (KEY_ERROR), which signs no receipt.
 func agentHarnessKeys(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys *channel.EngineKeys, pagesOrigin ...string) agentEnv {
 	t.Helper()
+	return agentHarnessLimits(t, d, a, keys, sqlguard.DefaultLimits(), pagesOrigin...)
+}
+
+// agentHarnessLimits is agentHarnessKeys with the agent's limits.
+func agentHarnessLimits(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys *channel.EngineKeys, limits sqlguard.Limits, pagesOrigin ...string) agentEnv {
+	t.Helper()
 	var receipts agent.ReceiptSigner
 	if keys != nil {
 		receipts = keys
@@ -172,7 +178,6 @@ func agentHarnessKeys(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys *c
 	pool, err := agentdb.NewPool(context.Background(), a.URL, 2)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
-	limits := sqlguard.DefaultLimits()
 	// As the engine runs it: every read of a call charged to its budget.
 	budgeted := resultsize.Budgeted(pool)
 	store := agentdb.NewStore(budgeted, limits, time.Now)

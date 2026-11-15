@@ -2,13 +2,15 @@
 
 ## Supported versions
 
-BasaltDB is pre-release and has no users yet. Only the latest commit on `master` is supported. There are no released versions to patch, so a fix lands on `master` and ships with the next release.
+BasaltDB is in alpha. Only the latest release and the latest commit on `master` are supported. Older releases are not patched: a fix lands on `master` and ships with the next release.
 
 ## Reporting a vulnerability
 
 Do not open a public issue or pull request for a security problem.
 
 Report it privately through GitHub: open the [Security tab](https://github.com/BasaltDBHq/BasaltDB/security) of this repository and choose **Report a vulnerability**. Only the maintainers can see the report.
+
+If you cannot use GitHub, write to [ask@basaltvault.app](mailto:ask@basaltvault.app). Say only that you have a security report, without the details, and we will arrange a private channel.
 
 Include what you can:
 

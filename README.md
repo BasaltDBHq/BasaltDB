@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/basalt-lockup-on-dark.svg">
-    <img src="docs/assets/basalt-lockup.svg" alt="Basalt" width="240">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/basalt-db-lockup-dark.svg">
+    <img src="docs/assets/basalt-db-lockup.svg" alt="BasaltDB" width="300">
   </picture>
 </p>
 

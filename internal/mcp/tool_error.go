@@ -36,7 +36,7 @@ type ToolError struct {
 const docsErrorsPage = "https://docs.basaltvault.app/reference/errors/"
 
 // DocsURL is the link to code's section on the docs site: the page plus the
-// lowercase code with underscores as hyphens (UNKNOWN_TOKEN is #unknown-token).
+// lowercase code with underscores as hyphens (STATEMENT_REFUSED is #statement-refused).
 func DocsURL(code string) string {
 	return docsErrorsPage + "#" + strings.ToLower(strings.ReplaceAll(code, "_", "-"))
 }

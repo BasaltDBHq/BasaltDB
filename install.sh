@@ -58,12 +58,13 @@ resolve_tag() {
 		;;
 	latest | "")
 		# Follow the Releases "latest" redirect (no jq).
-		# Include prereleases (published tag is v0.0.1-alpha). /releases/latest skips them.
+		# Include prereleases. /releases/latest skips them.
 		tag=$(curl -fsSL -H "Accept: application/vnd.github+json" \
 			"https://api.github.com/repos/${BASALTDB_REPO}/releases?per_page=10" |
 			tr ',' '\n' | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
 		if [ -z "$tag" ]; then
 			echo "install.sh: could not resolve latest release (no v* tag yet or GitHub API unavailable)" >&2
+			echo "install.sh: there is no release yet, so there is nothing to download. Build from source instead: https://github.com/BasaltDBHq/BasaltDB/blob/master/docs/install.md" >&2
 			return 1
 		fi
 		echo "$tag"
@@ -82,7 +83,7 @@ resolve_tag() {
 
 # GoReleaser {{ .Version }} is the git tag with a leading v stripped.
 # archives.name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-# so tag v0.0.1-alpha → basaltdb_0.0.1-alpha_linux_amd64.tar.gz
+# so a tag such as v0.0.1-alpha → basaltdb_0.0.1-alpha_linux_amd64.tar.gz
 archive_version() {
 	tag=$1
 	if [ "$tag" = nightly ]; then

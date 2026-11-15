@@ -145,7 +145,7 @@ Not there yet:
 - A release download and an installer. For now you build from source.
 - Setup from a browser alone, for a person without a terminal.
 
-The docs site has the [roadmap](https://docs.basaltvault.app/roadmap/). BasaltVault is a planned paid service for many agents and machines; BasaltDB does not need it.
+BasaltVault is a planned paid service for many agents and machines; BasaltDB does not need it.
 
 ## Development
 

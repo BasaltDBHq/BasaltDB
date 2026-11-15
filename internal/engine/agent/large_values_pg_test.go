@@ -37,6 +37,19 @@ func sum256(s string) string {
 // largeEnv is an agent whose run wrote large values: docs.body over 1 MiB
 // (change 1), seven values of 1,000,000 '<' (change 2), and 5 MB images
 // before and after, past 8 MiB together (change 3).
+// largeHarness is the agent harness with largeValuesStatementTimeout. The
+// tools here read megabytes of values (a preview runs the revert on trial),
+// which can take longer than the default statement timeout on a loaded
+// machine. The time limit is not what these tests check.
+func largeHarness(t *testing.T, d *guardtest.DB, a *guardtest.Agent) agentEnv {
+	t.Helper()
+	keys, err := channel.GenerateEngineKeys(time.Now)
+	require.NoError(t, err)
+	limits := sqlguard.DefaultLimits()
+	limits.StatementTimeout = largeValuesStatementTimeout
+	return agentHarnessLimits(t, d, a, keys, limits)
+}
+
 type largeEnv struct {
 	agentEnv
 	run     uuid.UUID
@@ -60,14 +73,7 @@ func newLargeEnv(t *testing.T) largeEnv {
 		INSERT INTO public.wide SELECT 1, repeat('a', 1000000), repeat('b', 1000000), repeat('c', 1000000),
 			repeat('d', 1000000), repeat('e', 1000000)`)
 	tables := []string{"public.docs", "public.angles", "public.wide"}
-	keys, err := channel.GenerateEngineKeys(time.Now)
-	require.NoError(t, err)
-	// The tools here read megabytes of values (a preview runs the revert on
-	// trial), which can take longer than the default statement timeout on a
-	// loaded machine. The time limit is not what these tests check.
-	limits := sqlguard.DefaultLimits()
-	limits.StatementTimeout = largeValuesStatementTimeout
-	e := agentHarnessLimits(t, d, d.NewAgent(t, "bot", tables, tables), keys, limits)
+	e := largeHarness(t, d, d.NewAgent(t, "bot", tables, tables))
 	ctx := context.Background()
 	in := guard.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Large values"}
 	require.NoError(t, guard.StartRun(ctx, e.a.Conn, in))
@@ -257,7 +263,7 @@ func TestPreviewRevertCutsChangeIDs(t *testing.T) {
 	d := guardtest.New(t)
 	d.Exec(t, `CREATE TABLE public.counter (id int PRIMARY KEY, n int); INSERT INTO public.counter VALUES (1, 0)`)
 	tables := []string{"public.counter"}
-	e := agentHarnessFor(t, d, d.NewAgent(t, "bot", tables, tables))
+	e := largeHarness(t, d, d.NewAgent(t, "bot", tables, tables))
 	ctx := context.Background()
 	in := guard.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Count"}
 	require.NoError(t, guard.StartRun(ctx, e.a.Conn, in))
@@ -283,7 +289,7 @@ func TestRevertPlanPagesPastALargeLineAndRestoresIt(t *testing.T) {
 		INSERT INTO public.items SELECT g, CASE WHEN g = 1 THEN repeat('x', %d) ELSE 'before' END
 		FROM generate_series(1, %d) g`, bigValue, planRows))
 	tables := []string{"public.items"}
-	e := agentHarnessFor(t, d, d.NewAgent(t, "bot", tables, tables))
+	e := largeHarness(t, d, d.NewAgent(t, "bot", tables, tables))
 	ctx := context.Background()
 	in := guard.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Bulk update"}
 	require.NoError(t, guard.StartRun(ctx, e.a.Conn, in))
@@ -334,7 +340,7 @@ func TestWriteReturningOneRowTooLarge(t *testing.T) {
 	d := guardtest.New(t)
 	d.Exec(t, `CREATE TABLE public.docs (id int PRIMARY KEY, body text); INSERT INTO public.docs VALUES (2, 'two')`)
 	tables := []string{"public.docs"}
-	e := agentHarnessFor(t, d, d.NewAgent(t, "bot", tables, tables))
+	e := largeHarness(t, d, d.NewAgent(t, "bot", tables, tables))
 	body, isError := e.h.call(t, "write", map[string]any{
 		"sql": "UPDATE public.docs SET body = repeat('<', 2700000) WHERE id = 2 RETURNING id, body", "intent": "Fill doc 2",
 	})
@@ -360,7 +366,7 @@ func TestALimitOfOneReadsOneItemOnly(t *testing.T) {
 	d.Exec(t, `CREATE TABLE public.big (id int PRIMARY KEY, `+strings.Join(cols, ", ")+`);
 		INSERT INTO public.big (id) VALUES (1), (2)`)
 	tables := []string{"public.big"}
-	e := agentHarnessFor(t, d, d.NewAgent(t, "bot", tables, tables))
+	e := largeHarness(t, d, d.NewAgent(t, "bot", tables, tables))
 	ctx := context.Background()
 	in := guard.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Fill"}
 	require.NoError(t, guard.StartRun(ctx, e.a.Conn, in))

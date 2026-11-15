@@ -85,23 +85,38 @@ func NewDirect(o DirectOptions) *Direct {
 // are, and the session's end as the socket's close code.
 type directCarrier struct {
 	ws *websocket.Conn
-	// once starts the one close; closed is done when it finished.
-	once   sync.Once
-	closed chan struct{}
+	// once starts the one close; closing is done when it started, closed
+	// when it finished.
+	once    sync.Once
+	closing chan struct{}
+	closed  chan struct{}
 }
 
 func newDirectCarrier(ws *websocket.Conn) *directCarrier {
-	return &directCarrier{ws: ws, closed: make(chan struct{})}
+	return &directCarrier{ws: ws, closing: make(chan struct{}), closed: make(chan struct{})}
 }
 
 // wait waits for the close closeSession started; without one, it drops
 // the socket.
 func (d *directCarrier) wait() {
 	d.once.Do(func() {
+		close(d.closing)
 		_ = d.ws.CloseNow()
 		close(d.closed)
 	})
 	<-d.closed
+}
+
+// ended waits, up to writeTimeout, for the close of a session another
+// goroutine ended: it takes the session first and closes the socket next,
+// and the socket must not be dropped in between, without the code.
+func (d *directCarrier) ended() {
+	t := time.NewTimer(writeTimeout)
+	defer t.Stop()
+	select {
+	case <-d.closing:
+	case <-t.C:
+	}
 }
 
 func (d *directCarrier) send(ctx context.Context, _ sid, payload []byte) error {
@@ -116,6 +131,7 @@ func (d *directCarrier) send(ctx context.Context, _ sid, payload []byte) error {
 // another session's.
 func (d *directCarrier) closeSession(_ context.Context, _ sid, code channel.CloseError) error {
 	d.once.Do(func() {
+		close(d.closing)
 		go func() {
 			defer close(d.closed)
 			closeWith(d.ws, code)
@@ -177,6 +193,9 @@ func (d *Direct) Serve(ctx context.Context, ws *websocket.Conn, admit func(conte
 	for {
 		ph, ss := d.sessions.lookup(id)
 		if ph != phaseOpen {
+			// Ended by EndLink, EndAgent, a timeout or a rotation, whose
+			// close carries the code.
+			out.ended()
 			return
 		}
 		payload, code := readDirect(sctx, ws, channel.FrameMax)

@@ -1,0 +1,42 @@
+name: Go
+description: >-
+  Install the go.mod toolchain line and restore the shared Go cache (modules
+  and build). Only the vet job of the CI workflow saves that cache.
+outputs:
+  key:
+    description: The cache key for this toolchain and go.sum.
+    value: ${{ steps.key.outputs.key }}
+  paths:
+    description: The cached paths, for actions/cache/save (same string as the restore).
+    value: ${{ steps.key.outputs.paths }}
+  cache-hit:
+    description: '"true" when the cache for exactly this key was restored.'
+    value: ${{ steps.restore.outputs.cache-hit }}
+runs:
+  using: composite
+  steps:
+    # setup-go v6 installs the toolchain line (the Makefile's GO_VERSION reads
+    # the same line). Its own cache is off: every job would race to save the
+    # same key, and only the first one would.
+    - id: go
+      uses: actions/setup-go@v6
+      with:
+        go-version-file: go.mod
+        cache: false
+    - name: go matches the toolchain line
+      shell: bash
+      run: test "$(go env GOVERSION)" = "$(awk '/^toolchain /{print $2}' go.mod)"
+    - id: key
+      shell: bash
+      run: |
+        echo "key=go-${RUNNER_OS}-${{ steps.go.outputs.go-version }}-${{ hashFiles('go.sum') }}" >> "$GITHUB_OUTPUT"
+        echo "prefix=go-${RUNNER_OS}-${{ steps.go.outputs.go-version }}-" >> "$GITHUB_OUTPUT"
+        printf 'paths<<EOF\n%s\n%s\nEOF\n' "$(go env GOCACHE)" "$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+    # A pull request reads master's cache; the prefix takes the newest one
+    # for this toolchain when go.sum changed.
+    - id: restore
+      uses: actions/cache/restore@v4
+      with:
+        key: ${{ steps.key.outputs.key }}
+        restore-keys: ${{ steps.key.outputs.prefix }}
+        path: ${{ steps.key.outputs.paths }}

@@ -15,13 +15,6 @@ on:
 permissions:
   contents: read
 
-# setup-go v6 installs the go.mod toolchain line (the Makefile's GO_VERSION
-# reads the same line), so the go command never fetches another toolchain
-# into the module cache before the cache is restored. local makes a
-# mismatch fail instead of downloading.
-env:
-  GOTOOLCHAIN: local
-
 jobs:
   # The pull request path runs side by side: lint, vet, the script checks and
   # the test shards (each with its own Postgres). make ci runs all of it in
@@ -31,6 +24,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # setup-go v6 installs the go.mod toolchain line (the Makefile's
+      # GO_VERSION reads the same line) and sets GOTOOLCHAIN=local itself, so
+      # no toolchain lands in the module cache before the cache restores.
+      # Setting GOTOOLCHAIN in the workflow would make it use the go line.
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod

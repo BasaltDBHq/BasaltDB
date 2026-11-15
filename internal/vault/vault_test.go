@@ -24,6 +24,28 @@ const (
 	tick    = 5 * time.Millisecond
 )
 
+// testClock is a clock only the test moves, for Options.Now: a deadline
+// the engine checks against it passes when the test says, not when a slow
+// runner gets there.
+type testClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func newTestClock() *testClock { return &testClock{now: time.Now()} }
+
+func (c *testClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *testClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+}
+
 func newKeys(t *testing.T) *channel.EngineKeys {
 	t.Helper()
 	k, err := channel.GenerateEngineKeys(time.Now)

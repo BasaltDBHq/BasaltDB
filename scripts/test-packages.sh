@@ -10,6 +10,10 @@
 set -eu
 cd "$(dirname "$0")/.."
 shard=${1:?usage: test-packages.sh <shard|rest>}
+if [ "$shard" != rest ] && ! grep -qx "shard $shard" scripts/test-shards.txt; then
+	echo "unknown shard $shard (not in scripts/test-shards.txt)" >&2
+	exit 1
+fi
 all=$(go list ./...)
 prefix=$(go list -m)/
 listed=$(awk '/^[[:space:]]*(#|$)/{next} $1=="shard"{next} {print $1}' scripts/test-shards.txt | sed "s|^|$prefix|")

@@ -1,8 +1,14 @@
 name: CI
 
+# Pull requests, every push to master and a nightly run all take the same
+# path: every job, the race detector on, every package. A failing run on master
+# or the nightly one shows as a red run in the Actions tab.
 on:
   push:
     branches: [master]
+  schedule:
+    - cron: "43 3 * * *"
+  workflow_dispatch:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
@@ -90,6 +96,7 @@ jobs:
       - name: timings
         if: always()
         run: |
+          [ -f "$RUNNER_TEMP/test.json" ] || exit 0
           python3 - "$RUNNER_TEMP/test.json" <<'PY'
           import json,sys
           pk={};ts=[]

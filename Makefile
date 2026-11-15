@@ -46,7 +46,8 @@ test-shard: bin/gotestsum portal-build ## Race tests for one shard: make test-sh
 .PHONY: shard-check
 shard-check: ## Every Go package is in exactly one CI test shard
 	@sh -n scripts/test-packages.sh
-	@all=$$(go list ./... | sort); got=$$( (for s in 1 2 3 rest; do sh scripts/test-packages.sh $$s || exit 1; done) | sort); \
+	@for s in $$(awk '$$1=="shard"{print $$2}' scripts/test-shards.txt); do grep -Eq "shard: \[.*\"$$s\".*, rest\]" .github/workflows/ci.yml || { echo "shard $$s is not in the test matrix of ci.yml" >&2; exit 1; }; done
+	@all=$$(go list ./... | sort); got=$$( (for s in $$(awk '$$1=="shard"{print $$2}' scripts/test-shards.txt) rest; do sh scripts/test-packages.sh $$s || exit 1; done) | sort); \
 	test "$$all" = "$$got" || { echo 'scripts/test-shards.txt and the CI matrix do not cover every package exactly once' >&2; exit 1; }
 
 .PHONY: script-checks

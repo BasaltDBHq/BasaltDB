@@ -65,9 +65,10 @@ changelog:
 snapshot:
   version_template: "0.0.0-nightly"
 
-# Published only on v* tags when HOMEBREW_TAP_GITHUB_TOKEN is set.
-# The workflow passes --skip=homebrew otherwise so a missing tap/secret is a no-op.
-# Default tap is BasaltDBHq/homebrew-tap (install: brew install basaltdbhq/tap/basaltdb).
+# The formula is uploaded only on v* tags and only when PUBLISH_HOMEBREW is
+# "true" (the release workflow sets it from the repository variable of the same
+# name, default off). Unset or anything else means no upload and no tap token
+# needed. Default tap is BasaltDBHq/homebrew-tap (install: brew install basaltdbhq/tap/basaltdb).
 brews:
   - name: basaltdb
     homepage: "https://github.com/{{ .Env.GITHUB_REPOSITORY }}"
@@ -75,15 +76,15 @@ brews:
     license: Apache-2.0
     directory: Formula
     repository:
-      owner: '{{ or .Env.HOMEBREW_TAP_OWNER "BasaltDBHq" }}'
-      name: '{{ or .Env.HOMEBREW_TAP_NAME "homebrew-tap" }}'
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      owner: '{{ or (envOrDefault "HOMEBREW_TAP_OWNER" "") "BasaltDBHq" }}'
+      name: '{{ or (envOrDefault "HOMEBREW_TAP_NAME" "") "homebrew-tap" }}'
+      token: '{{ envOrDefault "HOMEBREW_TAP_GITHUB_TOKEN" "" }}'
     commit_author:
       name: goreleaserbot
       email: bot@goreleaser.com
     install: |
       bin.install "basalt"
-    skip_upload: '{{ or (ne .Env.RELEASE_KIND "tag") (eq .Env.HOMEBREW_TAP_GITHUB_TOKEN "") }}'
+    skip_upload: '{{ or (ne (envOrDefault "RELEASE_KIND" "") "tag") (ne (envOrDefault "PUBLISH_HOMEBREW" "") "true") }}'
 
 release:
   name_template: "{{ .Tag }}"

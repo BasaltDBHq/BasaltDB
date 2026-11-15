@@ -73,7 +73,7 @@ install-sh-check: ## POSIX syntax, default repo, and archive names for install.s
 	@sh install.sh --print-platform >/dev/null
 	@grep -q 'BASALTDB_REPO="$${BASALTDB_REPO:-BasaltDBHq/BasaltDB}"' install.sh
 	@grep -Fq 'name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"' .goreleaser.yaml
-	@grep -Fq 'goos: [linux, darwin, windows]' .goreleaser.yaml
+	@grep -Fq 'goos: [linux, darwin]' .goreleaser.yaml
 	@grep -Fq 'goarch: [amd64, arm64]' .goreleaser.yaml
 	@plat=$$(sh install.sh --print-platform); \
 	got=$$(sh install.sh --print-archive-name v0.0.1-alpha); \

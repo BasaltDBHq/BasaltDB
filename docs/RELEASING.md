@@ -34,8 +34,8 @@ git push origin "$NEXT_TAG"
 
 That push is the only trigger for a GitHub Release. The first releases publish to GitHub only: npm, the MCP registry and the Homebrew tap are off until you switch them on (see [Other channels](#other-channels)). The [Release](../.github/workflows/release.yml) workflow then:
 
-1. Builds linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64 (`CGO_ENABLED=0`).
-2. Attaches tar.gz (zip on Windows) holding the one `basalt` binary, `SHA256SUMS`, and `.deb` / `.rpm` / `.apk`. It also attaches `portal.sha256`, a copy of `web/portal.sha256` from the tagged commit (the hashes of the portal pages that release embeds), for `basalt portal verify --manifest portal.sha256`. Darwin tarballs are `CGO_ENABLED=0` static builds. They are unsigned (no Apple Developer account, codesign, or notarization). After a browser download, clear Gatekeeper quarantine **per binary** the operator verified (`xattr -d com.apple.quarantine ./basalt`), never recursively. CI `macos-smoke` runs those archives on `macos-15` (`uname -m` arm64) and `macos-15-intel` (`uname -m` x86_64).
+1. Builds linux/amd64, linux/arm64, darwin/amd64, darwin/arm64 (`CGO_ENABLED=0`). Windows is not built yet.
+2. Attaches tar.gz holding the one `basalt` binary, `SHA256SUMS`, and `.deb` / `.rpm` / `.apk`. It also attaches `portal.sha256`, a copy of `web/portal.sha256` from the tagged commit (the hashes of the portal pages that release embeds), for `basalt portal verify --manifest portal.sha256`. Darwin tarballs are `CGO_ENABLED=0` static builds. They are unsigned (no Apple Developer account, codesign, or notarization). After a browser download, clear Gatekeeper quarantine **per binary** the operator verified (`xattr -d com.apple.quarantine ./basalt`), never recursively. CI `macos-smoke` runs those archives on `macos-15` (`uname -m` arm64) and `macos-15-intel` (`uname -m` x86_64).
 3. Marks the GitHub Release as a **prerelease** when the tag has a semver prerelease suffix (`-alpha`, `-beta`, `-rc`). `prerelease: auto` in GoReleaser.
 
 There is no container image: `basalt` runs next to the agent as a local service, not as a hosted server.
@@ -104,7 +104,7 @@ A tag publishes the GitHub Release (binaries, packages, `SHA256SUMS`, `portal.sh
 | Channel | Variable | Secret it needs | Notes |
 |---------|----------|-----------------|-------|
 | Homebrew | `PUBLISH_HOMEBREW` | `HOMEBREW_TAP_GITHUB_TOKEN` (write access to the tap) | Tap defaults to `BasaltDBHq/homebrew-tap`; override with the variables `HOMEBREW_TAP_OWNER` / `HOMEBREW_TAP_NAME`. Install: `brew install basaltdbhq/tap/basaltdb`. |
-| npm | `PUBLISH_NPM` | `NPM_TOKEN` | Scope `@basaltdb`, owned by the personal npm account `basaltdb` (unscoped `basaltdb` is a different product). Publishes `@basaltdb/cli` and `@basaltdb/{linux-x64,linux-arm64,darwin-x64,darwin-arm64,win32-x64}` with `--access public`. Prereleases use the dist-tag `alpha`/`beta`/`rc`, not `latest`. |
+| npm | `PUBLISH_NPM` | `NPM_TOKEN` | Scope `@basaltdb`, owned by the personal npm account `basaltdb` (unscoped `basaltdb` is a different product). Publishes `@basaltdb/cli` and `@basaltdb/{linux-x64,linux-arm64,darwin-x64,darwin-arm64}` with `--access public`. Prereleases use the dist-tag `alpha`/`beta`/`rc`, not `latest`. |
 | MCP registry | `PUBLISH_MCP_REGISTRY` | `MCP_REGISTRY_TOKEN` | `server.json` name and npm `mcpName` are `io.github.basaltdbhq/basaltdb`. Runs after the npm job when npm is on, and alone when npm is off; the registry entry points at the npm package, so that package must already exist. |
 
 With `PUBLISH_NPM` or `PUBLISH_MCP_REGISTRY` on but its secret empty, the script exits 0 and publishes nothing. With `PUBLISH_HOMEBREW` on but no tap token, the release job fails at the formula upload.

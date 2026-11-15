@@ -7,7 +7,6 @@ const packages = {
   "linux-arm64": "@basaltdb/linux-arm64",
   "darwin-x64": "@basaltdb/darwin-x64",
   "darwin-arm64": "@basaltdb/darwin-arm64",
-  "win32-x64": "@basaltdb/win32-x64",
 };
 
 function platformKey() {
@@ -23,12 +22,11 @@ function resolveBinary(name) {
     throw new Error(
       "BasaltDB has no npm binary for " +
         key +
-        ". Use install.sh, a release archive, or WSL on Windows ARM.",
+        ". Windows is not supported yet; use WSL. On other systems use install.sh or a release archive.",
     );
   }
-  const exe = process.platform === "win32" ? name + ".exe" : name;
   try {
-    return require.resolve(path.join(pkg, "bin", exe));
+    return require.resolve(path.join(pkg, "bin", name));
   } catch {
     throw new Error(
       "optionalDependency " +

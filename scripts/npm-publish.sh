@@ -8,7 +8,7 @@ set -eu
 if [ -z "${NPM_TOKEN:-}" ]; then
 	echo "NPM_TOKEN is empty; skipping npm publish."
 	echo "Scope @basaltdb is owned by personal npm account basaltdb (unscoped name basaltdb is a different project)."
-	echo "Set repo secret NPM_TOKEN on BasaltDBHq/BasaltDB to publish @basaltdb/cli and @basaltdb/{linux-x64,linux-arm64,darwin-x64,darwin-arm64,win32-x64}."
+	echo "Set repo secret NPM_TOKEN on BasaltDBHq/BasaltDB to publish @basaltdb/cli and @basaltdb/{linux-x64,linux-arm64,darwin-x64,darwin-arm64}."
 	exit 0
 fi
 
@@ -42,7 +42,6 @@ extract_archive() {
 	mkdir -p "$dest"
 	case "$archive" in
 	*.tar.gz) tar -xzf "$archive" -C "$dest" ;;
-	*.zip) unzip -q -o "$archive" -d "$dest" ;;
 	*)
 		echo "unknown archive $archive" >&2
 		exit 1
@@ -64,12 +63,8 @@ publish_platform() {
 	extract_archive "$archive" "$extract"
 	pkg="$ROOT/npm/platforms/$npm_dir"
 	mkdir -p "$pkg/bin"
-	if [ "$os" = "windows" ]; then
-		cp "$extract/basalt.exe" "$pkg/bin/basalt.exe"
-	else
-		cp "$extract/basalt" "$pkg/bin/basalt"
-		chmod +x "$pkg/bin/basalt"
-	fi
+	cp "$extract/basalt" "$pkg/bin/basalt"
+	chmod +x "$pkg/bin/basalt"
 	cp "$ROOT/LICENSE" "$pkg/LICENSE"
 	set_version "$pkg/package.json"
 	echo "publishing @basaltdb/$npm_dir@$VER (tag $NPM_DIST_TAG)"
@@ -89,7 +84,6 @@ publish_platform linux amd64 linux-x64 tar.gz
 publish_platform linux arm64 linux-arm64 tar.gz
 publish_platform darwin amd64 darwin-x64 tar.gz
 publish_platform darwin arm64 darwin-arm64 tar.gz
-publish_platform windows amd64 win32-x64 zip
 
 cp "$ROOT/LICENSE" "$ROOT/npm/cli/LICENSE"
 set_version "$ROOT/npm/cli/package.json"

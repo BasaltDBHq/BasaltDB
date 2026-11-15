@@ -5,7 +5,7 @@ From nothing to your agent's first guarded write, in about three minutes. It wor
 You need:
 
 - macOS or Linux, with `sudo`.
-- Go 1.26 or newer, and `git`. (There is no download for this version yet; see [Coming soon](#coming-soon).)
+- Go 1.26 or newer, and `git`. (There is no release download yet; see [Coming soon](#coming-soon).)
 - A Postgres you own. You need its admin connection string, the one for the `postgres` user.
 - A browser on the same machine, with a passkey (your laptop's own, a security key, or your phone through the browser).
 - An MCP client. Examples below use Claude Code; [`mcp-clients.md`](mcp-clients.md) has the JSON for others.
@@ -252,7 +252,7 @@ Remove the user last, after the files it owns. If you plan to run `basalt init` 
 
 ## Coming soon
 
-- A release download. The published release predates the guard, so for now you build from source (step 1).
+- A release download. There is no release yet, so nothing to download: you build from source (step 1).
 - Browser-only setup, for a person without a terminal, and the hosted relay that removes the pasting of approval codes.
 
 For a bot on a server you cannot log in to, see [`setup-from-laptop.md`](setup-from-laptop.md) (for you) and [`bot-setup.md`](bot-setup.md) (for the bot).

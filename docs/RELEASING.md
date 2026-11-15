@@ -14,12 +14,11 @@ Tags are semver with a leading `v`. Release tags **MUST** start with `v` (e.g. `
 
 | Kind | Example | When |
 |------|---------|------|
-| **Published (now)** | `v0.0.1-alpha` | Existing GitHub prerelease. Pin install commands here. |
-| Later alpha | a new unused `v*` with `-alpha` | Next cuts the owner chooses. Do not document an unpublished tag as current. |
+| Alpha | `v0.0.1-alpha` | The first cut will be an alpha like this. No release exists yet. |
 | Beta / RC | `v0.2.0-beta.1`, `v1.0.0-rc.1` | When we say so |
 | Stable | `v1.0.0` | No prerelease suffix |
 
-`go install …@latest` **ignores prereleases**. Pin the published tag: `@v0.0.1-alpha`. `install.sh` with no argument (`latest`) includes prereleases; GitHub `/releases/latest` does not.
+`go install …@latest` **ignores prereleases**. Once a release exists, pin its tag, for example `@v0.0.1-alpha`. `install.sh` with no argument (`latest`) includes prereleases; GitHub `/releases/latest` does not.
 
 ## How to cut a release
 
@@ -29,7 +28,6 @@ On a machine with push access, after `master` is the commit you want:
 git checkout master
 git pull origin master
 # NEXT_TAG must start with v and must not already exist.
-# The published tag today is v0.0.1-alpha; do not reuse it.
 git tag -a "$NEXT_TAG" -m "..."
 git push origin "$NEXT_TAG"
 ```
@@ -75,7 +73,7 @@ Publish scripts (`npm-publish.sh`, `mcp-registry-publish.sh`) also refuse a non-
 
 ## Install after a tag
 
-See [install.sh](../install.sh). Until M1 ships, a release holds only `basalt version`. Primary paths are anonymous `install.sh`, a Release archive, and `go install`. Pin the published tag:
+There is no release yet; until one exists, build from source ([install guide](install.md)). Once a release exists, the paths are anonymous [install.sh](../install.sh), a Release archive, and `go install`. Pin the tag (`v0.0.1-alpha` below is an example):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/BasaltDBHq/BasaltDB/master/install.sh | sh -s v0.0.1-alpha
@@ -95,7 +93,7 @@ CGO_ENABLED=0 go install ./cmd/basalt
 CGO_ENABLED=0 go install github.com/basaltdbhq/basaltdb/cmd/basalt@v0.0.1-alpha
 ```
 
-`@latest` will not pick an alpha tag. Pin `@v0.0.1-alpha`.
+`@latest` will not pick an alpha tag. Pin the tag, for example `@v0.0.1-alpha`.
 
 Release binaries embed the tag via `-ldflags`. `go install` uses the module version from build info when ldflags did not override it.
 

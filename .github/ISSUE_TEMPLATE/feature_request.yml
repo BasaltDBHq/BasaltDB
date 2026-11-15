@@ -1,0 +1,23 @@
+name: Feature request
+description: Suggest a change or something new for BasaltDB.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what gets in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: want
+    attributes:
+      label: What you want
+      description: What BasaltDB should do instead.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Other ways you have tried or considered.

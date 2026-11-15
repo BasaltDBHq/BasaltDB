@@ -1,0 +1,58 @@
+name: Bug report
+description: Something in BasaltDB does not work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Never paste a credential, a connection string with a password, or real data. Use a throwaway database and redact anything private.
+        For a security problem, do not open an issue. Follow SECURITY.md instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: basalt version
+      description: The output of `basalt version`.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: macOS 15 arm64, Ubuntu 24.04 amd64
+    validations:
+      required: true
+  - type: input
+    id: postgres
+    attributes:
+      label: Postgres version and host
+      placeholder: Postgres 17 on Supabase, Postgres 16 in Docker
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Relevant output
+      description: Error messages or logs. Remove credentials and real data first.
+      render: text

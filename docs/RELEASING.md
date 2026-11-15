@@ -38,6 +38,8 @@ That push is the only trigger for a GitHub Release. The first releases publish t
 2. Attaches tar.gz holding the one `basalt` binary, `SHA256SUMS`, and `.deb` / `.rpm` / `.apk`. It also attaches `portal.sha256`, a copy of `web/portal.sha256` from the tagged commit (the hashes of the portal pages that release embeds), for `basalt portal verify --manifest portal.sha256`. Darwin tarballs are `CGO_ENABLED=0` static builds. They are unsigned (no Apple Developer account, codesign, or notarization). After a browser download, clear Gatekeeper quarantine **per binary** the operator verified (`xattr -d com.apple.quarantine ./basalt`), never recursively. CI `macos-smoke` runs those archives on `macos-15` (`uname -m` arm64) and `macos-15-intel` (`uname -m` x86_64).
 3. Marks the GitHub Release as a **prerelease** when the tag has a semver prerelease suffix (`-alpha`, `-beta`, `-rc`). `prerelease: auto` in GoReleaser.
 
+Release notes come from [CHANGELOG.md](../CHANGELOG.md); GoReleaser does not generate them (`changelog.disable: true`).
+
 There is no container image: `basalt` runs next to the agent as a local service, not as a hosted server.
 
 Owner/repo in the workflow and GoReleaser come from `${{ github.repository }}` / `${{ github.repository_owner }}`. Transferring the repo to a new GitHub org does not require a config rewrite. `install.sh` defaults to `BASALTDB_REPO=BasaltDBHq/BasaltDB` (one-line change after a transfer).

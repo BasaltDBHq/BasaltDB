@@ -140,7 +140,8 @@ type established struct {
 	// work carries a whole request from the read loop to the worker.
 	work chan Request
 
-	// mu guards ch: the read loop opens frames, the worker seals them.
+	// mu guards ch: the read loop opens frames, the worker seals them. The
+	// idle check holds it to reset idle.
 	mu sync.Mutex
 	ch *channel.Session
 

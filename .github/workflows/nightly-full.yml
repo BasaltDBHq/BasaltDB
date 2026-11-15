@@ -21,9 +21,9 @@ jobs:
       BASALTDB_TEST_FULL: "1"
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
+      # The toolchain line, its version check and the CI workflow's Go cache
+      # (restored only).
+      - uses: ./.github/actions/go
       # Add a package here when it starts to honour BASALTDB_TEST_FULL.
       - name: Full-size tests
         run: go test -race -count=1 -timeout 80m ./internal/pii/...

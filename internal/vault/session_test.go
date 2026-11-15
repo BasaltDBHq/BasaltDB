@@ -428,36 +428,64 @@ func TestSessionTimeouts(t *testing.T) {
 	t.Parallel()
 	t.Run("idle", func(t *testing.T) {
 		t.Parallel()
-		e := newSessionEngine(t, func(o *vault.Options) { o.IdleTimeout = 500 * time.Millisecond })
+		// The idle timer only wakes the check; the time since the last frame
+		// is read from the client's clock. A test clock sets that time
+		// exactly, so a slow runner cannot make a frame late or the close
+		// early.
+		clock := newTestClock()
+		e := newSessionEngine(t, func(o *vault.Options) {
+			o.IdleTimeout = 50 * time.Millisecond
+			o.Now = clock.Now
+		})
 		l := newLink(t)
 		e.hold(t, l, time.Now().Add(time.Hour))
 		p := e.open(t, l)
 		ctx := ctxWait(t)
-		// Frames keep it open past the idle timeout.
-		for range 8 {
+		// A frame just before the idle timeout keeps it open, again and again,
+		// well past one idle timeout from the start. Each wait gives the idle
+		// check time to run while the session is a nanosecond short.
+		for range 4 {
+			clock.Advance(50*time.Millisecond - time.Nanosecond)
 			time.Sleep(100 * time.Millisecond)
 			_, err := p.Do(ctx, http.MethodGet, "/x", pagetest.Headers(l.secret), "", 0)
 			require.NoError(t, err)
 		}
-		start := time.Now()
-		require.Equal(t, code(channel.ErrTimeout), pageClosed(t, p))
-		require.GreaterOrEqual(t, time.Since(start), 400*time.Millisecond)
+		closed := make(chan websocket.StatusCode, 1)
+		go func() { closed <- pageClosed(t, p) }()
+		clock.Advance(50*time.Millisecond - time.Nanosecond)
+		require.Never(t, func() bool { return len(closed) > 0 }, 200*time.Millisecond, tick)
+		// At the idle timeout since the last frame, it ends with TIMEOUT.
+		clock.Advance(time.Nanosecond)
+		select {
+		case c := <-closed:
+			require.Equal(t, code(channel.ErrTimeout), c)
+		case <-time.After(waitFor):
+			t.Fatal("the session outlived its idle timeout")
+		}
 	})
 	t.Run("lifetime", func(t *testing.T) {
 		t.Parallel()
-		e := newSessionEngine(t, func(o *vault.Options) { o.SessionLifetime = 200 * time.Millisecond })
+		// The lifetime is a timer started when message 1 is read, so it is
+		// measured from before the handshake: the session must last the
+		// whole lifetime, and a handshake slower than the lifetime ends with
+		// the same TIMEOUT.
+		const lifetime = 200 * time.Millisecond
+		e := newSessionEngine(t, func(o *vault.Options) { o.SessionLifetime = lifetime })
 		l := newLink(t)
 		e.hold(t, l, time.Now().Add(time.Hour))
-		p := e.open(t, l)
-		start := time.Now()
 		ctx := ctxWait(t)
-		var err error
+		start := time.Now()
+		p, err := pagetest.Dial(ctx, e.v.URL(), l.keys.Token)
+		require.NoError(t, err)
+		t.Cleanup(p.Close)
+		err = p.Handshake(ctx, l.keys)
+		// Frames do not extend it.
 		for err == nil {
 			time.Sleep(20 * time.Millisecond)
 			_, err = p.Do(ctx, http.MethodGet, "/x", pagetest.Headers(l.secret), "", 0)
 		}
 		require.Equal(t, code(channel.ErrTimeout), failedWith(t, p, err))
-		require.GreaterOrEqual(t, time.Since(start), 150*time.Millisecond)
+		require.GreaterOrEqual(t, time.Since(start), lifetime)
 	})
 	t.Run("never past the link's expiry", func(t *testing.T) {
 		t.Parallel()

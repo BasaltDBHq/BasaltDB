@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -299,18 +298,7 @@ func TestSessionLimitAndHandshakeTimeout(t *testing.T) {
 	// SESSION_OPEN arrives, so a test clock decides when sessions are late:
 	// a slow runner cannot end the waiting sessions before the limit is
 	// checked.
-	var mu sync.Mutex
-	now := time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC)
-	clock := func() time.Time {
-		mu.Lock()
-		defer mu.Unlock()
-		return now
-	}
-	advance := func(d time.Duration) {
-		mu.Lock()
-		defer mu.Unlock()
-		now = now.Add(d)
-	}
+	clock := newTestClock()
 	url, result := hostileVault(t, func(ctx context.Context, ws *websocket.Conn) error {
 		if err := ready(ctx, ws); err != nil {
 			return err
@@ -328,7 +316,7 @@ func TestSessionLimitAndHandshakeTimeout(t *testing.T) {
 			return err
 		}
 		// Past the handshake timeout, the next SESSION_OPEN ends the waiting ones.
-		advance(vault.HandshakeTimeout)
+		clock.Advance(vault.HandshakeTimeout)
 		if err := openSession(ctx, ws, vaulttest.SID{0xfe}); err != nil {
 			return err
 		}
@@ -347,7 +335,7 @@ func TestSessionLimitAndHandshakeTimeout(t *testing.T) {
 		return nil
 	})
 	opts := fastOptions(url, newKeys(t))
-	opts.Now = clock
+	opts.Now = clock.Now
 	run(t, newClient(t, opts))
 	require.NoError(t, <-result)
 }
@@ -389,33 +377,39 @@ func TestDoesNotFollowRedirects(t *testing.T) {
 
 func TestLateMessageOneTimesOut(t *testing.T) {
 	t.Parallel()
+	// A session's wait for message 1 is measured on the client's clock, from
+	// when its SESSION_OPEN is read to when its message 1 is. A test clock
+	// sets that wait exactly: a slow runner can neither make the first
+	// message 1 late nor read the second SESSION_OPEN after the wait began.
+	clock := newTestClock()
 	url, result := hostileVault(t, func(ctx context.Context, ws *websocket.Conn) error {
 		if err := ready(ctx, ws); err != nil {
 			return err
 		}
-		// In time: refused as a dead token is.
 		if err := openSession(ctx, ws, vaulttest.SID{1}); err != nil {
 			return err
 		}
+		if err := openSession(ctx, ws, vaulttest.SID{2}); err != nil {
+			return err
+		}
+		// In time: refused as a dead token is. The engine reads the socket in
+		// order, so both SESSION_OPENs were read before this answer.
 		if err := ws.Write(ctx, websocket.MessageBinary, hello(vaulttest.SID{1}, channel.Message1Len, 0x01, 0x01)); err != nil {
 			return err
 		}
 		if err := sessionClosed(ctx, ws, vaulttest.SID{1}, channel.ErrLinkRefused); err != nil {
 			return err
 		}
-		// Past the handshake timeout, with no SESSION_OPEN in between: the
+		// At the handshake timeout, with no SESSION_OPEN in between: the
 		// message 1 is not read, the session ends with TIMEOUT.
-		if err := openSession(ctx, ws, vaulttest.SID{2}); err != nil {
-			return err
-		}
-		time.Sleep(80 * time.Millisecond)
+		clock.Advance(vault.HandshakeTimeout)
 		if err := ws.Write(ctx, websocket.MessageBinary, hello(vaulttest.SID{2}, channel.Message1Len, 0x01, 0x01)); err != nil {
 			return err
 		}
 		return sessionClosed(ctx, ws, vaulttest.SID{2}, channel.ErrTimeout)
 	})
 	opts := fastOptions(url, newKeys(t))
-	opts.HandshakeTimeout = 50 * time.Millisecond
+	opts.Now = clock.Now
 	c := newClient(t, opts)
 	run(t, c)
 	require.NoError(t, <-result)

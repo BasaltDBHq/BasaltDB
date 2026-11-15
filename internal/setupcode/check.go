@@ -17,10 +17,10 @@ const ClockSkew = 5 * time.Minute
 const timeLayout = "2006-01-02 15:04 UTC"
 
 // MinGuardVersion is the first guard version that records a setup
-// (basalt_meta.setups and record_setup, version 16). A code whose guard.to
-// is older cannot be applied: its transaction would end in a function the
-// database does not have.
-const MinGuardVersion = 16
+// (basalt_meta.setups and record_setup). A code whose guard.to is older
+// cannot be applied: its transaction would end in a function the database
+// does not have. Every guard version records setups.
+const MinGuardVersion = 1
 
 // CheckLocal applies the person's computer's checks to a decoded code, in
 // the contract's order: EXPIRED (now at or past expiresAt),

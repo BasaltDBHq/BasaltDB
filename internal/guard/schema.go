@@ -33,85 +33,15 @@ type migration struct {
 
 // basalt_meta versions, in order.
 const (
-	versionGuard               = iota + 1 // M1: guard, ledger, chain, retention
-	versionChainFrom                      // M1 close-out: verify_chain_from, engine events
-	versionReads                          // M1.5: recorded reads and STALE_READ
-	versionApprovals                      // M2: passkeys, held writes and approvals
-	versionRevertPlan                     // M3: the revert plan, read-only
-	versionRevertTrial                    // M3: the trial run and prepared reverts
-	versionRevertApply                    // M3: apply a signed revert
-	versionRLS                            // M3 follow-up: the guard's row-level security policy
-	versionRevertBatches                  // M3 follow-up: large reverts, signed once and applied in batches
-	versionAgentsInherit                  // M4: agents are roles that inherit the agents group
-	versionAgentPolicy                    // M4: ledger row for an agent RLS policy the person confirmed
-	versionPasskeys                       // M4.1: passkey revocation and last use
-	versionAgentVersion                   // M4 follow-up: agents read schema_version
-	versionRunsAgent                      // M4.1: index for list_runs, the agent's own runs by id
-	versionPII                            // M5.1: PII classification
-	versionSetups                         // M4: setups recorded by basalt init --setup-code
-	versionRevertSample                   // M3 follow-up: a large plan's sample shows both restored and skipped rows
-	versionSetupRole                      // M4 follow-up: record_setup reads the clock and checks the agent role strictly
-	versionPIIOids                        // M5.1 follow-up: pii_fingerprint names columns by oid and quotes names
-	versionRevertScope                    // RS-1 to RS-4: a revert's scope descriptor, own work only for agents
-	versionRevertWiden                    // RS-2, RS-5: the widen proof, rescope and reset, redaction after a widen
-	versionRevertNonce                    // RS-2: the requesting role reads its revert's rescope nonce
-	versionRevertReject                   // RS-2, Q8: the person rejects a pending revert
-	versionSearchPath                     // the caller's temporary tables never shadow the catalog
-	versionExpiryClock                    // approval and revert deadlines read the wall clock
-	versionTriggerAlways                  // guard triggers fire under any session_replication_role
-	versionPIIUsage                       // EV-14: a PII column needs USAGE on its schema
-	versionOneClock                       // the person's acts recorded on the wall clock; search_path on every routine
-	versionRevealRevert                   // HR-1: the person reveals a revert's redacted lines with a passkey proof
-	versionRevealApproval                 // HR-1, HR-2: the person reveals a held approval's redacted lines through a re-run preview
-	versionRevealNoLock                   // the approval reveal reads the approval row unlocked, so it never deadlocks with a signature
-	versionCatalogChangeAgents            // Q-11: the proven revert scope catalog maps each change to its agent
-	versionEngines                        // VC-21: engine keys, the pinned address and revocation
-	versionPinnedTrigger                  // guard_row stores row images in fixed TimeZone, styles, float digits and lc_monetary
-	versionPinnedReverts                  // bytea_output pinned too; the revert's row reads and restores pinned like guard_row
-	versionReinstalls                     // reinstalls on the record: installs, record_pin_set_aside, pin_on_chain, agent_reinstalls
-	versionHeldLines                      // a held write keeps preview lines over 64 KiB, up to 64 MiB in all
+	// versionGuard is the whole guard: every file of schema/.
+	versionGuard = iota + 1
 )
 
-// migrations lists every version in order, each the schema files from
-// first to last (their sequence numbers, inclusive).
+// migrations lists every version in order. A new version appends its own
+// schema files after the last and its entry here; version 1 then stays the
+// files it has now.
 var migrations = []migration{
-	{version: versionGuard, sql: schemaFiles(1, 8)},
-	{version: versionChainFrom, sql: schemaFiles(9, 10)},
-	{version: versionReads, sql: schemaFiles(11, 12)},
-	{version: versionApprovals, sql: schemaFiles(13, 18)},
-	{version: versionRevertPlan, sql: schemaFiles(19, 20)},
-	{version: versionRevertTrial, sql: schemaFiles(21, 22)},
-	{version: versionRevertApply, sql: schemaFiles(23, 24)},
-	{version: versionRLS, sql: schemaFiles(25, 25)},
-	{version: versionRevertBatches, sql: schemaFiles(26, 31)},
-	{version: versionAgentsInherit, sql: schemaFiles(32, 32)},
-	{version: versionAgentPolicy, sql: schemaFiles(33, 33)},
-	{version: versionPasskeys, sql: schemaFiles(34, 34)},
-	{version: versionAgentVersion, sql: schemaFiles(35, 35)},
-	{version: versionRunsAgent, sql: schemaFiles(36, 36)},
-	{version: versionPII, sql: schemaFiles(37, 39)},
-	{version: versionSetups, sql: schemaFiles(40, 42)},
-	{version: versionRevertSample, sql: schemaFiles(43, 43)},
-	{version: versionSetupRole, sql: schemaFiles(44, 44)},
-	{version: versionPIIOids, sql: schemaFiles(45, 45)},
-	{version: versionRevertScope, sql: schemaFiles(46, 50)},
-	{version: versionRevertWiden, sql: schemaFiles(51, 53)},
-	{version: versionRevertNonce, sql: schemaFiles(54, 54)},
-	{version: versionRevertReject, sql: schemaFiles(55, 55)},
-	{version: versionSearchPath, sql: schemaFiles(56, 57)},
-	{version: versionExpiryClock, sql: schemaFiles(58, 59)},
-	{version: versionTriggerAlways, sql: schemaFiles(60, 60)},
-	{version: versionPIIUsage, sql: schemaFiles(61, 61)},
-	{version: versionOneClock, sql: schemaFiles(62, 63)},
-	{version: versionRevealRevert, sql: schemaFiles(64, 64)},
-	{version: versionRevealApproval, sql: schemaFiles(65, 65)},
-	{version: versionRevealNoLock, sql: schemaFiles(66, 66)},
-	{version: versionCatalogChangeAgents, sql: schemaFiles(67, 67), nonBreaking: true},
-	{version: versionEngines, sql: schemaFiles(68, 70), nonBreaking: true},
-	{version: versionPinnedTrigger, sql: schemaFiles(71, 71), nonBreaking: true},
-	{version: versionPinnedReverts, sql: schemaFiles(72, 72), nonBreaking: true},
-	{version: versionReinstalls, sql: schemaFiles(73, 75), nonBreaking: true},
-	{version: versionHeldLines, sql: schemaFiles(76, 76), nonBreaking: true},
+	{version: versionGuard, sql: strings.Join(schema, "")},
 }
 
 // LatestVersion is the basalt_meta version this build installs.
@@ -127,8 +57,7 @@ CREATE TABLE IF NOT EXISTS basalt_meta.schema_version (
 REVOKE ALL ON basalt_meta.schema_version FROM PUBLIC;
 `
 
-// recordInstallRow writes the current install's row: on an upgrade to
-// version 36 (the time of the upgrade), and on every install after it, when
+// recordInstallRow writes the current install's row, on every install;
 // nothing changes for an install that has one (installed_at kept).
 // basalt.vault_user is the Vault user the install ran for, set by the
 // Vault's install path; null otherwise.
@@ -166,12 +95,6 @@ var schemaFS embed.FS
 
 // schema is every schema file's SQL, in name order.
 var schema = mustLoadSchema(schemaFS)
-
-// schemaFiles is the SQL of the schema files from sequence first to last,
-// inclusive, concatenated in order.
-func schemaFiles(first, last int) string {
-	return strings.Join(schema[first-1:last], "")
-}
 
 // mustLoadSchema reads the schema files. A malformed file is a broken
 // build, so it panics (TestSchemaFiles covers the rules).

@@ -6,10 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Changed
-
-- The guard installs as one schema version, 1, from SQL files in `internal/guard/schema/`. A fresh install creates the same objects as before.
-
 ## [0.0.1-alpha] - 2026-11-15
 
 The first public alpha, for macOS and Linux (amd64 and arm64). Expect bugs and breaking changes between alpha releases.
@@ -21,6 +17,10 @@ The first public alpha, for macOS and Linux (amd64 and arm64). Expect bugs and b
 - Undo for a run, a single change or a task, signed with your passkey. Rows changed after the agent are left as they are and listed.
 - The CLI: `init`, `status`, `log`, `revert`, `upgrade`, `uninstall`, `service` and `classify`.
 - Setup for an agent on another machine, with a setup code (`basalt init --remote`).
+
+### Changed
+
+- The guard's schema is kept as SQL files under one version, 1 (`internal/guard/schema/`).
 
 ### Known limits
 

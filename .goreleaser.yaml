@@ -72,7 +72,9 @@ brews:
     repository:
       owner: '{{ or (envOrDefault "HOMEBREW_TAP_OWNER" "") "BasaltDBHq" }}'
       name: '{{ or (envOrDefault "HOMEBREW_TAP_NAME" "") "homebrew-tap" }}'
-      token: '{{ envOrDefault "HOMEBREW_TAP_GITHUB_TOKEN" "" }}'
+      # The token field accepts only a single {{ .Env.NAME }}, no functions.
+      # The release workflow always sets the variable, empty when Homebrew is off.
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     commit_author:
       name: goreleaserbot
       email: bot@goreleaser.com

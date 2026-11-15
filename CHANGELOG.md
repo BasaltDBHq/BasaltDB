@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.0.1-alpha.1] - 2026-11-15
+
+### Fixed
+
+- The release publishes the Homebrew formula. The 0.0.1-alpha release has the binaries but no formula, so `brew install` starts with this version.
+
 ## [0.0.1-alpha] - 2026-11-15
 
 The first public alpha, for macOS and Linux (amd64 and arm64). Expect bugs and breaking changes between alpha releases.

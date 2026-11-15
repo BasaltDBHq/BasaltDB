@@ -84,7 +84,10 @@ echo "$status" | grep -q "^NoNewPrivs:[[:space:]]*1$" || fail "no_new_privs is n
 for cap in CapPrm CapEff CapAmb; do
 	echo "$status" | grep -q "^$cap:[[:space:]]*0000000000000000$" || fail "the engine kept capabilities: $(echo "$status" | grep "^$cap:")"
 done
-dc logs engine 2>&1 | grep -q "dropped root; running as basalt" || fail "no drop line in the engine log"
+# Read the whole log first: grep -q stops at its first match, and with
+# pipefail a writer cut off by that closed pipe fails the check.
+engine_log=$(dc logs engine 2>&1)
+echo "$engine_log" | grep -q "dropped root; running as basalt" || fail "no drop line in the engine log"
 
 step "isolation: the agent sees the socket and nothing else of the engine"
 dc exec -T agent test ! -e /etc/basalt/engine.json || fail "the agent container sees engine.json"
@@ -113,8 +116,8 @@ echo "$out" | grep -q 'CONTACTED' || fail "query after restart: $out"
 [ "$(dc logs engine 2>&1 | grep -c 'dropped root; running as basalt')" -ge 2 ] || fail "the restarted engine did not drop root"
 
 step "the person's log, as the engine's user"
-dc exec -T --user basalt -e XDG_CACHE_HOME=/var/lib/basalt/cli engine basalt log --agent demo_bot --config /etc/basalt/engine.json | grep -q 'basalt_demo.leads' ||
-	fail "basalt log does not show the write"
+person_log=$(dc exec -T --user basalt -e XDG_CACHE_HOME=/var/lib/basalt/cli engine basalt log --agent demo_bot --config /etc/basalt/engine.json)
+echo "$person_log" | grep -q 'basalt_demo.leads' || fail "basalt log does not show the write"
 
 step "uninstall: remove the guard, then the containers and volumes"
 dc stop engine

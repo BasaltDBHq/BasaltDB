@@ -66,6 +66,9 @@ install-sh-check: ## POSIX syntax, default repo, and archive names for install.s
 	@sh scripts/release-kind_test.sh
 	@grep -Fq 'tags: ["v*"]' .github/workflows/release.yml
 	@if grep -E '^[[:space:]]*(branches|workflow_dispatch):' .github/workflows/release.yml; then echo 'release.yml must not trigger on branches or workflow_dispatch' >&2; exit 1; fi
+	@grep -Fq "vars.PUBLISH_NPM == 'true'" .github/workflows/release.yml
+	@grep -Fq "vars.PUBLISH_MCP_REGISTRY == 'true'" .github/workflows/release.yml
+	@grep -Fq 'envOrDefault "PUBLISH_HOMEBREW"' .goreleaser.yaml
 	@sh install.sh --print-platform >/dev/null
 	@grep -q 'BASALTDB_REPO="$${BASALTDB_REPO:-BasaltDBHq/BasaltDB}"' install.sh
 	@grep -Fq 'name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"' .goreleaser.yaml

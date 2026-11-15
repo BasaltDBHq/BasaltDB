@@ -33,39 +33,30 @@ jobs:
           go-version-file: go.mod
 
       - name: Set version
-        env:
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
-          HOMEBREW_TAP_OWNER: ${{ vars.HOMEBREW_TAP_OWNER }}
-          HOMEBREW_TAP_NAME: ${{ vars.HOMEBREW_TAP_NAME }}
         run: |
           set -euo pipefail
           sh scripts/require-v-tag.sh "${GITHUB_REF_NAME}"
-          extra=""
-          echo "HOMEBREW_TAP_OWNER=${HOMEBREW_TAP_OWNER:-BasaltDBHq}" >> "${GITHUB_ENV}"
-          echo "HOMEBREW_TAP_NAME=${HOMEBREW_TAP_NAME:-homebrew-tap}" >> "${GITHUB_ENV}"
           echo "BASALT_VERSION=${GITHUB_REF_NAME}" >> "${GITHUB_ENV}"
           echo "RELEASE_KIND=tag" >> "${GITHUB_ENV}"
           echo "ARTIFACT_NAME=${GITHUB_REF_NAME}" >> "${GITHUB_ENV}"
-          if [[ -z "${HOMEBREW_TAP_GITHUB_TOKEN}" ]]; then
-            extra="--skip=homebrew"
-            echo "Skipping Homebrew publish."
-            echo "::notice::HOMEBREW_TAP_GITHUB_TOKEN is empty; skipping Homebrew. Tap is BasaltDBHq/homebrew-tap (override HOMEBREW_TAP_OWNER / HOMEBREW_TAP_NAME)."
-          fi
-          echo "GORELEASER_ARGS=${extra}" >> "${GITHUB_ENV}"
 
+      # Only the GitHub release needs the default GITHUB_TOKEN. The Homebrew
+      # formula is uploaded only when the repository variable PUBLISH_HOMEBREW
+      # is "true"; the tap token is passed in only then (docs/RELEASING.md).
       - uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean ${{ env.GORELEASER_ARGS }}
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BASALT_VERSION: ${{ env.BASALT_VERSION }}
           RELEASE_KIND: ${{ env.RELEASE_KIND }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
-          HOMEBREW_TAP_OWNER: ${{ env.HOMEBREW_TAP_OWNER }}
-          HOMEBREW_TAP_NAME: ${{ env.HOMEBREW_TAP_NAME }}
+          PUBLISH_HOMEBREW: ${{ vars.PUBLISH_HOMEBREW == 'true' && 'true' || 'false' }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ vars.PUBLISH_HOMEBREW == 'true' && secrets.HOMEBREW_TAP_GITHUB_TOKEN || '' }}
+          HOMEBREW_TAP_OWNER: ${{ vars.HOMEBREW_TAP_OWNER }}
+          HOMEBREW_TAP_NAME: ${{ vars.HOMEBREW_TAP_NAME }}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -79,9 +70,10 @@ jobs:
             dist/SHA256SUMS
           if-no-files-found: error
 
+  # Off unless the repository variable PUBLISH_NPM is "true".
   npm:
     name: Publish npm
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && vars.PUBLISH_NPM == 'true'
     needs: release
     runs-on: ubuntu-latest
     permissions:
@@ -105,10 +97,17 @@ jobs:
           VERSION: ${{ github.ref_name }}
         run: sh scripts/npm-publish.sh
 
+  # Off unless the repository variable PUBLISH_MCP_REGISTRY is "true". It runs
+  # after the npm job when that is on, and on its own when npm is off (the
+  # registry entry points at a package that is already on npm).
   mcp-registry:
     name: Publish MCP registry
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: npm
+    if: >-
+      !cancelled() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+      && vars.PUBLISH_MCP_REGISTRY == 'true'
+      && needs.release.result == 'success'
+      && (needs.npm.result == 'success' || needs.npm.result == 'skipped')
+    needs: [release, npm]
     runs-on: ubuntu-latest
     permissions:
       contents: read

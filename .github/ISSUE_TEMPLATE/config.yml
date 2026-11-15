@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://docs.basaltvault.app
+    about: Install, setup and reference guides.
+  - name: Report a vulnerability
+    url: https://github.com/BasaltDBHq/BasaltDB/security/advisories/new
+    about: Report security problems privately, as SECURITY.md describes. Do not open a public issue.

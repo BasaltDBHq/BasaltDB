@@ -1,8 +1,14 @@
 name: CI
 
+# Pull requests, every push to master and a nightly run all take the same
+# path: every job, the race detector on, every package. A failing run on master
+# or the nightly one shows as a red run in the Actions tab.
 on:
   push:
     branches: [master]
+  schedule:
+    - cron: "43 3 * * *"
+  workflow_dispatch:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
@@ -10,9 +16,58 @@ permissions:
   contents: read
 
 jobs:
-  check:
+  # The pull request path runs side by side: lint, vet, the script checks and
+  # the test shards (each with its own Postgres). make ci runs all of it in
+  # one go locally. The final job, check, is the one required status.
+  lint:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # setup-go v6 installs the go.mod toolchain line (the Makefile's
+      # GO_VERSION reads the same line) and sets GOTOOLCHAIN=local itself, so
+      # no toolchain lands in the module cache before the cache restores.
+      # Setting GOTOOLCHAIN in the workflow would make it use the go line.
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: go matches the toolchain line
+        run: test "$(go env GOVERSION)" = "$(awk '/^toolchain /{print $2}' go.mod)"
+      - run: make lint
+
+  vet:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: go matches the toolchain line
+        run: test "$(go env GOVERSION)" = "$(awk '/^toolchain /{print $2}' go.mod)"
+      - run: make vet shard-check
+
+  scripts:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # 22 or later: the portal page tests use Node's global WebSocket.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: make script-checks
+
+  test:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    name: test (${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Packages per shard: scripts/test-shards.txt. "rest" runs every
+        # package no shard lists, so each package runs in exactly one shard.
+        shard: ["1", "2", "3", rest]
     services:
       postgres:
         image: postgres:16
@@ -34,18 +89,53 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      - name: go matches the toolchain line
+        run: test "$(go env GOVERSION)" = "$(awk '/^toolchain /{print $2}' go.mod)"
       # The trusted-path checks refuse a directory below one that group or
       # others can write, as /tmp is (mode 1777), so the tests' temp files go
       # below a directory only the runner's user can write.
-      - name: ci
+      - name: tests
         run: |
           export TMPDIR="$HOME/.cache/basalt-tmp"
           mkdir -p "$TMPDIR"
           chmod 700 "$TMPDIR"
-          make ci
+          make test-shard SHARD=${{ matrix.shard }} SHARD_JSON="$RUNNER_TEMP/test.json"
+      - name: timings
+        if: always()
+        run: |
+          [ -f "$RUNNER_TEMP/test.json" ] || exit 0
+          python3 - "$RUNNER_TEMP/test.json" <<'PY'
+          import json,sys
+          pk={};ts=[]
+          for l in open(sys.argv[1]):
+              e=json.loads(l)
+              if e.get("Action") in("pass","fail"):
+                  if e.get("Test"): ts.append((e["Elapsed"],e["Package"],e["Test"]))
+                  else: pk[e["Package"]]=e["Elapsed"]
+          for k,v in sorted(pk.items(),key=lambda x:-x[1]): print("PKG %7.1f %s"%(v,k))
+          for v,p,t in sorted(ts,reverse=True)[:15]: print("TEST %7.1f %s %s"%(v,p,t))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-timings-${{ matrix.shard }}
+          path: ${{ runner.temp }}/test.json
+
+  # The one required status: fails if any job above failed or was skipped.
+  check:
+    if: always()
+    needs: [lint, vet, scripts, test, containers, darwin-archives, macos-smoke]
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo '${{ toJSON(needs) }}'
+          if [ '${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}' = true ]; then exit 1; fi
+          if [ '${{ github.event_name }}' != pull_request ] || [ '${{ github.event.pull_request.draft }}' = false ]; then
+            if [ '${{ contains(needs.*.result, 'skipped') }}' = true ]; then exit 1; fi
+          fi
 
   # basalt engine --user in containers without systemd: the privilege drop as
   # root on every thread, then the compose example end to end (setup,
@@ -70,9 +160,11 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      - name: go matches the toolchain line
+        run: test "$(go env GOVERSION)" = "$(awk '/^toolchain /{print $2}' go.mod)"
       - uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser

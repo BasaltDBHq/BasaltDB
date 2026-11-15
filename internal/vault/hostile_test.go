@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -294,6 +295,22 @@ func TestSessionsAreRefusedWithinTheirPhaseLimit(t *testing.T) {
 
 func TestSessionLimitAndHandshakeTimeout(t *testing.T) {
 	t.Parallel()
+	// The handshake timeout is read from the client's clock when a
+	// SESSION_OPEN arrives, so a test clock decides when sessions are late:
+	// a slow runner cannot end the waiting sessions before the limit is
+	// checked.
+	var mu sync.Mutex
+	now := time.Date(2026, 11, 12, 9, 0, 0, 0, time.UTC)
+	clock := func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		return now
+	}
+	advance := func(d time.Duration) {
+		mu.Lock()
+		defer mu.Unlock()
+		now = now.Add(d)
+	}
 	url, result := hostileVault(t, func(ctx context.Context, ws *websocket.Conn) error {
 		if err := ready(ctx, ws); err != nil {
 			return err
@@ -311,12 +328,12 @@ func TestSessionLimitAndHandshakeTimeout(t *testing.T) {
 			return err
 		}
 		// Past the handshake timeout, the next SESSION_OPEN ends the waiting ones.
-		time.Sleep(60 * time.Millisecond)
+		advance(vault.HandshakeTimeout)
 		if err := openSession(ctx, ws, vaulttest.SID{0xfe}); err != nil {
 			return err
 		}
-		seen := 0
-		for seen < vault.MaxSessions {
+		ended := map[string]bool{}
+		for len(ended) < vault.MaxSessions {
 			typ, data, err := ws.Read(ctx)
 			if err != nil {
 				return err
@@ -325,12 +342,12 @@ func TestSessionLimitAndHandshakeTimeout(t *testing.T) {
 			if typ != websocket.MessageText || json.Unmarshal(data, &m) != nil || m.Code != int(vaulttest.CloseTimeout) {
 				return fmt.Errorf("want SESSION_CLOSE TIMEOUT, got %s", data)
 			}
-			seen++
+			ended[m.SID] = true
 		}
 		return nil
 	})
 	opts := fastOptions(url, newKeys(t))
-	opts.HandshakeTimeout = 50 * time.Millisecond
+	opts.Now = clock
 	run(t, newClient(t, opts))
 	require.NoError(t, <-result)
 }

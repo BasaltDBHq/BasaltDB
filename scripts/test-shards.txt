@@ -1,0 +1,15 @@
+# Test shards for the CI workflow (one parallel job each). Balanced on the
+# package times of GitHub run 43731118331; packages not listed here run in the
+# "rest" shard, so a new package needs no edit.
+# Format: "shard <name>" starts a shard; one package path per line below it.
+
+shard 1
+cmd/basalt
+
+shard 2
+internal/engine/agent
+internal/engine
+
+shard 3
+internal/pii
+internal/pii/classify

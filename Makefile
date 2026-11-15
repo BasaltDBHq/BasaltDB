@@ -33,6 +33,26 @@ test: bin/gotestsum portal-build ## Race tests (gotestsum; builds dist/portal fi
 # The toolchain line wins over the go line, so the container tests run the same patched Go as CI.
 GO_VERSION := $(shell awk '/^toolchain go/{sub(/^go/,"",$$2); print $$2; f=1} /^go /{g=$$2} END{if(!f)print g}' go.mod)
 
+# One CI test shard (scripts/test-shards.txt; "rest" is every package no shard lists).
+# make ci still runs all of them through the test target.
+SHARD ?= rest
+SHARD_JSON ?=
+
+.PHONY: test-shard
+test-shard: bin/gotestsum portal-build ## Race tests for one shard: make test-shard SHARD=1 (or rest)
+	@pkgs=$$(sh scripts/test-packages.sh $(SHARD)) && \
+	$(GOTESTSUM) $(if $(SHARD_JSON),--jsonfile $(SHARD_JSON)) --format pkgname-and-test-fails --hide-summary=skipped -- -race -count=1 -timeout 15m $$pkgs
+
+.PHONY: shard-check
+shard-check: ## Every Go package is in exactly one CI test shard
+	@sh -n scripts/test-packages.sh
+	@for s in $$(awk '$$1=="shard"{print $$2}' scripts/test-shards.txt); do grep -Eq "shard: \[.*\"$$s\".*, rest\]" .github/workflows/ci.yml || { echo "shard $$s is not in the test matrix of ci.yml" >&2; exit 1; }; done
+	@all=$$(go list ./... | sort); got=$$( (for s in $$(awk '$$1=="shard"{print $$2}' scripts/test-shards.txt) rest; do sh scripts/test-packages.sh $$s || exit 1; done) | sort); \
+	test "$$all" = "$$got" || { echo 'scripts/test-shards.txt and the CI matrix do not cover every package exactly once' >&2; exit 1; }
+
+.PHONY: script-checks
+script-checks: install-sh-check npm-check web-check portal-build ## The script checks job of the CI workflow
+
 .PHONY: test-privdrop
 test-privdrop: ## basalt engine --user as root in a Linux container without systemd (needs Docker)
 	@docker run --rm -v "$(CURDIR)":/src:ro -v basalt-gomod:/go/pkg/mod -w /src -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false \
@@ -121,4 +141,4 @@ portal-build: ## Copy only the served portal files to dist/portal (Cloudflare Pa
 	@if find "$(PORTAL_DIR)" \( -name '*.test.mjs' -o -name '*.go' \) | grep -q .; then echo 'portal-build: test or Go files in output' >&2; exit 1; fi
 
 .PHONY: ci
-ci: lint vet install-sh-check npm-check web-check portal-build test ## Same steps as the GitHub check job
+ci: lint vet shard-check install-sh-check npm-check web-check portal-build test ## Same steps as the GitHub check job

@@ -24,6 +24,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 )
@@ -55,7 +56,7 @@ func (g olderGuard) requireNoSecret(t *testing.T, out string) {
 }
 
 func TestStatusShowsAnOutdatedGuardAndTheUpgradeCommand(t *testing.T) {
-	t.Parallel()
+	guardtest.NextVersion(t, false) // a breaking version 2: the build has one version
 	latest := guard.LatestVersion()
 	breaking := latestBreaking(t)
 	older := breaking - 1
@@ -191,7 +192,7 @@ func dbTarget(t *testing.T, dsn string) person.TargetDTO {
 }
 
 func TestStatusAndUpgradeGoThroughThePersonSocketInServiceMode(t *testing.T) {
-	t.Parallel()
+	guardtest.NextVersion(t, false) // a breaking version 2: the build has one version
 	older := latestBreaking(t) - 1
 	g := newOlderGuard(t, older)
 	report := outdatedReport(t, g)
@@ -239,7 +240,7 @@ func TestStatusAndUpgradeGoThroughThePersonSocketInServiceMode(t *testing.T) {
 }
 
 func TestUpgradeThroughThePersonSocket(t *testing.T) {
-	t.Parallel()
+	guardtest.NextVersion(t, false) // a breaking version 2: the build has one version
 	latest := guard.LatestVersion()
 	g := newOlderGuard(t, latest-1)
 	socket := fakeEngine(t, outdatedReport(t, g), dbTarget(t, g.dsn))
@@ -251,7 +252,7 @@ func TestUpgradeThroughThePersonSocket(t *testing.T) {
 // An engine still running an older build judges the guard by its own
 // migrations and says OK; this basalt has one more, and upgrade adds it.
 func TestUpgradeJudgesTheGuardByThisBuildNotTheRunningEngines(t *testing.T) {
-	t.Parallel()
+	guardtest.NextVersion(t, false) // a breaking version 2: the build has one version
 	latest := guard.LatestVersion()
 	g := newOlderGuard(t, latest-1)
 	old := outdatedReport(t, g)

@@ -20,7 +20,6 @@ func TestEngineInTheCode(t *testing.T) {
 	require.NoError(t, err)
 	spki := keys.PublicKeySPKI()
 	p := validPayload(t)
-	p.Guard.To = setupcode.EngineGuardVersion
 	without := p
 	p.Engine = &setupcode.Engine{PublicKey: base64.RawURLEncoding.EncodeToString(spki)}
 
@@ -34,11 +33,7 @@ func TestEngineInTheCode(t *testing.T) {
 	require.Equal(t, spki, key)
 	require.NotEqual(t, without.Fingerprint(), got.Fingerprint(), "the fingerprint covers the engine key")
 
-	// A guard that cannot record it, or a key that is not one, is INVALID.
-	old := p
-	old.Guard.To = setupcode.EngineGuardVersion - 1
-	_, err = setupcode.Encode(old)
-	require.Equal(t, setupcode.RefusalInvalid, refusalOf(t, err))
+	// A key that is not one is INVALID.
 	compressed := append([]byte{}, spki...)
 	compressed[26] = 0x02
 	for _, k := range []string{"", "AAAA", base64.RawURLEncoding.EncodeToString(compressed), strings.Repeat("A", 122)} {

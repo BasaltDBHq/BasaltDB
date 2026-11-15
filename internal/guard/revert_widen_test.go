@@ -675,10 +675,10 @@ func TestWidenedRevertRedacted(t *testing.T) {
 		"ten lines are no large plan")
 }
 
-// The new functions are SECURITY DEFINER with search_path pinned to
-// pg_catalog (pg_temp last from version 24), executable by the agents group and not by PUBLIC; the
-// migration adds the (task_id, agent) index and runs again unchanged.
-func TestRevertWidenMigration(t *testing.T) {
+// The rescope functions are SECURITY DEFINER with search_path pinned to
+// pg_catalog, pg_temp, only the two entry points executable by the agents
+// group and none by PUBLIC; the (task_id, agent) index exists.
+func TestRevertWidenFunctionsAndIndex(t *testing.T) {
 	t.Parallel()
 	e := newWidenEnv(t)
 	for _, fn := range []string{
@@ -702,12 +702,6 @@ func TestRevertWidenMigration(t *testing.T) {
 		WHERE schemaname = 'basalt_meta' AND indexname = 'changes_task_agent'`))
 
 	e.widen(t, e.every())
-	e.d.Exec(t, `DELETE FROM basalt_meta.schema_version WHERE version = $1`, guard.LatestVersion())
-	e.d.Init(t, guard.AgentSpec{
-		Name: "bot", Write: append(append([]string{}, leads...), "public.lead_owner"),
-		Read: append(append([]string{}, leads...), "public.lead_owner"),
-	})
-	require.Equal(t, guard.LatestVersion(), scalarOf[int](t, e.d.Admin, `SELECT max(version) FROM basalt_meta.schema_version`))
 	_, err := guard.ResetRevert(context.Background(), e.bot.Conn, e.prep.RevertID)
 	require.NoError(t, err)
 	require.Nil(t, guardVerify(t, e.d))

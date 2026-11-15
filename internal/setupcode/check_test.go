@@ -34,7 +34,7 @@ func TestCheckLocalEdges(t *testing.T) {
 	old := p
 	old.Guard.From, old.Guard.To = 0, setupcode.MinGuardVersion-1
 	require.Equal(t, setupcode.RefusalGuardTooOld, refusalOf(t, setupcode.CheckLocal(old, created, binary)))
-	require.ErrorContains(t, setupcode.CheckLocal(old, created, binary), "This setup code is for guard version 15, but setup codes need guard version 16 or later.")
+	require.ErrorContains(t, setupcode.CheckLocal(old, created, binary), "This setup code is for guard version 0, but setup codes need guard version 1 or later.")
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

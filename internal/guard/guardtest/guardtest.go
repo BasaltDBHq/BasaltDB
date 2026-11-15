@@ -8,8 +8,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -154,6 +156,36 @@ func RetryDeadlock(fn func() error) error {
 		time.Sleep(time.Duration(attempt) * 50 * time.Millisecond)
 	}
 	return err
+}
+
+// envTestMigrations is set (with t.Setenv) while a test's own migrations
+// are appended, which also keeps that test from running in parallel.
+const envTestMigrations = "BASALTDB_TEST_MIGRATIONS"
+
+// WithMigrations appends test-only versions after the build's own for the
+// rest of t (guard.AppendTestMigrations), so the upgrade machinery has a
+// version to upgrade to. The versions are package state that every guard
+// call reads: t must not run in parallel, which t.Setenv enforces (it fails
+// a parallel test and makes a later t.Parallel panic).
+func WithMigrations(t *testing.T, ms ...guard.TestMigration) {
+	t.Helper()
+	t.Setenv(envTestMigrations, strconv.Itoa(len(ms)))
+	t.Cleanup(guard.AppendTestMigrations(ms...))
+}
+
+// NextVersion appends one test-only version after the build's own (see
+// WithMigrations) and returns it. Its SQL creates the table
+// basalt_meta.upgrade_probe_v<N> and is idempotent, so a test may delete
+// its schema_version row and run init again.
+func NextVersion(t *testing.T, nonBreaking bool) int {
+	t.Helper()
+	v := guard.LatestVersion() + 1
+	WithMigrations(t, guard.TestMigration{
+		Version:     v,
+		SQL:         fmt.Sprintf("\nCREATE TABLE IF NOT EXISTS basalt_meta.upgrade_probe_v%d (id int PRIMARY KEY);\n", v),
+		NonBreaking: nonBreaking,
+	})
+	return v
 }
 
 // Agent is a connected agent role.

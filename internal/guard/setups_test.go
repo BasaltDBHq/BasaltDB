@@ -506,7 +506,7 @@ func TestAgentCannotRecordOrWriteSetups(t *testing.T) {
 	require.ElementsMatch(t, []string{theirs.ID.String(), up.ID.String()}, ids(other.Conn))
 }
 
-func TestSetupsMigrationIsIdempotentAndRemovable(t *testing.T) {
+func TestSetupsAreRemovable(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
 	ctx := context.Background()
@@ -515,9 +515,6 @@ func TestSetupsMigrationIsIdempotentAndRemovable(t *testing.T) {
 	_, err := guard.RecordSetup(ctx, d.Admin, d.Names, s)
 	require.NoError(t, err)
 
-	// Running version 16 again keeps the rows and the checks.
-	d.Exec(t, `DELETE FROM basalt_meta.schema_version WHERE version >= 16`)
-	d.Init(t, guard.AgentSpec{Name: "bot", Write: leads, Read: leads})
 	bot := requireLogin(t, d, pw)
 	require.Equal(t, 1, count(t, bot, `SELECT count(setup_id)::int FROM basalt_meta.agent_setups`))
 	_, err = guard.RecordSetup(ctx, d.Admin, d.Names, s)
@@ -530,10 +527,10 @@ func TestSetupsMigrationIsIdempotentAndRemovable(t *testing.T) {
 }
 
 // setupcode.MinGuardVersion, which refuses older codes before connecting,
-// is the version that added record_setup.
+// is the first guard version: every version records setups.
 func TestMinGuardVersionRecordsSetups(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, guard.VersionSetups, setupcode.MinGuardVersion)
+	require.Equal(t, guard.Migrations()[0].Version, setupcode.MinGuardVersion)
 }
 
 func TestRoleStatementTimeoutReadsThisDatabase(t *testing.T) {

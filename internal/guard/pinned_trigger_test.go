@@ -31,8 +31,7 @@ func configOf(t *testing.T, d *guardtest.DB, fn string) []string {
 
 // guard_row and the revert's row read and restore run with the settings
 // the engine pins in its own transactions, besides search_path, so a row
-// image does not depend on the session that wrote or reverts it. Running
-// versions 34 and 35 again changes nothing.
+// image does not depend on the session that wrote or reverts it.
 func TestGuardPinsTheSessionSettings(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
@@ -46,14 +45,6 @@ func TestGuardPinsTheSessionSettings(t *testing.T) {
 		"lc_monetary=" + guard.PinnedLcMonetary,
 		"bytea_output=" + guard.PinnedByteaOutput,
 	}
-	for _, fn := range pinnedFunctions {
-		require.ElementsMatch(t, want, configOf(t, d, fn), fn)
-	}
-
-	d.Exec(t, `DELETE FROM basalt_meta.schema_version WHERE version >= $1`, guard.VersionPinnedTrigger)
-	d.Init(t, guard.AgentSpec{Name: "bot", Write: leads, Read: leads})
-	require.Equal(t, guard.LatestVersion(), scalarOf[int](t, d.Admin, `SELECT max(version) FROM basalt_meta.schema_version`))
-	require.Greater(t, guard.VersionPinnedReverts, guard.VersionPinnedTrigger)
 	for _, fn := range pinnedFunctions {
 		require.ElementsMatch(t, want, configOf(t, d, fn), fn)
 	}

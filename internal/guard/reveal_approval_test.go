@@ -341,18 +341,6 @@ func TestRevealApprovalRowsSecretAndGrants(t *testing.T) {
 		"agent_approvals shows no reveal column")
 }
 
-// Running version 30 again keeps an open ticket.
-func TestRevealApprovalMigrationIsIdempotent(t *testing.T) {
-	t.Parallel()
-	e := newHeldEnv(t)
-	ticket := e.open(t)
-	e.d.Exec(t, `DELETE FROM basalt_meta.schema_version WHERE version >= 30`)
-	e.d.Init(t, guard.AgentSpec{Name: "bot", Write: leads, Read: leads})
-	require.Equal(t, guard.LatestVersion(), scalarOf[int](t, e.d.Admin, `SELECT max(version) FROM basalt_meta.schema_version`))
-	_, err := e.reveal(t, ticket, rerun{})
-	require.NoError(t, err)
-}
-
 // The change compared is the transaction's latest PREVIEW change: an
 // ordinary write recorded after the preview, in the same transaction, is
 // not the one checked against the held approval.

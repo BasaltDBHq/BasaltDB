@@ -394,15 +394,11 @@ func TestWriteClassificationRunsAsGuard(t *testing.T) {
 	require.Equal(t, "23514", guardtest.SQLState(err), "%v", err)
 }
 
-func TestPIIMigrationIsIdempotentAndRemovable(t *testing.T) {
+func TestPIIIsRemovable(t *testing.T) {
 	t.Parallel()
 	p := newPIIDB(t)
 	p.classifyAll(t)
 	ctx := context.Background()
-
-	// Running version 15 again keeps the rows.
-	p.Exec(t, `DELETE FROM basalt_meta.schema_version WHERE version >= 15`)
-	p.Init(t, guard.AgentSpec{Name: "bot", Password: p.bot.Password, Write: leads, Read: leads})
 	require.Equal(t, 1, count(t, p.bot.Conn, `SELECT count(1)::int FROM basalt_meta.agent_pii_catalog`))
 	require.Positive(t, count(t, p.bot.Conn, `SELECT count(1)::int FROM basalt_meta.agent_pii_columns`))
 

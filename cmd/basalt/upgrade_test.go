@@ -197,7 +197,7 @@ func (g olderGuard) callTool(t *testing.T, tool string) string {
 }
 
 func TestUpgradeServesTheRunningEngineAgainWithoutARestart(t *testing.T) {
-	t.Parallel()
+	guardtest.NextVersion(t, false) // a breaking version 2: the build has one version
 	latest := guard.LatestVersion()
 	older := latestBreaking(t) - 1
 	missing := versionsAfter(older)
@@ -254,7 +254,7 @@ func TestUpgradeIsANoOpOnACurrentGuard(t *testing.T) {
 }
 
 func TestUpgradeDryRunChangesNothing(t *testing.T) {
-	t.Parallel()
+	guardtest.NextVersion(t, false) // a breaking version 2: the build has one version
 	latest := guard.LatestVersion()
 	g := newOlderGuard(t, latest-1)
 	r := g.upgrade(t, g.d.URL, "", "--dry-run")
@@ -270,7 +270,7 @@ func TestUpgradeDryRunChangesNothing(t *testing.T) {
 // A database default of session_replication_role other than origin is a
 // warning on stderr naming the fix; the plan still runs.
 func TestUpgradeWarnsWhenReplicationRoleIsNotOrigin(t *testing.T) {
-	t.Parallel()
+	guardtest.NextVersion(t, false) // a breaking version 2: the build has one version
 	g := newOlderGuard(t, guard.LatestVersion()-1)
 	g.d.Exec(t, `DO $$ BEGIN EXECUTE format('ALTER DATABASE %I SET session_replication_role = replica', current_database()); END $$`)
 	r := g.upgrade(t, g.d.URL, "", "--dry-run")
@@ -281,7 +281,7 @@ func TestUpgradeWarnsWhenReplicationRoleIsNotOrigin(t *testing.T) {
 }
 
 func TestUpgradeAsksBeforeRunning(t *testing.T) {
-	t.Parallel()
+	guardtest.NextVersion(t, false) // a breaking version 2: the build has one version
 	latest := guard.LatestVersion()
 	g := newOlderGuard(t, latest-1)
 	r := g.upgrade(t, g.d.URL, "n\n")
@@ -296,7 +296,7 @@ func TestUpgradeAsksBeforeRunning(t *testing.T) {
 }
 
 func TestUpgradeRefusesAnotherDatabase(t *testing.T) {
-	t.Parallel()
+	guardtest.NextVersion(t, false) // a breaking version 2: the build has one version
 	latest := guard.LatestVersion()
 	g := newOlderGuard(t, latest-1)
 	other := guardtest.New(t)
@@ -331,16 +331,17 @@ func TestUpgradeRefusesAGuardItCannotUpgrade(t *testing.T) {
 		require.Contains(t, r.stderr, "basalt init")
 		require.Equal(t, 0, g.version(t))
 	})
-	t.Run("operated by the agent", func(t *testing.T) {
-		t.Parallel()
-		g := newOlderGuard(t, guard.LatestVersion()-1)
-		g.writeConfig(t, "AGENT")
-		r := g.upgrade(t, g.d.URL, "", "--yes")
-		require.Equal(t, exitError, r.code)
-		require.Contains(t, r.stderr, "basalt init --remote --agent bot")
-		require.NotContains(t, r.stderr, "Admin connection string")
-		require.Equal(t, guard.LatestVersion()-1, g.version(t))
-	})
+}
+
+func TestUpgradeRefusesAGuardOperatedByTheAgent(t *testing.T) {
+	guardtest.NextVersion(t, false) // a breaking version 2: the build has one version
+	g := newOlderGuard(t, guard.LatestVersion()-1)
+	g.writeConfig(t, "AGENT")
+	r := g.upgrade(t, g.d.URL, "", "--yes")
+	require.Equal(t, exitError, r.code)
+	require.Contains(t, r.stderr, "basalt init --remote --agent bot")
+	require.NotContains(t, r.stderr, "Admin connection string")
+	require.Equal(t, guard.LatestVersion()-1, g.version(t))
 }
 
 func TestUpgradeUsage(t *testing.T) {

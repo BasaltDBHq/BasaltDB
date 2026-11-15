@@ -141,10 +141,9 @@ func fakeEngine(t *testing.T, report agent.StatusReport, target person.TargetDTO
 	path := filepath.Join(dir, "person.sock")
 	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
 	require.NoError(t, err)
-	const personUID = 4242
 	srv := person.NewServer(person.Options{
-		Allow:   []uint32{personUID},
-		PeerUID: func(*net.UnixConn) (uint32, error) { return personUID, nil },
+		Allow:   []uint32{personUIDForTest},
+		PeerUID: func(*net.UnixConn) (uint32, error) { return personUIDForTest, nil },
 		Log:     slog.New(slog.DiscardHandler),
 		Info: map[string]person.AgentInfo{"bot": {
 			Status: func(context.Context) (json.RawMessage, error) { return json.Marshal(report) },

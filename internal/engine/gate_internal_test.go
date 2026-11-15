@@ -38,10 +38,17 @@ func TestThePersonSocketAppliesNothingOnAnOutdatedGuard(t *testing.T) {
 	path := filepath.Join(dir, "person.sock")
 	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
 	require.NoError(t, err)
+	// The recorded person: never this process's own uid, which the socket
+	// refuses even when recorded.
+	const fakePersonUID = 4242
+	personUID := uint32(fakePersonUID)
+	if personUID == uint32(os.Getuid()) {
+		personUID++
+	}
 	srv := person.NewServer(person.Options{
-		Allow: []uint32{4242}, Agents: map[string]person.Ledger{"bot": gatedLedger{admit: outdated}},
+		Allow: []uint32{personUID}, Agents: map[string]person.Ledger{"bot": gatedLedger{admit: outdated}},
 		AgentUIDs: map[string]uint32{"bot": 5001},
-		PeerUID:   func(*net.UnixConn) (uint32, error) { return 4242, nil }, Log: slog.New(slog.DiscardHandler),
+		PeerUID:   func(*net.UnixConn) (uint32, error) { return personUID, nil }, Log: slog.New(slog.DiscardHandler),
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})

@@ -86,8 +86,20 @@ func (emptyLedger) ListRevertLines(context.Context, ledger.RevertLineParams) (pa
 	return pagination.Page[ledger.RevertLine]{}, nil
 }
 
-// personUIDForTest stands in for the person's OS user.
-const personUIDForTest = 4242
+// fakePersonUID stands in for the person's OS user.
+const fakePersonUID = 4242
+
+// personUIDForTest is fakePersonUID, never this process's own uid, which the
+// person socket refuses even when recorded.
+var personUIDForTest = otherUID(fakePersonUID)
+
+// otherUID is uid, or the next uid when uid is this process's own.
+func otherUID(uid uint32) uint32 {
+	if uid == uint32(os.Getuid()) {
+		return uid + 1
+	}
+	return uid
+}
 
 // personSocket serves agent bot on a person socket in a short temp dir,
 // seeing every peer as peer.

@@ -54,7 +54,7 @@ jobs:
           RELEASE_KIND: ${{ env.RELEASE_KIND }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PUBLISH_HOMEBREW: ${{ vars.PUBLISH_HOMEBREW == 'true' && 'true' || 'false' }}
-          HOMEBREW_TAP_GITHUB_TOKEN: ${{ vars.PUBLISH_HOMEBREW == 'true' && secrets.HOMEBREW_TAP_GITHUB_TOKEN || '' }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ vars.PUBLISH_HOMEBREW == 'true' && secrets.HOMEBREW_TAP_GITHUB_TOKEN_BASALTDB || '' }}
           HOMEBREW_TAP_OWNER: ${{ vars.HOMEBREW_TAP_OWNER }}
           HOMEBREW_TAP_NAME: ${{ vars.HOMEBREW_TAP_NAME }}
 

@@ -103,7 +103,7 @@ A tag publishes the GitHub Release (binaries, packages, `SHA256SUMS`, `portal.sh
 
 | Channel | Variable | Secret it needs | Notes |
 |---------|----------|-----------------|-------|
-| Homebrew | `PUBLISH_HOMEBREW` | `HOMEBREW_TAP_GITHUB_TOKEN` (write access to the tap) | Tap defaults to `BasaltDBHq/homebrew-tap`; override with the variables `HOMEBREW_TAP_OWNER` / `HOMEBREW_TAP_NAME`. Install: `brew install basaltdbhq/tap/basaltdb`. |
+| Homebrew | `PUBLISH_HOMEBREW` | `HOMEBREW_TAP_GITHUB_TOKEN_BASALTDB` (write access to the tap) | Tap defaults to `BasaltDBHq/homebrew-tap`; override with the variables `HOMEBREW_TAP_OWNER` / `HOMEBREW_TAP_NAME`. Install: `brew install basaltdbhq/tap/basaltdb`. |
 | npm | `PUBLISH_NPM` | `NPM_TOKEN` | Scope `@basaltdb`, owned by the personal npm account `basaltdb` (unscoped `basaltdb` is a different product). Publishes `@basaltdb/cli` and `@basaltdb/{linux-x64,linux-arm64,darwin-x64,darwin-arm64}` with `--access public`. Prereleases use the dist-tag `alpha`/`beta`/`rc`, not `latest`. |
 | MCP registry | `PUBLISH_MCP_REGISTRY` | `MCP_REGISTRY_TOKEN` | `server.json` name and npm `mcpName` are `io.github.basaltdbhq/basaltdb`. Runs after the npm job when npm is on, and alone when npm is off; the registry entry points at the npm package, so that package must already exist. |
 

@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.0.1-alpha.2] - 2026-11-15
+
+### Fixed
+
+- A connection to the vault that BasaltDB ends itself, for example after the link is rotated, ended, or a session times out, now closes with its reason (such as `LINK_REFUSED` or `TIMEOUT`) instead of an abnormal closure without a code. The session always ended; only the reason could be lost.
+- A data race in the vault session's idle timeout, seen only with very short idle timeouts (the default is 5 minutes).
+
+### Changed
+
+- Release binaries are built with Go 1.26.11, the toolchain set in `go.mod`, instead of Go 1.26.0.
+
 ## [0.0.1-alpha.1] - 2026-11-15
 
 ### Fixed

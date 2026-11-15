@@ -31,6 +31,8 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      - name: go matches the toolchain line
+        run: test "$(go env GOVERSION)" = "$(awk '/^toolchain /{print $2}' go.mod)"
       - run: make lint
 
   vet:
@@ -41,6 +43,8 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      - name: go matches the toolchain line
+        run: test "$(go env GOVERSION)" = "$(awk '/^toolchain /{print $2}' go.mod)"
       - run: make vet shard-check
 
   scripts:
@@ -88,6 +92,8 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      - name: go matches the toolchain line
+        run: test "$(go env GOVERSION)" = "$(awk '/^toolchain /{print $2}' go.mod)"
       # The trusted-path checks refuse a directory below one that group or
       # others can write, as /tmp is (mode 1777), so the tests' temp files go
       # below a directory only the runner's user can write.
@@ -157,6 +163,8 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      - name: go matches the toolchain line
+        run: test "$(go env GOVERSION)" = "$(awk '/^toolchain /{print $2}' go.mod)"
       - uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser

@@ -46,12 +46,18 @@ type Fallback interface {
 // forever. When in ends, the write side of the socket is closed so the
 // engine finishes its answers; Serve returns after them, or when ctx is
 // done. An engine connection that ends in an error other than a clean close
-// is reported when it is the last one.
+// is reported when it is the last one, and so is the engine's refusal of
+// this OS user, even when that connection ended before a request reached it:
+// the requests it declined are answered with the refusal.
 func Serve(ctx context.Context, socketPath string, fallback Fallback, in io.Reader, out io.Writer) error {
 	if fallback == nil {
 		panic("shim: fallback server required")
 	}
-	r := &relay{path: socketPath, fallback: fallback, out: &lineWriter{w: out}, files: defaultRequestFiles()}
+	return serve(ctx, &relay{path: socketPath, fallback: fallback, out: &lineWriter{w: out}, files: defaultRequestFiles(), dial: dial}, in)
+}
+
+// serve is Serve on r.
+func serve(ctx context.Context, r *relay, in io.Reader) error {
 	defer r.close()
 
 	lines := make(chan []byte)
@@ -104,30 +110,43 @@ type relay struct {
 	sess     *session
 	// files writes the request files of hash links (request_files.go).
 	files requestFiles
+	// dial opens a session with the engine (dial; tests wrap it).
+	dial func(ctx context.Context, path string, out *lineWriter, fallback Fallback, files requestFiles) (*session, error)
+	// refusal is the engine's refusal of the last session that ended, ""
+	// when that session was admitted or there was none.
+	refusal string
 }
 
 // send forwards line to the engine, dialing when there is no live
 // connection, or answers it from the fallback when the engine does not take
-// it.
+// it. A connection the engine refused before it could take line (its
+// refusal and close came first) answers line with that refusal.
 func (r *relay) send(ctx context.Context, line []byte) error {
 	if r.sess != nil && r.sess.forward(line) {
 		return nil
 	}
 	r.close()
-	sess, err := dial(ctx, r.path, r.out, r.fallback, r.files)
+	sess, err := r.dial(ctx, r.path, r.out, r.fallback, r.files)
 	if err == nil {
 		r.sess = sess
 		if sess.forward(line) {
 			return nil
 		}
 		r.close()
+		if r.refusal != "" {
+			return refuse(r.out, line, r.refusal)
+		}
 	}
 	return r.fallback.ServeLine(ctx, r.out, line)
 }
 
 // finish closes the write side of a live connection and waits for the
-// engine's last answers.
+// engine's last answers. With no live connection it reports the refusal of
+// the last one, if the engine refused it.
 func (r *relay) finish(ctx context.Context) error {
+	if r.sess == nil && r.refusal != "" {
+		return errors.New(r.refusal)
+	}
 	if r.sess == nil {
 		return nil
 	}
@@ -146,6 +165,7 @@ func (r *relay) close() {
 	}
 	r.sess.conn.Close()
 	<-r.sess.done
+	r.refusal = r.sess.refusal // read only once the session is done
 	r.sess = nil
 }
 
@@ -223,12 +243,22 @@ func (s *session) abandon(ctx context.Context, out *lineWriter) {
 	s.pending = nil
 	s.mu.Unlock()
 	for _, line := range left {
-		if req, ok := mcp.RequestOf(line); ok && s.refusal != "" {
-			_ = mcp.WriteError(out, req.ID, mcp.ErrCodeServer, s.refusal)
+		if s.refusal != "" {
+			_ = refuse(out, line, s.refusal)
 			continue
 		}
 		_ = s.fallback.Abandoned(context.WithoutCancel(ctx), out, line)
 	}
+}
+
+// refuse answers a request with the engine's refusal of this OS user; any
+// other message gets no answer.
+func refuse(out io.Writer, line []byte, refusal string) error {
+	req, ok := mcp.RequestOf(line)
+	if !ok {
+		return nil
+	}
+	return mcp.WriteError(out, req.ID, mcp.ErrCodeServer, refusal)
 }
 
 // forward hands line to the engine and reports whether the session took

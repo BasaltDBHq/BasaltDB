@@ -18,6 +18,10 @@ The first public alpha, for macOS and Linux (amd64 and arm64). Expect bugs and b
 - The CLI: `init`, `status`, `log`, `revert`, `upgrade`, `uninstall`, `service` and `classify`.
 - Setup for an agent on another machine, with a setup code (`basalt init --remote`).
 
+### Changed
+
+- The guard's schema is kept as SQL files under one version, 1 (`internal/guard/schema/`).
+
 ### Known limits
 
 - Windows is not built yet.

@@ -2,7 +2,6 @@ package setupcode
 
 import (
 	"encoding/base64"
-	"fmt"
 	"regexp"
 	"time"
 	"unicode"
@@ -203,18 +202,11 @@ func (p Payload) validateExpiry() error {
 	return nil
 }
 
-// EngineGuardVersion is the first basalt_meta version that records engine
-// keys: a code that carries one must upgrade to at least it.
-const EngineGuardVersion = 33
-
-// validateEngine checks the engine part: a guard that can record it, and a
-// P-256 SPKI with an uncompressed point on the curve.
+// validateEngine checks the engine part: a P-256 SPKI with an
+// uncompressed point on the curve. Every guard version records engine keys.
 func (p Payload) validateEngine() error {
 	if p.Engine == nil {
 		return nil
-	}
-	if p.Guard.To < EngineGuardVersion {
-		return invalid(fmt.Sprintf("engine needs guard.to %d or later", EngineGuardVersion))
 	}
 	if _, err := p.Engine.Key(); err != nil {
 		return invalid("engine.publicKey is not a P-256 public key")

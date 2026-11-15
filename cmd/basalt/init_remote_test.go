@@ -529,7 +529,7 @@ func runCode(t *testing.T, d *guardtest.DB, p setupcode.Payload) {
 }
 
 func TestInitRemoteAgainstTheDatabase(t *testing.T) {
-	t.Parallel()
+	guardtest.NextVersion(t, false) // a breaking version 2: the build has one version
 	d, dbURL := remoteDB(t)
 	cfg := tempConfig(t)
 	base := []string{"--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix}

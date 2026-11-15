@@ -40,7 +40,7 @@ const (
 	maxRoleLen           = 63              // NAMEDATALEN - 1
 	setupLifetime        = 24 * time.Hour  // CO-13
 	setupClockSkew       = 5 * time.Minute // tolerated clock difference (RI-13)
-	setupMinGuardVersion = 16              // the first guard with record_setup
+	setupMinGuardVersion = 1               // the first guard with record_setup
 	refusalNotSetupCode  = "NOT_A_SETUP_CODE"
 	refusalUnsupported   = "UNSUPPORTED_FORMAT"
 	refusalDamaged       = "DAMAGED"

@@ -58,7 +58,7 @@ scripts/       release and packaging scripts
 
 - **DML and queries we write** (ledger, approvals, catalog reads): query builder **github.com/Masterminds/squirrel** with **`PlaceholderFormat(sq.Dollar)`**. Plain SQL strings only for: CTEs, complex aggregations, catalog queries that squirrel cannot express, DDL, triggers and PL/pgSQL. Each raw-SQL site gets a one-line comment saying why.
 - **Agent SQL** is never rewritten by string concatenation. It is parsed with `libpg_query` (pure-Go wasm build), classified, and refused or run as given with bound parameters. One exception, for recorded reads (M1.5): `query` appends version columns (`xmin` and the primary key of guarded tables in the `FROM`) through the parse tree and deparses, strips them from the result, and records the agent's own text. If that rewritten statement fails to plan, the original runs as given and the read is recorded without versions.
-- **DDL, triggers, PL/pgSQL** (the guard install): not squirrel. Keep it in a **`schema.go`**-style file with backtick SQL and **`fmt.Sprintf` limited to validated identifiers** (quote with `pgx.Identifier{…}.Sanitize()` or equivalent), readable for humans; no string-slice soup in install code.
+- **DDL, triggers, PL/pgSQL** (the guard install): not squirrel. The guard's schema lives in **`.sql` files under `internal/guard/schema/`** (embedded, run in name order; one schema version, 1); other install SQL is backtick SQL in Go with **`fmt.Sprintf` limited to validated identifiers** (quote with `pgx.Identifier{…}.Sanitize()` or equivalent), readable for humans; no string-slice soup in install code.
 - Everything installed lives in `basalt_meta` and must be removable with `DROP SCHEMA basalt_meta CASCADE`.
 - Every `basalt_meta` function declares `SET search_path = pg_catalog, pg_temp` (`pg_temp` last, or the caller's temporary tables shadow the catalog) and writes catalog relations as `pg_catalog.<name>` and the guard's own tables, views, types and functions as `basalt_meta.<name>`, so no name depends on `search_path`. Tests in `internal/guard/search_path_test.go` hold every function to it. Install SQL is idempotent. Session settings use the `basalt.` prefix with `SET LOCAL`.
 - Open every Postgres connection (pool or single) through **`internal/pgdial`**, never `pgx.Connect` or `pgxpool.ParseConfig` directly: it sets pgx `QueryExecModeExec` so Basalt works through transaction-mode poolers (Supavisor 6543, PgBouncer).
@@ -69,7 +69,7 @@ scripts/       release and packaging scripts
 
 Read **this file before implementing**; do not introduce conventions that conflict with it.
 
-- **SQL:** squirrel with `sq.Dollar` for DML; `schema.go`-style backtick SQL with validated identifiers for DDL and triggers.
+- **SQL:** squirrel with `sq.Dollar` for DML; `.sql` files under `internal/guard/schema/`, or backtick SQL with validated identifiers, for DDL and triggers.
 - **Magic numbers:** name them; **`mnd`** is enabled in CI. Use named constants and a short comment when helpful (e.g. Postgres identifier max length **`NAMEDATALEN` − 1**, the 10/50 row limits).
 - **Control flow:** early returns and flat structure over deep nesting; type asserts **`if v, ok := x.(T); !ok { return err }`**. No silent skip on a failed assertion unless intentional and **commented**.
 - **DRY:** do not copy-paste the same non-trivial block across branches in a function; extract a small private helper when the same logic appears twice or more. **Mandatory** for reviews and audits.

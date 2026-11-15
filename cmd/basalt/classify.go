@@ -20,9 +20,6 @@ import (
 // this run only and never written. No value from the person's tables is
 // printed, logged or written: the review carries names and counts.
 
-// piiGuardVersion is the first basalt_meta version with PII classification.
-const piiGuardVersion = 15
-
 // Review modes (--review).
 const (
 	reviewChanged = "changed"
@@ -174,7 +171,7 @@ func classifyGuard(c *cliIO, conn *pgx.Conn) (guard.Names, error) {
 		return guard.Names{}, err
 	}
 	switch latest := guard.LatestVersion(); {
-	case installed < piiGuardVersion || prefix == "":
+	case installed == 0 || prefix == "":
 		return guard.Names{}, fmt.Errorf("guard schema v%d has no PII classification; run basalt init again to upgrade it (same flags as before)", installed)
 	case installed > latest:
 		return guard.Names{}, newerGuardError(installed, latest)

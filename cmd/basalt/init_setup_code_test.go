@@ -147,11 +147,6 @@ func TestInitSetupCodeRefusesBeforeTheDatabase(t *testing.T) {
 	require.NoError(t, err)
 	// An admin string that cannot connect: none of these refusals connects.
 	const admin = "postgres://admin:adminsecret@127.0.0.1:1/app"
-	old := install.payload
-	old.Guard.From, old.Guard.To = 0, setupcode.MinGuardVersion-1
-	old.Engine = nil // a code that old carries no engine key
-	oldCode, err := setupcode.Encode(old)
-	require.NoError(t, err)
 
 	for name, tc := range map[string]struct {
 		now  time.Time
@@ -162,8 +157,6 @@ func TestInitSetupCodeRefusesBeforeTheDatabase(t *testing.T) {
 		"from the future": {expires.Add(-48 * time.Hour), install.res.Code, "basalt: This setup code claims a time in the future. Check this computer's clock, or ask bot for a new code.\n"},
 		"not a code":      {time.Time{}, "hello", "basalt: This is not a Basalt setup code.\n"},
 		"damaged":         {time.Time{}, damaged(install.res.Code), "basalt: This setup code is damaged; copy it again.\n"},
-		"guard too old": {time.Time{}, oldCode, "basalt: This setup code is for guard version 15, but setup codes need guard version 16 or later. " +
-			"Ask bot for a new code made with an up-to-date basalt.\n"},
 		"wrapped and wrong host": {
 			time.Time{},
 			install.res.Code[:40] + "\n  " + install.res.Code[40:],
@@ -375,7 +368,7 @@ func TestInitSetupCodeAgentCodeReplacesTheTables(t *testing.T) {
 }
 
 func TestInitSetupCodeUpgrade(t *testing.T) {
-	t.Parallel()
+	guardtest.NextVersion(t, false) // a breaking version 2: the build has one version
 	d, dbURL := remoteDB(t)
 	cfg := tempConfig(t)
 	installed(t, d, dbURL, cfg, "--write", "public.leads")
@@ -398,7 +391,7 @@ func TestInitSetupCodeUpgrade(t *testing.T) {
 }
 
 func TestInitSetupCodeUpgradeWithNothingToUpgrade(t *testing.T) {
-	t.Parallel()
+	guardtest.NextVersion(t, false) // a breaking version 2: the build has one version
 	d, dbURL := remoteDB(t)
 	cfg := tempConfig(t)
 	installed(t, d, dbURL, cfg, "--write", "public.leads")
@@ -420,14 +413,14 @@ func TestInitSetupCodeUpgradeWithNothingToUpgrade(t *testing.T) {
 }
 
 func TestUpgradeDone(t *testing.T) {
-	t.Parallel()
-	upgrade := setupcode.Payload{Kind: setupcode.KindUpgrade, Guard: setupcode.Guard{From: 17, To: 19}}
+	to := guardtest.NextVersion(t, false) // a breaking version 2: the build has one version
+	upgrade := setupcode.Payload{Kind: setupcode.KindUpgrade, Guard: setupcode.Guard{From: to - 1, To: to}}
 	require.False(t, upgradeDone(upgrade, 0), "no guard: the code installs it")
-	require.False(t, upgradeDone(upgrade, 18))
-	require.True(t, upgradeDone(upgrade, 19))
-	require.True(t, upgradeDone(upgrade, 20))
-	agentCode := setupcode.Payload{Kind: setupcode.KindAgent, Guard: setupcode.Guard{From: 19, To: 19}}
-	require.False(t, upgradeDone(agentCode, 19), "only an UPGRADE code is done by the guard alone")
+	require.False(t, upgradeDone(upgrade, to-1))
+	require.True(t, upgradeDone(upgrade, to))
+	require.True(t, upgradeDone(upgrade, to+1))
+	agentCode := setupcode.Payload{Kind: setupcode.KindAgent, Guard: setupcode.Guard{From: to, To: to}}
+	require.False(t, upgradeDone(agentCode, to), "only an UPGRADE code is done by the guard alone")
 }
 
 func TestSetupRefusedMessage(t *testing.T) {

@@ -370,15 +370,13 @@ func TestRevealRevertRowsLargePlan(t *testing.T) {
 	}
 }
 
-// Running version 29 again keeps every revert's nonce and the functions'
-// grants; every approval and revert has its own nonce.
-func TestRevealMigrationIsIdempotent(t *testing.T) {
+// Every approval and revert has its own reveal nonce, of 16 bytes, and a
+// basalt init that changes nothing keeps a revert's.
+func TestEveryApprovalAndRevertHasItsOwnRevealNonce(t *testing.T) {
 	t.Parallel()
 	e := newRevealEnv(t)
 	before := revertRevealNonce(t, e.d, e.prep.RevertID)
-	e.d.Exec(t, `DELETE FROM basalt_meta.schema_version WHERE version >= 29`)
 	e.d.Init(t, guard.AgentSpec{Name: "bot", Write: leads, Read: leads})
-	require.Equal(t, guard.LatestVersion(), scalarOf[int](t, e.d.Admin, `SELECT max(version) FROM basalt_meta.schema_version`))
 	require.Equal(t, before, revertRevealNonce(t, e.d, e.prep.RevertID))
 	require.Zero(t, count(t, e.d.Admin, `SELECT count(approval_id)::int FROM basalt_meta.approvals
 		WHERE octet_length(reveal_nonce) <> 16`))

@@ -94,24 +94,28 @@ func TestInstallsKeepsTheVaultUser(t *testing.T) {
 	require.Equal(t, "alice@example.com", *row.VaultUser)
 }
 
-// An upgrade to version 36 writes the install's row (the time of the
-// upgrade): the migration itself does.
-func TestUpgradeToReinstallsWritesTheInstall(t *testing.T) {
-	t.Parallel()
+// An upgrade keeps the install's row as the install wrote it: every init
+// records the install, and changes nothing for one that has its row.
+func TestUpgradeKeepsTheInstall(t *testing.T) {
 	d := guardtest.New(t).WithDemo(t)
+	next := guardtest.NextVersion(t, false)
 	ctx := context.Background()
-	s, err := guard.PlanInit(ctx, d.Admin, guard.InitOptions{Names: d.Names, UpTo: guard.VersionPinnedReverts})
-	require.NoError(t, err)
-	require.NoError(t, pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return s.Apply(ctx, tx) }))
-	require.Zero(t, count(t, d.Admin, `SELECT count(1)::int FROM pg_class WHERE oid = to_regclass('basalt_meta.installs')`))
-
-	s, err = guard.PlanInit(ctx, d.Admin, guard.InitOptions{Names: d.Names})
-	require.NoError(t, err)
-	require.NoError(t, pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return s.Apply(ctx, tx) }))
+	apply := func(upTo int) {
+		s, err := guard.PlanInit(ctx, d.Admin, guard.InitOptions{Names: d.Names, UpTo: upTo})
+		require.NoError(t, err)
+		require.NoError(t, pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error { return s.Apply(ctx, tx) }))
+	}
+	apply(next - 1)
 	install, err := guard.InstallID(ctx, d.Admin)
 	require.NoError(t, err)
-	_, ok := readInstall(t, d, install)
+	before, ok := readInstall(t, d, install)
 	require.True(t, ok)
+
+	apply(0)
+	require.Equal(t, next, scalarOf[int](t, d.Admin, `SELECT max(version) FROM basalt_meta.schema_version`))
+	after, ok := readInstall(t, d, install)
+	require.True(t, ok)
+	require.Equal(t, before, after)
 }
 
 // After a pg_restore installs has no row for the new schema: the next

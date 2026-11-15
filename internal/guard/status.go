@@ -56,8 +56,8 @@ func (s Status) Served() bool {
 
 // AgentStatus reads the guard q (an agent connection) sees and compares it
 // with migs. A missing version is one of migs not recorded in
-// schema_version; an agent that cannot read schema_version has a guard from
-// before versionAgentVersion, so every version from there on is missing.
+// schema_version. Every version lets agents read schema_version, so an agent
+// that cannot read it has no version this build knows: all are missing.
 func AgentStatus(ctx context.Context, q Querier, migs []Migration) (Status, error) {
 	st := Status{Build: buildVersion(migs)}
 	var exists, readable bool
@@ -127,15 +127,11 @@ func stateOf(st Status) string {
 	return GuardOK
 }
 
-// installedVersions are the versions recorded in schema_version, or, when
-// the agent may not read it, every version before versionAgentVersion.
+// installedVersions are the versions recorded in schema_version, or none
+// when the agent may not read it.
 func installedVersions(ctx context.Context, q Querier, readable bool) ([]int, error) {
 	if !readable {
-		out := make([]int, 0, versionAgentVersion-1)
-		for v := versionGuard; v < versionAgentVersion; v++ {
-			out = append(out, v)
-		}
-		return out, nil
+		return nil, nil
 	}
 	sql, args, err := psql.Select("version").From("basalt_meta.schema_version").OrderBy("version").ToSql()
 	if err != nil {

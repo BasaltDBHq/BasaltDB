@@ -17,8 +17,11 @@ func TestEveryMigrationIsListedBreakingByDefault(t *testing.T) {
 	for i, m := range migs {
 		require.Equal(t, i+1, m.Version)
 	}
+	require.True(t, migs[0].Breaking, "version 1 is the whole guard")
 }
 
+// AgentStatus judges a real guard against a build's migrations: this
+// build's, plus a version 2 the guard does not have, breaking or not.
 func TestAgentStatus(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
@@ -32,55 +35,47 @@ func TestAgentStatus(t *testing.T) {
 	require.Equal(t, guard.Status{State: guard.GuardOK, Installed: latest, Build: latest}, st)
 	require.True(t, st.Served())
 
-	// A breaking version in the middle not recorded: missing, though newer
-	// ones are.
-	gap := 0
-	for _, m := range migs[:len(migs)-1] {
-		if m.Breaking {
-			gap = m.Version
-		}
-	}
-	require.NotZero(t, gap)
-	d.Exec(t, `DELETE FROM basalt_meta.schema_version WHERE version = $1`, gap)
-	st, err = guard.AgentStatus(ctx, a.Conn, migs)
+	// A build with a breaking version the guard lacks: outdated.
+	next := latest + 1
+	build := append(append([]guard.Migration(nil), migs...), guard.Migration{Version: next, Breaking: true})
+	st, err = guard.AgentStatus(ctx, a.Conn, build)
 	require.NoError(t, err)
-	require.Equal(t, guard.GuardOutdated, st.State)
-	require.Equal(t, []int{gap}, st.MissingBreaking)
-	require.Equal(t, latest, st.Installed)
+	require.Equal(t, guard.Status{State: guard.GuardOutdated, Installed: latest, Build: next, MissingBreaking: []int{next}}, st)
 	require.False(t, st.Served())
 
-	// The same gap in a non-breaking migration only: served.
-	nonBreaking := append([]guard.Migration(nil), migs...)
-	nonBreaking[gap-1].Breaking = false
-	st, err = guard.AgentStatus(ctx, a.Conn, nonBreaking)
+	// The same version flagged non-breaking: served, with the upgrade available.
+	build[len(build)-1].Breaking = false
+	st, err = guard.AgentStatus(ctx, a.Conn, build)
 	require.NoError(t, err)
-	require.Equal(t, guard.GuardUpgradeAvailable, st.State)
-	require.Equal(t, []int{gap}, st.MissingNonBreaking)
-	require.Empty(t, st.MissingBreaking)
+	require.Equal(t, guard.Status{State: guard.GuardUpgradeAvailable, Installed: latest, Build: next, MissingNonBreaking: []int{next}}, st)
 	require.True(t, st.Served())
 
+	// A breaking version in the middle not recorded: missing, though a newer
+	// one is.
+	d.Exec(t, `INSERT INTO basalt_meta.schema_version (version) VALUES ($1)`, next)
+	d.Exec(t, `DELETE FROM basalt_meta.schema_version WHERE version = $1`, latest)
+	st, err = guard.AgentStatus(ctx, a.Conn, build)
+	require.NoError(t, err)
+	require.Equal(t, guard.GuardOutdated, st.State)
+	require.Equal(t, []int{latest}, st.MissingBreaking)
+	require.Equal(t, next, st.Installed)
+	require.False(t, st.Served())
+
 	// A guard newer than the build.
-	d.Exec(t, `INSERT INTO basalt_meta.schema_version (version) VALUES ($1), ($2)`, gap, latest+1)
+	d.Exec(t, `INSERT INTO basalt_meta.schema_version (version) VALUES ($1)`, latest)
 	st, err = guard.AgentStatus(ctx, a.Conn, migs)
 	require.NoError(t, err)
 	require.Equal(t, guard.GuardNewer, st.State)
 	require.True(t, st.Served())
 
-	// A guard from before agents could read schema_version: every later
-	// version is missing.
+	// An agent that cannot read schema_version, which every version grants
+	// it: every version is missing.
 	d.Exec(t, `REVOKE SELECT ON basalt_meta.schema_version FROM `+d.Names.Agents())
-	st, err = guard.AgentStatus(ctx, a.Conn, migs)
+	st, err = guard.AgentStatus(ctx, a.Conn, build)
 	require.NoError(t, err)
-	require.Equal(t, guard.GuardOutdated, st.State)
-	const agentsReadVersion = 13 // versionAgentVersion: agents read schema_version from here on
-	for _, m := range migs[agentsReadVersion-1:] {
-		missing := st.MissingNonBreaking
-		if m.Breaking {
-			missing = st.MissingBreaking
-		}
-		require.Contains(t, missing, m.Version)
-	}
-	require.NotContains(t, st.MissingBreaking, 1)
+	require.Equal(t, guard.Status{
+		State: guard.GuardOutdated, Build: next, MissingBreaking: []int{latest}, MissingNonBreaking: []int{next},
+	}, st)
 }
 
 func TestAgentStatusNoGuard(t *testing.T) {

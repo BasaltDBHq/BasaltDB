@@ -43,34 +43,17 @@ func guardWithout(t *testing.T, version int, migs []guard.Migration) (harness, *
 	return harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, d
 }
 
-// withNonBreaking is migs with version flagged non-breaking.
-func withNonBreaking(migs []guard.Migration, version int) []guard.Migration {
-	out := append([]guard.Migration(nil), migs...)
-	for i := range out {
-		if out[i].Version == version {
-			out[i].Breaking = false
-		}
-	}
-	return out
-}
-
-// latestBreaking is the newest version this build flags breaking.
-func latestBreaking(t *testing.T) int {
-	t.Helper()
-	migs := guard.Migrations()
-	for i := len(migs) - 1; i >= 0; i-- {
-		if migs[i].Breaking {
-			return migs[i].Version
-		}
-	}
-	t.Fatal("no breaking migration")
-	return 0
+// nextBuild is this build's migrations and one more version, the one a
+// real guard lacks, as an engine built with it sees the guard.
+func nextBuild(breaking bool) (int, []guard.Migration) {
+	next := guard.LatestVersion() + 1
+	return next, append(guard.Migrations(), guard.Migration{Version: next, Breaking: breaking})
 }
 
 func TestAGuardMissingABreakingMigrationServesOnlyStatus(t *testing.T) {
 	t.Parallel()
-	latest := latestBreaking(t)
-	h, d := guardWithout(t, latest, guard.Migrations())
+	latest, build := nextBuild(true)
+	h, d := guardWithout(t, latest, build)
 
 	for _, tool := range []struct {
 		name string
@@ -105,8 +88,8 @@ func TestAGuardMissingABreakingMigrationServesOnlyStatus(t *testing.T) {
 
 func TestAGuardMissingOnlyANonBreakingMigrationIsServedWithTheWarning(t *testing.T) {
 	t.Parallel()
-	latest := guard.LatestVersion()
-	h, _ := guardWithout(t, latest, withNonBreaking(guard.Migrations(), latest))
+	latest, build := nextBuild(false)
+	h, _ := guardWithout(t, latest, build)
 	requireServedWithTheWarning(t, h, latest)
 }
 

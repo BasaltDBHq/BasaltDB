@@ -66,7 +66,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["publicKey"],
-      "description": "Planned (M4.1, CONTRACT.md, The setup code and Direct transport). The engine's identity, which the person's computer records in basalt_meta (version 33) with the address given as --engine-url, never in the code. Optional in every kind. A code with engine and guard.to below 33 is INVALID, as is a key that is not an uncompressed P-256 point on the curve.",
+      "description": "Planned (M4.1, CONTRACT.md, The setup code and Direct transport). The engine's identity, which the person's computer records in basalt_meta with the address given as --engine-url, never in the code. Optional in every kind. A code with an engine key that is not an uncompressed P-256 point on the curve is INVALID.",
       "properties": {
         "publicKey": {
           "type": "string",

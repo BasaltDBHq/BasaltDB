@@ -170,7 +170,11 @@ func (cn *conn) handshake(ctx context.Context, ss *session, msg []byte) error {
 	now := o.Now()
 	est.lastFrame.Store(now.UnixNano())
 	lifetime := min(o.SessionLifetime, link.ExpiresAt.Sub(now))
+	// The idle check reads est.idle from its own goroutine; mu makes the
+	// timer it resets the one assigned here, however soon it fires.
+	est.mu.Lock()
 	est.idle = time.AfterFunc(o.IdleTimeout, func() { cn.idleCheck(ss.id, est) })
+	est.mu.Unlock()
 	est.life = time.AfterFunc(max(lifetime, 0), func() { cn.endAsync(ss.id, channel.ErrTimeout) })
 	ok, code := cn.sessions.establish(ss, est)
 	if !ok {
@@ -519,7 +523,9 @@ func (cn *conn) idleCheck(id sid, e *established) {
 		cn.endAsync(id, channel.ErrTimeout)
 		return
 	}
+	e.mu.Lock()
 	e.idle.Reset(o.IdleTimeout - since)
+	e.mu.Unlock()
 }
 
 // end ends session id with code: it stops what the session runs and tells

@@ -33,12 +33,28 @@ import (
 )
 
 // Uids of the cases: the recorded person, the agent's OS user and a third
-// local user.
-const (
-	personUID = 1001
-	agentUID  = 1002
-	otherUID  = 1003
-)
+// local user. They stand in for other OS users, so none may be root or this
+// process's own uid, which the server refuses even when recorded (a CI
+// runner's user is often uid 1001).
+var personUID, agentUID, otherUID = fakeUIDs()
+
+// firstFakeUID is the first uid fakeUIDs considers.
+const firstFakeUID uint32 = 1001
+
+// fakeUIDs returns three distinct uids from firstFakeUID on, skipping this
+// process's own.
+func fakeUIDs() (person, agent, other uint32) {
+	self := uint32(os.Getuid())
+	var uids [3]uint32
+	n := 0
+	for uid := firstFakeUID; n < len(uids); uid++ {
+		if uid != self {
+			uids[n] = uid
+			n++
+		}
+	}
+	return uids[0], uids[1], uids[2]
+}
 
 // fakeLedger answers every call from its fields and counts the calls, so a
 // test can tell a refused connection reached nothing.

@@ -30,14 +30,22 @@ jobs:
       BASALTDB_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/basalt_test?sslmode=disable
     steps:
       - uses: actions/checkout@v4
+      # 22 or later: the portal page tests use Node's global WebSocket.
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # The trusted-path checks refuse a directory below one that group or
+      # others can write, as /tmp is (mode 1777), so the tests' temp files go
+      # below a directory only the runner's user can write.
       - name: ci
-        run: make ci
+        run: |
+          export TMPDIR="$HOME/.cache/basalt-tmp"
+          mkdir -p "$TMPDIR"
+          chmod 700 "$TMPDIR"
+          make ci
 
   # basalt engine --user in containers without systemd: the privilege drop as
   # root on every thread, then the compose example end to end (setup,

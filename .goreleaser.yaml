@@ -12,20 +12,14 @@ builds:
     main: ./cmd/basalt
     binary: basalt
     env: [CGO_ENABLED=0]
-    goos: [linux, darwin, windows]
+    goos: [linux, darwin]
     goarch: [amd64, arm64]
-    ignore:
-      - goos: windows
-        goarch: arm64
     flags: [-trimpath]
     ldflags:
       - -s -w -X github.com/basaltdbhq/basaltdb/internal/buildinfo.Version={{.Env.BASALT_VERSION}}
 
 archives:
   - formats: [tar.gz]
-    format_overrides:
-      - goos: windows
-        formats: [zip]
     # Flat archives so install.sh can copy binaries from the extract root.
     wrap_in_directory: false
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"

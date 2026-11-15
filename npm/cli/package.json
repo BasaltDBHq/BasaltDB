@@ -27,7 +27,6 @@
     "@basaltdb/linux-x64": "0.0.0-dev",
     "@basaltdb/linux-arm64": "0.0.0-dev",
     "@basaltdb/darwin-x64": "0.0.0-dev",
-    "@basaltdb/darwin-arm64": "0.0.0-dev",
-    "@basaltdb/win32-x64": "0.0.0-dev"
+    "@basaltdb/darwin-arm64": "0.0.0-dev"
   }
 }

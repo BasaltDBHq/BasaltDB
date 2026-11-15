@@ -1,6 +1,6 @@
 # Install guide
 
-From nothing to your agent's first guarded write, in about three minutes. It works with Supabase and with any plain Postgres you can log in to as an admin (RDS, Neon, self-hosted).
+From nothing to your agent's first guarded write, in about three minutes. It works with Supabase and with any plain Postgres you can log in to as an admin (RDS, self-hosted).
 
 You need:
 

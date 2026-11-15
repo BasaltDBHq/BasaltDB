@@ -1,14 +1,25 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/basalt-lockup-on-dark.svg">
+    <img src="docs/assets/basalt-lockup.svg" alt="Basalt" width="240">
+  </picture>
+</p>
+
 # BasaltDB
 
-**BasaltDB is the action ledger for AI agents on your database.** It is not a database: your data stays in your own Postgres.
+**Make agent mistakes reversible.** BasaltDB is the action ledger for AI agents on your database. It is not a database: your data stays in your own Postgres.
 
-Every action an agent takes is recorded with who did it, why, what it saw and what it changed. That record is what lets BasaltDB preview an action, stop it, ask a person, and undo it.
+Every action an agent takes is recorded with who did it, why, what it saw and what it changed. That record is what lets a person preview an action, stop it and undo it.
 
-BasaltDB is an open-source hobby project, built in public. **It is not usable yet.** The repo is at milestone M0 (reset); see [Status](#status).
+> **Status: early.** BasaltDB works end to end on Postgres, but there is no release download yet: you build it from source with Go 1.26. Expect breaking changes. See [Status](#status).
+
+- **Docs:** https://docs.basaltvault.app
+- **Install guide:** [docs/install.md](docs/install.md), from nothing to an agent's first guarded write
+- **Contract:** [CONTRACT.md](CONTRACT.md), the MCP tools, the CLI, the pages and the `basalt_meta` schema
 
 ## Why
 
-People are starting to let agents work on data directly, with no app in between. The app's screens can go; the rules it enforced cannot, so they have to live next to the data.
+People are starting to let agents work on data directly, with no app in between. The app's screens can go. The rules it enforced cannot, so they have to live next to the data.
 
 - **Your data stays in storage you own.** BasaltDB never becomes the place your data lives.
 - **People and agents work on the same data.** A person must be able to see what an agent did, stop what is risky, and take back what was wrong.
@@ -19,19 +30,69 @@ The common advice is "never connect agents to production". BasaltDB is for the c
 
 | It is | It is not |
 |---|---|
-| A guard for a Postgres you already own (Supabase, Neon, RDS, self-hosted) | A database: your data never moves into BasaltDB |
+| A guard for a Postgres you already own (Supabase, RDS, self-hosted) | A database: your data never moves into BasaltDB |
 | One Go binary next to your agent, reached over MCP, plus a guard installed in your database | Agent memory, a sync engine or a vector index |
 | A record of every agent action, kept so it can be reverted | A general logging, tracing or secret-management product |
-| Open source and free | A company |
+| Open source under Apache-2.0, and complete on its own | A hosted service: the engine runs on your machine and the guard in your database |
+
+## Quickstart
+
+You need macOS or Linux with `sudo`, Go 1.26 or newer, a Postgres you own, a browser with a passkey, and an MCP client. The [install guide](docs/install.md) has every prompt and every error; this is the short version.
+
+**1. Build and install `basalt`.** The binary goes in a root-owned directory, because the engine runs it as its own OS user.
+
+```sh
+git clone https://github.com/BasaltDBHq/BasaltDB.git
+cd BasaltDB
+go build -o basalt ./cmd/basalt
+sudo install -d -o root -m 0755 /usr/local/libexec
+sudo install -o root -m 0755 basalt /usr/local/libexec/basalt
+sudo mkdir -p /usr/local/bin
+sudo ln -sf /usr/local/libexec/basalt /usr/local/bin/basalt
+```
+
+**2. Create the sample tables** (skip this if you guard your own). [`examples/demo/seed.sql`](examples/demo/seed.sql) creates a schema `basalt_demo` with 30 leads and 20 notes, and touches nothing else.
+
+**3. Install the guard.** `--write` lists tables the agent may read and write, `--read` tables it may only read.
+
+```sh
+basalt init --agent demo_bot \
+  --write basalt_demo.leads --read basalt_demo.lead_notes
+```
+
+Init asks for your admin connection string once and never stores it. It shows the setup SQL before running it, registers your passkey, and starts the engine as a background service.
+
+**4. Connect your agent.** Any MCP client takes the same command:
+
+```json
+{
+  "mcpServers": {
+    "basalt-demo_bot": {
+      "command": "/usr/local/bin/basalt",
+      "args": ["mcp", "--agent", "demo_bot"]
+    }
+  }
+}
+```
+
+**5. See what it did, and take it back.**
+
+```sh
+basalt log --agent demo_bot --run RUN_ID
+basalt revert --agent demo_bot --run RUN_ID
+```
+
+`revert` prints a link to a page that shows the rows. Nothing is restored until you sign there with your passkey.
+
+To remove everything, run `basalt uninstall`: it drops the `basalt_meta` schema, the guard's triggers and policies, and the `basalt_*` roles.
 
 ## How it works
 
-**Edge engine, guard in the database.** The engine runs next to each agent as its MCP server. Enforcement lives inside your Postgres, so it holds whatever path a write takes.
+**The engine runs next to the agent. The guard runs inside your database.** Enforcement lives in Postgres, so it holds whatever path a write takes.
 
-- **Edge engine.** One Go binary per agent machine, running as its own OS user behind a local socket. It parses SQL with `libpg_query`, refuses what is not allowed, records reads, and holds only that agent's scoped credential. The agent's MCP server is a thin shim that holds no secrets.
-- **Guard in `basalt_meta`.** Agent roles belong to `basalt_agents` and have no DDL rights. Triggers act only for agent roles: they require an intent, record old and new rows in the same transaction, and count rows per action, cascaded rows included. Writes by people and the app are never blocked.
-- **Approvals.** An approval counts only with a valid signature from the person's passkey, checked inside Postgres. Whatever carries the signed approval cannot forge one, and an agent cannot approve its own action.
-- **Cleanup.** Everything lives in the `basalt_meta` schema and is removed with `DROP SCHEMA basalt_meta CASCADE`.
+- **Engine.** One Go binary per agent machine, running as its own OS user behind a local socket. It parses SQL with `libpg_query`, refuses what is not allowed, records reads, and holds only that agent's scoped credential. The agent's MCP server is a thin shim that holds no secrets.
+- **Guard in `basalt_meta`.** Agent roles have no DDL rights. Triggers act only for agent roles: they require an intent, record old and new rows in the same transaction, and count rows per action, cascaded rows included. Writes by people and by your app are never blocked.
+- **Signatures.** A held write or a revert counts only with a valid signature from a person's passkey, checked inside Postgres. Whatever carries the signed request cannot forge one, and an agent cannot sign for itself.
 
 ### Default policy
 
@@ -39,8 +100,8 @@ The common advice is "never connect agents to production". BasaltDB is for the c
 |---|---|
 | `SELECT` | Allowed, within a row limit and a time limit |
 | `INSERT`, `UPDATE` of 1 to 10 rows | Allowed; intent required; old values kept |
-| `INSERT`, `UPDATE` of 11 to 50 rows | Held for approval, with a preview of the rows |
-| Any `DELETE` | Held for approval up to 50 rows; refused above 50 |
+| `INSERT`, `UPDATE` of 11 to 50 rows | Held for a person, with a preview of the rows |
+| Any `DELETE` | Held for a person up to 50 rows; refused above 50 |
 | `CREATE`, `ALTER`, `DROP`, `TRUNCATE` | Refused for agents |
 | Multiple statements, data-changing `WITH`, `COPY`, functions outside an allowlist | Refused |
 
@@ -48,39 +109,52 @@ Rows are counted per action, cascaded rows included. Bulk work over 50 rows belo
 
 ### Undo
 
-A revert is a new set of changes that restores the old values; it never rewrites history. You can revert one change, one run, or one task across agents. **People win:** a row someone changed after the agent is skipped and reported as a conflict, never overwritten. Only a person can revert, within the 30 days old values are kept.
+A revert is a new set of changes that restores the old values. It never rewrites history. You can revert one change, one run, or one task across agents.
+
+**People win.** A row someone changed after the agent is skipped and reported as a conflict, never overwritten. So a revert does not promise to restore every row: it restores the ones nobody has touched since.
+
+Old values are kept for 30 days. After that a row can no longer be reverted.
 
 ## What it does not protect against
 
 - A write that is valid SQL, touches one row, and is wrong for the business. It can only be reverted later.
-- Data an agent read and leaked, for example through prompt injection. Row limits and per-agent table access reduce it; nothing un-leaks it.
+- Data an agent read and leaked, for example through prompt injection. Row limits and per-agent table access limit the damage and leave a trail. Nothing un-leaks it.
 - Actions outside the database taken on bad data: emails sent, payments made.
-- An agent holding a person's or the admin's credential, or sudo on the engine's machine.
+- An agent holding a person's or the admin's credential, or `sudo` on the engine's machine.
 - Downstream systems that already consumed a change before it was reverted.
+
+## Works with
+
+- **Postgres:** Supabase, RDS, and any Postgres you run yourself and can log in to as an admin.
+- **Agents:** any MCP client. The docs cover OpenCode, Claude Code and Codex; [docs/mcp-clients.md](docs/mcp-clients.md) has the configuration for others.
+- **Platforms:** macOS and Linux.
 
 ## Status
 
-Milestones are gated by evidence, not dates.
+What works today, built from source:
 
-| Milestone | Delivers |
-|---|---|
-| **M0. Reset** (in progress) | This README, Apache-2.0, old code removed, a Postgres spike of the guard |
-| M1. Guarded writes | `basalt init`, per-agent role, engine as its own OS user, MCP, SQL parse and classify, intent required, guard triggers, change record, `basalt log` |
-| M1.5. Stale writes | Reads recorded by row version, task ids shared across agents, `STALE_READ` refusal |
-| M2. Approvals | Default policy, a preview that can never commit, passkey approval checked inside Postgres, notification |
-| M3. Revert | Revert by change and by run, preview, people-win conflict checks |
-| M4. Show it | The two-minute demo on a real Supabase project; an [install guide](docs/install.md) |
+- Guarded writes with a stated intent, a per-agent Postgres role, and the engine as its own OS user
+- A record of every read and write, and `basalt log` to read it
+- Refusal of a write based on a row that changed after the agent read it
+- Holds for larger writes and every `DELETE`, signed with a passkey and checked inside Postgres
+- Revert by change, by run and by task, with a preview and conflict checks
+- `basalt status`, `basalt upgrade`, `basalt access` and `basalt uninstall`
 
-The surfaces and their wire rules are specified in [CONTRACT.md](CONTRACT.md).
+Not there yet:
+
+- A release download and an installer. For now you build from source.
+- Setup from a browser alone, for a person without a terminal.
+
+The docs site has the [roadmap](https://docs.basaltvault.app/roadmap/). BasaltVault is a planned paid service for many agents and machines; BasaltDB does not need it.
 
 ## Development
 
-```bash
+```sh
 make help   # list targets
 make ci     # lint, vet and race tests
 ```
 
-Postgres tests need a real Postgres: set `BASALTDB_TEST_POSTGRES_URL`. See [AGENTS.md](AGENTS.md) for code and review rules and [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute.
+Postgres tests need a real Postgres: set `BASALTDB_TEST_POSTGRES_URL`. See [AGENTS.md](AGENTS.md) for code and review rules, [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute, and [SECURITY.md](SECURITY.md) for how to report a vulnerability.
 
 ## Licence
 

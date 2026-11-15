@@ -28,9 +28,15 @@ jobs:
       - name: Refuse non-tag publish
         run: test "$(sh scripts/release-kind.sh "${GITHUB_EVENT_NAME}" "${GITHUB_REF}")" = tag
 
-      - uses: actions/setup-go@v5
+      # setup-go v6 installs the go.mod toolchain line. No Go cache: a
+      # release builds from a clean module and build cache.
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+          cache: false
+
+      - name: go matches the toolchain line
+        run: test "$(go env GOVERSION)" = "$(awk '/^toolchain /{print $2}' go.mod)"
 
       - name: Set version
         run: |

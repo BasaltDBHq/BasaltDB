@@ -15,6 +15,13 @@ on:
 permissions:
   contents: read
 
+# setup-go v6 installs the go.mod toolchain line (the Makefile's GO_VERSION
+# reads the same line), so the go command never fetches another toolchain
+# into the module cache before the cache is restored. local makes a
+# mismatch fail instead of downloading.
+env:
+  GOTOOLCHAIN: local
+
 jobs:
   # The pull request path runs side by side: lint, vet, the script checks and
   # the test shards (each with its own Postgres). make ci runs all of it in
@@ -24,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - run: make lint
@@ -34,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - run: make vet shard-check
@@ -81,7 +88,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       # The trusted-path checks refuse a directory below one that group or
@@ -150,7 +157,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - uses: goreleaser/goreleaser-action@v6

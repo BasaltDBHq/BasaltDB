@@ -37,13 +37,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: debug temp directories
-        run: |
-          id
-          for d in / /home "$HOME" "$HOME/.cache" "$RUNNER_TEMP" "$(dirname "$RUNNER_TEMP")" "$(dirname "$(dirname "$RUNNER_TEMP")")" /tmp; do
-            stat -c '%U:%G %a %n' "$d" || true
-          done
-          echo "TMPDIR=${TMPDIR:-unset} HOME=$HOME RUNNER_TEMP=$RUNNER_TEMP"
       # The trusted-path checks refuse a directory below one that group or
       # others can write, as /tmp is (mode 1777), so the tests' temp files go
       # below a directory only the runner's user can write.
@@ -52,7 +45,6 @@ jobs:
           export TMPDIR="$HOME/.cache/basalt-tmp"
           mkdir -p "$TMPDIR"
           chmod 700 "$TMPDIR"
-          stat -c '%U:%G %a %n' "$TMPDIR"
           make ci
 
   # basalt engine --user in containers without systemd: the privilege drop as

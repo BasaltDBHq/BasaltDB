@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/register-agent-request.v1.json",
+  "title": "register_agent grants",
+  "description": "The p_grants argument of basalt_meta.register_agent and update_agent (jsonb): the tables and privileges asked for the new agent. Each privilege must be held by the agent's level at table level (has_table_privilege on the enrolled role's oid); asking for more is refused with BS012 PRIVILEGE_NOT_HELD. CONTRACT.md, Access and audit, Registering an agent.",
+  "type": "array",
+  "minItems": 1,
+  "maxItems": 100,
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "table",
+      "privileges"
+    ],
+    "properties": {
+      "table": {
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 200,
+        "description": "schema.table as Postgres quotes it (quote_ident on each part)."
+      },
+      "privileges": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 4,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "enum": [
+            "SELECT",
+            "INSERT",
+            "UPDATE",
+            "DELETE"
+          ]
+        }
+      }
+    }
+  }
+}

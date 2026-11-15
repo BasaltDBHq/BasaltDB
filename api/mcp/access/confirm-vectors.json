@@ -1,0 +1,111 @@
+{
+  "description": "Shared cases for CONTRACT.md, Access and audit, People and passkeys. fingerprint: Crockford base32 (0123456789ABCDEFGHJKMNPQRSTVWXYZ) of the first 10 bytes of sha256(\"basalt-passkey-fp.1\\n\" || credentialId || x || y), four groups of four joined by '-'; credentialId, x and y base64url, x and y the 32-byte P-256 coordinates. binding: \"basalt-passkey-confirm.1\\n\" followed by the jsonb text of fields as Postgres prints it (keys ordered by byte length, then bytewise; ', ' and ': ' separators; strings escaped as escape_json does: \\\" \\\\ \\b \\f \\n \\r \\t, other characters below U+0020 as \\u00xx, everything else as it is). challenge: base64url of sha256 of the binding's UTF-8 bytes, which clientDataJSON.challenge carries. invalidPersonNames: names register_passkey refuses (BS008 PERSON_NAME). The Go contract test, the guard's tests and web/lib tests read this file.",
+  "cases": [
+    {
+      "name": "a developer passkey, confirmed",
+      "x": "GbGWnk1qh7PLpjCNNk4sl3Zd5nGRWTY1zWwxOoesWGc",
+      "y": "9S_9TNAEpN051ZhaWRnE8D5Mq1rPGLr_HeqEqi_TBpI",
+      "fields": {
+        "kind": "CONFIRM",
+        "database": "shop_prod",
+        "credentialId": "edaweF-eXVzT9nBWRYXIYQ",
+        "fingerprint": "JS8X-G0SQ-DAAX-6GH0",
+        "personId": "0196f1a2-7b3c-7d4e-8f50-6a7b8c9d0e1f",
+        "personName": "Iman Tumorang",
+        "level": "ROLE",
+        "roleOid": 16384,
+        "roleName": "developer",
+        "registeredBy": "iman",
+        "registeredAt": "2026-11-14T09:30:00.123456Z",
+        "expiresAt": "2026-11-21T09:30:00.123456Z"
+      },
+      "binding": "basalt-passkey-confirm.1\n{\"kind\": \"CONFIRM\", \"level\": \"ROLE\", \"roleOid\": 16384, \"database\": \"shop_prod\", \"personId\": \"0196f1a2-7b3c-7d4e-8f50-6a7b8c9d0e1f\", \"roleName\": \"developer\", \"expiresAt\": \"2026-11-21T09:30:00.123456Z\", \"personName\": \"Iman Tumorang\", \"fingerprint\": \"JS8X-G0SQ-DAAX-6GH0\", \"credentialId\": \"edaweF-eXVzT9nBWRYXIYQ\", \"registeredAt\": \"2026-11-14T09:30:00.123456Z\", \"registeredBy\": \"iman\"}",
+      "challenge": "5OQ8b1rQCrCs4blZvUA_9I0h9wM_--S3JDeH7bsTet8"
+    },
+    {
+      "name": "the same passkey, rejected: another challenge",
+      "x": "GbGWnk1qh7PLpjCNNk4sl3Zd5nGRWTY1zWwxOoesWGc",
+      "y": "9S_9TNAEpN051ZhaWRnE8D5Mq1rPGLr_HeqEqi_TBpI",
+      "fields": {
+        "kind": "REJECT",
+        "database": "shop_prod",
+        "credentialId": "edaweF-eXVzT9nBWRYXIYQ",
+        "fingerprint": "JS8X-G0SQ-DAAX-6GH0",
+        "personId": "0196f1a2-7b3c-7d4e-8f50-6a7b8c9d0e1f",
+        "personName": "Iman Tumorang",
+        "level": "ROLE",
+        "roleOid": 16384,
+        "roleName": "developer",
+        "registeredBy": "iman",
+        "registeredAt": "2026-11-14T09:30:00.123456Z",
+        "expiresAt": "2026-11-21T09:30:00.123456Z"
+      },
+      "binding": "basalt-passkey-confirm.1\n{\"kind\": \"REJECT\", \"level\": \"ROLE\", \"roleOid\": 16384, \"database\": \"shop_prod\", \"personId\": \"0196f1a2-7b3c-7d4e-8f50-6a7b8c9d0e1f\", \"roleName\": \"developer\", \"expiresAt\": \"2026-11-21T09:30:00.123456Z\", \"personName\": \"Iman Tumorang\", \"fingerprint\": \"JS8X-G0SQ-DAAX-6GH0\", \"credentialId\": \"edaweF-eXVzT9nBWRYXIYQ\", \"registeredAt\": \"2026-11-14T09:30:00.123456Z\", \"registeredBy\": \"iman\"}",
+      "challenge": "szkYm2RCIKbcNlybVRA-Oh6xsazSN1RPPFHob_ZrZMc"
+    },
+    {
+      "name": "an admin passkey registered through the Vault",
+      "x": "5QZx02objKIGIBiLexPpmt2Fnivn1IIuiJbkDtjGFzs",
+      "y": "JJKOd-OFWe--L-FPLKOZ6BKXMdqplkQZSpA6lGw1E84",
+      "fields": {
+        "kind": "CONFIRM",
+        "database": "shop_prod",
+        "credentialId": "p--8sUff3l0Ba7FZKXuX6aoUFku65Xv4cmfmXDUxhTc",
+        "fingerprint": "J2J5-SBHB-S4EK-AY12",
+        "personId": "0196f1a2-8000-7000-9000-000000000001",
+        "personName": "Rina",
+        "level": "ADMIN",
+        "roleOid": null,
+        "roleName": null,
+        "registeredBy": "postgres",
+        "registeredAt": "2026-11-14T10:00:00.000000Z",
+        "expiresAt": "2026-11-21T10:00:00.000000Z"
+      },
+      "binding": "basalt-passkey-confirm.1\n{\"kind\": \"CONFIRM\", \"level\": \"ADMIN\", \"roleOid\": null, \"database\": \"shop_prod\", \"personId\": \"0196f1a2-8000-7000-9000-000000000001\", \"roleName\": null, \"expiresAt\": \"2026-11-21T10:00:00.000000Z\", \"personName\": \"Rina\", \"fingerprint\": \"J2J5-SBHB-S4EK-AY12\", \"credentialId\": \"p--8sUff3l0Ba7FZKXuX6aoUFku65Xv4cmfmXDUxhTc\", \"registeredAt\": \"2026-11-14T10:00:00.000000Z\", \"registeredBy\": \"postgres\"}",
+      "challenge": "tHzOXLdejsj78ghwoIlBIfsuV_CrtFrJLdugfEiuZ68"
+    },
+    {
+      "name": "non-ASCII name and a quoted role name with a quote and a newline",
+      "x": "GpFn3JEaQaMiFolr3hhpSHkg3_JVQRTjNggD2m77mtc",
+      "y": "fB99WSAA9JsFDbaWmbxxAu-v40llBBujLeOw5XZwuXk",
+      "fields": {
+        "kind": "CONFIRM",
+        "database": "Shop Prod",
+        "credentialId": "6c-q6mXh7iynmxbv3ipsCKaPSG3skiVYJSGDeN3EsXtHDc3BI8tjSix6nqyUPyCskquFG5h1IhRY2jOh4XPZ9A",
+        "fingerprint": "5YZ9-F3K9-4WZK-FWDP",
+        "personId": "0196f1a2-9abc-7def-a012-3456789abcde",
+        "personName": "Budi Śantoso 🚀",
+        "level": "ROLE",
+        "roleOid": 4294967295,
+        "roleName": "dev\"ops\nteam\\x",
+        "registeredBy": "budi",
+        "registeredAt": "2026-11-14T23:59:59.999999Z",
+        "expiresAt": "2026-11-21T23:59:59.999999Z"
+      },
+      "binding": "basalt-passkey-confirm.1\n{\"kind\": \"CONFIRM\", \"level\": \"ROLE\", \"roleOid\": 4294967295, \"database\": \"Shop Prod\", \"personId\": \"0196f1a2-9abc-7def-a012-3456789abcde\", \"roleName\": \"dev\\\"ops\\nteam\\\\x\", \"expiresAt\": \"2026-11-21T23:59:59.999999Z\", \"personName\": \"Budi Śantoso 🚀\", \"fingerprint\": \"5YZ9-F3K9-4WZK-FWDP\", \"credentialId\": \"6c-q6mXh7iynmxbv3ipsCKaPSG3skiVYJSGDeN3EsXtHDc3BI8tjSix6nqyUPyCskquFG5h1IhRY2jOh4XPZ9A\", \"registeredAt\": \"2026-11-14T23:59:59.999999Z\", \"registeredBy\": \"budi\"}",
+      "challenge": "9BRoix-ejfx8p9j4crxd0P81gy1tZDJY6kZW9t6NdA4"
+    }
+  ],
+  "invalidPersonNames": [
+    {
+      "name": "empty",
+      "personName": ""
+    },
+    {
+      "name": "a tab",
+      "personName": "Iman\tT"
+    },
+    {
+      "name": "a newline",
+      "personName": "Iman\nT"
+    },
+    {
+      "name": "DEL",
+      "personName": "Iman"
+    },
+    {
+      "name": "65 characters",
+      "personName": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    }
+  ]
+}

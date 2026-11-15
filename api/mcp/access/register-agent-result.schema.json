@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/register-agent-result.v1.json",
+  "title": "register_agent result",
+  "description": "What basalt_meta.register_agent and update_agent return (jsonb). Nothing secret. CONTRACT.md, Access and audit, Registering an agent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "agent",
+    "level",
+    "roleOid",
+    "roleName",
+    "grants",
+    "sequences",
+    "policiesState"
+  ],
+  "properties": {
+    "agent": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "description": "The agent role, <prefix>_agent_<name>."
+    },
+    "level": {
+      "type": "string",
+      "enum": [
+        "ADMIN",
+        "ROLE"
+      ],
+      "description": "ADMIN, or an enrolled role (ROLE, named by roleOid and roleName)."
+    },
+    "roleOid": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "maximum": 4294967295,
+      "description": "The enrolled role's oid; null for ADMIN."
+    },
+    "roleName": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "maxLength": 63,
+      "description": "The enrolled role's name at the time; null for ADMIN."
+    },
+    "grants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "table",
+          "privileges"
+        ],
+        "properties": {
+          "table": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 200,
+            "description": "schema.table as Postgres quotes it (quote_ident on each part)."
+          },
+          "privileges": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 4,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "SELECT",
+                "INSERT",
+                "UPDATE",
+                "DELETE"
+              ]
+            }
+          }
+        }
+      },
+      "description": "What was granted and checked to have taken effect."
+    },
+    "sequences": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sequence",
+          "privileges"
+        ],
+        "properties": {
+          "sequence": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 200,
+            "description": "schema.table as Postgres quotes it (quote_ident on each part)."
+          },
+          "privileges": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "USAGE",
+                "SELECT"
+              ]
+            }
+          }
+        }
+      },
+      "description": "Owned sequences of tables granted INSERT, granted only where the level holds them."
+    },
+    "policiesState": {
+      "type": "string",
+      "enum": [
+        "CURRENT",
+        "STALE"
+      ],
+      "description": "The level's mirrored policies over the granted tables: STALE means the agent reads no rows on some of them until the admin runs basalt access sync."
+    }
+  }
+}

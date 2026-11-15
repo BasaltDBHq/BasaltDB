@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/confirm-response.v1.json",
+  "title": "Passkey confirmation response",
+  "description": "What the confirm page outputs, as the text basalt-confirm.1.<base64url(this JSON)>. Byte fields are base64url without padding. The CLI checks it locally as basalt approve does and submits it with confirm_passkey or reject_passkey, by kind. CONTRACT.md, Access and audit, People and passkeys.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "credentialId",
+    "signer",
+    "authenticatorData",
+    "clientDataJson",
+    "signature"
+  ],
+  "properties": {
+    "kind": {
+      "type": "string",
+      "enum": [
+        "CONFIRM",
+        "REJECT"
+      ]
+    },
+    "credentialId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "description": "The waiting passkey."
+    },
+    "signer": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "description": "The credential id of the passkey that signed."
+    },
+    "authenticatorData": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "clientDataJson": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$"
+    }
+  }
+}

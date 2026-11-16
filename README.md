@@ -11,7 +11,7 @@
 
 Every action an agent takes is recorded with who did it, why, what it saw and what it changed. That record is what lets a person preview an action, stop it and undo it.
 
-> **Status: early.** BasaltDB works end to end on Postgres, but there is no release download yet: you build it from source with Go 1.26. Expect breaking changes. See [Status](#status).
+> **Status: early.** BasaltDB works end to end on Postgres. This is an alpha prerelease: expect breaking changes. See [Status](#status).
 
 - **Docs:** https://docs.basaltvault.app
 - **Install guide:** [docs/install.md](docs/install.md), from nothing to an agent's first guarded write
@@ -37,19 +37,16 @@ The common advice is "never connect agents to production". BasaltDB is for the c
 
 ## Quickstart
 
-You need macOS or Linux with `sudo`, Go 1.26 or newer, a Postgres you own, a browser with a passkey, and an MCP client. The [install guide](docs/install.md) has every prompt and every error; this is the short version.
+You need macOS and Linux, a Postgres you own, a browser with a passkey, and an MCP client. The [install guide](docs/install.md) has every prompt and every error; this is the short version.
 
-**1. Build and install `basalt`.** The binary goes in a root-owned directory, because the engine runs it as its own OS user.
+**1. Install `basalt`.**
 
 ```sh
-git clone https://github.com/BasaltDBHq/BasaltDB.git
-cd BasaltDB
-go build -o basalt ./cmd/basalt
-sudo install -d -o root -m 0755 /usr/local/libexec
-sudo install -o root -m 0755 basalt /usr/local/libexec/basalt
-sudo mkdir -p /usr/local/bin
-sudo ln -sf /usr/local/libexec/basalt /usr/local/bin/basalt
+brew install basaltdbhq/tap/basaltdb
+basalt version
 ```
+
+To install from a GitHub release, check the archive against `SHA256SUMS` and put `basalt` on your `PATH`. To build from source, see the [install guide](docs/install.md).
 
 **2. Create the sample tables** (skip this if you guard your own). [`examples/demo/seed.sql`](examples/demo/seed.sql) creates a schema `basalt_demo` with 30 leads and 20 notes, and touches nothing else.
 
@@ -131,7 +128,7 @@ Old values are kept for 30 days. After that a row can no longer be reverted.
 
 ## Status
 
-What works today, built from source:
+What works today:
 
 - Guarded writes with a stated intent, a per-agent Postgres role, and the engine as its own OS user
 - A record of every read and write, and `basalt log` to read it
@@ -142,7 +139,6 @@ What works today, built from source:
 
 Not there yet:
 
-- A release download and an installer. For now you build from source.
 - Setup from a browser alone, for a person without a terminal.
 
 BasaltVault is a planned paid service for many agents and machines; BasaltDB does not need it.

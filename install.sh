@@ -63,8 +63,8 @@ resolve_tag() {
 			"https://api.github.com/repos/${BASALTDB_REPO}/releases?per_page=10" |
 			tr ',' '\n' | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
 		if [ -z "$tag" ]; then
-			echo "install.sh: could not resolve latest release (no v* tag yet or GitHub API unavailable)" >&2
-			echo "install.sh: there is no release yet, so there is nothing to download. Build from source instead: https://github.com/BasaltDBHq/BasaltDB/blob/master/docs/install.md" >&2
+			echo "install.sh: could not resolve latest release (GitHub API unavailable, or no v* tag visible)" >&2
+			echo "install.sh: build from source instead: https://github.com/BasaltDBHq/BasaltDB/blob/master/docs/install.md" >&2
 			return 1
 		fi
 		echo "$tag"

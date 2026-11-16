@@ -4,36 +4,49 @@ From nothing to your agent's first guarded write, in about three minutes. It wor
 
 You need:
 
-- macOS or Linux, with `sudo`.
-- Go 1.26 or newer, and `git`. (There is no release download yet; see [Coming soon](#coming-soon).)
+- macOS and Linux.
 - A Postgres you own. You need its admin connection string, the one for the `postgres` user.
 - A browser on the same machine, with a passkey (your laptop's own, a security key, or your phone through the browser).
 - An MCP client. Examples below use Claude Code; [`mcp-clients.md`](mcp-clients.md) has the JSON for others.
 
 The admin connection string is used once, by `basalt init`, typed into its hidden prompt. It is never stored. Do not export it or put it on a command line.
 
-## 1. Build and install `basalt`
+## 1. Install `basalt`
+
+This is an alpha prerelease. Expect breaking changes.
+
+### Homebrew
+
+```sh
+brew install basaltdbhq/tap/basaltdb
+```
+
+### Release archive
+
+Download an archive from [GitHub Releases](https://github.com/BasaltDBHq/BasaltDB/releases), together with `SHA256SUMS`. Check the archive against `SHA256SUMS`, unpack it, and put `basalt` on your `PATH`.
+
+```sh
+curl -fsSL -O https://github.com/BasaltDBHq/BasaltDB/releases/download/v0.0.1-alpha.2/basaltdb_0.0.1-alpha.2_linux_amd64.tar.gz
+curl -fsSL -O https://github.com/BasaltDBHq/BasaltDB/releases/download/v0.0.1-alpha.2/SHA256SUMS
+grep 'basaltdb_0.0.1-alpha.2_linux_amd64.tar.gz$' SHA256SUMS | sha256sum -c -
+tar -xzf basaltdb_0.0.1-alpha.2_linux_amd64.tar.gz
+```
+
+### Build from source
+
+You need Go 1.26 or newer, and `git`. Then put `basalt` on your `PATH`.
 
 ```sh
 git clone https://github.com/BasaltDBHq/BasaltDB.git
 cd BasaltDB
 go build -o basalt ./cmd/basalt
-sudo install -d -o root -m 0755 /usr/local/libexec
-sudo install -o root -m 0755 basalt /usr/local/libexec/basalt
-sudo mkdir -p /usr/local/bin
-sudo ln -sf /usr/local/libexec/basalt /usr/local/bin/basalt
+```
+
+Check the install:
+
+```sh
 basalt version
 ```
-
-`basalt version` prints the version.
-
-The engine runs as its own OS user from the real file behind the link, `/usr/local/libexec/basalt`. Whoever can change that file can run code with the agent's credential, so `basalt init` and `basalt service install` check it first, before init asks for the admin connection string and again before `sudo`, like sshd's `StrictModes`: the file and every directory above it must be owned by root and not writable by group or others. Otherwise they stop before changing anything:
-
-```
-basalt: /usr/local/bin is owned by uid 501, not root: the engine service runs /usr/local/bin/basalt as the engine's OS user, so only root may be able to change it or any directory above it. Install basalt in a root-owned directory and run that copy: ... (or run basalt init with --no-service)
-```
-
-That is why the commands above put the binary in `/usr/local/libexec` and only link it from `/usr/local/bin`: on an Intel Mac with Homebrew, `/usr/local/bin` belongs to you, so a `basalt` installed there is refused. Do not run `sudo install -d` on `/usr/local/bin` itself there: it would hand Homebrew's directory to root. Never install it in your home directory. If you see the error, run the `sudo install` commands above and run `basalt init` again.
 
 ## 2. Get the connection string
 
@@ -205,6 +218,7 @@ On macOS `--user` works the same way when started as root (a launchd job you wri
 - The agent reads zero rows from a table that has rows: row-level security is on with no policy for the agent. Run step 4 again and answer `y` to the row-level security question, or add `--agent-rls=all-rows`.
 - `/mcp` shows the server failed, or the connection closes at once: the engine admits only the OS user that ran `init` (`--os-user`, you by default). Start the client as that user. The engine log is `/Library/Logs/Basalt/engine.log` on macOS and `journalctl -u basalt-engine` on Linux.
 - `guard schema vN is older than this build's vM`: run the `basalt init` command from step 4 again with the same flags. It keeps the agent's password.
+- If `basalt init` or `basalt service install` says the binary is not owned by root: the engine service will only run a copy that root owns and that group and others cannot change. Put `basalt` in a root-owned directory and run that copy, or use `--no-service`.
 - No `sudo`, or you do not want a service: add `--no-service` to `basalt init`. It then prints the one `basalt engine --config ...` command to run in the foreground as you. Writes are still guarded in Postgres, but your user can read the agent's credential file. [`m4-runbook.md`](m4-runbook.md) walks that mode end to end.
 
 ## Remove everything
@@ -252,7 +266,6 @@ Remove the user last, after the files it owns. If you plan to run `basalt init` 
 
 ## Coming soon
 
-- A release download. There is no release yet, so nothing to download: you build from source (step 1).
 - Browser-only setup, for a person without a terminal, and the hosted relay that removes the pasting of approval codes.
 
 For a bot on a server you cannot log in to, see [`setup-from-laptop.md`](setup-from-laptop.md) (for you) and [`bot-setup.md`](bot-setup.md) (for the bot).

@@ -11,7 +11,7 @@ Install the engine as a background service? This creates the OS user _basalt and
 ```
 
 - **Yes** (the default): init runs one `sudo basalt service install ... --agent NAME --credential-stdin`, which creates the engine's OS user (`basalt` on Linux, `_basalt` on macOS), writes the engine config and the agent's credential into the service's own directories (`/etc/basalt` with state in `/var/lib/basalt` and sockets in `/run/basalt` on Linux; `/Library/Application Support/Basalt` on macOS), owned by that user with mode 0600, and installs and starts the systemd unit or launchd daemon (or restarts it when it is already installed). The credential goes to sudo on stdin, never on a command line. Init then checks that the engine answers on the agent's socket and prints the MCP command. The agent's OS user cannot read the credential.
-- **No**, or `--no-service`: init writes the config and credential under your config directory (`~/.config/basalt` on Linux, `~/Library/Application Support/basalt` on macOS) and prints the one command that runs the engine in the foreground as you. Giving `--config`, `--socket-dir` or `--credential-file` also means you run the engine yourself. That is same-user mode: writes are still guarded in Postgres, but the agent's OS user can read its credential file. [`m4-runbook.md`](m4-runbook.md) walks through it.
+- **No**, or `--no-service`: init writes the config and credential under your config directory (`~/.config/basalt` on Linux, `~/Library/Application Support/basalt` on macOS) and prints the one command that runs the engine in the foreground as you. Giving `--config`, `--socket-dir` or `--credential-file` also means you run the engine yourself. That is same-user mode: writes are still guarded in Postgres, but the agent's OS user can read its credential file.
 - **No terminal** (answers piped in) and neither `--yes` nor `--no-service`: init stops before writing anything and asks you to pass one of them. It never picks same-user mode for you.
 
 `--dry-run` prints the SQL and the exact service steps without running anything. If the `claude` CLI is on your `PATH`, init also offers to run `claude mcp add basalt-NAME -- basalt mcp --agent NAME` for you; it never runs it without a yes.
@@ -35,7 +35,7 @@ Most MCP clients take a command and its arguments. Add one server per agent, run
 - If `init` used a non-default `--socket-dir`, add `"--socket-dir", "DIR"` to `args`, or pass the socket directly with `"--socket", "DIR/NAME.sock"`.
 - Do not put a database URL in the client config. The agent never holds one.
 
-The client then lists eight tools: `run_start`, `query`, `write`, `run_history`, `list_pending`, `preview_revert`, `revert_plan`, `apply_revert_batch`. A session usually starts a run with an intent, reads with `query` inside that run, and writes with `write` and an intent.
+The client then lists twelve tools: `run_start`, `describe`, `query`, `write`, `run_history`, `list_runs`, `list_pending`, `preview_revert`, `request_revert`, `status`, `revert_plan` and `apply_revert_batch`. A session usually starts a run with an intent, reads with `query` inside that run, and writes with `write` and an intent.
 
 ## Check it works
 

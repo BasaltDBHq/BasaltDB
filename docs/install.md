@@ -4,15 +4,76 @@ From nothing to your agent's first guarded write, in about three minutes. It wor
 
 You need:
 
-- macOS or Linux, with `sudo`.
-- Go 1.26 or newer, and `git`. (There is no release download yet; see [Coming soon](#coming-soon).)
+- macOS or Linux, with `sudo`. Windows is not available.
 - A Postgres you own. You need its admin connection string, the one for the `postgres` user.
 - A browser on the same machine, with a passkey (your laptop's own, a security key, or your phone through the browser).
 - An MCP client. Examples below use Claude Code; [`mcp-clients.md`](mcp-clients.md) has the JSON for others.
 
 The admin connection string is used once, by `basalt init`, typed into its hidden prompt. It is never stored. Do not export it or put it on a command line.
 
-## 1. Build and install `basalt`
+## 1. Install `basalt`
+
+This is an alpha prerelease. Expect breaking changes. Builds are published for macOS and Linux, amd64 and arm64. There is no Windows build, and BasaltDB is not published to npm.
+
+The engine runs as its own OS user from the real `basalt` binary. Whoever can change that file can run code with the agent's credential, so `basalt init` and `basalt service install` check it first, before init asks for the admin connection string and again before `sudo`, like sshd's `StrictModes`: the file and every directory above it must be owned by root and not writable by group or others. Otherwise they stop before changing anything:
+
+```
+basalt: /usr/local/bin is owned by uid 501, not root: the engine service runs /usr/local/bin/basalt as the engine's OS user, so only root may be able to change it or any directory above it. Install basalt in a root-owned directory and run that copy: ... (or run basalt init with --no-service)
+```
+
+Homebrew and the release archives put the binary in `/usr/local/libexec` and only link it from `/usr/local/bin`: on an Intel Mac with Homebrew, `/usr/local/bin` belongs to you, so a `basalt` installed there is refused. Do not run `sudo install -d` on `/usr/local/bin` itself there: it would hand Homebrew's directory to root. The Linux `.deb`, `.rpm` and `.apk` packages already install into `/usr/bin`, which is root-owned, so you can run that copy as it is. Never install the binary in your home directory. If you see the error, run the `sudo install` commands below and run `basalt init` again.
+
+`basalt version` prints the version.
+
+### Homebrew
+
+```sh
+brew install basaltdbhq/tap/basaltdb
+sudo install -d -o root -m 0755 /usr/local/libexec
+sudo install -o root -m 0755 "$(brew --prefix)/bin/basalt" /usr/local/libexec/basalt
+sudo mkdir -p /usr/local/bin
+sudo ln -sf /usr/local/libexec/basalt /usr/local/bin/basalt
+basalt version
+```
+
+### Release archive
+
+Download the archive for your OS and architecture from the [GitHub Releases](https://github.com/BasaltDBHq/BasaltDB/releases) page, together with `SHA256SUMS`. The current prerelease is `v0.0.1-alpha.2`. Archives are named `basaltdb_<version>_<os>_<arch>.tar.gz`, with `os` `darwin` or `linux`, and `arch` `amd64` or `arm64`.
+
+```sh
+curl -fsSL -O https://github.com/BasaltDBHq/BasaltDB/releases/download/v0.0.1-alpha.2/basaltdb_0.0.1-alpha.2_linux_amd64.tar.gz
+curl -fsSL -O https://github.com/BasaltDBHq/BasaltDB/releases/download/v0.0.1-alpha.2/SHA256SUMS
+grep 'basaltdb_0.0.1-alpha.2_linux_amd64.tar.gz$' SHA256SUMS | sha256sum -c -
+tar -xzf basaltdb_0.0.1-alpha.2_linux_amd64.tar.gz
+sudo install -d -o root -m 0755 /usr/local/libexec
+sudo install -o root -m 0755 basalt /usr/local/libexec/basalt
+sudo mkdir -p /usr/local/bin
+sudo ln -sf /usr/local/libexec/basalt /usr/local/bin/basalt
+basalt version
+```
+
+On macOS, use `shasum -a 256 -c` in place of `sha256sum -c`, and pick the `darwin_arm64` or `darwin_amd64` archive that matches your machine.
+
+### Linux packages
+
+`.deb`, `.rpm` and `.apk` packages are published for linux amd64 and arm64. They install `basalt` into `/usr/bin`. Download the package and `SHA256SUMS` from the same [Releases](https://github.com/BasaltDBHq/BasaltDB/releases) page, check the package against `SHA256SUMS`, then install it:
+
+```sh
+# Debian or Ubuntu
+sudo dpkg -i basaltdb_0.0.1-alpha.2_linux_amd64.deb
+
+# Fedora, RHEL or similar
+sudo rpm -Uvh basaltdb_0.0.1-alpha.2_linux_amd64.rpm
+
+# Alpine
+sudo apk add --allow-untrusted basaltdb_0.0.1-alpha.2_linux_amd64.apk
+```
+
+Use the `linux_arm64` package on arm64. `--allow-untrusted` is needed on Alpine because the packages are not signed with an Alpine key.
+
+### Build from source
+
+You need Go 1.26 or newer, and `git`.
 
 ```sh
 git clone https://github.com/BasaltDBHq/BasaltDB.git
@@ -24,16 +85,6 @@ sudo mkdir -p /usr/local/bin
 sudo ln -sf /usr/local/libexec/basalt /usr/local/bin/basalt
 basalt version
 ```
-
-`basalt version` prints the version.
-
-The engine runs as its own OS user from the real file behind the link, `/usr/local/libexec/basalt`. Whoever can change that file can run code with the agent's credential, so `basalt init` and `basalt service install` check it first, before init asks for the admin connection string and again before `sudo`, like sshd's `StrictModes`: the file and every directory above it must be owned by root and not writable by group or others. Otherwise they stop before changing anything:
-
-```
-basalt: /usr/local/bin is owned by uid 501, not root: the engine service runs /usr/local/bin/basalt as the engine's OS user, so only root may be able to change it or any directory above it. Install basalt in a root-owned directory and run that copy: ... (or run basalt init with --no-service)
-```
-
-That is why the commands above put the binary in `/usr/local/libexec` and only link it from `/usr/local/bin`: on an Intel Mac with Homebrew, `/usr/local/bin` belongs to you, so a `basalt` installed there is refused. Do not run `sudo install -d` on `/usr/local/bin` itself there: it would hand Homebrew's directory to root. Never install it in your home directory. If you see the error, run the `sudo install` commands above and run `basalt init` again.
 
 ## 2. Get the connection string
 
@@ -252,7 +303,7 @@ Remove the user last, after the files it owns. If you plan to run `basalt init` 
 
 ## Coming soon
 
-- A release download. There is no release yet, so nothing to download: you build from source (step 1).
 - Browser-only setup, for a person without a terminal, and the hosted relay that removes the pasting of approval codes.
+- A Windows build.
 
 For a bot on a server you cannot log in to, see [`setup-from-laptop.md`](setup-from-laptop.md) (for you) and [`bot-setup.md`](bot-setup.md) (for the bot).

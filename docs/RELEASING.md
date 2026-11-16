@@ -92,13 +92,13 @@ Publish scripts (`npm-publish.sh`, `mcp-registry-publish.sh`) also refuse a non-
 
 ## Install after a tag
 
-There is no release yet; until one exists, build from source ([install guide](install.md)). Once a release exists, the paths are anonymous [install.sh](../install.sh), a Release archive, and `go install`. Pin the tag (`v0.0.1-alpha` below is an example):
+After a tag, people can install from Homebrew (`brew install basaltdbhq/tap/basaltdb`), a Release archive or package, anonymous [install.sh](../install.sh), or `go install`. The [install guide](install.md) is the user-facing path. Pin the tag (`v0.0.1-alpha.2` below is an example):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/BasaltDBHq/BasaltDB/master/install.sh | sh -s v0.0.1-alpha
+curl -fsSL https://raw.githubusercontent.com/BasaltDBHq/BasaltDB/master/install.sh | sh -s v0.0.1-alpha.2
 
-curl -fsSL -o basaltdb.tgz https://github.com/BasaltDBHq/BasaltDB/releases/download/v0.0.1-alpha/basaltdb_0.0.1-alpha_linux_amd64.tar.gz
-curl -fsSL -O https://github.com/BasaltDBHq/BasaltDB/releases/download/v0.0.1-alpha/SHA256SUMS
+curl -fsSL -o basaltdb.tgz https://github.com/BasaltDBHq/BasaltDB/releases/download/v0.0.1-alpha.2/basaltdb_0.0.1-alpha.2_linux_amd64.tar.gz
+curl -fsSL -O https://github.com/BasaltDBHq/BasaltDB/releases/download/v0.0.1-alpha.2/SHA256SUMS
 ```
 
 ## go install

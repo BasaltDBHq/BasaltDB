@@ -4,7 +4,7 @@ From nothing to your agent's first guarded write, in about three minutes. It wor
 
 You need:
 
-- macOS and Linux.
+- macOS or Linux.
 - A Postgres you own. You need its admin connection string, the one for the `postgres` user.
 - A browser on the same machine, with a passkey (your laptop's own, a security key, or your phone through the browser).
 - An MCP client. Examples below use Claude Code; [`mcp-clients.md`](mcp-clients.md) has the JSON for others.
@@ -219,7 +219,7 @@ On macOS `--user` works the same way when started as root (a launchd job you wri
 - `/mcp` shows the server failed, or the connection closes at once: the engine admits only the OS user that ran `init` (`--os-user`, you by default). Start the client as that user. The engine log is `/Library/Logs/Basalt/engine.log` on macOS and `journalctl -u basalt-engine` on Linux.
 - `guard schema vN is older than this build's vM`: run the `basalt init` command from step 4 again with the same flags. It keeps the agent's password.
 - If `basalt init` or `basalt service install` says the binary is not owned by root: the engine service will only run a copy that root owns and that group and others cannot change. Put `basalt` in a root-owned directory and run that copy, or use `--no-service`.
-- No `sudo`, or you do not want a service: add `--no-service` to `basalt init`. It then prints the one `basalt engine --config ...` command to run in the foreground as you. Writes are still guarded in Postgres, but your user can read the agent's credential file. [`m4-runbook.md`](m4-runbook.md) walks that mode end to end.
+- No `sudo`, or you do not want a service: add `--no-service` to `basalt init`. It then prints the one `basalt engine --config ...` command to run in the foreground as you. Writes are still guarded in Postgres, but your user can read the agent's credential file.
 
 ## Remove everything
 

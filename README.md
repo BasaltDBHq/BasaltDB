@@ -37,7 +37,7 @@ The common advice is "never connect agents to production". BasaltDB is for the c
 
 ## Quickstart
 
-You need macOS and Linux, a Postgres you own, a browser with a passkey, and an MCP client. The [install guide](docs/install.md) has every prompt and every error; this is the short version.
+You need macOS or Linux, a Postgres you own, a browser with a passkey, and an MCP client. The [install guide](docs/install.md) has every prompt and every error; this is the short version.
 
 **1. Install `basalt`.**
 
@@ -48,31 +48,30 @@ basalt version
 
 To install from a GitHub release, check the archive against `SHA256SUMS` and put `basalt` on your `PATH`. To build from source, see the [install guide](docs/install.md).
 
-**2. Create the sample tables** (skip this if you guard your own). [`examples/demo/seed.sql`](examples/demo/seed.sql) creates a schema `basalt_demo` with 30 leads and 20 notes, and touches nothing else.
-
-**3. Install the guard.** `--write` lists tables the agent may read and write, `--read` tables it may only read.
+**2. Install the guard on a sample schema.** Skip this if you guard your own tables; the [install guide](docs/install.md) shows `--write` and `--read`.
 
 ```sh
-basalt init --agent demo_bot \
-  --write basalt_demo.leads --read basalt_demo.lead_notes
+basalt init --demo
 ```
 
-Init asks for your admin connection string once and never stores it. It shows the setup SQL before running it, registers your passkey, and starts the engine as a background service.
+Init asks for your admin connection string once and never stores it. It creates a schema `basalt_demo` with 30 leads and 20 notes, shows the setup SQL before running it, registers your passkey, and starts the engine as a background service. The agent is `demo_bot`.
 
-**4. Connect your agent.** Any MCP client takes the same command:
+**3. Connect your agent.** Any MCP client takes the same command:
 
 ```json
 {
   "mcpServers": {
     "basalt-demo_bot": {
-      "command": "/usr/local/bin/basalt",
+      "command": "basalt",
       "args": ["mcp", "--agent", "demo_bot"]
     }
   }
 }
 ```
 
-**5. See what it did, and take it back.**
+Use the absolute path of `basalt` (`which basalt`) if the client does not inherit your `PATH`.
+
+**4. See what it did, and take it back.** `RUN_ID` is the UUID the agent returned from `run_start`.
 
 ```sh
 basalt log --agent demo_bot --run RUN_ID
@@ -81,7 +80,7 @@ basalt revert --agent demo_bot --run RUN_ID
 
 `revert` prints a link to a page that shows the rows. Nothing is restored until you sign there with your passkey.
 
-To remove everything, run `basalt uninstall`: it drops the `basalt_meta` schema, the guard's triggers and policies, and the `basalt_*` roles.
+To remove everything, run `basalt uninstall` and then `basalt service uninstall`. Uninstall drops the `basalt_meta` schema, the guard's triggers and policies, the `basalt_*` roles, and the demo schema when `init --demo` created it. Service uninstall stops and removes the engine service.
 
 ## How it works
 
@@ -124,7 +123,6 @@ Old values are kept for 30 days. After that a row can no longer be reverted.
 
 - **Postgres:** Supabase, RDS, and any Postgres you run yourself and can log in to as an admin.
 - **Agents:** any MCP client. The docs cover OpenCode, Claude Code and Codex; [docs/mcp-clients.md](docs/mcp-clients.md) has the configuration for others.
-- **Platforms:** macOS and Linux.
 
 ## Status
 
@@ -135,13 +133,11 @@ What works today:
 - Refusal of a write based on a row that changed after the agent read it
 - Holds for larger writes and every `DELETE`, signed with a passkey and checked inside Postgres
 - Revert by change, by run and by task, with a preview and conflict checks
-- `basalt status`, `basalt upgrade`, `basalt access` and `basalt uninstall`
+- `basalt status`, `basalt upgrade`, `basalt access`, `basalt classify` and `basalt uninstall`, and the MCP `describe` tool
 
 Not there yet:
 
 - Setup from a browser alone, for a person without a terminal.
-
-BasaltVault is a planned paid service for many agents and machines; BasaltDB does not need it.
 
 ## Development
 

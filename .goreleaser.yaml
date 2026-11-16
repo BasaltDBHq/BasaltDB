@@ -31,14 +31,21 @@ archives:
     # Flat archives so install.sh can copy binaries from the extract root.
     wrap_in_directory: false
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # Fixed owner and time so the archive bytes do not depend on who built it.
     builds_info:
+      owner: root
+      group: root
       mtime: "{{ .CommitDate }}"
     files:
       - src: LICENSE
         info:
+          owner: root
+          group: root
           mtime: "{{ .CommitDate }}"
       - src: README.md
         info:
+          owner: root
+          group: root
           mtime: "{{ .CommitDate }}"
 
 nfpms:

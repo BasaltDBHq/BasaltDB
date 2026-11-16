@@ -2,6 +2,11 @@
 version: 2
 
 # One binary, basalt. All release binaries are CGO_ENABLED=0 static builds.
+# Reproducible builds: every timestamp that lands in an artifact (binary
+# mtime, archive entries, package entries) is the commit time of the commit
+# being built, not the time the build ran. With -trimpath, the same commit
+# and Go toolchain give the same bytes and the same SHA256SUMS on any machine.
+# SOURCE_DATE_EPOCH is set to the same commit time for the builds.
 # Version tags are created manually (see docs/RELEASING.md). CI never
 # creates or pushes git tags. Branch/PR builds use --snapshot (no GitHub
 # Release, no registry publish).
@@ -11,7 +16,10 @@ builds:
   - id: basalt
     main: ./cmd/basalt
     binary: basalt
-    env: [CGO_ENABLED=0]
+    env:
+      - CGO_ENABLED=0
+      - SOURCE_DATE_EPOCH={{ .CommitTimestamp }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
     goos: [linux, darwin]
     goarch: [amd64, arm64]
     flags: [-trimpath]
@@ -23,9 +31,22 @@ archives:
     # Flat archives so install.sh can copy binaries from the extract root.
     wrap_in_directory: false
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # Fixed owner and time so the archive bytes do not depend on who built it.
+    builds_info:
+      owner: root
+      group: root
+      mtime: "{{ .CommitDate }}"
     files:
-      - LICENSE
-      - README.md
+      - src: LICENSE
+        info:
+          owner: root
+          group: root
+          mtime: "{{ .CommitDate }}"
+      - src: README.md
+        info:
+          owner: root
+          group: root
+          mtime: "{{ .CommitDate }}"
 
 nfpms:
   - id: linux-packages
@@ -39,13 +60,18 @@ nfpms:
       Open source under Apache-2.0.
     license: Apache-2.0
     formats: [deb, rpm, apk]
+    mtime: "{{ .CommitDate }}"
     bindir: /usr/bin
     section: database
     contents:
       - src: LICENSE
         dst: /usr/share/doc/basaltdb/LICENSE
+        file_info:
+          mtime: "{{ .CommitDate }}"
       - src: README.md
         dst: /usr/share/doc/basaltdb/README.md
+        file_info:
+          mtime: "{{ .CommitDate }}"
 
 checksum:
   name_template: SHA256SUMS

@@ -96,6 +96,9 @@ install-sh-check: ## POSIX syntax, default repo, and archive names for install.s
 	@grep -Fq 'name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"' .goreleaser.yaml
 	@grep -Fq 'goos: [linux, darwin]' .goreleaser.yaml
 	@grep -Fq 'goarch: [amd64, arm64]' .goreleaser.yaml
+	@grep -Fq 'mod_timestamp: "{{ .CommitTimestamp }}"' .goreleaser.yaml
+	@grep -Fq 'SOURCE_DATE_EPOCH={{ .CommitTimestamp }}' .goreleaser.yaml
+	@test "$$(grep -Fc 'mtime: "{{ .CommitDate }}"' .goreleaser.yaml)" -ge 6
 	@plat=$$(sh install.sh --print-platform); \
 	got=$$(sh install.sh --print-archive-name v0.0.1-alpha); \
 	want="basaltdb_0.0.1-alpha_$${plat}.tar.gz"; \

@@ -40,6 +40,23 @@ That push is the only trigger for a GitHub Release. The first releases publish t
 
 Release notes come from [CHANGELOG.md](../CHANGELOG.md); GoReleaser does not generate them (`changelog.disable: true`).
 
+### Reproducible builds
+
+Release artifacts are reproducible: the same tagged commit built with the same Go toolchain (the `toolchain` line in `go.mod`) gives byte-identical archives, packages and `SHA256SUMS` on any machine. [`.goreleaser.yaml`](../.goreleaser.yaml) takes every timestamp from the commit being built, not from the clock:
+
+- the binary's mtime (`mod_timestamp: "{{ .CommitTimestamp }}"`) and `SOURCE_DATE_EPOCH` in the build environment;
+- the mtime of every entry in the tar.gz archives and in the `.deb` / `.rpm` / `.apk` packages (`{{ .CommitDate }}`), with archive entries owned by `root:root`;
+- `-trimpath`, so no build-machine paths end up in the binary.
+
+To check a release yourself, check out the tag, install the `go.mod` toolchain, and run the same build without publishing; the `SHA256SUMS` should match the one on the release:
+
+```bash
+git checkout "$TAG"
+BASALT_VERSION="$TAG" RELEASE_KIND=snapshot GITHUB_REPOSITORY=BasaltDBHq/BasaltDB HOMEBREW_TAP_GITHUB_TOKEN= \
+  goreleaser release --clean --skip=publish --skip=homebrew --skip=announce --skip=validate
+cat dist/SHA256SUMS
+```
+
 There is no container image: `basalt` runs next to the agent as a local service, not as a hosted server.
 
 Owner/repo in the workflow and GoReleaser come from `${{ github.repository }}` / `${{ github.repository_owner }}`. Transferring the repo to a new GitHub org does not require a config rewrite. `install.sh` defaults to `BASALTDB_REPO=BasaltDBHq/BasaltDB` (one-line change after a transfer).

@@ -11,7 +11,7 @@
 
 Every action an agent takes is recorded with who did it, why, what it saw and what it changed. That record is what lets a person preview an action, stop it and undo it.
 
-> **Status: early.** BasaltDB works end to end on Postgres. This is an alpha prerelease: expect breaking changes. Install with Homebrew or a release binary, or build from source with Go 1.26. See [Status](#status).
+> **Status: early.** BasaltDB works end to end on Postgres. This is an alpha prerelease: expect breaking changes. See [Status](#status).
 
 - **Docs:** https://docs.basaltvault.app
 - **Install guide:** [docs/install.md](docs/install.md), from nothing to an agent's first guarded write
@@ -37,17 +37,16 @@ The common advice is "never connect agents to production". BasaltDB is for the c
 
 ## Quickstart
 
-You need macOS or Linux with `sudo`, a Postgres you own, a browser with a passkey, and an MCP client. Windows is not available. The [install guide](docs/install.md) has every prompt and every error, including the GitHub release archives, the Linux packages, and building from source; this is the short version.
+You need macOS and Linux, a Postgres you own, a browser with a passkey, and an MCP client. The [install guide](docs/install.md) has every prompt and every error; this is the short version.
 
-**1. Install `basalt`.** This is an alpha prerelease. The binary must live in a root-owned directory, because the engine runs it as its own OS user. Homebrew's prefix is often not root-owned, so copy the bottle into `/usr/local/libexec` and link it from `/usr/local/bin`:
+**1. Install `basalt`.**
 
 ```sh
 brew install basaltdbhq/tap/basaltdb
-sudo install -d -o root -m 0755 /usr/local/libexec
-sudo install -o root -m 0755 "$(brew --prefix)/bin/basalt" /usr/local/libexec/basalt
-sudo mkdir -p /usr/local/bin
-sudo ln -sf /usr/local/libexec/basalt /usr/local/bin/basalt
+basalt version
 ```
+
+To install from a GitHub release, check the archive against `SHA256SUMS` and put `basalt` on your `PATH`. To build from source, see the [install guide](docs/install.md).
 
 **2. Create the sample tables** (skip this if you guard your own). [`examples/demo/seed.sql`](examples/demo/seed.sql) creates a schema `basalt_demo` with 30 leads and 20 notes, and touches nothing else.
 
@@ -125,7 +124,7 @@ Old values are kept for 30 days. After that a row can no longer be reverted.
 
 - **Postgres:** Supabase, RDS, and any Postgres you run yourself and can log in to as an admin.
 - **Agents:** any MCP client. The docs cover OpenCode, Claude Code and Codex; [docs/mcp-clients.md](docs/mcp-clients.md) has the configuration for others.
-- **Platforms:** macOS and Linux, amd64 and arm64. No Windows build.
+- **Platforms:** macOS and Linux.
 
 ## Status
 
@@ -141,7 +140,6 @@ What works today:
 Not there yet:
 
 - Setup from a browser alone, for a person without a terminal.
-- A Windows build.
 
 BasaltVault is a planned paid service for many agents and machines; BasaltDB does not need it.
 

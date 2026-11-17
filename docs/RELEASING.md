@@ -35,7 +35,7 @@ git push origin "$NEXT_TAG"
 That push is the only trigger for a GitHub Release. The first releases publish to GitHub only: npm, the MCP registry and the Homebrew tap are off until you switch them on (see [Other channels](#other-channels)). The [Release](../.github/workflows/release.yml) workflow then:
 
 1. Builds linux/amd64, linux/arm64, darwin/amd64, darwin/arm64 (`CGO_ENABLED=0`). Windows is not built yet.
-2. Attaches tar.gz holding the one `basalt` binary, `SHA256SUMS`, and `.deb` / `.rpm` / `.apk`. It also attaches `portal.sha256`, a copy of `web/portal.sha256` from the tagged commit (the hashes of the portal pages that release embeds), for `basalt portal verify --manifest portal.sha256`. Darwin tarballs are `CGO_ENABLED=0` static builds. They are unsigned (no Apple Developer account, codesign, or notarization). After a browser download, clear Gatekeeper quarantine **per binary** the operator verified (`xattr -d com.apple.quarantine ./basalt`), never recursively. CI `macos-smoke` runs those archives on `macos-15` (`uname -m` arm64) and `macos-15-intel` (`uname -m` x86_64).
+2. Attaches tar.gz holding the one `basalt` binary, `SHA256SUMS`, its Sigstore signature `SHA256SUMS.sigstore.json` ([Signed checksums](#signed-checksums)), and `.deb` / `.rpm` / `.apk`. It also attaches `portal.sha256`, a copy of `web/portal.sha256` from the tagged commit (the hashes of the portal pages that release embeds), for `basalt portal verify --manifest portal.sha256`. Darwin tarballs are `CGO_ENABLED=0` static builds. They are unsigned (no Apple Developer account, codesign, or notarization). After a browser download, clear Gatekeeper quarantine **per binary** the operator verified (`xattr -d com.apple.quarantine ./basalt`), never recursively. CI `macos-smoke` runs those archives on `macos-15` (`uname -m` arm64) and `macos-15-intel` (`uname -m` x86_64).
 3. Marks the GitHub Release as a **prerelease** when the tag has a semver prerelease suffix (`-alpha`, `-beta`, `-rc`). `prerelease: auto` in GoReleaser.
 
 Release notes come from [CHANGELOG.md](../CHANGELOG.md); GoReleaser does not generate them (`changelog.disable: true`).
@@ -53,9 +53,20 @@ To check a release yourself, check out the tag, install the `go.mod` toolchain, 
 ```bash
 git checkout "$TAG"
 BASALT_VERSION="$TAG" RELEASE_KIND=snapshot GITHUB_REPOSITORY=BasaltDBHq/BasaltDB HOMEBREW_TAP_GITHUB_TOKEN= \
-  goreleaser release --clean --skip=publish --skip=homebrew --skip=announce --skip=validate
+  goreleaser release --clean --skip=publish --skip=homebrew --skip=announce --skip=validate --skip=sign
 cat dist/SHA256SUMS
 ```
+
+### Signed checksums
+
+The release job signs `SHA256SUMS` with cosign, keyless ([`.goreleaser.yaml`](../.goreleaser.yaml), `signs`), and attaches the Sigstore bundle as `SHA256SUMS.sigstore.json`. `SHA256SUMS` lists every archive and package and `portal.sha256`, so the one signature covers them all.
+
+- The job has `id-token: write`. cosign trades the job's GitHub OIDC token for a short-lived Fulcio certificate whose identity is `https://github.com/<owner>/<repo>/.github/workflows/release.yml@refs/tags/<tag>`, signs, and records the signature in the public Rekor log. There is no signing key or secret to manage or rotate.
+- `sigstore/cosign-installer` puts `cosign` on the runner. If signing fails, GoReleaser stops before it publishes, so a release is never published unsigned.
+- CI snapshot builds and the reproducibility check above pass `--skip=sign`: they have no OIDC token and publish nothing.
+- The signature is not part of the reproducible output: each signing run gets a new certificate and log entry, so `SHA256SUMS.sigstore.json` differs from run to run while `SHA256SUMS` stays the same.
+
+How a user checks it is in the [install guide](install.md#check-the-signature).
 
 There is no container image: `basalt` runs next to the agent as a local service, not as a hosted server.
 

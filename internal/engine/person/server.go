@@ -44,10 +44,32 @@ type Options struct {
 	Pages   PagesDTO
 	PeerUID PeerUIDFunc
 	Log     *slog.Logger
+	// Gate admits each request; nil admits all. The engine closes it when
+	// it restarts onto an upgraded binary, and waits for the requests it
+	// admitted.
+	Gate Gate
 }
+
+// Gate admits the requests the server runs: Begin false means the request
+// is refused with nothing run; End follows each admitted request.
+type Gate interface {
+	Begin() bool
+	End()
+}
+
+type openGate struct{}
+
+func (openGate) Begin() bool { return true }
+func (openGate) End()        {}
+
+// restartingMessage refuses a request the engine did not run because it is
+// restarting onto an upgraded binary.
+const restartingMessage = "the basalt engine is restarting onto the upgraded basalt binary and did not run this request; " +
+	"nothing was run: run the command again in a few seconds"
 
 // Server serves the person socket.
 type Server struct {
+	gate   Gate
 	allow  map[uint32]bool
 	agents map[string]Ledger
 	// scopes are, per agent OS user uid, the agents that uid runs.
@@ -87,7 +109,12 @@ func NewServer(o Options) *Server {
 		}
 		scopes[uid][name] = true
 	}
+	gate := o.Gate
+	if gate == nil {
+		gate = openGate{}
+	}
 	return &Server{
+		gate:  gate,
 		allow: allow, agents: o.Agents, scopes: scopes, info: o.Info, engine: o.Engine,
 		pages: o.Pages, peerUID: o.PeerUID, log: o.Log,
 	}
@@ -144,7 +171,7 @@ func (s *Server) ServeConn(ctx context.Context, conn *net.UnixConn) {
 	req, rerr := readRequest(conn)
 	resp := Response{Error: rerr}
 	if rerr == nil {
-		resp = s.handle(ctx, uid, req)
+		resp = s.gated(ctx, uid, req)
 	}
 	_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 	writeLine(conn, resp)
@@ -186,6 +213,15 @@ func decodeStrict(raw []byte, v any) error {
 
 func invalid(err error) *Error {
 	return &Error{Code: CodeInvalidArgument, Message: err.Error()}
+}
+
+// gated runs req when the gate admits it, and refuses it otherwise.
+func (s *Server) gated(ctx context.Context, uid uint32, req Request) Response {
+	if !s.gate.Begin() {
+		return Response{Error: &Error{Code: CodeRefused, Message: restartingMessage}}
+	}
+	defer s.gate.End()
+	return s.handle(ctx, uid, req)
 }
 
 // handle runs one request against the named agent's ledger.

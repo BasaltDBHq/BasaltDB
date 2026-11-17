@@ -114,6 +114,13 @@ type RPCError struct {
 // per request to out, until in ends or ctx is done. Notifications get no
 // response. Callers must keep logs off out.
 func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
+	return s.ServeGated(ctx, in, out, openGate{})
+}
+
+// ServeGated is Serve with every request admitted by gate: a request gate
+// refuses is answered with ErrCodeRestarting and not run. The hello and
+// notifications are not gated.
+func (s *Server) ServeGated(ctx context.Context, in io.Reader, out io.Writer, gate Gate) error {
 	sess := &session{}
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, scannerInitSize), scannerMaxSize)
@@ -132,11 +139,24 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 			}
 			continue
 		}
-		if err := s.serveLine(ctx, out, line, sess); err != nil {
+		if err := s.serveGated(ctx, out, line, gate, sess); err != nil {
 			return err
 		}
 	}
 	return sc.Err()
+}
+
+// serveGated answers line when gate admits it, and refuses it otherwise.
+func (s *Server) serveGated(ctx context.Context, out io.Writer, line []byte, gate Gate, sess *session) error {
+	req, ok := RequestOf(line)
+	if !ok {
+		return s.serveLine(ctx, out, line, sess)
+	}
+	if !gate.Begin() {
+		return WriteError(out, req.ID, ErrCodeRestarting, RestartingMessage)
+	}
+	defer gate.End()
+	return s.serveLine(ctx, out, line, sess)
 }
 
 // negotiate answers the hello request, and refuses every other request

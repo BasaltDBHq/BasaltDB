@@ -19,6 +19,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/channel"
@@ -539,7 +540,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	})
 	return agentRuntime{
 		svc: svc,
-		upkeep: upkeep.New(a.Name, buildinfo.Version, pool, log, time.Now).WithPins(env.pins).WithRLSCache(blind).
+		upkeep: upkeep.New(a.Name, buildinfo.Version, postgres.NewUpkeep(pool), log, time.Now).WithPins(env.pins).WithRLSCache(blind).
 			WithOperatedBy(env.cfg.OperatedBy).WithGate(svc.AdmitTick).
 			WithPII(piidict.NewWatch(a.Name, classes, pool, log.With("component", "pii"))),
 		ledger: piiLedger{Ledger: gatedLedger{inner: person.NewDBLedger(pool, time.Now), admit: svc.Admit}, dict: env.dict},
@@ -612,8 +613,8 @@ func statePins(dir string, log *slog.Logger) upkeep.Pins {
 // KeptSetAside reads the pins agent set aside after reinstalls from its
 // pin (chainpin.Pin.SetAside), for the reinstall notice. A pin that cannot
 // be read is logged and adds nothing: the ledger still shows the notice.
-func KeptSetAside(pins upkeep.Pins, agent string, log *slog.Logger) func() []guard.SetAside {
-	return func() []guard.SetAside {
+func KeptSetAside(pins upkeep.Pins, agent string, log *slog.Logger) func() []action.SetAside {
+	return func() []action.SetAside {
 		p, _, err := pins.Load(agent)
 		if err != nil {
 			log.Warn("read the kept copy of set-aside pins", "agent", agent, "err", err)

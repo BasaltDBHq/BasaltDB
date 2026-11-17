@@ -1,0 +1,31 @@
+{
+  "body": {
+    "agent": "bot",
+    "enforcement": "ENGINE_AND_GUARD",
+    "engine": {
+      "build": "0.0.0-dev",
+      "reachable": true
+    },
+    "guard": {
+      "build": 1,
+      "installed": 1,
+      "state": "OK"
+    },
+    "operatedBy": "PERSON",
+    "pages": {
+      "served": false,
+      "url": "http://localhost:8787"
+    },
+    "passkeys": {
+      "active": 1,
+      "registered": true
+    },
+    "problems": [],
+    "ready": true,
+    "setup": {
+      "state": "NONE"
+    }
+  },
+  "isError": false,
+  "tool": "status"
+}

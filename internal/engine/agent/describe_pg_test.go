@@ -4,11 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -25,8 +23,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 )
-
-var updateGolden = flag.Bool("update", false, "rewrite testdata/describe/*.json")
 
 // describeSQL is the describe fixture: a quoted schema and table, orders
 // with a SECRET column (card_token), a column the agent is not granted
@@ -272,48 +268,6 @@ func TestDescribeDoesNotRecordReads(t *testing.T) {
 		h.describe(t, args)
 		require.Equal(t, before, count(), "%v", args)
 	}
-}
-
-// goldenNormal replaces what changes from run to run (the database name,
-// fingerprints, scan counters and sizes) so the answers can be compared.
-func goldenNormal(v any, key string) any {
-	switch x := v.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(x))
-		for k, val := range x {
-			out[k] = goldenNormal(val, k)
-		}
-		return out
-	case []any:
-		out := make([]any, len(x))
-		for i, val := range x {
-			out[i] = goldenNormal(val, key)
-		}
-		return out
-	}
-	switch key {
-	case "database", "fingerprint", "tableBytes", "totalBytes", "seqScans", "indexScans", "lastAnalyzed", "sizeBytes", "scans":
-		return "<" + key + ">"
-	}
-	return v
-}
-
-func requireGolden(t *testing.T, name string, body map[string]any) {
-	t.Helper()
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	enc.SetIndent("", "  ")
-	require.NoError(t, enc.Encode(goldenNormal(body, "")))
-	got := buf.Bytes()
-	file := filepath.Join("testdata", "describe", name+".json")
-	if *updateGolden {
-		require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o755))
-		require.NoError(t, os.WriteFile(file, got, 0o600))
-	}
-	want, err := os.ReadFile(file)
-	require.NoError(t, err, "run with -update to write %s", file)
-	require.Equal(t, string(want), string(got), "%s (run with -update to rewrite)", file)
 }
 
 func TestDescribeServedGolden(t *testing.T) {

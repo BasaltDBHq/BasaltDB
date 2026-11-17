@@ -1,0 +1,31 @@
+{
+  "body": {
+    "code": "STALE_READ",
+    "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
+    "message": "STALE_READ: public.leads {\"id\": 42} read at xmin <n>, now <n> (hint: read the row again in this run, then decide)",
+    "nextSteps": [
+      {
+        "action": "CALL_TOOL",
+        "actor": "AGENT",
+        "arguments": {
+          "params": [
+            42
+          ],
+          "runId": "<id-1>",
+          "sql": "SELECT * FROM public.leads WHERE \"id\" = $1"
+        },
+        "text": "Read the row again in this run, then decide.",
+        "tool": "query"
+      },
+      {
+        "action": "REVISE_CALL",
+        "actor": "AGENT",
+        "text": "Decide again from what the row holds now, then send the write again with the same intent.",
+        "tool": "write"
+      }
+    ],
+    "sqlState": "BS004"
+  },
+  "isError": true,
+  "tool": "write"
+}

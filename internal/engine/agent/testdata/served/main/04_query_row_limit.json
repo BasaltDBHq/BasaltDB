@@ -1,0 +1,18 @@
+{
+  "body": {
+    "code": "QUERY_TIMEOUT",
+    "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
+    "message": "the query returned more rows than the read row limit; add a LIMIT or a narrower WHERE",
+    "nextSteps": [
+      {
+        "action": "REVISE_CALL",
+        "actor": "AGENT",
+        "text": "Add a LIMIT or a narrower WHERE so the call returns fewer rows, then call it again.",
+        "tool": "query"
+      }
+    ],
+    "reason": "ROW_LIMIT"
+  },
+  "isError": true,
+  "tool": "query"
+}

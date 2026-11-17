@@ -1,0 +1,34 @@
+{
+  "body": {
+    "code": "PERMISSION_DENIED",
+    "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
+    "message": "permission denied for table payroll",
+    "nextSteps": [
+      {
+        "action": "STOP",
+        "actor": "AGENT",
+        "text": "The agent role may not do this: do not retry or look for another route."
+      },
+      {
+        "action": "ASK_PERSON",
+        "actor": "AGENT",
+        "text": "Tell the person which access is missing and ask them to grant it."
+      },
+      {
+        "action": "RUN_COMMAND",
+        "actor": "PERSON",
+        "command": "basalt init --agent bot --config /etc/basalt-test/engine.json --dry-run",
+        "text": "Show the person this command: it gives the agent the missing access, and init asks for the admin connection string itself."
+      },
+      {
+        "action": "TELL_AGENT",
+        "actor": "PERSON",
+        "text": "Tell the agent once the access is granted."
+      }
+    ],
+    "personMessage": "The agent was denied access to what it asked for. If it should have it, run the command the agent shows you, then tell the agent.",
+    "sqlState": "42501"
+  },
+  "isError": true,
+  "tool": "write"
+}

@@ -1,0 +1,54 @@
+{
+  "body": {
+    "batched": false,
+    "expiresAt": "<time>",
+    "intent": "Undo the tidy-up",
+    "nextSteps": [
+      {
+        "action": "OPEN_LINK",
+        "actor": "PERSON",
+        "text": "Open the link and sign with your passkey; then give the agent the code the page shows.",
+        "url": "http://localhost:8787/reverts/<id-27>#<fragment>"
+      },
+      {
+        "action": "TELL_AGENT",
+        "actor": "PERSON",
+        "text": "Tell the agent when you have signed, or that you lost the link."
+      },
+      {
+        "action": "END_TURN",
+        "actor": "AGENT",
+        "text": "Do not wait again: end your turn, showing personMessage and the revert link you gave earlier."
+      },
+      {
+        "action": "CALL_TOOL",
+        "actor": "AGENT",
+        "arguments": {
+          "revertId": "<id-27>",
+          "waitForSignature": 0
+        },
+        "text": "When the person says they signed, call it once more; it returns at once.",
+        "tool": "request_revert"
+      },
+      {
+        "action": "CALL_TOOL",
+        "actor": "AGENT",
+        "arguments": {
+          "reissueLink": true,
+          "revertId": "<id-27>"
+        },
+        "text": "For a lost link, or when the person asks for a new one, call this: it gives a fresh link and the old one stops working.",
+        "tool": "request_revert"
+      }
+    ],
+    "personMessage": "The revert of run <id-1> waits for your passkey at the link the agent gave you, until <time>. Tell the agent when you have signed, or give it the code the page shows.",
+    "revertId": "<id-27>",
+    "rows": 12,
+    "scope": "RUN",
+    "scopeId": "<id-1>",
+    "skipped": 0,
+    "status": "PENDING"
+  },
+  "isError": false,
+  "tool": "request_revert"
+}

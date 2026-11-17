@@ -1,0 +1,17 @@
+{
+  "body": {
+    "code": "NOT_FOUND",
+    "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
+    "message": "no revert <id-28> requested by this agent: request one with request_revert and a changeId or runId of yours",
+    "nextSteps": [
+      {
+        "action": "ASK_PERSON",
+        "actor": "AGENT",
+        "text": "Ask the person for the revert id that basalt revert printed; this agent prepared no revert with that id."
+      }
+    ],
+    "reason": "REVERT"
+  },
+  "isError": true,
+  "tool": "request_revert"
+}

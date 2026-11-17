@@ -1,0 +1,14 @@
+{
+  "body": {
+    "changeId": "<id-22>",
+    "durationMs": "<durationMs>",
+    "op": "UPDATE",
+    "personMessage": "Approved: Update 11 rows in public·leads (approval <id-5>), receipt from engine <engine>.",
+    "receipt": "<receipt>",
+    "rows": 11,
+    "runId": "<id-1>",
+    "status": "APPLIED"
+  },
+  "isError": false,
+  "tool": "write"
+}

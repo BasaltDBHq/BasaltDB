@@ -46,7 +46,14 @@ type Info struct {
 	Name         string
 	Version      string
 	Instructions string
+	// Notice, optional, is a short text for the agent to relay (an update
+	// notice); "" when there is none. A connection's first successful tool
+	// result carries it as an extra text item.
+	Notice func() string
 }
+
+// session is the state of one Serve connection.
+type session struct{ noticed bool }
 
 // Server serves a fixed set of tools.
 type Server struct {
@@ -107,6 +114,7 @@ type RPCError struct {
 // per request to out, until in ends or ctx is done. Notifications get no
 // response. Callers must keep logs off out.
 func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
+	sess := &session{}
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, scannerInitSize), scannerMaxSize)
 	shim := Hello{} // a shim that never says hello is version 0
@@ -124,7 +132,7 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 			}
 			continue
 		}
-		if err := s.serveLine(ctx, out, line); err != nil {
+		if err := s.serveLine(ctx, out, line, sess); err != nil {
 			return err
 		}
 	}
@@ -156,10 +164,10 @@ func (s *Server) negotiate(out io.Writer, line []byte, shim *Hello) (handled boo
 // ServeLine answers one JSON-RPC message on out, as Serve does for each line
 // (the MCP shim answers the lines the engine cannot).
 func (s *Server) ServeLine(ctx context.Context, out io.Writer, line []byte) error {
-	return s.serveLine(ctx, out, bytes.TrimSpace(line))
+	return s.serveLine(ctx, out, bytes.TrimSpace(line), nil)
 }
 
-func (s *Server) serveLine(ctx context.Context, out io.Writer, line []byte) error {
+func (s *Server) serveLine(ctx context.Context, out io.Writer, line []byte, sess *session) error {
 	var req Request
 	if err := json.Unmarshal(line, &req); err != nil {
 		return writeResponse(out, nil, nil, &RPCError{Code: rpcErrParse, Message: "parse error"})
@@ -167,11 +175,11 @@ func (s *Server) serveLine(ctx context.Context, out io.Writer, line []byte) erro
 	if req.ID == nil {
 		return nil
 	}
-	result, rpcErr := s.handle(ctx, req.Method, req.Params)
+	result, rpcErr := s.handle(ctx, req.Method, req.Params, sess)
 	return writeResponse(out, req.ID, result, rpcErr)
 }
 
-func (s *Server) handle(ctx context.Context, method string, params json.RawMessage) (any, *RPCError) {
+func (s *Server) handle(ctx context.Context, method string, params json.RawMessage, sess *session) (any, *RPCError) {
 	switch method {
 	case "initialize":
 		return s.initialize(params), nil
@@ -180,7 +188,7 @@ func (s *Server) handle(ctx context.Context, method string, params json.RawMessa
 	case "tools/list":
 		return map[string]any{"tools": s.listTools()}, nil
 	case "tools/call":
-		return s.callTool(ctx, params)
+		return s.callTool(ctx, params, sess)
 	default:
 		return nil, &RPCError{Code: rpcErrMethodNotFound, Message: "method not found: " + method}
 	}
@@ -219,7 +227,7 @@ func (s *Server) listTools() []map[string]any {
 	return out
 }
 
-func (s *Server) callTool(ctx context.Context, params json.RawMessage) (any, *RPCError) {
+func (s *Server) callTool(ctx context.Context, params json.RawMessage, sess *session) (any, *RPCError) {
 	var req struct {
 		Name      string          `json:"name"`
 		Arguments json.RawMessage `json:"arguments"`
@@ -238,13 +246,32 @@ func (s *Server) callTool(ctx context.Context, params json.RawMessage) (any, *RP
 	// QUERY_TIMEOUT SIZE_LIMIT).
 	out, err := tool.Call(resultsize.With(ctx), req.Arguments)
 	if err == nil {
-		return toolResult(out, false), nil
+		res := toolResult(out, false)
+		s.addNotice(res, sess)
+		return res, nil
 	}
 	var te *ToolError
 	if errors.As(err, &te) {
 		return errorResult(te), nil
 	}
 	return toolResult(map[string]string{"message": err.Error()}, true), nil
+}
+
+// addNotice appends the server's notice to res once per connection.
+func (s *Server) addNotice(res map[string]any, sess *session) {
+	if s.info.Notice == nil || sess == nil || sess.noticed {
+		return
+	}
+	text := s.info.Notice()
+	if text == "" {
+		return
+	}
+	sess.noticed = true
+	content, ok := res["content"].([]map[string]any)
+	if !ok {
+		return // toolResult always builds this shape
+	}
+	res["content"] = append(content, textItem(text))
 }
 
 // errorResult is the tools/call result of te, with docsUrl set from its code
@@ -257,13 +284,18 @@ func errorResult(te *ToolError) map[string]any {
 	return toolResult(&out, true)
 }
 
+// textItem is one text content item of a tools/call result.
+func textItem(text string) map[string]any {
+	return map[string]any{"type": "text", "text": text}
+}
+
 func toolResult(v any, isError bool) map[string]any {
 	text, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		text = []byte(err.Error())
 	}
 	return map[string]any{
-		"content": []map[string]any{{"type": "text", "text": string(text)}},
+		"content": []map[string]any{textItem(string(text))},
 		"isError": isError,
 	}
 }

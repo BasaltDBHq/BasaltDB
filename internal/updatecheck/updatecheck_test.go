@@ -218,3 +218,15 @@ func TestSlowRequestStillRecordsAttempt(t *testing.T) {
 		t.Fatal("a second command would start another request")
 	}
 }
+
+func TestAgentMessage(t *testing.T) {
+	n := Notice{Current: "0.0.1", Latest: "0.0.2", URL: "https://example.test/r"}
+	got := n.AgentMessage("/usr/local/bin/basalt")
+	if !strings.HasPrefix(got, "WARNING: ") || !strings.Contains(got, "https://example.test/r") || !strings.Contains(got, "Do not upgrade it yourself") {
+		t.Errorf("message = %q", got)
+	}
+	n.Security = true
+	if got := n.AgentMessage("/opt/homebrew/bin/basalt"); !strings.HasPrefix(got, "SECURITY UPDATE: ") || !strings.Contains(got, "brew upgrade basaltdbhq/tap/basaltdb") {
+		t.Errorf("message = %q", got)
+	}
+}

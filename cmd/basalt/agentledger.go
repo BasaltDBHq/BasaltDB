@@ -130,7 +130,7 @@ func personError(c *cliIO, agent string, err error) error {
 	case errors.Is(err, person.ErrNotRunning):
 		return fmt.Errorf("the engine is not running; start it with %s, then run this command again", service.StartCommand(c.goos))
 	case errors.Is(err, person.ErrUIDNotAllowed):
-		return fmt.Errorf("the engine does not let OS user %d use its person socket; add it with sudo basalt init --agent %s --person-uid %d",
+		return fmt.Errorf("the engine does not let OS user %d use its person socket; a person adds it in a terminal of their own (an agent never runs this: it asks for the admin password): sudo basalt init --agent %s --person-uid %d",
 			uid, agent, uid)
 	}
 	return err

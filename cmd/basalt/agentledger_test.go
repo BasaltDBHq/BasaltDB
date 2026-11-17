@@ -177,7 +177,7 @@ func TestServiceModeWithARefusedUIDSaysHowToAddIt(t *testing.T) {
 		r := serviceRun(t, socket, pc.run, pc.args...)
 		require.Equal(t, exitError, r.code, pc.name)
 		uid := os.Getuid()
-		require.Contains(t, r.stderr, fmt.Sprintf("basalt: the engine does not let OS user %d use its person socket; add it with sudo basalt init --agent bot --person-uid %d", uid, uid), pc.name)
+		require.Contains(t, r.stderr, fmt.Sprintf("basalt: the engine does not let OS user %d use its person socket; a person adds it in a terminal of their own (an agent never runs this: it asks for the admin password): sudo basalt init --agent bot --person-uid %d", uid, uid), pc.name)
 		require.NotContains(t, r.stderr, "permission denied", pc.name)
 	}
 }

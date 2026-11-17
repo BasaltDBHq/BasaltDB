@@ -86,6 +86,8 @@ To guard your own tables instead, use them in step 4 in place of `basalt_demo.le
 
 ## 4. Install the guard: `basalt init`
 
+You run this step yourself, in your own terminal: it asks for the admin connection string. An agent never runs it. If an agent is setting up Basalt for you, it uses `basalt init --remote` and gives you a setup code instead ([bot-setup.md](bot-setup.md)).
+
 ```sh
 basalt init --agent demo_bot \
   --write basalt_demo.leads --read basalt_demo.lead_notes

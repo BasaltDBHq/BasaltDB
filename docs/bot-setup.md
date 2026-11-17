@@ -140,7 +140,7 @@ If the person pastes an admin connection string or a password, or you find one i
 
 When `BASALT_ADMIN_DATABASE_URL` is set where you run commands, `basalt` does not use it and says so. Ask the person to remove it.
 
-`basalt` knows it runs under an agent from an environment variable: its own `BASALT_AGENT_CONTEXT`, or one that a known coding agent sets in its shell (`CLAUDECODE`, `CODEX_SANDBOX`, `GEMINI_CLI`, `CURSOR_AGENT`, `OPENCODE`). A person who runs a bot can set `BASALT_AGENT_CONTEXT=1` in the bot's environment. This check stops mistakes. It does not stop an agent that unsets the variable. What keeps the password safe is that it is typed only on the person's own computer, and that the engine and the agent run as OS users who cannot read it.
+`basalt` knows it runs under an agent from an environment variable: its own `BASALT_AGENT_CONTEXT`, or one that a known coding agent sets in its shell (`CLAUDECODE`, `CODEX_SANDBOX`, `CODEX_SANDBOX_NETWORK_DISABLED`, `GEMINI_CLI`, `CURSOR_AGENT`, `OPENCODE`). A person who runs a bot can set `BASALT_AGENT_CONTEXT=1` in the bot's environment. This check stops mistakes. It does not stop an agent that unsets the variable, and `sudo` clears it by default. What keeps the password safe is that it is typed only on the person's own computer, and that the engine and the agent run as OS users who cannot read it.
 
 ## Where to read more
 

@@ -15,13 +15,11 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/jackc/pgx/v5"
-
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/engine/piidict"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/pgcatalog"
-	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
@@ -48,7 +46,7 @@ type Catalog interface {
 	// Database is the database the credential connects to.
 	Database() string
 	// Limits are the read limits the agent's statements run within.
-	Limits() sqlguard.Limits
+	Limits() action.Limits
 }
 
 // ClassResolver is the agent's PII classification (piidict.BoundMap).
@@ -88,7 +86,7 @@ func (noCatalog) Search(context.Context, string, []pgcatalog.ColumnKey, *pgcatal
 
 func (noCatalog) Structure(context.Context) ([]string, error) { return nil, errNoCatalog }
 func (noCatalog) Database() string                            { return "" }
-func (noCatalog) Limits() sqlguard.Limits                     { return sqlguard.DefaultLimits() }
+func (noCatalog) Limits() action.Limits                       { return action.Limits{} }
 
 // noClasses serves a service built without PII classes: it cannot tell a
 // SECRET column, so every describe call fails closed (INTERNAL).
@@ -525,7 +523,7 @@ func (s *Service) DescribeResource(ctx context.Context, resource, ifFingerprint 
 		return Resource{}, describeNotFound(resource)
 	}
 	d, err := s.Catalog.Describe(ctx, rel.OID)
-	if errors.Is(err, pgx.ErrNoRows) { // dropped since Find
+	if errors.Is(err, action.ErrNotFound) { // dropped since Find
 		return Resource{}, describeNotFound(resource)
 	}
 	if err != nil {

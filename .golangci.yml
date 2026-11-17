@@ -130,6 +130,59 @@ linters:
           deny:
             - pkg: github.com/basaltdbhq/basaltdb/internal/vault/vaulttest
               desc: vaulttest is a test fake; import it from _test.go files only
+        # The agent service talks to its store only through the store ports
+        # (internal/engine/agent/ports.go): no database driver, SQL policy or
+        # adapter in it.
+        agent-through-store-ports:
+          files:
+            - "**/internal/engine/agent/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/jackc/pgx
+              desc: the agent service reaches Postgres only through the store ports
+            - pkg: github.com/basaltdbhq/basaltdb/internal/sqlguard
+              desc: statements are checked by the store (SQLStore.Check)
+            - pkg: github.com/basaltdbhq/basaltdb/internal/store
+              desc: the run.go wiring picks the adapter; the service sees ports only
+            - pkg: github.com/basaltdbhq/basaltdb/internal/pgdial
+              desc: the agent service opens no connection
+        # The ledger, the signed-message codecs and the PII code do not depend
+        # on a store adapter or on the agent service.
+        no-adapter-in-ledger-and-pii:
+          files:
+            - "**/internal/ledger/**"
+            - "**/internal/approval/**"
+            - "**/internal/revert/**"
+            - "**/internal/pii/**"
+            - "**/internal/engine/piidict/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/basaltdbhq/basaltdb/internal/store
+              desc: the ledger and PII code do not depend on a store adapter
+            - pkg: github.com/basaltdbhq/basaltdb/internal/engine/agent
+              desc: the ledger and PII code do not depend on the agent service
+        # internal/action is the store-neutral vocabulary: the standard
+        # library, uuid, pagination and the signed-message codecs only.
+        action-is-neutral:
+          files:
+            - "**/internal/action/**"
+          list-mode: strict
+          allow:
+            - $gostd
+            - github.com/google/uuid
+            - github.com/basaltdbhq/basaltdb/pkg/pagination
+            - github.com/basaltdbhq/basaltdb/internal/approval
+            - github.com/basaltdbhq/basaltdb/internal/passkey
+            - github.com/basaltdbhq/basaltdb/internal/revert
+        # The codecs action imports never import it back.
+        codecs-below-action:
+          files:
+            - "**/internal/approval/**"
+            - "**/internal/passkey/**"
+            - "**/internal/revert/**"
+          deny:
+            - pkg: github.com/basaltdbhq/basaltdb/internal/action
+              desc: internal/action imports the codecs; they must not import it
     errcheck:
       check-type-assertions: true
       check-blank: false

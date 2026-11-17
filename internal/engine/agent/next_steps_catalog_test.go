@@ -24,7 +24,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
-	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
@@ -92,7 +91,7 @@ func (catalogApprovals) Passkeys(context.Context) ([]passkey.Credential, error) 
 
 func pgFail(code, message, detail string) func(*testing.T, *Service) error {
 	return func(*testing.T, *Service) error {
-		return &pgconn.PgError{Code: code, Message: message, Detail: detail}
+		return postgres.MapError(&pgconn.PgError{Code: code, Message: message, Detail: detail})
 	}
 }
 
@@ -100,8 +99,8 @@ func staleText(table, key string) string {
 	return fmt.Sprintf("%s %s read at xmin 7, now 9", table, key)
 }
 
-func refusal(reason sqlguard.Reason) func(*testing.T, *Service) error {
-	return func(*testing.T, *Service) error { return &sqlguard.RefusalError{Reason: reason, Detail: "detail"} }
+func refusal(reason action.RefusalReason) func(*testing.T, *Service) error {
+	return func(*testing.T, *Service) error { return &action.RefusalError{Reason: reason, Detail: "detail"} }
 }
 
 func plain(err error) func(*testing.T, *Service) error {
@@ -165,7 +164,7 @@ func nothingToRevert(tool string, lines []string, detail string, by uuid.UUID) f
 	return func(t *testing.T, s *Service) error {
 		setReverts(&s.Deps, catalogReverts{lines: lines, by: by})
 		scope := action.Scope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}
-		return s.nothingToRevert(context.Background(), tool, scope, &pgconn.PgError{Code: "BS009", Message: "NOTHING_TO_REVERT", Detail: detail})
+		return s.nothingToRevert(context.Background(), tool, scope, postgres.MapError(&pgconn.PgError{Code: "BS009", Message: "NOTHING_TO_REVERT", Detail: detail}))
 	}
 }
 
@@ -212,17 +211,17 @@ func catalogCases() map[string]catalogCase {
 			pgFail("BS004", "STALE_READ", staleText("public.leads", `{"id": 42}`)),
 		},
 
-		caseKey("STATEMENT_REFUSED", "PARSE_ERROR", ""):           {"query", queryArgs0, refusal(sqlguard.ReasonParseError)},
-		caseKey("STATEMENT_REFUSED", "MULTIPLE_STATEMENTS", ""):   {"query", queryArgs0, refusal(sqlguard.ReasonMultipleStatements)},
-		caseKey("STATEMENT_REFUSED", "WRONG_TOOL", ""):            {"query", queryArgs0, refusal(sqlguard.ReasonWrongTool)},
-		caseKey("STATEMENT_REFUSED", "DDL_NOT_ALLOWED", ""):       {"write", writeArgs0, refusal(sqlguard.ReasonDDL)},
-		caseKey("STATEMENT_REFUSED", "STATEMENT_NOT_ALLOWED", ""): {"write", writeArgs0, refusal(sqlguard.ReasonUtility)},
-		caseKey("STATEMENT_REFUSED", "SELECT_INTO", ""):           {"query", queryArgs0, refusal(sqlguard.ReasonSelectInto)},
-		caseKey("STATEMENT_REFUSED", "LOCKING_READ", ""):          {"query", queryArgs0, refusal(sqlguard.ReasonLockingRead)},
-		caseKey("STATEMENT_REFUSED", "MERGE_NOT_ALLOWED", ""):     {"write", writeArgs0, refusal(sqlguard.ReasonMerge)},
-		caseKey("STATEMENT_REFUSED", "DATA_MODIFYING_WITH", ""):   {"query", queryArgs0, refusal(sqlguard.ReasonDataModifyingWith)},
-		caseKey("STATEMENT_REFUSED", "FUNCTION_NOT_ALLOWED", ""):  {"query", queryArgs0, refusal(sqlguard.ReasonFunction)},
-		caseKey("STATEMENT_REFUSED", "NOT_REPEATABLE", ""):        {"write", writeArgs0, refusal(sqlguard.ReasonNotRepeatable)},
+		caseKey("STATEMENT_REFUSED", "PARSE_ERROR", ""):           {"query", queryArgs0, refusal(action.ReasonParseError)},
+		caseKey("STATEMENT_REFUSED", "MULTIPLE_STATEMENTS", ""):   {"query", queryArgs0, refusal(action.ReasonMultipleStatements)},
+		caseKey("STATEMENT_REFUSED", "WRONG_TOOL", ""):            {"query", queryArgs0, refusal(action.ReasonWrongTool)},
+		caseKey("STATEMENT_REFUSED", "DDL_NOT_ALLOWED", ""):       {"write", writeArgs0, refusal(action.ReasonDDL)},
+		caseKey("STATEMENT_REFUSED", "STATEMENT_NOT_ALLOWED", ""): {"write", writeArgs0, refusal(action.ReasonUtility)},
+		caseKey("STATEMENT_REFUSED", "SELECT_INTO", ""):           {"query", queryArgs0, refusal(action.ReasonSelectInto)},
+		caseKey("STATEMENT_REFUSED", "LOCKING_READ", ""):          {"query", queryArgs0, refusal(action.ReasonLockingRead)},
+		caseKey("STATEMENT_REFUSED", "MERGE_NOT_ALLOWED", ""):     {"write", writeArgs0, refusal(action.ReasonMerge)},
+		caseKey("STATEMENT_REFUSED", "DATA_MODIFYING_WITH", ""):   {"query", queryArgs0, refusal(action.ReasonDataModifyingWith)},
+		caseKey("STATEMENT_REFUSED", "FUNCTION_NOT_ALLOWED", ""):  {"query", queryArgs0, refusal(action.ReasonFunction)},
+		caseKey("STATEMENT_REFUSED", "NOT_REPEATABLE", ""):        {"write", writeArgs0, refusal(action.ReasonNotRepeatable)},
 		caseKey("STATEMENT_REFUSED", "NO_PRIMARY_KEY", ""): {
 			"write", writeArgs0,
 			pgFail("BS007", "NOT_ALLOWED", "table public.events has no primary key; the guard keys ledger rows by it"),
@@ -374,9 +373,9 @@ func catalogCases() map[string]catalogCase {
 			"preview_revert",
 			map[string]any{"runId": caseRunID, "tables": []any{"public.ghost"}},
 			plainFunc(func() error {
-				return scopeRefused(action.Scope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}, &pgconn.PgError{
+				return scopeRefused(action.Scope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}, postgres.MapError(&pgconn.PgError{
 					Code: "BS011", Message: "SCOPE_REFUSED", Detail: guard.ScopeFilter, Hint: "public.ghost has no change of yours in this scope",
-				})
+				}))
 			}),
 		},
 		caseKey("INVALID_ARGUMENT", "SCOPE_FILTER_CAP", ""): {
@@ -820,7 +819,7 @@ func TestStepRulesRefuseABadStep(t *testing.T) {
 func TestStaleReadWithAnUnreadableDetailStopsAndAsks(t *testing.T) {
 	t.Parallel()
 	s := serviceFor(t, "linux", "", nil)
-	te := s.Failure("write", writeArgs0, &pgconn.PgError{Code: "BS004", Message: "STALE_READ", Detail: "something else"})
+	te := s.Failure("write", writeArgs0, postgres.MapError(&pgconn.PgError{Code: "BS004", Message: "STALE_READ", Detail: "something else"}))
 	require.Equal(t, CodeStaleRead, te.Code)
 	require.Len(t, te.NextSteps, 2)
 	require.Equal(t, mcp.ActionStop, te.NextSteps[0].Action)
@@ -833,7 +832,7 @@ func TestStaleReadWithAnUnreadableDetailStopsAndAsks(t *testing.T) {
 func TestMessageTooLargeIsSizeLimitOnlyWhereDeclared(t *testing.T) {
 	t.Parallel()
 	s := serviceFor(t, "linux", "", nil)
-	tooLarge := fmt.Errorf("read: %w", &pgproto3.ExceededMaxBodyLenErr{MaxExpectedBodyLen: 1, ActualBodyLen: 2})
+	tooLarge := postgres.MapError(fmt.Errorf("read: %w", &pgproto3.ExceededMaxBodyLenErr{MaxExpectedBodyLen: 1, ActualBodyLen: 2}))
 	for tool, want := range map[string]string{
 		"query": CodeQueryTimeout, "write": CodeQueryTimeout, "describe": CodeQueryTimeout,
 		"run_history": CodeQueryTimeout, "list_pending": CodeQueryTimeout, "revert_plan": CodeQueryTimeout,
@@ -879,7 +878,7 @@ func TestPermissionDeniedGrantsOnlyAPlainQualifiedTable(t *testing.T) {
 		`permission denied for table "a,b"`:         "--dry-run",
 		"permission denied for table a,public.b":    "--dry-run",
 	} {
-		te := s.Failure("query", queryArgs0, &pgconn.PgError{Code: "42501", Message: message})
+		te := s.Failure("query", queryArgs0, postgres.MapError(&pgconn.PgError{Code: "42501", Message: message}))
 		require.Contains(t, te.NextSteps[2].Command, want, message)
 		require.NotContains(t, te.PersonMessage, "basalt init", "the command is in the step, not in the message")
 		requirePersonMessage(t, te.PersonMessage, te.Links)

@@ -23,7 +23,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
@@ -278,16 +277,16 @@ func (s *Service) Query(ctx context.Context, p QueryParams) (QueryOutcome, error
 	}
 	in := action.Intent{RunID: run.ID, TaskID: run.TaskID, Text: run.Intent}
 	start := s.Now()
-	stmt, err := sqlguard.Check(p.SQL, sqlguard.ToolQuery)
+	stmt, err := s.Store.Check(p.SQL, action.ToolQuery)
 	if err == nil {
 		err = checkArgs(stmt, p.Params)
 	}
 	if err != nil {
-		return QueryOutcome{}, s.refused(ctx, in, action.Op(stmt.Op), p.SQL, p.Params, start, err)
+		return QueryOutcome{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
 	}
-	res, err := s.Store.Read(ctx, p.SQL, p.Params, statementOf(stmt))
+	res, err := s.Store.Read(ctx, p.SQL, p.Params, stmt)
 	if err != nil {
-		return QueryOutcome{}, s.refused(ctx, in, action.Op(stmt.Op), p.SQL, p.Params, start, err)
+		return QueryOutcome{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
 	}
 	// The values of IDENTIFIER columns go in the dictionary before the rows
 	// leave the engine (M5.1 plan, section 6). One that cannot be added
@@ -348,16 +347,16 @@ func (s *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, error
 	}
 	in := action.Intent{RunID: run.ID, TaskID: run.TaskID, Text: p.Intent}
 	start := s.Now()
-	stmt, err := sqlguard.Check(p.SQL, sqlguard.ToolWrite)
+	stmt, err := s.Store.Check(p.SQL, action.ToolWrite)
 	if err == nil {
 		err = checkArgs(stmt, p.Params)
 	}
-	op := action.Op(stmt.Op)
+	op := stmt.Op
 	if err != nil {
 		return WriteOutcome{}, s.refused(ctx, in, op, p.SQL, p.Params, start, err)
 	}
 	res, err := s.Store.Write(ctx, in, op, p.SQL, p.Params)
-	if approvalRequired(err) {
+	if errors.Is(err, action.ErrApprovalRequired) {
 		id, err := s.hold(ctx, in, p, stmt, start)
 		if id == uuid.Nil || p.Wait == 0 {
 			return WriteOutcome{}, err
@@ -446,7 +445,7 @@ func (s *Service) refused(ctx context.Context, in action.Intent, op action.Op, s
 }
 
 // actionTool is the tool an action came from: query runs only a SELECT
-// (sqlguard refuses anything else as WRONG_TOOL), write everything else.
+// (the store's check refuses anything else as WRONG_TOOL), write everything else.
 // Failure maps the error by tool, so a refusal is recorded with the code
 // the agent gets.
 func actionTool(op action.Op) string {
@@ -467,15 +466,9 @@ func refusalOp(op action.Op) action.Op {
 	return action.OpOther
 }
 
-// statementOf is the checked statement as the store takes it: the row
-// sources a recorded read versions travel as its opaque handle.
-func statementOf(stmt sqlguard.Statement) action.Statement {
-	return action.Statement{Op: action.Op(stmt.Op), Tables: stmt.Tables, Handle: stmt.RowSources}
-}
-
 // checkArgs checks the parameters match the statement's placeholders and
 // fit the guard's ledger limit.
-func checkArgs(stmt sqlguard.Statement, params []any) error {
+func checkArgs(stmt action.Statement, params []any) error {
 	if stmt.ParamCount != len(params) {
 		return &ArgumentError{Message: fmt.Sprintf("the statement uses %d parameters ($1..$%d) but %d were given",
 			stmt.ParamCount, stmt.ParamCount, len(params))}

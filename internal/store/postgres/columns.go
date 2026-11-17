@@ -32,8 +32,8 @@ JOIN pg_catalog.pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.
 WHERE pg_catalog.array_length(p.part, 1) = 2
 GROUP BY t.name`
 
-// ColumnOrder maps each table to its columns in table order.
-func (c *ColumnOrder) ColumnOrder(ctx context.Context, tables []string) (map[string][]string, error) {
+// columnOrderRaw is ColumnOrder before MapError.
+func (c *ColumnOrder) columnOrderRaw(ctx context.Context, tables []string) (map[string][]string, error) {
 	tx, err := c.pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
 	if err != nil {
 		return nil, err

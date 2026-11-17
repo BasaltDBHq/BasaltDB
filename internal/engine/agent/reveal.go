@@ -4,11 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/approval"
@@ -16,7 +14,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 )
 
 // The pages' reveal routes (CONTRACT.md, Approvals, Rows hidden from the
@@ -60,7 +57,7 @@ func (s *Service) RevealApproval(ctx context.Context, id uuid.UUID, secret strin
 	if err != nil {
 		return approval.RevealAnswer{}, err
 	}
-	held, err := heldWrite(a)
+	held, err := heldWrite(a, s.Store)
 	if err != nil {
 		return approval.RevealAnswer{}, err
 	}
@@ -148,12 +145,12 @@ type heldRun struct {
 // heldWrite reads the held write from approval a's binding: the statement,
 // its parameters (numbers kept exact, as the write tool decodes them), and
 // the run it belongs to.
-func heldWrite(a ledger.Approval) (heldRun, error) {
+func heldWrite(a ledger.Approval, check statementChecker) (heldRun, error) {
 	b, err := approval.ParseBinding(a.BindingText)
 	if err != nil {
 		return heldRun{}, err
 	}
-	stmt, err := sqlguard.Check(b.Statement, sqlguard.ToolWrite)
+	stmt, err := check.Check(b.Statement, action.ToolWrite)
 	if err != nil {
 		return heldRun{}, fmt.Errorf("the held statement no longer parses: %w", err)
 	}
@@ -171,13 +168,13 @@ func heldWrite(a ledger.Approval) (heldRun, error) {
 	if b.TaskID != nil {
 		in.TaskID = *b.TaskID
 	}
-	return heldRun{intent: in, op: action.Op(stmt.Op), sql: b.Statement, params: params}, nil
+	return heldRun{intent: in, op: stmt.Op, sql: b.Statement, params: params}, nil
 }
 
 // revealApprovalError is the page's answer to a reveal Postgres refused.
 func (s *Service) revealApprovalError(err error, link string) error {
-	code, _ := guard.CodeOf(err)
-	detail := guardDetail(err)
+	code, _ := ledgerCode(err)
+	detail := storeDetail(err)
 	switch {
 	case code == guard.CodeApprovalInvalid && detail == guard.RevealRefused:
 		return revealRefused(CodeApprovalInvalid, link)
@@ -198,8 +195,8 @@ func (s *Service) revealApprovalError(err error, link string) error {
 // revealRevertError is the page's answer to a revert reveal Postgres
 // refused.
 func (s *Service) revealRevertError(r ledger.Revert, err error, link string) error {
-	code, _ := guard.CodeOf(err)
-	detail := guardDetail(err)
+	code, _ := ledgerCode(err)
+	detail := storeDetail(err)
 	switch {
 	case code == guard.CodeRevertInvalid && detail == guard.RevealRefused:
 		return revealRefused(CodeRevertInvalid, link)
@@ -220,14 +217,6 @@ func (s *Service) revealRevertError(r ledger.Revert, err error, link string) err
 // approvalNotFoundDetail is the guard's detail for an approval the calling
 // role does not hold, or none.
 const approvalNotFoundDetail = "no such approval"
-
-func guardDetail(err error) string {
-	var pe *pgconn.PgError
-	if errors.As(err, &pe) {
-		return pe.Detail
-	}
-	return ""
-}
 
 // revealRefused is every refused proof, key, nonce or ticket: one answer,
 // so the agent holding the link learns nothing from which check failed. Its

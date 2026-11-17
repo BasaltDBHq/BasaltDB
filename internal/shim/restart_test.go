@@ -3,7 +3,6 @@
 package shim_test
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"net"
@@ -73,8 +72,7 @@ func TestACallWaitsForARestartingEngine(t *testing.T) {
 		if err != nil {
 			return
 		}
-		line, _ := bufio.NewReader(conn).ReadBytes('\n')
-		_ = srv.ServeLine(context.Background(), conn, line)
+		answerFirstRequest(srv, conn)
 		conn.Close()
 		_ = ln.Close()
 	}()

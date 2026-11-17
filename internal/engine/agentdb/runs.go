@@ -3,12 +3,12 @@ package agentdb
 import (
 	"context"
 	"fmt"
-	"time"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
@@ -16,25 +16,6 @@ import (
 // MaxRunTables is how many tables a run summary names (list_runs); a run
 // that wrote to more is marked TablesTruncated.
 const MaxRunTables = 10
-
-// RunSummary is one of the agent's runs with what it did (list_runs).
-type RunSummary struct {
-	ID        uuid.UUID
-	TaskID    uuid.NullUUID
-	Intent    string
-	StartedAt time.Time
-	// LastChangeAt is the run's latest change record, nil when it has none.
-	LastChangeAt *time.Time
-	Applied      int
-	Held         int
-	Refused      int
-	Reverted     int
-	Reads        int
-	RowsWritten  int
-	// Tables the run wrote to, in name order, at most MaxRunTables.
-	Tables          []string
-	TablesTruncated bool
-}
 
 // runIDColumn is the run list's sort and keyset column.
 const runIDColumn = "r.run_id"
@@ -69,13 +50,13 @@ var runAggregate = sq.Select(
 // ListRuns returns one page of the agent's own runs, read through the
 // guard's agent views (agent_runs filters on session_user in Postgres).
 // Keyset on run_id; the time filters narrow the same keyset.
-func (s *Store) ListRuns(ctx context.Context, p ledger.RunListParams) (pagination.Page[RunSummary], error) {
+func (s *Store) ListRuns(ctx context.Context, p ledger.RunListParams) (pagination.Page[action.RunSummary], error) {
 	if p.Limit < 1 || p.Limit > pagination.MaxLimit {
-		return pagination.Page[RunSummary]{}, fmt.Errorf("%w: limit %d", ledger.ErrInvalidParams, p.Limit)
+		return pagination.Page[action.RunSummary]{}, fmt.Errorf("%w: limit %d", ledger.ErrInvalidParams, p.Limit)
 	}
 	sort, err := p.ParseSort(ledger.RunSortSpec)
 	if err != nil {
-		return pagination.Page[RunSummary]{}, fmt.Errorf("%w: %w", ledger.ErrInvalidParams, err)
+		return pagination.Page[action.RunSummary]{}, fmt.Errorf("%w: %w", ledger.ErrInvalidParams, err)
 	}
 	order := runIDColumn
 	if sort.Desc {
@@ -95,21 +76,21 @@ func (s *Store) ListRuns(ctx context.Context, p ledger.RunListParams) (paginatio
 	}
 	b, err = runKeyset(b, sort.Desc, p.Cursor)
 	if err != nil {
-		return pagination.Page[RunSummary]{}, fmt.Errorf("%w: %w", ledger.ErrInvalidParams, err)
+		return pagination.Page[action.RunSummary]{}, fmt.Errorf("%w: %w", ledger.ErrInvalidParams, err)
 	}
 	sql, args, err := b.ToSql()
 	if err != nil {
-		return pagination.Page[RunSummary]{}, err
+		return pagination.Page[action.RunSummary]{}, err
 	}
 	rows, err := s.db.Query(ctx, sql, args...)
 	if err != nil {
-		return pagination.Page[RunSummary]{}, err
+		return pagination.Page[action.RunSummary]{}, err
 	}
 	items, err := pgx.CollectRows(rows, scanRunSummary)
 	if err != nil {
-		return pagination.Page[RunSummary]{}, err
+		return pagination.Page[action.RunSummary]{}, err
 	}
-	page := pagination.Page[RunSummary]{Items: items}
+	page := pagination.Page[action.RunSummary]{Items: items}
 	if len(items) > p.Limit {
 		page.Items = items[:p.Limit]
 		page.NextCursor = pagination.EncodeIDCursor(page.Items[p.Limit-1].ID.String())
@@ -137,8 +118,8 @@ func runKeyset(b sq.SelectBuilder, desc bool, cursor string) (sq.SelectBuilder, 
 	return b.Where(sq.Gt{runIDColumn: id.String()}), nil
 }
 
-func scanRunSummary(row pgx.CollectableRow) (RunSummary, error) {
-	var r RunSummary
+func scanRunSummary(row pgx.CollectableRow) (action.RunSummary, error) {
+	var r action.RunSummary
 	err := row.Scan(&r.ID, &r.TaskID, &r.Intent, &r.StartedAt, &r.LastChangeAt,
 		&r.Applied, &r.Held, &r.Refused, &r.Reverted, &r.Reads, &r.RowsWritten, &r.Tables)
 	if len(r.Tables) > MaxRunTables {

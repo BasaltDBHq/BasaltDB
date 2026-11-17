@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
@@ -232,7 +233,7 @@ func TestOneValueOverTheMessageCapIsNeverRead(t *testing.T) {
 	t.Parallel()
 	_, agentURL := testDB(t)
 	r := pgService(t, agentURL, withConns(1)).Reader
-	_, err := r.Read(context.Background(), "SELECT repeat('x', 20000000) AS big", nil, nil)
+	_, err := r.Read(context.Background(), "SELECT repeat('x', 20000000) AS big", nil, action.Statement{})
 	var tooLarge *resultsize.RowTooLargeError
 	require.ErrorAs(t, err, &tooLarge)
 	require.True(t, tooLarge.OnWire)
@@ -302,7 +303,7 @@ func TestReadsRunReadOnly(t *testing.T) {
 
 	// Past the engine's policy, the database still refuses a write inside a
 	// read: the agent role may INSERT into audit, but not from a read.
-	_, err := h.reader.Read(context.Background(), "SELECT bump()", nil, nil)
+	_, err := h.reader.Read(context.Background(), "SELECT bump()", nil, action.Statement{})
 	te := agent.ToolError(err)
 	require.Equal(t, agent.CodeSQLError, te.Code)
 	require.Equal(t, "25006", te.SQLState, "read_only_sql_transaction")

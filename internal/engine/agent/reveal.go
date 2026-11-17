@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
@@ -138,8 +139,8 @@ func checkedAnswer(lines []string, rows []approval.RevealedRow) (approval.Reveal
 // heldRun is what re-runs a held write: its statement and parameters as
 // the binding carries them, under the run, task and intent it was held in.
 type heldRun struct {
-	intent guard.Intent
-	op     sqlguard.Op
+	intent action.Intent
+	op     action.Op
 	sql    string
 	params []any
 }
@@ -166,11 +167,11 @@ func heldWrite(a ledger.Approval) (heldRun, error) {
 		}
 		params = append(params, v)
 	}
-	in := guard.Intent{RunID: b.RunID, Text: b.Intent}
+	in := action.Intent{RunID: b.RunID, Text: b.Intent}
 	if b.TaskID != nil {
 		in.TaskID = *b.TaskID
 	}
-	return heldRun{intent: in, op: stmt.Op, sql: b.Statement, params: params}, nil
+	return heldRun{intent: in, op: action.Op(stmt.Op), sql: b.Statement, params: params}, nil
 }
 
 // revealApprovalError is the page's answer to a reveal Postgres refused.

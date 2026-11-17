@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/engine/piidict"
@@ -76,7 +77,7 @@ func TestQueryAddsIdentifierValuesBeforeItReturns(t *testing.T) {
 // failingObserver cannot add any value.
 type failingObserver struct{}
 
-func (failingObserver) Observe(context.Context, []agentdb.Column, []map[string]any) error {
+func (failingObserver) Observe(context.Context, []action.Column, []map[string]any) error {
 	return errors.New("pii: dictionary delta is full")
 }
 
@@ -94,7 +95,7 @@ func TestQueryWithholdsRowsTheDictionaryCannotTake(t *testing.T) {
 
 func TestWriteRollsBackWhenItsReturnedValuesCannotBeAdded(t *testing.T) {
 	t.Parallel()
-	refuse := func(context.Context, pgx.Tx, []agentdb.Column, []map[string]any) error { return pii.ErrDeltaFull }
+	refuse := func(context.Context, pgx.Tx, []action.Column, []map[string]any) error { return pii.ErrDeltaFull }
 	svc, d, _, _ := piiService(t, failingObserver{}, refuse)
 	_, err := svc.Write(context.Background(), agent.WriteParams{
 		SQL: `UPDATE people SET city = 'Pärnu' WHERE id = 1 RETURNING email`, Intent: "move ann",

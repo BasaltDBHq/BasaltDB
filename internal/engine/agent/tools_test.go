@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
@@ -28,28 +29,28 @@ import (
 
 type nopReader struct{}
 
-func (nopReader) Read(context.Context, string, []any, []sqlguard.RowSource) (agentdb.ReadResult, error) {
-	return agentdb.ReadResult{}, nil
+func (nopReader) Read(context.Context, string, []any, action.Statement) (action.ReadResult, error) {
+	return action.ReadResult{}, nil
 }
 
 type nopRecorder struct{}
 
-func (nopRecorder) RecordRead(context.Context, guard.Read) (uuid.UUID, error) { return uuid.Nil, nil }
+func (nopRecorder) RecordRead(context.Context, action.Read) (uuid.UUID, error) { return uuid.Nil, nil }
 
 type nopStore struct{}
 
-func (nopStore) FindRun(context.Context, uuid.UUID) (agentdb.Run, error) { return agentdb.Run{}, nil }
-func (nopStore) StartRun(context.Context, guard.Intent) error            { return nil }
-func (nopStore) Write(context.Context, guard.Intent, sqlguard.Op, string, []any) (agentdb.WriteResult, error) {
-	return agentdb.WriteResult{}, nil
+func (nopStore) FindRun(context.Context, uuid.UUID) (action.Run, error) { return action.Run{}, nil }
+func (nopStore) StartRun(context.Context, action.Intent) error          { return nil }
+func (nopStore) Write(context.Context, action.Intent, action.Op, string, []any) (action.WriteResult, error) {
+	return action.WriteResult{}, nil
 }
-func (nopStore) RecordRefusal(context.Context, guard.Refusal) error { return nil }
-func (nopStore) History(context.Context, ledger.ChangeListParams) (agentdb.History, error) {
-	return agentdb.History{}, nil
+func (nopStore) RecordRefusal(context.Context, action.Refusal) error { return nil }
+func (nopStore) History(context.Context, ledger.ChangeListParams) (History, error) {
+	return History{}, nil
 }
 
-func (nopStore) ListRuns(context.Context, ledger.RunListParams) (pagination.Page[agentdb.RunSummary], error) {
-	return pagination.Page[agentdb.RunSummary]{}, nil
+func (nopStore) ListRuns(context.Context, ledger.RunListParams) (pagination.Page[action.RunSummary], error) {
+	return pagination.Page[action.RunSummary]{}, nil
 }
 
 func deps() Deps {
@@ -166,7 +167,7 @@ func TestToolErrorMapping(t *testing.T) {
 		{pg("53100", "could not extend file: No space left on device"), CodeUnavailable, reasonDatabaseUnreachable, "53100"},
 		{pg("23505", "duplicate key"), CodeSQLError, "", "23505"},
 		{&sqlguard.RefusalError{Reason: sqlguard.ReasonDDL}, CodeStatementRefused, "DDL_NOT_ALLOWED", ""},
-		{fmt.Errorf("read: %w", agentdb.ErrRowLimit), CodeQueryTimeout, ReasonRowLimit, ""},
+		{fmt.Errorf("read: %w", action.ErrRowLimit), CodeQueryTimeout, ReasonRowLimit, ""},
 		{fmt.Errorf("read: %w", agentdb.ErrSizeLimit), CodeQueryTimeout, ReasonSizeLimit, ""},
 		{fmt.Errorf("read: %w", &pgproto3.ExceededMaxBodyLenErr{MaxExpectedBodyLen: 1, ActualBodyLen: 2}), CodeInternal, "", ""},
 		{&ArgumentError{Message: "bad"}, CodeInvalidArgument, "", ""},

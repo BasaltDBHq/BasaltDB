@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
@@ -72,8 +72,8 @@ func TestRequestRevertPrepareTimeLimit(t *testing.T) {
 // noRuns is a Store that finds none of the agent's runs.
 type noRuns struct{ nopStore }
 
-func (noRuns) FindRun(context.Context, uuid.UUID) (agentdb.Run, error) {
-	return agentdb.Run{}, agentdb.ErrRunNotFound
+func (noRuns) FindRun(context.Context, uuid.UUID) (action.Run, error) {
+	return action.Run{}, action.ErrRunNotFound
 }
 
 // countedReverts owns nothing and counts the guard calls it receives.

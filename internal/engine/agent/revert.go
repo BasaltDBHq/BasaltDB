@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
@@ -564,7 +565,7 @@ func (s *Service) checkOwnScope(ctx context.Context, scope guard.RevertScope) er
 	switch scope.Kind {
 	case revert.ScopeRun:
 		_, err := s.Store.FindRun(ctx, scope.ID)
-		if errors.Is(err, agentdb.ErrRunNotFound) {
+		if errors.Is(err, action.ErrRunNotFound) {
 			return notOwnScope(scope)
 		}
 		return err

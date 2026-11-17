@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -21,7 +22,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
-	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 )
 
 // A reveal racing the approval's signature or apply, or the revert's
@@ -56,7 +56,7 @@ func newRaceEnv(t *testing.T) raceEnv {
 
 // heldDelete is a held delete of one lead and the run it belongs to.
 type heldDelete struct {
-	in     guard.Intent
+	in     action.Intent
 	params []any
 	held   guard.Held
 }
@@ -64,7 +64,7 @@ type heldDelete struct {
 func (e raceEnv) hold(t *testing.T, lead int) heldDelete {
 	t.Helper()
 	ctx := context.Background()
-	in := guard.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Drop lead " + strconv.Itoa(lead)}
+	in := action.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Drop lead " + strconv.Itoa(lead)}
 	require.NoError(t, e.store.StartRun(ctx, in))
 	params := []any{json.Number(strconv.Itoa(lead))}
 	lines, err := e.store.Preview(ctx, in, dropLeadSQL, params, []string{})
@@ -88,7 +88,7 @@ func (e raceEnv) sign(h heldDelete, as passkey.Assertion) error {
 }
 
 func (e raceEnv) apply(h heldDelete) error {
-	_, err := e.store.WriteApproved(context.Background(), h.in, h.held.ApprovalID, sqlguard.OpDelete, dropLeadSQL, h.params)
+	_, err := e.store.WriteApproved(context.Background(), h.in, h.held.ApprovalID, action.OpDelete, dropLeadSQL, h.params)
 	return err
 }
 
@@ -124,7 +124,7 @@ func (e raceEnv) revealApproval(h heldDelete, as passkey.Assertion, key []byte) 
 	if err != nil {
 		return nil, err
 	}
-	return e.store.RevealPreview(context.Background(), h.in, sqlguard.OpDelete, dropLeadSQL, h.params, h.held.ApprovalID, ticket)
+	return e.store.RevealPreview(context.Background(), h.in, action.OpDelete, dropLeadSQL, h.params, h.held.ApprovalID, ticket)
 }
 
 // lockRow locks one row of a basalt_meta table in a transaction on its own

@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/approval"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
@@ -25,10 +25,10 @@ import (
 // ApprovalStore holds writes for approval and applies approved ones, on the
 // agent's own credential.
 type ApprovalStore interface {
-	Preview(ctx context.Context, in guard.Intent, sql string, params []any, assigned []string) ([]string, error)
-	Hold(ctx context.Context, in guard.Intent, r guard.HoldRequest) (guard.Held, error)
+	Preview(ctx context.Context, in action.Intent, sql string, params []any, assigned []string) ([]string, error)
+	Hold(ctx context.Context, in action.Intent, r guard.HoldRequest) (guard.Held, error)
 	TableColumns(ctx context.Context, table string) ([]string, error)
-	WriteApproved(ctx context.Context, in guard.Intent, approvalID uuid.UUID, op sqlguard.Op, sql string, params []any) (agentdb.WriteResult, error)
+	WriteApproved(ctx context.Context, in action.Intent, approvalID uuid.UUID, op action.Op, sql string, params []any) (action.WriteResult, error)
 	SubmitApproval(ctx context.Context, id uuid.UUID, a passkey.Assertion) (time.Time, error)
 	FindApproval(ctx context.Context, id uuid.UUID) (ledger.Approval, error)
 	ListApprovals(ctx context.Context, p ledger.ApprovalListParams) (pagination.Page[ledger.Approval], error)
@@ -40,7 +40,7 @@ type ApprovalStore interface {
 	// returns the ticket of the re-run preview; RevealPreview re-runs the
 	// held write in a preview that rolls back and reads its hidden rows.
 	OpenReveal(ctx context.Context, id uuid.UUID, proof passkey.Assertion, key []byte) ([]byte, error)
-	RevealPreview(ctx context.Context, in guard.Intent, op sqlguard.Op, sql string, params []any, id uuid.UUID, ticket []byte) ([]approval.RevealedRow, error)
+	RevealPreview(ctx context.Context, in action.Intent, op action.Op, sql string, params []any, id uuid.UUID, ticket []byte) ([]approval.RevealedRow, error)
 }
 
 // HeldNotice is a held write to tell the person about.
@@ -107,10 +107,10 @@ func approvalRequired(err error) bool {
 // APPROVAL_REQUIRED with the approval link. It returns the held write's
 // approval id with the APPROVAL_REQUIRED error, or uuid.Nil and the error
 // that kept it from being held.
-func (s *Service) hold(ctx context.Context, in guard.Intent, p WriteParams, stmt sqlguard.Statement, start time.Time) (uuid.UUID, error) {
+func (s *Service) hold(ctx context.Context, in action.Intent, p WriteParams, stmt sqlguard.Statement, start time.Time) (uuid.UUID, error) {
 	h, err := sqlguard.CheckRepeatable(p.SQL, p.Params)
 	if err != nil {
-		return uuid.Nil, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
+		return uuid.Nil, s.refused(ctx, in, action.Op(stmt.Op), p.SQL, p.Params, start, err)
 	}
 	assigned := h.Assigned
 	if assigned == nil {
@@ -120,19 +120,19 @@ func (s *Service) hold(ctx context.Context, in guard.Intent, p WriteParams, stmt
 	}
 	lines, err := s.Approvals.Preview(ctx, in, p.SQL, p.Params, assigned)
 	if err != nil {
-		return uuid.Nil, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
+		return uuid.Nil, s.refused(ctx, in, action.Op(stmt.Op), p.SQL, p.Params, start, err)
 	}
 	if len(lines) == 0 {
 		// The rows went away between the attempt and the preview.
 		return uuid.Nil, &mcp.ToolError{Code: CodeSQLError, Reason: reasonNoRowsNow, Message: "the write changes no rows now; read again and decide"}
 	}
 	if te := holdTooLarge(lines, nil); te != nil {
-		return uuid.Nil, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
+		return uuid.Nil, s.refused(ctx, in, action.Op(stmt.Op), p.SQL, p.Params, start, te)
 	}
 	held, err := s.Approvals.Hold(ctx, in, guard.HoldRequest{Statement: p.SQL, Params: p.Params, Assigned: assigned, Lines: lines})
 	if err != nil {
 		if te := holdTooLarge(lines, err); te != nil {
-			return uuid.Nil, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
+			return uuid.Nil, s.refused(ctx, in, action.Op(stmt.Op), p.SQL, p.Params, start, te)
 		}
 		return uuid.Nil, err
 	}
@@ -474,18 +474,19 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 		}
 		receipt = &r
 	}
-	in := guard.Intent{RunID: run.ID, TaskID: run.TaskID, Text: p.Intent}
+	in := action.Intent{RunID: run.ID, TaskID: run.TaskID, Text: p.Intent}
 	start := s.Now()
 	stmt, err := sqlguard.Check(p.SQL, sqlguard.ToolWrite)
+	op := action.Op(stmt.Op)
 	if err != nil {
-		return WriteOutcome{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
+		return WriteOutcome{}, s.refused(ctx, in, op, p.SQL, p.Params, start, err)
 	}
-	res, err := s.Approvals.WriteApproved(ctx, in, a.ID, stmt.Op, p.SQL, p.Params)
+	res, err := s.Approvals.WriteApproved(ctx, in, a.ID, op, p.SQL, p.Params)
 	if err != nil {
-		return WriteOutcome{}, s.withApprovalLink(ctx, a, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err))
+		return WriteOutcome{}, s.withApprovalLink(ctx, a, s.refused(ctx, in, op, p.SQL, p.Params, start, err))
 	}
 	return WriteOutcome{
-		WriteResult: res, RunID: run.ID, Op: stmt.Op, ApprovalID: a.ID,
+		WriteResult: res, RunID: run.ID, Op: op, ApprovalID: a.ID,
 		Warnings: s.rlsWarnings(ctx, stmt.Tables, res.Rows), Receipt: receipt,
 	}, nil
 }

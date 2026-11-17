@@ -9,10 +9,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
-	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
 // DB is the part of a pgx pool the store needs.
@@ -34,7 +34,7 @@ type Store struct {
 // transaction, before COMMIT: the engine adds their PII values to the
 // dictionary there. An error rolls the write back, so no value it could not
 // handle is applied or returned (fail closed).
-type ReturnedFunc func(ctx context.Context, tx pgx.Tx, cols []Column, rows []map[string]any) error
+type ReturnedFunc func(ctx context.Context, tx pgx.Tx, cols []action.Column, rows []map[string]any) error
 
 // NewStore returns a store on db. Every transaction it begins is pinned
 // (guard.PinSession), so the row images the guard stores, the lines a
@@ -47,7 +47,7 @@ func NewStore(db DB, limits sqlguard.Limits, now func() time.Time) *Store {
 	return &Store{db: guard.Pinned(db), limits: limits, now: now, returned: noReturned}
 }
 
-func noReturned(context.Context, pgx.Tx, []Column, []map[string]any) error { return nil }
+func noReturned(context.Context, pgx.Tx, []action.Column, []map[string]any) error { return nil }
 
 // WithReturned has every write hand its returned rows to f before COMMIT.
 // It panics on a nil f.
@@ -59,28 +59,18 @@ func (s *Store) WithReturned(f ReturnedFunc) *Store {
 	return s
 }
 
-// Run is one of the agent's runs.
-type Run struct {
-	ID     uuid.UUID
-	TaskID uuid.UUID // uuid.Nil when the run has no task
-	Intent string
-}
-
-// ErrRunNotFound is a run id that is not one of this agent's runs.
-var ErrRunNotFound = errors.New("run not found")
-
 // FindRun returns the agent's run id, read through the guard's agent view.
-func (s *Store) FindRun(ctx context.Context, id uuid.UUID) (Run, error) {
+func (s *Store) FindRun(ctx context.Context, id uuid.UUID) (action.Run, error) {
 	q, args, err := psql.Select("task_id", "intent").From("basalt_meta.agent_runs").
 		Where(sq.Eq{"run_id": id.String()}).ToSql()
 	if err != nil {
-		return Run{}, err
+		return action.Run{}, err
 	}
-	run := Run{ID: id}
+	run := action.Run{ID: id}
 	var task uuid.NullUUID
 	err = s.db.QueryRow(ctx, q, args...).Scan(&task, &run.Intent)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Run{}, ErrRunNotFound
+		return action.Run{}, action.ErrRunNotFound
 	}
 	if task.Valid {
 		run.TaskID = task.UUID
@@ -89,18 +79,8 @@ func (s *Store) FindRun(ctx context.Context, id uuid.UUID) (Run, error) {
 }
 
 // StartRun records a run and its RUN_STARTED ledger row.
-func (s *Store) StartRun(ctx context.Context, in guard.Intent) error {
-	return guard.StartRun(ctx, s.db, in)
-}
-
-// WriteResult is one applied write.
-type WriteResult struct {
-	ChangeID uuid.UUID
-	// Rows is what the guard counted for the action, cascades included.
-	Rows      int
-	Duration  time.Duration
-	Columns   []Column
-	Returning []map[string]any
+func (s *Store) StartRun(ctx context.Context, in action.Intent) error {
+	return guard.StartRun(ctx, s.db, guardIntent(in))
 }
 
 // Write runs one INSERT, UPDATE or DELETE in a guarded transaction (the
@@ -108,21 +88,23 @@ type WriteResult struct {
 // transaction-local, the statement as given with its parameters, then the
 // change stamped with statement, parameters and duration before COMMIT. Any
 // error rolls the whole action back.
-func (s *Store) Write(ctx context.Context, in guard.Intent, op sqlguard.Op, sql string, params []any) (WriteResult, error) {
-	return s.write(ctx, op, sql, params, func(tx pgx.Tx) error { return guard.BeginGuarded(ctx, tx, in, s.limits.StatementTimeout) })
+func (s *Store) Write(ctx context.Context, in action.Intent, op action.Op, sql string, params []any) (action.WriteResult, error) {
+	return s.write(ctx, op, sql, params, func(tx pgx.Tx) error {
+		return guard.BeginGuarded(ctx, tx, guardIntent(in), s.limits.StatementTimeout)
+	})
 }
 
 // WriteApproved is Write under a signed approval (basalt.approval_id). The
 // guard commits it only if it is the write the person approved.
-func (s *Store) WriteApproved(ctx context.Context, in guard.Intent, approvalID uuid.UUID, op sqlguard.Op, sql string, params []any) (WriteResult, error) {
+func (s *Store) WriteApproved(ctx context.Context, in action.Intent, approvalID uuid.UUID, op action.Op, sql string, params []any) (action.WriteResult, error) {
 	return s.write(ctx, op, sql, params, func(tx pgx.Tx) error {
-		return guard.BeginApproved(ctx, tx, in, s.limits.StatementTimeout, approvalID)
+		return guard.BeginApproved(ctx, tx, guardIntent(in), s.limits.StatementTimeout, approvalID)
 	})
 }
 
-func (s *Store) write(ctx context.Context, op sqlguard.Op, sql string, params []any, begin func(pgx.Tx) error) (WriteResult, error) {
+func (s *Store) write(ctx context.Context, op action.Op, sql string, params []any, begin func(pgx.Tx) error) (action.WriteResult, error) {
 	start := s.now()
-	var res WriteResult
+	var res action.WriteResult
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		if err := begin(tx); err != nil {
 			return err
@@ -145,7 +127,7 @@ func (s *Store) write(ctx context.Context, op sqlguard.Op, sql string, params []
 		return s.countRows(ctx, tx, res.ChangeID, &res.Rows)
 	})
 	if err != nil {
-		return WriteResult{}, err
+		return action.WriteResult{}, err
 	}
 	return res, nil
 }
@@ -162,28 +144,22 @@ func (s *Store) countRows(ctx context.Context, tx pgx.Tx, change uuid.UUID, rows
 // RecordRead records a read the reader ran (a SELECT change record, the
 // READ ledger row and the run's row versions) in its own transaction, and
 // returns its change id.
-func (s *Store) RecordRead(ctx context.Context, r guard.Read) (uuid.UUID, error) {
-	return guard.RecordRead(ctx, s.db, r)
+func (s *Store) RecordRead(ctx context.Context, r action.Read) (uuid.UUID, error) {
+	return guard.RecordRead(ctx, s.db, guardRead(r))
 }
 
 // RecordRefusal writes a REFUSED change record in its own transaction.
-func (s *Store) RecordRefusal(ctx context.Context, r guard.Refusal) error {
-	_, err := guard.RecordRefusal(ctx, s.db, r)
+func (s *Store) RecordRefusal(ctx context.Context, r action.Refusal) error {
+	_, err := guard.RecordRefusal(ctx, s.db, guardRefusal(r))
 	return err
-}
-
-// History is one page of a run's change records with the rows each wrote.
-type History struct {
-	Page pagination.Page[ledger.Change]
-	Rows map[uuid.UUID][]ledger.RowChange
 }
 
 // History reads one page of change records through the agent views, with
 // values too large for the agent left out (CONTRACT.md, Large values).
-func (s *Store) History(ctx context.Context, p ledger.ChangeListParams) (History, error) {
+func (s *Store) History(ctx context.Context, p ledger.ChangeListParams) (action.History[ledger.Change, ledger.RowChange], error) {
 	page, err := ledger.ListChangesMarked(ctx, s.db, p)
 	if err != nil {
-		return History{}, err
+		return action.History[ledger.Change, ledger.RowChange]{}, err
 	}
 	ids := make([]uuid.UUID, 0, len(page.Items))
 	for _, ch := range page.Items {
@@ -191,7 +167,7 @@ func (s *Store) History(ctx context.Context, p ledger.ChangeListParams) (History
 	}
 	rows, err := ledger.RowChangesMarked(ctx, s.db, ids)
 	if err != nil {
-		return History{}, err
+		return action.History[ledger.Change, ledger.RowChange]{}, err
 	}
-	return History{Page: page, Rows: rows}, nil
+	return action.History[ledger.Change, ledger.RowChange]{Page: page, Rows: rows}, nil
 }

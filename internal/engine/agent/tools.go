@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
@@ -188,7 +189,7 @@ func queryResultFromDomain(r QueryOutcome) queryResult {
 	}
 }
 
-func columnsDTO(cols []agentdb.Column) []columnDTO {
+func columnsDTO(cols []action.Column) []columnDTO {
 	out := make([]columnDTO, 0, len(cols))
 	for _, c := range cols {
 		out = append(out, columnDTO{Name: c.Name, Type: c.Type})

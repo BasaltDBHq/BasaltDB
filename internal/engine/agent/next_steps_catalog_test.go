@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
@@ -234,7 +235,7 @@ func catalogCases() map[string]catalogCase {
 			pgFail("BS003", "ROW_LIMIT_EXCEEDED", "more than 50 rows in one action (cascades included)"),
 		},
 
-		caseKey("QUERY_TIMEOUT", "ROW_LIMIT", ""):  {"query", queryArgs0, plain(agentdb.ErrRowLimit)},
+		caseKey("QUERY_TIMEOUT", "ROW_LIMIT", ""):  {"query", queryArgs0, plain(action.ErrRowLimit)},
 		caseKey("QUERY_TIMEOUT", "SIZE_LIMIT", ""): {"query", queryArgs0, plain(agentdb.ErrSizeLimit)},
 		caseKey("QUERY_TIMEOUT", "ROW_TOO_LARGE", ""): {
 			"query", queryArgs0,

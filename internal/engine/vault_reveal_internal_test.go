@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
@@ -30,7 +31,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
-	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/vault/pagetest"
 )
 
@@ -91,7 +91,7 @@ func newRevealEnv(t *testing.T) *revealEnv {
 		require.NoError(t, err)
 		_, err = store.SubmitApproval(ctx, id, as)
 		require.NoError(t, err)
-		_, err = store.WriteApproved(ctx, done, id, sqlguard.OpDelete, `DELETE FROM public.leads WHERE id = $1`, []any{json.Number("5")})
+		_, err = store.WriteApproved(ctx, action.Intent(done), id, action.OpDelete, `DELETE FROM public.leads WHERE id = $1`, []any{json.Number("5")})
 		require.NoError(t, err)
 	})
 	e.revert, err = store.PrepareRevert(ctx, guard.RevertScope{Kind: revert.ScopeRun, ID: done.RunID}, "Undo it", agent.RescopeTimeout)
@@ -116,9 +116,9 @@ func (e *revealEnv) hold(t *testing.T, store *agentdb.Store, in guard.Intent, id
 	t.Helper()
 	ctx := context.Background()
 	stmt, params := `DELETE FROM public.leads WHERE id = $1`, []any{json.Number(strconv.Itoa(id))}
-	lines, err := store.Preview(ctx, in, stmt, params, []string{})
+	lines, err := store.Preview(ctx, action.Intent(in), stmt, params, []string{})
 	require.NoError(t, err)
-	held, err := store.Hold(ctx, in, guard.HoldRequest{Statement: stmt, Params: params, Assigned: []string{}, Lines: lines})
+	held, err := store.Hold(ctx, action.Intent(in), guard.HoldRequest{Statement: stmt, Params: params, Assigned: []string{}, Lines: lines})
 	require.NoError(t, err)
 	if id == 20 {
 		e.lines = lines

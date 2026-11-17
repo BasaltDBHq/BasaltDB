@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/engine/person"
@@ -77,9 +78,9 @@ func zoneDB(t *testing.T) (*guardtest.DB, *guardtest.Agent) {
 func write(t *testing.T, store *agentdb.Store, sql string) uuid.UUID {
 	t.Helper()
 	ctx := context.Background()
-	in := guard.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Tag events"}
+	in := action.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Tag events"}
 	require.NoError(t, store.StartRun(ctx, in))
-	_, err := store.Write(ctx, in, sqlguard.OpUpdate, sql, nil)
+	_, err := store.Write(ctx, in, action.OpUpdate, sql, nil)
 	require.NoError(t, err)
 	return in.RunID
 }
@@ -152,7 +153,7 @@ func TestSignedLinesDoNotDependOnTheSessionZone(t *testing.T) {
 	held := make([][]string, 0, len(zones))
 	for _, zone := range zones {
 		store := agentdb.NewStore(zonedPool(t, a.URL, zone), limits, time.Now)
-		in := guard.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Move events"}
+		in := action.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Move events"}
 		require.NoError(t, store.StartRun(ctx, in))
 		lines, err := store.Preview(ctx, in, update, nil, nil)
 		require.NoError(t, err)
@@ -198,7 +199,7 @@ func TestQueryDoesNotDependOnTheSessionStyle(t *testing.T) {
 	t.Parallel()
 	_, a := zoneDB(t)
 	r := agentdb.NewReader(zonedPool(t, a.URL, "Asia/Jakarta"), sqlguard.DefaultLimits(), time.Now)
-	res, err := r.Read(context.Background(), `SELECT at, took FROM public.events WHERE id = 1`, nil, nil)
+	res, err := r.Read(context.Background(), `SELECT at, took FROM public.events WHERE id = 1`, nil, action.Statement{})
 	require.NoError(t, err)
 	require.Len(t, res.Rows, 1)
 	require.Equal(t, "2026-11-10T07:02:11.5Z", res.Rows[0]["at"])

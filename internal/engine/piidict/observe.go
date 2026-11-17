@@ -8,7 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 )
@@ -41,7 +41,7 @@ func NewObserver(classes *Map, dict Adder) *Observer {
 // no source and is not added (rule 2 refuses those on PII columns from
 // M5.2). An error means a value could not be added or a column not
 // classified, and the caller must not return the rows. Errors name no value.
-func (o *Observer) Observe(ctx context.Context, db guard.Querier, cols []agentdb.Column, rows []map[string]any) error {
+func (o *Observer) Observe(ctx context.Context, db guard.Querier, cols []action.Column, rows []map[string]any) error {
 	if len(rows) == 0 || len(cols) == 0 {
 		return nil
 	}
@@ -63,7 +63,7 @@ func (e *DictionaryError) Error() string { return "pii dictionary: " + e.err.Err
 // Is reports whether the cause is target.
 func (e *DictionaryError) Is(target error) bool { return errors.Is(e.err, target) }
 
-func (o *Observer) observe(ctx context.Context, db guard.Querier, cols []agentdb.Column, rows []map[string]any) error {
+func (o *Observer) observe(ctx context.Context, db guard.Querier, cols []action.Column, rows []map[string]any) error {
 	refs := make([]ColumnRef, len(cols))
 	for i, c := range cols {
 		refs[i] = ColumnRef{TableOID: c.TableOID, Attnum: c.Attnum}
@@ -126,8 +126,8 @@ func (o *Observer) On(db guard.Querier) BoundObserver {
 }
 
 // Returned adds a write's RETURNING values inside its transaction, before
-// COMMIT (agentdb.ReturnedFunc): an error rolls the write back.
-func (o *Observer) Returned(ctx context.Context, tx pgx.Tx, cols []agentdb.Column, rows []map[string]any) error {
+// COMMIT (the store's ReturnedFunc): an error rolls the write back.
+func (o *Observer) Returned(ctx context.Context, tx pgx.Tx, cols []action.Column, rows []map[string]any) error {
 	return o.Observe(ctx, tx, cols, rows)
 }
 
@@ -138,6 +138,6 @@ type BoundObserver struct {
 }
 
 // Observe is Observer.Observe through the bound database.
-func (b BoundObserver) Observe(ctx context.Context, cols []agentdb.Column, rows []map[string]any) error {
+func (b BoundObserver) Observe(ctx context.Context, cols []action.Column, rows []map[string]any) error {
 	return b.o.Observe(ctx, b.db, cols, rows)
 }

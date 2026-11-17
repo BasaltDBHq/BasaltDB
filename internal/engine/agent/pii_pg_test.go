@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
@@ -18,7 +19,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
-	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 )
 
 // piiService is the engine's agent service with the PII observer wired as
@@ -45,26 +45,19 @@ func piiService(t *testing.T, obs agent.PIIObserver, returned agentdb.ReturnedFu
 	require.NoError(t, pgx.BeginFunc(context.Background(), d.Admin, func(tx pgx.Tx) error {
 		return guard.WriteClassification(context.Background(), tx, d.Names, guard.Classification{Columns: cols, At: time.Now()})
 	}))
-	pool, err := agentdb.NewPool(context.Background(), a.URL, 2)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
 	dir := t.TempDir()
 	keys, err := pii.LoadKeys(filepath.Join(dir, pii.KeyFileName), rand.Reader)
 	require.NoError(t, err)
 	dict, err := pii.OpenDictionary(dir, keys, pii.DefaultDictionaryOptions())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dict.Close() })
-	if obs == nil {
-		obs = piidict.NewObserver(piidict.NewMap(slog.New(slog.DiscardHandler)), dict).On(pool)
-	}
-	store := agentdb.NewStore(pool, sqlguard.DefaultLimits(), time.Now)
-	if returned != nil {
-		store = store.WithReturned(returned)
-	}
-	return agent.NewService(agent.Deps{
-		Name: "bot", Reader: agentdb.NewReader(pool, sqlguard.DefaultLimits(), time.Now), Store: store, Reads: store,
-		Approvals: store, Reverts: store, Log: slog.New(slog.DiscardHandler), Now: time.Now, PII: obs,
-	}), d, dict, keys
+	env := pgService(t, a.URL, withReturned(returned), withDeps(func(deps *agent.Deps, pool *pgxpool.Pool) {
+		if obs == nil {
+			obs = piidict.NewObserver(piidict.NewMap(slog.New(slog.DiscardHandler)), dict).On(pool)
+		}
+		deps.PII = obs
+	}))
+	return env.Svc, d, dict, keys
 }
 
 func TestQueryAddsIdentifierValuesBeforeItReturns(t *testing.T) {

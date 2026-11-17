@@ -3,7 +3,6 @@ package agent_test
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
@@ -25,7 +25,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
-	"github.com/basaltdbhq/basaltdb/internal/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 )
 
@@ -175,24 +174,21 @@ func agentHarnessLimits(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys 
 
 	cmds, err := agent.NewCommands("bot", "/etc/basalt-test/engine.json", "linux", nil)
 	require.NoError(t, err)
-	pool, err := agentdb.NewPool(context.Background(), a.URL, 2)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	// As the engine runs it: every read of a call charged to its budget.
-	budgeted := resultsize.Budgeted(pool)
-	store := agentdb.NewStore(budgeted, limits, time.Now)
 	sent := &notices{}
-	watched := &finds{ApprovalStore: store}
-	watchedReverts := &revertFinds{RevertStore: store}
-	blind := agent.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
-		return guard.RLSBlindTables(ctx, pool, "", tables)
-	})
-	svc := agent.NewService(agent.Deps{
-		Name: "bot", Reader: agentdb.NewReader(budgeted, limits, time.Now), Store: store, Reads: store, Approvals: watched,
-		Reverts: watchedReverts, Notifier: sent, Log: slog.New(slog.DiscardHandler), Now: time.Now,
-		Columns:  agentdb.NewColumnOrder(pool),
-		Commands: cmds, PagesOrigin: strings.Join(pagesOrigin, ""), Poll: testPoll, RLS: blind, Receipts: receipts,
-	})
+	var watched *finds
+	var watchedReverts *revertFinds
+	var blind *agent.BlindCache
+	// As the engine runs it: every read of a call charged to its budget.
+	svc := pgService(t, a.URL, withLimits(limits), withBudget(), withDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
+		watched = &finds{ApprovalStore: d.Approvals}
+		watchedReverts = &revertFinds{RevertStore: d.Reverts}
+		blind = agent.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
+			return guard.RLSBlindTables(ctx, pool, "", tables)
+		})
+		d.Approvals, d.Reverts, d.Notifier = watched, watchedReverts, sent
+		d.Columns = agentdb.NewColumnOrder(pool)
+		d.Commands, d.PagesOrigin, d.Poll, d.RLS, d.Receipts = cmds, strings.Join(pagesOrigin, ""), testPoll, blind, receipts
+	})).Svc
 	return agentEnv{d: d, a: a, h: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, person: person, sent: sent, svc: svc, blind: blind, finds: watched, revertFinds: watchedReverts, keys: keys}
 }
 

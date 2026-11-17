@@ -51,10 +51,7 @@ func newRaceEnv(t *testing.T) raceEnv {
 	person, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 	require.NoError(t, guard.RegisterPasskey(ctx, d.Admin, person.Credential(), "app"))
-	pool, err := agentdb.NewPool(ctx, bot.URL, 4)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	return raceEnv{d: d, store: agentdb.NewStore(pool, sqlguard.DefaultLimits(), time.Now), person: person}
+	return raceEnv{d: d, store: newPGAgent(t, bot.URL, 4).store, person: person}
 }
 
 // heldDelete is a held delete of one lead and the run it belongs to.

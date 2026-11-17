@@ -78,11 +78,8 @@ func newRevealEnv(t *testing.T) *revealEnv {
 	require.NoError(t, err)
 	require.NoError(t, guard.RegisterPasskey(ctx, d.Admin, person.Credential(), "app"))
 
-	pool, err := agentdb.NewPool(ctx, bot.URL, 2)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	limits := sqlguard.DefaultLimits()
-	store := agentdb.NewStore(pool, limits, time.Now)
+	pg := newPGAgent(t, bot.URL, 2)
+	store := pg.store
 	e := &revealEnv{d: d, person: person, secrets: links.NewSecrets(time.Now, rand.Reader), logs: &syncBuffer{}}
 	log := slog.New(slog.NewTextHandler(e.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
@@ -107,9 +104,8 @@ func newRevealEnv(t *testing.T) *revealEnv {
 	// The person's passkey is a synced one: its counter stays 0.
 	d.Exec(t, `UPDATE basalt_meta.passkeys SET sign_count = 0`)
 
-	e.svc = agent.NewService(agent.Deps{
-		Name: "bot", Reader: agentdb.NewReader(pool, limits, time.Now), Store: store, Reads: store, Approvals: store,
-		Reverts: store, Log: log, Now: time.Now, PagesBase: links.Portal, Links: e.secrets, Relay: &lateRelay{},
+	e.svc = pg.service(func(d *agent.Deps) {
+		d.Log, d.PagesBase, d.Links, d.Relay = log, links.Portal, e.secrets, &lateRelay{}
 	})
 	return e
 }

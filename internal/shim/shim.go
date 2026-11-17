@@ -16,6 +16,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 )
@@ -25,6 +26,12 @@ const (
 	// scannerMaxSize is the longest message either side may send, as the
 	// engine's MCP server reads it.
 	scannerMaxSize = 16 << 20
+
+	// DefaultReconnectWait is long enough for a service manager to restart
+	// the engine.
+	DefaultReconnectWait = 15 * time.Second
+	reconnectPoll        = 100 * time.Millisecond
+	retryQueue           = 64
 )
 
 // Fallback answers what the engine does not (agent.EngineDownServer).
@@ -49,15 +56,42 @@ type Fallback interface {
 // is reported when it is the last one, and so is the engine's refusal of
 // this OS user, even when that connection ended before a request reached it:
 // the requests it declined are answered with the refusal.
+//
+// An engine that was serving this session and goes away (an upgrade restarts
+// it) is waited for, up to DefaultReconnectWait, before the next message
+// falls back; a read-only request the engine dropped unanswered is sent once
+// more to the engine that returns. Nothing else is ever sent twice.
 func Serve(ctx context.Context, socketPath string, fallback Fallback, in io.Reader, out io.Writer) error {
+	return ServeWith(ctx, socketPath, fallback, in, out, Options{})
+}
+
+// Options tune Serve.
+type Options struct {
+	// ReconnectWait is how long a message waits for an engine that was
+	// serving this session and went away; zero means DefaultReconnectWait,
+	// negative means do not wait.
+	ReconnectWait time.Duration
+}
+
+// ServeWith is Serve with options.
+func ServeWith(ctx context.Context, socketPath string, fallback Fallback, in io.Reader, out io.Writer, opts Options) error {
 	if fallback == nil {
 		panic("shim: fallback server required")
 	}
-	return serve(ctx, &relay{path: socketPath, fallback: fallback, out: &lineWriter{w: out}, files: defaultRequestFiles(), dial: dial}, in)
+	wait := opts.ReconnectWait
+	if wait == 0 {
+		wait = DefaultReconnectWait
+	}
+	r := &relay{
+		path: socketPath, fallback: fallback, out: &lineWriter{w: out}, files: defaultRequestFiles(), dial: dial,
+		reconnectWait: wait, retries: make(chan []byte, retryQueue), retried: map[string]bool{},
+	}
+	return serve(ctx, r, in)
 }
 
 // serve is Serve on r.
 func serve(ctx context.Context, r *relay, in io.Reader) error {
+	defer r.drainRetries(ctx)
 	defer r.close()
 
 	lines := make(chan []byte)
@@ -67,6 +101,10 @@ func serve(ctx context.Context, r *relay, in io.Reader) error {
 		select {
 		case <-ctx.Done():
 			return nil
+		case line := <-r.retries:
+			if err := r.send(ctx, line); err != nil {
+				return err
+			}
 		case line, ok := <-lines:
 			if !ok {
 				if err := <-readErr; err != nil {
@@ -115,6 +153,86 @@ type relay struct {
 	// refusal is the engine's refusal of the last session that ended, ""
 	// when that session was admitted or there was none.
 	refusal string
+
+	reconnectWait time.Duration
+	// wasUp is set while the engine answered the last dial; only then does a
+	// message wait for it to come back, so a stopped engine costs one wait.
+	wasUp bool
+
+	// retries carries the in-flight reads a dying session hands back to the
+	// serve loop; retried holds the ids already given their one retry.
+	retries chan []byte
+	mu      sync.Mutex
+	retried map[string]bool
+	closing bool
+}
+
+// retry takes back a request the engine never answered, once, when it is
+// safe to run again; false means the caller answers it as abandoned.
+func (r *relay) retry(line []byte) bool {
+	key := messageID(line)
+	if key == "" || !retriable(line) {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closing || r.retried[key] {
+		return false
+	}
+	select {
+	case r.retries <- line:
+		r.retried[key] = true
+		return true
+	default:
+		return false
+	}
+}
+
+// drainRetries answers what is still queued once the serve loop stops.
+func (r *relay) drainRetries(ctx context.Context) {
+	r.mu.Lock()
+	r.closing = true
+	r.mu.Unlock()
+	for {
+		select {
+		case line := <-r.retries:
+			_ = r.fallback.Abandoned(context.WithoutCancel(ctx), r.out, line)
+		default:
+			return
+		}
+	}
+}
+
+// dialWaiting dials, and when the engine was up until now keeps trying for
+// reconnectWait: the engine is restarting, not gone.
+func (r *relay) dialWaiting(ctx context.Context) (*session, error) {
+	sess, err := r.dial(ctx, r.path, r.out, r.fallback, r.files)
+	if err == nil {
+		sess.retry = r.retry
+		r.wasUp = true
+		return sess, nil
+	}
+	if !r.wasUp || r.reconnectWait <= 0 {
+		return nil, err
+	}
+	deadline := time.NewTimer(r.reconnectWait)
+	defer deadline.Stop()
+	tick := time.NewTicker(reconnectPoll)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, err
+		case <-deadline.C:
+			r.wasUp = false
+			return nil, err
+		case <-tick.C:
+			if sess, err = r.dial(ctx, r.path, r.out, r.fallback, r.files); err == nil {
+				sess.retry = r.retry
+				return sess, nil
+			}
+		}
+	}
 }
 
 // send forwards line to the engine, dialing when there is no live
@@ -126,7 +244,7 @@ func (r *relay) send(ctx context.Context, line []byte) error {
 		return nil
 	}
 	r.close()
-	sess, err := r.dial(ctx, r.path, r.out, r.fallback, r.files)
+	sess, err := r.dialWaiting(ctx)
 	if err == nil {
 		r.sess = sess
 		if sess.forward(line) {
@@ -144,6 +262,7 @@ func (r *relay) send(ctx context.Context, line []byte) error {
 // engine's last answers. With no live connection it reports the refusal of
 // the last one, if the engine refused it.
 func (r *relay) finish(ctx context.Context) error {
+	defer r.drainRetries(ctx)
 	if r.sess == nil && r.refusal != "" {
 		return errors.New(r.refusal)
 	}
@@ -185,6 +304,8 @@ type session struct {
 	// refusal is the engine's refusal of this OS user (mcp.PeerRefusal),
 	// "" when it admitted the peer.
 	refusal string
+	// retry takes back an unanswered request that is safe to run again.
+	retry func(line []byte) bool
 
 	mu      sync.Mutex
 	ended   bool
@@ -245,6 +366,9 @@ func (s *session) abandon(ctx context.Context, out *lineWriter) {
 	for _, line := range left {
 		if s.refusal != "" {
 			_ = refuse(out, line, s.refusal)
+			continue
+		}
+		if s.retry != nil && s.retry(line) {
 			continue
 		}
 		_ = s.fallback.Abandoned(context.WithoutCancel(ctx), out, line)

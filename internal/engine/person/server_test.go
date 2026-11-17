@@ -149,7 +149,7 @@ func serveWith(t *testing.T, o person.Options) person.Client {
 	path := socketPath(t)
 	ln, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
 	require.NoError(t, err)
-	o.Pages = person.PagesDTO{PagesURL: "http://localhost:8787", LocalOrigin: "http://localhost:8787"}
+	o.Pages = person.PagesDTO{PagesURL: "http://localhost:8787", UpdateCheck: "OFF", LocalOrigin: "http://localhost:8787"}
 	o.Log = slog.New(slog.DiscardHandler)
 	srv := person.NewServer(o)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -347,6 +347,7 @@ func TestThePersonSocketRoundTripsWhatTheCLIPrints(t *testing.T) {
 	pages, err := c.Pages(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "http://localhost:8787", pages.PagesURL)
+	require.Equal(t, "OFF", pages.UpdateCheck)
 
 	got, err := c.Agent("bot").ListPasskeys(ctx)
 	require.NoError(t, err)

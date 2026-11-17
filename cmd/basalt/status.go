@@ -26,7 +26,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/server"
-	"github.com/basaltdbhq/basaltdb/internal/updatecheck"
 )
 
 // basalt status (CONTRACT.md, CLI; owner decision AE-13): the status tool's
@@ -46,7 +45,6 @@ type statusOut struct {
 	StateDir   string    `json:"stateDir"`
 	// Update is set when a newer release is out (CONTRACT.md, Update
 	// notice), from the daily cache only.
-	Update *updatecheck.Notice `json:"update,omitempty"`
 	// vaultID is the engine id in same-user mode when the Vault is on:
 	// the connection state only the running engine knows is left out of
 	// the report, and the text output still shows the id (localVault).
@@ -84,7 +82,7 @@ func runStatus(c *cliIO, args []string) int {
 		return c.fail(err)
 	}
 	if *asJSON {
-		out.Update = cachedUpdate(c)
+		out.Update = statusUpdate(c, out.Update)
 		enc := json.NewEncoder(c.stdout)
 		enc.SetIndent("", "  ")
 		return exitCode(c, enc.Encode(out))
@@ -95,6 +93,22 @@ func runStatus(c *cliIO, args []string) int {
 
 // configOrFallback is the config a person command reads: the --config value,
 // or, when --config was not given, perUserConfigFallback of the default.
+// statusUpdate is the update field of status --json: the status tool's shape
+// (message included). This binary's own cached notice comes first, since it
+// is the one the person upgrades; else the engine's notice. Nothing when the
+// check is off.
+func statusUpdate(c *cliIO, engine *agent.UpdateInfo) *agent.UpdateInfo {
+	if updateOff(c.ctx, c.getenv, c.goos, c.host, person.Client{Path: c.engine.personSocket}.Pages) {
+		return nil
+	}
+	if n := cachedUpdate(c); n != nil {
+		exe, _ := os.Executable()
+		info := agent.NewUpdateInfo(*n, exe)
+		return &info
+	}
+	return engine
+}
+
 func configOrFallback(h host, fs *flag.FlagSet, path string) string {
 	given := false
 	fs.Visit(func(fl *flag.Flag) { given = given || fl.Name == "config" })

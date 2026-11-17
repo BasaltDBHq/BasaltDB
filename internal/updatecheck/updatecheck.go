@@ -3,8 +3,8 @@
 // BasaltDBHq/BasaltDB at most once a day, keeps the answer in a small cache
 // file, and never makes a command wait on the network: callers read the
 // cache (Cached) and refresh it on the side (Refresh). The request carries
-// no data about the person, the machine or the database, only a User-Agent
-// with this build's version.
+// no data beyond the HTTP request itself (the IP address and a User-Agent
+// with this build's version).
 package updatecheck
 
 import (
@@ -118,7 +118,7 @@ func (c *Checker) Cached() *Notice {
 }
 
 // notice picks the newest release above current that the person may see:
-// pre-releases only when current is one.
+// pre-releases (a tag suffix or GitHub's flag) only when current is one.
 func notice(current string, releases []Release) *Notice {
 	cur, ok := parseVersion(current)
 	if !ok || current == DevVersion {
@@ -130,7 +130,7 @@ func notice(current string, releases []Release) *Notice {
 	for i := range releases {
 		r := &releases[i]
 		v, ok := parseVersion(r.Tag)
-		if !ok || (v.prerelease() && !cur.prerelease()) || v.compare(cur) <= 0 {
+		if !ok || ((v.prerelease() || r.Prerelease) && !cur.prerelease()) || v.compare(cur) <= 0 {
 			continue
 		}
 		security = security || r.Security
@@ -317,13 +317,24 @@ func (n Notice) AgentMessage(exePath string) string {
 
 func (n Notice) upgradeSentence(exePath string) string {
 	if homebrew(exePath) {
-		return "They upgrade with: brew upgrade basaltdbhq/tap/basaltdb"
+		return "They upgrade with: brew upgrade basaltdbhq/tap/basaltdb, then restart the engine so it runs the new binary"
 	}
-	return "They get the new release at " + n.URL
+	return "They get the new release at " + n.URL + " and then restart the engine so it runs the new binary"
 }
 
+// homebrew reports whether the binary at exePath, symlinks resolved, sits in
+// a Homebrew prefix: a Cellar, or the Apple-silicon or Linux prefix.
 func homebrew(exePath string) bool {
-	return strings.Contains(exePath, "/Cellar/") || strings.Contains(exePath, "/opt/homebrew/")
+	paths := []string{exePath}
+	if resolved, err := filepath.EvalSymlinks(exePath); err == nil {
+		paths = append(paths, resolved)
+	}
+	for _, p := range paths {
+		if strings.Contains(p, "/Cellar/") || strings.Contains(p, "/opt/homebrew/") || strings.Contains(p, "/home/linuxbrew/.linuxbrew/") {
+			return true
+		}
+	}
+	return false
 }
 
 // Line is the one-line notice for a terminal or a log.

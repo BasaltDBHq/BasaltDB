@@ -23,6 +23,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/updatecheck"
 )
 
 var updateGolden = flag.Bool("update", false, "rewrite testdata/describe/*.json")
@@ -70,7 +71,11 @@ type describeHarness struct {
 	role string
 }
 
-func describeDB(t *testing.T) describeHarness {
+func describeDB(t *testing.T) describeHarness { return describeDBWithUpdate(t, nil) }
+
+// describeDBWithUpdate is describeDB for an engine whose update check
+// answers with update.
+func describeDBWithUpdate(t *testing.T, update func() *updatecheck.Notice) describeHarness {
 	t.Helper()
 	d := guardtest.New(t)
 	d.Exec(t, describeSQL)
@@ -92,6 +97,7 @@ func describeDB(t *testing.T) describeHarness {
 		Approvals: store, Reverts: store, Log: slog.New(slog.DiscardHandler), Now: time.Now,
 		Catalog: agentdb.NewCatalog(pool, limits, pool.Config().ConnConfig.Database),
 		Classes: piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool),
+		Update:  update,
 	})
 	return describeHarness{harness: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, db: d, role: a.Role}
 }
@@ -452,4 +458,24 @@ func TestDescribeOverviewScaleSchemas(t *testing.T) {
 	raw, err := json.Marshal(body)
 	require.NoError(t, err)
 	require.Less(t, len(raw), 16<<10, "the overview stays small")
+}
+
+// TestDescribeOverviewCarriesTheUpdate: the overview form, and only it,
+// carries the engine's newer-release notice (CONTRACT.md, Update notice).
+func TestDescribeOverviewCarriesTheUpdate(t *testing.T) {
+	t.Parallel()
+	h := describeDBWithUpdate(t, func() *updatecheck.Notice {
+		return &updatecheck.Notice{Current: "0.0.1", Latest: "0.0.2", Security: true, URL: "https://example.test/r"}
+	})
+	overview, isError := h.describe(t, map[string]any{})
+	require.False(t, isError, "%v", overview)
+	u, ok := overview["update"].(map[string]any)
+	require.True(t, ok, "update in %v", overview)
+	require.Equal(t, "0.0.2", u["latest"])
+	require.Equal(t, true, u["security"])
+	require.Contains(t, u["message"], "SECURITY UPDATE: ")
+
+	plain := describeDB(t)
+	none, _ := plain.describe(t, map[string]any{})
+	require.NotContains(t, none, "update", "no notice, no field")
 }

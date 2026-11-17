@@ -69,6 +69,13 @@ func socketDir(t *testing.T) string {
 // fallback, as the agent's MCP client would start it.
 func startShim(t *testing.T, socket string) (*client, <-chan error) {
 	t.Helper()
+	return startShimWaiting(t, socket, -1)
+}
+
+// startShimWaiting is startShim with the time a call waits for an engine
+// that went away; negative does not wait.
+func startShimWaiting(t *testing.T, socket string, wait time.Duration) (*client, <-chan error) {
+	t.Helper()
 	cmds, err := agent.NewCommands("bot", "", "linux", nil)
 	require.NoError(t, err)
 	down := agent.EngineDown{Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: time.Now}
@@ -77,7 +84,7 @@ func startShim(t *testing.T, socket string) (*client, <-chan error) {
 	outR, outW := io.Pipe()
 	done := make(chan error, 1)
 	go func() {
-		err := shim.Serve(context.Background(), socket, fallback, inR, outW)
+		err := shim.ServeWith(context.Background(), socket, fallback, inR, outW, shim.Options{ReconnectWait: wait})
 		_ = outW.Close()
 		done <- err
 	}()

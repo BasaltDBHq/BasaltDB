@@ -179,6 +179,11 @@ func runInitRemote(c *cliIO, args []string) int {
 	if err != nil {
 		return c.fail(err)
 	}
+	if c.getenv(envAdminURL) != "" {
+		// Never used here, but whoever can read this environment holds
+		// the admin password (CONTRACT.md, Agents and the admin credential).
+		fmt.Fprintln(c.stderr, "basalt: warning: "+remoteAdminEnvSet)
+	}
 	if err := checkBuildVersion(buildVersion()); err != nil {
 		return c.fail(err)
 	}

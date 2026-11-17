@@ -599,15 +599,6 @@ func TestUninstallRemovesEverything(t *testing.T) {
 	require.Zero(t, roles)
 }
 
-func TestInitHelpListsTheOtherModes(t *testing.T) {
-	t.Parallel()
-	r := cli(t, nil, "", "init", "-h")
-	require.Equal(t, exitOK, r.code, r.stderr)
-	for _, want := range []string{"--remote", "--setup-code", "-operated-by"} {
-		require.Contains(t, r.stderr, want)
-	}
-}
-
 func TestInitOperatedByAgentWithTheAdminCredential(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)

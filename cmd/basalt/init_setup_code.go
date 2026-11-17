@@ -103,6 +103,11 @@ type laptopSetup struct {
 // runInitSetupCode: basalt init --setup-code, in the contract's order.
 // Every refusal before the transaction leaves the database as it was.
 func runInitSetupCode(c *cliIO, args []string) int {
+	if !helpAsked(args) {
+		if err := c.agentContextError("basalt init --setup-code", hintAgentSetupCode); err != nil {
+			return c.fail(err)
+		}
+	}
 	f, err := parseInitSetupCode(c, args)
 	if err != nil {
 		return c.fail(err)

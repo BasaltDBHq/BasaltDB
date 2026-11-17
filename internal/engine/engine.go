@@ -204,7 +204,7 @@ const (
 func (e *Engine) refusePeer(ctx context.Context, conn *net.UnixConn, agentName string, uid uint32) {
 	msg := fmt.Sprintf("the basalt engine refused this connection: the socket of agent %q serves only that agent's OS user "+
 		"(osUser in the engine config), and this process runs as uid %d. Start the MCP client as the agent's OS user, "+
-		"or set that user with basalt init --agent %s --os-user <user>", agentName, uid, agentName)
+		"or ask the person to set the agent's osUser in the engine config", agentName, uid)
 	if err := mcp.WritePeerRefused(conn, msg); err != nil {
 		return
 	}

@@ -205,6 +205,19 @@ If the engine is stopped, these commands say so and print the command that start
 
 To keep the agent off the person socket, run it as its own OS user: `basalt init --os-user <user>`.
 
+## Upgrade
+
+Upgrade the binary the way you installed it (`brew upgrade basaltdbhq/tap/basaltdb`, or install the new release archive over the old one), then restart the engine so it runs the new binary:
+
+- With the service: `sudo systemctl restart basalt-engine` on Linux, `sudo launchctl kickstart -k system/dev.basaltdb.engine` on macOS.
+- Without a service (a bot machine, a container): stop the `basalt engine` process and start it again with the same command.
+
+You do not restart your agent's MCP client. `basalt mcp`, the process the client started, only relays to the engine and keeps running; it waits up to 15 seconds for the engine to come back. A read the engine was answering when it stopped (`query`, `describe`, `list_pending`, `list_runs`, `run_history`, `status`) is sent once more to the new engine. A `write`, an approval or a revert is never sent twice: the agent is told the call may or may not have run, and it reads before it writes again.
+
+Then, if `basalt status --agent NAME` says the guard can be upgraded, run `basalt upgrade --agent NAME`; the engine serves again without a restart.
+
+How the pieces talk, for reference: the client starts `basalt mcp` over stdio; it dials the engine's Unix socket for that agent and forwards each message. The engine holds the credential and talks to Postgres. When the engine is down, `basalt mcp` answers `status` and the tool list itself and every other call with `ENGINE_UNREACHABLE`.
+
 ## Containers without systemd
 
 A container usually has no service manager: PID 1 is your process or a small init such as `tini`, so `basalt init` cannot install the engine service there. Run the engine as its own OS user with `basalt engine --user` instead, started as root by the container's entrypoint:

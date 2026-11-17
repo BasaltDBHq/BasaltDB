@@ -162,7 +162,7 @@ func checkHealth(c *cliIO, l *agentLedger, full bool) (ledger.Health, error) {
 	}
 	switch {
 	case h.PinMoved:
-		fprintSafef(c.stderr, "warning: the guard's schema was dropped and restored with the same ledger (guard install %d is now %d); the ledger pin moved to the new install\n",
+		fprintSafef(c.stderr, "warning: the guard was installed again over the same ledger (guard install %s is now %s); the ledger pin moved to the new install\n",
 			pin.Install, h.Install)
 	case h.PinSetAside:
 		pin = pin.Kept(guard.SetAside{

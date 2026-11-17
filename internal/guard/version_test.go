@@ -69,12 +69,12 @@ func TestPlanInitAppliesOnlyMissingVersions(t *testing.T) {
 	probe := fmt.Sprintf("basalt_meta.upgrade_probe_v%d", next)
 
 	first := apply(next - 1).SQL()
-	require.Equal(t, []int{next - 1}, versions())
+	require.Equal(t, versionsUpTo(next-1), versions())
 	require.Contains(t, first, "CREATE TABLE basalt_meta.guarded_tables")
 	require.NotContains(t, first, probe)
 
 	second := apply(0).SQL()
-	require.Equal(t, []int{next - 1, next}, versions())
+	require.Equal(t, versionsUpTo(next), versions())
 	require.Contains(t, second, probe)
 	require.Contains(t, second, fmt.Sprintf("INSERT INTO basalt_meta.schema_version (version) VALUES (%d);", next))
 	require.NotContains(t, second, "CREATE TABLE basalt_meta.guarded_tables", "version 1 does not run again")
@@ -101,4 +101,13 @@ func TestCheckAgentVersionNoGuard(t *testing.T) {
 	var stale *guard.StaleSchemaError
 	require.ErrorAs(t, err, &stale)
 	require.Zero(t, stale.Installed)
+}
+
+// versionsUpTo is every version from 1 to n, in order.
+func versionsUpTo(n int) []int {
+	out := make([]int, 0, n)
+	for v := 1; v <= n; v++ {
+		out = append(out, v)
+	}
+	return out
 }

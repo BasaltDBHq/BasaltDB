@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"slices"
+	"strings"
 	"time"
 
 	"golang.org/x/term"
@@ -70,7 +71,7 @@ func cachedUpdate(c *cliIO) *updatecheck.Notice {
 // notice as a field where the command has one).
 func startUpdateNotice(ctx context.Context, args []string, std stdio, getenv func(string) string) func() {
 	nothing := func() {}
-	if len(args) == 0 || slices.Contains(noUpdateLine, args[0]) || slices.Contains(args, "--json") || slices.Contains(args, "-json") {
+	if len(args) == 0 || slices.Contains(noUpdateLine, args[0]) || wantsJSON(args) {
 		return nothing
 	}
 	if updateOff(getenv, runtime.GOOS, osHost{}) {
@@ -115,4 +116,14 @@ func printUpdateLine(w io.Writer, getenv func(string) string, n *updatecheck.Not
 func isTerminal(w io.Writer) bool {
 	f, ok := w.(*os.File)
 	return ok && term.IsTerminal(int(f.Fd()))
+}
+
+// wantsJSON is true when args carry --json (or -json), with or without a value.
+func wantsJSON(args []string) bool {
+	for _, a := range args {
+		if a == "--json" || a == "-json" || strings.HasPrefix(a, "--json=") || strings.HasPrefix(a, "-json=") {
+			return true
+		}
+	}
+	return false
 }

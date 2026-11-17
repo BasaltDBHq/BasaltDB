@@ -201,3 +201,20 @@ func TestLine(t *testing.T) {
 		t.Errorf("line = %q", got)
 	}
 }
+
+func TestSlowRequestStillRecordsAttempt(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		close(started)
+		<-release
+	}))
+	defer srv.Close()
+	defer close(release)
+	c := &Checker{Dir: t.TempDir(), Current: "0.0.1", URL: srv.URL}
+	go func() { _ = c.Refresh(context.Background()) }()
+	<-started // the process could exit here: the attempt must be on disk already
+	if c.Due() {
+		t.Fatal("a second command would start another request")
+	}
+}

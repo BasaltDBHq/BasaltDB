@@ -165,14 +165,17 @@ func (c *Checker) Refresh(ctx context.Context) error {
 	}
 	k := c.load()
 	k.AttemptedAt = c.now()
+	// Record the attempt first: a command that exits while the request is
+	// still running must not leave the next command to start another one.
+	if err := c.save(k); err != nil {
+		return err
+	}
 	releases, err := c.fetch(ctx)
-	if err == nil {
-		k.Releases, k.CheckedAt = releases, k.AttemptedAt
+	if err != nil {
+		return err
 	}
-	if werr := c.save(k); err == nil {
-		err = werr
-	}
-	return err
+	k.Releases, k.CheckedAt = releases, k.AttemptedAt
+	return c.save(k)
 }
 
 type githubRelease struct {
@@ -277,7 +280,7 @@ func CacheDir(override string) (string, error) {
 // UpgradeHint is how to get the new release: the brew command when the
 // running binary sits in a Homebrew prefix, else the release page.
 func (n Notice) UpgradeHint(exePath string) string {
-	if strings.Contains(exePath, "/Cellar/") || strings.Contains(exePath, "/homebrew/") {
+	if strings.Contains(exePath, "/Cellar/") || strings.Contains(exePath, "/opt/homebrew/") {
 		return "Run: brew upgrade basaltdbhq/tap/basaltdb"
 	}
 	return "Get it at " + n.URL

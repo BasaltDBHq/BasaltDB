@@ -414,6 +414,7 @@ func (s *Service) describeNotFoundSteps(b *Steps, f failure) string {
 	b.RunCommand(command, "Run this to list the tables the agent cannot read, with the basalt init flag that would grant each.")
 	b.TellAgent("Tell the agent when it has the access, or which table to use instead.")
 	return fitMessage("The agent asked for a table it cannot see: it does not exist, or the agent may not read it. "+
+		"An agent uses one database; a table in another database needs its own agent, added with basalt init --agent NAME. "+
 		"To list the tables the agent cannot read, run: "+command, command)
 }
 

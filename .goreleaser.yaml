@@ -95,6 +95,8 @@ signs:
     signature: "${artifact}.sigstore.json"
     args:
       - sign-blob
+      # A Sigstore bundle (the .sigstore.json format) also on cosign 2.x.
+      - "--new-bundle-format"
       - "--bundle=${signature}"
       - "--yes"
       - "${artifact}"

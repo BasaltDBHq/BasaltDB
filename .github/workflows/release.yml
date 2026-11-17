@@ -42,7 +42,7 @@ jobs:
         run: test "$(go env GOVERSION)" = "$(awk '/^toolchain /{print $2}' go.mod)"
 
       # GoReleaser runs cosign to sign SHA256SUMS (.goreleaser.yaml, signs).
-      - uses: sigstore/cosign-installer@v3
+      - uses: sigstore/cosign-installer@v4
 
       - name: Set version
         run: |

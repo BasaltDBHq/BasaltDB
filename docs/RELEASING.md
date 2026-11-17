@@ -63,7 +63,7 @@ The release job signs `SHA256SUMS` with cosign, keyless ([`.goreleaser.yaml`](..
 
 - The job has `id-token: write`. cosign trades the job's GitHub OIDC token for a short-lived Fulcio certificate whose identity is `https://github.com/<owner>/<repo>/.github/workflows/release.yml@refs/tags/<tag>`, signs, and records the signature in the public Rekor log. There is no signing key or secret to manage or rotate.
 - `sigstore/cosign-installer` puts `cosign` on the runner. If signing fails, GoReleaser stops before it publishes, so a release is never published unsigned.
-- Snapshot builds (CI and the reproducibility check above) pass `--skip=sign`: they have no OIDC token and publish nothing.
+- CI snapshot builds and the reproducibility check above pass `--skip=sign`: they have no OIDC token and publish nothing.
 - The signature is not part of the reproducible output: each signing run gets a new certificate and log entry, so `SHA256SUMS.sigstore.json` differs from run to run while `SHA256SUMS` stays the same.
 
 How a user checks it is in the [install guide](install.md#check-the-signature).

@@ -93,6 +93,7 @@ install-sh-check: ## POSIX syntax, default repo, and archive names for install.s
 	@grep -Fq 'id-token: write' .github/workflows/release.yml
 	@grep -Fq 'sigstore/cosign-installer@' .github/workflows/release.yml
 	@grep -Fq 'artifacts: checksum' .goreleaser.yaml
+	@grep -Fq -- '--new-bundle-format' .goreleaser.yaml
 	@grep -Fq 'signature: "$${artifact}.sigstore.json"' .goreleaser.yaml
 	@grep -Fq -- '--skip=sign' .github/workflows/ci.yml
 	@grep -Fq 'token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"' .goreleaser.yaml

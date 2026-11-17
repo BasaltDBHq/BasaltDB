@@ -36,7 +36,7 @@ tar -xzf basaltdb_0.0.1-alpha.2_linux_amd64.tar.gz
 
 Releases after `v0.0.1-alpha.2` also carry `SHA256SUMS.sigstore.json`, a [Sigstore](https://www.sigstore.dev/) signature of `SHA256SUMS`. The release workflow signs it with no long-lived key: [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) gets a short-lived certificate for the workflow's GitHub identity, and the signature is recorded in the public Rekor transparency log. A valid signature proves that `SHA256SUMS` came from this repository's release workflow, run for that tag. Since `SHA256SUMS` lists every archive, package and `portal.sha256`, checking the archive against it (above) then covers the archive too.
 
-With `cosign` installed, check the signature before you check the archive:
+With `cosign` 2.4 or later installed (the bundle is in the Sigstore bundle format), check the signature before you check the archive:
 
 ```sh
 TAG=v0.0.1-alpha.3   # the release you downloaded

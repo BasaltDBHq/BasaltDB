@@ -126,10 +126,17 @@ type Config struct {
 	// VaultURL overrides the Vault's address for development and tests
 	// only: a ws:// URL on a loopback address. Empty is the Vault itself.
 	VaultURL string `json:"vaultUrl,omitempty"`
+	// UpdateCheck is OFF to stop the daily look at the public release list
+	// (CONTRACT.md, Update notice); ON, or empty, leaves it on. See
+	// UpdateCheckOn.
+	UpdateCheck string `json:"updateCheck,omitempty" validate:"omitempty,oneof=ON OFF"`
 	// PII sizes the PII dictionary and its scan (CONTRACT.md, PII
 	// classification, Engine config). Zero fields take the defaults.
 	PII PII `json:"pii,omitzero"`
 }
+
+// UpdateCheckOn is false only when updateCheck is OFF.
+func (c Config) UpdateCheckOn() bool { return c.UpdateCheck != "OFF" }
 
 // PII is engine.json pii: the dictionary's memory budget and the scan's
 // rate. Zero means the default. The budget is at most MaxPIIMemoryMB (64

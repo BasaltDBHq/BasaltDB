@@ -9,9 +9,11 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +21,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
+	"github.com/basaltdbhq/basaltdb/internal/engine/binwatch"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/privdrop"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
@@ -62,10 +65,67 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 		return fail(io.err, "engine", err)
 	}
 	log := engineLog(io.err)
-	if err := engine.Run(ctx, cfg.Config, enginePath(*configPath), log); err != nil {
+	run := func(ctx context.Context, o engine.RestartOptions) error {
+		return engine.RunWith(ctx, cfg.Config, enginePath(*configPath), log, o)
+	}
+	if err := serveRestarting(ctx, run, osRestart(log), log); err != nil {
 		return fail(io.err, "engine", err)
 	}
 	return exitOK
+}
+
+// restart is how the engine restarts onto an upgraded binary: upgrade says
+// when (nil turns it off) and exec runs the new binary in this process.
+type restart struct {
+	upgrade engine.UpgradeFunc
+	exec    func() error
+}
+
+// osRestart watches the binary this engine was started from. When it
+// cannot (its path cannot be read), the engine runs without the restart.
+func osRestart(log *slog.Logger) restart {
+	sys := binwatch.OS{}
+	exe, err := os.Executable()
+	if err != nil {
+		log.Warn("the engine does not restart onto an upgraded binary: its own path is unknown", "err", err)
+		return restart{}
+	}
+	path, err := binwatch.ExecPath(os.Args[0], exec.LookPath, func() (string, error) { return exe, nil }, sys.Stat)
+	if err != nil {
+		log.Warn("the engine does not restart onto an upgraded binary: its own path is unknown", "err", err)
+		return restart{}
+	}
+	w, err := binwatch.New(path, exe, sys, os.Geteuid() == 0, log)
+	if err != nil {
+		log.Warn("the engine does not restart onto an upgraded binary: its binary cannot be watched", "path", path, "err", err)
+		return restart{}
+	}
+	path = w.Path()
+	log.Info("the engine restarts onto an upgraded binary installed at its path", "path", path)
+	argv := slices.Clone(os.Args)
+	return restart{upgrade: w.Wait, exec: func() error {
+		if err := w.Recheck(); err != nil {
+			return err
+		}
+		return binwatch.Exec(path, argv, os.Environ())
+	}}
+}
+
+// serveRestarting runs the engine and, each time it stops for an upgrade,
+// runs the new binary in this process. When that fails, this binary serves
+// on, until the binary changes again.
+func serveRestarting(ctx context.Context, run func(context.Context, engine.RestartOptions) error, r restart, log *slog.Logger) error {
+	for {
+		err := run(ctx, engine.RestartOptions{Upgrade: r.upgrade})
+		if !errors.Is(err, engine.ErrRestart) || ctx.Err() != nil {
+			// A stop that came during the restart wins: never run the new
+			// binary after the engine was told to stop.
+			return err
+		}
+		log.Info("restarting onto the upgraded binary")
+		err = r.exec()
+		log.Error("could not run the upgraded binary; this one serves on", "err", err)
+	}
 }
 
 // dropToUser is basalt engine --user: before the config, the credential, a

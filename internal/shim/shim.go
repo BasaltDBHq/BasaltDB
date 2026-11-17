@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 )
 
@@ -60,7 +61,9 @@ type Fallback interface {
 // An engine that was serving this session and goes away (an upgrade restarts
 // it) is waited for, up to DefaultReconnectWait, before the next message
 // falls back; a read-only request the engine dropped unanswered is sent once
-// more to the engine that returns. Nothing else is ever sent twice.
+// more to the engine that returns, and so is any request the engine
+// answered as not run because it was restarting (mcp.ErrCodeRestarting).
+// Nothing else is ever sent twice.
 func Serve(ctx context.Context, socketPath string, fallback Fallback, in io.Reader, out io.Writer) error {
 	return ServeWith(ctx, socketPath, fallback, in, out, Options{})
 }
@@ -71,6 +74,11 @@ type Options struct {
 	// serving this session and went away; zero means DefaultReconnectWait,
 	// negative means do not wait.
 	ReconnectWait time.Duration
+
+	// MinEngineProtocol is the oldest engine protocol this shim works with
+	// (default mcp.MinEngineProtocol); an older engine is refused with the
+	// message that names the restart.
+	MinEngineProtocol int
 }
 
 // ServeWith is Serve with options.
@@ -82,7 +90,12 @@ func ServeWith(ctx context.Context, socketPath string, fallback Fallback, in io.
 	if wait == 0 {
 		wait = DefaultReconnectWait
 	}
+	minEngine := opts.MinEngineProtocol
+	if minEngine == 0 {
+		minEngine = mcp.MinEngineProtocol
+	}
 	r := &relay{
+		neg:  negotiation{build: buildinfo.Version, minEngine: minEngine},
 		path: socketPath, fallback: fallback, out: &lineWriter{w: out}, files: defaultRequestFiles(), dial: dial,
 		reconnectWait: wait, retries: make(chan []byte, retryQueue), retried: map[string]bool{},
 	}
@@ -98,6 +111,16 @@ func serve(ctx context.Context, r *relay, in io.Reader) error {
 	readErr := make(chan error, 1)
 	go readLines(ctx, in, lines, readErr)
 	for {
+		// Requests handed back go first, so a resent call keeps its place
+		// before the client's later ones.
+		select {
+		case line := <-r.retries:
+			if err := r.send(ctx, line); err != nil {
+				return err
+			}
+			continue
+		default:
+		}
 		select {
 		case <-ctx.Done():
 			return nil
@@ -141,7 +164,15 @@ func readLines(ctx context.Context, in io.Reader, lines chan<- []byte, errs chan
 }
 
 // relay holds the current engine connection, if any.
+// negotiation is what a session needs to agree on a protocol version with
+// the engine.
+type negotiation struct {
+	build     string
+	minEngine int
+}
+
 type relay struct {
+	neg      negotiation
 	path     string
 	fallback Fallback
 	out      *lineWriter
@@ -149,7 +180,7 @@ type relay struct {
 	// files writes the request files of hash links (request_files.go).
 	files requestFiles
 	// dial opens a session with the engine (dial; tests wrap it).
-	dial func(ctx context.Context, path string, out *lineWriter, fallback Fallback, files requestFiles) (*session, error)
+	dial func(ctx context.Context, path string, out *lineWriter, fallback Fallback, files requestFiles, neg negotiation) (*session, error)
 	// refusal is the engine's refusal of the last session that ended, ""
 	// when that session was admitted or there was none.
 	refusal string
@@ -170,8 +201,21 @@ type relay struct {
 // retry takes back a request the engine never answered, once, when it is
 // safe to run again; false means the caller answers it as abandoned.
 func (r *relay) retry(line []byte) bool {
+	if !retriable(line) {
+		return false
+	}
+	return r.requeue(line)
+}
+
+// resend takes back a request the engine answered as not run because it
+// was restarting: any request, since nothing ran, but once only; false
+// means the caller passes the engine's answer on.
+func (r *relay) resend(line []byte) bool { return r.requeue(line) }
+
+// requeue hands line back to the serve loop once per request id.
+func (r *relay) requeue(line []byte) bool {
 	key := messageID(line)
-	if key == "" || !retriable(line) {
+	if key == "" {
 		return false
 	}
 	r.mu.Lock()
@@ -206,9 +250,9 @@ func (r *relay) drainRetries(ctx context.Context) {
 // dialWaiting dials, and when the engine was up until now keeps trying for
 // reconnectWait: the engine is restarting, not gone.
 func (r *relay) dialWaiting(ctx context.Context) (*session, error) {
-	sess, err := r.dial(ctx, r.path, r.out, r.fallback, r.files)
+	sess, err := r.dial(ctx, r.path, r.out, r.fallback, r.files, r.neg)
 	if err == nil {
-		sess.retry = r.retry
+		sess.retry, sess.resend = r.retry, r.resend
 		r.wasUp = true
 		return sess, nil
 	}
@@ -227,8 +271,8 @@ func (r *relay) dialWaiting(ctx context.Context) (*session, error) {
 			r.wasUp = false
 			return nil, err
 		case <-tick.C:
-			if sess, err = r.dial(ctx, r.path, r.out, r.fallback, r.files); err == nil {
-				sess.retry = r.retry
+			if sess, err = r.dial(ctx, r.path, r.out, r.fallback, r.files, r.neg); err == nil {
+				sess.retry, sess.resend = r.retry, r.resend
 				return sess, nil
 			}
 		}
@@ -278,9 +322,23 @@ func (r *relay) finish(ctx context.Context) error {
 	}
 }
 
+// restartingClose is how long a session whose engine said it is
+// restarting is still read before it is closed: the engine ends it soon
+// after its last answer, and the answers still coming are its other
+// "not run" answers.
+const restartingClose = time.Second
+
 func (r *relay) close() {
 	if r.sess == nil {
 		return
+	}
+	if r.sess.isRestarting() {
+		t := time.NewTimer(restartingClose)
+		select {
+		case <-r.sess.done:
+		case <-t.C:
+		}
+		t.Stop()
 	}
 	r.sess.conn.Close()
 	<-r.sess.done
@@ -293,10 +351,13 @@ func (r *relay) close() {
 // yet, by id, and answers them through the fallback when the connection
 // ends.
 type session struct {
-	conn     *net.UnixConn
-	fallback Fallback
-	files    requestFiles
-	done     chan struct{}
+	conn      *net.UnixConn
+	fallback  Fallback
+	files     requestFiles
+	neg       negotiation
+	done      chan struct{}
+	ready     chan struct{} // closed once the hello is answered or the session ends
+	readyOnce sync.Once
 	// err is the read error that ended the session, set before done closes;
 	// nil for a clean close.
 	err error
@@ -306,13 +367,19 @@ type session struct {
 	refusal string
 	// retry takes back an unanswered request that is safe to run again.
 	retry func(line []byte) bool
+	// resend takes back a request the engine did not run because it is
+	// restarting.
+	resend func(line []byte) bool
 
-	mu      sync.Mutex
-	ended   bool
-	pending map[string][]byte
+	mu    sync.Mutex
+	ended bool
+	// restarting is set once the engine answered a request as not run
+	// because it is restarting: nothing more is sent on this session.
+	restarting bool
+	pending    map[string][]byte
 }
 
-func dial(ctx context.Context, path string, out *lineWriter, fallback Fallback, files requestFiles) (*session, error) {
+func dial(ctx context.Context, path string, out *lineWriter, fallback Fallback, files requestFiles, neg negotiation) (*session, error) {
 	var d net.Dialer
 	c, err := d.DialContext(ctx, "unix", path)
 	if err != nil {
@@ -323,7 +390,10 @@ func dial(ctx context.Context, path string, out *lineWriter, fallback Fallback, 
 		c.Close()
 		return nil, fmt.Errorf("%s is not a Unix socket", path)
 	}
-	s := &session{conn: conn, fallback: fallback, files: files, done: make(chan struct{}), pending: map[string][]byte{}}
+	s := &session{conn: conn, fallback: fallback, files: files, neg: neg, done: make(chan struct{}), ready: make(chan struct{}), pending: map[string][]byte{}}
+	// The first line on every connection: the shim's protocol version. A
+	// write that fails (a refused peer) shows up as the connection ending.
+	_, _ = conn.Write(mcp.HelloLine(neg.build))
 	go s.copyAnswers(ctx, out)
 	return s, nil
 }
@@ -332,6 +402,7 @@ func dial(ctx context.Context, path string, out *lineWriter, fallback Fallback, 
 // closes the connection, then answers what it left unanswered.
 func (s *session) copyAnswers(ctx context.Context, out *lineWriter) {
 	defer close(s.done)
+	defer s.markReady()
 	defer s.abandon(ctx, out)
 	sc := bufio.NewScanner(s.conn)
 	sc.Buffer(make([]byte, scannerInitSize), scannerMaxSize)
@@ -340,6 +411,19 @@ func (s *session) copyAnswers(ctx context.Context, out *lineWriter) {
 			// Not a request's answer: the requests left pending get its
 			// message when the engine closes.
 			s.refusal = msg
+			continue
+		}
+		if hello, known, ok := mcp.HelloAnswer(sc.Bytes()); ok {
+			if known && s.engineTooOld(hello) {
+				// Not ready yet: the deferred abandon marks the session ended
+				// first, then releases forward, which then finds it ended.
+				s.conn.Close()
+				return
+			}
+			s.markReady()
+			continue
+		}
+		if s.takeBackRestarting(sc.Bytes()) {
 			continue
 		}
 		s.answered(sc.Bytes())
@@ -357,6 +441,18 @@ func (s *session) copyAnswers(ctx context.Context, out *lineWriter) {
 }
 
 // abandon ends the session and answers every request still pending.
+// engineTooOld records the refusal for an engine that is older than this
+// shim works with; the pending requests and every later one are answered
+// with it.
+func (s *session) engineTooOld(engine mcp.Hello) bool {
+	if engine.Protocol >= s.neg.minEngine {
+		return false
+	}
+	me := mcp.Hello{Protocol: mcp.ShimProtocol, Build: s.neg.build}
+	s.refusal = mcp.EngineTooOldMessage(me, engine, s.neg.minEngine)
+	return true
+}
+
 func (s *session) abandon(ctx context.Context, out *lineWriter) {
 	s.mu.Lock()
 	s.ended = true
@@ -385,13 +481,31 @@ func refuse(out io.Writer, line []byte, refusal string) error {
 	return mcp.WriteError(out, req.ID, mcp.ErrCodeServer, refusal)
 }
 
+func (s *session) markReady() { s.readyOnce.Do(func() { close(s.ready) }) }
+
+// helloWait is how long the first request waits for the engine's answer to
+// the hello; an engine that stays silent is served as if it had answered.
+const helloWait = 3 * time.Second
+
 // forward hands line to the engine and reports whether the session took
 // it: false when the session has ended or the write failed, and the caller
 // answers it some other way.
 func (s *session) forward(line []byte) bool {
+	// No request reaches the engine before its version is known, so an
+	// engine that is too old never runs one.
+	select {
+	case <-s.ready:
+	default:
+		t := time.NewTimer(helloWait)
+		select {
+		case <-s.ready:
+		case <-t.C:
+		}
+		t.Stop()
+	}
 	key := messageID(line)
 	s.mu.Lock()
-	if s.ended {
+	if s.ended || s.restarting {
 		s.mu.Unlock()
 		return false
 	}
@@ -409,6 +523,29 @@ func (s *session) forward(line []byte) bool {
 	}
 	delete(s.pending, key)
 	return false
+}
+
+// takeBackRestarting hands the request of an answer that says the engine
+// is restarting and did not run it back to the relay, to be sent to the
+// engine that comes back; false when line is another answer, or the
+// request was already sent once more (the answer is then passed on).
+func (s *session) takeBackRestarting(line []byte) bool {
+	key, ok := mcp.Restarting(line)
+	if !ok {
+		return false
+	}
+	s.mu.Lock()
+	s.restarting = true
+	req, pending := s.pending[key]
+	delete(s.pending, key)
+	s.mu.Unlock()
+	return pending && s.resend != nil && s.resend(req)
+}
+
+func (s *session) isRestarting() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.restarting
 }
 
 // answered drops the request an engine answer is for.

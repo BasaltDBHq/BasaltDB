@@ -69,8 +69,8 @@ func relayLosingRace(t *testing.T, socket string, out *strings.Builder, late int
 		fallback: down.Server(mcp.Info{Name: "basalt", Version: "test"}),
 		out:      &lineWriter{w: out},
 		files:    defaultRequestFiles(),
-		dial: func(ctx context.Context, path string, out *lineWriter, fallback Fallback, files requestFiles) (*session, error) {
-			s, err := dial(ctx, path, out, fallback, files)
+		dial: func(ctx context.Context, path string, out *lineWriter, fallback Fallback, files requestFiles, neg negotiation) (*session, error) {
+			s, err := dial(ctx, path, out, fallback, files, neg)
 			dials++
 			if err == nil && dials <= late {
 				<-s.done

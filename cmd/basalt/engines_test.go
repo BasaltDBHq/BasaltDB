@@ -39,22 +39,22 @@ func TestEngineListAndRevoke(t *testing.T) {
 
 	// Revoke: a prefix too short, a declined confirmation, and an unknown
 	// engine change nothing.
-	r = cli(t, admin, "", "engine", "revoke", lost[:4])
+	r = cli(t, admin, "", "engine", "revoke", "--", lost[:4])
 	require.Equal(t, exitError, r.code)
-	r = cli(t, admin, "n\n", "engine", "revoke", lost[:10])
+	r = cli(t, admin, "n\n", "engine", "revoke", "--", lost[:10])
 	require.Equal(t, exitError, r.code)
 	require.Contains(t, r.stderr, "nothing was revoked")
-	r = cli(t, admin, "", "engine", "revoke", "--yes", "zzzzzzzzzz")
+	r = cli(t, admin, "", "engine", "revoke", "--yes", "--", "zzzzzzzzzz")
 	require.Equal(t, exitError, r.code)
 
 	// The fingerprint as shown, spaces and all, names the engine.
-	r = cli(t, admin, "y\n", "engine", "revoke", channel.FingerprintOf(lost)[:14])
+	r = cli(t, admin, "y\n", "engine", "revoke", "--", channel.FingerprintOf(lost)[:14])
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Contains(t, r.stderr, "engine "+channel.FingerprintOf(lost)+" revoked. 1 engines remain")
 	require.Equal(t, pinPageURL+"\n", r.stdout)
 
 	// Already revoked: refused, as an unknown one.
-	r = cli(t, admin, "", "engine", "revoke", "--yes", lost)
+	r = cli(t, admin, "", "engine", "revoke", "--yes", "--", lost)
 	require.Equal(t, exitError, r.code)
 
 	// Without an id it asks which, listing only the ones not revoked.

@@ -194,6 +194,7 @@ type Overview struct {
 	OtherSchemas  *OtherSchemas  `json:"otherSchemas,omitempty"`
 	PersonMessage string         `json:"personMessage,omitempty"`
 	NextSteps     []mcp.NextStep `json:"nextSteps,omitempty"`
+	Update        *UpdateInfo    `json:"update,omitempty"`
 }
 
 // DescribeSearchParams are a search's validated arguments.
@@ -301,6 +302,7 @@ func (s *Service) DescribeOverview(ctx context.Context) (Overview, error) {
 		Store:       StoreInfo{Kind: storePostgres, Database: s.Catalog.Database()},
 		Fingerprint: catalogFingerprint(lines, notGranted, pii),
 		Counts:      Counts{Tables: len(visible), NotGranted: notGranted},
+		Update:      s.updateInfo(),
 		Limits: OverviewLimits{
 			ReadRowLimit: limits.ReadRowLimit, StatementTimeoutMs: limits.StatementTimeout.Milliseconds(), WritePolicy: writePolicy,
 		},

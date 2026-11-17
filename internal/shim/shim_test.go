@@ -76,6 +76,12 @@ func startShim(t *testing.T, socket string) (*client, <-chan error) {
 // that went away; negative does not wait.
 func startShimWaiting(t *testing.T, socket string, wait time.Duration) (*client, <-chan error) {
 	t.Helper()
+	return startShimWith(t, socket, shim.Options{ReconnectWait: wait})
+}
+
+// startShimWith is startShim with the relay's options.
+func startShimWith(t *testing.T, socket string, opts shim.Options) (*client, <-chan error) {
+	t.Helper()
 	cmds, err := agent.NewCommands("bot", "", "linux", nil)
 	require.NoError(t, err)
 	down := agent.EngineDown{Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: time.Now}
@@ -84,7 +90,7 @@ func startShimWaiting(t *testing.T, socket string, wait time.Duration) (*client,
 	outR, outW := io.Pipe()
 	done := make(chan error, 1)
 	go func() {
-		err := shim.ServeWith(context.Background(), socket, fallback, inR, outW, shim.Options{ReconnectWait: wait})
+		err := shim.ServeWith(context.Background(), socket, fallback, inR, outW, opts)
 		_ = outW.Close()
 		done <- err
 	}()
@@ -95,10 +101,16 @@ func startShimWaiting(t *testing.T, socket string, wait time.Duration) (*client,
 // fakeEngine serves a query tool on socket until the test ends.
 func fakeEngine(t *testing.T, socket string) {
 	t.Helper()
+	fakeEngineMin(t, socket, mcp.MinShimProtocol)
+}
+
+// fakeEngineMin is fakeEngine serving only shims of protocol minShim or newer.
+func fakeEngineMin(t *testing.T, socket string, minShim int) {
+	t.Helper()
 	srv := mcp.NewServer(mcp.Info{Name: "basalt", Version: "engine"}, mcp.Tool{
 		Name: "query",
 		Call: func(context.Context, json.RawMessage) (any, error) { return map[string]string{"from": "engine"}, nil },
-	})
+	}).WithMinShimProtocol(minShim)
 	ln, err := net.Listen("unix", socket)
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -173,8 +185,7 @@ func TestShimFallsBackWhenTheEngineGoesAway(t *testing.T) {
 			return
 		}
 		// Answer one line, then stop as a crashed engine would.
-		line, _ := bufio.NewReader(conn).ReadBytes('\n')
-		_ = srv.ServeLine(context.Background(), conn, line)
+		answerFirstRequest(srv, conn)
 		conn.Close()
 	}()
 
@@ -192,4 +203,16 @@ func TestShimFallsBackWhenTheEngineGoesAway(t *testing.T) {
 	require.NoError(t, c.in.Close())
 	err = <-done
 	require.True(t, err == nil || errors.Is(err, net.ErrClosed), "%v", err)
+}
+
+// answerFirstRequest serves the shim's hello and then one request on conn.
+func answerFirstRequest(srv *mcp.Server, conn net.Conn) {
+	r := bufio.NewReader(conn)
+	for range 2 {
+		line, err := r.ReadBytes('\n')
+		if err != nil {
+			return
+		}
+		_ = srv.ServeLine(context.Background(), conn, line)
+	}
 }

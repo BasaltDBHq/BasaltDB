@@ -20,6 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # Keyless signing: cosign trades the job's OIDC token for a short-lived
+      # Sigstore certificate naming this workflow and tag.
+      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,6 +40,9 @@ jobs:
 
       - name: go matches the toolchain line
         run: test "$(go env GOVERSION)" = "$(awk '/^toolchain /{print $2}' go.mod)"
+
+      # GoReleaser runs cosign to sign SHA256SUMS (.goreleaser.yaml, signs).
+      - uses: sigstore/cosign-installer@v3
 
       - name: Set version
         run: |
@@ -74,6 +80,7 @@ jobs:
             dist/*.rpm
             dist/*.apk
             dist/SHA256SUMS
+            dist/SHA256SUMS.sigstore.json
           if-no-files-found: error
 
   # Off unless the repository variable PUBLISH_NPM is "true".

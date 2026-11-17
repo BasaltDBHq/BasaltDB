@@ -165,7 +165,7 @@ jobs:
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean --snapshot --skip=publish --skip=homebrew --skip=announce
+          args: release --clean --snapshot --skip=publish --skip=homebrew --skip=announce --skip=sign
         env:
           BASALT_VERSION: snapshot
           RELEASE_KIND: snapshot

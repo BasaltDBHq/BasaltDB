@@ -32,6 +32,24 @@ grep 'basaltdb_0.0.1-alpha.2_linux_amd64.tar.gz$' SHA256SUMS | sha256sum -c -
 tar -xzf basaltdb_0.0.1-alpha.2_linux_amd64.tar.gz
 ```
 
+#### Check the signature
+
+Releases after `v0.0.1-alpha.2` also carry `SHA256SUMS.sigstore.json`, a [Sigstore](https://www.sigstore.dev/) signature of `SHA256SUMS`. The release workflow signs it with no long-lived key: [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) gets a short-lived certificate for the workflow's GitHub identity, and the signature is recorded in the public Rekor transparency log. A valid signature proves that `SHA256SUMS` came from this repository's release workflow, run for that tag. Since `SHA256SUMS` lists every archive, package and `portal.sha256`, checking the archive against it (above) then covers the archive too.
+
+With `cosign` installed, check the signature before you check the archive:
+
+```sh
+TAG=v0.0.1-alpha.3   # the release you downloaded
+curl -fsSL -O "https://github.com/BasaltDBHq/BasaltDB/releases/download/$TAG/SHA256SUMS"
+curl -fsSL -O "https://github.com/BasaltDBHq/BasaltDB/releases/download/$TAG/SHA256SUMS.sigstore.json"
+cosign verify-blob SHA256SUMS \
+  --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity "https://github.com/BasaltDBHq/BasaltDB/.github/workflows/release.yml@refs/tags/$TAG" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+It prints `Verified OK`. Anything else means the file was not signed by that workflow for that tag: do not use the download.
+
 ### Build from source
 
 You need Go 1.26 or newer, and `git`. Then put `basalt` on your `PATH`.

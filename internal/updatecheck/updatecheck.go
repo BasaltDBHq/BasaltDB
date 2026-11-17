@@ -149,6 +149,23 @@ func notice(current string, releases []Release) *Notice {
 	}
 }
 
+// Run refreshes the cache now and then whenever it falls due, until ctx is
+// done: for a long-running process (the engine). Errors go to onErr.
+func (c *Checker) Run(ctx context.Context, onErr func(error)) {
+	t := time.NewTicker(retryAfterFailure)
+	defer t.Stop()
+	for {
+		if err := c.Refresh(ctx); err != nil && onErr != nil {
+			onErr(err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
 // Due reports whether Refresh would ask GitHub now.
 func (c *Checker) Due() bool {
 	k := c.load()
@@ -280,10 +297,33 @@ func CacheDir(override string) (string, error) {
 // UpgradeHint is how to get the new release: the brew command when the
 // running binary sits in a Homebrew prefix, else the release page.
 func (n Notice) UpgradeHint(exePath string) string {
-	if strings.Contains(exePath, "/Cellar/") || strings.Contains(exePath, "/opt/homebrew/") {
+	if homebrew(exePath) {
 		return "Run: brew upgrade basaltdbhq/tap/basaltdb"
 	}
 	return "Get it at " + n.URL
+}
+
+// AgentMessage is the notice as an agent should read it: a WARNING: or
+// SECURITY UPDATE: prefix instead of color, what to tell the person, the
+// upgrade step, and the rule that the agent never upgrades on its own.
+func (n Notice) AgentMessage(exePath string) string {
+	prefix := "WARNING:"
+	if n.Security {
+		prefix = "SECURITY UPDATE:"
+	}
+	return fmt.Sprintf("%s BasaltDB %s is out of date; %s is available. Tell the person now. %s. "+
+		"Do not upgrade it yourself unless the person says yes.", prefix, n.Current, n.Latest, n.upgradeSentence(exePath))
+}
+
+func (n Notice) upgradeSentence(exePath string) string {
+	if homebrew(exePath) {
+		return "They upgrade with: brew upgrade basaltdbhq/tap/basaltdb"
+	}
+	return "They get the new release at " + n.URL
+}
+
+func homebrew(exePath string) bool {
+	return strings.Contains(exePath, "/Cellar/") || strings.Contains(exePath, "/opt/homebrew/")
 }
 
 // Line is the one-line notice for a terminal or a log.

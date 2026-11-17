@@ -1,0 +1,37 @@
+{
+  "body": {
+    "approvalId": "<id-1>",
+    "binding": "{\"kind\": \"APPROVE\", \"rows\": 15, \"agent\": \"<prefix>_agent_bot\", \"runId\": \"<id-2>\", \"intent\": \"Leads 21 to 35 went cold\", \"params\": [\"closed\", 21, 35], \"taskId\": \"<id-3>\", \"database\": \"<database>\", \"rowsHash\": \"<hash>\", \"expiresAt\": \"<time>\", \"statement\": \"UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3\", \"approvalId\": \"<id-1>\", \"assignedColumns\": [\"status\"]}",
+    "columns": {
+      "public.leads": [
+        "id",
+        "name",
+        "status",
+        "score"
+      ]
+    },
+    "credentialIds": [
+      "<credentialIds>"
+    ],
+    "lines": [
+      "{\"op\": \"UPDATE\", \"key\": {\"id\": 21}, \"old\": {\"id\": 21, \"name\": \"lead 21\", \"score\": 0, \"status\": \"open\"}, \"set\": {\"status\": \"closed\"}, \"table\": \"public.leads\", \"cascaded\": false}",
+      "{\"op\": \"UPDATE\", \"key\": {\"id\": 22}, \"old\": {\"id\": 22, \"name\": \"lead 22\", \"score\": 1, \"status\": \"open\"}, \"set\": {\"status\": \"closed\"}, \"table\": \"public.leads\", \"cascaded\": false}",
+      "{\"op\": \"UPDATE\", \"key\": {\"id\": 23}, \"old\": {\"id\": 23, \"name\": \"lead 23\", \"score\": 2, \"status\": \"open\"}, \"set\": {\"status\": \"closed\"}, \"table\": \"public.leads\", \"cascaded\": false}",
+      "{\"op\": \"UPDATE\", \"key\": {\"id\": 24}, \"old\": {\"id\": 24, \"name\": \"lead 24\", \"score\": 3, \"status\": \"open\"}, \"set\": {\"status\": \"closed\"}, \"table\": \"public.leads\", \"cascaded\": false}",
+      "{\"op\": \"UPDATE\", \"key\": {\"id\": 25}, \"old\": {\"id\": 25, \"name\": \"lead 25\", \"score\": 4, \"status\": \"open\"}, \"set\": {\"status\": \"closed\"}, \"table\": \"public.leads\", \"cascaded\": false}",
+      "{\"op\": \"UPDATE\", \"key\": {\"id\": 26}, \"old\": {\"id\": 26, \"name\": \"lead 26\", \"score\": 5, \"status\": \"open\"}, \"set\": {\"status\": \"closed\"}, \"table\": \"public.leads\", \"cascaded\": false}",
+      "{\"op\": \"UPDATE\", \"key\": {\"id\": 27}, \"old\": {\"id\": 27, \"name\": \"lead 27\", \"score\": 6, \"status\": \"open\"}, \"set\": {\"status\": \"closed\"}, \"table\": \"public.leads\", \"cascaded\": false}",
+      "{\"op\": \"UPDATE\", \"key\": {\"id\": 28}, \"old\": {\"id\": 28, \"name\": \"lead 28\", \"score\": 0, \"status\": \"open\"}, \"set\": {\"status\": \"closed\"}, \"table\": \"public.leads\", \"cascaded\": false}",
+      "{\"op\": \"UPDATE\", \"key\": {\"id\": 29}, \"old\": {\"id\": 29, \"name\": \"lead 29\", \"score\": 1, \"status\": \"open\"}, \"set\": {\"status\": \"closed\"}, \"table\": \"public.leads\", \"cascaded\": false}",
+      "{\"op\": \"UPDATE\", \"key\": {\"id\": 30}, \"old\": {\"id\": 30, \"name\": \"lead 30\", \"score\": 2, \"status\": \"open\"}, \"set\": {\"status\": \"closed\"}, \"table\": \"public.leads\", \"cascaded\": false}",
+      "{\"op\": \"UPDATE\", \"key\": {\"id\": 31}, \"old\": {\"id\": 31, \"name\": \"lead 31\", \"score\": 3, \"status\": \"open\"}, \"set\": {\"status\": \"closed\"}, \"table\": \"public.leads\", \"cascaded\": false}",
+      "{\"op\": \"UPDATE\", \"key\": {\"id\": 32}, \"old\": {\"id\": 32, \"name\": \"lead 32\", \"score\": 4, \"status\": \"open\"}, \"set\": {\"status\": \"closed\"}, \"table\": \"public.leads\", \"cascaded\": false}",
+      "{\"op\": \"UPDATE\", \"key\": {\"id\": 33}, \"old\": {\"id\": 33, \"name\": \"lead 33\", \"score\": 5, \"status\": \"open\"}, \"set\": {\"status\": \"closed\"}, \"table\": \"public.leads\", \"cascaded\": false}",
+      "{\"op\": \"UPDATE\", \"key\": {\"id\": 34}, \"old\": {\"id\": 34, \"name\": \"lead 34\", \"score\": 6, \"status\": \"open\"}, \"set\": {\"status\": \"closed\"}, \"table\": \"public.leads\", \"cascaded\": false}",
+      "{\"op\": \"UPDATE\", \"key\": {\"id\": 35}, \"old\": {\"id\": 35, \"name\": \"lead 35\", \"score\": 0, \"status\": \"open\"}, \"set\": {\"status\": \"closed\"}, \"table\": \"public.leads\", \"cascaded\": false}"
+    ],
+    "revealNonce": "<revealNonce>"
+  },
+  "request": "GET /api/v1/approvals/<id-1>",
+  "status": 200
+}

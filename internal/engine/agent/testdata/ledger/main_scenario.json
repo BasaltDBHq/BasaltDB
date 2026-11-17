@@ -1,0 +1,1296 @@
+{
+  "changes": [
+    {
+      "actor_kind": "AGENT",
+      "agent": "<prefix>_agent_bot",
+      "approval_id": null,
+      "cascaded_rows": 0,
+      "change_id": "<id-1>",
+      "code": null,
+      "has_delete": false,
+      "intent": "Tidy the lead list",
+      "mode": "APPLY",
+      "op": "SELECT",
+      "params": [],
+      "reason": null,
+      "revert_id": null,
+      "reverted_by": null,
+      "rows": 3,
+      "run_id": "<id-2>",
+      "statement": "SELECT id, status FROM leads WHERE id <= 3 ORDER BY id",
+      "status": "APPLIED",
+      "table_name": "leads",
+      "task_id": "<id-3>"
+    },
+    {
+      "actor_kind": "AGENT",
+      "agent": "<prefix>_agent_bot",
+      "approval_id": null,
+      "cascaded_rows": 0,
+      "change_id": "<id-4>",
+      "code": "STATEMENT_REFUSED",
+      "has_delete": false,
+      "intent": "Tidy the lead list",
+      "mode": "APPLY",
+      "op": "OTHER",
+      "params": [],
+      "reason": "DDL_NOT_ALLOWED: DropStmt",
+      "revert_id": null,
+      "reverted_by": null,
+      "rows": 0,
+      "run_id": "<id-2>",
+      "statement": "DROP TABLE leads",
+      "status": "REFUSED",
+      "table_name": null,
+      "task_id": "<id-3>"
+    },
+    {
+      "actor_kind": "AGENT",
+      "agent": "<prefix>_agent_bot",
+      "approval_id": null,
+      "cascaded_rows": 0,
+      "change_id": "<id-5>",
+      "code": "QUERY_TIMEOUT",
+      "has_delete": false,
+      "intent": "Tidy the lead list",
+      "mode": "APPLY",
+      "op": "SELECT",
+      "params": [],
+      "reason": "the query returned more rows than the read row limit; add a LIMIT or a narrower WHERE",
+      "revert_id": null,
+      "reverted_by": null,
+      "rows": 0,
+      "run_id": "<id-2>",
+      "statement": "SELECT g FROM generate_series(1, 1001) g",
+      "status": "REFUSED",
+      "table_name": null,
+      "task_id": "<id-3>"
+    },
+    {
+      "actor_kind": "AGENT",
+      "agent": "<prefix>_agent_bot",
+      "approval_id": null,
+      "cascaded_rows": 0,
+      "change_id": "<id-6>",
+      "code": "SQL_ERROR",
+      "has_delete": false,
+      "intent": "Tidy the lead list",
+      "mode": "APPLY",
+      "op": "SELECT",
+      "params": [],
+      "reason": "column \"nope\" does not exist",
+      "revert_id": null,
+      "reverted_by": null,
+      "rows": 0,
+      "run_id": "<id-2>",
+      "statement": "SELECT nope FROM leads",
+      "status": "REFUSED",
+      "table_name": null,
+      "task_id": "<id-3>"
+    },
+    {
+      "actor_kind": "AGENT",
+      "agent": "<prefix>_agent_bot",
+      "approval_id": null,
+      "cascaded_rows": 0,
+      "change_id": "<id-7>",
+      "code": "PERMISSION_DENIED",
+      "has_delete": false,
+      "intent": "Tidy the lead list",
+      "mode": "APPLY",
+      "op": "SELECT",
+      "params": [],
+      "reason": "permission denied for table payroll",
+      "revert_id": null,
+      "reverted_by": null,
+      "rows": 0,
+      "run_id": "<id-2>",
+      "statement": "SELECT amount FROM payroll",
+      "status": "REFUSED",
+      "table_name": null,
+      "task_id": "<id-3>"
+    },
+    {
+      "actor_kind": "AGENT",
+      "agent": "<prefix>_agent_bot",
+      "approval_id": null,
+      "cascaded_rows": 0,
+      "change_id": "<id-8>",
+      "code": null,
+      "has_delete": false,
+      "intent": "Lead 4 duplicates lead 3",
+      "mode": "APPLY",
+      "op": "UPDATE",
+      "params": [
+        "merged",
+        4
+      ],
+      "reason": null,
+      "revert_id": null,
+      "reverted_by": null,
+      "rows": 1,
+      "run_id": "<id-2>",
+      "statement": "UPDATE leads SET status = $1 WHERE id = $2",
+      "status": "APPLIED",
+      "table_name": "public.leads",
+      "task_id": "<id-3>"
+    },
+    {
+      "actor_kind": "AGENT",
+      "agent": "<prefix>_agent_bot",
+      "approval_id": null,
+      "cascaded_rows": 0,
+      "change_id": "<id-9>",
+      "code": "ROW_LIMIT_EXCEEDED",
+      "has_delete": false,
+      "intent": "Reset every score",
+      "mode": "APPLY",
+      "op": "UPDATE",
+      "params": [],
+      "reason": "ROW_LIMIT_EXCEEDED: more than 50 rows in one action (cascades included)",
+      "revert_id": null,
+      "reverted_by": null,
+      "rows": 0,
+      "run_id": "<id-2>",
+      "statement": "UPDATE leads SET score = 1 WHERE id <= 60",
+      "status": "REFUSED",
+      "table_name": null,
+      "task_id": "<id-3>"
+    },
+    {
+      "actor_kind": "AGENT",
+      "agent": "<prefix>_agent_bot",
+      "approval_id": null,
+      "cascaded_rows": 0,
+      "change_id": "<id-10>",
+      "code": "STATEMENT_REFUSED",
+      "has_delete": false,
+      "intent": "Tidy up",
+      "mode": "APPLY",
+      "op": "OTHER",
+      "params": [],
+      "reason": "DDL_NOT_ALLOWED: DropStmt",
+      "revert_id": null,
+      "reverted_by": null,
+      "rows": 0,
+      "run_id": "<id-2>",
+      "statement": "DROP TABLE leads",
+      "status": "REFUSED",
+      "table_name": null,
+      "task_id": "<id-3>"
+    },
+    {
+      "actor_kind": "AGENT",
+      "agent": "<prefix>_agent_bot",
+      "approval_id": null,
+      "cascaded_rows": 0,
+      "change_id": "<id-11>",
+      "code": "PERMISSION_DENIED",
+      "has_delete": false,
+      "intent": "Pay nobody",
+      "mode": "APPLY",
+      "op": "UPDATE",
+      "params": [],
+      "reason": "permission denied for table payroll",
+      "revert_id": null,
+      "reverted_by": null,
+      "rows": 0,
+      "run_id": "<id-2>",
+      "statement": "UPDATE payroll SET amount = 0",
+      "status": "REFUSED",
+      "table_name": null,
+      "task_id": "<id-3>"
+    },
+    {
+      "actor_kind": "AGENT",
+      "agent": "<prefix>_agent_bot",
+      "approval_id": null,
+      "cascaded_rows": 0,
+      "change_id": "<id-12>",
+      "code": "SQL_ERROR",
+      "has_delete": false,
+      "intent": "Set a column that is not there",
+      "mode": "APPLY",
+      "op": "UPDATE",
+      "params": [],
+      "reason": "column \"nope\" of relation \"leads\" does not exist",
+      "revert_id": null,
+      "reverted_by": null,
+      "rows": 0,
+      "run_id": "<id-2>",
+      "statement": "UPDATE leads SET nope = 1 WHERE id = 5",
+      "status": "REFUSED",
+      "table_name": null,
+      "task_id": "<id-3>"
+    },
+    {
+      "actor_kind": "AGENT",
+      "agent": "<prefix>_agent_bot",
+      "approval_id": null,
+      "cascaded_rows": 0,
+      "change_id": "<id-13>",
+      "code": null,
+      "has_delete": false,
+      "intent": "Tidy the lead list",
+      "mode": "APPLY",
+      "op": "SELECT",
+      "params": [
+        42
+      ],
+      "reason": null,
+      "revert_id": null,
+      "reverted_by": null,
+      "rows": 1,
+      "run_id": "<id-2>",
+      "statement": "SELECT id, status FROM leads WHERE id = $1",
+      "status": "APPLIED",
+      "table_name": "leads",
+      "task_id": "<id-3>"
+    },
+    {
+      "actor_kind": "AGENT",
+      "agent": "<prefix>_agent_bot",
+      "approval_id": null,
+      "cascaded_rows": 0,
+      "change_id": "<id-14>",
+      "code": "STALE_READ",
+      "has_delete": false,
+      "intent": "No answer",
+      "mode": "APPLY",
+      "op": "UPDATE",
+      "params": [
+        "lost",
+        42
+      ],
+      "reason": "STALE_READ: public.leads {\"id\": 42} read at xmin <n>, now <n> (hint: read the row again in this run, then decide)",
+      "revert_id": null,
+      "reverted_by": null,
+      "rows": 0,
+      "run_id": "<id-2>",
+      "statement": "UPDATE leads SET status = $1 WHERE id = $2",
+      "status": "REFUSED",
+      "table_name": null,
+      "task_id": "<id-3>"
+    },
+    {
+      "actor_kind": "AGENT",
+      "agent": "<prefix>_agent_bot",
+      "approval_id": null,
+      "cascaded_rows": 0,
+      "change_id": "<id-15>",
+      "code": "APPROVAL_INVALID",
+      "has_delete": false,
+      "intent": "Leads 21 to 31 went cold",
+      "mode": "APPLY",
+      "op": "UPDATE",
+      "params": [
+        "closed",
+        21,
+        31
+      ],
+      "reason": "APPROVAL_INVALID: not approved yet: the person has not signed it with their passkey",
+      "revert_id": null,
+      "reverted_by": null,
+      "rows": 0,
+      "run_id": "<id-2>",
+      "statement": "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3",
+      "status": "REFUSED",
+      "table_name": null,
+      "task_id": "<id-3>"
+    },
+    {
+      "actor_kind": "AGENT",
+      "agent": "<prefix>_agent_bot",
+      "approval_id": "<id-16>",
+      "cascaded_rows": 0,
+      "change_id": "<id-17>",
+      "code": null,
+      "has_delete": false,
+      "intent": "Leads 21 to 31 went cold",
+      "mode": "APPLY",
+      "op": "UPDATE",
+      "params": [
+        "closed",
+        21,
+        31
+      ],
+      "reason": null,
+      "revert_id": null,
+      "reverted_by": null,
+      "rows": 11,
+      "run_id": "<id-2>",
+      "statement": "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3",
+      "status": "APPLIED",
+      "table_name": "public.leads",
+      "task_id": "<id-3>"
+    },
+    {
+      "actor_kind": "AGENT",
+      "agent": "<prefix>_agent_other",
+      "approval_id": null,
+      "cascaded_rows": 0,
+      "change_id": "<id-18>",
+      "code": null,
+      "has_delete": false,
+      "intent": "Other's work",
+      "mode": "APPLY",
+      "op": "UPDATE",
+      "params": null,
+      "reason": null,
+      "revert_id": null,
+      "reverted_by": null,
+      "rows": 1,
+      "run_id": "<id-19>",
+      "statement": "UPDATE public.leads SET status = 'won' WHERE id = 76",
+      "status": "APPLIED",
+      "table_name": "public.leads",
+      "task_id": "<id-20>"
+    },
+    {
+      "actor_kind": "AGENT",
+      "agent": "<prefix>_agent_bot",
+      "approval_id": null,
+      "cascaded_rows": 0,
+      "change_id": "<id-21>",
+      "code": null,
+      "has_delete": false,
+      "intent": "Only look",
+      "mode": "APPLY",
+      "op": "SELECT",
+      "params": [],
+      "reason": null,
+      "revert_id": null,
+      "reverted_by": null,
+      "rows": 1,
+      "run_id": "<id-22>",
+      "statement": "SELECT id FROM leads WHERE id = 1",
+      "status": "APPLIED",
+      "table_name": "leads",
+      "task_id": "<id-23>"
+    }
+  ],
+  "ledger": [
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": null,
+      "depth": null,
+      "detail": {
+        "intent": "Tidy the lead list",
+        "runId": "<id-2>",
+        "taskId": "<id-3>"
+      },
+      "kind": "RUN_STARTED",
+      "new_row": null,
+      "old_row": null,
+      "op": null,
+      "row_key": null,
+      "seq": 1,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-1>",
+      "depth": null,
+      "detail": {
+        "durationMs": "<durationMs>",
+        "rows": 3,
+        "runId": "<id-2>",
+        "statement": "SELECT id, status FROM leads WHERE id <= 3 ORDER BY id",
+        "tables": [
+          "leads"
+        ],
+        "taskId": "<id-3>",
+        "versions": [
+          {
+            "key": {
+              "id": 1
+            },
+            "table": "public.leads",
+            "version": "xmin:<n>"
+          },
+          {
+            "key": {
+              "id": 2
+            },
+            "table": "public.leads",
+            "version": "xmin:<n>"
+          },
+          {
+            "key": {
+              "id": 3
+            },
+            "table": "public.leads",
+            "version": "xmin:<n>"
+          }
+        ]
+      },
+      "kind": "READ",
+      "new_row": null,
+      "old_row": null,
+      "op": "SELECT",
+      "row_key": null,
+      "seq": 2,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-4>",
+      "depth": null,
+      "detail": {
+        "code": "STATEMENT_REFUSED",
+        "intent": "Tidy the lead list",
+        "reason": "DDL_NOT_ALLOWED: DropStmt",
+        "runId": "<id-2>",
+        "statement": "DROP TABLE leads",
+        "taskId": "<id-3>"
+      },
+      "kind": "REFUSED",
+      "new_row": null,
+      "old_row": null,
+      "op": "OTHER",
+      "row_key": null,
+      "seq": 3,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-5>",
+      "depth": null,
+      "detail": {
+        "code": "QUERY_TIMEOUT",
+        "intent": "Tidy the lead list",
+        "reason": "the query returned more rows than the read row limit; add a LIMIT or a narrower WHERE",
+        "runId": "<id-2>",
+        "statement": "SELECT g FROM generate_series(1, 1001) g",
+        "taskId": "<id-3>"
+      },
+      "kind": "REFUSED",
+      "new_row": null,
+      "old_row": null,
+      "op": "SELECT",
+      "row_key": null,
+      "seq": 4,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-6>",
+      "depth": null,
+      "detail": {
+        "code": "SQL_ERROR",
+        "intent": "Tidy the lead list",
+        "reason": "column \"nope\" does not exist",
+        "runId": "<id-2>",
+        "statement": "SELECT nope FROM leads",
+        "taskId": "<id-3>"
+      },
+      "kind": "REFUSED",
+      "new_row": null,
+      "old_row": null,
+      "op": "SELECT",
+      "row_key": null,
+      "seq": 5,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-7>",
+      "depth": null,
+      "detail": {
+        "code": "PERMISSION_DENIED",
+        "intent": "Tidy the lead list",
+        "reason": "permission denied for table payroll",
+        "runId": "<id-2>",
+        "statement": "SELECT amount FROM payroll",
+        "taskId": "<id-3>"
+      },
+      "kind": "REFUSED",
+      "new_row": null,
+      "old_row": null,
+      "op": "SELECT",
+      "row_key": null,
+      "seq": 6,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-8>",
+      "depth": 1,
+      "detail": {
+        "blindWrite": true,
+        "cascaded": false,
+        "newXmin": "<newXmin>",
+        "xmin": "<xmin>"
+      },
+      "kind": "ROW_CHANGE",
+      "new_row": {
+        "id": 4,
+        "name": "lead 4",
+        "score": 4,
+        "status": "merged"
+      },
+      "old_row": {
+        "id": 4,
+        "name": "lead 4",
+        "score": 4,
+        "status": "open"
+      },
+      "op": "UPDATE",
+      "row_key": {
+        "id": 4
+      },
+      "seq": 7,
+      "table_name": "public.leads",
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-8>",
+      "depth": null,
+      "detail": {
+        "cascadedRows": 0,
+        "durationMs": "<durationMs>",
+        "intent": "Lead 4 duplicates lead 3",
+        "rows": 1,
+        "runId": "<id-2>",
+        "statement": "UPDATE leads SET status = $1 WHERE id = $2",
+        "status": "APPLIED",
+        "table": "public.leads",
+        "taskId": "<id-3>"
+      },
+      "kind": "CHANGE",
+      "new_row": null,
+      "old_row": null,
+      "op": "UPDATE",
+      "row_key": null,
+      "seq": 8,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-24>",
+      "depth": null,
+      "detail": {
+        "approvalId": "<id-16>",
+        "expiresAt": "<time>",
+        "intent": "Leads 21 to 31 went cold",
+        "rows": 11,
+        "rowsHash": "<rowsHash>",
+        "runId": "<id-2>",
+        "statement": "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3",
+        "taskId": "<id-3>"
+      },
+      "kind": "APPROVAL_PENDING",
+      "new_row": null,
+      "old_row": null,
+      "op": "UPDATE",
+      "row_key": null,
+      "seq": 9,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-9>",
+      "depth": null,
+      "detail": {
+        "code": "ROW_LIMIT_EXCEEDED",
+        "intent": "Reset every score",
+        "reason": "ROW_LIMIT_EXCEEDED: more than 50 rows in one action (cascades included)",
+        "runId": "<id-2>",
+        "statement": "UPDATE leads SET score = 1 WHERE id <= 60",
+        "taskId": "<id-3>"
+      },
+      "kind": "REFUSED",
+      "new_row": null,
+      "old_row": null,
+      "op": "UPDATE",
+      "row_key": null,
+      "seq": 10,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-10>",
+      "depth": null,
+      "detail": {
+        "code": "STATEMENT_REFUSED",
+        "intent": "Tidy up",
+        "reason": "DDL_NOT_ALLOWED: DropStmt",
+        "runId": "<id-2>",
+        "statement": "DROP TABLE leads",
+        "taskId": "<id-3>"
+      },
+      "kind": "REFUSED",
+      "new_row": null,
+      "old_row": null,
+      "op": "OTHER",
+      "row_key": null,
+      "seq": 11,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-11>",
+      "depth": null,
+      "detail": {
+        "code": "PERMISSION_DENIED",
+        "intent": "Pay nobody",
+        "reason": "permission denied for table payroll",
+        "runId": "<id-2>",
+        "statement": "UPDATE payroll SET amount = 0",
+        "taskId": "<id-3>"
+      },
+      "kind": "REFUSED",
+      "new_row": null,
+      "old_row": null,
+      "op": "UPDATE",
+      "row_key": null,
+      "seq": 12,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-12>",
+      "depth": null,
+      "detail": {
+        "code": "SQL_ERROR",
+        "intent": "Set a column that is not there",
+        "reason": "column \"nope\" of relation \"leads\" does not exist",
+        "runId": "<id-2>",
+        "statement": "UPDATE leads SET nope = 1 WHERE id = 5",
+        "taskId": "<id-3>"
+      },
+      "kind": "REFUSED",
+      "new_row": null,
+      "old_row": null,
+      "op": "UPDATE",
+      "row_key": null,
+      "seq": 13,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-13>",
+      "depth": null,
+      "detail": {
+        "durationMs": "<durationMs>",
+        "rows": 1,
+        "runId": "<id-2>",
+        "statement": "SELECT id, status FROM leads WHERE id = $1",
+        "tables": [
+          "leads"
+        ],
+        "taskId": "<id-3>",
+        "versions": [
+          {
+            "key": {
+              "id": 42
+            },
+            "table": "public.leads",
+            "version": "xmin:<n>"
+          }
+        ]
+      },
+      "kind": "READ",
+      "new_row": null,
+      "old_row": null,
+      "op": "SELECT",
+      "row_key": null,
+      "seq": 14,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-14>",
+      "depth": null,
+      "detail": {
+        "code": "STALE_READ",
+        "intent": "No answer",
+        "reason": "STALE_READ: public.leads {\"id\": 42} read at xmin <n>, now <n> (hint: read the row again in this run, then decide)",
+        "runId": "<id-2>",
+        "statement": "UPDATE leads SET status = $1 WHERE id = $2",
+        "taskId": "<id-3>"
+      },
+      "kind": "REFUSED",
+      "new_row": null,
+      "old_row": null,
+      "op": "UPDATE",
+      "row_key": null,
+      "seq": 15,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-15>",
+      "depth": null,
+      "detail": {
+        "code": "APPROVAL_INVALID",
+        "intent": "Leads 21 to 31 went cold",
+        "reason": "APPROVAL_INVALID: not approved yet: the person has not signed it with their passkey",
+        "runId": "<id-2>",
+        "statement": "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3",
+        "taskId": "<id-3>"
+      },
+      "kind": "REFUSED",
+      "new_row": null,
+      "old_row": null,
+      "op": "UPDATE",
+      "row_key": null,
+      "seq": 16,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-24>",
+      "depth": null,
+      "detail": {
+        "approvalId": "<id-16>",
+        "credentialId": "<credentialId>",
+        "relayedBy": "<prefix>_agent_bot"
+      },
+      "kind": "APPROVED",
+      "new_row": null,
+      "old_row": null,
+      "op": null,
+      "row_key": null,
+      "seq": 17,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-17>",
+      "depth": 1,
+      "detail": {
+        "blindWrite": true,
+        "cascaded": false,
+        "newXmin": "<newXmin>",
+        "xmin": "<xmin>"
+      },
+      "kind": "ROW_CHANGE",
+      "new_row": {
+        "id": 21,
+        "name": "lead 21",
+        "score": 0,
+        "status": "closed"
+      },
+      "old_row": {
+        "id": 21,
+        "name": "lead 21",
+        "score": 0,
+        "status": "open"
+      },
+      "op": "UPDATE",
+      "row_key": {
+        "id": 21
+      },
+      "seq": 18,
+      "table_name": "public.leads",
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-17>",
+      "depth": 1,
+      "detail": {
+        "blindWrite": true,
+        "cascaded": false,
+        "newXmin": "<newXmin>",
+        "xmin": "<xmin>"
+      },
+      "kind": "ROW_CHANGE",
+      "new_row": {
+        "id": 22,
+        "name": "lead 22",
+        "score": 1,
+        "status": "closed"
+      },
+      "old_row": {
+        "id": 22,
+        "name": "lead 22",
+        "score": 1,
+        "status": "open"
+      },
+      "op": "UPDATE",
+      "row_key": {
+        "id": 22
+      },
+      "seq": 19,
+      "table_name": "public.leads",
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-17>",
+      "depth": 1,
+      "detail": {
+        "blindWrite": true,
+        "cascaded": false,
+        "newXmin": "<newXmin>",
+        "xmin": "<xmin>"
+      },
+      "kind": "ROW_CHANGE",
+      "new_row": {
+        "id": 23,
+        "name": "lead 23",
+        "score": 2,
+        "status": "closed"
+      },
+      "old_row": {
+        "id": 23,
+        "name": "lead 23",
+        "score": 2,
+        "status": "open"
+      },
+      "op": "UPDATE",
+      "row_key": {
+        "id": 23
+      },
+      "seq": 20,
+      "table_name": "public.leads",
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-17>",
+      "depth": 1,
+      "detail": {
+        "blindWrite": true,
+        "cascaded": false,
+        "newXmin": "<newXmin>",
+        "xmin": "<xmin>"
+      },
+      "kind": "ROW_CHANGE",
+      "new_row": {
+        "id": 24,
+        "name": "lead 24",
+        "score": 3,
+        "status": "closed"
+      },
+      "old_row": {
+        "id": 24,
+        "name": "lead 24",
+        "score": 3,
+        "status": "open"
+      },
+      "op": "UPDATE",
+      "row_key": {
+        "id": 24
+      },
+      "seq": 21,
+      "table_name": "public.leads",
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-17>",
+      "depth": 1,
+      "detail": {
+        "blindWrite": true,
+        "cascaded": false,
+        "newXmin": "<newXmin>",
+        "xmin": "<xmin>"
+      },
+      "kind": "ROW_CHANGE",
+      "new_row": {
+        "id": 25,
+        "name": "lead 25",
+        "score": 4,
+        "status": "closed"
+      },
+      "old_row": {
+        "id": 25,
+        "name": "lead 25",
+        "score": 4,
+        "status": "open"
+      },
+      "op": "UPDATE",
+      "row_key": {
+        "id": 25
+      },
+      "seq": 22,
+      "table_name": "public.leads",
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-17>",
+      "depth": 1,
+      "detail": {
+        "blindWrite": true,
+        "cascaded": false,
+        "newXmin": "<newXmin>",
+        "xmin": "<xmin>"
+      },
+      "kind": "ROW_CHANGE",
+      "new_row": {
+        "id": 26,
+        "name": "lead 26",
+        "score": 5,
+        "status": "closed"
+      },
+      "old_row": {
+        "id": 26,
+        "name": "lead 26",
+        "score": 5,
+        "status": "open"
+      },
+      "op": "UPDATE",
+      "row_key": {
+        "id": 26
+      },
+      "seq": 23,
+      "table_name": "public.leads",
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-17>",
+      "depth": 1,
+      "detail": {
+        "blindWrite": true,
+        "cascaded": false,
+        "newXmin": "<newXmin>",
+        "xmin": "<xmin>"
+      },
+      "kind": "ROW_CHANGE",
+      "new_row": {
+        "id": 27,
+        "name": "lead 27",
+        "score": 6,
+        "status": "closed"
+      },
+      "old_row": {
+        "id": 27,
+        "name": "lead 27",
+        "score": 6,
+        "status": "open"
+      },
+      "op": "UPDATE",
+      "row_key": {
+        "id": 27
+      },
+      "seq": 24,
+      "table_name": "public.leads",
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-17>",
+      "depth": 1,
+      "detail": {
+        "blindWrite": true,
+        "cascaded": false,
+        "newXmin": "<newXmin>",
+        "xmin": "<xmin>"
+      },
+      "kind": "ROW_CHANGE",
+      "new_row": {
+        "id": 28,
+        "name": "lead 28",
+        "score": 0,
+        "status": "closed"
+      },
+      "old_row": {
+        "id": 28,
+        "name": "lead 28",
+        "score": 0,
+        "status": "open"
+      },
+      "op": "UPDATE",
+      "row_key": {
+        "id": 28
+      },
+      "seq": 25,
+      "table_name": "public.leads",
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-17>",
+      "depth": 1,
+      "detail": {
+        "blindWrite": true,
+        "cascaded": false,
+        "newXmin": "<newXmin>",
+        "xmin": "<xmin>"
+      },
+      "kind": "ROW_CHANGE",
+      "new_row": {
+        "id": 29,
+        "name": "lead 29",
+        "score": 1,
+        "status": "closed"
+      },
+      "old_row": {
+        "id": 29,
+        "name": "lead 29",
+        "score": 1,
+        "status": "open"
+      },
+      "op": "UPDATE",
+      "row_key": {
+        "id": 29
+      },
+      "seq": 26,
+      "table_name": "public.leads",
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-17>",
+      "depth": 1,
+      "detail": {
+        "blindWrite": true,
+        "cascaded": false,
+        "newXmin": "<newXmin>",
+        "xmin": "<xmin>"
+      },
+      "kind": "ROW_CHANGE",
+      "new_row": {
+        "id": 30,
+        "name": "lead 30",
+        "score": 2,
+        "status": "closed"
+      },
+      "old_row": {
+        "id": 30,
+        "name": "lead 30",
+        "score": 2,
+        "status": "open"
+      },
+      "op": "UPDATE",
+      "row_key": {
+        "id": 30
+      },
+      "seq": 27,
+      "table_name": "public.leads",
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-17>",
+      "depth": 1,
+      "detail": {
+        "blindWrite": true,
+        "cascaded": false,
+        "newXmin": "<newXmin>",
+        "xmin": "<xmin>"
+      },
+      "kind": "ROW_CHANGE",
+      "new_row": {
+        "id": 31,
+        "name": "lead 31",
+        "score": 3,
+        "status": "closed"
+      },
+      "old_row": {
+        "id": 31,
+        "name": "lead 31",
+        "score": 3,
+        "status": "open"
+      },
+      "op": "UPDATE",
+      "row_key": {
+        "id": 31
+      },
+      "seq": 28,
+      "table_name": "public.leads",
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-17>",
+      "depth": null,
+      "detail": {
+        "cascadedRows": 0,
+        "durationMs": "<durationMs>",
+        "intent": "Leads 21 to 31 went cold",
+        "rows": 11,
+        "runId": "<id-2>",
+        "statement": "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3",
+        "status": "APPLIED",
+        "table": "public.leads",
+        "taskId": "<id-3>"
+      },
+      "kind": "CHANGE",
+      "new_row": null,
+      "old_row": null,
+      "op": "UPDATE",
+      "row_key": null,
+      "seq": 29,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_other",
+      "change_id": null,
+      "depth": null,
+      "detail": {
+        "intent": "Other's work",
+        "runId": "<id-19>",
+        "taskId": "<id-20>"
+      },
+      "kind": "RUN_STARTED",
+      "new_row": null,
+      "old_row": null,
+      "op": null,
+      "row_key": null,
+      "seq": 30,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_other",
+      "change_id": "<id-18>",
+      "depth": 1,
+      "detail": {
+        "blindWrite": true,
+        "cascaded": false,
+        "newXmin": "<newXmin>",
+        "xmin": "<xmin>"
+      },
+      "kind": "ROW_CHANGE",
+      "new_row": {
+        "id": 76,
+        "name": "lead 76",
+        "score": 6,
+        "status": "won"
+      },
+      "old_row": {
+        "id": 76,
+        "name": "lead 76",
+        "score": 6,
+        "status": "open"
+      },
+      "op": "UPDATE",
+      "row_key": {
+        "id": 76
+      },
+      "seq": 31,
+      "table_name": "public.leads",
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_other",
+      "change_id": "<id-18>",
+      "depth": null,
+      "detail": {
+        "cascadedRows": 0,
+        "durationMs": "<durationMs>",
+        "intent": "Other's work",
+        "rows": 1,
+        "runId": "<id-19>",
+        "statement": "UPDATE public.leads SET status = 'won' WHERE id = 76",
+        "status": "APPLIED",
+        "table": "public.leads",
+        "taskId": "<id-20>"
+      },
+      "kind": "CHANGE",
+      "new_row": null,
+      "old_row": null,
+      "op": "UPDATE",
+      "row_key": null,
+      "seq": 32,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": null,
+      "depth": null,
+      "detail": {
+        "intent": "Only look",
+        "runId": "<id-22>",
+        "taskId": "<id-23>"
+      },
+      "kind": "RUN_STARTED",
+      "new_row": null,
+      "old_row": null,
+      "op": null,
+      "row_key": null,
+      "seq": 33,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-21>",
+      "depth": null,
+      "detail": {
+        "durationMs": "<durationMs>",
+        "rows": 1,
+        "runId": "<id-22>",
+        "statement": "SELECT id FROM leads WHERE id = 1",
+        "tables": [
+          "leads"
+        ],
+        "taskId": "<id-23>",
+        "versions": [
+          {
+            "key": {
+              "id": 1
+            },
+            "table": "public.leads",
+            "version": "xmin:<n>"
+          }
+        ]
+      },
+      "kind": "READ",
+      "new_row": null,
+      "old_row": null,
+      "op": "SELECT",
+      "row_key": null,
+      "seq": 34,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": null,
+      "depth": null,
+      "detail": {
+        "expiresAt": "<time>",
+        "intent": "Undo the tidy-up",
+        "revertId": "<id-25>",
+        "rows": 12,
+        "rowsHash": "<rowsHash>",
+        "scope": "RUN",
+        "scopeId": "<id-2>",
+        "select": {
+          "agents": [
+            "<prefix>_agent_bot"
+          ],
+          "runs": null,
+          "scope": "RUN",
+          "scopeId": "<id-2>",
+          "tables": null
+        },
+        "skipped": 0
+      },
+      "kind": "REVERT_PENDING",
+      "new_row": null,
+      "old_row": null,
+      "op": null,
+      "row_key": null,
+      "seq": 35,
+      "table_name": null,
+      "values_pruned": false
+    }
+  ]
+}

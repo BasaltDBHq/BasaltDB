@@ -1,0 +1,26 @@
+{
+  "body": {
+    "binding": "{\"kind\": \"REVERT\", \"rows\": 3, \"intent\": \"Undo the lead merge\", \"select\": {\"runs\": null, \"scope\": \"RUN\", \"agents\": [\"<prefix>_agent_bot\"], \"tables\": null, \"scopeId\": \"<id-5>\"}, \"skipped\": 0, \"widened\": false, \"database\": \"<database>\", \"revertId\": \"<id-4>\", \"rowsHash\": \"<hash>\", \"expiresAt\": \"<time>\", \"requestedBy\": \"<prefix>_agent_bot\"}",
+    "columns": {
+      "public.leads": [
+        "id",
+        "name",
+        "status",
+        "score"
+      ]
+    },
+    "credentialIds": [
+      "<credentialIds>"
+    ],
+    "lines": [
+      "{\"op\": \"UPDATE\", \"key\": {\"id\": 71}, \"now\": {\"id\": 71, \"name\": \"lead 71\", \"score\": 1, \"status\": \"won\"}, \"set\": {\"id\": 71, \"name\": \"lead 71\", \"score\": 1, \"status\": \"open\"}, \"table\": \"public.leads\", \"action\": \"RESTORE\", \"cascaded\": false, \"conflict\": null, \"sqlState\": null, \"changeIds\": [\"<id-6>\"]}",
+      "{\"op\": \"UPDATE\", \"key\": {\"id\": 72}, \"now\": {\"id\": 72, \"name\": \"lead 72\", \"score\": 2, \"status\": \"won\"}, \"set\": {\"id\": 72, \"name\": \"lead 72\", \"score\": 2, \"status\": \"open\"}, \"table\": \"public.leads\", \"action\": \"RESTORE\", \"cascaded\": false, \"conflict\": null, \"sqlState\": null, \"changeIds\": [\"<id-6>\"]}",
+      "{\"op\": \"UPDATE\", \"key\": {\"id\": 73}, \"now\": {\"id\": 73, \"name\": \"lead 73\", \"score\": 3, \"status\": \"won\"}, \"set\": {\"id\": 73, \"name\": \"lead 73\", \"score\": 3, \"status\": \"open\"}, \"table\": \"public.leads\", \"action\": \"RESTORE\", \"cascaded\": false, \"conflict\": null, \"sqlState\": null, \"changeIds\": [\"<id-6>\"]}"
+    ],
+    "rescopeNonce": "<rescopeNonce>",
+    "revealNonce": "<revealNonce>",
+    "revertId": "<id-4>"
+  },
+  "request": "GET /api/v1/reverts/<id-4>",
+  "status": 200
+}

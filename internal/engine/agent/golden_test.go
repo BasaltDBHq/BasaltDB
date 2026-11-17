@@ -73,6 +73,8 @@ var (
 	goldenTime     = regexp.MustCompile(`\d{4}-\d\d-\d\d[T ]\d\d:\d\d(:\d\d(\.\d+)?)?(Z|[+-]\d\d(:\d\d)?| UTC)?`)
 	goldenRole     = regexp.MustCompile(`\bbt[0-9a-f]{12}_`)
 	goldenEngine   = regexp.MustCompile(`receipt from engine [^.]+\.`)
+	goldenDatabase = regexp.MustCompile(`\bbt_[0-9a-f]{12}\b`)
+	goldenHash     = regexp.MustCompile(`\b[0-9a-f]{64}\b`)
 	goldenXmin     = regexp.MustCompile(`xmin[: ]\d+|now \d+\b`)
 	goldenFragment = regexp.MustCompile(`#[^\s"'<>)]+`)
 	// goldenBlob is a request's encoded body: a long run of base64url
@@ -84,7 +86,8 @@ var (
 // it is: it is replaced by "<key>".
 var goldenPlaceholders = map[string]bool{
 	"durationMs": true, "database": true, "fingerprint": true, "hash": true, "rowsHash": true,
-	"signature": true, "receipt": true, "approval": true, "code": false,
+	"signature": true, "receipt": true, "xmin": true, "newXmin": true, "credentialId": true,
+	"credentialIds": true, "revealNonce": true, "rescopeNonce": true, "approval": true, "code": false,
 }
 
 // runNormalizer replaces what differs from one run to the next in a served
@@ -112,6 +115,8 @@ func (n *runNormalizer) text(s string) string {
 		return fmt.Sprintf("<id-%d>", k)
 	})
 	s = goldenEngine.ReplaceAllString(s, "receipt from engine <engine>.")
+	s = goldenHash.ReplaceAllString(s, "<hash>")
+	s = goldenDatabase.ReplaceAllString(s, "<database>")
 	s = goldenRole.ReplaceAllString(s, "<prefix>_")
 	s = goldenTime.ReplaceAllString(s, "<time>")
 	return goldenXmin.ReplaceAllStringFunc(s, func(m string) string {

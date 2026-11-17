@@ -1,0 +1,9 @@
+{
+  "body": {
+    "code": "REVERT_INVALID",
+    "message": "the scope change was refused: it needs the person's passkey proof, or the page that proved one; nothing changed",
+    "personMessage": "This scope change was refused, and nothing changed. To include other agents' changes, choose them again on this page and confirm with your passkey."
+  },
+  "request": "POST /api/v1/reverts/<id-4>/scope",
+  "status": 409
+}

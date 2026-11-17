@@ -23,7 +23,10 @@ const (
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	code := run(ctx, os.Args[1:], stdio{in: os.Stdin, out: os.Stdout, err: os.Stderr})
+	std := stdio{in: os.Stdin, out: os.Stdout, err: os.Stderr}
+	note := startUpdateNotice(ctx, os.Args[1:], std, os.Getenv)
+	code := run(ctx, os.Args[1:], std)
+	note()
 	stop()
 	os.Exit(code)
 }

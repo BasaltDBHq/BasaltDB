@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 )
 
@@ -15,7 +16,7 @@ type Probe struct {
 	Migrations []guard.Migration
 	// Kept is the engine's kept copy of the pins it set aside (its pin
 	// file's setAside); nil when there is none to read.
-	Kept func() []guard.SetAside
+	Kept func() []action.SetAside
 }
 
 // GuardStatus reads schema_version.
@@ -42,7 +43,13 @@ func (p Probe) LedgerBytes(ctx context.Context) (int64, error) {
 func (p Probe) Reinstalls(ctx context.Context) (guard.Reinstalls, error) {
 	var kept []guard.SetAside
 	if p.Kept != nil {
-		kept = p.Kept()
+		kept = GuardSetAside(p.Kept())
 	}
 	return guard.ReadReinstalls(ctx, p.Q, kept)
+}
+
+// GuardSetAside is the guard's form of pins set aside (chainpin keeps them
+// in action types), nil for nil.
+func GuardSetAside(kept []action.SetAside) []guard.SetAside {
+	return mapSlice(kept, func(k action.SetAside) guard.SetAside { return guard.SetAside(k) })
 }

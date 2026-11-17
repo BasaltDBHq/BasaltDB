@@ -9,8 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
-	"github.com/basaltdbhq/basaltdb/internal/guard"
 )
 
 // Install ids for the tests.
@@ -28,7 +28,7 @@ func TestFileRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, ok, "no pin yet")
 
-	head := chainpin.Pin{Head: guard.ChainHead{Seq: 42, Hash: []byte{1, 2, 3}}, Install: installA}
+	head := chainpin.Pin{Head: action.ChainHead{Seq: 42, Hash: []byte{1, 2, 3}}, Install: installA}
 	require.NoError(t, f.Save("bot", head))
 	got, ok, err := f.Load("bot")
 	require.NoError(t, err)
@@ -42,7 +42,7 @@ func TestFileRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o700), dirInfo.Mode().Perm())
 
-	next := chainpin.Pin{Head: guard.ChainHead{Seq: 43, Hash: []byte{4}}}
+	next := chainpin.Pin{Head: action.ChainHead{Seq: 43, Hash: []byte{4}}}
 	require.NoError(t, f.Save("bot", next))
 	got, _, err = f.Load("bot")
 	require.NoError(t, err)
@@ -57,7 +57,7 @@ func TestFileRefusesBadNamesAndContent(t *testing.T) {
 	dir := t.TempDir()
 	f := chainpin.File{Dir: dir}
 	for _, name := range []string{"", "../x", "a/b", "Bot", "a.b"} {
-		require.ErrorIs(t, f.Save(name, chainpin.Pin{Head: guard.Genesis()}), chainpin.ErrInvalidName, name)
+		require.ErrorIs(t, f.Save(name, chainpin.Pin{Head: genesis}), chainpin.ErrInvalidName, name)
 	}
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "bad.head.json"), []byte(`{"seq":1,"hash":"zz"}`), 0o600))
 	_, _, err := f.Load("bad")
@@ -70,11 +70,11 @@ func TestMemory(t *testing.T) {
 	_, ok, err := m.Load("bot")
 	require.NoError(t, err)
 	require.False(t, ok)
-	require.NoError(t, m.Save("bot", chainpin.Pin{Head: guard.Genesis(), Install: installA}))
+	require.NoError(t, m.Save("bot", chainpin.Pin{Head: genesis, Install: installA}))
 	got, ok, err := m.Load("bot")
 	require.NoError(t, err)
 	require.True(t, ok)
-	require.Equal(t, chainpin.Pin{Head: guard.Genesis(), Install: installA}, got)
+	require.Equal(t, chainpin.Pin{Head: genesis, Install: installA}, got)
 }
 
 // A pin belongs to the install it was saved on; one saved before install
@@ -98,7 +98,7 @@ func TestFileLoadsAPinSavedBeforeInstallIDs(t *testing.T) {
 	got, ok, err := chainpin.File{Dir: dir}.Load("bot")
 	require.NoError(t, err)
 	require.True(t, ok)
-	require.Equal(t, chainpin.Pin{Head: guard.ChainHead{Seq: 1, Hash: []byte{1, 2}}}, got)
+	require.Equal(t, chainpin.Pin{Head: action.ChainHead{Seq: 1, Hash: []byte{1, 2}}}, got)
 	require.False(t, got.Of(installA))
 }
 
@@ -106,8 +106,8 @@ func TestFileLoadsAPinSavedBeforeInstallIDs(t *testing.T) {
 func TestPinKeepsItsSetAside(t *testing.T) {
 	t.Parallel()
 	at := time.Date(2026, 11, 14, 9, 30, 0, 0, time.UTC)
-	s := guard.SetAside{PinnedSeq: 42, PinnedHash: []byte{1, 2}, PinnedInstall: installA, Install: installB, At: at}
-	p := chainpin.Pin{Head: guard.Genesis(), Install: installB}.Kept(s).Kept(s)
+	s := action.SetAside{PinnedSeq: 42, PinnedHash: []byte{1, 2}, PinnedInstall: installA, Install: installB, At: at}
+	p := chainpin.Pin{Head: genesis, Install: installB}.Kept(s).Kept(s)
 	require.Len(t, p.SetAside, 1)
 	other := s
 	other.PinnedSeq = 43
@@ -125,3 +125,6 @@ func TestPinKeepsItsSetAside(t *testing.T) {
 	require.Contains(t, string(raw), `"setAside":[{"pinnedSeq":42,"pinnedHash":"0102","pinnedInstallId":"`+installA.String()+
 		`","installId":"`+installB.String()+`","at":"2026-11-14T09:30:00Z"}`)
 }
+
+// genesis is the head before the first ledger entry: seq 0, a zero sha256.
+var genesis = action.ChainHead{Seq: 0, Hash: make([]byte, 32)}

@@ -13,6 +13,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/engine/upkeep"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 // noDB fails the test on any statement: a gated tick must not reach the
@@ -48,7 +49,7 @@ func TestATickTheGuardRefusesDoesNothing(t *testing.T) {
 	t.Parallel()
 	pins := &savedPins{}
 	refuse := errors.New("the guard misses breaking migrations 18")
-	u := upkeep.New("bot", "test", noDB{t: t}, slog.New(slog.DiscardHandler), time.Now).
+	u := upkeep.New("bot", "test", postgres.NewUpkeep(noDB{t: t}), slog.New(slog.DiscardHandler), time.Now).
 		WithPins(pins).WithGate(func(context.Context) error { return refuse })
 	err := u.Tick(context.Background())
 	require.ErrorIs(t, err, refuse)

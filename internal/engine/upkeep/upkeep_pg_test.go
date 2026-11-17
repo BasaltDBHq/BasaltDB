@@ -15,11 +15,13 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/engine/upkeep"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 type event struct {
@@ -43,7 +45,7 @@ func events(t *testing.T, c *pgx.Conn, kind string) []event {
 func heartbeats(t *testing.T, c *pgx.Conn) []event { return events(t, c, "HEARTBEAT") }
 
 func newUpkeep(c *pgx.Conn, now func() time.Time) *upkeep.Upkeep {
-	return upkeep.New("bot", "test", c, slog.New(slog.DiscardHandler), now)
+	return upkeep.New("bot", "test", postgres.NewUpkeep(c), slog.New(slog.DiscardHandler), now)
 }
 
 // rewriteHistory changes row 1 and re-hashes the whole chain: the full
@@ -245,7 +247,7 @@ func TestTickWarnsAboutTablesRLSHides(t *testing.T) {
 	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
 	d.Exec(t, `ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY`)
 	var buf bytes.Buffer
-	u := upkeep.New("bot", "test", a.Conn, slog.New(slog.NewTextHandler(&buf, nil)), time.Now)
+	u := upkeep.New("bot", "test", postgres.NewUpkeep(a.Conn), slog.New(slog.NewTextHandler(&buf, nil)), time.Now)
 	require.NoError(t, u.Tick(context.Background()))
 	require.Contains(t, buf.String(), "row-level security hides every row")
 	require.Contains(t, buf.String(), "table=public.leads")
@@ -306,7 +308,7 @@ func TestReinstallOverAKeptPinIsRecorded(t *testing.T) {
 
 	b := reinstall(t, d, a)
 	var logs bytes.Buffer
-	again := upkeep.New("bot", "test", b.Conn, slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
+	again := upkeep.New("bot", "test", postgres.NewUpkeep(b.Conn), slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
 	require.NoError(t, again.Tick(ctx))
 	require.NoError(t, again.Tick(ctx))
 	for _, hb := range heartbeats(t, b.Conn) {
@@ -329,7 +331,7 @@ func TestReinstallOverAKeptPinIsRecorded(t *testing.T) {
 	require.Equal(t, old.Head.Seq, fresh.SetAside[0].PinnedSeq)
 	require.Equal(t, fresh.Install, fresh.SetAside[0].Install)
 
-	rs, err := guard.ReadReinstalls(ctx, b.Conn, fresh.SetAside)
+	rs, err := guard.ReadReinstalls(ctx, b.Conn, postgres.GuardSetAside(fresh.SetAside))
 	require.NoError(t, err)
 	lines := ledger.ReinstallNotices(rs)
 	require.Len(t, lines, 1)
@@ -352,7 +354,7 @@ func TestReinstallWhileRunningIsRecorded(t *testing.T) {
 	ctx := context.Background()
 	pins := chainpin.File{Dir: t.TempDir()}
 	sw := &switchDB{q: a.Conn}
-	u := upkeep.New("bot", "test", sw, slog.New(slog.DiscardHandler), time.Now).WithPins(pins)
+	u := upkeep.New("bot", "test", postgres.NewUpkeep(sw), slog.New(slog.DiscardHandler), time.Now).WithPins(pins)
 	// Twice: the second pins the first heartbeat, past the genesis.
 	require.NoError(t, u.Tick(ctx))
 	require.NoError(t, u.Tick(ctx))
@@ -409,7 +411,7 @@ func TestSameLedgerUnderANewInstallMovesThePin(t *testing.T) {
 	require.Positive(t, moved.Head.Seq, "a pinned row, not the genesis")
 
 	var logs bytes.Buffer
-	u := upkeep.New("bot", "test", a.Conn, slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
+	u := upkeep.New("bot", "test", postgres.NewUpkeep(a.Conn), slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
 	require.NoError(t, u.Tick(ctx))
 	require.Empty(t, events(t, a.Conn, "PIN_SET_ASIDE"), "nothing recorded")
 	for _, hb := range heartbeats(t, a.Conn) {
@@ -442,7 +444,7 @@ func TestPinAtOrBeforeAMovedAnchorIsRecorded(t *testing.T) {
 			head, err := guard.Head(ctx, a.Conn)
 			require.NoError(t, err)
 			require.Positive(t, head.Seq)
-			pin := chainpin.Pin{Head: head, Install: uuid.New()}
+			pin := chainpin.Pin{Head: action.ChainHead(head), Install: uuid.New()}
 			require.NoError(t, pins.Save("bot", pin))
 			if name == "before" {
 				require.NoError(t, guard.Heartbeat(ctx, a.Conn, nil))
@@ -507,7 +509,7 @@ func TestUnreportedPinIsKeptAndReportedBroken(t *testing.T) {
 			noReport(t, d, kind)
 
 			var logs bytes.Buffer
-			u := upkeep.New("bot", "test", a.Conn, slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
+			u := upkeep.New("bot", "test", postgres.NewUpkeep(a.Conn), slog.New(slog.NewTextHandler(&logs, nil)), time.Now).WithPins(pins)
 			for range 2 {
 				require.NoError(t, u.Tick(ctx))
 				hb := heartbeats(t, a.Conn)
@@ -541,9 +543,14 @@ func TestCheckHealthKeepsAnUnreportedPin(t *testing.T) {
 	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
 	ctx := context.Background()
 	pins := chainpin.File{Dir: t.TempDir()}
-	pin := keptPinFixture(t, d, a, pins)
+	kept := keptPinFixture(t, d, a, pins)
 	noReport(t, d, "revoke")
 
+	// basalt log's side reads the pin in the guard's types.
+	pin := struct {
+		Head    guard.ChainHead
+		Install uuid.UUID
+	}{guard.ChainHead(kept.Head), kept.Install}
 	h, err := ledger.CheckHealth(ctx, a.Conn, time.Now(), ledger.HealthOptions{Pin: &pin.Head, PinInstall: pin.Install})
 	require.NoError(t, err)
 	require.False(t, h.Chain.Intact)
@@ -636,7 +643,7 @@ func TestRecreatedDatabaseIsARecordedReinstall(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, old.Install, fresh.Install)
 	require.Len(t, fresh.SetAside, 1)
-	rs, err := guard.ReadReinstalls(ctx, b.Conn, fresh.SetAside)
+	rs, err := guard.ReadReinstalls(ctx, b.Conn, postgres.GuardSetAside(fresh.SetAside))
 	require.NoError(t, err)
 	require.Len(t, ledger.ReinstallNotices(rs), 1)
 }
@@ -688,7 +695,7 @@ func TestPinWithoutAnInstallIsSettled(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, p.Install, moved.Install)
 
-	far := guard.ChainHead{Seq: p.Head.Seq + 100, Hash: p.Head.Hash}
+	far := action.ChainHead{Seq: p.Head.Seq + 100, Hash: p.Head.Hash}
 	require.NoError(t, pins.Save("bot", chainpin.Pin{Head: far}))
 	require.NoError(t, newUpkeep(a.Conn, time.Now).WithPins(pins).Tick(ctx))
 	require.Len(t, events(t, a.Conn, "PIN_SET_ASIDE"), 1, "not on the chain: reported")

@@ -35,6 +35,11 @@ func parseVersion(s string) (version, bool) {
 			return version{}, false
 		}
 		v.pre = strings.Split(pre, ".")
+		for _, id := range v.pre {
+			if !validIdentifier(id) {
+				return version{}, false
+			}
+		}
 	}
 	return v, true
 }
@@ -88,4 +93,18 @@ func cmpUint(a, b uint64) int {
 		return 1
 	}
 	return 0
+}
+
+// validIdentifier is true for a non-empty pre-release identifier made of
+// [0-9A-Za-z-].
+func validIdentifier(id string) bool {
+	if id == "" {
+		return false
+	}
+	for _, r := range id {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && r != '-' {
+			return false
+		}
+	}
+	return true
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -216,5 +218,75 @@ func TestSlowRequestStillRecordsAttempt(t *testing.T) {
 	<-started // the process could exit here: the attempt must be on disk already
 	if c.Due() {
 		t.Fatal("a second command would start another request")
+	}
+}
+
+func TestAgentMessage(t *testing.T) {
+	n := Notice{Current: "0.0.1", Latest: "0.0.2", URL: "https://example.test/r"}
+	got := n.AgentMessage("/usr/local/bin/basalt")
+	if !strings.HasPrefix(got, "WARNING: ") || !strings.Contains(got, "https://example.test/r") || !strings.Contains(got, "Do not upgrade it yourself") {
+		t.Errorf("message = %q", got)
+	}
+	n.Security = true
+	if got := n.AgentMessage("/opt/homebrew/bin/basalt"); !strings.HasPrefix(got, "SECURITY UPDATE: ") || !strings.Contains(got, "brew upgrade basaltdbhq/tap/basaltdb") {
+		t.Errorf("message = %q", got)
+	}
+}
+
+func TestAFlaggedPreReleaseIsNotOfferedToAStableBuild(t *testing.T) {
+	// GitHub's flag counts even when the tag has no suffix.
+	if n := notice("0.0.1", []Release{{Tag: "v0.0.2", Prerelease: true}}); n != nil {
+		t.Errorf("stable build got a flagged pre-release: %+v", n)
+	}
+	if n := notice("0.0.1-alpha.1", []Release{{Tag: "v0.0.2", Prerelease: true}}); n == nil || n.Latest != "0.0.2" {
+		t.Errorf("pre-release build: %+v", n)
+	}
+	// A flagged pre-release never makes a notice a security notice.
+	if n := notice("0.0.1", []Release{{Tag: "v0.0.2", Prerelease: true, Security: true}, {Tag: "v0.0.2"}}); n == nil || n.Security {
+		t.Errorf("security from a release the person is not offered: %+v", n)
+	}
+}
+
+func TestParseVersionRefusesOddPreReleaseIdentifiers(t *testing.T) {
+	for _, s := range []string{"1.2.3-alpha.2", "1.2.3-rc-1", "v1.2.3-0.3.7"} {
+		if _, ok := parseVersion(s); !ok {
+			t.Errorf("%q refused", s)
+		}
+	}
+	for _, s := range []string{"1.2.3-al pha", "1.2.3-a_b", "1.2.3-é", "1.2.3-a..b", "1.2.3-a.", "1.2.3-"} {
+		if _, ok := parseVersion(s); ok {
+			t.Errorf("%q accepted", s)
+		}
+	}
+}
+
+func TestHomebrewFollowsSymlinks(t *testing.T) {
+	dir := t.TempDir()
+	cellar := filepath.Join(dir, "Cellar", "basaltdb", "0.0.1", "bin")
+	if err := os.MkdirAll(cellar, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	resolved := filepath.Join(cellar, "basalt")
+	if err := os.WriteFile(resolved, nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "bin-basalt") // like /usr/local/bin/basalt on an Intel Mac
+	if err := os.Symlink(resolved, link); err != nil {
+		t.Fatal(err)
+	}
+	if !homebrew(link) {
+		t.Error("a symlink into a Cellar is not seen")
+	}
+	if homebrew(filepath.Join(dir, "other")) {
+		t.Error("a plain path counted as Homebrew")
+	}
+}
+
+func TestAgentMessageSaysToRestartTheEngine(t *testing.T) {
+	n := Notice{Current: "0.0.1", Latest: "0.0.2", URL: "u"}
+	for _, exe := range []string{"/opt/homebrew/bin/basalt", "/usr/local/bin/basalt"} {
+		if got := n.AgentMessage(exe); !strings.Contains(got, "restart the engine") {
+			t.Errorf("%s: %q", exe, got)
+		}
 	}
 }

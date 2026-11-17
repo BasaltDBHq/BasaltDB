@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/updatecheck"
 )
 
 // The status tool (CONTRACT.md, MCP tools, status; api/mcp/tools/status.json).
@@ -218,6 +220,56 @@ type StatusReport struct {
 	// when the engine is down.
 	EngineRecord *EngineRecordStatus `json:"engineRecord,omitempty"`
 	Problems     []Problem           `json:"problems"`
+	// Update is set when a newer release is out (CONTRACT.md, Update
+	// notice).
+	Update *UpdateInfo `json:"update,omitempty"`
+}
+
+// UpdateInfo is the update field of status and of describe's overview: the
+// newer release and what the agent tells the person.
+type UpdateInfo struct {
+	Current  string `json:"current"`
+	Latest   string `json:"latest"`
+	Security bool   `json:"security"`
+	URL      string `json:"url"`
+	// Message starts WARNING: or SECURITY UPDATE: and is meant to be
+	// relayed to the person.
+	Message string `json:"message"`
+}
+
+// updateInfo is the Service's newer release, or nil.
+func (s *Service) updateInfo() *UpdateInfo {
+	if s.Update == nil {
+		return nil
+	}
+	n := s.Update()
+	if n == nil {
+		return nil
+	}
+	info := NewUpdateInfo(*n, executablePath())
+	return &info
+}
+
+// NewUpdateInfo is the update field for notice n, with the message for
+// the binary at exe.
+func NewUpdateInfo(n updatecheck.Notice, exe string) UpdateInfo {
+	return UpdateInfo{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL, Message: n.AgentMessage(exe)}
+}
+
+// UpdateNotice is the text the MCP server appends to a connection's first
+// tool result: the update notice for the agent, "" when none.
+func (s *Service) UpdateNotice() string {
+	if u := s.updateInfo(); u != nil {
+		return u.Message
+	}
+	return ""
+}
+
+// executablePath is this binary's path, for the Homebrew hint; "" when
+// unknown.
+func executablePath() string {
+	p, _ := os.Executable()
+	return p
 }
 
 // EngineStatus is status.engine.
@@ -292,6 +344,7 @@ type statusDeps struct {
 	devLocalPages             bool
 	vault                     VaultReporter
 	portal                    PortalReporter
+	update                    *UpdateInfo
 	// engineKey is the engine id basalt status read from the running
 	// engine's key file ("" when it is refused), nil when it reports no
 	// engine record (LocalStatus.EngineKey); the engine uses vault.
@@ -320,7 +373,7 @@ func (s *Service) statusDeps() statusDeps {
 		name: s.Name, operatedBy: s.OperatedBy, build: s.Build, pagesBase: s.PagesBase, pagesOrigin: s.PagesOrigin,
 		sameUser: s.SameUser, devLocalPages: s.DevLocalPages, engineReachable: true, vault: s.Vault, portal: s.Portal,
 		engineRecord: s.EngineRecord, directServed: s.DirectServed, cmds: s.Commands, setup: s.pendingSetup(), probe: s.Probe,
-		finisher: s.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, lockTrouble: &s.lockTrouble, passkeys: s.Approvals.Passkeys, log: s.Log, now: s.Now,
+		update: s.updateInfo(), finisher: s.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, lockTrouble: &s.lockTrouble, passkeys: s.Approvals.Passkeys, log: s.Log, now: s.Now,
 	}
 }
 
@@ -385,6 +438,7 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 		Agent: s.name, OperatedBy: operatedBy(s.operatedBy), Enforcement: enforcement(s.operatedBy, s.sameUser),
 		Engine: EngineStatus{Reachable: s.engineReachable, Build: s.build},
 		Pages:  PagesStatus{Served: s.pagesOrigin != "", URL: s.pagesBase},
+		Update: s.update,
 	}
 	if s.vault != nil {
 		v := s.vault.VaultStatus()

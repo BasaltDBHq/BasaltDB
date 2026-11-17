@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"runtime"
 	"slices"
@@ -14,6 +16,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 	"github.com/basaltdbhq/basaltdb/internal/updatecheck"
 )
 
@@ -36,16 +39,32 @@ const (
 var noUpdateLine = []string{"engine", "mcp", "help", "-h", "--help"}
 
 // updateOff reports whether the check is turned off: the environment, or
-// updateCheck OFF in the config a command would read by default.
-func updateOff(getenv func(string) string, goos string, h host) bool {
-	if updatecheck.Disabled(getenv) {
+// updateCheck OFF in the config a command would read by default. When that
+// config exists but this person cannot read it (service mode: engine.json
+// is the engine's own, 0600), the engine's answer decides, over the person
+// socket; with no answer the check stays off, so an admin's opt-out is never
+// overridden by a failed read. No config at all means nobody opted out.
+func updateOff(ctx context.Context, getenv func(string) string, goos string, h host, askEngine func(context.Context) (person.PagesDTO, error)) bool {
+	if updatecheck.Disabled(getenv) || buildinfo.Version == updatecheck.DevVersion {
 		return true
 	}
 	cfg, err := loadEngineConfigAs(h.Euid(), perUserConfigFallback(h, config.DefaultPath(goos)))
-	return err == nil && !cfg.UpdateCheckOn()
+	switch {
+	case err == nil:
+		return !cfg.UpdateCheckOn()
+	case errors.Is(err, fs.ErrNotExist):
+		return false
+	}
+	ctx, cancel := context.WithTimeout(ctx, refreshGrace)
+	defer cancel()
+	pages, perr := askEngine(ctx)
+	return perr != nil || pages.UpdateCheck != "ON"
 }
 
 func updateChecker(getenv func(string) string) (*updatecheck.Checker, error) {
+	if buildinfo.Version == updatecheck.DevVersion {
+		return nil, errDevBuild
+	}
 	dir, err := updatecheck.CacheDir(getenv(envCacheDir))
 	if err != nil {
 		return nil, err
@@ -53,11 +72,12 @@ func updateChecker(getenv func(string) string) (*updatecheck.Checker, error) {
 	return &updatecheck.Checker{Dir: dir, Current: buildinfo.Version}, nil
 }
 
-// cachedUpdate is the notice for basalt status --json, from the cache only.
+// errDevBuild means this build has no release number, so no check runs.
+var errDevBuild = errors.New("a build with no release number gets no update notice")
+
+// cachedUpdate is the notice for basalt status --json, from the cache only
+// (the caller has checked that the check is on).
 func cachedUpdate(c *cliIO) *updatecheck.Notice {
-	if updateOff(c.getenv, c.goos, c.host) {
-		return nil
-	}
 	ck, err := updateChecker(c.getenv)
 	if err != nil {
 		return nil
@@ -74,7 +94,7 @@ func startUpdateNotice(ctx context.Context, args []string, std stdio, getenv fun
 	if len(args) == 0 || slices.Contains(noUpdateLine, args[0]) || wantsJSON(args) {
 		return nothing
 	}
-	if updateOff(getenv, runtime.GOOS, osHost{}) {
+	if updateOff(ctx, getenv, runtime.GOOS, osHost{}, person.Client{Path: config.PersonSocketPath(config.DefaultSocketDir(runtime.GOOS))}.Pages) {
 		return nothing
 	}
 	ck, err := updateChecker(getenv)

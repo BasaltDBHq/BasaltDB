@@ -23,6 +23,10 @@ import (
 type PagesDTO struct {
 	PagesURL    string `json:"pagesUrl"`
 	LocalOrigin string `json:"localOrigin"`
+	// UpdateCheck is "ON" or "OFF": whether the engine's update check is on
+	// (CONTRACT.md, Update notice). A person's command that cannot read
+	// engine.json follows it.
+	UpdateCheck string `json:"updateCheck"`
 }
 
 type emptyParams struct{}

@@ -1,7 +1,8 @@
-// Package agentdb runs an agent's statements on that agent's scoped Postgres
-// credential. Agent SQL is run as given, with bound parameters, never
-// rewritten; the engine's policy (internal/sqlguard) has already allowed it.
-package agentdb
+// Package postgres is the Postgres store adapter: it runs an agent's
+// statements on that agent's scoped Postgres credential. Agent SQL is run
+// as given, with bound parameters, never rewritten; the engine's policy
+// (internal/sqlguard) has already allowed it.
+package postgres
 
 import (
 	"bytes"
@@ -63,7 +64,7 @@ type Reader struct {
 // TimeZone or styles. It panics on a nil pool.
 func NewReader(pool Pool, limits sqlguard.Limits, now func() time.Time) *Reader {
 	if pool == nil || now == nil {
-		panic("agentdb: pool and clock required")
+		panic("postgres: pool and clock required")
 	}
 	return &Reader{pool: guard.PinnedBeginner{TxBeginner: pool}, limits: limits, now: now}
 }
@@ -324,34 +325,6 @@ func textValue(oid uint32, raw []byte) any {
 		return json.RawMessage(bytes.Clone(raw)) // pgx reuses raw for the next read on the connection
 	}
 	return s
-}
-
-// ParamValues converts JSON-decoded parameters for pgx: integral numbers
-// become int64 and other numbers float64, so an id passed as 4211 binds to
-// an integer column.
-func ParamValues(params []any) ([]any, error) {
-	out := make([]any, 0, len(params))
-	for i, p := range params {
-		switch p.(type) {
-		case map[string]any, []any:
-			return nil, fmt.Errorf("params[%d]: must be a string, number, boolean or null", i)
-		}
-		n, ok := p.(json.Number)
-		if !ok {
-			out = append(out, p)
-			continue
-		}
-		if v, err := n.Int64(); err == nil {
-			out = append(out, v)
-			continue
-		}
-		v, err := n.Float64()
-		if err != nil {
-			return nil, fmt.Errorf("params[%d]: %w", i, err)
-		}
-		out = append(out, v)
-	}
-	return out, nil
 }
 
 // NewPool opens a lazy pool on an agent's credential: no connection is made

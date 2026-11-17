@@ -15,12 +15,12 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 // testDB creates a database with the guard installed (the Postgres
@@ -49,7 +49,7 @@ func testDB(t *testing.T) (string, string) {
 
 type harness struct {
 	server *mcp.Server
-	reader *agentdb.Reader
+	reader *postgres.Reader
 }
 
 func newHarness(t *testing.T, agentURL string, limits sqlguard.Limits) harness {
@@ -237,7 +237,7 @@ func TestOneValueOverTheMessageCapIsNeverRead(t *testing.T) {
 	var tooLarge *resultsize.RowTooLargeError
 	require.ErrorAs(t, err, &tooLarge)
 	require.True(t, tooLarge.OnWire)
-	require.Greater(t, tooLarge.Bytes, agentdb.MaxResultBytes)
+	require.Greater(t, tooLarge.Bytes, postgres.MaxResultBytes)
 	require.Equal(t, []resultsize.ColumnSize{{Name: "big", Bytes: -1}}, tooLarge.Columns)
 }
 

@@ -14,10 +14,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/action"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 // A full pool must not wedge the agent: writes that hold every connection
@@ -31,7 +31,7 @@ func TestFullPoolDoesNotWedgeReloads(t *testing.T) {
 	f.classify(t, time.Now())
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	pool, err := agentdb.NewPool(ctx, f.agent.URL, 2)
+	pool, err := postgres.NewPool(ctx, f.agent.URL, 2)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	dict, _ := newDict(t, pii.DefaultDictionaryOptions())
@@ -84,14 +84,14 @@ func TestConcurrentUnknownOIDWritesOnAFullPool(t *testing.T) {
 	f.classify(t, time.Now())
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	pool, err := agentdb.NewPool(ctx, f.agent.URL, 2)
+	pool, err := postgres.NewPool(ctx, f.agent.URL, 2)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	dict, _ := newDict(t, pii.DefaultDictionaryOptions())
 	classes := NewMap(slog.New(slog.DiscardHandler))
 	obs := NewObserver(classes, dict)
-	store := agentdb.NewStore(pool, sqlguard.DefaultLimits(), time.Now).WithReturned(obs.Returned)
-	reader := agentdb.NewReader(pool, sqlguard.DefaultLimits(), time.Now)
+	store := postgres.NewStore(pool, sqlguard.DefaultLimits(), time.Now).WithReturned(obs.Returned)
+	reader := postgres.NewReader(pool, sqlguard.DefaultLimits(), time.Now)
 	scan := NewScanner(dict, []ScanSource{{Agent: "bot", DB: pool, Classes: classes, Limits: sqlguard.DefaultLimits()}},
 		ScanOptions{}, slog.New(slog.DiscardHandler))
 	in := action.Intent{RunID: uuidV7(t), TaskID: uuidV7(t), Text: "touch customers"}
@@ -171,7 +171,7 @@ func TestScanWarnsWhenBuildsKeepFailing(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	f.classify(t, time.Now())
-	pool, err := agentdb.NewPool(context.Background(), f.agent.URL, 1)
+	pool, err := postgres.NewPool(context.Background(), f.agent.URL, 1)
 	require.NoError(t, err)
 	pool.Close() // every cycle fails
 	dict, _ := newDict(t, pii.DefaultDictionaryOptions())

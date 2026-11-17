@@ -1,4 +1,4 @@
-package agentdb
+package postgres
 
 import (
 	"context"
@@ -23,7 +23,7 @@ type Catalog struct {
 // the pool connects to. It panics on a nil pool.
 func NewCatalog(pool Pool, limits sqlguard.Limits, database string) *Catalog {
 	if pool == nil {
-		panic("agentdb: pool required")
+		panic("postgres: pool required")
 	}
 	return &Catalog{pool: pool, limits: limits, database: database}
 }

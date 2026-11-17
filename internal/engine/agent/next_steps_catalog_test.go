@@ -18,7 +18,6 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/action"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
@@ -26,6 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 // This file is the contract test of the engine's error guidance
@@ -62,7 +62,7 @@ type catalogCase struct {
 // failure is raised by the test, so only the lookups the engine makes while
 // building steps answer.
 type catalogReverts struct {
-	RevertStore
+	Reverts
 	lines []string
 	by    uuid.UUID
 }
@@ -86,7 +86,7 @@ func (r catalogReverts) RevertedBy(context.Context, action.Scope) (uuid.UUID, er
 	return r.by, nil
 }
 
-type catalogApprovals struct{ ApprovalStore }
+type catalogApprovals struct{ approvalStore }
 
 func (catalogApprovals) Passkeys(context.Context) ([]passkey.Credential, error) { return nil, nil }
 
@@ -163,7 +163,7 @@ func approvalLink(reason string) func(*testing.T, *Service) error {
 
 func nothingToRevert(tool string, lines []string, detail string, by uuid.UUID) func(*testing.T, *Service) error {
 	return func(t *testing.T, s *Service) error {
-		s.Reverts = catalogReverts{lines: lines, by: by}
+		setReverts(&s.Deps, catalogReverts{lines: lines, by: by})
 		scope := action.Scope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}
 		return s.nothingToRevert(context.Background(), tool, scope, &pgconn.PgError{Code: "BS009", Message: "NOTHING_TO_REVERT", Detail: detail})
 	}
@@ -186,8 +186,8 @@ var tooLargeHeads = []string{`{"op": "DELETE", "table": "public.leads", "cascade
 func tooLargeNotice(t *testing.T, s *Service, issue bool) heldNotice {
 	t.Helper()
 	s.PagesOrigin = ""
-	if s.Approvals == nil {
-		s.Approvals = catalogApprovals{}
+	if p, _ := s.Store.(parts); p.approvalStore == nil {
+		setApprovals(&s.Deps, catalogApprovals{})
 	}
 	req := sizedRequest{Binding: "{}", Lines: tooLargeHeads, LeftOut: true, Cost: 2 << 20}
 	n, err := s.approvalNotice(context.Background(), uuid.MustParse(caseApproval), uuid.MustParse(caseRunID), req,
@@ -236,7 +236,7 @@ func catalogCases() map[string]catalogCase {
 		},
 
 		caseKey("QUERY_TIMEOUT", "ROW_LIMIT", ""):  {"query", queryArgs0, plain(action.ErrRowLimit)},
-		caseKey("QUERY_TIMEOUT", "SIZE_LIMIT", ""): {"query", queryArgs0, plain(agentdb.ErrSizeLimit)},
+		caseKey("QUERY_TIMEOUT", "SIZE_LIMIT", ""): {"query", queryArgs0, plain(postgres.ErrSizeLimit)},
 		caseKey("QUERY_TIMEOUT", "ROW_TOO_LARGE", ""): {
 			"query", queryArgs0,
 			plain(&resultsize.RowTooLargeError{Bytes: 20 << 20, Columns: []resultsize.ColumnSize{{Name: "body", Bytes: 20 << 20}}}),
@@ -462,8 +462,8 @@ func operatedService(t *testing.T, goos, configPath string, initArgs []string, o
 	d := deps()
 	d.Commands = cmds
 	d.OperatedBy = operatedBy
-	d.Approvals = catalogApprovals{}
-	d.Reverts = catalogReverts{}
+	setApprovals(&d, catalogApprovals{})
+	setReverts(&d, catalogReverts{})
 	return NewService(d)
 }
 

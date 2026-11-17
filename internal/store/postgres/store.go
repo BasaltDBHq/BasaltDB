@@ -1,4 +1,4 @@
-package agentdb
+package postgres
 
 import (
 	"context"
@@ -25,6 +25,7 @@ type DB interface {
 // change records, always on the agent's own credential.
 type Store struct {
 	db       DB
+	reader   *Reader
 	limits   sqlguard.Limits
 	now      func() time.Time
 	returned ReturnedFunc
@@ -42,9 +43,14 @@ type ReturnedFunc func(ctx context.Context, tx pgx.Tx, cols []action.Column, row
 // session's TimeZone or styles. It panics on a nil db or clock.
 func NewStore(db DB, limits sqlguard.Limits, now func() time.Time) *Store {
 	if db == nil || now == nil {
-		panic("agentdb: db and clock required")
+		panic("postgres: db and clock required")
 	}
-	return &Store{db: guard.Pinned(db), limits: limits, now: now, returned: noReturned}
+	return &Store{db: guard.Pinned(db), reader: NewReader(db, limits, now), limits: limits, now: now, returned: noReturned}
+}
+
+// Read runs one read on the store's pool (Reader.Read).
+func (s *Store) Read(ctx context.Context, sql string, params []any, stmt action.Statement) (action.ReadResult, error) {
+	return s.reader.Read(ctx, sql, params, stmt)
 }
 
 func noReturned(context.Context, pgx.Tx, []action.Column, []map[string]any) error { return nil }
@@ -53,7 +59,7 @@ func noReturned(context.Context, pgx.Tx, []action.Column, []map[string]any) erro
 // It panics on a nil f.
 func (s *Store) WithReturned(f ReturnedFunc) *Store {
 	if f == nil {
-		panic("agentdb: nil returned-rows hook")
+		panic("postgres: nil returned-rows hook")
 	}
 	s.returned = f
 	return s

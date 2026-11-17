@@ -1,4 +1,4 @@
-package agentdb
+package postgres
 
 import (
 	"context"
@@ -18,7 +18,7 @@ type ColumnOrder struct {
 // NewColumnOrder returns the column order on pool. It panics on a nil pool.
 func NewColumnOrder(pool Pool) *ColumnOrder {
 	if pool == nil {
-		panic("agentdb: pool required")
+		panic("postgres: pool required")
 	}
 	return &ColumnOrder{pool: pool}
 }

@@ -23,7 +23,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/engine/pages"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
@@ -31,6 +30,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 	"github.com/basaltdbhq/basaltdb/internal/vault/pagetest"
 )
 
@@ -112,7 +112,7 @@ func newRevealEnv(t *testing.T) *revealEnv {
 
 // hold previews and holds a delete of lead id as the engine does, then
 // hands the approval to then.
-func (e *revealEnv) hold(t *testing.T, store *agentdb.Store, in guard.Intent, id int, then func(uuid.UUID, string)) {
+func (e *revealEnv) hold(t *testing.T, store *postgres.Store, in guard.Intent, id int, then func(uuid.UUID, string)) {
 	t.Helper()
 	ctx := context.Background()
 	stmt, params := `DELETE FROM public.leads WHERE id = $1`, []any{json.Number(strconv.Itoa(id))}

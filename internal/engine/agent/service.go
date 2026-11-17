@@ -35,44 +35,17 @@ const (
 	maxReasonBytes = 2000
 )
 
-// Reader runs one read on the agent's credential, with the versions of the
-// rows of sources it can identify.
-type Reader interface {
-	Read(ctx context.Context, sql string, params []any, stmt action.Statement) (action.ReadResult, error)
-}
-
-// Store runs writes through the guard and reads runs and change records.
-type Store interface {
-	FindRun(ctx context.Context, id uuid.UUID) (action.Run, error)
-	StartRun(ctx context.Context, in action.Intent) error
-	Write(ctx context.Context, in action.Intent, op action.Op, sql string, params []any) (action.WriteResult, error)
-	RecordRefusal(ctx context.Context, r action.Refusal) error
-	History(ctx context.Context, p ledger.ChangeListParams) (History, error)
-	ListRuns(ctx context.Context, p ledger.RunListParams) (pagination.Page[action.RunSummary], error)
-}
-
-// ReadRecorder records the reads the engine runs (owner decision #7) and
-// returns the read's change id. It runs after the read's own read-only
-// transaction, so it may write.
-type ReadRecorder interface {
-	RecordRead(ctx context.Context, r action.Read) (uuid.UUID, error)
-}
-
 // History is one page of a run's change records with the rows each wrote.
 type History = action.History[ledger.Change, ledger.RowChange]
 
 // Deps are a Service's dependencies, all required.
 type Deps struct {
-	Name   string
-	Reader Reader
-	Store  Store
-	Reads  ReadRecorder
-	Log    *slog.Logger
-	Now    func() time.Time
-	// Approvals holds and applies writes that need the person's approval.
-	Approvals ApprovalStore
-	// Reverts previews reverts (M3).
-	Reverts RevertStore
+	Name string
+	// Store is the agent's store: its runs, reads, writes, approvals and
+	// reverts, on the agent's own credential.
+	Store SQLStore
+	Log   *slog.Logger
+	Now   func() time.Time
 	// Notifier is optional: no notification when nil.
 	Notifier Notifier
 	// PagesBase is the base URL of the approval and revert pages (links);
@@ -191,9 +164,8 @@ type Service struct {
 // NewService returns the service for one agent. It panics on a missing
 // dependency.
 func NewService(d Deps) *Service {
-	if d.Name == "" || d.Reader == nil || d.Store == nil || d.Reads == nil || d.Log == nil || d.Now == nil ||
-		d.Approvals == nil || d.Reverts == nil {
-		panic("agent: name, reader, store, read recorder, approval and revert stores, logger and clock required")
+	if d.Name == "" || d.Store == nil || d.Log == nil || d.Now == nil {
+		panic("agent: name, store, logger and clock required")
 	}
 	if d.Notifier == nil {
 		d.Notifier = noNotifier{}
@@ -313,7 +285,7 @@ func (s *Service) Query(ctx context.Context, p QueryParams) (QueryOutcome, error
 	if err != nil {
 		return QueryOutcome{}, s.refused(ctx, in, action.Op(stmt.Op), p.SQL, p.Params, start, err)
 	}
-	res, err := s.Reader.Read(ctx, p.SQL, p.Params, statementOf(stmt))
+	res, err := s.Store.Read(ctx, p.SQL, p.Params, statementOf(stmt))
 	if err != nil {
 		return QueryOutcome{}, s.refused(ctx, in, action.Op(stmt.Op), p.SQL, p.Params, start, err)
 	}
@@ -326,7 +298,7 @@ func (s *Service) Query(ctx context.Context, p QueryParams) (QueryOutcome, error
 		// Postgres error (a map reload) caused it. The cause is logged above.
 		return QueryOutcome{}, &mcp.ToolError{Code: CodeInternal, Message: "internal engine error"}
 	}
-	change, err := s.Reads.RecordRead(ctx, action.Read{
+	change, err := s.Store.RecordRead(ctx, action.Read{
 		RunID: run.ID, Statement: p.SQL, Params: p.Params, Tables: stmt.Tables,
 		Rows: len(res.Rows), Duration: res.Duration, Versions: res.Versions,
 	})

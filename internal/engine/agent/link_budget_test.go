@@ -65,8 +65,8 @@ const noticeBinding = `{"kind": "APPROVE", "rows": 3, "agent": "basalt_agent_bot
 
 func noticeService(origin string, budget int) *Service {
 	d := deps()
-	d.Approvals = catalogApprovals{}
-	d.Reverts = catalogReverts{}
+	setApprovals(&d, catalogApprovals{})
+	setReverts(&d, catalogReverts{})
 	d.PagesOrigin = origin
 	d.LinkBudget = budget
 	return NewService(d)

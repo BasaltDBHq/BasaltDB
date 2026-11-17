@@ -19,7 +19,7 @@ import (
 // slowPrepare is a revert store whose prepare runs into its time limit,
 // recording the limit it was given; nothing else is called.
 type slowPrepare struct {
-	RevertStore
+	Reverts
 	timeout *time.Duration
 }
 
@@ -34,7 +34,7 @@ func TestRequestRevertPrepareTimeLimit(t *testing.T) {
 	t.Parallel()
 	var limit time.Duration
 	d := deps()
-	d.Reverts = slowPrepare{timeout: &limit}
+	setReverts(&d, slowPrepare{timeout: &limit})
 	cmds, err := NewCommands("bot", "/etc/basalt-test/engine.json", "linux", nil)
 	require.NoError(t, err)
 	d.Commands = cmds
@@ -78,7 +78,7 @@ func (noRuns) FindRun(context.Context, uuid.UUID) (action.Run, error) {
 
 // countedReverts owns nothing and counts the guard calls it receives.
 type countedReverts struct {
-	RevertStore
+	Reverts
 	guardCalls *int
 }
 
@@ -102,8 +102,8 @@ func TestNotOwnScopeBeforeAnyGuardCall(t *testing.T) {
 	t.Parallel()
 	var calls int
 	d := deps()
-	d.Store = noRuns{}
-	d.Reverts = countedReverts{guardCalls: &calls}
+	setRuns(&d, noRuns{})
+	setReverts(&d, countedReverts{guardCalls: &calls})
 	svc := NewService(d)
 	ctx := context.Background()
 	for kind, reason := range map[revert.Scope]string{

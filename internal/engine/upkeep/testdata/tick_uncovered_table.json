@@ -1,0 +1,37 @@
+{
+  "chain": {
+    "BrokenAt": 0,
+    "Intact": true
+  },
+  "events": [
+    {
+      "detail": {
+        "engineVersion": "test",
+        "operatedBy": "PERSON",
+        "runId": null
+      },
+      "kind": "HEARTBEAT"
+    },
+    {
+      "detail": {
+        "engineVersion": "test",
+        "operatedBy": "PERSON",
+        "runId": null
+      },
+      "kind": "HEARTBEAT"
+    },
+    {
+      "detail": {
+        "runId": null,
+        "tables": [
+          {
+            "table": "lead_files",
+            "why": "CASCADE_TARGET via public.leads -> public.lead_files"
+          }
+        ]
+      },
+      "kind": "UNCOVERED_TABLES"
+    }
+  ],
+  "heartbeatStale": false
+}

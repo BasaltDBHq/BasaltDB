@@ -1,0 +1,9 @@
+{
+  "body": {
+    "rejectedAt": "<time>",
+    "revertId": "<id-4>",
+    "status": "REJECTED"
+  },
+  "request": "POST /api/v1/reverts/<id-4>/reject",
+  "status": 200
+}

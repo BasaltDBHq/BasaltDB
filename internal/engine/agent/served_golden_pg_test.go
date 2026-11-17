@@ -136,13 +136,13 @@ func TestServedToolsListGolden(t *testing.T) {
 func TestServedScenarioGolden(t *testing.T) {
 	t.Parallel()
 	large := servedLargePlan(t)
-	main := servedMainScenario(t)
+	main, _ := servedMainScenario(t)
 	requireEveryToolAndErrorPinned(t, main, large)
 }
 
 // servedMainScenario drives one agent through reads, writes, a held write,
 // refusals, history and a revert, and pins every answer.
-func servedMainScenario(t *testing.T) *servedGolden {
+func servedMainScenario(t *testing.T) (*servedGolden, agentEnv) {
 	t.Helper()
 	e := agentHarness(t)
 	g := newServedGolden(t, "served/main", e.h)
@@ -269,7 +269,7 @@ func servedMainScenario(t *testing.T) *servedGolden {
 	g.callErr("apply_revert_batch_not_signed", "apply_revert_batch", map[string]any{
 		"revertId": str(t, requested["revertId"]), "lines": []any{1},
 	}, "REVERT_INVALID")
-	return g
+	return g, e
 }
 
 // servedLargePlan pins a large revert: its plan before and after the person

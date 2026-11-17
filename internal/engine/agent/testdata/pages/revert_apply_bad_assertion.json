@@ -1,0 +1,17 @@
+{
+  "body": {
+    "code": "REVERT_INVALID",
+    "message": "the database refused the code, nothing was reverted: bad passkey signature",
+    "nextSteps": [
+      {
+        "action": "OPEN_LINK",
+        "actor": "PERSON",
+        "text": "Open the short link the agent gave you earlier. Sign again on the page; the code did not verify."
+      }
+    ],
+    "personMessage": "The revert code did not verify, so nothing was applied. Sign again on this page.",
+    "reason": "BAD_SIGNATURE"
+  },
+  "request": "POST /api/v1/reverts/<id-4>/apply",
+  "status": 409
+}

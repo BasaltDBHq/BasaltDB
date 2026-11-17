@@ -17,10 +17,9 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
@@ -34,33 +33,33 @@ import (
 const (
 	maxParamsBytes = 64 << 10
 	maxReasonBytes = 2000
-
-	// opOther is the refusal op of a statement that is not one of the four.
-	opOther = "OTHER"
 )
 
 // Reader runs one read on the agent's credential, with the versions of the
 // rows of sources it can identify.
 type Reader interface {
-	Read(ctx context.Context, sql string, params []any, sources []sqlguard.RowSource) (agentdb.ReadResult, error)
+	Read(ctx context.Context, sql string, params []any, stmt action.Statement) (action.ReadResult, error)
 }
 
 // Store runs writes through the guard and reads runs and change records.
 type Store interface {
-	FindRun(ctx context.Context, id uuid.UUID) (agentdb.Run, error)
-	StartRun(ctx context.Context, in guard.Intent) error
-	Write(ctx context.Context, in guard.Intent, op sqlguard.Op, sql string, params []any) (agentdb.WriteResult, error)
-	RecordRefusal(ctx context.Context, r guard.Refusal) error
-	History(ctx context.Context, p ledger.ChangeListParams) (agentdb.History, error)
-	ListRuns(ctx context.Context, p ledger.RunListParams) (pagination.Page[agentdb.RunSummary], error)
+	FindRun(ctx context.Context, id uuid.UUID) (action.Run, error)
+	StartRun(ctx context.Context, in action.Intent) error
+	Write(ctx context.Context, in action.Intent, op action.Op, sql string, params []any) (action.WriteResult, error)
+	RecordRefusal(ctx context.Context, r action.Refusal) error
+	History(ctx context.Context, p ledger.ChangeListParams) (History, error)
+	ListRuns(ctx context.Context, p ledger.RunListParams) (pagination.Page[action.RunSummary], error)
 }
 
 // ReadRecorder records the reads the engine runs (owner decision #7) and
 // returns the read's change id. It runs after the read's own read-only
 // transaction, so it may write.
 type ReadRecorder interface {
-	RecordRead(ctx context.Context, r guard.Read) (uuid.UUID, error)
+	RecordRead(ctx context.Context, r action.Read) (uuid.UUID, error)
 }
+
+// History is one page of a run's change records with the rows each wrote.
+type History = action.History[ledger.Change, ledger.RowChange]
 
 // Deps are a Service's dependencies, all required.
 type Deps struct {
@@ -165,12 +164,12 @@ type Deps struct {
 // engine's dictionary. An error means a value could not be added: the rows
 // are not returned (fail closed). It never logs a value.
 type PIIObserver interface {
-	Observe(ctx context.Context, cols []agentdb.Column, rows []map[string]any) error
+	Observe(ctx context.Context, cols []action.Column, rows []map[string]any) error
 }
 
 type noPII struct{}
 
-func (noPII) Observe(context.Context, []agentdb.Column, []map[string]any) error { return nil }
+func (noPII) Observe(context.Context, []action.Column, []map[string]any) error { return nil }
 
 // Service runs one agent's tool calls.
 type Service struct {
@@ -275,7 +274,7 @@ func (s *Service) startRun(ctx context.Context, intent string, taskID uuid.UUID)
 		taskID = newID()
 	}
 	run := RunInfo{RunID: newID(), TaskID: taskID, Intent: intent, StartedAt: s.Now().UTC()}
-	if err := s.Store.StartRun(ctx, guard.Intent{RunID: run.RunID, TaskID: taskID, Text: intent}); err != nil {
+	if err := s.Store.StartRun(ctx, action.Intent{RunID: run.RunID, TaskID: taskID, Text: intent}); err != nil {
 		return RunInfo{}, err
 	}
 	return run, nil
@@ -290,7 +289,7 @@ type QueryParams struct {
 
 // QueryOutcome is one recorded read.
 type QueryOutcome struct {
-	agentdb.ReadResult
+	action.ReadResult
 	ChangeID uuid.UUID
 	Warnings []mcp.Warning
 }
@@ -305,18 +304,18 @@ func (s *Service) Query(ctx context.Context, p QueryParams) (QueryOutcome, error
 	if err != nil {
 		return QueryOutcome{}, err
 	}
-	in := guard.Intent{RunID: run.ID, TaskID: run.TaskID, Text: run.Intent}
+	in := action.Intent{RunID: run.ID, TaskID: run.TaskID, Text: run.Intent}
 	start := s.Now()
 	stmt, err := sqlguard.Check(p.SQL, sqlguard.ToolQuery)
 	if err == nil {
 		err = checkArgs(stmt, p.Params)
 	}
 	if err != nil {
-		return QueryOutcome{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
+		return QueryOutcome{}, s.refused(ctx, in, action.Op(stmt.Op), p.SQL, p.Params, start, err)
 	}
-	res, err := s.Reader.Read(ctx, p.SQL, p.Params, stmt.RowSources)
+	res, err := s.Reader.Read(ctx, p.SQL, p.Params, statementOf(stmt))
 	if err != nil {
-		return QueryOutcome{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
+		return QueryOutcome{}, s.refused(ctx, in, action.Op(stmt.Op), p.SQL, p.Params, start, err)
 	}
 	// The values of IDENTIFIER columns go in the dictionary before the rows
 	// leave the engine (M5.1 plan, section 6). One that cannot be added
@@ -327,7 +326,7 @@ func (s *Service) Query(ctx context.Context, p QueryParams) (QueryOutcome, error
 		// Postgres error (a map reload) caused it. The cause is logged above.
 		return QueryOutcome{}, &mcp.ToolError{Code: CodeInternal, Message: "internal engine error"}
 	}
-	change, err := s.Reads.RecordRead(ctx, guard.Read{
+	change, err := s.Reads.RecordRead(ctx, action.Read{
 		RunID: run.ID, Statement: p.SQL, Params: p.Params, Tables: stmt.Tables,
 		Rows: len(res.Rows), Duration: res.Duration, Versions: res.Versions,
 	})
@@ -355,9 +354,9 @@ type WriteParams struct {
 
 // WriteOutcome is one applied write.
 type WriteOutcome struct {
-	agentdb.WriteResult
+	action.WriteResult
 	RunID uuid.UUID
-	Op    sqlguard.Op
+	Op    action.Op
 	// ApprovalID is set when the write applied under an approval.
 	ApprovalID uuid.UUID
 	Warnings   []mcp.Warning
@@ -375,16 +374,17 @@ func (s *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, error
 	if err != nil {
 		return WriteOutcome{}, err
 	}
-	in := guard.Intent{RunID: run.ID, TaskID: run.TaskID, Text: p.Intent}
+	in := action.Intent{RunID: run.ID, TaskID: run.TaskID, Text: p.Intent}
 	start := s.Now()
 	stmt, err := sqlguard.Check(p.SQL, sqlguard.ToolWrite)
 	if err == nil {
 		err = checkArgs(stmt, p.Params)
 	}
+	op := action.Op(stmt.Op)
 	if err != nil {
-		return WriteOutcome{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
+		return WriteOutcome{}, s.refused(ctx, in, op, p.SQL, p.Params, start, err)
 	}
-	res, err := s.Store.Write(ctx, in, stmt.Op, p.SQL, p.Params)
+	res, err := s.Store.Write(ctx, in, op, p.SQL, p.Params)
 	if approvalRequired(err) {
 		id, err := s.hold(ctx, in, p, stmt, start)
 		if id == uuid.Nil || p.Wait == 0 {
@@ -402,44 +402,44 @@ func (s *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, error
 		return out, waitErr
 	}
 	if err != nil {
-		return WriteOutcome{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
+		return WriteOutcome{}, s.refused(ctx, in, op, p.SQL, p.Params, start, err)
 	}
-	return WriteOutcome{WriteResult: res, RunID: run.ID, Op: stmt.Op, Warnings: s.rlsWarnings(ctx, stmt.Tables, res.Rows)}, nil
+	return WriteOutcome{WriteResult: res, RunID: run.ID, Op: op, Warnings: s.rlsWarnings(ctx, stmt.Tables, res.Rows)}, nil
 }
 
 // writeRun finds the named run, or starts a one-write run.
-func (s *Service) writeRun(ctx context.Context, p WriteParams) (agentdb.Run, error) {
+func (s *Service) writeRun(ctx context.Context, p WriteParams) (action.Run, error) {
 	if p.RunID != uuid.Nil {
 		return s.findRun(ctx, p.RunID)
 	}
 	info, err := s.startRun(ctx, p.Intent, uuid.Nil)
 	if err != nil {
-		return agentdb.Run{}, err
+		return action.Run{}, err
 	}
-	return agentdb.Run{ID: info.RunID, TaskID: info.TaskID, Intent: info.Intent}, nil
+	return action.Run{ID: info.RunID, TaskID: info.TaskID, Intent: info.Intent}, nil
 }
 
 // History returns one page of a run's change records.
-func (s *Service) History(ctx context.Context, p ledger.ChangeListParams) (agentdb.History, error) {
+func (s *Service) History(ctx context.Context, p ledger.ChangeListParams) (History, error) {
 	if _, err := s.findRun(ctx, p.RunID); err != nil {
-		return agentdb.History{}, err
+		return History{}, err
 	}
 	return s.Store.History(ctx, p)
 }
 
 // ListRuns returns one page of the agent's own runs with what each did.
-func (s *Service) ListRuns(ctx context.Context, p ledger.RunListParams) (pagination.Page[agentdb.RunSummary], error) {
+func (s *Service) ListRuns(ctx context.Context, p ledger.RunListParams) (pagination.Page[action.RunSummary], error) {
 	return s.Store.ListRuns(ctx, p)
 }
 
 // findRun returns the agent's run, the zero run for uuid.Nil, or NOT_FOUND.
-func (s *Service) findRun(ctx context.Context, id uuid.UUID) (agentdb.Run, error) {
+func (s *Service) findRun(ctx context.Context, id uuid.UUID) (action.Run, error) {
 	if id == uuid.Nil {
-		return agentdb.Run{}, nil
+		return action.Run{}, nil
 	}
 	run, err := s.Store.FindRun(ctx, id)
-	if errors.Is(err, agentdb.ErrRunNotFound) {
-		return agentdb.Run{}, &mcp.ToolError{Code: CodeNotFound, Reason: reasonRun, Message: fmt.Sprintf("run %s is not one of this agent's runs; start one with run_start", id)}
+	if errors.Is(err, action.ErrRunNotFound) {
+		return action.Run{}, &mcp.ToolError{Code: CodeNotFound, Reason: reasonRun, Message: fmt.Sprintf("run %s is not one of this agent's runs; start one with run_start", id)}
 	}
 	return run, err
 }
@@ -458,12 +458,12 @@ func recorded(code string) bool {
 // refused records a REFUSED change for err when it is an action the ledger
 // keeps, and returns err. A failure to record is logged; the agent still
 // gets the original refusal.
-func (s *Service) refused(ctx context.Context, in guard.Intent, op sqlguard.Op, sql string, params []any, start time.Time, err error) error {
+func (s *Service) refused(ctx context.Context, in action.Intent, op action.Op, sql string, params []any, start time.Time, err error) error {
 	te := messageTooLarge(actionTool(op), err, ToolError(err))
 	if !recorded(te.Code) {
 		return err
 	}
-	r := guard.Refusal{
+	r := action.Refusal{
 		Intent: in, Op: refusalOp(op), Statement: sql, Params: params,
 		Code: te.Code, Reason: truncate(te.Message, maxReasonBytes), Duration: s.Now().Sub(start),
 	}
@@ -477,22 +477,28 @@ func (s *Service) refused(ctx context.Context, in guard.Intent, op sqlguard.Op, 
 // (sqlguard refuses anything else as WRONG_TOOL), write everything else.
 // Failure maps the error by tool, so a refusal is recorded with the code
 // the agent gets.
-func actionTool(op sqlguard.Op) string {
-	if op == sqlguard.OpSelect {
+func actionTool(op action.Op) string {
+	if op == action.OpSelect {
 		return toolQuery
 	}
 	return toolWrite
 }
 
 // refusalOp is the op the guard's record_refusal accepts.
-func refusalOp(op sqlguard.Op) string {
+func refusalOp(op action.Op) action.Op {
 	switch op {
-	case sqlguard.OpSelect, sqlguard.OpInsert, sqlguard.OpUpdate, sqlguard.OpDelete:
-		return string(op)
-	case sqlguard.OpMerge:
-		return opOther
+	case action.OpSelect, action.OpInsert, action.OpUpdate, action.OpDelete:
+		return op
+	case action.OpMerge, action.OpOther:
+		return action.OpOther
 	}
-	return opOther
+	return action.OpOther
+}
+
+// statementOf is the checked statement as the store takes it: the row
+// sources a recorded read versions travel as its opaque handle.
+func statementOf(stmt sqlguard.Statement) action.Statement {
+	return action.Statement{Op: action.Op(stmt.Op), Tables: stmt.Tables, Handle: stmt.RowSources}
 }
 
 // checkArgs checks the parameters match the statement's placeholders and

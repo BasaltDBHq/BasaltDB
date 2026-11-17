@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
@@ -330,7 +331,7 @@ func TestValuesReadAreInTheDictionaryAndTokenizedConsistently(t *testing.T) {
 	obs := NewObserver(NewMap(slog.New(slog.DiscardHandler)), dict).On(f.pool)
 
 	reader := agentdb.NewReader(f.pool, sqlguard.DefaultLimits(), time.Now)
-	res, err := reader.Read(ctx, `SELECT c.id, c.email, c.phone, c.name, lower(c.email) AS computed, c.note FROM customers c ORDER BY c.id`, nil, nil)
+	res, err := reader.Read(ctx, `SELECT c.id, c.email, c.phone, c.name, lower(c.email) AS computed, c.note FROM customers c ORDER BY c.id`, nil, action.Statement{})
 	require.NoError(t, err)
 	require.False(t, dict.Contains(pii.EntityEmail, keys.TypedHash(pii.EntityEmail, "ada@corp.ee", "")))
 	require.NoError(t, obs.Observe(ctx, res.Columns, res.Rows))
@@ -371,9 +372,9 @@ func TestWriteReturningValuesAreAddedBeforeCommitAndFailClosed(t *testing.T) {
 	dict, keys := newDict(t, pii.DefaultDictionaryOptions())
 	obs := NewObserver(NewMap(slog.New(slog.DiscardHandler)), dict)
 	store := agentdb.NewStore(f.pool, sqlguard.DefaultLimits(), time.Now).WithReturned(obs.Returned)
-	in := guard.Intent{RunID: uuidV7(t), TaskID: uuidV7(t), Text: "add a customer"}
+	in := action.Intent{RunID: uuidV7(t), TaskID: uuidV7(t), Text: "add a customer"}
 	require.NoError(t, store.StartRun(ctx, in))
-	res, err := store.Write(ctx, in, sqlguard.OpInsert,
+	res, err := store.Write(ctx, in, action.OpInsert,
 		`INSERT INTO customers (id, email, name) VALUES (10, 'cy@corp.ee', 'Cy Young') RETURNING id, email, name`, nil)
 	require.NoError(t, err)
 	require.Len(t, res.Returning, 1)
@@ -382,7 +383,7 @@ func TestWriteReturningValuesAreAddedBeforeCommitAndFailClosed(t *testing.T) {
 	// A value the dictionary cannot take rolls the write back.
 	refusing := agentdb.NewStore(f.pool, sqlguard.DefaultLimits(), time.Now).
 		WithReturned(NewObserver(NewMap(slog.New(slog.DiscardHandler)), refusingDict{}).Returned)
-	_, err = refusing.Write(ctx, in, sqlguard.OpInsert,
+	_, err = refusing.Write(ctx, in, action.OpInsert,
 		`INSERT INTO customers (id, email) VALUES (11, 'dee@corp.ee') RETURNING email`, nil)
 	require.ErrorIs(t, err, pii.ErrDeltaFull)
 	require.NotContains(t, err.Error(), "dee@corp.ee", "errors name no value")
@@ -474,7 +475,7 @@ func TestConcurrentReadsReloadsAndScans(t *testing.T) {
 	for range 8 {
 		wg.Go(func() {
 			for range 5 {
-				res, err := reader.Read(ctx, `SELECT email, name FROM customers`, nil, nil)
+				res, err := reader.Read(ctx, `SELECT email, name FROM customers`, nil, action.Statement{})
 				if err == nil {
 					err = obs.Observe(ctx, res.Columns, res.Rows)
 				}

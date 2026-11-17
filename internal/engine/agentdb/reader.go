@@ -20,15 +20,12 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 	"github.com/basaltdbhq/basaltdb/pkg/wiretime"
 )
-
-// ErrRowLimit is a read canceled because it returned more rows than the
-// engine's read row limit.
-var ErrRowLimit = errors.New("the query returned more rows than the read row limit")
 
 // ErrSizeLimit is a read canceled because the call's reads came to more than
 // MaxResultBytes (resultsize; CONTRACT.md, QUERY_TIMEOUT SIZE_LIMIT).
@@ -48,28 +45,6 @@ const maxMessageBytes = MaxResultBytes + messageSlack
 // messageSlack covers a row message's framing: 2 bytes for the column
 // count and 4 per column, for at most Postgres's 1664 result columns.
 const messageSlack = 64 << 10
-
-// Column is one result column.
-type Column struct {
-	Name string
-	// Type is the Postgres type name, or "oid:<n>" for a type pgx does not know.
-	Type string
-	// TableOID and Attnum are the table column the value comes from (pgx
-	// FieldDescription), both 0 for a computed column. The engine maps them
-	// to the column's PII class; they never reach the agent.
-	TableOID uint32
-	Attnum   int16
-}
-
-// ReadResult is the rows of one read.
-type ReadResult struct {
-	Columns  []Column
-	Rows     []map[string]any
-	Duration time.Duration
-	// Versions are the guarded rows the read saw, by primary key and xmin
-	// (recorded reads); empty when no row could be identified.
-	Versions []guard.RowVersion
-}
 
 // Pool is the part of a pgx pool the reader needs.
 type Pool interface {
@@ -108,32 +83,36 @@ func setTimeout(ctx context.Context, tx pgx.Tx, limits sqlguard.Limits) error {
 }
 
 // Read runs one SELECT in a read-only transaction within the time limit,
-// and cancels it once it returns more than the row limit. For the sources
-// that are guarded tables the agent can read, it also returns the version
+// and cancels it once it returns more than the row limit. For the
+// statement's row sources (its Handle, the []sqlguard.RowSource of the
+// check) that are guarded tables the agent can read, it also returns the version
 // of each row: the statement runs with version columns added through the
 // parse tree (sqlguard.WithRowVersions), which are stripped from the rows.
 // If that statement fails to plan, the original runs as given and the read
 // carries no versions.
-func (r *Reader) Read(ctx context.Context, sql string, params []any, sources []sqlguard.RowSource) (ReadResult, error) {
+func (r *Reader) Read(ctx context.Context, sql string, params []any, stmt action.Statement) (action.ReadResult, error) {
+	// A statement without row sources (an aggregate, or one this store did
+	// not check) reads without versions.
+	sources, _ := stmt.Handle.([]sqlguard.RowSource)
 	start := r.now()
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
 	if err != nil {
-		return ReadResult{}, err
+		return action.ReadResult{}, err
 	}
 	// A read-only transaction has nothing to commit; rollback ends it.
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 	if err := setTimeout(ctx, tx, r.limits); err != nil {
-		return ReadResult{}, err
+		return action.ReadResult{}, err
 	}
 
 	res, ok, err := r.readVersioned(ctx, tx, sql, params, sources)
 	if err != nil {
-		return ReadResult{}, err
+		return action.ReadResult{}, err
 	}
 	if !ok {
 		res.Columns, res.Rows, _, err = runText(ctx, tx, sql, params, r.limits.ReadRowLimit, 0)
 		if err != nil {
-			return ReadResult{}, err
+			return action.ReadResult{}, err
 		}
 	}
 	res.Duration = r.now().Sub(start)
@@ -144,31 +123,31 @@ func (r *Reader) Read(ctx context.Context, sql string, params []any, sources []s
 // ok is false when no source is a guarded table, or the rewritten
 // statement failed to plan (a class 42 error) and was rolled back: the
 // caller then runs the original.
-func (r *Reader) readVersioned(ctx context.Context, tx pgx.Tx, sql string, params []any, sources []sqlguard.RowSource) (ReadResult, bool, error) {
+func (r *Reader) readVersioned(ctx context.Context, tx pgx.Tx, sql string, params []any, sources []sqlguard.RowSource) (action.ReadResult, bool, error) {
 	versioned, oids, err := guardedSources(ctx, tx, sources)
 	if err != nil || len(versioned) == 0 {
-		return ReadResult{}, false, err
+		return action.ReadResult{}, false, err
 	}
 	rewritten, err := sqlguard.WithRowVersions(sql, versioned)
 	if err != nil {
-		return ReadResult{}, false, nil //nolint:nilerr // no row identity: read without versions
+		return action.ReadResult{}, false, nil //nolint:nilerr // no row identity: read without versions
 	}
 	sp, err := tx.Begin(ctx)
 	if err != nil {
-		return ReadResult{}, false, err
+		return action.ReadResult{}, false, err
 	}
 	cols, rows, extras, err := runText(ctx, sp, rewritten, params, r.limits.ReadRowLimit, len(versioned)*sqlguard.VersionColumns)
 	var pe *pgconn.PgError
 	if errors.As(err, &pe) && strings.HasPrefix(pe.Code, sqlStateClassSyntaxOrAccess) {
-		return ReadResult{}, false, sp.Rollback(ctx)
+		return action.ReadResult{}, false, sp.Rollback(ctx)
 	}
 	if err != nil {
-		return ReadResult{}, false, err
+		return action.ReadResult{}, false, err
 	}
 	if err := sp.Commit(ctx); err != nil {
-		return ReadResult{}, false, err
+		return action.ReadResult{}, false, err
 	}
-	return ReadResult{Columns: cols, Rows: rows, Versions: rowVersions(extras, oids)}, true, nil
+	return action.ReadResult{Columns: cols, Rows: rows, Versions: rowVersions(extras, oids)}, true, nil
 }
 
 // sqlStateClassSyntaxOrAccess is SQLSTATE class 42: syntax error or access
@@ -205,15 +184,15 @@ func guardedSources(ctx context.Context, tx pgx.Tx, sources []sqlguard.RowSource
 // rowVersions reads the version columns: per row, per source, the key
 // (jsonb text) then xmin. A source with no row on this output row (an
 // outer join) has a NULL xmin and is skipped.
-func rowVersions(extras [][][]byte, oids []uint32) []guard.RowVersion {
-	var out []guard.RowVersion
+func rowVersions(extras [][][]byte, oids []uint32) []action.RowVersion {
+	var out []action.RowVersion
 	for _, row := range extras {
 		for i, oid := range oids {
 			key, version := row[i*sqlguard.VersionColumns], row[i*sqlguard.VersionColumns+1]
 			if version == nil {
 				continue
 			}
-			out = append(out, guard.RowVersion{TableOID: oid, Key: json.RawMessage(key), Version: string(version)})
+			out = append(out, action.RowVersion{TableOID: oid, Key: json.RawMessage(key), Version: string(version)})
 		}
 	}
 	return out
@@ -223,7 +202,7 @@ func rowVersions(extras [][][]byte, oids []uint32) []guard.RowVersion {
 // so any type renders without a type-specific decoder, and returns its rows.
 // The last extra columns are returned raw instead of in the rows. Past
 // limit rows the statement is canceled instead of drained.
-func runText(ctx context.Context, tx pgx.Tx, sql string, params []any, limit, extra int) ([]Column, []map[string]any, [][][]byte, error) {
+func runText(ctx context.Context, tx pgx.Tx, sql string, params []any, limit, extra int) ([]action.Column, []map[string]any, [][][]byte, error) {
 	// The call's budget, or one of its own: the rows are charged as they are
 	// read, whatever transaction they come from.
 	ctx = resultsize.Ensure(ctx)
@@ -254,7 +233,7 @@ func runText(ctx context.Context, tx pgx.Tx, sql string, params []any, limit, ex
 	for rows.Next() {
 		if len(out) == limit {
 			cancel()
-			return nil, nil, nil, ErrRowLimit
+			return nil, nil, nil, action.ErrRowLimit
 		}
 		raw := rows.RawValues()
 		out = append(out, rowValues(cols, fds, raw))
@@ -293,9 +272,9 @@ func cloneRaw(raw [][]byte) [][]byte {
 // columns names the result columns. A repeated name (a join selecting two
 // "id" columns) gets a "_2", "_3" suffix so no value is lost in the row
 // object; the column list shows the key used.
-func columns(tm *pgtype.Map, fds []pgconn.FieldDescription) []Column {
+func columns(tm *pgtype.Map, fds []pgconn.FieldDescription) []action.Column {
 	seen := map[string]int{}
-	cols := make([]Column, 0, len(fds))
+	cols := make([]action.Column, 0, len(fds))
 	for _, fd := range fds {
 		name := fd.Name
 		seen[name]++
@@ -306,12 +285,12 @@ func columns(tm *pgtype.Map, fds []pgconn.FieldDescription) []Column {
 		if t, ok := tm.TypeForOID(fd.DataTypeOID); ok {
 			typ = t.Name
 		}
-		cols = append(cols, Column{Name: name, Type: typ, TableOID: fd.TableOID, Attnum: int16(fd.TableAttributeNumber)})
+		cols = append(cols, action.Column{Name: name, Type: typ, TableOID: fd.TableOID, Attnum: int16(fd.TableAttributeNumber)})
 	}
 	return cols
 }
 
-func rowValues(cols []Column, fds []pgconn.FieldDescription, raw [][]byte) map[string]any {
+func rowValues(cols []action.Column, fds []pgconn.FieldDescription, raw [][]byte) map[string]any {
 	row := make(map[string]any, len(cols))
 	for i, c := range cols {
 		row[c.Name] = textValue(fds[i].DataTypeOID, raw[i])

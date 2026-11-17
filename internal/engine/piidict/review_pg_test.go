@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
@@ -53,7 +54,7 @@ func TestFullPoolDoesNotWedgeReloads(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// plain has no classes: its oid is unknown, so each result reloads.
-	label := agentdb.Column{Name: "label", TableOID: f.oid(t, "public.plain"), Attnum: 2}
+	label := action.Column{Name: "label", TableOID: f.oid(t, "public.plain"), Attnum: 2}
 	rows := []map[string]any{{"label": "x"}}
 	var wg sync.WaitGroup
 	errs := make(chan error, len(txs))
@@ -61,7 +62,7 @@ func TestFullPoolDoesNotWedgeReloads(t *testing.T) {
 		wg.Go(func() {
 			octx, ocancel := context.WithTimeout(ctx, 10*time.Second)
 			defer ocancel()
-			errs <- obs.Returned(octx, tx, []agentdb.Column{label}, rows)
+			errs <- obs.Returned(octx, tx, []action.Column{label}, rows)
 		})
 	}
 	wg.Wait()
@@ -93,7 +94,7 @@ func TestConcurrentUnknownOIDWritesOnAFullPool(t *testing.T) {
 	reader := agentdb.NewReader(pool, sqlguard.DefaultLimits(), time.Now)
 	scan := NewScanner(dict, []ScanSource{{Agent: "bot", DB: pool, Classes: classes, Limits: sqlguard.DefaultLimits()}},
 		ScanOptions{}, slog.New(slog.DiscardHandler))
-	in := guard.Intent{RunID: uuidV7(t), TaskID: uuidV7(t), Text: "touch customers"}
+	in := action.Intent{RunID: uuidV7(t), TaskID: uuidV7(t), Text: "touch customers"}
 	require.NoError(t, store.StartRun(ctx, in))
 
 	var wg sync.WaitGroup
@@ -107,7 +108,7 @@ func TestConcurrentUnknownOIDWritesOnAFullPool(t *testing.T) {
 		wg.Go(func() {
 			for range 4 {
 				// p.label comes from plain, a table with no classes.
-				_, err := store.Write(ctx, in, sqlguard.OpUpdate,
+				_, err := store.Write(ctx, in, action.OpUpdate,
 					`UPDATE customers c SET note = 'n' FROM plain p WHERE c.id = $1 AND p.id = 1 RETURNING c.email, p.label`, []any{id})
 				report(err)
 			}
@@ -127,7 +128,7 @@ func TestConcurrentUnknownOIDWritesOnAFullPool(t *testing.T) {
 	})
 	wg.Go(func() {
 		for range 4 {
-			res, err := reader.Read(ctx, `SELECT label FROM plain`, nil, nil)
+			res, err := reader.Read(ctx, `SELECT label FROM plain`, nil, action.Statement{})
 			if err == nil {
 				err = obs.Observe(ctx, pool, res.Columns, res.Rows)
 			}

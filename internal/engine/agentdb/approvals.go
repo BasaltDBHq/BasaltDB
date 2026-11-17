@@ -8,12 +8,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/resultsize"
-	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
@@ -24,10 +24,10 @@ var errPreviewRollback = errors.New("preview rolled back")
 // PREVIEW) on the agent's credential and returns its preview lines; the
 // transaction always rolls back. assigned names the columns whose new
 // values the approval binds.
-func (s *Store) Preview(ctx context.Context, in guard.Intent, sql string, params []any, assigned []string) ([]string, error) {
+func (s *Store) Preview(ctx context.Context, in action.Intent, sql string, params []any, assigned []string) ([]string, error) {
 	var lines []string
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
-		if err := guard.BeginPreview(ctx, tx, in, s.limits.StatementTimeout); err != nil {
+		if err := guard.BeginPreview(ctx, tx, guardIntent(in), s.limits.StatementTimeout); err != nil {
 			return err
 		}
 		if _, _, _, err := runText(ctx, tx, sql, params, s.limits.ReadRowLimit, 0); err != nil {
@@ -62,12 +62,12 @@ func (s *Store) OpenReveal(ctx context.Context, id uuid.UUID, proof passkey.Asse
 // the change records them), and reads the held approval's hidden rows with
 // ticket (basalt_meta.reveal_approval_rows). The transaction always rolls
 // back.
-func (s *Store) RevealPreview(ctx context.Context, in guard.Intent, op sqlguard.Op, sql string, params []any,
+func (s *Store) RevealPreview(ctx context.Context, in action.Intent, op action.Op, sql string, params []any,
 	id uuid.UUID, ticket []byte,
 ) ([]approval.RevealedRow, error) {
 	var rows []approval.RevealedRow
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
-		if err := guard.BeginPreview(ctx, tx, in, s.limits.StatementTimeout); err != nil {
+		if err := guard.BeginPreview(ctx, tx, guardIntent(in), s.limits.StatementTimeout); err != nil {
 			return err
 		}
 		if _, _, _, err := runText(ctx, tx, sql, params, s.limits.ReadRowLimit, 0); err != nil {
@@ -89,8 +89,8 @@ func (s *Store) RevealPreview(ctx context.Context, in guard.Intent, op sqlguard.
 }
 
 // Hold stores a held write for the person's approval.
-func (s *Store) Hold(ctx context.Context, in guard.Intent, r guard.HoldRequest) (guard.Held, error) {
-	return guard.Hold(ctx, s.db, in, s.limits.StatementTimeout, r)
+func (s *Store) Hold(ctx context.Context, in action.Intent, r guard.HoldRequest) (guard.Held, error) {
+	return guard.Hold(ctx, s.db, guardIntent(in), s.limits.StatementTimeout, r)
 }
 
 // TableColumns returns the columns an INSERT without a column list assigns:

@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgproto3"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
@@ -150,7 +151,7 @@ func ToolError(err error) *mcp.ToolError {
 		return te
 	case errors.As(err, &re):
 		return &mcp.ToolError{Code: CodeStatementRefused, Reason: string(re.Reason), Message: re.Error()}
-	case errors.Is(err, agentdb.ErrRowLimit):
+	case errors.Is(err, action.ErrRowLimit):
 		return &mcp.ToolError{Code: CodeQueryTimeout, Reason: ReasonRowLimit, Message: err.Error() + "; add a LIMIT or a narrower WHERE"}
 	case errors.As(err, &rl):
 		return &mcp.ToolError{Code: CodeQueryTimeout, Reason: ReasonRowTooLarge, Message: rl.Error() + rowTooLargeHint}

@@ -134,7 +134,7 @@ func agentConfigURL(c *cliIO, agent, configPath string) (string, error) {
 			return cfg.credential(a.CredentialFile)
 		}
 	}
-	return "", fmt.Errorf("agent %q is not in %s; run basalt init --agent %s", agent, configPath, agent)
+	return "", errAgentNotInConfig(agent, configPath)
 }
 
 // checkHealth verifies the chain from the head this user last verified on

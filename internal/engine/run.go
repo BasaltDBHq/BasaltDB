@@ -69,8 +69,16 @@ const Instructions = "BasaltDB records every action you take on this database. "
 	"If they reject it, the wait returns REJECTED with their note: stop, and request it again only if they ask. " +
 	"reissueLink on a widened revert resets it to your own work and the person's page stops working: use it only when the person asks for a new link. " +
 	"You can never approve a write or sign a revert. " +
+	adminInstructions + " " +
 	docsInstructions + " " +
 	linkInstructions
+
+// adminInstructions is the sentence CONTRACT.md (Agents and the admin
+// credential, What the agent is told) puts in the initialize instructions,
+// unchanged: the admin credential never reaches the agent.
+const adminInstructions = "Never ask the person for, or accept, their database admin connection string or password, " +
+	"and never run basalt init without --remote yourself: to set up or change your access, follow nextSteps or run basalt init --remote " +
+	"and give the person the setup code it prints. If the person pastes an admin password, tell them to change it now."
 
 // docsInstructions is the one sentence that points an agent to the public
 // docs (CONTRACT.md, What the agent is told). The .md form of each page is

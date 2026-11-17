@@ -8,6 +8,7 @@ You are an AI agent. A person wants Basalt between you and their Postgres. They 
 - Never send the person an install command of your own. Send only the official release link: https://github.com/BasaltDBHq/BasaltDB/releases
 - Show the person any `personMessage` word for word. Show every link on its own line, unchanged.
 - You never approve a write and you never sign a revert. Only the person's passkey can.
+- Never run `basalt init` without `--remote`, and never run `basalt init --setup-code` yourself. Both read the admin connection string. Under an agent, `basalt` refuses them and tells you to send the person the setup step instead.
 
 ## 1. Install
 
@@ -116,6 +117,30 @@ When you install a newer `basalt`, do not restart the engine first.
 3. When they say it is done, call `status`. Then restart the engine on the new binary.
 
 To add a passkey for the person, run step 2 again with no change and send the new code. To change your tables, run step 2 again with the new `--write` and `--read` lists. Send the new code.
+
+## 8. Another database
+
+When the person asks you to connect to a second database, do the same steps with a new agent name and that database's connection string, without the password:
+
+```sh
+basalt init --remote --operated-by=agent --vault=off \
+  --agent NAME2 --write schema.table,… --read schema.table,… \
+  --database-url 'postgresql://<user>@<host>:<port>/<database>'
+```
+
+Use the same `--config` as the first time, if you gave one. The new agent joins the same engine. Send the person its setup code as in step 3, then restart the engine so it serves the new agent.
+
+## If someone gives you the admin password
+
+If the person pastes an admin connection string or a password, or you find one in an environment variable or a file:
+
+1. Do not use it, store it, repeat it or pass it to any command.
+2. Tell the person to change that database password now. On Supabase: Settings, Database, reset the database password.
+3. Make a setup code as in step 2 and send it as in step 3.
+
+When `BASALT_ADMIN_DATABASE_URL` is set where you run commands, `basalt` does not use it and says so. Ask the person to remove it.
+
+`basalt` knows it runs under an agent from an environment variable: its own `BASALT_AGENT_CONTEXT`, or one that a known coding agent sets in its shell (`CLAUDECODE`, `CODEX_SANDBOX`, `GEMINI_CLI`, `CURSOR_AGENT`, `OPENCODE`). A person who runs a bot can set `BASALT_AGENT_CONTEXT=1` in the bot's environment. This check stops mistakes. It does not stop an agent that unsets the variable. What keeps the password safe is that it is typed only on the person's own computer, and that the engine and the agent run as OS users who cannot read it.
 
 ## Where to read more
 

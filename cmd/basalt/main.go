@@ -98,6 +98,8 @@ func usage(w io.Writer) {
 	}
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Exit codes: 0 ok, 1 error, 2 usage error.")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, agentsHelp)
 }
 
 // fail prints err for command name and returns the error exit code.
@@ -105,3 +107,8 @@ func fail(w io.Writer, name string, err error) int {
 	fmt.Fprintf(w, "basalt %s: %v\n", name, err)
 	return exitError
 }
+
+// agentsHelp is the top-level help's line for an agent reading it
+// (CONTRACT.md, Agents and the admin credential).
+const agentsHelp = "Agents: never ask for or accept the database admin connection string or password.\n" +
+	"To set up, run basalt init --remote and give the person the setup code it prints."

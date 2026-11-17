@@ -12,7 +12,6 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/action"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
@@ -107,9 +106,9 @@ const sizeLimitHint = "; select fewer or shorter columns (for example left(col, 
 const rowTooLargeHint = "; select fewer columns, a size (length(col), octet_length(col)) or a slice (substr(col, 1, 100000))"
 
 // sizeLimitError is QUERY_TIMEOUT SIZE_LIMIT: a result over
-// agentdb.MaxResultBytes.
+// resultsize.MaxBytes.
 func sizeLimitError() *mcp.ToolError {
-	return &mcp.ToolError{Code: CodeQueryTimeout, Reason: ReasonSizeLimit, Message: agentdb.ErrSizeLimit.Error() + sizeLimitHint}
+	return &mcp.ToolError{Code: CodeQueryTimeout, Reason: ReasonSizeLimit, Message: resultsize.ErrSizeLimit.Error() + sizeLimitHint}
 }
 
 // messageTooLarge maps a Postgres message over the agent connection's cap
@@ -155,7 +154,7 @@ func ToolError(err error) *mcp.ToolError {
 		return &mcp.ToolError{Code: CodeQueryTimeout, Reason: ReasonRowLimit, Message: err.Error() + "; add a LIMIT or a narrower WHERE"}
 	case errors.As(err, &rl):
 		return &mcp.ToolError{Code: CodeQueryTimeout, Reason: ReasonRowTooLarge, Message: rl.Error() + rowTooLargeHint}
-	case errors.Is(err, agentdb.ErrSizeLimit):
+	case errors.Is(err, resultsize.ErrSizeLimit):
 		return sizeLimitError()
 	case errors.As(err, &se):
 		reason := reasonSetupPending

@@ -38,7 +38,7 @@ func (s *Service) ApprovalRequest(ctx context.Context, id uuid.UUID) (approval.R
 	if err != nil {
 		return approval.Request{}, err
 	}
-	reveal, err := s.Approvals.RevealNonce(ctx, approval.KindApprove, id)
+	reveal, err := s.Store.RevealNonce(ctx, approval.KindApprove, id)
 	if err != nil {
 		return approval.Request{}, err
 	}
@@ -94,7 +94,7 @@ func (s *Service) RelayApproval(ctx context.Context, r approval.Response) (Recei
 	if _, err := s.openApproval(ctx, r.ApprovalID, nil); err != nil {
 		return Receipt{}, err
 	}
-	if _, err := s.Approvals.SubmitApproval(ctx, r.ApprovalID, r.Assertion()); err != nil {
+	if _, err := s.Store.SubmitApproval(ctx, r.ApprovalID, r.Assertion()); err != nil {
 		return Receipt{}, err
 	}
 	// Postgres accepted the signature: the receipt names the approval as
@@ -115,7 +115,7 @@ func (s *Service) openApproval(ctx context.Context, id uuid.UUID, proof *string)
 	if err := s.Admit(ctx); err != nil {
 		return ledger.Approval{}, err
 	}
-	a, err := s.Approvals.FindApproval(ctx, id)
+	a, err := s.Store.FindApproval(ctx, id)
 	if errors.Is(err, ledger.ErrApprovalNotFound) {
 		return ledger.Approval{}, ErrNotThisAgent
 	}
@@ -157,11 +157,11 @@ func (s *Service) RevertRequest(ctx context.Context, id uuid.UUID, secret string
 	if err != nil {
 		return revert.Request{}, err
 	}
-	nonce, err := s.Reverts.RevertNonce(ctx, id)
+	nonce, err := s.Store.RevertNonce(ctx, id)
 	if err != nil {
 		return revert.Request{}, err
 	}
-	reveal, err := s.Reverts.RevealNonce(ctx, approval.KindRevert, id)
+	reveal, err := s.Store.RevealNonce(ctx, approval.KindRevert, id)
 	if err != nil {
 		return revert.Request{}, err
 	}
@@ -192,13 +192,13 @@ func (s *Service) RelayRevert(ctx context.Context, r revert.Response) (action.Ap
 	if err != nil {
 		return action.AppliedRevert{}, Receipt{}, err
 	}
-	applied, err := s.Reverts.ApplyRevert(ctx, r.RevertID, r.Assertion())
+	applied, err := s.Store.ApplyRevert(ctx, r.RevertID, r.Assertion())
 	if err != nil {
 		return action.AppliedRevert{}, Receipt{}, s.applyRevertError(ctx, open, err)
 	}
 	// Postgres accepted the signature: the receipt names the revert as
 	// Postgres records it now.
-	signed, err := s.Reverts.FindRevert(ctx, r.RevertID)
+	signed, err := s.Store.FindRevert(ctx, r.RevertID)
 	if err != nil {
 		return action.AppliedRevert{}, Receipt{}, err
 	}
@@ -215,7 +215,7 @@ func (s *Service) openRevert(ctx context.Context, id uuid.UUID, proof *string) (
 	if err := s.Admit(ctx); err != nil {
 		return ledger.Revert{}, err
 	}
-	r, err := s.Reverts.FindRevert(ctx, id)
+	r, err := s.Store.FindRevert(ctx, id)
 	if errors.Is(err, ledger.ErrRevertNotFound) {
 		return ledger.Revert{}, ErrNotThisAgent
 	}

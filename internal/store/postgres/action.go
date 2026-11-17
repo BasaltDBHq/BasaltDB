@@ -1,4 +1,4 @@
-package agentdb
+package postgres
 
 import (
 	"github.com/basaltdbhq/basaltdb/internal/action"

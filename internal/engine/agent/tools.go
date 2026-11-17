@@ -12,7 +12,6 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/action"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
@@ -202,7 +201,7 @@ func (h handlers) query(ctx context.Context, raw json.RawMessage) (any, error) {
 	if err := decodeArgs(raw, &args); err != nil {
 		return nil, err
 	}
-	params, err := agentdb.ParamValues(args.Params)
+	params, err := paramValues(args.Params)
 	if err != nil {
 		return nil, &ArgumentError{Message: err.Error()}
 	}
@@ -264,7 +263,7 @@ func (h handlers) write(ctx context.Context, raw json.RawMessage) (any, error) {
 		}
 		return nil, err
 	}
-	params, err := agentdb.ParamValues(args.Params)
+	params, err := paramValues(args.Params)
 	if err != nil {
 		return nil, &ArgumentError{Message: err.Error()}
 	}
@@ -327,4 +326,32 @@ func (h handlers) runHistory(ctx context.Context, raw json.RawMessage) (any, err
 		items = append(items, ledger.RecordFromDomain(ch, hist.Rows[ch.ID]))
 	}
 	return pagination.ToMCP(pagination.Page[ledger.Record]{Items: items, NextCursor: hist.Page.NextCursor}), nil
+}
+
+// paramValues converts JSON-decoded parameters for the store's driver: integral numbers
+// become int64 and other numbers float64, so an id passed as 4211 binds to
+// an integer column.
+func paramValues(params []any) ([]any, error) {
+	out := make([]any, 0, len(params))
+	for i, p := range params {
+		switch p.(type) {
+		case map[string]any, []any:
+			return nil, fmt.Errorf("params[%d]: must be a string, number, boolean or null", i)
+		}
+		n, ok := p.(json.Number)
+		if !ok {
+			out = append(out, p)
+			continue
+		}
+		if v, err := n.Int64(); err == nil {
+			out = append(out, v)
+			continue
+		}
+		v, err := n.Float64()
+		if err != nil {
+			return nil, fmt.Errorf("params[%d]: %w", i, err)
+		}
+		out = append(out, v)
+	}
+	return out, nil
 }

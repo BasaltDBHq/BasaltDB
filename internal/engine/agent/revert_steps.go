@@ -455,7 +455,7 @@ func (s *Service) nothingToRevert(ctx context.Context, tool string, scope action
 	if strings.Contains(detail, "changed no rows") {
 		return s.nothingToRevertError(ctx, tool, scope, reasonReadsOnly, detail)
 	}
-	pv, perr := s.Reverts.PreviewRevert(ctx, scope, "", 1)
+	pv, perr := s.Store.PreviewRevert(ctx, scope, "", 1)
 	if perr != nil {
 		pv = action.PreviewPage{}
 	}
@@ -477,7 +477,7 @@ func (s *Service) nothingToRevertError(ctx context.Context, tool string, scope a
 		te.PersonMessage = fmt.Sprintf("Nothing to revert for %s: it only read data (or inserted rows it deleted again).", what)
 		b.Stop("There is nothing to revert; do not retry.")
 	case reasonAlreadyReverted:
-		by, err := s.Reverts.RevertedBy(ctx, scope)
+		by, err := s.Store.RevertedBy(ctx, scope)
 		if err != nil {
 			s.Log.Error("find the revert of a reverted scope", "scope", what, "err", err)
 		}

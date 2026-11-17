@@ -131,9 +131,8 @@ func newRescopeEnv(t *testing.T) *rescopeEnv {
 }
 
 // start (re)starts bot's engine: a new pool, the links read back from
-// their file, and nothing else kept. wrap, when set, wraps the revert
-// store.
-func (e *rescopeEnv) start(t *testing.T, wrap func(agent.RevertStore) agent.RevertStore) {
+// their file, and nothing else kept. wrap, when set, wraps the store.
+func (e *rescopeEnv) start(t *testing.T, wrap func(agent.SQLStore) agent.SQLStore) {
 	t.Helper()
 	secrets, err := links.OpenSecrets(e.linksPath, time.Now, rand.Reader)
 	require.NoError(t, err)
@@ -141,7 +140,7 @@ func (e *rescopeEnv) start(t *testing.T, wrap func(agent.RevertStore) agent.Reve
 		withPoolConfig(func(cfg *pgxpool.Config) { cfg.ConnConfig.Tracer = e.calls }),
 		withDeps(func(d *agent.Deps, _ *pgxpool.Pool) {
 			if wrap != nil {
-				d.Reverts = wrap(d.Reverts)
+				d.Store = wrap(d.Store)
 			}
 			d.Notifier, d.PagesOrigin, d.Links, d.Poll = e.sent, pageOrigin, secrets, testPoll
 		})).Svc
@@ -571,7 +570,7 @@ func TestConcurrentRescopesKeepTheLatest(t *testing.T) {
 
 // slowReverts answers every rescope as Postgres does once the statement
 // timeout cancels it.
-type slowReverts struct{ agent.RevertStore }
+type slowReverts struct{ agent.SQLStore }
 
 func (slowReverts) RescopeRevert(context.Context, action.RescopeRequest, time.Duration) (action.RescopedRevert, error) {
 	return action.RescopedRevert{}, &pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"}
@@ -583,7 +582,7 @@ func TestScopeRouteTimeLimit(t *testing.T) {
 	t.Parallel()
 	e := newRescopeEnv(t)
 	id, secret := e.request(t)
-	e.start(t, func(s agent.RevertStore) agent.RevertStore { return slowReverts{s} })
+	e.start(t, func(s agent.SQLStore) agent.SQLStore { return slowReverts{s} })
 	var perr pageError
 	require.Equal(t, http.StatusGatewayTimeout, e.p.post(scopePath(id), pageOrigin, secret, scopeBody(t, agent.ScopeRequest{Select: e.own()}), &perr))
 	require.Equal(t, "QUERY_TIMEOUT", perr.Code)

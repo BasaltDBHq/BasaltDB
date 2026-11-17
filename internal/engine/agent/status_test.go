@@ -67,7 +67,7 @@ func (p *fakeProbe) LatestSetup(context.Context) (guard.AgentSetup, bool, error)
 
 // keys answers Passkeys with n passkeys.
 type keys struct {
-	ApprovalStore
+	approvalStore
 	n int
 }
 
@@ -124,7 +124,7 @@ func operatedStatusWith(probe *fakeProbe, passkeys int, setup *config.Setup, ope
 		d := deps()
 		d.OperatedBy = operatedBy
 		d.Probe = probe
-		d.Approvals = keys{n: passkeys}
+		setApprovals(&d, keys{n: passkeys})
 		d.Setup = setup
 		d.Now = func() time.Time { return statusNow }
 		// The credential file is at init's default, so no saved flag names it
@@ -390,7 +390,7 @@ func TestStatusEnforcementAndOperator(t *testing.T) {
 func TestStatusVaultHook(t *testing.T) {
 	t.Parallel()
 	d := deps()
-	d.Approvals = keys{n: 1}
+	setApprovals(&d, keys{n: 1})
 	d.Vault = fixedVault{VaultStatus{State: "KEY_ERROR"}}
 	r, err := NewService(d).Status(context.Background())
 	require.NoError(t, err)
@@ -436,7 +436,7 @@ func degraded(t *testing.T, probe *fakeProbe, setup *config.Setup) (*mcp.Server,
 	t.Helper()
 	d := deps()
 	d.Probe = probe
-	d.Approvals = keys{n: 1}
+	setApprovals(&d, keys{n: 1})
 	d.Setup = setup
 	d.Now = func() time.Time { return statusNow }
 	tools := Tools(NewService(d))
@@ -698,7 +698,7 @@ func lockTroubleStatus(t *testing.T, operatedBy string) StatusReport {
 	d := deps()
 	d.OperatedBy = operatedBy
 	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil), recorded: true}
-	d.Approvals = keys{n: 1}
+	setApprovals(&d, keys{n: 1})
 	d.Setup = pendingSetup(guard.SetupAgent, statusNow.Add(time.Hour))
 	d.Now = func() time.Time { return statusNow }
 	d.Finisher = &fakeFinisher{finishErr: &config.LockUnusableError{Path: "/etc/basalt/engine.json.lock", Err: os.ErrPermission}}
@@ -734,7 +734,7 @@ func engineRecordStatusOf(t *testing.T, operatedBy string, read EngineRecordRead
 	d := deps()
 	d.OperatedBy = operatedBy
 	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
-	d.Approvals = keys{n: 1}
+	setApprovals(&d, keys{n: 1})
 	d.Now = func() time.Time { return statusNow }
 	d.Vault = fixedVault{VaultStatus{State: "OFF", EngineID: testEngineID}}
 	d.EngineRecord, d.DirectServed = read, directServed
@@ -789,7 +789,7 @@ func TestStatusEngineRecord(t *testing.T) {
 	t.Run("the key file is refused", func(t *testing.T) {
 		t.Parallel()
 		d := deps()
-		d.Approvals = keys{n: 1}
+		setApprovals(&d, keys{n: 1})
 		d.Vault = fixedVault{VaultStatus{State: "KEY_ERROR"}}
 		d.EngineRecord = recordOf(url, true)
 		r, err := NewService(d).Status(context.Background())
@@ -800,7 +800,7 @@ func TestStatusEngineRecord(t *testing.T) {
 	t.Run("no vault reporter: left out", func(t *testing.T) {
 		t.Parallel()
 		d := deps()
-		d.Approvals = keys{n: 1}
+		setApprovals(&d, keys{n: 1})
 		r, err := NewService(d).Status(context.Background())
 		require.NoError(t, err)
 		require.Nil(t, r.EngineRecord)

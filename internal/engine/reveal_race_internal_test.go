@@ -14,7 +14,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/approval"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/links"
@@ -22,6 +21,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 // A reveal racing the approval's signature or apply, or the revert's
@@ -35,10 +35,10 @@ import (
 const dropLeadSQL = `DELETE FROM public.leads WHERE id = $1`
 
 // raceEnv: bot may read and write leads only; its held deletes cascade to
-// notes it cannot read. Calls go through the engine's agentdb store.
+// notes it cannot read. Calls go through the engine's Postgres store.
 type raceEnv struct {
 	d      *guardtest.DB
-	store  *agentdb.Store
+	store  *postgres.Store
 	person *passkeytest.Authenticator
 }
 

@@ -1,4 +1,4 @@
-package agentdb_test
+package postgres_test
 
 import (
 	"context"
@@ -14,7 +14,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/approval"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
@@ -23,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 // zoned is the agent's connection string with the session settings a
@@ -44,7 +44,7 @@ func zoned(t *testing.T, agentURL, zone string) string {
 
 func zonedPool(t *testing.T, agentURL, zone string) *pgxpool.Pool {
 	t.Helper()
-	pool, err := agentdb.NewPool(context.Background(), zoned(t, agentURL, zone), 2)
+	pool, err := postgres.NewPool(context.Background(), zoned(t, agentURL, zone), 2)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	var got string
@@ -75,7 +75,7 @@ func zoneDB(t *testing.T) (*guardtest.DB, *guardtest.Agent) {
 }
 
 // write updates the events' notes as the engine does, from store's session.
-func write(t *testing.T, store *agentdb.Store, sql string) uuid.UUID {
+func write(t *testing.T, store *postgres.Store, sql string) uuid.UUID {
 	t.Helper()
 	ctx := context.Background()
 	in := action.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Tag events"}
@@ -109,11 +109,11 @@ func TestRevertDoesNotDependOnTheSessionZone(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, guard.RegisterPasskey(ctx, d.Admin, signer.Credential(), "app"))
 			limits := sqlguard.DefaultLimits()
-			writer := agentdb.NewStore(zonedPool(t, a.URL, zones[0]), limits, time.Now)
+			writer := postgres.NewStore(zonedPool(t, a.URL, zones[0]), limits, time.Now)
 			run := write(t, writer, `UPDATE public.events SET note = 'tagged' WHERE id IN (1, 2)`)
 			scope := guard.RevertScope{Kind: revert.ScopeRun, ID: run}
 
-			engine := agentdb.NewStore(zonedPool(t, a.URL, zones[1]), limits, time.Now)
+			engine := postgres.NewStore(zonedPool(t, a.URL, zones[1]), limits, time.Now)
 			pv, err := engine.PreviewRevert(ctx, action.Scope(scope), "", 10)
 			require.NoError(t, err)
 			requireNoSkip(t, previewTexts(pv))
@@ -153,7 +153,7 @@ func TestSignedLinesDoNotDependOnTheSessionZone(t *testing.T) {
 	zones := []string{"UTC", "Asia/Jakarta", "America/St_Johns"}
 	held := make([][]string, 0, len(zones))
 	for _, zone := range zones {
-		store := agentdb.NewStore(zonedPool(t, a.URL, zone), limits, time.Now)
+		store := postgres.NewStore(zonedPool(t, a.URL, zone), limits, time.Now)
 		in := action.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Move events"}
 		require.NoError(t, store.StartRun(ctx, in))
 		lines, err := store.Preview(ctx, in, update, nil, nil)
@@ -199,7 +199,7 @@ func requireUTC(t *testing.T, lines []string) {
 func TestQueryDoesNotDependOnTheSessionStyle(t *testing.T) {
 	t.Parallel()
 	_, a := zoneDB(t)
-	r := agentdb.NewReader(zonedPool(t, a.URL, "Asia/Jakarta"), sqlguard.DefaultLimits(), time.Now)
+	r := postgres.NewReader(zonedPool(t, a.URL, "Asia/Jakarta"), sqlguard.DefaultLimits(), time.Now)
 	res, err := r.Read(context.Background(), `SELECT at, took FROM public.events WHERE id = 1`, nil, action.Statement{})
 	require.NoError(t, err)
 	require.Len(t, res.Rows, 1)
@@ -258,7 +258,7 @@ func TestAWriteThatSkipsTheEngineStoresTheEngineImages(t *testing.T) {
 		return nil
 	}))
 
-	engine := agentdb.NewStore(zonedPool(t, a.URL, "UTC"), sqlguard.DefaultLimits(), time.Now)
+	engine := postgres.NewStore(zonedPool(t, a.URL, "UTC"), sqlguard.DefaultLimits(), time.Now)
 	viaEngine := write(t, engine, `UPDATE public.readings SET note = 'tagged' WHERE id IN (3, 4)`)
 
 	// The images, without the key, are the same either way.
@@ -352,7 +352,7 @@ func TestAWriteThatSkipsTheEngineStoresByteaAsTheEngine(t *testing.T) {
 	require.NoError(t, direct.QueryRow(ctx, `SELECT body::text FROM public.files WHERE id = 1`).Scan(&shown))
 	require.Equal(t, `\000\377A`, shown, "the agent's session keeps its bytea_output")
 
-	engine := agentdb.NewStore(zonedPool(t, a.URL, "UTC"), sqlguard.DefaultLimits(), time.Now)
+	engine := postgres.NewStore(zonedPool(t, a.URL, "UTC"), sqlguard.DefaultLimits(), time.Now)
 	viaEngine := write(t, engine, `UPDATE public.files SET note = 'tagged' WHERE id IN (3, 4)`)
 	got := images(t, d, in.RunID)
 	require.Len(t, got, 2)
@@ -378,7 +378,7 @@ func TestRevertFunctionsCalledByHandDoNotDependOnTheSession(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	d, a, signer := blobDB(t)
-	engine := agentdb.NewStore(zonedPool(t, a.URL, "UTC"), sqlguard.DefaultLimits(), time.Now)
+	engine := postgres.NewStore(zonedPool(t, a.URL, "UTC"), sqlguard.DefaultLimits(), time.Now)
 	run := write(t, engine, `UPDATE public.files SET note = 'tagged', ratio = ratio * 3, body = body || '\x01'::bytea,
 		at = at + interval '1 day', took = took * 2 WHERE id IN (1, 2)`)
 

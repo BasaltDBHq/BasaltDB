@@ -26,8 +26,8 @@ import (
 )
 
 // Catalog reads the structure of the database the agent can see, on the
-// agent's own credential (CONTRACT.md, describe). The engine's is
-// agentdb.Catalog; it mirrors internal/pgcatalog.
+// agent's own credential (CONTRACT.md, describe). The Postgres adapter
+// implements it; it mirrors internal/pgcatalog.
 type Catalog interface {
 	// Relations lists the readable relations by schema and name, and counts
 	// the ones in user schemas the agent cannot read.

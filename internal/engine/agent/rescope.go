@@ -211,7 +211,7 @@ func (s *Service) RescopeRevert(ctx context.Context, id uuid.UUID, secret string
 	if !widen && held {
 		req.Token = st.token
 	}
-	out, err := s.Reverts.RescopeRevert(ctx, req, RescopeTimeout)
+	out, err := s.Store.RescopeRevert(ctx, req, RescopeTimeout)
 	if err != nil {
 		return ScopeResponse{}, s.rescopeError(ctx, r, err)
 	}
@@ -402,7 +402,7 @@ func (s *Service) resetToProposal(ctx context.Context, r ledger.Revert) (ledger.
 		return ledger.Revert{}, err
 	}
 	defer release()
-	out, err := s.Reverts.ResetRevert(ctx, r.ID, RescopeTimeout)
+	out, err := s.Store.ResetRevert(ctx, r.ID, RescopeTimeout)
 	if err != nil {
 		return ledger.Revert{}, err
 	}
@@ -410,7 +410,7 @@ func (s *Service) resetToProposal(ctx context.Context, r ledger.Revert) (ledger.
 	if err := s.Links.Reset(r.ID, out.ExpiresAt); err != nil {
 		return ledger.Revert{}, err
 	}
-	return s.Reverts.FindRevert(ctx, r.ID)
+	return s.Store.FindRevert(ctx, r.ID)
 }
 
 // retirePersonScope is the agent's reissue of a revert that is no longer

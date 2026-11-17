@@ -19,11 +19,11 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/action"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
@@ -55,10 +55,13 @@ func (nopStore) ListRuns(context.Context, ledger.RunListParams) (pagination.Page
 
 func deps() Deps {
 	return Deps{
-		Name: "bot", Reader: nopReader{}, Store: nopStore{}, Reads: nopRecorder{},
-		Approvals: struct{ ApprovalStore }{}, // never called by these tests
-		Reverts:   struct{ RevertStore }{},
-		Log:       slog.New(slog.DiscardHandler), Now: time.Now,
+		Name: "bot",
+		Store: parts{
+			reader: nopReader{}, runStore: nopStore{}, readRecorder: nopRecorder{},
+			approvalStore: struct{ approvalStore }{}, // never called by these tests
+			Reverts:       struct{ Reverts }{},
+		},
+		Log: slog.New(slog.DiscardHandler), Now: time.Now,
 	}
 }
 
@@ -168,7 +171,7 @@ func TestToolErrorMapping(t *testing.T) {
 		{pg("23505", "duplicate key"), CodeSQLError, "", "23505"},
 		{&sqlguard.RefusalError{Reason: sqlguard.ReasonDDL}, CodeStatementRefused, "DDL_NOT_ALLOWED", ""},
 		{fmt.Errorf("read: %w", action.ErrRowLimit), CodeQueryTimeout, ReasonRowLimit, ""},
-		{fmt.Errorf("read: %w", agentdb.ErrSizeLimit), CodeQueryTimeout, ReasonSizeLimit, ""},
+		{fmt.Errorf("read: %w", postgres.ErrSizeLimit), CodeQueryTimeout, ReasonSizeLimit, ""},
 		{fmt.Errorf("read: %w", &pgproto3.ExceededMaxBodyLenErr{MaxExpectedBodyLen: 1, ActualBodyLen: 2}), CodeInternal, "", ""},
 		{&ArgumentError{Message: "bad"}, CodeInvalidArgument, "", ""},
 		{&mcp.ToolError{Code: CodeNotFound, Reason: reasonRun, Message: "no run"}, CodeNotFound, reasonRun, ""},
@@ -192,9 +195,7 @@ func TestNewServicePanicsWithoutDeps(t *testing.T) {
 	t.Parallel()
 	for _, breakIt := range []func(*Deps){
 		func(d *Deps) { d.Name = "" },
-		func(d *Deps) { d.Reader = nil },
 		func(d *Deps) { d.Store = nil },
-		func(d *Deps) { d.Reads = nil },
 		func(d *Deps) { d.Log = nil },
 		func(d *Deps) { d.Now = nil },
 	} {

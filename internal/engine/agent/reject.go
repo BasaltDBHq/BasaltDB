@@ -59,7 +59,7 @@ func (s *Service) RejectRevert(ctx context.Context, id uuid.UUID, secret string,
 	if err != nil {
 		return RejectResponse{}, err
 	}
-	out, err := s.Reverts.RejectRevert(ctx, id, note, st.token)
+	out, err := s.Store.RejectRevert(ctx, id, note, st.token)
 	if err != nil {
 		return RejectResponse{}, s.rejectError(r, st.token != nil, err)
 	}

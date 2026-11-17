@@ -15,17 +15,17 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/engine/piidict"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 // piiService is the engine's agent service with the PII observer wired as
 // the engine wires it: query rows through the service, RETURNING rows inside
 // the write's transaction.
-func piiService(t *testing.T, obs agent.PIIObserver, returned agentdb.ReturnedFunc) (*agent.Service, *guardtest.DB, *pii.FuseDictionary, *pii.Keys) {
+func piiService(t *testing.T, obs agent.PIIObserver, returned postgres.ReturnedFunc) (*agent.Service, *guardtest.DB, *pii.FuseDictionary, *pii.Keys) {
 	t.Helper()
 	d := guardtest.New(t)
 	d.Exec(t, `CREATE TABLE public.people (id bigint PRIMARY KEY, email text, city text);

@@ -23,7 +23,7 @@ func portalStatus(t *testing.T, operatedBy string, p PortalReporter) StatusRepor
 	d.OperatedBy = operatedBy
 	d.Portal = p
 	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
-	d.Approvals = keys{n: 1}
+	setApprovals(&d, keys{n: 1})
 	d.Now = func() time.Time { return statusNow }
 	cmds, err := NewCommands("bot", "", "linux", nil)
 	require.NoError(t, err)

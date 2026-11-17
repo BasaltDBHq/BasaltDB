@@ -17,7 +17,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 	"github.com/basaltdbhq/basaltdb/internal/engine/portalcheck"
@@ -26,6 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/server"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 // basalt status (CONTRACT.md, CLI; owner decision AE-13): the status tool's
@@ -185,7 +185,7 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 	if err != nil {
 		return statusOut{}, fmt.Errorf("the credential of agent %s cannot be read: %w", a.Name, withoutPath(err))
 	}
-	pool, err := agentdb.NewPool(c.ctx, dsn, statusAgentPool)
+	pool, err := postgres.NewPool(c.ctx, dsn, statusAgentPool)
 	if err != nil {
 		return statusOut{}, err
 	}
@@ -205,7 +205,7 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 		Portal: savedPortalCheck(cfg.StateDirFor(c.goos), base),
 		Name:   a.Name, Commands: cmds, OperatedBy: cfg.OperatedBy, DevLocalPages: cfg.DevLocalPages, Setup: a.Setup,
 		PagesBase: base, PagesOrigin: servedPages(c, cfg.Config, eng.Reachable), EngineRunning: eng.Reachable, EngineUnknown: eng.Unknown,
-		Probe: agent.DBProbe{
+		Probe: postgres.Probe{
 			Q: pool, Migrations: guard.Migrations(),
 			Kept: engine.KeptSetAside(chainpin.File{Dir: cfg.StateDirFor(c.goos)}, a.Name, slog.New(slog.DiscardHandler)),
 		},

@@ -13,6 +13,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 // guardWithout is a database whose guard lacks migration version, as an
@@ -28,7 +29,7 @@ func guardWithout(t *testing.T, version int, migs []guard.Migration) (harness, *
 	d.Exec(t, `DELETE FROM basalt_meta.schema_version WHERE version = $1`, version)
 
 	svc := pgService(t, a.URL, withDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
-		d.Probe = agent.DBProbe{Q: pool, Migrations: migs}
+		d.Probe = postgres.Probe{Q: pool, Migrations: migs}
 	})).Svc
 	return harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, d
 }
@@ -135,7 +136,7 @@ func TestStatusOnAFullGuard(t *testing.T) {
 	t.Parallel()
 	_, agentURL := testDB(t)
 	svc := pgService(t, agentURL, withDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
-		d.Probe = agent.DBProbe{Q: pool, Migrations: guard.Migrations()}
+		d.Probe = postgres.Probe{Q: pool, Migrations: guard.Migrations()}
 	})).Svc
 	r, err := svc.Status(context.Background())
 	require.NoError(t, err)

@@ -23,7 +23,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/channel"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/pages"
 	"github.com/basaltdbhq/basaltdb/internal/engine/peercred"
@@ -39,6 +38,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/server"
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 	"github.com/basaltdbhq/basaltdb/internal/vault"
 )
 
@@ -470,7 +470,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		files.close()
 		return agentRuntime{}, err
 	}
-	pool, password, err := agentdb.NewSwitchablePool(ctx, url, agentPoolConns)
+	pool, password, err := postgres.NewSwitchablePool(ctx, url, agentPoolConns)
 	if err != nil {
 		files.close()
 		return agentRuntime{}, err
@@ -485,14 +485,14 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	// budget per call). Reads outside a call (upkeep, the person's socket)
 	// carry no budget and are not charged.
 	budgeted := resultsize.Budgeted(pool)
-	probe := agent.DBProbe{Q: budgeted, Migrations: guard.Migrations(), Kept: KeptSetAside(env.pins, a.Name, log)}
+	probe := postgres.Probe{Q: budgeted, Migrations: guard.Migrations(), Kept: KeptSetAside(env.pins, a.Name, log)}
 	logGuard(ctx, probe, log)
 	// The agent's classification map, and the values of IDENTIFIER columns
 	// it reads added to the dictionary before they leave the engine: query
 	// rows in the service, RETURNING rows inside the write's transaction.
 	classes := piidict.NewMap(log.With("component", "pii"))
 	observer := piidict.NewObserver(classes, env.dict)
-	store := agentdb.NewStore(budgeted, limits, time.Now).WithReturned(observer.Returned)
+	store := postgres.NewStore(budgeted, limits, time.Now).WithReturned(observer.Returned)
 	secrets := linkSecrets(env.stateDir, a.Name, log)
 	var relay agent.LinkRelay
 	if env.relay != nil {
@@ -509,11 +509,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	})
 	svc := agent.NewService(agent.Deps{
 		Name:          a.Name,
-		Reader:        agentdb.NewReader(budgeted, limits, time.Now),
 		Store:         store,
-		Reads:         store,
-		Approvals:     store,
-		Reverts:       store,
 		PagesBase:     env.pagesBase,
 		LinkBudget:    env.cfg.LinkBudgetOrDefault(),
 		Commands:      cmds,
@@ -537,8 +533,8 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		Receipts:     env.receipts,
 		Finisher:     finisher,
 		PII:          observer.On(pool),
-		Catalog:      agentdb.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database),
-		Columns:      agentdb.NewColumnOrder(budgeted),
+		Catalog:      postgres.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database),
+		Columns:      postgres.NewColumnOrder(budgeted),
 		Classes:      classes.On(pool),
 	})
 	return agentRuntime{
@@ -586,7 +582,7 @@ func agentInfo(svc *agent.Service, conn pgconn.Config) person.AgentInfo {
 // that is missing or misses a breaking migration, or a database the engine
 // cannot reach, does not stop the engine: the agent gets status and its
 // problems, and the guard is read again on each call.
-func logGuard(ctx context.Context, probe agent.DBProbe, log *slog.Logger) {
+func logGuard(ctx context.Context, probe agent.Probe, log *slog.Logger) {
 	st, err := probe.GuardStatus(ctx)
 	switch {
 	case err != nil:

@@ -10,10 +10,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 // pgWiring is what pgService builds the service from; a pgOption changes it.
@@ -22,7 +22,7 @@ type pgWiring struct {
 	conns    int32
 	poolCfg  func(*pgxpool.Config)
 	budgeted bool
-	returned agentdb.ReturnedFunc
+	returned postgres.ReturnedFunc
 	deps     []func(*agent.Deps, *pgxpool.Pool)
 }
 
@@ -42,7 +42,7 @@ func withPoolConfig(f func(*pgxpool.Config)) pgOption { return func(w *pgWiring)
 func withBudget() pgOption { return func(w *pgWiring) { w.budgeted = true } }
 
 // withReturned sets the store's hook for the values a call returned.
-func withReturned(f agentdb.ReturnedFunc) pgOption { return func(w *pgWiring) { w.returned = f } }
+func withReturned(f postgres.ReturnedFunc) pgOption { return func(w *pgWiring) { w.returned = f } }
 
 // withDeps changes the service's dependencies after the Postgres ones are
 // filled in, to add optional ones or to wrap a store. It also gets the pool,
@@ -55,8 +55,8 @@ func withDeps(f func(*agent.Deps, *pgxpool.Pool)) pgOption {
 type pgEnv struct {
 	Svc    *agent.Service
 	Pool   *pgxpool.Pool
-	Store  *agentdb.Store
-	Reader *agentdb.Reader
+	Store  *postgres.Store
+	Reader *postgres.Reader
 }
 
 // pgService builds an agent service the way the engine does for one agent
@@ -72,7 +72,7 @@ func pgService(t *testing.T, url string, opts ...pgOption) pgEnv {
 	var pool *pgxpool.Pool
 	if w.poolCfg == nil {
 		var err error
-		pool, err = agentdb.NewPool(context.Background(), url, w.conns)
+		pool, err = postgres.NewPool(context.Background(), url, w.conns)
 		require.NoError(t, err)
 	} else {
 		cfg, err := pgdial.PoolConfig(url)
@@ -87,13 +87,13 @@ func pgService(t *testing.T, url string, opts ...pgOption) pgEnv {
 	if w.budgeted {
 		db = resultsize.Budgeted(pool)
 	}
-	store := agentdb.NewStore(db, w.limits, time.Now)
+	store := postgres.NewStore(db, w.limits, time.Now)
 	if w.returned != nil {
 		store = store.WithReturned(w.returned)
 	}
-	reader := agentdb.NewReader(db, w.limits, time.Now)
+	reader := postgres.NewReader(db, w.limits, time.Now)
 	d := agent.Deps{
-		Name: "bot", Reader: reader, Store: store, Reads: store, Approvals: store, Reverts: store,
+		Name: "bot", Store: store,
 		Log: slog.New(slog.DiscardHandler), Now: time.Now,
 	}
 	for _, f := range w.deps {

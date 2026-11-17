@@ -370,7 +370,8 @@ func (s *session) copyAnswers(ctx context.Context, out *lineWriter) {
 		}
 		if hello, known, ok := mcp.HelloAnswer(sc.Bytes()); ok {
 			if known && s.engineTooOld(hello) {
-				s.markReady()
+				// Not ready yet: the deferred abandon marks the session ended
+				// first, then releases forward, which then finds it ended.
 				s.conn.Close()
 				return
 			}
@@ -432,21 +433,27 @@ func refuse(out io.Writer, line []byte, refusal string) error {
 	return mcp.WriteError(out, req.ID, mcp.ErrCodeServer, refusal)
 }
 
-// forward hands line to the engine and reports whether the session took
-// it: false when the session has ended or the write failed, and the caller
-// answers it some other way.
 func (s *session) markReady() { s.readyOnce.Do(func() { close(s.ready) }) }
 
 // helloWait is how long the first request waits for the engine's answer to
 // the hello; an engine that stays silent is served as if it had answered.
 const helloWait = 3 * time.Second
 
+// forward hands line to the engine and reports whether the session took
+// it: false when the session has ended or the write failed, and the caller
+// answers it some other way.
 func (s *session) forward(line []byte) bool {
 	// No request reaches the engine before its version is known, so an
 	// engine that is too old never runs one.
 	select {
 	case <-s.ready:
-	case <-time.After(helloWait):
+	default:
+		t := time.NewTimer(helloWait)
+		select {
+		case <-s.ready:
+		case <-t.C:
+		}
+		t.Stop()
 	}
 	key := messageID(line)
 	s.mu.Lock()

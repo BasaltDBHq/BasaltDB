@@ -32,6 +32,24 @@ grep 'basaltdb_0.0.1-alpha.2_linux_amd64.tar.gz$' SHA256SUMS | sha256sum -c -
 tar -xzf basaltdb_0.0.1-alpha.2_linux_amd64.tar.gz
 ```
 
+#### Check the signature
+
+Releases after `v0.0.1-alpha.2` also carry `SHA256SUMS.sigstore.json`, a [Sigstore](https://www.sigstore.dev/) signature of `SHA256SUMS`. The release workflow signs it with no long-lived key: [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) gets a short-lived certificate for the workflow's GitHub identity, and the signature is recorded in the public Rekor transparency log. A valid signature proves that `SHA256SUMS` came from this repository's release workflow, run for that tag. Since `SHA256SUMS` lists every archive, package and `portal.sha256`, checking the archive against it (above) then covers the archive too.
+
+With `cosign` 2.4 or later installed (the bundle is in the Sigstore bundle format), check the signature before you check the archive:
+
+```sh
+TAG=v0.0.1-alpha.3   # the release you downloaded
+curl -fsSL -O "https://github.com/BasaltDBHq/BasaltDB/releases/download/$TAG/SHA256SUMS"
+curl -fsSL -O "https://github.com/BasaltDBHq/BasaltDB/releases/download/$TAG/SHA256SUMS.sigstore.json"
+cosign verify-blob SHA256SUMS \
+  --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity "https://github.com/BasaltDBHq/BasaltDB/.github/workflows/release.yml@refs/tags/$TAG" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+It prints `Verified OK`. Anything else means the file was not signed by that workflow for that tag: do not use the download.
+
 ### Build from source
 
 You need Go 1.26 or newer, and `git`. Then put `basalt` on your `PATH`.
@@ -85,6 +103,8 @@ When an agent hits its cap, `basalt status` reports `TOO_MANY_CONNECTIONS` with 
 To guard your own tables instead, use them in step 4 in place of `basalt_demo.leads` and `basalt_demo.lead_notes`.
 
 ## 4. Install the guard: `basalt init`
+
+You run this step yourself, in your own terminal: it asks for the admin connection string. An agent never runs it. If an agent is setting up Basalt for you, it uses `basalt init --remote` and gives you a setup code instead ([bot-setup.md](bot-setup.md)).
 
 ```sh
 basalt init --agent demo_bot \
@@ -186,6 +206,19 @@ If the engine is stopped, these commands say so and print the command that start
 - The agent can run these commands too. It still cannot approve a held write or sign a revert, because both need your passkey.
 
 To keep the agent off the person socket, run it as its own OS user: `basalt init --os-user <user>`.
+
+## Upgrade
+
+Upgrade the binary the way you installed it (`brew upgrade basaltdbhq/tap/basaltdb`, or install the new release archive over the old one), then restart the engine so it runs the new binary:
+
+- With the service: `sudo systemctl restart basalt-engine` on Linux, `sudo launchctl kickstart -k system/dev.basaltdb.engine` on macOS.
+- Without a service (a bot machine, a container): stop the `basalt engine` process and start it again with the same command.
+
+You do not restart your agent's MCP client. `basalt mcp`, the process the client started, only relays to the engine and keeps running; it waits up to 15 seconds for the engine to come back. A read the engine was answering when it stopped (`query`, `describe`, `list_pending`, `list_runs`, `run_history`, `status`) is sent once more to the new engine. A `write`, an approval or a revert is never sent twice: the agent is told the call may or may not have run, and it reads before it writes again.
+
+Then, if `basalt status --agent NAME` says the guard can be upgraded, run `basalt upgrade --agent NAME`; the engine serves again without a restart.
+
+How the pieces talk, for reference: the client starts `basalt mcp` over stdio; it dials the engine's Unix socket for that agent and forwards each message. The engine holds the credential and talks to Postgres. When the engine is down, `basalt mcp` answers `status` and the tool list itself and every other call with `ENGINE_UNREACHABLE`.
 
 ## Containers without systemd
 

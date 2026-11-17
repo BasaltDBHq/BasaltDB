@@ -7,6 +7,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -21,6 +22,8 @@ var (
 	noticeAt   = time.Date(2026, 11, 14, 9, 30, 0, 0, time.UTC)
 	noticeHash = bytes.Repeat([]byte{0xab}, 32)
 	hashHex    = strings.Repeat("ab", 32)
+	// testInstall is the install the notices are about.
+	testInstall = uuid.MustParse("0193a1b2-c3d4-4e5f-8a6b-7c8d9e0f1a2b")
 )
 
 func report(agent string, seq int64, more int) guard.ReinstallReport {
@@ -31,7 +34,7 @@ func TestReinstallNoticeWording(t *testing.T) {
 	t.Parallel()
 	installed := noticeAt.Add(-time.Hour)
 	r := guard.Reinstall{
-		Install: 9, InstalledAt: &installed, InstalledBy: "postgres", VaultUser: "alice@example.com",
+		Install: testInstall, InstalledAt: &installed, InstalledBy: "postgres", VaultUser: "alice@example.com",
 		Reports:    []guard.ReinstallReport{report("basalt_agent_bot", 42, 0), report("basalt_agent_two", 40, 2), report("basalt_agent_three", 41, 0)},
 		MoreAgents: 4,
 	}
@@ -50,7 +53,7 @@ func TestReinstallNoticeWording(t *testing.T) {
 
 func TestReinstallNoticeWithoutAnInstallRecord(t *testing.T) {
 	t.Parallel()
-	r := guard.Reinstall{Install: 9, Reports: []guard.ReinstallReport{report("basalt_agent_bot", 7, 0)}}
+	r := guard.Reinstall{Install: testInstall, Reports: []guard.ReinstallReport{report("basalt_agent_bot", 7, 0)}}
 	require.Equal(t, []string{
 		"This database's ledger was recreated or restored outside basalt init (no install record), first reported 2026-11-14T09:30:00Z. " +
 			"Previous ledger ended at entry 7 (hash " + hashHex + "), as reported with the credential of basalt_agent_bot. " +
@@ -60,7 +63,7 @@ func TestReinstallNoticeWithoutAnInstallRecord(t *testing.T) {
 
 func TestReinstallNoticesCountEarlierOnes(t *testing.T) {
 	t.Parallel()
-	one := guard.Reinstall{Install: 9, Reports: []guard.ReinstallReport{report("bot", 7, 0)}}
+	one := guard.Reinstall{Install: testInstall, Reports: []guard.ReinstallReport{report("bot", 7, 0)}}
 	lines := ledger.ReinstallNotices(guard.Reinstalls{List: []guard.Reinstall{one, one, one}, Earlier: 2})
 	require.Len(t, lines, 4)
 	require.Equal(t, "and 2 earlier reinstalls", lines[3])
@@ -74,7 +77,7 @@ func TestReinstallPersonMessage(t *testing.T) {
 
 	installed := noticeAt
 	r := guard.Reinstall{
-		Install: 9, InstalledAt: &installed, InstalledBy: "postgres", VaultUser: strings.Repeat("v", 100),
+		Install: testInstall, InstalledAt: &installed, InstalledBy: "postgres", VaultUser: strings.Repeat("v", 100),
 		Reports: []guard.ReinstallReport{report("bot", 7, 0), report("other", 8, 0)},
 	}
 	msg, ok := ledger.ReinstallPersonMessage(guard.Reinstalls{List: []guard.Reinstall{r}}, personMessageLimit)
@@ -100,7 +103,7 @@ func withVaultUser(r guard.Reinstall, v string) guard.Reinstall {
 // person's terminal.
 func TestReinstallNoticeReplacesControlCharacters(t *testing.T) {
 	t.Parallel()
-	r := guard.Reinstall{Install: 9, Reports: []guard.ReinstallReport{report("bot\x1b[2J\nfake", 7, 0)}}
+	r := guard.Reinstall{Install: testInstall, Reports: []guard.ReinstallReport{report("bot\x1b[2J\nfake", 7, 0)}}
 	line := ledger.ReinstallNotice(r)[0]
 	require.NotContains(t, line, "\x1b")
 	require.NotContains(t, line, "\n")

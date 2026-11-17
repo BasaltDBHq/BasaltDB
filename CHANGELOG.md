@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `basalt log` and the engine no longer report "ledger chain broken" on a new, untouched ledger after the database was recreated the same way, for example after removing the Postgres container and running the quickstart again. The guard now identifies each install by a random id instead of the schema's oid, which repeats in a cluster made the same way. An old pin is reported as a reinstall with its notice instead.
+
+### Changed
+
+- The guard's schema moves to version 2, a breaking upgrade: run `basalt upgrade --agent NAME` once after updating the binary. Until then the engine serves only `status`, with the upgrade steps.
+- Upgrading no longer needs your agent's MCP client restarted: `basalt mcp` waits up to 15 seconds for a restarted engine and sends a read the engine dropped once more. Writes, approvals and reverts are never sent twice.
+- When `basalt` runs under an agent (Claude Code, Codex, Gemini CLI, Cursor's agent, OpenCode, or `BASALT_AGENT_CONTEXT` set), every command that needs the database admin connection string refuses before reading it, and tells the agent to make a setup code with `basalt init --remote` or to give the person the command. An admin connection string in `BASALT_ADMIN_DATABASE_URL` there is not used, and `basalt` says to change that password.
+- `basalt init --help` shows only the setup-code path when an agent reads it, `basalt --help` ends with the rule for agents, and the MCP instructions tell the agent never to ask for or accept the admin password.
+
 ## [0.0.1-alpha.2] - 2026-11-15
 
 ### Fixed

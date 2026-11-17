@@ -443,4 +443,10 @@ CREATE TABLE basalt_meta.installs (
     installed_by name        NOT NULL,
     vault_user   text
 );
-{{record_install_row}}
+
+INSERT INTO basalt_meta.installs (install, installed_at, installed_by, vault_user)
+SELECT n.oid, pg_catalog.clock_timestamp(), session_user,
+       NULLIF(pg_catalog.current_setting('basalt.vault_user', true), '')
+  FROM pg_catalog.pg_namespace n
+ WHERE n.nspname = 'basalt_meta'
+ON CONFLICT (install) DO NOTHING;

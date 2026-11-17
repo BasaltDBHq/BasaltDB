@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,50 +33,151 @@ type DB struct {
 	// URL is the admin connection string of this database.
 	URL   string
 	Admin *pgx.Conn
+	// base is the test server's admin connection string, name this
+	// database's name, and template the database Recreate copies (empty
+	// for New).
+	base, name, template string
 }
 
 // New creates a database bt_<rand> and the prefix bt<rand>. Cleanup drops
 // the database and every role with the prefix. Skips without EnvURL.
 func New(t *testing.T) *DB {
 	t.Helper()
+	return newDB(t, testBase(t), randomHex(t), "")
+}
+
+// NewRecreatable is New for a database that Recreate can drop and create
+// again, as a person does who removes a Postgres container and starts a
+// new one from the same image: same database name, same roles, and
+// basalt_meta at the same schema oid. Postgres hands out the same oids in
+// two clusters made the same way; within one server, a template that
+// holds the (empty) basalt_meta schema, owned by the guard role, gives
+// every copy that oid.
+func NewRecreatable(t *testing.T) *DB {
+	t.Helper()
+	base := testBase(t)
+	suffix := randomHex(t)
+	names := guard.Names{Prefix: "bt" + suffix}
+	tpl := "bt_" + suffix + "_tpl"
+	ctx := context.Background()
+	server, err := pgdial.Connect(ctx, base)
+	require.NoError(t, err)
+	// Plain SQL: test fixture DDL on generated names.
+	_, err = server.Exec(ctx, "CREATE DATABASE "+tpl)
+	require.NoError(t, err)
+	_ = server.Close(ctx)
+	c, err := pgdial.Connect(ctx, dbURL(t, base, tpl))
+	require.NoError(t, err)
+	guardRole := pgx.Identifier{names.Guard()}.Sanitize()
+	_, err = c.Exec(ctx, "CREATE ROLE "+guardRole+" NOLOGIN")
+	require.NoError(t, err)
+	_, err = c.Exec(ctx, "CREATE SCHEMA basalt_meta AUTHORIZATION "+guardRole)
+	require.NoError(t, err)
+	_ = c.Close(ctx)
+
+	d := newDB(t, base, suffix, tpl)
+	// Registered after newDB's cleanup, so it runs first: the template's
+	// schema is owned by the guard role, which is dropped after it.
+	t.Cleanup(func() { dropDatabase(t, base, tpl) })
+	return d
+}
+
+// Recreate drops the database and creates it again from its template:
+// the guard and the app tables are gone, the roles stay, and a new
+// install puts basalt_meta at the same schema oid. Connections to the old
+// database are closed. Only for a DB from NewRecreatable.
+func (d *DB) Recreate(t *testing.T) {
+	t.Helper()
+	require.NotEmpty(t, d.template, "Recreate needs a DB from NewRecreatable")
+	before := d.schemaOID(t)
+	_ = d.Admin.Close(context.Background())
+	dropDatabase(t, d.base, d.name)
+	createDatabase(t, d.base, d.name, d.template)
+	d.Admin = d.connect(t, d.URL)
+	require.Equal(t, before, d.schemaOID(t), "the recreated basalt_meta has the old schema oid, or the test proves nothing")
+}
+
+// schemaOID is the oid of the basalt_meta schema.
+func (d *DB) schemaOID(t *testing.T) uint32 {
+	t.Helper()
+	var oid uint32
+	// Plain SQL: a catalog read for a fixture check.
+	require.NoError(t, d.Admin.QueryRow(context.Background(),
+		`SELECT n.oid FROM pg_catalog.pg_namespace n WHERE n.nspname = 'basalt_meta'`).Scan(&oid))
+	return oid
+}
+
+func testBase(t *testing.T) string {
+	t.Helper()
 	base := os.Getenv(EnvURL)
 	if base == "" {
 		t.Skip(EnvURL + " not set")
 	}
-	ctx := context.Background()
-	suffix := randomHex(t)
-	dbName := "bt_" + suffix
-	prefix := "bt" + suffix
+	return base
+}
 
+func dbURL(t *testing.T, base, name string) string {
+	t.Helper()
+	u, err := url.Parse(base)
+	require.NoError(t, err)
+	u.Path = "/" + name
+	return u.String()
+}
+
+// createDatabase creates name, from template when one is given.
+func createDatabase(t *testing.T, base, name, template string) {
+	t.Helper()
+	ctx := context.Background()
 	server, err := pgdial.Connect(ctx, base)
 	require.NoError(t, err)
+	defer server.Close(ctx)
+	create := "CREATE DATABASE " + name
+	if template != "" {
+		create += " TEMPLATE " + template
+	}
 	// Plain SQL: test fixture DDL on a generated name.
-	_, err = server.Exec(ctx, "CREATE DATABASE "+dbName)
+	_, err = server.Exec(ctx, create)
 	require.NoError(t, err)
 	// Tests assert timestamps as Postgres prints them, so the database
 	// prints in UTC whatever TimeZone the test server was initialized with.
-	_, err = server.Exec(ctx, "ALTER DATABASE "+dbName+" SET TimeZone TO 'UTC'")
+	_, err = server.Exec(ctx, "ALTER DATABASE "+name+" SET TimeZone TO 'UTC'")
 	require.NoError(t, err)
-	_ = server.Close(ctx)
+}
 
-	u, err := url.Parse(base)
-	require.NoError(t, err)
-	u.Path = "/" + dbName
-	d := &DB{Names: guard.Names{Prefix: prefix}, URL: u.String()}
+func dropDatabase(t *testing.T, base, name string) {
+	t.Helper()
+	ctx := context.Background()
+	server, err := pgdial.Connect(ctx, base)
+	if err != nil {
+		t.Errorf("drop database connect: %v", err)
+		return
+	}
+	defer server.Close(ctx)
+	if _, err := server.Exec(ctx, "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)"); err != nil {
+		t.Errorf("drop database %s: %v", name, err)
+	}
+}
+
+// newDB creates the database bt_<suffix> (from template when given) and
+// the prefix bt<suffix>, and drops both on cleanup.
+func newDB(t *testing.T, base, suffix, template string) *DB {
+	t.Helper()
+	dbName := "bt_" + suffix
+	prefix := "bt" + suffix
+	createDatabase(t, base, dbName, template)
+	d := &DB{Names: guard.Names{Prefix: prefix}, URL: dbURL(t, base, dbName), base: base, name: dbName, template: template}
 	d.Admin = d.connect(t, d.URL)
 
 	t.Cleanup(func() {
 		ctx := context.Background()
 		_ = d.Admin.Close(ctx)
+		dropDatabase(t, base, dbName)
 		server, err := pgdial.Connect(ctx, base)
 		if err != nil {
 			t.Errorf("cleanup connect: %v", err)
 			return
 		}
 		defer server.Close(ctx)
-		if _, err := server.Exec(ctx, "DROP DATABASE IF EXISTS "+dbName+" WITH (FORCE)"); err != nil {
-			t.Errorf("cleanup drop database: %v", err)
-		}
 		// Agent roles first: they are members of the group.
 		rows, err := server.Query(ctx, `SELECT rolname::text FROM pg_roles WHERE rolname LIKE $1
 			ORDER BY (rolname LIKE $2) DESC, rolname`, prefix+`\_%`, prefix+`\_agent\_%`)
@@ -171,6 +273,20 @@ func WithMigrations(t *testing.T, ms ...guard.TestMigration) {
 	t.Helper()
 	t.Setenv(envTestMigrations, strconv.Itoa(len(ms)))
 	t.Cleanup(guard.AppendTestMigrations(ms...))
+}
+
+// UpToVersion installs only the build's versions up to v until the
+// returned restore runs (guard.KeepTestMigrationsUpTo), so a test installs
+// a guard as an earlier release did and upgrades it after restore. Like
+// WithMigrations, t must not run in parallel; restore also runs at cleanup.
+func UpToVersion(t *testing.T, v int) (restore func()) {
+	t.Helper()
+	t.Setenv(envTestMigrations, "0")
+	var once sync.Once
+	r := guard.KeepTestMigrationsUpTo(v)
+	restore = func() { once.Do(r) }
+	t.Cleanup(restore)
+	return restore
 }
 
 // NextVersion appends one test-only version after the build's own (see

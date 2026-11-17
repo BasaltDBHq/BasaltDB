@@ -20,6 +20,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 )
 
@@ -36,10 +38,10 @@ var namePattern = regexp.MustCompile(`^[a-z0-9_]{1,64}$`)
 var ErrInvalidName = errors.New("invalid pin name")
 
 // Pin is a verified chain head and the install of the guard it belongs to
-// (guard.InstallID; 0 for a pin saved before installs were told apart).
+// (guard.InstallID; uuid.Nil for a pin saved before install ids).
 type Pin struct {
 	Head    guard.ChainHead
-	Install uint32
+	Install uuid.UUID
 	// SetAside are the pins this witness set aside after a reinstall and
 	// reported in the ledger, kept so the notice stays whatever happens to
 	// the ledger rows (CONTRACT.md, Version 36, step 4).
@@ -61,14 +63,16 @@ func (p Pin) Kept(s guard.SetAside) Pin {
 
 // Of reports whether p belongs to install: a pin of another install is of a
 // ledger that no longer exists, and is set aside, not checked. A pin with
-// no install is taken as this one's.
-func (p Pin) Of(install uint32) bool { return p.Install == 0 || p.Install == install }
+// no install (saved before install ids, when a schema oid named the
+// install and could repeat in another cluster) is taken as another
+// install's, so it is moved or reported, never checked as this one's.
+func (p Pin) Of(install uuid.UUID) bool { return p.Install != uuid.Nil && p.Install == install }
 
 // pinFile is the file format: the head as JSON, hashes in hex.
 type pinFile struct {
 	Seq      int64          `json:"seq"`
 	Hash     string         `json:"hash"`
-	Install  uint32         `json:"install,omitempty"`
+	Install  uuid.UUID      `json:"installId"`
 	SetAside []setAsideFile `json:"setAside,omitempty"`
 }
 
@@ -76,8 +80,8 @@ type pinFile struct {
 type setAsideFile struct {
 	PinnedSeq     int64     `json:"pinnedSeq"`
 	PinnedHash    string    `json:"pinnedHash"`
-	PinnedInstall uint32    `json:"pinnedInstall"`
-	Install       uint32    `json:"install"`
+	PinnedInstall uuid.UUID `json:"pinnedInstallId"`
+	Install       uuid.UUID `json:"installId"`
 	At            time.Time `json:"at"`
 }
 

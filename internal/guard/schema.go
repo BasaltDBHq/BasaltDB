@@ -33,15 +33,42 @@ type migration struct {
 
 // basalt_meta versions, in order.
 const (
-	// versionGuard is the whole guard: every file of schema/.
+	// versionGuard is the whole guard as first released: schema/001 to 011.
 	versionGuard = iota + 1
+	// versionInstallIDs identifies an install by a random id instead of
+	// the basalt_meta schema oid: schema/012.
+	versionInstallIDs
 )
 
-// migrations lists every version in order. A new version appends its own
-// schema files after the last and its entry here; version 1 then stays the
-// files it has now.
-var migrations = []migration{
-	{version: versionGuard, sql: strings.Join(schema, "")},
+// versionFiles is how many schema files each version runs, in version
+// order: a new version appends its own schema files after the last and its
+// count here, and every earlier version keeps the files it has.
+var versionFiles = []int{versionGuard: guardFiles, versionInstallIDs: 1}
+
+// guardFiles is how many schema files version 1 has: 001 to 011.
+const guardFiles = 11
+
+// migrations lists every version in order.
+var migrations = mustSplitMigrations(schema, versionFiles)
+
+// mustSplitMigrations groups the schema files into versions by count. A
+// count that does not match the files is a broken build, so it panics
+// (TestSchemaFiles covers it).
+func mustSplitMigrations(files []string, counts []int) []migration {
+	out := make([]migration, 0, len(counts))
+	next := 0
+	for v := versionGuard; v < len(counts); v++ {
+		end := next + counts[v]
+		if end > len(files) {
+			panic(fmt.Sprintf("schema: version %d needs %d files, %d left", v, counts[v], len(files)-next))
+		}
+		out = append(out, migration{version: v, sql: strings.Join(files[next:end], "")})
+		next = end
+	}
+	if next != len(files) {
+		panic(fmt.Sprintf("schema: %d files belong to no version", len(files)-next))
+	}
+	return out
 }
 
 // LatestVersion is the basalt_meta version this build installs.
@@ -62,6 +89,15 @@ REVOKE ALL ON basalt_meta.schema_version FROM PUBLIC;
 // basalt.vault_user is the Vault user the install ran for, set by the
 // Vault's install path; null otherwise.
 const recordInstallRow = `
+INSERT INTO basalt_meta.installs (id, install, installed_at, installed_by, vault_user)
+VALUES (true, pg_catalog.gen_random_uuid(), pg_catalog.clock_timestamp(), session_user,
+        NULLIF(pg_catalog.current_setting('basalt.vault_user', true), ''))
+ON CONFLICT (id) DO NOTHING;
+`
+
+// recordInstallRowV1 is version 1's statement (schema/001, where it is
+// written out as it shipped): installs keyed by the basalt_meta schema oid.
+const recordInstallRowV1 = `
 INSERT INTO basalt_meta.installs (install, installed_at, installed_by, vault_user)
 SELECT n.oid, pg_catalog.clock_timestamp(), session_user,
        NULLIF(pg_catalog.current_setting('basalt.vault_user', true), '')
@@ -70,14 +106,22 @@ SELECT n.oid, pg_catalog.clock_timestamp(), session_user,
 ON CONFLICT (install) DO NOTHING;
 `
 
-// recordInstall is recordInstallRow as its own init step, after the
-// migrations: it runs as the owner, which alone may write installs.
-const recordInstall = `
+// recordInstall is the install row statement of version v, the version the
+// guard is at after the migrations, as its own init step: it runs as the
+// owner, which alone may write installs. An install that stops at version
+// 1 (Options.UpTo) still has version 1's installs table.
+func recordInstall(v int) string {
+	row := recordInstallRow
+	if v < versionInstallIDs {
+		row = recordInstallRowV1
+	}
+	return `
 SET LOCAL ROLE {{guard}};
 SET LOCAL search_path = pg_catalog, pg_temp;
-` + recordInstallRow + `
+` + row + `
 RESET search_path;
 RESET ROLE;`
+}
 
 // The schema files: schema/NNN_name.sql, NNN a zero-padded sequence, so
 // the directory lists in the order the files run. Each file starts with a
@@ -86,8 +130,9 @@ RESET ROLE;`
 // line's newline on, so the header is documentation only and never runs.
 //
 // recordInstallLine is the one line the loader replaces: the file that
-// creates basalt_meta.installs writes the current install's row with the
-// same statement recordInstall runs, so that statement lives here once.
+// gives basalt_meta.installs its current shape (schema/012) writes the
+// current install's row with the same statement recordInstall runs, so
+// that statement lives here once.
 const recordInstallLine = "{{record_install_row}}\n"
 
 //go:embed schema/*.sql

@@ -134,7 +134,7 @@ func agentConfigURL(c *cliIO, agent, configPath string) (string, error) {
 			return cfg.credential(a.CredentialFile)
 		}
 	}
-	return "", fmt.Errorf("agent %q is not in %s; run basalt init --agent %s", agent, configPath, agent)
+	return "", errAgentNotInConfig(agent, configPath)
 }
 
 // checkHealth verifies the chain from the head this user last verified on
@@ -162,7 +162,7 @@ func checkHealth(c *cliIO, l *agentLedger, full bool) (ledger.Health, error) {
 	}
 	switch {
 	case h.PinMoved:
-		fprintSafef(c.stderr, "warning: the guard's schema was dropped and restored with the same ledger (guard install %d is now %d); the ledger pin moved to the new install\n",
+		fprintSafef(c.stderr, "warning: the guard was installed again over the same ledger (guard install %s is now %s); the ledger pin moved to the new install\n",
 			pin.Install, h.Install)
 	case h.PinSetAside:
 		pin = pin.Kept(guard.SetAside{

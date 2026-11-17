@@ -203,7 +203,7 @@ func sampleReinstalls() guard.Reinstalls {
 	installed := statusNow.Add(-time.Hour)
 	hash := make([]byte, 32)
 	return guard.Reinstalls{List: []guard.Reinstall{{
-		Install: 16999, InstalledAt: &installed, InstalledBy: "postgres",
+		Install: uuid.MustParse("0193a1b2-c3d4-4e5f-8a6b-7c8d9e0f1a2b"), InstalledAt: &installed, InstalledBy: "postgres",
 		Reports: []guard.ReinstallReport{
 			{Agent: "basalt_agent_bot", At: statusNow, PinnedSeq: 42, PinnedHash: hash},
 			{Agent: "basalt_agent_other", At: statusNow, PinnedSeq: 40, PinnedHash: hash},

@@ -258,7 +258,7 @@ func statusAgent(cfg config.Config, name, path string) (config.Agent, error) {
 	if name == "" {
 		return config.Agent{}, fmt.Errorf("%w: %s has agents %s; give --agent NAME", errUsage, path, strings.Join(names, ", "))
 	}
-	return config.Agent{}, fmt.Errorf("agent %q is not in %s; run basalt init --agent %s", name, path, name)
+	return config.Agent{}, errAgentNotInConfig(name, path)
 }
 
 // runningEngine reads the engine's lock file: held while it runs, with its

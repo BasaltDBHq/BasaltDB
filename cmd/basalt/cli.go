@@ -152,8 +152,12 @@ func (c *cliIO) line() (string, error) {
 }
 
 // adminURL takes the admin connection string from the environment or a
-// hidden prompt. It is used for this command only and never written.
+// hidden prompt. It is used for this command only and never written. Under
+// an agent it reads neither and refuses (agentContextError).
 func (c *cliIO) adminURL() (string, error) {
+	if err := c.agentContextError("This basalt command", hintAgentPerson); err != nil {
+		return "", err
+	}
 	if v := c.getenv(envAdminURL); v != "" {
 		return v, nil
 	}

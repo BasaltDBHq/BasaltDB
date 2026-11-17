@@ -2,8 +2,10 @@ package guard
 
 import (
 	"context"
+	"errors"
 
 	sq "github.com/Masterminds/squirrel"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -33,21 +35,29 @@ type Uncovered struct {
 	Why   string
 }
 
-// InstallID identifies this install of the guard: the oid of the
-// basalt_meta schema, which a new install (after basalt uninstall, or DROP
-// SCHEMA) gets anew. A chain pin carries it, so a pin of an earlier install
-// is set aside instead of checked against a new ledger.
-func InstallID(ctx context.Context, q Querier) (uint32, error) {
-	sql, args, err := psql.Select("n.oid").From("pg_catalog.pg_namespace n").
-		Where(sq.Eq{"n.nspname": "basalt_meta"}).ToSql()
+// ErrNoInstall is InstallID's error when basalt_meta has no install row:
+// it was recreated outside the install, or the row deleted. basalt init
+// writes a new one, a new install.
+var ErrNoInstall = errors.New("basalt_meta has no install record; run basalt init again with the admin connection string")
+
+// InstallID identifies this install of the guard: the random id the
+// install wrote (basalt_meta.install_id), which no other install has, a new
+// install after basalt uninstall or DROP SCHEMA included, and which a copy
+// of basalt_meta keeps. A chain pin carries it, so a pin of an earlier
+// install is set aside instead of checked against a new ledger.
+func InstallID(ctx context.Context, q Querier) (uuid.UUID, error) {
+	sql, args, err := psql.Select("basalt_meta.install_id()").ToSql()
 	if err != nil {
-		return 0, err
+		return uuid.Nil, err
 	}
-	var id uint32
+	var id uuid.NullUUID
 	if err := q.QueryRow(ctx, sql, args...).Scan(&id); err != nil {
-		return 0, err
+		return uuid.Nil, err
 	}
-	return id, nil
+	if !id.Valid {
+		return uuid.Nil, ErrNoInstall
+	}
+	return id.UUID, nil
 }
 
 // VerifyChain recomputes the ledger hash chain from its anchor (D8).

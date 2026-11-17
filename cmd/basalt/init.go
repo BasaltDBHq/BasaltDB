@@ -78,6 +78,13 @@ func runInit(c *cliIO, args []string) int {
 	if isSetupCode(args) {
 		return runInitSetupCode(c, args)
 	}
+	// Under an agent, init with the admin credential is refused before
+	// anything else, a usage error included: the agent makes a setup code.
+	if !helpAsked(args) {
+		if err := c.agentContextError("basalt init without --remote", hintAgentInit); err != nil {
+			return c.fail(err)
+		}
+	}
 	f, err := parseInit(c, args)
 	if err != nil {
 		return c.fail(err)
@@ -377,6 +384,10 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 	f.operatedBy = OperatedByPerson
 	fs.Var(&f.operatedBy, "operated-by", "who runs this engine's machine steps: person or agent (agent: you run init here, then hand the engine to a bot; the pages are the portal's)")
 	fs.Usage = func() {
+		if c.agentFacing() {
+			fmt.Fprint(c.stderr, agentInitUsage)
+			return
+		}
 		fmt.Fprint(c.stderr, "usage: basalt init --agent NAME [--write schema.table,...] [--read schema.table,...] [flags]\n"+
 			"       basalt init --remote [flags]            the engine's machine, for a bot that sets up with a code (see basalt init --remote -h)\n"+
 			"       basalt init --setup-code CODE [flags]   run the setup code an agent made (see basalt init --setup-code -h)\n\nflags:\n")

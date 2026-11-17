@@ -195,7 +195,7 @@ func TestListOpenApprovalsReadsAHeldWrite(t *testing.T) {
 	store := agentdb.NewStore(a.Conn, sqlguard.DefaultLimits(), time.Now)
 	lines, err := store.Preview(ctx, action.Intent(in), sql, []any{1}, nil)
 	require.NoError(t, err)
-	_, err = store.Hold(ctx, action.Intent(in), guard.HoldRequest{Statement: sql, Params: []any{1}, Lines: lines})
+	_, err = store.Hold(ctx, action.Intent(in), action.HoldRequest{Statement: sql, Params: []any{1}, Lines: lines})
 	require.NoError(t, err)
 	page, err := ledger.ListOpenApprovals(ctx, a.Conn, ledger.ApprovalListParams{Params: pagination.Params{Limit: 1}})
 	require.NoError(t, err)

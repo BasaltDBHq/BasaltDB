@@ -89,8 +89,9 @@ func (s *Store) RevealPreview(ctx context.Context, in action.Intent, op action.O
 }
 
 // Hold stores a held write for the person's approval.
-func (s *Store) Hold(ctx context.Context, in action.Intent, r guard.HoldRequest) (guard.Held, error) {
-	return guard.Hold(ctx, s.db, guardIntent(in), s.limits.StatementTimeout, r)
+func (s *Store) Hold(ctx context.Context, in action.Intent, r action.HoldRequest) (action.Held, error) {
+	h, err := guard.Hold(ctx, s.db, guardIntent(in), s.limits.StatementTimeout, guard.HoldRequest(r))
+	return action.Held(h), err
 }
 
 // TableColumns returns the columns an INSERT without a column list assigns:

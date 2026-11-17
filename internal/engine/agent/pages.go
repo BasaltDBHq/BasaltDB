@@ -9,8 +9,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/approval"
-	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
@@ -187,24 +187,24 @@ func (s *Service) RevertRequest(ctx context.Context, id uuid.UUID, secret string
 // RelayRevert applies the person's signed revert (apply_revert): Postgres
 // verifies the signature and runs the revert, or for a large plan records
 // it for the agent's batches.
-func (s *Service) RelayRevert(ctx context.Context, r revert.Response) (guard.AppliedRevert, Receipt, error) {
+func (s *Service) RelayRevert(ctx context.Context, r revert.Response) (action.AppliedRevert, Receipt, error) {
 	open, err := s.openRevert(ctx, r.RevertID, nil)
 	if err != nil {
-		return guard.AppliedRevert{}, Receipt{}, err
+		return action.AppliedRevert{}, Receipt{}, err
 	}
 	applied, err := s.Reverts.ApplyRevert(ctx, r.RevertID, r.Assertion())
 	if err != nil {
-		return guard.AppliedRevert{}, Receipt{}, s.applyRevertError(ctx, open, err)
+		return action.AppliedRevert{}, Receipt{}, s.applyRevertError(ctx, open, err)
 	}
 	// Postgres accepted the signature: the receipt names the revert as
 	// Postgres records it now.
 	signed, err := s.Reverts.FindRevert(ctx, r.RevertID)
 	if err != nil {
-		return guard.AppliedRevert{}, Receipt{}, err
+		return action.AppliedRevert{}, Receipt{}, err
 	}
 	receipt, err := s.revertReceipt(signed)
 	if err != nil {
-		return guard.AppliedRevert{}, Receipt{}, err
+		return action.AppliedRevert{}, Receipt{}, err
 	}
 	return applied, receipt, nil
 }

@@ -65,7 +65,7 @@ type revealEnv struct {
 	logs    *syncBuffer
 	held    uuid.UUID
 	lines   []string
-	revert  guard.PreparedRevert
+	revert  action.PreparedRevert
 }
 
 func newRevealEnv(t *testing.T) *revealEnv {
@@ -94,7 +94,7 @@ func newRevealEnv(t *testing.T) *revealEnv {
 		_, err = store.WriteApproved(ctx, action.Intent(done), id, action.OpDelete, `DELETE FROM public.leads WHERE id = $1`, []any{json.Number("5")})
 		require.NoError(t, err)
 	})
-	e.revert, err = store.PrepareRevert(ctx, guard.RevertScope{Kind: revert.ScopeRun, ID: done.RunID}, "Undo it", agent.RescopeTimeout)
+	e.revert, err = store.PrepareRevert(ctx, action.Scope{Kind: revert.ScopeRun, ID: done.RunID}, "Undo it", agent.RescopeTimeout)
 	require.NoError(t, err)
 
 	// The held write the page reveals.
@@ -118,7 +118,7 @@ func (e *revealEnv) hold(t *testing.T, store *agentdb.Store, in guard.Intent, id
 	stmt, params := `DELETE FROM public.leads WHERE id = $1`, []any{json.Number(strconv.Itoa(id))}
 	lines, err := store.Preview(ctx, action.Intent(in), stmt, params, []string{})
 	require.NoError(t, err)
-	held, err := store.Hold(ctx, action.Intent(in), guard.HoldRequest{Statement: stmt, Params: params, Assigned: []string{}, Lines: lines})
+	held, err := store.Hold(ctx, action.Intent(in), action.HoldRequest{Statement: stmt, Params: params, Assigned: []string{}, Lines: lines})
 	require.NoError(t, err)
 	if id == 20 {
 		e.lines = lines

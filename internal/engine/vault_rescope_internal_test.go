@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/channel"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/pages"
@@ -71,7 +72,7 @@ func TestVaultSessionWidensARevert(t *testing.T) {
 
 	pg := newPGAgent(t, bot.URL, 2)
 	dbStore := pg.store
-	prep, err := dbStore.PrepareRevert(ctx, guard.RevertScope{Kind: revert.ScopeTask, ID: task}, "Undo the task", agent.RescopeTimeout)
+	prep, err := dbStore.PrepareRevert(ctx, action.Scope{Kind: revert.ScopeTask, ID: task}, "Undo the task", agent.RescopeTimeout)
 	require.NoError(t, err)
 	id := prep.RevertID
 

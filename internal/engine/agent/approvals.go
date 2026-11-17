@@ -12,7 +12,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/approval"
-	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
@@ -26,7 +25,7 @@ import (
 // agent's own credential.
 type ApprovalStore interface {
 	Preview(ctx context.Context, in action.Intent, sql string, params []any, assigned []string) ([]string, error)
-	Hold(ctx context.Context, in action.Intent, r guard.HoldRequest) (guard.Held, error)
+	Hold(ctx context.Context, in action.Intent, r action.HoldRequest) (action.Held, error)
 	TableColumns(ctx context.Context, table string) ([]string, error)
 	WriteApproved(ctx context.Context, in action.Intent, approvalID uuid.UUID, op action.Op, sql string, params []any) (action.WriteResult, error)
 	SubmitApproval(ctx context.Context, id uuid.UUID, a passkey.Assertion) (time.Time, error)
@@ -129,7 +128,7 @@ func (s *Service) hold(ctx context.Context, in action.Intent, p WriteParams, stm
 	if te := holdTooLarge(lines, nil); te != nil {
 		return uuid.Nil, s.refused(ctx, in, action.Op(stmt.Op), p.SQL, p.Params, start, te)
 	}
-	held, err := s.Approvals.Hold(ctx, in, guard.HoldRequest{Statement: p.SQL, Params: p.Params, Assigned: assigned, Lines: lines})
+	held, err := s.Approvals.Hold(ctx, in, action.HoldRequest{Statement: p.SQL, Params: p.Params, Assigned: assigned, Lines: lines})
 	if err != nil {
 		if te := holdTooLarge(lines, err); te != nil {
 			return uuid.Nil, s.refused(ctx, in, action.Op(stmt.Op), p.SQL, p.Params, start, te)

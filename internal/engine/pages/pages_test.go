@@ -17,10 +17,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/pages"
-	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
@@ -101,8 +101,8 @@ func (a *stubAgent) RevealRevert(context.Context, uuid.UUID, string, agent.Revea
 	return approval.RevealAnswer{}, agent.ErrNotThisAgent
 }
 
-func (a *stubAgent) RelayRevert(context.Context, revert.Response) (guard.AppliedRevert, agent.Receipt, error) {
-	return guard.AppliedRevert{}, agent.Receipt{}, agent.ErrNotThisAgent
+func (a *stubAgent) RelayRevert(context.Context, revert.Response) (action.AppliedRevert, agent.Receipt, error) {
+	return action.AppliedRevert{}, agent.Receipt{}, agent.ErrNotThisAgent
 }
 
 // site is the pages behind the real listener policy on a loopback port, as

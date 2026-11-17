@@ -5,10 +5,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 )
@@ -19,10 +20,10 @@ import (
 func TestRevertStepsKeepTheFilters(t *testing.T) {
 	t.Parallel()
 	run := uuid.MustParse(caseRunID)
-	scope := guard.RevertScope{Kind: revert.ScopeTask, ID: run, Runs: []uuid.UUID{run}, Tables: []string{"public.leads", "public.lead_owner"}}
+	scope := action.Scope{Kind: revert.ScopeTask, ID: run, Runs: []uuid.UUID{run}, Tables: []string{"public.leads", "public.lead_owner"}}
 	require.Equal(t, map[string]any{"taskId": caseRunID, "runs": []string{caseRunID}, "tables": []string{"public.leads", "public.lead_owner"}},
 		scopeArgs(scope))
-	require.Equal(t, map[string]any{"runId": caseRunID}, scopeArgs(guard.RevertScope{Kind: revert.ScopeRun, ID: run}))
+	require.Equal(t, map[string]any{"runId": caseRunID}, scopeArgs(action.Scope{Kind: revert.ScopeRun, ID: run}))
 
 	msg, steps, err := serviceFor(t, "linux", "", nil).previewGuidance(RevertPreview{Scope: scope, Rows: 2})
 	require.NoError(t, err)

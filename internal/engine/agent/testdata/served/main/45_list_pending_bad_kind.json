@@ -1,0 +1,17 @@
+{
+  "body": {
+    "code": "INVALID_ARGUMENT",
+    "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
+    "message": "invalid arguments: Key: 'listPendingArgs.Kind' Error:Field validation for 'Kind' failed on the 'oneof' tag",
+    "nextSteps": [
+      {
+        "action": "REVISE_CALL",
+        "actor": "AGENT",
+        "text": "Fix the arguments as the message says; the tool's input schema lists them.",
+        "tool": "list_pending"
+      }
+    ]
+  },
+  "isError": true,
+  "tool": "list_pending"
+}

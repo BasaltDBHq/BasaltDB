@@ -1,0 +1,50 @@
+{
+  "body": {
+    "approval": {
+      "approvalId": "<id-5>",
+      "approvalUrl": "http://localhost:8787/approvals/<id-5>#<fragment>",
+      "approveCommand": "basalt approve --agent bot --config /etc/basalt-test/engine.json --open <id-5>",
+      "expiresAt": "<time>",
+      "headline": "Update 11 rows in public.leads",
+      "links": [
+        {
+          "label": "Approve the held write",
+          "url": "http://localhost:8787/approvals/<id-5>#<fragment>"
+        }
+      ],
+      "personMessage": "Held for your approval: Update 11 rows in public·leads.\nApprove it with your passkey here; the page then shows a code for the agent:\n\nhttp://localhost:8787/approvals/<id-5>#<fragment>\n\nOr run: basalt approve --agent bot --config /etc/basalt-test/engine.json --open <id-5>\nExpires <time>.",
+      "rows": 11
+    },
+    "code": "APPROVAL_REQUIRED",
+    "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
+    "links": [
+      {
+        "label": "Approve the held write",
+        "url": "http://localhost:8787/approvals/<id-5>#<fragment>"
+      }
+    ],
+    "message": "held for the person's approval: 11 rows. Show the person approval.personMessage verbatim, then, without ending your turn, call write once with the same arguments plus approvalId: it waits up to 90 seconds for their passkey and returns APPLIED as soon as they approve. If that call returns APPROVAL_REQUIRED again, its wait ran out: do not wait again, end your turn as its message says. If they give you an approval code, pass it as approval. It expires at <time>.",
+    "nextSteps": [
+      {
+        "action": "RUN_COMMAND",
+        "actor": "PERSON",
+        "command": "basalt approve --agent bot --config /etc/basalt-test/engine.json --open <id-5>",
+        "text": "Run this to open the approval page, then approve with your passkey."
+      },
+      {
+        "action": "CALL_TOOL",
+        "actor": "AGENT",
+        "arguments": {
+          "approvalId": "<id-5>"
+        },
+        "repeatCall": true,
+        "text": "In this turn, call write again with the same arguments plus approvalId: it waits up to 90 seconds for the approval.",
+        "tool": "write"
+      }
+    ],
+    "personMessage": "Held for your approval: Update 11 rows in public·leads.\nApprove it with your passkey here; the page then shows a code for the agent:\n\nhttp://localhost:8787/approvals/<id-5>#<fragment>\n\nOr run: basalt approve --agent bot --config /etc/basalt-test/engine.json --open <id-5>\nExpires <time>.",
+    "reason": "HELD_NO_PAGES"
+  },
+  "isError": true,
+  "tool": "write"
+}

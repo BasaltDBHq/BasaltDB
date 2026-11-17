@@ -1,0 +1,23 @@
+{
+  "body": {
+    "code": "STATEMENT_REFUSED",
+    "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
+    "message": "DDL_NOT_ALLOWED: DropStmt",
+    "nextSteps": [
+      {
+        "action": "STOP",
+        "actor": "AGENT",
+        "text": "Do not retry and do not look for another way to change the schema."
+      },
+      {
+        "action": "ASK_PERSON",
+        "actor": "AGENT",
+        "text": "Tell the person which schema change you need; they make it themselves."
+      }
+    ],
+    "personMessage": "The agent tried to change the database schema (DDL). Basalt never lets an agent do that. Make the change yourself if you want it.",
+    "reason": "DDL_NOT_ALLOWED"
+  },
+  "isError": true,
+  "tool": "query"
+}

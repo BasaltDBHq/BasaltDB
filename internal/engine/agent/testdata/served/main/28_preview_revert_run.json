@@ -1,0 +1,318 @@
+{
+  "body": {
+    "command": "basalt revert --agent bot --config /etc/basalt-test/engine.json --run <id-1> --open",
+    "items": [
+      {
+        "action": "RESTORE",
+        "cascaded": false,
+        "changeIds": [
+          "<id-22>"
+        ],
+        "key": {
+          "id": 21
+        },
+        "now": {
+          "id": 21,
+          "name": "lead 21",
+          "score": 0,
+          "status": "closed"
+        },
+        "op": "UPDATE",
+        "set": {
+          "id": 21,
+          "name": "lead 21",
+          "score": 0,
+          "status": "open"
+        },
+        "table": "public.leads"
+      },
+      {
+        "action": "RESTORE",
+        "cascaded": false,
+        "changeIds": [
+          "<id-22>"
+        ],
+        "key": {
+          "id": 22
+        },
+        "now": {
+          "id": 22,
+          "name": "lead 22",
+          "score": 1,
+          "status": "closed"
+        },
+        "op": "UPDATE",
+        "set": {
+          "id": 22,
+          "name": "lead 22",
+          "score": 1,
+          "status": "open"
+        },
+        "table": "public.leads"
+      },
+      {
+        "action": "RESTORE",
+        "cascaded": false,
+        "changeIds": [
+          "<id-22>"
+        ],
+        "key": {
+          "id": 23
+        },
+        "now": {
+          "id": 23,
+          "name": "lead 23",
+          "score": 2,
+          "status": "closed"
+        },
+        "op": "UPDATE",
+        "set": {
+          "id": 23,
+          "name": "lead 23",
+          "score": 2,
+          "status": "open"
+        },
+        "table": "public.leads"
+      },
+      {
+        "action": "RESTORE",
+        "cascaded": false,
+        "changeIds": [
+          "<id-22>"
+        ],
+        "key": {
+          "id": 24
+        },
+        "now": {
+          "id": 24,
+          "name": "lead 24",
+          "score": 3,
+          "status": "closed"
+        },
+        "op": "UPDATE",
+        "set": {
+          "id": 24,
+          "name": "lead 24",
+          "score": 3,
+          "status": "open"
+        },
+        "table": "public.leads"
+      },
+      {
+        "action": "RESTORE",
+        "cascaded": false,
+        "changeIds": [
+          "<id-22>"
+        ],
+        "key": {
+          "id": 25
+        },
+        "now": {
+          "id": 25,
+          "name": "lead 25",
+          "score": 4,
+          "status": "closed"
+        },
+        "op": "UPDATE",
+        "set": {
+          "id": 25,
+          "name": "lead 25",
+          "score": 4,
+          "status": "open"
+        },
+        "table": "public.leads"
+      },
+      {
+        "action": "RESTORE",
+        "cascaded": false,
+        "changeIds": [
+          "<id-22>"
+        ],
+        "key": {
+          "id": 26
+        },
+        "now": {
+          "id": 26,
+          "name": "lead 26",
+          "score": 5,
+          "status": "closed"
+        },
+        "op": "UPDATE",
+        "set": {
+          "id": 26,
+          "name": "lead 26",
+          "score": 5,
+          "status": "open"
+        },
+        "table": "public.leads"
+      },
+      {
+        "action": "RESTORE",
+        "cascaded": false,
+        "changeIds": [
+          "<id-22>"
+        ],
+        "key": {
+          "id": 27
+        },
+        "now": {
+          "id": 27,
+          "name": "lead 27",
+          "score": 6,
+          "status": "closed"
+        },
+        "op": "UPDATE",
+        "set": {
+          "id": 27,
+          "name": "lead 27",
+          "score": 6,
+          "status": "open"
+        },
+        "table": "public.leads"
+      },
+      {
+        "action": "RESTORE",
+        "cascaded": false,
+        "changeIds": [
+          "<id-22>"
+        ],
+        "key": {
+          "id": 28
+        },
+        "now": {
+          "id": 28,
+          "name": "lead 28",
+          "score": 0,
+          "status": "closed"
+        },
+        "op": "UPDATE",
+        "set": {
+          "id": 28,
+          "name": "lead 28",
+          "score": 0,
+          "status": "open"
+        },
+        "table": "public.leads"
+      },
+      {
+        "action": "RESTORE",
+        "cascaded": false,
+        "changeIds": [
+          "<id-22>"
+        ],
+        "key": {
+          "id": 29
+        },
+        "now": {
+          "id": 29,
+          "name": "lead 29",
+          "score": 1,
+          "status": "closed"
+        },
+        "op": "UPDATE",
+        "set": {
+          "id": 29,
+          "name": "lead 29",
+          "score": 1,
+          "status": "open"
+        },
+        "table": "public.leads"
+      },
+      {
+        "action": "RESTORE",
+        "cascaded": false,
+        "changeIds": [
+          "<id-22>"
+        ],
+        "key": {
+          "id": 30
+        },
+        "now": {
+          "id": 30,
+          "name": "lead 30",
+          "score": 2,
+          "status": "closed"
+        },
+        "op": "UPDATE",
+        "set": {
+          "id": 30,
+          "name": "lead 30",
+          "score": 2,
+          "status": "open"
+        },
+        "table": "public.leads"
+      },
+      {
+        "action": "RESTORE",
+        "cascaded": false,
+        "changeIds": [
+          "<id-22>"
+        ],
+        "key": {
+          "id": 31
+        },
+        "now": {
+          "id": 31,
+          "name": "lead 31",
+          "score": 3,
+          "status": "closed"
+        },
+        "op": "UPDATE",
+        "set": {
+          "id": 31,
+          "name": "lead 31",
+          "score": 3,
+          "status": "open"
+        },
+        "table": "public.leads"
+      },
+      {
+        "action": "RESTORE",
+        "cascaded": false,
+        "changeIds": [
+          "<id-4>"
+        ],
+        "key": {
+          "id": 4
+        },
+        "now": {
+          "id": 4,
+          "name": "lead 4",
+          "score": 4,
+          "status": "merged"
+        },
+        "op": "UPDATE",
+        "set": {
+          "id": 4,
+          "name": "lead 4",
+          "score": 4,
+          "status": "open"
+        },
+        "table": "public.leads"
+      }
+    ],
+    "nextSteps": [
+      {
+        "action": "ASK_PERSON",
+        "actor": "AGENT",
+        "text": "Show the person what the revert would do and ask whether to go on, and why they want it."
+      },
+      {
+        "action": "REVISE_CALL",
+        "actor": "AGENT",
+        "arguments": {
+          "runId": "<id-1>"
+        },
+        "text": "On yes, call request_revert with these arguments and the person's reason as intent.",
+        "tool": "request_revert"
+      }
+    ],
+    "personMessage": "Reverting run <id-1> would restore 12 rows and leave 0 as they are (changed after the agent). Say yes and the agent asks you to review the rows and sign with your passkey.",
+    "rows": 12,
+    "scope": "RUN",
+    "scopeId": "<id-1>",
+    "skipped": 0
+  },
+  "isError": false,
+  "tool": "preview_revert"
+}

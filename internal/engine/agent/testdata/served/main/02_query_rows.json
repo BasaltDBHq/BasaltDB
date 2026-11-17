@@ -1,0 +1,33 @@
+{
+  "body": {
+    "changeId": "<id-3>",
+    "columns": [
+      {
+        "name": "id",
+        "type": "int8"
+      },
+      {
+        "name": "status",
+        "type": "text"
+      }
+    ],
+    "durationMs": "<durationMs>",
+    "rowCount": 3,
+    "rows": [
+      {
+        "id": 1,
+        "status": "open"
+      },
+      {
+        "id": 2,
+        "status": "open"
+      },
+      {
+        "id": 3,
+        "status": "open"
+      }
+    ]
+  },
+  "isError": false,
+  "tool": "query"
+}

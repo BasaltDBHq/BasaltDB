@@ -1,0 +1,27 @@
+{
+  "body": {
+    "code": "REVERT_INVALID",
+    "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
+    "message": "REVERT_INVALID: the person has not signed this revert yet (basalt revert)",
+    "nextSteps": [
+      {
+        "action": "CALL_TOOL",
+        "actor": "AGENT",
+        "arguments": {
+          "revertId": "<id-2>"
+        },
+        "text": "Read the plan: it is not signed yet.",
+        "tool": "revert_plan"
+      },
+      {
+        "action": "END_TURN",
+        "actor": "AGENT",
+        "text": "The person signs the plan with basalt revert; end your turn and apply it when they say they signed."
+      }
+    ],
+    "reason": "PLAN_NOT_SIGNED",
+    "sqlState": "BS005"
+  },
+  "isError": true,
+  "tool": "apply_revert_batch"
+}

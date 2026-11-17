@@ -1,0 +1,39 @@
+{
+  "body": {
+    "batch": 1,
+    "items": [
+      {
+        "line": 1,
+        "outcome": "RESTORED"
+      },
+      {
+        "line": 2,
+        "outcome": "RESTORED"
+      },
+      {
+        "line": 3,
+        "outcome": "RESTORED"
+      }
+    ],
+    "nextSteps": [
+      {
+        "action": "CALL_TOOL",
+        "actor": "AGENT",
+        "arguments": {
+          "limit": 200,
+          "pending": true,
+          "revertId": "<id-2>"
+        },
+        "text": "Get the pending lines and apply them with apply_revert_batch, until pending is 0.",
+        "tool": "revert_plan"
+      }
+    ],
+    "pending": 1007,
+    "restored": 3,
+    "revertId": "<id-2>",
+    "skipped": 0,
+    "status": "APPLYING"
+  },
+  "isError": false,
+  "tool": "apply_revert_batch"
+}

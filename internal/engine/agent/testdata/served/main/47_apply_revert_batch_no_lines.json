@@ -1,0 +1,17 @@
+{
+  "body": {
+    "code": "INVALID_ARGUMENT",
+    "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
+    "message": "invalid arguments: Key: 'applyRevertBatchArgs.Lines' Error:Field validation for 'Lines' failed on the 'required' tag",
+    "nextSteps": [
+      {
+        "action": "REVISE_CALL",
+        "actor": "AGENT",
+        "text": "Fix the arguments as the message says; the tool's input schema lists them.",
+        "tool": "apply_revert_batch"
+      }
+    ]
+  },
+  "isError": true,
+  "tool": "apply_revert_batch"
+}

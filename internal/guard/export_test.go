@@ -1,5 +1,7 @@
 package guard
 
+import "github.com/google/uuid"
+
 // AgentAdoptSQL is the SQL init runs before taking over an existing agent
 // role, for tests that run it as an admin who is not a superuser.
 func AgentAdoptSQL(n Names, agent string, spec AgentSpec) (string, error) {
@@ -19,6 +21,6 @@ type (
 )
 
 // AssembleReinstalls is assembleReinstalls.
-func AssembleReinstalls(self string, rows []ReportRow, recs map[uint32]InstallRecord, kept []SetAside) Reinstalls {
+func AssembleReinstalls(self string, rows []ReportRow, recs map[uuid.UUID]InstallRecord, kept []SetAside) Reinstalls {
 	return assembleReinstalls(self, rows, recs, kept)
 }

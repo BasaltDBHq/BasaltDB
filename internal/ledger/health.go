@@ -7,6 +7,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -26,9 +27,10 @@ type HealthOptions struct {
 	// Full recomputes the whole chain from the anchor even with a pin.
 	Full bool
 	// PinInstall is the guard install Pin was verified on (guard.InstallID);
-	// 0 when unknown, taken as the current install. A pin of another
-	// install is moved, or reported and set aside (SettlePin).
-	PinInstall uint32
+	// uuid.Nil for a pin saved before install ids, taken as another
+	// install's. A pin of another install is moved, or reported and set
+	// aside (SettlePin), never checked against the current chain.
+	PinInstall uuid.UUID
 	// SetAside is the reader's kept copy of the pins it set aside, shown in
 	// the notice with what the ledger records.
 	SetAside []guard.SetAside
@@ -50,13 +52,14 @@ type Health struct {
 	Head guard.ChainHead
 	// Install is the guard install checked (guard.InstallID), to pin with
 	// Head.
-	Install uint32
+	Install uuid.UUID
 	// PinSetAside is set when the pin was of another install, was not on
 	// the current chain, and was reported with record_pin_set_aside on the
 	// agent's credential: the new chain was checked from its start.
 	PinSetAside bool
 	// PinMoved is set when the pin was of another install and still
-	// verified on the current chain (a pg_dump and pg_restore): it moved to
+	// verified on the current chain (the same ledger under a new install
+	// id): it moved to
 	// Install and nothing was recorded.
 	PinMoved bool
 	// Reinstalls are the reinstalls the ledger and the reader's kept copy
@@ -164,7 +167,7 @@ func CheckHealth(ctx context.Context, q guard.Querier, now time.Time, opts Healt
 		return Health{}, fmt.Errorf("guard install: %w", err)
 	}
 	kept := false
-	if opts.Pin != nil && opts.PinInstall != 0 && opts.PinInstall != h.Install {
+	if opts.Pin != nil && opts.PinInstall != h.Install {
 		if kept, err = settle(ctx, q, &h, &opts); err != nil {
 			return Health{}, err
 		}

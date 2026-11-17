@@ -433,12 +433,14 @@ CREATE TABLE basalt_meta.engines (
     CONSTRAINT engines_revoked CHECK ((revoked_at IS NULL) = (revoked_by IS NULL))
 );
 
--- A guard install is the oid of its basalt_meta schema; installs keeps one
--- row per install, written by the install transaction (here, and again by
--- basalt init after the migrations, which changes nothing for an install
--- that has its row).
+-- This install of the guard: one row, written by the install transaction
+-- (here, and again by basalt init after the migrations, which changes
+-- nothing for an install that has its row). install is a random id, so no
+-- other install can have it: a schema oid repeats across clusters made the
+-- same way. A copy of basalt_meta (a restore, a template database) keeps it.
 CREATE TABLE basalt_meta.installs (
-    install      oid         PRIMARY KEY,
+    id           boolean     PRIMARY KEY DEFAULT true CHECK (id),
+    install      uuid        NOT NULL,
     installed_at timestamptz NOT NULL,
     installed_by name        NOT NULL,
     vault_user   text

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
+	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -58,7 +59,7 @@ type Upkeep struct {
 	head    *guard.ChainHead
 	// install is the guard install the pinned head was verified on
 	// (guard.InstallID), saved with every pin.
-	install uint32
+	install uuid.UUID
 	// kept are the pins this engine set aside after reinstalls, saved with
 	// every pin (chainpin.Pin.SetAside).
 	kept []guard.SetAside
@@ -266,9 +267,10 @@ func (u *Upkeep) checkChain(ctx context.Context) (guard.ChainStatus, error) {
 	return st, nil
 }
 
-// start loads the pin and runs the full check when there is one. A pin
-// without an install is taken as install's.
-func (u *Upkeep) start(ctx context.Context, install uint32) error {
+// start loads the pin and runs the full check when there is one. A pin of
+// another install, or without one (saved before install ids), is settled
+// first.
+func (u *Upkeep) start(ctx context.Context, install uuid.UUID) error {
 	pin, ok, err := u.pins.Load(u.agent)
 	if err != nil {
 		return fmt.Errorf("load the chain head: %w", err)
@@ -304,7 +306,7 @@ func (u *Upkeep) start(ctx context.Context, install uint32) error {
 // and sets it aside, so the new chain is checked from its start; or, when
 // the report fails, it keeps the pin, which then shows as a broken chain,
 // and tries again on the next tick.
-func (u *Upkeep) settle(ctx context.Context, install uint32) error {
+func (u *Upkeep) settle(ctx context.Context, install uuid.UUID) error {
 	pinned, from := *u.head, u.install
 	s, err := ledger.SettlePin(ctx, u.db, pinned, from)
 	if err != nil {
@@ -312,7 +314,7 @@ func (u *Upkeep) settle(ctx context.Context, install uint32) error {
 	}
 	switch s.Fate {
 	case ledger.PinMoved:
-		u.log.Warn("the guard's schema was dropped and restored with the same ledger; the chain head pin moves to the new install",
+		u.log.Warn("the guard was installed again over the same ledger; the chain head pin moves to the new install",
 			"agent", u.agent, "pinnedInstall", from, "install", install, "pinnedSeq", pinned.Seq)
 		u.head, u.install = &s.Head, install
 	case ledger.PinSetAside:

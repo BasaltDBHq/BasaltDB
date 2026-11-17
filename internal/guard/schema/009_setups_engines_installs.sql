@@ -225,19 +225,25 @@ BEGIN
     RETURN v_remaining;
 END $$;
 
+-- This install's id (installs), for an agent role to pin chain heads with.
+-- Null when installs has no row: basalt_meta was recreated outside the
+-- install, or the row deleted, until basalt init writes a new one.
+CREATE OR REPLACE FUNCTION basalt_meta.install_id() RETURNS uuid
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+    SELECT i.install FROM basalt_meta.installs i WHERE i.id;
+$$;
+
 -- An agent reports that the chain head it pinned (p_seq, p_hash) was
 -- verified on another install (p_install), before it sets that pin aside.
 -- Appends PIN_SET_ASIDE with the install's row copied in, so the row stands
--- on its own; the install fields are absent when installs has no row for
--- the current install (basalt_meta was recreated or restored outside the
--- install). Returns false, appending nothing, for a report this role
--- already made. The chain head's row lock serializes the check with the
--- append.
-CREATE OR REPLACE FUNCTION basalt_meta.record_pin_set_aside(p_seq bigint, p_hash bytea, p_install oid) RETURNS boolean
+-- on its own. Refuses when installs has no row (NO_INSTALL): there is no
+-- install to set the pin aside on. Returns false, appending nothing, for a
+-- report this role already made. The chain head's row lock serializes the
+-- check with the append.
+CREATE OR REPLACE FUNCTION basalt_meta.record_pin_set_aside(p_seq bigint, p_hash bytea, p_install uuid) RETURNS boolean
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
     c_hash_len constant int := 32;
-    v_install  oid;
     v_row      basalt_meta.installs;
     v_detail   jsonb;
 BEGIN
@@ -245,8 +251,11 @@ BEGIN
        OR p_install IS NULL THEN
         PERFORM basalt_meta._invalid('PIN_SHAPE');
     END IF;
-    SELECT n.oid INTO v_install FROM pg_catalog.pg_namespace n WHERE n.nspname = 'basalt_meta';
-    IF p_install = v_install THEN
+    SELECT * INTO v_row FROM basalt_meta.installs i WHERE i.id;
+    IF NOT FOUND THEN
+        PERFORM basalt_meta._invalid('NO_INSTALL');
+    END IF;
+    IF p_install = v_row.install THEN
         PERFORM basalt_meta._invalid('PIN_SAME_INSTALL');
     END IF;
     PERFORM 1 FROM basalt_meta.chain_head h WHERE h.id FOR UPDATE;
@@ -258,15 +267,11 @@ BEGIN
         RETURN false;
     END IF;
     v_detail := pg_catalog.jsonb_build_object('pinnedSeq', p_seq, 'pinnedHash', pg_catalog.encode(p_hash, 'hex'),
-        'pinnedInstall', p_install::bigint, 'install', v_install::bigint);
-    SELECT * INTO v_row FROM basalt_meta.installs i WHERE i.install = v_install;
-    IF FOUND THEN
-        v_detail := v_detail || pg_catalog.jsonb_build_object(
-            'installedAt', pg_catalog.to_char(v_row.installed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
-            'installedBy', v_row.installed_by);
-        IF v_row.vault_user IS NOT NULL THEN
-            v_detail := v_detail || pg_catalog.jsonb_build_object('vaultUser', v_row.vault_user);
-        END IF;
+        'pinnedInstall', p_install::text, 'install', v_row.install::text,
+        'installedAt', pg_catalog.to_char(v_row.installed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+        'installedBy', v_row.installed_by);
+    IF v_row.vault_user IS NOT NULL THEN
+        v_detail := v_detail || pg_catalog.jsonb_build_object('vaultUser', v_row.vault_user);
     END IF;
     PERFORM basalt_meta._append(session_user, NULL, 'PIN_SET_ASIDE', NULL, NULL, NULL, NULL, NULL, NULL, v_detail);
     RETURN true;

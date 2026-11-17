@@ -62,12 +62,10 @@ REVOKE ALL ON basalt_meta.schema_version FROM PUBLIC;
 // basalt.vault_user is the Vault user the install ran for, set by the
 // Vault's install path; null otherwise.
 const recordInstallRow = `
-INSERT INTO basalt_meta.installs (install, installed_at, installed_by, vault_user)
-SELECT n.oid, pg_catalog.clock_timestamp(), session_user,
-       NULLIF(pg_catalog.current_setting('basalt.vault_user', true), '')
-  FROM pg_catalog.pg_namespace n
- WHERE n.nspname = 'basalt_meta'
-ON CONFLICT (install) DO NOTHING;
+INSERT INTO basalt_meta.installs (id, install, installed_at, installed_by, vault_user)
+VALUES (true, pg_catalog.gen_random_uuid(), pg_catalog.clock_timestamp(), session_user,
+        NULLIF(pg_catalog.current_setting('basalt.vault_user', true), ''))
+ON CONFLICT (id) DO NOTHING;
 `
 
 // recordInstall is recordInstallRow as its own init step, after the

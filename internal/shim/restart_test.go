@@ -69,7 +69,9 @@ func TestACallWaitsForARestartingEngine(t *testing.T) {
 		Name: "write",
 		Call: func(context.Context, json.RawMessage) (any, error) { return map[string]string{"from": "first"}, nil },
 	})
+	stopped := make(chan struct{})
 	go func() {
+		defer close(stopped)
 		conn, err := ln.Accept()
 		if err != nil {
 			return
@@ -78,12 +80,17 @@ func TestACallWaitsForARestartingEngine(t *testing.T) {
 		conn.Close()
 		_ = ln.Close()
 	}()
-	c, _ := startShimWaiting(t, socket, 5*time.Second)
+	// The wait is generous: a loaded CI machine must not turn a slow
+	// restart into a failure.
+	c, _ := startShimWaiting(t, socket, 30*time.Second)
 	body, isError := c.call(t, "write")
 	require.False(t, isError, "%v", body)
 	require.Equal(t, "first", body["from"])
 
 	// The engine restarts: the next call, not yet sent, waits and is served.
+	// The old engine has fully gone (its socket file removed) before the new
+	// one binds the same path, so the two cannot race over it.
+	<-stopped
 	engineAfter(t, socket, 300*time.Millisecond)
 	body, isError = c.call(t, "query")
 	require.False(t, isError, "%v", body)

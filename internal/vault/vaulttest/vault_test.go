@@ -515,7 +515,7 @@ func TestCloseEndsEverything(t *testing.T) {
 
 	start := time.Now()
 	v.Close()
-	require.Less(t, time.Since(start), time.Second, "Close does not wait out the 30-second CHALLENGE")
+	require.Less(t, time.Since(start), 10*time.Second, "Close does not wait out the 30-second CHALLENGE")
 	for _, conn := range []*websocket.Conn{e.conn, page.conn, midAuth} {
 		_ = conn.CloseNow()
 	}

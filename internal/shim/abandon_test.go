@@ -29,13 +29,13 @@ func takeAndClose(t *testing.T, socket string, n int) {
 			return
 		}
 		r := bufio.NewReader(conn)
-		for range n {
+		for range n + 1 { // the shim's hello, then n requests
 			if _, err := r.ReadBytes('\n'); err != nil {
 				break
 			}
 		}
+		_ = ln.Close() // before the conn, so no redial can reach a listener nobody serves
 		conn.Close()
-		_ = ln.Close()
 	}()
 }
 

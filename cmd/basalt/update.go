@@ -45,7 +45,7 @@ var noUpdateLine = []string{"engine", "mcp", "help", "-h", "--help"}
 // socket; with no answer the check stays off, so an admin's opt-out is never
 // overridden by a failed read. No config at all means nobody opted out.
 func updateOff(ctx context.Context, getenv func(string) string, goos string, h host, askEngine func(context.Context) (person.PagesDTO, error)) bool {
-	if updatecheck.Disabled(getenv) {
+	if updatecheck.Disabled(getenv) || buildinfo.Version == updatecheck.DevVersion {
 		return true
 	}
 	cfg, err := loadEngineConfigAs(h.Euid(), perUserConfigFallback(h, config.DefaultPath(goos)))

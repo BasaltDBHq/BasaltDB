@@ -43,8 +43,6 @@ type statusOut struct {
 	ConfigPath string    `json:"configPath"`
 	SocketDir  string    `json:"socketDir"`
 	StateDir   string    `json:"stateDir"`
-	// Update is set when a newer release is out (CONTRACT.md, Update
-	// notice), from the daily cache only.
 	// vaultID is the engine id in same-user mode when the Vault is on:
 	// the connection state only the running engine knows is left out of
 	// the report, and the text output still shows the id (localVault).
@@ -91,8 +89,6 @@ func runStatus(c *cliIO, args []string) int {
 	return exitOK
 }
 
-// configOrFallback is the config a person command reads: the --config value,
-// or, when --config was not given, perUserConfigFallback of the default.
 // statusUpdate is the update field of status --json: the status tool's shape
 // (message included). This binary's own cached notice comes first, since it
 // is the one the person upgrades; else the engine's notice. Nothing when the
@@ -109,6 +105,8 @@ func statusUpdate(c *cliIO, engine *agent.UpdateInfo) *agent.UpdateInfo {
 	return engine
 }
 
+// configOrFallback is the config a person command reads: the --config value,
+// or, when --config was not given, perUserConfigFallback of the default.
 func configOrFallback(h host, fs *flag.FlagSet, path string) string {
 	given := false
 	fs.Visit(func(fl *flag.Flag) { given = given || fl.Name == "config" })

@@ -74,6 +74,14 @@ func configWith(state string) string {
 		`"agents":[{"name":"bot","osUser":"u","credentialFile":"/etc/basalt/agents/bot.url"}]}`
 }
 
+// releaseBuild makes this test binary a build with a release number.
+func releaseBuild(t *testing.T) {
+	t.Helper()
+	old := buildinfo.Version
+	buildinfo.Version = "0.0.1"
+	t.Cleanup(func() { buildinfo.Version = old })
+}
+
 func engineSays(state string, err error) func(context.Context) (person.PagesDTO, error) {
 	return func(context.Context) (person.PagesDTO, error) {
 		return person.PagesDTO{UpdateCheck: state}, err
@@ -88,6 +96,7 @@ func noEngine(t *testing.T) func(context.Context) (person.PagesDTO, error) {
 }
 
 func TestUpdateOffFollowsAReadableConfig(t *testing.T) {
+	releaseBuild(t)
 	getenv := func(string) string { return "" }
 	h := newFakeHost(t)
 	writeUserConfig(t, h, configWith("OFF"), 0o600)
@@ -98,6 +107,7 @@ func TestUpdateOffFollowsAReadableConfig(t *testing.T) {
 }
 
 func TestUpdateOffWithNoConfigIsOn(t *testing.T) {
+	releaseBuild(t)
 	h := newFakeHost(t)
 	if _, err := os.Stat(config.DefaultPath("linux")); err == nil {
 		t.Skip("a system engine.json exists on this machine")
@@ -108,6 +118,7 @@ func TestUpdateOffWithNoConfigIsOn(t *testing.T) {
 // In service mode engine.json is the engine's own (0600): an admin's OFF
 // reaches the person's CLI through the engine, never through the file.
 func TestUpdateOffFollowsTheEngineWhenTheConfigCannotBeRead(t *testing.T) {
+	releaseBuild(t)
 	if os.Geteuid() == 0 {
 		t.Skip("root reads any file")
 	}

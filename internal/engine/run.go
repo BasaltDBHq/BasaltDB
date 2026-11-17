@@ -177,9 +177,12 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	}
 	var sessionPages *pages.Server
 	var dispatch vault.Dispatcher
+	// gate counts the agent calls, person requests and page sessions
+	// running, so a restart onto an upgraded binary waits for them.
+	gate := newCallGate()
 	if cfg.VaultEnabled() || directAddr != "" {
 		sessionPages = pages.New(base, log.With("component", "vault-pages"))
-		dispatch = sessionPages
+		dispatch = gatedDispatcher{gate: gate, next: sessionPages}
 	}
 	tally := vault.NewTally()
 	ev := openVault(cfg, env.stateDir, time.Now, log, relay, dispatch, tally)
@@ -257,6 +260,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 			Agents: ledgers, Info: srv.infos, AgentUIDs: agentUIDs,
 			Engine: engineInfo(cfg.SocketDir, env.stateDir),
 			Pages:  person.PagesDTO{PagesURL: base, LocalOrigin: env.pagesOrigin},
+			Gate:   gate,
 		}, log)
 		if err != nil {
 			return err
@@ -272,7 +276,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		wg.Go(func() { env.records.watchRevoked(ctx, env.direct, directRecheckEvery) })
 		wg.Go(func() { direct.serve(ctx, h, env.direct, log) })
 	}
-	return New(log, agents).WithRestart(restart).Serve(ctx)
+	return New(log, agents).withGate(gate).WithRestart(restart).Serve(ctx)
 }
 
 // agentOSUIDs is the uid of every configured agent's OS user, by agent

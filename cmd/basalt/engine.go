@@ -85,19 +85,30 @@ type restart struct {
 // cannot (its path cannot be read), the engine runs without the restart.
 func osRestart(log *slog.Logger) restart {
 	sys := binwatch.OS{}
-	path, err := binwatch.ExecPath(os.Args[0], exec.LookPath, os.Executable, sys.Stat)
+	exe, err := os.Executable()
 	if err != nil {
 		log.Warn("the engine does not restart onto an upgraded binary: its own path is unknown", "err", err)
 		return restart{}
 	}
-	w, err := binwatch.New(path, sys, os.Geteuid() == 0, log)
+	path, err := binwatch.ExecPath(os.Args[0], exec.LookPath, func() (string, error) { return exe, nil }, sys.Stat)
+	if err != nil {
+		log.Warn("the engine does not restart onto an upgraded binary: its own path is unknown", "err", err)
+		return restart{}
+	}
+	w, err := binwatch.New(path, exe, sys, os.Geteuid() == 0, log)
 	if err != nil {
 		log.Warn("the engine does not restart onto an upgraded binary: its binary cannot be watched", "path", path, "err", err)
 		return restart{}
 	}
+	path = w.Path()
 	log.Info("the engine restarts onto an upgraded binary installed at its path", "path", path)
 	argv := slices.Clone(os.Args)
-	return restart{upgrade: w.Wait, exec: func() error { return binwatch.Exec(path, argv, os.Environ()) }}
+	return restart{upgrade: w.Wait, exec: func() error {
+		if err := w.Recheck(); err != nil {
+			return err
+		}
+		return binwatch.Exec(path, argv, os.Environ())
+	}}
 }
 
 // serveRestarting runs the engine and, each time it stops for an upgrade,
@@ -106,7 +117,9 @@ func osRestart(log *slog.Logger) restart {
 func serveRestarting(ctx context.Context, run func(context.Context, engine.RestartOptions) error, r restart, log *slog.Logger) error {
 	for {
 		err := run(ctx, engine.RestartOptions{Upgrade: r.upgrade})
-		if !errors.Is(err, engine.ErrRestart) {
+		if !errors.Is(err, engine.ErrRestart) || ctx.Err() != nil {
+			// A stop that came during the restart wins: never run the new
+			// binary after the engine was told to stop.
 			return err
 		}
 		log.Info("restarting onto the upgraded binary")

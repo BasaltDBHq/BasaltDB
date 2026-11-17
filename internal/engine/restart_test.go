@@ -275,3 +275,20 @@ func TestStoppingTheEngineDuringTheIdleWaitIsAPlainStop(t *testing.T) {
 	require.NoError(t, old.stopped(t))
 	_ = slow
 }
+
+func TestStoppingTheEngineDuringTheDrainIsAPlainStop(t *testing.T) {
+	t.Parallel()
+	socket := shortDir(t) + "/bot.sock"
+	tools := newRestartTools("old")
+	upgrade := make(chan struct{})
+	// The gate closes at once (10 ms) while slow runs; the drain waits.
+	old := startRestarting(t, socket, tools, upgrade, 10*time.Millisecond, time.Minute)
+	c := startShimClient(t, socket)
+	slow := c.send(t, 1, "slow")
+	<-tools.started
+	close(upgrade)
+	time.Sleep(100 * time.Millisecond)
+	old.cancel()
+	require.NoError(t, old.stopped(t), "a stop, so the new binary is not run")
+	_ = slow
+}

@@ -122,6 +122,7 @@ func (e *Engine) Serve(ctx context.Context) error {
 		e.log.Info("serving agent", "agent", a.Name, "socket", a.SocketPath, "uid", a.UID)
 	}
 
+	stopped := ctx // the caller's: done means stop, never restart
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	// draining ends when the engine stops taking calls for a restart: every
@@ -148,7 +149,18 @@ func (e *Engine) Serve(ctx context.Context) error {
 	closeAll()
 	drain()
 	e.finishDrain(ctx, cancel, served)
+	if stopped.Err() != nil {
+		// Stopped during the drain: a stop, not a restart.
+		return nil
+	}
 	return ErrRestart
+}
+
+// withGate makes the engine share g with the other servers whose requests
+// a restart waits for (the person socket, page sessions).
+func (e *Engine) withGate(g *callGate) *Engine {
+	e.gate = g
+	return e
 }
 
 // awaitUpgrade reports whether the engine should restart onto a new binary
@@ -164,13 +176,18 @@ func (e *Engine) awaitUpgrade(ctx context.Context) bool {
 // finishDrain waits for every connection to end, up to DrainWait, then
 // cancels the calls still running.
 func (e *Engine) finishDrain(ctx context.Context, cancel context.CancelFunc, served <-chan struct{}) {
-	t := time.NewTimer(e.restart.DrainWait)
-	defer t.Stop()
+	wctx, stop := context.WithTimeout(ctx, e.restart.DrainWait)
+	defer stop()
 	select {
 	case <-served:
+	case <-wctx.Done():
+	}
+	// Person requests and page sessions are counted by the gate too.
+	if e.gate.waitIdle(wctx) {
+		<-served
 		return
-	case <-ctx.Done():
-	case <-t.C:
+	}
+	if ctx.Err() == nil {
 		e.log.Warn("calls still running after the drain wait are cancelled for the restart", "wait", e.restart.DrainWait)
 	}
 	cancel()

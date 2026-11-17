@@ -2,10 +2,15 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
+	"net/http"
 	"sync"
 	"time"
+
+	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
+	"github.com/basaltdbhq/basaltdb/internal/vault"
 )
 
 // ErrRestart is what Serve and Run return after they stopped to restart
@@ -122,6 +127,52 @@ func (g *callGate) closeWhenIdle(ctx context.Context, wait time.Duration) bool {
 		}
 	}
 	return true
+}
+
+// waitIdle waits until no admitted call runs; false when ctx ended first.
+func (g *callGate) waitIdle(ctx context.Context) bool {
+	for {
+		g.mu.Lock()
+		busy := g.busy
+		g.mu.Unlock()
+		if busy == 0 {
+			return true
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-g.idle:
+		}
+	}
+}
+
+// gatedDispatcher counts each page-session request (an approval or a revert
+// relayed through the Vault or the direct listener) in the gate, and
+// answers UNAVAILABLE with nothing run once the gate is closed.
+type gatedDispatcher struct {
+	gate *callGate
+	next vault.Dispatcher
+}
+
+func (d gatedDispatcher) Dispatch(ctx context.Context, link vault.SessionLink, req vault.Request) vault.Response {
+	if !d.gate.Begin() {
+		return restartingResponse()
+	}
+	defer d.gate.End()
+	return d.next.Dispatch(ctx, link, req)
+}
+
+// restartingResponse is the pages API's error for a request the engine did
+// not run because it is restarting.
+func restartingResponse() vault.Response {
+	body, err := json.Marshal(map[string]string{
+		"code":    agent.CodeUnavailable,
+		"message": "the basalt engine is restarting onto the upgraded binary and did not run this request; nothing was run: try again in a few seconds",
+	})
+	if err != nil {
+		panic(err) // a map of strings
+	}
+	return vault.Response{Status: http.StatusServiceUnavailable, ContentType: "application/json", Body: body}
 }
 
 // connGate is the gate as one connection sees it: once the gate is closed,

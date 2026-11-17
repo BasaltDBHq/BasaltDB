@@ -56,21 +56,37 @@ type Watcher struct {
 }
 
 // New watches path from now on: its current file is the one the engine
-// runs. A path that cannot be read is an error, and the engine then runs
+// runs. exe is the running binary's own path (os.Executable): whether it
+// is protected decides whether every new binary must be. When it is and
+// path is not (a symlink or a hard link in a directory others can change),
+// exe is watched instead, so a restart never goes through a less protected
+// path. A path that cannot be read is an error, and the engine then runs
 // without the restart.
-func New(path string, sys System, asRoot bool, log *slog.Logger) (*Watcher, error) {
+func New(path, exe string, sys System, asRoot bool, log *slog.Logger) (*Watcher, error) {
 	if sys == nil || log == nil {
 		panic("binwatch: system and logger required")
 	}
-	if !filepath.IsAbs(path) {
-		return nil, fmt.Errorf("binary path %q is not absolute", path)
+	if !filepath.IsAbs(path) || !filepath.IsAbs(exe) {
+		return nil, fmt.Errorf("binary paths %q and %q must be absolute", path, exe)
+	}
+	trusted := asRoot || sys.Trusted(exe) == nil
+	if trusted && sys.Trusted(path) != nil {
+		path = exe
 	}
 	base, err := sys.Stat(path)
 	if err != nil {
 		return nil, err
 	}
-	trusted := asRoot || sys.Trusted(path) == nil
 	return &Watcher{path: path, sys: sys, interval: DefaultInterval, trusted: trusted, log: log, base: base}, nil
+}
+
+// Recheck runs the protection check once more on the path, right before
+// the restart runs it; nil when no check applies.
+func (w *Watcher) Recheck() error {
+	if !w.trusted {
+		return nil
+	}
+	return w.sys.Trusted(w.path)
 }
 
 // WithInterval sets how often the path is looked at (tests).
@@ -126,10 +142,8 @@ func (w *Watcher) Wait(ctx context.Context) error {
 const probeTimeout = 10 * time.Second
 
 func (w *Watcher) check(ctx context.Context) (string, error) {
-	if w.trusted {
-		if err := w.sys.Trusted(w.path); err != nil {
-			return "", err
-		}
+	if err := w.Recheck(); err != nil {
+		return "", err
 	}
 	pctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()

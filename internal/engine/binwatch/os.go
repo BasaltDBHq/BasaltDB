@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
 	"github.com/basaltdbhq/basaltdb/internal/updatecheck"
@@ -18,6 +19,10 @@ var _ System = OS{}
 // Trusted is the root-only check of basalt service install.
 func (OS) Trusted(path string) error { return service.OSSystem{}.CheckBinary(path) }
 
+// probeWaitDelay bounds the wait for the probe's output after it exits or
+// is killed.
+const probeWaitDelay = time.Second
+
 // maxProbeOutput bounds what basalt version may print.
 const maxProbeOutput = 4096
 
@@ -28,6 +33,9 @@ func (OS) Probe(ctx context.Context, path string) (string, error) {
 	cmd.Env = append(os.Environ(), updatecheck.EnvDisable+"=off")
 	var out limitedBuffer
 	cmd.Stdout = &out
+	// A child the probed binary leaves holding stdout must not keep Run
+	// waiting after the timeout.
+	cmd.WaitDelay = probeWaitDelay
 	if err := cmd.Run(); err != nil {
 		return "", err
 	}

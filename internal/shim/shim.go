@@ -111,6 +111,16 @@ func serve(ctx context.Context, r *relay, in io.Reader) error {
 	readErr := make(chan error, 1)
 	go readLines(ctx, in, lines, readErr)
 	for {
+		// Requests handed back go first, so a resent call keeps its place
+		// before the client's later ones.
+		select {
+		case line := <-r.retries:
+			if err := r.send(ctx, line); err != nil {
+				return err
+			}
+			continue
+		default:
+		}
 		select {
 		case <-ctx.Done():
 			return nil

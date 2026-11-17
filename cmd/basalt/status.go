@@ -80,12 +80,29 @@ func runStatus(c *cliIO, args []string) int {
 		return c.fail(err)
 	}
 	if *asJSON {
+		out.Update = statusUpdate(c, out.Update)
 		enc := json.NewEncoder(c.stdout)
 		enc.SetIndent("", "  ")
 		return exitCode(c, enc.Encode(out))
 	}
 	printStatus(c.stdout, out)
 	return exitOK
+}
+
+// statusUpdate is the update field of status --json: the status tool's shape
+// (message included). This binary's own cached notice comes first, since it
+// is the one the person upgrades; else the engine's notice. Nothing when the
+// check is off.
+func statusUpdate(c *cliIO, engine *agent.UpdateInfo) *agent.UpdateInfo {
+	if updateOff(c.ctx, c.getenv, c.goos, c.host, person.Client{Path: c.engine.personSocket}.Pages) {
+		return nil
+	}
+	if n := cachedUpdate(c); n != nil {
+		exe, _ := os.Executable()
+		info := agent.NewUpdateInfo(*n, exe)
+		return &info
+	}
+	return engine
 }
 
 // configOrFallback is the config a person command reads: the --config value,

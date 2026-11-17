@@ -40,6 +40,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
+	"github.com/basaltdbhq/basaltdb/internal/updatecheck"
 	"github.com/basaltdbhq/basaltdb/internal/vault"
 )
 
@@ -70,9 +71,15 @@ const Instructions = "BasaltDB records every action you take on this database. "
 	"If they reject it, the wait returns REJECTED with their note: stop, and request it again only if they ask. " +
 	"reissueLink on a widened revert resets it to your own work and the person's page stops working: use it only when the person asks for a new link. " +
 	"You can never approve a write or sign a revert. " +
+	updateInstructions + " " +
 	adminInstructions + " " +
 	docsInstructions + " " +
 	linkInstructions
+
+// updateInstructions is the sentence CONTRACT.md (Update notice) puts in the
+// initialize instructions, unchanged.
+const updateInstructions = "When a result carries a WARNING: or SECURITY UPDATE: notice or an update field, tell the person that a newer BasaltDB release is out and give them the upgrade command it names; " +
+	"never upgrade BasaltDB yourself unless the person says yes."
 
 // adminInstructions is the sentence CONTRACT.md (Agents and the admin
 // credential, What the agent is told) puts in the initialize instructions,
@@ -98,6 +105,13 @@ const linkInstructions = "When you show the person a link from Basalt, put it on
 // absolute path cfg was read from, which the person's basalt commands name
 // with --config unless it is the platform default.
 func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Logger) error {
+	return RunWith(ctx, cfg, configPath, log, RestartOptions{})
+}
+
+// RunWith is Run with the restart onto a new binary: when restart.Upgrade
+// returns, the engine stops between calls, closes everything Run opened,
+// releases its lock and returns ErrRestart.
+func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slog.Logger, restart RestartOptions) error {
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		return errors.New("the engine runs on Linux and macOS only (it needs peer credentials on Unix sockets)")
 	}
@@ -148,6 +162,13 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 	if portal != nil {
 		env.portal = portal
 	}
+	updateCheck := "ON"
+	if !cfg.UpdateCheckOn() || updatecheck.Disabled(os.Getenv) {
+		log.Info("update check is off")
+		updateCheck = "OFF"
+	} else if uc := (&updatecheck.Checker{Dir: env.stateDir, Current: buildinfo.Version}); uc.Current != updatecheck.DevVersion {
+		env.update = uc
+	}
 	piiCfg := cfg.PIIOrDefault()
 	piiLog := log.With("component", "pii")
 	// A key file wider than 0600, or PII state the engine cannot open,
@@ -171,9 +192,12 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 	}
 	var sessionPages *pages.Server
 	var dispatch vault.Dispatcher
+	// gate counts the agent calls, person requests and page sessions
+	// running, so a restart onto an upgraded binary waits for them.
+	gate := newCallGate()
 	if cfg.VaultEnabled() || directAddr != "" {
 		sessionPages = pages.New(base, log.With("component", "vault-pages"))
-		dispatch = sessionPages
+		dispatch = gatedDispatcher{gate: gate, next: sessionPages}
 	}
 	tally := vault.NewTally()
 	ev := openVault(cfg, env.stateDir, time.Now, log, relay, dispatch, tally)
@@ -242,6 +266,11 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 	if portal != nil {
 		wg.Go(func() { portal.Run(ctx, portalcheck.Interval) })
 	}
+	if env.update != nil {
+		wg.Go(func() {
+			env.update.Run(ctx, func(err error) { log.Debug("update check failed", "err", err) })
+		})
+	}
 	if ev.client != nil {
 		wg.Go(func() { _ = ev.client.Run(ctx) })
 		wg.Go(func() { relay.pruneEvery(ctx, pruneInterval) })
@@ -250,7 +279,8 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 		srv, ln, err := listenPerson(cfg, person.Options{
 			Agents: ledgers, Info: srv.infos, AgentUIDs: agentUIDs,
 			Engine: engineInfo(cfg.SocketDir, env.stateDir),
-			Pages:  person.PagesDTO{PagesURL: base, LocalOrigin: env.pagesOrigin},
+			Pages:  person.PagesDTO{PagesURL: base, LocalOrigin: env.pagesOrigin, UpdateCheck: updateCheck},
+			Gate:   gate,
 		}, log)
 		if err != nil {
 			return err
@@ -266,7 +296,7 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 		wg.Go(func() { env.records.watchRevoked(ctx, env.direct, directRecheckEvery) })
 		wg.Go(func() { direct.serve(ctx, h, env.direct, log) })
 	}
-	return New(log, agents).Serve(ctx)
+	return New(log, agents).withGate(gate).WithRestart(restart).Serve(ctx)
 }
 
 // agentOSUIDs is the uid of every configured agent's OS user, by agent
@@ -324,7 +354,7 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 			Name:       a.Name,
 			UID:        uids[a.Name],
 			SocketPath: cfg.SocketPath(a.Name),
-			Server:     mcp.NewServer(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: Instructions}, agent.Tools(rt.svc)...),
+			Server:     mcp.NewServer(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: Instructions, Notice: rt.svc.UpdateNotice}, agent.Tools(rt.svc)...),
 		})
 	}
 	return out, nil
@@ -432,6 +462,8 @@ type agentEnv struct {
 	// portal reports the daily portal check in every agent's status; nil
 	// without a portal in the config.
 	portal agent.PortalReporter
+	// update is the daily newer-release check; nil when it is off.
+	update *updatecheck.Checker
 	// receipts signs the receipt of every relayed signature; nil when the
 	// engine key file is refused (KEY_ERROR).
 	receipts agent.ReceiptSigner
@@ -527,6 +559,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		Probe:         probe,
 		Vault:         env.vault,
 		Portal:        env.portal,
+		Update:        env.updateNotice(),
 		EngineRecord: func(ctx context.Context, id string) (*guard.RecordedEngine, error) {
 			return guard.EngineRecord(ctx, pool, id)
 		},
@@ -679,4 +712,12 @@ func (env agentEnv) dropLink(token channel.LinkToken) {
 	if env.direct != nil {
 		env.direct.EndLink(token)
 	}
+}
+
+// updateNotice is the cached newer release, or nil when the check is off.
+func (env agentEnv) updateNotice() func() *updatecheck.Notice {
+	if env.update == nil {
+		return nil
+	}
+	return env.update.Cached
 }

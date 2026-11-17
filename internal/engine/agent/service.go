@@ -24,6 +24,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/updatecheck"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
@@ -99,6 +100,10 @@ type Deps struct {
 	// Vault reports the engine's Vault connection for status; status leaves
 	// vault out when nil.
 	Vault VaultReporter
+	// Update gives the newer release the engine knows of, from its daily
+	// check (CONTRACT.md, Update notice); optional, nil or a nil result
+	// when none.
+	Update func() *updatecheck.Notice
 	// Portal reports the engine's last daily portal check for status
 	// (problem PORTAL_MISMATCH); status says nothing about the portal when
 	// nil.

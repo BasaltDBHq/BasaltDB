@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
@@ -82,17 +83,10 @@ func describeDB(t *testing.T) describeHarness {
 		GRANT SELECT ON "Sales"."Order Items" TO `+role)
 	classifyDescribe(t, d)
 
-	pool, err := agentdb.NewPool(context.Background(), a.URL, 2)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	limits := sqlguard.DefaultLimits()
-	store := agentdb.NewStore(pool, limits, time.Now)
-	svc := agent.NewService(agent.Deps{
-		Name: "bot", Reader: agentdb.NewReader(pool, limits, time.Now), Store: store, Reads: store,
-		Approvals: store, Reverts: store, Log: slog.New(slog.DiscardHandler), Now: time.Now,
-		Catalog: agentdb.NewCatalog(pool, limits, pool.Config().ConnConfig.Database),
-		Classes: piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool),
-	})
+	svc := pgService(t, a.URL, withDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
+		d.Catalog = agentdb.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database)
+		d.Classes = piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool)
+	})).Svc
 	return describeHarness{harness: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, db: d, role: a.Role}
 }
 
@@ -370,17 +364,10 @@ func TestDescribeSearchScale(t *testing.T) {
 	d.Exec(t, `GRANT USAGE ON SCHEMA big TO `+pgx.Identifier{a.Role}.Sanitize()+`;
 		GRANT SELECT ON ALL TABLES IN SCHEMA big TO `+pgx.Identifier{a.Role}.Sanitize())
 
-	pool, err := agentdb.NewPool(context.Background(), a.URL, 2)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	limits := sqlguard.DefaultLimits()
-	store := agentdb.NewStore(pool, limits, time.Now)
-	svc := agent.NewService(agent.Deps{
-		Name: "bot", Reader: agentdb.NewReader(pool, limits, time.Now), Store: store, Reads: store,
-		Approvals: store, Reverts: store, Log: slog.New(slog.DiscardHandler), Now: time.Now,
-		Catalog: agentdb.NewCatalog(pool, limits, pool.Config().ConnConfig.Database),
-		Classes: piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool),
-	})
+	svc := pgService(t, a.URL, withDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
+		d.Catalog = agentdb.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database)
+		d.Classes = piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool)
+	})).Svc
 	h := harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}
 	h.call(t, "describe", map[string]any{"resource": "public.anchor"}) // warm the pool and the class map
 
@@ -390,7 +377,7 @@ func TestDescribeSearchScale(t *testing.T) {
 		took := time.Since(start)
 		require.False(t, isError, "%s: %v", name, body)
 		t.Logf("%s: %s", name, took)
-		require.Less(t, took, limits.StatementTimeout, name)
+		require.Less(t, took, sqlguard.DefaultLimits().StatementTimeout, name)
 	}
 	measure("overview", map[string]any{})
 	measure("search table prefix", map[string]any{"query": "t04"})
@@ -424,17 +411,10 @@ func TestDescribeOverviewScaleSchemas(t *testing.T) {
 			END LOOP; END $$`, from, from+249, role, role))
 	}
 
-	pool, err := agentdb.NewPool(context.Background(), a.URL, 2)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	limits := sqlguard.DefaultLimits()
-	store := agentdb.NewStore(pool, limits, time.Now)
-	svc := agent.NewService(agent.Deps{
-		Name: "bot", Reader: agentdb.NewReader(pool, limits, time.Now), Store: store, Reads: store,
-		Approvals: store, Reverts: store, Log: slog.New(slog.DiscardHandler), Now: time.Now,
-		Catalog: agentdb.NewCatalog(pool, limits, pool.Config().ConnConfig.Database),
-		Classes: piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool),
-	})
+	svc := pgService(t, a.URL, withDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
+		d.Catalog = agentdb.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database)
+		d.Classes = piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool)
+	})).Svc
 	h := harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}
 	h.call(t, "describe", map[string]any{"resource": "public.anchor"}) // warm the pool and the class map
 
@@ -443,7 +423,7 @@ func TestDescribeOverviewScaleSchemas(t *testing.T) {
 	took := time.Since(start)
 	require.False(t, isError, "%v", body)
 	t.Logf("overview of %d schemas: %s", schemas, took)
-	require.Less(t, took, limits.StatementTimeout)
+	require.Less(t, took, sqlguard.DefaultLimits().StatementTimeout)
 	require.Len(t, body["schemas"], 50)
 	n, err := body["counts"].(map[string]any)["schemas"].(json.Number).Int64()
 	require.NoError(t, err)

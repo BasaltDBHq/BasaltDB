@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -22,16 +21,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
-	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
-	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 )
 
 // pgCalls records every statement and its parameters the engine sends to
@@ -138,26 +134,16 @@ func newRescopeEnv(t *testing.T) *rescopeEnv {
 // store.
 func (e *rescopeEnv) start(t *testing.T, wrap func(agent.RevertStore) agent.RevertStore) {
 	t.Helper()
-	cfg, err := pgdial.PoolConfig(e.bot.URL)
-	require.NoError(t, err)
-	cfg.MaxConns = 2
-	cfg.ConnConfig.Tracer = e.calls
-	pool, err := pgxpool.NewWithConfig(context.Background(), cfg)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	limits := sqlguard.DefaultLimits()
-	store := agentdb.NewStore(pool, limits, time.Now)
 	secrets, err := links.OpenSecrets(e.linksPath, time.Now, rand.Reader)
 	require.NoError(t, err)
-	var reverts agent.RevertStore = store
-	if wrap != nil {
-		reverts = wrap(store)
-	}
-	e.svc = agent.NewService(agent.Deps{
-		Name: "bot", Reader: agentdb.NewReader(pool, limits, time.Now), Store: store, Reads: store, Approvals: store,
-		Reverts: reverts, Notifier: e.sent, Log: slog.New(slog.DiscardHandler), Now: time.Now, PagesOrigin: pageOrigin, Links: secrets,
-		Poll: testPoll,
-	})
+	e.svc = pgService(t, e.bot.URL,
+		withPoolConfig(func(cfg *pgxpool.Config) { cfg.ConnConfig.Tracer = e.calls }),
+		withDeps(func(d *agent.Deps, _ *pgxpool.Pool) {
+			if wrap != nil {
+				d.Reverts = wrap(d.Reverts)
+			}
+			d.Notifier, d.PagesOrigin, d.Links, d.Poll = e.sent, pageOrigin, secrets, testPoll
+		})).Svc
 	e.h = harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(e.svc)...)}
 	e.p = newLocalPages(t, agentEnv{svc: e.svc})
 }

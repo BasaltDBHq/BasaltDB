@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/url"
 	"strings"
 	"testing"
@@ -60,18 +59,10 @@ func newHarness(t *testing.T, agentURL string, limits sqlguard.Limits) harness {
 // newHarnessConns is newHarness with a pool of conns connections.
 func newHarnessConns(t *testing.T, agentURL string, limits sqlguard.Limits, conns int32) harness {
 	t.Helper()
-	pool, err := agentdb.NewPool(context.Background(), agentURL, conns)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	reader := agentdb.NewReader(pool, limits, time.Now)
-	store := agentdb.NewStore(pool, limits, time.Now)
-	svc := agent.NewService(agent.Deps{
-		Name: "bot", Reader: reader, Store: store, Reads: store, Approvals: store, Reverts: store,
-		Log: slog.New(slog.DiscardHandler), Now: time.Now,
-	})
+	env := pgService(t, agentURL, withLimits(limits), withConns(conns))
 	return harness{
-		server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...),
-		reader: reader,
+		server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(env.Svc)...),
+		reader: env.Reader,
 	}
 }
 
@@ -240,11 +231,8 @@ const wideColumns = 300
 func TestOneValueOverTheMessageCapIsNeverRead(t *testing.T) {
 	t.Parallel()
 	_, agentURL := testDB(t)
-	pool, err := agentdb.NewPool(context.Background(), agentURL, 1)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	r := agentdb.NewReader(pool, sqlguard.DefaultLimits(), time.Now)
-	_, err = r.Read(context.Background(), "SELECT repeat('x', 20000000) AS big", nil, nil)
+	r := pgService(t, agentURL, withConns(1)).Reader
+	_, err := r.Read(context.Background(), "SELECT repeat('x', 20000000) AS big", nil, nil)
 	var tooLarge *resultsize.RowTooLargeError
 	require.ErrorAs(t, err, &tooLarge)
 	require.True(t, tooLarge.OnWire)

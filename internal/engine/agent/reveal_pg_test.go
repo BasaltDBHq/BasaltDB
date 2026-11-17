@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -18,7 +17,6 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/links"
@@ -420,10 +418,7 @@ func TestAgentRoleCannotRevealDirectly(t *testing.T) {
 	requireRevealRefused(t, err, guard.CodeApprovalInvalid)
 
 	// A preview of the held write with a ticket the agent guessed.
-	pool, err := agentdb.NewPool(ctx, s.env.a.URL, 1)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	store := agentdb.NewStore(pool, sqlguard.DefaultLimits(), time.Now)
+	store := pgService(t, s.env.a.URL, withConns(1)).Store
 	in := guard.Intent{RunID: uuid.MustParse(s.heldRun), Text: "Lead 20 left"}
 	_, err = store.RevealPreview(ctx, in, sqlguard.OpDelete, dropLead, []any{json.Number("20")}, uuid.MustParse(s.approval), make([]byte, 16))
 	requireRevealRefused(t, err, guard.CodeApprovalInvalid)
@@ -440,12 +435,9 @@ func TestApprovalRevealRowsChangedAndMismatch(t *testing.T) {
 	id := uuid.MustParse(s.approval)
 
 	// The person's ticket, opened as the engine does.
-	pool, err := agentdb.NewPool(ctx, s.env.a.URL, 1)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	store := agentdb.NewStore(pool, sqlguard.DefaultLimits(), time.Now)
+	store := pgService(t, s.env.a.URL, withConns(1)).Store
 	raw := make([]byte, links.SecretBytes)
-	_, err = rand.Read(raw)
+	_, err := rand.Read(raw)
 	require.NoError(t, err)
 	key, err := approval.RevealKey(raw)
 	require.NoError(t, err)

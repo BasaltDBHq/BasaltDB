@@ -60,6 +60,16 @@ type Server struct {
 	info   Info
 	tools  []Tool
 	byName map[string]Tool
+
+	minShim int
+}
+
+// WithMinShimProtocol sets the oldest shim protocol Serve accepts; the
+// default is MinShimProtocol. A connection whose shim is older gets every
+// request answered with ErrCodeVersionMismatch.
+func (s *Server) WithMinShimProtocol(n int) *Server {
+	s.minShim = n
+	return s
 }
 
 // NewServer returns a server for tools. It panics on a duplicate or unnamed
@@ -75,7 +85,7 @@ func NewServer(info Info, tools ...Tool) *Server {
 		}
 		byName[t.Name] = t
 	}
-	return &Server{info: info, tools: tools, byName: byName}
+	return &Server{info: info, tools: tools, byName: byName, minShim: MinShimProtocol}
 }
 
 // Request is a JSON-RPC 2.0 request or notification (no id).
@@ -107,6 +117,7 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 	sess := &session{}
 	sc := bufio.NewScanner(in)
 	sc.Buffer(make([]byte, scannerInitSize), scannerMaxSize)
+	shim := Hello{} // a shim that never says hello is version 0
 	for sc.Scan() {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -115,11 +126,39 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		if len(line) == 0 {
 			continue
 		}
+		if handled, err := s.negotiate(out, line, &shim); handled {
+			if err != nil {
+				return err
+			}
+			continue
+		}
 		if err := s.serveLine(ctx, out, line, sess); err != nil {
 			return err
 		}
 	}
 	return sc.Err()
+}
+
+// negotiate answers the hello request, and refuses every other request
+// while the connection's shim is older than the engine serves. handled is
+// true when line is done.
+func (s *Server) negotiate(out io.Writer, line []byte, shim *Hello) (handled bool, err error) {
+	req, ok := RequestOf(line)
+	if !ok {
+		return false, nil
+	}
+	engine := Hello{Protocol: ShimProtocol, Build: s.info.Version, MinShimProtocol: &s.minShim}
+	if req.Method == HelloMethod {
+		_ = json.Unmarshal(req.Params, shim) // malformed: stays version 0
+		if shim.Protocol < s.minShim {
+			return true, WriteError(out, req.ID, ErrCodeVersionMismatch, ShimTooOldMessage(*shim, engine, s.minShim))
+		}
+		return true, writeResponse(out, req.ID, engine, nil)
+	}
+	if shim.Protocol < s.minShim {
+		return true, WriteError(out, req.ID, ErrCodeVersionMismatch, ShimTooOldMessage(*shim, engine, s.minShim))
+	}
+	return false, nil
 }
 
 // ServeLine answers one JSON-RPC message on out, as Serve does for each line

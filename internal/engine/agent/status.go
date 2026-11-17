@@ -22,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/updatecheck"
 )
 
 // The status tool (CONTRACT.md, MCP tools, status; api/mcp/tools/status.json).
@@ -245,7 +246,14 @@ func (s *Service) updateInfo() *UpdateInfo {
 	if n == nil {
 		return nil
 	}
-	return &UpdateInfo{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL, Message: n.AgentMessage(executablePath())}
+	info := NewUpdateInfo(*n, executablePath())
+	return &info
+}
+
+// NewUpdateInfo is the update field for notice n, with the message for
+// the binary at exe.
+func NewUpdateInfo(n updatecheck.Notice, exe string) UpdateInfo {
+	return UpdateInfo{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL, Message: n.AgentMessage(exe)}
 }
 
 // UpdateNotice is the text the MCP server appends to a connection's first

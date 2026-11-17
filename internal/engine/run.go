@@ -154,8 +154,10 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 	if portal != nil {
 		env.portal = portal
 	}
+	updateCheck := "ON"
 	if !cfg.UpdateCheckOn() || updatecheck.Disabled(os.Getenv) {
 		log.Info("update check is off")
+		updateCheck = "OFF"
 	} else if uc := (&updatecheck.Checker{Dir: env.stateDir, Current: buildinfo.Version}); uc.Current != updatecheck.DevVersion {
 		env.update = uc
 	}
@@ -266,7 +268,7 @@ func Run(ctx context.Context, cfg config.Config, configPath string, log *slog.Lo
 		srv, ln, err := listenPerson(cfg, person.Options{
 			Agents: ledgers, Info: srv.infos, AgentUIDs: agentUIDs,
 			Engine: engineInfo(cfg.SocketDir, env.stateDir),
-			Pages:  person.PagesDTO{PagesURL: base, LocalOrigin: env.pagesOrigin},
+			Pages:  person.PagesDTO{PagesURL: base, LocalOrigin: env.pagesOrigin, UpdateCheck: updateCheck},
 		}, log)
 		if err != nil {
 			return err

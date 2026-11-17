@@ -58,21 +58,26 @@ func HelloLine(build string) []byte {
 }
 
 // HelloAnswer decodes line as the answer to a hello; ok is false for any
-// other line. A peer that does not know the method (an engine from before
-// the negotiation) answers with an error, which is version 0.
-func HelloAnswer(line []byte) (h Hello, ok bool) {
+// other line. An engine from before the negotiation answers method not
+// found, which is version 0. known is false when the answer says nothing
+// about the engine's version (the engine refused this shim with
+// ErrCodeVersionMismatch, or failed in another way).
+func HelloAnswer(line []byte) (h Hello, known, ok bool) {
 	var r struct {
 		ID     any             `json:"id"`
 		Result json.RawMessage `json:"result"`
 		Error  *RPCError       `json:"error"`
 	}
 	if json.Unmarshal(line, &r) != nil || r.ID != HelloID {
-		return Hello{}, false
+		return Hello{}, false, false
 	}
-	if r.Error != nil || json.Unmarshal(r.Result, &h) != nil {
-		return Hello{}, true
+	if r.Error != nil {
+		return Hello{}, r.Error.Code == rpcErrMethodNotFound, true
 	}
-	return h, true
+	if json.Unmarshal(r.Result, &h) != nil {
+		return Hello{}, false, true
+	}
+	return h, true, true
 }
 
 // ShimTooOldMessage is what an agent is told when its shim is older than

@@ -29,7 +29,14 @@ func takeAndClose(t *testing.T, socket string, n int) {
 			return
 		}
 		r := bufio.NewReader(conn)
-		for range n + 1 { // the shim's hello, then n requests
+		// The shim's hello, answered as an engine without it would; then
+		// n requests, taken and never answered.
+		if _, err := r.ReadBytes('\n'); err != nil {
+			conn.Close()
+			return
+		}
+		_ = mcp.WriteError(conn, mcp.HelloID, -32601, "method not found")
+		for range n {
 			if _, err := r.ReadBytes('\n'); err != nil {
 				break
 			}

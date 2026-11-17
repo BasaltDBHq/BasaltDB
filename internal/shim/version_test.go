@@ -8,6 +8,7 @@ import (
 	"net"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -136,12 +137,26 @@ func TestANewShimTellsTheAgentWhenTheEngineIsTooOld(t *testing.T) {
 	<-done
 }
 
+func TestAShimThatTheEngineRefusesIsToldToReconnectNotToRestartTheEngine(t *testing.T) {
+	t.Parallel()
+	socket := filepath.Join(socketDir(t), "bot.sock")
+	fakeEngineMin(t, socket, mcp.ShimProtocol+1) // the engine wants a newer shim
+	c, _ := startShimWith(t, socket, shim.Options{ReconnectWait: -1, MinEngineProtocol: 1})
+
+	e := c.requestError(t, "tools/call", map[string]any{"name": "query", "arguments": map[string]any{}})
+	require.Equal(t, mcp.ErrCodeVersionMismatch, e.Code)
+	require.Contains(t, e.Message, "Reconnect the MCP server")
+	require.NotContains(t, e.Message, "restart the basalt engine")
+}
+
 func TestAnEngineFromBeforeTheNegotiationIsAProtocolZeroEngine(t *testing.T) {
 	t.Parallel()
 	socket := filepath.Join(socketDir(t), "bot.sock")
 	ln, err := net.Listen("unix", socket)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ln.Close() })
+	var mu sync.Mutex
+	var seen []string
 	go func() {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -156,6 +171,9 @@ func TestAnEngineFromBeforeTheNegotiationIsAProtocolZeroEngine(t *testing.T) {
 				return
 			}
 			req, _ := mcp.RequestOf(line)
+			mu.Lock()
+			seen = append(seen, req.Method)
+			mu.Unlock()
 			_ = mcp.WriteError(conn, req.ID, -32601, "method not found: "+req.Method)
 		}
 	}()
@@ -163,4 +181,7 @@ func TestAnEngineFromBeforeTheNegotiationIsAProtocolZeroEngine(t *testing.T) {
 
 	e := c.requestError(t, "tools/list", map[string]any{})
 	require.Contains(t, e.Message, "restart the basalt engine")
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(t, []string{mcp.HelloMethod}, seen, "the old engine ran nothing")
 }

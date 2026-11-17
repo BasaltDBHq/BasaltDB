@@ -312,11 +312,13 @@ func (r *relay) close() {
 // yet, by id, and answers them through the fallback when the connection
 // ends.
 type session struct {
-	conn     *net.UnixConn
-	fallback Fallback
-	files    requestFiles
-	neg      negotiation
-	done     chan struct{}
+	conn      *net.UnixConn
+	fallback  Fallback
+	files     requestFiles
+	neg       negotiation
+	done      chan struct{}
+	ready     chan struct{} // closed once the hello is answered or the session ends
+	readyOnce sync.Once
 	// err is the read error that ended the session, set before done closes;
 	// nil for a clean close.
 	err error
@@ -343,7 +345,7 @@ func dial(ctx context.Context, path string, out *lineWriter, fallback Fallback, 
 		c.Close()
 		return nil, fmt.Errorf("%s is not a Unix socket", path)
 	}
-	s := &session{conn: conn, fallback: fallback, files: files, neg: neg, done: make(chan struct{}), pending: map[string][]byte{}}
+	s := &session{conn: conn, fallback: fallback, files: files, neg: neg, done: make(chan struct{}), ready: make(chan struct{}), pending: map[string][]byte{}}
 	// The first line on every connection: the shim's protocol version. A
 	// write that fails (a refused peer) shows up as the connection ending.
 	_, _ = conn.Write(mcp.HelloLine(neg.build))
@@ -355,6 +357,7 @@ func dial(ctx context.Context, path string, out *lineWriter, fallback Fallback, 
 // closes the connection, then answers what it left unanswered.
 func (s *session) copyAnswers(ctx context.Context, out *lineWriter) {
 	defer close(s.done)
+	defer s.markReady()
 	defer s.abandon(ctx, out)
 	sc := bufio.NewScanner(s.conn)
 	sc.Buffer(make([]byte, scannerInitSize), scannerMaxSize)
@@ -365,11 +368,13 @@ func (s *session) copyAnswers(ctx context.Context, out *lineWriter) {
 			s.refusal = msg
 			continue
 		}
-		if hello, ok := mcp.HelloAnswer(sc.Bytes()); ok {
-			if s.engineTooOld(hello) {
+		if hello, known, ok := mcp.HelloAnswer(sc.Bytes()); ok {
+			if known && s.engineTooOld(hello) {
+				s.markReady()
 				s.conn.Close()
 				return
 			}
+			s.markReady()
 			continue
 		}
 		s.answered(sc.Bytes())
@@ -430,7 +435,19 @@ func refuse(out io.Writer, line []byte, refusal string) error {
 // forward hands line to the engine and reports whether the session took
 // it: false when the session has ended or the write failed, and the caller
 // answers it some other way.
+func (s *session) markReady() { s.readyOnce.Do(func() { close(s.ready) }) }
+
+// helloWait is how long the first request waits for the engine's answer to
+// the hello; an engine that stays silent is served as if it had answered.
+const helloWait = 3 * time.Second
+
 func (s *session) forward(line []byte) bool {
+	// No request reaches the engine before its version is known, so an
+	// engine that is too old never runs one.
+	select {
+	case <-s.ready:
+	case <-time.After(helloWait):
+	}
 	key := messageID(line)
 	s.mu.Lock()
 	if s.ended {

@@ -222,7 +222,7 @@ func (r *relay) dialWaiting(ctx context.Context) (*session, error) {
 	for {
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, err
 		case <-deadline.C:
 			r.wasUp = false
 			return nil, err

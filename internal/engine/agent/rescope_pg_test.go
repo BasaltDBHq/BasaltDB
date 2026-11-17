@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
@@ -572,8 +573,8 @@ func TestConcurrentRescopesKeepTheLatest(t *testing.T) {
 // timeout cancels it.
 type slowReverts struct{ agent.RevertStore }
 
-func (slowReverts) RescopeRevert(context.Context, guard.RescopeRequest, time.Duration) (guard.RescopedRevert, error) {
-	return guard.RescopedRevert{}, &pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"}
+func (slowReverts) RescopeRevert(context.Context, action.RescopeRequest, time.Duration) (action.RescopedRevert, error) {
+	return action.RescopedRevert{}, &pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"}
 }
 
 // A rescope past 100 seconds is 504 QUERY_TIMEOUT TIME_LIMIT, with what the

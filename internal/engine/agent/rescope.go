@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/channel"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
@@ -60,8 +61,8 @@ func (p ScopeProof) assertion() passkey.Assertion {
 // (revert-scope-response.schema.json): the rebuilt request, and the catalog
 // for a proven widen or a narrow under its scope token.
 type ScopeResponse struct {
-	Request revert.Request       `json:"request"`
-	Catalog *guard.RevertCatalog `json:"catalog,omitempty"`
+	Request revert.Request        `json:"request"`
+	Catalog *action.RevertCatalog `json:"catalog,omitempty"`
 }
 
 // rescoped is what the engine holds in memory for a revert the person
@@ -74,7 +75,7 @@ type rescoped struct {
 	link    [sha256.Size]byte
 	token   []byte
 	request revert.Request
-	catalog *guard.RevertCatalog
+	catalog *action.RevertCatalog
 	expires time.Time
 }
 
@@ -193,7 +194,7 @@ func (s *Service) RescopeRevert(ctx context.Context, id uuid.UUID, secret string
 	if err != nil {
 		return ScopeResponse{}, err
 	}
-	req := guard.RescopeRequest{RevertID: id, Select: in.Select}
+	req := action.RescopeRequest{RevertID: id, Select: in.Select}
 	if widen {
 		raw, err := links.DecodeSecret(in.NewSecret)
 		if err != nil {

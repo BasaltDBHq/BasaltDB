@@ -67,12 +67,12 @@ type catalogReverts struct {
 	by    uuid.UUID
 }
 
-func (r catalogReverts) PreviewRevert(context.Context, guard.RevertScope, string, int) (guard.PreviewPage, error) {
-	out := guard.PreviewPage{Lines: len(r.lines), AllAlreadyReverted: true, CursorFound: true}
+func (r catalogReverts) PreviewRevert(context.Context, action.Scope, string, int) (action.PreviewPage, error) {
+	out := action.PreviewPage{Lines: len(r.lines), AllAlreadyReverted: true, CursorFound: true}
 	for _, text := range r.lines {
 		l, err := revert.ParseLine(text)
 		if err != nil {
-			return guard.PreviewPage{}, err
+			return action.PreviewPage{}, err
 		}
 		if l.Action == revert.ActionRestore {
 			out.Restore++
@@ -82,7 +82,7 @@ func (r catalogReverts) PreviewRevert(context.Context, guard.RevertScope, string
 	return out, nil
 }
 
-func (r catalogReverts) RevertedBy(context.Context, guard.RevertScope) (uuid.UUID, error) {
+func (r catalogReverts) RevertedBy(context.Context, action.Scope) (uuid.UUID, error) {
 	return r.by, nil
 }
 
@@ -164,7 +164,7 @@ func approvalLink(reason string) func(*testing.T, *Service) error {
 func nothingToRevert(tool string, lines []string, detail string, by uuid.UUID) func(*testing.T, *Service) error {
 	return func(t *testing.T, s *Service) error {
 		s.Reverts = catalogReverts{lines: lines, by: by}
-		scope := guard.RevertScope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}
+		scope := action.Scope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}
 		return s.nothingToRevert(context.Background(), tool, scope, &pgconn.PgError{Code: "BS009", Message: "NOTHING_TO_REVERT", Detail: detail})
 	}
 }
@@ -202,7 +202,7 @@ func catalogCases() map[string]catalogCase {
 	revertArgs := map[string]any{"revertId": caseRevertID}
 	timeoutRevert := func(tool string) func(*testing.T, *Service) error {
 		return func(t *testing.T, s *Service) error {
-			return s.prepareTimeout(tool, guard.RevertScope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}, "57014")
+			return s.prepareTimeout(tool, action.Scope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}, "57014")
 		}
 	}
 	return map[string]catalogCase{
@@ -345,7 +345,7 @@ func catalogCases() map[string]catalogCase {
 			"preview_revert",
 			map[string]any{"taskId": caseRunID},
 			plainFunc(func() error {
-				return notOwnTask(guard.RevertScope{Kind: "TASK", ID: uuid.MustParse(caseRunID)})
+				return notOwnTask(action.Scope{Kind: "TASK", ID: uuid.MustParse(caseRunID)})
 			}),
 		},
 		caseKey("NOT_FOUND", "LINK", ""):       {"approval_page", nil, asToolError(&mcp.ToolError{Code: CodeNotFound, Reason: "LINK", Message: "no such link"})},
@@ -374,7 +374,7 @@ func catalogCases() map[string]catalogCase {
 			"preview_revert",
 			map[string]any{"runId": caseRunID, "tables": []any{"public.ghost"}},
 			plainFunc(func() error {
-				return scopeRefused(guard.RevertScope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}, &pgconn.PgError{
+				return scopeRefused(action.Scope{Kind: "RUN", ID: uuid.MustParse(caseRunID)}, &pgconn.PgError{
 					Code: "BS011", Message: "SCOPE_REFUSED", Detail: guard.ScopeFilter, Hint: "public.ghost has no change of yours in this scope",
 				})
 			}),

@@ -61,7 +61,9 @@ type Fallback interface {
 // An engine that was serving this session and goes away (an upgrade restarts
 // it) is waited for, up to DefaultReconnectWait, before the next message
 // falls back; a read-only request the engine dropped unanswered is sent once
-// more to the engine that returns. Nothing else is ever sent twice.
+// more to the engine that returns, and so is any request the engine
+// answered as not run because it was restarting (mcp.ErrCodeRestarting).
+// Nothing else is ever sent twice.
 func Serve(ctx context.Context, socketPath string, fallback Fallback, in io.Reader, out io.Writer) error {
 	return ServeWith(ctx, socketPath, fallback, in, out, Options{})
 }
@@ -189,8 +191,21 @@ type relay struct {
 // retry takes back a request the engine never answered, once, when it is
 // safe to run again; false means the caller answers it as abandoned.
 func (r *relay) retry(line []byte) bool {
+	if !retriable(line) {
+		return false
+	}
+	return r.requeue(line)
+}
+
+// resend takes back a request the engine answered as not run because it
+// was restarting: any request, since nothing ran, but once only; false
+// means the caller passes the engine's answer on.
+func (r *relay) resend(line []byte) bool { return r.requeue(line) }
+
+// requeue hands line back to the serve loop once per request id.
+func (r *relay) requeue(line []byte) bool {
 	key := messageID(line)
-	if key == "" || !retriable(line) {
+	if key == "" {
 		return false
 	}
 	r.mu.Lock()
@@ -227,7 +242,7 @@ func (r *relay) drainRetries(ctx context.Context) {
 func (r *relay) dialWaiting(ctx context.Context) (*session, error) {
 	sess, err := r.dial(ctx, r.path, r.out, r.fallback, r.files, r.neg)
 	if err == nil {
-		sess.retry = r.retry
+		sess.retry, sess.resend = r.retry, r.resend
 		r.wasUp = true
 		return sess, nil
 	}
@@ -247,7 +262,7 @@ func (r *relay) dialWaiting(ctx context.Context) (*session, error) {
 			return nil, err
 		case <-tick.C:
 			if sess, err = r.dial(ctx, r.path, r.out, r.fallback, r.files, r.neg); err == nil {
-				sess.retry = r.retry
+				sess.retry, sess.resend = r.retry, r.resend
 				return sess, nil
 			}
 		}
@@ -297,9 +312,23 @@ func (r *relay) finish(ctx context.Context) error {
 	}
 }
 
+// restartingClose is how long a session whose engine said it is
+// restarting is still read before it is closed: the engine ends it soon
+// after its last answer, and the answers still coming are its other
+// "not run" answers.
+const restartingClose = time.Second
+
 func (r *relay) close() {
 	if r.sess == nil {
 		return
+	}
+	if r.sess.isRestarting() {
+		t := time.NewTimer(restartingClose)
+		select {
+		case <-r.sess.done:
+		case <-t.C:
+		}
+		t.Stop()
 	}
 	r.sess.conn.Close()
 	<-r.sess.done
@@ -328,10 +357,16 @@ type session struct {
 	refusal string
 	// retry takes back an unanswered request that is safe to run again.
 	retry func(line []byte) bool
+	// resend takes back a request the engine did not run because it is
+	// restarting.
+	resend func(line []byte) bool
 
-	mu      sync.Mutex
-	ended   bool
-	pending map[string][]byte
+	mu    sync.Mutex
+	ended bool
+	// restarting is set once the engine answered a request as not run
+	// because it is restarting: nothing more is sent on this session.
+	restarting bool
+	pending    map[string][]byte
 }
 
 func dial(ctx context.Context, path string, out *lineWriter, fallback Fallback, files requestFiles, neg negotiation) (*session, error) {
@@ -376,6 +411,9 @@ func (s *session) copyAnswers(ctx context.Context, out *lineWriter) {
 				return
 			}
 			s.markReady()
+			continue
+		}
+		if s.takeBackRestarting(sc.Bytes()) {
 			continue
 		}
 		s.answered(sc.Bytes())
@@ -457,7 +495,7 @@ func (s *session) forward(line []byte) bool {
 	}
 	key := messageID(line)
 	s.mu.Lock()
-	if s.ended {
+	if s.ended || s.restarting {
 		s.mu.Unlock()
 		return false
 	}
@@ -475,6 +513,29 @@ func (s *session) forward(line []byte) bool {
 	}
 	delete(s.pending, key)
 	return false
+}
+
+// takeBackRestarting hands the request of an answer that says the engine
+// is restarting and did not run it back to the relay, to be sent to the
+// engine that comes back; false when line is another answer, or the
+// request was already sent once more (the answer is then passed on).
+func (s *session) takeBackRestarting(line []byte) bool {
+	key, ok := mcp.Restarting(line)
+	if !ok {
+		return false
+	}
+	s.mu.Lock()
+	s.restarting = true
+	req, pending := s.pending[key]
+	delete(s.pending, key)
+	s.mu.Unlock()
+	return pending && s.resend != nil && s.resend(req)
+}
+
+func (s *session) isRestarting() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.restarting
 }
 
 // answered drops the request an engine answer is for.

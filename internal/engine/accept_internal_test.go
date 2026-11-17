@@ -37,11 +37,11 @@ func TestAcceptRetriesATemporaryError(t *testing.T) {
 	e := &Engine{log: slog.New(slog.DiscardHandler)}
 	emfile := &net.OpError{Op: "accept", Err: os.NewSyscallError("accept", syscall.EMFILE)}
 	ln := &failingAccepter{errs: []error{emfile, emfile}}
-	e.acceptLoop(context.Background(), Agent{Name: "bot"}, ln)
+	e.acceptLoop(context.Background(), context.Background(), Agent{Name: "bot"}, ln)
 	require.EqualValues(t, 3, ln.calls.Load(), "two retries, then the closed listener ends the loop")
 
 	ln = &failingAccepter{errs: []error{&net.OpError{Op: "accept", Err: os.NewSyscallError("accept", syscall.EINVAL)}, emfile}}
-	e.acceptLoop(context.Background(), Agent{Name: "bot"}, ln)
+	e.acceptLoop(context.Background(), context.Background(), Agent{Name: "bot"}, ln)
 	require.EqualValues(t, 1, ln.calls.Load(), "a lasting error ends the loop")
 
 	// A cancelled engine stops backing off.
@@ -49,7 +49,7 @@ func TestAcceptRetriesATemporaryError(t *testing.T) {
 	cancel()
 	ln = &failingAccepter{errs: []error{emfile, emfile, emfile}}
 	done := make(chan struct{})
-	go func() { e.acceptLoop(ctx, Agent{Name: "bot"}, ln); close(done) }()
+	go func() { e.acceptLoop(ctx, context.Background(), Agent{Name: "bot"}, ln); close(done) }()
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):

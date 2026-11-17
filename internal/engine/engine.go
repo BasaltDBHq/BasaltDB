@@ -50,6 +50,9 @@ type Engine struct {
 	// drains holds, per agent, a slot for each refused connection being
 	// drained; when all are taken a refused peer is closed at once.
 	drains map[string]chan struct{}
+
+	restart RestartOptions
+	gate    *callGate
 }
 
 // refusedDrains is how many refused connections of one agent are drained
@@ -67,7 +70,7 @@ func New(log *slog.Logger, agents []Agent) *Engine {
 			panic("engine: agent needs a name, a socket path and a server")
 		}
 	}
-	e := &Engine{log: log, agents: agents, peerUID: peercred.UID}
+	e := &Engine{log: log, agents: agents, peerUID: peercred.UID, gate: newCallGate()}
 	return e.WithRefusedDrains(refusedDrains)
 }
 
@@ -90,12 +93,24 @@ func (e *Engine) WithPeerUID(f PeerUIDFunc) *Engine {
 // Serve listens on every agent's socket and serves connections until ctx is
 // done, then closes the listeners and open connections and removes the
 // socket files.
+// WithRestart turns on the restart onto a new binary: when o.Upgrade
+// returns, Serve stops between calls and returns ErrRestart.
+func (e *Engine) WithRestart(o RestartOptions) *Engine {
+	e.restart = o.withDefaults()
+	return e
+}
+
+// Serve serves every agent's socket until ctx is done, then returns nil.
+// With WithRestart, it returns ErrRestart once it stopped for an upgrade.
 func (e *Engine) Serve(ctx context.Context) error {
 	listeners := make([]*net.UnixListener, 0, len(e.agents))
+	var closeOnce sync.Once
 	closeAll := func() {
-		for _, ln := range listeners {
-			ln.Close()
-		}
+		closeOnce.Do(func() {
+			for _, ln := range listeners {
+				ln.Close()
+			}
+		})
 	}
 	for _, a := range e.agents {
 		ln, err := listenSocket(a.SocketPath)
@@ -109,14 +124,57 @@ func (e *Engine) Serve(ctx context.Context) error {
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	// draining ends when the engine stops taking calls for a restart: every
+	// connection is then read only briefly more.
+	draining, drain := context.WithCancel(context.Background())
+	defer drain()
 	var wg sync.WaitGroup
 	for i, a := range e.agents {
-		wg.Go(func() { e.acceptLoop(ctx, a, listeners[i]) })
+		wg.Go(func() { e.acceptLoop(ctx, draining, a, listeners[i]) })
+	}
+	served := make(chan struct{})
+	go func() { wg.Wait(); close(served) }()
+	if !e.awaitUpgrade(ctx) {
+		closeAll()
+		<-served
+		return nil
+	}
+	e.log.Info("a new basalt binary is installed: restarting onto it between calls")
+	if !e.gate.closeWhenIdle(ctx, e.restart.IdleWait) {
+		closeAll()
+		<-served
+		return nil
+	}
+	closeAll()
+	drain()
+	e.finishDrain(ctx, cancel, served)
+	return ErrRestart
+}
+
+// awaitUpgrade reports whether the engine should restart onto a new binary
+// (true) or ctx ended first (false).
+func (e *Engine) awaitUpgrade(ctx context.Context) bool {
+	if e.restart.Upgrade != nil && e.restart.Upgrade(ctx) == nil && ctx.Err() == nil {
+		return true
 	}
 	<-ctx.Done()
-	closeAll()
-	wg.Wait()
-	return nil
+	return false
+}
+
+// finishDrain waits for every connection to end, up to DrainWait, then
+// cancels the calls still running.
+func (e *Engine) finishDrain(ctx context.Context, cancel context.CancelFunc, served <-chan struct{}) {
+	t := time.NewTimer(e.restart.DrainWait)
+	defer t.Stop()
+	select {
+	case <-served:
+		return
+	case <-ctx.Done():
+	case <-t.C:
+		e.log.Warn("calls still running after the drain wait are cancelled for the restart", "wait", e.restart.DrainWait)
+	}
+	cancel()
+	<-served
 }
 
 // unixAccepter is the listener acceptLoop reads (tests fake it).
@@ -130,7 +188,7 @@ const (
 	acceptBackoffMax = time.Second
 )
 
-func (e *Engine) acceptLoop(ctx context.Context, a Agent, ln unixAccepter) {
+func (e *Engine) acceptLoop(ctx, draining context.Context, a Agent, ln unixAccepter) {
 	var conns sync.WaitGroup
 	defer conns.Wait()
 	var backoff time.Duration
@@ -154,7 +212,7 @@ func (e *Engine) acceptLoop(ctx context.Context, a Agent, ln unixAccepter) {
 			continue
 		}
 		backoff = 0
-		conns.Go(func() { e.serveConn(ctx, a, conn) })
+		conns.Go(func() { e.serveConn(ctx, draining, a, conn) })
 	}
 }
 
@@ -169,7 +227,7 @@ func temporaryAccept(err error) bool {
 	return false
 }
 
-func (e *Engine) serveConn(ctx context.Context, a Agent, conn *net.UnixConn) {
+func (e *Engine) serveConn(ctx, draining context.Context, a Agent, conn *net.UnixConn) {
 	defer conn.Close()
 	uid, err := e.peerUID(conn)
 	if err != nil {
@@ -184,7 +242,11 @@ func (e *Engine) serveConn(ctx context.Context, a Agent, conn *net.UnixConn) {
 	// Closing the connection on shutdown unblocks the server's read.
 	stop := context.AfterFunc(ctx, func() { conn.Close() })
 	defer stop()
-	if err := a.Server.Serve(ctx, conn, conn); err != nil && ctx.Err() == nil && !errors.Is(err, net.ErrClosed) {
+	gate := connGate{callGate: e.gate, conn: conn}
+	stopDrain := context.AfterFunc(draining, gate.stopReading)
+	defer stopDrain()
+	err = a.Server.ServeGated(ctx, conn, conn, gate)
+	if err != nil && ctx.Err() == nil && !errors.Is(err, net.ErrClosed) && !errors.Is(err, os.ErrDeadlineExceeded) {
 		e.log.Warn("connection ended", "agent", a.Name, "err", err)
 	}
 }

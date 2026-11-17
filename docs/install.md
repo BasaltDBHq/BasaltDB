@@ -209,6 +209,8 @@ To keep the agent off the person socket, run it as its own OS user: `basalt init
 
 ## Upgrade
 
+Once a day `basalt` looks at the public release list of BasaltDBHq/BasaltDB (nothing else is sent) and, when a newer release is out, prints one line on stderr after a command: yellow normally, red for a security release. To turn the check off, set `BASALT_UPDATE_CHECK=off` or `"updateCheck": "OFF"` in `engine.json`.
+
 Upgrade the binary the way you installed it (`brew upgrade basaltdbhq/tap/basaltdb`, or install the new release archive over the old one), then restart the engine so it runs the new binary:
 
 - With the service: `sudo systemctl restart basalt-engine` on Linux, `sudo launchctl kickstart -k system/dev.basaltdb.engine` on macOS.

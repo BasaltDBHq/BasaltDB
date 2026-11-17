@@ -106,3 +106,9 @@ func TestDefaults(t *testing.T) {
 	require.Equal(t, "/srv/state", config.Config{StateDir: "/srv/state"}.StateDirFor("linux"))
 	require.Equal(t, "/var/lib/basalt", config.Config{}.StateDirFor("linux"))
 }
+
+func TestUpdateCheckKey(t *testing.T) {
+	if !(config.Config{}).UpdateCheckOn() || !(config.Config{UpdateCheck: "ON"}).UpdateCheckOn() || (config.Config{UpdateCheck: "OFF"}).UpdateCheckOn() {
+		t.Fatal("UpdateCheckOn")
+	}
+}

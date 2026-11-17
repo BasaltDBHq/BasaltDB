@@ -54,5 +54,4 @@ GRANT EXECUTE ON FUNCTION basalt_meta.reveal_nonce(text, uuid), basalt_meta.reve
 GRANT EXECUTE ON FUNCTION basalt_meta.pii_readable_columns(), basalt_meta.pii_fingerprint(), basalt_meta.pii_unclassified() TO {{agents}};
 
 -- Reinstalls.
-GRANT EXECUTE ON FUNCTION basalt_meta.install_id(), basalt_meta.record_pin_set_aside(bigint, bytea, uuid),
-    basalt_meta.pin_on_chain(bigint, bytea) TO {{agents}};
+GRANT EXECUTE ON FUNCTION basalt_meta.record_pin_set_aside(bigint, bytea, oid), basalt_meta.pin_on_chain(bigint, bytea) TO {{agents}};

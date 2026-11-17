@@ -180,8 +180,8 @@ CREATE OR REPLACE VIEW basalt_meta.agent_reinstalls WITH (security_barrier = tru
     SELECT l.at, l.agent,
            (l.detail->>'pinnedSeq')::bigint AS pinned_seq,
            pg_catalog.decode(l.detail->>'pinnedHash', 'hex') AS pinned_hash,
-           (l.detail->>'pinnedInstall')::uuid AS pinned_install,
-           (l.detail->>'install')::uuid AS install,
+           (l.detail->>'pinnedInstall')::oid AS pinned_install,
+           (l.detail->>'install')::oid AS install,
            (l.detail->>'installedAt')::timestamptz AS installed_at,
            (l.detail->>'installedBy') AS installed_by,
            (l.detail->>'vaultUser') AS vault_user

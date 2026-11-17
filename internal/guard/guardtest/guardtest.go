@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -88,10 +89,22 @@ func NewRecreatable(t *testing.T) *DB {
 func (d *DB) Recreate(t *testing.T) {
 	t.Helper()
 	require.NotEmpty(t, d.template, "Recreate needs a DB from NewRecreatable")
+	before := d.schemaOID(t)
 	_ = d.Admin.Close(context.Background())
 	dropDatabase(t, d.base, d.name)
 	createDatabase(t, d.base, d.name, d.template)
 	d.Admin = d.connect(t, d.URL)
+	require.Equal(t, before, d.schemaOID(t), "the recreated basalt_meta has the old schema oid, or the test proves nothing")
+}
+
+// schemaOID is the oid of the basalt_meta schema.
+func (d *DB) schemaOID(t *testing.T) uint32 {
+	t.Helper()
+	var oid uint32
+	// Plain SQL: a catalog read for a fixture check.
+	require.NoError(t, d.Admin.QueryRow(context.Background(),
+		`SELECT n.oid FROM pg_catalog.pg_namespace n WHERE n.nspname = 'basalt_meta'`).Scan(&oid))
+	return oid
 }
 
 func testBase(t *testing.T) string {
@@ -260,6 +273,20 @@ func WithMigrations(t *testing.T, ms ...guard.TestMigration) {
 	t.Helper()
 	t.Setenv(envTestMigrations, strconv.Itoa(len(ms)))
 	t.Cleanup(guard.AppendTestMigrations(ms...))
+}
+
+// UpToVersion installs only the build's versions up to v until the
+// returned restore runs (guard.KeepTestMigrationsUpTo), so a test installs
+// a guard as an earlier release did and upgrades it after restore. Like
+// WithMigrations, t must not run in parallel; restore also runs at cleanup.
+func UpToVersion(t *testing.T, v int) (restore func()) {
+	t.Helper()
+	t.Setenv(envTestMigrations, "0")
+	var once sync.Once
+	r := guard.KeepTestMigrationsUpTo(v)
+	restore = func() { once.Do(r) }
+	t.Cleanup(restore)
+	return restore
 }
 
 // NextVersion appends one test-only version after the build's own (see

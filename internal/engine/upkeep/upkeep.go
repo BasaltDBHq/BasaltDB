@@ -310,7 +310,7 @@ func (u *Upkeep) settle(ctx context.Context, install uuid.UUID) error {
 	pinned, from := *u.head, u.install
 	s, err := ledger.SettlePin(ctx, u.db, pinned, from)
 	if err != nil {
-		return fmt.Errorf("check the pin of guard install %d: %w", from, err)
+		return fmt.Errorf("check the pin of guard install %s: %w", from, err)
 	}
 	switch s.Fate {
 	case ledger.PinMoved:

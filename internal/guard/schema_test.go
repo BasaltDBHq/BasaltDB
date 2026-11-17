@@ -8,19 +8,27 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The schema files load in name order, each without its header, and
-// version 1 is all of them.
+// The schema files load in name order, each without its header, and the
+// versions run all of them, in order, each file once.
 func TestSchemaFiles(t *testing.T) {
 	t.Parallel()
 	files, err := loadSchema(schemaFS)
 	require.NoError(t, err)
 	require.NotEmpty(t, files)
-	require.Equal(t, strings.Join(files, ""), migrations[0].sql)
+	all := ""
+	for i, m := range migrations {
+		require.Equal(t, i+1, m.version)
+		all += m.sql
+	}
+	require.Equal(t, strings.Join(files, ""), all)
+	require.Equal(t, versionInstallIDs, LatestVersion())
 	for _, sql := range files {
 		require.True(t, strings.HasPrefix(sql, "\n"), "the SQL starts after the header's blank line")
 		require.NotContains(t, sql, strings.TrimSpace(recordInstallLine))
 	}
-	require.Contains(t, migrations[0].sql, recordInstallRow)
+	require.Contains(t, migrations[versionInstallIDs-1].sql, recordInstallRow)
+	require.NotContains(t, migrations[versionGuard-1].sql, recordInstallRow, "version 1 keeps the oid row it shipped with")
+	require.Contains(t, migrations[versionGuard-1].sql, recordInstallRowV1, "recordInstall(1) runs the statement version 1 has")
 }
 
 func TestSchemaFilesRefuseAMalformedDirectory(t *testing.T) {

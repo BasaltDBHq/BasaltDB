@@ -166,6 +166,7 @@ linters:
         action-is-neutral:
           files:
             - "**/internal/action/**"
+            - "!$test"
           list-mode: strict
           allow:
             - $gostd

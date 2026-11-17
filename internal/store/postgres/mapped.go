@@ -17,7 +17,8 @@ import (
 
 // The exported store methods map their errors (MapError), so the service
 // sees contract errors, never a driver error. Each calls the method of the
-// same name with Raw appended.
+// same name with Raw appended. A new exported method that can fail gets
+// its wrapper here.
 
 // Relations is pgcatalog.Relations.
 func (c *Catalog) Relations(ctx context.Context) ([]pgcatalog.Relation, int, error) {

@@ -24,7 +24,8 @@ var (
 // adapter to the contract: Code and Reason are the tool error's, Message
 // its text. SQLState, Detail and Hint are the store's own, LedgerCode the
 // ledger's code for its own refusals ("" for any other failure). Error is
-// the store's original text, and Unwrap the original error.
+// the store's original text, and Unwrap the original error, which is
+// required.
 type StoreError struct {
 	Code       string
 	Reason     string

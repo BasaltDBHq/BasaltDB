@@ -148,8 +148,13 @@ func (s *fakeSys) Run(_ context.Context, args ...string) error {
 	return nil
 }
 
-func (s *fakeSys) Mkdir(path string, mode os.FileMode, owner string) error {
-	s.ran = append(s.ran, fmt.Sprintf("mkdir -m %04o -o %s %s", mode, owner, path))
+func (s *fakeSys) Mkdir(path string, mode os.FileMode, owner, group string) error {
+	s.ran = append(s.ran, fakeMkdir(path, mode, owner, group))
+	return nil
+}
+
+func (s *fakeSys) RemoveTree(path string) error {
+	s.ran = append(s.ran, "rm -rf "+path)
 	return nil
 }
 
@@ -383,7 +388,7 @@ func TestServiceInstallAgentReadsTheCredentialFromStdin(t *testing.T) {
 	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "engine.json")
 	spec := service.Spec{GOOS: "linux", Binary: fakeBin, ConfigPath: cfgPath, User: me(t)}
-	a := agentInstall{name: "bot", osUser: me(t), personUIDs: []uint32{4242}}
+	a := agentInstall{name: "bot", osUser: agentOSUser(t), personUIDs: []uint32{4242}}
 
 	_, err := agentSpecFromStdin(strings.NewReader("postgres://x\n"), spec, a, false, false)
 	require.ErrorContains(t, err, "--credential-stdin")
@@ -392,7 +397,7 @@ func TestServiceInstallAgentReadsTheCredentialFromStdin(t *testing.T) {
 	_, err = agentSpecFromStdin(strings.NewReader("x\n"), spec, agentInstall{name: "bot", osUser: "no-such-user-basalt"}, true, false)
 	require.ErrorContains(t, err, "no-such-user-basalt")
 
-	noPerson := agentInstall{name: "bot", osUser: me(t)}
+	noPerson := agentInstall{name: "bot", osUser: agentOSUser(t)}
 	_, err = agentSpecFromStdin(strings.NewReader("x\n"), spec, noPerson, true, false)
 	require.ErrorIs(t, err, errNoPerson, "no person uid: no service")
 	noPerson.personUIDs = []uint32{0}
@@ -462,4 +467,19 @@ func TestInitNoServiceDoesNotCheckTheBinary(t *testing.T) {
 	c.goos, c.host = "linux", h
 	runInit(c, []string{"--agent", "bot", "--write", "public.leads", "--skip-passkey", "--yes", "--no-service"})
 	require.Empty(t, h.sys.checked)
+}
+
+// fakeMkdir is how the fakes record a mkdir step: the path as it is.
+func fakeMkdir(path string, mode os.FileMode, owner, group string) string {
+	bits := uint32(mode.Perm())
+	if mode&os.ModeSetgid != 0 {
+		bits |= 0o2000
+	}
+	if owner == "" {
+		owner = "root"
+	}
+	if group != "" {
+		owner += " -g " + group
+	}
+	return fmt.Sprintf("mkdir -m %04o -o %s %s", bits, owner, path)
 }

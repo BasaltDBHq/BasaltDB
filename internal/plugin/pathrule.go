@@ -31,6 +31,10 @@ const maxSymlinkHops = 40
 // groupOtherWrite is the group and other write bits.
 const groupOtherWrite = 0o022
 
+// WhyGroupWritable is the path rule's refusal of a directory or file that
+// its group or others can write.
+const WhyGroupWritable = "can be written by group or others"
+
 // errUnknownMode is a mode other than SERVICE and SAME_USER.
 var errUnknownMode = errors.New("plugin: unknown engine mode")
 
@@ -200,7 +204,7 @@ func checkAboveInfo(p string, fi fs.FileInfo, owner uint32) error {
 		return pathRefusal(p, "is owned by a user other than root and the required owner")
 	}
 	if fi.Mode().Perm()&groupOtherWrite != 0 {
-		return pathRefusal(p, "can be written by group or others")
+		return pathRefusal(p, WhyGroupWritable)
 	}
 	return nil
 }
@@ -227,7 +231,7 @@ func checkStrictInfo(p string, fi fs.FileInfo, owner uint32) error {
 		return pathRefusal(p, "is not owned by the required owner")
 	}
 	if fi.Mode().Perm()&groupOtherWrite != 0 {
-		return pathRefusal(p, "can be written by group or others")
+		return pathRefusal(p, WhyGroupWritable)
 	}
 	return nil
 }

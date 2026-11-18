@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>dev.basaltdb.plugin-acme-ner-default</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Library/Basalt/plugins/acme-ner/default/4f1c2b0e9a8d7c6b5a49382716f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3/bin/acme-ner</string>
+		<string>--serve</string>
+		<string>--lang=en id</string>
+	</array>
+	<key>UserName</key>
+	<string>_basalt-plugin-acme-ner-default</string>
+	<key>GroupName</key>
+	<string>_basalt-plugin-acme-ner-default</string>
+	<key>WorkingDirectory</key>
+	<string>/Library/Basalt/plugins/acme-ner/default/4f1c2b0e9a8d7c6b5a49382716f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3</string>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>BASALT_PLUGIN_SOCKET</key>
+		<string>/Library/Basalt/run/_basalt-plugin-acme-ner-default/p.sock</string>
+	</dict>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Umask</key>
+	<integer>7</integer>
+	<key>HardResourceLimits</key>
+	<dict>
+		<key>ResidentSetSize</key>
+		<integer>1073741824</integer>
+	</dict>
+</dict>
+</plist>

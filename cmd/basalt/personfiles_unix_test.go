@@ -58,6 +58,16 @@ func writeEngineJSON(t *testing.T, path, cred string) {
 	require.NoError(t, os.WriteFile(path, raw, 0o600))
 }
 
+// The hardened read as root gives the same edit for the old credentialFile.
+func TestRootCLINamesTheEditForTheOldCredentialFile(t *testing.T) {
+	t.Parallel()
+	f := newRootCLIFixture(t)
+	require.NoError(t, os.WriteFile(f.configPath, []byte(`{"socketDir": "/tmp/basalt-test", "agents": [{"name": "bot", "osUser": "tester", "credentialFile": "/c/bot.cred"}]}`), 0o600))
+	_, err := agentURL(f.c, testAgentKey, "", f.configPath)
+	require.ErrorContains(t, err, `agent "bot": "credentialFile" now goes inside "store"; replace "credentialFile": "/c/bot.cred" with "store": {"kind": "POSTGRES", "credentialFile": "/c/bot.cred"}`)
+	require.NotContains(t, err.Error(), "unknown field")
+}
+
 func TestRootCLIReadsAPlainCredential(t *testing.T) {
 	t.Parallel()
 	f := newRootCLIFixture(t)

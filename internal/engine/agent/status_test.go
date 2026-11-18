@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -155,7 +156,7 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			cmds, err := NewCommands("bot", "", "linux", nil)
 			require.NoError(t, err)
 			cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: operatedBy, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
-			r, err := EngineDownStatus("bot", cmds, cfg, "test", statusNow)
+			r, err := EngineDownStatus("bot", cmds, cfg, nil, "test", statusNow)
 			require.NoError(t, err)
 			return r
 		}},
@@ -365,7 +366,7 @@ func TestStatusEnforcementAndOperator(t *testing.T) {
 	// The shim that cannot read the config: PERSON and GUARD_ONLY.
 	cmds, err := NewCommands("bot", "", "linux", nil)
 	require.NoError(t, err)
-	r, err := EngineDownStatus("bot", cmds, nil, "test", statusNow)
+	r, err := EngineDownStatus("bot", cmds, nil, nil, "test", statusNow)
 	require.NoError(t, err)
 	require.Equal(t, mcpcontract.OperatedByPerson, r.OperatedBy)
 	require.Equal(t, EnforcementGuardOnly, r.Enforcement)
@@ -378,7 +379,7 @@ func TestStatusEnforcementAndOperator(t *testing.T) {
 	cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: mcpcontract.OperatedByAgent, Agents: []config.Agent{{
 		Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential), Setup: pendingSetup(guard.SetupInstall, statusNow.Add(time.Hour)),
 	}}}
-	r, err = EngineDownStatus("bot", cmds.Foreground(), cfg, "test", statusNow)
+	r, err = EngineDownStatus("bot", cmds.Foreground(), cfg, nil, "test", statusNow)
 	require.NoError(t, err)
 	require.Equal(t, mcpcontract.OperatedByAgent, r.OperatedBy)
 	require.Equal(t, EnforcementGuardOnly, r.Enforcement)
@@ -864,4 +865,19 @@ func TestDirectNotServedStepsCommand(t *testing.T) {
 // notRecorded is a database that holds no row for the engine.
 func notRecorded(context.Context, string) (*guard.RecordedEngine, error) {
 	return nil, nil //nolint:nilnil // a missing row is the answer, not an error
+}
+
+// A config refused for the older credentialFile key puts the edit in the
+// shim's status, since the engine cannot start on it.
+func TestEngineDownStatusNamesTheOldCredentialFileEdit(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "engine.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{"socketDir": "/s", "agents": [{"name": "bot", "osUser": "u", "credentialFile": "/c/bot.cred"}]}`), 0o600))
+	_, cfgErr := config.Load(path)
+	cmds, err := NewCommands("bot", path, "linux", nil)
+	require.NoError(t, err)
+	r, err := EngineDownStatus("bot", cmds, nil, cfgErr, "test", statusNow)
+	require.NoError(t, err)
+	require.Len(t, r.Problems, 1)
+	require.Contains(t, r.Problems[0].Message, `agent "bot": "credentialFile" now goes inside "store"; replace "credentialFile": "/c/bot.cred" with "store": {"kind": "POSTGRES", "credentialFile": "/c/bot.cred"}`)
 }

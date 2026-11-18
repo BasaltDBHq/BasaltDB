@@ -2,6 +2,9 @@
 [Unit]
 Description=BasaltDB plugin acme-ner (instance default)
 StartLimitIntervalSec=0
+After=basalt-engine.service
+BindsTo=basalt-engine.service
+PartOf=basalt-engine.service
 
 [Service]
 Type=simple
@@ -24,6 +27,15 @@ ProtectKernelModules=yes
 ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes
+ProtectProc=invisible
+ProcSubset=pid
+CapabilityBoundingSet=
+RestrictNamespaces=yes
+RemoveIPC=yes
+PrivateIPC=yes
+SystemCallFilter=~chmod fchmod fchmodat fchmodat2
+SystemCallErrorNumber=EPERM
+RestrictAddressFamilies=AF_UNIX
 ReadWritePaths=/usr/local/lib/basalt/run/basalt-plugin-acme-ner-default
 InaccessiblePaths=/etc/basalt
 InaccessiblePaths=/var/lib/basalt
@@ -33,4 +45,4 @@ InaccessiblePaths=-/srv/acme.token
 PrivateNetwork=yes
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=basalt-engine.service

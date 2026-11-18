@@ -89,9 +89,17 @@ func TestPluginNetwork(t *testing.T) {
 	none, err := service.SystemdPluginUnit(linuxHost(), entry("linux", "default"))
 	require.NoError(t, err)
 	require.Contains(t, none, "\nPrivateNetwork=yes\n", "an empty egress runs without network")
+	require.Contains(t, none, "\nRestrictAddressFamilies=AF_UNIX\n")
 	some, err := service.SystemdPluginUnit(linuxHost(), entry("linux", "default", "hooks.slack.com:443"))
 	require.NoError(t, err)
 	require.NotContains(t, some, "PrivateNetwork")
+	require.Contains(t, some, "\nRestrictAddressFamilies=AF_UNIX AF_INET AF_INET6\n")
+	for _, u := range []string{none, some} {
+		require.Contains(t, u, "\nBindsTo=basalt-engine.service\n")
+		require.Contains(t, u, "\nAfter=basalt-engine.service\n")
+		require.Contains(t, u, "\nWantedBy=basalt-engine.service\n")
+		require.Contains(t, u, "\nSystemCallFilter=~chmod fchmod fchmodat fchmodat2\n", "a plugin cannot open its socket to others")
+	}
 }
 
 func TestInaccessiblePathsHideTheEngine(t *testing.T) {
@@ -107,9 +115,9 @@ func TestInaccessiblePathsHideTheEngine(t *testing.T) {
 	} {
 		require.Contains(t, unit, want+"\n")
 	}
-	// A credential file in the config directory is hidden with it, so an
-	// agent added there leaves the unit as it is.
-	require.NotContains(t, unit, "product_a.url")
+	// A credential file in the config directory is hidden with it: no
+	// agent's name is written into the world-readable unit.
+	require.NotContains(t, unit, "product_a")
 	// Each path once, whatever the host lists twice.
 	h := linuxHost()
 	h.CredentialFiles = append(h.CredentialFiles, "/etc/basalt", "/srv/creds/client_x.url")
@@ -217,7 +225,7 @@ func TestPluginUserShortening(t *testing.T) {
 			// A shortened name ends in '-', '0' and hex digits, which no
 			// instance does (an instance starts with a letter).
 			last := u[strings.LastIndex(u, "-")+1:]
-			require.Regexp(t, `^0[0-9a-f]{8}$`, last)
+			require.Regexp(t, `^0[0-9a-f]{12}$`, last)
 			n, err := service.NamesFor(goos, k[0], k[1])
 			require.NoError(t, err)
 			require.Equal(t, u, n.User)
@@ -355,7 +363,8 @@ func TestPluginInstallPlanCreatesTheUser(t *testing.T) {
 	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
 	ran := strings.Join(sys.ran, "\n")
 	require.Contains(t, ran, "basalt-plugin-acme-ner-default\n")
-	require.Less(t, strings.Index(ran, "systemctl restart basalt-plugin-acme-ner-default.service"), strings.Index(ran, "systemctl enable --now basalt-engine.service"))
+	require.Less(t, strings.Index(ran, "systemctl enable --now basalt-engine.service"), strings.Index(ran, "systemctl restart basalt-plugin-acme-ner-default.service"),
+		"plugin units are bound to the engine's and start after it")
 	unit := sys.written["/etc/systemd/system/basalt-plugin-acme-ner-default.service"]
 	require.Contains(t, unit, "InaccessiblePaths=/etc/basalt\n")
 	require.Contains(t, unit, "InaccessiblePaths=/var/lib/basalt\n")
@@ -470,6 +479,14 @@ func TestPluginBaseOnAGroupWritableUsrLocal(t *testing.T) {
 	require.NoError(t, err)
 	var out strings.Builder
 	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
-	require.Contains(t, out.String(), "skipped mkdir -m 0755 -o root /usr/local/lib/basalt: plugins cannot be installed until every directory above /usr/local/lib/basalt is writable by root only; on Debian-family systems /usr/local is group-writable: sudo chmod g-w /usr/local")
+	require.Contains(t, out.String(), "skipped mkdir -m 0755 -o root /usr/local/lib/basalt: plugins cannot be installed until every directory above /usr/local/lib/basalt is writable by root only; on Debian-family systems /usr/local and /usr/local/lib are group-writable: sudo chmod g-w /usr/local /usr/local/lib")
 	require.Contains(t, sys.ran, "systemctl enable --now basalt-engine.service")
+}
+
+func TestUserClash(t *testing.T) {
+	t.Parallel()
+	long := "acme-ner-presidio"
+	others := []plugin.EntryKey{{Name: long, Instance: "default"}, {Name: "acme-ner", Instance: "client_x"}}
+	require.Nil(t, service.UserClash(long, "default", others), "an entry does not clash with itself")
+	require.Nil(t, service.UserClash("other", "default", others))
 }

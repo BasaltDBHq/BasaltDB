@@ -89,6 +89,10 @@ func (ep *enginePlugins) serviceRefusal(p config.Plugin, v plugin.Verified) stri
 	if err != nil {
 		return whyNoUnit
 	}
+	if service.UserClash(k.Name, k.Instance, ep.allKeys) != nil {
+		// Two entries would share an OS user, socket and directory.
+		return whyNoUnit
+	}
 	if ep.unitHostErr != nil {
 		return whyNoUnit
 	}
@@ -121,6 +125,9 @@ func (ep *enginePlugins) units() *unitSource {
 // they hide, from cfg at configPath.
 func (ep *enginePlugins) initServiceUnits(cfg config.Config, configPath string) {
 	ep.targets = map[plugin.EntryKey]serviceTarget{}
+	for _, p := range cfg.Plugins {
+		ep.allKeys = append(ep.allKeys, p.Key())
+	}
 	name, err := ep.units().engineUser()
 	if err != nil {
 		ep.unitHostErr = errNoEngineUser

@@ -74,6 +74,8 @@ type enginePlugins struct {
 	unitHost    service.PluginHost
 	unitHostErr error
 	targets     map[plugin.EntryKey]serviceTarget
+	// allKeys are every configured entry's, enabled or not.
+	allKeys []plugin.EntryKey
 }
 
 // newEnginePlugins verifies the enabled plugin entries of cfg, read from

@@ -415,6 +415,8 @@ func runService(ctx context.Context, args []string, io stdio) int {
 		// Every local plugin entry runs under its own unit and OS user:
 		// install writes them all again, uninstall removes them.
 		spec = withPluginUnits(spec, cfg, action == "install", io.err)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		_, _ = fmt.Fprintf(io.err, "basalt: %s cannot be read, so plugin service units are left as they are\n", *configPath)
 	}
 	sys := service.OSSystem{Stdout: io.out, Stderr: io.err}
 

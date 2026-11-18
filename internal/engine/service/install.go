@@ -171,8 +171,10 @@ func InstallPlan(ctx context.Context, sys System, s Spec) ([]Step, error) {
 	if err := sys.CheckBinary(s.Binary); err != nil {
 		return nil, err
 	}
-	if err := s.pluginHost().validate(); err != nil {
-		return nil, err
+	if len(s.Plugins) > 0 {
+		if err := s.pluginHost().validate(); err != nil {
+			return nil, err
+		}
 	}
 	if s.GOOS == goosDarwin {
 		return darwinInstall(ctx, sys, s)
@@ -203,20 +205,22 @@ func linuxInstall(sys System, s Spec) ([]Step, error) {
 	installed := sys.Exists(SystemdUnitPath)
 	steps = append(steps, mkdir(configDirMode, s.User, filepath.Dir(s.ConfigPath)))
 	steps = append(steps, fileSteps(s)...)
-	plugins, err := pluginSteps(sys, s, nil)
-	if err != nil {
-		return nil, err
-	}
-	steps = append(steps, plugins...)
 	steps = append(steps,
 		Step{Kind: StepWrite, Path: SystemdUnitPath, Content: SystemdUnit(s)},
 		run("systemctl", "daemon-reload"),
 	)
 	if installed {
 		// Already running: restart so it reads the new config.
-		return append(steps, run("systemctl", "enable", SystemdUnitName), run("systemctl", "restart", SystemdUnitName)), nil
+		steps = append(steps, run("systemctl", "enable", SystemdUnitName), run("systemctl", "restart", SystemdUnitName))
+	} else {
+		steps = append(steps, run("systemctl", "enable", "--now", SystemdUnitName))
 	}
-	return append(steps, run("systemctl", "enable", "--now", SystemdUnitName)), nil
+	// The plugin units are bound to the engine's: they go after it.
+	plugins, err := pluginSteps(sys, s, nil)
+	if err != nil {
+		return nil, err
+	}
+	return append(steps, plugins...), nil
 }
 
 // fileSteps write the spec's files (the engine config, an agent's

@@ -24,7 +24,7 @@ jobs:
       # Sigstore certificate naming this workflow and tag.
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -55,7 +55,7 @@ jobs:
       # Only the GitHub release needs the default GITHUB_TOKEN. The Homebrew
       # formula is uploaded only when the repository variable PUBLISH_HOMEBREW
       # is "true"; the tap token is passed in only then (docs/RELEASING.md).
-      - uses: goreleaser/goreleaser-action@v6
+      - uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
           version: "~> v2"
@@ -70,7 +70,7 @@ jobs:
           HOMEBREW_TAP_OWNER: ${{ vars.HOMEBREW_TAP_OWNER }}
           HOMEBREW_TAP_NAME: ${{ vars.HOMEBREW_TAP_NAME }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: basaltdb-${{ env.ARTIFACT_NAME }}
           path: |
@@ -92,14 +92,14 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
           registry-url: https://registry.npmjs.org
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: basaltdb-${{ github.ref_name }}
           path: dist
@@ -125,9 +125,9 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "20"
 

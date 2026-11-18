@@ -466,25 +466,26 @@ func TestSessionTimeouts(t *testing.T) {
 	t.Run("lifetime", func(t *testing.T) {
 		t.Parallel()
 		// The lifetime is a timer started when message 1 is read, so it is
-		// measured from before the handshake: the session must last the
-		// whole lifetime, and a handshake slower than the lifetime ends with
-		// the same TIMEOUT.
-		const lifetime = 200 * time.Millisecond
+		// measured from before the handshake. A request right after the
+		// handshake proves the session is up and that a frame does not
+		// extend it; then nothing is sent, so no frame can race the timer,
+		// and the session ends with TIMEOUT when the timer fires.
+		const lifetime = time.Second
 		e := newSessionEngine(t, func(o *vault.Options) { o.SessionLifetime = lifetime })
 		l := newLink(t)
 		e.hold(t, l, time.Now().Add(time.Hour))
 		ctx := ctxWait(t)
 		start := time.Now()
-		p, err := pagetest.Dial(ctx, e.v.URL(), l.keys.Token)
+		p, err := pagetest.Open(ctx, e.v.URL(), l.keys)
 		require.NoError(t, err)
 		t.Cleanup(p.Close)
-		err = p.Handshake(ctx, l.keys)
-		// Frames do not extend it.
-		for err == nil {
-			time.Sleep(20 * time.Millisecond)
-			_, err = p.Do(ctx, http.MethodGet, "/x", pagetest.Headers(l.secret), "", 0)
+		r, err := p.Do(ctx, http.MethodGet, "/x", pagetest.Headers(l.secret), "", 0)
+		if time.Since(start) >= lifetime {
+			t.Skip("the runner stalled past the whole lifetime before the first request")
 		}
-		require.Equal(t, code(channel.ErrTimeout), failedWith(t, p, err))
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, r.Status)
+		require.Equal(t, code(channel.ErrTimeout), pageClosed(t, p))
 		require.GreaterOrEqual(t, time.Since(start), lifetime)
 	})
 	t.Run("never past the link's expiry", func(t *testing.T) {

@@ -827,9 +827,6 @@ func (e *pluginEnv) enable(k plugin.EntryKey) error {
 	if _, err := p.Entry(v.Manifest); err != nil {
 		return err
 	}
-	if err := servedEndpoint(k, v.Manifest); err != nil {
-		return err
-	}
 	writeConsent(e.c.stderr, k, v, p.Agents, e.mode)
 	if err := e.ask("Enable this plugin for these agents?"); err != nil {
 		return err
@@ -850,15 +847,6 @@ func (e *pluginEnv) enable(k plugin.EntryKey) error {
 	}
 	fmt.Fprintf(e.c.stderr, "basalt: plugin %s enabled\n", k)
 	e.restart()
-	return nil
-}
-
-// servedEndpoint refuses an endpoint this build cannot run: a local plugin
-// over connectrpc (a Unix socket) is not served yet.
-func servedEndpoint(k plugin.EntryKey, m plugin.Manifest) error {
-	if l := m.Endpoint.Local; l != nil && l.Transport == transportConnect {
-		return fmt.Errorf("plugin %s: a local plugin over connectrpc is not served yet; use jsonrpc-stdio or jsonrpc-unix, or a remote endpoint", k)
-	}
 	return nil
 }
 

@@ -2,15 +2,13 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
-	pluginconnect "github.com/basaltdbhq/basaltdb/internal/plugin/connect"
-	"github.com/basaltdbhq/basaltdb/internal/plugin/jsonrpc"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/dial"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/protocol"
 )
 
@@ -101,7 +99,14 @@ func (e *pluginEnv) check(k plugin.EntryKey) error {
 	}
 	ctx, cancel := context.WithTimeout(e.c.ctx, checkWait)
 	defer cancel()
-	t, err := dialPlugin(ctx, v, p)
+	// A socket plugin listens in a fresh directory only this user can reach,
+	// short enough for a Unix socket path.
+	sockDir, err := os.MkdirTemp("", "bp")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(sockDir)
+	t, err := dial.Entry(ctx, k, v, dial.Options{SocketPath: filepath.Join(sockDir, "p.sock"), CredentialFile: p.CredentialFile()})
 	if err != nil {
 		return err
 	}
@@ -130,42 +135,3 @@ func (e *pluginEnv) check(k plugin.EntryKey) error {
 }
 
 func roundMs(d time.Duration) string { return d.Round(time.Millisecond).String() }
-
-// Transports a local plugin may declare.
-const (
-	transportStdio   = "jsonrpc-stdio"
-	transportUnix    = "jsonrpc-unix"
-	transportConnect = "connectrpc"
-)
-
-// errNotServed: this build cannot reach the plugin this way yet.
-var errNotServed = errors.New("is not served by this build yet")
-
-// dialPlugin reaches the installed copy v of entry p over the transport its
-// manifest names: a remote plugin through the connectrpc adapter (TLS to
-// the declared host only, with the entry's credential file), a local
-// jsonrpc-stdio plugin as a child process with an empty environment and its
-// stderr discarded.
-func dialPlugin(ctx context.Context, v plugin.Verified, p config.Plugin) (plugin.Transport, error) {
-	k, m := p.Key(), v.Manifest
-	if r := m.Endpoint.Remote; r != nil {
-		t, err := pluginconnect.Dial(ctx, *r, m.Network.Egress, p.CredentialFile())
-		if err != nil {
-			return nil, fmt.Errorf("plugin %s: %w", k, err)
-		}
-		return t, nil
-	}
-	l := m.Endpoint.Local
-	switch l.Transport {
-	case transportStdio:
-		t, err := jsonrpc.Spawn(ctx, filepath.Join(v.Dir, filepath.FromSlash(l.Command)), l.Args, nil)
-		if err != nil {
-			return nil, fmt.Errorf("plugin %s: the plugin's command could not be started", k)
-		}
-		return t, nil
-	case transportUnix:
-		return nil, fmt.Errorf("plugin %s: a local jsonrpc-unix plugin %w", k, errNotServed)
-	default:
-		return nil, fmt.Errorf("plugin %s: a local %s plugin %w", k, visibleText(l.Transport), errNotServed)
-	}
-}

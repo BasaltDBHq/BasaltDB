@@ -10,15 +10,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	connectrpc "connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 
+	pluginv1 "github.com/basaltdbhq/basaltdb/api/plugin/proto/basalt/plugin/v1"
+	"github.com/basaltdbhq/basaltdb/api/plugin/proto/basalt/plugin/v1/pluginv1connect"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/dial"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/protocol"
 )
 
@@ -27,10 +35,12 @@ import (
 // manifest, health with the status its argument names, and shutdown.
 const testPluginFlag = "--basalt-test-plugin"
 
-// testPluginMain never returns.
+// testPluginMain never returns. Its arguments: "not-ready" answers health
+// NOT_READY; "connect" serves ConnectRPC instead of JSON-RPC. With the
+// socket variable set it listens there, else it speaks on stdin and stdout.
 func testPluginMain(args []string) {
 	status := protocol.HealthReady
-	if len(args) > 0 && args[0] == "not-ready" {
+	if slices.Contains(args, "not-ready") {
 		status = protocol.HealthNotReady
 	}
 	exe, err := os.Executable()
@@ -45,11 +55,40 @@ func testPluginMain(args []string) {
 	if err != nil {
 		os.Exit(1)
 	}
-	in := bufio.NewReader(os.Stdin)
+	sock := os.Getenv(dial.SocketEnv)
+	if sock == "" {
+		serveJSONRPC(os.Stdin, os.Stdout, m, status)
+		os.Exit(0)
+	}
+	l, err := net.Listen("unix", sock)
+	if err != nil {
+		os.Exit(1)
+	}
+	if slices.Contains(args, "connect") {
+		var p http.Protocols
+		p.SetUnencryptedHTTP2(true)
+		path, h := pluginv1connect.NewPluginServiceHandler(testConnectPlugin{m: m, status: status})
+		mux := http.NewServeMux()
+		mux.Handle(path, h)
+		_ = (&http.Server{Handler: mux, Protocols: &p, ReadHeaderTimeout: time.Minute}).Serve(l)
+		os.Exit(1)
+	}
+	for {
+		c, err := l.Accept()
+		if err != nil {
+			os.Exit(1)
+		}
+		go serveJSONRPC(c, c, m, status)
+	}
+}
+
+// serveJSONRPC answers initialize, health and shutdown, one line each.
+func serveJSONRPC(r io.Reader, w io.Writer, m plugin.Manifest, status string) {
+	in := bufio.NewReader(r)
 	for {
 		line, err := in.ReadBytes('\n')
 		if err != nil {
-			os.Exit(0)
+			return
 		}
 		var req struct {
 			ID     json.RawMessage `json:"id"`
@@ -71,11 +110,35 @@ func testPluginMain(args []string) {
 		if err != nil {
 			os.Exit(1)
 		}
-		_, _ = os.Stdout.Write(append(b, '\n'))
+		_, _ = w.Write(append(b, '\n'))
 		if req.Method == protocol.MethodShutdown {
 			os.Exit(0)
 		}
 	}
+}
+
+// testConnectPlugin is the test plugin over ConnectRPC.
+type testConnectPlugin struct {
+	pluginv1connect.UnimplementedPluginServiceHandler
+	m      plugin.Manifest
+	status string
+}
+
+func (p testConnectPlugin) Initialize(context.Context, *connectrpc.Request[pluginv1.InitializeRequest]) (*connectrpc.Response[pluginv1.InitializeResponse], error) {
+	hooks := map[string]*pluginv1.HookDeclaration{}
+	for name, d := range p.m.Hooks {
+		hooks[name] = &pluginv1.HookDeclaration{Contract: d.Contract, Roles: d.Roles, EntityTypes: d.EntityTypes}
+	}
+	return connectrpc.NewResponse(&pluginv1.InitializeResponse{Protocol: protocol.Version1, Name: p.m.Name, Version: p.m.Version, Hooks: hooks}), nil
+}
+
+func (p testConnectPlugin) Health(context.Context, *connectrpc.Request[pluginv1.HealthRequest]) (*connectrpc.Response[pluginv1.HealthResponse], error) {
+	return connectrpc.NewResponse(&pluginv1.HealthResponse{Status: p.status}), nil
+}
+
+func (testConnectPlugin) Shutdown(context.Context, *connectrpc.Request[pluginv1.ShutdownRequest]) (*connectrpc.Response[pluginv1.ShutdownResponse], error) {
+	go func() { time.Sleep(50 * time.Millisecond); os.Exit(0) }()
+	return connectrpc.NewResponse(&pluginv1.ShutdownResponse{}), nil
 }
 
 // checkSource writes a signed local plugin whose command is this test
@@ -158,20 +221,29 @@ func TestCheckRunsInitializeAndHealth(t *testing.T) {
 	refusal(t, e.run(nil, "", "check", "acme-ner", "--json"), "NOT_TRUSTED")
 }
 
-func TestCheckRefusesTransportsNotServed(t *testing.T) {
+// TestCheckServesEveryLocalTransport: a socket plugin is started with the
+// socket path in its environment and reached over it.
+func TestCheckServesEveryLocalTransport(t *testing.T) {
 	t.Parallel()
 	e := newPluginEngine(t)
-	e.person("add", e.checkSource("jsonrpc-unix"), "--agents", "product_a")
-	e.person("add", e.checkSource("connectrpc"), "--agents", "product_a", "--instance", "grpc")
-	r := e.run(nil, "", "check", "acme-ner")
+	for inst, src := range map[string]string{
+		"unix":    e.checkSource("jsonrpc-unix"),
+		"grpc":    e.checkSource("connectrpc", "connect"),
+		"sickrpc": e.checkSource("connectrpc", "connect", "not-ready"),
+	} {
+		e.person("add", src, "--agents", "product_a", "--instance", inst)
+		e.setTimeout(inst)
+	}
+	for _, inst := range []string{"unix", "grpc"} {
+		r := e.run(nil, "", "check", "acme-ner", "--instance", inst)
+		require.Equal(t, exitOK, r.code, "%s: %s", inst, r.stderr)
+		require.Contains(t, r.stdout, "health READY", inst)
+	}
+	r := e.run(nil, "", "check", "acme-ner", "--instance", "sickrpc")
 	require.Equal(t, exitError, r.code)
-	require.Contains(t, r.stderr, "jsonrpc-unix plugin is not served by this build yet")
-	r = e.run(nil, "", "check", "acme-ner", "--instance", "grpc")
-	require.Equal(t, exitError, r.code)
-	require.Contains(t, r.stderr, "connectrpc plugin is not served by this build yet")
-	r = e.run(nil, "y\n", "enable", "acme-ner", "--instance", "grpc")
-	require.Equal(t, exitError, r.code)
-	require.Contains(t, r.stderr, "a local plugin over connectrpc is not served yet")
+	require.Contains(t, r.stdout, "health NOT_READY")
+	r = e.person("enable", "acme-ner", "--instance", "grpc")
+	require.Contains(t, r.stderr, "enabled", "a local connectrpc plugin can be enabled")
 }
 
 // runAuthor runs an author command, which takes no --config.

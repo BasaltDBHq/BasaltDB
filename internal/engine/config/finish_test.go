@@ -19,7 +19,7 @@ const finishSetupID = "0193a4c2-7d1e-7c3a-9f00-0000000000e5"
 
 func pendingAgent(name string) config.Agent {
 	return config.Agent{
-		Name: name, OSUser: "bot", CredentialFile: "/c/" + name + ".url", InitArgs: []string{"--agent=" + name},
+		Name: name, OSUser: "bot", Store: config.PostgresStore("/c/" + name + ".url"), InitArgs: []string{"--agent=" + name},
 		Setup: &config.Setup{
 			SetupID: finishSetupID, Kind: "INSTALL", GuardVersion: 16, ExpiresAt: "2026-11-13T10:00:00Z",
 			Code: "basalt-setup.1.abc.def", Fingerprint: "a1b2 c3d4 e5f6 0718 293a",

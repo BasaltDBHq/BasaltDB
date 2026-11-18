@@ -15,19 +15,17 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/jackc/pgx/v5"
-
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/engine/piidict"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/pgcatalog"
-	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
 // Catalog reads the structure of the database the agent can see, on the
-// agent's own credential (CONTRACT.md, describe). The engine's is
-// agentdb.Catalog; it mirrors internal/pgcatalog.
+// agent's own credential (CONTRACT.md, describe). The Postgres adapter
+// implements it; it mirrors internal/pgcatalog.
 type Catalog interface {
 	// Relations lists the readable relations by schema and name, and counts
 	// the ones in user schemas the agent cannot read.
@@ -48,7 +46,7 @@ type Catalog interface {
 	// Database is the database the credential connects to.
 	Database() string
 	// Limits are the read limits the agent's statements run within.
-	Limits() sqlguard.Limits
+	Limits() action.Limits
 }
 
 // ClassResolver is the agent's PII classification (piidict.BoundMap).
@@ -88,7 +86,7 @@ func (noCatalog) Search(context.Context, string, []pgcatalog.ColumnKey, *pgcatal
 
 func (noCatalog) Structure(context.Context) ([]string, error) { return nil, errNoCatalog }
 func (noCatalog) Database() string                            { return "" }
-func (noCatalog) Limits() sqlguard.Limits                     { return sqlguard.DefaultLimits() }
+func (noCatalog) Limits() action.Limits                       { return action.Limits{} }
 
 // noClasses serves a service built without PII classes: it cannot tell a
 // SECRET column, so every describe call fails closed (INTERNAL).
@@ -120,11 +118,10 @@ const (
 	// up to MaxRetryRows it is held for approval, over it refused.
 	policyAllowedUpTo = 10
 
-	storePostgres = "POSTGRES"
-	formOverview  = "OVERVIEW"
-	formSearch    = "SEARCH"
-	formResource  = "RESOURCE"
-	privSelect    = "SELECT"
+	formOverview = "OVERVIEW"
+	formSearch   = "SEARCH"
+	formResource = "RESOURCE"
+	privSelect   = "SELECT"
 )
 
 // WritePolicy is the guard's write policy (CONTRACT.md, Approvals).
@@ -196,6 +193,7 @@ type Overview struct {
 	OtherSchemas  *OtherSchemas  `json:"otherSchemas,omitempty"`
 	PersonMessage string         `json:"personMessage,omitempty"`
 	NextSteps     []mcp.NextStep `json:"nextSteps,omitempty"`
+	Update        *UpdateInfo    `json:"update,omitempty"`
 }
 
 // DescribeSearchParams are a search's validated arguments.
@@ -300,9 +298,10 @@ func (s *Service) DescribeOverview(ctx context.Context) (Overview, error) {
 	}
 	limits := s.Catalog.Limits()
 	o := Overview{
-		Store:       StoreInfo{Kind: storePostgres, Database: s.Catalog.Database()},
+		Store:       StoreInfo{Kind: string(s.Store.Kind()), Database: s.Catalog.Database()},
 		Fingerprint: catalogFingerprint(lines, notGranted, pii),
 		Counts:      Counts{Tables: len(visible), NotGranted: notGranted},
+		Update:      s.updateInfo(),
 		Limits: OverviewLimits{
 			ReadRowLimit: limits.ReadRowLimit, StatementTimeoutMs: limits.StatementTimeout.Milliseconds(), WritePolicy: writePolicy,
 		},
@@ -414,7 +413,7 @@ func (s *Service) describeNotFoundSteps(b *Steps, f failure) string {
 	b.RunCommand(command, "Run this to list the tables the agent cannot read, with the basalt init flag that would grant each.")
 	b.TellAgent("Tell the agent when it has the access, or which table to use instead.")
 	return fitMessage("The agent asked for a table it cannot see: it does not exist, or the agent may not read it. "+
-		"An agent uses one database; a table in another database needs its own agent, added with basalt init --agent NAME. "+
+		"An agent uses one database; a table in another database needs its own agent, added with basalt init --remote --agent NAME. "+
 		"To list the tables the agent cannot read, run: "+command, command)
 }
 
@@ -526,7 +525,7 @@ func (s *Service) DescribeResource(ctx context.Context, resource, ifFingerprint 
 		return Resource{}, describeNotFound(resource)
 	}
 	d, err := s.Catalog.Describe(ctx, rel.OID)
-	if errors.Is(err, pgx.ErrNoRows) { // dropped since Find
+	if errors.Is(err, action.ErrNotFound) { // dropped since Find
 		return Resource{}, describeNotFound(resource)
 	}
 	if err != nil {

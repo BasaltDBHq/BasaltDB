@@ -3,7 +3,6 @@ package agent_test
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -11,12 +10,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/channel"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
@@ -25,8 +24,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
-	"github.com/basaltdbhq/basaltdb/internal/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 // notices records what the engine hands its Notifier.
@@ -84,27 +83,27 @@ type agentEnv struct {
 	keys *channel.EngineKeys
 }
 
-// finds wraps the approval store and counts FindApproval calls, so a test
-// can tell that the agent is waiting without guessing a delay.
+// finds wraps the store and counts FindApproval calls, so a test can tell
+// that the agent is waiting without guessing a delay.
 type finds struct {
-	agent.ApprovalStore
+	agent.SQLStore
 	n atomic.Int64
 }
 
 func (f *finds) FindApproval(ctx context.Context, id uuid.UUID) (ledger.Approval, error) {
 	f.n.Add(1)
-	return f.ApprovalStore.FindApproval(ctx, id)
+	return f.SQLStore.FindApproval(ctx, id)
 }
 
-// revertFinds wraps the revert store and counts FindRevert calls.
+// revertFinds wraps the store and counts FindRevert calls.
 type revertFinds struct {
-	agent.RevertStore
+	agent.SQLStore
 	n atomic.Int64
 }
 
 func (f *revertFinds) FindRevert(ctx context.Context, id uuid.UUID) (ledger.Revert, error) {
 	f.n.Add(1)
-	return f.RevertStore.FindRevert(ctx, id)
+	return f.SQLStore.FindRevert(ctx, id)
 }
 
 // pollUntil reports whether cond became true within d, checking often. It
@@ -175,24 +174,21 @@ func agentHarnessLimits(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys 
 
 	cmds, err := agent.NewCommands("bot", "/etc/basalt-test/engine.json", "linux", nil)
 	require.NoError(t, err)
-	pool, err := agentdb.NewPool(context.Background(), a.URL, 2)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	// As the engine runs it: every read of a call charged to its budget.
-	budgeted := resultsize.Budgeted(pool)
-	store := agentdb.NewStore(budgeted, limits, time.Now)
 	sent := &notices{}
-	watched := &finds{ApprovalStore: store}
-	watchedReverts := &revertFinds{RevertStore: store}
-	blind := agent.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
-		return guard.RLSBlindTables(ctx, pool, "", tables)
-	})
-	svc := agent.NewService(agent.Deps{
-		Name: "bot", Reader: agentdb.NewReader(budgeted, limits, time.Now), Store: store, Reads: store, Approvals: watched,
-		Reverts: watchedReverts, Notifier: sent, Log: slog.New(slog.DiscardHandler), Now: time.Now,
-		Columns:  agentdb.NewColumnOrder(pool),
-		Commands: cmds, PagesOrigin: strings.Join(pagesOrigin, ""), Poll: testPoll, RLS: blind, Receipts: receipts,
-	})
+	var watched *finds
+	var watchedReverts *revertFinds
+	var blind *agent.BlindCache
+	// As the engine runs it: every read of a call charged to its budget.
+	svc := pgService(t, a.URL, withLimits(limits), withBudget(), withDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
+		watched = &finds{SQLStore: d.Store}
+		watchedReverts = &revertFinds{SQLStore: watched}
+		blind = agent.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
+			return guard.RLSBlindTables(ctx, pool, "", tables)
+		})
+		d.Store, d.Notifier = watchedReverts, sent
+		d.Columns = postgres.NewColumnOrder(pool)
+		d.Commands, d.PagesOrigin, d.Poll, d.RLS, d.Receipts = cmds, strings.Join(pagesOrigin, ""), testPoll, blind, receipts
+	})).Svc
 	return agentEnv{d: d, a: a, h: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, person: person, sent: sent, svc: svc, blind: blind, finds: watched, revertFinds: watchedReverts, keys: keys}
 }
 

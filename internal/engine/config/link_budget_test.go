@@ -8,7 +8,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 )
 
-const linkBudgetAgent = `"agents": [{"name": "a", "osUser": "u", "credentialFile": "/c"}]`
+const linkBudgetAgent = `"agents": [{"name": "a", "osUser": "u", "store": {"kind": "POSTGRES", "credentialFile": "/c"}}]`
 
 func TestLinkBudget(t *testing.T) {
 	t.Parallel()

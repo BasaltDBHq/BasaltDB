@@ -1,0 +1,47 @@
+{
+  "body": {
+    "items": [
+      {
+        "approvalId": "<id-5>",
+        "approvalUrl": "http://localhost:8787/approvals/<id-5>#<fragment>",
+        "approveCommand": "basalt approve --agent bot --config /etc/basalt-test/engine.json --open <id-5>",
+        "assignedColumns": [
+          "status"
+        ],
+        "createdAt": "<time>",
+        "expiresAt": "<time>",
+        "headline": "Update 11 rows in public.leads",
+        "intent": "Leads 21 to 31 went cold",
+        "kind": "APPROVAL",
+        "links": [
+          {
+            "label": "Approve the held write",
+            "url": "http://localhost:8787/approvals/<id-5>#<fragment>"
+          }
+        ],
+        "nextSteps": [
+          {
+            "action": "OPEN_LINK",
+            "actor": "PERSON",
+            "command": "basalt approve --agent bot --config /etc/basalt-test/engine.json --open <id-5>",
+            "text": "Open the link, review the rows and approve with your passkey.",
+            "url": "http://localhost:8787/approvals/<id-5>#<fragment>"
+          }
+        ],
+        "params": [
+          "closed",
+          21,
+          31
+        ],
+        "personMessage": "Held for your approval: Update 11 rows in public·leads.\nApprove it with your passkey here; the page then shows a code for the agent:\n\nhttp://localhost:8787/approvals/<id-5>#<fragment>\n\nOr run: basalt approve --agent bot --config /etc/basalt-test/engine.json --open <id-5>\nExpires <time>.",
+        "rows": 11,
+        "runId": "<id-1>",
+        "statement": "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3",
+        "status": "PENDING",
+        "taskId": "<id-2>"
+      }
+    ]
+  },
+  "isError": false,
+  "tool": "list_pending"
+}

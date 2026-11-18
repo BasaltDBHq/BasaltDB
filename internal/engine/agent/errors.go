@@ -7,85 +7,48 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgproto3"
-
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/resultsize"
-	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 )
 
-// Error codes (CONTRACT.md, "Error codes").
+// Error codes (CONTRACT.md, "Error codes"). The ones a store answers with
+// are action's.
 const (
-	CodeIntentRequired    = "INTENT_REQUIRED"
-	CodeStaleRead         = "STALE_READ"
-	CodeStatementRefused  = "STATEMENT_REFUSED"
-	CodeRowLimitExceeded  = "ROW_LIMIT_EXCEEDED"
-	CodeQueryTimeout      = "QUERY_TIMEOUT"
-	CodeApprovalRequired  = "APPROVAL_REQUIRED"
-	CodeApprovalExpired   = "APPROVAL_EXPIRED"
-	CodeApprovalInvalid   = "APPROVAL_INVALID"
-	CodeNothingToRevert   = "NOTHING_TO_REVERT"
-	CodeRevertInvalid     = "REVERT_INVALID"
-	CodeRevertExpired     = "REVERT_EXPIRED"
-	CodePermissionDenied  = "PERMISSION_DENIED"
-	CodeNotFound          = "NOT_FOUND"
-	CodeSQLError          = "SQL_ERROR"
-	CodeInvalidArgument   = "INVALID_ARGUMENT"
-	CodeUnavailable       = "UNAVAILABLE"
-	CodeInternal          = "INTERNAL"
-	ReasonTimeLimit       = "TIME_LIMIT"
-	ReasonRowLimit        = "ROW_LIMIT"
-	ReasonSizeLimit       = "SIZE_LIMIT"
-	ReasonRowTooLarge     = "ROW_TOO_LARGE"
-	sqlStateQueryCanceled = "57014"
-	sqlStateInsufficient  = "42501"
-	sqlStateInvalidSchema = "3F000"
-	sqlStateClassAuth     = "28"
-	// sqlStateTooManyConnections is too_many_connections: the agent role is at
-	// its CONNECTION LIMIT, checked by Postgres at login.
-	sqlStateTooManyConnections = "53300"
-	guardSchema                = "basalt_meta"
+	CodeIntentRequired   = action.CodeIntentRequired
+	CodeStaleRead        = action.CodeStaleRead
+	CodeStatementRefused = action.CodeStatementRefused
+	CodeRowLimitExceeded = action.CodeRowLimitExceeded
+	CodeQueryTimeout     = action.CodeQueryTimeout
+	CodeApprovalRequired = action.CodeApprovalRequired
+	CodeApprovalExpired  = action.CodeApprovalExpired
+	CodeApprovalInvalid  = action.CodeApprovalInvalid
+	CodeNothingToRevert  = action.CodeNothingToRevert
+	CodeRevertInvalid    = action.CodeRevertInvalid
+	CodeRevertExpired    = action.CodeRevertExpired
+	CodePermissionDenied = action.CodePermissionDenied
+	CodeNotFound         = "NOT_FOUND"
+	CodeSQLError         = action.CodeSQLError
+	CodeInvalidArgument  = "INVALID_ARGUMENT"
+	CodeUnavailable      = action.CodeUnavailable
+	CodeInternal         = action.CodeInternal
+	ReasonTimeLimit      = action.ReasonTimeLimit
+	ReasonRowLimit       = "ROW_LIMIT"
+	ReasonSizeLimit      = "SIZE_LIMIT"
+	ReasonRowTooLarge    = "ROW_TOO_LARGE"
 
 	ReasonStaleCursor  = "STALE_CURSOR"
-	ReasonNoPrimaryKey = "NO_PRIMARY_KEY"
-	ReasonNotAllowed   = "NOT_ALLOWED"
+	ReasonNoPrimaryKey = action.ReasonNoPrimaryKey
+	ReasonNotAllowed   = action.ReasonNotAllowed
 	// ReasonScopeFilter is a revert filter entry outside the agent's own
 	// work, and ReasonScopeFilterCap a filter over revert.MaxFilter entries
 	// (CONTRACT.md, Revert scope on preview_revert and request_revert).
 	ReasonScopeFilter    = "SCOPE_FILTER"
 	ReasonScopeFilterCap = "SCOPE_FILTER_CAP"
 )
-
-// guardCodes maps the guard's SQLSTATEs to contract
-// codes. BS005 is split by message below.
-var guardCodes = map[string]string{
-	"BS001": CodeIntentRequired,
-	"BS002": CodeApprovalRequired,
-	"BS003": CodeRowLimitExceeded,
-	"BS004": CodeStaleRead,
-	"BS005": CodeApprovalInvalid,
-	"BS006": CodeInternal,
-	"BS007": CodeStatementRefused,
-	"BS008": CodeInternal,
-	"BS009": CodeNothingToRevert,
-}
-
-// messageCodes are guard codes, told apart by message within one SQLSTATE
-// (BS005, BS009), that are also contract tool codes.
-var messageCodes = []guard.Code{
-	guard.CodeApprovalExpired, guard.CodeRevertInvalid, guard.CodeRevertExpired,
-	guard.CodeNothingToRevert,
-}
-
-// unavailableClasses are SQLSTATE classes meaning the database cannot serve
-// the agent right now: connection exceptions, invalid authorization,
-// insufficient resources, operator intervention other than a cancel.
-var unavailableClasses = map[string]bool{"08": true, "28": true, "53": true, "57": true}
 
 // ArgumentError is a tool call whose arguments fail validation.
 type ArgumentError struct {
@@ -106,9 +69,9 @@ const sizeLimitHint = "; select fewer or shorter columns (for example left(col, 
 const rowTooLargeHint = "; select fewer columns, a size (length(col), octet_length(col)) or a slice (substr(col, 1, 100000))"
 
 // sizeLimitError is QUERY_TIMEOUT SIZE_LIMIT: a result over
-// agentdb.MaxResultBytes.
+// resultsize.MaxBytes.
 func sizeLimitError() *mcp.ToolError {
-	return &mcp.ToolError{Code: CodeQueryTimeout, Reason: ReasonSizeLimit, Message: agentdb.ErrSizeLimit.Error() + sizeLimitHint}
+	return &mcp.ToolError{Code: CodeQueryTimeout, Reason: ReasonSizeLimit, Message: resultsize.ErrSizeLimit.Error() + sizeLimitHint}
 }
 
 // messageTooLarge maps a Postgres message over the agent connection's cap
@@ -116,8 +79,7 @@ func sizeLimitError() *mcp.ToolError {
 // for a tool that declares QUERY_TIMEOUT. Any other tool read the row from
 // the guard's own tables, so it stays the INTERNAL error ToolError made.
 func messageTooLarge(tool string, err error, te *mcp.ToolError) *mcp.ToolError {
-	var me *pgproto3.ExceededMaxBodyLenErr
-	if !errors.As(err, &me) || !declares(tool, CodeQueryTimeout) {
+	if !errors.Is(err, action.ErrMessageTooLarge) || !declares(tool, CodeQueryTimeout) {
 		return te
 	}
 	return sizeLimitError()
@@ -138,11 +100,10 @@ func declares(tool, code string) bool {
 func ToolError(err error) *mcp.ToolError {
 	var (
 		te *mcp.ToolError
-		re *sqlguard.RefusalError
+		re *action.RefusalError
 		ae *ArgumentError
-		pe *pgconn.PgError
+		pe *action.StoreError
 		se *SetupError
-		ce *pgconn.ConnectError
 		rl *resultsize.RowTooLargeError
 	)
 	switch {
@@ -150,11 +111,11 @@ func ToolError(err error) *mcp.ToolError {
 		return te
 	case errors.As(err, &re):
 		return &mcp.ToolError{Code: CodeStatementRefused, Reason: string(re.Reason), Message: re.Error()}
-	case errors.Is(err, agentdb.ErrRowLimit):
+	case errors.Is(err, action.ErrRowLimit):
 		return &mcp.ToolError{Code: CodeQueryTimeout, Reason: ReasonRowLimit, Message: err.Error() + "; add a LIMIT or a narrower WHERE"}
 	case errors.As(err, &rl):
 		return &mcp.ToolError{Code: CodeQueryTimeout, Reason: ReasonRowTooLarge, Message: rl.Error() + rowTooLargeHint}
-	case errors.Is(err, agentdb.ErrSizeLimit):
+	case errors.Is(err, resultsize.ErrSizeLimit):
 		return sizeLimitError()
 	case errors.As(err, &se):
 		reason := reasonSetupPending
@@ -167,8 +128,8 @@ func ToolError(err error) *mcp.ToolError {
 	case errors.Is(err, ledger.ErrInvalidParams), errors.Is(err, guard.ErrInvalidIntent):
 		return &mcp.ToolError{Code: CodeInvalidArgument, Reason: argumentReason(err), Message: err.Error()}
 	case errors.As(err, &pe):
-		return pgToolError(pe)
-	case errors.As(err, &ce), errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
+		return &mcp.ToolError{Code: pe.Code, Reason: pe.Reason, Message: pe.Message, SQLState: pe.SQLState}
+	case errors.Is(err, action.ErrUnavailable), errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 		return &mcp.ToolError{Code: CodeUnavailable, Reason: reasonDatabaseUnreachable, Message: "the database cannot be reached"}
 	}
 	return &mcp.ToolError{Code: CodeInternal, Message: "internal engine error"}
@@ -183,106 +144,47 @@ func argumentReason(err error) string {
 	return ""
 }
 
-func pgToolError(pe *pgconn.PgError) *mcp.ToolError {
-	te := &mcp.ToolError{Code: CodeSQLError, Message: pe.Message, SQLState: pe.Code}
-	if code, ok := guardCodes[pe.Code]; ok {
-		te.Code = code
-		if pe.Detail != "" {
-			// The guard's detail says what to fix (the stale row and its
-			// versions, the missing intent); it names nothing secret.
-			te.Message = pe.Message + ": " + pe.Detail
-		}
-		if pe.Hint != "" {
-			te.Message += " (hint: " + pe.Hint + ")"
-		}
-		if gc, ok := guard.CodeOf(pe); ok && slices.Contains(messageCodes, gc) {
-			te.Code = string(gc)
-		}
-		te.Reason = guardReason(te.Code, pe.Detail)
-		return te
+// storeError is the store's error in err's chain, nil when there is none.
+func storeError(err error) *action.StoreError {
+	var se *action.StoreError
+	if !errors.As(err, &se) {
+		return nil
 	}
-	switch {
-	case pe.Code == sqlStateQueryCanceled:
-		te.Code, te.Reason = CodeQueryTimeout, ReasonTimeLimit
-	case pe.Code == sqlStateInsufficient:
-		te.Code = CodePermissionDenied
-	case pe.Code == sqlStateInvalidSchema && strings.Contains(pe.Message, guardSchema):
-		te.Code, te.Reason = CodeUnavailable, reasonGuardMissing
-	case len(pe.Code) == len(sqlStateQueryCanceled) && unavailableClasses[pe.Code[:2]]:
-		te.Code, te.Reason = CodeUnavailable, unavailableReason(pe.Code)
-	}
-	return te
+	return se
 }
 
-// unavailableReason tells a role at its connection limit (53300) and a
-// refused credential (class 28) from a database the engine cannot reach.
-func unavailableReason(sqlState string) string {
-	if sqlState == sqlStateTooManyConnections {
-		return reasonTooManyConnections
+// ledgerCode is the ledger's code of a refusal the store answered (the
+// guard's code for Postgres), and false for any other error.
+func ledgerCode(err error) (guard.Code, bool) {
+	se := storeError(err)
+	if se == nil || se.LedgerCode == "" {
+		return "", false
 	}
-	if strings.HasPrefix(sqlState, sqlStateClassAuth) {
-		return reasonCredentialRejected
-	}
-	return reasonDatabaseUnreachable
+	return guard.Code(se.LedgerCode), true
 }
 
-// guardReason is the catalog reason of a guard error, told apart by the
-// guard's detail text (BS007, BS005).
-func guardReason(code, detail string) string {
-	switch code {
-	case CodeStatementRefused:
-		if strings.Contains(detail, "has no primary key") {
-			return ReasonNoPrimaryKey
-		}
-		if detail == guard.DetailHoldTooLarge {
-			return ReasonHoldTooLarge
-		}
-		return ReasonNotAllowed
-	case CodeApprovalInvalid:
-		return detailReason(detail, approvalDetails, reasonBadSignature)
-	case CodeRevertInvalid:
-		return detailReason(detail, revertDetails, reasonBadSignature)
+// storeDetail is the detail of the store's error in err, "" when none.
+func storeDetail(err error) string {
+	if se := storeError(err); se != nil {
+		return se.Detail
 	}
 	return ""
 }
 
-type detailRule struct{ contains, reason string }
-
-// approvalDetails maps the guard's APPROVAL_INVALID details (BS005) to the
-// catalog's reasons, first match wins; any other detail is a signature the
-// guard did not accept.
-var approvalDetails = []detailRule{
-	{"unknown passkey", reasonPasskeyRevoked},
-	{"not approved yet", reasonNotSigned},
-	{"not signed for this agent", reasonNotSigned},
-	{"already used", reasonAlreadyUsed},
-	{"already signed", reasonAlreadyUsed},
-	{"another agent", reasonNotThisAgent},
-	{"no such approval", reasonNotThisAgent},
-	{"another run", reasonDifferentWrite},
-	{"differ from the approval", reasonDifferentWrite},
-	{"rows changed", reasonRowsChanged},
-	{"changes more than", reasonRowsChanged},
-}
-
-// revertDetails is the same for REVERT_INVALID.
-var revertDetails = []detailRule{
-	{"line ", reasonLineInvalid},
-	{"a batch has", reasonLineInvalid},
-	{"the batch names", reasonLineInvalid},
-	{"no such revert", reasonNotThisAgent},
-	{"applied in one call", reasonNotThisAgent},
-	{"not signed this revert", reasonPlanNotSigned},
-	{"already applied", reasonPlanFinished},
-	{"already signed", reasonPlanFinished},
-	{"rows changed", reasonRowsChanged},
-}
-
-func detailReason(detail string, rules []detailRule, fallback string) string {
-	for _, r := range rules {
-		if strings.Contains(detail, r.contains) {
-			return r.reason
-		}
+// scopeRefusal returns the detail (guard.ScopeShape, ScopeNotOwnRun, ...)
+// and the explanation of a SCOPE_REFUSED error, and false for any other
+// error.
+func scopeRefusal(err error) (detail, hint string, ok bool) {
+	se := storeError(err)
+	if se == nil || se.LedgerCode != string(guard.CodeScopeRefused) {
+		return "", "", false
 	}
-	return fallback
+	return se.Detail, se.Hint, true
+}
+
+// timedOut reports whether the store canceled the statement at its time
+// limit (QUERY_TIMEOUT TIME_LIMIT).
+func timedOut(err error) bool {
+	se := storeError(err)
+	return se != nil && se.Code == CodeQueryTimeout && se.Reason == ReasonTimeLimit
 }

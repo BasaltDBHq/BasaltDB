@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
@@ -22,16 +22,21 @@ const StatusApplied = "APPLIED"
 
 // Tools returns the MCP tools served to one agent: every contract in api/mcp
 // that is IMPLEMENTED, each listed with the contract's description and
-// input schema. Handlers parse, validate, make one service call and render.
+// input schema, and query and write only for a store that speaks SQL
+// (CONTRACT.md, Stores). Handlers parse, validate, make one service call
+// and render.
 func Tools(svc *Service) []mcp.Tool {
 	if svc == nil {
 		panic("agent: service required")
 	}
 	h := handlers{svc: svc}
-	return []mcp.Tool{
-		contractTool("run_start", h.wrap("run_start", h.runStart)),
-		contractTool("query", h.wrap("query", h.query)),
-		contractTool("write", h.wrap("write", h.write)),
+	tools := []mcp.Tool{contractTool("run_start", h.wrap("run_start", h.runStart))}
+	if speaksSQL(svc.Store.Kind()) {
+		tools = append(tools,
+			contractTool("query", h.wrap("query", h.query)),
+			contractTool("write", h.wrap("write", h.write)))
+	}
+	return append(tools,
 		contractTool("run_history", h.wrap("run_history", h.runHistory)),
 		contractTool("list_runs", h.wrap("list_runs", h.listRuns)),
 		contractTool("list_pending", h.wrap("list_pending", h.listPending)),
@@ -41,7 +46,13 @@ func Tools(svc *Service) []mcp.Tool {
 		contractTool("request_revert", h.wrap("request_revert", h.requestRevert)),
 		contractTool(toolDescribe, h.wrap(toolDescribe, h.describe)),
 		contractTool(toolStatus, h.wrap(toolStatus, h.status)),
-	}
+	)
+}
+
+// speaksSQL reports whether a store of kind runs SQL: the query and write
+// tools are served for it, in its dialect.
+func speaksSQL(kind action.StoreKind) bool {
+	return kind == action.StorePostgres || kind == action.StoreMySQL
 }
 
 // contractTool builds a tool from its contract. A missing contract is a
@@ -188,7 +199,7 @@ func queryResultFromDomain(r QueryOutcome) queryResult {
 	}
 }
 
-func columnsDTO(cols []agentdb.Column) []columnDTO {
+func columnsDTO(cols []action.Column) []columnDTO {
 	out := make([]columnDTO, 0, len(cols))
 	for _, c := range cols {
 		out = append(out, columnDTO{Name: c.Name, Type: c.Type})
@@ -201,7 +212,7 @@ func (h handlers) query(ctx context.Context, raw json.RawMessage) (any, error) {
 	if err := decodeArgs(raw, &args); err != nil {
 		return nil, err
 	}
-	params, err := agentdb.ParamValues(args.Params)
+	params, err := paramValues(args.Params)
 	if err != nil {
 		return nil, &ArgumentError{Message: err.Error()}
 	}
@@ -263,7 +274,7 @@ func (h handlers) write(ctx context.Context, raw json.RawMessage) (any, error) {
 		}
 		return nil, err
 	}
-	params, err := agentdb.ParamValues(args.Params)
+	params, err := paramValues(args.Params)
 	if err != nil {
 		return nil, &ArgumentError{Message: err.Error()}
 	}
@@ -326,4 +337,32 @@ func (h handlers) runHistory(ctx context.Context, raw json.RawMessage) (any, err
 		items = append(items, ledger.RecordFromDomain(ch, hist.Rows[ch.ID]))
 	}
 	return pagination.ToMCP(pagination.Page[ledger.Record]{Items: items, NextCursor: hist.Page.NextCursor}), nil
+}
+
+// paramValues converts JSON-decoded parameters for the store's driver: integral numbers
+// become int64 and other numbers float64, so an id passed as 4211 binds to
+// an integer column.
+func paramValues(params []any) ([]any, error) {
+	out := make([]any, 0, len(params))
+	for i, p := range params {
+		switch p.(type) {
+		case map[string]any, []any:
+			return nil, fmt.Errorf("params[%d]: must be a string, number, boolean or null", i)
+		}
+		n, ok := p.(json.Number)
+		if !ok {
+			out = append(out, p)
+			continue
+		}
+		if v, err := n.Int64(); err == nil {
+			out = append(out, v)
+			continue
+		}
+		v, err := n.Float64()
+		if err != nil {
+			return nil, fmt.Errorf("params[%d]: %w", i, err)
+		}
+		out = append(out, v)
+	}
+	return out, nil
 }

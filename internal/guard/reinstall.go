@@ -1,12 +1,14 @@
 package guard
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"slices"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -14,8 +16,9 @@ import (
 // reinstalls on the record"). A witness, an engine or basalt log, pins the
 // chain head it verified with the install it verified it on (InstallID).
 // When the install changed, the pin names a ledger that no longer exists,
-// unless the same ledger came back under a new oid (a pg_dump and
-// pg_restore): PinStillOnChain tells the two apart, and a pin that is not
+// unless the same ledger is still there under a new install id (the
+// install row deleted and written again, or a pin saved before install
+// ids): PinStillOnChain tells the two apart, and a pin that is not
 // on the current chain is reported with RecordPinSetAside before it is set
 // aside, so a reinstall is never silent.
 
@@ -27,8 +30,8 @@ type SetAside struct {
 	PinnedHash []byte
 	// PinnedInstall is the install the pin was verified on, Install the one
 	// it was set aside on.
-	PinnedInstall uint32
-	Install       uint32
+	PinnedInstall uuid.UUID
+	Install       uuid.UUID
 	At            time.Time
 }
 
@@ -46,7 +49,7 @@ type ReinstallReport struct {
 // pins set aside on. InstalledAt is nil when installs had no row for it:
 // basalt_meta was recreated or restored outside basalt init.
 type Reinstall struct {
-	Install     uint32
+	Install     uuid.UUID
 	InstalledAt *time.Time
 	InstalledBy string
 	VaultUser   string
@@ -131,7 +134,7 @@ func PinStillOnChain(ctx context.Context, q Querier, head ChainHead) (bool, erro
 // RecordPinSetAside reports with basalt_meta.record_pin_set_aside that the
 // pin head, verified on install, is set aside. It returns false when this
 // role made the same report before. A guard older than version 36 fails.
-func RecordPinSetAside(ctx context.Context, q Querier, head ChainHead, install uint32) (bool, error) {
+func RecordPinSetAside(ctx context.Context, q Querier, head ChainHead, install uuid.UUID) (bool, error) {
 	sql, args, err := psql.Select().
 		Column(sq.Expr("basalt_meta.record_pin_set_aside(?, ?, ?)", head.Seq, head.Hash, install)).ToSql()
 	if err != nil {
@@ -145,7 +148,7 @@ func RecordPinSetAside(ctx context.Context, q Querier, head ChainHead, install u
 // reportRow is one agent's earliest report of one install, with how many
 // it made.
 type reportRow struct {
-	Install uint32
+	Install uuid.UUID
 	Agent   string
 	At      time.Time
 	Seq     int64
@@ -219,7 +222,7 @@ func readReportRows(ctx context.Context, q Querier) ([]reportRow, error) {
 
 // readInstallRecords is each install's row, from its earliest report that
 // copied one.
-func readInstallRecords(ctx context.Context, q Querier) (map[uint32]installRecord, error) {
+func readInstallRecords(ctx context.Context, q Querier) (map[uuid.UUID]installRecord, error) {
 	sql, args, err := psql.Select("r.install", "r.installed_at", "coalesce(r.installed_by, '')", "coalesce(r.vault_user, '')").
 		Options("DISTINCT ON (r.install)").
 		From("basalt_meta.agent_reinstalls r").
@@ -233,9 +236,9 @@ func readInstallRecords(ctx context.Context, q Querier) (map[uint32]installRecor
 		return nil, err
 	}
 	defer rows.Close()
-	out := map[uint32]installRecord{}
+	out := map[uuid.UUID]installRecord{}
 	for rows.Next() {
-		var install uint32
+		var install uuid.UUID
 		var r installRecord
 		if err := rows.Scan(&install, &r.At, &r.By, &r.VaultUser); err != nil {
 			return nil, err
@@ -247,8 +250,8 @@ func readInstallRecords(ctx context.Context, q Querier) (map[uint32]installRecor
 
 // assembleReinstalls groups the reports by install, adds the reader's kept
 // copy to its own reports, and orders and bounds what the notice shows.
-func assembleReinstalls(self string, rows []reportRow, recs map[uint32]installRecord, kept []SetAside) Reinstalls {
-	byInstall := map[uint32][]reportRow{}
+func assembleReinstalls(self string, rows []reportRow, recs map[uuid.UUID]installRecord, kept []SetAside) Reinstalls {
+	byInstall := map[uuid.UUID][]reportRow{}
 	for _, r := range rows {
 		byInstall[r.Install] = append(byInstall[r.Install], r)
 	}
@@ -263,7 +266,7 @@ func assembleReinstalls(self string, rows []reportRow, recs map[uint32]installRe
 		if c := reinstallTime(b).Compare(reinstallTime(a)); c != 0 {
 			return c
 		}
-		return cmp.Compare(b.Install, a.Install)
+		return bytes.Compare(b.Install[:], a.Install[:])
 	})
 	out := Reinstalls{List: list}
 	if len(list) > MaxReinstalls {
@@ -282,8 +285,8 @@ func reinstallTime(r Reinstall) time.Time {
 }
 
 // keptReports is the kept copy as the reader's earliest report per install.
-func keptReports(self string, kept []SetAside) map[uint32]reportRow {
-	out := map[uint32]reportRow{}
+func keptReports(self string, kept []SetAside) map[uuid.UUID]reportRow {
+	out := map[uuid.UUID]reportRow{}
 	for _, k := range kept {
 		r, ok := out[k.Install]
 		r.Count++
@@ -310,7 +313,7 @@ func mergeOwn(reports []reportRow, own reportRow) []reportRow {
 	return reports
 }
 
-func buildReinstall(self string, install uint32, reports []reportRow, recs map[uint32]installRecord) Reinstall {
+func buildReinstall(self string, install uuid.UUID, reports []reportRow, recs map[uuid.UUID]installRecord) Reinstall {
 	slices.SortFunc(reports, func(a, b reportRow) int {
 		if c := a.At.Compare(b.At); c != 0 {
 			return c

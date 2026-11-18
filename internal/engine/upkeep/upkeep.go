@@ -16,10 +16,10 @@ import (
 	"slices"
 	"time"
 
-	sq "github.com/Masterminds/squirrel"
+	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
-	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 )
 
@@ -27,7 +27,26 @@ import (
 // ledger.DeadManAfter, so a running engine never looks silent.
 const DefaultInterval = time.Hour
 
-var psql = sq.StatementBuilder.PlaceholderFormat(sq.Dollar)
+// Store is the agent's store as the timer uses it, on the agent's own
+// credential (the Postgres adapter's postgres.Upkeep).
+type Store interface {
+	// InstallID identifies this install of the ledger.
+	InstallID(ctx context.Context) (uuid.UUID, error)
+	// VerifyChain verifies the whole chain; VerifyChainFrom verifies it
+	// from head (from its start when head is nil) and returns the new head.
+	VerifyChain(ctx context.Context) (action.ChainStatus, error)
+	VerifyChainFrom(ctx context.Context, head *action.ChainHead) (action.ChainStatus, action.ChainHead, error)
+	// SettlePin moves or reports a pin of install, another install.
+	SettlePin(ctx context.Context, pin action.ChainHead, install uuid.UUID) (action.SettledPin, error)
+	// LastHeartbeat is the agent's latest heartbeat, zero when none.
+	LastHeartbeat(ctx context.Context) (time.Time, error)
+	Heartbeat(ctx context.Context, detail map[string]any) error
+	RecordDeadMan(ctx context.Context, detail map[string]any) error
+	RecordUncovered(ctx context.Context, detail map[string]any) error
+	UncoveredTables(ctx context.Context) ([]action.Uncovered, error)
+	RLSBlindTables(ctx context.Context) ([]string, error)
+	Prune(ctx context.Context) (action.PruneResult, error)
+}
 
 // Pins keeps the last verified chain head per agent (chainpin.File in the
 // engine's state directory).
@@ -45,7 +64,7 @@ type Upkeep struct {
 	// operatedBy is engine.json operatedBy, recorded in every heartbeat
 	// (CO-15).
 	operatedBy string
-	db         guard.Querier
+	db         Store
 	log        *slog.Logger
 	now        func() time.Time
 	pins       Pins
@@ -55,24 +74,24 @@ type Upkeep struct {
 	admit func(ctx context.Context) error
 
 	started bool
-	head    *guard.ChainHead
+	head    *action.ChainHead
 	// install is the guard install the pinned head was verified on
-	// (guard.InstallID), saved with every pin.
-	install uint32
+	// (Store.InstallID), saved with every pin.
+	install uuid.UUID
 	// kept are the pins this engine set aside after reinstalls, saved with
 	// every pin (chainpin.Pin.SetAside).
-	kept []guard.SetAside
+	kept []action.SetAside
 	// startBroken is where the full check on start found the chain broken;
 	// it is reported on every tick until the engine restarts.
 	startBroken *int64
 
 	coverageKnown bool
-	uncovered     []guard.Uncovered
+	uncovered     []action.Uncovered
 }
 
 // New returns the upkeep for one agent, pinning chain heads in memory
 // until WithPins. It panics on a missing dependency.
-func New(agent, version string, db guard.Querier, log *slog.Logger, now func() time.Time) *Upkeep {
+func New(agent, version string, db Store, log *slog.Logger, now func() time.Time) *Upkeep {
 	if agent == "" || db == nil || log == nil || now == nil {
 		panic("upkeep: agent, db, logger and clock required")
 	}
@@ -198,7 +217,7 @@ func (u *Upkeep) Tick(ctx context.Context) error {
 	if err := u.checkDeadMan(ctx); err != nil {
 		errs = append(errs, err)
 	}
-	if err := guard.Heartbeat(ctx, u.db, detail); err != nil {
+	if err := u.db.Heartbeat(ctx, detail); err != nil {
 		errs = append(errs, fmt.Errorf("heartbeat: %w", err))
 	}
 	if err := u.checkCoverage(ctx); err != nil {
@@ -210,7 +229,7 @@ func (u *Upkeep) Tick(ctx context.Context) error {
 	if err := u.pii.Tick(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("pii: %w", err))
 	}
-	if res, err := guard.Prune(ctx, u.db); err != nil {
+	if res, err := u.db.Prune(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("prune: %w", err))
 	} else if res.ValuesPruned+res.RowsDeleted > 0 {
 		u.log.Info("pruned the ledger", "agent", u.agent, "valuesPruned", res.ValuesPruned, "rowsDeleted", res.RowsDeleted)
@@ -225,20 +244,20 @@ func (u *Upkeep) Tick(ctx context.Context) error {
 // the break is reported on every tick until a person looks. A pin of
 // another install (the guard was installed again, on start or since the
 // last tick) is moved or reported and set aside first (settle).
-func (u *Upkeep) checkChain(ctx context.Context) (guard.ChainStatus, error) {
-	install, err := guard.InstallID(ctx, u.db)
+func (u *Upkeep) checkChain(ctx context.Context) (action.ChainStatus, error) {
+	install, err := u.db.InstallID(ctx)
 	if err != nil {
-		return guard.ChainStatus{}, fmt.Errorf("guard install: %w", err)
+		return action.ChainStatus{}, fmt.Errorf("guard install: %w", err)
 	}
 	starting := !u.started
 	if starting {
 		if err := u.start(ctx, install); err != nil {
-			return guard.ChainStatus{}, err
+			return action.ChainStatus{}, err
 		}
 	}
 	if !starting && u.head != nil && u.install != install {
 		if err := u.settle(ctx, install); err != nil {
-			return guard.ChainStatus{}, err
+			return action.ChainStatus{}, err
 		}
 	}
 	if u.head != nil && u.install != install {
@@ -246,29 +265,27 @@ func (u *Upkeep) checkChain(ctx context.Context) (guard.ChainStatus, error) {
 		// never verified from (verify_chain_from accepts any pin before the
 		// anchor) nor replaced. The chain is reported broken at it until
 		// the report succeeds.
-		return guard.ChainStatus{BrokenAt: u.head.Seq}, nil
+		return action.ChainStatus{BrokenAt: u.head.Seq}, nil
 	}
 	if u.startBroken != nil {
-		return guard.ChainStatus{BrokenAt: *u.startBroken}, nil
+		return action.ChainStatus{BrokenAt: *u.startBroken}, nil
 	}
-	from := guard.Genesis()
-	if u.head != nil {
-		from = *u.head
-	}
-	st, head, err := guard.VerifyChainFrom(ctx, u.db, from)
+	// From the pinned head, or from the chain's start when there is none.
+	st, head, err := u.db.VerifyChainFrom(ctx, u.head)
 	if err != nil || !st.Intact {
 		return st, err
 	}
 	u.head, u.install = &head, install
 	if err := u.pins.Save(u.agent, chainpin.Pin{Head: head, Install: u.install, SetAside: u.kept}); err != nil {
-		return guard.ChainStatus{}, fmt.Errorf("save the chain head: %w", err)
+		return action.ChainStatus{}, fmt.Errorf("save the chain head: %w", err)
 	}
 	return st, nil
 }
 
-// start loads the pin and runs the full check when there is one. A pin
-// without an install is taken as install's.
-func (u *Upkeep) start(ctx context.Context, install uint32) error {
+// start loads the pin and runs the full check when there is one. A pin of
+// another install, or without one (saved before install ids), is settled
+// first.
+func (u *Upkeep) start(ctx context.Context, install uuid.UUID) error {
 	pin, ok, err := u.pins.Load(u.agent)
 	if err != nil {
 		return fmt.Errorf("load the chain head: %w", err)
@@ -282,7 +299,7 @@ func (u *Upkeep) start(ctx context.Context, install uint32) error {
 		ok = u.head != nil
 	}
 	if ok {
-		full, err := guard.VerifyChain(ctx, u.db)
+		full, err := u.db.VerifyChain(ctx)
 		if err != nil {
 			return err
 		}
@@ -304,21 +321,21 @@ func (u *Upkeep) start(ctx context.Context, install uint32) error {
 // and sets it aside, so the new chain is checked from its start; or, when
 // the report fails, it keeps the pin, which then shows as a broken chain,
 // and tries again on the next tick.
-func (u *Upkeep) settle(ctx context.Context, install uint32) error {
+func (u *Upkeep) settle(ctx context.Context, install uuid.UUID) error {
 	pinned, from := *u.head, u.install
-	s, err := ledger.SettlePin(ctx, u.db, pinned, from)
+	s, err := u.db.SettlePin(ctx, pinned, from)
 	if err != nil {
-		return fmt.Errorf("check the pin of guard install %d: %w", from, err)
+		return fmt.Errorf("check the pin of guard install %s: %w", from, err)
 	}
 	switch s.Fate {
-	case ledger.PinMoved:
-		u.log.Warn("the guard's schema was dropped and restored with the same ledger; the chain head pin moves to the new install",
+	case action.PinMoved:
+		u.log.Warn("the guard was installed again over the same ledger; the chain head pin moves to the new install",
 			"agent", u.agent, "pinnedInstall", from, "install", install, "pinnedSeq", pinned.Seq)
 		u.head, u.install = &s.Head, install
-	case ledger.PinSetAside:
+	case action.PinSetAside:
 		u.log.Warn("the guard was installed again; the chain head pinned on the earlier install is set aside and reported in the ledger",
 			"agent", u.agent, "pinnedInstall", from, "install", install, "pinnedSeq", pinned.Seq)
-		u.kept = chainpin.Pin{SetAside: u.kept}.Kept(guard.SetAside{
+		u.kept = chainpin.Pin{SetAside: u.kept}.Kept(action.SetAside{
 			PinnedSeq: pinned.Seq, PinnedHash: pinned.Hash, PinnedInstall: from, Install: install, At: u.now().UTC(),
 		}).SetAside
 		u.head, u.install, u.startBroken = nil, install, nil
@@ -333,7 +350,7 @@ func (u *Upkeep) settle(ctx context.Context, install uint32) error {
 // after more than ledger.DeadManAfter without a heartbeat. Nothing is
 // disabled; basalt log shows the row.
 func (u *Upkeep) checkDeadMan(ctx context.Context) error {
-	last, err := u.lastHeartbeat(ctx)
+	last, err := u.db.LastHeartbeat(ctx)
 	if err != nil {
 		return fmt.Errorf("last heartbeat: %w", err)
 	}
@@ -342,7 +359,7 @@ func (u *Upkeep) checkDeadMan(ctx context.Context) error {
 		return nil
 	}
 	u.log.Warn("engine was silent past the dead-man limit", "agent", u.agent, "lastHeartbeat", last)
-	err = guard.RecordEvent(ctx, u.db, guard.EventDeadMan, map[string]any{
+	err = u.db.RecordDeadMan(ctx, map[string]any{
 		"engineVersion": u.version,
 		"lastHeartbeat": last.UTC().Format(time.RFC3339),
 		"silentHours":   int64(silence.Hours()),
@@ -357,7 +374,7 @@ func (u *Upkeep) checkDeadMan(ctx context.Context) error {
 // records an UNCOVERED_TABLES row when the set changed since the last tick
 // (on start, only when the set is not empty).
 func (u *Upkeep) checkCoverage(ctx context.Context) error {
-	tables, err := guard.UncoveredTables(ctx, u.db)
+	tables, err := u.db.UncoveredTables(ctx)
 	if err != nil {
 		return err
 	}
@@ -373,7 +390,7 @@ func (u *Upkeep) checkCoverage(ctx context.Context) error {
 	for _, t := range tables {
 		list = append(list, map[string]any{"table": t.Table, "why": t.Why})
 	}
-	if err := guard.RecordEvent(ctx, u.db, guard.EventUncoveredTables, map[string]any{"tables": list}); err != nil {
+	if err := u.db.RecordUncovered(ctx, map[string]any{"tables": list}); err != nil {
 		return err
 	}
 	u.coverageKnown, u.uncovered = true, tables
@@ -385,7 +402,7 @@ func (u *Upkeep) checkCoverage(ctx context.Context) error {
 // on for new tables). Basalt never adds a policy for the agent (N12-7).
 func (u *Upkeep) checkRLSBlind(ctx context.Context) error {
 	u.rls.Refresh()
-	tables, err := guard.RLSBlindTables(ctx, u.db, "", nil)
+	tables, err := u.db.RLSBlindTables(ctx)
 	if err != nil {
 		return err
 	}
@@ -396,27 +413,10 @@ func (u *Upkeep) checkRLSBlind(ctx context.Context) error {
 	return nil
 }
 
-// lastHeartbeat is the agent's latest HEARTBEAT, zero when none.
-func (u *Upkeep) lastHeartbeat(ctx context.Context) (time.Time, error) {
-	q, args, err := psql.Select("max(at)").From("basalt_meta.agent_ledger").
-		Where(sq.Eq{"kind": string(guard.EventHeartbeat)}).ToSql()
-	if err != nil {
-		return time.Time{}, err
-	}
-	var last *time.Time
-	if err := u.db.QueryRow(ctx, q, args...).Scan(&last); err != nil {
-		return time.Time{}, err
-	}
-	if last == nil {
-		return time.Time{}, nil
-	}
-	return *last, nil
-}
-
 // Head returns the head pinned on the last tick (tests).
-func (u *Upkeep) Head() (guard.ChainHead, bool) {
+func (u *Upkeep) Head() (action.ChainHead, bool) {
 	if u.head == nil {
-		return guard.ChainHead{}, false
+		return action.ChainHead{}, false
 	}
-	return guard.ChainHead{Seq: u.head.Seq, Hash: bytes.Clone(u.head.Hash)}, true
+	return action.ChainHead{Seq: u.head.Seq, Hash: bytes.Clone(u.head.Hash)}, true
 }

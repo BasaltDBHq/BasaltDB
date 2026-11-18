@@ -1,0 +1,24 @@
+{
+  "body": {
+    "code": "REVERT_INVALID",
+    "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
+    "message": "the code does not verify against the person's passkey, nothing was reverted: revert <id-27>: passkey rejected: signature counter did not increase (cloned authenticator or replay)",
+    "nextSteps": [
+      {
+        "action": "OPEN_LINK",
+        "actor": "PERSON",
+        "text": "Sign again on the page; the code did not verify.",
+        "url": "http://localhost:8787/reverts/<id-27>#<fragment>"
+      },
+      {
+        "action": "END_TURN",
+        "actor": "AGENT",
+        "text": "End your turn: the person acts next."
+      }
+    ],
+    "personMessage": "The code for the revert of run <id-1> did not verify, so nothing was reverted. Sign again on the revert page and give the agent the new code.",
+    "reason": "BAD_SIGNATURE"
+  },
+  "isError": true,
+  "tool": "request_revert"
+}

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
@@ -22,7 +23,7 @@ type installRow struct {
 	VaultUser *string
 }
 
-func readInstall(t *testing.T, d *guardtest.DB, install uint32) (installRow, bool) {
+func readInstall(t *testing.T, d *guardtest.DB, install uuid.UUID) (installRow, bool) {
 	t.Helper()
 	var r installRow
 	// Plain SQL: a fixture read of the guard's own table.
@@ -44,7 +45,7 @@ func adminUser(t *testing.T, d *guardtest.DB) string {
 
 // Every install writes its row in the install transaction; running the
 // install again keeps it; a new install (after basalt uninstall) gets a new
-// oid and its own row.
+// id and its own row.
 func TestInstallsRecordsEachInstall(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
@@ -118,18 +119,60 @@ func TestUpgradeKeepsTheInstall(t *testing.T) {
 	require.Equal(t, before, after)
 }
 
-// After a pg_restore installs has no row for the new schema: the next
-// basalt init writes one with its own time and user.
-func TestInitAfterARestoreWritesTheInstall(t *testing.T) {
+// Without its installs row basalt_meta has no install: InstallID fails,
+// for the admin and an agent alike, until basalt init writes a new row, a
+// new install with its own id, time and user.
+func TestInitWithoutAnInstallRowWritesANewInstall(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
-	d.NewAgent(t, "bot", leads, nil)
-	d.Exec(t, `DELETE FROM basalt_meta.installs`)
-	d.NewAgent(t, "bot", leads, nil)
-	install, err := guard.InstallID(context.Background(), d.Admin)
+	a := d.NewAgent(t, "bot", leads, nil)
+	ctx := context.Background()
+	before, err := guard.InstallID(ctx, d.Admin)
 	require.NoError(t, err)
+	d.Exec(t, `DELETE FROM basalt_meta.installs`)
+	_, err = guard.InstallID(ctx, d.Admin)
+	require.ErrorIs(t, err, guard.ErrNoInstall)
+	_, err = guard.InstallID(ctx, a.Conn)
+	require.ErrorIs(t, err, guard.ErrNoInstall)
+
+	d.NewAgent(t, "bot", leads, nil)
+	install, err := guard.InstallID(ctx, d.Admin)
+	require.NoError(t, err)
+	require.NotEqual(t, before, install)
 	_, ok := readInstall(t, d, install)
 	require.True(t, ok)
+}
+
+// Two clusters made the same way give basalt_meta the same schema oid
+// (here: a database dropped and created again from a template that holds
+// the schema, as after removing a Postgres container and starting a new
+// one). The install ids differ all the same, and an agent reads the same
+// id as the admin.
+func TestInstallIDDiffersWhereTheSchemaOidRepeats(t *testing.T) {
+	t.Parallel()
+	d := guardtest.NewRecreatable(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", leads, nil)
+	ctx := context.Background()
+	first, err := guard.InstallID(ctx, d.Admin)
+	require.NoError(t, err)
+	agentSees, err := guard.InstallID(ctx, a.Conn)
+	require.NoError(t, err)
+	require.Equal(t, first, agentSees)
+	oid := schemaOid(t, d)
+
+	d.Recreate(t)
+	d.WithDemo(t)
+	d.NewAgent(t, "bot", leads, nil)
+	require.Equal(t, oid, schemaOid(t, d), "the recreated database has basalt_meta at the same oid")
+	second, err := guard.InstallID(ctx, d.Admin)
+	require.NoError(t, err)
+	require.NotEqual(t, first, second)
+}
+
+// schemaOid is basalt_meta's oid, read as the admin.
+func schemaOid(t *testing.T, d *guardtest.DB) uint32 {
+	t.Helper()
+	return scalarOf[uint32](t, d.Admin, `SELECT oid FROM pg_namespace WHERE nspname = 'basalt_meta'`)
 }
 
 func requirePermissionDenied(t *testing.T, err error) {
@@ -146,7 +189,7 @@ func TestAgentCannotTouchInstalls(t *testing.T) {
 	a := d.NewAgent(t, "bot", leads, nil)
 	ctx := context.Background()
 	for _, sql := range []string{
-		`INSERT INTO basalt_meta.installs VALUES (1, now(), 'mallory', 'mallory')`,
+		`INSERT INTO basalt_meta.installs VALUES (true, gen_random_uuid(), now(), 'mallory', 'mallory')`,
 		`UPDATE basalt_meta.installs SET installed_by = 'mallory'`,
 		`DELETE FROM basalt_meta.installs`,
 		`SELECT 1 FROM basalt_meta.installs`,
@@ -170,8 +213,8 @@ type reinstallRow struct {
 	Agent         string
 	PinnedSeq     int64
 	PinnedHash    []byte
-	PinnedInstall uint32
-	Install       uint32
+	PinnedInstall uuid.UUID
+	Install       uuid.UUID
 	InstalledAt   *time.Time
 	InstalledBy   *string
 	VaultUser     *string
@@ -202,13 +245,13 @@ func TestRecordPinSetAside(t *testing.T) {
 
 	_, err = guard.RecordPinSetAside(ctx, a.Conn, pin, current)
 	requireDetail(t, err, "PIN_SAME_INSTALL")
-	_, err = guard.RecordPinSetAside(ctx, a.Conn, guard.ChainHead{Seq: -1, Hash: pin.Hash}, current+1)
+	old := uuid.New()
+	_, err = guard.RecordPinSetAside(ctx, a.Conn, guard.ChainHead{Seq: -1, Hash: pin.Hash}, old)
 	requireDetail(t, err, "PIN_SHAPE")
-	_, err = guard.RecordPinSetAside(ctx, a.Conn, guard.ChainHead{Seq: 1, Hash: pin.Hash[:31]}, current+1)
+	_, err = guard.RecordPinSetAside(ctx, a.Conn, guard.ChainHead{Seq: 1, Hash: pin.Hash[:31]}, old)
 	requireDetail(t, err, "PIN_SHAPE")
 	require.Empty(t, readReinstallRows(t, a.Conn), "a refusal writes nothing")
 
-	old := current + 1000
 	appended, err := guard.RecordPinSetAside(ctx, a.Conn, pin, old)
 	require.NoError(t, err)
 	require.True(t, appended)
@@ -240,15 +283,11 @@ func TestRecordPinSetAside(t *testing.T) {
 	require.True(t, appended)
 	require.Len(t, readReinstallRows(t, a.Conn), 2)
 
-	// basalt_meta recreated outside the install: no install fields.
+	// Without an installs row there is no install to set a pin aside on.
 	d.Exec(t, `DELETE FROM basalt_meta.installs`)
-	appended, err = guard.RecordPinSetAside(ctx, a.Conn, guard.ChainHead{Seq: 42, Hash: pin.Hash}, old)
-	require.NoError(t, err)
-	require.True(t, appended)
-	rows = readReinstallRows(t, a.Conn)
-	last := rows[len(rows)-1]
-	require.Nil(t, last.InstalledAt)
-	require.Nil(t, last.InstalledBy)
+	_, err = guard.RecordPinSetAside(ctx, a.Conn, guard.ChainHead{Seq: 42, Hash: pin.Hash}, old)
+	requireDetail(t, err, "NO_INSTALL")
+	require.Len(t, readReinstallRows(t, a.Conn), 2, "a refusal writes nothing")
 	st, err := guard.VerifyChain(ctx, a.Conn)
 	require.NoError(t, err)
 	require.True(t, st.Intact)

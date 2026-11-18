@@ -46,6 +46,10 @@ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol
 
 A JSON response naming the server `basalt` means the shim reached the engine. If the connection closes at once, the engine refused the peer: run the command as the agent's OS user, or check `osUser` in the engine config. The engine logs the refusal (`journalctl -u basalt-engine` on Linux, `/Library/Logs/Basalt/engine.log` on macOS).
 
+## Newer releases
+
+The engine looks once a day at the public release list. When a newer release is out, `status` and `describe` carry an `update` field, and the first tool result of each connection carries a line starting `WARNING:` (`SECURITY UPDATE:` for a security release) that the agent relays to you with the upgrade step. The agent never upgrades BasaltDB on its own. Turn the check off with `BASALT_UPDATE_CHECK=off` or `"updateCheck": "OFF"` in `engine.json`.
+
 ## Reading the ledger
 
 `basalt log --agent NAME` reads the agent's change records with the agent's own credential. Run it as yourself. When the engine runs as a service, its credential file belongs to the engine's user, so `basalt log`, `approve` and `revert` ask the running engine over its person socket instead of reading the file ([install.md](install.md), step 6). In same-user mode (`--no-service`) they read the credential file directly.

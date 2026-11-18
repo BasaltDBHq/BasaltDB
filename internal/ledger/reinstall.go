@@ -9,6 +9,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/google/uuid"
+
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 )
 
@@ -46,7 +48,7 @@ type SettledPin struct {
 // on pinInstall, another install than the current one. It fails only when
 // the check of step 1 cannot run (the database is down); a report that
 // cannot be made is PinKept, never a set-aside.
-func SettlePin(ctx context.Context, q guard.Querier, pin guard.ChainHead, pinInstall uint32) (SettledPin, error) {
+func SettlePin(ctx context.Context, q guard.Querier, pin guard.ChainHead, pinInstall uuid.UUID) (SettledPin, error) {
 	head, moved, err := pinMoves(ctx, q, pin)
 	if err != nil {
 		return SettledPin{}, err

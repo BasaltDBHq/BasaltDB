@@ -439,6 +439,19 @@
         ],
         "description": "RESOURCE: the write policy as it applies to this table, when Basalt guards it and you can write it. Null on a read-only table and on a table you can write outside the guard."
       },
+      "update": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["current", "latest", "security", "url", "message"],
+        "description": "OVERVIEW. Present only when a newer BasaltDB release is out (CONTRACT.md, Update notice). Tell the person; never upgrade without their OK.",
+        "properties": {
+          "current": { "type": "string", "description": "The running build's version." },
+          "latest": { "type": "string", "description": "The newest release the person may be offered." },
+          "security": { "type": "boolean", "description": "True when a release newer than the running build is a security release." },
+          "url": { "type": "string", "description": "The release's page." },
+          "message": { "type": "string", "description": "Starts WARNING: or SECURITY UPDATE:. Relay it to the person." }
+        }
+      },
       "personMessage": {
         "type": "string",
         "description": "OVERVIEW with notGranted above 0: the count and the basalt access command, for the agent to show the person."

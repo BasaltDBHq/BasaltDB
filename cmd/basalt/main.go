@@ -23,7 +23,10 @@ const (
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	code := run(ctx, os.Args[1:], stdio{in: os.Stdin, out: os.Stdout, err: os.Stderr})
+	std := stdio{in: os.Stdin, out: os.Stdout, err: os.Stderr}
+	note := startUpdateNotice(ctx, os.Args[1:], std, os.Getenv)
+	code := run(ctx, os.Args[1:], std)
+	note()
 	stop()
 	os.Exit(code)
 }
@@ -91,7 +94,7 @@ func runVersion(_ context.Context, _ []string, io stdio) int {
 // manyAgentsHelp tells an agent reading --help how to connect another
 // database: one engine serves many agents, each on one database.
 const manyAgentsHelp = "One engine serves many agents. Each agent uses one database. To connect another database,\n" +
-	"run basalt init --agent NAME for a new agent (basalt init --remote when an agent runs the setup)."
+	"add another agent: basalt init --remote --agent NAME."
 
 func usage(w io.Writer) {
 	fmt.Fprintln(w, "basalt - the action ledger for AI agents on your Postgres")
@@ -105,6 +108,8 @@ func usage(w io.Writer) {
 	fmt.Fprintln(w, manyAgentsHelp)
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Exit codes: 0 ok, 1 error, 2 usage error.")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, agentsHelp)
 }
 
 // fail prints err for command name and returns the error exit code.
@@ -112,3 +117,8 @@ func fail(w io.Writer, name string, err error) int {
 	fmt.Fprintf(w, "basalt %s: %v\n", name, err)
 	return exitError
 }
+
+// agentsHelp is the top-level help's line for an agent reading it
+// (CONTRACT.md, Agents and the admin credential).
+const agentsHelp = "Agents: never ask for or accept the database admin connection string or password.\n" +
+	"To set up, run basalt init --remote and give the person the setup code it prints."

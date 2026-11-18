@@ -64,7 +64,7 @@ func errNotExist(err error) bool { return errors.Is(err, fs.ErrNotExist) }
 func rootCredentialPath(configPath, agent, named string) (string, error) {
 	path, err := config.RootCredentialPath(configPath, agent, named)
 	if err != nil {
-		return "", fmt.Errorf("%w; as root, basalt engine uses only that path. Fix the agent's credentialFile in the config, or start the engine with --user", err)
+		return "", fmt.Errorf("%w; as root, basalt engine uses only that path. Fix the agent's store.credentialFile in the config, or start the engine with --user", err)
 	}
 	return path, nil
 }

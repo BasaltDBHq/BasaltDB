@@ -184,7 +184,7 @@ func PlanInit(ctx context.Context, q Querier, opts InitOptions) (Script, error) 
 		}
 		add(migrationBegin + m.sql + fmt.Sprintf(migrationEnd, m.version))
 	}
-	add(recordInstall)
+	add(recordInstall(versionAfter(version, opts.UpTo)))
 	if opts.Agent.Name != "" {
 		agent, err := planAgent(ctx, q, n, opts.Agent)
 		if err != nil {
@@ -769,4 +769,14 @@ func AgentConnString(adminURL, role, password string) (string, error) {
 		RawQuery: strings.ReplaceAll(query.Encode(), "+", "%20"),
 	}
 	return agent.String(), nil
+}
+
+// versionAfter is the guard's version after an install from installed that
+// stops at upTo (0: this build's latest). An install never goes back.
+func versionAfter(installed, upTo int) int {
+	v := LatestVersion()
+	if upTo > 0 {
+		v = min(v, upTo)
+	}
+	return max(v, installed)
 }

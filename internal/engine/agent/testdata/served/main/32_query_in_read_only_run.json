@@ -1,0 +1,20 @@
+{
+  "body": {
+    "changeId": "<id-26>",
+    "columns": [
+      {
+        "name": "id",
+        "type": "int8"
+      }
+    ],
+    "durationMs": "<durationMs>",
+    "rowCount": 1,
+    "rows": [
+      {
+        "id": 1
+      }
+    ]
+  },
+  "isError": false,
+  "tool": "query"
+}

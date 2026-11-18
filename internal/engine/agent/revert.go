@@ -9,73 +9,28 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
-// RevertStore previews reverts on the agent's credential, reads the large
-// plans it prepared and applies batches of them. Signing a revert is not an
-// agent's to do: it needs the person's passkey (basalt revert).
-// ApplyRevert only relays an assertion the person's page made, for the
-// local pages (CONTRACT.md, Local pages); no MCP tool reaches it, and
-// Postgres verifies the signature.
-type RevertStore interface {
-	// PreviewRevert reads one page of the preview of scope, after the line
-	// whose hash is after, with the preview's totals and large values left
-	// out (guard.PreviewRevertPage).
-	PreviewRevert(ctx context.Context, scope guard.RevertScope, after string, limit int) (guard.PreviewPage, error)
-	// RevertedBy is the change record of the latest revert that covered scope
-	// (a revert's own change, which request_revert accepts to redo the work),
-	// or uuid.Nil when none did.
-	RevertedBy(ctx context.Context, scope guard.RevertScope) (uuid.UUID, error)
-	PrepareRevert(ctx context.Context, scope guard.RevertScope, intent string, timeout time.Duration) (guard.PreparedRevert, error)
-	HasChange(ctx context.Context, id uuid.UUID) (bool, error)
-	// HasTaskRun reports whether the agent has a run with this task id.
-	HasTaskRun(ctx context.Context, id uuid.UUID) (bool, error)
-	FindRevert(ctx context.Context, id uuid.UUID) (ledger.Revert, error)
-	RevertLines(ctx context.Context, p ledger.RevertLineParams) (pagination.Page[ledger.RevertLine], error)
-	ApplyRevertBatch(ctx context.Context, id uuid.UUID, lines []int) (guard.BatchResult, error)
-	ApplyRevert(ctx context.Context, id uuid.UUID, a passkey.Assertion) (guard.AppliedRevert, error)
-	// RescopeRevert and ResetRevert change a pending revert's scope for the
-	// person, and put it back to the proposal for the agent's reissue, each
-	// canceled past timeout.
-	RescopeRevert(ctx context.Context, req guard.RescopeRequest, timeout time.Duration) (guard.RescopedRevert, error)
-	ResetRevert(ctx context.Context, id uuid.UUID, timeout time.Duration) (guard.RescopedRevert, error)
-	// RevertNonce is the rescope nonce of a revert the role prepared.
-	RevertNonce(ctx context.Context, id uuid.UUID) ([]byte, error)
-	// RejectRevert marks a pending revert REJECTED for the person, with the
-	// scope token of a widened revert (nil before a widen).
-	RejectRevert(ctx context.Context, id uuid.UUID, note string, token []byte) (guard.RejectedRevert, error)
-	// ListOpenReverts lists the role's PENDING and APPLYING reverts, keyset
-	// on the revert id (list_pending, LP-1).
-	ListOpenReverts(ctx context.Context, p ledger.RevertListParams) (pagination.Page[ledger.Revert], error)
-	// RevealNonce is the reveal nonce of a revert the role prepared
-	// (approval.KindRevert); RevealRevertRows returns the values of its
-	// redacted lines for the person's reveal proof.
-	RevealNonce(ctx context.Context, kind string, id uuid.UUID) ([]byte, error)
-	RevealRevertRows(ctx context.Context, id uuid.UUID, proof passkey.Assertion, key []byte) (guard.RevealedRevert, error)
-}
-
 // PreviewRevertParams are preview_revert's validated arguments: the scope
 // (exactly one id) and a page of lines.
 type PreviewRevertParams struct {
 	pagination.Params
-	Scope guard.RevertScope
+	Scope action.Scope
 }
 
 // RevertPreview is one page of what a revert would do, with the totals of
 // the whole preview and the command the person runs to revert.
 type RevertPreview struct {
-	Scope   guard.RevertScope
+	Scope   action.Scope
 	Rows    int
 	Skipped int
 	Command string
@@ -97,7 +52,7 @@ func (s *Service) PreviewRevert(ctx context.Context, p PreviewRevertParams) (Rev
 	if err != nil {
 		return RevertPreview{}, err
 	}
-	pv, err := s.Reverts.PreviewRevert(ctx, p.Scope, after, p.Limit)
+	pv, err := s.Store.PreviewRevert(ctx, p.Scope, after, p.Limit)
 	if err != nil {
 		return RevertPreview{}, s.prepareError(ctx, toolPreviewRevert, p.Scope, err)
 	}
@@ -173,7 +128,7 @@ type RevertPlan struct {
 // and one page of its lines, for the agent to apply with ApplyRevertBatch
 // once the person signed it.
 func (s *Service) RevertPlan(ctx context.Context, p RevertPlanParams) (RevertPlan, error) {
-	r, err := s.Reverts.FindRevert(ctx, p.RevertID)
+	r, err := s.Store.FindRevert(ctx, p.RevertID)
 	if errors.Is(err, ledger.ErrRevertNotFound) {
 		return RevertPlan{}, &mcp.ToolError{Code: CodeNotFound, Reason: reasonRevert, Message: fmt.Sprintf("no revert %s prepared by this agent", p.RevertID)}
 	}
@@ -184,7 +139,7 @@ func (s *Service) RevertPlan(ctx context.Context, p RevertPlanParams) (RevertPla
 		return RevertPlan{}, &ArgumentError{Message: fmt.Sprintf(
 			"revert %s has %d lines: basalt revert applies it in one call, there is no plan to apply in batches", r.ID, r.Rows+r.Skipped)}
 	}
-	page, err := s.Reverts.RevertLines(ctx, p)
+	page, err := s.Store.RevertLines(ctx, p)
 	if err != nil {
 		return RevertPlan{}, err
 	}
@@ -230,7 +185,7 @@ type ApplyRevertBatchParams struct {
 // ApplyRevertBatch applies lines of a signed plan this agent prepared.
 // Postgres checks them against the signed plan and re-checks each row.
 func (s *Service) ApplyRevertBatch(ctx context.Context, p ApplyRevertBatchParams) (AppliedBatch, error) {
-	res, err := s.Reverts.ApplyRevertBatch(ctx, p.RevertID, p.Lines)
+	res, err := s.Store.ApplyRevertBatch(ctx, p.RevertID, p.Lines)
 	if err != nil {
 		return AppliedBatch{}, err
 	}
@@ -244,7 +199,7 @@ func (s *Service) ApplyRevertBatch(ctx context.Context, p ApplyRevertBatchParams
 // AppliedBatch is one applied batch with what happens next (CONTRACT.md,
 // Next steps): the next pending lines, or the end of the plan.
 type AppliedBatch struct {
-	guard.BatchResult
+	action.BatchResult
 	PersonMessage string
 	NextSteps     []mcp.NextStep
 }
@@ -253,7 +208,7 @@ type AppliedBatch struct {
 // request form: one of the agent's own changes or runs, and why the person
 // reverts it.
 type RequestRevertParams struct {
-	Scope  guard.RevertScope
+	Scope  action.Scope
 	Intent string
 }
 
@@ -278,11 +233,11 @@ func (s *Service) RequestRevert(ctx context.Context, p RequestRevertParams) (Req
 	if err := s.checkOwnScope(ctx, p.Scope); err != nil {
 		return RequestedRevert{}, err
 	}
-	prep, err := s.Reverts.PrepareRevert(ctx, p.Scope, p.Intent, guard.MCPPrepareTimeout)
+	prep, err := s.Store.PrepareRevert(ctx, p.Scope, p.Intent, guard.MCPPrepareTimeout)
 	if err != nil {
 		return RequestedRevert{}, s.prepareError(ctx, toolRequestRevert, p.Scope, err)
 	}
-	r, err := s.Reverts.FindRevert(ctx, prep.RevertID)
+	r, err := s.Store.FindRevert(ctx, prep.RevertID)
 	if err != nil {
 		return RequestedRevert{}, err
 	}
@@ -350,7 +305,7 @@ type AwaitRevertParams struct {
 // and returns at once; otherwise it reads the revert about every s.Poll
 // until it is not PENDING or Wait is over. Only a signature writes.
 func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (RequestedRevert, error) {
-	r, err := s.Reverts.FindRevert(ctx, p.RevertID)
+	r, err := s.Store.FindRevert(ctx, p.RevertID)
 	if errors.Is(err, ledger.ErrRevertNotFound) {
 		return RequestedRevert{}, revertNotFound(p.RevertID)
 	}
@@ -370,7 +325,7 @@ func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Request
 	err = s.awaitWhile(ctx, p.Wait, func() bool { return r.Status == ledger.RevertPending }, func(ctx context.Context) error {
 		// Each poll is one measured read with a budget of its own (as the
 		// waiting write's).
-		next, err := s.Reverts.FindRevert(resultsize.With(ctx), r.ID)
+		next, err := s.Store.FindRevert(resultsize.With(ctx), r.ID)
 		if err != nil {
 			return err
 		}
@@ -392,10 +347,10 @@ func (s *Service) deliverRevertSignature(ctx context.Context, r ledger.Revert, c
 	if err := s.checkRevertCode(ctx, r, code); err != nil {
 		return RequestedRevert{}, err
 	}
-	if _, err := s.Reverts.ApplyRevert(ctx, r.ID, code.Assertion()); err != nil {
+	if _, err := s.Store.ApplyRevert(ctx, r.ID, code.Assertion()); err != nil {
 		return RequestedRevert{}, s.applyRevertError(ctx, r, err)
 	}
-	r, err := s.Reverts.FindRevert(ctx, r.ID)
+	r, err := s.Store.FindRevert(ctx, r.ID)
 	if err != nil {
 		return RequestedRevert{}, err
 	}
@@ -412,7 +367,7 @@ func (s *Service) checkRevertCode(ctx context.Context, r ledger.Revert, code rev
 	case r.Status != ledger.RevertPending:
 		return alreadySigned(r)
 	}
-	keys, err := s.Approvals.Passkeys(ctx)
+	keys, err := s.Store.Passkeys(ctx)
 	if err != nil {
 		return err
 	}
@@ -439,27 +394,27 @@ func (s *Service) checkRevertCode(ctx context.Context, r ledger.Revert, code rev
 // through its own steps: expired meanwhile, rows changed since the preview,
 // or a signature only Postgres could judge.
 func (s *Service) applyRevertError(ctx context.Context, r ledger.Revert, err error) error {
-	code, ok := guard.CodeOf(err)
+	code, ok := ledgerCode(err)
 	switch {
 	case ok && code == guard.CodeRevertExpired:
 		return s.revertExpired(r)
 	case ok && code == guard.CodeNothingToRevert:
 		return nothingSigned(r)
 	}
-	var pe *pgconn.PgError
-	if !ok || code != guard.CodeRevertInvalid || !errors.As(err, &pe) {
+	if !ok || code != guard.CodeRevertInvalid {
 		return err
 	}
 	// apply_revert's details (basalt_meta version 9) tell the cases apart.
+	detail := storeDetail(err)
 	switch {
-	case strings.Contains(pe.Detail, "rows changed since"):
-		return s.rowsChanged(r, pe.Detail)
-	case strings.Contains(pe.Detail, "passkey revoked"):
+	case strings.Contains(detail, "rows changed since"):
+		return s.rowsChanged(r, detail)
+	case strings.Contains(detail, "passkey revoked"):
 		return s.passkeyRevoked(ctx, r)
-	case strings.Contains(pe.Detail, "already"):
+	case strings.Contains(detail, "already"):
 		return alreadySigned(r)
 	}
-	return s.badSignature(ctx, r, "the database refused the code, nothing was reverted: "+pe.Detail)
+	return s.badSignature(ctx, r, "the database refused the code, nothing was reverted: "+detail)
 }
 
 // revertState is the answer for r without a new link: what happened, for
@@ -560,19 +515,19 @@ func applyByText(r ledger.Revert) string {
 // in (any run with that task id) must be its own. Another agent's id and an
 // unknown one get the same NOT_FOUND; Postgres refuses the same scopes when
 // an agent role calls the guard directly.
-func (s *Service) checkOwnScope(ctx context.Context, scope guard.RevertScope) error {
+func (s *Service) checkOwnScope(ctx context.Context, scope action.Scope) error {
 	switch scope.Kind {
 	case revert.ScopeRun:
 		_, err := s.Store.FindRun(ctx, scope.ID)
-		if errors.Is(err, agentdb.ErrRunNotFound) {
+		if errors.Is(err, action.ErrRunNotFound) {
 			return notOwnScope(scope)
 		}
 		return err
 	case revert.ScopeChange:
-		own, err := s.Reverts.HasChange(ctx, scope.ID)
+		own, err := s.Store.HasChange(ctx, scope.ID)
 		return ownOr(own, err, notOwnScope(scope))
 	case revert.ScopeTask:
-		own, err := s.Reverts.HasTaskRun(ctx, scope.ID)
+		own, err := s.Store.HasTaskRun(ctx, scope.ID)
 		return ownOr(own, err, notOwnTask(scope))
 	}
 	return &ArgumentError{Message: fmt.Sprintf("unknown revert scope %q", scope.Kind)}
@@ -598,7 +553,7 @@ const taskWidenPointer = "You can include other agents' changes in this task on 
 // notOwnScope is a change or run that is not this agent's (RS-6): NOT_FOUND
 // with the scope's reason, the same answer for another agent's id and an
 // unknown one, on preview_revert and request_revert alike.
-func notOwnScope(scope guard.RevertScope) error {
+func notOwnScope(scope action.Scope) error {
 	kind := strings.ToLower(string(scope.Kind))
 	return &mcp.ToolError{
 		Code: CodeNotFound, Reason: string(scope.Kind), Message: fmt.Sprintf(
@@ -614,7 +569,7 @@ func notOwnScope(scope guard.RevertScope) error {
 // TASK, the same answer whether or not other agents ran in it. The command
 // leaves the agent for the person to fill in: this agent cannot see who ran
 // in the task (N12-R1).
-func notOwnTask(scope guard.RevertScope) error {
+func notOwnTask(scope action.Scope) error {
 	return &mcp.ToolError{
 		Code: CodeNotFound, Reason: string(revert.ScopeTask), Message: fmt.Sprintf(
 			"task %s has no run of this agent; nothing was prepared. An agent reverts only its own work: "+
@@ -632,8 +587,8 @@ func notOwnTask(scope guard.RevertScope) error {
 // NOT_FOUND, alike; a descriptor the engine built badly is
 // INVALID_ARGUMENT with the guard's explanation. nil when err is not a
 // scope refusal.
-func scopeRefused(scope guard.RevertScope, err error) error {
-	detail, hint, ok := guard.ScopeRefusal(err)
+func scopeRefused(scope action.Scope, err error) error {
+	detail, hint, ok := scopeRefusal(err)
 	if !ok {
 		return nil
 	}
@@ -668,25 +623,24 @@ func scopeFilterCapped() error {
 // prepareError is the answer to a prepare that failed: what the person
 // can do when nothing can be reverted, or when the prepare is too large for
 // an MCP call and their terminal is the better path.
-func (s *Service) prepareError(ctx context.Context, tool string, scope guard.RevertScope, err error) error {
+func (s *Service) prepareError(ctx context.Context, tool string, scope action.Scope, err error) error {
 	if refused := scopeRefused(scope, err); refused != nil {
 		return refused
 	}
-	if errors.Is(err, agentdb.ErrEmptyProposal) {
+	if errors.Is(err, action.ErrEmptyProposal) {
 		return s.nothingToRevertError(ctx, tool, scope, reasonReadsOnly, "this agent changed no rows in it that a revert could restore")
 	}
-	if code, ok := guard.CodeOf(err); ok && code == guard.CodeNothingToRevert {
+	if code, ok := ledgerCode(err); ok && code == guard.CodeNothingToRevert {
 		return s.nothingToRevert(ctx, tool, scope, err)
 	}
 	if ctx.Err() != nil {
 		// The client canceled the call: not the prepare's time limit.
 		return fmt.Errorf("prepare revert: %w", ctx.Err())
 	}
-	var pe *pgconn.PgError
-	if !errors.As(err, &pe) || pe.Code != sqlStateQueryCanceled {
+	if !timedOut(err) {
 		return err
 	}
-	return s.prepareTimeout(tool, scope, pe.Code)
+	return s.prepareTimeout(tool, scope, storeError(err).SQLState)
 }
 
 // revertLink is what the agent hands the person to sign a prepared revert:
@@ -759,7 +713,7 @@ func (s *Service) revertNotice(ctx context.Context, r ledger.Revert) (revertLink
 // bindingHeadline is the headline of a revert not widened, from its
 // binding: the scope and filters it covers and its totals.
 func bindingHeadline(b revert.Binding, r ledger.Revert) string {
-	filters := filterText(guard.RevertScope{Runs: b.Select.Runs, Tables: b.Select.Tables})
+	filters := filterText(action.Scope{Runs: b.Select.Runs, Tables: b.Select.Tables})
 	return fmt.Sprintf("Revert of %s %s%s: %d rows to restore, %d left as they are (changed after the agent).",
 		strings.ToLower(string(b.Select.Scope)), b.Select.ScopeID, filters, r.Rows, r.Skipped)
 }

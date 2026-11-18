@@ -102,7 +102,7 @@ func readAgentGuard(c *cliIO, f upgradeFlags) (agentGuard, error) {
 	if err != nil {
 		return agentGuard{}, err
 	}
-	dsn, err := cfg.credential(a.CredentialFile)
+	dsn, err := cfg.credential(a.Store.CredentialFile)
 	if err != nil {
 		return agentGuard{}, err
 	}
@@ -167,7 +167,7 @@ func configAgentOf(c *cliIO, agentName, configPath string) (engineConfig, config
 			return cfg, a, nil
 		}
 	}
-	return engineConfig{}, config.Agent{}, fmt.Errorf("agent %q is not in %s; run basalt init --agent %s", agentName, configPath, agentName)
+	return engineConfig{}, config.Agent{}, errAgentNotInConfig(agentName, configPath)
 }
 
 func statusFlags(f upgradeFlags, goos string) string {

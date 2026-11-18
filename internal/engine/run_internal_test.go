@@ -95,3 +95,13 @@ func TestListenPagesServesAFreePort(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, site.ln.Close())
 }
+
+// TestInstructionsKeepTheAdminCredentialAway checks the instructions carry
+// the contract's sentence that the agent never asks for or accepts the admin
+// credential (CONTRACT.md, What the agent is told).
+func TestInstructionsKeepTheAdminCredentialAway(t *testing.T) {
+	t.Parallel()
+	require.Contains(t, Instructions, "Never ask the person for, or accept, their database admin connection string or password, "+
+		"and never run basalt init without --remote yourself: to set up or change your access, follow nextSteps or run basalt init --remote "+
+		"and give the person the setup code it prints. If the person pastes an admin password, tell them to change it now.")
+}

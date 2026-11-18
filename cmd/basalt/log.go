@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -23,6 +24,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 	"github.com/basaltdbhq/basaltdb/pkg/wiretime"
 )
@@ -131,10 +133,10 @@ func agentConfigURL(c *cliIO, agent, configPath string) (string, error) {
 	}
 	for _, a := range cfg.Agents {
 		if a.Name == agent {
-			return cfg.credential(a.CredentialFile)
+			return cfg.credential(a.Store.CredentialFile)
 		}
 	}
-	return "", fmt.Errorf("agent %q is not in %s; run basalt init --agent %s", agent, configPath, agent)
+	return "", errAgentNotInConfig(agent, configPath)
 }
 
 // checkHealth verifies the chain from the head this user last verified on
@@ -153,23 +155,24 @@ func checkHealth(c *cliIO, l *agentLedger, full bool) (ledger.Health, error) {
 		fmt.Fprintf(c.stderr, "warning: ledger pin unreadable, checking the whole chain: %v\n", err)
 	}
 	if ok {
-		opts.Pin, opts.PinInstall = &pin.Head, pin.Install
+		head := guard.ChainHead(pin.Head)
+		opts.Pin, opts.PinInstall = &head, pin.Install
 	}
-	opts.SetAside = pin.SetAside
+	opts.SetAside = postgres.GuardSetAside(pin.SetAside)
 	h, err := l.CheckHealth(c.ctx, opts)
 	if err != nil {
 		return h, err
 	}
 	switch {
 	case h.PinMoved:
-		fprintSafef(c.stderr, "warning: the guard's schema was dropped and restored with the same ledger (guard install %d is now %d); the ledger pin moved to the new install\n",
+		fprintSafef(c.stderr, "warning: the guard was installed again over the same ledger (guard install %s is now %s); the ledger pin moved to the new install\n",
 			pin.Install, h.Install)
 	case h.PinSetAside:
-		pin = pin.Kept(guard.SetAside{
+		pin = pin.Kept(action.SetAside{
 			PinnedSeq: pin.Head.Seq, PinnedHash: pin.Head.Hash, PinnedInstall: pin.Install, Install: h.Install, At: c.now().UTC(),
 		})
 	}
-	next := chainpin.Pin{Head: h.Head, Install: h.Install, SetAside: pin.SetAside}
+	next := chainpin.Pin{Head: action.ChainHead(h.Head), Install: h.Install, SetAside: pin.SetAside}
 	if !h.Chain.Intact {
 		if !h.PinSetAside {
 			return h, nil

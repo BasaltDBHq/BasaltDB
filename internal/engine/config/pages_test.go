@@ -78,6 +78,6 @@ func TestPages(t *testing.T) {
 func TestLoadRefusesANonLoopbackPagesAddr(t *testing.T) {
 	t.Parallel()
 	_, err := config.Load(write(t, "engine.json", `{"socketDir": "/s", "pagesUrl": "http://localhost:8787",
-		"pagesAddr": "0.0.0.0:8787", "agents": [{"name": "a", "osUser": "u", "credentialFile": "/c"}]}`, 0o600))
+		"pagesAddr": "0.0.0.0:8787", "agents": [{"name": "a", "osUser": "u", "store": {"kind": "POSTGRES", "credentialFile": "/c"}}]}`, 0o600))
 	require.ErrorContains(t, err, "loopback IP only")
 }

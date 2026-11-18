@@ -49,7 +49,7 @@ func TestMCPStatusReadsASameUserConfig(t *testing.T) {
 	cred := filepath.Join(dir, "agents", "bot.url")
 	path := filepath.Join(dir, "engine.json")
 	cfg := `{"socketDir": "` + sockDir + `", "operatedBy": "AGENT", "pagesUrl": "https://portal.basaltvault.app", "mode": "SAME_USER",
-		"agents": [{"name": "bot", "osUser": "bot", "credentialFile": "` + cred + `", "initArgs": ["--agent=bot"]}]}`
+		"agents": [{"name": "bot", "osUser": "bot", "store": {"kind": "POSTGRES", "credentialFile": "` + cred + `"}, "initArgs": ["--agent=bot"]}]}`
 	require.NoError(t, os.WriteFile(path, []byte(cfg), 0o600))
 
 	_, err = config.Load(path)

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/updatecheck"
 )
 
 // The status tool (CONTRACT.md, MCP tools, status; api/mcp/tools/status.json).
@@ -121,45 +123,6 @@ func (noProbe) LedgerBytes(context.Context) (int64, error) { return 0, errNoProb
 
 func (noProbe) Reinstalls(context.Context) (guard.Reinstalls, error) { return guard.Reinstalls{}, nil }
 
-// DBProbe is the Probe on an agent connection or pool, against the build's
-// migrations (guard.Migrations outside tests).
-type DBProbe struct {
-	Q          guard.Querier
-	Migrations []guard.Migration
-	// Kept is the engine's kept copy of the pins it set aside (its pin
-	// file's setAside); nil when there is none to read.
-	Kept func() []guard.SetAside
-}
-
-// GuardStatus reads schema_version.
-func (p DBProbe) GuardStatus(ctx context.Context) (guard.Status, error) {
-	return guard.AgentStatus(ctx, p.Q, p.Migrations)
-}
-
-// SetupRecorded reports whether setup id is recorded.
-func (p DBProbe) SetupRecorded(ctx context.Context, id uuid.UUID) (bool, error) {
-	return guard.SetupRecorded(ctx, p.Q, id)
-}
-
-// LatestSetup is the agent's newest recorded setup.
-func (p DBProbe) LatestSetup(ctx context.Context) (guard.AgentSetup, bool, error) {
-	return guard.LatestAgentSetup(ctx, p.Q)
-}
-
-// LedgerBytes is the size of basalt_meta.
-func (p DBProbe) LedgerBytes(ctx context.Context) (int64, error) {
-	return guard.LedgerBytes(ctx, p.Q)
-}
-
-// Reinstalls reads agent_reinstalls with the kept copy merged in.
-func (p DBProbe) Reinstalls(ctx context.Context) (guard.Reinstalls, error) {
-	var kept []guard.SetAside
-	if p.Kept != nil {
-		kept = p.Kept()
-	}
-	return guard.ReadReinstalls(ctx, p.Q, kept)
-}
-
 // VaultReporter says how the engine's connection to the hosted Vault stands
 // (status.vault, CONTRACT.md, Vault channel, Configuration and status).
 // Optional: without one, status leaves vault out.
@@ -218,6 +181,56 @@ type StatusReport struct {
 	// when the engine is down.
 	EngineRecord *EngineRecordStatus `json:"engineRecord,omitempty"`
 	Problems     []Problem           `json:"problems"`
+	// Update is set when a newer release is out (CONTRACT.md, Update
+	// notice).
+	Update *UpdateInfo `json:"update,omitempty"`
+}
+
+// UpdateInfo is the update field of status and of describe's overview: the
+// newer release and what the agent tells the person.
+type UpdateInfo struct {
+	Current  string `json:"current"`
+	Latest   string `json:"latest"`
+	Security bool   `json:"security"`
+	URL      string `json:"url"`
+	// Message starts WARNING: or SECURITY UPDATE: and is meant to be
+	// relayed to the person.
+	Message string `json:"message"`
+}
+
+// updateInfo is the Service's newer release, or nil.
+func (s *Service) updateInfo() *UpdateInfo {
+	if s.Update == nil {
+		return nil
+	}
+	n := s.Update()
+	if n == nil {
+		return nil
+	}
+	info := NewUpdateInfo(*n, executablePath())
+	return &info
+}
+
+// NewUpdateInfo is the update field for notice n, with the message for
+// the binary at exe.
+func NewUpdateInfo(n updatecheck.Notice, exe string) UpdateInfo {
+	return UpdateInfo{Current: n.Current, Latest: n.Latest, Security: n.Security, URL: n.URL, Message: n.AgentMessage(exe)}
+}
+
+// UpdateNotice is the text the MCP server appends to a connection's first
+// tool result: the update notice for the agent, "" when none.
+func (s *Service) UpdateNotice() string {
+	if u := s.updateInfo(); u != nil {
+		return u.Message
+	}
+	return ""
+}
+
+// executablePath is this binary's path, for the Homebrew hint; "" when
+// unknown.
+func executablePath() string {
+	p, _ := os.Executable()
+	return p
 }
 
 // EngineStatus is status.engine.
@@ -292,6 +305,7 @@ type statusDeps struct {
 	devLocalPages             bool
 	vault                     VaultReporter
 	portal                    PortalReporter
+	update                    *UpdateInfo
 	// engineKey is the engine id basalt status read from the running
 	// engine's key file ("" when it is refused), nil when it reports no
 	// engine record (LocalStatus.EngineKey); the engine uses vault.
@@ -320,7 +334,7 @@ func (s *Service) statusDeps() statusDeps {
 		name: s.Name, operatedBy: s.OperatedBy, build: s.Build, pagesBase: s.PagesBase, pagesOrigin: s.PagesOrigin,
 		sameUser: s.SameUser, devLocalPages: s.DevLocalPages, engineReachable: true, vault: s.Vault, portal: s.Portal,
 		engineRecord: s.EngineRecord, directServed: s.DirectServed, cmds: s.Commands, setup: s.pendingSetup(), probe: s.Probe,
-		finisher: s.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, lockTrouble: &s.lockTrouble, passkeys: s.Approvals.Passkeys, log: s.Log, now: s.Now,
+		update: s.updateInfo(), finisher: s.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, lockTrouble: &s.lockTrouble, passkeys: s.Store.Passkeys, log: s.Log, now: s.Now,
 	}
 }
 
@@ -385,6 +399,7 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 		Agent: s.name, OperatedBy: operatedBy(s.operatedBy), Enforcement: enforcement(s.operatedBy, s.sameUser),
 		Engine: EngineStatus{Reachable: s.engineReachable, Build: s.build},
 		Pages:  PagesStatus{Served: s.pagesOrigin != "", URL: s.pagesBase},
+		Update: s.update,
 	}
 	if s.vault != nil {
 		v := s.vault.VaultStatus()
@@ -456,7 +471,7 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 // does not answer: engine unreachable, guard UNKNOWN, operatedBy from the
 // config the shim could read (cfg nil: it could not, so PERSON and
 // GUARD_ONLY), the pending setup when the config holds one.
-func EngineDownStatus(name string, cmds Commands, cfg *config.Config, build string, now time.Time) (StatusReport, error) {
+func EngineDownStatus(name string, cmds Commands, cfg *config.Config, cfgErr error, build string, now time.Time) (StatusReport, error) {
 	r := StatusReport{
 		Agent: name, OperatedBy: mcpcontract.OperatedByPerson, Enforcement: EnforcementGuardOnly,
 		Engine: EngineStatus{Reachable: false, Build: build},
@@ -468,7 +483,12 @@ func EngineDownStatus(name string, cmds Commands, cfg *config.Config, build stri
 		cmds = cmds.OperatedBy(cfg.OperatedBy)
 	}
 	ps := problems{cmds: cmds}
-	ps.add(problemEngineUnreachable, "the engine does not answer, so no tool but status works",
+	msg := "the engine does not answer, so no tool but status works"
+	if config.IsOldCredentialFile(cfgErr) {
+		// The engine cannot start on this config: say what to edit.
+		msg += "; engine.json: " + cfgErr.Error()
+	}
+	ps.add(problemEngineUnreachable, msg,
 		func(b *Steps) string { return engineUnreachableSteps(b, cmds, toolStatus) })
 	if cfg != nil {
 		r.OperatedBy = operatedBy(cfg.OperatedBy)

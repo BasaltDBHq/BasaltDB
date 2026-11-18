@@ -1,0 +1,10 @@
+{
+  "body": {
+    "intent": "Only look",
+    "runId": "<id-24>",
+    "startedAt": "<time>",
+    "taskId": "<id-25>"
+  },
+  "isError": false,
+  "tool": "run_start"
+}

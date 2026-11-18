@@ -1,0 +1,12 @@
+{
+  "body": {
+    "changeId": "<id-4>",
+    "durationMs": "<durationMs>",
+    "op": "UPDATE",
+    "rows": 1,
+    "runId": "<id-1>",
+    "status": "APPLIED"
+  },
+  "isError": false,
+  "tool": "write"
+}

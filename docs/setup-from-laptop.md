@@ -19,6 +19,8 @@ The steps below work today. They use the static portal at `https://portal.basalt
 
 You may paste the connection string without a password. You may paste the setup code, and the codes the portal shows you (`basalt-passkey.1.`, `basalt-approval.1.`, `basalt-revert.1.`). Each code only works for the one thing it was made for.
 
+Run `basalt init --setup-code` in a terminal of your own, not through the bot or a coding agent. When `basalt` sees that an agent runs it, it refuses to read the admin connection string.
+
 If the admin password ever reached a chat or a server, change it now. On Supabase: Settings, Database, reset the database password. The bot's own role keeps working.
 
 ## Install `basalt` on your laptop

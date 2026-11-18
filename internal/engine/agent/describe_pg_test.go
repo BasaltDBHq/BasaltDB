@@ -4,28 +4,26 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/engine/piidict"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
+	"github.com/basaltdbhq/basaltdb/internal/updatecheck"
 )
-
-var updateGolden = flag.Bool("update", false, "rewrite testdata/describe/*.json")
 
 // describeSQL is the describe fixture: a quoted schema and table, orders
 // with a SECRET column (card_token), a column the agent is not granted
@@ -70,7 +68,11 @@ type describeHarness struct {
 	role string
 }
 
-func describeDB(t *testing.T) describeHarness {
+func describeDB(t *testing.T) describeHarness { return describeDBWithUpdate(t, nil) }
+
+// describeDBWithUpdate is describeDB for an engine whose update check
+// answers with update.
+func describeDBWithUpdate(t *testing.T, update func() *updatecheck.Notice) describeHarness {
 	t.Helper()
 	d := guardtest.New(t)
 	d.Exec(t, describeSQL)
@@ -82,17 +84,11 @@ func describeDB(t *testing.T) describeHarness {
 		GRANT SELECT ON "Sales"."Order Items" TO `+role)
 	classifyDescribe(t, d)
 
-	pool, err := agentdb.NewPool(context.Background(), a.URL, 2)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	limits := sqlguard.DefaultLimits()
-	store := agentdb.NewStore(pool, limits, time.Now)
-	svc := agent.NewService(agent.Deps{
-		Name: "bot", Reader: agentdb.NewReader(pool, limits, time.Now), Store: store, Reads: store,
-		Approvals: store, Reverts: store, Log: slog.New(slog.DiscardHandler), Now: time.Now,
-		Catalog: agentdb.NewCatalog(pool, limits, pool.Config().ConnConfig.Database),
-		Classes: piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool),
-	})
+	svc := pgService(t, a.URL, withDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
+		d.Catalog = postgres.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database)
+		d.Classes = piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool)
+		d.Update = update
+	})).Svc
 	return describeHarness{harness: harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, db: d, role: a.Role}
 }
 
@@ -280,48 +276,6 @@ func TestDescribeDoesNotRecordReads(t *testing.T) {
 	}
 }
 
-// goldenNormal replaces what changes from run to run (the database name,
-// fingerprints, scan counters and sizes) so the answers can be compared.
-func goldenNormal(v any, key string) any {
-	switch x := v.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(x))
-		for k, val := range x {
-			out[k] = goldenNormal(val, k)
-		}
-		return out
-	case []any:
-		out := make([]any, len(x))
-		for i, val := range x {
-			out[i] = goldenNormal(val, key)
-		}
-		return out
-	}
-	switch key {
-	case "database", "fingerprint", "tableBytes", "totalBytes", "seqScans", "indexScans", "lastAnalyzed", "sizeBytes", "scans":
-		return "<" + key + ">"
-	}
-	return v
-}
-
-func requireGolden(t *testing.T, name string, body map[string]any) {
-	t.Helper()
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	enc.SetIndent("", "  ")
-	require.NoError(t, enc.Encode(goldenNormal(body, "")))
-	got := buf.Bytes()
-	file := filepath.Join("testdata", "describe", name+".json")
-	if *updateGolden {
-		require.NoError(t, os.MkdirAll(filepath.Dir(file), 0o755))
-		require.NoError(t, os.WriteFile(file, got, 0o600))
-	}
-	want, err := os.ReadFile(file)
-	require.NoError(t, err, "run with -update to write %s", file)
-	require.Equal(t, string(want), string(got), "%s (run with -update to rewrite)", file)
-}
-
 func TestDescribeServedGolden(t *testing.T) {
 	t.Parallel()
 	h := describeDB(t)
@@ -370,17 +324,10 @@ func TestDescribeSearchScale(t *testing.T) {
 	d.Exec(t, `GRANT USAGE ON SCHEMA big TO `+pgx.Identifier{a.Role}.Sanitize()+`;
 		GRANT SELECT ON ALL TABLES IN SCHEMA big TO `+pgx.Identifier{a.Role}.Sanitize())
 
-	pool, err := agentdb.NewPool(context.Background(), a.URL, 2)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	limits := sqlguard.DefaultLimits()
-	store := agentdb.NewStore(pool, limits, time.Now)
-	svc := agent.NewService(agent.Deps{
-		Name: "bot", Reader: agentdb.NewReader(pool, limits, time.Now), Store: store, Reads: store,
-		Approvals: store, Reverts: store, Log: slog.New(slog.DiscardHandler), Now: time.Now,
-		Catalog: agentdb.NewCatalog(pool, limits, pool.Config().ConnConfig.Database),
-		Classes: piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool),
-	})
+	svc := pgService(t, a.URL, withDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
+		d.Catalog = postgres.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database)
+		d.Classes = piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool)
+	})).Svc
 	h := harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}
 	h.call(t, "describe", map[string]any{"resource": "public.anchor"}) // warm the pool and the class map
 
@@ -390,7 +337,7 @@ func TestDescribeSearchScale(t *testing.T) {
 		took := time.Since(start)
 		require.False(t, isError, "%s: %v", name, body)
 		t.Logf("%s: %s", name, took)
-		require.Less(t, took, limits.StatementTimeout, name)
+		require.Less(t, took, sqlguard.DefaultLimits().StatementTimeout, name)
 	}
 	measure("overview", map[string]any{})
 	measure("search table prefix", map[string]any{"query": "t04"})
@@ -424,17 +371,10 @@ func TestDescribeOverviewScaleSchemas(t *testing.T) {
 			END LOOP; END $$`, from, from+249, role, role))
 	}
 
-	pool, err := agentdb.NewPool(context.Background(), a.URL, 2)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	limits := sqlguard.DefaultLimits()
-	store := agentdb.NewStore(pool, limits, time.Now)
-	svc := agent.NewService(agent.Deps{
-		Name: "bot", Reader: agentdb.NewReader(pool, limits, time.Now), Store: store, Reads: store,
-		Approvals: store, Reverts: store, Log: slog.New(slog.DiscardHandler), Now: time.Now,
-		Catalog: agentdb.NewCatalog(pool, limits, pool.Config().ConnConfig.Database),
-		Classes: piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool),
-	})
+	svc := pgService(t, a.URL, withDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
+		d.Catalog = postgres.NewCatalog(pool, sqlguard.DefaultLimits(), pool.Config().ConnConfig.Database)
+		d.Classes = piidict.NewMap(slog.New(slog.DiscardHandler)).On(pool)
+	})).Svc
 	h := harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}
 	h.call(t, "describe", map[string]any{"resource": "public.anchor"}) // warm the pool and the class map
 
@@ -443,7 +383,7 @@ func TestDescribeOverviewScaleSchemas(t *testing.T) {
 	took := time.Since(start)
 	require.False(t, isError, "%v", body)
 	t.Logf("overview of %d schemas: %s", schemas, took)
-	require.Less(t, took, limits.StatementTimeout)
+	require.Less(t, took, sqlguard.DefaultLimits().StatementTimeout)
 	require.Len(t, body["schemas"], 50)
 	n, err := body["counts"].(map[string]any)["schemas"].(json.Number).Int64()
 	require.NoError(t, err)
@@ -452,4 +392,24 @@ func TestDescribeOverviewScaleSchemas(t *testing.T) {
 	raw, err := json.Marshal(body)
 	require.NoError(t, err)
 	require.Less(t, len(raw), 16<<10, "the overview stays small")
+}
+
+// TestDescribeOverviewCarriesTheUpdate: the overview form, and only it,
+// carries the engine's newer-release notice (CONTRACT.md, Update notice).
+func TestDescribeOverviewCarriesTheUpdate(t *testing.T) {
+	t.Parallel()
+	h := describeDBWithUpdate(t, func() *updatecheck.Notice {
+		return &updatecheck.Notice{Current: "0.0.1", Latest: "0.0.2", Security: true, URL: "https://example.test/r"}
+	})
+	overview, isError := h.describe(t, map[string]any{})
+	require.False(t, isError, "%v", overview)
+	u, ok := overview["update"].(map[string]any)
+	require.True(t, ok, "update in %v", overview)
+	require.Equal(t, "0.0.2", u["latest"])
+	require.Equal(t, true, u["security"])
+	require.Contains(t, u["message"], "SECURITY UPDATE: ")
+
+	plain := describeDB(t)
+	none, _ := plain.describe(t, map[string]any{})
+	require.NotContains(t, none, "update", "no notice, no field")
 }

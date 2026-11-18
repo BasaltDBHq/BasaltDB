@@ -23,6 +23,10 @@ import (
 type PagesDTO struct {
 	PagesURL    string `json:"pagesUrl"`
 	LocalOrigin string `json:"localOrigin"`
+	// UpdateCheck is "ON" or "OFF": whether the engine's update check is on
+	// (CONTRACT.md, Update notice). A person's command that cannot read
+	// engine.json follows it.
+	UpdateCheck string `json:"updateCheck"`
 }
 
 type emptyParams struct{}
@@ -51,11 +55,11 @@ func headFromDomain(h guard.ChainHead) headDTO { return headDTO{Seq: h.Seq, Hash
 func (h headDTO) toDomain() guard.ChainHead    { return guard.ChainHead{Seq: h.Seq, Hash: h.Hash} }
 
 // pinDTO is CHECK_HEALTH's pin: a head and the guard install it was
-// verified on, absent when unknown.
+// verified on, the nil uuid when unknown (a pin saved before install ids).
 type pinDTO struct {
 	Seq     int64         `json:"seq"`
 	Hash    passkey.Bytes `json:"hash"`
-	Install uint32        `json:"install,omitempty"`
+	Install uuid.UUID     `json:"install"`
 }
 
 // setAsideDTO is one pin the reader set aside and kept (chainpin's
@@ -63,8 +67,8 @@ type pinDTO struct {
 type setAsideDTO struct {
 	PinnedSeq     int64         `json:"pinnedSeq"`
 	PinnedHash    passkey.Bytes `json:"pinnedHash"`
-	PinnedInstall uint32        `json:"pinnedInstall"`
-	Install       uint32        `json:"install"`
+	PinnedInstall uuid.UUID     `json:"pinnedInstall"`
+	Install       uuid.UUID     `json:"install"`
 	At            time.Time     `json:"at"`
 }
 
@@ -103,7 +107,7 @@ func (p healthParams) toDomain() ledger.HealthOptions {
 // reinstallDTO is one entry of CHECK_HEALTH's reinstalls: the notice's
 // data. more and moreAgents carry the counts the notice prints.
 type reinstallDTO struct {
-	Install     uint32               `json:"install"`
+	Install     uuid.UUID            `json:"install"`
 	InstalledAt *time.Time           `json:"installedAt"`
 	InstalledBy string               `json:"installedBy,omitempty"`
 	VaultUser   string               `json:"vaultUser,omitempty"`
@@ -171,7 +175,7 @@ type deadManDTO struct {
 type healthDTO struct {
 	Chain       chainDTO       `json:"chain"`
 	Head        headDTO        `json:"head"`
-	Install     uint32         `json:"install"`
+	Install     uuid.UUID      `json:"install"`
 	PinSetAside bool           `json:"pinSetAside"`
 	PinMoved    bool           `json:"pinMoved"`
 	Reinstalls  []reinstallDTO `json:"reinstalls"`

@@ -12,8 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/approval"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/links"
@@ -21,7 +21,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
-	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 // A reveal racing the approval's signature or apply, or the revert's
@@ -35,10 +35,10 @@ import (
 const dropLeadSQL = `DELETE FROM public.leads WHERE id = $1`
 
 // raceEnv: bot may read and write leads only; its held deletes cascade to
-// notes it cannot read. Calls go through the engine's agentdb store.
+// notes it cannot read. Calls go through the engine's Postgres store.
 type raceEnv struct {
 	d      *guardtest.DB
-	store  *agentdb.Store
+	store  *postgres.Store
 	person *passkeytest.Authenticator
 }
 
@@ -51,28 +51,25 @@ func newRaceEnv(t *testing.T) raceEnv {
 	person, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 	require.NoError(t, guard.RegisterPasskey(ctx, d.Admin, person.Credential(), "app"))
-	pool, err := agentdb.NewPool(ctx, bot.URL, 4)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	return raceEnv{d: d, store: agentdb.NewStore(pool, sqlguard.DefaultLimits(), time.Now), person: person}
+	return raceEnv{d: d, store: newPGAgent(t, bot.URL, 4).store, person: person}
 }
 
 // heldDelete is a held delete of one lead and the run it belongs to.
 type heldDelete struct {
-	in     guard.Intent
+	in     action.Intent
 	params []any
-	held   guard.Held
+	held   action.Held
 }
 
 func (e raceEnv) hold(t *testing.T, lead int) heldDelete {
 	t.Helper()
 	ctx := context.Background()
-	in := guard.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Drop lead " + strconv.Itoa(lead)}
+	in := action.Intent{RunID: uuid.Must(uuid.NewV7()), Text: "Drop lead " + strconv.Itoa(lead)}
 	require.NoError(t, e.store.StartRun(ctx, in))
 	params := []any{json.Number(strconv.Itoa(lead))}
 	lines, err := e.store.Preview(ctx, in, dropLeadSQL, params, []string{})
 	require.NoError(t, err)
-	held, err := e.store.Hold(ctx, in, guard.HoldRequest{Statement: dropLeadSQL, Params: params, Assigned: []string{}, Lines: lines})
+	held, err := e.store.Hold(ctx, in, action.HoldRequest{Statement: dropLeadSQL, Params: params, Assigned: []string{}, Lines: lines})
 	require.NoError(t, err)
 	return heldDelete{in: in, params: params, held: held}
 }
@@ -91,7 +88,7 @@ func (e raceEnv) sign(h heldDelete, as passkey.Assertion) error {
 }
 
 func (e raceEnv) apply(h heldDelete) error {
-	_, err := e.store.WriteApproved(context.Background(), h.in, h.held.ApprovalID, sqlguard.OpDelete, dropLeadSQL, h.params)
+	_, err := e.store.WriteApproved(context.Background(), h.in, h.held.ApprovalID, action.OpDelete, dropLeadSQL, h.params)
 	return err
 }
 
@@ -127,7 +124,7 @@ func (e raceEnv) revealApproval(h heldDelete, as passkey.Assertion, key []byte) 
 	if err != nil {
 		return nil, err
 	}
-	return e.store.RevealPreview(context.Background(), h.in, sqlguard.OpDelete, dropLeadSQL, h.params, h.held.ApprovalID, ticket)
+	return e.store.RevealPreview(context.Background(), h.in, action.OpDelete, dropLeadSQL, h.params, h.held.ApprovalID, ticket)
 }
 
 // lockRow locks one row of a basalt_meta table in a transaction on its own
@@ -275,11 +272,11 @@ func TestRevealRacesTheApproval(t *testing.T) {
 func TestRevealRacesTheRevertSignature(t *testing.T) {
 	t.Parallel()
 	e := newRaceEnv(t)
-	prepared := func(lead int) guard.PreparedRevert {
+	prepared := func(lead int) action.PreparedRevert {
 		h := e.hold(t, lead)
 		require.NoError(t, e.sign(h, e.signature(t, h)))
 		require.NoError(t, e.apply(h))
-		prep, err := e.store.PrepareRevert(context.Background(), guard.RevertScope{Kind: revert.ScopeRun, ID: h.in.RunID}, "Undo it", time.Minute)
+		prep, err := e.store.PrepareRevert(context.Background(), action.Scope{Kind: revert.ScopeRun, ID: h.in.RunID}, "Undo it", time.Minute)
 		require.NoError(t, err)
 		return prep
 	}
@@ -289,26 +286,26 @@ func TestRevealRacesTheRevertSignature(t *testing.T) {
 		key   []byte
 		sig   passkey.Assertion
 	}
-	made := func(prep guard.PreparedRevert) signed {
+	made := func(prep action.PreparedRevert) signed {
 		as, key := e.proof(t, approval.KindRevert, prep.RevertID, "reverts", "revert_id")
 		sig, err := e.person.Sign(revert.Challenge(prep.BindingText), passkeytest.FlagsUPUV, nil)
 		require.NoError(t, err)
 		return signed{proof: as, key: key, sig: sig}
 	}
-	reveal := func(prep guard.PreparedRevert, m signed) (guard.RevealedRevert, error) {
+	reveal := func(prep action.PreparedRevert, m signed) (action.RevealedRevert, error) {
 		return e.store.RevealRevertRows(context.Background(), prep.RevertID, m.proof, m.key)
 	}
-	signRevert := func(prep guard.PreparedRevert, m signed) error {
+	signRevert := func(prep action.PreparedRevert, m signed) error {
 		_, err := e.store.ApplyRevert(context.Background(), prep.RevertID, m.sig)
 		return err
 	}
-	lock := func(prep guard.PreparedRevert) func() { return e.lockRow(t, "reverts", "revert_id", prep.RevertID) }
+	lock := func(prep action.PreparedRevert) func() { return e.lockRow(t, "reverts", "revert_id", prep.RevertID) }
 
 	// The reveal first: it shows the rows; the signature after it runs the
 	// revert.
 	prep := prepared(20)
 	m := made(prep)
-	var out guard.RevealedRevert
+	var out action.RevealedRevert
 	errReveal, errSign := e.race(t, lock(prep), func() error {
 		var err error
 		out, err = reveal(prep, m)

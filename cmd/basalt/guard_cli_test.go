@@ -175,7 +175,7 @@ func TestInitInstallsAndWritesCredential(t *testing.T) {
 	cfg, err := config.Load(cfgPath)
 	require.NoError(t, err)
 	require.Equal(t, config.DefaultSocketDir(runtime.GOOS), cfg.SocketDir)
-	require.Equal(t, []config.Agent{{Name: "bot", OSUser: "tester", CredentialFile: path, InitArgs: []string{
+	require.Equal(t, []config.Agent{{Name: "bot", OSUser: "tester", Store: config.PostgresStore(path), InitArgs: []string{
 		"--agent=bot", "--write=public.leads", "--prefix=" + d.Names.Prefix, "--os-user=tester",
 	}}}, cfg.Agents)
 	raw, err := os.ReadFile(cfgPath)
@@ -537,9 +537,10 @@ func TestLogShowsAReinstall(t *testing.T) {
 	require.Equal(t, old.Head.Seq, now.SetAside[0].PinnedSeq)
 }
 
-// The same ledger under another oid (a pg_dump and pg_restore) moves basalt
-// log's pin with a warning on stderr, and records nothing.
-func TestLogMovesItsPinAcrossARestore(t *testing.T) {
+// The same ledger under another install id (the installs row deleted and
+// written again by basalt init) moves basalt log's pin with a warning on
+// stderr, and records nothing.
+func TestLogMovesItsPinToANewInstallOfTheSameLedger(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
 	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
@@ -551,18 +552,64 @@ func TestLogMovesItsPinAcrossARestore(t *testing.T) {
 	pins, name := logPin(t, cache)
 	p, _, err := pins.Load(name)
 	require.NoError(t, err)
-	p.Install++
+	current := p.Install
+	p.Install = uuid.New()
 	require.NoError(t, pins.Save(name, p))
 
 	r = cli(t, env, "", "log")
 	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Contains(t, r.stderr, fmt.Sprintf("warning: the guard's schema was dropped and restored with the same ledger (guard install %d is now %d)",
-		p.Install, p.Install-1))
+	require.Contains(t, r.stderr, fmt.Sprintf("warning: the guard was installed again over the same ledger (guard install %s is now %s)",
+		p.Install, current))
 	require.NotContains(t, r.stderr, "reinstalled")
 	require.NotContains(t, r.stderr, "chain broken")
 	now, _, err := pins.Load(name)
 	require.NoError(t, err)
-	require.Equal(t, p.Install-1, now.Install)
+	require.Equal(t, current, now.Install)
+}
+
+// The quickstart path: the Postgres container removed and started again
+// from the same image, and basalt init run again with the same database
+// and role. basalt_meta has the same schema oid as before. basalt log
+// reports its old pin as a reinstall and shows the notice, never a broken
+// chain, on every run and with --full-check; a rewrite of the new ledger
+// is still caught.
+func TestLogAfterTheDatabaseIsRecreated(t *testing.T) {
+	t.Parallel()
+	d := guardtest.NewRecreatable(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
+	registerTestPasskey(t, d)
+	ctx := context.Background()
+	require.NoError(t, guard.Heartbeat(ctx, a.Conn, nil))
+	cache := t.TempDir()
+	r := cli(t, map[string]string{envAgentURL: a.URL, envCacheDir: cache}, "", "log")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	pins, name := logPin(t, cache)
+	old, _, err := pins.Load(name)
+	require.NoError(t, err)
+	require.Positive(t, old.Head.Seq)
+
+	d.Recreate(t)
+	d.WithDemo(t)
+	b := d.NewAgent(t, "bot", []string{"public.leads"}, nil)
+	registerTestPasskey(t, d)
+	env := map[string]string{envAgentURL: b.URL, envCacheDir: cache}
+	for _, args := range [][]string{{"log"}, {"log"}, {"log", "--full-check"}} {
+		r = cli(t, env, "", args...)
+		require.Equal(t, exitOK, r.code, r.stderr)
+		require.NotContains(t, r.stderr, "chain broken", args)
+		require.Contains(t, r.stderr, "This database's ledger was reinstalled on ", args)
+	}
+	_, again := logPin(t, cache)
+	require.Equal(t, name, again, "the same database and role: the same pin")
+	now, _, err := pins.Load(name)
+	require.NoError(t, err)
+	require.NotEqual(t, old.Install, now.Install)
+	require.Len(t, now.SetAside, 1)
+
+	d.Exec(t, `UPDATE basalt_meta.ledger SET hash = sha256(hash) WHERE seq = $1`, now.Head.Seq)
+	r = cli(t, env, "", "log")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Contains(t, r.stderr, fmt.Sprintf("warning: ledger chain broken at seq %d", now.Head.Seq))
 }
 
 func TestLogShowsTheDeadManRow(t *testing.T) {
@@ -599,22 +646,13 @@ func TestUninstallRemovesEverything(t *testing.T) {
 	require.Zero(t, roles)
 }
 
-func TestInitHelpListsTheOtherModes(t *testing.T) {
-	t.Parallel()
-	r := cli(t, nil, "", "init", "-h")
-	require.Equal(t, exitOK, r.code, r.stderr)
-	for _, want := range []string{"--remote", "--setup-code", "-operated-by"} {
-		require.Contains(t, r.stderr, want)
-	}
-}
-
 func TestHelpSaysOneEngineServesManyAgents(t *testing.T) {
 	t.Parallel()
 	for _, args := range [][]string{{"--help"}, {"init", "-h"}} {
 		code, stdout, stderr := runArgs(args...)
 		require.Equal(t, exitOK, code, stderr)
 		out := stdout + stderr
-		for _, want := range []string{"One engine serves many agents", "one database", "basalt init --agent NAME", "--remote"} {
+		for _, want := range []string{"One engine serves many agents", "one database", "basalt init --remote --agent NAME"} {
 			require.Contains(t, out, want, args)
 		}
 	}

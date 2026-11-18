@@ -8,40 +8,15 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/approval"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
-	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/resultsize"
-	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
-	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
-
-// ApprovalStore holds writes for approval and applies approved ones, on the
-// agent's own credential.
-type ApprovalStore interface {
-	Preview(ctx context.Context, in guard.Intent, sql string, params []any, assigned []string) ([]string, error)
-	Hold(ctx context.Context, in guard.Intent, r guard.HoldRequest) (guard.Held, error)
-	TableColumns(ctx context.Context, table string) ([]string, error)
-	WriteApproved(ctx context.Context, in guard.Intent, approvalID uuid.UUID, op sqlguard.Op, sql string, params []any) (agentdb.WriteResult, error)
-	SubmitApproval(ctx context.Context, id uuid.UUID, a passkey.Assertion) (time.Time, error)
-	FindApproval(ctx context.Context, id uuid.UUID) (ledger.Approval, error)
-	ListApprovals(ctx context.Context, p ledger.ApprovalListParams) (pagination.Page[ledger.Approval], error)
-	Passkeys(ctx context.Context) ([]passkey.Credential, error)
-	// RevealNonce is the reveal nonce of an approval or revert the role
-	// holds (approval.KindApprove or approval.KindRevert).
-	RevealNonce(ctx context.Context, kind string, id uuid.UUID) ([]byte, error)
-	// OpenReveal checks the person's reveal proof for a held write and
-	// returns the ticket of the re-run preview; RevealPreview re-runs the
-	// held write in a preview that rolls back and reads its hidden rows.
-	OpenReveal(ctx context.Context, id uuid.UUID, proof passkey.Assertion, key []byte) ([]byte, error)
-	RevealPreview(ctx context.Context, in guard.Intent, op sqlguard.Op, sql string, params []any, id uuid.UUID, ticket []byte) ([]approval.RevealedRow, error)
-}
 
 // HeldNotice is a held write to tell the person about.
 type HeldNotice struct {
@@ -93,32 +68,22 @@ type noNotifier struct{}
 func (noNotifier) NotifyHeld(context.Context, HeldNotice) error     { return nil }
 func (noNotifier) NotifyRevert(context.Context, RevertNotice) error { return nil }
 
-// sqlstateApprovalRequired is the guard's BS002.
-const sqlstateApprovalRequired = "BS002"
-
-func approvalRequired(err error) bool {
-	var pe *pgconn.PgError
-	return errors.As(err, &pe) && pe.Code == sqlstateApprovalRequired
-}
-
 // hold turns a write the guard held into a held action (decision M2-1):
 // refuse it when it is not repeatable, preview it in a transaction that
 // rolls back, store it with its lines, notify the person, and answer
 // APPROVAL_REQUIRED with the approval link. It returns the held write's
 // approval id with the APPROVAL_REQUIRED error, or uuid.Nil and the error
 // that kept it from being held.
-func (s *Service) hold(ctx context.Context, in guard.Intent, p WriteParams, stmt sqlguard.Statement, start time.Time) (uuid.UUID, error) {
-	h, err := sqlguard.CheckRepeatable(p.SQL, p.Params)
-	if err != nil {
+func (s *Service) hold(ctx context.Context, in action.Intent, p WriteParams, stmt action.Statement, start time.Time) (uuid.UUID, error) {
+	assigned, err := s.Store.HoldColumns(ctx, p.SQL, p.Params)
+	var notRepeatable *action.RefusalError
+	if errors.As(err, &notRepeatable) {
 		return uuid.Nil, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
 	}
-	assigned := h.Assigned
-	if assigned == nil {
-		if assigned, err = s.Approvals.TableColumns(ctx, h.Table); err != nil {
-			return uuid.Nil, err
-		}
+	if err != nil {
+		return uuid.Nil, err
 	}
-	lines, err := s.Approvals.Preview(ctx, in, p.SQL, p.Params, assigned)
+	lines, err := s.Store.Preview(ctx, in, p.SQL, p.Params, assigned)
 	if err != nil {
 		return uuid.Nil, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
 	}
@@ -129,7 +94,7 @@ func (s *Service) hold(ctx context.Context, in guard.Intent, p WriteParams, stmt
 	if te := holdTooLarge(lines, nil); te != nil {
 		return uuid.Nil, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
 	}
-	held, err := s.Approvals.Hold(ctx, in, guard.HoldRequest{Statement: p.SQL, Params: p.Params, Assigned: assigned, Lines: lines})
+	held, err := s.Store.Hold(ctx, in, action.HoldRequest{Statement: p.SQL, Params: p.Params, Assigned: assigned, Lines: lines})
 	if err != nil {
 		if te := holdTooLarge(lines, err); te != nil {
 			return uuid.Nil, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
@@ -403,7 +368,7 @@ const DefaultApprovalWait = 90 * time.Second
 // credentialIDs are the registered passkeys, for the request's
 // allowCredentials.
 func (s *Service) credentialIDs(ctx context.Context) ([]passkey.Bytes, error) {
-	keys, err := s.Approvals.Passkeys(ctx)
+	keys, err := s.Store.Passkeys(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -444,7 +409,7 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 	if err != nil {
 		return WriteOutcome{}, err
 	}
-	a, err := s.Approvals.FindApproval(ctx, p.ApprovalID)
+	a, err := s.Store.FindApproval(ctx, p.ApprovalID)
 	if errors.Is(err, ledger.ErrApprovalNotFound) {
 		return WriteOutcome{}, approvalInvalid(reasonNotThisAgent, "approval %s is not one of this agent's held writes", p.ApprovalID)
 	}
@@ -463,7 +428,7 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 	// The receipt is built from Postgres's record of the approval after the
 	// signature (CONTRACT.md, Receipts), and handed over only once the write
 	// is applied.
-	if a, err = s.Approvals.FindApproval(ctx, a.ID); err != nil {
+	if a, err = s.Store.FindApproval(ctx, a.ID); err != nil {
 		return WriteOutcome{}, err
 	}
 	var receipt *Receipt
@@ -474,18 +439,19 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 		}
 		receipt = &r
 	}
-	in := guard.Intent{RunID: run.ID, TaskID: run.TaskID, Text: p.Intent}
+	in := action.Intent{RunID: run.ID, TaskID: run.TaskID, Text: p.Intent}
 	start := s.Now()
-	stmt, err := sqlguard.Check(p.SQL, sqlguard.ToolWrite)
+	stmt, err := s.Store.Check(p.SQL, action.ToolWrite)
+	op := stmt.Op
 	if err != nil {
-		return WriteOutcome{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
+		return WriteOutcome{}, s.refused(ctx, in, op, p.SQL, p.Params, start, err)
 	}
-	res, err := s.Approvals.WriteApproved(ctx, in, a.ID, stmt.Op, p.SQL, p.Params)
+	res, err := s.Store.WriteApproved(ctx, in, a.ID, op, p.SQL, p.Params)
 	if err != nil {
-		return WriteOutcome{}, s.withApprovalLink(ctx, a, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err))
+		return WriteOutcome{}, s.withApprovalLink(ctx, a, s.refused(ctx, in, op, p.SQL, p.Params, start, err))
 	}
 	return WriteOutcome{
-		WriteResult: res, RunID: run.ID, Op: stmt.Op, ApprovalID: a.ID,
+		WriteResult: res, RunID: run.ID, Op: op, ApprovalID: a.ID,
 		Warnings: s.rlsWarnings(ctx, stmt.Tables, res.Rows), Receipt: receipt,
 	}, nil
 }
@@ -562,7 +528,7 @@ func (s *Service) relay(ctx context.Context, a ledger.Approval, code string) err
 	if resp.ApprovalID != a.ID {
 		return approvalInvalid(reasonBadSignature, "the approval code is for approval %s, not %s", resp.ApprovalID, a.ID)
 	}
-	_, err = s.Approvals.SubmitApproval(ctx, a.ID, resp.Assertion())
+	_, err = s.Store.SubmitApproval(ctx, a.ID, resp.Assertion())
 	return err
 }
 
@@ -611,7 +577,7 @@ func (s *Service) awaitSigned(ctx context.Context, a ledger.Approval, wait time.
 	err := s.awaitWhile(ctx, wait, func() bool { return a.Status == ledger.ApprovalPending }, func(ctx context.Context) error {
 		// Each poll is one measured read with a budget of its own: polls
 		// for 90 seconds must not add up against the call's budget.
-		next, err := s.Approvals.FindApproval(resultsize.With(ctx), a.ID)
+		next, err := s.Store.FindApproval(resultsize.With(ctx), a.ID)
 		if err != nil {
 			return err
 		}

@@ -17,7 +17,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 	"github.com/basaltdbhq/basaltdb/internal/engine/portalcheck"
@@ -26,6 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/server"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 // basalt status (CONTRACT.md, CLI; owner decision AE-13): the status tool's
@@ -80,12 +80,29 @@ func runStatus(c *cliIO, args []string) int {
 		return c.fail(err)
 	}
 	if *asJSON {
+		out.Update = statusUpdate(c, out.Update)
 		enc := json.NewEncoder(c.stdout)
 		enc.SetIndent("", "  ")
 		return exitCode(c, enc.Encode(out))
 	}
 	printStatus(c.stdout, out)
 	return exitOK
+}
+
+// statusUpdate is the update field of status --json: the status tool's shape
+// (message included). This binary's own cached notice comes first, since it
+// is the one the person upgrades; else the engine's notice. Nothing when the
+// check is off.
+func statusUpdate(c *cliIO, engine *agent.UpdateInfo) *agent.UpdateInfo {
+	if updateOff(c.ctx, c.getenv, c.goos, c.host, person.Client{Path: c.engine.personSocket}.Pages) {
+		return nil
+	}
+	if n := cachedUpdate(c); n != nil {
+		exe, _ := os.Executable()
+		info := agent.NewUpdateInfo(*n, exe)
+		return &info
+	}
+	return engine
 }
 
 // configOrFallback is the config a person command reads: the --config value,
@@ -181,11 +198,11 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 	if !cfg.Service() {
 		cmds = cmds.Foreground()
 	}
-	dsn, err := cfg.credential(a.CredentialFile)
+	dsn, err := cfg.credential(a.Store.CredentialFile)
 	if err != nil {
 		return statusOut{}, fmt.Errorf("the credential of agent %s cannot be read: %w", a.Name, withoutPath(err))
 	}
-	pool, err := agentdb.NewPool(c.ctx, dsn, statusAgentPool)
+	pool, err := postgres.NewPool(c.ctx, dsn, statusAgentPool)
 	if err != nil {
 		return statusOut{}, err
 	}
@@ -205,14 +222,18 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 		Portal: savedPortalCheck(cfg.StateDirFor(c.goos), base),
 		Name:   a.Name, Commands: cmds, OperatedBy: cfg.OperatedBy, DevLocalPages: cfg.DevLocalPages, Setup: a.Setup,
 		PagesBase: base, PagesOrigin: servedPages(c, cfg.Config, eng.Reachable), EngineRunning: eng.Reachable, EngineUnknown: eng.Unknown,
-		Probe: agent.DBProbe{
+		Probe: postgres.Probe{
 			Q: pool, Migrations: guard.Migrations(),
 			Kept: engine.KeptSetAside(chainpin.File{Dir: cfg.StateDirFor(c.goos)}, a.Name, slog.New(slog.DiscardHandler)),
 		},
-		Passkeys:  func(ctx context.Context) ([]passkey.Credential, error) { return ledger.Passkeys(ctx, pool) },
+		Passkeys: func(ctx context.Context) ([]passkey.Credential, error) {
+			p, err := ledger.Passkeys(ctx, pool)
+			return p, postgres.MapError(err)
+		},
 		EngineKey: key, DirectServed: directServed,
 		EngineRecord: func(ctx context.Context, id string) (*guard.RecordedEngine, error) {
-			return guard.EngineRecord(ctx, pool, id)
+			r, err := guard.EngineRecord(ctx, pool, id)
+			return r, postgres.MapError(err)
 		},
 		Log: slog.New(slog.DiscardHandler), Now: c.now,
 	}.Report(c.ctx)
@@ -258,7 +279,7 @@ func statusAgent(cfg config.Config, name, path string) (config.Agent, error) {
 	if name == "" {
 		return config.Agent{}, fmt.Errorf("%w: %s has agents %s; give --agent NAME", errUsage, path, strings.Join(names, ", "))
 	}
-	return config.Agent{}, fmt.Errorf("agent %q is not in %s; run basalt init --agent %s", name, path, name)
+	return config.Agent{}, errAgentNotInConfig(name, path)
 }
 
 // runningEngine reads the engine's lock file: held while it runs, with its

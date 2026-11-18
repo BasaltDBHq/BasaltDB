@@ -8,8 +8,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
-	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 )
 
@@ -20,7 +20,7 @@ func allCommands(c Commands) map[string]string {
 	id := uuid.Must(uuid.NewV7())
 	return map[string]string{
 		"approve":       c.Approve(id),
-		"revert":        c.Revert(guard.RevertScope{Kind: revert.ScopeRun, ID: id}),
+		"revert":        c.Revert(action.Scope{Kind: revert.ScopeRun, ID: id}),
 		"revertStatus":  c.RevertStatus(id),
 		"passkeyList":   c.PasskeyList(),
 		"upgrade":       c.Upgrade(),
@@ -76,7 +76,7 @@ func TestCommandShapes(t *testing.T) {
 	id := uuid.MustParse("0198a5c4-0000-7000-8000-000000000001")
 	cfg := "--agent bot --config /x/engine.json"
 	require.Equal(t, "basalt approve "+cfg+" --open "+id.String(), c.Approve(id))
-	require.Equal(t, "basalt revert "+cfg+" --run "+id.String()+" --open", c.Revert(guard.RevertScope{Kind: revert.ScopeRun, ID: id}))
+	require.Equal(t, "basalt revert "+cfg+" --run "+id.String()+" --open", c.Revert(action.Scope{Kind: revert.ScopeRun, ID: id}))
 	require.Equal(t, "basalt revert "+cfg+" --status "+id.String(), c.RevertStatus(id))
 	require.Equal(t, "basalt passkey list "+cfg, c.PasskeyList())
 	require.Equal(t, "basalt upgrade "+cfg, c.Upgrade())

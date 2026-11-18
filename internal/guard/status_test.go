@@ -74,7 +74,7 @@ func TestAgentStatus(t *testing.T) {
 	st, err = guard.AgentStatus(ctx, a.Conn, build)
 	require.NoError(t, err)
 	require.Equal(t, guard.Status{
-		State: guard.GuardOutdated, Build: next, MissingBreaking: []int{latest}, MissingNonBreaking: []int{next},
+		State: guard.GuardOutdated, Build: next, MissingBreaking: versionsUpTo(latest), MissingNonBreaking: []int{next},
 	}, st)
 }
 

@@ -10,21 +10,22 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/engine/piidict"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
-	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 // piiService is the engine's agent service with the PII observer wired as
 // the engine wires it: query rows through the service, RETURNING rows inside
 // the write's transaction.
-func piiService(t *testing.T, obs agent.PIIObserver, returned agentdb.ReturnedFunc) (*agent.Service, *guardtest.DB, *pii.FuseDictionary, *pii.Keys) {
+func piiService(t *testing.T, obs agent.PIIObserver, returned postgres.ReturnedFunc) (*agent.Service, *guardtest.DB, *pii.FuseDictionary, *pii.Keys) {
 	t.Helper()
 	d := guardtest.New(t)
 	d.Exec(t, `CREATE TABLE public.people (id bigint PRIMARY KEY, email text, city text);
@@ -45,26 +46,19 @@ func piiService(t *testing.T, obs agent.PIIObserver, returned agentdb.ReturnedFu
 	require.NoError(t, pgx.BeginFunc(context.Background(), d.Admin, func(tx pgx.Tx) error {
 		return guard.WriteClassification(context.Background(), tx, d.Names, guard.Classification{Columns: cols, At: time.Now()})
 	}))
-	pool, err := agentdb.NewPool(context.Background(), a.URL, 2)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
 	dir := t.TempDir()
 	keys, err := pii.LoadKeys(filepath.Join(dir, pii.KeyFileName), rand.Reader)
 	require.NoError(t, err)
 	dict, err := pii.OpenDictionary(dir, keys, pii.DefaultDictionaryOptions())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dict.Close() })
-	if obs == nil {
-		obs = piidict.NewObserver(piidict.NewMap(slog.New(slog.DiscardHandler)), dict).On(pool)
-	}
-	store := agentdb.NewStore(pool, sqlguard.DefaultLimits(), time.Now)
-	if returned != nil {
-		store = store.WithReturned(returned)
-	}
-	return agent.NewService(agent.Deps{
-		Name: "bot", Reader: agentdb.NewReader(pool, sqlguard.DefaultLimits(), time.Now), Store: store, Reads: store,
-		Approvals: store, Reverts: store, Log: slog.New(slog.DiscardHandler), Now: time.Now, PII: obs,
-	}), d, dict, keys
+	env := pgService(t, a.URL, withReturned(returned), withDeps(func(deps *agent.Deps, pool *pgxpool.Pool) {
+		if obs == nil {
+			obs = piidict.NewObserver(piidict.NewMap(slog.New(slog.DiscardHandler)), dict).On(pool)
+		}
+		deps.PII = obs
+	}))
+	return env.Svc, d, dict, keys
 }
 
 func TestQueryAddsIdentifierValuesBeforeItReturns(t *testing.T) {
@@ -83,7 +77,7 @@ func TestQueryAddsIdentifierValuesBeforeItReturns(t *testing.T) {
 // failingObserver cannot add any value.
 type failingObserver struct{}
 
-func (failingObserver) Observe(context.Context, []agentdb.Column, []map[string]any) error {
+func (failingObserver) Observe(context.Context, []action.Column, []map[string]any) error {
 	return errors.New("pii: dictionary delta is full")
 }
 
@@ -101,7 +95,7 @@ func TestQueryWithholdsRowsTheDictionaryCannotTake(t *testing.T) {
 
 func TestWriteRollsBackWhenItsReturnedValuesCannotBeAdded(t *testing.T) {
 	t.Parallel()
-	refuse := func(context.Context, pgx.Tx, []agentdb.Column, []map[string]any) error { return pii.ErrDeltaFull }
+	refuse := func(context.Context, pgx.Tx, []action.Column, []map[string]any) error { return pii.ErrDeltaFull }
 	svc, d, _, _ := piiService(t, failingObserver{}, refuse)
 	_, err := svc.Write(context.Background(), agent.WriteParams{
 		SQL: `UPDATE people SET city = 'Pärnu' WHERE id = 1 RETURNING email`, Intent: "move ann",

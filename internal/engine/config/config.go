@@ -126,10 +126,17 @@ type Config struct {
 	// VaultURL overrides the Vault's address for development and tests
 	// only: a ws:// URL on a loopback address. Empty is the Vault itself.
 	VaultURL string `json:"vaultUrl,omitempty"`
+	// UpdateCheck is OFF to stop the daily look at the public release list
+	// (CONTRACT.md, Update notice); ON, or empty, leaves it on. See
+	// UpdateCheckOn.
+	UpdateCheck string `json:"updateCheck,omitempty" validate:"omitempty,oneof=ON OFF"`
 	// PII sizes the PII dictionary and its scan (CONTRACT.md, PII
 	// classification, Engine config). Zero fields take the defaults.
 	PII PII `json:"pii,omitzero"`
 }
+
+// UpdateCheckOn is false only when updateCheck is OFF.
+func (c Config) UpdateCheckOn() bool { return c.UpdateCheck != "OFF" }
 
 // PII is engine.json pii: the dictionary's memory budget and the scan's
 // rate. Zero means the default. The budget is at most MaxPIIMemoryMB (64
@@ -202,8 +209,9 @@ type Agent struct {
 	Name string `json:"name" validate:"required,agentname"`
 	// OSUser is the only OS user allowed to connect to the agent's socket.
 	OSUser string `json:"osUser" validate:"required"`
-	// CredentialFile holds the agent role's Postgres URL, mode 0600.
-	CredentialFile string `json:"credentialFile" validate:"required"`
+	// Store is the one store the agent's actions land in (CONTRACT.md,
+	// Stores).
+	Store Store `json:"store"`
 	// InitArgs are the flags basalt init was run with for this agent (never
 	// the admin connection string, a password or a one-shot flag), so a
 	// step can name the init command again. See agent.NewCommands.
@@ -211,6 +219,22 @@ type Agent struct {
 	// Setup is the pending setup code basalt init --remote made for this
 	// agent; nil when none is pending.
 	Setup *Setup `json:"setup,omitempty"`
+}
+
+// StorePostgres is the store kind the engine serves (CONTRACT.md, Stores).
+const StorePostgres = "POSTGRES"
+
+// Store binds an agent to its store: the kind and the file that holds the
+// agent's credential for it (for POSTGRES the connection string of its own
+// role, mode 0600).
+type Store struct {
+	Kind           string `json:"kind" validate:"required"`
+	CredentialFile string `json:"credentialFile" validate:"required"`
+}
+
+// PostgresStore binds an agent to Postgres with the credential in file.
+func PostgresStore(file string) Store {
+	return Store{Kind: StorePostgres, CredentialFile: file}
 }
 
 // Setup is an agent's pending setup (CONTRACT.md, basalt init --remote):
@@ -324,6 +348,9 @@ func load(path string, open func(string) (*os.File, error)) (Config, error) {
 	if err := refuseParked(raw); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
+	if err := refuseOldCredentialFile(raw); err != nil {
+		return Config{}, fmt.Errorf("config %s: %w", path, err)
+	}
 	var c Config
 	dec := json.NewDecoder(strings.NewReader(string(raw)))
 	dec.DisallowUnknownFields()
@@ -334,6 +361,9 @@ func load(path string, open func(string) (*os.File, error)) (Config, error) {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	if err := c.checkSocketPaths(); err != nil {
+		return Config{}, fmt.Errorf("config %s: %w", path, err)
+	}
+	if err := c.checkStores(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	if err := c.checkLinkBudget(); err != nil {
@@ -354,6 +384,17 @@ func load(path string, open func(string) (*os.File, error)) (Config, error) {
 	return c, nil
 }
 
+// checkStores refuses an agent bound to a store kind the engine does not
+// serve, naming the agent.
+func (c Config) checkStores() error {
+	for _, a := range c.Agents {
+		if a.Store.Kind != StorePostgres {
+			return fmt.Errorf("agent %s: store kind %q is not served; this engine serves %s", a.Name, a.Store.Kind, StorePostgres)
+		}
+	}
+	return nil
+}
+
 // errNotifyParked refuses the notify key. It configured the Telegram
 // notifier, which is parked outside the engine; unknown keys are refused,
 // and this one says why.
@@ -368,6 +409,51 @@ func refuseParked(raw []byte) error {
 		if _, ok := keys["notify"]; ok {
 			return errNotifyParked
 		}
+	}
+	return nil
+}
+
+// OldCredentialFileError is the error of a config with the older per-agent
+// "credentialFile" key.
+type OldCredentialFileError struct{ msg string }
+
+func (e *OldCredentialFileError) Error() string { return e.msg }
+
+// IsOldCredentialFile reports whether err (from Load) is that refusal, so a
+// caller that otherwise ignores a config it cannot read can still show it.
+func IsOldCredentialFile(err error) bool {
+	var e *OldCredentialFileError
+	return errors.As(err, &e)
+}
+
+// refuseOldCredentialFile refuses an agent that still has the older
+// per-agent "credentialFile" key (it moved into "store"), with the exact
+// edit. The key is never read as a credential: only its value, as the path
+// to put into the edit, and only when it is a string. Every command that
+// loads engine.json gets this error, not the decoder's unknown-field one.
+func refuseOldCredentialFile(raw []byte) error {
+	var top struct {
+		Agents []map[string]json.RawMessage `json:"agents"`
+	}
+	//nolint:nilerr // not this shape: left to the decoder
+	if err := json.Unmarshal(raw, &top); err != nil {
+		return nil
+	}
+	for _, a := range top.Agents {
+		old, ok := a["credentialFile"]
+		if !ok {
+			continue
+		}
+		var name, path string
+		if err := json.Unmarshal(a["name"], &name); err != nil || name == "" {
+			name = "?"
+		}
+		if err := json.Unmarshal(old, &path); err != nil || path == "" {
+			path = "<path>"
+		}
+		return &OldCredentialFileError{msg: fmt.Sprintf(`agent %q: "credentialFile" now goes inside "store"; `+
+			`replace "credentialFile": %q with "store": {"kind": "POSTGRES", "credentialFile": %q}`,
+			name, path, path)}
 	}
 	return nil
 }

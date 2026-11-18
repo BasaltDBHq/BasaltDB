@@ -69,8 +69,8 @@ func newDirectEnv(t *testing.T, record func() (*guard.RecordedEngine, error), tu
 	t.Helper()
 	e := &directEnv{}
 	d := deps()
-	d.Approvals = catalogApprovals{}
-	d.Reverts = catalogReverts{}
+	setApprovals(&d, catalogApprovals{})
+	setReverts(&d, catalogReverts{})
 	d.PagesBase = links.Portal
 	d.Links = links.NewSecrets(time.Now, rand.Reader)
 	d.Vault = offVault{id: directEngineID}

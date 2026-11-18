@@ -20,7 +20,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/google/uuid"
+
+	"github.com/basaltdbhq/basaltdb/internal/action"
 )
 
 const (
@@ -36,19 +38,19 @@ var namePattern = regexp.MustCompile(`^[a-z0-9_]{1,64}$`)
 var ErrInvalidName = errors.New("invalid pin name")
 
 // Pin is a verified chain head and the install of the guard it belongs to
-// (guard.InstallID; 0 for a pin saved before installs were told apart).
+// (the guard install id; uuid.Nil for a pin saved before install ids).
 type Pin struct {
-	Head    guard.ChainHead
-	Install uint32
+	Head    action.ChainHead
+	Install uuid.UUID
 	// SetAside are the pins this witness set aside after a reinstall and
 	// reported in the ledger, kept so the notice stays whatever happens to
 	// the ledger rows (CONTRACT.md, Version 36, step 4).
-	SetAside []guard.SetAside
+	SetAside []action.SetAside
 }
 
 // Kept returns p with s in its SetAside, once: the same pin set aside on
 // the same install is kept once.
-func (p Pin) Kept(s guard.SetAside) Pin {
+func (p Pin) Kept(s action.SetAside) Pin {
 	for _, k := range p.SetAside {
 		if k.PinnedSeq == s.PinnedSeq && k.PinnedInstall == s.PinnedInstall && k.Install == s.Install &&
 			bytes.Equal(k.PinnedHash, s.PinnedHash) {
@@ -61,39 +63,41 @@ func (p Pin) Kept(s guard.SetAside) Pin {
 
 // Of reports whether p belongs to install: a pin of another install is of a
 // ledger that no longer exists, and is set aside, not checked. A pin with
-// no install is taken as this one's.
-func (p Pin) Of(install uint32) bool { return p.Install == 0 || p.Install == install }
+// no install (saved before install ids, when a schema oid named the
+// install and could repeat in another cluster) is taken as another
+// install's, so it is moved or reported, never checked as this one's.
+func (p Pin) Of(install uuid.UUID) bool { return p.Install != uuid.Nil && p.Install == install }
 
 // pinFile is the file format: the head as JSON, hashes in hex.
 type pinFile struct {
 	Seq      int64          `json:"seq"`
 	Hash     string         `json:"hash"`
-	Install  uint32         `json:"install,omitempty"`
+	Install  uuid.UUID      `json:"installId"`
 	SetAside []setAsideFile `json:"setAside,omitempty"`
 }
 
-// setAsideFile is one guard.SetAside in the pin file.
+// setAsideFile is one action.SetAside in the pin file.
 type setAsideFile struct {
 	PinnedSeq     int64     `json:"pinnedSeq"`
 	PinnedHash    string    `json:"pinnedHash"`
-	PinnedInstall uint32    `json:"pinnedInstall"`
-	Install       uint32    `json:"install"`
+	PinnedInstall uuid.UUID `json:"pinnedInstallId"`
+	Install       uuid.UUID `json:"installId"`
 	At            time.Time `json:"at"`
 }
 
-func setAsideToFile(s guard.SetAside) setAsideFile {
+func setAsideToFile(s action.SetAside) setAsideFile {
 	return setAsideFile{
 		PinnedSeq: s.PinnedSeq, PinnedHash: hex.EncodeToString(s.PinnedHash),
 		PinnedInstall: s.PinnedInstall, Install: s.Install, At: s.At.UTC(),
 	}
 }
 
-func (s setAsideFile) toDomain() (guard.SetAside, error) {
+func (s setAsideFile) toDomain() (action.SetAside, error) {
 	hash, err := hex.DecodeString(s.PinnedHash)
 	if err != nil || s.PinnedSeq < 0 {
-		return guard.SetAside{}, errors.New("a set-aside pin is not a chain head")
+		return action.SetAside{}, errors.New("a set-aside pin is not a chain head")
 	}
-	return guard.SetAside{PinnedSeq: s.PinnedSeq, PinnedHash: hash, PinnedInstall: s.PinnedInstall, Install: s.Install, At: s.At}, nil
+	return action.SetAside{PinnedSeq: s.PinnedSeq, PinnedHash: hash, PinnedInstall: s.PinnedInstall, Install: s.Install, At: s.At}, nil
 }
 
 // File keeps pins as <Dir>/<name>.head.json, mode 0600.
@@ -129,7 +133,7 @@ func (f File) Load(name string) (Pin, bool, error) {
 	if err != nil || p.Seq < 0 {
 		return Pin{}, false, fmt.Errorf("pin %s is not a chain head", path)
 	}
-	pin := Pin{Head: guard.ChainHead{Seq: p.Seq, Hash: hash}, Install: p.Install}
+	pin := Pin{Head: action.ChainHead{Seq: p.Seq, Hash: hash}, Install: p.Install}
 	for _, s := range p.SetAside {
 		kept, err := s.toDomain()
 		if err != nil {

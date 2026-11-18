@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Ask a question
+    url: https://github.com/BasaltDBHq/BasaltDB/discussions/categories/q-a
+    about: Questions about installing, connecting an agent or approving a change.
   - name: Documentation
     url: https://docs.basaltvault.app
     about: Install, setup and reference guides.

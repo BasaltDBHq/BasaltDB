@@ -1,5 +1,12 @@
+// Package pagination holds what every list in BasaltDB shares: the limit,
+// cursor and sort arguments (Params), the whitelist check for a sort
+// (ParseSort), and opaque keyset cursors. Lists are paged by keyset, never by
+// offset (AGENTS.md, Lists). A cursor is base64url JSON of the last row's key:
+// its id, its name or a sequence number.
 package pagination
 
+// Defaults for Params.Limit. The handler applies them with
+// ApplyDefaultsAndClamp; the repositories trust the clamped value.
 const (
 	DefaultLimit = 50
 	MaxLimit     = 200

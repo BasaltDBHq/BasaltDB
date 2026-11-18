@@ -79,8 +79,9 @@ BEGIN
 
     -- endpoint: LOCAL, or REMOTE with its host:port. A local entry records
     -- its isolation; a remote one has none to record.
-    IF pg_catalog.jsonb_typeof(v_endpoint) IS DISTINCT FROM 'object'
-       OR EXISTS (SELECT 1 FROM pg_catalog.jsonb_object_keys(v_endpoint) k WHERE k NOT IN ('kind', 'host')) THEN
+    IF (CASE WHEN pg_catalog.jsonb_typeof(v_endpoint) = 'object'
+             THEN EXISTS (SELECT 1 FROM pg_catalog.jsonb_object_keys(v_endpoint) k WHERE k NOT IN ('kind', 'host'))
+             ELSE true END) THEN
         PERFORM basalt_meta._invalid('plugin event endpoint must be an object with kind, and host when REMOTE');
     END IF;
     CASE v_endpoint -> 'kind'
@@ -88,8 +89,9 @@ BEGIN
         IF v_endpoint ? 'host' THEN
             PERFORM basalt_meta._invalid('plugin event endpoint must be an object with kind, and host when REMOTE');
         END IF;
-        IF pg_catalog.jsonb_typeof(v_isolation) IS DISTINCT FROM 'object'
-           OR EXISTS (SELECT 1 FROM pg_catalog.jsonb_object_keys(v_isolation) k WHERE k NOT IN ('files', 'network'))
+        IF (CASE WHEN pg_catalog.jsonb_typeof(v_isolation) = 'object'
+                 THEN EXISTS (SELECT 1 FROM pg_catalog.jsonb_object_keys(v_isolation) k WHERE k NOT IN ('files', 'network'))
+                 ELSE true END)
            OR v_isolation -> 'files' IS NULL OR v_isolation -> 'files' NOT IN ('"OS_USER"'::jsonb, '"NONE"'::jsonb)
            OR v_isolation -> 'network' IS NULL
            OR v_isolation -> 'network' NOT IN ('"ENFORCED"'::jsonb, '"DECLARED"'::jsonb, '"NOT_ENFORCED"'::jsonb) THEN
@@ -109,8 +111,9 @@ BEGIN
 
     -- model: the name and version a plugin reports, short identifiers only.
     IF p_detail ? 'model' AND (
-           pg_catalog.jsonb_typeof(v_model) <> 'object'
-           OR EXISTS (SELECT 1 FROM pg_catalog.jsonb_object_keys(v_model) k WHERE k NOT IN ('name', 'version'))
+           (CASE WHEN pg_catalog.jsonb_typeof(v_model) = 'object'
+                 THEN EXISTS (SELECT 1 FROM pg_catalog.jsonb_object_keys(v_model) k WHERE k NOT IN ('name', 'version'))
+                 ELSE true END)
            OR pg_catalog.jsonb_typeof(v_model -> 'name') IS DISTINCT FROM 'string' OR v_model ->> 'name' !~ c_ident
            OR pg_catalog.jsonb_typeof(v_model -> 'version') IS DISTINCT FROM 'string' OR v_model ->> 'version' !~ c_ident) THEN
         PERFORM basalt_meta._invalid('plugin event model must give a name and a version, each a short identifier');

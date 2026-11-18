@@ -139,6 +139,9 @@ func TestPluginEventShapesRefused(t *testing.T) {
 		},
 		"isolation files unknown":   func(m map[string]any) { m["isolation"] = map[string]any{"files": "ROOT", "network": "ENFORCED"} },
 		"isolation network missing": func(m map[string]any) { m["isolation"] = map[string]any{"files": "NONE"} },
+		"endpoint an array":         func(m map[string]any) { m["endpoint"] = []any{"LOCAL"} },
+		"isolation an array":        func(m map[string]any) { m["isolation"] = []any{"NONE"} },
+		"model an array":            func(m map[string]any) { m["model"] = []any{"m"} },
 		"model free text":           func(m map[string]any) { m["model"] = map[string]any{"name": "a model", "version": "1"} },
 		"model extra key": func(m map[string]any) {
 			m["model"] = map[string]any{"name": "m", "version": "1", "path": "x"}

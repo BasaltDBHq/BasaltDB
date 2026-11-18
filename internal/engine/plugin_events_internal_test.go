@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -385,4 +386,50 @@ func TestOldGuardWithholdsWithTheUpgradeStep(t *testing.T) {
 	require.Equal(t, []string{agent.ProblemPluginUnavailable}, codes(probs))
 	require.Contains(t, probs[0].Message, "basalt upgrade")
 	require.Empty(t, ep.entries)
+}
+
+// The largest manifests ParseManifest accepts, local and remote, record on
+// the real guard with the longest instance and isolation: no plugin the
+// person consents to is refused by the guard.
+func TestLargestAcceptedManifestRecords(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", demoTables, nil)
+	version := "1.0.0-" + strings.Repeat("a", 58)
+	for _, remote := range []bool{false, true} {
+		var m plugin.Manifest
+		for n := 1; ; n++ {
+			egress := make([]string, 0, n)
+			for i := range n {
+				egress = append(egress, fmt.Sprintf("%s%02d.example:443", strings.Repeat("h", 60), i))
+			}
+			endpoint := `{"local": {"transport": "jsonrpc-stdio", "command": "bin/p"}}`
+			if remote {
+				endpoint = `{"remote": {"transport": "connectrpc", "url": "https://` + strings.TrimSuffix(egress[0], ":443") + `"}}`
+			}
+			eg, err := json.Marshal(egress)
+			require.NoError(t, err)
+			raw := `{"manifestVersion": 1, "name": "` + strings.Repeat("n", 40) + `", "version": "` + version + `", "publisher": "A",
+				"protocol": ["basalt-plugin/1"],
+				"hooks": {"wire.detect": {"contract": "detector/1", "roles": ["VALUE", "NAME_CUE"], "entityTypes": ["PERSON_NAME"]}},
+				"endpoint": ` + endpoint + `, "files": {"bin/p": "sha256:` + strings.Repeat("0", 64) + `"},
+				"network": {"egress": ` + string(eg) + `}}`
+			if remote {
+				raw = strings.Replace(raw, `"files": {"bin/p": "sha256:`+strings.Repeat("0", 64)+`"},`, "", 1)
+			}
+			next, err := plugin.ParseManifest([]byte(raw))
+			if err != nil {
+				require.ErrorContains(t, err, "too large to record")
+				break
+			}
+			m = next
+		}
+		require.NotEmpty(t, m.Network.Egress)
+		k := plugin.EntryKey{Name: m.Name, Instance: strings.Repeat("i", 32)}
+		det := pluginDetail(k, plugin.Verified{Manifest: m, ManifestSHA256: strings.Repeat("ab", 32), SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, plugin.ModeSameUser)
+		if det.Isolation != nil {
+			det.Isolation = &guard.PluginIsolation{Files: guard.PluginFilesOSUser, Network: guard.PluginNetworkNotEnforced}
+		}
+		require.NoError(t, guard.RecordPluginEntryEvent(context.Background(), a.Conn, guard.PluginEnabled, det), "remote %v", remote)
+	}
 }

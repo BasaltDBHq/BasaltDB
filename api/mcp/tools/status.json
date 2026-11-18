@@ -254,9 +254,11 @@
                 "DIRECT_NOT_SERVED",
                 "LOCK_FILE_UNUSABLE",
                 "LEDGER_REINSTALLED",
-                "PORTAL_MISMATCH"
+                "PORTAL_MISMATCH",
+                "PLUGIN_UNAVAILABLE",
+                "PLUGIN_NOT_TRUSTED"
               ],
-              "description": "PORTAL_MISMATCH (CONTRACT.md, CLI, basalt portal verify): the engine's daily check found the portal serving pages other than the ones this build embeds. DEV_LOCAL_PAGES (CONTRACT.md, Page origins): the engine.json devLocalPages development exception is on, so the pages are on the agent's machine. ENGINE_REVOKED (CONTRACT.md, Direct transport): the agent's database revoked this engine's key. DIRECT_NOT_SERVED (CONTRACT.md, Direct transport): the agent's database records an address for this engine, but directAddr is off, so a tunnel has nothing to forward to. LOCK_FILE_UNUSABLE (CONTRACT.md, On the engine, Lock files): the engine cannot open engine.json.lock or the agent's credential lock, so a finished setup is not written back. LEDGER_REINSTALLED (CONTRACT.md, Version 36): the ledger records that the guard was installed again and an engine set its pin of the old ledger aside; personMessage is the reinstall notice, to show the person as it is."
+              "description": "PORTAL_MISMATCH (CONTRACT.md, CLI, basalt portal verify): the engine's daily check found the portal serving pages other than the ones this build embeds. DEV_LOCAL_PAGES (CONTRACT.md, Page origins): the engine.json devLocalPages development exception is on, so the pages are on the agent's machine. ENGINE_REVOKED (CONTRACT.md, Direct transport): the agent's database revoked this engine's key. DIRECT_NOT_SERVED (CONTRACT.md, Direct transport): the agent's database records an address for this engine, but directAddr is off, so a tunnel has nothing to forward to. LOCK_FILE_UNUSABLE (CONTRACT.md, On the engine, Lock files): the engine cannot open engine.json.lock or the agent's credential lock, so a finished setup is not written back. LEDGER_REINSTALLED (CONTRACT.md, Version 36): the ledger records that the guard was installed again and an engine set its pin of the old ledger aside; personMessage is the reinstall notice, to show the person as it is. Planned (plugins; CONTRACT.md, Plugins): PLUGIN_UNAVAILABLE, an enabled plugin entry for this agent is not ready, so a wire.detect plugin fails the agent's requests to the AI provider closed until it is back or disabled; PLUGIN_NOT_TRUSTED, the engine refused to start a plugin entry for this agent because its signature, file hashes or file permissions failed, or an agent's OS user is in the engine's group."
             },
             "severity": {
               "type": "string",

@@ -1,0 +1,10 @@
+{
+  "protocol": "basalt-plugin/1",
+  "name": "acme-ner",
+  "version": "1.4.0",
+  "hooks": {
+    "wire.verdict": {
+      "contract": "verdict/1"
+    }
+  }
+}

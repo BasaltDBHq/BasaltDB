@@ -1,0 +1,29 @@
+{
+  "manifestVersion": 1,
+  "name": "col-hints",
+  "version": "2.0.0-rc.1",
+  "publisher": "Example Co",
+  "protocol": [
+    "basalt-plugin/1"
+  ],
+  "hooks": {
+    "classify.suggest": {
+      "contract": "classify/1",
+      "entityTypes": [
+        "EMAIL",
+        "col-hints.TAX_ID"
+      ]
+    }
+  },
+  "endpoint": {
+    "remote": {
+      "transport": "connectrpc",
+      "url": "https://hints.example:8443"
+    }
+  },
+  "network": {
+    "egress": [
+      "hints.example:8443"
+    ]
+  }
+}

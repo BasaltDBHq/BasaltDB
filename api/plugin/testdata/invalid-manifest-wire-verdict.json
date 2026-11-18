@@ -1,0 +1,34 @@
+{
+  "manifestVersion": 1,
+  "name": "team-notify",
+  "version": "0.2.0",
+  "publisher": "Example Co",
+  "protocol": [
+    "basalt-plugin/1"
+  ],
+  "hooks": {
+    "feed.observe": {
+      "contract": "feed/1"
+    },
+    "approval.deliver": {
+      "contract": "deliver/1"
+    },
+    "wire.verdict": {
+      "contract": "verdict/1"
+    }
+  },
+  "endpoint": {
+    "local": {
+      "transport": "jsonrpc-unix",
+      "command": "team-notify"
+    }
+  },
+  "files": {
+    "team-notify": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+  },
+  "network": {
+    "egress": [
+      "hooks.chat.example:443"
+    ]
+  }
+}

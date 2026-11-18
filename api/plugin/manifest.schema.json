@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/plugin/manifest.v1.json",
+  "title": "basalt-plugin.json",
+  "description": "A plugin's manifest, manifestVersion 1. Unknown top-level fields are ignored, so a later minor addition does not break an older engine; the hooks object and the endpoint are closed. Rules this schema cannot express are checked by the engine at basalt plugin add and at every start: a remote endpoint's host and port are in network.egress, a namespaced entity type starts with the manifest's own name, and a local endpoint's command is one of its files. See CONTRACT.md, Plugins, Manifest.",
+  "type": "object",
+  "required": ["manifestVersion", "name", "version", "publisher", "protocol", "hooks", "endpoint", "network"],
+  "properties": {
+    "manifestVersion": { "const": 1 },
+    "name": { "$ref": "#/$defs/pluginName" },
+    "version": {
+      "description": "The plugin's version, semantic versioning.",
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$"
+    },
+    "publisher": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "description": { "type": "string", "maxLength": 500 },
+    "protocol": {
+      "description": "The plugin protocol versions the plugin speaks. A v1 engine needs basalt-plugin/1 among them; initialize picks one.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^basalt-plugin/[1-9][0-9]*$" },
+      "contains": { "const": "basalt-plugin/1" }
+    },
+    "hooks": {
+      "description": "The hooks the plugin serves, by hook name, at least one. wire.verdict is reserved and refused in v1. wire.detect may not share a manifest with feed.observe or approval.deliver.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "wire.detect": {
+          "allOf": [
+            { "$ref": "#/$defs/hookDeclaration" },
+            {
+              "required": ["contract", "roles", "entityTypes"],
+              "properties": {
+                "contract": { "const": "detector/1" },
+                "entityTypes": { "minItems": 1 }
+              }
+            }
+          ]
+        },
+        "feed.observe": {
+          "allOf": [
+            { "$ref": "#/$defs/hookDeclaration" },
+            { "required": ["contract"], "properties": { "contract": { "const": "feed/1" } }, "not": { "anyOf": [{ "required": ["roles"] }, { "required": ["entityTypes"] }] } }
+          ]
+        },
+        "approval.deliver": {
+          "allOf": [
+            { "$ref": "#/$defs/hookDeclaration" },
+            { "required": ["contract"], "properties": { "contract": { "const": "deliver/1" } }, "not": { "anyOf": [{ "required": ["roles"] }, { "required": ["entityTypes"] }] } }
+          ]
+        },
+        "classify.suggest": {
+          "allOf": [
+            { "$ref": "#/$defs/hookDeclaration" },
+            { "required": ["contract"], "properties": { "contract": { "const": "classify/1" } }, "not": { "required": ["roles"] } }
+          ]
+        },
+        "wire.verdict": false
+      },
+      "allOf": [
+        { "$comment": "One plugin that sees plain values on the wire and ledger events could pair them to learn which values are stored.", "not": { "required": ["wire.detect", "feed.observe"] } },
+        { "$comment": "A detector never receives approval links.", "not": { "required": ["wire.detect", "approval.deliver"] } }
+      ]
+    },
+    "endpoint": {
+      "description": "Where the plugin runs: exactly one of local or remote.",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "local": { "$ref": "#/$defs/localEndpoint" },
+        "remote": { "$ref": "#/$defs/remoteEndpoint" }
+      }
+    },
+    "files": {
+      "description": "Every file a local plugin ships, by path relative to the manifest's directory, with its SHA-256. A remote plugin ships no files.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/relativePath" },
+      "additionalProperties": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+    },
+    "network": {
+      "type": "object",
+      "required": ["egress"],
+      "properties": {
+        "egress": {
+          "description": "The host:port entries the plugin may reach. Empty means none.",
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/hostPort" }
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "properties": {
+        "memoryMB": { "type": "integer", "minimum": 64, "maximum": 65536 }
+      }
+    },
+    "entitlement": false
+  },
+  "allOf": [
+    {
+      "$comment": "A remote plugin carries no files; a local one lists every file it ships.",
+      "if": { "required": ["endpoint"], "properties": { "endpoint": { "required": ["remote"] } } },
+      "then": { "not": { "required": ["files"] } },
+      "else": { "required": ["files"] }
+    }
+  ],
+  "$defs": {
+    "pluginName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,39}$"
+    },
+    "hookDeclaration": {
+      "description": "What a plugin declares for one hook. Each hook's contract fixes which of these fields it takes; unknown fields are ignored.",
+      "type": "object",
+      "properties": {
+        "contract": {
+          "description": "The hook's message contract and its major version.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*/[1-9][0-9]*$"
+        },
+        "roles": {
+          "description": "wire.detect only: VALUE spans are tokenized; NAME_CUE spans are evidence for the dictionary and tokenize nothing alone.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["VALUE", "NAME_CUE"] }
+        },
+        "entityTypes": {
+          "description": "wire.detect and classify.suggest: the entity types the plugin may return.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/entityType" }
+        }
+      }
+    },
+    "entityType": {
+      "description": "A well-known token type, or a type namespaced by the plugin's own name (acme-ner.EMPLOYEE_ID). The engine checks the prefix is this manifest's name.",
+      "anyOf": [
+        { "enum": ["EMAIL", "PHONE", "PERSON_NAME", "ADDRESS", "OTHER", "CARD", "IBAN"] },
+        { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,39}\\.[A-Z][A-Z0-9_]{0,39}$" }
+      ]
+    },
+    "localEndpoint": {
+      "type": "object",
+      "required": ["transport", "command"],
+      "properties": {
+        "transport": { "enum": ["jsonrpc-stdio", "jsonrpc-unix", "connectrpc"] },
+        "command": { "$ref": "#/$defs/relativePath" },
+        "args": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "type": "string", "maxLength": 1024 }
+        }
+      }
+    },
+    "remoteEndpoint": {
+      "type": "object",
+      "required": ["transport", "url"],
+      "properties": {
+        "transport": { "const": "connectrpc" },
+        "url": {
+          "description": "https only, with no user name or password, query or fragment.",
+          "type": "string",
+          "maxLength": 2048,
+          "pattern": "^https://(([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*|\\[[0-9a-f:.]+\\]|[0-9]{1,3}(\\.[0-9]{1,3}){3})(:[0-9]{1,5})?(/[^?#@\\s]*)?$"
+        }
+      }
+    },
+    "relativePath": {
+      "description": "A path relative to the manifest's directory: slash-separated, no segment starting with a dot, so no .. and no absolute path.",
+      "type": "string",
+      "maxLength": 255,
+      "pattern": "^[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$"
+    },
+    "hostPort": {
+      "description": "A lowercase host name, an IPv4 address or a bracketed IPv6 address, then a port.",
+      "type": "string",
+      "maxLength": 260,
+      "pattern": "^(([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*|\\[[0-9a-f:.]+\\]|[0-9]{1,3}(\\.[0-9]{1,3}){3}):[0-9]{1,5}$"
+    }
+  }
+}

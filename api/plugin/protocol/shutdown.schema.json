@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/plugin/protocol/shutdown.v1.json",
+  "title": "shutdown",
+  "description": "Sent when the engine stops or the entry is disabled. The engine waits 5 seconds for the reply and the exit, then stops a local plugin's process. ConnectRPC: basalt.plugin.v1.PluginService/Shutdown. See CONTRACT.md, Plugins, Protocol.",
+  "$defs": {
+    "request": { "type": "object", "properties": {} },
+    "response": { "type": "object", "properties": {} }
+  }
+}

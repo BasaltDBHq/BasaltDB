@@ -1,0 +1,31 @@
+{
+  "kind": "PLUGIN_CHANGED",
+  "detail": {
+    "name": "acme-ner",
+    "instance": "client_x",
+    "version": "1.5.0",
+    "manifestSha256": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+    "signerKeyId": "acme-2026",
+    "hooks": [
+      "wire.detect"
+    ],
+    "roles": [
+      "VALUE"
+    ],
+    "egress": [
+      "ner.acme.example:443"
+    ],
+    "endpoint": {
+      "kind": "REMOTE",
+      "host": "ner.acme.example:443"
+    },
+    "model": {
+      "name": "acme-ner",
+      "version": "2026.11.13"
+    },
+    "isolation": {
+      "files": "NONE",
+      "network": "NOT_ENFORCED"
+    }
+  }
+}

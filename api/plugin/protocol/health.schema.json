@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/plugin/protocol/health.v1.json",
+  "title": "health",
+  "description": "Sent every 30 seconds to a ready plugin. NOT_READY, an error or a missed deadline makes the entry UNAVAILABLE. ConnectRPC: basalt.plugin.v1.PluginService/Health. See CONTRACT.md, Plugins, Protocol.",
+  "$defs": {
+    "request": { "type": "object", "properties": {} },
+    "response": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["READY", "NOT_READY"] }
+      }
+    }
+  }
+}

@@ -60,6 +60,7 @@ func reportPanic(w io.Writer, command string, v any, stack []byte) {
 	var lastErr error
 	for _, dir := range dirs {
 		rec.Dir = dir
+		rec.Shared = command == "engine" && dir == dirs[0]
 		rep, err := rec.Save(crash.Input{Command: command, Kind: crash.KindPanic, ErrorCode: "INTERNAL", Value: v, Stack: stack})
 		if err == nil {
 			fmt.Fprintf(w, "basalt: crashed; a report was saved: see what it holds with `basalt crash show %s`, file it on GitHub with `basalt crash report %s`\n", rep.ID, rep.ID)
@@ -106,7 +107,8 @@ func nonEmpty(in []string) []string {
 func (c *cliIO) crashDirs() []string {
 	var dirs []string
 	if base, err := c.host.UserConfigDir(); err == nil {
-		dirs = append(dirs, filepath.Join(base, perUserDirName, crash.DirName))
+		dirs = append(dirs, filepath.Join(base, perUserDirName, crash.DirName),
+			filepath.Join(base, perUserDirName, "state", crash.DirName)) // a per-user engine's stateDir
 	}
 	return append(dirs, filepath.Join(config.DefaultStateDir(c.goos), crash.DirName))
 }
@@ -138,7 +140,7 @@ func crashList(c *cliIO, args []string) int {
 		return exitOK
 	}
 	for _, r := range reports {
-		fmt.Fprintf(c.stdout, "%s  %s  %s  %s\n", r.ID, r.Time.Format(time.RFC3339), r.Version, r.Command)
+		fmt.Fprintf(c.stdout, "%s  %s  %s  %s\n", r.ID, r.Time.Format(time.RFC3339), terminalText(r.Version), r.Command)
 	}
 	return exitOK
 }

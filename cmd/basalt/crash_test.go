@@ -157,3 +157,19 @@ func TestCommandNameIsOnlyAKnownCommand(t *testing.T) {
 	require.Empty(t, commandName([]string{"post" + "gres://u" + ":p@h/db"}))
 	require.Empty(t, commandName(nil))
 }
+
+// TestPerUserEngineReportsAreFound: a report the engine saves under a
+// per-user stateDir is the one basalt crash show finds.
+func TestPerUserEngineReportsAreFound(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost(t)
+	rec := crash.Recorder{
+		Dir: filepath.Join(h.configDir, perUserDirName, "state", crash.DirName), Version: "0.0.1",
+		Scrub: crash.OSScrubber(), Now: time.Now, Shared: true,
+	}
+	rep, err := rec.Save(crash.Input{Command: "write", Value: "x"})
+	require.NoError(t, err)
+	c, out, _ := crashIO(t, h, nil, true)
+	require.Equal(t, exitOK, runCrash(c, []string{"show", rep.ID}))
+	require.Equal(t, rep.Show(), out.String())
+}

@@ -216,3 +216,19 @@ func TestSaveListFindAndRetention(t *testing.T) {
 	require.Len(t, List(r.Dir), Keep)
 	require.Empty(t, List(filepath.Join(t.TempDir(), "missing")))
 }
+
+func TestEnvValuesDoNotMangleFunctionNames(t *testing.T) {
+	s := NewScrubber("/Users/alice", "", []string{"USER=basalt"})
+	out := s.Stack("goroutine 1 [running]:\ngithub.com/basaltdbhq/basaltdb/cmd/basalt.run(0x1)\n\t/src/basalt/cmd/basalt/main.go:7 +0x1\n")
+	require.Contains(t, out, "github.com/basaltdbhq/basaltdb/cmd/basalt.run(...)")
+}
+
+func TestTamperedReportIsSkipped(t *testing.T) {
+	r := testRecorder(t)
+	rep, err := r.Save(Input{Command: "log", Value: "x"})
+	require.NoError(t, err)
+	rep.Command = "\x1b[31mred"
+	raw := []byte(rep.Show())
+	require.NoError(t, os.WriteFile(filepath.Join(r.Dir, rep.ID+".json"), raw, fileMode))
+	require.Empty(t, List(r.Dir))
+}

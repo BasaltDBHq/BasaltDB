@@ -18,7 +18,7 @@ If the engine hits a crash inside an agent's tool call, the engine keeps running
 - the name of the command (for example `log`) or the MCP tool (for example `write`)
 - the error code (`INTERNAL`)
 - for a Go runtime error such as an index out of range, the runtime's own message; for any other crash, only the type of the value, never its text
-- the stack trace: function names and source files inside basalt (`cmd/basalt/main.go:73`), with no function arguments
+- the stack trace: function names and source files (`cmd/basalt/main.go:73`, and Go runtime and library frames), with no function arguments
 
 Before anything is saved, basalt removes SQL text, table and column names, row values, connection strings, passwords, host names and IP addresses, e-mail addresses, the values of your environment variables, and your home directory path. The report is built from a fixed set of fields, so the text of a crash never goes into it.
 
@@ -45,9 +45,9 @@ An agent cannot file a report for you. Under an agent, `basalt crash report` ope
 
 | Who saved it | Where |
 |---|---|
-| A command you ran | `crash/` in your basalt config directory (`~/.config/basalt/crash` on Linux, `~/Library/Application Support/basalt/crash` on macOS), readable only by you |
+| A command you ran (or an engine you started yourself, in its `state/crash` next to your config) | `crash/` in your basalt config directory (`~/.config/basalt/crash` on Linux, `~/Library/Application Support/basalt/crash` on macOS), readable only by you |
 | The engine service | `crash/` in the engine's state directory (`/var/lib/basalt/crash` on Linux, `/Library/Application Support/Basalt/state/crash` on macOS) |
 
-Each place keeps the 20 newest reports and deletes older ones. You can delete any file there yourself.
+Look on the machine where the engine runs. Each place keeps the 20 newest reports and deletes older ones. You can delete any file there yourself.
 
 The exact rules are in [CONTRACT.md, Crash reports](../CONTRACT.md#crash-reports).

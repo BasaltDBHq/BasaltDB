@@ -72,7 +72,11 @@ const (
 )
 
 // common is the scrubbing both free text and stack lines get.
-func (s *Scrubber) common(in string) string {
+func (s *Scrubber) common(in string) string { return s.scrub(in, true) }
+
+// scrub is common; env says whether environment values are replaced. Function
+// names skip that: a service's USER can equal a word of the module path.
+func (s *Scrubber) scrub(in string, env bool) string {
 	out := in
 	if s.home != "" {
 		out = strings.ReplaceAll(out, s.home, "~")
@@ -82,7 +86,9 @@ func (s *Scrubber) common(in string) string {
 		out = strings.ReplaceAll(out, s.hostName, "<host>")
 	}
 	for _, v := range s.env {
-		out = strings.ReplaceAll(out, v, "<env>")
+		if env {
+			out = strings.ReplaceAll(out, v, "<env>")
+		}
 	}
 	out = reURL.ReplaceAllString(out, "<url>")
 	out = reKeyValue.ReplaceAllString(out, "$1="+redacted)
@@ -128,7 +134,7 @@ func (s *Scrubber) stackLine(line string) (string, bool) {
 		m := reFileLine.FindStringSubmatch(line)
 		return "\t" + s.shortPath(m[1]) + ":" + m[2], true
 	case reCreatedBy.MatchString(line):
-		return "created by " + s.common(reCreatedBy.FindStringSubmatch(line)[1]), true
+		return "created by " + s.scrub(reCreatedBy.FindStringSubmatch(line)[1], false), true
 	case strings.HasPrefix(line, "\t") || strings.HasPrefix(line, " ") || line == "":
 		return "", false
 	}
@@ -142,7 +148,7 @@ func (s *Scrubber) stackLine(line string) (string, bool) {
 	if !reFuncLine.MatchString(line) {
 		return "", false
 	}
-	return s.common(line), true
+	return s.scrub(line, false), true
 }
 
 // shortPath keeps the last pathParts components of a source file, after the

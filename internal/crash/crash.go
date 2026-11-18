@@ -42,6 +42,8 @@ const (
 	maxStack = 16 << 10
 	// maxMessage bounds the saved panic message, in bytes.
 	maxMessage = 200
+	// maxField bounds the short fields of a report read from disk.
+	maxField = 64
 )
 
 // Report is one saved crash. Its JSON is exactly what `basalt crash show`
@@ -237,6 +239,10 @@ func load(p string) (Report, error) {
 	dec := json.NewDecoder(&limitedReader{f: f, left: maxReportFile})
 	if err := dec.Decode(&rep); err != nil {
 		return Report{}, err
+	}
+	if !reCommand.MatchString(rep.Command) || len(rep.Version) > maxField || len(rep.Message) > maxMessage+len("<redacted>") ||
+		len(rep.OS) > maxField || len(rep.Arch) > maxField || len(rep.GoVersion) > maxField {
+		return Report{}, errors.New("not a crash report")
 	}
 	if rep.ID == "" || strings.TrimSuffix(filepath.Base(p), ".json") != rep.ID {
 		return Report{}, errors.New("not a crash report")

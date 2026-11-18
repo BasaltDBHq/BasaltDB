@@ -22,8 +22,8 @@ const (
 
 // TrustStore is the set of keys a manifest signature may name: the Basalt
 // publisher keys built into the binary and the keys the person added to
-// <configDir>/plugin-trust/ (CONTRACT.md, Plugins, Signing and the trust
-// store), stored in TrustDir. It reads the directory at each use, so a key added or removed is
+// plugin-trust/, in TrustDir (CONTRACT.md, Plugins, Signing and the trust
+// store). It reads the directory at each use, so a key added or removed is
 // seen by the next verification.
 type TrustStore struct {
 	dir      string

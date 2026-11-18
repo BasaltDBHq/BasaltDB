@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"os"
 	"strings"
@@ -24,6 +25,11 @@ func classifyDB(t *testing.T, more ...string) *guardtest.DB {
 	schema, err := os.ReadFile("../../internal/pii/classify/testdata/schema.sql")
 	require.NoError(t, err)
 	d.Exec(t, string(schema))
+	if n := fixtureRows(); n < 200 {
+		d.Exec(t, fmt.Sprintf(`DELETE FROM public.orders WHERE customer_id > %[1]d OR id > %[1]d * 2;
+			DELETE FROM public.customers WHERE id > %[1]d;
+			DELETE FROM public.leads WHERE id > %[1]d`, n))
+	}
 	d.NewAgent(t, "bot", nil, append([]string{"public.customers", "public.orders"}, more...))
 	return d
 }
@@ -245,8 +251,8 @@ func TestClassifyCheck(t *testing.T) {
 	d := classifyDB(t)
 	r := classifyCLI(t, d, "", true, 0, "--check")
 	require.Equal(t, exitOK, r.code, r.stderr)
-	require.Contains(t, r.stdout, "public.customers.full_name: 200 sampled, 0 do not round-trip")
-	require.Contains(t, r.stdout, "public.customers.msisdn: 200 sampled, 0 do not round-trip")
+	require.Contains(t, r.stdout, fmt.Sprintf("public.customers.full_name: %d sampled, 0 do not round-trip", fixtureRows()))
+	require.Contains(t, r.stdout, fmt.Sprintf("public.customers.msisdn: %d sampled, 0 do not round-trip", fixtureRows()))
 	require.NotContains(t, r.stdout, "public.customers.payment_ref:", "SECRET columns are not checked")
 	require.Empty(t, storedClasses(t, d))
 
@@ -366,7 +372,7 @@ func TestClassifyPrintsNoValue(t *testing.T) {
 	require.NoError(t, err)
 	values, err := pgx.CollectRows(rows, pgx.RowTo[string])
 	require.NoError(t, err)
-	require.Greater(t, len(values), 1000)
+	require.Greater(t, len(values), fixtureRows()*5)
 	u, err := url.Parse(d.URL)
 	require.NoError(t, err)
 	password, _ := u.User.Password()

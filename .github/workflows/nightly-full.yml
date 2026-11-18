@@ -27,3 +27,6 @@ jobs:
       # Add a package here when it starts to honour BASALTDB_TEST_FULL.
       - name: Full-size tests
         run: go test -race -count=1 -timeout 80m ./internal/pii/...
+      # The classify CLI tests run on a 12-customer fixture by default.
+      - name: Full-size classify CLI tests
+        run: go test -race -count=1 -timeout 30m -run 'TestClassify' ./cmd/basalt/

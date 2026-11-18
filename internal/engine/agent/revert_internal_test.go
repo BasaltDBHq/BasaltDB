@@ -10,22 +10,23 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 // slowPrepare is a revert store whose prepare runs into its time limit,
 // recording the limit it was given; nothing else is called.
 type slowPrepare struct {
-	RevertStore
+	Reverts
 	timeout *time.Duration
 }
 
-func (s slowPrepare) PrepareRevert(_ context.Context, _ guard.RevertScope, _ string, timeout time.Duration) (guard.PreparedRevert, error) {
+func (s slowPrepare) PrepareRevert(_ context.Context, _ action.Scope, _ string, timeout time.Duration) (action.PreparedRevert, error) {
 	*s.timeout = timeout
-	return guard.PreparedRevert{}, &pgconn.PgError{Code: sqlStateQueryCanceled, Message: "canceling statement due to statement timeout"}
+	return action.PreparedRevert{}, postgres.MapError(&pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"})
 }
 
 // A prepare too large for an MCP call is QUERY_TIMEOUT, and its message
@@ -34,7 +35,7 @@ func TestRequestRevertPrepareTimeLimit(t *testing.T) {
 	t.Parallel()
 	var limit time.Duration
 	d := deps()
-	d.Reverts = slowPrepare{timeout: &limit}
+	setReverts(&d, slowPrepare{timeout: &limit})
 	cmds, err := NewCommands("bot", "/etc/basalt-test/engine.json", "linux", nil)
 	require.NoError(t, err)
 	d.Commands = cmds
@@ -42,7 +43,7 @@ func TestRequestRevertPrepareTimeLimit(t *testing.T) {
 	run := uuid.Must(uuid.NewV7())
 
 	_, err = svc.RequestRevert(context.Background(), RequestRevertParams{
-		Scope: guard.RevertScope{Kind: revert.ScopeRun, ID: run}, Intent: "Undo",
+		Scope: action.Scope{Kind: revert.ScopeRun, ID: run}, Intent: "Undo",
 	})
 	require.Equal(t, guard.MCPPrepareTimeout, limit)
 	require.Equal(t, 100*time.Second, limit, "under Claude Code's 2-minute auto-background")
@@ -65,34 +66,34 @@ func TestRequestRevertPrepareTimeLimit(t *testing.T) {
 	// A call the client canceled is not the time limit.
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err = svc.RequestRevert(ctx, RequestRevertParams{Scope: guard.RevertScope{Kind: revert.ScopeRun, ID: run}, Intent: "Undo"})
+	_, err = svc.RequestRevert(ctx, RequestRevertParams{Scope: action.Scope{Kind: revert.ScopeRun, ID: run}, Intent: "Undo"})
 	require.Equal(t, CodeUnavailable, ToolError(err).Code)
 }
 
 // noRuns is a Store that finds none of the agent's runs.
 type noRuns struct{ nopStore }
 
-func (noRuns) FindRun(context.Context, uuid.UUID) (agentdb.Run, error) {
-	return agentdb.Run{}, agentdb.ErrRunNotFound
+func (noRuns) FindRun(context.Context, uuid.UUID) (action.Run, error) {
+	return action.Run{}, action.ErrRunNotFound
 }
 
 // countedReverts owns nothing and counts the guard calls it receives.
 type countedReverts struct {
-	RevertStore
+	Reverts
 	guardCalls *int
 }
 
 func (countedReverts) HasChange(context.Context, uuid.UUID) (bool, error)  { return false, nil }
 func (countedReverts) HasTaskRun(context.Context, uuid.UUID) (bool, error) { return false, nil }
 
-func (r countedReverts) PreviewRevert(context.Context, guard.RevertScope, string, int) (guard.PreviewPage, error) {
+func (r countedReverts) PreviewRevert(context.Context, action.Scope, string, int) (action.PreviewPage, error) {
 	*r.guardCalls++
-	return guard.PreviewPage{}, nil
+	return action.PreviewPage{}, nil
 }
 
-func (r countedReverts) PrepareRevert(context.Context, guard.RevertScope, string, time.Duration) (guard.PreparedRevert, error) {
+func (r countedReverts) PrepareRevert(context.Context, action.Scope, string, time.Duration) (action.PreparedRevert, error) {
 	*r.guardCalls++
-	return guard.PreparedRevert{}, nil
+	return action.PreparedRevert{}, nil
 }
 
 // TestNotOwnScopeBeforeAnyGuardCall: preview_revert and request_revert
@@ -102,14 +103,14 @@ func TestNotOwnScopeBeforeAnyGuardCall(t *testing.T) {
 	t.Parallel()
 	var calls int
 	d := deps()
-	d.Store = noRuns{}
-	d.Reverts = countedReverts{guardCalls: &calls}
+	setRuns(&d, noRuns{})
+	setReverts(&d, countedReverts{guardCalls: &calls})
 	svc := NewService(d)
 	ctx := context.Background()
 	for kind, reason := range map[revert.Scope]string{
 		revert.ScopeChange: "CHANGE", revert.ScopeRun: "RUN", revert.ScopeTask: "TASK",
 	} {
-		scope := guard.RevertScope{Kind: kind, ID: uuid.Must(uuid.NewV7())}
+		scope := action.Scope{Kind: kind, ID: uuid.Must(uuid.NewV7())}
 		_, err := svc.PreviewRevert(ctx, PreviewRevertParams{Scope: scope})
 		require.Equal(t, CodeNotFound, ToolError(err).Code, "%v", err)
 		require.Equal(t, reason, ToolError(err).Reason)

@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- Breaking for installs of an alpha release: an agent's `credentialFile` in `engine.json` moves inside `store`. The old key is not read, and every command that loads `engine.json` stops with the edit for the agent. Replace `"credentialFile": "<path>"` with `"store": {"kind": "POSTGRES", "credentialFile": "<path>"}` by hand, then run `basalt upgrade --agent NAME` for the guard schema below.
 - The guard's schema moves to version 2, a breaking upgrade: run `basalt upgrade --agent NAME` once after updating the binary. Until then the engine serves only `status`, with the upgrade steps.
 - Upgrading no longer needs your agent's MCP client restarted: `basalt mcp` waits up to 15 seconds for a restarted engine and sends a read the engine dropped once more. Writes, approvals and reverts are never sent twice.
 - When `basalt` runs under an agent (Claude Code, Codex, Gemini CLI, Cursor's agent, OpenCode, or `BASALT_AGENT_CONTEXT` set), every command that needs the database admin connection string refuses before reading it, and tells the agent to make a setup code with `basalt init --remote` or to give the person the command. An admin connection string in `BASALT_ADMIN_DATABASE_URL` there is not used, and `basalt` says to change that password.

@@ -27,6 +27,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 func (g olderGuard) status(t *testing.T, args ...string) result {
@@ -132,6 +133,18 @@ func TestStatusReportsACredentialFileItCannotReadWithoutItsPath(t *testing.T) {
 	require.NotContains(t, r.stderr, g.credFile)
 }
 
+// An engine.json from a released alpha (credentialFile on the agent) is
+// refused with the edit, not the decoder's unknown-field text.
+func TestStatusNamesTheEditForTheOldCredentialFile(t *testing.T) {
+	t.Parallel()
+	g := newOlderGuard(t, 0)
+	require.NoError(t, os.WriteFile(g.configPath, []byte(`{"socketDir": "/tmp/basalt-test", "agents": [{"name": "bot", "osUser": "tester", "credentialFile": "/c/bot.cred"}]}`), 0o600))
+	r := g.status(t)
+	require.Equal(t, exitError, r.code)
+	require.Contains(t, r.stderr, `agent "bot": "credentialFile" now goes inside "store"; replace "credentialFile": "/c/bot.cred" with "store": {"kind": "POSTGRES", "credentialFile": "/c/bot.cred"}`)
+	require.NotContains(t, r.stderr, "unknown field")
+}
+
 // fakeEngine is a service-mode engine's person socket answering STATUS
 // and TARGET for bot from report and target.
 func fakeEngine(t *testing.T, report agent.StatusReport, target person.TargetDTO) string {
@@ -176,7 +189,7 @@ func outdatedReport(t *testing.T, g olderGuard) agent.StatusReport {
 	require.NoError(t, err)
 	r, err := agent.LocalStatus{
 		Name: "bot", Commands: cmds, EngineRunning: true,
-		Probe:    agent.DBProbe{Q: g.d.Admin, Migrations: guard.Migrations()},
+		Probe:    postgres.Probe{Q: g.d.Admin, Migrations: guard.Migrations()},
 		Passkeys: func(context.Context) ([]passkey.Credential, error) { return nil, nil },
 		Log:      slog.New(slog.DiscardHandler), Now: time.Now,
 	}.Report(context.Background())
@@ -277,7 +290,7 @@ func TestStatusNamesANonDefaultCredentialFileOnlyAsTheSavedFlag(t *testing.T) {
 	require.NoError(t, os.Rename(g.credFile, custom))
 	cfg, err := config.Load(g.configPath)
 	require.NoError(t, err)
-	cfg.Agents[0].CredentialFile = custom
+	cfg.Agents[0].Store.CredentialFile = custom
 	cfg.Agents[0].InitArgs = append(cfg.Agents[0].InitArgs, "--credential-file="+custom)
 	raw, err := json.Marshal(cfg)
 	require.NoError(t, err)

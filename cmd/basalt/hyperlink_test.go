@@ -111,7 +111,7 @@ func TestConfigLoadRefusesABadPagesURL(t *testing.T) {
 		require.NoError(t, err)
 		path := filepath.Join(t.TempDir(), "engine.json")
 		body := `{"socketDir": "/tmp/bt", "pagesUrl": ` + string(quoted) + `,
-			"agents": [{"name": "bot", "osUser": "tester", "credentialFile": "/tmp/cred"}]}`
+			"agents": [{"name": "bot", "osUser": "tester", "store": {"kind": "POSTGRES", "credentialFile": "/tmp/cred"}}]}`
 		require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
 		_, err = config.Load(path)
 		require.Error(t, err, name)

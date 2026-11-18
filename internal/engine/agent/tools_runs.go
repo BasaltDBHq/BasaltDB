@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
@@ -28,7 +28,7 @@ type runSummaryDTO struct {
 	TablesTruncated bool     `json:"tablesTruncated,omitempty"`
 }
 
-func runSummaryFromDomain(r agentdb.RunSummary) runSummaryDTO {
+func runSummaryFromDomain(r action.RunSummary) runSummaryDTO {
 	out := runSummaryDTO{
 		RunID: r.ID.String(), TaskID: r.TaskID.UUID.String(), Intent: r.Intent, StartedAt: timeText(r.StartedAt),
 		Applied: r.Applied, Held: r.Held, Refused: r.Refused, Reverted: r.Reverted, Reads: r.Reads,

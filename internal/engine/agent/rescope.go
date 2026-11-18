@@ -4,13 +4,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
-	"errors"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/channel"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
@@ -60,8 +59,8 @@ func (p ScopeProof) assertion() passkey.Assertion {
 // (revert-scope-response.schema.json): the rebuilt request, and the catalog
 // for a proven widen or a narrow under its scope token.
 type ScopeResponse struct {
-	Request revert.Request       `json:"request"`
-	Catalog *guard.RevertCatalog `json:"catalog,omitempty"`
+	Request revert.Request        `json:"request"`
+	Catalog *action.RevertCatalog `json:"catalog,omitempty"`
 }
 
 // rescoped is what the engine holds in memory for a revert the person
@@ -74,7 +73,7 @@ type rescoped struct {
 	link    [sha256.Size]byte
 	token   []byte
 	request revert.Request
-	catalog *guard.RevertCatalog
+	catalog *action.RevertCatalog
 	expires time.Time
 }
 
@@ -193,7 +192,7 @@ func (s *Service) RescopeRevert(ctx context.Context, id uuid.UUID, secret string
 	if err != nil {
 		return ScopeResponse{}, err
 	}
-	req := guard.RescopeRequest{RevertID: id, Select: in.Select}
+	req := action.RescopeRequest{RevertID: id, Select: in.Select}
 	if widen {
 		raw, err := links.DecodeSecret(in.NewSecret)
 		if err != nil {
@@ -210,7 +209,7 @@ func (s *Service) RescopeRevert(ctx context.Context, id uuid.UUID, secret string
 	if !widen && held {
 		req.Token = st.token
 	}
-	out, err := s.Reverts.RescopeRevert(ctx, req, RescopeTimeout)
+	out, err := s.Store.RescopeRevert(ctx, req, RescopeTimeout)
 	if err != nil {
 		return ScopeResponse{}, s.rescopeError(ctx, r, err)
 	}
@@ -291,20 +290,20 @@ func (s *Service) registerRelay(ctx context.Context, id uuid.UUID, token channel
 // failure is one REVERT_INVALID whatever its cause; a rescope past
 // RescopeTimeout is QUERY_TIMEOUT TIME_LIMIT.
 func (s *Service) rescopeError(ctx context.Context, r ledger.Revert, err error) error {
-	if _, hint, ok := guard.ScopeRefusal(err); ok {
+	if _, hint, ok := scopeRefusal(err); ok {
 		return &ArgumentError{Message: "the scope was refused: " + hint}
 	}
-	var pe *pgconn.PgError
-	if !errors.As(err, &pe) {
+	se := storeError(err)
+	if se == nil {
 		return err
 	}
-	code, _ := guard.CodeOf(err)
+	code, _ := ledgerCode(err)
 	switch {
-	case code == guard.CodeRevertInvalid && pe.Detail == guard.RevertWidenRefused:
+	case code == guard.CodeRevertInvalid && se.Detail == guard.RevertWidenRefused:
 		return widenRefused()
 	case code == guard.CodeRevertExpired:
 		return s.revertExpired(r)
-	case pe.Code == sqlStateQueryCanceled && ctx.Err() == nil:
+	case timedOut(err) && ctx.Err() == nil:
 		return rescopeTimeout()
 	}
 	return err
@@ -401,7 +400,7 @@ func (s *Service) resetToProposal(ctx context.Context, r ledger.Revert) (ledger.
 		return ledger.Revert{}, err
 	}
 	defer release()
-	out, err := s.Reverts.ResetRevert(ctx, r.ID, RescopeTimeout)
+	out, err := s.Store.ResetRevert(ctx, r.ID, RescopeTimeout)
 	if err != nil {
 		return ledger.Revert{}, err
 	}
@@ -409,7 +408,7 @@ func (s *Service) resetToProposal(ctx context.Context, r ledger.Revert) (ledger.
 	if err := s.Links.Reset(r.ID, out.ExpiresAt); err != nil {
 		return ledger.Revert{}, err
 	}
-	return s.Reverts.FindRevert(ctx, r.ID)
+	return s.Store.FindRevert(ctx, r.ID)
 }
 
 // retirePersonScope is the agent's reissue of a revert that is no longer

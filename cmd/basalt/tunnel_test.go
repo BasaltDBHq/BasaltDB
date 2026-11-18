@@ -37,7 +37,7 @@ func newTunnelEnv(t *testing.T, directAddr string) tunnelEnv {
 	path := filepath.Join(dir, "engine.json")
 	require.NoError(t, config.UpsertAgent(path, config.Settings{
 		SocketDir: "/run/b", StateDir: state, PagesURL: links.Portal, OperatedBy: "AGENT", DirectAddr: directAddr,
-	}, config.Agent{Name: "bot", OSUser: "bot", CredentialFile: filepath.Join(dir, "bot.url")}))
+	}, config.Agent{Name: "bot", OSUser: "bot", Store: config.PostgresStore(filepath.Join(dir, "bot.url"))}))
 	return tunnelEnv{config: path, keys: keys}
 }
 

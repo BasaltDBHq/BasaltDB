@@ -17,7 +17,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 	"github.com/basaltdbhq/basaltdb/internal/engine/portalcheck"
@@ -26,6 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/server"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 // basalt status (CONTRACT.md, CLI; owner decision AE-13): the status tool's
@@ -198,11 +198,11 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 	if !cfg.Service() {
 		cmds = cmds.Foreground()
 	}
-	dsn, err := cfg.credential(a.CredentialFile)
+	dsn, err := cfg.credential(a.Store.CredentialFile)
 	if err != nil {
 		return statusOut{}, fmt.Errorf("the credential of agent %s cannot be read: %w", a.Name, withoutPath(err))
 	}
-	pool, err := agentdb.NewPool(c.ctx, dsn, statusAgentPool)
+	pool, err := postgres.NewPool(c.ctx, dsn, statusAgentPool)
 	if err != nil {
 		return statusOut{}, err
 	}
@@ -222,14 +222,18 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 		Portal: savedPortalCheck(cfg.StateDirFor(c.goos), base),
 		Name:   a.Name, Commands: cmds, OperatedBy: cfg.OperatedBy, DevLocalPages: cfg.DevLocalPages, Setup: a.Setup,
 		PagesBase: base, PagesOrigin: servedPages(c, cfg.Config, eng.Reachable), EngineRunning: eng.Reachable, EngineUnknown: eng.Unknown,
-		Probe: agent.DBProbe{
+		Probe: postgres.Probe{
 			Q: pool, Migrations: guard.Migrations(),
 			Kept: engine.KeptSetAside(chainpin.File{Dir: cfg.StateDirFor(c.goos)}, a.Name, slog.New(slog.DiscardHandler)),
 		},
-		Passkeys:  func(ctx context.Context) ([]passkey.Credential, error) { return ledger.Passkeys(ctx, pool) },
+		Passkeys: func(ctx context.Context) ([]passkey.Credential, error) {
+			p, err := ledger.Passkeys(ctx, pool)
+			return p, postgres.MapError(err)
+		},
 		EngineKey: key, DirectServed: directServed,
 		EngineRecord: func(ctx context.Context, id string) (*guard.RecordedEngine, error) {
-			return guard.EngineRecord(ctx, pool, id)
+			r, err := guard.EngineRecord(ctx, pool, id)
+			return r, postgres.MapError(err)
 		},
 		Log: slog.New(slog.DiscardHandler), Now: c.now,
 	}.Report(c.ctx)

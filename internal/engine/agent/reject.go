@@ -2,13 +2,11 @@ package agent
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
@@ -59,7 +57,7 @@ func (s *Service) RejectRevert(ctx context.Context, id uuid.UUID, secret string,
 	if err != nil {
 		return RejectResponse{}, err
 	}
-	out, err := s.Reverts.RejectRevert(ctx, id, note, st.token)
+	out, err := s.Store.RejectRevert(ctx, id, note, st.token)
 	if err != nil {
 		return RejectResponse{}, s.rejectError(r, st.token != nil, err)
 	}
@@ -121,12 +119,8 @@ func (s *Service) revokeRejected(ctx context.Context, id uuid.UUID) {
 // finds for the role reads as an unknown id, an expiry is REVERT_EXPIRED,
 // and a revert signed or rejected meanwhile is REVERT_INVALID.
 func (s *Service) rejectError(r ledger.Revert, heldToken bool, err error) error {
-	code, _ := guard.CodeOf(err)
-	var pe *pgconn.PgError
-	detail := ""
-	if errors.As(err, &pe) {
-		detail = pe.Detail
-	}
+	code, _ := ledgerCode(err)
+	detail := storeDetail(err)
 	switch {
 	case code == guard.CodeRevertInvalid && detail == guard.RevertWidenRefused && heldToken:
 		return s.personScopeGone(r)

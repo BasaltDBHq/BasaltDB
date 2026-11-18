@@ -1,0 +1,18 @@
+{
+  "body": {
+    "code": "APPROVAL_INVALID",
+    "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
+    "message": "approval <id-7> is not one of this agent's held writes",
+    "nextSteps": [
+      {
+        "action": "CALL_TOOL",
+        "actor": "AGENT",
+        "text": "List your pending approvals and use the approvalId of the one this write was held for.",
+        "tool": "list_pending"
+      }
+    ],
+    "reason": "NOT_THIS_AGENT"
+  },
+  "isError": true,
+  "tool": "write"
+}

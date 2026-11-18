@@ -50,9 +50,7 @@ func (unsafeGuard) Reinstalls(context.Context) (guard.Reinstalls, error) {
 // passes relayed nothing.
 func gatedService(store *links.Secrets) *agent.Service {
 	return agent.NewService(agent.Deps{
-		Name: "demo_bot", Reader: struct{ agent.Reader }{}, Store: struct{ agent.Store }{},
-		Reads: struct{ agent.ReadRecorder }{}, Approvals: struct{ agent.ApprovalStore }{},
-		Reverts: struct{ agent.RevertStore }{}, Log: quietLog(), Now: time.Now,
+		Name: "demo_bot", Store: struct{ agent.SQLStore }{}, Log: quietLog(), Now: time.Now,
 		PagesBase: links.Portal, Links: store, Probe: unsafeGuard{},
 	})
 }

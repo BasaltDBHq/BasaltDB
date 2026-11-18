@@ -1,0 +1,10 @@
+{
+  "body": {
+    "intent": "Tidy the lead list",
+    "runId": "<id-1>",
+    "startedAt": "<time>",
+    "taskId": "<id-2>"
+  },
+  "isError": false,
+  "tool": "run_start"
+}

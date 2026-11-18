@@ -1,0 +1,108 @@
+{
+  "body": {
+    "applyBy": "<time>",
+    "expiresAt": "<time>",
+    "items": [
+      {
+        "line": 1,
+        "outcome": "PENDING",
+        "plan": {
+          "action": "RESTORE",
+          "cascaded": false,
+          "changeIds": [
+            "<id-1>"
+          ],
+          "key": {
+            "id": 1010
+          },
+          "now": {
+            "id": 1010,
+            "v": "agent"
+          },
+          "op": "UPDATE",
+          "set": {
+            "id": 1010,
+            "v": "before"
+          },
+          "table": "public.items"
+        }
+      },
+      {
+        "line": 2,
+        "outcome": "PENDING",
+        "plan": {
+          "action": "RESTORE",
+          "cascaded": false,
+          "changeIds": [
+            "<id-1>"
+          ],
+          "key": {
+            "id": 1009
+          },
+          "now": {
+            "id": 1009,
+            "v": "agent"
+          },
+          "op": "UPDATE",
+          "set": {
+            "id": 1009,
+            "v": "before"
+          },
+          "table": "public.items"
+        }
+      },
+      {
+        "line": 3,
+        "outcome": "PENDING",
+        "plan": {
+          "action": "RESTORE",
+          "cascaded": false,
+          "changeIds": [
+            "<id-1>"
+          ],
+          "key": {
+            "id": 1008
+          },
+          "now": {
+            "id": 1008,
+            "v": "agent"
+          },
+          "op": "UPDATE",
+          "set": {
+            "id": 1008,
+            "v": "before"
+          },
+          "table": "public.items"
+        }
+      }
+    ],
+    "lines": 1010,
+    "maxBatch": 200,
+    "nextCursor": "eyJzZXEiOjN9",
+    "nextSteps": [
+      {
+        "action": "CALL_TOOL",
+        "actor": "AGENT",
+        "arguments": {
+          "lines": [
+            1,
+            2,
+            3
+          ],
+          "revertId": "<id-2>"
+        },
+        "text": "Apply these pending lines, in this order; then call revert_plan again for the next ones.",
+        "tool": "apply_revert_batch"
+      }
+    ],
+    "pending": 1010,
+    "restored": 0,
+    "revertId": "<id-2>",
+    "scope": "RUN",
+    "scopeId": "<id-3>",
+    "skipped": 0,
+    "status": "APPLYING"
+  },
+  "isError": false,
+  "tool": "revert_plan"
+}

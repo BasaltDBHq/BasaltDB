@@ -65,8 +65,8 @@ func TestAnUnservedAgentsOSUserStaysScoped(t *testing.T) {
 		}
 		return uid, nil
 	}
-	bot := config.Agent{Name: "bot", OSUser: "botuser", CredentialFile: "/c/bot.url"}
-	stale := config.Agent{Name: "stale", OSUser: "staleuser", CredentialFile: "/c/stale.url"}
+	bot := config.Agent{Name: "bot", OSUser: "botuser", Store: config.PostgresStore("/c/bot.url")}
+	stale := config.Agent{Name: "stale", OSUser: "staleuser", Store: config.PostgresStore("/c/stale.url")}
 
 	// An agent the engine does not serve still has its OS user known.
 	uids, err := agentOSUIDs([]config.Agent{bot, stale}, lookup)

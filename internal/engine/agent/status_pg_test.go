@@ -3,19 +3,17 @@ package agent_test
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"strconv"
 	"testing"
-	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 // guardWithout is a database whose guard lacks migration version, as an
@@ -30,16 +28,9 @@ func guardWithout(t *testing.T, version int, migs []guard.Migration) (harness, *
 	a := d.NewAgent(t, "bot", []string{"public.leads"}, []string{"public.leads"})
 	d.Exec(t, `DELETE FROM basalt_meta.schema_version WHERE version = $1`, version)
 
-	pool, err := agentdb.NewPool(context.Background(), a.URL, 2)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	limits := sqlguard.DefaultLimits()
-	store := agentdb.NewStore(pool, limits, time.Now)
-	svc := agent.NewService(agent.Deps{
-		Name: "bot", Reader: agentdb.NewReader(pool, limits, time.Now), Store: store, Reads: store, Approvals: store, Reverts: store,
-		Log: slog.New(slog.DiscardHandler), Now: time.Now,
-		Probe: agent.DBProbe{Q: pool, Migrations: migs},
-	})
+	svc := pgService(t, a.URL, withDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
+		d.Probe = postgres.Probe{Q: pool, Migrations: migs}
+	})).Svc
 	return harness{server: mcp.NewServer(mcp.Info{Name: "basalt"}, agent.Tools(svc)...)}, d
 }
 
@@ -144,15 +135,9 @@ func requireServedWithTheWarning(t *testing.T, h harness, version int) {
 func TestStatusOnAFullGuard(t *testing.T) {
 	t.Parallel()
 	_, agentURL := testDB(t)
-	pool, err := agentdb.NewPool(context.Background(), agentURL, 2)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	limits := sqlguard.DefaultLimits()
-	store := agentdb.NewStore(pool, limits, time.Now)
-	svc := agent.NewService(agent.Deps{
-		Name: "bot", Reader: agentdb.NewReader(pool, limits, time.Now), Store: store, Reads: store, Approvals: store, Reverts: store,
-		Log: slog.New(slog.DiscardHandler), Now: time.Now, Probe: agent.DBProbe{Q: pool, Migrations: guard.Migrations()},
-	})
+	svc := pgService(t, agentURL, withDeps(func(d *agent.Deps, pool *pgxpool.Pool) {
+		d.Probe = postgres.Probe{Q: pool, Migrations: guard.Migrations()}
+	})).Svc
 	r, err := svc.Status(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, guard.GuardOK, r.Guard.State)

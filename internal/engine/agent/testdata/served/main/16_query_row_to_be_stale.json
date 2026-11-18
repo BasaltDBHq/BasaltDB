@@ -1,0 +1,25 @@
+{
+  "body": {
+    "changeId": "<id-6>",
+    "columns": [
+      {
+        "name": "id",
+        "type": "int8"
+      },
+      {
+        "name": "status",
+        "type": "text"
+      }
+    ],
+    "durationMs": "<durationMs>",
+    "rowCount": 1,
+    "rows": [
+      {
+        "id": 42,
+        "status": "open"
+      }
+    ]
+  },
+  "isError": false,
+  "tool": "query"
+}

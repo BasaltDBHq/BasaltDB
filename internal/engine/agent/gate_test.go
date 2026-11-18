@@ -20,8 +20,8 @@ func gatedService(t *testing.T) *Service {
 	t.Helper()
 	d := deps()
 	d.Probe = &fakeProbe{st: guardAt(guard.GuardOutdated, []int{guard.LatestVersion()}, nil)}
-	d.Approvals = struct{ ApprovalStore }{}
-	d.Reverts = struct{ RevertStore }{}
+	setApprovals(&d, struct{ approvalStore }{})
+	setReverts(&d, struct{ Reverts }{})
 	return NewService(d)
 }
 

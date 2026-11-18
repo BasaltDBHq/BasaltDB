@@ -1,12 +1,10 @@
 package agent
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/jackc/pgx/v5/pgconn"
-
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
@@ -23,14 +21,11 @@ import (
 // ReasonHoldTooLarge is STATEMENT_REFUSED for a held write whose preview
 // lines are over what a hold keeps: the guard's BS007 with detail
 // HOLD_TOO_LARGE, or the engine's own check.
-const ReasonHoldTooLarge = "HOLD_TOO_LARGE"
+const ReasonHoldTooLarge = action.ReasonHoldTooLarge
 
 // olderGuardNote marks the HOLD_TOO_LARGE message of a guard before
 // version 37: upgrading the guard is what lets the write be held.
 const olderGuardNote = "this database's guard holds a line of at most 64 KiB"
-
-// sqlstateLedgerInputInvalid is the guard's BS008.
-const sqlstateLedgerInputInvalid = "BS008"
 
 // holdTooLarge is STATEMENT_REFUSED HOLD_TOO_LARGE for preview lines a
 // hold cannot keep, or nil when they fit. holdErr is hold_action's error
@@ -47,8 +42,7 @@ func holdTooLarge(lines []string, holdErr error) *mcp.ToolError {
 			"the write's preview lines are %s; a held write holds at most %s of them, so it cannot be held for approval",
 			largevalue.SizeText(int64(total)), largevalue.SizeText(guard.MaxHeldLinesBytes))}
 	}
-	var pe *pgconn.PgError
-	if holdErr != nil && longest > guard.MaxHeldLineBytesBefore37 && errors.As(holdErr, &pe) && pe.Code == sqlstateLedgerInputInvalid {
+	if code, ok := ledgerCode(holdErr); ok && longest > guard.MaxHeldLineBytesBefore37 && code == guard.CodeLedgerInputInvalid {
 		return &mcp.ToolError{Code: CodeStatementRefused, Reason: ReasonHoldTooLarge, Message: fmt.Sprintf(
 			"a preview line of the write is %s, and %s (basalt_meta before version 37): upgrading the guard lets it hold the write",
 			largevalue.SizeText(int64(longest)), olderGuardNote)}

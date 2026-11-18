@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
@@ -22,11 +23,11 @@ import (
 // steps per code).
 const (
 	reasonRevert              = "REVERT"
-	reasonBadSignature        = "BAD_SIGNATURE"
-	reasonPasskeyRevoked      = "PASSKEY_REVOKED"
-	reasonRowsChanged         = "ROWS_CHANGED"
-	reasonPlanFinished        = "PLAN_FINISHED"
-	reasonNotSigned           = "NOT_SIGNED"
+	reasonBadSignature        = action.ReasonBadSignature
+	reasonPasskeyRevoked      = action.ReasonPasskeyRevoked
+	reasonRowsChanged         = action.ReasonRowsChanged
+	reasonPlanFinished        = action.ReasonPlanFinished
+	reasonNotSigned           = action.ReasonNotSigned
 	reasonNotFinished         = "NOT_FINISHED"
 	reasonReadsOnly           = "READS_ONLY"
 	reasonAllChangedByPeople  = "ALL_CHANGED_BY_PEOPLE"
@@ -154,7 +155,7 @@ func expiredSteps(r ledger.Revert) []mcp.NextStep {
 // scopeArgs names a revert scope as request_revert's arguments, its runs
 // and tables filters included, so a request the agent makes from these
 // steps covers no more than the person was shown.
-func scopeArgs(scope guard.RevertScope) map[string]any {
+func scopeArgs(scope action.Scope) map[string]any {
 	args := map[string]any{strings.ToLower(string(scope.Kind)) + "Id": scope.ID.String()}
 	if len(scope.Runs) > 0 {
 		runs := make([]string, 0, len(scope.Runs))
@@ -172,8 +173,8 @@ func scopeArgs(scope guard.RevertScope) map[string]any {
 // proposalOf is the scope of revert r with the runs and tables of the
 // select its binding carries (the agent's proposal, or the person's
 // narrowing of it), so requesting r again keeps them.
-func proposalOf(r ledger.Revert) guard.RevertScope {
-	scope := guard.RevertScope{Kind: revert.Scope(r.Scope), ID: r.ScopeID}
+func proposalOf(r ledger.Revert) action.Scope {
+	scope := action.Scope{Kind: revert.Scope(r.Scope), ID: r.ScopeID}
 	// The agent's view hides a widened revert's binding (version 20): a new
 	// request then names only the revert's scope, a change, run or task of
 	// the agent's own (the person widens a run at most to its task), which
@@ -198,7 +199,7 @@ const maxFilterTableChars = 32
 
 // filterText names scope's runs and tables filters for a person, "" when it
 // has none: the count of runs, the first table and how many more.
-func filterText(scope guard.RevertScope) string {
+func filterText(scope action.Scope) string {
 	var parts []string
 	if n := len(scope.Runs); n > 0 {
 		parts = append(parts, fmt.Sprintf("%d of its runs", n))
@@ -426,7 +427,7 @@ func (s *Service) revertExpired(r ledger.Revert) error {
 // prepares it in a terminal. After a preview the person looks at what it
 // would do and prepares it; after a request they prepare it, sign it and give
 // the agent the revert id.
-func (s *Service) prepareTimeout(tool string, scope guard.RevertScope, sqlState string) error {
+func (s *Service) prepareTimeout(tool string, scope action.Scope, sqlState string) error {
 	command := s.Commands.Revert(scope)
 	minutes := int(guard.CLIPrepareTimeout.Minutes())
 	te := &mcp.ToolError{Code: CodeQueryTimeout, Reason: ReasonTimeLimit, SQLState: sqlState, Message: fmt.Sprintf(
@@ -449,20 +450,20 @@ func (s *Service) prepareTimeout(tool string, scope guard.RevertScope, sqlState 
 // nothingToRevert tells the cases of BS009 apart: the scope changed no rows
 // a revert could restore (READS_ONLY), every row was already reverted, or
 // people changed every row since (people win).
-func (s *Service) nothingToRevert(ctx context.Context, tool string, scope guard.RevertScope, err error) error {
+func (s *Service) nothingToRevert(ctx context.Context, tool string, scope action.Scope, err error) error {
 	detail := ToolError(err).Message
 	if strings.Contains(detail, "changed no rows") {
 		return s.nothingToRevertError(ctx, tool, scope, reasonReadsOnly, detail)
 	}
-	pv, perr := s.Reverts.PreviewRevert(ctx, scope, "", 1)
+	pv, perr := s.Store.PreviewRevert(ctx, scope, "", 1)
 	if perr != nil {
-		pv = guard.PreviewPage{}
+		pv = action.PreviewPage{}
 	}
 	return s.nothingToRevertError(ctx, tool, scope, skipReason(pv), detail)
 }
 
 // nothingToRevertError builds NOTHING_TO_REVERT for reason.
-func (s *Service) nothingToRevertError(ctx context.Context, tool string, scope guard.RevertScope, reason, detail string) error {
+func (s *Service) nothingToRevertError(ctx context.Context, tool string, scope action.Scope, reason, detail string) error {
 	what := fmt.Sprintf("%s %s", strings.ToLower(string(scope.Kind)), scope.ID)
 	te := &mcp.ToolError{Code: CodeNothingToRevert, Reason: reason}
 	te.Message = fmt.Sprintf("nothing to revert in %s; nothing was prepared (%s)", what, detail)
@@ -476,7 +477,7 @@ func (s *Service) nothingToRevertError(ctx context.Context, tool string, scope g
 		te.PersonMessage = fmt.Sprintf("Nothing to revert for %s: it only read data (or inserted rows it deleted again).", what)
 		b.Stop("There is nothing to revert; do not retry.")
 	case reasonAlreadyReverted:
-		by, err := s.Reverts.RevertedBy(ctx, scope)
+		by, err := s.Store.RevertedBy(ctx, scope)
 		if err != nil {
 			s.Log.Error("find the revert of a reverted scope", "scope", what, "err", err)
 		}
@@ -515,7 +516,7 @@ func (s *Service) nothingToRevertError(ctx context.Context, tool string, scope g
 // skipReason is why a preview with no line to restore has nothing to revert:
 // every line skipped because it was reverted already, or because people
 // changed the rows since.
-func skipReason(pv guard.PreviewPage) string {
+func skipReason(pv action.PreviewPage) string {
 	if pv.Lines > 0 && pv.AllAlreadyReverted {
 		return reasonAlreadyReverted
 	}
@@ -534,7 +535,7 @@ func (s *Service) requestTimeoutSteps(command string, minutes int) (string, *Ste
 
 // previewTimeoutSteps: the person sees what the revert would do, then
 // prepares it.
-func (s *Service) previewTimeoutSteps(scope guard.RevertScope, command string, minutes int) (string, *Steps) {
+func (s *Service) previewTimeoutSteps(scope action.Scope, command string, minutes int) (string, *Steps) {
 	dry := s.Commands.RevertDryRun(scope)
 	b := NewSteps().Stop("This revert is too large to prepare here: do not retry it.").
 		RunCommand(dry, fmt.Sprintf("See what the revert would do; the CLI allows up to %d minutes.", minutes)).

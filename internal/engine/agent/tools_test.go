@@ -18,46 +18,49 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
 type nopReader struct{}
 
-func (nopReader) Read(context.Context, string, []any, []sqlguard.RowSource) (agentdb.ReadResult, error) {
-	return agentdb.ReadResult{}, nil
+func (nopReader) Read(context.Context, string, []any, action.Statement) (action.ReadResult, error) {
+	return action.ReadResult{}, nil
 }
 
 type nopRecorder struct{}
 
-func (nopRecorder) RecordRead(context.Context, guard.Read) (uuid.UUID, error) { return uuid.Nil, nil }
+func (nopRecorder) RecordRead(context.Context, action.Read) (uuid.UUID, error) { return uuid.Nil, nil }
 
 type nopStore struct{}
 
-func (nopStore) FindRun(context.Context, uuid.UUID) (agentdb.Run, error) { return agentdb.Run{}, nil }
-func (nopStore) StartRun(context.Context, guard.Intent) error            { return nil }
-func (nopStore) Write(context.Context, guard.Intent, sqlguard.Op, string, []any) (agentdb.WriteResult, error) {
-	return agentdb.WriteResult{}, nil
+func (nopStore) FindRun(context.Context, uuid.UUID) (action.Run, error) { return action.Run{}, nil }
+func (nopStore) StartRun(context.Context, action.Intent) error          { return nil }
+func (nopStore) Write(context.Context, action.Intent, action.Op, string, []any) (action.WriteResult, error) {
+	return action.WriteResult{}, nil
 }
-func (nopStore) RecordRefusal(context.Context, guard.Refusal) error { return nil }
-func (nopStore) History(context.Context, ledger.ChangeListParams) (agentdb.History, error) {
-	return agentdb.History{}, nil
+func (nopStore) RecordRefusal(context.Context, action.Refusal) error { return nil }
+func (nopStore) History(context.Context, ledger.ChangeListParams) (History, error) {
+	return History{}, nil
 }
 
-func (nopStore) ListRuns(context.Context, ledger.RunListParams) (pagination.Page[agentdb.RunSummary], error) {
-	return pagination.Page[agentdb.RunSummary]{}, nil
+func (nopStore) ListRuns(context.Context, ledger.RunListParams) (pagination.Page[action.RunSummary], error) {
+	return pagination.Page[action.RunSummary]{}, nil
 }
 
 func deps() Deps {
 	return Deps{
-		Name: "bot", Reader: nopReader{}, Store: nopStore{}, Reads: nopRecorder{},
-		Approvals: struct{ ApprovalStore }{}, // never called by these tests
-		Reverts:   struct{ RevertStore }{},
-		Log:       slog.New(slog.DiscardHandler), Now: time.Now,
+		Name: "bot",
+		Store: parts{
+			reader: nopReader{}, runStore: nopStore{}, readRecorder: nopRecorder{},
+			approvalStore: struct{ approvalStore }{}, // never called by these tests
+			Reverts:       struct{ Reverts }{},
+		},
+		Log: slog.New(slog.DiscardHandler), Now: time.Now,
 	}
 }
 
@@ -142,7 +145,9 @@ func jsonFields(v any) []string {
 
 func TestToolErrorMapping(t *testing.T) {
 	t.Parallel()
-	pg := func(code, msg string) error { return fmt.Errorf("exec: %w", &pgconn.PgError{Code: code, Message: msg}) }
+	pg := func(code, msg string) error {
+		return postgres.MapError(fmt.Errorf("exec: %w", &pgconn.PgError{Code: code, Message: msg}))
+	}
 	cases := []struct {
 		err                    error
 		code, reason, sqlState string
@@ -153,7 +158,7 @@ func TestToolErrorMapping(t *testing.T) {
 		{pg("BS004", "STALE_READ"), CodeStaleRead, "", "BS004"},
 		{pg("BS005", "APPROVAL_EXPIRED"), CodeApprovalExpired, "", "BS005"},
 		{pg("BS005", "APPROVAL_INVALID: approval already used"), CodeApprovalInvalid, reasonBadSignature, "BS005"},
-		{&pgconn.PgError{Code: "BS005", Message: "APPROVAL_INVALID", Detail: "approval already used"}, CodeApprovalInvalid, reasonAlreadyUsed, "BS005"},
+		{postgres.MapError(&pgconn.PgError{Code: "BS005", Message: "APPROVAL_INVALID", Detail: "approval already used"}), CodeApprovalInvalid, reasonAlreadyUsed, "BS005"},
 		{pg("BS006", "PREVIEW_CANNOT_COMMIT"), CodeInternal, "", "BS006"},
 		{pg("BS007", "NOT_ALLOWED: unknown basalt.mode"), CodeStatementRefused, ReasonNotAllowed, "BS007"},
 		{pg("BS008", "LEDGER_INPUT_INVALID"), CodeInternal, "", "BS008"},
@@ -165,17 +170,17 @@ func TestToolErrorMapping(t *testing.T) {
 		{pg("53300", `too many connections for role "basalt_agent_bot"`), CodeUnavailable, reasonTooManyConnections, "53300"},
 		{pg("53100", "could not extend file: No space left on device"), CodeUnavailable, reasonDatabaseUnreachable, "53100"},
 		{pg("23505", "duplicate key"), CodeSQLError, "", "23505"},
-		{&sqlguard.RefusalError{Reason: sqlguard.ReasonDDL}, CodeStatementRefused, "DDL_NOT_ALLOWED", ""},
-		{fmt.Errorf("read: %w", agentdb.ErrRowLimit), CodeQueryTimeout, ReasonRowLimit, ""},
-		{fmt.Errorf("read: %w", agentdb.ErrSizeLimit), CodeQueryTimeout, ReasonSizeLimit, ""},
-		{fmt.Errorf("read: %w", &pgproto3.ExceededMaxBodyLenErr{MaxExpectedBodyLen: 1, ActualBodyLen: 2}), CodeInternal, "", ""},
+		{&action.RefusalError{Reason: action.ReasonDDL}, CodeStatementRefused, "DDL_NOT_ALLOWED", ""},
+		{fmt.Errorf("read: %w", action.ErrRowLimit), CodeQueryTimeout, ReasonRowLimit, ""},
+		{fmt.Errorf("read: %w", postgres.ErrSizeLimit), CodeQueryTimeout, ReasonSizeLimit, ""},
+		{postgres.MapError(fmt.Errorf("read: %w", &pgproto3.ExceededMaxBodyLenErr{MaxExpectedBodyLen: 1, ActualBodyLen: 2})), CodeInternal, "", ""},
 		{&ArgumentError{Message: "bad"}, CodeInvalidArgument, "", ""},
 		{&mcp.ToolError{Code: CodeNotFound, Reason: reasonRun, Message: "no run"}, CodeNotFound, reasonRun, ""},
 		{context.DeadlineExceeded, CodeUnavailable, reasonDatabaseUnreachable, ""},
 		{fmt.Errorf("list: %w", ledger.ErrInvalidParams), CodeInvalidArgument, "", ""},
 		{guard.ErrInvalidIntent, CodeInvalidArgument, "", ""},
 		{fmt.Errorf("list: %w: invalid cursor: missing id", ledger.ErrInvalidParams), CodeInvalidArgument, ReasonStaleCursor, ""},
-		{&pgconn.PgError{Code: "BS007", Message: "NOT_ALLOWED", Detail: "table public.t has no primary key"}, CodeStatementRefused, ReasonNoPrimaryKey, "BS007"},
+		{postgres.MapError(&pgconn.PgError{Code: "BS007", Message: "NOT_ALLOWED", Detail: "table public.t has no primary key"}), CodeStatementRefused, ReasonNoPrimaryKey, "BS007"},
 		{errors.New("password=hunter2 something broke"), CodeInternal, "", ""},
 	}
 	for _, c := range cases {
@@ -191,9 +196,7 @@ func TestNewServicePanicsWithoutDeps(t *testing.T) {
 	t.Parallel()
 	for _, breakIt := range []func(*Deps){
 		func(d *Deps) { d.Name = "" },
-		func(d *Deps) { d.Reader = nil },
 		func(d *Deps) { d.Store = nil },
-		func(d *Deps) { d.Reads = nil },
 		func(d *Deps) { d.Log = nil },
 		func(d *Deps) { d.Now = nil },
 	} {

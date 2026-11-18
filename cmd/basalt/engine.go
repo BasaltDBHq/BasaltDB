@@ -260,14 +260,15 @@ func shimAgent(name, socket string) string {
 // engine starts with the service manager.
 func engineDownServer(name, configPath string, log *slog.Logger) (agent.EngineDownServer, error) {
 	var cfg *config.Config
-	if c, err := config.Load(configPath); err == nil {
+	c, cfgErr := config.Load(configPath)
+	if cfgErr == nil {
 		cfg = &c
 	}
 	cmds, err := shimCommands(name, configPath, cfg)
 	if err != nil {
 		return agent.EngineDownServer{}, err
 	}
-	down := agent.EngineDown{Name: name, Commands: cmds, Config: cfg, Log: log, Now: time.Now}
+	down := agent.EngineDown{Name: name, Commands: cmds, Config: cfg, ConfigErr: cfgErr, Log: log, Now: time.Now}
 	return down.Server(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: engine.Instructions}), nil
 }
 

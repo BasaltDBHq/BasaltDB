@@ -25,7 +25,7 @@ func devLocalStatus(t *testing.T, operatedBy string) StatusReport {
 	d.OperatedBy = operatedBy
 	d.DevLocalPages = true
 	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
-	d.Approvals = keys{n: 1}
+	setApprovals(&d, keys{n: 1})
 	d.Now = func() time.Time { return statusNow }
 	cmds, err := NewCommands("bot", "", "linux", devLocalSaved)
 	require.NoError(t, err)
@@ -48,7 +48,7 @@ func TestDevLocalPagesWarnsOnEveryPersonMessage(t *testing.T) {
 	d.OperatedBy = mcpcontract.OperatedByAgent
 	d.DevLocalPages = true
 	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
-	d.Approvals = keys{n: 0} // NO_PASSKEY too: two problems
+	setApprovals(&d, keys{n: 0}) // NO_PASSKEY too: two problems
 	d.Now = func() time.Time { return statusNow }
 	cmds, err := NewCommands("bot", "", "linux", devLocalSaved)
 	require.NoError(t, err)

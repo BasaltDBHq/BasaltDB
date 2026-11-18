@@ -1,0 +1,18 @@
+{
+  "body": {
+    "code": "NOTHING_TO_REVERT",
+    "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
+    "message": "nothing to revert in run <id-24>; nothing was prepared (NOTHING_TO_REVERT: RUN <id-24> changed no rows that a revert could restore)",
+    "nextSteps": [
+      {
+        "action": "STOP",
+        "actor": "AGENT",
+        "text": "There is nothing to revert; do not retry."
+      }
+    ],
+    "personMessage": "Nothing to revert for run <id-24>: it only read data (or inserted rows it deleted again).",
+    "reason": "READS_ONLY"
+  },
+  "isError": true,
+  "tool": "preview_revert"
+}

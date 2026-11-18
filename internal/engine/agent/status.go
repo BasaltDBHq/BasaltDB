@@ -123,45 +123,6 @@ func (noProbe) LedgerBytes(context.Context) (int64, error) { return 0, errNoProb
 
 func (noProbe) Reinstalls(context.Context) (guard.Reinstalls, error) { return guard.Reinstalls{}, nil }
 
-// DBProbe is the Probe on an agent connection or pool, against the build's
-// migrations (guard.Migrations outside tests).
-type DBProbe struct {
-	Q          guard.Querier
-	Migrations []guard.Migration
-	// Kept is the engine's kept copy of the pins it set aside (its pin
-	// file's setAside); nil when there is none to read.
-	Kept func() []guard.SetAside
-}
-
-// GuardStatus reads schema_version.
-func (p DBProbe) GuardStatus(ctx context.Context) (guard.Status, error) {
-	return guard.AgentStatus(ctx, p.Q, p.Migrations)
-}
-
-// SetupRecorded reports whether setup id is recorded.
-func (p DBProbe) SetupRecorded(ctx context.Context, id uuid.UUID) (bool, error) {
-	return guard.SetupRecorded(ctx, p.Q, id)
-}
-
-// LatestSetup is the agent's newest recorded setup.
-func (p DBProbe) LatestSetup(ctx context.Context) (guard.AgentSetup, bool, error) {
-	return guard.LatestAgentSetup(ctx, p.Q)
-}
-
-// LedgerBytes is the size of basalt_meta.
-func (p DBProbe) LedgerBytes(ctx context.Context) (int64, error) {
-	return guard.LedgerBytes(ctx, p.Q)
-}
-
-// Reinstalls reads agent_reinstalls with the kept copy merged in.
-func (p DBProbe) Reinstalls(ctx context.Context) (guard.Reinstalls, error) {
-	var kept []guard.SetAside
-	if p.Kept != nil {
-		kept = p.Kept()
-	}
-	return guard.ReadReinstalls(ctx, p.Q, kept)
-}
-
 // VaultReporter says how the engine's connection to the hosted Vault stands
 // (status.vault, CONTRACT.md, Vault channel, Configuration and status).
 // Optional: without one, status leaves vault out.
@@ -373,7 +334,7 @@ func (s *Service) statusDeps() statusDeps {
 		name: s.Name, operatedBy: s.OperatedBy, build: s.Build, pagesBase: s.PagesBase, pagesOrigin: s.PagesOrigin,
 		sameUser: s.SameUser, devLocalPages: s.DevLocalPages, engineReachable: true, vault: s.Vault, portal: s.Portal,
 		engineRecord: s.EngineRecord, directServed: s.DirectServed, cmds: s.Commands, setup: s.pendingSetup(), probe: s.Probe,
-		update: s.updateInfo(), finisher: s.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, lockTrouble: &s.lockTrouble, passkeys: s.Approvals.Passkeys, log: s.Log, now: s.Now,
+		update: s.updateInfo(), finisher: s.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, lockTrouble: &s.lockTrouble, passkeys: s.Store.Passkeys, log: s.Log, now: s.Now,
 	}
 }
 
@@ -510,7 +471,7 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 // does not answer: engine unreachable, guard UNKNOWN, operatedBy from the
 // config the shim could read (cfg nil: it could not, so PERSON and
 // GUARD_ONLY), the pending setup when the config holds one.
-func EngineDownStatus(name string, cmds Commands, cfg *config.Config, build string, now time.Time) (StatusReport, error) {
+func EngineDownStatus(name string, cmds Commands, cfg *config.Config, cfgErr error, build string, now time.Time) (StatusReport, error) {
 	r := StatusReport{
 		Agent: name, OperatedBy: mcpcontract.OperatedByPerson, Enforcement: EnforcementGuardOnly,
 		Engine: EngineStatus{Reachable: false, Build: build},
@@ -522,7 +483,12 @@ func EngineDownStatus(name string, cmds Commands, cfg *config.Config, build stri
 		cmds = cmds.OperatedBy(cfg.OperatedBy)
 	}
 	ps := problems{cmds: cmds}
-	ps.add(problemEngineUnreachable, "the engine does not answer, so no tool but status works",
+	msg := "the engine does not answer, so no tool but status works"
+	if config.IsOldCredentialFile(cfgErr) {
+		// The engine cannot start on this config: say what to edit.
+		msg += "; engine.json: " + cfgErr.Error()
+	}
+	ps.add(problemEngineUnreachable, msg,
 		func(b *Steps) string { return engineUnreachableSteps(b, cmds, toolStatus) })
 	if cfg != nil {
 		r.OperatedBy = operatedBy(cfg.OperatedBy)

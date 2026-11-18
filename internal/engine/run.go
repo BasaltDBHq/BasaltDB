@@ -19,11 +19,11 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/channel"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/pages"
 	"github.com/basaltdbhq/basaltdb/internal/engine/peercred"
@@ -39,6 +39,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/server"
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 	"github.com/basaltdbhq/basaltdb/internal/updatecheck"
 	"github.com/basaltdbhq/basaltdb/internal/vault"
 )
@@ -493,6 +494,11 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	if !env.cfg.Service() {
 		cmds = cmds.Foreground()
 	}
+	// One store per agent (CONTRACT.md, Stores); the config refuses any
+	// kind but POSTGRES, the only adapter there is.
+	if a.Store.Kind != config.StorePostgres {
+		return agentRuntime{}, fmt.Errorf("agent %s: store kind %q is not served", a.Name, a.Store.Kind)
+	}
 	files, err := agentFilesFor(env, a)
 	if err != nil {
 		return agentRuntime{}, err
@@ -502,13 +508,13 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		files.close()
 		return agentRuntime{}, err
 	}
-	pool, password, err := agentdb.NewSwitchablePool(ctx, url, agentPoolConns)
+	pool, password, err := postgres.NewSwitchablePool(ctx, url, agentPoolConns)
 	if err != nil {
 		files.close()
 		return agentRuntime{}, err
 	}
 	finisher := &setupFinisher{
-		configPath: env.configPath, agent: a.Name, credFile: a.CredentialFile, files: files,
+		configPath: env.configPath, agent: a.Name, credFile: a.Store.CredentialFile, files: files,
 		login: targetOf(pool.Config().ConnConfig), password: password, reset: pool.Reset,
 		connect: connectAgent, log: log,
 	}
@@ -517,14 +523,14 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	// budget per call). Reads outside a call (upkeep, the person's socket)
 	// carry no budget and are not charged.
 	budgeted := resultsize.Budgeted(pool)
-	probe := agent.DBProbe{Q: budgeted, Migrations: guard.Migrations(), Kept: KeptSetAside(env.pins, a.Name, log)}
+	probe := postgres.Probe{Q: budgeted, Migrations: guard.Migrations(), Kept: KeptSetAside(env.pins, a.Name, log)}
 	logGuard(ctx, probe, log)
 	// The agent's classification map, and the values of IDENTIFIER columns
 	// it reads added to the dictionary before they leave the engine: query
 	// rows in the service, RETURNING rows inside the write's transaction.
 	classes := piidict.NewMap(log.With("component", "pii"))
 	observer := piidict.NewObserver(classes, env.dict)
-	store := agentdb.NewStore(budgeted, limits, time.Now).WithReturned(observer.Returned)
+	store := postgres.NewStore(budgeted, limits, time.Now).WithReturned(observer.Returned)
 	secrets := linkSecrets(env.stateDir, a.Name, log)
 	var relay agent.LinkRelay
 	if env.relay != nil {
@@ -541,11 +547,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	})
 	svc := agent.NewService(agent.Deps{
 		Name:          a.Name,
-		Reader:        agentdb.NewReader(budgeted, limits, time.Now),
 		Store:         store,
-		Reads:         store,
-		Approvals:     store,
-		Reverts:       store,
 		PagesBase:     env.pagesBase,
 		LinkBudget:    env.cfg.LinkBudgetOrDefault(),
 		Commands:      cmds,
@@ -564,19 +566,20 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		Portal:        env.portal,
 		Update:        env.updateNotice(),
 		EngineRecord: func(ctx context.Context, id string) (*guard.RecordedEngine, error) {
-			return guard.EngineRecord(ctx, pool, id)
+			r, err := guard.EngineRecord(ctx, pool, id)
+			return r, postgres.MapError(err)
 		},
 		DirectServed: env.direct != nil,
 		Receipts:     env.receipts,
 		Finisher:     finisher,
 		PII:          observer.On(pool),
-		Catalog:      agentdb.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database),
-		Columns:      agentdb.NewColumnOrder(budgeted),
-		Classes:      classes.On(pool),
+		Catalog:      postgres.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database),
+		Columns:      postgres.NewColumnOrder(budgeted),
+		Classes:      storeClasses{BoundMap: classes.On(pool)},
 	})
 	return agentRuntime{
 		svc: svc,
-		upkeep: upkeep.New(a.Name, buildinfo.Version, pool, log, time.Now).WithPins(env.pins).WithRLSCache(blind).
+		upkeep: upkeep.New(a.Name, buildinfo.Version, postgres.NewUpkeep(pool), log, time.Now).WithPins(env.pins).WithRLSCache(blind).
 			WithOperatedBy(env.cfg.OperatedBy).WithGate(svc.AdmitTick).
 			WithPII(piidict.NewWatch(a.Name, classes, pool, log.With("component", "pii"))),
 		ledger: piiLedger{Ledger: gatedLedger{inner: person.NewDBLedger(pool, time.Now), admit: svc.Admit}, dict: env.dict},
@@ -594,9 +597,9 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 // following a link, from the computed credential path only (rootFiles).
 func agentFilesFor(env agentEnv, a config.Agent) (agentFiles, error) {
 	if !env.asRoot {
-		return pathFiles{configPath: env.configPath, credFile: a.CredentialFile}, nil
+		return pathFiles{configPath: env.configPath, credFile: a.Store.CredentialFile}, nil
 	}
-	return openRootFiles(env.configPath, a.Name, a.CredentialFile)
+	return openRootFiles(env.configPath, a.Name, a.Store.CredentialFile)
 }
 
 // agentInfo answers the person socket's STATUS with the agent's status tool
@@ -619,7 +622,7 @@ func agentInfo(svc *agent.Service, conn pgconn.Config) person.AgentInfo {
 // that is missing or misses a breaking migration, or a database the engine
 // cannot reach, does not stop the engine: the agent gets status and its
 // problems, and the guard is read again on each call.
-func logGuard(ctx context.Context, probe agent.DBProbe, log *slog.Logger) {
+func logGuard(ctx context.Context, probe agent.Probe, log *slog.Logger) {
 	st, err := probe.GuardStatus(ctx)
 	switch {
 	case err != nil:
@@ -649,8 +652,8 @@ func statePins(dir string, log *slog.Logger) upkeep.Pins {
 // KeptSetAside reads the pins agent set aside after reinstalls from its
 // pin (chainpin.Pin.SetAside), for the reinstall notice. A pin that cannot
 // be read is logged and adds nothing: the ledger still shows the notice.
-func KeptSetAside(pins upkeep.Pins, agent string, log *slog.Logger) func() []guard.SetAside {
-	return func() []guard.SetAside {
+func KeptSetAside(pins upkeep.Pins, agent string, log *slog.Logger) func() []action.SetAside {
+	return func() []action.SetAside {
 		p, _, err := pins.Load(agent)
 		if err != nil {
 			log.Warn("read the kept copy of set-aside pins", "agent", agent, "err", err)

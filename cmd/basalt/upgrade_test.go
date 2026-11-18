@@ -101,7 +101,7 @@ func (g olderGuard) writeConfig(t *testing.T, operatedBy string) {
 		"socketDir": g.socketDir, "stateDir": filepath.Join(filepath.Dir(g.configPath), "state"),
 		"pagesAddr": "off", "mode": "SAME_USER", "operatedBy": operatedBy,
 		"agents": []map[string]any{{
-			"name": "bot", "osUser": me.Username, "credentialFile": g.credFile,
+			"name": "bot", "osUser": me.Username, "store": map[string]any{"kind": "POSTGRES", "credentialFile": g.credFile},
 			"initArgs": []string{"--agent=bot", "--write=public.leads", "--prefix=" + g.d.Names.Prefix},
 		}},
 	}

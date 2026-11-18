@@ -213,7 +213,7 @@ func TestInitRemoteWritesTheVault(t *testing.T) {
 func TestConfigUpsertAppliesTheVaultDefaultOnlyWhenThereIsNone(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "engine.json")
-	bot := config.Agent{Name: "bot", OSUser: "alice", CredentialFile: "/c/bot.url"}
+	bot := config.Agent{Name: "bot", OSUser: "alice", Store: config.PostgresStore("/c/bot.url")}
 	upsert := func(s config.Settings) config.VaultWritten {
 		t.Helper()
 		v, err := config.UpsertAgentVault(path, s, bot)
@@ -238,7 +238,7 @@ func TestConfigUpsertAppliesTheVaultDefaultOnlyWhenThereIsNone(t *testing.T) {
 func TestConfigUpsertKeepsTheVaultWithoutAChoice(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "engine.json")
-	bot := config.Agent{Name: "bot", OSUser: "alice", CredentialFile: "/c/bot.url"}
+	bot := config.Agent{Name: "bot", OSUser: "alice", Store: config.PostgresStore("/c/bot.url")}
 	require.NoError(t, config.UpsertAgent(path, config.Settings{SocketDir: "/s", PagesURL: links.Portal, Vault: config.VaultOn}, bot))
 	require.NoError(t, config.UpsertAgent(path, config.Settings{SocketDir: "/s"}, bot))
 	c, err := config.Load(path)

@@ -1,0 +1,32 @@
+{
+  "body": {
+    "code": "APPROVAL_INVALID",
+    "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
+    "links": [
+      {
+        "label": "Approve the held write",
+        "url": "http://localhost:8787/approvals/<id-5>#<fragment>"
+      }
+    ],
+    "message": "APPROVAL_INVALID: not approved yet: the person has not signed it with their passkey",
+    "nextSteps": [
+      {
+        "action": "OPEN_LINK",
+        "actor": "PERSON",
+        "command": "basalt approve --agent bot --config /etc/basalt-test/engine.json --open <id-5>",
+        "text": "Open the link and approve with your passkey: the write is not approved yet.",
+        "url": "http://localhost:8787/approvals/<id-5>#<fragment>"
+      },
+      {
+        "action": "END_TURN",
+        "actor": "AGENT",
+        "text": "End your turn: the person acts next."
+      }
+    ],
+    "personMessage": "The held write was not approved yet, so nothing was applied.\nApprove it with your passkey here; the page then shows a code for the agent:\n\nhttp://localhost:8787/approvals/<id-5>#<fragment>\n\nOr run: basalt approve --agent bot --config /etc/basalt-test/engine.json --open <id-5>",
+    "reason": "NOT_SIGNED",
+    "sqlState": "BS005"
+  },
+  "isError": true,
+  "tool": "write"
+}

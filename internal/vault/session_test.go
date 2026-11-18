@@ -467,10 +467,11 @@ func TestSessionTimeouts(t *testing.T) {
 		t.Parallel()
 		// The lifetime is a timer started when message 1 is read, so it is
 		// measured from before the handshake, and frames do not extend it.
-		// Requests go out only in the first half of the lifetime, so none
-		// can race the timer; then nothing is sent and the session must end
-		// with TIMEOUT. A lifetime reset by a frame would end it half a
-		// lifetime late, past the margin.
+		// Requests go out only in the first three quarters of the lifetime,
+		// so none can race the timer; then nothing is sent and the session
+		// must end with TIMEOUT. The last frame is sent after half the
+		// lifetime, so a lifetime reset by a frame would end the session
+		// more than a half lifetime late, past the quarter allowed here.
 		const lifetime = 2 * time.Second
 		e := newSessionEngine(t, func(o *vault.Options) { o.SessionLifetime = lifetime })
 		l := newLink(t)
@@ -480,7 +481,7 @@ func TestSessionTimeouts(t *testing.T) {
 		p, err := pagetest.Open(ctx, e.v.URL(), l.keys)
 		require.NoError(t, err)
 		t.Cleanup(p.Close)
-		for time.Since(start) < lifetime/2 {
+		for time.Since(start) < lifetime*3/4 {
 			r, err := p.Do(ctx, http.MethodGet, "/x", pagetest.Headers(l.secret), "", 0)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, r.Status)
@@ -489,7 +490,7 @@ func TestSessionTimeouts(t *testing.T) {
 		require.Equal(t, code(channel.ErrTimeout), pageClosed(t, p))
 		elapsed := time.Since(start)
 		require.GreaterOrEqual(t, elapsed, lifetime)
-		require.Less(t, elapsed, lifetime+lifetime/2, "a frame extended the lifetime")
+		require.Less(t, elapsed, lifetime+lifetime/4, "a frame extended the lifetime")
 	})
 	t.Run("never past the link's expiry", func(t *testing.T) {
 		t.Parallel()

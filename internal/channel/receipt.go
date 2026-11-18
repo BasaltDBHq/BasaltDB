@@ -107,6 +107,7 @@ func SignReceipt(signer Signer, r Receipt) (string, error) {
 // that came with it proves nothing about which engine signed it. In the
 // contract's order: the signature, then the parse, then that engineId is
 // engineKey's id, then the closed schema. Every refusal is ErrBadReceipt.
+// The engine only signs receipts; this is the verifier side, used by tests.
 func VerifyReceipt(token string, engineKey []byte) (Receipt, error) {
 	pub, err := ParseEngineKey(engineKey)
 	if err != nil {

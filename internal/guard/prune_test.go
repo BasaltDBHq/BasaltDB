@@ -27,7 +27,7 @@ func TestPruneKeepsChainVerifiable(t *testing.T) {
 
 	// A year later: the oldest rows go, the anchor moves, the chain verifies
 	// and new writes chain on.
-	head, err := guard.Head(ctx, a.Conn)
+	head, err := guardtest.Head(ctx, a.Conn)
 	require.NoError(t, err)
 	d.Exec(t, `SELECT basalt_meta._prune(now() + interval '366 days')`)
 	require.Equal(t, 1, count(t, d.Admin, `SELECT count(1)::int FROM basalt_meta.ledger`), "only the new PRUNED row")

@@ -47,29 +47,6 @@ func OriginForListener(scheme string, ln net.Addr, allowedHosts []string) func(h
 	}
 }
 
-// Origin is a fixed single-origin check (tests and simple callers).
-func Origin(self string) func(http.Handler) http.Handler {
-	self = strings.TrimSpace(self)
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Method == http.MethodGet || r.Method == http.MethodHead {
-				next.ServeHTTP(w, r)
-				return
-			}
-			origin := r.Header.Get("Origin")
-			if origin == "" {
-				next.ServeHTTP(w, r)
-				return
-			}
-			if origin != self {
-				http.Error(w, "origin not allowed", http.StatusForbidden)
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
-}
-
 func hostSet(hosts []string) map[string]struct{} {
 	set := make(map[string]struct{}, len(hosts))
 	for _, h := range hosts {

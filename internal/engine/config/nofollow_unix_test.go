@@ -59,20 +59,20 @@ func TestLoadAndUpsertRefuseFIFOWithoutBlocking(t *testing.T) {
 	require.ErrorContains(t, err, "not a regular file")
 
 	err = withinFIFOWait(t, func() error {
-		_, err := config.Upserted(path, config.Settings{}, config.Agent{Name: "bot"})
+		_, err := config.UpsertAgentVault(path, config.Settings{}, config.Agent{Name: "bot"})
 		return err
 	})
 	require.ErrorContains(t, err, "not a regular file")
 }
 
-func TestUpsertedRefusesSymlinkedConfig(t *testing.T) {
+func TestUpsertAgentVaultRefusesSymlinkedConfig(t *testing.T) {
 	dir := t.TempDir()
 	secret := filepath.Join(dir, "secret")
 	require.NoError(t, os.WriteFile(secret, []byte("{}"), 0o600))
 	link := filepath.Join(dir, "engine.json")
 	require.NoError(t, os.Symlink(secret, link))
 
-	_, err := config.Upserted(link, config.Settings{}, config.Agent{Name: "bot"})
+	_, err := config.UpsertAgentVault(link, config.Settings{}, config.Agent{Name: "bot"})
 
 	require.Error(t, err)
 	require.NotErrorIs(t, err, os.ErrNotExist)

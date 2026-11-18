@@ -48,7 +48,7 @@ func TestVerifyChainFromPinsAndExtends(t *testing.T) {
 
 	st, head := verifyFrom(t, a.Conn, guard.Genesis())
 	require.True(t, st.Intact)
-	want, err := guard.Head(ctx, a.Conn)
+	want, err := guardtest.Head(ctx, a.Conn)
 	require.NoError(t, err)
 	require.Equal(t, want, head, "the full check from genesis returns the head")
 
@@ -100,7 +100,7 @@ func TestVerifyChainFromAfterRetention(t *testing.T) {
 	ctx := context.Background()
 	writeSome(t, a, 2) // seq 1..5
 	early := guard.ChainHead{Seq: 3, Hash: hashAt(t, d, 3)}
-	head, err := guard.Head(ctx, a.Conn)
+	head, err := guardtest.Head(ctx, a.Conn)
 	require.NoError(t, err)
 
 	// A year later retention deletes every row; the anchor is the old head.

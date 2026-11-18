@@ -404,3 +404,12 @@ func SQLState(err error) string {
 	}
 	return ""
 }
+
+// Head reads the last appended (seq, hash) of the ledger straight from
+// basalt_meta.chain_head(), the reader's independent view of the head that
+// tests compare VerifyChain and CheckHead against.
+func Head(ctx context.Context, q guard.Querier) (guard.ChainHead, error) {
+	var h guard.ChainHead
+	err := q.QueryRow(ctx, "SELECT seq, hash FROM basalt_meta.chain_head()").Scan(&h.Seq, &h.Hash)
+	return h, err
+}

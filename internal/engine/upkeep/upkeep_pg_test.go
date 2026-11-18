@@ -441,7 +441,7 @@ func TestPinAtOrBeforeAMovedAnchorIsRecorded(t *testing.T) {
 			require.NoError(t, newUpkeep(a.Conn, time.Now).WithPins(pins).Tick(ctx))
 			// The pin is the head, past the genesis; "before" adds a row
 			// after it, so retention's anchor lands past the pin.
-			head, err := guard.Head(ctx, a.Conn)
+			head, err := guardtest.Head(ctx, a.Conn)
 			require.NoError(t, err)
 			require.Positive(t, head.Seq)
 			pin := chainpin.Pin{Head: action.ChainHead(head), Install: uuid.New()}

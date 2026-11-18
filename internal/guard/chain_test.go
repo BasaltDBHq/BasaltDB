@@ -73,7 +73,7 @@ func TestCheckHead(t *testing.T) {
 	a := d.NewAgent(t, "bot", leads, nil)
 	ctx := context.Background()
 	writeSome(t, a, 3)
-	head, err := guard.Head(ctx, a.Conn)
+	head, err := guardtest.Head(ctx, a.Conn)
 	require.NoError(t, err)
 	require.Equal(t, int64(7), head.Seq)
 	require.Len(t, head.Hash, 32)

@@ -45,6 +45,9 @@ type Catalog interface {
 	Structure(ctx context.Context) ([]string, error)
 	// Database is the database the credential connects to.
 	Database() string
+	// Host is the host that database is on (name and host only, never a
+	// user, port or credential).
+	Host() string
 	// Limits are the read limits the agent's statements run within.
 	Limits() action.Limits
 }
@@ -86,6 +89,7 @@ func (noCatalog) Search(context.Context, string, []pgcatalog.ColumnKey, *pgcatal
 
 func (noCatalog) Structure(context.Context) ([]string, error) { return nil, errNoCatalog }
 func (noCatalog) Database() string                            { return "" }
+func (noCatalog) Host() string                                { return "" }
 func (noCatalog) Limits() action.Limits                       { return action.Limits{} }
 
 // noClasses serves a service built without PII classes: it cannot tell a
@@ -153,6 +157,7 @@ type SearchItem struct {
 type StoreInfo struct {
 	Kind     string `json:"kind"`
 	Database string `json:"database"`
+	Host     string `json:"host"`
 }
 
 // Counts are the overview's counts.
@@ -298,7 +303,7 @@ func (s *Service) DescribeOverview(ctx context.Context) (Overview, error) {
 	}
 	limits := s.Catalog.Limits()
 	o := Overview{
-		Store:       StoreInfo{Kind: string(s.Store.Kind()), Database: s.Catalog.Database()},
+		Store:       StoreInfo{Kind: string(s.Store.Kind()), Database: s.Catalog.Database(), Host: s.Catalog.Host()},
 		Fingerprint: catalogFingerprint(lines, notGranted, pii),
 		Counts:      Counts{Tables: len(visible), NotGranted: notGranted},
 		Update:      s.updateInfo(),

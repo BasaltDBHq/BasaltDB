@@ -449,8 +449,9 @@ func offerClaude(c *cliIO, f initFlags) error {
 		fmt.Fprintf(c.stderr, "basalt: Claude Code already has %s\n", name)
 		return nil
 	}
-	args := append([]string{claude, "mcp", "add", name, "--"}, mcpArgs(f, c.goos, bin)...)
+	args := append([]string{claude, "mcp", "add", "--scope", "local", name, "--"}, mcpArgs(f, c.goos, bin)...)
 	shown := shellJoin(append([]string{"claude"}, args[1:]...))
+	fmt.Fprintf(c.stderr, "basalt: the server %s is registered for this project directory only (--scope local); sessions in other projects do not see it\n", name)
 	ok, err := c.confirmYes(fmt.Sprintf("Add it to Claude Code now (%s)?", shown))
 	if err != nil || !ok {
 		return err

@@ -10,8 +10,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `basalt log` and the engine no longer report "ledger chain broken" on a new, untouched ledger after the database was recreated the same way, for example after removing the Postgres container and running the quickstart again. The guard now identifies each install by a random id instead of the schema's oid, which repeats in a cluster made the same way. An old pin is reported as a reinstall with its notice instead.
 
+### Added
+
+- `basalt status` without `--agent` lists the engine's agents when there are several: each agent with the name and host of its database, in text and `--json`. `basalt status --agent NAME` also shows the agent's database and host. No user, port, password or connection string is shown. Under an agent (Claude Code, Codex and the others) it does not list other agents; it asks for `--agent NAME` and says the person can run `basalt status` in their own terminal.
+- The MCP `describe` overview names the agent's own database by name and host.
+
 ### Changed
 
+- When `claude` is on your `PATH`, `basalt init` offers `claude mcp add --scope local ...` and says the server is registered for this project directory only. `docs/mcp-clients.md` shows the per-project setup for `.mcp.json`, Codex and OpenCode.
 - Breaking for installs of an alpha release: an agent's `credentialFile` in `engine.json` moves inside `store`. The old key is not read, and every command that loads `engine.json` stops with the edit for the agent. Replace `"credentialFile": "<path>"` with `"store": {"kind": "POSTGRES", "credentialFile": "<path>"}` by hand, then run `basalt upgrade --agent NAME` for the guard schema below.
 - The guard's schema moves to version 2, a breaking upgrade: run `basalt upgrade --agent NAME` once after updating the binary. Until then the engine serves only `status`, with the upgrade steps.
 - Upgrading no longer needs your agent's MCP client restarted: `basalt mcp` waits up to 15 seconds for a restarted engine and sends a read the engine dropped once more. Writes, approvals and reverts are never sent twice.

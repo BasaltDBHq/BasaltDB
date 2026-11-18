@@ -175,7 +175,7 @@ func TestInitInstallsAndWritesCredential(t *testing.T) {
 	cfg, err := config.Load(cfgPath)
 	require.NoError(t, err)
 	require.Equal(t, config.DefaultSocketDir(runtime.GOOS), cfg.SocketDir)
-	require.Equal(t, []config.Agent{{Name: "bot", OSUser: "tester", CredentialFile: path, InitArgs: []string{
+	require.Equal(t, []config.Agent{{Name: "bot", OSUser: "tester", Store: config.PostgresStore(path), InitArgs: []string{
 		"--agent=bot", "--write=public.leads", "--prefix=" + d.Names.Prefix, "--os-user=tester",
 	}}}, cfg.Agents)
 	raw, err := os.ReadFile(cfgPath)
@@ -644,6 +644,18 @@ func TestUninstallRemovesEverything(t *testing.T) {
 	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT count(1)::int FROM pg_roles WHERE rolname LIKE $1`, d.Names.Prefix+`\_%`).Scan(&roles))
 	require.Zero(t, schemas)
 	require.Zero(t, roles)
+}
+
+func TestHelpSaysOneEngineServesManyAgents(t *testing.T) {
+	t.Parallel()
+	for _, args := range [][]string{{"--help"}, {"init", "-h"}} {
+		code, stdout, stderr := runArgs(args...)
+		require.Equal(t, exitOK, code, stderr)
+		out := stdout + stderr
+		for _, want := range []string{"One engine serves many agents", "one database", "basalt init --remote --agent NAME"} {
+			require.Contains(t, out, want, args)
+		}
+	}
 }
 
 func TestInitOperatedByAgentWithTheAdminCredential(t *testing.T) {

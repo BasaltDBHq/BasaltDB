@@ -1,0 +1,24 @@
+{
+  "body": {
+    "items": [
+      {
+        "applied": 1,
+        "held": 1,
+        "intent": "Tidy the lead list",
+        "lastChangeAt": "<time>",
+        "reads": 2,
+        "refused": 10,
+        "reverted": 0,
+        "rowsWritten": 1,
+        "runId": "<id-1>",
+        "startedAt": "<time>",
+        "tables": [
+          "public.leads"
+        ],
+        "taskId": "<id-2>"
+      }
+    ]
+  },
+  "isError": false,
+  "tool": "list_runs"
+}

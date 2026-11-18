@@ -129,7 +129,7 @@ func register(c *cliIO, f initFlags, dsn string) (config.VaultWritten, error) {
 		return config.VaultWritten{}, err
 	}
 	return config.UpsertAgentVault(f.configPath, engineSettings(f, c.goos), config.Agent{
-		Name: f.agent, OSUser: f.osUser, CredentialFile: f.credFile, InitArgs: f.initArgs,
+		Name: f.agent, OSUser: f.osUser, Store: config.PostgresStore(f.credFile), InitArgs: f.initArgs,
 	})
 }
 
@@ -215,7 +215,7 @@ func agentServiceSpec(goos, bin, configPath, engineUser string, a agentInstall, 
 			SocketDir: config.DefaultSocketDir(goos), PagesURL: a.pagesURL, DevLocalPages: a.devLocalPages, Mode: config.ModeService, PersonUIDs: a.personUIDs,
 			Vault: a.vault, VaultDefault: a.vaultDefault, OperatedBy: a.operatedBy,
 		},
-		config.Agent{Name: a.name, OSUser: a.osUser, CredentialFile: cred, InitArgs: a.initArgs})
+		config.Agent{Name: a.name, OSUser: a.osUser, Store: config.PostgresStore(cred), InitArgs: a.initArgs})
 	if err != nil {
 		return spec, err
 	}
@@ -449,8 +449,9 @@ func offerClaude(c *cliIO, f initFlags) error {
 		fmt.Fprintf(c.stderr, "basalt: Claude Code already has %s\n", name)
 		return nil
 	}
-	args := append([]string{claude, "mcp", "add", name, "--"}, mcpArgs(f, c.goos, bin)...)
+	args := append([]string{claude, "mcp", "add", "--scope", "local", name, "--"}, mcpArgs(f, c.goos, bin)...)
 	shown := shellJoin(append([]string{"claude"}, args[1:]...))
+	fmt.Fprintf(c.stderr, "basalt: the server %s is registered for this project directory only (--scope local); sessions in other projects do not see it\n", name)
 	ok, err := c.confirmYes(fmt.Sprintf("Add it to Claude Code now (%s)?", shown))
 	if err != nil || !ok {
 		return err

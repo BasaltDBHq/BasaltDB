@@ -10,10 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
@@ -64,8 +65,8 @@ const noticeBinding = `{"kind": "APPROVE", "rows": 3, "agent": "basalt_agent_bot
 
 func noticeService(origin string, budget int) *Service {
 	d := deps()
-	d.Approvals = catalogApprovals{}
-	d.Reverts = catalogReverts{}
+	setApprovals(&d, catalogApprovals{})
+	setReverts(&d, catalogReverts{})
 	d.PagesOrigin = origin
 	d.LinkBudget = budget
 	return NewService(d)
@@ -293,7 +294,7 @@ func TestMessagesOfferingACommandStayWithinTheLimitWithALongConfigPath(t *testin
 	cmds, err := NewCommands("pbot", long, "linux", nil)
 	require.NoError(t, err)
 	s := &Service{Deps: Deps{Commands: cmds, Log: slog.New(slog.DiscardHandler)}}
-	scope := guard.RevertScope{Kind: revert.ScopeTask, ID: uuid.New()}
+	scope := action.Scope{Kind: revert.ScopeTask, ID: uuid.New()}
 
 	messages := map[string]string{}
 	for _, tool := range []string{toolPreviewRevert, toolRequestRevert} {

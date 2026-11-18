@@ -17,7 +17,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 	"github.com/basaltdbhq/basaltdb/internal/engine/portalcheck"
@@ -26,6 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/server"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 // basalt status (CONTRACT.md, CLI; owner decision AE-13): the status tool's
@@ -39,10 +39,12 @@ type statusOut struct {
 	agent.StatusReport
 	// Engine replaces the report's engine (encoding/json takes the
 	// shallower field) to add the pid and OS user.
-	Engine     engineOut `json:"engine"`
-	ConfigPath string    `json:"configPath"`
-	SocketDir  string    `json:"socketDir"`
-	StateDir   string    `json:"stateDir"`
+	Engine engineOut `json:"engine"`
+	// Database is the agent's database: name and host, no credential.
+	Database   databaseOut `json:"database"`
+	ConfigPath string      `json:"configPath"`
+	SocketDir  string      `json:"socketDir"`
+	StateDir   string      `json:"stateDir"`
 	// vaultID is the engine id in same-user mode when the Vault is on:
 	// the connection state only the running engine knows is left out of
 	// the report, and the text output still shows the id (localVault).
@@ -75,7 +77,27 @@ func runStatus(c *cliIO, args []string) int {
 	if *name != "" && !config.ValidAgentName(*name) {
 		return c.fail(fmt.Errorf("%w: agent name %q is not valid", errUsage, *name))
 	}
-	out, err := readStatus(c, *name, configOrFallback(c.host, fs, *configPath))
+	cfgPath := configOrFallback(c.host, fs, *configPath)
+	if *name == "" && c.agentMarker() == "" {
+		// A person without --agent: with several agents, the listing of
+		// them and their databases; with one, that agent's report.
+		list, err := listAgentsStatus(c, cfgPath)
+		if err != nil {
+			return c.fail(err)
+		}
+		switch len(list.Agents) {
+		case 0:
+		case 1:
+			*name = list.Agents[0].Agent
+		default:
+			if *asJSON {
+				return exitCode(c, printAgentsJSON(c.stdout, list))
+			}
+			printAgents(c.stdout, list)
+			return exitOK
+		}
+	}
+	out, err := readStatus(c, *name, cfgPath)
 	if err != nil {
 		return c.fail(err)
 	}
@@ -144,7 +166,7 @@ func readStatus(c *cliIO, name, configPath string) (statusOut, error) {
 		return serviceStatus(c, name)
 	}
 	if name == "" && configPath == config.DefaultPath(c.goos) && c.engine.unitInstalled() {
-		return statusOut{}, fmt.Errorf("%w: the engine runs as a service, so give --agent NAME (the engine's files are its own)", errUsage)
+		return statusOut{}, c.needAgentName(fmt.Errorf("%w: the engine runs as a service, so give --agent NAME (the engine's files are its own)", errUsage))
 	}
 	return localStatus(c, name, configPath)
 }
@@ -167,8 +189,13 @@ func serviceStatus(c *cliIO, name string) (statusOut, error) {
 	if err != nil {
 		return statusOut{}, err
 	}
+	t, err := person.Client{Path: c.engine.personSocket}.Target(c.ctx, name)
+	if err != nil {
+		return statusOut{}, personError(c, name, err)
+	}
 	return statusOut{
 		StatusReport: r,
+		Database:     databaseOut{Host: t.Host, Name: t.Database},
 		Engine:       engineOut{Reachable: r.Engine.Reachable, Build: r.Engine.Build, PID: dto.Engine.PID, OSUser: dto.Engine.OSUser},
 		ConfigPath:   config.DefaultPath(c.goos),
 		SocketDir:    dto.SocketDir,
@@ -187,9 +214,9 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 	if err != nil {
 		return statusOut{}, err
 	}
-	a, err := statusAgent(cfg.Config, name, abs)
+	a, err := statusAgent(cfg.Config, name, abs, c.agentMarker() != "")
 	if err != nil {
-		return statusOut{}, err
+		return statusOut{}, c.needAgentName(err)
 	}
 	cmds, err := agent.NewCommands(a.Name, abs, c.goos, a.InitArgs)
 	if err != nil {
@@ -198,11 +225,15 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 	if !cfg.Service() {
 		cmds = cmds.Foreground()
 	}
-	dsn, err := cfg.credential(a.CredentialFile)
+	dsn, err := cfg.credential(a.Store.CredentialFile)
 	if err != nil {
 		return statusOut{}, fmt.Errorf("the credential of agent %s cannot be read: %w", a.Name, withoutPath(err))
 	}
-	pool, err := agentdb.NewPool(c.ctx, dsn, statusAgentPool)
+	db, err := connDatabase(dsn)
+	if err != nil {
+		return statusOut{}, fmt.Errorf("the credential of agent %s cannot be read: %w", a.Name, err)
+	}
+	pool, err := postgres.NewPool(c.ctx, dsn, statusAgentPool)
 	if err != nil {
 		return statusOut{}, err
 	}
@@ -222,14 +253,18 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 		Portal: savedPortalCheck(cfg.StateDirFor(c.goos), base),
 		Name:   a.Name, Commands: cmds, OperatedBy: cfg.OperatedBy, DevLocalPages: cfg.DevLocalPages, Setup: a.Setup,
 		PagesBase: base, PagesOrigin: servedPages(c, cfg.Config, eng.Reachable), EngineRunning: eng.Reachable, EngineUnknown: eng.Unknown,
-		Probe: agent.DBProbe{
+		Probe: postgres.Probe{
 			Q: pool, Migrations: guard.Migrations(),
 			Kept: engine.KeptSetAside(chainpin.File{Dir: cfg.StateDirFor(c.goos)}, a.Name, slog.New(slog.DiscardHandler)),
 		},
-		Passkeys:  func(ctx context.Context) ([]passkey.Credential, error) { return ledger.Passkeys(ctx, pool) },
+		Passkeys: func(ctx context.Context) ([]passkey.Credential, error) {
+			p, err := ledger.Passkeys(ctx, pool)
+			return p, postgres.MapError(err)
+		},
 		EngineKey: key, DirectServed: directServed,
 		EngineRecord: func(ctx context.Context, id string) (*guard.RecordedEngine, error) {
-			return guard.EngineRecord(ctx, pool, id)
+			r, err := guard.EngineRecord(ctx, pool, id)
+			return r, postgres.MapError(err)
 		},
 		Log: slog.New(slog.DiscardHandler), Now: c.now,
 	}.Report(c.ctx)
@@ -237,7 +272,7 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 		return statusOut{}, err
 	}
 	eng.Build = r.Engine.Build
-	out := statusOut{StatusReport: r, Engine: eng, ConfigPath: abs, SocketDir: cfg.SocketDir, StateDir: stateDir}
+	out := statusOut{StatusReport: r, Database: db, Engine: eng, ConfigPath: abs, SocketDir: cfg.SocketDir, StateDir: stateDir}
 	out.Vault, out.vaultID = vaultReport, vaultID
 	return out, nil
 }
@@ -264,13 +299,17 @@ func runningEngineKey(eng engineOut, report, identity *agent.VaultStatus, cfg co
 }
 
 // statusAgent is the named agent, or the config's only one.
-func statusAgent(cfg config.Config, name, path string) (config.Agent, error) {
+func statusAgent(cfg config.Config, name, path string, hideOthers bool) (config.Agent, error) {
 	names := make([]string, 0, len(cfg.Agents))
 	for _, a := range cfg.Agents {
 		if a.Name == name || (name == "" && len(cfg.Agents) == 1) {
 			return a, nil
 		}
 		names = append(names, a.Name)
+	}
+	if name == "" && hideOthers {
+		// An agent is not told the other agents' names.
+		return config.Agent{}, fmt.Errorf("%w: %s has several agents; give --agent NAME", errUsage, path)
 	}
 	if name == "" {
 		return config.Agent{}, fmt.Errorf("%w: %s has agents %s; give --agent NAME", errUsage, path, strings.Join(names, ", "))
@@ -372,6 +411,7 @@ func writeStatus(w io.Writer, s statusOut) {
 		ready = "not ready"
 	}
 	fmt.Fprintf(w, "\nAgent %s: %s\n", s.Agent, ready)
+	fmt.Fprintf(w, "  Database:   %s on %s\n", s.Database.Name, s.Database.Host)
 	fmt.Fprintf(w, "  Guard:      %s\n", guardWords(s.Guard))
 	fmt.Fprintf(w, "  Passkeys:   %s\n", passkeyWords(s.Passkeys))
 	if s.Ledger != nil {
@@ -506,4 +546,14 @@ func (p savedPortal) PortalFinding() (agent.PortalFinding, bool) {
 		return agent.PortalFinding{}, false
 	}
 	return agent.PortalFinding{CheckedAt: r.CheckedAt, Mismatch: r.Mismatch(), Summary: r.Summary()}, true
+}
+
+// needAgentName adds, under an agent marker, the one line that tells the
+// agent where the person sees every agent: an agent is never given the
+// other agents (CONTRACT.md, CLI, basalt status).
+func (c *cliIO) needAgentName(err error) error {
+	if c.agentMarker() == "" {
+		return err
+	}
+	return fmt.Errorf("%w\n%s", err, agentMarkerNote)
 }

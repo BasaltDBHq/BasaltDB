@@ -13,7 +13,7 @@ import (
 func TestUpsertAgent(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "etc", "engine.json")
-	bot := config.Agent{Name: "bot", OSUser: "alice", CredentialFile: "/c/bot.url"}
+	bot := config.Agent{Name: "bot", OSUser: "alice", Store: config.PostgresStore("/c/bot.url")}
 
 	require.NoError(t, config.UpsertAgent(path, config.Settings{SocketDir: "/run/basalt"}, bot))
 	c, err := config.Load(path)
@@ -25,9 +25,9 @@ func TestUpsertAgent(t *testing.T) {
 	require.Equal(t, os.FileMode(config.FileMode), info.Mode().Perm())
 
 	// Existing settings stay; same name replaces, a new name appends.
-	require.NoError(t, os.WriteFile(path, []byte(`{"socketDir":"/s","agents":[{"name":"bot","osUser":"alice","credentialFile":"/c/bot.url"}],"limits":{"readRowLimit":7}}`), config.FileMode))
+	require.NoError(t, os.WriteFile(path, []byte(`{"socketDir":"/s","agents":[{"name":"bot","osUser":"alice","store": {"kind": "POSTGRES", "credentialFile":"/c/bot.url"}}],"limits":{"readRowLimit":7}}`), config.FileMode))
 	bot.OSUser = "bob"
-	other := config.Agent{Name: "other", OSUser: "carol", CredentialFile: "/c/other.url"}
+	other := config.Agent{Name: "other", OSUser: "carol", Store: config.PostgresStore("/c/other.url")}
 	require.NoError(t, config.UpsertAgent(path, config.Settings{SocketDir: "/ignored", StateDir: "/ignored"}, bot))
 	require.NoError(t, config.UpsertAgent(path, config.Settings{SocketDir: "/ignored"}, other))
 	c, err = config.Load(path)
@@ -37,13 +37,13 @@ func TestUpsertAgent(t *testing.T) {
 	require.Equal(t, 7, c.Limits.ReadRowLimit)
 	require.Equal(t, []config.Agent{bot, other}, c.Agents)
 
-	require.Error(t, config.UpsertAgent(path, config.Settings{SocketDir: "/s"}, config.Agent{Name: "Bad/Name", OSUser: "x", CredentialFile: "/x"}))
+	require.Error(t, config.UpsertAgent(path, config.Settings{SocketDir: "/s"}, config.Agent{Name: "Bad/Name", OSUser: "x", Store: config.PostgresStore("/x")}))
 }
 
 func TestUpsertAgentStateDirAndPagesURL(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "engine.json")
-	bot := config.Agent{Name: "bot", OSUser: "alice", CredentialFile: "/c/bot.url"}
+	bot := config.Agent{Name: "bot", OSUser: "alice", Store: config.PostgresStore("/c/bot.url")}
 
 	// A new file takes the state directory; the pages base URL is set.
 	require.NoError(t, config.UpsertAgent(path, config.Settings{
@@ -71,7 +71,7 @@ func TestUpsertAgentStateDirAndPagesURL(t *testing.T) {
 func TestUpsertAgentRecordsTheModeAndKeepsThePersons(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "engine.json")
-	bot := config.Agent{Name: "bot", OSUser: "bot", CredentialFile: "/c/bot.url"}
+	bot := config.Agent{Name: "bot", OSUser: "bot", Store: config.PostgresStore("/c/bot.url")}
 	service := config.Settings{SocketDir: "/run/basalt", Mode: config.ModeService, PersonUIDs: []uint32{501}}
 	require.NoError(t, config.UpsertAgent(path, service, bot))
 

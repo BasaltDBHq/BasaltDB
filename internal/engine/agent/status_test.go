@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -23,6 +24,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 // This file is the contract test of the status tool (CONTRACT.md, MCP tools,
@@ -67,7 +69,7 @@ func (p *fakeProbe) LatestSetup(context.Context) (guard.AgentSetup, bool, error)
 
 // keys answers Passkeys with n passkeys.
 type keys struct {
-	ApprovalStore
+	approvalStore
 	n int
 }
 
@@ -124,7 +126,7 @@ func operatedStatusWith(probe *fakeProbe, passkeys int, setup *config.Setup, ope
 		d := deps()
 		d.OperatedBy = operatedBy
 		d.Probe = probe
-		d.Approvals = keys{n: passkeys}
+		setApprovals(&d, keys{n: passkeys})
 		d.Setup = setup
 		d.Now = func() time.Time { return statusNow }
 		// The credential file is at init's default, so no saved flag names it
@@ -153,26 +155,26 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			t.Helper()
 			cmds, err := NewCommands("bot", "", "linux", nil)
 			require.NoError(t, err)
-			cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: operatedBy, Agents: []config.Agent{{Name: "bot", OSUser: "bot", CredentialFile: statusCredential}}}
-			r, err := EngineDownStatus("bot", cmds, cfg, "test", statusNow)
+			cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: operatedBy, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
+			r, err := EngineDownStatus("bot", cmds, cfg, nil, "test", statusNow)
 			require.NoError(t, err)
 			return r
 		}},
 		problemDatabaseUnreachable: {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: fmt.Errorf("dial %s: %w", statusCredential, context.DeadlineExceeded)}, 1, nil)},
-		problemTooManyConnections: {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: &pgconn.PgError{
+		problemTooManyConnections: {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: postgres.MapError(&pgconn.PgError{
 			Code:    "53300",
 			Message: `too many connections for role "basalt_agent_bot"`,
-		}}, 1, nil)},
-		problemCredentialRejected: {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: &pgconn.PgError{
+		})}, 1, nil)},
+		problemCredentialRejected: {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: postgres.MapError(&pgconn.PgError{
 			Code:    "28P01",
 			Message: "password authentication failed (" + statusCredential + ")",
-		}}, 1, nil)},
+		})}, 1, nil)},
 		problemGuardMissing:       {state: guard.GuardMissing, report: engineStatus(&fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}}, 1, nil)},
 		problemGuardOutdated:      {state: guard.GuardOutdated, report: engineStatus(&fakeProbe{st: guardAt(guard.GuardOutdated, []int{guard.LatestVersion()}, nil)}, 1, nil)},
 		problemUpgradeAvailable:   {state: guard.GuardUpgradeAvailable, report: engineStatus(&fakeProbe{st: guardAt(guard.GuardUpgradeAvailable, nil, []int{guard.LatestVersion()})}, 1, nil)},
 		problemNoPasskey:          {state: guard.GuardOK, report: engineStatus(&fakeProbe{st: ok}, 0, nil)},
 		problemSetupNotRun:        {state: guard.GuardMissing, report: engineStatus(&fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}}, 0, pendingSetup(guard.SetupInstall, soon))},
-		problemSetupExpired:       {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: &pgconn.PgError{Code: "28000", Message: "role does not exist"}}, 0, pendingSetup(guard.SetupInstall, past))},
+		problemSetupExpired:       {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: postgres.MapError(&pgconn.PgError{Code: "28000", Message: "role does not exist"})}, 0, pendingSetup(guard.SetupInstall, past))},
 		problemSetupChangePending: {state: guard.GuardOK, report: engineStatus(&fakeProbe{st: ok}, 1, pendingSetup(guard.SetupAgent, soon))},
 		problemLockFileUnusable: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
 			t.Helper()
@@ -364,7 +366,7 @@ func TestStatusEnforcementAndOperator(t *testing.T) {
 	// The shim that cannot read the config: PERSON and GUARD_ONLY.
 	cmds, err := NewCommands("bot", "", "linux", nil)
 	require.NoError(t, err)
-	r, err := EngineDownStatus("bot", cmds, nil, "test", statusNow)
+	r, err := EngineDownStatus("bot", cmds, nil, nil, "test", statusNow)
 	require.NoError(t, err)
 	require.Equal(t, mcpcontract.OperatedByPerson, r.OperatedBy)
 	require.Equal(t, EnforcementGuardOnly, r.Enforcement)
@@ -375,9 +377,9 @@ func TestStatusEnforcementAndOperator(t *testing.T) {
 
 	// A same-user config the shim reads: its operator and its foreground engine.
 	cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: mcpcontract.OperatedByAgent, Agents: []config.Agent{{
-		Name: "bot", OSUser: "bot", CredentialFile: statusCredential, Setup: pendingSetup(guard.SetupInstall, statusNow.Add(time.Hour)),
+		Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential), Setup: pendingSetup(guard.SetupInstall, statusNow.Add(time.Hour)),
 	}}}
-	r, err = EngineDownStatus("bot", cmds.Foreground(), cfg, "test", statusNow)
+	r, err = EngineDownStatus("bot", cmds.Foreground(), cfg, nil, "test", statusNow)
 	require.NoError(t, err)
 	require.Equal(t, mcpcontract.OperatedByAgent, r.OperatedBy)
 	require.Equal(t, EnforcementGuardOnly, r.Enforcement)
@@ -390,7 +392,7 @@ func TestStatusEnforcementAndOperator(t *testing.T) {
 func TestStatusVaultHook(t *testing.T) {
 	t.Parallel()
 	d := deps()
-	d.Approvals = keys{n: 1}
+	setApprovals(&d, keys{n: 1})
 	d.Vault = fixedVault{VaultStatus{State: "KEY_ERROR"}}
 	r, err := NewService(d).Status(context.Background())
 	require.NoError(t, err)
@@ -436,7 +438,7 @@ func degraded(t *testing.T, probe *fakeProbe, setup *config.Setup) (*mcp.Server,
 	t.Helper()
 	d := deps()
 	d.Probe = probe
-	d.Approvals = keys{n: 1}
+	setApprovals(&d, keys{n: 1})
 	d.Setup = setup
 	d.Now = func() time.Time { return statusNow }
 	tools := Tools(NewService(d))
@@ -528,7 +530,7 @@ func TestOnlyNonBreakingMissingIsServedWithTheWarning(t *testing.T) {
 
 // errNoRole is the error a pending INSTALL code's agent gets: its role does
 // not exist yet, so the database refuses the login.
-var errNoRole = &pgconn.PgError{Code: "28P01", Message: "password authentication failed"}
+var errNoRole = postgres.MapError(&pgconn.PgError{Code: "28P01", Message: "password authentication failed"})
 
 func TestAPendingInstallServesOnlyStatus(t *testing.T) {
 	t.Parallel()
@@ -635,7 +637,7 @@ func TestEngineDownOnAnAgentOperatedEngine(t *testing.T) {
 	require.NoError(t, err)
 	cfg := &config.Config{
 		SocketDir: "/run/basalt", OperatedBy: mcpcontract.OperatedByAgent, Mode: config.ModeService,
-		Agents: []config.Agent{{Name: "bot", OSUser: "bot", CredentialFile: statusCredential}},
+		Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}},
 	}
 	down := EngineDown{Name: "bot", Commands: cmds, Config: cfg, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
 	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, down.Tools()...)
@@ -673,7 +675,7 @@ func TestStatusProblemsStayWithinTheLimitWithALongConfigPath(t *testing.T) {
 	ok := guardAt(guard.GuardOK, nil, nil)
 	soon := statusNow.Add(time.Hour)
 	reports := map[string]func(t *testing.T) StatusReport{
-		"credential rejected":  operatedStatusWith(&fakeProbe{err: &pgconn.PgError{Code: "28P01", Message: "password authentication failed"}}, 1, nil, "", long, saved),
+		"credential rejected":  operatedStatusWith(&fakeProbe{err: postgres.MapError(&pgconn.PgError{Code: "28P01", Message: "password authentication failed"})}, 1, nil, "", long, saved),
 		"database unreachable": operatedStatusWith(&fakeProbe{err: fmt.Errorf("dial: %w", context.DeadlineExceeded)}, 1, nil, "", long, saved),
 		"guard missing":        operatedStatusWith(&fakeProbe{st: guard.Status{State: guard.GuardMissing, Build: guard.LatestVersion()}}, 1, nil, "", long, saved),
 		"guard outdated":       operatedStatusWith(&fakeProbe{st: guardAt(guard.GuardOutdated, []int{guard.LatestVersion()}, nil)}, 1, nil, "", long, saved),
@@ -698,7 +700,7 @@ func lockTroubleStatus(t *testing.T, operatedBy string) StatusReport {
 	d := deps()
 	d.OperatedBy = operatedBy
 	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil), recorded: true}
-	d.Approvals = keys{n: 1}
+	setApprovals(&d, keys{n: 1})
 	d.Setup = pendingSetup(guard.SetupAgent, statusNow.Add(time.Hour))
 	d.Now = func() time.Time { return statusNow }
 	d.Finisher = &fakeFinisher{finishErr: &config.LockUnusableError{Path: "/etc/basalt/engine.json.lock", Err: os.ErrPermission}}
@@ -734,7 +736,7 @@ func engineRecordStatusOf(t *testing.T, operatedBy string, read EngineRecordRead
 	d := deps()
 	d.OperatedBy = operatedBy
 	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
-	d.Approvals = keys{n: 1}
+	setApprovals(&d, keys{n: 1})
 	d.Now = func() time.Time { return statusNow }
 	d.Vault = fixedVault{VaultStatus{State: "OFF", EngineID: testEngineID}}
 	d.EngineRecord, d.DirectServed = read, directServed
@@ -789,7 +791,7 @@ func TestStatusEngineRecord(t *testing.T) {
 	t.Run("the key file is refused", func(t *testing.T) {
 		t.Parallel()
 		d := deps()
-		d.Approvals = keys{n: 1}
+		setApprovals(&d, keys{n: 1})
 		d.Vault = fixedVault{VaultStatus{State: "KEY_ERROR"}}
 		d.EngineRecord = recordOf(url, true)
 		r, err := NewService(d).Status(context.Background())
@@ -800,7 +802,7 @@ func TestStatusEngineRecord(t *testing.T) {
 	t.Run("no vault reporter: left out", func(t *testing.T) {
 		t.Parallel()
 		d := deps()
-		d.Approvals = keys{n: 1}
+		setApprovals(&d, keys{n: 1})
 		r, err := NewService(d).Status(context.Background())
 		require.NoError(t, err)
 		require.Nil(t, r.EngineRecord)
@@ -863,4 +865,19 @@ func TestDirectNotServedStepsCommand(t *testing.T) {
 // notRecorded is a database that holds no row for the engine.
 func notRecorded(context.Context, string) (*guard.RecordedEngine, error) {
 	return nil, nil //nolint:nilnil // a missing row is the answer, not an error
+}
+
+// A config refused for the older credentialFile key puts the edit in the
+// shim's status, since the engine cannot start on it.
+func TestEngineDownStatusNamesTheOldCredentialFileEdit(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "engine.json")
+	require.NoError(t, os.WriteFile(path, []byte(`{"socketDir": "/s", "agents": [{"name": "bot", "osUser": "u", "credentialFile": "/c/bot.cred"}]}`), 0o600))
+	_, cfgErr := config.Load(path)
+	cmds, err := NewCommands("bot", path, "linux", nil)
+	require.NoError(t, err)
+	r, err := EngineDownStatus("bot", cmds, nil, cfgErr, "test", statusNow)
+	require.NoError(t, err)
+	require.Len(t, r.Problems, 1)
+	require.Contains(t, r.Problems[0].Message, `agent "bot": "credentialFile" now goes inside "store"; replace "credentialFile": "/c/bot.cred" with "store": {"kind": "POSTGRES", "credentialFile": "/c/bot.cred"}`)
 }

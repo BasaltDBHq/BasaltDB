@@ -214,7 +214,7 @@ func TestRootConfigDirWritesWhereItOpened(t *testing.T) {
 
 	require.NoError(t, os.Rename(dir, dir+".moved"))
 	require.NoError(t, os.Symlink(elsewhere, dir))
-	_, err = d.upsert("engine.json", config.Settings{SocketDir: "/run/basalt"}, config.Agent{Name: "bot", OSUser: "bot", CredentialFile: filepath.Join(dir, "agents", "bot.url")})
+	_, err = d.upsert("engine.json", config.Settings{SocketDir: "/run/basalt"}, config.Agent{Name: "bot", OSUser: "bot", Store: config.PostgresStore(filepath.Join(dir, "agents", "bot.url"))})
 	require.NoError(t, err)
 	entries, err := os.ReadDir(elsewhere)
 	require.NoError(t, err)

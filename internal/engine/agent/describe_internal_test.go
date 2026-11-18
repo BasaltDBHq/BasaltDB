@@ -13,11 +13,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/engine/piidict"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/pgcatalog"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 // fakeCatalog is a Catalog over fixed relations and details.
@@ -71,7 +73,8 @@ func (f *fakeCatalog) Search(_ context.Context, _ string, exclude []pgcatalog.Co
 
 func (f *fakeCatalog) Structure(context.Context) ([]string, error) { return f.lines, nil }
 func (f *fakeCatalog) Database() string                            { return "app" }
-func (f *fakeCatalog) Limits() sqlguard.Limits                     { return sqlguard.DefaultLimits() }
+func (f *fakeCatalog) Host() string                                { return "db.example.com" }
+func (f *fakeCatalog) Limits() action.Limits                       { return action.Limits(sqlguard.DefaultLimits()) }
 
 // fakeClasses is a ClassResolver over a fixed class map.
 type fakeClasses struct {
@@ -334,7 +337,7 @@ func TestOverviewSmallListsResources(t *testing.T) {
 	require.NotContains(t, m, "nextSteps")
 	require.NotContains(t, m, "personMessage")
 	require.Equal(t, map[string]any{"schemas": 2.0, "tables": 50.0, "notGranted": 0.0}, m["counts"])
-	require.Equal(t, map[string]any{"kind": "POSTGRES", "database": "app"}, m["store"])
+	require.Equal(t, map[string]any{"kind": "POSTGRES", "database": "app", "host": "db.example.com"}, m["store"])
 	first := m["resources"].([]any)[0].(map[string]any)
 	require.Equal(t, map[string]any{"resource": "app.t001", "kind": "TABLE", "estimatedRows": 12.0, "access": []any{"SELECT"}}, first)
 	limits := m["limits"].(map[string]any)
@@ -680,10 +683,10 @@ func TestDescribeErrorsStayInTheContract(t *testing.T) {
 			err  error
 			code string
 		}{
-			{&pgconn.PgError{Code: "42501", Message: "permission denied for table pg_class"}, CodeInternal},
-			{&pgconn.PgError{Code: "42703", Message: `column "x" does not exist`}, CodeInternal},
-			{&pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"}, CodeQueryTimeout},
-			{&pgconn.PgError{Code: "08006", Message: "connection failure"}, CodeUnavailable},
+			{postgres.MapError(&pgconn.PgError{Code: "42501", Message: "permission denied for table pg_class"}), CodeInternal},
+			{postgres.MapError(&pgconn.PgError{Code: "42703", Message: `column "x" does not exist`}), CodeInternal},
+			{postgres.MapError(&pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"}), CodeQueryTimeout},
+			{postgres.MapError(&pgconn.PgError{Code: "08006", Message: "connection failure"}), CodeUnavailable},
 			{errors.New("boom"), CodeInternal},
 		} {
 			s := describeService(t, &errCatalog{err: c.err}, fakeClasses{}, "")
@@ -791,4 +794,15 @@ func TestOverviewWithFiftySchemasHasNoOtherSchemas(t *testing.T) {
 	m := decodeBody(t, body)
 	require.Len(t, m["schemas"], 50)
 	require.NotContains(t, m, "otherSchemas")
+}
+
+func TestDescribeNotFoundHintsAtAnotherAgent(t *testing.T) {
+	t.Parallel()
+	cmds, err := NewCommands("bot", "/etc/basalt-test/engine.json", "linux", nil)
+	require.NoError(t, err)
+	s := &Service{Deps: Deps{Commands: cmds}}
+	msg := s.describeNotFoundSteps(NewSteps(), failure{tool: toolDescribe})
+	require.Contains(t, msg, "basalt init --remote --agent NAME")
+	require.Contains(t, msg, "another database")
+	require.NoError(t, CheckPersonMessage(msg))
 }

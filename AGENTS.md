@@ -32,7 +32,6 @@ scripts/       release and packaging scripts
 - Agents never approve and never revert. Approve and revert require a P-256 passkey signature verified **inside Postgres**.
 - If the guard cannot record or evaluate an agent's write, that write fails. Writes by people and the app are never blocked.
 - The admin credential is used once by `basalt init` and never stored. The engine holds only the agent's scoped credential.
-- Out of scope until after M4 (do not build): observe mode, logical replication, custom policies, the `changes` feed, sinks, webhooks, a web viewer beyond the approval and revert pages, other stores, Vault, any hosted service. One narrow exception in M3.5 (owner decision VC-1): the Vault relay at `relay.basaltvault.app`, which only forwards end-to-end encrypted link sessions between an engine and the portal page, stores no plaintext, credentials or ledger, has no accounts, and is never required (approvals fall back to long links). Its protocol is [CONTRACT.md, Vault channel](CONTRACT.md#vault-channel); the service itself is closed source and not in this repository.
 
 ## Wire format
 

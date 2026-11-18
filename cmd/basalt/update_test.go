@@ -71,7 +71,7 @@ func writeUserConfig(t *testing.T, h *fakeHost, body string, mode os.FileMode) {
 // configWith is a valid engine.json with updateCheck set to state.
 func configWith(state string) string {
 	return `{"socketDir":"/run/basalt","updateCheck":"` + state + `",` +
-		`"agents":[{"name":"bot","osUser":"u","credentialFile":"/etc/basalt/agents/bot.url"}]}`
+		`"agents":[{"name":"bot","osUser":"u","store":{"kind":"POSTGRES","credentialFile":"/etc/basalt/agents/bot.url"}}]}`
 }
 
 // releaseBuild makes this test binary a build with a release number.

@@ -22,6 +22,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -81,7 +82,7 @@ type Agent interface {
 	// RevertRequest is the request for the page holding secret, the
 	// revert's live link secret.
 	RevertRequest(ctx context.Context, id uuid.UUID, secret string) (revert.Request, error)
-	RelayRevert(ctx context.Context, r revert.Response) (guard.AppliedRevert, agent.Receipt, error)
+	RelayRevert(ctx context.Context, r revert.Response) (action.AppliedRevert, agent.Receipt, error)
 	// RescopeRevert changes the revert's scope for the page holding secret
 	// (CONTRACT.md, Rescope, widen and reject).
 	RescopeRevert(ctx context.Context, id uuid.UUID, secret string, in agent.ScopeRequest) (agent.ScopeResponse, error)
@@ -263,14 +264,14 @@ type approvedDTO struct {
 // appliedDTO is the relay's answer for a revert: the result basalt revert
 // --apply --json prints, with the engine's receipt or why there is none.
 type appliedDTO struct {
-	guard.AppliedRevert
+	action.AppliedRevert
 	Receipt   string `json:"receipt,omitempty"`
 	NoReceipt string `json:"noReceipt,omitempty"`
 }
 
 // relayedRevert is what RelayRevert returns, for find.
 type relayedRevert struct {
-	applied guard.AppliedRevert
+	applied action.AppliedRevert
 	receipt agent.Receipt
 }
 

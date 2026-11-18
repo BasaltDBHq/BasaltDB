@@ -27,8 +27,8 @@ func writeAgentFixture(t *testing.T) (credFile, configPath string) {
 	require.NoError(t, os.WriteFile(agentFile, []byte(agentCfgURL+"\n"), 0o600))
 	raw, err := json.Marshal(map[string]any{
 		"socketDir": "/tmp/basalt-test", // short: the config check bounds socket paths
-		"agents": []map[string]string{{
-			"name": testAgentKey, "osUser": "tester", "credentialFile": agentFile,
+		"agents": []map[string]any{{
+			"name": testAgentKey, "osUser": "tester", "store": map[string]string{"kind": "POSTGRES", "credentialFile": agentFile},
 		}},
 	})
 	require.NoError(t, err)

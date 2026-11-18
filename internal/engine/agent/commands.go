@@ -11,9 +11,9 @@ import (
 	"github.com/google/uuid"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
-	"github.com/basaltdbhq/basaltdb/internal/guard"
 )
 
 // Commands builds the commands the person runs, for one agent: complete and
@@ -163,7 +163,7 @@ func (c Commands) Approve(id uuid.UUID) string {
 }
 
 // Revert opens the revert page for scope.
-func (c Commands) Revert(scope guard.RevertScope) string {
+func (c Commands) Revert(scope action.Scope) string {
 	return c.verb("revert", "--"+strings.ToLower(string(scope.Kind)), scope.ID.String(), "--open")
 }
 
@@ -328,7 +328,7 @@ func SetupCode(code string) string { return "basalt init --setup-code " + code }
 
 // RevertDryRun is the person's command that prepares the revert of scope
 // without signing it and prints what it would do.
-func (c Commands) RevertDryRun(scope guard.RevertScope) string {
+func (c Commands) RevertDryRun(scope action.Scope) string {
 	return c.verb("revert", "--"+strings.ToLower(string(scope.Kind)), scope.ID.String(), "--dry-run")
 }
 

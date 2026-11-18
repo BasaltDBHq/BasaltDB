@@ -8,7 +8,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 )
 
-const vaultAgents = `"socketDir": "/s", "agents": [{"name": "a", "osUser": "u", "credentialFile": "/c"}]`
+const vaultAgents = `"socketDir": "/s", "agents": [{"name": "a", "osUser": "u", "store": {"kind": "POSTGRES", "credentialFile": "/c"}}]`
 
 func TestLoadVault(t *testing.T) {
 	t.Parallel()

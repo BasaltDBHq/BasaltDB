@@ -25,7 +25,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	std := stdio{in: os.Stdin, out: os.Stdout, err: os.Stderr}
 	note := startUpdateNotice(ctx, os.Args[1:], std, os.Getenv)
-	code := run(ctx, os.Args[1:], std)
+	code := runGuarded(ctx, os.Args[1:], std)
 	note()
 	stop()
 	os.Exit(code)
@@ -59,6 +59,7 @@ func commands() []command {
 		{"classify", "Suggest and confirm the PII class of every column the agents can read", withIO(runClassify)},
 		{"upgrade", "Add the guard migrations this build has and the database lacks", withIO(runUpgrade)},
 		{"uninstall", "Remove the guard, its ledger and its roles from Postgres", withIO(runUninstall)},
+		{"crash", "List, show or file the crash reports saved on this machine (list | show <id> | report <id>)", withIO(runCrash)},
 		{"version", "Print the version", runVersion},
 		{"help", "Show this help", nil},
 	}
@@ -91,6 +92,11 @@ func runVersion(_ context.Context, _ []string, io stdio) int {
 	return exitOK
 }
 
+// manyAgentsHelp tells an agent reading --help how to connect another
+// database: one engine serves many agents, each on one database.
+const manyAgentsHelp = "One engine serves many agents. Each agent uses one database. To connect another database,\n" +
+	"add another agent: basalt init --remote --agent NAME."
+
 func usage(w io.Writer) {
 	fmt.Fprintln(w, "basalt - the action ledger for AI agents on your Postgres")
 	fmt.Fprintln(w)
@@ -99,6 +105,8 @@ func usage(w io.Writer) {
 	for _, cmd := range commands() {
 		fmt.Fprintf(w, "  %-10s %s\n", cmd.name, cmd.summary)
 	}
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, manyAgentsHelp)
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Exit codes: 0 ok, 1 error, 2 usage error.")
 	fmt.Fprintln(w)

@@ -10,11 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/mcp/mcptest"
@@ -123,8 +124,8 @@ func pendingItem(s *Service, status string, expires time.Time) PendingItem {
 
 func resultCases() map[string]resultCase {
 	revertArgs := map[string]any{"revertId": caseRevertID}
-	run := guard.RevertScope{Kind: revert.ScopeRun, ID: uuid.MustParse(caseRunID)}
-	task := guard.RevertScope{Kind: revert.ScopeTask, ID: uuid.MustParse(caseRunID)}
+	run := action.Scope{Kind: revert.ScopeRun, ID: uuid.MustParse(caseRunID)}
+	task := action.Scope{Kind: revert.ScopeTask, ID: uuid.MustParse(caseRunID)}
 	state := func(status string) func(*testing.T, *Service) (string, []mcp.Link, []mcp.NextStep) {
 		return func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
 			out, err := s.revertState(context.Background(), caseRevertWith(t, status))
@@ -134,7 +135,7 @@ func resultCases() map[string]resultCase {
 	}
 	batch := func(status string) func(*testing.T, *Service) (string, []mcp.Link, []mcp.NextStep) {
 		return func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
-			person, steps, err := s.batchGuidance(guard.BatchResult{
+			person, steps, err := s.batchGuidance(action.BatchResult{
 				RevertID: uuid.MustParse(caseRevertID), Batch: 5, Status: status, Restored: 1000, Skipped: 9,
 			})
 			require.NoError(t, err)

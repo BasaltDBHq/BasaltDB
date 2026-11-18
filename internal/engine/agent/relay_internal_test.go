@@ -144,8 +144,8 @@ func newRelayEnv(t *testing.T, opts vaulttest.Options, rnd io.Reader, connect bo
 	store := links.NewSecrets(e.clock.Now, e.rnd)
 	store.OnDrop(e.client.Unregister)
 	d := deps()
-	d.Approvals = catalogApprovals{}
-	d.Reverts = catalogReverts{}
+	setApprovals(&d, catalogApprovals{})
+	setReverts(&d, catalogReverts{})
 	d.PagesBase = links.Portal
 	d.Links = store
 	d.Relay = e.client

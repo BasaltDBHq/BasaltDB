@@ -15,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 // The files basalt init --remote keeps next to an agent's credential file
@@ -115,6 +116,8 @@ func (f *setupFinisher) PendingRecorded(ctx context.Context, id uuid.UUID) (reco
 	ctx, cancel := context.WithTimeout(ctx, pendingLoginTimeout)
 	defer cancel()
 	conn, err := f.connect(ctx, dsn)
+	// The service reads store errors mapped (postgres.MapError).
+	err = postgres.MapError(err)
 	switch {
 	case agent.LoginRefused(err):
 		return false, false, nil // the person has not run the code yet

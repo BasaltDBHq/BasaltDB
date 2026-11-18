@@ -1,0 +1,29 @@
+{
+  "body": {
+    "code": "ROW_LIMIT_EXCEEDED",
+    "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
+    "message": "ROW_LIMIT_EXCEEDED: more than 50 rows in one action (cascades included)",
+    "nextSteps": [
+      {
+        "action": "STOP",
+        "actor": "AGENT",
+        "text": "Do not split the write to get around the limit, and do not retry it as it is."
+      },
+      {
+        "action": "ASK_PERSON",
+        "actor": "AGENT",
+        "text": "Tell the person the write touches more than 50 rows, cascades included, and ask whether to run it in held batches."
+      },
+      {
+        "action": "RETRY_SMALLER_BATCHES",
+        "actor": "AGENT",
+        "maxRows": 50,
+        "text": "Do this only on an explicit yes: write in batches of at most 50 rows, same intent and run; the person approves each batch."
+      }
+    ],
+    "personMessage": "The agent's write touches more than 50 rows (cascades included). It will ask you whether to run it in batches of up to 50 rows; you approve each batch with your passkey.",
+    "sqlState": "BS003"
+  },
+  "isError": true,
+  "tool": "write"
+}

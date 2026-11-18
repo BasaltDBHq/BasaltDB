@@ -13,10 +13,11 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 // A full pool must not wedge the agent: writes that hold every connection
@@ -30,7 +31,7 @@ func TestFullPoolDoesNotWedgeReloads(t *testing.T) {
 	f.classify(t, time.Now())
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	pool, err := agentdb.NewPool(ctx, f.agent.URL, 2)
+	pool, err := postgres.NewPool(ctx, f.agent.URL, 2)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	dict, _ := newDict(t, pii.DefaultDictionaryOptions())
@@ -53,7 +54,7 @@ func TestFullPoolDoesNotWedgeReloads(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// plain has no classes: its oid is unknown, so each result reloads.
-	label := agentdb.Column{Name: "label", TableOID: f.oid(t, "public.plain"), Attnum: 2}
+	label := action.Column{Name: "label", TableOID: f.oid(t, "public.plain"), Attnum: 2}
 	rows := []map[string]any{{"label": "x"}}
 	var wg sync.WaitGroup
 	errs := make(chan error, len(txs))
@@ -61,7 +62,7 @@ func TestFullPoolDoesNotWedgeReloads(t *testing.T) {
 		wg.Go(func() {
 			octx, ocancel := context.WithTimeout(ctx, 10*time.Second)
 			defer ocancel()
-			errs <- obs.Returned(octx, tx, []agentdb.Column{label}, rows)
+			errs <- obs.Returned(octx, tx, []action.Column{label}, rows)
 		})
 	}
 	wg.Wait()
@@ -83,17 +84,17 @@ func TestConcurrentUnknownOIDWritesOnAFullPool(t *testing.T) {
 	f.classify(t, time.Now())
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	pool, err := agentdb.NewPool(ctx, f.agent.URL, 2)
+	pool, err := postgres.NewPool(ctx, f.agent.URL, 2)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	dict, _ := newDict(t, pii.DefaultDictionaryOptions())
 	classes := NewMap(slog.New(slog.DiscardHandler))
 	obs := NewObserver(classes, dict)
-	store := agentdb.NewStore(pool, sqlguard.DefaultLimits(), time.Now).WithReturned(obs.Returned)
-	reader := agentdb.NewReader(pool, sqlguard.DefaultLimits(), time.Now)
+	store := postgres.NewStore(pool, sqlguard.DefaultLimits(), time.Now).WithReturned(obs.Returned)
+	reader := postgres.NewReader(pool, sqlguard.DefaultLimits(), time.Now)
 	scan := NewScanner(dict, []ScanSource{{Agent: "bot", DB: pool, Classes: classes, Limits: sqlguard.DefaultLimits()}},
 		ScanOptions{}, slog.New(slog.DiscardHandler))
-	in := guard.Intent{RunID: uuidV7(t), TaskID: uuidV7(t), Text: "touch customers"}
+	in := action.Intent{RunID: uuidV7(t), TaskID: uuidV7(t), Text: "touch customers"}
 	require.NoError(t, store.StartRun(ctx, in))
 
 	var wg sync.WaitGroup
@@ -107,7 +108,7 @@ func TestConcurrentUnknownOIDWritesOnAFullPool(t *testing.T) {
 		wg.Go(func() {
 			for range 4 {
 				// p.label comes from plain, a table with no classes.
-				_, err := store.Write(ctx, in, sqlguard.OpUpdate,
+				_, err := store.Write(ctx, in, action.OpUpdate,
 					`UPDATE customers c SET note = 'n' FROM plain p WHERE c.id = $1 AND p.id = 1 RETURNING c.email, p.label`, []any{id})
 				report(err)
 			}
@@ -127,7 +128,7 @@ func TestConcurrentUnknownOIDWritesOnAFullPool(t *testing.T) {
 	})
 	wg.Go(func() {
 		for range 4 {
-			res, err := reader.Read(ctx, `SELECT label FROM plain`, nil, nil)
+			res, err := reader.Read(ctx, `SELECT label FROM plain`, nil, action.Statement{})
 			if err == nil {
 				err = obs.Observe(ctx, pool, res.Columns, res.Rows)
 			}
@@ -170,7 +171,7 @@ func TestScanWarnsWhenBuildsKeepFailing(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	f.classify(t, time.Now())
-	pool, err := agentdb.NewPool(context.Background(), f.agent.URL, 1)
+	pool, err := postgres.NewPool(context.Background(), f.agent.URL, 1)
 	require.NoError(t, err)
 	pool.Close() // every cycle fails
 	dict, _ := newDict(t, pii.DefaultDictionaryOptions())

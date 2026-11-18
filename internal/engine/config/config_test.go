@@ -24,7 +24,7 @@ func TestLoad(t *testing.T) {
 	t.Parallel()
 	path := write(t, "engine.json", `{
 		"socketDir": "/run/basalt",
-		"agents": [{"name": "tracker_bot", "osUser": "iman", "credentialFile": "/etc/basalt/agents/tracker_bot.url"}],
+		"agents": [{"name": "tracker_bot", "osUser": "iman", "store": {"kind": "POSTGRES", "credentialFile": "/etc/basalt/agents/tracker_bot.url"}}],
 		"limits": {"statementTimeoutMs": 2500, "readRowLimit": 200}
 	}`, 0o600)
 	c, err := config.Load(path)
@@ -37,15 +37,15 @@ func TestLoad(t *testing.T) {
 func TestLoadRefuses(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
-		"unknown key":     `{"socketDir": "/s", "agents": [{"name": "a", "osUser": "u", "credentialFile": "/c"}], "extra": 1}`,
+		"unknown key":     `{"socketDir": "/s", "agents": [{"name": "a", "osUser": "u", "store": {"kind": "POSTGRES", "credentialFile": "/c"}}], "extra": 1}`,
 		"no agents":       `{"socketDir": "/s", "agents": []}`,
-		"no socket dir":   `{"agents": [{"name": "a", "osUser": "u", "credentialFile": "/c"}]}`,
-		"bad name":        `{"socketDir": "/s", "agents": [{"name": "Bot!", "osUser": "u", "credentialFile": "/c"}]}`,
-		"duplicate name":  `{"socketDir": "/s", "agents": [{"name": "a", "osUser": "u", "credentialFile": "/c"}, {"name": "a", "osUser": "v", "credentialFile": "/d"}]}`,
-		"no os user":      `{"socketDir": "/s", "agents": [{"name": "a", "credentialFile": "/c"}]}`,
-		"negative limit":  `{"socketDir": "/s", "agents": [{"name": "a", "osUser": "u", "credentialFile": "/c"}], "limits": {"readRowLimit": -1}}`,
+		"no socket dir":   `{"agents": [{"name": "a", "osUser": "u", "store": {"kind": "POSTGRES", "credentialFile": "/c"}}]}`,
+		"bad name":        `{"socketDir": "/s", "agents": [{"name": "Bot!", "osUser": "u", "store": {"kind": "POSTGRES", "credentialFile": "/c"}}]}`,
+		"duplicate name":  `{"socketDir": "/s", "agents": [{"name": "a", "osUser": "u", "store": {"kind": "POSTGRES", "credentialFile": "/c"}}, {"name": "a", "osUser": "v", "store": {"kind": "POSTGRES", "credentialFile": "/d"}}]}`,
+		"no os user":      `{"socketDir": "/s", "agents": [{"name": "a", "store": {"kind": "POSTGRES", "credentialFile": "/c"}}]}`,
+		"negative limit":  `{"socketDir": "/s", "agents": [{"name": "a", "osUser": "u", "store": {"kind": "POSTGRES", "credentialFile": "/c"}}], "limits": {"readRowLimit": -1}}`,
 		"not json":        `socketDir=/s`,
-		"socket too long": `{"socketDir": "/` + strings.Repeat("d", 100) + `", "agents": [{"name": "a", "osUser": "u", "credentialFile": "/c"}]}`,
+		"socket too long": `{"socketDir": "/` + strings.Repeat("d", 100) + `", "agents": [{"name": "a", "osUser": "u", "store": {"kind": "POSTGRES", "credentialFile": "/c"}}]}`,
 	}
 	for name, content := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -105,6 +105,25 @@ func TestDefaults(t *testing.T) {
 	require.Equal(t, "/Library/Application Support/Basalt/state", config.DefaultStateDir("darwin"))
 	require.Equal(t, "/srv/state", config.Config{StateDir: "/srv/state"}.StateDirFor("linux"))
 	require.Equal(t, "/var/lib/basalt", config.Config{}.StateDirFor("linux"))
+}
+
+// An agent's store binding: an unknown or unserved kind is refused, naming
+// the agent, and the old top-level credentialFile is not read.
+func TestLoadRefusesStoreBindings(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"unserved kind": `{"socketDir": "/s", "agents": [{"name": "a", "osUser": "u", "store": {"kind": "MYSQL", "credentialFile": "/c"}}]}`,
+		"unknown kind":  `{"socketDir": "/s", "agents": [{"name": "a", "osUser": "u", "store": {"kind": "ORACLE", "credentialFile": "/c"}}]}`,
+		"no kind":       `{"socketDir": "/s", "agents": [{"name": "a", "osUser": "u", "store": {"credentialFile": "/c"}}]}`,
+		"no store":      `{"socketDir": "/s", "agents": [{"name": "a", "osUser": "u"}]}`,
+		"old place":     `{"socketDir": "/s", "agents": [{"name": "a", "osUser": "u", "credentialFile": "/c"}]}`,
+	}
+	for name, content := range cases {
+		_, err := config.Load(write(t, "engine.json", content, 0o600))
+		require.Error(t, err, name)
+	}
+	_, err := config.Load(write(t, "engine.json", `{"socketDir": "/s", "agents": [{"name": "bot", "osUser": "u", "store": {"kind": "S3", "credentialFile": "/c"}}]}`, 0o600))
+	require.ErrorContains(t, err, `agent bot: store kind "S3" is not served`)
 }
 
 func TestUpdateCheckKey(t *testing.T) {

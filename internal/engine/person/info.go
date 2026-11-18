@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 )
 
 // STATUS and TARGET (CONTRACT.md, The person socket): what basalt status and
@@ -83,5 +84,37 @@ func (c Client) Status(ctx context.Context, agent string) (StatusDTO, error) {
 func (c Client) Target(ctx context.Context, agent string) (TargetDTO, error) {
 	var out TargetDTO
 	err := c.call(ctx, agent, MethodTarget, emptyParams{}, &out)
+	return out, err
+}
+
+// AgentDTO is one entry of AGENTS: an agent and the database it uses, by
+// name and host only. Never a user, port, password or credential path.
+type AgentDTO struct {
+	Agent    string `json:"agent"`
+	Host     string `json:"host"`
+	Database string `json:"database"`
+}
+
+// listAgents is AGENTS: the engine's agents by name, with each one's
+// database and host. The peer is the person's uid, or an agent's OS user,
+// which sees only the agents it runs (SM-4).
+func (s *Server) listAgents(uid uint32) []AgentDTO {
+	scope, isAgent := s.scopes[uid]
+	out := make([]AgentDTO, 0, len(s.info))
+	for name, info := range s.info {
+		if isAgent && !scope[name] {
+			continue
+		}
+		out = append(out, AgentDTO{Agent: name, Host: info.Target.Host, Database: info.Target.Database})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Agent < out[j].Agent })
+	return out
+}
+
+// Agents asks AGENTS: every agent the engine serves this peer, with its
+// database name and host.
+func (c Client) Agents(ctx context.Context) ([]AgentDTO, error) {
+	var out []AgentDTO
+	err := c.call(ctx, "", MethodAgents, emptyParams{}, &out)
 	return out, err
 }

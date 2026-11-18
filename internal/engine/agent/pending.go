@@ -76,7 +76,7 @@ func (s *Service) ListPending(ctx context.Context, p PendingParams) (pagination.
 	var entries []PendingEntry
 	more := false
 	if p.Kind != KindRevert && p.Status != ledger.RevertApplying {
-		page, err := s.Approvals.ListApprovals(ctx, ledger.ApprovalListParams{Params: p.Params, RunID: p.RunID, Status: p.Status})
+		page, err := s.Store.ListApprovals(ctx, ledger.ApprovalListParams{Params: p.Params, RunID: p.RunID, Status: p.Status})
 		if err != nil {
 			return pagination.Page[PendingEntry]{}, err
 		}
@@ -86,7 +86,7 @@ func (s *Service) ListPending(ctx context.Context, p PendingParams) (pagination.
 		more = page.NextCursor != ""
 	}
 	if p.Kind != KindApproval && p.Status != ledger.ApprovalApproved && p.RunID == uuid.Nil {
-		page, err := s.Reverts.ListOpenReverts(ctx, ledger.RevertListParams{Params: p.Params, Status: p.Status})
+		page, err := s.Store.ListOpenReverts(ctx, ledger.RevertListParams{Params: p.Params, Status: p.Status})
 		if err != nil {
 			return pagination.Page[PendingEntry]{}, err
 		}

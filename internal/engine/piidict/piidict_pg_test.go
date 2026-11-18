@@ -15,11 +15,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 // fixtureSQL is the app schema of these tests (fake values only):
@@ -53,7 +54,7 @@ func newFixture(t *testing.T) fixture {
 	d.Exec(t, fixtureSQL)
 	a := d.NewAgent(t, "bot", []string{"public.customers"},
 		[]string{"public.nokey", "public.orders", "public.emails_v", "public.plain"})
-	pool, err := agentdb.NewPool(context.Background(), a.URL, 4)
+	pool, err := postgres.NewPool(context.Background(), a.URL, 4)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
 	return fixture{db: d, agent: a, pool: pool}
@@ -329,8 +330,8 @@ func TestValuesReadAreInTheDictionaryAndTokenizedConsistently(t *testing.T) {
 	dict, keys := newDict(t, pii.DefaultDictionaryOptions())
 	obs := NewObserver(NewMap(slog.New(slog.DiscardHandler)), dict).On(f.pool)
 
-	reader := agentdb.NewReader(f.pool, sqlguard.DefaultLimits(), time.Now)
-	res, err := reader.Read(ctx, `SELECT c.id, c.email, c.phone, c.name, lower(c.email) AS computed, c.note FROM customers c ORDER BY c.id`, nil, nil)
+	reader := postgres.NewReader(f.pool, sqlguard.DefaultLimits(), time.Now)
+	res, err := reader.Read(ctx, `SELECT c.id, c.email, c.phone, c.name, lower(c.email) AS computed, c.note FROM customers c ORDER BY c.id`, nil, action.Statement{})
 	require.NoError(t, err)
 	require.False(t, dict.Contains(pii.EntityEmail, keys.TypedHash(pii.EntityEmail, "ada@corp.ee", "")))
 	require.NoError(t, obs.Observe(ctx, res.Columns, res.Rows))
@@ -370,19 +371,19 @@ func TestWriteReturningValuesAreAddedBeforeCommitAndFailClosed(t *testing.T) {
 	ctx := context.Background()
 	dict, keys := newDict(t, pii.DefaultDictionaryOptions())
 	obs := NewObserver(NewMap(slog.New(slog.DiscardHandler)), dict)
-	store := agentdb.NewStore(f.pool, sqlguard.DefaultLimits(), time.Now).WithReturned(obs.Returned)
-	in := guard.Intent{RunID: uuidV7(t), TaskID: uuidV7(t), Text: "add a customer"}
+	store := postgres.NewStore(f.pool, sqlguard.DefaultLimits(), time.Now).WithReturned(obs.Returned)
+	in := action.Intent{RunID: uuidV7(t), TaskID: uuidV7(t), Text: "add a customer"}
 	require.NoError(t, store.StartRun(ctx, in))
-	res, err := store.Write(ctx, in, sqlguard.OpInsert,
+	res, err := store.Write(ctx, in, action.OpInsert,
 		`INSERT INTO customers (id, email, name) VALUES (10, 'cy@corp.ee', 'Cy Young') RETURNING id, email, name`, nil)
 	require.NoError(t, err)
 	require.Len(t, res.Returning, 1)
 	require.True(t, dict.Contains(pii.EntityEmail, keys.TypedHash(pii.EntityEmail, "cy@corp.ee", "")))
 
 	// A value the dictionary cannot take rolls the write back.
-	refusing := agentdb.NewStore(f.pool, sqlguard.DefaultLimits(), time.Now).
+	refusing := postgres.NewStore(f.pool, sqlguard.DefaultLimits(), time.Now).
 		WithReturned(NewObserver(NewMap(slog.New(slog.DiscardHandler)), refusingDict{}).Returned)
-	_, err = refusing.Write(ctx, in, sqlguard.OpInsert,
+	_, err = refusing.Write(ctx, in, action.OpInsert,
 		`INSERT INTO customers (id, email) VALUES (11, 'dee@corp.ee') RETURNING email`, nil)
 	require.ErrorIs(t, err, pii.ErrDeltaFull)
 	require.NotContains(t, err.Error(), "dee@corp.ee", "errors name no value")
@@ -464,7 +465,7 @@ func TestConcurrentReadsReloadsAndScans(t *testing.T) {
 	dict, keys := newDict(t, pii.DefaultDictionaryOptions())
 	classes := NewMap(slog.New(slog.DiscardHandler))
 	obs := NewObserver(classes, dict).On(f.pool)
-	reader := agentdb.NewReader(f.pool, sqlguard.DefaultLimits(), time.Now)
+	reader := postgres.NewReader(f.pool, sqlguard.DefaultLimits(), time.Now)
 	s := NewScanner(dict, []ScanSource{{Agent: "bot", DB: f.pool, Classes: classes, Limits: sqlguard.DefaultLimits()}},
 		ScanOptions{}, slog.New(slog.DiscardHandler))
 	plain := ColumnRef{TableOID: f.oid(t, "public.plain"), Attnum: 2}
@@ -474,7 +475,7 @@ func TestConcurrentReadsReloadsAndScans(t *testing.T) {
 	for range 8 {
 		wg.Go(func() {
 			for range 5 {
-				res, err := reader.Read(ctx, `SELECT email, name FROM customers`, nil, nil)
+				res, err := reader.Read(ctx, `SELECT email, name FROM customers`, nil, action.Statement{})
 				if err == nil {
 					err = obs.Observe(ctx, res.Columns, res.Rows)
 				}

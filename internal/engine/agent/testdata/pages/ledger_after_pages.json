@@ -1,0 +1,280 @@
+{
+  "changes": [
+    {
+      "actor_kind": "AGENT",
+      "agent": "<prefix>_agent_bot",
+      "approval_id": "<id-1>",
+      "cascaded_rows": 0,
+      "change_id": "<id-2>",
+      "code": null,
+      "has_delete": false,
+      "intent": "Leads 21 to 35 went cold",
+      "mode": "APPLY",
+      "op": "UPDATE",
+      "params": [
+        "closed",
+        21,
+        35
+      ],
+      "reason": null,
+      "revert_id": null,
+      "reverted_by": null,
+      "rows": 15,
+      "run_id": "<id-3>",
+      "statement": "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3",
+      "status": "APPROVAL_PENDING",
+      "table_name": "public.leads",
+      "task_id": "<id-4>"
+    },
+    {
+      "actor_kind": "AGENT",
+      "agent": "<prefix>_agent_bot",
+      "approval_id": null,
+      "cascaded_rows": 0,
+      "change_id": "<id-5>",
+      "code": null,
+      "has_delete": false,
+      "intent": "They signed",
+      "mode": "APPLY",
+      "op": "UPDATE",
+      "params": [],
+      "reason": null,
+      "revert_id": null,
+      "reverted_by": null,
+      "rows": 3,
+      "run_id": "<id-6>",
+      "statement": "UPDATE leads SET status = 'won' WHERE id IN (71, 72, 73)",
+      "status": "APPLIED",
+      "table_name": "public.leads",
+      "task_id": "<id-7>"
+    }
+  ],
+  "ledger": [
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": null,
+      "depth": null,
+      "detail": {
+        "intent": "Close the stale leads",
+        "runId": "<id-3>",
+        "taskId": "<id-4>"
+      },
+      "kind": "RUN_STARTED",
+      "new_row": null,
+      "old_row": null,
+      "op": null,
+      "row_key": null,
+      "seq": 1,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-2>",
+      "depth": null,
+      "detail": {
+        "approvalId": "<id-1>",
+        "expiresAt": "<time>",
+        "intent": "Leads 21 to 35 went cold",
+        "rows": 15,
+        "rowsHash": "<rowsHash>",
+        "runId": "<id-3>",
+        "statement": "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3",
+        "taskId": "<id-4>"
+      },
+      "kind": "APPROVAL_PENDING",
+      "new_row": null,
+      "old_row": null,
+      "op": "UPDATE",
+      "row_key": null,
+      "seq": 2,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": null,
+      "depth": null,
+      "detail": {
+        "intent": "Win leads",
+        "runId": "<id-6>",
+        "taskId": "<id-7>"
+      },
+      "kind": "RUN_STARTED",
+      "new_row": null,
+      "old_row": null,
+      "op": null,
+      "row_key": null,
+      "seq": 3,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-5>",
+      "depth": 1,
+      "detail": {
+        "blindWrite": true,
+        "cascaded": false,
+        "newXmin": "<newXmin>",
+        "xmin": "<xmin>"
+      },
+      "kind": "ROW_CHANGE",
+      "new_row": {
+        "id": 71,
+        "name": "lead 71",
+        "score": 1,
+        "status": "won"
+      },
+      "old_row": {
+        "id": 71,
+        "name": "lead 71",
+        "score": 1,
+        "status": "open"
+      },
+      "op": "UPDATE",
+      "row_key": {
+        "id": 71
+      },
+      "seq": 4,
+      "table_name": "public.leads",
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-5>",
+      "depth": 1,
+      "detail": {
+        "blindWrite": true,
+        "cascaded": false,
+        "newXmin": "<newXmin>",
+        "xmin": "<xmin>"
+      },
+      "kind": "ROW_CHANGE",
+      "new_row": {
+        "id": 72,
+        "name": "lead 72",
+        "score": 2,
+        "status": "won"
+      },
+      "old_row": {
+        "id": 72,
+        "name": "lead 72",
+        "score": 2,
+        "status": "open"
+      },
+      "op": "UPDATE",
+      "row_key": {
+        "id": 72
+      },
+      "seq": 5,
+      "table_name": "public.leads",
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-5>",
+      "depth": 1,
+      "detail": {
+        "blindWrite": true,
+        "cascaded": false,
+        "newXmin": "<newXmin>",
+        "xmin": "<xmin>"
+      },
+      "kind": "ROW_CHANGE",
+      "new_row": {
+        "id": 73,
+        "name": "lead 73",
+        "score": 3,
+        "status": "won"
+      },
+      "old_row": {
+        "id": 73,
+        "name": "lead 73",
+        "score": 3,
+        "status": "open"
+      },
+      "op": "UPDATE",
+      "row_key": {
+        "id": 73
+      },
+      "seq": 6,
+      "table_name": "public.leads",
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": "<id-5>",
+      "depth": null,
+      "detail": {
+        "cascadedRows": 0,
+        "durationMs": "<durationMs>",
+        "intent": "They signed",
+        "rows": 3,
+        "runId": "<id-6>",
+        "statement": "UPDATE leads SET status = 'won' WHERE id IN (71, 72, 73)",
+        "status": "APPLIED",
+        "table": "public.leads",
+        "taskId": "<id-7>"
+      },
+      "kind": "CHANGE",
+      "new_row": null,
+      "old_row": null,
+      "op": "UPDATE",
+      "row_key": null,
+      "seq": 7,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": null,
+      "depth": null,
+      "detail": {
+        "expiresAt": "<time>",
+        "intent": "Undo the lead merge",
+        "revertId": "<id-8>",
+        "rows": 3,
+        "rowsHash": "<rowsHash>",
+        "scope": "RUN",
+        "scopeId": "<id-6>",
+        "select": {
+          "agents": [
+            "<prefix>_agent_bot"
+          ],
+          "runs": null,
+          "scope": "RUN",
+          "scopeId": "<id-6>",
+          "tables": null
+        },
+        "skipped": 0
+      },
+      "kind": "REVERT_PENDING",
+      "new_row": null,
+      "old_row": null,
+      "op": null,
+      "row_key": null,
+      "seq": 8,
+      "table_name": null,
+      "values_pruned": false
+    },
+    {
+      "agent": "<prefix>_agent_bot",
+      "change_id": null,
+      "depth": null,
+      "detail": {
+        "note": "Not now",
+        "revertId": "<id-8>",
+        "via": "LINK_OR_AGENT"
+      },
+      "kind": "REVERT_REJECTED",
+      "new_row": null,
+      "old_row": null,
+      "op": null,
+      "row_key": null,
+      "seq": 9,
+      "table_name": null,
+      "values_pruned": false
+    }
+  ]
+}

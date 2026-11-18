@@ -53,7 +53,7 @@ type Receipt struct {
 // signature was accepted, and signs its receipt. Only an approved (or
 // already applied) approval gets one.
 func (s *Service) approvalReceipt(ctx context.Context, id uuid.UUID) (Receipt, error) {
-	a, err := s.Approvals.FindApproval(ctx, id)
+	a, err := s.Store.FindApproval(ctx, id)
 	if err != nil {
 		return Receipt{}, err
 	}

@@ -1,0 +1,158 @@
+{
+  "body": {
+    "applyBy": "<time>",
+    "expiresAt": "<time>",
+    "items": [
+      {
+        "batch": 1,
+        "line": 1,
+        "outcome": "RESTORED",
+        "plan": {
+          "action": "RESTORE",
+          "cascaded": false,
+          "changeIds": [
+            "<id-1>"
+          ],
+          "key": {
+            "id": 1010
+          },
+          "now": {
+            "id": 1010,
+            "v": "agent"
+          },
+          "op": "UPDATE",
+          "set": {
+            "id": 1010,
+            "v": "before"
+          },
+          "table": "public.items"
+        }
+      },
+      {
+        "batch": 1,
+        "line": 2,
+        "outcome": "RESTORED",
+        "plan": {
+          "action": "RESTORE",
+          "cascaded": false,
+          "changeIds": [
+            "<id-1>"
+          ],
+          "key": {
+            "id": 1009
+          },
+          "now": {
+            "id": 1009,
+            "v": "agent"
+          },
+          "op": "UPDATE",
+          "set": {
+            "id": 1009,
+            "v": "before"
+          },
+          "table": "public.items"
+        }
+      },
+      {
+        "batch": 1,
+        "line": 3,
+        "outcome": "RESTORED",
+        "plan": {
+          "action": "RESTORE",
+          "cascaded": false,
+          "changeIds": [
+            "<id-1>"
+          ],
+          "key": {
+            "id": 1008
+          },
+          "now": {
+            "id": 1008,
+            "v": "agent"
+          },
+          "op": "UPDATE",
+          "set": {
+            "id": 1008,
+            "v": "before"
+          },
+          "table": "public.items"
+        }
+      },
+      {
+        "line": 4,
+        "outcome": "PENDING",
+        "plan": {
+          "action": "RESTORE",
+          "cascaded": false,
+          "changeIds": [
+            "<id-1>"
+          ],
+          "key": {
+            "id": 1007
+          },
+          "now": {
+            "id": 1007,
+            "v": "agent"
+          },
+          "op": "UPDATE",
+          "set": {
+            "id": 1007,
+            "v": "before"
+          },
+          "table": "public.items"
+        }
+      },
+      {
+        "line": 5,
+        "outcome": "PENDING",
+        "plan": {
+          "action": "RESTORE",
+          "cascaded": false,
+          "changeIds": [
+            "<id-1>"
+          ],
+          "key": {
+            "id": 1006
+          },
+          "now": {
+            "id": 1006,
+            "v": "agent"
+          },
+          "op": "UPDATE",
+          "set": {
+            "id": 1006,
+            "v": "before"
+          },
+          "table": "public.items"
+        }
+      }
+    ],
+    "lines": 1010,
+    "maxBatch": 200,
+    "nextCursor": "eyJzZXEiOjV9",
+    "nextSteps": [
+      {
+        "action": "CALL_TOOL",
+        "actor": "AGENT",
+        "arguments": {
+          "lines": [
+            4,
+            5
+          ],
+          "revertId": "<id-2>"
+        },
+        "text": "Apply these pending lines, in this order; then call revert_plan again for the next ones.",
+        "tool": "apply_revert_batch"
+      }
+    ],
+    "pending": 1007,
+    "restored": 3,
+    "revertId": "<id-2>",
+    "scope": "RUN",
+    "scopeId": "<id-3>",
+    "skipped": 0,
+    "status": "APPLYING"
+  },
+  "isError": false,
+  "tool": "revert_plan"
+}

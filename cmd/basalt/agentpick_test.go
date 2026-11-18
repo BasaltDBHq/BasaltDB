@@ -26,8 +26,8 @@ func twoAgentConfig(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "engine.json")
 	require.NoError(t, os.WriteFile(path, []byte(`{"socketDir": "/s", "agents": [
-		{"name": "helper", "osUser": "u", "credentialFile": "/c1"},
-		{"name": "bot", "osUser": "u", "credentialFile": "/c2"}]}`), 0o600))
+		{"name": "helper", "osUser": "u", "store": {"kind": "POSTGRES", "credentialFile": "/c1"}},
+		{"name": "bot", "osUser": "u", "store": {"kind": "POSTGRES", "credentialFile": "/c2"}}]}`), 0o600))
 	return path
 }
 

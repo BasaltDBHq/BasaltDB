@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
@@ -102,7 +102,7 @@ func (s *Service) applyBatchSteps(plan RevertPlan) ([]mcp.NextStep, error) {
 
 // batchGuidance is what apply_revert_batch adds to a batch's result: more
 // lines to read, or the plan's end.
-func (s *Service) batchGuidance(res guard.BatchResult) (string, []mcp.NextStep, error) {
+func (s *Service) batchGuidance(res action.BatchResult) (string, []mcp.NextStep, error) {
 	if res.Status != ledger.RevertApplied {
 		return "", applyingSteps(res.RevertID), nil
 	}

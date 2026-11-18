@@ -9,14 +9,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/jackc/pgx/v5"
-
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
-	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 	"github.com/basaltdbhq/basaltdb/pkg/uniqueid"
 )
 
@@ -28,15 +26,15 @@ const (
 	reasonNoPasskey           = "NO_PASSKEY"
 	reasonWaitEnded           = "WAIT_ENDED"
 	reasonNoRowsNow           = "NO_ROWS_NOW"
-	reasonAlreadyUsed         = "ALREADY_USED"
-	reasonDifferentWrite      = "DIFFERENT_WRITE"
-	reasonNotThisAgent        = "NOT_THIS_AGENT"
-	reasonLineInvalid         = "LINE_INVALID"
-	reasonPlanNotSigned       = "PLAN_NOT_SIGNED"
-	reasonDatabaseUnreachable = "DATABASE_UNREACHABLE"
-	reasonTooManyConnections  = "TOO_MANY_CONNECTIONS"
-	reasonCredentialRejected  = "CREDENTIAL_REJECTED" //nolint:gosec // a catalog reason, not a credential
-	reasonGuardMissing        = "GUARD_MISSING"
+	reasonAlreadyUsed         = action.ReasonAlreadyUsed
+	reasonDifferentWrite      = action.ReasonDifferentWrite
+	reasonNotThisAgent        = action.ReasonNotThisAgent
+	reasonLineInvalid         = action.ReasonLineInvalid
+	reasonPlanNotSigned       = action.ReasonPlanNotSigned
+	reasonDatabaseUnreachable = action.ReasonDatabaseUnreachable
+	reasonTooManyConnections  = action.ReasonTooManyConnections
+	reasonCredentialRejected  = action.ReasonCredentialRejected
+	reasonGuardMissing        = action.ReasonGuardMissing
 	reasonGuardOutdated       = "GUARD_OUTDATED"
 	reasonEngineUnreachable   = "ENGINE_UNREACHABLE"
 	reasonPagesOff            = "PAGES_OFF"
@@ -164,7 +162,7 @@ func (s *Service) errorGuidance(te *mcp.ToolError, f failure) ([]mcp.NextStep, s
 	case CodeSQLError:
 		sqlErrorSteps(b, te, f)
 	case CodeInvalidArgument:
-		invalidArgumentSteps(b, te, f)
+		person = invalidArgumentSteps(b, te, f)
 	case CodeUnavailable:
 		person = s.unavailableSteps(b, te, f)
 	case CodeInternal:
@@ -218,7 +216,7 @@ func staleReadQuery(message, runID string) (map[string]any, error) {
 	sort.Strings(cols)
 	conds, params := make([]string, 0, len(cols)), make([]any, 0, len(cols))
 	for i, c := range cols {
-		conds = append(conds, fmt.Sprintf("%s = $%d", pgx.Identifier{c}.Sanitize(), i+1))
+		conds = append(conds, fmt.Sprintf("%s = $%d", sanitizeIdent(c), i+1))
 		params = append(params, key[c])
 	}
 	args := map[string]any{"sql": "SELECT * FROM " + m[1] + " WHERE " + strings.Join(conds, " AND "), "params": params}
@@ -230,23 +228,23 @@ func staleReadQuery(message, runID string) (map[string]any, error) {
 
 // refusedText is the revision each statement refusal asks for.
 var refusedText = map[string]string{
-	string(sqlguard.ReasonParseError):         "Fix the SQL syntax as the message says, then call again.",
-	string(sqlguard.ReasonMultipleStatements): "Send exactly one statement per call: split it into separate calls.",
-	string(sqlguard.ReasonWrongTool):          "Send SELECT with query, and INSERT, UPDATE and DELETE with write.",
-	string(sqlguard.ReasonUtility):            "Only SELECT (query) and INSERT, UPDATE, DELETE (write) are allowed: use one of them.",
-	string(sqlguard.ReasonSelectInto):         "SELECT INTO creates a table: rewrite it as a plain SELECT.",
-	string(sqlguard.ReasonLockingRead):        "Drop FOR UPDATE and the other lock clauses: query reads without locking.",
-	string(sqlguard.ReasonMerge):              "MERGE is not allowed: use separate INSERT, UPDATE and DELETE statements.",
-	string(sqlguard.ReasonDataModifyingWith):  "Move the INSERT, UPDATE or DELETE out of the WITH and send it as its own write.",
-	string(sqlguard.ReasonFunction):           "Remove the call to the refused function the message names and use plain SQL.",
-	string(sqlguard.ReasonNotRepeatable):      "Rewrite the write with fixed values instead of ones that change between runs, then call it again.",
+	string(action.ReasonParseError):         "Fix the SQL syntax as the message says, then call again.",
+	string(action.ReasonMultipleStatements): "Send exactly one statement per call: split it into separate calls.",
+	string(action.ReasonWrongTool):          "Send SELECT with query, and INSERT, UPDATE and DELETE with write.",
+	string(action.ReasonUtility):            "Only SELECT (query) and INSERT, UPDATE, DELETE (write) are allowed: use one of them.",
+	string(action.ReasonSelectInto):         "SELECT INTO creates a table: rewrite it as a plain SELECT.",
+	string(action.ReasonLockingRead):        "Drop FOR UPDATE and the other lock clauses: query reads without locking.",
+	string(action.ReasonMerge):              "MERGE is not allowed: use separate INSERT, UPDATE and DELETE statements.",
+	string(action.ReasonDataModifyingWith):  "Move the INSERT, UPDATE or DELETE out of the WITH and send it as its own write.",
+	string(action.ReasonFunction):           "Remove the call to the refused function the message names and use plain SQL.",
+	string(action.ReasonNotRepeatable):      "Rewrite the write with fixed values instead of ones that change between runs, then call it again.",
 }
 
 // refusedSteps: most refusals are fixed by rewriting the statement; DDL and
 // the guard's own refusals are not the agent's to get around.
 func refusedSteps(b *Steps, te *mcp.ToolError, f failure) string {
 	switch te.Reason {
-	case string(sqlguard.ReasonDDL):
+	case string(action.ReasonDDL):
 		b.Stop("Do not retry and do not look for another way to change the schema.")
 		b.AskPerson("Tell the person which schema change you need; they make it themselves.")
 		return "The agent tried to change the database schema (DDL). Basalt never lets an agent do that. Make the change yourself if you want it."
@@ -259,7 +257,7 @@ func refusedSteps(b *Steps, te *mcp.ToolError, f failure) string {
 		return ""
 	}
 	tool := f.tool
-	if te.Reason == string(sqlguard.ReasonWrongTool) {
+	if te.Reason == string(action.ReasonWrongTool) {
 		tool = toolQuery // the statement went to write: it reads
 		if f.tool == toolQuery {
 			tool = toolWrite
@@ -526,25 +524,30 @@ func sqlErrorSteps(b *Steps, te *mcp.ToolError, f failure) {
 	b.ReviseCall(f.tool, nil, "Fix the statement as the database's message says, then call again.")
 }
 
-func invalidArgumentSteps(b *Steps, te *mcp.ToolError, f failure) {
+func invalidArgumentSteps(b *Steps, te *mcp.ToolError, f failure) string {
 	switch te.Reason {
 	case ReasonStaleCursor:
 		b.RepeatCall(f.tool, map[string]any{"cursor": nil}, 0, "The cursor is no longer valid: call again without cursor to start from the first page.")
-		return
+		return ""
 	case ReasonScopeFilter:
 		b.ReviseCall(f.tool, nil, "Call again without the refused entries the message names, or without that filter.")
 		if id := f.arg(argRunID); id != "" {
 			b.CallTool(toolRunHistory, map[string]any{argRunID: id}, "Read the run's history to see the tables you wrote in it.")
-			return
+			return ""
 		}
 		b.CallTool(toolListRuns, map[string]any{}, "List your runs to see your own runs in the task; run_history shows the tables each one wrote.")
-		return
+		return ""
 	case ReasonScopeFilterCap:
 		b.ReviseCall(f.tool, nil, fmt.Sprintf("Call again with at most %d runs and %d tables, or without the filter: the person "+
 			"can narrow it on the signing page.", revert.MaxFilter, revert.MaxFilter))
-		return
+		return ""
+	case ReasonAdminCredential:
+		b.AskPerson(adminCredentialAsk)
+		b.ReviseCall(f.tool, nil, adminCredentialRevise)
+		return adminCredentialPerson
 	}
 	b.ReviseCall(f.tool, nil, "Fix the arguments as the message says; the tool's input schema lists them.")
+	return ""
 }
 
 // unavailableSteps: a database the engine cannot reach is retried once; the
@@ -796,4 +799,11 @@ func setupPendingSteps(b *Steps, code, fingerprint string, blocking bool) string
 	b.EndTurn("End your turn: the person acts next.")
 	b.CallTool(toolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
 	return "This agent's setup has not run yet. On your own computer, run the basalt init --setup-code command the agent shows you." + check
+}
+
+// sanitizeIdent quotes a column name for the SQL a step suggests: in double
+// quotes, a double quote doubled and a NUL dropped.
+func sanitizeIdent(name string) string {
+	name = strings.ReplaceAll(name, "\x00", "")
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }

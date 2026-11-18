@@ -18,7 +18,7 @@ import (
 )
 
 // onePasskey answers the passkey count status reads; nothing else is called.
-type onePasskey struct{ agent.ApprovalStore }
+type onePasskey struct{ agent.SQLStore }
 
 func (onePasskey) Passkeys(context.Context) ([]passkey.Credential, error) {
 	return make([]passkey.Credential, 1), nil
@@ -28,8 +28,7 @@ func (onePasskey) Passkeys(context.Context) ([]passkey.Credential, error) {
 func vaultInStatus(t *testing.T, ev engineVault) map[string]any {
 	t.Helper()
 	svc := agent.NewService(agent.Deps{
-		Name: "bot", Reader: struct{ agent.Reader }{}, Store: struct{ agent.Store }{}, Reads: struct{ agent.ReadRecorder }{},
-		Approvals: onePasskey{}, Reverts: struct{ agent.RevertStore }{},
+		Name: "bot", Store: onePasskey{},
 		Log: quietLog(), Now: time.Now, Vault: ev,
 	})
 	r, err := svc.Status(context.Background())

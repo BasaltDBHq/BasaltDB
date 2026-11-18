@@ -390,7 +390,8 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 		}
 		fmt.Fprint(c.stderr, "usage: basalt init --agent NAME [--write schema.table,...] [--read schema.table,...] [flags]\n"+
 			"       basalt init --remote [flags]            the engine's machine, for a bot that sets up with a code (see basalt init --remote -h)\n"+
-			"       basalt init --setup-code CODE [flags]   run the setup code an agent made (see basalt init --setup-code -h)\n\nflags:\n")
+			"       basalt init --setup-code CODE [flags]   run the setup code an agent made (see basalt init --setup-code -h)\n\n"+
+			manyAgentsHelp+"\nRun init again with a new --agent NAME for each database you add.\n\nflags:\n")
 		fs.PrintDefaults()
 	}
 	if err := parse(fs, args); err != nil {

@@ -9,23 +9,21 @@ import (
 	"fmt"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
-	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 )
 
 // The agent cannot reveal hidden rows (CONTRACT.md, Approvals, Rows hidden
@@ -420,12 +418,9 @@ func TestAgentRoleCannotRevealDirectly(t *testing.T) {
 	requireRevealRefused(t, err, guard.CodeApprovalInvalid)
 
 	// A preview of the held write with a ticket the agent guessed.
-	pool, err := agentdb.NewPool(ctx, s.env.a.URL, 1)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	store := agentdb.NewStore(pool, sqlguard.DefaultLimits(), time.Now)
+	store := pgService(t, s.env.a.URL, withConns(1)).Store
 	in := guard.Intent{RunID: uuid.MustParse(s.heldRun), Text: "Lead 20 left"}
-	_, err = store.RevealPreview(ctx, in, sqlguard.OpDelete, dropLead, []any{json.Number("20")}, uuid.MustParse(s.approval), make([]byte, 16))
+	_, err = store.RevealPreview(ctx, action.Intent(in), action.OpDelete, dropLead, []any{json.Number("20")}, uuid.MustParse(s.approval), make([]byte, 16))
 	requireRevealRefused(t, err, guard.CodeApprovalInvalid)
 }
 
@@ -440,12 +435,9 @@ func TestApprovalRevealRowsChangedAndMismatch(t *testing.T) {
 	id := uuid.MustParse(s.approval)
 
 	// The person's ticket, opened as the engine does.
-	pool, err := agentdb.NewPool(ctx, s.env.a.URL, 1)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	store := agentdb.NewStore(pool, sqlguard.DefaultLimits(), time.Now)
+	store := pgService(t, s.env.a.URL, withConns(1)).Store
 	raw := make([]byte, links.SecretBytes)
-	_, err = rand.Read(raw)
+	_, err := rand.Read(raw)
 	require.NoError(t, err)
 	key, err := approval.RevealKey(raw)
 	require.NoError(t, err)
@@ -454,11 +446,11 @@ func TestApprovalRevealRowsChangedAndMismatch(t *testing.T) {
 	ticket, err := store.OpenReveal(ctx, id, s.personSigns(t)(ch), key)
 	require.NoError(t, err)
 	in := guard.Intent{RunID: uuid.MustParse(s.heldRun), Text: "Lead 20 left"}
-	_, err = store.RevealPreview(ctx, in, sqlguard.OpDelete, dropLead, []any{json.Number("21")}, id, ticket)
+	_, err = store.RevealPreview(ctx, action.Intent(in), action.OpDelete, dropLead, []any{json.Number("21")}, id, ticket)
 	requireRevealRefused(t, err, guard.CodeApprovalInvalid)
-	_, err = store.RevealPreview(ctx, in, sqlguard.OpDelete, dropLead+" AND status IS NOT NULL", []any{json.Number("20")}, id, ticket)
+	_, err = store.RevealPreview(ctx, action.Intent(in), action.OpDelete, dropLead+" AND status IS NOT NULL", []any{json.Number("20")}, id, ticket)
 	requireRevealRefused(t, err, guard.CodeApprovalInvalid)
-	rows, err := store.RevealPreview(ctx, in, sqlguard.OpDelete, dropLead, []any{json.Number("20")}, id, ticket)
+	rows, err := store.RevealPreview(ctx, action.Intent(in), action.OpDelete, dropLead, []any{json.Number("20")}, id, ticket)
 	require.NoError(t, err, "the held statement with its parameters")
 	require.Len(t, rows, 2)
 

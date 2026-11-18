@@ -64,6 +64,7 @@
   ],
   "store": {
     "database": "<database>",
+    "host": "db.example.com",
     "kind": "POSTGRES"
   }
 }

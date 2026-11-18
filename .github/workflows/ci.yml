@@ -133,9 +133,11 @@ jobs:
       - run: |
           echo '${{ toJSON(needs) }}'
           if [ '${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}' = true ]; then exit 1; fi
-          if [ '${{ github.event_name }}' != pull_request ] || [ '${{ github.event.pull_request.draft }}' = false ]; then
-            if [ '${{ contains(needs.*.result, 'skipped') }}' = true ]; then exit 1; fi
+          if [ '${{ github.event_name }}' = pull_request ] && [ '${{ github.event.pull_request.draft }}' = true ]; then
+            echo 'Draft pull request: the CI jobs did not run. Mark it ready for review to run them.'
+            exit 1
           fi
+          if [ '${{ contains(needs.*.result, 'skipped') }}' = true ]; then exit 1; fi
 
   # basalt engine --user in containers without systemd: the privilege drop as
   # root on every thread, then the compose example end to end (setup,

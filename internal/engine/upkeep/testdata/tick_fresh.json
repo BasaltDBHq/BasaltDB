@@ -1,0 +1,17 @@
+{
+  "chain": {
+    "BrokenAt": 0,
+    "Intact": true
+  },
+  "events": [
+    {
+      "detail": {
+        "engineVersion": "test",
+        "operatedBy": "PERSON",
+        "runId": null
+      },
+      "kind": "HEARTBEAT"
+    }
+  ],
+  "heartbeatStale": false
+}

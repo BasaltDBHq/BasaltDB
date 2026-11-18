@@ -1,0 +1,17 @@
+{
+  "body": {
+    "code": "INTENT_REQUIRED",
+    "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
+    "message": "write needs an intent: why this change is made",
+    "nextSteps": [
+      {
+        "action": "REVISE_CALL",
+        "actor": "AGENT",
+        "text": "Add an intent, one sentence saying why the change is made, then call write again.",
+        "tool": "write"
+      }
+    ]
+  },
+  "isError": true,
+  "tool": "write"
+}

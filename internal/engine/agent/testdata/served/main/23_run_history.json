@@ -1,0 +1,375 @@
+{
+  "body": {
+    "items": [
+      {
+        "actor": {
+          "kind": "AGENT",
+          "name": "<prefix>_agent_bot",
+          "runId": "<id-1>",
+          "taskId": "<id-2>"
+        },
+        "at": "<time>",
+        "cascadedRows": 0,
+        "changeId": "<id-10>",
+        "durationMs": "<durationMs>",
+        "intent": "Leads 21 to 31 went cold",
+        "op": "UPDATE",
+        "params": [
+          "closed",
+          21,
+          31
+        ],
+        "reason": {
+          "code": "APPROVAL_INVALID",
+          "message": "APPROVAL_INVALID: not approved yet: the person has not signed it with their passkey"
+        },
+        "rowChanges": [],
+        "rows": 0,
+        "statement": "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3",
+        "status": "REFUSED",
+        "target": {}
+      },
+      {
+        "actor": {
+          "kind": "AGENT",
+          "name": "<prefix>_agent_bot",
+          "runId": "<id-1>",
+          "taskId": "<id-2>"
+        },
+        "at": "<time>",
+        "cascadedRows": 0,
+        "changeId": "<id-11>",
+        "durationMs": "<durationMs>",
+        "intent": "No answer",
+        "op": "UPDATE",
+        "params": [
+          "lost",
+          42
+        ],
+        "reason": {
+          "code": "STALE_READ",
+          "message": "STALE_READ: public.leads {\"id\": 42} read at xmin <n>, now <n> (hint: read the row again in this run, then decide)"
+        },
+        "rowChanges": [],
+        "rows": 0,
+        "statement": "UPDATE leads SET status = $1 WHERE id = $2",
+        "status": "REFUSED",
+        "target": {}
+      },
+      {
+        "actor": {
+          "kind": "AGENT",
+          "name": "<prefix>_agent_bot",
+          "runId": "<id-1>",
+          "taskId": "<id-2>"
+        },
+        "at": "<time>",
+        "cascadedRows": 0,
+        "changeId": "<id-6>",
+        "durationMs": "<durationMs>",
+        "intent": "Tidy the lead list",
+        "op": "SELECT",
+        "params": [
+          42
+        ],
+        "rowChanges": [],
+        "rows": 1,
+        "statement": "SELECT id, status FROM leads WHERE id = $1",
+        "status": "APPLIED",
+        "target": {
+          "table": "leads"
+        }
+      },
+      {
+        "actor": {
+          "kind": "AGENT",
+          "name": "<prefix>_agent_bot",
+          "runId": "<id-1>",
+          "taskId": "<id-2>"
+        },
+        "at": "<time>",
+        "cascadedRows": 0,
+        "changeId": "<id-12>",
+        "durationMs": "<durationMs>",
+        "intent": "Set a column that is not there",
+        "op": "UPDATE",
+        "params": [],
+        "reason": {
+          "code": "SQL_ERROR",
+          "message": "column \"nope\" of relation \"leads\" does not exist"
+        },
+        "rowChanges": [],
+        "rows": 0,
+        "statement": "UPDATE leads SET nope = 1 WHERE id = 5",
+        "status": "REFUSED",
+        "target": {}
+      },
+      {
+        "actor": {
+          "kind": "AGENT",
+          "name": "<prefix>_agent_bot",
+          "runId": "<id-1>",
+          "taskId": "<id-2>"
+        },
+        "at": "<time>",
+        "cascadedRows": 0,
+        "changeId": "<id-13>",
+        "durationMs": "<durationMs>",
+        "intent": "Pay nobody",
+        "op": "UPDATE",
+        "params": [],
+        "reason": {
+          "code": "PERMISSION_DENIED",
+          "message": "permission denied for table payroll"
+        },
+        "rowChanges": [],
+        "rows": 0,
+        "statement": "UPDATE payroll SET amount = 0",
+        "status": "REFUSED",
+        "target": {}
+      },
+      {
+        "actor": {
+          "kind": "AGENT",
+          "name": "<prefix>_agent_bot",
+          "runId": "<id-1>",
+          "taskId": "<id-2>"
+        },
+        "at": "<time>",
+        "cascadedRows": 0,
+        "changeId": "<id-14>",
+        "durationMs": "<durationMs>",
+        "intent": "Tidy up",
+        "op": "OTHER",
+        "params": [],
+        "reason": {
+          "code": "STATEMENT_REFUSED",
+          "message": "DDL_NOT_ALLOWED: DropStmt"
+        },
+        "rowChanges": [],
+        "rows": 0,
+        "statement": "DROP TABLE leads",
+        "status": "REFUSED",
+        "target": {}
+      },
+      {
+        "actor": {
+          "kind": "AGENT",
+          "name": "<prefix>_agent_bot",
+          "runId": "<id-1>",
+          "taskId": "<id-2>"
+        },
+        "at": "<time>",
+        "cascadedRows": 0,
+        "changeId": "<id-15>",
+        "durationMs": "<durationMs>",
+        "intent": "Reset every score",
+        "op": "UPDATE",
+        "params": [],
+        "reason": {
+          "code": "ROW_LIMIT_EXCEEDED",
+          "message": "ROW_LIMIT_EXCEEDED: more than 50 rows in one action (cascades included)"
+        },
+        "rowChanges": [],
+        "rows": 0,
+        "statement": "UPDATE leads SET score = 1 WHERE id <= 60",
+        "status": "REFUSED",
+        "target": {}
+      },
+      {
+        "actor": {
+          "kind": "AGENT",
+          "name": "<prefix>_agent_bot",
+          "runId": "<id-1>",
+          "taskId": "<id-2>"
+        },
+        "at": "<time>",
+        "cascadedRows": 0,
+        "changeId": "<id-16>",
+        "intent": "Leads 21 to 31 went cold",
+        "op": "UPDATE",
+        "params": [
+          "closed",
+          21,
+          31
+        ],
+        "rowChanges": [],
+        "rows": 11,
+        "statement": "UPDATE leads SET status = $1 WHERE id BETWEEN $2 AND $3",
+        "status": "APPROVAL_PENDING",
+        "target": {
+          "table": "public.leads"
+        }
+      },
+      {
+        "actor": {
+          "kind": "AGENT",
+          "name": "<prefix>_agent_bot",
+          "runId": "<id-1>",
+          "taskId": "<id-2>"
+        },
+        "at": "<time>",
+        "cascadedRows": 0,
+        "changeId": "<id-4>",
+        "durationMs": "<durationMs>",
+        "intent": "Lead 4 duplicates lead 3",
+        "op": "UPDATE",
+        "params": [
+          "merged",
+          4
+        ],
+        "rowChanges": [
+          {
+            "after": {
+              "id": 4,
+              "name": "lead 4",
+              "score": 4,
+              "status": "merged"
+            },
+            "before": {
+              "id": 4,
+              "name": "lead 4",
+              "score": 4,
+              "status": "open"
+            },
+            "blindWrite": true,
+            "cascaded": false,
+            "key": {
+              "id": 4
+            },
+            "op": "UPDATE",
+            "pruned": false,
+            "redacted": false,
+            "table": "public.leads"
+          }
+        ],
+        "rows": 1,
+        "statement": "UPDATE leads SET status = $1 WHERE id = $2",
+        "status": "APPLIED",
+        "target": {
+          "table": "public.leads"
+        }
+      },
+      {
+        "actor": {
+          "kind": "AGENT",
+          "name": "<prefix>_agent_bot",
+          "runId": "<id-1>",
+          "taskId": "<id-2>"
+        },
+        "at": "<time>",
+        "cascadedRows": 0,
+        "changeId": "<id-17>",
+        "durationMs": "<durationMs>",
+        "intent": "Tidy the lead list",
+        "op": "SELECT",
+        "params": [],
+        "reason": {
+          "code": "PERMISSION_DENIED",
+          "message": "permission denied for table payroll"
+        },
+        "rowChanges": [],
+        "rows": 0,
+        "statement": "SELECT amount FROM payroll",
+        "status": "REFUSED",
+        "target": {}
+      },
+      {
+        "actor": {
+          "kind": "AGENT",
+          "name": "<prefix>_agent_bot",
+          "runId": "<id-1>",
+          "taskId": "<id-2>"
+        },
+        "at": "<time>",
+        "cascadedRows": 0,
+        "changeId": "<id-18>",
+        "durationMs": "<durationMs>",
+        "intent": "Tidy the lead list",
+        "op": "SELECT",
+        "params": [],
+        "reason": {
+          "code": "SQL_ERROR",
+          "message": "column \"nope\" does not exist"
+        },
+        "rowChanges": [],
+        "rows": 0,
+        "statement": "SELECT nope FROM leads",
+        "status": "REFUSED",
+        "target": {}
+      },
+      {
+        "actor": {
+          "kind": "AGENT",
+          "name": "<prefix>_agent_bot",
+          "runId": "<id-1>",
+          "taskId": "<id-2>"
+        },
+        "at": "<time>",
+        "cascadedRows": 0,
+        "changeId": "<id-19>",
+        "durationMs": "<durationMs>",
+        "intent": "Tidy the lead list",
+        "op": "SELECT",
+        "params": [],
+        "reason": {
+          "code": "QUERY_TIMEOUT",
+          "message": "the query returned more rows than the read row limit; add a LIMIT or a narrower WHERE"
+        },
+        "rowChanges": [],
+        "rows": 0,
+        "statement": "SELECT g FROM generate_series(1, 1001) g",
+        "status": "REFUSED",
+        "target": {}
+      },
+      {
+        "actor": {
+          "kind": "AGENT",
+          "name": "<prefix>_agent_bot",
+          "runId": "<id-1>",
+          "taskId": "<id-2>"
+        },
+        "at": "<time>",
+        "cascadedRows": 0,
+        "changeId": "<id-20>",
+        "durationMs": "<durationMs>",
+        "intent": "Tidy the lead list",
+        "op": "OTHER",
+        "params": [],
+        "reason": {
+          "code": "STATEMENT_REFUSED",
+          "message": "DDL_NOT_ALLOWED: DropStmt"
+        },
+        "rowChanges": [],
+        "rows": 0,
+        "statement": "DROP TABLE leads",
+        "status": "REFUSED",
+        "target": {}
+      },
+      {
+        "actor": {
+          "kind": "AGENT",
+          "name": "<prefix>_agent_bot",
+          "runId": "<id-1>",
+          "taskId": "<id-2>"
+        },
+        "at": "<time>",
+        "cascadedRows": 0,
+        "changeId": "<id-3>",
+        "durationMs": "<durationMs>",
+        "intent": "Tidy the lead list",
+        "op": "SELECT",
+        "params": [],
+        "rowChanges": [],
+        "rows": 3,
+        "statement": "SELECT id, status FROM leads WHERE id <= 3 ORDER BY id",
+        "status": "APPLIED",
+        "target": {
+          "table": "leads"
+        }
+      }
+    ]
+  },
+  "isError": false,
+  "tool": "run_history"
+}

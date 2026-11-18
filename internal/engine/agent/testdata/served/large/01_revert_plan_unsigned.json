@@ -1,0 +1,136 @@
+{
+  "body": {
+    "expiresAt": "<time>",
+    "items": [
+      {
+        "line": 1,
+        "outcome": "PENDING",
+        "plan": {
+          "action": "RESTORE",
+          "cascaded": false,
+          "changeIds": [
+            "<id-1>"
+          ],
+          "key": {
+            "id": 1010
+          },
+          "now": {
+            "id": 1010,
+            "v": "agent"
+          },
+          "op": "UPDATE",
+          "set": {
+            "id": 1010,
+            "v": "before"
+          },
+          "table": "public.items"
+        }
+      },
+      {
+        "line": 2,
+        "outcome": "PENDING",
+        "plan": {
+          "action": "RESTORE",
+          "cascaded": false,
+          "changeIds": [
+            "<id-1>"
+          ],
+          "key": {
+            "id": 1009
+          },
+          "now": {
+            "id": 1009,
+            "v": "agent"
+          },
+          "op": "UPDATE",
+          "set": {
+            "id": 1009,
+            "v": "before"
+          },
+          "table": "public.items"
+        }
+      },
+      {
+        "line": 3,
+        "outcome": "PENDING",
+        "plan": {
+          "action": "RESTORE",
+          "cascaded": false,
+          "changeIds": [
+            "<id-1>"
+          ],
+          "key": {
+            "id": 1008
+          },
+          "now": {
+            "id": 1008,
+            "v": "agent"
+          },
+          "op": "UPDATE",
+          "set": {
+            "id": 1008,
+            "v": "before"
+          },
+          "table": "public.items"
+        }
+      }
+    ],
+    "lines": 1010,
+    "links": [
+      {
+        "label": "Review and sign the revert",
+        "url": "http://localhost:8787/reverts/<id-2>#<fragment>"
+      }
+    ],
+    "maxBatch": 200,
+    "nextCursor": "eyJzZXEiOjN9",
+    "nextSteps": [
+      {
+        "action": "SEND_REQUEST",
+        "actor": "AGENT",
+        "text": "Send requestFile to the person first, once per item: attach the file at path (else one named fileName holding exactly text), or else each of blocks in a code block, one per message."
+      },
+      {
+        "action": "OPEN_LINK",
+        "actor": "PERSON",
+        "text": "Open the link, review the plan and sign it once with your passkey.",
+        "url": "http://localhost:8787/reverts/<id-2>#<fragment>"
+      },
+      {
+        "action": "TELL_AGENT",
+        "actor": "PERSON",
+        "text": "Tell the agent when you have signed."
+      },
+      {
+        "action": "END_TURN",
+        "actor": "AGENT",
+        "text": "End your turn: apply the lines only after the person says they signed."
+      }
+    ],
+    "pending": 1010,
+    "personMessage": "Revert of run <id-3>: 1010 rows to restore, 0 left as they are (changed after the agent). Why: Undo the bulk update. Expires <time>.\nIt covers 1010 rows: you sign once, and the agent restores it in batches within 24 hours.\nSign it with your passkey: open this link, then open the request file the agent sends you (or paste its text blocks). The page then shows a code for the agent:\n\nhttp://localhost:8787/reverts/<id-2>#<fragment>",
+    "requestFile": {
+      "blocks": [
+        "<request block>",
+        "<request block>",
+        "<request block>",
+        "<request block>",
+        "<request block>",
+        "<request block>",
+        "<request block>",
+        "<request block>"
+      ],
+      "fileName": "basalt-revert-<id-2>.txt",
+      "text": "<request text>"
+    },
+    "restored": 0,
+    "revertId": "<id-2>",
+    "revertUrl": "http://localhost:8787/reverts/<id-2>#<fragment>",
+    "scope": "RUN",
+    "scopeId": "<id-3>",
+    "skipped": 0,
+    "status": "PENDING"
+  },
+  "isError": false,
+  "tool": "revert_plan"
+}

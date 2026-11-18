@@ -16,9 +16,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/channel"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
 	"github.com/basaltdbhq/basaltdb/internal/engine/pages"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
@@ -26,7 +26,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
-	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 	"github.com/basaltdbhq/basaltdb/internal/vault"
 	"github.com/basaltdbhq/basaltdb/internal/vault/pagetest"
 )
@@ -71,21 +70,15 @@ func TestVaultSessionWidensARevert(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, guard.RegisterPasskey(ctx, d.Admin, person.Credential(), "app"))
 
-	pool, err := agentdb.NewPool(ctx, bot.URL, 2)
-	require.NoError(t, err)
-	t.Cleanup(pool.Close)
-	limits := sqlguard.DefaultLimits()
-	dbStore := agentdb.NewStore(pool, limits, time.Now)
-	prep, err := dbStore.PrepareRevert(ctx, guard.RevertScope{Kind: revert.ScopeTask, ID: task}, "Undo the task", agent.RescopeTimeout)
+	pg := newPGAgent(t, bot.URL, 2)
+	dbStore := pg.store
+	prep, err := dbStore.PrepareRevert(ctx, action.Scope{Kind: revert.ScopeTask, ID: task}, "Undo the task", agent.RescopeTimeout)
 	require.NoError(t, err)
 	id := prep.RevertID
 
 	secrets := links.NewSecrets(time.Now, rand.Reader)
 	relay := &lateRelay{}
-	svc := agent.NewService(agent.Deps{
-		Name: "bot", Reader: agentdb.NewReader(pool, limits, time.Now), Store: dbStore, Reads: dbStore, Approvals: dbStore,
-		Reverts: dbStore, Log: quietLog(), Now: time.Now, PagesBase: links.Portal, Links: secrets, Relay: relay,
-	})
+	svc := pg.service(func(d *agent.Deps) { d.PagesBase, d.Links, d.Relay = links.Portal, secrets, relay })
 	s := serveOverVault(t, &wire{}, svc, secrets, id)
 	relay.c.Store(s.client)
 

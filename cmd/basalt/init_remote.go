@@ -433,11 +433,11 @@ func (r *remoteInit) paths() error {
 			// As root the computed path is used, never the config's
 			// string: agents/sub/../bot.url passes the check but would
 			// resolve through agents/sub.
-			if _, err := config.RootCredentialPath(r.f.configPath, r.f.agent, r.entry.CredentialFile); err != nil {
-				return fmt.Errorf("%w; as root, basalt init --remote uses only that path. Fix the agent's credentialFile in the config", err)
+			if _, err := config.RootCredentialPath(r.f.configPath, r.f.agent, r.entry.Store.CredentialFile); err != nil {
+				return fmt.Errorf("%w; as root, basalt init --remote uses only that path. Fix the agent's store.credentialFile in the config", err)
 			}
 		} else {
-			r.credFile = r.entry.CredentialFile
+			r.credFile = r.entry.Store.CredentialFile
 		}
 		r.osUser = r.entry.OSUser
 	}
@@ -883,7 +883,7 @@ func (r *remoteInit) writeCredential(p plan) error {
 
 // writeConfig upserts the agent and prints the vault value it wrote.
 func (r *remoteInit) writeConfig(saved []string, s *config.Setup) error {
-	a := config.Agent{Name: r.f.agent, OSUser: r.osUser, CredentialFile: r.credFile, InitArgs: saved, Setup: s}
+	a := config.Agent{Name: r.f.agent, OSUser: r.osUser, Store: config.PostgresStore(r.credFile), InitArgs: saved, Setup: s}
 	var v config.VaultWritten
 	var err error
 	if r.configDir != nil {

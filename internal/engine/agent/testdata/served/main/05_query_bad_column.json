@@ -1,0 +1,18 @@
+{
+  "body": {
+    "code": "SQL_ERROR",
+    "docsUrl": "https://docs.basaltvault.app/reference/errors/#<fragment>",
+    "message": "column \"nope\" does not exist",
+    "nextSteps": [
+      {
+        "action": "REVISE_CALL",
+        "actor": "AGENT",
+        "text": "Fix the statement as the database's message says, then call again.",
+        "tool": "query"
+      }
+    ],
+    "sqlState": "42703"
+  },
+  "isError": true,
+  "tool": "query"
+}

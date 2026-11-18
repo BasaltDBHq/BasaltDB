@@ -13,13 +13,14 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/agentdb"
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/largevalue"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
 	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
@@ -191,10 +192,10 @@ func TestListOpenApprovalsReadsAHeldWrite(t *testing.T) {
 	in := newRun(t, a, "remove a lead")
 	ctx := context.Background()
 	sql := "DELETE FROM public.leads WHERE id = $1"
-	store := agentdb.NewStore(a.Conn, sqlguard.DefaultLimits(), time.Now)
-	lines, err := store.Preview(ctx, in, sql, []any{1}, nil)
+	store := postgres.NewStore(a.Conn, sqlguard.DefaultLimits(), time.Now)
+	lines, err := store.Preview(ctx, action.Intent(in), sql, []any{1}, nil)
 	require.NoError(t, err)
-	_, err = store.Hold(ctx, in, guard.HoldRequest{Statement: sql, Params: []any{1}, Lines: lines})
+	_, err = store.Hold(ctx, action.Intent(in), action.HoldRequest{Statement: sql, Params: []any{1}, Lines: lines})
 	require.NoError(t, err)
 	page, err := ledger.ListOpenApprovals(ctx, a.Conn, ledger.ApprovalListParams{Params: pagination.Params{Limit: 1}})
 	require.NoError(t, err)

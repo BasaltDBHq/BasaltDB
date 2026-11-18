@@ -12,6 +12,9 @@
 // verification off. Redirects are not followed, and no proxy is used: the
 // engine connects to the endpoint's host and port and nowhere else.
 //
+// DialLocal is the local path: the same calls over a Unix socket, HTTP/2
+// without TLS, to that socket only (see local.go).
+//
 // No payload value and no credential is ever written to a log or put in an
 // error: a failed call carries a failure class and nothing else.
 //
@@ -117,6 +120,13 @@ func dial(ctx context.Context, ep plugin.RemoteEndpoint, egress []string, creden
 		MaxIdleConnsPerHost:    maxIdleConnsPerHost,
 		IdleConnTimeout:        idleConnTimeout,
 	}
+	return newConn(tr, tgt.baseURL, auth, opts), nil
+}
+
+// newConn builds the transport both paths share: gRPC calls through tr to
+// baseURL, with the platform's method table, the size caps and the failure
+// classes. tr is the only thing that decides where the bytes go.
+func newConn(tr *http.Transport, baseURL string, auth func(http.Header), opts options) *conn {
 	httpClient := &http.Client{
 		Transport: tr,
 		// A redirect could lead outside the declared egress: never follow
@@ -132,7 +142,7 @@ func dial(ctx context.Context, ep plugin.RemoteEndpoint, egress []string, creden
 	for name, m := range table {
 		clients[name] = &call{
 			method: m,
-			client: connectrpc.NewClient[wireMessage, wireMessage](httpClient, tgt.baseURL+m.procedure,
+			client: connectrpc.NewClient[wireMessage, wireMessage](httpClient, baseURL+m.procedure,
 				connectrpc.WithGRPC(),
 				connectrpc.WithCodec(rawCodec{}),
 				// No compressed replies: a small gzip body could expand
@@ -144,7 +154,7 @@ func dial(ctx context.Context, ep plugin.RemoteEndpoint, egress []string, creden
 		}
 	}
 
-	return &conn{transport: tr, calls: clients, auth: auth, cancels: map[uint64]context.CancelFunc{}}, nil
+	return &conn{transport: tr, calls: clients, auth: auth, cancels: map[uint64]context.CancelFunc{}}
 }
 
 // probe makes one TLS connection to the endpoint and closes it, so a server

@@ -52,7 +52,7 @@ One MCP server serves one agent, and one agent uses one database. No server rout
   }
   ```
 
-- **Codex.** In the project's `.codex/config.toml` (or `~/.codex/config.toml` for every project, which you should not do for a per-project database):
+- **Codex.** In the project's `.codex/config.toml` (Codex reads it only for a project you have trusted) (or `~/.codex/config.toml` for every project, which you should not do for a per-project database):
 
   ```toml
   [mcp_servers.basalt-NAME]

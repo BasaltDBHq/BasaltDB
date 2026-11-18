@@ -27,7 +27,7 @@ type agentRow struct {
 	Host     string `json:"host"`
 	Database string `json:"database"`
 	// Problem says why host and database are empty: the agent's credential
-	// could not be read or parsed. Never the file's path or contents.
+	// could not be read or parsed. Never the file's contents.
 	Problem string `json:"problem,omitempty"`
 }
 

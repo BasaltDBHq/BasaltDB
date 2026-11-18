@@ -69,7 +69,7 @@ A store is the system an agent's actions land in. The engine records every actio
 { "agents": [ { "name": "tracker-bot", "osUser": "basalt-tracker-bot", "store": { "kind": "POSTGRES", "credentialFile": "/etc/basalt/agents/tracker-bot.url" } } ] }
 ```
 
-`store.credentialFile` is the file that holds the agent's credential for that store (for `POSTGRES`, the connection string of its own `<prefix>_agent_<name>` role, as described under "One engine, many agents" in [CLI](#cli)). It replaces the `credentialFile` that used to sit directly on the agent; the old place is not read. An unknown `kind` is a config error that names the agent.
+`store.credentialFile` is the file that holds the agent's credential for that store (for `POSTGRES`, the connection string of its own `<prefix>_agent_<name>` role, as described under "One engine, many agents" in [CLI](#cli)). It replaces the `credentialFile` that used to sit directly on the agent; the old place is not read, and an `engine.json` that still has it is refused, whichever command loads it, with the edit that fixes it: `agent "<name>": "credentialFile" now goes inside "store"; replace "credentialFile": "<path>" with "store": {"kind": "POSTGRES", "credentialFile": "<path>"}`. An unknown `kind` is a config error that names the agent.
 
 **Guarantee levels.** A store is not always able to refuse what the engine would refuse, so each property has a level that says what holds when the engine is wrong or bypassed (for example, an attacker holds the engine's credential):
 

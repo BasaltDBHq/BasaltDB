@@ -36,3 +36,13 @@ func TestLoadRefusesParkedNotify(t *testing.T) {
 		require.ErrorContains(t, err, "Telegram", name)
 	}
 }
+
+// An agent with the older top-level credentialFile is refused with the edit
+// that fixes it, not the decoder's unknown-field text.
+func TestLoadRefusesOldCredentialFile(t *testing.T) {
+	t.Parallel()
+	path := write(t, "engine.json", `{"socketDir": "/s", "agents": [{"name": "a", "osUser": "u", "credentialFile": "/c/a.cred"}]}`, 0o600)
+	_, err := config.Load(path)
+	require.EqualError(t, err, "config "+path+`: agent "a": "credentialFile" now goes inside "store"; `+
+		`replace "credentialFile": "/c/a.cred" with "store": {"kind": "POSTGRES", "credentialFile": "/c/a.cred"}`)
+}

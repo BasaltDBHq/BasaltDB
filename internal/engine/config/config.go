@@ -348,6 +348,9 @@ func load(path string, open func(string) (*os.File, error)) (Config, error) {
 	if err := refuseParked(raw); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
+	if err := refuseOldCredentialFile(raw); err != nil {
+		return Config{}, fmt.Errorf("config %s: %w", path, err)
+	}
 	var c Config
 	dec := json.NewDecoder(strings.NewReader(string(raw)))
 	dec.DisallowUnknownFields()
@@ -406,6 +409,38 @@ func refuseParked(raw []byte) error {
 		if _, ok := keys["notify"]; ok {
 			return errNotifyParked
 		}
+	}
+	return nil
+}
+
+// refuseOldCredentialFile refuses an agent that still has the older
+// per-agent "credentialFile" key (it moved into "store"), with the exact
+// edit. The key is never read as a credential: only its value, as the path
+// to put into the edit, and only when it is a string. Every command that
+// loads engine.json gets this error, not the decoder's unknown-field one.
+func refuseOldCredentialFile(raw []byte) error {
+	var top struct {
+		Agents []map[string]json.RawMessage `json:"agents"`
+	}
+	//nolint:nilerr // not this shape: left to the decoder
+	if err := json.Unmarshal(raw, &top); err != nil {
+		return nil
+	}
+	for _, a := range top.Agents {
+		old, ok := a["credentialFile"]
+		if !ok {
+			continue
+		}
+		var name, path string
+		if err := json.Unmarshal(a["name"], &name); err != nil || name == "" {
+			name = "?"
+		}
+		if err := json.Unmarshal(old, &path); err != nil || path == "" {
+			path = "<path>"
+		}
+		return fmt.Errorf(`agent %q: "credentialFile" now goes inside "store"; `+
+			`replace "credentialFile": %q with "store": {"kind": "POSTGRES", "credentialFile": %q}`,
+			name, path, path)
 	}
 	return nil
 }

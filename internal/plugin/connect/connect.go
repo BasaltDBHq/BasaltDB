@@ -1,5 +1,5 @@
-// Package connect is the ConnectRPC adapter for remote plugins: it reaches a
-// plugin at an https URL and gives a plugin.Transport. It speaks the gRPC
+// Package connect is the ConnectRPC adapter: it reaches a remote plugin at an
+// https URL, or a local one on a Unix socket, and gives a plugin.Transport. It speaks the gRPC
 // protocol with binary protobuf over HTTP/2, which both a ConnectRPC server
 // and a plain gRPC server accept. The messages are the checked-in
 // basalt.plugin.v1 service (api/plugin/proto); the host's JSON-shaped params
@@ -11,6 +11,9 @@
 // URL's host against the system roots. There is no way to turn TLS
 // verification off. Redirects are not followed, and no proxy is used: the
 // engine connects to the endpoint's host and port and nowhere else.
+//
+// DialLocal is the local path: the same calls over a Unix socket, HTTP/2
+// without TLS, to that socket only (see local.go).
 //
 // No payload value and no credential is ever written to a log or put in an
 // error: a failed call carries a failure class and nothing else.
@@ -117,6 +120,13 @@ func dial(ctx context.Context, ep plugin.RemoteEndpoint, egress []string, creden
 		MaxIdleConnsPerHost:    maxIdleConnsPerHost,
 		IdleConnTimeout:        idleConnTimeout,
 	}
+	return newConn(tr, tgt.baseURL, auth, opts), nil
+}
+
+// newConn builds the transport both paths share: gRPC calls through tr to
+// baseURL, with the platform's method table, the size caps and the failure
+// classes. tr is the only thing that decides where the bytes go.
+func newConn(tr *http.Transport, baseURL string, auth func(http.Header), opts options) *conn {
 	httpClient := &http.Client{
 		Transport: tr,
 		// A redirect could lead outside the declared egress: never follow
@@ -132,7 +142,7 @@ func dial(ctx context.Context, ep plugin.RemoteEndpoint, egress []string, creden
 	for name, m := range table {
 		clients[name] = &call{
 			method: m,
-			client: connectrpc.NewClient[wireMessage, wireMessage](httpClient, tgt.baseURL+m.procedure,
+			client: connectrpc.NewClient[wireMessage, wireMessage](httpClient, baseURL+m.procedure,
 				connectrpc.WithGRPC(),
 				connectrpc.WithCodec(rawCodec{}),
 				// No compressed replies: a small gzip body could expand
@@ -144,7 +154,7 @@ func dial(ctx context.Context, ep plugin.RemoteEndpoint, egress []string, creden
 		}
 	}
 
-	return &conn{transport: tr, calls: clients, auth: auth, cancels: map[uint64]context.CancelFunc{}}, nil
+	return &conn{transport: tr, calls: clients, auth: auth, cancels: map[uint64]context.CancelFunc{}}
 }
 
 // probe makes one TLS connection to the endpoint and closes it, so a server
@@ -271,6 +281,13 @@ func (c *conn) classify(ctx context.Context, err error, dropped bool) error {
 	if c.isClosed() {
 		return plugin.Fail(plugin.ClassUnavailable) // closed while in flight
 	}
+	if dropped {
+		// The connection went away while the call was open and nothing came
+		// back, so no status of the plugin's own can be in the error. Which
+		// connect code the loss maps to (a reset, a closed stream) depends on
+		// how the peer died.
+		return plugin.Fail(plugin.ClassExited)
+	}
 	code := connectrpc.CodeOf(err)
 	if connectrpc.IsWireError(err) {
 		if code == connectrpc.CodeDeadlineExceeded {
@@ -282,10 +299,6 @@ func (c *conn) classify(ctx context.Context, err error, dropped bool) error {
 		return plugin.Fail(plugin.ClassBadResponse)
 	}
 	if code == connectrpc.CodeUnavailable {
-		if dropped {
-			// The connection went away while the call was open.
-			return plugin.Fail(plugin.ClassExited)
-		}
 		// No connection, or an HTTP 503 (or similar) in front of the plugin.
 		return plugin.Fail(plugin.ClassUnavailable)
 	}

@@ -40,6 +40,16 @@ That push is the only trigger for a GitHub Release. The first releases publish t
 
 Release notes come from [CHANGELOG.md](../CHANGELOG.md); GoReleaser does not generate them (`changelog.disable: true`).
 
+### Docs version
+
+The docs site at docs.basaltvault.app has one version per minor release, plus `master`. When a tag starts a new minor line (`v0.1.0`, or its first prerelease such as `v0.1.0-alpha`), cut a docs version the same day in [BasaltDBHq/basaltdb-documentation](https://github.com/BasaltDBHq/basaltdb-documentation):
+
+```bash
+npm run cut-version -- 0.1    # add --tag "latest · alpha" while the line is alpha
+```
+
+Then open its pull request and merge it. Patches and later prereleases in the same line need no cut; their docs changes go into that repository's latest-release pages. The repository's README describes the cut.
+
 ### Reproducible builds
 
 Release artifacts are reproducible: the same tagged commit built with the same Go toolchain (the `toolchain` line in `go.mod`) gives byte-identical archives, packages and `SHA256SUMS` on any machine. [`.goreleaser.yaml`](../.goreleaser.yaml) takes every timestamp from the commit being built, not from the clock:

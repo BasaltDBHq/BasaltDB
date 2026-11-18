@@ -1,0 +1,304 @@
+// Package connect is the ConnectRPC adapter for remote plugins: it reaches a
+// plugin at an https URL and gives a plugin.Transport. It speaks the gRPC
+// protocol with binary protobuf over HTTP/2, which both a ConnectRPC server
+// and a plain gRPC server accept. The messages are the checked-in
+// basalt.plugin.v1 service (api/plugin/proto); the host's JSON-shaped params
+// and results are carried through their proto3 JSON mapping.
+//
+// Dial refuses an endpoint before sending any request: plain http, a URL
+// with credentials, a query or a fragment, a host and port outside the
+// plugin's egress, and a server whose certificate does not verify for the
+// URL's host against the system roots. There is no way to turn TLS
+// verification off. Redirects are not followed, and no proxy is used: the
+// engine connects to the endpoint's host and port and nowhere else.
+//
+// No payload value and no credential is ever written to a log or put in an
+// error: a failed call carries a failure class and nothing else.
+//
+// The Go code under api/plugin/proto is generated from plugin.proto with
+// `make proto` (protoc on PATH; the protoc-gen-go and protoc-gen-connect-go
+// versions are the ones go.mod requires) and checked in. A test in
+// api/plugin checks that it still matches the .proto.
+package connect
+
+import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
+	"net"
+	"net/http"
+	"net/http/httptrace"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	connectrpc "connectrpc.com/connect"
+
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/protocol"
+)
+
+const (
+	connectTimeout      = 10 * time.Second
+	keepAlive           = 30 * time.Second
+	idleConnTimeout     = 90 * time.Second
+	maxResponseHeader   = 64 << 10
+	maxIdleConnsPerHost = 4 // the host keeps at most 4 calls open per entry
+)
+
+var (
+	errOtherAddress = errors.New("connect: dial to an address other than the endpoint's")
+	errUnknownCall  = errors.New("connect: the method has no ConnectRPC mapping")
+	errBadParams    = errors.New("connect: the params do not fit the method's message")
+	errRedirectStop = http.ErrUseLastResponse
+)
+
+// options are what tests change; Dial uses the zero value.
+type options struct {
+	// roots replaces the system roots. Only tests set it, to trust their
+	// own test server's certificate; it never relaxes verification.
+	roots *x509.CertPool
+	// methods adds calls to the platform's table.
+	methods map[string]method
+}
+
+// Dial checks a remote endpoint, connects to it once to verify its TLS
+// certificate, and returns a transport for it. egress is the manifest's
+// network.egress. credentialFile is the entry's auth.credentialFile, or ""
+// for none: the engine reads it here, once, and sends its contents as
+// "Authorization: Bearer <token>" on every call; the plugin never sees the
+// path. A refusal names the endpoint's host or the credential file, and
+// wraps one of the Err values of this package (or ctx's error).
+func Dial(ctx context.Context, ep plugin.RemoteEndpoint, egress []string, credentialFile string) (plugin.Transport, error) {
+	return dial(ctx, ep, egress, credentialFile, options{})
+}
+
+func dial(ctx context.Context, ep plugin.RemoteEndpoint, egress []string, credentialFile string, opts options) (plugin.Transport, error) {
+	tgt, err := checkEndpoint(ep, egress)
+	if err != nil {
+		return nil, err
+	}
+	auth := func(http.Header) {}
+	if credentialFile != "" {
+		token, err := readCredential(credentialFile)
+		if err != nil {
+			return nil, err
+		}
+		bearer := "Bearer " + token
+		auth = func(h http.Header) { h.Set("Authorization", bearer) }
+	}
+
+	tlsConfig := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+		ServerName: tgt.host,
+		RootCAs:    opts.roots,
+	}
+	netDialer := &net.Dialer{Timeout: connectTimeout, KeepAlive: keepAlive}
+	if err := probe(ctx, tgt, netDialer, tlsConfig); err != nil {
+		return nil, err
+	}
+
+	tr := &http.Transport{
+		// No proxy, whatever the environment says.
+		Proxy: nil,
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			if addr != tgt.addr {
+				return nil, errOtherAddress
+			}
+			return netDialer.DialContext(ctx, network, addr)
+		},
+		TLSClientConfig:        tlsConfig,
+		TLSHandshakeTimeout:    connectTimeout,
+		ForceAttemptHTTP2:      true,
+		DisableCompression:     true,
+		MaxResponseHeaderBytes: maxResponseHeader,
+		MaxIdleConnsPerHost:    maxIdleConnsPerHost,
+		IdleConnTimeout:        idleConnTimeout,
+	}
+	httpClient := &http.Client{
+		Transport: tr,
+		// A redirect could lead outside the declared egress: never follow
+		// one. The 3xx reaches the call, which fails BAD_RESPONSE.
+		CheckRedirect: func(*http.Request, []*http.Request) error { return errRedirectStop },
+	}
+
+	table := platformMethods()
+	for name, m := range opts.methods {
+		table[name] = m
+	}
+	clients := make(map[string]*call, len(table))
+	for name, m := range table {
+		clients[name] = &call{
+			method: m,
+			client: connectrpc.NewClient[wireMessage, wireMessage](httpClient, tgt.baseURL+m.procedure,
+				connectrpc.WithGRPC(),
+				connectrpc.WithCodec(rawCodec{}),
+				connectrpc.WithReadMaxBytes(protocol.MaxMessageBytes),
+				connectrpc.WithSendMaxBytes(protocol.MaxMessageBytes),
+			),
+		}
+	}
+
+	return &conn{transport: tr, calls: clients, auth: auth, cancels: map[uint64]context.CancelFunc{}}, nil
+}
+
+// probe makes one TLS connection to the endpoint and closes it, so a server
+// whose certificate does not verify for the host is refused at Dial, before
+// any request is sent.
+func probe(ctx context.Context, tgt target, netDialer *net.Dialer, tlsConfig *tls.Config) error {
+	d := &tls.Dialer{NetDialer: netDialer, Config: tlsConfig.Clone()}
+	c, err := d.DialContext(ctx, "tcp", tgt.addr)
+	if err == nil {
+		_ = c.Close()
+		return nil
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return endpointError(tgt.host, ctxErr)
+	}
+	var verr *tls.CertificateVerificationError
+	var herr x509.HostnameError
+	var aerr x509.UnknownAuthorityError
+	var cerr x509.CertificateInvalidError
+	if errors.As(err, &verr) || errors.As(err, &herr) || errors.As(err, &aerr) || errors.As(err, &cerr) {
+		return endpointError(tgt.host, ErrCertificate)
+	}
+	return endpointError(tgt.host, ErrUnreachable)
+}
+
+// call is one method's client.
+type call struct {
+	method method
+	client *connectrpc.Client[wireMessage, wireMessage]
+}
+
+// conn is one entry's connection to its remote plugin. It shares nothing
+// with any other conn: two entries naming the same URL get separate
+// transports, connections and credentials.
+type conn struct {
+	transport *http.Transport
+	calls     map[string]*call
+	// auth sets the Authorization header; the token lives only in its
+	// closure, never in a field that could be printed.
+	auth func(http.Header)
+
+	mu     sync.Mutex
+	closed bool
+	// cancels ends each call in flight; Close calls them all.
+	cancels  map[uint64]context.CancelFunc
+	nextCall uint64
+	inFlight sync.WaitGroup
+	once     sync.Once
+}
+
+// Call sends one request and waits for its response. It returns promptly
+// when ctx ends, with ctx's own error.
+func (c *conn) Call(ctx context.Context, method string, params, result any) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	cl, ok := c.calls[method]
+	if !ok {
+		return errUnknownCall
+	}
+	body, err := encodeParams(cl.method, params)
+	if err != nil {
+		return err
+	}
+	callCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	id, ok := c.enter(cancel)
+	if !ok {
+		return plugin.Fail(plugin.ClassUnavailable)
+	}
+	defer c.leave(id)
+
+	var connected atomic.Bool
+	callCtx = httptrace.WithClientTrace(callCtx, &httptrace.ClientTrace{
+		GotConn: func(httptrace.GotConnInfo) { connected.Store(true) },
+	})
+
+	req := connectrpc.NewRequest(&wireMessage{data: body})
+	c.auth(req.Header())
+	res, err := cl.client.CallUnary(callCtx, req)
+	if err != nil {
+		return c.classify(ctx, err, connected.Load())
+	}
+	return decodeResult(cl.method, res.Msg.data, result)
+}
+
+// enter registers a call in flight with its cancel, or reports false once
+// Close has begun.
+func (c *conn) enter(cancel context.CancelFunc) (uint64, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return 0, false
+	}
+	c.nextCall++
+	c.cancels[c.nextCall] = cancel
+	c.inFlight.Add(1)
+	return c.nextCall, true
+}
+
+func (c *conn) leave(id uint64) {
+	c.mu.Lock()
+	delete(c.cancels, id)
+	c.mu.Unlock()
+	c.inFlight.Done()
+}
+
+func (c *conn) isClosed() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closed
+}
+
+// classify turns a failed call into what the host sees. Nothing of the
+// connect error, which may hold the peer's text, is kept.
+func (c *conn) classify(ctx context.Context, err error, connected bool) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	if c.isClosed() {
+		return plugin.Fail(plugin.ClassUnavailable) // closed while in flight
+	}
+	code := connectrpc.CodeOf(err)
+	if connectrpc.IsWireError(err) {
+		if code == connectrpc.CodeDeadlineExceeded {
+			// The plugin applied our deadline (sent as grpc-timeout) a hair
+			// before our own timer fired. Report the deadline as ours.
+			if _, ok := ctx.Deadline(); ok {
+				<-ctx.Done()
+				return ctx.Err()
+			}
+		}
+		// The plugin answered with an error status; its message is never read.
+		return plugin.Fail(plugin.ClassBadResponse)
+	}
+	if code == connectrpc.CodeUnavailable {
+		if connected {
+			// The connection went away while the call was open.
+			return plugin.Fail(plugin.ClassExited)
+		}
+		return plugin.Fail(plugin.ClassUnavailable)
+	}
+	// Over the size cap, not gRPC, an HTTP error or a redirect.
+	return plugin.Fail(plugin.ClassBadResponse)
+}
+
+// Close ends every call in flight, waits for them, and closes the
+// connections. It is safe to call more than once.
+func (c *conn) Close() error {
+	c.once.Do(func() {
+		c.mu.Lock()
+		c.closed = true
+		for _, cancel := range c.cancels {
+			cancel()
+		}
+		c.mu.Unlock()
+		c.inFlight.Wait()
+		c.transport.CloseIdleConnections()
+	})
+	return nil
+}

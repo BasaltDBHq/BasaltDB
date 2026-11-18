@@ -5,6 +5,7 @@ go 1.26.0
 toolchain go1.26.11
 
 require (
+	connectrpc.com/connect v1.21.1
 	github.com/FastFilter/xorfilter v0.5.1
 	github.com/Masterminds/squirrel v1.5.4
 	github.com/coder/websocket v1.8.15

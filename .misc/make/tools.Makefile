@@ -38,3 +38,11 @@ bin/mockery: bin
 		curl -fsSL "https://github.com/vektra/mockery/releases/download/v$(VERSION)/$${ASSET}" \
 			| tar -zOxf - mockery > $@ && chmod +x $@
 	@ echo "done."
+
+# The protobuf plugins come at the versions go.mod requires, so the generated
+# code follows the module's own protobuf and connect versions.
+bin/protoc-gen-go: bin go.mod
+	@ GOBIN=$(CURDIR)/bin go install google.golang.org/protobuf/cmd/protoc-gen-go
+
+bin/protoc-gen-connect-go: bin go.mod
+	@ GOBIN=$(CURDIR)/bin go install connectrpc.com/connect/cmd/protoc-gen-connect-go

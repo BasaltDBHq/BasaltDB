@@ -38,12 +38,20 @@ const (
 	// versionInstallIDs identifies an install by a random id instead of
 	// the basalt_meta schema oid: schema/012.
 	versionInstallIDs
+	// versionPluginEvents adds record_plugin_event: schema/013.
+	versionPluginEvents
 )
 
 // versionFiles is how many schema files each version runs, in version
 // order: a new version appends its own schema files after the last and its
 // count here, and every earlier version keeps the files it has.
-var versionFiles = []int{versionGuard: guardFiles, versionInstallIDs: 1}
+var versionFiles = []int{versionGuard: guardFiles, versionInstallIDs: 1, versionPluginEvents: 1}
+
+// nonBreakingVersions are the versions an engine serves an agent without
+// (migration.nonBreaking). versionPluginEvents: without it the engine
+// cannot record a plugin event, so it serves no plugin to that agent and
+// everything else as before.
+var nonBreakingVersions = map[int]bool{versionPluginEvents: true}
 
 // guardFiles is how many schema files version 1 has: 001 to 011.
 const guardFiles = 11
@@ -62,7 +70,7 @@ func mustSplitMigrations(files []string, counts []int) []migration {
 		if end > len(files) {
 			panic(fmt.Sprintf("schema: version %d needs %d files, %d left", v, counts[v], len(files)-next))
 		}
-		out = append(out, migration{version: v, sql: strings.Join(files[next:end], "")})
+		out = append(out, migration{version: v, sql: strings.Join(files[next:end], ""), nonBreaking: nonBreakingVersions[v]})
 		next = end
 	}
 	if next != len(files) {

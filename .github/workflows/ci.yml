@@ -1,8 +1,9 @@
 name: CI
 
 # Pull requests, every push to master and a nightly run all take the same
-# path: every job, the race detector on, every package. A failing run on master
-# or the nightly one shows as a red run in the Actions tab.
+# path: every job, the race detector on, every package. The one exception is
+# the arm64 macOS smoke, which skips pull requests (see macos-smoke). A failing
+# run on master or the nightly one shows as a red run in the Actions tab.
 on:
   push:
     branches: [master]

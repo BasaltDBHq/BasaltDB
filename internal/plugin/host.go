@@ -113,7 +113,7 @@ func (h *Host) Unregister(k EntryKey) {
 // (initialize, health, shutdown) goes through Register and Control instead, and
 // is refused with a plain error before anything is sent. The entry's timeout is
 // the deadline for the whole call, including the wait for a free slot (at most
-// four calls are in flight per entry). Other failures are *CallError.
+// four calls are in flight per entry). Other failures are *CallError or ErrAgentNotListed.
 func (h *Host) Call(ctx context.Context, k EntryKey, agents []string, method string, params, result any) error {
 	switch method {
 	case protocol.MethodInitialize, protocol.MethodHealth, protocol.MethodShutdown:

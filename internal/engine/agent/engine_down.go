@@ -26,8 +26,10 @@ type EngineDown struct {
 	// Config is the engine config the shim could read; nil when it could
 	// not (then operatedBy is PERSON).
 	Config *config.Config
-	Log    *slog.Logger
-	Now    func() time.Time
+	// ConfigErr is why Config is nil when the config was read and refused.
+	ConfigErr error
+	Log       *slog.Logger
+	Now       func() time.Time
 }
 
 // Tools are the tools of every IMPLEMENTED contract, and status, each
@@ -56,7 +58,7 @@ func (d EngineDown) status(_ context.Context, raw json.RawMessage) (any, error) 
 	if err := decodeArgs(raw, &args); err != nil {
 		return nil, d.invalidArgument(err)
 	}
-	return EngineDownStatus(d.Name, d.Commands, d.Config, buildinfo.Version, d.Now())
+	return EngineDownStatus(d.Name, d.Commands, d.Config, d.ConfigErr, buildinfo.Version, d.Now())
 }
 
 func (d EngineDown) unreachable(tool string) func(context.Context, json.RawMessage) (any, error) {

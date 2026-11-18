@@ -413,6 +413,19 @@ func refuseParked(raw []byte) error {
 	return nil
 }
 
+// OldCredentialFileError is the error of a config with the older per-agent
+// "credentialFile" key.
+type OldCredentialFileError struct{ msg string }
+
+func (e *OldCredentialFileError) Error() string { return e.msg }
+
+// IsOldCredentialFile reports whether err (from Load) is that refusal, so a
+// caller that otherwise ignores a config it cannot read can still show it.
+func IsOldCredentialFile(err error) bool {
+	var e *OldCredentialFileError
+	return errors.As(err, &e)
+}
+
 // refuseOldCredentialFile refuses an agent that still has the older
 // per-agent "credentialFile" key (it moved into "store"), with the exact
 // edit. The key is never read as a credential: only its value, as the path
@@ -438,9 +451,9 @@ func refuseOldCredentialFile(raw []byte) error {
 		if err := json.Unmarshal(old, &path); err != nil || path == "" {
 			path = "<path>"
 		}
-		return fmt.Errorf(`agent %q: "credentialFile" now goes inside "store"; `+
+		return &OldCredentialFileError{msg: fmt.Sprintf(`agent %q: "credentialFile" now goes inside "store"; `+
 			`replace "credentialFile": %q with "store": {"kind": "POSTGRES", "credentialFile": %q}`,
-			name, path, path)
+			name, path, path)}
 	}
 	return nil
 }

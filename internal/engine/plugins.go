@@ -13,6 +13,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/service"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/dial"
 )
@@ -30,13 +31,14 @@ type pluginOptions struct {
 	euid int
 	// clock is the supervisor's; plugin.RealClock() when nil.
 	clock plugin.Clock
+	// units finds a service engine's plugin units; the machine's when nil.
+	units *unitSource
 }
 
 // Why an entry is not started though it verified.
 const (
-	whyLocalInService = "a local plugin runs under its own OS user and service, which this engine does not set up yet"
-	whyLocalAsRoot    = "the engine runs as root, and a local plugin is never started with root's privileges"
-	whyBadEntry       = "its entry in engine.json breaks a rule (see the engine's log)"
+	whyLocalAsRoot = "the engine runs as root, and a local plugin is never started with root's privileges"
+	whyBadEntry    = "its entry in engine.json breaks a rule (see the engine's log)"
 )
 
 // enginePlugins are the plugin entries of a running engine (CONTRACT.md,
@@ -66,6 +68,14 @@ type enginePlugins struct {
 	notTrusted map[plugin.EntryKey]error
 	// refused is why an entry that verified is not started.
 	refused map[plugin.EntryKey]string
+
+	// In service mode: the units the engine expects (unitHost, or why it
+	// cannot tell) and each reachable local entry's socket and OS user.
+	unitHost    service.PluginHost
+	unitHostErr error
+	targets     map[plugin.EntryKey]serviceTarget
+	// allKeys are every configured entry's, enabled or not.
+	allKeys []plugin.EntryKey
 }
 
 // newEnginePlugins verifies the enabled plugin entries of cfg, read from
@@ -94,6 +104,7 @@ func newEnginePlugins(cfg config.Config, configPath string, o pluginOptions, log
 	}
 	if cfg.Service() {
 		ep.mode = plugin.ModeService
+		ep.initServiceUnits(cfg, configPath)
 	}
 	ep.sup = plugin.NewSupervisor(ep.host, ep.dial, o.clock).WithLog(log)
 	dir := filepath.Dir(configPath)
@@ -119,13 +130,16 @@ func newEnginePlugins(cfg config.Config, configPath string, o pluginOptions, log
 			log.Error("plugin not started", "plugin", k.String(), "err", err)
 			continue
 		}
-		if why := ep.localRefusal(v.Manifest); why != "" {
+		if why := ep.localRefusal(p, v); why != "" {
 			ep.refused[k] = why
 			log.Error("plugin not started: "+why, "plugin", k.String())
 			continue
 		}
 		ep.first[k] = v
 		ep.entries = append(ep.entries, e)
+	}
+	if ep.mode == plugin.ModeService {
+		ep.checkServiceAgents(cfg)
 	}
 	if ep.mode == plugin.ModeSameUser && slices.ContainsFunc(ep.entries, func(e plugin.Entry) bool { return !e.Manifest.Endpoint.IsRemote() }) {
 		log.Warn("local plugins run as the engine's own OS user: same-user mode is no security boundary, and a plugin can read whatever the engine can")
@@ -144,18 +158,19 @@ func verifyFailure(err error) string {
 	return err.Error()
 }
 
-// localRefusal is why a local plugin may not run on this engine, "" when
-// it may. In service mode a local plugin needs its own OS user and unit, so
-// it never runs with the engine's privileges (it could read the engine's
-// keys and credentials); as root it never runs at all.
-func (ep *enginePlugins) localRefusal(m plugin.Manifest) string {
+// localRefusal is why local entry p, verified as v, may not run on this
+// engine, "" when it may. As root it never runs at all. In service mode it
+// runs only under its own OS user and unit, which the engine connects to,
+// so it never runs with the engine's privileges (it could read the
+// engine's keys and credentials).
+func (ep *enginePlugins) localRefusal(p config.Plugin, v plugin.Verified) string {
 	switch {
-	case m.Endpoint.IsRemote():
+	case v.Manifest.Endpoint.IsRemote():
 		return ""
-	case ep.mode == plugin.ModeService:
-		return whyLocalInService
 	case ep.o.euid == 0:
 		return whyLocalAsRoot
+	case ep.mode == plugin.ModeService:
+		return ep.serviceRefusal(p, v)
 	}
 	return ""
 }
@@ -180,7 +195,12 @@ func (ep *enginePlugins) dial(ctx context.Context, e plugin.Entry) (plugin.Trans
 		ep.log.Error("plugin not started: it failed verification", "plugin", k.String(), "check", verifyFailure(err))
 		return nil, err
 	}
-	t, err := dial.Entry(ctx, k, v, dial.Options{SocketBase: ep.o.SocketBase, CredentialFile: ep.credentialFile(k), Stderr: ep.o.Stderr})
+	var t plugin.Transport
+	if u, ok := ep.targets[k]; ok {
+		t, err = dial.Service(ctx, k, v, u.socket, u.uid)
+	} else {
+		t, err = dial.Entry(ctx, k, v, dial.Options{SocketBase: ep.o.SocketBase, CredentialFile: ep.credentialFile(k), Stderr: ep.o.Stderr})
+	}
 	if err != nil {
 		ep.log.Warn("plugin did not start", "plugin", k.String(), "err", err)
 		return nil, err

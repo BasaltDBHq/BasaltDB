@@ -467,20 +467,21 @@ func TestNoPluginsChangeNothing(t *testing.T) {
 	require.True(t, os.IsNotExist(err), "nothing was made on disk")
 }
 
-// A local plugin never runs with the engine's privileges before isolation
-// exists: refused in service mode and as root; a remote one is not.
+// A local plugin never runs with the engine's privileges: refused as root,
+// and in service mode without its own unit; a remote one is not.
 func TestLocalPluginRefusedInServiceModeAndAsRoot(t *testing.T) {
 	t.Parallel()
-	local := plugin.Manifest{Endpoint: plugin.Endpoint{Local: &plugin.LocalEndpoint{Transport: dial.TransportStdio, Command: "bin/p"}}}
-	remote := plugin.Manifest{Endpoint: plugin.Endpoint{Remote: &plugin.RemoteEndpoint{Transport: dial.TransportConnect, URL: "https://ner.example"}}}
-	service := &enginePlugins{mode: plugin.ModeService, o: pluginOptions{euid: 1000}}
+	local := plugin.Verified{Dir: "/x", Manifest: plugin.Manifest{Endpoint: plugin.Endpoint{Local: &plugin.LocalEndpoint{Transport: dial.TransportStdio, Command: "bin/p"}}}}
+	remote := plugin.Verified{Manifest: plugin.Manifest{Endpoint: plugin.Endpoint{Remote: &plugin.RemoteEndpoint{Transport: dial.TransportConnect, URL: "https://ner.example"}}}}
+	p := config.Plugin{Name: "acme-ner", Enabled: true, Agents: []string{"product_a"}}
+	service := serviceEngine(svcConfig(), &fakeUnits{}, 1000)
 	root := &enginePlugins{mode: plugin.ModeSameUser, o: pluginOptions{euid: 0}}
 	user := &enginePlugins{mode: plugin.ModeSameUser, o: pluginOptions{euid: 1000}}
-	require.Equal(t, whyLocalInService, service.localRefusal(local))
-	require.Equal(t, whyLocalAsRoot, root.localRefusal(local))
-	require.Empty(t, user.localRefusal(local))
+	require.Equal(t, whyNoUnit, service.localRefusal(p, local))
+	require.Equal(t, whyLocalAsRoot, root.localRefusal(p, local))
+	require.Empty(t, user.localRefusal(p, local))
 	for _, ep := range []*enginePlugins{service, root, user} {
-		require.Empty(t, ep.localRefusal(remote))
+		require.Empty(t, ep.localRefusal(p, remote))
 	}
 }
 

@@ -254,7 +254,9 @@ func TestRefusedDrainsAreCapped(t *testing.T) {
 	bot := agent("bot", dir, myUID()+1)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	e := engine.New(slog.New(slog.DiscardHandler), []engine.Agent{bot}).WithRefusedDrains(2)
+	e := engine.New(slog.New(slog.DiscardHandler), []engine.Agent{bot}).WithRefusedDrains(2).
+		// A long drain window, so no drain times out while the test runs.
+		WithRefuseDrain(time.Minute)
 	done := make(chan struct{})
 	go func() { _ = e.Serve(ctx); close(done) }()
 	waitListening(t, bot.SocketPath)
@@ -272,27 +274,49 @@ func TestRefusedDrainsAreCapped(t *testing.T) {
 		require.NotEmpty(t, mcp.PeerRefusal([]byte(line)))
 		return c
 	}
-	// stillOpen reports whether the engine still reads c: writes to a
-	// connection the engine closed fail within a few tries.
-	stillOpen := func(c *net.UnixConn) bool {
-		require.NoError(t, c.SetWriteDeadline(time.Now().Add(time.Second)))
-		for range 10 {
-			if _, err := c.Write([]byte("x\n")); err != nil {
-				return false
+	// Probes are two bytes each; keep their number far below the engine's
+	// 64 KB drain read limit, or it closes the peer on its own.
+	// open reports whether the engine still reads c. A write to a socket
+	// the peer closed fails at once, so one write tells, with no pacing.
+	open := func(c *net.UnixConn) bool {
+		_, err := c.Write([]byte("x\n"))
+		return err == nil
+	}
+	// closedWithin polls until c is closed by the engine; it returns false
+	// only if that never happens within a generous failure bound.
+	closedWithin := func(c *net.UnixConn, bound time.Duration) bool {
+		end := time.Now().Add(bound)
+		for time.Now().Before(end) {
+			if !open(c) {
+				return true
 			}
-			time.Sleep(30 * time.Millisecond)
+			time.Sleep(2 * time.Millisecond)
 		}
-		return true
+		return false
 	}
 
-	first := refused()
-	second := refused()
-	third := refused()
-	require.True(t, stillOpen(first), "drained")
-	require.True(t, stillOpen(second), "drained")
-	require.False(t, stillOpen(third), "over the cap: closed at once")
+	// The engine takes a drain slot after it writes the refusal line, so
+	// which of the three connections is closed at once is not fixed; the
+	// cap is that exactly one of them is, and the other two stay open.
+	conns := []*net.UnixConn{refused(), refused(), refused()}
+	closed := -1
+	require.Eventually(t, func() bool {
+		for i, c := range conns {
+			if !open(c) {
+				closed = i
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 2*time.Millisecond, "one refused peer is closed at once")
+	for i, c := range conns {
+		if i != closed {
+			require.True(t, open(c), "drained")
+		}
+	}
+	first := conns[(closed+1)%3]
 
-	// Stopping the engine ends the drains well before their 2 seconds.
+	// Stopping the engine ends the drains well before their minute.
 	stopped := time.Now()
 	cancel()
 	select {
@@ -300,6 +324,6 @@ func TestRefusedDrainsAreCapped(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the engine did not stop")
 	}
-	require.Less(t, time.Since(stopped), 1500*time.Millisecond)
-	require.False(t, stillOpen(first))
+	require.Less(t, time.Since(stopped), 30*time.Second, "stopping ends the drains, which last a minute")
+	require.True(t, closedWithin(first, 5*time.Second), "stopping the engine closes the drained peers")
 }

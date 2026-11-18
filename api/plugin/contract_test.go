@@ -527,7 +527,7 @@ func TestSignatureVectors(t *testing.T) {
 	sum := sha256.Sum256(block.Bytes)
 	require.Equal(t, base64.RawURLEncoding.EncodeToString(sum[:16]), sig.KeyID, "keyId is derived from the key")
 
-	rawSig, err := base64.RawURLEncoding.DecodeString(sig.Sig)
+	rawSig, err := base64.RawURLEncoding.Strict().DecodeString(sig.Sig)
 	require.NoError(t, err)
 	require.True(t, verifyManifest(pub, manifest, rawSig), "the vector verifies")
 
@@ -549,7 +549,10 @@ func TestSignatureVectors(t *testing.T) {
 	}
 	require.False(t, verifyManifest(pub, append(slices.Clone(manifest), '\n'), rawSig), "an added byte must fail")
 	require.False(t, verifyManifest(pub, manifest, rawSig[:sigLen-1]), "a short signature must fail")
-	require.False(t, verifyManifest(pub, manifest[len(manifestSigContext):], rawSig), "the context line is part of the input")
+	bare := sha256.Sum256(manifest)
+	r := new(big.Int).SetBytes(rawSig[:sigLen/2])
+	s := new(big.Int).SetBytes(rawSig[sigLen/2:])
+	require.False(t, ecdsa.Verify(pub, bare[:], r, s), "the context line is part of the input")
 }
 
 // verifyManifest checks an ES256 signature, 64 bytes r ‖ s, over the

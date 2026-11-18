@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/basaltdbhq/basaltdb/pkg/uniqueid"
 )
 
@@ -244,7 +246,7 @@ func load(p string) (Report, error) {
 		len(rep.OS) > maxField || len(rep.Arch) > maxField || len(rep.GoVersion) > maxField {
 		return Report{}, errors.New("not a crash report")
 	}
-	if rep.ID == "" || strings.TrimSuffix(filepath.Base(p), ".json") != rep.ID {
+	if _, err := uuid.Parse(rep.ID); err != nil || strings.TrimSuffix(filepath.Base(p), ".json") != rep.ID {
 		return Report{}, errors.New("not a crash report")
 	}
 	return rep, nil

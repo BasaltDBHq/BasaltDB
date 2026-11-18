@@ -20,7 +20,7 @@ If the engine hits a crash inside an agent's tool call, the engine keeps running
 - for a Go runtime error such as an index out of range, the runtime's own message; for any other crash, only the type of the value, never its text
 - the stack trace: function names and source files (`cmd/basalt/main.go:73`, and Go runtime and library frames), with no function arguments
 
-Before anything is saved, basalt removes SQL text, table and column names, row values, connection strings, passwords, host names and IP addresses, e-mail addresses, the values of your environment variables, and your home directory path. The report is built from a fixed set of fields, so the text of a crash never goes into it.
+Before anything is saved, basalt removes SQL text, table and column names, row values, connection strings, passwords, this machine's host name, IP addresses, e-mail addresses, the values of your environment variables, and your home directory path. The report is built from a fixed set of fields, so the text of a crash never goes into it.
 
 ## See exactly what was saved
 

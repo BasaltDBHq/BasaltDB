@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -97,22 +96,21 @@ func (e *pluginEnv) check(k plugin.EntryKey) error {
 		return fmt.Errorf("plugin %s: in service mode a local plugin runs as its own OS user under its own service, "+
 			"which basalt plugin check does not start yet", k)
 	}
+	if !v.Manifest.Endpoint.IsRemote() && e.c.host.Euid() == 0 {
+		return fmt.Errorf("plugin %s: a local plugin is never started with root's privileges; "+
+			"run basalt plugin check as the engine's own OS user", k)
+	}
 	ctx, cancel := context.WithTimeout(e.c.ctx, checkWait)
 	defer cancel()
-	// A socket plugin listens in a fresh directory only this user can reach,
-	// short enough for a Unix socket path.
-	sockDir, err := os.MkdirTemp("", "bp")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(sockDir)
-	t, err := dial.Entry(ctx, k, v, dial.Options{SocketPath: filepath.Join(sockDir, "p.sock"), CredentialFile: p.CredentialFile()})
+	// A socket plugin listens in a fresh directory only this user can reach
+	// (dial.Options.SocketBase), removed when it stops.
+	t, err := dial.Entry(ctx, k, v, dial.Options{CredentialFile: p.CredentialFile()})
 	if err != nil {
 		return err
 	}
 	h := plugin.NewHost()
 	start := time.Now()
-	if err := h.Register(entry, t); err != nil {
+	if err := h.Register(ctx, entry, t); err != nil {
 		_ = t.Close()
 		return fmt.Errorf("plugin %s: initialize failed: %w", k, err)
 	}
@@ -122,8 +120,11 @@ func (e *pluginEnv) check(k plugin.EntryKey) error {
 	var health protocol.HealthResponse
 	err = h.Control(ctx, k, protocol.MethodHealth, protocol.HealthRequest{}, &health)
 	healthDur := time.Since(start)
-	// Close stops a local plugin at once: ask it to stop first.
-	_ = h.Control(ctx, k, protocol.MethodShutdown, protocol.ShutdownRequest{}, nil)
+	// Close stops a local plugin at once: ask it to stop first, on a context
+	// of its own, so a health call that used up ctx does not skip it.
+	shutCtx, shutCancel := context.WithTimeout(context.WithoutCancel(e.c.ctx), entry.Timeout)
+	defer shutCancel()
+	_ = h.Control(shutCtx, k, protocol.MethodShutdown, protocol.ShutdownRequest{}, nil)
 	if err != nil {
 		return fmt.Errorf("plugin %s: health failed: %w", k, err)
 	}

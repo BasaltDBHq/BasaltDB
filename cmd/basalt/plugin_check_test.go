@@ -56,6 +56,21 @@ func testPluginMain(args []string) {
 		os.Exit(1)
 	}
 	sock := os.Getenv(dial.SocketEnv)
+	// It answers nothing unless it got exactly the environment a plugin
+	// gets (the socket variable alone, or nothing for stdio) and runs in its
+	// installed copy.
+	wantEnv := []string{}
+	if sock != "" {
+		wantEnv = []string{dial.SocketEnv + "=" + sock}
+	}
+	cwd, err := os.Getwd()
+	if err == nil {
+		cwd, err = filepath.EvalSymlinks(cwd)
+	}
+	copyDir, dirErr := filepath.EvalSymlinks(filepath.Join(filepath.Dir(exe), ".."))
+	if !slices.Equal(os.Environ(), wantEnv) || err != nil || dirErr != nil || cwd != copyDir {
+		os.Exit(3)
+	}
 	if sock == "" {
 		serveJSONRPC(os.Stdin, os.Stdout, m, status)
 		os.Exit(0)
@@ -219,6 +234,19 @@ func TestCheckRunsInitializeAndHealth(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
 	refusal(t, e.run(nil, "", "check", "acme-ner", "--json"), "NOT_TRUSTED")
+}
+
+// TestCheckRefusesALocalPluginAsRoot: check never starts a local plugin
+// with root's privileges, as the engine never does.
+func TestCheckRefusesALocalPluginAsRoot(t *testing.T) {
+	t.Parallel()
+	e := newPluginEngine(t)
+	e.person("add", e.checkSource("jsonrpc-stdio"), "--agents", "product_a")
+	e.host.euid = 0
+	r := e.run(nil, "", "check", "acme-ner")
+	require.Equal(t, exitError, r.code)
+	require.Contains(t, r.stderr, "never started with root's privileges")
+	require.Empty(t, r.stdout, "nothing was started")
 }
 
 // TestCheckServesEveryLocalTransport: a socket plugin is started with the

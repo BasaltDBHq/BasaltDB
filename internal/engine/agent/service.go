@@ -107,6 +107,10 @@ type Deps struct {
 	// (problem PORTAL_MISMATCH); status says nothing about the portal when
 	// nil.
 	Portal PortalReporter
+	// Plugins reports the engine's plugin entries listed for this agent
+	// that do not serve it (problems PLUGIN_UNAVAILABLE and
+	// PLUGIN_NOT_TRUSTED); status says nothing about plugins when nil.
+	Plugins PluginReporter
 	// EngineRecord reads this engine's row in the agent's database for the
 	// status tool's engineRecord; nil makes its state UNKNOWN. DirectServed
 	// is whether the engine has a direct listener (directAddr is not off).

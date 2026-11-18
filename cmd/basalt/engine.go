@@ -46,6 +46,7 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 	fs.SetOutput(io.err)
 	configPath := fs.String("config", config.DefaultPath(runtime.GOOS), "engine config file")
 	runAs := fs.String("user", "", "start as root, then run as this OS user before reading the config (a container without systemd)")
+	pluginDebug := fs.Bool("plugin-debug", false, "show local plugins' stderr on this terminal (a foreground engine only; never logged)")
 	if fs.Parse(args) != nil || fs.NArg() > 0 {
 		return exitUsage
 	}
@@ -66,6 +67,9 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 	}
 	log := engineLog(io.err)
 	run := func(ctx context.Context, o engine.RestartOptions) error {
+		if *pluginDebug {
+			o.PluginStderr = io.err
+		}
 		return engine.RunWith(ctx, cfg.Config, enginePath(*configPath), log, o)
 	}
 	if err := serveRestarting(ctx, run, osRestart(log), log); err != nil {

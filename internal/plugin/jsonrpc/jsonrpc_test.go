@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/adaptertest"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/child"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/jsonrpc"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/protocol"
 )
@@ -33,9 +35,15 @@ const (
 	dialStep = 10 * time.Millisecond
 )
 
+// peerSpec starts this test binary as the peer, in a directory of its own.
+func peerSpec(t *testing.T, args []string, stderr io.Writer) child.Spec {
+	t.Helper()
+	return child.Spec{Path: os.Args[0], Args: args, Dir: t.TempDir(), Stderr: stderr}
+}
+
 func spawn(t *testing.T, mode string, opts ...string) plugin.Transport {
 	t.Helper()
-	tr, err := jsonrpc.Spawn(context.Background(), os.Args[0], peerArgs(mode, opts...), nil)
+	tr, err := jsonrpc.Spawn(context.Background(), peerSpec(t, peerArgs(mode, opts...), nil))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = tr.Close() })
 	return tr
@@ -260,7 +268,7 @@ func TestStderrIsDiscardedUnlessAWriterIsGiven(t *testing.T) {
 	require.NoError(t, tr.Call(context.Background(), "x", obj{N: 1}, &out))
 
 	var buf lockedBuffer
-	tr, err := jsonrpc.Spawn(context.Background(), os.Args[0], peerArgs("stderr"), &buf)
+	tr, err := jsonrpc.Spawn(context.Background(), peerSpec(t, peerArgs("stderr"), &buf))
 	require.NoError(t, err)
 	require.NoError(t, tr.Call(context.Background(), "x", obj{N: 1}, &out))
 	require.NoError(t, tr.Close())
@@ -268,12 +276,12 @@ func TestStderrIsDiscardedUnlessAWriterIsGiven(t *testing.T) {
 }
 
 func TestSpawnFailureIsAnError(t *testing.T) {
-	_, err := jsonrpc.Spawn(context.Background(), filepath.Join(t.TempDir(), "missing"), nil, nil)
+	_, err := jsonrpc.Spawn(context.Background(), child.Spec{Path: filepath.Join(t.TempDir(), "missing"), Dir: t.TempDir()})
 	require.Error(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err = jsonrpc.Spawn(ctx, os.Args[0], peerArgs("echo"), nil)
+	_, err = jsonrpc.Spawn(ctx, peerSpec(t, peerArgs("echo"), nil))
 	require.ErrorIs(t, err, context.Canceled)
 }
 

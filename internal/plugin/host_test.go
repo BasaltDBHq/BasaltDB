@@ -62,7 +62,7 @@ func manifest(name string) Manifest {
 	}
 }
 
-func entry(name, instance string, agents ...string) Entry { //nolint:unparam // tests vary the instance
+func entry(name, instance string, agents ...string) Entry {
 	return Entry{Key: EntryKey{name, instance}, Manifest: manifest(name), Agents: agents, Timeout: 100 * time.Millisecond}
 }
 
@@ -77,7 +77,7 @@ func goodInit(m Manifest) *protocol.InitializeResponse {
 func register(t *testing.T, h *Host, e Entry) *fake {
 	t.Helper()
 	f := &fake{initResp: goodInit(e.Manifest)}
-	if err := h.Register(e, f); err != nil {
+	if err := h.Register(context.Background(), e, f); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
 	return f
@@ -230,7 +230,7 @@ func TestInitializeHookMismatchRefused(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f := &fake{initResp: goodInit(e.Manifest)}
 			mutate(f.initResp)
-			if err := h.Register(e, f); err == nil {
+			if err := h.Register(context.Background(), e, f); err == nil {
 				t.Fatal("Register accepted a mismatched initialize reply")
 			}
 			if h.State(e.Key) != StateUnavailable {
@@ -243,7 +243,7 @@ func TestInitializeHookMismatchRefused(t *testing.T) {
 	d := f.initResp.Hooks["wire.detect"]
 	d.EntityTypes = []string{"PHONE", "EMAIL"}
 	f.initResp.Hooks["wire.detect"] = d
-	if err := h.Register(e, f); err != nil {
+	if err := h.Register(context.Background(), e, f); err != nil {
 		t.Fatalf("reordered types refused: %v", err)
 	}
 }
@@ -381,14 +381,14 @@ func TestRegisterValidation(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			e := entry("acme", "default", "a")
 			mutate(&e)
-			if err := h.Register(e, &fake{initResp: goodInit(manifest("acme"))}); err == nil {
+			if err := h.Register(context.Background(), e, &fake{initResp: goodInit(manifest("acme"))}); err == nil {
 				t.Fatal("Register accepted it")
 			}
 		})
 	}
 	e := entry("acme", "default", "a")
 	register(t, h, e)
-	if err := h.Register(e, &fake{initResp: goodInit(e.Manifest)}); err == nil {
+	if err := h.Register(context.Background(), e, &fake{initResp: goodInit(e.Manifest)}); err == nil {
 		t.Fatal("duplicate key accepted")
 	}
 }

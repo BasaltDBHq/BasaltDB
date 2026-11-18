@@ -23,7 +23,7 @@ const (
 // TrustStore is the set of keys a manifest signature may name: the Basalt
 // publisher keys built into the binary and the keys the person added to
 // <configDir>/plugin-trust/ (CONTRACT.md, Plugins, Signing and the trust
-// store). It reads the directory at each use, so a key added or removed is
+// store), stored in TrustDir. It reads the directory at each use, so a key added or removed is
 // seen by the next verification.
 type TrustStore struct {
 	dir      string
@@ -31,10 +31,15 @@ type TrustStore struct {
 	embedded map[string]*ecdsa.PublicKey
 }
 
-// NewTrustStore is the trust store of the engine whose engine.json is in
-// configDir, run in mode.
-func NewTrustStore(configDir string, mode Mode) (TrustStore, error) {
+// NewTrustStore is the trust store of an engine run in mode on goos, whose
+// engine.json is in configDir: TrustDir(mode, goos, configDir), with the
+// owner the path rule requires in that mode.
+func NewTrustStore(mode Mode, goos, configDir string) (TrustStore, error) {
 	owner, err := mode.owner()
+	if err != nil {
+		return TrustStore{}, err
+	}
+	dir, err := TrustDir(mode, goos, configDir)
 	if err != nil {
 		return TrustStore{}, err
 	}
@@ -42,10 +47,10 @@ func NewTrustStore(configDir string, mode Mode) (TrustStore, error) {
 	if err != nil {
 		return TrustStore{}, err
 	}
-	return TrustStore{dir: TrustDir(configDir), owner: owner, embedded: embedded}, nil
+	return TrustStore{dir: dir, owner: owner, embedded: embedded}, nil
 }
 
-// Dir is <configDir>/plugin-trust.
+// Dir is the trust store's directory, TrustDir.
 func (t TrustStore) Dir() string { return t.dir }
 
 // errTrustMode: the trust store was made for another engine mode than the
@@ -80,9 +85,10 @@ func embeddedKeys() (map[string]*ecdsa.PublicKey, error) {
 // holds no keys and passes.
 func (t TrustStore) check() error {
 	if _, err := os.Lstat(t.dir); errors.Is(err, fs.ErrNotExist) {
-		// No keys are stored; the directories above it still follow the
-		// rule, so none can be swapped in before a key is read.
-		return checkAbove(t.dir, t.owner)
+		// No keys are stored; the directories that exist above it still
+		// follow the rule, so none can be swapped in before a key is read.
+		_, err := checkExisting(t.dir, t.dir, t.owner)
+		return err
 	}
 	if err := checkUnder(t.owner, t.dir); err != nil {
 		return err
@@ -186,28 +192,8 @@ func ensureDir(boundary, dir string, owner uint32) error {
 	if !within(boundary, dir) {
 		return pathRefusal(dir, "is not inside "+boundary)
 	}
-	var missing []string
-	existing := dir
-	for {
-		_, err := os.Lstat(existing)
-		if err == nil {
-			break
-		}
-		if !errors.Is(err, fs.ErrNotExist) {
-			return pathRefusal(existing, "cannot be read")
-		}
-		missing = append(missing, existing)
-		parent := filepath.Dir(existing)
-		if parent == existing {
-			return pathRefusal(existing, "cannot be read")
-		}
-		existing = parent
-	}
-	if within(boundary, existing) {
-		if err := checkUnder(owner, chain(boundary, existing)...); err != nil {
-			return err
-		}
-	} else if err := checkAbove(filepath.Join(existing, "x"), owner); err != nil {
+	missing, err := checkExisting(boundary, dir, owner)
+	if err != nil {
 		return err
 	}
 	for i := len(missing) - 1; i >= 0; i-- {
@@ -221,6 +207,42 @@ func ensureDir(boundary, dir string, owner uint32) error {
 		}
 	}
 	return nil
+}
+
+// checkExisting applies the path rule to the nearest directory at or above
+// dir that exists (strictly when it is at or below boundary, as above a
+// root otherwise) and returns the missing directories below it, deepest
+// first.
+func checkExisting(boundary, dir string, owner uint32) ([]string, error) {
+	boundary, dir = filepath.Clean(boundary), filepath.Clean(dir)
+	if !within(boundary, dir) {
+		return nil, pathRefusal(dir, "is not inside "+boundary)
+	}
+	var missing []string
+	existing := dir
+	for {
+		_, err := os.Lstat(existing)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return nil, pathRefusal(existing, "cannot be read")
+		}
+		missing = append(missing, existing)
+		parent := filepath.Dir(existing)
+		if parent == existing {
+			return nil, pathRefusal(existing, "cannot be read")
+		}
+		existing = parent
+	}
+	if within(boundary, existing) {
+		if err := checkUnder(owner, chain(boundary, existing)...); err != nil {
+			return nil, err
+		}
+	} else if err := checkAbove(filepath.Join(existing, "x"), owner); err != nil {
+		return nil, err
+	}
+	return missing, nil
 }
 
 // within reports whether p is base or lies below it.

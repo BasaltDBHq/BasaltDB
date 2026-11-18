@@ -47,37 +47,63 @@ func (m Mode) owner() (uint32, error) {
 	}
 }
 
-// Linux and macOS roots of installed copies in service mode.
+// The root-owned base directory of plugins in service mode, per OS. It
+// holds the installed copies and the trust store side by side, and every
+// directory above it belongs to root. The config directory is not used in
+// service mode: it may belong to the engine's OS user, which must not be
+// able to change what is installed or trusted.
 const (
-	linuxServiceRoot  = "/usr/local/lib/basalt/plugins"
-	darwinServiceRoot = "/Library/Application Support/Basalt/plugins"
+	linuxServiceBase  = "/usr/local/lib/basalt"
+	darwinServiceBase = "/Library/Basalt"
 	goosDarwin        = "darwin"
 )
 
-// TrustDirName is the trust store's directory under the config directory.
-const TrustDirName = "plugin-trust"
+// The directory names under the base (service mode) or the config directory
+// (same-user mode).
+const (
+	PluginsDirName = "plugins"
+	TrustDirName   = "plugin-trust"
+)
 
-// Root is the directory installed copies live under: in service mode
-// /usr/local/lib/basalt/plugins on Linux and /Library/Application
-// Support/Basalt/plugins on macOS, in same-user mode <configDir>/plugins,
-// where configDir is the directory that holds engine.json. Another mode is
-// refused.
-func Root(mode Mode, goos, configDir string) (string, error) {
+// base is the directory the plugin root and the trust store sit in: the
+// service base per OS in service mode, the config directory (the directory
+// that holds engine.json) in same-user mode. Another mode is refused.
+func base(mode Mode, goos, configDir string) (string, error) {
 	switch mode {
 	case ModeService:
 		if goos == goosDarwin {
-			return darwinServiceRoot, nil
+			return darwinServiceBase, nil
 		}
-		return linuxServiceRoot, nil
+		return linuxServiceBase, nil
 	case ModeSameUser, "":
-		return filepath.Join(configDir, "plugins"), nil
+		return configDir, nil
 	default:
 		return "", errUnknownMode
 	}
 }
 
-// TrustDir is <configDir>/plugin-trust.
-func TrustDir(configDir string) string { return filepath.Join(configDir, TrustDirName) }
+// Root is the directory installed copies live under:
+// /usr/local/lib/basalt/plugins on Linux and /Library/Basalt/plugins on
+// macOS in service mode, <configDir>/plugins in same-user mode.
+func Root(mode Mode, goos, configDir string) (string, error) {
+	b, err := base(mode, goos, configDir)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(b, PluginsDirName), nil
+}
+
+// TrustDir is the trust store's directory, next to Root:
+// /usr/local/lib/basalt/plugin-trust on Linux and
+// /Library/Basalt/plugin-trust on macOS in service mode,
+// <configDir>/plugin-trust in same-user mode.
+func TrustDir(mode Mode, goos, configDir string) (string, error) {
+	b, err := base(mode, goos, configDir)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(b, TrustDirName), nil
+}
 
 // pathRefusal is a path-rule failure. It names the path and the rule.
 func pathRefusal(path, why string) *VerifyError {

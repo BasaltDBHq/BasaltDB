@@ -344,7 +344,7 @@ func TestTrustStoreModeMustMatch(t *testing.T) {
 	}
 	f := newFixture(t)
 	v := f.install("")
-	service, err := NewTrustStore(f.configDir, ModeService)
+	service, err := NewTrustStore(ModeService, runtime.GOOS, f.configDir)
 	require.NoError(t, err)
 	key := EntryKey{Name: "acme-ner", Instance: DefaultInstance}
 	_, err = Verify(f.root, key, v.ManifestSHA256, service, ModeSameUser)
@@ -372,6 +372,82 @@ func TestKeptCopyReportsItsSigner(t *testing.T) {
 	require.Equal(t, first.SignerKeyID, again.SignerKeyID, "the kept copy's .sig is the first key's")
 }
 
+// TestServiceModeLocations: in service mode the plugin root and the trust
+// store sit side by side in one root-owned base per OS, never in the config
+// directory; in same-user mode both are in the config directory.
+func TestServiceModeLocations(t *testing.T) {
+	t.Parallel()
+	for goos, want := range map[string][2]string{
+		"linux":  {"/usr/local/lib/basalt/plugins", "/usr/local/lib/basalt/plugin-trust"},
+		"darwin": {"/Library/Basalt/plugins", "/Library/Basalt/plugin-trust"},
+	} {
+		root, err := Root(ModeService, goos, "/etc/basalt")
+		require.NoError(t, err)
+		require.Equal(t, want[0], root, goos)
+		dir, err := TrustDir(ModeService, goos, "/etc/basalt")
+		require.NoError(t, err)
+		require.Equal(t, want[1], dir, goos)
+		require.Equal(t, filepath.Dir(root), filepath.Dir(dir), "side by side")
+		trust, err := NewTrustStore(ModeService, goos, "/etc/basalt")
+		require.NoError(t, err)
+		require.Equal(t, want[1], trust.Dir())
+		require.Equal(t, uint32(rootUID), trust.owner)
+	}
+	root, err := Root(ModeSameUser, "darwin", "/home/me/.config/basalt")
+	require.NoError(t, err)
+	require.Equal(t, "/home/me/.config/basalt/plugins", root)
+	dir, err := TrustDir("", "linux", "/home/me/.config/basalt")
+	require.NoError(t, err)
+	require.Equal(t, "/home/me/.config/basalt/plugin-trust", dir)
+	_, err = TrustDir(Mode("ROOTLESS"), "linux", "/x")
+	require.ErrorIs(t, err, errUnknownMode)
+	_, err = NewTrustStore(Mode("ROOTLESS"), "linux", "/x")
+	require.ErrorIs(t, err, errUnknownMode)
+}
+
+// TestTrustUnderEngineOwnedConfigRefused: a trust store under a config
+// directory that the engine's OS user owns is refused when root is the
+// required owner, as in service mode; the rule makes no exception for the
+// config directory. The test's own user stands in for the engine's user.
+func TestTrustUnderEngineOwnedConfigRefused(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("the test needs a user other than root")
+	}
+	f := newFixture(t)
+	asRoot := f.trust
+	asRoot.owner = rootUID
+	err := asRoot.check()
+	ve := requireRefused(t, err, RefusedNotTrusted)
+	require.Contains(t, ve.Why, "owned by")
+	_, _, err = asRoot.Add([]byte("x"))
+	require.Error(t, err)
+	pemBytes, err := MarshalPublicKey(&f.signer.PublicKey)
+	require.NoError(t, err)
+	_, _, err = asRoot.Add(pemBytes)
+	requireRefused(t, err, RefusedNotTrusted)
+
+	// The same store with the test's user as the required owner passes.
+	require.NoError(t, f.trust.check())
+}
+
+// TestMissingTrustStoreChecksExistingParents: with no trust store and no
+// base directory yet, verification checks the directories that exist and
+// trusts only built-in keys.
+func TestMissingTrustStoreChecksExistingParents(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	missing := f.trust
+	missing.dir = filepath.Join(f.base, "absent", "deeper", TrustDirName)
+	require.NoError(t, missing.check())
+	_, err := missing.key("jNZPxNG5htlwfhg4ZgknAA")
+	requireRefused(t, err, RefusedNotTrusted)
+	require.NoError(t, os.Chmod(f.base, 0o770))
+	ve := requireRefused(t, missing.check(), RefusedNotTrusted)
+	require.Equal(t, f.base, ve.File)
+	require.NoError(t, os.Chmod(f.base, 0o700))
+}
+
 // TestServiceModeRequiresRoot: in service mode the required owner is root,
 // so a tree the test's user owns is refused. Tests never run as root.
 func TestServiceModeRequiresRoot(t *testing.T) {
@@ -381,7 +457,7 @@ func TestServiceModeRequiresRoot(t *testing.T) {
 	}
 	f := newFixture(t)
 	v := f.install("")
-	trust, err := NewTrustStore(f.configDir, ModeService)
+	trust, err := NewTrustStore(ModeService, runtime.GOOS, f.configDir)
 	require.NoError(t, err)
 	_, err = Verify(f.root, EntryKey{Name: "acme-ner", Instance: DefaultInstance}, v.ManifestSHA256, trust, ModeService)
 	ve := requireRefused(t, err, RefusedNotTrusted)

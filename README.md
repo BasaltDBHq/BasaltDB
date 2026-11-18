@@ -147,7 +147,7 @@ make help   # list targets
 make ci     # lint, vet and race tests
 ```
 
-Postgres tests need a real Postgres: set `BASALTDB_TEST_POSTGRES_URL`. See [AGENTS.md](AGENTS.md) for code and review rules, [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute, and [SECURITY.md](SECURITY.md) for how to report a vulnerability.
+Postgres tests need a real Postgres: set `BASALTDB_TEST_POSTGRES_URL`. [docs/architecture.md](docs/architecture.md) is a short map of the code. See [AGENTS.md](AGENTS.md) for code and review rules, [CONTRIBUTING.md](CONTRIBUTING.md) for how to contribute, and [SECURITY.md](SECURITY.md) for how to report a vulnerability.
 
 Questions, ideas and setups you want to show go to [Discussions](https://github.com/BasaltDBHq/BasaltDB/discussions). Issues are for bugs and planned work.
 

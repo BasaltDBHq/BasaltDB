@@ -2,9 +2,16 @@ package plugincontract_test
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"math/big"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -39,6 +46,7 @@ var kinds = []exampleKind{
 	{"manifest", "manifest.schema.json", []rule{ruleRemoteHostInEgress, ruleEntityTypePrefix, ruleCommandInFiles}},
 	{"config", "config.schema.json", []rule{ruleUniqueEntries, ruleConfigSize, ruleConfigNoCredential}},
 	{"event", "events.schema.json", nil},
+	{"signature", "signature.schema.json", nil},
 }
 
 type exampleKind struct {
@@ -83,6 +91,10 @@ var wantFailure = map[string]string{
 	"invalid-event-unknown-kind.json":                 "schema:/properties/kind/enum",
 	"invalid-initialize-response-wire-verdict.json":   "schema:/properties/hooks/properties/wire.verdict",
 	"invalid-health-response-unknown-status.json":     "schema:/$defs/response/properties/status/enum",
+	"invalid-signature-alg.json":                      "schema:/properties/alg/const",
+	"invalid-signature-der-sig.json":                  "schema:/properties/sig/pattern",
+	"invalid-signature-bad-key-id.json":               "schema:/properties/keyId/pattern",
+	"invalid-event-bad-key-id.json":                   "schema:/$defs/keyId/pattern",
 }
 
 // TestSchemaExamples: every testdata/valid-*.json passes its schema and the
@@ -153,7 +165,7 @@ func newCompiler(t *testing.T) *jsonschema.Compiler {
 	c := jsonschema.NewCompiler()
 	c.DefaultDraft(jsonschema.Draft2020)
 	for _, f := range []string{
-		"manifest.schema.json", "config.schema.json", "events.schema.json",
+		"manifest.schema.json", "config.schema.json", "events.schema.json", "signature.schema.json",
 		"protocol/initialize.schema.json", "protocol/health.schema.json", "protocol/shutdown.schema.json",
 	} {
 		raw, err := os.ReadFile(f)
@@ -462,4 +474,95 @@ var upper = regexp.MustCompile(`[A-Z]`)
 // entity_types), the inverse of proto3's JSON name mapping.
 func snake(s string) string {
 	return upper.ReplaceAllStringFunc(s, func(c string) string { return "_" + strings.ToLower(c) })
+}
+
+// manifestSigContext is the line a manifest signature's input starts with
+// (CONTRACT.md, Plugins, Signing and the trust store).
+const manifestSigContext = "basalt-plugin-manifest.1\n"
+
+// sigLen is an ES256 signature as r ‖ s.
+const sigLen = 64
+
+// TestSignatureVectors: the signed manifest in testdata/signed verifies with
+// crypto/ecdsa against its publisher key, its key id is derived from that
+// key, and any 1-byte change to the manifest, or a signature of another
+// length, fails. The vector's private key was discarded after signing.
+func TestSignatureVectors(t *testing.T) {
+	t.Parallel()
+	dir := filepath.Join("testdata", "signed")
+	manifest, err := os.ReadFile(filepath.Join(dir, "basalt-plugin.json"))
+	require.NoError(t, err)
+	sigRaw, err := os.ReadFile(filepath.Join(dir, "basalt-plugin.json.sig"))
+	require.NoError(t, err)
+	pubPEM, err := os.ReadFile(filepath.Join(dir, "publisher.pub"))
+	require.NoError(t, err)
+
+	compiler := newCompiler(t)
+	for file, raw := range map[string][]byte{"signature.schema.json": sigRaw, "manifest.schema.json": manifest} {
+		sch, err := compiler.Compile(schemaBase + file)
+		require.NoError(t, err)
+		inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
+		require.NoError(t, err)
+		require.NoError(t, sch.Validate(inst), file)
+	}
+
+	var sig struct {
+		KeyID string `json:"keyId"`
+		Alg   string `json:"alg"`
+		Sig   string `json:"sig"`
+	}
+	require.NoError(t, json.Unmarshal(sigRaw, &sig))
+	require.Equal(t, "ES256", sig.Alg)
+
+	block, rest := pem.Decode(pubPEM)
+	require.NotNil(t, block)
+	require.Empty(t, bytes.TrimSpace(rest))
+	require.Equal(t, "PUBLIC KEY", block.Type)
+	parsed, err := x509.ParsePKIXPublicKey(block.Bytes)
+	require.NoError(t, err)
+	pub, ok := parsed.(*ecdsa.PublicKey)
+	require.True(t, ok)
+	require.Equal(t, elliptic.P256(), pub.Curve)
+
+	sum := sha256.Sum256(block.Bytes)
+	require.Equal(t, base64.RawURLEncoding.EncodeToString(sum[:16]), sig.KeyID, "keyId is derived from the key")
+
+	rawSig, err := base64.RawURLEncoding.Strict().DecodeString(sig.Sig)
+	require.NoError(t, err)
+	require.True(t, verifyManifest(pub, manifest, rawSig), "the vector verifies")
+
+	// Each file the manifest pins has the hash it states.
+	var m struct {
+		Files map[string]string `json:"files"`
+	}
+	require.NoError(t, json.Unmarshal(manifest, &m))
+	for path, want := range m.Files {
+		b, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(path)))
+		require.NoError(t, err)
+		require.Equal(t, want, fmt.Sprintf("sha256:%x", sha256.Sum256(b)), path)
+	}
+
+	for i := range manifest {
+		changed := slices.Clone(manifest)
+		changed[i] ^= 0x01
+		require.False(t, verifyManifest(pub, changed, rawSig), "a change at byte %d must fail", i)
+	}
+	require.False(t, verifyManifest(pub, append(slices.Clone(manifest), '\n'), rawSig), "an added byte must fail")
+	require.False(t, verifyManifest(pub, manifest, rawSig[:sigLen-1]), "a short signature must fail")
+	bare := sha256.Sum256(manifest)
+	r := new(big.Int).SetBytes(rawSig[:sigLen/2])
+	s := new(big.Int).SetBytes(rawSig[sigLen/2:])
+	require.False(t, ecdsa.Verify(pub, bare[:], r, s), "the context line is part of the input")
+}
+
+// verifyManifest checks an ES256 signature, 64 bytes r ‖ s, over the
+// context line and the manifest's exact bytes.
+func verifyManifest(pub *ecdsa.PublicKey, manifest, sig []byte) bool {
+	if len(sig) != sigLen {
+		return false
+	}
+	digest := sha256.Sum256(append([]byte(manifestSigContext), manifest...))
+	r := new(big.Int).SetBytes(sig[:sigLen/2])
+	s := new(big.Int).SetBytes(sig[sigLen/2:])
+	return ecdsa.Verify(pub, digest[:], r, s)
 }

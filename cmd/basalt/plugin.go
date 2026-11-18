@@ -194,6 +194,19 @@ func (e *pluginEnv) verifyRefusal(err error, again string) error {
 		r.steps = []mcp.NextStep{{Actor: mcp.ActorAgent, Action: mcp.ActionStop, Text: "Stop: the plugin's publisher must fix its manifest."}}
 		return r
 	}
+	if e.mode == plugin.ModeService && ve.Why == plugin.WhyGroupWritable {
+		// A directory others can write (Debian-family /usr/local is
+		// root:staff 2775): trusting a key would not help, the mode would.
+		fix := "sudo chmod go-w " + shellQuote(ve.File)
+		r.person = "The plugin was refused: " + ve.File + " can be written by its group or others, so another user could " +
+			"swap what is installed under it. Plugins are installed only under directories root alone can change. " +
+			"Remove that write access, then run the command again:\n  " + fix + "\n  " + again
+		r.steps = []mcp.NextStep{
+			{Actor: mcp.ActorPerson, Action: mcp.ActionRunCommand, Text: "Remove group and other write access from " + ve.File + ".", Command: fix},
+			{Actor: mcp.ActorPerson, Action: mcp.ActionRunCommand, Text: "Run the refused command again.", Command: again},
+		}
+		return r
+	}
 	trust := e.command("trust", "<publisher key file>")
 	r.person = "The plugin was refused: " + ve.File + " " + ve.Why + ". If you trust its publisher, trust their public key " +
 		"and run the command again:\n  " + trust + "\n  " + again
@@ -636,6 +649,8 @@ func (e *pluginEnv) add(f addFlags) error {
 		return err
 	}
 	shown := staged.SignerKeyID
+	var written config.Plugin
+	var installed plugin.Verified
 	err = e.update(config.Change{
 		Apply: func(cfg *config.Config) error {
 			if refused := e.refuseAgentOperated(*cfg, "add", again); refused != nil {
@@ -648,9 +663,12 @@ func (e *pluginEnv) add(f addFlags) error {
 			if err := e.checkAgents(*cfg, f.agents, func(a []string) string { return e.againAdd(f, a) }); err != nil {
 				return err
 			}
-			if _, err := staged.Commit(); err != nil {
+			final, err := staged.Commit()
+			if err != nil {
 				return e.verifyRefusal(err, again)
 			}
+			installed = staged.Verified
+			installed.Dir = final
 			// Commit replaces a copy another key signed; this guards that
 			// rule, so what is recorded is always what was shown.
 			if staged.SignerKeyID != shown {
@@ -658,16 +676,21 @@ func (e *pluginEnv) add(f addFlags) error {
 			}
 			if i >= 0 {
 				cfg.Plugins[i].ManifestSHA256, cfg.Plugins[i].Agents = staged.ManifestSHA256, f.agents
+				written = cfg.Plugins[i]
 				return nil
 			}
-			cfg.Plugins = append(cfg.Plugins, config.Plugin{
+			written = config.Plugin{
 				Name: k.Name, Instance: k.Instance, ManifestSHA256: staged.ManifestSHA256, Enabled: false, Agents: f.agents,
-			})
+			}
+			cfg.Plugins = append(cfg.Plugins, written)
 			return nil
 		},
 		Written: func(config.Config) { e.sweep(k, staged.ManifestSHA256) },
 	})
 	if err != nil {
+		return err
+	}
+	if err := e.applyUnit(unitWrite, written, &installed); err != nil {
 		return err
 	}
 	if prev != nil {
@@ -857,9 +880,13 @@ func (e *pluginEnv) enable(k plugin.EntryKey) error {
 			return errChangedMeanwhile
 		}
 		cfg.Plugins[i].Enabled = true
+		p, v = cfg.Plugins[i], now
 		return nil
 	}})
 	if err != nil {
+		return err
+	}
+	if err := e.applyUnit(unitWrite, p, &v); err != nil {
 		return err
 	}
 	fmt.Fprintf(e.c.stderr, "basalt: plugin %s enabled\n", k)
@@ -877,13 +904,14 @@ func pluginDisable(c *cliIO, args []string) int {
 
 // setDisabled turns k off. It only narrows, so an agent may run it.
 func (e *pluginEnv) setDisabled(k plugin.EntryKey) error {
-	if _, err := e.entry(k); err != nil {
+	p, err := e.entry(k)
+	if err != nil {
 		return err
 	}
 	if err := e.needsSudo("disable"); err != nil {
 		return err
 	}
-	err := e.update(config.Change{Apply: func(cfg *config.Config) error {
+	err = e.update(config.Change{Apply: func(cfg *config.Config) error {
 		i := cfg.PluginIndex(k)
 		if i < 0 {
 			return errChangedMeanwhile
@@ -899,6 +927,9 @@ func (e *pluginEnv) setDisabled(k plugin.EntryKey) error {
 		return nil
 	}
 	if err != nil {
+		return err
+	}
+	if err := e.applyUnit(unitStop, p, nil); err != nil {
 		return err
 	}
 	fmt.Fprintf(e.c.stderr, "basalt: plugin %s disabled\n", k)
@@ -917,13 +948,14 @@ func pluginRemove(c *cliIO, args []string) int {
 // remove drops k from engine.json, then its installed copies. It only
 // narrows, so an agent may run it.
 func (e *pluginEnv) remove(k plugin.EntryKey) error {
-	if _, err := e.entry(k); err != nil {
+	p, err := e.entry(k)
+	if err != nil {
 		return err
 	}
 	if err := e.needsSudo("remove"); err != nil {
 		return err
 	}
-	err := e.update(config.Change{
+	err = e.update(config.Change{
 		Apply: func(cfg *config.Config) error {
 			i := cfg.PluginIndex(k)
 			if i < 0 {
@@ -935,6 +967,9 @@ func (e *pluginEnv) remove(k plugin.EntryKey) error {
 		Written: func(config.Config) { e.sweep(k, "") },
 	})
 	if err != nil {
+		return err
+	}
+	if err := e.applyUnit(unitRemove, p, nil); err != nil {
 		return err
 	}
 	fmt.Fprintf(e.c.stderr, "basalt: plugin %s removed\n", k)

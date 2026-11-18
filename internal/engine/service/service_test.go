@@ -27,6 +27,9 @@ type fakeSystem struct {
 	owners  map[string]string
 	// binaryErr is what CheckBinary returns.
 	binaryErr error
+	// removeErr is what Remove returns for a directory under the plugin
+	// base (one that is not empty).
+	removeErr error
 }
 
 func newFake() *fakeSystem {
@@ -53,11 +56,16 @@ func (f *fakeSystem) Run(_ context.Context, args ...string) error {
 	return nil
 }
 
-func (f *fakeSystem) Mkdir(path string, mode os.FileMode, owner string) error {
-	if f.failOn == "mkdir" {
+func (f *fakeSystem) Mkdir(path string, mode os.FileMode, owner, group string) error {
+	if f.failOn == "mkdir" || f.failOn == "mkdir "+path {
 		return errors.New("exit status 1")
 	}
-	f.ran = append(f.ran, fmt.Sprintf("mkdir -m %04o -o %s %s", mode, owner, path))
+	f.ran = append(f.ran, fakeMkdir(path, mode, owner, group))
+	return nil
+}
+
+func (f *fakeSystem) RemoveTree(path string) error {
+	f.ran = append(f.ran, "rm -rf "+path)
 	return nil
 }
 
@@ -72,6 +80,9 @@ func (f *fakeSystem) CheckBinary(string) error { return f.binaryErr }
 
 func (f *fakeSystem) Remove(path string) error {
 	f.removed = append(f.removed, path)
+	if f.removeErr != nil && strings.HasPrefix(path, "/usr/local/lib/basalt") {
+		return f.removeErr
+	}
 	return os.ErrNotExist
 }
 
@@ -167,6 +178,8 @@ func TestLinuxInstallPlan(t *testing.T) {
 	require.Equal(t, []string{
 		"useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin basalt",
 		"mkdir -m 0750 -o basalt /etc/basalt",
+		"mkdir -m 0755 -o root /usr/local/lib/basalt",
+		"mkdir -m 0755 -o root /usr/local/lib/basalt/run",
 		"systemctl daemon-reload",
 		"systemctl enable --now basalt-engine.service",
 	}, sys.ran)
@@ -374,6 +387,8 @@ func TestInstallWritesOwnedFilesAndRestartsAnInstalledService(t *testing.T) {
 	require.Equal(t, []string{
 		"mkdir -m 0750 -o basalt /etc/basalt",
 		"mkdir -m 0700 -o basalt /etc/basalt/agents",
+		"mkdir -m 0755 -o root /usr/local/lib/basalt",
+		"mkdir -m 0755 -o root /usr/local/lib/basalt/run",
 		"systemctl daemon-reload",
 		"systemctl enable basalt-engine.service",
 		"systemctl restart basalt-engine.service",
@@ -416,4 +431,19 @@ func TestEngineDirsMatchTheUnit(t *testing.T) {
 	for _, d := range service.EngineDirs("darwin") {
 		require.Contains(t, steps, service.Step{Kind: service.StepMkdir, Path: d.Path, Mode: d.Mode, Owner: "_basalt"}, d.Path)
 	}
+}
+
+// fakeMkdir is how the fakes record a mkdir step: the path as it is.
+func fakeMkdir(path string, mode os.FileMode, owner, group string) string {
+	bits := uint32(mode.Perm())
+	if mode&os.ModeSetgid != 0 {
+		bits |= 0o2000
+	}
+	if owner == "" {
+		owner = "root"
+	}
+	if group != "" {
+		owner += " -g " + group
+	}
+	return fmt.Sprintf("mkdir -m %04o -o %s %s", bits, owner, path)
 }

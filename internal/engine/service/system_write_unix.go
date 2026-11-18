@@ -69,17 +69,23 @@ func (OSSystem) WriteFile(path string, data []byte, mode os.FileMode, owner stri
 // at path, and sets mode and owner through the opened directory descriptor.
 // The parent is reached by openTrusted, so no component of it is a symlink
 // the engine user planted. A directory that already exists is taken over
-// only when root or owner owns it.
-func (OSSystem) Mkdir(path string, mode os.FileMode, owner string) error {
+// only when root or owner owns it. group, when set, is the directory's
+// group instead of owner's; a setgid mode keeps the bit.
+func (OSSystem) Mkdir(path string, mode os.FileMode, owner, group string) error {
 	ids, err := lookupOwner(owner)
 	if err != nil {
 		return err
+	}
+	if group != "" {
+		if ids.gid, err = lookupGroup(group); err != nil {
+			return err
+		}
 	}
 	parent := filepath.Dir(path)
 	pfd, err := openTrusted(parent, ids.uid)
 	if errors.Is(err, unix.ENOENT) && parent != path {
 		// Missing ancestors are made by root (root-owned, 0755), like install -d.
-		if err := (OSSystem{}).Mkdir(parent, ancestorDirMode, ""); err != nil {
+		if err := (OSSystem{}).Mkdir(parent, ancestorDirMode, "", ""); err != nil {
 			return err
 		}
 		pfd, err = openTrusted(parent, ids.uid)
@@ -104,10 +110,76 @@ func (OSSystem) Mkdir(path string, mode os.FileMode, owner string) error {
 			return err
 		}
 	}
-	if err := unix.Fchmod(dfd, uint32(mode.Perm())); err != nil {
+	// Owner first: a chown clears the setgid bit, so the mode is set after.
+	if err := unix.Fchown(dfd, ids.uid, ids.gid); err != nil {
 		return err
 	}
-	return unix.Fchown(dfd, ids.uid, ids.gid)
+	return unix.Fchmod(dfd, modeBits(mode))
+}
+
+// lookupGroup is the gid of the OS group name.
+func lookupGroup(name string) (int, error) {
+	g, err := user.LookupGroup(name)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(g.Gid)
+}
+
+// maxTreeDepth bounds how deep RemoveTree goes.
+const maxTreeDepth = 32
+
+// RemoveTree removes path and everything in it as root without following a
+// link: its parent is reached by openTrusted (owned by root, writable by no
+// one else on the way), and every entry below is removed relative to an
+// open directory, a symlink as the link itself. A missing path is not an
+// error.
+func (OSSystem) RemoveTree(path string) error {
+	pfd, err := openTrusted(filepath.Dir(path), 0)
+	if errors.Is(err, unix.ENOENT) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer unix.Close(pfd)
+	err = removeAt(pfd, filepath.Base(path), 0)
+	if errors.Is(err, unix.ENOENT) {
+		return nil
+	}
+	return err
+}
+
+// removeAt removes name in the directory open at dfd: a file or link
+// directly, a directory after what is in it.
+func removeAt(dfd int, name string, depth int) error {
+	err := unix.Unlinkat(dfd, name, 0)
+	if err == nil || (!errors.Is(err, unix.EISDIR) && !errors.Is(err, unix.EPERM)) {
+		return err
+	}
+	if depth >= maxTreeDepth {
+		return fmt.Errorf("%s is nested too deep to remove", name)
+	}
+	fd, err := unix.Openat(dfd, name, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return err
+	}
+	d := os.NewFile(uintptr(fd), name)
+	names, err := d.Readdirnames(-1)
+	if err != nil {
+		_ = d.Close()
+		return err
+	}
+	for _, n := range names {
+		if err := removeAt(fd, n, depth+1); err != nil {
+			_ = d.Close()
+			return err
+		}
+	}
+	if err := d.Close(); err != nil {
+		return err
+	}
+	return unix.Unlinkat(dfd, name, unix.AT_REMOVEDIR)
 }
 
 // checkExisting refuses to take over a directory that someone other than
@@ -122,7 +194,7 @@ func checkExisting(dfd int, path string, uid int, owner string) error {
 		return nil
 	}
 	if owner == "" {
-		owner = "root"
+		owner = rootUser
 	}
 	return fmt.Errorf("%s already exists and is owned by uid %d, not root or %s; "+
 		"move it aside (sudo mv %s %s.old) or choose another --config, then run the install again", path, st.Uid, owner, path, path)

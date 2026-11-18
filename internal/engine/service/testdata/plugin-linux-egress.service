@@ -1,0 +1,36 @@
+# Written by basalt for plugin acme-ner, instance default; basalt rewrites it.
+[Unit]
+Description=BasaltDB plugin acme-ner (instance default)
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=basalt-plugin-acme-ner-default
+Group=basalt-plugin-acme-ner-default
+ExecStart="/usr/local/lib/basalt/plugins/acme-ner/default/4f1c2b0e9a8d7c6b5a49382716f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3/bin/acme-ner" "--serve" "--lang=en id"
+WorkingDirectory=/usr/local/lib/basalt/plugins/acme-ner/default/4f1c2b0e9a8d7c6b5a49382716f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3
+Environment=BASALT_PLUGIN_SOCKET=/usr/local/lib/basalt/run/basalt-plugin-acme-ner-default/p.sock
+UMask=0007
+Restart=always
+RestartSec=2s
+MemoryMax=1024M
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+ReadWritePaths=/usr/local/lib/basalt/run/basalt-plugin-acme-ner-default
+InaccessiblePaths=/etc/basalt
+InaccessiblePaths=/var/lib/basalt
+InaccessiblePaths=/run/basalt
+InaccessiblePaths=-/etc/basalt/agents/product_a.url
+InaccessiblePaths=-/srv/creds/client_x.url
+InaccessiblePaths=-/etc/basalt/plugins/acme.token
+
+[Install]
+WantedBy=multi-user.target

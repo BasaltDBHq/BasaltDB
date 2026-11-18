@@ -27,7 +27,8 @@ import (
 // remove stay allowed, since they only narrow.
 
 const pluginUsage = "basalt plugin list | add <dir> --agents a,b [--instance NAME] | enable <name> [--instance NAME] | " +
-	"disable <name> [--instance NAME] | trust <public key file> | remove <name> [--instance NAME]"
+	"disable <name> [--instance NAME] | check <name> [--instance NAME] | trust <public key file> | remove <name> [--instance NAME] | " +
+	"keygen --out DIR | sign <dir> --key FILE"
 
 // runPlugin: basalt plugin <command>.
 func runPlugin(c *cliIO, args []string) int {
@@ -36,7 +37,7 @@ func runPlugin(c *cliIO, args []string) int {
 	}
 	cmds := map[string]func(*cliIO, []string) int{
 		"list": pluginList, "add": pluginAdd, "enable": pluginEnable, "disable": pluginDisable,
-		"trust": pluginTrust, "remove": pluginRemove,
+		"trust": pluginTrust, "remove": pluginRemove, "check": pluginCheck, "keygen": pluginKeygen, "sign": pluginSign,
 	}
 	if run, ok := cmds[args[0]]; ok {
 		return run(c, args[1:])
@@ -855,7 +856,7 @@ func (e *pluginEnv) enable(k plugin.EntryKey) error {
 // servedEndpoint refuses an endpoint this build cannot run: a local plugin
 // over connectrpc (a Unix socket) is not served yet.
 func servedEndpoint(k plugin.EntryKey, m plugin.Manifest) error {
-	if l := m.Endpoint.Local; l != nil && l.Transport == "connectrpc" {
+	if l := m.Endpoint.Local; l != nil && l.Transport == transportConnect {
 		return fmt.Errorf("plugin %s: a local plugin over connectrpc is not served yet; use jsonrpc-stdio or jsonrpc-unix, or a remote endpoint", k)
 	}
 	return nil

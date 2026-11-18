@@ -121,6 +121,10 @@ func TestCredentialOpensRefuseAFIFOWithoutBlocking(t *testing.T) {
 // (Linux): the install refuses to read the engine's files below one, as it
 // should, and tests stand in for the engine user in their own directories.
 func TestMain(m *testing.M) {
+	// The test binary doubles as the test plugin of basalt plugin check.
+	if len(os.Args) > 1 && os.Args[1] == testPluginFlag {
+		testPluginMain(os.Args[2:])
+	}
 	if fi, err := os.Stat(os.TempDir()); err == nil && fi.Mode()&os.ModeSticky != 0 {
 		dir, err := os.MkdirTemp(".", ".tmp-test-")
 		if err != nil {

@@ -1,0 +1,296 @@
+package plugin
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"sort"
+	"sync"
+	"time"
+
+	"github.com/basaltdbhq/basaltdb/internal/plugin/protocol"
+)
+
+// State is whether an entry can take calls.
+type State string
+
+// The states.
+const (
+	StateReady       State = "READY"
+	StateUnavailable State = "UNAVAILABLE"
+)
+
+type slot struct {
+	entry Entry
+	t     Transport
+	sem   chan struct{}
+
+	mu    sync.Mutex
+	state State
+}
+
+// Host is the registry of plugin entries and the single place calls go
+// through. Entries share nothing: each has its own transport, slots and
+// state.
+type Host struct {
+	mu      sync.RWMutex
+	entries map[EntryKey]*slot
+}
+
+// NewHost returns an empty host.
+func NewHost() *Host { return &Host{entries: map[EntryKey]*slot{}} }
+
+// Register adds an entry over its transport and runs initialize on it. The
+// entry is READY only when the plugin answers a protocol the engine offered,
+// with the manifest's name and version and exactly the manifest's hooks.
+// On error nothing is registered and the caller still owns t.
+func (h *Host) Register(e Entry, t Transport) error {
+	e, err := normalize(e)
+	if err != nil {
+		return err
+	}
+	h.mu.RLock()
+	_, dup := h.entries[e.Key]
+	h.mu.RUnlock()
+	if dup {
+		return fmt.Errorf("plugin %s: already registered", e.Key)
+	}
+
+	req := protocol.InitializeRequest{
+		Protocols: []string{protocol.Version1},
+		Hooks:     hookNames(e.Manifest),
+		Config:    protocol.RawObject(e.Config),
+		Limits: protocol.Limits{
+			MaxMessageBytes: protocol.MaxMessageBytes,
+			MaxInFlight:     protocol.MaxInFlight,
+			TimeoutMs:       int(e.Timeout / time.Millisecond),
+		},
+	}
+	s := &slot{entry: e, t: t, sem: make(chan struct{}, protocol.MaxInFlight), state: StateUnavailable}
+	var resp protocol.InitializeResponse
+	if err := s.do(context.Background(), protocol.MethodInitialize, req, &resp); err != nil {
+		return err
+	}
+	if !initializeMatches(e, resp) {
+		return &CallError{Entry: e.Key, Class: ClassBadResponse}
+	}
+	s.state = StateReady
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if _, dup := h.entries[e.Key]; dup {
+		return fmt.Errorf("plugin %s: already registered", e.Key)
+	}
+	h.entries[e.Key] = s
+	return nil
+}
+
+// Unregister removes an entry and closes its transport. Calls in flight fail.
+func (h *Host) Unregister(k EntryKey) {
+	h.mu.Lock()
+	s := h.entries[k]
+	delete(h.entries, k)
+	h.mu.Unlock()
+	if s != nil {
+		_ = s.t.Close()
+	}
+}
+
+// Call sends a hook call to an entry on behalf of the named agents. Every
+// agent must be listed on the entry, or the call fails with ErrAgentNotListed
+// before anything is sent; so does a call naming no agent. The entry's timeout
+// is the deadline for the whole call, including the wait for a free slot (at
+// most four calls are in flight per entry). Failures are *CallError.
+func (h *Host) Call(ctx context.Context, k EntryKey, agents []string, method string, params, result any) error {
+	s := h.lookup(k)
+	if s == nil {
+		return &CallError{Entry: k, Class: ClassUnavailable}
+	}
+	if len(agents) == 0 {
+		return ErrAgentNotListed
+	}
+	for _, a := range agents {
+		if !s.lists(a) {
+			return ErrAgentNotListed
+		}
+	}
+	if s.State() != StateReady {
+		return &CallError{Entry: k, Class: ClassUnavailable}
+	}
+	return s.do(ctx, method, params, result)
+}
+
+// Control sends a lifecycle call (health, shutdown) to an entry. It names no
+// agent and carries no hook data.
+func (h *Host) Control(ctx context.Context, k EntryKey, method string, params, result any) error {
+	s := h.lookup(k)
+	if s == nil {
+		return &CallError{Entry: k, Class: ClassUnavailable}
+	}
+	switch method {
+	case protocol.MethodHealth, protocol.MethodShutdown:
+	default:
+		return fmt.Errorf("plugin %s: %q is not a lifecycle method", k, method)
+	}
+	return s.do(ctx, method, params, result)
+}
+
+// State reports whether the entry can take calls. An unknown entry is
+// UNAVAILABLE.
+func (h *Host) State(k EntryKey) State {
+	if s := h.lookup(k); s != nil {
+		return s.State()
+	}
+	return StateUnavailable
+}
+
+// SetState lets the supervisor mark an entry READY or UNAVAILABLE.
+func (h *Host) SetState(k EntryKey, st State) {
+	if s := h.lookup(k); s != nil {
+		s.setState(st)
+	}
+}
+
+func (h *Host) lookup(k EntryKey) *slot {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.entries[k]
+}
+
+func (s *slot) lists(agent string) bool {
+	for _, a := range s.entry.Agents {
+		if a == agent {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *slot) State() State {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.state
+}
+
+func (s *slot) setState(st State) {
+	s.mu.Lock()
+	s.state = st
+	s.mu.Unlock()
+}
+
+// do runs one call under the entry's deadline and in-flight cap, and turns
+// every failure into a CallError.
+func (s *slot) do(ctx context.Context, method string, params, result any) error {
+	ctx, cancel := context.WithTimeout(ctx, s.entry.Timeout)
+	defer cancel()
+
+	select {
+	case s.sem <- struct{}{}:
+		defer func() { <-s.sem }()
+	case <-ctx.Done():
+		return s.ctxErr(ctx)
+	}
+	if err := ctx.Err(); err != nil {
+		return s.ctxErr(ctx)
+	}
+
+	err := s.t.Call(ctx, method, params, result)
+	if err == nil {
+		return nil
+	}
+	if ctx.Err() != nil {
+		return s.ctxErr(ctx)
+	}
+	class := ClassUnavailable
+	var c Classed
+	if errors.As(err, &c) {
+		class = c.FailureClass()
+	}
+	if class == ClassExited || class == ClassUnavailable {
+		s.setState(StateUnavailable)
+	}
+	return &CallError{Entry: s.entry.Key, Class: class}
+}
+
+// ctxErr maps a finished context: the entry's deadline is TIMEOUT; a caller
+// that gave up gets its own context error back, which holds no payload.
+func (s *slot) ctxErr(ctx context.Context) error {
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return &CallError{Entry: s.entry.Key, Class: ClassTimeout}
+	}
+	return ctx.Err()
+}
+
+func normalize(e Entry) (Entry, error) {
+	if e.Key.Name == "" || e.Key.Instance == "" {
+		return e, errors.New("plugin: entry needs a name and an instance")
+	}
+	if e.Manifest.Name != e.Key.Name {
+		return e, fmt.Errorf("plugin %s: manifest names a different plugin", e.Key)
+	}
+	if len(e.Agents) == 0 {
+		return e, fmt.Errorf("plugin %s: entry lists no agents", e.Key)
+	}
+	if len(e.Manifest.Hooks) == 0 {
+		return e, fmt.Errorf("plugin %s: manifest declares no hooks", e.Key)
+	}
+	for h := range e.Manifest.Hooks {
+		if !Hook(h).Allowed() {
+			return e, fmt.Errorf("plugin %s: a hook the engine does not serve", e.Key)
+		}
+	}
+	e.Agents = append([]string(nil), e.Agents...)
+	e.Config = append([]byte(nil), e.Config...)
+	if e.Timeout == 0 {
+		e.Timeout = DefaultLocalTimeout
+		if e.Manifest.Endpoint.IsRemote() {
+			e.Timeout = DefaultRemoteTimeout
+		}
+	}
+	if e.Timeout < MinTimeout || e.Timeout > MaxTimeout {
+		return e, fmt.Errorf("plugin %s: timeout out of range", e.Key)
+	}
+	return e, nil
+}
+
+func hookNames(m Manifest) []string {
+	out := make([]string, 0, len(m.Hooks))
+	for h := range m.Hooks {
+		out = append(out, h)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func initializeMatches(e Entry, r protocol.InitializeResponse) bool {
+	if r.Protocol != protocol.Version1 || r.Name != e.Manifest.Name || r.Version != e.Manifest.Version {
+		return false
+	}
+	if len(r.Hooks) != len(e.Manifest.Hooks) {
+		return false
+	}
+	for h, want := range e.Manifest.Hooks {
+		got, ok := r.Hooks[h]
+		if !ok || got.Contract != want.Contract ||
+			!sameSet(got.Roles, want.Roles) || !sameSet(got.EntityTypes, want.EntityTypes) {
+			return false
+		}
+	}
+	return true
+}
+
+func sameSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	m := make(map[string]int, len(a))
+	for _, s := range a {
+		m[s]++
+	}
+	for _, s := range b {
+		if m[s]--; m[s] < 0 {
+			return false
+		}
+	}
+	return true
+}

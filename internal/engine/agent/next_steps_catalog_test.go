@@ -425,13 +425,18 @@ func entryKey(e mcpcontract.ErrorSteps) string { return caseKey(e.Code, e.Reason
 
 // TestEveryCatalogErrorHasACase walks the catalog: an error entry without a
 // case fails, so a new code or reason cannot ship without guidance, and a
-// case without an entry is stale.
+// case without an entry is stale. PLUGIN_REFUSED is the one code no MCP tool
+// returns: the basalt plugin commands do, and their tests check each reason
+// against the catalog (cmd/basalt).
 func TestEveryCatalogErrorHasACase(t *testing.T) {
 	t.Parallel()
 	cases := catalogCases()
 	seen := map[string]bool{}
 	var missing []string
 	for _, e := range catalogOf(t).Errors {
+		if e.Code == "PLUGIN_REFUSED" {
+			continue
+		}
 		seen[entryKey(e)] = true
 		if _, ok := cases[entryKey(e)]; !ok {
 			missing = append(missing, entryKey(e))

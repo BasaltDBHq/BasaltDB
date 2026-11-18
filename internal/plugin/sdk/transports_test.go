@@ -380,3 +380,51 @@ func TestPeerExitsZeroOnShutdown(t *testing.T) {
 		}
 	})
 }
+
+// failingListener hands out one connection, then fails the next Accept with
+// a reason that is not the context ending. Close is recorded.
+type failingListener struct {
+	conns  chan net.Conn
+	closed chan struct{}
+}
+
+func (l *failingListener) Accept() (net.Conn, error) {
+	select {
+	case c := <-l.conns:
+		return c, nil
+	case <-l.closed:
+		return nil, net.ErrClosed
+	default:
+		return nil, io.ErrUnexpectedEOF
+	}
+}
+
+func (l *failingListener) Close() error {
+	select {
+	case <-l.closed:
+	default:
+		close(l.closed)
+	}
+	return nil
+}
+func (l *failingListener) Addr() net.Addr { return &net.UnixAddr{Name: "x", Net: "unix"} }
+
+// A failed Accept cancels the connections still open before it waits for
+// them, so Serve returns the accept error instead of hanging on an idle peer.
+func TestListenerAcceptFailureEndsOpenConnections(t *testing.T) {
+	s, err := newServer(newFull(), &config{})
+	require.NoError(t, err)
+	server, peer := net.Pipe()
+	defer peer.Close()
+	l := &failingListener{conns: make(chan net.Conn, 1), closed: make(chan struct{})}
+	l.conns <- server
+
+	done := make(chan error, 1)
+	go func() { done <- s.serveJSONRPCListener(context.Background(), l) }()
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	case <-time.After(5 * time.Second):
+		t.Fatal("serveJSONRPCListener hung on an open connection after Accept failed")
+	}
+}

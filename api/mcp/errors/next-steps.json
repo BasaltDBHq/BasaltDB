@@ -95,10 +95,10 @@
     { "code": "UNAVAILABLE", "reason": "SETUP_EXPIRED", "personMessage": true, "steps": [{ "actor": "OPERATOR", "action": "RUN_COMMAND" }, { "actor": "AGENT", "action": "END_TURN" }] },
 
     { "code": "INTERNAL", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] },
-    { "code": "PLUGIN_REFUSED", "reason": "AGENT_OPERATED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }], "planned": true },
-    { "code": "PLUGIN_REFUSED", "reason": "BAD_MANIFEST", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }], "planned": true },
-    { "code": "PLUGIN_REFUSED", "reason": "NOT_TRUSTED", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "RUN_COMMAND" }], "planned": true },
-    { "code": "PLUGIN_REFUSED", "reason": "UNKNOWN_AGENT", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }], "planned": true }
+    { "code": "PLUGIN_REFUSED", "reason": "AGENT_OPERATED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }] },
+    { "code": "PLUGIN_REFUSED", "reason": "BAD_MANIFEST", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] },
+    { "code": "PLUGIN_REFUSED", "reason": "NOT_TRUSTED", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "RUN_COMMAND" }] },
+    { "code": "PLUGIN_REFUSED", "reason": "UNKNOWN_AGENT", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }] }
   ],
   "results": [
     { "tool": "preview_revert", "case": "PREVIEW", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "REVISE_CALL" }] },

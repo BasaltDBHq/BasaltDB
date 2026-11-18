@@ -107,6 +107,25 @@ func TestCallRefusesUnlistedAgent(t *testing.T) {
 	}
 }
 
+func TestCallRefusesLifecycleMethods(t *testing.T) {
+	h := NewHost()
+	e := entry("acme", "default", "product-a")
+	f := register(t, h, e)
+	before := len(f.methods())
+	for _, m := range []string{protocol.MethodInitialize, protocol.MethodHealth, protocol.MethodShutdown} {
+		err := h.Call(context.Background(), e.Key, []string{"product-a"}, m, nil, nil)
+		if err == nil {
+			t.Fatalf("Call sent %q", m)
+		}
+		if strings.Contains(err.Error(), "product-a") {
+			t.Fatalf("error names an agent: %v", err)
+		}
+	}
+	if got := len(f.methods()); got != before {
+		t.Fatalf("transport saw %d calls after the refused calls", got-before)
+	}
+}
+
 func TestDeadlineEnforced(t *testing.T) {
 	h := NewHost()
 	e := entry("acme", "default", "a")

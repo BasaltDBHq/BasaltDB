@@ -27,7 +27,8 @@ import (
 // remove stay allowed, since they only narrow.
 
 const pluginUsage = "basalt plugin list | add <dir> --agents a,b [--instance NAME] | enable <name> [--instance NAME] | " +
-	"disable <name> [--instance NAME] | trust <public key file> | remove <name> [--instance NAME]"
+	"disable <name> [--instance NAME] | check <name> [--instance NAME] | trust <public key file> | remove <name> [--instance NAME] | " +
+	"keygen --out DIR | sign <dir> --key FILE"
 
 // runPlugin: basalt plugin <command>.
 func runPlugin(c *cliIO, args []string) int {
@@ -36,7 +37,7 @@ func runPlugin(c *cliIO, args []string) int {
 	}
 	cmds := map[string]func(*cliIO, []string) int{
 		"list": pluginList, "add": pluginAdd, "enable": pluginEnable, "disable": pluginDisable,
-		"trust": pluginTrust, "remove": pluginRemove,
+		"trust": pluginTrust, "remove": pluginRemove, "check": pluginCheck, "keygen": pluginKeygen, "sign": pluginSign,
 	}
 	if run, ok := cmds[args[0]]; ok {
 		return run(c, args[1:])
@@ -618,6 +619,13 @@ func (e *pluginEnv) add(f addFlags) error {
 		fmt.Fprintf(e.c.stderr, "basalt: plugin %s is installed with this manifest and these agents; nothing changed\n", k)
 		return nil
 	}
+	if prev != nil && prev.Enabled {
+		// The entry stays enabled: refuse now what enable would refuse.
+		changed := *prev
+		if _, err := changed.Entry(staged.Manifest); err != nil {
+			return err
+		}
+	}
 	writeConsent(e.c.stderr, k, staged.Verified, f.agents, e.mode)
 	question := "Add this plugin? It stays disabled until you enable it."
 	if prev != nil {
@@ -643,6 +651,8 @@ func (e *pluginEnv) add(f addFlags) error {
 			if _, err := staged.Commit(); err != nil {
 				return e.verifyRefusal(err, again)
 			}
+			// Commit replaces a copy another key signed; this guards that
+			// rule, so what is recorded is always what was shown.
 			if staged.SignerKeyID != shown {
 				return fmt.Errorf("plugin %s: the installed copy's signer is not the one you were shown; nothing was written", k)
 			}
@@ -826,9 +836,6 @@ func (e *pluginEnv) enable(k plugin.EntryKey) error {
 	if _, err := p.Entry(v.Manifest); err != nil {
 		return err
 	}
-	if err := servedEndpoint(k, v.Manifest); err != nil {
-		return err
-	}
 	writeConsent(e.c.stderr, k, v, p.Agents, e.mode)
 	if err := e.ask("Enable this plugin for these agents?"); err != nil {
 		return err
@@ -841,6 +848,14 @@ func (e *pluginEnv) enable(k plugin.EntryKey) error {
 		if i < 0 || !samePlugin(cfg.Plugins[i], p) {
 			return errChangedMeanwhile
 		}
+		// The copy may have been re-signed since it was shown.
+		now, err := plugin.Verify(e.root, k, p.ManifestSHA256, e.trust, e.mode)
+		if err != nil {
+			return e.verifyRefusal(err, again)
+		}
+		if now.SignerKeyID != v.SignerKeyID {
+			return errChangedMeanwhile
+		}
 		cfg.Plugins[i].Enabled = true
 		return nil
 	}})
@@ -849,15 +864,6 @@ func (e *pluginEnv) enable(k plugin.EntryKey) error {
 	}
 	fmt.Fprintf(e.c.stderr, "basalt: plugin %s enabled\n", k)
 	e.restart()
-	return nil
-}
-
-// servedEndpoint refuses an endpoint this build cannot run: a local plugin
-// over connectrpc (a Unix socket) is not served yet.
-func servedEndpoint(k plugin.EntryKey, m plugin.Manifest) error {
-	if l := m.Endpoint.Local; l != nil && l.Transport == "connectrpc" {
-		return fmt.Errorf("plugin %s: a local plugin over connectrpc is not served yet; use jsonrpc-stdio or jsonrpc-unix, or a remote endpoint", k)
-	}
 	return nil
 }
 

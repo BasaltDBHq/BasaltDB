@@ -357,8 +357,9 @@ func TestTrustStoreModeMustMatch(t *testing.T) {
 	require.ErrorIs(t, err, errUnknownMode)
 }
 
-// TestKeptCopyReportsItsSigner: re-adding the same manifest signed by
-// another trusted key keeps the copy in place and reports its signer.
+// TestReaddWithAnotherSignerReplacesTheCopy: re-adding the same manifest
+// signed by another trusted key replaces the copy in place, so it is the one
+// consent showed; the same signer keeps it.
 func TestReaddWithAnotherSignerReplacesTheCopy(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)

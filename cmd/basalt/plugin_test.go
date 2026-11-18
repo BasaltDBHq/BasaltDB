@@ -481,6 +481,18 @@ func TestChangeEntryShowsWhatChanges(t *testing.T) {
 	again := e.run(nil, "", "add", newer, "--agents", "product_b")
 	require.Equal(t, exitOK, again.code)
 	require.Contains(t, again.stderr, "nothing changed")
+
+	// An enabled entry stays enabled, so a change enable would refuse is
+	// refused here: auth on a local plugin.
+	require.NoError(t, config.UpdateConfig(e.configPath, config.Change{Apply: func(c *config.Config) error {
+		c.Plugins[0].Auth = &config.PluginAuth{CredentialFile: "/etc/basalt/plugins/acme.token"}
+		return nil
+	}}))
+	before := e.snapshot()
+	r = e.run(nil, "y\n", "add", e.src, "--agents", "product_b")
+	require.Equal(t, exitError, r.code)
+	require.Contains(t, r.stderr, config.ErrAuthNotRemote.Error())
+	require.Equal(t, before, e.snapshot())
 }
 
 func TestEnableShowsConsentAndVerifies(t *testing.T) {

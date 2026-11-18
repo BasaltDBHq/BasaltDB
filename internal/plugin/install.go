@@ -307,7 +307,15 @@ func (s *Staged) Commit() (string, error) {
 			_ = os.RemoveAll(s.Dir)
 			return "", pathRefusal(final, "exists, is not the staged copy, and cannot be moved aside")
 		}
-		defer func() { _ = os.RemoveAll(old) }()
+		if err := os.Rename(s.Dir, final); err != nil {
+			// Put the copy that was in place back: an entry may still name it.
+			_ = os.Rename(old, final)
+			_ = os.RemoveAll(s.Dir)
+			return "", pathRefusal(final, "cannot be put in place")
+		}
+		_ = os.RemoveAll(old)
+		s.Dir = final
+		return final, nil
 	}
 	if err := os.Rename(s.Dir, final); err != nil {
 		_ = os.RemoveAll(s.Dir)

@@ -15,42 +15,14 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 )
 
-// servicePluginHost is what the plugin units of the engine configured by
-// cfg (at configPath, on goos) hide, and engineUser, whose group reaches
-// their sockets (CONTRACT.md, Plugins, Isolation and trust).
+// servicePluginHost is service.HostFor.
 func servicePluginHost(cfg config.Config, goos, configPath, engineUser string) service.PluginHost {
-	h := service.PluginHost{
-		GOOS: goos, EngineUser: engineUser, ConfigDir: filepath.Dir(configPath),
-		StateDir: cfg.StateDirFor(goos), SocketDir: cfg.SocketDir,
-	}
-	if h.SocketDir == "" {
-		h.SocketDir = config.DefaultSocketDir(goos)
-	}
-	for _, a := range cfg.Agents {
-		h.CredentialFiles = append(h.CredentialFiles, a.Store.CredentialFile)
-	}
-	// A remote entry's auth.credentialFile is not listed: the engine uses
-	// it only when it is the engine user's alone (mode 0600 or narrower),
-	// so no plugin's user can read it.
-	return h
+	return service.HostFor(cfg, goos, configPath, engineUser)
 }
 
-// unitEntry is entry p, verified as v, as its service unit runs it; false
-// for a remote entry, which has no unit.
+// unitEntry is service.EntryFor.
 func unitEntry(p config.Plugin, v plugin.Verified) (service.PluginEntry, bool) {
-	l := v.Manifest.Endpoint.Local
-	if l == nil {
-		return service.PluginEntry{}, false
-	}
-	k := p.Key()
-	e := service.PluginEntry{
-		Name: k.Name, Instance: k.Instance, Dir: v.Dir, Command: l.Command, Args: l.Args,
-		Egress: v.Manifest.Network.Egress, Enabled: p.Enabled,
-	}
-	if r := v.Manifest.Resources; r != nil {
-		e.MemoryMB = r.MemoryMB
-	}
-	return e, true
+	return service.EntryFor(p, v)
 }
 
 // withPluginUnits is spec with cfg's plugin units: on install every local

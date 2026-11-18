@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"os"
 	"path/filepath"
 )
 
@@ -98,13 +99,19 @@ func (c *config) resolve() (Transport, error) {
 	return "", ErrTransport
 }
 
-// listenUnix listens on the socket the engine handed over. The engine made the
-// socket's directory reachable only by the right users, so the socket is
-// created as the process's umask gives it. Closing the listener removes it.
+// listenUnix listens on the socket the engine handed over. The engine (or,
+// in service mode, the plugin's unit) made the socket's directory reachable
+// only by the right users, so the socket is created as the process's umask
+// gives it. Closing the listener removes it. A service unit's directory
+// stays between starts, so a socket a crash left at the path is removed
+// first; anything else there is left and refused.
 func listenUnix(c *config) (net.Listener, error) {
 	path := c.getenv(SocketEnv)
 	if path == "" || !filepath.IsAbs(path) {
 		return nil, ErrNoSocket
+	}
+	if fi, err := os.Lstat(path); err == nil && fi.Mode().Type() == os.ModeSocket {
+		_ = os.Remove(path)
 	}
 	l, err := net.Listen("unix", path)
 	if err != nil {

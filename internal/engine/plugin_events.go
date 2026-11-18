@@ -19,6 +19,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/service"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
@@ -147,7 +148,7 @@ func wantedPlugins(cfg config.Config, ep *enginePlugins, trust []string) pluginW
 				w.held[name][k] = true
 				continue
 			}
-			w.served[name][k] = pluginDetail(k, v, ep.mode)
+			w.served[name][k] = pluginDetail(k, v, ep.mode, ep.o.goos)
 		}
 	}
 	return w
@@ -170,7 +171,7 @@ func (ep *enginePlugins) startedCopy(k plugin.EntryKey) (plugin.Verified, bool) 
 // pluginDetail is what an agent's ledger records of entry k: the manifest's
 // identity, hooks, egress and endpoint, and for a local entry its
 // isolation. Never a config value, a credential, a path or an agent name.
-func pluginDetail(k plugin.EntryKey, v plugin.Verified, mode plugin.Mode) guard.PluginDetail {
+func pluginDetail(k plugin.EntryKey, v plugin.Verified, mode plugin.Mode, goos string) guard.PluginDetail {
 	m := v.Manifest
 	d := guard.PluginDetail{
 		Name: k.Name, Instance: k.Instance, Version: m.Version,
@@ -189,21 +190,22 @@ func pluginDetail(k plugin.EntryKey, v plugin.Verified, mode plugin.Mode) guard.
 		return d
 	}
 	d.Endpoint = guard.PluginEndpoint{Kind: guard.PluginEndpointLocal}
-	d.Isolation = pluginIsolation(mode, m)
+	d.Isolation = pluginIsolation(mode, goos, m)
 	return d
 }
 
 // pluginIsolation is what a local entry's record says of its isolation as
-// it runs on this engine. In same-user mode it runs as the engine's own OS
-// user with the engine's network: files NONE, network NOT_ENFORCED. An
-// engine run as a service starts no local plugin yet (localRefusal), so no
-// record says more than that. When each local entry runs under its own OS
-// user and unit, this is where service mode records files OS_USER and
-// network ENFORCED (empty egress, no network) or DECLARED (egress
-// declared, not enforced per host), or NOT_ENFORCED where the OS cannot
-// isolate the network.
-func pluginIsolation(_ plugin.Mode, _ plugin.Manifest) *guard.PluginIsolation {
-	return &guard.PluginIsolation{Files: guard.PluginFilesNone, Network: guard.PluginNetworkNotEnforced}
+// it runs on an engine in mode on goos. In same-user mode it runs as the
+// engine's own OS user with the engine's network: files NONE, network
+// NOT_ENFORCED. In service mode a served local entry runs under its own
+// unit and OS user (the engine starts none otherwise: localRefusal), so
+// files OS_USER, and the network the unit gets, from the same rule the unit
+// is written by (service.PluginNetwork).
+func pluginIsolation(mode plugin.Mode, goos string, m plugin.Manifest) *guard.PluginIsolation {
+	if mode != plugin.ModeService {
+		return &guard.PluginIsolation{Files: guard.PluginFilesNone, Network: guard.PluginNetworkNotEnforced}
+	}
+	return &guard.PluginIsolation{Files: guard.PluginFilesOSUser, Network: service.PluginNetwork(goos, m.Network.Egress)}
 }
 
 // writePluginEvents records in each agent's own ledger what changed since

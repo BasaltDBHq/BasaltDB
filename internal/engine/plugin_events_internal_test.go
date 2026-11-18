@@ -304,7 +304,7 @@ func TestPluginDetailMatchesTheSchema(t *testing.T) {
 		Network:  plugin.Network{Egress: []string{"ner.acme.example:443"}},
 	}
 	for _, m := range []plugin.Manifest{local, remote} {
-		d := pluginDetail(k, plugin.Verified{Manifest: m, ManifestSHA256: sha, SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, plugin.ModeSameUser)
+		d := pluginDetail(k, plugin.Verified{Manifest: m, ManifestSHA256: sha, SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, plugin.ModeSameUser, "linux")
 		for _, kind := range []guard.PluginEventKind{guard.PluginEnabled, guard.PluginDisabled, guard.PluginChanged} {
 			b, err := json.Marshal(map[string]any{"kind": kind, "detail": d})
 			require.NoError(t, err)
@@ -313,7 +313,7 @@ func TestPluginDetailMatchesTheSchema(t *testing.T) {
 			require.NoError(t, sch.Validate(inst), string(b))
 		}
 	}
-	d := pluginDetail(k, plugin.Verified{Manifest: remote, ManifestSHA256: sha, SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, plugin.ModeSameUser)
+	d := pluginDetail(k, plugin.Verified{Manifest: remote, ManifestSHA256: sha, SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, plugin.ModeSameUser, "linux")
 	require.Equal(t, guard.PluginEndpoint{Kind: guard.PluginEndpointRemote, Host: "ner.acme.example:443"}, d.Endpoint)
 	require.Nil(t, d.Isolation, "a remote entry records no local isolation")
 	require.Equal(t, []string{"approval.deliver", "feed.observe"}, d.Hooks)
@@ -426,10 +426,51 @@ func TestLargestAcceptedManifestRecords(t *testing.T) {
 		}
 		require.NotEmpty(t, m.Network.Egress)
 		k := plugin.EntryKey{Name: m.Name, Instance: strings.Repeat("i", 32)}
-		det := pluginDetail(k, plugin.Verified{Manifest: m, ManifestSHA256: strings.Repeat("ab", 32), SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, plugin.ModeSameUser)
+		det := pluginDetail(k, plugin.Verified{Manifest: m, ManifestSHA256: strings.Repeat("ab", 32), SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA"}, plugin.ModeSameUser, "linux")
 		if det.Isolation != nil {
 			det.Isolation = &guard.PluginIsolation{Files: guard.PluginFilesOSUser, Network: guard.PluginNetworkNotEnforced}
 		}
 		require.NoError(t, guard.RecordPluginEntryEvent(context.Background(), a.Conn, guard.PluginEnabled, det), "remote %v", remote)
+	}
+}
+
+// A local entry records the isolation it runs with: same-user mode none;
+// service mode its own OS user, with the network its unit gets (the unit
+// rule, service.PluginNetwork). A remote entry records none.
+func TestPluginIsolationIsWhatRuns(t *testing.T) {
+	t.Parallel()
+	local := func(egress ...string) plugin.Manifest {
+		return plugin.Manifest{
+			Name: "acme-ner", Version: "1.0.0", Hooks: map[string]protocol.HookDecl{"feed.observe": {}},
+			Endpoint: plugin.Endpoint{Local: &plugin.LocalEndpoint{Transport: dial.TransportStdio, Command: "bin/p"}},
+			Network:  plugin.Network{Egress: egress},
+		}
+	}
+	iso := func(files, network string) *guard.PluginIsolation {
+		return &guard.PluginIsolation{Files: files, Network: network}
+	}
+	for _, tc := range []struct {
+		name string
+		mode plugin.Mode
+		goos string
+		m    plugin.Manifest
+		want *guard.PluginIsolation
+	}{
+		{"same-user", plugin.ModeSameUser, "linux", local(), iso(guard.PluginFilesNone, guard.PluginNetworkNotEnforced)},
+		{"same-user with egress", plugin.ModeSameUser, "darwin", local("x.example:443"), iso(guard.PluginFilesNone, guard.PluginNetworkNotEnforced)},
+		{"service linux no egress", plugin.ModeService, "linux", local(), iso(guard.PluginFilesOSUser, guard.PluginNetworkEnforced)},
+		{"service linux egress", plugin.ModeService, "linux", local("x.example:443"), iso(guard.PluginFilesOSUser, guard.PluginNetworkDeclared)},
+		{"service macos", plugin.ModeService, "darwin", local(), iso(guard.PluginFilesOSUser, guard.PluginNetworkNotEnforced)},
+		{"service macos egress", plugin.ModeService, "darwin", local("x.example:443"), iso(guard.PluginFilesOSUser, guard.PluginNetworkNotEnforced)},
+	} {
+		d := pluginDetail(plugin.EntryKey{Name: "acme-ner", Instance: "default"}, plugin.Verified{Manifest: tc.m}, tc.mode, tc.goos)
+		require.Equal(t, tc.want, d.Isolation, tc.name)
+	}
+	remote := local("ner.acme.example:443")
+	remote.Endpoint = plugin.Endpoint{Remote: &plugin.RemoteEndpoint{Transport: dial.TransportConnect, URL: "https://ner.acme.example"}}
+	for _, mode := range []plugin.Mode{plugin.ModeSameUser, plugin.ModeService} {
+		d := pluginDetail(plugin.EntryKey{Name: "acme-ner", Instance: "default"}, plugin.Verified{Manifest: remote}, mode, "linux")
+		require.Nil(t, d.Isolation)
+		require.Equal(t, guard.PluginEndpoint{Kind: guard.PluginEndpointRemote, Host: "ner.acme.example:443"}, d.Endpoint)
 	}
 }

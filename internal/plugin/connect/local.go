@@ -31,6 +31,17 @@ func DialLocal(ctx context.Context, socketPath string) (plugin.Transport, error)
 	return dialLocal(ctx, socketPath, options{})
 }
 
+// DialLocalChecked is DialLocal with check run on every new connection
+// before it is used: a connection check refuses is closed, and the call
+// fails ErrWrongPeer. A service-mode engine checks the peer's OS user.
+func DialLocalChecked(ctx context.Context, socketPath string, check func(net.Conn) error) (plugin.Transport, error) {
+	return dialLocal(ctx, socketPath, options{check: check})
+}
+
+// ErrWrongPeer: the process listening on the socket is not the one the
+// entry's unit runs.
+var ErrWrongPeer = errors.New("the plugin socket is served by another process than the plugin's")
+
 func dialLocal(ctx context.Context, socketPath string, opts options) (plugin.Transport, error) {
 	name := filepath.Base(socketPath)
 	if !isSocket(socketPath) {
@@ -44,10 +55,21 @@ func dialLocal(ctx context.Context, socketPath string, opts options) (plugin.Tra
 		if !isSocket(socketPath) {
 			return nil, localError(name, ErrNotSocket)
 		}
-		return dialer.DialContext(ctx, "unix", socketPath)
+		c, err := dialer.DialContext(ctx, "unix", socketPath)
+		if err != nil || opts.check == nil {
+			return c, err
+		}
+		if err := opts.check(c); err != nil {
+			_ = c.Close()
+			return nil, localError(name, ErrWrongPeer)
+		}
+		return c, nil
 	}
 	// Connect once, so a dead socket is refused here and not at the first call.
 	c, err := dialSocket(ctx)
+	if errors.Is(err, ErrWrongPeer) || errors.Is(err, ErrNotSocket) {
+		return nil, err
+	}
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, localError(name, ctxErr)

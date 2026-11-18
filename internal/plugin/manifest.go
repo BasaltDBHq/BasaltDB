@@ -359,7 +359,7 @@ func (p *manifestParser) files() error {
 		}
 		h, ok := stringOf(rawHash)
 		if !ok || !fileHashPattern.MatchString(h) {
-			return badManifest("files: " + path + " must have a sha256: hash in lowercase hex")
+			return badManifest("files lists a file without a sha256: hash in lowercase hex")
 		}
 		p.m.Files[path] = h
 	}

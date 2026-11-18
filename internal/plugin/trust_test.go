@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -284,5 +285,15 @@ func TestSignVerifiesContextLine(t *testing.T) {
 	other, err := GenerateKey()
 	require.NoError(t, err)
 	require.False(t, verifyManifestSig(&other.PublicKey, m, sig))
+
+	// A signature over the bare manifest, without the context line, fails.
+	bare := sha256.Sum256(m)
+	r, s, err := ecdsa.Sign(rand.Reader, priv, bare[:])
+	require.NoError(t, err)
+	bareSig := make([]byte, sigBytes)
+	r.FillBytes(bareSig[:scalarBytes])
+	s.FillBytes(bareSig[scalarBytes:])
+	require.True(t, ecdsa.Verify(&priv.PublicKey, bare[:], r, s))
+	require.False(t, verifyManifestSig(&priv.PublicKey, m, bareSig))
 	require.Len(t, base64.RawURLEncoding.EncodeToString(sig), 86)
 }

@@ -41,7 +41,8 @@ func newFixture(t *testing.T) *fixture {
 	require.NoError(t, err)
 	f := &fixture{t: t, base: base, configDir: filepath.Join(base, "config"), src: filepath.Join(base, "src")}
 	require.NoError(t, os.Mkdir(f.configDir, 0o700))
-	f.root = Root(ModeSameUser, runtime.GOOS, f.configDir)
+	f.root, err = Root(ModeSameUser, runtime.GOOS, f.configDir)
+	require.NoError(t, err)
 	f.trust, err = NewTrustStore(f.configDir, ModeSameUser)
 	require.NoError(t, err)
 	f.signer, err = GenerateKey()

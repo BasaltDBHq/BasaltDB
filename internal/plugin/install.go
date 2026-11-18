@@ -48,6 +48,9 @@ func Stage(src, root, instance string, trust TrustStore, mode Mode) (*Staged, er
 	if err != nil {
 		return nil, err
 	}
+	if err := trust.matches(owner); err != nil {
+		return nil, err
+	}
 	if instance == "" {
 		instance = DefaultInstance
 	}
@@ -91,7 +94,7 @@ func Stage(src, root, instance string, trust TrustStore, mode Mode) (*Staged, er
 
 	nameDir := filepath.Join(root, key.Name)
 	instDir := filepath.Join(nameDir, key.Instance)
-	if err := mkdirOwned(instDir); err != nil {
+	if err := ensureDir(root, instDir, owner); err != nil {
 		return nil, err
 	}
 	// The path rule holds where the copy is written before anything is
@@ -276,8 +279,9 @@ func writeNew(p string, b []byte, mode os.FileMode) error {
 
 // Commit renames the verified copy into place as
 // <root>/<name>/<instance>/<manifest-sha256>/ and returns that directory.
-// When that directory already exists and verifies, it is kept and the
-// temporary copy removed; when it exists but fails, it is replaced.
+// When that directory already exists and verifies, it is kept, the
+// temporary copy removed, and Verified describes the kept copy; when it
+// exists but fails, it is replaced.
 func (s *Staged) Commit() (string, error) {
 	if s.done {
 		return "", errors.New("plugin: the staged copy was already committed or discarded")
@@ -290,8 +294,11 @@ func (s *Staged) Commit() (string, error) {
 		return "", pathRefusal(s.Dir, "cannot be set to mode 0755")
 	}
 	if _, err := os.Lstat(final); err == nil {
-		if _, verr := verifyCopy(s.root, s.Key, s.ManifestSHA256, s.ManifestSHA256, s.trust, s.owner); verr == nil {
+		if kept, verr := verifyCopy(s.root, s.Key, s.ManifestSHA256, s.ManifestSHA256, s.trust, s.owner); verr == nil {
+			// Same manifest bytes, but the kept .sig may be another trusted
+			// key's: report the copy that is in place.
 			_ = os.RemoveAll(s.Dir)
+			s.Verified = kept
 			return final, nil
 		}
 		old := filepath.Join(instDir, oldPrefix+strings.TrimPrefix(filepath.Base(s.Dir), stagingPrefix))

@@ -94,6 +94,9 @@ func Verify(root string, key EntryKey, manifestSHA256 string, trust TrustStore, 
 	if err != nil {
 		return Verified{}, err
 	}
+	if err := trust.matches(owner); err != nil {
+		return Verified{}, err
+	}
 	if err := checkKey(key); err != nil {
 		return Verified{}, err
 	}

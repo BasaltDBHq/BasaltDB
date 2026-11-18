@@ -263,8 +263,9 @@ func TestPathRule(t *testing.T) {
 		v := f.install("")
 		link := filepath.Join(f.base, "link")
 		require.NoError(t, os.Symlink(f.base, link))
-		root := Root(ModeSameUser, runtime.GOOS, filepath.Join(link, "config"))
-		_, err := Verify(root, EntryKey{Name: "acme-ner", Instance: DefaultInstance}, v.ManifestSHA256, f.trust, ModeSameUser)
+		root, err := Root(ModeSameUser, runtime.GOOS, filepath.Join(link, "config"))
+		require.NoError(t, err)
+		_, err = Verify(root, EntryKey{Name: "acme-ner", Instance: DefaultInstance}, v.ManifestSHA256, f.trust, ModeSameUser)
 		ve := requireRefused(t, err, RefusedNotTrusted)
 		require.Equal(t, link, ve.File)
 		require.Contains(t, ve.Why, "symlink not owned by root")
@@ -303,6 +304,72 @@ func TestStageChecksDestination(t *testing.T) {
 	ve := requireRefused(t, err, RefusedNotTrusted)
 	require.Equal(t, instDir, ve.File)
 	require.Empty(t, entries(t, instDir))
+}
+
+// TestNothingCreatedUnderWritableDir: add and trust apply the path rule to
+// the nearest existing directory before creating any, so nothing is created
+// (or chmodded) inside a directory another user could write.
+func TestNothingCreatedUnderWritableDir(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	require.NoError(t, os.Chmod(f.configDir, 0o770))
+	_, err := Install(f.src, f.root, "", f.trust, ModeSameUser)
+	requireRefused(t, err, RefusedNotTrusted)
+	_, statErr := os.Lstat(f.root)
+	require.ErrorIs(t, statErr, os.ErrNotExist, "no plugin root was created")
+
+	g := newFixture(t)
+	require.NoError(t, os.RemoveAll(g.trust.Dir()))
+	require.NoError(t, os.Chmod(g.configDir, 0o770))
+	pemBytes, err := MarshalPublicKey(&g.signer.PublicKey)
+	require.NoError(t, err)
+	_, _, err = g.trust.Add(pemBytes)
+	ve := requireRefused(t, err, RefusedNotTrusted)
+	require.Equal(t, g.configDir, ve.File)
+	_, statErr = os.Lstat(g.trust.Dir())
+	require.ErrorIs(t, statErr, os.ErrNotExist, "no trust store was created")
+
+	// A missing trust store still checks the directories above it.
+	_, err = Install(g.src, g.root, "", g.trust, ModeSameUser)
+	ve = requireRefused(t, err, RefusedNotTrusted)
+	require.Equal(t, g.configDir, ve.File)
+}
+
+// TestTrustStoreModeMustMatch: a trust store made for another mode, or not
+// made by NewTrustStore, is refused.
+func TestTrustStoreModeMustMatch(t *testing.T) {
+	t.Parallel()
+	if os.Geteuid() == 0 {
+		t.Skip("the test needs a user other than root")
+	}
+	f := newFixture(t)
+	v := f.install("")
+	service, err := NewTrustStore(f.configDir, ModeService)
+	require.NoError(t, err)
+	key := EntryKey{Name: "acme-ner", Instance: DefaultInstance}
+	_, err = Verify(f.root, key, v.ManifestSHA256, service, ModeSameUser)
+	require.ErrorIs(t, err, errTrustMode)
+	_, err = Verify(f.root, key, v.ManifestSHA256, TrustStore{}, ModeSameUser)
+	require.ErrorIs(t, err, errTrustMode)
+	_, err = Stage(f.src, f.root, "", service, ModeSameUser)
+	require.ErrorIs(t, err, errTrustMode)
+	_, err = Root(Mode("ROOTLESS"), runtime.GOOS, f.configDir)
+	require.ErrorIs(t, err, errUnknownMode)
+}
+
+// TestKeptCopyReportsItsSigner: re-adding the same manifest signed by
+// another trusted key keeps the copy in place and reports its signer.
+func TestKeptCopyReportsItsSigner(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	first := f.install("")
+	second, err := GenerateKey()
+	require.NoError(t, err)
+	f.trustKey(&second.PublicKey)
+	f.writeSigned(f.src, localManifest(), second)
+	again := f.install("")
+	require.Equal(t, first.Dir, again.Dir)
+	require.Equal(t, first.SignerKeyID, again.SignerKeyID, "the kept copy's .sig is the first key's")
 }
 
 // TestServiceModeRequiresRoot: in service mode the required owner is root,

@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // trustFileExt is a trusted key's file extension: <keyId>.pem.
@@ -47,6 +48,19 @@ func NewTrustStore(configDir string, mode Mode) (TrustStore, error) {
 // Dir is <configDir>/plugin-trust.
 func (t TrustStore) Dir() string { return t.dir }
 
+// errTrustMode: the trust store was made for another engine mode than the
+// one verification runs in, so it would check another owner.
+var errTrustMode = errors.New("plugin: the trust store was made for another engine mode")
+
+// matches refuses a trust store made for another mode, or not made by
+// NewTrustStore, so one check never mixes two required owners.
+func (t TrustStore) matches(owner uint32) error {
+	if t.dir == "" || t.owner != owner {
+		return errTrustMode
+	}
+	return nil
+}
+
 // embeddedKeys parses the built-in publisher keys and indexes them by the
 // id computed from each.
 func embeddedKeys() (map[string]*ecdsa.PublicKey, error) {
@@ -66,7 +80,9 @@ func embeddedKeys() (map[string]*ecdsa.PublicKey, error) {
 // holds no keys and passes.
 func (t TrustStore) check() error {
 	if _, err := os.Lstat(t.dir); errors.Is(err, fs.ErrNotExist) {
-		return nil
+		// No keys are stored; the directories above it still follow the
+		// rule, so none can be swapped in before a key is read.
+		return checkAbove(t.dir, t.owner)
 	}
 	if err := checkUnder(t.owner, t.dir); err != nil {
 		return err
@@ -109,7 +125,7 @@ func (t TrustStore) key(keyID string) (*ecdsa.PublicKey, error) {
 			continue
 		}
 		path := filepath.Join(t.dir, name)
-		b, err := readNoFollow(path, MaxKeyFileBytes)
+		b, err := readOwned(path, MaxKeyFileBytes, t.owner)
 		if err != nil {
 			return nil, err
 		}
@@ -139,7 +155,7 @@ func (t TrustStore) Add(pemBytes []byte) (keyID string, added bool, err error) {
 	if _, ok := t.embedded[id]; ok {
 		return id, false, nil
 	}
-	if err := mkdirOwned(t.dir); err != nil {
+	if err := ensureDir(t.dir, t.dir, t.owner); err != nil {
 		return "", false, err
 	}
 	if err := t.check(); err != nil {
@@ -158,29 +174,75 @@ func (t TrustStore) Add(pemBytes []byte) (keyID string, added bool, err error) {
 	return id, true, nil
 }
 
-// mkdirOwned creates dir and any missing parent with mode 0755, set
-// explicitly so a umask cannot leave group or other write on it.
-func mkdirOwned(dir string) error {
-	fi, err := os.Lstat(dir)
-	if err == nil {
-		if !fi.IsDir() {
-			return pathRefusal(dir, "is not a directory")
+// ensureDir creates dir, which is boundary or lies below it, with any
+// missing parents. It first applies the path rule to the nearest directory
+// that exists (strictly when it is at or below boundary, as above a root
+// otherwise), so no directory is created inside one another user could
+// write, and only then creates each missing directory with mode 0755, set
+// explicitly so a umask cannot leave group or other write on it. A
+// directory that appears meanwhile is refused, never reused.
+func ensureDir(boundary, dir string, owner uint32) error {
+	boundary, dir = filepath.Clean(boundary), filepath.Clean(dir)
+	if !within(boundary, dir) {
+		return pathRefusal(dir, "is not inside "+boundary)
+	}
+	var missing []string
+	existing := dir
+	for {
+		_, err := os.Lstat(existing)
+		if err == nil {
+			break
 		}
-		return nil
+		if !errors.Is(err, fs.ErrNotExist) {
+			return pathRefusal(existing, "cannot be read")
+		}
+		missing = append(missing, existing)
+		parent := filepath.Dir(existing)
+		if parent == existing {
+			return pathRefusal(existing, "cannot be read")
+		}
+		existing = parent
 	}
-	if !errors.Is(err, fs.ErrNotExist) {
-		return pathRefusal(dir, "cannot be read")
-	}
-	if err := mkdirOwned(filepath.Dir(dir)); err != nil {
+	if within(boundary, existing) {
+		if err := checkUnder(owner, chain(boundary, existing)...); err != nil {
+			return err
+		}
+	} else if err := checkAbove(filepath.Join(existing, "x"), owner); err != nil {
 		return err
 	}
-	if err := os.Mkdir(dir, dirMode); err != nil && !errors.Is(err, fs.ErrExist) {
-		return pathRefusal(dir, "cannot be created")
-	}
-	if err := os.Chmod(dir, dirMode); err != nil {
-		return pathRefusal(dir, "cannot be set to mode 0755")
+	for i := len(missing) - 1; i >= 0; i-- {
+		// The parent passed the path rule, so only its owner or root can
+		// put anything at this name; Mkdir fails rather than reuse it.
+		if err := os.Mkdir(missing[i], dirMode); err != nil {
+			return pathRefusal(missing[i], "cannot be created")
+		}
+		if err := os.Chmod(missing[i], dirMode); err != nil {
+			return pathRefusal(missing[i], "cannot be set to mode 0755")
+		}
 	}
 	return nil
+}
+
+// within reports whether p is base or lies below it.
+func within(base, p string) bool {
+	rel, err := filepath.Rel(base, p)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, "../")
+}
+
+// chain is base, then each directory from base down to p, p included. p is
+// base or lies below it.
+func chain(base, p string) []string {
+	out := []string{base}
+	rel, err := filepath.Rel(base, p)
+	if err != nil || rel == "." {
+		return out
+	}
+	cur := base
+	for _, part := range strings.Split(filepath.ToSlash(rel), "/") {
+		cur = filepath.Join(cur, part)
+		out = append(out, cur)
+	}
+	return out
 }
 
 // writeFileAtomic writes name in dir through a temporary file and a rename,
@@ -220,6 +282,24 @@ func writeFileAtomic(dir, name string, b []byte, mode os.FileMode) error {
 	return nil
 }
 
+// readOwned is readNoFollow that also applies the path rule to the file it
+// opened: owned by owner and writable by no one else.
+func readOwned(path string, limit int64, owner uint32) ([]byte, error) {
+	f, err := os.OpenFile(path, noFollowFlags, 0)
+	if err != nil {
+		return nil, pathRefusal(path, "cannot be opened, or is a symlink")
+	}
+	defer func() { _ = f.Close() }()
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, pathRefusal(path, "cannot be read")
+	}
+	if err := checkStrictInfo(path, fi, owner); err != nil {
+		return nil, err
+	}
+	return readOpened(f, fi, path, limit)
+}
+
 // readNoFollow reads a regular file, refusing a symlink as its last
 // component, a file larger than limit, and anything not regular. Errors name
 // the path, never the contents.
@@ -230,7 +310,16 @@ func readNoFollow(path string, limit int64) ([]byte, error) {
 	}
 	defer func() { _ = f.Close() }()
 	fi, err := f.Stat()
-	if err != nil || !fi.Mode().IsRegular() {
+	if err != nil {
+		return nil, pathRefusal(path, "cannot be read")
+	}
+	return readOpened(f, fi, path, limit)
+}
+
+// readOpened reads an opened file that must be regular and at most limit
+// bytes.
+func readOpened(f *os.File, fi fs.FileInfo, path string, limit int64) ([]byte, error) {
+	if !fi.Mode().IsRegular() {
 		return nil, pathRefusal(path, "is not a regular file")
 	}
 	if fi.Size() > limit {

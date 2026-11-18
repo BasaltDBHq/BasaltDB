@@ -60,15 +60,20 @@ const TrustDirName = "plugin-trust"
 // Root is the directory installed copies live under: in service mode
 // /usr/local/lib/basalt/plugins on Linux and /Library/Application
 // Support/Basalt/plugins on macOS, in same-user mode <configDir>/plugins,
-// where configDir is the directory that holds engine.json.
-func Root(mode Mode, goos, configDir string) string {
-	if mode == ModeService {
+// where configDir is the directory that holds engine.json. Another mode is
+// refused.
+func Root(mode Mode, goos, configDir string) (string, error) {
+	switch mode {
+	case ModeService:
 		if goos == goosDarwin {
-			return darwinServiceRoot
+			return darwinServiceRoot, nil
 		}
-		return linuxServiceRoot
+		return linuxServiceRoot, nil
+	case ModeSameUser, "":
+		return filepath.Join(configDir, "plugins"), nil
+	default:
+		return "", errUnknownMode
 	}
-	return filepath.Join(configDir, "plugins")
 }
 
 // TrustDir is <configDir>/plugin-trust.

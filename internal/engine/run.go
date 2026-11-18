@@ -273,7 +273,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	// supervisor stops the plugins within plugin.StopWait of ctx ending,
 	// before RunWith returns (and before a restart runs a new binary).
 	wg.Go(func() {
-		recordPluginEvents(ctx, cfg, configPath, plugins, srv.dbs, log.With("component", "plugins"))
+		recordPluginEvents(ctx, cfg, configPath, plugins, srv.pluginLedgers, log.With("component", "plugins"))
 		if plugins != nil {
 			plugins.run(ctx)
 		}
@@ -344,9 +344,9 @@ type startedAgents struct {
 	upkeeps  []*upkeep.Upkeep
 	services []*agent.Service
 	scans    []piidict.ScanSource
-	// dbs are the agents' own connections, for their plugin events.
-	dbs     map[string]guard.Querier
-	closers []func()
+	// pluginLedgers are the agents' own ledgers, for their plugin events.
+	pluginLedgers map[string]pluginLedger
+	closers       []func()
 }
 
 // startAgents builds each agent's runtime. An agent whose guard is missing
@@ -355,9 +355,9 @@ type startedAgents struct {
 // user is in uids, which the person socket scopes by.
 func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[string]uint32, newRT runtimeFunc, log *slog.Logger) (startedAgents, error) {
 	out := startedAgents{
-		ledgers: make(map[string]person.Ledger, len(cfg.Agents)),
-		infos:   make(map[string]person.AgentInfo, len(cfg.Agents)),
-		dbs:     make(map[string]guard.Querier, len(cfg.Agents)),
+		ledgers:       make(map[string]person.Ledger, len(cfg.Agents)),
+		infos:         make(map[string]person.AgentInfo, len(cfg.Agents)),
+		pluginLedgers: make(map[string]pluginLedger, len(cfg.Agents)),
 	}
 	for _, a := range cfg.Agents {
 		rt, err := newRT(ctx, env, a, log.With("agent", a.Name))
@@ -368,7 +368,7 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 		out.ledgers[a.Name] = rt.ledger
 		out.infos[a.Name] = rt.info
 		if rt.db != nil {
-			out.dbs[a.Name] = rt.db
+			out.pluginLedgers[a.Name] = pluginLedger{db: rt.db, admit: pluginAdmit(rt.svc)}
 		}
 		out.upkeeps = append(out.upkeeps, rt.upkeep)
 		out.services = append(out.services, rt.svc)

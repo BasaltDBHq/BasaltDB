@@ -5,6 +5,8 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"maps"
 	"path/filepath"
@@ -13,8 +15,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 )
 
@@ -23,9 +29,83 @@ import (
 // a database that is down fails here.
 const pluginEventTimeout = 15 * time.Second
 
-// whyUnrecorded is why an entry that verified is not served to one agent.
-const whyUnrecorded = "its PLUGIN_ENABLED or PLUGIN_CHANGED record could not be written to this agent's ledger; " +
-	"restart the engine once the agent's database is reachable"
+// Why an entry that verified is not served to one agent: its record could
+// not be written to that agent's ledger (unrecordedWhy). Each ends with
+// what to do; the engine writes the record at its next start.
+const (
+	whyNoPluginEvents = "this agent's guard is older than schema version 3, so its plugin record could not be written; " +
+		"run basalt upgrade for this agent, then restart the engine"
+	whyNoGuard = "this agent's database has no guard, so its plugin record could not be written; " +
+		"install the guard, then restart the engine"
+	whyNotAdmitted = "this agent is served status only until its guard or setup is ready, so its plugin record was not written; " +
+		"restart the engine once it is"
+	whyRefused     = "the guard refused its plugin record (see the engine's log); restart the engine once it is fixed"
+	whyUnreachable = "its plugin record could not be written to this agent's ledger; " +
+		"restart the engine once the agent's database is reachable"
+)
+
+// SQLSTATEs that say the guard is older than schema version 3 or missing.
+const (
+	sqlstateUndefinedFunction = "42883"
+	sqlstateUndefinedTable    = "42P01"
+	sqlstateInvalidSchemaName = "3F000"
+)
+
+// errNotAdmitted: the agent is served status only (agent.Service.Admit).
+var errNotAdmitted = errors.New("the agent is served status only")
+
+// unrecordedWhy is why a record could not be written, for the agent's
+// status: never the error's text, which could name a value.
+func unrecordedWhy(err error) string {
+	var pg *pgconn.PgError
+	if errors.Is(err, errNotAdmitted) {
+		return whyNotAdmitted
+	}
+	if !errors.As(err, &pg) {
+		return whyUnreachable
+	}
+	switch pg.Code {
+	case sqlstateUndefinedFunction:
+		return whyNoPluginEvents
+	case sqlstateUndefinedTable, sqlstateInvalidSchemaName:
+		return whyNoGuard
+	}
+	if _, ok := guard.CodeOf(err); ok {
+		return whyRefused
+	}
+	return whyUnreachable
+}
+
+// pluginLedger is one agent's ledger as the plugin event writer reaches it:
+// the agent's own connection, and the engine's admission of the agent
+// (nil admits it). An agent served status only (no guard, an outdated one,
+// a pending setup) gets no plugin record and no plugin.
+type pluginLedger struct {
+	db    guard.Querier
+	admit func(context.Context) error
+}
+
+// pluginAdmit is svc's admission for plugin records: errNotAdmitted when
+// the agent is served status only (no guard, an outdated one, a pending
+// setup), the probe's error when its database does not answer.
+func pluginAdmit(svc *agent.Service) func(context.Context) error {
+	return func(ctx context.Context) error {
+		err := svc.Admit(ctx)
+		var te *mcp.ToolError
+		var se *agent.SetupError
+		if errors.As(err, &te) || errors.As(err, &se) {
+			return fmt.Errorf("%w: %w", errNotAdmitted, err)
+		}
+		return err
+	}
+}
+
+// unrecordedEntry is a served entry whose record could not be written, and
+// why (unrecordedWhy).
+type unrecordedEntry struct {
+	key plugin.EntryKey
+	why string
+}
 
 // pluginWant is the plugin state the engine records in each agent's ledger
 // at start (CONTRACT.md, Plugins, In the ledger).
@@ -140,16 +220,16 @@ func pluginIsolation(_ plugin.Mode, _ plugin.Manifest) *guard.PluginIsolation {
 //     first.
 //
 // Agents run in parallel, each bounded by pluginEventTimeout. It returns,
-// per agent, the served entries whose record could not be written: they
-// must not be served to that agent. An agent missing from dbs has no
-// ledger to write to.
-func writePluginEvents(ctx context.Context, want pluginWant, dbs map[string]guard.Querier, log *slog.Logger) map[string][]plugin.EntryKey {
+// per agent, the served entries whose record could not be written, with
+// why: they must not be served to that agent. An agent missing from
+// ledgers has no ledger to write to.
+func writePluginEvents(ctx context.Context, want pluginWant, ledgers map[string]pluginLedger, log *slog.Logger) map[string][]unrecordedEntry {
 	var mu sync.Mutex
-	unrecorded := map[string][]plugin.EntryKey{}
+	unrecorded := map[string][]unrecordedEntry{}
 	var wg sync.WaitGroup
 	for _, name := range slices.Sorted(maps.Keys(want.served)) {
 		wg.Go(func() {
-			failed := writeAgentPluginEvents(ctx, name, want, dbs[name], log.With("agent", name))
+			failed := writeAgentPluginEvents(ctx, name, want, ledgers[name], log.With("agent", name))
 			if len(failed) == 0 {
 				return
 			}
@@ -164,19 +244,35 @@ func writePluginEvents(ctx context.Context, want pluginWant, dbs map[string]guar
 
 // writeAgentPluginEvents is writePluginEvents for one agent; it returns the
 // served entries whose record it could not write.
-func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, db guard.Querier, log *slog.Logger) []plugin.EntryKey {
+func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l pluginLedger, log *slog.Logger) []unrecordedEntry {
 	served := slices.SortedFunc(maps.Keys(want.served[name]), compareEntryKeys)
-	if db == nil {
-		return served
+	all := func(err error) []unrecordedEntry {
+		out := make([]unrecordedEntry, 0, len(served))
+		for _, k := range served {
+			out = append(out, unrecordedEntry{key: k, why: unrecordedWhy(err)})
+		}
+		return out
+	}
+	if l.db == nil {
+		return all(nil)
 	}
 	ctx, cancel := context.WithTimeout(ctx, pluginEventTimeout)
 	defer cancel()
+	if l.admit != nil {
+		if err := l.admit(ctx); err != nil {
+			if len(served) > 0 {
+				log.Warn("plugins not served to this agent: it is not admitted", "err", err)
+			}
+			return all(err)
+		}
+	}
+	db := l.db
 	recs, err := guard.ReadPluginRecords(ctx, db)
 	if err != nil {
 		if len(served) > 0 {
 			log.Error("plugins not served to this agent: its ledger cannot be read", "err", err)
 		}
-		return served
+		return all(err)
 	}
 	last := make(map[plugin.EntryKey]guard.PluginRecord, len(recs.Entries))
 	for _, r := range recs.Entries {
@@ -191,7 +287,7 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, d
 			log.Warn("PLUGIN_TRUST_ADDED not recorded; the next start tries again", "keyId", id, "err", err)
 		}
 	}
-	var failed []plugin.EntryKey
+	var failed []unrecordedEntry
 	for _, k := range served {
 		d := want.served[name][k]
 		kind, ok := entryEvent(last, k, d)
@@ -200,7 +296,7 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, d
 		}
 		if err := guard.RecordPluginEntryEvent(ctx, db, kind, d); err != nil {
 			log.Error("plugin not served to this agent: its record could not be written", "plugin", k.String(), "event", kind, "err", err)
-			failed = append(failed, k)
+			failed = append(failed, unrecordedEntry{key: k, why: unrecordedWhy(err)})
 		}
 	}
 	for _, r := range recs.Entries {
@@ -270,9 +366,9 @@ func addedTrustKeys(cfg config.Config, configPath string, log *slog.Logger) []st
 // and withholds from each agent the entries whose record failed, before
 // any plugin starts. ep is nil when no entry is enabled: removed or
 // disabled entries are still recorded then.
-func recordPluginEvents(ctx context.Context, cfg config.Config, configPath string, ep *enginePlugins, dbs map[string]guard.Querier, log *slog.Logger) {
+func recordPluginEvents(ctx context.Context, cfg config.Config, configPath string, ep *enginePlugins, ledgers map[string]pluginLedger, log *slog.Logger) {
 	want := wantedPlugins(cfg, ep, addedTrustKeys(cfg, configPath, log))
-	unrecorded := writePluginEvents(ctx, want, dbs, log)
+	unrecorded := writePluginEvents(ctx, want, ledgers, log)
 	ep.withhold(unrecorded)
 }
 
@@ -281,26 +377,26 @@ func recordPluginEvents(ctx context.Context, cfg config.Config, configPath strin
 // out of the entry's agents (the host then refuses any call naming it),
 // an entry left with no agent is not started, and status shows
 // PLUGIN_UNAVAILABLE for that agent. It runs before the supervisor does.
-func (ep *enginePlugins) withhold(unrecorded map[string][]plugin.EntryKey) {
+func (ep *enginePlugins) withhold(unrecorded map[string][]unrecordedEntry) {
 	if ep == nil || len(unrecorded) == 0 {
 		return
 	}
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 	if ep.unrecorded == nil {
-		ep.unrecorded = map[plugin.EntryKey]map[string]bool{}
+		ep.unrecorded = map[plugin.EntryKey]map[string]string{}
 	}
-	for agentName, keys := range unrecorded {
-		for _, k := range keys {
-			if ep.unrecorded[k] == nil {
-				ep.unrecorded[k] = map[string]bool{}
+	for agentName, entries := range unrecorded {
+		for _, u := range entries {
+			if ep.unrecorded[u.key] == nil {
+				ep.unrecorded[u.key] = map[string]string{}
 			}
-			ep.unrecorded[k][agentName] = true
+			ep.unrecorded[u.key][agentName] = u.why
 		}
 	}
 	kept := ep.entries[:0]
 	for _, e := range ep.entries {
-		e.Agents = slices.DeleteFunc(slices.Clone(e.Agents), func(a string) bool { return ep.unrecorded[e.Key][a] })
+		e.Agents = slices.DeleteFunc(slices.Clone(e.Agents), func(a string) bool { return ep.unrecorded[e.Key][a] != "" })
 		if len(e.Agents) > 0 {
 			kept = append(kept, e)
 		}
@@ -308,8 +404,9 @@ func (ep *enginePlugins) withhold(unrecorded map[string][]plugin.EntryKey) {
 	ep.entries = kept
 }
 
-// unrecordedFor reports whether entry k is withheld from agent name.
-func (ep *enginePlugins) unrecordedFor(k plugin.EntryKey, name string) bool {
+// unrecordedFor is why entry k is withheld from agent name, "" when it is
+// not.
+func (ep *enginePlugins) unrecordedFor(k plugin.EntryKey, name string) string {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 	return ep.unrecorded[k][name]

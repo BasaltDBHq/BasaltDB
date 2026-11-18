@@ -15,9 +15,12 @@ import (
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
+	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/dial"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/protocol"
@@ -28,16 +31,16 @@ import (
 type pluginLedgers struct {
 	d     *guardtest.DB
 	roles map[string]string
-	dbs   map[string]guard.Querier
+	dbs   map[string]pluginLedger
 }
 
 func newPluginLedgers(t *testing.T, f *pluginFixture) pluginLedgers {
 	t.Helper()
 	d := guardtest.New(t).WithDemo(t)
-	l := pluginLedgers{d: d, roles: map[string]string{}, dbs: map[string]guard.Querier{}}
+	l := pluginLedgers{d: d, roles: map[string]string{}, dbs: map[string]pluginLedger{}}
 	for _, a := range f.cfg.Agents {
 		ag := d.NewAgent(t, a.Name, demoTables, nil)
-		l.roles[a.Name], l.dbs[a.Name] = ag.Role, ag.Conn
+		l.roles[a.Name], l.dbs[a.Name] = ag.Role, pluginLedger{db: ag.Conn}
 	}
 	return l
 }
@@ -239,7 +242,7 @@ func TestUnrecordedEntryIsNotServed(t *testing.T) {
 	f := newPluginFixture(t)
 	p := f.install("default", dial.TransportStdio, "product_a", "client_x")
 	l := newPluginLedgers(t, f)
-	broken := map[string]guard.Querier{"product_a": l.dbs["product_a"], "client_x": l.d.Admin} // not an agent role: refused
+	broken := map[string]pluginLedger{"product_a": l.dbs["product_a"], "client_x": {db: l.d.Admin}} // not an agent role: refused
 	ep := f.plugins(nil)
 	recordPluginEvents(context.Background(), f.cfg, f.configPath, ep, broken, slog.New(slog.DiscardHandler))
 	require.Empty(t, l.events(t, "client_x"))
@@ -250,7 +253,7 @@ func TestUnrecordedEntryIsNotServed(t *testing.T) {
 	require.Empty(t, ep.PluginProblems("product_a"))
 	probs := ep.PluginProblems("client_x")
 	require.Equal(t, []string{agent.ProblemPluginUnavailable}, codes(probs))
-	require.Contains(t, probs[0].Message, "could not be written to this agent's ledger")
+	require.Contains(t, probs[0].Message, "the guard refused its plugin record")
 	require.NotContains(t, probs[0].Message, "product_a")
 	err := ep.host.Call(context.Background(), p.Key(), []string{"client_x"}, protocol.MethodHealth, nil, nil)
 	require.ErrorIs(t, err, plugin.ErrAgentNotListed, "the host refuses a call naming the withheld agent")
@@ -259,9 +262,11 @@ func TestUnrecordedEntryIsNotServed(t *testing.T) {
 	solo := newPluginFixture(t)
 	q := solo.install("default", dial.TransportStdio, "client_x")
 	ep = solo.plugins(nil)
-	recordPluginEvents(context.Background(), solo.cfg, solo.configPath, ep, map[string]guard.Querier{}, slog.New(slog.DiscardHandler))
+	recordPluginEvents(context.Background(), solo.cfg, solo.configPath, ep, map[string]pluginLedger{}, slog.New(slog.DiscardHandler))
 	require.Empty(t, ep.entries)
-	require.Equal(t, []string{agent.ProblemPluginUnavailable}, codes(ep.PluginProblems("client_x")))
+	probs = ep.PluginProblems("client_x")
+	require.Equal(t, []string{agent.ProblemPluginUnavailable}, codes(probs))
+	require.Contains(t, probs[0].Message, "database is reachable")
 	require.NotEqual(t, plugin.StateReady, ep.host.State(q.Key()))
 
 	// Next start, database reachable: recorded and served.
@@ -311,4 +316,73 @@ func TestPluginDetailMatchesTheSchema(t *testing.T) {
 	require.Equal(t, guard.PluginEndpoint{Kind: guard.PluginEndpointRemote, Host: "ner.acme.example:443"}, d.Endpoint)
 	require.Nil(t, d.Isolation, "a remote entry records no local isolation")
 	require.Equal(t, []string{"approval.deliver", "feed.observe"}, d.Hooks)
+}
+
+// The engine's own runtime gives the plugin writer the agent's ledger:
+// startAgents maps each agent to its pool and its admission, and an
+// admitted agent's record is written through them.
+func TestRuntimeLedgerRecordsPluginEvents(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", demoTables, nil)
+	r := newRemoteAgent(t, a.URL, guard.SetupAgent)
+	cfg, err := config.Load(r.cfgPath)
+	require.NoError(t, err)
+	env := agentEnv{cfg: cfg, configPath: r.cfgPath, pagesBase: links.DefaultLocal, stateDir: r.dir, pins: &chainpin.Memory{}}
+	srv, err := startAgents(context.Background(), cfg, env, map[string]uint32{"bot": 5001}, newAgentRuntime, slog.New(slog.DiscardHandler))
+	t.Cleanup(func() {
+		for _, c := range srv.closers {
+			c()
+		}
+	})
+	require.NoError(t, err)
+	l, ok := srv.pluginLedgers["bot"]
+	require.True(t, ok, "the runtime's ledger reaches the plugin writer")
+	require.NotNil(t, l.db)
+	require.NotNil(t, l.admit)
+
+	k := plugin.EntryKey{Name: "acme-ner", Instance: "default"}
+	want := pluginWant{
+		served: map[string]map[plugin.EntryKey]guard.PluginDetail{"bot": {k: testDetail(k)}},
+		held:   map[string]map[plugin.EntryKey]bool{"bot": {}},
+	}
+	require.Empty(t, writePluginEvents(context.Background(), want, srv.pluginLedgers, slog.New(slog.DiscardHandler)))
+	recs, err := guard.ReadPluginRecords(context.Background(), a.Conn)
+	require.NoError(t, err)
+	require.Equal(t, []guard.PluginDetail{testDetail(k)}, recs.EnabledPlugins())
+
+	// An agent served status only (a pending install setup) gets no record
+	// and no plugin, with the reason.
+	pending := newRemoteAgent(t, d.NewAgent(t, "other", demoTables, nil).URL, guard.SetupInstall)
+	rt := pending.start(t)
+	got := writePluginEvents(context.Background(), pluginWant{
+		served: map[string]map[plugin.EntryKey]guard.PluginDetail{"bot": {k: testDetail(k)}},
+		held:   map[string]map[plugin.EntryKey]bool{"bot": {}},
+	}, map[string]pluginLedger{"bot": {db: rt.db, admit: pluginAdmit(rt.svc)}}, slog.New(slog.DiscardHandler))
+	require.Equal(t, map[string][]unrecordedEntry{"bot": {{key: k, why: whyNotAdmitted}}}, got)
+}
+
+func testDetail(k plugin.EntryKey) guard.PluginDetail {
+	return guard.PluginDetail{
+		Name: k.Name, Instance: k.Instance, Version: "1.4.0", ManifestSHA256: strings.Repeat("ab", 32),
+		SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA", Hooks: []string{"feed.observe"}, Egress: []string{},
+		Endpoint:  guard.PluginEndpoint{Kind: guard.PluginEndpointLocal},
+		Isolation: &guard.PluginIsolation{Files: guard.PluginFilesNone, Network: guard.PluginNetworkNotEnforced},
+	}
+}
+
+// On a guard older than schema version 3 the record cannot be written:
+// the entry is withheld from that agent and its status names the upgrade.
+func TestOldGuardWithholdsWithTheUpgradeStep(t *testing.T) {
+	t.Parallel()
+	f := newPluginFixture(t)
+	f.install("default", dial.TransportStdio, "product_a")
+	l := newPluginLedgers(t, f)
+	l.d.Exec(t, `DROP FUNCTION basalt_meta.record_plugin_event(text, jsonb)`)
+	ep := f.plugins(nil)
+	l.record(t, f, ep)
+	probs := ep.PluginProblems("product_a")
+	require.Equal(t, []string{agent.ProblemPluginUnavailable}, codes(probs))
+	require.Contains(t, probs[0].Message, "basalt upgrade")
+	require.Empty(t, ep.entries)
 }

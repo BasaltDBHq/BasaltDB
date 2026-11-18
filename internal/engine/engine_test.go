@@ -316,7 +316,7 @@ func TestRefusedDrainsAreCapped(t *testing.T) {
 	}
 	first := conns[(closed+1)%3]
 
-	// Stopping the engine ends the drains well before their 2 seconds.
+	// Stopping the engine ends the drains well before their minute.
 	stopped := time.Now()
 	cancel()
 	select {

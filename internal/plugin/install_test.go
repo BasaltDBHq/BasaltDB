@@ -187,6 +187,21 @@ func TestSymlinkRefused(t *testing.T) {
 	_, err = Install(g.src, g.root, "", g.trust, ModeSameUser)
 	requireRefused(t, err, RefusedNotTrusted)
 
+	// A link that stays inside the source is refused too, for a listed
+	// file, the manifest and its signature.
+	for _, rel := range []string{filepath.Join("model", "weights.bin"), ManifestFile, SignatureFile} {
+		k := newFixture(t)
+		target := filepath.Join(k.src, "same-bytes")
+		orig := filepath.Join(k.src, rel)
+		require.NoError(t, os.Rename(orig, target))
+		require.NoError(t, os.Symlink(target, orig))
+		_, err = Install(k.src, k.root, "", k.trust, ModeSameUser)
+		ve = requireRefused(t, err, RefusedNotTrusted)
+		require.Equal(t, orig, ve.File, rel)
+		require.Contains(t, ve.Why, "symlink", rel)
+		require.Empty(t, entries(t, filepath.Join(k.root, "acme-ner", DefaultInstance)), rel)
+	}
+
 	// A file of the installed copy replaced by a link is refused at start.
 	h := newFixture(t)
 	v := h.install("")
@@ -274,6 +289,20 @@ func TestPathRule(t *testing.T) {
 		_, err := f.verify(DefaultInstance, v.ManifestSHA256)
 		requireRefused(t, err, RefusedNotTrusted)
 	})
+}
+
+// TestStageChecksDestination: the path rule holds where the copy is written
+// before anything is written there; a refused add leaves no staging copy.
+func TestStageChecksDestination(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	instDir := filepath.Join(f.root, "acme-ner", DefaultInstance)
+	require.NoError(t, os.MkdirAll(instDir, 0o755))
+	require.NoError(t, os.Chmod(instDir, 0o775))
+	_, err := Install(f.src, f.root, "", f.trust, ModeSameUser)
+	ve := requireRefused(t, err, RefusedNotTrusted)
+	require.Equal(t, instDir, ve.File)
+	require.Empty(t, entries(t, instDir))
 }
 
 // TestServiceModeRequiresRoot: in service mode the required owner is root,

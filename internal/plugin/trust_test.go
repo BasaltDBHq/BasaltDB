@@ -81,6 +81,7 @@ func TestParsePublicKeyStrict(t *testing.T) {
 		"headers":        withHeader,
 		"trailing bytes": pem.EncodeToMemory(&pem.Block{Type: pemPublicKey, Bytes: append(append([]byte{}, block.Bytes...), 0)}),
 		"empty":          nil,
+		"broken first":   append([]byte("-----BEGIN PUBLIC KEY-----\nnot base64\n-----END PUBLIC KEY-----\n"), good...),
 	} {
 		_, _, err := ParsePublicKey(b)
 		require.Error(t, err, name)

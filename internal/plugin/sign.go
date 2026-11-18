@@ -145,10 +145,15 @@ func ParsePrivateKey(b []byte) (*ecdsa.PrivateKey, error) {
 	return priv, nil
 }
 
+// pemBegin starts a PEM block.
+const pemBegin = "-----BEGIN "
+
 // onePEMBlock is the single PEM block of type typ in b, with no headers and
-// only whitespace before and after it.
+// only whitespace before and after it. pem.Decode skips a malformed block
+// before a good one, so the file must also hold exactly one BEGIN line.
 func onePEMBlock(b []byte, typ string) (*pem.Block, error) {
-	if len(b) > MaxKeyFileBytes || !bytes.HasPrefix(bytes.TrimLeft(b, " \t\r\n"), []byte("-----BEGIN ")) {
+	if len(b) > MaxKeyFileBytes || !bytes.HasPrefix(bytes.TrimLeft(b, " \t\r\n"), []byte(pemBegin)) ||
+		bytes.Count(b, []byte(pemBegin)) != 1 {
 		return nil, errKeyNotOnePEM
 	}
 	block, rest := pem.Decode(b)

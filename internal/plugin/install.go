@@ -89,8 +89,14 @@ func Stage(src, root, instance string, trust TrustStore, mode Mode) (*Staged, er
 		return nil, &VerifyError{Reason: RefusedBadManifest, File: filepath.Join(src, ManifestFile), Why: whyFilesNameManifest}
 	}
 
-	instDir := filepath.Join(root, key.Name, key.Instance)
+	nameDir := filepath.Join(root, key.Name)
+	instDir := filepath.Join(nameDir, key.Instance)
 	if err := mkdirOwned(instDir); err != nil {
+		return nil, err
+	}
+	// The path rule holds where the copy is written before anything is
+	// written or later removed there.
+	if err := checkUnder(owner, root, nameDir, instDir); err != nil {
 		return nil, err
 	}
 	tmp, err := os.MkdirTemp(instDir, stagingPrefix)
@@ -178,20 +184,23 @@ func (s *Staged) copyFile(srcRoot *os.Root, src, rel string, command bool) error
 	return nil
 }
 
-// noSymlinkBelow refuses a symlink at any directory between the source and
-// a listed file. os.Root already keeps every open inside the source; this
-// also refuses a link that stays inside it, so the copy has the source's
-// layout.
+// noSymlinkBelow refuses a symlink at any component from the source down to
+// a listed file, the file included. os.Root already keeps every open inside
+// the source; this also refuses a link that stays inside it, and the open
+// that follows uses O_NOFOLLOW for a link swapped in meanwhile.
 func noSymlinkBelow(srcRoot *os.Root, src, rel string) error {
 	parts := strings.Split(rel, "/")
-	for i := 1; i < len(parts); i++ {
+	for i := 1; i <= len(parts); i++ {
 		sub := strings.Join(parts[:i], "/")
 		fi, err := srcRoot.Lstat(filepath.FromSlash(sub))
 		if err != nil {
 			return pathRefusal(filepath.Join(src, filepath.FromSlash(sub)), "cannot be read")
 		}
-		if fi.Mode()&fs.ModeSymlink != 0 || !fi.IsDir() {
-			return pathRefusal(filepath.Join(src, filepath.FromSlash(sub)), "is a symlink or not a directory")
+		if fi.Mode()&fs.ModeSymlink != 0 {
+			return pathRefusal(filepath.Join(src, filepath.FromSlash(sub)), "is a symlink")
+		}
+		if i < len(parts) && !fi.IsDir() {
+			return pathRefusal(filepath.Join(src, filepath.FromSlash(sub)), "is not a directory")
 		}
 	}
 	return nil
@@ -201,6 +210,9 @@ func noSymlinkBelow(srcRoot *os.Root, src, rel string) error {
 // limit bytes.
 func readSource(srcRoot *os.Root, src, name string, limit int64) ([]byte, error) {
 	p := filepath.Join(src, name)
+	if err := noSymlinkBelow(srcRoot, src, name); err != nil {
+		return nil, err
+	}
 	f, err := srcRoot.OpenFile(name, noFollowFlags, 0)
 	if err != nil {
 		return nil, pathRefusal(p, "cannot be opened, or is a symlink")

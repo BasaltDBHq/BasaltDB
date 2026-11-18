@@ -1,8 +1,9 @@
 name: CI
 
 # Pull requests, every push to master and a nightly run all take the same
-# path: every job, the race detector on, every package. A failing run on master
-# or the nightly one shows as a red run in the Actions tab.
+# path: every job, the race detector on, every package. The one exception is
+# the arm64 macOS smoke, which skips pull requests (see macos-smoke). A failing
+# run on master or the nightly one shows as a red run in the Actions tab.
 on:
   push:
     branches: [master]
@@ -152,14 +153,24 @@ jobs:
     needs: [lint, vet, scripts, secret-scan, test, containers, darwin-archives, macos-smoke]
     runs-on: ubuntu-latest
     steps:
-      - run: |
-          echo '${{ toJSON(needs) }}'
-          if [ '${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}' = true ]; then exit 1; fi
-          if [ '${{ github.event_name }}' = pull_request ] && [ '${{ github.event.pull_request.draft }}' = true ]; then
+      # Passes only when every job above succeeded. An allowlist, not a list of
+      # bad results: a job GitHub gave up on before it started (for example a
+      # macOS runner that never came) reports "abandoned", which a check for
+      # failure, cancelled or skipped would let through.
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+          EVENT: ${{ github.event_name }}
+          DRAFT: ${{ github.event.pull_request.draft }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          if [ "$EVENT" = pull_request ] && [ "$DRAFT" = true ]; then
             echo 'Draft pull request: the CI jobs did not run. Mark it ready for review to run them.'
             exit 1
           fi
-          if [ '${{ contains(needs.*.result, 'skipped') }}' = true ]; then exit 1; fi
+          if ! echo "$NEEDS" | jq -e 'all(.[]; .result == "success")' >/dev/null; then
+            echo 'A required job did not succeed (failed, cancelled, skipped or abandoned).'
+            exit 1
+          fi
 
   # basalt engine --user in containers without systemd: the privilege drop as
   # root on every thread, then the compose example end to end (setup,
@@ -219,14 +230,13 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     strategy:
       fail-fast: false
+      # The arm64 runner (macos-15) often waits 5 to 15 minutes for a machine,
+      # which alone breaks the 7-minute pull request budget. Pull requests run
+      # the Intel smoke only; pushes to master, the nightly run and manual runs
+      # run both. The darwin/arm64 archive is still built and checksummed on
+      # every pull request (darwin-archives).
       matrix:
-        include:
-          - runner: macos-15
-            expect_uname: arm64
-            archive: basaltdb_0.0.0-nightly_darwin_arm64.tar.gz
-          - runner: macos-15-intel
-            expect_uname: x86_64
-            archive: basaltdb_0.0.0-nightly_darwin_amd64.tar.gz
+        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"runner":"macos-15-intel","expect_uname":"x86_64","archive":"basaltdb_0.0.0-nightly_darwin_amd64.tar.gz"}]' || '[{"runner":"macos-15","expect_uname":"arm64","archive":"basaltdb_0.0.0-nightly_darwin_arm64.tar.gz"},{"runner":"macos-15-intel","expect_uname":"x86_64","archive":"basaltdb_0.0.0-nightly_darwin_amd64.tar.gz"}]') }}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read

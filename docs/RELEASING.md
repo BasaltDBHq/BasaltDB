@@ -35,7 +35,7 @@ git push origin "$NEXT_TAG"
 That push is the only trigger for a GitHub Release. The first releases publish to GitHub only: npm, the MCP registry and the Homebrew tap are off until you switch them on (see [Other channels](#other-channels)). The [Release](../.github/workflows/release.yml) workflow then:
 
 1. Builds linux/amd64, linux/arm64, darwin/amd64, darwin/arm64 (`CGO_ENABLED=0`). Windows is not built yet.
-2. Attaches tar.gz holding the one `basalt` binary, `SHA256SUMS`, its Sigstore signature `SHA256SUMS.sigstore.json` ([Signed checksums](#signed-checksums)), and `.deb` / `.rpm` / `.apk`. It also attaches `portal.sha256`, a copy of `web/portal.sha256` from the tagged commit (the hashes of the portal pages that release embeds), for `basalt portal verify --manifest portal.sha256`. Darwin tarballs are `CGO_ENABLED=0` static builds. They are unsigned (no Apple Developer account, codesign, or notarization). After a browser download, clear Gatekeeper quarantine **per binary** the operator verified (`xattr -d com.apple.quarantine ./basalt`), never recursively. CI `macos-smoke` runs those archives on `macos-15` (`uname -m` arm64) and `macos-15-intel` (`uname -m` x86_64).
+2. Attaches tar.gz holding the one `basalt` binary, `SHA256SUMS`, its Sigstore signature `SHA256SUMS.sigstore.json` ([Signed checksums](#signed-checksums)), and `.deb` / `.rpm` / `.apk`. It also attaches `portal.sha256`, a copy of `web/portal.sha256` from the tagged commit (the hashes of the portal pages that release embeds), for `basalt portal verify --manifest portal.sha256`. Darwin tarballs are `CGO_ENABLED=0` static builds. They are unsigned (no Apple Developer account, codesign, or notarization). After a browser download, clear Gatekeeper quarantine **per binary** the operator verified (`xattr -d com.apple.quarantine ./basalt`), never recursively. CI `macos-smoke` runs those archives on `macos-15-intel` (`uname -m` x86_64) for every run and on `macos-15` (`uname -m` arm64) for pushes to master, the nightly run and manual runs.
 3. Marks the GitHub Release as a **prerelease** when the tag has a semver prerelease suffix (`-alpha`, `-beta`, `-rc`). `prerelease: auto` in GoReleaser.
 
 Release notes come from [CHANGELOG.md](../CHANGELOG.md); GoReleaser does not generate them (`changelog.disable: true`).
@@ -79,7 +79,7 @@ Do not force-push tags. Do not create a `nightly` git tag.
 Merges and pull requests run **CI** only ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)). They must not publish.
 
 - Actions artifact `basaltdb-snapshot` (archives + packages + `SHA256SUMS`). Snapshot version is `0.0.0-nightly` (archive name only).
-- Native archive smoke on `macos-15` (arm64) and `macos-15-intel` (x86_64).
+- Native archive smoke on `macos-15-intel` (x86_64) for every run, and on `macos-15` (arm64) for pushes to master, the nightly run and manual runs (the arm64 runner's queue is too slow for pull requests).
 - No GitHub Release, no git tag, no npm / Homebrew / MCP registry write.
 
 The Release workflow has no `branches`, `pull_request`, or `workflow_dispatch` trigger.

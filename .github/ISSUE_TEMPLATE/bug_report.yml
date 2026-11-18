@@ -7,6 +7,8 @@ body:
       value: |
         Never paste a credential, a connection string with a password, or real data. Use a throwaway database and redact anything private.
         For a security problem, do not open an issue. Follow SECURITY.md instead.
+        If basalt crashed, run `basalt crash report <id>` instead: it fills in a scrubbed report for you.
+        Not sure it is a bug? Ask in [Discussions](https://github.com/BasaltDBHq/BasaltDB/discussions/categories/q-a) first.
   - type: textarea
     id: what-happened
     attributes:
@@ -50,6 +52,12 @@ body:
       placeholder: Postgres 17 on Supabase, Postgres 16 in Docker
     validations:
       required: true
+  - type: input
+    id: agent
+    attributes:
+      label: Agent host
+      description: The MCP client the agent runs in, if the bug involves an agent.
+      placeholder: Claude Code 2.1, Codex, OpenCode
   - type: textarea
     id: output
     attributes:

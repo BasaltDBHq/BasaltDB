@@ -2,6 +2,10 @@ name: Feature request
 description: Suggest a change or something new for BasaltDB.
 labels: [enhancement]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Still shaping the idea? Start in [Discussions, Ideas](https://github.com/BasaltDBHq/BasaltDB/discussions/categories/ideas). Open a request here once you know the problem and what you want BasaltDB to do.
   - type: textarea
     id: problem
     attributes:

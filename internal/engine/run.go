@@ -354,7 +354,7 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 			Name:       a.Name,
 			UID:        uids[a.Name],
 			SocketPath: cfg.SocketPath(a.Name),
-			Server:     mcp.NewServer(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: Instructions, Notice: rt.svc.UpdateNotice}, agent.Tools(rt.svc)...),
+			Server:     mcp.NewServer(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: Instructions, Notice: rt.svc.UpdateNotice, OnPanic: env.onPanic}, agent.Tools(rt.svc)...),
 		})
 	}
 	return out, nil

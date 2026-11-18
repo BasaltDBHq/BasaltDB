@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- When `basalt` panics, it saves a scrubbed crash report on your machine (version, OS, command, stack; no SQL, table or column names, row values, connection strings, host names, home paths or environment values) and prints one line pointing to `basalt crash show <id>` and `basalt crash report <id>`. `basalt crash list` and `show` let you read exactly what was saved; `report` opens a pre-filled GitHub issue that you review and submit yourself. Nothing is sent by basalt. A tool call in the engine that panics now ends with an `INTERNAL` error instead of stopping the engine.
+
 ### Fixed
 
 - `basalt log` and the engine no longer report "ledger chain broken" on a new, untouched ledger after the database was recreated the same way, for example after removing the Postgres container and running the quickstart again. The guard now identifies each install by a random id instead of the schema's oid, which repeats in a cluster made the same way. An old pin is reported as a reinstall with its notice instead.

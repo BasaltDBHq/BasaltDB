@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"runtime/debug"
 
 	"github.com/basaltdbhq/basaltdb/internal/resultsize"
 )
@@ -50,6 +51,12 @@ type Info struct {
 	// notice); "" when there is none. A connection's first successful tool
 	// result carries it as an extra text item.
 	Notice func() string
+	// OnPanic, optional, is called when a tool panics, with the tool's
+	// name, the panic value and the stack. It saves a crash report and
+	// returns its id ("" when it saved none). With it set, the panic ends
+	// that call with an INTERNAL error instead of the process; without it
+	// the panic is not recovered.
+	OnPanic func(tool string, v any, stack []byte) (reportID string)
 }
 
 // session is the state of one Serve connection.
@@ -264,7 +271,7 @@ func (s *Server) callTool(ctx context.Context, params json.RawMessage, sess *ses
 	}
 	// One result budget for every read the call makes (CONTRACT.md,
 	// QUERY_TIMEOUT SIZE_LIMIT).
-	out, err := tool.Call(resultsize.With(ctx), req.Arguments)
+	out, err := s.call(ctx, tool, req.Arguments)
 	if err == nil {
 		res := toolResult(out, false)
 		s.addNotice(res, sess)
@@ -275,6 +282,36 @@ func (s *Server) callTool(ctx context.Context, params json.RawMessage, sess *ses
 		return errorResult(te), nil
 	}
 	return toolResult(map[string]string{"message": err.Error()}, true), nil
+}
+
+// call runs the tool, ending a panic with an INTERNAL error when OnPanic is
+// set (CONTRACT.md, Crash reports).
+func (s *Server) call(ctx context.Context, tool Tool, args json.RawMessage) (out any, err error) {
+	if s.info.OnPanic != nil {
+		defer func() {
+			v := recover()
+			if v == nil {
+				return
+			}
+			out, err = nil, panicError(s.info.OnPanic(tool.Name, v, debug.Stack()))
+		}()
+	}
+	return tool.Call(resultsize.With(ctx), args)
+}
+
+// panicError is the INTERNAL error a tool that panicked answers with.
+func panicError(reportID string) *ToolError {
+	te := &ToolError{
+		Code: "INTERNAL", Message: "internal engine error",
+		NextSteps: []NextStep{{Actor: ActorAgent, Action: ActionStop, Text: "Stop. Do not retry this call: the engine failed inside it."}},
+	}
+	if reportID == "" {
+		return te
+	}
+	te.PersonMessage = "The basalt engine hit an internal error and saved a crash report. " +
+		"See exactly what it holds with `basalt crash show " + reportID + "`; " +
+		"to file it on GitHub, run `basalt crash report " + reportID + "` in your own terminal, on the machine the engine runs on."
+	return te
 }
 
 // addNotice appends the server's notice to res once per connection.

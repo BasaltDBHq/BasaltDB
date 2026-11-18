@@ -52,8 +52,6 @@ const (
 
 var (
 	errOtherAddress = errors.New("connect: dial to an address other than the endpoint's")
-	errUnknownCall  = errors.New("connect: the method has no ConnectRPC mapping")
-	errBadParams    = errors.New("connect: the params do not fit the method's message")
 	errRedirectStop = http.ErrUseLastResponse
 )
 
@@ -205,7 +203,9 @@ func (c *conn) Call(ctx context.Context, method string, params, result any) erro
 	}
 	cl, ok := c.calls[method]
 	if !ok {
-		return errUnknownCall
+		// No mapping for the method: nothing is sent. The plugin is not at
+		// fault, so the call fails as a bad exchange, not as UNAVAILABLE.
+		return plugin.Fail(plugin.ClassBadResponse)
 	}
 	body, err := encodeParams(cl.method, params)
 	if err != nil {

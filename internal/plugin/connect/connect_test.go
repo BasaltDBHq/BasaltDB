@@ -297,8 +297,8 @@ func writeToken(t *testing.T, contents string, mode os.FileMode) string {
 	return path
 }
 
-// captureLogs sends the standard and slog default loggers to a buffer for
-// the rest of the test.
+// captureLogs sends the standard logger (and so slog's default handler,
+// which writes through it) to a buffer for the rest of the test.
 func captureLogs(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	var buf bytes.Buffer
@@ -561,8 +561,13 @@ func TestRequestOverTheCapIsNotSent(t *testing.T) {
 func TestUnknownMethodIsNotSent(t *testing.T) {
 	s := newServer(t, peerHandler("echo"), nil)
 	tr := dialServer(t, s, "")
-	if err := tr.Call(context.Background(), "wire.verdict", map[string]any{}, nil); err == nil {
-		t.Fatal("an unmapped method was called")
+	if err := tr.Call(context.Background(), "wire.verdict", map[string]any{}, nil); classOf(err) != plugin.ClassBadResponse {
+		t.Fatalf("an unmapped method: %v, want BAD_RESPONSE", err)
+	}
+	// Params that do not fit the message (a string for an int32) are not sent.
+	bad := map[string]any{"limits": map[string]any{"timeoutMs": "soon"}}
+	if err := tr.Call(context.Background(), protocol.MethodInitialize, bad, nil); classOf(err) != plugin.ClassBadResponse {
+		t.Fatalf("params of the wrong shape: %v, want BAD_RESPONSE", err)
 	}
 	if n := s.hits.Load(); n != 0 {
 		t.Fatalf("the server got %d requests", n)

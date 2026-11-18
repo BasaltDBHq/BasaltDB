@@ -50,24 +50,25 @@ var (
 )
 
 // encodeParams turns the host's params into the method's binary message.
-// Params over the size cap fail OVER_LIMIT and are never sent.
+// Params over the size cap fail OVER_LIMIT, and params that do not fit the
+// message fail BAD_RESPONSE (as the JSON-RPC adapter's do); neither is sent.
 func encodeParams(m method, params any) ([]byte, error) {
 	msg := m.newRequest()
 	if params != nil {
 		js, err := json.Marshal(params)
 		if err != nil {
-			return nil, errBadParams
+			return nil, plugin.Fail(plugin.ClassBadResponse)
 		}
 		if len(js) > protocol.MaxMessageBytes {
 			return nil, plugin.Fail(plugin.ClassOverLimit)
 		}
 		if err := jsonToProto.Unmarshal(js, msg); err != nil {
-			return nil, errBadParams
+			return nil, plugin.Fail(plugin.ClassBadResponse)
 		}
 	}
 	body, err := proto.Marshal(msg)
 	if err != nil {
-		return nil, errBadParams
+		return nil, plugin.Fail(plugin.ClassBadResponse)
 	}
 	if len(body) > protocol.MaxMessageBytes {
 		return nil, plugin.Fail(plugin.ClassOverLimit)

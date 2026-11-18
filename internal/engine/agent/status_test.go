@@ -154,7 +154,7 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			t.Helper()
 			cmds, err := NewCommands("bot", "", "linux", nil)
 			require.NoError(t, err)
-			cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: operatedBy, Agents: []config.Agent{{Name: "bot", OSUser: "bot", CredentialFile: statusCredential}}}
+			cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: operatedBy, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
 			r, err := EngineDownStatus("bot", cmds, cfg, "test", statusNow)
 			require.NoError(t, err)
 			return r
@@ -376,7 +376,7 @@ func TestStatusEnforcementAndOperator(t *testing.T) {
 
 	// A same-user config the shim reads: its operator and its foreground engine.
 	cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: mcpcontract.OperatedByAgent, Agents: []config.Agent{{
-		Name: "bot", OSUser: "bot", CredentialFile: statusCredential, Setup: pendingSetup(guard.SetupInstall, statusNow.Add(time.Hour)),
+		Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential), Setup: pendingSetup(guard.SetupInstall, statusNow.Add(time.Hour)),
 	}}}
 	r, err = EngineDownStatus("bot", cmds.Foreground(), cfg, "test", statusNow)
 	require.NoError(t, err)
@@ -636,7 +636,7 @@ func TestEngineDownOnAnAgentOperatedEngine(t *testing.T) {
 	require.NoError(t, err)
 	cfg := &config.Config{
 		SocketDir: "/run/basalt", OperatedBy: mcpcontract.OperatedByAgent, Mode: config.ModeService,
-		Agents: []config.Agent{{Name: "bot", OSUser: "bot", CredentialFile: statusCredential}},
+		Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}},
 	}
 	down := EngineDown{Name: "bot", Commands: cmds, Config: cfg, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }}
 	srv := mcp.NewServer(mcp.Info{Name: "basalt"}, down.Tools()...)

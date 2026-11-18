@@ -117,7 +117,7 @@ func remoteWith(t *testing.T, run func(*testing.T, ...string) result, cfg string
 	r.payload = p
 	r.cfg, err = config.Load(cfg)
 	require.NoError(t, err)
-	r.credFile = r.cfg.Agents[0].CredentialFile
+	r.credFile = r.cfg.Agents[0].Store.CredentialFile
 	return r
 }
 
@@ -245,7 +245,7 @@ func TestInitRemoteFirstRunMakesAnInstallCode(t *testing.T) {
 	require.Equal(t, "AGENT", r.cfg.OperatedBy)
 	require.Equal(t, links.Portal, r.cfg.PagesURL)
 	a := r.cfg.Agents[0]
-	require.Equal(t, filepath.Join(filepath.Dir(cfg), "agents", "lead_bot.url"), a.CredentialFile)
+	require.Equal(t, filepath.Join(filepath.Dir(cfg), "agents", "lead_bot.url"), a.Store.CredentialFile)
 	require.Equal(t, &config.Setup{
 		SetupID: p.SetupID, Kind: "INSTALL", GuardVersion: guard.LatestVersion(),
 		ExpiresAt: p.ExpiresAt, Code: r.res.Code, Fingerprint: r.res.Fingerprint,

@@ -22,16 +22,21 @@ const StatusApplied = "APPLIED"
 
 // Tools returns the MCP tools served to one agent: every contract in api/mcp
 // that is IMPLEMENTED, each listed with the contract's description and
-// input schema. Handlers parse, validate, make one service call and render.
+// input schema, and query and write only for a store that speaks SQL
+// (CONTRACT.md, Stores). Handlers parse, validate, make one service call
+// and render.
 func Tools(svc *Service) []mcp.Tool {
 	if svc == nil {
 		panic("agent: service required")
 	}
 	h := handlers{svc: svc}
-	return []mcp.Tool{
-		contractTool("run_start", h.wrap("run_start", h.runStart)),
-		contractTool("query", h.wrap("query", h.query)),
-		contractTool("write", h.wrap("write", h.write)),
+	tools := []mcp.Tool{contractTool("run_start", h.wrap("run_start", h.runStart))}
+	if speaksSQL(svc.Store.Kind()) {
+		tools = append(tools,
+			contractTool("query", h.wrap("query", h.query)),
+			contractTool("write", h.wrap("write", h.write)))
+	}
+	return append(tools,
 		contractTool("run_history", h.wrap("run_history", h.runHistory)),
 		contractTool("list_runs", h.wrap("list_runs", h.listRuns)),
 		contractTool("list_pending", h.wrap("list_pending", h.listPending)),
@@ -41,7 +46,13 @@ func Tools(svc *Service) []mcp.Tool {
 		contractTool("request_revert", h.wrap("request_revert", h.requestRevert)),
 		contractTool(toolDescribe, h.wrap(toolDescribe, h.describe)),
 		contractTool(toolStatus, h.wrap(toolStatus, h.status)),
-	}
+	)
+}
+
+// speaksSQL reports whether a store of kind runs SQL: the query and write
+// tools are served for it, in its dialect.
+func speaksSQL(kind action.StoreKind) bool {
+	return kind == action.StorePostgres || kind == action.StoreMySQL
 }
 
 // contractTool builds a tool from its contract. A missing contract is a

@@ -28,7 +28,7 @@ func rootLayout(t *testing.T, id uuid.UUID) (cfgPath, credFile string) {
 	cfgPath, credFile = filepath.Join(dir, "engine.json"), filepath.Join(dir, "agents", "bot.url")
 	require.NoError(t, config.WriteFile(credFile, []byte("postgres://bt_agent_bot:old@db:5432/app\n")))
 	require.NoError(t, config.UpsertAgent(cfgPath, config.Settings{SocketDir: "/run/basalt"}, config.Agent{
-		Name: "bot", OSUser: "bot", CredentialFile: credFile, Setup: &config.Setup{
+		Name: "bot", OSUser: "bot", Store: config.PostgresStore(credFile), Setup: &config.Setup{
 			SetupID: id.String(), Kind: guard.SetupAgent,
 			GuardVersion: guard.LatestVersion(), ExpiresAt: "2026-11-13T10:00:00Z", Code: "basalt-setup.1.abc.def", Fingerprint: "a1b2",
 		},
@@ -44,12 +44,12 @@ func TestRootEngineUsesOnlyTheComputedCredentialPath(t *testing.T) {
 	elsewhere := filepath.Join(filepath.Dir(cfgPath), "other.url")
 	require.NoError(t, config.WriteFile(elsewhere, []byte("postgres://x:y@h/db\n")))
 	for _, named := range []string{elsewhere, filepath.Join(filepath.Dir(cfgPath), "agents", "other.url")} {
-		_, err := agentFilesFor(agentEnv{configPath: cfgPath, asRoot: true}, config.Agent{Name: "bot", CredentialFile: named})
+		_, err := agentFilesFor(agentEnv{configPath: cfgPath, asRoot: true}, config.Agent{Name: "bot", Store: config.PostgresStore(named)})
 		require.ErrorContains(t, err, "as root, basalt engine uses only that path", named)
 	}
 	// A spelling of the same path is the same path.
 	files, err := agentFilesFor(agentEnv{configPath: cfgPath, asRoot: true},
-		config.Agent{Name: "bot", CredentialFile: filepath.Join(filepath.Dir(credFile), "sub", "..", "bot.url")})
+		config.Agent{Name: "bot", Store: config.PostgresStore(filepath.Join(filepath.Dir(credFile), "sub", "..", "bot.url"))})
 	require.NoError(t, err)
 	defer files.close()
 	dsn, err := files.readCredential()
@@ -57,7 +57,7 @@ func TestRootEngineUsesOnlyTheComputedCredentialPath(t *testing.T) {
 	require.Equal(t, "postgres://bt_agent_bot:old@db:5432/app", dsn)
 
 	// Not as root, the config's path as it is.
-	files, err = agentFilesFor(agentEnv{configPath: cfgPath}, config.Agent{Name: "bot", CredentialFile: elsewhere})
+	files, err = agentFilesFor(agentEnv{configPath: cfgPath}, config.Agent{Name: "bot", Store: config.PostgresStore(elsewhere)})
 	require.NoError(t, err)
 	_, ok := files.(pathFiles)
 	require.True(t, ok)

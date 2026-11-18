@@ -129,7 +129,7 @@ func register(c *cliIO, f initFlags, dsn string) (config.VaultWritten, error) {
 		return config.VaultWritten{}, err
 	}
 	return config.UpsertAgentVault(f.configPath, engineSettings(f, c.goos), config.Agent{
-		Name: f.agent, OSUser: f.osUser, CredentialFile: f.credFile, InitArgs: f.initArgs,
+		Name: f.agent, OSUser: f.osUser, Store: config.PostgresStore(f.credFile), InitArgs: f.initArgs,
 	})
 }
 
@@ -215,7 +215,7 @@ func agentServiceSpec(goos, bin, configPath, engineUser string, a agentInstall, 
 			SocketDir: config.DefaultSocketDir(goos), PagesURL: a.pagesURL, DevLocalPages: a.devLocalPages, Mode: config.ModeService, PersonUIDs: a.personUIDs,
 			Vault: a.vault, VaultDefault: a.vaultDefault, OperatedBy: a.operatedBy,
 		},
-		config.Agent{Name: a.name, OSUser: a.osUser, CredentialFile: cred, InitArgs: a.initArgs})
+		config.Agent{Name: a.name, OSUser: a.osUser, Store: config.PostgresStore(cred), InitArgs: a.initArgs})
 	if err != nil {
 		return spec, err
 	}

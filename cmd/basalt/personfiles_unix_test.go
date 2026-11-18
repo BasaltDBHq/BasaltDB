@@ -52,7 +52,7 @@ func writeEngineJSON(t *testing.T, path, cred string) {
 	t.Helper()
 	raw, err := json.Marshal(map[string]any{
 		"socketDir": "/tmp/basalt-test",
-		"agents":    []map[string]string{{"name": testAgentKey, "osUser": "tester", "credentialFile": cred}},
+		"agents":    []map[string]any{{"name": testAgentKey, "osUser": "tester", "store": map[string]string{"kind": "POSTGRES", "credentialFile": cred}}},
 	})
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(path, raw, 0o600))
@@ -187,7 +187,7 @@ func TestRootCLIConfigReadsDoNotFollowLinksOrBlockOnAFIFO(t *testing.T) {
 	require.NoError(t, syscall.Mkfifo(fifo, 0o600))
 	hosted := filepath.Join(t.TempDir(), "hosted.json")
 	require.NoError(t, os.WriteFile(hosted, []byte(`{"socketDir": "/s", "pagesUrl": "https://portal.basaltvault.app",
-		"agents": [{"name": "bot", "osUser": "u", "credentialFile": "/c"}]}`), 0o600))
+		"agents": [{"name": "bot", "osUser": "u", "store": {"kind": "POSTGRES", "credentialFile": "/c"}}]}`), 0o600))
 	link := filepath.Join(dir, "link.json")
 	require.NoError(t, os.Symlink(hosted, link))
 

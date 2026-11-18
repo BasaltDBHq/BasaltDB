@@ -12,7 +12,7 @@ func TestLoadApprovalPage(t *testing.T) {
 	t.Parallel()
 	c, err := config.Load(write(t, "engine.json", `{
 		"socketDir": "/s",
-		"agents": [{"name": "a", "osUser": "u", "credentialFile": "/c"}],
+		"agents": [{"name": "a", "osUser": "u", "store": {"kind": "POSTGRES", "credentialFile": "/c"}}],
 		"approvalPage": "http://localhost:8787/approve/"
 	}`, 0o600))
 	require.NoError(t, err)
@@ -31,7 +31,7 @@ func TestLoadRefusesParkedNotify(t *testing.T) {
 		"empty":    `{}`,
 		"null":     `null`,
 	} {
-		_, err := config.Load(write(t, "engine.json", `{"socketDir": "/s", "agents": [{"name": "a", "osUser": "u", "credentialFile": "/c"}], "notify": `+notify+`}`, 0o600))
+		_, err := config.Load(write(t, "engine.json", `{"socketDir": "/s", "agents": [{"name": "a", "osUser": "u", "store": {"kind": "POSTGRES", "credentialFile": "/c"}}], "notify": `+notify+`}`, 0o600))
 		require.ErrorContains(t, err, `"notify" is no longer supported`, name)
 		require.ErrorContains(t, err, "Telegram", name)
 	}

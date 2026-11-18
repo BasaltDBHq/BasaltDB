@@ -494,6 +494,11 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	if !env.cfg.Service() {
 		cmds = cmds.Foreground()
 	}
+	// One store per agent (CONTRACT.md, Stores); the config refuses any
+	// kind but POSTGRES, the only adapter there is.
+	if a.Store.Kind != config.StorePostgres {
+		return agentRuntime{}, fmt.Errorf("agent %s: store kind %q is not served", a.Name, a.Store.Kind)
+	}
 	files, err := agentFilesFor(env, a)
 	if err != nil {
 		return agentRuntime{}, err
@@ -509,7 +514,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		return agentRuntime{}, err
 	}
 	finisher := &setupFinisher{
-		configPath: env.configPath, agent: a.Name, credFile: a.CredentialFile, files: files,
+		configPath: env.configPath, agent: a.Name, credFile: a.Store.CredentialFile, files: files,
 		login: targetOf(pool.Config().ConnConfig), password: password, reset: pool.Reset,
 		connect: connectAgent, log: log,
 	}
@@ -592,9 +597,9 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 // following a link, from the computed credential path only (rootFiles).
 func agentFilesFor(env agentEnv, a config.Agent) (agentFiles, error) {
 	if !env.asRoot {
-		return pathFiles{configPath: env.configPath, credFile: a.CredentialFile}, nil
+		return pathFiles{configPath: env.configPath, credFile: a.Store.CredentialFile}, nil
 	}
-	return openRootFiles(env.configPath, a.Name, a.CredentialFile)
+	return openRootFiles(env.configPath, a.Name, a.Store.CredentialFile)
 }
 
 // agentInfo answers the person socket's STATUS with the agent's status tool

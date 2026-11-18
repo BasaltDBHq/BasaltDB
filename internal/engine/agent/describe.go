@@ -118,11 +118,10 @@ const (
 	// up to MaxRetryRows it is held for approval, over it refused.
 	policyAllowedUpTo = 10
 
-	storePostgres = "POSTGRES"
-	formOverview  = "OVERVIEW"
-	formSearch    = "SEARCH"
-	formResource  = "RESOURCE"
-	privSelect    = "SELECT"
+	formOverview = "OVERVIEW"
+	formSearch   = "SEARCH"
+	formResource = "RESOURCE"
+	privSelect   = "SELECT"
 )
 
 // WritePolicy is the guard's write policy (CONTRACT.md, Approvals).
@@ -299,7 +298,7 @@ func (s *Service) DescribeOverview(ctx context.Context) (Overview, error) {
 	}
 	limits := s.Catalog.Limits()
 	o := Overview{
-		Store:       StoreInfo{Kind: storePostgres, Database: s.Catalog.Database()},
+		Store:       StoreInfo{Kind: string(s.Store.Kind()), Database: s.Catalog.Database()},
 		Fingerprint: catalogFingerprint(lines, notGranted, pii),
 		Counts:      Counts{Tables: len(visible), NotGranted: notGranted},
 		Update:      s.updateInfo(),

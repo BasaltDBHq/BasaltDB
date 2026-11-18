@@ -86,7 +86,7 @@ func TestInitRemoteAsRootUsesTheComputedCredentialPath(t *testing.T) {
 	require.Len(t, entries, 1, "only inner/: nothing written next to it")
 }
 
-// setCredentialFile rewrites the agent's credentialFile in the config at
+// setCredentialFile rewrites the agent's store.credentialFile in the config at
 // cfg, keeping the rest and its mode 0600.
 func setCredentialFile(t *testing.T, cfg, path string) {
 	t.Helper()
@@ -98,7 +98,8 @@ func setCredentialFile(t *testing.T, cfg, path string) {
 	require.True(t, ok)
 	agent, ok := agents[0].(map[string]any)
 	require.True(t, ok)
-	agent["credentialFile"] = path
+	store := agent["store"].(map[string]any)
+	store["credentialFile"] = path
 	raw, err = json.Marshal(doc)
 	require.NoError(t, err)
 	require.NoError(t, config.WriteFile(cfg, raw))

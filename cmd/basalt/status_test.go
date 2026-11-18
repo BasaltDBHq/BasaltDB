@@ -278,7 +278,7 @@ func TestStatusNamesANonDefaultCredentialFileOnlyAsTheSavedFlag(t *testing.T) {
 	require.NoError(t, os.Rename(g.credFile, custom))
 	cfg, err := config.Load(g.configPath)
 	require.NoError(t, err)
-	cfg.Agents[0].CredentialFile = custom
+	cfg.Agents[0].Store.CredentialFile = custom
 	cfg.Agents[0].InitArgs = append(cfg.Agents[0].InitArgs, "--credential-file="+custom)
 	raw, err := json.Marshal(cfg)
 	require.NoError(t, err)

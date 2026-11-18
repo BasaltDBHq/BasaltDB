@@ -27,3 +27,29 @@ jobs:
       # Add a package here when it starts to honour BASALTDB_TEST_FULL.
       - name: Full-size tests
         run: go test -race -count=1 -timeout 80m ./internal/pii/...
+
+  # The classify CLI tests need a Postgres server (guardtest).
+  classify-cli-full:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: basalt_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      BASALTDB_TEST_FULL: "1"
+      BASALTDB_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/basalt_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/go
+      - name: Full-size classify CLI tests
+        run: go test -race -count=1 -timeout 30m -run 'TestClassify' ./cmd/basalt/

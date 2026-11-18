@@ -162,7 +162,7 @@ func (s *Service) errorGuidance(te *mcp.ToolError, f failure) ([]mcp.NextStep, s
 	case CodeSQLError:
 		sqlErrorSteps(b, te, f)
 	case CodeInvalidArgument:
-		invalidArgumentSteps(b, te, f)
+		person = invalidArgumentSteps(b, te, f)
 	case CodeUnavailable:
 		person = s.unavailableSteps(b, te, f)
 	case CodeInternal:
@@ -524,25 +524,30 @@ func sqlErrorSteps(b *Steps, te *mcp.ToolError, f failure) {
 	b.ReviseCall(f.tool, nil, "Fix the statement as the database's message says, then call again.")
 }
 
-func invalidArgumentSteps(b *Steps, te *mcp.ToolError, f failure) {
+func invalidArgumentSteps(b *Steps, te *mcp.ToolError, f failure) string {
 	switch te.Reason {
 	case ReasonStaleCursor:
 		b.RepeatCall(f.tool, map[string]any{"cursor": nil}, 0, "The cursor is no longer valid: call again without cursor to start from the first page.")
-		return
+		return ""
 	case ReasonScopeFilter:
 		b.ReviseCall(f.tool, nil, "Call again without the refused entries the message names, or without that filter.")
 		if id := f.arg(argRunID); id != "" {
 			b.CallTool(toolRunHistory, map[string]any{argRunID: id}, "Read the run's history to see the tables you wrote in it.")
-			return
+			return ""
 		}
 		b.CallTool(toolListRuns, map[string]any{}, "List your runs to see your own runs in the task; run_history shows the tables each one wrote.")
-		return
+		return ""
 	case ReasonScopeFilterCap:
 		b.ReviseCall(f.tool, nil, fmt.Sprintf("Call again with at most %d runs and %d tables, or without the filter: the person "+
 			"can narrow it on the signing page.", revert.MaxFilter, revert.MaxFilter))
-		return
+		return ""
+	case ReasonAdminCredential:
+		b.AskPerson(adminCredentialAsk)
+		b.ReviseCall(f.tool, nil, adminCredentialRevise)
+		return adminCredentialPerson
 	}
 	b.ReviseCall(f.tool, nil, "Fix the arguments as the message says; the tool's input schema lists them.")
+	return ""
 }
 
 // unavailableSteps: a database the engine cannot reach is retried once; the

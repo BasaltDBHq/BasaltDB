@@ -55,7 +55,8 @@ type ArgumentError struct {
 	Message string
 	// Reason is the catalog reason: STALE_CURSOR for a cursor that no longer
 	// leads anywhere, SCOPE_FILTER or SCOPE_FILTER_CAP for a revert filter
-	// refused, else none.
+	// refused, ADMIN_CREDENTIAL for a connection string with a password,
+	// else none.
 	Reason string
 }
 

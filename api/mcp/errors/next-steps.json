@@ -82,6 +82,7 @@
     { "code": "INVALID_ARGUMENT", "reason": "STALE_CURSOR", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }] },
     { "code": "INVALID_ARGUMENT", "reason": "SCOPE_FILTER", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },
     { "code": "INVALID_ARGUMENT", "reason": "SCOPE_FILTER_CAP", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "REVISE_CALL" }] },
+    { "code": "INVALID_ARGUMENT", "reason": "ADMIN_CREDENTIAL", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "REVISE_CALL" }] },
 
     { "code": "UNAVAILABLE", "reason": "DATABASE_UNREACHABLE", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }, { "actor": "AGENT", "action": "ASK_PERSON" }] },
     { "code": "UNAVAILABLE", "reason": "TOO_MANY_CONNECTIONS", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "CALL_TOOL" }, { "actor": "AGENT", "action": "ASK_PERSON" }] },

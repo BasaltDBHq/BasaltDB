@@ -48,7 +48,7 @@ func (d EngineDown) Tools() []mcp.Tool {
 		if c.Name == toolStatus {
 			call = d.status
 		}
-		out = append(out, mcp.Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: call})
+		out = append(out, mcp.Tool{Name: c.Name, Description: c.Description, InputSchema: c.InputSchema, Call: refuseAdminCredential(c.Name, call)})
 	}
 	return out
 }

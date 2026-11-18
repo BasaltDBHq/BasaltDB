@@ -69,6 +69,7 @@ type Spec struct {
 }
 
 // pluginHost is what s's plugin units hide and who reaches their sockets.
+// It is HostFor's, from the fields withPluginUnits copied out of it.
 func (s Spec) pluginHost() PluginHost {
 	h := PluginHost{
 		GOOS: s.GOOS, EngineUser: s.User, ConfigDir: filepath.Dir(s.ConfigPath),

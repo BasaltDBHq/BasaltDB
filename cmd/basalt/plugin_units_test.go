@@ -101,7 +101,7 @@ func TestPluginUnitEntries(t *testing.T) {
 	h := servicePluginHost(cfg, "linux", "/etc/basalt/engine.json", "basalt")
 	require.Equal(t, service.PluginHost{
 		GOOS: "linux", EngineUser: "basalt", ConfigDir: "/etc/basalt", StateDir: config.DefaultStateDir("linux"), SocketDir: "/run/basalt",
-		CredentialFiles: []string{"/etc/basalt/agents/product_a.url", "/srv/x.url", "/etc/basalt/acme.token"},
+		CredentialFiles: []string{"/etc/basalt/agents/product_a.url", "/srv/x.url"},
 	}, h)
 
 	names := serviceUnitNames(cfg)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -347,4 +348,37 @@ func TestOnlyTheSocketVariableIsRead(t *testing.T) {
 	_, c := serveStdio(t, newFull(), withEnv(get))
 	c.call("health", `{}`)
 	require.Subset(t, []string{SocketEnv}, asked)
+}
+
+// A socket left at the path by a crash (a service unit's directory stays
+// between starts) is replaced; anything else there is refused.
+func TestListenReplacesAStaleSocket(t *testing.T) {
+	dir, err := os.MkdirTemp("", "sk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	path := dir + "/p.sock"
+	stale, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale.(*net.UnixListener).SetUnlinkOnClose(false)
+	_ = stale.Close()
+	cfg := newConfig([]Option{withEnv(func(string) string { return path })})
+	l, err := listenUnix(cfg)
+	if err != nil {
+		t.Fatalf("a stale socket is replaced: %v", err)
+	}
+	_ = l.Close()
+
+	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := listenUnix(cfg); err == nil {
+		t.Fatal("a file that is not a socket is left and refused")
+	}
+	if b, err := os.ReadFile(path); err != nil || string(b) != "x" {
+		t.Fatalf("the file was changed: %q %v", b, err)
+	}
 }

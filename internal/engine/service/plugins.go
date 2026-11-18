@@ -16,6 +16,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 )
 
@@ -290,10 +291,24 @@ func (h PluginHost) hiddenDirs() []string {
 	return uniquePaths(nil, h.ConfigDir, h.StateDir, h.SocketDir)
 }
 
-// hiddenFiles are the credential files not already listed, each once.
+// hiddenFiles are the credential files outside the hidden directories,
+// each once: one inside the config directory is hidden with it, so adding
+// an agent there leaves every plugin's unit as it is.
 func (h PluginHost) hiddenFiles() []string {
 	dirs := h.hiddenDirs()
-	return uniquePaths(dirs, h.CredentialFiles...)[len(dirs):]
+	var files []string
+	for _, f := range h.CredentialFiles {
+		if !slices.ContainsFunc(dirs, func(d string) bool { return within(d, f) }) {
+			files = append(files, f)
+		}
+	}
+	return uniquePaths(dirs, files...)[len(dirs):]
+}
+
+// within reports whether p is dir or lies under it.
+func within(dir, p string) bool {
+	rel, err := filepath.Rel(dir, p)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, "../")
 }
 
 func uniquePaths(have []string, more ...string) []string {
@@ -439,6 +454,49 @@ func LaunchdPluginDaemon(h PluginHost, p PluginEntry) (string, error) {
 `, n.Unit, args.String(), n.User, xmlEscape(p.Dir), SocketEnv, xmlEscape(n.Socket), pluginUmask,
 		int64(p.memoryMB())*bytesPerMB), nil
 }
+
+// HostFor is the plugin host of the engine configured by cfg (at
+// configPath, on goos), run as engineUser: what its plugin units hide.
+func HostFor(cfg config.Config, goos, configPath, engineUser string) PluginHost {
+	h := PluginHost{
+		GOOS: goos, EngineUser: engineUser, ConfigDir: filepath.Dir(configPath),
+		StateDir: cfg.StateDirFor(goos), SocketDir: cfg.SocketDir,
+	}
+	if h.SocketDir == "" {
+		h.SocketDir = config.DefaultSocketDir(goos)
+	}
+	// Every agent's credential file. A remote entry's auth.credentialFile is
+	// not listed: the engine reads it only when it is the engine user's
+	// alone (mode 0600 or narrower), so no plugin user can, and listing it
+	// would make adding a remote entry change every local entry's unit.
+	for _, a := range cfg.Agents {
+		h.CredentialFiles = append(h.CredentialFiles, a.Store.CredentialFile)
+	}
+	return h
+}
+
+// EntryFor is config entry p, its installed copy verified as v, as its
+// unit runs it; false for a remote entry, which has no unit.
+func EntryFor(p config.Plugin, v plugin.Verified) (PluginEntry, bool) {
+	l := v.Manifest.Endpoint.Local
+	if l == nil {
+		return PluginEntry{}, false
+	}
+	k := p.Key()
+	e := PluginEntry{
+		Name: k.Name, Instance: k.Instance, Dir: v.Dir, Command: l.Command, Args: l.Args,
+		Egress: v.Manifest.Network.Egress, Enabled: p.Enabled,
+	}
+	if r := v.Manifest.Resources; r != nil {
+		e.MemoryMB = r.MemoryMB
+	}
+	return e, true
+}
+
+// PluginUnit is the unit p's entry needs on h.GOOS, byte for byte: what
+// install writes, and what the engine compares the installed unit with
+// before it connects.
+func PluginUnit(h PluginHost, p PluginEntry) (string, error) { return pluginUnit(h, p) }
 
 // pluginUnit renders p's unit on h.GOOS.
 func pluginUnit(h PluginHost, p PluginEntry) (string, error) {

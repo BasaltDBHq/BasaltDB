@@ -65,6 +65,9 @@ type options struct {
 	roots *x509.CertPool
 	// methods adds calls to the platform's table.
 	methods map[string]method
+	// check, for a local socket, runs on every new connection
+	// (DialLocalChecked).
+	check func(net.Conn) error
 }
 
 // Dial checks a remote endpoint, connects to it once to verify its TLS

@@ -20,3 +20,9 @@ func Dial(ctx context.Context, socketPath string) (plugin.Transport, error) {
 	}
 	return newConn(nc, nc, func() { _ = nc.Close() }), nil
 }
+
+// Open is a transport over nc, a connection the caller made and checked
+// (a service-mode engine checks the peer's OS user first). Close closes nc.
+func Open(nc net.Conn) plugin.Transport {
+	return newConn(nc, nc, func() { _ = nc.Close() })
+}

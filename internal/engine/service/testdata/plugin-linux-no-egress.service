@@ -28,9 +28,8 @@ ReadWritePaths=/usr/local/lib/basalt/run/basalt-plugin-acme-ner-default
 InaccessiblePaths=/etc/basalt
 InaccessiblePaths=/var/lib/basalt
 InaccessiblePaths=/run/basalt
-InaccessiblePaths=-/etc/basalt/agents/product_a.url
 InaccessiblePaths=-/srv/creds/client_x.url
-InaccessiblePaths=-/etc/basalt/plugins/acme.token
+InaccessiblePaths=-/srv/acme.token
 PrivateNetwork=yes
 
 [Install]

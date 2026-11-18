@@ -22,7 +22,7 @@ const copySHA = "4f1c2b0e9a8d7c6b5a49382716f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d
 func linuxHost() service.PluginHost {
 	return service.PluginHost{
 		GOOS: "linux", EngineUser: "basalt", ConfigDir: "/etc/basalt", StateDir: "/var/lib/basalt", SocketDir: "/run/basalt",
-		CredentialFiles: []string{"/etc/basalt/agents/product_a.url", "/srv/creds/client_x.url", "/etc/basalt/plugins/acme.token"},
+		CredentialFiles: []string{"/etc/basalt/agents/product_a.url", "/srv/creds/client_x.url", "/srv/acme.token"},
 	}
 }
 
@@ -102,12 +102,14 @@ func TestInaccessiblePathsHideTheEngine(t *testing.T) {
 		`InaccessiblePaths=/etc/basalt`,
 		`InaccessiblePaths=/var/lib/basalt`,
 		`InaccessiblePaths=/run/basalt`,
-		`InaccessiblePaths=-/etc/basalt/agents/product_a.url`,
 		`InaccessiblePaths=-/srv/creds/client_x.url`,
-		`InaccessiblePaths=-/etc/basalt/plugins/acme.token`,
+		`InaccessiblePaths=-/srv/acme.token`,
 	} {
 		require.Contains(t, unit, want+"\n")
 	}
+	// A credential file in the config directory is hidden with it, so an
+	// agent added there leaves the unit as it is.
+	require.NotContains(t, unit, "product_a.url")
 	// Each path once, whatever the host lists twice.
 	h := linuxHost()
 	h.CredentialFiles = append(h.CredentialFiles, "/etc/basalt", "/srv/creds/client_x.url")
@@ -119,11 +121,11 @@ func TestInaccessiblePathsHideTheEngine(t *testing.T) {
 	// A path with a space or a '%' is quoted, its specifier escaped.
 	h = linuxHost()
 	h.ConfigDir = "/etc/my basalt"
-	h.CredentialFiles = []string{`/etc/my basalt/agents/a%h"b.url`}
+	h.CredentialFiles = []string{`/srv/my creds/a%h"b.url`}
 	unit, err = service.SystemdPluginUnit(h, entry("linux", "default"))
 	require.NoError(t, err)
 	require.Contains(t, unit, "InaccessiblePaths=\"/etc/my basalt\"\n")
-	require.Contains(t, unit, "InaccessiblePaths=\"-/etc/my basalt/agents/a%%h\\\"b.url\"\n")
+	require.Contains(t, unit, "InaccessiblePaths=\"-/srv/my creds/a%%h\\\"b.url\"\n")
 }
 
 func TestRemoteEntryHasNoUnit(t *testing.T) {

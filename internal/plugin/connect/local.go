@@ -33,13 +33,17 @@ func DialLocal(ctx context.Context, socketPath string) (plugin.Transport, error)
 
 func dialLocal(ctx context.Context, socketPath string, opts options) (plugin.Transport, error) {
 	name := filepath.Base(socketPath)
-	fi, err := os.Lstat(socketPath)
-	if err != nil || fi.Mode().Type() != os.ModeSocket {
+	if !isSocket(socketPath) {
 		return nil, localError(name, ErrNotSocket)
 	}
 
 	dialer := &net.Dialer{Timeout: connectTimeout}
+	// The HTTP transport opens new connections on its own; each one checks
+	// again that the path is still a socket, not a link put in its place.
 	dialSocket := func(ctx context.Context) (net.Conn, error) {
+		if !isSocket(socketPath) {
+			return nil, localError(name, ErrNotSocket)
+		}
 		return dialer.DialContext(ctx, "unix", socketPath)
 	}
 	// Connect once, so a dead socket is refused here and not at the first call.
@@ -69,6 +73,12 @@ func dialLocal(ctx context.Context, socketPath string, opts options) (plugin.Tra
 	}
 	// The host name is a placeholder: it is only the :authority the plugin sees.
 	return newConn(tr, "http://localhost", func(http.Header) {}, opts), nil
+}
+
+// isSocket reports whether path itself, not followed, is a Unix socket.
+func isSocket(path string) bool {
+	fi, err := os.Lstat(path)
+	return err == nil && fi.Mode().Type() == os.ModeSocket
 }
 
 func localError(name string, reason error) error {

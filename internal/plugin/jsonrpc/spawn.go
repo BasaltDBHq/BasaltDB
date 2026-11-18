@@ -3,32 +3,29 @@ package jsonrpc
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"sync"
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/child"
 )
 
-const (
-	// waitDelay bounds how long reaping the child waits for a stderr copy to
-	// finish when something else still holds the child's pipes.
-	waitDelay = 2 * time.Second
-	// exitGrace is how long, after the child has exited, the reader may still
-	// deliver what the child wrote before it did.
-	exitGrace = 200 * time.Millisecond
-)
+// exitGrace is how long, after the child has exited, the reader may still
+// deliver what the child wrote before it did.
+const exitGrace = 200 * time.Millisecond
 
-// Spawn starts the plugin at cmdPath with args and talks to it over its stdin
-// and stdout. The child gets an empty environment: nothing of the engine's,
-// and no credentials. Its stderr is discarded when stderr is nil, and copied
-// to stderr otherwise (the engine passes a writer only under --plugin-debug).
+// Spawn starts the plugin s names and talks to it over its stdin and
+// stdout. The child runs in its own process group, in s.Dir, with an empty
+// environment: nothing of the engine's, and no credentials (s.Env is
+// ignored). Its stderr is discarded when s.Stderr is nil, and copied there
+// otherwise (the engine passes a writer only under --plugin-debug).
 //
-// ctx covers the start only. The child runs until Close, which stops it at
-// once; a graceful stop is the shutdown call, made before Close.
-func Spawn(ctx context.Context, cmdPath string, args []string, stderr io.Writer) (plugin.Transport, error) {
+// ctx covers the start only. The child runs until Close, which kills its
+// whole process group at once; a graceful stop is the shutdown call, made
+// before Close. The transport's Exited channel is closed once the child has
+// exited.
+func Spawn(ctx context.Context, s child.Spec) (plugin.Transport, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -43,16 +40,9 @@ func Spawn(ctx context.Context, cmdPath string, args []string, stderr io.Writer)
 		return nil, fmt.Errorf("jsonrpc: create pipe: %w", err)
 	}
 
-	cmd := exec.Command(cmdPath, args...)
-	cmd.Env = []string{}
-	cmd.Stdin = inR
-	cmd.Stdout = outW
-	if stderr != nil {
-		cmd.Stderr = stderr
-	}
-	cmd.WaitDelay = waitDelay
-
-	err = cmd.Start()
+	s.Env = nil
+	s.Stdin, s.Stdout = inR, outW
+	p, err := child.Start(s)
 	// The child has its own copies now; ours would keep the pipes open.
 	_ = inR.Close()
 	_ = outW.Close()
@@ -66,7 +56,7 @@ func Spawn(ctx context.Context, cmdPath string, args []string, stderr io.Writer)
 	stop := func() {
 		once.Do(func() {
 			_ = inW.Close()
-			_ = cmd.Process.Kill()
+			p.Stop()
 			_ = outR.Close()
 		})
 	}
@@ -75,7 +65,7 @@ func Spawn(ctx context.Context, cmdPath string, args []string, stderr io.Writer)
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
-		_ = cmd.Wait()
+		<-p.Exited()
 		// What the child wrote before it exited is still in the pipe; give
 		// the reader a moment to deliver it before calling the plugin gone.
 		select {
@@ -84,5 +74,14 @@ func Spawn(ctx context.Context, cmdPath string, args []string, stderr io.Writer)
 			c.abort(plugin.ClassExited)
 		}
 	}()
-	return c, nil
+	return &spawned{conn: c, p: p}, nil
 }
+
+// spawned is a conn to a child process.
+type spawned struct {
+	*conn
+	p *child.Process
+}
+
+// Exited is closed once the child has exited.
+func (s *spawned) Exited() <-chan struct{} { return s.p.Exited() }

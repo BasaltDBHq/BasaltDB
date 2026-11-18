@@ -56,6 +56,21 @@ func testPluginMain(args []string) {
 		os.Exit(1)
 	}
 	sock := os.Getenv(dial.SocketEnv)
+	// It answers nothing unless it got exactly the environment a plugin
+	// gets (the socket variable alone, or nothing for stdio) and runs in its
+	// installed copy.
+	wantEnv := []string{}
+	if sock != "" {
+		wantEnv = []string{dial.SocketEnv + "=" + sock}
+	}
+	cwd, err := os.Getwd()
+	if err == nil {
+		cwd, err = filepath.EvalSymlinks(cwd)
+	}
+	copyDir, dirErr := filepath.EvalSymlinks(filepath.Join(filepath.Dir(exe), ".."))
+	if !slices.Equal(os.Environ(), wantEnv) || err != nil || dirErr != nil || cwd != copyDir {
+		os.Exit(3)
+	}
 	if sock == "" {
 		serveJSONRPC(os.Stdin, os.Stdout, m, status)
 		os.Exit(0)

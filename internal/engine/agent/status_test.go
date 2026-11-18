@@ -197,6 +197,14 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			return engineRecordStatusOf(t, operatedBy, recordOf("https://engine.example.com", false), false)
 		}},
 		problemLedgerReinstalled: {state: guard.GuardOK, report: engineStatus(&fakeProbe{st: ok, reinstalls: sampleReinstalls()}, 1, nil)},
+		ProblemPluginUnavailable: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+			t.Helper()
+			return pluginStatus(t, operatedBy, "", false, samplePluginProblem(ProblemPluginUnavailable))
+		}},
+		ProblemPluginNotTrusted: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+			t.Helper()
+			return pluginStatus(t, operatedBy, "", false, samplePluginProblem(ProblemPluginNotTrusted))
+		}},
 	}
 }
 

@@ -24,9 +24,18 @@ type slot struct {
 	entry Entry
 	t     Transport
 	sem   chan struct{}
+	// down is closed the first time a call finds the plugin gone (EXITED
+	// or UNAVAILABLE), so the supervisor need not wait for its next health
+	// check.
+	down     chan struct{}
+	downOnce sync.Once
 
 	mu    sync.Mutex
 	state State
+	// draining: the entry takes no new call (Drain); inflight counts the
+	// calls admitted before.
+	draining bool
+	inflight sync.WaitGroup
 }
 
 // Host is the registry of plugin entries and the single place calls go
@@ -40,11 +49,12 @@ type Host struct {
 // NewHost returns an empty host.
 func NewHost() *Host { return &Host{entries: map[EntryKey]*slot{}} }
 
-// Register adds an entry over its transport and runs initialize on it. The
-// entry is READY only when the plugin answers a protocol the engine offered,
-// with the manifest's name and version and exactly the manifest's hooks.
-// On error nothing is registered and the caller still owns t.
-func (h *Host) Register(e Entry, t Transport) error {
+// Register adds an entry over its transport and runs initialize on it,
+// within ctx and the entry's timeout. The entry is READY only when the
+// plugin answers a protocol the engine offered, with the manifest's name and
+// version and exactly the manifest's hooks. On error nothing is registered
+// and the caller still owns t.
+func (h *Host) Register(ctx context.Context, e Entry, t Transport) error {
 	e, err := normalize(e)
 	if err != nil {
 		return err
@@ -66,9 +76,9 @@ func (h *Host) Register(e Entry, t Transport) error {
 			TimeoutMs:       int(e.Timeout / time.Millisecond),
 		},
 	}
-	s := &slot{entry: e, t: t, sem: make(chan struct{}, protocol.MaxInFlight), state: StateUnavailable}
+	s := &slot{entry: e, t: t, sem: make(chan struct{}, protocol.MaxInFlight), down: make(chan struct{}), state: StateUnavailable}
 	var resp protocol.InitializeResponse
-	if err := s.do(context.Background(), protocol.MethodInitialize, req, &resp); err != nil {
+	if err := s.do(ctx, protocol.MethodInitialize, req, &resp); err != nil {
 		return err
 	}
 	if !initializeMatches(e, resp) {
@@ -85,7 +95,8 @@ func (h *Host) Register(e Entry, t Transport) error {
 	return nil
 }
 
-// Unregister removes an entry and closes its transport. Calls in flight fail.
+// Unregister removes an entry and closes its transport. Calls in flight fail;
+// Drain first to let them finish.
 func (h *Host) Unregister(k EntryKey) {
 	h.mu.Lock()
 	s := h.entries[k]
@@ -114,10 +125,45 @@ func (h *Host) Call(ctx context.Context, k EntryKey, agents []string, method str
 			return ErrAgentNotListed
 		}
 	}
-	if s.State() != StateReady {
+	if !s.admit() {
 		return &CallError{Entry: k, Class: ClassUnavailable}
 	}
+	defer s.inflight.Done()
 	return s.do(ctx, method, params, result)
+}
+
+// Drain stops an entry from taking new calls and marks it UNAVAILABLE, then
+// waits until the calls already admitted have finished, or ctx is done. An
+// unknown entry is drained at once. Lifecycle calls (Control) still work, so
+// shutdown can follow.
+func (h *Host) Drain(ctx context.Context, k EntryKey) error {
+	s := h.lookup(k)
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	s.draining, s.state = true, StateUnavailable
+	s.mu.Unlock()
+	// No call is admitted once draining is set, so Wait never races an Add.
+	idle := make(chan struct{})
+	go func() { s.inflight.Wait(); close(idle) }()
+	select {
+	case <-idle:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// Down is closed the first time a call to the entry finds the plugin gone.
+// For an unknown entry it is closed already.
+func (h *Host) Down(k EntryKey) <-chan struct{} {
+	if s := h.lookup(k); s != nil {
+		return s.down
+	}
+	closed := make(chan struct{})
+	close(closed)
+	return closed
 }
 
 // Control sends a lifecycle call (health, shutdown) to an entry. It names no
@@ -144,7 +190,8 @@ func (h *Host) State(k EntryKey) State {
 	return StateUnavailable
 }
 
-// SetState lets the supervisor mark an entry READY or UNAVAILABLE.
+// SetState lets the supervisor mark an entry READY or UNAVAILABLE. A
+// draining entry stays UNAVAILABLE.
 func (h *Host) SetState(k EntryKey, st State) {
 	if s := h.lookup(k); s != nil {
 		s.setState(st)
@@ -174,8 +221,28 @@ func (s *slot) State() State {
 
 func (s *slot) setState(st State) {
 	s.mu.Lock()
-	s.state = st
+	if !s.draining {
+		s.state = st
+	}
 	s.mu.Unlock()
+}
+
+// admit counts a hook call in flight when the entry is READY and not
+// draining. The check and the count are one step, so Drain never misses a
+// call that passed it.
+func (s *slot) admit() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.state != StateReady || s.draining {
+		return false
+	}
+	s.inflight.Add(1)
+	return true
+}
+
+func (s *slot) markDown() {
+	s.setState(StateUnavailable)
+	s.downOnce.Do(func() { close(s.down) })
 }
 
 // do runs one call under the entry's deadline and in-flight cap, and turns
@@ -207,7 +274,7 @@ func (s *slot) do(ctx context.Context, method string, params, result any) error 
 		class = c.FailureClass()
 	}
 	if class == ClassExited || class == ClassUnavailable {
-		s.setState(StateUnavailable)
+		s.markDown()
 	}
 	return &CallError{Entry: s.entry.Key, Class: class}
 }

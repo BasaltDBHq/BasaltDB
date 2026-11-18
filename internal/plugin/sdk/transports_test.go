@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"bufio"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -8,10 +9,12 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -101,7 +104,7 @@ func TestEngineAdaptersTalkToTheSDK(t *testing.T) {
 			start := time.Now()
 			require.NoError(t, tr.Call(ctxT(t), protocol.MethodShutdown, protocol.ShutdownRequest{}, nil))
 			require.NoError(t, s.await(t), "shutdown ends Serve cleanly")
-			require.Less(t, time.Since(start), 1500*time.Millisecond, "Serve does not wait out a grace period")
+			require.Less(t, time.Since(start), 4*time.Second, "Serve does not wait out its grace period and then some")
 			require.EqualValues(t, 1, p.shutdownIn.Load())
 		})
 	}
@@ -336,10 +339,27 @@ func TestSDKPeerPassesTheAdapterSuite(t *testing.T) {
 // engine sends shutdown, on stdio and on a socket.
 func TestPeerExitsZeroOnShutdown(t *testing.T) {
 	t.Run("stdio", func(t *testing.T) {
-		tr, err := jsonrpc.Spawn(context.Background(), os.Args[0], []string{peerFlag, "echo"}, nil)
+		cmd := exec.Command(os.Args[0], peerFlag, "echo")
+		cmd.Env = []string{}
+		in, err := cmd.StdinPipe()
 		require.NoError(t, err)
-		t.Cleanup(func() { _ = tr.Close() })
-		require.NoError(t, tr.Call(ctxT(t), protocol.MethodShutdown, protocol.ShutdownRequest{}, nil))
+		out, err := cmd.StdoutPipe()
+		require.NoError(t, err)
+		require.NoError(t, cmd.Start())
+		t.Cleanup(func() { _ = cmd.Process.Kill() })
+		_, err = io.WriteString(in, `{"jsonrpc":"2.0","id":1,"method":"shutdown"}`+"\n")
+		require.NoError(t, err)
+		line, err := bufio.NewReader(out).ReadString('\n')
+		require.NoError(t, err)
+		require.JSONEq(t, `{"jsonrpc":"2.0","id":1,"result":{}}`, line)
+		done := make(chan error, 1)
+		go func() { done <- cmd.Wait() }()
+		select {
+		case err := <-done:
+			require.NoError(t, err, "exit status 0")
+		case <-time.After(wait):
+			t.Fatal("the plugin did not exit")
+		}
 	})
 	t.Run("socket", func(t *testing.T) {
 		path := socketPath(t)

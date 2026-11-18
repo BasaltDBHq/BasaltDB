@@ -10,7 +10,10 @@
 //
 // # From zero to a served plugin
 //
-// A plugin is a type with an Info method:
+// A plugin is a type with an Info method. Every manifest lists at least one
+// hook, and the engine refuses a plugin that does not declare the hooks its
+// manifest lists, so until the SDK has an interface for the hook you want,
+// declare it with WithHooks:
 //
 //	type plugin struct{}
 //
@@ -19,26 +22,33 @@
 //	func main() {
 //		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 //		defer stop()
-//		if err := sdk.Serve(ctx, plugin{}); err != nil {
+//		hooks := sdk.WithHooks(map[string]sdk.HookDecl{"feed.observe": {Contract: "feed/1"}})
+//		if err := sdk.Serve(ctx, plugin{}, hooks); err != nil {
 //			fmt.Fprintln(os.Stderr, err)
 //			os.Exit(1)
 //		}
 //	}
 //
-// The template in the template directory is this program with a transport flag
-// and the manifest it needs. Copy it, then:
+// The template (directory template, package main) is this program with a
+// transport flag and the manifest it needs. The SDK lives inside the engine's
+// module until it moves to its own repository, so build the template from a
+// clone of the engine, and expect the import path to change when the SDK
+// moves. The steps below are the ones the engine's own test runs, in
+// same-user mode: engine.json has "mode": "SAME_USER" and lists the agent you
+// pass to --agents, and trust, add and enable ask for a yes at the prompt.
 //
-//  1. Build it: go build -o bin/hello-feed .
-//  2. Write basalt-plugin.json next to bin/. The template's comment has a
+//  1. Build it, from the engine's module:
+//     go build -o hello-feed/bin/hello-feed ./internal/plugin/sdk/template
+//  2. Write hello-feed/basalt-plugin.json. The template's comment has a
 //     manifest to start from. Its "files" entry holds the binary's SHA-256
-//     (shasum -a 256 bin/hello-feed), and its name, version and hooks must
-//     equal what Info and the declared hooks say, or the engine refuses the
-//     plugin at initialize.
+//     (shasum -a 256 hello-feed/bin/hello-feed), and its name, version and
+//     hooks must equal what Info and the declared hooks say, or the engine
+//     refuses the plugin at initialize.
 //  3. Make a key and sign: basalt plugin keygen --out KEYDIR, then
-//     basalt plugin sign . --key KEYDIR/<keyId>.key.
-//  4. Trust your key on your own engine: basalt plugin trust KEYDIR/<keyId>.pub.
+//     basalt plugin sign hello-feed --key KEYDIR/KEYID.key.
+//  4. Trust your key on your own engine: basalt plugin trust KEYDIR/KEYID.pub.
 //  5. Install and turn it on, for the agents it should serve:
-//     basalt plugin add . --agents product_a, then
+//     basalt plugin add hello-feed --agents product_a, then
 //     basalt plugin enable hello-feed.
 //  6. Check it: basalt plugin check hello-feed. It starts the plugin, runs
 //     initialize and health, and sends shutdown. It prints

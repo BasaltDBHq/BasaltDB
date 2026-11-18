@@ -148,3 +148,23 @@ func TestSDKAndTemplateAreNotInTheReleaseBinary(t *testing.T) {
 		require.NotContains(t, pkg, "internal/plugin/sdk", "the release binary links %s", pkg)
 	}
 }
+
+// TestSDKReadsNoEnvironmentItself: the only environment access is the injected
+// getenv, which Serve calls for SocketEnv alone.
+func TestSDKReadsNoEnvironmentItself(t *testing.T) {
+	files, err := filepath.Glob("*.go")
+	require.NoError(t, err)
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(f)
+		require.NoError(t, err)
+		for _, call := range []string{"os.LookupEnv", "os.Environ", "os.ExpandEnv", "syscall.Getenv"} {
+			require.NotContains(t, string(src), call, f)
+		}
+		if f != "options.go" { // os.Getenv appears once, as the default of getenv
+			require.NotContains(t, string(src), "os.Getenv", f)
+		}
+	}
+}

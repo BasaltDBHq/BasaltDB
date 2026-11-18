@@ -74,6 +74,15 @@ type handlers struct {
 // engine's fault.
 func (h handlers) wrap(tool string, call func(context.Context, json.RawMessage) (any, error)) func(context.Context, json.RawMessage) (any, error) {
 	return func(ctx context.Context, args json.RawMessage) (any, error) {
+		// Before anything else: the call is not admitted, decoded, recorded
+		// or logged, and its arguments are not echoed into the error.
+		if holdsAdminCredential(args) {
+			te := h.svc.Failure(tool, nil, adminCredentialError())
+			if h.svc.DevLocalPages {
+				return nil, devLocalError(te)
+			}
+			return nil, te
+		}
 		out, err := h.admitted(ctx, tool, args, call)
 		switch {
 		case err == nil && h.svc.DevLocalPages:

@@ -91,7 +91,8 @@ An agent never asks for, accepts or types the database admin connection string
 or password. If the person pastes one, tell them to change that password now.
 Give the person the setup code, its fingerprint and the basalt init --setup-code
 command, then end your turn.
-`
+
+` + manyAgentsHelp + "\n"
 
 // helpAsked is true when args ask for help, which basalt prints whoever
 // runs it.

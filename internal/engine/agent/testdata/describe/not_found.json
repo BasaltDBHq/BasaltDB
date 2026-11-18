@@ -29,5 +29,5 @@
       "text": "Tell the agent when it has the access, or which table to use instead."
     }
   ],
-  "personMessage": "The agent asked for a table it cannot see: it does not exist, or the agent may not read it. To list the tables the agent cannot read, run: basalt access --agent bot"
+  "personMessage": "The agent asked for a table it cannot see: it does not exist, or the agent may not read it. An agent uses one database; a table in another database needs its own agent, added with basalt init --remote --agent NAME. To list the tables the agent cannot read, run: basalt access --agent bot"
 }

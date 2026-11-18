@@ -646,6 +646,18 @@ func TestUninstallRemovesEverything(t *testing.T) {
 	require.Zero(t, roles)
 }
 
+func TestHelpSaysOneEngineServesManyAgents(t *testing.T) {
+	t.Parallel()
+	for _, args := range [][]string{{"--help"}, {"init", "-h"}} {
+		code, stdout, stderr := runArgs(args...)
+		require.Equal(t, exitOK, code, stderr)
+		out := stdout + stderr
+		for _, want := range []string{"One engine serves many agents", "one database", "basalt init --remote --agent NAME"} {
+			require.Contains(t, out, want, args)
+		}
+	}
+}
+
 func TestInitOperatedByAgentWithTheAdminCredential(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)

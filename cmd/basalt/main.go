@@ -91,6 +91,11 @@ func runVersion(_ context.Context, _ []string, io stdio) int {
 	return exitOK
 }
 
+// manyAgentsHelp tells an agent reading --help how to connect another
+// database: one engine serves many agents, each on one database.
+const manyAgentsHelp = "One engine serves many agents. Each agent uses one database. To connect another database,\n" +
+	"add another agent: basalt init --remote --agent NAME."
+
 func usage(w io.Writer) {
 	fmt.Fprintln(w, "basalt - the action ledger for AI agents on your Postgres")
 	fmt.Fprintln(w)
@@ -99,6 +104,8 @@ func usage(w io.Writer) {
 	for _, cmd := range commands() {
 		fmt.Fprintf(w, "  %-10s %s\n", cmd.name, cmd.summary)
 	}
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, manyAgentsHelp)
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Exit codes: 0 ok, 1 error, 2 usage error.")
 	fmt.Fprintln(w)

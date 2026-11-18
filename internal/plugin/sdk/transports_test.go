@@ -27,8 +27,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/api/plugin/proto/basalt/plugin/v1/pluginv1connect"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/adaptertest"
-	"github.com/basaltdbhq/basaltdb/internal/plugin/connect"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/child"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/connect"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/jsonrpc"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/protocol"
 )

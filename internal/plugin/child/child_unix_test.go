@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -81,6 +82,16 @@ func TestEnvironmentAndDirectory(t *testing.T) {
 	require.ErrorIs(t, err, ErrNoDir)
 }
 
+// gone reports whether pid no longer runs: it does not exist, or it is a
+// zombie its new parent has not reaped yet.
+func gone(pid int) bool {
+	if errors.Is(syscall.Kill(pid, 0), syscall.ESRCH) {
+		return true
+	}
+	out, err := exec.Command("ps", "-o", "stat=", "-p", strconv.Itoa(pid)).Output()
+	return err == nil && strings.HasPrefix(strings.TrimSpace(string(out)), "Z")
+}
+
 func nilIfEmpty(s []string) []string {
 	if len(s) == 0 {
 		return nil
@@ -111,8 +122,6 @@ func TestStopKillsTheGroup(t *testing.T) {
 	default:
 		t.Fatal("the child was not reaped")
 	}
-	require.Eventually(t, func() bool {
-		return errors.Is(syscall.Kill(pid, 0), syscall.ESRCH)
-	}, 10*time.Second, 10*time.Millisecond, "the grandchild was killed with its group")
+	require.Eventually(t, func() bool { return gone(pid) }, 10*time.Second, 10*time.Millisecond, "the grandchild was killed with its group")
 	p.Stop() // again: a no-op
 }

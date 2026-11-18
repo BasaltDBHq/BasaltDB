@@ -343,3 +343,39 @@ func TestLocalContextEndsTheCall(t *testing.T) {
 		t.Fatalf("the call took %v to end", d)
 	}
 }
+
+// TestLocalRechecksTheSocketOnEveryConnection: the HTTP transport opens new
+// connections on its own. After the first one ends, a symbolic link put at
+// the socket's path, to another live socket, is refused, and that socket
+// never sees a request.
+func TestLocalRechecksTheSocketOnEveryConnection(t *testing.T) {
+	sock := filepath.Join(shortDir(t), "p.sock")
+	l, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := h2cServer(peerHandler("echo"))
+	go func() { _ = first.Serve(l) }()
+	tr, err := dialLocal(context.Background(), sock, options{methods: testMethods()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tr.Close() })
+	if err := tr.Call(context.Background(), protocol.MethodHealth, protocol.HealthRequest{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	// The first server goes away with its connection and its socket file.
+	_ = first.Close()
+	_ = os.Remove(sock)
+
+	other := newLocalServer(t, peerHandler("echo"))
+	if err := os.Symlink(other.sock, sock); err != nil {
+		t.Fatal(err)
+	}
+	if err := tr.Call(context.Background(), protocol.MethodHealth, protocol.HealthRequest{}, nil); err == nil {
+		t.Fatal("a call through a symbolic link to another socket succeeded")
+	}
+	if h, _ := other.seen(); len(h) != 0 {
+		t.Fatalf("the other socket saw %d requests", len(h))
+	}
+}

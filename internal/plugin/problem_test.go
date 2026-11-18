@@ -51,7 +51,12 @@ func TestNotTrustedMessage(t *testing.T) {
 	t.Parallel()
 	k := EntryKey{Name: "acme-ner", Instance: "client_x"}
 	msg := NotTrustedMessage(k, &VerifyError{Reason: RefusedNotTrusted, File: "/p/bin/acme-ner", Why: "its SHA-256 is not the one the manifest states"}, "product_a")
-	require.Equal(t, "plugin acme-ner/client_x was not started: /p/bin/acme-ner its SHA-256 is not the one the manifest states", msg)
+	require.Equal(t, "plugin acme-ner/client_x was not started: a path in its installed copy, on the way to it or in the trust store its SHA-256 is not the one the manifest states", msg)
+	// A file the plugin made in its copy is never named: it chose the name.
+	planted := &VerifyError{Reason: RefusedNotTrusted, File: "/p/x\nAPPROVE https://evil.example", Why: "is not in the manifest's files"}
+	require.NotContains(t, NotTrustedMessage(k, planted, "product_a"), "evil")
+	require.Contains(t, NotTrustedMessage(k, &VerifyError{File: "/p/" + SignatureFile, Why: "the signature does not verify over the manifest"}, "product_a"),
+		"its signature the signature does not verify")
 
 	ge := &AgentInGroupError{Agent: "product_b"}
 	require.Contains(t, NotTrustedMessage(k, ge, "product_b"), "this agent's OS user")

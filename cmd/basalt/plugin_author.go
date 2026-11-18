@@ -96,6 +96,10 @@ func (e *pluginEnv) check(k plugin.EntryKey) error {
 		return fmt.Errorf("plugin %s: in service mode a local plugin runs as its own OS user under its own service, "+
 			"which basalt plugin check does not start yet", k)
 	}
+	if !v.Manifest.Endpoint.IsRemote() && e.c.host.Euid() == 0 {
+		return fmt.Errorf("plugin %s: a local plugin is never started with root's privileges; "+
+			"run basalt plugin check as the engine's own OS user", k)
+	}
 	ctx, cancel := context.WithTimeout(e.c.ctx, checkWait)
 	defer cancel()
 	// A socket plugin listens in a fresh directory only this user can reach

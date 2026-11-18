@@ -236,6 +236,19 @@ func TestCheckRunsInitializeAndHealth(t *testing.T) {
 	refusal(t, e.run(nil, "", "check", "acme-ner", "--json"), "NOT_TRUSTED")
 }
 
+// TestCheckRefusesALocalPluginAsRoot: check never starts a local plugin
+// with root's privileges, as the engine never does.
+func TestCheckRefusesALocalPluginAsRoot(t *testing.T) {
+	t.Parallel()
+	e := newPluginEngine(t)
+	e.person("add", e.checkSource("jsonrpc-stdio"), "--agents", "product_a")
+	e.host.euid = 0
+	r := e.run(nil, "", "check", "acme-ner")
+	require.Equal(t, exitError, r.code)
+	require.Contains(t, r.stderr, "never started with root's privileges")
+	require.Empty(t, r.stdout, "nothing was started")
+}
+
 // TestCheckServesEveryLocalTransport: a socket plugin is started with the
 // socket path in its environment and reached over it.
 func TestCheckServesEveryLocalTransport(t *testing.T) {

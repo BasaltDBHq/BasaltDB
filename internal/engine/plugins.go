@@ -100,9 +100,6 @@ func newEnginePlugins(cfg config.Config, configPath string, o pluginOptions, log
 	root, rootErr := plugin.Root(ep.mode, o.goos, dir)
 	trust, trustErr := plugin.NewTrustStore(ep.mode, o.goos, dir)
 	ep.root, ep.trust = root, trust
-	if ep.mode == plugin.ModeSameUser {
-		log.Warn("plugins run as the engine's own OS user: same-user mode is no security boundary, and a plugin can read whatever the engine can")
-	}
 	for _, p := range configured {
 		k := p.Key()
 		if err := errors.Join(rootErr, trustErr); err != nil {
@@ -113,7 +110,7 @@ func newEnginePlugins(cfg config.Config, configPath string, o pluginOptions, log
 		v, err := plugin.Verify(root, k, p.ManifestSHA256, trust, ep.mode)
 		if err != nil {
 			ep.notTrusted[k] = err
-			log.Error("plugin not started: it failed verification", "plugin", k.String(), "err", err)
+			log.Error("plugin not started: it failed verification", "plugin", k.String(), "check", verifyFailure(err))
 			continue
 		}
 		e, err := p.Entry(v.Manifest)
@@ -130,7 +127,21 @@ func newEnginePlugins(cfg config.Config, configPath string, o pluginOptions, log
 		ep.first[k] = v
 		ep.entries = append(ep.entries, e)
 	}
+	if ep.mode == plugin.ModeSameUser && slices.ContainsFunc(ep.entries, func(e plugin.Entry) bool { return !e.Manifest.Endpoint.IsRemote() }) {
+		log.Warn("local plugins run as the engine's own OS user: same-user mode is no security boundary, and a plugin can read whatever the engine can")
+	}
 	return ep
+}
+
+// verifyFailure is what the engine logs of a failed verification: the
+// failed check in fixed words, never a path a plugin could have named
+// (plugin.VerifyFailure).
+func verifyFailure(err error) string {
+	var ve *plugin.VerifyError
+	if errors.As(err, &ve) {
+		return plugin.VerifyFailure(ve)
+	}
+	return err.Error()
 }
 
 // localRefusal is why a local plugin may not run on this engine, "" when
@@ -166,7 +177,7 @@ func (ep *enginePlugins) dial(ctx context.Context, e plugin.Entry) (plugin.Trans
 	k := e.Key
 	v, err := ep.verified(k)
 	if err != nil {
-		ep.log.Error("plugin not started: it failed verification", "plugin", k.String(), "err", err)
+		ep.log.Error("plugin not started: it failed verification", "plugin", k.String(), "check", verifyFailure(err))
 		return nil, err
 	}
 	t, err := dial.Entry(ctx, k, v, dial.Options{SocketBase: ep.o.SocketBase, CredentialFile: ep.credentialFile(k), Stderr: ep.o.Stderr})

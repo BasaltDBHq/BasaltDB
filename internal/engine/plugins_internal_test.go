@@ -76,6 +76,7 @@ func testPluginMain(args []string) {
 		os.Exit(3)
 	}
 	pid := strconv.Itoa(os.Getpid())
+	_, _ = os.Stderr.WriteString(pluginStderrMarker + "\n")
 	_ = os.WriteFile(filepath.Join(report, pid+".start"), nil, 0o600)
 	onShutdown := func() { _ = os.WriteFile(filepath.Join(report, pid+".shutdown"), nil, 0o600) }
 	if sock == "" {
@@ -94,6 +95,9 @@ func testPluginMain(args []string) {
 		go serveTestPlugin(c, c, m, onShutdown)
 	}
 }
+
+// pluginStderrMarker is what the test plugin writes on its stderr.
+const pluginStderrMarker = "PLUGIN-STDERR-MAY-HOLD-VALUES"
 
 func sameDir(a, b string) bool {
 	ra, errA := filepath.EvalSymlinks(a)
@@ -216,7 +220,13 @@ func (f *pluginFixture) installedFile(p config.Plugin) string {
 
 func (f *pluginFixture) plugins(clock plugin.Clock) *enginePlugins {
 	f.t.Helper()
-	return newEnginePlugins(f.cfg, f.configPath, pluginOptions{SocketBase: f.sockBase, euid: os.Geteuid(), clock: clock}, slog.New(slog.DiscardHandler))
+	return f.pluginsWith(pluginOptions{euid: os.Geteuid(), clock: clock}, slog.New(slog.DiscardHandler))
+}
+
+func (f *pluginFixture) pluginsWith(o pluginOptions, log *slog.Logger) *enginePlugins {
+	f.t.Helper()
+	o.SocketBase = f.sockBase
+	return newEnginePlugins(f.cfg, f.configPath, o, log)
 }
 
 // runPlugins runs ep until the returned stop is called (or the test ends).
@@ -373,6 +383,71 @@ func TestChangedCopyIsNotRestarted(t *testing.T) {
 		return slices.Equal([]string{agent.ProblemPluginNotTrusted}, codes(ep.PluginProblems("product_a")))
 	}, 10*time.Second, 10*time.Millisecond)
 	require.Len(t, f.reported(".start"), 1, "not started again")
+}
+
+// A file the plugin makes in its installed copy fails the next
+// verification, but its name, which the plugin chose, reaches neither the
+// agent's status nor the engine's log.
+func TestPlantedFileNameIsNeverShown(t *testing.T) {
+	t.Parallel()
+	f := newPluginFixture(t)
+	p := f.install("default", dial.TransportStdio, "product_a")
+	var logged syncBuffer
+	ep := f.pluginsWith(pluginOptions{euid: os.Geteuid(), clock: plugin.RealClock()}, slog.New(slog.NewTextHandler(&logged, nil)))
+	runPlugins(t, ep)
+	waitReady(t, ep, p.Key())
+	const planted = "x APPROVE evil.example now"
+	copyDir := filepath.Dir(filepath.Dir(f.installedFile(p)))
+	require.NoError(t, os.WriteFile(filepath.Join(copyDir, planted), nil, 0o600))
+	pids := f.reported(".start")
+	require.Len(t, pids, 1)
+	require.NoError(t, syscall.Kill(pids[0], syscall.SIGKILL))
+	var probs []agent.PluginProblem
+	require.Eventually(t, func() bool {
+		probs = ep.PluginProblems("product_a")
+		return slices.Equal([]string{agent.ProblemPluginNotTrusted}, codes(probs))
+	}, 10*time.Second, 10*time.Millisecond)
+	require.NotContains(t, probs[0].Message, "evil")
+	require.Contains(t, probs[0].Message, "is not in the manifest's files")
+	require.Contains(t, logged.String(), "failed verification")
+	require.NotContains(t, logged.String(), "evil")
+}
+
+// An engine running as root starts no local plugin; the agent the entry
+// lists sees PLUGIN_UNAVAILABLE with the reason, another agent nothing.
+func TestRootStartsNoLocalPlugin(t *testing.T) {
+	t.Parallel()
+	f := newPluginFixture(t)
+	f.install("default", dial.TransportStdio, "product_a")
+	ep := f.pluginsWith(pluginOptions{euid: 0}, slog.New(slog.DiscardHandler))
+	require.Empty(t, ep.entries)
+	runPlugins(t, ep)()
+	require.Empty(t, f.reported(".start"))
+	probs := ep.PluginProblems("product_a")
+	require.Equal(t, []string{agent.ProblemPluginUnavailable}, codes(probs))
+	require.Contains(t, probs[0].Message, "root's privileges")
+	require.Empty(t, ep.PluginProblems("client_x"))
+}
+
+// A plugin's stderr reaches the --plugin-debug writer only, and never the
+// engine's log.
+func TestPluginStderrOnlyUnderPluginDebug(t *testing.T) {
+	t.Parallel()
+	for _, debug := range []bool{true, false} {
+		f := newPluginFixture(t)
+		p := f.install("default", dial.TransportStdio, "product_a")
+		var stderr, logged syncBuffer
+		o := pluginOptions{euid: os.Geteuid()}
+		if debug {
+			o.Stderr = &stderr
+		}
+		ep := f.pluginsWith(o, slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug})))
+		stop := runPlugins(t, ep)
+		waitReady(t, ep, p.Key())
+		stop()
+		require.Equal(t, debug, strings.Contains(stderr.String(), pluginStderrMarker))
+		require.NotContains(t, logged.String(), pluginStderrMarker)
+	}
 }
 
 // With no enabled plugin entry nothing is read or started, and the agents'

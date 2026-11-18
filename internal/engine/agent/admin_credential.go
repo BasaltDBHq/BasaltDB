@@ -2,8 +2,11 @@ package agent
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"regexp"
+
+	"github.com/basaltdbhq/basaltdb/internal/mcp"
 )
 
 // ReasonAdminCredential is INVALID_ARGUMENT for a tool call whose arguments
@@ -23,7 +26,7 @@ const (
 // postgresPassword matches a postgres:// or postgresql:// URL (scheme in any
 // case) with a password: in its user part (user:secret@host), or as a
 // password parameter. A URL without a password does not match.
-var postgresPassword = regexp.MustCompile(`(?i)postgres(?:ql)?://(?:[^\s"'/?#@:]*:[^\s"']+@|[^\s"'?#]*\?(?:[^\s"'#]*&)?password=[^&\s"'#]+)`)
+var postgresPassword = regexp.MustCompile(`(?i)postgres(?:ql)?://(?:[^\s"'/?#@:]*:\S+@|[^\s"'?#]*\?(?:[^\s"'#]*&)?password=[^&\s"'#]+)`)
 
 // holdsAdminCredential reports whether a tool call's raw arguments hold such
 // a URL: in the raw text, or in any string or key once the JSON escapes are
@@ -48,4 +51,24 @@ func holdsAdminCredential(raw json.RawMessage) bool {
 // no part of the value.
 func adminCredentialError() error {
 	return &ArgumentError{Reason: ReasonAdminCredential, Message: adminCredentialMessage}
+}
+
+// adminCredentialToolError is the refusal as a tool error with its steps,
+// for the tools that answer without the service (the engine-down tools).
+func adminCredentialToolError(tool string) *mcp.ToolError {
+	te := &mcp.ToolError{Code: CodeInvalidArgument, Reason: ReasonAdminCredential, Message: adminCredentialMessage, PersonMessage: adminCredentialPerson}
+	b := NewSteps()
+	invalidArgumentSteps(b, te, failure{tool: tool})
+	te.NextSteps, _ = b.Build() // fixed steps: they cannot fail
+	return te
+}
+
+// refuseAdminCredential runs call, after refusing a call that holds one.
+func refuseAdminCredential(tool string, call func(context.Context, json.RawMessage) (any, error)) func(context.Context, json.RawMessage) (any, error) {
+	return func(ctx context.Context, raw json.RawMessage) (any, error) {
+		if holdsAdminCredential(raw) {
+			return nil, adminCredentialToolError(tool)
+		}
+		return call(ctx, raw)
+	}
 }

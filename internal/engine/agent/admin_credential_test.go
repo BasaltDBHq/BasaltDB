@@ -21,8 +21,13 @@ func TestHoldsAdminCredential(t *testing.T) {
 		"upper case":        `{"intent":"POSTGRES://u:p@h/db"}`,
 		"nested":            `{"a":{"b":[{"c":"postgres://u:p@h/db"}]}}`,
 		"in a key":          `{"postgres://u:p@h/db":1}`,
-		"escaped colon":     `{"sql":"postgres://u:p@h/db"}`,
-		"escaped scheme":    `{"sql":"postgres://u:p@h/db"}`,
+		"escaped colon":     `{"sql":"postgres\u003a//u:p@h/db"}`,
+		"escaped slash":     `{"sql":"postgres:\/\/u:p@h/db"}`,
+		"escaped at":        `{"sql":"postgres://u:p\u0040h/db"}`,
+		"doubled quote":     `{"sql":"SELECT dblink('postgres://admin:ab''cd@db/app','select 1')"}`,
+		"quote":             `{"sql":"postgres://u:a'b@h/db"}`,
+		"json quote":        `{"sql":"postgres://u:a\"b@h/db"}`,
+		"escaped scheme":    `{"sql":"\u0070ostgres://u:p@h/db"}`,
 		"password param":    `{"sql":"postgres://u@h/db?sslmode=require&password=hunter2"}`,
 		"empty user":        `{"sql":"postgres://:p@h/db"}`,
 		"not json":          `postgres://u:p@h/db`,
@@ -74,6 +79,21 @@ func TestEveryToolRefusesAnAdminURLInItsArguments(t *testing.T) {
 			require.NoError(t, err)
 			require.NotContains(t, string(raw), secret, tool.Name)
 			require.NotContains(t, string(raw), "db.example.com", tool.Name)
+		}
+	}
+	// The engine-down tools (basalt mcp, engine not answering) refuse too.
+	down := EngineDown{Name: "bot", Log: d.Log, Now: d.Now}
+	downTools := down.Tools()
+	downSrv := mcp.NewServer(mcp.Info{Name: "basalt"}, downTools...)
+	for _, tool := range downTools {
+		for _, args := range []map[string]any{{"sql": url}, {url: true}} {
+			body, isError := serveCall(t, downSrv, tool.Name, args)
+			require.True(t, isError, tool.Name)
+			require.Equal(t, ReasonAdminCredential, body["reason"], tool.Name)
+			require.Equal(t, mcpcontract.Resolve(entry.Steps, mcpcontract.OperatedByPerson), steps(t, body), tool.Name)
+			raw, err := json.Marshal(body)
+			require.NoError(t, err)
+			require.NotContains(t, string(raw), secret, tool.Name)
 		}
 	}
 	require.NotContains(t, logs.String(), secret)

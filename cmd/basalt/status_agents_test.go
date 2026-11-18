@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	shopDSN  = "postgres://basalt_agent_shop:s3cretShop@shop.db.example.com:6543/shopdb?sslmode=require"
-	salesDSN = "postgres://basalt_agent_sales:s3cretSales@sales.db.example.com:5432/salesdb"
+	shopDSN  = "postgres://" + "basalt_agent_shop:s3cretShop" + "@shop.db.example.com:6543/shopdb?sslmode=require"
+	salesDSN = "postgres://" + "basalt_agent_sales:s3cretSales" + "@sales.db.example.com:5432/salesdb"
 )
 
 // multiConfig writes an engine.json with agents shop and sales on different

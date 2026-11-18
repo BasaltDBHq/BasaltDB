@@ -78,6 +78,15 @@ build: ## Build the static basalt binary (CGO_ENABLED=0)
 mocks: bin/mockery ## Regenerate mocks from .mockery.yml
 	@$(MOCKERY) --config .mockery.yml
 
+.PHONY: proto
+proto: bin/protoc-gen-go bin/protoc-gen-connect-go ## Regenerate the plugin protocol's Go code from api/plugin/proto (needs protoc on PATH)
+	@protoc -I api/plugin/proto \
+		--go_out=api/plugin/proto --go_opt=paths=source_relative \
+		--connect-go_out=api/plugin/proto --connect-go_opt=paths=source_relative \
+		api/plugin/proto/basalt/plugin/v1/plugin.proto
+	@go run mvdan.cc/gofumpt@v0.9.2 -w api/plugin/proto
+	@go run golang.org/x/tools/cmd/goimports@v0.39.0 -local github.com/basaltdbhq/basaltdb -w api/plugin/proto
+
 .PHONY: install-sh-check
 install-sh-check: ## POSIX syntax, default repo, and archive names for install.sh
 	@sh -n install.sh

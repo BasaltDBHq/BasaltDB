@@ -24,7 +24,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # The toolchain line and the shared Go cache (.github/actions/go).
       # Setting GOTOOLCHAIN in the workflow would make setup-go use the go line.
       - uses: ./.github/actions/go
@@ -34,7 +34,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: go
         uses: ./.github/actions/go
       - run: make vet shard-check
@@ -47,7 +47,7 @@ jobs:
         if: steps.go.outputs.cache-hit != 'true'
         run: go test -race -count=1 -exec /bin/true ./... > /dev/null
       - if: steps.go.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           key: ${{ steps.go.outputs.key }}
           path: ${{ steps.go.outputs.paths }}
@@ -56,9 +56,9 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # 22 or later: the portal page tests use Node's global WebSocket.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
       - run: make script-checks
@@ -70,7 +70,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: install gitleaks
         env:
           GITLEAKS_VERSION: "8.30.1"
@@ -111,9 +111,9 @@ jobs:
     env:
       BASALTDB_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/basalt_test?sslmode=disable
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # 22 or later: the portal page tests use Node's global WebSocket.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
       - uses: ./.github/actions/go
@@ -141,7 +141,7 @@ jobs:
           for k,v in sorted(pk.items(),key=lambda x:-x[1]): print("PKG %7.1f %s"%(v,k))
           for v,p,t in sorted(ts,reverse=True)[:15]: print("TEST %7.1f %s %s"%(v,p,t))
           PY
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-timings-${{ matrix.shard }}
@@ -179,7 +179,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: privilege drop as root in a container
         run: make test-privdrop
       - name: compose example
@@ -194,9 +194,9 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/go
-      - uses: goreleaser/goreleaser-action@v6
+      - uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
           version: "~> v2"
@@ -213,7 +213,7 @@ jobs:
           test -f dist/SHA256SUMS
           grep -F 'basaltdb_0.0.0-nightly_darwin_amd64.tar.gz' dist/SHA256SUMS
           grep -F 'basaltdb_0.0.0-nightly_darwin_arm64.tar.gz' dist/SHA256SUMS
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: basaltdb-snapshot
           path: |
@@ -241,8 +241,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           name: basaltdb-snapshot
           path: dist

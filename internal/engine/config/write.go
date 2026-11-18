@@ -267,6 +267,61 @@ func clearSetupWith(f configFile, agent, id string) (cleared bool, err error) {
 	return true, f.write(append(raw, '\n'))
 }
 
+// Change is one read-modify-write of the config (UpdateConfig).
+type Change struct {
+	// Apply changes the config read under the lock; an error leaves the file
+	// as it was.
+	Apply func(*Config) error
+	// Written, when set, runs after the file is written, still under the
+	// lock, with the config written.
+	Written func(Config)
+}
+
+// UpdateConfig changes the existing config at path: under the config's
+// lock (lockConfig) it reads the file without following a link, applies
+// ch, checks the result as Load would, and writes it atomically with
+// FileMode. When Apply or the check fails, the file is left as it was.
+// basalt plugin writes its entries this way.
+func UpdateConfig(path string, ch Change) error {
+	return updateWith(pathFile(path), ch)
+}
+
+// UpdateConfigAt is UpdateConfig for a root process on the config file name
+// in d (see UpsertAgentVaultAt).
+func UpdateConfigAt(d Dir, name string, check func(*os.File) error, owner int, ch Change) error {
+	return updateWith(dirFile{d: d, name: name, check: check, owner: owner}, ch)
+}
+
+func updateWith(f configFile, ch Change) error {
+	unlock, err := f.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	c, err := load(f.path(), f.open)
+	if err != nil {
+		return err
+	}
+	if err := ch.Apply(&c); err != nil {
+		return err
+	}
+	// Never write a config the engine would refuse to load.
+	if err := c.check(); err != nil {
+		return fmt.Errorf("config %s: %w", f.path(), err)
+	}
+	raw, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := f.write(append(raw, '\n')); err != nil {
+		return err
+	}
+	if ch.Written != nil {
+		ch.Written(c)
+	}
+	return nil
+}
+
 // WriteFile writes data to path atomically with FileMode, creating the
 // directory (mode 0700) when missing. It writes a new temporary file
 // (O_EXCL, so never through a planted link) and renames it over path,

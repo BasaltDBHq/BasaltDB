@@ -359,7 +359,7 @@ func TestTrustStoreModeMustMatch(t *testing.T) {
 
 // TestKeptCopyReportsItsSigner: re-adding the same manifest signed by
 // another trusted key keeps the copy in place and reports its signer.
-func TestKeptCopyReportsItsSigner(t *testing.T) {
+func TestReaddWithAnotherSignerReplacesTheCopy(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	first := f.install("")
@@ -367,9 +367,22 @@ func TestKeptCopyReportsItsSigner(t *testing.T) {
 	require.NoError(t, err)
 	f.trustKey(&second.PublicKey)
 	f.writeSigned(f.src, localManifest(), second)
-	again := f.install("")
-	require.Equal(t, first.Dir, again.Dir)
-	require.Equal(t, first.SignerKeyID, again.SignerKeyID, "the kept copy's .sig is the first key's")
+	staged, err := Stage(f.src, f.root, "", f.trust, ModeSameUser)
+	require.NoError(t, err)
+	shown := staged.SignerKeyID
+	require.NotEqual(t, first.SignerKeyID, shown)
+	dir, err := staged.Commit()
+	require.NoError(t, err)
+	require.Equal(t, first.Dir, dir)
+	require.Equal(t, shown, staged.SignerKeyID, "the copy in place is the one consent showed, signer included")
+	again, err := f.verify(DefaultInstance, first.ManifestSHA256)
+	require.NoError(t, err)
+	require.Equal(t, shown, again.SignerKeyID)
+	require.Equal(t, []string{first.ManifestSHA256}, entries(t, filepath.Dir(first.Dir)), "nothing left aside")
+
+	// Re-adding with the same signer keeps the copy.
+	kept := f.install("")
+	require.Equal(t, shown, kept.SignerKeyID)
 }
 
 // TestServiceModeLocations: in service mode the plugin root and the trust

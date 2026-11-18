@@ -45,6 +45,9 @@ const (
 	idleConnTimeout     = 90 * time.Second
 	maxResponseHeader   = 64 << 10
 	maxIdleConnsPerHost = 4 // the host keeps at most 4 calls open per entry
+	// deadlineSlack is how near its deadline a call must be for a
+	// DEADLINE_EXCEEDED from the plugin to count as the call's own timeout.
+	deadlineSlack = 50 * time.Millisecond
 )
 
 var (
@@ -134,6 +137,9 @@ func dial(ctx context.Context, ep plugin.RemoteEndpoint, egress []string, creden
 			client: connectrpc.NewClient[wireMessage, wireMessage](httpClient, tgt.baseURL+m.procedure,
 				connectrpc.WithGRPC(),
 				connectrpc.WithCodec(rawCodec{}),
+				// No compressed replies: a small gzip body could expand
+				// far past the cap before the cap is checked.
+				connectrpc.WithAcceptCompression("gzip", nil, nil),
 				connectrpc.WithReadMaxBytes(protocol.MaxMessageBytes),
 				connectrpc.WithSendMaxBytes(protocol.MaxMessageBytes),
 			),
@@ -213,16 +219,17 @@ func (c *conn) Call(ctx context.Context, method string, params, result any) erro
 	}
 	defer c.leave(id)
 
-	var connected atomic.Bool
+	var connected, answered atomic.Bool
 	callCtx = httptrace.WithClientTrace(callCtx, &httptrace.ClientTrace{
-		GotConn: func(httptrace.GotConnInfo) { connected.Store(true) },
+		GotConn:              func(httptrace.GotConnInfo) { connected.Store(true) },
+		GotFirstResponseByte: func() { answered.Store(true) },
 	})
 
 	req := connectrpc.NewRequest(&wireMessage{data: body})
 	c.auth(req.Header())
 	res, err := cl.client.CallUnary(callCtx, req)
 	if err != nil {
-		return c.classify(ctx, err, connected.Load())
+		return c.classify(ctx, err, connected.Load() && !answered.Load())
 	}
 	return decodeResult(cl.method, res.Msg.data, result)
 }
@@ -255,8 +262,9 @@ func (c *conn) isClosed() bool {
 }
 
 // classify turns a failed call into what the host sees. Nothing of the
-// connect error, which may hold the peer's text, is kept.
-func (c *conn) classify(ctx context.Context, err error, connected bool) error {
+// connect error, which may hold the peer's text, is kept. dropped is true
+// when a connection was made and then lost before any answer came.
+func (c *conn) classify(ctx context.Context, err error, dropped bool) error {
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return ctxErr
 	}
@@ -266,25 +274,47 @@ func (c *conn) classify(ctx context.Context, err error, connected bool) error {
 	code := connectrpc.CodeOf(err)
 	if connectrpc.IsWireError(err) {
 		if code == connectrpc.CodeDeadlineExceeded {
-			// The plugin applied our deadline (sent as grpc-timeout) a hair
-			// before our own timer fired. Report the deadline as ours.
-			if _, ok := ctx.Deadline(); ok {
-				<-ctx.Done()
-				return ctx.Err()
+			if err := ownDeadline(ctx); err != nil {
+				return err
 			}
 		}
 		// The plugin answered with an error status; its message is never read.
 		return plugin.Fail(plugin.ClassBadResponse)
 	}
 	if code == connectrpc.CodeUnavailable {
-		if connected {
+		if dropped {
 			// The connection went away while the call was open.
 			return plugin.Fail(plugin.ClassExited)
 		}
+		// No connection, or an HTTP 503 (or similar) in front of the plugin.
 		return plugin.Fail(plugin.ClassUnavailable)
 	}
 	// Over the size cap, not gRPC, an HTTP error or a redirect.
 	return plugin.Fail(plugin.ClassBadResponse)
+}
+
+// ownDeadline reports ctx's error when a DEADLINE_EXCEEDED from the plugin
+// is the call's own deadline: the plugin applies it (sent as grpc-timeout)
+// a hair before our timer fires. It waits at most deadlineSlack past the
+// deadline, and only when the deadline is that near; a plugin that answers
+// DEADLINE_EXCEEDED early gets nil, so the call fails BAD_RESPONSE at once.
+func ownDeadline(ctx context.Context) error {
+	dl, ok := ctx.Deadline()
+	if !ok {
+		return nil
+	}
+	left := time.Until(dl)
+	if left > deadlineSlack {
+		return nil
+	}
+	t := time.NewTimer(left + deadlineSlack)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
 }
 
 // Close ends every call in flight, waits for them, and closes the

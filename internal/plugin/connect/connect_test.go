@@ -2,6 +2,7 @@ package connect
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -9,6 +10,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/binary"
 	"errors"
 	"io"
 	"log"
@@ -596,5 +598,89 @@ func TestInstancesShareNothing(t *testing.T) {
 	headers, _ := s.seen()
 	if headers[0].Get("Authorization") != "Bearer token-a" || headers[1].Get("Authorization") != "Bearer token-b" {
 		t.Fatal("the entries' credentials mixed")
+	}
+}
+
+// rawFrame answers every call with one gRPC frame: flags, then a length
+// prefix of declared bytes, then body.
+func rawFrame(flags byte, declared uint32, body []byte) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		frame := make([]byte, 5, 5+len(body))
+		frame[0] = flags
+		binary.BigEndian.PutUint32(frame[1:], declared)
+		frame = append(frame, body...)
+		w.Header().Set("Content-Type", "application/grpc+proto")
+		w.Header().Set("Grpc-Encoding", "gzip")
+		w.Header().Set("Trailer", "Grpc-Status")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(frame)
+		w.Header().Set("Grpc-Status", "0")
+	})
+}
+
+func TestReplyOverTheCapIsRefused(t *testing.T) {
+	// A length prefix over the cap, with no body behind it.
+	big := newServer(t, rawFrame(0, protocol.MaxMessageBytes+1, nil), nil)
+	err := dialServer(t, big, "").Call(context.Background(), protocol.MethodHealth, nil, nil)
+	if classOf(err) != plugin.ClassBadResponse {
+		t.Fatalf("over-cap prefix: %v", err)
+	}
+
+	// A small gzip body that inflates past the cap: compressed replies are
+	// not accepted at all.
+	var zb bytes.Buffer
+	zw := gzip.NewWriter(&zb)
+	_, _ = zw.Write(make([]byte, protocol.MaxMessageBytes+1024))
+	_ = zw.Close()
+	bomb := newServer(t, rawFrame(1, uint32(zb.Len()), zb.Bytes()), nil)
+	err = dialServer(t, bomb, "").Call(context.Background(), protocol.MethodHealth, nil, nil)
+	if classOf(err) != plugin.ClassBadResponse {
+		t.Fatalf("gzip reply: %v", err)
+	}
+	headers, _ := bomb.seen()
+	if ae := headers[0].Get("Grpc-Accept-Encoding"); strings.Contains(ae, "gzip") {
+		t.Fatalf("the adapter offers gzip: %q", ae)
+	}
+}
+
+func TestEarlyDeadlineFromPluginIsNotWaitedOn(t *testing.T) {
+	s := newServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		connectrpc.NewErrorWriter().Write(w, r, connectrpc.NewError(connectrpc.CodeDeadlineExceeded, errors.New("late")))
+	}), nil)
+	tr := dialServer(t, s, "")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	start := time.Now()
+	err := tr.Call(ctx, protocol.MethodHealth, nil, nil)
+	if classOf(err) != plugin.ClassBadResponse {
+		t.Fatalf("err = %v, want BAD_RESPONSE", err)
+	}
+	if took := time.Since(start); took > time.Second {
+		t.Fatalf("the call waited %v for a deadline the plugin claimed", took)
+	}
+	closed := make(chan struct{})
+	go func() { _ = tr.Close(); close(closed) }()
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("Close hangs")
+	}
+}
+
+// TestHTTPStatusClasses pins what an HTTP error in front of the plugin
+// gives: a refused token (401) and a gateway with no plugin behind it (503).
+func TestHTTPStatusClasses(t *testing.T) {
+	for status, want := range map[int]plugin.FailureClass{
+		http.StatusUnauthorized:       plugin.ClassBadResponse,
+		http.StatusServiceUnavailable: plugin.ClassUnavailable,
+	} {
+		s := newServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(status)
+		}), nil)
+		err := dialServer(t, s, "").Call(context.Background(), protocol.MethodHealth, nil, nil)
+		if got := classOf(err); got != want {
+			t.Fatalf("HTTP %d: class %q (%v), want %q", status, got, err, want)
+		}
 	}
 }

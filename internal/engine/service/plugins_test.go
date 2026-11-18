@@ -22,7 +22,7 @@ const copySHA = "4f1c2b0e9a8d7c6b5a49382716f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d
 func linuxHost() service.PluginHost {
 	return service.PluginHost{
 		GOOS: "linux", EngineUser: "basalt", ConfigDir: "/etc/basalt", StateDir: "/var/lib/basalt", SocketDir: "/run/basalt",
-		CredentialFiles: []string{"/etc/basalt/agents/product_a.url", "/srv/creds/client_x.url", "/etc/basalt/plugins/acme.token"},
+		CredentialFiles: []string{"/etc/basalt/agents/product_a.url", "/srv/creds/client_x.url", "/srv/acme.token"},
 	}
 }
 
@@ -89,9 +89,17 @@ func TestPluginNetwork(t *testing.T) {
 	none, err := service.SystemdPluginUnit(linuxHost(), entry("linux", "default"))
 	require.NoError(t, err)
 	require.Contains(t, none, "\nPrivateNetwork=yes\n", "an empty egress runs without network")
+	require.Contains(t, none, "\nRestrictAddressFamilies=AF_UNIX\n")
 	some, err := service.SystemdPluginUnit(linuxHost(), entry("linux", "default", "hooks.slack.com:443"))
 	require.NoError(t, err)
 	require.NotContains(t, some, "PrivateNetwork")
+	require.Contains(t, some, "\nRestrictAddressFamilies=AF_UNIX AF_INET AF_INET6\n")
+	for _, u := range []string{none, some} {
+		require.Contains(t, u, "\nBindsTo=basalt-engine.service\n")
+		require.Contains(t, u, "\nAfter=basalt-engine.service\n")
+		require.Contains(t, u, "\nWantedBy=basalt-engine.service\n")
+		require.Contains(t, u, "\nSystemCallFilter=~chmod fchmod fchmodat fchmodat2\n", "a plugin cannot open its socket to others")
+	}
 }
 
 func TestInaccessiblePathsHideTheEngine(t *testing.T) {
@@ -102,12 +110,14 @@ func TestInaccessiblePathsHideTheEngine(t *testing.T) {
 		`InaccessiblePaths=/etc/basalt`,
 		`InaccessiblePaths=/var/lib/basalt`,
 		`InaccessiblePaths=/run/basalt`,
-		`InaccessiblePaths=-/etc/basalt/agents/product_a.url`,
 		`InaccessiblePaths=-/srv/creds/client_x.url`,
-		`InaccessiblePaths=-/etc/basalt/plugins/acme.token`,
+		`InaccessiblePaths=-/srv/acme.token`,
 	} {
 		require.Contains(t, unit, want+"\n")
 	}
+	// A credential file in the config directory is hidden with it: no
+	// agent's name is written into the world-readable unit.
+	require.NotContains(t, unit, "product_a")
 	// Each path once, whatever the host lists twice.
 	h := linuxHost()
 	h.CredentialFiles = append(h.CredentialFiles, "/etc/basalt", "/srv/creds/client_x.url")
@@ -119,11 +129,11 @@ func TestInaccessiblePathsHideTheEngine(t *testing.T) {
 	// A path with a space or a '%' is quoted, its specifier escaped.
 	h = linuxHost()
 	h.ConfigDir = "/etc/my basalt"
-	h.CredentialFiles = []string{`/etc/my basalt/agents/a%h"b.url`}
+	h.CredentialFiles = []string{`/srv/my creds/a%h"b.url`}
 	unit, err = service.SystemdPluginUnit(h, entry("linux", "default"))
 	require.NoError(t, err)
 	require.Contains(t, unit, "InaccessiblePaths=\"/etc/my basalt\"\n")
-	require.Contains(t, unit, "InaccessiblePaths=\"-/etc/my basalt/agents/a%%h\\\"b.url\"\n")
+	require.Contains(t, unit, "InaccessiblePaths=\"-/srv/my creds/a%%h\\\"b.url\"\n")
 }
 
 func TestRemoteEntryHasNoUnit(t *testing.T) {
@@ -215,7 +225,7 @@ func TestPluginUserShortening(t *testing.T) {
 			// A shortened name ends in '-', '0' and hex digits, which no
 			// instance does (an instance starts with a letter).
 			last := u[strings.LastIndex(u, "-")+1:]
-			require.Regexp(t, `^0[0-9a-f]{8}$`, last)
+			require.Regexp(t, `^0[0-9a-f]{12}$`, last)
 			n, err := service.NamesFor(goos, k[0], k[1])
 			require.NoError(t, err)
 			require.Equal(t, u, n.User)
@@ -353,7 +363,8 @@ func TestPluginInstallPlanCreatesTheUser(t *testing.T) {
 	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
 	ran := strings.Join(sys.ran, "\n")
 	require.Contains(t, ran, "basalt-plugin-acme-ner-default\n")
-	require.Less(t, strings.Index(ran, "systemctl restart basalt-plugin-acme-ner-default.service"), strings.Index(ran, "systemctl enable --now basalt-engine.service"))
+	require.Less(t, strings.Index(ran, "systemctl enable --now basalt-engine.service"), strings.Index(ran, "systemctl restart basalt-plugin-acme-ner-default.service"),
+		"plugin units are bound to the engine's and start after it")
 	unit := sys.written["/etc/systemd/system/basalt-plugin-acme-ner-default.service"]
 	require.Contains(t, unit, "InaccessiblePaths=/etc/basalt\n")
 	require.Contains(t, unit, "InaccessiblePaths=/var/lib/basalt\n")
@@ -468,6 +479,14 @@ func TestPluginBaseOnAGroupWritableUsrLocal(t *testing.T) {
 	require.NoError(t, err)
 	var out strings.Builder
 	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
-	require.Contains(t, out.String(), "skipped mkdir -m 0755 -o root /usr/local/lib/basalt: plugins cannot be installed until every directory above /usr/local/lib/basalt is writable by root only; on Debian-family systems /usr/local is group-writable: sudo chmod g-w /usr/local")
+	require.Contains(t, out.String(), "skipped mkdir -m 0755 -o root /usr/local/lib/basalt: plugins cannot be installed until every directory above /usr/local/lib/basalt is writable by root only; on Debian-family systems /usr/local and /usr/local/lib are group-writable: sudo chmod g-w /usr/local /usr/local/lib")
 	require.Contains(t, sys.ran, "systemctl enable --now basalt-engine.service")
+}
+
+func TestUserClash(t *testing.T) {
+	t.Parallel()
+	long := "acme-ner-presidio"
+	others := []plugin.EntryKey{{Name: long, Instance: "default"}, {Name: "acme-ner", Instance: "client_x"}}
+	require.Nil(t, service.UserClash(long, "default", others), "an entry does not clash with itself")
+	require.Nil(t, service.UserClash("other", "default", others))
 }

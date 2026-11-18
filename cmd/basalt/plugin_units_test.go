@@ -37,6 +37,9 @@ func TestAgentOSUserInTheEngineGroupIsRefused(t *testing.T) {
 	require.ErrorContains(t, err, "--os-user alice is in the engine's group basalt")
 	require.NoError(t, checkAgentOSUserWith("bob", "basalt", engineGroup, lookupGroups))
 	require.ErrorContains(t, checkAgentOSUserWith("basalt", "basalt", engineGroup, lookupGroups), "the engine's own OS user")
+	for _, reserved := range []string{"basalt-plugin-acme-ner-default", "_basalt-plugin-x"} {
+		require.ErrorContains(t, checkAgentOSUserWith(reserved, "basalt", engineGroup, lookupGroups), "keeps those names for plugins")
+	}
 
 	// A first install: the engine's group does not exist yet, so no one is in it.
 	require.NoError(t, checkAgentOSUserWith("alice", "_basalt", engineGroup, lookupGroups))
@@ -101,7 +104,7 @@ func TestPluginUnitEntries(t *testing.T) {
 	h := servicePluginHost(cfg, "linux", "/etc/basalt/engine.json", "basalt")
 	require.Equal(t, service.PluginHost{
 		GOOS: "linux", EngineUser: "basalt", ConfigDir: "/etc/basalt", StateDir: config.DefaultStateDir("linux"), SocketDir: "/run/basalt",
-		CredentialFiles: []string{"/etc/basalt/agents/product_a.url", "/srv/x.url", "/etc/basalt/acme.token"},
+		CredentialFiles: []string{"/etc/basalt/agents/product_a.url", "/srv/x.url"},
 	}, h)
 
 	names := serviceUnitNames(cfg)

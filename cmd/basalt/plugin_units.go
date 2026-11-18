@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
@@ -28,11 +29,9 @@ func servicePluginHost(cfg config.Config, goos, configPath, engineUser string) s
 	for _, a := range cfg.Agents {
 		h.CredentialFiles = append(h.CredentialFiles, a.Store.CredentialFile)
 	}
-	for _, p := range cfg.Plugins {
-		if f := p.CredentialFile(); f != "" {
-			h.CredentialFiles = append(h.CredentialFiles, f)
-		}
-	}
+	// A remote entry's auth.credentialFile is not listed: the engine uses
+	// it only when it is the engine user's alone (mode 0600 or narrower),
+	// so no plugin's user can read it.
 	return h
 }
 
@@ -195,6 +194,9 @@ func checkAgentOSUser(osUser, engineUser string) error {
 func checkAgentOSUserWith(osUser, engineUser string, lookupGroup func(string) (*user.Group, error),
 	groups func(string) ([]string, error),
 ) error {
+	if strings.HasPrefix(osUser, "basalt-plugin-") || strings.HasPrefix(osUser, "_basalt-plugin-") {
+		return fmt.Errorf("%w: --os-user %s is named as a plugin's OS user; Basalt keeps those names for plugins", errUsage, osUser)
+	}
 	if osUser == engineUser {
 		return fmt.Errorf("%w: --os-user %s is the engine's own OS user; give the agent an OS user of its own", errUsage, osUser)
 	}
@@ -228,4 +230,18 @@ func osUserGroups(name string) ([]string, error) {
 		return nil, err
 	}
 	return append(gids, u.Gid), nil
+}
+
+// checkUserClash refuses entry k when another entry of cfg would run as the
+// same OS user on Linux or macOS (a shortened user name matched): two
+// entries never share a user, a socket or a directory.
+func (e *pluginEnv) checkUserClash(cfg config.Config, k plugin.EntryKey) error {
+	keys := make([]plugin.EntryKey, 0, len(cfg.Plugins))
+	for _, p := range cfg.Plugins {
+		keys = append(keys, p.Key())
+	}
+	if o := service.UserClash(k.Name, k.Instance, keys); o != nil {
+		return fmt.Errorf("plugin %s would run as the same OS user as plugin %s; nothing was written. Add it with another --instance", k, *o)
+	}
+	return nil
 }

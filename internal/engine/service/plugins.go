@@ -37,7 +37,7 @@ const (
 	maxPluginUser = 32
 	// pluginNameHashHex is how many hex digits of the entry's hash a
 	// shortened user name keeps.
-	pluginNameHashHex = 8
+	pluginNameHashHex = 12
 
 	// PluginSocketName is the socket's file name in the entry's directory.
 	PluginSocketName = "p.sock"
@@ -143,7 +143,7 @@ func NamesFor(goos, name, instance string) (PluginNames, error) {
 // PluginUser is the OS user of entry (name, instance) on goos: the prefix,
 // the name, '-', the instance. When that is longer than 32 characters it is
 // shortened to the prefix, the start of "<name>-<instance>", '-', '0' and
-// the first 8 hex digits of the SHA-256 of "<name>/<instance>". An
+// the first 12 hex digits of the SHA-256 of "<name>/<instance>". An
 // unshortened name always ends in its instance, which starts with a letter,
 // so a shortened one (ending in '0' and hex digits after the last '-') never
 // equals one.
@@ -290,10 +290,25 @@ func (h PluginHost) hiddenDirs() []string {
 	return uniquePaths(nil, h.ConfigDir, h.StateDir, h.SocketDir)
 }
 
-// hiddenFiles are the credential files not already listed, each once.
+// hiddenFiles are the credential files outside the hidden directories,
+// each once. A file inside the config directory is hidden with it, so no
+// agent's name is written into a unit (units are world-readable), and an
+// agent added there leaves every plugin's unit as it is.
 func (h PluginHost) hiddenFiles() []string {
 	dirs := h.hiddenDirs()
-	return uniquePaths(dirs, h.CredentialFiles...)[len(dirs):]
+	var files []string
+	for _, f := range h.CredentialFiles {
+		if !slices.ContainsFunc(dirs, func(d string) bool { return within(d, f) }) {
+			files = append(files, f)
+		}
+	}
+	return uniquePaths(dirs, files...)[len(dirs):]
+}
+
+// within reports whether p is dir or lies under it.
+func within(dir, p string) bool {
+	rel, err := filepath.Rel(dir, p)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, "../")
 }
 
 func uniquePaths(have []string, more ...string) []string {
@@ -344,6 +359,9 @@ func SystemdPluginUnit(h PluginHost, p PluginEntry) (string, error) {
 [Unit]
 Description=BasaltDB plugin %[1]s (instance %[2]s)
 StartLimitIntervalSec=0
+After=%[11]s
+BindsTo=%[11]s
+PartOf=%[11]s
 
 [Service]
 Type=simple
@@ -366,9 +384,18 @@ ProtectKernelModules=yes
 ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes
+ProtectProc=invisible
+ProcSubset=pid
+CapabilityBoundingSet=
+RestrictNamespaces=yes
+RemoveIPC=yes
+PrivateIPC=yes
+SystemCallFilter=~chmod fchmod fchmodat fchmodat2
+SystemCallErrorNumber=EPERM
+RestrictAddressFamilies=%[12]s
 ReadWritePaths=%[9]s
 `, p.Name, p.Instance, n.User, strings.Join(argv, " "), p.Dir,
-		SocketEnv, pluginUmask, p.memoryMB(), n.SocketDir, n.Socket)
+		SocketEnv, pluginUmask, p.memoryMB(), n.SocketDir, n.Socket, SystemdUnitName, addressFamilies(p.Egress))
 	for _, dir := range h.hiddenDirs() {
 		// The directories always exist; a missing one stops the unit.
 		fmt.Fprintf(&b, "InaccessiblePaths=%s\n", systemdPath("", dir))
@@ -380,8 +407,37 @@ ReadWritePaths=%[9]s
 	if len(p.Egress) == 0 {
 		b.WriteString("PrivateNetwork=yes\n")
 	}
-	b.WriteString("\n[Install]\nWantedBy=multi-user.target\n")
+	// Enabled with the engine: starting the engine starts it, and it stops
+	// and restarts with the engine, so its namespace is built again each
+	// time the engine's socket directory is.
+	b.WriteString("\n[Install]\nWantedBy=" + SystemdUnitName + "\n")
 	return b.String(), nil
+}
+
+// addressFamilies are the socket families a plugin may open: Unix sockets
+// only with an empty egress, the internet too with a non-empty one.
+func addressFamilies(egress []string) string {
+	if len(egress) == 0 {
+		return "AF_UNIX"
+	}
+	return "AF_UNIX AF_INET AF_INET6"
+}
+
+// UserClash is the first other entry in others whose OS user is the same
+// as entry (name, instance)'s on Linux or macOS, or nil. Two entries never
+// share a user: basalt plugin add refuses one that would.
+func UserClash(name, instance string, others []plugin.EntryKey) *plugin.EntryKey {
+	for _, o := range others {
+		if o.Name == name && o.Instance == instance {
+			continue
+		}
+		for _, goos := range []string{goosLinux, goosDarwin} {
+			if PluginUser(goos, o.Name, o.Instance) == PluginUser(goos, name, instance) {
+				return &o
+			}
+		}
+	}
+	return nil
 }
 
 // LaunchdPluginDaemon renders entry p's macOS launch daemon. The plugin runs
@@ -487,7 +543,7 @@ func PluginBaseSteps(goos string) ([]Step, error) {
 	}
 	run := filepath.Join(base, pluginRunDirName)
 	note := "plugins cannot be installed until every directory above " + base +
-		" is writable by root only; on Debian-family systems /usr/local is group-writable: sudo chmod g-w /usr/local"
+		" is writable by root only; on Debian-family systems /usr/local and /usr/local/lib are group-writable: sudo chmod g-w /usr/local /usr/local/lib"
 	if goos == goosDarwin {
 		note = "plugins cannot be installed until every directory above " + base + " is owned by root and writable by root only"
 	}

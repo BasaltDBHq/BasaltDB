@@ -618,6 +618,9 @@ func (e *pluginEnv) add(f addFlags) error {
 	}
 	defer func() { _ = staged.Discard() }()
 	k := staged.Key
+	if err := e.checkUserClash(e.cfg, k); err != nil {
+		return err
+	}
 	var prev *config.Plugin
 	var prevCopy *plugin.Verified
 	if i := e.cfg.PluginIndex(k); i >= 0 {
@@ -661,6 +664,9 @@ func (e *pluginEnv) add(f addFlags) error {
 				return errChangedMeanwhile
 			}
 			if err := e.checkAgents(*cfg, f.agents, func(a []string) string { return e.againAdd(f, a) }); err != nil {
+				return err
+			}
+			if err := e.checkUserClash(*cfg, k); err != nil {
 				return err
 			}
 			final, err := staged.Commit()

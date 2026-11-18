@@ -178,10 +178,10 @@ func TestLinuxInstallPlan(t *testing.T) {
 	require.Equal(t, []string{
 		"useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin basalt",
 		"mkdir -m 0750 -o basalt /etc/basalt",
-		"mkdir -m 0755 -o root /usr/local/lib/basalt",
-		"mkdir -m 0755 -o root /usr/local/lib/basalt/run",
 		"systemctl daemon-reload",
 		"systemctl enable --now basalt-engine.service",
+		"mkdir -m 0755 -o root /usr/local/lib/basalt",
+		"mkdir -m 0755 -o root /usr/local/lib/basalt/run",
 	}, sys.ran)
 	require.Equal(t, service.SystemdUnit(linuxSpec()), sys.written[service.SystemdUnitPath])
 	require.Contains(t, out.String(), "write /etc/systemd/system/basalt-engine.service")
@@ -387,11 +387,11 @@ func TestInstallWritesOwnedFilesAndRestartsAnInstalledService(t *testing.T) {
 	require.Equal(t, []string{
 		"mkdir -m 0750 -o basalt /etc/basalt",
 		"mkdir -m 0700 -o basalt /etc/basalt/agents",
-		"mkdir -m 0755 -o root /usr/local/lib/basalt",
-		"mkdir -m 0755 -o root /usr/local/lib/basalt/run",
 		"systemctl daemon-reload",
 		"systemctl enable basalt-engine.service",
 		"systemctl restart basalt-engine.service",
+		"mkdir -m 0755 -o root /usr/local/lib/basalt",
+		"mkdir -m 0755 -o root /usr/local/lib/basalt/run",
 	}, sys.ran)
 	require.Equal(t, "postgres://secret", sys.written["/etc/basalt/agents/bot.url"])
 	require.Equal(t, os.FileMode(0o600), sys.modes["/etc/basalt/agents/bot.url"])

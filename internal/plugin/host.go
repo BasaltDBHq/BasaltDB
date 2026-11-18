@@ -109,11 +109,11 @@ func (h *Host) Unregister(k EntryKey) {
 
 // Call sends a hook call to an entry on behalf of the named agents. Every
 // agent must be listed on the entry, or the call fails with ErrAgentNotListed
-// before anything is sent; so does a call naming no agent, and so does a
-// lifecycle method (initialize, health, shutdown), which goes through Register
-// and Control instead. The entry's timeout
-// is the deadline for the whole call, including the wait for a free slot (at
-// most four calls are in flight per entry). Failures are *CallError.
+// before anything is sent; so does a call naming no agent. A lifecycle method
+// (initialize, health, shutdown) goes through Register and Control instead, and
+// is refused with a plain error before anything is sent. The entry's timeout is
+// the deadline for the whole call, including the wait for a free slot (at most
+// four calls are in flight per entry). Other failures are *CallError.
 func (h *Host) Call(ctx context.Context, k EntryKey, agents []string, method string, params, result any) error {
 	switch method {
 	case protocol.MethodInitialize, protocol.MethodHealth, protocol.MethodShutdown:

@@ -18,6 +18,7 @@ type Catalog struct {
 	pool     Pool
 	limits   sqlguard.Limits
 	database string
+	host     string
 }
 
 // NewCatalog returns the catalog on pool with limits; database is the name
@@ -27,6 +28,13 @@ func NewCatalog(pool Pool, limits sqlguard.Limits, database string) *Catalog {
 		panic("postgres: pool required")
 	}
 	return &Catalog{pool: pool, limits: limits, database: database}
+}
+
+// WithHost sets the host the pool connects to, which describe's overview
+// names with the database. It returns c.
+func (c *Catalog) WithHost(host string) *Catalog {
+	c.host = host
+	return c
 }
 
 // read runs fn in a read-only transaction within the time limit. It is
@@ -108,6 +116,9 @@ func (c *Catalog) structureRaw(ctx context.Context) (lines []string, err error) 
 
 // Database is the database the pool connects to.
 func (c *Catalog) Database() string { return c.database }
+
+// Host is the host the pool connects to.
+func (c *Catalog) Host() string { return c.host }
 
 // Limits are the limits each call runs within.
 func (c *Catalog) Limits() action.Limits { return action.Limits(c.limits) }

@@ -73,6 +73,7 @@ func (f *fakeCatalog) Search(_ context.Context, _ string, exclude []pgcatalog.Co
 
 func (f *fakeCatalog) Structure(context.Context) ([]string, error) { return f.lines, nil }
 func (f *fakeCatalog) Database() string                            { return "app" }
+func (f *fakeCatalog) Host() string                                { return "db.example.com" }
 func (f *fakeCatalog) Limits() action.Limits                       { return action.Limits(sqlguard.DefaultLimits()) }
 
 // fakeClasses is a ClassResolver over a fixed class map.
@@ -336,7 +337,7 @@ func TestOverviewSmallListsResources(t *testing.T) {
 	require.NotContains(t, m, "nextSteps")
 	require.NotContains(t, m, "personMessage")
 	require.Equal(t, map[string]any{"schemas": 2.0, "tables": 50.0, "notGranted": 0.0}, m["counts"])
-	require.Equal(t, map[string]any{"kind": "POSTGRES", "database": "app"}, m["store"])
+	require.Equal(t, map[string]any{"kind": "POSTGRES", "database": "app", "host": "db.example.com"}, m["store"])
 	first := m["resources"].([]any)[0].(map[string]any)
 	require.Equal(t, map[string]any{"resource": "app.t001", "kind": "TABLE", "estimatedRows": 12.0, "access": []any{"SELECT"}}, first)
 	limits := m["limits"].(map[string]any)

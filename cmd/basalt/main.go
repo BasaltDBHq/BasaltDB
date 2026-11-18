@@ -25,7 +25,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	std := stdio{in: os.Stdin, out: os.Stdout, err: os.Stderr}
 	note := startUpdateNotice(ctx, os.Args[1:], std, os.Getenv)
-	code := run(ctx, os.Args[1:], std)
+	code := runGuarded(ctx, os.Args[1:], std)
 	note()
 	stop()
 	os.Exit(code)
@@ -59,6 +59,7 @@ func commands() []command {
 		{"classify", "Suggest and confirm the PII class of every column the agents can read", withIO(runClassify)},
 		{"upgrade", "Add the guard migrations this build has and the database lacks", withIO(runUpgrade)},
 		{"uninstall", "Remove the guard, its ledger and its roles from Postgres", withIO(runUninstall)},
+		{"crash", "List, show or file the crash reports saved on this machine (list | show <id> | report <id>)", withIO(runCrash)},
 		{"version", "Print the version", runVersion},
 		{"help", "Show this help", nil},
 	}

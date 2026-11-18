@@ -11,7 +11,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/go-playground/validator/v10 v10.30.6
 	github.com/google/uuid v1.6.0
-	github.com/jackc/pgx/v5 v5.12.0
+	github.com/jackc/pgx/v5 v5.13.0
 	github.com/nyaruka/phonenumbers v1.8.1
 	github.com/pganalyze/pg_query_go/v6 v6.2.5
 	github.com/stretchr/testify v1.12.1

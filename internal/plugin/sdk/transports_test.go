@@ -28,6 +28,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/adaptertest"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/connect"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/child"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/jsonrpc"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/protocol"
 )
@@ -312,7 +313,7 @@ func TestSDKPeerPassesTheAdapterSuite(t *testing.T) {
 			if mode == "" {
 				t.Skip("the SDK cannot be made to send garbage")
 			}
-			tr, err := jsonrpc.Spawn(context.Background(), os.Args[0], []string{peerFlag, mode}, nil)
+			tr, err := jsonrpc.Spawn(context.Background(), child.Spec{Path: os.Args[0], Args: []string{peerFlag, mode}, Dir: t.TempDir()})
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = tr.Close() })
 			return tr

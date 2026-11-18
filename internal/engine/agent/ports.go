@@ -41,6 +41,10 @@ type Ledger interface {
 // Approvals holds writes for the person's approval and relays their
 // signature.
 type Approvals interface {
+	// HoldColumns returns the columns whose new values the person's
+	// approval binds for a held write, or an *action.RefusalError
+	// (NOT_REPEATABLE) for a write that cannot be run again the same way.
+	HoldColumns(ctx context.Context, sql string, params []any) ([]string, error)
 	Preview(ctx context.Context, in action.Intent, sql string, params []any, assigned []string) ([]string, error)
 	Hold(ctx context.Context, in action.Intent, r action.HoldRequest) (action.Held, error)
 	TableColumns(ctx context.Context, table string) ([]string, error)
@@ -101,11 +105,19 @@ type Reverts interface {
 	RevealRevertRows(ctx context.Context, id uuid.UUID, proof passkey.Assertion, key []byte) (action.RevealedRevert, error)
 }
 
+// statementChecker checks a statement against the engine's SQL policy for
+// a tool, and returns it as the store will run it, or an
+// *action.RefusalError.
+type statementChecker interface {
+	Check(sql string, tool action.Tool) (action.Statement, error)
+}
+
 // SQLStore is a store that speaks SQL: the query and write tools run on it.
 type SQLStore interface {
 	Store
 	Approvals
 	Reverts
+	statementChecker
 	// Read runs one read, with the versions of the rows of the statement's
 	// sources it can identify.
 	Read(ctx context.Context, sql string, params []any, stmt action.Statement) (action.ReadResult, error)

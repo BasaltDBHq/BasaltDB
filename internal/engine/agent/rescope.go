@@ -4,12 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
-	"errors"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/channel"
@@ -292,20 +290,20 @@ func (s *Service) registerRelay(ctx context.Context, id uuid.UUID, token channel
 // failure is one REVERT_INVALID whatever its cause; a rescope past
 // RescopeTimeout is QUERY_TIMEOUT TIME_LIMIT.
 func (s *Service) rescopeError(ctx context.Context, r ledger.Revert, err error) error {
-	if _, hint, ok := guard.ScopeRefusal(err); ok {
+	if _, hint, ok := scopeRefusal(err); ok {
 		return &ArgumentError{Message: "the scope was refused: " + hint}
 	}
-	var pe *pgconn.PgError
-	if !errors.As(err, &pe) {
+	se := storeError(err)
+	if se == nil {
 		return err
 	}
-	code, _ := guard.CodeOf(err)
+	code, _ := ledgerCode(err)
 	switch {
-	case code == guard.CodeRevertInvalid && pe.Detail == guard.RevertWidenRefused:
+	case code == guard.CodeRevertInvalid && se.Detail == guard.RevertWidenRefused:
 		return widenRefused()
 	case code == guard.CodeRevertExpired:
 		return s.revertExpired(r)
-	case pe.Code == sqlStateQueryCanceled && ctx.Err() == nil:
+	case timedOut(err) && ctx.Err() == nil:
 		return rescopeTimeout()
 	}
 	return err

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -395,27 +394,27 @@ func (s *Service) checkRevertCode(ctx context.Context, r ledger.Revert, code rev
 // through its own steps: expired meanwhile, rows changed since the preview,
 // or a signature only Postgres could judge.
 func (s *Service) applyRevertError(ctx context.Context, r ledger.Revert, err error) error {
-	code, ok := guard.CodeOf(err)
+	code, ok := ledgerCode(err)
 	switch {
 	case ok && code == guard.CodeRevertExpired:
 		return s.revertExpired(r)
 	case ok && code == guard.CodeNothingToRevert:
 		return nothingSigned(r)
 	}
-	var pe *pgconn.PgError
-	if !ok || code != guard.CodeRevertInvalid || !errors.As(err, &pe) {
+	if !ok || code != guard.CodeRevertInvalid {
 		return err
 	}
 	// apply_revert's details (basalt_meta version 9) tell the cases apart.
+	detail := storeDetail(err)
 	switch {
-	case strings.Contains(pe.Detail, "rows changed since"):
-		return s.rowsChanged(r, pe.Detail)
-	case strings.Contains(pe.Detail, "passkey revoked"):
+	case strings.Contains(detail, "rows changed since"):
+		return s.rowsChanged(r, detail)
+	case strings.Contains(detail, "passkey revoked"):
 		return s.passkeyRevoked(ctx, r)
-	case strings.Contains(pe.Detail, "already"):
+	case strings.Contains(detail, "already"):
 		return alreadySigned(r)
 	}
-	return s.badSignature(ctx, r, "the database refused the code, nothing was reverted: "+pe.Detail)
+	return s.badSignature(ctx, r, "the database refused the code, nothing was reverted: "+detail)
 }
 
 // revertState is the answer for r without a new link: what happened, for
@@ -589,7 +588,7 @@ func notOwnTask(scope action.Scope) error {
 // INVALID_ARGUMENT with the guard's explanation. nil when err is not a
 // scope refusal.
 func scopeRefused(scope action.Scope, err error) error {
-	detail, hint, ok := guard.ScopeRefusal(err)
+	detail, hint, ok := scopeRefusal(err)
 	if !ok {
 		return nil
 	}
@@ -631,18 +630,17 @@ func (s *Service) prepareError(ctx context.Context, tool string, scope action.Sc
 	if errors.Is(err, action.ErrEmptyProposal) {
 		return s.nothingToRevertError(ctx, tool, scope, reasonReadsOnly, "this agent changed no rows in it that a revert could restore")
 	}
-	if code, ok := guard.CodeOf(err); ok && code == guard.CodeNothingToRevert {
+	if code, ok := ledgerCode(err); ok && code == guard.CodeNothingToRevert {
 		return s.nothingToRevert(ctx, tool, scope, err)
 	}
 	if ctx.Err() != nil {
 		// The client canceled the call: not the prepare's time limit.
 		return fmt.Errorf("prepare revert: %w", ctx.Err())
 	}
-	var pe *pgconn.PgError
-	if !errors.As(err, &pe) || pe.Code != sqlStateQueryCanceled {
+	if !timedOut(err) {
 		return err
 	}
-	return s.prepareTimeout(tool, scope, pe.Code)
+	return s.prepareTimeout(tool, scope, storeError(err).SQLState)
 }
 
 // revertLink is what the agent hands the person to sign a prepared revert:

@@ -83,15 +83,8 @@ func setTimeout(ctx context.Context, tx pgx.Tx, limits sqlguard.Limits) error {
 	return err
 }
 
-// Read runs one SELECT in a read-only transaction within the time limit,
-// and cancels it once it returns more than the row limit. For the
-// statement's row sources (its Handle, the []sqlguard.RowSource of the
-// check) that are guarded tables the agent can read, it also returns the version
-// of each row: the statement runs with version columns added through the
-// parse tree (sqlguard.WithRowVersions), which are stripped from the rows.
-// If that statement fails to plan, the original runs as given and the read
-// carries no versions.
-func (r *Reader) Read(ctx context.Context, sql string, params []any, stmt action.Statement) (action.ReadResult, error) {
+// readRaw is Read before MapError.
+func (r *Reader) readRaw(ctx context.Context, sql string, params []any, stmt action.Statement) (action.ReadResult, error) {
 	// A statement without row sources (an aggregate, or one this store did
 	// not check) reads without versions.
 	sources, _ := stmt.Handle.([]sqlguard.RowSource)

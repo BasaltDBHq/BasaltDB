@@ -47,10 +47,8 @@ var runAggregate = sq.Select(
 		writtenWrite, MaxRunTables+1),
 ).From("basalt_meta.agent_changes c").Where("c.run_id = r.run_id")
 
-// ListRuns returns one page of the agent's own runs, read through the
-// guard's agent views (agent_runs filters on session_user in Postgres).
-// Keyset on run_id; the time filters narrow the same keyset.
-func (s *Store) ListRuns(ctx context.Context, p ledger.RunListParams) (pagination.Page[action.RunSummary], error) {
+// listRunsRaw is ListRuns before MapError.
+func (s *Store) listRunsRaw(ctx context.Context, p ledger.RunListParams) (pagination.Page[action.RunSummary], error) {
 	if p.Limit < 1 || p.Limit > pagination.MaxLimit {
 		return pagination.Page[action.RunSummary]{}, fmt.Errorf("%w: limit %d", ledger.ErrInvalidParams, p.Limit)
 	}

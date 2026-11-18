@@ -21,6 +21,8 @@ type Statement struct {
 	Op Op
 	// Tables are the relations the statement names, as written, sorted.
 	Tables []string
+	// ParamCount is the highest $n placeholder used, 0 when none.
+	ParamCount int
 	// Handle is the store's own data about the statement (for Postgres, the
 	// relations whose row versions a read can return); nil when it has
 	// none.

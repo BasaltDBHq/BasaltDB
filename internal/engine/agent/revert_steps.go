@@ -23,11 +23,11 @@ import (
 // steps per code).
 const (
 	reasonRevert              = "REVERT"
-	reasonBadSignature        = "BAD_SIGNATURE"
-	reasonPasskeyRevoked      = "PASSKEY_REVOKED"
-	reasonRowsChanged         = "ROWS_CHANGED"
-	reasonPlanFinished        = "PLAN_FINISHED"
-	reasonNotSigned           = "NOT_SIGNED"
+	reasonBadSignature        = action.ReasonBadSignature
+	reasonPasskeyRevoked      = action.ReasonPasskeyRevoked
+	reasonRowsChanged         = action.ReasonRowsChanged
+	reasonPlanFinished        = action.ReasonPlanFinished
+	reasonNotSigned           = action.ReasonNotSigned
 	reasonNotFinished         = "NOT_FINISHED"
 	reasonReadsOnly           = "READS_ONLY"
 	reasonAllChangedByPeople  = "ALL_CHANGED_BY_PEOPLE"

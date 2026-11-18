@@ -18,12 +18,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
-// PreviewRevert returns one page of the preview of scope (basalt_meta
-// preview_revert) on the agent's credential, after the line whose hash is
-// after, with the preview's totals (guard.PreviewRevertPage). The guard
-// runs the revert on trial and undoes it; this transaction is read-write
-// for that, and is rolled back anyway.
-func (s *Store) PreviewRevert(ctx context.Context, scope action.Scope, after string, limit int) (action.PreviewPage, error) {
+// previewRevertRaw is PreviewRevert before MapError.
+func (s *Store) previewRevertRaw(ctx context.Context, scope action.Scope, after string, limit int) (action.PreviewPage, error) {
 	var page guard.PreviewPage
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		if err := setTimeout(ctx, tx, s.limits); err != nil {
@@ -42,14 +38,8 @@ func (s *Store) PreviewRevert(ctx context.Context, scope action.Scope, after str
 	return previewPageOf(page), nil
 }
 
-// PrepareRevert stores a revert of scope for the person to sign
-// (basalt_meta.prepare_revert) on the agent's credential, in its own
-// transaction with the statement timeout set to timeout instead of the
-// agent's limit, as basalt revert does. A proposal with no line is rolled
-// back and answered action.ErrEmptyProposal: the guard stores such a proposal
-// for the person to widen on the page (basalt revert --task); through MCP
-// it is NOTHING_TO_REVERT (RS-6).
-func (s *Store) PrepareRevert(ctx context.Context, scope action.Scope, intent string, timeout time.Duration) (action.PreparedRevert, error) {
+// prepareRevertRaw is PrepareRevert before MapError.
+func (s *Store) prepareRevertRaw(ctx context.Context, scope action.Scope, intent string, timeout time.Duration) (action.PreparedRevert, error) {
 	var p guard.PreparedRevert
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		var err error
@@ -68,12 +58,8 @@ func (s *Store) PrepareRevert(ctx context.Context, scope action.Scope, intent st
 	return action.PreparedRevert(p), nil
 }
 
-// RescopeRevert changes the scope of a revert the agent's role prepared
-// (basalt_meta.rescope_revert), for the person on the revert page, in its
-// own transaction with the statement timeout set to timeout instead of the
-// agent's limit. Past it Postgres cancels the rescope (57014) and nothing
-// changes.
-func (s *Store) RescopeRevert(ctx context.Context, req action.RescopeRequest, timeout time.Duration) (action.RescopedRevert, error) {
+// rescopeRevertRaw is RescopeRevert before MapError.
+func (s *Store) rescopeRevertRaw(ctx context.Context, req action.RescopeRequest, timeout time.Duration) (action.RescopedRevert, error) {
 	var out guard.RescopedRevert
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		if err := setStatementTimeout(ctx, tx, timeout); err != nil {
@@ -86,10 +72,8 @@ func (s *Store) RescopeRevert(ctx context.Context, req action.RescopeRequest, ti
 	return rescopedOf(out), err
 }
 
-// ResetRevert puts a widened revert the agent's role prepared back to its
-// proposal (basalt_meta.reset_revert), for the agent's reissueLink, under
-// the same time limit as a rescope.
-func (s *Store) ResetRevert(ctx context.Context, id uuid.UUID, timeout time.Duration) (action.RescopedRevert, error) {
+// resetRevertRaw is ResetRevert before MapError.
+func (s *Store) resetRevertRaw(ctx context.Context, id uuid.UUID, timeout time.Duration) (action.RescopedRevert, error) {
 	var out guard.RescopedRevert
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		if err := setStatementTimeout(ctx, tx, timeout); err != nil {
@@ -122,16 +106,13 @@ func (s savepoint) BeginTx(ctx context.Context, _ pgx.TxOptions) (pgx.Tx, error)
 	return s.tx.Begin(ctx)
 }
 
-// HasChange reports whether the agent's view of the change record shows
-// change id: one of its own changes, or a revert's change that covered it.
-func (s *Store) HasChange(ctx context.Context, id uuid.UUID) (bool, error) {
+// hasChangeRaw is HasChange before MapError.
+func (s *Store) hasChangeRaw(ctx context.Context, id uuid.UUID) (bool, error) {
 	return s.exists(ctx, "basalt_meta.agent_changes", sq.Eq{"change_id": id.String()})
 }
 
-// HasTaskRun reports whether the agent has a run with task id id, read
-// through its agent_runs view (RS-1: a task the agent ran in is its own
-// scope; any run with that task id counts).
-func (s *Store) HasTaskRun(ctx context.Context, id uuid.UUID) (bool, error) {
+// hasTaskRunRaw is HasTaskRun before MapError.
+func (s *Store) hasTaskRunRaw(ctx context.Context, id uuid.UUID) (bool, error) {
 	return s.exists(ctx, "basalt_meta.agent_runs", sq.Eq{"task_id": id.String()})
 }
 
@@ -148,11 +129,8 @@ func (s *Store) exists(ctx context.Context, from string, where sq.Eq) (bool, err
 	return ok, err
 }
 
-// RevertedBy returns the change record of the latest revert that covered
-// scope in the agent's view of the ledger, or uuid.Nil when none did. A change
-// scope is the change itself; a run or task scope is any of its changes. The
-// revert's change is what request_revert takes to redo the reverted work.
-func (s *Store) RevertedBy(ctx context.Context, scope action.Scope) (uuid.UUID, error) {
+// revertedByRaw is RevertedBy before MapError.
+func (s *Store) revertedByRaw(ctx context.Context, scope action.Scope) (uuid.UUID, error) {
 	column := map[revert.Scope]string{
 		revert.ScopeChange: "c.change_id", revert.ScopeRun: "c.run_id", revert.ScopeTask: "c.task_id",
 	}[scope.Kind]
@@ -178,21 +156,18 @@ func (s *Store) RevertedBy(ctx context.Context, scope action.Scope) (uuid.UUID, 
 	return id, err
 }
 
-// FindRevert returns a revert the agent's role prepared.
-func (s *Store) FindRevert(ctx context.Context, id uuid.UUID) (ledger.Revert, error) {
+// findRevertRaw is FindRevert before MapError.
+func (s *Store) findRevertRaw(ctx context.Context, id uuid.UUID) (ledger.Revert, error) {
 	return ledger.FindRevert(ctx, s.db, id)
 }
 
-// RevertLines returns one page of a batched plan's lines, with values too
-// large for the agent left out (CONTRACT.md, Large values).
-func (s *Store) RevertLines(ctx context.Context, p ledger.RevertLineParams) (pagination.Page[ledger.RevertLine], error) {
+// revertLinesRaw is RevertLines before MapError.
+func (s *Store) revertLinesRaw(ctx context.Context, p ledger.RevertLineParams) (pagination.Page[ledger.RevertLine], error) {
 	return ledger.ListRevertLinesMarked(ctx, s.db, p)
 }
 
-// ApplyRevertBatch applies lines of a signed plan in one transaction on the
-// agent's credential (basalt_meta.apply_revert_batch), under the agent's
-// statement timeout.
-func (s *Store) ApplyRevertBatch(ctx context.Context, id uuid.UUID, lines []int) (action.BatchResult, error) {
+// applyRevertBatchRaw is ApplyRevertBatch before MapError.
+func (s *Store) applyRevertBatchRaw(ctx context.Context, id uuid.UUID, lines []int) (action.BatchResult, error) {
 	var out guard.BatchResult
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		if err := setTimeout(ctx, tx, s.limits); err != nil {
@@ -205,13 +180,8 @@ func (s *Store) ApplyRevertBatch(ctx context.Context, id uuid.UUID, lines []int)
 	return batchResultOf(out), err
 }
 
-// ApplyRevert relays the person's signed revert (basalt_meta.apply_revert)
-// on the agent's credential, as basalt revert does: Postgres verifies the
-// passkey assertion and runs the revert, or for a large plan records the
-// signature. It runs in its own transaction with the engine's timeouts
-// (guard.SetTimeouts), so the agent role's own defaults cannot fail the
-// person's revert.
-func (s *Store) ApplyRevert(ctx context.Context, id uuid.UUID, a passkey.Assertion) (action.AppliedRevert, error) {
+// applyRevertRaw is ApplyRevert before MapError.
+func (s *Store) applyRevertRaw(ctx context.Context, id uuid.UUID, a passkey.Assertion) (action.AppliedRevert, error) {
 	var out guard.AppliedRevert
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		if err := guard.SetTimeouts(ctx, tx, s.limits.StatementTimeout); err != nil {
@@ -224,32 +194,24 @@ func (s *Store) ApplyRevert(ctx context.Context, id uuid.UUID, a passkey.Asserti
 	return action.AppliedRevert(out), err
 }
 
-// RevertNonce reads the rescope nonce of a revert the agent's role prepared
-// (basalt_meta.revert_nonce).
-func (s *Store) RevertNonce(ctx context.Context, id uuid.UUID) ([]byte, error) {
+// revertNonceRaw is RevertNonce before MapError.
+func (s *Store) revertNonceRaw(ctx context.Context, id uuid.UUID) ([]byte, error) {
 	return guard.RevertNonce(ctx, s.db, id)
 }
 
-// RejectRevert marks a pending revert the agent's role prepared REJECTED
-// for the person on the revert page (basalt_meta.reject_revert), with the
-// scope token the engine holds for a widened revert's rotated link.
-func (s *Store) RejectRevert(ctx context.Context, id uuid.UUID, note string, token []byte) (action.RejectedRevert, error) {
+// rejectRevertRaw is RejectRevert before MapError.
+func (s *Store) rejectRevertRaw(ctx context.Context, id uuid.UUID, note string, token []byte) (action.RejectedRevert, error) {
 	r, err := guard.RejectRevert(ctx, s.db, id, note, token)
 	return action.RejectedRevert(r), err
 }
 
-// RevealNonce reads the reveal nonce of an approval (approval.KindApprove)
-// or revert (approval.KindRevert) the agent's role holds
-// (basalt_meta.reveal_nonce).
-func (s *Store) RevealNonce(ctx context.Context, kind string, id uuid.UUID) ([]byte, error) {
+// revealNonceRaw is RevealNonce before MapError.
+func (s *Store) revealNonceRaw(ctx context.Context, kind string, id uuid.UUID) ([]byte, error) {
 	return guard.RevealNonce(ctx, s.db, kind, id)
 }
 
-// RevealRevertRows asks Postgres for the values of a pending revert's
-// redacted lines with the person's reveal proof and the key derived from
-// the page's reveal secret (basalt_meta.reveal_revert_rows), in its own
-// pinned transaction: it rebuilds the lines' rows to match their hashes.
-func (s *Store) RevealRevertRows(ctx context.Context, id uuid.UUID, proof passkey.Assertion, key []byte) (action.RevealedRevert, error) {
+// revealRevertRowsRaw is RevealRevertRows before MapError.
+func (s *Store) revealRevertRowsRaw(ctx context.Context, id uuid.UUID, proof passkey.Assertion, key []byte) (action.RevealedRevert, error) {
 	var out guard.RevealedRevert
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		var err error

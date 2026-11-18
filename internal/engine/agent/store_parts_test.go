@@ -8,6 +8,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 	"github.com/basaltdbhq/basaltdb/pkg/pagination"
 )
 
@@ -56,6 +57,17 @@ func (p parts) RevealNonce(ctx context.Context, kind string, id uuid.UUID) ([]by
 		return p.Reverts.RevealNonce(ctx, kind, id)
 	}
 	return p.approvalStore.RevealNonce(ctx, kind, id)
+}
+
+// Check is the Postgres store's policy check, which needs no connection.
+func (parts) Check(sql string, tool action.Tool) (action.Statement, error) {
+	return postgres.Check(sql, tool)
+}
+
+// HoldColumns is the Postgres store's, reading a table's columns from the
+// approvals part.
+func (p parts) HoldColumns(ctx context.Context, sql string, params []any) ([]string, error) {
+	return postgres.HoldColumns(ctx, sql, params, p.TableColumns)
 }
 
 // setApprovals and setReverts replace one part of d's store.

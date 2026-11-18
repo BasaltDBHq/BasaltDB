@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/approval"
@@ -17,7 +16,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/resultsize"
-	"github.com/basaltdbhq/basaltdb/internal/sqlguard"
 )
 
 // HeldNotice is a held write to tell the person about.
@@ -70,46 +68,36 @@ type noNotifier struct{}
 func (noNotifier) NotifyHeld(context.Context, HeldNotice) error     { return nil }
 func (noNotifier) NotifyRevert(context.Context, RevertNotice) error { return nil }
 
-// sqlstateApprovalRequired is the guard's BS002.
-const sqlstateApprovalRequired = "BS002"
-
-func approvalRequired(err error) bool {
-	var pe *pgconn.PgError
-	return errors.As(err, &pe) && pe.Code == sqlstateApprovalRequired
-}
-
 // hold turns a write the guard held into a held action (decision M2-1):
 // refuse it when it is not repeatable, preview it in a transaction that
 // rolls back, store it with its lines, notify the person, and answer
 // APPROVAL_REQUIRED with the approval link. It returns the held write's
 // approval id with the APPROVAL_REQUIRED error, or uuid.Nil and the error
 // that kept it from being held.
-func (s *Service) hold(ctx context.Context, in action.Intent, p WriteParams, stmt sqlguard.Statement, start time.Time) (uuid.UUID, error) {
-	h, err := sqlguard.CheckRepeatable(p.SQL, p.Params)
-	if err != nil {
-		return uuid.Nil, s.refused(ctx, in, action.Op(stmt.Op), p.SQL, p.Params, start, err)
+func (s *Service) hold(ctx context.Context, in action.Intent, p WriteParams, stmt action.Statement, start time.Time) (uuid.UUID, error) {
+	assigned, err := s.Store.HoldColumns(ctx, p.SQL, p.Params)
+	var notRepeatable *action.RefusalError
+	if errors.As(err, &notRepeatable) {
+		return uuid.Nil, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
 	}
-	assigned := h.Assigned
-	if assigned == nil {
-		if assigned, err = s.Store.TableColumns(ctx, h.Table); err != nil {
-			return uuid.Nil, err
-		}
+	if err != nil {
+		return uuid.Nil, err
 	}
 	lines, err := s.Store.Preview(ctx, in, p.SQL, p.Params, assigned)
 	if err != nil {
-		return uuid.Nil, s.refused(ctx, in, action.Op(stmt.Op), p.SQL, p.Params, start, err)
+		return uuid.Nil, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
 	}
 	if len(lines) == 0 {
 		// The rows went away between the attempt and the preview.
 		return uuid.Nil, &mcp.ToolError{Code: CodeSQLError, Reason: reasonNoRowsNow, Message: "the write changes no rows now; read again and decide"}
 	}
 	if te := holdTooLarge(lines, nil); te != nil {
-		return uuid.Nil, s.refused(ctx, in, action.Op(stmt.Op), p.SQL, p.Params, start, te)
+		return uuid.Nil, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
 	}
 	held, err := s.Store.Hold(ctx, in, action.HoldRequest{Statement: p.SQL, Params: p.Params, Assigned: assigned, Lines: lines})
 	if err != nil {
 		if te := holdTooLarge(lines, err); te != nil {
-			return uuid.Nil, s.refused(ctx, in, action.Op(stmt.Op), p.SQL, p.Params, start, te)
+			return uuid.Nil, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
 		}
 		return uuid.Nil, err
 	}
@@ -453,8 +441,8 @@ func (s *Service) applyApproved(ctx context.Context, p WriteParams) (WriteOutcom
 	}
 	in := action.Intent{RunID: run.ID, TaskID: run.TaskID, Text: p.Intent}
 	start := s.Now()
-	stmt, err := sqlguard.Check(p.SQL, sqlguard.ToolWrite)
-	op := action.Op(stmt.Op)
+	stmt, err := s.Store.Check(p.SQL, action.ToolWrite)
+	op := stmt.Op
 	if err != nil {
 		return WriteOutcome{}, s.refused(ctx, in, op, p.SQL, p.Params, start, err)
 	}

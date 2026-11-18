@@ -29,6 +29,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/revert"
+	"github.com/basaltdbhq/basaltdb/internal/store/postgres"
 )
 
 // pgCalls records every statement and its parameters the engine sends to
@@ -573,7 +574,7 @@ func TestConcurrentRescopesKeepTheLatest(t *testing.T) {
 type slowReverts struct{ agent.SQLStore }
 
 func (slowReverts) RescopeRevert(context.Context, action.RescopeRequest, time.Duration) (action.RescopedRevert, error) {
-	return action.RescopedRevert{}, &pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"}
+	return action.RescopedRevert{}, postgres.MapError(&pgconn.PgError{Code: "57014", Message: "canceling statement due to statement timeout"})
 }
 
 // A rescope past 100 seconds is 504 QUERY_TIMEOUT TIME_LIMIT, with what the

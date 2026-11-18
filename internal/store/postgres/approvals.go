@@ -20,11 +20,8 @@ import (
 // errPreviewRollback ends a preview transaction: a preview never commits.
 var errPreviewRollback = errors.New("preview rolled back")
 
-// Preview runs a held write in a preview transaction (basalt.mode =
-// PREVIEW) on the agent's credential and returns its preview lines; the
-// transaction always rolls back. assigned names the columns whose new
-// values the approval binds.
-func (s *Store) Preview(ctx context.Context, in action.Intent, sql string, params []any, assigned []string) ([]string, error) {
+// previewRaw is Preview before MapError.
+func (s *Store) previewRaw(ctx context.Context, in action.Intent, sql string, params []any, assigned []string) ([]string, error) {
 	var lines []string
 	err := pgx.BeginTxFunc(ctx, s.db, pgx.TxOptions{}, func(tx pgx.Tx) error {
 		if err := guard.BeginPreview(ctx, tx, guardIntent(in), s.limits.StatementTimeout); err != nil {
@@ -50,19 +47,13 @@ func (s *Store) Preview(ctx context.Context, in action.Intent, sql string, param
 	return lines, nil
 }
 
-// OpenReveal checks the person's reveal proof for a held write and returns
-// the ticket of the re-run preview (basalt_meta.open_reveal), in its own
-// transaction. The caller keeps the ticket in memory for this one request.
-func (s *Store) OpenReveal(ctx context.Context, id uuid.UUID, proof passkey.Assertion, key []byte) ([]byte, error) {
+// openRevealRaw is OpenReveal before MapError.
+func (s *Store) openRevealRaw(ctx context.Context, id uuid.UUID, proof passkey.Assertion, key []byte) ([]byte, error) {
 	return guard.OpenReveal(ctx, s.db, id, proof, key)
 }
 
-// RevealPreview re-runs a held write in a preview transaction exactly as an
-// apply runs it (the statement with its parameters, then finish_change, so
-// the change records them), and reads the held approval's hidden rows with
-// ticket (basalt_meta.reveal_approval_rows). The transaction always rolls
-// back.
-func (s *Store) RevealPreview(ctx context.Context, in action.Intent, op action.Op, sql string, params []any,
+// revealPreviewRaw is RevealPreview before MapError.
+func (s *Store) revealPreviewRaw(ctx context.Context, in action.Intent, op action.Op, sql string, params []any,
 	id uuid.UUID, ticket []byte,
 ) ([]approval.RevealedRow, error) {
 	var rows []approval.RevealedRow
@@ -88,16 +79,14 @@ func (s *Store) RevealPreview(ctx context.Context, in action.Intent, op action.O
 	return rows, nil
 }
 
-// Hold stores a held write for the person's approval.
-func (s *Store) Hold(ctx context.Context, in action.Intent, r action.HoldRequest) (action.Held, error) {
+// holdRaw is Hold before MapError.
+func (s *Store) holdRaw(ctx context.Context, in action.Intent, r action.HoldRequest) (action.Held, error) {
 	h, err := guard.Hold(ctx, s.db, guardIntent(in), s.limits.StatementTimeout, guard.HoldRequest(r))
 	return action.Held(h), err
 }
 
-// TableColumns returns the columns an INSERT without a column list assigns:
-// every non-generated column of table, in order, resolved as the agent's
-// session would.
-func (s *Store) TableColumns(ctx context.Context, table string) ([]string, error) {
+// tableColumnsRaw is TableColumns before MapError.
+func (s *Store) tableColumnsRaw(ctx context.Context, table string) ([]string, error) {
 	// Plain SQL: a catalog query on to_regclass.
 	rows, err := s.db.Query(ctx, `SELECT a.attname::text FROM pg_catalog.pg_attribute a
 		WHERE a.attrelid = pg_catalog.to_regclass($1) AND a.attnum > 0 AND NOT a.attisdropped AND a.attgenerated = ''
@@ -108,28 +97,27 @@ func (s *Store) TableColumns(ctx context.Context, table string) ([]string, error
 	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
-// SubmitApproval relays the person's signed approval to Postgres.
-func (s *Store) SubmitApproval(ctx context.Context, id uuid.UUID, a passkey.Assertion) (time.Time, error) {
+// submitApprovalRaw is SubmitApproval before MapError.
+func (s *Store) submitApprovalRaw(ctx context.Context, id uuid.UUID, a passkey.Assertion) (time.Time, error) {
 	return guard.SubmitApproval(ctx, s.db, id, a)
 }
 
-// FindApproval returns one of the agent's approvals.
-func (s *Store) FindApproval(ctx context.Context, id uuid.UUID) (ledger.Approval, error) {
+// findApprovalRaw is FindApproval before MapError.
+func (s *Store) findApprovalRaw(ctx context.Context, id uuid.UUID) (ledger.Approval, error) {
 	return ledger.FindApproval(ctx, s.db, id)
 }
 
-// ListApprovals returns one page of the agent's open approvals.
-func (s *Store) ListApprovals(ctx context.Context, p ledger.ApprovalListParams) (pagination.Page[ledger.Approval], error) {
+// listApprovalsRaw is ListApprovals before MapError.
+func (s *Store) listApprovalsRaw(ctx context.Context, p ledger.ApprovalListParams) (pagination.Page[ledger.Approval], error) {
 	return ledger.ListOpenApprovals(ctx, s.db, p)
 }
 
-// ListOpenReverts returns one page of the agent's reverts waiting for the
-// person's signature or for its batches (ledger.ListOpenReverts).
-func (s *Store) ListOpenReverts(ctx context.Context, p ledger.RevertListParams) (pagination.Page[ledger.Revert], error) {
+// listOpenRevertsRaw is ListOpenReverts before MapError.
+func (s *Store) listOpenRevertsRaw(ctx context.Context, p ledger.RevertListParams) (pagination.Page[ledger.Revert], error) {
 	return ledger.ListOpenReverts(ctx, s.db, p)
 }
 
-// Passkeys returns the registered passkeys' public data.
-func (s *Store) Passkeys(ctx context.Context) ([]passkey.Credential, error) {
+// passkeysRaw is Passkeys before MapError.
+func (s *Store) passkeysRaw(ctx context.Context) ([]passkey.Credential, error) {
 	return ledger.Passkeys(ctx, s.db)
 }

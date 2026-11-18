@@ -226,10 +226,14 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 			Q: pool, Migrations: guard.Migrations(),
 			Kept: engine.KeptSetAside(chainpin.File{Dir: cfg.StateDirFor(c.goos)}, a.Name, slog.New(slog.DiscardHandler)),
 		},
-		Passkeys:  func(ctx context.Context) ([]passkey.Credential, error) { return ledger.Passkeys(ctx, pool) },
+		Passkeys: func(ctx context.Context) ([]passkey.Credential, error) {
+			p, err := ledger.Passkeys(ctx, pool)
+			return p, postgres.MapError(err)
+		},
 		EngineKey: key, DirectServed: directServed,
 		EngineRecord: func(ctx context.Context, id string) (*guard.RecordedEngine, error) {
-			return guard.EngineRecord(ctx, pool, id)
+			r, err := guard.EngineRecord(ctx, pool, id)
+			return r, postgres.MapError(err)
 		},
 		Log: slog.New(slog.DiscardHandler), Now: c.now,
 	}.Report(c.ctx)

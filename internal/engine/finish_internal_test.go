@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
@@ -113,4 +115,20 @@ func TestAReplacedPendingCredentialIsNotPromoted(t *testing.T) {
 	cfg, err := config.Load(f.configPath)
 	require.NoError(t, err)
 	require.NotNil(t, cfg.Agents[0].Setup, "nothing cleared")
+}
+
+// A pending credential Postgres refuses (28P01) means the person has not
+// run the code yet: not recorded, and no error.
+func TestARefusedPendingLoginIsNotAnError(t *testing.T) {
+	t.Parallel()
+	id := uuid.Must(uuid.NewV7())
+	f, _, _ := fileFinisher(t, id)
+	require.NoError(t, config.WriteFile(f.credFile+pendingSuffix, []byte("postgres://bt_agent_bot:new@db:5432/app\n")))
+	f.connect = func(context.Context, string) (agentLogin, error) {
+		return nil, fmt.Errorf("failed to connect: %w", &pgconn.PgError{Code: "28P01", Message: "password authentication failed"})
+	}
+	recorded, has, err := f.PendingRecorded(context.Background(), id)
+	require.NoError(t, err)
+	require.False(t, recorded)
+	require.False(t, has)
 }

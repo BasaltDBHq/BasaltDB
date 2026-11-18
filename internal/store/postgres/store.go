@@ -48,8 +48,8 @@ func NewStore(db DB, limits sqlguard.Limits, now func() time.Time) *Store {
 	return &Store{db: guard.Pinned(db), reader: NewReader(db, limits, now), limits: limits, now: now, returned: noReturned}
 }
 
-// Read runs one read on the store's pool (Reader.Read).
-func (s *Store) Read(ctx context.Context, sql string, params []any, stmt action.Statement) (action.ReadResult, error) {
+// readRaw is Read before MapError.
+func (s *Store) readRaw(ctx context.Context, sql string, params []any, stmt action.Statement) (action.ReadResult, error) {
 	return s.reader.Read(ctx, sql, params, stmt)
 }
 
@@ -65,8 +65,8 @@ func (s *Store) WithReturned(f ReturnedFunc) *Store {
 	return s
 }
 
-// FindRun returns the agent's run id, read through the guard's agent view.
-func (s *Store) FindRun(ctx context.Context, id uuid.UUID) (action.Run, error) {
+// findRunRaw is FindRun before MapError.
+func (s *Store) findRunRaw(ctx context.Context, id uuid.UUID) (action.Run, error) {
 	q, args, err := psql.Select("task_id", "intent").From("basalt_meta.agent_runs").
 		Where(sq.Eq{"run_id": id.String()}).ToSql()
 	if err != nil {
@@ -84,25 +84,20 @@ func (s *Store) FindRun(ctx context.Context, id uuid.UUID) (action.Run, error) {
 	return run, err
 }
 
-// StartRun records a run and its RUN_STARTED ledger row.
-func (s *Store) StartRun(ctx context.Context, in action.Intent) error {
+// startRunRaw is StartRun before MapError.
+func (s *Store) startRunRaw(ctx context.Context, in action.Intent) error {
 	return guard.StartRun(ctx, s.db, guardIntent(in))
 }
 
-// Write runs one INSERT, UPDATE or DELETE in a guarded transaction (the
-// engine session protocol): the time limit and the intent set
-// transaction-local, the statement as given with its parameters, then the
-// change stamped with statement, parameters and duration before COMMIT. Any
-// error rolls the whole action back.
-func (s *Store) Write(ctx context.Context, in action.Intent, op action.Op, sql string, params []any) (action.WriteResult, error) {
+// writeRaw is Write before MapError.
+func (s *Store) writeRaw(ctx context.Context, in action.Intent, op action.Op, sql string, params []any) (action.WriteResult, error) {
 	return s.write(ctx, op, sql, params, func(tx pgx.Tx) error {
 		return guard.BeginGuarded(ctx, tx, guardIntent(in), s.limits.StatementTimeout)
 	})
 }
 
-// WriteApproved is Write under a signed approval (basalt.approval_id). The
-// guard commits it only if it is the write the person approved.
-func (s *Store) WriteApproved(ctx context.Context, in action.Intent, approvalID uuid.UUID, op action.Op, sql string, params []any) (action.WriteResult, error) {
+// writeApprovedRaw is WriteApproved before MapError.
+func (s *Store) writeApprovedRaw(ctx context.Context, in action.Intent, approvalID uuid.UUID, op action.Op, sql string, params []any) (action.WriteResult, error) {
 	return s.write(ctx, op, sql, params, func(tx pgx.Tx) error {
 		return guard.BeginApproved(ctx, tx, guardIntent(in), s.limits.StatementTimeout, approvalID)
 	})
@@ -147,22 +142,19 @@ func (s *Store) countRows(ctx context.Context, tx pgx.Tx, change uuid.UUID, rows
 	return tx.QueryRow(ctx, q, args...).Scan(rows)
 }
 
-// RecordRead records a read the reader ran (a SELECT change record, the
-// READ ledger row and the run's row versions) in its own transaction, and
-// returns its change id.
-func (s *Store) RecordRead(ctx context.Context, r action.Read) (uuid.UUID, error) {
+// recordReadRaw is RecordRead before MapError.
+func (s *Store) recordReadRaw(ctx context.Context, r action.Read) (uuid.UUID, error) {
 	return guard.RecordRead(ctx, s.db, guardRead(r))
 }
 
-// RecordRefusal writes a REFUSED change record in its own transaction.
-func (s *Store) RecordRefusal(ctx context.Context, r action.Refusal) error {
+// recordRefusalRaw is RecordRefusal before MapError.
+func (s *Store) recordRefusalRaw(ctx context.Context, r action.Refusal) error {
 	_, err := guard.RecordRefusal(ctx, s.db, guardRefusal(r))
 	return err
 }
 
-// History reads one page of change records through the agent views, with
-// values too large for the agent left out (CONTRACT.md, Large values).
-func (s *Store) History(ctx context.Context, p ledger.ChangeListParams) (action.History[ledger.Change, ledger.RowChange], error) {
+// historyRaw is History before MapError.
+func (s *Store) historyRaw(ctx context.Context, p ledger.ChangeListParams) (action.History[ledger.Change, ledger.RowChange], error) {
 	page, err := ledger.ListChangesMarked(ctx, s.db, p)
 	if err != nil {
 		return action.History[ledger.Change, ledger.RowChange]{}, err

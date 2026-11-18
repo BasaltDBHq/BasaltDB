@@ -19,28 +19,28 @@ type Probe struct {
 	Kept func() []action.SetAside
 }
 
-// GuardStatus reads schema_version.
-func (p Probe) GuardStatus(ctx context.Context) (guard.Status, error) {
+// guardStatusRaw is GuardStatus before MapError.
+func (p Probe) guardStatusRaw(ctx context.Context) (guard.Status, error) {
 	return guard.AgentStatus(ctx, p.Q, p.Migrations)
 }
 
-// SetupRecorded reports whether setup id is recorded.
-func (p Probe) SetupRecorded(ctx context.Context, id uuid.UUID) (bool, error) {
+// setupRecordedRaw is SetupRecorded before MapError.
+func (p Probe) setupRecordedRaw(ctx context.Context, id uuid.UUID) (bool, error) {
 	return guard.SetupRecorded(ctx, p.Q, id)
 }
 
-// LatestSetup is the agent's newest recorded setup.
-func (p Probe) LatestSetup(ctx context.Context) (guard.AgentSetup, bool, error) {
+// latestSetupRaw is LatestSetup before MapError.
+func (p Probe) latestSetupRaw(ctx context.Context) (guard.AgentSetup, bool, error) {
 	return guard.LatestAgentSetup(ctx, p.Q)
 }
 
-// LedgerBytes is the size of basalt_meta.
-func (p Probe) LedgerBytes(ctx context.Context) (int64, error) {
+// ledgerBytesRaw is LedgerBytes before MapError.
+func (p Probe) ledgerBytesRaw(ctx context.Context) (int64, error) {
 	return guard.LedgerBytes(ctx, p.Q)
 }
 
-// Reinstalls reads agent_reinstalls with the kept copy merged in.
-func (p Probe) Reinstalls(ctx context.Context) (guard.Reinstalls, error) {
+// reinstallsRaw is Reinstalls before MapError.
+func (p Probe) reinstallsRaw(ctx context.Context) (guard.Reinstalls, error) {
 	var kept []guard.SetAside
 	if p.Kept != nil {
 		kept = GuardSetAside(p.Kept())

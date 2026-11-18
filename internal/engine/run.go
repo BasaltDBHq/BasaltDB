@@ -561,7 +561,8 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		Portal:        env.portal,
 		Update:        env.updateNotice(),
 		EngineRecord: func(ctx context.Context, id string) (*guard.RecordedEngine, error) {
-			return guard.EngineRecord(ctx, pool, id)
+			r, err := guard.EngineRecord(ctx, pool, id)
+			return r, postgres.MapError(err)
 		},
 		DirectServed: env.direct != nil,
 		Receipts:     env.receipts,
@@ -569,7 +570,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		PII:          observer.On(pool),
 		Catalog:      postgres.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database),
 		Columns:      postgres.NewColumnOrder(budgeted),
-		Classes:      classes.On(pool),
+		Classes:      storeClasses{BoundMap: classes.On(pool)},
 	})
 	return agentRuntime{
 		svc: svc,

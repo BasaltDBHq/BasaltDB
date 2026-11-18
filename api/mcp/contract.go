@@ -213,7 +213,8 @@ var ActorActions = map[string][]string{
 
 // Resolve returns steps with every OPERATOR step addressed to the agent when
 // operatedBy is AGENT and to the person otherwise (PERSON, or a config the
-// shim cannot read).
+// shim cannot read). Part of the exported contract package: the shim and
+// other consumers call it; this repo only tests it.
 func Resolve(steps []StepKind, operatedBy string) []StepKind {
 	actor := ActorPerson
 	if operatedBy == OperatedByAgent {
@@ -412,6 +413,7 @@ func (c NextSteps) errorEntry(code, reason, tool, scope string) (ErrorSteps, boo
 
 // CheckServed compares the tools a server lists with the contracts: every
 // served tool needs a contract, and every IMPLEMENTED contract must be served.
+// Part of the exported contract package; this repo calls it from tests.
 func CheckServed(tools []Tool, served []string) error {
 	var errs []error
 	servedSet := make(map[string]bool, len(served))

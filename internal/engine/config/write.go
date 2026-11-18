@@ -84,8 +84,9 @@ func (s Settings) changesOperatedBy(prev Config) bool {
 }
 
 // UpsertAgent adds agent a to the config at path, or replaces the agent of
-// the same name, creating the file from s when it does not exist. basalt
-// init calls it. The file is written atomically with FileMode.
+// the same name, creating the file from s when it does not exist. The file is
+// written atomically with FileMode. Only tests call it: basalt init uses
+// UpsertAgentVault, which also returns the vault it wrote.
 func UpsertAgent(path string, s Settings, a Agent) error {
 	_, err := UpsertAgentVault(path, s, a)
 	return err
@@ -174,21 +175,8 @@ func (f dirFile) open(string) (*os.File, error) {
 }
 func (f dirFile) write(raw []byte) error { return f.d.WriteFile(f.name, raw, FileMode, f.owner) }
 
-// Upserted is the content UpsertAgent writes, without writing it: the
-// service install writes it itself, owned by the engine's OS user.
-func Upserted(path string, s Settings, a Agent) ([]byte, error) {
-	return UpsertedWith(path, openNoFollow, s, a)
-}
-
-// UpsertedWith is Upserted reading the existing file through open. The
-// service install, as root, passes one that follows no link anywhere on the
-// path and accepts only a file the engine's user owns.
-func UpsertedWith(path string, open func(string) (*os.File, error), s Settings, a Agent) ([]byte, error) {
-	raw, _, err := UpsertedVault(path, open, s, a)
-	return raw, err
-}
-
-// UpsertedVault is UpsertedWith, returning the vault it wrote.
+// UpsertedVault is the content UpsertAgentVault writes, without writing it,
+// reading the existing file through open, and the vault it wrote.
 func UpsertedVault(path string, open func(string) (*os.File, error), s Settings, a Agent) ([]byte, VaultWritten, error) {
 	c, err := load(path, open)
 	existed := true

@@ -38,7 +38,8 @@ type RecordedEngine struct {
 // admin connection and returns its engine id. A nil url keeps the address
 // already recorded. Postgres refuses a malformed key or address and a
 // revoked engine (BS008, details above) and appends ENGINE_RECORDED when
-// it inserts a key or changes its address.
+// it inserts a key or changes its address. Kept for tests, which run
+// record_engine through it; basalt init runs RecordEngineStatement.
 func RecordEngine(ctx context.Context, q Querier, publicKey []byte, url *string) (string, error) {
 	sql, args, err := psql.Select().Column(sq.Expr("basalt_meta.record_engine(?::bytea, ?::text)", publicKey, url)).ToSql()
 	if err != nil {

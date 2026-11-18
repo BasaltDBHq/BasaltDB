@@ -304,7 +304,7 @@ func TestPinOnChain(t *testing.T) {
 	for range 3 {
 		require.NoError(t, guard.Heartbeat(ctx, a.Conn, nil))
 	}
-	head, err := guard.Head(ctx, a.Conn)
+	head, err := guardtest.Head(ctx, a.Conn)
 	require.NoError(t, err)
 	on := func(h guard.ChainHead) bool {
 		t.Helper()
@@ -337,7 +337,7 @@ func TestPinOnChain(t *testing.T) {
 	require.False(t, still(head), "a pin at a later anchor: the history before it was cut")
 	require.False(t, on(earlier))
 	require.False(t, on(guard.Genesis()))
-	next, err := guard.Head(ctx, a.Conn)
+	next, err := guardtest.Head(ctx, a.Conn)
 	require.NoError(t, err)
 	require.True(t, still(next), "a pinned row after the anchor")
 

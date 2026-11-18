@@ -215,6 +215,8 @@ type Initiator struct {
 }
 
 // WriteHello starts a session for link over transport and returns message 1.
+// The engine only answers; this is the page's side, the reference the vector
+// and handshake tests drive.
 func WriteHello(transport Transport, link LinkKeys) (*Initiator, []byte, error) {
 	e, err := ecdh.P256().GenerateKey(rand.Reader)
 	if err != nil {

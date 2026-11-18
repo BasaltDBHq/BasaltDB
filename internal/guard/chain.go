@@ -100,18 +100,6 @@ func VerifyChainFrom(ctx context.Context, q Querier, from ChainHead) (ChainStatu
 	return ChainStatus{Intact: true}, head, nil
 }
 
-// Head returns the last appended (seq, hash). The engine keeps it and
-// passes it to CheckHead on its next start.
-func Head(ctx context.Context, q Querier) (ChainHead, error) {
-	sql, args, err := psql.Select("seq", "hash").From("basalt_meta.chain_head()").ToSql()
-	if err != nil {
-		return ChainHead{}, err
-	}
-	var h ChainHead
-	err = q.QueryRow(ctx, sql, args...).Scan(&h.Seq, &h.Hash)
-	return h, err
-}
-
 // CheckHead reports false when the ledger no longer agrees with a head
 // seen earlier: the row at that seq changed, or the chain got shorter. A
 // consistent rewrite of the whole chain passes VerifyChain but not this.

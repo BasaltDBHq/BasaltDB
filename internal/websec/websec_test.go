@@ -23,7 +23,7 @@ func TestWrongHostRejected(t *testing.T) {
 
 func TestCrossOriginPostRejected(t *testing.T) {
 	t.Parallel()
-	h := websec.Origin("http://127.0.0.1:8080")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	h := websec.OriginForListener("http", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8080}, []string{"127.0.0.1"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8080/x", nil)
 	req.Header.Set("Origin", "http://other:8080")
 	w := httptest.NewRecorder()
@@ -33,7 +33,7 @@ func TestCrossOriginPostRejected(t *testing.T) {
 
 func TestCLIWithoutOriginAllowed(t *testing.T) {
 	t.Parallel()
-	h := websec.Origin("http://127.0.0.1:8080")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := websec.OriginForListener("http", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8080}, []string{"127.0.0.1"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8080/x", nil)
@@ -44,7 +44,7 @@ func TestCLIWithoutOriginAllowed(t *testing.T) {
 
 func TestOtherLocalhostPortOriginRejected(t *testing.T) {
 	t.Parallel()
-	h := websec.Origin("http://127.0.0.1:8080")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	h := websec.OriginForListener("http", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 8080}, []string{"127.0.0.1"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8080/x", nil)
 	req.Header.Set("Origin", "http://127.0.0.1:9090")
 	w := httptest.NewRecorder()

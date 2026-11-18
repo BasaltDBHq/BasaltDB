@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/plugin/config.v1.json",
+  "title": "engine.json plugins",
+  "description": "The value of engine.json's plugins key: one entry per plugin instance. No plugins key means no plugins. Rules this schema cannot express are checked when the config is loaded and by basalt plugin: (name, instance) is unique, every name in agents is one of the engine's agents, config is at most 16 KiB as compact JSON and holds no credential, and auth is set only for a remote plugin. See CONTRACT.md, Plugins, Config.",
+  "type": "array",
+  "items": { "$ref": "#/$defs/entry" },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "manifestSha256", "enabled", "agents"],
+      "properties": {
+        "name": {
+          "description": "The manifest's name.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{1,39}$"
+        },
+        "instance": {
+          "description": "Separates entries of one plugin; default \"default\". Every per-plugin path, unit, OS user, socket and cursor is keyed by name and instance.",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,31}$",
+          "default": "default"
+        },
+        "manifestSha256": {
+          "description": "SHA-256 of the installed manifest's exact bytes, lowercase hex.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "enabled": { "type": "boolean" },
+        "agents": {
+          "description": "The agents this entry serves. Required; an empty list serves none.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$", "maxLength": 63 }
+        },
+        "timeoutMs": {
+          "description": "Deadline of one call to the plugin. Default 300 for a local plugin, 2000 for a remote one.",
+          "type": "integer",
+          "minimum": 50,
+          "maximum": 60000
+        },
+        "minConfidence": {
+          "description": "Spans below this confidence are dropped (wire.detect). Default 0.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "config": {
+          "description": "Opaque to the engine, passed to the plugin in initialize. At most 16 KiB as compact JSON; never a secret.",
+          "type": "object"
+        },
+        "auth": {
+          "description": "Remote plugins only. The engine reads the file and authenticates to the plugin with it; the plugin never receives the path.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["credentialFile"],
+          "properties": {
+            "credentialFile": { "type": "string", "pattern": "^/", "maxLength": 4096 }
+          }
+        }
+      }
+    }
+  }
+}

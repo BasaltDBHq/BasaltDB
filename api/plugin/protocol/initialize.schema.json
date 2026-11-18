@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/plugin/protocol/initialize.v1.json",
+  "title": "initialize",
+  "description": "The first call on every connection to a plugin. The engine offers the protocol versions it speaks and the plugin picks one. A reply whose protocol was not offered, or whose name, version or hooks differ from the installed manifest, refuses the plugin. Unknown fields are ignored. ConnectRPC: basalt.plugin.v1.PluginService/Initialize. See CONTRACT.md, Plugins, Protocol.",
+  "$defs": {
+    "request": {
+      "type": "object",
+      "required": ["protocols", "hooks", "config", "limits"],
+      "properties": {
+        "protocols": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^basalt-plugin/[1-9][0-9]*$" }
+        },
+        "hooks": {
+          "description": "The hooks the engine will call: the manifest's hooks.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["wire.detect", "feed.observe", "approval.deliver", "classify.suggest"] }
+        },
+        "config": {
+          "description": "The entry's config from engine.json, {} when it has none.",
+          "type": "object"
+        },
+        "limits": { "$ref": "#/$defs/limits" }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "required": ["maxMessageBytes", "maxInFlight", "timeoutMs"],
+      "properties": {
+        "maxMessageBytes": { "description": "Largest message either side may send: 4 MiB.", "const": 4194304 },
+        "maxInFlight": { "description": "Calls the engine has open on this entry at once.", "const": 4 },
+        "timeoutMs": { "type": "integer", "minimum": 50, "maximum": 60000 }
+      }
+    },
+    "response": {
+      "type": "object",
+      "required": ["protocol", "name", "version", "hooks"],
+      "properties": {
+        "protocol": { "type": "string", "pattern": "^basalt-plugin/[1-9][0-9]*$" },
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,39}$" },
+        "version": { "type": "string", "maxLength": 64 },
+        "hooks": {
+          "description": "The same hooks object as the manifest's.",
+          "$ref": "../manifest.schema.json#/properties/hooks"
+        },
+        "model": { "$ref": "#/$defs/model" }
+      }
+    },
+    "model": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "version": { "type": "string", "maxLength": 100 }
+      }
+    }
+  }
+}

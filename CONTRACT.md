@@ -137,6 +137,7 @@ From M2, an `APPROVAL_REQUIRED` body also carries `approval: { "approvalId", "ex
 | `INVALID_ARGUMENT` | Arguments fail schema validation, or an unknown argument was passed. Served (revert scope, RS-1): a revert scope filter outside the agent's own work (reason `SCOPE_FILTER`) or with more than 20 entries (reason `SCOPE_FILTER_CAP`). Served (admin credential): a string in the arguments, a key included, holds a `postgres://` or `postgresql://` URL with a password (reason `ADMIN_CREDENTIAL`, [Agents and the admin credential](#agents-and-the-admin-credential)) |
 | `UNAVAILABLE` | The database or the guard cannot be reached; planned (chat-only operator): also the agent's [setup from the laptop](#setup-from-your-laptop) has not run yet (reasons `SETUP_PENDING`, `SETUP_EXPIRED`) |
 | `INTERNAL` | A defect in the engine or the guard (`BS006`, `BS008`) |
+| `PLUGIN_REFUSED` | Planned ([Plugins](#plugins)). Never returned by an MCP tool: `basalt plugin add`, `enable` and an `--agents` change refuse with it (exit `1`, and this error body with `--json`) and change nothing. Reasons `AGENT_OPERATED` (an agent marker is set or the engine is `operatedBy: AGENT`), `BAD_MANIFEST` (the manifest breaks a rule of [Manifest](#manifest); the message names the rule), `NOT_TRUSTED` (no trusted key signed the manifest, or a file's hash or permissions failed) and `UNKNOWN_AGENT` (an agent in `--agents` is not one of the engine's agents) |
 
 `STATEMENT_REFUSED` reasons: `PARSE_ERROR`, `MULTIPLE_STATEMENTS`, `WRONG_TOOL` (a write sent to `query` or a read sent to `write`), `DDL_NOT_ALLOWED`, `STATEMENT_NOT_ALLOWED` (`SET`, `DO`, `COPY`, `EXPLAIN`, transaction control and other utility statements), `SELECT_INTO`, `LOCKING_READ`, `MERGE_NOT_ALLOWED`, `DATA_MODIFYING_WITH`, `FUNCTION_NOT_ALLOWED`, `HOLD_TOO_LARGE` (a write that would be held has preview lines over what a hold keeps, [Large values](#large-values) rule 7), and from M2 `NOT_REPEATABLE` (a write that would be held contains a value that changes between transactions: a function such as `now()` or `random()`, `DEFAULT`, or a string that is a date/time word, `now`, `today`, `tomorrow` or `yesterday` in any case, alone or with a time of day, a day name or a zone (`tomorrow 10:00`, `today 09:00 Europe/Berlin`; a zone is an offset, one of Postgres's default zone abbreviations or an `Area/City` name), as a literal anywhere in the statement or as a parameter; pass a fixed value, a timestamp, as a parameter. A string that holds such a word among other words (`call back tomorrow`) is plain text and is not refused, but a string that is only a time word cannot be held, whatever the column's type: the check reads the statement, not the column). `QUERY_TIMEOUT` reasons: `TIME_LIMIT`, `ROW_LIMIT`, `SIZE_LIMIT`: the result costs more than 16 MiB (16 777 216 bytes) as the engine counts it, summed over its rows: each value's bytes in text form, what JSON adds to escape them, a fixed cost per value (NULLs included) and each column's name per row. A single row over 16 MiB on the wire is refused before it is read. The engine stops reading at either point, so one large value, or many small or NULL ones, cannot grow its memory without bound. **One budget per call.** Every read the engine makes on the agent's connection for one tool call is charged against the same 16 MiB, with the same accounting: the agent's own statement in `query` and a write's `RETURNING`, the held write's preview, and the reads behind `run_history`, `list_pending`, `preview_revert`, `revert_plan`, `request_revert` and `describe`. Reads the person's CLI makes are not budgeted. The ledger tools never fail on one large item: they replace large values with a marker ([Large values](#large-values)), so their pages always fit at `limit` 1 and a smaller `limit` always ends a `SIZE_LIMIT`. The reads of `list_runs`, `run_start`, `apply_revert_batch` and `status` are charged too but are bounded far below the budget (short fields only), so those tools do not declare `QUERY_TIMEOUT`; `run_history`, `list_pending` and `revert_plan` declare it. Reason `REQUEST_TOO_LARGE` (`request_revert`; and `APPROVAL_REQUIRED` `REQUEST_TOO_LARGE` for a held write): the request is over what a page can decode and the engine has no short link that can carry it ([Large values](#large-values)). Reason `ROW_TOO_LARGE` (`query` and a write's `RETURNING`): one row alone costs more than the budget. `query` never shortens a value, so it refuses the row: the message names the row's size and its largest columns with their sizes (when the row was over 16 MiB on the wire and could not be read at all, the row's size and the result's columns, largest unknown), and the agent selects fewer columns, a size (`length(col)`, `octet_length(col)`) or a slice (`substr(col, 1, 100000)`). The agent never holds a shortened value it could write back. `SIZE_LIMIT` stays the reason when no single row is over the budget but the rows together are. Planned (AE-5): `STATEMENT_REFUSED` gains `NO_PRIMARY_KEY` and `NOT_ALLOWED` (the guard's `BS007`, which carries no reason today), and the other codes with more than one case get reasons; [Next steps per code](#next-steps-per-code) lists them all.
 
@@ -255,6 +256,10 @@ Planned (owner decisions AE-1 to AE-14). Every error body and every result the a
 | `UNAVAILABLE` | `SETUP_PENDING` | — | P `RUN_COMMAND` (`basalt init --setup-code <the pending code>`, on their own computer), P `TELL_AGENT`, A `END_TURN`, A `CALL_TOOL` (`status`); +pm |
 | `UNAVAILABLE` | `SETUP_EXPIRED` | — | O `RUN_COMMAND` (`basalt init --remote --new-code ...`, saved flags), A `END_TURN`; +pm |
 | `INTERNAL` | — | — | A `STOP`; +pm |
+| `PLUGIN_REFUSED` | `AGENT_OPERATED` | — | Planned (plugins). A `STOP`, A `ASK_PERSON` (an agent never adds or widens a plugin; on a person-operated engine the person runs the command in a terminal of their own, and on an agent-operated engine plugins cannot be added yet); +pm |
+| `PLUGIN_REFUSED` | `BAD_MANIFEST` | — | Planned (plugins). A `STOP` (the plugin's publisher fixes the manifest; the message names the rule); +pm |
+| `PLUGIN_REFUSED` | `NOT_TRUSTED` | — | Planned (plugins). P `RUN_COMMAND` (`basalt plugin trust <publisher key file>`, only when the person trusts that publisher), P `RUN_COMMAND` (the refused command again); +pm |
+| `PLUGIN_REFUSED` | `UNKNOWN_AGENT` | — | Planned (plugins). P `RUN_COMMAND` (the refused command with `--agents` naming only the engine's agents); +pm |
 
 Results and warnings:
 
@@ -308,6 +313,8 @@ Status problems (`status` tool, every one +pm):
 | `ENGINE_REVOKED` | `WARNING` | A `ASK_PERSON` (whether they revoked this engine on purpose; until a new key is recorded the agent hands over long links, and a replacement means `basalt engine rotate-key` and a new setup code), A `END_TURN` |
 | `DIRECT_NOT_SERVED` | `WARNING` | O `RUN_COMMAND` (`basalt init --remote ... --direct-addr 127.0.0.1:8787`, the saved flags `--remote` takes, then restart the engine), so the tunnel has a listener to forward to |
 | `LEDGER_REINSTALLED` | `WARNING` | [Version 36](#version-36-reinstalls-on-the-record). A `ASK_PERSON` (show the notice and ask whether someone on their team reinstalled Basalt; the tools keep working, and the notice stays until an admin acknowledges it) |
+| `PLUGIN_UNAVAILABLE` | `ERROR` | Planned (plugins). P `RUN_COMMAND` (`basalt plugin check <name>`), P `RUN_COMMAND` (`basalt plugin disable <name>`) |
+| `PLUGIN_NOT_TRUSTED` | `ERROR` | Planned (plugins). P `RUN_COMMAND` (`basalt plugin check <name>`: it names the check that failed), P `RUN_COMMAND` (`basalt plugin disable <name>`) |
 
 ### Next steps on an agent-operated engine
 
@@ -451,7 +458,7 @@ M4 (owner decisions D-1 to D-7). The agent's map of the database. It reads only 
 
 ## CLI
 
-`basalt init`, `basalt log --run`, `basalt approve`, `basalt revert` (first release), plus `basalt version`, from M4.1 `basalt passkey`, from M4 `basalt status`, `basalt upgrade` and `basalt access`, from M5.1 `basalt classify`, and `basalt portal verify`. Machine output with `--json` uses the wire format above. Paged output prints the next cursor on **stderr**. Exit codes: `0` ok, `1` error, `2` usage. Flag values a person types are lowercase kebab-case with an explicit default (`--agent-rls=ask|all-rows|none`), an input spelling only: anything stored, sent or written to the ledger uses the SCREAMING_SNAKE_CASE enum it maps to.
+`basalt init`, `basalt log --run`, `basalt approve`, `basalt revert` (first release), plus `basalt version`, from M4.1 `basalt passkey`, from M4 `basalt status`, `basalt upgrade` and `basalt access`, from M5.1 `basalt classify`, and `basalt portal verify`; planned, `basalt plugin` ([Plugins](#plugins)). Machine output with `--json` uses the wire format above. Paged output prints the next cursor on **stderr**. Exit codes: `0` ok, `1` error, `2` usage. Flag values a person types are lowercase kebab-case with an explicit default (`--agent-rls=ask|all-rows|none`), an input spelling only: anything stored, sent or written to the ledger uses the SCREAMING_SNAKE_CASE enum it maps to.
 
 - `basalt init --agent NAME [--write schema.table,…] [--read schema.table,…]`: shows the setup SQL (agent password redacted), asks to confirm unless `--yes`, installs or upgrades `basalt_meta`, creates the agent role (an existing role keeps its password unless `--rotate-password`; the SQL sends Postgres only the password's SCRAM-SHA-256 verifier, computed by init, never the password, so a server log of the statement cannot reveal it; an existing role is taken over only when it is a plain agent, see below), attaches the guard (with the guard's row-level security policy on tables that have RLS enabled, version 8), registers the passkey, then sets up the engine. Before showing the SQL it finds the agent's tables where row-level security hides every row from the agent role and, with `--agent-rls=ask` (the default; the values are `ask`, `all-rows`, `none`) at a terminal, asks once per table `<schema.table> hides its rows with row-level security. Let <name> see all <n> rows of this table? [y/N]`; tables without RLS are never asked about. Yes adds the agent policy of version 11 to the SQL. `--agent-rls=all-rows` adds it for every such table without asking (the only way without a terminal or with `--yes`); `--agent-rls=none` skips the question. After installing, init warns for each agent table where RLS still hides every row (`basalt: warning: row-level security is on for ... and no policy lets <role> see rows; the agent will read 0 rows. ...`); `basalt log` and the engine log warn the same. At a terminal it asks once `Install the engine as a background service? ... [Y/n]` (`--yes` answers yes, `--no-service` no). Without a terminal and without either flag (answers piped in, for example), init stops before anything is written with a usage error (exit `2`) that names `--yes` and `--no-service`: it never falls back to same-user mode on its own. Yes: one `sudo basalt service install --config ... --user ... --agent NAME --os-user ... --credential-stdin` (the agent's connection string on stdin, never in arguments) creates the engine's OS user, writes the engine config (agent `name`, `osUser` and `store`: its `kind`, `POSTGRES`, and the `credentialFile` inside it) and the `0600` credential file (`<config dir>/agents/NAME.url`) owned by that user in the service's system directories, installs and starts (or restarts) the unit. Before any step it refuses a basalt binary that anyone but root could change (the file and every directory above it must be root-owned and not writable by group or others), and it reaches every directory it writes in from `/` without following a symlink anyone but root controls, refusing a directory on the way owned by anyone but root or the engine's user or writable by group or others, and an existing directory owned by anyone else; init then checks the engine answers MCP `initialize` on the agent's socket, retrying for up to 20 seconds while the service manager starts or restarts it (init has already closed the page server it ran for the passkey registration, so the engine's pages port is free), and when it never answers, names the last error line of the engine's log it can read (`/Library/Logs/Basalt/engine.log` on macOS, the unit's journal on Linux) with the log's location; it then prints the `basalt mcp --agent NAME` line. No, or any of `--config`, `--socket-dir`, `--credential-file` given: init writes the config and credential itself (under the person's config directory when the paths are the system defaults) and prints the one `basalt engine --config ...` command. With the `claude` CLI on `PATH`, at a terminal, it offers `claude mcp add --scope local basalt-NAME -- basalt mcp --agent NAME` and runs it only on yes. `--scope local` is always passed, and init prints `basalt: the server basalt-NAME is registered for this project directory only (--scope local); sessions in other projects do not see it`: one MCP server serves one agent and so one database, and the registration decides which database a session reaches. [MCP clients](docs/mcp-clients.md) shows the same per-project setup for other clients. The admin connection string comes from `BASALT_ADMIN_DATABASE_URL` or a hidden prompt and is never written anywhere. It must be a `postgres://` or `postgresql://` URL; a keyword/value string (`host=... user=...`), or a URL that does not parse (a Unix socket directory goes in `?host=`, not percent-encoded in the host), is refused before init connects. The agent's connection string is built from it: its scheme, hosts, ports and database, the agent's user (`<prefix>_agent_<name>`, or `<prefix>_agent_<name>.<ref>` through Supabase's pooler) and password, and only these parameters: `host`, `port`, `dbname`, `sslmode`, `sslrootcert`, `sslcrl`, `sslcertmode`, `sslnegotiation`, `sslsni`, `channel_binding`, `require_auth`, `target_session_attrs`, `connect_timeout`, `application_name`, `min_protocol_version`, `max_protocol_version` and `default_query_exec_mode`. Every other parameter is dropped, among them `user`, `password`, `passfile`, `service` and `servicefile`, and the admin's TLS client identity `sslcert`, `sslkey` and `sslpassword` (CO-9). `sslrootcert` and `sslcrl` are file paths: after `service install` the engine's OS user must be able to read them. `--dry-run` prints the SQL and the engine setup (the sudo command and its steps) and runs nothing. M5.1: after installing, init prints `basalt: N columns the agent can read are not classified yet; run basalt classify` when there are any ([PII classification](#engine-basalt-log-and-basalt-init)).
 - **Plain agent roles only.** Whenever init gives a role `<prefix>_agent_<name>` that already exists `LOGIN`, a password or `<prefix>_agents` (keeping its password, `--rotate-password`, or an `AGENT` setup code), the same SQL first refuses, with `BS008` (`LEDGER_INPUT_INVALID`) and nothing changed, a role that is not a plain agent: one that has `SUPERUSER`, `CREATEROLE`, `CREATEDB`, `REPLICATION` or `BYPASSRLS`; that is a member (directly or not, inheriting or not) of any role other than `<prefix>_agents` (an allow-list: predefined roles such as `pg_read_all_data`, `pg_monitor` or `pg_signal_backend`, `<prefix>_guard`, and any other group are all refused); that owns, or is a member of the owner of, the database or any object in it (`pg_shdepend`; the owner of a function, view or default a guarded write runs could replace it and run code as the next writer); or that holds a direct privilege on anything in `basalt_meta`, or `TRUNCATE`, `TRIGGER`, `REFERENCES` or `MAINTAIN` on an agent or guarded table. It then resets the role's own settings (`ALTER ROLE ... RESET ALL`, everywhere and `IN DATABASE` this one) before setting `statement_timeout` and `CONNECTION LIMIT 8`, since a setting such as `session_replication_role = replica` would keep the guard's triggers from firing; a setting the admin may not reset (one only a superuser may set, when the admin is not one) is refused. An `AGENT` setup code also refuses a role outside `<prefix>_agents`.
@@ -1942,3 +1949,194 @@ basalt classify [--review=changed|all] [--set schema.table.column=class[:entity-
 - **Engine config.** `engine.json` gains `pii: { "maxMemoryMB": 512, "scanRowsPerSecond": 20000 }` (the defaults). The engine sets `GOMEMLIMIT` to twice `maxMemoryMB` unless the environment sets it. `basalt service install` writes the service's memory limits from `maxMemoryMB` at install time: on Linux `MemoryHigh` (3×) and `MemoryMax` (4×) in the systemd unit. They do not follow a later edit of `engine.json`: after raising `maxMemoryMB`, run `basalt service install` again (with the same flags) so the unit is rewritten, or the engine may be throttled or stopped below its new budget. On macOS the plist carries `SoftResourceLimits`/`HardResourceLimits` `ResidentSetSize` with the same values, but current macOS does not enforce `ResidentSetSize`: there the limit is only `GOMEMLIMIT`, and the OS may evict the mapped dictionary's pages under pressure.
 - **`basalt log`** prints one line on stderr, before its warnings, when the guard is version 15 or later: `PII: N columns classified, M unclassified; dictionary of K values, last scan <time>`. N counts the rows of `agent_pii_columns` with a class other than `UNCLASSIFIED`; K counts the dictionary's generic forms, so a two-word `PERSON_NAME`, stored in both orders, counts twice; M the rows of `pii_unclassified()` with `why` `NEW` or `UNCLASSIFIED`. When `status.json` is missing, cannot be read (permissions, an unreadable `stateDir`) or does not parse, the part after `;` is `dictionary not built yet`. It then warns on stderr `basalt: warning: M columns the agent can read are not classified yet: <names>; run basalt classify` when M > 0, and `basalt: warning: R columns need a classification review (type changed or flagged): <names>; run basalt classify` when any column is `TYPE_CHANGED` or has `needs_review`; at most 10 names each, then `…`. `--json` output is unchanged.
 - **`basalt init`**, after installing, prints `basalt: N columns the agent can read are not classified yet; run basalt classify` when N > 0, N counted as `pii_unclassified()` counts for that agent's role (`why` `NEW` or `UNCLASSIFIED`).
+
+## Plugins
+
+Planned (plugins). Nothing in this section is served yet. It fixes the platform every plugin follows: the hooks, the manifest, the `engine.json` entries, consent, the transports, the protocol messages every plugin answers, failure, isolation and the ledger record. Each hook's own messages are added to this section by that hook's contract. Schemas: [`api/plugin/`](api/plugin/), with valid and invalid examples in `api/plugin/testdata/` and the ConnectRPC mapping in [`api/plugin/proto/basalt/plugin/v1/plugin.proto`](api/plugin/proto/basalt/plugin/v1/plugin.proto); the contract test (`api/plugin/contract_test.go`) checks every example and that the `.proto` has the same fields as the schemas.
+
+### The principle
+
+Core enables, plugins extend. Others extend Basalt without forking it, and core keeps only what Basalt's guarantees need.
+
+| Plugins own | Core keeps |
+|---|---|
+| Where they run: a child process, a Unix socket, a remote host | The contract: hook points, messages, versions |
+| Their latency, cost, uptime, model and hosting | What each hook may see and do |
+| How they detect: patterns, heuristics, named-entity recognition, models | Failure: a data-path plugin that fails or misses its deadline fails the call closed |
+| Their own credentials, in their own files | Consent and record: the person approves hooks, egress and agents; the ledger records them |
+| | Signing and verification of what is installed |
+| | The core floor of PII detection: exact dictionary matches and the validated email, `+` phone, card and IBAN patterns |
+
+A plugin can only add. It never approves, reverts or signs, never lets through a write the guard refuses, never removes or changes a token core made, and never rewrites bytes on the wire. With no plugin installed Basalt keeps every guarantee it states elsewhere in this file: the core floor holds on its own. No `plugins` key in `engine.json` means no plugins.
+
+### The lifecycle
+
+The stages are store-neutral, so the hooks do not change when another store adapter lands. A plugin sees the stage, never the adapter's mechanism (a Postgres hold is `BS002` from a guard trigger; another store holds its own way).
+
+```
+engine   start → load plugins → serve agents → stop
+action   proposed (intent) → checked → previewed → held | applied | refused → recorded
+held     → signed by the person → applied   (or left unsigned until it expires)
+revert   planned → signed by the person → applied | conflicted | rejected
+data     store data and the person's text → wire to the AI provider (tokenized)
+feed     every recorded entry, in chain order (cursor = chain seq)
+```
+
+Where plugins hook in:
+
+```
+person / harness ──request──▶ [ capabilities claimed → core floor → wire.detect plugins → tokenize → final scan (core) ] ──▶ AI provider
+                 ◀─response── [ tokens → values in text, no plugin ]                                                      ◀──
+ledger (per agent) ──▶ engine reads after the plugin's cursor ──▶ [ feed.observe plugins ]
+held write, prepared revert, reissued link ──▶ [ approval.deliver plugins ] ──▶ the person
+basalt classify ──▶ [ classify.suggest plugins ] ──▶ suggestions the person accepts or not
+```
+
+Never hookable: approve, revert, sign, the agent's SQL or store calls, writes to the store, the ledger itself, and the approval and revert pages.
+
+### Per-agent scope
+
+One engine serves many agents ([One engine, many agents](#cli)). A plugin entry sits at the engine's level and serves **only the agents listed in its `agents`**. A notifier listed for `product_a` and `product_b` never hears about `client_x`; a detector listed for `product_a` never sees `client_x`'s text.
+
+- **Every call names the agents it serves.** The engine refuses, before any byte is sent, a call naming an agent the entry does not list.
+- **Mixed sessions.** When one request to the AI provider holds text from several agents (one harness connected to several), only the `wire.detect` entries listed for **every** agent in the session run on it; the core floor always runs, with every agent's dictionary. An entry skipped this way is recorded in each of those agents' ledgers with reason `MIXED_SESSION`, and `status` warns: protection that dropped is never silent. The person splits the session to get every detector back. Running a detector on only its own agents' part of the text is not done: once the model mixes the sources, where each piece came from is lost.
+- **Instances.** To keep one client's data out of a shared plugin process entirely (no shared cache or model context), the person adds a second entry of the same plugin with its own `instance` and `agents`. Two entries share nothing: each has its own process, socket, service unit, OS user, installed copy and feed cursors.
+
+### Hooks
+
+Four hooks in v1. A fifth, `wire.verdict`, is reserved. Hook names are the lowercase dotted strings below, an exception to the SCREAMING_SNAKE_CASE enum rule because they name a place in the lifecycle, not a state; transport names (`jsonrpc-stdio`) are lowercase kebab-case for the same reason.
+
+| Hook | When | Sees | Power | On error or timeout |
+|---|---|---|---|---|
+| `wire.detect` | Every request the engine's wire proxy sends to the AI provider, for a listed agent | Plain text of the segments no earlier step claimed | Add-only spans; core makes every token | The request fails closed (`DETECTOR_FAILED`, with the failure class) |
+| `feed.observe` | After an entry is recorded in a listed agent's ledger | Event metadata, never row values or free text | None | Nothing blocks; delivery resumes from the cursor |
+| `approval.deliver` | The engine holds a write, prepares a revert or reissues a link, for a listed agent | The notice: agent, headline, expiry and the short link | None over the action | Nothing blocks; the agent hands the person the link as without plugins |
+| `classify.suggest` | During `basalt classify` | The catalog of the listed agents' readable columns, never values | Raise-only suggestions, never auto-accepted | Classify goes on without them and says so |
+
+- **`wire.detect`** returns spans `{segment, start, end, type, role, confidence}` and the `model` it ran. Before any detector runs, core claims every piece of text that is itself a Basalt capability: approval and revert links (short and long) and passkey page links, request files and pasted request or response blocks (`basalt-approval.1.…`, `basalt-revert.1.…`), and setup codes (`basalt-setup.1.…`). They pass to the provider as without plugins, but no segment sent to a plugin contains one. Then, in order: existing tokens, core patterns, `NAME_CUE` plugins, the dictionary, `VALUE`-only plugins in config order. The final scan runs core only. Its message contract is `detector/1`.
+- **`feed.observe`** gets events read from each listed agent's ledger through that agent's own access, after the entry's cursor (the chain `seq`), at least once and in chain order per agent; a plugin dedups by `(agent, seq)` and acknowledges the last `seq` it handled. An event carries `seq`, `at`, `agent`, `store` (`kind`, `database`), `event`, `runId`, `taskId`, `changeId`, `op`, `target`, `rows`, `cascaded`, `status`, `approvalId`, `revertId`, `reasonCode` and `chainVerified`, each when the entry has it. `target` is a table, or for an object or file store a bucket or folder, never a key or file name. Not delivered: row values (plain or tokenized), row keys, statements, intents, refusal messages and approval or revert links. A new cursor starts at the agent's chain head, with no history. Message contract `feed/1`.
+- **`approval.deliver`** never gets the long link (it carries the preview in its URL) or the intent; a notice about a widened revert carries its headline only. The link lets a channel show the held rows; signing still needs the person's passkey, checked in the store. Installing it is a separate permission, shown in plain words: anyone who can read the channel can see the rows of held writes. Message contract `deliver/1`.
+- **`classify.suggest`** gets schema, table and column names, types and column comments, limited to columns the listed agents' roles can read, and returns `{column, class, entityType, confidence, why}`. A suggestion may be stricter than core's, never looser; `--yes` never accepts one, and the review labels it with the plugin. It never runs in a process that holds the admin credential. Message contract `classify/1`.
+- **`wire.verdict`** is reserved: a manifest that declares it is refused in v1.
+
+### What a plugin never receives
+
+Whatever its hooks, a plugin never receives: a database credential, the engine's or an agent's credential file, `pii.key`, the vault, the dictionary, tokens, column classes, which values are stored, the Vault channel's keys, an approval or revert link (except the short link in an `approval.deliver` notice), or the name or data of an agent its entry does not list. No log line, error, ledger row or plugin event carries a value a plugin saw or returned: errors name the entry (`name`, `instance`) and a failure class only.
+
+### Manifest
+
+`basalt-plugin.json` in the plugin's directory ([`manifest.schema.json`](api/plugin/manifest.schema.json)). A manifest is accepted only with a valid signature from a trusted key.
+
+```json
+{
+  "manifestVersion": 1,
+  "name": "acme-ner",
+  "version": "1.4.0",
+  "publisher": "Acme",
+  "protocol": ["basalt-plugin/1"],
+  "hooks": {
+    "wire.detect": {
+      "contract": "detector/1",
+      "roles": ["VALUE", "NAME_CUE"],
+      "entityTypes": ["PERSON_NAME", "ADDRESS", "acme-ner.EMPLOYEE_ID"]
+    }
+  },
+  "endpoint": { "local": { "transport": "jsonrpc-stdio", "command": "bin/acme-ner", "args": ["--serve"] } },
+  "files": { "bin/acme-ner": "sha256:…" },
+  "network": { "egress": [] }
+}
+```
+
+A remote plugin has `"endpoint": { "remote": { "transport": "connectrpc", "url": "https://ner.acme.example" } }`, no `files`, and its host in `network.egress`.
+
+- **`name`** matches `^[a-z][a-z0-9-]{1,39}$`. **`protocol`** lists the protocol versions the plugin speaks and includes `basalt-plugin/1`.
+- **`hooks`**: one or more of `wire.detect`, `feed.observe`, `approval.deliver`, `classify.suggest`, each with its `contract`. An unknown hook and `wire.verdict` are refused. **`wire.detect` may not share a manifest with `feed.observe`** (one plugin seeing plain values on the wire and ledger events could pair them to learn which values are stored) **or with `approval.deliver`** (a detector never receives links). `feed.observe` and `approval.deliver` may share one.
+- **`endpoint`**: exactly one of `local` (`transport` `jsonrpc-stdio`, `jsonrpc-unix` or `connectrpc`; `command`, one of `files`; `args`) or `remote` (`transport` `connectrpc`; `url`, `https://` only, with no user name, password, query or fragment).
+- **`files`**: every file a local plugin ships, by path relative to the manifest (no segment starting with `.`), with its `sha256:` hash. A remote plugin has none.
+- **`network.egress`**: the `host:port` entries the plugin may reach, lowercase; empty means none. A remote endpoint's host, with port `443` when its URL names none, must be exactly one of them. A broker transport counts as egress to the broker's host.
+- **Entity types.** A plugin may return the well-known token types (`EMAIL`, `PHONE`, `PERSON_NAME`, `ADDRESS`, `OTHER`, `CARD`, `IBAN`) and types namespaced by its own `name` (`acme-ner.EMPLOYEE_ID`); a namespaced type with another prefix is refused, so two plugins never share a type or a token key. Namespaced types get a generic token shape and their own token key, and the person sees them at install.
+- **`entitlement`** is reserved and refused. Unknown top-level fields are ignored, so a later minor addition does not break an older engine; a breaking change is a new `manifestVersion`.
+- **Where each rule is checked.** The schema checks shapes, the hook rules and `remote` without `files`. Three rules JSON Schema cannot state are checked by the engine at `basalt plugin add` and at every start, and refuse with `PLUGIN_REFUSED` `BAD_MANIFEST`: the remote host is in `egress`, a namespaced type's prefix is the manifest's `name`, and a local `command` is one of `files`.
+
+### Config
+
+`engine.json` gains `plugins`, an array of entries ([`config.schema.json`](api/plugin/config.schema.json)):
+
+```json
+"plugins": [
+  { "name": "acme-ner", "instance": "default", "manifestSha256": "…", "enabled": true,
+    "agents": ["product_a", "product_b"], "timeoutMs": 2000, "minConfidence": 0.6,
+    "config": { "languages": ["en", "id"] },
+    "auth": { "credentialFile": "/etc/basalt/plugins/acme-ner.token" } },
+  { "name": "acme-ner", "instance": "client_x", "manifestSha256": "…", "enabled": true,
+    "agents": ["client_x"], "timeoutMs": 2000 }
+]
+```
+
+- **`agents`** is required: the agents the entry serves, each one of the engine's agents (`PLUGIN_REFUSED` `UNKNOWN_AGENT` otherwise). An empty list serves none.
+- **`instance`** matches `^[a-z][a-z0-9_]{0,31}$`, default `default`. `(name, instance)` is unique, and every per-plugin path, socket, service unit, OS user and cursor is keyed by both.
+- **`timeoutMs`** is the deadline of one call, from 50 to 60,000; default 300 for a local plugin, 2,000 for a remote one. It is the person's setting, not a latency budget: it only stops a plugin that no longer answers from hanging the engine.
+- **`minConfidence`** (0 to 1, default 0): the engine drops a plugin's spans below it. Dropping only removes the plugin's own additions.
+- **`config`** is opaque to the engine and passed to the plugin in `initialize`. At most 16 KiB (16,384 bytes) as compact JSON, and never a secret: as for `initArgs` ([Init saves its flags](#cli)), a string in it, keys included, that is a URL with a user name or password, or that holds `password=`, is refused before anything is written. A plugin that needs a credential (a chat token) reads its own file, as its own user.
+- **`auth.credentialFile`**, remote entries only: an absolute path. The engine reads the file and sends its contents as `Authorization: Bearer <contents>`; the plugin never receives the path, and the contents never appear in a log or error.
+- The engine reads `plugins` at start. `basalt plugin` writes `engine.json` under `<config>.lock` and prints the engine restart command.
+
+### Consent
+
+- **`basalt plugin add <dir> --agents a,b [--instance NAME]`** verifies the plugin, installs it and adds its entry disabled. Before anything is written it shows the person the hooks, the entity types, the egress hosts, `LOCAL` or `REMOTE` with the host, the signer and the agents, in plain words: a remote `wire.detect` plugin that declares `NAME_CUE` sees stored values in free text, so with it those values leave the machine; an `approval.deliver` plugin's readers can see the rows of held writes; a local plugin with a non-empty `egress` runs with network access, not enforced per host.
+- **`enable`** and **`disable <name> [--instance NAME]`** flip `enabled`. Changing hooks, egress, endpoint or agents later is a change that needs the same approval and is recorded as `PLUGIN_CHANGED`.
+- **Agent-operated engines.** `basalt plugin add`, `enable`, and any change that widens hooks, egress, endpoint or agents are refused (`PLUGIN_REFUSED` `AGENT_OPERATED`, exit `1`) when an agent marker is set ([Agents and the admin credential](#agents-and-the-admin-credential)) or the engine is `operatedBy: AGENT`, before anything is read from the plugin directory or written: `engine.json`, the installed copies and the ledger are unchanged. There, the agent runs the machine steps, so a prompt answered on that machine is no proof that a person consented. `disable` and `remove` stay allowed: they only narrow.
+- The other commands: `basalt plugin list` (entries with version, signer, endpoint, isolation and health), `check <name>` (starts the entry, runs `initialize` and `health` and each declared hook with fixed samples that hold no store data, and prints the timing), `trust <public key file>`, and `remove`. In service mode every write needs `sudo`, as editing `engine.json` does.
+
+### Transports
+
+The contract is the messages, defined once; a **transport** is an adapter that carries them. The engine and the hooks do not know which transport is in use, and adding a transport is an adapter compiled into the engine, with no change to the hooks or existing plugins. v1 has two:
+
+- **JSON-RPC 2.0**, newline-delimited JSON, one message per line: `jsonrpc-stdio` (the plugin reads requests on stdin and answers on stdout) and `jsonrpc-unix` (the plugin accepts connections on a Unix socket it is handed at start; the engine connects as the client). Methods are the message names (`initialize`, `health`, `shutdown`) and each hook's methods.
+- **ConnectRPC** (`connectrpc`), over HTTP: Connect, gRPC and gRPC-Web, so a plain gRPC server works. Local (over a Unix socket) or remote. The service is `basalt.plugin.v1.PluginService` in `plugin.proto`, where each message has the same fields as its JSON schema, in snake_case.
+
+**Remote endpoints.** TLS is always required: an `http://` URL is refused. The engine verifies the server's certificate against the URL's host, and refuses a certificate valid for any other host. The URL's host and port must be in the manifest's `egress`. A refused endpoint is never started, and the error names the entry and the endpoint's host.
+
+### Protocol
+
+Every plugin answers three messages, whatever its hooks ([`api/plugin/protocol/`](api/plugin/protocol/)):
+
+- **`initialize`**, the first call on every connection. The engine sends `{protocols, hooks, config, limits}`: the protocol versions it speaks, the hooks it will call (the manifest's), the entry's `config` (`{}` when none) and `limits` (`maxMessageBytes` 4,194,304, `maxInFlight` 4, the entry's `timeoutMs`). The plugin answers `{protocol, name, version, hooks, model?}`: one offered protocol, and its name, version and hooks exactly as in the installed manifest. Any difference refuses the plugin.
+- **`health`**, every 30 seconds while ready: `{status: READY | NOT_READY}`.
+- **`shutdown`**, when the engine stops or the entry is disabled. The engine waits 5 seconds, then stops a local plugin's process.
+
+Limits: a message in either direction is at most 4 MiB, checked before it is decoded. At most 4 calls are open per entry; a fifth waits for a free one until its own deadline, then fails `TIMEOUT`. Each call's deadline is the entry's `timeoutMs`. Unknown fields in a message are ignored; a breaking change is a new `basalt-plugin/<major>`.
+
+### Failure
+
+A failed call has one of the failure classes `TIMEOUT`, `EXITED`, `BAD_RESPONSE`, `OVER_LIMIT` or `UNAVAILABLE` (a hook's contract may add its own). A plugin that fails is marked `UNAVAILABLE` and restarted with a backoff from 1 to 60 seconds.
+
+- **Data-path hooks fail closed.** While a `wire.detect` entry listed for an agent is failing or not running, every request of that agent to the AI provider is refused (`DETECTOR_FAILED`, naming the entry and the class), until the plugin is back or the person disables it. `status` shows `PLUGIN_UNAVAILABLE`.
+- `feed.observe` and `approval.deliver` never block anything; `classify.suggest` lets classify go on and says so.
+- **Stderr.** A plugin may see PII, so the engine never logs its stderr. In service mode it goes to the plugin's own log; in same-user mode it is discarded, unless the engine runs with `--plugin-debug`.
+
+### Isolation and trust
+
+- **Service mode.** Each local entry runs as its own OS user, under its own service unit, started by the service manager. It cannot read the engine's files, `pii.key`, the vault or credential files, and the agents' OS users cannot connect to its socket. With an empty `egress` it also runs without network, recorded `network: ENFORCED`. With a non-empty `egress` it runs with network access: the allowlist is declared, shown at install and recorded `network: DECLARED`, not enforced per host. On an OS where network isolation is not available yet it is recorded `NOT_ENFORCED`, and `status` warns.
+- **Same-user mode is no security boundary.** In the foreground engine (development, CI) a plugin runs as a child process of the engine's user and can read whatever the engine can; an agent that runs as that same user can add a plugin and trust its own key. Only the ledger shows it happened (`PLUGIN_TRUST_ADDED`, `PLUGIN_ENABLED`, `isolation.files: NONE`), and the engine warns at start whenever a plugin runs this way.
+- **Remote plugins are trusted by declaration and record.** A signature proves who published a remote plugin's manifest, endpoint and egress, not what runs on that host. A remote plugin's own onward calls cannot be enforced; the declaration the person approved and the ledger's `endpoint: REMOTE` are the control, and `basalt plugin add` says so.
+
+### In the ledger
+
+Plugin events go through `record_plugin_event` into the ledger of each agent a change affects ([`events.schema.json`](api/plugin/events.schema.json)):
+
+| Kind | Written to |
+|---|---|
+| `PLUGIN_ENABLED` | Each agent the entry starts serving, once (a restart writes nothing new) |
+| `PLUGIN_DISABLED` | Each agent the entry stops serving, including an agent removed from its `agents` |
+| `PLUGIN_CHANGED` | Each listed agent, when the version, manifest, hooks, egress, endpoint, isolation or reported model changes |
+| `PLUGIN_TRUST_ADDED` | Every agent: a key added to the trust store applies to the whole engine |
+
+- **Detail keys**: `name`, `instance`, `version`, `manifestSha256`, `signerKeyId`, `hooks`, `roles` (`wire.detect` only), `egress`, `endpoint` (`{kind: LOCAL | REMOTE, host}`, `host` for `REMOTE` only), `isolation` (`{files: OS_USER | NONE, network: ENFORCED | DECLARED | NOT_ENFORCED}`, `LOCAL` only) and `model` (`{name, version}`, when the plugin reports one). `PLUGIN_TRUST_ADDED` carries `signerKeyId` only. The guard refuses any other key, and a detail over 4 KiB.
+- The detail never holds a config value, text a plugin saw, or the name of any agent: no agent's ledger names another agent.
+- A feed cursor is reset to the agent's chain head when an entry is enabled again, when an agent is added to its `agents`, and when a `PLUGIN_CHANGED` adds an egress host or moves the endpoint: history is never sent to a newly approved destination.
+
+### Problems and errors
+
+- `status` problems ([Next steps per code](#next-steps-per-code)): `PLUGIN_UNAVAILABLE` (an enabled entry listed for the agent is not ready) and `PLUGIN_NOT_TRUSTED` (the engine refused to start an entry listed for the agent: its signature, a file's hash or a path's permissions failed, or an agent's OS user is in the engine's group, which would let it reach plugin sockets).
+- The error `PLUGIN_REFUSED`, reasons `AGENT_OPERATED`, `BAD_MANIFEST`, `NOT_TRUSTED` and `UNKNOWN_AGENT` ([Error codes](#error-codes)), from the `basalt plugin` commands only.

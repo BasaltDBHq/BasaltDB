@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/plugin/events.v1.json",
+  "title": "Plugin ledger events",
+  "description": "A plugin event in an agent's ledger: its kind and its detail. The detail is closed: the guard refuses any other key, and a detail over 4 KiB. It never holds a config value, text the plugin saw, or the name of another agent. See CONTRACT.md, Plugins, In the ledger.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "detail"],
+  "properties": {
+    "kind": { "enum": ["PLUGIN_ENABLED", "PLUGIN_DISABLED", "PLUGIN_CHANGED", "PLUGIN_TRUST_ADDED"] },
+    "detail": { "type": "object" }
+  },
+  "if": { "properties": { "kind": { "const": "PLUGIN_TRUST_ADDED" } } },
+  "then": { "properties": { "detail": { "$ref": "#/$defs/trustDetail" } } },
+  "else": { "properties": { "detail": { "$ref": "#/$defs/entryDetail" } } },
+  "$defs": {
+    "trustDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["signerKeyId"],
+      "properties": {
+        "signerKeyId": { "$ref": "#/$defs/keyId" }
+      }
+    },
+    "entryDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "instance", "version", "manifestSha256", "signerKeyId", "hooks", "egress", "endpoint"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,39}$" },
+        "instance": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+        "version": { "type": "string", "maxLength": 64 },
+        "manifestSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "signerKeyId": { "$ref": "#/$defs/keyId" },
+        "hooks": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["wire.detect", "feed.observe", "approval.deliver", "classify.suggest"] }
+        },
+        "roles": {
+          "description": "wire.detect only: the roles the plugin declares, so a remote NAME_CUE detector is on the record.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["VALUE", "NAME_CUE"] }
+        },
+        "egress": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "maxLength": 260 }
+        },
+        "endpoint": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": { "enum": ["LOCAL", "REMOTE"] },
+            "host": { "description": "REMOTE only: the endpoint's host:port.", "type": "string", "maxLength": 260 }
+          },
+          "if": { "properties": { "kind": { "const": "REMOTE" } } },
+          "then": { "required": ["host"] },
+          "else": { "not": { "required": ["host"] } }
+        },
+        "isolation": {
+          "description": "LOCAL only. files: OS_USER when the plugin runs as its own OS user, NONE in same-user mode. network: ENFORCED with no egress and network isolation, DECLARED when egress is declared but not enforced, NOT_ENFORCED where the OS cannot isolate the network.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["files", "network"],
+          "properties": {
+            "files": { "enum": ["OS_USER", "NONE"] },
+            "network": { "enum": ["ENFORCED", "DECLARED", "NOT_ENFORCED"] }
+          }
+        },
+        "model": {
+          "description": "The model a plugin reports, when it reports one.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "version"],
+          "properties": {
+            "name": { "type": "string", "maxLength": 100 },
+            "version": { "type": "string", "maxLength": 100 }
+          }
+        }
+      },
+      "if": { "properties": { "endpoint": { "properties": { "kind": { "const": "REMOTE" } } } } },
+      "then": { "not": { "required": ["isolation"] } },
+      "else": { "required": ["isolation"] }
+    },
+    "keyId": {
+      "description": "A signer key id.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    }
+  }
+}

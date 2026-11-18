@@ -254,7 +254,9 @@ func TestRefusedDrainsAreCapped(t *testing.T) {
 	bot := agent("bot", dir, myUID()+1)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	e := engine.New(slog.New(slog.DiscardHandler), []engine.Agent{bot}).WithRefusedDrains(2)
+	e := engine.New(slog.New(slog.DiscardHandler), []engine.Agent{bot}).WithRefusedDrains(2).
+		// A long drain window, so no drain times out while the test runs.
+		WithRefuseDrain(time.Minute)
 	done := make(chan struct{})
 	go func() { _ = e.Serve(ctx); close(done) }()
 	waitListening(t, bot.SocketPath)
@@ -272,6 +274,8 @@ func TestRefusedDrainsAreCapped(t *testing.T) {
 		require.NotEmpty(t, mcp.PeerRefusal([]byte(line)))
 		return c
 	}
+	// Probes are two bytes each; keep their number far below the engine's
+	// 64 KB drain read limit, or it closes the peer on its own.
 	// open reports whether the engine still reads c. A write to a socket
 	// the peer closed fails at once, so one write tells, with no pacing.
 	open := func(c *net.UnixConn) bool {
@@ -310,13 +314,7 @@ func TestRefusedDrainsAreCapped(t *testing.T) {
 			require.True(t, open(c), "drained")
 		}
 	}
-	var first *net.UnixConn
-	for i, c := range conns {
-		if i != closed {
-			first = c
-			break
-		}
-	}
+	first := conns[(closed+1)%3]
 
 	// Stopping the engine ends the drains well before their 2 seconds.
 	stopped := time.Now()
@@ -326,6 +324,6 @@ func TestRefusedDrainsAreCapped(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the engine did not stop")
 	}
-	require.Less(t, time.Since(stopped), 1500*time.Millisecond)
+	require.Less(t, time.Since(stopped), 30*time.Second, "stopping ends the drains, which last a minute")
 	require.True(t, closedWithin(first, 5*time.Second), "stopping the engine closes the drained peers")
 }

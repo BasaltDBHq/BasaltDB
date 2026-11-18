@@ -50,6 +50,8 @@ type Engine struct {
 	// drains holds, per agent, a slot for each refused connection being
 	// drained; when all are taken a refused peer is closed at once.
 	drains map[string]chan struct{}
+	// drainFor bounds how long one refused connection is drained.
+	drainFor time.Duration
 
 	restart RestartOptions
 	gate    *callGate
@@ -70,7 +72,7 @@ func New(log *slog.Logger, agents []Agent) *Engine {
 			panic("engine: agent needs a name, a socket path and a server")
 		}
 	}
-	e := &Engine{log: log, agents: agents, peerUID: peercred.UID, gate: newCallGate()}
+	e := &Engine{log: log, agents: agents, peerUID: peercred.UID, gate: newCallGate(), drainFor: refuseDrain}
 	return e.WithRefusedDrains(refusedDrains)
 }
 
@@ -81,6 +83,13 @@ func (e *Engine) WithRefusedDrains(n int) *Engine {
 	for _, a := range e.agents {
 		e.drains[a.Name] = make(chan struct{}, n)
 	}
+	return e
+}
+
+// WithRefuseDrain sets how long a refused connection is drained before it
+// is closed (tests).
+func (e *Engine) WithRefuseDrain(d time.Duration) *Engine {
+	e.drainFor = d
 	return e
 }
 
@@ -295,7 +304,7 @@ func (e *Engine) refusePeer(ctx context.Context, conn *net.UnixConn, agentName s
 	default:
 		return // enough refused peers are drained already
 	}
-	_ = conn.SetReadDeadline(time.Now().Add(refuseDrain))
+	_ = conn.SetReadDeadline(time.Now().Add(e.drainFor))
 	stop := context.AfterFunc(ctx, func() { _ = conn.SetReadDeadline(time.Now()) })
 	defer stop()
 	_, _ = io.Copy(io.Discard, io.LimitReader(conn, refuseDrainBytes))

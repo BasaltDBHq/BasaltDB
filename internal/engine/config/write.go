@@ -176,7 +176,9 @@ func (f dirFile) open(string) (*os.File, error) {
 func (f dirFile) write(raw []byte) error { return f.d.WriteFile(f.name, raw, FileMode, f.owner) }
 
 // UpsertedVault is the content UpsertAgentVault writes, without writing it,
-// reading the existing file through open, and the vault it wrote.
+// reading the existing file through open, and the vault it wrote. The root
+// service install passes an open that follows no link anywhere on the path
+// and accepts only a file the engine's user owns.
 func UpsertedVault(path string, open func(string) (*os.File, error), s Settings, a Agent) ([]byte, VaultWritten, error) {
 	c, err := load(path, open)
 	existed := true

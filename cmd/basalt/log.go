@@ -133,7 +133,7 @@ func agentConfigURL(c *cliIO, agent, configPath string) (string, error) {
 	}
 	for _, a := range cfg.Agents {
 		if a.Name == agent {
-			return cfg.credential(a.CredentialFile)
+			return cfg.credential(a.Store.CredentialFile)
 		}
 	}
 	return "", errAgentNotInConfig(agent, configPath)

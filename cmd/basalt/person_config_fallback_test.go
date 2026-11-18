@@ -158,7 +158,7 @@ func TestMCPFindsThePerUserConfigWithoutTheConfigFlag(t *testing.T) {
 	require.NoError(t, os.MkdirAll(dir, 0o700))
 	path := filepath.Join(dir, "engine.json")
 	cfg := `{"socketDir": "` + filepath.Join(dir, "run") + `", "operatedBy": "AGENT", "pagesUrl": "https://portal.basaltvault.app", "mode": "SAME_USER",
-		"agents": [{"name": "bot", "osUser": "bot", "credentialFile": "` + filepath.Join(dir, "agents", "bot.url") + `", "initArgs": ["--agent=bot"]}]}`
+		"agents": [{"name": "bot", "osUser": "bot", "store": {"kind": "POSTGRES", "credentialFile": "` + filepath.Join(dir, "agents", "bot.url") + `"}, "initArgs": ["--agent=bot"]}]}`
 	require.NoError(t, os.WriteFile(path, []byte(cfg), 0o600))
 	run := func(args ...string) string {
 		var out, errOut bytes.Buffer

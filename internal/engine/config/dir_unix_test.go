@@ -45,7 +45,7 @@ func TestUpsertAgentVaultAtStaysInTheOpenedDirectory(t *testing.T) {
 	require.NoError(t, os.Mkdir(cfgDir, 0o700))
 	require.NoError(t, os.Mkdir(elsewhere, 0o700))
 	cfg := filepath.Join(cfgDir, "engine.json")
-	require.NoError(t, config.UpsertAgent(cfg, config.Settings{SocketDir: "/run/basalt"}, config.Agent{Name: "one", OSUser: "bot", CredentialFile: "/c/one.url"}))
+	require.NoError(t, config.UpsertAgent(cfg, config.Settings{SocketDir: "/run/basalt"}, config.Agent{Name: "one", OSUser: "bot", Store: config.PostgresStore("/c/one.url")}))
 	d := openDir(t, cfgDir)
 
 	// The swap: the config directory moves away and a symlink takes its
@@ -54,7 +54,7 @@ func TestUpsertAgentVaultAtStaysInTheOpenedDirectory(t *testing.T) {
 	require.NoError(t, os.Rename(cfgDir, moved))
 	require.NoError(t, os.Symlink(elsewhere, cfgDir))
 
-	_, err := config.UpsertAgentVaultAt(d, "engine.json", trustedCheck, -1, config.Settings{}, config.Agent{Name: "two", OSUser: "bot", CredentialFile: "/c/two.url"})
+	_, err := config.UpsertAgentVaultAt(d, "engine.json", trustedCheck, -1, config.Settings{}, config.Agent{Name: "two", OSUser: "bot", Store: config.PostgresStore("/c/two.url")})
 	require.NoError(t, err)
 	entries, err := os.ReadDir(elsewhere)
 	require.NoError(t, err)
@@ -79,17 +79,17 @@ func TestUpsertAgentVaultAtRefusesAnUntrustedConfig(t *testing.T) {
 	dir := realDir(t)
 	d := openDir(t, dir)
 	cfg := filepath.Join(dir, "engine.json")
-	require.NoError(t, config.UpsertAgent(cfg, config.Settings{SocketDir: "/run/basalt"}, config.Agent{Name: "one", OSUser: "bot", CredentialFile: "/c/one.url"}))
+	require.NoError(t, config.UpsertAgent(cfg, config.Settings{SocketDir: "/run/basalt"}, config.Agent{Name: "one", OSUser: "bot", Store: config.PostgresStore("/c/one.url")}))
 	before, err := os.ReadFile(cfg)
 	require.NoError(t, err)
 
 	require.NoError(t, os.Chmod(cfg, 0o620))
-	_, err = config.UpsertAgentVaultAt(d, "engine.json", trustedCheck, -1, config.Settings{}, config.Agent{Name: "two", OSUser: "bot", CredentialFile: "/c/two.url"})
+	_, err = config.UpsertAgentVaultAt(d, "engine.json", trustedCheck, -1, config.Settings{}, config.Agent{Name: "two", OSUser: "bot", Store: config.PostgresStore("/c/two.url")})
 	require.ErrorContains(t, err, "writable by group or others")
 	require.NoError(t, os.Chmod(cfg, 0o600))
 
 	require.NoError(t, os.Link(cfg, filepath.Join(dir, "hard")))
-	_, err = config.UpsertAgentVaultAt(d, "engine.json", trustedCheck, -1, config.Settings{}, config.Agent{Name: "two", OSUser: "bot", CredentialFile: "/c/two.url"})
+	_, err = config.UpsertAgentVaultAt(d, "engine.json", trustedCheck, -1, config.Settings{}, config.Agent{Name: "two", OSUser: "bot", Store: config.PostgresStore("/c/two.url")})
 	require.ErrorContains(t, err, "more than one hard link")
 	require.NoError(t, os.Remove(filepath.Join(dir, "hard")))
 
@@ -199,7 +199,7 @@ func TestUpsertAgentVaultAtGivesTheConfigToItsOwnerAsRoot(t *testing.T) {
 	defer d.Close()
 	check := func(f *os.File) error { return config.CheckTrustedConfig(f, nobody) }
 	_, err = config.UpsertAgentVaultAt(d, "engine.json", check, nobody, config.Settings{SocketDir: "/run/basalt"},
-		config.Agent{Name: "one", OSUser: "bot", CredentialFile: "/c/one.url"})
+		config.Agent{Name: "one", OSUser: "bot", Store: config.PostgresStore("/c/one.url")})
 	require.NoError(t, err)
 	fi, err := os.Stat(filepath.Join(dir, "engine.json"))
 	require.NoError(t, err)

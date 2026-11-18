@@ -16,7 +16,7 @@ func loadWith(t *testing.T, keys map[string]any) error {
 	t.Helper()
 	c := map[string]any{
 		"socketDir": "/run/basalt",
-		"agents":    []map[string]any{{"name": "bot", "osUser": "bot", "credentialFile": "/etc/basalt/agents/bot.url"}},
+		"agents":    []map[string]any{{"name": "bot", "osUser": "bot", "store": map[string]any{"kind": "POSTGRES", "credentialFile": "/etc/basalt/agents/bot.url"}}},
 	}
 	for k, v := range keys {
 		c[k] = v
@@ -68,7 +68,7 @@ func TestPageOriginsAreAClosedList(t *testing.T) {
 func TestUpsertChecksTheOrigins(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "engine.json")
-	a := config.Agent{Name: "bot", OSUser: "bot", CredentialFile: "/etc/basalt/agents/bot.url"}
+	a := config.Agent{Name: "bot", OSUser: "bot", Store: config.PostgresStore("/etc/basalt/agents/bot.url")}
 	err := config.UpsertAgent(path, config.Settings{SocketDir: "/run/basalt", OperatedBy: "AGENT", PagesURL: "http://localhost:8787"}, a)
 	require.ErrorContains(t, err, "an agent-operated engine uses the portal's pages")
 	require.NoError(t, config.UpsertAgent(path, config.Settings{SocketDir: "/run/basalt", OperatedBy: "AGENT", PagesURL: "http://localhost:8787", DevLocalPages: true}, a))

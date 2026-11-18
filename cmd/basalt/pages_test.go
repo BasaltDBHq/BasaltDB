@@ -34,7 +34,7 @@ func localConfig(t *testing.T, cred string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "engine.json")
 	body := `{"socketDir": "/tmp/bt", "pagesUrl": "` + testPagesOrigin + `",
-		"agents": [{"name": "bot", "osUser": "tester", "credentialFile": "` + cred + `"}]}`
+		"agents": [{"name": "bot", "osUser": "tester", "store": {"kind": "POSTGRES", "credentialFile": "` + cred + `"}}]}`
 	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
 	_, err := config.Load(path)
 	require.NoError(t, err)

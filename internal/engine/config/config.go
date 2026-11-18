@@ -209,8 +209,9 @@ type Agent struct {
 	Name string `json:"name" validate:"required,agentname"`
 	// OSUser is the only OS user allowed to connect to the agent's socket.
 	OSUser string `json:"osUser" validate:"required"`
-	// CredentialFile holds the agent role's Postgres URL, mode 0600.
-	CredentialFile string `json:"credentialFile" validate:"required"`
+	// Store is the one store the agent's actions land in (CONTRACT.md,
+	// Stores).
+	Store Store `json:"store"`
 	// InitArgs are the flags basalt init was run with for this agent (never
 	// the admin connection string, a password or a one-shot flag), so a
 	// step can name the init command again. See agent.NewCommands.
@@ -218,6 +219,22 @@ type Agent struct {
 	// Setup is the pending setup code basalt init --remote made for this
 	// agent; nil when none is pending.
 	Setup *Setup `json:"setup,omitempty"`
+}
+
+// StorePostgres is the store kind the engine serves (CONTRACT.md, Stores).
+const StorePostgres = "POSTGRES"
+
+// Store binds an agent to its store: the kind and the file that holds the
+// agent's credential for it (for POSTGRES the connection string of its own
+// role, mode 0600).
+type Store struct {
+	Kind           string `json:"kind" validate:"required"`
+	CredentialFile string `json:"credentialFile" validate:"required"`
+}
+
+// PostgresStore binds an agent to Postgres with the credential in file.
+func PostgresStore(file string) Store {
+	return Store{Kind: StorePostgres, CredentialFile: file}
 }
 
 // Setup is an agent's pending setup (CONTRACT.md, basalt init --remote):
@@ -343,6 +360,9 @@ func load(path string, open func(string) (*os.File, error)) (Config, error) {
 	if err := c.checkSocketPaths(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
+	if err := c.checkStores(); err != nil {
+		return Config{}, fmt.Errorf("config %s: %w", path, err)
+	}
 	if err := c.checkLinkBudget(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
@@ -359,6 +379,17 @@ func load(path string, open func(string) (*os.File, error)) (Config, error) {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	return c, nil
+}
+
+// checkStores refuses an agent bound to a store kind the engine does not
+// serve, naming the agent.
+func (c Config) checkStores() error {
+	for _, a := range c.Agents {
+		if a.Store.Kind != StorePostgres {
+			return fmt.Errorf("agent %s: store kind %q is not served; this engine serves %s", a.Name, a.Store.Kind, StorePostgres)
+		}
+	}
+	return nil
 }
 
 // errNotifyParked refuses the notify key. It configured the Telegram

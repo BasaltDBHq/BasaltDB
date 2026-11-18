@@ -35,7 +35,7 @@ runs:
     # A pull request reads master's cache; the prefix takes the newest one
     # for this toolchain when go.sum changed.
     - id: restore
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v6
       with:
         key: ${{ steps.key.outputs.key }}
         restore-keys: ${{ steps.key.outputs.prefix }}

@@ -20,7 +20,7 @@ jobs:
     env:
       BASALTDB_TEST_FULL: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # The toolchain line, its version check and the CI workflow's Go cache
       # (restored only).
       - uses: ./.github/actions/go
@@ -49,7 +49,7 @@ jobs:
       BASALTDB_TEST_FULL: "1"
       BASALTDB_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/basalt_test?sslmode=disable
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/go
       - name: Full-size classify CLI tests
         run: go test -race -count=1 -timeout 30m -run 'TestClassify' ./cmd/basalt/

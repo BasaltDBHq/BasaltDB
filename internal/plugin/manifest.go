@@ -127,7 +127,7 @@ func (p *manifestParser) parse() (Manifest, error) {
 	}
 	steps := []func() error{
 		p.header, p.protocols, p.hooks, p.endpoint, p.files, p.network, p.resources,
-		p.commandInFiles, p.remoteHostInEgress,
+		p.commandInFiles, p.remoteHostInEgress, p.recordFits,
 	}
 	for _, step := range steps {
 		if err := step(); err != nil {

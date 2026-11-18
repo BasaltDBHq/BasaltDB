@@ -22,7 +22,7 @@ import (
 func withoutPII(stderr string) string {
 	var keep []string
 	for _, line := range strings.SplitAfter(stderr, "\n") {
-		if strings.HasPrefix(line, "PII: ") || strings.Contains(line, "run basalt classify") {
+		if strings.HasPrefix(line, "PII: ") || strings.HasPrefix(line, "Plugins: ") || strings.Contains(line, "run basalt classify") {
 			continue
 		}
 		keep = append(keep, line)

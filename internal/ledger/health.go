@@ -76,6 +76,42 @@ type Health struct {
 	DeadMan *DeadMan
 	// PII is the classification summary; nil before guard version 15.
 	PII *PIIHealth
+	// Plugins are the plugin entries the agent's ledger records as served
+	// (latest event PLUGIN_ENABLED or PLUGIN_CHANGED), in name and instance
+	// order; Plugins is nil when it records no plugin event at all.
+	Plugins []PluginHealth
+}
+
+// PluginHealth is one plugin served to the agent, as its ledger records it
+// (basalt log's Plugins line).
+type PluginHealth struct {
+	Name, Instance, Version, SignerKeyID string
+	// Endpoint is LOCAL or REMOTE; Host is a REMOTE endpoint's host:port.
+	Endpoint, Host string
+	// Files and Network are a LOCAL entry's isolation, "" for REMOTE.
+	Files, Network string
+}
+
+// checkPlugins reads the plugin entries the agent's ledger records as
+// served: an empty, non-nil list when it records only disabled ones, nil
+// when it records no plugin event.
+func checkPlugins(ctx context.Context, q guard.Querier) ([]PluginHealth, error) {
+	recs, err := guard.ReadPluginRecords(ctx, q)
+	if err != nil || len(recs.Entries) == 0 {
+		return nil, err
+	}
+	out := []PluginHealth{}
+	for _, d := range recs.EnabledPlugins() {
+		p := PluginHealth{
+			Name: d.Name, Instance: d.Instance, Version: d.Version, SignerKeyID: d.SignerKeyID,
+			Endpoint: d.Endpoint.Kind, Host: d.Endpoint.Host,
+		}
+		if d.Isolation != nil {
+			p.Files, p.Network = d.Isolation.Files, d.Isolation.Network
+		}
+		out = append(out, p)
+	}
+	return out, nil
 }
 
 // MaxPIINames is how many column names the PII summary carries per list;
@@ -208,6 +244,9 @@ func CheckHealth(ctx context.Context, q guard.Querier, now time.Time, opts Healt
 	}
 	if h.PII, err = checkPII(ctx, q); err != nil {
 		return Health{}, err
+	}
+	if h.Plugins, err = checkPlugins(ctx, q); err != nil {
+		return Health{}, fmt.Errorf("plugins: %w", err)
 	}
 	return h, nil
 }

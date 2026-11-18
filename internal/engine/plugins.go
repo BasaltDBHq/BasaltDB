@@ -68,6 +68,9 @@ type enginePlugins struct {
 	notTrusted map[plugin.EntryKey]error
 	// refused is why an entry that verified is not started.
 	refused map[plugin.EntryKey]string
+	// unrecorded are the agents each entry is withheld from: its ledger
+	// record could not be written (withhold).
+	unrecorded map[plugin.EntryKey]map[string]string
 
 	// In service mode: the units the engine expects (unitHost, or why it
 	// cannot tell) and each reachable local entry's socket and OS user.
@@ -263,6 +266,8 @@ func (ep *enginePlugins) PluginProblems(name string) []agent.PluginProblem {
 			prob.Code, prob.Message = agent.ProblemPluginNotTrusted, plugin.NotTrustedMessage(k, notTrusted, name)
 		case refused != "":
 			prob.Message = "plugin " + k.String() + " was not started: " + refused
+		case ep.unrecordedFor(k, name) != "":
+			prob.Message = "plugin " + k.String() + " is not served to this agent: " + ep.unrecordedFor(k, name)
 		case ep.host.State(k) == plugin.StateReady:
 			continue
 		default:

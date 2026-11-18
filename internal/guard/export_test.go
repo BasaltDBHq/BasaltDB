@@ -24,3 +24,7 @@ type (
 func AssembleReinstalls(self string, rows []ReportRow, recs map[uuid.UUID]InstallRecord, kept []SetAside) Reinstalls {
 	return assembleReinstalls(self, rows, recs, kept)
 }
+
+// PluginEventsSQL is schema version 3's SQL as the install runs it, for the
+// test that runs it twice.
+func PluginEventsSQL(n Names) string { return n.render(migrations[versionPluginEvents-1].sql) }

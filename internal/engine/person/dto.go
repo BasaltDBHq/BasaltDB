@@ -188,6 +188,42 @@ type healthDTO struct {
 	DeadMan           *deadManDTO    `json:"deadMan"`
 	// PII is absent before guard version 15.
 	PII *piiHealthDTO `json:"pii,omitempty"`
+	// Plugins is null when the ledger records no plugin event, and empty
+	// when it records only disabled entries.
+	Plugins []pluginHealthDTO `json:"plugins"`
+}
+
+type pluginHealthDTO struct {
+	Name        string `json:"name"`
+	Instance    string `json:"instance"`
+	Version     string `json:"version"`
+	SignerKeyID string `json:"signerKeyId"`
+	Endpoint    string `json:"endpoint"`
+	Host        string `json:"host,omitempty"`
+	Files       string `json:"files,omitempty"`
+	Network     string `json:"network,omitempty"`
+}
+
+func pluginsFromDomain(ps []ledger.PluginHealth) []pluginHealthDTO {
+	if ps == nil {
+		return nil
+	}
+	out := make([]pluginHealthDTO, 0, len(ps))
+	for _, p := range ps {
+		out = append(out, pluginHealthDTO(p))
+	}
+	return out
+}
+
+func pluginsToDomain(ps []pluginHealthDTO) []ledger.PluginHealth {
+	if ps == nil {
+		return nil
+	}
+	out := make([]ledger.PluginHealth, 0, len(ps))
+	for _, p := range ps {
+		out = append(out, ledger.PluginHealth(p))
+	}
+	return out
 }
 
 type piiHealthDTO struct {
@@ -248,6 +284,7 @@ func healthFromDomain(h ledger.Health) healthDTO {
 		Reinstalls: reinstallsFromDomain(h.Reinstalls), EarlierReinstalls: h.Reinstalls.Earlier,
 		Uncovered: make([]uncoveredDTO, 0, len(h.Uncovered)), RLSBlind: h.RLSBlind,
 		LastHeartbeat: h.LastHeartbeat, HeartbeatStale: h.HeartbeatStale, PII: piiHealthFromDomain(h.PII),
+		Plugins: pluginsFromDomain(h.Plugins),
 	}
 	for _, u := range h.Uncovered {
 		out.Uncovered = append(out.Uncovered, uncoveredDTO(u))
@@ -265,7 +302,7 @@ func (h healthDTO) toDomain() ledger.Health {
 		Install: h.Install, PinSetAside: h.PinSetAside, PinMoved: h.PinMoved,
 		Reinstalls: reinstallsToDomain(h.Reinstalls, h.EarlierReinstalls),
 		RLSBlind:   h.RLSBlind, LastHeartbeat: h.LastHeartbeat, HeartbeatStale: h.HeartbeatStale,
-		PII: h.PII.toDomain(),
+		PII: h.PII.toDomain(), Plugins: pluginsToDomain(h.Plugins),
 	}
 	for _, u := range h.Uncovered {
 		out.Uncovered = append(out.Uncovered, guard.Uncovered(u))

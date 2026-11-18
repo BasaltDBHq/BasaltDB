@@ -467,8 +467,7 @@ func TestSessionTimeouts(t *testing.T) {
 		t.Parallel()
 		// The lifetime is a timer started when message 1 is read, so it is
 		// measured from before the handshake. A request right after the
-		// handshake proves the session is up and that a frame does not
-		// extend it; then nothing is sent, so no frame can race the timer,
+		// handshake proves the session is up; then nothing is sent, so no frame can race the timer,
 		// and the session ends with TIMEOUT when the timer fires.
 		const lifetime = time.Second
 		e := newSessionEngine(t, func(o *vault.Options) { o.SessionLifetime = lifetime })

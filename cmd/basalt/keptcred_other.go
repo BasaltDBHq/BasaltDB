@@ -54,6 +54,8 @@ func (*rootConfigDir) upsert(string, config.Settings, config.Agent) (config.Vaul
 	return config.VaultWritten{}, errRemoteUnsupported
 }
 
+func (*rootConfigDir) update(string, config.Change) error { return errRemoteUnsupported }
+
 func (*rootConfigDir) close() {}
 
 // rootEngineKey: see errRemoteUnsupported.

@@ -133,6 +133,9 @@ type Config struct {
 	// PII sizes the PII dictionary and its scan (CONTRACT.md, PII
 	// classification, Engine config). Zero fields take the defaults.
 	PII PII `json:"pii,omitzero"`
+	// Plugins are the plugin entries (CONTRACT.md, Plugins, Config); no
+	// key means none. basalt plugin writes them (UpdateConfig).
+	Plugins []Plugin `json:"plugins,omitempty"`
 }
 
 // UpdateCheckOn is false only when updateCheck is OFF.
@@ -357,31 +360,39 @@ func load(path string, open func(string) (*os.File, error)) (Config, error) {
 	if err := dec.Decode(&c); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
-	if err := validate.Struct(c); err != nil {
-		return Config{}, fmt.Errorf("config %s: %w", path, err)
-	}
-	if err := c.checkSocketPaths(); err != nil {
-		return Config{}, fmt.Errorf("config %s: %w", path, err)
-	}
-	if err := c.checkStores(); err != nil {
-		return Config{}, fmt.Errorf("config %s: %w", path, err)
-	}
-	if err := c.checkLinkBudget(); err != nil {
-		return Config{}, fmt.Errorf("config %s: %w", path, err)
-	}
-	if _, err := c.Direct(); err != nil {
-		return Config{}, fmt.Errorf("config %s: %w", path, err)
-	}
-	if _, err := c.Pages(); err != nil {
-		return Config{}, fmt.Errorf("config %s: %w", path, err)
-	}
-	if err := c.checkOrigins(); err != nil {
-		return Config{}, fmt.Errorf("config %s: %w", path, err)
-	}
-	if err := CheckVaultURL(c.VaultURL); err != nil {
+	if err := c.check(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	return c, nil
+}
+
+// check applies every rule Load applies after decoding.
+func (c Config) check() error {
+	if err := validate.Struct(c); err != nil {
+		return err
+	}
+	if err := c.checkSocketPaths(); err != nil {
+		return err
+	}
+	if err := c.checkStores(); err != nil {
+		return err
+	}
+	if err := c.checkLinkBudget(); err != nil {
+		return err
+	}
+	if _, err := c.Direct(); err != nil {
+		return err
+	}
+	if _, err := c.Pages(); err != nil {
+		return err
+	}
+	if err := c.checkOrigins(); err != nil {
+		return err
+	}
+	if err := CheckVaultURL(c.VaultURL); err != nil {
+		return err
+	}
+	return c.checkPlugins()
 }
 
 // checkStores refuses an agent bound to a store kind the engine does not

@@ -279,9 +279,11 @@ func writeNew(p string, b []byte, mode os.FileMode) error {
 
 // Commit renames the verified copy into place as
 // <root>/<name>/<instance>/<manifest-sha256>/ and returns that directory.
-// When that directory already exists and verifies, it is kept, the
-// temporary copy removed, and Verified describes the kept copy; when it
-// exists but fails, it is replaced.
+// When that directory already exists, verifies and was signed by the same
+// key as the staged copy, it is kept and the temporary copy removed; when it
+// fails verification, or another trusted key signed it, it is replaced, so
+// the copy in place is always the one the consent screen showed, signer
+// included.
 func (s *Staged) Commit() (string, error) {
 	if s.done {
 		return "", errors.New("plugin: the staged copy was already committed or discarded")
@@ -294,9 +296,8 @@ func (s *Staged) Commit() (string, error) {
 		return "", pathRefusal(s.Dir, "cannot be set to mode 0755")
 	}
 	if _, err := os.Lstat(final); err == nil {
-		if kept, verr := verifyCopy(s.root, s.Key, s.ManifestSHA256, s.ManifestSHA256, s.trust, s.owner); verr == nil {
-			// Same manifest bytes, but the kept .sig may be another trusted
-			// key's: report the copy that is in place.
+		kept, verr := verifyCopy(s.root, s.Key, s.ManifestSHA256, s.ManifestSHA256, s.trust, s.owner)
+		if verr == nil && kept.SignerKeyID == s.SignerKeyID {
 			_ = os.RemoveAll(s.Dir)
 			s.Verified = kept
 			return final, nil
@@ -304,7 +305,7 @@ func (s *Staged) Commit() (string, error) {
 		old := filepath.Join(instDir, oldPrefix+strings.TrimPrefix(filepath.Base(s.Dir), stagingPrefix))
 		if err := os.Rename(final, old); err != nil {
 			_ = os.RemoveAll(s.Dir)
-			return "", pathRefusal(final, "exists, fails verification, and cannot be moved aside")
+			return "", pathRefusal(final, "exists, is not the staged copy, and cannot be moved aside")
 		}
 		defer func() { _ = os.RemoveAll(old) }()
 	}

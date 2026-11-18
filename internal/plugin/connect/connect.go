@@ -1,5 +1,5 @@
-// Package connect is the ConnectRPC adapter for remote plugins: it reaches a
-// plugin at an https URL and gives a plugin.Transport. It speaks the gRPC
+// Package connect is the ConnectRPC adapter: it reaches a remote plugin at an
+// https URL, or a local one on a Unix socket, and gives a plugin.Transport. It speaks the gRPC
 // protocol with binary protobuf over HTTP/2, which both a ConnectRPC server
 // and a plain gRPC server accept. The messages are the checked-in
 // basalt.plugin.v1 service (api/plugin/proto); the host's JSON-shaped params

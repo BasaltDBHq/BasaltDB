@@ -1,0 +1,32 @@
+# Weekly dependency updates, grouped so each ecosystem opens one PR.
+# Security updates are not grouped and open as soon as an advisory lands.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      go:
+        applies-to: version-updates
+        patterns: ["*"]
+
+  # Workflows in .github/workflows and the composite action in .github/actions/go.
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/go
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(ci)
+    groups:
+      actions:
+        applies-to: version-updates
+        patterns: ["*"]

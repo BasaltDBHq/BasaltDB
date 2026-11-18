@@ -47,7 +47,7 @@
         "egress": {
           "type": "array",
           "uniqueItems": true,
-          "items": { "type": "string", "maxLength": 260 }
+          "items": { "$ref": "manifest.schema.json#/$defs/hostPort" }
         },
         "endpoint": {
           "type": "object",
@@ -77,8 +77,8 @@
           "additionalProperties": false,
           "required": ["name", "version"],
           "properties": {
-            "name": { "type": "string", "maxLength": 100 },
-            "version": { "type": "string", "maxLength": 100 }
+            "name": { "type": "string", "pattern": "^[A-Za-z0-9._+-]{1,64}$" },
+            "version": { "type": "string", "pattern": "^[A-Za-z0-9._+-]{1,64}$" }
           }
         }
       },

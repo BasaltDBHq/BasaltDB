@@ -1,8 +1,10 @@
 // The ConnectRPC mapping of the plugin protocol's platform messages
 // (CONTRACT.md, Plugins, Protocol). Each message here has the same fields
 // as its JSON schema under api/plugin/protocol/, in snake_case; the proto3
-// JSON names are the schema's camelCase names. Each hook's messages are
-// added to this package by that hook's contract.
+// JSON names are the schema's camelCase names. Integer fields are 32-bit,
+// so proto3 JSON writes them as numbers, not strings; the contract test
+// compares field names, not types. Each hook's messages are added to this
+// package by that hook's contract.
 syntax = "proto3";
 
 package basalt.plugin.v1;
@@ -27,7 +29,7 @@ message InitializeRequest {
 
 // initialize.schema.json #/$defs/limits
 message Limits {
-  int64 max_message_bytes = 1;
+  int32 max_message_bytes = 1;
   int32 max_in_flight = 2;
   int32 timeout_ms = 3;
 }

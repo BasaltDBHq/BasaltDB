@@ -573,7 +573,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		Receipts:     env.receipts,
 		Finisher:     finisher,
 		PII:          observer.On(pool),
-		Catalog:      postgres.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database),
+		Catalog:      postgres.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database).WithHost(pool.Config().ConnConfig.Host),
 		Columns:      postgres.NewColumnOrder(budgeted),
 		Classes:      storeClasses{BoundMap: classes.On(pool)},
 	})

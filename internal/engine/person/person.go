@@ -55,6 +55,7 @@ const (
 	MethodRejectRevert    Method = "REJECT_REVERT"
 	MethodStatus          Method = "STATUS"
 	MethodTarget          Method = "TARGET"
+	MethodAgents          Method = "AGENTS"
 )
 
 // Code is an error code of the person socket.

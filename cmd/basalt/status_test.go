@@ -231,9 +231,16 @@ func TestStatusAndUpgradeGoThroughThePersonSocketInServiceMode(t *testing.T) {
 		require.Contains(t, text.stdout, "Engine:       running (pid 77, OS user basalt)")
 		require.Contains(t, text.stdout, "Run: basalt upgrade --agent bot")
 
-		usage := serviceCmd(t, runStatus, socket, nil)
-		require.Equal(t, exitUsage, usage.code)
-		require.Contains(t, usage.stderr, "give --agent NAME")
+		// The engine's only agent is the one reported, and its database is
+		// named by host and name only.
+		only := serviceCmd(t, runStatus, socket, nil)
+		require.Equal(t, exitOK, only.code, only.stderr)
+		require.Contains(t, only.stdout, "Agent bot: not ready")
+		require.Contains(t, only.stdout, "  Database:   "+dbTarget(t, g.dsn).Database+" on "+dbTarget(t, g.dsn).Host)
+
+		marked := serviceCmd(t, runStatus, socket, map[string]string{"CLAUDECODE": "1"})
+		require.Equal(t, exitUsage, marked.code, "an agent marker still needs --agent")
+		require.Contains(t, marked.stderr, "give --agent NAME")
 	})
 	t.Run("engine stopped", func(t *testing.T) {
 		t.Parallel()

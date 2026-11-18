@@ -232,6 +232,12 @@ func (s *Server) handle(ctx context.Context, uid uint32, req Request) Response {
 		}
 		return result(s.pages, nil)
 	}
+	if req.Method == MethodAgents {
+		if err := decodeStrict(req.Params, &emptyParams{}); err != nil {
+			return Response{Error: invalid(err)}
+		}
+		return result(s.listAgents(uid), nil)
+	}
 	h, ok := handlers[req.Method]
 	if !ok {
 		return Response{Error: &Error{Code: CodeUnknownMethod, Message: fmt.Sprintf("unknown method %q", req.Method)}}
@@ -320,7 +326,8 @@ func call[P any](f func(ctx context.Context, l Ledger, p P) (any, error)) handle
 const maxRowChangeIDs = pagination.MaxLimit
 
 var handlers = map[Method]handler{
-	MethodPages: nil, // answered by the server itself, for no agent
+	MethodPages:  nil, // answered by the server itself, for no agent
+	MethodAgents: nil, // likewise: every agent this peer may see
 	// Answered from the agent's AgentInfo, without the guard check.
 	MethodStatus: nil,
 	MethodTarget: nil,

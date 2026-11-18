@@ -466,26 +466,31 @@ func TestSessionTimeouts(t *testing.T) {
 	t.Run("lifetime", func(t *testing.T) {
 		t.Parallel()
 		// The lifetime is a timer started when message 1 is read, so it is
-		// measured from before the handshake: the session must last the
-		// whole lifetime, and a handshake slower than the lifetime ends with
-		// the same TIMEOUT.
-		const lifetime = 200 * time.Millisecond
+		// measured from before the handshake, and frames do not extend it.
+		// Requests go out only in the first three quarters of the lifetime,
+		// so none can race the timer; then nothing is sent and the session
+		// must end with TIMEOUT. The last frame is sent after half the
+		// lifetime, so a lifetime reset by a frame would end the session
+		// more than a half lifetime late, past the quarter allowed here.
+		const lifetime = 2 * time.Second
 		e := newSessionEngine(t, func(o *vault.Options) { o.SessionLifetime = lifetime })
 		l := newLink(t)
 		e.hold(t, l, time.Now().Add(time.Hour))
 		ctx := ctxWait(t)
 		start := time.Now()
-		p, err := pagetest.Dial(ctx, e.v.URL(), l.keys.Token)
+		p, err := pagetest.Open(ctx, e.v.URL(), l.keys)
 		require.NoError(t, err)
 		t.Cleanup(p.Close)
-		err = p.Handshake(ctx, l.keys)
-		// Frames do not extend it.
-		for err == nil {
-			time.Sleep(20 * time.Millisecond)
-			_, err = p.Do(ctx, http.MethodGet, "/x", pagetest.Headers(l.secret), "", 0)
+		for time.Since(start) < lifetime*3/4 {
+			r, err := p.Do(ctx, http.MethodGet, "/x", pagetest.Headers(l.secret), "", 0)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, r.Status)
+			time.Sleep(100 * time.Millisecond)
 		}
-		require.Equal(t, code(channel.ErrTimeout), failedWith(t, p, err))
-		require.GreaterOrEqual(t, time.Since(start), lifetime)
+		require.Equal(t, code(channel.ErrTimeout), pageClosed(t, p))
+		elapsed := time.Since(start)
+		require.GreaterOrEqual(t, elapsed, lifetime)
+		require.Less(t, elapsed, lifetime+lifetime/4, "a frame extended the lifetime")
 	})
 	t.Run("never past the link's expiry", func(t *testing.T) {
 		t.Parallel()

@@ -5,7 +5,7 @@
     "instance": "client_x",
     "version": "1.5.0",
     "manifestSha256": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
-    "signerKeyId": "acme-2026",
+    "signerKeyId": "jNZPxNG5htlwfhg4ZgknAA",
     "hooks": [
       "wire.detect"
     ],

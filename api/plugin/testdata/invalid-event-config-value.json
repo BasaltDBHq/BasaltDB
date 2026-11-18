@@ -5,7 +5,7 @@
     "instance": "default",
     "version": "1.4.0",
     "manifestSha256": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
-    "signerKeyId": "acme-2026",
+    "signerKeyId": "jNZPxNG5htlwfhg4ZgknAA",
     "hooks": [
       "wire.detect"
     ],

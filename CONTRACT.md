@@ -2025,7 +2025,7 @@ Whatever its hooks, a plugin never receives: a database credential, the engine's
 
 ### Manifest
 
-`basalt-plugin.json` in the plugin's directory ([`manifest.schema.json`](api/plugin/manifest.schema.json)). A manifest is accepted only with a valid signature from a trusted key.
+`basalt-plugin.json` in the plugin's directory ([`manifest.schema.json`](api/plugin/manifest.schema.json)). A manifest is accepted only with a valid signature from a trusted key ([Signing and the trust store](#signing-and-the-trust-store)).
 
 ```json
 {
@@ -2057,6 +2057,26 @@ A remote plugin has `"endpoint": { "remote": { "transport": "connectrpc", "url":
 - **Entity types.** A plugin may return the well-known token types (`EMAIL`, `PHONE`, `PERSON_NAME`, `ADDRESS`, `OTHER`, `CARD`, `IBAN`) and types namespaced by its own `name` (`acme-ner.EMPLOYEE_ID`); a namespaced type with another prefix is refused, so two plugins never share a type or a token key. Namespaced types get a generic token shape and their own token key, and the person sees them at install.
 - **`entitlement`** is reserved and refused. Unknown top-level fields are ignored, so a later minor addition does not break an older engine; a breaking change is a new `manifestVersion`.
 - **Where each rule is checked.** The schema checks shapes, the hook rules and `remote` without `files`. Three rules JSON Schema cannot state are checked by the engine at `basalt plugin add` and at every start, and refuse with `PLUGIN_REFUSED` `BAD_MANIFEST`: the remote host is in `egress`, a namespaced type's prefix is the manifest's `name`, and a local `command` is one of `files`.
+
+### Signing and the trust store
+
+Every plugin is signed; there is no unsigned mode. A person building their own plugin signs it with their own key and trusts that key with one command.
+
+- **The signature** sits next to the manifest in `basalt-plugin.json.sig` ([`signature.schema.json`](api/plugin/signature.schema.json)): `{ "keyId", "alg": "ES256", "sig" }`. `sig` is ECDSA P-256 with SHA-256 ([Primitives and encodings](#primitives-and-encodings): 64 bytes `r ‖ s`, base64url without padding) over the context line `basalt-plugin-manifest.1\n` followed by the manifest file's exact bytes, with no parsing or reformatting first. Any change to the manifest, one byte or whitespace included, fails it. The context line keeps a manifest signature from being any other Basalt signature.
+- **Key ids.** A publisher key is a P-256 key; its id is base64url of the first 16 bytes of `sha256` of its DER SubjectPublicKeyInfo (22 characters), as for engine ids. Public key files are PEM `PUBLIC KEY` (SubjectPublicKeyInfo); private key files are PEM `PRIVATE KEY` (PKCS#8).
+- **What the signature proves.** For a local plugin: who published the manifest, and, through the `sha256` of every file in `files`, that no shipped file changed. For a **remote** plugin the signature covers the manifest only: who published its endpoint, egress and hooks. It proves nothing about what runs on that host, which can change at any time without the manifest changing. That is why the ledger records `endpoint: REMOTE` and the install screen says so ([Isolation and trust](#isolation-and-trust)).
+- **Trust roots.** The Basalt publisher key embedded in the binary, and the keys the person adds with `basalt plugin trust <public key file>`. `trust` shows the key id and asks to confirm, then writes the key to `<configDir>/plugin-trust/<keyId>.pem` and records `PLUGIN_TRUST_ADDED` in every agent's ledger. It is refused on agent-operated engines and under an agent marker ([Consent](#consent)).
+- **Author commands.** Neither reads or writes `engine.json`, the trust store or the ledger.
+  - `basalt plugin keygen --out DIR` writes a new key pair to `DIR/<keyId>.key` (mode `0600`) and `DIR/<keyId>.pub`, and prints the key id and the public key's path. It never prints the private key and never overwrites a file.
+  - `basalt plugin sign <dir> --key FILE` checks the manifest in `<dir>` against [Manifest](#manifest) and every file in `files` against its hash, then writes `<dir>/basalt-plugin.json.sig` that verification accepts. It refuses a key file that is not `0600` or is owned by another user.
+- **Verification**, at `basalt plugin add` (refused `PLUGIN_REFUSED` `NOT_TRUSTED`, or `BAD_MANIFEST` for a rule of [Manifest](#manifest)) and again at every engine start (the entry is not started and `status` shows `PLUGIN_NOT_TRUSTED`), in this order:
+  1. The path rule below holds for the installed copy and the trust store.
+  2. At start, the installed manifest's `sha256` is the entry's `manifestSha256`.
+  3. The `.sig` passes its schema, its `keyId` names a trusted key, and the signature verifies.
+  4. The manifest passes [Manifest](#manifest).
+  5. For a local plugin, every file in `files` is a regular file (not a symlink) with the stated hash, and the installed copy holds nothing else besides the manifest and its `.sig`.
+- **Installed copies.** `basalt plugin add` verifies the source directory, then copies the manifest, its `.sig` and the listed files to `<root>/<name>/<instance>/<manifest-sha256>/`, where the engine (and, in service mode, the plugin's unit) runs them. A remote plugin's copy is the manifest and its `.sig` only. `<root>` is `/usr/local/lib/basalt/plugins` on Linux and `/Library/Application Support/Basalt/plugins` on macOS in service mode (written with `sudo`), and `<configDir>/plugins` in same-user mode. Each entry has its own copy, so changing one instance never touches another.
+- **The path rule.** At every path component from `<root>` down to each installed file, and from `<configDir>/plugin-trust/` down to each key in it, the owner is the required owner, no one else can write it (no group or other write bit), and it is not a symlink. In service mode the required owner is root. In same-user mode it is the engine's own user, which is no boundary ([Isolation and trust](#isolation-and-trust)).
 
 ### Config
 

@@ -87,10 +87,9 @@
       "else": { "required": ["isolation"] }
     },
     "keyId": {
-      "description": "A signer key id.",
+      "description": "A signer key id: base64url of the first 16 bytes of sha256 of the key's SubjectPublicKeyInfo DER.",
       "type": "string",
-      "minLength": 1,
-      "maxLength": 128
+      "pattern": "^[A-Za-z0-9_-]{22}$"
     }
   }
 }

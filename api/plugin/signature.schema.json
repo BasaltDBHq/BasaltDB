@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/plugin/signature.v1.json",
+  "title": "basalt-plugin.json.sig",
+  "description": "The signature next to a plugin's manifest. sig is ECDSA P-256 with SHA-256 over the line basalt-plugin-manifest.1 and a newline followed by the manifest's exact bytes, as 64 bytes r ‖ s, base64url without padding. keyId names the signer's key: base64url of the first 16 bytes of sha256 of its SubjectPublicKeyInfo DER. See CONTRACT.md, Plugins, Signing and the trust store.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["keyId", "alg", "sig"],
+  "properties": {
+    "keyId": { "type": "string", "pattern": "^[A-Za-z0-9_-]{22}$" },
+    "alg": { "const": "ES256" },
+    "sig": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }
+  }
+}

@@ -256,7 +256,7 @@ func TestUnrecordedEntryIsNotServed(t *testing.T) {
 	require.Equal(t, []string{agent.ProblemPluginUnavailable}, codes(probs))
 	require.Contains(t, probs[0].Message, "the guard refused its plugin record")
 	require.NotContains(t, probs[0].Message, "product_a")
-	err := ep.host.Call(context.Background(), p.Key(), []string{"client_x"}, protocol.MethodHealth, nil, nil)
+	err := ep.host.Call(context.Background(), p.Key(), []string{"client_x"}, "detect", nil, nil)
 	require.ErrorIs(t, err, plugin.ErrAgentNotListed, "the host refuses a call naming the withheld agent")
 
 	// The only listed agent unrecorded: the entry does not start at all.

@@ -206,7 +206,7 @@ func refusal(t *testing.T, r result, reason string) mcp.ToolError {
 	require.Equal(t, codePluginRefused, body.Code)
 	require.Equal(t, reason, body.Reason, body.Message)
 	require.NotEmpty(t, body.PersonMessage)
-	catalog, err := mcpcontract.LoadAllNextSteps()
+	catalog, err := mcpcontract.LoadNextSteps()
 	require.NoError(t, err)
 	want, ok := catalog.ErrorEntry(body.Code, body.Reason, "")
 	require.True(t, ok)

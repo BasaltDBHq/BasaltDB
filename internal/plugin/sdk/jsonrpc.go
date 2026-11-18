@@ -219,17 +219,23 @@ func readLine(br *bufio.Reader, maxLen int) ([]byte, error) {
 // serveJSONRPCListener accepts connections until ctx ends. Each connection is
 // served on its own; the plugin's state is shared between them.
 func (s *server) serveJSONRPCListener(ctx context.Context, l net.Listener) error {
+	// A failed accept cancels this context before the wait below, so the
+	// connections still open end instead of holding Serve up.
+	connCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	var wg sync.WaitGroup
 	go func() {
-		<-ctx.Done()
+		<-connCtx.Done()
 		_ = l.Close()
 	}()
 	for {
 		c, err := l.Accept()
 		if err != nil {
+			stopping := ctx.Err() != nil
+			cancel()
 			wg.Wait()
-			if ctx.Err() != nil {
-				return nil //nolint:nilerr // the accept failed because Serve is stopping
+			if stopping {
+				return nil // the accept failed because Serve is stopping
 			}
 			return err
 		}
@@ -238,7 +244,7 @@ func (s *server) serveJSONRPCListener(ctx context.Context, l net.Listener) error
 			defer wg.Done()
 			// A connection that sent an oversized line is closed; the plugin
 			// goes on serving the others.
-			_ = s.serveConn(ctx, c, c)
+			_ = s.serveConn(connCtx, c, c)
 		}()
 	}
 }

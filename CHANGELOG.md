@@ -6,28 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Breaking for alpha installs
+
+- Breaking for installs of an alpha release: an agent's `credentialFile` in `engine.json` moves inside `store`. The old key is not read, and every command that loads `engine.json` stops with the edit for the agent. Replace `"credentialFile": "<path>"` with `"store": {"kind": "POSTGRES", "credentialFile": "<path>"}` by hand, then run `basalt upgrade --agent NAME` for the guard schema below.
+- The guard's schema moves to version 2, a breaking upgrade: run `basalt upgrade --agent NAME` once after updating the binary. Until then the engine serves only `status`, with the upgrade steps.
+
 ### Added
 
+- A daily check for a newer release. After a command, `basalt` prints one line on stderr when a newer release is out, in red when that release has a security fix. It asks the public release list once a day and sends nothing but the request itself. Turn it off with `BASALT_UPDATE_CHECK=off` or `"updateCheck": "OFF"` in `engine.json`. `basalt status --json` carries an `update` field instead of the line, and when the engine runs as a service, `basalt` follows the engine's setting.
+- Agents hear about a newer release too: the `status` and `describe` tools carry an `update` message, and the first tool result of each MCP connection repeats it once. The agent is told to pass it on and never to upgrade BasaltDB unless the person says yes.
+- `basalt mcp` and the engine agree on a protocol version when they connect. If the two builds do not fit, the agent gets a clear error that says to reconnect the MCP server or restart the engine, instead of a failure that depends on what changed.
+- The engine restarts itself onto an upgraded binary installed at the path it was started from, with or without a service manager such as systemd or launchd. It waits for running calls to finish first, then admits nothing new. A request it turns away with error `-32003` was not run, and `basalt mcp` sends it once more to the restarted engine.
 - When `basalt` panics, it saves a scrubbed crash report on your machine (version, OS, command, stack; no SQL, table or column names, row values, connection strings, host names, home paths or environment values) and prints one line pointing to `basalt crash show <id>` and `basalt crash report <id>`. `basalt crash list` and `show` let you read exactly what was saved; `report` opens a pre-filled GitHub issue that you review and submit yourself. Nothing is sent by basalt. A tool call in the engine that panics now ends with an `INTERNAL` error instead of stopping the engine.
-
-### Fixed
-
-- `basalt log` and the engine no longer report "ledger chain broken" on a new, untouched ledger after the database was recreated the same way, for example after removing the Postgres container and running the quickstart again. The guard now identifies each install by a random id instead of the schema's oid, which repeats in a cluster made the same way. An old pin is reported as a reinstall with its notice instead.
-
-### Added
-
 - `basalt status` without `--agent` lists the engine's agents when there are several: each agent with the name and host of its database, in text and `--json`. `basalt status --agent NAME` also shows the agent's database and host. No user, port, password or connection string is shown. Under an agent (Claude Code, Codex and the others) it does not list other agents; it asks for `--agent NAME` and says the person can run `basalt status` in their own terminal.
 - The MCP `describe` overview names the agent's own database by name and host.
 
 ### Changed
 
-- Every MCP tool refuses a call whose arguments hold a `postgres://` or `postgresql://` URL with a password (`INVALID_ARGUMENT`, reason `ADMIN_CREDENTIAL`), before it reaches Postgres. The value is never recorded or logged, and the next steps tell the agent to ask the person to change that password.
-- When `claude` is on your `PATH`, `basalt init` offers `claude mcp add --scope local ...` and says the server is registered for this project directory only. `docs/mcp-clients.md` shows the per-project setup for `.mcp.json`, Codex and OpenCode.
-- Breaking for installs of an alpha release: an agent's `credentialFile` in `engine.json` moves inside `store`. The old key is not read, and every command that loads `engine.json` stops with the edit for the agent. Replace `"credentialFile": "<path>"` with `"store": {"kind": "POSTGRES", "credentialFile": "<path>"}` by hand, then run `basalt upgrade --agent NAME` for the guard schema below.
-- The guard's schema moves to version 2, a breaking upgrade: run `basalt upgrade --agent NAME` once after updating the binary. Until then the engine serves only `status`, with the upgrade steps.
 - Upgrading no longer needs your agent's MCP client restarted: `basalt mcp` waits up to 15 seconds for a restarted engine and sends a read the engine dropped once more. Writes, approvals and reverts are never sent twice.
 - When `basalt` runs under an agent (Claude Code, Codex, Gemini CLI, Cursor's agent, OpenCode, or `BASALT_AGENT_CONTEXT` set), every command that needs the database admin connection string refuses before reading it, and tells the agent to make a setup code with `basalt init --remote` or to give the person the command. An admin connection string in `BASALT_ADMIN_DATABASE_URL` there is not used, and `basalt` says to change that password.
 - `basalt init --help` shows only the setup-code path when an agent reads it, `basalt --help` ends with the rule for agents, and the MCP instructions tell the agent never to ask for or accept the admin password.
+- Every MCP tool refuses a call whose arguments hold a `postgres://` or `postgresql://` URL with a password (`INVALID_ARGUMENT`, reason `ADMIN_CREDENTIAL`), before it reaches Postgres. The value is never recorded or logged, and the next steps tell the agent to ask the person to change that password.
+- When `claude` is on your `PATH`, `basalt init` offers `claude mcp add --scope local ...` and says the server is registered for this project directory only. `docs/mcp-clients.md` shows the per-project setup for `.mcp.json`, Codex and OpenCode.
+- Release binaries embed `golang.org/x/crypto` v0.59.0, so binary scanners no longer flag GO-2026-5932. BasaltDB never called the package involved.
+
+### Fixed
+
+- `basalt log` and the engine no longer report "ledger chain broken" on a new, untouched ledger after the database was recreated the same way, for example after removing the Postgres container and running the quickstart again. The guard now identifies each install by a random id instead of the schema's oid, which repeats in a cluster made the same way. An old pin is reported as a reinstall with its notice instead.
+
+### Security
+
+- The release `SHA256SUMS` is signed with keyless cosign, and the signature is attached to the release as `SHA256SUMS.sigstore.json`. `SHA256SUMS` now also lists the portal checksum, so one signature covers every file. See [docs/install.md](docs/install.md) to check it with `cosign verify-blob`.
 
 ## [0.0.1-alpha.2] - 2026-11-15
 

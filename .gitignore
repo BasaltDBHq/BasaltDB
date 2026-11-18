@@ -33,3 +33,7 @@ npm/platforms/*/bin/
 # local scratch (plans, specs, briefs)
 tmp/
 /cmd/basalt/basalt
+
+# local environment files (secrets)
+.env
+.env.*

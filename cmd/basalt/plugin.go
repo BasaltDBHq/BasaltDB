@@ -619,6 +619,13 @@ func (e *pluginEnv) add(f addFlags) error {
 		fmt.Fprintf(e.c.stderr, "basalt: plugin %s is installed with this manifest and these agents; nothing changed\n", k)
 		return nil
 	}
+	if prev != nil && prev.Enabled {
+		// The entry stays enabled: refuse now what enable would refuse.
+		changed := *prev
+		if _, err := changed.Entry(staged.Manifest); err != nil {
+			return err
+		}
+	}
 	writeConsent(e.c.stderr, k, staged.Verified, f.agents, e.mode)
 	question := "Add this plugin? It stays disabled until you enable it."
 	if prev != nil {
@@ -644,6 +651,8 @@ func (e *pluginEnv) add(f addFlags) error {
 			if _, err := staged.Commit(); err != nil {
 				return e.verifyRefusal(err, again)
 			}
+			// Commit replaces a copy another key signed; this guards that
+			// rule, so what is recorded is always what was shown.
 			if staged.SignerKeyID != shown {
 				return fmt.Errorf("plugin %s: the installed copy's signer is not the one you were shown; nothing was written", k)
 			}
@@ -837,6 +846,14 @@ func (e *pluginEnv) enable(k plugin.EntryKey) error {
 		}
 		i := cfg.PluginIndex(k)
 		if i < 0 || !samePlugin(cfg.Plugins[i], p) {
+			return errChangedMeanwhile
+		}
+		// The copy may have been re-signed since it was shown.
+		now, err := plugin.Verify(e.root, k, p.ManifestSHA256, e.trust, e.mode)
+		if err != nil {
+			return e.verifyRefusal(err, again)
+		}
+		if now.SignerKeyID != v.SignerKeyID {
 			return errChangedMeanwhile
 		}
 		cfg.Plugins[i].Enabled = true

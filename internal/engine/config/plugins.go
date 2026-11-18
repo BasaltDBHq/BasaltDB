@@ -22,6 +22,9 @@ const (
 	MaxPluginTimeoutMs = 60_000
 	// MaxPluginConfigBytes bounds config, as compact JSON.
 	MaxPluginConfigBytes = 16 << 10
+	// maxCredentialPath bounds auth.credentialFile
+	// (api/plugin/config.schema.json).
+	maxCredentialPath = 4096
 )
 
 // Patterns of a plugin entry's name and instance
@@ -184,8 +187,8 @@ func (c Config) checkPlugin(p Plugin) error {
 	if err := CheckPluginConfig(p.Config); err != nil {
 		return fmt.Errorf("plugin %s: %w", k, err)
 	}
-	if p.Auth != nil && (p.Auth.CredentialFile == "" || !filepath.IsAbs(p.Auth.CredentialFile)) {
-		return fmt.Errorf("plugin %s: auth.credentialFile must be an absolute path", k)
+	if p.Auth != nil && (p.Auth.CredentialFile == "" || !filepath.IsAbs(p.Auth.CredentialFile) || len(p.Auth.CredentialFile) > maxCredentialPath) {
+		return fmt.Errorf("plugin %s: auth.credentialFile must be an absolute path of at most %d bytes", k, maxCredentialPath)
 	}
 	return nil
 }

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -46,6 +47,13 @@ type keptRun struct {
 // as engine.json's entries (none).
 func (f *keptFixture) run(euid int, inGroup error) *keptRun {
 	f.t.Helper()
+	return f.runWith(euid, inGroup, nil)
+}
+
+// runWith is run with the engine's plugin options changed by set (nil
+// changes nothing).
+func (f *keptFixture) runWith(euid int, inGroup error, set func(*pluginOptions)) *keptRun {
+	f.t.Helper()
 	t := f.t
 	cfg := f.cfg
 	raw, err := json.Marshal(cfg)
@@ -55,6 +63,9 @@ func (f *keptFixture) run(euid int, inGroup error) *keptRun {
 	require.NoError(t, os.MkdirAll(report, 0o700))
 	units := &fakeUnits{inGroup: inGroup, gid: 980}
 	o := pluginOptions{goos: runtime.GOOS, euid: euid, units: units.source(), kept: f.s.store, SocketBase: f.base}
+	if set != nil {
+		set(&o)
+	}
 	log := slog.New(slog.DiscardHandler)
 	ep := newEnginePluginsFor(cfg, f.configPath, o, log)
 	ledgers := map[string]pluginLedger{}
@@ -228,6 +239,41 @@ func TestServiceModeStartsWithoutRestart(t *testing.T) {
 	require.Empty(t, servedTo(r.ep, keptKey))
 	require.NoDirExists(t, filepath.Join(f.state, "plugins", "acme-ner"))
 	require.Nil(t, r.problem())
+}
+
+// TestFeedFollowsEngineKeptEntries: the notifier hooks follow an entry a
+// service engine keeps itself, which it starts while it runs and not from
+// engine.json: the entry gets a sender and its agent's ledger events once
+// it is served, and loses the sender when it is turned off.
+func TestFeedFollowsEngineKeptEntries(t *testing.T) {
+	f := newKeptFixture(t, []string{"product_b"})
+	timing := fastFeed
+	r := f.runWith(os.Geteuid(), nil, func(o *pluginOptions) { o.stateDir, o.feedTiming = f.state, &timing })
+	res := r.add("product_b")
+	require.Never(t, func() bool { return r.ep.senders.sender(keptKey) != nil }, 10*timing.follow, timing.follow,
+		"no sender before the entry is approved")
+
+	f.sign(res.Approvals[0])
+	r.requireServed(res.Approvals[0], "product_b")
+	require.Eventually(t, func() bool { return r.ep.senders.sender(keptKey) != nil }, keptWait, 20*time.Millisecond,
+		"the engine-kept entry's sender, for the notifier hooks")
+
+	fe := &feedEnv{
+		t: t, stateDir: f.state,
+		l: pluginLedgers{d: f.d, roles: map[string]string{"product_b": f.roles["product_b"].Role}},
+	}
+	fe.started(keptKey, "product_b")
+	seq := fe.applied("product_b")
+	fed := &pluginFixture{t: t, report: r.report}
+	sch := feedSchema(t)
+	require.Eventually(t, func() bool { return slices.Contains(fed.fedSeqs(sch, "product_b"), seq) }, keptWait, 20*time.Millisecond,
+		"the agent's ledger events reach the engine-kept entry")
+
+	_, err := f.client.PluginDisable(context.Background(), person.PluginEntryParams{Name: keptKey.Name, Instance: keptKey.Instance})
+	require.NoError(t, err)
+	require.Empty(t, servedTo(r.ep, keptKey))
+	require.Eventually(t, func() bool { return r.ep.senders.sender(keptKey) == nil }, keptWait, 20*time.Millisecond,
+		"its sender stops with it")
 }
 
 func reportedFiles(t *testing.T, dir, suffix string) []string {

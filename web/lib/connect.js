@@ -575,10 +575,25 @@ export function start(env) {
       result = await flow.runSetup(answers);
     } catch (err) {
       show("review", false);
-      // A challenge past its 15 minutes, or one for another code, needs a
-      // fresh start; anything else, the string pasted again.
-      if (err instanceof Refusal && err.reason.startsWith("CHALLENGE_")) {
+      // A challenge past its 15 minutes, one for another code, or a passkey
+      // the service refused needs a fresh start (a new challenge and a new
+      // passkey); sending the same registration again would be refused
+      // again.
+      if (err instanceof Refusal && (err.reason.startsWith("CHALLENGE_") || err.reason === "PASSKEY_INVALID")) {
         fail(refusalText(err) + "\nOpen the link from your bot again to start over.");
+        return;
+      }
+      // No answer arrived: the setup may have run. Pasting again would be
+      // refused USED, so show the page's own check code and send the
+      // person to the bot.
+      if (err instanceof Refusal && (err.reason === "UNREACHABLE" || err.reason === "UNKNOWN")) {
+        fail(`${err.message}\nThis page cannot tell whether the setup ran. Tell your bot "done" so it checks; if it says the setup is still pending, open the link from your bot again.`);
+        if (flow.passkey) {
+          setText("check-code", flow.passkey.checkCode);
+          show("check-code-box");
+          setText("result-text", "If the setup ran, this is your passkey's check code.");
+          show("result");
+        }
         return;
       }
       setText("check-status", refusalText(err) + "\nPaste the connection string again to retry.");

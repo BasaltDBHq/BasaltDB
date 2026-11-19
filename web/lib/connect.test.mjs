@@ -567,3 +567,48 @@ test("without a code in the link, the paste box reads one; a bad code shows the 
   assert.deepEqual(calls.map((c) => c.body), [{ code: CODE }, { code: CODE }]);
 });
 
+
+test("a refused passkey sends the person back to the link, never in a loop", async () => {
+  const nodes = fakeDocument();
+  const { calls, fetchFn } = service({
+    DescribeSetup: () => ({ body: { summary: summary("INSTALL"), challenge: challenge() } }),
+    CheckSetup: () => ({ body: {} }),
+    RunSetup: () => ({ status: 400, body: refusalBody("invalid_argument", "PASSKEY_INVALID", "The passkey registration was refused.") }),
+  });
+  const { flow, ready } = start({ location: location(`#${CODE}`), fetch: fetchFn, credentials: credentials() });
+  await ready;
+  await nodes["passkey-go"].click();
+  nodes["database-url"].value = MARKER;
+  await nodes.check.click();
+  await nodes.approve.click();
+  assert.equal(nodes.error.hidden, false);
+  assert.match(nodes["error-text"].textContent, /Open the link from your bot again/);
+  assert.equal(nodes.paste.hidden, true, "no retry with the same registration");
+  assert.equal(calls.filter((c) => c.method === "RunSetup").length, 1);
+  assert.equal(flow.holdsConnectionString, false);
+});
+
+test("a RunSetup answer that never arrives shows the page's own check code and sends the person to the bot", async () => {
+  const nodes = fakeDocument();
+  const { fetchFn } = service({
+    DescribeSetup: () => ({ body: { summary: summary("INSTALL"), challenge: challenge() } }),
+    CheckSetup: () => ({ body: {} }),
+    RunSetup: () => {
+      throw new TypeError("Failed to fetch");
+    },
+  });
+  const { flow, ready } = start({ location: location(`#${CODE}`), fetch: fetchFn, credentials: credentials() });
+  await ready;
+  await nodes["passkey-go"].click();
+  nodes["database-url"].value = MARKER;
+  await nodes.check.click();
+  await nodes.approve.click();
+  assert.match(nodes["error-text"].textContent, /cannot tell whether the setup ran/);
+  assert.match(nodes["error-text"].textContent, /Tell your bot "done"/);
+  assert.equal(nodes.paste.hidden, true);
+  assert.equal(nodes["check-code"].textContent, BASE_POINT_CODE);
+  assert.equal(nodes.result.hidden, false);
+  assert.equal(nodes.done.hidden, true);
+  assert.equal(flow.holdsConnectionString, false);
+  assert.doesNotMatch(everything(nodes), /Marker-7f3a9c/);
+});

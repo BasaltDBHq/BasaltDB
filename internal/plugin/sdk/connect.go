@@ -71,7 +71,10 @@ func (h connectService) FeedObserve(ctx context.Context, req *connectrpc.Request
 	if e != nil {
 		return nil, connectError(e)
 	}
-	out, _ := res.(protocol.FeedObserveResponse)
+	out, ok := res.(protocol.FeedObserveResponse)
+	if !ok {
+		return nil, connectError(errInternal)
+	}
 	return connectrpc.NewResponse(&pluginv1.FeedObserveResponse{LastSeq: out.LastSeq}), nil
 }
 
@@ -107,22 +110,49 @@ func hookParams(agent, field string, events []byte) (json.RawMessage, bool) {
 	return append(out, '}'), true
 }
 
-// connectHook runs one hook call under the server's ConnectRPC slots: at
-// most MaxInFlight run at once, a few more wait for a slot until their own
-// deadline, and past that a call is answered busy at once. A handler that
-// ignores its context keeps its slot until it returns, as over JSON-RPC.
+// hookSlots cap the hook calls of one connection, as on a JSON-RPC
+// connection: at most MaxInFlight run at once, and waitingCalls more wait.
+// Each connection has its own, so two entries that reach one plugin server
+// (two instances, or two engines) never take each other's slots.
+type hookSlots struct {
+	running  chan struct{}
+	admitted chan struct{}
+}
+
+func newHookSlots() *hookSlots {
+	return &hookSlots{
+		running:  make(chan struct{}, protocol.MaxInFlight),
+		admitted: make(chan struct{}, protocol.MaxInFlight+waitingCalls),
+	}
+}
+
+type hookSlotsKey struct{}
+
+// withConnSlots gives a new connection its own hook slots.
+func withConnSlots(ctx context.Context, _ net.Conn) context.Context {
+	return context.WithValue(ctx, hookSlotsKey{}, newHookSlots())
+}
+
+// connectHook runs one hook call under its connection's slots: a call past
+// the waiting cap is answered busy at once, and one that gets no slot before
+// its deadline is answered deadline exceeded. A handler that ignores its
+// context keeps its slot until it returns, as over JSON-RPC.
 func (s *server) connectHook(ctx context.Context, method string, params json.RawMessage) (any, *rpcError) {
+	slots, ok := ctx.Value(hookSlotsKey{}).(*hookSlots)
+	if !ok {
+		slots = s.connectSlots
+	}
 	select {
-	case s.connectAdmitted <- struct{}{}:
-		defer func() { <-s.connectAdmitted }()
+	case slots.admitted <- struct{}{}:
+		defer func() { <-slots.admitted }()
 	default:
 		return nil, errBusy
 	}
 	ctx, cancel := s.callContext(ctx)
 	defer cancel()
 	select {
-	case s.connectSlots <- struct{}{}:
-		defer func() { <-s.connectSlots }()
+	case slots.running <- struct{}{}:
+		defer func() { <-slots.running }()
 	case <-ctx.Done():
 		return nil, errDeadline
 	}
@@ -226,6 +256,7 @@ func (s *server) serveConnect(ctx context.Context, l net.Listener, tlsConfig *tl
 		protocols.SetHTTP2(true)
 	}
 	srv := &http.Server{
+		ConnContext:       withConnSlots,
 		Handler:           s.connectHandler(token),
 		Protocols:         &protocols,
 		ReadHeaderTimeout: headerTimeout,

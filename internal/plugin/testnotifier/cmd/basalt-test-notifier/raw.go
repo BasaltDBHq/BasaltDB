@@ -37,6 +37,10 @@ func serveRaw(ctx context.Context, n *notifier, m tn.Mode, feed, deliver bool) e
 	if !filepath.IsAbs(path) {
 		return errors.New("the socket path is not absolute")
 	}
+	// A socket a crash left at the path is removed first, as the SDK does.
+	if fi, err := os.Lstat(path); err == nil && fi.Mode().Type() == os.ModeSocket {
+		_ = os.Remove(path)
+	}
 	l, err := net.Listen("unix", path)
 	if err != nil {
 		return err
@@ -83,8 +87,8 @@ func (r *raw) serve(in io.Reader, out io.Writer) {
 	sc.Buffer(make([]byte, 0, 64<<10), 4<<20+1)
 	for sc.Scan() {
 		var req rawRequest
-		if json.Unmarshal(sc.Bytes(), &req) != nil {
-			continue
+		if json.Unmarshal(sc.Bytes(), &req) != nil || len(req.ID) == 0 {
+			continue // not a request, or a notification: nothing to answer
 		}
 		switch req.Method {
 		case "initialize":
@@ -108,11 +112,17 @@ func (r *raw) serve(in io.Reader, out io.Writer) {
 			reply(req.ID, map[string]int64{"lastSeq": lastSeq(p.Events) + 1})
 		case tn.HookApprovalDeliver:
 			var p struct {
-				Agent string          `json:"agent"`
 				Event json.RawMessage `json:"event"`
 			}
 			_ = json.Unmarshal(req.Params, &p)
-			r.n.rec.write(tn.Record{Hook: req.Method, Agent: p.Agent, Mode: r.mode, Event: p.Event})
+			// The notice's own data.agent, as the SDK path records it.
+			var notice struct {
+				Data struct {
+					Agent string `json:"agent"`
+				} `json:"data"`
+			}
+			_ = json.Unmarshal(p.Event, &notice)
+			r.n.rec.write(tn.Record{Hook: req.Method, Agent: notice.Data.Agent, Mode: r.mode, Event: p.Event})
 			if r.mode == tn.ModeBadJSON {
 				write([]byte(`{"jsonrpc":"2.0","id":` + string(req.ID) + `,"result":`))
 				continue

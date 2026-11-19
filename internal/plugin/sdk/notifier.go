@@ -3,6 +3,7 @@ package sdk
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 
 	"github.com/basaltdbhq/basaltdb/internal/plugin/protocol"
@@ -100,7 +101,11 @@ func observeFeed(h FeedObserver) methodFunc {
 		for i, ev := range batch.Events {
 			seqs[i] = ev.Seq
 		}
-		last, err := h.ObserveFeed(ctx, batch)
+		var last int64
+		err := recovered(func() (err error) {
+			last, err = h.ObserveFeed(ctx, batch)
+			return err
+		})
 		switch {
 		case ctx.Err() != nil:
 			return nil, errDeadline
@@ -125,7 +130,7 @@ func deliverApproval(h ApprovalDeliverer) methodFunc {
 		if err != nil {
 			return nil, errBadParams
 		}
-		err = h.DeliverApproval(ctx, n)
+		err = recovered(func() error { return h.DeliverApproval(ctx, n) })
 		switch {
 		case ctx.Err() != nil:
 			return nil, errDeadline
@@ -134,4 +139,19 @@ func deliverApproval(h ApprovalDeliverer) methodFunc {
 		}
 		return protocol.ApprovalDeliverResponse{}, nil
 	}
+}
+
+// errPanicked stands for a handler that panicked. Its value stays in the
+// plugin, like a handler's error.
+var errPanicked = errors.New("sdk: the handler panicked")
+
+// recovered runs a hook handler and turns a panic into an error, so one bad
+// event fails its call instead of ending the plugin.
+func recovered(f func() error) (err error) {
+	defer func() {
+		if recover() != nil {
+			err = errPanicked
+		}
+	}()
+	return f()
 }

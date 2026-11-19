@@ -21,7 +21,7 @@
 //     the person's approval, a revert waits for their signature, or the link
 //     to one was replaced, with the link the agent was handed.
 //
-// A complete notifier:
+// A complete notifier (chat stands for your channel's client):
 //
 //	type notifier struct{ out *chat.Client }
 //
@@ -29,48 +29,78 @@
 //
 //	func (n notifier) ObserveFeed(ctx context.Context, b sdk.FeedBatch) (int64, error) {
 //		for _, ev := range b.Events {
-//			if held, ok := ev.Detail.(sdk.WriteHeld); ok {
-//				n.out.Post(ctx, ev.ID, fmt.Sprintf("%s: %d rows held", b.Agent, held.Rows))
-//			} // any other type, a type this SDK does not know included: skip it
+//			held, ok := ev.Detail.(sdk.WriteHeld)
+//			if !ok || ev.IsCheckSample() {
+//				continue // another type, one this SDK does not know, or check's sample
+//			}
+//			text := fmt.Sprintf("%s: %d rows held", chat.Escape(b.Agent), held.Rows)
+//			if err := n.out.Post(ctx, ev.Source+"/"+ev.ID, text); err != nil {
+//				return 0, err // the engine sends this batch again later
+//			}
 //		}
 //		return b.LastSeq(), nil
 //	}
 //
 //	func (n notifier) DeliverApproval(ctx context.Context, x sdk.Notice) error {
-//		return n.out.Post(ctx, x.ID, x.Headline+"\n"+x.Instruction+"\n"+x.Link)
+//		switch x.Kind {
+//		case sdk.KindApprovalRequested, sdk.KindRevertRequested, sdk.KindLinkReplaced:
+//		default:
+//			return nil // a kind this SDK does not know: skip it
+//		}
+//		if x.IsCheckSample() || time.Now().After(x.ExpiresAt) {
+//			return nil
+//		}
+//		text := chat.Escape(x.Headline) + "\n" + x.Instruction
+//		if x.Link != "" {
+//			text += "\n" + x.Link
+//			if x.LinkOpens == sdk.LinkOpensEngineComputer {
+//				text += "\n(This link opens only on the computer Basalt runs on.)"
+//			}
+//		}
+//		return n.out.Post(ctx, x.Source+"/"+x.ID, text)
 //	}
 //
 //	func main() { /* sdk.Serve(ctx, notifier{...}), as the template does */ }
 //
-// Its manifest declares both hooks, with their contracts:
+// Its manifest declares both hooks, with their contracts. The SDK declares a
+// hook for every interface the plugin implements, so the manifest must list
+// exactly those: implement ApprovalDeliverer without listing approval.deliver
+// and the engine refuses the plugin at initialize.
 //
 //	"hooks": { "feed.observe": { "contract": "feed/1" }, "approval.deliver": { "contract": "deliver/1" } }
 //
 // What to know:
 //
-//   - At least once. An event or a notice can arrive again (after a crash, a
-//     restart or a failed call). Two with the same Source and ID are the same:
-//     dedup by that pair, as the example does by passing ev.ID on.
+//   - At least once. An event or a notice can arrive again: after a crash, a
+//     restart or a failed call, and a notice up to four times. Two with the
+//     same Source and ID are the same: dedup by that pair, as the example does
+//     by posting with Source and ID as the message key.
 //   - The answer to a batch. Return the Seq of the last event you handled:
 //     b.LastSeq() for all of them, or an earlier one, and the engine sends the
 //     rest again. The SDK refuses to send a Seq that is not one of the batch's;
-//     an error, a late answer or a refused one makes the engine send the same
-//     events again later. Nothing in Basalt waits for a notifier.
+//     an error, a panic, a late answer or a refused one makes the engine send
+//     the same events again later. Nothing in Basalt waits for a notifier.
 //   - Skip what you do not know. A later engine may send a Type this SDK does
 //     not know (Detail is nil, Seq is set) or a field it does not know
 //     (ignored). Skip the event and still count it as handled; skip a notice
 //     of an unknown Kind.
 //   - Forward unchanged. Every event is a CloudEvents 1.0 event. Raw returns
 //     its exact JSON bytes, so a plugin that passes events to a message broker
-//     or a webhook can send them as they came.
-//   - Plain text. Headline, Table and every other string are the engine's or
-//     the database's text: show them as plain text, never as markup or links.
-//     A notice's link opens anywhere (LinkOpensAnywhere) or only on the
-//     computer Basalt runs on (LinkOpensEngineComputer): say so when you show
-//     it. With no link, Instruction tells the person to ask the agent.
-//   - Samples. basalt plugin check sends a fixed batch and notice whose
-//     InstallID is CheckInstallID. Handle them, but do not keep them for
-//     dedup.
+//     or a webhook sends Raw, never a JSON encoding of FeedEvent or Notice.
+//   - Plain text. Headline, Table, Agent and every other string are the
+//     engine's or the database's text, and an agent names its own tables. The
+//     engine keeps them to one plain line, but a chat's own markup (mentions
+//     such as @everyone or <!channel>, emphasis, links) is yours to escape
+//     before you post. A notice's link opens anywhere (LinkOpensAnywhere) or
+//     only on the computer Basalt runs on (LinkOpensEngineComputer): say so
+//     when you show it. With no link, Instruction tells the person to ask the
+//     agent.
+//   - Samples. basalt plugin check sends a fixed batch and notice for which
+//     IsCheckSample is true. Answer them as any other, but do not post them
+//     to a person or keep them for dedup.
+//   - What you get is what the engine sends. The SDK passes events and
+//     notices on as they arrive; it is the engine that keeps row values,
+//     statements, intents and other agents out of them.
 //
 // # What a notice's link holds
 //
@@ -163,7 +193,8 @@
 // answered deadline exceeded, and health and shutdown are still answered.
 // An error a handler returns is not sent to the engine (it may hold a value):
 // the engine sees a failed call, and a plugin that wants a reason writes it
-// to its own stderr.
+// to its own stderr. A notifier handler that panics fails its call the same
+// way, and the plugin goes on serving.
 //
 // # Hooks
 //

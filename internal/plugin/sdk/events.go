@@ -66,8 +66,15 @@ type CloudEvent struct {
 	raw []byte
 }
 
-// Raw returns the event's exact JSON bytes, as the engine sent them.
+// Raw returns the event's exact JSON bytes, as the engine sent them. Forward
+// these, not a JSON encoding of the Go value: FeedEvent and Notice are not
+// CloudEvents in their JSON form.
 func (e CloudEvent) Raw() []byte { return slices.Clone(e.raw) }
+
+// IsCheckSample reports whether the event is one of the fixed samples
+// basalt plugin check sends (its install id is CheckInstallID). Answer it as
+// any other, but do not post it to a person or keep it for dedup.
+func (e CloudEvent) IsCheckSample() bool { return e.Source == "urn:uuid:"+CheckInstallID }
 
 // envelope is the JSON form of a CloudEvent.
 type envelope struct {
@@ -320,7 +327,9 @@ const (
 )
 
 // Notice is one approval.deliver call: something waits for the person. It is
-// one-shot: never replayed, and useless after ExpiresAt.
+// one-shot: never replayed from a cursor, and useless after ExpiresAt. A
+// failed try is tried again, up to four times, with the same ID: dedup by
+// Source and ID, as for feed events.
 //
 // Link is the link the agent's own answer handed over, byte for byte. A long
 // link carries the whole request inside it (the statement, its parameters,
@@ -331,22 +340,36 @@ const (
 // intent.
 type Notice struct {
 	CloudEvent
-	Kind  NoticeKind `json:"kind"`
-	Agent string     `json:"agent"`
+	Kind  NoticeKind
+	Agent string
 	// Exactly one of ApprovalID (a held write) and RevertID (a revert) is set.
-	ApprovalID string `json:"approvalId"`
-	RevertID   string `json:"revertId"`
+	ApprovalID string
+	RevertID   string
 	// Headline is the item in one line, plain text: show it as text, never
 	// parse it or render it as markup.
-	Headline  string    `json:"headline"`
-	ExpiresAt time.Time `json:"expiresAt"`
+	Headline  string
+	ExpiresAt time.Time
 	// Link is empty when the agent's answer had no link that stands alone;
 	// Instruction then says to ask the agent.
-	Link      string    `json:"link"`
-	LinkOpens LinkOpens `json:"linkOpens"`
+	Link      string
+	LinkOpens LinkOpens
 	// Instruction is what the person does: one of the Instruction
 	// constants.
-	Instruction string `json:"instruction"`
+	Instruction string
+}
+
+// noticeData is the JSON form of a notice's data. It names only the
+// contract's fields, so a later field, whatever its name, is ignored.
+type noticeData struct {
+	Kind        NoticeKind `json:"kind"`
+	Agent       string     `json:"agent"`
+	ApprovalID  string     `json:"approvalId"`
+	RevertID    string     `json:"revertId"`
+	Headline    string     `json:"headline"`
+	ExpiresAt   time.Time  `json:"expiresAt"`
+	Link        string     `json:"link"`
+	LinkOpens   LinkOpens  `json:"linkOpens"`
+	Instruction string     `json:"instruction"`
 }
 
 // decodeNotice decodes a notice. An unknown type or field is not an error:
@@ -356,10 +379,12 @@ func decodeNotice(raw json.RawMessage) (Notice, error) {
 	if err != nil {
 		return Notice{}, err
 	}
-	var n Notice
-	if json.Unmarshal(ce.Data, &n) != nil {
+	var d noticeData
+	if json.Unmarshal(ce.Data, &d) != nil {
 		return Notice{}, errBadEvent
 	}
-	n.CloudEvent = ce
-	return n, nil
+	return Notice{
+		CloudEvent: ce, Kind: d.Kind, Agent: d.Agent, ApprovalID: d.ApprovalID, RevertID: d.RevertID,
+		Headline: d.Headline, ExpiresAt: d.ExpiresAt, Link: d.Link, LinkOpens: d.LinkOpens, Instruction: d.Instruction,
+	}, nil
 }

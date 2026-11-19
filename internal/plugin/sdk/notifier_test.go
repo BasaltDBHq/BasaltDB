@@ -82,6 +82,12 @@ func (r *recordingNotifier) lastNotice(t *testing.T) Notice {
 	return r.notices[len(r.notices)-1]
 }
 
+type panickingDeliverer struct{}
+
+func (panickingDeliverer) Info() Info { return Info{Name: "panics", Version: "1.0.0"} }
+
+func (panickingDeliverer) DeliverApproval(context.Context, Notice) error { panic(marker) }
+
 // feedOnly implements one hook.
 type feedOnly struct{}
 
@@ -238,10 +244,21 @@ func TestEverySampleDecodesTyped(t *testing.T) {
 		require.Equal(t, n.Link == "", n.LinkOpens == "", f)
 	}
 
+	// Only check's samples are samples.
+	p = &recordingNotifier{}
+	_, c = serveStdio(t, p)
+	require.Nil(t, c.call("approval.deliver", compact(t, readSample(t, "valid-deliver-request-check-sample.json"))).Error)
+	require.True(t, p.lastNotice(t).IsCheckSample())
+	require.Nil(t, c.call("feed.observe", compact(t, readSample(t, "valid-feed-request-check-sample.json"))).Error)
+	require.True(t, p.lastBatch(t).Events[0].IsCheckSample())
+	require.Nil(t, c.call("feed.observe", compact(t, readSample(t, "valid-feed-request.json"))).Error)
+	require.False(t, p.lastBatch(t).Events[0].IsCheckSample())
+
 	p = &recordingNotifier{}
 	_, c = serveStdio(t, p)
 	require.Nil(t, c.call("approval.deliver", compact(t, readSample(t, "valid-deliver-request-revert-portal.json"))).Error)
 	n := p.lastNotice(t)
+	require.False(t, n.IsCheckSample())
 	require.Equal(t, TypeRevertRequested, n.Type)
 	require.Equal(t, KindRevertRequested, n.Kind)
 	require.Equal(t, "product_a", n.Agent)
@@ -304,6 +321,22 @@ func TestUnknownTypeAndFieldsReachThePlugin(t *testing.T) {
 	later := `{"specversion":"1.0","id":"n2","type":"dev.basaltdb.later.notice","data":{"kind":"LATER_KIND","agent":"product_a"}}`
 	require.Nil(t, c.call("approval.deliver", `{"agent":"product_a","event":`+later+`}`).Error)
 	require.Equal(t, NoticeKind("LATER_KIND"), p.lastNotice(t).Kind)
+
+	// A later data field may share a name with an envelope attribute, in any
+	// case and of any type: it is still an unknown field, and ignored.
+	for _, extra := range []string{`"time":5`, `"subject":{}`, `"id":7`, `"Source":[1]`, `"data":"x"`, `"specversion":2`} {
+		notice := strings.Replace(adaptertest.Notice, `"kind":"APPROVAL_REQUESTED"`, `"kind":"APPROVAL_REQUESTED",`+extra, 1)
+		r := c.call("approval.deliver", `{"agent":"product_a","event":`+notice+`}`)
+		require.Nil(t, r.Error, extra)
+		n := p.lastNotice(t)
+		require.Equal(t, "0193a1b4-0000-7000-8000-000000000001", n.ID, extra)
+		require.Equal(t, "product_a", n.Subject, extra)
+		require.Equal(t, KindApprovalRequested, n.Kind, extra)
+	}
+	// So may a feed event's data.
+	ev := strings.Replace(adaptertest.FeedEvent(5), `"rows":1`, `"rows":1,"time":5,"subject":{},"id":7`, 1)
+	require.Nil(t, c.call("feed.observe", `{"agent":"product_a","events":[`+ev+`]}`).Error)
+	require.Equal(t, "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee:5", p.lastBatch(t).Events[0].ID)
 }
 
 // TestObserveFeedAnswerIsHeldToTheContract: a lastSeq that is not a seq of the
@@ -333,6 +366,20 @@ func TestObserveFeedAnswerIsHeldToTheContract(t *testing.T) {
 	r = c.call("approval.deliver", `{"agent":"product_a","event":`+adaptertest.Notice+`}`)
 	require.NotNil(t, r.Error)
 	require.NotContains(t, r.Error.Message, marker)
+
+	_, c = serveStdio(t, panickingDeliverer{})
+	r = c.call("approval.deliver", `{"agent":"product_a","event":`+adaptertest.Notice+`}`)
+	require.NotNil(t, r.Error, "a panic in DeliverApproval fails the call")
+	require.Nil(t, c.call("health", `{}`).Error, "and the plugin still serves")
+
+	// A handler that panics fails the call; the plugin goes on serving.
+	p = &recordingNotifier{answer: func(FeedBatch) (int64, error) { panic(marker) }}
+	_, c = serveStdio(t, p)
+	r = c.call("feed.observe", batch)
+	require.NotNil(t, r.Error)
+	require.NotContains(t, r.Error.Message, marker)
+	p.answer = nil
+	require.JSONEq(t, `{"lastSeq":12}`, string(c.call("feed.observe", batch).Result))
 
 	// A batch that is not one: refused before the plugin sees it.
 	p = &recordingNotifier{}
@@ -396,10 +443,67 @@ func TestConnectHookCallsHaveFourSlots(t *testing.T) {
 	case <-time.After(wait):
 		t.Fatal("the fifth call was neither run nor answered")
 	}
+
+	// Another connection (another entry reaching the same server) has slots
+	// of its own: its call runs while the first connection's four are taken.
+	other, err := connect.DialLocal(ctxT(t), path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = other.Close() })
+	otherDone := make(chan error, 1)
+	go func() {
+		var res protocol.FeedObserveResponse
+		otherDone <- other.Call(ctxT(t), protocol.MethodFeedObserve,
+			protocol.FeedObserveRequest{Agent: "a", Events: adaptertest.Batch(adaptertest.FeedEvent(99))}, &res)
+	}()
+	require.Eventually(t, func() bool { return running.Load() == MaxInFlight+1 }, wait, 5*time.Millisecond,
+		"the other connection's call runs beside the first's four")
+
 	close(release)
 	wg.Wait()
 	close(errs)
-	require.EqualValues(t, MaxInFlight, peak.Load())
+	<-otherDone // it ran, which is the point; its answer may be past its deadline
+	require.EqualValues(t, MaxInFlight+1, peak.Load())
+}
+
+// TestConnectCallsPastTheWaitingCapAreAnsweredBusy: with four calls running
+// and eight waiting on one connection, the next is answered at once, without
+// waiting for its deadline.
+func TestConnectCallsPastTheWaitingCapAreAnsweredBusy(t *testing.T) {
+	var running atomic.Int32
+	release := make(chan struct{})
+	p := &recordingNotifier{answer: func(b FeedBatch) (int64, error) {
+		running.Add(1)
+		<-release
+		return b.LastSeq(), nil
+	}}
+	_, path := serveSocket(t, p, WithTransport(ConnectRPC))
+	tr, err := connect.DialLocal(ctxT(t), path)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = tr.Close() })
+	var init protocol.InitializeResponse
+	require.NoError(t, tr.Call(ctxT(t), protocol.MethodInitialize, protocol.InitializeRequest{
+		Protocols: []string{protocol.Version1}, Limits: protocol.Limits{TimeoutMs: 10000},
+	}, &init))
+
+	call := func(seq int64) error {
+		var res protocol.FeedObserveResponse
+		return tr.Call(ctxT(t), protocol.MethodFeedObserve,
+			protocol.FeedObserveRequest{Agent: "a", Events: adaptertest.Batch(adaptertest.FeedEvent(seq))}, &res)
+	}
+	var wg sync.WaitGroup
+	for i := range MaxInFlight + waitingCalls {
+		wg.Add(1)
+		go func() { defer wg.Done(); _ = call(int64(i + 1)) }()
+	}
+	t.Cleanup(func() { close(release); wg.Wait() })
+	require.Eventually(t, func() bool { return running.Load() == MaxInFlight }, wait, 5*time.Millisecond)
+	// Give the waiting calls time to be admitted; then one more is turned away.
+	require.Eventually(t, func() bool {
+		start := time.Now()
+		err := call(1000)
+		var c plugin.Classed
+		return err != nil && errors.As(err, &c) && time.Since(start) < time.Second
+	}, wait, 50*time.Millisecond)
 }
 
 // TestSDKNotifierPassesTheNotifierSuite: the engine's adapters carry both

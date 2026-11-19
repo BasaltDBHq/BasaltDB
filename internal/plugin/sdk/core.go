@@ -99,11 +99,10 @@ type server struct {
 	initMu    sync.Mutex
 	timeoutNs atomic.Int64
 
-	// connectSlots and connectAdmitted are the ConnectRPC transport's hook
-	// call slots: the engine keeps one connection per entry there, so they
-	// are the server's, as a JSON-RPC connection's are its own.
-	connectSlots    chan struct{}
-	connectAdmitted chan struct{}
+	// connectSlots are the hook call slots of a ConnectRPC request that
+	// reached the server without a connection's own (a handler mounted
+	// outside serveConnect). serveConnect gives each connection its own.
+	connectSlots *hookSlots
 
 	stop context.CancelFunc
 
@@ -121,8 +120,7 @@ func newServer(p Plugin, cfg *config) (*server, error) {
 	}
 	s := &server{
 		p: p, info: info, hooks: map[string]HookDecl{}, methods: map[string]methodFunc{},
-		connectSlots:    make(chan struct{}, protocol.MaxInFlight),
-		connectAdmitted: make(chan struct{}, protocol.MaxInFlight+waitingCalls),
+		connectSlots: newHookSlots(),
 	}
 	s.timeoutNs.Store(int64(defaultTimeout))
 	for _, h := range hookSpecs {

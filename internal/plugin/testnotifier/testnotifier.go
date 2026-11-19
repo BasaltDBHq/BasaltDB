@@ -73,8 +73,11 @@ const (
 	// ModeOK answers feed.observe with the batch's last seq and
 	// approval.deliver with {}.
 	ModeOK Mode = "ok"
-	// ModeLate answers as ModeOK after the delay (default 5s), whatever the
-	// call's deadline.
+	// ModeLate waits for the delay (default 5s), ignoring the call's
+	// deadline, and then answers. Through the SDK a reply after the deadline
+	// is a deadline-exceeded error, so the engine sees TIMEOUT, as for
+	// ModeHang; unlike ModeHang, the plugin frees the call's slot after the
+	// delay, and a delay shorter than the deadline answers as ModeOK.
 	ModeLate Mode = "late"
 	// ModeHang never answers.
 	ModeHang Mode = "hang"

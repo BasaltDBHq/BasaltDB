@@ -82,8 +82,10 @@ func pluginCheck(c *cliIO, args []string) int {
 }
 
 // check starts entry k from its verified installed copy, runs initialize
-// and health, prints the timing and sends shutdown. It sends no store data
-// and needs no database. It changes nothing, so an agent may run it.
+// and health, sends each declared notifier hook its fixed sample, prints the
+// timing and sends shutdown. It sends no store data and needs no database,
+// and changes nothing of the engine's, so an agent may run it. A notifier
+// receives the samples as it would real events, marked by their install id.
 func (e *pluginEnv) check(k plugin.EntryKey) error {
 	p, err := e.entry(k)
 	if err != nil {
@@ -177,8 +179,8 @@ func (e *pluginEnv) checkHooks(ctx context.Context, h *plugin.Host, entry plugin
 			}
 			dur := time.Since(start)
 			if last != plugincontract.CheckFeedLastSeq {
-				return fmt.Errorf("plugin %s: %s answered lastSeq %d; the sample's events end at seq %d, and a plugin that handles them answers it",
-					k, hook, last, plugincontract.CheckFeedLastSeq)
+				return fmt.Errorf("plugin %s: %s failed: %s: answered lastSeq %d; the sample's events end at seq %d, and a plugin that handles them answers it",
+					k, hook, plugin.ClassBadResponse, last, plugincontract.CheckFeedLastSeq)
 			}
 			fmt.Fprintf(e.c.stdout, "plugin %s: %s lastSeq %d %s\n", k, hook, last, roundMs(dur))
 		case plugin.HookWireDetect, plugin.HookClassifySuggest, plugin.HookWireVerdict:

@@ -247,6 +247,37 @@ func TestConnectRPCTransport(t *testing.T) {
 	require.Len(t, r, 1)
 }
 
+// TestRawModeOverAUnixSocket: the modes the SDK refuses to serve work on
+// jsonrpc-unix too, through the engine's host.
+func TestRawModeOverAUnixSocket(t *testing.T) {
+	dir, err := os.MkdirTemp("", "tn")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "p.sock")
+	rec := filepath.Join(dir, "rec.jsonl")
+	cmd, err := child.Start(child.Spec{Path: bin, Args: tn.Options{Mode: tn.ModeBadSeq, Record: rec}.Args(), Dir: dir, Env: []string{"BASALT_PLUGIN_SOCKET=" + sock}})
+	require.NoError(t, err)
+	t.Cleanup(cmd.Stop)
+	require.Eventually(t, func() bool { _, err := os.Stat(sock); return err == nil }, 5*time.Second, 10*time.Millisecond)
+	tr, err := jsonrpc.Dial(context.Background(), sock)
+	require.NoError(t, err)
+	e := entry(tn.HookFeedObserve, tn.HookApprovalDeliver)
+	h := plugin.NewHost()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, h.Register(ctx, e, tr))
+	t.Cleanup(func() { h.Unregister(e.Key) })
+	s := &started{h: h, key: e.Key, record: rec}
+
+	_, err = s.observe(4)
+	require.Equal(t, plugin.ClassBadResponse, classOf(err), "%v", err)
+	require.NoError(t, s.deliver())
+	r := s.records(t)
+	require.Len(t, r, 2)
+	require.Equal(t, "product_a", r[1].Agent)
+	require.Equal(t, adaptertest.Notice, string(r[1].Event))
+}
+
 // TestManifestMatchesTheOptions: WriteDir writes a manifest the engine reads,
 // with the binary's hash and the settings in args.
 func TestManifestMatchesTheOptions(t *testing.T) {

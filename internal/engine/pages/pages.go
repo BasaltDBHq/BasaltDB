@@ -125,7 +125,7 @@ type PluginApprovals interface {
 	// RelayPluginApproval relays the person's signature to
 	// submit_plugin_approval, which verifies it, and returns when Postgres
 	// recorded the approval.
-	RelayPluginApproval(ctx context.Context, r approval.PluginResponse) (time.Time, error)
+	RelayPluginApproval(ctx context.Context, r approval.PluginApprovalResponse) (time.Time, error)
 	// IssuePluginLink issues a new short link for the approval to a caller
 	// that shows proof of its binding text (links.IssueProof).
 	IssuePluginLink(ctx context.Context, id uuid.UUID, proof string) (string, error)

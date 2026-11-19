@@ -30,7 +30,7 @@ type pluginAgent struct {
 	stubAgent
 	plugin    uuid.UUID
 	pluginErr error
-	submitted []approval.PluginResponse
+	submitted []approval.PluginApprovalResponse
 	at        time.Time
 }
 
@@ -48,7 +48,7 @@ func (a *pluginAgent) PluginApprovalRequest(_ context.Context, id uuid.UUID) (ap
 	return approval.PluginRequest{ApprovalID: id, Binding: pluginBinding, Settings: pluginSettings}, a.pluginErr
 }
 
-func (a *pluginAgent) RelayPluginApproval(_ context.Context, r approval.PluginResponse) (time.Time, error) {
+func (a *pluginAgent) RelayPluginApproval(_ context.Context, r approval.PluginApprovalResponse) (time.Time, error) {
 	if r.ApprovalID != a.plugin {
 		return time.Time{}, agent.ErrNotThisAgent
 	}
@@ -64,7 +64,7 @@ func (a *pluginAgent) IssuePluginLink(_ context.Context, id uuid.UUID, proof str
 		return "", agent.ErrNotThisAgent
 	}
 	secret, err := a.secrets.Issue(id, time.Now().Add(time.Hour))
-	return links.WithSecret(links.Plugin(a.origin, id), secret), err
+	return links.WithSecret(links.PluginApproval(a.origin, id), secret), err
 }
 
 func pluginResponseBody(id uuid.UUID) string {
@@ -215,9 +215,10 @@ func TestPluginPageServed(t *testing.T) {
 	}
 }
 
-// In a Vault session the request and the relay are served for the
-// session's own approval; the links route is not.
-func TestPluginRoutesInASession(t *testing.T) {
+// A Vault session carries approvals and reverts only
+// (frame-message.schema.json): every plugin route answers as an unknown
+// id, even for the session's own item and secret.
+func TestNoPluginRoutesInASession(t *testing.T) {
 	t.Parallel()
 	id := uuid.Must(uuid.NewV7())
 	const origin = links.Portal
@@ -233,25 +234,14 @@ func TestPluginRoutesInASession(t *testing.T) {
 	link := vault.SessionLink{Token: keys.Token, Item: id}
 	headers := map[string]string{links.SecretHeader: secret, "origin": origin}
 
-	got := srv.Dispatch(context.Background(), link, vault.Request{Method: http.MethodGet, Path: "/api/v1/plugins/" + id.String(), Headers: headers})
-	require.Equal(t, http.StatusOK, got.Status, string(got.Body))
-	require.Contains(t, string(got.Body), `"settings"`)
-
 	post := map[string]string{links.SecretHeader: secret, "origin": origin, "content-type": "application/json"}
-	got = srv.Dispatch(context.Background(), link, vault.Request{
-		Method: http.MethodPost, Path: "/api/v1/plugins/" + id.String() + "/approve", Headers: post, Body: []byte(pluginResponseBody(id)),
-	})
-	require.Equal(t, http.StatusOK, got.Status, string(got.Body))
-	require.Len(t, a.submitted, 1)
-
-	got = srv.Dispatch(context.Background(), link, vault.Request{
-		Method: http.MethodPost, Path: "/api/v1/plugins/" + id.String() + "/links", Headers: post,
-		Body: []byte(fmt.Sprintf(`{"proof":%q}`, links.IssueProof(pluginBinding))),
-	})
-	require.Equal(t, http.StatusNotFound, got.Status, "a session never issues links")
-
-	// Another approval than the session's own is unknown.
-	other := uuid.Must(uuid.NewV7())
-	got = srv.Dispatch(context.Background(), link, vault.Request{Method: http.MethodGet, Path: "/api/v1/plugins/" + other.String(), Headers: headers})
-	require.Equal(t, http.StatusNotFound, got.Status)
+	for _, req := range []vault.Request{
+		{Method: http.MethodGet, Path: "/api/v1/plugins/" + id.String(), Headers: headers},
+		{Method: http.MethodPost, Path: "/api/v1/plugins/" + id.String() + "/approve", Headers: post, Body: []byte(pluginResponseBody(id))},
+		{Method: http.MethodPost, Path: "/api/v1/plugins/" + id.String() + "/links", Headers: post, Body: []byte(fmt.Sprintf(`{"proof":%q}`, links.IssueProof(pluginBinding)))},
+	} {
+		got := srv.Dispatch(context.Background(), link, req)
+		require.Equal(t, http.StatusNotFound, got.Status, req.Path)
+	}
+	require.Empty(t, a.submitted)
 }

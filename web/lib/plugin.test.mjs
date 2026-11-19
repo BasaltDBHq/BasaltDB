@@ -283,6 +283,17 @@ const MUTATIONS = {
   "a change hook nobody knows": ["change-unknown-local", (b) => { b.change.hooksAdded = ["wire.rewrite"]; }],
 };
 
+// The control: every base the mutations start from renders when nothing
+// is changed, so a refusal below is the mutation's.
+for (const base of new Set(Object.values(MUTATIONS).map(([b]) => b))) {
+  test(`unmutated ${base} renders through the same path`, async () => {
+    const { binding, settings } = mutate(base, () => {});
+    const page = await open(linkFor(binding, settings));
+    assert.equal(page.$("main").hidden, false, page.$("error-text").textContent);
+    assert.deepEqual(shown(page.nodes), vector(base).expect.sentences);
+  });
+}
+
 for (const [name, [base, change]] of Object.entries(MUTATIONS)) {
   test(`refused, no approve button: ${name}`, async () => {
     const { binding, settings } = mutate(base, change);

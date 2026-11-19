@@ -55,9 +55,9 @@ func Revert(base string, id uuid.UUID) string {
 	return trim(base) + RevertsPath + id.String()
 }
 
-// Plugin is the approval page of a plugin install or change:
+// PluginApproval is the approval page of a plugin install or change:
 // <base>/plugins/<id>.
-func Plugin(base string, id uuid.UUID) string {
+func PluginApproval(base string, id uuid.UUID) string {
 	return trim(base) + PluginsPath + id.String()
 }
 

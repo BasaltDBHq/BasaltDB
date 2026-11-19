@@ -138,7 +138,7 @@ func (r PluginRequest) URL(base string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return links.Plugin(base, r.ApprovalID) + "#" + frag, nil
+	return links.PluginApproval(base, r.ApprovalID) + "#" + frag, nil
 }
 
 // pluginTexts is how many texts a plugin approval link carries: the
@@ -169,10 +169,10 @@ func ParsePluginRequest(fragment string) (PluginRequest, PluginBinding, error) {
 	return r, b, nil
 }
 
-// PluginResponse is what the plugin approval page outputs after the person
+// PluginApprovalResponse is what the plugin approval page outputs after the person
 // signs (api/plugin/approval/response.schema.json), and the body of POST
 // /api/v1/plugins/{approvalId}/approve.
-type PluginResponse struct {
+type PluginApprovalResponse struct {
 	ApprovalID        uuid.UUID     `json:"approvalId"`
 	CredentialID      passkey.Bytes `json:"credentialId"`
 	AuthenticatorData passkey.Bytes `json:"authenticatorData"`
@@ -180,9 +180,9 @@ type PluginResponse struct {
 	Signature         passkey.Bytes `json:"signature"`
 }
 
-// NewPluginResponse wraps an assertion for approvalID.
-func NewPluginResponse(approvalID uuid.UUID, a passkey.Assertion) PluginResponse {
-	return PluginResponse{
+// NewPluginApprovalResponse wraps an assertion for approvalID.
+func NewPluginApprovalResponse(approvalID uuid.UUID, a passkey.Assertion) PluginApprovalResponse {
+	return PluginApprovalResponse{
 		ApprovalID:        approvalID,
 		CredentialID:      a.CredentialID,
 		AuthenticatorData: a.AuthenticatorData,
@@ -192,7 +192,7 @@ func NewPluginResponse(approvalID uuid.UUID, a passkey.Assertion) PluginResponse
 }
 
 // Assertion returns the WebAuthn assertion the response carries.
-func (r PluginResponse) Assertion() passkey.Assertion {
+func (r PluginApprovalResponse) Assertion() passkey.Assertion {
 	return passkey.Assertion{
 		CredentialID:      r.CredentialID,
 		AuthenticatorData: r.AuthenticatorData,
@@ -203,20 +203,20 @@ func (r PluginResponse) Assertion() passkey.Assertion {
 
 // Code returns the text the person gives the agent:
 // basalt-plugin.1.<base64url(json)>.
-func (r PluginResponse) Code() (string, error) {
+func (r PluginApprovalResponse) Code() (string, error) {
 	return passkey.EncodeCode(PluginResponsePrefix, r)
 }
 
 // ParsePluginResponse decodes a pasted plugin approval code. Surrounding
 // whitespace is ignored; an unknown field, a missing one or another code's
 // prefix is refused.
-func ParsePluginResponse(code string) (PluginResponse, error) {
-	var r PluginResponse
+func ParsePluginResponse(code string) (PluginApprovalResponse, error) {
+	var r PluginApprovalResponse
 	if err := passkey.DecodeCode(PluginResponsePrefix, strings.TrimSpace(code), &r); err != nil {
-		return PluginResponse{}, invalid("%v", err)
+		return PluginApprovalResponse{}, invalid("%v", err)
 	}
 	if r.ApprovalID == uuid.Nil || len(r.CredentialID) == 0 || len(r.AuthenticatorData) == 0 || len(r.ClientDataJSON) == 0 || len(r.Signature) == 0 {
-		return PluginResponse{}, invalid("plugin approval response is missing a field")
+		return PluginApprovalResponse{}, invalid("plugin approval response is missing a field")
 	}
 	return r, nil
 }
@@ -225,7 +225,7 @@ func ParsePluginResponse(code string) (PluginResponse, error) {
 // and the stored passkey, the way submit_plugin_approval does (without the
 // approval's state and expiry, which only Postgres knows). It returns the
 // new signature counter.
-func VerifyPlugin(bindingText string, cred passkey.Credential, r PluginResponse) (uint32, error) {
+func VerifyPlugin(bindingText string, cred passkey.Credential, r PluginApprovalResponse) (uint32, error) {
 	b, err := ParsePluginBinding(bindingText)
 	if err != nil {
 		return 0, err

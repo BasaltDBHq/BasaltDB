@@ -862,7 +862,7 @@ function requireList(value, what, min, check) {
 }
 
 const inSet = (set) => (value, what) => {
-  if (!set.has(value)) throw new CodeError(`${what} "${value}" is not known`);
+  if (!set.has(value)) throw new CodeError(`${what} is not a value this page knows`);
 };
 const roleName = (value, what) => requireMatch(value, ROLE_NAME, what, MAX_ROLE_NAME);
 const hostPort = (value, what) => requireMatch(value, HOST_PORT, what, MAX_HOST_PORT);
@@ -915,7 +915,7 @@ function checkChange(value) {
 export function parsePluginBinding(text) {
   const raw = parseJSON(requireString(text, "binding"), "binding");
   if (raw === null || typeof raw !== "object" || Array.isArray(raw)) throw new CodeError("binding is not an object");
-  if (raw.kind !== KIND_PLUGIN) throw new PluginLinkError(WRONG_KIND, `binding kind "${raw.kind}" is not a plugin approval`);
+  if (raw.kind !== KIND_PLUGIN) throw new PluginLinkError(WRONG_KIND, "the binding is not a plugin approval");
   const b = strictObject(raw, "binding", PLUGIN_BINDING_REQUIRED, PLUGIN_BINDING_OPTIONAL);
   requireMatch(b.approvalId, UUID, "binding approvalId");
   requireString(b.database, "binding database");
@@ -964,7 +964,7 @@ export async function checkPluginRequest(value) {
   const req = strictObject(value, "plugin approval request", PLUGIN_REQUEST_FIELDS, ["credentialIds"]);
   const binding = parsePluginBinding(req.binding);
   if (req.approvalId !== binding.approvalId) {
-    throw new CodeError(`request is for plugin approval ${req.approvalId}, binding for ${binding.approvalId}`);
+    throw new CodeError("the request names another plugin approval than its binding");
   }
   requireString(req.settings, "settings");
   if (hex(await sha256(utf8(req.settings))) !== binding.settingsSha256) {

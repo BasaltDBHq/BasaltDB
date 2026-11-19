@@ -173,7 +173,7 @@ func TestPluginRequestRefuses(t *testing.T) {
 func TestParsePluginResponse(t *testing.T) {
 	t.Parallel()
 	vs := readPluginVectors(t)
-	var want approval.PluginResponse
+	var want approval.PluginApprovalResponse
 	require.NoError(t, json.Unmarshal(vs.Response, &want))
 
 	code, err := want.Code()
@@ -217,7 +217,7 @@ func TestVerifyPlugin(t *testing.T) {
 	require.NoError(t, err)
 	as, err := person.Sign(approval.Challenge(v.Binding), passkeytest.FlagsUPUV, nil)
 	require.NoError(t, err)
-	code, err := approval.NewPluginResponse(id, as).Code()
+	code, err := approval.NewPluginApprovalResponse(id, as).Code()
 	require.NoError(t, err)
 	resp, err := approval.ParsePluginResponse(code)
 	require.NoError(t, err)

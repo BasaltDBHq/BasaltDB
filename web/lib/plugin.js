@@ -27,7 +27,7 @@ import {
   visibleText,
 } from "./codec.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
-import { $, el, fail, loadOrPaste, personText, setPill, showCode, showDone, showEngine, showRelayFailed, webauthnError, whenText } from "./page.js";
+import { $, el, fail, loadOrPaste, personText, setPill, showCode, showDone, showRelayFailed, webauthnError, whenText } from "./page.js";
 import { agentName } from "./scope.js";
 import { pageTransport } from "./transport.js";
 
@@ -232,14 +232,14 @@ async function loadRequest(hash) {
   try {
     if (isLongLink(hash)) {
       const req = await parsePluginRequest(hash);
-      if (req.approvalId !== id) throw new CodeError(`the link is for plugin approval ${req.approvalId}, its path for ${id}`);
+      if (req.approvalId !== id) throw new CodeError("the link is for another plugin approval than its path");
       return { req, relay: null };
     }
     const paths = relayPaths("plugins", id);
     const secret = linkSecret(hash);
     const session = await pageTransport().open({ page: "plugins", id, secret });
     const req = await checkPluginRequest(await fetchRequest(session, paths.request, secret));
-    if (req.approvalId !== id) throw new CodeError(`the engine sent plugin approval ${req.approvalId}, not ${id}`);
+    if (req.approvalId !== id) throw new CodeError("the engine sent another plugin approval than this link's");
     return { req, relay: { path: paths.relay, secret, session } };
   } catch (err) {
     if (err instanceof PluginLinkError) return { refused: err };
@@ -366,7 +366,6 @@ export async function main({ now = () => new Date() } = {}) {
   }
   const state = { req, relay, now, view: pluginView(req.binding) };
   render(req, state.view);
-  showEngine(relay?.session);
   setPill("state", `Waiting · expires ${whenText(req.binding.expiresAt, now())}`, "hold");
   $("main").hidden = false;
   gate(state);

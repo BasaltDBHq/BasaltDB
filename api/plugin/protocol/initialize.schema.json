@@ -33,7 +33,7 @@
       "required": ["maxMessageBytes", "maxInFlight", "timeoutMs"],
       "properties": {
         "maxMessageBytes": { "description": "Largest message either side may send: 4 MiB.", "const": 4194304 },
-        "maxInFlight": { "description": "Calls the engine has open on this entry at once.", "const": 4 },
+        "maxInFlight": { "description": "Hook calls the engine has open on this entry at once. health and shutdown are not counted: each has a slot of its own.", "const": 4 },
         "timeoutMs": { "type": "integer", "minimum": 50, "maximum": 60000 }
       }
     },

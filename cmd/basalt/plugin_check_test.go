@@ -287,6 +287,22 @@ func (e *pluginEngine) runAuthor(env map[string]string, args ...string) result {
 	return r
 }
 
+// The author commands never read the engine config, so --config is a usage
+// error for both.
+func TestAuthorCommandsTakeNoConfig(t *testing.T) {
+	t.Parallel()
+	e := newPluginEngine(t)
+	cfg := filepath.Join(e.base, "engine.json")
+	for _, args := range [][]string{
+		{"keygen", "--out", filepath.Join(e.base, "k"), "--config", cfg},
+		{"sign", e.base, "--key", filepath.Join(e.base, "k.key"), "--config", cfg},
+	} {
+		r := e.runAuthor(nil, args...)
+		require.Equal(t, exitUsage, r.code, r.stderr)
+		require.Contains(t, r.stderr, "config")
+	}
+}
+
 // TestKeygenAndSign: keygen and sign are author commands, allowed under an
 // agent marker. A directory signed with sign passes verification once its
 // public key is trusted, and fails after a 1-byte change.

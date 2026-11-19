@@ -289,6 +289,36 @@ func TestAtMostFourCallsRunAtOnce(t *testing.T) {
 	require.LessOrEqual(t, peak.Load(), int32(MaxInFlight))
 }
 
+// health and shutdown are not held behind four running hook calls: each has
+// a slot of its own, as on the engine's side.
+func TestLifecycleCallsAnswerWithFourCallsRunning(t *testing.T) {
+	var running atomic.Int32
+	release := make(chan struct{})
+	extra := map[string]methodFunc{"hold": func(ctx context.Context, _ json.RawMessage) (any, *rpcError) {
+		running.Add(1)
+		select {
+		case <-release:
+		case <-ctx.Done():
+		}
+		return struct{}{}, nil
+	}}
+	_, c := serveStdio(t, newFull(), withExtra(extra))
+	require.Nil(t, c.call("initialize", initParams).Error)
+	for i := 1; i <= MaxInFlight; i++ {
+		c.send(fmt.Sprintf(`{"jsonrpc":"2.0","id":"h%d","method":"hold","params":{}}`, i))
+	}
+	require.Eventually(t, func() bool { return running.Load() == MaxInFlight }, wait, 5*time.Millisecond)
+	c.send(`{"jsonrpc":"2.0","id":"health","method":"health","params":{}}`)
+	r := c.read()
+	require.Equal(t, `"health"`, string(r.ID), "health answered while four calls run")
+	require.JSONEq(t, `{"status":"READY"}`, string(r.Result))
+	c.send(`{"jsonrpc":"2.0","id":"shutdown","method":"shutdown","params":{}}`)
+	r = c.read()
+	require.Equal(t, `"shutdown"`, string(r.ID), "shutdown answered while four calls run")
+	require.Nil(t, r.Error)
+	close(release)
+}
+
 func TestServeRefusesAnUnnamedPlugin(t *testing.T) {
 	require.ErrorIs(t, Serve(context.Background(), nil), ErrBadPlugin)
 	require.ErrorIs(t, Serve(context.Background(), &fullPlugin{}), ErrBadPlugin)

@@ -3,8 +3,8 @@
 //
 // The SDK answers initialize (with version negotiation), health and shutdown,
 // enforces the 4 MiB message cap in both directions, applies the entry's
-// per-call deadline to the context of every call, keeps at most four calls
-// running at once, and exits cleanly on shutdown. It never logs, never reads
+// per-call deadline to the context of every call, keeps at most four hook
+// calls running at once (health and shutdown are answered beside them), and exits cleanly on shutdown. It never logs, never reads
 // the environment beyond SocketEnv, and puts no value from a message in any
 // error.
 //

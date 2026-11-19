@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -20,8 +21,16 @@ func TestPrintPlugins(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		ps   []ledger.PluginHealth
+		more int
+		bad  string
 		want string
 	}{
+		{name: "problem", bad: "boom", want: "Plugins: could not be read (boom)\n"},
+		{
+			name: "cut", more: 3,
+			ps:   []ledger.PluginHealth{{Name: "a", Instance: "i", Version: "1", SignerKeyID: "k", Endpoint: "REMOTE", Host: "h:1"}},
+			want: "Plugins: a/i 1 (signer k, REMOTE h:1); and 3 more\n",
+		},
 		{name: "no plugin event", ps: nil, want: ""},
 		{name: "only disabled", ps: []ledger.PluginHealth{}, want: "Plugins: none\n"},
 		{
@@ -38,7 +47,7 @@ func TestPrintPlugins(t *testing.T) {
 			t.Parallel()
 			var stderr bytes.Buffer
 			c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &bytes.Buffer{}, err: &stderr}, func(string) string { return "" })
-			printPlugins(c, tc.ps)
+			printPlugins(c, ledger.Health{Plugins: tc.ps, PluginsMore: tc.more, PluginsProblem: tc.bad})
 			require.Equal(t, tc.want, stderr.String())
 		})
 	}
@@ -85,4 +94,34 @@ func TestLogShowsThePluginsLine(t *testing.T) {
 	r = cli(t, nil, "", "log", "--agent", "bot", "--config", cfgPath)
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Contains(t, r.stderr, "Plugins: none\n")
+}
+
+// The Plugins line lists at most ledger.MaxPluginsListed entries and says
+// how many more there are.
+func TestLogCapsThePluginsLine(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	cfgPath := tempConfig(t)
+	path := initAgent(t, d, cfgPath)
+	b, err := os.ReadFile(path)
+	require.NoError(t, err)
+	ctx := context.Background()
+	conn, err := pgdial.Connect(ctx, strings.TrimSpace(string(b)))
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	total := ledger.MaxPluginsListed + 3
+	for i := range total {
+		require.NoError(t, guard.RecordPluginEntryEvent(ctx, conn, guard.PluginEnabled, guard.PluginDetail{
+			Name: fmt.Sprintf("p%03d", i), Instance: "default", Version: "1.0.0", ManifestSHA256: strings.Repeat("ab", 32),
+			SignerKeyID: "jNZPxNG5htlwfhg4ZgknAA", Hooks: []string{"feed.observe"},
+			Endpoint: guard.PluginEndpoint{Kind: guard.PluginEndpointRemote, Host: "h.example:443"}, Egress: []string{"h.example:443"},
+		}))
+	}
+	r := cli(t, nil, "", "log", "--agent", "bot", "--config", cfgPath)
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Contains(t, r.stderr, "p000/default")
+	require.Contains(t, r.stderr, fmt.Sprintf("p%03d/default", ledger.MaxPluginsListed-1))
+	require.NotContains(t, r.stderr, fmt.Sprintf("p%03d/default", ledger.MaxPluginsListed))
+	require.Contains(t, r.stderr, "; and 3 more\n")
 }

@@ -15,7 +15,10 @@
 #   - Fedora's stock service.d/10-timeout-abort.conf is applied by systemd and
 #     the engine still connects; a drop-in that turns the network back on is
 #     applied by systemd and the engine refuses the plugin until it is gone;
-#   - basalt plugin remove deletes the unit, the user and the socket directory.
+#   - basalt plugin remove deletes the unit, the user and the socket directory;
+#   - under the engine unit's own sandbox settings, the engine's user writes a
+#     program into its state directory, starts it, and reaches it on a Unix
+#     socket (./spawn), as an engine that runs a plugin itself would.
 #
 # It changes the machine as root (users, units, /opt/basalt, /etc/basalt), so
 # it runs only on a throwaway CI runner with systemd and passwordless sudo:
@@ -315,5 +318,75 @@ id "$user" >/dev/null 2>&1 && fail "the plugin's user $user is still there"
 sudo test ! -e "/opt/basalt/run/$user" || fail "the socket directory is still there"
 sudo rm -f "$fedora_dropin"
 sudo systemctl daemon-reload
+
+step "the engine's own sandbox lets its user start a program from its state directory"
+# A transient unit gets every [Service] setting of the installed engine unit
+# but what it runs and RuntimeDirectory (systemd removes a unit's runtime
+# directory when it stops, and /run/basalt holds the running engine's
+# sockets). In it, ./spawn writes a copy of itself into the state directory,
+# starts it as a child and reaches it on a socket in the unit's /tmp and on
+# one under the state directory.
+CGO_ENABLED=0 go build -trimpath -o "$work/spawn" ./scripts/systemd-smoke/spawn
+spawn_bin=/usr/local/bin/basalt-smoke-spawn
+spawn_unit="basalt-smoke-spawn.service"
+sudo install -o root -g root -m 0755 "$work/spawn" "$spawn_bin"
+props=()
+in_service=0
+while IFS= read -r line; do
+	case "$line" in
+	'[Service]') in_service=1 ;;
+	'['*) in_service=0 ;;
+	'' | '#'*) ;;
+	*)
+		[ "$in_service" = 1 ] || continue
+		case "${line%%=*}" in
+		ExecStart | Type | Restart | RestartSec | RuntimeDirectory | RuntimeDirectoryMode) ;;
+		*) props+=(-p "$line") ;;
+		esac
+		;;
+	esac
+done </etc/systemd/system/"$engine_unit"
+for ((i = 1; i < ${#props[@]}; i += 2)); do echo "copied from $engine_unit: ${props[i]}"; done
+state=$(systemctl show -p StateDirectory --value "$engine_unit")
+[ "$state" = basalt ] || fail "the engine unit's StateDirectory is '$state'"
+[ -e "$marker" ] || fail "control: the host's marker $marker is gone"
+sudo systemd-run --quiet --unit="$spawn_unit" -p RemainAfterExit=yes "${props[@]}" \
+	"$spawn_bin" -state /var/lib/basalt -marker "$marker" -read-only /usr/local
+spawn_finished() {
+	local s
+	s=$(systemctl show -p SubState --value "$spawn_unit")
+	[ "$s" = exited ] || [ "$s" = failed ]
+}
+wait_for "the spawn check to finish" spawn_finished
+# Every sandbox setting systemd reports is the engine unit's: each key copied
+# from the unit file, and the ones the engine unit leaves at their defaults.
+copied=()
+for ((i = 1; i < ${#props[@]}; i += 2)); do copied+=("${props[i]%%=*}"); done
+for p in "${copied[@]}" User Group UMask NoNewPrivileges ProtectSystem ProtectHome PrivateTmp PrivateDevices \
+	ProtectKernelTunables ProtectKernelModules ProtectControlGroups RestrictSUIDSGID LockPersonality \
+	MemoryDenyWriteExecute SystemCallFilter RestrictAddressFamilies RestrictNamespaces NoExecPaths \
+	ExecPaths ReadWritePaths ReadOnlyPaths InaccessiblePaths StateDirectory StateDirectoryMode \
+	ProtectProc ProcSubset PrivateUsers PrivateNetwork CapabilityBoundingSet MemoryHigh MemoryMax; do
+	want=$(systemctl show -p "$p" --value "$engine_unit")
+	got=$(systemctl show -p "$p" --value "$spawn_unit")
+	[ "$got" = "$want" ] || fail "$p is '$got' in the spawn unit, '$want' in the engine unit"
+	echo "$p=$want"
+done
+id=$(systemctl show -p InvocationID --value "$spawn_unit")
+spawn_log=$(sudo journalctl --no-pager -o cat _SYSTEMD_INVOCATION_ID="$id")
+[ -n "$spawn_log" ] || fail "the spawn check logged nothing ($(systemctl show -p Result --value "$spawn_unit"))"
+grep '^spawn ' <<<"$spawn_log" || fail "the spawn check printed no result line"
+[ "$(systemctl show -p ExecMainStatus --value "$spawn_unit")" = 0 ] || fail "the spawn check exited non-zero"
+grep -q '^spawn FAIL' <<<"$spawn_log" && fail "a spawn check failed"
+for c in "runs-as: uid $(id -u basalt) " no-new-privileges control-read-only-system control-private-tmp \
+	write-copy exec-from-state-dir child-socket-dir reach-socket-in-temp-dir reach-socket-in-state-dir; do
+	grep -q "^spawn ok $c" <<<"$spawn_log" || fail "no passing spawn check '$c'"
+done
+grep -qx 'spawn done' <<<"$spawn_log" || fail "the spawn check did not finish"
+sudo systemctl stop "$spawn_unit"
+sudo rm -f "$spawn_bin"
+sudo test -S "/run/basalt/$agent.sock" || fail "the engine's agent socket is gone after the spawn check"
+left=$(sudo ls -A /var/lib/basalt)
+grep -q '^spawn-' <<<"$left" && fail "the spawn check left its copy in the state directory"
 
 step "PASS"

@@ -1,0 +1,16 @@
+{
+  "method": "PLUGIN_OPEN",
+  "params": {
+    "uploadId": "0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a70",
+    "name": "remote-ner",
+    "instance": "default",
+    "agents": [
+      "product_a"
+    ],
+    "settings": {
+      "auth": {
+        "credentialFile": "/etc/basalt/agents/product_a.url"
+      }
+    }
+  }
+}

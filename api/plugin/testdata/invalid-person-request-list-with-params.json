@@ -1,0 +1,6 @@
+{
+  "method": "PLUGIN_LIST",
+  "params": {
+    "agent": "product_a"
+  }
+}

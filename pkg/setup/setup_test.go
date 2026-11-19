@@ -440,6 +440,8 @@ func TestRunUpgrade(t *testing.T) {
 	require.Equal(t, latest, installedVersion(t, d))
 
 	nothing := upgrade()
+	_, err = setup.Run(ctx, d.Admin, request(nothing), setup.RunInput{Answers: setup.Answers{Revoke: []string{"x"}}})
+	require.Equal(t, setup.CodeUnknownAnswer, codeOf(t, err), "nothing is asked, so no answer is taken")
 	res, err = setup.Run(ctx, d.Admin, request(nothing), setup.RunInput{Approve: func(setup.Plan) error { return errors.New("nothing to approve") }})
 	require.NoError(t, err)
 	require.False(t, res.Ran)

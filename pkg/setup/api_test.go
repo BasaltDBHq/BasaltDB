@@ -195,7 +195,7 @@ func TestBuildsFromAnotherModule(t *testing.T) {
 
 	cmd := exec.Command("go", "build", "-mod=mod", "-o", filepath.Join(dir, "importer"), ".")
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=mod", "GOPROXY=off")
+	cmd.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=mod")
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "%s", out)
 }

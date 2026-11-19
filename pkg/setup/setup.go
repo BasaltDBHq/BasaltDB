@@ -333,6 +333,9 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 		return Result{}, asError(err)
 	}
 	if p.NothingToDo {
+		if err := setuprun.RefuseAnswers(in.Answers.AllRows, in.Answers.Revoke); err != nil {
+			return Result{}, asError(err)
+		}
 		return Result{SetupID: s.P.SetupID, NothingToDo: nothingToDo(p)}, nil
 	}
 	script, err := p.Plan(ctx, in.Answers.AllRows, in.Answers.Revoke)

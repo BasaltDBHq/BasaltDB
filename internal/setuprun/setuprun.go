@@ -359,6 +359,15 @@ func (p *Prepared) plan(ctx context.Context, policies []guard.BlindTable, revoke
 	return script, nil
 }
 
+// RefuseAnswers refuses any answer to a setup that asks nothing: an
+// UPGRADE code with nothing to do.
+func RefuseAnswers(allRows, revoke []string) error {
+	if len(allRows) > 0 || len(revoke) > 0 {
+		return refuse(CodeUnknownAnswer, "the answers reply to questions this setup does not ask: it has nothing to do")
+	}
+	return nil
+}
+
 // policies are the blind tables the person let the agent see every row of.
 func (p *Prepared) policies(allRows []string) ([]guard.BlindTable, error) {
 	var out []guard.BlindTable

@@ -150,7 +150,7 @@ jobs:
   # The one required status: fails if any job above failed or was skipped.
   check:
     if: always()
-    needs: [lint, vet, scripts, secret-scan, test, containers, darwin-archives, macos-smoke]
+    needs: [lint, vet, scripts, secret-scan, test, containers, systemd, darwin-archives, macos-smoke]
     runs-on: ubuntu-latest
     steps:
       # Passes only when every job above succeeded. An allowlist, not a list of
@@ -184,6 +184,42 @@ jobs:
         run: make test-privdrop
       - name: compose example
         run: make test-compose
+
+  # A local plugin under its real systemd unit, which no container here has:
+  # basalt init installs the engine service, a signed test plugin is trusted,
+  # added and enabled with sudo, and its isolation is checked live from inside
+  # and outside the unit, systemd drop-ins included (make test-systemd). The
+  # hosted runner has systemd as PID 1 and passwordless sudo, and is thrown
+  # away after the job: the script changes it as root.
+  systemd:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: basalt_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      BASALT_ADMIN_DATABASE_URL: postgres://postgres:postgres@localhost:5432/basalt_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/go
+      # The hosted image leaves /opt and /usr/local/bin writable by everyone
+      # (mode 0777); stock distributions ship both as root's, mode 0755, and
+      # basalt refuses a plugin base or a binary below a directory others can
+      # write. Put them back as a distribution has them.
+      - name: close /opt and /usr/local/bin
+        run: sudo chmod 0755 /opt /usr/local/bin
+      - run: make test-systemd
 
   # Darwin/amd64 and darwin/arm64 are already in .goreleaser.yaml and on
   # v0.0.1-alpha. This job rebuilds those archives (CGO_ENABLED=0 snapshot,

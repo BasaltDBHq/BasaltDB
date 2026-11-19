@@ -23,12 +23,19 @@ var errBadBatch = errors.New("plugin: a feed batch must be a JSON array of 1 to 
 // runs under Call's rules: a listed agent, the entry's slots and deadline.
 // The caller sends it only to an entry whose manifest declares feed.observe.
 func (h *Host) ObserveFeed(ctx context.Context, k EntryKey, agent string, events json.RawMessage) (int64, error) {
+	return h.ObserveFeedOn(ctx, k, 0, agent, events)
+}
+
+// ObserveFeedOn is ObserveFeed made only on registration reg of the entry
+// (CallOn): a batch read while one registration served the agent never
+// reaches a later one, which may serve it from a later record.
+func (h *Host) ObserveFeedOn(ctx context.Context, k EntryKey, reg Registration, agent string, events json.RawMessage) (int64, error) {
 	seqs, err := batchSeqs(events)
 	if err != nil {
 		return 0, fmt.Errorf("plugin %s: %w", k, err)
 	}
 	var res protocol.FeedObserveResponse
-	if err := h.Call(ctx, k, []string{agent}, protocol.MethodFeedObserve,
+	if err := h.CallOn(ctx, k, reg, []string{agent}, protocol.MethodFeedObserve,
 		protocol.FeedObserveRequest{Agent: agent, Events: events}, &res); err != nil {
 		return 0, err
 	}

@@ -17,7 +17,7 @@ service PluginService {
   rpc Initialize(InitializeRequest) returns (InitializeResponse);
   rpc Health(HealthRequest) returns (HealthResponse);
   rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
-  // Planned: feed.observe (feed/1).
+  // feed.observe (feed/1).
   rpc FeedObserve(FeedObserveRequest) returns (FeedObserveResponse);
   // Planned: approval.deliver (deliver/1).
   rpc ApprovalDeliver(ApprovalDeliverRequest) returns (ApprovalDeliverResponse);

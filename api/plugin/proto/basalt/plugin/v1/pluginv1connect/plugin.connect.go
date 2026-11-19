@@ -63,7 +63,7 @@ type PluginServiceClient interface {
 	Initialize(context.Context, *connect.Request[v1.InitializeRequest]) (*connect.Response[v1.InitializeResponse], error)
 	Health(context.Context, *connect.Request[v1.HealthRequest]) (*connect.Response[v1.HealthResponse], error)
 	Shutdown(context.Context, *connect.Request[v1.ShutdownRequest]) (*connect.Response[v1.ShutdownResponse], error)
-	// Planned: feed.observe (feed/1).
+	// feed.observe (feed/1).
 	FeedObserve(context.Context, *connect.Request[v1.FeedObserveRequest]) (*connect.Response[v1.FeedObserveResponse], error)
 	// Planned: approval.deliver (deliver/1).
 	ApprovalDeliver(context.Context, *connect.Request[v1.ApprovalDeliverRequest]) (*connect.Response[v1.ApprovalDeliverResponse], error)
@@ -152,7 +152,7 @@ type PluginServiceHandler interface {
 	Initialize(context.Context, *connect.Request[v1.InitializeRequest]) (*connect.Response[v1.InitializeResponse], error)
 	Health(context.Context, *connect.Request[v1.HealthRequest]) (*connect.Response[v1.HealthResponse], error)
 	Shutdown(context.Context, *connect.Request[v1.ShutdownRequest]) (*connect.Response[v1.ShutdownResponse], error)
-	// Planned: feed.observe (feed/1).
+	// feed.observe (feed/1).
 	FeedObserve(context.Context, *connect.Request[v1.FeedObserveRequest]) (*connect.Response[v1.FeedObserveResponse], error)
 	// Planned: approval.deliver (deliver/1).
 	ApprovalDeliver(context.Context, *connect.Request[v1.ApprovalDeliverRequest]) (*connect.Response[v1.ApprovalDeliverResponse], error)

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/plugin/protocol/feed.v1.json",
   "title": "feed.observe (feed/1)",
-  "description": "Planned (no hook is called yet). The feed/1 message: one call carries one agent's ledger events, in chain order, as a CloudEvents 1.0 JSON batch; the plugin answers with the last seq it handled. JSON-RPC method feed.observe; ConnectRPC basalt.plugin.v1.PluginService/FeedObserve. Events hold metadata only: never a row value or key, a statement, an intent, a refusal message, a link, or anything about plugins or passkeys. See CONTRACT.md, Plugins, Notifier messages.",
+  "description": "The feed/1 message: one call carries one agent's ledger events, in chain order, as a CloudEvents 1.0 JSON batch; the plugin answers with the last seq it handled. JSON-RPC method feed.observe; ConnectRPC basalt.plugin.v1.PluginService/FeedObserve. Events hold metadata only: never a row value or key, a statement, an intent, a refusal message, a link, or anything about plugins or passkeys. See CONTRACT.md, Plugins, Notifier messages.",
   "$defs": {
     "request": {
       "type": "object",

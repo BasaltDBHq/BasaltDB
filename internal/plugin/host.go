@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/plugin/protocol"
@@ -23,6 +24,8 @@ const (
 type slot struct {
 	entry Entry
 	t     Transport
+	// reg is this registration of the entry, never reused by the host.
+	reg Registration
 	// sem caps the hook calls in flight (initialize included, which runs
 	// before any hook call). health and shutdown each have a slot of their
 	// own outside it, so a plugin busy with hook calls still gets its health
@@ -50,7 +53,14 @@ type slot struct {
 type Host struct {
 	mu      sync.RWMutex
 	entries map[EntryKey]*slot
+	// regs numbers the registrations.
+	regs atomic.Uint64
 }
+
+// Registration is one registration of an entry: each Register gives the
+// entry a new one, so a start, a restart and a start for other agents are
+// told apart. Zero is no registration.
+type Registration uint64
 
 // NewHost returns an empty host.
 func NewHost() *Host { return &Host{entries: map[EntryKey]*slot{}} }
@@ -87,6 +97,7 @@ func (h *Host) Register(ctx context.Context, e Entry, t Transport) error {
 		sem:    make(chan struct{}, protocol.MaxInFlight),
 		health: make(chan struct{}, 1), shutdown: make(chan struct{}, 1),
 		down: make(chan struct{}), state: StateUnavailable,
+		reg: Registration(h.regs.Add(1)),
 	}
 	var resp protocol.InitializeResponse
 	if err := s.do(ctx, s.sem, protocol.MethodInitialize, req, &resp); err != nil {
@@ -127,12 +138,20 @@ func (h *Host) Unregister(k EntryKey) {
 // four hook calls are in flight per entry; health and shutdown are not counted).
 // Other failures are *CallError or ErrAgentNotListed.
 func (h *Host) Call(ctx context.Context, k EntryKey, agents []string, method string, params, result any) error {
+	return h.CallOn(ctx, k, 0, agents, method, params, result)
+}
+
+// CallOn is Call, made only on registration reg of the entry: when the
+// entry was registered again since (it restarted, or started for other
+// agents), the call fails UNAVAILABLE before anything is sent. A zero reg
+// is any registration, as Call.
+func (h *Host) CallOn(ctx context.Context, k EntryKey, reg Registration, agents []string, method string, params, result any) error {
 	switch method {
 	case protocol.MethodInitialize, protocol.MethodHealth, protocol.MethodShutdown:
 		return fmt.Errorf("plugin %s: %q is a lifecycle method, not a hook call", k, method)
 	}
 	s := h.lookup(k)
-	if s == nil {
+	if s == nil || (reg != 0 && s.reg != reg) {
 		return &CallError{Entry: k, Class: ClassUnavailable}
 	}
 	if len(agents) == 0 {
@@ -219,6 +238,15 @@ func (h *Host) SetState(k EntryKey, st State) {
 	if s := h.lookup(k); s != nil {
 		s.setState(st)
 	}
+}
+
+// Registration is the entry's current registration, false when it is not
+// registered.
+func (h *Host) Registration(k EntryKey) (Registration, bool) {
+	if s := h.lookup(k); s != nil {
+		return s.reg, true
+	}
+	return 0, false
 }
 
 func (h *Host) lookup(k EntryKey) *slot {

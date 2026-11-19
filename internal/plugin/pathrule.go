@@ -176,6 +176,22 @@ func checkAbove(base string, owner uint32) error {
 	return nil
 }
 
+// CheckPrivateDir applies the path rule's "above a root" check to dir and
+// every directory above it: each is owned by root or the engine's own user
+// and writable by no one else (a world-writable sticky directory such as
+// /tmp included). A symlink on the way is followed only when root owns it.
+// The engine checks the base it makes plugin socket directories in with it.
+// The error is a *VerifyError naming the path and the rule.
+func CheckPrivateDir(dir string) error {
+	owner, err := currentUID()
+	if err != nil {
+		return pathRefusal(dir, "has an owner that cannot be read")
+	}
+	// checkAbove checks the directories above its argument: name one inside
+	// dir so dir itself is checked too.
+	return checkAbove(filepath.Join(dir, "."+PluginsDirName), owner)
+}
+
 func splitComponents(p string) []string {
 	return strings.Split(filepath.ToSlash(p), "/")
 }

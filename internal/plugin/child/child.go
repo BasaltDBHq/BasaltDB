@@ -7,6 +7,7 @@ package child
 import (
 	"errors"
 	"io"
+	"os"
 	"os/exec"
 	"sync"
 	"time"
@@ -35,6 +36,12 @@ type Spec struct {
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
+	// Runs, when set, records the started process until Stop, so an
+	// engine that is killed leaves a record its next start reaps (Reap).
+	Runs *Runs
+	// SocketDir is the socket directory made for this process, recorded
+	// with it so Reap can remove it.
+	SocketDir string
 }
 
 // Process is a started child.
@@ -42,6 +49,8 @@ type Process struct {
 	cmd    *exec.Cmd
 	exited chan struct{}
 	once   sync.Once
+	// record is the process's run record, removed by Stop.
+	record string
 }
 
 // ErrNoDir: a spec without a working directory.
@@ -66,6 +75,16 @@ func Start(s Spec) (*Process, error) {
 	}
 	p := &Process{cmd: cmd, exited: make(chan struct{})}
 	go func() { _ = cmd.Wait(); close(p.exited) }()
+	if s.Runs != nil {
+		// No process the engine cannot reap later: without its record the
+		// process is stopped at once.
+		path, err := recordStart(s.Runs, cmd.Process.Pid, s.SocketDir)
+		if err != nil {
+			p.Stop()
+			return nil, err
+		}
+		p.record = path
+	}
 	return p, nil
 }
 
@@ -81,6 +100,9 @@ func (p *Process) Stop() {
 		select {
 		case <-p.exited:
 		case <-time.After(reapWait):
+		}
+		if p.record != "" {
+			_ = os.Remove(p.record)
 		}
 	})
 }

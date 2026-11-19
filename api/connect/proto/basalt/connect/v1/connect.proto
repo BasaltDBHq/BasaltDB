@@ -1,0 +1,186 @@
+// The connect service's API (CONTRACT.md, Connect). The connect service is
+// a hosted service of Basalt Vault, used only at setup: it runs a bot's
+// setup code against the person's database, once, and keeps nothing.
+// Planned: no part of BasaltDB serves or calls it yet.
+//
+// Field names are snake_case here; the proto3 JSON names, which the connect
+// page sends and reads, are their camelCase forms. Byte values are strings
+// of base64url without padding, and enum values are SCREAMING_SNAKE_CASE
+// strings, as in the rest of the contract. Integer fields are 32-bit, so
+// proto3 JSON writes them as numbers.
+syntax = "proto3";
+
+package basalt.connect.v1;
+
+import "google/protobuf/descriptor.proto";
+
+option go_package = "github.com/basaltdbhq/basaltdb/api/connect/proto/basalt/connect/v1;connectv1";
+
+extend google.protobuf.FieldOptions {
+  // A field whose value is a secret: the admin connection string. Nothing
+  // may write it to a log, a trace, an error report or a metric label.
+  bool sensitive = 50001;
+}
+
+// Runs a bot's setup code against the person's database, once.
+service SetupService {
+  // What the code asks for, in words, and a passkey challenge. No database
+  // access.
+  rpc DescribeSetup(DescribeSetupRequest) returns (DescribeSetupResponse);
+  // Connects, reads the database's state, and returns the questions to ask.
+  // Changes nothing.
+  rpc CheckSetup(CheckSetupRequest) returns (CheckSetupResponse);
+  // Connects and runs the setup in one transaction.
+  rpc RunSetup(RunSetupRequest) returns (RunSetupResponse);
+}
+
+message DescribeSetupRequest {
+  // The setup code, basalt-setup.1.<payload>.<check>.
+  string code = 1;
+}
+
+message DescribeSetupResponse {
+  SetupSummary summary = 1;
+  PasskeyChallenge challenge = 2;
+}
+
+// What the setup code asks for, decoded and checked.
+message SetupSummary {
+  string setup_id = 1;
+  // INSTALL, AGENT or UPGRADE.
+  string kind = 2;
+  // The agent's name; empty for UPGRADE.
+  string agent = 3;
+  // <prefix>_agent_<name>; empty for UPGRADE.
+  string role = 4;
+  string prefix = 5;
+  Target target = 6;
+  repeated string write = 7;
+  repeated string read = 8;
+  int32 statement_timeout_ms = 9;
+  int32 guard_from = 10;
+  int32 guard_to = 11;
+  // RFC 3339 UTC.
+  string expires_at = 12;
+  // The setup fingerprint, five groups of four lowercase hex digits.
+  string fingerprint = 13;
+  // The engine's fingerprint, when the code carries an engine key.
+  string engine_fingerprint = 14;
+  // The summary lines that do not depend on the database, in the words
+  // basalt init --setup-code shows.
+  repeated string lines = 15;
+}
+
+// The database the setup code is for.
+message Target {
+  string host = 1;
+  int32 port = 2;
+  string database = 3;
+  // Set when the code names a Supabase project.
+  string supabase_ref = 4;
+}
+
+// A passkey registration challenge. The page passes it to the browser to
+// create a passkey and sends it back unchanged with RunSetup.
+message PasskeyChallenge {
+  // 32 random bytes.
+  string challenge = 1;
+  // 16 random bytes: the WebAuthn user id.
+  string user_id = 2;
+  // Labels for the passkey picker.
+  string user_name = 3;
+  string display_name = 4;
+  // RFC 3339 UTC, 15 minutes after DescribeSetup.
+  string expires_at = 5;
+  // The service's keyed hash binding the fields above to the code's
+  // fingerprint. Opaque to the page.
+  string mac = 6;
+}
+
+message CheckSetupRequest {
+  string code = 1;
+  // The admin connection string the person pasted.
+  string database_url = 2 [(sensitive) = true];
+}
+
+message CheckSetupResponse {
+  // Asked before Approve; RunSetup needs an answer to each.
+  repeated Question questions = 1;
+  // True when RunSetup needs a passkey registration.
+  bool passkey_needed = 2;
+  // Lines that depend on the database's state, in the words
+  // basalt init --setup-code shows.
+  repeated string notes = 3;
+  // True for an UPGRADE code with nothing to do: RunSetup then changes and
+  // records nothing.
+  bool nothing_to_do = 4;
+}
+
+message Question {
+  // ROW_LEVEL_SECURITY.
+  string kind = 1;
+  // schema.table.
+  string table = 2;
+  // The question, in the words basalt init --setup-code asks it.
+  string text = 3;
+  // The answers allowed: ALL_ROWS or NONE.
+  repeated string choices = 4;
+}
+
+message Answer {
+  string kind = 1;
+  string table = 2;
+  string choice = 3;
+}
+
+message RunSetupRequest {
+  string code = 1;
+  // The admin connection string the person pasted.
+  string database_url = 2 [(sensitive) = true];
+  repeated Answer answers = 3;
+  // The challenge DescribeSetup returned, unchanged. Required with passkey.
+  PasskeyChallenge challenge = 4;
+  // Absent when no passkey is needed.
+  PasskeyRegistration passkey = 5;
+}
+
+// The browser's answer to navigator.credentials.create, as in the passkey
+// registration response (CONTRACT.md, Approvals, Codes).
+message PasskeyRegistration {
+  string credential_id = 1;
+  string client_data_json = 2;
+  string authenticator_data = 3;
+  // SubjectPublicKeyInfo DER from getPublicKey().
+  string public_key = 4;
+  // -7 (ES256) only.
+  int32 public_key_algorithm = 5;
+  bool prf_supported = 6;
+  // The passkey's label; empty for the default basalt init uses.
+  string label = 7;
+}
+
+message RunSetupResponse {
+  repeated string warnings = 1;
+  // The passkeys this run registered.
+  repeated RegisteredPasskey passkeys = 2;
+  // As in CheckSetupResponse.
+  bool nothing_to_do = 3;
+}
+
+message RegisteredPasskey {
+  string credential_id = 1;
+  string label = 2;
+  // The passkey check code (CONTRACT.md, Connect).
+  string check_code = 3;
+}
+
+// The error detail of every refusal, attached to the ConnectRPC error.
+message Refusal {
+  // SCREAMING_SNAKE_CASE, from the refusals table in CONTRACT.md, Connect.
+  string reason = 1;
+  // The fixed message, in the words the laptop command uses. Never holds
+  // the connection string.
+  string message = 2;
+  // Set when trying again later can work.
+  int32 retry_after_seconds = 3;
+}

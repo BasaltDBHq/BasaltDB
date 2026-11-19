@@ -67,7 +67,9 @@ func WithTransport(t Transport) Option {
 // interfaces the plugin implements. Use it to declare a hook whose SDK
 // interface does not exist yet (the engine still checks the declaration against
 // the manifest), or to declare fewer hooks than the plugin implements. The
-// declaration must equal the manifest's hooks.
+// declaration must equal the manifest's hooks. A hook that has an SDK
+// interface (FeedObserver, ApprovalDeliverer) can be declared only by a
+// plugin that implements it; Serve returns ErrHookNotImplemented otherwise.
 func WithHooks(h map[string]HookDecl) Option {
 	return func(c *config) {
 		c.hooks = h

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
@@ -59,6 +60,103 @@ func (h connectService) Shutdown(ctx context.Context, _ *connectrpc.Request[plug
 	// Serve stops accepting and finishes this reply before it returns.
 	h.s.requestStop()
 	return connectrpc.NewResponse(&pluginv1.ShutdownResponse{}), nil
+}
+
+func (h connectService) FeedObserve(ctx context.Context, req *connectrpc.Request[pluginv1.FeedObserveRequest]) (*connectrpc.Response[pluginv1.FeedObserveResponse], error) {
+	params, ok := hookParams(req.Msg.GetAgent(), "events", req.Msg.GetEvents())
+	if !ok {
+		return nil, connectError(errBadParams)
+	}
+	res, e := h.s.connectHook(ctx, protocol.MethodFeedObserve, params)
+	if e != nil {
+		return nil, connectError(e)
+	}
+	out, ok := res.(protocol.FeedObserveResponse)
+	if !ok {
+		return nil, connectError(errInternal)
+	}
+	return connectrpc.NewResponse(&pluginv1.FeedObserveResponse{LastSeq: out.LastSeq}), nil
+}
+
+func (h connectService) ApprovalDeliver(ctx context.Context, req *connectrpc.Request[pluginv1.ApprovalDeliverRequest]) (*connectrpc.Response[pluginv1.ApprovalDeliverResponse], error) {
+	params, ok := hookParams(req.Msg.GetAgent(), "event", req.Msg.GetEvent())
+	if !ok {
+		return nil, connectError(errBadParams)
+	}
+	if _, e := h.s.connectHook(ctx, protocol.MethodApprovalDeliver, params); e != nil {
+		return nil, connectError(e)
+	}
+	return connectrpc.NewResponse(&pluginv1.ApprovalDeliverResponse{}), nil
+}
+
+// hookParams builds a hook's JSON-RPC params from its ConnectRPC message
+// without encoding the event bytes again, so a plugin's Raw is the bytes
+// the engine sent.
+func hookParams(agent, field string, events []byte) (json.RawMessage, bool) {
+	if !json.Valid(events) {
+		return nil, false
+	}
+	name, err := json.Marshal(agent)
+	if err != nil {
+		return nil, false
+	}
+	out := make([]byte, 0, len(events)+len(name)+len(field)+16)
+	out = append(out, `{"agent":`...)
+	out = append(out, name...)
+	out = append(out, `,"`...)
+	out = append(out, field...)
+	out = append(out, `":`...)
+	out = append(out, events...)
+	return append(out, '}'), true
+}
+
+// hookSlots cap the hook calls of one connection, as on a JSON-RPC
+// connection: at most MaxInFlight run at once, and waitingCalls more wait.
+// Each connection has its own, so two entries that reach one plugin server
+// (two instances, or two engines) never take each other's slots.
+type hookSlots struct {
+	running  chan struct{}
+	admitted chan struct{}
+}
+
+func newHookSlots() *hookSlots {
+	return &hookSlots{
+		running:  make(chan struct{}, protocol.MaxInFlight),
+		admitted: make(chan struct{}, protocol.MaxInFlight+waitingCalls),
+	}
+}
+
+type hookSlotsKey struct{}
+
+// withConnSlots gives a new connection its own hook slots.
+func withConnSlots(ctx context.Context, _ net.Conn) context.Context {
+	return context.WithValue(ctx, hookSlotsKey{}, newHookSlots())
+}
+
+// connectHook runs one hook call under its connection's slots: a call past
+// the waiting cap is answered busy at once, and one that gets no slot before
+// its deadline is answered deadline exceeded. A handler that ignores its
+// context keeps its slot until it returns, as over JSON-RPC.
+func (s *server) connectHook(ctx context.Context, method string, params json.RawMessage) (any, *rpcError) {
+	slots, ok := ctx.Value(hookSlotsKey{}).(*hookSlots)
+	if !ok {
+		slots = s.connectSlots
+	}
+	select {
+	case slots.admitted <- struct{}{}:
+		defer func() { <-slots.admitted }()
+	default:
+		return nil, errBusy
+	}
+	ctx, cancel := s.callContext(ctx)
+	defer cancel()
+	select {
+	case slots.running <- struct{}{}:
+		defer func() { <-slots.running }()
+	case <-ctx.Done():
+		return nil, errDeadline
+	}
+	return s.dispatch(ctx, method, params)
 }
 
 func initializeRequestFromProto(m *pluginv1.InitializeRequest) (protocol.InitializeRequest, error) {
@@ -158,6 +256,7 @@ func (s *server) serveConnect(ctx context.Context, l net.Listener, tlsConfig *tl
 		protocols.SetHTTP2(true)
 	}
 	srv := &http.Server{
+		ConnContext:       withConnSlots,
 		Handler:           s.connectHandler(token),
 		Protocols:         &protocols,
 		ReadHeaderTimeout: headerTimeout,

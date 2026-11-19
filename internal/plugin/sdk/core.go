@@ -83,7 +83,8 @@ type hookSpec struct {
 	methods map[string]func(p Plugin) methodFunc
 }
 
-// hookSpecs is empty: no hook has messages yet.
+// hookSpecs are the hooks the SDK has interfaces for. notifier.go adds the
+// notifier hooks.
 var hookSpecs []hookSpec
 
 // server is the transport-neutral part of a plugin: the three platform methods
@@ -97,6 +98,11 @@ type server struct {
 
 	initMu    sync.Mutex
 	timeoutNs atomic.Int64
+
+	// connectSlots are the hook call slots of a ConnectRPC request that
+	// reached the server without a connection's own (a handler mounted
+	// outside serveConnect). serveConnect gives each connection its own.
+	connectSlots *hookSlots
 
 	stop context.CancelFunc
 
@@ -112,11 +118,17 @@ func newServer(p Plugin, cfg *config) (*server, error) {
 	if info.Name == "" || info.Version == "" {
 		return nil, ErrBadPlugin
 	}
-	s := &server{p: p, info: info, hooks: map[string]HookDecl{}, methods: map[string]methodFunc{}}
+	s := &server{
+		p: p, info: info, hooks: map[string]HookDecl{}, methods: map[string]methodFunc{},
+		connectSlots: newHookSlots(),
+	}
 	s.timeoutNs.Store(int64(defaultTimeout))
 	for _, h := range hookSpecs {
 		decl, ok := h.declare(p)
 		if !ok {
+			if _, given := cfg.hooks[h.name]; cfg.hooksSet && given {
+				return nil, ErrHookNotImplemented
+			}
 			continue
 		}
 		// WithHooks names exactly the hooks served: a hook it leaves out

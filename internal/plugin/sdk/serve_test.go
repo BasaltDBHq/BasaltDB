@@ -54,28 +54,28 @@ func newFull() *fullPlugin {
 	return &fullPlugin{info: Info{Name: "acme-feed", Version: "2.1.0", Model: &Model{Name: "tiny", Version: "3"}}}
 }
 
-var feedHook = map[string]HookDecl{"feed.observe": {Contract: "feed/1"}}
+var wireHook = map[string]HookDecl{"wire.detect": {Contract: "detector/1"}}
 
 // The SDK's tests are not parallel: some swap the package's hook table.
 
 func TestStdioLifecycle(t *testing.T) {
 	p := newFull()
-	s, c := serveStdio(t, p, WithHooks(feedHook))
+	s, c := serveStdio(t, p, WithHooks(wireHook))
 
-	r := c.call("initialize", `{"protocols":["basalt-plugin/0","basalt-plugin/1"],"hooks":["feed.observe"],"config":{"k":[1,"x"]},"limits":{"maxMessageBytes":4194304,"maxInFlight":4,"timeoutMs":1500}}`)
+	r := c.call("initialize", `{"protocols":["basalt-plugin/0","basalt-plugin/1"],"hooks":["wire.detect"],"config":{"k":[1,"x"]},"limits":{"maxMessageBytes":4194304,"maxInFlight":4,"timeoutMs":1500}}`)
 	require.Nil(t, r.Error)
 	var res protocol.InitializeResponse
 	require.NoError(t, json.Unmarshal(r.Result, &res))
 	require.Equal(t, protocol.InitializeResponse{
 		Protocol: protocol.Version1, Name: "acme-feed", Version: "2.1.0",
-		Hooks: map[string]protocol.HookDecl{"feed.observe": {Contract: "feed/1"}},
+		Hooks: map[string]protocol.HookDecl{"wire.detect": {Contract: "detector/1"}},
 		Model: &protocol.Model{Name: "tiny", Version: "3"},
 	}, res)
 	in := p.gotInit.Load()
 	require.NotNil(t, in)
 	require.JSONEq(t, `{"k":[1,"x"]}`, string(in.Config))
 	require.Equal(t, 1500, in.TimeoutMs)
-	require.Equal(t, []string{"feed.observe"}, in.Hooks)
+	require.Equal(t, []string{"wire.detect"}, in.Hooks)
 
 	r = c.call("health", `{}`)
 	require.JSONEq(t, `{"status":"READY"}`, string(r.Result))
@@ -127,28 +127,28 @@ func TestContextCancelStopsServing(t *testing.T) {
 }
 
 func TestVersionNegotiation(t *testing.T) {
-	_, c := serveStdio(t, newFull(), WithHooks(feedHook))
+	_, c := serveStdio(t, newFull(), WithHooks(wireHook))
 	for _, offered := range []string{`["basalt-plugin/2"]`, `["basalt-plugin/0"]`, `[]`, `["garbage"]`} {
-		r := c.call("initialize", fmt.Sprintf(`{"protocols":%s,"hooks":["feed.observe"],"config":{},"limits":{"timeoutMs":1000}}`, offered))
+		r := c.call("initialize", fmt.Sprintf(`{"protocols":%s,"hooks":["wire.detect"],"config":{},"limits":{"timeoutMs":1000}}`, offered))
 		require.Nil(t, r.Result, offered)
 		require.NotNil(t, r.Error, offered)
 		require.Equal(t, codeRefused, r.Error.Code)
 		require.Contains(t, r.Error.Message, "basalt-plugin/1")
 	}
 	// The connection is still usable, and a good offer still works.
-	r := c.call("initialize", `{"protocols":["basalt-plugin/2","basalt-plugin/1"],"hooks":["feed.observe"],"config":{},"limits":{"timeoutMs":1000}}`)
+	r := c.call("initialize", `{"protocols":["basalt-plugin/2","basalt-plugin/1"],"hooks":["wire.detect"],"config":{},"limits":{"timeoutMs":1000}}`)
 	require.Nil(t, r.Error)
 }
 
 func TestInitializeRefusesAHookThePluginDoesNotImplement(t *testing.T) {
 	_, c := serveStdio(t, newFull()) // no hooks declared
-	r := c.call("initialize", `{"protocols":["basalt-plugin/1"],"hooks":["feed.observe"],"config":{},"limits":{"timeoutMs":1000}}`)
+	r := c.call("initialize", `{"protocols":["basalt-plugin/1"],"hooks":["wire.detect"],"config":{},"limits":{"timeoutMs":1000}}`)
 	require.NotNil(t, r.Error)
 	require.Equal(t, codeRefused, r.Error.Code)
 
 	// Declared hooks are exactly what WithHooks says, nothing else.
-	_, c = serveStdio(t, newFull(), WithHooks(feedHook))
-	r = c.call("initialize", `{"protocols":["basalt-plugin/1"],"hooks":["feed.observe"],"config":{},"limits":{"timeoutMs":1000}}`)
+	_, c = serveStdio(t, newFull(), WithHooks(wireHook))
+	r = c.call("initialize", `{"protocols":["basalt-plugin/1"],"hooks":["wire.detect"],"config":{},"limits":{"timeoutMs":1000}}`)
 	require.Nil(t, r.Error)
 	var res protocol.InitializeResponse
 	require.NoError(t, json.Unmarshal(r.Result, &res))

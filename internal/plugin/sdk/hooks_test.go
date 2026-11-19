@@ -162,6 +162,7 @@ func TestSDKAndTemplateAreNotInTheReleaseBinary(t *testing.T) {
 	require.Contains(t, string(out), "github.com/basaltdbhq/basaltdb/internal/plugin/protocol", "the list is the binary's packages")
 	for _, pkg := range strings.Fields(string(out)) {
 		require.NotContains(t, pkg, "internal/plugin/sdk", "the release binary links %s", pkg)
+		require.NotContains(t, pkg, "internal/plugin/testnotifier", "the release binary links %s", pkg)
 	}
 }
 

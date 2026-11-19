@@ -43,6 +43,15 @@ type probe struct{ out io.Writer }
 
 func (probe) Info() sdk.Info { return sdk.Info{Name: pluginName, Version: pluginVersion} }
 
+// ObserveFeed makes the probe a feed observer, the hook its manifest
+// declares. It notes each batch and handles every event.
+func (p probe) ObserveFeed(_ context.Context, b sdk.FeedBatch) (int64, error) {
+	if _, err := fmt.Fprintf(p.out, "probe feed: %d events\n", len(b.Events)); err != nil {
+		return 0, err
+	}
+	return b.LastSeq(), nil
+}
+
 func (p probe) Initialize(context.Context, sdk.Init) error {
 	_, err := fmt.Fprintln(p.out, "probe initialized")
 	return err
@@ -93,8 +102,7 @@ func run(args []string, out io.Writer) int {
 	// so the engine's side is checked as well.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	err := sdk.Serve(ctx, probe{out: out},
-		sdk.WithHooks(map[string]sdk.HookDecl{"feed.observe": {Contract: "feed/1"}}))
+	err := sdk.Serve(ctx, probe{out: out})
 	if err != nil {
 		_, _ = fmt.Fprintln(out, "probe:", err)
 		return 1

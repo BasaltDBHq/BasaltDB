@@ -106,6 +106,8 @@ func connectError(e *rpcError) error {
 		code = connectrpc.CodeFailedPrecondition
 	case codeDeadline:
 		code = connectrpc.CodeDeadlineExceeded
+	case codeBusy:
+		code = connectrpc.CodeResourceExhausted
 	case codeNoMethod:
 		code = connectrpc.CodeUnimplemented
 	}

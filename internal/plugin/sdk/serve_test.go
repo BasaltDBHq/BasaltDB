@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strings"
@@ -271,9 +272,8 @@ func TestAtMostFourCallsRunAtOnce(t *testing.T) {
 		return struct{}{}, nil
 	}}
 	_, c := serveStdio(t, newFull(), withExtra(extra))
-	const calls = 12
-	// The reader stops reading when the slots are full, so the client's writes
-	// block: send from another goroutine.
+	// Four run and the other eight wait for a slot, within the waiting cap.
+	const calls = MaxInFlight + waitingCalls
 	go func() {
 		for i := 1; i <= calls; i++ {
 			_, _ = fmt.Fprintf(c.w, `{"jsonrpc":"2.0","id":%d,"method":"hold","params":{}}`+"\n", i)
@@ -317,6 +317,90 @@ func TestLifecycleCallsAnswerWithFourCallsRunning(t *testing.T) {
 	require.Equal(t, `"shutdown"`, string(r.ID), "shutdown answered while four calls run")
 	require.Nil(t, r.Error)
 	close(release)
+}
+
+// overrunning serves "hold" with a handler that ignores its context and runs
+// until the test ends, counting the handlers running.
+func overrunning(t *testing.T, init string) (*stdioClient, *atomic.Int32) {
+	t.Helper()
+	running := new(atomic.Int32)
+	release := make(chan struct{})
+	extra := map[string]methodFunc{"hold": func(context.Context, json.RawMessage) (any, *rpcError) {
+		running.Add(1)
+		<-release
+		return struct{}{}, nil
+	}}
+	_, c := serveStdio(t, newFull(), withExtra(extra))
+	t.Cleanup(func() { close(release) }) // before Serve is stopped
+	require.Nil(t, c.call("initialize", init).Error)
+	for i := 1; i <= MaxInFlight; i++ {
+		c.send(fmt.Sprintf(`{"jsonrpc":"2.0","id":"h%d","method":"hold","params":{}}`, i))
+	}
+	require.Eventually(t, func() bool { return running.Load() == MaxInFlight }, wait, 5*time.Millisecond)
+	return c, running
+}
+
+// sendAll writes lines from another goroutine: a reader that stopped reading
+// must fail the test, not hang it.
+func (c *stdioClient) sendAll(lines ...string) {
+	go func() {
+		for _, l := range lines {
+			if _, err := io.WriteString(c.w, l+"\n"); err != nil {
+				return
+			}
+		}
+	}()
+}
+
+// readByID reads n replies, which may come in any order, keyed by id.
+func (c *stdioClient) readByID(n int) map[string]reply {
+	c.t.Helper()
+	got := map[string]reply{}
+	for range n {
+		r := c.read()
+		got[string(r.ID)] = r
+	}
+	return got
+}
+
+// Four hook handlers ignore their context and run past the deadline. The
+// engine has timed them out, frees its slots and sends a fifth call, then
+// health. The reader keeps reading: health is answered at once, and the fifth
+// call is answered deadline exceeded when no slot frees in time.
+func TestHealthIsAnsweredWhileHookHandlersOverrun(t *testing.T) {
+	c, running := overrunning(t, shortInit)
+	c.sendAll(`{"jsonrpc":"2.0","id":"h5","method":"hold","params":{}}`,
+		`{"jsonrpc":"2.0","id":"health","method":"health","params":{}}`)
+	got := c.readByID(2)
+	require.Contains(t, got, `"health"`, "health answered behind a call waiting for a slot")
+	require.Nil(t, got[`"health"`].Error)
+	require.JSONEq(t, `{"status":"READY"}`, string(got[`"health"`].Result))
+	require.Contains(t, got, `"h5"`, "the fifth call is answered, not left silent")
+	require.NotNil(t, got[`"h5"`].Error)
+	require.Equal(t, codeDeadline, got[`"h5"`].Error.Code)
+	require.EqualValues(t, MaxInFlight, running.Load(), "the fifth call never ran")
+}
+
+// A peer that ignores the cap cannot make the plugin hold unbounded calls:
+// past waitingCalls waiting, a call is answered busy at once, and health still
+// gets through.
+func TestCallsPastTheWaitingCapAreAnsweredBusy(t *testing.T) {
+	const longInit = `{"protocols":["basalt-plugin/1"],"hooks":[],"config":{},"limits":{"timeoutMs":60000}}`
+	c, running := overrunning(t, longInit)
+	lines := make([]string, 0, waitingCalls+2)
+	for i := 1; i <= waitingCalls; i++ {
+		lines = append(lines, fmt.Sprintf(`{"jsonrpc":"2.0","id":"w%d","method":"hold","params":{}}`, i))
+	}
+	lines = append(lines, `{"jsonrpc":"2.0","id":"over","method":"hold","params":{}}`,
+		`{"jsonrpc":"2.0","id":"health","method":"health","params":{}}`)
+	c.sendAll(lines...)
+	got := c.readByID(2)
+	require.Contains(t, got, `"over"`, "the call past the cap is answered at once")
+	require.NotNil(t, got[`"over"`].Error)
+	require.Equal(t, codeBusy, got[`"over"`].Error.Code)
+	require.Contains(t, got, `"health"`)
+	require.JSONEq(t, `{"status":"READY"}`, string(got[`"health"`].Result))
+	require.EqualValues(t, MaxInFlight, running.Load())
 }
 
 func TestServeRefusesAnUnnamedPlugin(t *testing.T) {

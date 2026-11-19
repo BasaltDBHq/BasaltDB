@@ -12,7 +12,7 @@
       "kind": "APPROVAL_REQUESTED",
       "agent": "product_a",
       "approvalId": "00000000-0000-7000-8000-000000000003",
-      "headline": "Delete 1 row in basalt_check.sample",
+      "headline": "Delete 1 row in basalt_check·sample",
       "expiresAt": "2026-01-02T00:00:01Z",
       "instruction": "Ask the agent for the link to review the held write and approve it with your passkey."
     }

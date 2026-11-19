@@ -62,11 +62,11 @@
         "approvalId": { "description": "The held write's approval: present exactly when the item is a held write.", "$ref": "feed.schema.json#/$defs/uuid" },
         "revertId": { "description": "The revert: present exactly when the item is a revert.", "$ref": "feed.schema.json#/$defs/uuid" },
         "headline": {
-          "description": "The item in one line, built from the operation, the target and the row count (CONTRACT.md gives the grammar). Never a value, a statement or the intent. At most 1000 characters, no control character.",
+          "description": "The item in one line, built from the operation, the target and the row count (CONTRACT.md gives the grammar). Never a value, a statement or the intent. Passed through CONTRACT.md's rule for text from the agent or the database (Links in personMessage): one line, no control, format, zero-width or bidirectional character, host-like dots as middle dots. At most 1000 characters.",
           "type": "string",
           "minLength": 1,
           "maxLength": 1000,
-          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u2064\\u2066-\\u2069\\ufeff]+$"
         },
         "expiresAt": { "$ref": "feed.schema.json#/$defs/timestamp" },
         "link": {

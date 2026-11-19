@@ -155,6 +155,7 @@ var wantFailure = map[string]string{
 	"invalid-deliver-request-no-link-open-instruction.json":  "schema:/$defs/notice/allOf/8/then/properties/instruction/pattern",
 	"invalid-deliver-request-statement-field.json":           "schema:/$defs/notice/additionalProperties",
 	"invalid-deliver-request-headline-two-lines.json":        "schema:/$defs/notice/properties/headline/pattern",
+	"invalid-deliver-request-headline-bidi.json":             "schema:/$defs/notice/properties/headline/pattern",
 	"invalid-deliver-request-hash-link.json":                 "schema:/$defs/notice/properties/link/pattern",
 	"invalid-deliver-request-both-ids.json":                  "schema:/$defs/notice/allOf/0/oneOf",
 	"invalid-deliver-request-other-agent.json":               "rule:deliverOneAgent",

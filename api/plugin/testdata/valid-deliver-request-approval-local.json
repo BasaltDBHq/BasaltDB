@@ -12,7 +12,7 @@
       "kind": "APPROVAL_REQUESTED",
       "agent": "product_a",
       "approvalId": "0193a1b3-1111-7000-8000-000000000001",
-      "headline": "Update 27 rows in public.leads",
+      "headline": "Update 27 rows in public·leads",
       "expiresAt": "2026-11-20T06:03:02.120000Z",
       "link": "http://localhost:8787/approvals/0193a1b3-1111-7000-8000-000000000001#s=q3Jv8sLk2mT0xYp1aBcD9w",
       "linkOpens": "ENGINE_COMPUTER",

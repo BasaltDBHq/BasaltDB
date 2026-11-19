@@ -114,7 +114,27 @@ type site struct {
 	secrets *links.Secrets
 }
 
+// testAgent is an agent the test pages serve, told the pages' secrets and
+// origin once they are known.
+type testAgent interface {
+	pages.Agent
+	wire(secrets *links.Secrets, origin string)
+}
+
+func (a *stubAgent) wire(secrets *links.Secrets, origin string) {
+	a.secrets, a.origin = secrets, origin
+}
+
 func serve(t *testing.T, agents ...*stubAgent) site {
+	t.Helper()
+	all := make([]testAgent, len(agents))
+	for i, a := range agents {
+		all[i] = a
+	}
+	return serveAgents(t, all...)
+}
+
+func serveAgents(t *testing.T, agents ...testAgent) site {
 	t.Helper()
 	// Bind first to learn the port, which is part of the page origin.
 	probe, err := net.Listen("tcp", "127.0.0.1:0")
@@ -128,7 +148,7 @@ func serve(t *testing.T, agents ...*stubAgent) site {
 	secrets := links.NewSecrets(time.Now, rand.Reader)
 	p := pages.New(origin, slog.New(slog.DiscardHandler))
 	for _, a := range agents {
-		a.secrets, a.origin = secrets, origin
+		a.wire(secrets, origin)
 		p.Add(a)
 	}
 	ln, h, err := server.Listen(server.Options{}, "approval pages", addr, p.Handler())
@@ -174,6 +194,7 @@ func TestPagesServeTheEmbeddedFiles(t *testing.T) {
 		"/healthz":               "ok",
 		"/approvals/" + id:       "../lib/approve.js",
 		"/reverts/" + id:         "../lib/revert.js",
+		"/plugins/" + id:         "../lib/plugin.js",
 		"/passkeys/register":     "../lib/register.js",
 		"/passkeys/check":        "../lib/passkeys.js",
 		"/passkeys/forget":       "../lib/passkeys.js",

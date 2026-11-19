@@ -53,6 +53,9 @@ const codePluginRefused = "PLUGIN_REFUSED"
 const (
 	reasonAgentOperated = "AGENT_OPERATED"
 	reasonUnknownAgent  = "UNKNOWN_AGENT"
+	// reasonUnsafePath: a NOT_TRUSTED verification failure of the path rule
+	// (who can write a path, a symlink, an owner), which no key fixes.
+	reasonUnsafePath = "UNSAFE_PATH"
 )
 
 // pluginRefusedError is a PLUGIN_REFUSED error: a basalt plugin command refused,
@@ -193,6 +196,9 @@ func (e *pluginEnv) verifyRefusal(err error, again string) error {
 		r.person = "The plugin was refused because its manifest breaks a rule (" + ve.Why + "). Its publisher must fix the manifest."
 		r.steps = []mcp.NextStep{{Actor: mcp.ActorAgent, Action: mcp.ActionStop, Text: "Stop: the plugin's publisher must fix its manifest."}}
 		return r
+	}
+	if ve.Path != nil {
+		return pathRuleRefusal(r, ve, again)
 	}
 	trust := e.command("trust", "<publisher key file>")
 	r.person = "The plugin was refused: " + ve.File + " " + ve.Why + ". If you trust its publisher, trust their public key " +

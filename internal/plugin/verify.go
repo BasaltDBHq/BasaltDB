@@ -39,6 +39,36 @@ type VerifyError struct {
 	File string
 	// Why is the rule that failed, in fixed words.
 	Why string
+	// Path is set when the path rule refused File for who can write it, a
+	// symlink or its owner: something on the machine to fix, which no
+	// trusted key changes. It is nil for every other refusal.
+	Path *PathFault
+}
+
+// PathFaultKind is which part of the path rule a path failed.
+type PathFaultKind string
+
+// The path rule's parts a refusal names.
+const (
+	// PathWritable: someone besides the owner can write the path.
+	PathWritable PathFaultKind = "WRITABLE"
+	// PathSymlink: the path is a symlink the rule does not follow.
+	PathSymlink PathFaultKind = "SYMLINK"
+	// PathOwner: the path is owned by a user the rule does not allow there.
+	PathOwner PathFaultKind = "OWNER"
+)
+
+// PathFault is what the path rule found at a refused path, read from the
+// path itself (not followed if it is a symlink).
+type PathFault struct {
+	Kind PathFaultKind
+	// UID and GID own the path; Mode is its mode.
+	UID, GID uint32
+	Mode     fs.FileMode
+	// Owners are the users allowed to own it there: root and the required
+	// owner above a root, the required owner from a root down, root for a
+	// symlink above a root.
+	Owners []uint32
 }
 
 // Error implements error.

@@ -65,6 +65,50 @@ func (OSSystem) WriteFile(path string, data []byte, mode os.FileMode, owner stri
 	return nil
 }
 
+// CreateFile makes path an empty file with mode, owned by owner, when it is
+// missing, and keeps an existing one's content: a log a service appends to.
+// Its directory is reached by openTrusted with root as the only trusted
+// owner, so only root can have put anything at path. A missing file is
+// created exclusively without following a link; an existing one is opened
+// without following a link and must be a regular file with no other name (a
+// hard link to another file is refused, never re-owned). Mode and owner are
+// set through the descriptor.
+func (OSSystem) CreateFile(path string, mode os.FileMode, owner string) error {
+	ids, err := lookupOwner(owner)
+	if err != nil {
+		return err
+	}
+	dfd, err := openTrusted(filepath.Dir(path), keepID)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(dfd)
+	base := filepath.Base(path)
+	fd, err := unix.Openat(dfd, base, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, tempFileMode)
+	if errors.Is(err, unix.EEXIST) {
+		fd, err = unix.Openat(dfd, base, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	}
+	if errors.Is(err, unix.ELOOP) {
+		return symlinkError(path)
+	}
+	if err != nil {
+		return &os.PathError{Op: opOpen, Path: path, Err: err}
+	}
+	defer unix.Close(fd)
+	var st unix.Stat_t
+	if err := fstat(fd, &st); err != nil {
+		return err
+	}
+	if statMode(st.Mode)&unix.S_IFMT != unix.S_IFREG || st.Nlink != 1 {
+		return fmt.Errorf("%s is not a plain file (a hard link, a directory or a device?); refusing to take it over; "+
+			"move it aside (sudo mv %s %s.old) and run the install again", path, path, path)
+	}
+	if err := unix.Fchown(fd, ids.uid, ids.gid); err != nil {
+		return err
+	}
+	return unix.Fchmod(fd, uint32(mode.Perm()))
+}
+
 // Mkdir makes path (mode, owner) relative to its parent, refusing a symlink
 // at path, and sets mode and owner through the opened directory descriptor.
 // The parent is reached by openTrusted, so no component of it is a symlink

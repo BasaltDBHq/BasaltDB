@@ -27,6 +27,8 @@
 	<true/>
 	<key>Umask</key>
 	<integer>7</integer>
+	<key>StandardErrorPath</key>
+	<string>/Library/Logs/Basalt/plugins/_basalt-plugin-acme-ner-default.log</string>
 	<key>HardResourceLimits</key>
 	<dict>
 		<key>ResidentSetSize</key>

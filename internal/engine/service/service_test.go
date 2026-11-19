@@ -80,6 +80,16 @@ func (f *fakeSystem) WriteFile(path string, data []byte, mode os.FileMode, owner
 	return nil
 }
 
+func (f *fakeSystem) CreateFile(path string, mode os.FileMode, owner string) error {
+	f.ran = append(f.ran, fakeCreate(path, mode, owner))
+	return nil
+}
+
+// fakeCreate is how the fake records a create step.
+func fakeCreate(path string, mode os.FileMode, owner string) string {
+	return fmt.Sprintf("create -m %04o -o %s %s", mode.Perm(), owner, path)
+}
+
 func (f *fakeSystem) CheckBinary(string) error { return f.binaryErr }
 
 func (f *fakeSystem) Remove(path string) error {
@@ -211,6 +221,14 @@ func TestDarwinInstallPlan(t *testing.T) {
 	require.Contains(t, sys.ran, "dscl . -create /Users/_basalt UserShell /usr/bin/false")
 	require.Contains(t, sys.ran, "mkdir -m 0755 -o _basalt /Library/Application Support/Basalt/run")
 	require.Contains(t, sys.ran, "mkdir -m 0750 -o _basalt /Library/Application Support/Basalt/state")
+	// The log directory is root's, so the engine's user cannot swap the
+	// plugins' log directory below it; the engine's own log is made, as its
+	// user's, before the daemon loads.
+	ran := strings.Join(sys.ran, "\n")
+	require.Contains(t, ran, "mkdir -m 0755 -o root /Library/Logs/Basalt\ncreate -m 0600 -o _basalt /Library/Logs/Basalt/engine.log\n")
+	require.Contains(t, ran, "mkdir -m 0755 -o root /Library/Logs/Basalt/plugins\n")
+	require.NotContains(t, ran, "mkdir -m 0750 -o _basalt /Library/Logs")
+	require.Contains(t, out.String(), "create -m 0600 -o _basalt /Library/Logs/Basalt/engine.log (kept when it exists)")
 	require.Equal(t, []string{
 		"launchctl bootstrap system /Library/LaunchDaemons/dev.basaltdb.engine.plist",
 		"launchctl enable system/dev.basaltdb.engine",
@@ -260,6 +278,14 @@ func TestUninstallPlan(t *testing.T) {
 	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &strings.Builder{}))
 	require.Equal(t, []string{"launchctl bootout system/dev.basaltdb.engine"}, sys.ran)
 	require.Equal(t, []string{service.LaunchdPlist}, sys.removed)
+
+	// The plugins' log directory goes when it is there and empty.
+	sys = newFake()
+	sys.exists["/Library/Logs/Basalt/plugins"] = true
+	steps, err = service.UninstallPlan(sys, darwinSpec())
+	require.NoError(t, err)
+	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &strings.Builder{}))
+	require.Equal(t, []string{service.LaunchdPlist, "/Library/Logs/Basalt/plugins"}, sys.removed)
 }
 
 // Uninstalling again, the unit already gone: nothing to stop, so systemd's

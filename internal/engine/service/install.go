@@ -20,6 +20,9 @@ const (
 	openDirMode   = 0o755
 	// privateDirMode is the agents directory holding credential files.
 	privateDirMode = 0o700
+	// engineLogMode is the macOS engine log's mode: the engine's user's
+	// alone, as its umask would make it.
+	engineLogMode = 0o600
 
 	// rootUser is root's name, as a step names an owner.
 	rootUser = "root"
@@ -47,6 +50,11 @@ type System interface {
 	// WriteFile writes a file without following links; owner, when set, is
 	// the OS user that owns the new file.
 	WriteFile(path string, data []byte, mode os.FileMode, owner string) error
+	// CreateFile makes an empty file owned by owner with mode when it is
+	// missing and keeps an existing one's content (a log a service appends
+	// to), in a directory only root can change, without following a link;
+	// it refuses a path that is not a plain file.
+	CreateFile(path string, mode os.FileMode, owner string) error
 	// Mkdir makes a directory (or takes over an existing real one) without
 	// following a link; it refuses a symlink. group, when set, is its group
 	// instead of owner's.
@@ -70,17 +78,22 @@ const (
 	StepMkdir  StepKind = "MKDIR"
 	// StepRemoveTree removes a directory and what is in it.
 	StepRemoveTree StepKind = "REMOVE_TREE"
+	// StepCreate makes an empty file when it is missing and keeps an
+	// existing one's content; either way it gets Mode and Owner.
+	StepCreate StepKind = "CREATE"
 )
 
 // Step is one action of an install or uninstall plan.
 type Step struct {
 	Kind    StepKind
 	Args    []string // StepRun
-	Path    string   // StepWrite, StepRemove
+	Path    string   // StepWrite, StepCreate, StepRemove
 	Content string   // StepWrite; never printed (a credential can be one)
-	// Mode is the StepWrite file mode; zero means a unit file's 0644.
+	// Mode is the StepWrite or StepCreate file mode; zero means a unit
+	// file's 0644.
 	Mode os.FileMode
-	// Owner is the OS user that owns what StepWrite or StepMkdir makes.
+	// Owner is the OS user that owns what StepWrite, StepCreate or StepMkdir
+	// makes.
 	Owner string
 	// Group is StepMkdir's group; empty is Owner's.
 	Group string
@@ -99,6 +112,8 @@ func (s Step) String() string {
 	switch s.Kind {
 	case StepWrite:
 		return "write " + s.Path
+	case StepCreate:
+		return fmt.Sprintf("create -m %04o -o %s %s (kept when it exists)", modeBits(s.fileMode()), s.Owner, strings.Join(quoteArgs([]string{s.Path}), ""))
 	case StepRemove:
 		return "rm -f " + s.Path
 	case StepRemoveTree:
@@ -117,6 +132,15 @@ func (s Step) String() string {
 		return strings.Join(quoteArgs(s.Args), " ")
 	}
 	return string(s.Kind)
+}
+
+// fileMode is a StepWrite or StepCreate file's mode: Mode, or a unit
+// file's 0644 when it is zero.
+func (s Step) fileMode() os.FileMode {
+	if s.Mode == 0 {
+		return unitFileMode
+	}
+	return s.Mode
 }
 
 // modeBits is m as the octal number chmod takes, setgid included.
@@ -267,7 +291,11 @@ func darwinInstall(ctx context.Context, sys System, s Spec) ([]Step, error) {
 		// and credential files inside are 0600.
 		mkdir(openDirMode, s.User, configDir),
 		mkdir(runtimeDirMode, s.User, config.DefaultSocketDir(goosDarwin)),
-		mkdir(configDirMode, s.User, darwinLogDir),
+		// The log directory is root's, so the plugins' logs below it are out
+		// of the engine user's reach; the engine's own log in it is that
+		// user's, made before the daemon loads.
+		mkdir(openDirMode, "", darwinLogDir),
+		Step{Kind: StepCreate, Path: darwinLogFile, Mode: engineLogMode, Owner: s.User},
 		mkdir(darwinStateDirMode, s.User, config.DefaultStateDir(goosDarwin)),
 	)
 	steps = append(steps, fileSteps(s)...)
@@ -434,11 +462,9 @@ func applyStep(ctx context.Context, sys System, st Step) error {
 	case StepRun:
 		return sys.Run(ctx, st.Args...)
 	case StepWrite:
-		mode := st.Mode
-		if mode == 0 {
-			mode = unitFileMode
-		}
-		return sys.WriteFile(st.Path, []byte(st.Content), mode, st.Owner)
+		return sys.WriteFile(st.Path, []byte(st.Content), st.fileMode(), st.Owner)
+	case StepCreate:
+		return sys.CreateFile(st.Path, st.fileMode(), st.Owner)
 	case StepMkdir:
 		return sys.Mkdir(st.Path, st.Mode, st.Owner, st.Group)
 	case StepRemoveTree:

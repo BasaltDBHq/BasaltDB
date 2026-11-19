@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
+	"github.com/basaltdbhq/basaltdb/internal/contractdoc"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -503,7 +504,7 @@ func TestPersonMessageCarriesThePageWarning(t *testing.T) {
 	t.Parallel()
 	page, err := os.ReadFile("../../web/lib/plugin.js")
 	require.NoError(t, err)
-	contract, err := os.ReadFile("../../CONTRACT.md")
+	contract, err := contractdoc.Read()
 	require.NoError(t, err)
 	for _, line := range []string{levelKnown, levelUnknown, levelUnknownHere} {
 		require.Contains(t, string(page), line)

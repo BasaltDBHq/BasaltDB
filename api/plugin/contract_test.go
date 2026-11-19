@@ -23,6 +23,8 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/contractdoc"
 )
 
 // ecmaUnicodeEscape is an ECMA-262 \uXXXX escape in a schema pattern.
@@ -1200,7 +1202,7 @@ func TestPluginApprovalVectors(t *testing.T) {
 	require.Error(t, validate(responseSchema, missing), "a response without its signature")
 	require.NoError(t, validate(compile("approval/result.schema.json"), doc.ResultExample))
 
-	contract, err := os.ReadFile(filepath.Join("..", "..", "CONTRACT.md"))
+	contract, err := contractdoc.Read()
 	require.NoError(t, err)
 	fixed := []string{
 		sentChangeOnAgain, sentChange, sentChangeVersion, sentChangeFiles, sentChangeSigner, sentChangeEndpoint,

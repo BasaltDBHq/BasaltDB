@@ -1,6 +1,6 @@
 # When something needs doing: next steps, status and upgrade
 
-Every error and every result the agent has to act on tells it what to do next and what to tell you. This page covers what you will see, how to check your setup yourself, and how to upgrade the guard. The exact wire format and the full list of cases are in [CONTRACT.md, Next steps](../CONTRACT.md#next-steps), and the catalog is [`api/mcp/errors/next-steps.json`](../api/mcp/errors/next-steps.json).
+Every error and every result the agent has to act on tells it what to do next and what to tell you. This page covers what you will see, how to check your setup yourself, and how to upgrade the guard. The exact wire format and the full list of cases are in [CONTRACT.md, Next steps](../contract/next-steps.md#next-steps), and the catalog is [`api/mcp/errors/next-steps.json`](../api/mcp/errors/next-steps.json).
 
 ## What the agent gets
 

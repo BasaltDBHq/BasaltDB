@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/contractdoc"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 )
 
@@ -27,7 +28,7 @@ var (
 // so a tool cannot declare a code the contract does not define.
 func contractErrorCodes(t *testing.T) map[string]bool {
 	t.Helper()
-	raw, err := os.ReadFile("../../CONTRACT.md")
+	raw, err := contractdoc.Read()
 	require.NoError(t, err)
 	codes := map[string]bool{}
 	inSection := false
@@ -405,7 +406,7 @@ func TestPIIEnums(t *testing.T) {
 // under the given ### subsection of a ## section of CONTRACT.md.
 func contractSubsectionValues(t *testing.T, section, subsection string) map[string]bool {
 	t.Helper()
-	raw, err := os.ReadFile("../../CONTRACT.md")
+	raw, err := contractdoc.Read()
 	require.NoError(t, err)
 	values := map[string]bool{}
 	inSection, inSubsection := false, false
@@ -665,7 +666,7 @@ const (
 // warnings, and code for status problems.
 func contractNextSteps(t *testing.T) (map[string]bool, map[string]bool, map[string]bool) {
 	t.Helper()
-	raw, err := os.ReadFile("../../CONTRACT.md")
+	raw, err := contractdoc.Read()
 	require.NoError(t, err)
 	errs, results, problems := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	inSection, table := false, tableErrors

@@ -56,4 +56,4 @@ The public docs are at https://docs.basaltvault.app. Every page is also Markdown
 Design records for people working on the code, not user help.
 
 - [README](README.md): what BasaltDB is, what it is not, and the milestone status
-- [CONTRACT.md](CONTRACT.md): the normative contract for MCP tools, the CLI, the pages and the basalt_meta schema
+- [CONTRACT.md](CONTRACT.md): the index of the normative contract for MCP tools, the CLI, the pages and the basalt_meta schema. It lists the section files under contract/; read the index, then only the sections you need

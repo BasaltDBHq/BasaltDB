@@ -12,7 +12,7 @@
 - [ ] New behaviour has tests; guard and ledger tests run against a real Postgres
 - [ ] `make fmt` and `make lint` pass locally; CI runs the full `make ci`
 - [ ] A user-facing change has an entry under `## [Unreleased]` in `CHANGELOG.md`
-- [ ] `CONTRACT.md` is updated if a surface changed (MCP tools, CLI output, errors, wire formats)
+- [ ] The contract (`CONTRACT.md` or its section under `contract/`) is updated if a surface changed (MCP tools, CLI output, errors, wire formats)
 - [ ] Docs are updated if setup, commands or output changed
 - [ ] No credentials, connection strings with passwords, or real data in code, tests or this description
 

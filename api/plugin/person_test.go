@@ -15,6 +15,8 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/contractdoc"
 )
 
 // The person socket's limits the plugin methods live within.
@@ -84,7 +86,7 @@ func TestPluginServiceMethods(t *testing.T) {
 	require.NoError(t, err)
 	var ps personSchema
 	require.NoError(t, json.Unmarshal(raw, &ps))
-	contractRaw, err := os.ReadFile(filepath.Join("..", "..", "CONTRACT.md"))
+	contractRaw, err := contractdoc.Read()
 	require.NoError(t, err)
 	contract := string(contractRaw)
 	start := strings.Index(contract, "### Plugin approval in service mode")

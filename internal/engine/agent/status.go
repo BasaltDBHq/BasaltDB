@@ -268,6 +268,20 @@ type PagesStatus struct {
 type PasskeysStatus struct {
 	Registered bool `json:"registered"`
 	Active     *int `json:"active,omitempty"`
+	// Keys names each active passkey with its check code, computed from the
+	// public key in the database (CONTRACT.md, Connect, The passkey check
+	// code); absent when none is active or they cannot be read.
+	Keys []PasskeyStatus `json:"keys,omitempty"`
+	// Summary is the same in words for the person, set once a setup is
+	// recorded (state DONE).
+	Summary string `json:"summary,omitempty"`
+}
+
+// PasskeyStatus is one entry of status.passkeys.keys. CheckCode is absent
+// when the key cannot be read.
+type PasskeyStatus struct {
+	CredentialID passkey.Bytes `json:"credentialId"`
+	CheckCode    string        `json:"checkCode,omitempty"`
 }
 
 // LedgerStatus is status.ledger: absent when the guard or its size cannot
@@ -446,7 +460,7 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 		}
 	}
 	if err == nil && st.State != guard.GuardMissing {
-		r.Passkeys = s.countPasskeys(ctx, &ps)
+		r.Passkeys = s.countPasskeys(ctx, &ps, setup.status.State == setupDone)
 	}
 	if err == nil {
 		r.Ledger = s.ledgerStatus(ctx, st)
@@ -596,7 +610,7 @@ func (s statusDeps) addReinstalled(ctx context.Context, ps *problems) {
 
 // passkeys counts the active passkeys; none is NO_PASSKEY. A count that
 // fails is logged and leaves active out.
-func (s statusDeps) countPasskeys(ctx context.Context, ps *problems) PasskeysStatus {
+func (s statusDeps) countPasskeys(ctx context.Context, ps *problems, setupDone bool) PasskeysStatus {
 	keys, err := s.passkeys(ctx)
 	if err != nil {
 		s.log.Error("status: count passkeys", "err", err)
@@ -607,7 +621,47 @@ func (s statusDeps) countPasskeys(ctx context.Context, ps *problems) PasskeysSta
 		ps.add(problemNoPasskey, "no passkey is registered, so held writes and reverts cannot be signed",
 			func(b *Steps) string { return noPasskeySteps(b, s.cmds) })
 	}
-	return PasskeysStatus{Registered: n > 0, Active: &n}
+	out := PasskeysStatus{Registered: n > 0, Active: &n}
+	for _, k := range keys {
+		entry := PasskeyStatus{CredentialID: k.ID}
+		code, err := k.CheckCode()
+		if err != nil {
+			s.log.Error("status: passkey check code", "err", err)
+		}
+		entry.CheckCode = code
+		out.Keys = append(out.Keys, entry)
+	}
+	if setupDone {
+		out.Summary = passkeySummary(out.Keys)
+	}
+	return out
+}
+
+// passkeySummary says in words how many passkeys are registered and the
+// check code of each, so the person can compare them with the codes the
+// connect page showed (CONTRACT.md, Connect, The passkey check code).
+func passkeySummary(keys []PasskeyStatus) string {
+	if len(keys) == 0 {
+		return ""
+	}
+	codes := make([]string, 0, len(keys))
+	for _, k := range keys {
+		if k.CheckCode != "" {
+			codes = append(codes, k.CheckCode)
+		}
+	}
+	noun := "passkeys are"
+	if len(keys) == 1 {
+		noun = "passkey is"
+	}
+	msg := fmt.Sprintf("%d %s registered", len(keys), noun)
+	if len(codes) > 0 {
+		msg += ", with check code " + strings.Join(codes, ", check code ")
+	}
+	if len(codes) < len(keys) {
+		msg += fmt.Sprintf(" (the code of %d could not be read)", len(keys)-len(codes))
+	}
+	return msg + ". If the setup page showed you a check code for the passkey it created, it should be one of these. A passkey you did not create means stop and remove it."
 }
 
 // noPasskeySteps: the person registers a passkey; on an agent-operated

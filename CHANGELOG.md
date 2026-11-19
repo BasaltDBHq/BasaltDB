@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `status` names each active passkey with a check code computed from its public key in the database (`passkeys.keys`), and, once a setup is recorded, says in words how many passkeys are registered and each code (`passkeys.summary`). When the setup page created a passkey it shows the same code, so a swapped or extra passkey is visible.
 - `basalt plugin check --json` prints the result of a check that passed as JSON (`api/plugin/check.schema.json`): the `initialize` and `health` timing and one item per hook that answered its sample. A check that fails still prints its reason on stderr and nothing on stdout.
 - `basalt plugin list` without `sudo` on a service install shows each plugin's isolation and its health as the running engine reports it: `READY`, `UNAVAILABLE` or `NOT_STARTED`. `--json` carries both.
 - `basalt plugin trust` ends with the engine restart command: the engine reads a new key at its next start.

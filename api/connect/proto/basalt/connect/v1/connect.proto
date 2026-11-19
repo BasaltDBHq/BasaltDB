@@ -7,7 +7,8 @@
 // page sends and reads, are their camelCase forms. Byte values are strings
 // of base64url without padding, and enum values are SCREAMING_SNAKE_CASE
 // strings, as in the rest of the contract. Integer fields are 32-bit, so
-// proto3 JSON writes them as numbers.
+// proto3 JSON writes them as numbers. Proto3 JSON leaves out a field at its
+// default value: an absent field is false, 0, empty or an empty list.
 syntax = "proto3";
 
 package basalt.connect.v1;
@@ -19,7 +20,9 @@ option go_package = "github.com/basaltdbhq/basaltdb/api/connect/proto/basalt/con
 extend google.protobuf.FieldOptions {
   // A field whose value is a secret: the admin connection string. Nothing
   // may write it to a log, a trace, an error report or a metric label.
-  bool sensitive = 50001;
+  // The number is from the in-house range; a program that also links another
+  // extension of FieldOptions with this number would not start.
+  bool sensitive = 51873;
 }
 
 // Runs a bot's setup code against the person's database, once.

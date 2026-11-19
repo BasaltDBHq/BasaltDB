@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // trustFileExt is a trusted key's file extension: <keyId>.pem.
@@ -79,6 +80,20 @@ func embeddedKeys() (map[string]*ecdsa.PublicKey, error) {
 	}
 	return out, nil
 }
+
+// BuiltInKey reports whether keyID is one of the publisher keys built into
+// the engine, which every trust store holds and no ledger records.
+func BuiltInKey(keyID string) bool {
+	keys, err := builtInKeys()
+	if err != nil {
+		return false
+	}
+	_, ok := keys[keyID]
+	return ok
+}
+
+// builtInKeys parses the built-in keys once.
+var builtInKeys = sync.OnceValues(embeddedKeys)
 
 // check applies the path rule to the trust store: every directory from "/"
 // to plugin-trust/, and each entry in it. A trust store that does not exist

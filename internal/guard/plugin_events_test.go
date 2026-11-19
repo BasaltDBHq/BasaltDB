@@ -315,3 +315,62 @@ func TestPluginEventsUpgradeFromVersion2(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, st.Intact)
 }
+
+// A key is trusted on the record when its latest PLUGIN_TRUST_ADDED or
+// PLUGIN_TRUST_REMOVED is an ADDED: removed, it is not listed; added again,
+// it is.
+func TestReadPluginRecordsTakesTheLatestTrustEvent(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", leads, nil)
+	ctx := context.Background()
+	const k1, k2 = "jNZPxNG5htlwfhg4ZgknAA", "AAAAAAAAAAAAAAAAAAAAAA"
+	require.NoError(t, guard.RecordPluginTrustAdded(ctx, a.Conn, k1))
+	require.NoError(t, guard.RecordPluginTrustAdded(ctx, a.Conn, k2))
+	require.NoError(t, guard.RecordPluginTrustRemoved(ctx, a.Conn, k2))
+	recs, err := guard.ReadPluginRecords(ctx, a.Conn)
+	require.NoError(t, err)
+	require.Equal(t, []string{k1}, recs.TrustKeys)
+
+	require.NoError(t, guard.RecordPluginTrustAdded(ctx, a.Conn, k2))
+	require.NoError(t, guard.RecordPluginTrustRemoved(ctx, a.Conn, k1))
+	recs, err = guard.ReadPluginRecords(ctx, a.Conn)
+	require.NoError(t, err)
+	require.Equal(t, []string{k2}, recs.TrustKeys)
+
+	require.Error(t, guard.RecordPluginEntryEvent(ctx, a.Conn, guard.PluginTrustRemoved, validLocal()), "a key event carries no entry")
+	requireCode(t, recordRaw(t, a.Conn, string(guard.PluginTrustRemoved), `{"signerKeyId": "short"}`), guard.CodeLedgerInputInvalid)
+	requireCode(t, recordRaw(t, a.Conn, string(guard.PluginTrustRemoved), mutated(t, validLocal(), nil)), guard.CodeLedgerInputInvalid)
+	st, err := guard.VerifyChain(ctx, a.Conn)
+	require.NoError(t, err)
+	require.True(t, st.Intact)
+}
+
+// A guard at version 3 refuses PLUGIN_TRUST_REMOVED until the upgrade;
+// version 4's SQL then runs again over itself and keeps the function's
+// grants.
+func TestPluginTrustRemovedMigration(t *testing.T) {
+	ctx := context.Background()
+	restore := guardtest.UpToVersion(t, 3)
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", leads, nil)
+	requireCode(t, guard.RecordPluginTrustRemoved(ctx, a.Conn, "jNZPxNG5htlwfhg4ZgknAA"), guard.CodeLedgerInputInvalid)
+	require.NoError(t, guard.RecordPluginTrustAdded(ctx, a.Conn, "jNZPxNG5htlwfhg4ZgknAA"), "version 3 still records")
+
+	restore()
+	d.NewAgent(t, "bot", leads, nil)
+	sql := guard.PluginTrustRemovedSQL(d.Names)
+	d.Exec(t, "BEGIN; SET LOCAL ROLE "+d.Names.Guard()+"; SET LOCAL search_path = pg_catalog, pg_temp;"+sql+"COMMIT;")
+	require.NoError(t, guard.RecordPluginTrustRemoved(ctx, a.Conn, "jNZPxNG5htlwfhg4ZgknAA"))
+	recs, err := guard.ReadPluginRecords(ctx, a.Conn)
+	require.NoError(t, err)
+	require.Empty(t, recs.TrustKeys)
+	var public bool
+	require.NoError(t, d.Admin.QueryRow(ctx,
+		`SELECT has_function_privilege('public', 'basalt_meta.record_plugin_event(text, jsonb)', 'EXECUTE')`).Scan(&public))
+	require.False(t, public, "PUBLIC cannot run it")
+	requireCode(t, recordRaw(t, d.Admin, string(guard.PluginTrustRemoved), `{"signerKeyId": "jNZPxNG5htlwfhg4ZgknAA"}`), guard.CodeNotAllowed)
+	st, err := guard.VerifyChain(ctx, a.Conn)
+	require.NoError(t, err)
+	require.True(t, st.Intact)
+}

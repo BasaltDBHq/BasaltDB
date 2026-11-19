@@ -57,7 +57,7 @@ func (m Mode) owner() (uint32, error) {
 // service mode: it may belong to the engine's OS user, which must not be
 // able to change what is installed or trusted.
 const (
-	linuxServiceBase  = "/usr/local/lib/basalt"
+	linuxServiceBase  = "/opt/basalt"
 	darwinServiceBase = "/Library/Basalt"
 	goosDarwin        = "darwin"
 )
@@ -87,7 +87,7 @@ func base(mode Mode, goos, configDir string) (string, error) {
 }
 
 // Root is the directory installed copies live under:
-// /usr/local/lib/basalt/plugins on Linux and /Library/Basalt/plugins on
+// /opt/basalt/plugins on Linux and /Library/Basalt/plugins on
 // macOS in service mode, <configDir>/plugins in same-user mode.
 func Root(mode Mode, goos, configDir string) (string, error) {
 	b, err := base(mode, goos, configDir)
@@ -98,7 +98,7 @@ func Root(mode Mode, goos, configDir string) (string, error) {
 }
 
 // TrustDir is the trust store's directory, next to Root:
-// /usr/local/lib/basalt/plugin-trust on Linux and
+// /opt/basalt/plugin-trust on Linux and
 // /Library/Basalt/plugin-trust on macOS in service mode,
 // <configDir>/plugin-trust in same-user mode.
 func TrustDir(mode Mode, goos, configDir string) (string, error) {

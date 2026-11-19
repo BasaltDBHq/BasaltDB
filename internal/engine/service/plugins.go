@@ -92,7 +92,7 @@ type PluginNames struct {
 }
 
 // PluginBase is the service-mode plugin base directory on goos:
-// /usr/local/lib/basalt on Linux, /Library/Basalt on macOS. It holds the
+// /opt/basalt on Linux, /Library/Basalt on macOS. It holds the
 // installed copies, the trust store and the plugins' socket directories.
 func PluginBase(goos string) (string, error) {
 	root, err := plugin.Root(plugin.ModeService, goos, "")
@@ -576,24 +576,23 @@ func (a *idAllocator) next() (int, error) {
 }
 
 // PluginBaseSteps make the plugin base and its run directory, root's and
-// 0755, before any plugin's unit. On a system where a directory above the
-// base can be written by a group (Debian-family systems ship /usr/local as
-// root:staff 2775), the base cannot be made safely: the step is skipped
-// with the fix, and the engine itself still installs.
+// 0755, before any plugin's unit. On Linux a base that cannot be made safely
+// (a directory above it that someone other than root can write) fails its
+// step, as any other unsafe path does; the engine is already started by
+// then. On macOS the plugin steps come before the engine's daemon, so the
+// step is skipped with the cause and the engine still installs.
 func PluginBaseSteps(goos string) ([]Step, error) {
 	base, err := PluginBase(goos)
 	if err != nil {
 		return nil, err
 	}
-	run := filepath.Join(base, pluginRunDirName)
-	note := "plugins cannot be installed until every directory above " + base +
-		" is writable by root only; on Debian-family systems /usr/local and /usr/local/lib are group-writable: sudo chmod g-w /usr/local /usr/local/lib"
+	var note string
 	if goos == goosDarwin {
 		note = "plugins cannot be installed until every directory above " + base + " is owned by root and writable by root only"
 	}
 	return []Step{
 		{Kind: StepMkdir, Path: base, Mode: openDirMode, Note: note},
-		{Kind: StepMkdir, Path: run, Mode: openDirMode, Note: note},
+		{Kind: StepMkdir, Path: filepath.Join(base, pluginRunDirName), Mode: openDirMode, Note: note},
 	}, nil
 }
 

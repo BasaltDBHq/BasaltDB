@@ -392,7 +392,7 @@ func TestReaddWithAnotherSignerReplacesTheCopy(t *testing.T) {
 func TestServiceModeLocations(t *testing.T) {
 	t.Parallel()
 	for goos, want := range map[string][2]string{
-		"linux":  {"/usr/local/lib/basalt/plugins", "/usr/local/lib/basalt/plugin-trust"},
+		"linux":  {"/opt/basalt/plugins", "/opt/basalt/plugin-trust"},
 		"darwin": {"/Library/Basalt/plugins", "/Library/Basalt/plugin-trust"},
 	} {
 		root, err := Root(ModeService, goos, "/etc/basalt")

@@ -21,7 +21,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/plugin/dial"
 )
 
-const svcCopy = "/usr/local/lib/basalt/plugins/acme-ner/default/4f1c2b0e9a8d7c6b5a49382716f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3"
+const svcCopy = "/opt/basalt/plugins/acme-ner/default/4f1c2b0e9a8d7c6b5a49382716f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3"
 
 func svcConfig() config.Config {
 	return config.Config{
@@ -102,7 +102,7 @@ func TestServiceEngineReachesOnlyAMatchingUnit(t *testing.T) {
 
 	ep := serviceEngine(cfg, installed(t, cfg, v, 990), 995)
 	require.Empty(t, ep.localRefusal(p, v))
-	require.Equal(t, serviceTarget{socket: "/usr/local/lib/basalt/run/basalt-plugin-acme-ner-default/p.sock", uid: 990}, ep.targets[k])
+	require.Equal(t, serviceTarget{socket: "/opt/basalt/run/basalt-plugin-acme-ner-default/p.sock", uid: 990}, ep.targets[k])
 
 	// No unit: refused, fail closed.
 	ep = serviceEngine(cfg, &fakeUnits{uids: map[string]int{"basalt-plugin-acme-ner-default": 990}}, 995)

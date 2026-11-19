@@ -156,15 +156,18 @@ func TestPluginIsolationAsRoot(t *testing.T) {
 	require.NoError(t, os.WriteFile(exe, raw, 0o755))
 
 	sys := OSSystem{Stdout: io.Discard, Stderr: io.Discard}
-	// Debian-family systems ship /usr/local as root:staff 2775: the plugin
-	// base is refused there, and the fix the install prints makes it work.
-	runCmd(t, "chmod", "2775", "/usr/local")
-	err = sys.Mkdir("/usr/local/lib/basalt", openDirMode, "", "")
+	// A group-writable directory above the base: the base is refused, as any
+	// path under it would be. The mode is put back even when an assert fails.
+	opt, err := os.Stat("/opt")
+	require.NoError(t, err, "/opt holds the plugin base")
+	optMode := opt.Mode().Perm() | opt.Mode()&os.ModeSetgid
+	t.Cleanup(func() { _ = os.Chmod("/opt", optMode) })
+	runCmd(t, "chmod", "2775", "/opt")
+	err = sys.Mkdir("/opt/basalt", openDirMode, "", "")
 	require.ErrorContains(t, err, "writable by group or others")
-	runCmd(t, "chmod", "g-w", "/usr/local")
-	if fi, err := os.Stat("/usr/local/lib"); err == nil && fi.Mode().Perm()&0o020 != 0 {
-		runCmd(t, "chmod", "g-w", "/usr/local/lib")
-	}
+	_, err = os.Lstat("/opt/basalt")
+	require.ErrorIs(t, err, os.ErrNotExist, "nothing is made under a group-writable directory")
+	require.NoError(t, os.Chmod("/opt", optMode))
 
 	for _, u := range []string{"basalt", "agent-one"} {
 		if !sys.UserExists(u) {
@@ -186,9 +189,9 @@ func TestPluginIsolationAsRoot(t *testing.T) {
 	}
 
 	h := PluginHost{GOOS: goosLinux, EngineUser: "basalt", ConfigDir: cfgDir, StateDir: state, SocketDir: "/run/basalt"}
-	a := PluginEntry{Name: "acme-ner", Instance: "default", Dir: "/usr/local/lib/basalt/plugins/acme-ner/default/x", Command: "bin/p", Enabled: true}
+	a := PluginEntry{Name: "acme-ner", Instance: "default", Dir: "/opt/basalt/plugins/acme-ner/default/x", Command: "bin/p", Enabled: true}
 	b := a
-	b.Instance, b.Dir = "client_x", "/usr/local/lib/basalt/plugins/acme-ner/client_x/x"
+	b.Instance, b.Dir = "client_x", "/opt/basalt/plugins/acme-ner/client_x/x"
 	steps, err := PluginInstallPlan(context.Background(), sys, h, []PluginEntry{a, b})
 	require.NoError(t, err)
 	apply(t, steps)

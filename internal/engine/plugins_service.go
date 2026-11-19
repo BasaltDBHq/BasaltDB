@@ -11,6 +11,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/dial"
 )
 
 // Why a service engine does not reach a local entry's unit.
@@ -21,8 +22,14 @@ const (
 	// whyUnitOverridden: a drop-in or a unit file systemd reads first would
 	// change what the unit runs beyond the file the engine compared.
 	whyUnitOverridden = "a systemd drop-in or another unit file of the same name changes its service unit; " +
-		"the person removes it (systemctl cat names it), then runs sudo basalt service install"
+		"the person removes it or masks it with a link to /dev/null of the same name in /etc/systemd/system (systemctl cat names it)"
 	whyNoEngineGroup = "the engine's group cannot be looked up, so its socket directory cannot be checked"
+	whyUserGroups    = "the groups of its service unit's OS user cannot be read, so it cannot be checked"
+	whyUnitUserMoved = "its service unit's OS user or the engine's group is not the one the engine started with; " +
+		"the engine reaches it again after a restart"
+	// whySocketDir follows a not-ready entry whose socket directory changed.
+	whySocketDir = "its socket directory is no longer the plugin user's, in the engine's group and closed to others; " +
+		"the person runs sudo basalt service install to make it again"
 	// whyNoSocket follows a not-ready entry whose unit never made its socket.
 	whyNoSocket = "nothing listens on its socket: in service mode a plugin must listen on the socket " +
 		"BASALT_PLUGIN_SOCKET names (a plugin built with the Go SDK does); one that only reads stdin never starts there"
@@ -159,7 +166,7 @@ func (ep *enginePlugins) unitTarget(p config.Plugin, v plugin.Verified) (service
 	group := ep.unitHost.EngineUser
 	in, err := src.inGroup(names.User, group)
 	if err != nil {
-		return serviceTarget{}, whyUnitUser
+		return serviceTarget{}, whyUserGroups
 	}
 	if in {
 		return serviceTarget{}, service.PluginUserInGroup(ep.o.goos, names.User, group)
@@ -171,13 +178,25 @@ func (ep *enginePlugins) unitTarget(p config.Plugin, v plugin.Verified) (service
 	return serviceTarget{socket: names.Socket, uid: uint32(uid), gid: uint32(gid)}, ""
 }
 
+// dialFailure is what status adds for a failed connection to a service
+// entry, "" when its cause needs no words.
+func dialFailure(err error) string {
+	switch {
+	case errors.Is(err, dial.ErrNoSocket):
+		return whyNoSocket
+	case errors.Is(err, dial.ErrSocketDir):
+		return whySocketDir
+	}
+	return ""
+}
+
 // recheckUnit runs unitTarget again before a connection to local entry k,
 // verified as v, that start reached as t. When the unit or its OS user
 // changed since, the entry is refused (status shows why) and not reached.
 func (ep *enginePlugins) recheckUnit(k plugin.EntryKey, v plugin.Verified, t serviceTarget) error {
 	now, why := ep.unitTarget(ep.configuredEntry(k), v)
 	if why == "" && (now.uid != t.uid || now.gid != t.gid) {
-		why = whyUnitUser
+		why = whyUnitUserMoved
 	}
 	ep.mu.Lock()
 	defer ep.mu.Unlock()

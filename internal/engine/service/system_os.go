@@ -29,7 +29,10 @@ func (OSSystem) InGroup(name, group string) (bool, error) {
 	return InGroup(name, group)
 }
 
-// InGroup is OSSystem.InGroup, for the engine, which has no System.
+// InGroup is OSSystem.InGroup, for the engine, which has no System. In a
+// build without cgo, Linux group membership comes from /etc/group only, so a
+// membership only a directory service (sssd, LDAP) knows is not seen, as for
+// plugin.CheckAgentUsers.
 func InGroup(name, group string) (bool, error) {
 	g, err := user.LookupGroup(group)
 	var unknown user.UnknownGroupError

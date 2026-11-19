@@ -239,7 +239,7 @@ func TestServiceEngineConnectsToTheUnitSocket(t *testing.T) {
 	ep.first[k] = v
 	ep.targets[k] = serviceTarget{socket: sock, uid: me + 1, gid: uint32(f.gid)}
 	_, err = ep.dial(ctx, e)
-	require.ErrorContains(t, err, whyUnitUser)
+	require.ErrorContains(t, err, whyUnitUserMoved)
 }
 
 // A drop-in, or a unit file systemd reads before the engine's, changes what
@@ -391,6 +391,15 @@ func TestServiceEngineNamesTheSocketVariable(t *testing.T) {
 	require.Len(t, probs, 1)
 	require.Equal(t, agent.ProblemPluginUnavailable, probs[0].Code)
 	require.Contains(t, probs[0].Message, "must listen on the socket BASALT_PLUGIN_SOCKET names")
+
+	// A socket directory opened to others: status names that instead.
+	require.NoError(t, os.Chmod(dir, 0o755))
+	ep.first[k] = v
+	_, err = ep.dial(context.Background(), e)
+	require.ErrorIs(t, err, dial.ErrSocketDir)
+	probs = ep.PluginProblems("product_a")
+	require.Len(t, probs, 1)
+	require.Contains(t, probs[0].Message, whySocketDir)
 }
 
 // dirGID is dir's group: on macOS a new directory takes its parent's.

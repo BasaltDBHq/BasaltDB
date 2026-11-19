@@ -56,13 +56,13 @@ func TestServiceConnectsOnlyToTheEntrysUser(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		gid := dirGID(t, dir)
 
-		tr, err := Service(ctx, k, serviceEntry(transport), sock, me, gid)
+		tr, err := Service(ctx, k, serviceEntry(transport), sock, me, gid, nil)
 		require.NoError(t, err, transport)
 		require.NoError(t, tr.Close())
 		require.Eventually(t, func() bool { return accepted.Load() >= 1 }, 2*time.Second, 10*time.Millisecond)
 
 		// Another uid: its socket directory is not that user's.
-		_, err = Service(ctx, k, serviceEntry(transport), sock, me+1, gid)
+		_, err = Service(ctx, k, serviceEntry(transport), sock, me+1, gid, nil)
 		require.Error(t, err, transport)
 		require.True(t, errors.Is(err, ErrSocketDir), "%s: %v", transport, err)
 		require.Contains(t, err.Error(), "plugin acme-ner/default")
@@ -91,16 +91,16 @@ func TestServiceRefusesALinkOrNoSocket(t *testing.T) {
 	link := filepath.Join(dir, "p.sock")
 	require.NoError(t, os.Symlink(target, link))
 	for _, transport := range []string{TransportUnix, TransportConnect} {
-		_, err := Service(context.Background(), k, serviceEntry(transport), link, me, gid)
+		_, err := Service(context.Background(), k, serviceEntry(transport), link, me, gid, nil)
 		require.Error(t, err, transport)
 	}
 	require.Zero(t, accepted.Load(), "the link's target was never reached")
 
-	_, err := Service(context.Background(), k, serviceEntry(TransportUnix), filepath.Join(dir, "missing.sock"), me, gid)
+	_, err := Service(context.Background(), k, serviceEntry(TransportUnix), filepath.Join(dir, "missing.sock"), me, gid, nil)
 	require.ErrorIs(t, err, ErrNoSocket, "nothing listens: the plugin never made its socket")
 
 	remote := plugin.Verified{Manifest: plugin.Manifest{Endpoint: plugin.Endpoint{Remote: &plugin.RemoteEndpoint{Transport: TransportConnect, URL: "https://x.example"}}}}
-	_, err = Service(context.Background(), k, remote, link, me, gid)
+	_, err = Service(context.Background(), k, remote, link, me, gid, nil)
 	require.Error(t, err)
 }
 
@@ -116,7 +116,7 @@ func TestServiceChecksTheSocketDirectoryEachTime(t *testing.T) {
 	sock := filepath.Join(dir, "p.sock")
 	accepted := listenUnix(t, sock)
 	dialOnce := func(sock string, gid uint32) error {
-		tr, err := Service(context.Background(), k, serviceEntry(TransportUnix), sock, me, gid)
+		tr, err := Service(context.Background(), k, serviceEntry(TransportUnix), sock, me, gid, nil)
 		if err == nil {
 			_ = tr.Close()
 		}
@@ -144,4 +144,48 @@ func dirGID(t *testing.T, dir string) uint32 {
 	fi, err := os.Stat(dir)
 	require.NoError(t, err)
 	return fi.Sys().(*syscall.Stat_t).Gid
+}
+
+// The unit recheck and the directory check run on the connection itself,
+// for every transport: a connect transport's later connections go through
+// the same check, so a unit or directory changed after the first one is
+// refused there too.
+func TestServiceChecksEveryConnectionOfEveryTransport(t *testing.T) {
+	t.Parallel()
+	k := plugin.EntryKey{Name: "acme-ner", Instance: "default"}
+	me := uint32(os.Getuid())
+	for _, transport := range []string{TransportStdio, TransportUnix, TransportConnect} {
+		dir := shortBase(t)
+		gid := dirGID(t, dir)
+		sock := filepath.Join(dir, "p.sock")
+		listenUnix(t, sock)
+		var calls atomic.Int32
+		tr, err := Service(context.Background(), k, serviceEntry(transport), sock, me, gid, func() error {
+			calls.Add(1)
+			return nil
+		})
+		require.NoError(t, err, transport)
+		require.NoError(t, tr.Close())
+		require.Positive(t, calls.Load(), "%s: the recheck ran on the connection", transport)
+
+		changed := errors.New("unit changed")
+		_, err = Service(context.Background(), k, serviceEntry(transport), sock, me, gid, func() error { return changed })
+		require.Error(t, err, transport)
+	}
+
+	// The check itself: recheck, then the directory, then the peer.
+	dir := shortBase(t)
+	gid := dirGID(t, dir)
+	sock := filepath.Join(dir, "p.sock")
+	listenUnix(t, sock)
+	c, err := net.Dial("unix", sock)
+	require.NoError(t, err)
+	defer c.Close()
+	changed := errors.New("unit changed")
+	require.NoError(t, ConnCheck(dir, me, gid, nil)(c))
+	require.ErrorIs(t, ConnCheck(dir, me, gid, func() error { return changed })(c), changed)
+	require.NoError(t, os.Chmod(dir, 0o755))
+	require.ErrorIs(t, ConnCheck(dir, me, gid, nil)(c), ErrSocketDir, "opened to others after the first connection")
+	require.NoError(t, os.Chmod(dir, 0o700))
+	require.ErrorIs(t, ConnCheck(dir, me, gid+1, nil)(c), ErrSocketDir)
 }

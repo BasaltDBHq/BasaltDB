@@ -608,7 +608,10 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		PII:          observer.On(pool),
 		Catalog:      postgres.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database).WithHost(pool.Config().ConnConfig.Host),
 		Columns:      postgres.NewColumnOrder(budgeted),
-		Classes:      storeClasses{BoundMap: classes.On(pool)},
+		// The plugin approval routes read and relay on the agent's own
+		// credential, as the approval routes do.
+		PluginApprovals: store,
+		Classes:         storeClasses{BoundMap: classes.On(pool)},
 	})
 	return agentRuntime{
 		svc: svc,

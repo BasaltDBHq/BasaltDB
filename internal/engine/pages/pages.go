@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"path"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -47,6 +48,9 @@ type PageRoute struct {
 var PageRoutes = []PageRoute{
 	{Path: links.ApprovalsPath, ID: true, File: "approve/index.html"},
 	{Path: links.RevertsPath, ID: true, File: "revert/index.html"},
+	// The plugin approval page: the same fragments as the approval page
+	// (#2., #s=, #h=).
+	{Path: links.PluginsPath, ID: true, File: "plugin/index.html"},
 	{Path: links.RegisterPath, File: "register/index.html"},
 	// The passkey management page (M4.1): static, input in the fragment,
 	// no relay.
@@ -107,6 +111,26 @@ type Agent interface {
 	PageFailure(err error) *mcp.ToolError
 }
 
+// PluginApprovals is what the plugin approval routes ask of an agent
+// (CONTRACT.md, Local pages): an Agent that also serves plugin approvals
+// implements it, and the routes skip one that does not, as an agent that
+// does not know the id. Each method acts on a plugin approval this agent's
+// role opened, with its credential; ErrNotThisAgent (agent package) means
+// another agent's, or none.
+type PluginApprovals interface {
+	// PluginApprovalRequest is the request of a pending plugin approval:
+	// its binding and settings texts read from agent_plugin_approvals, and
+	// the database's passkeys.
+	PluginApprovalRequest(ctx context.Context, id uuid.UUID) (approval.PluginRequest, error)
+	// RelayPluginApproval relays the person's signature to
+	// submit_plugin_approval, which verifies it, and returns when Postgres
+	// recorded the approval.
+	RelayPluginApproval(ctx context.Context, r approval.PluginApprovalResponse) (time.Time, error)
+	// IssuePluginLink issues a new short link for the approval to a caller
+	// that shows proof of its binding text (links.IssueProof).
+	IssuePluginLink(ctx context.Context, id uuid.UUID, proof string) (string, error)
+}
+
 // Server is the pages' handler. Agents are added once each is set up,
 // before the listener serves.
 type Server struct {
@@ -164,6 +188,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/reverts/{revertId}/reveal", s.postRevertReveal)
 	mux.HandleFunc("POST /api/v1/approvals/{approvalId}/links", s.postApprovalLink)
 	mux.HandleFunc("POST /api/v1/reverts/{revertId}/links", s.postRevertLink)
+	mux.HandleFunc("GET /api/v1/plugins/{approvalId}", s.getPlugin)
+	mux.HandleFunc("POST /api/v1/plugins/{approvalId}/approve", s.postPlugin)
+	mux.HandleFunc("POST /api/v1/plugins/{approvalId}/links", s.postPluginLink)
 	return mux
 }
 
@@ -463,6 +490,80 @@ func (s *Server) postApprovalLink(w http.ResponseWriter, r *http.Request) {
 func (s *Server) postRevertLink(w http.ResponseWriter, r *http.Request) {
 	s.issueLink(w, r, revertParam, func(ctx context.Context, a Agent, id uuid.UUID, proof string) (string, error) {
 		return a.IssueRevertLink(ctx, id, proof)
+	})
+}
+
+// The plugin approval routes (CONTRACT.md, Local pages): the same link
+// secret, origin, content type and size checks as the approval routes. The
+// relay decides nothing: submit_plugin_approval verifies the signature.
+
+// pluginApprovedDTO is the relay's answer for a plugin approval: no
+// receipt.
+type pluginApprovedDTO struct {
+	ApprovalID string    `json:"approvalId"`
+	Status     string    `json:"status"`
+	ApprovedAt time.Time `json:"approvedAt"`
+}
+
+// asPlugins asks an agent's plugin approvals; an agent that serves none
+// answers as one that does not know the id.
+func asPlugins[T any](ask func(context.Context, PluginApprovals) (T, error)) func(context.Context, Agent) (T, error) {
+	return func(ctx context.Context, a Agent) (T, error) {
+		p, ok := a.(PluginApprovals)
+		if !ok {
+			var zero T
+			return zero, agent.ErrNotThisAgent
+		}
+		return ask(ctx, p)
+	}
+}
+
+func (s *Server) getPlugin(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.linkedID(w, r, approvalParam)
+	if !ok {
+		return
+	}
+	req, err := find(r.Context(), s, asPlugins(func(ctx context.Context, p PluginApprovals) (approval.PluginRequest, error) {
+		return p.PluginApprovalRequest(ctx, id)
+	}))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.reply(w, req)
+}
+
+func (s *Server) postPlugin(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.linkedID(w, r, approvalParam)
+	if !ok {
+		return
+	}
+	body, ok := s.body(w, r, pageOnly)
+	if !ok {
+		return
+	}
+	// The body is the JSON the plugin approval code carries; parsing it as
+	// that code reuses the code's strict decoding.
+	resp, err := approval.ParsePluginResponse(approval.PluginResponsePrefix + passkey.Bytes(body).String())
+	if err != nil || resp.ApprovalID != id {
+		s.fail(w, &mcp.ToolError{Code: agent.CodeInvalidArgument, Message: "the body is not this plugin approval's signed response"})
+		return
+	}
+	at, err := find(r.Context(), s, asPlugins(func(ctx context.Context, p PluginApprovals) (time.Time, error) {
+		return p.RelayPluginApproval(ctx, resp)
+	}))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.reply(w, pluginApprovedDTO{ApprovalID: id.String(), Status: "APPROVED", ApprovedAt: at.UTC()})
+}
+
+func (s *Server) postPluginLink(w http.ResponseWriter, r *http.Request) {
+	s.issueLink(w, r, approvalParam, func(ctx context.Context, a Agent, id uuid.UUID, proof string) (string, error) {
+		return asPlugins(func(ctx context.Context, p PluginApprovals) (string, error) {
+			return p.IssuePluginLink(ctx, id, proof)
+		})(ctx, a)
 	})
 }
 

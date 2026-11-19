@@ -18,7 +18,7 @@ import (
 
 var connectSrc = regexp.MustCompile(`connect-src ([^;"]+)`)
 
-// The approve and revert pages of a short link read the request from the
+// The approve, revert and plugin pages of a short link read the request from the
 // engine and post the signature back (same origin), so their meta CSP must
 // allow connect-src 'self'; a browser blocks the fetch otherwise. So must
 // the registration page, which posts the passkey back to basalt init when
@@ -28,6 +28,7 @@ func TestPageCSPConnectSrc(t *testing.T) {
 	cases := map[string]string{
 		"approve/index.html":  "'self'",
 		"revert/index.html":   "'self'",
+		"plugin/index.html":   "'self'",
 		"register/index.html": "'self'",
 		"passkeys/index.html": "'none'",
 		// The pin page reaches only the address it checks, which the
@@ -85,7 +86,7 @@ func TestSigningPagesSayBiometricsStayOnTheDevice(t *testing.T) {
 		require.NotContains(t, strings.ToLower(string(body)), "touch id", p)
 		return nil
 	}))
-	for _, page := range []string{"approve", "revert", "register", "passkeys"} {
+	for _, page := range []string{"approve", "revert", "plugin", "register", "passkeys"} {
 		body, err := web.Files.ReadFile(page + "/index.html")
 		require.NoError(t, err)
 		require.Contains(t, string(body), line, page)

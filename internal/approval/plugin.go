@@ -1,0 +1,241 @@
+package approval
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/basaltdbhq/basaltdb/internal/linkcodec"
+	"github.com/basaltdbhq/basaltdb/internal/links"
+	"github.com/basaltdbhq/basaltdb/internal/passkey"
+)
+
+// Plugin approvals (CONTRACT.md, Plugins, What a plugin approval binds and
+// The plugin approval page): the binding text Postgres builds for a plugin
+// install or change, the settings text that travels beside it, the request
+// a plugin approval link carries, and the code the page outputs. As for
+// held writes, nothing here decides whether an approval counts: Postgres
+// does, in basalt_meta.submit_plugin_approval.
+
+const (
+	// KindPlugin is the binding kind of a plugin approval.
+	KindPlugin = "PLUGIN"
+	// PluginResponsePrefix starts the code the plugin approval page outputs.
+	PluginResponsePrefix = "basalt-plugin.1."
+)
+
+// PluginBinding is the parsed binding text of a plugin approval, for the
+// checks a relay makes. The text itself is what the passkey signs: never
+// re-serialize it. The page derives what it shows from the text; this
+// struct only names the keys, so an unknown one is refused.
+type PluginBinding struct {
+	Kind           string          `json:"kind"`
+	ApprovalID     uuid.UUID       `json:"approvalId"`
+	Database       string          `json:"database"`
+	ExpiresAt      time.Time       `json:"expiresAt"`
+	RequestedBy    string          `json:"requestedBy"`
+	Agents         []string        `json:"agents"`
+	Name           string          `json:"name"`
+	Instance       string          `json:"instance"`
+	Version        string          `json:"version"`
+	ManifestSHA256 string          `json:"manifestSha256"`
+	SettingsSHA256 string          `json:"settingsSha256"`
+	Hooks          []string        `json:"hooks"`
+	Roles          []string        `json:"roles,omitempty"`
+	Egress         []string        `json:"egress"`
+	Endpoint       json.RawMessage `json:"endpoint"`
+	Isolation      json.RawMessage `json:"isolation,omitempty"`
+	Signer         string          `json:"signer"`
+	SignerKeyID    string          `json:"signerKeyId,omitempty"`
+	Change         json.RawMessage `json:"change,omitempty"`
+}
+
+// ParsePluginBinding parses a plugin approval's binding text: kind PLUGIN,
+// no unknown key, an approval id, and both hashes lowercase sha256 hex.
+func ParsePluginBinding(text string) (PluginBinding, error) {
+	var b PluginBinding
+	dec := json.NewDecoder(strings.NewReader(text))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&b); err != nil {
+		return PluginBinding{}, invalid("plugin binding: %v", err)
+	}
+	if dec.More() {
+		return PluginBinding{}, invalid("plugin binding has data after its end")
+	}
+	if b.Kind != KindPlugin {
+		return PluginBinding{}, invalid("binding kind %q is not a plugin approval", b.Kind)
+	}
+	if b.ApprovalID == uuid.Nil {
+		return PluginBinding{}, invalid("plugin binding has no approvalId")
+	}
+	if !isSHA256Hex(b.ManifestSHA256) || !isSHA256Hex(b.SettingsSHA256) {
+		return PluginBinding{}, invalid("plugin binding manifestSha256 and settingsSha256 must be lowercase sha256 hex")
+	}
+	return b, nil
+}
+
+func isSHA256Hex(s string) bool {
+	if len(s) != sha256.Size*2 || strings.ToLower(s) != s {
+		return false
+	}
+	_, err := hex.DecodeString(s)
+	return err == nil
+}
+
+// SettingsHash is the lowercase hex sha256 of the settings text, a
+// binding's settingsSha256.
+func SettingsHash(settings string) string {
+	sum := sha256.Sum256([]byte(settings))
+	return hex.EncodeToString(sum[:])
+}
+
+// PluginRequest is a plugin approval request: what the engine's local
+// pages serve at GET /api/v1/plugins/{approvalId}
+// (api/plugin/approval/request.schema.json), and the two texts a long
+// link carries.
+type PluginRequest struct {
+	ApprovalID    uuid.UUID       `json:"approvalId"`
+	Binding       string          `json:"binding"`
+	Settings      string          `json:"settings"`
+	CredentialIDs []passkey.Bytes `json:"credentialIds,omitempty"`
+}
+
+// Check parses the binding and checks the request against it: the same
+// approval, and the settings text hashes to settingsSha256. The page makes
+// the same checks, and more, before it shows anything.
+func (r PluginRequest) Check() (PluginBinding, error) {
+	b, err := ParsePluginBinding(r.Binding)
+	if err != nil {
+		return PluginBinding{}, err
+	}
+	if b.ApprovalID != r.ApprovalID {
+		return PluginBinding{}, invalid("request is for plugin approval %s, binding for %s", r.ApprovalID, b.ApprovalID)
+	}
+	if SettingsHash(r.Settings) != b.SettingsSHA256 {
+		return PluginBinding{}, invalid("the settings text does not match the binding's settingsSha256")
+	}
+	return b, nil
+}
+
+// Fragment returns the link fragment (without '#') in format 2: exactly two
+// texts, the binding and then the settings, and the database's credential
+// ids (CONTRACT.md, Format 2).
+func (r PluginRequest) Fragment() (string, error) {
+	return linkcodec.EncodeRequest(r.Binding, []string{r.Settings}, r.CredentialIDs)
+}
+
+// URL returns the long plugin approval link on the pages at base:
+// <base>/plugins/<approvalId>#2.<request>. Over the link budget,
+// links.HashLink with links.PluginFile turns it into the hash link and its
+// request file.
+func (r PluginRequest) URL(base string) (string, error) {
+	frag, err := r.Fragment()
+	if err != nil {
+		return "", err
+	}
+	return links.PluginApproval(base, r.ApprovalID) + "#" + frag, nil
+}
+
+// pluginTexts is how many texts a plugin approval link carries: the
+// binding, then the settings.
+const pluginTexts = 2
+
+// ParsePluginRequest decodes a plugin approval link fragment, with or
+// without '#', and checks it (Check). Only format 2 is read: a plugin
+// approval link was never written in format 1.
+func ParsePluginRequest(fragment string) (PluginRequest, PluginBinding, error) {
+	if strings.HasPrefix(strings.TrimPrefix(fragment, "#"), linkcodec.Format1) {
+		return PluginRequest{}, PluginBinding{}, invalid("a plugin approval link is format %q only", linkcodec.Format2)
+	}
+	r, err := linkcodec.DecodeRequest(fragment, pluginTexts-1, func(binding string, lines []string, ids []passkey.Bytes) PluginRequest {
+		out := PluginRequest{Binding: binding, Settings: lines[0], CredentialIDs: ids}
+		if b, err := ParsePluginBinding(binding); err == nil {
+			out.ApprovalID = b.ApprovalID
+		}
+		return out
+	})
+	if err != nil {
+		return PluginRequest{}, PluginBinding{}, invalid("plugin approval request %v", err)
+	}
+	b, err := r.Check()
+	if err != nil {
+		return PluginRequest{}, PluginBinding{}, err
+	}
+	return r, b, nil
+}
+
+// PluginApprovalResponse is what the plugin approval page outputs after the person
+// signs (api/plugin/approval/response.schema.json), and the body of POST
+// /api/v1/plugins/{approvalId}/approve.
+type PluginApprovalResponse struct {
+	ApprovalID        uuid.UUID     `json:"approvalId"`
+	CredentialID      passkey.Bytes `json:"credentialId"`
+	AuthenticatorData passkey.Bytes `json:"authenticatorData"`
+	ClientDataJSON    passkey.Bytes `json:"clientDataJson"`
+	Signature         passkey.Bytes `json:"signature"`
+}
+
+// NewPluginApprovalResponse wraps an assertion for approvalID.
+func NewPluginApprovalResponse(approvalID uuid.UUID, a passkey.Assertion) PluginApprovalResponse {
+	return PluginApprovalResponse{
+		ApprovalID:        approvalID,
+		CredentialID:      a.CredentialID,
+		AuthenticatorData: a.AuthenticatorData,
+		ClientDataJSON:    a.ClientDataJSON,
+		Signature:         a.Signature,
+	}
+}
+
+// Assertion returns the WebAuthn assertion the response carries.
+func (r PluginApprovalResponse) Assertion() passkey.Assertion {
+	return passkey.Assertion{
+		CredentialID:      r.CredentialID,
+		AuthenticatorData: r.AuthenticatorData,
+		ClientDataJSON:    r.ClientDataJSON,
+		Signature:         r.Signature,
+	}
+}
+
+// Code returns the text the person gives the agent:
+// basalt-plugin.1.<base64url(json)>.
+func (r PluginApprovalResponse) Code() (string, error) {
+	return passkey.EncodeCode(PluginResponsePrefix, r)
+}
+
+// ParsePluginResponse decodes a pasted plugin approval code. Surrounding
+// whitespace is ignored; an unknown field, a missing one or another code's
+// prefix is refused.
+func ParsePluginResponse(code string) (PluginApprovalResponse, error) {
+	var r PluginApprovalResponse
+	if err := passkey.DecodeCode(PluginResponsePrefix, strings.TrimSpace(code), &r); err != nil {
+		return PluginApprovalResponse{}, invalid("%v", err)
+	}
+	if r.ApprovalID == uuid.Nil || len(r.CredentialID) == 0 || len(r.AuthenticatorData) == 0 || len(r.ClientDataJSON) == 0 || len(r.Signature) == 0 {
+		return PluginApprovalResponse{}, invalid("plugin approval response is missing a field")
+	}
+	return r, nil
+}
+
+// VerifyPlugin checks a response against the binding text it should sign
+// and the stored passkey, the way submit_plugin_approval does (without the
+// approval's state and expiry, which only Postgres knows). It returns the
+// new signature counter.
+func VerifyPlugin(bindingText string, cred passkey.Credential, r PluginApprovalResponse) (uint32, error) {
+	b, err := ParsePluginBinding(bindingText)
+	if err != nil {
+		return 0, err
+	}
+	if b.ApprovalID != r.ApprovalID {
+		return 0, invalid("response is for plugin approval %s, binding for %s", r.ApprovalID, b.ApprovalID)
+	}
+	count, err := passkey.VerifyAssertion(cred, Challenge(bindingText), r.Assertion())
+	if err != nil {
+		return 0, fmt.Errorf("plugin approval %s: %w", r.ApprovalID, err)
+	}
+	return count, nil
+}

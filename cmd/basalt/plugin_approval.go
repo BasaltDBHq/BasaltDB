@@ -540,11 +540,14 @@ func (e *pluginEnv) approvalOutcome(k plugin.EntryKey, version string, items []o
 			steps.SendRequest(o.file)
 		}
 		msg = append(msg, fmt.Sprintf("Expires %s. The plugin starts within seconds of your approval.", expires.UTC().Format(personTime)))
+		var ids []uuid.UUID
 		for _, o := range items {
 			if o.refused == nil {
 				steps.OpenLink(o.url, "", "Open the link, read what the plugin may do and approve it with your passkey.")
+				ids = append(ids, o.opened.ID)
 			}
 		}
+		steps.AgentRunCommand(e.waitCommand(k, ids), fmt.Sprintf("Show the person personMessage first. Then, in the same turn, run this: it returns as soon as the plugin runs, or after %d seconds.", defaultRepeatWait))
 	}
 	// What the refused databases need comes before the agent ends its turn.
 	e.refusedSteps(steps, cmds, items, k)
@@ -553,7 +556,7 @@ func (e *pluginEnv) approvalOutcome(k plugin.EntryKey, version string, items []o
 		// approval is signed (CONTRACT.md, Plugin changes while the engine
 		// runs).
 		steps.TellAgent("Tell the agent once you approved, or give it the basalt-plugin.1. code the page shows.")
-		steps.EndTurn("End your turn: the person approves next. When they paste a basalt-plugin.1. code, run basalt plugin approve with it; the engine starts the plugin within seconds of the signature.")
+		steps.EndTurn("When that wait ended without the plugin running, end your turn: the person approves next. When they paste a basalt-plugin.1. code, run basalt plugin approve with it, then the wait again.")
 	}
 	res.PersonMessage = fitPersonMessage(noPasskeyText, msg, refusedText)
 	built, err := steps.Build()
@@ -737,7 +740,7 @@ func (e *pluginEnv) addWithApproval(f addFlags, prev *config.Plugin) error {
 	if err != nil {
 		return err
 	}
-	return e.handOver(res, f.asJSON)
+	return e.handOverOrWait(k, res, f.wait, f.asJSON)
 }
 
 // narrowWithin is add in the approval flow for an existing entry with the
@@ -758,7 +761,7 @@ func (e *pluginEnv) narrowWithin(f addFlags, prev config.Plugin) (bool, error) {
 // enableWithApproval is enable in the approval flow: it opens a new
 // approval for the installed copy and the entry as engine.json holds it,
 // whether or not the entry is enabled.
-func (e *pluginEnv) enableWithApproval(k plugin.EntryKey, p config.Plugin, asJSON bool) error {
+func (e *pluginEnv) enableWithApproval(k plugin.EntryKey, p config.Plugin, wait int, asJSON bool) error {
 	again := e.command("enable", entryArgs(k)...)
 	v, err := plugin.Verify(e.root, k, p.ManifestSHA256, e.trust, e.mode, plugin.RequireApproval(true))
 	if err != nil {
@@ -797,7 +800,7 @@ func (e *pluginEnv) enableWithApproval(k plugin.EntryKey, p config.Plugin, asJSO
 	if err != nil {
 		return err
 	}
-	return e.handOver(res, asJSON)
+	return e.handOverOrWait(k, res, wait, asJSON)
 }
 
 // --- approve ---

@@ -164,7 +164,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	pluginLog := log.With("component", "plugins")
 	pluginOpts := pluginOptions{
 		Stderr: pluginDebugWriter(cfg, restart.PluginStderr, log), euid: engineEUID(),
-		runs: pluginRuns(cfg, env.stateDir, engineEUID(), pluginLog),
+		runs: pluginRuns(cfg, env.stateDir, engineEUID(), pluginLog), stateDir: env.stateDir,
 	}
 	plugins := newEnginePlugins(cfg, configPath, pluginOpts, pluginLog)
 	if plugins == nil && !cfg.Service() {

@@ -210,7 +210,7 @@ func TestAddByAgentOpensApproval(t *testing.T) {
 	require.Contains(t, res.PersonMessage, "Approve it with your passkey only if you know who made it:\n"+a.URL+"\n")
 	require.Equal(t, []mcp.Link{{Label: "Approve the plugin acme-ner", URL: a.URL}}, res.Links)
 	// No restart: the running engine starts the plugin once it is signed.
-	require.Equal(t, []string{"PERSON OPEN_LINK", "PERSON TELL_AGENT", "AGENT END_TURN"}, stepKinds(res.NextSteps))
+	require.Equal(t, []string{"PERSON OPEN_LINK", "AGENT RUN_COMMAND", "PERSON TELL_AGENT", "AGENT END_TURN"}, stepKinds(res.NextSteps))
 	require.Contains(t, res.PersonMessage, "The plugin starts within seconds of your approval.")
 	require.NotContains(t, res.PersonMessage, "restart")
 	require.NotContains(t, r.stderr, "basalt engine --config", "no restart command")
@@ -225,7 +225,7 @@ func TestAddOnAgentOperatedEngine(t *testing.T) {
 	require.Equal(t, exitOK, r.code, r.stderr)
 	res := approvalResultOf(t, r)
 	require.True(t, strings.HasPrefix(res.Approvals[0].URL, links.Portal+"/plugins/"+res.Approvals[0].ApprovalID+"#"), res.Approvals[0].URL)
-	require.Equal(t, []string{"PERSON OPEN_LINK", "PERSON TELL_AGENT", "AGENT END_TURN"}, stepKinds(res.NextSteps))
+	require.Equal(t, []string{"PERSON OPEN_LINK", "AGENT RUN_COMMAND", "PERSON TELL_AGENT", "AGENT END_TURN"}, stepKinds(res.NextSteps))
 	require.Equal(t, config.PluginApprovalRequired, e.config().Plugins[0].Approval)
 }
 

@@ -11,6 +11,8 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/google/uuid"
+
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
@@ -38,6 +40,9 @@ type pluginOptions struct {
 	clock plugin.Clock
 	// units finds a service engine's plugin units; the machine's when nil.
 	units *unitSource
+	// stateDir is where a same-user engine writes which entries it serves
+	// (pluginServingFile); "" writes nothing.
+	stateDir string
 }
 
 // Why an entry is not started though it verified.
@@ -103,6 +108,9 @@ type enginePlugins struct {
 	configProblem string
 	// startChecks is each entry's check at start. Immutable once built.
 	startChecks map[plugin.EntryKey]entryCheck
+	// approvedBy is, for each entry that requires approval served at start,
+	// the approval each agent is served on.
+	approvedBy map[plugin.EntryKey]map[string]uuid.UUID
 }
 
 // newEnginePlugins verifies the enabled plugin entries of cfg, read from

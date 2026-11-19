@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
@@ -195,4 +196,107 @@ func TestAgentAddStartsWithoutRestart(t *testing.T) {
 	require.Eventually(t, func() bool { return len(e.pluginProblems()) == 0 }, 15*time.Second, 100*time.Millisecond,
 		"the plugin serves the agent without a restart")
 	require.Less(t, time.Since(signed), 10*time.Second)
+}
+
+// waitResultOf decodes and checks a wait's result against
+// api/plugin/approval/wait.schema.json.
+func waitResultOf(t *testing.T, r result) waitResult {
+	t.Helper()
+	c := jsonschema.NewCompiler()
+	c.DefaultDraft(jsonschema.Draft2020)
+	for _, f := range []string{"../../api/plugin/approval/wait.schema.json", "../../api/mcp/errors/next-step.schema.json"} {
+		raw, err := os.ReadFile(f)
+		require.NoError(t, err)
+		var head struct {
+			ID string `json:"$id"`
+		}
+		require.NoError(t, json.Unmarshal(raw, &head))
+		doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
+		require.NoError(t, err)
+		require.NoError(t, c.AddResource(head.ID, doc))
+	}
+	s, err := c.Compile("https://basaltvault.app/schemas/plugin/approval/wait.v1.json")
+	require.NoError(t, err)
+	inst, err := jsonschema.UnmarshalJSON(strings.NewReader(r.stdout))
+	require.NoError(t, err, r.stdout+r.stderr)
+	require.NoError(t, s.Validate(inst), r.stdout)
+	var res waitResult
+	require.NoError(t, json.Unmarshal([]byte(r.stdout), &res))
+	return res
+}
+
+// command runs a step's command line, "basalt plugin ...", as the agent.
+func (e *liveEngine) command(line string) result {
+	e.t.Helper()
+	rest, ok := strings.CutPrefix(line, "basalt plugin ")
+	require.True(e.t, ok, "a basalt plugin command: %q", line)
+	return e.agent(strings.Fields(rest)...)
+}
+
+// The wait: the agent's add hands the link over at once, with a step that
+// waits in the same turn. Run while the person has not signed, it ends after
+// its --wait as WAITING and tells the agent to end its turn; run again, it
+// returns RUNNING as soon as the person's signature reaches the engine and
+// the plugin answers READY, so the agent says "done" in that turn. A wait
+// on an approval a newer one replaced ends at once.
+func TestAddWaitReturnsWhenRunning(t *testing.T) {
+	t.Parallel()
+	e := newLiveEngine(t)
+	e.start()
+
+	start := time.Now()
+	r := e.agent("add", e.src, "--agents", "product_a", "--json")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Less(t, time.Since(start), 30*time.Second, "the link at once, no wait by default")
+	res := approvalResultOf(t, r)
+	require.Equal(t, []string{"PERSON OPEN_LINK", "AGENT RUN_COMMAND", "PERSON TELL_AGENT", "AGENT END_TURN"}, stepKinds(res.NextSteps))
+	wait := res.NextSteps[1].Command
+	require.Contains(t, wait, "basalt plugin enable hello-feed --approval-id "+res.Approvals[0].ApprovalID+" --json")
+
+	// Not signed: the wait ends, nothing opened or written.
+	before, err := os.ReadFile(e.configPath)
+	require.NoError(t, err)
+	r = e.command(wait + " --wait 2")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	w := waitResultOf(t, r)
+	require.Equal(t, waitWaiting, w.State)
+	require.Equal(t, statePending, w.Approvals[0].State)
+	require.Equal(t, []string{"product_a"}, w.Approvals[0].Agents)
+	require.Equal(t, []string{"PERSON TELL_AGENT", "AGENT END_TURN"}, stepKinds(w.NextSteps))
+	after, err := os.ReadFile(e.configPath)
+	require.NoError(t, err)
+	require.Equal(t, before, after, "a wait writes nothing")
+
+	// The person signs while the agent waits.
+	done := make(chan result, 1)
+	go func() { done <- e.command(wait) }()
+	time.Sleep(time.Second)
+	signed := e.agent("approve", e.sign(res.Approvals[0].URL))
+	require.Equal(t, exitOK, signed.code, signed.stderr)
+	at := time.Now()
+	r = <-done
+	require.Equal(t, exitOK, r.code, r.stderr)
+	w = waitResultOf(t, r)
+	require.Equal(t, waitRunning, w.State, r.stdout)
+	require.Less(t, time.Since(at), 15*time.Second)
+	require.Equal(t, []string{"AGENT STOP"}, stepKinds(w.NextSteps))
+	require.Equal(t, "The plugin hello-feed runs now for product_a.", w.PersonMessage)
+	require.Empty(t, e.pluginProblems(), "it runs as the wait said")
+
+	// Called again once it runs: at once.
+	start = time.Now()
+	r = e.command(wait)
+	require.Equal(t, waitRunning, waitResultOf(t, r).State)
+	require.Less(t, time.Since(start), 5*time.Second)
+
+	// A newer approval replaces it: the wait on the old one ends at once.
+	r = e.agent("enable", "hello-feed", "--json")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	start = time.Now()
+	r = e.command(wait)
+	require.Equal(t, exitError, r.code)
+	w = waitResultOf(t, r)
+	require.Equal(t, waitEnded, w.State)
+	require.Equal(t, stateCancelled, w.Approvals[0].State)
+	require.Less(t, time.Since(start), 5*time.Second)
 }

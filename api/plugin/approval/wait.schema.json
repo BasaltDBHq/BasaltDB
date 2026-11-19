@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/plugin/approval/wait.v1.json",
+  "title": "basalt plugin enable --approval-id --json: the wait for a plugin to run",
+  "description": "What basalt plugin enable --approval-id ID[,ID] --json prints once its wait ends, and what basalt plugin add or enable --wait N --json prints when the plugin runs before the wait ends. The command opens and writes nothing. Exit 0 for RUNNING and WAITING, 1 for NOT_RUNNING and ENDED. The agent shows personMessage to the person verbatim and follows nextSteps. See CONTRACT.md, Plugins, Plugin approval commands.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "instance", "state", "approvals", "personMessage", "nextSteps"],
+  "properties": {
+    "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,39}$" },
+    "instance": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+    "state": {
+      "enum": ["RUNNING", "WAITING", "NOT_RUNNING", "ENDED"],
+      "description": "RUNNING: every approval is signed, and the running engine serves the entry, READY, to each listed agent an approval names, on that approval. WAITING: an approval is still pending when the wait ends. NOT_RUNNING: every approval is signed, and the engine is not running or does not serve the entry yet when the wait ends. ENDED: an approval is no longer open (it expired, a newer one replaced it, it ended, or no listed agent's database shows it for this entry)."
+    },
+    "approvals": {
+      "type": "array",
+      "minItems": 1,
+      "description": "One item per --approval-id, in the order given.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["approvalId", "state", "agents"],
+        "properties": {
+          "approvalId": { "type": "string", "format": "uuid" },
+          "state": {
+            "enum": ["APPROVED", "PENDING", "EXPIRED", "CANCELLED", "ENDED", "NONE"],
+            "description": "As basalt plugin list says it; CANCELLED: a newer approval for the entry replaced it; NONE: no listed agent's database shows it for this entry."
+          },
+          "agents": {
+            "type": "array",
+            "uniqueItems": true,
+            "description": "The entry's agents, by their names in engine.json, that the approval names and whose database answered.",
+            "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$", "maxLength": 63 }
+          }
+        }
+      }
+    },
+    "personMessage": { "type": "string", "minLength": 1 },
+    "nextSteps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "https://basaltvault.app/schemas/next-step.v1.json" }
+    }
+  }
+}

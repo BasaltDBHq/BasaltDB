@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
@@ -37,6 +39,8 @@ type withheldWhy struct {
 	// transient: the database did not answer (transientErr), so nothing was
 	// decided. While the engine runs, what runs then stays as it is.
 	transient bool
+	// approvalID is the approval that matched, when one did.
+	approvalID uuid.UUID
 }
 
 // approvalReason reports whether code is one of the approval reasons:
@@ -137,7 +141,7 @@ func (a *agentApprovals) check(ctx context.Context, k plugin.EntryKey, d guard.P
 	if r.Ended() {
 		return withheldWhy{code: agent.ProblemPluginAwaitingApproval, why: whyApprovalEnded}, false
 	}
-	return withheldWhy{}, true
+	return withheldWhy{approvalID: r.ApprovalID}, true
 }
 
 // approvalBound is what an approval of entry d with settings hash

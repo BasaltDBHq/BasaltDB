@@ -18,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/action"
@@ -315,6 +316,8 @@ type agentPass struct {
 	// approval matched and whose record holds.
 	withheld []unrecordedEntry
 	approved []plugin.EntryKey
+	// approvalIDs is the approval each approved entry matched.
+	approvalIDs map[plugin.EntryKey]uuid.UUID
 	// disables are the PLUGIN_DISABLED records still to write, each the
 	// detail last recorded: written after the entry stopped serving the
 	// agent (writeDisables), so the ledger never shows an entry not served
@@ -419,12 +422,14 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 	recorded, unrecordedKeys := writeTrustEvents(ctx, db, want.trust, recs.TrustKeys, log)
 	approvals := &agentApprovals{db: db}
 	out := agentPass{reached: true}
+	approvedBy := map[plugin.EntryKey]uuid.UUID{}
 	for _, k := range served {
 		d := want.served[name][k]
 		if want.approval[k] {
 			// The signed approval takes the place of the trust record
 			// (CONTRACT.md, Signer states): served only on a match.
 			w, ok := approvals.check(ctx, k, d, want.settings[k])
+			approvedBy[k] = w.approvalID
 			if !ok {
 				log.Warn("plugin not served to this agent: "+w.why, "plugin", k.String())
 				out.withheld = append(out.withheld, unrecordedEntry{key: k, why: w.why, code: w.code, transient: w.transient})
@@ -461,6 +466,10 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 		}
 		if want.approval[k] {
 			out.approved = append(out.approved, k)
+			if out.approvalIDs == nil {
+				out.approvalIDs = map[plugin.EntryKey]uuid.UUID{}
+			}
+			out.approvalIDs[k] = approvedBy[k]
 		}
 	}
 	for _, r := range recs.Entries {
@@ -595,10 +604,19 @@ func (ep *enginePlugins) withhold(passes map[string]agentPass) {
 	defer ep.mu.Unlock()
 	ep.setWithheldLocked(passes, nil)
 	kept := ep.entries[:0]
+	ep.approvedBy = map[plugin.EntryKey]map[string]uuid.UUID{}
 	for _, e := range ep.entries {
 		e.Agents = ep.servedAgentsLocked(e.Key, passes, nil)
 		if len(e.Agents) > 0 {
 			kept = append(kept, e)
+		}
+		for _, a := range e.Agents {
+			if id, ok := passes[a].approvalIDs[e.Key]; ok {
+				if ep.approvedBy[e.Key] == nil {
+					ep.approvedBy[e.Key] = map[string]uuid.UUID{}
+				}
+				ep.approvedBy[e.Key][a] = id
+			}
 		}
 	}
 	ep.entries = kept

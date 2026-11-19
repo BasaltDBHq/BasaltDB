@@ -8,9 +8,12 @@ import (
 	"log/slog"
 	"maps"
 	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
@@ -76,6 +79,8 @@ type pluginWatch struct {
 	// retry: a PLUGIN_DISABLED could not be written; the next check writes
 	// it.
 	retry bool
+	// serving is PluginServingFile as last written.
+	serving []byte
 }
 
 type cachedCheck struct {
@@ -92,6 +97,9 @@ type agentBackoff struct {
 type runningEntry struct {
 	e plugin.Entry
 	p config.Plugin
+	// approvals is, for an entry that requires approval, the approval each
+	// agent is served on.
+	approvals map[string]uuid.UUID
 }
 
 // newPluginWatch watches for ep, started from cfg read at path, with the
@@ -105,7 +113,7 @@ func newPluginWatch(ep *enginePlugins, cfg config.Config, path string, ledgers m
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 	for _, e := range ep.entries {
-		w.running[e.Key] = runningEntry{e: e, p: ep.configuredLocked(e.Key)}
+		w.running[e.Key] = runningEntry{e: e, p: ep.configuredLocked(e.Key), approvals: maps.Clone(ep.approvedBy[e.Key])}
 	}
 	return w
 }
@@ -119,6 +127,7 @@ func (w *pluginWatch) run(ctx context.Context, clock plugin.Clock) {
 		case <-clock.After(pluginWatchTick):
 		}
 		w.step(ctx)
+		w.writeServing()
 	}
 }
 
@@ -234,7 +243,7 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 		e := r.e
 		e.Agents = slices.DeleteFunc(slices.Clone(e.Agents), func(a string) bool { return !slices.Contains(p.Agents, a) })
 		if len(e.Agents) > 0 {
-			narrowed[k] = runningEntry{e: e, p: p}
+			narrowed[k] = runningEntry{e: e, p: p, approvals: r.approvals}
 		}
 	}
 	w.apply(narrowed)
@@ -329,7 +338,18 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 		}
 		e := c.e
 		e.Agents = agents
-		desired[k] = runningEntry{e: e, p: p}
+		d := runningEntry{e: e, p: p}
+		if approval[k] {
+			d.approvals = map[string]uuid.UUID{}
+			for _, a := range agents {
+				if id, ok := passes[a].approvalIDs[k]; ok {
+					d.approvals[a] = id
+				} else if id, ok := r.approvals[a]; ok {
+					d.approvals[a] = id // kept: its database did not answer
+				}
+			}
+		}
+		desired[k] = d
 	}
 	ep.mu.Unlock()
 	w.apply(desired)
@@ -408,7 +428,10 @@ func (w *pluginWatch) apply(desired map[plugin.EntryKey]runningEntry) {
 	}
 	for _, k := range slices.SortedFunc(maps.Keys(desired), compareEntryKeys) {
 		d := desired[k]
-		if _, ok := w.running[k]; ok {
+		if r, ok := w.running[k]; ok {
+			// The same run; the approval it is served on may be a newer one.
+			r.approvals = d.approvals
+			w.running[k] = r
 			continue
 		}
 		// A copy verified before the start is never used: dial verifies it
@@ -497,7 +520,115 @@ func (ep *enginePlugins) serve(ctx context.Context, cfg config.Config, configPat
 		return
 	}
 	if ep.mode == plugin.ModeSameUser {
-		newPluginWatch(ep, cfg, configPath, ledgers).run(ctx, ep.o.clock)
+		w := newPluginWatch(ep, cfg, configPath, ledgers)
+		w.writeServing()
+		w.run(ctx, ep.o.clock)
+		defer w.removeServing()
 	}
 	ep.sup.Wait()
+}
+
+// PluginServingFile is the file in a same-user engine's state directory
+// that says which entries the running engine serves, to which agents, on
+// which approval, and whether each answers READY (CONTRACT.md, Plugin
+// changes while the engine runs). basalt plugin enable --approval-id reads
+// it to wait until the plugin runs. It holds no value from a plugin or its
+// config. It is advice only: nothing is served because of it.
+const PluginServingFile = "plugin-serving.json"
+
+// PluginServing is PluginServingFile's content.
+type PluginServing struct {
+	// EnginePID is the engine that wrote it; a reader trusts it only while
+	// that engine holds the engine lock.
+	EnginePID int                  `json:"enginePid"`
+	Entries   []PluginServingEntry `json:"entries"`
+}
+
+// PluginServingEntry is one entry the engine runs.
+type PluginServingEntry struct {
+	Name           string               `json:"name"`
+	Instance       string               `json:"instance"`
+	ManifestSHA256 string               `json:"manifestSha256"`
+	Ready          bool                 `json:"ready"`
+	Agents         []PluginServingAgent `json:"agents"`
+}
+
+// PluginServingAgent is an agent an entry serves, and the approval it is
+// served on ("" for an entry that does not require approval).
+type PluginServingAgent struct {
+	Agent      string `json:"agent"`
+	ApprovalID string `json:"approvalId,omitempty"`
+}
+
+// ReadPluginServing reads PluginServingFile from stateDir.
+func ReadPluginServing(stateDir string) (PluginServing, error) {
+	var out PluginServing
+	raw, err := os.ReadFile(filepath.Join(stateDir, PluginServingFile))
+	if err != nil {
+		return out, err
+	}
+	err = json.Unmarshal(raw, &out)
+	return out, err
+}
+
+// writeServing writes PluginServingFile when what runs changed since the
+// last write: whole, by rename, mode 0600.
+func (w *pluginWatch) writeServing() {
+	if w.ep.o.stateDir == "" {
+		return
+	}
+	st := PluginServing{EnginePID: os.Getpid(), Entries: []PluginServingEntry{}}
+	for _, k := range slices.SortedFunc(maps.Keys(w.running), compareEntryKeys) {
+		r := w.running[k]
+		e := PluginServingEntry{
+			Name: k.Name, Instance: k.Instance, ManifestSHA256: r.p.ManifestSHA256,
+			Ready: w.ep.host.State(k) == plugin.StateReady, Agents: []PluginServingAgent{},
+		}
+		for _, a := range slices.Sorted(slices.Values(r.e.Agents)) {
+			sa := PluginServingAgent{Agent: a}
+			if id, ok := r.approvals[a]; ok {
+				sa.ApprovalID = id.String()
+			}
+			e.Agents = append(e.Agents, sa)
+		}
+		st.Entries = append(st.Entries, e)
+	}
+	raw, err := json.Marshal(st)
+	if err != nil || bytes.Equal(raw, w.serving) {
+		return
+	}
+	if err := writeFileAtomic(w.ep.o.stateDir, PluginServingFile, raw); err != nil {
+		w.log.Warn("which plugins run could not be written to the state directory; basalt plugin enable --approval-id cannot see them", "err", err)
+		return
+	}
+	w.serving = raw
+}
+
+// removeServing removes PluginServingFile as the engine stops.
+func (w *pluginWatch) removeServing() {
+	if w.ep.o.stateDir != "" {
+		_ = os.Remove(filepath.Join(w.ep.o.stateDir, PluginServingFile))
+	}
+}
+
+// writeFileAtomic writes name in dir whole: a temporary file renamed into
+// place, mode 0600.
+func writeFileAtomic(dir, name string, raw []byte) error {
+	if err := os.MkdirAll(dir, stateDirMode); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(dir, name+".*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer func() { _ = os.Remove(tmp) }()
+	if _, err := f.Write(raw); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, filepath.Join(dir, name))
 }

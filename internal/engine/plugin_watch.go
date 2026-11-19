@@ -423,10 +423,13 @@ func (w *pluginWatch) frozenNow() func(plugin.EntryKey) bool {
 	if w.ep.kept == nil {
 		return func(plugin.EntryKey) bool { return false }
 	}
-	w.ep.mu.Lock()
-	kept := maps.Clone(w.ep.keptKeys)
-	w.ep.mu.Unlock()
-	return func(k plugin.EntryKey) bool { return !kept[k] }
+	// The start config's entries, as wanted holds them: an engine-kept
+	// entry just removed or clashed is not one, so it narrows at once.
+	start := make(map[plugin.EntryKey]bool, len(w.start.Plugins))
+	for _, p := range w.start.Plugins {
+		start[p.Key()] = true
+	}
+	return func(k plugin.EntryKey) bool { return start[k] }
 }
 
 // wanted is what each agent should have on record for the entries the

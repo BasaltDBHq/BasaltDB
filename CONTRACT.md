@@ -2463,7 +2463,10 @@ Same-user mode.
 
   The command prints a refusal as the same-user [`PLUGIN_REFUSED`](#problems-and-errors) error body with that reason. `reason` appears only with `PLUGIN_REFUSED`. `INTERNAL` keeps its generic `message`.
 
-**Where another section says otherwise, this section decides for engine-kept entries.** In particular:
+**Where another section says otherwise, this section decides for engine-kept entries.** In particular (each of these holds for config entries only, or now also for engine-kept ones):
+
+- [`basalt engine`](#cli): "An engine run as a service starts no local plugin" holds for config entries only;
+- [Plugin changes while the engine runs](#plugin-changes-while-the-engine-runs): in service mode the engine watches its engine-kept entries while it runs (**When it starts**, above), and reads config entries at start only;
 
 - [The person socket](#the-person-socket): its opening list of the commands it serves; "Each is the agent-credential call the same-user CLI makes, and nothing more" and "the socket gives the person no power the agent's credential plus their passkey does not", which the plugin methods go beyond (the engine writes files and runs a plugin); and the guard-check sentence, which the plugin methods are outside of;
 - [Consent](#consent): "In service mode every write needs `sudo`" holds for config entries only, and the agent-operated paragraph's "This paragraph is service mode's" holds for `sudo` commands only;

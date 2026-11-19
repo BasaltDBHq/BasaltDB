@@ -207,8 +207,9 @@ func (s *keptPlugins) Open(ctx context.Context, uid uint32, scope person.Scope, 
 		}
 		if taken != nil {
 			return person.PluginOpenResult{}, person.Refused(reasonNameTaken, fmt.Sprintf(
-				"plugin %s is an entry of engine.json, added with sudo; an engine-kept entry cannot have its name and instance. "+
-					"Use another --instance, or change it with sudo basalt plugin", k))
+				"plugin %s is an entry of engine.json, added with sudo (or was when the engine started: one removed since counts until "+
+					"the engine restarts); an engine-kept entry cannot have its name and instance. Use another --instance, "+
+					"or change it with sudo basalt plugin", k))
 		}
 		return person.PluginOpenResult{}, person.Refused(reasonConfigEntry, fmt.Sprintf(
 			"plugin %s is an entry of engine.json, added with sudo; enable it with sudo basalt plugin enable", k))

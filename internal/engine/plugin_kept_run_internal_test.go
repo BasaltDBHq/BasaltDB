@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -168,8 +169,6 @@ func TestEngineKeptEntryNeedsApproval(t *testing.T) {
 		return p != nil && p.Code == agent.ProblemPluginAwaitingApproval
 	}, keptWait, 50*time.Millisecond)
 
-	// Another approval, not signed, never serves: open one for product_b
-	// only, through its own credential, and sign nothing.
 	f.sign(a)
 	r.requireServed(a, "product_a", "product_b")
 	require.Nil(t, r.problem())
@@ -275,9 +274,10 @@ func TestEngineKeptLocalRefusedWhenAgentInEngineGroup(t *testing.T) {
 	require.Empty(t, reportedFiles(t, r.report, ".start"))
 }
 
-// TestNameClashBothHeldServesConfig: when engine.json and the engine both
-// hold one (name, instance) (a hand edit), the config's entry is the one
-// considered and the engine-kept one is not served, with the clash named.
+// TestNameClashBothHeldServesConfig: when engine.json comes to hold the
+// (name, instance) of a running engine-kept entry (a hand edit), the
+// engine-kept one stops and is not served, with the clash named; the
+// config's entry takes effect at the next start, as every config entry.
 func TestNameClashBothHeldServesConfig(t *testing.T) {
 	f := newKeptFixture(t, []string{"product_a"})
 	r := f.run(os.Geteuid(), nil)
@@ -321,4 +321,48 @@ func TestSudoInstalledPluginStillIsolated(t *testing.T) {
 	require.Equal(t, guard.PluginFilesNone, want.served["product_a"][kept.Key()].Isolation.Files)
 	require.True(t, want.approval[kept.Key()])
 	require.False(t, want.approval[p.Key()])
+}
+
+// TestServiceWatchLeavesConfigEntriesAlone: a service engine's watch holds
+// its config entries (added with sudo) as the start decided: their ledger
+// record is never ended by a pass, and their status is never cleared.
+func TestServiceWatchLeavesConfigEntriesAlone(t *testing.T) {
+	f := newKeptFixture(t, []string{"product_a"})
+	sudoKey := plugin.EntryKey{Name: "acme-sudo", Instance: "default"}
+	held := config.Plugin{Name: sudoKey.Name, Instance: sudoKey.Instance, ManifestSHA256: strings.Repeat("a", 64), Enabled: true, Agents: []string{"product_a"}}
+	db := f.agents["product_a"].db
+	recorded := guard.PluginDetail{
+		Name: sudoKey.Name, Instance: sudoKey.Instance, Version: "1.0.0", ManifestSHA256: held.ManifestSHA256,
+		Hooks: []string{"feed.observe"}, Egress: []string{}, Endpoint: guard.PluginEndpoint{Kind: guard.PluginEndpointLocal},
+		Isolation: &guard.PluginIsolation{Files: guard.PluginFilesOSUser, Network: guard.PluginNetworkEnforced}, Signer: string(plugin.SignerUnknown),
+	}
+	require.NoError(t, guard.RecordPluginEntryEvent(context.Background(), db, guard.PluginEnabled, recorded))
+
+	start := f.cfg
+	start.Plugins = []config.Plugin{held}
+	ep := &enginePlugins{kept: f.s.store, keptKeys: map[plugin.EntryKey]bool{}, mode: plugin.ModeService, o: pluginOptions{goos: "linux"}}
+	w := &pluginWatch{ep: ep, start: start, eff: start}
+	notStarted := func(plugin.EntryKey) (plugin.Verified, bool) { return plugin.Verified{}, false }
+	want := w.wanted(notStarted)
+	require.True(t, want.frozen[sudoKey])
+	pass := writeAgentPluginEvents(context.Background(), "product_a", want, pluginLedger{db: db}, slog.New(slog.DiscardHandler))
+	require.True(t, pass.reached)
+	require.Empty(t, pass.disables, "a pass never ends a config entry's record")
+
+	// Without the hold the same pass would end it: the check is not vacuous.
+	want.frozen = nil
+	pass = writeAgentPluginEvents(context.Background(), "product_a", want, pluginLedger{db: db}, slog.New(slog.DiscardHandler))
+	require.NotEmpty(t, pass.disables)
+
+	// A pass keeps a config entry's status and replaces a kept entry's.
+	keptKey := plugin.EntryKey{Name: "acme-kept", Instance: "default"}
+	ep.unrecorded = map[plugin.EntryKey]map[string]withheldWhy{
+		sudoKey: {"product_a": {why: "start"}},
+		keptKey: {"product_a": {why: "old"}},
+	}
+	ep.setWithheldLocked(map[string]agentPass{"product_a": {reached: true}}, nil, w.frozenNow())
+	require.Equal(t, "start", ep.unrecorded[sudoKey]["product_a"].why)
+	require.Empty(t, ep.unrecorded[keptKey]["product_a"].why)
+	require.True(t, w.frozenNow()(sudoKey))
+	require.False(t, w.frozenNow()(keptKey))
 }

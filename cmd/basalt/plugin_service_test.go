@@ -14,11 +14,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 )
 
 // servicePersonUID is the uid the test's person socket reads for every
@@ -145,4 +147,53 @@ func TestServiceModeCommandsUseThePersonSocket(t *testing.T) {
 	require.Equal(t, before, after, "engine.json is untouched")
 	_, err = os.Stat(filepath.Join(s.base, "config", "plugins"))
 	require.ErrorIs(t, err, os.ErrNotExist, "nothing in the config directory's plugin root")
+}
+
+// TestSocketWaitStates: the service-mode wait reads PLUGIN_LIST: RUNNING
+// only when every agent an approval names is served READY on it; pending,
+// replaced and ended approvals are told apart, and an agent whose state
+// could not be read decides nothing.
+func TestSocketWaitStates(t *testing.T) {
+	id, other := uuid.New(), uuid.New()
+	listed := func(states map[string]string, ids map[string]uuid.UUID, serving ...person.PluginServing) *person.PluginListed {
+		l := &person.PluginListed{Serving: serving}
+		for _, a := range []string{"a", "b"} {
+			st := person.PluginAgentStatus{Agent: a, State: states[a]}
+			if x, ok := ids[a]; ok {
+				st.ApprovalID = &x
+			}
+			l.Approval.Agents = append(l.Approval.Agents, st)
+		}
+		return l
+	}
+	both := map[string]uuid.UUID{"a": id, "b": id}
+
+	l := listed(map[string]string{"a": stateApproved, "b": stateApproved}, both,
+		person.PluginServing{Agent: "a", ApprovalID: &id, Ready: true}, person.PluginServing{Agent: "b", ApprovalID: &id, Ready: true})
+	ws, signed, open := socketWaitStates([]uuid.UUID{id}, l)
+	require.True(t, signed)
+	require.True(t, open)
+	require.True(t, socketServedOn(l, ws))
+
+	// Served on another approval, or not READY: not running yet.
+	l.Serving[1].ApprovalID = &other
+	require.False(t, socketServedOn(l, ws))
+	l.Serving[1].ApprovalID, l.Serving[0].Ready = &id, false
+	require.False(t, socketServedOn(l, ws))
+
+	_, signed, open = socketWaitStates([]uuid.UUID{id}, listed(map[string]string{"a": stateApproved, "b": statePending}, both))
+	require.False(t, signed)
+	require.True(t, open)
+	_, signed, open = socketWaitStates([]uuid.UUID{id}, listed(map[string]string{"a": stateEnded, "b": stateEnded}, both))
+	require.False(t, signed)
+	require.False(t, open)
+	// Replaced: no agent's newest is it any more.
+	ws, _, open = socketWaitStates([]uuid.UUID{id}, listed(map[string]string{"a": statePending, "b": statePending}, map[string]uuid.UUID{"a": other, "b": other}))
+	require.False(t, open)
+	require.Equal(t, stateCancelled, ws[0].State)
+	// An agent not read decides nothing.
+	ws, signed, open = socketWaitStates([]uuid.UUID{id}, listed(map[string]string{"a": stateUnavailable, "b": stateUnavailable}, nil))
+	require.False(t, signed)
+	require.True(t, open)
+	require.Equal(t, stateNone, ws[0].State)
 }

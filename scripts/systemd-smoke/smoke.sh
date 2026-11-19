@@ -423,7 +423,7 @@ waited=$(BASALT_AGENT_CONTEXT=1 "$basalt" plugin enable "$name" --instance "$kep
 	fail "the plugin does not run: $waited"
 echo "$waited"
 [ "$(jq -r .state <<<"$waited")" = RUNNING ] || fail "the wait ended $(jq -r .state <<<"$waited")"
-kept_pid=$(pgrep -f "/var/lib/basalt/plugins/$name/$kept_inst/" | head -1)
+kept_pid=$(pgrep -f "/var/lib/basalt/plugins/$name/$kept_inst/" | head -1 || true)
 [ -n "$kept_pid" ] || fail "no plugin process runs from the engine's copy"
 kept_uid=$(awk '/^Uid:/ {print $2}' "/proc/$kept_pid/status")
 [ "$kept_uid" = "$(id -u basalt)" ] || fail "the plugin runs as uid $kept_uid, not the engine's user"

@@ -7,7 +7,7 @@ M3: the read-only plan, the trial run, prepared reverts and `apply_revert`; larg
 | Object | Purpose |
 |---|---|
 | `ROW_CHANGE` detail | Carries `revertOf` on revert writes |
-| `reverts` | Prepared reverts: scope, agents, intent, lines, `rows`, `skipped`, `rows_hash`, binding text and hash, 1-hour expiry, applying credential and change; for a large plan `batched`, `sample_hash`, `covered` (the changes in scope at prepare), `signed_at`, `apply_by`, `batches`. Values pruned after 30 days. The scope columns are under [Revert scope objects](#revert-scope-objects) |
+| `reverts` | Prepared reverts: scope, agents, intent, lines, `rows`, `skipped`, `rows_hash`, binding text and hash, 1-hour expiry, applying credential and change, `covered` (the changes in scope at prepare); for a large plan `batched`, `sample_hash`, `signed_at`, `apply_by`, `batches`. Values pruned after 30 days. The scope columns are under [Revert scope objects](#revert-scope-objects) |
 | `revert_running` | Marks the transaction a revert or its trial runs in; written only by the revert functions |
 | `revert_lines` | A large plan's lines: number, text, the row's ledger chain, `outcome` (`PENDING`, `RESTORED`, `SKIPPED`), `conflict`, `sql_state`, `batch`. Text and chain pruned after 30 days |
 | `agent_reverts` | The calling role's prepared reverts (status `PENDING`, `APPLYING`, `APPLIED`, `EXPIRED`, `REJECTED`) with binding text and lines, and `batched`, `signed_at`, `apply_by`, `restored`, `skipped_now`, `pending` |

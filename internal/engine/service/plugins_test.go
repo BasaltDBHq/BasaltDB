@@ -200,11 +200,11 @@ func TestInstancesAreSeparate(t *testing.T) {
 	ub := lsys.written["/etc/systemd/system/basalt-plugin-acme-ner-client_x.service"]
 	require.Contains(t, ua, "User=basalt-plugin-acme-ner-default\n")
 	require.Contains(t, ub, "User=basalt-plugin-acme-ner-client_x\n")
-	require.Contains(t, ua, "WorkingDirectory=/usr/local/lib/basalt/plugins/acme-ner/default/")
-	require.Contains(t, ub, "WorkingDirectory=/usr/local/lib/basalt/plugins/acme-ner/client_x/")
-	require.Contains(t, ua, "ReadWritePaths=/usr/local/lib/basalt/run/basalt-plugin-acme-ner-default\n")
-	require.Contains(t, ub, "ReadWritePaths=/usr/local/lib/basalt/run/basalt-plugin-acme-ner-client_x\n")
-	require.Contains(t, ua, "Environment=BASALT_PLUGIN_SOCKET=/usr/local/lib/basalt/run/basalt-plugin-acme-ner-default/p.sock\n")
+	require.Contains(t, ua, "WorkingDirectory=/opt/basalt/plugins/acme-ner/default/")
+	require.Contains(t, ub, "WorkingDirectory=/opt/basalt/plugins/acme-ner/client_x/")
+	require.Contains(t, ua, "ReadWritePaths=/opt/basalt/run/basalt-plugin-acme-ner-default\n")
+	require.Contains(t, ub, "ReadWritePaths=/opt/basalt/run/basalt-plugin-acme-ner-client_x\n")
+	require.Contains(t, ua, "Environment=BASALT_PLUGIN_SOCKET=/opt/basalt/run/basalt-plugin-acme-ner-default/p.sock\n")
 }
 
 func TestPluginUserShortening(t *testing.T) {
@@ -310,7 +310,7 @@ func TestPluginArgsCannotInjectIntoUnits(t *testing.T) {
 		require.Error(t, err, cmd)
 	}
 	e = entry("linux", "default")
-	e.Dir = "/usr/local/lib/basalt/plugins/x y"
+	e.Dir = "/opt/basalt/plugins/x y"
 	_, err = service.SystemdPluginUnit(linuxHost(), e)
 	require.Error(t, err)
 	h := linuxHost()
@@ -333,10 +333,10 @@ func TestPluginInstallPlanCreatesTheUser(t *testing.T) {
 	var out strings.Builder
 	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
 	require.Equal(t, []string{
-		"mkdir -m 0755 -o root /usr/local/lib/basalt",
-		"mkdir -m 0755 -o root /usr/local/lib/basalt/run",
+		"mkdir -m 0755 -o root /opt/basalt",
+		"mkdir -m 0755 -o root /opt/basalt/run",
 		"useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin --comment BasaltDB plugin acme-ner default basalt-plugin-acme-ner-default",
-		"mkdir -m 2750 -o basalt-plugin-acme-ner-default -g basalt /usr/local/lib/basalt/run/basalt-plugin-acme-ner-default",
+		"mkdir -m 2750 -o basalt-plugin-acme-ner-default -g basalt /opt/basalt/run/basalt-plugin-acme-ner-default",
 		"systemctl daemon-reload",
 		"systemctl disable --now basalt-plugin-acme-ner-default.service",
 	}, sys.ran, "a disabled entry's unit is written and stays stopped")
@@ -396,7 +396,7 @@ func TestPluginRemoveDeletesWhatInstallMade(t *testing.T) {
 		{"linux", []string{
 			"systemctl disable --now basalt-plugin-acme-ner-default.service",
 			"systemctl daemon-reload",
-			"rm -rf /usr/local/lib/basalt/run/basalt-plugin-acme-ner-default",
+			"rm -rf /opt/basalt/run/basalt-plugin-acme-ner-default",
 			"userdel basalt-plugin-acme-ner-default",
 		}},
 		{"darwin", []string{
@@ -440,7 +440,7 @@ func TestUninstallRemovesPluginsAndAnEmptyBase(t *testing.T) {
 	t.Parallel()
 	sys := newFake()
 	sys.users["basalt-plugin-acme-ner-default"] = true
-	sys.exists["/usr/local/lib/basalt"] = true
+	sys.exists["/opt/basalt"] = true
 	spec := linuxSpec()
 	spec.Plugins = []service.PluginEntry{entry("linux", "default")}
 	steps, err := service.UninstallPlan(sys, spec)
@@ -448,39 +448,46 @@ func TestUninstallRemovesPluginsAndAnEmptyBase(t *testing.T) {
 	var out strings.Builder
 	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
 	require.Contains(t, sys.ran, "userdel basalt-plugin-acme-ner-default")
-	require.Contains(t, sys.ran, "rm -rf /usr/local/lib/basalt/run/basalt-plugin-acme-ner-default")
+	require.Contains(t, sys.ran, "rm -rf /opt/basalt/run/basalt-plugin-acme-ner-default")
 	require.Equal(t, []string{
 		service.SystemdUnitPath,
 		"/etc/systemd/system/basalt-plugin-acme-ner-default.service",
-		"/usr/local/lib/basalt/run",
-		"/usr/local/lib/basalt",
+		"/opt/basalt/run",
+		"/opt/basalt",
 	}, sys.removed)
 
 	// A base that still holds installed copies or keys stays, and the
 	// uninstall still succeeds.
 	sys = newFake()
-	sys.exists["/usr/local/lib/basalt"] = true
+	sys.exists["/opt/basalt"] = true
 	sys.removeErr = errors.New("directory not empty")
 	steps, err = service.UninstallPlan(sys, linuxSpec())
 	require.NoError(t, err)
 	out.Reset()
 	require.NoError(t, service.Settle(service.Apply(context.Background(), sys, steps, false, &out), sys, "linux"))
-	require.Contains(t, out.String(), "skipped rm -f /usr/local/lib/basalt: left in place")
+	require.Contains(t, out.String(), "skipped rm -f /opt/basalt: left in place")
 }
 
-func TestPluginBaseOnAGroupWritableUsrLocal(t *testing.T) {
+func TestPluginBaseThatCannotBeMadeFailsTheInstall(t *testing.T) {
 	t.Parallel()
-	// Debian-family systems ship /usr/local group-writable: the base cannot
-	// be made safely. The engine still installs, and the step names the fix.
+	// On Linux a base the path rule refuses is not skipped: the install
+	// stops at that step, as at any other unsafe path, after the engine and
+	// before any plugin's user or unit.
 	sys := newFake()
-	sys.failOn = "mkdir /usr/local/lib/basalt"
+	sys.failOn = "mkdir /opt/basalt"
 	sys.users["basalt"] = true
-	steps, err := service.InstallPlan(context.Background(), sys, linuxSpec())
+	spec := linuxSpec()
+	spec.Plugins = []service.PluginEntry{entry("linux", "default")}
+	steps, err := service.InstallPlan(context.Background(), sys, spec)
 	require.NoError(t, err)
 	var out strings.Builder
-	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
-	require.Contains(t, out.String(), "skipped mkdir -m 0755 -o root /usr/local/lib/basalt: plugins cannot be installed until every directory above /usr/local/lib/basalt is writable by root only; on Debian-family systems /usr/local and /usr/local/lib are group-writable: sudo chmod g-w /usr/local /usr/local/lib")
+	err = service.Apply(context.Background(), sys, steps, false, &out)
+	require.ErrorContains(t, err, "mkdir -m 0755 -o root /opt/basalt")
+	require.NotContains(t, out.String(), "skipped")
 	require.Contains(t, sys.ran, "systemctl enable --now basalt-engine.service")
+	for _, r := range sys.ran {
+		require.NotContains(t, r, "basalt-plugin-acme-ner")
+	}
 }
 
 func TestUserClash(t *testing.T) {

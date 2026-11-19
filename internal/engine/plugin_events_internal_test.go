@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
 
@@ -473,4 +474,64 @@ func TestPluginIsolationIsWhatRuns(t *testing.T) {
 		require.Nil(t, d.Isolation)
 		require.Equal(t, guard.PluginEndpoint{Kind: guard.PluginEndpointRemote, Host: "ner.acme.example:443"}, d.Endpoint)
 	}
+}
+
+// refuseTrustKey is an agent's connection on which the PLUGIN_TRUST_ADDED
+// record of one key fails, as a guard that refuses it would; every other
+// statement goes through.
+type refuseTrustKey struct {
+	guard.Querier
+	keyID string
+}
+
+func (q refuseTrustKey) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	if strings.Contains(fmt.Sprint(args...), string(guard.PluginTrustAdded)) && strings.Contains(fmt.Sprint(args...), q.keyID) {
+		return pgconn.CommandTag{}, &pgconn.PgError{Code: "BS008", Message: "refused"}
+	}
+	return q.Querier.Exec(ctx, sql, args...)
+}
+
+// When the PLUGIN_TRUST_ADDED record of a key cannot be written to an
+// agent's ledger, the entries signed by that key are withheld from that
+// agent, with no PLUGIN_ENABLED for them; an entry signed by another key is
+// served. The next start writes the key and serves the entry.
+func TestUnrecordedTrustKeyWithholdsItsEntries(t *testing.T) {
+	t.Parallel()
+	f := newPluginFixture(t)
+	refused := f.install("default", dial.TransportStdio, "product_a", "client_x")
+	other := f.install("eu", dial.TransportStdio, "product_a")
+	l := newPluginLedgers(t, f)
+	ep := f.plugins(nil)
+	v, ok := ep.startedCopy(refused.Key())
+	require.True(t, ok)
+	w, ok := ep.startedCopy(other.Key())
+	require.True(t, ok)
+	require.NotEqual(t, v.SignerKeyID, w.SignerKeyID)
+
+	ledgers := map[string]pluginLedger{
+		"product_a": {db: refuseTrustKey{Querier: l.dbs["product_a"].db, keyID: v.SignerKeyID}},
+		"client_x":  l.dbs["client_x"],
+	}
+	recordPluginEvents(context.Background(), f.cfg, f.configPath, ep, ledgers, slog.New(slog.DiscardHandler))
+
+	rows := l.events(t, "product_a")
+	require.Equal(t, []string{"PLUGIN_TRUST_ADDED", "PLUGIN_ENABLED"}, kindsOf(rows), "only the other key and its entry")
+	require.Contains(t, rows[0].Detail, w.SignerKeyID)
+	require.Contains(t, rows[1].Detail, `"instance": "eu"`)
+	require.NotEmpty(t, ep.unrecordedFor(refused.Key(), "product_a"), "withheld from product_a")
+	require.Empty(t, ep.unrecordedFor(other.Key(), "product_a"))
+	require.Empty(t, ep.unrecordedFor(refused.Key(), "client_x"), "client_x recorded the key: served")
+	require.Equal(t, []string{"PLUGIN_TRUST_ADDED", "PLUGIN_TRUST_ADDED", "PLUGIN_ENABLED"}, kindsOf(l.events(t, "client_x")))
+	var refusedProbs int
+	for _, p := range ep.PluginProblems("product_a") {
+		require.Equal(t, agent.ProblemPluginUnavailable, p.Code)
+		if strings.Contains(p.Message, "the guard refused its plugin record") {
+			refusedProbs++
+		}
+	}
+	require.Equal(t, 1, refusedProbs, "status names the withheld entry's reason once")
+
+	// Next start, the guard takes it: the key, then the entry.
+	l.record(t, f, f.plugins(nil))
+	require.Equal(t, []string{"PLUGIN_TRUST_ADDED", "PLUGIN_ENABLED", "PLUGIN_TRUST_ADDED", "PLUGIN_ENABLED"}, kindsOf(l.events(t, "product_a")))
 }

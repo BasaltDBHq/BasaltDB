@@ -102,6 +102,7 @@ var wantFailure = map[string]string{
 	"invalid-signature-bad-key-id.json":               "schema:/properties/keyId/pattern",
 	"invalid-event-bad-key-id.json":                   "schema:/$defs/keyId/pattern",
 	"invalid-event-trust-removed-entry-detail.json":   "schema:/$defs/trustDetail/additionalProperties",
+	"invalid-event-unknown-signer-with-key-id.json":   "schema:/$defs/entryDetail/allOf/0/then",
 }
 
 // TestSchemaExamples: every testdata/valid-*.json passes its schema and the

@@ -33,18 +33,27 @@ const (
 	PluginNetworkEnforced    = "ENFORCED"
 	PluginNetworkDeclared    = "DECLARED"
 	PluginNetworkNotEnforced = "NOT_ENFORCED"
+
+	// Signer states of a plugin event or approval (schema version 5).
+	PluginSignerKnown   = "KNOWN"
+	PluginSignerUnknown = "UNKNOWN"
 )
 
 // PluginDetail is the detail of a plugin entry event (PLUGIN_ENABLED,
 // PLUGIN_DISABLED, PLUGIN_CHANGED), api/plugin/events.schema.json. It
 // holds no config value and names no agent.
 type PluginDetail struct {
-	Name           string   `json:"name"`
-	Instance       string   `json:"instance"`
-	Version        string   `json:"version"`
-	ManifestSHA256 string   `json:"manifestSha256"`
-	SignerKeyID    string   `json:"signerKeyId"`
-	Hooks          []string `json:"hooks"`
+	Name           string `json:"name"`
+	Instance       string `json:"instance"`
+	Version        string `json:"version"`
+	ManifestSHA256 string `json:"manifestSha256"`
+	// Signer is written only for an entry that requires approval (schema
+	// version 5; an older guard refuses the key): PluginSignerKnown with
+	// SignerKeyID, or PluginSignerUnknown without. Without Signer,
+	// SignerKeyID is required.
+	Signer      string   `json:"signer,omitempty"`
+	SignerKeyID string   `json:"signerKeyId,omitempty"`
+	Hooks       []string `json:"hooks"`
 	// Roles are wire.detect's declared roles; omitted otherwise.
 	Roles []string `json:"roles,omitempty"`
 	// Egress is never nil: the guard wants an array, empty for none.

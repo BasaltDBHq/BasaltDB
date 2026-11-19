@@ -205,6 +205,19 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			t.Helper()
 			return pluginStatus(t, operatedBy, "", false, samplePluginProblem(ProblemPluginNotTrusted))
 		}},
+		// Plugin approvals are same-user mode: a foreground engine.
+		ProblemPluginAwaitingApproval: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+			t.Helper()
+			return pluginStatus(t, operatedBy, "", true, samplePluginProblem(ProblemPluginAwaitingApproval))
+		}},
+		ProblemPluginApprovalExpired: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+			t.Helper()
+			return pluginStatus(t, operatedBy, "", true, samplePluginProblem(ProblemPluginApprovalExpired))
+		}},
+		ProblemPluginApprovalMismatch: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+			t.Helper()
+			return pluginStatus(t, operatedBy, "", true, samplePluginProblem(ProblemPluginApprovalMismatch))
+		}},
 	}
 }
 
@@ -290,7 +303,17 @@ func requireProblemObeysCatalog(t *testing.T, statusTool mcpcontract.Tool, code 
 	requireOperatorRules(t, p.NextSteps, p.PersonMessage, variant, code)
 	requirePersonMessage(t, p.PersonMessage, nil)
 	for i, st := range p.NextSteps {
-		requireStepObeysRules(t, st, catalogCase{tool: toolStatus, args: map[string]any{}}, "", fmt.Sprintf("%s step %d", code, i+1))
+		where := fmt.Sprintf("%s step %d", code, i+1)
+		if code == ProblemPluginAwaitingApproval && st.Action == mcp.ActionOpenLink {
+			// No url: the link the agent handed over when the approval was
+			// opened, which the engine never had (CONTRACT.md, Next steps
+			// per code).
+			require.Empty(t, st.URL, where)
+			require.Empty(t, st.Command, where)
+			require.NotEmpty(t, st.Text, where)
+			continue
+		}
+		requireStepObeysRules(t, st, catalogCase{tool: toolStatus, args: map[string]any{}}, "", where)
 	}
 	require.Equal(t, entry.Severity != mcpcontract.SeverityError, r.Ready, "ready exactly when no ERROR problem")
 	for i := 1; i < len(r.Problems); i++ {

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -15,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
+	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -288,49 +288,6 @@ func (e *pluginEnv) guardOutdated(agentName string) error {
 	return r
 }
 
-// pluginApprovalDetail is what an approval binds of verified copy v of
-// entry k for roles, derived exactly as the engine derives it at start: the
-// manifest's hooks, wire.detect roles, egress and endpoint, the same-user
-// isolation of a local plugin, and the signer state with a known signer's
-// key id only.
-func pluginApprovalDetail(k plugin.EntryKey, v plugin.Verified, roles []string) guard.PluginApprovalDetail {
-	m := v.Manifest
-	d := guard.PluginApprovalDetail{
-		Agents: slices.Clone(roles), Name: k.Name, Instance: k.Instance, Version: m.Version, ManifestSHA256: v.ManifestSHA256,
-		Hooks: slices.Sorted(maps.Keys(m.Hooks)), Egress: append([]string{}, m.Network.Egress...),
-		Signer: string(v.Signer),
-	}
-	slices.Sort(d.Egress)
-	if v.Signer == plugin.SignerKnown {
-		d.SignerKeyID = v.SignerKeyID
-	}
-	if decl, ok := m.Hooks[string(plugin.HookWireDetect)]; ok && len(decl.Roles) > 0 {
-		d.Roles = slices.Sorted(slices.Values(decl.Roles))
-	}
-	if r := m.Endpoint.Remote; r != nil {
-		host, _ := plugin.RemoteHostPort(r.URL) // the manifest's rules checked it
-		d.Endpoint = guard.PluginEndpoint{Kind: guard.PluginEndpointRemote, Host: host}
-		return d
-	}
-	d.Endpoint = guard.PluginEndpoint{Kind: guard.PluginEndpointLocal}
-	d.Isolation = &guard.PluginIsolation{Files: guard.PluginFilesNone, Network: guard.PluginNetworkNotEnforced}
-	return d
-}
-
-// pluginSettings is the entry's settings as engine.json holds them: config
-// and auth as written, the two numbers by value, each only when set.
-func pluginSettings(p config.Plugin) guard.PluginSettings {
-	s := guard.PluginSettings{Config: p.Config, MinConfidence: p.MinConfidence}
-	if p.TimeoutMs != 0 {
-		t := p.TimeoutMs
-		s.TimeoutMs = &t
-	}
-	if p.Auth != nil {
-		s.Auth = &guard.PluginAuth{CredentialFile: p.Auth.CredentialFile}
-	}
-	return s
-}
-
 // approvalResult is basalt plugin add and enable --json when the command
 // opened plugin approvals (api/plugin/approval/result.schema.json).
 type approvalResult struct {
@@ -381,7 +338,7 @@ func (e *pluginEnv) openApprovals(groups []*approvalGroup, p config.Plugin, v pl
 	for _, g := range groups {
 		o := openedApproval{group: g}
 		ctx, cancel := context.WithTimeout(e.c.ctx, databaseTimeout)
-		opened, err := guard.OpenPluginApproval(ctx, g.conn, pluginApprovalDetail(p.Key(), v, g.roles), pluginSettings(p))
+		opened, err := guard.OpenPluginApproval(ctx, g.conn, engine.PluginApprovalDetail(p.Key(), v, g.roles), p.ApprovalSettings())
 		cancel()
 		if err != nil {
 			o.refused = openRefusal(err)

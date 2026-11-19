@@ -774,3 +774,51 @@ func TestPluginEventSigner(t *testing.T) {
 	}
 	require.Equal(t, 2, pluginEvents(t, d, a.Role))
 }
+
+// The engine's recomputed settingsSha256 equals the one
+// open_plugin_approval stored, byte for byte: config numbers as written
+// (0.60 stays, 1e3 reads 1000), the two top-level numbers by value.
+func TestPluginSettingsSHA256MatchesOpen(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", leads, nil)
+	mc := 0.6
+	for _, s := range []guard.PluginSettings{
+		{},
+		{Config: json.RawMessage(`{"threshold": 0.60, "max": 1e3, "z": [1.50, "x"], "a": {"b": null}}`), TimeoutMs: intPtr(300), MinConfidence: &mc},
+		{MinConfidence: new(float64)},
+	} {
+		opened, err := guard.OpenPluginApproval(ctx, a.Conn, localApproval(a.Role), s)
+		require.NoError(t, err)
+		rec, ok, err := guard.ReadPluginApproval(ctx, a.Conn, opened.ID)
+		require.NoError(t, err)
+		require.True(t, ok)
+		got, err := guard.PluginSettingsSHA256(ctx, a.Conn, s)
+		require.NoError(t, err)
+		require.Equal(t, rec.Bound.SettingsSHA256, got, opened.SettingsText)
+	}
+}
+
+// The settings hash cannot be steered by the agent's search_path: a type
+// named text in a schema ahead of pg_catalog, with a cast from jsonb that
+// always returns the approved text, is never used.
+func TestPluginSettingsSHA256IgnoresSearchPath(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", leads, nil)
+	d.Exec(t, `CREATE SCHEMA evil`)
+	d.Exec(t, `GRANT USAGE ON SCHEMA evil TO PUBLIC`)
+	d.Exec(t, `CREATE TYPE evil.text AS ENUM ('{}')`)
+	d.Exec(t, `CREATE FUNCTION evil.f(pg_catalog.jsonb) RETURNS evil.text LANGUAGE sql IMMUTABLE AS $$ SELECT '{}'::evil.text $$`)
+	d.Exec(t, `CREATE CAST (pg_catalog.jsonb AS evil.text) WITH FUNCTION evil.f(pg_catalog.jsonb)`)
+	_, err := a.Conn.Exec(ctx, `SET search_path = evil, pg_catalog`)
+	require.NoError(t, err)
+
+	empty, err := guard.PluginSettingsSHA256(ctx, a.Conn, guard.PluginSettings{})
+	require.NoError(t, err)
+	changed, err := guard.PluginSettingsSHA256(ctx, a.Conn, guard.PluginSettings{Config: json.RawMessage(`{"dest": "https://x.example"}`)})
+	require.NoError(t, err)
+	require.NotEqual(t, empty, changed, "the hash is of the settings, whatever the search_path")
+}

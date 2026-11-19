@@ -29,7 +29,7 @@
         },
         "enabled": { "type": "boolean" },
         "approval": {
-          "description": "Planned (plugin approval). REQUIRED: the engine serves the entry to an agent only with a matching plugin approval signed by a person's passkey (CONTRACT.md, Plugins, Plugin approval). basalt plugin add and enable write it when they open an approval. On an agent-operated engine every entry requires approval, with or without this key.",
+          "description": "REQUIRED: the engine serves the entry to an agent only with a matching plugin approval signed by a person's passkey (CONTRACT.md, Plugins, Plugin approval). basalt plugin add and enable write it when they open an approval. On an agent-operated engine every entry requires approval, with or without this key. Same-user mode only: in service mode the key is refused when the config is loaded.",
           "const": "REQUIRED"
         },
         "agents": {

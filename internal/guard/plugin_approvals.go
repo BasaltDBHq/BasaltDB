@@ -2,6 +2,8 @@ package guard
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -180,6 +182,28 @@ func OpenPluginApproval(ctx context.Context, q Querier, d PluginApprovalDetail, 
 		return PluginApproval{}, err
 	}
 	return a, nil
+}
+
+// PluginSettingsSHA256 is the settingsSha256 of an entry's settings s as
+// the engine recomputes it at start (CONTRACT.md, What a plugin approval
+// binds): s goes to q's database as jsonb, its text comes back, and the
+// lowercase hex SHA-256 is taken of that text, so both sides hash the bytes
+// Postgres writes. Go never builds the text itself.
+func PluginSettingsSHA256(ctx context.Context, q Querier, s PluginSettings) (string, error) {
+	raw, err := json.Marshal(s)
+	if err != nil {
+		return "", fmt.Errorf("plugin settings: %w", err)
+	}
+	var text string
+	// Plain SQL: a cast, no table. Both types are qualified: the agent's
+	// connection has its own search_path, and a type of its own named text
+	// with a cast from jsonb would decide the text otherwise. A cast between
+	// two pg_catalog types needs the owner of one of them to create it.
+	if err := q.QueryRow(ctx, `SELECT $1::pg_catalog.jsonb::pg_catalog.text`, string(raw)).Scan(&text); err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:]), nil
 }
 
 func sortedCopy(in []string) []string {

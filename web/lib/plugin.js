@@ -77,7 +77,7 @@ export const SENTENCES = Object.freeze({
 export const HOOK_SEES = Object.freeze({
   "wire.detect": "It reads the text your agents send to the AI provider, before Basalt hides private values in it.",
   "feed.observe": "It is told what your agents do in the database, such as which tables they change and how many rows, never the values.",
-  "approval.deliver": "It delivers your approval links. Anyone who can read where it delivers them can see the rows of writes waiting for your approval.",
+  "approval.deliver": "It delivers your approval links. Anyone who can read where it delivers them can see the rows of writes waiting for your approval. Some links carry the whole request, so they can also see what the agent asked to run and why.",
   "classify.suggest": "It reads the names and types of your tables and columns, never their values, and suggests which ones hold private data.",
 });
 export const HOOK_LABELS = Object.freeze({

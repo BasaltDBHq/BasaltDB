@@ -14,7 +14,7 @@
           "Published by Basalt.",
           "It runs on the computer Basalt runs on, with the same access as Basalt itself.",
           "It says it connects only to slack.com:443. That is not enforced on the computer Basalt runs on.",
-          "It delivers your approval links. Anyone who can read where it delivers them can see the rows of writes waiting for your approval.",
+          "It delivers your approval links. Anyone who can read where it delivers them can see the rows of writes waiting for your approval. Some links carry the whole request, so they can also see what the agent asked to run and why.",
           "It is told what your agents do in the database, such as which tables they change and how many rows, never the values.",
           "Used for: product_a, product_b.",
           "Asked by product_a.",

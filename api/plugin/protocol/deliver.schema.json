@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/plugin/protocol/deliver.v1.json",
+  "title": "approval.deliver (deliver/1)",
+  "description": "Planned (no hook is called yet). The deliver/1 message: one call carries one notice, a CloudEvents 1.0 event in its JSON form, and the plugin answers {}. JSON-RPC method approval.deliver; ConnectRPC basalt.plugin.v1.PluginService/ApprovalDeliver. A notice is one-shot: best effort, never stored, never replayed, never sent past its expiry. Outside link, no field holds a row value or key, a statement, an intent or a refusal message; link is the one stated exception: a long link carries the whole request. See CONTRACT.md, Plugins, Notifier messages.",
+  "$defs": {
+    "request": {
+      "type": "object",
+      "required": ["agent", "event"],
+      "properties": {
+        "agent": { "$ref": "feed.schema.json#/$defs/agent" },
+        "event": { "$ref": "#/$defs/event" }
+      }
+    },
+    "response": {
+      "description": "Empty: the notice gives the plugin no power over the action.",
+      "type": "object",
+      "properties": {}
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["specversion", "id", "source", "type", "time", "subject", "datacontenttype", "data"],
+      "properties": {
+        "specversion": { "const": "1.0" },
+        "id": {
+          "description": "A UUIDv7 the engine makes once for the notice and keeps on every try of it.",
+          "$ref": "feed.schema.json#/$defs/uuid"
+        },
+        "source": { "$ref": "feed.schema.json#/$defs/source" },
+        "type": {
+          "enum": [
+            "dev.basaltdb.approval.requested",
+            "dev.basaltdb.revert.requested",
+            "dev.basaltdb.link.replaced"
+          ]
+        },
+        "time": {
+          "description": "When the engine made the notice: the moment the agent's answer was built.",
+          "$ref": "feed.schema.json#/$defs/timestamp"
+        },
+        "subject": { "$ref": "feed.schema.json#/$defs/agent" },
+        "datacontenttype": { "const": "application/json" },
+        "data": { "$ref": "#/$defs/notice" }
+      },
+      "allOf": [
+        { "if": { "properties": { "type": { "const": "dev.basaltdb.approval.requested" } } }, "then": { "properties": { "data": { "properties": { "kind": { "const": "APPROVAL_REQUESTED" } } } } } },
+        { "if": { "properties": { "type": { "const": "dev.basaltdb.revert.requested" } } }, "then": { "properties": { "data": { "properties": { "kind": { "const": "REVERT_REQUESTED" } } } } } },
+        { "if": { "properties": { "type": { "const": "dev.basaltdb.link.replaced" } } }, "then": { "properties": { "data": { "properties": { "kind": { "const": "LINK_REPLACED" } } } } } }
+      ]
+    },
+    "notice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "agent", "headline", "expiresAt", "instruction"],
+      "properties": {
+        "kind": {
+          "description": "APPROVAL_REQUESTED: the engine held a write. REVERT_REQUESTED: the engine prepared a revert. LINK_REPLACED: the agent asked for a new link for a held write or a revert; the earlier one no longer works.",
+          "enum": ["APPROVAL_REQUESTED", "REVERT_REQUESTED", "LINK_REPLACED"]
+        },
+        "agent": { "$ref": "feed.schema.json#/$defs/agent" },
+        "approvalId": { "description": "The held write's approval: present exactly when the item is a held write.", "$ref": "feed.schema.json#/$defs/uuid" },
+        "revertId": { "description": "The revert: present exactly when the item is a revert.", "$ref": "feed.schema.json#/$defs/uuid" },
+        "headline": {
+          "description": "The item in one line, built from the operation, the target and the row count (CONTRACT.md gives the grammar). Never a value, a statement or the intent. Passed through CONTRACT.md's rule for text from the agent or the database (Links in personMessage): one line, no control, format, zero-width or bidirectional character, host-like dots as middle dots. At most 1000 characters.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u180e\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u2064\\u2066-\\u2069\\ufeff]+$"
+        },
+        "expiresAt": { "$ref": "feed.schema.json#/$defs/timestamp" },
+        "link": {
+          "description": "Exactly the link the agent's own answer handed over for this item, when it stands alone: a short link, or a long link within the link budget. A long link carries the whole request: the statement, its parameters, the intent and the rows. Absent when the answer had no link that stands alone (a hash link, or a request too large for any link).",
+          "type": "string",
+          "pattern": "^(?:https://portal\\.basaltvault\\.app|http://localhost:[0-9]{1,5})/(?:approvals|reverts)/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}#(?:s=[A-Za-z0-9_-]{22}|2\\.[A-Za-z0-9_.-]+)$"
+        },
+        "linkOpens": {
+          "description": "Where the link opens, from its origin: ANYWHERE (the portal) or ENGINE_COMPUTER (http://localhost: only on the computer Basalt runs on). Present exactly with link.",
+          "enum": ["ANYWHERE", "ENGINE_COMPUTER"]
+        },
+        "instruction": {
+          "description": "What the person does, one of six fixed sentences chosen by the item (held write or revert) and the link (opens anywhere, only on the computer Basalt runs on, or none).",
+          "enum": [
+            "Open the link to review the held write and approve it with your passkey.",
+            "Open the link on the computer Basalt runs on to review the held write and approve it with your passkey.",
+            "Ask the agent for the link to review the held write and approve it with your passkey.",
+            "Open the link to review the revert and sign it with your passkey.",
+            "Open the link on the computer Basalt runs on to review the revert and sign it with your passkey.",
+            "Ask the agent for the link to review the revert and sign it with your passkey."
+          ]
+        }
+      },
+      "allOf": [
+        { "oneOf": [{ "required": ["approvalId"] }, { "required": ["revertId"] }] },
+        { "if": { "properties": { "kind": { "const": "APPROVAL_REQUESTED" } } }, "then": { "required": ["approvalId"] } },
+        { "if": { "properties": { "kind": { "const": "REVERT_REQUESTED" } } }, "then": { "required": ["revertId"] } },
+        { "if": { "required": ["link"] }, "then": { "required": ["linkOpens"] }, "else": { "not": { "required": ["linkOpens"] } } },
+        { "if": { "required": ["approvalId"] }, "then": { "properties": { "link": { "pattern": "/approvals/" } } }, "else": { "properties": { "link": { "pattern": "/reverts/" } } } },
+        { "if": { "properties": { "linkOpens": { "const": "ANYWHERE" } }, "required": ["linkOpens"] }, "then": { "properties": { "link": { "pattern": "^https://portal\\.basaltvault\\.app/" } } } },
+        { "if": { "properties": { "linkOpens": { "const": "ENGINE_COMPUTER" } }, "required": ["linkOpens"] }, "then": { "properties": { "link": { "pattern": "^http://localhost:" } } } },
+        {
+          "if": { "required": ["approvalId"] },
+          "then": { "properties": { "instruction": { "pattern": "held write" } } },
+          "else": { "properties": { "instruction": { "pattern": "revert" } } }
+        },
+        {
+          "if": { "not": { "required": ["link"] } },
+          "then": { "properties": { "instruction": { "pattern": "^Ask the agent" } } }
+        },
+        {
+          "if": { "properties": { "linkOpens": { "const": "ANYWHERE" } }, "required": ["linkOpens"] },
+          "then": { "properties": { "instruction": { "pattern": "^Open the link to" } } }
+        },
+        {
+          "if": { "properties": { "linkOpens": { "const": "ENGINE_COMPUTER" } }, "required": ["linkOpens"] },
+          "then": { "properties": { "instruction": { "pattern": "^Open the link on the computer" } } }
+        }
+      ]
+    }
+  }
+}

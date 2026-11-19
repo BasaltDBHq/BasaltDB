@@ -1,0 +1,216 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/plugin/protocol/feed.v1.json",
+  "title": "feed.observe (feed/1)",
+  "description": "Planned (no hook is called yet). The feed/1 message: one call carries one agent's ledger events, in chain order, as a CloudEvents 1.0 JSON batch; the plugin answers with the last seq it handled. JSON-RPC method feed.observe; ConnectRPC basalt.plugin.v1.PluginService/FeedObserve. Events hold metadata only: never a row value or key, a statement, an intent, a refusal message, a link, or anything about plugins or passkeys. See CONTRACT.md, Plugins, Notifier messages.",
+  "$defs": {
+    "request": {
+      "type": "object",
+      "required": ["agent", "events"],
+      "properties": {
+        "agent": { "$ref": "#/$defs/agent" },
+        "events": {
+          "description": "A CloudEvents JSON batch (application/cloudevents-batch+json): 1 to 100 events of this one agent, in ascending seq.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/event" }
+        }
+      }
+    },
+    "response": {
+      "type": "object",
+      "required": ["lastSeq"],
+      "properties": {
+        "lastSeq": {
+          "description": "The data.seq of the last event the plugin handled, which must be the seq of one event of the batch. The engine moves the agent's cursor to it and sends the events after it next.",
+          "$ref": "#/$defs/seq"
+        }
+      }
+    },
+    "event": {
+      "description": "One CloudEvents 1.0 event in its JSON form (application/cloudevents+json). The attribute names are the standard's; Basalt's camelCase keys and SCREAMING_SNAKE_CASE values apply inside data.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["specversion", "id", "source", "type", "subject", "datacontenttype", "data"],
+      "properties": {
+        "specversion": { "const": "1.0" },
+        "id": {
+          "description": "<installId>:<seq> for a ledger event; <installId>:skipped:<afterSeq>:<seq> for the skipped marker. The same on every redelivery.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:(?:[1-9][0-9]{0,18}|skipped:[0-9]{1,19}:[1-9][0-9]{0,18})$"
+        },
+        "source": { "$ref": "#/$defs/source" },
+        "type": {
+          "enum": [
+            "dev.basaltdb.write.applied",
+            "dev.basaltdb.write.refused",
+            "dev.basaltdb.write.held",
+            "dev.basaltdb.approval.signed",
+            "dev.basaltdb.revert.prepared",
+            "dev.basaltdb.revert.signed",
+            "dev.basaltdb.revert.applied",
+            "dev.basaltdb.revert.rejected",
+            "dev.basaltdb.feed.skipped"
+          ]
+        },
+        "time": {
+          "description": "The ledger row's at. Absent on the skipped marker only.",
+          "$ref": "#/$defs/timestamp"
+        },
+        "subject": { "$ref": "#/$defs/agent" },
+        "datacontenttype": { "const": "application/json" },
+        "data": { "type": "object" }
+      },
+      "allOf": [
+        { "if": { "properties": { "type": { "const": "dev.basaltdb.write.applied" } } }, "then": { "required": ["time"], "properties": { "data": { "$ref": "#/$defs/writeApplied" } } } },
+        { "if": { "properties": { "type": { "const": "dev.basaltdb.write.refused" } } }, "then": { "required": ["time"], "properties": { "data": { "$ref": "#/$defs/writeRefused" } } } },
+        { "if": { "properties": { "type": { "const": "dev.basaltdb.write.held" } } }, "then": { "required": ["time"], "properties": { "data": { "$ref": "#/$defs/writeHeld" } } } },
+        { "if": { "properties": { "type": { "const": "dev.basaltdb.approval.signed" } } }, "then": { "required": ["time"], "properties": { "data": { "$ref": "#/$defs/approvalSigned" } } } },
+        { "if": { "properties": { "type": { "const": "dev.basaltdb.revert.prepared" } } }, "then": { "required": ["time"], "properties": { "data": { "$ref": "#/$defs/revertOnly" } } } },
+        { "if": { "properties": { "type": { "const": "dev.basaltdb.revert.signed" } } }, "then": { "required": ["time"], "properties": { "data": { "$ref": "#/$defs/revertWithChange" } } } },
+        { "if": { "properties": { "type": { "const": "dev.basaltdb.revert.applied" } } }, "then": { "required": ["time"], "properties": { "data": { "$ref": "#/$defs/revertWithChange" } } } },
+        { "if": { "properties": { "type": { "const": "dev.basaltdb.revert.rejected" } } }, "then": { "required": ["time"], "properties": { "data": { "$ref": "#/$defs/revertOnly" } } } },
+        { "if": { "properties": { "type": { "const": "dev.basaltdb.feed.skipped" } } }, "then": { "not": { "required": ["time"] }, "properties": { "data": { "$ref": "#/$defs/skipped" } } } }
+      ]
+    },
+    "writeApplied": {
+      "description": "A CHANGE ledger row whose status is APPLIED: one per write, not one per row.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["installId", "seq", "agent", "changeId", "op", "rows", "cascadedRows"],
+      "properties": {
+        "installId": { "$ref": "#/$defs/uuid" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "agent": { "$ref": "#/$defs/agent" },
+        "changeId": { "$ref": "#/$defs/uuid" },
+        "runId": { "description": "When the write ran in a run.", "$ref": "#/$defs/uuid" },
+        "taskId": { "description": "When the run had a task.", "$ref": "#/$defs/uuid" },
+        "op": { "enum": ["INSERT", "UPDATE", "DELETE"] },
+        "table": { "description": "The statement's own table, when the write changed a row.", "$ref": "#/$defs/table" },
+        "rows": { "description": "Rows written, cascaded rows included.", "type": "integer", "minimum": 0 },
+        "cascadedRows": { "description": "Of rows, those written by cascade.", "type": "integer", "minimum": 0 }
+      }
+    },
+    "writeRefused": {
+      "description": "A REFUSED ledger row whose op is not SELECT.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["installId", "seq", "agent", "changeId", "op"],
+      "properties": {
+        "installId": { "$ref": "#/$defs/uuid" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "agent": { "$ref": "#/$defs/agent" },
+        "changeId": { "$ref": "#/$defs/uuid" },
+        "runId": { "$ref": "#/$defs/uuid" },
+        "taskId": { "$ref": "#/$defs/uuid" },
+        "op": { "enum": ["INSERT", "UPDATE", "DELETE", "OTHER"] },
+        "reasonCode": {
+          "description": "The refusal's error code, when it is one of the codes of CONTRACT.md, Error codes. Never its message.",
+          "type": "string",
+          "pattern": "^[A-Z][A-Z_]{0,63}$"
+        }
+      }
+    },
+    "writeHeld": {
+      "description": "An APPROVAL_PENDING ledger row: a write held for the person's approval. The row names no table.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["installId", "seq", "agent", "changeId", "approvalId", "runId", "op", "rows", "expiresAt"],
+      "properties": {
+        "installId": { "$ref": "#/$defs/uuid" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "agent": { "$ref": "#/$defs/agent" },
+        "changeId": { "description": "The held change.", "$ref": "#/$defs/uuid" },
+        "approvalId": { "$ref": "#/$defs/uuid" },
+        "runId": { "$ref": "#/$defs/uuid" },
+        "taskId": { "$ref": "#/$defs/uuid" },
+        "op": { "description": "The operation on the statement's own table.", "enum": ["INSERT", "UPDATE", "DELETE"] },
+        "rows": { "description": "Rows the held write changes, cascaded rows included.", "type": "integer", "minimum": 1 },
+        "expiresAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "approvalSigned": {
+      "description": "An APPROVED ledger row: the person signed a held write.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["installId", "seq", "agent", "changeId", "approvalId"],
+      "properties": {
+        "installId": { "$ref": "#/$defs/uuid" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "agent": { "$ref": "#/$defs/agent" },
+        "changeId": { "description": "The held change.", "$ref": "#/$defs/uuid" },
+        "approvalId": { "$ref": "#/$defs/uuid" }
+      }
+    },
+    "revertOnly": {
+      "description": "A REVERT_PENDING (revert.prepared) or REVERT_REJECTED (revert.rejected) ledger row. Only the revert's id: the rest of such a row reads differently once the person widens the revert.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["installId", "seq", "agent", "revertId"],
+      "properties": {
+        "installId": { "$ref": "#/$defs/uuid" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "agent": { "$ref": "#/$defs/agent" },
+        "revertId": { "$ref": "#/$defs/uuid" }
+      }
+    },
+    "revertWithChange": {
+      "description": "A REVERT_SIGNED (revert.signed, a large plan signed) or REVERTED (revert.applied) ledger row: the revert's id and the revert's own change.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["installId", "seq", "agent", "changeId", "revertId"],
+      "properties": {
+        "installId": { "$ref": "#/$defs/uuid" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "agent": { "$ref": "#/$defs/agent" },
+        "changeId": { "description": "The revert's own change.", "$ref": "#/$defs/uuid" },
+        "revertId": { "$ref": "#/$defs/uuid" }
+      }
+    },
+    "skipped": {
+      "description": "The skipped-ahead marker: the ledger's retention deleted rows after the cursor before they were delivered. Rows of this agent with afterSeq < seq <= this seq may have been events; how many is not known. Acknowledging it moves the cursor to seq.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["installId", "seq", "agent", "afterSeq"],
+      "properties": {
+        "installId": { "$ref": "#/$defs/uuid" },
+        "seq": { "$ref": "#/$defs/seq" },
+        "agent": { "$ref": "#/$defs/agent" },
+        "afterSeq": { "description": "The cursor: the last seq the plugin acknowledged.", "type": "integer", "minimum": 0 }
+      }
+    },
+    "agent": {
+      "description": "The agent's name in engine.json.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "maxLength": 63
+    },
+    "source": {
+      "description": "urn:uuid: and the install id of the agent's database's guard (basalt_meta.install_id()).",
+      "type": "string",
+      "pattern": "^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "seq": {
+      "description": "A ledger chain seq. Sequence numbers are per install and begin again on a new one.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "table": {
+      "description": "Schema-qualified, as Postgres writes the table's name, with any control character replaced by U+FFFD.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+    },
+    "timestamp": {
+      "description": "RFC 3339 UTC with Z, fractional seconds kept when present.",
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,6})?Z$"
+    }
+  }
+}

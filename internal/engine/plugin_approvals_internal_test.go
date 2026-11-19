@@ -644,6 +644,86 @@ func TestApprovalsUnreadableWriteNothing(t *testing.T) {
 	}
 }
 
+// An entry an agent's basalt plugin add wrote with the approval key, whose
+// copy a key in the person's trust store signed, is withheld until a
+// person signs an approval: the trust store vouches for nothing here, and
+// no trust record is written for it.
+func TestTrustedSignerWithoutApprovalIsWithheld(t *testing.T) {
+	t.Parallel()
+	f := newPluginFixture(t)
+	p := f.installCopy("default", feedHooks, true)
+	p.Agents, p.Approval = []string{"product_a"}, config.PluginApprovalRequired
+	f.cfg.Plugins = append(f.cfg.Plugins, p)
+	l := newPluginLedgers(t, f)
+
+	ep := f.plugins(nil)
+	for range 2 {
+		l.record(t, f, ep)
+	}
+	require.Empty(t, servedTo(ep, p.Key()))
+	require.Empty(t, ep.entries)
+	require.Equal(t, agent.ProblemPluginAwaitingApproval, problemFor(t, ep, "product_a").Code)
+	require.NotContains(t, kindsOf(l.events(t, "product_a")), "PLUGIN_ENABLED")
+}
+
+// basalt plugin and the engine derive the detail and the settings with the
+// same functions (PluginApprovalDetail, config.Plugin.ApprovalSettings): an
+// approval opened from them and signed is served, for a local and a remote
+// plugin, with numbers the guard rewrites (0.60, 1e3).
+func TestCommandsApprovalIsServed(t *testing.T) {
+	t.Parallel()
+	for name, remote := range map[string]bool{"local": false, "remote": true} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			f := newPluginFixture(t)
+			var p config.Plugin
+			if remote {
+				p = f.installRemote()
+			} else {
+				p = f.installCopy("default", detectHooks, false)
+			}
+			mc := 0.60
+			p.Agents, p.Approval, p.MinConfidence, p.TimeoutMs = []string{"product_a"}, config.PluginApprovalRequired, &mc, 1500
+			p.Config = json.RawMessage(`{"threshold": 0.60, "max": 1e3}`)
+			if remote {
+				p.Auth = &config.PluginAuth{CredentialFile: "/etc/basalt/acme.token"}
+			}
+			f.cfg.Plugins = append(f.cfg.Plugins, p)
+			l := newPluginLedgers(t, f)
+
+			v, err := plugin.Verify(f.root, p.Key(), p.ManifestSHA256, f.trust, plugin.ModeSameUser, plugin.RequireApproval(true))
+			require.NoError(t, err)
+			d := PluginApprovalDetail(p.Key(), v, []string{l.roles["product_a"]})
+			l.sign(t, l.person(t), "product_a", l.open(t, "product_a", d, p.ApprovalSettings()))
+
+			ep := f.plugins(nil)
+			l.record(t, f, ep)
+			require.Equal(t, []string{"product_a"}, servedTo(ep, p.Key()))
+			require.Empty(t, ep.unrecordedFor(p.Key(), "product_a"))
+		})
+	}
+}
+
+// installRemote installs a copy of a remote plugin manifest with no .sig
+// and returns its entry with no agents.
+func (f *pluginFixture) installRemote() config.Plugin {
+	f.t.Helper()
+	t := f.t
+	src := t.TempDir()
+	manifest := `{
+  "manifestVersion": 1, "name": "acme-ner", "version": "2.0.0", "publisher": "Acme",
+  "protocol": ["basalt-plugin/1"],
+  "hooks": { "feed.observe": { "contract": "feed/1" } },
+  "endpoint": { "remote": { "transport": "connectrpc", "url": "https://ner.acme.example/v1" } },
+  "network": { "egress": ["ner.acme.example:443"] }
+}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(src, plugin.ManifestFile), []byte(manifest), 0o644))
+	v, err := plugin.Install(src, f.root, "default", f.trust, plugin.ModeSameUser, plugin.RequireApproval(true))
+	require.NoError(t, err)
+	return config.Plugin{Name: "acme-ner", Instance: "default", ManifestSHA256: v.ManifestSHA256, Enabled: true, Agents: []string{}}
+}
+
 // Default deny: an entry that requires approval is served to no agent whose
 // approvals were never read, an agent with no ledger or one not admitted,
 // even though a matching approval exists.

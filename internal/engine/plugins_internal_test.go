@@ -79,14 +79,17 @@ func testPluginMain(args []string) {
 	_, _ = os.Stderr.WriteString(pluginStderrMarker + "\n")
 	_ = os.WriteFile(filepath.Join(report, pid+".start"), nil, 0o600)
 	onShutdown := func() { _ = os.WriteFile(filepath.Join(report, pid+".shutdown"), nil, 0o600) }
-	onFeed := func(line []byte) {
-		f, err := os.OpenFile(filepath.Join(report, pid+".feed"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-		if err != nil {
-			os.Exit(1)
+	keep := func(suffix string) func(line []byte) {
+		return func(line []byte) {
+			f, err := os.OpenFile(filepath.Join(report, pid+suffix), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+			if err != nil {
+				os.Exit(1)
+			}
+			_, _ = f.Write(line)
+			_ = f.Close()
 		}
-		_, _ = f.Write(line)
-		_ = f.Close()
 	}
+	onFeed := testPluginKeeps{feed: keep(".feed"), notice: keep(".deliver")}
 	if sock == "" {
 		serveTestPlugin(os.Stdin, os.Stdout, m, onShutdown, onFeed)
 		os.Exit(0)
@@ -113,10 +116,16 @@ func sameDir(a, b string) bool {
 	return errA == nil && errB == nil && ra == rb
 }
 
+// testPluginKeeps are where the test plugin keeps the request lines of its
+// notifier hooks.
+type testPluginKeeps struct {
+	feed, notice func(line []byte)
+}
+
 // serveTestPlugin answers initialize from the manifest, health READY,
 // feed.observe with the last seq of its batch, and shutdown (then exits),
 // one line each.
-func serveTestPlugin(r io.Reader, w io.Writer, m plugin.Manifest, onShutdown func(), onFeed func(line []byte)) {
+func serveTestPlugin(r io.Reader, w io.Writer, m plugin.Manifest, onShutdown func(), onFeed testPluginKeeps) {
 	in := bufio.NewReader(r)
 	for {
 		line, err := in.ReadBytes('\n')
@@ -144,8 +153,11 @@ func serveTestPlugin(r io.Reader, w io.Writer, m plugin.Manifest, onShutdown fun
 			// line in <report>/<pid>.feed for the test to read.
 			if n := len(req.Params.Events); n > 0 {
 				result = map[string]int64{"lastSeq": req.Params.Events[n-1].Data.Seq}
-				onFeed(line)
+				onFeed.feed(line)
 			}
+		case protocol.MethodApprovalDeliver:
+			// Keeps the request's line in <report>/<pid>.deliver.
+			onFeed.notice(line)
 		case protocol.MethodInitialize:
 			result = protocol.InitializeResponse{Protocol: protocol.Version1, Name: m.Name, Version: m.Version, Hooks: m.Hooks}
 		case protocol.MethodHealth:

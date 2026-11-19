@@ -34,6 +34,7 @@ import (
 // Hooks of the test plugin's manifest.
 const (
 	feedHooks   = `{ "feed.observe": { "contract": "feed/1" } }`
+	notifyHooks = `{ "feed.observe": { "contract": "feed/1" }, "approval.deliver": { "contract": "deliver/1" } }`
 	detectHooks = `{ "wire.detect": { "contract": "detector/1", "roles": ["VALUE"], "entityTypes": ["PERSON_NAME"] } }`
 )
 

@@ -618,6 +618,7 @@ func (ep *enginePlugins) serve(ctx context.Context, cfg config.Config, configPat
 	}
 	var feed sync.WaitGroup
 	feed.Go(func() { f.run(ctx) })
+	feed.Go(func() { ep.delivery.run(ctx, ledgers) })
 	if ep.mode == plugin.ModeSameUser || ep.kept != nil {
 		w := newPluginWatch(ep, cfg, configPath, ledgers)
 		w.writeServing()

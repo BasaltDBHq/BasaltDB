@@ -3,6 +3,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -17,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
@@ -85,7 +88,7 @@ func (f *keptFixture) runWith(euid int, inGroup error, set func(*pluginOptions))
 
 // runSource is a local plugin acme-ner whose command is this test binary,
 // started as the test plugin that reports to report.
-func runSource(t *testing.T, report string) ([]person.PluginFile, []string) {
+func runSource(t *testing.T, report, hooks string) ([]person.PluginFile, []string) {
 	t.Helper()
 	exe, err := os.ReadFile(os.Args[0])
 	require.NoError(t, err)
@@ -99,14 +102,20 @@ func runSource(t *testing.T, report string) ([]person.PluginFile, []string) {
   "files": { "bin/p": "sha256:%x" },
   "network": { "egress": [] }
 }
-`, feedHooks, dial.TransportStdio, args, sha256.Sum256(exe))
+`, hooks, dial.TransportStdio, args, sha256.Sum256(exe))
 	return []person.PluginFile{{Path: plugin.ManifestFile, Data: []byte(manifest)}, {Path: "bin/p", Data: exe}}, []string{"bin/p"}
 }
 
 // add uploads the running source and opens it for agents.
 func (r *keptRun) add(agents ...string) person.PluginOpenResult {
 	r.t.Helper()
-	files, exec := runSource(r.t, r.report)
+	return r.addWith(feedHooks, agents...)
+}
+
+// addWith is add for a plugin that declares hooks.
+func (r *keptRun) addWith(hooks string, agents ...string) person.PluginOpenResult {
+	r.t.Helper()
+	files, exec := runSource(r.t, r.report, hooks)
 	id, err := r.f.client.PluginUpload(context.Background(), files)
 	require.NoError(r.t, err)
 	res, err := r.f.client.PluginOpen(context.Background(), person.PluginOpenParams{
@@ -274,6 +283,83 @@ func TestFeedFollowsEngineKeptEntries(t *testing.T) {
 	require.Empty(t, servedTo(r.ep, keptKey))
 	require.Eventually(t, func() bool { return r.ep.senders.sender(keptKey) == nil }, keptWait, 20*time.Millisecond,
 		"its sender stops with it")
+}
+
+// TestDeliveryReachesEngineKeptEntries: approval.deliver follows an entry a
+// service engine keeps itself. Once it is approved and served, a notice of
+// its agent reaches the plugin process, as the contract's event with the
+// agent's link; a notice of an agent it does not serve reaches nothing;
+// after it is turned off nothing more is sent and nothing is counted.
+func TestDeliveryReachesEngineKeptEntries(t *testing.T) {
+	f := newKeptFixture(t, []string{"product_a", "product_b"})
+	timing, tries := fastFeed, fastDeliver
+	r := f.runWith(os.Geteuid(), nil, func(o *pluginOptions) { o.stateDir, o.feedTiming, o.deliverTiming = f.state, &timing, &tries })
+	res := r.addWith(notifyHooks, "product_b")
+	notice := agent.LinkNotice{
+		Kind: agent.NoticeApprovalRequested, ApprovalID: uuid.MustParse(testApproval), Headline: "Update 27 rows in public·leads",
+		ExpiresAt: time.Now().Add(time.Hour), Link: localShort,
+	}
+	// Not approved yet: not served, so nothing is sent or counted.
+	r.ep.DeliverLinks("product_b").DeliverLink(notice)
+
+	f.sign(res.Approvals[0])
+	r.requireServed(res.Approvals[0], "product_b")
+	require.Eventually(t, func() bool { return r.ep.senders.sender(keptKey) != nil }, keptWait, 20*time.Millisecond)
+	r.ep.DeliverLinks("product_a").DeliverLink(notice)
+	r.ep.DeliverLinks("product_b").DeliverLink(notice)
+
+	sch := deliverSchema(t)
+	var got []gotNotice
+	require.Eventually(t, func() bool {
+		got = reportedNotices(t, r.report, sch)
+		return len(got) > 0
+	}, keptWait, 20*time.Millisecond, "the notice reaches the engine-kept entry")
+	time.Sleep(3 * fastDeliver.tries[3])
+	got = reportedNotices(t, r.report, sch)
+	require.Len(t, got, 1, "one notice: nothing from before the approval, nothing of product_a")
+	require.Equal(t, "product_b", got[0].Agent)
+	require.Equal(t, localShort, got[0].Event.Data["link"])
+	install, err := guard.InstallID(context.Background(), f.d.Admin)
+	require.NoError(t, err)
+	require.Equal(t, "urn:uuid:"+install.String(), got[0].Event.Source, "the install id, read through the agent's own connection")
+	require.NotContains(t, string(got[0].raw), "product_a")
+
+	_, err = f.client.PluginDisable(context.Background(), person.PluginEntryParams{Name: keptKey.Name, Instance: keptKey.Instance})
+	require.NoError(t, err)
+	r.ep.DeliverLinks("product_b").DeliverLink(notice)
+	time.Sleep(3 * fastDeliver.tries[3])
+	require.Len(t, reportedNotices(t, r.report, sch), 1, "turned off: nothing more")
+	for _, a := range []string{"product_a", "product_b"} {
+		require.Empty(t, r.ep.delivery.dropped(a), "a notice for an entry not served is not a dropped one")
+	}
+}
+
+// reportedNotices are the approval.deliver requests the test plugin
+// processes kept in dir, each checked against deliver.schema.json.
+func reportedNotices(t *testing.T, dir string, sch *jsonschema.Schema) []gotNotice {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(dir, "*.deliver"))
+	require.NoError(t, err)
+	var out []gotNotice
+	for _, name := range files {
+		raw, err := os.ReadFile(name)
+		require.NoError(t, err)
+		for _, line := range bytes.Split(bytes.TrimSpace(raw), []byte{'\n'}) {
+			var req struct {
+				Params json.RawMessage `json:"params"`
+			}
+			if json.Unmarshal(line, &req) != nil {
+				continue // a line still being written
+			}
+			inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(req.Params))
+			require.NoError(t, err)
+			require.NoError(t, sch.Validate(inst), string(req.Params))
+			g := gotNotice{raw: req.Params}
+			require.NoError(t, json.Unmarshal(req.Params, &g))
+			out = append(out, g)
+		}
+	}
+	return out
 }
 
 func reportedFiles(t *testing.T, dir, suffix string) []string {

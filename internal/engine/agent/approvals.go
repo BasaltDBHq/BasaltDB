@@ -72,39 +72,39 @@ func (noNotifier) NotifyRevert(context.Context, RevertNotice) error { return nil
 // refuse it when it is not repeatable, preview it in a transaction that
 // rolls back, store it with its lines, notify the person, and answer
 // APPROVAL_REQUIRED with the approval link. It returns the held write's
-// approval id with the APPROVAL_REQUIRED error, or uuid.Nil and the error
-// that kept it from being held.
-func (s *Service) hold(ctx context.Context, in action.Intent, p WriteParams, stmt action.Statement, start time.Time) (uuid.UUID, error) {
+// approval id and expiry with the APPROVAL_REQUIRED error, or uuid.Nil and
+// the error that kept it from being held.
+func (s *Service) hold(ctx context.Context, in action.Intent, p WriteParams, stmt action.Statement, start time.Time) (uuid.UUID, time.Time, error) {
 	assigned, err := s.Store.HoldColumns(ctx, p.SQL, p.Params)
 	var notRepeatable *action.RefusalError
 	if errors.As(err, &notRepeatable) {
-		return uuid.Nil, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
+		return uuid.Nil, time.Time{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
 	}
 	if err != nil {
-		return uuid.Nil, err
+		return uuid.Nil, time.Time{}, err
 	}
 	lines, err := s.Store.Preview(ctx, in, p.SQL, p.Params, assigned)
 	if err != nil {
-		return uuid.Nil, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
+		return uuid.Nil, time.Time{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, err)
 	}
 	if len(lines) == 0 {
 		// The rows went away between the attempt and the preview.
-		return uuid.Nil, &mcp.ToolError{Code: CodeSQLError, Reason: reasonNoRowsNow, Message: "the write changes no rows now; read again and decide"}
+		return uuid.Nil, time.Time{}, &mcp.ToolError{Code: CodeSQLError, Reason: reasonNoRowsNow, Message: "the write changes no rows now; read again and decide"}
 	}
 	if te := holdTooLarge(lines, nil); te != nil {
-		return uuid.Nil, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
+		return uuid.Nil, time.Time{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
 	}
 	held, err := s.Store.Hold(ctx, in, action.HoldRequest{Statement: p.SQL, Params: p.Params, Assigned: assigned, Lines: lines})
 	if err != nil {
 		if te := holdTooLarge(lines, err); te != nil {
-			return uuid.Nil, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
+			return uuid.Nil, time.Time{}, s.refused(ctx, in, stmt.Op, p.SQL, p.Params, start, te)
 		}
-		return uuid.Nil, err
+		return uuid.Nil, time.Time{}, err
 	}
 	req := sizedRequest{Binding: held.BindingText, Lines: lines, Cost: textsCost(lines)}
 	notice, err := s.approvalNotice(ctx, held.ApprovalID, in.RunID, req, held.ExpiresAt, issueLink)
 	if err != nil {
-		return uuid.Nil, err
+		return uuid.Nil, time.Time{}, err
 	}
 	// The notice carries the long link, which works anywhere, and the
 	// short one, which works only on this machine (CONTRACT.md, Link
@@ -117,7 +117,7 @@ func (s *Service) hold(ctx context.Context, in action.Intent, p WriteParams, stm
 	if err := s.Notifier.NotifyHeld(context.WithoutCancel(ctx), sent); err != nil {
 		s.Log.Error("notify held write", "approvalId", held.ApprovalID, "err", err)
 	}
-	return held.ApprovalID, approvalRequiredError(notice)
+	return held.ApprovalID, held.ExpiresAt, approvalRequiredError(notice)
 }
 
 // heldNotice is a held write as the agent hands it to the person
@@ -542,6 +542,9 @@ type PendingItem struct {
 	// tooLargeSteps are the steps of an item whose request no link this
 	// engine has can carry (REQUEST_TOO_LARGE); nil otherwise.
 	tooLargeSteps []mcp.NextStep
+	// issued is set when this list_pending issued the item a new link the
+	// person can still use.
+	issued bool
 	// PersonMessage and NextSteps say what happens next (CONTRACT.md, Next steps).
 	PersonMessage string
 	Links         []mcp.Link

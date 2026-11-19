@@ -48,6 +48,10 @@ type Deps struct {
 	Now   func() time.Time
 	// Notifier is optional: no notification when nil.
 	Notifier Notifier
+	// Deliverer takes the notice of each answer that holds a write, prepares
+	// a revert or issues a new link on the agent's request, for the
+	// approval.deliver plugins; optional, none when nil.
+	Deliverer LinkDeliverer
 	// PagesBase is the base URL of the approval and revert pages (links);
 	// links.DefaultLocal when empty.
 	PagesBase string
@@ -370,8 +374,12 @@ func (s *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, error
 	}
 	res, err := s.Store.Write(ctx, in, op, p.SQL, p.Params)
 	if errors.Is(err, action.ErrApprovalRequired) {
-		id, err := s.hold(ctx, in, p, stmt, start)
-		if id == uuid.Nil || p.Wait == 0 {
+		id, expires, err := s.hold(ctx, in, p, stmt, start)
+		if id == uuid.Nil {
+			return WriteOutcome{}, err
+		}
+		if p.Wait == 0 {
+			s.deliverHeld(id, expires, err)
 			return WriteOutcome{}, err
 		}
 		// Held: wait for the person's signature and apply it, exactly as
@@ -381,6 +389,9 @@ func (s *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, error
 		out, waitErr := s.applyApproved(ctx, p)
 		var te *mcp.ToolError
 		if errors.As(waitErr, &te) && te.Code == CodeApprovalRequired {
+			// The notice is made only now: until this answer, the agent
+			// had no link, and a notice never runs ahead of the agent.
+			s.deliverHeld(id, expires, err)
 			return WriteOutcome{}, err
 		}
 		return out, waitErr

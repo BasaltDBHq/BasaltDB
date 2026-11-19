@@ -222,6 +222,10 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			t.Helper()
 			return pluginStatus(t, operatedBy, "", true, fakePlugins{"bot": {{Code: ProblemPluginConfigInvalid, Message: "engine.json changed and the engine cannot read its plugins"}}})
 		}},
+		ProblemPluginNoticesDropped: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
+			t.Helper()
+			return pluginStatus(t, operatedBy, "", true, samplePluginProblem(ProblemPluginNoticesDropped))
+		}},
 	}
 }
 

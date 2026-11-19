@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -51,6 +52,12 @@ type pluginOptions struct {
 	// feedTiming replaces the feed's intervals (tests); nil is the
 	// contract's.
 	feedTiming *feedTiming
+	// deliverTiming replaces the delivery's numbers (tests); nil is the
+	// contract's.
+	deliverTiming *deliverTiming
+	// now is the engine's clock for the notifier hooks' expiries and try
+	// times; time.Now when nil.
+	now func() time.Time
 	// kept is a service engine's own entries (CONTRACT.md, Plugin approval
 	// in service mode); nil in same-user mode.
 	kept *keptplugins.Store
@@ -75,6 +82,8 @@ type enginePlugins struct {
 	// declares feed.observe or approval.deliver (pluginFeed keeps them in
 	// step with what is served): senders.sender(k).
 	senders *pluginSenders
+	// delivery hands approval notices to the approval.deliver entries.
+	delivery *pluginDelivery
 	// configured are the enabled entries that list an agent, in config
 	// order; entries are the ones the supervisor runs.
 	configured []config.Plugin
@@ -196,7 +205,15 @@ func newEnginePluginsFor(cfg config.Config, configPath string, o pluginOptions, 
 	configured := configuredPlugins(ep.startCfg)
 	ep.configured = configured
 	ep.sup = plugin.NewSupervisor(ep.host, ep.dial, o.clock).WithLog(log)
-	ep.senders = newPluginSenders(ep.host, time.Now)
+	if o.now == nil {
+		o.now = time.Now
+		ep.o.now = o.now
+	}
+	ep.senders = newPluginSenders(ep.host, o.now)
+	ep.delivery = newPluginDelivery(ep.host, ep.servedEntries, ep.senders, o.now, o.clock, log)
+	if o.deliverTiming != nil {
+		ep.delivery.timing = *o.deliverTiming
+	}
 	dir := filepath.Dir(configPath)
 	root, rootErr := plugin.Root(ep.mode, o.goos, dir)
 	trust, trustErr := plugin.NewTrustStore(ep.mode, o.goos, dir)
@@ -482,7 +499,28 @@ func (ep *enginePlugins) PluginProblems(name string) []agent.PluginProblem {
 		}
 		out = append(out, prob)
 	}
+	for _, dn := range ep.delivery.dropped(name) {
+		out = append(out, agent.PluginProblem{
+			Code: agent.ProblemPluginNoticesDropped, Name: dn.key.Name, Instance: dn.key.Instance, EngineKept: ep.isKept(dn.key),
+			Message: fmt.Sprintf("plugin %s did not get %s of this agent in the last 24 hours: the engine dropped them "+
+				"(the plugin did not take them within about a minute, they expired first, or too many were waiting). "+
+				"The agent's answers carried the links all the same", dn.key, noticeCount(dn.count)),
+		})
+	}
 	return out
+}
+
+// DeliverLinks is the agent.LinkDeliverer of the agent named name: its
+// notices go to the approval.deliver entries served to it.
+func (ep *enginePlugins) DeliverLinks(name string) agent.LinkDeliverer {
+	return ep.delivery.forAgent(name)
+}
+
+func noticeCount(n int) string {
+	if n == 1 {
+		return "1 approval notice"
+	}
+	return fmt.Sprintf("%d approval notices", n)
 }
 
 // pluginDebugWriter is where --plugin-debug sends local plugins' stderr: the

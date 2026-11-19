@@ -227,6 +227,10 @@ type RequestedRevert struct {
 	Receipt *Receipt
 	// tooLarge is the notice when no link can carry the request.
 	tooLarge revertLink
+	// headline is the revert in one line, and issued is set when this
+	// answer issued a new link: for the approval.deliver notice.
+	headline string
+	issued   bool
 }
 
 func (s *Service) RequestRevert(ctx context.Context, p RequestRevertParams) (RequestedRevert, error) {
@@ -242,10 +246,21 @@ func (s *Service) RequestRevert(ctx context.Context, p RequestRevertParams) (Req
 		return RequestedRevert{}, err
 	}
 	out, err := s.revertWithLink(ctx, r)
-	if err == nil && out.tooLarge.tooLarge {
-		return RequestedRevert{}, s.revertTooLargeError(r.ID, out.tooLarge.cost, r.ExpiresAt)
+	if err != nil {
+		return RequestedRevert{}, err
 	}
-	return out, err
+	if out.tooLarge.tooLarge {
+		answer := s.revertTooLargeError(r.ID, out.tooLarge.cost, r.ExpiresAt)
+		var te *mcp.ToolError
+		if errors.As(answer, &te) {
+			// Prepared, with no link any page can open: a notice with none.
+			out.RevertURL = ""
+			s.deliverRevert(NoticeRevertRequested, out)
+		}
+		return RequestedRevert{}, answer
+	}
+	s.deliverRevert(NoticeRevertRequested, out)
+	return out, nil
 }
 
 // prepareReissue readies a pending revert for a new link the agent asked
@@ -275,12 +290,13 @@ func (s *Service) revertWithLink(ctx context.Context, r ledger.Revert) (Requeste
 		if err != nil {
 			return RequestedRevert{}, err
 		}
-		return RequestedRevert{Revert: r, RevertURL: n.URL, PersonMessage: n.Message, NextSteps: steps, tooLarge: n}, nil
+		return RequestedRevert{Revert: r, RevertURL: n.URL, PersonMessage: n.Message, NextSteps: steps, tooLarge: n, headline: n.Headline}, nil
 	}
 	s.notifyRevert(ctx, r, n)
 	return RequestedRevert{
 		Revert: r, RevertURL: n.URL, RequestFile: n.File, PersonMessage: n.Message, Links: n.Links,
 		NextSteps: withSendRequest(requestedSteps(r.ID, n.URL), n.File),
+		headline:  n.Headline, issued: n.short != "",
 	}, nil
 }
 
@@ -320,7 +336,11 @@ func (s *Service) AwaitRevert(ctx context.Context, p AwaitRevertParams) (Request
 		if err != nil {
 			return RequestedRevert{}, err
 		}
-		return s.revertWithLink(ctx, r)
+		out, err := s.revertWithLink(ctx, r)
+		if err == nil && out.issued {
+			s.deliverRevert(NoticeLinkReplaced, out)
+		}
+		return out, err
 	}
 	err = s.awaitWhile(ctx, p.Wait, func() bool { return r.Status == ledger.RevertPending }, func(ctx context.Context) error {
 		// Each poll is one measured read with a budget of its own (as the

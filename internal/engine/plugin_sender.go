@@ -49,10 +49,15 @@ type pluginSender struct {
 	key  plugin.EntryKey
 	now  func() time.Time
 
-	queue  chan pluginCall
-	ctx    context.Context
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	queue chan pluginCall
+	// notices are the approval.deliver calls, apart from the feed's batches:
+	// a full feed queue never refuses a notice, workers take notices first,
+	// and one worker takes nothing else, so feed calls that hang never hold
+	// every worker.
+	notices chan pluginCall
+	ctx     context.Context
+	cancel  context.CancelFunc
+	wg      sync.WaitGroup
 
 	mu sync.Mutex
 	// stopped: Stop ran; Send queues nothing.
@@ -65,8 +70,12 @@ func newPluginSender(host *plugin.Host, k plugin.EntryKey, now func() time.Time)
 		panic("engine: a plugin sender needs a host and a clock")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &pluginSender{host: host, key: k, now: now, queue: make(chan pluginCall, pluginSenderQueue), ctx: ctx, cancel: cancel}
-	for range protocol.MaxInFlight {
+	s := &pluginSender{
+		host: host, key: k, now: now, queue: make(chan pluginCall, pluginSenderQueue),
+		notices: make(chan pluginCall, pluginSenderQueue), ctx: ctx, cancel: cancel,
+	}
+	s.wg.Go(s.workNotices)
+	for range protocol.MaxInFlight - 1 {
 		s.wg.Go(s.work)
 	}
 	return s
@@ -94,6 +103,22 @@ func (s *pluginSender) Send(ctx context.Context, c pluginCall) error {
 	}
 }
 
+// SendNotice is Send for an approval.deliver call: it waits in the notices'
+// own queue, which the feed's batches never fill.
+func (s *pluginSender) SendNotice(c pluginCall) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stopped {
+		return errSenderStopped
+	}
+	select {
+	case s.notices <- c:
+		return nil
+	default:
+		return errSenderFull
+	}
+}
+
 // Stop ends the calls in flight, drops the waiting ones (each done gets
 // errSenderStopped) and returns once every worker has returned.
 func (s *pluginSender) Stop() {
@@ -106,6 +131,8 @@ func (s *pluginSender) Stop() {
 		select {
 		case c := <-s.queue:
 			finish(c, errSenderStopped)
+		case c := <-s.notices:
+			finish(c, errSenderStopped)
 		default:
 			return
 		}
@@ -114,10 +141,33 @@ func (s *pluginSender) Stop() {
 
 func (s *pluginSender) work() {
 	for {
+		// A waiting notice goes before a feed batch.
 		select {
 		case <-s.ctx.Done():
 			return
+		case c := <-s.notices:
+			s.do(c)
+			continue
+		default:
+		}
+		select {
+		case <-s.ctx.Done():
+			return
+		case c := <-s.notices:
+			s.do(c)
 		case c := <-s.queue:
+			s.do(c)
+		}
+	}
+}
+
+// workNotices is the worker that takes only notices.
+func (s *pluginSender) workNotices() {
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case c := <-s.notices:
 			s.do(c)
 		}
 	}

@@ -16,6 +16,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 )
@@ -102,6 +103,11 @@ type pluginEnv struct {
 	mode  plugin.Mode
 	root  string
 	trust plugin.TrustStore
+	// sock is the engine's person socket when the command runs in service
+	// mode without sudo (plugin_service.go), with the engine's pages; nil
+	// otherwise.
+	sock  *person.Client
+	pages person.PagesDTO
 }
 
 func loadPluginEnv(c *cliIO, fs *flag.FlagSet, configPath string) (*pluginEnv, error) {
@@ -528,9 +534,19 @@ func pluginList(c *cliIO, args []string) int {
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
 	}
+	if c.pluginViaSocket(*configPath) {
+		e, err := socketPluginEnv(c)
+		if err != nil {
+			return c.fail(err)
+		}
+		return c.pluginDone(e.listViaSocket(*asJSON), *asJSON)
+	}
 	e, err := loadPluginEnv(c, fs, *configPath)
 	if err != nil {
 		return c.fail(err)
+	}
+	if e.cfg.Service() && c.host.Euid() == 0 && !*asJSON {
+		defer fmt.Fprintln(c.stdout, "Entries the engine keeps: run basalt plugin list without sudo.")
 	}
 	approvals := &approvalReader{e: e, read: map[string]agentRecords{}}
 	if *asJSON {
@@ -627,12 +643,24 @@ func pluginAdd(c *cliIO, args []string) int {
 	if f.dir, err = filepath.Abs(f.dir); err != nil {
 		return c.fail(err)
 	}
+	if c.pluginViaSocket(*configPath) {
+		// --approve-with-passkey is accepted and changes nothing: without
+		// sudo every add opens an approval.
+		e, err := socketPluginEnv(c)
+		if err != nil {
+			return c.fail(err)
+		}
+		return c.pluginDone(e.addViaSocket(f), *asJSON)
+	}
 	e, err := loadPluginEnv(c, fs, *configPath)
 	if err != nil {
 		return c.fail(err)
 	}
 	if f.approve && e.cfg.Service() {
 		return c.fail(errApprovalInServiceMode("--" + flagApproveWithPasskey))
+	}
+	if err := e.refuseKeptName(plugin.EntryKey{}, f.dir, f.instance); err != nil {
+		return c.pluginDone(err, *asJSON)
 	}
 	return c.pluginDone(e.add(f), *asJSON)
 }
@@ -884,6 +912,14 @@ func entryFlagsWith(c *cliIO, name string, args []string, withJSON, withApprove 
 	if err := checkInstance(*instance); err != nil {
 		return nil, plugin.EntryKey{}, false, false, c.fail(err)
 	}
+	k := plugin.EntryKey{Name: pluginName, Instance: *instance}
+	if (name == "enable" || name == "disable" || name == "remove") && c.pluginViaSocket(*configPath) {
+		e, err := socketPluginEnv(c)
+		if err != nil {
+			return nil, plugin.EntryKey{}, false, false, c.fail(err)
+		}
+		return e, k, *asJSON, *approve, -1
+	}
 	e, err := loadPluginEnv(c, fs, *configPath)
 	if err != nil {
 		return nil, plugin.EntryKey{}, false, false, c.fail(err)
@@ -891,7 +927,12 @@ func entryFlagsWith(c *cliIO, name string, args []string, withJSON, withApprove 
 	if *approve && e.cfg.Service() {
 		return nil, plugin.EntryKey{}, false, false, c.fail(errApprovalInServiceMode("--" + flagApproveWithPasskey))
 	}
-	return e, plugin.EntryKey{Name: pluginName, Instance: *instance}, *asJSON, *approve, -1
+	if name == "enable" || name == "disable" || name == "remove" {
+		if err := e.refuseKeptName(k, "", ""); err != nil {
+			return nil, plugin.EntryKey{}, false, false, c.pluginDone(err, *asJSON)
+		}
+	}
+	return e, k, *asJSON, *approve, -1
 }
 
 // entry is the entry k, or an error naming the command that adds it.
@@ -925,6 +966,9 @@ func pluginEnable(c *cliIO, args []string) int {
 			return c.fail(err)
 		}
 		return c.pluginDone(e.enableWait(k, parsed, wait, asJSON), asJSON)
+	}
+	if e.sock != nil {
+		return c.pluginDone(e.enableViaSocket(k, max(wait, 0), asJSON), asJSON)
 	}
 	return c.pluginDone(e.enable(k, approve, max(wait, 0), asJSON), asJSON)
 }
@@ -999,6 +1043,9 @@ func pluginDisable(c *cliIO, args []string) int {
 	if code >= 0 {
 		return code
 	}
+	if e.sock != nil {
+		return c.pluginDone(e.turnOffViaSocket(k, false), false)
+	}
 	return c.pluginDone(e.setDisabled(k), false)
 }
 
@@ -1041,6 +1088,9 @@ func pluginRemove(c *cliIO, args []string) int {
 	e, k, _, code := entryFlags(c, "remove", args, false)
 	if code >= 0 {
 		return code
+	}
+	if e.sock != nil {
+		return c.pluginDone(e.turnOffViaSocket(k, true), false)
 	}
 	return c.pluginDone(e.remove(k), false)
 }

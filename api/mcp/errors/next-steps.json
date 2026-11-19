@@ -102,7 +102,12 @@
     { "code": "PLUGIN_REFUSED", "reason": "UNSAFE_PATH", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "PERSON", "action": "RUN_COMMAND" }] },
     { "code": "PLUGIN_REFUSED", "reason": "TOO_MANY_PENDING", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }] },
     { "code": "PLUGIN_REFUSED", "reason": "GUARD_OUTDATED", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "STOP" }] },
-    { "code": "PLUGIN_REFUSED", "reason": "DATABASE_UNREACHABLE", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "OPERATOR", "action": "RUN_COMMAND" }] }
+    { "code": "PLUGIN_REFUSED", "reason": "DATABASE_UNREACHABLE", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "OPERATOR", "action": "RUN_COMMAND" }] },
+    { "code": "PLUGIN_REFUSED", "reason": "NAME_TAKEN", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }] },
+    { "code": "PLUGIN_REFUSED", "reason": "CONFIG_ENTRY", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }] },
+    { "code": "PLUGIN_REFUSED", "reason": "TOO_LARGE", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }] },
+    { "code": "PLUGIN_REFUSED", "reason": "TOO_MANY_UPLOADS", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }] },
+    { "code": "PLUGIN_REFUSED", "reason": "ENGINE_IS_ROOT", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }] }
   ],
   "results": [
     { "tool": "preview_revert", "case": "PREVIEW", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "REVISE_CALL" }] },

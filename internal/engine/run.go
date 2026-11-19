@@ -322,6 +322,9 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 			wg.Go(func() { kept.endDisabled(ctx) })
 		}
 		srv, ln, err := listenPerson(cfg, o, log)
+		if err == nil && restart.PersonPeerUID != nil {
+			srv = person.NewServer(withPeerUID(o, cfg, restart.PersonPeerUID, log))
+		}
 		if err != nil {
 			return err
 		}
@@ -424,6 +427,12 @@ func listenPerson(cfg config.Config, o person.Options, log *slog.Logger) (*perso
 	log.Info("serving the person socket", "socket", path, "personUids", cfg.PersonUIDs)
 	o.Allow, o.PeerUID, o.Log = cfg.PersonUIDs, peercred.UID, log.With("component", "person")
 	return person.NewServer(o), ln, nil
+}
+
+// withPeerUID is o as listenPerson completes it, with peerUID (tests).
+func withPeerUID(o person.Options, cfg config.Config, peerUID func(*net.UnixConn) (uint32, error), log *slog.Logger) person.Options {
+	o.Allow, o.PeerUID, o.Log = cfg.PersonUIDs, peerUID, log.With("component", "person")
+	return o
 }
 
 // engineInfo is what the person socket's STATUS says about this engine:

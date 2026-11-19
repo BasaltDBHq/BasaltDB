@@ -41,13 +41,12 @@ type keptRun struct {
 }
 
 // run starts the engine's plugins with euid as the engine's uid, inGroup as
-// the answer to "is an agent's OS user in the engine's group", and plugins
-// as engine.json's entries.
-func (f *keptFixture) run(euid int, inGroup error, plugins ...config.Plugin) *keptRun {
+// the answer to "is an agent's OS user in the engine's group", and no entry
+// as engine.json's entries (none).
+func (f *keptFixture) run(euid int, inGroup error) *keptRun {
 	f.t.Helper()
 	t := f.t
 	cfg := f.cfg
-	cfg.Plugins = plugins
 	raw, err := json.Marshal(cfg)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(f.configPath, raw, 0o600))
@@ -143,9 +142,10 @@ func containsKey(ks []plugin.EntryKey, k plugin.EntryKey) bool {
 	return false
 }
 
-// problem is agent's status problem for keptKey, nil when there is none.
-func (r *keptRun) problem(agentName string) *agent.PluginProblem {
-	for _, p := range r.ep.PluginProblems(agentName) {
+// problem is product_a's status problem for keptKey, nil when there is
+// none.
+func (r *keptRun) problem() *agent.PluginProblem {
+	for _, p := range r.ep.PluginProblems("product_a") {
 		if p.Name == keptKey.Name && p.Instance == keptKey.Instance {
 			return &p
 		}
@@ -164,7 +164,7 @@ func TestEngineKeptEntryNeedsApproval(t *testing.T) {
 
 	r.requireNotRunning()
 	require.Eventually(t, func() bool {
-		p := r.problem("product_a")
+		p := r.problem()
 		return p != nil && p.Code == agent.ProblemPluginAwaitingApproval
 	}, keptWait, 50*time.Millisecond)
 
@@ -172,7 +172,7 @@ func TestEngineKeptEntryNeedsApproval(t *testing.T) {
 	// only, through its own credential, and sign nothing.
 	f.sign(a)
 	r.requireServed(a, "product_a", "product_b")
-	require.Nil(t, r.problem("product_a"))
+	require.Nil(t, r.problem())
 	var detail map[string]any
 	require.NoError(t, f.d.Admin.QueryRow(context.Background(), `SELECT detail FROM basalt_meta.ledger
 		WHERE agent = $1 AND kind = 'PLUGIN_ENABLED' ORDER BY seq DESC LIMIT 1`, f.roles["product_a"].Role).Scan(&detail))
@@ -189,7 +189,7 @@ func TestEngineKeptEntryNeedsApproval(t *testing.T) {
 	r.ep.applyNow(context.Background())
 	r.requireNotRunning()
 	require.Eventually(t, func() bool {
-		p := r.problem("product_a")
+		p := r.problem()
 		return p != nil && p.Code == agent.ProblemPluginApprovalMismatch
 	}, keptWait, 50*time.Millisecond)
 }
@@ -218,7 +218,7 @@ func TestServiceModeStartsWithoutRestart(t *testing.T) {
 	require.NoError(t, err)
 	time.Sleep(3 * pluginWaitingPoll)
 	require.Empty(t, servedTo(r.ep, keptKey), "the old approval never serves it again")
-	require.Equal(t, agent.ProblemPluginAwaitingApproval, r.problem("product_a").Code)
+	require.Equal(t, agent.ProblemPluginAwaitingApproval, r.problem().Code)
 
 	f.sign(again.Approvals[0])
 	r.requireServed(again.Approvals[0], "product_a")
@@ -227,7 +227,7 @@ func TestServiceModeStartsWithoutRestart(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, servedTo(r.ep, keptKey))
 	require.NoDirExists(t, filepath.Join(f.state, "plugins", "acme-ner"))
-	require.Nil(t, r.problem("product_a"))
+	require.Nil(t, r.problem())
 }
 
 func reportedFiles(t *testing.T, dir, suffix string) []string {
@@ -251,10 +251,10 @@ func TestRootEngineStartsNoLocalPlugin(t *testing.T) {
 	res := r.add("product_a")
 	f.sign(res.Approvals[0])
 	require.Eventually(t, func() bool {
-		p := r.problem("product_a")
+		p := r.problem()
 		return p != nil && p.Code == agent.ProblemPluginUnavailable
 	}, keptWait, 50*time.Millisecond)
-	require.Contains(t, r.problem("product_a").Message, "root")
+	require.Contains(t, r.problem().Message, "root")
 	time.Sleep(3 * pluginWaitingPoll)
 	require.Empty(t, servedTo(r.ep, keptKey))
 	require.Empty(t, reportedFiles(t, r.report, ".start"), "no plugin process ever started")
@@ -268,7 +268,7 @@ func TestEngineKeptLocalRefusedWhenAgentInEngineGroup(t *testing.T) {
 	res := r.add("product_a")
 	f.sign(res.Approvals[0])
 	require.Eventually(t, func() bool {
-		p := r.problem("product_a")
+		p := r.problem()
 		return p != nil && p.Code == agent.ProblemPluginUnavailable
 	}, keptWait, 50*time.Millisecond)
 	time.Sleep(3 * pluginWaitingPoll)
@@ -294,10 +294,10 @@ func TestNameClashBothHeldServesConfig(t *testing.T) {
 	r.ep.applyNow(context.Background())
 	r.requireNotRunning()
 	require.Eventually(t, func() bool {
-		p := r.problem("product_a")
+		p := r.problem()
 		return p != nil && p.Code == agent.ProblemPluginUnavailable
 	}, keptWait, 50*time.Millisecond)
-	require.Contains(t, r.problem("product_a").Message, "engine.json holds an entry of the same name")
+	require.Contains(t, r.problem().Message, "engine.json holds an entry of the same name")
 }
 
 // TestSudoInstalledPluginStillIsolated: with engine-kept entries on, a

@@ -105,6 +105,9 @@ func (e *pluginEnv) waitCommand(k plugin.EntryKey, ids []uuid.UUID) string {
 // d by more than one poll. A database that does not answer decides
 // nothing: its agents' approvals stay as last read.
 func (e *pluginEnv) waitForRunning(k plugin.EntryKey, ids []uuid.UUID, d time.Duration) (waitResult, error) {
+	if e.sock != nil {
+		return e.waitViaSocket(k, ids, d)
+	}
 	// engine.json as it is now: add and enable wrote the entry after the
 	// command read it.
 	ec, err := loadEngineConfig(e.c, e.configPath)
@@ -381,7 +384,7 @@ var errWaitNotRunning = errors.New("the plugin does not run")
 // enableWait is basalt plugin enable --approval-id: the repeat call that
 // waits for the plugin to run, opening nothing.
 func (e *pluginEnv) enableWait(k plugin.EntryKey, ids []uuid.UUID, wait int, asJSON bool) error {
-	if e.cfg.Service() {
+	if e.sock == nil && e.cfg.Service() {
 		return errApprovalInServiceMode("--approval-id")
 	}
 	if wait < 0 {

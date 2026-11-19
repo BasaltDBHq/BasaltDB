@@ -584,13 +584,10 @@ func TestDisableThenEnableNeedsNewApproval(t *testing.T) {
 		again, err := enable(f)
 		require.NoError(t, err)
 		require.Len(t, again.Approvals, 1)
-		recs, err := guard.ReadPluginApprovals(context.Background(), f.roles["product_a"].Connect(t))
+		old, ok, err := guard.ReadPluginApproval(context.Background(), f.roles["product_a"].Connect(t), *res.Approvals[0].ApprovalID)
 		require.NoError(t, err)
-		for _, r := range recs {
-			if r.ApprovalID == *res.Approvals[0].ApprovalID {
-				require.True(t, r.Ended(), "the old approval ended before the new one was opened")
-			}
-		}
+		require.True(t, ok)
+		require.True(t, old.Ended(), "the old approval ended before the new one was opened")
 		require.Equal(t, "PENDING", f.state0("product_a", k))
 	})
 
@@ -767,14 +764,20 @@ func TestRemoveThenAddWiderNeedsNewApproval(t *testing.T) {
 	fail.Store(false)
 	_, err = f.add("default", "product_a")
 	require.NoError(t, err)
+	require.Equal(t, "APPROVED", f.state0("product_b", k), "a new entry for product_a alone owes product_b nothing yet")
+	// The widen's own open fails after the write: only the end written for
+	// the agent it adds keeps the old approval from serving it.
+	failOpen := &atomic.Bool{}
+	a := f.agents["product_a"]
+	a.db = failingOpen{Querier: a.db, fail: failOpen}
+	f.agents["product_a"] = a
+	failOpen.Store(true)
 	widened, err := f.client.PluginOpen(context.Background(), person.PluginOpenParams{Name: k.Name, Instance: k.Instance, Agents: []string{"product_a", "product_b"}})
 	require.NoError(t, err)
-	require.Len(t, widened.Approvals, 1)
-	recs, err := guard.ReadPluginApprovals(context.Background(), f.roles["product_b"].Connect(t))
+	require.NotNil(t, widened.Approvals[0].Refused)
+	require.Equal(t, "ENDED", f.state0("product_b", k), "the old approval ended before product_b was added")
+	old, ok, err := guard.ReadPluginApproval(context.Background(), f.roles["product_b"].Connect(t), *res.Approvals[0].ApprovalID)
 	require.NoError(t, err)
-	for _, r := range recs {
-		if r.ApprovalID == *res.Approvals[0].ApprovalID {
-			require.True(t, r.Ended(), "the old approval ended before product_b was added")
-		}
-	}
+	require.True(t, ok)
+	require.True(t, old.Ended())
 }

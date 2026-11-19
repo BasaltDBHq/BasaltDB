@@ -134,6 +134,9 @@ func (s *Store) Part(uid uint32, id uuid.UUID, p string, offset int64, data stri
 		return 0, refused(ReasonTooLarge, "a part holds at most %d bytes; this one holds %d. The upload was dropped", s.lim.PartBytes, len(b))
 	}
 	held, known := u.sizes[p]
+	if known && offset == 0 {
+		return 0, invalid("%s already holds a part; send the next at offset %d", p, held)
+	}
 	if len(b) == 0 && (known || offset != 0) {
 		// An empty part only makes an empty file: the first part of a path.
 		return 0, invalid("data holds no bytes; only the one part of an empty file may")

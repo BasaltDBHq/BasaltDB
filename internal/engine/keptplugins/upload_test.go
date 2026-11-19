@@ -182,6 +182,11 @@ func TestUploadHardening(t *testing.T) {
 			_, err = s.Part(peer, u.ID, "a", 2, data)
 			requireRefused(t, err, keptplugins.KindInvalid, "")
 		}
+		_, err = s.Part(peer, u.ID, "e", 0, "")
+		require.NoError(t, err, "an empty file is one empty part")
+		_, err = s.Part(peer, u.ID, "e", 0, b64([]byte("x")))
+		requireRefused(t, err, keptplugins.KindInvalid, "")
+		require.Equal(t, 1, s.Open())
 		_, err = s.Part(peer, u.ID, "a/b", 0, b64([]byte("x")))
 		requireRefused(t, err, keptplugins.KindInvalid, "")
 		n, err := s.Part(peer, u.ID, "a", 2, b64([]byte("3")))

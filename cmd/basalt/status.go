@@ -251,7 +251,7 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 	key, directServed := runningEngineKey(eng, vaultReport, vaultID, cfg.Config)
 	r, err := agent.LocalStatus{
 		Portal: savedPortalCheck(cfg.StateDirFor(c.goos), base),
-		Name:   a.Name, Commands: cmds, OperatedBy: cfg.OperatedBy, DevLocalPages: cfg.DevLocalPages, Setup: a.Setup,
+		Name:   a.Name, Commands: cmds, OperatedBy: cfg.OperatedBy, DevLocalPages: cfg.DevLocalPages, ConnectBudget: cfg.ConnectLinkBudget(), Setup: a.Setup,
 		PagesBase: base, PagesOrigin: servedPages(c, cfg.Config, eng.Reachable), EngineRunning: eng.Reachable, EngineUnknown: eng.Unknown,
 		Probe: postgres.Probe{
 			Q: pool, Migrations: guard.Migrations(),

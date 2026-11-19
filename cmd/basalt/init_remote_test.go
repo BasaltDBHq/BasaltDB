@@ -29,6 +29,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/links"
+	"github.com/basaltdbhq/basaltdb/internal/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/mcp/mcptest"
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 )
 
@@ -273,8 +275,6 @@ func requireSetupGuidance(t *testing.T, res RemoteInitResult) {
 	pm := res.PersonMessage
 	require.Contains(t, pm, res.Fingerprint)
 	require.Contains(t, pm, "Never paste your database password")
-	require.Contains(t, pm, "\n"+releasePage+"\n", "the URL stands on a line of its own")
-	require.LessOrEqual(t, utf8.RuneCountInString(strings.Replace(pm, releasePage, "", 1)), agent.MaxPersonMessageLength)
 
 	catalog, err := mcpcontract.LoadNextSteps()
 	require.NoError(t, err)
@@ -284,6 +284,17 @@ func requireSetupGuidance(t *testing.T, res RemoteInitResult) {
 			want = p.Steps
 		}
 	}
+	if res.ConnectURL != "" {
+		// An agent-operated engine with the Vault on: the connect link
+		// first, then the laptop command (the catalog's connectLink variant).
+		v, ok := catalog.ConnectLinkEntry(mcpcontract.VariantProblem, "SETUP_NOT_RUN", "", "")
+		require.True(t, ok)
+		requireConnectGuidance(t, res, v.Steps)
+		return
+	}
+	require.Contains(t, pm, "\n"+releasePage+"\n", "the URL stands on a line of its own")
+	require.LessOrEqual(t, utf8.RuneCountInString(strings.Replace(pm, releasePage, "", 1)), agent.MaxPersonMessageLength)
+	require.Empty(t, res.Links)
 	got := make([]mcpcontract.StepKind, 0, len(res.NextSteps))
 	for _, s := range res.NextSteps {
 		got = append(got, mcpcontract.StepKind{Actor: s.Actor, Action: s.Action})
@@ -291,6 +302,115 @@ func requireSetupGuidance(t *testing.T, res RemoteInitResult) {
 	require.Equal(t, want, got, "P RUN_COMMAND, P TELL_AGENT, A END_TURN, A CALL_TOOL status")
 	require.Equal(t, "basalt init --setup-code "+res.Code, res.NextSteps[0].Command)
 	require.Equal(t, "status", res.NextSteps[3].Tool)
+}
+
+// requireConnectGuidance checks a result that carries the connect link: the
+// link is the code in the portal's fragment, on a line of its own in the
+// message with its label, and the first step; the laptop command is the second.
+func requireConnectGuidance(t *testing.T, res RemoteInitResult, want []mcpcontract.StepKind) {
+	t.Helper()
+	require.Equal(t, links.Portal+"/connect#"+res.Code, res.ConnectURL)
+	require.Equal(t, []mcp.Link{{Label: agent.LabelConnect, URL: res.ConnectURL}}, res.Links)
+	pm := res.PersonMessage
+	require.Contains(t, pm, "\n\n"+res.ConnectURL+"\n\n", "the link stands on a line of its own")
+	require.Contains(t, pm, "Basalt Vault, a hosted service")
+	require.Contains(t, pm, "basalt init --setup-code")
+	require.Less(t, strings.Index(pm, res.ConnectURL), strings.Index(pm, "basalt init --setup-code"), "the link first")
+	mcptest.Require(t, pm, res.Links)
+	got := make([]mcpcontract.StepKind, 0, len(res.NextSteps))
+	for _, st := range res.NextSteps {
+		got = append(got, mcpcontract.StepKind{Actor: st.Actor, Action: st.Action})
+	}
+	require.Equal(t, want, got)
+	require.Equal(t, res.ConnectURL, res.NextSteps[0].URL)
+	require.Equal(t, "basalt init --setup-code "+res.Code, res.NextSteps[1].Command)
+	require.Equal(t, "status", res.NextSteps[4].Tool)
+}
+
+// An agent-operated engine with the Vault on prints the connect link; a
+// person-operated one, or one with the Vault off, does not. There is no
+// network call: the link only holds the code.
+func TestInitRemoteHandsTheConnectLinkOnlyWithTheVaultOn(t *testing.T) {
+	t.Parallel()
+	args := []string{"--agent", "bot", "--write", "public.leads", "--database-url", "postgres://u@db.example.com:5432/app"}
+	for name, tc := range map[string]struct {
+		extra []string
+		link  bool
+	}{
+		"agent-operated, vault on by default": {[]string{"--operated-by", "agent"}, true},
+		"agent-operated, vault off":           {[]string{"--operated-by", "agent", "--vault", "off"}, false},
+		"person-operated, vault on":           {[]string{"--operated-by", "person", "--vault", "on"}, false},
+		"person-operated":                     {nil, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cfg := tempConfig(t)
+			r := remote(t, cfg, append(append([]string{}, args...), tc.extra...)...)
+			if !tc.link {
+				require.Empty(t, r.res.ConnectURL)
+				require.Empty(t, r.res.Links)
+				require.NotContains(t, r.res.PersonMessage, "connect")
+				require.NotContains(t, r.stdout, "portal.basaltvault.app")
+				require.Equal(t, "RUN_COMMAND", r.res.NextSteps[0].Action)
+				return
+			}
+			requireSetupGuidance(t, r.res)
+			require.NotEmpty(t, r.res.ConnectURL)
+
+			// Text output: the link next to the code and the fingerprint.
+			txt := cliNoDB(t, append([]string{"init", "--remote", "--config", cfg}, append(append([]string{}, args...), tc.extra...)...)...)
+			require.Equal(t, exitOK, txt.code, txt.stderr)
+			require.Contains(t, txt.stdout, "\n\n"+r.res.Code+"\n\n")
+			require.Contains(t, txt.stdout, "Setup fingerprint: "+r.res.Fingerprint+"\n")
+			require.Contains(t, txt.stdout, "\n\n"+r.res.ConnectURL+"\n\n")
+		})
+	}
+}
+
+// A link over the engine's linkBudget is not printed: the code is, with the
+// address to paste it at.
+func TestInitRemoteSaysWhereToPasteTheCodeWhenTheLinkIsOverTheBudget(t *testing.T) {
+	t.Parallel()
+	cfg := tempConfig(t)
+	args := []string{"--agent", "bot", "--write", "public.leads", "--operated-by", "agent", "--database-url", "postgres://u@db.example.com:5432/app"}
+	first := remote(t, cfg, args...)
+	require.NotEmpty(t, first.res.ConnectURL)
+
+	budget := len(first.res.ConnectURL) - 1
+	raw, err := os.ReadFile(cfg)
+	require.NoError(t, err)
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(raw, &doc))
+	doc["linkBudget"] = budget
+	raw, err = json.Marshal(doc)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(cfg, raw, 0o600))
+
+	again := remote(t, cfg, args...)
+	require.Equal(t, first.res.Code, again.res.Code, "the pending code is printed again")
+	require.Empty(t, again.res.ConnectURL)
+	require.Empty(t, again.res.Links)
+	require.NotContains(t, again.stdout, "/connect#")
+	require.Equal(t, "RUN_COMMAND", again.res.NextSteps[0].Action)
+
+	txt := cliNoDB(t, append([]string{"init", "--remote", "--config", cfg}, args...)...)
+	require.Equal(t, exitOK, txt.code, txt.stderr)
+	require.Contains(t, txt.stdout, "\n\n"+first.res.Code+"\n\n")
+	require.Contains(t, txt.stdout, "paste the setup code at portal.basaltvault.app/connect.")
+	require.NotContains(t, txt.stdout, "/connect#")
+}
+
+func TestConnectMessageFitsForTheLongestName(t *testing.T) {
+	t.Parallel()
+	name := ""
+	for n := 1; n < 100; n++ {
+		if candidate := strings.Repeat("a", n); config.ValidAgentName(candidate) {
+			name = candidate
+		}
+	}
+	pm, ls := agent.ConnectMessage("Finish setting up Basalt for "+name+".", links.Portal+"/connect#basalt-setup.1.x.y", "3f9a 21c0 7d44 e1b2 90ac")
+	require.NoError(t, agent.CheckPersonMessage(pm), pm)
+	mcptest.Require(t, pm, ls)
 }
 
 // A new credential keeps the strongest TLS protection the probe confirms,

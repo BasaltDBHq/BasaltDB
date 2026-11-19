@@ -378,8 +378,12 @@ func (s *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, error
 		if id == uuid.Nil {
 			return WriteOutcome{}, err
 		}
+		// The notice is made now, when the write is held, once: a call that
+		// waits would otherwise keep the person from hearing of it until it
+		// answers. Its link is the hold's own answer's, which is the answer
+		// the agent gets unless the person signs first.
+		s.deliverHeld(id, expires, err)
 		if p.Wait == 0 {
-			s.deliverHeld(id, expires, err)
 			return WriteOutcome{}, err
 		}
 		// Held: wait for the person's signature and apply it, exactly as
@@ -389,9 +393,6 @@ func (s *Service) Write(ctx context.Context, p WriteParams) (WriteOutcome, error
 		out, waitErr := s.applyApproved(ctx, p)
 		var te *mcp.ToolError
 		if errors.As(waitErr, &te) && te.Code == CodeApprovalRequired {
-			// The notice is made only now: until this answer, the agent
-			// had no link, and a notice never runs ahead of the agent.
-			s.deliverHeld(id, expires, err)
 			return WriteOutcome{}, err
 		}
 		return out, waitErr

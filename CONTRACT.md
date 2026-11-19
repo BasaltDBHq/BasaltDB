@@ -2586,22 +2586,22 @@ Every event is one CloudEvents 1.0 event in its JSON form, with these attributes
 
 - **The call.** JSON-RPC method `approval.deliver`, params `{ "agent", "event" }`: the agent's name and one notice, a CloudEvent in its JSON form. ConnectRPC: `basalt.plugin.v1.PluginService/ApprovalDeliver`, where `event` is the event's exact JSON bytes.
 - **The answer** is `{}`. The notice gives the plugin no power over the action: approving and signing still need the person's passkey, checked in the store, and the signed code returns as without plugins (the page's relay, or pasted to the agent).
-- **When a notice is sent**: three moments, each for a listed agent, each with the link in that answer:
+- **When a notice is sent**: three moments, each for a listed agent, each with the link of that answer:
 
 | Moment | `kind` | Its link |
 |---|---|---|
-| `write` holds a write and answers `APPROVAL_REQUIRED` | `APPROVAL_REQUESTED` | `approval.approvalUrl` of that answer |
+| `write` holds a write | `APPROVAL_REQUESTED` | `approval.approvalUrl` of the `APPROVAL_REQUIRED` answer the engine built for that held write |
 | `request_revert` prepares a revert | `REVERT_REQUESTED` | `revertUrl` of that answer |
 | The agent asks for a new link and the engine issues one: `list_pending` with `reissueLink: true` (one notice per item it issued a link for), or `request_revert` with `revertId` and `reissueLink: true` | `LINK_REPLACED` | The new `approvalUrl` or `revertUrl` |
 
-- **A notice never runs ahead of the agent.** It is made when the answer that carries the link is returned to the agent, never before. A new `write` with `waitForApproval` that is held keeps its call open ([Approvals](#approvals)): its notice is made when that call answers `APPROVAL_REQUIRED`, and none is made when the person signed meanwhile (`basalt approve`) and the call answers `APPLIED`. A `list_pending` that fails sends no notice for any of its items.
+- **A held write is noticed when it is held.** The notice is made once the engine has held the write and built its `APPROVAL_REQUIRED` answer, with that answer's link. A new `write` with `waitForApproval` that is held keeps its call open ([Approvals](#approvals)): its notice is made at the hold too, while the call still waits, so the person hears of it at once and not up to 110 seconds later. The agent has no link yet at that moment. When the wait runs out, the call answers `APPROVAL_REQUIRED` with the same link, byte for byte; when the person signs first (through the notice's link, or `basalt approve`), the call answers `APPLIED` and the agent never gets a link. Either way the held write is noticed once: the call's answer sends no second notice. Every other notice is made when the answer that carries its link is returned to the agent, never before. A `list_pending` that fails sends no notice for any of its items.
 - **Only a link that was issued is a replaced link.** An engine that hands over long links (no pages served, no portal short link) issues nothing on `reissueLink`: the same link is restated, the earlier one still works, and no notice is sent.
 - **Which entries get it.** Each `approval.deliver` entry the engine serves to that agent at that moment. An entry not served to the agent then (withheld, turned off, not started, or another agent's) gets nothing, and nothing is counted as dropped for it.
 
 - **Nothing else sends one.** Not a link issued from the person's own command line (`basalt approve --show` or `--open`, `basalt revert`, any `POST …/links`): that link is in the person's hands already. Not a wait or a list that issues no link, a refusal that restates one, or a widen on the signing page. Not `revert_plan`. Known limit, accepted: reading a large revert's plan with `revert_plan` issues a fresh short link each time, which replaces the one a notice delivered; that page then says the link was replaced, and the person asks the agent.
 - **A request too large for any link** (`REQUEST_TOO_LARGE`): a held write, and a revert `request_revert` prepared and then answered with that error, are noticed with no link.
 - **With no passkey registered** (`NO_PASSKEY`) the notice is sent as usual, with the answer's link: the agent's answer tells the person to register a passkey first, and the notice does not repeat it.
-- **The engine never issues a link for a notice.** Issuing a short link revokes the item's earlier one ([Link secrets](#link-secrets)), which would kill the agent's link. The notice reuses the link the answer handed over, at the moment the answer is built.
+- **The engine never issues a link for a notice.** Issuing a short link revokes the item's earlier one ([Link secrets](#link-secrets)), which would kill the agent's link. The notice reuses the link of the answer, at the moment the answer is built; for a held write whose call waits, that is the answer built at the hold, which the call returns unchanged if the wait runs out.
 
 **What a notice's `data` holds:**
 

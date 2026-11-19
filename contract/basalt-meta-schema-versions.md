@@ -1,6 +1,6 @@
 > Part of **`basalt_meta`**. The section starts in [basalt-meta.md](basalt-meta.md).
 
-Changes to `basalt_meta` after the first release. Schema version 1, the files `001` to `011`, is described in [basalt-meta.md](basalt-meta.md), [basalt-meta-revert.md](basalt-meta-revert.md) and [basalt-meta-installs.md](basalt-meta-installs.md). Each later version has one section here, in order, saying what it adds or replaces, whether it is breaking (AE-11) and what an engine does on a guard without it. Each section says whether its migration is idempotent. The objects of schema version 2 are described with the rest of the reinstall record, in [Reinstalls on the record](basalt-meta-installs.md#reinstalls-on-the-record). A new change takes the next free number and the next file in `internal/guard/schema/`.
+Changes to `basalt_meta` after the first release. Schema version 1, the files `001` to `011`, is described in [basalt-meta.md](basalt-meta.md), [basalt-meta-revert.md](basalt-meta-revert.md) and [basalt-meta-installs.md](basalt-meta-installs.md). Each later version has one section here, in order, saying what it adds or replaces, whether it is breaking (AE-11) and what an engine does on a guard without it. A section says so when its migration is idempotent. The objects of schema version 2 are described with the rest of the reinstall record, in [Reinstalls on the record](basalt-meta-installs.md#reinstalls-on-the-record). A new change takes the next free number and the next file in `internal/guard/schema/`.
 
 ### Schema version 2: install ids
 

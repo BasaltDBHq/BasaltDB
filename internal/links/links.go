@@ -43,6 +43,9 @@ const (
 	// pinning one. Portal only: the engine's local pages never serve them.
 	EnginesPath    = "/engines"
 	EnginesAddPath = "/engines/add"
+	// ConnectPath is the portal's connect page (CONTRACT.md, The connect
+	// page): run a setup code through the connect service. Portal only.
+	ConnectPath = "/connect"
 )
 
 // Approval is the approval page of a held write: <base>/approvals/<id>.

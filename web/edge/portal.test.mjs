@@ -4,13 +4,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { DEFAULT_CSP, DEFAULT_HEADERS, MAX_ORIGINS, PINS_COOKIE, candidateOrigin, cookieOrigins, handle, policyWith, rewriteMeta } from "./portal.js";
+import { CONNECT_CSP, CONNECT_SERVICE, DEFAULT_CSP, DEFAULT_HEADERS, MAX_ORIGINS, PINS_COOKIE, candidateOrigin, cookieOrigins, handle, policyWith, rewriteMeta } from "./portal.js";
+import { CONNECT_SERVICE as PAGE_SERVICE } from "../lib/connect.js";
 import { PINS_COOKIE as PAGE_COOKIE, pinsCookie } from "../lib/pins.js";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const APPROVE_HTML = read("approve/index.html");
 const REVERT_HTML = read("revert/index.html");
 const ENGINES_HTML = read("engines/index.html");
+const CONNECT_HTML = read("connect/index.html");
 const ID = "0199c0de-0000-7000-8000-000000000000";
 const BASE = "https://portal.basaltvault.app";
 
@@ -258,5 +260,35 @@ test("the asset's own answer is never changed in place", async () => {
     assert.equal(cached.headers.get("Cache-Control"), null);
     assert.equal(cached.headers.get("Vary"), "Accept-Encoding");
     assert.equal(res.headers.get("Vary"), "Accept-Encoding, Cookie", "Vary keeps what the asset varies on");
+  }
+});
+
+test("the connect page gets its own policy, the same for everyone, never stored", async () => {
+  assert.equal(CONNECT_SERVICE, PAGE_SERVICE);
+  assert.equal(CONNECT_CSP, DEFAULT_CSP.replace("default-src 'self'; ", `default-src 'self'; connect-src ${CONNECT_SERVICE}; `));
+  const meta = /<meta http-equiv="Content-Security-Policy" content="([^"]*)">/.exec(CONNECT_HTML)[1];
+  assert.match(meta, new RegExp(`; connect-src ${CONNECT_SERVICE.replace(/[.]/g, "\\.")};`));
+  for (const path of ["/connect", "/connect/"]) {
+    for (const cookie of [null, "https://a.example.com"]) {
+      const cached = new Response(CONNECT_HTML, { status: 200, headers: { ...DEFAULT_HEADERS, "Content-Type": "text/html", ETag: '"abc"' } });
+      const seen = [];
+      const res = await handle(request(path, cookie, { "If-None-Match": '"abc"' }), async (req) => {
+        seen.push(req);
+        return cached;
+      });
+      assert.equal(res.status, 200);
+      assert.equal(seen[0].headers.get("If-None-Match"), null, "never a 304");
+      assert.equal(res.headers.get("Content-Security-Policy"), CONNECT_CSP, path);
+      assert.equal(res.headers.get("Cache-Control"), "no-store");
+      assert.equal(res.headers.get("ETag"), null);
+      for (const [k, v] of Object.entries(DEFAULT_HEADERS)) if (k !== "Content-Security-Policy") assert.equal(res.headers.get(k), v);
+      assert.doesNotMatch(res.headers.get("Content-Security-Policy"), /a\.example\.com/, "pins never reach the connect page");
+      assert.equal(await res.text(), CONNECT_HTML, "the page itself is not changed");
+      assert.equal(cached.headers.get("Content-Security-Policy"), DEFAULT_CSP, "the asset's answer is not changed in place");
+    }
+  }
+  for (const path of ["/connect/x", "/connectx", "/connect/index.html"]) {
+    const res = await handle(request(path, null), async () => new Response("x", { status: 200, headers: DEFAULT_HEADERS }));
+    assert.equal(res.headers.get("Content-Security-Policy"), DEFAULT_CSP, path);
   }
 });

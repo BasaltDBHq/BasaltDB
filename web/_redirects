@@ -1,6 +1,7 @@
 # Cloudflare Pages rewrites (status 200) for the paths the engine's local
 # pages server serves (internal/engine/pages PageRoutes), plus the portal's
-# own pin page (PortalRoutes). TestRedirectsMatchRoutes fails if they drift.
+# own pin page and connect page (PortalRoutes). TestRedirectsMatchRoutes
+# fails if they drift.
 /approvals/*        /approve/    200
 /reverts/*          /revert/     200
 /plugins/*          /plugin/     200
@@ -9,3 +10,4 @@
 /passkeys/forget    /passkeys/   200
 /engines            /engines/    200
 /engines/add        /engines/    200
+/connect            /connect/    200

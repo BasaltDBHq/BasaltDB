@@ -128,8 +128,15 @@ var headLine = regexp.MustCompile(`^(?:` + strings.Join([]string{
 // falls back to default-src 'none', so frames and objects stay blocked even
 // where a host serves the page under a looser header (the portal's _headers
 // falls back to 'self'). It does not block workers or script elements
-// (script-src 'self'). Only connect-src may differ.
-var cspLine = regexp.MustCompile(`^<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src '(?:self|none)'; base-uri 'none'; form-action 'none'">$`)
+// (script-src 'self'). Only connect-src may differ: 'self' or 'none', except
+// on the connect page, whose one source is the connect service. No other
+// page may name it.
+var (
+	cspLine        = regexp.MustCompile(`^<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src '(?:self|none)'; base-uri 'none'; form-action 'none'">$`)
+	connectCSPLine = regexp.MustCompile(`^<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src https://connect\.basaltvault\.app; base-uri 'none'; form-action 'none'">$`)
+)
+
+const connectPage = "connect/index.html"
 
 var (
 	preloadLine = regexp.MustCompile(preloadForm.String() + `$`)
@@ -171,12 +178,16 @@ func pageShape(page, html string) error {
 		preloads
 		after
 	)
+	want := cspLine
+	if page == connectPage {
+		want = connectCSPLine
+	}
 	state := before
 	csp := 0
 	for _, line := range strings.Split(head, "\n") {
 		line = strings.TrimLeft(line, " ")
 		switch {
-		case state == before && cspLine.MatchString(line):
+		case state == before && want.MatchString(line):
 			csp++
 		case strings.HasPrefix(line, `<meta http-equiv="Content-Security-Policy"`):
 			return fmt.Errorf("%s: the meta CSP line must be the fixed one, with default-src 'none', before the sri block: %s", page, line)
@@ -505,6 +516,9 @@ func TestPortalSRICheckRejects(t *testing.T) {
 		"two meta CSP lines": {
 			strings.Replace(html, "  <!-- sri:begin", cspLine+"  <!-- sri:begin", 1), "meta CSP line",
 		},
+		"meta CSP naming the connect service on another page": {
+			strings.Replace(html, "connect-src 'self'", "connect-src https://connect.basaltvault.app", 1), "meta CSP line",
+		},
 		"iframe srcdoc in the body": {
 			strings.Replace(html, "</body>", `<iframe srcdoc="&lt;script type=module src=../portal.sha256&gt;&lt;/script&gt;"></iframe>`+"\n</body>", 1),
 			"<iframe after the head",
@@ -529,6 +543,41 @@ func TestPortalSRICheckRejects(t *testing.T) {
 		err := checkPageSRI(fsys, page)
 		require.Error(t, err, name)
 		require.Contains(t, err.Error(), c.want, name)
+	}
+}
+
+// The connect page's meta CSP names the connect service and nothing else:
+// 'self', another origin or a second source is refused.
+func TestConnectPageCSPIsItsOwn(t *testing.T) {
+	t.Parallel()
+	base := fstest.MapFS{}
+	require.NoError(t, fs.WalkDir(web.Files, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		b, err := fs.ReadFile(web.Files, p)
+		base[p] = &fstest.MapFile{Data: b}
+		return err
+	}))
+	html := string(base[connectPage].Data)
+	require.NoError(t, checkPageSRI(base, connectPage))
+	const src = "connect-src https://connect.basaltvault.app;"
+	require.Contains(t, html, src)
+	for name, repl := range map[string]string{
+		"self":          "connect-src 'self';",
+		"none":          "connect-src 'none';",
+		"two sources":   "connect-src https://connect.basaltvault.app 'self';",
+		"other origin":  "connect-src https://connect.basaltvault.app.evil.example;",
+		"any subdomain": "connect-src https://*.basaltvault.app;",
+	} {
+		fsys := fstest.MapFS{}
+		for k, v := range base {
+			fsys[k] = v
+		}
+		fsys[connectPage] = &fstest.MapFile{Data: []byte(strings.Replace(html, src, repl, 1))}
+		err := checkPageSRI(fsys, connectPage)
+		require.Error(t, err, name)
+		require.Contains(t, err.Error(), "meta CSP line", name)
 	}
 }
 

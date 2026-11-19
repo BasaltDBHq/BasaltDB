@@ -168,6 +168,22 @@ test("a page without the fixed meta CSP line (default-src 'none') fails", () => 
   }
 });
 
+test("only the connect page may name the connect service, and it names nothing else", () => {
+  const other = check((h) => h.replace("connect-src 'self'", "connect-src https://connect.basaltvault.app"));
+  assert.equal(other.code, 1);
+  assert.match(other.out, /meta CSP line/);
+  const connect = join("connect", "index.html");
+  const src = "connect-src https://connect.basaltvault.app;";
+  for (const repl of ["connect-src 'self';", "connect-src 'none';", "connect-src https://connect.basaltvault.app 'self';", "connect-src https://*.basaltvault.app;", "connect-src https://connectxbasaltvault.app;"]) {
+    const r = check((h) => {
+      assert.ok(h.includes(src));
+      return h.replace(src, repl);
+    }, connect);
+    assert.equal(r.code, 1, repl);
+    assert.match(r.out, /meta CSP line/, repl);
+  }
+});
+
 test("an iframe, object, embed or frame in the body fails", () => {
   const tags = [
     ['<iframe srcdoc="&lt;script type=module src=../portal.sha256&gt;&lt;/script&gt;"></iframe>', /<iframe after the head/],

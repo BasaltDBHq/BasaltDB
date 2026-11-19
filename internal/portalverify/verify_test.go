@@ -47,6 +47,68 @@ func TestVerifyChecksEveryFileOfTheFS(t *testing.T) {
 	require.Contains(t, r.Files, portalverify.File{Path: "lib/new.js", Status: portalverify.StatusMissing})
 }
 
+// FileHeaders give one page its own policy, at its file's path and at every
+// route to it; the other files keep Headers. A wanted Cache-Control must be
+// served.
+func TestVerifyFileHeaders(t *testing.T) {
+	t.Parallel()
+	embedded := fstest.MapFS{
+		"approve/index.html": {Data: []byte("<html>a</html>")},
+		"connect/index.html": {Data: []byte("<html>c</html>")},
+	}
+	const def, own = "default-src 'self'", "default-src 'self'; connect-src https://c.example"
+	serve := func(connectCSP, cacheControl string) string {
+		files := http.FileServer(http.FS(embedded))
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Security-Policy", def)
+			if r.URL.Path == "/connect" || r.URL.Path == "/connect/" {
+				w.Header().Set("Content-Security-Policy", connectCSP)
+				if cacheControl != "" {
+					w.Header().Set("Cache-Control", cacheControl)
+				}
+			}
+			if r.URL.Path == "/connect" {
+				_, _ = w.Write(embedded["connect/index.html"].Data)
+				return
+			}
+			files.ServeHTTP(w, r)
+		}))
+		t.Cleanup(srv.Close)
+		return srv.URL
+	}
+	opts := func(base string) portalverify.Options {
+		return portalverify.Options{
+			Base: base, Files: embedded,
+			Headers:     http.Header{"Content-Security-Policy": {def}},
+			FileHeaders: map[string]http.Header{"connect/index.html": {"Content-Security-Policy": {own}, "Cache-Control": {"no-store"}}},
+			Routes:      []portalverify.Route{{Path: "/connect", File: "connect/index.html"}},
+		}
+	}
+
+	r, err := portalverify.Verify(context.Background(), opts(serve(own, "private, no-store")))
+	require.NoError(t, err)
+	require.True(t, r.OK, "%+v", r.Files)
+
+	for name, c := range map[string]struct{ csp, cc, detail string }{
+		"the default policy": {def, "no-store", "Content-Security-Policy is"},
+		"stored":             {own, "max-age=60", "Cache-Control is"},
+		"no Cache-Control":   {own, "", "Cache-Control is"},
+	} {
+		r, err := portalverify.Verify(context.Background(), opts(serve(c.csp, c.cc)))
+		require.NoError(t, err, name)
+		require.False(t, r.OK, name)
+		got := map[string]portalverify.File{}
+		for _, f := range r.Files {
+			got[f.Path] = f
+		}
+		for _, p := range []string{"connect/index.html", "/connect"} {
+			require.Equal(t, portalverify.StatusHeader, got[p].Status, "%s: %s", name, p)
+			require.Contains(t, got[p].Detail, c.detail, name)
+		}
+		require.Equal(t, portalverify.StatusOK, got["approve/index.html"].Status, name)
+	}
+}
+
 func TestValidateURL(t *testing.T) {
 	t.Parallel()
 	for in, want := range map[string]string{

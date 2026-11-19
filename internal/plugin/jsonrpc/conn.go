@@ -109,7 +109,7 @@ func (c *conn) Call(ctx context.Context, method string, params, result any) erro
 	}
 	defer c.forget(id)
 
-	line, err := json.Marshal(request{JSONRPC: version, ID: id, Method: method, Params: body})
+	line, err := protocol.Marshal(request{JSONRPC: version, ID: id, Method: method, Params: body})
 	if err != nil {
 		return plugin.Fail(plugin.ClassBadResponse)
 	}
@@ -149,7 +149,7 @@ func marshalParams(params any) (json.RawMessage, error) {
 	if params == nil {
 		return nil, nil
 	}
-	b, err := json.Marshal(params)
+	b, err := protocol.Marshal(params)
 	if err != nil {
 		return nil, err
 	}

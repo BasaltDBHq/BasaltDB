@@ -70,9 +70,9 @@ func (OSSystem) WriteFile(path string, data []byte, mode os.FileMode, owner stri
 // Its directory is reached by openTrusted with root as the only trusted
 // owner, so only root can have put anything at path. A missing file is
 // created exclusively without following a link; an existing one is opened
-// without following a link and must be a regular file with no other name (a
-// hard link to another file is refused, never re-owned). Mode and owner are
-// set through the descriptor.
+// without following a link and must be a regular file with no other name,
+// unless it already belongs to owner (a hard link to anyone else's file is
+// refused, never re-owned). Mode and owner are set through the descriptor.
 func (OSSystem) CreateFile(path string, mode os.FileMode, owner string) error {
 	ids, err := lookupOwner(owner)
 	if err != nil {
@@ -99,7 +99,12 @@ func (OSSystem) CreateFile(path string, mode os.FileMode, owner string) error {
 	if err := fstat(fd, &st); err != nil {
 		return err
 	}
-	if statMode(st.Mode)&unix.S_IFMT != unix.S_IFREG || st.Nlink != 1 {
+	// A file with another name is taken over only when it is already the
+	// owner's: the directory is root's, so only that owner (who could link
+	// its own log elsewhere) made the other name, and fchown and fchmod then
+	// change nothing of anyone else's.
+	ownLink := ids.uid >= 0 && int(st.Uid) == ids.uid
+	if statMode(st.Mode)&unix.S_IFMT != unix.S_IFREG || (st.Nlink != 1 && !ownLink) {
 		return fmt.Errorf("%s is not a plain file (a hard link, a directory or a device?); refusing to take it over; "+
 			"move it aside (sudo mv %s %s.old) and run the install again", path, path, path)
 	}

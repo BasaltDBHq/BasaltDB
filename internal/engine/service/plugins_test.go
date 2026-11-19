@@ -105,7 +105,7 @@ func TestDarwinPluginStderrLog(t *testing.T) {
 	require.Equal(t, "/etc/newsyslog.d/basalt-plugin-"+long+"-default.conf", ln.LogRule)
 	rule, err := service.NewsyslogPluginRule(long, "default")
 	require.NoError(t, err)
-	require.Contains(t, rule, "\n"+ln.Log+"\t"+ln.User+":"+ln.User+"\t600\t1\t1024\t*\tN\n")
+	require.Contains(t, rule, "\n"+ln.Log+"\t"+ln.User+":"+ln.User+"\t600\t1\t1024\t*\tNB\n")
 
 	// Linux has no log file or rule: stderr goes to the journal.
 	lx, err := service.NamesFor("linux", "acme-ner", "default")

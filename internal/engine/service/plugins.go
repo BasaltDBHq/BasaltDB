@@ -526,7 +526,9 @@ func LaunchdPluginDaemon(h PluginHost, p PluginEntry) (string, error) {
 // NewsyslogPluginRule renders the newsyslog rule that caps macOS entry
 // (name, instance)'s stderr log: past 1 MiB newsyslog moves the log to
 // <log>.0, dropping the copy moved before, and makes a new empty log owned
-// by the plugin's user, mode 0600. N: no process is signaled. newsyslog
+// by the plugin's user, mode 0600. N: no process is signaled; B: newsyslog
+// writes no turnover line into the new log, which holds only the plugin's
+// own output. newsyslog
 // checks the size on its own schedule, and launchd opens the log when it
 // starts the plugin, so a plugin that keeps running goes on writing to the
 // moved copy until it is started again.
@@ -537,7 +539,7 @@ func NewsyslogPluginRule(name, instance string) (string, error) {
 	}
 	return fmt.Sprintf(`# Written by basalt for plugin %[1]s, instance %[2]s; basalt rewrites it.
 # logfilename	[owner:group]	mode	count	size	when	flags
-%[3]s	%[4]s:%[4]s	%03[5]o	%[6]d	%[7]d	*	N
+%[3]s	%[4]s:%[4]s	%03[5]o	%[6]d	%[7]d	*	NB
 `, name, instance, n.Log, n.User, pluginLogMode, pluginLogKeep, pluginLogMaxKB), nil
 }
 

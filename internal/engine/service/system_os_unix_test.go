@@ -401,9 +401,21 @@ func TestOSSystemCreateFileKeepsContentAndFollowsNoLink(t *testing.T) {
 	_, err = os.Lstat(filepath.Join(dir, "missing"))
 	require.ErrorIs(t, err, os.ErrNotExist, "nothing is created through a dangling link")
 
-	// A hard link to another file is refused, never re-owned.
+	// A log its owner hard-linked elsewhere (a plugin can link its own log
+	// into its socket directory) is still taken over: refusing it would let
+	// one plugin stop every later install.
+	own := filepath.Join(dir, "own.log")
+	require.NoError(t, os.WriteFile(own, []byte("mine\n"), 0o644))
+	require.NoError(t, os.Link(own, filepath.Join(dir, "own-elsewhere")))
+	require.NoError(t, OSSystem{}.CreateFile(own, 0o600, cur.Username))
+	got, err = os.ReadFile(own)
+	require.NoError(t, err)
+	require.Equal(t, "mine\n", string(got))
+
+	// A hard link to someone else's file is refused, never re-owned.
 	hard := filepath.Join(dir, "hard.log")
 	require.NoError(t, os.Link(victim, hard))
+	ownedBy(t, victim, 4343)
 	require.ErrorContains(t, OSSystem{}.CreateFile(hard, 0o600, cur.Username), "not a plain file")
 	fi, err = os.Stat(victim)
 	require.NoError(t, err)

@@ -46,6 +46,8 @@ func peerMain(args []string) {
 		}
 		_, _ = os.Stdout.Write(b)
 		os.Exit(0)
+	case "engine":
+		fakeEngine(args[1], args[2], args[3], args[4])
 	case "grandchild":
 		gc := exec.Command(os.Args[0], peerFlag, "sleep")
 		if gc.Start() != nil {

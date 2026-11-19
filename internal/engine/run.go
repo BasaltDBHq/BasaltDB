@@ -161,9 +161,11 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	// Plugins are verified now and started below, once the agents serve: a
 	// plugin that fails never stops the engine. With no enabled entry
 	// nothing is read or started.
+	pluginLog := log.With("component", "plugins")
 	plugins := newEnginePlugins(cfg, configPath, pluginOptions{
 		Stderr: pluginDebugWriter(cfg, restart.PluginStderr, log), euid: engineEUID(),
-	}, log.With("component", "plugins"))
+		runs: pluginRuns(cfg, env.stateDir, engineEUID(), pluginLog),
+	}, pluginLog)
 	if plugins != nil {
 		env.plugins = plugins
 	}

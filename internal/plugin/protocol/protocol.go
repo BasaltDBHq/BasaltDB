@@ -19,7 +19,8 @@ const (
 const (
 	// MaxMessageBytes is the largest message either side may send.
 	MaxMessageBytes = 4 << 20
-	// MaxInFlight is the number of calls the engine keeps open on one entry.
+	// MaxInFlight is the number of hook calls the engine keeps open on one
+	// entry. health and shutdown are not counted: each has a slot of its own.
 	MaxInFlight = 4
 )
 

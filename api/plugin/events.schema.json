@@ -7,10 +7,10 @@
   "additionalProperties": false,
   "required": ["kind", "detail"],
   "properties": {
-    "kind": { "enum": ["PLUGIN_ENABLED", "PLUGIN_DISABLED", "PLUGIN_CHANGED", "PLUGIN_TRUST_ADDED"] },
+    "kind": { "enum": ["PLUGIN_ENABLED", "PLUGIN_DISABLED", "PLUGIN_CHANGED", "PLUGIN_TRUST_ADDED", "PLUGIN_TRUST_REMOVED"] },
     "detail": { "type": "object" }
   },
-  "if": { "properties": { "kind": { "const": "PLUGIN_TRUST_ADDED" } } },
+  "if": { "properties": { "kind": { "enum": ["PLUGIN_TRUST_ADDED", "PLUGIN_TRUST_REMOVED"] } } },
   "then": { "properties": { "detail": { "$ref": "#/$defs/trustDetail" } } },
   "else": { "properties": { "detail": { "$ref": "#/$defs/entryDetail" } } },
   "$defs": {

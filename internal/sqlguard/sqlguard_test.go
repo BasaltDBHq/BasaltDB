@@ -121,6 +121,26 @@ func TestCheckTool(t *testing.T) {
 	}
 }
 
+// The guard's own functions are never callable through the SQL tools: the
+// plugin event writer, which every agent role may execute, is refused by
+// either tool, qualified or not, wherever it appears in the statement.
+func TestGuardFunctionsAreRefused(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		sql  string
+		tool sqlguard.Tool
+	}{
+		{`SELECT basalt_meta.record_plugin_event('PLUGIN_TRUST_ADDED', '{"signerKeyId":"jNZPxNG5htlwfhg4ZgknAA"}')`, sqlguard.ToolQuery},
+		{`SELECT record_plugin_event('PLUGIN_TRUST_ADDED', '{}')`, sqlguard.ToolQuery},
+		{`SELECT id FROM leads WHERE id = (SELECT basalt_meta.record_plugin_event('PLUGIN_DISABLED', '{}'))`, sqlguard.ToolQuery},
+		{`UPDATE leads SET name = basalt_meta.record_plugin_event('PLUGIN_TRUST_REMOVED', '{}')::text WHERE id = 1`, sqlguard.ToolWrite},
+		{`INSERT INTO leads (name) VALUES ("basalt_meta"."record_plugin_event"('PLUGIN_ENABLED', '{}')::text)`, sqlguard.ToolWrite},
+	} {
+		_, err := sqlguard.Check(c.sql, c.tool)
+		require.Equal(t, sqlguard.ReasonFunction, refusalOf(t, err), "%s: err=%v", c.sql, err)
+	}
+}
+
 func TestRefusalMessage(t *testing.T) {
 	t.Parallel()
 	_, err := sqlguard.Check("SELECT pg_sleep(1)", sqlguard.ToolQuery)

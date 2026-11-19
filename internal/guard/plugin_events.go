@@ -18,6 +18,8 @@ const (
 	PluginDisabled   PluginEventKind = "PLUGIN_DISABLED"
 	PluginChanged    PluginEventKind = "PLUGIN_CHANGED"
 	PluginTrustAdded PluginEventKind = "PLUGIN_TRUST_ADDED"
+	// PluginTrustRemoved needs schema version 4.
+	PluginTrustRemoved PluginEventKind = "PLUGIN_TRUST_REMOVED"
 )
 
 // Endpoint kinds and isolation values of a plugin event's detail.
@@ -79,7 +81,7 @@ type pluginTrustDetail struct {
 // agent's own ledger. The guard refuses a detail outside the schema with
 // LEDGER_INPUT_INVALID (BS008).
 func RecordPluginEntryEvent(ctx context.Context, q Querier, kind PluginEventKind, d PluginDetail) error {
-	if kind == PluginTrustAdded {
+	if kind == PluginTrustAdded || kind == PluginTrustRemoved {
 		return fmt.Errorf("guard: %s carries a key id, not an entry", kind)
 	}
 	if d.Egress == nil {
@@ -92,6 +94,12 @@ func RecordPluginEntryEvent(ctx context.Context, q Querier, kind PluginEventKind
 // calling agent's own ledger.
 func RecordPluginTrustAdded(ctx context.Context, q Querier, keyID string) error {
 	return recordPluginEvent(ctx, q, PluginTrustAdded, pluginTrustDetail{SignerKeyID: keyID})
+}
+
+// RecordPluginTrustRemoved records that keyID is no longer trusted. It
+// needs schema version 4; an older guard refuses the kind (BS008).
+func RecordPluginTrustRemoved(ctx context.Context, q Querier, keyID string) error {
+	return recordPluginEvent(ctx, q, PluginTrustRemoved, pluginTrustDetail{SignerKeyID: keyID})
 }
 
 func recordPluginEvent(ctx context.Context, q Querier, kind PluginEventKind, detail any) error {
@@ -117,7 +125,9 @@ func (r PluginRecord) Enabled() bool { return r.Kind != PluginDisabled }
 // event of each entry, in name and instance order, and the trust keys
 // recorded as added.
 type PluginRecords struct {
-	Entries   []PluginRecord
+	Entries []PluginRecord
+	// TrustKeys are the keys the ledger records as trusted: their latest
+	// PLUGIN_TRUST_ADDED or PLUGIN_TRUST_REMOVED is an ADDED. Sorted.
 	TrustKeys []string
 }
 
@@ -155,10 +165,13 @@ func ReadPluginRecords(ctx context.Context, q Querier) (PluginRecords, error) {
 	if err := rows.Err(); err != nil {
 		return out, err
 	}
-	sql, args, err = psql.Select("DISTINCT detail->>'signerKeyId'").
+	// A key is trusted on the record when its latest PLUGIN_TRUST_ADDED or
+	// PLUGIN_TRUST_REMOVED is an ADDED.
+	sql, args, err = psql.Select("kind", "detail->>'signerKeyId'").
+		Options("DISTINCT ON (detail->>'signerKeyId')").
 		From("basalt_meta.agent_ledger").
-		Where(sq.Eq{"kind": string(PluginTrustAdded)}).
-		OrderBy("1").ToSql()
+		Where(sq.Eq{"kind": []string{string(PluginTrustAdded), string(PluginTrustRemoved)}}).
+		OrderBy("detail->>'signerKeyId'", "seq DESC").ToSql()
 	if err != nil {
 		return out, err
 	}
@@ -168,11 +181,12 @@ func ReadPluginRecords(ctx context.Context, q Querier) (PluginRecords, error) {
 	}
 	defer keys.Close()
 	for keys.Next() {
+		var kind string
 		var k *string
-		if err := keys.Scan(&k); err != nil {
+		if err := keys.Scan(&kind, &k); err != nil {
 			return out, err
 		}
-		if k != nil {
+		if k != nil && kind == string(PluginTrustAdded) {
 			out.TrustKeys = append(out.TrustKeys, *k)
 		}
 	}

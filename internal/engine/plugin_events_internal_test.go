@@ -208,8 +208,8 @@ func TestChangedEntryWritesChanged(t *testing.T) {
 	p := f.install("default", dial.TransportStdio, "product_a")
 	l := newPluginLedgers(t, f)
 	ep := f.plugins(nil)
-	want := wantedPlugins(f.cfg, ep, nil)
 	discard := slog.New(slog.DiscardHandler)
+	want := wantedPlugins(f.cfg, ep, trustedKeys(f.cfg, f.configPath, discard))
 	require.Empty(t, writePluginEvents(context.Background(), want, l.dbs, discard))
 	d := want.served["product_a"][p.Key()]
 	d.Egress = []string{"ner.acme.example:443"}
@@ -217,7 +217,7 @@ func TestChangedEntryWritesChanged(t *testing.T) {
 	for range 2 {
 		require.Empty(t, writePluginEvents(context.Background(), want, l.dbs, discard))
 	}
-	require.Equal(t, []string{"PLUGIN_ENABLED", "PLUGIN_CHANGED"}, kindsOf(l.events(t, "product_a")))
+	require.Equal(t, []string{"PLUGIN_TRUST_ADDED", "PLUGIN_ENABLED", "PLUGIN_CHANGED"}, kindsOf(l.events(t, "product_a")))
 }
 
 // An entry enabled and listed that the engine does not start (it fails
@@ -347,6 +347,7 @@ func TestRuntimeLedgerRecordsPluginEvents(t *testing.T) {
 	want := pluginWant{
 		served: map[string]map[plugin.EntryKey]guard.PluginDetail{"bot": {k: testDetail(k)}},
 		held:   map[string]map[plugin.EntryKey]bool{"bot": {}},
+		trust:  trustWant{read: true, added: []string{testDetail(k).SignerKeyID}},
 	}
 	require.Empty(t, writePluginEvents(context.Background(), want, srv.pluginLedgers, slog.New(slog.DiscardHandler)))
 	recs, err := guard.ReadPluginRecords(context.Background(), a.Conn)
@@ -534,4 +535,114 @@ func TestUnrecordedTrustKeyWithholdsItsEntries(t *testing.T) {
 	// Next start, the guard takes it: the key, then the entry.
 	l.record(t, f, f.plugins(nil))
 	require.Equal(t, []string{"PLUGIN_TRUST_ADDED", "PLUGIN_ENABLED", "PLUGIN_TRUST_ADDED", "PLUGIN_ENABLED"}, kindsOf(l.events(t, "product_a")))
+}
+
+// refuseKind is an agent's connection on which every plugin event of one
+// kind is refused with BS008, as a guard without that kind refuses it.
+type refuseKind struct {
+	guard.Querier
+	kind guard.PluginEventKind
+}
+
+func (q refuseKind) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	if strings.Contains(fmt.Sprint(args...), string(q.kind)) {
+		return pgconn.CommandTag{}, &pgconn.PgError{Code: "BS008", Message: "kind must be one of the older kinds"}
+	}
+	return q.Querier.Exec(ctx, sql, args...)
+}
+
+// forgedKey is a key id no trust store holds.
+const forgedKey = "ForgedKeyForgedKey0000"
+
+// trustRows are an agent's trust events, oldest first, as kind and key.
+func (l pluginLedgers) trustRows(t *testing.T, agentName string) [][2]string {
+	t.Helper()
+	var out [][2]string
+	for _, r := range l.events(t, agentName) {
+		if r.Kind != string(guard.PluginTrustAdded) && r.Kind != string(guard.PluginTrustRemoved) {
+			continue
+		}
+		var d struct {
+			SignerKeyID string `json:"signerKeyId"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(r.Detail), &d))
+		out = append(out, [2]string{r.Kind, d.SignerKeyID})
+	}
+	return out
+}
+
+// A PLUGIN_TRUST_ADDED the agent wrote itself, for a key the trust store
+// does not hold, is corrected at the next start with PLUGIN_TRUST_REMOVED,
+// once. A PLUGIN_TRUST_REMOVED it wrote for a key the store holds is
+// corrected with PLUGIN_TRUST_ADDED, and the entry that key signed is
+// served throughout.
+func TestForgedTrustEventIsCorrected(t *testing.T) {
+	t.Parallel()
+	f := newPluginFixture(t)
+	p := f.install("default", dial.TransportStdio, "product_a")
+	l := newPluginLedgers(t, f)
+	l.record(t, f, f.plugins(nil))
+	held, err := f.trust.AddedKeys()
+	require.NoError(t, err)
+	require.Len(t, held, 1)
+	agentConn := l.dbs["product_a"].db
+
+	require.NoError(t, guard.RecordPluginTrustAdded(context.Background(), agentConn, forgedKey), "the agent's role can write it")
+	for range 2 {
+		l.record(t, f, f.plugins(nil))
+	}
+	require.Equal(t, [][2]string{
+		{"PLUGIN_TRUST_ADDED", held[0]}, {"PLUGIN_TRUST_ADDED", forgedKey}, {"PLUGIN_TRUST_REMOVED", forgedKey},
+	}, l.trustRows(t, "product_a"))
+	recs, err := guard.ReadPluginRecords(context.Background(), agentConn)
+	require.NoError(t, err)
+	require.Equal(t, []string{held[0]}, recs.TrustKeys)
+
+	require.NoError(t, guard.RecordPluginTrustRemoved(context.Background(), agentConn, held[0]))
+	ep := f.plugins(nil)
+	l.record(t, f, ep)
+	rows := l.trustRows(t, "product_a")
+	require.Equal(t, [2]string{"PLUGIN_TRUST_ADDED", held[0]}, rows[len(rows)-1], "the held key is recorded again")
+	require.Empty(t, ep.unrecordedFor(p.Key(), "product_a"), "its entry is served")
+	require.Equal(t, [][2]string{{"PLUGIN_TRUST_ADDED", held[0]}}, l.trustRows(t, "client_x"), "the other agent's ledger is untouched")
+}
+
+// On a guard at schema version 3, which refuses PLUGIN_TRUST_REMOVED, the
+// forged record stays, the failure is only logged, and every entry is
+// served as before.
+func TestTrustRemovedOnVersion3IsOnlyLogged(t *testing.T) {
+	t.Parallel()
+	f := newPluginFixture(t)
+	p := f.install("default", dial.TransportStdio, "product_a")
+	l := newPluginLedgers(t, f)
+	require.NoError(t, guard.RecordPluginTrustAdded(context.Background(), l.dbs["product_a"].db, forgedKey))
+	ep := f.plugins(nil)
+	// The guard refuses the kind as version 3's record_plugin_event does.
+	v3 := map[string]pluginLedger{
+		"product_a": {db: refuseKind{Querier: l.dbs["product_a"].db, kind: guard.PluginTrustRemoved}},
+		"client_x":  l.dbs["client_x"],
+	}
+	recordPluginEvents(context.Background(), f.cfg, f.configPath, ep, v3, slog.New(slog.DiscardHandler))
+	require.Empty(t, ep.unrecordedFor(p.Key(), "product_a"))
+	require.Equal(t, []string{"PLUGIN_TRUST_ADDED", "PLUGIN_TRUST_ADDED", "PLUGIN_ENABLED"}, kindsOf(l.events(t, "product_a")))
+}
+
+// When the trust store cannot be read, no trust event is written, and an
+// entry whose added key the ledger does not record yet is withheld; once
+// the ledger records the key, its entry is served.
+func TestUnreadTrustStoreWithholdsUnrecordedKeys(t *testing.T) {
+	t.Parallel()
+	f := newPluginFixture(t)
+	p := f.install("default", dial.TransportStdio, "product_a")
+	l := newPluginLedgers(t, f)
+	discard := slog.New(slog.DiscardHandler)
+	ep := f.plugins(nil)
+	got := writePluginEvents(context.Background(), wantedPlugins(f.cfg, ep, trustWant{}), l.dbs, discard)
+	require.Equal(t, map[string][]unrecordedEntry{"product_a": {{key: p.Key(), why: whyTrustUnread}}}, got)
+	require.Empty(t, l.events(t, "product_a"))
+
+	l.record(t, f, f.plugins(nil))
+	got = writePluginEvents(context.Background(), wantedPlugins(f.cfg, f.plugins(nil), trustWant{}), l.dbs, discard)
+	require.Empty(t, got, "the ledger records the key: served")
+	require.Equal(t, []string{"PLUGIN_TRUST_ADDED", "PLUGIN_ENABLED"}, kindsOf(l.events(t, "product_a")), "nothing removed")
 }

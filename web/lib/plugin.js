@@ -69,7 +69,7 @@ export const SENTENCES = Object.freeze({
   usedFor: "Used for: <agents>.",
   askedBy: "Asked by <agent>.",
   fingerprint: "Fingerprint: <fingerprint>",
-  approved: "Approved. The plugin starts when the engine restarts.",
+  approved: "Approved. The plugin starts within a few seconds.",
 });
 
 // What each hook sees, in plain words, and the label of that access in a

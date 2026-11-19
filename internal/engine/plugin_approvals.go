@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
@@ -17,15 +19,15 @@ import (
 // and write nothing.
 const (
 	whyNoApproval = "no plugin approval names this agent yet; " +
-		"open one with basalt plugin enable --approve-with-passkey and have a person sign it, then restart the engine"
+		"open one with basalt plugin enable --approve-with-passkey and have a person sign it: the engine starts the plugin within seconds"
 	whyApprovalReplaced = "no plugin approval names this agent: the newest one for it was replaced by a newer approval that does not name this agent; " +
-		"open one with basalt plugin enable --approve-with-passkey, then restart the engine once a person signed it"
+		"open one with basalt plugin enable --approve-with-passkey: the engine starts the plugin once a person signed it"
 	whyApprovalEnded = "its plugin approval ended when it was turned off or removed for this agent; " +
 		"turning it on again needs a new approval: open one with basalt plugin enable --approve-with-passkey"
 	whyApprovalsOldGuard = "this agent's guard is older than schema version 5, so it holds no plugin approvals; " +
-		"run basalt upgrade for this agent (on an agent-operated engine, an UPGRADE setup code), then restart the engine"
+		"run basalt upgrade for this agent (on an agent-operated engine, an UPGRADE setup code): the engine checks again on its own"
 	whyApprovalsUnread = "its plugin approvals could not be read from this agent's database; " +
-		"restart the engine once the database answers"
+		"the engine checks again once the database answers"
 )
 
 // withheldWhy is why an entry is not served to one agent: code is the
@@ -34,6 +36,11 @@ const (
 type withheldWhy struct {
 	code string
 	why  string
+	// transient: the database did not answer (transientErr), so nothing was
+	// decided. While the engine runs, what runs then stays as it is.
+	transient bool
+	// approvalID is the approval that matched, when one did.
+	approvalID uuid.UUID
 }
 
 // approvalReason reports whether code is one of the approval reasons:
@@ -54,8 +61,10 @@ func approvalReason(code string) bool {
 type agentApprovals struct {
 	db   guard.Querier
 	read bool
-	// unavailable is why they could not be read, "" when they were.
+	// unavailable is why they could not be read, "" when they were;
+	// transient when the database did not answer.
 	unavailable string
+	transient   bool
 	// newest is, per entry, the newest approval that names the agent's
 	// role (guard.ReadPluginApprovals).
 	newest map[plugin.EntryKey]guard.PluginApprovalRecord
@@ -69,7 +78,7 @@ func (a *agentApprovals) load(ctx context.Context) {
 	v, err := guard.AgentVersion(ctx, a.db)
 	switch {
 	case err != nil:
-		a.unavailable = whyApprovalsUnread
+		a.unavailable, a.transient = whyApprovalsUnread, transientErr(err)
 		return
 	case v < guard.PluginApprovalsVersion:
 		a.unavailable = whyApprovalsOldGuard
@@ -77,7 +86,7 @@ func (a *agentApprovals) load(ctx context.Context) {
 	}
 	recs, err := guard.ReadPluginApprovals(ctx, a.db)
 	if err != nil {
-		a.unavailable = whyApprovalsUnread
+		a.unavailable, a.transient = whyApprovalsUnread, transientErr(err)
 		return
 	}
 	a.newest = make(map[plugin.EntryKey]guard.PluginApprovalRecord, len(recs))
@@ -97,7 +106,7 @@ func (a *agentApprovals) load(ctx context.Context) {
 func (a *agentApprovals) check(ctx context.Context, k plugin.EntryKey, d guard.PluginDetail, s guard.PluginSettings) (withheldWhy, bool) {
 	a.load(ctx)
 	if a.unavailable != "" {
-		return withheldWhy{why: a.unavailable}, false
+		return withheldWhy{why: a.unavailable, transient: a.transient}, false
 	}
 	r, ok := a.newest[k]
 	if !ok {
@@ -106,7 +115,7 @@ func (a *agentApprovals) check(ctx context.Context, k plugin.EntryKey, d guard.P
 	switch r.Status {
 	case guard.PluginApprovalStatusPending:
 		return withheldWhy{code: agent.ProblemPluginAwaitingApproval, why: "its plugin approval is waiting for a person to sign it (it expires " +
-			r.ExpiresAt.UTC().Format("2006-01-02 15:04") + " UTC); restart the engine once it is signed"}, false
+			r.ExpiresAt.UTC().Format("2006-01-02 15:04") + " UTC); the engine starts the plugin within seconds of the signature"}, false
 	case guard.PluginApprovalStatusCancelled:
 		return withheldWhy{code: agent.ProblemPluginAwaitingApproval, why: whyApprovalReplaced}, false
 	case guard.PluginApprovalStatusExpired:
@@ -116,18 +125,23 @@ func (a *agentApprovals) check(ctx context.Context, k plugin.EntryKey, d guard.P
 	default:
 		return withheldWhy{why: whyApprovalsUnread}, false
 	}
-	if r.Ended() || r.ApprovedAt == nil {
+	if r.ApprovedAt == nil {
 		return withheldWhy{code: agent.ProblemPluginAwaitingApproval, why: whyApprovalEnded}, false
 	}
 	sum, err := guard.PluginSettingsSHA256(ctx, a.db, s)
 	if err != nil {
-		return withheldWhy{why: whyApprovalsUnread}, false
+		return withheldWhy{why: whyApprovalsUnread, transient: transientErr(err)}, false
 	}
+	// A mismatch is named while it lasts, also once the withhold ended the
+	// approval: the person sees what differs, not only that it ended.
 	if diff := approvalMismatch(r.Bound, approvalBound(d, sum)); len(diff) > 0 {
 		return withheldWhy{code: agent.ProblemPluginApprovalMismatch, why: "it does not match what a person approved; these differ: " +
 			strings.Join(diff, ", ") + ". Ask the person whether the change was theirs, then open a new approval or disable the plugin"}, false
 	}
-	return withheldWhy{}, true
+	if r.Ended() {
+		return withheldWhy{code: agent.ProblemPluginAwaitingApproval, why: whyApprovalEnded}, false
+	}
+	return withheldWhy{approvalID: r.ApprovalID}, true
 }
 
 // approvalBound is what an approval of entry d with settings hash

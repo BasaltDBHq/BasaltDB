@@ -154,7 +154,7 @@ func pluginExpired(id uuid.UUID, at time.Time) error {
 func pluginAlreadyApproved(id uuid.UUID) error {
 	return pluginPageError(CodeApprovalInvalid, reasonAlreadyUsed,
 		fmt.Sprintf("plugin approval %s is already signed", id),
-		"This plugin approval is already signed. The plugin starts when the engine restarts.", nil)
+		"This plugin approval is already signed. The plugin starts within a few seconds of the signature.", nil)
 }
 
 func pluginCancelled(id uuid.UUID) error {

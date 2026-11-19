@@ -286,6 +286,18 @@ func (e *pluginEnv) restart() {
 	fmt.Fprintf(e.c.stderr, "basalt: restart the engine so it reads engine.json again:\n  %s\n", cmds.EngineRestart())
 }
 
+// narrowed says when a change that only narrows (disable, remove, an agent
+// removed) takes effect: in same-user mode the running engine applies it
+// within seconds (CONTRACT.md, Plugin changes while the engine runs); a
+// service engine reads engine.json at start, so it prints the restart.
+func (e *pluginEnv) narrowed() {
+	if e.cfg.Service() {
+		e.restart()
+		return
+	}
+	fmt.Fprintln(e.c.stderr, "basalt: a running engine applies this within a few seconds; no restart is needed")
+}
+
 // errChangedMeanwhile: engine.json changed between what the person was
 // shown and the write.
 var errChangedMeanwhile = errors.New("engine.json changed while you were asked; nothing was written. Run the command again")
@@ -577,6 +589,9 @@ type addFlags struct {
 	instance string
 	// approve is --approve-with-passkey; asJSON is --json.
 	approve, asJSON bool
+	// wait is --wait, in seconds: how long add waits for the plugin to run
+	// after it opened the approval (plugin_wait.go).
+	wait int
 }
 
 func pluginAdd(c *cliIO, args []string) int {
@@ -586,16 +601,20 @@ func pluginAdd(c *cliIO, args []string) int {
 	configPath := fs.String("config", config.DefaultPath(c.goos), "engine config file")
 	asJSON := fs.Bool("json", false, "print the result, or a refusal's error body, as JSON")
 	approve := fs.Bool(flagApproveWithPasskey, false, "open a plugin approval a person signs with a passkey instead of asking here")
+	wait := fs.Int("wait", 0, fmt.Sprintf("with an approval, seconds to wait for the plugin to run before printing (0 to %d)", maxWaitSeconds))
 	dir, err := parseOne(fs, args, "the plugin's directory")
 	if err != nil {
 		return c.fail(err)
+	}
+	if err := waitFlag(*wait); err != nil || *wait < 0 {
+		return c.fail(fmt.Errorf("%w: --wait is seconds from 0 to %d", errUsage, maxWaitSeconds))
 	}
 	given := false
 	fs.Visit(func(f *flag.Flag) { given = given || f.Name == "agents" })
 	if !given {
 		return c.fail(fmt.Errorf("%w: --agents is required: the agents the plugin serves, comma-separated", errUsage))
 	}
-	f := addFlags{dir: dir, agents: splitList(*agents), instance: *instance, approve: *approve, asJSON: *asJSON}
+	f := addFlags{dir: dir, agents: splitList(*agents), instance: *instance, approve: *approve, asJSON: *asJSON, wait: *wait}
 	if f.agents == nil {
 		f.agents = []string{}
 	}
@@ -801,7 +820,7 @@ func (e *pluginEnv) narrowOnly(f addFlags, refused error) error {
 	}
 	_, removed := diff(prev.Agents, f.agents)
 	fmt.Fprintf(e.c.stderr, "basalt: plugin %s no longer serves %s\n", k, listText(removed, ""))
-	e.restart()
+	e.narrowed()
 	return nil
 }
 
@@ -840,7 +859,15 @@ func entryFlags(c *cliIO, name string, args []string, withJSON bool) (*pluginEnv
 // entryFlagsApprove is entryFlags, with --approve-with-passkey when
 // withApprove.
 func entryFlagsApprove(c *cliIO, name string, args []string, withJSON, withApprove bool) (*pluginEnv, plugin.EntryKey, bool, bool, int) {
+	return entryFlagsWith(c, name, args, withJSON, withApprove, nil)
+}
+
+// entryFlagsWith is entryFlagsApprove with more flags, which extra adds.
+func entryFlagsWith(c *cliIO, name string, args []string, withJSON, withApprove bool, extra func(*flag.FlagSet)) (*pluginEnv, plugin.EntryKey, bool, bool, int) {
 	fs := c.flags("plugin " + name)
+	if extra != nil {
+		extra(fs)
+	}
 	instance := instanceFlag(fs)
 	configPath := fs.String("config", config.DefaultPath(c.goos), "engine config file")
 	asJSON, approve := new(bool), new(bool)
@@ -877,16 +904,34 @@ func (e *pluginEnv) entry(k plugin.EntryKey) (config.Plugin, error) {
 }
 
 func pluginEnable(c *cliIO, args []string) int {
-	e, k, asJSON, approve, code := entryFlagsApprove(c, "enable", args, true, true)
+	var wait int
+	var ids string
+	e, k, asJSON, approve, code := entryFlagsWith(c, "enable", args, true, true, func(fs *flag.FlagSet) {
+		fs.IntVar(&wait, "wait", -1, fmt.Sprintf("seconds to wait for the plugin to run (0 to %d; default 0, or %d with --approval-id)", maxWaitSeconds, defaultRepeatWait))
+		fs.StringVar(&ids, "approval-id", "", "wait for these approvals (the approvalId values add or enable printed, comma separated) instead of opening a new one")
+	})
 	if code >= 0 {
 		return code
 	}
-	return c.pluginDone(e.enable(k, approve, asJSON), asJSON)
+	if err := waitFlag(wait); err != nil {
+		return c.fail(err)
+	}
+	if ids != "" {
+		if approve {
+			return c.fail(fmt.Errorf("%w: --approval-id waits for an approval already open; --%s opens a new one", errUsage, flagApproveWithPasskey))
+		}
+		parsed, err := parseApprovalIDs(ids)
+		if err != nil {
+			return c.fail(err)
+		}
+		return c.pluginDone(e.enableWait(k, parsed, wait, asJSON), asJSON)
+	}
+	return c.pluginDone(e.enable(k, approve, max(wait, 0), asJSON), asJSON)
 }
 
-func (e *pluginEnv) enable(k plugin.EntryKey, approve, asJSON bool) error {
+func (e *pluginEnv) enable(k plugin.EntryKey, approve bool, wait int, asJSON bool) error {
 	if i := e.cfg.PluginIndex(k); i >= 0 && e.approvalFlow(e.cfg, &e.cfg.Plugins[i], approve) {
-		return e.enableWithApproval(k, e.cfg.Plugins[i], asJSON)
+		return e.enableWithApproval(k, e.cfg.Plugins[i], wait, asJSON)
 	}
 	if e.approvalFlow(e.cfg, nil, approve) {
 		_, err := e.entry(k)
@@ -988,7 +1033,7 @@ func (e *pluginEnv) setDisabled(k plugin.EntryKey) error {
 		return err
 	}
 	fmt.Fprintf(e.c.stderr, "basalt: plugin %s disabled\n", k)
-	e.restart()
+	e.narrowed()
 	return nil
 }
 
@@ -1028,7 +1073,7 @@ func (e *pluginEnv) remove(k plugin.EntryKey) error {
 		return err
 	}
 	fmt.Fprintf(e.c.stderr, "basalt: plugin %s removed\n", k)
-	e.restart()
+	e.narrowed()
 	return nil
 }
 

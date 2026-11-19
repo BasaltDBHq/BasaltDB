@@ -53,6 +53,12 @@ func (f *pluginFixture) installApproval(hooks string, agents ...string) config.P
 // agents.
 func (f *pluginFixture) installCopy(instance, hooks string, signed bool) config.Plugin {
 	f.t.Helper()
+	return f.installCopyOver(instance, hooks, dial.TransportStdio, signed)
+}
+
+// installCopyOver is installCopy over transport.
+func (f *pluginFixture) installCopyOver(instance, hooks, transport string, signed bool) config.Plugin {
+	f.t.Helper()
 	t := f.t
 	src := t.TempDir()
 	require.NoError(t, os.Mkdir(filepath.Join(src, "bin"), 0o755))
@@ -69,7 +75,7 @@ func (f *pluginFixture) installCopy(instance, hooks string, signed bool) config.
   "files": { "bin/p": "sha256:%x" },
   "network": { "egress": [] }
 }
-`, hooks, dial.TransportStdio, args, sha256.Sum256(exe))
+`, hooks, transport, args, sha256.Sum256(exe))
 	require.NoError(t, os.WriteFile(filepath.Join(src, plugin.ManifestFile), []byte(manifest), 0o644))
 	if signed {
 		key, err := plugin.GenerateKey()
@@ -84,7 +90,8 @@ func (f *pluginFixture) installCopy(instance, hooks string, signed bool) config.
 	}
 	v, err := plugin.Install(src, f.root, instance, f.trust, plugin.ModeSameUser, plugin.RequireApproval(!signed))
 	require.NoError(t, err)
-	return config.Plugin{Name: "acme-ner", Instance: instance, ManifestSHA256: v.ManifestSHA256, Enabled: true, Agents: []string{}}
+	// The longest timeout: the plugin is this test binary, built with -race.
+	return config.Plugin{Name: "acme-ner", Instance: instance, ManifestSHA256: v.ManifestSHA256, Enabled: true, Agents: []string{}, TimeoutMs: config.MaxPluginTimeoutMs}
 }
 
 // honestDetail is what basalt plugin would open for entry p of the test
@@ -147,6 +154,8 @@ func (l pluginLedgers) approve(t *testing.T, pk *passkeytest.Authenticator, p co
 // servedTo are the agents the host serves entry k to, none when it is not
 // started.
 func servedTo(ep *enginePlugins, k plugin.EntryKey) []string {
+	ep.mu.Lock()
+	defer ep.mu.Unlock()
 	for _, e := range ep.entries {
 		if e.Key == k {
 			return slices.Sorted(slices.Values(e.Agents))
@@ -354,11 +363,12 @@ func TestChangedEntryIsWithheld(t *testing.T) {
 		prob := problemFor(t, ep, "product_a")
 		require.Equal(t, agent.ProblemPluginApprovalMismatch, prob.Code)
 		require.Contains(t, prob.Message, "settingsSha256")
-		// The next start finds that approval ended by the PLUGIN_DISABLED, and
-		// writes nothing more.
+		// The next check finds that approval ended by the PLUGIN_DISABLED,
+		// still names what differs, and writes nothing more.
 		ep = f.plugins(nil)
 		l.record(t, f, ep)
-		require.Equal(t, agent.ProblemPluginAwaitingApproval, problemFor(t, ep, "product_a").Code)
+		require.Equal(t, agent.ProblemPluginApprovalMismatch, problemFor(t, ep, "product_a").Code)
+		require.Contains(t, problemFor(t, ep, "product_a").Message, "settingsSha256")
 		rows := l.events(t, "product_a")
 		require.Equal(t, []string{"PLUGIN_APPROVAL_PENDING", "PLUGIN_APPROVED", "PLUGIN_ENABLED", "PLUGIN_DISABLED"}, kindsOf(rows))
 		require.JSONEq(t, rows[2].Detail, rows[3].Detail, "PLUGIN_DISABLED carries what was last recorded")

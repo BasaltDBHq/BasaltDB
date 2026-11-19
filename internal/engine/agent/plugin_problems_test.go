@@ -84,9 +84,10 @@ func TestStatusShowsApprovalSteps(t *testing.T) {
 		cmds    []string
 	}{
 		{
+			// No restart: the engine starts the plugin once it is signed.
 			ProblemPluginAwaitingApproval,
-			[]string{"OPEN_LINK", "RUN_COMMAND", "RUN_COMMAND"},
-			[]string{"", enable, "basalt engine --config /srv/basalt/engine.json"},
+			[]string{"OPEN_LINK", "RUN_COMMAND"},
+			[]string{"", enable},
 		},
 		{
 			ProblemPluginApprovalExpired,
@@ -122,6 +123,30 @@ func TestStatusShowsApprovalSteps(t *testing.T) {
 			} else {
 				require.Contains(t, p.PersonMessage, enable)
 			}
+		}
+	}
+}
+
+// engine.json that the running engine cannot read is a WARNING naming no
+// entry, with basalt plugin list to see what is wrong: the person's on a
+// person-operated engine, the agent's on an agent-operated one.
+func TestStatusShowsConfigInvalid(t *testing.T) {
+	t.Parallel()
+	for _, operatedBy := range []string{"", "AGENT"} {
+		r := pluginStatus(t, operatedBy, "/srv/basalt/engine.json", true, fakePlugins{"bot": {{Code: ProblemPluginConfigInvalid, Message: "engine.json changed"}}})
+		p := findProblem(t, r, ProblemPluginConfigInvalid)
+		require.Equal(t, "WARNING", p.Severity)
+		require.Equal(t, "engine.json changed", p.Message)
+		require.Len(t, p.NextSteps, 1)
+		require.Equal(t, "RUN_COMMAND", p.NextSteps[0].Action)
+		require.Equal(t, "basalt plugin list --config /srv/basalt/engine.json", p.NextSteps[0].Command)
+		require.Contains(t, p.PersonMessage, "keeps running as before")
+		if operatedBy == "AGENT" {
+			require.Equal(t, "AGENT", p.NextSteps[0].Actor)
+			require.NotContains(t, p.PersonMessage, "basalt ")
+		} else {
+			require.Equal(t, "PERSON", p.NextSteps[0].Actor)
+			require.Contains(t, p.PersonMessage, p.NextSteps[0].Command)
 		}
 	}
 }

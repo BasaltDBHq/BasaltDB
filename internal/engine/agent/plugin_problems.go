@@ -13,6 +13,10 @@ const (
 	ProblemPluginAwaitingApproval = "PLUGIN_AWAITING_APPROVAL"
 	ProblemPluginApprovalExpired  = "PLUGIN_APPROVAL_EXPIRED"
 	ProblemPluginApprovalMismatch = "PLUGIN_APPROVAL_MISMATCH"
+	// engine.json changed while the engine runs and its plugins cannot be
+	// read, so the engine applies no plugin change (CONTRACT.md, Plugin
+	// changes while the engine runs). It names no entry.
+	ProblemPluginConfigInvalid = "PLUGIN_CONFIG_INVALID"
 )
 
 // PluginProblem is one plugin entry listed for the agent that is not
@@ -68,6 +72,16 @@ func (c Commands) PluginRemove(name, instance string) string {
 	return c.plugin("remove", name, instance)
 }
 
+// PluginList is basalt plugin list, which reads engine.json and says what
+// is wrong with it when it cannot.
+func (c Commands) PluginList() string {
+	parts := []string{cmdBasalt, "plugin", "list"}
+	if c.configFlag != "" {
+		parts = append(parts, c.configFlag)
+	}
+	return strings.Join(parts, " ")
+}
+
 func (c Commands) plugin(sub, name, instance string, flags ...string) string {
 	parts := []string{cmdBasalt, "plugin", sub, name}
 	if instance != "" && instance != pluginDefaultInstance {
@@ -89,6 +103,15 @@ func (s statusDeps) addPluginProblems(ps *problems) {
 			switch p.Code {
 			case ProblemPluginAwaitingApproval, ProblemPluginApprovalExpired, ProblemPluginApprovalMismatch:
 				return pluginApprovalSteps(b, s.cmds, p)
+			case ProblemPluginConfigInvalid:
+				list := s.cmds.PluginList()
+				b.MachineCommand(s.cmds, list, "Run this: it says what is wrong with engine.json. Fix that; the engine applies the plugin changes once it can read the file.",
+					"Run this: it says what is wrong with engine.json. Fix what a basalt plugin command wrote, or ask the person when they edited it.")
+				lead := "The engine cannot read the plugins in engine.json since it changed, so it applies no plugin change: every plugin keeps running as before."
+				if s.cmds.AgentOperated() {
+					return lead
+				}
+				return lead + " To see what is wrong, run: " + list
 			}
 			return pluginSteps(b, s.cmds, p)
 		})
@@ -109,12 +132,8 @@ func pluginApprovalSteps(b *Steps, cmds Commands, p PluginProblem) string {
 		b.MachineCommand(cmds, approve,
 			"When that link is lost or expired, or none was given, run this: it opens a new approval and prints its link.",
 			"When the person no longer has a pending link, run this: it opens a new approval; hand its link to the person.")
-		restart := cmds.EngineRestart()
-		b.MachineCommand(cmds, restart,
-			"Once basalt plugin list shows the approval signed, restart the engine: the plugin starts then.",
-			"Once basalt plugin list shows the approval signed, restart the engine: the plugin starts then.")
-		lead = "The plugin " + entry + " is waiting for your approval, so it does nothing for this agent yet. Open the approval link the agent gave you and approve it with your passkey."
-		person = " For a new link, run: " + approve + " Once it is signed, restart the engine: " + restart
+		lead = "The plugin " + entry + " is waiting for your approval, so it does nothing for this agent yet. Open the approval link the agent gave you and approve it with your passkey: the plugin starts within a few seconds."
+		person = " For a new link, run: " + approve
 	case ProblemPluginApprovalExpired:
 		remove := cmds.PluginRemove(p.Name, p.Instance)
 		b.MachineCommand(cmds, approve, "Run this to open a new approval for the installed plugin; it prints a new link.",

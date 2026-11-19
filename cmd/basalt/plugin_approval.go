@@ -539,21 +539,24 @@ func (e *pluginEnv) approvalOutcome(k plugin.EntryKey, version string, items []o
 			msg = append(msg, o.url)
 			steps.SendRequest(o.file)
 		}
-		msg = append(msg, fmt.Sprintf("Expires %s. The plugin starts once the engine restarts.", expires.UTC().Format(personTime)))
+		msg = append(msg, fmt.Sprintf("Expires %s. The plugin starts within seconds of your approval.", expires.UTC().Format(personTime)))
+		var ids []uuid.UUID
 		for _, o := range items {
 			if o.refused == nil {
 				steps.OpenLink(o.url, "", "Open the link, read what the plugin may do and approve it with your passkey.")
+				ids = append(ids, o.opened.ID)
 			}
 		}
+		steps.AgentRunCommand(e.waitCommand(k, ids), fmt.Sprintf("Show the person personMessage first. Then, in the same turn, run this: it returns as soon as the plugin runs, or after %d seconds.", defaultRepeatWait))
 	}
 	// What the refused databases need comes before the agent ends its turn.
 	e.refusedSteps(steps, cmds, items, k)
 	if opened > 0 {
+		// No restart: the running engine starts the plugin once a matching
+		// approval is signed (CONTRACT.md, Plugin changes while the engine
+		// runs).
 		steps.TellAgent("Tell the agent once you approved, or give it the basalt-plugin.1. code the page shows.")
-		steps.EndTurn("End your turn: the person approves next. When they paste a basalt-plugin.1. code, run basalt plugin approve with it.")
-		steps.MachineCommand(cmds, cmds.EngineRestart(),
-			"Once basalt plugin list shows every approval signed, restart the engine so it starts the plugin.",
-			"Once basalt plugin list shows every approval signed, restart the engine so it starts the plugin.")
+		steps.EndTurn("When that wait ended without the plugin running, end your turn: the person approves next. When they paste a basalt-plugin.1. code, run basalt plugin approve with it, then the wait again.")
 	}
 	res.PersonMessage = fitPersonMessage(noPasskeyText, msg, refusedText)
 	built, err := steps.Build()
@@ -634,8 +637,9 @@ func (e *pluginEnv) refusedSteps(b *agent.Steps, cmds agent.Commands, items []op
 }
 
 // handOver prints the result: with asJSON the result, else personMessage on
-// stdout with each link on a line of its own; then the restart command. It
-// returns exit 1 when a database refused.
+// stdout with each link on a line of its own. No restart: the engine starts
+// the entry once its approval is signed. It returns exit 1 when a database
+// refused.
 func (e *pluginEnv) handOver(res approvalResult, asJSON bool) error {
 	refused := slices.ContainsFunc(res.Approvals, func(a approvalItem) bool { return a.Refused != nil })
 	if asJSON {
@@ -651,7 +655,6 @@ func (e *pluginEnv) handOver(res approvalResult, asJSON bool) error {
 			fmt.Fprintln(e.c.stdout, line)
 		}
 	}
-	e.restart()
 	if refused {
 		return errApprovalRefused
 	}
@@ -737,7 +740,7 @@ func (e *pluginEnv) addWithApproval(f addFlags, prev *config.Plugin) error {
 	if err != nil {
 		return err
 	}
-	return e.handOver(res, f.asJSON)
+	return e.handOverOrWait(k, res, f.wait, f.asJSON)
 }
 
 // narrowWithin is add in the approval flow for an existing entry with the
@@ -758,7 +761,7 @@ func (e *pluginEnv) narrowWithin(f addFlags, prev config.Plugin) (bool, error) {
 // enableWithApproval is enable in the approval flow: it opens a new
 // approval for the installed copy and the entry as engine.json holds it,
 // whether or not the entry is enabled.
-func (e *pluginEnv) enableWithApproval(k plugin.EntryKey, p config.Plugin, asJSON bool) error {
+func (e *pluginEnv) enableWithApproval(k plugin.EntryKey, p config.Plugin, wait int, asJSON bool) error {
 	again := e.command("enable", entryArgs(k)...)
 	v, err := plugin.Verify(e.root, k, p.ManifestSHA256, e.trust, e.mode, plugin.RequireApproval(true))
 	if err != nil {
@@ -797,7 +800,7 @@ func (e *pluginEnv) enableWithApproval(k plugin.EntryKey, p config.Plugin, asJSO
 	if err != nil {
 		return err
 	}
-	return e.handOver(res, asJSON)
+	return e.handOverOrWait(k, res, wait, asJSON)
 }
 
 // --- approve ---
@@ -845,8 +848,7 @@ func pluginApprove(c *cliIO, args []string) int {
 	if *asJSON {
 		return printJSONValue(c, approvedJSON{ApprovalID: resp.ApprovalID.String(), Status: "APPROVED", ApprovedAt: at.UTC()})
 	}
-	fmt.Fprintf(c.stderr, "basalt: plugin approval %s signed: plugin %s instance %s is approved\n", resp.ApprovalID, rec.Name, rec.Instance)
-	e.restart()
+	fmt.Fprintf(c.stderr, "basalt: plugin approval %s signed: plugin %s instance %s is approved; a running engine starts it within seconds\n", resp.ApprovalID, rec.Name, rec.Instance)
 	return exitOK
 }
 
@@ -911,6 +913,11 @@ func (e *pluginEnv) relayAs(conn *pgx.Conn, resp approval.PluginApprovalResponse
 
 // connectAgent connects with agent's credential within 15 seconds.
 func (e *pluginEnv) connectAgent(name string) (*pgx.Conn, error) {
+	return e.connectAgentCtx(e.c.ctx, name)
+}
+
+// connectAgentCtx is connectAgent within ctx too.
+func (e *pluginEnv) connectAgentCtx(ctx context.Context, name string) (*pgx.Conn, error) {
 	a, ok := agentOf(e.cfg, name)
 	if !ok {
 		return nil, errAgentNotInConfig(name, e.configPath)
@@ -919,7 +926,7 @@ func (e *pluginEnv) connectAgent(name string) (*pgx.Conn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("agent %s: its credential file cannot be read", name)
 	}
-	ctx, cancel := context.WithTimeout(e.c.ctx, databaseTimeout)
+	ctx, cancel := context.WithTimeout(ctx, databaseTimeout)
 	defer cancel()
 	conn, err := connect(ctx, dsn)
 	if err != nil {

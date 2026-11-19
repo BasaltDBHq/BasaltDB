@@ -162,10 +162,16 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	// plugin that fails never stops the engine. With no enabled entry
 	// nothing is read or started.
 	pluginLog := log.With("component", "plugins")
-	plugins := newEnginePlugins(cfg, configPath, pluginOptions{
+	pluginOpts := pluginOptions{
 		Stderr: pluginDebugWriter(cfg, restart.PluginStderr, log), euid: engineEUID(),
-		runs: pluginRuns(cfg, env.stateDir, engineEUID(), pluginLog),
-	}, pluginLog)
+		runs: pluginRuns(cfg, env.stateDir, engineEUID(), pluginLog), stateDir: env.stateDir,
+	}
+	plugins := newEnginePlugins(cfg, configPath, pluginOpts, pluginLog)
+	if plugins == nil && !cfg.Service() {
+		// A same-user engine starts an entry approved while it runs
+		// (pluginWatch), so it keeps its plugins with none enabled yet.
+		plugins = newEnginePluginsFor(cfg, configPath, pluginOpts, pluginLog)
+	}
 	if plugins != nil {
 		env.plugins = plugins
 	}
@@ -271,13 +277,15 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		wg.Go(func() { u.Run(ctx, upkeep.DefaultInterval) })
 	}
 	// Each agent's ledger records its plugin changes before any plugin
-	// starts; an entry whose record fails is not served to that agent. The
-	// supervisor stops the plugins within plugin.StopWait of ctx ending,
-	// before RunWith returns (and before a restart runs a new binary).
+	// starts; an entry whose record fails is not served to that agent. In
+	// same-user mode the plugins then follow engine.json and the agents'
+	// approvals while the engine runs (pluginWatch). The supervisor stops
+	// the plugins within plugin.StopWait of ctx ending, before RunWith
+	// returns (and before a restart runs a new binary).
 	wg.Go(func() {
 		recordPluginEvents(ctx, cfg, configPath, plugins, srv.pluginLedgers, log.With("component", "plugins"))
 		if plugins != nil {
-			plugins.run(ctx)
+			plugins.serve(ctx, cfg, configPath, srv.pluginLedgers)
 		}
 	})
 	scanner := piidict.NewScanner(dict, srv.scans, piidict.ScanOptions{

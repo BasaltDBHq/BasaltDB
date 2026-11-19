@@ -34,15 +34,16 @@ type pluginLedgers struct {
 	d     *guardtest.DB
 	roles map[string]string
 	dbs   map[string]pluginLedger
+	urls  map[string]string
 }
 
 func newPluginLedgers(t *testing.T, f *pluginFixture) pluginLedgers {
 	t.Helper()
 	d := guardtest.New(t).WithDemo(t)
-	l := pluginLedgers{d: d, roles: map[string]string{}, dbs: map[string]pluginLedger{}}
+	l := pluginLedgers{d: d, roles: map[string]string{}, dbs: map[string]pluginLedger{}, urls: map[string]string{}}
 	for _, a := range f.cfg.Agents {
 		ag := d.NewAgent(t, a.Name, demoTables, nil)
-		l.roles[a.Name], l.dbs[a.Name] = ag.Role, pluginLedger{db: ag.Conn}
+		l.roles[a.Name], l.dbs[a.Name], l.urls[a.Name] = ag.Role, pluginLedger{db: ag.Conn}, ag.URL
 	}
 	return l
 }
@@ -81,7 +82,12 @@ func kindsOf(rows []pluginRow) []string {
 
 // withheldBy is writePluginEvents's withheld entries per agent.
 func withheldBy(ctx context.Context, want pluginWant, ledgers map[string]pluginLedger, log *slog.Logger) map[string][]unrecordedEntry {
-	withheld, _ := writePluginEvents(ctx, want, ledgers, log)
+	withheld := map[string][]unrecordedEntry{}
+	for name, p := range writePluginEvents(ctx, want, ledgers, log) {
+		if len(p.withheld) > 0 {
+			withheld[name] = p.withheld
+		}
+	}
 	return withheld
 }
 

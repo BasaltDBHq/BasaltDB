@@ -181,7 +181,7 @@ func TestPluginRoutesAgainstGuard(t *testing.T) {
 	status, out = p.approve(opened.ID, secret, approval.NewPluginApprovalResponse(opened.ID, signed))
 	require.Equal(t, http.StatusConflict, status, out)
 	require.Equal(t, "APPROVAL_INVALID", out["code"])
-	require.Equal(t, "This plugin approval is already signed. The plugin starts when the engine restarts.", out["personMessage"])
+	require.Equal(t, "This plugin approval is already signed. The plugin starts within a few seconds of the signature.", out["personMessage"])
 	status, out = p.issue(opened.ID, opened.BindingText)
 	require.Equal(t, http.StatusConflict, status, out)
 

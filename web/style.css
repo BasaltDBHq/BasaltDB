@@ -229,7 +229,23 @@ pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
    stored, left to right, even with right-to-left letters in them:
    "ש 100 200" cannot read as "200 100 ש" (fidelity over readability).
    web/lib/display.test.mjs checks the selectors. */
-.values td, #params, #statement, #intent { direction: ltr; unicode-bidi: isolate-override; }
+.values td, #params, #statement, #intent, #settings { direction: ltr; unicode-bidi: isolate-override; }
+
+/* The plugin approval page: what changes first, then the level's box (1
+   calm, 2 one warning, 3 the strong warning with its tick), then the facts. */
+.plugin-change { border-color: var(--ui-border-strong); }
+.plugin-change-lead { font-weight: 600; }
+.plugin-lines { display: flex; flex-direction: column; gap: 6px; overflow-wrap: anywhere; }
+.plugin-level-line { font-weight: 500; }
+.plugin-level.level-1 .plugin-level-line { color: var(--diff-add-fg); }
+.plugin-level.level-2 { background: var(--diff-hold-bg); border-color: var(--diff-hold-fg); }
+.plugin-level.level-2 .plugin-level-line { color: var(--diff-hold-fg); }
+.plugin-level.level-3 { background: var(--diff-del-bg); border-color: var(--diff-del-fg); }
+.plugin-level.level-3 .plugin-level-line { color: var(--diff-del-fg); font-weight: 600; }
+.plugin-facts { gap: 16px; }
+.plugin-row { display: flex; flex-direction: column; gap: 6px; }
+.plugin-who { color: var(--ui-text-2); font-size: 13px; }
+.plugin-settings { background: var(--ui-subtle); border: 1px solid var(--ui-border); border-radius: var(--radius-ui-sm); padding: 10px 12px; overflow-wrap: anywhere; }
 
 /* Buttons: primary in ui-primary, a destructive confirm in diff-del-fg. */
 button {

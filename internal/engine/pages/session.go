@@ -40,13 +40,18 @@ var sessionRoutes = []sessionRoute{
 	{http.MethodPost, revertsResource, "reject", revertParam, (*Server).postReject},
 	{http.MethodPost, approvalsResource, "reveal", approvalParam, (*Server).postApprovalReveal},
 	{http.MethodPost, revertsResource, "reveal", revertParam, (*Server).postRevertReveal},
+	// A plugin approval: the request and the relay only, as for a held
+	// write (CONTRACT.md, Plugin approval, step 5).
+	{http.MethodGet, pluginsResource, "", approvalParam, (*Server).getPlugin},
+	{http.MethodPost, pluginsResource, "approve", approvalParam, (*Server).postPlugin},
 }
 
 // The resources of the pages API and the path parameters naming an
-// approval and a revert.
+// approval (held write or plugin) and a revert.
 const (
 	approvalsResource = "approvals"
 	revertsResource   = "reverts"
+	pluginsResource   = "plugins"
 	approvalParam     = "approvalId"
 	revertParam       = "revertId"
 )

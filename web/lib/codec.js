@@ -789,6 +789,229 @@ export function revertResponseJSON({ revertId, ...assertion }) {
   return assertionJSON({ revertId }, assertion);
 }
 
+// Plugin approvals (CONTRACT.md, Plugins, What a plugin approval binds and
+// The plugin approval page). The link carries two texts, the binding and
+// the settings; the page checks the binding against binding.schema.json,
+// strictly at every depth, and the settings against settingsSha256, before
+// it shows anything. Same as internal/approval/plugin.go, which checks less:
+// the page is where a person reads the binding.
+export const KIND_PLUGIN = "PLUGIN";
+export const PLUGIN_RESPONSE_PREFIX = "basalt-plugin.1.";
+
+// Why a plugin approval link is refused, when the page names the reason:
+// a binding of another kind, or settings that do not hash to
+// settingsSha256 (the vectors' expect.error).
+export const WRONG_KIND = "WRONG_KIND";
+export const SETTINGS_MISMATCH = "SETTINGS_MISMATCH";
+
+export class PluginLinkError extends CodeError {
+  constructor(reason, message) {
+    super(message);
+    this.name = "PluginLinkError";
+    this.reason = reason;
+  }
+}
+
+const PLUGIN_BINDING_REQUIRED = [
+  "kind", "approvalId", "database", "expiresAt", "requestedBy", "agents", "name", "instance",
+  "version", "manifestSha256", "settingsSha256", "hooks", "egress", "endpoint", "signer",
+];
+const PLUGIN_BINDING_OPTIONAL = ["roles", "isolation", "signerKeyId", "change"];
+const PLUGIN_CHANGE_KEYS = [
+  "fromVersion", "fromManifestSha256", "hooksAdded", "hooksRemoved", "rolesAdded", "rolesRemoved",
+  "egressAdded", "egressRemoved", "fromEndpoint", "fromIsolation", "fromSigner", "agentsAdded",
+  "agentsRemoved", "settingsChanged",
+];
+const PLUGIN_SETTINGS_KEYS = ["config", "auth", "timeoutMs", "minConfidence"];
+export const PLUGIN_HOOKS = new Set(["approval.deliver", "classify.suggest", "feed.observe", "wire.detect"]);
+const PLUGIN_ROLES = new Set(["NAME_CUE", "VALUE"]);
+export const SIGNER_KNOWN = "KNOWN";
+export const SIGNER_UNKNOWN = "UNKNOWN";
+const SIGNERS = new Set([SIGNER_KNOWN, SIGNER_UNKNOWN]);
+export const ENDPOINT_LOCAL = "LOCAL";
+export const ENDPOINT_REMOTE = "REMOTE";
+const ISOLATION_FILES = new Set(["OS_USER", "NONE"]);
+const ISOLATION_NETWORK = new Set(["ENFORCED", "DECLARED", "NOT_ENFORCED"]);
+const WIRE_DETECT = "wire.detect";
+
+const ROLE_NAME = /^[a-z_][a-z0-9_]*$/;
+const MAX_ROLE_NAME = 63;
+const PLUGIN_NAME = /^[a-z][a-z0-9-]{1,39}$/;
+const PLUGIN_INSTANCE = /^[a-z][a-z0-9_]{0,31}$/;
+const SEMVER = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
+const MAX_VERSION = 64;
+const MICRO_TIME = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}Z$/;
+// A host and port as a manifest declares them (manifest.schema.json,
+// hostPort). The endpoint's host must be in egress, so it has this form too.
+const HOST_PORT = /^(([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*|\[[0-9a-f:.]+\]|[0-9]{1,3}(\.[0-9]{1,3}){3}):[0-9]{1,5}$/;
+const MAX_HOST_PORT = 260;
+const KEY_ID = /^[A-Za-z0-9_-]{22}$/;
+
+function requireMatch(value, re, what, maxLength = Infinity) {
+  if (typeof value !== "string" || value.length > maxLength || !re.test(value)) throw new CodeError(`${what} is not valid`);
+  return value;
+}
+
+// requireList checks a list of distinct items, each passing check, with at
+// least min of them.
+function requireList(value, what, min, check) {
+  if (!Array.isArray(value) || value.length < min) throw new CodeError(`${what} must list at least ${min}`);
+  if (new Set(value).size !== value.length) throw new CodeError(`${what} names an item twice`);
+  for (const item of value) check(item, `${what} item`);
+  return value;
+}
+
+const inSet = (set) => (value, what) => {
+  if (!set.has(value)) throw new CodeError(`${what} "${value}" is not known`);
+};
+const roleName = (value, what) => requireMatch(value, ROLE_NAME, what, MAX_ROLE_NAME);
+const hostPort = (value, what) => requireMatch(value, HOST_PORT, what, MAX_HOST_PORT);
+
+function checkEndpoint(value, what) {
+  if (value?.kind === ENDPOINT_LOCAL) return strictObject(value, what, ["kind"]);
+  if (value?.kind === ENDPOINT_REMOTE) {
+    const e = strictObject(value, what, ["kind", "host"]);
+    hostPort(e.host, `${what} host`);
+    return e;
+  }
+  throw new CodeError(`${what} kind is not LOCAL or REMOTE`);
+}
+
+function checkIsolation(value, what) {
+  const i = strictObject(value, what, ["files", "network"]);
+  inSet(ISOLATION_FILES)(i.files, `${what} files`);
+  inSet(ISOLATION_NETWORK)(i.network, `${what} network`);
+  return i;
+}
+
+// checkChange checks a binding's change: only the contract's keys, each
+// present only with a value of its kind; {} is the same entry turned on
+// again.
+function checkChange(value) {
+  const c = strictObject(value, "binding change", [], PLUGIN_CHANGE_KEYS);
+  const lists = {
+    hooksAdded: inSet(PLUGIN_HOOKS), hooksRemoved: inSet(PLUGIN_HOOKS),
+    rolesAdded: inSet(PLUGIN_ROLES), rolesRemoved: inSet(PLUGIN_ROLES),
+    egressAdded: hostPort, egressRemoved: hostPort,
+    agentsAdded: roleName, agentsRemoved: roleName,
+  };
+  for (const [key, check] of Object.entries(lists)) {
+    if (key in c) requireList(c[key], `binding change ${key}`, 1, check);
+  }
+  if ("fromVersion" in c) requireMatch(c.fromVersion, SEMVER, "binding change fromVersion", MAX_VERSION);
+  if ("fromManifestSha256" in c) requireMatch(c.fromManifestSha256, HEX64, "binding change fromManifestSha256");
+  if ("fromSigner" in c) inSet(SIGNERS)(c.fromSigner, "binding change fromSigner");
+  if ("fromEndpoint" in c) checkEndpoint(c.fromEndpoint, "binding change fromEndpoint");
+  if ("fromIsolation" in c && c.fromIsolation !== null) checkIsolation(c.fromIsolation, "binding change fromIsolation");
+  if ("settingsChanged" in c && c.settingsChanged !== true) throw new CodeError("binding change settingsChanged must be true");
+  return c;
+}
+
+// parsePluginBinding parses a plugin approval's binding text for display
+// and checks it against binding.schema.json, with its rules between keys:
+// isolation exactly with LOCAL, host exactly with REMOTE, signerKeyId
+// exactly with KNOWN, roles exactly with wire.detect. A binding of another
+// kind is refused first, as WRONG_KIND. The text itself is what gets signed.
+export function parsePluginBinding(text) {
+  const raw = parseJSON(requireString(text, "binding"), "binding");
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) throw new CodeError("binding is not an object");
+  if (raw.kind !== KIND_PLUGIN) throw new PluginLinkError(WRONG_KIND, `binding kind "${raw.kind}" is not a plugin approval`);
+  const b = strictObject(raw, "binding", PLUGIN_BINDING_REQUIRED, PLUGIN_BINDING_OPTIONAL);
+  requireMatch(b.approvalId, UUID, "binding approvalId");
+  requireString(b.database, "binding database");
+  requireMatch(b.expiresAt, MICRO_TIME, "binding expiresAt");
+  roleName(b.requestedBy, "binding requestedBy");
+  requireList(b.agents, "binding agents", 1, roleName);
+  requireMatch(b.name, PLUGIN_NAME, "binding name");
+  requireMatch(b.instance, PLUGIN_INSTANCE, "binding instance");
+  requireMatch(b.version, SEMVER, "binding version", MAX_VERSION);
+  requireMatch(b.manifestSha256, HEX64, "binding manifestSha256");
+  requireMatch(b.settingsSha256, HEX64, "binding settingsSha256");
+  requireList(b.hooks, "binding hooks", 1, inSet(PLUGIN_HOOKS));
+  requireList(b.egress, "binding egress", 0, hostPort);
+  checkEndpoint(b.endpoint, "binding endpoint");
+  inSet(SIGNERS)(b.signer, "binding signer");
+  if (b.hooks.includes(WIRE_DETECT) !== ("roles" in b)) throw new CodeError("binding roles go with wire.detect, and only with it");
+  if ("roles" in b) requireList(b.roles, "binding roles", 1, inSet(PLUGIN_ROLES));
+  if ((b.endpoint.kind === ENDPOINT_LOCAL) !== ("isolation" in b)) throw new CodeError("binding isolation goes with a LOCAL endpoint, and only with it");
+  if ("isolation" in b) checkIsolation(b.isolation, "binding isolation");
+  if ((b.signer === SIGNER_KNOWN) !== ("signerKeyId" in b)) throw new CodeError("binding signerKeyId goes with a KNOWN signer, and only with it");
+  if ("signerKeyId" in b) requireMatch(b.signerKeyId, KEY_ID, "binding signerKeyId");
+  if ("change" in b) checkChange(b.change);
+  return { ...b, expiresAt: parseExpiry(b.expiresAt) };
+}
+
+// checkPluginSettings checks the settings text is an object of the entry's
+// settings (binding.schema.json, $defs/settings). The page shows the text
+// itself, never a re-serialized parse: 0.60 stays 0.60.
+function checkPluginSettings(text) {
+  const s = strictObject(parseJSON(requireString(text, "settings"), "settings"), "settings", [], PLUGIN_SETTINGS_KEYS);
+  const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+  if ("config" in s && !isObject(s.config)) throw new CodeError("settings config is not an object");
+  if ("auth" in s) strictObject(s.auth, "settings auth", ["credentialFile"]);
+  if ("timeoutMs" in s && !Number.isInteger(s.timeoutMs)) throw new CodeError("settings timeoutMs is not an integer");
+  if ("minConfidence" in s && typeof s.minConfidence !== "number") throw new CodeError("settings minConfidence is not a number");
+}
+
+const PLUGIN_REQUEST_FIELDS = ["approvalId", "binding", "settings"];
+
+// checkPluginRequest checks a plugin approval request, from a link or from
+// the engine (GET /api/v1/plugins/{id}): the binding (parsePluginBinding),
+// the same approval in request and binding, and the settings text hashing
+// to settingsSha256 (SETTINGS_MISMATCH otherwise). Only then may the page
+// show it or ask for a signature.
+export async function checkPluginRequest(value) {
+  const req = strictObject(value, "plugin approval request", PLUGIN_REQUEST_FIELDS, ["credentialIds"]);
+  const binding = parsePluginBinding(req.binding);
+  if (req.approvalId !== binding.approvalId) {
+    throw new CodeError(`request is for plugin approval ${req.approvalId}, binding for ${binding.approvalId}`);
+  }
+  requireString(req.settings, "settings");
+  if (hex(await sha256(utf8(req.settings))) !== binding.settingsSha256) {
+    throw new PluginLinkError(SETTINGS_MISMATCH, "the settings do not match the binding's settingsSha256");
+  }
+  checkPluginSettings(req.settings);
+  if ("credentialIds" in req) {
+    requireList(req.credentialIds, "plugin approval request credentialIds", 0, (id) => requireString(id, "credential id"));
+    if (req.credentialIds.length > MAX_LINK_CREDENTIAL_IDS) throw new CodeError("plugin approval request has too many credential ids");
+  }
+  return {
+    approvalId: req.approvalId,
+    bindingText: req.binding,
+    binding,
+    settingsText: req.settings,
+    credentialIds: decodeCredentialIds(req.credentialIds),
+    challenge: await challengeFor(req.binding),
+  };
+}
+
+// parsePluginRequest decodes a plugin approval link fragment, with or
+// without '#': format 2 only, exactly two texts (the binding, then the
+// settings) and optionally the database's credential ids; then
+// checkPluginRequest.
+export async function parsePluginRequest(fragment) {
+  const text = String(fragment).replace(/^#/, "");
+  if (text.startsWith(REQUEST_FORMAT_1)) throw new CodeError(`a plugin approval link is format "${REQUEST_FORMAT_2}" only`);
+  const r = await decodeRequest(text, "plugin approval request", {
+    idKey: "approvalId", maxLines: 1, required: [], optional: [], parse: (t) => JSON.parse(t),
+  });
+  const req = { approvalId: r.approvalId, binding: r.binding, settings: r.lines[0] };
+  if ("credentialIds" in r) req.credentialIds = r.credentialIds;
+  return checkPluginRequest(req);
+}
+
+// encodePluginResponse builds the code the person gives the agent, who
+// runs basalt plugin approve with it.
+export function encodePluginResponse(response) {
+  return PLUGIN_RESPONSE_PREFIX + b64urlEncode(utf8(pluginResponseJSON(response)));
+}
+
+// pluginResponseJSON is the JSON a plugin approval code carries, which the
+// page posts to the engine's relay (POST /api/v1/plugins/{id}/approve).
+export function pluginResponseJSON({ approvalId, ...assertion }) {
+  return assertionJSON({ approvalId }, assertion);
+}
+
 function checkLabel(label, what) {
   requireString(label, what);
   const n = utf8(label).length;

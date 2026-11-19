@@ -1,5 +1,6 @@
 // The engine's local pages (CONTRACT.md, Local pages): a short link
-// /approvals/<id> or /reverts/<id> opens a page the engine serves itself. The
+// /approvals/<id>, /reverts/<id> or /plugins/<id> opens a page the engine
+// serves itself. The
 // page reads the request for that id from the engine and, after the passkey
 // signs, posts the response back for the engine to relay. Every request goes
 // through the page's session to the engine (transport.js), passed in, so
@@ -31,20 +32,26 @@ export function shortLinkId(pathname, page) {
   return m ? m[1] : null;
 }
 
-// pageId is the id in the page's path, which every approval and revert link
-// carries (/approvals/<id>, /reverts/<id>; CONTRACT.md, Page links). A
-// format 2 request takes its id from its binding, so the page refuses to
-// run without an id to check it against.
+// What each page's link names, and the action of its relay (CONTRACT.md,
+// Local pages): a held write is approved, a revert applied, a plugin
+// approval approved.
+const PAGE_ITEMS = { approvals: "approval", reverts: "revert", plugins: "plugin approval" };
+const RELAY_ACTIONS = { approvals: "approve", reverts: "apply", plugins: "approve" };
+
+// pageId is the id in the page's path, which every approval, revert and
+// plugin approval link carries (/approvals/<id>, /reverts/<id>,
+// /plugins/<id>; CONTRACT.md, Page links). A format 2 request takes its id
+// from its binding, so the page refuses to run without an id to check it
+// against.
 export function pageId(pathname, page) {
   const id = shortLinkId(pathname, page);
-  if (id === null) throw new Error(`this link has no ${page === "approvals" ? "approval" : "revert"} id in its path; open the whole link the engine gave`);
+  if (id === null) throw new Error(`this link has no ${PAGE_ITEMS[page]} id in its path; open the whole link the engine gave`);
   return id;
 }
 
 // Paths of the relay for a short link's page and id.
 export function relayPaths(page, id) {
-  const action = page === "approvals" ? "approve" : "apply";
-  return { request: `/api/v1/${page}/${id}`, relay: `/api/v1/${page}/${id}/${action}` };
+  return { request: `/api/v1/${page}/${id}`, relay: `/api/v1/${page}/${id}/${RELAY_ACTIONS[page]}` };
 }
 
 // revertPaths are a revert's routes on the engine (CONTRACT.md, Local

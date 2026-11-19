@@ -30,7 +30,10 @@ const DefaultBudget = 1800
 const (
 	ApprovalsPath = "/approvals/"
 	RevertsPath   = "/reverts/"
-	RegisterPath  = "/passkeys/register"
+	// PluginsPath is the plugin approval page (CONTRACT.md, The plugin
+	// approval page).
+	PluginsPath  = "/plugins/"
+	RegisterPath = "/passkeys/register"
 	// CheckPath and ForgetPath are the passkey management page (M4.1):
 	// which passkeys a device has, and forgetting a removed one.
 	CheckPath  = "/passkeys/check"
@@ -50,6 +53,12 @@ func Approval(base string, id uuid.UUID) string {
 // Revert is the revert page of a prepared revert: <base>/reverts/<id>.
 func Revert(base string, id uuid.UUID) string {
 	return trim(base) + RevertsPath + id.String()
+}
+
+// Plugin is the approval page of a plugin install or change:
+// <base>/plugins/<id>.
+func Plugin(base string, id uuid.UUID) string {
+	return trim(base) + PluginsPath + id.String()
 }
 
 // Register is the passkey registration page: <base>/passkeys/register.

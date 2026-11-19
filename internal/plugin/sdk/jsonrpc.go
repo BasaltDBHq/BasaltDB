@@ -63,6 +63,18 @@ func (s *server) serveConn(ctx context.Context, rc io.ReadCloser, w io.Writer) e
 	var err error
 	select {
 	case err = <-readDone:
+		// The peer closed its side. Calls already running finish and are
+		// answered, bounded by the call timeout; a cancelled parent ctx or a
+		// stuck handler ends the wait.
+		drain := time.NewTimer(time.Duration(s.timeoutNs.Load()) + closeWait)
+		handlers := make(chan struct{})
+		go func() { c.wg.Wait(); close(handlers) }()
+		select {
+		case <-handlers:
+		case <-ctx.Done():
+		case <-drain.C:
+		}
+		drain.Stop()
 	case <-ctx.Done():
 		_ = rc.Close()
 		select {

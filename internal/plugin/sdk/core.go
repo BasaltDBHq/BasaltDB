@@ -117,6 +117,13 @@ func newServer(p Plugin, cfg *config) (*server, error) {
 		if !ok {
 			continue
 		}
+		// WithHooks names exactly the hooks served: a hook it leaves out
+		// gets no methods, so its calls answer "method not found".
+		if cfg.hooksSet {
+			if _, given := cfg.hooks[h.name]; !given {
+				continue
+			}
+		}
 		s.hooks[h.name] = decl
 		for name, m := range h.methods {
 			s.methods[name] = m(p)
@@ -145,15 +152,35 @@ func (s *server) dispatch(ctx context.Context, method string, params json.RawMes
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, errBadParams
 		}
-		res, e := s.initialize(ctx, req)
-		if e != nil {
-			return nil, e
+		type out struct {
+			res protocol.InitializeResponse
+			e   *rpcError
+		}
+		o, ok := within(ctx, func() out {
+			res, e := s.initialize(ctx, req)
+			return out{res, e}
+		})
+		switch {
+		case !ok:
+			return nil, errDeadline
+		case o.e != nil:
+			return nil, o.e
+		}
+		return o.res, nil
+	case protocol.MethodHealth:
+		// A health check that does not answer in time is not ready.
+		res, ok := within(ctx, func() protocol.HealthResponse { return s.health(ctx) })
+		if !ok {
+			return protocol.HealthResponse{Status: protocol.HealthNotReady}, nil
 		}
 		return res, nil
-	case protocol.MethodHealth:
-		return s.health(ctx), nil
 	case protocol.MethodShutdown:
-		s.shutdown(ctx)
+		// The engine is stopping the plugin either way: a shutdown that does
+		// not return in time is abandoned and the call still answers.
+		within(ctx, func() struct{} {
+			s.shutdown(ctx)
+			return struct{}{}
+		})
 		return protocol.ShutdownResponse{}, nil
 	}
 	m, ok := s.methods[method]
@@ -165,6 +192,21 @@ func (s *server) dispatch(ctx context.Context, method string, params json.RawMes
 		return nil, errDeadline
 	}
 	return res, e
+}
+
+// within runs f and waits for it or for ctx, whichever ends first, so a plugin
+// handler that ignores its context cannot hold the call past its deadline. When
+// ctx ends first the handler is left running and its result is dropped.
+func within[T any](ctx context.Context, f func() T) (T, bool) {
+	done := make(chan T, 1)
+	go func() { done <- f() }()
+	select {
+	case v := <-done:
+		return v, true
+	case <-ctx.Done():
+		var zero T
+		return zero, false
+	}
 }
 
 // initialize negotiates the protocol, checks the hooks the engine will call and

@@ -89,6 +89,22 @@ func TestWithHooksReplacesDiscovery(t *testing.T) {
 	require.JSONEq(t, `{}`, mustField(t, r.Result, "hooks"))
 }
 
+// TestWithHooksServesOnlyTheHooksItWasGiven: a hook the plugin implements but
+// WithHooks leaves out answers "method not found"; one it names is served.
+func TestWithHooksServesOnlyTheHooksItWasGiven(t *testing.T) {
+	withProbeHook(t)
+	p := &probePlugin{fullPlugin: *newFull()}
+
+	_, c := serveStdio(t, p, WithHooks(map[string]HookDecl{}))
+	require.Equal(t, codeNoMethod, c.call("probe", `{"N":1}`).Error.Code)
+
+	_, c = serveStdio(t, p, WithHooks(map[string]HookDecl{"other.hook": {Contract: "other/1"}}))
+	require.Equal(t, codeNoMethod, c.call("probe", `{"N":1}`).Error.Code)
+
+	_, c = serveStdio(t, p, WithHooks(map[string]HookDecl{"probe.hook": {Contract: "probe/1"}}))
+	require.JSONEq(t, `{"n":2}`, string(c.call("probe", `{"N":1}`).Result))
+}
+
 func mustField(t *testing.T, raw json.RawMessage, key string) string {
 	t.Helper()
 	var m map[string]json.RawMessage

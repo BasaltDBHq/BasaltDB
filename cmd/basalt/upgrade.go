@@ -14,6 +14,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/setuprun"
 )
 
 // basalt upgrade (CONTRACT.md, CLI; owner decision AE-11): the missing
@@ -233,7 +234,7 @@ func checkUpgradeTarget(agentName string, want setupcode.Target, admin string) e
 	}
 	return fmt.Errorf("%s connects to database %s of %s, but your admin connection string points at database %s of %s. "+
 		"Run basalt upgrade with the admin connection string of %s's database; nothing changed",
-		agentName, want.Database, targetWords(want), got.Database, targetWords(got), agentName)
+		agentName, want.Database, setuprun.TargetWords(want), got.Database, setuprun.TargetWords(got), agentName)
 }
 
 // upgradeGuard plans the missing migrations on the admin connection, shows

@@ -14,13 +14,13 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/links"
+	"github.com/basaltdbhq/basaltdb/internal/setuprun"
 )
 
 // initFlags are basalt init's flags after parsing.
@@ -265,50 +265,55 @@ func agentPolicies(c *cliIO, conn guard.Querier, names guard.Names, f initFlags)
 	if err != nil {
 		return nil, err
 	}
-	if f.agentRLS == AgentRLSAllRows {
-		return blind, nil
+	questions := make([]string, 0, len(blind))
+	for _, b := range blind {
+		questions = append(questions, setuprun.RLSQuestion(b, f.agent))
 	}
-	if !c.interactive || f.yes || f.dryRun {
-		return nil, nil
+	yes, err := rlsAnswers(c, f.agentRLS, f.yes || f.dryRun, questions)
+	if err != nil {
+		return nil, err
 	}
 	var out []guard.BlindTable
-	for _, b := range blind {
-		ok, err := c.confirm(fmt.Sprintf("%s hides its rows with row-level security. Let %s see all %s of this table?",
-			b.Table, f.agent, rowCount(b.Rows)))
-		if err != nil {
-			return nil, err
-		}
-		if ok {
+	for i, b := range blind {
+		if yes[i] {
 			out = append(out, b)
 		}
 	}
 	return out, nil
 }
 
-// rowCount is "1 row" or "n rows".
-func rowCount(n int64) string {
-	if n == 1 {
-		return "1 row"
+// rlsAnswers answers the row-level security questions by --agent-rls:
+// none says no to all, all-rows yes to all, and ask asks each at a
+// terminal (default no), or says no to all without a terminal or when
+// quiet (--yes, --dry-run).
+func rlsAnswers(c *cliIO, mode AgentRLSMode, quiet bool, questions []string) ([]bool, error) {
+	out := make([]bool, len(questions))
+	switch {
+	case mode == AgentRLSNone:
+		return out, nil
+	case mode == AgentRLSAllRows:
+		for i := range out {
+			out[i] = true
+		}
+		return out, nil
+	case !c.interactive || quiet:
+		return out, nil
 	}
-	return fmt.Sprintf("%d rows", n)
+	for i, q := range questions {
+		ok, err := c.confirm(q)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = ok
+	}
+	return out, nil
 }
 
 // warnRLSBlind warns about every --write and --read table where row-level
-// security still hides all rows from the agent role: Supabase can turn
-// RLS on for new tables, and the agent then reads 0 rows without any
-// error. A failed check is a warning too: the guard is installed either
-// way.
+// security still hides all rows from the agent role
+// (setuprun.RLSBlindWarnings).
 func warnRLSBlind(c *cliIO, conn *pgx.Conn, role string, spec guard.AgentSpec) {
-	tables := append(append([]string{}, spec.Write...), spec.Read...)
-	blind, err := guard.RLSBlindTables(c.ctx, conn, role, tables)
-	if err != nil {
-		fmt.Fprintf(c.stderr, "basalt: warning: could not check row-level security on the agent's tables: %v\n", err)
-		return
-	}
-	for _, t := range blind {
-		fmt.Fprintf(c.stderr, "basalt: warning: row-level security is on for %s and no policy lets %s see rows; "+
-			"the agent will read 0 rows. Add a policy for that role, or disable RLS on the table.\n", t, role)
-	}
+	printWarningLines(c.stderr, setuprun.RLSBlindWarnings(c.ctx, conn, role, spec))
 }
 
 // printSetupPlan is the dry run's account of the engine setup init would
@@ -477,29 +482,11 @@ func invokingUser() (string, error) {
 	return u.Username, nil
 }
 
-// demoSchema is the schema of the M4 demo data (examples/demo/seed.sql).
-const demoSchema = "basalt_demo."
-
 // missingTablesHint turns the guard's list of missing --write and --read
-// tables into one message naming the database, and points at the demo
-// seed when a demo table is missing. Other errors pass through.
+// tables into one message naming the database
+// (setuprun.MissingTablesHint).
 func missingTablesHint(err error, database string) error {
-	var missing *guard.MissingTablesError
-	if !errors.As(err, &missing) {
-		return err
-	}
-	noun, verb := "table", "it"
-	if len(missing.Tables) > 1 {
-		noun, verb = "tables", "them"
-	}
-	msg := fmt.Sprintf("%s %s not found in database %q; create %s first", noun, strings.Join(missing.Tables, ", "), database, verb)
-	for _, t := range missing.Tables {
-		if strings.HasPrefix(t, demoSchema) {
-			msg += " (basalt init --demo creates the sample tables)"
-			break
-		}
-	}
-	return errors.New(msg)
+	return setuprun.MissingTablesHint(err, database)
 }
 
 // stateDirName is the engine's state directory next to a per-user config.
@@ -572,82 +559,23 @@ func engineSettings(f initFlags, goos string) config.Settings {
 }
 
 // applyInit runs the script in one transaction and refuses to commit while
-// any agent-writable table or cascade target is left unguarded. The after
-// statements run last, once that check passed (a setup code's
-// record_setup). basalt init, init --setup-code and upgrade all apply
-// through it.
+// any agent-writable table or cascade target is left unguarded, the after
+// statements last (setuprun.ApplyInit).
 func applyInit(ctx context.Context, conn *pgx.Conn, script guard.Script, after ...guard.Statement) error {
-	err := pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error { return applyInitTx(ctx, tx, script, after...) })
-	return withGuardDetail(err)
+	return setuprun.ApplyInit(ctx, conn, script, after...)
 }
 
-// detailedError is a database error followed by the Detail and Hint the
-// guard raised with it, which pgconn.PgError.Error leaves out.
-type detailedError struct {
-	err    error
-	detail string
-}
+// withGuardDetail adds the Detail and Hint of a database error to its text
+// (setuprun.WithGuardDetail).
+func withGuardDetail(err error) error { return setuprun.WithGuardDetail(err) }
 
-func (e *detailedError) Error() string { return e.err.Error() + ": " + e.detail }
-
-func (e *detailedError) Unwrap() error { return e.err }
-
-// withGuardDetail adds the Detail and Hint of a database error to its text,
-// so a refusal says which table is wrong and how to fix it ("table crm.nopk
-// has no primary key; ..." and "add a primary key, or revoke ..."), not only
-// "NOT_ALLOWED (SQLSTATE BS007)". An error with neither, or already
-// carrying them, is returned as it is.
-func withGuardDetail(err error) error {
-	var pg *pgconn.PgError
-	var done *detailedError
-	if err == nil || errors.As(err, &done) || !errors.As(err, &pg) || (pg.Detail == "" && pg.Hint == "") {
-		return err
-	}
-	return &detailedError{err: err, detail: sentences(pg.Detail, pg.Hint)}
-}
-
-// nothingChanged ends a failed install's error with "nothing changed": as a
-// sentence after the guard's detail and hint (which end with a period), or
-// after a semicolon otherwise.
-func nothingChanged(err error) error {
-	var done *detailedError
-	if errors.As(err, &done) {
-		return fmt.Errorf("%w Nothing changed.", err) //nolint:staticcheck // full sentences after the database's message, shown as is
-	}
-	return fmt.Errorf("%w; nothing changed", err)
-}
+// nothingChanged ends a failed install's error with "nothing changed"
+// (setuprun.NothingChanged).
+func nothingChanged(err error) error { return setuprun.NothingChanged(err) }
 
 // applyInitTx is applyInit on a transaction the caller commits.
 func applyInitTx(ctx context.Context, tx pgx.Tx, script guard.Script, after ...guard.Statement) error {
-	if err := script.Apply(ctx, tx); err != nil {
-		return err
-	}
-	if err := checkCovered(ctx, tx); err != nil {
-		return err
-	}
-	for _, st := range after {
-		if _, err := tx.Exec(ctx, st.SQL); err != nil {
-			return fmt.Errorf("record the setup: %w", err)
-		}
-	}
-	return nil
-}
-
-// checkCovered refuses, inside the install's transaction, while any
-// agent-writable table or cascade target is left unguarded.
-func checkCovered(ctx context.Context, tx pgx.Tx) error {
-	uncovered, err := guard.UncoveredTables(ctx, tx)
-	if err != nil {
-		return err
-	}
-	if len(uncovered) > 0 {
-		tables := make([]string, 0, len(uncovered))
-		for _, u := range uncovered {
-			tables = append(tables, u.Table+" ("+u.Why+")")
-		}
-		return fmt.Errorf("tables left unguarded: %s", strings.Join(tables, ", "))
-	}
-	return nil
+	return setuprun.ApplyInitTx(ctx, tx, script, after...)
 }
 
 // savedArgs are the flags init writes to engine.json for the agent: the ones
@@ -751,8 +679,11 @@ func credentialMissing(path string) bool {
 
 // printWarnings prints what the plan wants the person to know before it
 // runs (guard.Script.Warnings), one line each on stderr.
-func printWarnings(w io.Writer, s guard.Script) {
-	for _, warning := range s.Warnings {
+func printWarnings(w io.Writer, s guard.Script) { printWarningLines(w, s.Warnings) }
+
+// printWarningLines prints each warning on its own line.
+func printWarningLines(w io.Writer, warnings []string) {
+	for _, warning := range warnings {
 		fmt.Fprintf(w, "basalt: warning: %s\n", warning)
 	}
 }

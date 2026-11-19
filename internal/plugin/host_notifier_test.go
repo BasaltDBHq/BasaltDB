@@ -90,6 +90,8 @@ func TestObserveFeedRefusesABatchBeforeSending(t *testing.T) {
 		"not JSON": json.RawMessage(`[{`),
 		"object":   json.RawMessage(`{"seq":1}`),
 		"no seq":   json.RawMessage(`[{"data":{}}]`),
+		"seq 0":    batch(0),
+		"seq -1":   batch(-1),
 	} {
 		if _, err := h.ObserveFeed(context.Background(), e.Key, "product_a", events); err == nil {
 			t.Fatalf("%s: sent", name)

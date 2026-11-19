@@ -12,14 +12,16 @@ import (
 
 // errBadBatch: the engine built a feed batch the contract does not allow. It
 // is the engine's fault, so nothing is sent and the plugin is not blamed.
-var errBadBatch = errors.New("plugin: a feed batch must be a JSON array of 1 to 100 events, each with data.seq")
+var errBadBatch = errors.New("plugin: a feed batch must be a JSON array of 1 to 100 events, each with a data.seq of at least 1")
 
 // ObserveFeed sends one feed.observe call (feed/1) for one agent and returns
-// the seq the plugin handled. events is the CloudEvents JSON batch, sent as
-// it is. The answer must be the data.seq of one event of the batch; any
-// other answer fails BAD_RESPONSE, so a caller moves its cursor only on a
-// nil error. The call runs under Call's rules: a listed agent, the entry's
-// slots and deadline.
+// the seq the plugin handled. events is the CloudEvents JSON batch; the
+// transports send it compacted, with no character escaped, so build it with
+// protocol.Marshal to keep its bytes the same on every transport. The answer
+// must be the data.seq of one event of the batch; any other answer fails
+// BAD_RESPONSE, so a caller moves its cursor only on a nil error. The call
+// runs under Call's rules: a listed agent, the entry's slots and deadline.
+// The caller sends it only to an entry whose manifest declares feed.observe.
 func (h *Host) ObserveFeed(ctx context.Context, k EntryKey, agent string, events json.RawMessage) (int64, error) {
 	seqs, err := batchSeqs(events)
 	if err != nil {
@@ -37,7 +39,9 @@ func (h *Host) ObserveFeed(ctx context.Context, k EntryKey, agent string, events
 }
 
 // DeliverApproval sends one approval.deliver call (deliver/1) for one agent:
-// event is the notice, a CloudEvent in its JSON form, sent as it is.
+// event is the notice, a CloudEvent in its JSON form, sent compacted as a
+// feed batch is. The caller sends it only to an entry whose manifest declares
+// approval.deliver.
 func (h *Host) DeliverApproval(ctx context.Context, k EntryKey, agent string, event json.RawMessage) error {
 	var obj map[string]json.RawMessage
 	if json.Unmarshal(event, &obj) != nil || obj == nil {
@@ -59,7 +63,9 @@ func batchSeqs(events json.RawMessage) ([]int64, error) {
 	}
 	seqs := make([]int64, len(batch))
 	for i, e := range batch {
-		if e.Data.Seq == nil {
+		// A seq is at least 1, so an answer with no lastSeq (0) is never
+		// one of the batch's.
+		if e.Data.Seq == nil || *e.Data.Seq < 1 {
 			return nil, errBadBatch
 		}
 		seqs[i] = *e.Data.Seq

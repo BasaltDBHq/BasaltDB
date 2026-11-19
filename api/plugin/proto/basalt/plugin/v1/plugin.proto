@@ -19,7 +19,7 @@ service PluginService {
   rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
   // feed.observe (feed/1).
   rpc FeedObserve(FeedObserveRequest) returns (FeedObserveResponse);
-  // Planned: approval.deliver (deliver/1).
+  // approval.deliver (deliver/1).
   rpc ApprovalDeliver(ApprovalDeliverRequest) returns (ApprovalDeliverResponse);
 }
 

@@ -65,7 +65,7 @@ type PluginServiceClient interface {
 	Shutdown(context.Context, *connect.Request[v1.ShutdownRequest]) (*connect.Response[v1.ShutdownResponse], error)
 	// feed.observe (feed/1).
 	FeedObserve(context.Context, *connect.Request[v1.FeedObserveRequest]) (*connect.Response[v1.FeedObserveResponse], error)
-	// Planned: approval.deliver (deliver/1).
+	// approval.deliver (deliver/1).
 	ApprovalDeliver(context.Context, *connect.Request[v1.ApprovalDeliverRequest]) (*connect.Response[v1.ApprovalDeliverResponse], error)
 }
 
@@ -154,7 +154,7 @@ type PluginServiceHandler interface {
 	Shutdown(context.Context, *connect.Request[v1.ShutdownRequest]) (*connect.Response[v1.ShutdownResponse], error)
 	// feed.observe (feed/1).
 	FeedObserve(context.Context, *connect.Request[v1.FeedObserveRequest]) (*connect.Response[v1.FeedObserveResponse], error)
-	// Planned: approval.deliver (deliver/1).
+	// approval.deliver (deliver/1).
 	ApprovalDeliver(context.Context, *connect.Request[v1.ApprovalDeliverRequest]) (*connect.Response[v1.ApprovalDeliverResponse], error)
 }
 

@@ -197,19 +197,25 @@ const PRELOAD_LINE = new RegExp(PRELOAD.source + "$");
 const SCRIPT_LINE = new RegExp(SCRIPT.source + "$");
 const PROLOGUE = '<!doctype html>\n<html lang="en">\n<head>\n';
 
+// pageHead checks the fixed prologue and that no BODY_TAG follows </head>,
+// and returns the head.
+function pageHead(page, html) {
+  if (!html.startsWith(PROLOGUE)) throw new Error(`${page}: does not start with the fixed prologue`);
+  const end = html.indexOf("\n</head>\n", PROLOGUE.length);
+  if (end < 0) throw new Error(`${page}: no </head> line`);
+  const tag = html.slice(end + "\n</head>\n".length).match(BODY_TAG);
+  if (tag) throw new Error(`${page}: ${tag[0]} after the head`);
+  return html.slice(PROLOGUE.length, end);
+}
+
 // pageShape pins where the sri block sits: the fixed prologue, a head of
 // allow-listed lines with exactly one meta CSP line (CSP_LINE) and exactly
 // one sri block (the preloads, then one module script), and no BODY_TAG
 // after </head>.
 function pageShape(page, html) {
-  if (!html.startsWith(PROLOGUE)) throw new Error(`${page}: does not start with the fixed prologue`);
-  const end = html.indexOf("\n</head>\n", PROLOGUE.length);
-  if (end < 0) throw new Error(`${page}: no </head> line`);
-  const tag = html.slice(end + 9).match(BODY_TAG);
-  if (tag) throw new Error(`${page}: ${tag[0]} after the head`);
   let state = "before";
   let csp = 0;
-  for (let line of html.slice(PROLOGUE.length, end).split("\n")) {
+  for (let line of pageHead(page, html).split("\n")) {
     line = line.replace(/^ +/, "");
     if (state === "before" && CSP_LINE.test(line)) csp++;
     else if (line.startsWith(CSP_PREFIX)) throw new Error(`${page}: the meta CSP line must be the fixed one, with default-src 'none', before the sri block: ${line}`);
@@ -294,15 +300,16 @@ export function verifyStatic(root, files, page) {
     return [e.message];
   }
   if (!files.has("style.css")) return [`${page}: style.css is not embedded`];
-  if (!html.startsWith(PROLOGUE)) return [`${page}: does not start with the fixed prologue`];
-  const end = html.indexOf("\n</head>\n", PROLOGUE.length);
-  if (end < 0) return [`${page}: no </head> line`];
+  let head;
+  try {
+    head = pageHead(page, html);
+  } catch (e) {
+    return [e.message];
+  }
   const problems = [];
-  const tag = html.slice(end + 9).match(BODY_TAG);
-  if (tag) problems.push(`${page}: ${tag[0]} after the head`);
   let csp = 0;
   let style = 0;
-  for (let line of html.slice(PROLOGUE.length, end).split("\n")) {
+  for (let line of head.split("\n")) {
     line = line.replace(/^ +/, "");
     if (line === STATIC_CSP_LINE) csp++;
     else if (line === STATIC_STYLE_LINE) style++;

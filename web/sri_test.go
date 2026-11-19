@@ -141,20 +141,30 @@ var (
 // would run markup that no integrity check reads).
 var bodyTag = regexp.MustCompile(`(?i)<(script|link|meta|base|head|iframe|frame|frameset|object|embed|portal|applet)\b`)
 
+// pageHead checks the fixed prologue and that nothing after </head> is a
+// bodyTag, and returns the head.
+func pageHead(page, html string) (string, error) {
+	if !strings.HasPrefix(html, prologue) {
+		return "", fmt.Errorf("%s: does not start with the fixed prologue", page)
+	}
+	head, body, ok := strings.Cut(html[len(prologue):], "\n</head>\n")
+	if !ok {
+		return "", fmt.Errorf("%s: no </head> line", page)
+	}
+	if m := bodyTag.FindString(body); m != "" {
+		return "", fmt.Errorf("%s: %s after the head", page, m)
+	}
+	return head, nil
+}
+
 // pageShape pins where the sri block sits: the page starts with the fixed
 // prologue, its head holds only allow-listed lines, exactly one meta CSP
 // line (cspLine) and exactly one sri block (the preloads, then one module
 // script), and nothing after </head> is a bodyTag.
 func pageShape(page, html string) error {
-	if !strings.HasPrefix(html, prologue) {
-		return fmt.Errorf("%s: does not start with the fixed prologue", page)
-	}
-	head, body, ok := strings.Cut(html[len(prologue):], "\n</head>\n")
-	if !ok {
-		return fmt.Errorf("%s: no </head> line", page)
-	}
-	if m := bodyTag.FindString(body); m != "" {
-		return fmt.Errorf("%s: %s after the head", page, m)
+	head, err := pageHead(page, html)
+	if err != nil {
+		return err
 	}
 	const (
 		before = iota
@@ -623,15 +633,9 @@ func checkStaticPage(fsys fs.FS, page string) error {
 		return fmt.Errorf("%s: style.css is not embedded", page)
 	}
 	html := string(b)
-	if !strings.HasPrefix(html, prologue) {
-		return fmt.Errorf("%s: does not start with the fixed prologue", page)
-	}
-	head, body, ok := strings.Cut(html[len(prologue):], "\n</head>\n")
-	if !ok {
-		return fmt.Errorf("%s: no </head> line", page)
-	}
-	if m := bodyTag.FindString(body); m != "" {
-		return fmt.Errorf("%s: %s after the head", page, m)
+	head, err := pageHead(page, html)
+	if err != nil {
+		return err
 	}
 	csp, style := 0, 0
 	for _, line := range strings.Split(head, "\n") {

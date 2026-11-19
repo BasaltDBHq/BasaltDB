@@ -300,6 +300,11 @@ func checkFile(ctx context.Context, c *http.Client, o Options, p, urlPath string
 	case a.status != http.StatusOK:
 		return File{Path: p, Status: StatusError, Detail: fmt.Sprintf("HTTP %d", a.status)}
 	}
+	return compare(o, p, a, want)
+}
+
+// compare checks a served answer's bytes against want, then its headers.
+func compare(o Options, p string, a answer, want []byte) File {
 	if len(a.body) > maxBody || sum(a.body) != sum(want) {
 		return File{Path: p, Status: StatusDiffers, Detail: fmt.Sprintf("served sha256 %s, embedded %s", short(a.body), short(want))}
 	}
@@ -325,13 +330,7 @@ func checkNotFound(ctx context.Context, c *http.Client, o Options, want []byte) 
 	case a.status != http.StatusNotFound:
 		return File{Path: NotFoundFile, Status: StatusError, Detail: fmt.Sprintf("HTTP %d at %s", a.status, NotFoundPath)}
 	}
-	if len(a.body) > maxBody || sum(a.body) != sum(want) {
-		return File{Path: NotFoundFile, Status: StatusDiffers, Detail: fmt.Sprintf("served sha256 %s at %s, embedded %s", short(a.body), NotFoundPath, short(want))}
-	}
-	if d := headerProblem(a.header, o.Headers, NotFoundFile); d != "" {
-		return File{Path: NotFoundFile, Status: StatusHeader, Detail: d}
-	}
-	return File{Path: NotFoundFile, Status: StatusOK}
+	return compare(o, NotFoundFile, a, want)
 }
 
 // headerProblem names the first wrong header: the CSP must equal the

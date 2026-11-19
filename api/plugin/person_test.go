@@ -70,7 +70,7 @@ type personSchema struct {
 }
 
 // personTableRow is a row of the person socket's method table.
-var personTableRow = regexp.MustCompile("(?m)^\\| `(PLUGIN_[A-Z_]+)` \\| Planned\\. ")
+var personTableRow = regexp.MustCompile("(?m)^\\| `(PLUGIN_[A-Z_]+)` \\| `\\{[^|]*\\(no `agent`\\) \\|")
 
 // TestPluginServiceMethods checks the person socket's plugin methods
 // (CONTRACT.md, Plugin approval in service mode) against their schema: every

@@ -305,12 +305,18 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		wg.Go(func() { relay.pruneEvery(ctx, pruneInterval) })
 	}
 	if cfg.Service() {
-		srv, ln, err := listenPerson(cfg, person.Options{
+		o := person.Options{
 			Agents: ledgers, Info: srv.infos, AgentUIDs: agentUIDs,
 			Engine: engineInfo(cfg.SocketDir, env.stateDir),
 			Pages:  person.PagesDTO{PagesURL: base, LocalOrigin: env.pagesOrigin, UpdateCheck: updateCheck},
 			Gate:   gate,
-		}, log)
+		}
+		if kept := openKeptPlugins(cfg, configPath, env.stateDir, srv.kept, log.With("component", "plugins")); kept != nil {
+			o.Plugins = kept
+			// Ends a disable could not write are tried again now.
+			wg.Go(func() { kept.endDisabled(ctx) })
+		}
+		srv, ln, err := listenPerson(cfg, o, log)
 		if err != nil {
 			return err
 		}
@@ -356,7 +362,9 @@ type startedAgents struct {
 	scans    []piidict.ScanSource
 	// pluginLedgers are the agents' own ledgers, for their plugin events.
 	pluginLedgers map[string]pluginLedger
-	closers       []func()
+	// kept are the agents as the plugin methods reach them.
+	kept    map[string]keptAgent
+	closers []func()
 }
 
 // startAgents builds each agent's runtime. An agent whose guard is missing
@@ -368,6 +376,7 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 		ledgers:       make(map[string]person.Ledger, len(cfg.Agents)),
 		infos:         make(map[string]person.AgentInfo, len(cfg.Agents)),
 		pluginLedgers: make(map[string]pluginLedger, len(cfg.Agents)),
+		kept:          make(map[string]keptAgent, len(cfg.Agents)),
 	}
 	for _, a := range cfg.Agents {
 		rt, err := newRT(ctx, env, a, log.With("agent", a.Name))
@@ -379,6 +388,9 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 		out.infos[a.Name] = rt.info
 		if rt.db != nil {
 			out.pluginLedgers[a.Name] = pluginLedger{db: rt.db, admit: pluginAdmit(rt.svc)}
+		}
+		if rt.kept.db != nil {
+			out.kept[a.Name] = rt.kept
 		}
 		out.upkeeps = append(out.upkeeps, rt.upkeep)
 		out.services = append(out.services, rt.svc)
@@ -482,7 +494,9 @@ type agentRuntime struct {
 	// scan is what the engine's PII scan reads for this agent.
 	scan piidict.ScanSource
 	// db is the agent's own connection pool, outside any tool call.
-	db    guard.Querier
+	db guard.Querier
+	// kept is how the person socket's plugin methods reach the agent.
+	kept  keptAgent
 	close func()
 }
 
@@ -630,6 +644,10 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		info:   agentInfo(svc, pool.Config().ConnConfig.Config),
 		scan:   piidict.ScanSource{Agent: a.Name, DB: pool, Classes: classes, Limits: limits},
 		db:     pool,
+		kept: keptAgent{
+			db: pool, host: pool.Config().ConnConfig.Host, port: pool.Config().ConnConfig.Port,
+			database: pool.Config().ConnConfig.Database, role: pool.Config().ConnConfig.User,
+		},
 		close: func() {
 			pool.Close()
 			files.close()

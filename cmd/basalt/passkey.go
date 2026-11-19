@@ -18,10 +18,11 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/server"
+	"github.com/basaltdbhq/basaltdb/internal/setuprun"
 )
 
 // maxPasskeyLabel is the registration request's label limit in bytes.
-const maxPasskeyLabel = 64
+const maxPasskeyLabel = setuprun.MaxPasskeyLabel
 
 // relyingParty is the portal (RP ID basaltvault.app) for its origin, else
 // the engine's local pages at origin (http://localhost:<port>, RP ID
@@ -88,28 +89,17 @@ func truncateUTF8(s string, n int) string {
 }
 
 // hasPasskeyFor reports whether an active passkey of this database belongs
-// to origin. A passkey signs only on the origin it was registered on, so
-// one for the local pages does not count for the portal: an engine handed
-// over to an agent needs a portal passkey of its own.
+// to origin (setuprun.HasPasskeyFor): an engine handed over to an agent
+// needs a portal passkey of its own.
 func hasPasskeyFor(c *cliIO, conn *pgx.Conn, origin string) (bool, error) {
-	var ok bool
-	// Plain SQL: a presence check on the admin connection.
-	err := conn.QueryRow(c.ctx, `SELECT EXISTS (SELECT 1 FROM basalt_meta.passkeys WHERE origin = $1 AND revoked_at IS NULL)`, origin).Scan(&ok)
-	return ok, err
+	return setuprun.HasPasskeyFor(c.ctx, conn, origin)
 }
 
 // registerPasskey is basalt init's passkey step: print the registration
 // link, read the code the page shows, verify it, and store the public key
 // with the admin connection (owner decision #3; CONTRACT.md, Approvals).
-// With open it also opens the link in the browser (basalt init
-// --setup-code at a terminal).
-func registerPasskey(c *cliIO, conn *pgx.Conn, rp passkey.Relying, label string, open bool) error {
-	db := conn.Config().Database
-	display := "BasaltDB · " + db
-	if len(display) > maxPasskeyLabel {
-		display = label
-	}
-	req, err := passkey.NewRegistrationRequest(c.rand, label, display)
+func registerPasskey(c *cliIO, conn *pgx.Conn, rp passkey.Relying, label string) error {
+	req, err := setuprun.NewRegistrationRequest(c.rand, label, conn.Config().Database)
 	if err != nil {
 		return err
 	}
@@ -132,16 +122,8 @@ func registerPasskey(c *cliIO, conn *pgx.Conn, rp passkey.Relying, label string,
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(c.stderr, "basalt: register the passkey that approves this agent's held writes. Open this link on your phone or computer:")
-	ref := linkRef{setting: "--passkey-origin", item: "the passkey registration", again: "basalt init"}
-	link := links.Register(rp.Origin) + "#" + frag
-	if err := printLink(c, c.stderr, link, ref); err != nil {
+	if err := showRegistrationLink(c, links.Register(rp.Origin)+"#"+frag, false); err != nil {
 		return err
-	}
-	if open {
-		if err := c.host.OpenURL(c.ctx, link); err != nil {
-			fmt.Fprintf(c.stderr, "basalt: could not open a browser (%v); open the link above yourself\n", err)
-		}
 	}
 	// Only a local origin is served by init, so only there can a taken
 	// port explain a page that does not answer.
@@ -155,6 +137,35 @@ func registerPasskey(c *cliIO, conn *pgx.Conn, rp passkey.Relying, label string,
 	return guard.RegisterPasskey(c.ctx, conn, cred, label)
 }
 
+// showRegistrationLink prints the passkey registration link, and with
+// open also opens it in the browser (basalt init --setup-code at a
+// terminal).
+func showRegistrationLink(c *cliIO, link string, open bool) error {
+	fmt.Fprintln(c.stderr, "basalt: register the passkey that approves this agent's held writes. Open this link on your phone or computer:")
+	ref := linkRef{setting: "--passkey-origin", item: "the passkey registration", again: "basalt init"}
+	if err := printLink(c, c.stderr, link, ref); err != nil {
+		return err
+	}
+	if !open {
+		return nil
+	}
+	if err := c.host.OpenURL(c.ctx, link); err != nil {
+		fmt.Fprintf(c.stderr, "basalt: could not open a browser (%v); open the link above yourself\n", err)
+	}
+	return nil
+}
+
+// pastedRegistrationCode reads the registration code the page shows,
+// pasted by the person.
+func pastedRegistrationCode(c *cliIO) (string, error) {
+	fmt.Fprint(c.stderr, "Paste the code the page shows: ")
+	code, err := c.pasted(c.ctx)
+	if err != nil {
+		return "", fmt.Errorf("no passkey code: %w", err)
+	}
+	return code, nil
+}
+
 // readRegistration waits for the passkey of req. Without hb it reads the
 // pasted registration code. With hb (init serves the page) the page posts
 // the passkey to init and shows a pairing code: init keeps only the posted
@@ -164,10 +175,9 @@ func registerPasskey(c *cliIO, conn *pgx.Conn, rp passkey.Relying, label string,
 // it fails and nothing is stored.
 func readRegistration(c *cliIO, req passkey.RegistrationRequest, rp passkey.Relying, hb *registrationHandBack) (passkey.Credential, error) {
 	if hb == nil {
-		fmt.Fprint(c.stderr, "Paste the code the page shows: ")
-		code, err := c.pasted(c.ctx)
+		code, err := pastedRegistrationCode(c)
 		if err != nil {
-			return passkey.Credential{}, fmt.Errorf("no passkey code: %w", err)
+			return passkey.Credential{}, err
 		}
 		return verifyRegistrationCode(code, req, rp)
 	}
@@ -250,16 +260,10 @@ func matchPairingCode(c *cliIO, hb *registrationHandBack, line string) (passkey.
 	return passkey.Credential{}, false
 }
 
-// verifyRegistrationCode checks a pasted registration code against req.
+// verifyRegistrationCode checks a pasted registration code against req
+// (setuprun.VerifyRegistrationCode).
 func verifyRegistrationCode(code string, req passkey.RegistrationRequest, rp passkey.Relying) (passkey.Credential, error) {
-	if strings.TrimSpace(code) == "" {
-		return passkey.Credential{}, errors.New("no passkey code given")
-	}
-	resp, err := passkey.ParseRegistrationResponse(code)
-	if err != nil {
-		return passkey.Credential{}, err
-	}
-	return passkey.VerifyRegistration(req, resp, rp)
+	return setuprun.VerifyRegistrationCode(code, req, rp)
 }
 
 // passkeyStep registers the person's passkey unless an active one is
@@ -285,7 +289,7 @@ func passkeyStep(c *cliIO, conn *pgx.Conn, f initFlags) error {
 	if label == "" {
 		label = defaultPasskeyLabel(conn.Config().Database, f.agent, c.now())
 	}
-	if err := registerPasskey(c, conn, rp, label, false); err != nil {
+	if err := registerPasskey(c, conn, rp, label); err != nil {
 		return err
 	}
 	fmt.Fprintf(c.stderr, "basalt: passkey registered for %s\n", rp.RPID)

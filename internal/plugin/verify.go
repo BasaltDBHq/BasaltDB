@@ -87,7 +87,12 @@ type Verified struct {
 	// ManifestSHA256 is the SHA-256 of the manifest's exact bytes, lowercase
 	// hex: the entry's manifestSha256 and the copy's directory name.
 	ManifestSHA256 string
-	// SignerKeyID is the id of the key that signed the manifest.
+	// Signer is who vouches for the copy: KNOWN when a built-in publisher
+	// key signed the manifest, UNKNOWN otherwise.
+	Signer SignerState
+	// SignerKeyID is the id of the key that signed the manifest: a trusted
+	// key's without RequireApproval, and with it only a KNOWN signer's,
+	// empty otherwise.
 	SignerKeyID string
 	// Dir is the copy's directory.
 	Dir string
@@ -111,7 +116,9 @@ const DefaultInstance = "default"
 //     key in the trust store;
 //  2. the manifest's SHA-256 is manifestSHA256;
 //  3. the signature file is well formed, names a trusted key and verifies
-//     over the context line and the manifest's exact bytes;
+//     over the context line and the manifest's exact bytes; with
+//     RequireApproval a copy with no known signer passes this step, and a
+//     .sig that names a built-in key must still verify (signerOf);
 //  4. the manifest passes ParseManifest and names the entry's plugin;
 //  5. for a local plugin every listed file is a regular file with its
 //     stated hash; the copy holds nothing else besides the manifest and
@@ -119,7 +126,7 @@ const DefaultInstance = "default"
 //
 // A failure is a *VerifyError; the entry must then not be started, and
 // status shows PLUGIN_NOT_TRUSTED for its agents.
-func Verify(root string, key EntryKey, manifestSHA256 string, trust TrustStore, mode Mode) (Verified, error) {
+func Verify(root string, key EntryKey, manifestSHA256 string, trust TrustStore, mode Mode, opts ...Option) (Verified, error) {
 	owner, err := mode.owner()
 	if err != nil {
 		return Verified{}, err
@@ -133,7 +140,7 @@ func Verify(root string, key EntryKey, manifestSHA256 string, trust TrustStore, 
 	if !sha256Pattern.MatchString(manifestSHA256) {
 		return Verified{}, &VerifyError{Reason: RefusedNotTrusted, File: root, Why: "the entry's manifestSha256 is not lowercase hex SHA-256"}
 	}
-	return verifyCopy(root, key, manifestSHA256, manifestSHA256, trust, owner)
+	return verifyCopy(root, key, manifestSHA256, manifestSHA256, trust, owner, optionsOf(opts))
 }
 
 func checkKey(key EntryKey) error {
@@ -155,7 +162,7 @@ type copyEntry struct {
 // verifyCopy checks the copy in <root>/<name>/<instance>/<dirName>. wantSHA
 // is the manifest's expected SHA-256, or "" while the copy is a temporary
 // one at add.
-func verifyCopy(root string, key EntryKey, dirName, wantSHA string, trust TrustStore, owner uint32) (Verified, error) {
+func verifyCopy(root string, key EntryKey, dirName, wantSHA string, trust TrustStore, owner uint32, o options) (Verified, error) {
 	nameDir := filepath.Join(root, key.Name)
 	instDir := filepath.Join(nameDir, key.Instance)
 	dir := filepath.Join(instDir, dirName)
@@ -185,7 +192,7 @@ func verifyCopy(root string, key EntryKey, dirName, wantSHA string, trust TrustS
 	}
 
 	// 3. The signature.
-	keyID, err := verifySignature(dir, manifest, trust)
+	signer, keyID, err := verifySignature(dir, manifest, entries, trust, o)
 	if err != nil {
 		return Verified{}, err
 	}
@@ -200,7 +207,7 @@ func verifyCopy(root string, key EntryKey, dirName, wantSHA string, trust TrustS
 	}
 
 	// 5. The files, and nothing else.
-	if err := checkContents(dir, m, entries); err != nil {
+	if err := checkContents(dir, m, entries, o.requireApproval); err != nil {
 		return Verified{}, err
 	}
 	for _, rel := range sortedKeys(m.Files) {
@@ -208,18 +215,32 @@ func verifyCopy(root string, key EntryKey, dirName, wantSHA string, trust TrustS
 			return Verified{}, err
 		}
 	}
-	return Verified{Manifest: m, ManifestSHA256: sha, SignerKeyID: keyID, Dir: dir}, nil
+	return Verified{Manifest: m, ManifestSHA256: sha, Signer: signer, SignerKeyID: keyID, Dir: dir}, nil
 }
 
-// verifySignature reads the copy's .sig and checks it against the trust
-// store and the manifest's exact bytes.
-func verifySignature(dir string, manifest []byte, trust TrustStore) (string, error) {
+// verifySignature reads the copy's .sig and works out its signer
+// (signerOf). With approval a copy whose walk found no .sig is unsigned;
+// without it a missing .sig is refused when it is read, as before.
+func verifySignature(dir string, manifest []byte, entries []copyEntry, trust TrustStore, o options) (SignerState, string, error) {
 	sigPath := filepath.Join(dir, SignatureFile)
+	if o.requireApproval && !hasFile(entries, SignatureFile) {
+		return signerOf(sigPath, manifest, nil, false, trust, o)
+	}
 	raw, err := readNoFollow(sigPath, MaxSignatureFileBytes)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return checkSignature(sigPath, manifest, raw, trust)
+	return signerOf(sigPath, manifest, raw, true, trust, o)
+}
+
+// hasFile reports whether the walk of a copy found rel, of any kind.
+func hasFile(entries []copyEntry, rel string) bool {
+	for _, e := range entries {
+		if e.rel == rel {
+			return true
+		}
+	}
+	return false
 }
 
 // checkSignature checks a .sig's bytes against the trust store and the
@@ -286,8 +307,10 @@ func walkCopy(dir string, owner uint32) ([]copyEntry, error) {
 }
 
 // checkContents: the copy holds the manifest, its signature, the listed
-// files and the directories that lead to them, and nothing else.
-func checkContents(dir string, m Manifest, entries []copyEntry) error {
+// files and the directories that lead to them, and nothing else. With
+// sigOptional (an entry that requires approval) the signature may be
+// missing.
+func checkContents(dir string, m Manifest, entries []copyEntry, sigOptional bool) error {
 	wantFiles := map[string]bool{ManifestFile: true, SignatureFile: true}
 	wantDirs := map[string]bool{}
 	for rel := range m.Files {
@@ -311,7 +334,7 @@ func checkContents(dir string, m Manifest, entries []copyEntry) error {
 		}
 	}
 	for rel := range wantFiles {
-		if !seen[rel] {
+		if !seen[rel] && (rel != SignatureFile || !sigOptional) {
 			return &VerifyError{Reason: RefusedNotTrusted, File: filepath.Join(dir, filepath.FromSlash(rel)), Why: "is missing"}
 		}
 	}

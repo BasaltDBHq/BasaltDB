@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/plugin/approval/request.v1.json",
+  "title": "Plugin approval request",
+  "description": "What the engine's local pages serve at GET /api/v1/plugins/{approvalId} for a short link. A long link carries the same two texts as format 2 (api/mcp/links/compact-request.schema.json): texts [binding, settings] and, optionally, credentialIds. The page takes nothing else as input. See CONTRACT.md, Plugins, The plugin approval page.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["approvalId", "binding", "settings"],
+  "properties": {
+    "approvalId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Equal to the binding's approvalId and to the id in the page's path; the page refuses a request where they differ."
+    },
+    "binding": {
+      "type": "string",
+      "minLength": 2,
+      "description": "The binding text exactly as Postgres returned it (binding.schema.json). The passkey signs sha256 of its UTF-8 bytes."
+    },
+    "settings": {
+      "type": "string",
+      "minLength": 2,
+      "description": "The settings text exactly as Postgres returned it (binding.schema.json#/$defs/settings). The page shows it, and offers the approve button, only when sha256 of its UTF-8 bytes, lowercase hex, equals the binding's settingsSha256."
+    },
+    "credentialIds": {
+      "type": "array",
+      "maxItems": 100,
+      "uniqueItems": true,
+      "description": "The database's active passkey credential ids, base64url without padding, passed as allowCredentials. Not signed; may be absent or empty.",
+      "items": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" }
+    }
+  }
+}

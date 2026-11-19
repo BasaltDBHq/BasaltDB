@@ -1,0 +1,10 @@
+{
+  "method": "PLUGIN_OPEN",
+  "params": {
+    "name": "local-ner",
+    "instance": "client_x",
+    "agents": [
+      "product_b"
+    ]
+  }
+}

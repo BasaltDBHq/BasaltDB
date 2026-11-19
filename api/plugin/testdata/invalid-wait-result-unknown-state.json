@@ -1,0 +1,8 @@
+{
+  "name": "acme-ner",
+  "instance": "default",
+  "state": "SERVED",
+  "approvals": [{ "approvalId": "0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7b", "state": "APPROVED", "agents": ["product_a"] }],
+  "personMessage": "The plugin acme-ner runs now for product_a.",
+  "nextSteps": [{ "actor": "AGENT", "action": "STOP", "text": "Done." }]
+}

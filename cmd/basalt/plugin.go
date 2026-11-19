@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 )
@@ -26,7 +28,8 @@ import (
 // change and trust are refused before anything is written; disable and
 // remove stay allowed, since they only narrow.
 
-const pluginUsage = "basalt plugin list | add <dir> --agents a,b [--instance NAME] | enable <name> [--instance NAME] | " +
+const pluginUsage = "basalt plugin list | add <dir> --agents a,b [--instance NAME] [--approve-with-passkey] | " +
+	"enable <name> [--instance NAME] [--approve-with-passkey] | approve <code> | " +
 	"disable <name> [--instance NAME] | check <name> [--instance NAME] | trust <public key file> | remove <name> [--instance NAME] | " +
 	"keygen --out DIR | sign <dir> --key FILE"
 
@@ -38,6 +41,7 @@ func runPlugin(c *cliIO, args []string) int {
 	cmds := map[string]func(*cliIO, []string) int{
 		"list": pluginList, "add": pluginAdd, "enable": pluginEnable, "disable": pluginDisable,
 		"trust": pluginTrust, "remove": pluginRemove, "check": pluginCheck, "keygen": pluginKeygen, "sign": pluginSign,
+		"approve": pluginApprove,
 	}
 	if run, ok := cmds[args[0]]; ok {
 		return run(c, args[1:])
@@ -94,9 +98,16 @@ type pluginEnv struct {
 	c          *cliIO
 	configPath string
 	cfg        config.Config
-	mode       plugin.Mode
-	root       string
-	trust      plugin.TrustStore
+	// ec reads the agents' credentials, for the approval flow.
+	ec    engineConfig
+	mode  plugin.Mode
+	root  string
+	trust plugin.TrustStore
+	// sock is the engine's person socket when the command runs in service
+	// mode without sudo (plugin_service.go), with the engine's pages; nil
+	// otherwise.
+	sock  *person.Client
+	pages person.PagesDTO
 }
 
 func loadPluginEnv(c *cliIO, fs *flag.FlagSet, configPath string) (*pluginEnv, error) {
@@ -122,7 +133,7 @@ func loadPluginEnv(c *cliIO, fs *flag.FlagSet, configPath string) (*pluginEnv, e
 	if err != nil {
 		return nil, err
 	}
-	return &pluginEnv{c: c, configPath: abs, cfg: cfg, mode: mode, root: root, trust: trust}, nil
+	return &pluginEnv{c: c, configPath: abs, cfg: cfg, ec: ec, mode: mode, root: root, trust: trust}, nil
 }
 
 // configArg is " --config PATH" for a command a step names, or "" at the
@@ -166,10 +177,18 @@ func (e *pluginEnv) refuseAgentOperated(cfg config.Config, sub, again string) er
 	}
 	r := &pluginRefusedError{reason: reasonAgentOperated}
 	switch {
+	case sub == "trust" && !cfg.Service():
+		// Same-user mode: plugins are added through a passkey approval, and
+		// trusting a key stays a person's step at their own terminal.
+		r.message = fmt.Sprintf("basalt plugin trust is refused: an agent never adds a trust root (%s). Nothing was written",
+			cmp.Or(marker, "this engine is operatedBy AGENT"))
+		r.person = "An agent never trusts a plugin key. If you trust this publisher, add their key in a terminal of your own, " +
+			"which no agent reads:\n  " + again + "\nTo add a plugin, the agent can open an approval you sign with your passkey instead."
 	case cfg.AgentOperated():
 		r.message = fmt.Sprintf("basalt plugin %s is refused: this engine is operatedBy AGENT, so a prompt answered on this machine "+
 			"is no proof that a person consented. Nothing was written", sub)
-		r.person = "Plugins cannot be added, enabled or widened, and plugin keys cannot be trusted, on an engine an agent operates yet. " +
+		r.person = "With sudo, plugins cannot be added or enabled, and plugin keys cannot be trusted, on an engine an agent operates. " +
+			"Without sudo, basalt plugin add and enable open an approval that you sign with your passkey. " +
 			"Disabling and removing a plugin still work."
 	default:
 		r.message = fmt.Sprintf("basalt plugin %s is refused: %s is set, so an agent is running it. An agent never adds, enables or "+
@@ -272,6 +291,18 @@ func (e *pluginEnv) restart() {
 		cmds = cmds.Foreground()
 	}
 	fmt.Fprintf(e.c.stderr, "basalt: restart the engine so it reads engine.json again:\n  %s\n", cmds.EngineRestart())
+}
+
+// narrowed says when a change that only narrows (disable, remove, an agent
+// removed) takes effect: in same-user mode the running engine applies it
+// within seconds (CONTRACT.md, Plugin changes while the engine runs); a
+// service engine reads engine.json at start, so it prints the restart.
+func (e *pluginEnv) narrowed() {
+	if e.cfg.Service() {
+		e.restart()
+		return
+	}
+	fmt.Fprintln(e.c.stderr, "basalt: a running engine applies this within a few seconds; no restart is needed")
 }
 
 // errChangedMeanwhile: engine.json changed between what the person was
@@ -500,12 +531,36 @@ func sameSet(a, b []string) bool {
 func pluginList(c *cliIO, args []string) int {
 	fs := c.flags("plugin list")
 	configPath := fs.String("config", config.DefaultPath(c.goos), "engine config file")
+	asJSON := fs.Bool("json", false, "print the entries as JSON, with each one's approval state per agent")
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
+	}
+	if c.pluginViaSocket(*configPath) {
+		e, err := socketPluginEnv(c)
+		if err != nil {
+			return c.fail(err)
+		}
+		return c.pluginDone(e.listViaSocket(*asJSON), *asJSON)
 	}
 	e, err := loadPluginEnv(c, fs, *configPath)
 	if err != nil {
 		return c.fail(err)
+	}
+	if e.cfg.Service() && c.host.Euid() == 0 && !*asJSON {
+		defer fmt.Fprintln(c.stdout, "Entries the engine keeps: run basalt plugin list without sudo.")
+	}
+	approvals := &approvalReader{e: e, read: map[string]agentRecords{}}
+	if *asJSON {
+		out := struct {
+			Plugins []listedEntry `json:"plugins"`
+		}{Plugins: []listedEntry{}}
+		for _, p := range e.cfg.Plugins {
+			k := p.Key()
+			out.Plugins = append(out.Plugins, listedEntry{
+				Name: k.Name, Instance: k.Instance, Enabled: p.Enabled, Agents: p.Agents, Approval: approvals.approvalOf(p),
+			})
+		}
+		return printJSONValue(c, out)
 	}
 	if len(e.cfg.Plugins) == 0 {
 		fmt.Fprintln(c.stderr, "basalt: no plugins; add one with basalt plugin add <dir> --agents NAME,...")
@@ -513,6 +568,7 @@ func pluginList(c *cliIO, args []string) int {
 	}
 	for _, p := range e.cfg.Plugins {
 		e.listEntry(p)
+		writeApproval(e, approvals.approvalOf(p))
 	}
 	return exitOK
 }
@@ -525,7 +581,7 @@ func (e *pluginEnv) listEntry(p config.Plugin) {
 	}
 	w := e.c.stdout
 	fmt.Fprintf(w, "%s  instance %s  %s\n", k.Name, k.Instance, state)
-	v, err := plugin.Verify(e.root, k, p.ManifestSHA256, e.trust, e.mode)
+	v, err := plugin.Verify(e.root, k, p.ManifestSHA256, e.trust, e.mode, plugin.RequireApproval(e.cfg.PluginRequiresApproval(p)))
 	if err != nil {
 		fmt.Fprintf(w, "  refused: %s\n", terminalText(err.Error()))
 	} else {
@@ -548,6 +604,11 @@ type addFlags struct {
 	dir      string
 	agents   []string
 	instance string
+	// approve is --approve-with-passkey; asJSON is --json.
+	approve, asJSON bool
+	// wait is --wait, in seconds: how long add waits for the plugin to run
+	// after it opened the approval (plugin_wait.go).
+	wait int
 }
 
 func pluginAdd(c *cliIO, args []string) int {
@@ -555,17 +616,22 @@ func pluginAdd(c *cliIO, args []string) int {
 	agents := fs.String("agents", "", "the agents the plugin serves, comma-separated (required; the entry's full list)")
 	instance := instanceFlag(fs)
 	configPath := fs.String("config", config.DefaultPath(c.goos), "engine config file")
-	asJSON := fs.Bool("json", false, "print a refusal as the JSON error body")
+	asJSON := fs.Bool("json", false, "print the result, or a refusal's error body, as JSON")
+	approve := fs.Bool(flagApproveWithPasskey, false, "open a plugin approval a person signs with a passkey instead of asking here")
+	wait := fs.Int("wait", 0, fmt.Sprintf("with an approval, seconds to wait for the plugin to run before printing (0 to %d)", maxWaitSeconds))
 	dir, err := parseOne(fs, args, "the plugin's directory")
 	if err != nil {
 		return c.fail(err)
+	}
+	if err := waitFlag(*wait); err != nil || *wait < 0 {
+		return c.fail(fmt.Errorf("%w: --wait is seconds from 0 to %d", errUsage, maxWaitSeconds))
 	}
 	given := false
 	fs.Visit(func(f *flag.Flag) { given = given || f.Name == "agents" })
 	if !given {
 		return c.fail(fmt.Errorf("%w: --agents is required: the agents the plugin serves, comma-separated", errUsage))
 	}
-	f := addFlags{dir: dir, agents: splitList(*agents), instance: *instance}
+	f := addFlags{dir: dir, agents: splitList(*agents), instance: *instance, approve: *approve, asJSON: *asJSON, wait: *wait}
 	if f.agents == nil {
 		f.agents = []string{}
 	}
@@ -578,9 +644,24 @@ func pluginAdd(c *cliIO, args []string) int {
 	if f.dir, err = filepath.Abs(f.dir); err != nil {
 		return c.fail(err)
 	}
+	if c.pluginViaSocket(*configPath) {
+		// --approve-with-passkey is accepted and changes nothing: without
+		// sudo every add opens an approval.
+		e, err := socketPluginEnv(c)
+		if err != nil {
+			return c.fail(err)
+		}
+		return c.pluginDone(e.addViaSocket(f), *asJSON)
+	}
 	e, err := loadPluginEnv(c, fs, *configPath)
 	if err != nil {
 		return c.fail(err)
+	}
+	if f.approve && e.cfg.Service() {
+		return c.fail(errApprovalInServiceMode("--" + flagApproveWithPasskey))
+	}
+	if err := e.refuseKeptName(plugin.EntryKey{}, f.dir, f.instance); err != nil {
+		return c.pluginDone(err, *asJSON)
 	}
 	return c.pluginDone(e.add(f), *asJSON)
 }
@@ -595,6 +676,9 @@ func (e *pluginEnv) againAdd(f addFlags, agents []string) string {
 }
 
 func (e *pluginEnv) add(f addFlags) error {
+	if prev := e.existing(f); e.approvalFlow(e.cfg, prev, f.approve) {
+		return e.addWithApproval(f, prev)
+	}
 	again := e.againAdd(f, f.agents)
 	if refused := e.refuseAgentOperated(e.cfg, "add", again); refused != nil {
 		return e.narrowOnly(f, refused)
@@ -765,7 +849,7 @@ func (e *pluginEnv) narrowOnly(f addFlags, refused error) error {
 	}
 	_, removed := diff(prev.Agents, f.agents)
 	fmt.Fprintf(e.c.stderr, "basalt: plugin %s no longer serves %s\n", k, listText(removed, ""))
-	e.restart()
+	e.narrowed()
 	return nil
 }
 
@@ -797,25 +881,59 @@ func readManifest(dir string) ([]byte, error) {
 
 // entryFlags parse <name> [--instance NAME] [--config PATH].
 func entryFlags(c *cliIO, name string, args []string, withJSON bool) (*pluginEnv, plugin.EntryKey, bool, int) {
+	e, k, asJSON, _, code := entryFlagsApprove(c, name, args, withJSON, false)
+	return e, k, asJSON, code
+}
+
+// entryFlagsApprove is entryFlags, with --approve-with-passkey when
+// withApprove.
+func entryFlagsApprove(c *cliIO, name string, args []string, withJSON, withApprove bool) (*pluginEnv, plugin.EntryKey, bool, bool, int) {
+	return entryFlagsWith(c, name, args, withJSON, withApprove, nil)
+}
+
+// entryFlagsWith is entryFlagsApprove with more flags, which extra adds.
+func entryFlagsWith(c *cliIO, name string, args []string, withJSON, withApprove bool, extra func(*flag.FlagSet)) (*pluginEnv, plugin.EntryKey, bool, bool, int) {
 	fs := c.flags("plugin " + name)
+	if extra != nil {
+		extra(fs)
+	}
 	instance := instanceFlag(fs)
 	configPath := fs.String("config", config.DefaultPath(c.goos), "engine config file")
-	asJSON := new(bool)
+	asJSON, approve := new(bool), new(bool)
 	if withJSON {
-		asJSON = fs.Bool("json", false, "print a refusal as the JSON error body")
+		asJSON = fs.Bool("json", false, "print the result, or a refusal's error body, as JSON")
+	}
+	if withApprove {
+		approve = fs.Bool(flagApproveWithPasskey, false, "open a plugin approval a person signs with a passkey instead of asking here")
 	}
 	pluginName, err := parseOne(fs, args, "the plugin's name")
 	if err != nil {
-		return nil, plugin.EntryKey{}, false, c.fail(err)
+		return nil, plugin.EntryKey{}, false, false, c.fail(err)
 	}
 	if err := checkInstance(*instance); err != nil {
-		return nil, plugin.EntryKey{}, false, c.fail(err)
+		return nil, plugin.EntryKey{}, false, false, c.fail(err)
+	}
+	k := plugin.EntryKey{Name: pluginName, Instance: *instance}
+	if (name == "enable" || name == "disable" || name == "remove") && c.pluginViaSocket(*configPath) {
+		e, err := socketPluginEnv(c)
+		if err != nil {
+			return nil, plugin.EntryKey{}, false, false, c.fail(err)
+		}
+		return e, k, *asJSON, *approve, -1
 	}
 	e, err := loadPluginEnv(c, fs, *configPath)
 	if err != nil {
-		return nil, plugin.EntryKey{}, false, c.fail(err)
+		return nil, plugin.EntryKey{}, false, false, c.fail(err)
 	}
-	return e, plugin.EntryKey{Name: pluginName, Instance: *instance}, *asJSON, -1
+	if *approve && e.cfg.Service() {
+		return nil, plugin.EntryKey{}, false, false, c.fail(errApprovalInServiceMode("--" + flagApproveWithPasskey))
+	}
+	if name == "enable" || name == "disable" || name == "remove" {
+		if err := e.refuseKeptName(k, "", ""); err != nil {
+			return nil, plugin.EntryKey{}, false, false, c.pluginDone(err, *asJSON)
+		}
+	}
+	return e, k, *asJSON, *approve, -1
 }
 
 // entry is the entry k, or an error naming the command that adds it.
@@ -828,14 +946,42 @@ func (e *pluginEnv) entry(k plugin.EntryKey) (config.Plugin, error) {
 }
 
 func pluginEnable(c *cliIO, args []string) int {
-	e, k, asJSON, code := entryFlags(c, "enable", args, true)
+	var wait int
+	var ids string
+	e, k, asJSON, approve, code := entryFlagsWith(c, "enable", args, true, true, func(fs *flag.FlagSet) {
+		fs.IntVar(&wait, "wait", -1, fmt.Sprintf("seconds to wait for the plugin to run (0 to %d; default 0, or %d with --approval-id)", maxWaitSeconds, defaultRepeatWait))
+		fs.StringVar(&ids, "approval-id", "", "wait for these approvals (the approvalId values add or enable printed, comma separated) instead of opening a new one")
+	})
 	if code >= 0 {
 		return code
 	}
-	return c.pluginDone(e.enable(k), asJSON)
+	if err := waitFlag(wait); err != nil {
+		return c.fail(err)
+	}
+	if ids != "" {
+		if approve {
+			return c.fail(fmt.Errorf("%w: --approval-id waits for an approval already open; --%s opens a new one", errUsage, flagApproveWithPasskey))
+		}
+		parsed, err := parseApprovalIDs(ids)
+		if err != nil {
+			return c.fail(err)
+		}
+		return c.pluginDone(e.enableWait(k, parsed, wait, asJSON), asJSON)
+	}
+	if e.sock != nil {
+		return c.pluginDone(e.enableViaSocket(k, max(wait, 0), asJSON), asJSON)
+	}
+	return c.pluginDone(e.enable(k, approve, max(wait, 0), asJSON), asJSON)
 }
 
-func (e *pluginEnv) enable(k plugin.EntryKey) error {
+func (e *pluginEnv) enable(k plugin.EntryKey, approve bool, wait int, asJSON bool) error {
+	if i := e.cfg.PluginIndex(k); i >= 0 && e.approvalFlow(e.cfg, &e.cfg.Plugins[i], approve) {
+		return e.enableWithApproval(k, e.cfg.Plugins[i], wait, asJSON)
+	}
+	if e.approvalFlow(e.cfg, nil, approve) {
+		_, err := e.entry(k)
+		return err
+	}
 	again := e.command("enable", entryArgs(k)...)
 	if refused := e.refuseAgentOperated(e.cfg, "enable", again); refused != nil {
 		return refused
@@ -898,6 +1044,9 @@ func pluginDisable(c *cliIO, args []string) int {
 	if code >= 0 {
 		return code
 	}
+	if e.sock != nil {
+		return c.pluginDone(e.turnOffViaSocket(k, false), false)
+	}
 	return c.pluginDone(e.setDisabled(k), false)
 }
 
@@ -923,6 +1072,7 @@ func (e *pluginEnv) setDisabled(k plugin.EntryKey) error {
 	}})
 	if errors.Is(err, errNoChange) {
 		fmt.Fprintf(e.c.stderr, "basalt: plugin %s is already disabled; nothing changed\n", k)
+		e.endAfterTurnOff(p)
 		return nil
 	}
 	if err != nil {
@@ -932,7 +1082,8 @@ func (e *pluginEnv) setDisabled(k plugin.EntryKey) error {
 		return err
 	}
 	fmt.Fprintf(e.c.stderr, "basalt: plugin %s disabled\n", k)
-	e.restart()
+	e.endAfterTurnOff(p)
+	e.narrowed()
 	return nil
 }
 
@@ -940,6 +1091,9 @@ func pluginRemove(c *cliIO, args []string) int {
 	e, k, _, code := entryFlags(c, "remove", args, false)
 	if code >= 0 {
 		return code
+	}
+	if e.sock != nil {
+		return c.pluginDone(e.turnOffViaSocket(k, true), false)
 	}
 	return c.pluginDone(e.remove(k), false)
 }
@@ -972,7 +1126,8 @@ func (e *pluginEnv) remove(k plugin.EntryKey) error {
 		return err
 	}
 	fmt.Fprintf(e.c.stderr, "basalt: plugin %s removed\n", k)
-	e.restart()
+	e.endAfterTurnOff(p)
+	e.narrowed()
 	return nil
 }
 

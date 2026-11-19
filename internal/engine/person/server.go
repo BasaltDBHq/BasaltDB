@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -48,6 +49,8 @@ type Options struct {
 	// it restarts onto an upgraded binary, and waits for the requests it
 	// admitted.
 	Gate Gate
+	// Plugins serves the PLUGIN_* methods; nil answers them UNKNOWN_METHOD.
+	Plugins PluginMethods
 }
 
 // Gate admits the requests the server runs: Begin false means the request
@@ -79,6 +82,7 @@ type Server struct {
 	pages   PagesDTO
 	peerUID PeerUIDFunc
 	log     *slog.Logger
+	plugins PluginMethods
 }
 
 // rootUID is the superuser, never a person.
@@ -116,7 +120,7 @@ func NewServer(o Options) *Server {
 	return &Server{
 		gate:  gate,
 		allow: allow, agents: o.Agents, scopes: scopes, info: o.Info, engine: o.Engine,
-		pages: o.Pages, peerUID: o.PeerUID, log: o.Log,
+		pages: o.Pages, peerUID: o.PeerUID, log: o.Log, plugins: o.Plugins,
 	}
 }
 
@@ -199,6 +203,15 @@ func readRequest(r io.Reader) (Request, *Error) {
 	if err := decodeStrict(line, &req); err != nil {
 		return Request{}, invalid(err)
 	}
+	// Whether the line names a top-level agent at all: the plugin methods
+	// refuse one, even empty.
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(line, &keys); err == nil {
+		// Go's decoder matches keys in any case; so does this check.
+		for key := range keys {
+			req.agentSet = req.agentSet || strings.EqualFold(key, "agent")
+		}
+	}
 	return req, nil
 }
 
@@ -231,6 +244,9 @@ func (s *Server) handle(ctx context.Context, uid uint32, req Request) Response {
 			return Response{Error: invalid(err)}
 		}
 		return result(s.pages, nil)
+	}
+	if pluginMethod(req.Method) {
+		return s.handlePlugin(ctx, uid, req)
 	}
 	if req.Method == MethodAgents {
 		if err := decodeStrict(req.Params, &emptyParams{}); err != nil {
@@ -325,7 +341,7 @@ func call[P any](f func(ctx context.Context, l Ledger, p P) (any, error)) handle
 // maxRowChangeIDs bounds ROW_CHANGES: one page of changes.
 const maxRowChangeIDs = pagination.MaxLimit
 
-var handlers = map[Method]handler{
+var handlers = map[Method]handler{ //nolint:exhaustive // the plugin methods are answered by handlePlugin
 	MethodPages:  nil, // answered by the server itself, for no agent
 	MethodAgents: nil, // likewise: every agent this peer may see
 	// Answered from the agent's AgentInfo, without the guard check.

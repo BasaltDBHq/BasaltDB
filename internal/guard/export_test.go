@@ -33,3 +33,8 @@ func PluginEventsSQL(n Names) string { return n.render(migrations[versionPluginE
 func PluginTrustRemovedSQL(n Names) string {
 	return n.render(migrations[versionPluginTrustRemoved-1].sql)
 }
+
+// PluginApprovalsSQL is schema version 5's SQL as the install runs it.
+func PluginApprovalsSQL(n Names) string {
+	return n.render(migrations[versionPluginApprovals-1].sql)
+}

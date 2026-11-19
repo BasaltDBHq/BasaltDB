@@ -1,0 +1,31 @@
+{
+  "plugins": [
+    {
+      "name": "local-ner",
+      "instance": "client_x",
+      "source": "ENGINE",
+      "enabled": true,
+      "agents": [
+        "product_b"
+      ],
+      "version": "0.3.1",
+      "signer": "UNKNOWN",
+      "endpoint": {
+        "kind": "LOCAL"
+      },
+      "isolation": {
+        "files": "NONE",
+        "network": "NOT_ENFORCED"
+      },
+      "approval": {
+        "required": false,
+        "agents": [
+          {
+            "agent": "product_b",
+            "state": "NOT_REQUIRED"
+          }
+        ]
+      }
+    }
+  ]
+}

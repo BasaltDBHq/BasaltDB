@@ -316,7 +316,7 @@ func TestSDKPeerPassesTheAdapterSuite(t *testing.T) {
 			tr, err := jsonrpc.Spawn(context.Background(), child.Spec{Path: os.Args[0], Args: []string{peerFlag, mode}, Dir: t.TempDir()})
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = tr.Close() })
-			return tr
+			return engineCapped(tr)
 		})
 	})
 	t.Run("jsonrpc-unix", func(t *testing.T) {
@@ -331,9 +331,31 @@ func TestSDKPeerPassesTheAdapterSuite(t *testing.T) {
 			tr, err := jsonrpc.Dial(context.Background(), path)
 			require.NoError(t, err)
 			t.Cleanup(func() { _ = tr.Close() })
-			return tr
+			return engineCapped(tr)
 		})
 	})
+}
+
+// capped calls a transport as the engine does: at most MaxInFlight calls open
+// at once. The suite sends more at a time than the engine ever does, and an
+// SDK plugin answers calls past its waiting cap busy instead of queueing them.
+type capped struct {
+	plugin.Transport
+	slots chan struct{}
+}
+
+func engineCapped(tr plugin.Transport) plugin.Transport {
+	return capped{Transport: tr, slots: make(chan struct{}, MaxInFlight)}
+}
+
+func (c capped) Call(ctx context.Context, method string, params, result any) error {
+	select {
+	case c.slots <- struct{}{}:
+		defer func() { <-c.slots }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return c.Transport.Call(ctx, method, params, result)
 }
 
 // TestPeerExitsZeroOnShutdown: the process built from the SDK exits 0 when the

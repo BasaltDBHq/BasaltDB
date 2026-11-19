@@ -162,10 +162,21 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	// plugin that fails never stops the engine. With no enabled entry
 	// nothing is read or started.
 	pluginLog := log.With("component", "plugins")
-	plugins := newEnginePlugins(cfg, configPath, pluginOptions{
+	pluginOpts := pluginOptions{
 		Stderr: pluginDebugWriter(cfg, restart.PluginStderr, log), euid: engineEUID(),
-		runs: pluginRuns(cfg, env.stateDir, engineEUID(), pluginLog),
-	}, pluginLog)
+		runs: pluginRuns(cfg, env.stateDir, engineEUID(), pluginLog), stateDir: env.stateDir,
+	}
+	if cfg.Service() {
+		// A service engine keeps plugin entries of its own, added over the
+		// person socket, and runs them once approved.
+		pluginOpts.kept = openKeptStore(cfg, env.stateDir, pluginLog)
+	}
+	plugins := newEnginePlugins(cfg, configPath, pluginOpts, pluginLog)
+	if plugins == nil && (!cfg.Service() || pluginOpts.kept != nil) {
+		// A same-user engine starts an entry approved while it runs
+		// (pluginWatch), so it keeps its plugins with none enabled yet.
+		plugins = newEnginePluginsFor(cfg, configPath, pluginOpts, pluginLog)
+	}
 	if plugins != nil {
 		env.plugins = plugins
 	}
@@ -271,13 +282,15 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		wg.Go(func() { u.Run(ctx, upkeep.DefaultInterval) })
 	}
 	// Each agent's ledger records its plugin changes before any plugin
-	// starts; an entry whose record fails is not served to that agent. The
-	// supervisor stops the plugins within plugin.StopWait of ctx ending,
-	// before RunWith returns (and before a restart runs a new binary).
+	// starts; an entry whose record fails is not served to that agent. In
+	// same-user mode the plugins then follow engine.json and the agents'
+	// approvals while the engine runs (pluginWatch). The supervisor stops
+	// the plugins within plugin.StopWait of ctx ending, before RunWith
+	// returns (and before a restart runs a new binary).
 	wg.Go(func() {
 		recordPluginEvents(ctx, cfg, configPath, plugins, srv.pluginLedgers, log.With("component", "plugins"))
 		if plugins != nil {
-			plugins.run(ctx)
+			plugins.serve(ctx, cfg, configPath, srv.pluginLedgers)
 		}
 	})
 	scanner := piidict.NewScanner(dict, srv.scans, piidict.ScanOptions{
@@ -297,12 +310,21 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		wg.Go(func() { relay.pruneEvery(ctx, pruneInterval) })
 	}
 	if cfg.Service() {
-		srv, ln, err := listenPerson(cfg, person.Options{
+		o := person.Options{
 			Agents: ledgers, Info: srv.infos, AgentUIDs: agentUIDs,
 			Engine: engineInfo(cfg.SocketDir, env.stateDir),
 			Pages:  person.PagesDTO{PagesURL: base, LocalOrigin: env.pagesOrigin, UpdateCheck: updateCheck},
 			Gate:   gate,
-		}, log)
+		}
+		if kept := openKeptPlugins(cfg, configPath, pluginOpts.kept, plugins, srv.kept, log.With("component", "plugins")); kept != nil {
+			o.Plugins = kept
+			// Ends a disable could not write are tried again now.
+			wg.Go(func() { kept.endDisabled(ctx) })
+		}
+		srv, ln, err := listenPerson(cfg, o, log)
+		if err == nil && restart.PersonPeerUID != nil {
+			srv = person.NewServer(withPeerUID(o, cfg, restart.PersonPeerUID, log))
+		}
 		if err != nil {
 			return err
 		}
@@ -348,7 +370,9 @@ type startedAgents struct {
 	scans    []piidict.ScanSource
 	// pluginLedgers are the agents' own ledgers, for their plugin events.
 	pluginLedgers map[string]pluginLedger
-	closers       []func()
+	// kept are the agents as the plugin methods reach them.
+	kept    map[string]keptAgent
+	closers []func()
 }
 
 // startAgents builds each agent's runtime. An agent whose guard is missing
@@ -360,6 +384,7 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 		ledgers:       make(map[string]person.Ledger, len(cfg.Agents)),
 		infos:         make(map[string]person.AgentInfo, len(cfg.Agents)),
 		pluginLedgers: make(map[string]pluginLedger, len(cfg.Agents)),
+		kept:          make(map[string]keptAgent, len(cfg.Agents)),
 	}
 	for _, a := range cfg.Agents {
 		rt, err := newRT(ctx, env, a, log.With("agent", a.Name))
@@ -371,6 +396,9 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 		out.infos[a.Name] = rt.info
 		if rt.db != nil {
 			out.pluginLedgers[a.Name] = pluginLedger{db: rt.db, admit: pluginAdmit(rt.svc)}
+		}
+		if rt.kept.db != nil {
+			out.kept[a.Name] = rt.kept
 		}
 		out.upkeeps = append(out.upkeeps, rt.upkeep)
 		out.services = append(out.services, rt.svc)
@@ -399,6 +427,12 @@ func listenPerson(cfg config.Config, o person.Options, log *slog.Logger) (*perso
 	log.Info("serving the person socket", "socket", path, "personUids", cfg.PersonUIDs)
 	o.Allow, o.PeerUID, o.Log = cfg.PersonUIDs, peercred.UID, log.With("component", "person")
 	return person.NewServer(o), ln, nil
+}
+
+// withPeerUID is o as listenPerson completes it, with peerUID (tests).
+func withPeerUID(o person.Options, cfg config.Config, peerUID func(*net.UnixConn) (uint32, error), log *slog.Logger) person.Options {
+	o.Allow, o.PeerUID, o.Log = cfg.PersonUIDs, peerUID, log.With("component", "person")
+	return o
 }
 
 // engineInfo is what the person socket's STATUS says about this engine:
@@ -474,7 +508,9 @@ type agentRuntime struct {
 	// scan is what the engine's PII scan reads for this agent.
 	scan piidict.ScanSource
 	// db is the agent's own connection pool, outside any tool call.
-	db    guard.Querier
+	db guard.Querier
+	// kept is how the person socket's plugin methods reach the agent.
+	kept  keptAgent
 	close func()
 }
 
@@ -608,7 +644,10 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		PII:          observer.On(pool),
 		Catalog:      postgres.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database).WithHost(pool.Config().ConnConfig.Host),
 		Columns:      postgres.NewColumnOrder(budgeted),
-		Classes:      storeClasses{BoundMap: classes.On(pool)},
+		// The plugin approval routes read and relay on the agent's own
+		// credential, as the approval routes do.
+		PluginApprovals: store,
+		Classes:         storeClasses{BoundMap: classes.On(pool)},
 	})
 	return agentRuntime{
 		svc: svc,
@@ -619,6 +658,10 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		info:   agentInfo(svc, pool.Config().ConnConfig.Config),
 		scan:   piidict.ScanSource{Agent: a.Name, DB: pool, Classes: classes, Limits: limits},
 		db:     pool,
+		kept: keptAgent{
+			db: pool, host: pool.Config().ConnConfig.Host, port: pool.Config().ConnConfig.Port,
+			database: pool.Config().ConnConfig.Database, role: pool.Config().ConnConfig.User,
+		},
 		close: func() {
 			pool.Close()
 			files.close()

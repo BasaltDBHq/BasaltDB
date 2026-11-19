@@ -1,0 +1,12 @@
+{
+  "method": "PLUGIN_OPEN",
+  "agent": "product_b",
+  "params": {
+    "uploadId": "0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a70",
+    "name": "local-ner",
+    "instance": "client_x",
+    "agents": [
+      "product_b"
+    ]
+  }
+}

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 )
 
@@ -61,6 +62,65 @@ type Plugin struct {
 	Config json.RawMessage `json:"config,omitempty"`
 	// Auth is a remote plugin's credential file.
 	Auth *PluginAuth `json:"auth,omitempty"`
+	// Approval is PluginApprovalRequired, or empty when the key is absent:
+	// with it the engine serves the entry to an agent only with a matching
+	// plugin approval signed by a person's passkey (CONTRACT.md, Plugins,
+	// Plugin approval). See Config.PluginRequiresApproval.
+	Approval PluginApproval `json:"approval,omitempty"`
+}
+
+// PluginApproval is a plugin entry's approval key.
+type PluginApproval string
+
+// PluginApprovalRequired is the approval key's one value.
+const PluginApprovalRequired PluginApproval = "REQUIRED"
+
+// UnmarshalJSON accepts only "REQUIRED": an empty string, null or any other
+// value is refused when the config is loaded, never read as no key.
+func (a *PluginApproval) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil || s != string(PluginApprovalRequired) {
+		return fmt.Errorf("approval must be %q or absent", PluginApprovalRequired)
+	}
+	*a = PluginApprovalRequired
+	return nil
+}
+
+// PluginRequiresApproval reports whether entry p requires a plugin approval
+// on this engine: it has the approval key, or the engine is agent-operated,
+// whatever the key says. Same-user mode only: in service mode nothing
+// changes, so no entry requires approval there (and checkPlugin refuses the
+// key, as before). The engine, at start, and basalt plugin both decide by
+// this.
+func (c Config) PluginRequiresApproval(p Plugin) bool {
+	if c.Service() {
+		return false
+	}
+	return p.Approval == PluginApprovalRequired || c.AgentOperated()
+}
+
+// ApprovalSettings are p's settings as a plugin approval binds them
+// (CONTRACT.md, What a plugin approval binds, the settings text): config
+// and auth as engine.json holds them, timeoutMs and minConfidence by value,
+// each only when the entry sets it, no default filled in. Postgres turns
+// the object into the settings text; Go never builds that text.
+func (p Plugin) ApprovalSettings() guard.PluginSettings {
+	var s guard.PluginSettings
+	if len(p.Config) > 0 {
+		s.Config = slices.Clone(p.Config)
+	}
+	if p.Auth != nil {
+		s.Auth = &guard.PluginAuth{CredentialFile: p.Auth.CredentialFile}
+	}
+	if p.TimeoutMs != 0 {
+		v := p.TimeoutMs
+		s.TimeoutMs = &v
+	}
+	if p.MinConfidence != nil {
+		v := *p.MinConfidence
+		s.MinConfidence = &v
+	}
+	return s
 }
 
 // PluginAuth is a remote plugin entry's auth: the file the engine reads its
@@ -190,6 +250,54 @@ func (c Config) checkPlugin(p Plugin) error {
 	if p.Auth != nil && (p.Auth.CredentialFile == "" || !filepath.IsAbs(p.Auth.CredentialFile) || len(p.Auth.CredentialFile) > maxCredentialPath) {
 		return fmt.Errorf("plugin %s: auth.credentialFile must be an absolute path of at most %d bytes", k, maxCredentialPath)
 	}
+	switch {
+	case p.Approval == "":
+	case p.Approval != PluginApprovalRequired:
+		return fmt.Errorf("plugin %s: approval must be %q or absent", k, PluginApprovalRequired)
+	case c.Service():
+		// Plugin approvals are same-user mode only; service mode is unchanged.
+		return fmt.Errorf("plugin %s: approval is not served in service mode", k)
+	}
+	return nil
+}
+
+// MaxKeptPlugins bounds the entries a service engine keeps itself
+// (CONTRACT.md, Plugin approval in service mode, Engine-kept entries).
+const MaxKeptPlugins = 16
+
+// CheckKeptPlugins applies to entries, the engine-kept entries of a service
+// engine (<stateDir>/plugins.json, api/plugin/engine-entries.schema.json),
+// the rules of an engine.json plugins entry, plus their own: each names its
+// instance and "approval": "REQUIRED", none names auth (the engine would send
+// a file of its own to the plugin's host), no (name, instance) twice, and at
+// most MaxKeptPlugins. c is the engine's config, for its agents. Errors name
+// the entry, never a config value.
+func (c Config) CheckKeptPlugins(entries []Plugin) error {
+	if len(entries) > MaxKeptPlugins {
+		return fmt.Errorf("it holds %d entries; at most %d", len(entries), MaxKeptPlugins)
+	}
+	// The rules of an entry, without the service-mode refusal of the
+	// approval key: every engine-kept entry requires approval.
+	same := c
+	same.Mode = ModeSameUser
+	seen := map[plugin.EntryKey]bool{}
+	for i, p := range entries {
+		if err := same.checkPlugin(p); err != nil {
+			return fmt.Errorf("entry %d: %w", i, err)
+		}
+		k := p.Key()
+		switch {
+		case p.Instance == "":
+			return fmt.Errorf("plugin %s: instance is required", k)
+		case p.Approval != PluginApprovalRequired:
+			return fmt.Errorf("plugin %s: approval must be %q", k, PluginApprovalRequired)
+		case p.Auth != nil:
+			return fmt.Errorf("plugin %s: auth is refused for an engine-kept entry", k)
+		case seen[k]:
+			return fmt.Errorf("plugin %s is listed twice; name and instance must be unique", k)
+		}
+		seen[k] = true
+	}
 	return nil
 }
 
@@ -217,8 +325,8 @@ var errPluginConfigSecret = errors.New("config holds a URL with a user name or p
 // CheckPluginConfig applies the config rules (CONTRACT.md, Plugins,
 // Config): a JSON object of at most MaxPluginConfigBytes as compact JSON,
 // with no string (keys included) that parses as a URL with a user name or
-// password or holds password= in any case. Empty means none. Errors never
-// quote the config.
+// password or holds password= in any case, and no key repeated in one
+// object. Empty means none. Errors never quote the config.
 func CheckPluginConfig(raw json.RawMessage) error {
 	if len(raw) == 0 {
 		return nil
@@ -229,6 +337,11 @@ func CheckPluginConfig(raw json.RawMessage) error {
 	}
 	if compact.Len() > MaxPluginConfigBytes {
 		return fmt.Errorf("config is %d bytes as compact JSON; at most %d", compact.Len(), MaxPluginConfigBytes)
+	}
+	if repeatedKey(compact.Bytes()) {
+		// Postgres keeps a repeated key's last value and a plugin may keep
+		// its first: an approval would bind a value the plugin never reads.
+		return errors.New("config has a key more than once in one object")
 	}
 	var v any
 	dec := json.NewDecoder(bytes.NewReader(compact.Bytes()))
@@ -243,6 +356,56 @@ func CheckPluginConfig(raw json.RawMessage) error {
 		return errPluginConfigSecret
 	}
 	return nil
+}
+
+// repeatedKey reports whether valid JSON b has an object with a key twice,
+// at any depth. It walks the tokens, since decoding into a map keeps one.
+func repeatedKey(b []byte) bool {
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	// keys holds, per open container, the keys seen (nil for an array) and
+	// whether the next string is a key.
+	type frame struct {
+		keys    map[string]bool
+		wantKey bool
+	}
+	var stack []*frame
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			return false // io.EOF: done; the caller already checked validity
+		}
+		var top *frame
+		if len(stack) > 0 {
+			top = stack[len(stack)-1]
+		}
+		switch t := tok.(type) {
+		case json.Delim:
+			switch t {
+			case '{':
+				stack = append(stack, &frame{keys: map[string]bool{}, wantKey: true})
+				continue
+			case '[':
+				stack = append(stack, &frame{})
+				continue
+			default: // '}' or ']': the container is a value of its parent
+				stack = stack[:len(stack)-1]
+			}
+		case string:
+			if top != nil && top.keys != nil && top.wantKey {
+				if top.keys[t] {
+					return true
+				}
+				top.keys[t] = true
+				top.wantKey = false
+				continue
+			}
+		}
+		// A value ended: an object waits for its next key.
+		if len(stack) > 0 && stack[len(stack)-1].keys != nil {
+			stack[len(stack)-1].wantKey = true
+		}
+	}
 }
 
 // holdsSecret walks v for a string, key or value, that looks like a

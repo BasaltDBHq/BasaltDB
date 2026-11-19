@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/plugin/approval/binding.v1.json",
+  "title": "Plugin approval binding",
+  "description": "Plugin approval, basalt_meta schema version 5. The jsonb text basalt_meta.open_plugin_approval builds: what a person approves when they let a plugin entry serve agents of one database. The WebAuthn challenge is sha256 of its UTF-8 bytes. Clients parse it for display and never re-serialise it; keys are in jsonb order at every depth. Every list is sorted by its text COLLATE \"C\" with no repeats. See CONTRACT.md, Plugins, What a plugin approval binds.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "approvalId",
+    "database",
+    "expiresAt",
+    "requestedBy",
+    "agents",
+    "name",
+    "instance",
+    "version",
+    "manifestSha256",
+    "settingsSha256",
+    "hooks",
+    "egress",
+    "endpoint",
+    "signer"
+  ],
+  "properties": {
+    "kind": {
+      "const": "PLUGIN",
+      "description": "Separates plugin approvals from held writes (APPROVE) and reverts (REVERT)."
+    },
+    "approvalId": { "type": "string", "format": "uuid" },
+    "database": {
+      "type": "string",
+      "description": "current_database() of the guarded database, for display. One approval binds the agents of one database only."
+    },
+    "expiresAt": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z$",
+      "description": "RFC 3339 UTC with microseconds: 24 hours after the approval was opened. A signed approval does not expire; this bounds only the wait for the signature."
+    },
+    "requestedBy": {
+      "$ref": "#/$defs/role",
+      "description": "The agent role that opened the approval (session_user of open_plugin_approval): the page's \"which agent asked\"."
+    },
+    "agents": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/role" },
+      "description": "The agent roles of this database the entry will serve, each a member of <prefix>_agents. The engine serves an agent only when its role is in this list."
+    },
+    "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,39}$" },
+    "instance": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+    "version": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$"
+    },
+    "manifestSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 of the installed manifest's exact bytes, lowercase hex: the copy the person approves."
+    },
+    "settingsSha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Lowercase hex SHA-256 of the settings text (#/$defs/settings), which travels next to the binding."
+    },
+    "hooks": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["approval.deliver", "classify.suggest", "feed.observe", "wire.detect"] }
+    },
+    "roles": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["NAME_CUE", "VALUE"] },
+      "description": "Present exactly when hooks holds wire.detect: the roles the manifest declares for it."
+    },
+    "egress": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "../manifest.schema.json#/$defs/hostPort" }
+    },
+    "endpoint": { "$ref": "../events.schema.json#/$defs/entryDetail/properties/endpoint" },
+    "isolation": {
+      "$ref": "../events.schema.json#/$defs/entryDetail/properties/isolation",
+      "description": "LOCAL only: the isolation the entry would run with on this engine, as the plugin events record it. In same-user mode files NONE, network NOT_ENFORCED."
+    },
+    "signer": {
+      "enum": ["KNOWN", "UNKNOWN"],
+      "description": "KNOWN: the manifest's signature verifies against a publisher key built into the engine. UNKNOWN: anything else (no .sig, or a .sig naming a key the engine does not have built in, a key in the trust store included)."
+    },
+    "signerKeyId": {
+      "$ref": "../events.schema.json#/$defs/keyId",
+      "description": "KNOWN only: the built-in key's id. An UNKNOWN signer has none: a key id the engine cannot check could be made up."
+    },
+    "change": { "$ref": "#/$defs/change" }
+  },
+  "allOf": [{ "$ref": "../events.schema.json#/$defs/approvalFieldRules" }],
+  "$defs": {
+    "role": {
+      "type": "string",
+      "pattern": "^[a-z_][a-z0-9_]*$",
+      "maxLength": 63,
+      "description": "An agent role name, <prefix>_agent_<name>. The page shows the part after _agent_."
+    },
+    "change": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Built by Postgres, never taken from the caller: present exactly when the database holds an earlier signed approval for the same (name, instance), and then holds a key for each thing that differs from the newest such approval (absent keys did not change; {} means nothing differs: the same entry turned on again). Lists hold what was added or removed; from* keys hold the earlier value.",
+      "properties": {
+        "fromVersion": { "type": "string", "maxLength": 64 },
+        "fromManifestSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "hooksAdded": { "$ref": "#/$defs/hookList" },
+        "hooksRemoved": { "$ref": "#/$defs/hookList" },
+        "rolesAdded": { "$ref": "#/$defs/roleList" },
+        "rolesRemoved": { "$ref": "#/$defs/roleList" },
+        "egressAdded": { "$ref": "#/$defs/egressList" },
+        "egressRemoved": { "$ref": "#/$defs/egressList" },
+        "fromEndpoint": { "$ref": "../events.schema.json#/$defs/entryDetail/properties/endpoint" },
+        "fromIsolation": {
+          "description": "The earlier isolation; null when the earlier entry was REMOTE and had none.",
+          "anyOf": [
+            { "type": "null" },
+            { "$ref": "../events.schema.json#/$defs/entryDetail/properties/isolation" }
+          ]
+        },
+        "fromSigner": { "enum": ["KNOWN", "UNKNOWN"] },
+        "agentsAdded": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/role" } },
+        "agentsRemoved": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/role" } },
+        "settingsChanged": { "const": true }
+      }
+    },
+    "hookList": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["approval.deliver", "classify.suggest", "feed.observe", "wire.detect"] }
+    },
+    "roleList": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["NAME_CUE", "VALUE"] }
+    },
+    "egressList": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "../manifest.schema.json#/$defs/hostPort" }
+    },
+    "settings": {
+      "description": "The settings text: the jsonb text Postgres returns for this object (open_plugin_approval returns it; the engine reads it back from Postgres the same way). It holds the entry's keys other than name, instance, manifestSha256, enabled, agents and approval, each only when the entry sets it, with its value as engine.json holds it (no default is filled in). {} when the entry sets none.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "config": { "$ref": "../config.schema.json#/$defs/entry/properties/config" },
+        "auth": { "$ref": "../config.schema.json#/$defs/entry/properties/auth" },
+        "timeoutMs": { "$ref": "../config.schema.json#/$defs/entry/properties/timeoutMs" },
+        "minConfidence": { "$ref": "../config.schema.json#/$defs/entry/properties/minConfidence" }
+      }
+    }
+  }
+}

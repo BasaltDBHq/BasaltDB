@@ -1,0 +1,22 @@
+[
+  {
+    "name": "local-ner",
+    "instance": "default",
+    "manifestSha256": "3b1f0c9e5a7d2b4c6e8f0a1b3c5d7e9f1a2b3c4d5e6f708192a3b4c5d6e7f809",
+    "enabled": true,
+    "approval": "REQUIRED",
+    "agents": [
+      "product_b"
+    ]
+  },
+  {
+    "name": "local-ner",
+    "instance": "default",
+    "manifestSha256": "3b1f0c9e5a7d2b4c6e8f0a1b3c5d7e9f1a2b3c4d5e6f708192a3b4c5d6e7f809",
+    "enabled": false,
+    "approval": "REQUIRED",
+    "agents": [
+      "product_a"
+    ]
+  }
+]

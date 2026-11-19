@@ -95,7 +95,9 @@
 //   - Shutdowner runs before the shutdown reply, to flush or release.
 //
 // Handlers receive a context that ends at the call's deadline and must return
-// when it does.
+// when it does. A hook handler that does not keeps its slot until it returns:
+// a later hook call waits for a slot until its own deadline and is then
+// answered deadline exceeded, and health and shutdown are still answered.
 //
 // # Hooks
 //

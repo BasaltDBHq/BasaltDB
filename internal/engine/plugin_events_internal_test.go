@@ -34,15 +34,16 @@ type pluginLedgers struct {
 	d     *guardtest.DB
 	roles map[string]string
 	dbs   map[string]pluginLedger
+	urls  map[string]string
 }
 
 func newPluginLedgers(t *testing.T, f *pluginFixture) pluginLedgers {
 	t.Helper()
 	d := guardtest.New(t).WithDemo(t)
-	l := pluginLedgers{d: d, roles: map[string]string{}, dbs: map[string]pluginLedger{}}
+	l := pluginLedgers{d: d, roles: map[string]string{}, dbs: map[string]pluginLedger{}, urls: map[string]string{}}
 	for _, a := range f.cfg.Agents {
 		ag := d.NewAgent(t, a.Name, demoTables, nil)
-		l.roles[a.Name], l.dbs[a.Name] = ag.Role, pluginLedger{db: ag.Conn}
+		l.roles[a.Name], l.dbs[a.Name], l.urls[a.Name] = ag.Role, pluginLedger{db: ag.Conn}, ag.URL
 	}
 	return l
 }
@@ -77,6 +78,17 @@ func kindsOf(rows []pluginRow) []string {
 		out = append(out, r.Kind)
 	}
 	return out
+}
+
+// withheldBy is writePluginEvents's withheld entries per agent.
+func withheldBy(ctx context.Context, want pluginWant, ledgers map[string]pluginLedger, log *slog.Logger) map[string][]unrecordedEntry {
+	withheld := map[string][]unrecordedEntry{}
+	for name, p := range writePluginEvents(ctx, want, ledgers, log) {
+		if len(p.withheld) > 0 {
+			withheld[name] = p.withheld
+		}
+	}
+	return withheld
 }
 
 func (l pluginLedgers) record(t *testing.T, f *pluginFixture, ep *enginePlugins) {
@@ -210,12 +222,12 @@ func TestChangedEntryWritesChanged(t *testing.T) {
 	ep := f.plugins(nil)
 	discard := slog.New(slog.DiscardHandler)
 	want := wantedPlugins(f.cfg, ep, trustedKeys(f.cfg, f.configPath, discard))
-	require.Empty(t, writePluginEvents(context.Background(), want, l.dbs, discard))
+	require.Empty(t, withheldBy(context.Background(), want, l.dbs, discard))
 	d := want.served["product_a"][p.Key()]
 	d.Egress = []string{"ner.acme.example:443"}
 	want.served["product_a"][p.Key()] = d
 	for range 2 {
-		require.Empty(t, writePluginEvents(context.Background(), want, l.dbs, discard))
+		require.Empty(t, withheldBy(context.Background(), want, l.dbs, discard))
 	}
 	require.Equal(t, []string{"PLUGIN_TRUST_ADDED", "PLUGIN_ENABLED", "PLUGIN_CHANGED"}, kindsOf(l.events(t, "product_a")))
 }
@@ -382,7 +394,7 @@ func TestRuntimeLedgerRecordsPluginEvents(t *testing.T) {
 		held:   map[string]map[plugin.EntryKey]bool{"bot": {}},
 		trust:  trustWant{read: true, added: []string{testDetail(k).SignerKeyID}},
 	}
-	require.Empty(t, writePluginEvents(context.Background(), want, srv.pluginLedgers, slog.New(slog.DiscardHandler)))
+	require.Empty(t, withheldBy(context.Background(), want, srv.pluginLedgers, slog.New(slog.DiscardHandler)))
 	recs, err := guard.ReadPluginRecords(context.Background(), a.Conn)
 	require.NoError(t, err)
 	require.Equal(t, []guard.PluginDetail{testDetail(k)}, recs.EnabledPlugins())
@@ -391,7 +403,7 @@ func TestRuntimeLedgerRecordsPluginEvents(t *testing.T) {
 	// and no plugin, with the reason.
 	pending := newRemoteAgent(t, d.NewAgent(t, "other", demoTables, nil).URL, guard.SetupInstall)
 	rt := pending.start(t)
-	got := writePluginEvents(context.Background(), pluginWant{
+	got := withheldBy(context.Background(), pluginWant{
 		served: map[string]map[plugin.EntryKey]guard.PluginDetail{"bot": {k: testDetail(k)}},
 		held:   map[string]map[plugin.EntryKey]bool{"bot": {}},
 	}, map[string]pluginLedger{"bot": {db: rt.db, admit: pluginAdmit(rt.svc)}}, slog.New(slog.DiscardHandler))
@@ -670,12 +682,12 @@ func TestUnreadTrustStoreWithholdsUnrecordedKeys(t *testing.T) {
 	l := newPluginLedgers(t, f)
 	discard := slog.New(slog.DiscardHandler)
 	ep := f.plugins(nil)
-	got := writePluginEvents(context.Background(), wantedPlugins(f.cfg, ep, trustWant{}), l.dbs, discard)
+	got := withheldBy(context.Background(), wantedPlugins(f.cfg, ep, trustWant{}), l.dbs, discard)
 	require.Equal(t, map[string][]unrecordedEntry{"product_a": {{key: p.Key(), why: whyTrustUnread}}}, got)
 	require.Empty(t, l.events(t, "product_a"))
 
 	l.record(t, f, f.plugins(nil))
-	got = writePluginEvents(context.Background(), wantedPlugins(f.cfg, f.plugins(nil), trustWant{}), l.dbs, discard)
+	got = withheldBy(context.Background(), wantedPlugins(f.cfg, f.plugins(nil), trustWant{}), l.dbs, discard)
 	require.Empty(t, got, "the ledger records the key: served")
 	require.Equal(t, []string{"PLUGIN_TRUST_ADDED", "PLUGIN_ENABLED"}, kindsOf(l.events(t, "product_a")), "nothing removed")
 }
@@ -693,7 +705,7 @@ func TestKeyGoneFromTheStoreWithholdsItsEntry(t *testing.T) {
 	key := l.trustRows(t, "product_a")[0][1]
 
 	discard := slog.New(slog.DiscardHandler)
-	got := writePluginEvents(context.Background(), wantedPlugins(f.cfg, ep, trustWant{read: true}), l.dbs, discard)
+	got := withheldBy(context.Background(), wantedPlugins(f.cfg, ep, trustWant{read: true}), l.dbs, discard)
 	require.Equal(t, []unrecordedEntry{{key: p.Key(), why: whyKeyNotTrusted}}, got["product_a"])
 	rows := l.trustRows(t, "product_a")
 	require.Equal(t, [2]string{"PLUGIN_TRUST_REMOVED", key}, rows[len(rows)-1])

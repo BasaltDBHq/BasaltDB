@@ -135,6 +135,8 @@ func TestGuardFunctionsAreRefused(t *testing.T) {
 		{`SELECT id FROM leads WHERE id = (SELECT basalt_meta.record_plugin_event('PLUGIN_DISABLED', '{}'))`, sqlguard.ToolQuery},
 		{`UPDATE leads SET name = basalt_meta.record_plugin_event('PLUGIN_TRUST_REMOVED', '{}')::text WHERE id = 1`, sqlguard.ToolWrite},
 		{`INSERT INTO leads (name) VALUES ("basalt_meta"."record_plugin_event"('PLUGIN_ENABLED', '{}')::text)`, sqlguard.ToolWrite},
+		{`SELECT * FROM basalt_meta.open_plugin_approval('{}', '{}')`, sqlguard.ToolQuery},
+		{`SELECT basalt_meta.submit_plugin_approval(NULL, NULL, NULL, NULL, NULL)`, sqlguard.ToolQuery},
 	} {
 		_, err := sqlguard.Check(c.sql, c.tool)
 		require.Equal(t, sqlguard.ReasonFunction, refusalOf(t, err), "%s: err=%v", c.sql, err)

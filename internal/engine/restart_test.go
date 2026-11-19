@@ -189,7 +189,8 @@ func TestAnIdleEngineRestartsAndTheNextCallReachesTheNewOne(t *testing.T) {
 	next := c.send(t, 2, "write")
 	time.Sleep(200 * time.Millisecond)
 	startRestarting(t, socket, newTools, make(chan struct{}), time.Minute, time.Minute)
-	require.Equal(t, "new", answer(t, next)["build"])
+	body := answer(t, next)
+	require.Equal(t, "new", body["build"], "%v", body)
 	require.EqualValues(t, 1, oldTools.writes.Load())
 	require.EqualValues(t, 1, newTools.writes.Load())
 }

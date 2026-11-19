@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/plugin/approval/response.v1.json",
+  "title": "Plugin approval response",
+  "description": "What the plugin approval page outputs after the passkey signs, as the text basalt-plugin.1.<base64url(this JSON)>, and the body of POST /api/v1/plugins/{approvalId}/approve. Byte fields are base64url without padding. Any relay may carry it (basalt plugin approve, the local pages' relay); basalt_meta.submit_plugin_approval verifies it. See CONTRACT.md, Plugins, Plugin approval.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["approvalId", "credentialId", "authenticatorData", "clientDataJson", "signature"],
+  "properties": {
+    "approvalId": { "type": "string", "format": "uuid" },
+    "credentialId": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+    "authenticatorData": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+    "clientDataJson": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+    "signature": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "description": "ASN.1 DER ECDSA signature (ES256) over authenticatorData ‖ sha256(clientDataJSON); clientDataJSON.challenge is sha256(binding text)."
+    }
+  }
+}

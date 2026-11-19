@@ -43,20 +43,30 @@ const (
 	// versionPluginTrustRemoved lets record_plugin_event record
 	// PLUGIN_TRUST_REMOVED: schema/014.
 	versionPluginTrustRemoved
+	// versionPluginApprovals adds plugin approvals verified by passkey and
+	// the signer of a plugin event: schema/015.
+	versionPluginApprovals
 )
+
+// PluginApprovalsVersion is the basalt_meta version that holds plugin
+// approvals (open_plugin_approval, submit_plugin_approval,
+// agent_plugin_approvals). A guard below it cannot open one.
+const PluginApprovalsVersion = versionPluginApprovals
 
 // versionFiles is how many schema files each version runs, in version
 // order: a new version appends its own schema files after the last and its
 // count here, and every earlier version keeps the files it has.
-var versionFiles = []int{versionGuard: guardFiles, versionInstallIDs: 1, versionPluginEvents: 1, versionPluginTrustRemoved: 1}
+var versionFiles = []int{versionGuard: guardFiles, versionInstallIDs: 1, versionPluginEvents: 1, versionPluginTrustRemoved: 1, versionPluginApprovals: 1}
 
 // nonBreakingVersions are the versions an engine serves an agent without
 // (migration.nonBreaking). versionPluginEvents: without it the engine
 // cannot record a plugin event, so it serves no plugin to that agent and
 // everything else as before. versionPluginTrustRemoved: without it the
 // engine cannot correct a PLUGIN_TRUST_ADDED for a key it does not trust,
-// and logs that; everything is served as before.
-var nonBreakingVersions = map[int]bool{versionPluginEvents: true, versionPluginTrustRemoved: true}
+// and logs that; everything is served as before. versionPluginApprovals:
+// without it an entry that requires approval is withheld from that agent
+// and no approval can be opened there; everything else is served as before.
+var nonBreakingVersions = map[int]bool{versionPluginEvents: true, versionPluginTrustRemoved: true, versionPluginApprovals: true}
 
 // guardFiles is how many schema files version 1 has: 001 to 011.
 const guardFiles = 11

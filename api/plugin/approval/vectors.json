@@ -1,0 +1,191 @@
+{
+  "description": "Plugin approval vectors (CONTRACT.md, Plugins, What a plugin approval binds and The plugin approval page). Each binding and settings text is the jsonb text Postgres 16 returned for it, byte for byte; challenge is base64url (no padding) of sha256 of the binding text. expect gives what the page derives from the two texts alone: whether the settings text hashes to settingsSha256, then the level, whether the tick is shown, and the page's sentences in the order the contract fixes. A settings mismatch shows an error and no approve button. response is the JSON of a basalt-plugin.1. code (response.schema.json); its byte fields are placeholders, not a real assertion, and the test carries it as the code and back. resultExample is a basalt plugin add --json output (result.schema.json) on a person-operated engine that serves the local pages. TestPluginApprovalVectors checks all of it.",
+  "vectors": [
+    {
+      "name": "level-1-known-local",
+      "binding": "{\"kind\": \"PLUGIN\", \"name\": \"slack-notify\", \"hooks\": [\"approval.deliver\", \"feed.observe\"], \"agents\": [\"basalt_agent_product_a\", \"basalt_agent_product_b\"], \"egress\": [\"slack.com:443\"], \"signer\": \"KNOWN\", \"version\": \"1.0.0\", \"database\": \"app\", \"endpoint\": {\"kind\": \"LOCAL\"}, \"instance\": \"default\", \"expiresAt\": \"2026-11-20T09:15:02.123456Z\", \"isolation\": {\"files\": \"NONE\", \"network\": \"NOT_ENFORCED\"}, \"approvalId\": \"0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7b\", \"requestedBy\": \"basalt_agent_product_a\", \"signerKeyId\": \"jNZPxNG5htlwfhg4ZgknAA\", \"manifestSha256\": \"5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e\", \"settingsSha256\": \"377fd91f32749c88bf8f0fa651b648f30b87abfe51721d9d57cb1d47fed1c178\"}",
+      "challenge": "eGMCwPOPauervlhAdcfMxyPsUmdGUcJFH-lmUX-rtl8",
+      "settings": "{\"config\": {\"channel\": \"ops-alerts\"}, \"timeoutMs\": 2000}",
+      "expect": {
+        "settingsMatch": true,
+        "level": 1,
+        "tick": false,
+        "sentences": [
+          "Published by Basalt.",
+          "It runs on the computer Basalt runs on, with the same access as Basalt itself.",
+          "It says it connects only to slack.com:443. That is not enforced on the computer Basalt runs on.",
+          "It delivers your approval links. Anyone who can read where it delivers them can see the rows of writes waiting for your approval.",
+          "It is told what your agents do in the database, such as which tables they change and how many rows, never the values.",
+          "Used for: product_a, product_b.",
+          "Asked by product_a.",
+          "Fingerprint: 5e5e 5e5e 5e5e 5e5e"
+        ]
+      }
+    },
+    {
+      "name": "level-2-unknown-remote",
+      "binding": "{\"kind\": \"PLUGIN\", \"name\": \"acme-ner\", \"hooks\": [\"wire.detect\"], \"roles\": [\"NAME_CUE\", \"VALUE\"], \"agents\": [\"basalt_agent_product_a\"], \"egress\": [\"ner.acme.example:443\"], \"signer\": \"UNKNOWN\", \"version\": \"1.4.0\", \"database\": \"app\", \"endpoint\": {\"host\": \"ner.acme.example:443\", \"kind\": \"REMOTE\"}, \"instance\": \"default\", \"expiresAt\": \"2026-11-20T09:16:40.000001Z\", \"approvalId\": \"0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7c\", \"requestedBy\": \"basalt_agent_product_a\", \"manifestSha256\": \"3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\", \"settingsSha256\": \"45ae5c4f1d0beea85ea5c512afbf5f3257de0ca877d54f77ce7cb355ee0476c4\"}",
+      "challenge": "kBkItpaNii0Zxvdw3pzad1r-keX6eXdZEyoEfH4QARQ",
+      "settings": "{\"auth\": {\"credentialFile\": \"/etc/basalt/plugins/acme-ner.token\"}, \"config\": {\"languages\": [\"en\", \"id\"]}, \"timeoutMs\": 2000}",
+      "expect": {
+        "settingsMatch": true,
+        "level": 2,
+        "tick": false,
+        "sentences": [
+          "Nobody vouches for this plugin. Add it only if you trust where it came from.",
+          "It runs at ner.acme.example:443. Everything it sees is sent there.",
+          "Basalt cannot check what runs there or where it sends things next.",
+          "It reads the text your agents send to the AI provider, before Basalt hides private values in it.",
+          "It also sees values from your database that appear in that text.",
+          "Used for: product_a.",
+          "Asked by product_a.",
+          "Fingerprint: 3f3f 3f3f 3f3f 3f3f"
+        ]
+      }
+    },
+    {
+      "name": "level-3-unknown-local",
+      "binding": "{\"kind\": \"PLUGIN\", \"name\": \"local-ner\", \"hooks\": [\"wire.detect\"], \"roles\": [\"VALUE\"], \"agents\": [\"basalt_agent_product_b\"], \"egress\": [], \"signer\": \"UNKNOWN\", \"version\": \"0.3.1\", \"database\": \"app\", \"endpoint\": {\"kind\": \"LOCAL\"}, \"instance\": \"client_x\", \"expiresAt\": \"2026-11-20T10:00:00.500000Z\", \"isolation\": {\"files\": \"NONE\", \"network\": \"NOT_ENFORCED\"}, \"approvalId\": \"0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7d\", \"requestedBy\": \"basalt_agent_product_b\", \"manifestSha256\": \"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\", \"settingsSha256\": \"81de1544c257d8c44bad1756a6051b5ecce832e5f4202bb9aa416ad76daa72e3\"}",
+      "challenge": "IhRHLJaJgK3Q4WmNEA5yFoA_ZQxAB7pG0-cIIV04HQ8",
+      "settings": "{\"config\": {\"a\": null, \"max\": 1000, \"note\": \"tab\\there é\", \"threshold\": 0.60}, \"timeoutMs\": 300, \"minConfidence\": 0.6}",
+      "expect": {
+        "settingsMatch": true,
+        "level": 3,
+        "tick": true,
+        "sentences": [
+          "Nobody vouches for this plugin. It runs a stranger's program on the computer Basalt runs on, with the same access as Basalt itself, so it could read your database password and the key Basalt uses to hide private values.",
+          "I know who made this plugin and I trust them with my data.",
+          "It says it needs no network. That is not enforced on the computer Basalt runs on.",
+          "It reads the text your agents send to the AI provider, before Basalt hides private values in it.",
+          "Used for: product_b.",
+          "Asked by product_b.",
+          "Fingerprint: a1a1 a1a1 a1a1 a1a1"
+        ]
+      }
+    },
+    {
+      "name": "change-unknown-local",
+      "binding": "{\"kind\": \"PLUGIN\", \"name\": \"local-ner\", \"hooks\": [\"wire.detect\"], \"roles\": [\"NAME_CUE\", \"VALUE\"], \"agents\": [\"basalt_agent_client_x\", \"basalt_agent_product_a\"], \"change\": {\"rolesAdded\": [\"NAME_CUE\"], \"agentsAdded\": [\"basalt_agent_client_x\"], \"egressAdded\": [\"models.acme.example:443\"], \"fromVersion\": \"0.3.1\", \"settingsChanged\": true, \"fromManifestSha256\": \"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1\"}, \"egress\": [\"models.acme.example:443\"], \"signer\": \"UNKNOWN\", \"version\": \"0.4.0\", \"database\": \"app\", \"endpoint\": {\"kind\": \"LOCAL\"}, \"instance\": \"default\", \"expiresAt\": \"2026-11-21T08:00:00.000000Z\", \"isolation\": {\"files\": \"NONE\", \"network\": \"NOT_ENFORCED\"}, \"approvalId\": \"0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7e\", \"requestedBy\": \"basalt_agent_product_a\", \"manifestSha256\": \"b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2\", \"settingsSha256\": \"80bcc157a29f1c109430fd4e4089e4069b32377e2f3fddc9383fd721f9b1e42b\"}",
+      "challenge": "ZWBVDDXho2_FMvvvTTqkchNMLoh9CbIZXmNdEChT9J8",
+      "settings": "{\"config\": {\"languages\": [\"en\"]}, \"timeoutMs\": 500}",
+      "expect": {
+        "settingsMatch": true,
+        "level": 3,
+        "tick": true,
+        "sentences": [
+          "This changes local-ner, which you approved before.",
+          "Version 0.3.1 becomes 0.4.0.",
+          "It now also looks for names in the text.",
+          "It now also connects to models.acme.example:443.",
+          "It will now also be used for client_x.",
+          "Its settings change.",
+          "Nobody vouches for this plugin. It runs a stranger's program on the computer Basalt runs on, with the same access as Basalt itself, so it could read your database password and the key Basalt uses to hide private values.",
+          "I know who made this plugin and I trust them with my data.",
+          "It says it connects only to models.acme.example:443. That is not enforced on the computer Basalt runs on.",
+          "It reads the text your agents send to the AI provider, before Basalt hides private values in it.",
+          "It also sees values from your database that appear in that text.",
+          "Used for: client_x, product_a.",
+          "Asked by product_a.",
+          "Fingerprint: b2b2 b2b2 b2b2 b2b2"
+        ]
+      }
+    },
+    {
+      "name": "change-turned-on-again",
+      "binding": "{\"kind\": \"PLUGIN\", \"name\": \"acme-ner\", \"hooks\": [\"wire.detect\"], \"roles\": [\"NAME_CUE\", \"VALUE\"], \"agents\": [\"basalt_agent_product_a\"], \"change\": {}, \"egress\": [\"ner.acme.example:443\"], \"signer\": \"UNKNOWN\", \"version\": \"1.4.0\", \"database\": \"app\", \"endpoint\": {\"host\": \"ner.acme.example:443\", \"kind\": \"REMOTE\"}, \"instance\": \"default\", \"expiresAt\": \"2026-11-21T08:30:00.000000Z\", \"approvalId\": \"0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7f\", \"requestedBy\": \"basalt_agent_product_a\", \"manifestSha256\": \"3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\", \"settingsSha256\": \"45ae5c4f1d0beea85ea5c512afbf5f3257de0ca877d54f77ce7cb355ee0476c4\"}",
+      "challenge": "rSRlwvh3DP0EKtKUCxwmS3dzMqt0lZNbYtd4TZw3d-g",
+      "settings": "{\"auth\": {\"credentialFile\": \"/etc/basalt/plugins/acme-ner.token\"}, \"config\": {\"languages\": [\"en\", \"id\"]}, \"timeoutMs\": 2000}",
+      "expect": {
+        "settingsMatch": true,
+        "level": 2,
+        "tick": false,
+        "sentences": [
+          "You approved acme-ner before, and it was turned off. Turning it on again needs your approval.",
+          "Nobody vouches for this plugin. Add it only if you trust where it came from.",
+          "It runs at ner.acme.example:443. Everything it sees is sent there.",
+          "Basalt cannot check what runs there or where it sends things next.",
+          "It reads the text your agents send to the AI provider, before Basalt hides private values in it.",
+          "It also sees values from your database that appear in that text.",
+          "Used for: product_a.",
+          "Asked by product_a.",
+          "Fingerprint: 3f3f 3f3f 3f3f 3f3f"
+        ]
+      }
+    },
+    {
+      "name": "settings-mismatch",
+      "binding": "{\"kind\": \"PLUGIN\", \"name\": \"acme-ner\", \"hooks\": [\"wire.detect\"], \"roles\": [\"NAME_CUE\", \"VALUE\"], \"agents\": [\"basalt_agent_product_a\"], \"egress\": [\"ner.acme.example:443\"], \"signer\": \"UNKNOWN\", \"version\": \"1.4.0\", \"database\": \"app\", \"endpoint\": {\"host\": \"ner.acme.example:443\", \"kind\": \"REMOTE\"}, \"instance\": \"default\", \"expiresAt\": \"2026-11-20T09:16:40.000001Z\", \"approvalId\": \"0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7c\", \"requestedBy\": \"basalt_agent_product_a\", \"manifestSha256\": \"3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\", \"settingsSha256\": \"45ae5c4f1d0beea85ea5c512afbf5f3257de0ca877d54f77ce7cb355ee0476c4\"}",
+      "challenge": "kBkItpaNii0Zxvdw3pzad1r-keX6eXdZEyoEfH4QARQ",
+      "settings": "{\"auth\": {\"credentialFile\": \"/etc/basalt/plugins/acme-ner.token\"}, \"config\": {\"languages\": [\"en\", \"id\", \"ms\"]}, \"timeoutMs\": 2000}",
+      "expect": {
+        "settingsMatch": false,
+        "error": "SETTINGS_MISMATCH"
+      }
+    },
+    {
+      "name": "wrong-kind",
+      "binding": "{\"kind\": \"APPROVE\", \"name\": \"acme-ner\", \"hooks\": [\"wire.detect\"], \"roles\": [\"NAME_CUE\", \"VALUE\"], \"agents\": [\"basalt_agent_product_a\"], \"egress\": [\"ner.acme.example:443\"], \"signer\": \"UNKNOWN\", \"version\": \"1.4.0\", \"database\": \"app\", \"endpoint\": {\"host\": \"ner.acme.example:443\", \"kind\": \"REMOTE\"}, \"instance\": \"default\", \"expiresAt\": \"2026-11-20T09:16:40.000001Z\", \"approvalId\": \"0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7c\", \"requestedBy\": \"basalt_agent_product_a\", \"manifestSha256\": \"3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\", \"settingsSha256\": \"45ae5c4f1d0beea85ea5c512afbf5f3257de0ca877d54f77ce7cb355ee0476c4\"}",
+      "challenge": "O3pgs_FdpGT3HyEY9eA5jn_hUsltsJOor8OY9-nyDv4",
+      "settings": "{\"auth\": {\"credentialFile\": \"/etc/basalt/plugins/acme-ner.token\"}, \"config\": {\"languages\": [\"en\", \"id\"]}, \"timeoutMs\": 2000}",
+      "expect": {
+        "error": "WRONG_KIND"
+      }
+    }
+  ],
+  "response": {
+    "approvalId": "0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7d",
+    "credentialId": "AAAAAAAAAAAAAAAAAAAAAA",
+    "authenticatorData": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "clientDataJson": "e30",
+    "signature": "MAYCAQECAQE"
+  },
+  "resultExample": {
+    "name": "local-ner",
+    "instance": "client_x",
+    "approvals": [
+      {
+        "database": {
+          "host": "localhost",
+          "name": "app"
+        },
+        "agents": [
+          "product_b"
+        ],
+        "approvalId": "0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7d",
+        "expiresAt": "2026-11-20T10:00:00.5Z",
+        "url": "http://localhost:8787/plugins/0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7d#s=q3Jv8sLk2mT0xYp1aBcD9w"
+      }
+    ],
+    "personMessage": "product_b asks you to approve the plugin local-ner 0.3.1.\nNobody vouches for this plugin. It runs a stranger's program on the computer Basalt runs on, with the same access as Basalt itself, so it could read your database password and the key Basalt uses to hide private values.\nApprove it with your passkey only if you know who made it:\n\nhttp://localhost:8787/plugins/0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7d#s=q3Jv8sLk2mT0xYp1aBcD9w\n\nExpires 2026-11-20 10:00 UTC. The plugin starts once the engine restarts.",
+    "links": [
+      {
+        "label": "Review and approve the plugin",
+        "url": "http://localhost:8787/plugins/0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7d#s=q3Jv8sLk2mT0xYp1aBcD9w"
+      }
+    ],
+    "nextSteps": [
+      {
+        "actor": "PERSON",
+        "action": "OPEN_LINK",
+        "text": "Open the link, read the page, and approve the plugin with your passkey if you want it.",
+        "url": "http://localhost:8787/plugins/0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7d#s=q3Jv8sLk2mT0xYp1aBcD9w"
+      },
+      {
+        "actor": "PERSON",
+        "action": "TELL_AGENT",
+        "text": "Tell the agent once you approved it."
+      },
+      {
+        "actor": "AGENT",
+        "action": "END_TURN",
+        "text": "End your turn: the person approves on the page."
+      },
+      {
+        "actor": "PERSON",
+        "action": "RUN_COMMAND",
+        "text": "Once basalt plugin list shows the approval signed, restart the engine so it starts the plugin.",
+        "command": "basalt engine --config /home/me/.config/basalt/engine.json"
+      }
+    ]
+  }
+}

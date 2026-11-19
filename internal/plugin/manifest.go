@@ -453,6 +453,12 @@ func relativePath(p string) bool {
 	return len(p) <= maxRelativePathLen && relativePathPattern.MatchString(p)
 }
 
+// ValidRelativePath reports whether p follows the manifest's path rules: a
+// relative slash-separated path of at most 255 characters, with no segment
+// that starts with "." (so no "..") and no character outside letters,
+// digits, ".", "_" and "-".
+func ValidRelativePath(p string) bool { return relativePath(p) }
+
 func unique(list []string) bool {
 	seen := make(map[string]struct{}, len(list))
 	for _, s := range list {

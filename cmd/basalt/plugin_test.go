@@ -39,6 +39,11 @@ type pluginEngine struct {
 	src        string
 	signer     *ecdsa.PrivateKey
 	host       *fakeHost
+	// agents is the config's agents array; product_a and product_b with
+	// credential files that do not exist when empty.
+	agents string
+	// mode is the config's mode, SAME_USER when empty.
+	mode string
 }
 
 func newPluginEngine(t *testing.T) *pluginEngine {
@@ -76,9 +81,17 @@ func (e *pluginEngine) writeConfig(operatedBy string) {
 		require.NoError(e.t, err)
 		extra += `, "plugins": ` + string(plugins)
 	}
-	require.NoError(e.t, config.WriteFile(e.configPath, []byte(`{"socketDir": "/run/x", "mode": "SAME_USER", "agents": [
+	agents := e.agents
+	if agents == "" {
+		agents = `[
 		{"name": "product_a", "osUser": "u", "store": {"kind": "POSTGRES", "credentialFile": "/c"}},
-		{"name": "product_b", "osUser": "u", "store": {"kind": "POSTGRES", "credentialFile": "/d"}}]`+extra+`}`)))
+		{"name": "product_b", "osUser": "u", "store": {"kind": "POSTGRES", "credentialFile": "/d"}}]`
+	}
+	mode := e.mode
+	if mode == "" {
+		mode = "SAME_USER"
+	}
+	require.NoError(e.t, config.WriteFile(e.configPath, []byte(`{"socketDir": "/run/x", "mode": "`+mode+`", "agents": `+agents+extra+`}`)))
 }
 
 func (e *pluginEngine) trustKey(pub *ecdsa.PublicKey) {
@@ -202,7 +215,7 @@ func refusal(t *testing.T, r result, reason string) mcp.ToolError {
 	t.Helper()
 	require.Equal(t, exitError, r.code, r.stderr)
 	var body mcp.ToolError
-	require.NoError(t, json.Unmarshal([]byte(r.stdout), &body), r.stdout)
+	require.NoError(t, json.Unmarshal([]byte(r.stdout), &body), r.stdout+r.stderr)
 	require.Equal(t, codePluginRefused, body.Code)
 	require.Equal(t, reason, body.Reason, body.Message)
 	require.NotEmpty(t, body.PersonMessage)
@@ -210,9 +223,21 @@ func refusal(t *testing.T, r result, reason string) mcp.ToolError {
 	require.NoError(t, err)
 	want, ok := catalog.ErrorEntry(body.Code, body.Reason, "")
 	require.True(t, ok)
-	require.Len(t, body.NextSteps, len(want.Steps))
-	for i, s := range want.Steps {
-		require.Equal(t, s.Actor, body.NextSteps[i].Actor)
+	steps := want.Steps
+	// On an agent-operated engine a variant may replace the steps.
+	if v, ok := catalog.AgentOperatedEntry("ERROR", body.Code, body.Reason, ""); ok && len(body.NextSteps) > 0 &&
+		body.NextSteps[0].Actor == mcp.ActorAgent && steps[0].Actor != mcp.ActorAgent {
+		steps = v.Steps
+	}
+	require.Len(t, body.NextSteps, len(steps))
+	for i, s := range steps {
+		// An OPERATOR step is the person's, or the agent's on an
+		// agent-operated engine.
+		if s.Actor == "OPERATOR" {
+			require.Contains(t, []string{mcp.ActorPerson, mcp.ActorAgent}, body.NextSteps[i].Actor)
+		} else {
+			require.Equal(t, s.Actor, body.NextSteps[i].Actor)
+		}
 		require.Equal(t, s.Action, body.NextSteps[i].Action)
 	}
 	return body
@@ -353,10 +378,12 @@ func TestAddRefusesBadManifests(t *testing.T) {
 	require.Equal(t, before, e.snapshot(), "nothing written for a refused command; no plugin root made")
 }
 
-// TestEnableRefusedForAgent: under an agent marker, and on an engine an
-// agent operates, add, enable, any widening and trust are refused with
-// PLUGIN_REFUSED AGENT_OPERATED, and nothing on disk changes.
-func TestEnableRefusedForAgent(t *testing.T) {
+// TestWideningByAgentOpensNothingUnchecked: in same-user mode, under an
+// agent marker or on an engine an agent operates, add and enable take the
+// plugin approval flow, trust stays refused, and every refusal before the
+// write leaves disk unchanged. These agents' credential files do not
+// exist, so the flow refuses DATABASE_UNREACHABLE before writing.
+func TestWideningByAgentOpensNothingUnchecked(t *testing.T) {
 	t.Parallel()
 	for name, tc := range map[string]struct {
 		env        map[string]string
@@ -375,35 +402,37 @@ func TestEnableRefusedForAgent(t *testing.T) {
 			e.writeConfig(tc.operatedBy)
 			newer := e.newSource(pluginManifest("1.5.0", `"wire.detect": {"contract": "detector/1", "roles": ["VALUE"], "entityTypes": ["PERSON_NAME", "acme-ner.EMPLOYEE_ID"]}`, ""))
 			egress := e.newSource(pluginManifest("1.4.0", `"wire.detect": {"contract": "detector/1", "roles": ["VALUE"], "entityTypes": ["PERSON_NAME", "acme-ner.EMPLOYEE_ID"]}`, `"evil.example:443"`))
-			other, err := plugin.GenerateKey()
+			key, err := plugin.GenerateKey()
 			require.NoError(t, err)
-			pub, err := plugin.MarshalPublicKey(&other.PublicKey)
+			pub, err := plugin.MarshalPublicKey(&key.PublicKey)
 			require.NoError(t, err)
 			keyFile := filepath.Join(t.TempDir(), "publisher.pub")
 			require.NoError(t, os.WriteFile(keyFile, pub, 0o644))
 			before := e.snapshot()
 
-			for what, args := range map[string][]string{
-				"enable":                {"enable", "acme-ner"},
-				"add another instance":  {"add", e.src, "--agents", "product_a", "--instance", "client_x"},
-				"widen agents":          {"add", e.src, "--agents", "product_a,product_b"},
-				"swap agents":           {"add", e.src, "--agents", "product_b"},
-				"new version":           {"add", newer, "--agents", "product_a"},
-				"new egress":            {"add", egress, "--agents", "product_a"},
-				"new plugin":            {"add", e.newSource(remotePluginManifest), "--agents", "product_a"},
-				"trust":                 {"trust", keyFile},
-				"unknown agent":         {"add", e.src, "--agents", "client_x"},
-				"missing dir":           {"add", filepath.Join(e.base, "nowhere"), "--agents", "product_a"},
-				"enable another entity": {"enable", "acme-ner", "--instance", "client_x"},
+			for what, c := range map[string]struct {
+				args   []string
+				reason string
+			}{
+				"enable":               {[]string{"enable", "acme-ner"}, reasonDatabaseUnreachable},
+				"add another instance": {[]string{"add", e.src, "--agents", "product_a", "--instance", "client_x"}, reasonDatabaseUnreachable},
+				"widen agents":         {[]string{"add", e.src, "--agents", "product_a,product_b"}, reasonDatabaseUnreachable},
+				"swap agents":          {[]string{"add", e.src, "--agents", "product_b"}, reasonDatabaseUnreachable},
+				"new version":          {[]string{"add", newer, "--agents", "product_a"}, reasonDatabaseUnreachable},
+				"new egress":           {[]string{"add", egress, "--agents", "product_a"}, reasonDatabaseUnreachable},
+				"new plugin":           {[]string{"add", e.newSource(remotePluginManifest), "--agents", "product_a"}, reasonDatabaseUnreachable},
+				"trust":                {[]string{"trust", keyFile}, reasonAgentOperated},
+				"unknown agent":        {[]string{"add", e.src, "--agents", "client_x"}, reasonUnknownAgent},
 			} {
-				r := e.run(tc.env, "y\n", append(args, "--json")...)
-				refusal(t, r, "AGENT_OPERATED")
+				r := e.run(tc.env, "y\n", append(c.args, "--json")...)
+				refusal(t, r, c.reason)
 				require.NotContains(t, r.stderr, "[y/N]", "%s: refused before any prompt", what)
 				require.Equal(t, before, e.snapshot(), "%s: engine.json, the plugin root and the trust store are unchanged", what)
 			}
-			text := e.run(tc.env, "y\n", "enable", "acme-ner")
-			require.Equal(t, exitError, text.code)
-			require.Contains(t, text.stderr, "is refused")
+			r := e.run(tc.env, "y\n", "add", filepath.Join(e.base, "nowhere"), "--agents", "product_a")
+			require.Equal(t, exitError, r.code)
+			r = e.run(tc.env, "y\n", "enable", "acme-ner", "--instance", "client_x")
+			require.Equal(t, exitError, r.code)
 			require.Equal(t, before, e.snapshot())
 		})
 	}
@@ -436,7 +465,8 @@ func TestDisableAllowedForAgent(t *testing.T) {
 
 			r = e.run(tc.env, "", "disable", "acme-ner")
 			require.Equal(t, exitOK, r.code, r.stderr)
-			require.Contains(t, r.stderr, "basalt engine --config "+e.configPath)
+			require.Contains(t, r.stderr, "no restart is needed", "a same-user engine stops it while it runs")
+			require.NotContains(t, r.stderr, "basalt engine --config ")
 			require.False(t, e.config().Plugins[0].Enabled)
 
 			client := e.config().Plugins[1]

@@ -49,17 +49,21 @@ type rpcResponse struct {
 // breaks, or ctx ends. It closes rc. It returns ErrMessageTooLarge when the
 // peer sent a line over the cap, nil in every other case.
 //
-// Calls are served concurrently, at most MaxInFlight at a time: the reader
-// waits for a free slot, so a flood of requests cannot start unbounded work.
-// Replies may arrive out of order; each carries its request's id.
+// Calls are served concurrently, at most MaxInFlight at a time. The reader
+// never waits for a hook call's slot: each call waits for one in its own
+// goroutine, under its own deadline, so a health line behind it is still read
+// while hook handlers run past their deadline. At most waitingCalls more wait;
+// past that a call is answered errBusy at once. Replies may arrive out of
+// order; each carries its request's id.
 func (s *server) serveConn(ctx context.Context, rc io.ReadCloser, w io.Writer) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	c := &jsonrpcConn{
 		s: s, w: w,
-		slots:  make(chan struct{}, protocol.MaxInFlight),
-		health: make(chan struct{}, 1), shutdown: make(chan struct{}, 1),
+		slots:    make(chan struct{}, protocol.MaxInFlight),
+		admitted: make(chan struct{}, protocol.MaxInFlight+waitingCalls),
+		health:   make(chan struct{}, 1), shutdown: make(chan struct{}, 1),
 	}
 	readDone := make(chan error, 1)
 	go func() { readDone <- c.readLoop(ctx, rc) }()
@@ -102,14 +106,24 @@ func (s *server) serveConn(ctx context.Context, rc io.ReadCloser, w io.Writer) e
 	return err
 }
 
+// waitingCalls is how many calls may wait for a slot beyond those running.
+// The engine keeps at most MaxInFlight hook calls open, but a call it gave up
+// on still waits here until the SDK's own deadline for it, so more than
+// MaxInFlight may wait. Each one ends at its deadline; the cap only bounds
+// what a burst can hold.
+const waitingCalls = 2 * protocol.MaxInFlight
+
 type jsonrpcConn struct {
 	s   *server
 	w   io.Writer
 	wmu sync.Mutex
 	// slots caps the calls running at once; health and shutdown each have
 	// one slot of their own outside it, as on the engine's side, so they are
-	// answered while four hook calls run.
-	slots    chan struct{}
+	// answered while four hook calls run. A handler that ignores its context
+	// keeps its slot until it returns.
+	slots chan struct{}
+	// admitted caps the calls holding or waiting for one of slots.
+	admitted chan struct{}
 	health   chan struct{}
 	shutdown chan struct{}
 	wg       sync.WaitGroup
@@ -151,45 +165,85 @@ func (c *jsonrpcConn) readLoop(ctx context.Context, r io.Reader) error {
 			continue
 		}
 		slots := c.slotsFor(line)
+		if slots != c.slots {
+			// health or shutdown: its own slot, held at most until the
+			// deadline of the one call running, since both are bounded.
+			select {
+			case slots <- struct{}{}:
+			case <-ctx.Done():
+				return nil
+			}
+			c.wg.Add(1)
+			go func() {
+				defer c.wg.Done()
+				defer func() { <-slots }()
+				c.handle(ctx, line, nil)
+			}()
+			continue
+		}
 		select {
-		case slots <- struct{}{}:
-		case <-ctx.Done():
-			return nil
+		case c.admitted <- struct{}{}:
+		default:
+			// Too many calls wait already: answer at once and read on.
+			if req, notification, ok := c.request(line); ok {
+				c.reply(req.ID, notification, nil, errBusy)
+			}
+			continue
 		}
 		c.wg.Add(1)
 		go func() {
 			defer c.wg.Done()
-			defer func() { <-slots }()
-			c.handle(ctx, line)
+			defer func() { <-c.admitted }()
+			c.handle(ctx, line, c.slots)
 		}()
 	}
 }
 
-// handle answers one line.
-func (c *jsonrpcConn) handle(ctx context.Context, line []byte) {
-	var req rpcRequest
+// request decodes one line. A line that is not a valid request is answered
+// here, and ok is false.
+func (c *jsonrpcConn) request(line []byte) (req rpcRequest, notification, ok bool) {
 	if err := json.Unmarshal(line, &req); err != nil {
 		c.write(rpcResponse{JSONRPC: jsonrpcVersion, Error: &rpcBody{Code: codeParse, Message: "parse error"}})
-		return
+		return req, false, false
 	}
-	notification := len(req.ID) == 0
-	id := req.ID
-	if !notification && !validID(id) {
+	notification = len(req.ID) == 0
+	if !notification && !validID(req.ID) {
 		c.write(rpcResponse{JSONRPC: jsonrpcVersion, Error: &rpcBody{Code: codeInvalidRequest, Message: "invalid request"}})
-		return
+		return req, false, false
 	}
 	if req.JSONRPC != jsonrpcVersion || req.Method == "" {
-		c.reply(id, notification, nil, &rpcError{codeInvalidRequest, "invalid request"})
+		c.reply(req.ID, notification, nil, &rpcError{codeInvalidRequest, "invalid request"})
+		return req, false, false
+	}
+	return req, notification, true
+}
+
+// handle answers one line. With slots, the call first waits for one of them.
+// The wait counts against its deadline, which starts when the line is read,
+// so a call that gets no slot in time is answered deadline exceeded.
+func (c *jsonrpcConn) handle(ctx context.Context, line []byte, slots chan struct{}) {
+	callCtx, cancel := c.s.callContext(ctx)
+	defer cancel()
+	req, notification, ok := c.request(line)
+	if !ok {
 		return
+	}
+	if slots != nil {
+		select {
+		case slots <- struct{}{}:
+			defer func() { <-slots }()
+		case <-callCtx.Done():
+			c.reply(req.ID, notification, nil, errDeadline)
+			return
+		}
 	}
 	params := req.Params
 	if len(params) == 0 || bytes.Equal(params, []byte("null")) {
 		params = json.RawMessage("{}")
 	}
-	callCtx, cancel := c.s.callContext(ctx)
 	res, e := c.s.dispatch(callCtx, req.Method, params)
 	cancel()
-	c.reply(id, notification, res, e)
+	c.reply(req.ID, notification, res, e)
 	if req.Method == protocol.MethodShutdown && e == nil {
 		c.s.requestStop()
 	}

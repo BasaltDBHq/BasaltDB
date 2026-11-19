@@ -9,8 +9,8 @@
   "properties": {
     "fileName": {
       "type": "string",
-      "pattern": "^basalt-(approval|revert)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.txt$",
-      "description": "basalt-approval-<approvalId>.txt or basalt-revert-<revertId>.txt."
+      "pattern": "^basalt-(approval|revert|plugin)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.txt$",
+      "description": "basalt-approval-<approvalId>.txt or basalt-revert-<revertId>.txt; planned, basalt-plugin-<approvalId>.txt for a plugin approval."
     },
     "text": {
       "type": "string",

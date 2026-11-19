@@ -155,6 +155,20 @@ func (s *Store) SubmitApproval(ctx context.Context, id uuid.UUID, a passkey.Asse
 	return r0, MapError(err)
 }
 
+// ReadPluginApproval returns one plugin approval the agent's role may see
+// (basalt_meta.agent_plugin_approvals), and false when there is none.
+func (s *Store) ReadPluginApproval(ctx context.Context, id uuid.UUID) (guard.PluginApprovalRecord, bool, error) {
+	r0, r1, err := s.readPluginApprovalRaw(ctx, id)
+	return r0, r1, MapError(err)
+}
+
+// SubmitPluginApproval relays the person's signed plugin approval to
+// Postgres (basalt_meta.submit_plugin_approval).
+func (s *Store) SubmitPluginApproval(ctx context.Context, r guard.PluginApprovalResponse) (time.Time, error) {
+	r0, err := s.submitPluginApprovalRaw(ctx, r)
+	return r0, MapError(err)
+}
+
 // FindApproval returns one of the agent's approvals.
 func (s *Store) FindApproval(ctx context.Context, id uuid.UUID) (ledger.Approval, error) {
 	r0, err := s.findApprovalRaw(ctx, id)

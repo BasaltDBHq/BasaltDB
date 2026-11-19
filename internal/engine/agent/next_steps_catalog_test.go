@@ -520,9 +520,14 @@ func requireOperatorRules(t *testing.T, steps []mcp.NextStep, personMessage stri
 		if st.Actor != mcp.ActorAgent || st.Action != mcp.ActionRunCommand {
 			continue
 		}
+		// basalt plugin enable (opening a plugin approval with the agent's
+		// own credential), disable and remove edit engine.json, and list
+		// reads it: machine steps too (CONTRACT.md, Plugin approval), needing
+		// no admin connection string. Never trust: an agent never adds a
+		// trust root.
 		machine := strings.HasPrefix(st.Command, "basalt init --remote ") || serviceManager.MatchString(st.Command) ||
-			strings.HasPrefix(st.Command, "basalt engine ")
-		require.True(t, machine, "%s: an AGENT command is init --remote or the engine's start: %q", where, st.Command)
+			strings.HasPrefix(st.Command, "basalt engine ") || agentPluginCommand.MatchString(st.Command)
+		require.True(t, machine, "%s: an AGENT command is init --remote, the engine's start or basalt plugin enable, disable or remove: %q", where, st.Command)
 		if strings.HasPrefix(st.Command, "basalt init --remote ") {
 			require.True(t, strings.HasSuffix(st.Command, " --json"), "%s: the agent reads init --remote's steps: %q", where, st.Command)
 			require.NotContains(t, st.Command, "--os-user", "%s: init --remote takes no --os-user", where)
@@ -604,6 +609,11 @@ func requireStepObeysRules(t *testing.T, st mcp.NextStep, kase catalogCase, conf
 // manager, or giving a lock file back to the engine's user
 // (LOCK_FILE_UNUSABLE).
 var serviceManager = regexp.MustCompile(`^sudo (systemctl|launchctl|chown) `)
+
+// agentPluginCommand is a basalt plugin command an agent may run as a
+// machine step on an agent-operated engine: list only reads engine.json
+// (PLUGIN_CONFIG_INVALID), the others edit it.
+var agentPluginCommand = regexp.MustCompile(`^basalt plugin (enable|disable|remove|list)( |$)`)
 
 func requireCommand(t *testing.T, command, config, where string) {
 	t.Helper()

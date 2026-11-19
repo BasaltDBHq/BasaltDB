@@ -33,18 +33,27 @@ const (
 	PluginNetworkEnforced    = "ENFORCED"
 	PluginNetworkDeclared    = "DECLARED"
 	PluginNetworkNotEnforced = "NOT_ENFORCED"
+
+	// Signer states of a plugin event or approval (schema version 5).
+	PluginSignerKnown   = "KNOWN"
+	PluginSignerUnknown = "UNKNOWN"
 )
 
 // PluginDetail is the detail of a plugin entry event (PLUGIN_ENABLED,
 // PLUGIN_DISABLED, PLUGIN_CHANGED), api/plugin/events.schema.json. It
 // holds no config value and names no agent.
 type PluginDetail struct {
-	Name           string   `json:"name"`
-	Instance       string   `json:"instance"`
-	Version        string   `json:"version"`
-	ManifestSHA256 string   `json:"manifestSha256"`
-	SignerKeyID    string   `json:"signerKeyId"`
-	Hooks          []string `json:"hooks"`
+	Name           string `json:"name"`
+	Instance       string `json:"instance"`
+	Version        string `json:"version"`
+	ManifestSHA256 string `json:"manifestSha256"`
+	// Signer is written only for an entry that requires approval (schema
+	// version 5; an older guard refuses the key): PluginSignerKnown with
+	// SignerKeyID, or PluginSignerUnknown without. Without Signer,
+	// SignerKeyID is required.
+	Signer      string   `json:"signer,omitempty"`
+	SignerKeyID string   `json:"signerKeyId,omitempty"`
+	Hooks       []string `json:"hooks"`
 	// Roles are wire.detect's declared roles; omitted otherwise.
 	Roles []string `json:"roles,omitempty"`
 	// Egress is never nil: the guard wants an array, empty for none.
@@ -203,4 +212,52 @@ func (r PluginRecords) EnabledPlugins() []PluginDetail {
 		}
 	}
 	return out
+}
+
+// OwedPluginEnd is the PLUGIN_DISABLED the calling agent owes for the entry
+// (name, instance), false when it owes none: its ledger records the entry as
+// served (the detail last recorded), or its newest plugin approval naming
+// it is signed and not ended (the detail that approval binds). Writing it
+// ends the approval for that agent (CONTRACT.md, Plugin approval, Turning
+// off ends it). It needs schema version PluginApprovalsVersion.
+func OwedPluginEnd(ctx context.Context, q Querier, name, instance string) (PluginDetail, bool, error) {
+	recs, err := ReadPluginRecords(ctx, q)
+	if err != nil {
+		return PluginDetail{}, false, err
+	}
+	for _, r := range recs.Entries {
+		if r.Detail.Name == name && r.Detail.Instance == instance && r.Enabled() {
+			return r.Detail, true, nil
+		}
+	}
+	apps, err := ReadPluginApprovals(ctx, q)
+	if err != nil {
+		return PluginDetail{}, false, err
+	}
+	for _, a := range apps {
+		if a.Name != name || a.Instance != instance || !a.NamesCaller {
+			continue
+		}
+		if a.Status != PluginApprovalStatusApproved || a.ApprovedAt == nil || a.Ended() {
+			return PluginDetail{}, false, nil
+		}
+		b := a.Bound
+		return PluginDetail{
+			Name: b.Name, Instance: b.Instance, Version: b.Version, ManifestSHA256: b.ManifestSHA256,
+			Hooks: b.Hooks, Roles: b.Roles, Egress: b.Egress, Endpoint: b.Endpoint, Isolation: b.Isolation,
+			Signer: b.Signer, SignerKeyID: b.SignerKeyID,
+		}, true, nil
+	}
+	return PluginDetail{}, false, nil
+}
+
+// EndPluginApproval writes the PLUGIN_DISABLED the calling agent owes for
+// (name, instance), if any (OwedPluginEnd). One implementation for the
+// engine and the basalt plugin commands.
+func EndPluginApproval(ctx context.Context, q Querier, name, instance string) error {
+	d, owed, err := OwedPluginEnd(ctx, q, name, instance)
+	if err != nil || !owed {
+		return err
+	}
+	return RecordPluginEntryEvent(ctx, q, PluginDisabled, d)
 }

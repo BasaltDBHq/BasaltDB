@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
@@ -59,6 +60,73 @@ func (h connectService) Shutdown(ctx context.Context, _ *connectrpc.Request[plug
 	// Serve stops accepting and finishes this reply before it returns.
 	h.s.requestStop()
 	return connectrpc.NewResponse(&pluginv1.ShutdownResponse{}), nil
+}
+
+func (h connectService) FeedObserve(ctx context.Context, req *connectrpc.Request[pluginv1.FeedObserveRequest]) (*connectrpc.Response[pluginv1.FeedObserveResponse], error) {
+	params, ok := hookParams(req.Msg.GetAgent(), "events", req.Msg.GetEvents())
+	if !ok {
+		return nil, connectError(errBadParams)
+	}
+	res, e := h.s.connectHook(ctx, protocol.MethodFeedObserve, params)
+	if e != nil {
+		return nil, connectError(e)
+	}
+	out, _ := res.(protocol.FeedObserveResponse)
+	return connectrpc.NewResponse(&pluginv1.FeedObserveResponse{LastSeq: out.LastSeq}), nil
+}
+
+func (h connectService) ApprovalDeliver(ctx context.Context, req *connectrpc.Request[pluginv1.ApprovalDeliverRequest]) (*connectrpc.Response[pluginv1.ApprovalDeliverResponse], error) {
+	params, ok := hookParams(req.Msg.GetAgent(), "event", req.Msg.GetEvent())
+	if !ok {
+		return nil, connectError(errBadParams)
+	}
+	if _, e := h.s.connectHook(ctx, protocol.MethodApprovalDeliver, params); e != nil {
+		return nil, connectError(e)
+	}
+	return connectrpc.NewResponse(&pluginv1.ApprovalDeliverResponse{}), nil
+}
+
+// hookParams builds a hook's JSON-RPC params from its ConnectRPC message
+// without encoding the event bytes again, so a plugin's Raw is the bytes
+// the engine sent.
+func hookParams(agent, field string, events []byte) (json.RawMessage, bool) {
+	if !json.Valid(events) {
+		return nil, false
+	}
+	name, err := json.Marshal(agent)
+	if err != nil {
+		return nil, false
+	}
+	out := make([]byte, 0, len(events)+len(name)+len(field)+16)
+	out = append(out, `{"agent":`...)
+	out = append(out, name...)
+	out = append(out, `,"`...)
+	out = append(out, field...)
+	out = append(out, `":`...)
+	out = append(out, events...)
+	return append(out, '}'), true
+}
+
+// connectHook runs one hook call under the server's ConnectRPC slots: at
+// most MaxInFlight run at once, a few more wait for a slot until their own
+// deadline, and past that a call is answered busy at once. A handler that
+// ignores its context keeps its slot until it returns, as over JSON-RPC.
+func (s *server) connectHook(ctx context.Context, method string, params json.RawMessage) (any, *rpcError) {
+	select {
+	case s.connectAdmitted <- struct{}{}:
+		defer func() { <-s.connectAdmitted }()
+	default:
+		return nil, errBusy
+	}
+	ctx, cancel := s.callContext(ctx)
+	defer cancel()
+	select {
+	case s.connectSlots <- struct{}{}:
+		defer func() { <-s.connectSlots }()
+	case <-ctx.Done():
+		return nil, errDeadline
+	}
+	return s.dispatch(ctx, method, params)
 }
 
 func initializeRequestFromProto(m *pluginv1.InitializeRequest) (protocol.InitializeRequest, error) {

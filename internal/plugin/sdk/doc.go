@@ -4,46 +4,105 @@
 // The SDK answers initialize (with version negotiation), health and shutdown,
 // enforces the 4 MiB message cap in both directions, applies the entry's
 // per-call deadline to the context of every call, keeps at most four hook
-// calls running at once (health and shutdown are answered beside them), and exits cleanly on shutdown. It never logs, never reads
-// the environment beyond SocketEnv, and puts no value from a message in any
-// error.
+// calls running at once (health and shutdown are answered beside them), and
+// exits cleanly on shutdown. It never logs, never reads the environment
+// beyond SocketEnv, and puts no value from a message in any error.
+//
+// # Write a notifier
+//
+// A notifier tells a person what an agent did, in the channel they already
+// use. It implements one or both of two interfaces, and the SDK declares the
+// matching hooks for it:
+//
+//   - FeedObserver (feed.observe): the agent's ledger events, in order, as
+//     typed values. Metadata only, never a row value, a statement or an
+//     intent, so they are safe to store or forward.
+//   - ApprovalDeliverer (approval.deliver): a notice that a write waits for
+//     the person's approval, a revert waits for their signature, or the link
+//     to one was replaced, with the link the agent was handed.
+//
+// A complete notifier:
+//
+//	type notifier struct{ out *chat.Client }
+//
+//	func (notifier) Info() sdk.Info { return sdk.Info{Name: "chat-notify", Version: "0.1.0"} }
+//
+//	func (n notifier) ObserveFeed(ctx context.Context, b sdk.FeedBatch) (int64, error) {
+//		for _, ev := range b.Events {
+//			if held, ok := ev.Detail.(sdk.WriteHeld); ok {
+//				n.out.Post(ctx, ev.ID, fmt.Sprintf("%s: %d rows held", b.Agent, held.Rows))
+//			} // any other type, a type this SDK does not know included: skip it
+//		}
+//		return b.LastSeq(), nil
+//	}
+//
+//	func (n notifier) DeliverApproval(ctx context.Context, x sdk.Notice) error {
+//		return n.out.Post(ctx, x.ID, x.Headline+"\n"+x.Instruction+"\n"+x.Link)
+//	}
+//
+//	func main() { /* sdk.Serve(ctx, notifier{...}), as the template does */ }
+//
+// Its manifest declares both hooks, with their contracts:
+//
+//	"hooks": { "feed.observe": { "contract": "feed/1" }, "approval.deliver": { "contract": "deliver/1" } }
+//
+// What to know:
+//
+//   - At least once. An event or a notice can arrive again (after a crash, a
+//     restart or a failed call). Two with the same Source and ID are the same:
+//     dedup by that pair, as the example does by passing ev.ID on.
+//   - The answer to a batch. Return the Seq of the last event you handled:
+//     b.LastSeq() for all of them, or an earlier one, and the engine sends the
+//     rest again. The SDK refuses to send a Seq that is not one of the batch's;
+//     an error, a late answer or a refused one makes the engine send the same
+//     events again later. Nothing in Basalt waits for a notifier.
+//   - Skip what you do not know. A later engine may send a Type this SDK does
+//     not know (Detail is nil, Seq is set) or a field it does not know
+//     (ignored). Skip the event and still count it as handled; skip a notice
+//     of an unknown Kind.
+//   - Forward unchanged. Every event is a CloudEvents 1.0 event. Raw returns
+//     its exact JSON bytes, so a plugin that passes events to a message broker
+//     or a webhook can send them as they came.
+//   - Plain text. Headline, Table and every other string are the engine's or
+//     the database's text: show them as plain text, never as markup or links.
+//     A notice's link opens anywhere (LinkOpensAnywhere) or only on the
+//     computer Basalt runs on (LinkOpensEngineComputer): say so when you show
+//     it. With no link, Instruction tells the person to ask the agent.
+//   - Samples. basalt plugin check sends a fixed batch and notice whose
+//     InstallID is CheckInstallID. Handle them, but do not keep them for
+//     dedup.
+//
+// # What a notice's link holds
+//
+// A notice carries exactly the link the agent's own answer handed over. A
+// short link carries only a secret that opens the approval page. A long link
+// carries the whole request inside it: the statement, its parameters, the
+// intent and the affected rows, values included. So anyone who can read
+// where you deliver a notice can read the request, and a plugin that
+// forwards notices to a message broker puts that link into the broker's log,
+// readable by whoever can read that log for as long as it keeps it. The link
+// grants no power over the action: approving still needs the person's
+// passkey. Every other field of a notice, and every feed event, holds no
+// value, statement or intent.
 //
 // # From zero to a served plugin
 //
-// A plugin is a type with an Info method. Every manifest lists at least one
-// hook, and the engine refuses a plugin that does not declare the hooks its
-// manifest lists, so until the SDK has an interface for the hook you want,
-// declare it with WithHooks:
-//
-//	type plugin struct{}
-//
-//	func (plugin) Info() sdk.Info { return sdk.Info{Name: "hello-feed", Version: "0.1.0"} }
-//
-//	func main() {
-//		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-//		defer stop()
-//		hooks := sdk.WithHooks(map[string]sdk.HookDecl{"feed.observe": {Contract: "feed/1"}})
-//		if err := sdk.Serve(ctx, plugin{}, hooks); err != nil {
-//			fmt.Fprintln(os.Stderr, err)
-//			os.Exit(1)
-//		}
-//	}
-//
-// The template (directory template, package main) is this program with a
-// transport flag and the manifest it needs. The SDK lives inside the engine's
-// module until it moves to its own repository, so build the template from a
-// clone of the engine, and expect the import path to change when the SDK
-// moves. The steps below are the ones the engine's own test runs, in
-// same-user mode: engine.json has "mode": "SAME_USER" and lists the agent you
-// pass to --agents, and trust, add and enable ask for a yes at the prompt.
+// The template (directory template, package main) is a feed observer that
+// writes one line per event to stderr, with a transport flag and the manifest
+// it needs. The SDK lives inside the engine's module until it moves to its
+// own repository, so build the template from a clone of the engine, and
+// expect the import path to change when the SDK moves. The steps below are
+// the ones the engine's own test runs, in same-user mode: engine.json has
+// "mode": "SAME_USER" and lists the agent you pass to --agents, and trust,
+// add and enable ask for a yes at the prompt.
 //
 //  1. Build it, from the engine's module:
 //     go build -o hello-feed/bin/hello-feed ./internal/plugin/sdk/template
 //  2. Write hello-feed/basalt-plugin.json. The template's comment has a
 //     manifest to start from. Its "files" entry holds the binary's SHA-256
 //     (shasum -a 256 hello-feed/bin/hello-feed), and its name, version and
-//     hooks must equal what Info and the declared hooks say, or the engine
-//     refuses the plugin at initialize.
+//     hooks must equal what Info and the interfaces the plugin implements
+//     say, or the engine refuses the plugin at initialize.
 //  3. Make a key and sign: basalt plugin keygen --out KEYDIR, then
 //     basalt plugin sign hello-feed --key KEYDIR/KEYID.key.
 //  4. Trust your key on your own engine: basalt plugin trust KEYDIR/KEYID.pub.
@@ -51,11 +110,14 @@
 //     basalt plugin add hello-feed --agents product_a, then
 //     basalt plugin enable hello-feed.
 //  6. Check it: basalt plugin check hello-feed. It starts the plugin, runs
-//     initialize and health, and sends shutdown. It prints
-//     "plugin hello-feed/default: initialize 3ms, health READY 1ms".
+//     initialize and health, sends each declared notifier hook a fixed
+//     sample, and sends shutdown. It prints one line for initialize and
+//     health and one per hook:
+//     "plugin hello-feed/default: initialize 3ms, health READY 1ms"
+//     "plugin hello-feed/default: feed.observe lastSeq 2 1ms"
 //
-// In same-user mode (the foreground engine, for development and CI) all of this
-// runs as your user under the engine's config directory.
+// In same-user mode (the foreground engine, for development and CI) all of
+// this runs as your user under the engine's config directory.
 //
 // # Choosing a transport
 //
@@ -93,20 +155,23 @@
 //   - Initializer receives the entry's config and limits at initialize.
 //   - HealthChecker reports NOT_READY when it returns an error.
 //   - Shutdowner runs before the shutdown reply, to flush or release.
+//   - FeedObserver and ApprovalDeliverer, above, serve the notifier hooks.
 //
 // Handlers receive a context that ends at the call's deadline and must return
 // when it does. A hook handler that does not keeps its slot until it returns:
 // a later hook call waits for a slot until its own deadline and is then
 // answered deadline exceeded, and health and shutdown are still answered.
+// An error a handler returns is not sent to the engine (it may hold a value):
+// the engine sees a failed call, and a plugin that wants a reason writes it
+// to its own stderr.
 //
 // # Hooks
 //
-// A plugin extends Basalt through hooks. Each hook's messages land with that
-// hook's own work, and each will add one optional interface here (found the
-// same way, by type assertion) with typed payloads. The SDK declares a hook in
-// initialize only for a plugin that implements its interface, so adding a hook
-// to the SDK never changes a plugin written before it. No hook interface
-// exists yet. A manifest must still declare one hook, so until the interface
-// for yours exists, declare it with WithHooks, as the template does. How a
+// The SDK declares a hook in initialize only for a plugin that implements its
+// interface, so adding a hook to the SDK never changes a plugin written
+// before it. The notifier hooks have interfaces; wire.detect and
+// classify.suggest do not yet. Until the interface for your hook exists,
+// declare it with WithHooks. WithHooks refuses to declare a hook that has an
+// interface the plugin does not implement (ErrHookNotImplemented). How a
 // hook is added to the SDK is described on hookSpec.
 package sdk

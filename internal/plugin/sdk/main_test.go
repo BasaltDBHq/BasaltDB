@@ -34,6 +34,17 @@ func (peerPlugin) Info() Info { return Info{Name: "sdk-peer", Version: "1.0.0"} 
 // peerMain never returns. The "echo" method it adds answers as the engine's
 // adapter suite expects, in the behavior the mode names.
 func peerMain(mode string) {
+	switch mode {
+	case "notifier", "notifier-connect":
+		var opts []Option
+		if mode == "notifier-connect" {
+			opts = append(opts, WithTransport(ConnectRPC))
+		}
+		if Serve(context.Background(), notifierPeer{}, opts...) != nil {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 	extra := map[string]methodFunc{"echo": func(ctx context.Context, params json.RawMessage) (any, *rpcError) {
 		switch mode {
 		case "oversized":

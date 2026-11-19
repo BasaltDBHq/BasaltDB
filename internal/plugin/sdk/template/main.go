@@ -1,11 +1,10 @@
 // Command template is the smallest plugin that passes `basalt plugin check`:
-// copy this file, change the name and version, and add what your plugin does.
+// a feed observer that writes one line per event to stderr. Copy this file,
+// change the name and version, and make ObserveFeed do what your plugin does.
 //
-// It implements no hook. The SDK has no interface for a hook until that hook's
-// messages exist, and a manifest must declare at least one hook, so the
-// template declares one with sdk.WithHooks to match the manifest below. When you implement a hook interface, delete the
-// WithHooks line: the SDK then declares exactly the hooks your plugin
-// implements.
+// It implements sdk.FeedObserver, so the SDK declares feed.observe for it.
+// To also deliver approval notices, implement sdk.ApprovalDeliverer and add
+// "approval.deliver": { "contract": "deliver/1" } to the manifest's hooks.
 //
 // The manifest that goes with it (basalt-plugin.json, next to the binary):
 //
@@ -37,11 +36,23 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/plugin/sdk"
 )
 
-// plugin is all an author must write to be served: a name and a version.
 type plugin struct{}
 
 func (plugin) Info() sdk.Info {
 	return sdk.Info{Name: "hello-feed", Version: "0.1.0"}
+}
+
+// ObserveFeed writes one line per event and says it handled them all. If a
+// line cannot be written, it returns an error, and the engine sends the same
+// events again later. Events can arrive twice: a real plugin dedups by
+// ev.Source and ev.ID.
+func (plugin) ObserveFeed(_ context.Context, batch sdk.FeedBatch) (int64, error) {
+	for _, ev := range batch.Events {
+		if _, err := fmt.Fprintf(os.Stderr, "hello-feed: %s seq %d %s\n", batch.Agent, ev.Seq, ev.Type); err != nil {
+			return 0, err
+		}
+	}
+	return batch.LastSeq(), nil
 }
 
 func main() { os.Exit(run(os.Args[1:])) }
@@ -56,10 +67,7 @@ func run(args []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	opts := []sdk.Option{
-		// Delete this once the plugin implements a hook interface.
-		sdk.WithHooks(map[string]sdk.HookDecl{"feed.observe": {Contract: "feed/1"}}),
-	}
+	var opts []sdk.Option
 	if *transport != "" {
 		opts = append(opts, sdk.WithTransport(sdk.Transport(*transport)))
 	}

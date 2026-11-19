@@ -97,6 +97,9 @@ func methodTimeout(m Method) time.Duration {
 	if m == MethodPrepareRevert {
 		return guard.CLIPrepareTimeout + callTimeout
 	}
+	if pluginMethod(m) {
+		return pluginTimeout
+	}
 	return callTimeout
 }
 
@@ -110,8 +113,10 @@ type Greeting struct {
 // Request is one call.
 type Request struct {
 	Method Method          `json:"method"`
-	Agent  string          `json:"agent"`
+	Agent  string          `json:"agent,omitempty"`
 	Params json.RawMessage `json:"params"`
+	// agentSet: the request line holds an agent key, even empty.
+	agentSet bool
 }
 
 // Response is the engine's answer: Result or Error.
@@ -122,7 +127,9 @@ type Response struct {
 
 // Error is a person socket error.
 type Error struct {
-	Code    Code   `json:"code"`
+	Code Code `json:"code"`
+	// Reason is set with CodePluginRefused only.
+	Reason  string `json:"reason,omitempty"`
 	Message string `json:"message"`
 }
 

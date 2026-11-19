@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/plugin/engine-entries.v1.json",
   "title": "Engine-kept plugin entries",
-  "description": "Planned (plugin approval in service mode). The content of <stateDir>/plugins.json: the plugin entries a service-mode engine keeps itself, added over the person socket without sudo. Each is an engine.json plugins entry that requires approval and names no credential file. Only the engine writes this file (owner the engine's OS user, mode 0600). Rules this schema cannot express are checked as for engine.json: (name, instance) is unique here, and is not one engine.json holds; every name in agents is one of the engine's agents; config is at most 16 KiB as compact JSON and holds no credential. See CONTRACT.md, Plugins, Plugin approval in service mode.",
+  "description": "The content of <stateDir>/plugins.json: the plugin entries a service-mode engine keeps itself, added over the person socket without sudo. Each is an engine.json plugins entry that requires approval and names no credential file. Only the engine writes this file (owner the engine's OS user, mode 0600). Rules this schema cannot express are checked as for engine.json: (name, instance) is unique here, and is not one engine.json holds; every name in agents is one of the engine's agents; config is at most 16 KiB as compact JSON and holds no credential. See CONTRACT.md, Plugins, Plugin approval in service mode.",
   "type": "array",
   "items": {
     "allOf": [

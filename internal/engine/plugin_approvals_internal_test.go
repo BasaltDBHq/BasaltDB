@@ -363,11 +363,12 @@ func TestChangedEntryIsWithheld(t *testing.T) {
 		prob := problemFor(t, ep, "product_a")
 		require.Equal(t, agent.ProblemPluginApprovalMismatch, prob.Code)
 		require.Contains(t, prob.Message, "settingsSha256")
-		// The next start finds that approval ended by the PLUGIN_DISABLED, and
-		// writes nothing more.
+		// The next check finds that approval ended by the PLUGIN_DISABLED,
+		// still names what differs, and writes nothing more.
 		ep = f.plugins(nil)
 		l.record(t, f, ep)
-		require.Equal(t, agent.ProblemPluginAwaitingApproval, problemFor(t, ep, "product_a").Code)
+		require.Equal(t, agent.ProblemPluginApprovalMismatch, problemFor(t, ep, "product_a").Code)
+		require.Contains(t, problemFor(t, ep, "product_a").Message, "settingsSha256")
 		rows := l.events(t, "product_a")
 		require.Equal(t, []string{"PLUGIN_APPROVAL_PENDING", "PLUGIN_APPROVED", "PLUGIN_ENABLED", "PLUGIN_DISABLED"}, kindsOf(rows))
 		require.JSONEq(t, rows[2].Detail, rows[3].Detail, "PLUGIN_DISABLED carries what was last recorded")

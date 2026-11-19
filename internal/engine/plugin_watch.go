@@ -278,9 +278,9 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 	}
 
 	desired := map[plugin.EntryKey]runningEntry{}
+	kept := map[plugin.EntryKey][]string{}
 	waiting := false
 	ep.mu.Lock()
-	ep.setWithheldLocked(passes, nil)
 	for _, p := range configured {
 		k := p.Key()
 		c := checks[k]
@@ -289,21 +289,20 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 		}
 		r, running := w.running[k]
 		unchanged := running && samePluginConfig(r.p, p, false)
-		kept := func(a string) bool {
+		keep := func(a string) bool {
 			pa, checked := passes[a]
 			return unchanged && slices.Contains(r.e.Agents, a) && (!checked || pa.undecided(k))
 		}
-		agents := ep.servedAgentsLocked(k, passes, kept)
+		agents := ep.servedAgentsLocked(k, passes, keep)
 		for _, a := range p.Agents {
-			// Waiting for a signature: checked again soon.
-			if approval[k] && !slices.Contains(agents, a) && ep.unrecorded[k][a].code == agent.ProblemPluginAwaitingApproval {
-				waiting = true
+			if keep(a) {
+				kept[k] = append(kept[k], a)
 			}
-		}
-		for _, a := range agents {
-			// What is served for a passing failure is not withheld.
-			if byAgent := ep.unrecorded[k]; byAgent != nil && kept(a) {
-				delete(byAgent, a)
+			// Waiting for a signature: checked again soon.
+			if pa, ok := passes[a]; ok && approval[k] && !slices.Contains(agents, a) && slices.ContainsFunc(pa.withheld, func(u unrecordedEntry) bool {
+				return u.key == k && u.code == agent.ProblemPluginAwaitingApproval
+			}) {
+				waiting = true
 			}
 		}
 		if len(agents) == 0 {
@@ -316,6 +315,18 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 	ep.mu.Unlock()
 	w.apply(desired)
 	writeDisables(ctx, passes, w.ledgers, pluginWatchTimeout, w.log)
+	// Status changes last: an agent that reads a withhold from it acts on a
+	// ledger that already records it (a new approval signed before the
+	// PLUGIN_DISABLED of the old one would be ended by it).
+	ep.mu.Lock()
+	ep.setWithheldLocked(passes, nil)
+	for k, agents := range kept {
+		// What runs on for a database that did not answer is not withheld.
+		for _, a := range agents {
+			delete(ep.unrecorded[k], a)
+		}
+	}
+	ep.mu.Unlock()
 	w.publish()
 
 	switch {

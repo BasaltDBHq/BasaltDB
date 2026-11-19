@@ -559,8 +559,10 @@ func trustedKeys(cfg config.Config, configPath string, log *slog.Logger) trustWa
 func recordPluginEvents(ctx context.Context, cfg config.Config, configPath string, ep *enginePlugins, ledgers map[string]pluginLedger, log *slog.Logger) {
 	want := wantedPlugins(cfg, ep, trustedKeys(cfg, configPath, log))
 	passes := writePluginEvents(ctx, want, ledgers, log)
-	ep.withhold(passes)
+	// Nothing runs yet: the records first, so status never shows a withhold
+	// the ledger does not record.
 	writeDisables(ctx, passes, ledgers, pluginEventTimeout, log)
+	ep.withhold(passes)
 }
 
 // withhold sets which agents each started entry is served to, before the

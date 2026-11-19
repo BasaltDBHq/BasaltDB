@@ -702,11 +702,12 @@ func (f *flowEngine) requireServedEvent(name, instance string) {
 }
 
 // TestPluginApprovalFlowLocal runs the flow for an unsigned local plugin
-// that two of three agents use: an agent's add, the engine withholding it,
-// the page's routes, a settings change reopened from status's own step,
-// the signature relayed by the page, a restart that serves it, then
-// disable and enable needing a new signature, which comes back as a pasted
-// code, also when the two happen between two engine starts.
+// that two of three agents use, on one engine that is never restarted: an
+// agent's add, the engine withholding it, the page's routes, a settings
+// change reopened from status's own step, the signature relayed by the page
+// and the running engine serving it, then disable and enable needing a new
+// signature, which comes back as a pasted code, also when the two happen
+// back to back.
 func TestPluginApprovalFlowLocal(t *testing.T) {
 	f := newFlowEngine(t, "")
 	const name, inst = "acme-ner", plugin.DefaultInstance
@@ -714,7 +715,7 @@ func TestPluginApprovalFlowLocal(t *testing.T) {
 	src := f.source("1.4.0")
 
 	// 1. An agent adds an unsigned plugin: a link, the entry written, and
-	// nothing served after the engine starts on it.
+	// nothing served by the running engine, which sees the entry.
 	res, a1 := f.opened(f.plugin(agentEnv, "add", src, "--agents", strings.Join(flowListed, ","), "--json"))
 	f.shortSecret(a1)
 	require.Equal(t, flowListed, a1.Agents)
@@ -727,7 +728,6 @@ func TestPluginApprovalFlowLocal(t *testing.T) {
 	require.Equal(t, 1, f.ledgerCount("product_a", string(guard.PluginApprovalPending)))
 	require.Equal(t, "PENDING", f.listState(inst, "product_a"))
 
-	f.restart()
 	for _, ag := range flowListed {
 		pr := f.waitProblem(ag, name, inst, agent.ProblemPluginAwaitingApproval)
 		require.Contains(t, pr.Message, "waiting for a person to sign it", ag)
@@ -771,7 +771,6 @@ func TestPluginApprovalFlowLocal(t *testing.T) {
 		e.Config = json.RawMessage(`{"threshold": 0.60, "max": 1e3, "langs": ["en", "id"]}`)
 		return nil
 	})
-	f.restart()
 	pr := f.waitProblem("product_a", name, inst, agent.ProblemPluginAwaitingApproval)
 	reopen := stepCommand(t, pr.NextSteps, mcp.ActorPerson, "basalt plugin enable ")
 	require.Contains(t, reopen, "--approve-with-passkey")
@@ -797,9 +796,8 @@ func TestPluginApprovalFlowLocal(t *testing.T) {
 	code, body = f.relay(a2, f.signed(req2))
 	require.Equal(t, http.StatusConflict, code, "signed once: %s", body)
 
-	// 4. After a restart the plugin is served to the listed agents, and the
+	// 4. With no restart the plugin is served to the listed agents, and the
 	// ledger holds the approval and the engine's record with the signer.
-	f.restart()
 	for _, ag := range flowListed {
 		f.waitServed(ag, inst)
 		f.requireNotBlocked(ag)
@@ -814,7 +812,7 @@ func TestPluginApprovalFlowLocal(t *testing.T) {
 	// 5. disable, then enable: withheld until a new approval is signed.
 	r := f.plugin(agentEnv, "disable", name)
 	require.Equal(t, exitOK, r.code, r.stderr)
-	f.restart()
+	require.Contains(t, r.stderr, "no restart is needed")
 	for _, ag := range flowListed {
 		require.Nil(t, f.pluginProblem(ag, name, inst), "%s: disabled, so not configured for it", ag)
 		// The engine writes its plugin records beside serving: wait for it.
@@ -824,7 +822,6 @@ func TestPluginApprovalFlowLocal(t *testing.T) {
 	}
 	res3, a3 := f.opened(f.plugin(agentEnv, "enable", name, "--json"))
 	require.Contains(t, res3.PersonMessage, "asks you to approve a change to the plugin acme-ner 1.4.0.")
-	f.restart()
 	for _, ag := range flowListed {
 		f.waitProblem(ag, name, inst, agent.ProblemPluginAwaitingApproval)
 	}
@@ -844,23 +841,26 @@ func TestPluginApprovalFlowLocal(t *testing.T) {
 	require.Equal(t, "APPROVED", out.Status)
 	f.requireApproved(before, 1)
 	require.Equal(t, "APPROVED", f.listState(inst, "product_b"))
-	f.restart()
 	for _, ag := range flowListed {
 		f.waitServed(ag, inst)
 	}
 	require.Equal(t, a3.ApprovalID, f.lastEvent("product_a", string(guard.PluginApproved), name, inst)["approvalId"])
 
-	// The same with disable and enable back to back, between two starts:
-	// the signed approval no longer serves it.
+	// The same with disable and enable back to back, possibly between two
+	// reads of engine.json: the signed approval no longer serves it.
 	require.Equal(t, exitOK, f.plugin(agentEnv, "disable", name).code)
 	_, a4 := f.opened(f.plugin(agentEnv, "enable", name, "--json"))
-	f.restart()
 	for _, ag := range flowListed {
 		f.waitProblem(ag, name, inst, agent.ProblemPluginAwaitingApproval)
 	}
 	req4, _ := f.pageRequest(a4)
 	code, body = f.relay(a4, f.signed(req4))
 	require.Equal(t, http.StatusOK, code, body)
+	for _, ag := range flowListed {
+		f.waitServed(ag, inst)
+	}
+
+	// A restart still serves it, as at any start.
 	f.restart()
 	for _, ag := range flowListed {
 		f.waitServed(ag, inst)
@@ -893,7 +893,6 @@ func TestPluginApprovalFlowRemote(t *testing.T) {
 	res, a := f.opened(f.plugin(agentEnv, "add", f.remoteSource("https://"+hostPort, hostPort), "--agents", strings.Join(flowListed, ","), "--json"))
 	require.Contains(t, res.PersonMessage, levelUnknown, "the level 2 warning")
 	require.NotContains(t, res.PersonMessage, levelUnknownHere)
-	f.restart()
 	for _, ag := range flowListed {
 		f.waitProblem(ag, name, inst, agent.ProblemPluginAwaitingApproval)
 		f.requireNotBlocked(ag)
@@ -916,8 +915,7 @@ func TestPluginApprovalFlowRemote(t *testing.T) {
 	f.requireApproved(before, 1)
 	require.Equal(t, "APPROVED", f.listState(inst, "product_a"))
 
-	f.restart()
-	require.True(t, waitFor(func() bool { return dials.Load() > 0 }), "the engine dials the served remote plugin")
+	require.True(t, waitFor(func() bool { return dials.Load() > 0 }), "the running engine dials the served remote plugin")
 	for _, ag := range flowListed {
 		// The server's certificate is httptest's own, which the engine does
 		// not trust, so the plugin never gets READY; what is proven is that
@@ -930,8 +928,11 @@ func TestPluginApprovalFlowRemote(t *testing.T) {
 }
 
 // TestPluginApprovalTampered: a signed and served entry changed behind the
-// approval is withheld at the next start. Each case is its own instance of
-// the plugin on one engine.
+// approval is withheld. Each case is its own instance of the plugin on one
+// engine. A change in engine.json is seen while the engine runs; files
+// swapped inside the pinned copy, with engine.json unchanged, are seen when
+// the copy is verified again, at the plugin's next start or the engine's,
+// which this test restarts once for.
 func TestPluginApprovalTampered(t *testing.T) {
 	f := newFlowEngine(t, "")
 	const name = "acme-ner"
@@ -949,7 +950,6 @@ func TestPluginApprovalTampered(t *testing.T) {
 		code, body := f.relay(a, f.signed(req))
 		require.Equal(t, http.StatusOK, code, body)
 	}
-	f.restart()
 	for _, inst := range cases {
 		for _, ag := range flowListed {
 			f.waitServed(ag, inst)
@@ -1023,7 +1023,6 @@ func TestPluginApprovalTampered(t *testing.T) {
 		f.entry("settings")(c).Config = nil
 		return nil
 	})
-	f.restart()
 	for _, ag := range flowListed {
 		pr := f.waitProblem(ag, name, "settings", agent.ProblemPluginAwaitingApproval)
 		require.Contains(t, pr.Message, "ended", ag)
@@ -1033,7 +1032,6 @@ func TestPluginApprovalTampered(t *testing.T) {
 	// The honest way to a new version, the command, opens a new approval;
 	// the old signature does not serve the new copy.
 	f.opened(f.plugin(agentEnv, "add", f.source("2.1.0"), "--agents", strings.Join(flowListed, ","), "--instance", "version", "--json"))
-	f.restart()
 	for _, ag := range flowListed {
 		pr := f.waitProblem(ag, name, "version", agent.ProblemPluginAwaitingApproval)
 		require.Contains(t, pr.Message, "waiting for a person to sign it", ag)
@@ -1043,9 +1041,9 @@ func TestPluginApprovalTampered(t *testing.T) {
 func ptrConfig(c config.Config) *config.Config { return &c }
 
 // TestPluginApprovalFlowAgentOperated: on an engine an agent operates, the
-// agent's add hands over a portal link and the next steps make the restart
-// the agent's; the engine withholds the plugin until the pasted code is
-// approved and the agent restarts it.
+// agent's add hands over a portal link and the person runs no command; the
+// engine withholds the plugin until the pasted code is approved, then
+// serves it with no restart.
 func TestPluginApprovalFlowAgentOperated(t *testing.T) {
 	f := newFlowEngine(t, mcpcontract.OperatedByAgent)
 	const name, inst = "acme-ner", plugin.DefaultInstance
@@ -1054,15 +1052,14 @@ func TestPluginApprovalFlowAgentOperated(t *testing.T) {
 	require.True(t, strings.HasPrefix(a.URL, links.Portal+"/plugins/"+a.ApprovalID+"#"), a.URL)
 	require.NotEmpty(t, res.NextSteps)
 	last := res.NextSteps[len(res.NextSteps)-1]
-	require.Equal(t, mcp.ActorAgent+" "+mcp.ActionRunCommand, last.Actor+" "+last.Action)
-	require.Contains(t, last.Command, "basalt engine", "the restart is the agent's step")
+	require.Equal(t, mcp.ActorAgent+" "+mcp.ActionEndTurn, last.Actor+" "+last.Action, "no restart step")
 	for _, s := range res.NextSteps {
+		require.NotContains(t, s.Command, "basalt engine", "nobody restarts the engine")
 		require.NotEqual(t, mcp.ActorPerson+" "+mcp.ActionRunCommand, s.Actor+" "+s.Action, "the person runs no command: %+v", s)
 	}
 	require.NotContains(t, res.PersonMessage, "basalt ", "no command for the person")
 	require.Equal(t, config.PluginApprovalRequired, f.config().Plugins[0].Approval)
 
-	f.restart()
 	for _, ag := range flowListed {
 		pr := f.waitProblem(ag, name, inst, agent.ProblemPluginAwaitingApproval)
 		stepCommand(t, pr.NextSteps, mcp.ActorAgent, "basalt plugin enable ")
@@ -1081,7 +1078,6 @@ func TestPluginApprovalFlowAgentOperated(t *testing.T) {
 	r := f.plugin(agentEnv, "approve", f.paste(req))
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Equal(t, "APPROVED", f.listState(inst, "product_a"))
-	f.restart()
 	f.waitServedEvent(name, inst)
 	for _, ag := range flowListed {
 		f.requireServedNotWithheld(ag, name, inst)

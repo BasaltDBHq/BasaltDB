@@ -121,16 +121,21 @@ func (a *agentApprovals) check(ctx context.Context, k plugin.EntryKey, d guard.P
 	default:
 		return withheldWhy{why: whyApprovalsUnread}, false
 	}
-	if r.Ended() || r.ApprovedAt == nil {
+	if r.ApprovedAt == nil {
 		return withheldWhy{code: agent.ProblemPluginAwaitingApproval, why: whyApprovalEnded}, false
 	}
 	sum, err := guard.PluginSettingsSHA256(ctx, a.db, s)
 	if err != nil {
 		return withheldWhy{why: whyApprovalsUnread, transient: transientErr(err)}, false
 	}
+	// A mismatch is named while it lasts, also once the withhold ended the
+	// approval: the person sees what differs, not only that it ended.
 	if diff := approvalMismatch(r.Bound, approvalBound(d, sum)); len(diff) > 0 {
 		return withheldWhy{code: agent.ProblemPluginApprovalMismatch, why: "it does not match what a person approved; these differ: " +
 			strings.Join(diff, ", ") + ". Ask the person whether the change was theirs, then open a new approval or disable the plugin"}, false
+	}
+	if r.Ended() {
+		return withheldWhy{code: agent.ProblemPluginAwaitingApproval, why: whyApprovalEnded}, false
 	}
 	return withheldWhy{}, true
 }

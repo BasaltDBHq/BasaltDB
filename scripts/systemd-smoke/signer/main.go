@@ -15,7 +15,6 @@ package main
 
 import (
 	"context"
-	"crypto/ecdsa"
 	"crypto/x509"
 	"encoding/json"
 	"errors"
@@ -36,6 +35,13 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
+)
+
+// keyFileMode keeps the passkey to its owner; maxBody bounds the page's
+// answer.
+const (
+	keyFileMode = 0o600
+	maxBody     = 1 << 20
 )
 
 // keyFile is what the passkey keeps between the two commands.
@@ -100,7 +106,7 @@ func save(path string, a *passkeytest.Authenticator) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, raw, 0o600)
+	return os.WriteFile(path, raw, keyFileMode)
 }
 
 func load(path string) (*passkeytest.Authenticator, error) {
@@ -116,7 +122,7 @@ func load(path string) (*passkeytest.Authenticator, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &passkeytest.Authenticator{ID: k.ID, Key: (*ecdsa.PrivateKey)(key), Counter: k.Counter, Relying: passkey.Production}, nil
+	return &passkeytest.Authenticator{ID: k.ID, Key: key, Counter: k.Counter, Relying: passkey.Production}, nil
 }
 
 // code signs the approval behind link and prints the response code.
@@ -172,7 +178,7 @@ func request(ctx context.Context, link string) (approval.PluginRequest, error) {
 		return approval.PluginRequest{}, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 	if err != nil {
 		return approval.PluginRequest{}, err
 	}
@@ -180,5 +186,8 @@ func request(ctx context.Context, link string) (approval.PluginRequest, error) {
 		return approval.PluginRequest{}, fmt.Errorf("the engine's pages answered %d: %s", resp.StatusCode, body)
 	}
 	var req approval.PluginRequest
-	return req, json.Unmarshal(body, &req)
+	if err := json.Unmarshal(body, &req); err != nil {
+		return approval.PluginRequest{}, err
+	}
+	return req, nil
 }

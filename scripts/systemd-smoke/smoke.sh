@@ -406,21 +406,24 @@ engine_pid=$(systemctl show -p MainPID --value "$engine_unit")
 config_before=$(sudo sha256sum /etc/basalt/engine.json)
 # From here on every plugin command is the agent's, run as the person with
 # no sudo; sudo only reads root's and the engine's files for the checks.
-add=$(BASALT_AGENT_CONTEXT=1 "$basalt" plugin add "$work/kept" --agents "$agent" --json) || fail "plugin add: $add"
+# Its own instance: the running engine still counts the sudo entry it
+# started with, removed above, as engine.json's until it restarts.
+kept_inst=kept
+add=$(BASALT_AGENT_CONTEXT=1 "$basalt" plugin add "$work/kept" --agents "$agent" --instance "$kept_inst" --json) || fail "plugin add: $add"
 echo "$add"
 url=$(jq -r '.approvals[0].url' <<<"$add")
 approval_id=$(jq -r '.approvals[0].approvalId' <<<"$add")
 case "$url" in http*/plugins/"$approval_id"*) ;; *) fail "add gave no approval link: $url" ;; esac
 sudo test -f /var/lib/basalt/plugins.json || fail "the engine keeps no entries file"
-sudo test -d "/var/lib/basalt/plugins/$name/default" || fail "the engine keeps no copy"
+sudo test -d "/var/lib/basalt/plugins/$name/$kept_inst" || fail "the engine keeps no copy"
 [ "$(sudo sha256sum /etc/basalt/engine.json)" = "$config_before" ] || fail "engine.json changed"
 code=$("$work/signer" -key "$work/passkey.json" code "$url")
 BASALT_AGENT_CONTEXT=1 "$basalt" plugin approve "$code" --json
-waited=$(BASALT_AGENT_CONTEXT=1 "$basalt" plugin enable "$name" --approval-id "$approval_id" --wait 60 --json) ||
+waited=$(BASALT_AGENT_CONTEXT=1 "$basalt" plugin enable "$name" --instance "$kept_inst" --approval-id "$approval_id" --wait 60 --json) ||
 	fail "the plugin does not run: $waited"
 echo "$waited"
 [ "$(jq -r .state <<<"$waited")" = RUNNING ] || fail "the wait ended $(jq -r .state <<<"$waited")"
-kept_pid=$(pgrep -f "/var/lib/basalt/plugins/$name/default/" | head -1)
+kept_pid=$(pgrep -f "/var/lib/basalt/plugins/$name/$kept_inst/" | head -1)
 [ -n "$kept_pid" ] || fail "no plugin process runs from the engine's copy"
 kept_uid=$(awk '/^Uid:/ {print $2}' "/proc/$kept_pid/status")
 [ "$kept_uid" = "$(id -u basalt)" ] || fail "the plugin runs as uid $kept_uid, not the engine's user"
@@ -428,14 +431,14 @@ grep -q "/$engine_unit" "/proc/$kept_pid/cgroup" || fail "the plugin is not in t
 echo "the plugin runs as the engine's user (uid $kept_uid) in $engine_unit"
 [ "$(systemctl show -p MainPID --value "$engine_unit")" = "$engine_pid" ] || fail "the engine restarted"
 
-BASALT_AGENT_CONTEXT=1 "$basalt" plugin disable "$name"
+BASALT_AGENT_CONTEXT=1 "$basalt" plugin disable "$name" --instance "$kept_inst"
 kept_gone() { ! kill -0 "$kept_pid" 2>/dev/null; }
 wait_for "the plugin to stop" kept_gone
 listed=$(BASALT_AGENT_CONTEXT=1 "$basalt" plugin list --json)
-[ "$(jq -r --arg n "$name" '.plugins[] | select(.name == $n) | .approval.agents[0].state' <<<"$listed")" = ENDED ] ||
+[ "$(jq -r --arg n "$name" '.plugins[] | select(.name == $n and .instance == "kept") | .approval.agents[0].state' <<<"$listed")" = ENDED ] ||
 	fail "disable did not end the approval: $listed"
-BASALT_AGENT_CONTEXT=1 "$basalt" plugin remove "$name"
-sudo test ! -e "/var/lib/basalt/plugins/$name" || fail "remove left the copy"
+BASALT_AGENT_CONTEXT=1 "$basalt" plugin remove "$name" --instance "$kept_inst"
+sudo test ! -e "/var/lib/basalt/plugins/$name/$kept_inst" || fail "remove left the copy"
 [ "$(systemctl show -p MainPID --value "$engine_unit")" = "$engine_pid" ] || fail "the engine restarted"
 [ "$(sudo sha256sum /etc/basalt/engine.json)" = "$config_before" ] || fail "engine.json changed"
 

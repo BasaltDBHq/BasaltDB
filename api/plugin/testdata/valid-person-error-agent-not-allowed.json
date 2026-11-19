@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "AGENT_NOT_ALLOWED",
+    "message": "uid 1001 runs the agent product_b; only the person adds, changes or approves plugins"
+  }
+}

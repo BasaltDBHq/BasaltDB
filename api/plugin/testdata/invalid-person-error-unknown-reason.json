@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "PLUGIN_REFUSED",
+    "reason": "AGENT_OPERATED",
+    "message": "refused"
+  }
+}

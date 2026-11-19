@@ -1,0 +1,85 @@
+{
+  "plugins": [
+    {
+      "name": "acme-ner",
+      "instance": "default",
+      "source": "CONFIG",
+      "enabled": true,
+      "agents": [
+        "product_a"
+      ],
+      "version": "1.4.0",
+      "signer": "KNOWN",
+      "signerKeyId": "AAECAwQFBgcICQoLDA0ODw",
+      "endpoint": {
+        "kind": "LOCAL"
+      },
+      "isolation": {
+        "files": "OS_USER",
+        "network": "ENFORCED"
+      },
+      "approval": {
+        "required": false,
+        "agents": [
+          {
+            "agent": "product_a",
+            "state": "NOT_REQUIRED"
+          }
+        ]
+      }
+    },
+    {
+      "name": "local-ner",
+      "instance": "client_x",
+      "source": "ENGINE",
+      "enabled": true,
+      "agents": [
+        "product_b"
+      ],
+      "version": "0.3.1",
+      "signer": "UNKNOWN",
+      "endpoint": {
+        "kind": "LOCAL"
+      },
+      "isolation": {
+        "files": "NONE",
+        "network": "NOT_ENFORCED"
+      },
+      "approval": {
+        "required": true,
+        "agents": [
+          {
+            "agent": "product_b",
+            "state": "PENDING",
+            "approvalId": "0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7b",
+            "expiresAt": "2026-11-20T10:00:00.5Z"
+          }
+        ]
+      }
+    },
+    {
+      "name": "slack-notify",
+      "instance": "default",
+      "source": "ENGINE",
+      "enabled": false,
+      "agents": [
+        "product_a"
+      ],
+      "version": "1.0.0",
+      "signer": "UNKNOWN",
+      "endpoint": {
+        "kind": "REMOTE",
+        "host": "notify.example.com:443"
+      },
+      "approval": {
+        "required": true,
+        "agents": [
+          {
+            "agent": "product_a",
+            "state": "ENDED"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "method": "PLUGIN_DISABLE",
+  "params": {
+    "name": "local-ner",
+    "instance": "client_x"
+  }
+}

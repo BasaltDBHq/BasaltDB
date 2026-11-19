@@ -1,0 +1,7 @@
+{
+  "method": "PLUGIN_REMOVE",
+  "params": {
+    "name": "local-ner",
+    "instance": "client_x"
+  }
+}

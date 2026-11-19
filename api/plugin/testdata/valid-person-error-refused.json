@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "PLUGIN_REFUSED",
+    "reason": "NAME_TAKEN",
+    "message": "engine.json already has the plugin entry local-ner (instance client_x), added with sudo; choose another --instance, or change that entry with sudo basalt plugin add"
+  }
+}

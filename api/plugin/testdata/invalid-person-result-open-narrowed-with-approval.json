@@ -1,0 +1,21 @@
+{
+  "name": "local-ner",
+  "instance": "default",
+  "version": "0.3.1",
+  "narrowed": true,
+  "approvals": [
+    {
+      "database": {
+        "host": "db.example.internal",
+        "name": "app"
+      },
+      "agents": [
+        "product_b"
+      ],
+      "approvalId": "0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7b",
+      "expiresAt": "2026-11-20T10:00:00.5Z",
+      "bindingText": "{\"kind\": \"PLUGIN\", \"name\": \"local-ner\", \"hooks\": [\"wire.detect\"], \"roles\": [\"VALUE\"], \"agents\": [\"basalt_agent_product_b\"], \"egress\": [], \"signer\": \"UNKNOWN\", \"version\": \"0.3.1\", \"database\": \"app\", \"endpoint\": {\"kind\": \"LOCAL\"}, \"instance\": \"client_x\", \"expiresAt\": \"2026-11-20T10:00:00.500000Z\", \"isolation\": {\"files\": \"NONE\", \"network\": \"NOT_ENFORCED\"}, \"approvalId\": \"0193b2c4-5d6e-7f80-9a1b-2c3d4e5f6a7b\", \"requestedBy\": \"basalt_agent_product_b\", \"manifestSha256\": \"3b1f0c9e5a7d2b4c6e8f0a1b3c5d7e9f1a2b3c4d5e6f708192a3b4c5d6e7f809\", \"settingsSha256\": \"44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a\"}",
+      "settingsText": "{}"
+    }
+  ]
+}

@@ -1,0 +1,370 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/plugin/approval/person.v1.json",
+  "title": "Person socket plugin methods",
+  "description": "Planned (plugin approval in service mode). The person socket's plugin methods: the request line a client writes after the greeting, and each method's result and error. Framing is the person socket's own (one request per connection, newline-delimited JSON, a request line of at most 256 KiB). The plugin methods carry no top-level agent; the agents are named in params. Only the person may call them: a peer whose uid is an agent's osUser is refused with AGENT_NOT_ALLOWED. See CONTRACT.md, The person socket and Plugins, Plugin approval in service mode.",
+  "$defs": {
+    "request": {
+      "description": "The request line of a plugin method.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "params"],
+      "properties": {
+        "method": {
+          "enum": [
+            "PLUGIN_UPLOAD_BEGIN",
+            "PLUGIN_UPLOAD_PART",
+            "PLUGIN_OPEN",
+            "PLUGIN_LIST",
+            "PLUGIN_APPROVE",
+            "PLUGIN_DISABLE",
+            "PLUGIN_REMOVE"
+          ]
+        },
+        "params": { "type": "object" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "method": { "enum": ["PLUGIN_UPLOAD_BEGIN", "PLUGIN_LIST"] } } },
+          "then": { "properties": { "params": { "$ref": "#/$defs/noParams" } } }
+        },
+        {
+          "if": { "properties": { "method": { "const": "PLUGIN_UPLOAD_PART" } } },
+          "then": { "properties": { "params": { "$ref": "#/$defs/partParams" } } }
+        },
+        {
+          "if": { "properties": { "method": { "const": "PLUGIN_OPEN" } } },
+          "then": { "properties": { "params": { "$ref": "#/$defs/openParams" } } }
+        },
+        {
+          "if": { "properties": { "method": { "const": "PLUGIN_APPROVE" } } },
+          "then": { "properties": { "params": { "$ref": "#/$defs/approveParams" } } }
+        },
+        {
+          "if": { "properties": { "method": { "enum": ["PLUGIN_DISABLE", "PLUGIN_REMOVE"] } } },
+          "then": { "properties": { "params": { "$ref": "#/$defs/entryParams" } } }
+        }
+      ]
+    },
+    "noParams": {
+      "type": "object",
+      "additionalProperties": false
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,39}$"
+    },
+    "instance": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,31}$"
+    },
+    "agentName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "maxLength": 63
+    },
+    "uploadId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "partParams": {
+      "description": "One part of one file of an upload. Parts of a path arrive in order: offset is the number of bytes the engine already holds for that path.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uploadId", "path", "offset", "data"],
+      "properties": {
+        "uploadId": { "$ref": "#/$defs/uploadId" },
+        "path": {
+          "description": "basalt-plugin.json, basalt-plugin.json.sig, or a path the manifest lists in files.",
+          "$ref": "../manifest.schema.json#/$defs/relativePath"
+        },
+        "offset": { "type": "integer", "minimum": 0, "maximum": 268435455 },
+        "data": {
+          "description": "The part's bytes, base64url without padding: 1 to 65536 bytes (2 to 87382 characters).",
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 87382,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      }
+    },
+    "settings": {
+      "description": "The entry's settings for an engine-kept entry: config, timeoutMs and minConfidence as engine.json holds them. auth is refused: an engine-kept entry never names a credential file.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "config": { "$ref": "../config.schema.json#/$defs/entry/properties/config" },
+        "timeoutMs": { "$ref": "../config.schema.json#/$defs/entry/properties/timeoutMs" },
+        "minConfidence": { "$ref": "../config.schema.json#/$defs/entry/properties/minConfidence" }
+      }
+    },
+    "openParams": {
+      "description": "Open a plugin change. With uploadId: add the uploaded copy as a new engine-kept entry, or change an existing one to it. Without: open a new approval for the entry's installed copy (basalt plugin enable). agents is the entry's full new list, always named explicitly. settings replaces the entry's settings; absent keeps them (none for a new entry).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "instance", "agents"],
+      "properties": {
+        "uploadId": { "$ref": "#/$defs/uploadId" },
+        "name": { "$ref": "#/$defs/name" },
+        "instance": { "$ref": "#/$defs/instance" },
+        "agents": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/agentName" }
+        },
+        "settings": { "$ref": "#/$defs/settings" }
+      }
+    },
+    "approveParams": {
+      "description": "Relay a signed plugin approval: the decoded basalt-plugin.1. code without its approvalId repeated.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approvalId", "assertion"],
+      "properties": {
+        "approvalId": { "type": "string", "format": "uuid" },
+        "assertion": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["credentialId", "authenticatorData", "clientDataJson", "signature"],
+          "properties": {
+            "credentialId": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+            "authenticatorData": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+            "clientDataJson": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+            "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" }
+          }
+        }
+      }
+    },
+    "entryParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "instance"],
+      "properties": {
+        "name": { "$ref": "#/$defs/name" },
+        "instance": { "$ref": "#/$defs/instance" }
+      }
+    },
+    "uploadBeginResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uploadId", "expiresAt", "maxPartBytes", "maxUploadBytes"],
+      "properties": {
+        "uploadId": { "$ref": "#/$defs/uploadId" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "maxPartBytes": { "const": 65536 },
+        "maxUploadBytes": { "const": 268435456 }
+      }
+    },
+    "uploadPartResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "size"],
+      "properties": {
+        "path": { "$ref": "../manifest.schema.json#/$defs/relativePath" },
+        "size": { "type": "integer", "minimum": 1, "maximum": 268435456 }
+      }
+    },
+    "database": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host", "name"],
+      "properties": {
+        "host": { "type": "string" },
+        "name": { "type": "string" }
+      }
+    },
+    "openResult": {
+      "description": "The entry is written, enabled, with approval REQUIRED. approvals holds one item per database among agents, in the order of each database's first agent in agents; empty exactly when narrowed. The client builds the links, personMessage and nextSteps of result.schema.json from it, as the same-user command does.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "instance", "version", "narrowed", "approvals"],
+      "properties": {
+        "name": { "$ref": "#/$defs/name" },
+        "instance": { "$ref": "#/$defs/instance" },
+        "version": { "type": "string" },
+        "narrowed": {
+          "description": "true when the change only removed agents (the same copy and settings, no agent added): no approval is opened.",
+          "type": "boolean"
+        },
+        "approvals": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/openedApproval" }
+        }
+      },
+      "if": { "properties": { "narrowed": { "const": true } } },
+      "then": { "properties": { "approvals": { "maxItems": 0 } } },
+      "else": { "properties": { "approvals": { "minItems": 1 } } }
+    },
+    "openedApproval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["database", "agents"],
+      "properties": {
+        "database": { "$ref": "#/$defs/database" },
+        "agents": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/agentName" }
+        },
+        "approvalId": { "type": "string", "format": "uuid" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "bindingText": { "type": "string", "description": "The binding text as open_plugin_approval returned it: clients hash and parse it as given." },
+        "settingsText": { "type": "string", "description": "The settings text as open_plugin_approval returned it." },
+        "refused": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reason", "message"],
+          "properties": {
+            "reason": { "enum": ["TOO_MANY_PENDING", "GUARD_OUTDATED", "UNKNOWN_AGENT", "DATABASE_UNREACHABLE"] },
+            "message": { "type": "string" }
+          }
+        }
+      },
+      "oneOf": [
+        { "required": ["approvalId", "expiresAt", "bindingText", "settingsText"], "not": { "required": ["refused"] } },
+        { "required": ["refused"], "not": { "anyOf": [{ "required": ["approvalId"] }, { "required": ["bindingText"] }] } }
+      ]
+    },
+    "listResult": {
+      "description": "Every plugin entry of the engine, config entries and engine-kept ones, in name and instance order: what basalt plugin list prints in service mode.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plugins"],
+      "properties": {
+        "plugins": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/listedEntry" }
+        },
+        "problem": {
+          "description": "Present when the engine-kept entries file cannot be used: why, naming the file. The list then holds the config entries only.",
+          "type": "string"
+        }
+      }
+    },
+    "listedEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "instance", "source", "enabled", "agents", "version", "endpoint", "approval"],
+      "properties": {
+        "name": { "$ref": "#/$defs/name" },
+        "instance": { "$ref": "#/$defs/instance" },
+        "source": {
+          "description": "CONFIG: in engine.json, added with sudo. ENGINE: engine-kept, added over the person socket.",
+          "enum": ["CONFIG", "ENGINE"]
+        },
+        "enabled": { "type": "boolean" },
+        "agents": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/agentName" }
+        },
+        "version": { "type": "string" },
+        "signer": {
+          "description": "The installed copy's signer state, or absent when the copy could not be read.",
+          "enum": ["KNOWN", "UNKNOWN"]
+        },
+        "signerKeyId": { "$ref": "../events.schema.json#/$defs/keyId" },
+        "endpoint": { "$ref": "../events.schema.json#/$defs/entryDetail/properties/endpoint" },
+        "isolation": { "$ref": "../events.schema.json#/$defs/entryDetail/properties/isolation" },
+        "approval": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["required", "agents"],
+          "properties": {
+            "required": { "type": "boolean" },
+            "agents": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["agent", "state"],
+                "properties": {
+                  "agent": { "$ref": "#/$defs/agentName" },
+                  "state": { "enum": ["APPROVED", "PENDING", "EXPIRED", "ENDED", "NONE", "UNAVAILABLE", "NOT_REQUIRED"] },
+                  "approvalId": { "type": "string", "format": "uuid" },
+                  "expiresAt": { "type": "string", "format": "date-time" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "source": { "const": "ENGINE" } } },
+          "then": { "properties": { "approval": { "properties": { "required": { "const": true } } } } }
+        }
+      ]
+    },
+    "approveResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approvalId", "status", "approvedAt"],
+      "properties": {
+        "approvalId": { "type": "string", "format": "uuid" },
+        "status": { "const": "APPROVED" },
+        "approvedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "disableResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "instance", "enabled"],
+      "properties": {
+        "name": { "$ref": "#/$defs/name" },
+        "instance": { "$ref": "#/$defs/instance" },
+        "enabled": { "const": false }
+      }
+    },
+    "removeResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "instance", "removed"],
+      "properties": {
+        "name": { "$ref": "#/$defs/name" },
+        "instance": { "$ref": "#/$defs/instance" },
+        "removed": { "const": true }
+      }
+    },
+    "error": {
+      "description": "The response line of a failed plugin method. code is one of the person socket's codes, or PLUGIN_REFUSED with a reason, which the CLI prints as the same-user PLUGIN_REFUSED error body.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error"],
+      "properties": {
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message"],
+          "properties": {
+            "code": {
+              "enum": ["AGENT_NOT_ALLOWED", "UNKNOWN_METHOD", "INVALID_ARGUMENT", "NOT_FOUND", "REFUSED", "INTERNAL", "PLUGIN_REFUSED"]
+            },
+            "reason": {
+              "enum": [
+                "BAD_MANIFEST",
+                "NOT_TRUSTED",
+                "UNKNOWN_AGENT",
+                "UNSAFE_PATH",
+                "GUARD_OUTDATED",
+                "DATABASE_UNREACHABLE",
+                "NAME_TAKEN",
+                "CONFIG_ENTRY",
+                "TOO_LARGE",
+                "TOO_MANY_UPLOADS",
+                "ENGINE_IS_ROOT"
+              ]
+            },
+            "message": { "type": "string" }
+          },
+          "if": { "properties": { "code": { "const": "PLUGIN_REFUSED" } } },
+          "then": { "required": ["reason"] },
+          "else": { "not": { "required": ["reason"] } }
+        }
+      }
+    }
+  }
+}

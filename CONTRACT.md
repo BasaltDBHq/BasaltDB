@@ -571,11 +571,20 @@ Service mode only (owner decisions SM-1 to SM-3). With `"mode": "SERVICE"` the e
 | `STATUS` | `{}` | `{ "status", "engine": { "pid", "osUser" }, "socketDir", "stateDir" }`: `status` is the agent's [`status` tool](#mcp-tools) result | `status`, `upgrade` |
 | `TARGET` | `{}` | `{ "host", "port", "database", "supabaseRef" }`: the database the agent's credential connects to, as pgx parses it (`supabaseRef` when its user or host names a Supabase project); no user, password or other parameter | `upgrade` |
 | `AGENTS` | `{}` (no `agent` in the request) | `[{ "agent", "host", "database" }]`, sorted by agent: every agent the engine serves this peer with the name and host of its database, nothing else (no user, port, password or credential path). The person's uid gets every agent; an agent's OS user gets only the agents it runs. Not refused by the guard check | `status` without `--agent` |
+| `PLUGIN_UPLOAD_BEGIN` | Planned. `{}` (no `agent`) | `{ "uploadId", "expiresAt", "maxPartBytes", "maxUploadBytes" }` | `plugin add` |
+| `PLUGIN_UPLOAD_PART` | Planned. `{ "uploadId", "path", "offset", "data" }` (no `agent`) | `{ "path", "size" }` | `plugin add` |
+| `PLUGIN_OPEN` | Planned. `{ "uploadId"?, "name", "instance", "agents", "settings"? }` (no `agent`) | `{ "name", "instance", "version", "narrowed", "approvals": [{ "database", "agents", "approvalId", "expiresAt", "bindingText", "settingsText" } or { "database", "agents", "refused" }] }` | `plugin add`, `plugin enable` |
+| `PLUGIN_LIST` | Planned. `{}` (no `agent`) | `{ "plugins": [{ "name", "instance", "source", "enabled", "agents", "version", "signer", "signerKeyId", "endpoint", "isolation", "approval" }], "problem"? }` | `plugin list` |
+| `PLUGIN_APPROVE` | Planned. `{ "approvalId", "assertion" }` (no `agent`) | `{ "approvalId", "status", "approvedAt" }` | `plugin approve` |
+| `PLUGIN_DISABLE` | Planned. `{ "name", "instance" }` (no `agent`) | `{ "name", "instance", "enabled": false }` | `plugin disable` |
+| `PLUGIN_REMOVE` | Planned. `{ "name", "instance" }` (no `agent`) | `{ "name", "instance", "removed": true }` | `plugin remove` |
+
+The `PLUGIN_*` methods are planned ([Plugin approval in service mode](#plugin-approval-in-service-mode), which sets out their params, results, limits and errors; schemas in [`person.schema.json`](api/plugin/approval/person.schema.json)). Unlike the methods above they are the person's only: a peer whose uid is an agent's `osUser` is refused with `AGENT_NOT_ALLOWED` whatever it names, and a request with a top-level `agent` is `INVALID_ARGUMENT`. Until they are served the engine answers them `UNKNOWN_METHOD`.
 
 `STATUS`, `TARGET` and `AGENTS` (added with `basalt status` and `basalt upgrade`) answer while the guard is missing or outdated: unlike every other method they are not refused by the guard check, since they are how the person finds and fixes that.
 
 `assertion` is `{ "credentialId", "authenticatorData", "clientDataJson", "signature" }`, the passkey assertion of the approval or revert code. `scope` is `CHANGE`, `RUN` or `TASK`. `runs` and `tables` (revert scope) are the scope filters of `basalt revert --runs` and `--tables`, `null` or absent for all; the engine builds the descriptor with `agents` = `[the agent's role]`, as for the MCP tools. `RESCOPE_REVERT` keeps the revert's scope and id and calls `rescope_revert` with no proof or token, so it never widens; `REJECT_REVERT` calls `reject_revert` with no token. A `change` and a `rowChange` carry the fields of [the change record](#the-change-record) the CLI prints. `SUBMIT_APPROVAL` and `APPLY_REVERT` are relays: Postgres verifies the passkey signature, as for the same-user CLI, and the socket gives the person no power the agent's credential plus their passkey does not.
-- **Errors.** `error.code` is one of `UID_NOT_ALLOWED` (greeting only), `UNKNOWN_AGENT` (the engine serves no agent of that name), `AGENT_NOT_ALLOWED` (the peer is an agent's OS user and named another agent; `message` names the fix, a separate `--os-user`), `UNKNOWN_METHOD`, `INVALID_ARGUMENT`, `NOT_FOUND` (`FIND_APPROVAL`, `FIND_REVERT`: not this agent's), `REFUSED` (Postgres refused the call, and `message` is its message and detail, as the same-user CLI prints them; or the engine refused it before reaching the database because the guard is outdated or missing or the database is down, and `message` is the agent's message for that refusal, with the command that fixes it, such as `basalt upgrade` or `basalt init`) and `INTERNAL` (`message` is generic; the engine logs the cause). The CLI prints `message` the way it prints the same error in same-user mode.
+- **Errors.** Planned for the `PLUGIN_*` methods only: `PLUGIN_REFUSED`, with a `reason` beside `code` and `message` ([Plugin approval in service mode](#plugin-approval-in-service-mode)). `error.code` is one of `UID_NOT_ALLOWED` (greeting only), `UNKNOWN_AGENT` (the engine serves no agent of that name), `AGENT_NOT_ALLOWED` (the peer is an agent's OS user and named another agent; `message` names the fix, a separate `--os-user`), `UNKNOWN_METHOD`, `INVALID_ARGUMENT`, `NOT_FOUND` (`FIND_APPROVAL`, `FIND_REVERT`: not this agent's), `REFUSED` (Postgres refused the call, and `message` is its message and detail, as the same-user CLI prints them; or the engine refused it before reaching the database because the guard is outdated or missing or the database is down, and `message` is the agent's message for that refusal, with the command that fixes it, such as `basalt upgrade` or `basalt init`) and `INTERNAL` (`message` is generic; the engine logs the cause). The CLI prints `message` the way it prints the same error in same-user mode.
 
 ## Setup from your laptop
 
@@ -2319,6 +2328,126 @@ Same-user mode.
 - **`nextSteps`**: `SEND_REQUEST` first when a `requestFile` is present; P `OPEN_LINK` for each link; P `TELL_AGENT` (once they approved, or the code the page shows); A `END_TURN`; then O `RUN_COMMAND` (the engine restart command, once `basalt plugin list` shows every approval signed), `O` resolved as in [Next steps](#next-steps). When the person pastes a `basalt-plugin.1.` code into the chat, the agent runs `basalt plugin approve <code>` on an agent-operated engine, and on a person-operated engine shows the person that command (the local pages' relay usually makes it unnecessary there).
 - **`basalt plugin approve <code> [--agent NAME] [--json]`** decodes a `basalt-plugin.1.` code, uses the agent that opened the approval (`requestedBy`: the only agent, `--agent`, or the one whose `agent_plugin_approvals` row carries `binding_text`, which only the opener's does), checks the code locally against the binding text and against the stored passkey, and calls `submit_plugin_approval` with that agent's credential. It prints the approved entry and the engine restart command; `--json` prints `{ "approvalId", "status": "APPROVED", "approvedAt" }`. A refusal exits `1` with Postgres's detail, as `basalt approve` does (`APPROVAL_INVALID`, `APPROVAL_EXPIRED`). An agent may run it: relaying a signature is not consent, and Postgres checks it.
 - **`basalt plugin list`** shows, for each entry that requires approval, the state of the newest approval naming each listed agent: `APPROVED`, `PENDING` (with its expiry), `EXPIRED`, `ENDED` (turned off or removed since it was signed), `NONE` (none names the agent, or the newest was cancelled), or `UNAVAILABLE` (the guard is older than schema version 5, or the approvals could not be read); an entry that does not require approval shows `NOT_REQUIRED`. Whether a signed approval matches the installed copy and config is the engine's check at start, which `status` reports. `--json` prints `{ "plugins": [{ "name", "instance", "enabled", "agents", "approval" }] }`, `approval` being `{ "required", "agents": [{ "agent", "state", "approvalId"?, "expiresAt"? }] }`. Only an entry that requires approval reads a database, each agent's within 15 seconds.
+
+### Plugin approval in service mode
+
+Planned (not served: today service mode is as [Consent](#consent) and [Service units](#service-units) say, and the person socket answers the `PLUGIN_*` methods `UNKNOWN_METHOD`). `basalt init` at a terminal installs the engine as a background service by default, so a person's own laptop usually runs in service mode. There a person adds a plugin as in same-user mode: they tell their agent to add it, approve once with a passkey on the [plugin approval page](#the-plugin-approval-page), and it runs. No step needs `sudo` and nothing runs as root. The engine runs such a plugin itself, as its own OS user, without the isolation a plugin added with `sudo` gets, and the page says so. Everything in [Plugin approval](#plugin-approval) and the sections after it applies, except where this section says otherwise.
+
+**What the person gives up.** Service mode exists so that agents cannot read the engine's files. A local plugin approved this way runs as the engine's OS user, so it can read what the engine can: every agent's database credential on that engine and the masking key (`pii.key`). It can also change what the engine can change: the engine's config directory and state directory, and the sockets in its socket directory. With an agent's credential it can write plugin events to that agent's ledger, so for an engine running such a plugin [the plugin events](#in-the-ledger) are only as trustworthy as the plugin. That is the same as a local plugin in same-user mode. A person who wants a local plugin fenced in installs it with `sudo basalt plugin add`, which runs it under its own OS user and unit ([Isolation and trust](#isolation-and-trust)). A remote plugin runs no process on the machine, so it gives up none of this.
+
+**Two kinds of entry.**
+
+- **Config entries**: `engine.json`'s `plugins`, added with `sudo basalt plugin add` as [Consent](#consent) says, each local one under its own unit and OS user (`files: OS_USER`). Unchanged by this section, and they never require approval.
+- **Engine-kept entries**: added without `sudo`, over the [person socket](#the-person-socket). The engine keeps them under its own state directory. **Every engine-kept entry requires approval**, whatever the file says, so this section's rules hold for it on a person-operated engine and on an agent-operated one alike.
+
+`basalt plugin list` shows both kinds: in the text output each entry ends with `added with sudo` or `engine-kept`, and `--json` gives each item `source`: `CONFIG` or `ENGINE`.
+
+**Asking.**
+
+- In service mode, `basalt plugin add`, `enable`, `disable`, `remove`, `list` and `approve` run **without `sudo`** (not as root) never read `engine.json`, the state directory or a credential. They call the `PLUGIN_*` methods of the person socket, and the engine does the work with the credentials it holds.
+  - `add` and `enable` always open an approval: no consent screen in the terminal, no `AGENT_OPERATED` refusal, and `--approve-with-passkey` is accepted and changes nothing.
+  - `disable` and `remove` act on engine-kept entries only.
+- **With `sudo`** they are as [Consent](#consent) says, for config entries only: `--approve-with-passkey` and `basalt plugin approve` stay usage errors (exit `2`) there.
+- `basalt plugin trust` is unchanged: `sudo` only, refused for agents.
+- **Who may call.** Only the person: a peer the socket admits (its uid in `personUids`) that is no agent's `osUser`.
+  - A peer whose uid is an agent's `osUser` gets `AGENT_NOT_ALLOWED` on every `PLUGIN_*` method, before anything is read. Root and the engine's own user are never admitted, as for every method.
+  - An agent that runs under the person's own uid (a coding agent on a laptop) does reach these methods: that is how "tell the agent to add a plugin" works. It is safe for the reason it is in same-user mode: what such an agent can do is open an approval, which nothing serves until a person signs it with a passkey, and narrow (disable, remove).
+  - The requests carry no top-level `agent`. The agents an entry serves are named in `params`.
+- **Only the engine opens plugin approvals in service mode.** It does so only on a `PLUGIN_OPEN` request from the person socket, and only for the agents that request names explicitly: there is no default to every agent. It opens them in the guard with the listed agents' own credentials, which it holds. No agent can open one any other way. Its OS user cannot read its credential, and the SQL tools refuse `open_plugin_approval`, `submit_plugin_approval` and every other `basalt_meta` function (`STATEMENT_REFUSED`, `FUNCTION_NOT_ALLOWED`).
+- **Operated by an agent.** `operatedBy` changes nothing in the methods. It only decides the link base and who restarts the engine, as in same-user mode: on an agent-operated engine the links are on the portal, and the signature comes back as the pasted code, which `basalt plugin approve` relays when it runs under a person's uid. An agent with an OS user of its own cannot relay it there (`AGENT_NOT_ALLOWED`); the person runs that command.
+
+**Engine-kept entries.**
+
+- **The entries file** is `<stateDir>/plugins.json`, owned by the engine's OS user, mode `0600`.
+  - It holds a JSON array of entries in the shape of `engine.json`'s `plugins` ([`engine-entries.schema.json`](api/plugin/engine-entries.schema.json)), each with `instance` and `"approval": "REQUIRED"`, and none with `auth`.
+  - Only the engine writes it: under `<stateDir>/plugins.json.lock`, as a new file renamed into place. A missing file means no engine-kept entries.
+  - A file that fails the path rule (below) or its schema, or holds a `(name, instance)` twice, is not used and never overwritten. The engine then serves no engine-kept entry, logs the cause, and every agent's `status` shows `PLUGIN_UNAVAILABLE` naming the file. `PLUGIN_LIST` lists the config entries with `problem` set. Every other `PLUGIN_*` method is refused with `INTERNAL`, whose `message` names the file and the rule it fails.
+- **Installed copies** are under `<stateDir>/plugins/<name>/<instance>/<manifest-sha256>/`. They are staged, checked and renamed into place as [Installed copies](#signing-and-the-trust-store) says, from an upload (below) instead of a source directory.
+  - The [path rule](#signing-and-the-trust-store) holds for them and for the entries file, with the engine's OS user as the required owner from `<stateDir>` down (root or that user above it, as for any path).
+  - A copy that no entry names any more (the old version after a change, or a removed entry's copy) is removed at the engine's next start, and when its entry is removed.
+- **The engine never writes** `engine.json`'s `plugins`, `<base>` (`/opt/basalt` or `/Library/Basalt`, root's: the config entries' copies and the trust store), or a service unit. `engine.json` belongs to the engine's user in service mode. The engine writes it only as before (to clear a finished setup), never for plugins.
+- **One `(name, instance)`, one kind.**
+  - A `(name, instance)` that `engine.json` holds cannot be added as an engine-kept entry (`PLUGIN_REFUSED` `NAME_TAKEN`).
+  - `sudo basalt plugin add` refuses a `(name, instance)` the engine keeps (`NAME_TAKEN`, naming `basalt plugin remove`). It reads only the entries' names from `<stateDir>/plugins.json`, opened relative to the state directory with the same checks `sudo basalt init --remote` applies to the state directory; a file it cannot read that way refuses the add (`UNSAFE_PATH`).
+  - If both still hold one (an `engine.json` edited by hand), the config's entry is served and the engine-kept one is not, with `PLUGIN_UNAVAILABLE` naming the clash.
+- **Fields.** `agents` and `settings` are as in [Config](#config): each agent is one of the engine's agents, and `config`, `timeoutMs` and `minConfidence` follow the same rules.
+- **No `auth`.** `auth` is refused for an engine-kept entry: the engine would send the contents of the file it names to the plugin's host. In service mode the engine's own files, an agent's credential file among them, are files the engine's user owns with mode `0600`, so a request could name one. A remote plugin that needs a token is added with `sudo`.
+
+**Running.**
+
+- **Local.** Once an engine-kept local entry's approval matches ([Plugin approvals at engine start](#plugin-approvals-at-engine-start)), the engine runs it itself, as its own child, exactly as a same-user engine does ([Transports](#transports)):
+  - its own process group, with its installed copy as the working directory and no environment but `BASALT_PLUGIN_SOCKET`;
+  - a socket directory new for each start, under the OS temporary directory (on Linux the engine unit's private `/tmp`), with the same checks;
+  - crash records in `<stateDir>/plugin-runs/`;
+  - stderr discarded;
+  - `shutdown` and a kill of its process group when it stops.
+
+  **This replaces the rule that an engine in service mode never starts a local plugin itself, for approved engine-kept entries only** ([Isolation and trust](#isolation-and-trust)). Config entries keep their own units, and the engine still never starts, signals or kills a config entry's process.
+- **Remote.** An engine-kept remote entry is dialled, as any remote entry.
+- **Never as root.** An engine running as root starts no local plugin, engine-kept ones included (`PLUGIN_UNAVAILABLE`). It also refuses to open one: `PLUGIN_OPEN` of a local plugin is refused `PLUGIN_REFUSED` `ENGINE_IS_ROOT` before anything is written. When an agent's OS user is in the engine's group, the engine starts no local plugin either, as [Service units](#service-units) says.
+- **On Linux** the plugin runs inside the engine's unit, under the same sandbox (`ProtectSystem=strict`, `PrivateTmp`, `NoNewPrivileges` and the rest; the `systemd` CI job shows the unit lets the engine's user start a program from its state directory and reach it on a Unix socket). It is in the engine's cgroup, so it shares the engine's `MemoryHigh` and `MemoryMax`: a plugin that uses too much memory throttles the engine, or gets it stopped. It stops when the engine stops.
+- **On macOS** the engine's launch daemon has no sandbox: the plugin runs as the engine's user with the engine's umask.
+- **When it starts.** The engine checks the approval at each start, as for every entry that requires approval. Every signature in service mode reaches the engine (`PLUGIN_APPROVE`, or the local pages' relay), so once [starting a plugin without an engine restart](#plugins) is served, the engine starts the entry when the signature arrives, and no step in service mode names an engine restart for an engine-kept entry. Until then the entry is served from the engine's next start.
+
+**Isolation, the binding and the page.** An engine-kept local entry is bound and recorded with `isolation` `{"files": "NONE", "network": "NOT_ENFORCED"}`, on Linux and macOS: the plugin has the engine's files and network. A remote one has no `isolation`, as always. So the [page](#the-plugin-approval-page) is unchanged:
+
+- An unknown publisher is level 3, with the warning that it runs with the same access as Basalt itself, and the tick.
+- A known publisher is level 1, with the plain line "It runs on the computer Basalt runs on, with the same access as Basalt itself."
+- The ledger records `files: NONE`, `network: NOT_ENFORCED` for it ([In the ledger](#in-the-ledger)), next to config entries recorded `files: OS_USER`.
+
+**The upload.** The command sends the plugin's files to the engine over the socket, which keeps the person socket's framing (one request per connection, a request line of at most 256 KiB, 10 seconds). The engine never reads the person's directories.
+
+1. `PLUGIN_UPLOAD_BEGIN` returns a new `uploadId`, its `expiresAt` (15 minutes later), `maxPartBytes` (65,536) and `maxUploadBytes` (268,435,456).
+2. `PLUGIN_UPLOAD_PART` adds bytes to one file of the upload, and returns the bytes now held for that `path`.
+   - `path` is `basalt-plugin.json`, `basalt-plugin.json.sig` or a file the manifest lists, with the manifest's path rules (no segment starting with `.`).
+   - `offset` must equal the bytes already held for that path: parts arrive in order, and a part sent twice is refused.
+   - `data` is 1 to 65,536 bytes, base64url without padding (decoded strictly, as everywhere in this file).
+3. **Limits** are the manifest's own: the manifest at most 1 MiB and its `.sig` at most 4 KiB. On top of that: at most 1,024 paths, and at most 256 MiB (268,435,456 bytes) in all, the cap on the whole transfer. A part over a limit is refused `PLUGIN_REFUSED` `TOO_LARGE`, and the upload is dropped.
+4. **An upload belongs to the peer uid that began it.** For any other uid it is `NOT_FOUND`.
+   - At most 4 uploads are open on the engine at a time; a fifth `PLUGIN_UPLOAD_BEGIN` is refused `PLUGIN_REFUSED` `TOO_MANY_UPLOADS`.
+   - Uploads are kept in `<stateDir>/plugin-uploads/<uploadId>/` (mode `0700`) and removed when `PLUGIN_OPEN` uses them (whatever its result), when they expire (checked at each `PLUGIN_UPLOAD_BEGIN`), and at the engine's start.
+5. The upload is checked only by `PLUGIN_OPEN`, as a staged copy. Until then it is bytes the engine does not read.
+
+**The methods.** The schemas are in [`person.schema.json`](api/plugin/approval/person.schema.json), with valid and invalid examples in `api/plugin/testdata/` (`*-person-*`, `*-engine-entries-*`). The engine applies the methods that change entries one at a time.
+
+- **`PLUGIN_OPEN`** `{ "uploadId"?, "name", "instance", "agents", "settings"? }`. With `uploadId` it adds the uploaded copy as a new engine-kept entry, or changes an existing one to it (the manifest's `name` must be `name`). Without it, it opens a new approval for the entry's installed copy (`enable`), and the entry must exist.
+  - **`agents`** is the entry's full new list: 1 to 256 names, no repeats, always given. `add` sends `--agents`. `enable` sends the entry's current `agents`, or `--agents` when given.
+  - **`settings`** `{ "config"?, "timeoutMs"?, "minConfidence"? }` replaces the entry's settings. Absent, it keeps them (none for a new entry). The commands send none today.
+  - **Steps:** [The flow](#plugin-approval), with the engine in the command's place.
+    1. Refusals before anything is written: `ENGINE_IS_ROOT`, and `NAME_TAKEN` for a config entry's `(name, instance)`.
+    2. Check the copy. Manifest rules: `BAD_MANIFEST`, also when the manifest's `name` is not `name` or the upload holds a file the manifest does not list. File hashes, the path rule (`UNSAFE_PATH`), the signer state, and a `.sig` that names a built-in key and does not verify (`NOT_TRUSTED`). The trust store does not make a publisher known here, as in [Signer states](#signer-states).
+    3. Check every listed agent: it is one of the engine's agents (`UNKNOWN_AGENT`), its database answers within 15 seconds (`DATABASE_UNREACHABLE`), and its guard is at [schema version 5](#schema-version-5-plugin-approvals) or later (`GUARD_OUTDATED`).
+    4. Write the copy, and the entry enabled with `"approval": "REQUIRED"`.
+    5. Open one approval per database: with the credential of that database's first agent in `agents` order (`requestedBy`), naming every listed agent of that database.
+  - **A narrowing** (the same manifest bytes and the same settings, only agents removed) writes the entry and opens nothing: `narrowed` is `true` and `approvals` is empty.
+  - **Result.** `approvals` has one item per database, in the order of each database's first agent: `database` `{ host, name }`, `agents`, then either `approvalId`, `expiresAt`, `bindingText` and `settingsText` (the texts as `open_plugin_approval` returned them), or `refused` `{ reason, message }` with the reasons after the write of [The flow](#plugin-approval) step 3.
+  - **The command** builds from the result, as the same-user command does, what [Plugin approval commands](#plugin-approval-commands) prints: the links (base `pagesUrl` from `PAGES`; the short link through the engine's local pages when `PAGES` gives a `localOrigin`), `personMessage`, `nextSteps` and the `--json` of [`result.schema.json`](api/plugin/approval/result.schema.json). It exits `1` when an item is `refused`.
+- **`PLUGIN_LIST`** `{}`: every entry, config and engine-kept, in name and instance order, with `source`, `enabled`, `agents`, the installed copy's `version`, `signer` (and `signerKeyId` when `KNOWN`), `endpoint`, `isolation` (`LOCAL` only, as the entry runs on this engine), and `approval` as `basalt plugin list --json` gives it. A config entry is `required: false` with `NOT_REQUIRED` for each agent; an engine-kept entry is always `required: true`.
+- **`PLUGIN_APPROVE`** `{ "approvalId", "assertion" }`, the decoded `basalt-plugin.1.` code: a relay. The engine finds the agent that opened the approval (the served agent whose `agent_plugin_approvals` row for that id carries `binding_text`) and calls `submit_plugin_approval` with that agent's credential: Postgres verifies the signature.
+  - Result: `{ "approvalId", "status": "APPROVED", "approvedAt" }`.
+  - `NOT_FOUND` when no served agent's database holds the approval; `REFUSED` with Postgres's detail (`APPROVAL_INVALID`, `APPROVAL_EXPIRED`) as [Plugin approval commands](#plugin-approval-commands) says.
+- **`PLUGIN_DISABLE`** and **`PLUGIN_REMOVE`** `{ "name", "instance" }`, engine-kept entries only.
+  - `PLUGIN_DISABLE` sets `enabled` to `false`. `PLUGIN_REMOVE` deletes the entry and its installed copies.
+  - Both stop the plugin, and write `PLUGIN_DISABLED` to the ledger of every listed agent whose ledger records it as served when the engine handles the request, not at its next start, so the approval [ends](#how-long-an-approval-lasts) at once. A record that cannot be written then is written at the next start, as [In the ledger](#in-the-ledger) says.
+  - Turning the entry on again needs a new approval (`PLUGIN_OPEN`).
+  - A config entry is refused `PLUGIN_REFUSED` `CONFIG_ENTRY`, its `message` naming `sudo basalt plugin disable` or `remove`. An unknown one is `NOT_FOUND`.
+  - Disabling an entry that is already disabled returns the same result and writes nothing.
+- **Errors.** The person socket's codes, plus `PLUGIN_REFUSED`: `{ "error": { "code": "PLUGIN_REFUSED", "reason", "message" } }`. Reasons:
+  - from [Consent](#consent) and [The flow](#plugin-approval): `BAD_MANIFEST`, `NOT_TRUSTED`, `UNKNOWN_AGENT`, `UNSAFE_PATH`, `GUARD_OUTDATED`, `DATABASE_UNREACHABLE`;
+  - new here: `NAME_TAKEN`, `CONFIG_ENTRY`, `TOO_LARGE`, `TOO_MANY_UPLOADS` and `ENGINE_IS_ROOT`.
+
+  The command prints a refusal as the same-user [`PLUGIN_REFUSED`](#problems-and-errors) error body with that reason. `reason` appears only with `PLUGIN_REFUSED`.
+
+**When this is served, these statements change with it:**
+
+- the person socket's opening list of the commands it serves;
+- [Consent](#consent): "In service mode every write needs `sudo`" holds for config entries only;
+- [Config](#config): the `approval` bullet's "Plugin approvals are same-user mode only";
+- the opening of [Plugin approval](#plugin-approval), and "Same-user mode" at the head of [Plugin approvals at engine start](#plugin-approvals-at-engine-start) and [Plugin approval commands](#plugin-approval-commands);
+- [Isolation and trust](#isolation-and-trust): "The engine never starts a local plugin itself in service mode";
+- the first sentence of [Service units](#service-units);
+- [Protocol](#protocol): "In service mode the engine runs no plugin process", which holds for config entries only;
+- [In the ledger](#in-the-ledger), "Isolation as it runs": in service mode an engine-kept local entry records `files: NONE`, `network: NOT_ENFORCED`.
 
 ### Transports
 

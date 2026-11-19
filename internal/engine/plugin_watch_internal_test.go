@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -426,7 +427,7 @@ func TestWatchBacksOffWhenDatabaseDown(t *testing.T) {
 	tries := 0
 	lp.w.ledgers["product_a"] = pluginLedger{db: up.db, admit: func(context.Context) error {
 		tries++
-		return errors.New("connection refused")
+		return action.Unavailable(errors.New("connection refused"))
 	}}
 	var at []int
 	for s := range 200 {
@@ -508,4 +509,47 @@ func TestAddApproveRemoveLeavesNothing(t *testing.T) {
 	require.LessOrEqual(t, n, base, "goroutines after 50 rounds, against after the first")
 	lp.stop()
 	require.Empty(t, lp.ep.sup.Supervised())
+}
+
+// An entry that does not require approval, turned off while its agent's
+// database does not answer, stops at once; its PLUGIN_DISABLED is written
+// once the database answers again, with no further change to engine.json.
+// An error that is not the database failing to answer (a reply that does
+// not decode) decides: the agent is not kept.
+func TestDisableRecordedOnceDatabaseAnswers(t *testing.T) {
+	t.Parallel()
+	f := newPluginFixture(t)
+	p := f.install("default", dial.TransportStdio, "product_a")
+	l := newPluginLedgers(t, f)
+	lp := f.live(l, pluginOptions{})
+	lp.requireServing(p.Key(), "product_a")
+	clock := time.Now()
+	lp.w.now = func() time.Time { return clock }
+	up := lp.ledgers["product_a"]
+	down := true
+	lp.w.ledgers["product_a"] = pluginLedger{db: up.db, admit: func(context.Context) error {
+		if down {
+			return action.Unavailable(errors.New("connection refused"))
+		}
+		return nil
+	}}
+
+	f.cfg.Plugins[0].Enabled = false
+	lp.change()
+	lp.requireStopped(p.Key())
+	require.Equal(t, "PLUGIN_ENABLED", lastKind(t, l, "product_a"), "not written while the database does not answer")
+	require.False(t, lp.w.next.IsZero(), "checked again after the backoff")
+
+	down = false
+	for range 5 {
+		clock = clock.Add(time.Second)
+		lp.w.step(lp.ctx)
+	}
+	require.Equal(t, "PLUGIN_DISABLED", lastKind(t, l, "product_a"))
+	require.Empty(t, lp.w.backoff)
+	require.True(t, lp.w.next.IsZero(), "nothing left to check")
+
+	require.False(t, transientErr(errors.New("cannot decode the plugin approval detail")))
+	require.True(t, transientErr(action.Unavailable(errors.New("connection refused"))))
+	require.True(t, transientErr(context.DeadlineExceeded))
 }

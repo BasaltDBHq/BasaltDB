@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"maps"
 	"os"
@@ -68,6 +69,13 @@ type pluginWatch struct {
 	// running is what the supervisor runs: each entry and the configured
 	// entry it was started from.
 	running map[plugin.EntryKey]runningEntry
+	// trust is the trust store as read at start: an entry that does not
+	// require approval rests on it, and changes to it take effect at the
+	// next start.
+	trust trustWant
+	// retry: a PLUGIN_DISABLED could not be written; the next check writes
+	// it.
+	retry bool
 }
 
 type cachedCheck struct {
@@ -92,7 +100,7 @@ func newPluginWatch(ep *enginePlugins, cfg config.Config, path string, ledgers m
 	w := &pluginWatch{
 		ep: ep, start: cfg, path: path, ledgers: ledgers, log: ep.log, now: time.Now,
 		eff: cfg, checks: map[plugin.EntryKey]cachedCheck{}, backoff: map[string]agentBackoff{},
-		running: map[plugin.EntryKey]runningEntry{},
+		running: map[plugin.EntryKey]runningEntry{}, trust: trustedKeys(cfg, path, ep.log),
 	}
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
@@ -190,6 +198,17 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 		k := p.Key()
 		required := w.start.PluginRequiresApproval(p)
 		approval[k] = required
+		if !required {
+			// Started and changed at engine start only (effective): the
+			// start's own check, never a new one against the copy or the
+			// trust store as they are now.
+			c, ok := ep.startCheck(k)
+			if !ok {
+				c = entryCheck{refused: whyStartOnly}
+			}
+			checks[k] = c
+			continue
+		}
 		if c, ok := w.checks[k]; ok && c.required == required && samePluginConfig(c.p, p, true) {
 			checks[k] = c.c
 			continue
@@ -245,8 +264,8 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 	ep.mu.Unlock()
 
 	required := slices.ContainsFunc(configured, func(p config.Plugin) bool { return approval[p.Key()] })
-	if !configChanged && !required {
-		w.next = time.Time{}
+	if !configChanged && !required && !w.retry && !w.backoffDue(now) {
+		w.schedule(now, false, false)
 		w.publish()
 		return
 	}
@@ -261,7 +280,7 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 		c, ok := checks[k]
 		return c.v, ok && c.ok()
 	}
-	want := wantedFrom(w.eff, copyOf, ep.mode, ep.o.goos, trustedKeys(w.eff, w.path, w.log))
+	want := wantedFrom(w.eff, copyOf, ep.mode, ep.o.goos, w.trust)
 	passes := checkAgents(ctx, want, w.ledgers, due, pluginWatchTimeout, w.log)
 	if ctx.Err() != nil {
 		return
@@ -314,7 +333,8 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 	}
 	ep.mu.Unlock()
 	w.apply(desired)
-	writeDisables(ctx, passes, w.ledgers, pluginWatchTimeout, w.log)
+	// A record that could not be written is written by the next check.
+	w.retry = !writeDisables(ctx, passes, w.ledgers, pluginWatchTimeout, w.log)
 	// Status changes last: an agent that reads a withhold from it acts on a
 	// ledger that already records it (a new approval signed before the
 	// PLUGIN_DISABLED of the old one would be ended by it).
@@ -328,16 +348,43 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 	}
 	ep.mu.Unlock()
 	w.publish()
+	w.schedule(now, required, waiting)
+}
 
+// schedule sets when the agents are checked again: every
+// pluginWaitingPoll while an entry waits for a signature or a record waits
+// to be written again, every pluginRecheckPoll while an entry requires
+// approval, else when the first agent's backoff ends; never when nothing
+// is left to check (only a change of engine.json then).
+func (w *pluginWatch) schedule(now time.Time, required, waiting bool) {
 	switch {
-	case !required:
-		w.next = time.Time{}
-	case waiting:
+	case waiting || w.retry:
 		w.next = now.Add(pluginWaitingPoll)
-	default:
+	case required:
 		w.next = now.Add(pluginRecheckPoll)
+	default:
+		w.next = time.Time{}
+		for _, b := range w.backoff {
+			if w.next.IsZero() || b.until.Before(w.next) {
+				w.next = b.until
+			}
+		}
 	}
 }
+
+// backoffDue reports whether an agent's backoff has ended.
+func (w *pluginWatch) backoffDue(now time.Time) bool {
+	for _, b := range w.backoff {
+		if !now.Before(b.until) {
+			return true
+		}
+	}
+	return false
+}
+
+// whyStartOnly: an entry that does not require approval and was not served
+// at start is started at the next start only.
+const whyStartOnly = "it does not require approval, so it starts at the engine's next start"
 
 // apply makes the supervisor run desired: it stops every running entry
 // that is not desired, or desired otherwise (other agents or another
@@ -370,7 +417,9 @@ func (w *pluginWatch) apply(desired map[plugin.EntryKey]runningEntry) {
 		delete(w.ep.first, k)
 		w.ep.mu.Unlock()
 		if err := w.ep.sup.Add(d.e); err != nil {
-			w.log.Warn("plugin not started", "plugin", k.String(), "err", err)
+			if !errors.Is(err, plugin.ErrNotRunning) { // the engine is stopping
+				w.log.Warn("plugin not started", "plugin", k.String(), "err", err)
+			}
 			continue
 		}
 		w.log.Info("plugin started while the engine runs", "plugin", k.String(), "agents", len(d.e.Agents))

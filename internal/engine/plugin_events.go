@@ -7,16 +7,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"maps"
+	"net"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
@@ -82,11 +86,24 @@ func unrecordedWhy(err error) string {
 }
 
 // transientErr reports whether err says only that the database did not
-// answer (no connection, a timeout), not what it holds: no Postgres error,
-// and not a refusal to admit the agent. Any other failure decides.
+// answer: no connection, a timeout, a connection lost. Any other failure,
+// a Postgres error, a refusal to admit the agent or a reply the engine
+// cannot read, decides.
 func transientErr(err error) bool {
-	var pg *pgconn.PgError
-	return err != nil && !errors.As(err, &pg) && !errors.Is(err, errNotAdmitted)
+	var (
+		pg   *pgconn.PgError
+		conn *pgconn.ConnectError
+		ne   net.Error
+	)
+	switch {
+	case err == nil, errors.As(err, &pg), errors.Is(err, errNotAdmitted):
+		return false
+	case errors.As(err, &conn), errors.As(err, &ne), errors.Is(err, action.ErrUnavailable),
+		errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled),
+		errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF), pgconn.SafeToRetry(err), pgconn.Timeout(err):
+		return true
+	}
+	return false
 }
 
 // pluginLedger is one agent's ledger as the plugin event writer reaches it:
@@ -341,8 +358,9 @@ func checkAgents(ctx context.Context, want pluginWant, ledgers map[string]plugin
 // writeDisables writes each agent's pending PLUGIN_DISABLED records, each
 // agent bounded by timeout. A record that fails is logged; the next check
 // writes it again, since the ledger still shows the entry served.
-func writeDisables(ctx context.Context, passes map[string]agentPass, ledgers map[string]pluginLedger, timeout time.Duration, log *slog.Logger) {
+func writeDisables(ctx context.Context, passes map[string]agentPass, ledgers map[string]pluginLedger, timeout time.Duration, log *slog.Logger) bool {
 	var wg sync.WaitGroup
+	var failed atomic.Bool
 	for name, p := range passes {
 		if len(p.disables) == 0 || ledgers[name].db == nil {
 			continue
@@ -352,6 +370,7 @@ func writeDisables(ctx context.Context, passes map[string]agentPass, ledgers map
 			defer cancel()
 			for _, d := range p.disables {
 				if err := guard.RecordPluginEntryEvent(ctx, ledgers[name].db, guard.PluginDisabled, d); err != nil {
+					failed.Store(true)
 					log.Warn("PLUGIN_DISABLED not recorded; the next check tries again", "agent", name,
 						"plugin", plugin.EntryKey{Name: d.Name, Instance: d.Instance}.String(), "err", err)
 				}
@@ -359,6 +378,7 @@ func writeDisables(ctx context.Context, passes map[string]agentPass, ledgers map
 		})
 	}
 	wg.Wait()
+	return !failed.Load()
 }
 
 // writeAgentPluginEvents is writePluginEvents for one agent, within ctx's

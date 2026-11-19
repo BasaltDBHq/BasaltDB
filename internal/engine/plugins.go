@@ -101,6 +101,8 @@ type enginePlugins struct {
 	// configProblem is why engine.json, changed while the engine runs,
 	// cannot be read; "" when it can (pluginWatch).
 	configProblem string
+	// startChecks is each entry's check at start. Immutable once built.
+	startChecks map[plugin.EntryKey]entryCheck
 }
 
 // newEnginePlugins verifies the enabled plugin entries of cfg, read from
@@ -140,7 +142,7 @@ func newEnginePluginsFor(cfg config.Config, configPath string, o pluginOptions, 
 		host: plugin.NewHost(), log: log, o: o, configured: configured,
 		mode:  plugin.ModeSameUser,
 		first: map[plugin.EntryKey]plugin.Verified{}, notTrusted: map[plugin.EntryKey]error{}, refused: map[plugin.EntryKey]string{},
-		approval: map[plugin.EntryKey]bool{},
+		approval: map[plugin.EntryKey]bool{}, startChecks: map[plugin.EntryKey]entryCheck{},
 	}
 	if cfg.Service() {
 		ep.mode = plugin.ModeService
@@ -157,6 +159,7 @@ func newEnginePluginsFor(cfg config.Config, configPath string, o pluginOptions, 
 		required := cfg.PluginRequiresApproval(p)
 		ep.approval[k] = required
 		c := ep.check(p, required)
+		ep.startChecks[k] = c
 		switch {
 		case c.notTrusted != nil:
 			ep.notTrusted[k] = c.notTrusted
@@ -214,6 +217,13 @@ func (ep *enginePlugins) check(p config.Plugin, required bool) entryCheck {
 		e.Agents = nil
 	}
 	return entryCheck{v: v, e: e}
+}
+
+// startCheck is entry k's check at start, false when it was not checked
+// (not enabled, or with no agent).
+func (ep *enginePlugins) startCheck(k plugin.EntryKey) (entryCheck, bool) {
+	c, ok := ep.startChecks[k]
+	return c, ok
 }
 
 // verifyFailure is what the engine logs of a failed verification: the

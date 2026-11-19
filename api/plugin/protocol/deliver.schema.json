@@ -30,9 +30,9 @@
         "source": { "$ref": "feed.schema.json#/$defs/source" },
         "type": {
           "enum": [
-            "app.basaltvault.notice.approval.requested",
-            "app.basaltvault.notice.revert.requested",
-            "app.basaltvault.notice.link.replaced"
+            "dev.basaltdb.approval.requested",
+            "dev.basaltdb.revert.requested",
+            "dev.basaltdb.link.replaced"
           ]
         },
         "time": {
@@ -44,9 +44,9 @@
         "data": { "$ref": "#/$defs/notice" }
       },
       "allOf": [
-        { "if": { "properties": { "type": { "const": "app.basaltvault.notice.approval.requested" } } }, "then": { "properties": { "data": { "properties": { "kind": { "const": "APPROVAL_REQUESTED" } } } } } },
-        { "if": { "properties": { "type": { "const": "app.basaltvault.notice.revert.requested" } } }, "then": { "properties": { "data": { "properties": { "kind": { "const": "REVERT_REQUESTED" } } } } } },
-        { "if": { "properties": { "type": { "const": "app.basaltvault.notice.link.replaced" } } }, "then": { "properties": { "data": { "properties": { "kind": { "const": "LINK_REPLACED" } } } } } }
+        { "if": { "properties": { "type": { "const": "dev.basaltdb.approval.requested" } } }, "then": { "properties": { "data": { "properties": { "kind": { "const": "APPROVAL_REQUESTED" } } } } } },
+        { "if": { "properties": { "type": { "const": "dev.basaltdb.revert.requested" } } }, "then": { "properties": { "data": { "properties": { "kind": { "const": "REVERT_REQUESTED" } } } } } },
+        { "if": { "properties": { "type": { "const": "dev.basaltdb.link.replaced" } } }, "then": { "properties": { "data": { "properties": { "kind": { "const": "LINK_REPLACED" } } } } } }
       ]
     },
     "notice": {

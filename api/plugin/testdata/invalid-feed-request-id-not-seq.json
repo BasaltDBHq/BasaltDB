@@ -5,7 +5,7 @@
       "specversion": "1.0",
       "id": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee:4212",
       "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
-      "type": "app.basaltvault.feed.write.applied",
+      "type": "dev.basaltdb.write.applied",
       "time": "2026-11-19T06:02:11.513958Z",
       "subject": "product_a",
       "datacontenttype": "application/json",

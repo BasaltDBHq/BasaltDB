@@ -2520,22 +2520,22 @@ Every event is one CloudEvents 1.0 event in its JSON form, with these attributes
 
 - **The install id** is `basalt_meta.install_id()` of the agent's database ([Schema version 2](#schema-version-2-install-ids)), read with the agent's credential: one per guard install, shared by every agent of that database. Sequence numbers are the database's one chain, shared by its agents, so one agent's events skip the `seq` of other agents' rows, and a new install begins them again. An agent whose guard reports no install id gets no feed events and no notices; each notice for it counts as dropped.
 - **`source` and `id`.** CloudEvents lets a consumer treat two events with the same `source` and `id` as one. A feed event's pair is built from the install id and `seq` only, so a redelivery after a crash, a restart or a failed call has exactly the same pair, through a broker as well. `source` names the database's guard install, not the engine: an engine's id changes with `basalt engine rotate-key` and does not exist while its key file is unusable, and a `source` that changes would break that dedup. Two entries that receive the same row receive the same event, with the same `id`.
-- **Types** are reverse-DNS names under `app.basaltvault.` (the domain of Basalt's pages and schemas): `app.basaltvault.feed.<…>` for feed events, `app.basaltvault.notice.<…>` for notices, one per kind:
+- **Types** are reverse-DNS names under `dev.basaltdb.`, the prefix the engine already uses for itself (its launchd labels). Nothing the open-source engine emits is named after the Vault: the Vault's domain is reserved for events the Vault may one day emit itself (the portal's URLs inside a notice's link are page addresses, not names). Each type names what happened, not the hook that carries it, so it still reads right on a broker or a webhook; the one feed-only event is the skipped marker. The notices' names (`requested`, `replaced`) are not names any feed event uses, so a consumer never mistakes a notice, which carries a link, for a feed event, which never does. One type per kind (owner decision, Nov 19):
 
-| `type` | What happened |
-|---|---|
-| `app.basaltvault.feed.write.applied` | A write was applied |
-| `app.basaltvault.feed.write.refused` | A write was refused |
-| `app.basaltvault.feed.write.held` | A write was held for the person's approval |
-| `app.basaltvault.feed.approval.signed` | The person signed a held write |
-| `app.basaltvault.feed.revert.prepared` | A revert was prepared for the person to sign |
-| `app.basaltvault.feed.revert.signed` | The person signed a large revert's plan, which the agent then applies in batches |
-| `app.basaltvault.feed.revert.applied` | A revert was applied |
-| `app.basaltvault.feed.revert.rejected` | The person rejected a revert |
-| `app.basaltvault.feed.skipped` | The skipped-ahead marker |
-| `app.basaltvault.notice.approval.requested` | The engine held a write: an approval was requested |
-| `app.basaltvault.notice.revert.requested` | The engine prepared a revert: a revert was requested |
-| `app.basaltvault.notice.link.replaced` | The agent asked for a new link for a held write or a revert: a link was replaced |
+| `type` | What happened | Message |
+|---|---|---|
+| `dev.basaltdb.write.applied` | A write was applied | `feed/1` |
+| `dev.basaltdb.write.refused` | A write was refused | `feed/1` |
+| `dev.basaltdb.write.held` | A write was held for the person's approval | `feed/1` |
+| `dev.basaltdb.approval.signed` | The person signed a held write | `feed/1` |
+| `dev.basaltdb.revert.prepared` | A revert was prepared for the person to sign | `feed/1` |
+| `dev.basaltdb.revert.signed` | The person signed a large revert's plan, which the agent then applies in batches | `feed/1` |
+| `dev.basaltdb.revert.applied` | A revert was applied | `feed/1` |
+| `dev.basaltdb.revert.rejected` | The person rejected a revert | `feed/1` |
+| `dev.basaltdb.feed.skipped` | The skipped-ahead marker | `feed/1` |
+| `dev.basaltdb.approval.requested` | The engine held a write: an approval was requested | `deliver/1` |
+| `dev.basaltdb.revert.requested` | The engine prepared a revert: a revert was requested | `deliver/1` |
+| `dev.basaltdb.link.replaced` | The agent asked for a new link for a held write or a revert: a link was replaced | `deliver/1` |
 
 - **Versions.** These names and fields are those of `feed/1` and `deliver/1`. A later minor version may add a field to `data`, which a plugin ignores as it ignores any unknown field ([Protocol](#protocol)); a breaking change is a new contract (`feed/2`) with new type names. The schemas list today's fields and close `data`, so a sample with a field this contract does not name fails.
 
@@ -2550,19 +2550,19 @@ Every event is one CloudEvents 1.0 event in its JSON form, with these attributes
 
 | Ledger kind | `type` | `data` besides `installId`, `seq`, `agent` |
 |---|---|---|
-| `CHANGE` whose detail `status` is `APPLIED` | `app.basaltvault.feed.write.applied` | `changeId`; `runId` and `taskId` when it ran in a run and task; `op` (`INSERT`, `UPDATE`, `DELETE`); `table`, the statement's own table, when it changed a row; `rows` (rows written, cascades included) and `cascadedRows` |
-| `REFUSED` whose `op` is not `SELECT` | `app.basaltvault.feed.write.refused` | `changeId`; `runId`, `taskId` when present; `op` (`INSERT`, `UPDATE`, `DELETE`, `OTHER`); `reasonCode`, the refusal's error code, when it is one of [Error codes](#error-codes) |
-| `APPROVAL_PENDING` | `app.basaltvault.feed.write.held` | `changeId` (the held change), `approvalId`, `runId`, `taskId` when present, `op` (the statement's own table's), `rows` (the rows it changes, cascades included), `expiresAt` |
-| `APPROVED` | `app.basaltvault.feed.approval.signed` | `changeId` (the held change), `approvalId` |
-| `REVERT_PENDING` | `app.basaltvault.feed.revert.prepared` | `revertId` |
-| `REVERT_SIGNED` | `app.basaltvault.feed.revert.signed` | `changeId` (the revert's own change), `revertId` |
-| `REVERTED` | `app.basaltvault.feed.revert.applied` | `changeId` (the revert's own change), `revertId` |
-| `REVERT_REJECTED` | `app.basaltvault.feed.revert.rejected` | `revertId` |
+| `CHANGE` whose detail `status` is `APPLIED` | `dev.basaltdb.write.applied` | `changeId`; `runId` and `taskId` when it ran in a run and task; `op` (`INSERT`, `UPDATE`, `DELETE`); `table`, the statement's own table, when it changed a row; `rows` (rows written, cascades included) and `cascadedRows` |
+| `REFUSED` whose `op` is not `SELECT` | `dev.basaltdb.write.refused` | `changeId`; `runId`, `taskId` when present; `op` (`INSERT`, `UPDATE`, `DELETE`, `OTHER`); `reasonCode`, the refusal's error code, when it is one of [Error codes](#error-codes) |
+| `APPROVAL_PENDING` | `dev.basaltdb.write.held` | `changeId` (the held change), `approvalId`, `runId`, `taskId` when present, `op` (the statement's own table's), `rows` (the rows it changes, cascades included), `expiresAt` |
+| `APPROVED` | `dev.basaltdb.approval.signed` | `changeId` (the held change), `approvalId` |
+| `REVERT_PENDING` | `dev.basaltdb.revert.prepared` | `revertId` |
+| `REVERT_SIGNED` | `dev.basaltdb.revert.signed` | `changeId` (the revert's own change), `revertId` |
+| `REVERTED` | `dev.basaltdb.revert.applied` | `changeId` (the revert's own change), `revertId` |
+| `REVERT_REJECTED` | `dev.basaltdb.revert.rejected` | `revertId` |
 
 - **Not events.** Reads (`READ`, and a `REFUSED` whose `op` is `SELECT`: one per query, too many to be a notice), the rows of a write (`ROW_CHANGE`: its `CHANGE` is the event), a `CHANGE` whose status is `PREVIEW` (the person's reveal re-runs a held write as a preview), the steps inside one revert (`REVERT_BATCH`, `REVERT_RESCOPED`, `REVERT_RESET`: its prepared, signed, applied or rejected event is the one), and everything about the engine itself: `RUN_STARTED`, `PRUNED`, `HEARTBEAT`, `DEAD_MAN`, `UNCOVERED_TABLES`, `AGENT_POLICY_ADDED`, `AGENT_SETUP`, `ENGINE_RECORDED`, `ENGINE_REVOKED`, `PIN_SET_ASIDE`, `PASSKEY_REVOKED`, `ROWS_REVEALED`, every `PLUGIN_*` kind (plugin events and plugin approvals). A held write or a revert that expires writes no ledger row (its expiry is a status the guard reads, not an entry), so expiry is not an event: a plugin that needs it compares `expiresAt` with the clock. A kind added to the ledger later is not an event until this table names it.
 - **Left out of every event**, though some rows hold them: `intent`, `statement`, `params`, a refusal's `reason`, `rowsHash`, row keys and images, a passkey's `credentialId`, the role that relayed a signature (`relayedBy`, which can name another agent), a revert's selections (`select`, `oldSelect`, `droppedSelect`), `binding`, the skipped lines of a revert, and a rejection's `note`. `chainVerified` has no source in a ledger row and is not sent; `reasonCode` is the `code` a `REFUSED` row holds. `APPROVAL_PENDING` holds no table, so `write.held` names none.
 - **A revert's events carry its ids only.** `agent_ledger` shows an agent a revert row with only `revertId` once the person widens that revert ([Version 20](#version-20-revert-scope)), and a revert can be widened after its row was written, so any other field could read differently at a redelivery of the same `seq`. Its row counts reach the person in the notice.
-- **The skipped-ahead marker.** The ledger keeps rows one year. When retention deleted rows after the cursor before they were delivered (a plugin down that long), the next call starts with one `app.basaltvault.feed.skipped` event, with no `time`, whose `data` holds `installId`, `agent`, `afterSeq` (the cursor) and `seq`: the `seq` just before the agent's oldest row after the cursor that remains, or the chain head when none remains. The agent's events with `afterSeq < seq ≤ data.seq` may have been deleted; how many, if any, is not known. The plugin acknowledges it like any event, which moves the cursor to its `seq`.
+- **The skipped-ahead marker.** The ledger keeps rows one year. When retention deleted rows after the cursor before they were delivered (a plugin down that long), the next call starts with one `dev.basaltdb.feed.skipped` event, with no `time`, whose `data` holds `installId`, `agent`, `afterSeq` (the cursor) and `seq`: the `seq` just before the agent's oldest row after the cursor that remains, or the chain head when none remains. The agent's events with `afterSeq < seq ≤ data.seq` may have been deleted; how many, if any, is not known. The plugin acknowledges it like any event, which moves the cursor to its `seq`.
 
 #### The cursor
 

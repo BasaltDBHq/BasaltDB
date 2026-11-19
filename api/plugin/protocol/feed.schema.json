@@ -43,15 +43,15 @@
         "source": { "$ref": "#/$defs/source" },
         "type": {
           "enum": [
-            "app.basaltvault.feed.write.applied",
-            "app.basaltvault.feed.write.refused",
-            "app.basaltvault.feed.write.held",
-            "app.basaltvault.feed.approval.signed",
-            "app.basaltvault.feed.revert.prepared",
-            "app.basaltvault.feed.revert.signed",
-            "app.basaltvault.feed.revert.applied",
-            "app.basaltvault.feed.revert.rejected",
-            "app.basaltvault.feed.skipped"
+            "dev.basaltdb.write.applied",
+            "dev.basaltdb.write.refused",
+            "dev.basaltdb.write.held",
+            "dev.basaltdb.approval.signed",
+            "dev.basaltdb.revert.prepared",
+            "dev.basaltdb.revert.signed",
+            "dev.basaltdb.revert.applied",
+            "dev.basaltdb.revert.rejected",
+            "dev.basaltdb.feed.skipped"
           ]
         },
         "time": {
@@ -63,15 +63,15 @@
         "data": { "type": "object" }
       },
       "allOf": [
-        { "if": { "properties": { "type": { "const": "app.basaltvault.feed.write.applied" } } }, "then": { "required": ["time"], "properties": { "data": { "$ref": "#/$defs/writeApplied" } } } },
-        { "if": { "properties": { "type": { "const": "app.basaltvault.feed.write.refused" } } }, "then": { "required": ["time"], "properties": { "data": { "$ref": "#/$defs/writeRefused" } } } },
-        { "if": { "properties": { "type": { "const": "app.basaltvault.feed.write.held" } } }, "then": { "required": ["time"], "properties": { "data": { "$ref": "#/$defs/writeHeld" } } } },
-        { "if": { "properties": { "type": { "const": "app.basaltvault.feed.approval.signed" } } }, "then": { "required": ["time"], "properties": { "data": { "$ref": "#/$defs/approvalSigned" } } } },
-        { "if": { "properties": { "type": { "const": "app.basaltvault.feed.revert.prepared" } } }, "then": { "required": ["time"], "properties": { "data": { "$ref": "#/$defs/revertOnly" } } } },
-        { "if": { "properties": { "type": { "const": "app.basaltvault.feed.revert.signed" } } }, "then": { "required": ["time"], "properties": { "data": { "$ref": "#/$defs/revertWithChange" } } } },
-        { "if": { "properties": { "type": { "const": "app.basaltvault.feed.revert.applied" } } }, "then": { "required": ["time"], "properties": { "data": { "$ref": "#/$defs/revertWithChange" } } } },
-        { "if": { "properties": { "type": { "const": "app.basaltvault.feed.revert.rejected" } } }, "then": { "required": ["time"], "properties": { "data": { "$ref": "#/$defs/revertOnly" } } } },
-        { "if": { "properties": { "type": { "const": "app.basaltvault.feed.skipped" } } }, "then": { "not": { "required": ["time"] }, "properties": { "data": { "$ref": "#/$defs/skipped" } } } }
+        { "if": { "properties": { "type": { "const": "dev.basaltdb.write.applied" } } }, "then": { "required": ["time"], "properties": { "data": { "$ref": "#/$defs/writeApplied" } } } },
+        { "if": { "properties": { "type": { "const": "dev.basaltdb.write.refused" } } }, "then": { "required": ["time"], "properties": { "data": { "$ref": "#/$defs/writeRefused" } } } },
+        { "if": { "properties": { "type": { "const": "dev.basaltdb.write.held" } } }, "then": { "required": ["time"], "properties": { "data": { "$ref": "#/$defs/writeHeld" } } } },
+        { "if": { "properties": { "type": { "const": "dev.basaltdb.approval.signed" } } }, "then": { "required": ["time"], "properties": { "data": { "$ref": "#/$defs/approvalSigned" } } } },
+        { "if": { "properties": { "type": { "const": "dev.basaltdb.revert.prepared" } } }, "then": { "required": ["time"], "properties": { "data": { "$ref": "#/$defs/revertOnly" } } } },
+        { "if": { "properties": { "type": { "const": "dev.basaltdb.revert.signed" } } }, "then": { "required": ["time"], "properties": { "data": { "$ref": "#/$defs/revertWithChange" } } } },
+        { "if": { "properties": { "type": { "const": "dev.basaltdb.revert.applied" } } }, "then": { "required": ["time"], "properties": { "data": { "$ref": "#/$defs/revertWithChange" } } } },
+        { "if": { "properties": { "type": { "const": "dev.basaltdb.revert.rejected" } } }, "then": { "required": ["time"], "properties": { "data": { "$ref": "#/$defs/revertOnly" } } } },
+        { "if": { "properties": { "type": { "const": "dev.basaltdb.feed.skipped" } } }, "then": { "not": { "required": ["time"] }, "properties": { "data": { "$ref": "#/$defs/skipped" } } } }
       ]
     },
     "writeApplied": {

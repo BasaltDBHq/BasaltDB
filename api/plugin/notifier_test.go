@@ -39,7 +39,7 @@ type testFeedRequest struct {
 }
 
 // skippedType is the skipped-ahead marker's type.
-const skippedType = "app.basaltvault.feed.skipped"
+const skippedType = "dev.basaltdb.feed.skipped"
 
 func feedEvents(raw []byte) (string, []testCloudEvent, []testFeedData, error) {
 	var r testFeedRequest
@@ -225,7 +225,7 @@ func TestNotifierNamesInContract(t *testing.T) {
 		}
 		allowed = append(allowed, values...)
 	}
-	for _, m := range regexp.MustCompile("`(app\\.basaltvault\\.[a-z.]*[a-z])`").FindAllStringSubmatch(text, -1) {
+	for _, m := range regexp.MustCompile("`(dev\\.basaltdb\\.[a-z.]*[a-z])`").FindAllStringSubmatch(text, -1) {
 		require.Contains(t, allowed, m[1], "CONTRACT.md names %s, which no schema allows", m[1])
 	}
 }
@@ -252,4 +252,27 @@ func schemaEnum(t *testing.T, file, pointer string) []string {
 		out = append(out, s)
 	}
 	return out
+}
+
+// typePrefix is the reverse-DNS prefix of every type the engine emits: the
+// engine's own, never the Vault's (CONTRACT.md, Notifier messages).
+const typePrefix = "dev.basaltdb."
+
+// TestNotifierTypeNames: every type is under the engine's prefix, names no
+// hook but the skipped marker's feed, and no notice type is a feed type.
+func TestNotifierTypeNames(t *testing.T) {
+	t.Parallel()
+	feed := schemaEnum(t, "protocol/feed.schema.json", "#/$defs/event/properties/type")
+	notice := schemaEnum(t, "protocol/deliver.schema.json", "#/$defs/event/properties/type")
+	for _, typ := range append(slices.Clone(feed), notice...) {
+		require.True(t, strings.HasPrefix(typ, typePrefix), typ)
+		require.NotContains(t, typ, "basaltvault", typ)
+		require.NotContains(t, typ, ".notice.", typ)
+		if typ != skippedType {
+			require.NotContains(t, typ, ".feed.", typ)
+		}
+	}
+	for _, typ := range notice {
+		require.NotContains(t, feed, typ)
+	}
 }

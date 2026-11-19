@@ -4,7 +4,7 @@
     "specversion": "1.0",
     "id": "0193a1b4-0000-7000-8000-000000000003",
     "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
-    "type": "app.basaltvault.notice.link.replaced",
+    "type": "dev.basaltdb.link.replaced",
     "time": "2026-11-19T06:03:02.130000Z",
     "subject": "product_a",
     "datacontenttype": "application/json",

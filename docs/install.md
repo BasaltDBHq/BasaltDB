@@ -281,7 +281,7 @@ sudo basalt service uninstall
 |---|---|---|
 | Config directory: `engine.json` and `agents/<name>.url`, the agent's database credential | `/etc/basalt` | `/Library/Application Support/Basalt` |
 | State directory: the engine's keys, PII dictionary, ledger chain heads and link secrets | `/var/lib/basalt` | `/Library/Application Support/Basalt/state` |
-| Logs | none on disk; the engine logs to the journal (`journalctl -u basalt-engine`), which the system keeps | `/Library/Logs/Basalt` |
+| Logs | none on disk; the engine logs to the journal (`journalctl -u basalt-engine`), which the system keeps | `/Library/Logs/Basalt`: the engine's `engine.log`, and in `plugins/` the stderr log of a plugin that is no longer installed (`service uninstall` deletes the logs of the plugins it removes). After an upgrade from an earlier release, the old logs are in `/Library/Logs/Basalt.old-<time>`, which `service install` printed |
 | The engine's OS user and group | `basalt` | `_basalt` |
 
 The socket directory (`/run/basalt` on Linux, `/Library/Application Support/Basalt/run` on macOS) holds only sockets and the engine's lock. It goes away on Linux when the service stops; on macOS it sits inside the config directory and goes with it.
@@ -300,7 +300,7 @@ sudo userdel basalt
 On macOS:
 
 ```sh
-sudo rm -rf "/Library/Application Support/Basalt" /Library/Logs/Basalt
+sudo rm -rf "/Library/Application Support/Basalt" /Library/Logs/Basalt /Library/Logs/Basalt.old-*
 sudo dscl . -delete /Users/_basalt
 sudo dscl . -delete /Groups/_basalt
 ```

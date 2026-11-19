@@ -80,6 +80,26 @@ func (f *fakeSystem) WriteFile(path string, data []byte, mode os.FileMode, owner
 	return nil
 }
 
+func (f *fakeSystem) CreateFile(path string, mode os.FileMode, owner string) error {
+	f.ran = append(f.ran, fakeCreate(path, mode, owner))
+	return nil
+}
+
+// MoveAside records the step; a path in f.exists owned (in f.owners) by
+// owner is reported moved.
+func (f *fakeSystem) MoveAside(path, owner string) (string, error) {
+	f.ran = append(f.ran, "move-aside "+path+" "+owner)
+	if f.exists[path] && f.owners[path] == owner {
+		return path + ".old-20261119T000000Z", nil
+	}
+	return "", nil
+}
+
+// fakeCreate is how the fake records a create step.
+func fakeCreate(path string, mode os.FileMode, owner string) string {
+	return fmt.Sprintf("create -m %04o -o %s %s", mode.Perm(), owner, path)
+}
+
 func (f *fakeSystem) CheckBinary(string) error { return f.binaryErr }
 
 func (f *fakeSystem) Remove(path string) error {
@@ -211,12 +231,36 @@ func TestDarwinInstallPlan(t *testing.T) {
 	require.Contains(t, sys.ran, "dscl . -create /Users/_basalt UserShell /usr/bin/false")
 	require.Contains(t, sys.ran, "mkdir -m 0755 -o _basalt /Library/Application Support/Basalt/run")
 	require.Contains(t, sys.ran, "mkdir -m 0750 -o _basalt /Library/Application Support/Basalt/state")
+	// The log directory is root's, so the engine's user cannot swap the
+	// plugins' log directory below it; the engine's own log is made, as its
+	// user's, before the daemon loads.
+	ran := strings.Join(sys.ran, "\n")
+	require.Contains(t, ran, "move-aside /Library/Logs/Basalt _basalt\nmkdir -m 0755 -o root /Library/Logs/Basalt\ncreate -m 0600 -o _basalt /Library/Logs/Basalt/engine.log\n")
+	require.NotContains(t, out.String(), "moved the old", "nothing to move on a new Mac")
+	require.Contains(t, ran, "mkdir -m 0755 -o root /Library/Logs/Basalt/plugins\n")
+	require.NotContains(t, ran, "mkdir -m 0750 -o _basalt /Library/Logs")
+	require.Contains(t, out.String(), "create -m 0600 -o _basalt /Library/Logs/Basalt/engine.log (kept when it exists)")
 	require.Equal(t, []string{
 		"launchctl bootstrap system /Library/LaunchDaemons/dev.basaltdb.engine.plist",
 		"launchctl enable system/dev.basaltdb.engine",
 	}, sys.ran[len(sys.ran)-2:])
 	require.Equal(t, service.LaunchdDaemon(darwinSpec()), sys.written[service.LaunchdPlist])
 	require.Contains(t, out.String(), `mkdir -m 0755 -o _basalt "/Library/Application Support/Basalt/run"`)
+
+	// Over an earlier install whose log directory is the engine user's, the
+	// install moves it aside itself, says where, and carries on.
+	sys = newFake()
+	sys.users["_basalt"] = true
+	sys.exists[service.LaunchdPlist] = true
+	sys.exists["/Library/Logs/Basalt"] = true
+	sys.owners["/Library/Logs/Basalt"] = "_basalt"
+	steps, err = service.InstallPlan(context.Background(), sys, darwinSpec())
+	require.NoError(t, err)
+	out.Reset()
+	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
+	require.Contains(t, out.String(), "  mv /Library/Logs/Basalt /Library/Logs/Basalt.old-<time> (only when _basalt owns it)\n")
+	require.Contains(t, out.String(), "  moved the old /Library/Logs/Basalt, which _basalt owned, to /Library/Logs/Basalt.old-20261119T000000Z\n")
+	require.Equal(t, "launchctl kickstart -k system/dev.basaltdb.engine", sys.ran[len(sys.ran)-1], "the engine restarts onto the new log")
 }
 
 func TestDryRunRunsNothing(t *testing.T) {
@@ -260,6 +304,14 @@ func TestUninstallPlan(t *testing.T) {
 	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &strings.Builder{}))
 	require.Equal(t, []string{"launchctl bootout system/dev.basaltdb.engine"}, sys.ran)
 	require.Equal(t, []string{service.LaunchdPlist}, sys.removed)
+
+	// The plugins' log directory goes when it is there and empty.
+	sys = newFake()
+	sys.exists["/Library/Logs/Basalt/plugins"] = true
+	steps, err = service.UninstallPlan(sys, darwinSpec())
+	require.NoError(t, err)
+	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &strings.Builder{}))
+	require.Equal(t, []string{service.LaunchdPlist, "/Library/Logs/Basalt/plugins"}, sys.removed)
 }
 
 // Uninstalling again, the unit already gone: nothing to stop, so systemd's

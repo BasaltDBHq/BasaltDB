@@ -296,6 +296,20 @@
               }
             }
           }
+        },
+        "serving": {
+          "description": "What the running engine serves of an engine-kept entry, per agent the peer's scope reaches: the approval it is served on and whether the plugin answers READY. Absent when it serves the entry to no such agent. Advice to the command's wait, never a reason to serve.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["agent", "ready"],
+            "properties": {
+              "agent": { "$ref": "#/$defs/agentName" },
+              "approvalId": { "type": "string", "format": "uuid" },
+              "ready": { "type": "boolean" }
+            }
+          }
         }
       },
       "allOf": [

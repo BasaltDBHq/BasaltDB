@@ -121,13 +121,18 @@ func newPluginWatch(ep *enginePlugins, cfg config.Config, path string, ledgers m
 // run reads engine.json every pluginWatchTick until ctx is done.
 func (w *pluginWatch) run(ctx context.Context, clock plugin.Clock) {
 	for {
+		var reply chan struct{}
 		select {
 		case <-ctx.Done():
 			return
 		case <-clock.After(pluginWatchTick):
+		case reply = <-w.ep.kick:
 		}
 		w.step(ctx)
 		w.writeServing()
+		if reply != nil {
+			close(reply)
+		}
 	}
 }
 
@@ -135,6 +140,10 @@ func (w *pluginWatch) run(ctx context.Context, clock plugin.Clock) {
 // engine.json that cannot be read or fails validation changes nothing: no
 // pass runs until it can be read again, and status says so.
 func (w *pluginWatch) step(ctx context.Context) {
+	if w.ep.kept != nil {
+		w.stepKept(ctx)
+		return
+	}
 	raw, readErr := os.ReadFile(w.path)
 	if readErr != nil {
 		raw = nil
@@ -163,6 +172,29 @@ func (w *pluginWatch) step(ctx context.Context) {
 		return
 	}
 	if !w.bad && !w.next.IsZero() && !w.now().Before(w.next) {
+		w.pass(ctx, false)
+	}
+}
+
+// stepKept is step on a service engine: only its engine-kept entries change
+// while it runs (config entries are read at start only, as before). A pass
+// runs when the entries file or engine.json (for a name clash) changed, or
+// the agents are due.
+func (w *pluginWatch) stepKept(ctx context.Context) {
+	raw, err := os.ReadFile(w.ep.kept.EntriesPath())
+	if err != nil {
+		raw = []byte(err.Error())
+	}
+	if cfgRaw, err := os.ReadFile(w.path); err == nil {
+		raw = append(append(raw, 0), cfgRaw...)
+	}
+	if w.raw == nil || !bytes.Equal(raw, w.raw) {
+		w.raw = raw
+		w.eff = w.ep.reloadKept(w.start, w.path)
+		w.pass(ctx, true)
+		return
+	}
+	if !w.next.IsZero() && !w.now().Before(w.next) {
 		w.pass(ctx, false)
 	}
 }
@@ -199,13 +231,15 @@ func (w *pluginWatch) effective(cfg config.Config) config.Config {
 func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 	ep := w.ep
 	now := w.now()
+	// Read once: ep.mu is held where it is asked below.
+	frozen := w.frozenNow()
 	configured := configuredPlugins(w.eff)
 	approval := make(map[plugin.EntryKey]bool, len(configured))
 	checks := make(map[plugin.EntryKey]entryCheck, len(configured))
 	fresh := map[plugin.EntryKey]bool{}
 	for _, p := range configured {
 		k := p.Key()
-		required := w.start.PluginRequiresApproval(p)
+		required := ep.requires(w.start, p)
 		approval[k] = required
 		if !required {
 			// Started and changed at engine start only (effective): the
@@ -236,6 +270,10 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 	// before any database is asked.
 	narrowed := map[plugin.EntryKey]runningEntry{}
 	for k, r := range w.running {
+		if frozen(k) {
+			narrowed[k] = r
+			continue
+		}
 		p, ok := configuredPlugin(configured, k)
 		if !ok || !checks[k].ok() || !samePluginConfig(r.p, p, false) {
 			continue
@@ -289,7 +327,7 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 		c, ok := checks[k]
 		return c.v, ok && c.ok()
 	}
-	want := wantedFrom(w.eff, copyOf, ep.mode, ep.o.goos, w.trust)
+	want := w.wanted(copyOf)
 	passes := checkAgents(ctx, want, w.ledgers, due, pluginWatchTimeout, w.log)
 	if ctx.Err() != nil {
 		return
@@ -311,6 +349,12 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 	ep.mu.Lock()
 	for _, p := range configured {
 		k := p.Key()
+		if frozen(k) {
+			if r, ok := w.running[k]; ok {
+				desired[k] = r
+			}
+			continue
+		}
 		c := checks[k]
 		if !c.ok() {
 			continue
@@ -359,7 +403,7 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 	// ledger that already records it (a new approval signed before the
 	// PLUGIN_DISABLED of the old one would be ended by it).
 	ep.mu.Lock()
-	ep.setWithheldLocked(passes, nil)
+	ep.setWithheldLocked(passes, nil, frozen)
 	for k, agents := range kept {
 		// What runs on for a database that did not answer is not withheld.
 		for _, a := range agents {
@@ -369,6 +413,45 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 	ep.mu.Unlock()
 	w.publish()
 	w.schedule(now, required, waiting)
+}
+
+// frozenNow reports whether an entry is a service engine's config entry: it is
+// run as the start decided until the engine stops (CONTRACT.md, Plugin
+// changes while the engine runs: in service mode the engine reads plugins at
+// start only), and the watch neither checks it nor changes it.
+func (w *pluginWatch) frozenNow() func(plugin.EntryKey) bool {
+	if w.ep.kept == nil {
+		return func(plugin.EntryKey) bool { return false }
+	}
+	w.ep.mu.Lock()
+	kept := maps.Clone(w.ep.keptKeys)
+	w.ep.mu.Unlock()
+	return func(k plugin.EntryKey) bool { return !kept[k] }
+}
+
+// wanted is what each agent should have on record for the entries the
+// watch decides. On a service engine those are its engine-kept entries
+// only: its config entries are held as they are, so a pass never writes,
+// ends or withholds anything of theirs.
+func (w *pluginWatch) wanted(copyOf func(plugin.EntryKey) (plugin.Verified, bool)) pluginWant {
+	ep := w.ep
+	if ep.kept == nil {
+		return wantedFrom(w.eff, copyOf, ep.mode, ep.o.goos, w.trust, ep.isKept)
+	}
+	eff := w.eff
+	eff.Plugins = slices.DeleteFunc(slices.Clone(w.eff.Plugins), func(p config.Plugin) bool { return !ep.isKept(p.Key()) })
+	want := wantedFrom(eff, copyOf, ep.mode, ep.o.goos, w.trust, ep.isKept)
+	want.frozen = map[plugin.EntryKey]bool{}
+	for _, p := range w.start.Plugins {
+		k := p.Key()
+		want.frozen[k] = true
+		for _, a := range p.Agents {
+			if held, ok := want.held[a]; ok {
+				held[k] = true
+			}
+		}
+	}
+	return want
 }
 
 // schedule sets when the agents are checked again: every
@@ -524,7 +607,7 @@ func (ep *enginePlugins) serve(ctx context.Context, cfg config.Config, configPat
 	if err := ep.start(ctx); err != nil {
 		return
 	}
-	if ep.mode == plugin.ModeSameUser {
+	if ep.mode == plugin.ModeSameUser || ep.kept != nil {
 		w := newPluginWatch(ep, cfg, configPath, ledgers)
 		w.writeServing()
 		w.run(ctx, ep.o.clock)
@@ -580,9 +663,6 @@ func ReadPluginServing(stateDir string) (PluginServing, error) {
 // writeServing writes PluginServingFile when what runs changed since the
 // last write: whole, by rename, mode 0600.
 func (w *pluginWatch) writeServing() {
-	if w.ep.o.stateDir == "" {
-		return
-	}
 	st := PluginServing{EnginePID: os.Getpid(), Entries: []PluginServingEntry{}}
 	for _, k := range slices.SortedFunc(maps.Keys(w.running), compareEntryKeys) {
 		r := w.running[k]
@@ -598,6 +678,14 @@ func (w *pluginWatch) writeServing() {
 			e.Agents = append(e.Agents, sa)
 		}
 		st.Entries = append(st.Entries, e)
+	}
+	w.ep.mu.Lock()
+	w.ep.serving = st
+	w.ep.mu.Unlock()
+	// A service engine's state directory is its own: PLUGIN_LIST says what
+	// it serves instead of the file.
+	if w.ep.o.stateDir == "" || w.ep.mode != plugin.ModeSameUser {
+		return
 	}
 	raw, err := json.Marshal(st)
 	if err != nil || bytes.Equal(raw, w.serving) {

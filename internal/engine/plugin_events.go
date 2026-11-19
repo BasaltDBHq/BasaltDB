@@ -163,6 +163,9 @@ type pluginWant struct {
 	settings map[plugin.EntryKey]guard.PluginSettings
 	// trust is the trust store's state.
 	trust trustWant
+	// frozen are a service engine's config entries while it runs: held,
+	// their records always kept (pluginWatch.wanted).
+	frozen map[plugin.EntryKey]bool
 }
 
 // trustWant is what the trust store holds besides the built-in keys
@@ -184,14 +187,22 @@ func wantedPlugins(cfg config.Config, ep *enginePlugins, trust trustWant) plugin
 	if ep != nil {
 		mode, goos = ep.mode, ep.o.goos
 	}
-	return wantedFrom(cfg, ep.startedCopy, mode, goos, trust)
+	var kept func(plugin.EntryKey) bool
+	if ep != nil {
+		cfg, kept = ep.startCfg, ep.isKept
+	}
+	return wantedFrom(cfg, ep.startedCopy, mode, goos, trust, kept)
 }
 
 // wantedFrom is wantedPlugins with the verified copy of each started entry
 // given by copyOf (false: it is not started) and the engine's mode and OS:
 // the one derivation of what each agent should have on record, at start
 // and while the engine runs (pluginWatch).
-func wantedFrom(cfg config.Config, copyOf func(plugin.EntryKey) (plugin.Verified, bool), mode plugin.Mode, goos string, trust trustWant) pluginWant {
+//
+// kept reports an engine-kept entry (nil: none): it always requires
+// approval and runs as the engine's own child, so it is recorded with
+// same-user isolation (CONTRACT.md, Plugin approval in service mode).
+func wantedFrom(cfg config.Config, copyOf func(plugin.EntryKey) (plugin.Verified, bool), mode plugin.Mode, goos string, trust trustWant, kept func(plugin.EntryKey) bool) pluginWant {
 	w := pluginWant{
 		served:   make(map[string]map[plugin.EntryKey]guard.PluginDetail, len(cfg.Agents)),
 		held:     make(map[string]map[plugin.EntryKey]bool, len(cfg.Agents)),
@@ -207,7 +218,8 @@ func wantedFrom(cfg config.Config, copyOf func(plugin.EntryKey) (plugin.Verified
 			continue
 		}
 		k := p.Key()
-		required := cfg.PluginRequiresApproval(p)
+		isKept := kept != nil && kept(k)
+		required := isKept || cfg.PluginRequiresApproval(p)
 		if required {
 			w.approval[k], w.settings[k] = true, p.ApprovalSettings()
 		}
@@ -220,7 +232,11 @@ func wantedFrom(cfg config.Config, copyOf func(plugin.EntryKey) (plugin.Verified
 				w.held[name][k] = true
 				continue
 			}
-			d := pluginDetail(k, v, mode, goos)
+			m := mode
+			if isKept {
+				m = plugin.ModeSameUser
+			}
+			d := pluginDetail(k, v, m, goos)
 			if required {
 				d = withSigner(d, v)
 			}
@@ -481,7 +497,7 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 		// longer recorded as trusted: the ledger never shows an entry served
 		// without that key. An entry that requires approval rests on its
 		// approval, not on a key: held, it always keeps its record.
-		if s := r.Detail.SignerKeyID; want.held[name][k] && (want.approval[k] || recorded[s] || plugin.BuiltInKey(s)) {
+		if s := r.Detail.SignerKeyID; want.held[name][k] && (want.frozen[k] || want.approval[k] || recorded[s] || plugin.BuiltInKey(s)) {
 			continue
 		}
 		out.disables = append(out.disables, r.Detail)
@@ -602,7 +618,7 @@ func (ep *enginePlugins) withhold(passes map[string]agentPass) {
 	}
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
-	ep.setWithheldLocked(passes, nil)
+	ep.setWithheldLocked(passes, nil, nil)
 	kept := ep.entries[:0]
 	ep.approvedBy = map[plugin.EntryKey]map[string]uuid.UUID{}
 	for _, e := range ep.entries {
@@ -624,8 +640,9 @@ func (ep *enginePlugins) withhold(passes map[string]agentPass) {
 
 // setWithheldLocked replaces, for each agent of passes whose check read
 // what decides (or for every agent when keep is nil, as at start), why
-// each entry is withheld from it. ep.mu is held.
-func (ep *enginePlugins) setWithheldLocked(passes map[string]agentPass, keep func(agentName string) bool) {
+// each entry is withheld from it; an entry frozen reports (nil: none) keeps
+// what it had. ep.mu is held.
+func (ep *enginePlugins) setWithheldLocked(passes map[string]agentPass, keep func(agentName string) bool, frozen func(plugin.EntryKey) bool) {
 	if ep.unrecorded == nil {
 		ep.unrecorded = map[plugin.EntryKey]map[string]withheldWhy{}
 	}
@@ -633,8 +650,10 @@ func (ep *enginePlugins) setWithheldLocked(passes map[string]agentPass, keep fun
 		if keep != nil && keep(agentName) {
 			continue
 		}
-		for _, byAgent := range ep.unrecorded {
-			delete(byAgent, agentName)
+		for k, byAgent := range ep.unrecorded {
+			if frozen == nil || !frozen(k) {
+				delete(byAgent, agentName)
+			}
 		}
 		for _, u := range p.withheld {
 			if ep.unrecorded[u.key] == nil {

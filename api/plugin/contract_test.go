@@ -1126,7 +1126,6 @@ func TestPluginApprovalVectors(t *testing.T) {
 	// there and back, then check it.
 	const codePrefix = "basalt-plugin.1."
 	code := codePrefix + base64.RawURLEncoding.EncodeToString(doc.Response)
-	require.True(t, strings.HasPrefix(code, codePrefix))
 	body, err := base64.RawURLEncoding.Strict().DecodeString(strings.TrimPrefix(code, codePrefix))
 	require.NoError(t, err)
 	require.JSONEq(t, string(doc.Response), string(body))

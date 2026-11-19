@@ -68,7 +68,7 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["code", "reason", "message"],
-          "description": "This database's approval could not be opened after the entry was written. The entry stays written and is withheld from these agents.",
+          "description": "This database's approval could not be opened after the entry was written. The entry stays written and is withheld from these agents. Any guard refusal other than TOO_MANY_PENDING, UNKNOWN_AGENT and an older guard is DATABASE_UNREACHABLE, its message carrying the detail.",
           "properties": {
             "code": { "const": "PLUGIN_REFUSED" },
             "reason": { "enum": ["TOO_MANY_PENDING", "GUARD_OUTDATED", "UNKNOWN_AGENT", "DATABASE_UNREACHABLE"] },

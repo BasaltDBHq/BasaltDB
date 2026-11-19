@@ -34,6 +34,7 @@ const (
 	codeInternal       = -32603
 	codeRefused        = -32000 // the plugin refuses this call
 	codeDeadline       = -32001
+	codeBusy           = -32002 // too many calls wait for a slot
 )
 
 type rpcError struct {
@@ -48,6 +49,7 @@ var (
 	errBadParams     = &rpcError{codeInvalidParams, "invalid params"}
 	errInternal      = &rpcError{codeInternal, "internal error"}
 	errDeadline      = &rpcError{codeDeadline, "deadline exceeded"}
+	errBusy          = &rpcError{codeBusy, "too many calls waiting"}
 	errNoProtocol    = &rpcError{codeRefused, "no protocol version in common; this plugin speaks " + protocol.Version1}
 	errHookNotServed = &rpcError{codeRefused, "the engine lists a hook this plugin does not implement"}
 	errInitFailed    = &rpcError{codeRefused, "the plugin refused to start"}

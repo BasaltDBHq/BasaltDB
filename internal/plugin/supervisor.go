@@ -77,6 +77,12 @@ type Supervisor struct {
 
 	mu   sync.Mutex
 	runs map[EntryKey]*entryRun
+	// base is Start's context: every run, added later too, ends with it.
+	// closed is set once Wait saw it end, after which Add starts nothing;
+	// wg counts the runs not yet stopped.
+	base   context.Context
+	closed bool
+	wg     sync.WaitGroup
 }
 
 // entryRun is one supervised entry.
@@ -110,38 +116,101 @@ func (s *Supervisor) WithLog(log *slog.Logger) *Supervisor {
 // supervised.
 var ErrDuplicateEntry = errors.New("plugin: entry is already supervised")
 
-// Run supervises entries until ctx is done, then stops each one (drain,
-// shutdown, close) and returns once all have stopped. An entry that cannot
-// start is retried with the backoff; it never stops Run or another entry.
-// Run returns an error, starting nothing, only when an entry key repeats.
+// ErrNotRunning: Add was called before Start or after its context ended.
+var ErrNotRunning = errors.New("plugin: the supervisor is not running")
+
+// Run is Start, then Wait: it supervises entries, and the ones Add gives
+// it later, until ctx is done, then stops each one (drain, shutdown,
+// close) and returns once all have stopped. An entry that cannot start is
+// retried with the backoff; it never stops Run or another entry. Run
+// returns an error, starting nothing, only when an entry key repeats.
 func (s *Supervisor) Run(ctx context.Context, entries []Entry) error {
-	runs := make([]*entryRun, 0, len(entries))
+	if err := s.Start(ctx, entries); err != nil {
+		return err
+	}
+	s.Wait()
+	return nil
+}
+
+// Start starts supervising entries until ctx is done and returns at once;
+// Add can give it more entries from then on. It refuses, starting
+// nothing, an entry key that repeats, and a second Start.
+func (s *Supervisor) Start(ctx context.Context, entries []Entry) error {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.base != nil {
+		return errors.New("plugin: the supervisor was started already")
+	}
 	seen := map[EntryKey]bool{}
 	for _, e := range entries {
-		if seen[e.Key] || s.runs[e.Key] != nil {
-			s.mu.Unlock()
+		if seen[e.Key] {
 			return fmt.Errorf("%w: %s", ErrDuplicateEntry, e.Key)
 		}
 		seen[e.Key] = true
 	}
+	s.base = ctx
 	for _, e := range entries {
-		ectx, cancel := context.WithCancel(ctx)
-		r := &entryRun{entry: e, cancel: cancel, done: make(chan struct{})}
-		s.runs[e.Key] = r
-		runs = append(runs, r)
-		go func() {
-			defer close(r.done)
-			defer s.forget(r)
-			defer cancel()
-			s.supervise(ectx, r)
-		}()
-	}
-	s.mu.Unlock()
-	for _, r := range runs {
-		<-r.done
+		s.startLocked(ctx, e)
 	}
 	return nil
+}
+
+// Add supervises one more entry, while the context Start was given runs.
+// The key must not be supervised now (Stop it first to replace it).
+func (s *Supervisor) Add(e Entry) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.base == nil || s.closed || s.base.Err() != nil {
+		return ErrNotRunning
+	}
+	if s.runs[e.Key] != nil {
+		return fmt.Errorf("%w: %s", ErrDuplicateEntry, e.Key)
+	}
+	// An added entry runs until Start's context ends, as the others do.
+	s.startLocked(s.base, e)
+	return nil
+}
+
+// startLocked starts e's run until ctx is done; s.mu is held.
+func (s *Supervisor) startLocked(ctx context.Context, e Entry) {
+	ectx, cancel := context.WithCancel(ctx)
+	r := &entryRun{entry: e, cancel: cancel, done: make(chan struct{})}
+	s.runs[e.Key] = r
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		defer close(r.done)
+		defer s.forget(r)
+		defer cancel()
+		s.supervise(ectx, r)
+	}()
+}
+
+// Wait returns once Start's context is done and every entry, added later
+// too, has stopped. Without Start it returns at once.
+func (s *Supervisor) Wait() {
+	s.mu.Lock()
+	base := s.base
+	s.mu.Unlock()
+	if base == nil {
+		return
+	}
+	<-base.Done()
+	s.mu.Lock()
+	s.closed = true
+	s.mu.Unlock()
+	s.wg.Wait()
+}
+
+// Supervised are the keys of the entries supervised now.
+func (s *Supervisor) Supervised() []EntryKey {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]EntryKey, 0, len(s.runs))
+	for k := range s.runs {
+		out = append(out, k)
+	}
+	return out
 }
 
 // Stop stops one supervised entry (drain, shutdown, close) and returns once

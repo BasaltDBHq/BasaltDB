@@ -465,7 +465,8 @@ func TestDisableAllowedForAgent(t *testing.T) {
 
 			r = e.run(tc.env, "", "disable", "acme-ner")
 			require.Equal(t, exitOK, r.code, r.stderr)
-			require.Contains(t, r.stderr, "basalt engine --config "+e.configPath)
+			require.Contains(t, r.stderr, "no restart is needed", "a same-user engine stops it while it runs")
+			require.NotContains(t, r.stderr, "basalt engine --config ")
 			require.False(t, e.config().Plugins[0].Enabled)
 
 			client := e.config().Plugins[1]

@@ -286,6 +286,18 @@ func (e *pluginEnv) restart() {
 	fmt.Fprintf(e.c.stderr, "basalt: restart the engine so it reads engine.json again:\n  %s\n", cmds.EngineRestart())
 }
 
+// narrowed says when a change that only narrows (disable, remove, an agent
+// removed) takes effect: in same-user mode the running engine applies it
+// within seconds (CONTRACT.md, Plugin changes while the engine runs); a
+// service engine reads engine.json at start, so it prints the restart.
+func (e *pluginEnv) narrowed() {
+	if e.cfg.Service() {
+		e.restart()
+		return
+	}
+	fmt.Fprintln(e.c.stderr, "basalt: a running engine applies this within a few seconds; no restart is needed")
+}
+
 // errChangedMeanwhile: engine.json changed between what the person was
 // shown and the write.
 var errChangedMeanwhile = errors.New("engine.json changed while you were asked; nothing was written. Run the command again")
@@ -801,7 +813,7 @@ func (e *pluginEnv) narrowOnly(f addFlags, refused error) error {
 	}
 	_, removed := diff(prev.Agents, f.agents)
 	fmt.Fprintf(e.c.stderr, "basalt: plugin %s no longer serves %s\n", k, listText(removed, ""))
-	e.restart()
+	e.narrowed()
 	return nil
 }
 
@@ -988,7 +1000,7 @@ func (e *pluginEnv) setDisabled(k plugin.EntryKey) error {
 		return err
 	}
 	fmt.Fprintf(e.c.stderr, "basalt: plugin %s disabled\n", k)
-	e.restart()
+	e.narrowed()
 	return nil
 }
 
@@ -1028,7 +1040,7 @@ func (e *pluginEnv) remove(k plugin.EntryKey) error {
 		return err
 	}
 	fmt.Fprintf(e.c.stderr, "basalt: plugin %s removed\n", k)
-	e.restart()
+	e.narrowed()
 	return nil
 }
 

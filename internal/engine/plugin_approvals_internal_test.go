@@ -53,6 +53,12 @@ func (f *pluginFixture) installApproval(hooks string, agents ...string) config.P
 // agents.
 func (f *pluginFixture) installCopy(instance, hooks string, signed bool) config.Plugin {
 	f.t.Helper()
+	return f.installCopyOver(instance, hooks, dial.TransportStdio, signed)
+}
+
+// installCopyOver is installCopy over transport.
+func (f *pluginFixture) installCopyOver(instance, hooks, transport string, signed bool) config.Plugin {
+	f.t.Helper()
 	t := f.t
 	src := t.TempDir()
 	require.NoError(t, os.Mkdir(filepath.Join(src, "bin"), 0o755))
@@ -69,7 +75,7 @@ func (f *pluginFixture) installCopy(instance, hooks string, signed bool) config.
   "files": { "bin/p": "sha256:%x" },
   "network": { "egress": [] }
 }
-`, hooks, dial.TransportStdio, args, sha256.Sum256(exe))
+`, hooks, transport, args, sha256.Sum256(exe))
 	require.NoError(t, os.WriteFile(filepath.Join(src, plugin.ManifestFile), []byte(manifest), 0o644))
 	if signed {
 		key, err := plugin.GenerateKey()
@@ -147,6 +153,8 @@ func (l pluginLedgers) approve(t *testing.T, pk *passkeytest.Authenticator, p co
 // servedTo are the agents the host serves entry k to, none when it is not
 // started.
 func servedTo(ep *enginePlugins, k plugin.EntryKey) []string {
+	ep.mu.Lock()
+	defer ep.mu.Unlock()
 	for _, e := range ep.entries {
 		if e.Key == k {
 			return slices.Sorted(slices.Values(e.Agents))

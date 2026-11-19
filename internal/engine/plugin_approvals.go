@@ -17,15 +17,15 @@ import (
 // and write nothing.
 const (
 	whyNoApproval = "no plugin approval names this agent yet; " +
-		"open one with basalt plugin enable --approve-with-passkey and have a person sign it, then restart the engine"
+		"open one with basalt plugin enable --approve-with-passkey and have a person sign it: the engine starts the plugin within seconds"
 	whyApprovalReplaced = "no plugin approval names this agent: the newest one for it was replaced by a newer approval that does not name this agent; " +
-		"open one with basalt plugin enable --approve-with-passkey, then restart the engine once a person signed it"
+		"open one with basalt plugin enable --approve-with-passkey: the engine starts the plugin once a person signed it"
 	whyApprovalEnded = "its plugin approval ended when it was turned off or removed for this agent; " +
 		"turning it on again needs a new approval: open one with basalt plugin enable --approve-with-passkey"
 	whyApprovalsOldGuard = "this agent's guard is older than schema version 5, so it holds no plugin approvals; " +
-		"run basalt upgrade for this agent (on an agent-operated engine, an UPGRADE setup code), then restart the engine"
+		"run basalt upgrade for this agent (on an agent-operated engine, an UPGRADE setup code): the engine checks again on its own"
 	whyApprovalsUnread = "its plugin approvals could not be read from this agent's database; " +
-		"restart the engine once the database answers"
+		"the engine checks again once the database answers"
 )
 
 // withheldWhy is why an entry is not served to one agent: code is the
@@ -106,7 +106,7 @@ func (a *agentApprovals) check(ctx context.Context, k plugin.EntryKey, d guard.P
 	switch r.Status {
 	case guard.PluginApprovalStatusPending:
 		return withheldWhy{code: agent.ProblemPluginAwaitingApproval, why: "its plugin approval is waiting for a person to sign it (it expires " +
-			r.ExpiresAt.UTC().Format("2006-01-02 15:04") + " UTC); restart the engine once it is signed"}, false
+			r.ExpiresAt.UTC().Format("2006-01-02 15:04") + " UTC); the engine starts the plugin within seconds of the signature"}, false
 	case guard.PluginApprovalStatusCancelled:
 		return withheldWhy{code: agent.ProblemPluginAwaitingApproval, why: whyApprovalReplaced}, false
 	case guard.PluginApprovalStatusExpired:

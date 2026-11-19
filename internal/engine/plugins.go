@@ -94,21 +94,42 @@ type enginePlugins struct {
 	targets     map[plugin.EntryKey]serviceTarget
 	// allKeys are every configured entry's, enabled or not.
 	allKeys []plugin.EntryKey
+
+	// rootErr is why no copy can be verified: the plugin root or the trust
+	// store cannot be read.
+	rootErr error
+	// configProblem is why engine.json, changed while the engine runs,
+	// cannot be read; "" when it can (pluginWatch).
+	configProblem string
 }
 
 // newEnginePlugins verifies the enabled plugin entries of cfg, read from
 // configPath. It returns nil, touching nothing on disk, when no entry is
 // enabled for an agent.
 func newEnginePlugins(cfg config.Config, configPath string, o pluginOptions, log *slog.Logger) *enginePlugins {
+	if len(configuredPlugins(cfg)) == 0 {
+		return nil
+	}
+	return newEnginePluginsFor(cfg, configPath, o, log)
+}
+
+// configuredPlugins are cfg's enabled entries that list an agent, in config
+// order.
+func configuredPlugins(cfg config.Config) []config.Plugin {
 	configured := make([]config.Plugin, 0, len(cfg.Plugins))
 	for _, p := range cfg.Plugins {
 		if p.Enabled && len(p.Agents) > 0 {
 			configured = append(configured, p)
 		}
 	}
-	if len(configured) == 0 {
-		return nil
-	}
+	return configured
+}
+
+// newEnginePluginsFor is newEnginePlugins, also when no entry is enabled:
+// a same-user engine keeps one so it can start an entry approved while it
+// runs (pluginWatch).
+func newEnginePluginsFor(cfg config.Config, configPath string, o pluginOptions, log *slog.Logger) *enginePlugins {
+	configured := configuredPlugins(cfg)
 	if o.goos == "" {
 		o.goos = runtime.GOOS
 	}
@@ -130,38 +151,21 @@ func newEnginePlugins(cfg config.Config, configPath string, o pluginOptions, log
 	root, rootErr := plugin.Root(ep.mode, o.goos, dir)
 	trust, trustErr := plugin.NewTrustStore(ep.mode, o.goos, dir)
 	ep.root, ep.trust = root, trust
+	ep.rootErr = errors.Join(rootErr, trustErr)
 	for _, p := range configured {
 		k := p.Key()
 		required := cfg.PluginRequiresApproval(p)
 		ep.approval[k] = required
-		if err := errors.Join(rootErr, trustErr); err != nil {
-			ep.notTrusted[k] = err
-			log.Error("plugin not started: it cannot be verified", "plugin", k.String(), "err", err)
-			continue
+		c := ep.check(p, required)
+		switch {
+		case c.notTrusted != nil:
+			ep.notTrusted[k] = c.notTrusted
+		case c.refused != "":
+			ep.refused[k] = c.refused
+		default:
+			ep.first[k] = c.v
+			ep.entries = append(ep.entries, c.e)
 		}
-		v, err := plugin.Verify(root, k, p.ManifestSHA256, trust, ep.mode, plugin.RequireApproval(required))
-		if err != nil {
-			ep.notTrusted[k] = err
-			log.Error("plugin not started: it failed verification", "plugin", k.String(), "check", verifyFailure(err))
-			continue
-		}
-		e, err := p.Entry(v.Manifest)
-		if err != nil {
-			ep.refused[k] = whyBadEntry
-			log.Error("plugin not started", "plugin", k.String(), "err", err)
-			continue
-		}
-		if why := ep.localRefusal(p, v); why != "" {
-			ep.refused[k] = why
-			log.Error("plugin not started: "+why, "plugin", k.String())
-			continue
-		}
-		if required {
-			// Served to no agent until its approval matched (withhold).
-			e.Agents = nil
-		}
-		ep.first[k] = v
-		ep.entries = append(ep.entries, e)
 	}
 	if ep.mode == plugin.ModeService {
 		ep.checkServiceAgents(cfg)
@@ -170,6 +174,46 @@ func newEnginePlugins(cfg config.Config, configPath string, o pluginOptions, log
 		log.Warn("local plugins run as the engine's own OS user: same-user mode is no security boundary, and a plugin can read whatever the engine can")
 	}
 	return ep
+}
+
+// entryCheck is what verification found of one configured entry: the
+// verified copy and the entry to run (with no agent when it requires
+// approval: servedAgentsLocked grants them), or why it is not started.
+type entryCheck struct {
+	v          plugin.Verified
+	e          plugin.Entry
+	notTrusted error
+	refused    string
+}
+
+// check verifies entry p's installed copy, at start and when the engine
+// sees p new or changed while it runs, and decides whether it may run on
+// this engine. It logs a failure.
+func (ep *enginePlugins) check(p config.Plugin, required bool) entryCheck {
+	k := p.Key()
+	if ep.rootErr != nil {
+		ep.log.Error("plugin not started: it cannot be verified", "plugin", k.String(), "err", ep.rootErr)
+		return entryCheck{notTrusted: ep.rootErr}
+	}
+	v, err := plugin.Verify(ep.root, k, p.ManifestSHA256, ep.trust, ep.mode, plugin.RequireApproval(required))
+	if err != nil {
+		ep.log.Error("plugin not started: it failed verification", "plugin", k.String(), "check", verifyFailure(err))
+		return entryCheck{notTrusted: err}
+	}
+	e, err := p.Entry(v.Manifest)
+	if err != nil {
+		ep.log.Error("plugin not started", "plugin", k.String(), "err", err)
+		return entryCheck{refused: whyBadEntry}
+	}
+	if why := ep.localRefusal(p, v); why != "" {
+		ep.log.Error("plugin not started: "+why, "plugin", k.String())
+		return entryCheck{refused: why}
+	}
+	if required {
+		// Served to no agent until its approval matched (servedAgentsLocked).
+		e.Agents = nil
+	}
+	return entryCheck{v: v, e: e}
 }
 
 // verifyFailure is what the engine logs of a failed verification: the
@@ -203,12 +247,24 @@ func (ep *enginePlugins) localRefusal(p config.Plugin, v plugin.Verified) string
 // run supervises the started entries until ctx is done and every one has
 // stopped.
 func (ep *enginePlugins) run(ctx context.Context) {
-	if len(ep.entries) == 0 {
+	if err := ep.start(ctx); err != nil {
 		return
 	}
-	if err := ep.sup.Run(ctx, ep.entries); err != nil {
+	ep.sup.Wait()
+}
+
+// start starts supervising the entries the start's checks serve, until ctx
+// is done; entries the engine starts while it runs are added to the same
+// supervisor (pluginWatch).
+func (ep *enginePlugins) start(ctx context.Context) error {
+	ep.mu.Lock()
+	entries := slices.Clone(ep.entries)
+	ep.mu.Unlock()
+	if err := ep.sup.Start(ctx, entries); err != nil {
 		ep.log.Error("plugins not started", "err", err)
+		return err
 	}
+	return nil
 }
 
 // dial verifies e's installed copy again, so a copy changed while the
@@ -253,7 +309,10 @@ func (ep *enginePlugins) verified(k plugin.EntryKey) (plugin.Verified, error) {
 	if ok {
 		return v, nil
 	}
-	v, err := plugin.Verify(ep.root, k, ep.manifestSHA256(k), ep.trust, ep.mode, plugin.RequireApproval(ep.approval[k]))
+	ep.mu.Lock()
+	sum, required := ep.configuredLocked(k).ManifestSHA256, ep.approval[k]
+	ep.mu.Unlock()
+	v, err := plugin.Verify(ep.root, k, sum, ep.trust, ep.mode, plugin.RequireApproval(required))
 	ep.mu.Lock()
 	if err != nil {
 		ep.notTrusted[k] = err
@@ -265,15 +324,19 @@ func (ep *enginePlugins) verified(k plugin.EntryKey) (plugin.Verified, error) {
 }
 
 func (ep *enginePlugins) configuredEntry(k plugin.EntryKey) config.Plugin {
+	ep.mu.Lock()
+	defer ep.mu.Unlock()
+	return ep.configuredLocked(k)
+}
+
+// configuredLocked is the configured entry k; ep.mu is held. While the
+// engine runs, pluginWatch replaces the configured entries.
+func (ep *enginePlugins) configuredLocked(k plugin.EntryKey) config.Plugin {
 	i := slices.IndexFunc(ep.configured, func(p config.Plugin) bool { return p.Key() == k })
 	if i < 0 {
 		return config.Plugin{}
 	}
 	return ep.configured[i]
-}
-
-func (ep *enginePlugins) manifestSHA256(k plugin.EntryKey) string {
-	return ep.configuredEntry(k).ManifestSHA256
 }
 
 func (ep *enginePlugins) credentialFile(k plugin.EntryKey) string {
@@ -283,10 +346,18 @@ func (ep *enginePlugins) credentialFile(k plugin.EntryKey) string {
 // PluginProblems implements agent.PluginReporter: for each enabled entry
 // that lists name, PLUGIN_NOT_TRUSTED when it failed verification, else
 // PLUGIN_UNAVAILABLE when it is not READY. Messages name the entry and the
-// failed check or failure class only, never another agent.
+// failed check or failure class only, never another agent. While engine.json
+// holds plugins the engine cannot read, every agent also gets
+// PLUGIN_CONFIG_INVALID.
 func (ep *enginePlugins) PluginProblems(name string) []agent.PluginProblem {
 	var out []agent.PluginProblem
-	for _, p := range ep.configured {
+	ep.mu.Lock()
+	configured, configProblem := slices.Clone(ep.configured), ep.configProblem
+	ep.mu.Unlock()
+	if configProblem != "" {
+		out = append(out, agent.PluginProblem{Code: agent.ProblemPluginConfigInvalid, Message: configProblem})
+	}
+	for _, p := range configured {
 		if !slices.Contains(p.Agents, name) {
 			continue
 		}

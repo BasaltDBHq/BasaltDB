@@ -1,0 +1,437 @@
+package engine
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"log/slog"
+	"maps"
+	"os"
+	"slices"
+	"sync"
+	"time"
+
+	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/plugin"
+)
+
+// Timing of the plugin watch (CONTRACT.md, Plugins, Plugin changes while
+// the engine runs).
+const (
+	// pluginWatchTick is how often the engine reads engine.json.
+	pluginWatchTick = time.Second
+	// pluginWaitingPoll is how often each agent's plugin approvals are read
+	// while an entry that requires approval is not served to one of its
+	// agents; pluginRecheckPoll while every such entry is served.
+	pluginWaitingPoll = 2 * time.Second
+	pluginRecheckPoll = 15 * time.Second
+	// pluginWatchTimeout bounds one agent's check in a pass.
+	pluginWatchTimeout = 5 * time.Second
+	// An agent whose database does not answer is checked again after
+	// pluginWaitingPoll, doubling up to pluginWatchMaxBackoff.
+	pluginWatchMaxBackoff = time.Minute
+)
+
+// pluginWatch applies plugin changes while a same-user engine runs: an entry
+// that requires approval starts once its approval is signed, and any entry
+// stops once it is turned off, removed, or no longer matches. It is one
+// goroutine, level-triggered: each pass derives what should run from
+// engine.json and the agents' ledgers, by the same checks as at start
+// (enginePlugins.check, writeAgentPluginEvents, servedAgentsLocked), and
+// makes the supervisor run that. An entry that does not require approval is
+// started and changed at engine start only; while the engine runs it only
+// narrows (turned off, removed, an agent removed).
+type pluginWatch struct {
+	ep      *enginePlugins
+	start   config.Config
+	path    string
+	ledgers map[string]pluginLedger
+	log     *slog.Logger
+	now     func() time.Time
+
+	// raw is engine.json as last read; bad is set while it cannot be read.
+	raw []byte
+	bad bool
+	// eff is the config last applied: the start config with the plugins
+	// of engine.json as effective (effective).
+	eff config.Config
+	// checks is each configured entry's verification, kept while its entry
+	// is unchanged so a pass does not hash its files again.
+	checks map[plugin.EntryKey]cachedCheck
+	// next is when the agents are checked again; zero: only when
+	// engine.json changes.
+	next time.Time
+	// backoff is, per agent whose database did not answer, when it is
+	// checked again.
+	backoff map[string]agentBackoff
+	// running is what the supervisor runs: each entry and the configured
+	// entry it was started from.
+	running map[plugin.EntryKey]runningEntry
+}
+
+type cachedCheck struct {
+	p        config.Plugin
+	required bool
+	c        entryCheck
+}
+
+type agentBackoff struct {
+	wait  time.Duration
+	until time.Time
+}
+
+type runningEntry struct {
+	e plugin.Entry
+	p config.Plugin
+}
+
+// newPluginWatch watches for ep, started from cfg read at path, with the
+// agents' ledgers. What runs is what the start's checks served.
+func newPluginWatch(ep *enginePlugins, cfg config.Config, path string, ledgers map[string]pluginLedger) *pluginWatch {
+	w := &pluginWatch{
+		ep: ep, start: cfg, path: path, ledgers: ledgers, log: ep.log, now: time.Now,
+		eff: cfg, checks: map[plugin.EntryKey]cachedCheck{}, backoff: map[string]agentBackoff{},
+		running: map[plugin.EntryKey]runningEntry{},
+	}
+	ep.mu.Lock()
+	defer ep.mu.Unlock()
+	for _, e := range ep.entries {
+		w.running[e.Key] = runningEntry{e: e, p: ep.configuredLocked(e.Key)}
+	}
+	return w
+}
+
+// run reads engine.json every pluginWatchTick until ctx is done.
+func (w *pluginWatch) run(ctx context.Context, clock plugin.Clock) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-clock.After(pluginWatchTick):
+		}
+		w.step(ctx)
+	}
+}
+
+// step is one tick: a pass when engine.json changed or the agents are due.
+// engine.json that cannot be read or fails validation changes nothing: no
+// pass runs until it can be read again, and status says so.
+func (w *pluginWatch) step(ctx context.Context) {
+	raw, readErr := os.ReadFile(w.path)
+	if readErr != nil {
+		raw = nil
+	}
+	if w.raw == nil || !bytes.Equal(raw, w.raw) {
+		w.raw = raw
+		cfg, err := config.Load(w.path)
+		if readErr != nil || err != nil {
+			if !w.bad {
+				w.log.Error("engine.json changed and its plugins cannot be read; no plugin change is applied until it can", "err", err)
+			}
+			w.bad = true
+			w.ep.setConfigProblem(true)
+			return
+		}
+		if w.bad {
+			w.log.Info("engine.json can be read again; applying its plugin changes")
+		}
+		w.bad = false
+		w.ep.setConfigProblem(false)
+		w.eff = w.effective(cfg)
+		w.pass(ctx, true)
+		return
+	}
+	if !w.bad && !w.next.IsZero() && !w.now().Before(w.next) {
+		w.pass(ctx, false)
+	}
+}
+
+// effective is cfg's plugins as this engine applies them while it runs,
+// with everything else from the start config (agents, mode, operatedBy:
+// those take a restart). An entry that requires approval is cfg's. One that
+// does not is the entry the engine started with, narrowed: turned off when
+// cfg turns it off, its agents those of both; it is dropped when cfg drops
+// it, adds it or makes it one that no longer requires approval.
+func (w *pluginWatch) effective(cfg config.Config) config.Config {
+	eff := w.start
+	eff.Plugins = nil
+	for _, p := range cfg.Plugins {
+		if w.start.PluginRequiresApproval(p) {
+			eff.Plugins = append(eff.Plugins, p)
+			continue
+		}
+		i := w.start.PluginIndex(p.Key())
+		if i < 0 || w.start.PluginRequiresApproval(w.start.Plugins[i]) {
+			continue
+		}
+		s := w.start.Plugins[i]
+		s.Enabled = s.Enabled && p.Enabled
+		s.Agents = slices.DeleteFunc(slices.Clone(s.Agents), func(a string) bool { return !slices.Contains(p.Agents, a) })
+		eff.Plugins = append(eff.Plugins, s)
+	}
+	return eff
+}
+
+// pass applies w.eff: it verifies new and changed entries, stops what the
+// config no longer serves, checks the agents that are due, and runs what
+// they serve.
+func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
+	ep := w.ep
+	now := w.now()
+	configured := configuredPlugins(w.eff)
+	approval := make(map[plugin.EntryKey]bool, len(configured))
+	checks := make(map[plugin.EntryKey]entryCheck, len(configured))
+	fresh := map[plugin.EntryKey]bool{}
+	for _, p := range configured {
+		k := p.Key()
+		required := w.start.PluginRequiresApproval(p)
+		approval[k] = required
+		if c, ok := w.checks[k]; ok && c.required == required && samePluginConfig(c.p, p, true) {
+			checks[k] = c.c
+			continue
+		}
+		c := ep.check(p, required)
+		w.checks[k] = cachedCheck{p: p, required: required, c: c}
+		checks[k], fresh[k] = c, true
+	}
+	for k := range w.checks {
+		if _, ok := checks[k]; !ok {
+			delete(w.checks, k)
+		}
+	}
+	ep.mu.Lock()
+	ep.configured, ep.approval = configured, approval
+	for k := range ep.notTrusted {
+		if _, ok := checks[k]; !ok {
+			delete(ep.notTrusted, k)
+		}
+	}
+	for k := range ep.refused {
+		if _, ok := checks[k]; !ok {
+			delete(ep.refused, k)
+		}
+	}
+	for k := range fresh {
+		delete(ep.notTrusted, k)
+		delete(ep.refused, k)
+		if c := checks[k]; c.notTrusted != nil {
+			ep.notTrusted[k] = c.notTrusted
+		} else if c.refused != "" {
+			ep.refused[k] = c.refused
+		}
+	}
+	ep.mu.Unlock()
+
+	// Narrow first, from the config alone: what it no longer serves stops
+	// before any database is asked.
+	narrowed := map[plugin.EntryKey]runningEntry{}
+	for k, r := range w.running {
+		p, ok := configuredPlugin(configured, k)
+		if !ok || !checks[k].ok() || !samePluginConfig(r.p, p, false) {
+			continue
+		}
+		e := r.e
+		e.Agents = slices.DeleteFunc(slices.Clone(e.Agents), func(a string) bool { return !slices.Contains(p.Agents, a) })
+		if len(e.Agents) > 0 {
+			narrowed[k] = runningEntry{e: e, p: p}
+		}
+	}
+	w.apply(narrowed)
+
+	required := slices.ContainsFunc(configured, func(p config.Plugin) bool { return approval[p.Key()] })
+	if !configChanged && !required {
+		w.next = time.Time{}
+		w.publish()
+		return
+	}
+	var due []string
+	for _, a := range w.start.Agents {
+		if b, ok := w.backoff[a.Name]; ok && now.Before(b.until) {
+			continue
+		}
+		due = append(due, a.Name)
+	}
+	copyOf := func(k plugin.EntryKey) (plugin.Verified, bool) {
+		c, ok := checks[k]
+		return c.v, ok && c.ok()
+	}
+	want := wantedFrom(w.eff, copyOf, ep.mode, ep.o.goos, trustedKeys(w.eff, w.path, w.log))
+	passes := checkAgents(ctx, want, w.ledgers, due, pluginWatchTimeout, w.log)
+	if ctx.Err() != nil {
+		return
+	}
+	for name, p := range passes {
+		if p.unread() {
+			b := w.backoff[name]
+			b.wait = min(max(2*b.wait, pluginWaitingPoll), pluginWatchMaxBackoff)
+			b.until = now.Add(b.wait)
+			w.backoff[name] = b
+			continue
+		}
+		delete(w.backoff, name)
+	}
+
+	desired := map[plugin.EntryKey]runningEntry{}
+	waiting := false
+	ep.mu.Lock()
+	ep.setWithheldLocked(passes, nil)
+	for _, p := range configured {
+		k := p.Key()
+		c := checks[k]
+		if !c.ok() {
+			continue
+		}
+		r, running := w.running[k]
+		unchanged := running && samePluginConfig(r.p, p, false)
+		kept := func(a string) bool {
+			pa, checked := passes[a]
+			return unchanged && slices.Contains(r.e.Agents, a) && (!checked || pa.undecided(k))
+		}
+		agents := ep.servedAgentsLocked(k, passes, kept)
+		if approval[k] && len(agents) < len(p.Agents) {
+			waiting = true
+		}
+		for _, a := range agents {
+			// What is served for a passing failure is not withheld.
+			if byAgent := ep.unrecorded[k]; byAgent != nil && kept(a) {
+				delete(byAgent, a)
+			}
+		}
+		if len(agents) == 0 {
+			continue
+		}
+		e := c.e
+		e.Agents = agents
+		desired[k] = runningEntry{e: e, p: p}
+	}
+	ep.mu.Unlock()
+	w.apply(desired)
+	writeDisables(ctx, passes, w.ledgers, pluginWatchTimeout, w.log)
+	w.publish()
+
+	switch {
+	case !required:
+		w.next = time.Time{}
+	case waiting:
+		w.next = now.Add(pluginWaitingPoll)
+	default:
+		w.next = now.Add(pluginRecheckPoll)
+	}
+}
+
+// apply makes the supervisor run desired: it stops every running entry
+// that is not desired, or desired otherwise (other agents or another
+// config), all at once, then starts the new ones. A replaced entry is
+// stopped before it starts again, so for a moment it serves no agent.
+func (w *pluginWatch) apply(desired map[plugin.EntryKey]runningEntry) {
+	var stop []plugin.EntryKey
+	for k, r := range w.running {
+		if d, ok := desired[k]; !ok || !sameRun(r, d) {
+			stop = append(stop, k)
+		}
+	}
+	var wg sync.WaitGroup
+	for _, k := range stop {
+		w.log.Info("plugin stopped: its entry changed, or it is no longer served to an agent", "plugin", k.String())
+		wg.Go(func() { w.ep.sup.Stop(k) })
+	}
+	wg.Wait()
+	for _, k := range stop {
+		delete(w.running, k)
+	}
+	for _, k := range slices.SortedFunc(maps.Keys(desired), compareEntryKeys) {
+		d := desired[k]
+		if _, ok := w.running[k]; ok {
+			continue
+		}
+		// A copy verified before the start is never used: dial verifies it
+		// again now.
+		w.ep.mu.Lock()
+		delete(w.ep.first, k)
+		w.ep.mu.Unlock()
+		if err := w.ep.sup.Add(d.e); err != nil {
+			w.log.Warn("plugin not started", "plugin", k.String(), "err", err)
+			continue
+		}
+		w.log.Info("plugin started while the engine runs", "plugin", k.String(), "agents", len(d.e.Agents))
+		w.running[k] = d
+	}
+}
+
+// publish records what runs as ep's entries.
+func (w *pluginWatch) publish() {
+	entries := make([]plugin.Entry, 0, len(w.running))
+	for _, k := range slices.SortedFunc(maps.Keys(w.running), compareEntryKeys) {
+		entries = append(entries, w.running[k].e)
+	}
+	w.ep.mu.Lock()
+	w.ep.entries = entries
+	w.ep.mu.Unlock()
+}
+
+// ok reports whether the entry verified and may run on this engine.
+func (c entryCheck) ok() bool { return c.notTrusted == nil && c.refused == "" }
+
+// undecided reports whether the check could not read what decides entry k
+// for the agent: its ledger, its approvals, or the database for its
+// record. While the engine runs, what runs then stays as it is.
+func (p agentPass) undecided(k plugin.EntryKey) bool {
+	if !p.reached {
+		return true
+	}
+	return slices.ContainsFunc(p.withheld, func(u unrecordedEntry) bool {
+		return u.key == k && (u.why == whyApprovalsUnread || u.why == whyUnreachable)
+	})
+}
+
+func configuredPlugin(configured []config.Plugin, k plugin.EntryKey) (config.Plugin, bool) {
+	i := slices.IndexFunc(configured, func(p config.Plugin) bool { return p.Key() == k })
+	if i < 0 {
+		return config.Plugin{}, false
+	}
+	return configured[i], true
+}
+
+// samePluginConfig reports whether two configured entries are the same, in
+// every field or, without withAgents, in every field but agents.
+func samePluginConfig(a, b config.Plugin, withAgents bool) bool {
+	if !withAgents {
+		a.Agents, b.Agents = nil, nil
+	}
+	ja, errA := json.Marshal(a)
+	jb, errB := json.Marshal(b)
+	return errA == nil && errB == nil && bytes.Equal(ja, jb)
+}
+
+// sameRun reports whether a running entry is the desired one: the same
+// configured entry and the same agents.
+func sameRun(r, d runningEntry) bool {
+	return samePluginConfig(r.p, d.p, false) && slices.Equal(slices.Sorted(slices.Values(r.e.Agents)), slices.Sorted(slices.Values(d.e.Agents)))
+}
+
+// setConfigProblem sets or clears PLUGIN_CONFIG_INVALID.
+func (ep *enginePlugins) setConfigProblem(on bool) {
+	ep.mu.Lock()
+	defer ep.mu.Unlock()
+	ep.configProblem = ""
+	if on {
+		ep.configProblem = whyConfigInvalid
+	}
+}
+
+// whyConfigInvalid is PLUGIN_CONFIG_INVALID's message: fixed words, never
+// the parse error, which could quote a value.
+const whyConfigInvalid = "engine.json changed and the engine cannot read its plugins (it does not parse, or it breaks a rule), " +
+	"so no plugin change is applied: every plugin keeps its state until the file can be read"
+
+// serve runs the started entries, and in same-user mode watches for plugin
+// changes, until ctx is done and every plugin has stopped.
+func (ep *enginePlugins) serve(ctx context.Context, cfg config.Config, configPath string, ledgers map[string]pluginLedger) {
+	if err := ep.start(ctx); err != nil {
+		return
+	}
+	if ep.mode == plugin.ModeSameUser {
+		newPluginWatch(ep, cfg, configPath, ledgers).run(ctx, ep.o.clock)
+	}
+	ep.sup.Wait()
+}

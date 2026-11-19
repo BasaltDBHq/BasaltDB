@@ -466,6 +466,47 @@ func TestRunRefusesARepeatedEntry(t *testing.T) {
 	require.Zero(t, d.starts(e.Key))
 }
 
+// An entry added while the supervisor runs is started and stopped like the
+// ones it started with; a stopped key can be added again (a replaced
+// entry), a supervised one cannot, and once Run's context ends Add starts
+// nothing and Run waits for the added entries too.
+func TestAddWhileRunning(t *testing.T) {
+	t.Parallel()
+	h, d, c := NewHost(), newDialer(), newFakeClock()
+	def := entry("acme", "default", "a")
+	s, stop := runSupervisor(t, h, d, c, def)
+	waitReady(t, h, def.Key)
+
+	cx := entry("acme", "client_x", "b")
+	require.NoError(t, s.Add(cx))
+	waitReady(t, h, cx.Key)
+	require.ErrorIs(t, s.Add(cx), ErrDuplicateEntry)
+	require.NoError(t, h.Call(context.Background(), cx.Key, []string{"b"}, "detect", nil, nil))
+
+	first := d.last(cx.Key)
+	s.Stop(cx.Key)
+	require.True(t, first.dead() || slices.Contains(first.calls(), "close"))
+	wider := entry("acme", "client_x", "b")
+	wider.Agents = []string{"b", "c"}
+	require.NoError(t, s.Add(wider), "a stopped key is added again with its new agents")
+	waitReady(t, h, cx.Key)
+	require.NoError(t, h.Call(context.Background(), cx.Key, []string{"c"}, "detect", nil, nil))
+	require.ElementsMatch(t, []EntryKey{def.Key, cx.Key}, s.Supervised())
+
+	added := d.last(cx.Key)
+	stop()
+	require.Contains(t, added.calls(), protocol.MethodShutdown, "Run stopped the added entry before it returned")
+	require.ErrorIs(t, s.Add(entry("acme", "late", "a")), ErrNotRunning)
+	require.Zero(t, d.starts(EntryKey{Name: "acme", Instance: "late"}))
+}
+
+func TestAddBeforeStartRefused(t *testing.T) {
+	t.Parallel()
+	s := NewSupervisor(NewHost(), newDialer().dial, newFakeClock())
+	require.ErrorIs(t, s.Add(entry("acme", "default", "a")), ErrNotRunning)
+	s.Wait()
+}
+
 func TestNextBackoff(t *testing.T) {
 	t.Parallel()
 	require.Equal(t, MinBackoff, nextBackoff(0, false))

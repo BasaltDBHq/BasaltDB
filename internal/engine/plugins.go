@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -41,8 +42,12 @@ type pluginOptions struct {
 	// units finds a service engine's plugin units; the machine's when nil.
 	units *unitSource
 	// stateDir is where a same-user engine writes which entries it serves
-	// (pluginServingFile); "" writes nothing.
+	// (pluginServingFile), and where every engine keeps its feed cursors;
+	// "" writes nothing and feeds no plugin.
 	stateDir string
+	// feedTiming replaces the feed's intervals (tests); nil is the
+	// contract's.
+	feedTiming *feedTiming
 }
 
 // Why an entry is not started though it verified.
@@ -60,6 +65,10 @@ type enginePlugins struct {
 	sup  *plugin.Supervisor
 	log  *slog.Logger
 	o    pluginOptions
+	// senders make the notifier hooks' calls, one per served entry that
+	// declares feed.observe or approval.deliver (pluginFeed keeps them in
+	// step with what is served): senders.sender(k).
+	senders *pluginSenders
 	// configured are the enabled entries that list an agent, in config
 	// order; entries are the ones the supervisor runs.
 	configured []config.Plugin
@@ -157,6 +166,7 @@ func newEnginePluginsFor(cfg config.Config, configPath string, o pluginOptions, 
 		ep.initServiceUnits(cfg, configPath)
 	}
 	ep.sup = plugin.NewSupervisor(ep.host, ep.dial, o.clock).WithLog(log)
+	ep.senders = newPluginSenders(ep.host, time.Now)
 	dir := filepath.Dir(configPath)
 	root, rootErr := plugin.Root(ep.mode, o.goos, dir)
 	trust, trustErr := plugin.NewTrustStore(ep.mode, o.goos, dir)

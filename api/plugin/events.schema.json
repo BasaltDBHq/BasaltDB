@@ -51,7 +51,7 @@
           "$ref": "#/$defs/keyId"
         },
         "signer": {
-          "description": "Planned (plugin approval, basalt_meta schema version 5; a guard before it refuses the key). Written only for an entry that requires approval: KNOWN when the signature verified against a publisher key built into the engine (signerKeyId names it), UNKNOWN otherwise (no signerKeyId). An entry recorded without signer was served through a trusted key, without approval, and always has signerKeyId.",
+          "description": "Plugin approval, basalt_meta schema version 5 (a guard before it refuses the key). Written only for an entry that requires approval: KNOWN when the signature verified against a publisher key built into the engine (signerKeyId names it), UNKNOWN otherwise (no signerKeyId). An entry recorded without signer was served through a trusted key, without approval, and always has signerKeyId.",
           "enum": ["KNOWN", "UNKNOWN"]
         },
         "hooks": {
@@ -116,7 +116,7 @@
       ]
     },
     "approvalPendingDetail": {
-      "description": "Planned. PLUGIN_APPROVAL_PENDING, appended by open_plugin_approval to the ledger of the agent that opened the approval: the binding's keys without kind, database, requestedBy, agents and change, so no agent's ledger names another agent.",
+      "description": "PLUGIN_APPROVAL_PENDING, appended by open_plugin_approval to the ledger of the agent that opened the approval: the binding's keys without kind, database, requestedBy, agents and change, so no agent's ledger names another agent.",
       "type": "object",
       "additionalProperties": false,
       "required": ["approvalId", "expiresAt", "name", "instance", "version", "manifestSha256", "settingsSha256", "hooks", "egress", "endpoint", "signer"],
@@ -139,7 +139,7 @@
       "allOf": [{ "$ref": "#/$defs/approvalFieldRules" }]
     },
     "approvedDetail": {
-      "description": "Planned. PLUGIN_APPROVED, appended by submit_plugin_approval to the ledger of every agent the approval lists: the binding's keys without kind, database, expiresAt, requestedBy, agents and change, plus the passkey that signed and the binding's hash. It holds no list of agents.",
+      "description": "PLUGIN_APPROVED, appended by submit_plugin_approval to the ledger of every agent the approval lists: the binding's keys without kind, database, expiresAt, requestedBy, agents and change, plus the passkey that signed and the binding's hash. It holds no list of agents.",
       "type": "object",
       "additionalProperties": false,
       "required": ["approvalId", "credentialId", "bindingSha256", "name", "instance", "version", "manifestSha256", "settingsSha256", "hooks", "egress", "endpoint", "signer"],

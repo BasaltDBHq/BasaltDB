@@ -39,7 +39,7 @@ func (h connectService) Initialize(ctx context.Context, req *connectrpc.Request[
 	}
 	ctx, cancel := h.s.callContext(ctx)
 	defer cancel()
-	res, e := h.s.initialize(ctx, in)
+	res, e := h.s.boundedInitialize(ctx, in)
 	if e != nil {
 		return nil, connectError(e)
 	}
@@ -49,13 +49,13 @@ func (h connectService) Initialize(ctx context.Context, req *connectrpc.Request[
 func (h connectService) Health(ctx context.Context, _ *connectrpc.Request[pluginv1.HealthRequest]) (*connectrpc.Response[pluginv1.HealthResponse], error) {
 	ctx, cancel := h.s.callContext(ctx)
 	defer cancel()
-	return connectrpc.NewResponse(&pluginv1.HealthResponse{Status: h.s.health(ctx).Status}), nil
+	return connectrpc.NewResponse(&pluginv1.HealthResponse{Status: h.s.boundedHealth(ctx).Status}), nil
 }
 
 func (h connectService) Shutdown(ctx context.Context, _ *connectrpc.Request[pluginv1.ShutdownRequest]) (*connectrpc.Response[pluginv1.ShutdownResponse], error) {
 	ctx, cancel := h.s.callContext(ctx)
 	defer cancel()
-	h.s.shutdown(ctx)
+	h.s.boundedShutdown(ctx)
 	// Serve stops accepting and finishes this reply before it returns.
 	h.s.requestStop()
 	return connectrpc.NewResponse(&pluginv1.ShutdownResponse{}), nil

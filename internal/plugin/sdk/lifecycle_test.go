@@ -3,13 +3,64 @@ package sdk
 import (
 	"context"
 	"encoding/json"
+	"net"
+	"net/http"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	connectrpc "connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
+
+	pluginv1 "github.com/basaltdbhq/basaltdb/api/plugin/proto/basalt/plugin/v1"
+	"github.com/basaltdbhq/basaltdb/api/plugin/proto/basalt/plugin/v1/pluginv1connect"
 )
+
+// TestStuckHandlersEndAtTheDeadlineOverConnect: the same bound holds on the
+// ConnectRPC transport, and a stuck Shutdown still ends Serve.
+func TestStuckHandlersEndAtTheDeadlineOverConnect(t *testing.T) {
+	p := newStuck(t)
+	s, path := serveSocket(t, p, WithTransport(ConnectRPC))
+	var protocols http.Protocols
+	protocols.SetUnencryptedHTTP2(true)
+	hc := &http.Client{Transport: &http.Transport{
+		Protocols: &protocols,
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", path)
+		},
+	}}
+	t.Cleanup(hc.CloseIdleConnections)
+	cl := pluginv1connect.NewPluginServiceClient(hc, "http://plugin", connectrpc.WithGRPC())
+	initReq := func() *connectrpc.Request[pluginv1.InitializeRequest] {
+		return connectrpc.NewRequest(&pluginv1.InitializeRequest{
+			Protocols: []string{"basalt-plugin/1"}, Limits: &pluginv1.Limits{TimeoutMs: 100},
+		})
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
+	defer cancel()
+
+	_, err := cl.Initialize(ctx, initReq())
+	require.NoError(t, err)
+
+	p.stuckInit.Store(true)
+	start := time.Now()
+	_, err = cl.Initialize(ctx, initReq())
+	require.Error(t, err)
+	require.Less(t, time.Since(start), 2*time.Second)
+
+	p.stuckHealth.Store(true)
+	start = time.Now()
+	h, err := cl.Health(ctx, connectrpc.NewRequest(&pluginv1.HealthRequest{}))
+	require.NoError(t, err)
+	require.Equal(t, "NOT_READY", h.Msg.GetStatus())
+	require.Less(t, time.Since(start), 2*time.Second)
+
+	p.stuckShutdown.Store(true)
+	_, err = cl.Shutdown(ctx, connectrpc.NewRequest(&pluginv1.ShutdownRequest{}))
+	require.NoError(t, err)
+	require.NoError(t, s.await(t))
+}
 
 // stuckPlugin has handlers that can be made to ignore their context and never
 // return, until release is closed.

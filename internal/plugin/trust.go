@@ -324,6 +324,10 @@ func writeFileAtomic(dir, name string, b []byte, mode os.FileMode) error {
 func readOwned(path string, limit int64, owner uint32) ([]byte, error) {
 	f, err := os.OpenFile(path, noFollowFlags, 0)
 	if err != nil {
+		// A symlink in the trust store is the path rule's refusal.
+		if fi, lerr := os.Lstat(path); lerr == nil && fi.Mode()&fs.ModeSymlink != 0 {
+			return nil, ruleRefusal(path, "is a symlink", PathSymlink, fi)
+		}
 		return nil, pathRefusal(path, "cannot be opened, or is a symlink")
 	}
 	defer func() { _ = f.Close() }()

@@ -227,7 +227,7 @@ func TestPluginApprovalKey(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(raw), `"approval":"REQUIRED"`)
 
-	for _, bad := range []string{`"required"`, `true`, `"OPTIONAL"`} {
+	for _, bad := range []string{`"required"`, `""`, `null`, `true`, `"OPTIONAL"`} {
 		_, err := loadPlugins(t, "["+entry(`, "agents": ["product_a"], "approval": `+bad)+"]")
 		require.Error(t, err, bad)
 	}

@@ -62,15 +62,29 @@ type Plugin struct {
 	Config json.RawMessage `json:"config,omitempty"`
 	// Auth is a remote plugin's credential file.
 	Auth *PluginAuth `json:"auth,omitempty"`
-	// Approval is PluginApprovalRequired or empty: with it the engine serves
-	// the entry to an agent only with a matching plugin approval signed by a
-	// person's passkey (CONTRACT.md, Plugins, Plugin approval). See
-	// Config.PluginRequiresApproval.
-	Approval string `json:"approval,omitempty"`
+	// Approval is PluginApprovalRequired, or empty when the key is absent:
+	// with it the engine serves the entry to an agent only with a matching
+	// plugin approval signed by a person's passkey (CONTRACT.md, Plugins,
+	// Plugin approval). See Config.PluginRequiresApproval.
+	Approval PluginApproval `json:"approval,omitempty"`
 }
 
+// PluginApproval is a plugin entry's approval key.
+type PluginApproval string
+
 // PluginApprovalRequired is the approval key's one value.
-const PluginApprovalRequired = "REQUIRED"
+const PluginApprovalRequired PluginApproval = "REQUIRED"
+
+// UnmarshalJSON accepts only "REQUIRED": an empty string, null or any other
+// value is refused when the config is loaded, never read as no key.
+func (a *PluginApproval) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil || s != string(PluginApprovalRequired) {
+		return fmt.Errorf("approval must be %q or absent", PluginApprovalRequired)
+	}
+	*a = PluginApprovalRequired
+	return nil
+}
 
 // PluginRequiresApproval reports whether entry p requires a plugin approval
 // on this engine: it has the approval key, or the engine is agent-operated,

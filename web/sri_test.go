@@ -599,3 +599,89 @@ func utf16le(s string) string {
 	}
 	return string(out)
 }
+
+// The portal's root pages, index.html and 404.html, load no script, so they
+// have no sri block. Cloudflare Pages serves 404.html at any unknown path,
+// whatever its depth, so they name the stylesheet by its absolute path. The
+// engine embeds them for basalt portal verify but never serves them.
+// staticCSPLine allows no script at all; staticStyleLine is the only link
+// they may hold. scripts/web-sri.mjs (verifyStatic) checks the same.
+const (
+	staticCSPLine   = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'">`
+	staticStyleLine = `<link rel="stylesheet" href="/style.css">`
+)
+
+func checkStaticPage(fsys fs.FS, page string) error {
+	b, err := fs.ReadFile(fsys, page)
+	if err != nil {
+		return err
+	}
+	if err := plainUTF8(page, b); err != nil {
+		return err
+	}
+	if _, err := fs.Stat(fsys, "style.css"); err != nil {
+		return fmt.Errorf("%s: style.css is not embedded", page)
+	}
+	html := string(b)
+	if !strings.HasPrefix(html, prologue) {
+		return fmt.Errorf("%s: does not start with the fixed prologue", page)
+	}
+	head, body, ok := strings.Cut(html[len(prologue):], "\n</head>\n")
+	if !ok {
+		return fmt.Errorf("%s: no </head> line", page)
+	}
+	if m := bodyTag.FindString(body); m != "" {
+		return fmt.Errorf("%s: %s after the head", page, m)
+	}
+	csp, style := 0, 0
+	for _, line := range strings.Split(head, "\n") {
+		line = strings.TrimLeft(line, " ")
+		switch {
+		case line == staticCSPLine:
+			csp++
+		case line == staticStyleLine:
+			style++
+		case strings.HasPrefix(line, `<meta http-equiv="Content-Security-Policy"`):
+			return fmt.Errorf("%s: the meta CSP line must be the fixed one for a page without script: %s", page, line)
+		case strings.HasPrefix(strings.ToLower(line), "<link"), !headLine.MatchString(line):
+			return fmt.Errorf("%s: head line is not in a checked form: %s", page, line)
+		}
+	}
+	if csp != 1 {
+		return fmt.Errorf("%s: needs exactly one meta CSP line, the one for a page without script (found %d)", page, csp)
+	}
+	if style != 1 {
+		return fmt.Errorf("%s: needs exactly one stylesheet link, %s (found %d)", page, staticStyleLine, style)
+	}
+	return nil
+}
+
+// The portal's root pages (index.html, 404.html) load no script and pass
+// the static check; a script, a looser CSP or a relative stylesheet fails it.
+func TestPortalStaticPages(t *testing.T) {
+	t.Parallel()
+	pages, err := fs.Glob(web.Files, "*.html")
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"404.html", "index.html"}, pages)
+	for _, page := range pages {
+		require.NoError(t, checkStaticPage(web.Files, page))
+		b, err := fs.ReadFile(web.Files, page)
+		require.NoError(t, err)
+		html := string(b)
+		cases := map[string]struct{ html, want string }{
+			"script in head": {strings.Replace(html, "</head>", `  <script type="module" src="lib/codec.js"></script>`+"\n</head>", 1), "head line is not in a checked form"},
+			"script in body": {strings.Replace(html, "</main>", `<script src="lib/codec.js"></script></main>`, 1), "<script after the head"},
+			"iframe in body": {strings.Replace(html, "</main>", `<iframe srcdoc="x"></iframe></main>`, 1), "<iframe after the head"},
+			"relative style": {strings.Replace(html, `href="/style.css"`, `href="style.css"`, 1), "head line is not in a checked form"},
+			"script CSP":     {strings.Replace(html, "default-src 'none'; style-src", "default-src 'none'; script-src 'self'; style-src", 1), "must be the fixed one for a page without script"},
+			"no CSP":         {strings.Replace(html, "  "+staticCSPLine+"\n", "", 1), "needs exactly one meta CSP line"},
+		}
+		for name, c := range cases {
+			require.NotEqual(t, html, c.html, "%s %s: edit did not apply", page, name)
+			fsys := fstest.MapFS{page: {Data: []byte(c.html)}, "style.css": {Data: []byte("")}}
+			err := checkStaticPage(fsys, page)
+			require.Error(t, err, "%s %s", page, name)
+			require.Contains(t, err.Error(), c.want, "%s %s", page, name)
+		}
+	}
+}

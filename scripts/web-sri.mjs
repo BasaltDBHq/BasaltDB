@@ -274,10 +274,53 @@ export function verify(root, files, page) {
   return [...new Set(problems)];
 }
 
+// The portal's root pages, index.html and 404.html, load no script, so they
+// have no sri block. Cloudflare Pages serves 404.html at any unknown path,
+// whatever its depth, so they name the stylesheet by its absolute path. The
+// engine embeds them for basalt portal verify but never serves them.
+// STATIC_CSP_LINE allows no script at all; STATIC_STYLE_LINE is the only
+// link they may hold.
+const STATIC_CSP_LINE = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'">`;
+const STATIC_STYLE_LINE = '<link rel="stylesheet" href="/style.css">';
+
+// verifyStatic checks a root page: the fixed prologue, a head of allow-listed
+// lines with exactly the static meta CSP line and the one stylesheet link,
+// no script or other link anywhere, and no BODY_TAG after </head>.
+export function verifyStatic(root, files, page) {
+  let html;
+  try {
+    html = plainUTF8(page);
+  } catch (e) {
+    return [e.message];
+  }
+  if (!files.has("style.css")) return [`${page}: style.css is not embedded`];
+  if (!html.startsWith(PROLOGUE)) return [`${page}: does not start with the fixed prologue`];
+  const end = html.indexOf("\n</head>\n", PROLOGUE.length);
+  if (end < 0) return [`${page}: no </head> line`];
+  const problems = [];
+  const tag = html.slice(end + 9).match(BODY_TAG);
+  if (tag) problems.push(`${page}: ${tag[0]} after the head`);
+  let csp = 0;
+  let style = 0;
+  for (let line of html.slice(PROLOGUE.length, end).split("\n")) {
+    line = line.replace(/^ +/, "");
+    if (line === STATIC_CSP_LINE) csp++;
+    else if (line === STATIC_STYLE_LINE) style++;
+    else if (line.startsWith(CSP_PREFIX)) problems.push(`${page}: the meta CSP line must be the fixed one for a page without script: ${line}`);
+    else if (/^<link\b/i.test(line) || !HEAD_LINE.test(line)) problems.push(`${page}: head line is not in a checked form: ${line}`);
+  }
+  if (csp !== 1) problems.push(`${page}: needs exactly one meta CSP line, the one for a page without script (found ${csp})`);
+  if (style !== 1) problems.push(`${page}: needs exactly one stylesheet link, ${STATIC_STYLE_LINE} (found ${style})`);
+  return problems;
+}
+
 export function run(mode, root) {
   const files = embedded(root);
   const pages = [...files].filter((f) => /^[^/]+\/index\.html$/.test(f)).sort().map((f) => join(root, f));
   let bad = 0;
+  for (const f of [...files].filter((f) => /^[^/]+\.html$/.test(f)).sort()) {
+    for (const problem of verifyStatic(root, files, join(root, f))) { console.error(problem); bad++; }
+  }
   for (const p of pages) {
     let want;
     try {

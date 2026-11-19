@@ -12,15 +12,15 @@ import { imports, run } from "./web-sri.mjs";
 const web = join(dirname(fileURLToPath(import.meta.url)), "..", "web");
 const sri = (b) => "sha384-" + createHash("sha384").update(b).digest("base64");
 
-// check copies web/ to a temp dir, lets edit change the approve page, and
-// returns the exit code of --check and what it printed.
-function check(edit) {
+// check copies web/ to a temp dir, lets edit change one page (the approve
+// page by default), and returns the exit code of --check and what it printed.
+function check(edit, file = join("approve", "index.html")) {
   const root = mkdtempSync(join(tmpdir(), "web-sri-"));
   const logged = [];
   const orig = console.error;
   try {
     cpSync(web, root, { recursive: true });
-    const page = join(root, "approve", "index.html");
+    const page = join(root, file);
     const out = edit(readFileSync(page, "utf8"), root);
     writeFileSync(page, typeof out === "string" ? out : Buffer.from(out));
     console.error = (m) => logged.push(String(m));
@@ -196,6 +196,41 @@ function scan(src) {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+}
+
+for (const file of ["index.html", "404.html"]) {
+  test(`${file}: a script, in the head or the body, fails`, () => {
+    const tag = '<script type="module" src="lib/codec.js"></script>';
+    for (const edit of [(h) => h.replace("</head>", `  ${tag}\n</head>`), (h) => h.replace("</main>", `${tag}\n    </main>`)]) {
+      const r = check(edit, file);
+      assert.equal(r.code, 1, r.out);
+      assert.match(r.out, new RegExp(`${file.replace(".", "\\.")}: `));
+    }
+  });
+
+  test(`${file}: a relative stylesheet fails`, () => {
+    const r = check((h) => h.replace('href="/style.css"', 'href="style.css"'), file);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /head line is not in a checked form: <link rel="stylesheet" href="style\.css">/);
+  });
+
+  test(`${file}: a CSP that allows script fails`, () => {
+    const r = check((h) => h.replace("default-src 'none'; style-src", "default-src 'none'; script-src 'self'; style-src"), file);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /the meta CSP line must be the fixed one for a page without script/);
+  });
+
+  test(`${file}: a page without the meta CSP line fails`, () => {
+    const r = check((h) => h.replace(/ *<meta http-equiv="Content-Security-Policy"[^\n]*\n/, ""), file);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /needs exactly one meta CSP line/);
+  });
+
+  test(`${file}: an iframe in the body fails`, () => {
+    const r = check((h) => h.replace("</main>", '<iframe srcdoc="x"></iframe>\n    </main>'), file);
+    assert.equal(r.code, 1);
+    assert.match(r.out, /<iframe after the head/);
+  });
 }
 
 test("the module scanner reads ordinary modules", () => {

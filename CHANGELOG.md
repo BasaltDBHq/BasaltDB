@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- The portal has a home page and a not-found page. Opening `https://portal.basaltvault.app/` or a mistyped link now shows a short page that says what the portal is and links to the docs, instead of the browser's bare 404. Both pages are static and run no script. `basalt portal verify` checks them too: the home page at `/`, and the not-found page at an unknown path, which must answer 404 with that page.
 - A daily check for a newer release. After a command, `basalt` prints one line on stderr when a newer release is out, in red when that release has a security fix. It asks the public release list once a day and sends nothing but the request itself. Turn it off with `BASALT_UPDATE_CHECK=off` or `"updateCheck": "OFF"` in `engine.json`. `basalt status --json` carries an `update` field instead of the line, and when the engine runs as a service, `basalt` follows the engine's setting.
 - Agents hear about a newer release too: the `status` and `describe` tools carry an `update` message, and the first tool result of each MCP connection repeats it once. The agent is told to pass it on and never to upgrade BasaltDB unless the person says yes.
 - `basalt mcp` and the engine agree on a protocol version when they connect. If the two builds do not fit, the agent gets a clear error that says to reconnect the MCP server or restart the engine, instead of a failure that depends on what changed.

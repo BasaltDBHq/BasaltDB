@@ -38,14 +38,14 @@ const (
 	// which passkeys a device has, and forgetting a removed one.
 	CheckPath  = "/passkeys/check"
 	ForgetPath = "/passkeys/forget"
-	// ConnectPath is the connect page: a setup code in the fragment
-	// (CONTRACT.md, Connect, The connect link). Portal only.
-	ConnectPath = "/connect"
 	// EnginesPath and EnginesAddPath are the portal's pin page (M4.1,
 	// CONTRACT.md, Direct transport): the engines this device pinned, and
 	// pinning one. Portal only: the engine's local pages never serve them.
 	EnginesPath    = "/engines"
 	EnginesAddPath = "/engines/add"
+	// ConnectPath is the portal's connect page (CONTRACT.md, The connect
+	// page): run a setup code through the connect service. Portal only.
+	ConnectPath = "/connect"
 )
 
 // Approval is the approval page of a held write: <base>/approvals/<id>.

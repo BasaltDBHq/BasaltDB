@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -108,12 +109,20 @@ func resultOf(rep *portalverify.Report, now time.Time) Result {
 	return r
 }
 
+// ConnectPageFile is the connect page's embedded file.
+const ConnectPageFile = "connect/index.html"
+
 // Options is what the check compares and how it is run for base, the
 // portal's origin: the pages embedded in this binary, the routes people load
 // pages at and the headers they must carry. basalt portal verify uses the
 // same.
 func Options(base string) portalverify.Options {
-	o := portalverify.Options{Base: base, Files: web.Files, Headers: websec.Expected()}
+	o := portalverify.Options{
+		Base: base, Files: web.Files, Headers: websec.Expected(),
+		// The connect page reaches the connect service (CONTRACT.md, The
+		// connect page): its own policy, never stored.
+		FileHeaders: map[string]http.Header{ConnectPageFile: websec.ExpectedConnectPage()},
+	}
 	for _, r := range pages.PortalPages() {
 		o.Routes = append(o.Routes, portalverify.Route{Path: r.Path, ID: r.ID, File: r.File})
 	}

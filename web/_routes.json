@@ -1,5 +1,5 @@
 {
   "version": 1,
-  "include": ["/approvals/*", "/reverts/*", "/engines/add"],
+  "include": ["/approvals/*", "/reverts/*", "/engines/add", "/connect", "/connect/"],
   "exclude": []
 }

@@ -76,6 +76,10 @@ type Options struct {
 	// Headers are the response headers every file must carry; only
 	// Content-Security-Policy is compared, plus the media type of .js.
 	Headers http.Header
+	// FileHeaders replace Headers for one embedded file, by its path, and
+	// for every route to it: the connect page has its own policy. A
+	// Cache-Control in them must be served with each of its directives.
+	FileHeaders map[string]http.Header
 	// Routes are the paths people load a page at (the engine's PageRoutes,
 	// which the portal's _redirects rewrites to page files). Each is fetched
 	// and compared with its embedded File, so a rewrite to another page is
@@ -233,7 +237,7 @@ func Verify(ctx context.Context, o Options) (*Report, error) {
 			r.Files = append(r.Files, checkNotFound(ctx, client, o, want))
 			continue
 		}
-		r.Files = append(r.Files, checkFile(ctx, client, o, p, "/"+requestPath(p), want))
+		r.Files = append(r.Files, checkFile(ctx, client, o, p, "/"+requestPath(p), want, o.headersFor(p)))
 	}
 	for _, rt := range o.Routes {
 		want, err := fs.ReadFile(o.Files, rt.File)
@@ -244,7 +248,7 @@ func Verify(ctx context.Context, o Options) (*Report, error) {
 		if rt.ID {
 			u += ProbeID
 		}
-		r.Files = append(r.Files, checkFile(ctx, client, o, u, u, want))
+		r.Files = append(r.Files, checkFile(ctx, client, o, u, u, want, o.headersFor(rt.File)))
 	}
 	for _, p := range probes(paths) {
 		if f, bad := checkExtra(ctx, client, o.Base, p); bad {
@@ -288,8 +292,17 @@ func get(ctx context.Context, c *http.Client, base, urlPath string) (answer, err
 	return answer{resp.StatusCode, resp.Header, body}, err
 }
 
-// checkFile fetches urlPath and compares it with want; p names the result.
-func checkFile(ctx context.Context, c *http.Client, o Options, p, urlPath string, want []byte) File {
+// headersFor is the header set the embedded file p must be served with.
+func (o Options) headersFor(p string) http.Header {
+	if h, ok := o.FileHeaders[p]; ok {
+		return h
+	}
+	return o.Headers
+}
+
+// checkFile fetches urlPath and compares it with want and its headers with
+// hdr; p names the result.
+func checkFile(ctx context.Context, c *http.Client, o Options, p, urlPath string, want []byte, hdr http.Header) File {
 	a, err := get(ctx, c, o.Base, urlPath)
 	if err != nil {
 		return File{Path: p, Status: StatusError, Detail: errText(err)}
@@ -300,15 +313,16 @@ func checkFile(ctx context.Context, c *http.Client, o Options, p, urlPath string
 	case a.status != http.StatusOK:
 		return File{Path: p, Status: StatusError, Detail: fmt.Sprintf("HTTP %d", a.status)}
 	}
-	return compare(o, p, a, want)
+	return compare(p, a, want, hdr)
 }
 
-// compare checks a served answer's bytes against want, then its headers.
-func compare(o Options, p string, a answer, want []byte) File {
+// compare checks a served answer's bytes against want, then its headers
+// against hdr.
+func compare(p string, a answer, want []byte, hdr http.Header) File {
 	if len(a.body) > maxBody || sum(a.body) != sum(want) {
 		return File{Path: p, Status: StatusDiffers, Detail: fmt.Sprintf("served sha256 %s, embedded %s", short(a.body), short(want))}
 	}
-	if d := headerProblem(a.header, o.Headers, p); d != "" {
+	if d := headerProblem(a.header, hdr, p); d != "" {
 		return File{Path: p, Status: StatusHeader, Detail: d}
 	}
 	return File{Path: p, Status: StatusOK}
@@ -330,11 +344,12 @@ func checkNotFound(ctx context.Context, c *http.Client, o Options, want []byte) 
 	case a.status != http.StatusNotFound:
 		return File{Path: NotFoundFile, Status: StatusError, Detail: fmt.Sprintf("HTTP %d at %s", a.status, NotFoundPath)}
 	}
-	return compare(o, NotFoundFile, a, want)
+	return compare(NotFoundFile, a, want, o.headersFor(NotFoundFile))
 }
 
 // headerProblem names the first wrong header: the CSP must equal the
-// engine's, and a .js file must be text/javascript.
+// wanted one, a wanted Cache-Control's directives must all be served, and a
+// .js file must be text/javascript.
 func headerProblem(got, want http.Header, p string) string {
 	if csp := want.Get("Content-Security-Policy"); csp != "" {
 		switch have := got.Get("Content-Security-Policy"); {
@@ -344,6 +359,14 @@ func headerProblem(got, want http.Header, p string) string {
 			return fmt.Sprintf("Content-Security-Policy is %q, want %q", have, csp)
 		}
 	}
+	if cc := want.Get("Cache-Control"); cc != "" {
+		have := directives(got.Values("Cache-Control"))
+		for d := range directives([]string{cc}) {
+			if !have[d] {
+				return fmt.Sprintf("Cache-Control is %q, want %q", strings.Join(got.Values("Cache-Control"), ", "), cc)
+			}
+		}
+	}
 	if path.Ext(p) == ".js" {
 		mt, _, _ := mime.ParseMediaType(got.Get("Content-Type"))
 		if mt != "text/javascript" {
@@ -351,6 +374,19 @@ func headerProblem(got, want http.Header, p string) string {
 		}
 	}
 	return ""
+}
+
+// directives reads Cache-Control values into their lower-cased directives.
+func directives(values []string) map[string]bool {
+	out := map[string]bool{}
+	for _, v := range values {
+		for _, d := range strings.Split(v, ",") {
+			if d = strings.ToLower(strings.TrimSpace(d)); d != "" {
+				out[d] = true
+			}
+		}
+	}
+	return out
 }
 
 func checkExtra(ctx context.Context, c *http.Client, base, p string) (File, bool) {

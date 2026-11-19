@@ -58,6 +58,11 @@ func portalHost(t *testing.T, files fs.FS, wrap func(http.Handler) http.Handler)
 	// The portal's _redirects: each page route is rewritten (200) to its file.
 	static := http.FileServer(http.FS(files))
 	rewrite := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The portal's edge function gives the connect page its own policy.
+		if r.URL.Path == "/connect" || r.URL.Path == "/connect/" {
+			w.Header().Set("Content-Security-Policy", websec.ConnectPageCSP)
+			w.Header().Set("Cache-Control", "no-store")
+		}
 		for _, rt := range pages.PortalPages() {
 			if r.URL.Path == rt.Path || (rt.ID && strings.HasPrefix(r.URL.Path, rt.Path)) {
 				b, err := fs.ReadFile(files, rt.File)

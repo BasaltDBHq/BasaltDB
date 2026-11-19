@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"io/fs"
@@ -300,7 +301,9 @@ func writeNew(p string, b []byte, mode os.FileMode) error {
 // state and key as the staged copy, it is kept and the temporary copy
 // removed; when it fails verification, or has another signer, it is
 // replaced, so the copy in place is always the one the consent screen
-// showed, signer included. It is verified with Stage's options.
+// showed, signer included. It is verified with Stage's options. With
+// RequireApproval it is also kept only when its .sig is the staged one,
+// byte for byte, or both have none: two UNKNOWN copies can differ in it.
 func (s *Staged) Commit() (string, error) {
 	if s.done {
 		return "", errors.New("plugin: the staged copy was already committed or discarded")
@@ -314,7 +317,8 @@ func (s *Staged) Commit() (string, error) {
 	}
 	if _, err := os.Lstat(final); err == nil {
 		kept, verr := verifyCopy(s.root, s.Key, s.ManifestSHA256, s.ManifestSHA256, s.trust, s.owner, s.opts)
-		if verr == nil && kept.Signer == s.Signer && kept.SignerKeyID == s.SignerKeyID {
+		if verr == nil && kept.Signer == s.Signer && kept.SignerKeyID == s.SignerKeyID &&
+			(!s.opts.requireApproval || sameSignatureFile(final, s.Dir)) {
 			_ = os.RemoveAll(s.Dir)
 			s.Verified = kept
 			return final, nil
@@ -340,6 +344,22 @@ func (s *Staged) Commit() (string, error) {
 	}
 	s.Dir = final
 	return final, nil
+}
+
+// sameSignatureFile reports whether copies a and b both hold no .sig, or
+// hold the same bytes in it.
+func sameSignatureFile(a, b string) bool {
+	read := func(dir string) ([]byte, bool, bool) {
+		p := filepath.Join(dir, SignatureFile)
+		if _, err := os.Lstat(p); errors.Is(err, fs.ErrNotExist) {
+			return nil, false, true
+		}
+		raw, err := readNoFollow(p, MaxSignatureFileBytes)
+		return raw, true, err == nil
+	}
+	ra, hasA, okA := read(a)
+	rb, hasB, okB := read(b)
+	return okA && okB && hasA == hasB && bytes.Equal(ra, rb)
 }
 
 // Discard removes the temporary copy.

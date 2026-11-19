@@ -415,3 +415,54 @@ func TestCommitKeepsOnlyTheSameSigner(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, SignerKnown, got.Signer)
 }
+
+// TestCommitKeepsOnlyTheSameSignatureFile: with approval two UNKNOWN copies
+// of one manifest can differ in their .sig; the copy in place is always the
+// staged one's.
+func TestCommitKeepsOnlyTheSameSignatureFile(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	v, err := Install(f.src, f.root, "", f.trust, ModeSameUser, approval)
+	require.NoError(t, err)
+	require.Equal(t, SignerUnknown, v.Signer)
+	require.Contains(t, entries(t, v.Dir), SignatureFile)
+
+	f.unsigned()
+	u, err := Install(f.src, f.root, "", f.trust, ModeSameUser, approval)
+	require.NoError(t, err)
+	require.Equal(t, v.Dir, u.Dir)
+	require.NotContains(t, entries(t, u.Dir), SignatureFile, "the unsigned copy replaced the one with a .sig")
+
+	stranger, err := GenerateKey()
+	require.NoError(t, err)
+	f.writeSigned(f.src, localManifest(), stranger)
+	s, err := Install(f.src, f.root, "", f.trust, ModeSameUser, approval)
+	require.NoError(t, err)
+	want, err := os.ReadFile(filepath.Join(f.src, SignatureFile))
+	require.NoError(t, err)
+	got, err := os.ReadFile(filepath.Join(s.Dir, SignatureFile))
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+// TestSignatureDirectoryRefused: with approval a .sig that is a directory is
+// refused, in the source and in the copy, never taken as unsigned.
+func TestSignatureDirectoryRefused(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	f.unsigned()
+	v, err := Install(f.src, f.root, "", f.trust, ModeSameUser, approval)
+	require.NoError(t, err)
+
+	inCopy := filepath.Join(v.Dir, SignatureFile)
+	require.NoError(t, os.Mkdir(inCopy, 0o755))
+	_, err = f.verifyWith(v.ManifestSHA256, f.trust, approval)
+	ve := requireRefused(t, err, RefusedNotTrusted)
+	require.True(t, strings.HasPrefix(ve.File, inCopy), ve.File)
+
+	inSource := filepath.Join(f.src, SignatureFile)
+	require.NoError(t, os.Mkdir(inSource, 0o755))
+	_, err = Install(f.src, f.root, "x", f.trust, ModeSameUser, approval)
+	ve = requireRefused(t, err, RefusedNotTrusted)
+	require.Equal(t, inSource, ve.File)
+}

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/plugin/approval/request.v1.json",
   "title": "Plugin approval request",
-  "description": "Planned (plugin approval). What the engine's local pages serve at GET /api/v1/plugins/{approvalId} for a short link. A long link carries the same two texts as format 2 (api/mcp/links/compact-request.schema.json): texts [binding, settings] and, optionally, credentialIds. The page takes nothing else as input. See CONTRACT.md, Plugins, The plugin approval page.",
+  "description": "What the engine's local pages serve at GET /api/v1/plugins/{approvalId} for a short link. A long link carries the same two texts as format 2 (api/mcp/links/compact-request.schema.json): texts [binding, settings] and, optionally, credentialIds. The page takes nothing else as input. See CONTRACT.md, Plugins, The plugin approval page.",
   "type": "object",
   "additionalProperties": false,
   "required": ["approvalId", "binding", "settings"],

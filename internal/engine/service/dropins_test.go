@@ -115,6 +115,25 @@ func TestSystemdOverridesFollowsMasking(t *testing.T) {
 	m.link(t, "usr/lib/systemd/system/service.d/50-x.conf", os.DevNull)
 	require.Equal(t, []string{"/etc/systemd/system/service.d/50-x.conf"}, m.overrides(t))
 
+	// A file masks only the same name in the same drop-in directory name:
+	// a harmless shorter dash prefix does not hide a longer one (which
+	// systemd applies over it), and service.d does not hide a name-specific
+	// drop-in in a lower-priority directory.
+	m = newMachine(t)
+	m.write(t, "etc/systemd/system/basalt-.service.d/override.conf", "[Service]\nTimeoutSec=5\n")
+	m.write(t, "etc/systemd/system/basalt-plugin-.service.d/override.conf", "[Service]\nUser=root\n")
+	require.Equal(t, []string{"/etc/systemd/system/basalt-plugin-.service.d/override.conf"}, m.overrides(t))
+	for name, mask := range map[string]func(m machine){
+		"dev/null link": func(m machine) { m.link(t, "etc/systemd/system/service.d/override.conf", os.DevNull) },
+		"empty file":    func(m machine) { m.write(t, "etc/systemd/system/service.d/override.conf", "") },
+		"harmless file": func(m machine) { m.write(t, "etc/systemd/system/service.d/override.conf", "[Service]\nTimeoutSec=9\n") },
+	} {
+		m := newMachine(t)
+		mask(m)
+		m.write(t, "run/systemd/system/"+pluginUnit+".d/override.conf", "[Service]\nReadWritePaths=/\n")
+		require.Equal(t, []string{"/run/systemd/system/" + pluginUnit + ".d/override.conf"}, m.overrides(t), name)
+	}
+
 	// A link anywhere else is refused: its target can change.
 	m = newMachine(t)
 	m.write(t, "srv/x.conf", "[Service]\nTimeoutSec=1\n")

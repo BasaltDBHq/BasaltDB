@@ -73,11 +73,15 @@ type SystemdFS struct {
 //   - a drop-in (*.conf) systemd applies to it that sets anything but the
 //     harmless timeout settings.
 //
-// Drop-ins are resolved as systemd does: by file name across every drop-in
-// directory that applies, the one in the highest-priority directory wins,
-// and a winner that is a link to /dev/null or empty masks that name. A file
-// or directory that cannot be read for any reason other than not existing
-// is an error, so the caller fails closed.
+// A drop-in replaces or masks (as a link to /dev/null, or empty) only a file
+// of the same name in a drop-in directory of the same name (<unit>.d,
+// basalt-plugin-.service.d, service.d) in a lower-priority directory, where
+// systemd agrees. systemd also lets a file in one drop-in directory name
+// override a same-named file in another (a longer dash prefix over a
+// shorter, any name-specific one over service.d); those are all checked
+// here instead, which can refuse a unit systemd would not change, never the
+// other way. A file or directory that cannot be read for any reason other
+// than not existing is an error, so the caller fails closed.
 func SystemdOverrides(unit string, m SystemdFS) ([]string, error) {
 	var found []string
 	for _, dir := range systemdAbovePluginUnit {
@@ -102,10 +106,10 @@ func SystemdOverrides(unit string, m SystemdFS) ([]string, error) {
 			}
 			for _, e := range entries {
 				name := e.Name()
-				if !strings.HasSuffix(name, ".conf") || seen[name] {
+				if !strings.HasSuffix(name, ".conf") || seen[d+"/"+name] {
 					continue
 				}
-				seen[name] = true
+				seen[d+"/"+name] = true
 				p := filepath.Join(dir, d, name)
 				changes, err := dropInChanges(p, m)
 				if err != nil {

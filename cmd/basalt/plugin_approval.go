@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -74,6 +75,9 @@ type approvalGroup struct {
 	port           uint16
 	agents, roles  []string
 	conn           *pgx.Conn
+	// install is the guard's install id: one per database, whatever the
+	// connection string calls its host.
+	install uuid.UUID
 	// passkeys are the database's registered passkeys, for the link's
 	// credentialIds; none means nobody can sign yet.
 	passkeys []passkey.Credential
@@ -95,9 +99,12 @@ func closeGroups(ctx context.Context, groups []*approvalGroup) {
 }
 
 // approvalGroups reads every listed agent's credential, groups the agents
-// by the database they connect to (host, port and database name), in
-// --agents order, and checks each database before anything is written:
-// it answers within 15 seconds and its guard has plugin approvals. A
+// by the database they connect to, in --agents order, and checks each
+// database before anything is written: it answers within 15 seconds and its
+// guard has plugin approvals. Agents are grouped first by the connection
+// string's host, port and database name, then the groups whose guard has
+// the same install id are merged: two spellings of one host are one
+// database, so it gets one approval, not two that cancel each other. A
 // failure is the refusal the contract names; again is the refused command.
 func (e *pluginEnv) approvalGroups(agents []string, again string) ([]*approvalGroup, error) {
 	if len(agents) == 0 {
@@ -108,6 +115,7 @@ func (e *pluginEnv) approvalGroups(agents []string, again string) ([]*approvalGr
 	for _, name := range agents {
 		a, ok := agentOf(e.cfg, name)
 		if !ok {
+			closeGroups(e.c.ctx, groups)
 			return nil, errAgentNotInConfig(name, e.configPath)
 		}
 		dsn, err := e.ec.credential(a.Store.CredentialFile)
@@ -134,7 +142,25 @@ func (e *pluginEnv) approvalGroups(agents []string, again string) ([]*approvalGr
 		g.agents = append(g.agents, name)
 		g.roles = append(g.roles, pc.User)
 	}
-	return groups, nil
+	return e.mergeByInstall(groups), nil
+}
+
+// mergeByInstall merges the groups whose guard has the same install id
+// into the first of them, keeping --agents order of the first agents.
+func (e *pluginEnv) mergeByInstall(groups []*approvalGroup) []*approvalGroup {
+	out := make([]*approvalGroup, 0, len(groups))
+	first := map[uuid.UUID]*approvalGroup{}
+	for _, g := range groups {
+		if into, ok := first[g.install]; ok {
+			into.agents = append(into.agents, g.agents...)
+			into.roles = append(into.roles, g.roles...)
+			g.close(e.c.ctx)
+			continue
+		}
+		first[g.install] = g
+		out = append(out, g)
+	}
+	return out
 }
 
 // checkDatabase connects as agent, the first of g, within 15 seconds, and
@@ -155,6 +181,10 @@ func (e *pluginEnv) checkDatabase(g *approvalGroup, agentName, dsn, again string
 	if !holdsPluginApprovals(st) {
 		g.close(e.c.ctx)
 		return e.guardOutdated(agentName)
+	}
+	if g.install, err = guard.InstallID(ctx, conn); err != nil {
+		g.close(e.c.ctx)
+		return e.unreachable(agentName, "its guard cannot be read ("+pgDetail(err)+")", again)
 	}
 	keys, err := ledger.Passkeys(ctx, conn)
 	if err != nil {
@@ -521,9 +551,9 @@ func (e *pluginEnv) approvalOutcome(k plugin.EntryKey, version string, items []o
 	if err != nil {
 		return approvalResult{}, err
 	}
-	msg := []string{}
+	var noPasskeyText, msg []string
 	for _, g := range noPasskey {
-		msg = append(msg, fmt.Sprintf("Nobody can approve this yet: no passkey is registered for database %s.", g.database))
+		noPasskeyText = append(noPasskeyText, fmt.Sprintf("Nobody can approve this yet: no passkey is registered for database %s.", g.database))
 		gc, err := e.commandsFor(g.opener())
 		if err != nil {
 			return approvalResult{}, err
@@ -548,11 +578,9 @@ func (e *pluginEnv) approvalOutcome(k plugin.EntryKey, version string, items []o
 			if o.refused != nil {
 				continue
 			}
+			// A hash link's request file goes by the SEND_REQUEST step.
 			msg = append(msg, o.url)
-			if o.file != nil {
-				msg = append(msg, "On that page, open the file "+o.file.FileName+" the agent sends you.")
-				steps.SendRequest(o.file)
-			}
+			steps.SendRequest(o.file)
 		}
 		msg = append(msg, fmt.Sprintf("Expires %s. The plugin starts once the engine restarts.", expires.UTC().Format(personTime)))
 		for _, o := range items {
@@ -560,28 +588,41 @@ func (e *pluginEnv) approvalOutcome(k plugin.EntryKey, version string, items []o
 				steps.OpenLink(o.url, "", "Open the link, read what the plugin may do and approve it with your passkey.")
 			}
 		}
+	}
+	// What the refused databases need comes before the agent ends its turn.
+	e.refusedSteps(steps, cmds, items, k)
+	if opened > 0 {
 		steps.TellAgent("Tell the agent once you approved, or give it the basalt-plugin.1. code the page shows.")
 		steps.EndTurn("End your turn: the person approves next. When they paste a basalt-plugin.1. code, run basalt plugin approve with it.")
 		steps.MachineCommand(cmds, cmds.EngineRestart(),
 			"Once basalt plugin list shows every approval signed, restart the engine so it starts the plugin.",
 			"Once basalt plugin list shows every approval signed, restart the engine so it starts the plugin.")
 	}
-	e.refusedSteps(steps, cmds, items, k)
-	// The databases that opened none are named when the limit leaves room:
-	// the level line and the links always stay.
-	res.PersonMessage = strings.Join(append(slices.Clone(msg), refusedText...), "\n")
-	if agent.CheckPersonMessage(res.PersonMessage) != nil {
-		res.PersonMessage = strings.Join(msg, "\n")
-	}
-	if err := agent.CheckPersonMessage(res.PersonMessage); err != nil {
-		return approvalResult{}, err
-	}
+	res.PersonMessage = fitPersonMessage(noPasskeyText, msg, refusedText)
 	built, err := steps.Build()
 	if err != nil {
 		return approvalResult{}, err
 	}
 	res.NextSteps = built
 	return res, nil
+}
+
+// fitPersonMessage is the person's message within its limit. The entry is
+// already written, so it never fails: it drops, in this order, the
+// databases that opened none and then the no-passkey lines (their steps
+// stay), and always keeps the level line, the links and the expiry.
+func fitPersonMessage(noPasskey, core, refused []string) string {
+	for _, parts := range [][][]string{{noPasskey, core, refused}, {noPasskey, core}, {core}} {
+		var lines []string
+		for _, p := range parts {
+			lines = append(lines, p...)
+		}
+		text := strings.Join(lines, "\n")
+		if agent.CheckPersonMessage(text) == nil || len(parts) == 1 {
+			return text
+		}
+	}
+	return ""
 }
 
 // labelText is s for a link's label, which may not hold Markdown
@@ -625,7 +666,8 @@ func (e *pluginEnv) refusedSteps(b *agent.Steps, cmds agent.Commands, items []op
 				b.Stop("Stop until the person says the guard is upgraded, then run basalt plugin enable with --approve-with-passkey.")
 			}
 		case reasonUnknownAgent:
-			b.RunCommand(e.command("add", "<dir>", "--agents", "<this engine's agents>"), "Add the plugin again, naming only agents of this engine.")
+			b.MachineCommand(cmds, enable, "Once the entry names only agents of that database's guard, run this to open the missing approval.",
+				"Once the person fixed the entry's agents, run this to open the missing approval.")
 		default:
 			b.AskPerson("Ask the person to check that the agent's database is up and reachable from this machine.")
 			b.MachineCommand(cmds, enable, "Run this once the database answers: it opens the missing approval.",

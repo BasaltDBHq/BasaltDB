@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
+	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
@@ -525,4 +526,47 @@ func TestAddHandsOverShortLink(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, links.IssueProof(rec.BindingText), e.host.issued[0].proof)
+}
+
+// TestHashLinkWithoutPasskeyFits: over the link budget the link is a hash
+// link with its request file, and the person's message stays within its
+// limit with the level 3 warning and a database that has no passkey: the
+// command never fails after the entry is written.
+func TestHashLinkWithoutPasskeyFits(t *testing.T) {
+	t.Parallel()
+	e := newApprovalEngine(t, "")
+	budget := 200
+	require.NoError(t, config.UpdateConfig(e.configPath, config.Change{Apply: func(c *config.Config) error {
+		c.LinkBudget = &budget
+		return nil
+	}}))
+	r := e.run(agentEnv, "", "add", e.unsigned, "--agents", "client_x,product_a", "--json")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	res := approvalResultOf(t, r)
+	require.Len(t, res.Approvals, 2)
+	for _, a := range res.Approvals {
+		require.NotNil(t, a.RequestFile, "a hash link carries its request file")
+		require.Contains(t, a.URL, "#h=")
+	}
+	require.Contains(t, res.PersonMessage, levelUnknownHere)
+	require.NoError(t, agent.CheckPersonMessage(res.PersonMessage))
+	require.Contains(t, stepKinds(res.NextSteps), "AGENT SEND_REQUEST")
+}
+
+// TestOneDatabaseTwoSpellings: two agents whose credentials name the same
+// database by different host spellings get one approval, not two that
+// cancel each other.
+func TestOneDatabaseTwoSpellings(t *testing.T) {
+	t.Parallel()
+	e := newApprovalEngine(t, "")
+	url := e.roles["product_b"].URL
+	require.Contains(t, url, "127.0.0.1")
+	require.NoError(t, os.WriteFile(filepath.Join(e.base, "creds", "product_b.url"), []byte(strings.Replace(url, "127.0.0.1", "localhost", 1)+"\n"), 0o600))
+	r := e.run(agentEnv, "", "add", e.unsigned, "--agents", "product_a,product_b", "--json")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	res := approvalResultOf(t, r)
+	require.Len(t, res.Approvals, 1)
+	require.Equal(t, []string{"product_a", "product_b"}, res.Approvals[0].Agents)
+	_, b := requestOf(t, res.Approvals[0].URL)
+	require.Equal(t, []string{e.roles["product_a"].Role, e.roles["product_b"].Role}, b.Agents)
 }

@@ -92,7 +92,7 @@ func runLog(c *cliIO, args []string) int {
 	}
 
 	printPII(c, health.PII, l.configPath)
-	printPlugins(c, health.Plugins)
+	printPlugins(c, health)
 	warn(c, health)
 	warnPasskeys(c, keys)
 	if *asJSON {
@@ -282,7 +282,12 @@ func printPII(c *cliIO, p *ledger.PIIHealth, configPath string) {
 // when the ledger records no plugin event; "none" when it records only
 // disabled ones. The agent role can write these rows, so the line is
 // printed as terminal-safe text.
-func printPlugins(c *cliIO, ps []ledger.PluginHealth) {
+func printPlugins(c *cliIO, h ledger.Health) {
+	if h.PluginsProblem != "" {
+		fprintSafef(c.stderr, "Plugins: could not be read (%s)\n", h.PluginsProblem)
+		return
+	}
+	ps := h.Plugins
 	if ps == nil {
 		return
 	}
@@ -301,7 +306,11 @@ func printPlugins(c *cliIO, ps []ledger.PluginHealth) {
 		}
 		parts = append(parts, fmt.Sprintf("%s/%s %s (signer %s, %s)", p.Name, p.Instance, p.Version, p.SignerKeyID, where))
 	}
-	fprintSafef(c.stderr, "Plugins: %s\n", strings.Join(parts, "; "))
+	line := strings.Join(parts, "; ")
+	if h.PluginsMore > 0 {
+		line += fmt.Sprintf("; and %d more", h.PluginsMore)
+	}
+	fprintSafef(c.stderr, "Plugins: %s\n", line)
 }
 
 // piiNames lists at most ledger.MaxPIINames names, then "…" when there are

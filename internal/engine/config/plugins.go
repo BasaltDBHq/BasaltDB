@@ -261,6 +261,46 @@ func (c Config) checkPlugin(p Plugin) error {
 	return nil
 }
 
+// MaxKeptPlugins bounds the entries a service engine keeps itself
+// (CONTRACT.md, Plugin approval in service mode, Engine-kept entries).
+const MaxKeptPlugins = 16
+
+// CheckKeptPlugins applies to entries, the engine-kept entries of a service
+// engine (<stateDir>/plugins.json, api/plugin/engine-entries.schema.json),
+// the rules of an engine.json plugins entry, plus their own: each names its
+// instance and "approval": "REQUIRED", none names auth (the engine would send
+// a file of its own to the plugin's host), no (name, instance) twice, and at
+// most MaxKeptPlugins. c is the engine's config, for its agents. Errors name
+// the entry, never a config value.
+func (c Config) CheckKeptPlugins(entries []Plugin) error {
+	if len(entries) > MaxKeptPlugins {
+		return fmt.Errorf("it holds %d entries; at most %d", len(entries), MaxKeptPlugins)
+	}
+	// The rules of an entry, without the service-mode refusal of the
+	// approval key: every engine-kept entry requires approval.
+	same := c
+	same.Mode = ModeSameUser
+	seen := map[plugin.EntryKey]bool{}
+	for i, p := range entries {
+		if err := same.checkPlugin(p); err != nil {
+			return fmt.Errorf("entry %d: %w", i, err)
+		}
+		k := p.Key()
+		switch {
+		case p.Instance == "":
+			return fmt.Errorf("plugin %s: instance is required", k)
+		case p.Approval != PluginApprovalRequired:
+			return fmt.Errorf("plugin %s: approval must be %q", k, PluginApprovalRequired)
+		case p.Auth != nil:
+			return fmt.Errorf("plugin %s: auth is refused for an engine-kept entry", k)
+		case seen[k]:
+			return fmt.Errorf("plugin %s is listed twice; name and instance must be unique", k)
+		}
+		seen[k] = true
+	}
+	return nil
+}
+
 // checkPluginAgents requires agents, each one of c's agents, none twice.
 func (c Config) checkPluginAgents(k plugin.EntryKey, agents []string) error {
 	if agents == nil {

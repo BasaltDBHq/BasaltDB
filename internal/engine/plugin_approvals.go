@@ -191,8 +191,9 @@ func sameIsolation(a, b *guard.PluginIsolation) bool {
 // with for verified copy v of entry k (verified with
 // plugin.RequireApproval(true)), naming roles. It is built by the same code
 // the engine derives the matched fields with at start (pluginDetail,
-// withSigner, same-user mode: plugin approvals are same-user only), so an
-// honest approval always matches what the engine serves.
+// withSigner, in same-user mode: the engine runs an entry that requires
+// approval itself, as its own child, in either mode), so an honest approval
+// always matches what the engine serves.
 func PluginApprovalDetail(k plugin.EntryKey, v plugin.Verified, roles []string) guard.PluginApprovalDetail {
 	d := withSigner(pluginDetail(k, v, plugin.ModeSameUser, runtime.GOOS), v)
 	return guard.PluginApprovalDetail{

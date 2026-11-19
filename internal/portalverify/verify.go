@@ -96,6 +96,14 @@ type Route struct {
 	File string
 }
 
+// NotFoundFile is the portal's not-found page. Its host serves it, with
+// status 404, at every path it has no file for, so Verify checks it at
+// NotFoundPath rather than at its own path.
+const NotFoundFile = "404.html"
+
+// NotFoundPath is a path no portal file or rewrite answers.
+const NotFoundPath = "/basalt-portal-verify-no-such-page"
+
 // ProbeID stands in for the id of an ID route; the portal's static rewrite
 // ignores it.
 const ProbeID = "00000000-0000-7000-8000-000000000000"
@@ -221,6 +229,10 @@ func Verify(ctx context.Context, o Options) (*Report, error) {
 		if err != nil {
 			return nil, err
 		}
+		if p == NotFoundFile {
+			r.Files = append(r.Files, checkNotFound(ctx, client, o, want))
+			continue
+		}
 		r.Files = append(r.Files, checkFile(ctx, client, o, p, "/"+requestPath(p), want))
 	}
 	for _, rt := range o.Routes {
@@ -288,6 +300,11 @@ func checkFile(ctx context.Context, c *http.Client, o Options, p, urlPath string
 	case a.status != http.StatusOK:
 		return File{Path: p, Status: StatusError, Detail: fmt.Sprintf("HTTP %d", a.status)}
 	}
+	return compare(o, p, a, want)
+}
+
+// compare checks a served answer's bytes against want, then its headers.
+func compare(o Options, p string, a answer, want []byte) File {
 	if len(a.body) > maxBody || sum(a.body) != sum(want) {
 		return File{Path: p, Status: StatusDiffers, Detail: fmt.Sprintf("served sha256 %s, embedded %s", short(a.body), short(want))}
 	}
@@ -295,6 +312,25 @@ func checkFile(ctx context.Context, c *http.Client, o Options, p, urlPath string
 		return File{Path: p, Status: StatusHeader, Detail: d}
 	}
 	return File{Path: p, Status: StatusOK}
+}
+
+// checkNotFound fetches NotFoundPath and wants status 404 with the bytes of
+// the not-found page. A 200 means the host answers unknown paths with
+// something else (a single-page fallback to the home page, say), which would
+// also hide the probes for files it must not serve; any other status is
+// reported as an error.
+func checkNotFound(ctx context.Context, c *http.Client, o Options, want []byte) File {
+	a, err := get(ctx, c, o.Base, NotFoundPath)
+	if err != nil {
+		return File{Path: NotFoundFile, Status: StatusError, Detail: errText(err)}
+	}
+	switch {
+	case a.status == http.StatusOK:
+		return File{Path: NotFoundFile, Status: StatusDiffers, Detail: fmt.Sprintf("HTTP %d at %s, want 404 with this page", a.status, NotFoundPath)}
+	case a.status != http.StatusNotFound:
+		return File{Path: NotFoundFile, Status: StatusError, Detail: fmt.Sprintf("HTTP %d at %s", a.status, NotFoundPath)}
+	}
+	return compare(o, NotFoundFile, a, want)
 }
 
 // headerProblem names the first wrong header: the CSP must equal the

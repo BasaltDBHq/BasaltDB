@@ -314,8 +314,8 @@ func TestChangedEntryIsWithheld(t *testing.T) {
 			d.Egress = []string{"ner.acme.example:443"}
 		}, "ner.acme.example"},
 		{"isolation", feedHooks, func(d *guard.PluginApprovalDetail, _ *guard.PluginSettings) {
-			d.Isolation = &guard.PluginIsolation{Files: guard.PluginFilesOSUser, Network: guard.PluginNetworkEnforced}
-		}, "OS_USER"},
+			d.Isolation = &guard.PluginIsolation{Files: guard.PluginFilesNone, Network: guard.PluginNetworkEnforced}
+		}, "ENFORCED"},
 		{"signer", feedHooks, func(d *guard.PluginApprovalDetail, _ *guard.PluginSettings) {
 			d.Signer, d.SignerKeyID = guard.PluginSignerKnown, "jNZPxNG5htlwfhg4ZgknAA"
 		}, "jNZPx"},

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -69,6 +70,25 @@ func portalHost(t *testing.T, files fs.FS, wrap func(http.Handler) http.Handler)
 				return
 			}
 		}
+		// Like Cloudflare Pages, a path with no file gets 404.html, status 404.
+		name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
+		if name == "" {
+			name = "."
+		}
+		if st, err := fs.Stat(files, name); err == nil && st.IsDir() {
+			name = path.Join(name, "index.html")
+		}
+		if _, err := fs.Stat(files, name); err != nil {
+			b, rerr := fs.ReadFile(files, "404.html")
+			if rerr != nil {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write(b)
+			return
+		}
 		static.ServeHTTP(w, r)
 	})
 	h := websec.Headers()(rewrite)
@@ -102,6 +122,51 @@ func TestPortalVerifyMatches(t *testing.T) {
 		requireLine(t, r.stdout, "OK", p)
 	}
 	require.NotContains(t, r.stdout, "DIFFERS")
+}
+
+// The not-found page is checked at an unknown path: it must come back with
+// status 404 and the embedded bytes, under the engine's CSP. A host that
+// answers unknown paths with the home page (a single-page fallback) or with
+// its own bare 404 does not match.
+func TestPortalVerifyChecksTheNotFoundPage(t *testing.T) {
+	t.Parallel()
+	home, err := web.Files.ReadFile("index.html")
+	require.NoError(t, err)
+	page, err := web.Files.ReadFile(portalverify.NotFoundFile)
+	require.NoError(t, err)
+	cases := map[string]struct {
+		answer func(w http.ResponseWriter)
+		status string
+	}{
+		"home page fallback": {func(w http.ResponseWriter) { _, _ = w.Write(home) }, portalverify.StatusDiffers},
+		"bare 404": {func(w http.ResponseWriter) {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte("404 Not Found"))
+		}, portalverify.StatusDiffers},
+		"no CSP": {func(w http.ResponseWriter) {
+			w.Header().Del("Content-Security-Policy")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write(page)
+		}, portalverify.StatusHeader},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			url := portalHost(t, portalFS(t), func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if r.URL.Path != portalverify.NotFoundPath {
+						next.ServeHTTP(w, r)
+						return
+					}
+					websec.Headers()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { c.answer(w) })).ServeHTTP(w, r)
+				})
+			})
+			r := runPortalVerify(t, "--portal-url", url)
+			require.Equal(t, exitError, r.code, r.stdout+r.stderr)
+			requireLine(t, r.stdout, c.status, portalverify.NotFoundFile)
+			requireLine(t, r.stdout, "OK", "index.html")
+		})
+	}
 }
 
 // make portal-build output is what the portal publishes; verify must pass

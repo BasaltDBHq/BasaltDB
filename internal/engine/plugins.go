@@ -76,6 +76,10 @@ type enginePlugins struct {
 	// unrecorded are the agents each entry is withheld from: its ledger
 	// record could not be written (withhold).
 	unrecorded map[plugin.EntryKey]map[string]string
+	// dialWhy is why a service entry's last connection failed, when the
+	// cause is one status should name (nothing listens, the socket
+	// directory changed).
+	dialWhy map[plugin.EntryKey]string
 
 	// In service mode: the units the engine expects (unitHost, or why it
 	// cannot tell) and each reachable local entry's socket and OS user.
@@ -205,7 +209,19 @@ func (ep *enginePlugins) dial(ctx context.Context, e plugin.Entry) (plugin.Trans
 	}
 	var t plugin.Transport
 	if u, ok := ep.targets[k]; ok {
-		t, err = dial.Service(ctx, k, v, u.socket, u.uid)
+		if err := ep.recheckUnit(k, v, u); err != nil {
+			ep.log.Error("plugin not started: its service unit changed", "plugin", k.String(), "err", err)
+			return nil, err
+		}
+		// The unit is checked again on every connection the transport
+		// opens, not only this first one.
+		t, err = dial.Service(ctx, k, v, u.socket, u.uid, u.gid, func() error { return ep.recheckUnit(k, v, u) })
+		ep.mu.Lock()
+		if ep.dialWhy == nil {
+			ep.dialWhy = map[plugin.EntryKey]string{}
+		}
+		ep.dialWhy[k] = dialFailure(err)
+		ep.mu.Unlock()
 	} else {
 		t, err = dial.Entry(ctx, k, v, dial.Options{SocketBase: ep.o.SocketBase, CredentialFile: ep.credentialFile(k), Stderr: ep.o.Stderr, Runs: ep.o.runs})
 	}
@@ -264,7 +280,7 @@ func (ep *enginePlugins) PluginProblems(name string) []agent.PluginProblem {
 		k := p.Key()
 		prob := agent.PluginProblem{Code: agent.ProblemPluginUnavailable, Name: k.Name, Instance: k.Instance}
 		ep.mu.Lock()
-		notTrusted, refused := ep.notTrusted[k], ep.refused[k]
+		notTrusted, refused, dialWhy := ep.notTrusted[k], ep.refused[k], ep.dialWhy[k]
 		ep.mu.Unlock()
 		switch {
 		case notTrusted != nil:
@@ -279,6 +295,9 @@ func (ep *enginePlugins) PluginProblems(name string) []agent.PluginProblem {
 			prob.Message = "plugin " + k.String() + " is not ready"
 			if c := ep.sup.Failure(k); c != "" {
 				prob.Message += " (" + string(c) + ")"
+			}
+			if dialWhy != "" {
+				prob.Message += ": " + dialWhy
 			}
 		}
 		out = append(out, prob)

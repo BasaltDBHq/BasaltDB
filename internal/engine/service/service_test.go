@@ -30,6 +30,8 @@ type fakeSystem struct {
 	// removeErr is what Remove returns for a directory under the plugin
 	// base (one that is not empty).
 	removeErr error
+	// inGroup are the "user group" pairs InGroup reports as members.
+	inGroup map[string]bool
 }
 
 func newFake() *fakeSystem {
@@ -40,6 +42,8 @@ func newFake() *fakeSystem {
 }
 
 func (f *fakeSystem) UserExists(name string) bool { return f.users[name] }
+
+func (f *fakeSystem) InGroup(name, group string) (bool, error) { return f.inGroup[name+" "+group], nil }
 
 func (f *fakeSystem) Exists(path string) bool { return f.exists[path] }
 

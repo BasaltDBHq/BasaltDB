@@ -596,6 +596,18 @@ func PluginBaseSteps(goos string) ([]Step, error) {
 	}, nil
 }
 
+// PluginUserInGroup says that a plugin's OS user is in the engine's group,
+// which reaches every plugin socket and the engine's config directory, and
+// names the command that takes it out.
+func PluginUserInGroup(goos, pluginUser, engineGroup string) string {
+	fix := "sudo gpasswd -d " + pluginUser + " " + engineGroup
+	if goos == goosDarwin {
+		fix = "sudo dseditgroup -o edit -d " + pluginUser + " -t user " + engineGroup
+	}
+	return "its OS user " + pluginUser + " is in the engine's group " + engineGroup +
+		", which reaches every plugin socket and the engine's config; take it out of that group: " + fix
+}
+
 // PluginInstallSteps create entry p's OS user when missing, its socket
 // directory (the user's, in the engine's group, 02750) and its unit, then
 // start it when it is enabled and stop it when it is not. ids, on macOS,
@@ -610,7 +622,15 @@ func pluginInstallSteps(sys System, h PluginHost, p PluginEntry, ids *idAllocato
 		return nil, err
 	}
 	var steps []Step
-	if !sys.UserExists(n.User) {
+	if sys.UserExists(n.User) {
+		in, err := sys.InGroup(n.User, h.EngineUser)
+		if err != nil {
+			return nil, fmt.Errorf("plugin %s/%s: the groups of its OS user %s cannot be read, so it cannot be checked: %w", p.Name, p.Instance, n.User, err)
+		}
+		if in {
+			return nil, fmt.Errorf("plugin %s/%s: %s", p.Name, p.Instance, PluginUserInGroup(h.GOOS, n.User, h.EngineUser))
+		}
+	} else {
 		if h.GOOS == goosDarwin {
 			id, err := ids.next()
 			if err != nil {

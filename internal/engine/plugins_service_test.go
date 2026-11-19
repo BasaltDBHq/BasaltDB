@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 
@@ -45,6 +46,12 @@ type fakeUnits struct {
 	units   map[string]string
 	uids    map[string]int
 	inGroup error
+	// pluginInGroup are the plugin users in the engine's group.
+	pluginInGroup map[string]bool
+	// gid is the engine group's id; overrides are drop-ins found.
+	gid          int
+	overrides    []string
+	overridesErr error
 }
 
 func (f *fakeUnits) source() *unitSource {
@@ -65,6 +72,14 @@ func (f *fakeUnits) source() *unitSource {
 		},
 		engineUser:  func() (string, error) { return "basalt", nil },
 		checkAgents: func(string, map[string]string) error { return f.inGroup },
+		inGroup:     func(name, _ string) (bool, error) { return f.pluginInGroup[name], nil },
+		lookupGID: func(string) (int, error) {
+			if f.gid == 0 {
+				return 0, errors.New("unknown group")
+			}
+			return f.gid, nil
+		},
+		overrides: func(string) ([]string, error) { return f.overrides, f.overridesErr },
 	}
 }
 
@@ -79,7 +94,7 @@ func installed(t *testing.T, cfg config.Config, v plugin.Verified, uid int) *fak
 	require.NoError(t, err)
 	n, err := service.NamesFor("linux", "acme-ner", "default")
 	require.NoError(t, err)
-	return &fakeUnits{units: map[string]string{n.UnitPath: unit}, uids: map[string]int{n.User: uid}}
+	return &fakeUnits{units: map[string]string{n.UnitPath: unit}, uids: map[string]int{n.User: uid}, gid: 980}
 }
 
 func serviceEngine(cfg config.Config, f *fakeUnits, euid int) *enginePlugins {
@@ -102,7 +117,7 @@ func TestServiceEngineReachesOnlyAMatchingUnit(t *testing.T) {
 
 	ep := serviceEngine(cfg, installed(t, cfg, v, 990), 995)
 	require.Empty(t, ep.localRefusal(p, v))
-	require.Equal(t, serviceTarget{socket: "/opt/basalt/run/basalt-plugin-acme-ner-default/p.sock", uid: 990}, ep.targets[k])
+	require.Equal(t, serviceTarget{socket: "/opt/basalt/run/basalt-plugin-acme-ner-default/p.sock", uid: 990, gid: 980}, ep.targets[k])
 
 	// No unit: refused, fail closed.
 	ep = serviceEngine(cfg, &fakeUnits{uids: map[string]int{"basalt-plugin-acme-ner-default": 990}}, 995)
@@ -201,9 +216,11 @@ func TestServiceEngineConnectsToTheUnitSocket(t *testing.T) {
 	e, err := cfg.Plugins[0].Entry(v.Manifest)
 	require.NoError(t, err)
 	me := uint32(os.Getuid())
-	ep := serviceEngine(cfg, &fakeUnits{}, 995)
+	f := installed(t, cfg, v, int(me))
+	f.gid = int(dirGID(t, dir))
+	ep := serviceEngine(cfg, f, 995)
 	ep.first[k] = v
-	ep.targets[k] = serviceTarget{socket: sock, uid: me}
+	ep.targets[k] = serviceTarget{socket: sock, uid: me, gid: uint32(f.gid)}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	tr, err := ep.dial(ctx, e)
@@ -217,9 +234,178 @@ func TestServiceEngineConnectsToTheUnitSocket(t *testing.T) {
 	_, isProcess := tr.(plugin.Exiter)
 	require.False(t, isProcess, "no process is started in service mode")
 
-	// Another OS user listening there is refused.
+	// A unit whose OS user is now another one is refused before any
+	// connection.
 	ep.first[k] = v
-	ep.targets[k] = serviceTarget{socket: sock, uid: me + 1}
+	ep.targets[k] = serviceTarget{socket: sock, uid: me + 1, gid: uint32(f.gid)}
 	_, err = ep.dial(ctx, e)
-	require.ErrorIs(t, err, dial.ErrWrongPeer)
+	require.ErrorContains(t, err, whyUnitUserMoved)
+}
+
+// A drop-in, or a unit file systemd reads before the engine's, changes what
+// the unit runs though its file is unchanged: refused, and when the lookup
+// itself fails too.
+func TestServiceEngineRefusesAnOverriddenUnit(t *testing.T) {
+	t.Parallel()
+	cfg := svcConfig()
+	v := svcVerified()
+	p := cfg.Plugins[0]
+	f := installed(t, cfg, v, 990)
+	f.overrides = []string{"/etc/systemd/system/basalt-plugin-acme-ner-default.service.d/override.conf"}
+	ep := serviceEngine(cfg, f, 995)
+	require.Equal(t, whyUnitOverridden, ep.localRefusal(p, v))
+	require.NotContains(t, ep.targets, p.Key())
+
+	f = installed(t, cfg, v, 990)
+	f.overridesErr = os.ErrPermission
+	ep = serviceEngine(cfg, f, 995)
+	require.Equal(t, whyUnitOverridden, ep.localRefusal(p, v), "fail closed")
+}
+
+// A plugin's OS user in the engine's group could reach every plugin socket
+// and the engine's config: its entry is not started, and status names the
+// user and the fix.
+func TestServiceEngineRefusesAPluginUserInItsGroup(t *testing.T) {
+	t.Parallel()
+	cfg := svcConfig()
+	v := svcVerified()
+	p := cfg.Plugins[0]
+	f := installed(t, cfg, v, 990)
+	f.pluginInGroup = map[string]bool{"basalt-plugin-acme-ner-default": true}
+	ep := serviceEngine(cfg, f, 995)
+	why := ep.localRefusal(p, v)
+	require.Equal(t, "its OS user basalt-plugin-acme-ner-default is in the engine's group basalt, which reaches every plugin socket "+
+		"and the engine's config; take it out of that group: sudo gpasswd -d basalt-plugin-acme-ner-default basalt", why)
+	require.NotContains(t, ep.targets, p.Key())
+	ep.refused[p.Key()] = why
+	probs := ep.PluginProblems("product_a")
+	require.Len(t, probs, 1)
+	require.Equal(t, agent.ProblemPluginUnavailable, probs[0].Code)
+	require.Equal(t, "plugin acme-ner/default was not started: "+why, probs[0].Message)
+}
+
+// The unit is checked again before every connection: one changed after the
+// engine started (its file, a drop-in, its user's groups) is refused there,
+// status says why, and the entry is reached again once it is put back.
+func TestServiceEngineChecksTheUnitAtEachConnection(t *testing.T) {
+	t.Parallel()
+	dir, err := os.MkdirTemp("", "bs")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "p.sock")
+	l, err := net.Listen("unix", sock)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = l.Close() })
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			_ = c.Close()
+		}
+	}()
+
+	cfg := svcConfig()
+	v := svcVerified()
+	p := cfg.Plugins[0]
+	k := p.Key()
+	e, err := p.Entry(v.Manifest)
+	require.NoError(t, err)
+	me := os.Getuid()
+	f := installed(t, cfg, v, me)
+	f.gid = int(dirGID(t, dir))
+	ep := serviceEngine(cfg, f, 995)
+	ep.sup = plugin.NewSupervisor(ep.host, ep.dial, plugin.RealClock())
+	require.Empty(t, ep.localRefusal(p, v))
+	ep.targets[k] = serviceTarget{socket: sock, uid: uint32(me), gid: uint32(f.gid)}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	reach := func() error {
+		tr, err := ep.dial(ctx, e)
+		if err == nil {
+			_ = tr.Close()
+		}
+		return err
+	}
+	status := func() string {
+		probs := ep.PluginProblems("product_a")
+		if len(probs) == 0 {
+			return ""
+		}
+		return probs[0].Message
+	}
+	ep.first[k] = v
+	require.NoError(t, reach())
+
+	good := map[string]string{}
+	for path, u := range f.units {
+		good[path] = u
+		f.units[path] = u + "Environment=X=1\n"
+	}
+	ep.first[k] = v
+	require.ErrorContains(t, reach(), whyNoUnit)
+	require.Contains(t, status(), whyNoUnit)
+
+	f.units = good
+	f.overrides = []string{"/run/systemd/system/basalt-plugin-.service.d/x.conf"}
+	ep.first[k] = v
+	require.ErrorContains(t, reach(), whyUnitOverridden)
+	require.Contains(t, status(), whyUnitOverridden)
+
+	f.overrides = nil
+	f.pluginInGroup = map[string]bool{"basalt-plugin-acme-ner-default": true}
+	ep.first[k] = v
+	require.ErrorContains(t, reach(), "is in the engine's group basalt")
+
+	f.pluginInGroup = nil
+	ep.first[k] = v
+	require.NoError(t, reach(), "put back: reached again")
+	require.NotContains(t, status(), "was not started")
+}
+
+// A service entry whose unit never made its socket (a plugin that only
+// reads stdin) is not ready, and status says the plugin must listen on
+// BASALT_PLUGIN_SOCKET.
+func TestServiceEngineNamesTheSocketVariable(t *testing.T) {
+	t.Parallel()
+	dir, err := os.MkdirTemp("", "bs")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	cfg := svcConfig()
+	v := svcVerified()
+	p := cfg.Plugins[0]
+	k := p.Key()
+	e, err := p.Entry(v.Manifest)
+	require.NoError(t, err)
+	me := os.Getuid()
+	f := installed(t, cfg, v, me)
+	f.gid = int(dirGID(t, dir))
+	ep := serviceEngine(cfg, f, 995)
+	ep.sup = plugin.NewSupervisor(ep.host, ep.dial, plugin.RealClock())
+	ep.first[k] = v
+	ep.targets[k] = serviceTarget{socket: filepath.Join(dir, "p.sock"), uid: uint32(me), gid: uint32(f.gid)}
+	_, err = ep.dial(context.Background(), e)
+	require.ErrorIs(t, err, dial.ErrNoSocket)
+	probs := ep.PluginProblems("product_a")
+	require.Len(t, probs, 1)
+	require.Equal(t, agent.ProblemPluginUnavailable, probs[0].Code)
+	require.Contains(t, probs[0].Message, "must listen on the socket BASALT_PLUGIN_SOCKET names")
+
+	// A socket directory opened to others: status names that instead.
+	require.NoError(t, os.Chmod(dir, 0o755))
+	ep.first[k] = v
+	_, err = ep.dial(context.Background(), e)
+	require.ErrorIs(t, err, dial.ErrSocketDir)
+	probs = ep.PluginProblems("product_a")
+	require.Len(t, probs, 1)
+	require.Contains(t, probs[0].Message, whySocketDir)
+}
+
+// dirGID is dir's group: on macOS a new directory takes its parent's.
+func dirGID(t *testing.T, dir string) uint32 {
+	t.Helper()
+	fi, err := os.Stat(dir)
+	require.NoError(t, err)
+	return fi.Sys().(*syscall.Stat_t).Gid
 }

@@ -99,6 +99,25 @@ func TestNoticeCarriesTheAgentsLink(t *testing.T) {
 	})
 }
 
+// panics is a deliverer that fails in the worst way.
+type panics struct{}
+
+func (panics) DeliverLink(agent.LinkNotice) { panic("the deliverer broke") }
+
+// TestDelivererCannotChangeTheAnswer: with a deliverer that panics, the
+// agent gets the answer it gets with none: held, with its link.
+func TestDelivererCannotChangeTheAnswer(t *testing.T) {
+	t.Parallel()
+	env, _ := deliveryHarness(t, true)
+	env.svc.Deliverer = panics{}
+	body, isError := env.h.call(t, "write", holdWrite(t, env.h, nil))
+	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
+	require.Contains(t, str(t, approvalOf(t, body)["approvalUrl"]), "#s=")
+	pending, isError := env.h.call(t, "list_pending", map[string]any{"reissueLink": true})
+	require.False(t, isError, "%v", pending)
+	require.Len(t, items(t, pending), 1)
+}
+
 // TestNoticeWaitsForTheAgentsAnswer: a new write that waits for the
 // person is noticed only when its answer hands the link over, never while
 // the agent has no link yet; a wait that ran out on a repeat restates the

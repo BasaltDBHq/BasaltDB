@@ -77,11 +77,18 @@ func standaloneLink(link string) string {
 }
 
 // deliver hands n to the deliverer. It is called only where the agent's
-// answer is final: nothing after it can fail or change the link.
+// answer is final: nothing after it can fail or change the link. A
+// deliverer that panics is logged and costs the agent nothing: the answer
+// is returned as it was built.
 func (s *Service) deliver(n LinkNotice) {
 	if s.Deliverer == nil {
 		return
 	}
+	defer func() {
+		if v := recover(); v != nil {
+			s.Log.Error("approval notice not made: the deliverer panicked", "kind", string(n.Kind))
+		}
+	}()
 	n.Headline = NoticeHeadline(n.Headline)
 	n.Link = standaloneLink(n.Link)
 	if n.Headline == "" || n.ExpiresAt.IsZero() || (n.ApprovalID == uuid.Nil) == (n.RevertID == uuid.Nil) {

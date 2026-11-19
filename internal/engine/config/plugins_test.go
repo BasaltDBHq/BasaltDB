@@ -212,3 +212,62 @@ func TestUpdateConfigLeavesTheFileOnFailure(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, entries, 2, "only engine.json and its lock: no temporary file left")
 }
+
+// The approval key loads as "REQUIRED" only, and the entry requires
+// approval with it, or on an agent-operated engine without it. In service
+// mode nothing changes: the key is refused when the config is loaded, as
+// before, and no entry requires approval there.
+func TestPluginApprovalKey(t *testing.T) {
+	t.Parallel()
+	c, err := loadPlugins(t, "["+entry(`, "agents": ["product_a"], "approval": "REQUIRED"`)+"]")
+	require.NoError(t, err)
+	require.Equal(t, config.PluginApprovalRequired, c.Plugins[0].Approval)
+	require.True(t, c.PluginRequiresApproval(c.Plugins[0]))
+	raw, err := json.Marshal(c.Plugins[0])
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"approval":"REQUIRED"`)
+
+	for _, bad := range []string{`"required"`, `true`, `"OPTIONAL"`} {
+		_, err := loadPlugins(t, "["+entry(`, "agents": ["product_a"], "approval": `+bad)+"]")
+		require.Error(t, err, bad)
+	}
+
+	c, err = loadPlugins(t, "["+entry(`, "agents": ["product_a"]`)+"]")
+	require.NoError(t, err)
+	require.Empty(t, c.Plugins[0].Approval)
+	raw, err = json.Marshal(c.Plugins[0])
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "approval", "no key is written for an entry without it")
+	require.False(t, c.PluginRequiresApproval(c.Plugins[0]))
+	c.OperatedBy = "AGENT"
+	require.True(t, c.PluginRequiresApproval(c.Plugins[0]), "an agent-operated engine requires approval of every entry")
+
+	c.Mode = config.ModeService
+	require.False(t, c.PluginRequiresApproval(c.Plugins[0]), "service mode is unchanged")
+	c.Plugins[0].Approval = config.PluginApprovalRequired
+	require.False(t, c.PluginRequiresApproval(c.Plugins[0]), "service mode is unchanged")
+
+	svc := strings.Replace(pluginConfig("["+entry(`, "agents": ["product_a"], "approval": "REQUIRED"`)+"]"), `{"socketDir"`, `{"mode": "SERVICE", "socketDir"`, 1)
+	_, err = config.Load(write(t, "engine.json", svc, 0o600))
+	require.ErrorContains(t, err, "approval", "service mode refuses the key as before")
+}
+
+// The settings an approval binds are the entry's keys besides name,
+// instance, manifestSha256, enabled, agents and approval, each only when
+// set, config as engine.json holds it.
+func TestPluginApprovalSettings(t *testing.T) {
+	t.Parallel()
+	c, err := loadPlugins(t, "["+entry(`, "agents": ["product_a"], "approval": "REQUIRED", "timeoutMs": 300, "minConfidence": 0.60, `+
+		`"config": {"threshold": 0.60, "max": 1e3}, "auth": {"credentialFile": "/etc/t"}`)+"]")
+	require.NoError(t, err)
+	raw, err := json.Marshal(c.Plugins[0].ApprovalSettings())
+	require.NoError(t, err)
+	require.JSONEq(t, `{"config": {"threshold": 0.60, "max": 1e3}, "auth": {"credentialFile": "/etc/t"}, "timeoutMs": 300, "minConfidence": 0.6}`, string(raw))
+	require.Contains(t, string(raw), `0.60`, "config keeps how a number was written")
+
+	c, err = loadPlugins(t, "["+entry(`, "agents": ["product_a"]`)+"]")
+	require.NoError(t, err)
+	raw, err = json.Marshal(c.Plugins[0].ApprovalSettings())
+	require.NoError(t, err)
+	require.Equal(t, `{}`, string(raw), "no default is filled in")
+}

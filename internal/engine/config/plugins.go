@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 )
 
@@ -61,6 +62,51 @@ type Plugin struct {
 	Config json.RawMessage `json:"config,omitempty"`
 	// Auth is a remote plugin's credential file.
 	Auth *PluginAuth `json:"auth,omitempty"`
+	// Approval is PluginApprovalRequired or empty: with it the engine serves
+	// the entry to an agent only with a matching plugin approval signed by a
+	// person's passkey (CONTRACT.md, Plugins, Plugin approval). See
+	// Config.PluginRequiresApproval.
+	Approval string `json:"approval,omitempty"`
+}
+
+// PluginApprovalRequired is the approval key's one value.
+const PluginApprovalRequired = "REQUIRED"
+
+// PluginRequiresApproval reports whether entry p requires a plugin approval
+// on this engine: it has the approval key, or the engine is agent-operated,
+// whatever the key says. Same-user mode only: in service mode nothing
+// changes, so no entry requires approval there (and checkPlugin refuses the
+// key, as before). The engine, at start, and basalt plugin both decide by
+// this.
+func (c Config) PluginRequiresApproval(p Plugin) bool {
+	if c.Service() {
+		return false
+	}
+	return p.Approval == PluginApprovalRequired || c.AgentOperated()
+}
+
+// ApprovalSettings are p's settings as a plugin approval binds them
+// (CONTRACT.md, What a plugin approval binds, the settings text): config
+// and auth as engine.json holds them, timeoutMs and minConfidence by value,
+// each only when the entry sets it, no default filled in. Postgres turns
+// the object into the settings text; Go never builds that text.
+func (p Plugin) ApprovalSettings() guard.PluginSettings {
+	var s guard.PluginSettings
+	if len(p.Config) > 0 {
+		s.Config = slices.Clone(p.Config)
+	}
+	if p.Auth != nil {
+		s.Auth = &guard.PluginAuth{CredentialFile: p.Auth.CredentialFile}
+	}
+	if p.TimeoutMs != 0 {
+		v := p.TimeoutMs
+		s.TimeoutMs = &v
+	}
+	if p.MinConfidence != nil {
+		v := *p.MinConfidence
+		s.MinConfidence = &v
+	}
+	return s
 }
 
 // PluginAuth is a remote plugin entry's auth: the file the engine reads its
@@ -189,6 +235,14 @@ func (c Config) checkPlugin(p Plugin) error {
 	}
 	if p.Auth != nil && (p.Auth.CredentialFile == "" || !filepath.IsAbs(p.Auth.CredentialFile) || len(p.Auth.CredentialFile) > maxCredentialPath) {
 		return fmt.Errorf("plugin %s: auth.credentialFile must be an absolute path of at most %d bytes", k, maxCredentialPath)
+	}
+	switch {
+	case p.Approval == "":
+	case p.Approval != PluginApprovalRequired:
+		return fmt.Errorf("plugin %s: approval must be %q or absent", k, PluginApprovalRequired)
+	case c.Service():
+		// Plugin approvals are same-user mode only; service mode is unchanged.
+		return fmt.Errorf("plugin %s: approval is not served in service mode", k)
 	}
 	return nil
 }

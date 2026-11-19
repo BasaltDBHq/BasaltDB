@@ -774,3 +774,28 @@ func TestPluginEventSigner(t *testing.T) {
 	}
 	require.Equal(t, 2, pluginEvents(t, d, a.Role))
 }
+
+// The engine's recomputed settingsSha256 equals the one
+// open_plugin_approval stored, byte for byte: config numbers as written
+// (0.60 stays, 1e3 reads 1000), the two top-level numbers by value.
+func TestPluginSettingsSHA256MatchesOpen(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "bot", leads, nil)
+	mc := 0.6
+	for _, s := range []guard.PluginSettings{
+		{},
+		{Config: json.RawMessage(`{"threshold": 0.60, "max": 1e3, "z": [1.50, "x"], "a": {"b": null}}`), TimeoutMs: intPtr(300), MinConfidence: &mc},
+		{MinConfidence: new(float64)},
+	} {
+		opened, err := guard.OpenPluginApproval(ctx, a.Conn, localApproval(a.Role), s)
+		require.NoError(t, err)
+		rec, ok, err := guard.ReadPluginApproval(ctx, a.Conn, opened.ID)
+		require.NoError(t, err)
+		require.True(t, ok)
+		got, err := guard.PluginSettingsSHA256(ctx, a.Conn, s)
+		require.NoError(t, err)
+		require.Equal(t, rec.Bound.SettingsSHA256, got, opened.SettingsText)
+	}
+}

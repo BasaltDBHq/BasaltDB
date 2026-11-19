@@ -105,11 +105,14 @@ func pluginAdmit(svc *agent.Service) func(context.Context) error {
 	}
 }
 
-// unrecordedEntry is a served entry whose record could not be written, and
-// why (unrecordedWhy).
+// unrecordedEntry is a served entry withheld from one agent, and why: its
+// record could not be written (unrecordedWhy), or it requires approval and
+// has no matching one. code is the status problem, PLUGIN_UNAVAILABLE when
+// empty.
 type unrecordedEntry struct {
-	key plugin.EntryKey
-	why string
+	key  plugin.EntryKey
+	why  string
+	code string
 }
 
 // pluginWant is the plugin state the engine records in each agent's ledger
@@ -123,6 +126,12 @@ type pluginWant struct {
 	// record is left as it is, so a passing failure writes nothing, unless
 	// the key that signed it is no longer recorded as trusted.
 	held map[string]map[plugin.EntryKey]bool
+	// approval are the enabled entries that require a plugin approval
+	// (config.Config.PluginRequiresApproval), served or held: one is served
+	// to an agent only on a matching signed approval, in place of the trust
+	// record, and settings are what that approval binds of each.
+	approval map[plugin.EntryKey]bool
+	settings map[plugin.EntryKey]guard.PluginSettings
 	// trust is the trust store's state.
 	trust trustWant
 }
@@ -143,9 +152,11 @@ type trustWant struct {
 // trust store's keys.
 func wantedPlugins(cfg config.Config, ep *enginePlugins, trust trustWant) pluginWant {
 	w := pluginWant{
-		served: make(map[string]map[plugin.EntryKey]guard.PluginDetail, len(cfg.Agents)),
-		held:   make(map[string]map[plugin.EntryKey]bool, len(cfg.Agents)),
-		trust:  trust,
+		served:   make(map[string]map[plugin.EntryKey]guard.PluginDetail, len(cfg.Agents)),
+		held:     make(map[string]map[plugin.EntryKey]bool, len(cfg.Agents)),
+		approval: map[plugin.EntryKey]bool{},
+		settings: map[plugin.EntryKey]guard.PluginSettings{},
+		trust:    trust,
 	}
 	for _, a := range cfg.Agents {
 		w.served[a.Name], w.held[a.Name] = map[plugin.EntryKey]guard.PluginDetail{}, map[plugin.EntryKey]bool{}
@@ -155,6 +166,10 @@ func wantedPlugins(cfg config.Config, ep *enginePlugins, trust trustWant) plugin
 			continue
 		}
 		k := p.Key()
+		required := cfg.PluginRequiresApproval(p)
+		if required {
+			w.approval[k], w.settings[k] = true, p.ApprovalSettings()
+		}
 		v, started := ep.startedCopy(k)
 		for _, name := range p.Agents {
 			if _, ok := w.served[name]; !ok {
@@ -164,7 +179,11 @@ func wantedPlugins(cfg config.Config, ep *enginePlugins, trust trustWant) plugin
 				w.held[name][k] = true
 				continue
 			}
-			w.served[name][k] = pluginDetail(k, v, ep.mode, ep.o.goos)
+			d := pluginDetail(k, v, ep.mode, ep.o.goos)
+			if required {
+				d = withSigner(d, v)
+			}
+			w.served[name][k] = d
 		}
 	}
 	return w
@@ -239,31 +258,38 @@ func pluginIsolation(mode plugin.Mode, goos string, m plugin.Manifest) *guard.Pl
 //     first.
 //
 // Agents run in parallel, each bounded by pluginEventTimeout. It returns,
-// per agent, the served entries whose record could not be written, with
-// why: they must not be served to that agent. An agent missing from
+// per agent, the served entries withheld from it, with why: their record
+// could not be written, or they require approval and have no matching one.
+// They must not be served to that agent. It also returns, per agent, the
+// entries that require approval whose approval matched and whose record
+// holds: the only agents such an entry is served to. An agent missing from
 // ledgers has no ledger to write to.
-func writePluginEvents(ctx context.Context, want pluginWant, ledgers map[string]pluginLedger, log *slog.Logger) map[string][]unrecordedEntry {
+func writePluginEvents(ctx context.Context, want pluginWant, ledgers map[string]pluginLedger, log *slog.Logger) (map[string][]unrecordedEntry, map[string][]plugin.EntryKey) {
 	var mu sync.Mutex
 	unrecorded := map[string][]unrecordedEntry{}
+	approved := map[string][]plugin.EntryKey{}
 	var wg sync.WaitGroup
 	for _, name := range slices.Sorted(maps.Keys(want.served)) {
 		wg.Go(func() {
-			failed := writeAgentPluginEvents(ctx, name, want, ledgers[name], log.With("agent", name))
-			if len(failed) == 0 {
-				return
-			}
+			failed, ok := writeAgentPluginEvents(ctx, name, want, ledgers[name], log.With("agent", name))
 			mu.Lock()
-			unrecorded[name] = failed
-			mu.Unlock()
+			defer mu.Unlock()
+			if len(failed) > 0 {
+				unrecorded[name] = failed
+			}
+			if len(ok) > 0 {
+				approved[name] = ok
+			}
 		})
 	}
 	wg.Wait()
-	return unrecorded
+	return unrecorded, approved
 }
 
 // writeAgentPluginEvents is writePluginEvents for one agent; it returns the
-// served entries whose record it could not write.
-func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l pluginLedger, log *slog.Logger) []unrecordedEntry {
+// served entries it withholds, and the entries that require approval it
+// serves.
+func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l pluginLedger, log *slog.Logger) ([]unrecordedEntry, []plugin.EntryKey) {
 	served := slices.SortedFunc(maps.Keys(want.served[name]), compareEntryKeys)
 	all := func(err error) []unrecordedEntry {
 		out := make([]unrecordedEntry, 0, len(served))
@@ -273,7 +299,7 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 		return out
 	}
 	if l.db == nil {
-		return all(nil)
+		return all(nil), nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, pluginEventTimeout)
 	defer cancel()
@@ -282,7 +308,7 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 			if len(served) > 0 {
 				log.Warn("plugins not served to this agent: it is not admitted", "err", err)
 			}
-			return all(err)
+			return all(err), nil
 		}
 	}
 	db := l.db
@@ -291,20 +317,40 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 		if len(served) > 0 {
 			log.Error("plugins not served to this agent: its ledger cannot be read", "err", err)
 		}
-		return all(err)
+		return all(err), nil
 	}
 	last := make(map[plugin.EntryKey]guard.PluginRecord, len(recs.Entries))
 	for _, r := range recs.Entries {
 		last[plugin.EntryKey{Name: r.Detail.Name, Instance: r.Detail.Instance}] = r
 	}
 	recorded, unrecordedKeys := writeTrustEvents(ctx, db, want.trust, recs.TrustKeys, log)
+	approvals := &agentApprovals{db: db}
 	var failed []unrecordedEntry
+	var approved []plugin.EntryKey
 	for _, k := range served {
 		d := want.served[name][k]
-		// An entry is served only when the ledger records the key that
-		// signed it as trusted (a built-in key needs no record): the ledger
-		// never shows an entry served without that key.
-		if s := d.SignerKeyID; !recorded[s] && !plugin.BuiltInKey(s) {
+		if want.approval[k] {
+			// The signed approval takes the place of the trust record
+			// (CONTRACT.md, Signer states): served only on a match.
+			w, ok := approvals.check(ctx, k, d, want.settings[k])
+			if !ok {
+				log.Warn("plugin not served to this agent: "+w.why, "plugin", k.String())
+				failed = append(failed, unrecordedEntry{key: k, why: w.why, code: w.code})
+				// For an approval reason the ledger never shows the entry
+				// served after it stopped matching; that ends the approval.
+				// A passing failure (old guard, unread approvals) writes
+				// nothing.
+				if r, ok := last[k]; ok && r.Enabled() && approvalReason(w.code) {
+					if err := guard.RecordPluginEntryEvent(ctx, db, guard.PluginDisabled, r.Detail); err != nil {
+						log.Warn("PLUGIN_DISABLED not recorded; the next start tries again", "plugin", k.String(), "err", err)
+					}
+				}
+				continue
+			}
+		} else if s := d.SignerKeyID; !recorded[s] && !plugin.BuiltInKey(s) {
+			// An entry is served only when the ledger records the key that
+			// signed it as trusted (a built-in key needs no record): the
+			// ledger never shows an entry served without that key.
 			why := whyTrustUnread
 			if err, ok := unrecordedKeys[s]; ok {
 				why = unrecordedWhy(err)
@@ -316,13 +362,15 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 			failed = append(failed, unrecordedEntry{key: k, why: why})
 			continue
 		}
-		kind, ok := entryEvent(last, k, d)
-		if !ok {
-			continue
+		if kind, ok := entryEvent(last, k, d); ok {
+			if err := guard.RecordPluginEntryEvent(ctx, db, kind, d); err != nil {
+				log.Error("plugin not served to this agent: its record could not be written", "plugin", k.String(), "event", kind, "err", err)
+				failed = append(failed, unrecordedEntry{key: k, why: unrecordedWhy(err)})
+				continue
+			}
 		}
-		if err := guard.RecordPluginEntryEvent(ctx, db, kind, d); err != nil {
-			log.Error("plugin not served to this agent: its record could not be written", "plugin", k.String(), "event", kind, "err", err)
-			failed = append(failed, unrecordedEntry{key: k, why: unrecordedWhy(err)})
+		if want.approval[k] {
+			approved = append(approved, k)
 		}
 	}
 	for _, r := range recs.Entries {
@@ -332,15 +380,16 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 		}
 		// A held entry keeps its record, unless the key that signed it is no
 		// longer recorded as trusted: the ledger never shows an entry served
-		// without that key.
-		if s := r.Detail.SignerKeyID; want.held[name][k] && (recorded[s] || plugin.BuiltInKey(s)) {
+		// without that key. An entry that requires approval rests on its
+		// approval, not on a key: held, it always keeps its record.
+		if s := r.Detail.SignerKeyID; want.held[name][k] && (want.approval[k] || recorded[s] || plugin.BuiltInKey(s)) {
 			continue
 		}
 		if err := guard.RecordPluginEntryEvent(ctx, db, guard.PluginDisabled, r.Detail); err != nil {
 			log.Warn("PLUGIN_DISABLED not recorded; the next start tries again", "plugin", k.String(), "err", err)
 		}
 	}
-	return failed
+	return failed, approved
 }
 
 // writeTrustEvents writes the agent's trust events, keys before any entry:
@@ -441,35 +490,48 @@ func trustedKeys(cfg config.Config, configPath string, log *slog.Logger) trustWa
 // disabled entries are still recorded then.
 func recordPluginEvents(ctx context.Context, cfg config.Config, configPath string, ep *enginePlugins, ledgers map[string]pluginLedger, log *slog.Logger) {
 	want := wantedPlugins(cfg, ep, trustedKeys(cfg, configPath, log))
-	unrecorded := writePluginEvents(ctx, want, ledgers, log)
-	ep.withhold(unrecorded)
+	unrecorded, approved := writePluginEvents(ctx, want, ledgers, log)
+	ep.withhold(unrecorded, approved)
 }
 
-// withhold stops serving each agent the entries whose record could not be
-// written to its ledger: the record is part of consent. The agent is taken
-// out of the entry's agents (the host then refuses any call naming it),
-// an entry left with no agent is not started, and status shows
-// PLUGIN_UNAVAILABLE for that agent. It runs before the supervisor does.
-func (ep *enginePlugins) withhold(unrecorded map[string][]unrecordedEntry) {
-	if ep == nil || len(unrecorded) == 0 {
+// withhold sets which agents each started entry is served to, before the
+// supervisor runs. An entry that does not require approval keeps its
+// agents but those whose record could not be written to their ledger: the
+// record is part of consent. An entry that requires approval, started with
+// no agent, is served only to the listed agents in approved for it, with
+// their record written; every other listed agent is withheld (and
+// unrecorded says why). The host refuses any call naming a withheld agent,
+// an entry left with no agent is not started, and status shows the problem
+// for that agent.
+func (ep *enginePlugins) withhold(unrecorded map[string][]unrecordedEntry, approved map[string][]plugin.EntryKey) {
+	if ep == nil {
 		return
 	}
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 	if ep.unrecorded == nil {
-		ep.unrecorded = map[plugin.EntryKey]map[string]string{}
+		ep.unrecorded = map[plugin.EntryKey]map[string]withheldWhy{}
 	}
 	for agentName, entries := range unrecorded {
 		for _, u := range entries {
 			if ep.unrecorded[u.key] == nil {
-				ep.unrecorded[u.key] = map[string]string{}
+				ep.unrecorded[u.key] = map[string]withheldWhy{}
 			}
-			ep.unrecorded[u.key][agentName] = u.why
+			ep.unrecorded[u.key][agentName] = withheldWhy{code: u.code, why: u.why}
 		}
 	}
 	kept := ep.entries[:0]
 	for _, e := range ep.entries {
-		e.Agents = slices.DeleteFunc(slices.Clone(e.Agents), func(a string) bool { return ep.unrecorded[e.Key][a] != "" })
+		agents := e.Agents
+		if ep.approval[e.Key] {
+			agents = nil
+			for _, a := range ep.configuredEntry(e.Key).Agents {
+				if slices.Contains(approved[a], e.Key) {
+					agents = append(agents, a)
+				}
+			}
+		}
+		e.Agents = slices.DeleteFunc(slices.Clone(agents), func(a string) bool { return ep.unrecorded[e.Key][a].why != "" })
 		if len(e.Agents) > 0 {
 			kept = append(kept, e)
 		}
@@ -477,9 +539,9 @@ func (ep *enginePlugins) withhold(unrecorded map[string][]unrecordedEntry) {
 	ep.entries = kept
 }
 
-// unrecordedFor is why entry k is withheld from agent name, "" when it is
-// not.
-func (ep *enginePlugins) unrecordedFor(k plugin.EntryKey, name string) string {
+// unrecordedFor is why entry k is withheld from agent name, empty when it
+// is not.
+func (ep *enginePlugins) unrecordedFor(k plugin.EntryKey, name string) withheldWhy {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 	return ep.unrecorded[k][name]

@@ -72,6 +72,60 @@ func TestStatusShowsTwoPersonSteps(t *testing.T) {
 }
 
 // No reporter, or no problem for this agent: no plugin problem.
+// An entry withheld for an approval reason gets the contract's steps: the
+// commands are the person's on a person-operated engine and the agent's on
+// an agent-operated one, where personMessage names no command.
+func TestStatusShowsApprovalSteps(t *testing.T) {
+	t.Parallel()
+	const enable = "basalt plugin enable acme-ner --instance client_x --approve-with-passkey --json --config /srv/basalt/engine.json"
+	for _, c := range []struct {
+		code    string
+		actions []string
+		cmds    []string
+	}{
+		{
+			ProblemPluginAwaitingApproval,
+			[]string{"OPEN_LINK", "RUN_COMMAND", "RUN_COMMAND"},
+			[]string{"", enable, "basalt engine --config /srv/basalt/engine.json"},
+		},
+		{
+			ProblemPluginApprovalExpired,
+			[]string{"RUN_COMMAND", "RUN_COMMAND"},
+			[]string{enable, "basalt plugin remove acme-ner --instance client_x --config /srv/basalt/engine.json"},
+		},
+		{
+			ProblemPluginApprovalMismatch,
+			[]string{"ASK_PERSON", "RUN_COMMAND", "RUN_COMMAND"},
+			[]string{"", enable, "basalt plugin disable acme-ner --instance client_x --config /srv/basalt/engine.json"},
+		},
+	} {
+		for _, operatedBy := range []string{"", "AGENT"} {
+			r := pluginStatus(t, operatedBy, "/srv/basalt/engine.json", true, samplePluginProblem(c.code))
+			p := findProblem(t, r, c.code)
+			require.False(t, r.Ready, "an ERROR problem")
+			require.Len(t, p.NextSteps, len(c.actions), c.code)
+			for i, st := range p.NextSteps {
+				require.Equal(t, c.actions[i], st.Action, c.code)
+				require.Equal(t, c.cmds[i], st.Command, c.code)
+				if st.Action == "RUN_COMMAND" {
+					want := "PERSON"
+					if operatedBy == "AGENT" {
+						want = "AGENT"
+					}
+					require.Equal(t, want, st.Actor, c.code)
+				}
+			}
+			require.Contains(t, p.PersonMessage, "acme-ner/client_x")
+			require.NotContains(t, p.PersonMessage, "acme-ner/default", "another agent's entry is not shown")
+			if operatedBy == "AGENT" {
+				require.NotContains(t, p.PersonMessage, "basalt ", "the agent runs the commands")
+			} else {
+				require.Contains(t, p.PersonMessage, enable)
+			}
+		}
+	}
+}
+
 func TestNoPluginProblemWithoutOne(t *testing.T) {
 	t.Parallel()
 	for name, rep := range map[string]PluginReporter{

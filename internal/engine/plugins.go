@@ -73,9 +73,15 @@ type enginePlugins struct {
 	notTrusted map[plugin.EntryKey]error
 	// refused is why an entry that verified is not started.
 	refused map[plugin.EntryKey]string
-	// unrecorded are the agents each entry is withheld from: its ledger
-	// record could not be written (withhold).
-	unrecorded map[plugin.EntryKey]map[string]string
+	// approval are the entries that require a plugin approval
+	// (config.Config.PluginRequiresApproval). Such an entry is verified with
+	// plugin.RequireApproval and starts with no agent: withhold grants it
+	// each agent whose approval matched, and no other.
+	approval map[plugin.EntryKey]bool
+	// unrecorded are the agents each entry is withheld from, and why: its
+	// ledger record could not be written, or, for an entry that requires
+	// approval, its approval is missing or does not match (withhold).
+	unrecorded map[plugin.EntryKey]map[string]withheldWhy
 	// dialWhy is why a service entry's last connection failed, when the
 	// cause is one status should name (nothing listens, the socket
 	// directory changed).
@@ -113,6 +119,7 @@ func newEnginePlugins(cfg config.Config, configPath string, o pluginOptions, log
 		host: plugin.NewHost(), log: log, o: o, configured: configured,
 		mode:  plugin.ModeSameUser,
 		first: map[plugin.EntryKey]plugin.Verified{}, notTrusted: map[plugin.EntryKey]error{}, refused: map[plugin.EntryKey]string{},
+		approval: map[plugin.EntryKey]bool{},
 	}
 	if cfg.Service() {
 		ep.mode = plugin.ModeService
@@ -125,12 +132,14 @@ func newEnginePlugins(cfg config.Config, configPath string, o pluginOptions, log
 	ep.root, ep.trust = root, trust
 	for _, p := range configured {
 		k := p.Key()
+		required := cfg.PluginRequiresApproval(p)
+		ep.approval[k] = required
 		if err := errors.Join(rootErr, trustErr); err != nil {
 			ep.notTrusted[k] = err
 			log.Error("plugin not started: it cannot be verified", "plugin", k.String(), "err", err)
 			continue
 		}
-		v, err := plugin.Verify(root, k, p.ManifestSHA256, trust, ep.mode)
+		v, err := plugin.Verify(root, k, p.ManifestSHA256, trust, ep.mode, plugin.RequireApproval(required))
 		if err != nil {
 			ep.notTrusted[k] = err
 			log.Error("plugin not started: it failed verification", "plugin", k.String(), "check", verifyFailure(err))
@@ -146,6 +155,10 @@ func newEnginePlugins(cfg config.Config, configPath string, o pluginOptions, log
 			ep.refused[k] = why
 			log.Error("plugin not started: "+why, "plugin", k.String())
 			continue
+		}
+		if required {
+			// Served to no agent until its approval matched (withhold).
+			e.Agents = nil
 		}
 		ep.first[k] = v
 		ep.entries = append(ep.entries, e)
@@ -240,7 +253,7 @@ func (ep *enginePlugins) verified(k plugin.EntryKey) (plugin.Verified, error) {
 	if ok {
 		return v, nil
 	}
-	v, err := plugin.Verify(ep.root, k, ep.manifestSHA256(k), ep.trust, ep.mode)
+	v, err := plugin.Verify(ep.root, k, ep.manifestSHA256(k), ep.trust, ep.mode, plugin.RequireApproval(ep.approval[k]))
 	ep.mu.Lock()
 	if err != nil {
 		ep.notTrusted[k] = err
@@ -282,13 +295,17 @@ func (ep *enginePlugins) PluginProblems(name string) []agent.PluginProblem {
 		ep.mu.Lock()
 		notTrusted, refused, dialWhy := ep.notTrusted[k], ep.refused[k], ep.dialWhy[k]
 		ep.mu.Unlock()
+		withheld := ep.unrecordedFor(k, name)
 		switch {
 		case notTrusted != nil:
 			prob.Code, prob.Message = agent.ProblemPluginNotTrusted, plugin.NotTrustedMessage(k, notTrusted, name)
 		case refused != "":
 			prob.Message = "plugin " + k.String() + " was not started: " + refused
-		case ep.unrecordedFor(k, name) != "":
-			prob.Message = "plugin " + k.String() + " is not served to this agent: " + ep.unrecordedFor(k, name)
+		case withheld.why != "":
+			if withheld.code != "" {
+				prob.Code = withheld.code
+			}
+			prob.Message = "plugin " + k.String() + " is not served to this agent: " + withheld.why
 		case ep.host.State(k) == plugin.StateReady:
 			continue
 		default:

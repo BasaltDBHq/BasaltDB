@@ -520,9 +520,12 @@ func requireOperatorRules(t *testing.T, steps []mcp.NextStep, personMessage stri
 		if st.Actor != mcp.ActorAgent || st.Action != mcp.ActionRunCommand {
 			continue
 		}
+		// basalt plugin edits engine.json and opens plugin approvals with the
+		// agent's own credential: a machine step too (CONTRACT.md, Plugin
+		// approval), and it needs no admin connection string.
 		machine := strings.HasPrefix(st.Command, "basalt init --remote ") || serviceManager.MatchString(st.Command) ||
-			strings.HasPrefix(st.Command, "basalt engine ")
-		require.True(t, machine, "%s: an AGENT command is init --remote or the engine's start: %q", where, st.Command)
+			strings.HasPrefix(st.Command, "basalt engine ") || strings.HasPrefix(st.Command, "basalt plugin ")
+		require.True(t, machine, "%s: an AGENT command is init --remote, the engine's start or basalt plugin: %q", where, st.Command)
 		if strings.HasPrefix(st.Command, "basalt init --remote ") {
 			require.True(t, strings.HasSuffix(st.Command, " --json"), "%s: the agent reads init --remote's steps: %q", where, st.Command)
 			require.NotContains(t, st.Command, "--os-user", "%s: init --remote takes no --os-user", where)

@@ -188,7 +188,9 @@ func (f *flowEngine) start() {
 		return f.origin == "" || osHost{}.PagesUp(context.Background(), f.origin)
 	}
 	require.Eventually(t, up, flowWait, 20*time.Millisecond)
-	require.False(t, stopped(), "the engine stopped: %v", runErr)
+	if stopped() {
+		require.FailNow(t, "the engine stopped", "%v", runErr)
+	}
 }
 
 func (f *flowEngine) restart() {

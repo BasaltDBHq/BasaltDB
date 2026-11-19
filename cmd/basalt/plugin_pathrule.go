@@ -23,21 +23,19 @@ func pathRuleRefusal(r *pluginRefusedError, ve *plugin.VerifyError, again string
 	var what, fix string
 	switch f.Kind {
 	case plugin.PathWritable:
-		what = fmt.Sprintf("%s can be written by %s (owner %s, group %s, mode %04o). "+
-			"Every directory on the way to plugins and their keys must be writable by its owner alone",
+		what = fmt.Sprintf("%s can be written by %s (owner %s, group %s, mode %04o); only its owner may write it",
 			ve.File, writers(f), userName(f.UID), groupName(f.GID), octalMode(f.Mode))
-		fix = "If it is yours, take write access away from everyone but you; if it is a system directory, ask whoever runs this machine. " +
-			"Basalt does not change it"
+		fix = "If it is yours, remove others' write access; if not, ask whoever runs this machine"
 	case plugin.PathSymlink:
-		what = fmt.Sprintf("%s is a symbolic link owned by %s. Basalt follows a link on the way to plugins only above "+
-			"the plugin directories and only when root owns it", ve.File, userName(f.UID))
-		fix = "Use the directory the link points to instead, or have whoever runs this machine replace the link with that directory"
+		what = fmt.Sprintf("%s is a symbolic link owned by %s; only links root owns, above the plugin files, are followed",
+			ve.File, userName(f.UID))
+		fix = "Put the real file or directory there, or ask whoever runs this machine"
 	default:
-		what = fmt.Sprintf("%s is owned by %s, but there it must be owned by %s", ve.File, userName(f.UID), ownerNames(f.Owners))
-		fix = "Use a directory that belongs to " + ownerNames(f.Owners) + ", or ask whoever runs this machine. Basalt does not change who owns it"
+		what = fmt.Sprintf("%s is owned by %s; it must be owned by %s", ve.File, userName(f.UID), ownerNames(f.Owners))
+		fix = "Use one that belongs to " + ownerNames(f.Owners) + ", or ask whoever runs this machine"
 	}
-	r.person = "The plugin was refused: " + what + ". Trusting a key does not fix this. " + fix +
-		". Then run the command again:\n  " + again
+	r.person = "Plugin refused: " + what + ". Trusting a key does not fix this, and Basalt does not change it. " + fix +
+		". Then run again:\n  " + again
 	r.steps = []mcp.NextStep{
 		{Actor: mcp.ActorAgent, Action: mcp.ActionAskPerson, Text: "Show the person the personMessage: " + ve.File +
 			" must be fixed on this machine. Do not change it yourself, and do not offer to trust a key."},

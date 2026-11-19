@@ -42,6 +42,10 @@ func SocketDirIs(dir string, uid, gid uint32) bool {
 //     of mode 0700, empty, and the one the path names (same device and
 //     inode).
 //
+// Only the opened base is checked again: the directories above it passed
+// plugin.CheckSocketBase, and as each is either writable by no one but root
+// and the engine's user or root's and sticky, no other user can swap one.
+// A umask that takes the owner's own bits away fails the open after mkdir.
 // Any failure after the directory was made removes it. Another user cannot
 // rename or remove it in a sticky directory, nor enter it, so its path stays
 // the engine's for as long as it exists.

@@ -44,6 +44,11 @@ func TestAddRefusesAWritableDirectoryAsUnsafePath(t *testing.T) {
 	require.Contains(t, body.PersonMessage, "mode 0775")
 	require.Contains(t, body.PersonMessage, "Trusting a key does not fix this")
 	require.Contains(t, body.PersonMessage, "Basalt does not change it")
+	// personMessage is at most 500 characters: the words around the path and
+	// the command take at most 300, leaving 200 for those two on a real
+	// machine (the test's temporary paths are far longer).
+	words := strings.ReplaceAll(strings.ReplaceAll(body.PersonMessage, body.NextSteps[1].Command, ""), e.root, "")
+	require.LessOrEqual(t, len(words), 300, words)
 	requireNoTrustStep(t, body)
 	require.Equal(t, "basalt plugin add "+e.src+" --agents product_a --config "+e.configPath, body.NextSteps[1].Command)
 	require.Contains(t, body.NextSteps[0].Text, e.root)
@@ -58,6 +63,23 @@ func TestAddRefusesASymlinkAsUnsafePath(t *testing.T) {
 	require.NoError(t, os.Symlink(elsewhere, e.root))
 	body := refusal(t, e.run(nil, "y\n", "add", e.src, "--agents", "product_a", "--json"), reasonUnsafePath)
 	require.Contains(t, body.PersonMessage, e.root+" is a symbolic link owned by ")
+	requireNoTrustStep(t, body)
+}
+
+// A trusted key that is a symlink is refused UNSAFE_PATH too, not with the
+// step that trusts the key again.
+func TestAddRefusesASymlinkedKeyAsUnsafePath(t *testing.T) {
+	t.Parallel()
+	e := newPluginEngine(t)
+	keys, err := os.ReadDir(e.trustDir)
+	require.NoError(t, err)
+	require.Len(t, keys, 1)
+	key := filepath.Join(e.trustDir, keys[0].Name())
+	moved := filepath.Join(e.base, "moved.pem")
+	require.NoError(t, os.Rename(key, moved))
+	require.NoError(t, os.Symlink(moved, key))
+	body := refusal(t, e.run(nil, "y\n", "add", e.src, "--agents", "product_a", "--json"), reasonUnsafePath)
+	require.Contains(t, body.PersonMessage, key+" is a symbolic link owned by ")
 	requireNoTrustStep(t, body)
 }
 
@@ -78,7 +100,7 @@ func TestWrongOwnerIsAnUnsafePath(t *testing.T) {
 	var r *pluginRefusedError
 	require.ErrorAs(t, err, &r)
 	require.Equal(t, reasonUnsafePath, r.reason)
-	require.Contains(t, r.person, "/opt/basalt is owned by uid 4242424, but there it must be owned by root")
+	require.Contains(t, r.person, "/opt/basalt is owned by uid 4242424; it must be owned by root")
 	require.LessOrEqual(t, len(r.person), 500)
 	body := r.body()
 	requireNoTrustStep(t, *body)

@@ -136,8 +136,8 @@ const (
 )
 
 // socketDirName is a new socket directory's name, unpredictable to another
-// user; tests replace it.
-var socketDirName = func() (string, error) {
+// user.
+func socketDirName() (string, error) {
 	b := make([]byte, socketDirRandom)
 	if _, err := rand.Read(b); err != nil {
 		return "", err

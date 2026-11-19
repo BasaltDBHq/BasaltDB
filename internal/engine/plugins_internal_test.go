@@ -409,7 +409,9 @@ func TestPlantedFileNameIsNeverShown(t *testing.T) {
 	}, 10*time.Second, 10*time.Millisecond)
 	require.NotContains(t, probs[0].Message, "evil")
 	require.Contains(t, probs[0].Message, "is not in the manifest's files")
-	require.Contains(t, logged.String(), "failed verification")
+	// The problem is set before the line is logged: wait for the line.
+	require.Eventually(t, func() bool { return strings.Contains(logged.String(), "failed verification") },
+		10*time.Second, 10*time.Millisecond, logged.String())
 	require.NotContains(t, logged.String(), "evil")
 }
 

@@ -133,7 +133,7 @@ func TestGroupWritableDirectoryIsRefusedLikeAnyPath(t *testing.T) {
 	require.ErrorAs(t, err, &r)
 	require.Equal(t, reasonUnsafePath, r.reason)
 	require.Contains(t, r.message, "/opt")
-	require.Contains(t, r.person, "/opt can be written by members of group gid 4242424 (owner root, group gid 4242424, mode 2775)")
+	require.Contains(t, r.person, "/opt can be written by members of group gid 4242424 (owner root, group gid 4242424, mode 2775); only its owner may write it")
 	require.NotContains(t, r.person, "chmod")
 	for _, s := range r.steps {
 		require.NotContains(t, s.Command, "chmod")

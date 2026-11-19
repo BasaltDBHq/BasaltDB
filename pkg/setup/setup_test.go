@@ -7,8 +7,13 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -69,12 +74,12 @@ func request(code string) setup.Request { return setup.Request{Code: code, Now: 
 
 // personPasskey is the person's portal passkey, registered through the
 // package's request and verified by it.
-func personPasskey(t *testing.T, database string) (*passkeytest.Authenticator, func(context.Context) (setup.Passkey, error)) {
+func personPasskey(t *testing.T) (*passkeytest.Authenticator, func(context.Context) (setup.Passkey, error)) {
 	t.Helper()
 	person, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 	return person, func(context.Context) (setup.Passkey, error) {
-		req, err := setup.NewPasskeyRequest(rand.Reader, database+" · bot", database)
+		req, err := setup.NewPasskeyRequest(rand.Reader, "db · bot", "db")
 		if err != nil {
 			return setup.Passkey{}, err
 		}
@@ -159,7 +164,7 @@ func TestCheckThenRunInstalls(t *testing.T) {
 	require.Contains(t, checked.Summary[0], "This creates the agent bot")
 	require.Zero(t, installedVersion(t, d), "Check changes nothing")
 
-	person, give := personPasskey(t, "db")
+	person, give := personPasskey(t)
 	var shown setup.Plan
 	committed := 0
 	res, err := setup.Run(ctx, d.Admin, request(code), setup.RunInput{
@@ -251,7 +256,7 @@ func TestRunRefusesByTheDatabasesState(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	d := guardtest.New(t).WithDemo(t)
-	_, give := personPasskey(t, "db")
+	_, give := personPasskey(t)
 	_, err := setup.Run(ctx, d.Admin, request(newCode(t, d, nil)), setup.RunInput{Passkey: give})
 	require.NoError(t, err)
 
@@ -284,7 +289,7 @@ func TestRunRevokesOnlyWhatWasAsked(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	d := guardtest.New(t).WithDemo(t)
-	_, give := personPasskey(t, "db")
+	_, give := personPasskey(t)
 	_, err := setup.Run(ctx, d.Admin, request(newCode(t, d, nil)), setup.RunInput{Passkey: give})
 	require.NoError(t, err)
 	_, oldDER, oldID := engineKey(t)
@@ -369,10 +374,121 @@ func TestMessagesCarryNoConnectionSecret(t *testing.T) {
 	note(setup.Check(ctx, conn, request(newCode(t, d, nil))))
 	note(setup.Run(ctx, conn, request(newCode(t, d, nil)), setup.RunInput{}))
 	note(setup.Run(ctx, conn, request(newCode(t, other, func(p *setupcode.Payload) { p.Agent.Write = []string{"public.nope"} })), setup.RunInput{}))
-	note(setup.Run(ctx, conn, request(newCode(t, other, nil)), setup.RunInput{}))
-	require.Len(t, out, 4)
+	require.Len(t, out, 3)
+	require.Contains(t, out[0], "Your admin connection string points at database ")
+
+	// A transaction that fails inside Run: the role appears after Check.
+	other.Exec(t, guardtest.Demo)
+	code := newCode(t, other, func(p *setupcode.Payload) { p.Agent.Read = []string{"public.payroll"} })
+	other.Exec(t, `ALTER TABLE public.payroll ENABLE ROW LEVEL SECURITY`)
+	checked, err := setup.Check(ctx, conn, request(code))
+	require.NoError(t, err)
+	out = append(out, checked.Summary...)
+	for _, q := range checked.Questions.RowSecurity {
+		out = append(out, q.Text)
+	}
+	_, err = setup.Run(ctx, conn, request(code), setup.RunInput{Approve: func(p setup.Plan) error {
+		out = append(out, p.SQL)
+		other.Exec(t, "CREATE ROLE "+other.Names.Prefix+"_agent_bot NOLOGIN")
+		return nil
+	}})
+	require.Equal(t, setup.CodeDatabase, codeOf(t, err))
+	require.Contains(t, err.Error(), "already exists")
+	require.Zero(t, installedVersion(t, other), "the transaction rolled back")
+	note(nil, err)
+
+	// A run that goes through, with its warnings.
+	other.Exec(t, "DROP ROLE "+other.Names.Prefix+"_agent_bot")
+	res, err := setup.Run(ctx, conn, request(newCode(t, other, func(p *setupcode.Payload) { p.Agent.Read = []string{"public.payroll"} })), setup.RunInput{
+		Approve: func(p setup.Plan) error { out = append(out, p.SQL); out = append(out, p.Warnings...); return nil },
+	})
+	require.True(t, res.Ran)
+	require.NotEmpty(t, res.Warnings, "payroll stays hidden")
+	out = append(out, res.Warnings...)
+	note(nil, err)
+
 	for _, msg := range out {
 		require.NotContains(t, msg, marker)
+		require.NotContains(t, msg, "postgres://")
+		require.NotContains(t, msg, "postgresql://")
 	}
-	require.Contains(t, out[0], "Your admin connection string points at database ")
+}
+
+// UPGRADE codes: one that runs, then one with nothing to do, which Run
+// alone recognizes and records nothing for.
+func TestRunUpgrade(t *testing.T) {
+	ctx := context.Background()
+	guardtest.NextVersion(t, false) // a breaking version 2: the build has one version
+	d := guardtest.New(t).WithDemo(t)
+	_, give := personPasskey(t)
+	_, err := setup.Run(ctx, d.Admin, request(newCode(t, d, nil)), setup.RunInput{Passkey: give})
+	require.NoError(t, err)
+	latest := guard.LatestVersion()
+	d.Exec(t, `DELETE FROM basalt_meta.schema_version WHERE version = `+strconv.Itoa(latest))
+
+	upgrade := func() string {
+		return newCode(t, d, func(p *setupcode.Payload) {
+			p.Kind, p.Agent, p.Guard = setupcode.KindUpgrade, nil, setupcode.Guard{From: latest - 1, To: latest}
+		})
+	}
+	checked, err := setup.Check(ctx, d.Admin, request(upgrade()))
+	require.NoError(t, err)
+	require.Contains(t, checked.Summary, fmt.Sprintf("This upgrades Basalt's guard from version %d to %d; no agent changes.", latest-1, latest))
+	res, err := setup.Run(ctx, d.Admin, request(upgrade()), setup.RunInput{})
+	require.NoError(t, err)
+	require.True(t, res.Ran)
+	require.Equal(t, latest, installedVersion(t, d))
+
+	nothing := upgrade()
+	res, err = setup.Run(ctx, d.Admin, request(nothing), setup.RunInput{Approve: func(setup.Plan) error { return errors.New("nothing to approve") }})
+	require.NoError(t, err)
+	require.False(t, res.Ran)
+	require.Equal(t, &setup.NothingToDo{Installed: latest, To: latest}, res.NothingToDo)
+	desc, err := setup.Describe(request(nothing))
+	require.NoError(t, err)
+	setups, err := guard.SetupsFor(ctx, d.Admin, uuid.MustParse(desc.SetupID), "")
+	require.NoError(t, err)
+	require.Empty(t, setups, "nothing recorded")
+}
+
+func TestRunRefusesASupersededCode(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	d := guardtest.New(t).WithDemo(t)
+	_, give := personPasskey(t)
+	_, err := setup.Run(ctx, d.Admin, request(newCode(t, d, nil)), setup.RunInput{Passkey: give})
+	require.NoError(t, err)
+	change := func(made time.Time) string {
+		return newCode(t, d, func(p *setupcode.Payload) {
+			p.Kind, p.Agent.Verifier = setupcode.KindAgent, ""
+			id, expires, err := setupcode.NewSetupID(made, rand.Reader)
+			require.NoError(t, err)
+			p.SetupID, p.ExpiresAt = id, expires
+		})
+	}
+	older := change(time.Now().Add(-time.Minute))
+	_, err = setup.Run(ctx, d.Admin, request(change(time.Now())), setup.RunInput{})
+	require.NoError(t, err)
+	_, err = setup.Run(ctx, d.Admin, request(older), setup.RunInput{})
+	require.Equal(t, "SUPERSEDED", codeOf(t, err))
+}
+
+// The contract's invalid codes are refused by Describe with their refusal.
+func TestDescribeRefusesTheInvalidFixtures(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile(filepath.Join(moduleRoot(t), "api", "mcp", "setup", "setup-code.fixtures.json"))
+	require.NoError(t, err)
+	var fixtures struct {
+		Invalid []struct {
+			Name    string `json:"name"`
+			Code    string `json:"code"`
+			Refusal string `json:"refusal"`
+		} `json:"invalid"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &fixtures))
+	require.NotEmpty(t, fixtures.Invalid)
+	for _, f := range fixtures.Invalid {
+		_, err := setup.Describe(request(f.Code))
+		require.Equal(t, f.Refusal, codeOf(t, err), f.Name)
+	}
 }

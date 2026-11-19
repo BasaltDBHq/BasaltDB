@@ -9,12 +9,14 @@ import (
 	"os"
 	"path/filepath"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/connect"
 )
 
 // listenUnix serves sock and counts the connections it accepts.
@@ -48,19 +50,30 @@ func TestServiceConnectsOnlyToTheEntrysUser(t *testing.T) {
 	k := plugin.EntryKey{Name: "acme-ner", Instance: "default"}
 	me := uint32(os.Getuid())
 	for _, transport := range []string{TransportStdio, TransportUnix, TransportConnect} {
-		sock := filepath.Join(shortBase(t), "p.sock")
+		dir := shortBase(t)
+		sock := filepath.Join(dir, "p.sock")
 		accepted := listenUnix(t, sock)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		gid := dirGID(t, dir)
 
-		tr, err := Service(ctx, k, serviceEntry(transport), sock, me)
+		tr, err := Service(ctx, k, serviceEntry(transport), sock, me, gid)
 		require.NoError(t, err, transport)
 		require.NoError(t, tr.Close())
 		require.Eventually(t, func() bool { return accepted.Load() >= 1 }, 2*time.Second, 10*time.Millisecond)
 
-		_, err = Service(ctx, k, serviceEntry(transport), sock, me+1)
+		// Another uid: its socket directory is not that user's.
+		_, err = Service(ctx, k, serviceEntry(transport), sock, me+1, gid)
 		require.Error(t, err, transport)
-		require.True(t, errors.Is(err, ErrWrongPeer), "%s: %v", transport, err)
+		require.True(t, errors.Is(err, ErrSocketDir), "%s: %v", transport, err)
 		require.Contains(t, err.Error(), "plugin acme-ner/default")
+
+		// The peer check refuses a listener under another uid.
+		if transport == TransportConnect {
+			_, err = connect.DialLocalChecked(ctx, sock, PeerIs(me+1))
+		} else {
+			_, err = dialChecked(ctx, sock, PeerIs(me+1))
+		}
+		require.True(t, errors.Is(err, ErrWrongPeer), "%s: %v", transport, err)
 		cancel()
 	}
 }
@@ -72,20 +85,63 @@ func TestServiceRefusesALinkOrNoSocket(t *testing.T) {
 	k := plugin.EntryKey{Name: "acme-ner", Instance: "default"}
 	me := uint32(os.Getuid())
 	dir := shortBase(t)
+	gid := dirGID(t, dir)
 	target := filepath.Join(dir, "real.sock")
 	accepted := listenUnix(t, target)
 	link := filepath.Join(dir, "p.sock")
 	require.NoError(t, os.Symlink(target, link))
 	for _, transport := range []string{TransportUnix, TransportConnect} {
-		_, err := Service(context.Background(), k, serviceEntry(transport), link, me)
+		_, err := Service(context.Background(), k, serviceEntry(transport), link, me, gid)
 		require.Error(t, err, transport)
 	}
 	require.Zero(t, accepted.Load(), "the link's target was never reached")
 
-	_, err := Service(context.Background(), k, serviceEntry(TransportUnix), filepath.Join(dir, "missing.sock"), me)
-	require.Error(t, err)
+	_, err := Service(context.Background(), k, serviceEntry(TransportUnix), filepath.Join(dir, "missing.sock"), me, gid)
+	require.ErrorIs(t, err, ErrNoSocket, "nothing listens: the plugin never made its socket")
 
 	remote := plugin.Verified{Manifest: plugin.Manifest{Endpoint: plugin.Endpoint{Remote: &plugin.RemoteEndpoint{Transport: TransportConnect, URL: "https://x.example"}}}}
-	_, err = Service(context.Background(), k, remote, link, me)
+	_, err = Service(context.Background(), k, remote, link, me, gid)
 	require.Error(t, err)
+}
+
+// The socket directory is checked at each connection: one opened to others,
+// in another group, or a link to a directory is refused before the socket
+// is reached.
+func TestServiceChecksTheSocketDirectoryEachTime(t *testing.T) {
+	t.Parallel()
+	k := plugin.EntryKey{Name: "acme-ner", Instance: "default"}
+	me := uint32(os.Getuid())
+	dir := shortBase(t)
+	gid := dirGID(t, dir)
+	sock := filepath.Join(dir, "p.sock")
+	accepted := listenUnix(t, sock)
+	dialOnce := func(sock string, gid uint32) error {
+		tr, err := Service(context.Background(), k, serviceEntry(TransportUnix), sock, me, gid)
+		if err == nil {
+			_ = tr.Close()
+		}
+		return err
+	}
+	require.NoError(t, os.Chmod(dir, 0o750))
+	require.NoError(t, dialOnce(sock, gid))
+
+	require.NoError(t, os.Chmod(dir, 0o751))
+	require.ErrorIs(t, dialOnce(sock, gid), ErrSocketDir, "others may enter")
+	require.NoError(t, os.Chmod(dir, 0o750))
+	require.ErrorIs(t, dialOnce(sock, gid+1), ErrSocketDir, "not the engine's group")
+
+	link := filepath.Join(shortBase(t), "d")
+	require.NoError(t, os.Symlink(dir, link))
+	require.ErrorIs(t, dialOnce(filepath.Join(link, "p.sock"), gid), ErrSocketDir, "a link to the directory")
+
+	require.NoError(t, dialOnce(sock, gid), "closed again: connected")
+	require.Eventually(t, func() bool { return accepted.Load() == 2 }, 2*time.Second, 10*time.Millisecond)
+}
+
+// dirGID is dir's group: on macOS a new directory takes its parent's.
+func dirGID(t *testing.T, dir string) uint32 {
+	t.Helper()
+	fi, err := os.Stat(dir)
+	require.NoError(t, err)
+	return fi.Sys().(*syscall.Stat_t).Gid
 }

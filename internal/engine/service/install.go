@@ -37,6 +37,9 @@ const (
 // System is what install and uninstall need from the machine.
 type System interface {
 	UserExists(name string) bool
+	// InGroup reports whether an OS user is in a group, as its primary or a
+	// supplementary group; a group that does not exist has no one in it.
+	InGroup(name, group string) (bool, error)
 	// Exists reports whether a file exists (an installed unit).
 	Exists(path string) bool
 	Output(ctx context.Context, args ...string) (string, error)

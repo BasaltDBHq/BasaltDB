@@ -258,6 +258,16 @@ func TestPluginIsolationAsRoot(t *testing.T) {
 	require.NoError(t, dial.PeerIs(ua)(c))
 	require.ErrorIs(t, dial.PeerIs(ub)(c), dial.ErrWrongPeer)
 	_ = c.Close()
+	// The engine's per-connection check of the socket directory passes on
+	// the one the install made, and the plugin's user is not in its group.
+	require.True(t, dial.SocketDirIs(na.SocketDir, ua, engineGID))
+	require.False(t, dial.SocketDirIs(na.SocketDir, ua, engineGID+1))
+	in, err := sys.InGroup(na.User, "basalt")
+	require.NoError(t, err)
+	require.False(t, in, "a plugin's user is not in the engine's group")
+	in, err = sys.InGroup("basalt", "basalt")
+	require.NoError(t, err)
+	require.True(t, in, "a primary group counts")
 
 	// Remove deletes the directory and the user.
 	_ = plug.Process.Kill()

@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"os"
+	"path/filepath"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/peercred"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
@@ -17,20 +19,34 @@ import (
 // engine does not talk to it.
 var ErrWrongPeer = connect.ErrWrongPeer
 
-// errNotSocket: the path is missing, or is not itself a Unix socket.
+// errNotSocket: the path is not itself a Unix socket.
 var errNotSocket = errors.New("the plugin socket path is not a unix socket")
+
+// ErrSocketDir: the socket directory is not the one the install made: a
+// directory (not a link) owned by the entry's OS user, in the engine's
+// group, with no access for others.
+var ErrSocketDir = errors.New("the plugin socket directory is not the plugin user's, in the engine's group and closed to others")
 
 // Service reaches local entry k, verified as v, that its service unit runs
 // as uid and that listens on sock (CONTRACT.md, Plugins, Service units). It
 // starts no process. Every connection is checked before a byte is sent:
 // sock is itself a socket, not a link to one, and the process listening on
 // it runs as uid, so a socket another process put at the path, a hard link
-// to one included, is refused. A jsonrpc-stdio entry is reached over its
-// socket too: in service mode every local plugin listens on one.
-func Service(ctx context.Context, k plugin.EntryKey, v plugin.Verified, sock string, uid uint32) (plugin.Transport, error) {
+// to one included, is refused. Before that, sock's directory must be owned
+// by uid, in group gid (the engine's) and closed to others, so a plugin that
+// opened its directory to other users is not connected to. Nothing at sock
+// is ErrNoSocket. A jsonrpc-stdio entry is reached over its socket too: in
+// service mode every local plugin listens on one.
+func Service(ctx context.Context, k plugin.EntryKey, v plugin.Verified, sock string, uid, gid uint32) (plugin.Transport, error) {
 	l := v.Manifest.Endpoint.Local
 	if l == nil {
 		return nil, fmt.Errorf("plugin %s: a remote entry has no service unit", k)
+	}
+	if !SocketDirIs(filepath.Dir(sock), uid, gid) {
+		return nil, fmt.Errorf("plugin %s: %w", k, ErrSocketDir)
+	}
+	if _, err := os.Lstat(sock); errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("plugin %s: %w", k, ErrNoSocket)
 	}
 	check := PeerIs(uid)
 	switch l.Transport {

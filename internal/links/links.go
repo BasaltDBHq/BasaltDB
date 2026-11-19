@@ -82,3 +82,7 @@ func Forget(base string) string {
 func trim(base string) string {
 	return strings.TrimSuffix(base, "/")
 }
+
+// ConnectURL is the connect link for a setup code: the portal's connect
+// page with the code in the fragment, so the code never reaches a server.
+func ConnectURL(code string) string { return Portal + ConnectPath + "#" + code }

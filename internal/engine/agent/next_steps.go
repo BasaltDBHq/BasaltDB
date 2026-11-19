@@ -763,7 +763,9 @@ func (s *Service) setupSteps(b *Steps, te *mcp.ToolError, f failure) string {
 		b.fail(errors.New("a pending setup needs its code"))
 		return ""
 	}
-	return setupPendingSteps(b, se.Code, se.Fingerprint, true)
+	person, ls := setupPendingSteps(b, se.Code, se.Fingerprint, true, s.ConnectBudget)
+	te.Links = ls
+	return person
 }
 
 // setupExpiredSteps: a new setup code is made on the engine's machine, by
@@ -785,20 +787,38 @@ func setupExpiredSteps(b *Steps, cmds Commands) string {
 // (blocking), so the agent ends its turn and checks status after; an AGENT
 // or UPGRADE code does not. The message names the command, not the code
 // itself, which is in the step and runs to 1500 characters.
-func setupPendingSteps(b *Steps, code, fingerprint string, blocking bool) string {
+//
+// With a connect link (budget is not 0 and the whole link fits it) the link
+// comes first and the command second, and the message says the link uses
+// Basalt Vault, a hosted service (CONTRACT.md, Next steps with the connect
+// link). The links are those of the message.
+func setupPendingSteps(b *Steps, code, fingerprint string, blocking bool, budget int) (string, []mcp.Link) {
 	if !setupCode.MatchString(code) || fingerprint == "" {
 		b.fail(errors.New("a pending setup needs its code and fingerprint"))
-		return ""
+		return "", nil
+	}
+	url := ConnectLink(code, budget)
+	if url != "" {
+		b.OpenLink(url, "", ConnectStepText)
 	}
 	b.RunCommand(SetupCode(code), "On your own computer, not the agent's machine, run this and check it shows the same setup fingerprint.")
 	b.TellAgent("Tell the agent when it is done.")
+	if url != "" {
+		lead := "A change to this agent's setup is waiting for you."
+		if blocking {
+			b.EndTurn("End your turn: the person acts next.")
+			b.CallTool(toolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
+			lead = "This agent's setup has not run yet."
+		}
+		return ConnectMessage(lead, url, fingerprint)
+	}
 	check := " Check that it shows the setup fingerprint " + fingerprint + ", then tell the agent. Never paste your database password into this chat."
 	if !blocking {
-		return "A change to this agent's setup is waiting for you. On your own computer, run the basalt init --setup-code command the agent shows you." + check
+		return "A change to this agent's setup is waiting for you. On your own computer, run the basalt init --setup-code command the agent shows you." + check, nil
 	}
 	b.EndTurn("End your turn: the person acts next.")
 	b.CallTool(toolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
-	return "This agent's setup has not run yet. On your own computer, run the basalt init --setup-code command the agent shows you." + check
+	return "This agent's setup has not run yet. On your own computer, run the basalt init --setup-code command the agent shows you." + check, nil
 }
 
 // sanitizeIdent quotes a column name for the SQL a step suggests: in double

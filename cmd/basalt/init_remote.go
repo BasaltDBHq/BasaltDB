@@ -25,6 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/links"
+	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 )
 
@@ -119,15 +120,25 @@ type remoteFlags struct {
 // RemoteInitResult is what basalt init --remote --json prints
 // (api/mcp/setup/remote-init-result.schema.json).
 type RemoteInitResult struct {
-	Agent         string           `json:"agent"`
-	SetupID       string           `json:"setupId"`
-	Kind          string           `json:"kind"`
-	Code          string           `json:"code"`
-	Fingerprint   string           `json:"fingerprint"`
-	Reused        bool             `json:"reused,omitempty"`
-	ExpiresAt     string           `json:"expiresAt"`
-	PersonMessage string           `json:"personMessage"`
-	NextSteps     []agent.NextStep `json:"nextSteps"`
+	Agent         string `json:"agent"`
+	SetupID       string `json:"setupId"`
+	Kind          string `json:"kind"`
+	Code          string `json:"code"`
+	Fingerprint   string `json:"fingerprint"`
+	Reused        bool   `json:"reused,omitempty"`
+	ExpiresAt     string `json:"expiresAt"`
+	PersonMessage string `json:"personMessage"`
+	// ConnectURL is the connect link, set when the engine is agent-operated
+	// with the Vault on and the whole link fits the link budget
+	// (CONTRACT.md, Connect, The connect link). Links are PersonMessage's
+	// URLs, set exactly when it holds one.
+	ConnectURL string           `json:"connectUrl,omitempty"`
+	Links      []mcp.Link       `json:"links,omitempty"`
+	NextSteps  []agent.NextStep `json:"nextSteps"`
+	// pasteAtPortal: the engine would hand the connect link but the whole
+	// link does not fit the budget, so the text output says to paste the
+	// code at the connect page instead.
+	pasteAtPortal bool
 }
 
 // isRemote reports whether args ask for basalt init --remote.
@@ -339,6 +350,12 @@ type remoteInit struct {
 	// serviceNote says root's run made the config a service one (paths);
 	// writeConfig prints it once engine.json is written. "" otherwise.
 	serviceNote string
+	// connectBudget is the link budget for the connect link, 0 when this
+	// engine hands none (not agent-operated, the Vault off, or development
+	// pages). Known once writeConfig has written the vault.
+	connectBudget int
+	// linkBudget is the engine's configured link budget.
+	linkBudget int
 }
 
 func newRemoteInit(c *cliIO, f remoteFlags) (*remoteInit, error) {
@@ -402,6 +419,7 @@ func (r *remoteInit) paths() error {
 	default:
 		r.stateDir = cfg.StateDirFor(r.c.goos)
 		r.settings.SocketDir = cfg.SocketDir
+		r.linkBudget = cfg.LinkBudgetOrDefault()
 		for i := range cfg.Agents {
 			if cfg.Agents[i].Name == r.f.agent {
 				r.entry = &cfg.Agents[i]
@@ -898,6 +916,13 @@ func (r *remoteInit) writeConfig(saved []string, s *config.Setup) error {
 	}
 	fmt.Fprint(r.c.stderr, r.serviceNote)
 	fmt.Fprint(r.c.stderr, r.f.vault.line(v))
+	r.connectBudget = 0
+	if r.f.operatedBy == OperatedByAgent && v.Vault == config.VaultOn {
+		r.connectBudget = r.linkBudget
+		if r.connectBudget <= 0 {
+			r.connectBudget = links.DefaultBudget
+		}
+	}
 	return nil
 }
 
@@ -905,21 +930,39 @@ func (r *remoteInit) writeConfig(saved []string, s *config.Setup) error {
 // it, and the steps (P RUN_COMMAND, P TELL_AGENT, A END_TURN, A CALL_TOOL
 // status, as the catalog's SETUP_NOT_RUN).
 func (r *remoteInit) result(s config.Setup, reused bool) (RemoteInitResult, error) {
-	steps, err := setupSteps(s.Code)
+	res := RemoteInitResult{
+		Agent: r.f.agent, SetupID: s.SetupID, Kind: s.Kind, Code: s.Code, Fingerprint: s.Fingerprint,
+		Reused: reused, ExpiresAt: s.ExpiresAt, PersonMessage: setupPersonMessage(r.f.agent, s.Fingerprint),
+	}
+	// An agent-operated engine with the Vault on hands the connect link
+	// first when the whole link fits the budget (no network call: the link
+	// only holds the code); else the text says where to paste the code.
+	url := agent.ConnectLink(s.Code, r.connectBudget)
+	if url != "" {
+		res.ConnectURL = url
+		res.PersonMessage, res.Links = agent.ConnectMessage("Finish setting up Basalt for "+r.f.agent+".", url, s.Fingerprint)
+	}
+	res.pasteAtPortal = r.connectBudget > 0 && url == ""
+	steps, err := setupSteps(s.Code, url)
 	if err != nil {
 		return RemoteInitResult{}, err
 	}
-	return RemoteInitResult{
-		Agent: r.f.agent, SetupID: s.SetupID, Kind: s.Kind, Code: s.Code, Fingerprint: s.Fingerprint,
-		Reused: reused, ExpiresAt: s.ExpiresAt, PersonMessage: setupPersonMessage(r.f.agent, s.Fingerprint), NextSteps: steps,
-	}, nil
+	res.NextSteps = steps
+	return res, nil
 }
 
 // setupCommand is what the person runs on their own computer.
 func setupCommand(code string) string { return "basalt init --setup-code " + code }
 
-func setupSteps(code string) ([]agent.NextStep, error) {
-	return agent.NewSteps().
+// setupSteps are the steps of the result: with a connect link (url) the
+// link comes first and the command second, as the catalog's connectLink
+// variant of SETUP_NOT_RUN.
+func setupSteps(code, url string) ([]agent.NextStep, error) {
+	b := agent.NewSteps()
+	if url != "" {
+		b.OpenLink(url, "", agent.ConnectStepText)
+	}
+	return b.
 		RunCommand(setupCommand(code), "On your own computer, not the agent's machine: install basalt from the official release page, run this, and check it shows the same fingerprint.").
 		TellAgent("Tell the agent once the command says Done.").
 		EndTurn("End your turn: the person runs the setup code on their own computer and tells you when it is done.").
@@ -955,6 +998,11 @@ func printRemoteResult(c *cliIO, f remoteFlags, res RemoteInitResult) error {
 	}
 	_, err = fmt.Fprintf(c.stdout, "Setup code for %s (%s), valid until %s:\n\n%s\n\nSetup fingerprint: %s\n\n%s\n",
 		res.Agent, res.Kind, expires.UTC().Format("2006-01-02 15:04 UTC"), res.Code, res.Fingerprint, res.PersonMessage)
+	if err == nil && res.pasteAtPortal {
+		// The link is over the budget: no link is printed, the code is
+		// pasted at the connect page instead.
+		_, err = fmt.Fprintf(c.stdout, "\nTo use Basalt Vault, a hosted service, paste the setup code at %s.\n", strings.TrimPrefix(links.Portal+links.ConnectPath, "https://"))
+	}
 	return err
 }
 

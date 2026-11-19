@@ -40,6 +40,29 @@ func TestVaultEnabled(t *testing.T) {
 	}
 }
 
+func TestConnectLinkBudget(t *testing.T) {
+	t.Parallel()
+	const portal = "https://portal.basaltvault.app"
+	small := 900
+	cases := map[string]struct {
+		cfg  config.Config
+		want int
+	}{
+		"agent-operated, vault on, portal": {config.Config{OperatedBy: "AGENT", Vault: config.VaultOn, PagesURL: portal}, 1800},
+		"the configured budget":            {config.Config{OperatedBy: "AGENT", Vault: config.VaultOn, PagesURL: portal, LinkBudget: &small}, 900},
+		"person-operated":                  {config.Config{Vault: config.VaultOn, PagesURL: portal}, 0},
+		"vault off":                        {config.Config{OperatedBy: "AGENT", Vault: config.VaultOff, PagesURL: portal}, 0},
+		"local pages":                      {config.Config{OperatedBy: "AGENT", Vault: config.VaultOn, PagesURL: "http://localhost:7777"}, 0},
+		"development pages":                {config.Config{OperatedBy: "AGENT", Vault: config.VaultOn, PagesURL: portal, DevLocalPages: true}, 0},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.want, tc.cfg.ConnectLinkBudget())
+		})
+	}
+}
+
 func TestCheckVaultURL(t *testing.T) {
 	t.Parallel()
 	for _, ok := range []string{"", "ws://127.0.0.1:8787", "ws://[::1]:8787", "ws://localhost:8787", "ws://LOCALHOST:1/", "ws://127.0.0.1"} {

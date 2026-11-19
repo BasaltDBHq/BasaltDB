@@ -636,6 +636,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		Now:           time.Now,
 		OperatedBy:    env.cfg.OperatedBy,
 		DevLocalPages: env.cfg.DevLocalPages,
+		ConnectBudget: env.cfg.ConnectLinkBudget(),
 		SameUser:      !env.cfg.Service(),
 		Setup:         a.Setup,
 		Probe:         probe,

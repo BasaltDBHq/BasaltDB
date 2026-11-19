@@ -475,6 +475,63 @@ func TestAgentOperatedSteps(t *testing.T) {
 	require.Equal(t, variants, contractAgentOperated(t), "CONTRACT.md agent-operated table and next-steps.json differ")
 }
 
+// TestConnectLinkSteps checks the catalog's connect-link variants (CONTRACT.md,
+// Next steps with the connect link): each replaces an entry that hands the
+// person a pending setup code, puts the person's OPEN_LINK before that
+// entry's steps on an agent-operated engine, keeps the rest unchanged, and is
+// listed in CONTRACT.md.
+func TestConnectLinkSteps(t *testing.T) {
+	t.Parallel()
+	c, err := mcpcontract.LoadNextSteps()
+	require.NoError(t, err)
+
+	base := map[string][]mcpcontract.StepKind{}
+	for _, e := range c.Errors {
+		base[mcpcontract.VariantError+":"+e.Code+"/"+e.Reason+"/"+e.Tool] = e.Steps
+	}
+	for _, p := range c.Problems {
+		base[mcpcontract.VariantProblem+":"+p.Code+"//"] = p.Steps
+	}
+	variants := map[string]bool{}
+	for _, v := range c.ConnectLink {
+		key := v.Kind + ":" + v.Code + "/" + v.Reason + "/" + v.Tool
+		require.False(t, variants[key], "duplicate variant %s", key)
+		variants[key] = true
+		steps, ok := base[key]
+		require.True(t, ok, "%s: a connect-link variant replaces an existing entry", key)
+		_, agentVariant := c.AgentOperatedEntry(v.Kind, v.Code, v.Reason, v.Tool)
+		require.False(t, agentVariant, "%s: an entry with an agent-operated variant cannot take a connect-link one", key)
+		require.True(t, v.PersonMessage, "%s: the link is in the personMessage", key)
+		requireSteps(t, key, v.Steps)
+		want := append([]mcpcontract.StepKind{{Actor: mcpcontract.ActorPerson, Action: "OPEN_LINK"}},
+			mcpcontract.Resolve(steps, mcpcontract.OperatedByAgent)...)
+		require.Equal(t, want, v.Steps, "%s: the link first, then the entry's own steps", key)
+		got, ok := c.ConnectLinkEntry(v.Kind, v.Code, v.Reason, v.Tool)
+		require.True(t, ok, key)
+		require.Equal(t, v, got)
+	}
+	require.Equal(t, variants, contractConnectLink(t), "CONTRACT.md connect-link table and next-steps.json differ")
+}
+
+func contractConnectLink(t *testing.T) map[string]bool {
+	t.Helper()
+	raw, err := contractdoc.Read()
+	require.NoError(t, err)
+	rows := map[string]bool{}
+	inSection := false
+	for line := range strings.SplitSeq(string(raw), "\n") {
+		if strings.HasPrefix(line, "#") {
+			inSection = line == "### Next steps with the connect link"
+			continue
+		}
+		if m := agentOperatedRow.FindStringSubmatch(line); inSection && m != nil {
+			rows[strings.ToUpper(m[1])+":"+m[2]+"/"+m[3]+"/"] = true
+		}
+	}
+	require.NotEmpty(t, rows, "no connect-link variants found in CONTRACT.md")
+	return rows
+}
+
 func TestResolveOperatorSteps(t *testing.T) {
 	t.Parallel()
 	c, err := mcpcontract.LoadNextSteps()

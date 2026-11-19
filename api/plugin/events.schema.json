@@ -2,17 +2,32 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/plugin/events.v1.json",
   "title": "Plugin ledger events",
-  "description": "A plugin event in an agent's ledger: its kind and its detail. The detail is closed: the guard refuses any other key, and a detail over 4 KiB. It never holds a config value, text the plugin saw, or the name of another agent. See CONTRACT.md, Plugins, In the ledger.",
+  "description": "A plugin event in an agent's ledger: its kind and its detail. The detail is closed: the guard refuses any other key, and a detail over 4 KiB. It never holds a config value, text the plugin saw, or the name of another agent. PLUGIN_APPROVAL_PENDING and PLUGIN_APPROVED are planned (plugin approval, basalt_meta schema version 5): only the plugin approval functions write them, and record_plugin_event refuses them. See CONTRACT.md, Plugins, In the ledger.",
   "type": "object",
   "additionalProperties": false,
   "required": ["kind", "detail"],
   "properties": {
-    "kind": { "enum": ["PLUGIN_ENABLED", "PLUGIN_DISABLED", "PLUGIN_CHANGED", "PLUGIN_TRUST_ADDED", "PLUGIN_TRUST_REMOVED"] },
+    "kind": { "enum": ["PLUGIN_ENABLED", "PLUGIN_DISABLED", "PLUGIN_CHANGED", "PLUGIN_TRUST_ADDED", "PLUGIN_TRUST_REMOVED", "PLUGIN_APPROVAL_PENDING", "PLUGIN_APPROVED"] },
     "detail": { "type": "object" }
   },
-  "if": { "properties": { "kind": { "enum": ["PLUGIN_TRUST_ADDED", "PLUGIN_TRUST_REMOVED"] } } },
-  "then": { "properties": { "detail": { "$ref": "#/$defs/trustDetail" } } },
-  "else": { "properties": { "detail": { "$ref": "#/$defs/entryDetail" } } },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "enum": ["PLUGIN_TRUST_ADDED", "PLUGIN_TRUST_REMOVED"] } } },
+      "then": { "properties": { "detail": { "$ref": "#/$defs/trustDetail" } } }
+    },
+    {
+      "if": { "properties": { "kind": { "enum": ["PLUGIN_ENABLED", "PLUGIN_DISABLED", "PLUGIN_CHANGED"] } } },
+      "then": { "properties": { "detail": { "$ref": "#/$defs/entryDetail" } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "PLUGIN_APPROVAL_PENDING" } } },
+      "then": { "properties": { "detail": { "$ref": "#/$defs/approvalPendingDetail" } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "PLUGIN_APPROVED" } } },
+      "then": { "properties": { "detail": { "$ref": "#/$defs/approvedDetail" } } }
+    }
+  ],
   "$defs": {
     "trustDetail": {
       "type": "object",
@@ -25,13 +40,20 @@
     "entryDetail": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "instance", "version", "manifestSha256", "signerKeyId", "hooks", "egress", "endpoint"],
+      "required": ["name", "instance", "version", "manifestSha256", "hooks", "egress", "endpoint"],
       "properties": {
         "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,39}$" },
         "instance": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
         "version": { "type": "string", "maxLength": 64 },
         "manifestSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-        "signerKeyId": { "$ref": "#/$defs/keyId" },
+        "signerKeyId": {
+          "description": "The id of the key whose signature the engine verified. Required, except with signer UNKNOWN, where it is absent.",
+          "$ref": "#/$defs/keyId"
+        },
+        "signer": {
+          "description": "Planned (plugin approval, basalt_meta schema version 5; a guard before it refuses the key). Written only for an entry that requires approval: KNOWN when the signature verified against a publisher key built into the engine (signerKeyId names it), UNKNOWN otherwise (no signerKeyId). An entry recorded without signer was served through a trusted key, without approval, and always has signerKeyId.",
+          "enum": ["KNOWN", "UNKNOWN"]
+        },
         "hooks": {
           "type": "array",
           "minItems": 1,
@@ -84,7 +106,61 @@
       },
       "if": { "properties": { "endpoint": { "properties": { "kind": { "const": "REMOTE" } } } } },
       "then": { "not": { "required": ["isolation"] } },
-      "else": { "required": ["isolation"] }
+      "else": { "required": ["isolation"] },
+      "allOf": [
+        {
+          "if": { "required": ["signer"], "properties": { "signer": { "const": "UNKNOWN" } } },
+          "then": { "not": { "required": ["signerKeyId"] } },
+          "else": { "required": ["signerKeyId"] }
+        }
+      ]
+    },
+    "approvalPendingDetail": {
+      "description": "Planned. PLUGIN_APPROVAL_PENDING, appended by open_plugin_approval to the ledger of the agent that opened the approval: the binding's keys without kind, database, requestedBy, agents and change, so no agent's ledger names another agent.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approvalId", "expiresAt", "name", "instance", "version", "manifestSha256", "settingsSha256", "hooks", "egress", "endpoint", "signer"],
+      "properties": {
+        "approvalId": { "$ref": "approval/binding.schema.json#/properties/approvalId" },
+        "expiresAt": { "$ref": "approval/binding.schema.json#/properties/expiresAt" },
+        "name": { "$ref": "approval/binding.schema.json#/properties/name" },
+        "instance": { "$ref": "approval/binding.schema.json#/properties/instance" },
+        "version": { "$ref": "approval/binding.schema.json#/properties/version" },
+        "manifestSha256": { "$ref": "approval/binding.schema.json#/properties/manifestSha256" },
+        "settingsSha256": { "$ref": "approval/binding.schema.json#/properties/settingsSha256" },
+        "hooks": { "$ref": "approval/binding.schema.json#/properties/hooks" },
+        "roles": { "$ref": "approval/binding.schema.json#/properties/roles" },
+        "egress": { "$ref": "approval/binding.schema.json#/properties/egress" },
+        "endpoint": { "$ref": "approval/binding.schema.json#/properties/endpoint" },
+        "isolation": { "$ref": "approval/binding.schema.json#/properties/isolation" },
+        "signer": { "$ref": "approval/binding.schema.json#/properties/signer" },
+        "signerKeyId": { "$ref": "approval/binding.schema.json#/properties/signerKeyId" }
+      },
+      "allOf": [{ "$ref": "approval/binding.schema.json#/$defs/fieldRules" }]
+    },
+    "approvedDetail": {
+      "description": "Planned. PLUGIN_APPROVED, appended by submit_plugin_approval to the ledger of every agent the approval lists: the binding's keys without kind, database, expiresAt, requestedBy, agents and change, plus the passkey that signed and the binding's hash. It holds no list of agents.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approvalId", "credentialId", "bindingSha256", "name", "instance", "version", "manifestSha256", "settingsSha256", "hooks", "egress", "endpoint", "signer"],
+      "properties": {
+        "approvalId": { "$ref": "approval/binding.schema.json#/properties/approvalId" },
+        "credentialId": { "description": "The passkey that signed, base64url without padding.", "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+        "bindingSha256": { "description": "Lowercase hex sha256 of the signed binding text: the WebAuthn challenge.", "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "name": { "$ref": "approval/binding.schema.json#/properties/name" },
+        "instance": { "$ref": "approval/binding.schema.json#/properties/instance" },
+        "version": { "$ref": "approval/binding.schema.json#/properties/version" },
+        "manifestSha256": { "$ref": "approval/binding.schema.json#/properties/manifestSha256" },
+        "settingsSha256": { "$ref": "approval/binding.schema.json#/properties/settingsSha256" },
+        "hooks": { "$ref": "approval/binding.schema.json#/properties/hooks" },
+        "roles": { "$ref": "approval/binding.schema.json#/properties/roles" },
+        "egress": { "$ref": "approval/binding.schema.json#/properties/egress" },
+        "endpoint": { "$ref": "approval/binding.schema.json#/properties/endpoint" },
+        "isolation": { "$ref": "approval/binding.schema.json#/properties/isolation" },
+        "signer": { "$ref": "approval/binding.schema.json#/properties/signer" },
+        "signerKeyId": { "$ref": "approval/binding.schema.json#/properties/signerKeyId" }
+      },
+      "allOf": [{ "$ref": "approval/binding.schema.json#/$defs/fieldRules" }]
     },
     "keyId": {
       "description": "A signer key id: base64url of the first 16 bytes of sha256 of the key's SubjectPublicKeyInfo DER.",

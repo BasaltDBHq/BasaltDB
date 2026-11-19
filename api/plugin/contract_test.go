@@ -25,6 +25,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// ecmaUnicodeEscape is an ECMA-262 \uXXXX escape in a schema pattern.
+var ecmaUnicodeEscape = regexp.MustCompile(`\\u([0-9a-fA-F]{4})`)
+
+// longRepeat is a repeat count with an upper bound over 1000.
+var longRepeat = regexp.MustCompile(`\{([0-9]+),[0-9]{4,}\}`)
+
 // schemaBase is the base URL the schema files are loaded under, so a $ref
 // between files (initialize's hooks point at the manifest's) resolves.
 const schemaBase = "https://basaltvault.app/schemas/plugin/"
@@ -165,9 +171,18 @@ func newCompiler(t *testing.T) *jsonschema.Compiler {
 	t.Helper()
 	c := jsonschema.NewCompiler()
 	c.DefaultDraft(jsonschema.Draft2020)
+	// The MCP link schemas' patterns use ECMA-262 \uXXXX escapes, which Go's
+	// regexp spells \x{XXXX}, and repeat counts over Go's limit of 1000,
+	// which are read without their upper bound.
+	c.UseRegexpEngine(func(s string) (jsonschema.Regexp, error) {
+		s = ecmaUnicodeEscape.ReplaceAllString(s, `\x{$1}`)
+		return regexp.Compile(longRepeat.ReplaceAllString(s, `{$1,}`))
+	})
 	for _, f := range []string{
 		"manifest.schema.json", "config.schema.json", "events.schema.json", "signature.schema.json",
 		"protocol/initialize.schema.json", "protocol/health.schema.json", "protocol/shutdown.schema.json",
+		"approval/binding.schema.json", "approval/request.schema.json", "approval/response.schema.json",
+		"approval/result.schema.json",
 	} {
 		raw, err := os.ReadFile(f)
 		require.NoError(t, err)
@@ -181,6 +196,18 @@ func newCompiler(t *testing.T) *jsonschema.Compiler {
 		}
 		require.NoError(t, json.Unmarshal(raw, &head))
 		require.Equal(t, schemaBase+strings.Replace(f, ".schema.json", ".v1.json", 1), head.ID, f)
+	}
+	// The MCP schemas the plugin approval result shares, under their own ids.
+	for _, f := range []string{"errors/next-step.schema.json", "links/link.schema.json", "links/request-file.schema.json"} {
+		raw, err := os.ReadFile(filepath.Join("..", "mcp", f))
+		require.NoError(t, err)
+		var head struct {
+			ID string `json:"$id"`
+		}
+		require.NoError(t, json.Unmarshal(raw, &head))
+		doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
+		require.NoError(t, err, f)
+		require.NoError(t, c.AddResource(head.ID, doc), f)
 	}
 	return c
 }
@@ -566,4 +593,557 @@ func verifyManifest(pub *ecdsa.PublicKey, manifest, sig []byte) bool {
 	r := new(big.Int).SetBytes(sig[:sigLen/2])
 	s := new(big.Int).SetBytes(sig[sigLen/2:])
 	return ecdsa.Verify(pub, digest[:], r, s)
+}
+
+// The plugin approval page's fixed sentences (CONTRACT.md, Plugins, The
+// plugin approval page). Placeholders are <name>-style; every template must
+// appear in CONTRACT.md exactly as written here.
+const (
+	sentChangeOnAgain   = "You approved <name> before, and it was turned off. Turning it on again needs your approval."
+	sentChange          = "This changes <name>, which you approved before."
+	sentChangeVersion   = "Version <fromVersion> becomes <version>."
+	sentChangeFiles     = "Its files change, but its version stays <version>."
+	sentChangeSigner    = "Its publisher was <fromPublisher>; now it is <publisher>."
+	sentChangeEndpoint  = "It moves from <fromWhere> to <where>."
+	sentChangeIsolation = "How it is kept apart from Basalt changes."
+	sentHooksAdded      = "It gets new access to: <hookLabels>."
+	sentHooksRemoved    = "It no longer gets: <hookLabels>."
+	sentNamesAdded      = "It now also looks for names in the text."
+	sentValuesAdded     = "It now also looks for private values in the text."
+	sentNamesRemoved    = "It no longer looks for names in the text."
+	sentValuesRemoved   = "It no longer looks for private values in the text."
+	sentEgressAdded     = "It now also connects to <hosts>."
+	sentEgressRemoved   = "It no longer connects to <hosts>."
+	sentAgentsAdded     = "It will now also be used for <agents>."
+	sentAgentsRemoved   = "It will no longer be used for <agents>."
+	sentSettingsChanged = "Its settings change."
+	sentLevel1          = "Published by Basalt."
+	sentLevel2          = "Nobody vouches for this plugin. Add it only if you trust where it came from."
+	sentLevel3          = "Nobody vouches for this plugin. It runs a stranger's program on the computer Basalt runs on, with the same access as Basalt itself, so it could read your database password and the key Basalt uses to hide private values."
+	sentTick            = "I know who made this plugin and I trust them with my data."
+	sentRemote          = "It runs at <host>. Everything it sees is sent there."
+	sentRemoteOnward    = "Basalt cannot check what runs there or where it sends things next."
+	sentOwnUser         = "It runs on the computer Basalt runs on, as its own user, so it cannot read Basalt's files."
+	sentSameAccess      = "It runs on the computer Basalt runs on, with the same access as Basalt itself."
+	sentNoNetwork       = "It says it needs no network. That is not enforced on the computer Basalt runs on."
+	sentEgressLimit     = "It says it connects only to <hosts>. That is not enforced on the computer Basalt runs on."
+	sentNameCue         = "It also sees values from your database that appear in that text."
+	sentUsedFor         = "Used for: <agents>."
+	sentAskedBy         = "Asked by <agent>."
+	sentFingerprint     = "Fingerprint: <fingerprint>"
+	computerBasaltRuns  = "the computer Basalt runs on"
+)
+
+// hookSentence is what each hook sees, in plain words; hookLabel names that
+// access in a change's list.
+var (
+	hookSentence = map[string]string{
+		"wire.detect":      "It reads the text your agents send to the AI provider, before Basalt hides private values in it.",
+		"feed.observe":     "It is told what your agents do in the database, such as which tables they change and how many rows, never the values.",
+		"approval.deliver": "It delivers your approval links. Anyone who can read where it delivers them can see the rows of writes waiting for your approval.",
+		"classify.suggest": "It reads the names and types of your tables and columns, never their values, and suggests which ones hold private data.",
+	}
+	hookLabel = map[string]string{
+		"wire.detect":      "the text your agents send to the AI provider",
+		"feed.observe":     "what your agents do in the database",
+		"approval.deliver": "your approval links",
+		"classify.suggest": "the names of your tables and columns",
+	}
+	addedRole   = map[string]string{"NAME_CUE": sentNamesAdded, "VALUE": sentValuesAdded}
+	removedRole = map[string]string{"NAME_CUE": sentNamesRemoved, "VALUE": sentValuesRemoved}
+	levelLine   = map[int]string{1: sentLevel1, 2: sentLevel2, 3: sentLevel3}
+)
+
+type approvalEndpoint struct {
+	Kind string `json:"kind"`
+	Host string `json:"host"`
+}
+
+type approvalIsolation struct {
+	Files   string `json:"files"`
+	Network string `json:"network"`
+}
+
+type approvalChange struct {
+	FromVersion        *string           `json:"fromVersion"`
+	FromManifestSHA256 *string           `json:"fromManifestSha256"`
+	FromSigner         *string           `json:"fromSigner"`
+	FromEndpoint       *approvalEndpoint `json:"fromEndpoint"`
+	FromIsolation      json.RawMessage   `json:"fromIsolation"`
+	HooksAdded         []string          `json:"hooksAdded"`
+	HooksRemoved       []string          `json:"hooksRemoved"`
+	RolesAdded         []string          `json:"rolesAdded"`
+	RolesRemoved       []string          `json:"rolesRemoved"`
+	EgressAdded        []string          `json:"egressAdded"`
+	EgressRemoved      []string          `json:"egressRemoved"`
+	AgentsAdded        []string          `json:"agentsAdded"`
+	AgentsRemoved      []string          `json:"agentsRemoved"`
+	SettingsChanged    bool              `json:"settingsChanged"`
+}
+
+type approvalBinding struct {
+	Kind           string                     `json:"kind"`
+	ApprovalID     string                     `json:"approvalId"`
+	RequestedBy    string                     `json:"requestedBy"`
+	Agents         []string                   `json:"agents"`
+	Name           string                     `json:"name"`
+	Version        string                     `json:"version"`
+	ManifestSHA256 string                     `json:"manifestSha256"`
+	SettingsSHA256 string                     `json:"settingsSha256"`
+	Hooks          []string                   `json:"hooks"`
+	Roles          []string                   `json:"roles"`
+	Egress         []string                   `json:"egress"`
+	Endpoint       approvalEndpoint           `json:"endpoint"`
+	Isolation      *approvalIsolation         `json:"isolation"`
+	Signer         string                     `json:"signer"`
+	Change         map[string]json.RawMessage `json:"change"`
+}
+
+// pageLevel derives the page's level from signer, endpoint and isolation.
+func pageLevel(b approvalBinding) int {
+	switch {
+	case b.Signer == "KNOWN":
+		return 1
+	case b.Endpoint.Kind == "REMOTE", b.Isolation != nil && b.Isolation.Files == "OS_USER":
+		return 2
+	default:
+		return 3
+	}
+}
+
+// shortAgent is a role's name after "_agent_", as the pages show it.
+func shortAgent(role string) string {
+	if i := strings.Index(role, "_agent_"); i > 0 {
+		return role[i+len("_agent_"):]
+	}
+	return role
+}
+
+func shortAgents(roles []string) string {
+	out := make([]string, len(roles))
+	for i, r := range roles {
+		out[i] = shortAgent(r)
+	}
+	return strings.Join(out, ", ")
+}
+
+func runsAt(e approvalEndpoint) string {
+	if e.Kind == "LOCAL" {
+		return computerBasaltRuns
+	}
+	return e.Host
+}
+
+func publisherOf(signer string) string {
+	if signer == "KNOWN" {
+		return "Basalt"
+	}
+	return "unknown"
+}
+
+func fill(template string, kv ...string) string {
+	return strings.NewReplacer(kv...).Replace(template)
+}
+
+func hookLabels(hooks []string) string {
+	out := make([]string, len(hooks))
+	for i, h := range hooks {
+		out[i] = hookLabel[h]
+	}
+	return strings.Join(out, "; ")
+}
+
+// changeSentences are the lines a change binding leads with, in the
+// contract's order.
+func changeSentences(t *testing.T, b approvalBinding) []string {
+	t.Helper()
+	if b.Change == nil {
+		return nil
+	}
+	if len(b.Change) == 0 {
+		return []string{fill(sentChangeOnAgain, "<name>", b.Name)}
+	}
+	var c approvalChange
+	raw, err := json.Marshal(b.Change)
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(raw, &c))
+	out := []string{fill(sentChange, "<name>", b.Name)}
+	switch {
+	case c.FromVersion != nil:
+		out = append(out, fill(sentChangeVersion, "<fromVersion>", *c.FromVersion, "<version>", b.Version))
+	case c.FromManifestSHA256 != nil:
+		out = append(out, fill(sentChangeFiles, "<version>", b.Version))
+	}
+	if c.FromSigner != nil {
+		out = append(out, fill(sentChangeSigner, "<fromPublisher>", publisherOf(*c.FromSigner), "<publisher>", publisherOf(b.Signer)))
+	}
+	if c.FromEndpoint != nil {
+		out = append(out, fill(sentChangeEndpoint, "<fromWhere>", runsAt(*c.FromEndpoint), "<where>", runsAt(b.Endpoint)))
+	}
+	if c.FromIsolation != nil {
+		out = append(out, sentChangeIsolation)
+	}
+	if len(c.HooksAdded) > 0 {
+		out = append(out, fill(sentHooksAdded, "<hookLabels>", hookLabels(c.HooksAdded)))
+	}
+	if len(c.HooksRemoved) > 0 {
+		out = append(out, fill(sentHooksRemoved, "<hookLabels>", hookLabels(c.HooksRemoved)))
+	}
+	for _, r := range c.RolesAdded {
+		out = append(out, addedRole[r])
+	}
+	for _, r := range c.RolesRemoved {
+		out = append(out, removedRole[r])
+	}
+	if len(c.EgressAdded) > 0 {
+		out = append(out, fill(sentEgressAdded, "<hosts>", strings.Join(c.EgressAdded, ", ")))
+	}
+	if len(c.EgressRemoved) > 0 {
+		out = append(out, fill(sentEgressRemoved, "<hosts>", strings.Join(c.EgressRemoved, ", ")))
+	}
+	if len(c.AgentsAdded) > 0 {
+		out = append(out, fill(sentAgentsAdded, "<agents>", shortAgents(c.AgentsAdded)))
+	}
+	if len(c.AgentsRemoved) > 0 {
+		out = append(out, fill(sentAgentsRemoved, "<agents>", shortAgents(c.AgentsRemoved)))
+	}
+	if c.SettingsChanged {
+		out = append(out, sentSettingsChanged)
+	}
+	return out
+}
+
+// pageSentences are the sentences the page shows for a binding, in the
+// contract's order.
+func pageSentences(t *testing.T, b approvalBinding) []string {
+	t.Helper()
+	out := changeSentences(t, b)
+	level := pageLevel(b)
+	out = append(out, levelLine[level])
+	if level == 3 {
+		out = append(out, sentTick)
+	}
+	switch {
+	case b.Endpoint.Kind == "REMOTE":
+		out = append(out, fill(sentRemote, "<host>", b.Endpoint.Host), sentRemoteOnward)
+	case b.Isolation.Files == "OS_USER":
+		out = append(out, sentOwnUser)
+	case level == 1:
+		out = append(out, sentSameAccess)
+	}
+	if b.Endpoint.Kind == "LOCAL" && b.Isolation.Network != "ENFORCED" {
+		if len(b.Egress) == 0 {
+			out = append(out, sentNoNetwork)
+		} else {
+			out = append(out, fill(sentEgressLimit, "<hosts>", strings.Join(b.Egress, ", ")))
+		}
+	}
+	for _, h := range b.Hooks {
+		out = append(out, hookSentence[h])
+		if h == "wire.detect" && slices.Contains(b.Roles, "NAME_CUE") {
+			out = append(out, sentNameCue)
+		}
+	}
+	m := b.ManifestSHA256
+	return append(out,
+		fill(sentUsedFor, "<agents>", shortAgents(b.Agents)),
+		fill(sentAskedBy, "<agent>", shortAgent(b.RequestedBy)),
+		fill(sentFingerprint, "<fingerprint>", m[0:4]+" "+m[4:8]+" "+m[8:12]+" "+m[12:16]),
+	)
+}
+
+// jsonbNode is a JSON value decoded with its object keys in text order.
+type jsonbNode struct {
+	kind   byte // '{', '[' or 's' (a scalar)
+	obj    []jsonbMember
+	arr    []jsonbNode
+	scalar any // string, json.Number, bool or nil
+}
+
+type jsonbMember struct {
+	key   string
+	value jsonbNode
+}
+
+func decodeOrdered(dec *json.Decoder) (jsonbNode, error) {
+	tok, err := dec.Token()
+	if err != nil {
+		return jsonbNode{}, err
+	}
+	d, ok := tok.(json.Delim)
+	if !ok {
+		return jsonbNode{kind: 's', scalar: tok}, nil
+	}
+	n := jsonbNode{kind: byte(d)}
+	for dec.More() {
+		var key string
+		if d == '{' {
+			k, err := dec.Token()
+			if err != nil {
+				return n, err
+			}
+			key, _ = k.(string)
+		}
+		child, err := decodeOrdered(dec)
+		if err != nil {
+			return n, err
+		}
+		if d == '{' {
+			n.obj = append(n.obj, jsonbMember{key, child})
+		} else {
+			n.arr = append(n.arr, child)
+		}
+	}
+	_, err = dec.Token()
+	return n, err
+}
+
+// writeJSONB writes n as Postgres writes jsonb text: object keys shorter
+// first, then bytewise, never repeated; ", " and ": " as separators; strings
+// quoted as escape_json quotes them. Numbers are written as given.
+func writeJSONB(b *strings.Builder, n jsonbNode) error {
+	switch n.kind {
+	case '{':
+		members := slices.Clone(n.obj)
+		sort.SliceStable(members, func(i, j int) bool {
+			a, c := members[i].key, members[j].key
+			if len(a) != len(c) {
+				return len(a) < len(c)
+			}
+			return a < c
+		})
+		b.WriteByte('{')
+		for i, m := range members {
+			if i > 0 {
+				if members[i-1].key == m.key {
+					return fmt.Errorf("repeated key %q", m.key)
+				}
+				b.WriteString(", ")
+			}
+			b.WriteString(escapeJSON(m.key))
+			b.WriteString(": ")
+			if err := writeJSONB(b, m.value); err != nil {
+				return err
+			}
+		}
+		b.WriteByte('}')
+	case '[':
+		b.WriteByte('[')
+		for i, c := range n.arr {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			if err := writeJSONB(b, c); err != nil {
+				return err
+			}
+		}
+		b.WriteByte(']')
+	default:
+		switch v := n.scalar.(type) {
+		case string:
+			b.WriteString(escapeJSON(v))
+		case json.Number:
+			b.WriteString(v.String())
+		case bool:
+			fmt.Fprint(b, v)
+		default:
+			b.WriteString("null")
+		}
+	}
+	return nil
+}
+
+// escapeJSON quotes s as Postgres's escape_json does.
+func escapeJSON(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '"':
+			b.WriteString(`\"`)
+		case '\\':
+			b.WriteString(`\\`)
+		case '\b':
+			b.WriteString(`\b`)
+		case '\f':
+			b.WriteString(`\f`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		default:
+			if r < 0x20 {
+				fmt.Fprintf(&b, `\u%04x`, r)
+			} else {
+				b.WriteRune(r)
+			}
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
+// requireJSONBText checks text is laid out exactly as Postgres writes jsonb.
+func requireJSONBText(t *testing.T, text, what string) {
+	t.Helper()
+	dec := json.NewDecoder(strings.NewReader(text))
+	dec.UseNumber()
+	n, err := decodeOrdered(dec)
+	require.NoError(t, err, what)
+	require.False(t, dec.More(), what)
+	var b strings.Builder
+	require.NoError(t, writeJSONB(&b, n), what)
+	require.Equal(t, text, b.String(), "%s is not in jsonb text layout", what)
+}
+
+type approvalVector struct {
+	Name      string `json:"name"`
+	Binding   string `json:"binding"`
+	Challenge string `json:"challenge"`
+	Settings  string `json:"settings"`
+	Expect    struct {
+		SettingsMatch *bool    `json:"settingsMatch"`
+		Level         int      `json:"level"`
+		Tick          bool     `json:"tick"`
+		Sentences     []string `json:"sentences"`
+		Error         string   `json:"error"`
+	} `json:"expect"`
+}
+
+// TestPluginApprovalVectors checks api/plugin/approval/vectors.json against
+// the contract: each binding and settings text is jsonb text, the binding,
+// settings and request pass their schemas, the challenge is sha256 of the
+// binding, and the settings check, level, tick and sentences follow the
+// page's rules. The ledger details derived from each binding pass
+// events.schema.json, and one that lists agents fails it. The response code
+// decodes to response.schema.json and the result example passes
+// result.schema.json. Every fixed sentence is written in CONTRACT.md.
+func TestPluginApprovalVectors(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile(filepath.Join("approval", "vectors.json"))
+	require.NoError(t, err)
+	var doc struct {
+		Vectors       []approvalVector `json:"vectors"`
+		ResponseCode  string           `json:"responseCode"`
+		ResultExample json.RawMessage  `json:"resultExample"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &doc))
+
+	compiler := newCompiler(t)
+	compile := func(ref string) *jsonschema.Schema {
+		s, err := compiler.Compile(schemaBase + ref)
+		require.NoError(t, err, ref)
+		return s
+	}
+	validate := func(s *jsonschema.Schema, text []byte) error {
+		inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(text))
+		require.NoError(t, err)
+		return s.Validate(inst)
+	}
+	bindingSchema := compile("approval/binding.schema.json")
+	settingsSchema := compile("approval/binding.schema.json#/$defs/settings")
+	requestSchema := compile("approval/request.schema.json")
+	eventSchema := compile("events.schema.json")
+
+	levels := map[int]bool{}
+	var changes, mismatches, wrongKinds int
+	for _, v := range doc.Vectors {
+		requireJSONBText(t, v.Binding, v.Name+" binding")
+		requireJSONBText(t, v.Settings, v.Name+" settings")
+		sum := sha256.Sum256([]byte(v.Binding))
+		require.Equal(t, base64.RawURLEncoding.EncodeToString(sum[:]), v.Challenge, v.Name)
+		require.NoError(t, validate(settingsSchema, []byte(v.Settings)), v.Name)
+
+		var b approvalBinding
+		require.NoError(t, json.Unmarshal([]byte(v.Binding), &b), v.Name)
+		if v.Expect.Error == "WRONG_KIND" {
+			require.NotEqual(t, "PLUGIN", b.Kind, v.Name)
+			require.Error(t, validate(bindingSchema, []byte(v.Binding)), v.Name)
+			wrongKinds++
+			continue
+		}
+		require.NoError(t, validate(bindingSchema, []byte(v.Binding)), v.Name)
+
+		req, err := json.Marshal(map[string]string{"approvalId": b.ApprovalID, "binding": v.Binding, "settings": v.Settings})
+		require.NoError(t, err)
+		require.NoError(t, validate(requestSchema, req), v.Name)
+
+		settingsSum := sha256.Sum256([]byte(v.Settings))
+		match := fmt.Sprintf("%x", settingsSum) == b.SettingsSHA256
+		require.NotNil(t, v.Expect.SettingsMatch, v.Name)
+		require.Equal(t, *v.Expect.SettingsMatch, match, v.Name)
+		if !match {
+			require.Equal(t, "SETTINGS_MISMATCH", v.Expect.Error, v.Name)
+			require.Zero(t, v.Expect.Level, "%s: a mismatch shows no level", v.Name)
+			mismatches++
+			continue
+		}
+		require.Empty(t, v.Expect.Error, v.Name)
+		level := pageLevel(b)
+		levels[level] = true
+		require.Equal(t, v.Expect.Level, level, v.Name)
+		require.Equal(t, level == 3, v.Expect.Tick, v.Name)
+		require.Equal(t, pageSentences(t, b), v.Expect.Sentences, v.Name)
+		if b.Change != nil {
+			changes++
+			// Version, hooks, roles, egress and endpoint are the manifest's,
+			// so a change to any of them is a new manifest.
+			for _, k := range []string{"fromVersion", "hooksAdded", "hooksRemoved", "rolesAdded", "rolesRemoved", "egressAdded", "egressRemoved", "fromEndpoint"} {
+				if _, ok := b.Change[k]; ok {
+					require.Contains(t, b.Change, "fromManifestSha256", "%s: %s changes the manifest", v.Name, k)
+				}
+			}
+		}
+
+		// The ledger details: the binding without the keys that name other
+		// agents or describe only the request.
+		var detail map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal([]byte(v.Binding), &detail))
+		for _, k := range []string{"kind", "database", "requestedBy", "agents", "change"} {
+			delete(detail, k)
+		}
+		event := func(kind string) []byte {
+			out, err := json.Marshal(map[string]any{"kind": kind, "detail": detail})
+			require.NoError(t, err)
+			return out
+		}
+		require.NoError(t, validate(eventSchema, event("PLUGIN_APPROVAL_PENDING")), v.Name)
+		delete(detail, "expiresAt")
+		detail["credentialId"] = json.RawMessage(`"q3Jv8sLk2mT0xYp1aBcD9w"`)
+		detail["bindingSha256"] = json.RawMessage(fmt.Sprintf("%q", fmt.Sprintf("%x", sum)))
+		require.NoError(t, validate(eventSchema, event("PLUGIN_APPROVED")), v.Name)
+		detail["agents"] = json.RawMessage(`["basalt_agent_product_a"]`)
+		require.Error(t, validate(eventSchema, event("PLUGIN_APPROVED")), "%s: no agent's ledger names another agent", v.Name)
+	}
+	require.Equal(t, map[int]bool{1: true, 2: true, 3: true}, levels, "one vector per page level")
+	require.Positive(t, changes, "a change binding")
+	require.Positive(t, mismatches, "a settings mismatch")
+	require.Positive(t, wrongKinds, "a binding of another kind")
+
+	const codePrefix = "basalt-plugin.1."
+	require.True(t, strings.HasPrefix(doc.ResponseCode, codePrefix))
+	body, err := base64.RawURLEncoding.Strict().DecodeString(strings.TrimPrefix(doc.ResponseCode, codePrefix))
+	require.NoError(t, err)
+	require.NoError(t, validate(compile("approval/response.schema.json"), body))
+	require.NoError(t, validate(compile("approval/result.schema.json"), doc.ResultExample))
+
+	contract, err := os.ReadFile(filepath.Join("..", "..", "CONTRACT.md"))
+	require.NoError(t, err)
+	fixed := []string{
+		sentChangeOnAgain, sentChange, sentChangeVersion, sentChangeFiles, sentChangeSigner, sentChangeEndpoint,
+		sentChangeIsolation, sentHooksAdded, sentHooksRemoved, sentNamesAdded, sentValuesAdded, sentNamesRemoved,
+		sentValuesRemoved, sentEgressAdded, sentEgressRemoved, sentAgentsAdded, sentAgentsRemoved, sentSettingsChanged,
+		sentLevel1, sentLevel2, sentLevel3, sentTick, sentRemote, sentRemoteOnward, sentOwnUser, sentSameAccess,
+		sentNoNetwork, sentEgressLimit, sentNameCue, sentUsedFor, sentAskedBy, sentFingerprint,
+	}
+	for _, m := range []map[string]string{hookSentence, hookLabel} {
+		for _, s := range m {
+			fixed = append(fixed, s)
+		}
+	}
+	for _, s := range fixed {
+		require.True(t, strings.Contains(string(contract), s), "CONTRACT.md must state the page's sentence exactly: %q", s)
+	}
 }

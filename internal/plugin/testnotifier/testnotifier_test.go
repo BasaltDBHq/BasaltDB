@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -17,6 +19,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/plugin/adaptertest"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/child"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/connect"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/dial"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/jsonrpc"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/protocol"
 	tn "github.com/basaltdbhq/basaltdb/internal/plugin/testnotifier"
@@ -293,4 +296,79 @@ func TestManifestMatchesTheOptions(t *testing.T) {
 	require.Equal(t, "jsonrpc-unix", m.Endpoint.Local.Transport)
 	require.Equal(t, o.Args(), m.Endpoint.Local.Args)
 	require.True(t, strings.HasPrefix(m.Files["bin/"+tn.Binary], "sha256:"))
+}
+
+// capped calls a transport as the engine does: at most MaxInFlight calls open
+// at once. The suite sends more at a time than the engine ever does, and an
+// SDK plugin answers calls past its waiting cap busy instead of queueing them.
+type capped struct {
+	plugin.Transport
+	slots chan struct{}
+}
+
+func engineCapped(tr plugin.Transport) plugin.Transport {
+	return capped{Transport: tr, slots: make(chan struct{}, protocol.MaxInFlight)}
+}
+
+func (c capped) Call(ctx context.Context, method string, params, result any) error {
+	select {
+	case c.slots <- struct{}{}:
+		defer func() { <-c.slots }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return c.Transport.Call(ctx, method, params, result)
+}
+
+// TestSDKNotifierPassesTheNotifierSuite: the engine's adapters carry both
+// hooks to a plugin built from the Go SDK module go.mod pins, in a child
+// process, on every transport. It is the wire check between the engine and
+// the SDK: a version of the SDK that no longer speaks the engine's protocol
+// fails here.
+func TestSDKNotifierPassesTheNotifierSuite(t *testing.T) {
+	t.Run("jsonrpc-stdio", func(t *testing.T) {
+		adaptertest.RunNotifier(t, func(t *testing.T) plugin.Transport {
+			tr, err := jsonrpc.Spawn(context.Background(), child.Spec{Path: bin, Dir: t.TempDir()})
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = tr.Close() })
+			return engineCapped(tr)
+		})
+	})
+	for _, tc := range []struct {
+		name string
+		opts tn.Options
+		dial func(context.Context, string) (plugin.Transport, error)
+	}{
+		{"jsonrpc-unix", tn.Options{}, jsonrpc.Dial},
+		{"connectrpc", tn.Options{Transport: "connectrpc"}, connect.DialLocal},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			adaptertest.RunNotifier(t, func(t *testing.T) plugin.Transport {
+				dir, err := os.MkdirTemp("", "tn")
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = os.RemoveAll(dir) })
+				sock := filepath.Join(dir, "p.sock")
+				cmd := exec.Command(bin, tc.opts.Args()...)
+				cmd.Dir = dir
+				cmd.Env = []string{dial.SocketEnv + "=" + sock}
+				require.NoError(t, cmd.Start())
+				t.Cleanup(func() {
+					_ = cmd.Process.Kill()
+					_ = cmd.Wait()
+				})
+				require.Eventually(t, func() bool {
+					c, err := net.Dial("unix", sock)
+					if err != nil {
+						return false
+					}
+					_ = c.Close()
+					return true
+				}, 5*time.Second, 5*time.Millisecond)
+				tr, err := tc.dial(context.Background(), sock)
+				require.NoError(t, err)
+				t.Cleanup(func() { _ = tr.Close() })
+				return engineCapped(tr)
+			})
+		})
+	}
 }

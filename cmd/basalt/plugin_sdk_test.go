@@ -21,7 +21,9 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/plugin/testnotifier"
 )
 
-const templatePackage = "github.com/basaltdbhq/basaltdb/internal/plugin/sdk/template"
+// templatePackage is the starter plugin of the Go SDK's module, at the version
+// go.mod pins.
+const templatePackage = "github.com/basaltdbhq/basalt-plugin-go/template"
 
 // templateManifest is the manifest shipped in the template's comment, with the
 // transport and the binary's hash filled in.
@@ -197,4 +199,18 @@ func setEntryTimeout(t *testing.T, e *pluginEngine, instance string) {
 		c.Plugins[c.PluginIndex(plugin.EntryKey{Name: "hello-feed", Instance: instance})].TimeoutMs = config.MaxPluginTimeoutMs
 		return nil
 	}}))
+}
+
+// TestPluginSDKIsNotInTheReleaseBinary: the release binary is built from
+// cmd/basalt. The Go SDK's module is required only for the programs that are
+// plugins (the test notifier, the template), so none of its packages, and not
+// the test notifier, may be among the binary's.
+func TestPluginSDKIsNotInTheReleaseBinary(t *testing.T) {
+	out, err := exec.Command("go", "list", "-deps", "github.com/basaltdbhq/basaltdb/cmd/basalt").Output()
+	require.NoError(t, err)
+	require.Contains(t, string(out), "github.com/basaltdbhq/basaltdb/internal/plugin/protocol", "the list is the binary's packages")
+	for _, pkg := range strings.Fields(string(out)) {
+		require.NotContains(t, pkg, "basalt-plugin-go", "the release binary links %s", pkg)
+		require.NotContains(t, pkg, "internal/plugin/testnotifier", "the release binary links %s", pkg)
+	}
 }

@@ -433,6 +433,14 @@ func TestNameClashBothHeldServesConfig(t *testing.T) {
 	}, keptWait, 50*time.Millisecond)
 	require.Contains(t, r.problem().Message, "engine.json holds an entry of the same name")
 	require.True(t, r.problem().EngineKept)
+	// The engine-kept entry is not run, and the list says so of it.
+	list, err := r.f.client.PluginList(context.Background())
+	require.NoError(t, err)
+	for _, l := range list.Plugins {
+		if l.Source == person.SourceEngine {
+			require.Equal(t, person.HealthNotStarted, l.Health)
+		}
+	}
 }
 
 // TestSudoInstalledPluginStillIsolated: with engine-kept entries on, a

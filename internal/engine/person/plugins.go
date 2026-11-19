@@ -153,14 +153,14 @@ const (
 
 // Health of a listed entry: what the running engine knows of it.
 const (
-	// HealthReady: the engine started the entry and it answers.
+	// HealthReady: the engine runs the entry and its plugin answers.
 	HealthReady = "READY"
-	// HealthUnavailable: the engine started the entry and it does not
-	// answer now.
+	// HealthUnavailable: the engine runs the entry, or keeps trying to
+	// start it, and its plugin does not answer now.
 	HealthUnavailable = "UNAVAILABLE"
-	// HealthNotStarted: the engine has not started the entry (turned off,
-	// not approved, refused at its check, or added since the engine last
-	// read its entries).
+	// HealthNotStarted: the engine does not run the entry (turned off, not
+	// approved, refused at its check, added since the engine last read its
+	// entries, or another entry of the same name and instance runs).
 	HealthNotStarted = "NOT_STARTED"
 )
 

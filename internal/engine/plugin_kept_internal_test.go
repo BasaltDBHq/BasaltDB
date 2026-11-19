@@ -405,15 +405,22 @@ func TestNameClashWithConfigRefused(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, res.Approvals, 1)
 
+	// Each row's health is asked of the engine for that row's own kind.
+	f.s.health = func(_ plugin.EntryKey, kept bool) string {
+		if kept {
+			return person.HealthUnavailable
+		}
+		return person.HealthReady
+	}
 	list, err := f.client.PluginList(context.Background())
 	require.NoError(t, err)
 	requireSchema(t, "listResult", list)
 	sources := make([]string, 0, len(list.Plugins))
 	for _, p := range list.Plugins {
-		sources = append(sources, p.Instance+":"+p.Source)
+		sources = append(sources, p.Instance+":"+p.Source+":"+p.Health)
 	}
 	sort.Strings(sources)
-	require.Equal(t, []string{"default:CONFIG", "other:ENGINE"}, sources)
+	require.Equal(t, []string{"default:CONFIG:READY", "other:ENGINE:UNAVAILABLE"}, sources)
 }
 
 // TestAgentOsUserThatIsNotAPersonRefused: an agent's own OS user that is

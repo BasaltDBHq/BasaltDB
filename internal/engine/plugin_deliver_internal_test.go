@@ -643,19 +643,39 @@ func TestDroppedNoticeMessageHoldsNothingOfTheNotice(t *testing.T) {
 	}
 }
 
-// TestListHealthFollowsTheHost: PLUGIN_LIST's health of an entry is what
-// the running engine knows of it: NOT_STARTED while the engine has not
-// started it, then READY or UNAVAILABLE as the plugin answers or not.
-func TestListHealthFollowsTheHost(t *testing.T) {
+// TestListHealthFollowsTheEngine: PLUGIN_LIST's health of an entry is what
+// the running engine knows of it: NOT_STARTED while the engine does not run
+// it, READY while its plugin answers, UNAVAILABLE while the engine runs it
+// or keeps trying to start it and it does not answer.
+func TestListHealthFollowsTheEngine(t *testing.T) {
 	t.Parallel()
 	e := newDeliverEnv(t)
-	ep := &enginePlugins{host: e.host}
 	k := plugin.EntryKey{Name: "slack-notify", Instance: "default"}
-	require.Equal(t, person.HealthNotStarted, ep.healthOf(k))
+	failing := plugin.EntryKey{Name: "never-starts", Instance: "default"}
+	ep := &enginePlugins{host: e.host, keptKeys: map[plugin.EntryKey]bool{k: true, failing: true}}
+	ep.sup = plugin.NewSupervisor(e.host, func(context.Context, plugin.Entry) (plugin.Transport, error) {
+		return nil, errors.New("the plugin does not start")
+	}, plugin.RealClock())
+	require.Equal(t, person.HealthNotStarted, ep.healthOf(k, true))
+
 	e.serve(k.Name, "product_a")
-	require.Equal(t, person.HealthReady, ep.healthOf(k))
+	require.Equal(t, person.HealthReady, ep.healthOf(k, true))
+	require.Equal(t, person.HealthNotStarted, ep.healthOf(k, false),
+		"an entry of engine.json with the name of the engine-kept one that runs is not the one running")
 	e.host.SetState(k, plugin.StateUnavailable)
-	require.Equal(t, person.HealthUnavailable, ep.healthOf(k))
+	require.Equal(t, person.HealthUnavailable, ep.healthOf(k, true))
+
+	// An entry whose start fails is never registered: the engine keeps
+	// trying, and until it answers it is UNAVAILABLE, as status says.
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		cancel()
+		ep.sup.Wait()
+	})
+	m := feedManifest(failing.Name)
+	require.NoError(t, ep.sup.Start(ctx, []plugin.Entry{{Key: failing, Manifest: m, Agents: []string{"product_a"}, Timeout: time.Second}}))
+	require.Equal(t, person.HealthUnavailable, ep.healthOf(failing, true))
+
 	var none *enginePlugins
-	require.Equal(t, person.HealthNotStarted, none.healthOf(k), "an engine that runs no plugin")
+	require.Equal(t, person.HealthNotStarted, none.healthOf(k, true), "an engine that runs no plugin")
 }

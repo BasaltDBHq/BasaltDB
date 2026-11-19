@@ -73,9 +73,10 @@ type keptPlugins struct {
 	// serving is what the running engine serves of entry k; nil serves
 	// nothing.
 	serving func(k plugin.EntryKey) []person.PluginServing
-	// health is whether the running engine started entry k and it answers
-	// (person.HealthReady and the like); nil has started nothing.
-	health func(k plugin.EntryKey) string
+	// health is what the running engine knows of the entry k, engine-kept
+	// (kept) or of engine.json: person.HealthReady and the like; nil runs
+	// nothing.
+	health func(k plugin.EntryKey, kept bool) string
 }
 
 var _ person.PluginMethods = (*keptPlugins)(nil)
@@ -824,7 +825,7 @@ func (s *keptPlugins) listed(p config.Plugin, source string, scope person.Scope,
 	}
 	l := person.PluginListed{Name: k.Name, Instance: k.Instance, Source: source, Enabled: p.Enabled, Agents: agents, Health: person.HealthNotStarted}
 	if s.health != nil {
-		l.Health = s.health(k)
+		l.Health = s.health(k, source == person.SourceEngine)
 	}
 	mode, trustMode := plugin.ModeService, plugin.ModeService
 	var v plugin.Verified

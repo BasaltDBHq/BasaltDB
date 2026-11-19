@@ -70,7 +70,7 @@
         },
         "expiresAt": { "$ref": "feed.schema.json#/$defs/timestamp" },
         "link": {
-          "description": "Exactly the link the agent's own answer handed over for this item, when it stands alone: a short link, or a long link within the link budget. A long link carries the whole request: the statement, its parameters, the intent and the rows. Absent when the answer had no link that stands alone (a hash link, or a request too large for any link).",
+          "description": "Exactly the link of the agent's own answer for this item (for a write whose call waits for approval, the answer that call gives if nobody signs in time), when it stands alone: a short link, or a long link within the link budget. A long link carries the whole request: the statement, its parameters, the intent and the rows. Absent when the answer had no link that stands alone (a hash link, or a request too large for any link).",
           "type": "string",
           "pattern": "^(?:https://portal\\.basaltvault\\.app|http://localhost:[0-9]{1,5})/(?:approvals|reverts)/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}#(?:s=[A-Za-z0-9_-]{22}|2\\.[A-Za-z0-9_.-]+)$"
         },

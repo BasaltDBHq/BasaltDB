@@ -276,7 +276,7 @@
         "endpoint": { "$ref": "../events.schema.json#/$defs/entryDetail/properties/endpoint" },
         "isolation": { "$ref": "../events.schema.json#/$defs/entryDetail/properties/isolation" },
         "health": {
-          "description": "What the running engine knows of the entry. READY: it started the entry and the plugin answers. UNAVAILABLE: it started the entry and the plugin does not answer now. NOT_STARTED: it has not started the entry (turned off, not approved, refused at its check, or added since the engine last read its entries). It says nothing of any agent: serving does.",
+          "description": "What the running engine knows of the entry. READY: it runs the entry and the plugin answers. UNAVAILABLE: it runs the entry, or keeps trying to start it, and the plugin does not answer now. NOT_STARTED: it does not run the entry (turned off, not approved, refused at its check, added since the engine last read its entries, or another entry of the same name and instance runs). It says nothing of any agent: serving does.",
           "enum": ["READY", "UNAVAILABLE", "NOT_STARTED"]
         },
         "approval": {

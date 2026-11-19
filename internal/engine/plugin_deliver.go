@@ -212,7 +212,8 @@ func (d *pluginDelivery) forAgent(name string) agent.LinkDeliverer {
 	return agentDeliverer{d: d, agent: name}
 }
 
-// DeliverLink takes the notice of an answer the agent is about to get. It
+// DeliverLink takes the notice of an answer the agent is about to get, or of
+// a write just held whose call waits for the person. It
 // only stamps it and puts it in a buffer: no lock, no read, no call, so it
 // returns at once whatever the plugins and the database do. A full buffer
 // drops the notice; the agent's answer has the link all the same.

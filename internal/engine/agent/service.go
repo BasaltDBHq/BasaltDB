@@ -135,6 +135,10 @@ type Deps struct {
 	// Columns reads each table's columns in table order for the pages;
 	// optional, and the pages show the order the rows carry when nil.
 	Columns ColumnOrder
+	// PluginApprovals are the guard's plugin approvals on the agent's
+	// credential, for the plugin approval routes of the pages; optional,
+	// and those routes know no plugin approval of this agent when nil.
+	PluginApprovals PluginApprovalStore
 	// Classes are the agent's PII classes for describe; optional, and
 	// describe fails closed (INTERNAL) when nil: it cannot tell a SECRET
 	// column.

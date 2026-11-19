@@ -214,6 +214,12 @@ BEGIN
     IF NOT p_detail ? 'signer' THEN
         PERFORM basalt_meta._invalid('plugin approval signer is required');
     END IF;
+    -- The engine runs every entry that requires approval itself, as its own
+    -- child, so it derives files NONE for it: an approval claiming OS_USER
+    -- never matches, and the page would show it a calmer level than it has.
+    IF p_detail #>> '{isolation,files}' = 'OS_USER' THEN
+        PERFORM basalt_meta._invalid('plugin approval isolation files must be NONE: the engine runs an approved plugin itself');
+    END IF;
     -- _check_plugin_detail has shown roles is an array when present.
     IF (p_detail -> 'hooks') @> '["wire.detect"]'::jsonb
        <> (p_detail ? 'roles' AND pg_catalog.jsonb_array_length(coalesce(p_detail -> 'roles', '[]'::jsonb)) > 0) THEN

@@ -434,6 +434,7 @@ func TestAgentOsUserThatIsNotAPersonRefused(t *testing.T) {
 	_, err = f2.addVia(srvScoped, "1.0.0", "default", "product_a", "product_b")
 	requirePersonError(t, err, person.CodeAgentNotAllowed, "")
 	require.Empty(t, f2.entries(), "nothing was written")
+	require.Equal(t, 1, f2.s.store.Open(), "a request refused for its scope does not use up its upload")
 
 	// The person adds for both; the scoped peer can neither disable nor
 	// remove it, nor enable it, and sees only its own agent.

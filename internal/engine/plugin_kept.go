@@ -174,13 +174,19 @@ func (s *keptPlugins) Open(ctx context.Context, uid uint32, scope person.Scope, 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	k := plugin.EntryKey{Name: p.Name, Instance: p.Instance}
+	// The scope first, before the upload is touched: a scoped peer learns
+	// nothing it may not reach, not even which agent names exist, and a
+	// request refused for its scope leaves its upload where it is.
+	if !scope.AllowsAll(p.Agents) {
+		return person.PluginOpenResult{}, notAllowed(k)
+	}
 	var taken *keptplugins.Taken
 	if p.UploadID != nil {
 		t, err := s.store.Take(uid, *p.UploadID)
 		if err != nil {
 			return person.PluginOpenResult{}, storeError(err)
 		}
-		// The upload is removed whatever this request decides.
+		// The upload is removed whatever the rest of this request decides.
 		defer t.Release()
 		taken = t
 	} else if len(p.Executables) > 0 {
@@ -192,11 +198,6 @@ func (s *keptPlugins) Open(ctx context.Context, uid uint32, scope person.Scope, 
 	next := config.Plugin{
 		Name: p.Name, Instance: p.Instance, ManifestSHA256: zeroSHA, Enabled: true,
 		Agents: slices.Clone(p.Agents), Approval: config.PluginApprovalRequired,
-	}
-	// The scope first: a scoped peer learns nothing it may not reach, not
-	// even which agent names exist.
-	if !scope.AllowsAll(p.Agents) {
-		return person.PluginOpenResult{}, notAllowed(k)
 	}
 	if err := s.checkRequest(next, p); err != nil {
 		return person.PluginOpenResult{}, err
@@ -280,10 +281,7 @@ func (s *keptPlugins) Open(ctx context.Context, uid uint32, scope person.Scope, 
 	// even when the new one cannot be opened afterwards. For an entry that
 	// is off or new that is every agent of both lists; for an enabled one,
 	// the agents added and the agents removed.
-	ends := union(minus(agentsOf(prev), next.Agents), minus(next.Agents, agentsOf(prev)))
-	if prev == nil || !prev.Enabled {
-		ends = union(agentsOf(prev), next.Agents)
-	}
+	ends := PluginEndAgents(prev, next.Agents)
 	if len(ends) > 0 {
 		if err := s.writeOwedEnds(ctx, k, ends); err != nil {
 			return person.PluginOpenResult{}, err
@@ -396,6 +394,18 @@ func sameSettings(a, b config.Plugin) bool {
 	ja, errA := json.Marshal(a.ApprovalSettings())
 	jb, errB := json.Marshal(b.ApprovalSettings())
 	return errA == nil && errB == nil && bytes.Equal(ja, jb)
+}
+
+// PluginEndAgents are the agents whose old plugin approval of an entry must
+// be ended before the entry becomes next (CONTRACT.md, Plugin approval,
+// Turning off ends it): for an entry that is off or new, every agent of both
+// lists; for an enabled one, the agents added and the agents removed. prev is
+// nil for a new entry. The engine and the basalt plugin commands share it.
+func PluginEndAgents(prev *config.Plugin, next []string) []string {
+	if prev == nil || !prev.Enabled {
+		return union(agentsOf(prev), next)
+	}
+	return union(minus(prev.Agents, next), minus(next, prev.Agents))
 }
 
 // agentsOf is p's agents, none when p is nil.
@@ -537,43 +547,8 @@ func holdsPluginApprovals(st guard.Status) bool {
 		!slices.Contains(st.MissingNonBreaking, guard.PluginApprovalsVersion)
 }
 
-// owedEnd is the PLUGIN_DISABLED an agent owes for entry k, false when it
-// owes none: its ledger records k served (the detail last recorded), or
-// its newest approval naming it is signed and not ended (the detail that
-// approval binds). The record ends the approval for that agent.
-func owedEnd(ctx context.Context, db guard.Querier, k plugin.EntryKey) (guard.PluginDetail, bool, error) {
-	recs, err := guard.ReadPluginRecords(ctx, db)
-	if err != nil {
-		return guard.PluginDetail{}, false, err
-	}
-	for _, r := range recs.Entries {
-		if r.Detail.Name == k.Name && r.Detail.Instance == k.Instance && r.Enabled() {
-			return r.Detail, true, nil
-		}
-	}
-	apps, err := guard.ReadPluginApprovals(ctx, db)
-	if err != nil {
-		return guard.PluginDetail{}, false, err
-	}
-	for _, a := range apps {
-		if a.Name != k.Name || a.Instance != k.Instance || !a.NamesCaller {
-			continue
-		}
-		if a.Status != guard.PluginApprovalStatusApproved || a.ApprovedAt == nil || a.Ended() {
-			return guard.PluginDetail{}, false, nil
-		}
-		b := a.Bound
-		return guard.PluginDetail{
-			Name: b.Name, Instance: b.Instance, Version: b.Version, ManifestSHA256: b.ManifestSHA256,
-			Hooks: b.Hooks, Roles: b.Roles, Egress: b.Egress, Endpoint: b.Endpoint, Isolation: b.Isolation,
-			Signer: b.Signer, SignerKeyID: b.SignerKeyID,
-		}, true, nil
-	}
-	return guard.PluginDetail{}, false, nil
-}
-
 // writeOwedEnds writes, in parallel and each within 15 seconds, every
-// PLUGIN_DISABLED agents owe for k (owedEnd). One that cannot be written
+// PLUGIN_DISABLED agents owe for k (guard.OwedPluginEnd). One that cannot be written
 // refuses the request: DATABASE_UNREACHABLE.
 func (s *keptPlugins) writeOwedEnds(ctx context.Context, k plugin.EntryKey, agents []string) error {
 	errs := s.endAll(ctx, k, agents)
@@ -599,11 +574,7 @@ func (s *keptPlugins) endAll(ctx context.Context, k plugin.EntryKey, agents []st
 		wg.Go(func() {
 			ctx, cancel := context.WithTimeout(ctx, keptDatabaseTimeout)
 			defer cancel()
-			d, owed, err := owedEnd(ctx, a.db, k)
-			if err == nil && owed {
-				err = guard.RecordPluginEntryEvent(ctx, a.db, guard.PluginDisabled, d)
-			}
-			if err != nil {
+			if err := guard.EndPluginApproval(ctx, a.db, k.Name, k.Instance); err != nil {
 				s.log.Warn("PLUGIN_DISABLED of an engine-kept plugin not recorded; it is written before the plugin is turned on again",
 					"agent", name, "plugin", k.String(), "err", err)
 				mu.Lock()

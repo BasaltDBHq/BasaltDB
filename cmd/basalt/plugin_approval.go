@@ -665,6 +665,63 @@ func (e *pluginEnv) handOver(res approvalResult, asJSON bool) error {
 // could not open its approval: exit 1, the result already printed.
 var errApprovalRefused = errors.New("a plugin approval could not be opened; the entry is written and waits for it")
 
+// --- ending the old approval ---
+
+// endApproval writes the PLUGIN_DISABLED agentName owes for k with its own
+// credential, within 15 seconds (guard.EndPluginApproval); it returns why it
+// could not, for a refusal's message.
+func (e *pluginEnv) endApproval(k plugin.EntryKey, agentName string) (why string) {
+	a, ok := agentOf(e.cfg, agentName)
+	if !ok {
+		return "it is not an agent of this engine"
+	}
+	dsn, err := e.ec.credential(a.Store.CredentialFile)
+	if err != nil {
+		return "its credential file cannot be read"
+	}
+	ctx, cancel := context.WithTimeout(e.c.ctx, databaseTimeout)
+	defer cancel()
+	conn, err := connect(ctx, dsn)
+	if err != nil {
+		return "its database does not answer (" + connectWhy(err) + ")"
+	}
+	defer func() { _ = conn.Close(context.WithoutCancel(e.c.ctx)) }()
+	if err := guard.EndPluginApproval(ctx, conn, k.Name, k.Instance); err != nil {
+		return "the old plugin approval could not be ended (" + pgDetail(err) + ")"
+	}
+	return ""
+}
+
+// endOwedApprovals writes, before the entry is written, the approval ends
+// the agents owe for k (engine.PluginEndAgents), as the engine does for an
+// engine-kept entry: an agent the entry did not serve, or no longer serves,
+// never comes back on an old signature, even when the new approval cannot be
+// opened afterwards. One that cannot be written refuses the command before
+// anything is written; again is the refused command.
+func (e *pluginEnv) endOwedApprovals(k plugin.EntryKey, prev *config.Plugin, next []string, again string) error {
+	for _, name := range engine.PluginEndAgents(prev, next) {
+		if why := e.endApproval(k, name); why != "" {
+			return e.unreachable(name, why, again)
+		}
+	}
+	return nil
+}
+
+// endAfterTurnOff ends the approvals of an entry just turned off, for its
+// agents. Turning off is never blocked: an end that cannot be written is
+// said, and stays owed to the next add or enable, which writes it first.
+func (e *pluginEnv) endAfterTurnOff(p config.Plugin) {
+	if !e.cfg.PluginRequiresApproval(p) {
+		return
+	}
+	for _, name := range p.Agents {
+		if why := e.endApproval(p.Key(), name); why != "" {
+			fmt.Fprintf(e.c.stderr, "basalt: the signed approval of plugin %s was not ended for agent %s: %s. "+
+				"The plugin is off; the next add or enable ends it before anything is written\n", p.Key(), name, why)
+		}
+	}
+}
+
 // --- add and enable ---
 
 // addWithApproval is add in the approval flow: check, write, open, hand over.
@@ -693,6 +750,11 @@ func (e *pluginEnv) addWithApproval(f addFlags, prev *config.Plugin) error {
 	k := staged.Key
 	if (prev == nil) != (e.cfg.PluginIndex(k) < 0) {
 		return errChangedMeanwhile
+	}
+	// Ends owed first, before the entry is written: no refusal after the
+	// write leaves an old approval to serve an agent that comes back.
+	if err := e.endOwedApprovals(k, prev, f.agents, again+" --"+flagApproveWithPasskey+" --json"); err != nil {
+		return err
 	}
 	shownSigner, shownKey := staged.Signer, staged.SignerKeyID
 	var written config.Plugin
@@ -775,6 +837,9 @@ func (e *pluginEnv) enableWithApproval(k plugin.EntryKey, p config.Plugin, wait 
 		return err
 	}
 	defer closeGroups(e.c.ctx, groups)
+	if err := e.endOwedApprovals(k, &p, p.Agents, again+" --"+flagApproveWithPasskey+" --json"); err != nil {
+		return err
+	}
 	var written config.Plugin
 	err = e.update(config.Change{Apply: func(cfg *config.Config) error {
 		i := cfg.PluginIndex(k)

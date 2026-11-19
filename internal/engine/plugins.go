@@ -426,13 +426,15 @@ func (ep *enginePlugins) PluginProblems(name string) []agent.PluginProblem {
 		out = append(out, agent.PluginProblem{Code: agent.ProblemPluginConfigInvalid, Message: configProblem})
 	}
 	if keptProblem != "" {
-		out = append(out, agent.PluginProblem{Code: agent.ProblemPluginUnavailable, Message: "no engine-kept plugin is served: " + keptProblem})
+		out = append(out, agent.PluginProblem{
+			Code: agent.ProblemPluginUnavailable, Message: "no engine-kept plugin is served: " + keptProblem, File: ep.kept.EntriesPath(),
+		})
 	}
 	for _, p := range clashes {
 		if slices.Contains(p.Agents, name) {
 			k := p.Key()
 			out = append(out, agent.PluginProblem{
-				Code: agent.ProblemPluginUnavailable, Name: k.Name, Instance: k.Instance,
+				Code: agent.ProblemPluginUnavailable, Name: k.Name, Instance: k.Instance, EngineKept: true,
 				Message: "the engine-kept plugin " + k.String() + " is not served: engine.json holds an entry of the same name and instance, " +
 					"added with sudo, and that one is served; remove one of them (basalt plugin remove " + k.Name + " --instance " + k.Instance + ")",
 			})
@@ -443,7 +445,7 @@ func (ep *enginePlugins) PluginProblems(name string) []agent.PluginProblem {
 			continue
 		}
 		k := p.Key()
-		prob := agent.PluginProblem{Code: agent.ProblemPluginUnavailable, Name: k.Name, Instance: k.Instance}
+		prob := agent.PluginProblem{Code: agent.ProblemPluginUnavailable, Name: k.Name, Instance: k.Instance, EngineKept: ep.isKept(k)}
 		ep.mu.Lock()
 		notTrusted, refused, dialWhy := ep.notTrusted[k], ep.refused[k], ep.dialWhy[k]
 		ep.mu.Unlock()
@@ -496,11 +498,10 @@ const pluginRunsDirName = "plugin-runs"
 // it starts, after reaping what an earlier run of it left: processes still
 // running and their socket directories (CONTRACT.md, Plugins, Transports).
 // It runs under the engine lock, before any plugin starts, whether or not a
-// plugin is enabled now. A service engine starts no plugin process and an
-// engine run as root starts no local plugin: nil for both.
+// plugin is enabled now. A service engine runs its approved engine-kept
+// local entries itself, so it records and reaps them as a same-user engine
+// does; an engine run as root starts no local plugin: nil.
 func pluginRuns(cfg config.Config, stateDir string, euid int, log *slog.Logger) *child.Runs {
-	// A service engine runs its approved engine-kept local entries itself,
-	// so it records and reaps them as a same-user engine does.
 	_ = cfg
 	if euid == 0 || stateDir == "" {
 		return nil

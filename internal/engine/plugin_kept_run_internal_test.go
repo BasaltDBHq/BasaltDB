@@ -191,6 +191,7 @@ func TestEngineKeptEntryNeedsApproval(t *testing.T) {
 		p := r.problem()
 		return p != nil && p.Code == agent.ProblemPluginApprovalMismatch
 	}, keptWait, 50*time.Millisecond)
+	require.True(t, r.problem().EngineKept, "its status steps name no sudo and no check")
 }
 
 // TestServiceModeStartsWithoutRestart: the engine starts an engine-kept
@@ -298,6 +299,7 @@ func TestNameClashBothHeldServesConfig(t *testing.T) {
 		return p != nil && p.Code == agent.ProblemPluginUnavailable
 	}, keptWait, 50*time.Millisecond)
 	require.Contains(t, r.problem().Message, "engine.json holds an entry of the same name")
+	require.True(t, r.problem().EngineKept)
 }
 
 // TestSudoInstalledPluginStillIsolated: with engine-kept entries on, a

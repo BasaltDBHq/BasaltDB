@@ -187,7 +187,8 @@ func (e *pluginEnv) refuseAgentOperated(cfg config.Config, sub, again string) er
 	case cfg.AgentOperated():
 		r.message = fmt.Sprintf("basalt plugin %s is refused: this engine is operatedBy AGENT, so a prompt answered on this machine "+
 			"is no proof that a person consented. Nothing was written", sub)
-		r.person = "Plugins cannot be added, enabled or widened, and plugin keys cannot be trusted, on an engine an agent operates yet. " +
+		r.person = "With sudo, plugins cannot be added or enabled, and plugin keys cannot be trusted, on an engine an agent operates. " +
+			"Without sudo, basalt plugin add and enable open an approval that you sign with your passkey. " +
 			"Disabling and removing a plugin still work."
 	default:
 		r.message = fmt.Sprintf("basalt plugin %s is refused: %s is set, so an agent is running it. An agent never adds, enables or "+
@@ -1071,6 +1072,7 @@ func (e *pluginEnv) setDisabled(k plugin.EntryKey) error {
 	}})
 	if errors.Is(err, errNoChange) {
 		fmt.Fprintf(e.c.stderr, "basalt: plugin %s is already disabled; nothing changed\n", k)
+		e.endAfterTurnOff(p)
 		return nil
 	}
 	if err != nil {
@@ -1080,6 +1082,7 @@ func (e *pluginEnv) setDisabled(k plugin.EntryKey) error {
 		return err
 	}
 	fmt.Fprintf(e.c.stderr, "basalt: plugin %s disabled\n", k)
+	e.endAfterTurnOff(p)
 	e.narrowed()
 	return nil
 }
@@ -1123,6 +1126,7 @@ func (e *pluginEnv) remove(k plugin.EntryKey) error {
 		return err
 	}
 	fmt.Fprintf(e.c.stderr, "basalt: plugin %s removed\n", k)
+	e.endAfterTurnOff(p)
 	e.narrowed()
 	return nil
 }

@@ -417,6 +417,20 @@ case "$url" in http*/plugins/"$approval_id"*) ;; *) fail "add gave no approval l
 sudo test -f /var/lib/basalt/plugins.json || fail "the engine keeps no entries file"
 sudo test -d "/var/lib/basalt/plugins/$name/$kept_inst" || fail "the engine keeps no copy"
 [ "$(sudo sha256sum /etc/basalt/engine.json)" = "$config_before" ] || fail "engine.json changed"
+# Withheld until the signature: the approval is PENDING, and for a few
+# seconds (the engine checks about once a second) no plugin process runs
+# from the engine's copies.
+kept_state() {
+	BASALT_AGENT_CONTEXT=1 "$basalt" plugin list --json |
+		jq -r --arg n "$name" --arg i "$kept_inst" '.plugins[] | select(.name == $n and .instance == $i) | .approval.agents[0].state'
+}
+kept_pending() { [ "$(kept_state)" = PENDING ]; }
+wait_for "the approval to show PENDING" kept_pending
+for _ in $(seq 1 6); do
+	pgrep -f "/var/lib/basalt/plugins/$name/$kept_inst/" >/dev/null && fail "the plugin runs before its approval is signed"
+	sleep 0.5
+done
+[ "$(kept_state)" = PENDING ] || fail "the approval is not PENDING before the signature: $(kept_state)"
 code=$("$work/signer" -key "$work/passkey.json" code "$url")
 BASALT_AGENT_CONTEXT=1 "$basalt" plugin approve "$code" --json
 waited=$(BASALT_AGENT_CONTEXT=1 "$basalt" plugin enable "$name" --instance "$kept_inst" --approval-id "$approval_id" --wait 60 --json) ||

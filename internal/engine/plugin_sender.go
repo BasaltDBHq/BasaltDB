@@ -70,7 +70,8 @@ func newPluginSender(host *plugin.Host, k plugin.EntryKey, now func() time.Time)
 		panic("engine: a plugin sender needs a host and a clock")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &pluginSender{host: host, key: k, now: now, queue: make(chan pluginCall, pluginSenderQueue),
+	s := &pluginSender{
+		host: host, key: k, now: now, queue: make(chan pluginCall, pluginSenderQueue),
 		notices: make(chan pluginCall, pluginSenderQueue), ctx: ctx, cancel: cancel,
 	}
 	s.wg.Go(s.workNotices)

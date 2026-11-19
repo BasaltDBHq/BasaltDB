@@ -31,6 +31,34 @@ func TestEngineKeptEntryStepsHaveNoSudoAndNoCheck(t *testing.T) {
 	require.Equal(t, "sudo basalt plugin disable acme-ner", p.NextSteps[1].Command)
 }
 
+// Dropped approval notices are a WARNING with one step: basalt plugin check
+// for the entry, or basalt plugin list for one the engine keeps itself,
+// which check does not find. The message says nothing was lost.
+func TestStatusShowsDroppedNotices(t *testing.T) {
+	t.Parallel()
+	for _, kept := range []bool{false, true} {
+		for _, operatedBy := range []string{"", "AGENT"} {
+			r := pluginStatus(t, operatedBy, "", true, fakePlugins{"bot": {{
+				Code: ProblemPluginNoticesDropped, Name: "acme-notify", Instance: "client_x", EngineKept: kept,
+				Message: "plugin acme-notify/client_x did not get 3 approval notices of this agent in the last 24 hours",
+			}}})
+			p := findProblem(t, r, ProblemPluginNoticesDropped)
+			require.Equal(t, "WARNING", p.Severity)
+			require.Len(t, p.NextSteps, 1)
+			require.Equal(t, "PERSON", p.NextSteps[0].Actor)
+			require.Equal(t, "RUN_COMMAND", p.NextSteps[0].Action)
+			want := "basalt plugin check acme-notify --instance client_x"
+			if kept {
+				want = "basalt plugin list"
+			}
+			require.Equal(t, want, p.NextSteps[0].Command)
+			require.NotContains(t, p.NextSteps[0].Command, "sudo")
+			require.Contains(t, p.PersonMessage, "ask the agent what waits for your approval")
+			require.Contains(t, p.PersonMessage, want)
+		}
+	}
+}
+
 // A problem that names no entry (the engine's entries file is unusable)
 // never gives a command with an empty plugin name: its steps move the file
 // aside and restart the engine, the person's, on an agent-operated engine

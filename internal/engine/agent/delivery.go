@@ -70,10 +70,10 @@ func NoticeHeadline(headline string) string {
 // not.
 func standaloneLink(link string) string {
 	_, fragment, ok := strings.Cut(link, "#")
-	if !ok || !(strings.HasPrefix(fragment, "s=") || strings.HasPrefix(fragment, "2.")) {
-		return ""
+	if ok && (strings.HasPrefix(fragment, "s=") || strings.HasPrefix(fragment, "2.")) {
+		return link
 	}
-	return link
+	return ""
 }
 
 // deliver hands n to the deliverer. It is called only where the agent's

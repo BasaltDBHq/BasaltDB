@@ -122,12 +122,16 @@ func (m madeNotice) event(install uuid.UUID) (json.RawMessage, error) {
 		Kind: string(n.Kind), Agent: m.agent, Headline: n.Headline,
 		ExpiresAt: n.ExpiresAt.UTC().Format(feedTimeLayout),
 	}
-	typ := noticeTypeReplaced
+	var typ string
 	switch n.Kind {
 	case agent.NoticeApprovalRequested:
 		typ = noticeTypeApproval
 	case agent.NoticeRevertRequested:
 		typ = noticeTypeRevert
+	case agent.NoticeLinkReplaced:
+		typ = noticeTypeReplaced
+	default:
+		return nil, errors.New("plugin: a notice of an unknown kind")
 	}
 	page, id := "reverts", n.RevertID
 	if held {
@@ -136,7 +140,7 @@ func (m madeNotice) event(install uuid.UUID) (json.RawMessage, error) {
 	} else {
 		d.RevertID = id.String()
 	}
-	if parts := noticeLink.FindStringSubmatch(n.Link); parts != nil && parts[1] == page && parts[2] == id.String() {
+	if parts := noticeLink.FindStringSubmatch(n.Link); len(parts) == 3 && parts[1] == page && parts[2] == id.String() {
 		d.Link, d.LinkOpens = n.Link, linkOpensAnywhere
 		if strings.HasPrefix(n.Link, localLinkPrefix) {
 			d.LinkOpens = linkOpensEngine

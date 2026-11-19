@@ -258,7 +258,7 @@ func TestNoticeHeadline(t *testing.T) {
 		agent.NoticeHeadline("Delete 1 row in public.customers + 30 cascaded rows (public.invoices 28, public.payments 2 [values hidden])"))
 	const revert = "Revert of run 0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b: 27 rows to restore, 0 left as they are (changed after the agent)."
 	require.Equal(t, revert, agent.NoticeHeadline(revert))
-	require.Equal(t, "Update 1 row in evil·example·com/x", agent.NoticeHeadline("Update 1 row in evil.example.com/x\n‮"))
+	require.Equal(t, "Update 1 row in evil·example·com/x", agent.NoticeHeadline("Update 1 row in evil.example.com/x\n\u202e"))
 	long := agent.NoticeHeadline("Update 1 row in " + strings.Repeat("a", 2000))
 	require.Len(t, []rune(long), 1000)
 	require.True(t, strings.HasSuffix(long, "…"))

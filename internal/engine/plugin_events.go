@@ -281,17 +281,26 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 		last[plugin.EntryKey{Name: r.Detail.Name, Instance: r.Detail.Instance}] = r
 	}
 	// Keys first: a key is trusted before an entry it signed is served.
+	// A key whose PLUGIN_TRUST_ADDED cannot be written withholds the entries
+	// it signed from this agent, as a failed entry record does: the ledger
+	// never shows an entry served without the key that made it trusted.
+	unrecordedKeys := map[string]error{}
 	for _, id := range want.trust {
 		if slices.Contains(recs.TrustKeys, id) {
 			continue
 		}
 		if err := guard.RecordPluginTrustAdded(ctx, db, id); err != nil {
-			log.Warn("PLUGIN_TRUST_ADDED not recorded; the next start tries again", "keyId", id, "err", err)
+			log.Error("PLUGIN_TRUST_ADDED not recorded; plugins signed by this key are not served to this agent", "keyId", id, "err", err)
+			unrecordedKeys[id] = err
 		}
 	}
 	var failed []unrecordedEntry
 	for _, k := range served {
 		d := want.served[name][k]
+		if err, ok := unrecordedKeys[d.SignerKeyID]; ok {
+			failed = append(failed, unrecordedEntry{key: k, why: unrecordedWhy(err)})
+			continue
+		}
 		kind, ok := entryEvent(last, k, d)
 		if !ok {
 			continue

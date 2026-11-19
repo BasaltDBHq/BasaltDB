@@ -28,3 +28,8 @@ func AssembleReinstalls(self string, rows []ReportRow, recs map[uuid.UUID]Instal
 // PluginEventsSQL is schema version 3's SQL as the install runs it, for the
 // test that runs it twice.
 func PluginEventsSQL(n Names) string { return n.render(migrations[versionPluginEvents-1].sql) }
+
+// PluginTrustRemovedSQL is schema version 4's SQL as the install runs it.
+func PluginTrustRemovedSQL(n Names) string {
+	return n.render(migrations[versionPluginTrustRemoved-1].sql)
+}

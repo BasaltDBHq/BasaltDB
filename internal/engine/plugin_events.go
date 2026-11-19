@@ -40,7 +40,11 @@ const (
 		"install the guard, then restart the engine"
 	whyNotAdmitted = "this agent is served status only until its guard or setup is ready, so its plugin record was not written; " +
 		"restart the engine once it is"
-	whyRefused     = "the guard refused its plugin record (see the engine's log); restart the engine once it is fixed"
+	whyRefused       = "the guard refused its plugin record (see the engine's log); restart the engine once it is fixed"
+	whyKeyNotTrusted = "the key that signed it is no longer in the trust store, so it is not served; " +
+		"trust the key again with basalt plugin trust, or disable the plugin, then restart the engine"
+	whyTrustUnread = "the trust store could not be read, so the record of the key that signed it was not written; " +
+		"restart the engine once the trust store can be read"
 	whyUnreachable = "its plugin record could not be written to this agent's ledger; " +
 		"restart the engine once the agent's database is reachable"
 )
@@ -118,14 +122,25 @@ type pluginWant struct {
 	// not start (verification failed, or it may not run here): their
 	// record is left as it is, so a passing failure writes nothing.
 	held map[string]map[plugin.EntryKey]bool
-	// trust are the keys the person added to the trust store.
-	trust []string
+	// trust is the trust store's state.
+	trust trustWant
+}
+
+// trustWant is what the trust store holds besides the built-in keys
+// (plugin.BuiltInKey), which no ledger records.
+type trustWant struct {
+	// read: the trust store could be read. Without it no trust event is
+	// written, and an entry whose added key the ledger does not record is
+	// withheld.
+	read bool
+	// added are the keys the person added.
+	added []string
 }
 
 // wantedPlugins is what each agent of cfg should have on record: the
 // entries ep starts (none when ep is nil), the ones it holds back, and the
-// trust store's added keys.
-func wantedPlugins(cfg config.Config, ep *enginePlugins, trust []string) pluginWant {
+// trust store's keys.
+func wantedPlugins(cfg config.Config, ep *enginePlugins, trust trustWant) pluginWant {
 	w := pluginWant{
 		served: make(map[string]map[plugin.EntryKey]guard.PluginDetail, len(cfg.Agents)),
 		held:   make(map[string]map[plugin.EntryKey]bool, len(cfg.Agents)),
@@ -280,25 +295,23 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 	for _, r := range recs.Entries {
 		last[plugin.EntryKey{Name: r.Detail.Name, Instance: r.Detail.Instance}] = r
 	}
-	// Keys first: a key is trusted before an entry it signed is served.
-	// A key whose PLUGIN_TRUST_ADDED cannot be written withholds the entries
-	// it signed from this agent, as a failed entry record does: the ledger
-	// never shows an entry served without the key that made it trusted.
-	unrecordedKeys := map[string]error{}
-	for _, id := range want.trust {
-		if slices.Contains(recs.TrustKeys, id) {
-			continue
-		}
-		if err := guard.RecordPluginTrustAdded(ctx, db, id); err != nil {
-			log.Error("PLUGIN_TRUST_ADDED not recorded; plugins signed by this key are not served to this agent", "keyId", id, "err", err)
-			unrecordedKeys[id] = err
-		}
-	}
+	recorded, unrecordedKeys := writeTrustEvents(ctx, db, want.trust, recs.TrustKeys, log)
 	var failed []unrecordedEntry
 	for _, k := range served {
 		d := want.served[name][k]
-		if err, ok := unrecordedKeys[d.SignerKeyID]; ok {
-			failed = append(failed, unrecordedEntry{key: k, why: unrecordedWhy(err)})
+		// An entry is served only when the ledger records the key that
+		// signed it as trusted (a built-in key needs no record): the ledger
+		// never shows an entry served without that key.
+		if s := d.SignerKeyID; !recorded[s] && !plugin.BuiltInKey(s) {
+			why := whyTrustUnread
+			if err, ok := unrecordedKeys[s]; ok {
+				why = unrecordedWhy(err)
+			} else if want.trust.read {
+				// The store was read and no longer holds the key (it changed
+				// since the entry was verified at start).
+				why = whyKeyNotTrusted
+			}
+			failed = append(failed, unrecordedEntry{key: k, why: why})
 			continue
 		}
 		kind, ok := entryEvent(last, k, d)
@@ -320,6 +333,47 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 		}
 	}
 	return failed
+}
+
+// writeTrustEvents writes the agent's trust events, keys before any entry:
+// PLUGIN_TRUST_ADDED for each added key the ledger does not record as
+// trusted, and PLUGIN_TRUST_REMOVED for each key it records as trusted that
+// the trust store does not hold (a key removed, or an event the agent wrote
+// itself). Nothing is written when the trust store could not be read. It
+// returns the keys the ledger now records as trusted, and why each added key
+// it could not record failed. A failed PLUGIN_TRUST_REMOVED (a guard older
+// than schema version 4) is logged and tried again at the next start.
+func writeTrustEvents(ctx context.Context, db guard.Querier, trust trustWant, onRecord []string, log *slog.Logger) (map[string]bool, map[string]error) {
+	recorded := make(map[string]bool, len(onRecord))
+	for _, id := range onRecord {
+		recorded[id] = true
+	}
+	unrecorded := map[string]error{}
+	if !trust.read {
+		return recorded, unrecorded
+	}
+	for _, id := range trust.added {
+		if recorded[id] {
+			continue
+		}
+		if err := guard.RecordPluginTrustAdded(ctx, db, id); err != nil {
+			log.Warn("PLUGIN_TRUST_ADDED not recorded; until a later start writes it, plugins signed by this key are not served to this agent", "keyId", id, "err", err)
+			unrecorded[id] = err
+			continue
+		}
+		recorded[id] = true
+	}
+	for _, id := range onRecord {
+		if slices.Contains(trust.added, id) || plugin.BuiltInKey(id) {
+			continue
+		}
+		if err := guard.RecordPluginTrustRemoved(ctx, db, id); err != nil {
+			log.Warn("PLUGIN_TRUST_REMOVED not recorded; the next start tries again", "keyId", id, "err", err)
+			continue
+		}
+		delete(recorded, id)
+	}
+	return recorded, unrecorded
 }
 
 // entryEvent is the event a served entry needs given the agent's last
@@ -353,9 +407,9 @@ func compareEntryKeys(a, b plugin.EntryKey) int {
 	return cmp.Or(cmp.Compare(a.Name, b.Name), cmp.Compare(a.Instance, b.Instance))
 }
 
-// addedTrustKeys are the keys the person added to the trust store of an
-// engine run with cfg from configPath; none, logged, when it cannot be read.
-func addedTrustKeys(cfg config.Config, configPath string, log *slog.Logger) []string {
+// trustedKeys is the trust store of an engine run with cfg from configPath:
+// the keys the person added, or not read, logged, when it cannot be read.
+func trustedKeys(cfg config.Config, configPath string, log *slog.Logger) trustWant {
 	mode := plugin.ModeSameUser
 	if cfg.Service() {
 		mode = plugin.ModeService
@@ -363,14 +417,14 @@ func addedTrustKeys(cfg config.Config, configPath string, log *slog.Logger) []st
 	trust, err := plugin.NewTrustStore(mode, runtime.GOOS, filepath.Dir(configPath))
 	if err != nil {
 		log.Warn("plugin trust keys not recorded: the trust store cannot be read", "err", err)
-		return nil
+		return trustWant{}
 	}
 	keys, err := trust.AddedKeys()
 	if err != nil {
 		log.Warn("plugin trust keys not recorded: the trust store cannot be read", "err", err)
-		return nil
+		return trustWant{}
 	}
-	return keys
+	return trustWant{read: true, added: keys}
 }
 
 // recordPluginEvents writes the start's plugin events (writePluginEvents)
@@ -378,7 +432,7 @@ func addedTrustKeys(cfg config.Config, configPath string, log *slog.Logger) []st
 // any plugin starts. ep is nil when no entry is enabled: removed or
 // disabled entries are still recorded then.
 func recordPluginEvents(ctx context.Context, cfg config.Config, configPath string, ep *enginePlugins, ledgers map[string]pluginLedger, log *slog.Logger) {
-	want := wantedPlugins(cfg, ep, addedTrustKeys(cfg, configPath, log))
+	want := wantedPlugins(cfg, ep, trustedKeys(cfg, configPath, log))
 	unrecorded := writePluginEvents(ctx, want, ledgers, log)
 	ep.withhold(unrecorded)
 }

@@ -178,7 +178,7 @@ func TestUploadHardening(t *testing.T) {
 		}
 		_, err = s.Part(peer, u.ID, "b", 5, b64([]byte("x")))
 		requireRefused(t, err, keptplugins.KindInvalid, "")
-		for _, data := range []string{"", "AA==", "A", "!!", "a+b/"} {
+		for _, data := range []string{"", "AA==", "A", "!!", "a+b/"} { // "" too: only an empty file's first part may be empty
 			_, err = s.Part(peer, u.ID, "a", 2, data)
 			requireRefused(t, err, keptplugins.KindInvalid, "")
 		}

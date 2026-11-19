@@ -127,8 +127,14 @@ func (s *keptPlugins) UploadPart(_ context.Context, uid uint32, p person.PluginU
 func (s *keptPlugins) configEntries() []config.Plugin {
 	out := slices.Clone(s.cfg.Plugins)
 	raw, err := os.ReadFile(s.configPath)
+	// Only the fields a clash needs: an entry with any other field the
+	// engine would refuse still names its (name, instance) and agents.
 	var now struct {
-		Plugins []config.Plugin `json:"plugins"`
+		Plugins []struct {
+			Name     string   `json:"name"`
+			Instance string   `json:"instance"`
+			Agents   []string `json:"agents"`
+		} `json:"plugins"`
 	}
 	if err == nil {
 		err = json.Unmarshal(raw, &now)
@@ -137,7 +143,8 @@ func (s *keptPlugins) configEntries() []config.Plugin {
 		s.log.Warn("engine.json cannot be read for the plugin entries it holds; using the ones it held at start", "err", err)
 		return out
 	}
-	for _, p := range now.Plugins {
+	for _, n := range now.Plugins {
+		p := config.Plugin{Name: n.Name, Instance: n.Instance, Agents: n.Agents}
 		if !slices.ContainsFunc(out, func(q config.Plugin) bool { return q.Key() == p.Key() }) {
 			out = append(out, p)
 		}
@@ -145,8 +152,14 @@ func (s *keptPlugins) configEntries() []config.Plugin {
 	return out
 }
 
-func (s *keptPlugins) isConfigEntry(k plugin.EntryKey) bool {
-	return slices.ContainsFunc(s.configEntries(), func(p config.Plugin) bool { return p.Key() == k })
+// configEntry is engine.json's entry k, false when it holds none.
+func (s *keptPlugins) configEntry(k plugin.EntryKey) (config.Plugin, bool) {
+	for _, p := range s.configEntries() {
+		if p.Key() == k {
+			return p, true
+		}
+	}
+	return config.Plugin{}, false
 }
 
 func keptIndex(entries []config.Plugin, k plugin.EntryKey) int {
@@ -180,13 +193,18 @@ func (s *keptPlugins) Open(ctx context.Context, uid uint32, scope person.Scope, 
 		Name: p.Name, Instance: p.Instance, ManifestSHA256: zeroSHA, Enabled: true,
 		Agents: slices.Clone(p.Agents), Approval: config.PluginApprovalRequired,
 	}
-	if err := s.checkRequest(next, p); err != nil {
-		return person.PluginOpenResult{}, err
-	}
+	// The scope first: a scoped peer learns nothing it may not reach, not
+	// even which agent names exist.
 	if !scope.AllowsAll(p.Agents) {
 		return person.PluginOpenResult{}, notAllowed(k)
 	}
-	if s.isConfigEntry(k) {
+	if err := s.checkRequest(next, p); err != nil {
+		return person.PluginOpenResult{}, err
+	}
+	if c, ok := s.configEntry(k); ok {
+		if !scope.AllowsAll(c.Agents) {
+			return person.PluginOpenResult{}, notAllowed(k)
+		}
 		if taken != nil {
 			return person.PluginOpenResult{}, person.Refused(reasonNameTaken, fmt.Sprintf(
 				"plugin %s is an entry of engine.json, added with sudo; an engine-kept entry cannot have its name and instance. "+
@@ -255,16 +273,19 @@ func (s *keptPlugins) Open(ctx context.Context, uid uint32, scope person.Scope, 
 		if err != nil {
 			return person.PluginOpenResult{}, err
 		}
-		// Ends owed first: an entry turned off never comes back on its old
-		// approval, even when the new one cannot be opened afterwards.
-		if prev == nil || !prev.Enabled {
-			agents := next.Agents
-			if prev != nil {
-				agents = union(prev.Agents, next.Agents)
-			}
-			if err := s.writeOwedEnds(ctx, k, agents); err != nil {
-				return person.PluginOpenResult{}, err
-			}
+	}
+	// Ends owed first, before anything is written: an agent the entry did
+	// not serve, or no longer serves, never comes back on an old approval,
+	// even when the new one cannot be opened afterwards. For an entry that
+	// is off or new that is every agent of both lists; for an enabled one,
+	// the agents added and the agents removed.
+	ends := union(minus(agentsOf(prev), next.Agents), minus(next.Agents, agentsOf(prev)))
+	if prev == nil || !prev.Enabled {
+		ends = union(agentsOf(prev), next.Agents)
+	}
+	if len(ends) > 0 {
+		if err := s.writeOwedEnds(ctx, k, ends); err != nil {
+			return person.PluginOpenResult{}, err
 		}
 	}
 
@@ -374,6 +395,19 @@ func sameSettings(a, b config.Plugin) bool {
 	ja, errA := json.Marshal(a.ApprovalSettings())
 	jb, errB := json.Marshal(b.ApprovalSettings())
 	return errA == nil && errB == nil && bytes.Equal(ja, jb)
+}
+
+// agentsOf is p's agents, none when p is nil.
+func agentsOf(p *config.Plugin) []string {
+	if p == nil {
+		return nil
+	}
+	return p.Agents
+}
+
+// minus is a without the elements of b, in a's order.
+func minus(a, b []string) []string {
+	return slices.DeleteFunc(slices.Clone(a), func(x string) bool { return slices.Contains(b, x) })
 }
 
 func subsetOf(a, of []string) bool {
@@ -647,7 +681,10 @@ func (s *keptPlugins) turnOff(ctx context.Context, scope person.Scope, p person.
 	if remove {
 		verb = "remove"
 	}
-	if s.isConfigEntry(k) {
+	if c, ok := s.configEntry(k); ok {
+		if !scope.AllowsAll(c.Agents) {
+			return notAllowed(k)
+		}
 		return person.Refused(reasonConfigEntry, fmt.Sprintf(
 			"plugin %s is an entry of engine.json, added with sudo; run sudo basalt plugin %s %s", k, verb, k.Name))
 	}

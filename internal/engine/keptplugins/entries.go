@@ -45,10 +45,28 @@ func (s *Store) Entries(cfg config.Config) ([]config.Plugin, error) {
 	if entries == nil {
 		return nil, bad("is not a JSON array of plugin entries")
 	}
-	if err := cfg.CheckKeptPlugins(entries); err != nil {
+	if err := withNamedAgents(cfg, entries).CheckKeptPlugins(entries); err != nil {
 		return nil, bad("breaks a rule (" + err.Error() + ")")
 	}
 	return entries, nil
+}
+
+// withNamedAgents is cfg with every agent entries name: an agent removed
+// from engine.json since does not make the file unusable (every method
+// would then refuse it, disable and remove included). Such an agent is
+// served nothing: the engine serves only its own agents. A request names
+// only the engine's agents (PLUGIN_OPEN checks them on its own).
+func withNamedAgents(cfg config.Config, entries []config.Plugin) config.Config {
+	out := cfg
+	out.Agents = slices.Clone(cfg.Agents)
+	for _, p := range entries {
+		for _, a := range p.Agents {
+			if !out.HasAgent(a) {
+				out.Agents = append(out.Agents, config.Agent{Name: a})
+			}
+		}
+	}
+	return out
 }
 
 // readEntries reads the entries file's bytes, nil when it does not exist.
@@ -115,7 +133,7 @@ func (s *Store) Update(cfg config.Config, change func([]config.Plugin) ([]config
 	if next == nil {
 		next = []config.Plugin{}
 	}
-	if err := cfg.CheckKeptPlugins(next); err != nil {
+	if err := withNamedAgents(cfg, next).CheckKeptPlugins(next); err != nil {
 		return fmt.Errorf("the engine-kept entries would break a rule: %w", err)
 	}
 	raw, err := json.MarshalIndent(next, "", "  ")

@@ -396,6 +396,13 @@ func (c Client) PluginUpload(ctx context.Context, files []PluginFile) (uuid.UUID
 		return uuid.Nil, fmt.Errorf("the engine offers parts of %d bytes", part)
 	}
 	for _, f := range files {
+		if len(f.Data) == 0 {
+			// An empty file is one empty part at offset 0.
+			if _, err := c.PluginUploadPart(ctx, PluginUploadPartParams{UploadID: begun.UploadID, Path: f.Path}); err != nil {
+				return uuid.Nil, err
+			}
+			continue
+		}
 		for off := 0; off < len(f.Data); off += part {
 			chunk := f.Data[off:min(off+part, len(f.Data))]
 			if _, err := c.PluginUploadPart(ctx, PluginUploadPartParams{

@@ -124,18 +124,20 @@ func (s *Store) Part(uid uint32, id uuid.UUID, p string, offset int64, data stri
 		return 0, invalid("path %q breaks the manifest's path rules: relative, at most 255 characters, "+
 			"letters, digits, '.', '_' and '-', no segment starting with '.'", p)
 	}
+	// "" decodes to no bytes: the one part of an empty file.
 	b, err := base64.RawURLEncoding.Strict().DecodeString(data)
 	if err != nil {
 		return 0, invalid("data is not base64url without padding")
 	}
-	switch {
-	case len(b) == 0:
-		return 0, invalid("data holds no bytes")
-	case int64(len(b)) > s.lim.PartBytes:
+	if int64(len(b)) > s.lim.PartBytes {
 		s.dropLocked(id)
 		return 0, refused(ReasonTooLarge, "a part holds at most %d bytes; this one holds %d. The upload was dropped", s.lim.PartBytes, len(b))
 	}
 	held, known := u.sizes[p]
+	if len(b) == 0 && (known || offset != 0) {
+		// An empty part only makes an empty file: the first part of a path.
+		return 0, invalid("data holds no bytes; only the one part of an empty file may")
+	}
 	if offset != held {
 		return 0, invalid("offset %d is not the %d bytes held for %s; send its parts in order, each once", offset, held, p)
 	}

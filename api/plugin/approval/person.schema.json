@@ -80,11 +80,10 @@
         },
         "offset": { "type": "integer", "minimum": 0, "maximum": 268435455 },
         "data": {
-          "description": "The part's bytes, base64url without padding: 1 to 65536 bytes (2 to 87382 characters).",
+          "description": "The part's bytes, base64url without padding: 1 to 65536 bytes (2 to 87382 characters), or none (\"\") for the one part of an empty file, at offset 0.",
           "type": "string",
-          "minLength": 2,
           "maxLength": 87382,
-          "pattern": "^[A-Za-z0-9_-]+$"
+          "pattern": "^([A-Za-z0-9_-]{2,})?$"
         }
       }
     },

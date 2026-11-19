@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/santhosh-tekuri/jsonschema/v6"
@@ -286,7 +287,9 @@ func TestServiceModeAddOpensApproval(t *testing.T) {
 	fi, err = os.Stat(filepath.Join(f.state, keptplugins.EntriesFile))
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o600), fi.Mode().Perm())
-	require.NoDirExists(t, filepath.Join(f.state, keptplugins.UploadsDir, "x"), "")
+	des, err := os.ReadDir(filepath.Join(f.state, keptplugins.UploadsDir))
+	require.NoError(t, err)
+	require.Empty(t, des, "the upload's directory is gone once used")
 	require.Zero(t, f.s.store.Open(), "the upload is gone once used")
 
 	require.Equal(t, before, snapshot(t, f.base, f.state), "nothing outside the state directory changed")
@@ -312,7 +315,7 @@ func TestFilesOverSocketRespectLimits(t *testing.T) {
 	begin := func() uuid.UUID {
 		r, err := f.client.PluginUploadBegin(context.Background())
 		require.NoError(t, err)
-		requireSchemaLoose(t, r)
+		requireSchema(t, "uploadBeginResult", r)
 		return r.UploadID
 	}
 	part := func(id uuid.UUID, p string, off int64, n int) error {
@@ -350,7 +353,7 @@ func TestFilesOverSocketRespectLimits(t *testing.T) {
 	id = begin()
 	tooLarge(part(id, plugin.SignatureFile, 0, plugin.MaxSignatureFileBytes+1))
 	id = begin()
-	require.Error(t, part(id, "a", 0, keptplugins.MaxPartBytes+1), "a part over 64 KiB does not even fit the schema's line")
+	tooLarge(part(id, "a", 0, keptplugins.MaxPartBytes+1))
 
 	// A seventeenth entry is refused before anything is written.
 	require.NoError(t, f.s.store.Update(f.cfg, func([]config.Plugin) ([]config.Plugin, error) {
@@ -366,12 +369,6 @@ func TestFilesOverSocketRespectLimits(t *testing.T) {
 	_, err := f.add("default", "product_a")
 	tooLarge(err)
 	require.NoDirExists(t, filepath.Join(f.state, "plugins", "acme-ner"))
-}
-
-// requireSchemaLoose checks a begin result against its schema's limits.
-func requireSchemaLoose(t *testing.T, r person.PluginUploadBeginResult) {
-	t.Helper()
-	require.NotEqual(t, uuid.Nil, r.UploadID)
 }
 
 func b64(b []byte) string { return base64.RawURLEncoding.EncodeToString(b) }
@@ -675,8 +672,109 @@ func TestKeptOpenRefusals(t *testing.T) {
 	require.NoDirExists(t, filepath.Join(f.state, "plugins", "acme-ner"))
 	require.Zero(t, f.s.store.Open(), "every upload is gone once PLUGIN_OPEN took it")
 
-	// A narrowing opens nothing and keeps the entry enabled.
-	res, err := f.add("default", "product_a")
+	// An empty file is uploaded as one empty part.
+	files, exec = source("1.0.0")
+	empty := fmt.Sprintf(`"files": { "bin/acme-ner": "sha256:%x", "share/model.txt": "sha256:%x", "pkg/__init__.py": "sha256:%x" },`,
+		sha256.Sum256(files[1].Data), sha256.Sum256([]byte("model")), sha256.Sum256(nil))
+	manifest := strings.Replace(string(files[0].Data), fmt.Sprintf(`"files": { "bin/acme-ner": "sha256:%x", "share/model.txt": "sha256:%x" },`,
+		sha256.Sum256(files[1].Data), sha256.Sum256([]byte("model"))), empty, 1)
+	files[0].Data = []byte(manifest)
+	id, err = f.client.PluginUpload(context.Background(), append(files, person.PluginFile{Path: "pkg/__init__.py"}))
+	require.NoError(t, err)
+	res, err := f.client.PluginOpen(context.Background(), person.PluginOpenParams{UploadID: &id, Name: "acme-ner", Instance: "default", Agents: []string{"product_a"}, Executables: exec})
 	require.NoError(t, err)
 	require.Len(t, res.Approvals, 1)
+	require.FileExists(t, filepath.Join(f.state, "plugins", "acme-ner", "default", f.entries()[0].ManifestSHA256, "pkg", "__init__.py"))
+}
+
+// failingOpen fails every open_plugin_approval while fail is set: an open
+// refused after the entry is written.
+type failingOpen struct {
+	guard.Querier
+	fail *atomic.Bool
+}
+
+func (d failingOpen) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+	if d.fail.Load() && strings.Contains(sql, "open_plugin_approval") {
+		return errRow{}
+	}
+	return d.Querier.QueryRow(ctx, sql, args...)
+}
+
+type errRow struct{}
+
+func (errRow) Scan(...any) error { return errors.New("the database does not answer") }
+
+// TestNarrowThenWidenNeedsNewApproval: an agent removed from an enabled
+// entry has its approval ended, and an agent added never comes back on an
+// old signed approval, even when the new approval cannot be opened.
+func TestNarrowThenWidenNeedsNewApproval(t *testing.T) {
+	k := plugin.EntryKey{Name: "acme-ner", Instance: "default"}
+	open := func(f *keptFixture, agents ...string) (person.PluginOpenResult, error) {
+		return f.client.PluginOpen(context.Background(), person.PluginOpenParams{Name: k.Name, Instance: k.Instance, Agents: agents})
+	}
+	f := newKeptFixture(t, []string{"product_a", "product_b"})
+	res, err := f.add("default", "product_a", "product_b")
+	require.NoError(t, err)
+	f.sign(res.Approvals[0])
+
+	narrowed, err := open(f, "product_a")
+	require.NoError(t, err)
+	requireSchema(t, "openResult", narrowed)
+	require.True(t, narrowed.Narrowed)
+	require.Empty(t, narrowed.Approvals)
+	require.True(t, f.entries()[0].Enabled)
+	require.Equal(t, "APPROVED", f.state0("product_a", k))
+	require.Equal(t, "ENDED", f.state0("product_b", k), "the agent removed has its approval ended")
+
+	// Widened again while the open fails after the write.
+	fail := &atomic.Bool{}
+	a := f.agents["product_a"]
+	a.db = failingOpen{Querier: a.db, fail: fail}
+	f.agents["product_a"] = a
+	fail.Store(true)
+	widened, err := open(f, "product_a", "product_b")
+	require.NoError(t, err)
+	require.NotNil(t, widened.Approvals[0].Refused)
+	require.Equal(t, "ENDED", f.state0("product_b", k), "the old approval does not come back")
+
+	// A disabled entry is never narrowed: turning it on opens an approval.
+	fail.Store(false)
+	_, err = f.client.PluginDisable(context.Background(), person.PluginEntryParams{Name: k.Name, Instance: k.Instance})
+	require.NoError(t, err)
+	again, err := open(f, "product_a")
+	require.NoError(t, err)
+	require.False(t, again.Narrowed)
+	require.Len(t, again.Approvals, 1)
+}
+
+// TestRemoveThenAddWiderNeedsNewApproval: an end a remove could not write
+// is written before an agent is added to a new entry of the same name.
+func TestRemoveThenAddWiderNeedsNewApproval(t *testing.T) {
+	k := plugin.EntryKey{Name: "acme-ner", Instance: "default"}
+	f := newKeptFixture(t, []string{"product_a", "product_b"})
+	res, err := f.add("default", "product_a", "product_b")
+	require.NoError(t, err)
+	f.sign(res.Approvals[0])
+	fail := &atomic.Bool{}
+	b := f.agents["product_b"]
+	b.db = failingDB{Querier: b.db, fail: fail}
+	f.agents["product_b"] = b
+	fail.Store(true)
+	_, err = f.client.PluginRemove(context.Background(), person.PluginEntryParams{Name: k.Name, Instance: k.Instance})
+	require.NoError(t, err)
+	require.Equal(t, "APPROVED", f.state0("product_b", k), "its end could not be written")
+	fail.Store(false)
+	_, err = f.add("default", "product_a")
+	require.NoError(t, err)
+	widened, err := f.client.PluginOpen(context.Background(), person.PluginOpenParams{Name: k.Name, Instance: k.Instance, Agents: []string{"product_a", "product_b"}})
+	require.NoError(t, err)
+	require.Len(t, widened.Approvals, 1)
+	recs, err := guard.ReadPluginApprovals(context.Background(), f.roles["product_b"].Connect(t))
+	require.NoError(t, err)
+	for _, r := range recs {
+		if r.ApprovalID == *res.Approvals[0].ApprovalID {
+			require.True(t, r.Ended(), "the old approval ended before product_b was added")
+		}
+	}
 }

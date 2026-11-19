@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -206,7 +207,10 @@ func readRequest(r io.Reader) (Request, *Error) {
 	// refuse one, even empty.
 	var keys map[string]json.RawMessage
 	if err := json.Unmarshal(line, &keys); err == nil {
-		_, req.agentSet = keys["agent"]
+		// Go's decoder matches keys in any case; so does this check.
+		for key := range keys {
+			req.agentSet = req.agentSet || strings.EqualFold(key, "agent")
+		}
 	}
 	return req, nil
 }

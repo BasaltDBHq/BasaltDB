@@ -80,7 +80,17 @@ type Health struct {
 	// (latest event PLUGIN_ENABLED or PLUGIN_CHANGED), in name and instance
 	// order; Plugins is nil when it records no plugin event at all.
 	Plugins []PluginHealth
+	// PluginsMore counts the served entries past the MaxPluginsListed in
+	// Plugins.
+	PluginsMore int
+	// PluginsProblem is why the plugin entries could not be read, "" when
+	// they could. The rest of the health is still filled in.
+	PluginsProblem string
 }
+
+// MaxPluginsListed is how many plugin entries Health lists; the rest are
+// counted in PluginsMore.
+const MaxPluginsListed = 20
 
 // PluginHealth is one plugin served to the agent, as its ledger records it
 // (basalt log's Plugins line).
@@ -92,16 +102,24 @@ type PluginHealth struct {
 	Files, Network string
 }
 
-// checkPlugins reads the plugin entries the agent's ledger records as
+// pluginsFrom reads the plugin entries the agent's ledger records as
 // served: an empty, non-nil list when it records only disabled ones, nil
-// when it records no plugin event.
-func checkPlugins(ctx context.Context, q guard.Querier) ([]PluginHealth, error) {
-	recs, err := guard.ReadPluginRecords(ctx, q)
+// when it records no plugin event. It lists at most MaxPluginsListed and
+// returns how many more there are.
+func pluginsFrom(ctx context.Context, q guard.Querier,
+	read func(context.Context, guard.Querier) (guard.PluginRecords, error),
+) ([]PluginHealth, int, error) {
+	recs, err := read(ctx, q)
 	if err != nil || len(recs.Entries) == 0 {
-		return nil, err
+		return nil, 0, err
 	}
 	out := []PluginHealth{}
+	more := 0
 	for _, d := range recs.EnabledPlugins() {
+		if len(out) >= MaxPluginsListed {
+			more++
+			continue
+		}
 		p := PluginHealth{
 			Name: d.Name, Instance: d.Instance, Version: d.Version, SignerKeyID: d.SignerKeyID,
 			Endpoint: d.Endpoint.Kind, Host: d.Endpoint.Host,
@@ -111,7 +129,7 @@ func checkPlugins(ctx context.Context, q guard.Querier) ([]PluginHealth, error) 
 		}
 		out = append(out, p)
 	}
-	return out, nil
+	return out, more, nil
 }
 
 // MaxPIINames is how many column names the PII summary carries per list;
@@ -245,10 +263,20 @@ func CheckHealth(ctx context.Context, q guard.Querier, now time.Time, opts Healt
 	if h.PII, err = checkPII(ctx, q); err != nil {
 		return Health{}, err
 	}
-	if h.Plugins, err = checkPlugins(ctx, q); err != nil {
-		return Health{}, fmt.Errorf("plugins: %w", err)
-	}
+	h.Plugins, h.PluginsMore, h.PluginsProblem = pluginsHealth(ctx, q, guard.ReadPluginRecords)
 	return h, nil
+}
+
+// pluginsHealth reads the plugin entries and fails on its own: a read error
+// comes back as one problem text and the rest of the health stays.
+func pluginsHealth(ctx context.Context, q guard.Querier,
+	read func(context.Context, guard.Querier) (guard.PluginRecords, error),
+) (ps []PluginHealth, more int, problem string) {
+	ps, more, err := pluginsFrom(ctx, q, read)
+	if err != nil {
+		return nil, 0, err.Error()
+	}
+	return ps, more, ""
 }
 
 // settle handles a pin of another install (SettlePin) and sets the pin to

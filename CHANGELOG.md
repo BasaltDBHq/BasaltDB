@@ -43,6 +43,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- `basalt log` keeps its other health output when the plugin entries cannot be read, and prints one `Plugins: could not be read (...)` line instead of failing. The `Plugins:` line and the health answer list at most 20 entries and say how many more there are.
 - `basalt log` and the engine no longer report "ledger chain broken" on a new, untouched ledger after the database was recreated the same way, for example after removing the Postgres container and running the quickstart again. The guard now identifies each install by a random id instead of the schema's oid, which repeats in a cluster made the same way. An old pin is reported as a reinstall with its notice instead.
 
 ### Security

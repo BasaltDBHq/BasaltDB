@@ -25,3 +25,13 @@ func TestHealthCarriesThePlugins(t *testing.T) {
 		require.Equal(t, in, back.toDomain().Plugins)
 	}
 }
+
+func TestHealthCarriesThePluginsCutAndProblem(t *testing.T) {
+	t.Parallel()
+	raw, err := json.Marshal(healthFromDomain(ledger.Health{PluginsMore: 4, PluginsProblem: "boom"}))
+	require.NoError(t, err)
+	var back healthDTO
+	require.NoError(t, json.Unmarshal(raw, &back))
+	require.Equal(t, 4, back.toDomain().PluginsMore)
+	require.Equal(t, "boom", back.toDomain().PluginsProblem)
+}

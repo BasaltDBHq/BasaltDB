@@ -191,6 +191,10 @@ type healthDTO struct {
 	// Plugins is null when the ledger records no plugin event, and empty
 	// when it records only disabled entries.
 	Plugins []pluginHealthDTO `json:"plugins"`
+	// PluginsMore counts the entries past those listed; PluginsProblem is
+	// why the entries could not be read.
+	PluginsMore    int    `json:"pluginsMore,omitempty"`
+	PluginsProblem string `json:"pluginsProblem,omitempty"`
 }
 
 type pluginHealthDTO struct {
@@ -284,7 +288,7 @@ func healthFromDomain(h ledger.Health) healthDTO {
 		Reinstalls: reinstallsFromDomain(h.Reinstalls), EarlierReinstalls: h.Reinstalls.Earlier,
 		Uncovered: make([]uncoveredDTO, 0, len(h.Uncovered)), RLSBlind: h.RLSBlind,
 		LastHeartbeat: h.LastHeartbeat, HeartbeatStale: h.HeartbeatStale, PII: piiHealthFromDomain(h.PII),
-		Plugins: pluginsFromDomain(h.Plugins),
+		Plugins: pluginsFromDomain(h.Plugins), PluginsMore: h.PluginsMore, PluginsProblem: h.PluginsProblem,
 	}
 	for _, u := range h.Uncovered {
 		out.Uncovered = append(out.Uncovered, uncoveredDTO(u))
@@ -303,6 +307,7 @@ func (h healthDTO) toDomain() ledger.Health {
 		Reinstalls: reinstallsToDomain(h.Reinstalls, h.EarlierReinstalls),
 		RLSBlind:   h.RLSBlind, LastHeartbeat: h.LastHeartbeat, HeartbeatStale: h.HeartbeatStale,
 		PII: h.PII.toDomain(), Plugins: pluginsToDomain(h.Plugins),
+		PluginsMore: h.PluginsMore, PluginsProblem: h.PluginsProblem,
 	}
 	for _, u := range h.Uncovered {
 		out.Uncovered = append(out.Uncovered, guard.Uncovered(u))

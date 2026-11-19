@@ -370,7 +370,13 @@ type session struct {
 	// resend takes back a request the engine did not run because it is
 	// restarting.
 	resend func(line []byte) bool
+	// beforeWrite, when set (tests), runs once a request is pending and
+	// before it is written.
+	beforeWrite func()
 
+	// wmu is held by forward from recording a request as pending until its
+	// write returns, and by abandon while it takes the pending requests.
+	wmu   sync.Mutex
 	mu    sync.Mutex
 	ended bool
 	// restarting is set once the engine answered a request as not run
@@ -454,11 +460,16 @@ func (s *session) engineTooOld(engine mcp.Hello) bool {
 }
 
 func (s *session) abandon(ctx context.Context, out *lineWriter) {
+	// A write still in progress settles first whether its request reached
+	// the engine. It ends soon: the engine has closed its side, and a socket
+	// the peer closed fails the write.
+	s.wmu.Lock()
 	s.mu.Lock()
 	s.ended = true
 	left := s.pending
 	s.pending = nil
 	s.mu.Unlock()
+	s.wmu.Unlock()
 	for _, line := range left {
 		if s.refusal != "" {
 			_ = refuse(out, line, s.refusal)
@@ -503,6 +514,11 @@ func (s *session) forward(line []byte) bool {
 		}
 		t.Stop()
 	}
+	// abandon waits for this write: a request whose write failed never
+	// reached the engine, so it is not answered as dropped but taken back
+	// here, for the caller to send to the engine that comes back.
+	s.wmu.Lock()
+	defer s.wmu.Unlock()
 	key := messageID(line)
 	s.mu.Lock()
 	if s.ended || s.restarting {
@@ -513,6 +529,9 @@ func (s *session) forward(line []byte) bool {
 		s.pending[key] = line
 	}
 	s.mu.Unlock()
+	if s.beforeWrite != nil {
+		s.beforeWrite()
+	}
 	if _, err := s.conn.Write(append(append([]byte(nil), line...), '\n')); err == nil {
 		return true
 	}

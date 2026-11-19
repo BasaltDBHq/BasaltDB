@@ -1026,7 +1026,7 @@ func TestPluginApprovalVectors(t *testing.T) {
 	require.NoError(t, err)
 	var doc struct {
 		Vectors       []approvalVector `json:"vectors"`
-		ResponseCode  string           `json:"responseCode"`
+		Response      json.RawMessage  `json:"response"`
 		ResultExample json.RawMessage  `json:"resultExample"`
 	}
 	require.NoError(t, json.Unmarshal(raw, &doc))
@@ -1122,11 +1122,22 @@ func TestPluginApprovalVectors(t *testing.T) {
 	require.Positive(t, mismatches, "a settings mismatch")
 	require.Positive(t, wrongKinds, "a binding of another kind")
 
+	// The response travels as basalt-plugin.1.<base64url(json)>: carry it
+	// there and back, then check it.
 	const codePrefix = "basalt-plugin.1."
-	require.True(t, strings.HasPrefix(doc.ResponseCode, codePrefix))
-	body, err := base64.RawURLEncoding.Strict().DecodeString(strings.TrimPrefix(doc.ResponseCode, codePrefix))
+	code := codePrefix + base64.RawURLEncoding.EncodeToString(doc.Response)
+	require.True(t, strings.HasPrefix(code, codePrefix))
+	body, err := base64.RawURLEncoding.Strict().DecodeString(strings.TrimPrefix(code, codePrefix))
 	require.NoError(t, err)
-	require.NoError(t, validate(compile("approval/response.schema.json"), body))
+	require.JSONEq(t, string(doc.Response), string(body))
+	responseSchema := compile("approval/response.schema.json")
+	require.NoError(t, validate(responseSchema, body))
+	var incomplete map[string]any
+	require.NoError(t, json.Unmarshal(body, &incomplete))
+	delete(incomplete, "signature")
+	missing, err := json.Marshal(incomplete)
+	require.NoError(t, err)
+	require.Error(t, validate(responseSchema, missing), "a response without its signature")
 	require.NoError(t, validate(compile("approval/result.schema.json"), doc.ResultExample))
 
 	contract, err := os.ReadFile(filepath.Join("..", "..", "CONTRACT.md"))

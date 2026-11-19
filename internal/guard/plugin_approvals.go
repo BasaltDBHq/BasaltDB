@@ -195,8 +195,11 @@ func PluginSettingsSHA256(ctx context.Context, q Querier, s PluginSettings) (str
 		return "", fmt.Errorf("plugin settings: %w", err)
 	}
 	var text string
-	// Plain SQL: a cast, no table.
-	if err := q.QueryRow(ctx, `SELECT $1::jsonb::text`, string(raw)).Scan(&text); err != nil {
+	// Plain SQL: a cast, no table. Both types are qualified: the agent's
+	// connection has its own search_path, and a type of its own named text
+	// with a cast from jsonb would decide the text otherwise. A cast between
+	// two pg_catalog types needs the owner of one of them to create it.
+	if err := q.QueryRow(ctx, `SELECT $1::pg_catalog.jsonb::pg_catalog.text`, string(raw)).Scan(&text); err != nil {
 		return "", err
 	}
 	sum := sha256.Sum256([]byte(text))

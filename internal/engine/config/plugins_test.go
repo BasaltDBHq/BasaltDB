@@ -252,6 +252,24 @@ func TestPluginApprovalKey(t *testing.T) {
 	require.ErrorContains(t, err, "approval", "service mode refuses the key as before")
 }
 
+// A config with a key repeated in any object is refused: Postgres keeps the
+// last value, a plugin's parser may keep the first, so the person would
+// approve a value the plugin never reads.
+func TestPluginConfigRepeatedKeyRefused(t *testing.T) {
+	t.Parallel()
+	for _, raw := range []string{
+		`{"dest": "evil", "dest": "good"}`,
+		`{"a": {"dest": 1, "dest": 2}}`,
+		`{"a": [{"x": 1}, {"y": 1, "y": 2}]}`,
+	} {
+		require.ErrorContains(t, config.CheckPluginConfig(json.RawMessage(raw)), "more than once", raw)
+		_, err := loadPlugins(t, "["+entry(`, "agents": ["product_a"], "config": `+raw)+"]")
+		require.Error(t, err, raw)
+	}
+	require.NoError(t, config.CheckPluginConfig(json.RawMessage(`{"a": {"x": 1}, "b": {"x": 2}, "c": [{"x": 1}, {"x": 2}]}`)),
+		"the same key in different objects is fine")
+}
+
 // The settings an approval binds are the entry's keys besides name,
 // instance, manifestSha256, enabled, agents and approval, each only when
 // set, config as engine.json holds it.

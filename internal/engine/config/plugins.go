@@ -285,8 +285,8 @@ var errPluginConfigSecret = errors.New("config holds a URL with a user name or p
 // CheckPluginConfig applies the config rules (CONTRACT.md, Plugins,
 // Config): a JSON object of at most MaxPluginConfigBytes as compact JSON,
 // with no string (keys included) that parses as a URL with a user name or
-// password or holds password= in any case. Empty means none. Errors never
-// quote the config.
+// password or holds password= in any case, and no key repeated in one
+// object. Empty means none. Errors never quote the config.
 func CheckPluginConfig(raw json.RawMessage) error {
 	if len(raw) == 0 {
 		return nil
@@ -297,6 +297,11 @@ func CheckPluginConfig(raw json.RawMessage) error {
 	}
 	if compact.Len() > MaxPluginConfigBytes {
 		return fmt.Errorf("config is %d bytes as compact JSON; at most %d", compact.Len(), MaxPluginConfigBytes)
+	}
+	if repeatedKey(compact.Bytes()) {
+		// Postgres keeps a repeated key's last value and a plugin may keep
+		// its first: an approval would bind a value the plugin never reads.
+		return errors.New("config has a key more than once in one object")
 	}
 	var v any
 	dec := json.NewDecoder(bytes.NewReader(compact.Bytes()))
@@ -311,6 +316,56 @@ func CheckPluginConfig(raw json.RawMessage) error {
 		return errPluginConfigSecret
 	}
 	return nil
+}
+
+// repeatedKey reports whether valid JSON b has an object with a key twice,
+// at any depth. It walks the tokens, since decoding into a map keeps one.
+func repeatedKey(b []byte) bool {
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	// keys holds, per open container, the keys seen (nil for an array) and
+	// whether the next string is a key.
+	type frame struct {
+		keys    map[string]bool
+		wantKey bool
+	}
+	var stack []*frame
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			return false // io.EOF: done; the caller already checked validity
+		}
+		var top *frame
+		if len(stack) > 0 {
+			top = stack[len(stack)-1]
+		}
+		switch t := tok.(type) {
+		case json.Delim:
+			switch t {
+			case '{':
+				stack = append(stack, &frame{keys: map[string]bool{}, wantKey: true})
+				continue
+			case '[':
+				stack = append(stack, &frame{})
+				continue
+			default: // '}' or ']': the container is a value of its parent
+				stack = stack[:len(stack)-1]
+			}
+		case string:
+			if top != nil && top.keys != nil && top.wantKey {
+				if top.keys[t] {
+					return true
+				}
+				top.keys[t] = true
+				top.wantKey = false
+				continue
+			}
+		}
+		// A value ended: an object waits for its next key.
+		if len(stack) > 0 && stack[len(stack)-1].keys != nil {
+			stack[len(stack)-1].wantKey = true
+		}
+	}
 }
 
 // holdsSecret walks v for a string, key or value, that looks like a

@@ -644,6 +644,29 @@ func TestApprovalsUnreadableWriteNothing(t *testing.T) {
 	}
 }
 
+// Default deny: an entry that requires approval is served to no agent whose
+// approvals were never read, an agent with no ledger or one not admitted,
+// even though a matching approval exists.
+func TestRequiredEntryDeniedWithoutALedger(t *testing.T) {
+	t.Parallel()
+	f := newPluginFixture(t)
+	p := f.installApproval(feedHooks, "product_a", "client_x")
+	l := newPluginLedgers(t, f)
+	l.approve(t, l.person(t), p, "product_a", "client_x")
+
+	ep := f.plugins(nil)
+	require.Empty(t, servedTo(ep, p.Key()), "no agent before the check")
+	ledgers := map[string]pluginLedger{
+		"product_a": {db: l.dbs["product_a"].db, admit: func(context.Context) error { return errNotAdmitted }},
+	}
+	recordPluginEvents(context.Background(), f.cfg, f.configPath, ep, ledgers, slog.New(slog.DiscardHandler))
+	require.Empty(t, servedTo(ep, p.Key()))
+	require.Empty(t, ep.entries)
+	for _, a := range []string{"product_a", "client_x"} {
+		require.Equal(t, agent.ProblemPluginUnavailable, problemFor(t, ep, a).Code, a)
+	}
+}
+
 // A withheld entry blocks none of the agent's calls: the agent is admitted,
 // starts a run and reads its status, which names the entry with the
 // catalog's steps.

@@ -3,6 +3,7 @@ package jsonrpc_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -177,6 +178,22 @@ func TestPluginErrorsCarryNoText(t *testing.T) {
 				require.NotContains(t, err.Error(), adaptertest.GarbageMarker)
 			})
 		}
+	}
+}
+
+// TestParamsAreNotHTMLEscaped: the plugin reads event bytes as the engine
+// built them, compacted, with no <, > or & escaped, as over ConnectRPC.
+func TestParamsAreNotHTMLEscaped(t *testing.T) {
+	tr := spawn(t, "rawparams")
+	params := protocol.FeedObserveRequest{Agent: "a", Events: json.RawMessage(`[ {"data": {"seq": 1, "table": "a<b&c>d"}} ]`)}
+	var got struct {
+		Raw string `json:"raw"`
+	}
+	if err := tr.Call(context.Background(), protocol.MethodFeedObserve, params, &got); err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"agent":"a","events":[{"data":{"seq":1,"table":"a<b&c>d"}}]}`; got.Raw != want {
+		t.Fatalf("the plugin read %s, want %s", got.Raw, want)
 	}
 }
 

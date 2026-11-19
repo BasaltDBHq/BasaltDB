@@ -24,7 +24,9 @@ type fake struct {
 	initResp *protocol.InitializeResponse
 	initReq  protocol.InitializeRequest
 	onCall   func(ctx context.Context, method string) error
-	closed   atomic.Bool
+	// answer, when set, answers a hook call with its params and result.
+	answer func(method string, params, result any) error
+	closed atomic.Bool
 }
 
 func (f *fake) Call(ctx context.Context, method string, params, result any) error {
@@ -39,6 +41,9 @@ func (f *fake) Call(ctx context.Context, method string, params, result any) erro
 	}
 	if f.onCall != nil {
 		return f.onCall(ctx, method)
+	}
+	if f.answer != nil {
+		return f.answer(method, params, result)
 	}
 	return nil
 }

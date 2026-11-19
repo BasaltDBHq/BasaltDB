@@ -1,6 +1,6 @@
 {
   "error": {
     "code": "AGENT_NOT_ALLOWED",
-    "message": "uid 1001 runs the agent product_b; only the person adds, changes or approves plugins"
+    "message": "uid 1001 runs only the agent product_b, and this entry also serves product_a; ask the person to run it"
   }
 }

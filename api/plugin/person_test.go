@@ -124,7 +124,7 @@ func TestPluginServiceMethods(t *testing.T) {
 	require.Equal(t, maxUploadBytes, ps.Defs.UploadBeginResult.Properties.MaxUploadBytes.Const)
 	require.Equal(t, maxUploadBytes-1, ps.Defs.PartParams.Properties.Offset.Maximum)
 	require.Equal(t, base64.RawURLEncoding.EncodedLen(maxPartBytes), ps.Defs.PartParams.Properties.Data.MaxLength)
-	for _, n := range []string{"65,536", "268,435,456", "1 MiB", "4 KiB", "1,024", "15 minutes"} {
+	for _, n := range []string{"65,536", "268,435,456", "1,073,741,824", "At most 16 entries", "1 MiB", "4 KiB", "1,024", "15 minutes"} {
 		require.Contains(t, section, n)
 	}
 

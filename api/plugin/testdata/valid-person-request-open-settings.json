@@ -17,6 +17,9 @@
       },
       "timeoutMs": 2000,
       "minConfidence": 0.6
-    }
+    },
+    "executables": [
+      "bin/helper"
+    ]
   }
 }

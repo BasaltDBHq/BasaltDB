@@ -349,6 +349,7 @@ done </etc/systemd/system/"$engine_unit"
 for ((i = 1; i < ${#props[@]}; i += 2)); do echo "copied from $engine_unit: ${props[i]}"; done
 state=$(systemctl show -p StateDirectory --value "$engine_unit")
 [ "$state" = basalt ] || fail "the engine unit's StateDirectory is '$state'"
+[ -e "$marker" ] || fail "control: the host's marker $marker is gone"
 sudo systemd-run --quiet --unit="$spawn_unit" -p RemainAfterExit=yes "${props[@]}" \
 	"$spawn_bin" -state /var/lib/basalt -marker "$marker" -read-only /usr/local
 spawn_finished() {
@@ -357,9 +358,11 @@ spawn_finished() {
 	[ "$s" = exited ] || [ "$s" = failed ]
 }
 wait_for "the spawn check to finish" spawn_finished
-# Every sandbox setting systemd reports is the engine unit's, the ones the
-# engine unit leaves at their defaults included.
-for p in User Group UMask NoNewPrivileges ProtectSystem ProtectHome PrivateTmp PrivateDevices \
+# Every sandbox setting systemd reports is the engine unit's: each key copied
+# from the unit file, and the ones the engine unit leaves at their defaults.
+copied=()
+for ((i = 1; i < ${#props[@]}; i += 2)); do copied+=("${props[i]%%=*}"); done
+for p in "${copied[@]}" User Group UMask NoNewPrivileges ProtectSystem ProtectHome PrivateTmp PrivateDevices \
 	ProtectKernelTunables ProtectKernelModules ProtectControlGroups RestrictSUIDSGID LockPersonality \
 	MemoryDenyWriteExecute SystemCallFilter RestrictAddressFamilies RestrictNamespaces NoExecPaths \
 	ExecPaths ReadWritePaths ReadOnlyPaths InaccessiblePaths StateDirectory StateDirectoryMode \
@@ -371,7 +374,8 @@ for p in User Group UMask NoNewPrivileges ProtectSystem ProtectHome PrivateTmp P
 done
 id=$(systemctl show -p InvocationID --value "$spawn_unit")
 spawn_log=$(sudo journalctl --no-pager -o cat _SYSTEMD_INVOCATION_ID="$id")
-echo "$spawn_log" | grep '^spawn '
+[ -n "$spawn_log" ] || fail "the spawn check logged nothing ($(systemctl show -p Result --value "$spawn_unit"))"
+grep '^spawn ' <<<"$spawn_log" || fail "the spawn check printed no result line"
 [ "$(systemctl show -p ExecMainStatus --value "$spawn_unit")" = 0 ] || fail "the spawn check exited non-zero"
 grep -q '^spawn FAIL' <<<"$spawn_log" && fail "a spawn check failed"
 for c in "runs-as: uid $(id -u basalt) " no-new-privileges control-read-only-system control-private-tmp \

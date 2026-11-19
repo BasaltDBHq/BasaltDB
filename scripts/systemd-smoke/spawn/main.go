@@ -8,8 +8,8 @@
 // directory. The child is this same binary, run with -child.
 //
 // The smoke test runs it in a transient unit with the engine unit's sandbox
-// settings (scripts/systemd-smoke/smoke.sh); on macOS the owner runs it by
-// hand as the engine's OS user. Every line it prints starts with "spawn ".
+// settings (scripts/systemd-smoke/smoke.sh); on macOS it can be run by hand
+// as the engine's OS user. Every line it prints starts with "spawn ".
 package main
 
 import (

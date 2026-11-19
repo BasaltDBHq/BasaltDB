@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/plugin/approval/person.v1.json",
   "title": "Person socket plugin methods",
-  "description": "Planned (plugin approval in service mode). The person socket's plugin methods: the request line a client writes after the greeting, and each method's result and error. Framing is the person socket's own (one request per connection, newline-delimited JSON, a request line of at most 256 KiB). The plugin methods carry no top-level agent; the agents are named in params. Only the person may call them: a peer whose uid is an agent's osUser is refused with AGENT_NOT_ALLOWED. See CONTRACT.md, The person socket and Plugins, Plugin approval in service mode.",
+  "description": "Planned (plugin approval in service mode). The person socket's plugin methods: the request line a client writes after the greeting, and each method's result and error. Framing is the person socket's own (one request per connection, newline-delimited JSON, a request line of at most 256 KiB). The plugin methods carry no top-level agent; the agents are named in params. Only an admitted uid (in personUids) reaches them; when that uid is also agents' osUser, they are scoped to those agents (AGENT_NOT_ALLOWED otherwise). See CONTRACT.md, The person socket and Plugins, Plugin approval in service mode.",
   "$defs": {
     "request": {
       "description": "The request line of a plugin method.",
@@ -114,7 +114,14 @@
           "uniqueItems": true,
           "items": { "$ref": "#/$defs/agentName" }
         },
-        "settings": { "$ref": "#/$defs/settings" }
+        "settings": { "$ref": "#/$defs/settings" },
+        "executables": {
+          "description": "Paths of the upload installed with mode 0755 besides the manifest's command; each one the manifest lists.",
+          "type": "array",
+          "maxItems": 1024,
+          "uniqueItems": true,
+          "items": { "$ref": "../manifest.schema.json#/$defs/relativePath" }
+        }
       }
     },
     "approveParams": {

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/plugin/approval/result.v1.json",
   "title": "basalt plugin add and enable --json, approval opened",
-  "description": "Planned (plugin approval). What basalt plugin add --json and basalt plugin enable --json print on stdout when the command opened plugin approvals: the entry is written with \"approval\": \"REQUIRED\" and is not served until a person signs. Exit 0 when every database's approval opened, 1 when one could not be opened after the entry was written (that database's item carries refused). The agent shows personMessage to the person verbatim and follows nextSteps. See CONTRACT.md, Plugins, Plugin approval.",
+  "description": "What basalt plugin add --json and basalt plugin enable --json print on stdout when the command opened plugin approvals: the entry is written with \"approval\": \"REQUIRED\" and is not served until a person signs. Exit 0 when every database's approval opened, 1 when one could not be opened after the entry was written (that database's item carries refused). The agent shows personMessage to the person verbatim and follows nextSteps. See CONTRACT.md, Plugins, Plugin approval.",
   "type": "object",
   "additionalProperties": false,
   "required": ["name", "instance", "approvals", "personMessage", "nextSteps"],

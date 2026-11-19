@@ -13,7 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/plugin/sdk"
+	basaltplugin "github.com/basaltdbhq/basalt-plugin-go"
+
 	tn "github.com/basaltdbhq/basaltdb/internal/plugin/testnotifier"
 )
 
@@ -48,7 +49,7 @@ func run(args []string) int {
 	defer stop()
 
 	if m := n.mode(); m == tn.ModeBadSeq || m == tn.ModeBadJSON {
-		if *transport == string(sdk.ConnectRPC) {
+		if *transport == string(basaltplugin.ConnectRPC) {
 			fmt.Fprintln(os.Stderr, tn.Binary+": "+string(m)+" is served on JSON-RPC transports only")
 			return 2
 		}
@@ -59,7 +60,7 @@ func run(args []string) int {
 		return 0
 	}
 
-	var p sdk.Plugin
+	var p basaltplugin.Plugin
 	switch {
 	case feed && deliver:
 		p = both{n}
@@ -68,11 +69,11 @@ func run(args []string) int {
 	case deliver:
 		p = deliverOnly{n}
 	}
-	var opts []sdk.Option
+	var opts []basaltplugin.Option
 	if *transport != "" {
-		opts = append(opts, sdk.WithTransport(sdk.Transport(*transport)))
+		opts = append(opts, basaltplugin.WithTransport(basaltplugin.Transport(*transport)))
 	}
-	if err := sdk.Serve(ctx, p, opts...); err != nil {
+	if err := basaltplugin.Serve(ctx, p, opts...); err != nil {
 		fmt.Fprintln(os.Stderr, tn.Binary+":", err)
 		return 1
 	}
@@ -113,7 +114,9 @@ func (n *notifier) mode() tn.Mode {
 	return n.start
 }
 
-func (n *notifier) Info() sdk.Info { return sdk.Info{Name: tn.Name, Version: tn.Version} }
+func (n *notifier) Info() basaltplugin.Info {
+	return basaltplugin.Info{Name: tn.Name, Version: tn.Version}
+}
 
 func (n *notifier) Health(context.Context) error {
 	if n.mode() == tn.ModeNotReady {
@@ -144,7 +147,7 @@ func (n *notifier) behave(r tn.Record) error {
 	return nil
 }
 
-func (n *notifier) observe(_ context.Context, b sdk.FeedBatch) (int64, error) {
+func (n *notifier) observe(_ context.Context, b basaltplugin.FeedBatch) (int64, error) {
 	r := tn.Record{Hook: tn.HookFeedObserve, Agent: b.Agent}
 	for _, ev := range b.Events {
 		r.Events = append(r.Events, ev.Raw())
@@ -155,7 +158,7 @@ func (n *notifier) observe(_ context.Context, b sdk.FeedBatch) (int64, error) {
 	return b.LastSeq(), nil
 }
 
-func (n *notifier) deliver(_ context.Context, notice sdk.Notice) error {
+func (n *notifier) deliver(_ context.Context, notice basaltplugin.Notice) error {
 	return n.behave(tn.Record{Hook: tn.HookApprovalDeliver, Agent: notice.Agent, Event: notice.Raw()})
 }
 
@@ -167,18 +170,18 @@ type (
 	both        struct{ *notifier }
 )
 
-func (p feedOnly) ObserveFeed(ctx context.Context, b sdk.FeedBatch) (int64, error) {
+func (p feedOnly) ObserveFeed(ctx context.Context, b basaltplugin.FeedBatch) (int64, error) {
 	return p.observe(ctx, b)
 }
 
-func (p deliverOnly) DeliverApproval(ctx context.Context, n sdk.Notice) error {
+func (p deliverOnly) DeliverApproval(ctx context.Context, n basaltplugin.Notice) error {
 	return p.deliver(ctx, n)
 }
 
-func (p both) ObserveFeed(ctx context.Context, b sdk.FeedBatch) (int64, error) {
+func (p both) ObserveFeed(ctx context.Context, b basaltplugin.FeedBatch) (int64, error) {
 	return p.observe(ctx, b)
 }
 
-func (p both) DeliverApproval(ctx context.Context, n sdk.Notice) error {
+func (p both) DeliverApproval(ctx context.Context, n basaltplugin.Notice) error {
 	return p.deliver(ctx, n)
 }

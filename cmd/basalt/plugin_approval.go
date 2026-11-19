@@ -823,11 +823,17 @@ func pluginApprove(c *cliIO, args []string) int {
 	if fs.NArg() > 1 {
 		return c.fail(fmt.Errorf("%w: give one basalt-plugin.1. code", errUsage))
 	}
-	e, err := loadPluginEnv(c, fs, *configPath)
+	var e *pluginEnv
+	var err error
+	if c.pluginViaSocket(*configPath) {
+		e, err = socketPluginEnv(c)
+	} else {
+		e, err = loadPluginEnv(c, fs, *configPath)
+	}
 	if err != nil {
 		return c.fail(err)
 	}
-	if e.cfg.Service() {
+	if e.sock == nil && e.cfg.Service() {
 		return c.fail(errApprovalInServiceMode("basalt plugin approve"))
 	}
 	code := fs.Arg(0)
@@ -840,6 +846,9 @@ func pluginApprove(c *cliIO, args []string) int {
 	resp, err := approval.ParsePluginResponse(code)
 	if err != nil {
 		return c.fail(fmt.Errorf("%w: %w", errUsage, err))
+	}
+	if e.sock != nil {
+		return c.pluginDone(e.approveViaSocket(resp, *asJSON), *asJSON)
 	}
 	at, rec, err := e.relayPluginApproval(*agentName, resp)
 	if err != nil {

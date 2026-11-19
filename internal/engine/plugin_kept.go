@@ -207,8 +207,9 @@ func (s *keptPlugins) Open(ctx context.Context, uid uint32, scope person.Scope, 
 		}
 		if taken != nil {
 			return person.PluginOpenResult{}, person.Refused(reasonNameTaken, fmt.Sprintf(
-				"plugin %s is an entry of engine.json, added with sudo; an engine-kept entry cannot have its name and instance. "+
-					"Use another --instance, or change it with sudo basalt plugin", k))
+				"plugin %s is an entry of engine.json, added with sudo (or was when the engine started: one removed since counts until "+
+					"the engine restarts); an engine-kept entry cannot have its name and instance. Use another --instance, "+
+					"or change it with sudo basalt plugin", k))
 		}
 		return person.PluginOpenResult{}, person.Refused(reasonConfigEntry, fmt.Sprintf(
 			"plugin %s is an entry of engine.json, added with sudo; enable it with sudo basalt plugin enable", k))
@@ -976,23 +977,36 @@ func (r *keptApprovalReader) stateOf(agent string, k plugin.EntryKey) person.Plu
 	return st
 }
 
-// openKeptPlugins opens a service engine's engine-kept plugins in stateDir:
+// openKeptStore opens a service engine's engine-kept plugins in stateDir:
 // the uploads an earlier run left are removed and the copies no entry names
-// are swept. A store that cannot be opened is logged, and the person socket
-// then answers the plugin methods UNKNOWN_METHOD.
-func openKeptPlugins(cfg config.Config, configPath, stateDir string, agents map[string]keptAgent, log *slog.Logger) *keptPlugins {
+// are swept. A store that cannot be opened is logged and nil: no
+// engine-kept entry is served, and the person socket answers the plugin
+// methods UNKNOWN_METHOD.
+func openKeptStore(cfg config.Config, stateDir string, log *slog.Logger) *keptplugins.Store {
 	store, err := keptplugins.New(stateDir, time.Now)
 	if err != nil {
 		log.Error("engine-kept plugins are not served: the state directory cannot hold them", "err", err)
 		return nil
 	}
-	s := &keptPlugins{store: store, cfg: cfg, configPath: configPath, agents: agents, euid: engineEUID(), goos: runtimeGOOS(), log: log}
 	if entries, err := store.Entries(cfg); err != nil {
 		log.Error("the engine-kept plugin entries cannot be used", "err", err)
 	} else {
 		store.Sweep(entries)
 	}
-	return s
+	return store
+}
+
+// openKeptPlugins serves the person socket's plugin methods on store, nil
+// when there is none. A change applies to what ep runs before the method
+// answers, and PLUGIN_LIST says what ep serves.
+func openKeptPlugins(cfg config.Config, configPath string, store *keptplugins.Store, ep *enginePlugins, agents map[string]keptAgent, log *slog.Logger) *keptPlugins {
+	if store == nil {
+		return nil
+	}
+	return &keptPlugins{
+		store: store, cfg: cfg, configPath: configPath, agents: agents, euid: engineEUID(), goos: runtimeGOOS(), log: log,
+		changed: ep.applyNow, serving: ep.servingOf,
+	}
 }
 
 func runtimeGOOS() string { return runtime.GOOS }

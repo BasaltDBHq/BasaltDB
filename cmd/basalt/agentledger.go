@@ -23,6 +23,10 @@ type engineAccess struct {
 	unitInstalled func() bool
 	// personSocket is the engine's person socket.
 	personSocket string
+	// configPath is the service engine's config: a plugin command naming
+	// it runs over the person socket when not root ("" is the platform
+	// default).
+	configPath string
 }
 
 // osEngineAccess looks for the systemd unit or the launchd plist on goos.

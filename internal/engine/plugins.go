@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -10,11 +11,14 @@ import (
 	"runtime"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/keptplugins"
+	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/child"
@@ -43,6 +47,9 @@ type pluginOptions struct {
 	// stateDir is where a same-user engine writes which entries it serves
 	// (pluginServingFile); "" writes nothing.
 	stateDir string
+	// kept is a service engine's own entries (CONTRACT.md, Plugin approval
+	// in service mode); nil in same-user mode.
+	kept *keptplugins.Store
 }
 
 // Why an entry is not started though it verified.
@@ -111,13 +118,30 @@ type enginePlugins struct {
 	// approvedBy is, for each entry that requires approval served at start,
 	// the approval each agent is served on.
 	approvedBy map[plugin.EntryKey]map[string]uuid.UUID
+
+	// A service engine's own entries: the store, which configured entries
+	// are engine-kept, why the entries file cannot be used ("" when it
+	// can), the engine-kept entries not served because engine.json holds
+	// their (name, instance), and why no engine-kept local entry may start
+	// (an agent's OS user in the engine's group).
+	kept        *keptplugins.Store
+	keptKeys    map[plugin.EntryKey]bool
+	keptProblem string
+	clashes     []config.Plugin
+	groupErr    error
+	// startCfg is the start config with the engine-kept entries added.
+	startCfg config.Config
+	// kick asks the watch to apply a change now (applyNow).
+	kick chan chan struct{}
+	// serving is what runs, as the watch last published it.
+	serving PluginServing
 }
 
 // newEnginePlugins verifies the enabled plugin entries of cfg, read from
 // configPath. It returns nil, touching nothing on disk, when no entry is
 // enabled for an agent.
 func newEnginePlugins(cfg config.Config, configPath string, o pluginOptions, log *slog.Logger) *enginePlugins {
-	if len(configuredPlugins(cfg)) == 0 {
+	if len(configuredPlugins(cfg)) == 0 && o.kept == nil {
 		return nil
 	}
 	return newEnginePluginsFor(cfg, configPath, o, log)
@@ -139,7 +163,6 @@ func configuredPlugins(cfg config.Config) []config.Plugin {
 // a same-user engine keeps one so it can start an entry approved while it
 // runs (pluginWatch).
 func newEnginePluginsFor(cfg config.Config, configPath string, o pluginOptions, log *slog.Logger) *enginePlugins {
-	configured := configuredPlugins(cfg)
 	if o.goos == "" {
 		o.goos = runtime.GOOS
 	}
@@ -147,15 +170,23 @@ func newEnginePluginsFor(cfg config.Config, configPath string, o pluginOptions, 
 		o.clock = plugin.RealClock()
 	}
 	ep := &enginePlugins{
-		host: plugin.NewHost(), log: log, o: o, configured: configured,
+		host: plugin.NewHost(), log: log, o: o,
 		mode:  plugin.ModeSameUser,
 		first: map[plugin.EntryKey]plugin.Verified{}, notTrusted: map[plugin.EntryKey]error{}, refused: map[plugin.EntryKey]string{},
 		approval: map[plugin.EntryKey]bool{}, startChecks: map[plugin.EntryKey]entryCheck{},
+		keptKeys: map[plugin.EntryKey]bool{}, kick: make(chan chan struct{}), startCfg: cfg,
 	}
 	if cfg.Service() {
 		ep.mode = plugin.ModeService
 		ep.initServiceUnits(cfg, configPath)
+		if o.kept != nil {
+			ep.kept = o.kept
+			ep.groupErr = ep.agentsInEngineGroup(cfg)
+			ep.startCfg = ep.reloadKept(cfg, configPath)
+		}
 	}
+	configured := configuredPlugins(ep.startCfg)
+	ep.configured = configured
 	ep.sup = plugin.NewSupervisor(ep.host, ep.dial, o.clock).WithLog(log)
 	dir := filepath.Dir(configPath)
 	root, rootErr := plugin.Root(ep.mode, o.goos, dir)
@@ -164,7 +195,7 @@ func newEnginePluginsFor(cfg config.Config, configPath string, o pluginOptions, 
 	ep.rootErr = errors.Join(rootErr, trustErr)
 	for _, p := range configured {
 		k := p.Key()
-		required := cfg.PluginRequiresApproval(p)
+		required := ep.requires(cfg, p)
 		ep.approval[k] = required
 		c := ep.check(p, required)
 		ep.startChecks[k] = c
@@ -202,11 +233,12 @@ type entryCheck struct {
 // this engine. It logs a failure.
 func (ep *enginePlugins) check(p config.Plugin, required bool) entryCheck {
 	k := p.Key()
-	if ep.rootErr != nil {
+	kept := ep.isKept(k)
+	if ep.rootErr != nil && !kept {
 		ep.log.Error("plugin not started: it cannot be verified", "plugin", k.String(), "err", ep.rootErr)
 		return entryCheck{notTrusted: ep.rootErr}
 	}
-	v, err := plugin.Verify(ep.root, k, p.ManifestSHA256, ep.trust, ep.mode, plugin.RequireApproval(required))
+	v, err := ep.verifyCopy(k, p.ManifestSHA256, required)
 	if err != nil {
 		ep.log.Error("plugin not started: it failed verification", "plugin", k.String(), "check", verifyFailure(err))
 		return entryCheck{notTrusted: err}
@@ -256,6 +288,13 @@ func (ep *enginePlugins) localRefusal(p config.Plugin, v plugin.Verified) string
 		return ""
 	case ep.o.euid == 0:
 		return whyLocalAsRoot
+	case ep.isKept(p.Key()):
+		// The engine runs an approved engine-kept local entry itself, as
+		// its own OS user, as a same-user engine does.
+		if ep.groupErr != nil {
+			return whyKeptAgentInGroup
+		}
+		return ""
 	case ep.mode == plugin.ModeService:
 		return ep.serviceRefusal(p, v)
 	}
@@ -330,7 +369,7 @@ func (ep *enginePlugins) verified(k plugin.EntryKey) (plugin.Verified, error) {
 	ep.mu.Lock()
 	sum, required := ep.configuredLocked(k).ManifestSHA256, ep.approval[k]
 	ep.mu.Unlock()
-	v, err := plugin.Verify(ep.root, k, sum, ep.trust, ep.mode, plugin.RequireApproval(required))
+	v, err := ep.verifyCopy(k, sum, required)
 	ep.mu.Lock()
 	if err != nil {
 		ep.notTrusted[k] = err
@@ -339,6 +378,16 @@ func (ep *enginePlugins) verified(k plugin.EntryKey) (plugin.Verified, error) {
 	}
 	ep.mu.Unlock()
 	return v, err
+}
+
+// verifyCopy verifies entry k's installed copy: an engine-kept entry's
+// under the state directory, always as one that requires approval; any
+// other under the plugin root of the engine's mode.
+func (ep *enginePlugins) verifyCopy(k plugin.EntryKey, sum string, required bool) (plugin.Verified, error) {
+	if ep.isKept(k) {
+		return ep.kept.Verify(k, sum)
+	}
+	return plugin.Verify(ep.root, k, sum, ep.trust, ep.mode, plugin.RequireApproval(required))
 }
 
 func (ep *enginePlugins) configuredEntry(k plugin.EntryKey) config.Plugin {
@@ -371,9 +420,23 @@ func (ep *enginePlugins) PluginProblems(name string) []agent.PluginProblem {
 	var out []agent.PluginProblem
 	ep.mu.Lock()
 	configured, configProblem := slices.Clone(ep.configured), ep.configProblem
+	keptProblem, clashes := ep.keptProblem, slices.Clone(ep.clashes)
 	ep.mu.Unlock()
 	if configProblem != "" {
 		out = append(out, agent.PluginProblem{Code: agent.ProblemPluginConfigInvalid, Message: configProblem})
+	}
+	if keptProblem != "" {
+		out = append(out, agent.PluginProblem{Code: agent.ProblemPluginUnavailable, Message: "no engine-kept plugin is served: " + keptProblem})
+	}
+	for _, p := range clashes {
+		if slices.Contains(p.Agents, name) {
+			k := p.Key()
+			out = append(out, agent.PluginProblem{
+				Code: agent.ProblemPluginUnavailable, Name: k.Name, Instance: k.Instance,
+				Message: "the engine-kept plugin " + k.String() + " is not served: engine.json holds an entry of the same name and instance, " +
+					"added with sudo, and that one is served; remove one of them (basalt plugin remove " + k.Name + " --instance " + k.Instance + ")",
+			})
+		}
 	}
 	for _, p := range configured {
 		if !slices.Contains(p.Agents, name) {
@@ -436,7 +499,10 @@ const pluginRunsDirName = "plugin-runs"
 // plugin is enabled now. A service engine starts no plugin process and an
 // engine run as root starts no local plugin: nil for both.
 func pluginRuns(cfg config.Config, stateDir string, euid int, log *slog.Logger) *child.Runs {
-	if cfg.Service() || euid == 0 || stateDir == "" {
+	// A service engine runs its approved engine-kept local entries itself,
+	// so it records and reaps them as a same-user engine does.
+	_ = cfg
+	if euid == 0 || stateDir == "" {
 		return nil
 	}
 	dir := filepath.Join(stateDir, pluginRunsDirName)
@@ -446,3 +512,142 @@ func pluginRuns(cfg config.Config, stateDir string, euid int, log *slog.Logger) 
 
 // engineEUID is the engine's effective user id.
 func engineEUID() int { return os.Geteuid() }
+
+// whyKeptAgentInGroup: an agent's OS user is in the engine's group, which
+// reaches the engine's sockets and directories, so no engine-kept local
+// entry starts (CONTRACT.md, Service units).
+const whyKeptAgentInGroup = "an agent's OS user is in the engine's group, or the group cannot be checked, so the engine starts no local plugin itself"
+
+// isKept reports whether configured entry k is engine-kept.
+func (ep *enginePlugins) isKept(k plugin.EntryKey) bool {
+	if ep == nil {
+		return false
+	}
+	ep.mu.Lock()
+	defer ep.mu.Unlock()
+	return ep.keptKeys[k]
+}
+
+// requires reports whether entry p requires approval on this engine: every
+// engine-kept entry does; any other as cfg says.
+func (ep *enginePlugins) requires(cfg config.Config, p config.Plugin) bool {
+	return ep.isKept(p.Key()) || cfg.PluginRequiresApproval(p)
+}
+
+// agentsInEngineGroup is why no engine-kept local entry may start: an
+// agent's OS user is in the engine's group, or the engine's user cannot be
+// read; nil when they may.
+func (ep *enginePlugins) agentsInEngineGroup(cfg config.Config) error {
+	if ep.unitHostErr != nil {
+		return ep.unitHostErr
+	}
+	users := make(map[string]string, len(cfg.Agents))
+	for _, a := range cfg.Agents {
+		users[a.Name] = a.OSUser
+	}
+	return ep.units().checkAgents(ep.unitHost.EngineUser, users)
+}
+
+// reloadKept reads the engine-kept entries and returns cfg with them added:
+// the enabled ones that list an agent and whose (name, instance) engine.json
+// does not hold (the start config's, or the file's now). A file that cannot
+// be used adds none, and status says why.
+func (ep *enginePlugins) reloadKept(cfg config.Config, configPath string) config.Config {
+	entries, err := ep.kept.Entries(cfg)
+	held := configKeys(cfg, configPath)
+	out := cfg
+	out.Plugins = slices.Clone(cfg.Plugins)
+	keys := map[plugin.EntryKey]bool{}
+	var clashes []config.Plugin
+	problem := ""
+	if err != nil {
+		problem = err.Error()
+		ep.log.Error("no engine-kept plugin is served: its entries file cannot be used", "err", err)
+		entries = nil
+	}
+	for _, p := range entries {
+		k := p.Key()
+		if held[k] {
+			clashes = append(clashes, p)
+			continue
+		}
+		keys[k] = true
+		out.Plugins = append(out.Plugins, p)
+	}
+	ep.mu.Lock()
+	ep.keptKeys, ep.keptProblem, ep.clashes = keys, problem, clashes
+	ep.mu.Unlock()
+	return out
+}
+
+// configKeys are the (name, instance)s of cfg's entries and of those
+// engine.json holds on disk now, read leniently.
+func configKeys(cfg config.Config, configPath string) map[plugin.EntryKey]bool {
+	out := map[plugin.EntryKey]bool{}
+	for _, p := range cfg.Plugins {
+		out[p.Key()] = true
+	}
+	var now struct {
+		Plugins []config.Plugin `json:"plugins"`
+	}
+	if raw, err := os.ReadFile(configPath); err == nil && json.Unmarshal(raw, &now) == nil {
+		for _, p := range now.Plugins {
+			out[p.Key()] = true
+		}
+	}
+	return out
+}
+
+// applyNow asks the watch to apply the engine-kept entries as they are now
+// and waits until it has, at most kickWait; a watch that does not answer
+// sees the change at its next tick.
+func (ep *enginePlugins) applyNow(ctx context.Context) {
+	if ep == nil {
+		return
+	}
+	reply := make(chan struct{})
+	t := time.NewTimer(kickWait)
+	defer t.Stop()
+	select {
+	case ep.kick <- reply:
+	case <-ctx.Done():
+		return
+	case <-t.C:
+		return
+	}
+	select {
+	case <-reply:
+	case <-ctx.Done():
+	case <-t.C:
+	}
+}
+
+// kickWait bounds applyNow.
+const kickWait = 30 * time.Second
+
+// servingOf is what the running engine serves of engine-kept entry k: each
+// agent, the approval it is served on and whether the plugin answers READY.
+func (ep *enginePlugins) servingOf(k plugin.EntryKey) []person.PluginServing {
+	if ep == nil {
+		return nil
+	}
+	ep.mu.Lock()
+	defer ep.mu.Unlock()
+	if !ep.keptKeys[k] {
+		return nil
+	}
+	var out []person.PluginServing
+	for _, e := range ep.serving.Entries {
+		if e.Name != k.Name || e.Instance != k.Instance {
+			continue
+		}
+		for _, a := range e.Agents {
+			sv := person.PluginServing{Agent: a.Agent, Ready: e.Ready}
+			if id, err := uuid.Parse(a.ApprovalID); err == nil {
+				sv.ApprovalID = &id
+			}
+			out = append(out, sv)
+		}
+	}
+	return out
+}

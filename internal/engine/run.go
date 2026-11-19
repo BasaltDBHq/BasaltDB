@@ -166,8 +166,13 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		Stderr: pluginDebugWriter(cfg, restart.PluginStderr, log), euid: engineEUID(),
 		runs: pluginRuns(cfg, env.stateDir, engineEUID(), pluginLog), stateDir: env.stateDir,
 	}
+	if cfg.Service() {
+		// A service engine keeps plugin entries of its own, added over the
+		// person socket, and runs them once approved.
+		pluginOpts.kept = openKeptStore(cfg, env.stateDir, pluginLog)
+	}
 	plugins := newEnginePlugins(cfg, configPath, pluginOpts, pluginLog)
-	if plugins == nil && !cfg.Service() {
+	if plugins == nil && (!cfg.Service() || pluginOpts.kept != nil) {
 		// A same-user engine starts an entry approved while it runs
 		// (pluginWatch), so it keeps its plugins with none enabled yet.
 		plugins = newEnginePluginsFor(cfg, configPath, pluginOpts, pluginLog)
@@ -311,12 +316,15 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 			Pages:  person.PagesDTO{PagesURL: base, LocalOrigin: env.pagesOrigin, UpdateCheck: updateCheck},
 			Gate:   gate,
 		}
-		if kept := openKeptPlugins(cfg, configPath, env.stateDir, srv.kept, log.With("component", "plugins")); kept != nil {
+		if kept := openKeptPlugins(cfg, configPath, pluginOpts.kept, plugins, srv.kept, log.With("component", "plugins")); kept != nil {
 			o.Plugins = kept
 			// Ends a disable could not write are tried again now.
 			wg.Go(func() { kept.endDisabled(ctx) })
 		}
 		srv, ln, err := listenPerson(cfg, o, log)
+		if err == nil && restart.PersonPeerUID != nil {
+			srv = person.NewServer(withPeerUID(o, cfg, restart.PersonPeerUID, log))
+		}
 		if err != nil {
 			return err
 		}
@@ -419,6 +427,12 @@ func listenPerson(cfg config.Config, o person.Options, log *slog.Logger) (*perso
 	log.Info("serving the person socket", "socket", path, "personUids", cfg.PersonUIDs)
 	o.Allow, o.PeerUID, o.Log = cfg.PersonUIDs, peercred.UID, log.With("component", "person")
 	return person.NewServer(o), ln, nil
+}
+
+// withPeerUID is o as listenPerson completes it, with peerUID (tests).
+func withPeerUID(o person.Options, cfg config.Config, peerUID func(*net.UnixConn) (uint32, error), log *slog.Logger) person.Options {
+	o.Allow, o.PeerUID, o.Log = cfg.PersonUIDs, peerUID, log.With("component", "person")
+	return o
 }
 
 // engineInfo is what the person socket's STATUS says about this engine:

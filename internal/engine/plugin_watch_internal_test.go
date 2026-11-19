@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -446,6 +447,16 @@ func TestWatchBacksOffWhenDatabaseDown(t *testing.T) {
 	lp.w.step(lp.ctx)
 	require.NotContains(t, lp.w.backoff, "product_a")
 	lp.requireServing(p.Key(), "client_x", "product_a")
+
+	// An answer decides: an agent the engine no longer admits (its guard
+	// gone or too old, a setup pending) is withheld, as at start.
+	lp.w.ledgers["product_a"] = pluginLedger{db: up.db, admit: func(context.Context) error {
+		return fmt.Errorf("%w: the guard is not installed", errNotAdmitted)
+	}}
+	lp.w.next = clock
+	lp.w.step(lp.ctx)
+	lp.requireServing(p.Key(), "client_x")
+	require.Contains(t, lp.w.backoff, "product_a", "and checked again after a backoff")
 }
 
 // Fifty rounds of add, approve and remove, each started and stopped by the

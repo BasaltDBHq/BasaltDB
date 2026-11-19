@@ -81,6 +81,14 @@ func unrecordedWhy(err error) string {
 	return whyUnreachable
 }
 
+// transientErr reports whether err says only that the database did not
+// answer (no connection, a timeout), not what it holds: no Postgres error,
+// and not a refusal to admit the agent. Any other failure decides.
+func transientErr(err error) bool {
+	var pg *pgconn.PgError
+	return err != nil && !errors.As(err, &pg) && !errors.Is(err, errNotAdmitted)
+}
+
 // pluginLedger is one agent's ledger as the plugin event writer reaches it:
 // the agent's own connection, and the engine's admission of the agent
 // (nil admits it). An agent served status only (no guard, an outdated one,
@@ -113,6 +121,9 @@ type unrecordedEntry struct {
 	key  plugin.EntryKey
 	why  string
 	code string
+	// transient: the database did not answer, so nothing was decided
+	// (transientErr).
+	transient bool
 }
 
 // pluginWant is the plugin state the engine records in each agent's ledger
@@ -297,11 +308,11 @@ type agentPass struct {
 	reached bool
 }
 
-// unread reports whether the check could not read what decides: the ledger
-// or the agent's plugin approvals. While the engine runs such a passing
-// failure changes nothing that runs (pluginWatch).
+// unread reports whether the check failed for the agent as a whole, or
+// because its database did not answer: the watch then asks it again only
+// after a backoff (pluginWatch).
 func (p agentPass) unread() bool {
-	return !p.reached || slices.ContainsFunc(p.withheld, func(u unrecordedEntry) bool { return u.why == whyApprovalsUnread })
+	return !p.reached || slices.ContainsFunc(p.withheld, func(u unrecordedEntry) bool { return u.transient })
 }
 
 // checkAgents runs writeAgentPluginEvents for each of names in parallel,
@@ -358,7 +369,7 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 	all := func(err error) agentPass {
 		out := make([]unrecordedEntry, 0, len(served))
 		for _, k := range served {
-			out = append(out, unrecordedEntry{key: k, why: unrecordedWhy(err)})
+			out = append(out, unrecordedEntry{key: k, why: unrecordedWhy(err), transient: transientErr(err)})
 		}
 		return agentPass{withheld: out}
 	}
@@ -396,7 +407,7 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 			w, ok := approvals.check(ctx, k, d, want.settings[k])
 			if !ok {
 				log.Warn("plugin not served to this agent: "+w.why, "plugin", k.String())
-				out.withheld = append(out.withheld, unrecordedEntry{key: k, why: w.why, code: w.code})
+				out.withheld = append(out.withheld, unrecordedEntry{key: k, why: w.why, code: w.code, transient: w.transient})
 				// For an approval reason the ledger never shows the entry
 				// served after it stopped matching; that ends the approval.
 				// A passing failure (old guard, unread approvals) writes
@@ -424,7 +435,7 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 		if kind, ok := entryEvent(last, k, d); ok {
 			if err := guard.RecordPluginEntryEvent(ctx, db, kind, d); err != nil {
 				log.Error("plugin not served to this agent: its record could not be written", "plugin", k.String(), "event", kind, "err", err)
-				out.withheld = append(out.withheld, unrecordedEntry{key: k, why: unrecordedWhy(err)})
+				out.withheld = append(out.withheld, unrecordedEntry{key: k, why: unrecordedWhy(err), transient: transientErr(err)})
 				continue
 			}
 		}

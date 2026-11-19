@@ -34,6 +34,9 @@ const (
 type withheldWhy struct {
 	code string
 	why  string
+	// transient: the database did not answer (transientErr), so nothing was
+	// decided. While the engine runs, what runs then stays as it is.
+	transient bool
 }
 
 // approvalReason reports whether code is one of the approval reasons:
@@ -54,8 +57,10 @@ func approvalReason(code string) bool {
 type agentApprovals struct {
 	db   guard.Querier
 	read bool
-	// unavailable is why they could not be read, "" when they were.
+	// unavailable is why they could not be read, "" when they were;
+	// transient when the database did not answer.
 	unavailable string
+	transient   bool
 	// newest is, per entry, the newest approval that names the agent's
 	// role (guard.ReadPluginApprovals).
 	newest map[plugin.EntryKey]guard.PluginApprovalRecord
@@ -69,7 +74,7 @@ func (a *agentApprovals) load(ctx context.Context) {
 	v, err := guard.AgentVersion(ctx, a.db)
 	switch {
 	case err != nil:
-		a.unavailable = whyApprovalsUnread
+		a.unavailable, a.transient = whyApprovalsUnread, transientErr(err)
 		return
 	case v < guard.PluginApprovalsVersion:
 		a.unavailable = whyApprovalsOldGuard
@@ -77,7 +82,7 @@ func (a *agentApprovals) load(ctx context.Context) {
 	}
 	recs, err := guard.ReadPluginApprovals(ctx, a.db)
 	if err != nil {
-		a.unavailable = whyApprovalsUnread
+		a.unavailable, a.transient = whyApprovalsUnread, transientErr(err)
 		return
 	}
 	a.newest = make(map[plugin.EntryKey]guard.PluginApprovalRecord, len(recs))
@@ -97,7 +102,7 @@ func (a *agentApprovals) load(ctx context.Context) {
 func (a *agentApprovals) check(ctx context.Context, k plugin.EntryKey, d guard.PluginDetail, s guard.PluginSettings) (withheldWhy, bool) {
 	a.load(ctx)
 	if a.unavailable != "" {
-		return withheldWhy{why: a.unavailable}, false
+		return withheldWhy{why: a.unavailable, transient: a.transient}, false
 	}
 	r, ok := a.newest[k]
 	if !ok {
@@ -121,7 +126,7 @@ func (a *agentApprovals) check(ctx context.Context, k plugin.EntryKey, d guard.P
 	}
 	sum, err := guard.PluginSettingsSHA256(ctx, a.db, s)
 	if err != nil {
-		return withheldWhy{why: whyApprovalsUnread}, false
+		return withheldWhy{why: whyApprovalsUnread, transient: transientErr(err)}, false
 	}
 	if diff := approvalMismatch(r.Bound, approvalBound(d, sum)); len(diff) > 0 {
 		return withheldWhy{code: agent.ProblemPluginApprovalMismatch, why: "it does not match what a person approved; these differ: " +

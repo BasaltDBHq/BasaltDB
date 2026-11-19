@@ -90,7 +90,8 @@ func (f *pluginFixture) installCopyOver(instance, hooks, transport string, signe
 	}
 	v, err := plugin.Install(src, f.root, instance, f.trust, plugin.ModeSameUser, plugin.RequireApproval(!signed))
 	require.NoError(t, err)
-	return config.Plugin{Name: "acme-ner", Instance: instance, ManifestSHA256: v.ManifestSHA256, Enabled: true, Agents: []string{}}
+	// The longest timeout: the plugin is this test binary, built with -race.
+	return config.Plugin{Name: "acme-ner", Instance: instance, ManifestSHA256: v.ManifestSHA256, Enabled: true, Agents: []string{}, TimeoutMs: config.MaxPluginTimeoutMs}
 }
 
 // honestDetail is what basalt plugin would open for entry p of the test

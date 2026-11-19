@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 )
@@ -125,6 +126,9 @@ func (w *pluginWatch) step(ctx context.Context) {
 		w.raw = raw
 		cfg, err := config.Load(w.path)
 		if readErr != nil || err != nil {
+			// Read again on every tick: the file may have changed between
+			// the read and the load.
+			w.raw = nil
 			if !w.bad {
 				w.log.Error("engine.json changed and its plugins cannot be read; no plugin change is applied until it can", "err", err)
 			}
@@ -199,6 +203,24 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 			delete(w.checks, k)
 		}
 	}
+
+	// Narrow first, from the config alone: what it no longer serves stops
+	// before any database is asked.
+	narrowed := map[plugin.EntryKey]runningEntry{}
+	for k, r := range w.running {
+		p, ok := configuredPlugin(configured, k)
+		if !ok || !checks[k].ok() || !samePluginConfig(r.p, p, false) {
+			continue
+		}
+		e := r.e
+		e.Agents = slices.DeleteFunc(slices.Clone(e.Agents), func(a string) bool { return !slices.Contains(p.Agents, a) })
+		if len(e.Agents) > 0 {
+			narrowed[k] = runningEntry{e: e, p: p}
+		}
+	}
+	w.apply(narrowed)
+	// Only now does a restart of an entry dial with the new config: a
+	// narrowed entry runs the same copy and config as before.
 	ep.mu.Lock()
 	ep.configured, ep.approval = configured, approval
 	for k := range ep.notTrusted {
@@ -221,22 +243,6 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 		}
 	}
 	ep.mu.Unlock()
-
-	// Narrow first, from the config alone: what it no longer serves stops
-	// before any database is asked.
-	narrowed := map[plugin.EntryKey]runningEntry{}
-	for k, r := range w.running {
-		p, ok := configuredPlugin(configured, k)
-		if !ok || !checks[k].ok() || !samePluginConfig(r.p, p, false) {
-			continue
-		}
-		e := r.e
-		e.Agents = slices.DeleteFunc(slices.Clone(e.Agents), func(a string) bool { return !slices.Contains(p.Agents, a) })
-		if len(e.Agents) > 0 {
-			narrowed[k] = runningEntry{e: e, p: p}
-		}
-	}
-	w.apply(narrowed)
 
 	required := slices.ContainsFunc(configured, func(p config.Plugin) bool { return approval[p.Key()] })
 	if !configChanged && !required {
@@ -288,8 +294,11 @@ func (w *pluginWatch) pass(ctx context.Context, configChanged bool) {
 			return unchanged && slices.Contains(r.e.Agents, a) && (!checked || pa.undecided(k))
 		}
 		agents := ep.servedAgentsLocked(k, passes, kept)
-		if approval[k] && len(agents) < len(p.Agents) {
-			waiting = true
+		for _, a := range p.Agents {
+			// Waiting for a signature: checked again soon.
+			if approval[k] && !slices.Contains(agents, a) && ep.unrecorded[k][a].code == agent.ProblemPluginAwaitingApproval {
+				waiting = true
+			}
 		}
 		for _, a := range agents {
 			// What is served for a passing failure is not withheld.
@@ -372,16 +381,13 @@ func (w *pluginWatch) publish() {
 // ok reports whether the entry verified and may run on this engine.
 func (c entryCheck) ok() bool { return c.notTrusted == nil && c.refused == "" }
 
-// undecided reports whether the check could not read what decides entry k
-// for the agent: its ledger, its approvals, or the database for its
-// record. While the engine runs, what runs then stays as it is.
+// undecided reports whether nothing was decided of entry k for the agent
+// because its database did not answer (transientErr). While the engine
+// runs, what runs then stays as it is. Any answer decides: a guard that
+// refuses, is missing or too old, or an agent not admitted withholds, as at
+// start.
 func (p agentPass) undecided(k plugin.EntryKey) bool {
-	if !p.reached {
-		return true
-	}
-	return slices.ContainsFunc(p.withheld, func(u unrecordedEntry) bool {
-		return u.key == k && (u.why == whyApprovalsUnread || u.why == whyUnreachable)
-	})
+	return slices.ContainsFunc(p.withheld, func(u unrecordedEntry) bool { return u.key == k && u.transient })
 }
 
 func configuredPlugin(configured []config.Plugin, k plugin.EntryKey) (config.Plugin, bool) {

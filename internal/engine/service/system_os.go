@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
 	"os/user"
+	"slices"
 	"strconv"
 )
 
@@ -19,6 +21,36 @@ type OSSystem struct {
 func (OSSystem) UserExists(name string) bool {
 	_, err := user.Lookup(name)
 	return err == nil
+}
+
+// InGroup reports whether the OS user name is in group, as its primary or a
+// supplementary group. A group that does not exist has no one in it.
+func (OSSystem) InGroup(name, group string) (bool, error) {
+	return InGroup(name, group)
+}
+
+// InGroup is OSSystem.InGroup, for the engine, which has no System. In a
+// build without cgo, Linux group membership comes from /etc/group only, so a
+// membership only a directory service (sssd, LDAP) knows is not seen, as for
+// plugin.CheckAgentUsers.
+func InGroup(name, group string) (bool, error) {
+	g, err := user.LookupGroup(group)
+	var unknown user.UnknownGroupError
+	if errors.As(err, &unknown) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	u, err := user.Lookup(name)
+	if err != nil {
+		return false, err
+	}
+	gids, err := u.GroupIds()
+	if err != nil {
+		return false, err
+	}
+	return u.Gid == g.Gid || slices.Contains(gids, g.Gid), nil
 }
 
 // keepID tells chown to leave an id as it is; as an owner uid it is no user.

@@ -11,6 +11,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -63,6 +64,121 @@ func (OSSystem) WriteFile(path string, data []byte, mode os.FileMode, owner stri
 		return err
 	}
 	return nil
+}
+
+// CreateFile makes path an empty file with mode, owned by owner, when it is
+// missing, and keeps an existing one's content: a log a service appends to.
+// Its directory is reached by openTrusted with root as the only trusted
+// owner, so only root can have put anything at path. A missing file is
+// created exclusively without following a link; an existing one is opened
+// without following a link and must be a regular file with no other name,
+// unless it already belongs to owner (a hard link to anyone else's file is
+// refused, never re-owned). Mode and owner are set through the descriptor.
+func (OSSystem) CreateFile(path string, mode os.FileMode, owner string) error {
+	ids, err := lookupOwner(owner)
+	if err != nil {
+		return err
+	}
+	dfd, err := openTrusted(filepath.Dir(path), keepID)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(dfd)
+	base := filepath.Base(path)
+	fd, err := unix.Openat(dfd, base, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, tempFileMode)
+	if errors.Is(err, unix.EEXIST) {
+		fd, err = unix.Openat(dfd, base, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	}
+	if errors.Is(err, unix.ELOOP) {
+		return symlinkError(path)
+	}
+	if err != nil {
+		return &os.PathError{Op: opOpen, Path: path, Err: err}
+	}
+	defer unix.Close(fd)
+	var st unix.Stat_t
+	if err := fstat(fd, &st); err != nil {
+		return err
+	}
+	// A file with another name is taken over only when it is already the
+	// owner's: the directory is root's, so only that owner (who could link
+	// its own log elsewhere) made the other name, and fchown and fchmod then
+	// change nothing of anyone else's.
+	ownLink := ids.uid >= 0 && int(st.Uid) == ids.uid
+	if statMode(st.Mode)&unix.S_IFMT != unix.S_IFREG || (st.Nlink != 1 && !ownLink) {
+		return fmt.Errorf("%s is not a plain file (a hard link, a directory or a device?); refusing to take it over; "+
+			"move it aside (sudo mv %s %s.old) and run the install again", path, path, path)
+	}
+	if err := clearUserFlags(fd); err != nil {
+		return err
+	}
+	if err := unix.Fchown(fd, ids.uid, ids.gid); err != nil {
+		return err
+	}
+	return unix.Fchmod(fd, uint32(mode.Perm()))
+}
+
+// movedNameTries bounds the names MoveAside tries when one is taken.
+const movedNameTries = 100
+
+// MoveAside renames the directory at path to "<path>.old-<UTC time>" when
+// the OS user owner owns it, and returns the new name. Its parent is reached
+// by openTrusted with root as the only trusted owner, so only root can
+// change the entry at path meanwhile; the directory is checked through a
+// descriptor opened without following a link and renamed as a whole,
+// relative to the parent, so nothing inside it is followed, read or
+// re-owned. A missing path, one owned by anyone else, or an owner with no
+// account, is left as it is (""); a link or a file at path is refused.
+func (OSSystem) MoveAside(path, owner string) (string, error) {
+	uid := LookupUID(owner)
+	if uid < 0 {
+		return "", nil
+	}
+	pfd, err := openTrusted(filepath.Dir(path), keepID)
+	if err != nil {
+		return "", err
+	}
+	defer unix.Close(pfd)
+	base := filepath.Base(path)
+	dfd, err := openDirAt(pfd, base, path)
+	if errors.Is(err, unix.ENOENT) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	defer unix.Close(dfd)
+	var st unix.Stat_t
+	if err := fstat(dfd, &st); err != nil {
+		return "", err
+	}
+	if int(st.Uid) != uid {
+		return "", nil
+	}
+	// An owner who made the directory immutable would stop the rename.
+	if err := clearUserFlags(dfd); err != nil {
+		return "", err
+	}
+	stamp := base + ".old-" + time.Now().UTC().Format("20060102T150405Z")
+	for i := range movedNameTries {
+		name := stamp
+		if i > 0 {
+			name += "-" + strconv.Itoa(i)
+		}
+		var other unix.Stat_t
+		err := unix.Fstatat(pfd, name, &other, unix.AT_SYMLINK_NOFOLLOW)
+		if err == nil {
+			continue
+		}
+		if !errors.Is(err, unix.ENOENT) {
+			return "", err
+		}
+		if err := unix.Renameat(pfd, base, pfd, name); err != nil {
+			return "", &os.LinkError{Op: "rename", Old: path, New: filepath.Join(filepath.Dir(path), name), Err: err}
+		}
+		return filepath.Join(filepath.Dir(path), name), nil
+	}
+	return "", fmt.Errorf("cannot find a free name to move %s aside", path)
 }
 
 // Mkdir makes path (mode, owner) relative to its parent, refusing a symlink

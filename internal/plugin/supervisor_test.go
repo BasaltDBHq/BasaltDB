@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -371,6 +372,71 @@ func TestShutdownWithin5s(t *testing.T) {
 		require.Equal(t, StateUnavailable, h.State(k))
 	}
 	require.Equal(t, []string{protocol.MethodInitialize, protocol.MethodShutdown, "close"}, d.last(fine.Key).calls())
+}
+
+// holdHooks starts protocol.MaxInFlight hook calls on k that run until
+// their deadline or the process is killed, and waits until all hold a slot.
+func holdHooks(t *testing.T, h *Host, d *dialer, k EntryKey) {
+	t.Helper()
+	p := d.last(k)
+	// Set before any hook call starts (the go statements below order it).
+	p.hook = func(ctx context.Context) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-p.exited:
+			return Fail(ClassExited)
+		}
+	}
+	for range protocol.MaxInFlight {
+		go func() { _ = h.Call(context.Background(), k, []string{"a"}, "detect", nil, nil) }()
+	}
+	require.Eventually(t, func() bool {
+		h.mu.RLock()
+		defer h.mu.RUnlock()
+		return len(h.entries[k].sem) == protocol.MaxInFlight
+	}, 5*time.Second, time.Millisecond)
+}
+
+// A plugin busy with four hook calls still passes its health check: it
+// stays READY and is not started again.
+func TestHealthGetsThroughFourHookCalls(t *testing.T) {
+	t.Parallel()
+	h, d, c := NewHost(), newDialer(), newFakeClock()
+	e := entry("acme", "default", "a")
+	e.Timeout = MaxTimeout
+	s, _ := runSupervisor(t, h, d, c, e)
+	w := c.next(t, HealthInterval)
+	waitReady(t, h, e.Key)
+	holdHooks(t, h, d, e.Key)
+
+	w.fire <- time.Now()
+	c.next(t, HealthInterval)
+	require.Equal(t, StateReady, h.State(e.Key))
+	require.Empty(t, s.Failure(e.Key))
+	require.Equal(t, 1, d.starts(e.Key), "not started again")
+	require.False(t, d.last(e.Key).dead())
+}
+
+// shutdown reaches a plugin whose four hook calls never finish, within the
+// stop window, before its process is killed.
+func TestShutdownGetsThroughFourHookCalls(t *testing.T) {
+	t.Parallel()
+	h, d, c := NewHost(), newDialer(), newFakeClock()
+	e := entry("acme", "default", "a")
+	e.Timeout = MaxTimeout
+	_, stop := runSupervisor(t, h, d, c, e)
+	waitReady(t, h, e.Key)
+	holdHooks(t, h, d, e.Key)
+	p := d.last(e.Key)
+
+	start := time.Now()
+	stop()
+	require.Less(t, time.Since(start), StopWait)
+	calls := p.calls()
+	i := slices.Index(calls, protocol.MethodShutdown)
+	require.GreaterOrEqual(t, i, 0, "shutdown was sent: %v", calls)
+	require.Less(t, i, slices.Index(calls, "close"), "shutdown before the process was killed: %v", calls)
 }
 
 // A plugin whose initialize answers other hooks than its manifest's is

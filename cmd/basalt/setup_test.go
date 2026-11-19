@@ -163,7 +163,18 @@ func (s *fakeSys) WriteFile(path string, data []byte, mode os.FileMode, owner st
 	s.written[path], s.modes[path] = string(data), mode
 	return nil
 }
-func (s *fakeSys) Remove(string) error { return nil }
+
+func (s *fakeSys) CreateFile(path string, mode os.FileMode, owner string) error {
+	s.ran = append(s.ran, fmt.Sprintf("create -m %04o -o %s %s", mode.Perm(), owner, path))
+	return nil
+}
+
+func (s *fakeSys) MoveAside(path, owner string) (string, error) {
+	s.ran = append(s.ran, "move-aside "+path+" "+owner)
+	return "", nil
+}
+func (s *fakeSys) Remove(string) error                  { return nil }
+func (s *fakeSys) InGroup(string, string) (bool, error) { return false, nil }
 func (s *fakeSys) CheckBinary(path string) error {
 	s.checked = append(s.checked, path)
 	return s.binaryErr

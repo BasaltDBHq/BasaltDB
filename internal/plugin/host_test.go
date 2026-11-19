@@ -509,3 +509,57 @@ func TestManifestExamplesDecode(t *testing.T) {
 		}
 	}
 }
+
+// health and shutdown each have a slot of their own: with four hook calls
+// holding every hook slot, both are still sent and answered at once.
+func TestLifecycleCallsAreOutsideTheCap(t *testing.T) {
+	h := NewHost()
+	e := entry("acme", "default", "a")
+	e.Timeout = 2 * time.Second
+	f := register(t, h, e)
+	release := make(chan struct{})
+	var held atomic.Int32
+	f.onCall = func(ctx context.Context, method string) error {
+		if method != "detect" {
+			return nil
+		}
+		held.Add(1)
+		select {
+		case <-release:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	var wg sync.WaitGroup
+	for range protocol.MaxInFlight {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := h.Call(context.Background(), e.Key, []string{"a"}, "detect", nil, nil); err != nil {
+				t.Errorf("hook call: %v", err)
+			}
+		}()
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for held.Load() < protocol.MaxInFlight {
+		if time.Now().After(deadline) {
+			t.Fatal("the four hook calls never started")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	var resp protocol.HealthResponse
+	if err := h.Control(ctx, e.Key, protocol.MethodHealth, protocol.HealthRequest{}, &resp); err != nil {
+		t.Fatalf("health with four hook calls in flight: %v", err)
+	}
+	if err := h.Control(ctx, e.Key, protocol.MethodShutdown, protocol.ShutdownRequest{}, nil); err != nil {
+		t.Fatalf("shutdown with four hook calls in flight: %v", err)
+	}
+	if n := held.Load(); n != protocol.MaxInFlight {
+		t.Fatalf("hook calls held = %d, want %d", n, protocol.MaxInFlight)
+	}
+	close(release)
+	wg.Wait()
+}

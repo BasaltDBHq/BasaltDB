@@ -57,7 +57,7 @@ func (m Mode) owner() (uint32, error) {
 // service mode: it may belong to the engine's OS user, which must not be
 // able to change what is installed or trusted.
 const (
-	linuxServiceBase  = "/usr/local/lib/basalt"
+	linuxServiceBase  = "/opt/basalt"
 	darwinServiceBase = "/Library/Basalt"
 	goosDarwin        = "darwin"
 )
@@ -87,7 +87,7 @@ func base(mode Mode, goos, configDir string) (string, error) {
 }
 
 // Root is the directory installed copies live under:
-// /usr/local/lib/basalt/plugins on Linux and /Library/Basalt/plugins on
+// /opt/basalt/plugins on Linux and /Library/Basalt/plugins on
 // macOS in service mode, <configDir>/plugins in same-user mode.
 func Root(mode Mode, goos, configDir string) (string, error) {
 	b, err := base(mode, goos, configDir)
@@ -98,7 +98,7 @@ func Root(mode Mode, goos, configDir string) (string, error) {
 }
 
 // TrustDir is the trust store's directory, next to Root:
-// /usr/local/lib/basalt/plugin-trust on Linux and
+// /opt/basalt/plugin-trust on Linux and
 // /Library/Basalt/plugin-trust on macOS in service mode,
 // <configDir>/plugin-trust in same-user mode.
 func TrustDir(mode Mode, goos, configDir string) (string, error) {
@@ -114,6 +114,23 @@ func pathRefusal(path, why string) *VerifyError {
 	return &VerifyError{Reason: RefusedNotTrusted, File: path, Why: why}
 }
 
+// ruleRefusal is a refusal for who can write path, a symlink or its owner,
+// with what was found there (VerifyError.Path).
+func ruleRefusal(path, why string, kind PathFaultKind, fi fs.FileInfo, owners ...uint32) *VerifyError {
+	r := pathRefusal(path, why)
+	uid, _ := fileOwner(fi)
+	r.Path = &PathFault{Kind: kind, UID: uid, GID: fileGroup(fi), Mode: fi.Mode(), Owners: owners}
+	return r
+}
+
+// abovePolicy is how checkAbove judges the directories above a root.
+type abovePolicy struct {
+	// stickyRoot lets a directory that group or others can write pass when
+	// root owns it and its sticky bit is set, as /tmp. Only the base of
+	// same-user plugin socket directories takes it.
+	stickyRoot bool
+}
+
 // checkAbove applies the path rule to every directory above base, "/"
 // included (CONTRACT.md, Plugins, the path rule): each is owned by root or
 // by owner and writable by no one else. A symlink there is followed only
@@ -122,11 +139,15 @@ func pathRefusal(path, why string) *VerifyError {
 // as the kernel does. base itself and what is below it are checked by
 // checkStrict.
 func checkAbove(base string, owner uint32) error {
+	return checkAboveWith(base, owner, abovePolicy{})
+}
+
+func checkAboveWith(base string, owner uint32, pol abovePolicy) error {
 	if !filepath.IsAbs(base) {
 		return pathRefusal(base, "is not an absolute path")
 	}
 	base = filepath.Clean(base)
-	if err := checkAboveDir("/", owner); err != nil {
+	if err := checkAboveDir("/", owner, pol); err != nil {
 		return err
 	}
 	pending := splitComponents(filepath.Dir(base))
@@ -148,7 +169,7 @@ func checkAbove(base string, owner uint32) error {
 			return pathRefusal(p, "cannot be read")
 		}
 		if fi.Mode()&fs.ModeSymlink == 0 {
-			if err := checkAboveInfo(p, fi, owner); err != nil {
+			if err := checkAboveInfo(p, fi, owner, pol); err != nil {
 				return err
 			}
 			resolved = p
@@ -159,7 +180,7 @@ func checkAbove(base string, owner uint32) error {
 			return pathRefusal(p, "has an owner that cannot be read")
 		}
 		if uid != rootUID {
-			return pathRefusal(p, "is a symlink not owned by root")
+			return ruleRefusal(p, "is a symlink not owned by root", PathSymlink, fi, rootUID)
 		}
 		if hops++; hops > maxSymlinkHops {
 			return pathRefusal(p, "has too many symlinks")
@@ -176,23 +197,55 @@ func checkAbove(base string, owner uint32) error {
 	return nil
 }
 
+// WhyNotStickyRoot refuses a socket base, or a directory above it, that
+// group or others can write and that is not root's with the sticky bit set.
+const WhyNotStickyRoot = WhyGroupWritable + ", and is not a directory root owns with the sticky bit set"
+
+// CheckSocketBase applies the path rule's "above a root" check to dir and
+// every directory above it, for the base same-user plugin socket
+// directories are made in: each is owned by root or the engine's own user
+// and writable by no one else, except that a directory root owns with the
+// sticky bit set (such as /tmp) may be writable by group or others, since
+// there no other user can rename or remove a directory the engine made. A
+// symlink on the way is followed only when root owns it. The error is a
+// *VerifyError naming the path and the rule.
+func CheckSocketBase(dir string) error {
+	owner, err := currentUID()
+	if err != nil {
+		return pathRefusal(dir, "has an owner that cannot be read")
+	}
+	// checkAbove checks the directories above its argument: name one inside
+	// dir so dir itself is checked too.
+	return checkAboveWith(filepath.Join(dir, "."+PluginsDirName), owner, abovePolicy{stickyRoot: true})
+}
+
+// CheckSocketBaseInfo is CheckSocketBase's rule for dir alone, judged from
+// fi: the base's status read from a descriptor opened on it.
+func CheckSocketBaseInfo(dir string, fi fs.FileInfo) error {
+	owner, err := currentUID()
+	if err != nil {
+		return pathRefusal(dir, "has an owner that cannot be read")
+	}
+	return checkAboveInfo(dir, fi, owner, abovePolicy{stickyRoot: true})
+}
+
 func splitComponents(p string) []string {
 	return strings.Split(filepath.ToSlash(p), "/")
 }
 
-func checkAboveDir(p string, owner uint32) error {
+func checkAboveDir(p string, owner uint32, pol abovePolicy) error {
 	fi, err := os.Lstat(p)
 	if err != nil {
 		return pathRefusal(p, "cannot be read")
 	}
-	return checkAboveInfo(p, fi, owner)
+	return checkAboveInfo(p, fi, owner, pol)
 }
 
 // checkAboveInfo: a directory above a root is owned by root or owner and
-// writable by no one else. A world-writable sticky directory such as /tmp
-// fails: another user could not replace its entries, but the rule does not
-// make that exception.
-func checkAboveInfo(p string, fi fs.FileInfo, owner uint32) error {
+// writable by no one else. A directory group or others can write fails,
+// a sticky /tmp included, unless pol.stickyRoot is set and it is root's
+// with the sticky bit.
+func checkAboveInfo(p string, fi fs.FileInfo, owner uint32, pol abovePolicy) error {
 	if !fi.IsDir() {
 		return pathRefusal(p, "is not a directory")
 	}
@@ -201,12 +254,18 @@ func checkAboveInfo(p string, fi fs.FileInfo, owner uint32) error {
 		return pathRefusal(p, "has an owner that cannot be read")
 	}
 	if uid != rootUID && uid != owner {
-		return pathRefusal(p, "is owned by a user other than root and the required owner")
+		return ruleRefusal(p, "is owned by a user other than root and the required owner", PathOwner, fi, rootUID, owner)
 	}
-	if fi.Mode().Perm()&groupOtherWrite != 0 {
-		return pathRefusal(p, WhyGroupWritable)
+	if fi.Mode().Perm()&groupOtherWrite == 0 {
+		return nil
 	}
-	return nil
+	if !pol.stickyRoot {
+		return ruleRefusal(p, WhyGroupWritable, PathWritable, fi, rootUID, owner)
+	}
+	if uid == rootUID && fi.Mode()&fs.ModeSticky != 0 {
+		return nil
+	}
+	return ruleRefusal(p, WhyNotStickyRoot, PathWritable, fi, rootUID, owner)
 }
 
 // checkStrict applies the path rule to p at or below a root: it is not a
@@ -221,17 +280,17 @@ func checkStrict(p string, owner uint32) (fs.FileInfo, error) {
 
 func checkStrictInfo(p string, fi fs.FileInfo, owner uint32) error {
 	if fi.Mode()&fs.ModeSymlink != 0 {
-		return pathRefusal(p, "is a symlink")
+		return ruleRefusal(p, "is a symlink", PathSymlink, fi)
 	}
 	uid, err := fileOwner(fi)
 	if err != nil {
 		return pathRefusal(p, "has an owner that cannot be read")
 	}
 	if uid != owner {
-		return pathRefusal(p, "is not owned by the required owner")
+		return ruleRefusal(p, "is not owned by the required owner", PathOwner, fi, owner)
 	}
 	if fi.Mode().Perm()&groupOtherWrite != 0 {
-		return pathRefusal(p, WhyGroupWritable)
+		return ruleRefusal(p, WhyGroupWritable, PathWritable, fi, owner)
 	}
 	return nil
 }

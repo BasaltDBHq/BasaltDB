@@ -117,6 +117,13 @@ func newServer(p Plugin, cfg *config) (*server, error) {
 		if !ok {
 			continue
 		}
+		// WithHooks names exactly the hooks served: a hook it leaves out
+		// gets no methods, so its calls answer "method not found".
+		if cfg.hooksSet {
+			if _, given := cfg.hooks[h.name]; !given {
+				continue
+			}
+		}
 		s.hooks[h.name] = decl
 		for name, m := range h.methods {
 			s.methods[name] = m(p)
@@ -145,15 +152,15 @@ func (s *server) dispatch(ctx context.Context, method string, params json.RawMes
 		if err := json.Unmarshal(params, &req); err != nil {
 			return nil, errBadParams
 		}
-		res, e := s.initialize(ctx, req)
+		res, e := s.boundedInitialize(ctx, req)
 		if e != nil {
 			return nil, e
 		}
 		return res, nil
 	case protocol.MethodHealth:
-		return s.health(ctx), nil
+		return s.boundedHealth(ctx), nil
 	case protocol.MethodShutdown:
-		s.shutdown(ctx)
+		s.boundedShutdown(ctx)
 		return protocol.ShutdownResponse{}, nil
 	}
 	m, ok := s.methods[method]
@@ -165,6 +172,58 @@ func (s *server) dispatch(ctx context.Context, method string, params json.RawMes
 		return nil, errDeadline
 	}
 	return res, e
+}
+
+// within runs f and waits for it or for ctx, whichever ends first, so a plugin
+// handler that ignores its context cannot hold the call past its deadline. When
+// ctx ends first the handler is left running and its result is dropped.
+func within[T any](ctx context.Context, f func() T) (T, bool) {
+	done := make(chan T, 1)
+	go func() { done <- f() }()
+	select {
+	case v := <-done:
+		return v, true
+	case <-ctx.Done():
+		var zero T
+		return zero, false
+	}
+}
+
+// The bounded forms of the three platform methods are what every transport
+// calls: a plugin handler that never returns ends at the call's deadline.
+
+// boundedInitialize answers deadline exceeded when the plugin's Initialize is late.
+func (s *server) boundedInitialize(ctx context.Context, req protocol.InitializeRequest) (protocol.InitializeResponse, *rpcError) {
+	type out struct {
+		res protocol.InitializeResponse
+		e   *rpcError
+	}
+	o, ok := within(ctx, func() out {
+		res, e := s.initialize(ctx, req)
+		return out{res, e}
+	})
+	if !ok {
+		return protocol.InitializeResponse{}, errDeadline
+	}
+	return o.res, o.e
+}
+
+// boundedHealth reports a health check that is late as not ready.
+func (s *server) boundedHealth(ctx context.Context) protocol.HealthResponse {
+	res, ok := within(ctx, func() protocol.HealthResponse { return s.health(ctx) })
+	if !ok {
+		return protocol.HealthResponse{Status: protocol.HealthNotReady}
+	}
+	return res
+}
+
+// boundedShutdown abandons a plugin Shutdown that is late: the engine is
+// stopping the plugin either way, so the call still answers.
+func (s *server) boundedShutdown(ctx context.Context) {
+	within(ctx, func() struct{} {
+		s.shutdown(ctx)
+		return struct{}{}
+	})
 }
 
 // initialize negotiates the protocol, checks the hooks the engine will call and
@@ -202,6 +261,9 @@ func (s *server) initialize(ctx context.Context, req protocol.InitializeRequest)
 		if err != nil {
 			return res, errInitFailed
 		}
+	}
+	if ctx.Err() != nil {
+		return res, errDeadline // late: the engine was already told so
 	}
 	if timeoutMs != 0 {
 		s.timeoutNs.Store(int64(time.Duration(timeoutMs) * time.Millisecond))

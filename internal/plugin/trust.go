@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // trustFileExt is a trusted key's file extension: <keyId>.pem.
@@ -79,6 +80,20 @@ func embeddedKeys() (map[string]*ecdsa.PublicKey, error) {
 	}
 	return out, nil
 }
+
+// BuiltInKey reports whether keyID is one of the publisher keys built into
+// the engine, which every trust store holds and no ledger records.
+func BuiltInKey(keyID string) bool {
+	keys, err := builtInKeys()
+	if err != nil {
+		return false
+	}
+	_, ok := keys[keyID]
+	return ok
+}
+
+// builtInKeys parses the built-in keys once.
+var builtInKeys = sync.OnceValues(embeddedKeys)
 
 // check applies the path rule to the trust store: every directory from "/"
 // to plugin-trust/, and each entry in it. A trust store that does not exist
@@ -309,6 +324,10 @@ func writeFileAtomic(dir, name string, b []byte, mode os.FileMode) error {
 func readOwned(path string, limit int64, owner uint32) ([]byte, error) {
 	f, err := os.OpenFile(path, noFollowFlags, 0)
 	if err != nil {
+		// A symlink in the trust store is the path rule's refusal.
+		if fi, lerr := os.Lstat(path); lerr == nil && fi.Mode()&fs.ModeSymlink != 0 {
+			return nil, ruleRefusal(path, "is a symlink", PathSymlink, fi)
+		}
 		return nil, pathRefusal(path, "cannot be opened, or is a symlink")
 	}
 	defer func() { _ = f.Close() }()

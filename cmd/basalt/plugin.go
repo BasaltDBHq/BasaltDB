@@ -53,6 +53,9 @@ const codePluginRefused = "PLUGIN_REFUSED"
 const (
 	reasonAgentOperated = "AGENT_OPERATED"
 	reasonUnknownAgent  = "UNKNOWN_AGENT"
+	// reasonUnsafePath: a NOT_TRUSTED verification failure of the path rule
+	// (who can write a path, a symlink, an owner), which no key fixes.
+	reasonUnsafePath = "UNSAFE_PATH"
 )
 
 // pluginRefusedError is a PLUGIN_REFUSED error: a basalt plugin command refused,
@@ -194,18 +197,8 @@ func (e *pluginEnv) verifyRefusal(err error, again string) error {
 		r.steps = []mcp.NextStep{{Actor: mcp.ActorAgent, Action: mcp.ActionStop, Text: "Stop: the plugin's publisher must fix its manifest."}}
 		return r
 	}
-	if e.mode == plugin.ModeService && ve.Why == plugin.WhyGroupWritable {
-		// A directory others can write (Debian-family /usr/local is
-		// root:staff 2775): trusting a key would not help, the mode would.
-		fix := "sudo chmod go-w " + shellQuote(ve.File)
-		r.person = "The plugin was refused: " + ve.File + " can be written by its group or others, so another user could " +
-			"swap what is installed under it. Plugins are installed only under directories root alone can change. " +
-			"Remove that write access, then run the command again:\n  " + fix + "\n  " + again
-		r.steps = []mcp.NextStep{
-			{Actor: mcp.ActorPerson, Action: mcp.ActionRunCommand, Text: "Remove group and other write access from " + ve.File + ".", Command: fix},
-			{Actor: mcp.ActorPerson, Action: mcp.ActionRunCommand, Text: "Run the refused command again.", Command: again},
-		}
-		return r
+	if ve.Path != nil {
+		return pathRuleRefusal(r, ve, again)
 	}
 	trust := e.command("trust", "<publisher key file>")
 	r.person = "The plugin was refused: " + ve.File + " " + ve.Why + ". If you trust its publisher, trust their public key " +

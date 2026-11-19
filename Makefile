@@ -64,6 +64,10 @@ test-privdrop: ## basalt engine --user and plugin isolation as root in a Linux c
 test-compose: ## The docker compose example (examples/compose): setup, isolation, restart, removal (needs Docker)
 	@examples/compose/smoke.sh
 
+.PHONY: test-systemd
+test-systemd: ## A plugin under its systemd unit, isolation checked live (throwaway host with systemd and passwordless sudo only: changes it as root)
+	@bash scripts/systemd-smoke/smoke.sh
+
 .PHONY: test-cover
 test-cover: bin/gotestsum ## Tests with coverage.out
 	@$(GOTESTSUM) --format pkgname -- -race -count=1 -timeout 15m -coverprofile=coverage.out -covermode=atomic $(PKG)

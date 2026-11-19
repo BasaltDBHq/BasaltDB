@@ -59,6 +59,23 @@ const (
 	systemdUnitDir   = "/etc/systemd/system/"
 	launchDaemonsDir = "/Library/LaunchDaemons/"
 
+	// darwinPluginLogDir holds each macOS plugin's stderr log: root's, mode
+	// 0755, in a directory that is root's too, so only root can put a file
+	// or a link in it.
+	darwinPluginLogDir = darwinLogDir + "/plugins"
+	// newsyslogDir holds the rule that caps each plugin's log; /etc is a
+	// root-owned link to /private/etc, which the install follows.
+	newsyslogDir = "/etc/newsyslog.d/"
+	// pluginLogMode is the log's mode: the plugin's user writes it, root
+	// reads it, no one else can.
+	pluginLogMode = 0o600
+	// pluginLogMaxKB is the size, in KiB, past which newsyslog moves the log
+	// aside, and pluginLogKeep how many moved copies it keeps.
+	pluginLogMaxKB = 1024
+	pluginLogKeep  = 1
+	// rotatedSuffix ends the name of the one copy newsyslog moved aside.
+	rotatedSuffix = ".0"
+
 	// SocketEnv is the one variable a plugin's unit sets: its socket's path
 	// (CONTRACT.md, Plugins, Transports).
 	SocketEnv = "BASALT_PLUGIN_SOCKET"
@@ -89,10 +106,14 @@ type PluginNames struct {
 	// SocketDir is <base>/run/<User>; Socket is the socket in it.
 	SocketDir string
 	Socket    string
+	// Log is the file the plugin's stderr goes to and LogRule the newsyslog
+	// rule that caps it: on macOS only, empty on Linux, where stderr goes to
+	// the journal under the unit.
+	Log, LogRule string
 }
 
 // PluginBase is the service-mode plugin base directory on goos:
-// /usr/local/lib/basalt on Linux, /Library/Basalt on macOS. It holds the
+// /opt/basalt on Linux, /Library/Basalt on macOS. It holds the
 // installed copies, the trust store and the plugins' socket directories.
 func PluginBase(goos string) (string, error) {
 	root, err := plugin.Root(plugin.ModeService, goos, "")
@@ -132,6 +153,8 @@ func NamesFor(goos, name, instance string) (PluginNames, error) {
 	if goos == goosDarwin {
 		n.Unit = pluginLabelPrefix + full
 		n.UnitPath = launchDaemonsDir + n.Unit + ".plist"
+		n.Log = filepath.Join(darwinPluginLogDir, n.User+".log")
+		n.LogRule = newsyslogDir + pluginUnitPrefix + full + ".conf"
 	} else {
 		n.Unit = pluginUnitPrefix + full + ".service"
 		n.UnitPath = systemdUnitDir + n.Unit
@@ -443,8 +466,9 @@ func UserClash(name, instance string, others []plugin.EntryKey) *plugin.EntryKey
 
 // LaunchdPluginDaemon renders entry p's macOS launch daemon. The plugin runs
 // as its own user from its installed copy; macOS file modes keep it from the
-// engine's files. Its stderr is discarded (no log path is set), and its
-// network is not enforced.
+// engine's files. Its stderr goes to its own log (PluginNames.Log), which
+// the install makes before the daemon loads, and its network is not
+// enforced.
 func LaunchdPluginDaemon(h PluginHost, p PluginEntry) (string, error) {
 	if err := p.validate(); err != nil {
 		return "", err
@@ -486,6 +510,8 @@ func LaunchdPluginDaemon(h PluginHost, p PluginEntry) (string, error) {
 	<true/>
 	<key>Umask</key>
 	<integer>%[7]d</integer>
+	<key>StandardErrorPath</key>
+	<string>%[9]s</string>
 	<key>HardResourceLimits</key>
 	<dict>
 		<key>ResidentSetSize</key>
@@ -494,7 +520,27 @@ func LaunchdPluginDaemon(h PluginHost, p PluginEntry) (string, error) {
 </dict>
 </plist>
 `, n.Unit, args.String(), n.User, xmlEscape(p.Dir), SocketEnv, xmlEscape(n.Socket), pluginUmask,
-		int64(p.memoryMB())*bytesPerMB), nil
+		int64(p.memoryMB())*bytesPerMB, xmlEscape(n.Log)), nil
+}
+
+// NewsyslogPluginRule renders the newsyslog rule that caps macOS entry
+// (name, instance)'s stderr log: past 1 MiB newsyslog moves the log to
+// <log>.0, dropping the copy moved before, and makes a new empty log owned
+// by the plugin's user, mode 0600. N: no process is signaled; B: newsyslog
+// writes no turnover line into the new log, which holds only the plugin's
+// own output. newsyslog
+// checks the size on its own schedule, and launchd opens the log when it
+// starts the plugin, so a plugin that keeps running goes on writing to the
+// moved copy until it is started again.
+func NewsyslogPluginRule(name, instance string) (string, error) {
+	n, err := NamesFor(goosDarwin, name, instance)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(`# Written by basalt for plugin %[1]s, instance %[2]s; basalt rewrites it.
+# logfilename	[owner:group]	mode	count	size	when	flags
+%[3]s	%[4]s:%[4]s	%03[5]o	%[6]d	%[7]d	*	NB
+`, name, instance, n.Log, n.User, pluginLogMode, pluginLogKeep, pluginLogMaxKB), nil
 }
 
 // HostFor is the plugin host of the engine configured by cfg (at
@@ -576,31 +622,53 @@ func (a *idAllocator) next() (int, error) {
 }
 
 // PluginBaseSteps make the plugin base and its run directory, root's and
-// 0755, before any plugin's unit. On a system where a directory above the
-// base can be written by a group (Debian-family systems ship /usr/local as
-// root:staff 2775), the base cannot be made safely: the step is skipped
-// with the fix, and the engine itself still installs.
+// 0755, before any plugin's unit, and on macOS the plugins' log directory,
+// root's and 0755 too. On Linux a base that cannot be made safely (a
+// directory above it that someone other than root can write) fails its
+// step, as any other unsafe path does; the engine is already started by
+// then. On macOS the plugin steps come before the engine's daemon, so the
+// step is skipped with the cause and the engine still installs.
 func PluginBaseSteps(goos string) ([]Step, error) {
 	base, err := PluginBase(goos)
 	if err != nil {
 		return nil, err
 	}
 	run := filepath.Join(base, pluginRunDirName)
-	note := "plugins cannot be installed until every directory above " + base +
-		" is writable by root only; on Debian-family systems /usr/local and /usr/local/lib are group-writable: sudo chmod g-w /usr/local /usr/local/lib"
-	if goos == goosDarwin {
-		note = "plugins cannot be installed until every directory above " + base + " is owned by root and writable by root only"
+	if goos != goosDarwin {
+		return []Step{
+			{Kind: StepMkdir, Path: base, Mode: openDirMode},
+			{Kind: StepMkdir, Path: run, Mode: openDirMode},
+		}, nil
 	}
 	return []Step{
-		{Kind: StepMkdir, Path: base, Mode: openDirMode, Note: note},
-		{Kind: StepMkdir, Path: run, Mode: openDirMode, Note: note},
+		{Kind: StepMkdir, Path: base, Mode: openDirMode, Note: rootOnlyNote(base)},
+		{Kind: StepMkdir, Path: run, Mode: openDirMode, Note: rootOnlyNote(base)},
+		{Kind: StepMkdir, Path: darwinPluginLogDir, Mode: openDirMode, Note: rootOnlyNote(darwinPluginLogDir)},
 	}, nil
 }
 
+// rootOnlyNote is why a macOS plugin base step may be skipped.
+func rootOnlyNote(dir string) string {
+	return "plugins cannot be installed until every directory above " + dir + " is owned by root and writable by root only"
+}
+
+// PluginUserInGroup says that a plugin's OS user is in the engine's group,
+// which reaches every plugin socket and the engine's config directory, and
+// names the command that takes it out.
+func PluginUserInGroup(goos, pluginUser, engineGroup string) string {
+	fix := "sudo gpasswd -d " + pluginUser + " " + engineGroup
+	if goos == goosDarwin {
+		fix = "sudo dseditgroup -o edit -d " + pluginUser + " -t user " + engineGroup
+	}
+	return "its OS user " + pluginUser + " is in the engine's group " + engineGroup +
+		", which reaches every plugin socket and the engine's config; take it out of that group: " + fix
+}
+
 // PluginInstallSteps create entry p's OS user when missing, its socket
-// directory (the user's, in the engine's group, 02750) and its unit, then
-// start it when it is enabled and stop it when it is not. ids, on macOS,
-// hands out the new user's id.
+// directory (the user's, in the engine's group, 02750), on macOS its stderr
+// log (the user's, 0600, kept when it exists) and the newsyslog rule that
+// caps it, and its unit, then start it when it is enabled and stop it when
+// it is not. ids, on macOS, hands out the new user's id.
 func pluginInstallSteps(sys System, h PluginHost, p PluginEntry, ids *idAllocator) ([]Step, error) {
 	unit, err := pluginUnit(h, p)
 	if err != nil {
@@ -611,7 +679,15 @@ func pluginInstallSteps(sys System, h PluginHost, p PluginEntry, ids *idAllocato
 		return nil, err
 	}
 	var steps []Step
-	if !sys.UserExists(n.User) {
+	if sys.UserExists(n.User) {
+		in, err := sys.InGroup(n.User, h.EngineUser)
+		if err != nil {
+			return nil, fmt.Errorf("plugin %s/%s: the groups of its OS user %s cannot be read, so it cannot be checked: %w", p.Name, p.Instance, n.User, err)
+		}
+		if in {
+			return nil, fmt.Errorf("plugin %s/%s: %s", p.Name, p.Instance, PluginUserInGroup(h.GOOS, n.User, h.EngineUser))
+		}
+	} else {
 		if h.GOOS == goosDarwin {
 			id, err := ids.next()
 			if err != nil {
@@ -624,13 +700,21 @@ func pluginInstallSteps(sys System, h PluginHost, p PluginEntry, ids *idAllocato
 				"--comment", "BasaltDB plugin "+p.Name+" "+p.Instance, n.User))
 		}
 	}
-	steps = append(steps,
-		Step{Kind: StepMkdir, Path: n.SocketDir, Mode: pluginSocketDirMode, Owner: n.User, Group: h.EngineUser},
-		Step{Kind: StepWrite, Path: n.UnitPath, Content: unit},
-	)
+	steps = append(steps, Step{Kind: StepMkdir, Path: n.SocketDir, Mode: pluginSocketDirMode, Owner: n.User, Group: h.EngineUser})
 	if h.GOOS == goosDarwin {
+		rule, err := NewsyslogPluginRule(p.Name, p.Instance)
+		if err != nil {
+			return nil, err
+		}
 		label := "system/" + n.Unit
-		steps = append(steps, bootout(label))
+		steps = append(steps,
+			// Before the daemon loads, so launchd opens a file the plugin's
+			// user owns rather than making one; an existing log is kept.
+			Step{Kind: StepCreate, Path: n.Log, Mode: pluginLogMode, Owner: n.User},
+			Step{Kind: StepWrite, Path: n.LogRule, Content: rule},
+			Step{Kind: StepWrite, Path: n.UnitPath, Content: unit},
+			bootout(label),
+		)
 		if !p.Enabled {
 			// A plist in LaunchDaemons loads at boot unless it is disabled.
 			return append(steps, run("launchctl", "disable", label)), nil
@@ -640,7 +724,7 @@ func pluginInstallSteps(sys System, h PluginHost, p PluginEntry, ids *idAllocato
 			run("launchctl", "bootstrap", "system", n.UnitPath),
 		), nil
 	}
-	steps = append(steps, run("systemctl", "daemon-reload"))
+	steps = append(steps, Step{Kind: StepWrite, Path: n.UnitPath, Content: unit}, run("systemctl", "daemon-reload"))
 	if !p.Enabled {
 		return append(steps, tryRun("systemctl", "disable", "--now", n.Unit)), nil
 	}
@@ -648,8 +732,9 @@ func pluginInstallSteps(sys System, h PluginHost, p PluginEntry, ids *idAllocato
 }
 
 // PluginInstallPlan is pluginInstallSteps for each of ps, after the base
-// directories: what basalt plugin add, enable and disable run in service
-// mode for one entry, and service install for every local entry.
+// directories (on macOS after the log directory's steps too): what basalt
+// plugin add, enable and disable run in service mode for one entry, and
+// service install for every local entry.
 func PluginInstallPlan(ctx context.Context, sys System, h PluginHost, ps []PluginEntry) ([]Step, error) {
 	if len(ps) == 0 {
 		return nil, nil
@@ -663,6 +748,10 @@ func PluginInstallPlan(ctx context.Context, sys System, h PluginHost, ps []Plugi
 		if ids, err = newIDAllocator(ctx, sys); err != nil {
 			return nil, err
 		}
+		// A Mac set up by an earlier install has the engine user's log
+		// directory: plugin add and enable fix it as service install does,
+		// so no separate step is needed before a plugin's log can be made.
+		steps = append(darwinLogSteps(h.EngineUser), steps...)
 	}
 	more, err := pluginEntriesSteps(sys, h, ps, ids)
 	if err != nil {
@@ -697,8 +786,9 @@ func bootout(label string) Step {
 	return Step{Kind: StepRun, Args: []string{"launchctl", "bootout", label}, Note: "it was not loaded"}
 }
 
-// PluginStopSteps stop entry (name, instance)'s unit and keep it, its user
-// and its directory: basalt plugin disable in service mode.
+// PluginStopSteps stop entry (name, instance)'s unit and keep it, its user,
+// its directory and, on macOS, its log and log rule: basalt plugin disable
+// in service mode.
 func PluginStopSteps(goos, name, instance string) ([]Step, error) {
 	n, err := NamesFor(goos, name, instance)
 	if err != nil {
@@ -712,9 +802,9 @@ func PluginStopSteps(goos, name, instance string) ([]Step, error) {
 }
 
 // PluginRemoveSteps stop and delete exactly what pluginInstallSteps made for
-// entry (name, instance): its unit, its socket directory and, when it
-// exists, its OS user and group. Names come from the entry, never from a
-// listing.
+// entry (name, instance): its unit, on macOS its log rule, its log and the
+// one copy newsyslog moved aside, its socket directory and, when it exists,
+// its OS user and group. Names come from the entry, never from a listing.
 func PluginRemoveSteps(sys System, goos, name, instance string) ([]Step, error) {
 	n, err := NamesFor(goos, name, instance)
 	if err != nil {
@@ -722,7 +812,7 @@ func PluginRemoveSteps(sys System, goos, name, instance string) ([]Step, error) 
 	}
 	installed := sys.Exists(n.UnitPath)
 	hasUser := sys.UserExists(n.User)
-	if !installed && !hasUser && !sys.Exists(n.SocketDir) {
+	if !installed && !hasUser && !sys.Exists(n.SocketDir) && !hasLog(sys, n) {
 		// Nothing of this entry is on the machine (a remote entry).
 		return nil, nil
 	}
@@ -731,7 +821,14 @@ func PluginRemoveSteps(sys System, goos, name, instance string) ([]Step, error) 
 		if installed {
 			steps = append(steps, bootout("system/"+n.Unit))
 		}
-		steps = append(steps, Step{Kind: StepRemove, Path: n.UnitPath})
+		// The rule before the log, so newsyslog never rotates a log being
+		// removed.
+		steps = append(steps,
+			Step{Kind: StepRemove, Path: n.UnitPath},
+			Step{Kind: StepRemove, Path: n.LogRule},
+			Step{Kind: StepRemove, Path: n.Log},
+			Step{Kind: StepRemove, Path: n.Log + rotatedSuffix},
+		)
 	} else {
 		if installed {
 			steps = append(steps, tryRun("systemctl", "disable", "--now", n.Unit))
@@ -754,9 +851,19 @@ func PluginRemoveSteps(sys System, goos, name, instance string) ([]Step, error) 
 	return steps, nil
 }
 
+// hasLog reports whether a macOS entry's log, its moved copy or its rule is
+// on the machine; a Linux entry has none.
+func hasLog(sys System, n PluginNames) bool {
+	if n.Log == "" {
+		return false
+	}
+	return sys.Exists(n.Log) || sys.Exists(n.Log+rotatedSuffix) || sys.Exists(n.LogRule)
+}
+
 // pluginUninstallSteps remove every entry's unit, directory and user, then
-// the run directory and the base when they are empty: installed copies and
-// the trust store stay, as the engine's config does.
+// the run directory and the base when they are empty, and on macOS the
+// plugins' log directory when it is empty: installed copies and the trust
+// store stay, as the engine's config does.
 func pluginUninstallSteps(sys System, goos string, entries []PluginEntry) ([]Step, error) {
 	base, err := PluginBase(goos)
 	if err != nil {
@@ -769,6 +876,12 @@ func pluginUninstallSteps(sys System, goos string, entries []PluginEntry) ([]Ste
 			return nil, err
 		}
 		steps = append(steps, more...)
+	}
+	if goos == goosDarwin && sys.Exists(darwinPluginLogDir) {
+		steps = append(steps, Step{
+			Kind: StepRemove, Path: darwinPluginLogDir,
+			Note: "left in place: it still holds the log of a plugin that is not in engine.json",
+		})
 	}
 	if !sys.Exists(base) {
 		return steps, nil

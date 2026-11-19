@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"testing"
 
@@ -356,4 +357,184 @@ func TestOSSystemRemoveTreeFollowsNoLink(t *testing.T) {
 	require.NoError(t, OSSystem{}.RemoveTree(tree))
 	_, err = os.Stat(filepath.Join(outside, "keep"))
 	require.NoError(t, err)
+}
+
+// CreateFile makes a service's log: a missing one empty, an existing one
+// kept with its content, both given the mode and owner through the
+// descriptor; anything but a plain file at the path is refused, never
+// followed or re-owned.
+func TestOSSystemCreateFileKeepsContentAndFollowsNoLink(t *testing.T) {
+	dir := realTempDir(t)
+	cur, err := user.Current()
+	require.NoError(t, err)
+
+	log := filepath.Join(dir, "p.log")
+	require.NoError(t, OSSystem{}.CreateFile(log, 0o600, cur.Username))
+	fi, err := os.Lstat(log)
+	require.NoError(t, err)
+	require.True(t, fi.Mode().IsRegular())
+	require.Equal(t, os.FileMode(0o600), fi.Mode().Perm())
+	require.Zero(t, fi.Size())
+	require.Equal(t, cur.Uid, strconv.Itoa(int(fi.Sys().(*syscall.Stat_t).Uid)))
+
+	// Run again over a log with content and a wider mode: the content stays.
+	require.NoError(t, os.WriteFile(log, []byte("crash trace\n"), 0o600))
+	require.NoError(t, os.Chmod(log, 0o644))
+	require.NoError(t, OSSystem{}.CreateFile(log, 0o600, cur.Username))
+	got, err := os.ReadFile(log)
+	require.NoError(t, err)
+	require.Equal(t, "crash trace\n", string(got))
+	fi, err = os.Lstat(log)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), fi.Mode().Perm())
+
+	victim := filepath.Join(dir, "victim")
+	require.NoError(t, os.WriteFile(victim, []byte("keep"), 0o644))
+
+	// A symlink, dangling or not, is refused; its target keeps its mode.
+	link := filepath.Join(dir, "link.log")
+	require.NoError(t, os.Symlink(victim, link))
+	require.ErrorContains(t, OSSystem{}.CreateFile(link, 0o600, cur.Username), "is a symlink, which is refused")
+	dangling := filepath.Join(dir, "dangling.log")
+	require.NoError(t, os.Symlink(filepath.Join(dir, "missing"), dangling))
+	require.ErrorContains(t, OSSystem{}.CreateFile(dangling, 0o600, cur.Username), "is a symlink, which is refused")
+	_, err = os.Lstat(filepath.Join(dir, "missing"))
+	require.ErrorIs(t, err, os.ErrNotExist, "nothing is created through a dangling link")
+
+	// A log its owner hard-linked elsewhere (a plugin can link its own log
+	// into its socket directory) is still taken over: refusing it would let
+	// one plugin stop every later install.
+	own := filepath.Join(dir, "own.log")
+	require.NoError(t, os.WriteFile(own, []byte("mine\n"), 0o644))
+	require.NoError(t, os.Link(own, filepath.Join(dir, "own-elsewhere")))
+	require.NoError(t, OSSystem{}.CreateFile(own, 0o600, cur.Username))
+	got, err = os.ReadFile(own)
+	require.NoError(t, err)
+	require.Equal(t, "mine\n", string(got))
+
+	// A hard link to someone else's file is refused, never re-owned.
+	hard := filepath.Join(dir, "hard.log")
+	require.NoError(t, os.Link(victim, hard))
+	ownedBy(t, victim, 4343)
+	require.ErrorContains(t, OSSystem{}.CreateFile(hard, 0o600, cur.Username), "not a plain file")
+	fi, err = os.Stat(victim)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o644), fi.Mode().Perm(), "the other name keeps its mode")
+
+	// A directory or a FIFO is refused, and the FIFO's open does not block.
+	sub := filepath.Join(dir, "sub.log")
+	require.NoError(t, os.Mkdir(sub, 0o755))
+	require.ErrorContains(t, OSSystem{}.CreateFile(sub, 0o600, cur.Username), "not a plain file")
+	fifo := filepath.Join(dir, "fifo.log")
+	require.NoError(t, unix.Mkfifo(fifo, 0o644))
+	require.ErrorContains(t, OSSystem{}.CreateFile(fifo, 0o600, cur.Username), "not a plain file")
+
+	// An unknown owner is refused before anything is made.
+	require.Error(t, OSSystem{}.CreateFile(filepath.Join(dir, "nobody.log"), 0o600, "basalt-test-no-such-user"))
+	_, err = os.Lstat(filepath.Join(dir, "nobody.log"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+// The log's directory must be root's: one the plugin's or the engine's user
+// owns could have a link swapped in, so it is refused even when that user
+// is the log's owner.
+func TestOSSystemCreateFileWantsARootDirectory(t *testing.T) {
+	dir := realTempDir(t)
+	logs := filepath.Join(dir, "plugins")
+	require.NoError(t, os.Mkdir(logs, 0o755))
+	ownedBy(t, logs, 4242)
+	cur, err := user.Current()
+	require.NoError(t, err)
+	err = OSSystem{}.CreateFile(filepath.Join(logs, "p.log"), 0o600, cur.Username)
+	require.ErrorContains(t, err, "is owned by uid 4242, not root")
+	entries, rerr := os.ReadDir(logs)
+	require.NoError(t, rerr)
+	require.Empty(t, entries)
+
+	// A symlinked directory is refused too.
+	target := filepath.Join(dir, "real")
+	require.NoError(t, os.Mkdir(target, 0o755))
+	require.NoError(t, os.Symlink(target, filepath.Join(dir, "linked")))
+	err = OSSystem{}.CreateFile(filepath.Join(dir, "linked", "p.log"), 0o600, cur.Username)
+	require.ErrorContains(t, err, "symlink is refused")
+	entries, rerr = os.ReadDir(target)
+	require.NoError(t, rerr)
+	require.Empty(t, entries)
+}
+
+// An earlier install's log directory, the engine user's, is renamed whole:
+// what that user left inside (a link to a root file, say) moves with it,
+// untouched and never followed, and the path is free for root's directory.
+func TestOSSystemMoveAsideRenamesTheWholeDirectory(t *testing.T) {
+	dir := realTempDir(t)
+	cur, err := user.Current()
+	require.NoError(t, err)
+	logs := filepath.Join(dir, "Basalt")
+	require.NoError(t, os.Mkdir(logs, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(logs, "engine.log"), []byte("old\n"), 0o600))
+	victim := filepath.Join(dir, "victim")
+	require.NoError(t, os.WriteFile(victim, []byte("keep"), 0o644))
+	require.NoError(t, os.Symlink(victim, filepath.Join(logs, "plugins")))
+
+	moved, err := OSSystem{}.MoveAside(logs, cur.Username)
+	require.NoError(t, err)
+	require.Regexp(t, `/Basalt\.old-\d{8}T\d{6}Z$`, moved)
+	_, err = os.Lstat(logs)
+	require.ErrorIs(t, err, os.ErrNotExist, "the path is free")
+	got, err := os.ReadFile(filepath.Join(moved, "engine.log"))
+	require.NoError(t, err)
+	require.Equal(t, "old\n", string(got), "the old logs are kept")
+	fi, err := os.Lstat(filepath.Join(moved, "plugins"))
+	require.NoError(t, err)
+	require.Equal(t, os.ModeSymlink, fi.Mode().Type(), "the planted link moved as it is")
+	fi, err = os.Stat(victim)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o644), fi.Mode().Perm(), "the link's target is untouched")
+
+	// A second move in the same second takes the next free name.
+	require.NoError(t, os.Mkdir(logs, 0o750))
+	again, err := OSSystem{}.MoveAside(logs, cur.Username)
+	require.NoError(t, err)
+	require.NotEqual(t, moved, again)
+
+	// Nothing there, or an owner with no account: nothing moves.
+	moved, err = OSSystem{}.MoveAside(logs, cur.Username)
+	require.NoError(t, err)
+	require.Empty(t, moved)
+	require.NoError(t, os.Mkdir(logs, 0o755))
+	moved, err = OSSystem{}.MoveAside(logs, "basalt-test-no-such-user")
+	require.NoError(t, err)
+	require.Empty(t, moved)
+}
+
+func TestOSSystemMoveAsideLeavesOthersAndRefusesLinks(t *testing.T) {
+	dir := realTempDir(t)
+	cur, err := user.Current()
+	require.NoError(t, err)
+
+	// A directory root (or anyone but the engine's user) owns stays.
+	logs := filepath.Join(dir, "Basalt")
+	require.NoError(t, os.Mkdir(logs, 0o755))
+	ownedBy(t, logs, 0)
+	moved, err := OSSystem{}.MoveAside(logs, cur.Username)
+	require.NoError(t, err)
+	require.Empty(t, moved)
+	_, err = os.Stat(logs)
+	require.NoError(t, err)
+
+	// A link or a file at the path is refused, never followed or moved.
+	target := filepath.Join(dir, "target")
+	require.NoError(t, os.Mkdir(target, 0o755))
+	link := filepath.Join(dir, "linked")
+	require.NoError(t, os.Symlink(target, link))
+	_, err = OSSystem{}.MoveAside(link, cur.Username)
+	require.ErrorContains(t, err, "symlink is refused")
+	file := filepath.Join(dir, "file")
+	require.NoError(t, os.WriteFile(file, nil, 0o600))
+	_, err = OSSystem{}.MoveAside(file, cur.Username)
+	require.ErrorContains(t, err, "is not a directory")
+	for _, p := range []string{link, file} {
+		_, err := os.Lstat(p)
+		require.NoError(t, err, "left in place")
+	}
 }

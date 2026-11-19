@@ -94,7 +94,8 @@ func (e *pluginEnv) check(k plugin.EntryKey) error {
 	}
 	if !v.Manifest.Endpoint.IsRemote() && e.mode == plugin.ModeService {
 		return fmt.Errorf("plugin %s: in service mode a local plugin runs as its own OS user under its own service, "+
-			"which basalt plugin check does not start yet", k)
+			"which basalt plugin check does not start yet. There the plugin must listen on the socket BASALT_PLUGIN_SOCKET names "+
+			"(a plugin built with the Go SDK does); one that only reads stdin never starts", k)
 	}
 	if !v.Manifest.Endpoint.IsRemote() && e.c.host.Euid() == 0 {
 		return fmt.Errorf("plugin %s: a local plugin is never started with root's privileges; "+

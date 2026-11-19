@@ -23,7 +23,13 @@ const (
 type slot struct {
 	entry Entry
 	t     Transport
-	sem   chan struct{}
+	// sem caps the hook calls in flight (initialize included, which runs
+	// before any hook call). health and shutdown each have a slot of their
+	// own outside it, so a plugin busy with hook calls still gets its health
+	// check and its shutdown.
+	sem      chan struct{}
+	health   chan struct{}
+	shutdown chan struct{}
 	// down is closed the first time a call finds the plugin gone (EXITED
 	// or UNAVAILABLE), so the supervisor need not wait for its next health
 	// check.
@@ -76,9 +82,14 @@ func (h *Host) Register(ctx context.Context, e Entry, t Transport) error {
 			TimeoutMs:       int(e.Timeout / time.Millisecond),
 		},
 	}
-	s := &slot{entry: e, t: t, sem: make(chan struct{}, protocol.MaxInFlight), down: make(chan struct{}), state: StateUnavailable}
+	s := &slot{
+		entry: e, t: t,
+		sem:    make(chan struct{}, protocol.MaxInFlight),
+		health: make(chan struct{}, 1), shutdown: make(chan struct{}, 1),
+		down: make(chan struct{}), state: StateUnavailable,
+	}
 	var resp protocol.InitializeResponse
-	if err := s.do(ctx, protocol.MethodInitialize, req, &resp); err != nil {
+	if err := s.do(ctx, s.sem, protocol.MethodInitialize, req, &resp); err != nil {
 		return err
 	}
 	if !initializeMatches(e, resp) {
@@ -113,7 +124,8 @@ func (h *Host) Unregister(k EntryKey) {
 // (initialize, health, shutdown) goes through Register and Control instead, and
 // is refused with a plain error before anything is sent. The entry's timeout is
 // the deadline for the whole call, including the wait for a free slot (at most
-// four calls are in flight per entry). Other failures are *CallError or ErrAgentNotListed.
+// four hook calls are in flight per entry; health and shutdown are not counted).
+// Other failures are *CallError or ErrAgentNotListed.
 func (h *Host) Call(ctx context.Context, k EntryKey, agents []string, method string, params, result any) error {
 	switch method {
 	case protocol.MethodInitialize, protocol.MethodHealth, protocol.MethodShutdown:
@@ -135,7 +147,7 @@ func (h *Host) Call(ctx context.Context, k EntryKey, agents []string, method str
 		return &CallError{Entry: k, Class: ClassUnavailable}
 	}
 	defer s.inflight.Done()
-	return s.do(ctx, method, params, result)
+	return s.do(ctx, s.sem, method, params, result)
 }
 
 // Drain stops an entry from taking new calls and marks it UNAVAILABLE, then
@@ -173,18 +185,23 @@ func (h *Host) Down(k EntryKey) <-chan struct{} {
 }
 
 // Control sends a lifecycle call (health, shutdown) to an entry. It names no
-// agent and carries no hook data.
+// agent and carries no hook data. It does not wait behind hook calls: each of
+// the two methods has one slot of its own, outside the cap of four.
 func (h *Host) Control(ctx context.Context, k EntryKey, method string, params, result any) error {
 	s := h.lookup(k)
 	if s == nil {
 		return &CallError{Entry: k, Class: ClassUnavailable}
 	}
+	var sem chan struct{}
 	switch method {
-	case protocol.MethodHealth, protocol.MethodShutdown:
+	case protocol.MethodHealth:
+		sem = s.health
+	case protocol.MethodShutdown:
+		sem = s.shutdown
 	default:
 		return fmt.Errorf("plugin %s: %q is not a lifecycle method", k, method)
 	}
-	return s.do(ctx, method, params, result)
+	return s.do(ctx, sem, method, params, result)
 }
 
 // State reports whether the entry can take calls. An unknown entry is
@@ -251,15 +268,15 @@ func (s *slot) markDown() {
 	s.downOnce.Do(func() { close(s.down) })
 }
 
-// do runs one call under the entry's deadline and in-flight cap, and turns
-// every failure into a CallError.
-func (s *slot) do(ctx context.Context, method string, params, result any) error {
+// do runs one call under the entry's deadline and a free slot of sem, and
+// turns every failure into a CallError.
+func (s *slot) do(ctx context.Context, sem chan struct{}, method string, params, result any) error {
 	ctx, cancel := context.WithTimeout(ctx, s.entry.Timeout)
 	defer cancel()
 
 	select {
-	case s.sem <- struct{}{}:
-		defer func() { <-s.sem }()
+	case sem <- struct{}{}:
+		defer func() { <-sem }()
 	case <-ctx.Done():
 		return s.ctxErr(ctx)
 	}

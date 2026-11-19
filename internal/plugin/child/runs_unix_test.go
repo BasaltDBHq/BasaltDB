@@ -16,6 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// deadEngine is an engine pid the tests' records name; its start time never
+// matches, so the engine counts as gone.
+const deadEngine = 4242424
+
 // shortDir is a new directory under TMPDIR short enough for a socket path.
 func shortDir(t *testing.T) string {
 	t.Helper()
@@ -135,7 +139,7 @@ func TestReapSparesAnotherProcess(t *testing.T) {
 	other.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	require.NoError(t, other.Start())
 	t.Cleanup(func() { _ = other.Process.Kill(); _ = other.Wait() })
-	_, err := (&Runs{Dir: runs}).write(record{PID: other.Process.Pid, Start: "not-its-start"})
+	_, err := (&Runs{Dir: runs}).write(record{PID: other.Process.Pid, Start: "not-its-start", EnginePID: deadEngine, EngineStart: "gone"})
 	require.NoError(t, err)
 
 	Reap(runs, nil)
@@ -157,11 +161,18 @@ func TestReapNeverKillsTheEngineOrInit(t *testing.T) {
 	runs := filepath.Join(shortDir(t), "runs")
 	r := &Runs{Dir: runs}
 	for _, pid := range []int{0, 1, os.Getpid(), syscall.Getpgrp(), 4242} {
-		_, err := r.write(record{PID: pid, Start: "s"})
+		_, err := r.write(record{PID: pid, Start: "s", EnginePID: deadEngine, EngineStart: "gone"})
 		require.NoError(t, err)
 	}
 	require.NoError(t, os.WriteFile(filepath.Join(runs, "7.json"), []byte("{not json"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(runs, "8.json"), []byte(`{"pid":8}`), 0o600))
+	// pid_t truncation: 4294967297 would be pid 1 to the kernel, 4294967295 -1.
+	for i, pid := range []string{"4294967297", "4294967295", "-5"} {
+		rec := `{"pid":` + pid + `,"start":"s","enginePid":4242424,"engineStart":"gone"}`
+		require.NoError(t, os.WriteFile(filepath.Join(runs, "big"+strconv.Itoa(i)+".json"), []byte(rec), 0o600))
+	}
+	// A record without its engine is dropped.
+	require.NoError(t, os.WriteFile(filepath.Join(runs, "9.json"), []byte(`{"pid":4343,"start":"s"}`), 0o600))
 	Reap(runs, nil)
 	require.Equal(t, []int{4242}, killed)
 	recs, err := os.ReadDir(runs)
@@ -196,7 +207,7 @@ func TestReapKeepsAnythingButAnEmptySocketDir(t *testing.T) {
 	require.NoError(t, os.Mkdir(empty, 0o700))
 
 	for i, d := range []string{extra, notSock, link, empty, "relative/dir"} {
-		_, err := r.write(record{PID: 100000 + i, Start: "s", SocketDir: d})
+		_, err := r.write(record{PID: 100000 + i, Start: "s", SocketDir: d, EnginePID: deadEngine, EngineStart: "gone"})
 		require.NoError(t, err)
 	}
 	Reap(runs, nil)
@@ -219,4 +230,37 @@ func TestReapIgnoresASymlinkedRunsDir(t *testing.T) {
 	Reap(link, nil)
 	_, err := os.Lstat(filepath.Join(target, "9.json"))
 	require.NoError(t, err, "nothing read or removed through the symlink")
+}
+
+// A record written by another engine that still runs (its pid has the
+// recorded start time) is kept, and its plugin is not killed.
+func TestReapLeavesAnotherRunningEnginesPlugins(t *testing.T) {
+	runs := filepath.Join(shortDir(t), "runs")
+	require.NoError(t, os.Mkdir(runs, 0o700))
+	start := func() *exec.Cmd {
+		c := exec.Command(os.Args[0], peerFlag, "sleep")
+		c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		require.NoError(t, c.Start())
+		t.Cleanup(func() { _ = c.Process.Kill(); _ = c.Wait() })
+		return c
+	}
+	engine, plug := start(), start()
+	es, err := procStart(engine.Process.Pid)
+	require.NoError(t, err)
+	ps, err := procStart(plug.Process.Pid)
+	require.NoError(t, err)
+	_, err = (&Runs{Dir: runs}).write(record{PID: plug.Process.Pid, Start: ps, EnginePID: engine.Process.Pid, EngineStart: es})
+	require.NoError(t, err)
+
+	Reap(runs, nil)
+	time.Sleep(50 * time.Millisecond)
+	require.False(t, gone(plug.Process.Pid), "the running engine's plugin is spared")
+	recs, err := os.ReadDir(runs)
+	require.NoError(t, err)
+	require.Len(t, recs, 1, "and its record kept")
+
+	require.NoError(t, engine.Process.Kill())
+	_ = engine.Wait()
+	Reap(runs, nil)
+	require.Eventually(t, func() bool { return gone(plug.Process.Pid) }, 10*time.Second, 10*time.Millisecond, "reaped once that engine is gone")
 }

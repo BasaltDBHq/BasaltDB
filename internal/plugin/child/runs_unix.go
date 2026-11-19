@@ -16,7 +16,15 @@ func ownedByMe(fi fs.FileInfo) bool {
 	return ok && int(st.Uid) == os.Geteuid()
 }
 
-// killGroupID sends SIGKILL to the process group pgid leads.
-func killGroupID(pgid int) error { return syscall.Kill(-pgid, syscall.SIGKILL) }
+// killGroupID sends SIGKILL to the process group pgid leads, and to pgid
+// itself in case it left that group.
+func killGroupID(pgid int) error {
+	errGroup := syscall.Kill(-pgid, syscall.SIGKILL)
+	errLeader := syscall.Kill(pgid, syscall.SIGKILL)
+	if errGroup != nil && errLeader != nil {
+		return errGroup
+	}
+	return nil
+}
 
 func getpgrp() int { return syscall.Getpgrp() }

@@ -146,7 +146,7 @@ func socketDir(base string) (dir, path string, err error) {
 	if err := plugin.CheckPrivateDir(base); err != nil {
 		var ve *plugin.VerifyError
 		if errors.As(err, &ve) {
-			return "", "", fmt.Errorf("plugin socket directories are made under %s, but %s %s; set TMPDIR to a directory only you can write (for example mkdir -m 700 ~/.cache/basalt-tmp)", base, ve.File, ve.Why)
+			return "", "", fmt.Errorf("plugin socket directories are made under %s, but %s %s; set TMPDIR to a directory only you can write (for example mkdir -m 700 ~/.cache/basalt-tmp, with chmod go-w on the directories above it)", base, ve.File, ve.Why)
 		}
 		return "", "", err
 	}

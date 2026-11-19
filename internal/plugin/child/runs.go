@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,8 +16,9 @@ import (
 
 // Runs is the directory where the engine records each local plugin process
 // it starts, so its next start can stop one an engine crash left running and
-// remove its socket directory (Reap). Only the engine uses it: it holds the
-// engine lock, so no other engine records into the same directory.
+// remove its socket directory (Reap). Each record also names the engine that
+// wrote it, so an engine sharing the directory with another that still runs
+// never reaps that engine's plugins.
 type Runs struct {
 	// Dir is the records' directory, made 0700 when the first record is
 	// written.
@@ -43,6 +45,9 @@ type record struct {
 	PID       int    `json:"pid"`
 	Start     string `json:"start"`
 	SocketDir string `json:"socketDir,omitempty"`
+	// EnginePID and EngineStart are the engine that started it.
+	EnginePID   int    `json:"enginePid"`
+	EngineStart string `json:"engineStart"`
 }
 
 // ErrNotRecorded: a process was started but its run record could not be
@@ -56,7 +61,11 @@ func recordStart(r *Runs, pid int, socketDir string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("%w (its start time cannot be read)", ErrNotRecorded)
 	}
-	path, err := r.write(record{PID: pid, Start: start, SocketDir: socketDir})
+	engineStart, err := procStart(os.Getpid())
+	if err != nil {
+		return "", fmt.Errorf("%w (the engine's start time cannot be read)", ErrNotRecorded)
+	}
+	path, err := r.write(record{PID: pid, Start: start, SocketDir: socketDir, EnginePID: os.Getpid(), EngineStart: engineStart})
 	if err != nil {
 		return "", ErrNotRecorded
 	}
@@ -132,10 +141,14 @@ func Reap(dir string, log *slog.Logger) {
 	for _, de := range des {
 		path := filepath.Join(dir, de.Name())
 		if strings.HasSuffix(de.Name(), recordSuffix) && de.Type().IsRegular() {
-			if rec, err := readRecord(path); err == nil {
-				reapOne(rec, log)
-			} else {
+			rec, err := readRecord(path)
+			switch {
+			case err != nil:
 				log.Warn("plugin run record dropped: it cannot be read", "file", de.Name())
+			case engineRuns(rec):
+				continue // another engine's plugin, still in use: kept
+			default:
+				reapOne(rec, log)
 			}
 		}
 		if de.Type().IsRegular() {
@@ -161,10 +174,25 @@ func readRecord(path string) (record, error) {
 	if err := json.Unmarshal(b, &rec); err != nil {
 		return rec, err
 	}
-	if rec.Start == "" {
+	if rec.Start == "" || rec.EngineStart == "" {
 		return rec, errors.New("record has no start time")
 	}
+	// Only a pid the kernel takes as pid_t as given: a larger one would be
+	// truncated there, and 4294967295 would become -1, every process.
+	if rec.PID < 2 || rec.PID > math.MaxInt32 || rec.EnginePID < 2 || rec.EnginePID > math.MaxInt32 {
+		return rec, errors.New("record has a pid out of range")
+	}
 	return rec, nil
+}
+
+// engineRuns reports whether the engine that wrote rec still runs, and is
+// not this one.
+func engineRuns(rec record) bool {
+	if rec.EnginePID == os.Getpid() {
+		return false
+	}
+	start, err := reapStart(rec.EnginePID)
+	return err == nil && start == rec.EngineStart
 }
 
 // The process lookups Reap uses; tests replace them.

@@ -506,7 +506,7 @@ func TestPluginRunsOnlyInSameUserMode(t *testing.T) {
 	require.NoError(t, os.Mkdir(stale, 0o700))
 	runs := filepath.Join(state, pluginRunsDirName)
 	require.NoError(t, os.Mkdir(runs, 0o700))
-	rec := fmt.Sprintf(`{"pid":99999999,"start":"gone","socketDir":%q}`, stale)
+	rec := fmt.Sprintf(`{"pid":99999999,"start":"gone","socketDir":%q,"enginePid":99999998,"engineStart":"gone"}`, stale)
 	require.NoError(t, os.WriteFile(filepath.Join(runs, "99999999.json"), []byte(rec), 0o600))
 
 	require.Nil(t, pluginRuns(config.Config{Mode: config.ModeService}, state, os.Geteuid(), discard))

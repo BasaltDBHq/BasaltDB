@@ -61,6 +61,20 @@ type Plugin struct {
 	Config json.RawMessage `json:"config,omitempty"`
 	// Auth is a remote plugin's credential file.
 	Auth *PluginAuth `json:"auth,omitempty"`
+	// Approval is PluginApprovalRequired or empty: with it the entry is
+	// served to an agent only with a matching plugin approval a person
+	// signed with a passkey (CONTRACT.md, Plugin approval). basalt plugin
+	// add and enable write it when they open an approval.
+	Approval string `json:"approval,omitempty"`
+}
+
+// PluginApprovalRequired is the value of a plugin entry's approval key.
+const PluginApprovalRequired = "REQUIRED"
+
+// PluginRequiresApproval reports whether entry p requires a plugin approval
+// on c: the engine is agent-operated, or the entry says so.
+func (c Config) PluginRequiresApproval(p Plugin) bool {
+	return c.AgentOperated() || p.Approval == PluginApprovalRequired
 }
 
 // PluginAuth is a remote plugin entry's auth: the file the engine reads its
@@ -186,6 +200,9 @@ func (c Config) checkPlugin(p Plugin) error {
 	}
 	if err := CheckPluginConfig(p.Config); err != nil {
 		return fmt.Errorf("plugin %s: %w", k, err)
+	}
+	if p.Approval != "" && p.Approval != PluginApprovalRequired {
+		return fmt.Errorf("plugin %s: approval must be %q or absent", k, PluginApprovalRequired)
 	}
 	if p.Auth != nil && (p.Auth.CredentialFile == "" || !filepath.IsAbs(p.Auth.CredentialFile) || len(p.Auth.CredentialFile) > maxCredentialPath) {
 		return fmt.Errorf("plugin %s: auth.credentialFile must be an absolute path of at most %d bytes", k, maxCredentialPath)

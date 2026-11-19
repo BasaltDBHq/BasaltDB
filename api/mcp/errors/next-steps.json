@@ -100,9 +100,9 @@
     { "code": "PLUGIN_REFUSED", "reason": "NOT_TRUSTED", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "RUN_COMMAND" }] },
     { "code": "PLUGIN_REFUSED", "reason": "UNKNOWN_AGENT", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }] },
     { "code": "PLUGIN_REFUSED", "reason": "UNSAFE_PATH", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "PERSON", "action": "RUN_COMMAND" }] },
-    { "code": "PLUGIN_REFUSED", "reason": "TOO_MANY_PENDING", "personMessage": true, "planned": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }] },
-    { "code": "PLUGIN_REFUSED", "reason": "GUARD_OUTDATED", "personMessage": true, "planned": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "STOP" }] },
-    { "code": "PLUGIN_REFUSED", "reason": "DATABASE_UNREACHABLE", "personMessage": true, "planned": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "OPERATOR", "action": "RUN_COMMAND" }] }
+    { "code": "PLUGIN_REFUSED", "reason": "TOO_MANY_PENDING", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }] },
+    { "code": "PLUGIN_REFUSED", "reason": "GUARD_OUTDATED", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "STOP" }] },
+    { "code": "PLUGIN_REFUSED", "reason": "DATABASE_UNREACHABLE", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "OPERATOR", "action": "RUN_COMMAND" }] }
   ],
   "results": [
     { "tool": "preview_revert", "case": "PREVIEW", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "REVISE_CALL" }] },
@@ -164,6 +164,7 @@
     { "kind": "ERROR", "code": "UNAVAILABLE", "reason": "CREDENTIAL_REJECTED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }] },
     { "kind": "ERROR", "code": "UNAVAILABLE", "reason": "GUARD_MISSING", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }] },
     { "kind": "ERROR", "code": "UNAVAILABLE", "reason": "GUARD_OUTDATED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }] },
+    { "kind": "ERROR", "code": "PLUGIN_REFUSED", "reason": "GUARD_OUTDATED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }] },
     { "kind": "ERROR", "code": "UNAVAILABLE", "reason": "ENGINE_UNREACHABLE", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },
     { "kind": "WARNING", "code": "RLS_HIDES_ROWS", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "RUN_COMMAND" }] },
     { "kind": "WARNING", "code": "GUARD_UPGRADE_AVAILABLE", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }] },

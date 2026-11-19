@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
 
@@ -299,4 +300,36 @@ func TestAddWaitReturnsWhenRunning(t *testing.T) {
 	require.Equal(t, waitEnded, w.State)
 	require.Equal(t, stateCancelled, w.Approvals[0].State)
 	require.Less(t, time.Since(start), 5*time.Second)
+}
+
+// A database that does not answer decides nothing: an approval no agent
+// could read is neither signed nor ended, so the wait goes on; once every
+// agent answered, one that none shows has ended.
+func TestWaitUndecidedWhileDatabaseDown(t *testing.T) {
+	t.Parallel()
+	e := &pluginEnv{c: newIO(context.Background(), stdio{in: strings.NewReader(""), out: &bytes.Buffer{}, err: &bytes.Buffer{}}, func(string) string { return "" })}
+	k := plugin.EntryKey{Name: "acme-ner", Instance: "default"}
+	id := uuid.New()
+	listed := []string{"product_a", "product_b"}
+
+	w, signed, open := e.waitStates([]uuid.UUID{id}, listed, map[string]waitAgentRead{})
+	require.False(t, signed)
+	require.True(t, open, "nobody answered: nothing ended")
+	require.Equal(t, stateNone, w[0].State)
+
+	approved := guard.PluginApprovalRecord{ApprovalID: id, Name: k.Name, Instance: k.Instance, Status: guard.PluginApprovalStatusApproved, NamesCaller: true}
+	one := map[string]waitAgentRead{"product_a": {newest: id, records: map[uuid.UUID]guard.PluginApprovalRecord{id: approved}}}
+	_, signed, open = e.waitStates([]uuid.UUID{id}, listed, one)
+	require.False(t, signed, "product_b never answered: not yet signed for it")
+	require.True(t, open)
+
+	one["product_b"] = waitAgentRead{newest: id, records: map[uuid.UUID]guard.PluginApprovalRecord{id: approved}}
+	_, signed, open = e.waitStates([]uuid.UUID{id}, listed, one)
+	require.True(t, signed)
+	require.True(t, open)
+
+	gone := map[string]waitAgentRead{"product_a": {records: map[uuid.UUID]guard.PluginApprovalRecord{}}, "product_b": {records: map[uuid.UUID]guard.PluginApprovalRecord{}}}
+	w, _, open = e.waitStates([]uuid.UUID{id}, listed, gone)
+	require.False(t, open, "every agent answered and none shows it")
+	require.Equal(t, stateNone, w[0].State)
 }

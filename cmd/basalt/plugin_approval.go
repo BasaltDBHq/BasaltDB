@@ -913,6 +913,11 @@ func (e *pluginEnv) relayAs(conn *pgx.Conn, resp approval.PluginApprovalResponse
 
 // connectAgent connects with agent's credential within 15 seconds.
 func (e *pluginEnv) connectAgent(name string) (*pgx.Conn, error) {
+	return e.connectAgentCtx(e.c.ctx, name)
+}
+
+// connectAgentCtx is connectAgent within ctx too.
+func (e *pluginEnv) connectAgentCtx(ctx context.Context, name string) (*pgx.Conn, error) {
 	a, ok := agentOf(e.cfg, name)
 	if !ok {
 		return nil, errAgentNotInConfig(name, e.configPath)
@@ -921,7 +926,7 @@ func (e *pluginEnv) connectAgent(name string) (*pgx.Conn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("agent %s: its credential file cannot be read", name)
 	}
-	ctx, cancel := context.WithTimeout(e.c.ctx, databaseTimeout)
+	ctx, cancel := context.WithTimeout(ctx, databaseTimeout)
 	defer cancel()
 	conn, err := connect(ctx, dsn)
 	if err != nil {

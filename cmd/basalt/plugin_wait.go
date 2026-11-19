@@ -96,17 +96,14 @@ func (e *pluginEnv) waitCommand(k plugin.EntryKey, ids []uuid.UUID) string {
 	return e.command("enable", append(entryArgs(k), "--approval-id", strings.Join(parts, ","), "--json")...)
 }
 
-// waitAgent is one listed agent's connection for the wait.
-type waitAgent struct {
-	name string
-	conn *pgx.Conn
-}
-
 // waitForRunning waits up to d for entry k to run on approvals ids: every
 // approval signed, and the running engine serving the entry, READY, to each
 // listed agent an approval names, on that approval. It opens nothing and
 // writes nothing. It returns at once when an approval is no longer open,
-// or when they are all signed and the engine is not running.
+// or when they are all signed and the engine is not running. Every
+// connection and read runs within the deadline, so the wait never outlasts
+// d by more than one poll. A database that does not answer decides
+// nothing: its agents' approvals stay as last read.
 func (e *pluginEnv) waitForRunning(k plugin.EntryKey, ids []uuid.UUID, d time.Duration) (waitResult, error) {
 	// engine.json as it is now: add and enable wrote the entry after the
 	// command read it.
@@ -122,23 +119,43 @@ func (e *pluginEnv) waitForRunning(k plugin.EntryKey, ids []uuid.UUID, d time.Du
 	if !e.cfg.PluginRequiresApproval(p) {
 		return waitResult{}, fmt.Errorf("%w: plugin %s does not require approval, so there is no approval to wait for", errUsage, k)
 	}
-	var agents []waitAgent
-	defer func() {
-		for _, a := range agents {
-			_ = a.conn.Close(context.WithoutCancel(e.c.ctx))
-		}
-	}()
-	for _, name := range p.Agents {
-		conn, err := e.connectAgent(name)
-		if err != nil {
-			continue // its database is down: its approvals stay unknown
-		}
-		agents = append(agents, waitAgent{name: name, conn: conn})
+	if len(p.Agents) == 0 {
+		return waitResult{}, fmt.Errorf("%w: plugin %s serves no agent, so there is no approval to wait for", errUsage, k)
 	}
 	deadline := e.c.now().Add(d)
+	ctx, cancel := context.WithDeadline(e.c.ctx, deadline.Add(waitPoll))
+	defer cancel()
+	agents := map[string]*pgx.Conn{}
+	defer func() {
+		for _, conn := range agents {
+			_ = conn.Close(context.WithoutCancel(e.c.ctx))
+		}
+	}()
+	last := map[string]waitAgentRead{}
 	for {
-		approvals, signed, open := e.readWaitApprovals(k, ids, agents)
-		eng := runningEngine(e.cfg.SocketDir)
+		for _, name := range p.Agents {
+			if agents[name] == nil {
+				if conn, err := e.connectAgentCtx(ctx, name); err == nil {
+					agents[name] = conn
+				}
+			}
+			if conn := agents[name]; conn != nil {
+				if r, ok := e.readAgentApprovals(ctx, conn, k, ids); ok {
+					last[name] = r
+				} else if ctx.Err() == nil {
+					// A lost connection is opened again next time.
+					_ = conn.Close(context.WithoutCancel(e.c.ctx))
+					delete(agents, name)
+				}
+			}
+		}
+		approvals, signed, open := e.waitStates(ids, p.Agents, last)
+		var eng engineOut
+		if signed {
+			// The engine lock is probed only once there is something to
+			// run: a probe takes the lock for an instant.
+			eng = runningEngine(e.cfg.SocketDir)
+		}
 		switch {
 		case !open:
 			return e.waitOutcome(k, waitEnded, approvals, eng)
@@ -162,48 +179,76 @@ func (e *pluginEnv) waitForRunning(k plugin.EntryKey, ids []uuid.UUID, d time.Du
 	}
 }
 
-// readWaitApprovals reads each approval through the listed agents'
-// connections: its state, and the agents it names. signed: all are signed
-// and not ended for an agent they name; open: none expired, was replaced,
-// ended or is unknown to every listed agent.
-func (e *pluginEnv) readWaitApprovals(k plugin.EntryKey, ids []uuid.UUID, agents []waitAgent) ([]waitApproval, bool, bool) {
-	out := make([]waitApproval, 0, len(ids))
-	signed, open := true, true
-	// The newest approval of the entry naming each agent: the one the engine
-	// decides by.
-	newest := map[string]uuid.UUID{}
-	for _, a := range agents {
-		ctx, cancel := context.WithTimeout(e.c.ctx, databaseTimeout)
-		recs, err := guard.ReadPluginApprovals(ctx, a.conn)
-		cancel()
-		if err != nil {
-			continue
-		}
-		for _, r := range recs {
-			if r.Name == k.Name && r.Instance == k.Instance {
-				newest[a.name] = r.ApprovalID
-			}
+// waitAgentRead is what one agent's database said of the approvals: the
+// newest approval of the entry naming the agent, and each given approval
+// that names it.
+type waitAgentRead struct {
+	newest  uuid.UUID
+	records map[uuid.UUID]guard.PluginApprovalRecord
+}
+
+// readAgentApprovals reads, through one agent's connection, the newest
+// approval of entry k naming the agent and each of ids; false when the
+// database did not answer them all.
+func (e *pluginEnv) readAgentApprovals(ctx context.Context, conn *pgx.Conn, k plugin.EntryKey, ids []uuid.UUID) (waitAgentRead, bool) {
+	out := waitAgentRead{records: map[uuid.UUID]guard.PluginApprovalRecord{}}
+	rctx, cancel := context.WithTimeout(ctx, databaseTimeout)
+	defer cancel()
+	recs, err := guard.ReadPluginApprovals(rctx, conn)
+	if err != nil {
+		return out, false
+	}
+	for _, r := range recs {
+		if r.Name == k.Name && r.Instance == k.Instance {
+			out.newest = r.ApprovalID
 		}
 	}
 	for _, id := range ids {
+		rec, ok, err := guard.ReadPluginApproval(rctx, conn, id)
+		if err != nil {
+			return out, false
+		}
+		if ok && rec.Name == k.Name && rec.Instance == k.Instance && rec.NamesCaller {
+			out.records[id] = rec
+		}
+	}
+	return out, true
+}
+
+// waitStates is each approval's state from what the entry's agents last
+// read: its state, and the agents it names. An approval is decided only by
+// agents whose database answered; while an agent never answered, nothing
+// is signed (the wait goes on) and nothing ends. signed: every approval is
+// signed for every agent it names, and every agent answered; open: none
+// expired, was replaced, ended, or is unknown to every agent (once all
+// answered).
+func (e *pluginEnv) waitStates(ids []uuid.UUID, listed []string, last map[string]waitAgentRead) ([]waitApproval, bool, bool) {
+	out := make([]waitApproval, 0, len(ids))
+	allRead := len(last) == len(listed)
+	signed, open := allRead, true
+	for _, id := range ids {
 		w := waitApproval{ApprovalID: id.String(), State: stateNone, Agents: []string{}}
-		for _, a := range agents {
-			ctx, cancel := context.WithTimeout(e.c.ctx, databaseTimeout)
-			rec, ok, err := guard.ReadPluginApproval(ctx, a.conn, id)
-			cancel()
-			if err != nil || !ok || rec.Name != k.Name || rec.Instance != k.Instance || !rec.NamesCaller {
+		for _, name := range listed {
+			read, ok := last[name]
+			if !ok {
 				continue
 			}
-			w.Agents = append(w.Agents, a.name)
+			rec, ok := read.records[id]
+			if !ok {
+				continue
+			}
+			w.Agents = append(w.Agents, name)
 			switch {
-			case newest[a.name] != id:
+			case read.newest != id:
 				w.State = stateCancelled // a newer approval decides for this agent
 			case w.State == stateCancelled:
 			case rec.Status == guard.PluginApprovalStatusApproved && rec.Ended():
 				w.State = stateEnded
 			case w.State == stateEnded:
 			case rec.Status == guard.PluginApprovalStatusApproved:
-				w.State = stateApproved
+				if w.State != statePending {
+					w.State = stateApproved
+				}
 			case rec.Status == guard.PluginApprovalStatusPending && e.c.now().Before(rec.ExpiresAt):
 				w.State = statePending
 			case rec.Status == guard.PluginApprovalStatusCancelled:
@@ -212,9 +257,9 @@ func (e *pluginEnv) readWaitApprovals(k plugin.EntryKey, ids []uuid.UUID, agents
 				w.State = stateExpired
 			}
 		}
-		switch w.State {
-		case stateApproved:
-		case statePending:
+		switch {
+		case w.State == stateApproved:
+		case w.State == statePending, w.State == stateNone && !allRead:
 			signed = false
 		default:
 			signed, open = false, false
@@ -266,7 +311,10 @@ func (e *pluginEnv) waitOutcome(k plugin.EntryKey, state string, approvals []wai
 			}
 		}
 	}
-	cmdAgent := p.Agents[0]
+	cmdAgent := ""
+	if len(p.Agents) > 0 {
+		cmdAgent = p.Agents[0]
+	}
 	if len(named) > 0 {
 		cmdAgent = named[0]
 	}

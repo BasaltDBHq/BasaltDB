@@ -516,6 +516,11 @@ const whyConfigInvalid = "engine.json changed and the engine cannot read its plu
 // serve runs the started entries, and in same-user mode watches for plugin
 // changes, until ctx is done and every plugin has stopped.
 func (ep *enginePlugins) serve(ctx context.Context, cfg config.Config, configPath string, ledgers map[string]pluginLedger) {
+	// A file an earlier engine left (a crash, a reused pid) never speaks
+	// for this one.
+	if ep.o.stateDir != "" {
+		_ = os.Remove(filepath.Join(ep.o.stateDir, PluginServingFile))
+	}
 	if err := ep.start(ctx); err != nil {
 		return
 	}
@@ -523,7 +528,8 @@ func (ep *enginePlugins) serve(ctx context.Context, cfg config.Config, configPat
 		w := newPluginWatch(ep, cfg, configPath, ledgers)
 		w.writeServing()
 		w.run(ctx, ep.o.clock)
-		defer w.removeServing()
+		// Stopping: nothing is served any more, before the plugins drain.
+		w.removeServing()
 	}
 	ep.sup.Wait()
 }

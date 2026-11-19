@@ -951,6 +951,9 @@ func TestPluginApprovalTampered(t *testing.T) {
 		require.Equal(t, http.StatusOK, code, body)
 	}
 	for _, inst := range cases {
+		// Recorded first: status says nothing of an entry the engine has
+		// not read from engine.json yet.
+		f.waitServedEvent(name, inst)
 		for _, ag := range flowListed {
 			f.waitServed(ag, inst)
 		}

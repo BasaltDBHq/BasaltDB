@@ -154,20 +154,29 @@ func (f *flowEngine) start() {
 	cfg, err := config.Load(f.configPath)
 	require.NoError(t, err)
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
+	done := make(chan struct{})
+	var runErr error
 	go func() {
-		done <- engine.Run(ctx, cfg, f.configPath, slog.New(slog.NewTextHandler(f.log, &slog.HandlerOptions{Level: slog.LevelDebug})))
+		defer close(done)
+		runErr = engine.Run(ctx, cfg, f.configPath, slog.New(slog.NewTextHandler(f.log, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	}()
 	f.stop = func() {
 		cancel()
-		require.NoError(t, <-done)
+		<-done
 		f.stop = nil
+		require.NoError(t, runErr)
+	}
+	stopped := func() bool {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
 	}
 	up := func() bool {
-		select {
-		case err := <-done:
-			require.FailNow(t, "the engine stopped", "%v", err)
-		default:
+		if stopped() {
+			return true
 		}
 		for _, name := range append(slicesClone(flowListed), flowUnlisted) {
 			c, err := net.Dial("unix", config.SocketPath(f.socketDir, name))
@@ -179,6 +188,7 @@ func (f *flowEngine) start() {
 		return f.origin == "" || osHost{}.PagesUp(context.Background(), f.origin)
 	}
 	require.Eventually(t, up, flowWait, 20*time.Millisecond)
+	require.False(t, stopped(), "the engine stopped: %v", runErr)
 }
 
 func (f *flowEngine) restart() {
@@ -805,7 +815,9 @@ func TestPluginApprovalFlowLocal(t *testing.T) {
 	f.restart()
 	for _, ag := range flowListed {
 		require.Nil(t, f.pluginProblem(ag, name, inst), "%s: disabled, so not configured for it", ag)
-		require.NotNil(t, f.lastEvent(ag, "PLUGIN_DISABLED", name, inst), "%s: the engine recorded it off", ag)
+		// The engine writes its plugin records beside serving: wait for it.
+		require.True(t, waitFor(func() bool { return f.lastEvent(ag, "PLUGIN_DISABLED", name, inst) != nil }),
+			"%s: the engine recorded it off", ag)
 		require.Equal(t, "ENDED", f.listState(inst, ag), "%s: turning it off ended the approval", ag)
 	}
 	res3, a3 := f.opened(f.plugin(agentEnv, "enable", name, "--json"))
@@ -895,6 +907,7 @@ func TestPluginApprovalFlowRemote(t *testing.T) {
 	f.pageSays(a, 2, levelUnknown, "It runs at "+hostPort+". Everything it sees is sent there.",
 		"Basalt cannot check what runs there or where it sends things next.", "Used for: product_a, product_b.")
 
+	require.Zero(t, dials.Load(), "still never dialed while withheld")
 	before := f.approvedCounts()
 	r := f.plugin(agentEnv, "approve", f.paste(req))
 	require.Equal(t, exitOK, r.code, r.stderr)
@@ -993,7 +1006,8 @@ func TestPluginApprovalTampered(t *testing.T) {
 			differ, _, _ = strings.Cut(differ, ". ")
 			require.ElementsMatch(t, fields, strings.Split(differ, ", "), "%s %s: exactly what changed", inst, ag)
 			require.NotContains(t, pr.Message, "0.9", "a mismatch never names a value")
-			require.NotNil(t, f.lastEvent(ag, "PLUGIN_DISABLED", name, inst), "%s %s: the engine records it no longer served", inst, ag)
+			require.True(t, waitFor(func() bool { return f.lastEvent(ag, "PLUGIN_DISABLED", name, inst) != nil }),
+				"%s %s: the engine records it no longer served", inst, ag)
 		}
 	}
 	// The swapped copy no longer verifies against its pin, so it is refused
@@ -1036,6 +1050,7 @@ func TestPluginApprovalFlowAgentOperated(t *testing.T) {
 	f.start()
 	res, a := f.opened(f.plugin(agentEnv, "add", f.source("1.4.0"), "--agents", strings.Join(flowListed, ","), "--json"))
 	require.True(t, strings.HasPrefix(a.URL, links.Portal+"/plugins/"+a.ApprovalID+"#"), a.URL)
+	require.NotEmpty(t, res.NextSteps)
 	last := res.NextSteps[len(res.NextSteps)-1]
 	require.Equal(t, mcp.ActorAgent+" "+mcp.ActionRunCommand, last.Actor+" "+last.Action)
 	require.Contains(t, last.Command, "basalt engine", "the restart is the agent's step")
@@ -1057,20 +1072,38 @@ func TestPluginApprovalFlowAgentOperated(t *testing.T) {
 	req, b := requestOf(t, a.URL)
 	require.Equal(t, 3, pageLevel(t, b))
 	_, frag, _ := strings.Cut(a.URL, "#")
-	f.views[a.ApprovalID], _ = runPage(t, "fragment", frag)
+	if v, ok := runPage(t, "fragment", frag); ok {
+		f.views[a.ApprovalID] = v
+	}
 	f.pageSays(a, 3, levelUnknownHere, "Asked by product_a.")
 	r := f.plugin(agentEnv, "approve", f.paste(req))
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Equal(t, "APPROVED", f.listState(inst, "product_a"))
 	f.restart()
+	f.waitServedEvent(name, inst)
 	for _, ag := range flowListed {
 		f.requireServedNotWithheld(ag, name, inst)
 	}
-	f.requireServedEvent(name, inst)
 }
 
-// requireServedNotWithheld waits until the entry is no longer withheld
-// from the agent: status reports no problem for it, or only that its
+// waitServedEvent waits until the engine recorded the entry served for
+// every listed agent, then checks those records (requireServedEvent). The
+// engine writes them before it starts any plugin.
+func (f *flowEngine) waitServedEvent(name, instance string) {
+	f.t.Helper()
+	require.True(f.t, waitFor(func() bool {
+		for _, a := range flowListed {
+			if f.lastEvent(a, "PLUGIN_ENABLED", name, instance) == nil {
+				return false
+			}
+		}
+		return true
+	}), "the engine records %s/%s served", name, instance)
+	f.requireServedEvent(name, instance)
+}
+
+// requireServedNotWithheld: once the engine recorded the entry served
+// (waitServedEvent), status reports no problem for it, or only that its
 // plugin, which has no settings for a cold start here, is not ready yet.
 func (f *flowEngine) requireServedNotWithheld(agentName, name, instance string) {
 	f.t.Helper()

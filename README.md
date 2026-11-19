@@ -16,7 +16,7 @@ Every action an agent takes is recorded with who did it, why, what it saw and wh
 - **Docs:** https://docs.basaltvault.app
 - **Install guide:** [docs/install.md](docs/install.md), from nothing to an agent's first guarded write
 - **Crash reports:** [docs/crash-reports.md](docs/crash-reports.md), what basalt saves when it crashes and how you file it (nothing is sent for you)
-- **Contract:** [CONTRACT.md](CONTRACT.md), the MCP tools, the CLI, the pages and the `basalt_meta` schema
+- **Contract:** [CONTRACT.md](CONTRACT.md) and [`contract/`](contract/), the MCP tools, the CLI, the pages and the `basalt_meta` schema
 
 ## Why
 

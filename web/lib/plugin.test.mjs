@@ -18,7 +18,14 @@ import { HOOK_LABELS, HOOK_SEES, SENTENCES, main, pluginLevel, pluginSentences, 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const vectors = JSON.parse(read("../../api/plugin/approval/vectors.json")).vectors;
 const goLinks = new Map(JSON.parse(read("../../internal/approval/testdata/plugin-links.json")).map((l) => [l.name, l]));
-const contract = read("../../CONTRACT.md");
+// The contract is CONTRACT.md, an index, and the section files it lists.
+const contractIndex = read("../../CONTRACT.md");
+const contract = [
+  contractIndex,
+  ...[...new Set([...contractIndex.matchAll(/\]\(contract\/([a-z0-9-]+\.md)\)/g)].map((m) => m[1]))].map((f) =>
+    read(`../../contract/${f}`),
+  ),
+].join("\n");
 const PAGE = read("../plugin/index.html");
 const ORIGIN = "http://localhost:8787";
 const vector = (name) => vectors.find((v) => v.name === name);

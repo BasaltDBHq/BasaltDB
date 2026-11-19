@@ -8,8 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"maps"
-	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -25,6 +23,7 @@ import (
 	"go.uber.org/goleak"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
+	"github.com/basaltdbhq/basaltdb/internal/contractdoc"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/passkey/passkeytest"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
@@ -350,7 +349,7 @@ func TestBatchNeverReachesALaterRegistration(t *testing.T) {
 // code is sent only when the contract names it.
 func TestReasonCodesAreTheContracts(t *testing.T) {
 	t.Parallel()
-	raw, err := os.ReadFile(filepath.Join("..", "..", "CONTRACT.md"))
+	raw, err := contractdoc.Read()
 	require.NoError(t, err)
 	text := string(raw)
 	start := strings.Index(text, "\n## Error codes\n")

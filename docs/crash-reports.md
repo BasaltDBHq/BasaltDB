@@ -50,4 +50,4 @@ An agent cannot file a report for you. Under an agent, `basalt crash report` ope
 
 Look on the machine where the engine runs. Each place keeps the 20 newest reports and deletes older ones. You can delete any file there yourself.
 
-The exact rules are in [CONTRACT.md, Crash reports](../CONTRACT.md#crash-reports).
+The exact rules are in [CONTRACT.md, Crash reports](../contract/crash-reports.md#crash-reports).

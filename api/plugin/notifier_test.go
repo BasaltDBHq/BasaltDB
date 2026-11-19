@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/contractdoc"
 )
 
 // The notifier messages (CONTRACT.md, Plugins, The feed.observe and
@@ -206,7 +208,7 @@ func TestCheckSamples(t *testing.T) {
 // spans.
 func TestNotifierNamesInContract(t *testing.T) {
 	t.Parallel()
-	contract, err := os.ReadFile(filepath.Join("..", "..", "CONTRACT.md"))
+	contract, err := contractdoc.Read()
 	require.NoError(t, err)
 	text := string(contract)
 

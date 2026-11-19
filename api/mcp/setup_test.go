@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/contractdoc"
 )
 
 // Setup code shape (CONTRACT.md, Setup from your laptop).
@@ -499,7 +500,7 @@ var agentOperatedRow = regexp.MustCompile("^\\| (error|warning|problem) \\| `([A
 
 func contractAgentOperated(t *testing.T) map[string]bool {
 	t.Helper()
-	raw, err := os.ReadFile("../../CONTRACT.md")
+	raw, err := contractdoc.Read()
 	require.NoError(t, err)
 	rows := map[string]bool{}
 	inSection := false

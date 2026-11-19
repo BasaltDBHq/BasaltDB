@@ -95,6 +95,6 @@ Small libraries with no BasaltDB policy in them.
 
 - **Adding or changing an MCP tool:** the contract first (`api/mcp`, CONTRACT.md), then `internal/engine/agent`.
 - **Changing what the guard enforces:** a new numbered file in `internal/guard/schema`, never an edit to an applied one.
-- **Changing a CLI command:** its file in `cmd/basalt`, and the CLI section of CONTRACT.md.
+- **Changing a CLI command:** its file in `cmd/basalt`, and the CLI section of the contract (`contract/cli.md`).
 - **Changing what an agent may run:** `internal/sqlguard`.
 - **Changing a signing page:** `web/`, and the codes in `internal/approval` or `internal/revert`.

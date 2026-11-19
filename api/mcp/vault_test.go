@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/basaltdbhq/basaltdb/internal/contractdoc"
 )
 
 // Close-code range of the Vault channel (CONTRACT.md, Vault channel, Close
@@ -72,7 +74,7 @@ func TestVaultCloseCodes(t *testing.T) {
 		byName[c.Name] = c.Code
 	}
 
-	contract, err := os.ReadFile(filepath.Join("..", "..", "CONTRACT.md"))
+	contract, err := contractdoc.Read()
 	require.NoError(t, err)
 	rows := vaultCloseRow.FindAllStringSubmatch(string(contract), -1)
 	inContract := make(map[string]int, len(rows))
@@ -96,7 +98,7 @@ func TestVaultCloseCodes(t *testing.T) {
 // in CONTRACT.md.
 func TestVaultControlErrorsInContract(t *testing.T) {
 	t.Parallel()
-	contract, err := os.ReadFile(filepath.Join("..", "..", "CONTRACT.md"))
+	contract, err := contractdoc.Read()
 	require.NoError(t, err)
 	raw, err := os.ReadFile(filepath.Join("vault", "control-message.schema.json"))
 	require.NoError(t, err)

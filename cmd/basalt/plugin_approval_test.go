@@ -560,8 +560,13 @@ func TestOneDatabaseTwoSpellings(t *testing.T) {
 	t.Parallel()
 	e := newApprovalEngine(t, "")
 	url := e.roles["product_b"].URL
-	require.Contains(t, url, "127.0.0.1")
-	require.NoError(t, os.WriteFile(filepath.Join(e.base, "creds", "product_b.url"), []byte(strings.Replace(url, "127.0.0.1", "localhost", 1)+"\n"), 0o600))
+	// The same server under the other name of the loopback address.
+	respelled := strings.Replace(url, "@127.0.0.1:", "@localhost:", 1)
+	if respelled == url {
+		respelled = strings.Replace(url, "@localhost:", "@127.0.0.1:", 1)
+	}
+	require.NotEqual(t, url, respelled, "the test database is on the loopback address")
+	require.NoError(t, os.WriteFile(filepath.Join(e.base, "creds", "product_b.url"), []byte(respelled+"\n"), 0o600))
 	r := e.run(agentEnv, "", "add", e.unsigned, "--agents", "product_a,product_b", "--json")
 	require.Equal(t, exitOK, r.code, r.stderr)
 	res := approvalResultOf(t, r)

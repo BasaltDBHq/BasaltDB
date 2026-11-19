@@ -15,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
+	"github.com/basaltdbhq/basaltdb/internal/plugin/child"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/dial"
 )
 
@@ -26,6 +27,10 @@ type pluginOptions struct {
 	// SocketBase is where socket plugins' socket directories are made; ""
 	// is the OS temporary directory (dial.Options.SocketBase).
 	SocketBase string
+	// runs records each local plugin process the engine starts in
+	// same-user mode (pluginRuns), so its next start reaps one a crash left
+	// running; nil records nothing.
+	runs *child.Runs
 	// goos and euid default to the running engine's.
 	goos string
 	euid int
@@ -202,7 +207,7 @@ func (ep *enginePlugins) dial(ctx context.Context, e plugin.Entry) (plugin.Trans
 	if u, ok := ep.targets[k]; ok {
 		t, err = dial.Service(ctx, k, v, u.socket, u.uid)
 	} else {
-		t, err = dial.Entry(ctx, k, v, dial.Options{SocketBase: ep.o.SocketBase, CredentialFile: ep.credentialFile(k), Stderr: ep.o.Stderr})
+		t, err = dial.Entry(ctx, k, v, dial.Options{SocketBase: ep.o.SocketBase, CredentialFile: ep.credentialFile(k), Stderr: ep.o.Stderr, Runs: ep.o.runs})
 	}
 	if err != nil {
 		ep.log.Warn("plugin did not start", "plugin", k.String(), "err", err)
@@ -293,6 +298,25 @@ func pluginDebugWriter(cfg config.Config, w io.Writer, log *slog.Logger) io.Writ
 		return nil
 	}
 	return w
+}
+
+// pluginRunsDirName is the directory under the engine's state directory
+// that holds its plugin run records.
+const pluginRunsDirName = "plugin-runs"
+
+// pluginRuns is where a same-user engine records the local plugin processes
+// it starts, after reaping what an earlier run of it left: processes still
+// running and their socket directories (CONTRACT.md, Plugins, Transports).
+// It runs under the engine lock, before any plugin starts, whether or not a
+// plugin is enabled now. A service engine starts no plugin process and an
+// engine run as root starts no local plugin: nil for both.
+func pluginRuns(cfg config.Config, stateDir string, euid int, log *slog.Logger) *child.Runs {
+	if cfg.Service() || euid == 0 || stateDir == "" {
+		return nil
+	}
+	dir := filepath.Join(stateDir, pluginRunsDirName)
+	child.Reap(dir, log)
+	return &child.Runs{Dir: dir}
 }
 
 // engineEUID is the engine's effective user id.

@@ -64,8 +64,13 @@ type Options struct {
 	// a new directory per start, created by the engine's user with mode
 	// 0700, holding only the socket, and removed when the plugin stops. It
 	// is never a directory the plugin's files live in. Empty means the OS
-	// temporary directory. The socket's path must fit MaxSocketPath.
+	// temporary directory. The socket's path must fit MaxSocketPath, and the
+	// base and every directory above it must pass plugin.CheckPrivateDir.
 	SocketBase string
+	// Runs, when set, records each local process started (child.Runs), so
+	// the engine's next start can reap one a crash left running. The engine
+	// sets it; basalt plugin check does not.
+	Runs *child.Runs
 	// CredentialFile is the entry's auth.credentialFile, remote only.
 	CredentialFile string
 	// Stderr receives a local plugin's stderr; nil discards it.
@@ -93,11 +98,14 @@ func Entry(ctx context.Context, k plugin.EntryKey, v plugin.Verified, o Options)
 	if l == nil {
 		return nil, fmt.Errorf("plugin %s: the manifest has no endpoint", k)
 	}
-	spec := child.Spec{Path: filepath.Join(v.Dir, filepath.FromSlash(l.Command)), Args: l.Args, Dir: v.Dir, Stderr: o.Stderr}
+	spec := child.Spec{Path: filepath.Join(v.Dir, filepath.FromSlash(l.Command)), Args: l.Args, Dir: v.Dir, Stderr: o.Stderr, Runs: o.Runs}
 	switch l.Transport {
 	case TransportStdio:
 		t, err := jsonrpc.Spawn(ctx, spec)
 		if err != nil {
+			if o.Runs != nil && errors.Is(err, child.ErrNotRecorded) {
+				return nil, fmt.Errorf("plugin %s: %w", k, err)
+			}
 			return nil, fmt.Errorf("plugin %s: its command could not be started", k)
 		}
 		return t, nil
@@ -119,8 +127,9 @@ func wrap(k plugin.EntryKey) func(plugin.Transport, error) (plugin.Transport, er
 }
 
 // socketDir makes a new socket directory under base and returns the
-// socket's path in it. The path's length is checked before anything is
-// made.
+// socket's path in it. The path's length and the base's ownership and modes
+// (plugin.CheckPrivateDir: no one but the engine's user or root can write it
+// or a directory above it) are checked before anything is made.
 func socketDir(base string) (dir, path string, err error) {
 	if base == "" {
 		base = os.TempDir()
@@ -133,6 +142,13 @@ func socketDir(base string) (dir, path string, err error) {
 	const pattern, suffix = "bp", 10
 	if n := len(filepath.Join(base, pattern)) + suffix + len("/"+socketFile); n > MaxSocketPath {
 		return "", "", fmt.Errorf("a socket path under %s would be %d bytes; Unix sockets take at most %d here, so set TMPDIR to a shorter directory", base, n, MaxSocketPath)
+	}
+	if err := plugin.CheckPrivateDir(base); err != nil {
+		var ve *plugin.VerifyError
+		if errors.As(err, &ve) {
+			return "", "", fmt.Errorf("plugin socket directories are made under %s, but %s %s; set TMPDIR to a directory only you can write (for example mkdir -m 700 ~/.cache/basalt-tmp, with chmod go-w on the directories above it)", base, ve.File, ve.Why)
+		}
+		return "", "", err
 	}
 	dir, err = os.MkdirTemp(base, pattern)
 	if err != nil {
@@ -157,9 +173,13 @@ func startSocket(ctx context.Context, spec child.Spec, base string,
 		return nil, err
 	}
 	spec.Env = []string{SocketEnv + "=" + sock}
+	spec.SocketDir = dir
 	p, err := child.Start(spec)
 	if err != nil {
 		_ = os.RemoveAll(dir)
+		if errors.Is(err, child.ErrNotRecorded) {
+			return nil, err
+		}
 		return nil, errors.New("its command could not be started")
 	}
 	st := &socketTransport{p: p, dir: dir}

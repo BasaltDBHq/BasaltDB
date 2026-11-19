@@ -502,8 +502,9 @@ func (ep *enginePlugins) PluginProblems(name string) []agent.PluginProblem {
 	for _, dn := range ep.delivery.dropped(name) {
 		out = append(out, agent.PluginProblem{
 			Code: agent.ProblemPluginNoticesDropped, Name: dn.key.Name, Instance: dn.key.Instance, EngineKept: ep.isKept(dn.key),
-			Message: fmt.Sprintf("plugin %s did not get %s of this agent in the last 24 hours: the engine tried each for about a minute, "+
-				"then dropped it. The agent's answers carried the links all the same", dn.key, noticeCount(dn.count)),
+			Message: fmt.Sprintf("plugin %s did not get %s of this agent in the last 24 hours: the engine dropped them "+
+				"(the plugin did not take them within about a minute, they expired first, or too many were waiting). "+
+				"The agent's answers carried the links all the same", dn.key, noticeCount(dn.count)),
 		})
 	}
 	return out

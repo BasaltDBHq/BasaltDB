@@ -1,7 +1,11 @@
 package agent_test
 
 import (
+	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -77,6 +81,7 @@ func TestNoticeCarriesTheAgentsLink(t *testing.T) {
 		got := rec.all()
 		require.Len(t, got, 1)
 		require.Equal(t, link, got[0].Link, "the answer's link, byte for byte")
+		require.Regexp(t, noticeLinkPattern(t), link, "a link the engine issued fits the notice's schema")
 		require.Equal(t, agent.NoticeApprovalRequested, got[0].Kind)
 		require.Equal(t, id, got[0].ApprovalID.String())
 		require.Equal(t, "Update 15 rows in public·leads", got[0].Headline)
@@ -96,7 +101,31 @@ func TestNoticeCarriesTheAgentsLink(t *testing.T) {
 		got := rec.all()
 		require.Len(t, got, 1)
 		require.Equal(t, link, got[0].Link)
+		require.Regexp(t, noticeLinkPattern(t), link)
 	})
+}
+
+// noticeLinkPattern is the pattern of a notice's link in
+// deliver.schema.json: a link the engine hands an agent must fit it, or the
+// engine would leave it out of the notice.
+func noticeLinkPattern(t *testing.T) *regexp.Regexp {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "api", "plugin", "protocol", "deliver.schema.json"))
+	require.NoError(t, err)
+	var doc struct {
+		Defs struct {
+			Notice struct {
+				Properties struct {
+					Link struct {
+						Pattern string `json:"pattern"`
+					} `json:"link"`
+				} `json:"properties"`
+			} `json:"notice"`
+		} `json:"$defs"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &doc))
+	require.NotEmpty(t, doc.Defs.Notice.Properties.Link.Pattern)
+	return regexp.MustCompile(doc.Defs.Notice.Properties.Link.Pattern)
 }
 
 // panics is a deliverer that fails in the worst way.
@@ -179,6 +208,7 @@ func TestRevertAndReissueAreNoticed(t *testing.T) {
 	require.Equal(t, revertID, got[0].RevertID.String())
 	require.Equal(t, str(t, req["revertUrl"]), got[0].Link)
 	require.Contains(t, got[0].Link, "#s=")
+	require.Regexp(t, noticeLinkPattern(t), got[0].Link)
 	require.Equal(t, "Revert of run "+runID+": 2 rows to restore, 0 left as they are (changed after the agent).", got[0].Headline)
 	require.Equal(t, str(t, req["expiresAt"]), got[0].ExpiresAt.UTC().Format(time.RFC3339))
 

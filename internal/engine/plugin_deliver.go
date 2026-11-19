@@ -431,6 +431,9 @@ type droppedNotices struct {
 // dropped are the entries that dropped notices of agent in the last 24
 // hours, with how many, in entry order.
 func (d *pluginDelivery) dropped(agentName string) []droppedNotices {
+	if d == nil {
+		return nil
+	}
 	now := d.now()
 	d.mu.Lock()
 	defer d.mu.Unlock()

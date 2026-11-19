@@ -74,6 +74,16 @@ func newNotifierEngine(t *testing.T, bin string, o testnotifier.Options) *notifi
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Eventually(t, func() bool { return len(e.pluginProblems()) == 0 }, 30*time.Second, 100*time.Millisecond,
 		"the notifier serves the agent")
+	// The feed's cursor starts at the ledger's head at its first read, a
+	// moment after the plugin is ready. Small writes until one arrives as
+	// a feed event: from then on the plugin takes calls and nothing the
+	// test does is before the cursor.
+	require.Eventually(t, func() bool {
+		body, isError := e.tool("write", map[string]any{"sql": "UPDATE public.leads SET score = score + 1 WHERE id = 2", "intent": "warm up"})
+		require.False(t, isError, "%v", body)
+		_, types, _ := e.records()
+		return len(types) > 0
+	}, 90*time.Second, time.Second, "the feed follows the agent")
 	return e
 }
 
@@ -194,7 +204,7 @@ func (e *notifierEngine) noticeFor(id string) recordedNotice {
 			}
 		}
 		return false
-	}, 30*time.Second, 50*time.Millisecond, "the notice of %s reaches the notifier", id)
+	}, 100*time.Second, 50*time.Millisecond, "the notice of %s reaches the notifier", id) // its four tries span a minute
 	return got
 }
 
@@ -247,11 +257,13 @@ func TestNotifierEndToEnd(t *testing.T) {
 	require.Empty(t, e.pluginProblems())
 }
 
-// TestHeldWriteNotSlowedByDeadNotifier: the agent's answer to a held write
-// never waits on the notifier. With a plugin that never answers, one that
-// answers after ten minutes and one that exits on the call, the agent gets
-// the same answer, with its link, while the plugin's call is still open
-// or failed, and far sooner than the plugin could have answered.
+// TestHeldWriteNotSlowedByDeadNotifier: on a real engine, a notifier that
+// never answers, one that answers after ten minutes and one that exits on
+// the call leave the agent's answer to a held write as it is: the same
+// answer, with its link, and the agent goes on working. That the answer
+// does not wait at all, not even for one try, is proven without a clock in
+// internal/engine (TestDeliverLinkNeverBlocks): what runs on the agent's
+// call returns while the plugin, the database and the delivery are held.
 func TestHeldWriteNotSlowedByDeadNotifier(t *testing.T) {
 	bin := buildNotifier(t)
 	t.Parallel()
@@ -264,7 +276,7 @@ func TestHeldWriteNotSlowedByDeadNotifier(t *testing.T) {
 
 			require.NoError(t, testnotifier.SetMode(e.control, mode))
 			held := e.hold("Leads went cold again", "lost")
-			require.Less(t, held.took, time.Minute, "the answer did not wait for the plugin's answer")
+			require.Less(t, held.took, time.Minute)
 			require.Contains(t, held.link, "#2.")
 			require.Equal(t, first.headline, held.headline)
 			require.NotEqual(t, first.approvalID, held.approvalID)

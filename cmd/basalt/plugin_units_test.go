@@ -72,7 +72,7 @@ func TestInitRefusesAnOSUserInTheEngineGroup(t *testing.T) {
 func TestPluginUnitEntries(t *testing.T) {
 	t.Parallel()
 	local := plugin.Verified{
-		Dir: "/usr/local/lib/basalt/plugins/acme-ner/default/abc",
+		Dir: "/opt/basalt/plugins/acme-ner/default/abc",
 		Manifest: plugin.Manifest{
 			Endpoint:  plugin.Endpoint{Local: &plugin.LocalEndpoint{Transport: "jsonrpc-unix", Command: "bin/acme", Args: []string{"--serve"}}},
 			Network:   plugin.Network{Egress: []string{"hooks.slack.com:443"}},
@@ -116,18 +116,22 @@ func TestPluginUnitEntries(t *testing.T) {
 	require.Contains(t, warn.String(), "plugin acme-ner/default: its service unit is left as it is")
 }
 
-func TestGroupWritableDirectoryNamesTheFix(t *testing.T) {
+func TestGroupWritableDirectoryIsRefusedLikeAnyPath(t *testing.T) {
 	t.Parallel()
+	// No special case for a group-writable directory above the base: it is
+	// refused as any other path the rule refuses, and no chmod is offered.
 	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &bytes.Buffer{}, err: &bytes.Buffer{}}, func(string) string { return "" })
 	c.goos = "linux"
 	e := &pluginEnv{c: c, configPath: config.DefaultPath("linux"), mode: plugin.ModeService}
-	err := e.verifyRefusal(&plugin.VerifyError{Reason: plugin.RefusedNotTrusted, File: "/usr/local", Why: plugin.WhyGroupWritable}, "basalt plugin add /src --agents a")
+	err := e.verifyRefusal(&plugin.VerifyError{Reason: plugin.RefusedNotTrusted, File: "/opt", Why: plugin.WhyGroupWritable}, "basalt plugin add /src --agents a")
 	var r *pluginRefusedError
 	require.ErrorAs(t, err, &r)
-	require.Contains(t, r.person, "/usr/local can be written by its group or others")
-	require.Contains(t, r.person, "sudo chmod go-w /usr/local")
-	require.NotContains(t, r.person, "trust", "trusting a key would not help")
-	require.Equal(t, "sudo chmod go-w /usr/local", r.steps[0].Command)
+	require.Equal(t, string(plugin.RefusedNotTrusted), r.reason)
+	require.Contains(t, r.message, "/opt")
+	require.NotContains(t, r.person, "chmod")
+	for _, s := range r.steps {
+		require.NotContains(t, s.Command, "chmod")
+	}
 }
 
 // agentOSUser is an OS user that exists and is neither the test's user nor

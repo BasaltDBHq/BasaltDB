@@ -80,7 +80,7 @@ func (f *fakeSystem) CheckBinary(string) error { return f.binaryErr }
 
 func (f *fakeSystem) Remove(path string) error {
 	f.removed = append(f.removed, path)
-	if f.removeErr != nil && strings.HasPrefix(path, "/usr/local/lib/basalt") {
+	if f.removeErr != nil && strings.HasPrefix(path, "/opt/basalt") {
 		return f.removeErr
 	}
 	return os.ErrNotExist
@@ -180,8 +180,8 @@ func TestLinuxInstallPlan(t *testing.T) {
 		"mkdir -m 0750 -o basalt /etc/basalt",
 		"systemctl daemon-reload",
 		"systemctl enable --now basalt-engine.service",
-		"mkdir -m 0755 -o root /usr/local/lib/basalt",
-		"mkdir -m 0755 -o root /usr/local/lib/basalt/run",
+		"mkdir -m 0755 -o root /opt/basalt",
+		"mkdir -m 0755 -o root /opt/basalt/run",
 	}, sys.ran)
 	require.Equal(t, service.SystemdUnit(linuxSpec()), sys.written[service.SystemdUnitPath])
 	require.Contains(t, out.String(), "write /etc/systemd/system/basalt-engine.service")
@@ -390,8 +390,8 @@ func TestInstallWritesOwnedFilesAndRestartsAnInstalledService(t *testing.T) {
 		"systemctl daemon-reload",
 		"systemctl enable basalt-engine.service",
 		"systemctl restart basalt-engine.service",
-		"mkdir -m 0755 -o root /usr/local/lib/basalt",
-		"mkdir -m 0755 -o root /usr/local/lib/basalt/run",
+		"mkdir -m 0755 -o root /opt/basalt",
+		"mkdir -m 0755 -o root /opt/basalt/run",
 	}, sys.ran)
 	require.Equal(t, "postgres://secret", sys.written["/etc/basalt/agents/bot.url"])
 	require.Equal(t, os.FileMode(0o600), sys.modes["/etc/basalt/agents/bot.url"])

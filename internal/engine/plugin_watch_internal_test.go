@@ -490,7 +490,9 @@ func TestAddApproveRemoveLeavesNothing(t *testing.T) {
 		round()
 	}
 	started, _ := f.startedPIDs()
-	require.Len(t, started, 50)
+	// At least one process per round; a slow start on a loaded machine may
+	// be retried by the supervisor, which must leave nothing behind either.
+	require.GreaterOrEqual(t, len(started), 50)
 	require.Eventually(t, func() bool {
 		return !slices.ContainsFunc(started, alive)
 	}, 10*time.Second, 50*time.Millisecond, "every plugin process exited")

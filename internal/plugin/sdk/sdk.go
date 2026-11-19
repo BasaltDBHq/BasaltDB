@@ -21,7 +21,8 @@ const Protocol = protocol.Version1
 const (
 	// MaxMessageBytes is the largest message either side may send.
 	MaxMessageBytes = protocol.MaxMessageBytes
-	// MaxInFlight is the number of calls the engine keeps open on a plugin.
+	// MaxInFlight is the number of hook calls the engine keeps open on a
+	// plugin. health and shutdown are not counted: each has a slot of its own.
 	MaxInFlight = protocol.MaxInFlight
 )
 

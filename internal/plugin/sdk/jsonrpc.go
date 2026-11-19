@@ -56,7 +56,11 @@ func (s *server) serveConn(ctx context.Context, rc io.ReadCloser, w io.Writer) e
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	c := &jsonrpcConn{s: s, w: w, slots: make(chan struct{}, protocol.MaxInFlight)}
+	c := &jsonrpcConn{
+		s: s, w: w,
+		slots:  make(chan struct{}, protocol.MaxInFlight),
+		health: make(chan struct{}, 1), shutdown: make(chan struct{}, 1),
+	}
 	readDone := make(chan error, 1)
 	go func() { readDone <- c.readLoop(ctx, rc) }()
 
@@ -87,11 +91,34 @@ func (s *server) serveConn(ctx context.Context, rc io.ReadCloser, w io.Writer) e
 }
 
 type jsonrpcConn struct {
-	s     *server
-	w     io.Writer
-	wmu   sync.Mutex
-	slots chan struct{}
-	wg    sync.WaitGroup
+	s   *server
+	w   io.Writer
+	wmu sync.Mutex
+	// slots caps the calls running at once; health and shutdown each have
+	// one slot of their own outside it, as on the engine's side, so they are
+	// answered while four hook calls run.
+	slots    chan struct{}
+	health   chan struct{}
+	shutdown chan struct{}
+	wg       sync.WaitGroup
+}
+
+// slotsFor is the slots a request line runs under, by its method. A line
+// that does not decode runs under the common slots, where handle answers it.
+func (c *jsonrpcConn) slotsFor(line []byte) chan struct{} {
+	var req struct {
+		Method string `json:"method"`
+	}
+	if json.Unmarshal(line, &req) != nil {
+		return c.slots
+	}
+	switch req.Method {
+	case protocol.MethodHealth:
+		return c.health
+	case protocol.MethodShutdown:
+		return c.shutdown
+	}
+	return c.slots
 }
 
 func (c *jsonrpcConn) readLoop(ctx context.Context, r io.Reader) error {
@@ -111,15 +138,16 @@ func (c *jsonrpcConn) readLoop(ctx context.Context, r io.Reader) error {
 		if len(line) == 0 {
 			continue
 		}
+		slots := c.slotsFor(line)
 		select {
-		case c.slots <- struct{}{}:
+		case slots <- struct{}{}:
 		case <-ctx.Done():
 			return nil
 		}
 		c.wg.Add(1)
 		go func() {
 			defer c.wg.Done()
-			defer func() { <-c.slots }()
+			defer func() { <-slots }()
 			c.handle(ctx, line)
 		}()
 	}

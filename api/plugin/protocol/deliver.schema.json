@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/plugin/protocol/deliver.v1.json",
   "title": "approval.deliver (deliver/1)",
-  "description": "Planned (no hook is called yet). The deliver/1 message: one call carries one notice, a CloudEvents 1.0 event in its JSON form, and the plugin answers {}. JSON-RPC method approval.deliver; ConnectRPC basalt.plugin.v1.PluginService/ApprovalDeliver. A notice is one-shot: best effort, never stored, never replayed, never sent past its expiry. Outside link, no field holds a row value or key, a statement, an intent or a refusal message; link is the one stated exception: a long link carries the whole request. See CONTRACT.md, Plugins, Notifier messages.",
+  "description": "Planned (the engine does not call approval.deliver yet). The deliver/1 message: one call carries one notice, a CloudEvents 1.0 event in its JSON form, and the plugin answers {}. JSON-RPC method approval.deliver; ConnectRPC basalt.plugin.v1.PluginService/ApprovalDeliver. A notice is one-shot: best effort, never stored, never replayed, never sent past its expiry. Outside link, no field holds a row value or key, a statement, an intent or a refusal message; link is the one stated exception: a long link carries the whole request. See CONTRACT.md, Plugins, Notifier messages.",
   "$defs": {
     "request": {
       "type": "object",

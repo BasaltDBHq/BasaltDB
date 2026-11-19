@@ -106,6 +106,12 @@ var (
 	// ErrMessageTooLarge: the engine sent a message over MaxMessageBytes on
 	// the stdio transport. The stream cannot be resynchronised, so Serve ends.
 	ErrMessageTooLarge = errors.New("sdk: a message was over the size cap")
+	// ErrHookNotImplemented: WithHooks declares a hook the SDK has an
+	// interface for (FeedObserver, ApprovalDeliverer), and the plugin does
+	// not implement it. The engine would call the hook and get "method not
+	// found" every time. Implement the interface; the SDK then declares the
+	// hook itself.
+	ErrHookNotImplemented = errors.New("sdk: WithHooks declares a hook whose interface the plugin does not implement")
 	// ErrTransport: the options name a transport that cannot be served as
 	// asked.
 	ErrTransport = errors.New("sdk: the transport options do not fit together")

@@ -367,7 +367,10 @@ func TestOpenRefusesBadDetail(t *testing.T) {
 		"hooks unsorted":        func(m map[string]any) { m["hooks"] = []string{"wire.detect", "feed.observe"} },
 		"egress unsorted":       func(m map[string]any) { m["egress"] = []string{"b.example:443", "a.example:443"} },
 		"local no isolation":    func(m map[string]any) { delete(m, "isolation") },
-		"version free text":     func(m map[string]any) { m["version"] = "1.0 for other-agent" },
+		"isolation OS_USER": func(m map[string]any) {
+			m["isolation"] = map[string]any{"files": "OS_USER", "network": "ENFORCED"}
+		},
+		"version free text": func(m map[string]any) { m["version"] = "1.0 for other-agent" },
 		"over 4 KiB": func(m map[string]any) {
 			var e []string
 			for i := range 250 {

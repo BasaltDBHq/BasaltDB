@@ -28,6 +28,13 @@ type PluginProblem struct {
 	Name     string
 	Instance string
 	Message  string
+	// EngineKept marks an entry the engine keeps itself (service mode, added
+	// without sudo): basalt plugin disable runs without sudo for it, and
+	// basalt plugin check does not find it, so its steps leave out both.
+	EngineKept bool
+	// File is the engine's unusable entries file, for a problem that names
+	// no entry: the way out is moving it aside and restarting the engine.
+	File string
 }
 
 // PluginReporter gives the plugin problems of one agent: only entries that
@@ -56,6 +63,13 @@ func (c Commands) PluginDisable(name, instance string) string {
 		cmd = "sudo " + cmd
 	}
 	return cmd
+}
+
+// PluginDisableKept is basalt plugin disable for an engine-kept entry: no
+// sudo, since a service engine's own entries are turned off over its socket,
+// and sudo is refused for them.
+func (c Commands) PluginDisableKept(name, instance string) string {
+	return c.plugin("disable", name, instance)
 }
 
 // PluginApprove is basalt plugin enable for an entry that requires
@@ -103,6 +117,10 @@ func (s statusDeps) addPluginProblems(ps *problems) {
 			switch p.Code {
 			case ProblemPluginAwaitingApproval, ProblemPluginApprovalExpired, ProblemPluginApprovalMismatch:
 				return pluginApprovalSteps(b, s.cmds, p)
+			case ProblemPluginUnavailable:
+				if p.File != "" {
+					return unusableFileSteps(b, s.cmds, p.File)
+				}
 			case ProblemPluginConfigInvalid:
 				list := s.cmds.PluginList()
 				b.MachineCommand(s.cmds, list, "Run this: it says what is wrong with engine.json. Fix that; the engine applies the plugin changes once it can read the file.",
@@ -144,6 +162,9 @@ func pluginApprovalSteps(b *Steps, cmds Commands, p PluginProblem) string {
 		person = " To ask again, run: " + approve + " To remove it, run: " + remove
 	default: // ProblemPluginApprovalMismatch
 		disable := cmds.PluginDisable(p.Name, p.Instance)
+		if p.EngineKept {
+			disable = cmds.PluginDisableKept(p.Name, p.Instance)
+		}
 		b.AskPerson("Ask the person whether they changed the plugin " + entry + " (the status message names what differs from what they approved).")
 		b.MachineCommand(cmds, approve, "Run this to approve the plugin as it is now; it prints a new link.",
 			"When the person says the change was theirs, run this to open a new approval; hand its link to the person.")
@@ -159,14 +180,37 @@ func pluginApprovalSteps(b *Steps, cmds Commands, p PluginProblem) string {
 	return lead + person
 }
 
+// unusableFileSteps are the steps of a problem that names no entry: the
+// engine's entries file cannot be used, so the engine keeps no plugin until
+// the person moves it aside and restarts the engine. Both commands are root's
+// and the person's, on an agent-operated engine too.
+func unusableFileSteps(b *Steps, cmds Commands, file string) string {
+	file = shellQuote(file)
+	move, restart := "sudo mv "+file+" "+file+".bad", cmds.EngineRestart()
+	b.RunCommand(move, "Move the unusable entries file aside; the engine keeps no plugin until then.")
+	b.RunCommand(restart, "Then restart the engine: it starts with no engine-kept plugins.")
+	lead := "The engine cannot use its plugin entries file, so it serves no plugin it keeps itself."
+	if cmds.AgentOperated() {
+		return lead
+	}
+	return lead + " To move the file aside, run: " + move + " Then restart the engine: " + restart
+}
+
 func pluginSteps(b *Steps, cmds Commands, p PluginProblem) string {
 	check, disable := cmds.PluginCheck(p.Name, p.Instance), cmds.PluginDisable(p.Name, p.Instance)
-	b.RunCommand(check, "Run this to see what is wrong with the plugin.")
-	b.RunCommand(disable, "Or run this to turn the plugin off.")
+	if p.EngineKept {
+		disable = cmds.PluginDisableKept(p.Name, p.Instance)
+	} else {
+		b.RunCommand(check, "Run this to see what is wrong with the plugin.")
+	}
+	b.RunCommand(disable, "Run this to turn the plugin off.")
 	entry := p.Name + "/" + p.Instance
 	lead := "The plugin " + entry + " is not working, so it does nothing for this agent; while it is down, a plugin that checks the agent's requests makes them fail."
 	if p.Code == ProblemPluginNotTrusted {
 		lead = "The plugin " + entry + " was not started: its installed files, its signature or its directory's permissions failed the check."
+	}
+	if p.EngineKept {
+		return lead + " To turn it off, run: " + disable
 	}
 	return lead + " To see what is wrong, run: " + check + " To turn it off, run: " + disable
 }

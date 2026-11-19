@@ -40,7 +40,9 @@ const (
 		"install the guard, then restart the engine"
 	whyNotAdmitted = "this agent is served status only until its guard or setup is ready, so its plugin record was not written; " +
 		"restart the engine once it is"
-	whyRefused     = "the guard refused its plugin record (see the engine's log); restart the engine once it is fixed"
+	whyRefused       = "the guard refused its plugin record (see the engine's log); restart the engine once it is fixed"
+	whyKeyNotTrusted = "the key that signed it is no longer in the trust store, so it is not served; " +
+		"trust the key again with basalt plugin trust, or disable the plugin, then restart the engine"
 	whyTrustUnread = "the trust store could not be read, so the record of the key that signed it was not written; " +
 		"restart the engine once the trust store can be read"
 	whyUnreachable = "its plugin record could not be written to this agent's ledger; " +
@@ -304,6 +306,10 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 			why := whyTrustUnread
 			if err, ok := unrecordedKeys[s]; ok {
 				why = unrecordedWhy(err)
+			} else if want.trust.read {
+				// The store was read and no longer holds the key (it changed
+				// since the entry was verified at start).
+				why = whyKeyNotTrusted
 			}
 			failed = append(failed, unrecordedEntry{key: k, why: why})
 			continue

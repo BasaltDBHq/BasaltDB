@@ -646,3 +646,22 @@ func TestUnreadTrustStoreWithholdsUnrecordedKeys(t *testing.T) {
 	require.Empty(t, got, "the ledger records the key: served")
 	require.Equal(t, []string{"PLUGIN_TRUST_ADDED", "PLUGIN_ENABLED"}, kindsOf(l.events(t, "product_a")), "nothing removed")
 }
+
+// A key on record whose entry was verified at start, but which the trust
+// store no longer holds when the events are written, is recorded removed and
+// its entry withheld, with that reason.
+func TestKeyGoneFromTheStoreWithholdsItsEntry(t *testing.T) {
+	t.Parallel()
+	f := newPluginFixture(t)
+	p := f.install("default", dial.TransportStdio, "product_a")
+	l := newPluginLedgers(t, f)
+	l.record(t, f, f.plugins(nil))
+	ep := f.plugins(nil) // verified while the key is held
+	key := l.trustRows(t, "product_a")[0][1]
+
+	discard := slog.New(slog.DiscardHandler)
+	got := writePluginEvents(context.Background(), wantedPlugins(f.cfg, ep, trustWant{read: true}), l.dbs, discard)
+	require.Equal(t, []unrecordedEntry{{key: p.Key(), why: whyKeyNotTrusted}}, got["product_a"])
+	rows := l.trustRows(t, "product_a")
+	require.Equal(t, [2]string{"PLUGIN_TRUST_REMOVED", key}, rows[len(rows)-1])
+}

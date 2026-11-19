@@ -114,6 +114,23 @@ func TestServiceModeCommandsUseThePersonSocket(t *testing.T) {
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Contains(t, r.stdout, `"source": "ENGINE"`)
 	require.Contains(t, r.stdout, `"state": "PENDING"`)
+	// Isolation and health are what the engine reports over the socket.
+	var listed struct {
+		Plugins []struct {
+			Health    string `json:"health"`
+			Isolation struct {
+				Files, Network string
+			} `json:"isolation"`
+		} `json:"plugins"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(r.stdout), &listed), r.stdout)
+	require.Len(t, listed.Plugins, 1)
+	require.Equal(t, person.HealthNotStarted, listed.Plugins[0].Health, "not approved yet")
+	require.Equal(t, "NONE", listed.Plugins[0].Isolation.Files)
+	require.Equal(t, "NOT_ENFORCED", listed.Plugins[0].Isolation.Network)
+	r = s.plugin(agentEnv, "list")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Contains(t, r.stdout, "isolation files NONE, network NOT_ENFORCED  health NOT_STARTED\n")
 
 	// The person pastes the page's code; the agent relays it.
 	r = s.plugin(agentEnv, "approve", s.paste(req), "--json")

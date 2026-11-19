@@ -79,7 +79,7 @@ func (f *keptFixture) runWith(euid int, inGroup error, set func(*pluginOptions))
 	recordPluginEvents(ctx, cfg, f.configPath, ep, ledgers, log)
 	done := make(chan struct{})
 	go func() { ep.serve(ctx, cfg, f.configPath, ledgers); close(done) }()
-	f.s.changed, f.s.serving = ep.applyNow, ep.servingOf
+	f.s.changed, f.s.serving, f.s.health = ep.applyNow, ep.servingOf, ep.healthOf
 	r := &keptRun{t: t, f: f, ep: ep, report: report}
 	r.cancel = func() { cancel(); <-done }
 	t.Cleanup(r.cancel)
@@ -141,6 +141,7 @@ func (r *keptRun) requireServed(approval person.PluginOpenedApproval, agents ...
 	requireSchema(r.t, "listResult", list)
 	require.Len(r.t, list.Plugins, 1)
 	require.Len(r.t, list.Plugins[0].Serving, len(agents))
+	require.Equal(r.t, person.HealthReady, list.Plugins[0].Health, "the engine started it and it answers")
 	for _, sv := range list.Plugins[0].Serving {
 		require.Equal(r.t, *approval.ApprovalID, *sv.ApprovalID)
 	}

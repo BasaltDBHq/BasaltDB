@@ -18,6 +18,7 @@
         "files": "OS_USER",
         "network": "ENFORCED"
       },
+      "health": "READY",
       "approval": {
         "required": false,
         "agents": [
@@ -45,6 +46,7 @@
         "files": "NONE",
         "network": "NOT_ENFORCED"
       },
+      "health": "NOT_STARTED",
       "approval": {
         "required": true,
         "agents": [
@@ -71,6 +73,7 @@
         "kind": "REMOTE",
         "host": "notify.example.com:443"
       },
+      "health": "NOT_STARTED",
       "approval": {
         "required": true,
         "agents": [

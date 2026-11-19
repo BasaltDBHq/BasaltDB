@@ -673,6 +673,22 @@ func (ep *enginePlugins) applyNow(ctx context.Context) {
 // kickWait bounds applyNow.
 const kickWait = 30 * time.Second
 
+// healthOf is what the running engine knows of entry k, config or
+// engine-kept: NOT_STARTED when it has not started it, else whether the
+// plugin answers. It says nothing of any agent.
+func (ep *enginePlugins) healthOf(k plugin.EntryKey) string {
+	if ep == nil || ep.host == nil {
+		return person.HealthNotStarted
+	}
+	if _, ok := ep.host.Registration(k); !ok {
+		return person.HealthNotStarted
+	}
+	if ep.host.State(k) == plugin.StateReady {
+		return person.HealthReady
+	}
+	return person.HealthUnavailable
+}
+
 // servingOf is what the running engine serves of engine-kept entry k: each
 // agent, the approval it is served on and whether the plugin answers READY.
 func (ep *enginePlugins) servingOf(k plugin.EntryKey) []person.PluginServing {

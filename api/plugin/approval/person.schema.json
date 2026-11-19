@@ -253,7 +253,7 @@
     "listedEntry": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "instance", "source", "enabled", "agents", "version", "endpoint", "approval"],
+      "required": ["name", "instance", "source", "enabled", "agents", "version", "endpoint", "health", "approval"],
       "properties": {
         "name": { "$ref": "#/$defs/name" },
         "instance": { "$ref": "#/$defs/instance" },
@@ -275,6 +275,10 @@
         "signerKeyId": { "$ref": "../events.schema.json#/$defs/keyId" },
         "endpoint": { "$ref": "../events.schema.json#/$defs/entryDetail/properties/endpoint" },
         "isolation": { "$ref": "../events.schema.json#/$defs/entryDetail/properties/isolation" },
+        "health": {
+          "description": "What the running engine knows of the entry. READY: it started the entry and the plugin answers. UNAVAILABLE: it started the entry and the plugin does not answer now. NOT_STARTED: it has not started the entry (turned off, not approved, refused at its check, or added since the engine last read its entries). It says nothing of any agent: serving does.",
+          "enum": ["READY", "UNAVAILABLE", "NOT_STARTED"]
+        },
         "approval": {
           "type": "object",
           "additionalProperties": false,

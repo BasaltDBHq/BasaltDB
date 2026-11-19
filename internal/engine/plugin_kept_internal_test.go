@@ -302,6 +302,8 @@ func TestServiceModeAddOpensApproval(t *testing.T) {
 	require.Equal(t, person.SourceEngine, list.Plugins[0].Source)
 	require.True(t, list.Plugins[0].Approval.Required)
 	require.Equal(t, "PENDING", list.Plugins[0].Approval.Agents[0].State)
+	require.Equal(t, person.HealthNotStarted, list.Plugins[0].Health, "not approved yet, so the engine has not started it")
+	require.JSONEq(t, `{"files":"NONE","network":"NOT_ENFORCED"}`, string(list.Plugins[0].Isolation))
 
 	f.sign(a)
 	require.Equal(t, "APPROVED", f.state0("product_b", plugin.EntryKey{Name: "acme-ner", Instance: "default"}))

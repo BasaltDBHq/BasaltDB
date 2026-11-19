@@ -78,15 +78,48 @@ func pluginCheck(c *cliIO, args []string) int {
 	if code >= 0 {
 		return code
 	}
-	return c.pluginDone(e.check(k), asJSON)
+	return c.pluginDone(e.check(k, asJSON), asJSON)
 }
+
+// checkResult is basalt plugin check --json for a check that passed
+// (api/plugin/check.schema.json). Times are whole milliseconds.
+type checkResult struct {
+	Name         string        `json:"name"`
+	Instance     string        `json:"instance"`
+	InitializeMs int64         `json:"initializeMs"`
+	Health       checkedHealth `json:"health"`
+	Hooks        []checkedHook `json:"hooks"`
+}
+
+type checkedHealth struct {
+	Status string `json:"status"`
+	Ms     int64  `json:"ms"`
+}
+
+// checkedHook is one hook that answered its sample; LastSeq is
+// feed.observe's answer.
+type checkedHook struct {
+	Hook    string `json:"hook"`
+	Ms      int64  `json:"ms"`
+	LastSeq *int64 `json:"lastSeq,omitempty"`
+}
+
+func wholeMs(d time.Duration) int64 { return d.Round(time.Millisecond).Milliseconds() }
 
 // check starts entry k from its verified installed copy, runs initialize
 // and health, sends each declared notifier hook its fixed sample, prints the
 // timing and sends shutdown. It sends no store data and needs no database,
 // and changes nothing of the engine's, so an agent may run it. A notifier
 // receives the samples as it would real events, marked by their install id.
-func (e *pluginEnv) check(k plugin.EntryKey) error {
+// With asJSON it prints no line as it goes: a check that passed prints its
+// checkResult, and one that failed prints nothing on stdout.
+func (e *pluginEnv) check(k plugin.EntryKey, asJSON bool) error {
+	say := func(format string, a ...any) {
+		if !asJSON {
+			fmt.Fprintf(e.c.stdout, format, a...)
+		}
+	}
+	res := checkResult{Name: k.Name, Instance: k.Instance, Hooks: []checkedHook{}}
 	p, err := e.entry(k)
 	if err != nil {
 		return err
@@ -130,9 +163,10 @@ func (e *pluginEnv) check(k plugin.EntryKey) error {
 	healthDur := time.Since(start)
 	var hookErr error
 	if err == nil {
-		fmt.Fprintf(e.c.stdout, "plugin %s: initialize %s, health %s %s\n", k, roundMs(initDur), visibleText(health.Status), roundMs(healthDur))
+		say("plugin %s: initialize %s, health %s %s\n", k, roundMs(initDur), visibleText(health.Status), roundMs(healthDur))
+		res.InitializeMs, res.Health = wholeMs(initDur), checkedHealth{Status: health.Status, Ms: wholeMs(healthDur)}
 		if health.Status == protocol.HealthReady {
-			hookErr = e.checkHooks(ctx, h, entry)
+			res.Hooks, hookErr = e.checkHooks(ctx, h, entry, say)
 		}
 	}
 	// Close stops a local plugin at once: ask it to stop first, on a context
@@ -146,13 +180,21 @@ func (e *pluginEnv) check(k plugin.EntryKey) error {
 	if health.Status != protocol.HealthReady {
 		return fmt.Errorf("plugin %s answered health %s", k, visibleText(health.Status))
 	}
-	return hookErr
+	if hookErr != nil {
+		return hookErr
+	}
+	if asJSON {
+		printJSONValue(e.c, res)
+	}
+	return nil
 }
 
 // checkHooks sends each declared notifier hook the contract's fixed sample,
 // for the entry's first agent, and prints one timing line per hook. The
-// samples hold no store data. It stops at the first hook that fails.
-func (e *pluginEnv) checkHooks(ctx context.Context, h *plugin.Host, entry plugin.Entry) error {
+// samples hold no store data. It stops at the first hook that fails. It
+// returns the hooks that answered, with their timing.
+func (e *pluginEnv) checkHooks(ctx context.Context, h *plugin.Host, entry plugin.Entry, say func(string, ...any)) ([]checkedHook, error) {
+	done := []checkedHook{}
 	k := entry.Key
 	agent := entry.Agents[0]
 	for _, hook := range hookNamesSorted(entry.Manifest) {
@@ -160,34 +202,37 @@ func (e *pluginEnv) checkHooks(ctx context.Context, h *plugin.Host, entry plugin
 		case plugin.HookApprovalDeliver:
 			params, err := checkDeliverParams(agent, time.Now())
 			if err != nil {
-				return err
+				return done, err
 			}
 			start := time.Now()
 			if err := h.DeliverApproval(ctx, k, agent, params.Event); err != nil {
-				return fmt.Errorf("plugin %s: %s failed: %w", k, hook, err)
+				return done, fmt.Errorf("plugin %s: %s failed: %w", k, hook, err)
 			}
-			fmt.Fprintf(e.c.stdout, "plugin %s: %s %s\n", k, hook, roundMs(time.Since(start)))
+			dur := time.Since(start)
+			say("plugin %s: %s %s\n", k, hook, roundMs(dur))
+			done = append(done, checkedHook{Hook: hook, Ms: wholeMs(dur)})
 		case plugin.HookFeedObserve:
 			params, err := checkFeedParams(agent)
 			if err != nil {
-				return err
+				return done, err
 			}
 			start := time.Now()
 			last, err := h.ObserveFeed(ctx, k, agent, params.Events)
 			if err != nil {
-				return fmt.Errorf("plugin %s: %s failed: %w", k, hook, err)
+				return done, fmt.Errorf("plugin %s: %s failed: %w", k, hook, err)
 			}
 			dur := time.Since(start)
 			if last != plugincontract.CheckFeedLastSeq {
-				return fmt.Errorf("plugin %s: %s failed: %s: answered lastSeq %d; the sample's events end at seq %d, and a plugin that handles them answers it",
+				return done, fmt.Errorf("plugin %s: %s failed: %s: answered lastSeq %d; the sample's events end at seq %d, and a plugin that handles them answers it",
 					k, hook, plugin.ClassBadResponse, last, plugincontract.CheckFeedLastSeq)
 			}
-			fmt.Fprintf(e.c.stdout, "plugin %s: %s lastSeq %d %s\n", k, hook, last, roundMs(dur))
+			say("plugin %s: %s lastSeq %d %s\n", k, hook, last, roundMs(dur))
+			done = append(done, checkedHook{Hook: hook, Ms: wholeMs(dur), LastSeq: &last})
 		case plugin.HookWireDetect, plugin.HookClassifySuggest, plugin.HookWireVerdict:
 			// No fixed sample for these hooks yet.
 		}
 	}
-	return nil
+	return done, nil
 }
 
 func hookNamesSorted(m plugin.Manifest) []string {

@@ -149,6 +149,17 @@ func TestCheckSendsEachNotifierHookItsSample(t *testing.T) {
 	r = e.run(nil, "", "check", testnotifier.Name, "--instance", "badseq")
 	require.NotEqual(t, exitOK, r.code)
 	require.Contains(t, r.stderr, "feed.observe failed")
+
+	// --json: the same result as one document, each hook with its timing.
+	res := checkResultOf(t, e.run(nil, "", "check", testnotifier.Name, "--instance", "good", "--json"))
+	require.Len(t, res.Hooks, 2)
+	require.Equal(t, "approval.deliver", res.Hooks[0].Hook)
+	require.Nil(t, res.Hooks[0].LastSeq)
+	require.Equal(t, "feed.observe", res.Hooks[1].Hook)
+	require.Equal(t, int64(2), *res.Hooks[1].LastSeq)
+	r = e.run(nil, "", "check", testnotifier.Name, "--instance", "badseq", "--json")
+	require.NotEqual(t, exitOK, r.code)
+	require.Empty(t, r.stdout, "a failed check prints no result")
 }
 
 // TestCheckSamplesAreTheContractsBytes: only the agent, and the notice's time

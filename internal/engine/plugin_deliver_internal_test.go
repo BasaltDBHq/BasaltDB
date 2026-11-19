@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
+	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/plugin"
 	"github.com/basaltdbhq/basaltdb/internal/plugin/protocol"
@@ -640,4 +641,21 @@ func TestDroppedNoticeMessageHoldsNothingOfTheNotice(t *testing.T) {
 	for _, secret := range []string{marker, localShort, testApproval, "q3Jv8sLk2mT0xYp1aBcD9w"} {
 		require.False(t, strings.Contains(logs, secret), "the log holds %q", secret)
 	}
+}
+
+// TestListHealthFollowsTheHost: PLUGIN_LIST's health of an entry is what
+// the running engine knows of it: NOT_STARTED while the engine has not
+// started it, then READY or UNAVAILABLE as the plugin answers or not.
+func TestListHealthFollowsTheHost(t *testing.T) {
+	t.Parallel()
+	e := newDeliverEnv(t)
+	ep := &enginePlugins{host: e.host}
+	k := plugin.EntryKey{Name: "slack-notify", Instance: "default"}
+	require.Equal(t, person.HealthNotStarted, ep.healthOf(k))
+	e.serve(k.Name, "product_a")
+	require.Equal(t, person.HealthReady, ep.healthOf(k))
+	e.host.SetState(k, plugin.StateUnavailable)
+	require.Equal(t, person.HealthUnavailable, ep.healthOf(k))
+	var none *enginePlugins
+	require.Equal(t, person.HealthNotStarted, none.healthOf(k), "an engine that runs no plugin")
 }

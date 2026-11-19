@@ -94,7 +94,11 @@
     { "code": "UNAVAILABLE", "reason": "SETUP_PENDING", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "END_TURN" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },
     { "code": "UNAVAILABLE", "reason": "SETUP_EXPIRED", "personMessage": true, "steps": [{ "actor": "OPERATOR", "action": "RUN_COMMAND" }, { "actor": "AGENT", "action": "END_TURN" }] },
 
-    { "code": "INTERNAL", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] }
+    { "code": "INTERNAL", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] },
+    { "code": "PLUGIN_REFUSED", "reason": "AGENT_OPERATED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }] },
+    { "code": "PLUGIN_REFUSED", "reason": "BAD_MANIFEST", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }] },
+    { "code": "PLUGIN_REFUSED", "reason": "NOT_TRUSTED", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "RUN_COMMAND" }] },
+    { "code": "PLUGIN_REFUSED", "reason": "UNKNOWN_AGENT", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }] }
   ],
   "results": [
     { "tool": "preview_revert", "case": "PREVIEW", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "REVISE_CALL" }] },
@@ -143,7 +147,9 @@
     { "code": "DIRECT_NOT_SERVED", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "OPERATOR", "action": "RUN_COMMAND" }] },
     { "code": "LEDGER_REINSTALLED", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }] },
     { "code": "LOCK_FILE_UNUSABLE", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }] },
-    { "code": "PORTAL_MISMATCH", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }] }
+    { "code": "PORTAL_MISMATCH", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }] },
+    { "code": "PLUGIN_UNAVAILABLE", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "RUN_COMMAND" }] },
+    { "code": "PLUGIN_NOT_TRUSTED", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "RUN_COMMAND" }] }
   ],
   "agentOperated": [
     { "kind": "ERROR", "code": "PERMISSION_DENIED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "END_TURN" }, { "actor": "AGENT", "action": "RUN_COMMAND" }] },

@@ -51,18 +51,18 @@ func TestAgentStatus(t *testing.T) {
 	require.True(t, st.Served())
 
 	// A breaking version in the middle not recorded: missing, though a newer
-	// one is.
+	// one is. Version 1 is breaking.
 	d.Exec(t, `INSERT INTO basalt_meta.schema_version (version) VALUES ($1)`, next)
-	d.Exec(t, `DELETE FROM basalt_meta.schema_version WHERE version = $1`, latest)
+	d.Exec(t, `DELETE FROM basalt_meta.schema_version WHERE version = 1`)
 	st, err = guard.AgentStatus(ctx, a.Conn, build)
 	require.NoError(t, err)
 	require.Equal(t, guard.GuardOutdated, st.State)
-	require.Equal(t, []int{latest}, st.MissingBreaking)
+	require.Equal(t, []int{1}, st.MissingBreaking)
 	require.Equal(t, next, st.Installed)
 	require.False(t, st.Served())
 
 	// A guard newer than the build.
-	d.Exec(t, `INSERT INTO basalt_meta.schema_version (version) VALUES ($1)`, latest)
+	d.Exec(t, `INSERT INTO basalt_meta.schema_version (version) VALUES (1)`)
 	st, err = guard.AgentStatus(ctx, a.Conn, migs)
 	require.NoError(t, err)
 	require.Equal(t, guard.GuardNewer, st.State)
@@ -73,8 +73,16 @@ func TestAgentStatus(t *testing.T) {
 	d.Exec(t, `REVOKE SELECT ON basalt_meta.schema_version FROM `+d.Names.Agents())
 	st, err = guard.AgentStatus(ctx, a.Conn, build)
 	require.NoError(t, err)
+	var breaking, nonBreaking []int
+	for _, m := range build {
+		if m.Breaking {
+			breaking = append(breaking, m.Version)
+			continue
+		}
+		nonBreaking = append(nonBreaking, m.Version)
+	}
 	require.Equal(t, guard.Status{
-		State: guard.GuardOutdated, Build: next, MissingBreaking: versionsUpTo(latest), MissingNonBreaking: []int{next},
+		State: guard.GuardOutdated, Build: next, MissingBreaking: breaking, MissingNonBreaking: nonBreaking,
 	}, st)
 }
 

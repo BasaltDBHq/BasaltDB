@@ -1,0 +1,30 @@
+[
+  {
+    "name": "acme-ner",
+    "instance": "default",
+    "manifestSha256": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+    "enabled": true,
+    "agents": [
+      "product_a",
+      "product_b"
+    ],
+    "timeoutMs": 300,
+    "minConfidence": 0.6,
+    "config": {
+      "languages": [
+        "en",
+        "id"
+      ]
+    }
+  },
+  {
+    "name": "acme-ner",
+    "instance": "client_x",
+    "manifestSha256": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+    "enabled": true,
+    "timeoutMs": 2000,
+    "auth": {
+      "credentialFile": "/etc/basalt/plugins/acme-ner-client_x.token"
+    }
+  }
+]

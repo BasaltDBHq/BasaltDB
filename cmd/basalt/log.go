@@ -92,6 +92,7 @@ func runLog(c *cliIO, args []string) int {
 	}
 
 	printPII(c, health.PII, l.configPath)
+	printPlugins(c, health.Plugins)
 	warn(c, health)
 	warnPasskeys(c, keys)
 	if *asJSON {
@@ -273,6 +274,34 @@ func printPII(c *cliIO, p *ledger.PIIHealth, configPath string) {
 		fprintSafef(c.stderr, "basalt: warning: %d columns need a classification review (type changed or flagged): %s; run basalt classify\n",
 			p.Review, piiNames(p.ReviewNames, p.Review))
 	}
+}
+
+// printPlugins prints the Plugins line on stderr: each plugin the agent's
+// ledger records as served, with its version, signer, endpoint and, for a
+// local one, its isolation (CONTRACT.md, Plugins, In the ledger). Nothing
+// when the ledger records no plugin event; "none" when it records only
+// disabled ones. The agent role can write these rows, so the line is
+// printed as terminal-safe text.
+func printPlugins(c *cliIO, ps []ledger.PluginHealth) {
+	if ps == nil {
+		return
+	}
+	if len(ps) == 0 {
+		fmt.Fprintln(c.stderr, "Plugins: none")
+		return
+	}
+	parts := make([]string, 0, len(ps))
+	for _, p := range ps {
+		where := p.Endpoint
+		if p.Host != "" {
+			where += " " + p.Host
+		}
+		if p.Files != "" {
+			where += ", files " + p.Files + ", network " + p.Network
+		}
+		parts = append(parts, fmt.Sprintf("%s/%s %s (signer %s, %s)", p.Name, p.Instance, p.Version, p.SignerKeyID, where))
+	}
+	fprintSafef(c.stderr, "Plugins: %s\n", strings.Join(parts, "; "))
 }
 
 // piiNames lists at most ledger.MaxPIINames names, then "…" when there are

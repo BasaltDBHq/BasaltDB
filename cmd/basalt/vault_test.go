@@ -129,7 +129,7 @@ func TestServiceInstallKeepsTheVaultOnARerun(t *testing.T) {
 		require.NoError(t, err)
 		return c.Vault, lines.String()
 	}
-	a := agentInstall{name: "bot", osUser: me(t), personUIDs: []uint32{4242}}
+	a := agentInstall{name: "bot", osUser: agentOSUser(t), personUIDs: []uint32{4242}}
 
 	a.vaultDefault = config.VaultOff
 	v, line := install(a)

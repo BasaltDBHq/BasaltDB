@@ -21,6 +21,9 @@ const (
 	// privateDirMode is the agents directory holding credential files.
 	privateDirMode = 0o700
 
+	// rootUser is root's name, as a step names an owner.
+	rootUser = "root"
+
 	// darwinIDMin and darwinIDMax bound the uid/gid picked for the engine's
 	// user on macOS: below 500 keeps it a hidden system account, at or
 	// above 300 stays clear of Apple's own accounts.
@@ -42,9 +45,13 @@ type System interface {
 	// the OS user that owns the new file.
 	WriteFile(path string, data []byte, mode os.FileMode, owner string) error
 	// Mkdir makes a directory (or takes over an existing real one) without
-	// following a link; it refuses a symlink.
-	Mkdir(path string, mode os.FileMode, owner string) error
+	// following a link; it refuses a symlink. group, when set, is its group
+	// instead of owner's.
+	Mkdir(path string, mode os.FileMode, owner, group string) error
 	Remove(path string) error
+	// RemoveTree removes a directory and everything in it without
+	// following a link; a missing one is not an error.
+	RemoveTree(path string) error
 	// CheckBinary refuses a binary anyone but root could change.
 	CheckBinary(path string) error
 }
@@ -58,6 +65,8 @@ const (
 	StepWrite  StepKind = "WRITE"
 	StepRemove StepKind = "REMOVE"
 	StepMkdir  StepKind = "MKDIR"
+	// StepRemoveTree removes a directory and what is in it.
+	StepRemoveTree StepKind = "REMOVE_TREE"
 )
 
 // Step is one action of an install or uninstall plan.
@@ -70,10 +79,16 @@ type Step struct {
 	Mode os.FileMode
 	// Owner is the OS user that owns what StepWrite or StepMkdir makes.
 	Owner string
+	// Group is StepMkdir's group; empty is Owner's.
+	Group string
 	// BestEffort marks a step whose failure does not stop the plan: Apply
 	// names it as skipped and goes on (an uninstall's service-manager
 	// commands where no service manager runs).
 	BestEffort bool
+	// Note marks a step whose failure is expected in some setups: Apply
+	// names it as skipped with the note and goes on, and the plan still
+	// succeeds.
+	Note string
 }
 
 // String is the step as a person reads it before it runs.
@@ -83,12 +98,31 @@ func (s Step) String() string {
 		return "write " + s.Path
 	case StepRemove:
 		return "rm -f " + s.Path
+	case StepRemoveTree:
+		return "rm -rf " + strings.Join(quoteArgs([]string{s.Path}), "")
 	case StepMkdir:
-		return fmt.Sprintf("mkdir -m %04o -o %s %s", s.Mode, s.Owner, strings.Join(quoteArgs([]string{s.Path}), ""))
+		owner := s.Owner
+		if owner == "" {
+			owner = rootUser
+		}
+		group := ""
+		if s.Group != "" {
+			group = " -g " + s.Group
+		}
+		return fmt.Sprintf("mkdir -m %04o -o %s%s %s", modeBits(s.Mode), owner, group, strings.Join(quoteArgs([]string{s.Path}), ""))
 	case StepRun:
 		return strings.Join(quoteArgs(s.Args), " ")
 	}
 	return string(s.Kind)
+}
+
+// modeBits is m as the octal number chmod takes, setgid included.
+func modeBits(m os.FileMode) uint32 {
+	bits := uint32(m.Perm())
+	if m&os.ModeSetgid != 0 {
+		bits |= 0o2000
+	}
+	return bits
 }
 
 func quoteArgs(args []string) []string {
@@ -122,7 +156,7 @@ func (s Spec) Validate() error {
 		return fmt.Errorf("binary path %q must be absolute", s.Binary)
 	case !filepath.IsAbs(s.ConfigPath):
 		return fmt.Errorf("config path %q must be absolute", s.ConfigPath)
-	case s.User == "" || s.User == "root":
+	case s.User == "" || s.User == rootUser:
 		return errors.New("the engine needs its own OS user, not root")
 	}
 	return nil
@@ -137,13 +171,32 @@ func InstallPlan(ctx context.Context, sys System, s Spec) ([]Step, error) {
 	if err := sys.CheckBinary(s.Binary); err != nil {
 		return nil, err
 	}
+	if len(s.Plugins) > 0 {
+		if err := s.pluginHost().validate(); err != nil {
+			return nil, err
+		}
+	}
 	if s.GOOS == goosDarwin {
 		return darwinInstall(ctx, sys, s)
 	}
-	return linuxInstall(sys, s), nil
+	return linuxInstall(sys, s)
 }
 
-func linuxInstall(sys System, s Spec) []Step {
+// pluginSteps make the plugin base, then every local plugin entry's user,
+// socket directory and unit (CONTRACT.md, Plugins, Isolation and trust).
+func pluginSteps(sys System, s Spec, ids *idAllocator) ([]Step, error) {
+	steps, err := PluginBaseSteps(s.GOOS)
+	if err != nil {
+		return nil, err
+	}
+	more, err := pluginEntriesSteps(sys, s.pluginHost(), s.Plugins, ids)
+	if err != nil {
+		return nil, err
+	}
+	return append(steps, more...), nil
+}
+
+func linuxInstall(sys System, s Spec) ([]Step, error) {
 	var steps []Step
 	if !sys.UserExists(s.User) {
 		steps = append(steps, run("useradd", "--system", "--user-group", "--no-create-home",
@@ -158,9 +211,16 @@ func linuxInstall(sys System, s Spec) []Step {
 	)
 	if installed {
 		// Already running: restart so it reads the new config.
-		return append(steps, run("systemctl", "enable", SystemdUnitName), run("systemctl", "restart", SystemdUnitName))
+		steps = append(steps, run("systemctl", "enable", SystemdUnitName), run("systemctl", "restart", SystemdUnitName))
+	} else {
+		steps = append(steps, run("systemctl", "enable", "--now", SystemdUnitName))
 	}
-	return append(steps, run("systemctl", "enable", "--now", SystemdUnitName))
+	// The plugin units are bound to the engine's: they go after it.
+	plugins, err := pluginSteps(sys, s, nil)
+	if err != nil {
+		return nil, err
+	}
+	return append(steps, plugins...), nil
 }
 
 // fileSteps write the spec's files (the engine config, an agent's
@@ -183,12 +243,19 @@ func fileSteps(s Spec) []Step {
 
 func darwinInstall(ctx context.Context, sys System, s Spec) ([]Step, error) {
 	var steps []Step
+	var ids *idAllocator
+	if !sys.UserExists(s.User) || len(s.Plugins) > 0 {
+		var err error
+		if ids, err = newIDAllocator(ctx, sys); err != nil {
+			return nil, err
+		}
+	}
 	if !sys.UserExists(s.User) {
-		id, err := darwinFreeID(ctx, sys)
+		id, err := ids.next()
 		if err != nil {
 			return nil, err
 		}
-		steps = append(steps, darwinUserSteps(s.User, strconv.Itoa(id))...)
+		steps = append(steps, darwinAccountSteps(s.User, strconv.Itoa(id), "BasaltDB engine")...)
 	}
 	configDir := filepath.Dir(s.ConfigPath)
 	installed := sys.Exists(LaunchdPlist)
@@ -201,6 +268,11 @@ func darwinInstall(ctx context.Context, sys System, s Spec) ([]Step, error) {
 		mkdir(darwinStateDirMode, s.User, config.DefaultStateDir(goosDarwin)),
 	)
 	steps = append(steps, fileSteps(s)...)
+	plugins, err := pluginSteps(sys, s, ids)
+	if err != nil {
+		return nil, err
+	}
+	steps = append(steps, plugins...)
 	steps = append(steps, Step{Kind: StepWrite, Path: LaunchdPlist, Content: LaunchdDaemon(s)})
 	if installed {
 		// Already loaded: restart so it reads the new config.
@@ -212,7 +284,9 @@ func darwinInstall(ctx context.Context, sys System, s Spec) ([]Step, error) {
 	), nil
 }
 
-func darwinUserSteps(name, id string) []Step {
+// darwinAccountSteps create a hidden macOS system account and its group,
+// both named name, with id as uid and gid.
+func darwinAccountSteps(name, id, realName string) []Step {
 	userPath, groupPath := "/Users/"+name, "/Groups/"+name
 	return []Step{
 		run("dscl", ".", "-create", groupPath),
@@ -222,27 +296,19 @@ func darwinUserSteps(name, id string) []Step {
 		run("dscl", ".", "-create", userPath, "PrimaryGroupID", id),
 		run("dscl", ".", "-create", userPath, "UserShell", "/usr/bin/false"),
 		run("dscl", ".", "-create", userPath, "NFSHomeDirectory", "/var/empty"),
-		run("dscl", ".", "-create", userPath, "RealName", "BasaltDB engine"),
+		run("dscl", ".", "-create", userPath, "RealName", realName),
 		run("dscl", ".", "-create", userPath, "IsHidden", "1"),
 	}
-}
-
-// darwinFreeID picks one id free as both a uid and a gid.
-func darwinFreeID(ctx context.Context, sys System) (int, error) {
-	users, err := sys.Output(ctx, "dscl", ".", "-list", "/Users", "UniqueID")
-	if err != nil {
-		return 0, fmt.Errorf("list users: %w", err)
-	}
-	groups, err := sys.Output(ctx, "dscl", ".", "-list", "/Groups", "PrimaryGroupID")
-	if err != nil {
-		return 0, fmt.Errorf("list groups: %w", err)
-	}
-	return PickFreeID(users + "\n" + groups)
 }
 
 // PickFreeID returns the lowest id in the system-account range that does not
 // appear in dscl -list output (lines of "name id").
 func PickFreeID(dsclOutput string) (int, error) {
+	return freeID(usedIDs(dsclOutput))
+}
+
+// usedIDs are the ids in dscl -list output.
+func usedIDs(dsclOutput string) map[int]bool {
 	used := map[int]bool{}
 	for line := range strings.SplitSeq(dsclOutput, "\n") {
 		fields := strings.Fields(line)
@@ -253,6 +319,11 @@ func PickFreeID(dsclOutput string) (int, error) {
 			used[id] = true
 		}
 	}
+	return used
+}
+
+// freeID is the lowest id in the system-account range not in used.
+func freeID(used map[int]bool) (int, error) {
 	for id := darwinIDMin; id <= darwinIDMax; id++ {
 		if !used[id] {
 			return id, nil
@@ -268,22 +339,32 @@ func PickFreeID(dsclOutput string) (int, error) {
 // the service is not installed: there is nothing to stop, so running
 // uninstall again does not fail on systemd's "Unit file does not exist" or
 // launchd's "not loaded".
+//
+// Every local plugin entry's unit, socket directory and OS user go too,
+// then the plugin base's run directory and the base itself when nothing
+// else is left in them: installed copies and trusted keys stay, as the
+// config does.
 func UninstallPlan(sys System, s Spec) ([]Step, error) {
+	var steps []Step
 	switch s.GOOS {
 	case goosLinux:
-		var steps []Step
 		if sys.Exists(SystemdUnitPath) {
 			steps = append(steps, tryRun("systemctl", "disable", "--now", SystemdUnitName))
 		}
-		return append(steps, Step{Kind: StepRemove, Path: SystemdUnitPath}, tryRun("systemctl", "daemon-reload")), nil
+		steps = append(steps, Step{Kind: StepRemove, Path: SystemdUnitPath}, tryRun("systemctl", "daemon-reload"))
 	case goosDarwin:
-		var steps []Step
 		if sys.Exists(LaunchdPlist) {
 			steps = append(steps, tryRun("launchctl", "bootout", "system/"+LaunchdLabel))
 		}
-		return append(steps, Step{Kind: StepRemove, Path: LaunchdPlist}), nil
+		steps = append(steps, Step{Kind: StepRemove, Path: LaunchdPlist})
+	default:
+		return nil, fmt.Errorf("the engine service installs on linux and darwin, not %s", s.GOOS)
 	}
-	return nil, fmt.Errorf("the engine service installs on linux and darwin, not %s", s.GOOS)
+	plugins, err := pluginUninstallSteps(sys, s.GOOS, s.Plugins)
+	if err != nil {
+		return nil, err
+	}
+	return append(steps, plugins...), nil
 }
 
 // ErrStepsSkipped is Apply's error, after every step ran, when a
@@ -305,6 +386,8 @@ func Apply(ctx context.Context, sys System, steps []Step, dryRun bool, out io.Wr
 		err := applyStep(ctx, sys, st)
 		switch {
 		case err == nil:
+		case st.Note != "":
+			fmt.Fprintf(out, "  skipped %s: %s (%v)\n", st, st.Note, err)
 		case st.BestEffort:
 			fmt.Fprintf(out, "  skipped %s: %v\n", st, err)
 			skipped = append(skipped, st.String())
@@ -354,7 +437,9 @@ func applyStep(ctx context.Context, sys System, st Step) error {
 		}
 		return sys.WriteFile(st.Path, []byte(st.Content), mode, st.Owner)
 	case StepMkdir:
-		return sys.Mkdir(st.Path, st.Mode, st.Owner)
+		return sys.Mkdir(st.Path, st.Mode, st.Owner, st.Group)
+	case StepRemoveTree:
+		return sys.RemoveTree(st.Path)
 	case StepRemove:
 		err := sys.Remove(st.Path)
 		if errors.Is(err, os.ErrNotExist) {

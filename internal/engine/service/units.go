@@ -58,7 +58,35 @@ type Spec struct {
 	// limits the engine's memory from it, so pressure throttles or stops
 	// only the engine's own OS user (M5.1 plan, section 5).
 	MemoryMB int
+	// Plugins are the config's local plugin entries: install makes each
+	// one's OS user, socket directory and unit, uninstall removes them.
+	Plugins []PluginEntry
+	// StateDir and SocketDir are the engine's, from its config (the
+	// defaults when empty), and CredentialFiles every agent's and plugin's
+	// credential file: a plugin's unit makes them inaccessible.
+	StateDir, SocketDir string
+	CredentialFiles     []string
 }
+
+// pluginHost is what s's plugin units hide and who reaches their sockets.
+// It is HostFor's, from the fields withPluginUnits copied out of it.
+func (s Spec) pluginHost() PluginHost {
+	h := PluginHost{
+		GOOS: s.GOOS, EngineUser: s.User, ConfigDir: filepath.Dir(s.ConfigPath),
+		StateDir: s.StateDir, SocketDir: s.SocketDir, CredentialFiles: s.CredentialFiles,
+	}
+	if h.StateDir == "" {
+		h.StateDir = config.DefaultStateDir(s.GOOS)
+	}
+	if h.SocketDir == "" {
+		h.SocketDir = config.DefaultSocketDir(s.GOOS)
+	}
+	return h
+}
+
+// PluginHost is s's plugin host: the engine's user and the paths its
+// plugin units hide.
+func (s Spec) PluginHost() PluginHost { return s.pluginHost() }
 
 // The unit's memory limits, as multiples of pii.maxMemoryMB: the Go heap
 // is soft-limited to twice the budget (GOMEMLIMIT, a dictionary build and

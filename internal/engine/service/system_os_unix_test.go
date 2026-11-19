@@ -126,14 +126,14 @@ func TestOSSystemMkdir(t *testing.T) {
 	require.NoError(t, err)
 
 	made := filepath.Join(dir, "agents")
-	require.NoError(t, OSSystem{}.Mkdir(made, 0o700, cur.Username))
+	require.NoError(t, OSSystem{}.Mkdir(made, 0o700, cur.Username, ""))
 	fi, err := os.Lstat(made)
 	require.NoError(t, err)
 	require.True(t, fi.IsDir())
 	require.Equal(t, os.FileMode(0o700), fi.Mode().Perm())
 
 	require.NoError(t, os.Chmod(made, 0o755))
-	require.NoError(t, OSSystem{}.Mkdir(made, 0o700, ""), "an existing real directory is taken over")
+	require.NoError(t, OSSystem{}.Mkdir(made, 0o700, "", ""), "an existing real directory is taken over")
 	fi, err = os.Lstat(made)
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o700), fi.Mode().Perm())
@@ -146,14 +146,14 @@ func TestOSSystemMkdirRefusesSymlinkAndFile(t *testing.T) {
 	link := filepath.Join(dir, "agents")
 	require.NoError(t, os.Symlink(realDir, link))
 
-	require.ErrorContains(t, OSSystem{}.Mkdir(link, 0o700, ""), "not a real directory")
+	require.ErrorContains(t, OSSystem{}.Mkdir(link, 0o700, "", ""), "not a real directory")
 	fi, err := os.Stat(realDir)
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o755), fi.Mode().Perm(), "the link target keeps its mode")
 
 	file := filepath.Join(dir, "file")
 	require.NoError(t, os.WriteFile(file, nil, 0o600))
-	require.ErrorContains(t, OSSystem{}.Mkdir(file, 0o700, ""), file+" is not a directory")
+	require.ErrorContains(t, OSSystem{}.Mkdir(file, 0o700, "", ""), file+" is not a directory")
 }
 
 // A regular file in a middle component is named as what it is.
@@ -165,7 +165,7 @@ func TestOSSystemRefusesFileInMiddleComponent(t *testing.T) {
 	err := OSSystem{}.WriteFile(filepath.Join(file, "agents", "bot.url"), []byte("x"), 0o600, "")
 	require.ErrorContains(t, err, file+" is not a directory")
 	require.NotContains(t, err.Error(), "symlink")
-	require.ErrorContains(t, OSSystem{}.Mkdir(filepath.Join(file, "agents"), 0o700, ""), file+" is not a directory")
+	require.ErrorContains(t, OSSystem{}.Mkdir(filepath.Join(file, "agents"), 0o700, "", ""), file+" is not a directory")
 }
 
 func TestOpenTrustedFile(t *testing.T) {
@@ -241,16 +241,16 @@ func TestOSSystemRefusesSymlinkInMiddleComponent(t *testing.T) {
 	cur, err := user.Current()
 	require.NoError(t, err)
 	x := filepath.Join(dir, "x")
-	require.NoError(t, OSSystem{}.Mkdir(x, 0o755, cur.Username))
+	require.NoError(t, OSSystem{}.Mkdir(x, 0o755, cur.Username, ""))
 	elsewhere := filepath.Join(dir, "elsewhere")
 	require.NoError(t, os.MkdirAll(filepath.Join(elsewhere, "agents"), 0o755))
 	require.NoError(t, os.Chmod(filepath.Join(elsewhere, "agents"), 0o755))
 	require.NoError(t, os.Rename(x, filepath.Join(dir, "moved")))
 	require.NoError(t, os.Symlink(elsewhere, x))
 
-	require.ErrorContains(t, OSSystem{}.Mkdir(filepath.Join(x, "agents"), 0o700, cur.Username), "symlink is refused")
+	require.ErrorContains(t, OSSystem{}.Mkdir(filepath.Join(x, "agents"), 0o700, cur.Username, ""), "symlink is refused")
 	require.ErrorContains(t, OSSystem{}.WriteFile(filepath.Join(x, "agents", "bot.url"), []byte("secret"), 0o600, cur.Username), "symlink is refused")
-	require.ErrorContains(t, OSSystem{}.Mkdir(filepath.Join(x, "agents", "deeper"), 0o700, cur.Username), "symlink is refused")
+	require.ErrorContains(t, OSSystem{}.Mkdir(filepath.Join(x, "agents", "deeper"), 0o700, cur.Username, ""), "symlink is refused")
 
 	fi, err := os.Stat(filepath.Join(elsewhere, "agents"))
 	require.NoError(t, err)
@@ -269,7 +269,7 @@ func TestOSSystemRefusesGroupWritableAncestor(t *testing.T) {
 	err := OSSystem{}.WriteFile(filepath.Join(shared, "agents", "bot.url"), []byte("x"), 0o600, "")
 	require.ErrorContains(t, err, shared+" is writable by group or others")
 	require.ErrorContains(t, err, "sudo chmod go-w "+shared)
-	require.ErrorContains(t, OSSystem{}.Mkdir(filepath.Join(shared, "new"), 0o700, ""), shared+" is writable by group or others")
+	require.ErrorContains(t, OSSystem{}.Mkdir(filepath.Join(shared, "new"), 0o700, "", ""), shared+" is writable by group or others")
 	_, err = os.Stat(filepath.Join(shared, "new"))
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
@@ -282,7 +282,7 @@ func TestOSSystemRefusesAncestorOwnedByAnotherUser(t *testing.T) {
 
 	err := OSSystem{}.WriteFile(filepath.Join(theirs, "agents", "bot.url"), []byte("x"), 0o600, "")
 	require.ErrorContains(t, err, theirs+" is owned by uid 4242, not root")
-	require.ErrorContains(t, OSSystem{}.Mkdir(filepath.Join(theirs, "new"), 0o700, ""), theirs+" is owned by uid 4242")
+	require.ErrorContains(t, OSSystem{}.Mkdir(filepath.Join(theirs, "new"), 0o700, "", ""), theirs+" is owned by uid 4242")
 }
 
 // With only root trusted, as in a real install, a directory a person owns
@@ -308,9 +308,52 @@ func TestOSSystemMkdirRefusesExistingDirOwnedByAnotherUser(t *testing.T) {
 	require.NoError(t, os.Chmod(agents, 0o755))
 	ownedBy(t, agents, 4242)
 
-	err = OSSystem{}.Mkdir(agents, 0o700, cur.Username)
+	err = OSSystem{}.Mkdir(agents, 0o700, cur.Username, "")
 	require.ErrorContains(t, err, agents+" already exists and is owned by uid 4242, not root or "+cur.Username)
 	fi, err := os.Stat(agents)
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o755), fi.Mode().Perm(), "a refused directory is left as it was")
+}
+
+func TestOSSystemMkdirWithGroupKeepsSetgid(t *testing.T) {
+	dir := t.TempDir()
+	cur, err := user.Current()
+	require.NoError(t, err)
+	g, err := user.LookupGroupId(cur.Gid)
+	require.NoError(t, err)
+	made := filepath.Join(dir, "sock")
+	require.NoError(t, OSSystem{}.Mkdir(made, os.ModeSetgid|0o750, cur.Username, g.Name))
+	fi, err := os.Lstat(made)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o750), fi.Mode().Perm())
+	require.NotZero(t, fi.Mode()&os.ModeSetgid, "the socket inherits the directory's group")
+	require.Error(t, OSSystem{}.Mkdir(filepath.Join(dir, "x"), 0o750, cur.Username, "basalt-test-no-such-group"))
+}
+
+func TestOSSystemRemoveTreeFollowsNoLink(t *testing.T) {
+	dir := realTempDir(t)
+	outside := filepath.Join(dir, "outside")
+	require.NoError(t, os.Mkdir(outside, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(outside, "keep"), []byte("x"), 0o600))
+
+	tree := filepath.Join(dir, "sock")
+	require.NoError(t, os.MkdirAll(filepath.Join(tree, "a", "b"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(tree, "a", "b", "f"), nil, 0o600))
+	require.NoError(t, os.Symlink(outside, filepath.Join(tree, "link")))
+	require.NoError(t, os.Symlink(filepath.Join(outside, "keep"), filepath.Join(tree, "a", "flink")))
+
+	require.NoError(t, OSSystem{}.RemoveTree(tree))
+	_, err := os.Lstat(tree)
+	require.ErrorIs(t, err, os.ErrNotExist)
+	got, err := os.ReadFile(filepath.Join(outside, "keep"))
+	require.NoError(t, err, "a link's target is never removed")
+	require.Equal(t, "x", string(got))
+
+	require.NoError(t, OSSystem{}.RemoveTree(tree), "a missing tree is not an error")
+
+	// A symlink in place of the tree is removed as a link.
+	require.NoError(t, os.Symlink(outside, tree))
+	require.NoError(t, OSSystem{}.RemoveTree(tree))
+	_, err = os.Stat(filepath.Join(outside, "keep"))
+	require.NoError(t, err)
 }

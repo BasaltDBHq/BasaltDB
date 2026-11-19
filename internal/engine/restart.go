@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"sync"
@@ -46,6 +47,11 @@ type RestartOptions struct {
 	// DefaultDrainWait.
 	IdleWait  time.Duration
 	DrainWait time.Duration
+	// PluginStderr is where local plugins' stderr goes (basalt engine
+	// --plugin-debug), on a foreground engine only; nil discards it. It
+	// rides along with the restart options because both are how
+	// basalt engine runs this engine.
+	PluginStderr io.Writer
 }
 
 func (o RestartOptions) withDefaults() RestartOptions {

@@ -425,13 +425,18 @@ func entryKey(e mcpcontract.ErrorSteps) string { return caseKey(e.Code, e.Reason
 
 // TestEveryCatalogErrorHasACase walks the catalog: an error entry without a
 // case fails, so a new code or reason cannot ship without guidance, and a
-// case without an entry is stale.
+// case without an entry is stale. PLUGIN_REFUSED is the one code no MCP tool
+// returns: the basalt plugin commands do, and their tests check each reason
+// against the catalog (cmd/basalt).
 func TestEveryCatalogErrorHasACase(t *testing.T) {
 	t.Parallel()
 	cases := catalogCases()
 	seen := map[string]bool{}
 	var missing []string
 	for _, e := range catalogOf(t).Errors {
+		if e.Code == "PLUGIN_REFUSED" {
+			continue
+		}
 		seen[entryKey(e)] = true
 		if _, ok := cases[entryKey(e)]; !ok {
 			missing = append(missing, entryKey(e))
@@ -606,6 +611,10 @@ func requireCommand(t *testing.T, command, config, where string) {
 	if serviceManager.MatchString(command) {
 		return
 	}
+	// basalt plugin writes engine.json, root's on a service engine.
+	if rest, ok := strings.CutPrefix(command, "sudo "); ok && strings.HasPrefix(rest, "basalt plugin ") {
+		command = rest
+	}
 	require.True(t, strings.HasPrefix(command, "basalt "), "%s: %q", where, command)
 	if code, ok := strings.CutPrefix(command, "basalt init --setup-code "); ok {
 		// Run on the person's own computer: it writes no engine config, so
@@ -620,7 +629,11 @@ func requireCommand(t *testing.T, command, config, where string) {
 	if command == "basalt portal verify" { // reads public pages only: no agent, no config
 		return
 	}
-	require.Regexp(t, `--agent[ =]bot`, command, where)
+	// A plugin entry is the engine's, not one agent's: basalt plugin takes
+	// no --agent.
+	if !strings.HasPrefix(command, "basalt plugin ") {
+		require.Regexp(t, `--agent[ =]bot`, command, where)
+	}
 	require.NotContains(t, command, "<", "%s: no placeholders: %q", where, command)
 	if config == "" {
 		require.NotContains(t, command, "--config", where)

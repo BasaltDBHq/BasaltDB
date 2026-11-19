@@ -1,0 +1,32 @@
+{
+  "manifestVersion": 1,
+  "name": "acme-ner",
+  "version": "1.4.0",
+  "publisher": "Acme",
+  "protocol": [
+    "basalt-plugin/1"
+  ],
+  "hooks": {
+    "wire.detect": {
+      "contract": "detector/1",
+      "roles": [
+        "VALUE"
+      ],
+      "entityTypes": [
+        "PERSON_NAME",
+        "ADDRESS"
+      ]
+    }
+  },
+  "endpoint": {
+    "remote": {
+      "transport": "connectrpc",
+      "url": "http://ner.acme.example/basalt"
+    }
+  },
+  "network": {
+    "egress": [
+      "ner.acme.example:443"
+    ]
+  }
+}

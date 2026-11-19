@@ -59,6 +59,7 @@ func commands() []command {
 		{"classify", "Suggest and confirm the PII class of every column the agents can read", withIO(runClassify)},
 		{"upgrade", "Add the guard migrations this build has and the database lacks", withIO(runUpgrade)},
 		{"uninstall", "Remove the guard, its ledger and its roles from Postgres", withIO(runUninstall)},
+		{"plugin", "Add, enable, check and remove plugins; sign your own (list | add | enable | disable | check | trust | remove | keygen | sign)", withIO(runPlugin)},
 		{"crash", "List, show or file the crash reports saved on this machine (list | show <id> | report <id>)", withIO(runCrash)},
 		{"version", "Print the version", runVersion},
 		{"help", "Show this help", nil},

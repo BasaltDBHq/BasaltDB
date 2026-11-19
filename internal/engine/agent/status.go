@@ -305,6 +305,7 @@ type statusDeps struct {
 	devLocalPages             bool
 	vault                     VaultReporter
 	portal                    PortalReporter
+	plugins                   PluginReporter
 	update                    *UpdateInfo
 	// engineKey is the engine id basalt status read from the running
 	// engine's key file ("" when it is refused), nil when it reports no
@@ -332,7 +333,7 @@ type statusDeps struct {
 func (s *Service) statusDeps() statusDeps {
 	return statusDeps{
 		name: s.Name, operatedBy: s.OperatedBy, build: s.Build, pagesBase: s.PagesBase, pagesOrigin: s.PagesOrigin,
-		sameUser: s.SameUser, devLocalPages: s.DevLocalPages, engineReachable: true, vault: s.Vault, portal: s.Portal,
+		sameUser: s.SameUser, devLocalPages: s.DevLocalPages, engineReachable: true, vault: s.Vault, portal: s.Portal, plugins: s.Plugins,
 		engineRecord: s.EngineRecord, directServed: s.DirectServed, cmds: s.Commands, setup: s.pendingSetup(), probe: s.Probe,
 		update: s.updateInfo(), finisher: s.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, lockTrouble: &s.lockTrouble, passkeys: s.Store.Passkeys, log: s.Log, now: s.Now,
 	}
@@ -415,6 +416,7 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 			func(b *Steps) string { return engineUnreachableSteps(b, s.cmds, toolStatus) })
 	}
 	s.addPortalProblem(&ps)
+	s.addPluginProblems(&ps)
 	setup, known := s.setupView(ctx)
 	r.Setup = setup.status
 	if path := s.lockTrouble.get(); path != "" {

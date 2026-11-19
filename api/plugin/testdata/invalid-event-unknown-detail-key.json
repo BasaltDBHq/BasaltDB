@@ -1,0 +1,29 @@
+{
+  "kind": "PLUGIN_ENABLED",
+  "detail": {
+    "name": "acme-ner",
+    "instance": "default",
+    "version": "1.4.0",
+    "manifestSha256": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+    "signerKeyId": "jNZPxNG5htlwfhg4ZgknAA",
+    "hooks": [
+      "wire.detect"
+    ],
+    "roles": [
+      "VALUE",
+      "NAME_CUE"
+    ],
+    "egress": [],
+    "endpoint": {
+      "kind": "LOCAL"
+    },
+    "isolation": {
+      "files": "OS_USER",
+      "network": "ENFORCED"
+    },
+    "agents": [
+      "product_a",
+      "client_x"
+    ]
+  }
+}

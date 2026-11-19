@@ -26,7 +26,8 @@
         "SQL_ERROR",
         "INVALID_ARGUMENT",
         "UNAVAILABLE",
-        "INTERNAL"
+        "INTERNAL",
+        "PLUGIN_REFUSED"
       ]
     },
     "reason": {

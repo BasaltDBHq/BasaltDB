@@ -21,7 +21,9 @@ func TestSchemaFiles(t *testing.T) {
 		all += m.sql
 	}
 	require.Equal(t, strings.Join(files, ""), all)
-	require.Equal(t, versionInstallIDs, LatestVersion())
+	require.Equal(t, versionPluginEvents, LatestVersion())
+	require.True(t, migrations[versionPluginEvents-1].nonBreaking)
+	require.False(t, migrations[versionInstallIDs-1].nonBreaking)
 	for _, sql := range files {
 		require.True(t, strings.HasPrefix(sql, "\n"), "the SQL starts after the header's blank line")
 		require.NotContains(t, sql, strings.TrimSpace(recordInstallLine))

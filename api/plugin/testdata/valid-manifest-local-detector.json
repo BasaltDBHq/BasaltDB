@@ -1,0 +1,43 @@
+{
+  "manifestVersion": 1,
+  "name": "acme-ner",
+  "version": "1.4.0",
+  "publisher": "Acme",
+  "description": "Finds names and addresses of people the database does not hold.",
+  "protocol": [
+    "basalt-plugin/1"
+  ],
+  "hooks": {
+    "wire.detect": {
+      "contract": "detector/1",
+      "roles": [
+        "VALUE",
+        "NAME_CUE"
+      ],
+      "entityTypes": [
+        "PERSON_NAME",
+        "ADDRESS",
+        "acme-ner.EMPLOYEE_ID"
+      ]
+    }
+  },
+  "endpoint": {
+    "local": {
+      "transport": "jsonrpc-stdio",
+      "command": "bin/acme-ner",
+      "args": [
+        "--serve"
+      ]
+    }
+  },
+  "files": {
+    "bin/acme-ner": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+    "model/ner.onnx": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+  },
+  "network": {
+    "egress": []
+  },
+  "resources": {
+    "memoryMB": 1024
+  }
+}

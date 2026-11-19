@@ -158,6 +158,15 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		return err
 	}
 	env := agentEnv{cfg: cfg, configPath: configPath, asRoot: os.Geteuid() == 0, pagesBase: base, stateDir: cfg.StateDirFor(runtime.GOOS), pins: statePins(cfg.StateDirFor(runtime.GOOS), log)}
+	// Plugins are verified now and started below, once the agents serve: a
+	// plugin that fails never stops the engine. With no enabled entry
+	// nothing is read or started.
+	plugins := newEnginePlugins(cfg, configPath, pluginOptions{
+		Stderr: pluginDebugWriter(cfg, restart.PluginStderr, log), euid: engineEUID(),
+	}, log.With("component", "plugins"))
+	if plugins != nil {
+		env.plugins = plugins
+	}
 	portal := newPortalChecker(base, env.stateDir, log, time.Now)
 	if portal != nil {
 		env.portal = portal
@@ -259,6 +268,16 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	for _, u := range upkeeps {
 		wg.Go(func() { u.Run(ctx, upkeep.DefaultInterval) })
 	}
+	// Each agent's ledger records its plugin changes before any plugin
+	// starts; an entry whose record fails is not served to that agent. The
+	// supervisor stops the plugins within plugin.StopWait of ctx ending,
+	// before RunWith returns (and before a restart runs a new binary).
+	wg.Go(func() {
+		recordPluginEvents(ctx, cfg, configPath, plugins, srv.pluginLedgers, log.With("component", "plugins"))
+		if plugins != nil {
+			plugins.run(ctx)
+		}
+	})
 	scanner := piidict.NewScanner(dict, srv.scans, piidict.ScanOptions{
 		RowsPerSecond: piiCfg.ScanRowsPerSecond, MaxMemoryBytes: piiCfg.MaxMemoryBytes(),
 	}, piiLog)
@@ -325,7 +344,9 @@ type startedAgents struct {
 	upkeeps  []*upkeep.Upkeep
 	services []*agent.Service
 	scans    []piidict.ScanSource
-	closers  []func()
+	// pluginLedgers are the agents' own ledgers, for their plugin events.
+	pluginLedgers map[string]pluginLedger
+	closers       []func()
 }
 
 // startAgents builds each agent's runtime. An agent whose guard is missing
@@ -334,8 +355,9 @@ type startedAgents struct {
 // user is in uids, which the person socket scopes by.
 func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[string]uint32, newRT runtimeFunc, log *slog.Logger) (startedAgents, error) {
 	out := startedAgents{
-		ledgers: make(map[string]person.Ledger, len(cfg.Agents)),
-		infos:   make(map[string]person.AgentInfo, len(cfg.Agents)),
+		ledgers:       make(map[string]person.Ledger, len(cfg.Agents)),
+		infos:         make(map[string]person.AgentInfo, len(cfg.Agents)),
+		pluginLedgers: make(map[string]pluginLedger, len(cfg.Agents)),
 	}
 	for _, a := range cfg.Agents {
 		rt, err := newRT(ctx, env, a, log.With("agent", a.Name))
@@ -345,6 +367,9 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 		out.closers = append(out.closers, rt.close)
 		out.ledgers[a.Name] = rt.ledger
 		out.infos[a.Name] = rt.info
+		if rt.db != nil {
+			out.pluginLedgers[a.Name] = pluginLedger{db: rt.db, admit: pluginAdmit(rt.svc)}
+		}
 		out.upkeeps = append(out.upkeeps, rt.upkeep)
 		out.services = append(out.services, rt.svc)
 		if rt.scan.DB != nil {
@@ -445,7 +470,9 @@ type agentRuntime struct {
 	// info answers the person socket's STATUS and TARGET.
 	info person.AgentInfo
 	// scan is what the engine's PII scan reads for this agent.
-	scan  piidict.ScanSource
+	scan piidict.ScanSource
+	// db is the agent's own connection pool, outside any tool call.
+	db    guard.Querier
 	close func()
 }
 
@@ -462,6 +489,9 @@ type agentEnv struct {
 	// portal reports the daily portal check in every agent's status; nil
 	// without a portal in the config.
 	portal agent.PortalReporter
+	// plugins reports the plugin entries listed for each agent in its
+	// status; nil when no plugin is enabled.
+	plugins agent.PluginReporter
 	// update is the daily newer-release check; nil when it is off.
 	update *updatecheck.Checker
 	// receipts signs the receipt of every relayed signature; nil when the
@@ -564,6 +594,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		Probe:         probe,
 		Vault:         env.vault,
 		Portal:        env.portal,
+		Plugins:       env.plugins,
 		Update:        env.updateNotice(),
 		EngineRecord: func(ctx context.Context, id string) (*guard.RecordedEngine, error) {
 			r, err := guard.EngineRecord(ctx, pool, id)
@@ -585,6 +616,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		ledger: piiLedger{Ledger: gatedLedger{inner: person.NewDBLedger(pool, time.Now), admit: svc.Admit}, dict: env.dict},
 		info:   agentInfo(svc, pool.Config().ConnConfig.Config),
 		scan:   piidict.ScanSource{Agent: a.Name, DB: pool, Classes: classes, Limits: limits},
+		db:     pool,
 		close: func() {
 			pool.Close()
 			files.close()

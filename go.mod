@@ -5,6 +5,7 @@ go 1.26.0
 toolchain go1.26.11
 
 require (
+	connectrpc.com/connect v1.21.1
 	github.com/FastFilter/xorfilter v0.5.1
 	github.com/Masterminds/squirrel v1.5.4
 	github.com/coder/websocket v1.8.15
@@ -14,8 +15,10 @@ require (
 	github.com/jackc/pgx/v5 v5.13.0
 	github.com/nyaruka/phonenumbers v1.8.1
 	github.com/pganalyze/pg_query_go/v6 v6.2.5
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/stretchr/testify v1.12.1
 	github.com/wasilibs/go-pgquery v0.0.0-20261106060434-4301e51f8dbf
+	go.uber.org/goleak v1.3.0
 	golang.org/x/sys v0.50.0
 	golang.org/x/term v0.48.0
 	golang.org/x/text v0.44.0

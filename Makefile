@@ -54,9 +54,11 @@ shard-check: ## Every Go package is in exactly one CI test shard
 script-checks: install-sh-check npm-check web-check portal-build ## The script checks job of the CI workflow
 
 .PHONY: test-privdrop
-test-privdrop: ## basalt engine --user as root in a Linux container without systemd (needs Docker)
+test-privdrop: ## basalt engine --user and plugin isolation as root in a Linux container without systemd (needs Docker)
 	@docker run --rm -v "$(CURDIR)":/src:ro -v basalt-gomod:/go/pkg/mod -w /src -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false \
-		golang:$(GO_VERSION) go test -count=1 -v -run 'TestDropEveryThread|TestParseOwnStatus' ./internal/engine/privdrop/
+		-e BASALT_TEST_PLUGIN_ISOLATION=1 golang:$(GO_VERSION) sh -c \
+		"go test -count=1 -v -run 'TestDropEveryThread|TestParseOwnStatus' ./internal/engine/privdrop/ && \
+		go test -count=1 -v -run 'TestPluginIsolationAsRoot' ./internal/engine/service/"
 
 .PHONY: test-compose
 test-compose: ## The docker compose example (examples/compose): setup, isolation, restart, removal (needs Docker)
@@ -77,6 +79,15 @@ build: ## Build the static basalt binary (CGO_ENABLED=0)
 .PHONY: mocks
 mocks: bin/mockery ## Regenerate mocks from .mockery.yml
 	@$(MOCKERY) --config .mockery.yml
+
+.PHONY: proto
+proto: bin/protoc-gen-go bin/protoc-gen-connect-go ## Regenerate the plugin protocol's Go code from api/plugin/proto (needs protoc on PATH)
+	@protoc -I api/plugin/proto \
+		--go_out=api/plugin/proto --go_opt=paths=source_relative \
+		--connect-go_out=api/plugin/proto --connect-go_opt=paths=source_relative \
+		api/plugin/proto/basalt/plugin/v1/plugin.proto
+	@go run mvdan.cc/gofumpt@v0.9.2 -w api/plugin/proto
+	@go run golang.org/x/tools/cmd/goimports@v0.39.0 -local github.com/basaltdbhq/basaltdb -w api/plugin/proto
 
 .PHONY: install-sh-check
 install-sh-check: ## POSIX syntax, default repo, and archive names for install.sh

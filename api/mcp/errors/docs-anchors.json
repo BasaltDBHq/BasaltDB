@@ -17,6 +17,7 @@
     "sql-error",
     "invalid-argument",
     "unavailable",
-    "internal"
+    "internal",
+    "plugin-refused"
   ]
 }

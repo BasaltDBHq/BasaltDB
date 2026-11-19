@@ -130,6 +130,16 @@ linters:
           deny:
             - pkg: github.com/basaltdbhq/basaltdb/internal/vault/vaulttest
               desc: vaulttest is a test fake; import it from _test.go files only
+        # The Go plugin SDK is its own module, with its own generated copy of
+        # the plugin service. Only the programs that are plugins import it: a
+        # binary that also links the engine's copy would not start.
+        plugin-sdk-only-in-plugins:
+          files:
+            - "!**/internal/plugin/testnotifier/cmd/**"
+            - "!**/scripts/systemd-smoke/probe/**"
+          deny:
+            - pkg: github.com/basaltdbhq/basalt-plugin-go
+              desc: only the test notifier and the systemd smoke probe import the plugin SDK
         # The agent service talks to its store only through the store ports
         # (internal/engine/agent/ports.go): no database driver, SQL policy or
         # adapter in it.

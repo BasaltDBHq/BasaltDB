@@ -12,24 +12,25 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/basaltdbhq/basaltdb/internal/plugin/sdk"
+	basaltplugin "github.com/basaltdbhq/basalt-plugin-go"
+
 	tn "github.com/basaltdbhq/basaltdb/internal/plugin/testnotifier"
 )
 
 // serveRaw speaks JSON-RPC without the SDK, for the modes whose answers the
 // SDK refuses to send: a lastSeq that is no seq of the batch, and a line that
-// is not JSON. It serves stdin and stdout, or the socket in sdk.SocketEnv
+// is not JSON. It serves stdin and stdout, or the socket in basaltplugin.SocketEnv
 // when it is set, until shutdown or the end of the stream.
 func serveRaw(ctx context.Context, n *notifier, m tn.Mode, feed, deliver bool) error {
 	hooks := map[string]map[string]string{}
 	if feed {
-		hooks[tn.HookFeedObserve] = map[string]string{"contract": sdk.ContractFeed}
+		hooks[tn.HookFeedObserve] = map[string]string{"contract": basaltplugin.ContractFeed}
 	}
 	if deliver {
-		hooks[tn.HookApprovalDeliver] = map[string]string{"contract": sdk.ContractDeliver}
+		hooks[tn.HookApprovalDeliver] = map[string]string{"contract": basaltplugin.ContractDeliver}
 	}
 	r := &raw{n: n, mode: m, hooks: hooks}
-	path := os.Getenv(sdk.SocketEnv)
+	path := os.Getenv(basaltplugin.SocketEnv)
 	if path == "" {
 		r.serve(os.Stdin, os.Stdout)
 		return nil
@@ -92,7 +93,7 @@ func (r *raw) serve(in io.Reader, out io.Writer) {
 		}
 		switch req.Method {
 		case "initialize":
-			reply(req.ID, map[string]any{"protocol": sdk.Protocol, "name": tn.Name, "version": tn.Version, "hooks": r.hooks})
+			reply(req.ID, map[string]any{"protocol": basaltplugin.Protocol, "name": tn.Name, "version": tn.Version, "hooks": r.hooks})
 		case "health":
 			reply(req.ID, map[string]string{"status": "READY"})
 		case "shutdown":

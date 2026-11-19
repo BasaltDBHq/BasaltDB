@@ -20,6 +20,14 @@ func fileOwner(fi fs.FileInfo) (uint32, error) {
 	return st.Uid, nil
 }
 
+// fileGroup is the gid of the file fi describes, 0 when it cannot be read.
+func fileGroup(fi fs.FileInfo) uint32 {
+	if st, ok := fi.Sys().(*syscall.Stat_t); ok {
+		return st.Gid
+	}
+	return 0
+}
+
 // currentUID is this process's effective uid: the engine's own user.
 func currentUID() (uint32, error) {
 	uid := os.Geteuid()

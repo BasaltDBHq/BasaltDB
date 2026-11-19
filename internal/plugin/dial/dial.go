@@ -5,6 +5,8 @@ package dial
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -65,7 +67,7 @@ type Options struct {
 	// 0700, holding only the socket, and removed when the plugin stops. It
 	// is never a directory the plugin's files live in. Empty means the OS
 	// temporary directory. The socket's path must fit MaxSocketPath, and the
-	// base and every directory above it must pass plugin.CheckPrivateDir.
+	// base and every directory above it must pass plugin.CheckSocketBase.
 	SocketBase string
 	// Runs, when set, records each local process started (child.Runs), so
 	// the engine's next start can reap one a crash left running. The engine
@@ -126,10 +128,30 @@ func wrap(k plugin.EntryKey) func(plugin.Transport, error) (plugin.Transport, er
 	}
 }
 
+// socketDirPrefix and socketDirRandom make a socket directory's name: the
+// prefix and socketDirRandom random bytes in hex.
+const (
+	socketDirPrefix = "bp"
+	socketDirRandom = 8
+)
+
+// socketDirName is a new socket directory's name, unpredictable to another
+// user.
+func socketDirName() (string, error) {
+	b := make([]byte, socketDirRandom)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return socketDirPrefix + hex.EncodeToString(b), nil
+}
+
 // socketDir makes a new socket directory under base and returns the
 // socket's path in it. The path's length and the base's ownership and modes
-// (plugin.CheckPrivateDir: no one but the engine's user or root can write it
-// or a directory above it) are checked before anything is made.
+// (plugin.CheckSocketBase: no one but the engine's user or root can write it
+// or a directory above it, unless root owns that directory and its sticky
+// bit is set) are checked before anything is made. The directory itself is
+// made by makeSocketDir: a random name, refused if anything is there, and
+// its owner and mode checked on the directory opened, not by its path.
 func socketDir(base string) (dir, path string, err error) {
 	if base == "" {
 		base = os.TempDir()
@@ -138,28 +160,45 @@ func socketDir(base string) (dir, path string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	// MkdirTemp adds its pattern and a random suffix of up to 10 digits.
-	const pattern, suffix = "bp", 10
-	if n := len(filepath.Join(base, pattern)) + suffix + len("/"+socketFile); n > MaxSocketPath {
-		return "", "", fmt.Errorf("a socket path under %s would be %d bytes; Unix sockets take at most %d here, so set TMPDIR to a shorter directory", base, n, MaxSocketPath)
+	if err := socketPathFits(base); err != nil {
+		return "", "", err
 	}
-	if err := plugin.CheckPrivateDir(base); err != nil {
+	if err := plugin.CheckSocketBase(base); err != nil {
 		var ve *plugin.VerifyError
 		if errors.As(err, &ve) {
-			return "", "", fmt.Errorf("plugin socket directories are made under %s, but %s %s; set TMPDIR to a directory only you can write (for example mkdir -m 700 ~/.cache/basalt-tmp, with chmod go-w on the directories above it)", base, ve.File, ve.Why)
+			return "", "", fmt.Errorf("plugin socket directories are made under %s, but %s %s; "+
+				"a directory there may be writable by others only when root owns it and its sticky bit is set, as for /tmp. "+
+				"Set TMPDIR to a directory only you can write, such as a new directory of mode 0700 in your home directory", base, ve.File, ve.Why)
 		}
 		return "", "", err
 	}
-	dir, err = os.MkdirTemp(base, pattern)
+	// Every symlink on the way is root's (CheckSocketBase); the directory is
+	// made in, and its path named from, the directory they lead to.
+	resolved, err := filepath.EvalSymlinks(base)
 	if err != nil {
-		return "", "", errors.New("the plugin's socket directory could not be made")
+		return "", "", errors.New("the plugin socket base " + base + " cannot be read")
 	}
-	// MkdirTemp makes it 0700 whatever the umask; say so where it matters.
-	if err := os.Chmod(dir, socketDirMode); err != nil {
-		_ = os.RemoveAll(dir)
-		return "", "", errors.New("the plugin's socket directory could not be made private")
+	if err := socketPathFits(resolved); err != nil {
+		return "", "", err
 	}
+	name, err := socketDirName()
+	if err != nil {
+		return "", "", errors.New("the plugin's socket directory could not be named")
+	}
+	if err := makeSocketDir(resolved, name); err != nil {
+		return "", "", err
+	}
+	dir = filepath.Join(resolved, name)
 	return dir, filepath.Join(dir, socketFile), nil
+}
+
+// socketPathFits refuses a base whose socket path would not fit a Unix
+// socket address.
+func socketPathFits(base string) error {
+	if n := len(filepath.Join(base, socketDirPrefix)) + 2*socketDirRandom + len("/"+socketFile); n > MaxSocketPath {
+		return fmt.Errorf("a socket path under %s would be %d bytes; Unix sockets take at most %d here, so set TMPDIR to a shorter directory", base, n, MaxSocketPath)
+	}
+	return nil
 }
 
 // startSocket starts a socket plugin in a new socket directory, waits for

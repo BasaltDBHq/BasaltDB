@@ -179,6 +179,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	}
 	if plugins != nil {
 		env.plugins = plugins
+		env.deliverer = plugins.DeliverLinks
 	}
 	portal := newPortalChecker(base, env.stateDir, log, time.Now)
 	if portal != nil {
@@ -530,6 +531,9 @@ type agentEnv struct {
 	// plugins reports the plugin entries listed for each agent in its
 	// status; nil when no plugin is enabled.
 	plugins agent.PluginReporter
+	// deliverer gives each agent where its approval notices go, for the
+	// approval.deliver plugins; nil when the engine keeps no plugins.
+	deliverer func(name string) agent.LinkDeliverer
 	// update is the daily newer-release check; nil when it is off.
 	update *updatecheck.Checker
 	// receipts signs the receipt of every relayed signature; nil when the
@@ -613,8 +617,13 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	blind := agent.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
 		return guard.RLSBlindTables(ctx, budgeted, "", tables)
 	})
+	var deliverer agent.LinkDeliverer
+	if env.deliverer != nil {
+		deliverer = env.deliverer(a.Name)
+	}
 	svc := agent.NewService(agent.Deps{
 		Name:          a.Name,
+		Deliverer:     deliverer,
 		Store:         store,
 		PagesBase:     env.pagesBase,
 		LinkBudget:    env.cfg.LinkBudgetOrDefault(),

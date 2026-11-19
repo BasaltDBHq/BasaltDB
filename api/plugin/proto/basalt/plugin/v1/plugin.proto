@@ -17,6 +17,10 @@ service PluginService {
   rpc Initialize(InitializeRequest) returns (InitializeResponse);
   rpc Health(HealthRequest) returns (HealthResponse);
   rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
+  // feed.observe (feed/1).
+  rpc FeedObserve(FeedObserveRequest) returns (FeedObserveResponse);
+  // Planned: approval.deliver (deliver/1).
+  rpc ApprovalDeliver(ApprovalDeliverRequest) returns (ApprovalDeliverResponse);
 }
 
 // initialize.schema.json #/$defs/request
@@ -71,3 +75,30 @@ message ShutdownRequest {}
 
 // shutdown.schema.json #/$defs/response
 message ShutdownResponse {}
+
+// feed.schema.json #/$defs/request
+message FeedObserveRequest {
+  string agent = 1;
+  // The CloudEvents JSON batch, application/cloudevents-batch+json: the
+  // exact bytes JSON-RPC carries as events. Events stay in their JSON form
+  // on every transport.
+  bytes events = 2;
+}
+
+// feed.schema.json #/$defs/response
+message FeedObserveResponse {
+  // A ledger seq is a bigint, so this field is 64-bit; the engine calls
+  // with binary protobuf, where that needs no string form.
+  int64 last_seq = 1;
+}
+
+// deliver.schema.json #/$defs/request
+message ApprovalDeliverRequest {
+  string agent = 1;
+  // One CloudEvent, application/cloudevents+json: the exact bytes JSON-RPC
+  // carries as event.
+  bytes event = 2;
+}
+
+// deliver.schema.json #/$defs/response
+message ApprovalDeliverResponse {}

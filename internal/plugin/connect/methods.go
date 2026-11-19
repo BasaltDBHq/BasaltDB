@@ -20,6 +20,14 @@ type method struct {
 	procedure   string
 	newRequest  func() proto.Message
 	newResponse func() proto.Message
+	// fromJSON, when set, fills the request from the params' JSON form in
+	// place of proto3 JSON: the notifier hooks carry their events as bytes
+	// that hold the events' own JSON, which proto3 JSON would want as
+	// base64.
+	fromJSON func(js []byte, msg proto.Message) error
+	// toJSON, when set, renders the reply as the params' JSON form in place
+	// of proto3 JSON, which writes a 64-bit integer as a string.
+	toJSON func(msg proto.Message) ([]byte, error)
 }
 
 func platformMethods() map[string]method {
@@ -39,6 +47,38 @@ func platformMethods() map[string]method {
 			newRequest:  func() proto.Message { return new(pluginv1.ShutdownRequest) },
 			newResponse: func() proto.Message { return new(pluginv1.ShutdownResponse) },
 		},
+		protocol.MethodFeedObserve: {
+			procedure:   pluginv1connect.PluginServiceFeedObserveProcedure,
+			newRequest:  func() proto.Message { return new(pluginv1.FeedObserveRequest) },
+			newResponse: func() proto.Message { return new(pluginv1.FeedObserveResponse) },
+			fromJSON: func(js []byte, msg proto.Message) error {
+				var in protocol.FeedObserveRequest
+				if err := json.Unmarshal(js, &in); err != nil {
+					return err
+				}
+				m, _ := msg.(*pluginv1.FeedObserveRequest)
+				m.Agent, m.Events = in.Agent, in.Events
+				return nil
+			},
+			toJSON: func(msg proto.Message) ([]byte, error) {
+				m, _ := msg.(*pluginv1.FeedObserveResponse)
+				return json.Marshal(protocol.FeedObserveResponse{LastSeq: m.GetLastSeq()})
+			},
+		},
+		protocol.MethodApprovalDeliver: {
+			procedure:   pluginv1connect.PluginServiceApprovalDeliverProcedure,
+			newRequest:  func() proto.Message { return new(pluginv1.ApprovalDeliverRequest) },
+			newResponse: func() proto.Message { return new(pluginv1.ApprovalDeliverResponse) },
+			fromJSON: func(js []byte, msg proto.Message) error {
+				var in protocol.ApprovalDeliverRequest
+				if err := json.Unmarshal(js, &in); err != nil {
+					return err
+				}
+				m, _ := msg.(*pluginv1.ApprovalDeliverRequest)
+				m.Agent, m.Event = in.Agent, in.Event
+				return nil
+			},
+		},
 	}
 }
 
@@ -55,14 +95,18 @@ var (
 func encodeParams(m method, params any) ([]byte, error) {
 	msg := m.newRequest()
 	if params != nil {
-		js, err := json.Marshal(params)
+		js, err := protocol.Marshal(params)
 		if err != nil {
 			return nil, plugin.Fail(plugin.ClassBadResponse)
 		}
 		if len(js) > protocol.MaxMessageBytes {
 			return nil, plugin.Fail(plugin.ClassOverLimit)
 		}
-		if err := jsonToProto.Unmarshal(js, msg); err != nil {
+		fill := jsonToProto.Unmarshal
+		if m.fromJSON != nil {
+			fill = m.fromJSON
+		}
+		if err := fill(js, msg); err != nil {
 			return nil, plugin.Fail(plugin.ClassBadResponse)
 		}
 	}
@@ -86,7 +130,11 @@ func decodeResult(m method, body []byte, result any) error {
 	if result == nil {
 		return nil
 	}
-	js, err := protoToJSON.Marshal(msg)
+	render := protoToJSON.Marshal
+	if m.toJSON != nil {
+		render = m.toJSON
+	}
+	js, err := render(msg)
 	if err != nil {
 		return plugin.Fail(plugin.ClassBadResponse)
 	}

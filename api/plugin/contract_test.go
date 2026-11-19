@@ -49,6 +49,10 @@ var kinds = []exampleKind{
 	{"health-response", "protocol/health.schema.json#/$defs/response", nil},
 	{"shutdown-request", "protocol/shutdown.schema.json#/$defs/request", nil},
 	{"shutdown-response", "protocol/shutdown.schema.json#/$defs/response", nil},
+	{"feed-request", "protocol/feed.schema.json#/$defs/request", []rule{ruleFeedOneAgent, ruleFeedAscending, ruleFeedIDs}},
+	{"feed-response", "protocol/feed.schema.json#/$defs/response", nil},
+	{"deliver-request", "protocol/deliver.schema.json#/$defs/request", []rule{ruleDeliverOneAgent}},
+	{"deliver-response", "protocol/deliver.schema.json#/$defs/response", nil},
 	{"manifest", "manifest.schema.json", []rule{ruleRemoteHostInEgress, ruleEntityTypePrefix, ruleCommandInFiles}},
 	{"config", "config.schema.json", []rule{ruleUniqueEntries, ruleConfigSize, ruleConfigNoCredential}},
 	{"event", "events.schema.json", nil},
@@ -64,6 +68,7 @@ var kinds = []exampleKind{
 	{"person-error", "approval/person.schema.json#/$defs/error", nil},
 	{"engine-entries", "engine-entries.schema.json", []rule{ruleUniqueEntries, ruleConfigSize, ruleConfigNoCredential}},
 	{"wait-result", "approval/wait.schema.json", nil},
+	{"check-result", "check.schema.json", nil},
 }
 
 type exampleKind struct {
@@ -132,9 +137,31 @@ var wantFailure = map[string]string{
 	"invalid-person-error-reason-without-refusal.json":       "schema:/$defs/error/properties/error/else",
 	"invalid-engine-entries-no-approval.json":                "schema:/items/allOf/1/required",
 	"invalid-wait-result-unknown-state.json":                 "schema:/properties/state/enum",
+	"invalid-check-result-not-ready.json":                    "schema:/properties/health/properties/status/const",
+	"invalid-person-result-list-unknown-health.json":         "schema:/$defs/listedEntry/properties/health/enum",
 	"invalid-engine-entries-auth.json":                       "schema:/items/allOf/2",
 	"invalid-engine-entries-duplicate-instance.json":         "rule:uniqueEntries",
 	"invalid-engine-entries-secret-in-config.json":           "rule:configNoCredential",
+	"invalid-feed-request-over-100.json":                     "schema:/$defs/request/properties/events/maxItems",
+	"invalid-feed-request-statement-in-data.json":            "schema:/$defs/writeApplied/additionalProperties",
+	"invalid-feed-request-intent-in-held.json":               "schema:/$defs/writeHeld/additionalProperties",
+	"invalid-feed-request-passkey-in-signed.json":            "schema:/$defs/approvalSigned/additionalProperties",
+	"invalid-feed-request-rows-in-revert.json":               "schema:/$defs/revertOnly/additionalProperties",
+	"invalid-feed-request-old-specversion.json":              "schema:/$defs/event/properties/specversion/const",
+	"invalid-feed-request-camelcase-attribute.json":          "schema:/$defs/event/additionalProperties",
+	"invalid-feed-request-skipped-with-time.json":            "schema:/$defs/event/allOf/8/then",
+	"invalid-feed-request-out-of-order.json":                 "rule:feedAscending",
+	"invalid-feed-request-other-agent.json":                  "rule:feedOneAgent",
+	"invalid-feed-request-id-not-seq.json":                   "rule:feedIDs",
+	"invalid-deliver-request-link-without-opens.json":        "schema:/$defs/notice/allOf/3/then/required",
+	"invalid-deliver-request-local-link-anywhere.json":       "schema:/$defs/notice/allOf/5/then/properties/link/pattern",
+	"invalid-deliver-request-no-link-open-instruction.json":  "schema:/$defs/notice/allOf/8/then/properties/instruction/pattern",
+	"invalid-deliver-request-statement-field.json":           "schema:/$defs/notice/additionalProperties",
+	"invalid-deliver-request-headline-two-lines.json":        "schema:/$defs/notice/properties/headline/pattern",
+	"invalid-deliver-request-headline-bidi.json":             "schema:/$defs/notice/properties/headline/pattern",
+	"invalid-deliver-request-hash-link.json":                 "schema:/$defs/notice/properties/link/pattern",
+	"invalid-deliver-request-both-ids.json":                  "schema:/$defs/notice/allOf/0/oneOf",
+	"invalid-deliver-request-other-agent.json":               "rule:deliverOneAgent",
 }
 
 // TestSchemaExamples: every testdata/valid-*.json passes its schema and the
@@ -216,7 +243,7 @@ func newCompiler(t *testing.T) *jsonschema.Compiler {
 		"protocol/initialize.schema.json", "protocol/health.schema.json", "protocol/shutdown.schema.json",
 		"approval/binding.schema.json", "approval/request.schema.json", "approval/response.schema.json",
 		"approval/result.schema.json", "approval/person.schema.json", "engine-entries.schema.json",
-		"approval/wait.schema.json",
+		"approval/wait.schema.json", "protocol/feed.schema.json", "protocol/deliver.schema.json", "check.schema.json",
 	} {
 		raw, err := os.ReadFile(f)
 		require.NoError(t, err)
@@ -674,7 +701,7 @@ var (
 	hookSentence = map[string]string{
 		"wire.detect":      "It reads the text your agents send to the AI provider, before Basalt hides private values in it.",
 		"feed.observe":     "It is told what your agents do in the database, such as which tables they change and how many rows, never the values.",
-		"approval.deliver": "It delivers your approval links. Anyone who can read where it delivers them can see the rows of writes waiting for your approval.",
+		"approval.deliver": "It delivers your approval links. Anyone who can read where it delivers them can see the rows of writes waiting for your approval. Some links carry the whole request, so they can also see what the agent asked to run and why.",
 		"classify.suggest": "It reads the names and types of your tables and columns, never their values, and suggests which ones hold private data.",
 	}
 	hookLabel = map[string]string{

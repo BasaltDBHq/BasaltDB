@@ -1,0 +1,33 @@
+{
+  "plugins": [
+    {
+      "name": "acme-ner",
+      "instance": "default",
+      "source": "CONFIG",
+      "enabled": true,
+      "agents": [
+        "product_a"
+      ],
+      "version": "1.4.0",
+      "signer": "KNOWN",
+      "signerKeyId": "AAECAwQFBgcICQoLDA0ODw",
+      "endpoint": {
+        "kind": "LOCAL"
+      },
+      "isolation": {
+        "files": "OS_USER",
+        "network": "ENFORCED"
+      },
+      "health": "UNKNOWN",
+      "approval": {
+        "required": false,
+        "agents": [
+          {
+            "agent": "product_a",
+            "state": "NOT_REQUIRED"
+          }
+        ]
+      }
+    }
+  ]
+}

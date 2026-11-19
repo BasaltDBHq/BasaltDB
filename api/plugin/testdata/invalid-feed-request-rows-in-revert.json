@@ -1,0 +1,21 @@
+{
+  "agent": "product_a",
+  "events": [
+    {
+      "specversion": "1.0",
+      "id": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee:4300",
+      "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
+      "type": "dev.basaltdb.revert.prepared",
+      "time": "2026-11-19T07:00:00Z",
+      "subject": "product_a",
+      "datacontenttype": "application/json",
+      "data": {
+        "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
+        "seq": 4300,
+        "agent": "product_a",
+        "revertId": "0193a1b3-2222-7000-8000-000000000001",
+        "rows": 12
+      }
+    }
+  ]
+}

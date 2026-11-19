@@ -50,6 +50,12 @@ const (
 	PluginServiceHealthProcedure = "/basalt.plugin.v1.PluginService/Health"
 	// PluginServiceShutdownProcedure is the fully-qualified name of the PluginService's Shutdown RPC.
 	PluginServiceShutdownProcedure = "/basalt.plugin.v1.PluginService/Shutdown"
+	// PluginServiceFeedObserveProcedure is the fully-qualified name of the PluginService's FeedObserve
+	// RPC.
+	PluginServiceFeedObserveProcedure = "/basalt.plugin.v1.PluginService/FeedObserve"
+	// PluginServiceApprovalDeliverProcedure is the fully-qualified name of the PluginService's
+	// ApprovalDeliver RPC.
+	PluginServiceApprovalDeliverProcedure = "/basalt.plugin.v1.PluginService/ApprovalDeliver"
 )
 
 // PluginServiceClient is a client for the basalt.plugin.v1.PluginService service.
@@ -57,6 +63,10 @@ type PluginServiceClient interface {
 	Initialize(context.Context, *connect.Request[v1.InitializeRequest]) (*connect.Response[v1.InitializeResponse], error)
 	Health(context.Context, *connect.Request[v1.HealthRequest]) (*connect.Response[v1.HealthResponse], error)
 	Shutdown(context.Context, *connect.Request[v1.ShutdownRequest]) (*connect.Response[v1.ShutdownResponse], error)
+	// feed.observe (feed/1).
+	FeedObserve(context.Context, *connect.Request[v1.FeedObserveRequest]) (*connect.Response[v1.FeedObserveResponse], error)
+	// Planned: approval.deliver (deliver/1).
+	ApprovalDeliver(context.Context, *connect.Request[v1.ApprovalDeliverRequest]) (*connect.Response[v1.ApprovalDeliverResponse], error)
 }
 
 // NewPluginServiceClient constructs a client for the basalt.plugin.v1.PluginService service. By
@@ -88,14 +98,28 @@ func NewPluginServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 			connect.WithSchema(pluginServiceMethods.ByName("Shutdown")),
 			connect.WithClientOptions(opts...),
 		),
+		feedObserve: connect.NewClient[v1.FeedObserveRequest, v1.FeedObserveResponse](
+			httpClient,
+			baseURL+PluginServiceFeedObserveProcedure,
+			connect.WithSchema(pluginServiceMethods.ByName("FeedObserve")),
+			connect.WithClientOptions(opts...),
+		),
+		approvalDeliver: connect.NewClient[v1.ApprovalDeliverRequest, v1.ApprovalDeliverResponse](
+			httpClient,
+			baseURL+PluginServiceApprovalDeliverProcedure,
+			connect.WithSchema(pluginServiceMethods.ByName("ApprovalDeliver")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // pluginServiceClient implements PluginServiceClient.
 type pluginServiceClient struct {
-	initialize *connect.Client[v1.InitializeRequest, v1.InitializeResponse]
-	health     *connect.Client[v1.HealthRequest, v1.HealthResponse]
-	shutdown   *connect.Client[v1.ShutdownRequest, v1.ShutdownResponse]
+	initialize      *connect.Client[v1.InitializeRequest, v1.InitializeResponse]
+	health          *connect.Client[v1.HealthRequest, v1.HealthResponse]
+	shutdown        *connect.Client[v1.ShutdownRequest, v1.ShutdownResponse]
+	feedObserve     *connect.Client[v1.FeedObserveRequest, v1.FeedObserveResponse]
+	approvalDeliver *connect.Client[v1.ApprovalDeliverRequest, v1.ApprovalDeliverResponse]
 }
 
 // Initialize calls basalt.plugin.v1.PluginService.Initialize.
@@ -113,11 +137,25 @@ func (c *pluginServiceClient) Shutdown(ctx context.Context, req *connect.Request
 	return c.shutdown.CallUnary(ctx, req)
 }
 
+// FeedObserve calls basalt.plugin.v1.PluginService.FeedObserve.
+func (c *pluginServiceClient) FeedObserve(ctx context.Context, req *connect.Request[v1.FeedObserveRequest]) (*connect.Response[v1.FeedObserveResponse], error) {
+	return c.feedObserve.CallUnary(ctx, req)
+}
+
+// ApprovalDeliver calls basalt.plugin.v1.PluginService.ApprovalDeliver.
+func (c *pluginServiceClient) ApprovalDeliver(ctx context.Context, req *connect.Request[v1.ApprovalDeliverRequest]) (*connect.Response[v1.ApprovalDeliverResponse], error) {
+	return c.approvalDeliver.CallUnary(ctx, req)
+}
+
 // PluginServiceHandler is an implementation of the basalt.plugin.v1.PluginService service.
 type PluginServiceHandler interface {
 	Initialize(context.Context, *connect.Request[v1.InitializeRequest]) (*connect.Response[v1.InitializeResponse], error)
 	Health(context.Context, *connect.Request[v1.HealthRequest]) (*connect.Response[v1.HealthResponse], error)
 	Shutdown(context.Context, *connect.Request[v1.ShutdownRequest]) (*connect.Response[v1.ShutdownResponse], error)
+	// feed.observe (feed/1).
+	FeedObserve(context.Context, *connect.Request[v1.FeedObserveRequest]) (*connect.Response[v1.FeedObserveResponse], error)
+	// Planned: approval.deliver (deliver/1).
+	ApprovalDeliver(context.Context, *connect.Request[v1.ApprovalDeliverRequest]) (*connect.Response[v1.ApprovalDeliverResponse], error)
 }
 
 // NewPluginServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -145,6 +183,18 @@ func NewPluginServiceHandler(svc PluginServiceHandler, opts ...connect.HandlerOp
 		connect.WithSchema(pluginServiceMethods.ByName("Shutdown")),
 		connect.WithHandlerOptions(opts...),
 	)
+	pluginServiceFeedObserveHandler := connect.NewUnaryHandler(
+		PluginServiceFeedObserveProcedure,
+		svc.FeedObserve,
+		connect.WithSchema(pluginServiceMethods.ByName("FeedObserve")),
+		connect.WithHandlerOptions(opts...),
+	)
+	pluginServiceApprovalDeliverHandler := connect.NewUnaryHandler(
+		PluginServiceApprovalDeliverProcedure,
+		svc.ApprovalDeliver,
+		connect.WithSchema(pluginServiceMethods.ByName("ApprovalDeliver")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/basalt.plugin.v1.PluginService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case PluginServiceInitializeProcedure:
@@ -153,6 +203,10 @@ func NewPluginServiceHandler(svc PluginServiceHandler, opts ...connect.HandlerOp
 			pluginServiceHealthHandler.ServeHTTP(w, r)
 		case PluginServiceShutdownProcedure:
 			pluginServiceShutdownHandler.ServeHTTP(w, r)
+		case PluginServiceFeedObserveProcedure:
+			pluginServiceFeedObserveHandler.ServeHTTP(w, r)
+		case PluginServiceApprovalDeliverProcedure:
+			pluginServiceApprovalDeliverHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -172,4 +226,12 @@ func (UnimplementedPluginServiceHandler) Health(context.Context, *connect.Reques
 
 func (UnimplementedPluginServiceHandler) Shutdown(context.Context, *connect.Request[v1.ShutdownRequest]) (*connect.Response[v1.ShutdownResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("basalt.plugin.v1.PluginService.Shutdown is not implemented"))
+}
+
+func (UnimplementedPluginServiceHandler) FeedObserve(context.Context, *connect.Request[v1.FeedObserveRequest]) (*connect.Response[v1.FeedObserveResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("basalt.plugin.v1.PluginService.FeedObserve is not implemented"))
+}
+
+func (UnimplementedPluginServiceHandler) ApprovalDeliver(context.Context, *connect.Request[v1.ApprovalDeliverRequest]) (*connect.Response[v1.ApprovalDeliverResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("basalt.plugin.v1.PluginService.ApprovalDeliver is not implemented"))
 }

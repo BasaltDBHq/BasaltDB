@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -306,7 +307,8 @@ func TestAddShowsWarnings(t *testing.T) {
 	deliver := e.newSource(strings.Replace(pluginManifest("1.0.0", `"feed.observe": {"contract": "feed/1"}, "approval.deliver": {"contract": "deliver/1"}`, `"chat.example:443"`),
 		`"acme-ner"`, `"acme-notify"`, 1))
 	r = e.person("add", deliver, "--agents", "product_a")
-	require.Contains(t, r.stderr, "anyone who can read the channel it delivers to can see the rows of held writes")
+	require.Contains(t, r.stderr, "approval.deliver: It delivers your approval links. Anyone who can read where it delivers them can see the rows of writes "+
+		"waiting for your approval. Some links carry the whole request, so they can also see what the agent asked to run and why.")
 	require.Contains(t, r.stderr, "runs with network access: its egress list is declared, not enforced per host")
 	require.Contains(t, r.stderr, "Egress:       chat.example:443")
 }
@@ -572,8 +574,11 @@ func TestTrustAsksAndAddsOnce(t *testing.T) {
 	r = e.person("trust", file)
 	require.Contains(t, r.stderr, "key "+id+" trusted")
 	require.Contains(t, entriesUnder(t, e.trustDir), id+".pem")
+	require.Contains(t, r.stderr, "restart the engine so it trusts the key:\n  basalt engine --config "+e.configPath+"\n",
+		"the engine reads its trust store at start, so trust names the restart")
 	r = e.person("trust", file)
 	require.Contains(t, r.stderr, "already trusted; nothing changed")
+	require.NotContains(t, r.stderr, "restart the engine", "nothing changed, so nothing to restart for")
 
 	bad := filepath.Join(t.TempDir(), "bad.pub")
 	require.NoError(t, os.WriteFile(bad, []byte("not a key TOP-SECRET"), 0o644))
@@ -595,4 +600,70 @@ func TestPluginUsage(t *testing.T) {
 		r := e.run(nil, "", args...)
 		require.Equal(t, exitUsage, r.code, "%v: %s", args, r.stderr)
 	}
+}
+
+// TestPluginHelpSaysWhatTheCommandsTake: the usage line names every flag a
+// command takes, approve's code as optional, and enable's real --wait
+// default.
+func TestPluginHelpSaysWhatTheCommandsTake(t *testing.T) {
+	t.Parallel()
+	e := newPluginEngine(t)
+	usage := e.run(nil, "", "frobnicate").stderr
+	for _, part := range []string{
+		"list [--json]",
+		"add <dir> --agents a,b [--instance NAME] [--approve-with-passkey] [--wait SECONDS] [--json]",
+		"enable <name> [--instance NAME] [--approve-with-passkey] [--approval-id ID[,ID]] [--wait SECONDS] [--json]",
+		"approve [code] [--agent NAME] [--json]",
+		"disable <name> [--instance NAME]",
+		"check <name> [--instance NAME] [--json]",
+		"trust <public key file> [--json]",
+		"remove <name> [--instance NAME]",
+		"keygen --out DIR",
+		"sign <dir> --key FILE",
+		"--config PATH",
+	} {
+		require.Contains(t, usage, part)
+	}
+
+	help := e.run(nil, "", "enable", "-h")
+	require.Equal(t, exitOK, help.code)
+	require.NotContains(t, help.stderr, "default -1")
+	require.Contains(t, help.stderr, "default 0, or 90 with --approval-id")
+
+	// The default is 0, and a negative --wait is refused, also the -1 that
+	// used to stand for "not given".
+	for _, wait := range []string{"-1", "-5", "111"} {
+		r := e.run(nil, "", "enable", "acme-ner", "--wait", wait)
+		require.Equal(t, exitUsage, r.code, "--wait %s: %s", wait, r.stderr)
+		require.Contains(t, r.stderr, "--wait is seconds from 0 to 110")
+	}
+}
+
+// TestPluginApproveWithoutCodeNeedsATerminal: approve asks for the code
+// only at a terminal. With no code and no terminal it refuses at once,
+// reading nothing, so a script or an agent never hangs on it.
+func TestPluginApproveWithoutCodeNeedsATerminal(t *testing.T) {
+	t.Parallel()
+	e := newPluginEngine(t)
+	// A stdin that never yields a byte: a read of it would hang.
+	stdin, w := io.Pipe()
+	t.Cleanup(func() { _ = w.Close() })
+	var stdout, stderr bytes.Buffer
+	c := newIO(context.Background(), stdio{in: stdin, out: &stdout, err: &stderr}, func(string) string { return "" })
+	c.host = e.host
+	var code int
+	within(t, func() { code = runPlugin(c, []string{"approve", "--config", e.configPath}) })
+	require.Equal(t, exitUsage, code, stderr.String())
+	require.Contains(t, stderr.String(), "basalt plugin approve <code>")
+	require.NotContains(t, stderr.String(), "Paste the code", "it does not ask where nobody can answer")
+
+	// At a terminal it asks, and reads the pasted code.
+	term, tw := fallbackIO(t, &stderr, noRawRead)
+	term.host = e.host
+	stderr.Reset()
+	_, err := tw.WriteString("basalt-plugin.1.not-a-code\n")
+	require.NoError(t, err)
+	within(t, func() { code = runPlugin(term, []string{"approve", "--config", e.configPath}) })
+	require.Equal(t, exitUsage, code, "the pasted text was read and is no code: %s", stderr.String())
+	require.Contains(t, stderr.String(), "Paste the code the plugin approval page showed: ")
 }

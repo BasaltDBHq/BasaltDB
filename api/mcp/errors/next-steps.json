@@ -162,7 +162,8 @@
     { "code": "PLUGIN_AWAITING_APPROVAL", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "OPERATOR", "action": "RUN_COMMAND" }] },
     { "code": "PLUGIN_APPROVAL_EXPIRED", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "OPERATOR", "action": "RUN_COMMAND" }, { "actor": "OPERATOR", "action": "RUN_COMMAND" }] },
     { "code": "PLUGIN_APPROVAL_MISMATCH", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "OPERATOR", "action": "RUN_COMMAND" }, { "actor": "OPERATOR", "action": "RUN_COMMAND" }] },
-    { "code": "PLUGIN_CONFIG_INVALID", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "OPERATOR", "action": "RUN_COMMAND" }] }
+    { "code": "PLUGIN_CONFIG_INVALID", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "OPERATOR", "action": "RUN_COMMAND" }] },
+    { "code": "PLUGIN_NOTICES_DROPPED", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }] }
   ],
   "agentOperated": [
     { "kind": "ERROR", "code": "PERMISSION_DENIED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "STOP" }, { "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "END_TURN" }, { "actor": "AGENT", "action": "RUN_COMMAND" }] },

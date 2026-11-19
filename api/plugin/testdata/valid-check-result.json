@@ -1,0 +1,20 @@
+{
+  "name": "slack-notify",
+  "instance": "default",
+  "initializeMs": 41,
+  "health": {
+    "status": "READY",
+    "ms": 2
+  },
+  "hooks": [
+    {
+      "hook": "approval.deliver",
+      "ms": 180
+    },
+    {
+      "hook": "feed.observe",
+      "ms": 95,
+      "lastSeq": 2
+    }
+  ]
+}

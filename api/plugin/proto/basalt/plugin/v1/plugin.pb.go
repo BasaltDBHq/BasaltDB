@@ -510,6 +510,201 @@ func (*ShutdownResponse) Descriptor() ([]byte, []int) {
 	return file_basalt_plugin_v1_plugin_proto_rawDescGZIP(), []int{8}
 }
 
+// feed.schema.json #/$defs/request
+type FeedObserveRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Agent string                 `protobuf:"bytes,1,opt,name=agent,proto3" json:"agent,omitempty"`
+	// The CloudEvents JSON batch, application/cloudevents-batch+json: the
+	// exact bytes JSON-RPC carries as events. Events stay in their JSON form
+	// on every transport.
+	Events        []byte `protobuf:"bytes,2,opt,name=events,proto3" json:"events,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FeedObserveRequest) Reset() {
+	*x = FeedObserveRequest{}
+	mi := &file_basalt_plugin_v1_plugin_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FeedObserveRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FeedObserveRequest) ProtoMessage() {}
+
+func (x *FeedObserveRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_basalt_plugin_v1_plugin_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FeedObserveRequest.ProtoReflect.Descriptor instead.
+func (*FeedObserveRequest) Descriptor() ([]byte, []int) {
+	return file_basalt_plugin_v1_plugin_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *FeedObserveRequest) GetAgent() string {
+	if x != nil {
+		return x.Agent
+	}
+	return ""
+}
+
+func (x *FeedObserveRequest) GetEvents() []byte {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+// feed.schema.json #/$defs/response
+type FeedObserveResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// A ledger seq is a bigint, so this field is 64-bit; the engine calls
+	// with binary protobuf, where that needs no string form.
+	LastSeq       int64 `protobuf:"varint,1,opt,name=last_seq,json=lastSeq,proto3" json:"last_seq,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FeedObserveResponse) Reset() {
+	*x = FeedObserveResponse{}
+	mi := &file_basalt_plugin_v1_plugin_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FeedObserveResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FeedObserveResponse) ProtoMessage() {}
+
+func (x *FeedObserveResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_basalt_plugin_v1_plugin_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FeedObserveResponse.ProtoReflect.Descriptor instead.
+func (*FeedObserveResponse) Descriptor() ([]byte, []int) {
+	return file_basalt_plugin_v1_plugin_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *FeedObserveResponse) GetLastSeq() int64 {
+	if x != nil {
+		return x.LastSeq
+	}
+	return 0
+}
+
+// deliver.schema.json #/$defs/request
+type ApprovalDeliverRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Agent string                 `protobuf:"bytes,1,opt,name=agent,proto3" json:"agent,omitempty"`
+	// One CloudEvent, application/cloudevents+json: the exact bytes JSON-RPC
+	// carries as event.
+	Event         []byte `protobuf:"bytes,2,opt,name=event,proto3" json:"event,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ApprovalDeliverRequest) Reset() {
+	*x = ApprovalDeliverRequest{}
+	mi := &file_basalt_plugin_v1_plugin_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApprovalDeliverRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApprovalDeliverRequest) ProtoMessage() {}
+
+func (x *ApprovalDeliverRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_basalt_plugin_v1_plugin_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApprovalDeliverRequest.ProtoReflect.Descriptor instead.
+func (*ApprovalDeliverRequest) Descriptor() ([]byte, []int) {
+	return file_basalt_plugin_v1_plugin_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ApprovalDeliverRequest) GetAgent() string {
+	if x != nil {
+		return x.Agent
+	}
+	return ""
+}
+
+func (x *ApprovalDeliverRequest) GetEvent() []byte {
+	if x != nil {
+		return x.Event
+	}
+	return nil
+}
+
+// deliver.schema.json #/$defs/response
+type ApprovalDeliverResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ApprovalDeliverResponse) Reset() {
+	*x = ApprovalDeliverResponse{}
+	mi := &file_basalt_plugin_v1_plugin_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApprovalDeliverResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApprovalDeliverResponse) ProtoMessage() {}
+
+func (x *ApprovalDeliverResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_basalt_plugin_v1_plugin_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApprovalDeliverResponse.ProtoReflect.Descriptor instead.
+func (*ApprovalDeliverResponse) Descriptor() ([]byte, []int) {
+	return file_basalt_plugin_v1_plugin_proto_rawDescGZIP(), []int{12}
+}
+
 var File_basalt_plugin_v1_plugin_proto protoreflect.FileDescriptor
 
 const file_basalt_plugin_v1_plugin_proto_rawDesc = "" +
@@ -546,12 +741,23 @@ const file_basalt_plugin_v1_plugin_proto_rawDesc = "" +
 	"\x0eHealthResponse\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\"\x11\n" +
 	"\x0fShutdownRequest\"\x12\n" +
-	"\x10ShutdownResponse2\x88\x02\n" +
+	"\x10ShutdownResponse\"B\n" +
+	"\x12FeedObserveRequest\x12\x14\n" +
+	"\x05agent\x18\x01 \x01(\tR\x05agent\x12\x16\n" +
+	"\x06events\x18\x02 \x01(\fR\x06events\"0\n" +
+	"\x13FeedObserveResponse\x12\x19\n" +
+	"\blast_seq\x18\x01 \x01(\x03R\alastSeq\"D\n" +
+	"\x16ApprovalDeliverRequest\x12\x14\n" +
+	"\x05agent\x18\x01 \x01(\tR\x05agent\x12\x14\n" +
+	"\x05event\x18\x02 \x01(\fR\x05event\"\x19\n" +
+	"\x17ApprovalDeliverResponse2\xcc\x03\n" +
 	"\rPluginService\x12W\n" +
 	"\n" +
 	"Initialize\x12#.basalt.plugin.v1.InitializeRequest\x1a$.basalt.plugin.v1.InitializeResponse\x12K\n" +
 	"\x06Health\x12\x1f.basalt.plugin.v1.HealthRequest\x1a .basalt.plugin.v1.HealthResponse\x12Q\n" +
-	"\bShutdown\x12!.basalt.plugin.v1.ShutdownRequest\x1a\".basalt.plugin.v1.ShutdownResponseBKZIgithub.com/basaltdbhq/basaltdb/api/plugin/proto/basalt/plugin/v1;pluginv1b\x06proto3"
+	"\bShutdown\x12!.basalt.plugin.v1.ShutdownRequest\x1a\".basalt.plugin.v1.ShutdownResponse\x12Z\n" +
+	"\vFeedObserve\x12$.basalt.plugin.v1.FeedObserveRequest\x1a%.basalt.plugin.v1.FeedObserveResponse\x12f\n" +
+	"\x0fApprovalDeliver\x12(.basalt.plugin.v1.ApprovalDeliverRequest\x1a).basalt.plugin.v1.ApprovalDeliverResponseBKZIgithub.com/basaltdbhq/basaltdb/api/plugin/proto/basalt/plugin/v1;pluginv1b\x06proto3"
 
 var (
 	file_basalt_plugin_v1_plugin_proto_rawDescOnce sync.Once
@@ -565,34 +771,42 @@ func file_basalt_plugin_v1_plugin_proto_rawDescGZIP() []byte {
 	return file_basalt_plugin_v1_plugin_proto_rawDescData
 }
 
-var file_basalt_plugin_v1_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_basalt_plugin_v1_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_basalt_plugin_v1_plugin_proto_goTypes = []any{
-	(*InitializeRequest)(nil),  // 0: basalt.plugin.v1.InitializeRequest
-	(*Limits)(nil),             // 1: basalt.plugin.v1.Limits
-	(*InitializeResponse)(nil), // 2: basalt.plugin.v1.InitializeResponse
-	(*HookDeclaration)(nil),    // 3: basalt.plugin.v1.HookDeclaration
-	(*Model)(nil),              // 4: basalt.plugin.v1.Model
-	(*HealthRequest)(nil),      // 5: basalt.plugin.v1.HealthRequest
-	(*HealthResponse)(nil),     // 6: basalt.plugin.v1.HealthResponse
-	(*ShutdownRequest)(nil),    // 7: basalt.plugin.v1.ShutdownRequest
-	(*ShutdownResponse)(nil),   // 8: basalt.plugin.v1.ShutdownResponse
-	nil,                        // 9: basalt.plugin.v1.InitializeResponse.HooksEntry
-	(*structpb.Struct)(nil),    // 10: google.protobuf.Struct
+	(*InitializeRequest)(nil),       // 0: basalt.plugin.v1.InitializeRequest
+	(*Limits)(nil),                  // 1: basalt.plugin.v1.Limits
+	(*InitializeResponse)(nil),      // 2: basalt.plugin.v1.InitializeResponse
+	(*HookDeclaration)(nil),         // 3: basalt.plugin.v1.HookDeclaration
+	(*Model)(nil),                   // 4: basalt.plugin.v1.Model
+	(*HealthRequest)(nil),           // 5: basalt.plugin.v1.HealthRequest
+	(*HealthResponse)(nil),          // 6: basalt.plugin.v1.HealthResponse
+	(*ShutdownRequest)(nil),         // 7: basalt.plugin.v1.ShutdownRequest
+	(*ShutdownResponse)(nil),        // 8: basalt.plugin.v1.ShutdownResponse
+	(*FeedObserveRequest)(nil),      // 9: basalt.plugin.v1.FeedObserveRequest
+	(*FeedObserveResponse)(nil),     // 10: basalt.plugin.v1.FeedObserveResponse
+	(*ApprovalDeliverRequest)(nil),  // 11: basalt.plugin.v1.ApprovalDeliverRequest
+	(*ApprovalDeliverResponse)(nil), // 12: basalt.plugin.v1.ApprovalDeliverResponse
+	nil,                             // 13: basalt.plugin.v1.InitializeResponse.HooksEntry
+	(*structpb.Struct)(nil),         // 14: google.protobuf.Struct
 }
 var file_basalt_plugin_v1_plugin_proto_depIdxs = []int32{
-	10, // 0: basalt.plugin.v1.InitializeRequest.config:type_name -> google.protobuf.Struct
+	14, // 0: basalt.plugin.v1.InitializeRequest.config:type_name -> google.protobuf.Struct
 	1,  // 1: basalt.plugin.v1.InitializeRequest.limits:type_name -> basalt.plugin.v1.Limits
-	9,  // 2: basalt.plugin.v1.InitializeResponse.hooks:type_name -> basalt.plugin.v1.InitializeResponse.HooksEntry
+	13, // 2: basalt.plugin.v1.InitializeResponse.hooks:type_name -> basalt.plugin.v1.InitializeResponse.HooksEntry
 	4,  // 3: basalt.plugin.v1.InitializeResponse.model:type_name -> basalt.plugin.v1.Model
 	3,  // 4: basalt.plugin.v1.InitializeResponse.HooksEntry.value:type_name -> basalt.plugin.v1.HookDeclaration
 	0,  // 5: basalt.plugin.v1.PluginService.Initialize:input_type -> basalt.plugin.v1.InitializeRequest
 	5,  // 6: basalt.plugin.v1.PluginService.Health:input_type -> basalt.plugin.v1.HealthRequest
 	7,  // 7: basalt.plugin.v1.PluginService.Shutdown:input_type -> basalt.plugin.v1.ShutdownRequest
-	2,  // 8: basalt.plugin.v1.PluginService.Initialize:output_type -> basalt.plugin.v1.InitializeResponse
-	6,  // 9: basalt.plugin.v1.PluginService.Health:output_type -> basalt.plugin.v1.HealthResponse
-	8,  // 10: basalt.plugin.v1.PluginService.Shutdown:output_type -> basalt.plugin.v1.ShutdownResponse
-	8,  // [8:11] is the sub-list for method output_type
-	5,  // [5:8] is the sub-list for method input_type
+	9,  // 8: basalt.plugin.v1.PluginService.FeedObserve:input_type -> basalt.plugin.v1.FeedObserveRequest
+	11, // 9: basalt.plugin.v1.PluginService.ApprovalDeliver:input_type -> basalt.plugin.v1.ApprovalDeliverRequest
+	2,  // 10: basalt.plugin.v1.PluginService.Initialize:output_type -> basalt.plugin.v1.InitializeResponse
+	6,  // 11: basalt.plugin.v1.PluginService.Health:output_type -> basalt.plugin.v1.HealthResponse
+	8,  // 12: basalt.plugin.v1.PluginService.Shutdown:output_type -> basalt.plugin.v1.ShutdownResponse
+	10, // 13: basalt.plugin.v1.PluginService.FeedObserve:output_type -> basalt.plugin.v1.FeedObserveResponse
+	12, // 14: basalt.plugin.v1.PluginService.ApprovalDeliver:output_type -> basalt.plugin.v1.ApprovalDeliverResponse
+	10, // [10:15] is the sub-list for method output_type
+	5,  // [5:10] is the sub-list for method input_type
 	5,  // [5:5] is the sub-list for extension type_name
 	5,  // [5:5] is the sub-list for extension extendee
 	0,  // [0:5] is the sub-list for field type_name
@@ -609,7 +823,7 @@ func file_basalt_plugin_v1_plugin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_basalt_plugin_v1_plugin_proto_rawDesc), len(file_basalt_plugin_v1_plugin_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

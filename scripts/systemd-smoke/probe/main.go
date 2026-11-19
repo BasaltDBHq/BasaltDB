@@ -27,7 +27,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/basaltdbhq/basaltdb/internal/plugin/sdk"
+	basaltplugin "github.com/basaltdbhq/basalt-plugin-go"
 )
 
 // The name and version must equal the manifest the smoke test writes.
@@ -41,9 +41,20 @@ const ownerOnly = 0o600
 
 type probe struct{ out io.Writer }
 
-func (probe) Info() sdk.Info { return sdk.Info{Name: pluginName, Version: pluginVersion} }
+func (probe) Info() basaltplugin.Info {
+	return basaltplugin.Info{Name: pluginName, Version: pluginVersion}
+}
 
-func (p probe) Initialize(context.Context, sdk.Init) error {
+// ObserveFeed makes the probe a feed observer, the hook its manifest
+// declares. It notes each batch and handles every event.
+func (p probe) ObserveFeed(_ context.Context, b basaltplugin.FeedBatch) (int64, error) {
+	if _, err := fmt.Fprintf(p.out, "probe feed: %d events\n", len(b.Events)); err != nil {
+		return 0, err
+	}
+	return b.LastSeq(), nil
+}
+
+func (p probe) Initialize(context.Context, basaltplugin.Init) error {
 	_, err := fmt.Fprintln(p.out, "probe initialized")
 	return err
 }
@@ -65,9 +76,9 @@ func run(args []string, out io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	socket := os.Getenv(sdk.SocketEnv)
+	socket := os.Getenv(basaltplugin.SocketEnv)
 	if socket == "" || *hidden == "" || *marker == "" {
-		_, _ = fmt.Fprintln(out, "probe: needs -hidden, -marker and "+sdk.SocketEnv)
+		_, _ = fmt.Fprintln(out, "probe: needs -hidden, -marker and "+basaltplugin.SocketEnv)
 		return 2
 	}
 
@@ -93,8 +104,7 @@ func run(args []string, out io.Writer) int {
 	// so the engine's side is checked as well.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	err := sdk.Serve(ctx, probe{out: out},
-		sdk.WithHooks(map[string]sdk.HookDecl{"feed.observe": {Contract: "feed/1"}}))
+	err := basaltplugin.Serve(ctx, probe{out: out})
 	if err != nil {
 		_, _ = fmt.Fprintln(out, "probe:", err)
 		return 1

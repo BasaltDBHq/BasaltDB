@@ -17,6 +17,9 @@ const (
 	// read, so the engine applies no plugin change (CONTRACT.md, Plugin
 	// changes while the engine runs). It names no entry.
 	ProblemPluginConfigInvalid = "PLUGIN_CONFIG_INVALID"
+	// ProblemPluginNoticesDropped: an approval.deliver entry dropped notices
+	// of this agent in the last 24 hours (CONTRACT.md, Notifier messages).
+	ProblemPluginNoticesDropped = "PLUGIN_NOTICES_DROPPED"
 )
 
 // PluginProblem is one plugin entry listed for the agent that is not
@@ -130,6 +133,8 @@ func (s statusDeps) addPluginProblems(ps *problems) {
 					return lead
 				}
 				return lead + " To see what is wrong, run: " + list
+			case ProblemPluginNoticesDropped:
+				return droppedNoticesSteps(b, s.cmds, p)
 			}
 			return pluginSteps(b, s.cmds, p)
 		})
@@ -194,6 +199,19 @@ func unusableFileSteps(b *Steps, cmds Commands, file string) string {
 		return lead
 	}
 	return lead + " To move the file aside, run: " + move + " Then restart the engine: " + restart
+}
+
+// droppedNoticesSteps are PLUGIN_NOTICES_DROPPED's: the command that shows
+// whether the plugin answers (check does not find an engine-kept entry, so
+// the list for that one). The message says the agent still has the links.
+func droppedNoticesSteps(b *Steps, cmds Commands, p PluginProblem) string {
+	cmd, text := cmds.PluginCheck(p.Name, p.Instance), "Run this to see whether the plugin answers."
+	if p.EngineKept {
+		cmd, text = cmds.PluginList(), "Run this to see whether the plugin runs."
+	}
+	b.RunCommand(cmd, text)
+	return "The plugin " + p.Name + "/" + p.Instance + " did not deliver some approval notices, so a link may not have reached you. " +
+		"Nothing is lost: ask the agent what waits for your approval. To check the plugin, run: " + cmd
 }
 
 func pluginSteps(b *Steps, cmds Commands, p PluginProblem) string {

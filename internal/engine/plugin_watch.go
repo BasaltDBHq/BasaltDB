@@ -610,6 +610,15 @@ func (ep *enginePlugins) serve(ctx context.Context, cfg config.Config, configPat
 	if err := ep.start(ctx); err != nil {
 		return
 	}
+	// The notifier hooks follow what is served; they stop before the
+	// plugins drain.
+	f := newPluginFeed(ep.host, ep.servedEntries, ledgers, ep.o.stateDir, ep.senders, ep.o.clock, ep.log)
+	if ep.o.feedTiming != nil {
+		f.timing = *ep.o.feedTiming
+	}
+	var feed sync.WaitGroup
+	feed.Go(func() { f.run(ctx) })
+	feed.Go(func() { ep.delivery.run(ctx, ledgers) })
 	if ep.mode == plugin.ModeSameUser || ep.kept != nil {
 		w := newPluginWatch(ep, cfg, configPath, ledgers)
 		w.writeServing()
@@ -617,7 +626,16 @@ func (ep *enginePlugins) serve(ctx context.Context, cfg config.Config, configPat
 		// Stopping: nothing is served any more, before the plugins drain.
 		w.removeServing()
 	}
+	feed.Wait()
 	ep.sup.Wait()
+}
+
+// servedEntries are the entries the engine runs now, each with the agents
+// it is served to.
+func (ep *enginePlugins) servedEntries() []plugin.Entry {
+	ep.mu.Lock()
+	defer ep.mu.Unlock()
+	return slices.Clone(ep.entries)
 }
 
 // PluginServingFile is the file in a same-user engine's state directory

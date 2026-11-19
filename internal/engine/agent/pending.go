@@ -58,6 +58,8 @@ type PendingRevert struct {
 	PersonMessage string
 	Links         []mcp.Link
 	NextSteps     []mcp.NextStep
+	// issued is set when this list_pending issued the revert a new link.
+	issued bool
 }
 
 // ListPending returns one page of the agent's open held writes and
@@ -111,6 +113,9 @@ func (s *Service) ListPending(ctx context.Context, p PendingParams) (pagination.
 			return pagination.Page[PendingEntry]{}, err
 		}
 	}
+	// Only once the whole page is built: an item's failure fails the call,
+	// and then no notice leaves for a link the agent never got.
+	s.deliverReissued(out.Items)
 	return out, nil
 }
 
@@ -129,6 +134,7 @@ func (s *Service) pendingGuidance(ctx context.Context, e PendingEntry, reissue b
 		if !s.waitsForPerson(*a) {
 			a.Notice.RequestFile = nil // nothing left to sign: no request to send
 		}
+		a.issued = reissue && n.shortURL != "" && s.waitsForPerson(*a)
 		a.PersonMessage, a.Links, a.NextSteps, err = s.itemGuidance(*a)
 		return err
 	}
@@ -164,6 +170,7 @@ func (s *Service) pendingRevert(ctx context.Context, p *PendingRevert, reissue b
 			return s.pendingRevertTooLarge(p, r, n.URL, n.cost)
 		}
 		s.notifyRevert(ctx, r, n)
+		p.issued = n.short != ""
 		p.Revert, p.Headline, p.RevertURL, p.RequestFile, p.PersonMessage, p.Links = r, n.Headline, n.URL, n.File, n.Message, n.Links
 		p.NextSteps = withSendRequest(pendingRevertSteps(r.ID, n.URL, "Open the new link, review the rows and sign with your passkey."), n.File)
 		return nil

@@ -1,0 +1,27 @@
+{
+  "agent": "product_a",
+  "events": [
+    {
+      "specversion": "1.0",
+      "id": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee:4219",
+      "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
+      "type": "dev.basaltdb.write.held",
+      "time": "2026-11-19T06:03:02Z",
+      "subject": "product_a",
+      "datacontenttype": "application/json",
+      "data": {
+        "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
+        "seq": 4219,
+        "agent": "product_a",
+        "changeId": "0193a1b3-0000-7000-8000-000000000003",
+        "approvalId": "0193a1b3-1111-7000-8000-000000000001",
+        "runId": "0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b",
+        "taskId": "0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a00",
+        "op": "UPDATE",
+        "rows": 27,
+        "expiresAt": "2026-11-20T06:03:02.120000Z",
+        "intent": "Merge duplicate case reports"
+      }
+    }
+  ]
+}

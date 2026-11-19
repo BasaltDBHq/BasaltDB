@@ -150,6 +150,15 @@ func serve(r io.Reader, w io.Writer, mode string, opts map[string]string) {
 				os.Exit(1)
 			}
 			reply(req.ID, b)
+		case "rawparams":
+			// The params' bytes as they came off the line, as a string.
+			b, err := json.Marshal(struct {
+				Raw string `json:"raw"`
+			}{string(params)})
+			if err != nil {
+				os.Exit(1)
+			}
+			reply(req.ID, b)
 		case "pid":
 			reply(req.ID, []byte(`{"pid":`+strconv.Itoa(os.Getpid())+`}`))
 		case "stderr":

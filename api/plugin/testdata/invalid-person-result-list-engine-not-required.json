@@ -17,6 +17,7 @@
         "files": "NONE",
         "network": "NOT_ENFORCED"
       },
+      "health": "READY",
       "approval": {
         "required": false,
         "agents": [

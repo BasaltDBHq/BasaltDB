@@ -28,10 +28,14 @@ import (
 // change and trust are refused before anything is written; disable and
 // remove stay allowed, since they only narrow.
 
-const pluginUsage = "basalt plugin list | add <dir> --agents a,b [--instance NAME] [--approve-with-passkey] | " +
-	"enable <name> [--instance NAME] [--approve-with-passkey] | approve <code> | " +
-	"disable <name> [--instance NAME] | check <name> [--instance NAME] | trust <public key file> | remove <name> [--instance NAME] | " +
-	"keygen --out DIR | sign <dir> --key FILE"
+// pluginUsage names every flag each command takes; a test holds it to that.
+const pluginUsage = "basalt plugin list [--json] | " +
+	"add <dir> --agents a,b [--instance NAME] [--approve-with-passkey] [--wait SECONDS] [--json] | " +
+	"enable <name> [--instance NAME] [--approve-with-passkey] [--approval-id ID[,ID]] [--wait SECONDS] [--json] | " +
+	"approve [code] [--agent NAME] [--json] | " +
+	"disable <name> [--instance NAME] | check <name> [--instance NAME] [--json] | trust <public key file> [--json] | " +
+	"remove <name> [--instance NAME] | keygen --out DIR | sign <dir> --key FILE. " +
+	"Every command but keygen and sign also takes --config PATH"
 
 // runPlugin: basalt plugin <command>.
 func runPlugin(c *cliIO, args []string) int {
@@ -282,7 +286,13 @@ func (e *pluginEnv) update(ch config.Change) error {
 }
 
 // restart prints the command that makes the engine read engine.json again.
-func (e *pluginEnv) restart() {
+func (e *pluginEnv) restart() { e.restartSo("it reads engine.json again") }
+
+// restartSo prints the engine restart command and why it is needed.
+func (e *pluginEnv) restartSo(why string) {
+	if len(e.cfg.Agents) == 0 {
+		return
+	}
 	cmds, err := agent.NewCommands(e.cfg.Agents[0].Name, e.configPath, e.c.goos, nil)
 	if err != nil {
 		return
@@ -290,7 +300,7 @@ func (e *pluginEnv) restart() {
 	if !e.cfg.Service() {
 		cmds = cmds.Foreground()
 	}
-	fmt.Fprintf(e.c.stderr, "basalt: restart the engine so it reads engine.json again:\n  %s\n", cmds.EngineRestart())
+	fmt.Fprintf(e.c.stderr, "basalt: restart the engine so %s:\n  %s\n", why, cmds.EngineRestart())
 }
 
 // narrowed says when a change that only narrows (disable, remove, an agent
@@ -446,6 +456,11 @@ func writeConsent(w io.Writer, k plugin.EntryKey, v plugin.Verified, agents []st
 	}
 }
 
+// deliverConsent is the fixed sentence for approval.deliver, the same words
+// as the plugin approval page's (CONTRACT.md, Consent and The plugin
+// approval page).
+const deliverConsent = "It delivers your approval links. Anyone who can read where it delivers them can see the rows of writes waiting for your approval. Some links carry the whole request, so they can also see what the agent asked to run and why."
+
 func consentWarnings(f pluginFacts, mode plugin.Mode) []string {
 	var out []string
 	if f.remote {
@@ -456,7 +471,7 @@ func consentWarnings(f pluginFacts, mode plugin.Mode) []string {
 		}
 	}
 	if f.has(plugin.HookApprovalDeliver) {
-		out = append(out, "approval.deliver: anyone who can read the channel it delivers to can see the rows of held writes.")
+		out = append(out, "approval.deliver: "+deliverConsent)
 	}
 	if !f.remote && len(f.egress) > 0 {
 		out = append(out, "This local plugin runs with network access: its egress list is declared, not enforced per host.")
@@ -948,15 +963,23 @@ func (e *pluginEnv) entry(k plugin.EntryKey) (config.Plugin, error) {
 func pluginEnable(c *cliIO, args []string) int {
 	var wait int
 	var ids string
+	var flags *flag.FlagSet
 	e, k, asJSON, approve, code := entryFlagsWith(c, "enable", args, true, true, func(fs *flag.FlagSet) {
-		fs.IntVar(&wait, "wait", -1, fmt.Sprintf("seconds to wait for the plugin to run (0 to %d; default 0, or %d with --approval-id)", maxWaitSeconds, defaultRepeatWait))
+		flags = fs
+		fs.IntVar(&wait, "wait", 0, fmt.Sprintf("seconds to wait for the plugin to run (0 to %d; default 0, or %d with --approval-id)", maxWaitSeconds, defaultRepeatWait))
 		fs.StringVar(&ids, "approval-id", "", "wait for these approvals (the approvalId values add or enable printed, comma separated) instead of opening a new one")
 	})
 	if code >= 0 {
 		return code
 	}
-	if err := waitFlag(wait); err != nil {
-		return c.fail(err)
+	if err := waitFlag(wait); err != nil || wait < 0 {
+		return c.fail(fmt.Errorf("%w: --wait is seconds from 0 to %d", errUsage, maxWaitSeconds))
+	}
+	// enableWait takes -1 for a --wait that was not given: its default.
+	given := false
+	flags.Visit(func(f *flag.Flag) { given = given || f.Name == "wait" })
+	if !given {
+		wait = -1
 	}
 	if ids != "" {
 		if approve {
@@ -1178,6 +1201,9 @@ func (e *pluginEnv) trustKey(file string) error {
 		return nil
 	}
 	fmt.Fprintf(e.c.stderr, "basalt: key %s trusted (%s)\n", id, filepath.Join(e.trust.Dir(), id+".pem"))
+	// The engine reads its trust store, and records the new key in the
+	// ledgers, at start.
+	e.restartSo("it trusts the key")
 	return nil
 }
 

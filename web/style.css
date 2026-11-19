@@ -285,6 +285,12 @@ textarea, input.text {
 .sign-foot:empty, #status:empty { display: none; }
 #register, #sign { width: 100%; }
 
+/* The connect page: one fieldset per row-level security question. */
+.question { border: 1px solid var(--ui-border); border-radius: var(--radius-ui); padding: 10px 12px; margin: 0 0 10px; }
+.question legend { padding: 0 4px; font-weight: 500; }
+.choice { display: inline-flex; align-items: center; gap: 6px; margin-right: 16px; cursor: pointer; }
+#paste .field { display: block; font-weight: 500; margin: 8px 0 4px; }
+
 /* Lists of the other pages (passkeys): one bordered line each. */
 .rows { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
 .row { background: var(--ui-panel); border: 1px solid var(--ui-border); border-radius: var(--radius-ui); padding: 12px; overflow-x: auto; }

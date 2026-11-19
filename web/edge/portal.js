@@ -6,7 +6,9 @@
 // portal page sets after pinning. Only an origin that passes the engine
 // address grammar (web/lib/engineaddr.js, the one laptop init and Postgres
 // apply) is added; anything else is dropped, and with nothing left the
-// strict default is served as it is.
+// strict default is served as it is. It also gives the connect page its
+// fixed policy, which allows the connect service (CONTRACT.md, The connect
+// page).
 //
 // This is defence in depth, not what makes signing safe. Signing rests on
 // subresource integrity on every script, the engine record pinned in
@@ -44,6 +46,15 @@ export const DEFAULT_HEADERS = Object.freeze({
 // the pin page, which checks one address not pinned yet.
 const SESSION_PAGE = /^\/(approvals|reverts)\/[^/]+$/;
 const PIN_PAGE = "/engines/add";
+
+// The connect page (CONTRACT.md, The connect page) reaches the connect
+// service and nothing else: the default policy with connect-src naming that
+// one origin, the same for everyone, never stored. Its own meta CSP names
+// the same source; internal/websec ConnectPageCSP is the copy basalt portal
+// verify expects, and a test fails on drift.
+export const CONNECT_SERVICE = "https://connect.basaltvault.app";
+export const CONNECT_CSP = "default-src 'self'; connect-src https://connect.basaltvault.app; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+const CONNECT_PAGE = /^\/connect\/?$/;
 
 // Cookie pairs are separated by "; " and only spaces and tabs are trimmed
 // (RFC 6265). String.trim would also strip Unicode spaces, so a cookie
@@ -125,12 +136,26 @@ function personal(headers) {
   headers.set("Vary", [...vary, "Cookie"].join(", "));
 }
 
+// connectPage serves the connect page with its own policy: the security
+// headers, CSP with the connect service, never stored. It is the same for
+// every request, so it varies with nothing.
+function connectPage(upstream) {
+  const out = new Response(upstream.body, upstream);
+  for (const [k, v] of Object.entries(DEFAULT_HEADERS)) out.headers.set(k, v);
+  out.headers.set("Content-Security-Policy", CONNECT_CSP);
+  out.headers.set("Cache-Control", "no-store");
+  out.headers.delete("ETag");
+  out.headers.delete("Last-Modified");
+  return out;
+}
+
 // handle answers one request: next(request) fetches the static asset.
 export async function handle(request, next) {
   const url = new URL(request.url);
   const session = SESSION_PAGE.test(url.pathname);
   const pin = url.pathname === PIN_PAGE;
-  if (!session && !pin) return next(request);
+  const connect = CONNECT_PAGE.test(url.pathname);
+  if (!session && !pin && !connect) return next(request);
 
   // Never let a conditional request turn into a 304 that keeps another
   // policy in a cache: always fetch the whole page.
@@ -138,6 +163,7 @@ export async function handle(request, next) {
   clean.delete("If-None-Match");
   clean.delete("If-Modified-Since");
   const upstream = await next(new Request(request.url, { method: request.method, headers: clean }));
+  if (connect) return connectPage(upstream);
 
   let sources = [];
   if (session) sources = connectSources(cookieOrigins(request.headers.get("Cookie")));

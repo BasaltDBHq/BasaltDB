@@ -26,6 +26,22 @@ func Headers() func(http.Handler) http.Handler {
 	}
 }
 
+// ConnectPageCSP is the portal's connect page policy (CONTRACT.md, The
+// connect page): the pages' policy with connect-src naming the connect
+// service, its one other origin. The portal's edge function serves it
+// (web/edge/portal.js CONNECT_CSP; a test fails on drift). The engine never
+// serves the connect page.
+const ConnectPageCSP = "default-src 'self'; connect-src https://connect.basaltvault.app; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+
+// ExpectedConnectPage is the header set the portal must serve the connect
+// page with: Expected's, with ConnectPageCSP, and never stored.
+func ExpectedConnectPage() http.Header {
+	h := Expected()
+	h.Set("Content-Security-Policy", ConnectPageCSP)
+	h.Set("Cache-Control", "no-store")
+	return h
+}
+
 // Expected is the header set Headers sends, for a check that a page served
 // from somewhere else (the hosted portal) carries the same policy.
 func Expected() http.Header {

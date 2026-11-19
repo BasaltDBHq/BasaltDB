@@ -161,11 +161,11 @@
           "active": {
             "type": "integer",
             "minimum": 0,
-            "description": "How many passkeys are active. Absent when the engine is down."
+            "description": "How many passkeys are active. Absent when the engine is down or the passkeys cannot be read."
           },
           "keys": {
             "type": "array",
-            "description": "The active passkeys (at most 100), oldest first, each with its check code computed from the public key in the database. If the setup page showed a check code for the passkey it created, it is one of these: a passkey the person did not create means stop and remove it. Absent when none is active.",
+            "description": "The active passkeys (at most 100), oldest first, each with its check code computed from the public key in the database. If the setup page showed a check code for the passkey it created, it is one of these: a passkey the person did not create means stop and remove it. Absent when none is active or the passkeys cannot be read.",
             "items": {
               "type": "object",
               "additionalProperties": false,
@@ -185,7 +185,7 @@
           },
           "summary": {
             "type": "string",
-            "description": "How many passkeys are registered and the check code of each, in words for the person. Set once a setup is recorded (setup.state DONE)."
+            "description": "How many passkeys are registered and the check code of each, in words for the person. Set once a setup is recorded (setup.state DONE) and at least one passkey is listed."
           }
         }
       },

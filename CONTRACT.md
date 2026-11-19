@@ -13,7 +13,7 @@ A reference in the code such as `(CONTRACT.md, Direct transport)` names a headin
 | [`change-record.md`](contract/change-record.md) | The change record | — |
 | [`stores.md`](contract/stores.md) | Stores | — |
 | [`error-codes.md`](contract/error-codes.md) | Error codes | — |
-| [`next-steps.md`](contract/next-steps.md) | Next steps | [Next steps per code](contract/next-steps.md#next-steps-per-code), [Next steps on an agent-operated engine](contract/next-steps.md#next-steps-on-an-agent-operated-engine) |
+| [`next-steps.md`](contract/next-steps.md) | Next steps | [Next steps per code](contract/next-steps.md#next-steps-per-code), [Next steps on an agent-operated engine](contract/next-steps.md#next-steps-on-an-agent-operated-engine), [Next steps with the connect link](contract/next-steps.md#next-steps-with-the-connect-link) |
 | [`mcp-tools.md`](contract/mcp-tools.md) | MCP tools | [Large values](contract/mcp-tools.md#large-values), [`describe`](contract/mcp-tools.md#describe) |
 | [`cli.md`](contract/cli.md) | CLI | — |
 | [`crash-reports.md`](contract/crash-reports.md) | Crash reports | — |

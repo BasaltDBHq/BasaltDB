@@ -207,6 +207,8 @@ Chat-only operator. When `operatedBy` is `AGENT`, each entry below replaces the 
 | problem | `GUARD_UPGRADE_AVAILABLE` | — | A `RUN_COMMAND` (init --remote: an `UPGRADE` code); +pm |
 | problem | `NO_PASSKEY` | — | A `RUN_COMMAND` (init --remote: an `AGENT` code with no change); +pm |
 
+Not covered here: entries whose `PERSON` step opens a page or reads the ledger on the engine's machine (`basalt approve ... --open`, `basalt revert ... --open`, `basalt passkey list`: `APPROVAL_REQUIRED` `HELD_NO_PAGES`, `APPROVAL_INVALID` and `REVERT_INVALID` `PASSKEY_REVOKED`, `REVERT_EXPIRED`, `QUERY_TIMEOUT` `TIME_LIMIT` for `preview_revert` and `request_revert`, `revert_plan` `EXPIRED`). On an agent-operated engine there is no person at that machine; their variants come with the links fallback contract (chat-only operator design, PR 7, and the vault channel's transports), and until then these entries keep the steps above, which assume a person at the engine's machine.
+
 ### Next steps with the connect link
 
 When `operatedBy` is `AGENT`, `vault` is `ON`, `pagesUrl` is the portal (not with `devLocalPages`) and the whole [connect link](connect.md#the-connect-link) is at most the engine's [`linkBudget`](showing-links.md#the-link-budget) characters, the entries below that hand the person a pending setup code replace their steps with the ones in the table (`connectLink` in [`next-steps.json`](../api/mcp/errors/next-steps.json)). This is the one place the catalog depends on the Vault setting as well as `operatedBy`: an engine that is not agent-operated, has the Vault off, or whose link does not fit the budget keeps the steps of the tables above. Making the link needs no network call.
@@ -218,6 +220,3 @@ The link comes first and the laptop command second, and both run the same code. 
 | error | `UNAVAILABLE` | `SETUP_PENDING` | P `OPEN_LINK` (the connect link), P `RUN_COMMAND` (`basalt init --setup-code <the pending code>`, on their own computer), P `TELL_AGENT`, A `END_TURN`, A `CALL_TOOL` (`status`); +pm |
 | problem | `SETUP_NOT_RUN` | — | P `OPEN_LINK` (the connect link), P `RUN_COMMAND` (`basalt init --setup-code <the pending code>`, on their own computer), P `TELL_AGENT`, A `END_TURN`, A `CALL_TOOL` (`status`); +pm |
 | problem | `SETUP_CHANGE_PENDING` | — | P `OPEN_LINK` (the connect link), P `RUN_COMMAND` (`basalt init --setup-code <the pending code>`, on their own computer), P `TELL_AGENT`; +pm |
-
-
-Not covered here: entries whose `PERSON` step opens a page or reads the ledger on the engine's machine (`basalt approve ... --open`, `basalt revert ... --open`, `basalt passkey list`: `APPROVAL_REQUIRED` `HELD_NO_PAGES`, `APPROVAL_INVALID` and `REVERT_INVALID` `PASSKEY_REVOKED`, `REVERT_EXPIRED`, `QUERY_TIMEOUT` `TIME_LIMIT` for `preview_revert` and `request_revert`, `revert_plan` `EXPIRED`). On an agent-operated engine there is no person at that machine; their variants come with the links fallback contract (chat-only operator design, PR 7, and the vault channel's transports), and until then these entries keep the steps above, which assume a person at the engine's machine.

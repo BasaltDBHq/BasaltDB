@@ -356,8 +356,6 @@ type remoteInit struct {
 	connectBudget int
 	// linkBudget is the engine's configured link budget.
 	linkBudget int
-	// devLocalPages: the existing config uses development pages.
-	devLocalPages bool
 }
 
 func newRemoteInit(c *cliIO, f remoteFlags) (*remoteInit, error) {
@@ -422,7 +420,6 @@ func (r *remoteInit) paths() error {
 		r.stateDir = cfg.StateDirFor(r.c.goos)
 		r.settings.SocketDir = cfg.SocketDir
 		r.linkBudget = cfg.LinkBudgetOrDefault()
-		r.devLocalPages = cfg.DevLocalPages
 		for i := range cfg.Agents {
 			if cfg.Agents[i].Name == r.f.agent {
 				r.entry = &cfg.Agents[i]
@@ -920,7 +917,7 @@ func (r *remoteInit) writeConfig(saved []string, s *config.Setup) error {
 	fmt.Fprint(r.c.stderr, r.serviceNote)
 	fmt.Fprint(r.c.stderr, r.f.vault.line(v))
 	r.connectBudget = 0
-	if r.f.operatedBy == OperatedByAgent && v.Vault == config.VaultOn && !r.devLocalPages {
+	if r.f.operatedBy == OperatedByAgent && v.Vault == config.VaultOn {
 		r.connectBudget = r.linkBudget
 		if r.connectBudget <= 0 {
 			r.connectBudget = links.DefaultBudget

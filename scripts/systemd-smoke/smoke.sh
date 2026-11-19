@@ -116,6 +116,13 @@ unavailable() {
 	grep -q "PLUGIN_UNAVAILABLE" <<<"$out"
 }
 connected() { run_has 'probe initialized' && ! unavailable; }
+# dropin_refused: status names a systemd drop-in as why the plugin is not
+# reached, the cause the engine gives only after it checked the drop-ins.
+dropin_refused() {
+	local out
+	out=$(status_out)
+	grep -qF "a systemd drop-in or another unit file of the same name changes its service unit" <<<"$out"
+}
 
 restart_engine() { sudo systemctl restart "$engine_unit"; }
 
@@ -289,9 +296,8 @@ run=$(new_run "$run")
 pid=$(systemctl show -p MainPID --value "$unit")
 [ "$(sudo readlink "/proc/$pid/ns/net")" = "$(sudo readlink /proc/1/ns/net)" ] ||
 	fail "control: with the drop-in the plugin should share the host's network namespace"
-wait_for "status to show the plugin unavailable" unavailable
+wait_for "status to name the drop-in as the cause" dropin_refused
 status_out | grep -A3 PLUGIN_UNAVAILABLE
-sleep 5
 run_has 'probe initialized' && fail "the engine connected to a plugin whose unit a drop-in changed"
 
 step "drop-in removed: the engine connects again"

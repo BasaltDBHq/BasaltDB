@@ -18,6 +18,12 @@
     },
     "passkeys": {
       "active": 1,
+      "keys": [
+        {
+          "checkCode": "<checkCode>",
+          "credentialId": "<credentialId>"
+        }
+      ],
       "registered": true
     },
     "problems": [],

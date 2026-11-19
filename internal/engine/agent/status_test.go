@@ -2,6 +2,9 @@ package agent
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +13,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -74,8 +78,24 @@ type keys struct {
 }
 
 func (k keys) Passkeys(context.Context) ([]passkey.Credential, error) {
-	return make([]passkey.Credential, k.n), nil
+	return testCredentials(k.n), nil
 }
+
+// testKeys are eight fixed-for-the-run P-256 credentials with ids 1..8.
+var testKeys = sync.OnceValue(func() []passkey.Credential {
+	out := make([]passkey.Credential, 8)
+	for i := range out {
+		k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			panic(err)
+		}
+		out[i] = passkey.Credential{ID: []byte{byte(i + 1)}, PublicKey: &k.PublicKey}
+	}
+	return out
+})
+
+// testCredentials are the first n of them, with distinct keys and ids.
+func testCredentials(n int) []passkey.Credential { return testKeys()[:n] }
 
 func guardAt(state string, missingBreaking, missingNonBreaking []int) guard.Status {
 	b := guard.LatestVersion()
@@ -365,7 +385,8 @@ func TestStatusWhenEverythingIsReady(t *testing.T) {
 	require.Equal(t, EnforcementEngineAndGuard, r.Enforcement)
 	require.True(t, r.Engine.Reachable)
 	require.Equal(t, guard.GuardOK, r.Guard.State)
-	require.Equal(t, PasskeysStatus{Registered: true, Active: ptr(2)}, r.Passkeys)
+	require.True(t, r.Passkeys.Registered)
+	require.Equal(t, ptr(2), r.Passkeys.Active)
 	require.Equal(t, SetupStatus{State: setupDone, SetupID: caseRunID, Kind: guard.SetupAgent}, r.Setup)
 	require.Nil(t, r.Vault, "no vault reporter yet: vault is left out")
 	require.Equal(t, &LedgerStatus{Bytes: 123456, ValuesKeptDays: 30, RecordsKeptDays: 365}, r.Ledger)
@@ -919,4 +940,41 @@ func TestEngineDownStatusNamesTheOldCredentialFileEdit(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, r.Problems, 1)
 	require.Contains(t, r.Problems[0].Message, `agent "bot": "credentialFile" now goes inside "store"; replace "credentialFile": "/c/bot.cred" with "store": {"kind": "POSTGRES", "credentialFile": "/c/bot.cred"}`)
+}
+
+// After a setup is recorded, status names every active passkey with its
+// check code (CONTRACT.md, Connect, The passkey check code); a second key
+// shows as a second code.
+func TestStatusNamesPasskeysWithCheckCodes(t *testing.T) {
+	t.Parallel()
+	probe := func() *fakeProbe {
+		return &fakeProbe{st: guardAt(guard.GuardOK, nil, nil), latest: &guard.AgentSetup{SetupID: uuid.MustParse(caseRunID), Kind: guard.SetupInstall}}
+	}
+	statusTool, _ := mcpcontract.Find(mcpcontract.MustLoad(), toolStatus)
+
+	one := engineStatus(probe(), 1, nil)(t)
+	requireStatusSchema(t, statusTool, one)
+	require.Len(t, one.Passkeys.Keys, 1)
+	want, err := testCredentials(1)[0].CheckCode()
+	require.NoError(t, err)
+	require.Equal(t, PasskeyStatus{CredentialID: []byte{1}, CheckCode: want}, one.Passkeys.Keys[0])
+	require.Equal(t, "1 passkey is registered, with check code "+want+
+		". Each code should match the one the setup page showed you. A different code, or a passkey you did not create, means stop and remove it.", one.Passkeys.Summary)
+
+	two := engineStatus(probe(), 2, nil)(t)
+	requireStatusSchema(t, statusTool, two)
+	require.Len(t, two.Passkeys.Keys, 2)
+	require.NotEqual(t, two.Passkeys.Keys[0].CheckCode, two.Passkeys.Keys[1].CheckCode)
+	require.Contains(t, two.Passkeys.Summary, "2 passkeys are registered")
+	for _, k := range two.Passkeys.Keys {
+		require.Contains(t, two.Passkeys.Summary, k.CheckCode)
+	}
+
+	pending := engineStatus(probe(), 1, pendingSetup(guard.SetupAgent, statusNow.Add(time.Hour)))(t)
+	require.Len(t, pending.Passkeys.Keys, 1, "status returns the codes whatever the setup's state")
+	require.Empty(t, pending.Passkeys.Summary, "the message waits for a recorded setup")
+
+	none := engineStatus(probe(), 0, nil)(t)
+	require.Empty(t, none.Passkeys.Keys)
+	require.Empty(t, none.Passkeys.Summary)
 }

@@ -461,3 +461,80 @@ func TestOSSystemCreateFileWantsARootDirectory(t *testing.T) {
 	require.NoError(t, rerr)
 	require.Empty(t, entries)
 }
+
+// An earlier install's log directory, the engine user's, is renamed whole:
+// what that user left inside (a link to a root file, say) moves with it,
+// untouched and never followed, and the path is free for root's directory.
+func TestOSSystemMoveAsideRenamesTheWholeDirectory(t *testing.T) {
+	dir := realTempDir(t)
+	cur, err := user.Current()
+	require.NoError(t, err)
+	logs := filepath.Join(dir, "Basalt")
+	require.NoError(t, os.Mkdir(logs, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(logs, "engine.log"), []byte("old\n"), 0o600))
+	victim := filepath.Join(dir, "victim")
+	require.NoError(t, os.WriteFile(victim, []byte("keep"), 0o644))
+	require.NoError(t, os.Symlink(victim, filepath.Join(logs, "plugins")))
+
+	moved, err := OSSystem{}.MoveAside(logs, cur.Username)
+	require.NoError(t, err)
+	require.Regexp(t, `/Basalt\.old-\d{8}T\d{6}Z$`, moved)
+	_, err = os.Lstat(logs)
+	require.ErrorIs(t, err, os.ErrNotExist, "the path is free")
+	got, err := os.ReadFile(filepath.Join(moved, "engine.log"))
+	require.NoError(t, err)
+	require.Equal(t, "old\n", string(got), "the old logs are kept")
+	fi, err := os.Lstat(filepath.Join(moved, "plugins"))
+	require.NoError(t, err)
+	require.Equal(t, os.ModeSymlink, fi.Mode().Type(), "the planted link moved as it is")
+	fi, err = os.Stat(victim)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o644), fi.Mode().Perm(), "the link's target is untouched")
+
+	// A second move in the same second takes the next free name.
+	require.NoError(t, os.Mkdir(logs, 0o750))
+	again, err := OSSystem{}.MoveAside(logs, cur.Username)
+	require.NoError(t, err)
+	require.NotEqual(t, moved, again)
+
+	// Nothing there, or an owner with no account: nothing moves.
+	moved, err = OSSystem{}.MoveAside(logs, cur.Username)
+	require.NoError(t, err)
+	require.Empty(t, moved)
+	require.NoError(t, os.Mkdir(logs, 0o755))
+	moved, err = OSSystem{}.MoveAside(logs, "basalt-test-no-such-user")
+	require.NoError(t, err)
+	require.Empty(t, moved)
+}
+
+func TestOSSystemMoveAsideLeavesOthersAndRefusesLinks(t *testing.T) {
+	dir := realTempDir(t)
+	cur, err := user.Current()
+	require.NoError(t, err)
+
+	// A directory root (or anyone but the engine's user) owns stays.
+	logs := filepath.Join(dir, "Basalt")
+	require.NoError(t, os.Mkdir(logs, 0o755))
+	ownedBy(t, logs, 0)
+	moved, err := OSSystem{}.MoveAside(logs, cur.Username)
+	require.NoError(t, err)
+	require.Empty(t, moved)
+	_, err = os.Stat(logs)
+	require.NoError(t, err)
+
+	// A link or a file at the path is refused, never followed or moved.
+	target := filepath.Join(dir, "target")
+	require.NoError(t, os.Mkdir(target, 0o755))
+	link := filepath.Join(dir, "linked")
+	require.NoError(t, os.Symlink(target, link))
+	_, err = OSSystem{}.MoveAside(link, cur.Username)
+	require.ErrorContains(t, err, "symlink is refused")
+	file := filepath.Join(dir, "file")
+	require.NoError(t, os.WriteFile(file, nil, 0o600))
+	_, err = OSSystem{}.MoveAside(file, cur.Username)
+	require.ErrorContains(t, err, "is not a directory")
+	for _, p := range []string{link, file} {
+		_, err := os.Lstat(p)
+		require.NoError(t, err, "left in place")
+	}
+}

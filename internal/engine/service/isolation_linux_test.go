@@ -129,7 +129,7 @@ func apply(t *testing.T, steps []Step) {
 		if st.Kind == StepRemove && strings.HasPrefix(st.Path, systemdUnitDir) {
 			continue
 		}
-		require.NoError(t, applyStep(context.Background(), sys, st), st.String())
+		require.NoError(t, applyStep(context.Background(), sys, st, io.Discard), st.String())
 	}
 }
 

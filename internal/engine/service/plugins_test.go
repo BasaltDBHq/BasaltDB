@@ -133,6 +133,9 @@ func TestDarwinPluginInstallMakesTheLogBeforeTheDaemon(t *testing.T) {
 		}
 	}
 	require.Equal(t, []string{
+		"mv /Library/Logs/Basalt /Library/Logs/Basalt.old-<time> (only when _basalt owns it)",
+		"mkdir -m 0755 -o root /Library/Logs/Basalt",
+		"create -m 0600 -o _basalt /Library/Logs/Basalt/engine.log (kept when it exists)",
 		"mkdir -m 0755 -o root /Library/Basalt",
 		"mkdir -m 0755 -o root /Library/Basalt/run",
 		"mkdir -m 0755 -o root /Library/Logs/Basalt/plugins",
@@ -156,9 +159,26 @@ func TestDarwinPluginInstallMakesTheLogBeforeTheDaemon(t *testing.T) {
 
 	// The base steps are skipped with the cause on macOS, the log
 	// directory's too.
-	for _, st := range steps[:3] {
+	for _, st := range steps[3:6] {
 		require.NotEmpty(t, st.Note, st.String())
 	}
+
+	// On a Mac an earlier install set up, plugin add moves the engine
+	// user's log directory aside itself and says where: no separate step.
+	sys = newFake()
+	sys.outputs["dscl . -list /Users UniqueID"] = "root 0\n"
+	sys.exists["/Library/Logs/Basalt"] = true
+	sys.owners["/Library/Logs/Basalt"] = "_basalt"
+	steps, err = service.PluginInstallPlan(context.Background(), sys, darwinHost(), []service.PluginEntry{entry("darwin", "default")})
+	require.NoError(t, err)
+	out.Reset()
+	require.NoError(t, service.Apply(context.Background(), sys, steps, false, &out))
+	require.Contains(t, out.String(), "moved the old /Library/Logs/Basalt, which _basalt owned, to /Library/Logs/Basalt.old-20261119T000000Z\n")
+	require.Equal(t, []string{
+		"move-aside /Library/Logs/Basalt _basalt",
+		"mkdir -m 0755 -o root /Library/Logs/Basalt",
+		"create -m 0600 -o _basalt /Library/Logs/Basalt/engine.log",
+	}, sys.ran[:3])
 
 	// service install makes the same log and rule for each entry.
 	sys = newFake()

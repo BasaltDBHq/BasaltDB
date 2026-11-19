@@ -732,8 +732,9 @@ func pluginInstallSteps(sys System, h PluginHost, p PluginEntry, ids *idAllocato
 }
 
 // PluginInstallPlan is pluginInstallSteps for each of ps, after the base
-// directories: what basalt plugin add, enable and disable run in service
-// mode for one entry, and service install for every local entry.
+// directories (on macOS after the log directory's steps too): what basalt
+// plugin add, enable and disable run in service mode for one entry, and
+// service install for every local entry.
 func PluginInstallPlan(ctx context.Context, sys System, h PluginHost, ps []PluginEntry) ([]Step, error) {
 	if len(ps) == 0 {
 		return nil, nil
@@ -747,6 +748,10 @@ func PluginInstallPlan(ctx context.Context, sys System, h PluginHost, ps []Plugi
 		if ids, err = newIDAllocator(ctx, sys); err != nil {
 			return nil, err
 		}
+		// A Mac set up by an earlier install has the engine user's log
+		// directory: plugin add and enable fix it as service install does,
+		// so no separate step is needed before a plugin's log can be made.
+		steps = append(darwinLogSteps(h.EngineUser), steps...)
 	}
 	more, err := pluginEntriesSteps(sys, h, ps, ids)
 	if err != nil {

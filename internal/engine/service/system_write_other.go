@@ -13,6 +13,8 @@ func (OSSystem) WriteFile(string, []byte, os.FileMode, string) error { return er
 
 func (OSSystem) CreateFile(string, os.FileMode, string) error { return errUnsupported }
 
+func (OSSystem) MoveAside(string, string) (string, error) { return "", errUnsupported }
+
 func (OSSystem) Mkdir(string, os.FileMode, string, string) error { return errUnsupported }
 
 func (OSSystem) RemoveTree(string) error { return errUnsupported }

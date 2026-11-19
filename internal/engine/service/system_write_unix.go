@@ -11,6 +11,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -112,6 +113,66 @@ func (OSSystem) CreateFile(path string, mode os.FileMode, owner string) error {
 		return err
 	}
 	return unix.Fchmod(fd, uint32(mode.Perm()))
+}
+
+// movedNameTries bounds the names MoveAside tries when one is taken.
+const movedNameTries = 100
+
+// MoveAside renames the directory at path to "<path>.old-<UTC time>" when
+// the OS user owner owns it, and returns the new name. Its parent is reached
+// by openTrusted with root as the only trusted owner, so only root can
+// change the entry at path meanwhile; the directory is checked through a
+// descriptor opened without following a link and renamed as a whole,
+// relative to the parent, so nothing inside it is followed, read or
+// re-owned. A missing path, one owned by anyone else, or an owner with no
+// account, is left as it is (""); a link or a file at path is refused.
+func (OSSystem) MoveAside(path, owner string) (string, error) {
+	uid := LookupUID(owner)
+	if uid < 0 {
+		return "", nil
+	}
+	pfd, err := openTrusted(filepath.Dir(path), keepID)
+	if err != nil {
+		return "", err
+	}
+	defer unix.Close(pfd)
+	base := filepath.Base(path)
+	dfd, err := openDirAt(pfd, base, path)
+	if errors.Is(err, unix.ENOENT) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	var st unix.Stat_t
+	err = fstat(dfd, &st)
+	unix.Close(dfd)
+	if err != nil {
+		return "", err
+	}
+	if int(st.Uid) != uid {
+		return "", nil
+	}
+	stamp := base + ".old-" + time.Now().UTC().Format("20060102T150405Z")
+	for i := range movedNameTries {
+		name := stamp
+		if i > 0 {
+			name += "-" + strconv.Itoa(i)
+		}
+		var other unix.Stat_t
+		err := unix.Fstatat(pfd, name, &other, unix.AT_SYMLINK_NOFOLLOW)
+		if err == nil {
+			continue
+		}
+		if !errors.Is(err, unix.ENOENT) {
+			return "", err
+		}
+		if err := unix.Renameat(pfd, base, pfd, name); err != nil {
+			return "", &os.LinkError{Op: "rename", Old: path, New: filepath.Join(filepath.Dir(path), name), Err: err}
+		}
+		return filepath.Join(filepath.Dir(path), name), nil
+	}
+	return "", fmt.Errorf("cannot find a free name to move %s aside", path)
 }
 
 // Mkdir makes path (mode, owner) relative to its parent, refusing a symlink

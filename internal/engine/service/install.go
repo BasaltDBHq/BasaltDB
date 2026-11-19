@@ -55,6 +55,12 @@ type System interface {
 	// to), in a directory only root can change, without following a link;
 	// it refuses a path that is not a plain file.
 	CreateFile(path string, mode os.FileMode, owner string) error
+	// MoveAside renames the directory at path, as a whole and without
+	// following a link, to a new name next to it when the OS user owner
+	// owns it, and returns that name; a missing path or one owned by anyone
+	// else is left as it is (""). Anything at path but a real directory is
+	// refused.
+	MoveAside(path, owner string) (string, error)
 	// Mkdir makes a directory (or takes over an existing real one) without
 	// following a link; it refuses a symlink. group, when set, is its group
 	// instead of owner's.
@@ -81,6 +87,9 @@ const (
 	// StepCreate makes an empty file when it is missing and keeps an
 	// existing one's content; either way it gets Mode and Owner.
 	StepCreate StepKind = "CREATE"
+	// StepMoveAside renames Path to a new name next to it when Owner owns
+	// it (an earlier install's directory that must now be root's).
+	StepMoveAside StepKind = "MOVE_ASIDE"
 )
 
 // Step is one action of an install or uninstall plan.
@@ -114,6 +123,9 @@ func (s Step) String() string {
 		return "write " + s.Path
 	case StepCreate:
 		return fmt.Sprintf("create -m %04o -o %s %s (kept when it exists)", modeBits(s.fileMode()), s.Owner, strings.Join(quoteArgs([]string{s.Path}), ""))
+	case StepMoveAside:
+		p := strings.Join(quoteArgs([]string{s.Path}), "")
+		return fmt.Sprintf("mv %s %s.old-<time> (only when %s owns it)", p, p, s.Owner)
 	case StepRemove:
 		return "rm -f " + s.Path
 	case StepRemoveTree:
@@ -291,13 +303,9 @@ func darwinInstall(ctx context.Context, sys System, s Spec) ([]Step, error) {
 		// and credential files inside are 0600.
 		mkdir(openDirMode, s.User, configDir),
 		mkdir(runtimeDirMode, s.User, config.DefaultSocketDir(goosDarwin)),
-		// The log directory is root's, so the plugins' logs below it are out
-		// of the engine user's reach; the engine's own log in it is that
-		// user's, made before the daemon loads.
-		mkdir(openDirMode, "", darwinLogDir),
-		Step{Kind: StepCreate, Path: darwinLogFile, Mode: engineLogMode, Owner: s.User},
-		mkdir(darwinStateDirMode, s.User, config.DefaultStateDir(goosDarwin)),
 	)
+	steps = append(steps, darwinLogSteps(s.User)...)
+	steps = append(steps, mkdir(darwinStateDirMode, s.User, config.DefaultStateDir(goosDarwin)))
 	steps = append(steps, fileSteps(s)...)
 	plugins, err := pluginSteps(sys, s, ids)
 	if err != nil {
@@ -313,6 +321,20 @@ func darwinInstall(ctx context.Context, sys System, s Spec) ([]Step, error) {
 		run("launchctl", "bootstrap", "system", LaunchdPlist),
 		run("launchctl", "enable", "system/"+LaunchdLabel),
 	), nil
+}
+
+// darwinLogSteps make the macOS log directory root's, so the plugins' logs
+// below it are out of the engine user's reach, and the engine's own log in
+// it that user's, before its daemon loads. An earlier install gave the
+// directory to the engine's user: that directory is moved aside whole,
+// never re-owned in place, so nothing the engine's user left in it is
+// taken over by root.
+func darwinLogSteps(engineUser string) []Step {
+	return []Step{
+		{Kind: StepMoveAside, Path: darwinLogDir, Owner: engineUser},
+		mkdir(openDirMode, "", darwinLogDir),
+		{Kind: StepCreate, Path: darwinLogFile, Mode: engineLogMode, Owner: engineUser},
+	}
 }
 
 // darwinAccountSteps create a hidden macOS system account and its group,
@@ -414,7 +436,7 @@ func Apply(ctx context.Context, sys System, steps []Step, dryRun bool, out io.Wr
 	}
 	var skipped []string
 	for _, st := range steps {
-		err := applyStep(ctx, sys, st)
+		err := applyStep(ctx, sys, st, out)
 		switch {
 		case err == nil:
 		case st.Note != "":
@@ -457,8 +479,16 @@ func ManagerRunning(sys System, goos string) bool {
 	return sys.Exists(systemdRunning)
 }
 
-func applyStep(ctx context.Context, sys System, st Step) error {
+// applyStep runs st; a step that has something to tell the person (where
+// a directory was moved) says it on out.
+func applyStep(ctx context.Context, sys System, st Step, out io.Writer) error {
 	switch st.Kind {
+	case StepMoveAside:
+		moved, err := sys.MoveAside(st.Path, st.Owner)
+		if err == nil && moved != "" {
+			fmt.Fprintf(out, "  moved the old %s, which %s owned, to %s\n", st.Path, st.Owner, moved)
+		}
+		return err
 	case StepRun:
 		return sys.Run(ctx, st.Args...)
 	case StepWrite:

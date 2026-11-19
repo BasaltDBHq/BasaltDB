@@ -221,7 +221,8 @@ func TestChangedEntryWritesChanged(t *testing.T) {
 }
 
 // An entry enabled and listed that the engine does not start (it fails
-// verification) keeps its record: no PLUGIN_DISABLED for a passing failure.
+// verification) while the key that signed it is still trusted keeps its
+// record: no PLUGIN_DISABLED for a passing failure.
 func TestHeldEntryKeepsItsRecord(t *testing.T) {
 	t.Parallel()
 	f := newPluginFixture(t)
@@ -231,8 +232,40 @@ func TestHeldEntryKeepsItsRecord(t *testing.T) {
 	require.NoError(t, os.WriteFile(f.installedFile(p), []byte("changed"), 0o755))
 	ep := f.plugins(nil)
 	require.Equal(t, []string{agent.ProblemPluginNotTrusted}, codes(ep.PluginProblems("product_a")))
-	l.record(t, f, ep)
+	for range 2 {
+		l.record(t, f, ep)
+	}
 	require.Equal(t, []string{"PLUGIN_TRUST_ADDED", "PLUGIN_ENABLED"}, kindsOf(l.events(t, "product_a")))
+}
+
+// An entry held because the key that signed it was removed from the trust
+// store gets PLUGIN_TRUST_REMOVED for the key and PLUGIN_DISABLED for the
+// entry, once: the ledger never shows it served without its key.
+func TestHeldEntryOfRemovedKeyGetsDisabled(t *testing.T) {
+	t.Parallel()
+	f := newPluginFixture(t)
+	f.install("default", dial.TransportStdio, "product_a")
+	l := newPluginLedgers(t, f)
+	l.record(t, f, f.plugins(nil))
+	keys, err := f.trust.AddedKeys()
+	require.NoError(t, err)
+	require.Len(t, keys, 1)
+	require.NoError(t, os.Remove(filepath.Join(f.trust.Dir(), keys[0]+".pem")))
+
+	ep := f.plugins(nil)
+	require.Equal(t, []string{agent.ProblemPluginNotTrusted}, codes(ep.PluginProblems("product_a")), "held: its key is gone")
+	for range 2 {
+		l.record(t, f, ep)
+	}
+	rows := l.events(t, "product_a")
+	require.Equal(t, []string{"PLUGIN_TRUST_ADDED", "PLUGIN_ENABLED", "PLUGIN_TRUST_REMOVED", "PLUGIN_DISABLED"}, kindsOf(rows))
+	require.JSONEq(t, rows[1].Detail, rows[3].Detail, "PLUGIN_DISABLED carries what was last recorded")
+	recs, err := guard.ReadPluginRecords(context.Background(), l.dbs["product_a"].db)
+	require.NoError(t, err)
+	require.Empty(t, recs.TrustKeys)
+	for _, r := range recs.Entries {
+		require.False(t, r.Enabled(), "no entry is on record as served")
+	}
 }
 
 // When an agent's record cannot be written, the entry is not served to

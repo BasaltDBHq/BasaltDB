@@ -120,7 +120,8 @@ type pluginWant struct {
 	served map[string]map[plugin.EntryKey]guard.PluginDetail
 	// held are entries enabled and listed for an agent that this engine does
 	// not start (verification failed, or it may not run here): their
-	// record is left as it is, so a passing failure writes nothing.
+	// record is left as it is, so a passing failure writes nothing, unless
+	// the key that signed it is no longer recorded as trusted.
 	held map[string]map[plugin.EntryKey]bool
 	// trust is the trust store's state.
 	trust trustWant
@@ -231,8 +232,9 @@ func pluginIsolation(mode plugin.Mode, goos string, m plugin.Manifest) *guard.Pl
 //     PLUGIN_ENABLED;
 //   - one whose detail differs from the last recorded: PLUGIN_CHANGED;
 //   - one its ledger shows served that it is no longer served (disabled,
-//     removed, or the agent removed from its agents) and that is not held:
-//     PLUGIN_DISABLED, with the detail last recorded;
+//     removed, or the agent removed from its agents) and that is not held,
+//     or is held and the key that signed it is no longer recorded as
+//     trusted: PLUGIN_DISABLED, with the detail last recorded;
 //   - each added trust key its ledger lacks: PLUGIN_TRUST_ADDED, written
 //     first.
 //
@@ -325,7 +327,13 @@ func writeAgentPluginEvents(ctx context.Context, name string, want pluginWant, l
 	}
 	for _, r := range recs.Entries {
 		k := plugin.EntryKey{Name: r.Detail.Name, Instance: r.Detail.Instance}
-		if _, ok := want.served[name][k]; ok || !r.Enabled() || want.held[name][k] {
+		if _, ok := want.served[name][k]; ok || !r.Enabled() {
+			continue
+		}
+		// A held entry keeps its record, unless the key that signed it is no
+		// longer recorded as trusted: the ledger never shows an entry served
+		// without that key.
+		if s := r.Detail.SignerKeyID; want.held[name][k] && (recorded[s] || plugin.BuiltInKey(s)) {
 			continue
 		}
 		if err := guard.RecordPluginEntryEvent(ctx, db, guard.PluginDisabled, r.Detail); err != nil {

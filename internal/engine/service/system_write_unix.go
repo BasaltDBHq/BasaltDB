@@ -109,6 +109,9 @@ func (OSSystem) CreateFile(path string, mode os.FileMode, owner string) error {
 		return fmt.Errorf("%s is not a plain file (a hard link, a directory or a device?); refusing to take it over; "+
 			"move it aside (sudo mv %s %s.old) and run the install again", path, path, path)
 	}
+	if err := clearUserFlags(fd); err != nil {
+		return err
+	}
 	if err := unix.Fchown(fd, ids.uid, ids.gid); err != nil {
 		return err
 	}
@@ -144,14 +147,17 @@ func (OSSystem) MoveAside(path, owner string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	defer unix.Close(dfd)
 	var st unix.Stat_t
-	err = fstat(dfd, &st)
-	unix.Close(dfd)
-	if err != nil {
+	if err := fstat(dfd, &st); err != nil {
 		return "", err
 	}
 	if int(st.Uid) != uid {
 		return "", nil
+	}
+	// An owner who made the directory immutable would stop the rename.
+	if err := clearUserFlags(dfd); err != nil {
+		return "", err
 	}
 	stamp := base + ".old-" + time.Now().UTC().Format("20060102T150405Z")
 	for i := range movedNameTries {

@@ -1,0 +1,26 @@
+{
+  "agent": "product_a",
+  "events": [
+    {
+      "specversion": "1.0",
+      "id": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee:4211",
+      "source": "urn:uuid:0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
+      "type": "app.basaltvault.feed.write.applied",
+      "time": "2026-11-19T06:02:11.513958Z",
+      "subject": "product_b",
+      "datacontenttype": "application/json",
+      "data": {
+        "installId": "0193a0f2-5b7e-7c41-9d2a-6e1f00c0ffee",
+        "seq": 4211,
+        "agent": "product_b",
+        "changeId": "0193a1b3-0000-7000-8000-000000000001",
+        "runId": "0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b",
+        "taskId": "0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a00",
+        "op": "UPDATE",
+        "table": "public.cases",
+        "rows": 1,
+        "cascadedRows": 0
+      }
+    }
+  ]
+}

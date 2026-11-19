@@ -306,7 +306,8 @@ func TestAddShowsWarnings(t *testing.T) {
 	deliver := e.newSource(strings.Replace(pluginManifest("1.0.0", `"feed.observe": {"contract": "feed/1"}, "approval.deliver": {"contract": "deliver/1"}`, `"chat.example:443"`),
 		`"acme-ner"`, `"acme-notify"`, 1))
 	r = e.person("add", deliver, "--agents", "product_a")
-	require.Contains(t, r.stderr, "anyone who can read the channel it delivers to can see the rows of held writes")
+	require.Contains(t, r.stderr, "approval.deliver: It delivers your approval links. Anyone who can read where it delivers them can see the rows of writes "+
+		"waiting for your approval. Some links carry the whole request, so they can also see what the agent asked to run and why.")
 	require.Contains(t, r.stderr, "runs with network access: its egress list is declared, not enforced per host")
 	require.Contains(t, r.stderr, "Egress:       chat.example:443")
 }

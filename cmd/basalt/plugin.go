@@ -439,6 +439,11 @@ func writeConsent(w io.Writer, k plugin.EntryKey, v plugin.Verified, agents []st
 	}
 }
 
+// deliverConsent is the fixed sentence for approval.deliver, the same words
+// as the plugin approval page's (CONTRACT.md, Consent and The plugin
+// approval page).
+const deliverConsent = "It delivers your approval links. Anyone who can read where it delivers them can see the rows of writes waiting for your approval. Some links carry the whole request, so they can also see what the agent asked to run and why."
+
 func consentWarnings(f pluginFacts, mode plugin.Mode) []string {
 	var out []string
 	if f.remote {
@@ -449,7 +454,7 @@ func consentWarnings(f pluginFacts, mode plugin.Mode) []string {
 		}
 	}
 	if f.has(plugin.HookApprovalDeliver) {
-		out = append(out, "approval.deliver: anyone who can read the channel it delivers to can see the rows of held writes.")
+		out = append(out, "approval.deliver: "+deliverConsent)
 	}
 	if !f.remote && len(f.egress) > 0 {
 		out = append(out, "This local plugin runs with network access: its egress list is declared, not enforced per host.")

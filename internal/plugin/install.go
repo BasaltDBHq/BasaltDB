@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"io/fs"
@@ -32,6 +33,7 @@ type Staged struct {
 	root  string
 	owner uint32
 	trust TrustStore
+	opts  options
 	done  bool
 }
 
@@ -42,8 +44,10 @@ type Staged struct {
 // a regular file, so the copy is exactly what was read; a change to src
 // afterwards has no effect. A remote plugin's copy is the manifest and its
 // signature only. instance "" is "default". On any failure nothing is left
-// behind.
-func Stage(src, root, instance string, trust TrustStore, mode Mode) (*Staged, error) {
+// behind. With RequireApproval a source with no .sig stages, and its copy
+// has none.
+func Stage(src, root, instance string, trust TrustStore, mode Mode, opts ...Option) (*Staged, error) {
+	o := optionsOf(opts)
 	owner, err := mode.owner()
 	if err != nil {
 		return nil, err
@@ -64,9 +68,20 @@ func Stage(src, root, instance string, trust TrustStore, mode Mode) (*Staged, er
 	if err != nil {
 		return nil, err
 	}
-	sig, err := readSource(srcRoot, src, SignatureFile, MaxSignatureFileBytes)
-	if err != nil {
-		return nil, err
+	// Unsigned only when the .sig does not exist; a symlink, or anything
+	// else readSource refuses, is refused as before.
+	var sig []byte
+	signed := true
+	if o.requireApproval {
+		if _, err := srcRoot.Lstat(SignatureFile); errors.Is(err, fs.ErrNotExist) {
+			signed = false
+		}
+	}
+	if signed {
+		sig, err = readSource(srcRoot, src, SignatureFile, MaxSignatureFileBytes)
+		if err != nil {
+			return nil, err
+		}
 	}
 	// Checked here, in the order verification uses, only to learn the name
 	// and the files to copy and to refuse early; every check runs again on
@@ -74,7 +89,7 @@ func Stage(src, root, instance string, trust TrustStore, mode Mode) (*Staged, er
 	if err := trust.check(); err != nil {
 		return nil, err
 	}
-	if _, err := checkSignature(filepath.Join(src, SignatureFile), manifest, sig, trust); err != nil {
+	if _, _, err := signerOf(filepath.Join(src, SignatureFile), manifest, sig, signed, trust, o); err != nil {
 		return nil, err
 	}
 	m, err := ParseManifest(manifest)
@@ -106,13 +121,13 @@ func Stage(src, root, instance string, trust TrustStore, mode Mode) (*Staged, er
 	if err != nil {
 		return nil, pathRefusal(instDir, "cannot hold a temporary copy")
 	}
-	s := &Staged{Key: key, root: root, owner: owner, trust: trust}
+	s := &Staged{Key: key, root: root, owner: owner, trust: trust, opts: o}
 	s.Dir = tmp
-	if err := s.fill(srcRoot, src, m, manifest, sig); err != nil {
+	if err := s.fill(srcRoot, src, m, manifest, sig, signed); err != nil {
 		_ = os.RemoveAll(tmp)
 		return nil, err
 	}
-	v, err := verifyCopy(root, key, filepath.Base(tmp), "", trust, owner)
+	v, err := verifyCopy(root, key, filepath.Base(tmp), "", trust, owner, o)
 	if err != nil {
 		_ = os.RemoveAll(tmp)
 		return nil, err
@@ -121,14 +136,17 @@ func Stage(src, root, instance string, trust TrustStore, mode Mode) (*Staged, er
 	return s, nil
 }
 
-// fill writes the manifest and signature bytes already read, and copies each
-// listed file, into the temporary copy.
-func (s *Staged) fill(srcRoot *os.Root, src string, m Manifest, manifest, sig []byte) error {
+// fill writes the manifest and signature bytes already read (no signature
+// when signed is false), and copies each listed file, into the temporary
+// copy.
+func (s *Staged) fill(srcRoot *os.Root, src string, m Manifest, manifest, sig []byte, signed bool) error {
 	if err := writeNew(filepath.Join(s.Dir, ManifestFile), manifest, installedFileMode); err != nil {
 		return err
 	}
-	if err := writeNew(filepath.Join(s.Dir, SignatureFile), sig, installedFileMode); err != nil {
-		return err
+	if signed {
+		if err := writeNew(filepath.Join(s.Dir, SignatureFile), sig, installedFileMode); err != nil {
+			return err
+		}
 	}
 	command := ""
 	if m.Endpoint.Local != nil {
@@ -279,11 +297,13 @@ func writeNew(p string, b []byte, mode os.FileMode) error {
 
 // Commit renames the verified copy into place as
 // <root>/<name>/<instance>/<manifest-sha256>/ and returns that directory.
-// When that directory already exists, verifies and was signed by the same
-// key as the staged copy, it is kept and the temporary copy removed; when it
-// fails verification, or another trusted key signed it, it is replaced, so
-// the copy in place is always the one the consent screen showed, signer
-// included.
+// When that directory already exists, verifies and has the same signer
+// state and key as the staged copy, it is kept and the temporary copy
+// removed; when it fails verification, or has another signer, it is
+// replaced, so the copy in place is always the one the consent screen
+// showed, signer included. It is verified with Stage's options. With
+// RequireApproval it is also kept only when its .sig is the staged one,
+// byte for byte, or both have none: two UNKNOWN copies can differ in it.
 func (s *Staged) Commit() (string, error) {
 	if s.done {
 		return "", errors.New("plugin: the staged copy was already committed or discarded")
@@ -296,8 +316,9 @@ func (s *Staged) Commit() (string, error) {
 		return "", pathRefusal(s.Dir, "cannot be set to mode 0755")
 	}
 	if _, err := os.Lstat(final); err == nil {
-		kept, verr := verifyCopy(s.root, s.Key, s.ManifestSHA256, s.ManifestSHA256, s.trust, s.owner)
-		if verr == nil && kept.SignerKeyID == s.SignerKeyID {
+		kept, verr := verifyCopy(s.root, s.Key, s.ManifestSHA256, s.ManifestSHA256, s.trust, s.owner, s.opts)
+		if verr == nil && kept.Signer == s.Signer && kept.SignerKeyID == s.SignerKeyID &&
+			(!s.opts.requireApproval || sameSignatureFile(final, s.Dir)) {
 			_ = os.RemoveAll(s.Dir)
 			s.Verified = kept
 			return final, nil
@@ -325,6 +346,22 @@ func (s *Staged) Commit() (string, error) {
 	return final, nil
 }
 
+// sameSignatureFile reports whether copies a and b both hold no .sig, or
+// hold the same bytes in it.
+func sameSignatureFile(a, b string) bool {
+	read := func(dir string) ([]byte, bool, bool) {
+		p := filepath.Join(dir, SignatureFile)
+		if _, err := os.Lstat(p); errors.Is(err, fs.ErrNotExist) {
+			return nil, false, true
+		}
+		raw, err := readNoFollow(p, MaxSignatureFileBytes)
+		return raw, true, err == nil
+	}
+	ra, hasA, okA := read(a)
+	rb, hasB, okB := read(b)
+	return okA && okB && hasA == hasB && bytes.Equal(ra, rb)
+}
+
 // Discard removes the temporary copy.
 func (s *Staged) Discard() error {
 	if s.done {
@@ -339,8 +376,8 @@ func (s *Staged) Discard() error {
 
 // Install stages the plugin in src and commits it, with no consent step in
 // between. It returns the installed copy.
-func Install(src, root, instance string, trust TrustStore, mode Mode) (Verified, error) {
-	s, err := Stage(src, root, instance, trust, mode)
+func Install(src, root, instance string, trust TrustStore, mode Mode, opts ...Option) (Verified, error) {
+	s, err := Stage(src, root, instance, trust, mode, opts...)
 	if err != nil {
 		return Verified{}, err
 	}

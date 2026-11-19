@@ -959,7 +959,7 @@ func TestStatusNamesPasskeysWithCheckCodes(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, PasskeyStatus{CredentialID: []byte{1}, CheckCode: want}, one.Passkeys.Keys[0])
 	require.Equal(t, "1 passkey is registered, with check code "+want+
-		". Each code should match the one the setup page showed you. A different code, or a passkey you did not create, means stop and remove it.", one.Passkeys.Summary)
+		". If the setup page showed you a check code for the passkey it created, it should be one of these. A passkey you did not create means stop and remove it.", one.Passkeys.Summary)
 
 	two := engineStatus(probe(), 2, nil)(t)
 	requireStatusSchema(t, statusTool, two)
@@ -969,6 +969,9 @@ func TestStatusNamesPasskeysWithCheckCodes(t *testing.T) {
 	for _, k := range two.Passkeys.Keys {
 		require.Contains(t, two.Passkeys.Summary, k.CheckCode)
 	}
+
+	agentKind := engineStatus(&fakeProbe{st: guardAt(guard.GuardOK, nil, nil), latest: &guard.AgentSetup{SetupID: uuid.MustParse(caseRunID), Kind: guard.SetupAgent}}, 1, nil)(t)
+	require.Contains(t, agentKind.Passkeys.Summary, "If the setup page showed you a check code")
 
 	pending := engineStatus(probe(), 1, pendingSetup(guard.SetupAgent, statusNow.Add(time.Hour)))(t)
 	require.Len(t, pending.Passkeys.Keys, 1, "status returns the codes whatever the setup's state")

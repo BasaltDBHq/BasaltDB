@@ -165,7 +165,7 @@
           },
           "keys": {
             "type": "array",
-            "description": "The active passkeys, oldest first, each with its check code computed from the public key in the database. Compare each code with the one the setup page showed: a different code, or a passkey the person did not create, means stop and remove it. Absent when none is active.",
+            "description": "The active passkeys (at most 100), oldest first, each with its check code computed from the public key in the database. If the setup page showed a check code for the passkey it created, it is one of these: a passkey the person did not create means stop and remove it. Absent when none is active.",
             "items": {
               "type": "object",
               "additionalProperties": false,

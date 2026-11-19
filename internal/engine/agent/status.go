@@ -658,7 +658,10 @@ func passkeySummary(keys []PasskeyStatus) string {
 	if len(codes) > 0 {
 		msg += ", with check code " + strings.Join(codes, ", check code ")
 	}
-	return msg + ". Each code should match the one the setup page showed you. A different code, or a passkey you did not create, means stop and remove it."
+	if len(codes) < len(keys) {
+		msg += fmt.Sprintf(" (the code of %d could not be read)", len(keys)-len(codes))
+	}
+	return msg + ". If the setup page showed you a check code for the passkey it created, it should be one of these. A passkey you did not create means stop and remove it."
 }
 
 // noPasskeySteps: the person registers a passkey; on an agent-operated

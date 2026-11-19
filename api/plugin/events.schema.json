@@ -121,22 +121,22 @@
       "additionalProperties": false,
       "required": ["approvalId", "expiresAt", "name", "instance", "version", "manifestSha256", "settingsSha256", "hooks", "egress", "endpoint", "signer"],
       "properties": {
-        "approvalId": { "$ref": "approval/binding.schema.json#/properties/approvalId" },
-        "expiresAt": { "$ref": "approval/binding.schema.json#/properties/expiresAt" },
-        "name": { "$ref": "approval/binding.schema.json#/properties/name" },
-        "instance": { "$ref": "approval/binding.schema.json#/properties/instance" },
-        "version": { "$ref": "approval/binding.schema.json#/properties/version" },
-        "manifestSha256": { "$ref": "approval/binding.schema.json#/properties/manifestSha256" },
-        "settingsSha256": { "$ref": "approval/binding.schema.json#/properties/settingsSha256" },
-        "hooks": { "$ref": "approval/binding.schema.json#/properties/hooks" },
-        "roles": { "$ref": "approval/binding.schema.json#/properties/roles" },
-        "egress": { "$ref": "approval/binding.schema.json#/properties/egress" },
-        "endpoint": { "$ref": "approval/binding.schema.json#/properties/endpoint" },
-        "isolation": { "$ref": "approval/binding.schema.json#/properties/isolation" },
-        "signer": { "$ref": "approval/binding.schema.json#/properties/signer" },
-        "signerKeyId": { "$ref": "approval/binding.schema.json#/properties/signerKeyId" }
+        "approvalId": { "type": "string", "format": "uuid" },
+        "expiresAt": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z$" },
+        "name": { "$ref": "#/$defs/entryDetail/properties/name" },
+        "instance": { "$ref": "#/$defs/entryDetail/properties/instance" },
+        "version": { "$ref": "#/$defs/entryDetail/properties/version" },
+        "manifestSha256": { "$ref": "#/$defs/entryDetail/properties/manifestSha256" },
+        "settingsSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "hooks": { "$ref": "#/$defs/entryDetail/properties/hooks" },
+        "roles": { "$ref": "#/$defs/entryDetail/properties/roles" },
+        "egress": { "$ref": "#/$defs/entryDetail/properties/egress" },
+        "endpoint": { "$ref": "#/$defs/entryDetail/properties/endpoint" },
+        "isolation": { "$ref": "#/$defs/entryDetail/properties/isolation" },
+        "signer": { "$ref": "#/$defs/entryDetail/properties/signer" },
+        "signerKeyId": { "$ref": "#/$defs/entryDetail/properties/signerKeyId" }
       },
-      "allOf": [{ "$ref": "approval/binding.schema.json#/$defs/fieldRules" }]
+      "allOf": [{ "$ref": "#/$defs/approvalFieldRules" }]
     },
     "approvedDetail": {
       "description": "Planned. PLUGIN_APPROVED, appended by submit_plugin_approval to the ledger of every agent the approval lists: the binding's keys without kind, database, expiresAt, requestedBy, agents and change, plus the passkey that signed and the binding's hash. It holds no list of agents.",
@@ -144,23 +144,43 @@
       "additionalProperties": false,
       "required": ["approvalId", "credentialId", "bindingSha256", "name", "instance", "version", "manifestSha256", "settingsSha256", "hooks", "egress", "endpoint", "signer"],
       "properties": {
-        "approvalId": { "$ref": "approval/binding.schema.json#/properties/approvalId" },
+        "approvalId": { "type": "string", "format": "uuid" },
         "credentialId": { "description": "The passkey that signed, base64url without padding.", "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
         "bindingSha256": { "description": "Lowercase hex sha256 of the signed binding text: the WebAuthn challenge.", "type": "string", "pattern": "^[0-9a-f]{64}$" },
-        "name": { "$ref": "approval/binding.schema.json#/properties/name" },
-        "instance": { "$ref": "approval/binding.schema.json#/properties/instance" },
-        "version": { "$ref": "approval/binding.schema.json#/properties/version" },
-        "manifestSha256": { "$ref": "approval/binding.schema.json#/properties/manifestSha256" },
-        "settingsSha256": { "$ref": "approval/binding.schema.json#/properties/settingsSha256" },
-        "hooks": { "$ref": "approval/binding.schema.json#/properties/hooks" },
-        "roles": { "$ref": "approval/binding.schema.json#/properties/roles" },
-        "egress": { "$ref": "approval/binding.schema.json#/properties/egress" },
-        "endpoint": { "$ref": "approval/binding.schema.json#/properties/endpoint" },
-        "isolation": { "$ref": "approval/binding.schema.json#/properties/isolation" },
-        "signer": { "$ref": "approval/binding.schema.json#/properties/signer" },
-        "signerKeyId": { "$ref": "approval/binding.schema.json#/properties/signerKeyId" }
+        "name": { "$ref": "#/$defs/entryDetail/properties/name" },
+        "instance": { "$ref": "#/$defs/entryDetail/properties/instance" },
+        "version": { "$ref": "#/$defs/entryDetail/properties/version" },
+        "manifestSha256": { "$ref": "#/$defs/entryDetail/properties/manifestSha256" },
+        "settingsSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "hooks": { "$ref": "#/$defs/entryDetail/properties/hooks" },
+        "roles": { "$ref": "#/$defs/entryDetail/properties/roles" },
+        "egress": { "$ref": "#/$defs/entryDetail/properties/egress" },
+        "endpoint": { "$ref": "#/$defs/entryDetail/properties/endpoint" },
+        "isolation": { "$ref": "#/$defs/entryDetail/properties/isolation" },
+        "signer": { "$ref": "#/$defs/entryDetail/properties/signer" },
+        "signerKeyId": { "$ref": "#/$defs/entryDetail/properties/signerKeyId" }
       },
-      "allOf": [{ "$ref": "approval/binding.schema.json#/$defs/fieldRules" }]
+      "allOf": [{ "$ref": "#/$defs/approvalFieldRules" }]
+    },
+    "approvalFieldRules": {
+      "description": "Rules between keys of a plugin approval's binding and its ledger details: isolation exactly for LOCAL, signerKeyId exactly for KNOWN, roles exactly with wire.detect.",
+      "allOf": [
+        {
+          "if": { "properties": { "endpoint": { "properties": { "kind": { "const": "REMOTE" } } } } },
+          "then": { "not": { "required": ["isolation"] } },
+          "else": { "required": ["isolation"] }
+        },
+        {
+          "if": { "properties": { "signer": { "const": "KNOWN" } } },
+          "then": { "required": ["signerKeyId"] },
+          "else": { "not": { "required": ["signerKeyId"] } }
+        },
+        {
+          "if": { "properties": { "hooks": { "contains": { "const": "wire.detect" } } } },
+          "then": { "required": ["roles"] },
+          "else": { "not": { "required": ["roles"] } }
+        }
+      ]
     },
     "keyId": {
       "description": "A signer key id: base64url of the first 16 bytes of sha256 of the key's SubjectPublicKeyInfo DER.",

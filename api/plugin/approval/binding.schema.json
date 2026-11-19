@@ -98,28 +98,8 @@
     },
     "change": { "$ref": "#/$defs/change" }
   },
-  "allOf": [{ "$ref": "#/$defs/fieldRules" }],
+  "allOf": [{ "$ref": "../events.schema.json#/$defs/approvalFieldRules" }],
   "$defs": {
-    "fieldRules": {
-      "description": "Rules between keys, shared with the ledger details of PLUGIN_APPROVAL_PENDING and PLUGIN_APPROVED: isolation exactly for LOCAL, signerKeyId exactly for KNOWN, roles exactly with wire.detect.",
-      "allOf": [
-        {
-          "if": { "properties": { "endpoint": { "properties": { "kind": { "const": "REMOTE" } } } } },
-          "then": { "not": { "required": ["isolation"] } },
-          "else": { "required": ["isolation"] }
-        },
-        {
-          "if": { "properties": { "signer": { "const": "KNOWN" } } },
-          "then": { "required": ["signerKeyId"] },
-          "else": { "not": { "required": ["signerKeyId"] } }
-        },
-        {
-          "if": { "properties": { "hooks": { "contains": { "const": "wire.detect" } } } },
-          "then": { "required": ["roles"] },
-          "else": { "not": { "required": ["roles"] } }
-        }
-      ]
-    },
     "role": {
       "type": "string",
       "pattern": "^[a-z_][a-z0-9_]*$",

@@ -41,10 +41,11 @@ type LinkNotice struct {
 	Link string
 }
 
-// LinkDeliverer takes the notice of an answer the agent is about to get.
-// DeliverLink must return at once: it runs on the agent's call, after the
-// answer is built, and nothing it does may delay or change that answer. It
-// returns nothing, so the answer cannot depend on it.
+// LinkDeliverer takes the notice of an answer the agent is about to get, or
+// of a write just held whose call waits for the person. DeliverLink must
+// return at once: it runs on the agent's call, after the answer that holds
+// the link is built, and nothing it does may delay or change the call's
+// answer. It returns nothing, so the answer cannot depend on it.
 type LinkDeliverer interface {
 	DeliverLink(n LinkNotice)
 }
@@ -76,8 +77,9 @@ func standaloneLink(link string) string {
 	return ""
 }
 
-// deliver hands n to the deliverer. It is called only where the agent's
-// answer is final: nothing after it can fail or change the link. A
+// deliver hands n to the deliverer. It is called only where the link is
+// final: the agent's answer is built, or the write is held and waits, and
+// nothing after it issues another link for the item in this call. A
 // deliverer that panics is logged and costs the agent nothing: the answer
 // is returned as it was built.
 func (s *Service) deliver(n LinkNotice) {
@@ -99,6 +101,8 @@ func (s *Service) deliver(n LinkNotice) {
 
 // deliverHeld makes the notice of answer, the APPROVAL_REQUIRED answer of
 // a write this call held: its link is that answer's approval.approvalUrl.
+// Write calls it once, when the write is held, also when the call then
+// waits for the person.
 func (s *Service) deliverHeld(id uuid.UUID, expires time.Time, answer error) {
 	var te *mcp.ToolError
 	if !errors.As(answer, &te) || te.Code != CodeApprovalRequired || te.Approval == nil {

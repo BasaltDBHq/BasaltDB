@@ -151,19 +151,34 @@ const (
 	SourceEngine = "ENGINE"
 )
 
+// Health of a listed entry: what the running engine knows of it.
+const (
+	// HealthReady: the engine runs the entry and its plugin answers.
+	HealthReady = "READY"
+	// HealthUnavailable: the engine runs the entry, or keeps trying to
+	// start it, and its plugin does not answer now.
+	HealthUnavailable = "UNAVAILABLE"
+	// HealthNotStarted: the engine does not run the entry (turned off, not
+	// approved, refused at its check, added since the engine last read its
+	// entries, or another entry of the same name and instance runs).
+	HealthNotStarted = "NOT_STARTED"
+)
+
 // PluginListed is one entry of PLUGIN_LIST.
 type PluginListed struct {
-	Name        string               `json:"name"`
-	Instance    string               `json:"instance"`
-	Source      string               `json:"source"`
-	Enabled     bool                 `json:"enabled"`
-	Agents      []string             `json:"agents"`
-	Version     string               `json:"version"`
-	Signer      string               `json:"signer,omitempty"`
-	SignerKeyID string               `json:"signerKeyId,omitempty"`
-	Endpoint    json.RawMessage      `json:"endpoint"`
-	Isolation   json.RawMessage      `json:"isolation,omitempty"`
-	Approval    PluginListedApproval `json:"approval"`
+	Name        string          `json:"name"`
+	Instance    string          `json:"instance"`
+	Source      string          `json:"source"`
+	Enabled     bool            `json:"enabled"`
+	Agents      []string        `json:"agents"`
+	Version     string          `json:"version"`
+	Signer      string          `json:"signer,omitempty"`
+	SignerKeyID string          `json:"signerKeyId,omitempty"`
+	Endpoint    json.RawMessage `json:"endpoint"`
+	Isolation   json.RawMessage `json:"isolation,omitempty"`
+	// Health is HealthReady, HealthUnavailable or HealthNotStarted.
+	Health   string               `json:"health"`
+	Approval PluginListedApproval `json:"approval"`
 	// Serving is what the running engine serves of the entry, per agent:
 	// the approval it is served on and whether the plugin answers READY.
 	// Absent when it serves the entry to no agent.

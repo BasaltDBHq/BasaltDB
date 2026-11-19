@@ -673,6 +673,30 @@ func (ep *enginePlugins) applyNow(ctx context.Context) {
 // kickWait bounds applyNow.
 const kickWait = 30 * time.Second
 
+// healthOf is what the running engine knows of the entry k, engine-kept
+// (kept) or of engine.json: READY when its plugin answers; UNAVAILABLE when
+// the engine runs it, or keeps trying to start it, and it does not answer;
+// NOT_STARTED when the engine does not run it. The engine runs one entry
+// per (name, instance): when engine.json and the engine both hold k, the
+// one it does not run is NOT_STARTED. It says nothing of any agent.
+func (ep *enginePlugins) healthOf(k plugin.EntryKey, kept bool) string {
+	if ep == nil || ep.host == nil || ep.isKept(k) != kept {
+		return person.HealthNotStarted
+	}
+	if ep.host.State(k) == plugin.StateReady {
+		return person.HealthReady
+	}
+	if _, ok := ep.host.Registration(k); ok {
+		return person.HealthUnavailable
+	}
+	// Not registered: a start or an initialize that fails registers
+	// nothing, and the supervisor tries again.
+	if ep.sup != nil && slices.Contains(ep.sup.Supervised(), k) {
+		return person.HealthUnavailable
+	}
+	return person.HealthNotStarted
+}
+
 // servingOf is what the running engine serves of engine-kept entry k: each
 // agent, the approval it is served on and whether the plugin answers READY.
 func (ep *enginePlugins) servingOf(k plugin.EntryKey) []person.PluginServing {

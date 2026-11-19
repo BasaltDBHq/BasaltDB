@@ -20,6 +20,7 @@ import (
 	"time"
 
 	connectrpc "connectrpc.com/connect"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/stretchr/testify/require"
 
 	pluginv1 "github.com/basaltdbhq/basaltdb/api/plugin/proto/basalt/plugin/v1"
@@ -217,11 +218,23 @@ func TestCheckRunsInitializeAndHealth(t *testing.T) {
 	}
 	require.Equal(t, before, e.snapshot(), "check writes nothing")
 
+	// --json prints the result as one JSON document and no text line.
+	res := checkResultOf(t, e.run(nil, "", "check", "acme-ner", "--json"))
+	require.Equal(t, "acme-ner", res.Name)
+	require.Equal(t, "default", res.Instance)
+	require.Equal(t, "READY", res.Health.Status)
+	require.Empty(t, res.Hooks, "wire.detect has no sample yet")
+
 	e.person("add", e.checkSource("jsonrpc-stdio", "not-ready"), "--agents", "product_a", "--instance", "sick")
 	e.setTimeout("sick")
 	r := e.run(nil, "", "check", "acme-ner", "--instance", "sick")
 	require.Equal(t, exitError, r.code)
 	require.Contains(t, r.stdout, "health NOT_READY")
+	require.Contains(t, r.stderr, "answered health NOT_READY")
+	// A failed check prints no result: with --json stdout stays empty.
+	r = e.run(nil, "", "check", "acme-ner", "--instance", "sick", "--json")
+	require.Equal(t, exitError, r.code)
+	require.Empty(t, r.stdout)
 	require.Contains(t, r.stderr, "answered health NOT_READY")
 
 	// A changed installed file is refused before anything starts.
@@ -234,6 +247,29 @@ func TestCheckRunsInitializeAndHealth(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
 	refusal(t, e.run(nil, "", "check", "acme-ner", "--json"), "NOT_TRUSTED")
+}
+
+// checkResultOf decodes a successful check --json and checks it against
+// api/plugin/check.schema.json.
+func checkResultOf(t *testing.T, r result) checkResult {
+	t.Helper()
+	require.Equal(t, exitOK, r.code, r.stderr)
+	raw, err := os.ReadFile("../../api/plugin/check.schema.json")
+	require.NoError(t, err)
+	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
+	require.NoError(t, err)
+	c := jsonschema.NewCompiler()
+	c.DefaultDraft(jsonschema.Draft2020)
+	const id = "https://basaltvault.app/schemas/plugin/check.v1.json"
+	require.NoError(t, c.AddResource(id, doc))
+	s, err := c.Compile(id)
+	require.NoError(t, err)
+	inst, err := jsonschema.UnmarshalJSON(strings.NewReader(r.stdout))
+	require.NoError(t, err, r.stdout+r.stderr)
+	require.NoError(t, s.Validate(inst), r.stdout)
+	var res checkResult
+	require.NoError(t, json.Unmarshal([]byte(r.stdout), &res))
+	return res
 }
 
 // TestCheckRefusesALocalPluginAsRoot: check never starts a local plugin

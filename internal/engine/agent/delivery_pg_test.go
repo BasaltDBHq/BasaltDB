@@ -147,14 +147,14 @@ func TestDelivererCannotChangeTheAnswer(t *testing.T) {
 	require.Len(t, items(t, pending), 1)
 }
 
-// TestNoticeWaitsForTheAgentsAnswer: a new write that waits for the
-// person is noticed only when its answer hands the link over, never while
-// the agent has no link yet; a wait that ran out on a repeat restates the
-// link and sends nothing.
-func TestNoticeWaitsForTheAgentsAnswer(t *testing.T) {
+// TestWaitingWriteIsNoticedWhenHeld: a new write that waits for the person
+// is noticed when it is held, while its call is still open, with the link
+// the call's answer then carries. The answer sends no second notice, and a
+// wait that ran out on a repeat restates the link and sends nothing.
+func TestWaitingWriteIsNoticedWhenHeld(t *testing.T) {
 	t.Parallel()
 	env, rec := deliveryHarness(t, true)
-	wait := 1
+	wait := 2
 	args := holdWrite(t, env.h, &wait)
 	done := make(chan map[string]any, 1)
 	go func() {
@@ -162,17 +162,57 @@ func TestNoticeWaitsForTheAgentsAnswer(t *testing.T) {
 		done <- body
 	}()
 	env.waitPolling(t)
-	require.Empty(t, rec.all(), "held and waiting: the agent has no link yet, so nobody else has")
+	held := rec.all()
+	require.Len(t, held, 1, "held and waiting: the person is told now, not when the call answers")
+	require.Empty(t, done, "the call is still open")
+	require.Equal(t, agent.NoticeApprovalRequested, held[0].Kind)
+	require.Contains(t, held[0].Link, "#s=")
+
 	body := <-done
+	requireToolError(t, body, true, "APPROVAL_REQUIRED", "", "")
 	ap := approvalOf(t, body)
-	got := rec.take()
-	require.Len(t, got, 1)
-	require.Equal(t, str(t, ap["approvalUrl"]), got[0].Link)
+	require.Equal(t, held[0].Link, str(t, ap["approvalUrl"]), "the answer carries the noticed link, byte for byte")
+	require.Equal(t, held[0].ApprovalID.String(), str(t, ap["approvalId"]))
+	require.Len(t, rec.take(), 1, "the answer sends no second notice")
 
 	args["approvalId"] = str(t, ap["approvalId"])
 	body, isError := env.h.call(t, "write", args)
 	requireToolError(t, body, isError, "APPROVAL_REQUIRED", "", "")
 	require.Empty(t, rec.all(), "a wait that ran out restates the link")
+}
+
+// TestWaitingWriteSignedFromItsNotice: the person signs through the link of
+// the notice while the agent's first call still waits. The call answers
+// success, and nothing else is noticed.
+func TestWaitingWriteSignedFromItsNotice(t *testing.T) {
+	t.Parallel()
+	env, rec := deliveryHarness(t, true)
+	p := newLocalPages(t, env)
+	wait := 60
+	args := holdWrite(t, env.h, &wait)
+	type answer struct {
+		body    map[string]any
+		isError bool
+	}
+	done := make(chan answer, 1)
+	start := time.Now()
+	go func() {
+		b, e := env.h.call(t, "write", args)
+		done <- answer{b, e}
+	}()
+	env.waitPolling(t)
+	held := rec.all()
+	require.Len(t, held, 1, "noticed while the call is open")
+	require.Empty(t, done, "the call is still open")
+
+	id, secret := held[0].ApprovalID.String(), links.SecretOf(held[0].Link)
+	require.Equal(t, http.StatusOK, p.post("/api/v1/approvals/"+id+"/approve", pageOrigin, secret, p.signApproval(id, secret, env.person), nil),
+		"the notice's link is the held write's own")
+	got := <-done
+	require.False(t, got.isError, "%v", got.body)
+	require.Equal(t, "APPLIED", got.body["status"])
+	require.Less(t, time.Since(start), 30*time.Second, "applied as soon as it was signed")
+	require.Len(t, rec.all(), 1, "one notice for the held write, none when its call answers")
 }
 
 // TestNoticeWithoutStandaloneLinkHasNone: when the agent's answer hands

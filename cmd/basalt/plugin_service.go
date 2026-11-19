@@ -339,14 +339,16 @@ func (e *pluginEnv) listViaSocket(asJSON bool) error {
 	if asJSON {
 		type item struct {
 			listedEntry
-			Source string `json:"source"`
+			Source    string          `json:"source"`
+			Isolation json.RawMessage `json:"isolation,omitempty"`
+			Health    string          `json:"health"`
 		}
 		out := struct {
 			Plugins []item `json:"plugins"`
 			Problem string `json:"problem,omitempty"`
 		}{Plugins: []item{}, Problem: list.Problem}
 		for _, l := range list.Plugins {
-			out.Plugins = append(out.Plugins, item{listedEntry: listedEntry{Name: l.Name, Instance: l.Instance, Enabled: l.Enabled, Agents: l.Agents, Approval: socketApproval(l)}, Source: l.Source})
+			out.Plugins = append(out.Plugins, item{listedEntry: listedEntry{Name: l.Name, Instance: l.Instance, Enabled: l.Enabled, Agents: l.Agents, Approval: socketApproval(l)}, Source: l.Source, Isolation: l.Isolation, Health: l.Health})
 		}
 		printJSONValue(e.c, out)
 		return nil
@@ -368,11 +370,32 @@ func (e *pluginEnv) listViaSocket(asJSON bool) error {
 			kind = "added with sudo"
 		}
 		fmt.Fprintf(w, "%s  instance %s  %s  %s\n", l.Name, l.Instance, state, kind)
-		fmt.Fprintf(w, "  version %s  signer %s  endpoint %s\n", visibleText(l.Version), visibleText(l.Signer), visibleText(string(l.Endpoint)))
+		fmt.Fprintf(w, "  version %s  signer %s  endpoint %s  isolation %s  health %s\n",
+			visibleText(l.Version), visibleText(l.Signer), visibleText(string(l.Endpoint)), socketIsolation(l), visibleText(l.Health))
 		fmt.Fprintf(w, "  agents %s\n", listText(l.Agents, "none"))
 		writeApproval(e, socketApproval(l))
 	}
 	return nil
+}
+
+// socketIsolation is a listed entry's isolation as the engine reports it.
+// A remote entry runs on another host and has none; a local entry whose
+// installed copy the engine cannot verify has none to report.
+func socketIsolation(l person.PluginListed) string {
+	var iso struct {
+		Files   string `json:"files"`
+		Network string `json:"network"`
+	}
+	if len(l.Isolation) > 0 && json.Unmarshal(l.Isolation, &iso) == nil && iso.Files != "" {
+		return "files " + visibleText(iso.Files) + ", network " + visibleText(iso.Network)
+	}
+	var endpoint struct {
+		Kind string `json:"kind"`
+	}
+	if json.Unmarshal(l.Endpoint, &endpoint) == nil && endpoint.Kind == "REMOTE" {
+		return "none (remote)"
+	}
+	return "unknown (the installed copy cannot be verified)"
 }
 
 func socketApproval(l person.PluginListed) entryApproval {

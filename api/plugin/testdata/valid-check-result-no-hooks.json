@@ -1,0 +1,10 @@
+{
+  "name": "acme-ner",
+  "instance": "client_x",
+  "initializeMs": 12,
+  "health": {
+    "status": "READY",
+    "ms": 0
+  },
+  "hooks": []
+}

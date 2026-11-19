@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://basaltvault.app/schemas/plugin/check.v1.json",
+  "title": "basalt plugin check --json: the result of a check that passed",
+  "description": "What basalt plugin check <name> --json prints, exit 0, when the entry started, answered initialize and health READY, and answered every sample it was sent. A check that fails prints no result: the reason goes to stderr and the exit code is 1, or a PLUGIN_REFUSED error body is printed when the installed copy is refused. Times are whole milliseconds, rounded. See CONTRACT.md, Plugins, What basalt plugin check sends.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "instance", "initializeMs", "health", "hooks"],
+  "properties": {
+    "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,39}$" },
+    "instance": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+    "initializeMs": {
+      "description": "How long starting or dialing the plugin's initialize took.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "ms"],
+      "properties": {
+        "status": { "description": "Always READY: any other answer fails the check.", "const": "READY" },
+        "ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "hooks": {
+      "description": "One item per declared hook that was sent its sample, in hook name order. A hook with no sample yet (wire.detect, classify.suggest, wire.verdict) has no item.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["hook", "ms"],
+        "properties": {
+          "hook": { "enum": ["approval.deliver", "feed.observe"] },
+          "ms": { "type": "integer", "minimum": 0 },
+          "lastSeq": {
+            "description": "feed.observe only: the lastSeq the plugin answered, which is the sample's last seq.",
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  }
+}

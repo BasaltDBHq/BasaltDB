@@ -888,6 +888,11 @@ func pluginApprove(c *cliIO, args []string) int {
 	if fs.NArg() > 1 {
 		return c.fail(fmt.Errorf("%w: give one basalt-plugin.1. code", errUsage))
 	}
+	if fs.NArg() == 0 && c.terminal == nil {
+		// Nobody can answer a prompt here, and a read of stdin could wait
+		// for ever: refuse before anything is read.
+		return c.fail(fmt.Errorf("%w: give the code: basalt plugin approve <code>. It is asked for only at a terminal", errUsage))
+	}
 	var e *pluginEnv
 	var err error
 	if c.pluginViaSocket(*configPath) {

@@ -302,6 +302,8 @@ func TestServiceModeAddOpensApproval(t *testing.T) {
 	require.Equal(t, person.SourceEngine, list.Plugins[0].Source)
 	require.True(t, list.Plugins[0].Approval.Required)
 	require.Equal(t, "PENDING", list.Plugins[0].Approval.Agents[0].State)
+	require.Equal(t, person.HealthNotStarted, list.Plugins[0].Health, "not approved yet, so the engine has not started it")
+	require.JSONEq(t, `{"files":"NONE","network":"NOT_ENFORCED"}`, string(list.Plugins[0].Isolation))
 
 	f.sign(a)
 	require.Equal(t, "APPROVED", f.state0("product_b", plugin.EntryKey{Name: "acme-ner", Instance: "default"}))
@@ -403,15 +405,22 @@ func TestNameClashWithConfigRefused(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, res.Approvals, 1)
 
+	// Each row's health is asked of the engine for that row's own kind.
+	f.s.health = func(_ plugin.EntryKey, kept bool) string {
+		if kept {
+			return person.HealthUnavailable
+		}
+		return person.HealthReady
+	}
 	list, err := f.client.PluginList(context.Background())
 	require.NoError(t, err)
 	requireSchema(t, "listResult", list)
 	sources := make([]string, 0, len(list.Plugins))
 	for _, p := range list.Plugins {
-		sources = append(sources, p.Instance+":"+p.Source)
+		sources = append(sources, p.Instance+":"+p.Source+":"+p.Health)
 	}
 	sort.Strings(sources)
-	require.Equal(t, []string{"default:CONFIG", "other:ENGINE"}, sources)
+	require.Equal(t, []string{"default:CONFIG:READY", "other:ENGINE:UNAVAILABLE"}, sources)
 }
 
 // TestAgentOsUserThatIsNotAPersonRefused: an agent's own OS user that is

@@ -68,6 +68,7 @@ var kinds = []exampleKind{
 	{"person-error", "approval/person.schema.json#/$defs/error", nil},
 	{"engine-entries", "engine-entries.schema.json", []rule{ruleUniqueEntries, ruleConfigSize, ruleConfigNoCredential}},
 	{"wait-result", "approval/wait.schema.json", nil},
+	{"check-result", "check.schema.json", nil},
 }
 
 type exampleKind struct {
@@ -136,6 +137,8 @@ var wantFailure = map[string]string{
 	"invalid-person-error-reason-without-refusal.json":       "schema:/$defs/error/properties/error/else",
 	"invalid-engine-entries-no-approval.json":                "schema:/items/allOf/1/required",
 	"invalid-wait-result-unknown-state.json":                 "schema:/properties/state/enum",
+	"invalid-check-result-not-ready.json":                    "schema:/properties/health/properties/status/const",
+	"invalid-person-result-list-unknown-health.json":         "schema:/$defs/listedEntry/properties/health/enum",
 	"invalid-engine-entries-auth.json":                       "schema:/items/allOf/2",
 	"invalid-engine-entries-duplicate-instance.json":         "rule:uniqueEntries",
 	"invalid-engine-entries-secret-in-config.json":           "rule:configNoCredential",
@@ -240,7 +243,7 @@ func newCompiler(t *testing.T) *jsonschema.Compiler {
 		"protocol/initialize.schema.json", "protocol/health.schema.json", "protocol/shutdown.schema.json",
 		"approval/binding.schema.json", "approval/request.schema.json", "approval/response.schema.json",
 		"approval/result.schema.json", "approval/person.schema.json", "engine-entries.schema.json",
-		"approval/wait.schema.json", "protocol/feed.schema.json", "protocol/deliver.schema.json",
+		"approval/wait.schema.json", "protocol/feed.schema.json", "protocol/deliver.schema.json", "check.schema.json",
 	} {
 		raw, err := os.ReadFile(f)
 		require.NoError(t, err)

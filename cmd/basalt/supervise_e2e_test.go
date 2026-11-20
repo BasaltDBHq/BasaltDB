@@ -186,3 +186,26 @@ func parentOf(pid int) (int, error) {
 	}
 	return strconv.Atoi(strings.TrimSpace(string(b)))
 }
+
+// An engine started by hand holds the engine lock: the supervisor's child
+// fails at once, and the supervisor ends with 0 instead of crash-looping.
+func TestSuperviseBesideAnEngineStartedByHand(t *testing.T) {
+	t.Setenv(testAsBasaltEnv, "1")       // the child is this test binary
+	dir, err := os.MkdirTemp("", "bsup") // short: macOS bounds socket paths
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	cfgPath := filepath.Join(dir, "engine.json")
+	raw := `{"socketDir":"` + filepath.Join(dir, "run") + `","stateDir":"` + filepath.Join(dir, "state") + `","mode":"SAME_USER",` +
+		`"agents":[{"name":"bot","osUser":"someone","store":{"kind":"POSTGRES","credentialFile":"` + filepath.Join(dir, "bot.url") + `"}}]}`
+	require.NoError(t, config.WriteFile(cfgPath, []byte(raw)))
+	hand, err := server.AcquireLock(engine.LockPath(filepath.Join(dir, "run")))
+	require.NoError(t, err)
+	defer hand.Release()
+	var stderr bytes.Buffer
+
+	code := runSupervise(context.Background(), cfgPath, startedByHand, stdio{in: bytes.NewReader(nil), out: &bytes.Buffer{}, err: &stderr}, osHost{})
+
+	require.Equal(t, exitOK, code, stderr.String())
+	require.Contains(t, stderr.String(), "another engine already runs for this config")
+	require.NotContains(t, stderr.String(), "restarting it", "no crash loop")
+}

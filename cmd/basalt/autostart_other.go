@@ -10,6 +10,6 @@ import (
 )
 
 // engineStarter: the engine runs on Linux and macOS only, so nothing starts.
-func engineStarter(string, *config.Config, int, string, *slog.Logger) (func(context.Context) error, func() string) {
+func engineStarter(string, string, *config.Config, int, string, *slog.Logger) (func(context.Context) error, func() string) {
 	return nil, nil
 }

@@ -60,6 +60,10 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 		_, _ = fmt.Fprintln(io.err, "basalt engine: --supervise runs as the engine's own user; drop --user")
 		return exitUsage
 	}
+	if *supervised && *pluginDebug {
+		_, _ = fmt.Fprintln(io.err, "basalt engine: --plugin-debug shows a foreground engine's plugin output; drop --supervise to use it")
+		return exitUsage
+	}
 	if *runAs != "" {
 		if err := dropToUser(privdrop.OS{}, *runAs, io.err); err != nil {
 			return fail(io.err, "engine", err)
@@ -281,7 +285,7 @@ func runMCPOn(ctx context.Context, args []string, io stdio, h host) int {
 	opts := shim.Options{}
 	if exe, err := shimExecutable(); err == nil {
 		var failure func() string
-		opts.Start, failure = engineStarter(enginePath(*configPath), down.Config, h.Euid(), exe, log)
+		opts.Start, failure = engineStarter(enginePath(*configPath), path, down.Config, h.Euid(), exe, log)
 		down.StartFailure = failure
 	}
 	if err := shim.ServeWith(ctx, path, down.Server(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: engine.Instructions}), io.in, io.out, opts); err != nil {

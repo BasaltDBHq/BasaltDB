@@ -181,7 +181,7 @@ func childStarter(exe, configPath, lockPath, stateDir string, io stdio, log *slo
 			stable.Stop()
 			if err != nil && ctx.Err() == nil {
 				// The child has exited, so a live holder is another engine.
-				if _, up, _ := server.Running(lockPath); up {
+				if anotherEngineRuns(lockPath) {
 					return errAnotherEngine
 				}
 			}
@@ -220,4 +220,20 @@ func writeFileAtomic(path string, data []byte) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// anotherEngineRuns looks for a live holder of the engine lock a few
+// times: a probe by someone else (basalt status, a starting basalt mcp)
+// holds the lock for a moment and must not read as "no engine".
+func anotherEngineRuns(lockPath string) bool {
+	const looks, gap = 3, 70 * time.Millisecond
+	for i := range looks {
+		if _, up, _ := server.Running(lockPath); up {
+			return true
+		}
+		if i < looks-1 {
+			time.Sleep(gap)
+		}
+	}
+	return false
 }

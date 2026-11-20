@@ -222,18 +222,26 @@ func writeFileAtomic(path string, data []byte) error {
 	return os.Rename(tmp, path)
 }
 
-// anotherEngineRuns looks for a live holder of the engine lock a few
-// times: a probe by someone else (basalt status, a starting basalt mcp)
-// holds the lock for a moment and must not read as "no engine".
+// anotherEngineRuns is true when the engine lock is held at every one of a
+// few looks. A real engine holds it all the time; a probe by someone else
+// (basalt status, a starting basalt mcp) holds it for a moment and reads as
+// a holder, so one look that finds it free means no engine runs.
 func anotherEngineRuns(lockPath string) bool {
+	return heldAtEveryLook(func() bool {
+		_, up, _ := server.Running(lockPath)
+		return up
+	}, time.Sleep)
+}
+
+func heldAtEveryLook(held func() bool, sleep func(time.Duration)) bool {
 	const looks, gap = 3, 70 * time.Millisecond
 	for i := range looks {
-		if _, up, _ := server.Running(lockPath); up {
-			return true
+		if !held() {
+			return false
 		}
 		if i < looks-1 {
-			time.Sleep(gap)
+			sleep(gap)
 		}
 	}
-	return false
+	return true
 }

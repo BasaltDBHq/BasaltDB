@@ -207,3 +207,17 @@ func TestLastStopIsWrittenAndCleared(t *testing.T) {
 	require.ErrorIs(t, err, os.ErrNotExist)
 	clearLastStop(dir, log) // nothing to remove: no error
 }
+
+// A stray probe of the engine lock reads as a holder for a moment; only a
+// lock held at every look is another engine.
+func TestAnotherEngineNeedsEveryLookHeld(t *testing.T) {
+	t.Parallel()
+	looks := func(seq ...bool) func() bool {
+		i := 0
+		return func() bool { v := seq[min(i, len(seq)-1)]; i++; return v }
+	}
+	nap := func(time.Duration) {}
+	require.True(t, heldAtEveryLook(looks(true, true, true), nap))
+	require.False(t, heldAtEveryLook(looks(true, false, true), nap), "a probe that ended is not an engine")
+	require.False(t, heldAtEveryLook(looks(false), nap))
+}

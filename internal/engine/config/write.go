@@ -44,6 +44,10 @@ type Settings struct {
 	// Otherwise the config's vault stays: a rerun never undoes the
 	// person's choice (VC-19).
 	VaultDefault string
+	// KeepConnectOnlySetup keeps the replaced agent's pending connect-only
+	// setup in the new entry (basalt service install --agent for an agent
+	// that waits for its database's address).
+	KeepConnectOnlySetup bool
 }
 
 // operatedByPerson is operatedBy's value when empty.
@@ -206,6 +210,9 @@ func UpsertedVault(path string, open func(string) (*os.File, error), s Settings,
 	replaced := false
 	for i := range c.Agents {
 		if c.Agents[i].Name == a.Name {
+			if prev := c.Agents[i].Setup; s.KeepConnectOnlySetup && a.Setup == nil && prev != nil && prev.ConnectOnly() {
+				a.Setup = prev
+			}
 			c.Agents[i], replaced = a, true
 		}
 	}

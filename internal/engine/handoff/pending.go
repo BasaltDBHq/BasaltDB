@@ -33,7 +33,15 @@ const (
 	ProblemClockSkew      = "CLOCK_SKEW"
 	ProblemAddressInvalid = "ADDRESS_INVALID"
 	ProblemUnreachable    = "DATABASE_UNREACHABLE_FROM_BOT"
+	// ProblemEngineAsRoot: the engine runs as root without --user, so it
+	// does not collect.
+	ProblemEngineAsRoot = "ENGINE_AS_ROOT"
 )
+
+// ErrEngineAsRoot is the collector of an engine started as root without
+// --user: it never collects a connect-only setup's address (problem
+// ENGINE_AS_ROOT).
+var ErrEngineAsRoot = errors.New("the engine runs as root without --user, so it does not collect the database's address")
 
 // The collect cadence (CONTRACT.md, Connect, The reach check, Polling):
 // every 15 seconds while the setup waits for an address or cannot reach
@@ -117,6 +125,13 @@ type Options struct {
 	Changed func()
 	Log     *slog.Logger
 	Now     func() time.Time
+	// Cache keeps the last PREVIEW probe and the RATE_LIMITED wait across
+	// processes; nil keeps them in memory only.
+	Cache ProbeCache
+	// NoSetUpProbe is basalt status while the engine is down: a SET_UP
+	// address is probed only by the engine, which asks the person next
+	// (a passed PREVIEW probe it may reuse still counts).
+	NoSetUpProbe bool
 }
 
 // Pending is one agent's connect-only setup on the engine: the collect,
@@ -168,6 +183,14 @@ func New(o Options) (*Pending, error) {
 	}
 	out := &Pending{o: o, role: p.Role(), made: made, expires: expires}
 	out.st = State{Setup: o.Setup, Phase: PhaseWaiting}
+	if o.Cache != nil {
+		if c, ok := o.Cache.Load(o.Setup.SetupID); ok {
+			out.notBefore = c.NotBefore
+			if !c.At.IsZero() {
+				out.preview = previewProbe{key: c.AddressKey, ip: c.IP, at: c.At, reach: Reach{Reason: c.Reason}, probed: Probed{IP: c.IP, ChannelBinding: c.ChannelBinding}}
+			}
+		}
+	}
 	if o.Setup.Refused {
 		out.st.Phase = PhaseRefused
 	}
@@ -178,7 +201,7 @@ func New(o Options) (*Pending, error) {
 // the IP its host resolved to, when, and its outcome (passed with probed,
 // or reach's reason).
 type previewProbe struct {
-	addr   Address
+	key    string
 	ip     netip.Addr
 	at     time.Time
 	reach  Reach
@@ -188,7 +211,7 @@ type previewProbe struct {
 // passed reports whether the probe passed for a at ip within reuseFor of
 // now: only then does the SET_UP probe reuse it.
 func (v previewProbe) passed(a Address, ip netip.Addr, now time.Time) bool {
-	return !v.at.IsZero() && v.reach.Reason == "" && v.addr == a.Canonical() && v.ip == ip && now.Sub(v.at) <= reuseFor
+	return !v.at.IsZero() && v.reach.Reason == "" && v.key == a.key() && v.ip == ip && now.Sub(v.at) <= reuseFor
 }
 
 // State is the setup's state now: it reads engine.json first, so a pending
@@ -300,9 +323,12 @@ func (p *Pending) step(ctx context.Context) {
 		p.mu.Lock()
 		reuse, v := p.preview.passed(addr, ip, p.o.Now()), p.preview
 		p.mu.Unlock()
-		if reuse {
+		switch {
+		case reuse:
 			probed = v.probed
-		} else {
+		case p.o.NoSetUpProbe:
+			return
+		default:
 			probed, err = p.o.Prober.ProbeAt(ctx, addr, ip, LoginUser(addr, p.role))
 		}
 	}
@@ -336,10 +362,13 @@ func (p *Pending) collected(setup config.Setup, err error) bool {
 		p.waiting("", nil)
 	case errors.Is(err, ErrClockSkew):
 		p.waiting(ProblemClockSkew, nil)
+	case errors.Is(err, ErrEngineAsRoot):
+		p.waiting(ProblemEngineAsRoot, nil)
 	case errors.As(err, &rl):
 		p.mu.Lock()
 		p.notBefore = p.o.Now().Add(rl.After)
 		p.mu.Unlock()
+		p.save()
 	default:
 		p.o.Log.Warn("collect the database's address", "setupId", setup.SetupID, "err", err)
 	}
@@ -363,8 +392,8 @@ func (p *Pending) previewStep(ctx context.Context, setup config.Setup, addr Addr
 	p.mu.Lock()
 	v := p.preview
 	p.mu.Unlock()
-	if v.at.IsZero() || v.addr != addr.Canonical() || (v.reach.Reason != "" && now.Sub(v.at) > reuseFor) {
-		v = previewProbe{addr: addr.Canonical(), at: now}
+	if v.at.IsZero() || v.key != addr.key() || (v.reach.Reason != "" && now.Sub(v.at) > reuseFor) {
+		v = previewProbe{key: addr.key(), at: now}
 		ip, err := p.o.Prober.Resolve(ctx, addr)
 		if err == nil {
 			v.ip = ip
@@ -379,6 +408,7 @@ func (p *Pending) previewStep(ctx context.Context, setup config.Setup, addr Addr
 		p.mu.Lock()
 		p.preview = v
 		p.mu.Unlock()
+		p.save()
 	}
 	err := p.o.Collector.Report(ctx, setup.SetupID, setup.Fingerprint, addr, v.reach)
 	var rl *RateLimitedError
@@ -387,6 +417,7 @@ func (p *Pending) previewStep(ctx context.Context, setup config.Setup, addr Addr
 		p.mu.Lock()
 		p.notBefore = p.o.Now().Add(rl.After)
 		p.mu.Unlock()
+		p.save()
 	case err != nil:
 		p.o.Log.Warn("report whether the preview address was reached", "setupId", setup.SetupID, "err", err)
 	}
@@ -429,6 +460,20 @@ func (p *Pending) recheckConfig() bool {
 }
 
 func (p *Pending) done() { p.changed.Do(p.o.Changed) }
+
+// save writes the preview probe and the RATE_LIMITED wait to the cache.
+func (p *Pending) save() {
+	if p.o.Cache == nil {
+		return
+	}
+	p.mu.Lock()
+	v, c := p.preview, Cached{SetupID: p.st.Setup.SetupID, NotBefore: p.notBefore}
+	p.mu.Unlock()
+	c.AddressKey, c.IP, c.At, c.Reason, c.ChannelBinding = v.key, v.ip, v.at, v.reach.Reason, v.probed.ChannelBinding
+	if err := p.o.Cache.Save(c); err != nil {
+		p.o.Log.Warn("keep the preview probe for the next process", "err", err)
+	}
+}
 
 // Answer is what confirm_database did.
 type Answer struct {

@@ -11,6 +11,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -24,6 +25,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -140,7 +142,6 @@ func (f handoffFixture) runOnPage(pasted string) *connectv1.RunSetupResponse {
 	require.NotEmpty(f.t, chk.GetTables())
 	ch := desc.GetChallenge()
 	var run connectv1.RunSetupResponse
-	// Every table ticked, as the page sends it by default.
 	f.page.ok("RunSetup", map[string]any{
 		"code": code, "databaseUrl": pasted, "challenge": challengeJSON(ch), "passkey": passkeyOf(f.t, f.person, ch),
 		"includedTables": chk.GetTables(),
@@ -163,26 +164,7 @@ type handoffEngine struct {
 
 func startHandoffEngine(t *testing.T, cfgPath string, o engine.HandoffOptions) handoffEngine {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "bho") // short: macOS bounds socket paths
-	require.NoError(t, err)
-	t.Cleanup(func() { os.RemoveAll(dir) })
-	raw, err := os.ReadFile(cfgPath)
-	require.NoError(t, err)
-	var m map[string]any
-	require.NoError(t, json.Unmarshal(raw, &m))
-	me, err := user.Current()
-	require.NoError(t, err)
-	// The state directory stays: the engine signs with the key init put
-	// in the code. The Vault is off, so the test dials nothing else.
-	if m["stateDir"] == nil {
-		m["stateDir"] = filepath.Join(filepath.Dir(cfgPath), stateDirName)
-	}
-	m["socketDir"], m["pagesAddr"], m["mode"], m["vault"] = filepath.Join(dir, "run"), "off", "SAME_USER", "OFF"
-	m["agents"].([]any)[0].(map[string]any)["osUser"] = me.Username
-	raw, err = json.Marshal(m)
-	require.NoError(t, err)
-	require.NoError(t, config.WriteFile(cfgPath, raw))
-
+	sameUserConfig(t, cfgPath)
 	e := handoffEngine{reloads: make(chan struct{}, 4)}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -210,6 +192,31 @@ func startHandoffEngine(t *testing.T, cfgPath string, o engine.HandoffOptions) h
 	e.socket = config.SocketPath(cfg.SocketDir, "bot")
 	e.waitServing(t)
 	return e
+}
+
+// sameUserConfig makes the config init wrote one for a same-user engine
+// of this test's OS user, with a short socket directory and the Vault off.
+func sameUserConfig(t *testing.T, cfgPath string) {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "bho") // short: macOS bounds socket paths
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	raw, err := os.ReadFile(cfgPath)
+	require.NoError(t, err)
+	var m map[string]any
+	require.NoError(t, json.Unmarshal(raw, &m))
+	me, err := user.Current()
+	require.NoError(t, err)
+	// The state directory stays: the engine signs with the key init put
+	// in the code. The Vault is off, so the test dials nothing else.
+	if m["stateDir"] == nil {
+		m["stateDir"] = filepath.Join(filepath.Dir(cfgPath), stateDirName)
+	}
+	m["socketDir"], m["pagesAddr"], m["mode"], m["vault"] = filepath.Join(dir, "run"), "off", "SAME_USER", "OFF"
+	m["agents"].([]any)[0].(map[string]any)["osUser"] = me.Username
+	raw, err = json.Marshal(m)
+	require.NoError(t, err)
+	require.NoError(t, config.WriteFile(cfgPath, raw))
 }
 
 func (e handoffEngine) waitServing(t *testing.T) {
@@ -745,11 +752,108 @@ func TestConnectOnlyHostileReachCheck(t *testing.T) {
 	})
 }
 
-// The page's choices on RunSetup against the fake: the shape rules of the
-// tables it may untick and the labels it may set, and the re-run that skips
-// both. The setup package cannot leave a table out or write a label yet, so
-// the fake refuses those instead of dropping them, as the service does.
-func TestConnectOnlyPageChoices(t *testing.T) {
+// The connect page's ticks and labels through the service: CheckSetup
+// lists the columns with their classes, a label whose class changed is
+// CLASSES_CHANGED, and RunSetup grants the ticked tables only and writes
+// the labels.
+func TestConnectPageTicksAndLabels(t *testing.T) {
+	t.Parallel()
+	f := newHandoffFixture(t)
+	pasted := pastedFor(t, f.d, dbHost)
+	chk := f.checkOnPage(pasted)
+	require.NotEmpty(t, chk.GetColumns())
+	for _, c := range chk.GetColumns() {
+		require.Equal(t, "UNCLASSIFIED", c.GetClass(), "no guard yet")
+	}
+	var desc connectv1.DescribeSetupResponse
+	f.page.ok("DescribeSetup", map[string]any{"code": f.install.res.Code}, &desc)
+	ch := desc.GetChallenge()
+	body := func(was string) map[string]any {
+		return map[string]any{
+			"code": f.install.res.Code, "databaseUrl": pasted, "challenge": challengeJSON(ch), "passkey": passkeyOf(t, f.person, ch),
+			"includedTables": []string{"public.leads"},
+			"columnClasses": []map[string]any{{
+				"table": "public.leads", "column": "name", "class": "IDENTIFIER", "entityType": "PERSON_NAME", "was": map[string]any{"class": was},
+			}},
+			"restPublic": true,
+		}
+	}
+	f.page.refused("RunSetup", body("PUBLIC"), "failed_precondition", "CLASSES_CHANGED")
+	require.Zero(t, installedVersion(t, f.d), "nothing changed")
+	var run connectv1.RunSetupResponse
+	f.page.ok("RunSetup", body("UNCLASSIFIED"), &run)
+	role := f.d.Names.Prefix + "_agent_bot"
+	var leads, payroll bool
+	require.NoError(t, f.d.Admin.QueryRow(context.Background(),
+		`SELECT has_table_privilege($1, 'public.leads', 'UPDATE'), has_table_privilege($1, 'public.payroll', 'SELECT')`, role).Scan(&leads, &payroll))
+	require.True(t, leads)
+	require.False(t, payroll, "an unticked table is not granted")
+	labels, err := guard.ReadLabels(context.Background(), f.d.Admin, f.d.Names, []string{"public.leads"})
+	require.NoError(t, err)
+	for _, l := range labels {
+		if l.Column == "name" {
+			require.Equal(t, guard.Label{Class: "IDENTIFIER", EntityType: "PERSON_NAME"}, l.Label)
+		} else {
+			require.Equal(t, "PUBLIC", l.Class, l.Column)
+		}
+	}
+}
+
+// cliStatus is basalt status --json for the fixture's agent with the
+// engine down, collecting through o.
+func (f handoffFixture) cliStatus(o engine.HandoffOptions) map[string]any {
+	f.t.Helper()
+	var stdout, stderr bytes.Buffer
+	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr}, func(string) string { return "" })
+	c.handoff = o
+	code := runStatus(c, []string{"--agent", "bot", "--config", f.cfg, "--json"})
+	require.Equal(f.t, exitOK, code, stderr.String())
+	var out map[string]any
+	require.NoError(f.t, json.Unmarshal(stdout.Bytes(), &out), stdout.String())
+	return out
+}
+
+// basalt status while a same-user engine is down collects as the engine
+// would: a preview is reported and shows nothing, and a SET_UP address that
+// passed the probe is named, waiting for the engine to ask. It never reads
+// .secret and sends no real password.
+func TestStatusCollectsWhileTheEngineIsDown(t *testing.T) {
+	t.Parallel()
+	f := newHandoffFixture(t)
+	sameUserConfig(t, f.cfg)
+	o := f.engineOptions(publicDB)
+	pasted := pastedFor(t, f.d, dbHost)
+
+	chk := f.checkOnPage(pasted)
+	out := f.cliStatus(o)
+	require.Equal(t, "PENDING", setupOf(t, out)["state"])
+	require.Contains(t, problemCodes(out), "ENGINE_UNREACHABLE")
+	require.Contains(t, problemCodes(out), "SETUP_NOT_RUN")
+	require.NotContains(t, fmtJSON(t, out), dbHost, "nothing of a preview address is shown")
+	var hs connectv1.HandoffStatusResponse
+	f.page.ok("HandoffStatus", map[string]any{"ticket": chk.GetTicket()}, &hs)
+	require.Equal(t, "REACHABLE", hs.GetReach().GetResult(), "the CLI reported for the engine")
+	probed := f.roleLogins()
+	require.NotZero(t, probed)
+	f.cliStatus(o)
+	f.cliStatus(o)
+	require.Equal(t, probed, f.roleLogins(), "a reached preview is probed once, however often status runs")
+
+	f.runOnPage(pasted)
+	out = f.cliStatus(o)
+	require.Equal(t, probed, f.roleLogins(), "the SET_UP address reuses the preview's probe")
+	require.Equal(t, "CONFIRM_DATABASE", setupOf(t, out)["state"])
+	require.Equal(t, dbHost, setupOf(t, out)["database"].(map[string]any)["host"])
+	require.Contains(t, problemCodes(out), "ENGINE_UNREACHABLE", "only the engine asks and confirms")
+	require.FileExists(t, secretPathOf(f.cfg))
+	require.NoFileExists(t, f.install.credFile)
+	require.Zero(t, f.carried())
+}
+
+// The shape rules of the page's table list, then the re-run of the same
+// code: CheckSetup says it already ran, and RunSetup reconnects without the
+// tables, the labels or a passkey.
+func TestConnectOnlyPageRerun(t *testing.T) {
 	t.Parallel()
 	f := newHandoffFixture(t)
 	pasted := pastedFor(t, f.d, dbHost)
@@ -757,51 +861,38 @@ func TestConnectOnlyPageChoices(t *testing.T) {
 	var desc connectv1.DescribeSetupResponse
 	f.page.ok("DescribeSetup", map[string]any{"code": code}, &desc)
 	require.NotEmpty(t, desc.GetSummary().GetAllTablesSchemas(), "a connect-only code gives all tables")
-	var chk connectv1.CheckSetupResponse
-	f.page.ok("CheckSetup", map[string]any{"code": code, "databaseUrl": pasted}, &chk)
-	require.NotEmpty(t, chk.GetTables())
+	chk := f.checkOnPage(pasted)
 	require.False(t, chk.GetAlreadyRan())
 	require.NotEmpty(t, chk.GetTicket(), "a preview ticket for the reach check")
+	all := chk.GetTables()
+	require.NotEmpty(t, all)
 	ch := desc.GetChallenge()
-	body := func(extra map[string]any) map[string]any {
+	body := func(included []string) map[string]any {
 		b := map[string]any{"code": code, "databaseUrl": pasted, "challenge": challengeJSON(ch), "passkey": passkeyOf(t, f.person, ch)}
-		for k, v := range extra {
-			b[k] = v
+		if included != nil {
+			b["includedTables"] = included
 		}
 		return b
 	}
-	all := chk.GetTables()
 	for name, c := range map[string]struct {
-		extra        map[string]any
+		included     []string
 		code, reason string
 	}{
-		"no list":              {map[string]any{}, "failed_precondition", "NO_TABLES"},
-		"a table twice":        {map[string]any{"includedTables": append([]string{all[0]}, all...)}, "invalid_argument", "ANSWERS_INVALID"},
-		"not schema-qualified": {map[string]any{"includedTables": []string{"users"}}, "invalid_argument", "ANSWERS_INVALID"},
-		"a table since gone":   {map[string]any{"includedTables": append(slices.Clone(all), "public.gone")}, "failed_precondition", "TABLES_CHANGED"},
-		"a table left out":     {map[string]any{"includedTables": all[1:]}, "invalid_argument", "ANSWERS_INVALID"},
-		"a label": {map[string]any{"includedTables": all, "columnClasses": []map[string]any{{
-			"table": all[0], "column": "id", "class": "PUBLIC", "was": map[string]any{"class": "UNCLASSIFIED"},
-		}}}, "invalid_argument", "ANSWERS_INVALID"},
-		"restPublic": {map[string]any{"includedTables": all, "restPublic": true}, "invalid_argument", "ANSWERS_INVALID"},
+		"no list":              {nil, "failed_precondition", "NO_TABLES"},
+		"a table twice":        {append([]string{all[0]}, all...), "invalid_argument", "ANSWERS_INVALID"},
+		"not schema-qualified": {[]string{"leads"}, "invalid_argument", "ANSWERS_INVALID"},
+		"a table since gone":   {append(slices.Clone(all), "public.gone"), "failed_precondition", "TABLES_CHANGED"},
 	} {
-		if len(all) < 2 && name == "a table left out" {
-			continue
-		}
-		f.page.refused("RunSetup", body(c.extra), c.code, c.reason)
+		f.page.refused("RunSetup", body(c.included), c.code, c.reason)
 		require.Zero(t, installedVersion(t, f.d), "%s: nothing ran", name)
 	}
 
-	// Every table ticked, no label: the setup runs.
 	var run connectv1.RunSetupResponse
-	f.page.ok("RunSetup", body(map[string]any{"includedTables": all}), &run)
+	f.page.ok("RunSetup", body(all), &run)
 	require.NotEmpty(t, run.GetTicket())
 	require.False(t, run.GetReconnected())
 
-	// The same code again in the same database: CheckSetup says it already
-	// ran, and RunSetup reconnects without the tables or the labels.
-	var again connectv1.CheckSetupResponse
-	f.page.ok("CheckSetup", map[string]any{"code": code, "databaseUrl": pasted}, &again)
+	again := f.checkOnPage(pasted)
 	require.True(t, again.GetAlreadyRan())
 	require.Equal(t, dbHost, again.GetDatabase().GetHost())
 	require.Empty(t, again.GetTicket(), "no preview hold over a SET_UP one")

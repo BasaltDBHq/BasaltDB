@@ -395,6 +395,28 @@ func TestInitDryRunPrintsTheServicePlan(t *testing.T) {
 	}
 }
 
+func TestInitYesPrintsAShortSQLSummary(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	h := newFakeHost(t)
+	r := initRun(t, d, h, "linux", false, "", "--yes", "--no-service")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.NotContains(t, r.stdout, "CREATE SCHEMA")
+	require.LessOrEqual(t, strings.Count(r.stdout, "\n"), 24, "at most a screenful")
+	require.Contains(t, r.stdout, "basalt: this setup SQL will:")
+	require.Contains(t, r.stdout, "- install or upgrade the guard (basalt_meta)")
+	require.Contains(t, r.stdout, "- create the agent role")
+	require.Contains(t, r.stdout, "- let the agent write public.leads")
+	require.Contains(t, r.stdout, "Pass --show-sql to print the SQL (passwords redacted).")
+
+	d = guardtest.New(t).WithDemo(t)
+	h = newFakeHost(t)
+	r = initRun(t, d, h, "linux", false, "", "--yes", "--no-service", "--show-sql")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.Contains(t, r.stdout, "CREATE SCHEMA IF NOT EXISTS basalt_meta")
+	require.NotContains(t, r.stdout, "Pass --show-sql")
+}
+
 func TestServiceInstallAgentReadsTheCredentialFromStdin(t *testing.T) {
 	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "engine.json")

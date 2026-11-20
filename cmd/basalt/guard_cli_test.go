@@ -297,7 +297,7 @@ func TestInitAsksBeforeLettingTheAgentSeeRLSRows(t *testing.T) {
 		d, cred, args := setup(t)
 		h := newFakeHost(t)
 		// Answers: yes for leads, default (no) for lead_notes, run the SQL.
-		r := initRun(t, d, h, "linux", true, "y\n\ny\n", append(args, "--read", "public.lead_notes")...)
+		r := initRun(t, d, h, "linux", true, "y\n\ny\n", append(args, "--read", "public.lead_notes", "--show-sql")...)
 		require.Equal(t, exitOK, r.code, r.stderr)
 		require.Contains(t, r.stderr, question("leads", 200))
 		require.Contains(t, r.stderr, question("lead_notes", 60))

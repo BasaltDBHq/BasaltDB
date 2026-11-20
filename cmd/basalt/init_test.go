@@ -18,12 +18,12 @@ import (
 func TestForegroundNext(t *testing.T) {
 	t.Parallel()
 	f := initFlags{
-		agent: "bot", configPath: "/home/iman/basalt/engine.json", socketDir: "/home/iman/basalt/run", osUser: "iman",
+		agent: "bot", configPath: "/home/dev/basalt/engine.json", socketDir: "/home/dev/basalt/run", osUser: "iman",
 	}
 	require.Equal(t, `next, start the engine; it runs in the foreground as you (same-user mode: writes are guarded, but your OS user can read the credential):
-  basalt engine --config /home/iman/basalt/engine.json
+  basalt engine --config /home/dev/basalt/engine.json
 then add this MCP server to the agent's client, running as OS user iman (docs/mcp-clients.md):
-  basalt mcp --agent bot --socket-dir /home/iman/basalt/run --config /home/iman/basalt/engine.json
+  basalt mcp --agent bot --socket-dir /home/dev/basalt/run --config /home/dev/basalt/engine.json
 `, foregroundNext(f, "linux", newFakeHost(t)))
 
 	f.configPath, f.socketDir = "/Users/me/Library/Application Support/basalt/engine.json", config.DefaultSocketDir("darwin")

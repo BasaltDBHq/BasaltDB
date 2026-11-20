@@ -134,10 +134,15 @@ func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agen
 	if reload == nil {
 		reload = func() {}
 	}
+	// A root engine never collects, so it reads no probe cache either.
+	var cache handoff.ProbeCache
+	if !env.asRoot {
+		cache = handoff.FileCache{Dir: env.stateDir}
+	}
 	pending, err := handoff.New(handoff.Options{
 		Agent: a.Name, Setup: *a.Setup, Collector: collector, Prober: env.handoff.Prober,
 		Files:   handoffFiles{configPath: env.configPath, agent: a.Name, credFile: a.Store.CredentialFile},
-		Changed: reload, Log: log.With("component", "connect"), Now: time.Now, Cache: handoff.FileCache{Dir: env.stateDir},
+		Changed: reload, Log: log.With("component", "connect"), Now: time.Now, Cache: cache,
 	})
 	if err != nil {
 		return agentRuntime{}, fmt.Errorf("agent %s: %w", a.Name, err)

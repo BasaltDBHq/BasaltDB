@@ -110,7 +110,7 @@ Planned (owner decisions AE-1 to AE-14). Every error body and every result the a
 | `UNAVAILABLE` | `PAGES_OFF` | — | A `CALL_TOOL` (`list_pending`, hand over `approveCommand`) |
 | `UNAVAILABLE` | `SETUP_PENDING` | — | P `RUN_COMMAND` (`basalt init --setup-code <the pending code>`, on their own computer), P `TELL_AGENT`, A `END_TURN`, A `CALL_TOOL` (`status`); +pm |
 | `UNAVAILABLE` | `SETUP_EXPIRED` | — | O `RUN_COMMAND` (`basalt init --remote --new-code ...`, saved flags), A `END_TURN`; +pm |
-| `UNAVAILABLE` | `DATABASE_NOT_CONFIRMED` | — | Planned (connect-only code). A `ASK_PERSON` (`The setup points me at <database>. Is that your database?`), A `CALL_TOOL` (`confirm_database` with the `setupId` and the person's answer); +pm |
+| `UNAVAILABLE` | `DATABASE_NOT_CONFIRMED` | — | Planned (connect-only code). A `ASK_PERSON` (`The setup points me at <database>. Is that your database?`), A `CALL_TOOL` (`confirm_database` with the `setupId`, the database it named and the person's answer); +pm |
 | `INTERNAL` | — | — | A `STOP`; +pm |
 | `PLUGIN_REFUSED` | `AGENT_OPERATED` | — | A `STOP`, A `ASK_PERSON` (an agent never adds or widens a plugin; on a person-operated engine the person runs the command in a terminal of their own, and on an agent-operated engine in service mode a plugin is added without `sudo`, which opens an approval the person signs; in same-user mode, with [Plugin approval](plugins-approval.md#plugin-approval), it is left for `trust`, and its text says the person adds a trust root at a terminal of their own); +pm |
 | `PLUGIN_REFUSED` | `TOO_MANY_PENDING` | — | A `STOP`, A `ASK_PERSON` (8 plugin approvals already wait in this database: the person signs them or lets them expire, 24 hours after each was opened, then the agent tries again); +pm |
@@ -174,7 +174,7 @@ Status problems (`status` tool, every one +pm):
 | `SETUP_NOT_RUN` | `ERROR` | P `RUN_COMMAND` (`basalt init --setup-code <the pending code>`, on their own computer), P `TELL_AGENT`, A `END_TURN`, A `CALL_TOOL` (`status`) |
 | `SETUP_EXPIRED` | `ERROR` | O `RUN_COMMAND` (`basalt init --remote --new-code ...`, saved flags), A `END_TURN` |
 | `SETUP_CHANGE_PENDING` | `WARNING` | P `RUN_COMMAND` (`basalt init --setup-code <the pending code>`, on their own computer), P `TELL_AGENT` |
-| `CONFIRM_DATABASE` | `ERROR` | Planned (connect-only code). A `ASK_PERSON` (`The setup points me at <database>. Is that your database?`), A `CALL_TOOL` (`confirm_database` with the `setupId` and the person's answer) |
+| `CONFIRM_DATABASE` | `ERROR` | Planned (connect-only code). A `ASK_PERSON` (`The setup points me at <database>. Is that your database?`), A `CALL_TOOL` (`confirm_database` with the `setupId`, the database it named and the person's answer) |
 | `DATABASE_REFUSED` | `ERROR` | Planned (connect-only code). O `RUN_COMMAND` (`basalt init --remote ... --json`, saved flags: a recovery code), A `END_TURN` |
 | `DATABASE_UNREACHABLE_FROM_BOT` | `ERROR` | Planned (connect-only code). P `OPEN_LINK` (the same connect link, with a connection string the bot's machine can reach: for Supabase the pooler string), A `END_TURN`, A `CALL_TOOL` (`status`) |
 | `ADDRESS_INVALID` | `ERROR` | Planned (connect-only code). A `ASK_PERSON` (tell the person the address the connect page handed over was refused, naming nothing of it), O `RUN_COMMAND` (`basalt init --remote ... --forget --json`, saved flags: a recovery code), A `END_TURN` |

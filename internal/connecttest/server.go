@@ -144,7 +144,7 @@ func (s *Server) CheckSetup(ctx context.Context, r *connect.Request[connectv1.Ch
 	req := s.request(r.Msg.GetCode())
 	c, err := setup.Check(ctx, conn, req)
 	var se *setup.Error
-	if errors.As(err, &se) && se.Code == "USED" {
+	if errors.As(err, &se) && se.Code == codeUsed {
 		// A connect-only code that ran in this database may run again
 		// (the recovery path): alreadyRan, and the page skips the tables
 		// and the labels. A SET_UP hold of another database is refused
@@ -185,6 +185,10 @@ func (s *Server) CheckSetup(ctx context.Context, r *connect.Request[connectv1.Ch
 	return connect.NewResponse(out), nil
 }
 
+// codeUsed is the setup package's refusal of a code the database already
+// ran.
+const codeUsed = "USED"
+
 const (
 	rowSecurity   = "ROW_LEVEL_SECURITY"
 	choiceAllRows = "ALL_ROWS"
@@ -219,7 +223,7 @@ func (s *Server) RunSetup(ctx context.Context, r *connect.Request[connectv1.RunS
 	}
 	checked, err := setup.Check(ctx, conn, req)
 	var se *setup.Error
-	if d.Target == nil && errors.As(err, &se) && se.Code == "USED" {
+	if d.Target == nil && errors.As(err, &se) && se.Code == codeUsed {
 		// The same connect-only code again in the database it ran in: the
 		// address is held again, nothing changes.
 		ticket, terr := s.holdFor(d, at)
@@ -499,7 +503,7 @@ func fromSetup(e *setup.Error) *refusalError {
 		return &refusalError{connect.CodeInvalidArgument, e.Code, e.Message}
 	case "BINARY_TOO_OLD":
 		return &refusalError{connect.CodeUnavailable, e.Code, "Basalt Vault is being updated: try again shortly, or use the laptop command."}
-	case setup.CodeTargetMismatch, "PREFIX_MISMATCH", "USED", "SUPERSEDED", "ROLE_EXISTS", "ROLE_MISSING", setup.CodeEngineRevoked, setup.CodeTablesMissing,
+	case setup.CodeTargetMismatch, "PREFIX_MISMATCH", codeUsed, "SUPERSEDED", "ROLE_EXISTS", "ROLE_MISSING", setup.CodeEngineRevoked, setup.CodeTablesMissing,
 		setup.CodeNoTables:
 		return &refusalError{connect.CodeFailedPrecondition, e.Code, e.Message}
 	case setup.CodeAnswersInvalid:

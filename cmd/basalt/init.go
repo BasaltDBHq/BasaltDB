@@ -361,7 +361,7 @@ func printSetupPlan(c *cliIO, f initFlags) error {
 	if f.noService || f.pathsGiven {
 		fmt.Fprintf(c.stderr, "basalt: dry run; then init writes %s and %s, and prints:\n", f.credFile, f.configPath)
 		fmt.Fprint(c.stderr, f.vault.dryRunLine())
-		fmt.Fprint(c.stderr, foregroundNext(f, c.goos))
+		fmt.Fprint(c.stderr, foregroundNext(f, c.goos, c.host))
 		return nil
 	}
 	f.initArgs = f.savedArgs(c.goos)

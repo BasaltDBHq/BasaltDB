@@ -112,6 +112,10 @@ type Description struct {
 	// EngineFingerprint is the fingerprint of the code's engine key, ""
 	// when the code carries none.
 	EngineFingerprint string
+	// EngineKey is the code's engine key as it carries it (SPKI DER,
+	// base64url): the key a connect-only setup's CollectAddress must be
+	// signed with. "" when the code carries none.
+	EngineKey string
 	// EngineURL is the request's engine address in its written form.
 	EngineURL string
 	// Summary is the summary's fixed lines, without the database's state:
@@ -152,6 +156,7 @@ func describe(s *setuprun.Setup) Description {
 		}
 	}
 	if p.Engine != nil {
+		d.EngineKey = p.Engine.PublicKey
 		// Decode checked the key: it parses.
 		if key, err := p.Engine.Key(); err == nil {
 			d.EngineFingerprint = channel.FingerprintOf(channel.EngineIDOf(key))

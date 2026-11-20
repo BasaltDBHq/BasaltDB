@@ -43,6 +43,9 @@ const (
 type RestartOptions struct {
 	// Upgrade says when to restart; nil turns the restart off.
 	Upgrade UpgradeFunc
+	// Handoff reaches the connect service and the collected database for
+	// a connect-only agent; the zero value is the contract's.
+	Handoff HandoffOptions
 	// IdleWait and DrainWait default to DefaultIdleWait and
 	// DefaultDrainWait.
 	IdleWait  time.Duration

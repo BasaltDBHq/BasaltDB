@@ -25,6 +25,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/channel"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/engine/pages"
 	"github.com/basaltdbhq/basaltdb/internal/engine/peercred"
 	"github.com/basaltdbhq/basaltdb/internal/engine/person"
@@ -225,6 +226,21 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	tally := vault.NewTally()
 	ev := openVault(cfg, env.stateDir, time.Now, log, relay, dispatch, tally)
 	env.vault, env.receipts = ev, ev.receipts()
+	if ev.keys != nil {
+		env.keys = ev.keys
+	}
+	env.handoff = restart.Handoff
+	// A connect-only agent's setup that changes (the person confirmed its
+	// database) has the engine stop between calls and serve its config
+	// again, as for an upgraded binary.
+	reload, reloading := make(chan struct{}, 1), make(chan struct{})
+	env.reload = func() {
+		select {
+		case reload <- struct{}{}:
+		default:
+		}
+	}
+	restart.Upgrade = upgradeOrReload(restart.Upgrade, reload, reloading)
 	if ev.client != nil {
 		env.relay, env.relayLinks = ev.client, relay
 	}
@@ -281,6 +297,9 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	defer cancel()
 	for _, u := range upkeeps {
 		wg.Go(func() { u.Run(ctx, upkeep.DefaultInterval) })
+	}
+	for _, run := range srv.runs {
+		wg.Go(func() { run(ctx) })
 	}
 	// Each agent's ledger records its plugin changes before any plugin
 	// starts; an entry whose record fails is not served to that agent. In
@@ -340,7 +359,36 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		wg.Go(func() { env.records.watchRevoked(ctx, env.direct, directRecheckEvery) })
 		wg.Go(func() { direct.serve(ctx, h, env.direct, log) })
 	}
-	return New(log, agents).withGate(gate).WithRestart(restart).Serve(ctx)
+	err = New(log, agents).withGate(gate).WithRestart(restart).Serve(ctx)
+	select {
+	case <-reloading:
+		if errors.Is(err, ErrRestart) {
+			return ErrReload
+		}
+	default:
+	}
+	return err
+}
+
+// upgradeOrReload is the restart's trigger: an upgraded binary (up, when
+// set) or a reload asked for on reload. A reload closes reloading first,
+// so RunWith returns ErrReload, not ErrRestart.
+func upgradeOrReload(up UpgradeFunc, reload <-chan struct{}, reloading chan struct{}) UpgradeFunc {
+	return func(ctx context.Context) error {
+		upgraded := make(chan error, 1)
+		if up != nil {
+			go func() { upgraded <- up(ctx) }()
+		}
+		select {
+		case <-reload:
+			close(reloading)
+			return nil
+		case err := <-upgraded:
+			return err
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }
 
 // agentOSUIDs is the uid of every configured agent's OS user, by agent
@@ -374,6 +422,8 @@ type startedAgents struct {
 	// kept are the agents as the plugin methods reach them.
 	kept    map[string]keptAgent
 	closers []func()
+	// runs are the agents' own loops (a connect-only agent's collector).
+	runs []func(context.Context)
 }
 
 // startAgents builds each agent's runtime. An agent whose guard is missing
@@ -393,8 +443,20 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 			return out, fmt.Errorf("agent %s: %w", a.Name, err)
 		}
 		out.closers = append(out.closers, rt.close)
-		out.ledgers[a.Name] = rt.ledger
 		out.infos[a.Name] = rt.info
+		if rt.run != nil {
+			out.runs = append(out.runs, rt.run)
+		}
+		if rt.svc == nil {
+			// A connect-only agent waiting for its database: its tools
+			// only, and nothing that reads a database.
+			out.agents = append(out.agents, Agent{
+				Name: a.Name, UID: uids[a.Name], SocketPath: cfg.SocketPath(a.Name),
+				Server: mcp.NewServer(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: Instructions, OnPanic: env.onPanic}, rt.tools...),
+			})
+			continue
+		}
+		out.ledgers[a.Name] = rt.ledger
 		if rt.db != nil {
 			out.pluginLedgers[a.Name] = pluginLedger{db: rt.db, admit: pluginAdmit(rt.svc)}
 		}
@@ -513,6 +575,10 @@ type agentRuntime struct {
 	// kept is how the person socket's plugin methods reach the agent.
 	kept  keptAgent
 	close func()
+	// tools serve a connect-only agent waiting for its database (svc is
+	// nil then), and run is its collect loop.
+	tools []mcp.Tool
+	run   func(context.Context)
 }
 
 // agentEnv is what every agent's runtime shares.
@@ -552,6 +618,13 @@ type agentEnv struct {
 	// asRoot: the engine runs as root (started without --user); it then
 	// reaches each agent's files through openRootFiles.
 	asRoot bool
+	// keys sign a connect-only agent's collect requests; nil when the key
+	// file is refused.
+	keys handoff.Signer
+	// handoff reaches the connect service and the collected database.
+	handoff HandoffOptions
+	// reload has the engine serve its config again.
+	reload func()
 }
 
 func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slog.Logger) (agentRuntime, error) {
@@ -570,6 +643,18 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	// kind but POSTGRES, the only adapter there is.
 	if a.Store.Kind != config.StorePostgres {
 		return agentRuntime{}, fmt.Errorf("agent %s: store kind %q is not served", a.Name, a.Store.Kind)
+	}
+	waiting, err := connectOnlyAgent(env, a, log)
+	switch {
+	case err != nil:
+		return agentRuntime{}, fmt.Errorf("agent %s: %w", a.Name, err)
+	case waiting:
+		return newConnectOnlyRuntime(env, a, log)
+	case a.Setup != nil && a.Setup.AwaitingAddress:
+		// connectOnlyAgent finished a confirmation the engine stopped in.
+		s := *a.Setup
+		s.AwaitingAddress = false
+		a.Setup = &s
 	}
 	files, err := agentFilesFor(env, a)
 	if err != nil {
@@ -649,6 +734,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 			return r, postgres.MapError(err)
 		},
 		DirectServed: env.direct != nil,
+		Database:     agent.ConnectDatabaseName(pool.Config().ConnConfig.Host, pool.Config().ConnConfig.Port, pool.Config().ConnConfig.Database),
 		Receipts:     env.receipts,
 		Finisher:     finisher,
 		PII:          observer.On(pool),

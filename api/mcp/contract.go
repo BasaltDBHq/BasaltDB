@@ -325,6 +325,13 @@ type NextSteps struct {
 	// its pages are the portal's and the connect link fits the link budget
 	// (CONTRACT.md, Next steps with the connect link).
 	ConnectLink []VariantSteps `json:"connectLink"`
+	// ConnectOnly replaces the steps of an entry while the agent's pending
+	// setup code is connect-only (no target: the person pastes the database
+	// on the connect page and the engine collects its address). It takes
+	// precedence over ConnectLink and AgentOperated. Planned: the engine
+	// does not apply these yet (CONTRACT.md, Next steps for a connect-only
+	// code).
+	ConnectOnly []VariantSteps `json:"connectOnly"`
 }
 
 // ConnectLinkEntry returns the connect-link variant of kind for code, reason

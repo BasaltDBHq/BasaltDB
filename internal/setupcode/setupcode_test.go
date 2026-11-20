@@ -112,6 +112,30 @@ func TestValidFixtures(t *testing.T) {
 	}
 }
 
+// The planned fixtures (connect-only codes, agent.allTables) are in the
+// contract but not accepted by this codec yet: it refuses each as INVALID.
+// When the codec accepts them, they move to valid and laptop.
+func TestPlannedFixturesNotAcceptedYet(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile(fixturesFile)
+	require.NoError(t, err)
+	var f struct {
+		Planned struct {
+			Valid []struct {
+				Name string `json:"name"`
+				Code string `json:"code"`
+			} `json:"valid"`
+		} `json:"planned"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &f))
+	require.NotEmpty(t, f.Planned.Valid)
+	for _, v := range f.Planned.Valid {
+		_, err := setupcode.Decode(v.Code)
+		require.Error(t, err, v.Name)
+		require.Equal(t, setupcode.RefusalInvalid, refusalOf(t, err), v.Name)
+	}
+}
+
 func TestInvalidFixtures(t *testing.T) {
 	t.Parallel()
 	for _, v := range loadFixtures(t).Invalid {

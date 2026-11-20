@@ -1,0 +1,101 @@
+{
+  "name": "confirm_database",
+  "status": "PLANNED",
+  "milestone": "M4.1",
+  "description": "Record the person's answer to the database check of a connect-only setup (CONTRACT.md, Setup from your laptop, On the engine). Call it only after status returned setup.state CONFIRM_DATABASE and you asked the person, in the chat, whether setup.database is their database. Pass their answer as given: YES only when they said yes to that database. On YES the engine logs in to it for the first time and serves. On NO the engine forgets the address and its password, having never logged in there, and you make a new setup code. Never answer for the person.",
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "setupId",
+      "answer"
+    ],
+    "properties": {
+      "setupId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "status's setup.setupId when it showed CONFIRM_DATABASE. Refused with INVALID_ARGUMENT when no database waits for confirmation or the setupId is another one, so an answer given for one database never confirms another."
+      },
+      "answer": {
+        "type": "string",
+        "enum": [
+          "YES",
+          "NO"
+        ],
+        "description": "The person's answer to the database named in status's setup.database."
+      }
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "state",
+      "database"
+    ],
+    "properties": {
+      "state": {
+        "type": "string",
+        "enum": [
+          "CONFIRMED",
+          "REFUSED"
+        ],
+        "description": "CONFIRMED: the engine wrote the agent's credential for the database and logs in with it from now on; status then reports DONE, or SETUP_NOT_FOUND when the database does not record the setup. REFUSED: the engine deleted the address and the agent's password without logging in; a new code is needed."
+      },
+      "database": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "host",
+          "port",
+          "database"
+        ],
+        "description": "The database the answer was for, as status named it.",
+        "properties": {
+          "host": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253,
+            "pattern": "^[A-Za-z0-9.-]+$"
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "database": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]{1,63}$"
+          },
+          "supabaseRef": {
+            "type": "string",
+            "pattern": "^[a-z0-9]{20}$"
+          }
+        }
+      },
+      "personMessage": {
+        "type": "string",
+        "description": "REFUSED: what happened and that the agent gives them a new link. Show it verbatim."
+      },
+      "links": {
+        "type": "array",
+        "minItems": 1,
+        "description": "The URLs of personMessage with labels, in order; present exactly when personMessage holds a URL.",
+        "items": { "$ref": "../links/link.schema.json" }
+      },
+      "nextSteps": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "$ref": "../errors/next-step.schema.json"
+        },
+        "description": "CONFIRMED: call status. REFUSED: make a new setup code (CONTRACT.md, Next steps)."
+      }
+    }
+  },
+  "errors": [
+    "INVALID_ARGUMENT",
+    "UNAVAILABLE",
+    "INTERNAL"
+  ]
+}

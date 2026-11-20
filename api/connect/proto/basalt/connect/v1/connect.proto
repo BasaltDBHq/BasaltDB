@@ -1,7 +1,9 @@
 // The connect service's API (CONTRACT.md, Connect). The connect service is
 // a hosted service of Basalt Vault, used only at setup: it runs a bot's
-// setup code against the person's database, once, and keeps nothing.
-// Planned: no part of BasaltDB serves or calls it yet.
+// setup code against the person's database, once, and writes nothing
+// anywhere. For a connect-only setup code it holds the database's address
+// (never the password) in memory for up to 30 minutes, until the bot's
+// engine collects it. Planned: no part of BasaltDB serves or calls it yet.
 //
 // Field names are snake_case here; the proto3 JSON names, which the connect
 // page sends and reads, are their camelCase forms. Byte values are strings
@@ -18,7 +20,8 @@ import "google/protobuf/descriptor.proto";
 option go_package = "github.com/basaltdbhq/basaltdb/api/connect/proto/basalt/connect/v1;connectv1";
 
 extend google.protobuf.FieldOptions {
-  // A field whose value is a secret: the admin connection string. Nothing
+  // A field whose value must stay out of logs: the admin connection string,
+  // and the hand-off ticket, which carries the database's address. Nothing
   // may write it to a log, a trace, an error report or a metric label.
   // The number is from the in-house range; a program that also links another
   // extension of FieldOptions with this number would not start.
@@ -33,8 +36,18 @@ service SetupService {
   // Connects, reads the database's state, and returns the questions to ask.
   // Changes nothing.
   rpc CheckSetup(CheckSetupRequest) returns (CheckSetupResponse);
-  // Connects and runs the setup in one transaction.
+  // Connects and runs the setup in one transaction. For a connect-only
+  // code, then holds the database's address and returns a hand-off ticket.
   rpc RunSetup(RunSetupRequest) returns (RunSetupResponse);
+  // The engine: the address of its connect-only setup, signed with the
+  // engine key the setup code names. No database access.
+  rpc CollectAddress(CollectAddressRequest) returns (CollectAddressResponse);
+  // The page: whether the engine has collected the address. No database
+  // access.
+  rpc HandoffStatus(HandoffStatusRequest) returns (HandoffStatusResponse);
+  // The page: puts a hold the service lost (a restart) back, with the
+  // ticket's own expiry. No database access.
+  rpc OfferAddress(OfferAddressRequest) returns (OfferAddressResponse);
 }
 
 message DescribeSetupRequest {
@@ -57,6 +70,8 @@ message SetupSummary {
   // <prefix>_agent_<name>; empty for UPGRADE.
   string role = 4;
   string prefix = 5;
+  // Absent for a connect-only code: the database is the one the person
+  // pastes.
   Target target = 6;
   repeated string write = 7;
   repeated string read = 8;
@@ -72,6 +87,9 @@ message SetupSummary {
   // The summary lines that do not depend on the database, in the words
   // basalt init --setup-code shows.
   repeated string lines = 15;
+  // The schemas of agent.allTables (public only); empty when the code
+  // names its tables in write and read.
+  repeated string all_tables_schemas = 16;
 }
 
 // The database the setup code is for.
@@ -117,6 +135,22 @@ message CheckSetupResponse {
   // True for an UPGRADE code with nothing to do: RunSetup then changes and
   // records nothing.
   bool nothing_to_do = 4;
+  // The database the pasted string names, which the page shows first under
+  // Before you approve.
+  Target database = 5;
+  // With agent.allTables: the tables the agent will get, schema.table, in
+  // order. Empty when the code names its tables.
+  repeated string tables = 6;
+  // With agent.allTables: the tables in those schemas left out, because
+  // the admin role does not own them.
+  repeated ExcludedTable excluded = 7;
+}
+
+message ExcludedTable {
+  // schema.table.
+  string table = 1;
+  // The role that owns it.
+  string owner = 2;
 }
 
 message Question {
@@ -168,6 +202,12 @@ message RunSetupResponse {
   repeated RegisteredPasskey passkeys = 2;
   // As in CheckSetupResponse.
   bool nothing_to_do = 3;
+  // Connect-only codes only: the hand-off ticket the page passes to
+  // HandoffStatus and OfferAddress. Opaque to the page; kept in memory only.
+  string ticket = 4 [(sensitive) = true];
+  // Connect-only codes only: true when the database already recorded this
+  // setup and nothing changed; the address is held again for the engine.
+  bool reconnected = 5;
 }
 
 message RegisteredPasskey {
@@ -175,6 +215,48 @@ message RegisteredPasskey {
   string label = 2;
   // The passkey check code (CONTRACT.md, Connect).
   string check_code = 3;
+}
+
+message CollectAddressRequest {
+  // The setupId of the connect-only setup code.
+  string setup_id = 1;
+  // The engine's signing key, as the code's engine.publicKey: SPKI DER,
+  // base64url without padding.
+  string engine_public_key = 2;
+  // RFC 3339 UTC, whole seconds: when the engine signed.
+  string time = 3;
+  // ECDSA P-256 over the basalt-connect-collect.1 context (CONTRACT.md,
+  // Connect, The address hand-off), 64 bytes r and s, base64url.
+  string signature = 4;
+}
+
+message CollectAddressResponse {
+  // The database the setup ran in. Never a password.
+  Target address = 1;
+}
+
+message HandoffStatusRequest {
+  string ticket = 1 [(sensitive) = true];
+}
+
+message HandoffStatusResponse {
+  // HELD, COLLECTED or UNKNOWN (no hold: the service restarted or the hold
+  // expired).
+  string state = 1;
+  // COLLECTED: RFC 3339 UTC, when the engine first collected.
+  string collected_at = 2;
+  // HELD and COLLECTED: a new ticket that records the state, for the page
+  // to use from now on.
+  string ticket = 3 [(sensitive) = true];
+}
+
+message OfferAddressRequest {
+  string ticket = 1 [(sensitive) = true];
+}
+
+message OfferAddressResponse {
+  // HELD or COLLECTED, as the ticket records it.
+  string state = 1;
 }
 
 // The error detail of every refusal, attached to the ConnectRPC error.

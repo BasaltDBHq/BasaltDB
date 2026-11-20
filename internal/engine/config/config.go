@@ -266,6 +266,17 @@ type Setup struct {
 // collects the address, or the person refused the one it collected.
 func (s Setup) ConnectOnly() bool { return s.AwaitingAddress || s.Refused }
 
+// SecretSuffix names the file that holds the password of a connect-only
+// setup until the person confirms its database: agents/<agent>.secret.
+const SecretSuffix = ".secret"
+
+// SecretPath is agent's .secret, next to its credential file credFile
+// (CONTRACT.md, Connect-only setup codes): init writes it there and the
+// engine reads it there.
+func SecretPath(credFile, agent string) string {
+	return filepath.Join(filepath.Dir(credFile), agent+SecretSuffix)
+}
+
 // Expires parses ExpiresAt.
 func (s Setup) Expires() (time.Time, error) {
 	return time.Parse(time.RFC3339, s.ExpiresAt)

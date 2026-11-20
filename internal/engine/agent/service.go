@@ -124,6 +124,10 @@ type Deps struct {
 	// is whether the engine has a direct listener (directAddr is not off).
 	EngineRecord EngineRecordReader
 	DirectServed bool
+	// Database names the database the agent's credential connects to, as
+	// status names a connect-only setup's database ("<host>:<port>, database
+	// <db>"); empty when unknown.
+	Database string
 	// Receipts is the engine's signing key, which signs the receipt of
 	// every signature the engine relays (CONTRACT.md, Vault channel,
 	// Receipts). Nil when the key file is refused (KEY_ERROR): answers then

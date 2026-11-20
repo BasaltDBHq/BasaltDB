@@ -17,11 +17,13 @@ import (
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
+	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/updatecheck"
 )
 
@@ -49,6 +51,14 @@ const (
 	problemPortalMismatch      = "PORTAL_MISMATCH"
 	problemEngineRevoked       = "ENGINE_REVOKED"
 	problemDirectNotServed     = "DIRECT_NOT_SERVED"
+	// The problems of a connect-only setup (CONTRACT.md, The engine and a
+	// connect-only code).
+	problemConfirmDatabase    = "CONFIRM_DATABASE"
+	problemDatabaseRefused    = "DATABASE_REFUSED"
+	problemUnreachableFromBot = "DATABASE_UNREACHABLE_FROM_BOT"
+	problemAddressInvalid     = "ADDRESS_INVALID"
+	problemSetupNotFound      = "SETUP_NOT_FOUND"
+	problemClockSkew          = "CLOCK_SKEW"
 )
 
 // status.engineRecord.state (CONTRACT.md, Configuration and status).
@@ -86,6 +96,11 @@ const (
 	setupPending = "PENDING"
 	setupExpired = "EXPIRED"
 	setupDone    = "DONE"
+	// setupConfirmDatabase: a connect-only setup's database was collected
+	// and probed, and waits for the person's confirmation.
+	setupConfirmDatabase = "CONFIRM_DATABASE"
+	// setupRefused: the person said the collected database is not theirs.
+	setupRefused = "REFUSED"
 )
 
 // Probe reads, on the agent's own credential, what status reports from the
@@ -255,6 +270,10 @@ type SetupStatus struct {
 	Kind        string `json:"kind,omitempty"`
 	ExpiresAt   string `json:"expiresAt,omitempty"`
 	Fingerprint string `json:"fingerprint,omitempty"`
+	// ConnectOnly is set while the pending code is connect-only.
+	ConnectOnly bool `json:"connectOnly,omitempty"`
+	// Database is the collected and probed database (CONFIRM_DATABASE).
+	Database *handoff.Address `json:"database,omitempty"`
 }
 
 // PagesStatus is status.pages.
@@ -331,10 +350,12 @@ type statusDeps struct {
 	engineKey    *string
 	engineRecord EngineRecordReader
 	directServed bool
-	cmds         Commands
-	setup        *config.Setup
-	probe        Probe
-	finisher     SetupFinisher
+	// database names the credential's database (Deps.Database).
+	database string
+	cmds     Commands
+	setup    *config.Setup
+	probe    Probe
+	finisher SetupFinisher
 	// finished forgets the pending setup once the database shows it
 	// recorded.
 	finished func(id string)
@@ -352,7 +373,7 @@ func (s *Service) statusDeps() statusDeps {
 	return statusDeps{
 		name: s.Name, operatedBy: s.OperatedBy, build: s.Build, pagesBase: s.PagesBase, pagesOrigin: s.PagesOrigin,
 		sameUser: s.SameUser, devLocalPages: s.DevLocalPages, connectBudget: s.ConnectBudget, engineReachable: true, vault: s.Vault, portal: s.Portal, plugins: s.Plugins,
-		engineRecord: s.EngineRecord, directServed: s.DirectServed, cmds: s.Commands, setup: s.pendingSetup(), probe: s.Probe,
+		engineRecord: s.EngineRecord, directServed: s.DirectServed, database: s.Database, cmds: s.Commands, setup: s.pendingSetup(), probe: s.Probe,
 		update: s.updateInfo(), finisher: s.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, lockTrouble: &s.lockTrouble, passkeys: s.Store.Passkeys, log: s.Log, now: s.Now,
 	}
 }
@@ -739,21 +760,46 @@ type setupView struct {
 	// code and fingerprint are the pending code's, also once it expired
 	// (status shows the fingerprint only while pending).
 	code, fingerprint string
+	// awaiting: a connect-only code whose engine waits for the database's
+	// address; refused: the person refused the one it collected; confirmed:
+	// a connect-only code whose database the person confirmed, so the
+	// engine logs in with its credential.
+	awaiting, refused, confirmed bool
+	// database names the database of a confirmed connect-only setup.
+	database string
 }
 
 // explainsGuard reports whether an INSTALL setup is pending or expired: the
 // guard and the agent's role are not there yet, so the setup problem is
 // the one to fix and the guard and database problems it causes are left out.
 func (v setupView) explainsGuard() bool {
-	return v.status.Kind == guard.SetupInstall && (v.status.State == setupPending || v.status.State == setupExpired)
+	return !v.confirmed && v.status.Kind == guard.SetupInstall && (v.status.State == setupPending || v.status.State == setupExpired)
+}
+
+// blocks reports whether the pending setup holds every tool but status: an
+// INSTALL code that has not run, or a connect-only code whose database the
+// person confirmed and that the database does not record yet.
+func (v setupView) blocks() bool {
+	return v.explainsGuard() || (v.confirmed && v.status.State == setupPending)
 }
 
 func (v setupView) addProblem(ps *problems) {
 	switch {
+	case v.refused:
+		ps.add(problemDatabaseRefused, "the person said the database the setup reached is not theirs; a new setup code is needed",
+			func(b *Steps) string { return databaseRefusedSteps(b, ps.cmds) })
 	case v.status.State == setupExpired:
 		ps.add(problemSetupExpired, "the agent's setup code expired before it was used; a new one is needed",
 			func(b *Steps) string { return setupExpiredSteps(b, ps.cmds) })
 	case v.status.State != setupPending:
+	case v.awaiting:
+		ps.addLinked(problemSetupNotRun, connectOnlyWaiting,
+			func(b *Steps) (string, []mcp.Link) {
+				return connectOnlySteps(b, v.code, v.fingerprint, ps.connectBudget)
+			})
+	case v.confirmed:
+		ps.add(problemSetupNotFound, "the database the person confirmed does not record this setup: "+v.database,
+			func(b *Steps) string { return setupNotFoundSteps(b, ps.cmds, v.database) })
 	case v.status.Kind == guard.SetupInstall:
 		ps.addLinked(problemSetupNotRun, "the agent's setup has not run yet; no tool but status works until it has",
 			func(b *Steps) (string, []mcp.Link) {
@@ -777,6 +823,7 @@ func (s statusDeps) setupView(ctx context.Context) (setupView, bool) {
 		recorded, known = s.pendingRecorded(ctx)
 	}
 	v := setupFrom(s.setup, recorded, s.now())
+	v.database = s.database
 	if v.status.State != setupNone || !known {
 		return v, known
 	}
@@ -797,16 +844,36 @@ func setupFrom(p *config.Setup, recorded bool, now time.Time) setupView {
 	if p == nil || recorded {
 		return setupView{status: SetupStatus{State: setupNone}}
 	}
+	connectOnly := connectOnlyCode(p.Code)
+	if p.Refused {
+		return setupView{refused: true, status: SetupStatus{State: setupRefused, SetupID: p.SetupID, Kind: p.Kind, ConnectOnly: true}}
+	}
 	expires, err := p.Expires()
 	expired := err != nil || !now.Before(expires)
-	if expired && p.Kind != guard.SetupInstall {
+	// A connect-only code the person confirmed stays pending until the
+	// database shows it recorded, whatever its expiry: the setup ran.
+	confirmed := connectOnly && !p.AwaitingAddress
+	if expired && confirmed {
+		expired = false
+	}
+	if expired && p.Kind != guard.SetupInstall && !p.AwaitingAddress {
 		return setupView{status: SetupStatus{State: setupNone}}
 	}
-	v := setupView{code: p.Code, fingerprint: p.Fingerprint, status: SetupStatus{State: setupPending, SetupID: p.SetupID, Kind: p.Kind, ExpiresAt: p.ExpiresAt, Fingerprint: p.Fingerprint}}
+	v := setupView{
+		code: p.Code, fingerprint: p.Fingerprint, awaiting: p.AwaitingAddress, confirmed: confirmed,
+		status: SetupStatus{State: setupPending, SetupID: p.SetupID, Kind: p.Kind, ExpiresAt: p.ExpiresAt, Fingerprint: p.Fingerprint, ConnectOnly: connectOnly},
+	}
 	if expired {
 		v.status.State, v.status.Fingerprint = setupExpired, ""
 	}
 	return v
+}
+
+// connectOnlyCode reports whether code is a connect-only setup code (it
+// has no target). A code that cannot be read is not.
+func connectOnlyCode(code string) bool {
+	p, err := setupcode.Decode(code)
+	return err == nil && p.ConnectOnly()
 }
 
 // problems collects status problems, each built from its catalog entry.
@@ -898,8 +965,8 @@ func (h handlers) status(ctx context.Context, raw json.RawMessage) (any, error) 
 // guard on every call, so basalt upgrade needs no engine restart. status is
 // never refused.
 func (s *Service) Admit(ctx context.Context) error {
-	if v, known := s.statusDeps().setupGate(ctx); known && v.explainsGuard() {
-		return &SetupError{Code: v.code, Fingerprint: v.fingerprint, Expired: v.status.State == setupExpired}
+	if v, known := s.statusDeps().setupGate(ctx); known && v.blocks() {
+		return &SetupError{Code: v.code, Fingerprint: v.fingerprint, Expired: v.status.State == setupExpired, ConnectOnly: v.status.ConnectOnly}
 	}
 	st, err := s.Probe.GuardStatus(ctx)
 	if err != nil {
@@ -923,7 +990,7 @@ func (s *Service) Admit(ctx context.Context) error {
 // INSTALL code, so an agent without one reads nothing more. known is false
 // when the database cannot tell whether the code was used.
 func (s statusDeps) setupGate(ctx context.Context) (setupView, bool) {
-	if s.setup == nil || s.setup.Kind != guard.SetupInstall {
+	if s.setup == nil || (s.setup.Kind != guard.SetupInstall && !connectOnlyCode(s.setup.Code)) {
 		return setupView{status: SetupStatus{State: setupNone}}, true
 	}
 	now := s.now()

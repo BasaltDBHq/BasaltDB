@@ -301,11 +301,11 @@ func TestFrameVectors(t *testing.T) {
 }
 
 var vectorContexts = map[string]SigningContext{
-	"VAULT_AUTH": ContextVaultAuth,
-	"SESSION":    ContextSession,
-	"RECEIPT":    ContextReceipt,
-	"BOX_KEY":    ContextBoxKey,
-	"ROTATE":     ContextRotate,
+	"VAULT_AUTH":      ContextVaultAuth,
+	"SESSION":         ContextSession,
+	"RECEIPT":         ContextReceipt,
+	"BOX_KEY":         ContextBoxKey,
+	"ROTATE":          ContextRotate,
 	"CONNECT_COLLECT": ContextConnectCollect,
 }
 

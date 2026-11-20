@@ -72,11 +72,11 @@ const (
 
 // The signing contexts (CONTRACT.md, Primitives and encodings).
 var signingContexts = map[string]string{
-	"VAULT_AUTH": "basalt-vault-engine.1\n",
-	"SESSION":    "basalt-vault-session-sig.1\n",
-	"RECEIPT":    "basalt-receipt.1\n",
-	"BOX_KEY":    "basalt-engine-box-key.1\n",
-	"ROTATE":     "basalt-engine-rotate.1\n",
+	"VAULT_AUTH":      "basalt-vault-engine.1\n",
+	"SESSION":         "basalt-vault-session-sig.1\n",
+	"RECEIPT":         "basalt-receipt.1\n",
+	"BOX_KEY":         "basalt-engine-box-key.1\n",
+	"ROTATE":          "basalt-engine-rotate.1\n",
 	"CONNECT_COLLECT": "basalt-connect-collect.1\n",
 }
 

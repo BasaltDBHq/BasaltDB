@@ -568,6 +568,13 @@ func (s *Service) unavailableSteps(b *Steps, te *mcp.ToolError, f failure) strin
 		return engineUnreachableSteps(b, s.Commands, f.tool)
 	case reasonSetupPending, reasonSetupExpired:
 		return s.setupSteps(b, te, f)
+	case reasonDatabaseNotConfirmed:
+		var dn *DatabaseNotConfirmedError
+		if !errors.As(f.err, &dn) {
+			b.fail(errors.New("a database waiting for confirmation needs its setup and address"))
+			return ""
+		}
+		return confirmDatabaseSteps(b, dn.SetupID, dn.Database)
 	case reasonPagesOff:
 		b.CallTool(toolListPending, map[string]any{}, "Read the held writes: each has the command the person runs, since this engine serves no pages.")
 		return ""
@@ -740,6 +747,10 @@ type SetupError struct {
 	Code        string
 	Fingerprint string
 	Expired     bool
+	// ConnectOnly: the pending code is connect-only, so status's setup
+	// problem says what comes next (CONTRACT.md, Next steps for a
+	// connect-only code).
+	ConnectOnly bool
 }
 
 func (e *SetupError) Error() string {
@@ -761,6 +772,10 @@ func (s *Service) setupSteps(b *Steps, te *mcp.ToolError, f failure) string {
 	var se *SetupError
 	if !errors.As(f.err, &se) {
 		b.fail(errors.New("a pending setup needs its code"))
+		return ""
+	}
+	if se.ConnectOnly {
+		b.CallTool(toolStatus, map[string]any{}, "Call status: its setup problem says what the person or you do next.")
 		return ""
 	}
 	person, ls := setupPendingSteps(b, se.Code, se.Fingerprint, true, s.ConnectBudget)

@@ -396,6 +396,9 @@ func catalogCases() map[string]catalogCase {
 
 		caseKey("UNAVAILABLE", "SETUP_PENDING", ""): {"query", queryArgs0, plain(&SetupError{Code: testSetupCode, Fingerprint: testFingerprint})},
 		caseKey("UNAVAILABLE", "SETUP_EXPIRED", ""): {"query", queryArgs0, plain(&SetupError{Code: testSetupCode, Fingerprint: testFingerprint, Expired: true})},
+		caseKey("UNAVAILABLE", "DATABASE_NOT_CONFIRMED", ""): {"query", queryArgs0, plain(&DatabaseNotConfirmedError{
+			SetupID: caseSetupID, Database: caseDatabase,
+		})},
 
 		caseKey("INTERNAL", "", ""): {"query", queryArgs0, plain(errors.New("boom"))},
 	}
@@ -676,6 +679,12 @@ func requireToolArguments(t *testing.T, st mcp.NextStep, kase catalogCase, where
 			require.Contains(t, props, k, "%s: %s has no argument %q", where, st.Tool, k)
 		}
 		return
+	}
+	if st.Tool == toolConfirmDatabase {
+		// The one CALL_TOOL whose arguments are not complete (CONTRACT.md,
+		// Next steps): the engine never fills in the person's answer.
+		require.NotContains(t, args, argAnswer, "%s: the engine never fills in answer", where)
+		args[argAnswer] = answerYes
 	}
 	require.NoError(t, validateSchema(tool.InputSchema, args), "%s: arguments of %s must validate against its inputSchema", where, st.Tool)
 }

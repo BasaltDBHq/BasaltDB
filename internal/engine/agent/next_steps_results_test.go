@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"sort"
 	"strconv"
 	"strings"
@@ -148,7 +149,7 @@ func resultCases() map[string]resultCase {
 		r.Lines, r.LinesLeftOut, r.LinesCost = nil, true, 2<<20
 		return r
 	}
-	return map[string]resultCase{
+	cases := map[string]resultCase{
 		resultKey("request_revert", "REQUEST_TOO_LARGE"): {
 			tool: "request_revert", args: map[string]any{"revertId": caseRevertID, "reissueLink": true},
 			build: func(t *testing.T, s *Service) (string, []mcp.Link, []mcp.NextStep) {
@@ -313,6 +314,8 @@ func resultCases() map[string]resultCase {
 			build: batch(ledger.RevertApplied),
 		},
 	}
+	maps.Copy(cases, confirmResultCases())
+	return cases
 }
 
 func resultService(t *testing.T, goos, config string, initArgs []string) *Service {

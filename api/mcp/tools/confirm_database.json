@@ -1,6 +1,6 @@
 {
   "name": "confirm_database",
-  "status": "PLANNED",
+  "status": "IMPLEMENTED",
   "milestone": "M4.1",
   "description": "Record the person's answer to the database check of a connect-only setup (CONTRACT.md, Setup from your laptop, On the engine). Call it only after status returned setup.state CONFIRM_DATABASE and you asked the person, in the chat, whether setup.database is their database; pass that setupId and database as status gave them. Pass their answer as given: YES only when they said yes to that database. On YES the engine logs in to it for the first time and serves. On NO the engine forgets the address and its password, having never logged in there, and you make a new setup code. Never answer for the person.",
   "inputSchema": {

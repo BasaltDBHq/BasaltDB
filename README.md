@@ -55,7 +55,7 @@ To install from a GitHub release, check the archive against `SHA256SUMS` and put
 basalt init --demo
 ```
 
-Init asks for your admin connection string once and never stores it. It creates a schema `basalt_demo` with 30 leads and 20 notes, shows the setup SQL before running it, registers your passkey, and starts the engine as a background service. The agent is `demo_bot`.
+Init asks for your admin connection string once and never stores it. It creates a schema `basalt_demo` with 30 leads and 20 notes, prints a short summary of the setup SQL before running it (the full SQL with `--show-sql`), registers your passkey, and starts the engine as a background service. The agent is `demo_bot`.
 
 **3. Connect your agent.** Any MCP client takes the same command:
 

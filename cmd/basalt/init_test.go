@@ -125,3 +125,45 @@ func TestInitRecordsThePerson(t *testing.T) {
 	require.Equal(t, []string{"--person-uid", "501", "--person-uid", "502", "--credential-stdin"}, args[len(args)-5:])
 	require.NotContains(t, f.savedArgs("linux"), "--person-uid=501", "a one-shot flag, not saved")
 }
+
+func TestInitSQLSummary(t *testing.T) {
+	t.Parallel()
+	f := initFlags{spec: guard.AgentSpec{Write: []string{"public.leads"}, Read: []string{"public.notes"}}}
+	got := initSQLSummary(f, "basalt_agent_bot", false)
+	require.Contains(t, got, "basalt: this setup SQL will:")
+	require.Contains(t, got, "- install or upgrade the guard (basalt_meta)")
+	require.Contains(t, got, "- create the agent role basalt_agent_bot")
+	require.Contains(t, got, "- let the agent write public.leads")
+	require.Contains(t, got, "- let the agent read public.notes")
+	require.Contains(t, got, "Pass --show-sql to print the SQL (passwords redacted).")
+	require.NotContains(t, got, "CREATE ")
+	require.LessOrEqual(t, strings.Count(got, "\n"), 24)
+
+	demo := initSQLSummary(initFlags{}, "basalt_agent_demo_bot", true)
+	require.Contains(t, demo, "- create the sample schema basalt_demo")
+	require.Contains(t, demo, "- create the agent role basalt_agent_demo_bot")
+
+	keep := initSQLSummary(initFlags{keepCredential: true}, "basalt_agent_bot", false)
+	require.Contains(t, keep, "- keep the existing agent role basalt_agent_bot (its password is unchanged)")
+
+	rotate := initSQLSummary(initFlags{rotated: true}, "basalt_agent_bot", false)
+	require.Contains(t, rotate, "- set a new password for the existing agent role basalt_agent_bot")
+}
+
+func TestPrintInitSQL(t *testing.T) {
+	t.Parallel()
+	script := guard.Script{Statements: []guard.Statement{{Shown: "CREATE SCHEMA IF NOT EXISTS basalt_meta;\n"}}}
+	var stdout strings.Builder
+	c := &cliIO{stdout: &stdout}
+	printInitSQL(c, initFlags{}, "basalt_agent_bot", "", script)
+	require.NotContains(t, stdout.String(), "CREATE SCHEMA")
+	require.Contains(t, stdout.String(), "Pass --show-sql")
+
+	stdout.Reset()
+	printInitSQL(c, initFlags{showSQL: true}, "basalt_agent_bot", "-- demo --\n", script)
+	require.Equal(t, "-- demo --\nCREATE SCHEMA IF NOT EXISTS basalt_meta;\n", stdout.String())
+
+	stdout.Reset()
+	printInitSQL(c, initFlags{dryRun: true}, "basalt_agent_bot", "", script)
+	require.Equal(t, "CREATE SCHEMA IF NOT EXISTS basalt_meta;\n", stdout.String())
+}

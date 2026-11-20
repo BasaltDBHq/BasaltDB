@@ -186,8 +186,14 @@ const HEAD_LINE = new RegExp("^(?:" + [
 // default-src 'none', so frames and objects stay blocked even where a host
 // serves the page under a looser header (the portal's _headers falls back to
 // 'self'). It does not block workers or script elements (script-src 'self').
-// Only connect-src may differ.
-const CSP_LINE = /^<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src '(?:self|none)'; base-uri 'none'; form-action 'none'">$/;
+// Only connect-src may differ: 'self' or 'none', except on the connect page,
+// whose one source is the connect service (CONTRACT.md, The connect page).
+// No other page may name it.
+export const CONNECT_PAGE = "connect/index.html";
+export const CONNECT_SERVICE = "https://connect.basaltvault.app";
+const cspLine = (connectSrc) => new RegExp(`^<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src ${connectSrc}; base-uri 'none'; form-action 'none'">$`);
+const CSP_LINE = cspLine("'(?:self|none)'");
+const CONNECT_CSP_LINE = cspLine(CONNECT_SERVICE.replace(/[.]/g, "\\."));
 const CSP_PREFIX = '<meta http-equiv="Content-Security-Policy"';
 // A tag the body may not hold: one that loads a script, sets page metadata,
 // or frames or embeds another document (an <iframe srcdoc> would run markup
@@ -212,12 +218,13 @@ function pageHead(page, html) {
 // allow-listed lines with exactly one meta CSP line (CSP_LINE) and exactly
 // one sri block (the preloads, then one module script), and no BODY_TAG
 // after </head>.
-function pageShape(page, html) {
+function pageShape(page, html, rel) {
+  const want = rel === CONNECT_PAGE ? CONNECT_CSP_LINE : CSP_LINE;
   let state = "before";
   let csp = 0;
   for (let line of pageHead(page, html).split("\n")) {
     line = line.replace(/^ +/, "");
-    if (state === "before" && CSP_LINE.test(line)) csp++;
+    if (state === "before" && want.test(line)) csp++;
     else if (line.startsWith(CSP_PREFIX)) throw new Error(`${page}: the meta CSP line must be the fixed one, with default-src 'none', before the sri block: ${line}`);
     else if (state === "before" && line === BEGIN) state = "preloads";
     else if (state === "preloads" && PRELOAD_LINE.test(line)) continue;
@@ -273,7 +280,7 @@ export function verify(root, files, page) {
     }
   }
   try {
-    pageShape(page, html);
+    pageShape(page, html, relative(root, page).split(sep).join("/"));
   } catch (e) {
     problems.push(e.message);
   }

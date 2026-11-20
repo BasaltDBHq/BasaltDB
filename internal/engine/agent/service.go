@@ -94,6 +94,10 @@ type Deps struct {
 	// with the DEV_LOCAL_PAGES warning and status reports the problem
 	// (CONTRACT.md, Page origins).
 	DevLocalPages bool
+	// ConnectBudget is the link budget for the connect link when the
+	// engine hands one (config.ConnectLinkBudget), else 0: next steps for a
+	// pending setup then put the link first (CONTRACT.md, Connect).
+	ConnectBudget int
 	Setup         *config.Setup
 	Build         string
 	// Probe reads the guard's state and the agent's setups on its

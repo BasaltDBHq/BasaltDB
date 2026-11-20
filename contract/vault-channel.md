@@ -6,7 +6,7 @@ Planned (M3.5, Vault channel Phase 1a; owner decisions VC-1 to VC-42). An engine
 
 **Scope (VC-1, VC-17).** Link sessions only, for the approval and revert pages. Pairing, box keys in use, envelopes, device codes, the pending list, notifications and accounts are after M4 (their contract is VC2-1's). The direct transport (`DIRECT`, M4.1) runs this same session over the person's own tunnel; its route, the pinned engine address and revocation of an engine in `basalt_meta` are in [Direct transport](vault-direct-transport.md#direct-transport) (VCT-1).
 
-**The exception (VC-1).** "No hosted service before M4" has one narrow exception: this rendezvous. It stores no plaintext, no credentials and no ledger, has no accounts, and approvals work when it is down (long links, below).
+**The exception (VC-1).** "No hosted service before M4" has one narrow exception: this rendezvous. It stores no plaintext, no credentials and no ledger, has no accounts, and approvals work when it is down (long links, below). Planned: the [connect service](connect.md#connect) is a second one, used only at setup and only when the person opens the connect link. It stores nothing and has no accounts, and every setup it runs can be run with the laptop command instead; unlike this rendezvous, it holds the admin connection string in memory for one setup ([What the connect service sees](connect.md#what-the-connect-service-sees)).
 
 ### Primitives and encodings
 

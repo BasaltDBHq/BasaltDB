@@ -74,6 +74,29 @@ func TestPortalHeadersMatchEngine(t *testing.T) {
 	require.Len(t, rules, 2, "unexpected extra rules in web/_headers")
 }
 
+// The connect page's policy is the pages' policy with one connect-src, the
+// connect service, and the portal's edge function serves exactly it.
+func TestConnectPageCSPMatchesEdgeFunction(t *testing.T) {
+	t.Parallel()
+	edge, err := os.ReadFile(filepath.Clean("../../web/edge/portal.js"))
+	require.NoError(t, err)
+	m := regexp.MustCompile(`(?m)^export const CONNECT_CSP = "([^"]*)";$`).FindSubmatch(edge)
+	require.NotNil(t, m, "web/edge/portal.js has no CONNECT_CSP")
+	require.Equal(t, websec.ConnectPageCSP, string(m[1]))
+
+	def := websec.Expected().Get("Content-Security-Policy")
+	require.Equal(t, strings.Replace(def, "default-src 'self'; ", "default-src 'self'; connect-src https://connect.basaltvault.app; ", 1), websec.ConnectPageCSP)
+
+	h := websec.ExpectedConnectPage()
+	require.Equal(t, websec.ConnectPageCSP, h.Get("Content-Security-Policy"))
+	require.Equal(t, "no-store", h.Get("Cache-Control"))
+	for name := range websec.Expected() {
+		if name != "Content-Security-Policy" {
+			require.Equal(t, websec.Expected().Get(name), h.Get(name), name)
+		}
+	}
+}
+
 func TestPortalCSPHasNoInlineOrRemoteSources(t *testing.T) {
 	t.Parallel()
 	csp := parseHeadersFile(t, portalHeadersFile)["/*"]["Content-Security-Policy"]

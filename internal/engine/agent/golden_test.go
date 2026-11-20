@@ -87,7 +87,7 @@ var (
 var goldenPlaceholders = map[string]bool{
 	"durationMs": true, "database": true, "fingerprint": true, "hash": true, "rowsHash": true,
 	"signature": true, "receipt": true, "xmin": true, "newXmin": true, "credentialId": true,
-	"credentialIds": true, "revealNonce": true, "rescopeNonce": true, "approval": true, "code": false,
+	"credentialIds": true, "checkCode": true, "revealNonce": true, "rescopeNonce": true, "approval": true, "code": false,
 }
 
 // runNormalizer replaces what differs from one run to the next in a served

@@ -5,18 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/engineaddr"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
-	"github.com/basaltdbhq/basaltdb/internal/passkey"
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
+	"github.com/basaltdbhq/basaltdb/internal/setuprun"
+	"github.com/basaltdbhq/basaltdb/pkg/setup"
 )
 
 // basalt init --setup-code runs on the person's own computer (CONTRACT.md,
@@ -84,20 +83,13 @@ func parseInitSetupCode(c *cliIO, args []string) (setupCodeFlags, error) {
 	return f, nil
 }
 
-// laptopSetup is one run of basalt init --setup-code.
+// laptopSetup is one run of basalt init --setup-code, on pkg/setup.
 type laptopSetup struct {
-	c       *cliIO
-	f       setupCodeFlags
-	p       setupcode.Payload
-	names   guard.Names
-	id      uuid.UUID
-	expires time.Time
-	conn    *pgx.Conn
-	// engine is what the database records about the code's engine.
-	engine engineState
-	// revoke are the engines at the same address the person chose to
-	// revoke in the setup's transaction.
-	revoke []string
+	c    *cliIO
+	f    setupCodeFlags
+	p    setupcode.Payload
+	desc setup.Description
+	conn *pgx.Conn
 }
 
 // runInitSetupCode: basalt init --setup-code, in the contract's order.
@@ -138,315 +130,187 @@ func runInitSetupCode(c *cliIO, args []string) int {
 	return exitOK
 }
 
-// newLaptopSetup decodes and validates the code, then applies this
-// computer's checks: its clock and this binary's guard (step 1).
+// newLaptopSetup applies the checks that need no database (step 1,
+// setup.Describe) and keeps the decoded code for the target check, which
+// reads the admin connection string before anything connects.
 func newLaptopSetup(c *cliIO, f setupCodeFlags) (*laptopSetup, error) {
+	desc, err := setup.Describe(setup.Request{Code: f.code, Now: c.now(), EngineURL: f.engineURL})
+	if err != nil {
+		return nil, err
+	}
 	p, err := setupcode.Decode(f.code)
 	if err != nil {
 		return nil, err
 	}
-	if err := setupcode.CheckLocal(p, c.now(), guard.LatestVersion()); err != nil {
-		return nil, err
-	}
-	if f.engineURL != "" && p.Engine == nil {
-		return nil, fmt.Errorf("ENGINE_KEY_MISSING: this setup code carries no engine key, so basalt cannot record the engine address. "+
-			"Ask %s to check basalt status (its key file may be refused) and make a new code", agentWord(p))
-	}
-	id, err := uuid.Parse(p.SetupID)
-	if err != nil {
-		return nil, err
-	}
-	expires, err := p.ExpiresTime()
-	if err != nil {
-		return nil, err
-	}
-	return &laptopSetup{c: c, f: f, p: p, names: guard.Names{Prefix: p.Prefix}, id: id, expires: expires}, nil
+	return &laptopSetup{c: c, f: f, p: p, desc: desc}, nil
 }
 
-// run reads the database's state, shows the summary and the SQL, asks,
-// and runs it all in one transaction, then registers the portal passkey.
+func (l *laptopSetup) request() setup.Request {
+	return setup.Request{Code: l.f.code, Now: l.c.now(), EngineURL: l.f.engineURL}
+}
+
+// errDryRun stops a dry run after the SQL is shown.
+var errDryRun = errors.New("dry run")
+
+// run checks the database, shows the summary, asks the questions, shows
+// the SQL, asks, and runs it all in one transaction, then registers the
+// portal passkey (steps 4 to 8).
 func (l *laptopSetup) run() error {
 	c := l.c
-	db, state, err := l.readDatabase()
+	checked, err := setup.Check(c.ctx, l.conn, l.request())
 	if err != nil {
 		return err
 	}
-	if err := setupcode.CheckDatabase(l.p, db); err != nil {
-		return err
-	}
-	if err := l.readEngine(); err != nil {
-		return err
-	}
-	engineOnly := false
-	if upgradeDone(l.p, state.GuardVersion) {
-		engineOnly = l.engineToRecord()
-	}
-	if upgradeDone(l.p, state.GuardVersion) && !engineOnly {
-		fmt.Fprintf(c.stderr, "basalt: the guard is already at version %d and this code upgrades it to version %d: nothing to upgrade; nothing changed\n",
-			state.GuardVersion, l.p.Guard.To)
+	if n := checked.NothingToDo; n != nil {
+		l.nothingToDo(*n)
 		return nil
 	}
-	for _, line := range setupcode.Summary(l.p, state) {
-		if engineOnly && strings.HasPrefix(line, upgradeLinePrefix) {
-			line = "No guard change."
-		}
+	for _, line := range checked.Summary {
 		fmt.Fprintln(c.stdout, line)
 	}
-	if err := l.engineSummary(); err != nil {
+	var answers setup.Answers
+	if answers.Revoke, err = l.engineSummary(checked); err != nil {
 		return err
 	}
 	fmt.Fprintln(c.stdout)
-	script, err := l.plan()
-	if err != nil {
-		return missingTablesHint(err, l.conn.Config().Database)
+	if answers.AllRows, err = l.rowSecurity(checked.Questions.RowSecurity); err != nil {
+		return err
 	}
-	fmt.Fprint(c.stdout, script.SQL())
-	printWarnings(c.stderr, script)
-	if l.f.dryRun {
-		fmt.Fprintln(c.stderr, "basalt: dry run; nothing ran")
+	res, err := setup.Run(c.ctx, l.conn, l.request(), setup.RunInput{
+		Answers: answers, AddPasskey: l.f.addPasskey, Approve: l.approve, Committed: l.committed, AskPasskey: l.portalPasskey,
+	})
+	if errors.Is(err, errDryRun) {
 		return nil
 	}
-	if !l.f.yes {
-		ok, err := c.confirm("Run this?")
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return errors.New("canceled; nothing changed")
-		}
+	if err != nil {
+		return err
 	}
-	if err := applySetup(c.ctx, l.conn, script); err != nil {
-		return l.refused(err)
+	if n := res.NothingToDo; n != nil { // the guard was upgraded since Check
+		l.nothingToDo(*n)
+		return nil
 	}
-	fmt.Fprintf(c.stderr, "basalt: setup %s recorded\n", l.p.SetupID)
-	if l.p.Agent != nil {
-		role := l.p.Role()
-		warnRLSBlind(c, l.conn, role, l.spec())
+	if res.Passkey != nil {
+		fmt.Fprintf(c.stderr, "basalt: passkey registered for %s\n", res.Passkey.RPID)
 	}
-	if err := l.passkey(); err != nil {
-		return fmt.Errorf("the setup ran but no passkey was registered: %w. Ask %s for a new code; running it registers the passkey", err, agentWord(l.p))
-	}
-	fmt.Fprintf(c.stdout, "Done. Tell %s to check its status.\n", agentWord(l.p))
-	if l.p.Engine != nil && l.f.engineURL != "" {
+	fmt.Fprintf(c.stdout, "Done. Tell %s to check its status.\n", l.desc.AgentWord)
+	if res.EngineRecorded && l.f.engineURL != "" {
 		fmt.Fprintln(c.stdout, "Pin it on each device you approve from:")
 		fmt.Fprintln(c.stdout, pinAddURL)
 	}
 	return nil
 }
 
-// upgradeDone is whether an UPGRADE code has nothing to add: the installed
-// guard already has every migration up to the code's guard.to (or is
-// newer). No guard installed is not done: the code installs it.
-func upgradeDone(p setupcode.Payload, installed int) bool {
-	if p.Kind != setupcode.KindUpgrade || installed == 0 {
-		return false
-	}
-	var upTo []guard.Migration
-	for _, m := range guard.Migrations() {
-		if m.Version <= p.Guard.To {
-			upTo = append(upTo, m)
-		}
-	}
-	st := guard.StatusAt(installed, upTo)
-	return st.State == guard.GuardOK || st.State == guard.GuardNewer
+// nothingToDo says an UPGRADE code has nothing to upgrade.
+func (l *laptopSetup) nothingToDo(n setup.NothingToDo) {
+	fmt.Fprintf(l.c.stderr, "basalt: the guard is already at version %d and this code upgrades it to version %d: nothing to upgrade; nothing changed\n",
+		n.Installed, n.To)
 }
 
-// agentWord names the agent in messages: its name, or "your agent" for an
-// UPGRADE code.
-func agentWord(p setupcode.Payload) string {
-	if p.Agent == nil {
-		return "your agent"
+// rowSecurity answers the row-level security questions as basalt init does
+// (agentPolicies): the tables the person lets the agent see all rows of.
+func (l *laptopSetup) rowSecurity(questions []setup.RowSecurityQuestion) ([]string, error) {
+	texts := make([]string, 0, len(questions))
+	for _, q := range questions {
+		texts = append(texts, q.Text)
 	}
-	return p.Agent.Name
-}
-
-// readDatabase reads what the checks and the summary need (step 4).
-func (l *laptopSetup) readDatabase() (setupcode.Database, setupcode.SummaryState, error) {
-	ctx, q := l.c.ctx, l.conn
-	var db setupcode.Database
-	var state setupcode.SummaryState
-	var err error
-	if db.Prefix, err = guard.InstalledPrefix(ctx, q); err != nil {
-		return db, state, err
-	}
-	if state.GuardVersion, err = guard.InstalledVersion(ctx, q); err != nil {
-		return db, state, err
-	}
-	role := l.p.Role()
-	if db.Setups, err = guard.SetupsFor(ctx, q, l.id, role); err != nil {
-		return db, state, err
-	}
-	if role == "" {
-		return db, state, nil
-	}
-	exists, err := guard.AgentRoleExists(ctx, q, l.names, l.p.Agent.Name)
-	if err != nil || !exists {
-		return db, state, err
-	}
-	db.Roles = []string{role}
-	if l.p.Kind == setupcode.KindAgent {
-		now, err := guard.RoleStatementTimeout(ctx, q, role)
-		if err != nil {
-			return db, state, err
-		}
-		want := l.p.Agent.StatementTimeoutMs
-		state.TimeoutNow = timeoutNow(now.AllDatabases, want)
-		if now.ThisDatabase != "" {
-			state.TimeoutThisDatabase = timeoutNow(now.ThisDatabase, want)
-		}
-	}
-	return db, state, nil
-}
-
-// timeoutNow is the role's current statement_timeout as the summary shows
-// it, or "" when it is the code's.
-func timeoutNow(setting string, want int64) string {
-	if setting == "" {
-		return "not set"
-	}
-	ms, ok := settingMillis(setting)
-	switch {
-	case ok && ms == want:
-		return ""
-	case ok:
-		return strconv.FormatInt(ms, 10) + " ms"
-	default:
-		return printableLabel(setting)
-	}
-}
-
-// settingMillis reads a time setting as Postgres stores it: a number of
-// milliseconds, or a number with a unit.
-func settingMillis(s string) (int64, bool) {
-	units := []struct {
-		suffix string
-		ms     int64
-	}{{"ms", 1}, {"min", 60000}, {"s", 1000}, {"h", 3600000}, {"d", 86400000}, {"", 1}}
-	for _, u := range units {
-		num, ok := strings.CutSuffix(s, u.suffix)
-		if !ok {
-			continue
-		}
-		if n, err := strconv.ParseInt(strings.TrimSpace(num), 10, 64); err == nil {
-			return n * u.ms, true
-		}
-	}
-	return 0, false
-}
-
-// spec is the agent part of the code as an install input.
-func (l *laptopSetup) spec() guard.AgentSpec {
-	a := l.p.Agent
-	return guard.AgentSpec{
-		Name: a.Name, Write: a.Write, Read: a.Read, Verifier: a.Verifier,
-		CreateOnly: l.p.Kind == setupcode.KindInstall, Change: l.p.Kind == setupcode.KindAgent,
-		StatementTimeout: time.Duration(a.StatementTimeoutMs) * time.Millisecond,
-	}
-}
-
-// plan asks the row-level security questions and builds the SQL: the
-// migrations up to the code's guard.to, the role (taken over only when it
-// is a plain agent: agentAdoptSQL runs first), the grants, the confirmed
-// policies, attach, and record_setup last (step 6).
-func (l *laptopSetup) plan() (guard.Script, error) {
-	opts := guard.InitOptions{Names: l.names, UpTo: l.p.Guard.To}
-	if l.p.Agent != nil {
-		opts.Agent = l.spec()
-		policies, err := agentPolicies(l.c, l.conn, l.names, initFlags{
-			agent: l.p.Agent.Name, spec: opts.Agent, agentRLS: l.f.agentRLS, yes: l.f.yes, dryRun: l.f.dryRun,
-		})
-		if err != nil {
-			return guard.Script{}, err
-		}
-		opts.AgentPolicies = policies
-	}
-	script, err := guard.PlanInit(l.c.ctx, l.conn, opts)
+	yes, err := rlsAnswers(l.c, l.f.agentRLS, l.f.yes || l.f.dryRun, texts)
 	if err != nil {
-		return guard.Script{}, err
+		return nil, err
 	}
-	agent := ""
-	if l.p.Agent != nil {
-		agent = l.p.Agent.Name
-	}
-	record, err := guard.RecordSetupStatement(l.names, guard.Setup{
-		ID: l.id, Kind: string(l.p.Kind), Agent: agent, GuardVersion: l.p.Guard.To, ExpiresAt: l.expires,
-	})
-	if err != nil {
-		return guard.Script{}, err
-	}
-	script.Statements = append(script.Statements, l.engineStatements()...)
-	script.Statements = append(script.Statements, record)
-	return script, nil
-}
-
-// applySetup runs script in one transaction. Its last statement is
-// record_setup, run after every other one and after the coverage check, so
-// the setup is recorded only with everything it sets up; any failure rolls
-// all of it back.
-func applySetup(ctx context.Context, conn *pgx.Conn, script guard.Script) error {
-	n := len(script.Statements)
-	if n == 0 {
-		return errors.New("nothing to run")
-	}
-	return applyInit(ctx, conn, guard.Script{Statements: script.Statements[:n-1]}, script.Statements[n-1])
-}
-
-// refused turns a failed transaction into what the person reads. Nothing
-// changed: the transaction rolled back. A refusal by record_setup gets the
-// contract's words (USED and SUPERSEDED with the time, read again).
-func (l *laptopSetup) refused(err error) error {
-	agent := agentWord(l.p)
-	if detail, ok := guard.SetupRefusal(err); ok {
-		switch setupcode.Refusal(detail) {
-		case setupcode.RefusalUsed, setupcode.RefusalSuperseded:
-			if db, _, rerr := l.readDatabase(); rerr == nil {
-				if cerr := setupcode.CheckDatabase(l.p, db); cerr != nil {
-					return cerr
-				}
-			}
-			return fmt.Errorf("the database refused this setup code (%s): it, or a newer one for %s, already ran. Ask %s for a new one", detail, agent, agent)
-		case setupcode.RefusalExpired:
-			return fmt.Errorf("this setup code expired on %s by the database's clock. Ask %s for a new one", l.expires.UTC().Format("2006-01-02 15:04 UTC"), agent)
-		default:
-			return fmt.Errorf("the database's clock refuses this setup code (%s): check the database's and this computer's clocks, or ask %s for a new code", detail, agent)
-		}
-	}
-	return nothingChanged(withGuardDetail(err))
-}
-
-// sentences joins the non-empty parts with one space, each ending with a
-// period.
-func sentences(parts ...string) string {
 	var out []string
-	for _, s := range parts {
-		s = strings.TrimSpace(s)
-		if s == "" {
-			continue
+	for i, q := range questions {
+		if yes[i] {
+			out = append(out, q.Table)
 		}
-		if !strings.HasSuffix(s, ".") {
-			s += "."
-		}
-		out = append(out, s)
 	}
-	return strings.Join(out, " ")
+	return out, nil
 }
 
-// passkey registers a portal passkey when no active one belongs to the
-// portal, or with --add-passkey (step 7).
-func (l *laptopSetup) passkey() error {
-	has, err := hasPasskeyFor(l.c, l.conn, passkey.Production.Origin)
-	if err != nil {
-		return err
+// approve shows the SQL and the plan's warnings, then stops a dry run, or
+// asks "Run this?" unless --yes.
+func (l *laptopSetup) approve(plan setup.Plan) error {
+	c := l.c
+	fmt.Fprint(c.stdout, plan.SQL)
+	printWarningLines(c.stderr, plan.Warnings)
+	if l.f.dryRun {
+		fmt.Fprintln(c.stderr, "basalt: dry run; nothing ran")
+		return errDryRun
 	}
-	if has && !l.f.addPasskey {
+	if l.f.yes {
 		return nil
 	}
-	label := setupPasskeyLabel(l.f.passkeyLabel, l.p, l.conn.Config().Database, l.c.now())
-	if err := registerPasskey(l.c, l.conn, passkey.Production, label, l.c.interactive); err != nil {
+	ok, err := c.confirm("Run this?")
+	if err != nil {
 		return err
 	}
-	fmt.Fprintf(l.c.stderr, "basalt: passkey registered for %s\n", passkey.Production.RPID)
+	if !ok {
+		return errors.New("canceled; nothing changed")
+	}
 	return nil
+}
+
+// committed says the setup is recorded, with the warnings about tables
+// the agent cannot see.
+func (l *laptopSetup) committed(res setup.Result) {
+	fmt.Fprintf(l.c.stderr, "basalt: setup %s recorded\n", res.SetupID)
+	printWarningLines(l.c.stderr, res.Warnings)
+}
+
+// portalPasskey is the passkey step (step 7): print and open the portal's
+// registration link, read the pasted code and verify it.
+func (l *laptopSetup) portalPasskey(context.Context) (setup.Passkey, error) {
+	c := l.c
+	db := l.conn.Config().Database
+	req, err := setup.NewPasskeyRequest(c.rand, setupPasskeyLabel(l.f.passkeyLabel, l.p, db, c.now()), db)
+	if err != nil {
+		return setup.Passkey{}, err
+	}
+	link, err := req.Link()
+	if err != nil {
+		return setup.Passkey{}, err
+	}
+	if err := showRegistrationLink(c, link, c.interactive); err != nil {
+		return setup.Passkey{}, err
+	}
+	code, err := pastedRegistrationCode(c)
+	if err != nil {
+		return setup.Passkey{}, err
+	}
+	return req.Verify(code)
+}
+
+// plan is the setup's SQL as Run builds it, with no row-level security
+// policy and no engine revoked.
+func (l *laptopSetup) plan() (guard.Script, error) {
+	s, err := setuprun.New(l.f.code, l.c.now(), l.f.engineURL)
+	if err != nil {
+		return guard.Script{}, err
+	}
+	p, err := s.Prepare(l.c.ctx, l.conn)
+	if err != nil {
+		return guard.Script{}, err
+	}
+	return p.Plan(l.c.ctx, nil, nil)
+}
+
+// upgradeDone is whether an UPGRADE code has nothing to add
+// (setuprun.UpgradeDone).
+func upgradeDone(p setupcode.Payload, installed int) bool { return setuprun.UpgradeDone(p, installed) }
+
+// applySetup runs script in one transaction, record_setup last
+// (setuprun.ApplySetup).
+func applySetup(ctx context.Context, conn *pgx.Conn, script guard.Script) error {
+	return setuprun.ApplySetup(ctx, conn, script)
+}
+
+// refused turns a failed transaction into what the person reads
+// (setuprun.Refused).
+func (l *laptopSetup) refused(err error) error {
+	ctx := context.Background()
+	if l.c != nil {
+		ctx = l.c.ctx
+	}
+	return setuprun.Refused(ctx, l.conn, l.p, err)
 }
 
 // setupPasskeyLabel is the passkey's name: the flag, or the default. An
@@ -463,12 +327,11 @@ func setupPasskeyLabel(flagLabel string, p setupcode.Payload, database string, n
 }
 
 // checkSetupTarget refuses an admin connection string that names another
-// database than the code's target (step 3, CO-17): with a Supabase project
-// ref, the same ref and database; otherwise the same host, port and
-// database. It first applies the admin URL rules basalt init has (a
+// database than the code's target (step 3, CO-17), before anything
+// connects. It first applies the admin URL rules basalt init has (a
 // postgres:// URL that parses), and refuses a URL whose parameters, a
 // service file or the environment would make pgx connect elsewhere than
-// the URL itself names.
+// the URL itself names; setuprun.CheckTarget compares the databases.
 func checkSetupTarget(p setupcode.Payload, admin string) error {
 	if _, err := guard.AgentConnString(admin, "", ""); err != nil {
 		return err
@@ -484,14 +347,7 @@ func checkSetupTarget(p setupcode.Payload, admin string) error {
 	if err := sameEffectiveTarget(admin, got); err != nil {
 		return err
 	}
-	if sameDatabase(p.Target, got) {
-		return nil
-	}
-	want := targetWords(p.Target)
-	return fmt.Errorf("This setup code is for database %s of %s (the agent connects there). Your admin connection string points at database %s of %s. "+ //nolint:staticcheck // the contract's sentence, shown as is
-		"Either run this command with the admin connection string of %s, or ask %s for a new code for the database you meant "+
-		"(basalt init --remote --new-code --database-url %s).",
-		p.Target.Database, want, got.Database, targetWords(got), want, agentWord(p), withoutPassword(u))
+	return setuprun.CheckTarget(p, got, u)
 }
 
 // sameEffectiveTarget refuses an admin string that pgx would connect
@@ -515,30 +371,5 @@ func sameEffectiveTarget(admin string, t setupcode.Target) error {
 	return nil
 }
 
-// sameDatabase compares by database identity (CO-17): a Supabase project
-// by its ref and database name, so its pooler and direct hosts match;
-// anything else by host, port and database.
-func sameDatabase(want, got setupcode.Target) bool {
-	if want.SupabaseRef != "" {
-		return got.SupabaseRef == want.SupabaseRef && got.Database == want.Database
-	}
-	return strings.EqualFold(got.Host, want.Host) && got.Port == want.Port && got.Database == want.Database
-}
-
-// targetWords names where a target is: a Supabase project, or host:port.
-func targetWords(t setupcode.Target) string {
-	if t.SupabaseRef != "" {
-		return "Supabase project " + t.SupabaseRef
-	}
-	return fmt.Sprintf("%s:%d", printableLabel(t.Host), t.Port)
-}
-
-// withoutPassword is the admin URL's scheme, user, host, port and database,
-// with no password and no parameters: what the person may give the agent.
-func withoutPassword(u *url.URL) string {
-	out := url.URL{Scheme: u.Scheme, Host: u.Host, Path: u.Path}
-	if name := u.User.Username(); name != "" {
-		out.User = url.User(name)
-	}
-	return out.String()
-}
+// sameDatabase compares by database identity (setuprun.SameDatabase).
+func sameDatabase(want, got setupcode.Target) bool { return setuprun.SameDatabase(want, got) }

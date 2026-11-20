@@ -161,7 +161,31 @@
           "active": {
             "type": "integer",
             "minimum": 0,
-            "description": "How many passkeys are active. Absent when the engine is down."
+            "description": "How many passkeys are active. Absent when the engine is down or the passkeys cannot be read."
+          },
+          "keys": {
+            "type": "array",
+            "description": "The active passkeys (at most 100), oldest first, each with its check code computed from the public key in the database. If the setup page showed a check code for the passkey it created, it is one of these: a passkey the person did not create means stop and remove it. Absent when none is active or the passkeys cannot be read.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["credentialId"],
+              "properties": {
+                "credentialId": {
+                  "type": "string",
+                  "description": "The passkey's credential id, base64url."
+                },
+                "checkCode": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{4}( [0-9a-f]{4}){4}$",
+                  "description": "Five groups of four lowercase hex digits, from the first 10 bytes of sha256(\"basalt-passkey-check.1\\n\" || x || y) of the key's P-256 coordinates."
+                }
+              }
+            }
+          },
+          "summary": {
+            "type": "string",
+            "description": "How many passkeys are registered and the check code of each, in words for the person. Set once a setup is recorded (setup.state DONE) and at least one passkey is listed."
           }
         }
       },

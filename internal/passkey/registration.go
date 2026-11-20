@@ -67,6 +67,17 @@ func NewRegistrationRequest(rnd io.Reader, userName, displayName string) (Regist
 	return req, req.validate()
 }
 
+// RegistrationRequestFor is the request of a challenge and user id drawn
+// elsewhere, such as by a service that rebuilds the request it sent a
+// page. It copies both.
+func RegistrationRequestFor(challenge, userID []byte, userName, displayName string) (RegistrationRequest, error) {
+	req := RegistrationRequest{
+		Challenge: append([]byte(nil), challenge...), UserID: append([]byte(nil), userID...),
+		UserName: userName, DisplayName: displayName,
+	}
+	return req, req.validate()
+}
+
 func (r RegistrationRequest) validate() error {
 	if len(r.Challenge) != challengeLen || len(r.UserID) != userIDLen {
 		return rejected("registration request needs a %d-byte challenge and a %d-byte user id", challengeLen, userIDLen)

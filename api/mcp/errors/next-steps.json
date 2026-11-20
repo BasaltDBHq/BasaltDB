@@ -181,5 +181,10 @@
     { "kind": "PROBLEM", "code": "GUARD_OUTDATED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }] },
     { "kind": "PROBLEM", "code": "GUARD_UPGRADE_AVAILABLE", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }] },
     { "kind": "PROBLEM", "code": "NO_PASSKEY", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }] }
+  ],
+  "connectLink": [
+    { "kind": "ERROR", "code": "UNAVAILABLE", "reason": "SETUP_PENDING", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "END_TURN" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },
+    { "kind": "PROBLEM", "code": "SETUP_NOT_RUN", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "END_TURN" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },
+    { "kind": "PROBLEM", "code": "SETUP_CHANGE_PENDING", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "OPEN_LINK" }, { "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }] }
   ]
 }

@@ -34,6 +34,8 @@ func TestPageCSPConnectSrc(t *testing.T) {
 		// The pin page reaches only the address it checks, which the
 		// portal's edge function adds for that request.
 		"engines/index.html": "'none'",
+		// The connect page reaches the connect service and nothing else.
+		"connect/index.html": "https://connect.basaltvault.app",
 	}
 	for page, want := range cases {
 		t.Run(page, func(t *testing.T) {
@@ -86,7 +88,7 @@ func TestSigningPagesSayBiometricsStayOnTheDevice(t *testing.T) {
 		require.NotContains(t, strings.ToLower(string(body)), "touch id", p)
 		return nil
 	}))
-	for _, page := range []string{"approve", "revert", "plugin", "register", "passkeys"} {
+	for _, page := range []string{"approve", "revert", "plugin", "register", "passkeys", "connect"} {
 		body, err := web.Files.ReadFile(page + "/index.html")
 		require.NoError(t, err)
 		require.Contains(t, string(body), line, page)

@@ -43,6 +43,9 @@ const (
 	// pinning one. Portal only: the engine's local pages never serve them.
 	EnginesPath    = "/engines"
 	EnginesAddPath = "/engines/add"
+	// ConnectPath is the portal's connect page (CONTRACT.md, The connect
+	// page): run a setup code through the connect service. Portal only.
+	ConnectPath = "/connect"
 )
 
 // Approval is the approval page of a held write: <base>/approvals/<id>.
@@ -79,3 +82,7 @@ func Forget(base string) string {
 func trim(base string) string {
 	return strings.TrimSuffix(base, "/")
 }
+
+// ConnectURL is the connect link for a setup code: the portal's connect
+// page with the code in the fragment, so the code never reaches a server.
+func ConnectURL(code string) string { return Portal + ConnectPath + "#" + code }

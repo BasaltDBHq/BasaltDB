@@ -469,6 +469,17 @@ func refuseOldCredentialFile(raw []byte) error {
 	return nil
 }
 
+// ConnectLinkBudget is the link budget for the connect link, or 0 when the
+// engine hands none: the engine is agent-operated, the vault is ON, the pages
+// are the portal's and devLocalPages is off (CONTRACT.md, Connect, The connect
+// link). The link is made when its whole length is within the budget.
+func (c Config) ConnectLinkBudget() int {
+	if !c.AgentOperated() || !c.VaultEnabled() || c.DevLocalPages {
+		return 0
+	}
+	return c.LinkBudgetOrDefault()
+}
+
 // LinkBudgetOrDefault is the configured link budget, or links.DefaultBudget
 // when none is set.
 func (c Config) LinkBudgetOrDefault() int {

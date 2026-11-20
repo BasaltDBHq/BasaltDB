@@ -85,13 +85,17 @@ mocks: bin/mockery ## Regenerate mocks from .mockery.yml
 	@$(MOCKERY) --config .mockery.yml
 
 .PHONY: proto
-proto: bin/protoc-gen-go bin/protoc-gen-connect-go ## Regenerate the plugin protocol's Go code from api/plugin/proto (needs protoc on PATH)
+proto: bin/protoc-gen-go bin/protoc-gen-connect-go ## Regenerate the Go code of the plugin protocol (api/plugin/proto) and the connect service (api/connect/proto); needs protoc on PATH
 	@protoc -I api/plugin/proto \
 		--go_out=api/plugin/proto --go_opt=paths=source_relative \
 		--connect-go_out=api/plugin/proto --connect-go_opt=paths=source_relative \
 		api/plugin/proto/basalt/plugin/v1/plugin.proto
-	@go run mvdan.cc/gofumpt@v0.9.2 -w api/plugin/proto
-	@go run golang.org/x/tools/cmd/goimports@v0.39.0 -local github.com/basaltdbhq/basaltdb -w api/plugin/proto
+	@protoc -I api/connect/proto \
+		--go_out=api/connect/proto --go_opt=paths=source_relative \
+		--connect-go_out=api/connect/proto --connect-go_opt=paths=source_relative \
+		api/connect/proto/basalt/connect/v1/connect.proto
+	@go run mvdan.cc/gofumpt@v0.9.2 -w api/plugin/proto api/connect/proto
+	@go run golang.org/x/tools/cmd/goimports@v0.39.0 -local github.com/basaltdbhq/basaltdb -w api/plugin/proto api/connect/proto
 
 .PHONY: install-sh-check
 install-sh-check: ## POSIX syntax, default repo, and archive names for install.sh
@@ -158,7 +162,7 @@ PORTAL_DIR ?= dist/portal
 portal-build: ## Copy only the served portal files to dist/portal (Cloudflare Pages output)
 	@rm -rf "$(PORTAL_DIR)"
 	@mkdir -p "$(PORTAL_DIR)/lib" "$(PORTAL_DIR)/fonts"
-	@for d in approve revert plugin register passkeys engines; do mkdir -p "$(PORTAL_DIR)/$$d" && cp "web/$$d/index.html" "$(PORTAL_DIR)/$$d/index.html" || exit 1; done
+	@for d in approve revert plugin register passkeys engines connect; do mkdir -p "$(PORTAL_DIR)/$$d" && cp "web/$$d/index.html" "$(PORTAL_DIR)/$$d/index.html" || exit 1; done
 	@for f in web/lib/*.js; do cp "$$f" "$(PORTAL_DIR)/lib/" || exit 1; done
 	@cp web/fonts/*.woff2 web/fonts/OFL.txt "$(PORTAL_DIR)/fonts/"
 	@cp web/index.html web/404.html web/style.css web/_headers web/_redirects web/_routes.json "$(PORTAL_DIR)/"

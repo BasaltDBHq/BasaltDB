@@ -320,6 +320,24 @@ type NextSteps struct {
 	Warnings      []WarningSteps `json:"warnings"`
 	Problems      []ProblemSteps `json:"problems"`
 	AgentOperated []VariantSteps `json:"agentOperated"`
+	// ConnectLink replaces the steps of an entry that hands the person a
+	// pending setup code when the engine is agent-operated, its vault is ON,
+	// its pages are the portal's and the connect link fits the link budget
+	// (CONTRACT.md, Next steps with the connect link).
+	ConnectLink []VariantSteps `json:"connectLink"`
+}
+
+// ConnectLinkEntry returns the connect-link variant of kind for code, reason
+// and tool, if the catalog has one. It applies only when the engine hands the
+// connect link; otherwise the entry's own steps (or its agentOperated
+// variant) apply.
+func (c NextSteps) ConnectLinkEntry(kind, code, reason, tool string) (VariantSteps, bool) {
+	for _, v := range c.ConnectLink {
+		if v.Kind == kind && v.Code == code && v.Reason == reason && v.Tool == tool {
+			return v, true
+		}
+	}
+	return VariantSteps{}, false
 }
 
 // AgentOperatedEntry returns the variant of kind for code, reason and tool

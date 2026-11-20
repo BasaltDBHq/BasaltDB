@@ -10,6 +10,7 @@ Owner decisions, Decided Nov 12. Every link is built from one pages base URL (`p
 | Register a passkey | `/passkeys/register#1.<request>` |
 | Check which passkeys a device has (M4.1) | `/passkeys/check#1.<request>` |
 | Forget a removed passkey (M4.1) | `/passkeys/forget#1.<request>` |
+| Run a setup code through the connect service (planned, [Connect](connect.md#the-connect-page)) | `/connect#<code>`, or `/connect` with a paste box. Portal only: the local pages have no such page |
 | A run (reserved, later) | `/runs/<runId>` |
 
 

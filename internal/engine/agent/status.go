@@ -268,6 +268,20 @@ type PagesStatus struct {
 type PasskeysStatus struct {
 	Registered bool `json:"registered"`
 	Active     *int `json:"active,omitempty"`
+	// Keys names each active passkey with its check code, computed from the
+	// public key in the database (CONTRACT.md, Connect, The passkey check
+	// code); absent when none is active or they cannot be read.
+	Keys []PasskeyStatus `json:"keys,omitempty"`
+	// Summary is the same in words for the person, set once a setup is
+	// recorded (state DONE).
+	Summary string `json:"summary,omitempty"`
+}
+
+// PasskeyStatus is one entry of status.passkeys.keys. CheckCode is absent
+// when the key cannot be read.
+type PasskeyStatus struct {
+	CredentialID passkey.Bytes `json:"credentialId"`
+	CheckCode    string        `json:"checkCode,omitempty"`
 }
 
 // LedgerStatus is status.ledger: absent when the guard or its size cannot
@@ -280,11 +294,14 @@ type LedgerStatus struct {
 
 // Problem is one entry of status.problems.
 type Problem struct {
-	Code          string     `json:"code"`
-	Severity      string     `json:"severity"`
-	Message       string     `json:"message"`
-	PersonMessage string     `json:"personMessage,omitempty"`
-	NextSteps     []NextStep `json:"nextSteps"`
+	Code          string `json:"code"`
+	Severity      string `json:"severity"`
+	Message       string `json:"message"`
+	PersonMessage string `json:"personMessage,omitempty"`
+	// Links are the URLs of PersonMessage, with labels (present exactly when
+	// it holds a URL).
+	Links     []mcp.Link `json:"links,omitempty"`
+	NextSteps []NextStep `json:"nextSteps"`
 }
 
 // Status is the status tool: whether the agent is served and each problem
@@ -303,6 +320,7 @@ type statusDeps struct {
 	sameUser, engineReachable bool
 	engineUnknown             bool
 	devLocalPages             bool
+	connectBudget             int
 	vault                     VaultReporter
 	portal                    PortalReporter
 	plugins                   PluginReporter
@@ -333,7 +351,7 @@ type statusDeps struct {
 func (s *Service) statusDeps() statusDeps {
 	return statusDeps{
 		name: s.Name, operatedBy: s.OperatedBy, build: s.Build, pagesBase: s.PagesBase, pagesOrigin: s.PagesOrigin,
-		sameUser: s.SameUser, devLocalPages: s.DevLocalPages, engineReachable: true, vault: s.Vault, portal: s.Portal, plugins: s.Plugins,
+		sameUser: s.SameUser, devLocalPages: s.DevLocalPages, connectBudget: s.ConnectBudget, engineReachable: true, vault: s.Vault, portal: s.Portal, plugins: s.Plugins,
 		engineRecord: s.EngineRecord, directServed: s.DirectServed, cmds: s.Commands, setup: s.pendingSetup(), probe: s.Probe,
 		update: s.updateInfo(), finisher: s.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, lockTrouble: &s.lockTrouble, passkeys: s.Store.Passkeys, log: s.Log, now: s.Now,
 	}
@@ -358,6 +376,9 @@ type LocalStatus struct {
 	EngineUnknown bool
 	// DevLocalPages is the config's devLocalPages (problem DEV_LOCAL_PAGES).
 	DevLocalPages bool
+	// ConnectBudget is the config's config.ConnectLinkBudget (0: no connect
+	// link).
+	ConnectBudget int
 	// Portal is the last daily portal check the engine saved (problem
 	// PORTAL_MISMATCH); nil when the config names no portal.
 	Portal PortalReporter
@@ -387,7 +408,7 @@ func (l LocalStatus) Report(ctx context.Context) (StatusReport, error) {
 	}
 	return statusDeps{
 		name: l.Name, operatedBy: l.OperatedBy, build: buildinfo.Version, pagesBase: base, pagesOrigin: l.PagesOrigin,
-		sameUser: true, devLocalPages: l.DevLocalPages, portal: l.Portal, engineReachable: l.EngineRunning, engineUnknown: l.EngineUnknown, cmds: l.Commands, setup: l.Setup, probe: l.Probe,
+		sameUser: true, devLocalPages: l.DevLocalPages, connectBudget: l.ConnectBudget, portal: l.Portal, engineReachable: l.EngineRunning, engineUnknown: l.EngineUnknown, cmds: l.Commands, setup: l.Setup, probe: l.Probe,
 		engineKey: l.EngineKey, engineRecord: l.EngineRecord, directServed: l.DirectServed,
 		// basalt status reads; the running engine finishes the setup.
 		finisher: noFinisher{}, finished: func(string) {}, notRecorded: &setupCache{}, lockTrouble: &lockTrouble{}, passkeys: l.Passkeys, log: l.Log, now: l.Now,
@@ -406,7 +427,7 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 		v := s.vault.VaultStatus()
 		r.Vault = &v
 	}
-	ps := problems{cmds: s.cmds}
+	ps := problems{cmds: s.cmds, connectBudget: s.connectBudget}
 	if s.devLocalPages {
 		ps.add(problemDevLocalPages, "the pages are development pages on this machine, not the portal",
 			func(b *Steps) string { return devLocalPagesSteps(b, s.cmds) })
@@ -446,7 +467,7 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 		}
 	}
 	if err == nil && st.State != guard.GuardMissing {
-		r.Passkeys = s.countPasskeys(ctx, &ps)
+		r.Passkeys = s.countPasskeys(ctx, &ps, setup.status.State == setupDone)
 	}
 	if err == nil {
 		r.Ledger = s.ledgerStatus(ctx, st)
@@ -596,7 +617,7 @@ func (s statusDeps) addReinstalled(ctx context.Context, ps *problems) {
 
 // passkeys counts the active passkeys; none is NO_PASSKEY. A count that
 // fails is logged and leaves active out.
-func (s statusDeps) countPasskeys(ctx context.Context, ps *problems) PasskeysStatus {
+func (s statusDeps) countPasskeys(ctx context.Context, ps *problems, setupDone bool) PasskeysStatus {
 	keys, err := s.passkeys(ctx)
 	if err != nil {
 		s.log.Error("status: count passkeys", "err", err)
@@ -607,7 +628,47 @@ func (s statusDeps) countPasskeys(ctx context.Context, ps *problems) PasskeysSta
 		ps.add(problemNoPasskey, "no passkey is registered, so held writes and reverts cannot be signed",
 			func(b *Steps) string { return noPasskeySteps(b, s.cmds) })
 	}
-	return PasskeysStatus{Registered: n > 0, Active: &n}
+	out := PasskeysStatus{Registered: n > 0, Active: &n}
+	for _, k := range keys {
+		entry := PasskeyStatus{CredentialID: k.ID}
+		code, err := k.CheckCode()
+		if err != nil {
+			s.log.Error("status: passkey check code", "err", err)
+		}
+		entry.CheckCode = code
+		out.Keys = append(out.Keys, entry)
+	}
+	if setupDone {
+		out.Summary = passkeySummary(out.Keys)
+	}
+	return out
+}
+
+// passkeySummary says in words how many passkeys are registered and the
+// check code of each, so the person can compare them with the codes the
+// connect page showed (CONTRACT.md, Connect, The passkey check code).
+func passkeySummary(keys []PasskeyStatus) string {
+	if len(keys) == 0 {
+		return ""
+	}
+	codes := make([]string, 0, len(keys))
+	for _, k := range keys {
+		if k.CheckCode != "" {
+			codes = append(codes, k.CheckCode)
+		}
+	}
+	noun := "passkeys are"
+	if len(keys) == 1 {
+		noun = "passkey is"
+	}
+	msg := fmt.Sprintf("%d %s registered", len(keys), noun)
+	if len(codes) > 0 {
+		msg += ", with check code " + strings.Join(codes, ", check code ")
+	}
+	if len(codes) < len(keys) {
+		msg += fmt.Sprintf(" (the code of %d could not be read)", len(keys)-len(codes))
+	}
+	return msg + ". If the setup page showed you a check code for the passkey it created, it should be one of these. A passkey you did not create means stop and remove it."
 }
 
 // noPasskeySteps: the person registers a passkey; on an agent-operated
@@ -694,11 +755,15 @@ func (v setupView) addProblem(ps *problems) {
 			func(b *Steps) string { return setupExpiredSteps(b, ps.cmds) })
 	case v.status.State != setupPending:
 	case v.status.Kind == guard.SetupInstall:
-		ps.add(problemSetupNotRun, "the agent's setup has not run yet; no tool but status works until it has",
-			func(b *Steps) string { return setupPendingSteps(b, v.code, v.fingerprint, true) })
+		ps.addLinked(problemSetupNotRun, "the agent's setup has not run yet; no tool but status works until it has",
+			func(b *Steps) (string, []mcp.Link) {
+				return setupPendingSteps(b, v.code, v.fingerprint, true, ps.connectBudget)
+			})
 	default:
-		ps.add(problemSetupChangePending, "a setup change is waiting for the person; the tools keep working as installed",
-			func(b *Steps) string { return setupPendingSteps(b, v.code, v.fingerprint, false) })
+		ps.addLinked(problemSetupChangePending, "a setup change is waiting for the person; the tools keep working as installed",
+			func(b *Steps) (string, []mcp.Link) {
+				return setupPendingSteps(b, v.code, v.fingerprint, false, ps.connectBudget)
+			})
 	}
 }
 
@@ -747,20 +812,27 @@ func setupFrom(p *config.Setup, recorded bool, now time.Time) setupView {
 // problems collects status problems, each built from its catalog entry.
 type problems struct {
 	cmds Commands
-	list []Problem
-	err  error
+	// connectBudget: see Deps.ConnectBudget.
+	connectBudget int
+	list          []Problem
+	err           error
 }
 
 // add builds the problem code with the steps steps returns along with the
 // person's message.
 func (ps *problems) add(code, message string, steps func(*Steps) string) {
+	ps.addLinked(code, message, func(b *Steps) (string, []mcp.Link) { return steps(b), nil })
+}
+
+// addLinked is add for a message that carries links.
+func (ps *problems) addLinked(code, message string, steps func(*Steps) (string, []mcp.Link)) {
 	entry, ok := problemEntry(code)
 	if !ok {
 		ps.fail(fmt.Errorf("no catalog entry for status problem %s", code))
 		return
 	}
 	b := NewSteps()
-	person := steps(b)
+	person, ls := steps(b)
 	list, err := b.Build()
 	if err != nil {
 		ps.fail(fmt.Errorf("status problem %s: %w", code, err))
@@ -771,7 +843,7 @@ func (ps *problems) add(code, message string, steps func(*Steps) string) {
 		ps.fail(fmt.Errorf("status problem %s: %w", code, err))
 		return
 	}
-	ps.list = append(ps.list, Problem{Code: code, Severity: entry.Severity, Message: message, PersonMessage: person, NextSteps: list})
+	ps.list = append(ps.list, Problem{Code: code, Severity: entry.Severity, Message: message, PersonMessage: person, Links: ls, NextSteps: list})
 }
 
 func (ps *problems) fail(err error) {

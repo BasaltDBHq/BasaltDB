@@ -59,6 +59,10 @@ type RestartOptions struct {
 	// (tests only: an engine and its caller in one test process share a
 	// uid, which the socket never admits); nil reads the OS's.
 	PersonPeerUID func(*net.UnixConn) (uint32, error)
+	// StartedBy is why this engine started: "hand" (the default when
+	// empty), "mcp" (basalt mcp found it down) or "crash" (the supervisor
+	// restarted it). It is carried here for the status report.
+	StartedBy string
 }
 
 func (o RestartOptions) withDefaults() RestartOptions {

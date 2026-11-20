@@ -43,6 +43,14 @@
       "expect": "ACCEPT"
     },
     {
+      "name": "connect_collect: valid",
+      "context": "CONNECT_COLLECT",
+      "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEglfhPHrg8LxuAWlZjdnNSo9CTcShFClz0sAD1eBem80rLis8Tm_wbA0QU_yosHyHSPy47tQX1Pf_1K2TIafeOw",
+      "message": "626173616c742d636f6e6e6563742d636f6c6c6563742e310a636f6e6e6563742e626173616c747661756c742e6170700a30316131663738632d353262382d376333612d396630302d3030303030303030303065310a6434386220656536362061316439206430303520316636330a323032362d31312d32305430363a31303a30305a",
+      "sig": "nZcDGwpkPQYOcoi0mxyHh6JtRcKYNRqFPd5hwphtx8SO9F8ziKyGDHSIpNunAA-mtAq2BqvHjzwjmRMk9mBIDg",
+      "expect": "ACCEPT"
+    },
+    {
       "name": "a session signature over the same bytes, checked as a receipt",
       "context": "RECEIPT",
       "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEglfhPHrg8LxuAWlZjdnNSo9CTcShFClz0sAD1eBem80rLis8Tm_wbA0QU_yosHyHSPy47tQX1Pf_1K2TIafeOw",

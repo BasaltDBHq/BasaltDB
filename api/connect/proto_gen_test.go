@@ -98,12 +98,12 @@ func TestGeneratedCodeMatchesProto(t *testing.T) {
 }
 
 // TestConnectionStringIsSensitive: every field that carries the admin
-// connection string or the hand-off ticket is marked sensitive, so a logging interceptor can find
+// connection string, the hand-off ticket or the database's address is marked sensitive, so a logging interceptor can find
 // it by the option (CONTRACT.md, Connect).
 func TestConnectionStringIsSensitive(t *testing.T) {
 	t.Parallel()
 	fd := connectv1.File_basalt_connect_v1_connect_proto
-	found, tickets := 0, 0
+	found, tickets, addresses := 0, 0, 0
 	msgs := fd.Messages()
 	for i := range msgs.Len() {
 		fields := msgs.Get(i).Fields()
@@ -111,6 +111,10 @@ func TestConnectionStringIsSensitive(t *testing.T) {
 			f := fields.Get(j)
 			if f.Name() == "database_url" {
 				found++
+				require.True(t, isSensitive(f), "%s is not marked sensitive", f.FullName())
+			}
+			if f.FullName() == "basalt.connect.v1.CheckSetupResponse.database" || f.FullName() == "basalt.connect.v1.CollectAddressResponse.address" {
+				addresses++
 				require.True(t, isSensitive(f), "%s is not marked sensitive", f.FullName())
 			}
 			if f.Name() == "ticket" {
@@ -121,6 +125,7 @@ func TestConnectionStringIsSensitive(t *testing.T) {
 	}
 	require.Equal(t, 2, found, "CheckSetupRequest and RunSetupRequest carry database_url")
 	require.Equal(t, 4, tickets, "RunSetupResponse, HandoffStatusRequest, HandoffStatusResponse and OfferAddressRequest carry the hand-off ticket, which holds the address")
+	require.Equal(t, 2, addresses, "the database CheckSetup names and the address CollectAddress returns are marked")
 }
 
 func isSensitive(f protoreflect.FieldDescriptor) bool {

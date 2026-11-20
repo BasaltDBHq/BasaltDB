@@ -77,6 +77,7 @@ var signingContexts = map[string]string{
 	"RECEIPT":    "basalt-receipt.1\n",
 	"BOX_KEY":    "basalt-engine-box-key.1\n",
 	"ROTATE":     "basalt-engine-rotate.1\n",
+	"CONNECT_COLLECT": "basalt-connect-collect.1\n",
 }
 
 // spkiP256Prefix is the DER of a P-256 SubjectPublicKeyInfo up to its

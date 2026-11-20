@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/setup-code.v1.json",
   "title": "Setup code",
-  "description": "The JSON inside a setup code, basalt-setup.1.<b64url(deflate-raw(json))>.<check> (CONTRACT.md, Setup from your laptop). basalt init --remote makes it on the bot's machine; basalt init --setup-code reads it on the person's own computer. Never the agent's password (its SCRAM-SHA-256 verifier instead, which is sensitive) and never anything of the admin. Closed: an unknown key is refused. Rules a schema cannot state (guard.from <= guard.to, and < for UPGRADE; at least one table; a table in only one of write and read; the agent role <prefix>_agent_<name> at most 63 bytes; expiresAt no later than the setupId's UUIDv7 time plus 24 hours) are in CONTRACT.md. Golden fixtures: setup-code.fixtures.json.",
+  "description": "The JSON inside a setup code, basalt-setup.1.<b64url(deflate-raw(json))>.<check> (CONTRACT.md, Setup from your laptop). basalt init --remote makes it on the bot's machine; basalt init --setup-code reads it on the person's own computer, and the connect service reads it from the connect page. Never the agent's password (its SCRAM-SHA-256 verifier instead, which is sensitive) and never anything of the admin. Closed: an unknown key is refused. Rules a schema cannot state (guard.from <= guard.to, and < for UPGRADE; at least one table in write or read, unless agent.allTables; a table in only one of write and read; the agent role <prefix>_agent_<name> at most 63 bytes; expiresAt no later than the setupId's UUIDv7 time plus 24 hours; a code without target carries engine, and an AGENT code without target carries agent.verifier) are in CONTRACT.md. Golden fixtures: setup-code.fixtures.json.",
   "oneOf": [
     { "$ref": "#/$defs/install" },
     { "$ref": "#/$defs/agentChange" },
@@ -12,8 +12,8 @@
     "install": {
       "type": "object",
       "additionalProperties": false,
-      "description": "INSTALL: the guard (migrations guard.from+1..guard.to), the agent role with its password set from the verifier, its grants, and a portal passkey when none is active.",
-      "required": ["format", "setupId", "kind", "prefix", "target", "guard", "build", "agent", "expiresAt"],
+      "description": "INSTALL: the guard (migrations guard.from+1..guard.to), the agent role with its password set from the verifier, its grants, and a portal passkey when none is active. Planned: without target, a connect-only code (it must carry engine); the database is the one the person pastes on the connect page.",
+      "required": ["format", "setupId", "kind", "prefix", "guard", "build", "agent", "expiresAt"],
       "properties": {
         "format": { "$ref": "#/$defs/format" },
         "setupId": { "$ref": "#/$defs/setupId" },
@@ -30,8 +30,8 @@
     "agentChange": {
       "type": "object",
       "additionalProperties": false,
-      "description": "AGENT: an existing agent's tables, replaced by write and read as given; with a verifier its password is rotated, without one it is kept. Also applies missing migrations up to guard.to and registers a portal passkey when none is active.",
-      "required": ["format", "setupId", "kind", "prefix", "target", "guard", "build", "agent", "expiresAt"],
+      "description": "AGENT: an existing agent's tables, replaced by write and read (or agent.allTables) as given; with a verifier its password is rotated, without one it is kept. Also applies missing migrations up to guard.to and registers a portal passkey when none is active. Planned: without target, a connect-only recovery code (it must carry engine and agent.verifier); the connect service rotates the password of an existing role, or creates the role as INSTALL does when it does not exist.",
+      "required": ["format", "setupId", "kind", "prefix", "guard", "build", "agent", "expiresAt"],
       "properties": {
         "format": { "$ref": "#/$defs/format" },
         "setupId": { "$ref": "#/$defs/setupId" },
@@ -48,7 +48,7 @@
     "upgrade": {
       "type": "object",
       "additionalProperties": false,
-      "description": "UPGRADE: the missing migrations up to guard.to only. No agent part: the password, grants and policies are unchanged.",
+      "description": "UPGRADE: the missing migrations up to guard.to only. No agent part: the password, grants and policies are unchanged. Always carries target: its engine already has an address.",
       "required": ["format", "setupId", "kind", "prefix", "target", "guard", "build", "expiresAt"],
       "properties": {
         "format": { "$ref": "#/$defs/format" },
@@ -66,7 +66,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["publicKey"],
-      "description": "Planned (M4.1, CONTRACT.md, The setup code and Direct transport). The engine's identity, which the person's computer records in basalt_meta with the address given as --engine-url, never in the code. Optional in every kind. A code with an engine key that is not an uncompressed P-256 point on the curve is INVALID.",
+      "description": "Planned (M4.1, CONTRACT.md, The setup code and Direct transport). The engine's identity, which the person's computer records in basalt_meta with the address given as --engine-url, never in the code. Optional in a code with target; required in a code without one, whose engine collects the database's address from the connect service with a request signed by this key. A code with an engine key that is not an uncompressed P-256 point on the curve is INVALID.",
       "properties": {
         "publicKey": {
           "type": "string",
@@ -93,7 +93,7 @@
     "target": {
       "type": "object",
       "additionalProperties": false,
-      "description": "The database the bot's engine connects to, from its password-less connection string. The laptop compares it with the admin connection string by database identity and refuses a mismatch (CO-17).",
+      "description": "The database the bot's engine connects to, from its password-less connection string. The laptop and the connect service compare it with the admin connection string by database identity and refuse a mismatch (CO-17). Planned: absent in a connect-only code (INSTALL, or AGENT with a verifier, both with engine), which only the connect service runs; the laptop command refuses it (CONNECT_ONLY).",
       "required": ["host", "port", "database"],
       "properties": {
         "host": {
@@ -139,6 +139,22 @@
       "uniqueItems": true,
       "items": { "$ref": "#/$defs/table" }
     },
+    "allTables": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemas"],
+      "description": "Planned (CONTRACT.md, The setup code). In place of write and read: the agent gets write access to every ordinary and partitioned table in these schemas that the admin role owns when the setup runs. Tables made later are not covered. The connect page and the laptop command list the concrete tables before the person approves.",
+      "properties": {
+        "schemas": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^public$" },
+          "description": "public only. Supabase's auth and storage schemas are never included."
+        }
+      }
+    },
     "verifier": {
       "type": "string",
       "pattern": "^SCRAM-SHA-256\\$4096:[A-Za-z0-9+/]{22}==\\$[A-Za-z0-9+/]{43}=:[A-Za-z0-9+/]{43}=$",
@@ -151,28 +167,60 @@
       "description": "The agent role's statement_timeout (basalt init --statement-timeout)."
     },
     "newAgent": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["name", "write", "read", "verifier", "statementTimeoutMs"],
-      "properties": {
-        "name": { "$ref": "#/$defs/agentName" },
-        "write": { "$ref": "#/$defs/tables" },
-        "read": { "$ref": "#/$defs/tables" },
-        "verifier": { "$ref": "#/$defs/verifier" },
-        "statementTimeoutMs": { "$ref": "#/$defs/statementTimeoutMs" }
-      }
+      "description": "The new agent: its tables in write and read, or (planned) agent.allTables in their place. Key order: name, write, read, allTables, verifier, statementTimeoutMs.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "write", "read", "verifier", "statementTimeoutMs"],
+          "properties": {
+            "name": { "$ref": "#/$defs/agentName" },
+            "write": { "$ref": "#/$defs/tables" },
+            "read": { "$ref": "#/$defs/tables" },
+            "verifier": { "$ref": "#/$defs/verifier" },
+            "statementTimeoutMs": { "$ref": "#/$defs/statementTimeoutMs" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "allTables", "verifier", "statementTimeoutMs"],
+          "properties": {
+            "name": { "$ref": "#/$defs/agentName" },
+            "allTables": { "$ref": "#/$defs/allTables" },
+            "verifier": { "$ref": "#/$defs/verifier" },
+            "statementTimeoutMs": { "$ref": "#/$defs/statementTimeoutMs" }
+          }
+        }
+      ]
     },
     "changedAgent": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["name", "write", "read", "statementTimeoutMs"],
-      "properties": {
-        "name": { "$ref": "#/$defs/agentName" },
-        "write": { "$ref": "#/$defs/tables" },
-        "read": { "$ref": "#/$defs/tables" },
-        "verifier": { "$ref": "#/$defs/verifier" },
-        "statementTimeoutMs": { "$ref": "#/$defs/statementTimeoutMs" }
-      }
+      "description": "The changed agent: its tables in write and read, or (planned) agent.allTables in their place; a verifier when its password is rotated. Key order: name, write, read, allTables, verifier, statementTimeoutMs.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "write", "read", "statementTimeoutMs"],
+          "properties": {
+            "name": { "$ref": "#/$defs/agentName" },
+            "write": { "$ref": "#/$defs/tables" },
+            "read": { "$ref": "#/$defs/tables" },
+            "verifier": { "$ref": "#/$defs/verifier" },
+            "statementTimeoutMs": { "$ref": "#/$defs/statementTimeoutMs" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "allTables", "statementTimeoutMs"],
+          "properties": {
+            "name": { "$ref": "#/$defs/agentName" },
+            "allTables": { "$ref": "#/$defs/allTables" },
+            "verifier": { "$ref": "#/$defs/verifier" },
+            "statementTimeoutMs": { "$ref": "#/$defs/statementTimeoutMs" }
+          }
+        }
+      ]
     },
     "agentName": {
       "type": "string",

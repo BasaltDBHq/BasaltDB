@@ -6,7 +6,7 @@ Planned (M3.5, Vault channel Phase 1a; owner decisions VC-1 to VC-42). An engine
 
 **Scope (VC-1, VC-17).** Link sessions only, for the approval and revert pages. Pairing, box keys in use, envelopes, device codes, the pending list, notifications and accounts are after M4 (their contract is VC2-1's). The direct transport (`DIRECT`, M4.1) runs this same session over the person's own tunnel; its route, the pinned engine address and revocation of an engine in `basalt_meta` are in [Direct transport](vault-direct-transport.md#direct-transport) (VCT-1).
 
-**The exception (VC-1).** "No hosted service before M4" has one narrow exception: this rendezvous. It stores no plaintext, no credentials and no ledger, has no accounts, and approvals work when it is down (long links, below). Planned: the [connect service](connect.md#connect) is a second one, used only at setup and only when the person opens the connect link. It stores nothing and has no accounts, and every setup it runs can be run with the laptop command instead; unlike this rendezvous, it holds the admin connection string in memory for one setup ([What the connect service sees](connect.md#what-the-connect-service-sees)).
+**The exception (VC-1).** "No hosted service before M4" has one narrow exception: this rendezvous. It stores no plaintext, no credentials and no ledger, has no accounts, and approvals work when it is down (long links, below). Planned: the [connect service](connect.md#connect) is a second one, used only at setup: when the person opens the connect link, and (planned) while the engine of a connect-only code polls it for the database's address, for up to 2.5 hours after the code was made. It writes nothing anywhere and has no accounts, and every setup of a code with a target can be run with the laptop command instead; unlike this rendezvous, it holds the admin connection string in memory for one setup, and the address of a connect-only setup in memory for up to 30 minutes, until the engine collects it ([What the connect service sees](connect.md#what-the-connect-service-sees)). A connect-only code needs it: the laptop command refuses one.
 
 ### Primitives and encodings
 
@@ -24,6 +24,7 @@ Planned (M3.5, Vault channel Phase 1a; owner decisions VC-1 to VC-42). An engine
 | `basalt-receipt.1\n` | Engine signing key | A receipt's payload bytes ([Receipts](#receipts)) |
 | `basalt-engine-box-key.1\n` | Engine signing key | The engine id and the box key's public key |
 | `basalt-engine-rotate.1\n` | The previous signing key | The new keys ([Engine keys](#engine-keys), rotation) |
+| `basalt-connect-collect.1\n` | Engine signing key | Planned. The audience `connect.basaltvault.app`, the `setupId`, the setup fingerprint and the time of a request for a connect-only setup's address ([The address hand-off](connect.md#the-address-hand-off)). Its `SIGNATURE` vector lands with the engine's code that signs it |
 
 ### Engine keys
 

@@ -47,6 +47,10 @@ var b64 = base64.RawURLEncoding
 
 // Server is the service. Its zero value is not usable: use Start.
 type Server struct {
+	// The address hand-off calls are not served here yet: they answer
+	// unimplemented.
+	connectv1connect.UnimplementedSetupServiceHandler
+
 	skew   atomic.Int64 // nanoseconds the service's clock is ahead
 	secret []byte
 }

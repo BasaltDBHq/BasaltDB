@@ -65,8 +65,8 @@ var unreachableCodes = map[string]string{
 	"write INTERNAL":                    "needs a failure the engine does not expect",
 }
 
-// declaredErrors reads every tool's error codes from the contract's tool
-// files, as "tool CODE".
+// declaredErrors reads every served tool's error codes from the contract's
+// tool files, as "tool CODE". PLANNED tools are left out.
 func declaredErrors(t *testing.T) []string {
 	t.Helper()
 	files, err := filepath.Glob(filepath.Join("..", "..", "..", "api", "mcp", "tools", "*.json"))
@@ -78,9 +78,13 @@ func declaredErrors(t *testing.T) []string {
 		require.NoError(t, err)
 		var tool struct {
 			Name   string   `json:"name"`
+			Status string   `json:"status"`
 			Errors []string `json:"errors"`
 		}
 		require.NoError(t, json.Unmarshal(raw, &tool), f)
+		if tool.Status == "PLANNED" {
+			continue // not served yet, so no scenario can reach it
+		}
 		for _, code := range tool.Errors {
 			out = append(out, tool.Name+" "+code)
 		}

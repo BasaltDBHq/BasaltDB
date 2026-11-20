@@ -251,7 +251,20 @@ type Setup struct {
 	ExpiresAt   string `json:"expiresAt" validate:"required"`
 	Code        string `json:"code" validate:"required"`
 	Fingerprint string `json:"fingerprint" validate:"required"`
+	// AwaitingAddress is a connect-only code (CONTRACT.md, Connect-only
+	// setup codes): the agent's password waits in agents/<agent>.secret
+	// and the engine collects the database's address from the connect
+	// service. The agent has no credential file yet.
+	AwaitingAddress bool `json:"awaitingAddress,omitempty"`
+	// Refused replaces AwaitingAddress once the person said the collected
+	// database is not theirs (confirm_database NO): the next basalt init
+	// --remote makes a recovery code.
+	Refused bool `json:"refused,omitempty"`
 }
+
+// ConnectOnly reports whether s is a connect-only setup: its engine
+// collects the address, or the person refused the one it collected.
+func (s Setup) ConnectOnly() bool { return s.AwaitingAddress || s.Refused }
 
 // Expires parses ExpiresAt.
 func (s Setup) Expires() (time.Time, error) {

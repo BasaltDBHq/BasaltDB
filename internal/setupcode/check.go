@@ -55,6 +55,17 @@ func CheckLocal(p Payload, now time.Time, binaryGuardVersion int) error {
 	return nil
 }
 
+// CheckNotConnectOnly refuses a connect-only code (no target) on the laptop
+// path, basalt init --setup-code, before the clock checks: only the connect
+// page runs it (CONNECT_ONLY).
+func CheckNotConnectOnly(p Payload) error {
+	if !p.ConnectOnly() {
+		return nil
+	}
+	return refuseWith(RefusalConnectOnly, "This setup code is for the connect page: open the link "+p.agentWord()+
+		" sent, or ask it for a code for this command (basalt init --remote --database-url <the database, without password>).")
+}
+
 func futureMessage(agent string) string {
 	return "This setup code claims a time in the future. Check this computer's clock, or ask " + agent + " for a new code."
 }
@@ -112,7 +123,9 @@ func CheckDatabase(p Payload, db Database) error {
 	case p.Kind == KindInstall && exists:
 		return refuseWith(RefusalRoleExists, role+" already exists. This code would replace its password: ask "+agent+
 			" for a new code, or run basalt init --remote --new-code for that agent if it is yours.")
-	case p.Kind == KindAgent && !exists:
+	case p.Kind == KindAgent && !exists && !p.ConnectOnly():
+		// A connect-only recovery code whose role does not exist runs as
+		// an INSTALL instead (CONTRACT.md, Connect-only setup codes).
 		return refuseWith(RefusalRoleMissing, role+" does not exist. Ask "+agent+" for a new code.")
 	}
 	return nil

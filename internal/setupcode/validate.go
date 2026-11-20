@@ -46,7 +46,7 @@ var (
 // later than the setupId's time plus 24 hours). Failing one is INVALID.
 // None of these depend on the clock.
 func (p Payload) Validate() error {
-	checks := []func() error{p.validateHeader, p.validateTarget, p.validateGuard, p.validateAgent, p.validateExpiry, p.validateEngine}
+	checks := []func() error{p.validateHeader, p.validateTarget, p.validateGuard, p.validateAgent, p.validateExpiry, p.validateEngine, p.validateConnectOnly}
 	for _, c := range checks {
 		if err := c(); err != nil {
 			return err
@@ -80,7 +80,10 @@ func (p Payload) validateHeader() error {
 }
 
 func (p Payload) validateTarget() error {
-	t := p.Target
+	if p.Target == nil {
+		return nil // a connect-only code: validateConnectOnly
+	}
+	t := *p.Target
 	switch {
 	case len(t.Host) > maxHostLen || !hostPattern.MatchString(t.Host):
 		return invalid("target.host is not a host name")
@@ -142,6 +145,8 @@ func (p Payload) validateAgent() error {
 		return invalid("the agent's role name is longer than 63 bytes")
 	case a.StatementTimeoutMs < 1 || a.StatementTimeoutMs > maxStatementTimeoutMs:
 		return invalid("agent.statementTimeoutMs is out of range")
+	case a.AllTables != nil:
+		return validateAllTables(a)
 	case a.Write == nil || a.Read == nil:
 		return invalid("agent.write and agent.read are required")
 	case len(a.Write)+len(a.Read) == 0:
@@ -161,6 +166,37 @@ func (p Payload) validateAgent() error {
 		if write[t] {
 			return invalid("a table is in both agent.write and agent.read")
 		}
+	}
+	return nil
+}
+
+// validateAllTables checks agent.allTables: in place of write and read, and
+// schema public only (Supabase's auth and storage are never included).
+func validateAllTables(a *Agent) error {
+	switch {
+	case a.Write != nil || a.Read != nil:
+		return invalid("agent.allTables is given with agent.write or agent.read")
+	case len(a.AllTables.Schemas) != 1 || a.AllTables.Schemas[0] != publicSchema:
+		return invalid("agent.allTables.schemas may only be [\"public\"]")
+	}
+	return nil
+}
+
+// validateConnectOnly checks a code without target: it carries engine (its
+// engine collects the database's address with that key), and it is an
+// INSTALL or a recovery AGENT code with a verifier. UPGRADE codes and other
+// AGENT codes keep target: their engine already has an address.
+func (p Payload) validateConnectOnly() error {
+	if !p.ConnectOnly() {
+		return nil
+	}
+	switch {
+	case p.Engine == nil:
+		return invalid("a code without target needs engine")
+	case p.Kind == KindUpgrade:
+		return invalid("an upgrade needs target")
+	case p.Kind == KindAgent && p.Agent.Verifier == "":
+		return invalid("an agent change without target needs agent.verifier")
 	}
 	return nil
 }

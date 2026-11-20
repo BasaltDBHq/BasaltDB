@@ -134,7 +134,7 @@ func TargetOf(u *url.URL) (Target, error) {
 		return Target{}, errors.New("the connection string must name the database (postgres://user@host:port/database)")
 	}
 	t := Target{Host: host, Port: port, Database: db, SupabaseRef: supabaseRef(u.User.Username(), host)}
-	if err := (Payload{Target: t}).validateTarget(); err != nil {
+	if err := (Payload{Target: &t}).validateTarget(); err != nil {
 		return Target{}, fmt.Errorf("the connection string: %s", InvalidDetail(err))
 	}
 	return t, nil

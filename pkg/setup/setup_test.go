@@ -47,7 +47,7 @@ func newCode(t *testing.T, d *guardtest.DB, edit func(p *setupcode.Payload)) str
 	verifier, err := setupcode.NewVerifier("not-a-real-password")
 	require.NoError(t, err)
 	p := setupcode.Payload{
-		Format: setupcode.Format, SetupID: id, Kind: setupcode.KindInstall, Prefix: d.Names.Prefix, Target: target,
+		Format: setupcode.Format, SetupID: id, Kind: setupcode.KindInstall, Prefix: d.Names.Prefix, Target: &target,
 		Guard: setupcode.Guard{From: 0, To: guard.LatestVersion()}, Build: "1.0.0", ExpiresAt: expires,
 		Agent: &setupcode.Agent{Name: "bot", Write: []string{"public.leads"}, Verifier: verifier, StatementTimeoutMs: 30000},
 	}

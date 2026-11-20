@@ -63,12 +63,6 @@ type setupFixtures struct {
 		Refusal string `json:"refusal"`
 	} `json:"invalid"`
 	Laptop []laptopFixture `json:"laptop"`
-	// Planned: codes the contract accepts and this build's codec does not
-	// yet (connect-only codes, agent.allTables).
-	Planned struct {
-		Valid  []validSetupFixture `json:"valid"`
-		Laptop []laptopFixture     `json:"laptop"`
-	} `json:"planned"`
 }
 
 type validSetupFixture struct {
@@ -135,17 +129,6 @@ func TestSetupCodeFixtures(t *testing.T) {
 		verifiers[v.Verifier] = true
 	}
 	kinds := map[string]bool{}
-	require.NotEmpty(t, f.Planned.Valid)
-	for _, v := range f.Planned.Valid {
-		t.Run("planned/"+v.Name, func(t *testing.T) {
-			t.Parallel()
-			got, refusal := decodeSetupCode(t, schema, v.Code)
-			require.Empty(t, refusal)
-			require.Equal(t, v.Payload, got)
-			require.LessOrEqual(t, len(stripSpace(v.Code)), setupCodeMaxLen)
-			require.Equal(t, v.Fingerprint, setupFingerprint(t, got))
-		})
-	}
 	for _, v := range f.Valid {
 		t.Run("valid/"+v.Name, func(t *testing.T) {
 			t.Parallel()
@@ -337,7 +320,7 @@ func TestSetupLaptopFixtures(t *testing.T) {
 	require.NotEmpty(t, f.Laptop)
 	schema := readJSON(t, "setup/setup-code.schema.json")
 	refusals := map[string]bool{}
-	for _, l := range append(f.Laptop, f.Planned.Laptop...) {
+	for _, l := range f.Laptop {
 		refusals[l.Refusal] = true
 		t.Run(l.Name, func(t *testing.T) {
 			t.Parallel()

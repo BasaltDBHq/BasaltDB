@@ -241,3 +241,13 @@ func TestInitRemoteKeepsTheFlagsItTakes(t *testing.T) {
 	require.Equal(t, "basalt init --setup-code basalt-setup.1.abc.def", SetupCode("basalt-setup.1.abc.def"))
 	require.False(t, c.OperatedBy("PERSON").AgentOperated())
 }
+
+// With --all-tables saved, a grant is init --remote with the saved flags as
+// they are: the new code reads every table of public again.
+func TestRemoteGrantWithAllTables(t *testing.T) {
+	t.Parallel()
+	c := mustCommands(t, "/srv/basalt/engine.json", "linux", []string{"--agent=bot", "--all-tables=true", "--operated-by=agent"}).OperatedBy("AGENT")
+	grant, err := c.RemoteGrant("write", "public.notes")
+	require.NoError(t, err)
+	require.Equal(t, "basalt init --remote --config /srv/basalt/engine.json --agent=bot --all-tables=true --operated-by=agent --json", grant)
+}

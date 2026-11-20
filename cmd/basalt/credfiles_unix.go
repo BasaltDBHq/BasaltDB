@@ -331,4 +331,12 @@ func (r rootCredFiles) rename(from, to string) error {
 	return r.dir.Rename(a, b)
 }
 
+func (r rootCredFiles) remove(path string) error {
+	name, err := r.name(path)
+	if err != nil {
+		return err
+	}
+	return r.dir.Remove(name)
+}
+
 func (r rootCredFiles) close() { _ = r.dir.Close() }

@@ -37,6 +37,7 @@ const (
 	CodePasskeyRequired  = "PASSKEY_REQUIRED"
 	CodePasskeyInvalid   = "PASSKEY_INVALID"
 	CodePasskeyMissing   = "PASSKEY_NOT_REGISTERED" //nolint:gosec // a refusal code, not a credential
+	CodeNoTables         = "NO_TABLES"
 )
 
 // RefusalError is a refused setup: a code and the sentence the person reads.
@@ -66,13 +67,21 @@ type Setup struct {
 	// EngineURL is the address to record with the code's engine key, in
 	// its written form; "" when none was given.
 	EngineURL string
+	// tables are, for an agent.allTables code, what Prepare read from the
+	// database: the agent's write and read-only tables, and those left out.
+	tables guard.SchemaTables
+	// asInstall is a connect-only recovery AGENT code whose role does not
+	// exist: it runs as an INSTALL (Prepare).
+	asInstall bool
 }
 
 // New decodes code and applies the checks that need no database, in the
-// contract's order (step 1): the engine address's rules, the codec, this
-// clock and this binary's guard (setupcode.CheckLocal), then
+// contract's order (step 1): the engine address's rules, the codec,
+// CONNECT_ONLY unless connectPage (the laptop command refuses a code
+// without target before the clock checks; the connect service runs it),
+// this clock and this binary's guard (setupcode.CheckLocal), then
 // ENGINE_KEY_MISSING.
-func New(code string, now time.Time, engineURL string) (*Setup, error) {
+func New(code string, now time.Time, engineURL string, connectPage bool) (*Setup, error) {
 	if engineURL != "" {
 		u, err := engineaddr.Parse(engineURL)
 		if err != nil {
@@ -83,6 +92,11 @@ func New(code string, now time.Time, engineURL string) (*Setup, error) {
 	p, err := setupcode.Decode(code)
 	if err != nil {
 		return nil, err
+	}
+	if !connectPage {
+		if err := setupcode.CheckNotConnectOnly(p); err != nil {
+			return nil, err
+		}
 	}
 	if err := setupcode.CheckLocal(p, now, guard.LatestVersion()); err != nil {
 		return nil, err
@@ -121,15 +135,30 @@ func AgentWord(p setupcode.Payload) string {
 	return p.Agent.Name
 }
 
-// Spec is the agent part of the code as an install input.
+// Spec is the agent part of the code as an install input. For an
+// agent.allTables code its write tables are those Prepare read; a recovery
+// code whose role does not exist is an INSTALL.
 func (s *Setup) Spec() guard.AgentSpec {
 	a := s.P.Agent
+	write, read := a.Write, a.Read
+	if a.AllTables != nil {
+		write, read = s.tables.Write, s.tables.ReadOnly
+	}
+	install := s.P.Kind == setupcode.KindInstall || s.asInstall
 	return guard.AgentSpec{
-		Name: a.Name, Write: a.Write, Read: a.Read, Verifier: a.Verifier,
-		CreateOnly: s.P.Kind == setupcode.KindInstall, Change: s.P.Kind == setupcode.KindAgent,
+		Name: a.Name, Write: write, Read: read, Verifier: a.Verifier,
+		CreateOnly: install, Change: s.P.Kind == setupcode.KindAgent && !install,
 		StatementTimeout: time.Duration(a.StatementTimeoutMs) * time.Millisecond,
 	}
 }
+
+// Tables are, for an agent.allTables code after Prepare, the tables the
+// agent gets and those left out; empty otherwise.
+func (s *Setup) Tables() guard.SchemaTables { return s.tables }
+
+// RunsAsInstall is whether Prepare found a connect-only recovery AGENT
+// code's role missing, so the setup creates it as an INSTALL does.
+func (s *Setup) RunsAsInstall() bool { return s.asInstall }
 
 // Prepared is a setup checked against the database: what it found and the
 // questions the person answers before the setup runs.
@@ -166,6 +195,10 @@ func (s *Setup) Prepare(ctx context.Context, conn *pgx.Conn) (*Prepared, error) 
 	if err := setupcode.CheckDatabase(s.P, db); err != nil {
 		return nil, err
 	}
+	// CheckDatabase let a connect-only AGENT code through without its role:
+	// a recovery code, run as an INSTALL.
+	s.asInstall = s.P.Kind == setupcode.KindAgent && s.P.ConnectOnly() && len(db.Roles) == 0
+	state.RunsAsInstall = s.asInstall
 	engine, err := s.readEngine(ctx, conn)
 	if err != nil {
 		return nil, err
@@ -178,12 +211,44 @@ func (s *Setup) Prepare(ctx context.Context, conn *pgx.Conn) (*Prepared, error) 
 	if p.NothingToDo || s.P.Agent == nil {
 		return p, nil
 	}
+	if err := s.readAllTables(ctx, conn, &p.State); err != nil {
+		return nil, err
+	}
 	blind, err := guard.AgentBlindTables(ctx, conn, s.Names, s.Spec())
 	if err != nil {
 		return nil, MissingTablesHint(err, conn.Config().Database)
 	}
 	p.Blind = blind
 	return p, nil
+}
+
+// readAllTables reads, for an agent.allTables code, the tables of its
+// schemas the admin role owns (with a primary key the agent's write tables,
+// without one read only) and those left out, into s and the summary's
+// state. No table at all is NO_TABLES.
+func (s *Setup) readAllTables(ctx context.Context, q guard.Querier, state *setupcode.SummaryState) error {
+	all := s.P.Agent.AllTables
+	if all == nil {
+		return nil
+	}
+	s.tables = guard.SchemaTables{Write: []string{}, ReadOnly: []string{}}
+	for _, schema := range all.Schemas {
+		got, err := guard.AllTablesIn(ctx, q, schema)
+		if err != nil {
+			return err
+		}
+		s.tables.Write = append(s.tables.Write, got.Write...)
+		s.tables.ReadOnly = append(s.tables.ReadOnly, got.ReadOnly...)
+		for _, e := range got.Excluded {
+			s.tables.Excluded = append(s.tables.Excluded, setupcode.ExcludedTable{Table: e.Table, Owner: printableLabel(e.Owner)})
+		}
+	}
+	if len(s.tables.Write)+len(s.tables.ReadOnly) == 0 {
+		return refuse(CodeNoTables, fmt.Sprintf("schema %s of this database has no table the admin role owns, so the agent would get nothing. "+
+			"Create the tables first, or ask %s for a code that names its tables; nothing changed", strings.Join(all.Schemas, ", "), AgentWord(s.P)))
+	}
+	state.Tables, state.ReadOnly, state.Excluded = s.tables.Write, s.tables.ReadOnly, s.tables.Excluded
+	return nil
 }
 
 // UpgradeDone is whether an UPGRADE code has nothing to add: the installed

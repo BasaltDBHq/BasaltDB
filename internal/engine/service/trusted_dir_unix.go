@@ -245,6 +245,17 @@ func (d *TrustedDir) CreateFile(name string, data []byte, mode os.FileMode, owne
 	return nil
 }
 
+// Remove removes the file name in the directory, never following a link.
+func (d *TrustedDir) Remove(name string) error {
+	if err := d.name(name); err != nil {
+		return err
+	}
+	if err := unix.Unlinkat(d.fd, name, 0); err != nil {
+		return &os.PathError{Op: "remove", Path: filepath.Join(d.path, name), Err: err}
+	}
+	return nil
+}
+
 // Rename renames from over to, both in the directory.
 func (d *TrustedDir) Rename(from, to string) error {
 	if err := d.name(from); err != nil {

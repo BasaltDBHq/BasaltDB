@@ -151,6 +151,10 @@ func (s *Server) CheckSetup(ctx context.Context, r *connect.Request[connectv1.Ch
 	for _, e := range c.Excluded {
 		out.Excluded = append(out.Excluded, &connectv1.ExcludedTable{Table: e.Table, Owner: e.Owner})
 	}
+	out.ReadOnly = slices.Clone(c.ReadOnly)
+	for _, l := range c.Columns {
+		out.Columns = append(out.Columns, &connectv1.ColumnLabel{Table: l.Table, Column: l.Column, Class: l.Class, EntityType: l.EntityType, PhoneRegion: l.PhoneRegion})
+	}
 	if c.NothingToDo == nil {
 		out.Notes = notes(c)
 	}
@@ -181,6 +185,9 @@ const (
 func (s *Server) RunSetup(ctx context.Context, r *connect.Request[connectv1.RunSetupRequest]) (*connect.Response[connectv1.RunSetupResponse], error) {
 	m := r.Msg
 	req := s.request(m.GetCode())
+	// The page's ticks: every RunSetup sends them (empty for a code
+	// without ticks), so pkg/setup checks them for every code.
+	req.Included = &setup.Included{Tables: m.GetIncludedTables()}
 	d, err := setup.Describe(req)
 	if err != nil {
 		return nil, refuse(err)
@@ -229,6 +236,15 @@ func (s *Server) RunSetup(ctx context.Context, r *connect.Request[connectv1.RunS
 	}
 	if reg != nil {
 		in.Passkey = &reg.verified // registered in the setup's transaction
+	}
+	in.RestPublic = m.GetRestPublic()
+	for _, c := range m.GetColumnClasses() {
+		w := c.GetWas()
+		in.ColumnClasses = append(in.ColumnClasses, setup.ColumnClass{
+			Table: c.GetTable(), Column: c.GetColumn(),
+			Label: setup.Label{Class: c.GetClass(), EntityType: c.GetEntityType(), PhoneRegion: c.GetPhoneRegion()},
+			Was:   setup.Label{Class: w.GetClass(), EntityType: w.GetEntityType(), PhoneRegion: w.GetPhoneRegion()},
+		})
 	}
 	res, err := setup.Run(ctx, conn, req, in)
 	if err != nil {
@@ -482,7 +498,7 @@ func fromSetup(e *setup.Error) *refusalError {
 	case "BINARY_TOO_OLD":
 		return &refusalError{connect.CodeUnavailable, e.Code, "Basalt Vault is being updated: try again shortly, or use the laptop command."}
 	case setup.CodeTargetMismatch, "PREFIX_MISMATCH", "USED", "SUPERSEDED", "ROLE_EXISTS", "ROLE_MISSING", setup.CodeEngineRevoked, setup.CodeTablesMissing,
-		setup.CodeNoTables:
+		setup.CodeNoTables, setup.CodeTablesChanged, setup.CodeClassesChanged:
 		return &refusalError{connect.CodeFailedPrecondition, e.Code, e.Message}
 	case setup.CodeAnswersInvalid:
 		return &refusalError{connect.CodeInvalidArgument, e.Code, "The answers do not match the questions for this database."}

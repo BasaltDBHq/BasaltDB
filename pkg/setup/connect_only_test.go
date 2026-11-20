@@ -86,7 +86,7 @@ func TestConnectOnlyAllTablesInstalls(t *testing.T) {
 	require.False(t, checked.RunsAsInstall)
 
 	_, give := personPasskey(t)
-	res, err := setup.Run(ctx, d.Admin, connectPage(code), setup.RunInput{Passkey: verified(t, give)})
+	res, err := setup.Run(ctx, d.Admin, ticked(code, checked.Tables...), setup.RunInput{Passkey: verified(t, give)})
 	require.NoError(t, err)
 	require.True(t, res.Ran)
 	role := d.Names.Prefix + "_agent_bot"
@@ -104,25 +104,120 @@ func TestConnectOnlyAllTablesInstalls(t *testing.T) {
 }
 
 // The tables of an allTables code are read again in the setup's own
-// transaction: a table made after the check the person approved stops the
-// setup, and nothing changes.
+// transaction. Without ticks (the laptop command), a table made after the
+// check the person approved stops the setup; with ticks, a ticked table
+// dropped meanwhile does, and one made meanwhile is not included. Either
+// way TABLES_CHANGED, nothing changed.
 func TestAllTablesReadAgainInTheTransaction(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
+
 	d := guardtest.New(t).WithDemo(t)
-	code := newCode(t, d, connectOnly(t))
+	code := newCode(t, d, func(p *setupcode.Payload) {
+		p.Agent.Write, p.Agent.Read = nil, nil
+		p.Agent.AllTables = &setupcode.AllTables{Schemas: []string{"public"}}
+	})
 	_, give := personPasskey(t)
-	_, err := setup.Run(ctx, d.Admin, connectPage(code), setup.RunInput{
+	_, err := setup.Run(ctx, d.Admin, request(code), setup.RunInput{
 		Passkey: verified(t, give),
 		Approve: func(setup.Plan) error {
 			d.Exec(t, `CREATE TABLE public.made_meanwhile (id bigint PRIMARY KEY)`)
 			return nil
 		},
 	})
-	require.Equal(t, setup.CodeSetupFailed, codeOf(t, err))
-	require.Contains(t, err.Error(), "changed while the setup was prepared")
+	require.Equal(t, setup.CodeTablesChanged, codeOf(t, err))
 	require.Zero(t, installedVersion(t, d), "nothing changed")
 	require.False(t, roleExists(t, d, d.Names.Prefix+"_agent_bot"))
+
+	d = guardtest.New(t).WithDemo(t)
+	code = newCode(t, d, connectOnly(t))
+	_, err = setup.Run(ctx, d.Admin, ticked(code, "public.leads", "public.payroll"), setup.RunInput{
+		Passkey: verified(t, give),
+		Approve: func(setup.Plan) error {
+			d.Exec(t, `DROP TABLE public.payroll`)
+			return nil
+		},
+	})
+	require.Equal(t, setup.CodeTablesChanged, codeOf(t, err))
+	require.Zero(t, installedVersion(t, d), "nothing changed")
+
+	d = guardtest.New(t).WithDemo(t)
+	code = newCode(t, d, connectOnly(t))
+	_, err = setup.Run(ctx, d.Admin, ticked(code, "public.leads"), setup.RunInput{
+		Passkey: verified(t, give),
+		Approve: func(setup.Plan) error {
+			d.Exec(t, `CREATE TABLE public.made_meanwhile (id bigint PRIMARY KEY)`)
+			return nil
+		},
+	})
+	require.NoError(t, err, "a table made since is simply not included")
+	require.False(t, hasPrivilege(t, d, "public.made_meanwhile", "SELECT"))
+}
+
+func ticked(code string, tables ...string) setup.Request {
+	r := connectPage(code)
+	r.Included = &setup.Included{Tables: tables}
+	return r
+}
+
+func hasPrivilege(t *testing.T, d *guardtest.DB, table, privilege string) bool {
+	t.Helper()
+	var ok bool
+	require.NoError(t, d.Admin.QueryRow(context.Background(), `SELECT has_table_privilege($1, $2, $3)`,
+		d.Names.Prefix+"_agent_bot", table, privilege).Scan(&ok))
+	return ok
+}
+
+// The connect page's ticks: exactly the ticked tables are granted (read
+// only without a primary key) and asked about; the entries' rules.
+func TestTickedTables(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	d := guardtest.New(t).WithDemo(t)
+	d.Exec(t, `CREATE TABLE public.events (id bigint, at date)`)
+	code := newCode(t, d, connectOnly(t))
+
+	for name, c := range map[string]struct {
+		tables []string
+		code   string
+	}{
+		"none":                {[]string{}, setup.CodeNoTables},
+		"another schema":      {[]string{"crm.leads"}, setup.CodeAnswersInvalid},
+		"a quoted name":       {[]string{`public."Leads"`}, setup.CodeAnswersInvalid},
+		"upper case":          {[]string{"public.Leads"}, setup.CodeAnswersInvalid},
+		"twice":               {[]string{"public.leads", "public.leads"}, setup.CodeAnswersInvalid},
+		"a table never there": {[]string{"public.nowhere"}, setup.CodeTablesChanged},
+	} {
+		_, err := setup.Check(ctx, d.Admin, ticked(code, c.tables...))
+		require.Equal(t, c.code, codeOf(t, err), name)
+	}
+	_, err := setup.Run(ctx, d.Admin, connectPage(code), setup.RunInput{})
+	require.Equal(t, setup.CodeNoTables, codeOf(t, err), "the page always sends its ticks")
+
+	checked, err := setup.Check(ctx, d.Admin, ticked(code, "public.leads", "public.events"))
+	require.NoError(t, err)
+	require.Equal(t, []string{"public.events", "public.leads"}, checked.Tables)
+	require.Equal(t, []string{"public.events"}, checked.ReadOnly)
+	for _, c := range checked.Columns {
+		require.Contains(t, []string{"public.events", "public.leads"}, c.Table, "columns of the ticked tables only")
+	}
+	_, give := personPasskey(t)
+	_, err = setup.Run(ctx, d.Admin, ticked(code, "public.leads", "public.events"), setup.RunInput{Passkey: verified(t, give)})
+	require.NoError(t, err)
+	require.True(t, hasPrivilege(t, d, "public.leads", "UPDATE"))
+	require.True(t, hasPrivilege(t, d, "public.events", "SELECT"))
+	require.False(t, hasPrivilege(t, d, "public.events", "UPDATE"), "no primary key: read only")
+	require.False(t, hasPrivilege(t, d, "public.payroll", "SELECT"), "an unticked table is not granted")
+	_, err = setup.Check(ctx, d.Admin, ticked(code))
+	require.Equal(t, "USED", codeOf(t, err), "a setup that ran is USED, whatever the ticks")
+
+	// A code that names its tables ticks none.
+	d2 := guardtest.New(t).WithDemo(t)
+	named := newCode(t, d2, nil)
+	_, err = setup.Check(ctx, d2.Admin, setup.Request{Code: named, Now: time.Now(), Included: &setup.Included{Tables: []string{"public.leads"}}})
+	require.Equal(t, setup.CodeAnswersInvalid, codeOf(t, err))
+	_, err = setup.Check(ctx, d2.Admin, setup.Request{Code: named, Now: time.Now(), Included: &setup.Included{}})
+	require.NoError(t, err)
 }
 
 // No table the admin role owns in the schema: NO_TABLES, nothing changed.

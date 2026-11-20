@@ -139,7 +139,10 @@ func (f handoffFixture) runOnPage(pasted string) *connectv1.RunSetupResponse {
 	require.NotEmpty(f.t, chk.GetTables())
 	ch := desc.GetChallenge()
 	var run connectv1.RunSetupResponse
-	f.page.ok("RunSetup", map[string]any{"code": code, "databaseUrl": pasted, "challenge": challengeJSON(ch), "passkey": passkeyOf(f.t, f.person, ch)}, &run)
+	f.page.ok("RunSetup", map[string]any{
+		"code": code, "databaseUrl": pasted, "challenge": challengeJSON(ch), "passkey": passkeyOf(f.t, f.person, ch),
+		"includedTables": chk.GetTables(),
+	}, &run)
 	require.NotEmpty(f.t, run.GetTicket())
 	return &run
 }
@@ -738,4 +741,51 @@ func TestConnectOnlyHostileReachCheck(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, dbHost, held.Host, "RunSetup holds its own address, never the preview's")
 	})
+}
+
+// The connect page's ticks and labels through the service: CheckSetup
+// lists the columns with their classes, a label whose class changed is
+// CLASSES_CHANGED, and RunSetup grants the ticked tables only and writes
+// the labels.
+func TestConnectPageTicksAndLabels(t *testing.T) {
+	t.Parallel()
+	f := newHandoffFixture(t)
+	pasted := pastedFor(t, f.d, dbHost)
+	chk := f.checkOnPage(pasted)
+	require.NotEmpty(t, chk.GetColumns())
+	for _, c := range chk.GetColumns() {
+		require.Equal(t, "UNCLASSIFIED", c.GetClass(), "no guard yet")
+	}
+	var desc connectv1.DescribeSetupResponse
+	f.page.ok("DescribeSetup", map[string]any{"code": f.install.res.Code}, &desc)
+	ch := desc.GetChallenge()
+	body := func(was string) map[string]any {
+		return map[string]any{
+			"code": f.install.res.Code, "databaseUrl": pasted, "challenge": challengeJSON(ch), "passkey": passkeyOf(t, f.person, ch),
+			"includedTables": []string{"public.leads"},
+			"columnClasses": []map[string]any{{
+				"table": "public.leads", "column": "name", "class": "IDENTIFIER", "entityType": "PERSON_NAME", "was": map[string]any{"class": was},
+			}},
+			"restPublic": true,
+		}
+	}
+	f.page.refused("RunSetup", body("PUBLIC"), "failed_precondition", "CLASSES_CHANGED")
+	require.Zero(t, installedVersion(t, f.d), "nothing changed")
+	var run connectv1.RunSetupResponse
+	f.page.ok("RunSetup", body("UNCLASSIFIED"), &run)
+	role := f.d.Names.Prefix + "_agent_bot"
+	var leads, payroll bool
+	require.NoError(t, f.d.Admin.QueryRow(context.Background(),
+		`SELECT has_table_privilege($1, 'public.leads', 'UPDATE'), has_table_privilege($1, 'public.payroll', 'SELECT')`, role).Scan(&leads, &payroll))
+	require.True(t, leads)
+	require.False(t, payroll, "an unticked table is not granted")
+	labels, err := guard.ReadLabels(context.Background(), f.d.Admin, f.d.Names, []string{"public.leads"})
+	require.NoError(t, err)
+	for _, l := range labels {
+		if l.Column == "name" {
+			require.Equal(t, guard.Label{Class: "IDENTIFIER", EntityType: "PERSON_NAME"}, l.Label)
+		} else {
+			require.Equal(t, "PUBLIC", l.Class, l.Column)
+		}
+	}
 }

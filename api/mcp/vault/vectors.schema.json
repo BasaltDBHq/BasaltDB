@@ -181,7 +181,7 @@
             "required": ["name", "context", "publicKey", "message", "sig", "expect"],
             "properties": {
               "name": { "$ref": "#/$defs/name" },
-              "context": { "type": "string", "enum": ["VAULT_AUTH", "SESSION", "RECEIPT", "BOX_KEY", "ROTATE"] },
+              "context": { "type": "string", "enum": ["VAULT_AUTH", "SESSION", "RECEIPT", "BOX_KEY", "ROTATE", "CONNECT_COLLECT", "CONNECT_REACH"] },
               "publicKey": { "type": "string", "pattern": "^[A-Za-z0-9_-]{122}$" },
               "message": { "$ref": "#/$defs/hex", "description": "The exact signed bytes, context line included." },
               "sig": { "$ref": "#/$defs/b64url" },

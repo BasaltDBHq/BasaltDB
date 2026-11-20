@@ -69,7 +69,7 @@ func TestGeneratedCodeMatchesProto(t *testing.T) {
 	sort.Strings(got)
 	require.Equal(t, want, got, "the generated messages differ from connect.proto: run make proto")
 
-	want, got = make([]string, 0, 3), make([]string, 0, 3)
+	want, got = make([]string, 0, 6), make([]string, 0, 6)
 	svc := protoService.FindStringSubmatch(text)
 	require.NotNil(t, svc)
 	for _, r := range protoRPC.FindAllStringSubmatch(text, -1) {
@@ -88,19 +88,23 @@ func TestGeneratedCodeMatchesProto(t *testing.T) {
 	sort.Strings(got)
 	require.Equal(t, []string{
 		"SetupService.CheckSetup(CheckSetupRequest) CheckSetupResponse",
+		"SetupService.CollectAddress(CollectAddressRequest) CollectAddressResponse",
 		"SetupService.DescribeSetup(DescribeSetupRequest) DescribeSetupResponse",
+		"SetupService.HandoffStatus(HandoffStatusRequest) HandoffStatusResponse",
+		"SetupService.OfferAddress(OfferAddressRequest) OfferAddressResponse",
+		"SetupService.ReportReach(ReportReachRequest) ReportReachResponse",
 		"SetupService.RunSetup(RunSetupRequest) RunSetupResponse",
 	}, want, "connect.proto's service")
 	require.Equal(t, want, got, "the generated service differs from connect.proto: run make proto")
 }
 
 // TestConnectionStringIsSensitive: every field that carries the admin
-// connection string is marked sensitive, so a logging interceptor can find
+// connection string, the hand-off ticket or the database's address is marked sensitive, so a logging interceptor can find
 // it by the option (CONTRACT.md, Connect).
 func TestConnectionStringIsSensitive(t *testing.T) {
 	t.Parallel()
 	fd := connectv1.File_basalt_connect_v1_connect_proto
-	found := 0
+	found, tickets, addresses := 0, 0, 0
 	msgs := fd.Messages()
 	for i := range msgs.Len() {
 		fields := msgs.Get(i).Fields()
@@ -110,9 +114,20 @@ func TestConnectionStringIsSensitive(t *testing.T) {
 				found++
 				require.True(t, isSensitive(f), "%s is not marked sensitive", f.FullName())
 			}
+			if f.FullName() == "basalt.connect.v1.CheckSetupResponse.database" || f.FullName() == "basalt.connect.v1.CollectAddressResponse.address" ||
+				f.FullName() == "basalt.connect.v1.ReportReachRequest.address" {
+				addresses++
+				require.True(t, isSensitive(f), "%s is not marked sensitive", f.FullName())
+			}
+			if f.Name() == "ticket" {
+				tickets++
+				require.True(t, isSensitive(f), "%s is not marked sensitive", f.FullName())
+			}
 		}
 	}
 	require.Equal(t, 2, found, "CheckSetupRequest and RunSetupRequest carry database_url")
+	require.Equal(t, 5, tickets, "CheckSetupResponse, RunSetupResponse, HandoffStatusRequest, HandoffStatusResponse and OfferAddressRequest carry the hand-off ticket, which holds the address")
+	require.Equal(t, 3, addresses, "the database CheckSetup names, the address CollectAddress returns and the address ReportReach sends are marked")
 }
 
 func isSensitive(f protoreflect.FieldDescriptor) bool {

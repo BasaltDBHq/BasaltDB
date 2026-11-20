@@ -56,18 +56,20 @@ type setupFixtures struct {
 		Salt     string `json:"salt"`
 		Verifier string `json:"verifier"`
 	} `json:"verifiers"`
-	Valid []struct {
-		Name        string         `json:"name"`
-		Code        string         `json:"code"`
-		Fingerprint string         `json:"fingerprint"`
-		Payload     map[string]any `json:"payload"`
-	} `json:"valid"`
+	Valid   []validSetupFixture `json:"valid"`
 	Invalid []struct {
 		Name    string `json:"name"`
 		Code    string `json:"code"`
 		Refusal string `json:"refusal"`
 	} `json:"invalid"`
 	Laptop []laptopFixture `json:"laptop"`
+}
+
+type validSetupFixture struct {
+	Name        string         `json:"name"`
+	Code        string         `json:"code"`
+	Fingerprint string         `json:"fingerprint"`
+	Payload     map[string]any `json:"payload"`
 }
 
 // laptopFixture is what basalt init --setup-code decides for a code against
@@ -212,12 +214,25 @@ func checkSetupRules(p map[string]any) error {
 	if expires.After(uuidV7Time(p["setupId"].(string)).Add(setupLifetime)) {
 		return fmt.Errorf("expiresAt more than %v after the setup id's time", setupLifetime)
 	}
-	agent, ok := p["agent"].(map[string]any)
-	if !ok {
+	agent, hasAgent := p["agent"].(map[string]any)
+	if _, ok := p["target"]; !ok {
+		// A connect-only code: the engine collects the address, so it
+		// needs the engine key; an AGENT one is a recovery code.
+		if _, ok := p["engine"]; !ok {
+			return fmt.Errorf("a code without target carries no engine")
+		}
+		if _, ok := agent["verifier"]; p["kind"] == "AGENT" && !ok {
+			return fmt.Errorf("an AGENT code without target carries no verifier")
+		}
+	}
+	if !hasAgent {
 		return nil
 	}
 	if len(roleName(p)) > maxRoleLen {
 		return fmt.Errorf("role %s longer than %d bytes", roleName(p), maxRoleLen)
+	}
+	if _, ok := agent["allTables"]; ok {
+		return nil // the schema keeps write and read out
 	}
 	write, read := agent["write"].([]any), agent["read"].([]any)
 	if len(write)+len(read) == 0 {
@@ -247,10 +262,12 @@ func uuidV7Time(id string) time.Time {
 // setupKeyOrder is setup-code.schema.json's key order per object: the
 // order the compact JSON of a code is written in.
 var setupKeyOrder = map[string][]string{
-	"":       {"format", "setupId", "kind", "prefix", "target", "guard", "build", "agent", "expiresAt"},
-	"target": {"host", "port", "database", "supabaseRef"},
-	"guard":  {"from", "to"},
-	"agent":  {"name", "write", "read", "verifier", "statementTimeoutMs"},
+	"":          {"format", "setupId", "kind", "prefix", "target", "guard", "build", "agent", "expiresAt", "engine"},
+	"target":    {"host", "port", "database", "supabaseRef"},
+	"guard":     {"from", "to"},
+	"agent":     {"name", "write", "read", "allTables", "verifier", "statementTimeoutMs"},
+	"allTables": {"schemas"},
+	"engine":    {"publicKey"},
 }
 
 // compactSetupJSON writes the decoded payload p back as compact JSON in
@@ -318,7 +335,7 @@ func TestSetupLaptopFixtures(t *testing.T) {
 			}
 		})
 	}
-	for _, r := range []string{"", "EXPIRED", "SETUP_ID_IN_FUTURE", "BINARY_TOO_OLD", "PREFIX_MISMATCH", "USED", "SUPERSEDED", "ROLE_EXISTS", "ROLE_MISSING"} {
+	for _, r := range []string{"", "CONNECT_ONLY", "EXPIRED", "SETUP_ID_IN_FUTURE", "BINARY_TOO_OLD", "PREFIX_MISMATCH", "USED", "SUPERSEDED", "ROLE_EXISTS", "ROLE_MISSING"} {
 		require.True(t, refusals[r], "a laptop fixture for %q", r)
 	}
 }
@@ -328,6 +345,9 @@ func laptopDecision(t *testing.T, p map[string]any, l laptopFixture, now time.Ti
 	id, kind, prefix := p["setupId"].(string), p["kind"].(string), p["prefix"].(string)
 	to := int(p["guard"].(map[string]any)["to"].(float64))
 	db := l.Database
+	if _, ok := p["target"]; !ok {
+		return "CONNECT_ONLY", "" // before the clock checks
+	}
 	switch {
 	case !now.Before(expires):
 		return "EXPIRED", ""
@@ -513,6 +533,57 @@ func TestConnectLinkSteps(t *testing.T) {
 	require.Equal(t, variants, contractConnectLink(t), "CONTRACT.md connect-link table and next-steps.json differ")
 }
 
+// TestConnectOnlySteps checks the catalog's connect-only variants
+// (CONTRACT.md, Next steps for a connect-only code): each replaces an entry
+// of the catalog, none is listed twice, and CONTRACT.md's table lists the
+// same entries (keys only; the steps are checked by eye).
+func TestConnectOnlySteps(t *testing.T) {
+	t.Parallel()
+	c, err := mcpcontract.LoadAllNextSteps()
+	require.NoError(t, err)
+
+	base := map[string]bool{}
+	for _, e := range c.Errors {
+		base[mcpcontract.VariantError+":"+e.Code+"/"+e.Reason+"/"+e.Tool] = true
+	}
+	for _, p := range c.Problems {
+		base[mcpcontract.VariantProblem+":"+p.Code+"//"] = true
+	}
+	variants := map[string]bool{}
+	for _, v := range c.ConnectOnly {
+		key := v.Kind + ":" + v.Code + "/" + v.Reason + "/" + v.Tool
+		require.False(t, variants[key], "duplicate variant %s", key)
+		variants[key] = true
+		require.True(t, base[key], "%s: a connect-only variant replaces an existing entry", key)
+		requireSteps(t, key, v.Steps)
+		for _, s := range v.Steps {
+			require.NotEqual(t, mcpcontract.ActionRunCommand, s.Action, "%s: a connect-only code is never run with a command", key)
+		}
+	}
+	require.NotEmpty(t, variants)
+	require.Equal(t, variants, contractVariantRows(t, "### Next steps for a connect-only code"), "CONTRACT.md connect-only table and next-steps.json differ")
+}
+
+// contractVariantRows reads the entry keys of a variants table under the
+// CONTRACT.md heading.
+func contractVariantRows(t *testing.T, heading string) map[string]bool {
+	t.Helper()
+	raw, err := contractdoc.Read()
+	require.NoError(t, err)
+	rows := map[string]bool{}
+	inSection := false
+	for line := range strings.SplitSeq(string(raw), "\n") {
+		if strings.HasPrefix(line, "#") {
+			inSection = line == heading
+			continue
+		}
+		if m := agentOperatedRow.FindStringSubmatch(line); inSection && m != nil {
+			rows[strings.ToUpper(m[1])+":"+m[2]+"/"+m[3]+"/"] = true
+		}
+	}
+	return rows
+}
+
 func contractConnectLink(t *testing.T) map[string]bool {
 	t.Helper()
 	raw, err := contractdoc.Read()
@@ -584,7 +655,7 @@ func TestStatusReportsSetup(t *testing.T) {
 	require.Contains(t, required, "setup")
 	props := mustMap(t, tool.OutputSchema["properties"])
 	require.Equal(t, map[string]bool{"ENGINE_AND_GUARD": true, "GUARD_ONLY": true}, schemaEnum(t, tool.OutputSchema, "enforcement"))
-	require.Equal(t, map[string]bool{"NONE": true, "PENDING": true, "EXPIRED": true, "DONE": true},
+	require.Equal(t, map[string]bool{"NONE": true, "PENDING": true, "EXPIRED": true, "CONFIRM_DATABASE": true, "REFUSED": true, "DONE": true},
 		schemaEnum(t, mustMap(t, props["setup"]), "state"))
 }
 

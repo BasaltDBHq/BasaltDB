@@ -4,10 +4,13 @@
 // makes against a real Postgres. It is not part of the binary: only test
 // files import it.
 //
-// It follows the contract's calls, order of refusals and refusal reasons. It
-// differs from the hosted service in what is not the setup's own logic: it
-// dials the pasted string as given (the hosted service requires verified TLS
-// and refuses private addresses), and it has no limits.
+// It follows the contract's calls, order of refusals and refusal reasons,
+// the address hand-off and the reach check included (the hold in its
+// PREVIEW and SET_UP phases, the ticket, CollectAddress, ReportReach,
+// HandoffStatus and OfferAddress). It differs from the hosted service in
+// what is not the setup's own logic: it dials the pasted string as given,
+// or through Options.Dial (the hosted service requires verified TLS and
+// refuses private addresses), and it has no limits.
 package connecttest
 
 import (
@@ -49,6 +52,19 @@ var b64 = base64.RawURLEncoding
 type Server struct {
 	skew   atomic.Int64 // nanoseconds the service's clock is ahead
 	secret []byte
+	holds  holds
+	dial   func(ctx context.Context, url string) (*pgx.Conn, error)
+	// collectsRefused and reportsRefused count the CollectAddress and
+	// ReportReach calls answered HANDOFF_UNKNOWN.
+	collectsRefused, reportsRefused atomic.Int64
+}
+
+// Options change how the service reaches the pasted database (tests whose
+// database sits behind a test TLS proxy).
+type Options struct {
+	// Dial opens the admin connection for a pasted string; nil dials it as
+	// given.
+	Dial func(ctx context.Context, url string) (*pgx.Conn, error)
 }
 
 // Start serves a Server on a local test server until the test ends and
@@ -56,7 +72,16 @@ type Server struct {
 // <base>/basalt.connect.v1.SetupService/<Method>).
 func Start(t *testing.T) (*Server, string) {
 	t.Helper()
-	s := &Server{secret: make([]byte, 32)}
+	return StartWith(t, Options{})
+}
+
+// StartWith is Start with o.
+func StartWith(t *testing.T, o Options) (*Server, string) {
+	t.Helper()
+	s := &Server{secret: make([]byte, 32), dial: o.Dial}
+	if s.dial == nil {
+		s.dial = dial
+	}
 	if _, err := rand.Read(s.secret); err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +100,11 @@ func (s *Server) Advance(d time.Duration) { s.skew.Add(int64(d)) }
 // Now is the service's clock.
 func (s *Server) Now() time.Time { return time.Now().Add(time.Duration(s.skew.Load())) }
 
-func (s *Server) request(code string) setup.Request { return setup.Request{Code: code, Now: s.Now()} }
+// request is a setup request as the connect service makes it: a
+// connect-only code is accepted (ConnectPage).
+func (s *Server) request(code string) setup.Request {
+	return setup.Request{Code: code, Now: s.Now(), ConnectPage: true}
+}
 
 // DescribeSetup is the call that needs no database.
 func (s *Server) DescribeSetup(_ context.Context, r *connect.Request[connectv1.DescribeSetupRequest]) (*connect.Response[connectv1.DescribeSetupResponse], error) {
@@ -89,10 +118,16 @@ func (s *Server) DescribeSetup(_ context.Context, r *connect.Request[connectv1.D
 			return nil, err
 		}
 	}
-	ch.UserName = d.Target.Database
-	ch.DisplayName = "BasaltDB · " + d.Target.Database
+	// The picker's label names the database, or the agent's role for a
+	// connect-only code, whose database is not known yet.
+	label := d.AgentRole
+	if d.Target != nil {
+		label = d.Target.Database
+	}
+	ch.UserName = label
+	ch.DisplayName = "BasaltDB · " + label
 	if len(ch.DisplayName) > maxPasskeyLabel {
-		ch.DisplayName = d.Target.Database
+		ch.DisplayName = label
 	}
 	ch.ExpiresAt = s.Now().Add(ChallengeLife).UTC().Format(time.RFC3339)
 	ch.MAC = s.mac(ch, d.Fingerprint)
@@ -101,16 +136,39 @@ func (s *Server) DescribeSetup(_ context.Context, r *connect.Request[connectv1.D
 
 // CheckSetup connects and reads.
 func (s *Server) CheckSetup(ctx context.Context, r *connect.Request[connectv1.CheckSetupRequest]) (*connect.Response[connectv1.CheckSetupResponse], error) {
-	conn, err := dial(ctx, r.Msg.GetDatabaseUrl())
+	conn, err := s.dial(ctx, r.Msg.GetDatabaseUrl())
 	if err != nil {
 		return nil, refuse(err)
 	}
 	defer conn.Close(ctx)
-	c, err := setup.Check(ctx, conn, s.request(r.Msg.GetCode()))
+	req := s.request(r.Msg.GetCode())
+	c, err := setup.Check(ctx, conn, req)
+	var se *setup.Error
+	if errors.As(err, &se) && se.Code == codeUsed {
+		// A connect-only code that ran in this database may run again
+		// (the recovery path): alreadyRan, and the page skips the tables
+		// and the labels. A SET_UP hold of another database is refused
+		// USED as before.
+		if d, derr := setup.Describe(req); derr == nil && d.Target == nil {
+			at := setup.ConnDatabase(conn.Config())
+			if !s.otherTarget(d, at) {
+				return connect.NewResponse(&connectv1.CheckSetupResponse{Database: target(at), AlreadyRan: true}), nil
+			}
+		}
+	}
 	if err != nil {
 		return nil, refuse(err)
 	}
-	out := &connectv1.CheckSetupResponse{PasskeyNeeded: c.PasskeyNeeded, NothingToDo: c.NothingToDo != nil}
+	out := &connectv1.CheckSetupResponse{
+		PasskeyNeeded: c.PasskeyNeeded, NothingToDo: c.NothingToDo != nil, Database: target(c.Database), Tables: slices.Clone(c.Tables),
+	}
+	for _, e := range c.Excluded {
+		out.Excluded = append(out.Excluded, &connectv1.ExcludedTable{Table: e.Table, Owner: e.Owner})
+	}
+	out.ReadOnly = slices.Clone(c.ReadOnly)
+	for _, l := range c.Columns {
+		out.Columns = append(out.Columns, &connectv1.ColumnLabel{Table: l.Table, Column: l.Column, Class: l.Class, EntityType: l.EntityType, PhoneRegion: l.PhoneRegion})
+	}
 	if c.NothingToDo == nil {
 		out.Notes = notes(c)
 	}
@@ -119,8 +177,20 @@ func (s *Server) CheckSetup(ctx context.Context, r *connect.Request[connectv1.Ch
 			Kind: rowSecurity, Table: q.Table, Text: q.Text, Choices: []string{choiceAllRows, choiceNone},
 		})
 	}
+	// The reach check: a connect-only INSTALL code that logged in and is
+	// not refused gets a PREVIEW hold of the pasted database, unless a
+	// SET_UP hold exists.
+	if c.Description.Target == nil && c.Description.Kind == setup.KindInstall {
+		if out.Ticket, err = s.previewFor(c.Description, c.Database); err != nil {
+			return nil, err
+		}
+	}
 	return connect.NewResponse(out), nil
 }
+
+// codeUsed is the setup package's refusal of a code the database already
+// ran.
+const codeUsed = "USED"
 
 const (
 	rowSecurity   = "ROW_LEVEL_SECURITY"
@@ -133,6 +203,9 @@ const (
 func (s *Server) RunSetup(ctx context.Context, r *connect.Request[connectv1.RunSetupRequest]) (*connect.Response[connectv1.RunSetupResponse], error) {
 	m := r.Msg
 	req := s.request(m.GetCode())
+	// The page's ticks: every RunSetup sends them (empty for a code
+	// without ticks), so pkg/setup checks them for every code.
+	req.Included = &setup.Included{Tables: m.GetIncludedTables()}
 	d, err := setup.Describe(req)
 	if err != nil {
 		return nil, refuse(err)
@@ -143,12 +216,28 @@ func (s *Server) RunSetup(ctx context.Context, r *connect.Request[connectv1.RunS
 			return nil, err
 		}
 	}
-	conn, err := dial(ctx, m.GetDatabaseUrl())
+	conn, err := s.dial(ctx, m.GetDatabaseUrl())
 	if err != nil {
 		return nil, refuse(err)
 	}
 	defer conn.Close(ctx)
+	// After the login to the pasted database succeeded: only someone who
+	// can log in to a database learns that the code ran elsewhere.
+	at := setup.ConnDatabase(conn.Config())
+	if d.Target == nil && s.otherTarget(d, at) {
+		return nil, refusal(connect.CodeFailedPrecondition, "RUN_ELSEWHERE", runElsewhere)
+	}
 	checked, err := setup.Check(ctx, conn, req)
+	var se *setup.Error
+	if d.Target == nil && errors.As(err, &se) && se.Code == codeUsed {
+		// The same connect-only code again in the database it ran in: the
+		// address is held again, nothing changes.
+		ticket, terr := s.holdFor(d, at)
+		if terr != nil {
+			return nil, terr
+		}
+		return connect.NewResponse(&connectv1.RunSetupResponse{Ticket: ticket, Reconnected: true}), nil
+	}
 	if err != nil {
 		return nil, refuse(err)
 	}
@@ -166,11 +255,25 @@ func (s *Server) RunSetup(ctx context.Context, r *connect.Request[connectv1.RunS
 	if reg != nil {
 		in.Passkey = &reg.verified // registered in the setup's transaction
 	}
+	in.RestPublic = m.GetRestPublic()
+	for _, c := range m.GetColumnClasses() {
+		w := c.GetWas()
+		in.ColumnClasses = append(in.ColumnClasses, setup.ColumnClass{
+			Table: c.GetTable(), Column: c.GetColumn(),
+			Label: setup.Label{Class: c.GetClass(), EntityType: c.GetEntityType(), PhoneRegion: c.GetPhoneRegion()},
+			Was:   setup.Label{Class: w.GetClass(), EntityType: w.GetEntityType(), PhoneRegion: w.GetPhoneRegion()},
+		})
+	}
 	res, err := setup.Run(ctx, conn, req, in)
 	if err != nil {
 		return nil, refuse(err)
 	}
 	out := &connectv1.RunSetupResponse{Warnings: res.Warnings, NothingToDo: res.NothingToDo != nil}
+	if d.Target == nil {
+		if out.Ticket, err = s.holdFor(d, at); err != nil {
+			return nil, err
+		}
+	}
 	if res.Passkey != nil && reg != nil {
 		out.Passkeys = []*connectv1.RegisteredPasskey{{
 			CredentialId: b64.EncodeToString(res.Passkey.CredentialID), Label: res.Passkey.Label, CheckCode: reg.checkCode,
@@ -299,14 +402,21 @@ func notes(c setup.Checked) []string {
 }
 
 func summary(d setup.Description) *connectv1.SetupSummary {
-	return &connectv1.SetupSummary{
+	out := &connectv1.SetupSummary{
 		SetupId: d.SetupID, Kind: string(d.Kind), Agent: d.Agent, Role: d.AgentRole, Prefix: d.Prefix,
-		Target: &connectv1.Target{Host: d.Target.Host, Port: int32(d.Target.Port), Database: d.Target.Database, SupabaseRef: d.Target.SupabaseRef},
-		Write:  slices.Clone(d.Write), Read: slices.Clone(d.Read),
+		Write: slices.Clone(d.Write), Read: slices.Clone(d.Read), AllTablesSchemas: slices.Clone(d.AllTablesSchemas),
 		StatementTimeoutMs: int32(d.StatementTimeoutMs), GuardFrom: int32(d.GuardFrom), GuardTo: int32(d.GuardTo),
 		ExpiresAt: d.ExpiresAt.UTC().Format(time.RFC3339), Fingerprint: d.Fingerprint,
 		EngineFingerprint: d.EngineFingerprint, Lines: slices.Clone(d.Summary),
 	}
+	if d.Target != nil {
+		out.Target = target(*d.Target)
+	}
+	return out
+}
+
+func target(t setup.Target) *connectv1.Target {
+	return &connectv1.Target{Host: t.Host, Port: int32(t.Port), Database: t.Database, SupabaseRef: t.SupabaseRef}
 }
 
 // PasskeyChallenge is the decoded challenge.
@@ -405,7 +515,8 @@ func fromSetup(e *setup.Error) *refusalError {
 		return &refusalError{connect.CodeInvalidArgument, e.Code, e.Message}
 	case "BINARY_TOO_OLD":
 		return &refusalError{connect.CodeUnavailable, e.Code, "Basalt Vault is being updated: try again shortly, or use the laptop command."}
-	case setup.CodeTargetMismatch, "PREFIX_MISMATCH", "USED", "SUPERSEDED", "ROLE_EXISTS", "ROLE_MISSING", setup.CodeEngineRevoked, setup.CodeTablesMissing:
+	case setup.CodeTargetMismatch, "PREFIX_MISMATCH", codeUsed, "SUPERSEDED", "ROLE_EXISTS", "ROLE_MISSING", setup.CodeEngineRevoked, setup.CodeTablesMissing,
+		setup.CodeNoTables, setup.CodeTablesChanged, setup.CodeClassesChanged:
 		return &refusalError{connect.CodeFailedPrecondition, e.Code, e.Message}
 	case setup.CodeAnswersInvalid:
 		return &refusalError{connect.CodeInvalidArgument, e.Code, "The answers do not match the questions for this database."}

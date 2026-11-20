@@ -20,6 +20,7 @@ var notFromTheService = map[string]string{
 	setup.CodeEngineURLInvalid:     "needs Request.EngineURL, which the service never sets",
 	setup.CodeEngineKeyMissing:     "needs Request.EngineURL, which the service never sets",
 	setup.CodePasskeyNotRegistered: "needs RunInput.AskPasskey, the laptop's passkey step",
+	setup.CodeConnectOnly:          "needs Request.ConnectPage unset; the service always sets it",
 }
 
 // Every code the setup package returns is a reason of the contract's

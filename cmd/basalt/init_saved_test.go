@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -187,6 +188,44 @@ func TestKeptCredentialSpec(t *testing.T) {
 	require.Contains(t, string(got.Files[0].Content), `"initArgs"`)
 }
 
+// An agent that waits for its database's address (a connect-only setup
+// code) has no credential file yet: the install places it without one and
+// keeps its pending setup in the config.
+func TestKeptCredentialSpecForAWaitingAgent(t *testing.T) {
+	t.Parallel()
+	cfg := tempConfig(t)
+	setup := &config.Setup{
+		SetupID: "01a1f78c-52b8-7c3a-9f00-0000000000e1", Kind: "INSTALL", GuardVersion: 16, ExpiresAt: "2026-11-21T06:02:11Z",
+		Code: connectOnlyFixtureCode, Fingerprint: "d48b ee66 a1d9 d005 1f63", AwaitingAddress: true,
+	}
+	cred := filepath.Join(filepath.Dir(cfg), "agents", "bot.url")
+	raw, err := json.Marshal(config.Config{SocketDir: "/run/basalt", Agents: []config.Agent{{Name: "bot", OSUser: "tester", Store: config.PostgresStore(cred), Setup: setup}}})
+	require.NoError(t, err)
+	require.NoError(t, config.WriteFile(cfg, raw))
+	spec := service.Spec{GOOS: "linux", Binary: "/b", ConfigPath: cfg, User: me(t)}
+	a := agentInstall{name: "bot", osUser: "tester", keepCredential: true, initArgs: []string{"--agent=bot"}}
+
+	_, err = keptCredentialSpec(spec, a, false)
+	require.ErrorContains(t, err, ".secret", "the engine's user must own the password the YES writes")
+	require.NoError(t, config.WriteFile(config.SecretPath(cred, "bot"), []byte("pw\n")))
+	got, err := keptCredentialSpec(spec, a, false)
+	require.NoError(t, err)
+	require.Len(t, got.Files, 1, "no credential file is written")
+	dry, err := keptCredentialSpec(spec, a, true)
+	require.NoError(t, err)
+	require.Len(t, dry.Files, 1, "a dry run shows the same plan")
+	var written config.Config
+	require.NoError(t, json.Unmarshal(got.Files[0].Content, &written))
+	require.Equal(t, setup, written.Agents[0].Setup, "the pending setup stays")
+
+	// Not waiting (no connect-only setup): still refused.
+	raw, err = json.Marshal(config.Config{SocketDir: "/run/basalt", Agents: []config.Agent{{Name: "bot", OSUser: "tester", Store: config.PostgresStore(cred)}}})
+	require.NoError(t, err)
+	require.NoError(t, config.WriteFile(cfg, raw))
+	_, err = keptCredentialSpec(spec, a, false)
+	require.ErrorContains(t, err, "--rotate-password")
+}
+
 // A mistyped --credential-file must not rotate the password.
 func TestInitRefusesAMissingCredentialFileForAnExistingRole(t *testing.T) {
 	t.Parallel()
@@ -207,3 +246,7 @@ func TestInitRefusesAMissingCredentialFileForAnExistingRole(t *testing.T) {
 	require.NoError(t, err, "the password was not rotated")
 	conn.Close(ctx)
 }
+
+// connectOnlyFixtureCode is the contract's connect-only fixture
+// (api/mcp/setup/setup-code.fixtures.json).
+const connectOnlyFixtureCode = "basalt-setup.1.PJBdb6JAFIb_y0nvlmlnrKJO4sUUtFXESou2uNmYAQecOjB0gPrR-N837G72XJ3kPDlvnvcbUm1yXgMlFlSibsrpDihgwknaHySo14kHqJ_cczRMMUb4_wgCFhxk0dLTxWvI5nOwoDQilSegEPOKqxosyBpudkC_ITU6B4otqDVQYl8tiBup_oTd9m4xWMAzUdQtWvBcAAUl-G4b6_YLVyrksRJVe66Svch5BfQnlE2sZAK_rhZ8CSNTKQxQeHVemI9enxjq9OybLh7alAVT94GtHh-O2czJKt8NussxG41uzt33U3R3Kcovd_nj7TDTy_eJDPjjnVfNVPg514P95lE5jX4ejGjWU5FbzLpv2jddW77tz59RkXB395Lovn_5IpNz9vR81vu78QgsqGpei1wUdShzoZvar4Det-VdLRCnUhpRsRoodHDHRoSgDgmxTXGHErIBC0SRyUK0xn81PXEGCv7kcBwfoydPb6aXD-ywIJr-210WJG6QsfFqfRzGpvhQ5jDG276XknB4CS4P9kZsF-TeW61NUFbPmJHhZGG69mrpR2ibqxdycLScBB4aLNbI8Vf9ue-o-JRuULhmcL3-DgAA__8._9xzIw"

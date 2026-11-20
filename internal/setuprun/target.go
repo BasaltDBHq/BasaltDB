@@ -17,10 +17,12 @@ import (
 // then names it without its password and parameters, for the new code's
 // command.
 func CheckTarget(p setupcode.Payload, got setupcode.Target, shown *url.URL) error {
-	if SameDatabase(p.Target, got) {
+	if p.Target == nil || SameDatabase(*p.Target, got) {
+		// A connect-only code has no target: the database the connection
+		// names is the setup's (never TARGET_MISMATCH).
 		return nil
 	}
-	want := TargetWords(p.Target)
+	want := TargetWords(*p.Target)
 	msg := fmt.Sprintf("This setup code is for database %s of %s (the agent connects there). Your admin connection string points at database %s of %s. "+
 		"Either run this command with the admin connection string of %s, or ask %s for a new code for the database you meant",
 		p.Target.Database, want, got.Database, TargetWords(got), want, AgentWord(p))

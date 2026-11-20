@@ -145,6 +145,7 @@ func TestInitSetupCodeRefusesBeforeTheDatabase(t *testing.T) {
 	install := remote(t, cfg, "--agent", "bot", "--write", "public.leads", "--database-url", "postgres://u@db.example.com:5432/app")
 	expires, err := install.payload.ExpiresTime()
 	require.NoError(t, err)
+	connectOnly := remote(t, connectOnlyConfig(t), connectOnlyArgs...)
 	// An admin string that cannot connect: none of these refusals connects.
 	const admin = "postgres://admin:adminsecret@127.0.0.1:1/app"
 
@@ -156,7 +157,12 @@ func TestInitSetupCodeRefusesBeforeTheDatabase(t *testing.T) {
 		"expired":         {expires, install.res.Code, "basalt: This setup code expired on " + expires.UTC().Format("2006-01-02 15:04 UTC") + ". Ask bot for a new one.\n"},
 		"from the future": {expires.Add(-48 * time.Hour), install.res.Code, "basalt: This setup code claims a time in the future. Check this computer's clock, or ask bot for a new code.\n"},
 		"not a code":      {time.Time{}, "hello", "basalt: This is not a Basalt setup code.\n"},
-		"damaged":         {time.Time{}, damaged(install.res.Code), "basalt: This setup code is damaged; copy it again.\n"},
+		"connect-only, before the clock": {
+			expires.Add(48 * time.Hour), connectOnly.res.Code,
+			"basalt: This setup code is for the connect page: open the link bot sent, or ask it for a code for this command " +
+				"(basalt init --remote --database-url <the database, without password>).\n",
+		},
+		"damaged": {time.Time{}, damaged(install.res.Code), "basalt: This setup code is damaged; copy it again.\n"},
 		"wrapped and wrong host": {
 			time.Time{},
 			install.res.Code[:40] + "\n  " + install.res.Code[40:],
@@ -231,7 +237,7 @@ func TestSetupTargetMatchesByDatabaseIdentity(t *testing.T) {
 		require.Equal(t, tc.same, sameDatabase(tc.want, got), tc.admin)
 	}
 
-	p := setupcode.Payload{Target: pooler, Agent: &setupcode.Agent{Name: "lead_bot"}}
+	p := setupcode.Payload{Target: &pooler, Agent: &setupcode.Agent{Name: "lead_bot"}}
 	err := checkSetupTarget(p, "postgres://postgres:secretpw@db.zzzzzzzzzzzzzzzzzzzz.supabase.co:5432/postgres?sslmode=require&password=x")
 	require.EqualError(t, err, "This setup code is for database postgres of Supabase project abcdefghijklmnopqrst (the agent connects there). "+
 		"Your admin connection string points at database postgres of Supabase project zzzzzzzzzzzzzzzzzzzz. "+

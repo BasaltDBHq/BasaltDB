@@ -72,7 +72,17 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 		}
 		return engine.RunWith(ctx, cfg.Config, enginePath(*configPath), log, o)
 	}
-	if err := serveRestarting(ctx, run, osRestart(log), log); err != nil {
+	// A reload (a connect-only agent's setup changed) serves the config as
+	// it is now.
+	reload := func() error {
+		next, err := loadEngineConfigAs(h.Euid(), *configPath)
+		if err != nil {
+			return err
+		}
+		cfg = next
+		return nil
+	}
+	if err := serveRestarting(ctx, run, osRestart(log), reload, log); err != nil {
 		return fail(io.err, "engine", err)
 	}
 	return exitOK
@@ -116,11 +126,21 @@ func osRestart(log *slog.Logger) restart {
 }
 
 // serveRestarting runs the engine and, each time it stops for an upgrade,
-// runs the new binary in this process. When that fails, this binary serves
+// runs the new binary in this process; each time it stops for a reload, it
+// reads the config again and runs the engine anew. When that fails, this binary serves
 // on, until the binary changes again.
-func serveRestarting(ctx context.Context, run func(context.Context, engine.RestartOptions) error, r restart, log *slog.Logger) error {
+func serveRestarting(ctx context.Context, run func(context.Context, engine.RestartOptions) error, r restart, reload func() error, log *slog.Logger) error {
 	for {
 		err := run(ctx, engine.RestartOptions{Upgrade: r.upgrade})
+		if errors.Is(err, engine.ErrReload) && ctx.Err() == nil {
+			// Same binary, same process: the config is read again and the
+			// engine serves anew. A config it cannot read now stops it.
+			log.Info("serving the engine config again: an agent's connect-only setup changed")
+			if err := reload(); err != nil {
+				return err
+			}
+			continue
+		}
 		if !errors.Is(err, engine.ErrRestart) || ctx.Err() != nil {
 			// A stop that came during the restart wins: never run the new
 			// binary after the engine was told to stop.
@@ -492,11 +512,39 @@ func agentSpecFromStdin(in io.Reader, spec service.Spec, a agentInstall, credStd
 func keptCredentialSpec(spec service.Spec, a agentInstall, dryRun bool) (service.Spec, error) {
 	cred := filepath.Join(filepath.Dir(spec.ConfigPath), "agents", a.name+".url")
 	raw, err := readKeptCredential(cred, spec.User)
+	if err != nil && waitingForAddress(spec, a.name, cred) {
+		// A connect-only setup waits for its address: no credential yet,
+		// and the engine writes it after the person's YES (CONTRACT.md,
+		// Connect-only setup codes), with the password in .secret, which
+		// must be the engine user's own for that.
+		if _, serr := readKeptCredential(config.SecretPath(cred, a.name), spec.User); serr != nil && !dryRun {
+			return spec, fmt.Errorf("agent %s waits for its database's address, but its .secret is not usable by the engine's user %s (%w); run basalt init --remote as that user, or keep --user as it was", a.name, spec.User, serr)
+		}
+		a.keepCredential, a.waiting = true, true
+		return agentServiceSpec(spec.GOOS, spec.Binary, spec.ConfigPath, spec.User, a, dryRun)
+	}
 	if err != nil && !dryRun {
 		return spec, fmt.Errorf("the agent's role keeps its password but its credential file %s is not usable (%w); run basalt init --rotate-password", cred, err)
 	}
 	a.dsn, a.keepCredential = raw, false
 	return agentServiceSpec(spec.GOOS, spec.Binary, spec.ConfigPath, spec.User, a, dryRun)
+}
+
+// waitingForAddress reports whether the config gives agent name a pending
+// connect-only setup and no credential file exists at cred: the agent
+// waits for its database's address.
+func waitingForAddress(spec service.Spec, name, cred string) bool {
+	cfg, err := loadEngineConfigAs(os.Geteuid(), spec.ConfigPath)
+	if err != nil {
+		return false
+	}
+	for _, ag := range cfg.Agents {
+		if ag.Name == name && ag.Setup != nil && ag.Setup.ConnectOnly() {
+			_, err := os.Lstat(cred)
+			return errors.Is(err, os.ErrNotExist)
+		}
+	}
+	return false
 }
 
 func binaryPath(flagValue string) (string, error) {

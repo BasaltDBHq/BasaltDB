@@ -282,7 +282,7 @@ func (l *laptopSetup) portalPasskey(context.Context) (setup.Passkey, error) {
 // plan is the setup's SQL as Run builds it, with no row-level security
 // policy and no engine revoked.
 func (l *laptopSetup) plan() (guard.Script, error) {
-	s, err := setuprun.New(l.f.code, l.c.now(), l.f.engineURL)
+	s, err := setuprun.New(l.f.code, l.c.now(), l.f.engineURL, false)
 	if err != nil {
 		return guard.Script{}, err
 	}

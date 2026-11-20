@@ -1,7 +1,12 @@
 // The connect service's API (CONTRACT.md, Connect). The connect service is
 // a hosted service of Basalt Vault, used only at setup: it runs a bot's
-// setup code against the person's database, once, and keeps nothing.
-// Planned: no part of BasaltDB serves or calls it yet.
+// setup code against the person's database, once, and writes nothing
+// anywhere of its own. For a connect-only setup code it holds the
+// database's address (never the password) in memory for up to 30 minutes:
+// from CheckSetup, for the bot's engine to test that it can reach it (the
+// reach check), and from RunSetup, until the engine collects it. Planned:
+// no part of BasaltDB serves it yet; the engine calls CollectAddress and
+// ReportReach.
 //
 // Field names are snake_case here; the proto3 JSON names, which the connect
 // page sends and reads, are their camelCase forms. Byte values are strings
@@ -54,6 +59,18 @@ const (
 	SetupServiceCheckSetupProcedure = "/basalt.connect.v1.SetupService/CheckSetup"
 	// SetupServiceRunSetupProcedure is the fully-qualified name of the SetupService's RunSetup RPC.
 	SetupServiceRunSetupProcedure = "/basalt.connect.v1.SetupService/RunSetup"
+	// SetupServiceCollectAddressProcedure is the fully-qualified name of the SetupService's
+	// CollectAddress RPC.
+	SetupServiceCollectAddressProcedure = "/basalt.connect.v1.SetupService/CollectAddress"
+	// SetupServiceReportReachProcedure is the fully-qualified name of the SetupService's ReportReach
+	// RPC.
+	SetupServiceReportReachProcedure = "/basalt.connect.v1.SetupService/ReportReach"
+	// SetupServiceHandoffStatusProcedure is the fully-qualified name of the SetupService's
+	// HandoffStatus RPC.
+	SetupServiceHandoffStatusProcedure = "/basalt.connect.v1.SetupService/HandoffStatus"
+	// SetupServiceOfferAddressProcedure is the fully-qualified name of the SetupService's OfferAddress
+	// RPC.
+	SetupServiceOfferAddressProcedure = "/basalt.connect.v1.SetupService/OfferAddress"
 )
 
 // SetupServiceClient is a client for the basalt.connect.v1.SetupService service.
@@ -62,10 +79,24 @@ type SetupServiceClient interface {
 	// access.
 	DescribeSetup(context.Context, *connect.Request[v1.DescribeSetupRequest]) (*connect.Response[v1.DescribeSetupResponse], error)
 	// Connects, reads the database's state, and returns the questions to ask.
-	// Changes nothing.
+	// Changes nothing in the database. For a connect-only INSTALL code, holds
+	// the address for the reach check (a PREVIEW hold).
 	CheckSetup(context.Context, *connect.Request[v1.CheckSetupRequest]) (*connect.Response[v1.CheckSetupResponse], error)
-	// Connects and runs the setup in one transaction.
+	// Connects and runs the setup in one transaction. For a connect-only
+	// code, then holds the database's address and returns a hand-off ticket.
 	RunSetup(context.Context, *connect.Request[v1.RunSetupRequest]) (*connect.Response[v1.RunSetupResponse], error)
+	// The engine: the address of its connect-only setup, signed with the
+	// engine key the setup code names. No database access.
+	CollectAddress(context.Context, *connect.Request[v1.CollectAddressRequest]) (*connect.Response[v1.CollectAddressResponse], error)
+	// The engine: whether it can reach the address it collected, signed with
+	// the same engine key. No database access.
+	ReportReach(context.Context, *connect.Request[v1.ReportReachRequest]) (*connect.Response[v1.ReportReachResponse], error)
+	// The page: whether the engine has collected the address, and what it
+	// reported about reaching it. No database access.
+	HandoffStatus(context.Context, *connect.Request[v1.HandoffStatusRequest]) (*connect.Response[v1.HandoffStatusResponse], error)
+	// The page: puts a hold the service lost (a restart) back, with the
+	// ticket's own expiry. No database access.
+	OfferAddress(context.Context, *connect.Request[v1.OfferAddressRequest]) (*connect.Response[v1.OfferAddressResponse], error)
 }
 
 // NewSetupServiceClient constructs a client for the basalt.connect.v1.SetupService service. By
@@ -97,14 +128,42 @@ func NewSetupServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(setupServiceMethods.ByName("RunSetup")),
 			connect.WithClientOptions(opts...),
 		),
+		collectAddress: connect.NewClient[v1.CollectAddressRequest, v1.CollectAddressResponse](
+			httpClient,
+			baseURL+SetupServiceCollectAddressProcedure,
+			connect.WithSchema(setupServiceMethods.ByName("CollectAddress")),
+			connect.WithClientOptions(opts...),
+		),
+		reportReach: connect.NewClient[v1.ReportReachRequest, v1.ReportReachResponse](
+			httpClient,
+			baseURL+SetupServiceReportReachProcedure,
+			connect.WithSchema(setupServiceMethods.ByName("ReportReach")),
+			connect.WithClientOptions(opts...),
+		),
+		handoffStatus: connect.NewClient[v1.HandoffStatusRequest, v1.HandoffStatusResponse](
+			httpClient,
+			baseURL+SetupServiceHandoffStatusProcedure,
+			connect.WithSchema(setupServiceMethods.ByName("HandoffStatus")),
+			connect.WithClientOptions(opts...),
+		),
+		offerAddress: connect.NewClient[v1.OfferAddressRequest, v1.OfferAddressResponse](
+			httpClient,
+			baseURL+SetupServiceOfferAddressProcedure,
+			connect.WithSchema(setupServiceMethods.ByName("OfferAddress")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // setupServiceClient implements SetupServiceClient.
 type setupServiceClient struct {
-	describeSetup *connect.Client[v1.DescribeSetupRequest, v1.DescribeSetupResponse]
-	checkSetup    *connect.Client[v1.CheckSetupRequest, v1.CheckSetupResponse]
-	runSetup      *connect.Client[v1.RunSetupRequest, v1.RunSetupResponse]
+	describeSetup  *connect.Client[v1.DescribeSetupRequest, v1.DescribeSetupResponse]
+	checkSetup     *connect.Client[v1.CheckSetupRequest, v1.CheckSetupResponse]
+	runSetup       *connect.Client[v1.RunSetupRequest, v1.RunSetupResponse]
+	collectAddress *connect.Client[v1.CollectAddressRequest, v1.CollectAddressResponse]
+	reportReach    *connect.Client[v1.ReportReachRequest, v1.ReportReachResponse]
+	handoffStatus  *connect.Client[v1.HandoffStatusRequest, v1.HandoffStatusResponse]
+	offerAddress   *connect.Client[v1.OfferAddressRequest, v1.OfferAddressResponse]
 }
 
 // DescribeSetup calls basalt.connect.v1.SetupService.DescribeSetup.
@@ -122,16 +181,50 @@ func (c *setupServiceClient) RunSetup(ctx context.Context, req *connect.Request[
 	return c.runSetup.CallUnary(ctx, req)
 }
 
+// CollectAddress calls basalt.connect.v1.SetupService.CollectAddress.
+func (c *setupServiceClient) CollectAddress(ctx context.Context, req *connect.Request[v1.CollectAddressRequest]) (*connect.Response[v1.CollectAddressResponse], error) {
+	return c.collectAddress.CallUnary(ctx, req)
+}
+
+// ReportReach calls basalt.connect.v1.SetupService.ReportReach.
+func (c *setupServiceClient) ReportReach(ctx context.Context, req *connect.Request[v1.ReportReachRequest]) (*connect.Response[v1.ReportReachResponse], error) {
+	return c.reportReach.CallUnary(ctx, req)
+}
+
+// HandoffStatus calls basalt.connect.v1.SetupService.HandoffStatus.
+func (c *setupServiceClient) HandoffStatus(ctx context.Context, req *connect.Request[v1.HandoffStatusRequest]) (*connect.Response[v1.HandoffStatusResponse], error) {
+	return c.handoffStatus.CallUnary(ctx, req)
+}
+
+// OfferAddress calls basalt.connect.v1.SetupService.OfferAddress.
+func (c *setupServiceClient) OfferAddress(ctx context.Context, req *connect.Request[v1.OfferAddressRequest]) (*connect.Response[v1.OfferAddressResponse], error) {
+	return c.offerAddress.CallUnary(ctx, req)
+}
+
 // SetupServiceHandler is an implementation of the basalt.connect.v1.SetupService service.
 type SetupServiceHandler interface {
 	// What the code asks for, in words, and a passkey challenge. No database
 	// access.
 	DescribeSetup(context.Context, *connect.Request[v1.DescribeSetupRequest]) (*connect.Response[v1.DescribeSetupResponse], error)
 	// Connects, reads the database's state, and returns the questions to ask.
-	// Changes nothing.
+	// Changes nothing in the database. For a connect-only INSTALL code, holds
+	// the address for the reach check (a PREVIEW hold).
 	CheckSetup(context.Context, *connect.Request[v1.CheckSetupRequest]) (*connect.Response[v1.CheckSetupResponse], error)
-	// Connects and runs the setup in one transaction.
+	// Connects and runs the setup in one transaction. For a connect-only
+	// code, then holds the database's address and returns a hand-off ticket.
 	RunSetup(context.Context, *connect.Request[v1.RunSetupRequest]) (*connect.Response[v1.RunSetupResponse], error)
+	// The engine: the address of its connect-only setup, signed with the
+	// engine key the setup code names. No database access.
+	CollectAddress(context.Context, *connect.Request[v1.CollectAddressRequest]) (*connect.Response[v1.CollectAddressResponse], error)
+	// The engine: whether it can reach the address it collected, signed with
+	// the same engine key. No database access.
+	ReportReach(context.Context, *connect.Request[v1.ReportReachRequest]) (*connect.Response[v1.ReportReachResponse], error)
+	// The page: whether the engine has collected the address, and what it
+	// reported about reaching it. No database access.
+	HandoffStatus(context.Context, *connect.Request[v1.HandoffStatusRequest]) (*connect.Response[v1.HandoffStatusResponse], error)
+	// The page: puts a hold the service lost (a restart) back, with the
+	// ticket's own expiry. No database access.
+	OfferAddress(context.Context, *connect.Request[v1.OfferAddressRequest]) (*connect.Response[v1.OfferAddressResponse], error)
 }
 
 // NewSetupServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -159,6 +252,30 @@ func NewSetupServiceHandler(svc SetupServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(setupServiceMethods.ByName("RunSetup")),
 		connect.WithHandlerOptions(opts...),
 	)
+	setupServiceCollectAddressHandler := connect.NewUnaryHandler(
+		SetupServiceCollectAddressProcedure,
+		svc.CollectAddress,
+		connect.WithSchema(setupServiceMethods.ByName("CollectAddress")),
+		connect.WithHandlerOptions(opts...),
+	)
+	setupServiceReportReachHandler := connect.NewUnaryHandler(
+		SetupServiceReportReachProcedure,
+		svc.ReportReach,
+		connect.WithSchema(setupServiceMethods.ByName("ReportReach")),
+		connect.WithHandlerOptions(opts...),
+	)
+	setupServiceHandoffStatusHandler := connect.NewUnaryHandler(
+		SetupServiceHandoffStatusProcedure,
+		svc.HandoffStatus,
+		connect.WithSchema(setupServiceMethods.ByName("HandoffStatus")),
+		connect.WithHandlerOptions(opts...),
+	)
+	setupServiceOfferAddressHandler := connect.NewUnaryHandler(
+		SetupServiceOfferAddressProcedure,
+		svc.OfferAddress,
+		connect.WithSchema(setupServiceMethods.ByName("OfferAddress")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/basalt.connect.v1.SetupService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case SetupServiceDescribeSetupProcedure:
@@ -167,6 +284,14 @@ func NewSetupServiceHandler(svc SetupServiceHandler, opts ...connect.HandlerOpti
 			setupServiceCheckSetupHandler.ServeHTTP(w, r)
 		case SetupServiceRunSetupProcedure:
 			setupServiceRunSetupHandler.ServeHTTP(w, r)
+		case SetupServiceCollectAddressProcedure:
+			setupServiceCollectAddressHandler.ServeHTTP(w, r)
+		case SetupServiceReportReachProcedure:
+			setupServiceReportReachHandler.ServeHTTP(w, r)
+		case SetupServiceHandoffStatusProcedure:
+			setupServiceHandoffStatusHandler.ServeHTTP(w, r)
+		case SetupServiceOfferAddressProcedure:
+			setupServiceOfferAddressHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -186,4 +311,20 @@ func (UnimplementedSetupServiceHandler) CheckSetup(context.Context, *connect.Req
 
 func (UnimplementedSetupServiceHandler) RunSetup(context.Context, *connect.Request[v1.RunSetupRequest]) (*connect.Response[v1.RunSetupResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("basalt.connect.v1.SetupService.RunSetup is not implemented"))
+}
+
+func (UnimplementedSetupServiceHandler) CollectAddress(context.Context, *connect.Request[v1.CollectAddressRequest]) (*connect.Response[v1.CollectAddressResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("basalt.connect.v1.SetupService.CollectAddress is not implemented"))
+}
+
+func (UnimplementedSetupServiceHandler) ReportReach(context.Context, *connect.Request[v1.ReportReachRequest]) (*connect.Response[v1.ReportReachResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("basalt.connect.v1.SetupService.ReportReach is not implemented"))
+}
+
+func (UnimplementedSetupServiceHandler) HandoffStatus(context.Context, *connect.Request[v1.HandoffStatusRequest]) (*connect.Response[v1.HandoffStatusResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("basalt.connect.v1.SetupService.HandoffStatus is not implemented"))
+}
+
+func (UnimplementedSetupServiceHandler) OfferAddress(context.Context, *connect.Request[v1.OfferAddressRequest]) (*connect.Response[v1.OfferAddressResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("basalt.connect.v1.SetupService.OfferAddress is not implemented"))
 }

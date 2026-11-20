@@ -13,6 +13,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -37,6 +39,12 @@ const (
 	CodePasskeyRequired  = "PASSKEY_REQUIRED"
 	CodePasskeyInvalid   = "PASSKEY_INVALID"
 	CodePasskeyMissing   = "PASSKEY_NOT_REGISTERED" //nolint:gosec // a refusal code, not a credential
+	CodeNoTables         = "NO_TABLES"
+	// CodeTablesChanged: the tables changed since they were listed.
+	CodeTablesChanged = "TABLES_CHANGED"
+	// CodeClassesChanged: a column's class stored now is not the one the
+	// person saw.
+	CodeClassesChanged = "CLASSES_CHANGED"
 )
 
 // RefusalError is a refused setup: a code and the sentence the person reads.
@@ -66,13 +74,87 @@ type Setup struct {
 	// EngineURL is the address to record with the code's engine key, in
 	// its written form; "" when none was given.
 	EngineURL string
+	// tables are, for an agent.allTables code, what Prepare read from the
+	// database: the agent's write and read-only tables, and those left out.
+	tables guard.SchemaTables
+	// asInstall is a connect-only recovery AGENT code whose role does not
+	// exist: it runs as an INSTALL (Prepare).
+	asInstall bool
+	// given: Include was called with the page's ticks (given), which
+	// Prepare checks after the database's refusals; ticks: they apply (an
+	// agent.allTables INSTALL code), and included are those tables.
+	given    *[]string
+	ticks    bool
+	included []string
+}
+
+// includedShape is an includedTables entry: a plain lowercase
+// schema.table.
+var includedShape = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,62}\.[a-z_][a-z0-9_]{0,62}$`)
+
+// Ticked reports whether the connect page ticks tables for this code: an
+// INSTALL code with agent.allTables (CONTRACT.md, Connect, Tables on the
+// connect page).
+func (s *Setup) Ticked() bool {
+	return s.P.Kind == setupcode.KindInstall && s.P.Agent != nil && s.P.Agent.AllTables != nil
+}
+
+// Include gives Prepare the tables the person left ticked on the connect
+// page. Prepare checks them after the database's own refusals (so a code
+// that already ran is USED, whatever the ticks): for a code without ticks
+// (Ticked false) they must be empty; for one with ticks each entry is a
+// plain lowercase schema.table in a schema of agent.allTables, at most once
+// (ANSWERS_INVALID otherwise), and none at all is NO_TABLES. Prepare then
+// grants exactly those tables, and an entry the listing lacks is
+// TABLES_CHANGED.
+func (s *Setup) Include(tables []string) {
+	t := slices.Clone(tables)
+	s.given = &t
+}
+
+// checkIncluded applies Include's rules.
+func (s *Setup) checkIncluded() error {
+	if s.given == nil {
+		return nil
+	}
+	tables := *s.given
+	if !s.Ticked() {
+		if len(tables) > 0 {
+			return refuse(CodeAnswersInvalid, "this setup code names its tables, so no table can be ticked; nothing changed")
+		}
+		return nil
+	}
+	if len(tables) == 0 {
+		return refuse(CodeNoTables, fmt.Sprintf("There is no table to give %s. Tick at least one table; nothing changed", AgentWord(s.P)))
+	}
+	seen := make(map[string]bool, len(tables))
+	for _, t := range tables {
+		schema, _, _ := strings.Cut(t, ".")
+		if !includedShape.MatchString(t) || !slices.Contains(s.P.Agent.AllTables.Schemas, schema) || seen[t] {
+			return refuse(CodeAnswersInvalid, "a ticked table is not a table of this setup's schemas, or is ticked twice; nothing changed")
+		}
+		seen[t] = true
+	}
+	s.ticks, s.included = true, slices.Clone(tables)
+	return nil
+}
+
+// Included are the tables the grants cover, as the person approved them:
+// the ticked ones, else nil.
+func (s *Setup) Included() []string { return slices.Clone(s.included) }
+
+// errTablesChanged is TABLES_CHANGED.
+func errTablesChanged() error {
+	return refuse(CodeTablesChanged, "the tables changed since they were listed (a table was dropped, renamed or given to another owner), so the setup did not run and nothing changed: check the setup again")
 }
 
 // New decodes code and applies the checks that need no database, in the
-// contract's order (step 1): the engine address's rules, the codec, this
-// clock and this binary's guard (setupcode.CheckLocal), then
+// contract's order (step 1): the engine address's rules, the codec,
+// CONNECT_ONLY unless connectPage (the laptop command refuses a code
+// without target before the clock checks; the connect service runs it),
+// this clock and this binary's guard (setupcode.CheckLocal), then
 // ENGINE_KEY_MISSING.
-func New(code string, now time.Time, engineURL string) (*Setup, error) {
+func New(code string, now time.Time, engineURL string, connectPage bool) (*Setup, error) {
 	if engineURL != "" {
 		u, err := engineaddr.Parse(engineURL)
 		if err != nil {
@@ -83,6 +165,11 @@ func New(code string, now time.Time, engineURL string) (*Setup, error) {
 	p, err := setupcode.Decode(code)
 	if err != nil {
 		return nil, err
+	}
+	if !connectPage {
+		if err := setupcode.CheckNotConnectOnly(p); err != nil {
+			return nil, err
+		}
 	}
 	if err := setupcode.CheckLocal(p, now, guard.LatestVersion()); err != nil {
 		return nil, err
@@ -121,15 +208,30 @@ func AgentWord(p setupcode.Payload) string {
 	return p.Agent.Name
 }
 
-// Spec is the agent part of the code as an install input.
+// Spec is the agent part of the code as an install input. For an
+// agent.allTables code its write tables are those Prepare read; a recovery
+// code whose role does not exist is an INSTALL.
 func (s *Setup) Spec() guard.AgentSpec {
 	a := s.P.Agent
+	write, read := a.Write, a.Read
+	if a.AllTables != nil {
+		write, read = s.tables.Write, s.tables.ReadOnly
+	}
+	install := s.P.Kind == setupcode.KindInstall || s.asInstall
 	return guard.AgentSpec{
-		Name: a.Name, Write: a.Write, Read: a.Read, Verifier: a.Verifier,
-		CreateOnly: s.P.Kind == setupcode.KindInstall, Change: s.P.Kind == setupcode.KindAgent,
+		Name: a.Name, Write: write, Read: read, Verifier: a.Verifier,
+		CreateOnly: install, Change: s.P.Kind == setupcode.KindAgent && !install,
 		StatementTimeout: time.Duration(a.StatementTimeoutMs) * time.Millisecond,
 	}
 }
+
+// Tables are, for an agent.allTables code after Prepare, the tables the
+// agent gets and those left out; empty otherwise.
+func (s *Setup) Tables() guard.SchemaTables { return s.tables }
+
+// RunsAsInstall is whether Prepare found a connect-only recovery AGENT
+// code's role missing, so the setup creates it as an INSTALL does.
+func (s *Setup) RunsAsInstall() bool { return s.asInstall }
 
 // Prepared is a setup checked against the database: what it found and the
 // questions the person answers before the setup runs.
@@ -166,6 +268,13 @@ func (s *Setup) Prepare(ctx context.Context, conn *pgx.Conn) (*Prepared, error) 
 	if err := setupcode.CheckDatabase(s.P, db); err != nil {
 		return nil, err
 	}
+	if err := s.checkIncluded(); err != nil {
+		return nil, err
+	}
+	// CheckDatabase let a connect-only AGENT code through without its role:
+	// a recovery code, run as an INSTALL.
+	s.asInstall = s.P.Kind == setupcode.KindAgent && s.P.ConnectOnly() && len(db.Roles) == 0
+	state.RunsAsInstall = s.asInstall
 	engine, err := s.readEngine(ctx, conn)
 	if err != nil {
 		return nil, err
@@ -178,12 +287,114 @@ func (s *Setup) Prepare(ctx context.Context, conn *pgx.Conn) (*Prepared, error) 
 	if p.NothingToDo || s.P.Agent == nil {
 		return p, nil
 	}
+	if err := s.readAllTables(ctx, conn, &p.State); err != nil {
+		return nil, err
+	}
 	blind, err := guard.AgentBlindTables(ctx, conn, s.Names, s.Spec())
 	if err != nil {
 		return nil, MissingTablesHint(err, conn.Config().Database)
 	}
 	p.Blind = blind
 	return p, nil
+}
+
+// readAllTables reads, for an agent.allTables code, the tables of its
+// schemas the admin role owns (with a primary key the agent's write tables,
+// without one read only) and those left out, into s and the summary's
+// state. No table at all is NO_TABLES.
+func (s *Setup) readAllTables(ctx context.Context, q guard.Querier, state *setupcode.SummaryState) error {
+	if s.P.Agent.AllTables == nil {
+		return nil
+	}
+	tables, err := s.listAllTables(ctx, q)
+	if err != nil {
+		return err
+	}
+	if s.ticks {
+		if tables, err = pickIncluded(tables, s.included); err != nil {
+			return err
+		}
+	}
+	s.tables = tables
+	state.Tables, state.ReadOnly, state.Excluded = s.tables.Write, s.tables.ReadOnly, s.tables.Excluded
+	return nil
+}
+
+// listAllTables lists the tables of an agent.allTables code's schemas.
+func (s *Setup) listAllTables(ctx context.Context, q guard.Querier) (guard.SchemaTables, error) {
+	all := s.P.Agent.AllTables
+	out := guard.SchemaTables{Write: []string{}, ReadOnly: []string{}}
+	for _, schema := range all.Schemas {
+		got, err := guard.AllTablesIn(ctx, q, schema)
+		if err != nil {
+			return guard.SchemaTables{}, err
+		}
+		out.Write = append(out.Write, got.Write...)
+		out.ReadOnly = append(out.ReadOnly, got.ReadOnly...)
+		for _, e := range got.Excluded {
+			out.Excluded = append(out.Excluded, setupcode.ExcludedTable{Table: e.Table, Owner: printableLabel(e.Owner)})
+		}
+	}
+	if len(out.Write)+len(out.ReadOnly) == 0 {
+		return guard.SchemaTables{}, refuse(CodeNoTables, fmt.Sprintf("schema %s of this database has no table the admin role owns, so the agent would get nothing. "+
+			"Create the tables first, or ask %s for a code that names its tables; nothing changed", strings.Join(all.Schemas, ", "), AgentWord(s.P)))
+	}
+	return out, nil
+}
+
+// pickIncluded is the listing narrowed to the included tables, each with
+// its access (write, or read only without a primary key); the excluded
+// ones stay as listed. An included table the listing lacks is
+// TABLES_CHANGED.
+func pickIncluded(all guard.SchemaTables, included []string) (guard.SchemaTables, error) {
+	out := guard.SchemaTables{Write: []string{}, ReadOnly: []string{}, Excluded: all.Excluded}
+	for _, t := range included {
+		switch {
+		case slices.Contains(all.Write, t):
+			out.Write = append(out.Write, t)
+		case slices.Contains(all.ReadOnly, t):
+			out.ReadOnly = append(out.ReadOnly, t)
+		default:
+			return guard.SchemaTables{}, errTablesChanged()
+		}
+	}
+	slices.Sort(out.Write)
+	slices.Sort(out.ReadOnly)
+	return out, nil
+}
+
+// RecheckTables reads an agent.allTables code's tables again with q, the
+// setup's own transaction (CONTRACT.md, Connect, Tables on the connect
+// page), and refuses TABLES_CHANGED, nothing changed: with ticks, when a
+// ticked table is gone or its access changed (a table made since is not
+// included); without, when the listing is not the one Prepare read, which
+// the plan grants and the person was shown. Other codes pass.
+func (s *Setup) RecheckTables(ctx context.Context, q guard.Querier) error {
+	if s.P.Agent == nil || s.P.Agent.AllTables == nil {
+		return nil
+	}
+	now, err := s.listAllTables(ctx, q)
+	var r *RefusalError
+	if errors.As(err, &r) && r.Code == CodeNoTables {
+		return errTablesChanged() // every table went since the listing
+	}
+	if err != nil {
+		return err
+	}
+	if s.ticks {
+		picked, err := pickIncluded(now, s.included)
+		if err != nil {
+			return err
+		}
+		if !slices.Equal(picked.Write, s.tables.Write) || !slices.Equal(picked.ReadOnly, s.tables.ReadOnly) {
+			return errTablesChanged()
+		}
+		return nil
+	}
+	if !slices.Equal(now.Write, s.tables.Write) || !slices.Equal(now.ReadOnly, s.tables.ReadOnly) || !slices.Equal(now.Excluded, s.tables.Excluded) {
+		return errTablesChanged()
+	}
+	return nil
 }
 
 // UpgradeDone is whether an UPGRADE code has nothing to add: the installed
@@ -399,20 +610,26 @@ func blindIndex(tables []guard.BlindTable, table string) int {
 // the setup is recorded only with everything it sets up; any failure rolls
 // all of it back.
 func ApplySetup(ctx context.Context, conn *pgx.Conn, script guard.Script) error {
-	return ApplySetupWith(ctx, conn, script, nil)
+	return ApplySetupWith(ctx, conn, script, nil, nil)
 }
 
 // ApplySetupWith is ApplySetup with inTx, when set, run in the same
 // transaction after the migrations and the coverage check and before
 // record_setup (a passkey registered with the setup). An error from it
-// rolls everything back.
-func ApplySetupWith(ctx context.Context, conn *pgx.Conn, script guard.Script, inTx func(context.Context, pgx.Tx) error) error {
+// rolls everything back. first, when set, runs in the transaction before
+// anything else (the tables read again before the grants name them).
+func ApplySetupWith(ctx context.Context, conn *pgx.Conn, script guard.Script, first, inTx func(context.Context, pgx.Tx) error) error {
 	n := len(script.Statements)
 	if n == 0 {
 		return errors.New("nothing to run")
 	}
 	body, record := guard.Script{Statements: script.Statements[:n-1]}, script.Statements[n-1]
 	err := pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
+		if first != nil {
+			if err := first(ctx, tx); err != nil {
+				return err
+			}
+		}
 		if err := ApplyInitTx(ctx, tx, body); err != nil {
 			return err
 		}

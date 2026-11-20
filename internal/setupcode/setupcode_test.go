@@ -151,6 +151,9 @@ func TestLaptopFixtures(t *testing.T) {
 
 func laptopCheck(t *testing.T, p setupcode.Payload, l laptopFixture, now time.Time) error {
 	t.Helper()
+	if err := setupcode.CheckNotConnectOnly(p); err != nil {
+		return err
+	}
 	if err := setupcode.CheckLocal(p, now, l.BinaryGuardVersion); err != nil {
 		return err
 	}
@@ -434,7 +437,12 @@ func TestFingerprintCoversTheWholeCode(t *testing.T) {
 			}
 			return p
 		}(),
-		"target": func() setupcode.Payload { p := base; p.Target.Database += "x"; return p }(),
+		"target": func() setupcode.Payload {
+			p, t := base, *base.Target
+			t.Database += "x"
+			p.Target = &t
+			return p
+		}(),
 		"expiry": func() setupcode.Payload { p := base; p.ExpiresAt = "2026-01-01T00:00:00Z"; return p }(),
 	}
 	seen := map[string]string{base.Fingerprint(): "base"}
@@ -486,4 +494,22 @@ func TestFingerprintOfTheDecodedCode(t *testing.T) {
 	decoded, err := setupcode.Decode(rawCode(t, []byte(sb.String())))
 	require.NoError(t, err)
 	require.Equal(t, p.Fingerprint(), decoded.Fingerprint())
+}
+
+// A connect-only code relaxes ROLE_MISSING for its recovery AGENT code
+// only: an INSTALL still refuses an existing role, and an AGENT code with a
+// target still needs its role.
+func TestConnectOnlyRoleRules(t *testing.T) {
+	t.Parallel()
+	base := validPayload(t)
+	role := base.Role()
+	install := base
+	install.Target = nil
+	require.Equal(t, setupcode.RefusalRoleExists, refusalOf(t, setupcode.CheckDatabase(install, setupcode.Database{Roles: []string{role}})))
+	withTarget := base
+	withTarget.Kind = setupcode.KindAgent
+	require.Equal(t, setupcode.RefusalRoleMissing, refusalOf(t, setupcode.CheckDatabase(withTarget, setupcode.Database{})))
+	recovery := withTarget
+	recovery.Target = nil
+	require.NoError(t, setupcode.CheckDatabase(recovery, setupcode.Database{}))
 }

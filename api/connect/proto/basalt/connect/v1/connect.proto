@@ -1,7 +1,12 @@
 // The connect service's API (CONTRACT.md, Connect). The connect service is
 // a hosted service of Basalt Vault, used only at setup: it runs a bot's
-// setup code against the person's database, once, and keeps nothing.
-// Planned: no part of BasaltDB serves or calls it yet.
+// setup code against the person's database, once, and writes nothing
+// anywhere of its own. For a connect-only setup code it holds the
+// database's address (never the password) in memory for up to 30 minutes:
+// from CheckSetup, for the bot's engine to test that it can reach it (the
+// reach check), and from RunSetup, until the engine collects it. Planned:
+// no part of BasaltDB serves it yet; the engine calls CollectAddress and
+// ReportReach.
 //
 // Field names are snake_case here; the proto3 JSON names, which the connect
 // page sends and reads, are their camelCase forms. Byte values are strings
@@ -18,7 +23,8 @@ import "google/protobuf/descriptor.proto";
 option go_package = "github.com/basaltdbhq/basaltdb/api/connect/proto/basalt/connect/v1;connectv1";
 
 extend google.protobuf.FieldOptions {
-  // A field whose value is a secret: the admin connection string. Nothing
+  // A field whose value must stay out of logs: the admin connection string,
+  // and the hand-off ticket, which carries the database's address. Nothing
   // may write it to a log, a trace, an error report or a metric label.
   // The number is from the in-house range; a program that also links another
   // extension of FieldOptions with this number would not start.
@@ -31,10 +37,24 @@ service SetupService {
   // access.
   rpc DescribeSetup(DescribeSetupRequest) returns (DescribeSetupResponse);
   // Connects, reads the database's state, and returns the questions to ask.
-  // Changes nothing.
+  // Changes nothing in the database. For a connect-only INSTALL code, holds
+  // the address for the reach check (a PREVIEW hold).
   rpc CheckSetup(CheckSetupRequest) returns (CheckSetupResponse);
-  // Connects and runs the setup in one transaction.
+  // Connects and runs the setup in one transaction. For a connect-only
+  // code, then holds the database's address and returns a hand-off ticket.
   rpc RunSetup(RunSetupRequest) returns (RunSetupResponse);
+  // The engine: the address of its connect-only setup, signed with the
+  // engine key the setup code names. No database access.
+  rpc CollectAddress(CollectAddressRequest) returns (CollectAddressResponse);
+  // The engine: whether it can reach the address it collected, signed with
+  // the same engine key. No database access.
+  rpc ReportReach(ReportReachRequest) returns (ReportReachResponse);
+  // The page: whether the engine has collected the address, and what it
+  // reported about reaching it. No database access.
+  rpc HandoffStatus(HandoffStatusRequest) returns (HandoffStatusResponse);
+  // The page: puts a hold the service lost (a restart) back, with the
+  // ticket's own expiry. No database access.
+  rpc OfferAddress(OfferAddressRequest) returns (OfferAddressResponse);
 }
 
 message DescribeSetupRequest {
@@ -57,6 +77,8 @@ message SetupSummary {
   // <prefix>_agent_<name>; empty for UPGRADE.
   string role = 4;
   string prefix = 5;
+  // Absent for a connect-only code: the database is the one the person
+  // pastes.
   Target target = 6;
   repeated string write = 7;
   repeated string read = 8;
@@ -72,6 +94,9 @@ message SetupSummary {
   // The summary lines that do not depend on the database, in the words
   // basalt init --setup-code shows.
   repeated string lines = 15;
+  // The schemas of agent.allTables (public only); empty when the code
+  // names its tables in write and read.
+  repeated string all_tables_schemas = 16;
 }
 
 // The database the setup code is for.
@@ -117,6 +142,75 @@ message CheckSetupResponse {
   // True for an UPGRADE code with nothing to do: RunSetup then changes and
   // records nothing.
   bool nothing_to_do = 4;
+  // The database the pasted string names, which the page shows first under
+  // Before you approve. Sensitive: it names the person's database, which a
+  // log must not keep.
+  Target database = 5 [(sensitive) = true];
+  // With agent.allTables: the tables the agent will get, schema.table, in
+  // order. Empty when the code names its tables.
+  repeated string tables = 6;
+  // With agent.allTables: the tables in those schemas left out, because
+  // the admin role does not own them.
+  repeated ExcludedTable excluded = 7;
+  // Those of tables (with agent.allTables) that have no primary key:
+  // the agent may read them, not change their rows.
+  repeated string read_only = 8;
+  // Every column of the tables the agent will get (tables, or the code's
+  // write and read), with its class in this database now.
+  repeated ColumnLabel columns = 9;
+  // Connect-only INSTALL codes: the preview ticket, for HandoffStatus and
+  // OfferAddress during the reach check. Absent when the service made no
+  // PREVIEW hold (over a cap, or a SET_UP hold exists). Opaque to the page;
+  // kept in memory only.
+  string ticket = 10 [(sensitive) = true];
+  // Connect-only codes: true when this database already records the setup,
+  // so RunSetup changes nothing and holds the address again (reconnected).
+  bool already_ran = 11;
+}
+
+// A column of a table the agent will get, and its PII class in this
+// database (CONTRACT.md, PII classification).
+message ColumnLabel {
+  // schema.table.
+  string table = 1;
+  string column = 2;
+  // PUBLIC, IDENTIFIER, FREE_TEXT, SECRET or UNCLASSIFIED (also for a
+  // column with no class stored, or a database with no classes at all).
+  string class = 3;
+  // IDENTIFIER only: EMAIL, PHONE, PERSON_NAME, ADDRESS or OTHER.
+  string entity_type = 4;
+  // PHONE only, when one is stored: an ISO 3166-1 alpha-2 code.
+  string phone_region = 5;
+}
+
+// A class as ColumnLabel carries it, without the column.
+message ColumnClass {
+  string class = 1;
+  string entity_type = 2;
+  string phone_region = 3;
+}
+
+// A class the person set on the connect page.
+message ColumnClassChange {
+  // schema.table, one of the included tables.
+  string table = 1;
+  string column = 2;
+  // PUBLIC, IDENTIFIER or SECRET.
+  string class = 3;
+  // Required with IDENTIFIER: EMAIL, PHONE, PERSON_NAME, ADDRESS or OTHER.
+  string entity_type = 4;
+  // Required with PHONE: an ISO 3166-1 alpha-2 code, upper case.
+  string phone_region = 5;
+  // The column's class as CheckSetup returned it. RunSetup refuses the
+  // setup (CLASSES_CHANGED) when the class stored now differs.
+  ColumnClass was = 6;
+}
+
+message ExcludedTable {
+  // schema.table.
+  string table = 1;
+  // The role that owns it.
+  string owner = 2;
 }
 
 message Question {
@@ -145,6 +239,16 @@ message RunSetupRequest {
   PasskeyChallenge challenge = 4;
   // Absent when no passkey is needed.
   PasskeyRegistration passkey = 5;
+  // agent.allTables INSTALL codes: the tables the person left ticked,
+  // schema.table, each from CheckSetup's tables. Empty is NO_TABLES. Must
+  // be empty for every other code.
+  repeated string included_tables = 6;
+  // The columns whose class the person changed, at most 500.
+  repeated ColumnClassChange column_classes = 7;
+  // Mark the rest as not personal: PUBLIC for every column of the included
+  // tables that has no class in the transaction, sent when the entries
+  // would pass the 500 cap.
+  bool rest_public = 8;
 }
 
 // The browser's answer to navigator.credentials.create, as in the passkey
@@ -168,6 +272,12 @@ message RunSetupResponse {
   repeated RegisteredPasskey passkeys = 2;
   // As in CheckSetupResponse.
   bool nothing_to_do = 3;
+  // Connect-only codes only: the hand-off ticket the page passes to
+  // HandoffStatus and OfferAddress. Opaque to the page; kept in memory only.
+  string ticket = 4 [(sensitive) = true];
+  // Connect-only codes only: true when the database already recorded this
+  // setup and nothing changed; the address is held again for the engine.
+  bool reconnected = 5;
 }
 
 message RegisteredPasskey {
@@ -175,6 +285,89 @@ message RegisteredPasskey {
   string label = 2;
   // The passkey check code (CONTRACT.md, Connect).
   string check_code = 3;
+}
+
+message CollectAddressRequest {
+  // The setupId of the connect-only setup code.
+  string setup_id = 1;
+  // The engine's signing key, as the code's engine.publicKey: SPKI DER,
+  // base64url without padding.
+  string engine_public_key = 2;
+  // RFC 3339 UTC, whole seconds: when the engine signed.
+  string time = 3;
+  // ECDSA P-256 over the basalt-connect-collect.1 context (CONTRACT.md,
+  // Connect, The address hand-off), 64 bytes r and s, base64url.
+  string signature = 4;
+}
+
+message CollectAddressResponse {
+  // The database the setup ran in. Never a password. Sensitive: it names
+  // the person's database, which a log must not keep.
+  Target address = 1 [(sensitive) = true];
+  // PREVIEW (CheckSetup's hold: probe and report only) or SET_UP (RunSetup's
+  // hold: probe, ask the person, log in after yes).
+  string phase = 2;
+}
+
+message ReportReachRequest {
+  // As in CollectAddressRequest.
+  string setup_id = 1;
+  string engine_public_key = 2;
+  // RFC 3339 UTC, whole seconds: when the engine signed.
+  string time = 3;
+  // The address the engine probed, in its canonical form: lowercase host,
+  // port, database, Supabase ref.
+  Target address = 4 [(sensitive) = true];
+  // REACHABLE or UNREACHABLE.
+  string result = 5;
+  // UNREACHABLE only: ADDRESS_REFUSED, NO_ROUTE, TLS_NOT_VERIFIED or
+  // TIMEOUT.
+  string reason = 6;
+  // ECDSA P-256 over the basalt-connect-reach.1 context (CONTRACT.md,
+  // Connect, The reach check), 64 bytes r and s, base64url.
+  string signature = 7;
+}
+
+message ReportReachResponse {}
+
+message HandoffStatusRequest {
+  string ticket = 1 [(sensitive) = true];
+}
+
+message HandoffStatusResponse {
+  // HELD, COLLECTED or UNKNOWN (no hold: the service restarted or the hold
+  // expired).
+  string state = 1;
+  // COLLECTED: RFC 3339 UTC, when the engine first collected.
+  string collected_at = 2;
+  // HELD and COLLECTED: a new ticket that records the state, for the page
+  // to use from now on.
+  string ticket = 3 [(sensitive) = true];
+  // HELD and COLLECTED: PREVIEW or SET_UP, the hold's phase.
+  string phase = 4;
+  // The newest reach report the engine made for the ticket's address;
+  // absent before the first.
+  Reach reach = 5;
+}
+
+// What the engine reported about reaching an address.
+message Reach {
+  // REACHABLE or UNREACHABLE.
+  string result = 1;
+  // UNREACHABLE only: ADDRESS_REFUSED, NO_ROUTE, TLS_NOT_VERIFIED or
+  // TIMEOUT.
+  string reason = 2;
+  // RFC 3339 UTC: the report's time.
+  string reported_at = 3;
+}
+
+message OfferAddressRequest {
+  string ticket = 1 [(sensitive) = true];
+}
+
+message OfferAddressResponse {
+  // HELD or COLLECTED, as the ticket records it.
+  string state = 1;
 }
 
 // The error detail of every refusal, attached to the ConnectRPC error.

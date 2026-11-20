@@ -30,6 +30,9 @@ var unreachableCodes = map[string]string{
 	"apply_revert_batch REVERT_EXPIRED": "needs a signed plan past its deadline; the clock is the database's",
 	"apply_revert_batch UNAVAILABLE":    "needs the database to be down",
 	"apply_revert_batch INTERNAL":       "needs a failure the engine does not expect",
+	"confirm_database INVALID_ARGUMENT": "a served agent has no database waiting; pinned by TestConfirmDatabaseOnAServedAgent",
+	"confirm_database UNAVAILABLE":      "answered by a connect-only agent, which serves no database; see TestConnectOnlyConfirmDatabase",
+	"confirm_database INTERNAL":         "needs a failure the engine does not expect",
 	"describe INVALID_ARGUMENT":         "pinned by testdata/describe",
 	"describe NOT_FOUND":                "pinned by testdata/describe",
 	"describe QUERY_TIMEOUT":            "needs a catalog too large to read in time; see TestDescribeSearchScale",
@@ -65,8 +68,8 @@ var unreachableCodes = map[string]string{
 	"write INTERNAL":                    "needs a failure the engine does not expect",
 }
 
-// declaredErrors reads every tool's error codes from the contract's tool
-// files, as "tool CODE".
+// declaredErrors reads every served tool's error codes from the contract's
+// tool files, as "tool CODE". PLANNED tools are left out.
 func declaredErrors(t *testing.T) []string {
 	t.Helper()
 	files, err := filepath.Glob(filepath.Join("..", "..", "..", "api", "mcp", "tools", "*.json"))
@@ -78,9 +81,13 @@ func declaredErrors(t *testing.T) []string {
 		require.NoError(t, err)
 		var tool struct {
 			Name   string   `json:"name"`
+			Status string   `json:"status"`
 			Errors []string `json:"errors"`
 		}
 		require.NoError(t, json.Unmarshal(raw, &tool), f)
+		if tool.Status == "PLANNED" {
+			continue // not served yet, so no scenario can reach it
+		}
 		for _, code := range tool.Errors {
 			out = append(out, tool.Name+" "+code)
 		}

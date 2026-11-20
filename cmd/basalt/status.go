@@ -18,6 +18,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/handoff"
 	"github.com/basaltdbhq/basaltdb/internal/engine/person"
 	"github.com/basaltdbhq/basaltdb/internal/engine/portalcheck"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
@@ -224,6 +225,11 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 	}
 	if !cfg.Service() {
 		cmds = cmds.Foreground()
+	}
+	if a.Setup != nil && a.Setup.ConnectOnly() {
+		if _, err := os.Lstat(a.Store.CredentialFile); errors.Is(err, fs.ErrNotExist) {
+			return connectOnlyStatus(c, cfg.Config, a, cmds, abs)
+		}
 	}
 	dsn, err := cfg.credential(a.Store.CredentialFile)
 	if err != nil {
@@ -556,4 +562,36 @@ func (c *cliIO) needAgentName(err error) error {
 		return err
 	}
 	return fmt.Errorf("%w\n%s", err, agentMarkerNote)
+}
+
+// connectOnlyStatus is basalt status for an agent whose connect-only setup
+// waits for its database or was refused: no credential, so nothing reads a
+// database. With the engine down in same-user mode the CLI collects once,
+// as the engine would; in service mode it does not, and the problem
+// ENGINE_UNREACHABLE says to start the engine (CONTRACT.md, The engine and
+// a connect-only code, Collecting).
+func connectOnlyStatus(c *cliIO, cfg config.Config, a config.Agent, cmds agent.Commands, abs string) (statusOut, error) {
+	eng := runningEngine(cfg.SocketDir)
+	base, err := cfg.PagesBase()
+	if err != nil {
+		return statusOut{}, err
+	}
+	var collected *handoff.State
+	if !eng.Reachable && !eng.Unknown && !cfg.Service() && !a.Setup.Refused {
+		// Same-user mode with the engine down: the CLI runs as the
+		// engine's user, so it collects as the engine would.
+		st, err := engine.CollectWhileDown(c.ctx, cfg, abs, c.goos, a, c.handoff, slog.New(slog.DiscardHandler))
+		if err == nil {
+			collected = &st
+		}
+	}
+	r, err := agent.ConnectOnlyLocalStatus(agent.LocalStatus{
+		Name: a.Name, Commands: cmds, OperatedBy: cfg.OperatedBy, ConnectBudget: cfg.ConnectLinkBudget(), Setup: a.Setup, Collected: collected,
+		PagesBase: base, PagesOrigin: servedPages(c, cfg, eng.Reachable), EngineRunning: eng.Reachable, EngineUnknown: eng.Unknown, Now: c.now,
+	})
+	if err != nil {
+		return statusOut{}, err
+	}
+	eng.Build = r.Engine.Build
+	return statusOut{StatusReport: r, Engine: eng, ConfigPath: abs, SocketDir: cfg.SocketDir, StateDir: cfg.StateDirFor(c.goos)}, nil
 }

@@ -82,12 +82,12 @@
         "type": "object",
         "additionalProperties": false,
         "required": ["state"],
-        "description": "Setup from the person's laptop (basalt init --remote on the engine's machine, then basalt init --setup-code on the person's own computer).",
+        "description": "Setup from the person's laptop (basalt init --remote on the engine's machine, then basalt init --setup-code on the person's own computer), or from the connect page.",
         "properties": {
           "state": {
             "type": "string",
-            "enum": ["NONE", "PENDING", "EXPIRED", "DONE"],
-            "description": "PENDING: a setup code was made and its setup is not recorded yet. For an INSTALL code every tool but status answers UNAVAILABLE reason SETUP_PENDING (problem SETUP_NOT_RUN); for an AGENT or UPGRADE code the tools keep working with what is installed (problem SETUP_CHANGE_PENDING). EXPIRED: an INSTALL code past expiresAt (reason and problem SETUP_EXPIRED); a new code is needed. An expired AGENT or UPGRADE code is dropped, and the problem that called for it comes back. DONE: no setup pending, and setupId names the agent's latest recorded setup. NONE: no setup pending and none recorded (set up with basalt init and the admin connection string), or the engine is down and no setup is pending."
+            "enum": ["NONE", "PENDING", "EXPIRED", "CONFIRM_DATABASE", "REFUSED", "DONE"],
+            "description": "PENDING: a setup code was made and its setup is not recorded yet. For an INSTALL code every tool but status answers UNAVAILABLE reason SETUP_PENDING (problem SETUP_NOT_RUN); for an AGENT or UPGRADE code the tools keep working with what is installed (problem SETUP_CHANGE_PENDING; except a connect-only AGENT recovery code, served as a pending INSTALL). EXPIRED: an INSTALL code past expiresAt (reason and problem SETUP_EXPIRED); a new code is needed. An expired AGENT or UPGRADE code is dropped, and the problem that called for it comes back. DONE: no setup pending, and setupId names the agent's latest recorded setup. NONE: no setup pending and none recorded (set up with basalt init and the admin connection string), or the engine is down and no setup is pending. For a connect-only code (CONTRACT.md, Setup from your laptop, The engine and a connect-only code): PENDING also while the engine waits for the database's address; CONFIRM_DATABASE: the engine collected the address and probed it, and serves nothing until the person confirms the database (database names it; problem CONFIRM_DATABASE, and every tool but status and confirm_database answers UNAVAILABLE reason DATABASE_NOT_CONFIRMED); REFUSED: the person said it is not their database, the engine forgot the address and its password and recorded refused in engine.json, and a new code is needed (problem DATABASE_REFUSED)."
           },
           "setupId": {
             "type": "string",
@@ -107,6 +107,22 @@
             "type": "string",
             "pattern": "^[0-9a-f]{4}( [0-9a-f]{4}){4}$",
             "description": "PENDING: the pending code's setup fingerprint. Tell the person to check that basalt init --setup-code shows the same one."
+          },
+          "connectOnly": {
+            "type": "boolean",
+            "description": "True when the pending code is connect-only: it has no target, the person pastes the database's connection string on the connect page, and the engine collects the address from the connect service. Absent otherwise."
+          },
+          "database": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["host", "port", "database"],
+            "description": "CONFIRM_DATABASE: the database the engine collected and probed, which the agent names when it asks the person to confirm. Checked by the engine before it is shown: a host name of DNS characters, a port, a database name of letters, digits, _ . - up to 63 characters, and a Supabase ref of 20 lowercase letters and digits. Never a password.",
+            "properties": {
+              "host": { "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[A-Za-z0-9.-]+$" },
+              "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+              "database": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,63}$" },
+              "supabaseRef": { "type": "string", "pattern": "^[a-z0-9]{20}$" }
+            }
           }
         }
       },
@@ -273,6 +289,13 @@
                 "SETUP_NOT_RUN",
                 "SETUP_EXPIRED",
                 "SETUP_CHANGE_PENDING",
+                "CONFIRM_DATABASE",
+                "DATABASE_REFUSED",
+                "DATABASE_UNREACHABLE_FROM_BOT",
+                "ADDRESS_INVALID",
+                "SETUP_NOT_FOUND",
+                "CLOCK_SKEW",
+                "ENGINE_AS_ROOT",
                 "DEV_LOCAL_PAGES",
                 "ENGINE_REVOKED",
                 "DIRECT_NOT_SERVED",
@@ -287,7 +310,7 @@
                 "PLUGIN_CONFIG_INVALID",
                 "PLUGIN_NOTICES_DROPPED"
               ],
-              "description": "PORTAL_MISMATCH (CONTRACT.md, CLI, basalt portal verify): the engine's daily check found the portal serving pages other than the ones this build embeds. DEV_LOCAL_PAGES (CONTRACT.md, Page origins): the engine.json devLocalPages development exception is on, so the pages are on the agent's machine. ENGINE_REVOKED (CONTRACT.md, Direct transport): the agent's database revoked this engine's key. DIRECT_NOT_SERVED (CONTRACT.md, Direct transport): the agent's database records an address for this engine, but directAddr is off, so a tunnel has nothing to forward to. LOCK_FILE_UNUSABLE (CONTRACT.md, On the engine, Lock files): the engine cannot open engine.json.lock or the agent's credential lock, so a finished setup is not written back. LEDGER_REINSTALLED (CONTRACT.md, Version 36): the ledger records that the guard was installed again and an engine set its pin of the old ledger aside; personMessage is the reinstall notice, to show the person as it is. PLUGIN_UNAVAILABLE (CONTRACT.md, Plugins): an enabled plugin entry for this agent is not ready, so a wire.detect plugin fails the agent's requests to the AI provider closed until it is back or disabled. PLUGIN_NOT_TRUSTED (CONTRACT.md, Plugins): the engine refused to start a plugin entry for this agent because its signature, file hashes or file permissions failed, or, in service mode, an agent's OS user is in the engine's group. PLUGIN_AWAITING_APPROVAL, PLUGIN_APPROVAL_EXPIRED and PLUGIN_APPROVAL_MISMATCH (CONTRACT.md, Plugins, Plugin approvals at engine start): an entry that requires a passkey approval is withheld from this agent because no signed approval names it, its approval expired unsigned, or its signed approval does not match the installed copy or config (the message names the fields that differ). A withheld entry blocks none of the agent calls. PLUGIN_CONFIG_INVALID (CONTRACT.md, Plugins, Plugin changes while the engine runs): engine.json changed while the engine runs and its plugins cannot be read, so the engine applies no plugin change and every plugin keeps its state. PLUGIN_NOTICES_DROPPED (Planned; CONTRACT.md, Plugins, Notifier messages): an approval.deliver entry for this agent dropped notices in the last 24 hours; the message names the entry and how many, never what they were about. The agent's answers carried the links all along."
+              "description": "PORTAL_MISMATCH (CONTRACT.md, CLI, basalt portal verify): the engine's daily check found the portal serving pages other than the ones this build embeds. DEV_LOCAL_PAGES (CONTRACT.md, Page origins): the engine.json devLocalPages development exception is on, so the pages are on the agent's machine. ENGINE_REVOKED (CONTRACT.md, Direct transport): the agent's database revoked this engine's key. DIRECT_NOT_SERVED (CONTRACT.md, Direct transport): the agent's database records an address for this engine, but directAddr is off, so a tunnel has nothing to forward to. LOCK_FILE_UNUSABLE (CONTRACT.md, On the engine, Lock files): the engine cannot open engine.json.lock or the agent's credential lock, so a finished setup is not written back. LEDGER_REINSTALLED (CONTRACT.md, Version 36): the ledger records that the guard was installed again and an engine set its pin of the old ledger aside; personMessage is the reinstall notice, to show the person as it is. PLUGIN_UNAVAILABLE (CONTRACT.md, Plugins): an enabled plugin entry for this agent is not ready, so a wire.detect plugin fails the agent's requests to the AI provider closed until it is back or disabled. PLUGIN_NOT_TRUSTED (CONTRACT.md, Plugins): the engine refused to start a plugin entry for this agent because its signature, file hashes or file permissions failed, or, in service mode, an agent's OS user is in the engine's group. PLUGIN_AWAITING_APPROVAL, PLUGIN_APPROVAL_EXPIRED and PLUGIN_APPROVAL_MISMATCH (CONTRACT.md, Plugins, Plugin approvals at engine start): an entry that requires a passkey approval is withheld from this agent because no signed approval names it, its approval expired unsigned, or its signed approval does not match the installed copy or config (the message names the fields that differ). A withheld entry blocks none of the agent calls. PLUGIN_CONFIG_INVALID (CONTRACT.md, Plugins, Plugin changes while the engine runs): engine.json changed while the engine runs and its plugins cannot be read, so the engine applies no plugin change and every plugin keeps its state. PLUGIN_NOTICES_DROPPED (Planned; CONTRACT.md, Plugins, Notifier messages): an approval.deliver entry for this agent dropped notices in the last 24 hours; the message names the entry and how many, never what they were about. The agent's answers carried the links all along. For a connect-only setup (CONTRACT.md, Setup from your laptop, The engine and a connect-only code): CONFIRM_DATABASE: the engine collected the database's address and asks the person, through the agent, to confirm it before it logs in. DATABASE_REFUSED: the person said no; a new code is needed. DATABASE_UNREACHABLE_FROM_BOT: the setup ran, but the engine's machine cannot reach that database (a firewall allow-list, an IPv6-only host); the person runs the same link again with a reachable connection string. ADDRESS_INVALID: the address the connect service handed over breaks the engine's own address rules, so nothing of it is shown. SETUP_NOT_FOUND: after the person confirmed, the engine logged in but the database does not record its setup. CLOCK_SKEW: the connect service refused the engine's collect request because the engine's clock is more than 5 minutes off. ENGINE_AS_ROOT: the engine runs as root without --user, so it does not collect this agent's address; the engine's other agents are served as usual."
             },
             "severity": {
               "type": "string",

@@ -32,16 +32,18 @@ var (
 // call pgdial.CheckForeignDSN, each with why root never connects with a
 // string another user wrote there. Every other read must call it.
 var uncheckedCredentialReads = map[string]string{
-	"cmd/basalt/personfiles.go:engineConfig.credential:config.ReadCredential":     "not root; as root it is readCredentialAsRoot",
-	"cmd/basalt/personfiles.go:readCredentialFlag:config.ReadCredential":          "not root; as root it is readCredentialAsRoot",
-	"cmd/basalt/personfiles_other.go:readCredentialAsRoot:config.ReadCredential":  "no root on this platform",
-	"cmd/basalt/keptcred_unix.go:readKeptCredential:readOwnedCredential":          "service install writes it back for the engine's user and never connects with it",
-	"cmd/basalt/engine.go:keptCredentialSpec:readKeptCredential":                  "service install writes it back for the engine's user and never connects with it",
-	"cmd/basalt/keptcred_unix.go:readOwnCredential:readCredentialFile":            "only a file this process's user owns (ownedByThisUser): root's own as root",
-	"cmd/basalt/keptcred_unix.go:readCredentialFile:readCredentialFrom":           "its owner rule is its caller's, and its callers are listed here",
-	"cmd/basalt/init_remote.go:pathCredFiles.read:readOwnCredential":              "init --remote not as root",
-	"internal/engine/credfiles.go:pathFiles.readCredential:config.ReadCredential": "an engine not running as root (agentFilesFor)",
-	"internal/engine/credfiles.go:pathFiles.readPending:config.ReadOwnCredential": "an engine not running as root (agentFilesFor)",
+	"cmd/basalt/personfiles.go:engineConfig.credential:config.ReadCredential":           "not root; as root it is readCredentialAsRoot",
+	"cmd/basalt/personfiles.go:readCredentialFlag:config.ReadCredential":                "not root; as root it is readCredentialAsRoot",
+	"cmd/basalt/personfiles_other.go:readCredentialAsRoot:config.ReadCredential":        "no root on this platform",
+	"cmd/basalt/keptcred_unix.go:readKeptCredential:readOwnedCredential":                "service install writes it back for the engine's user and never connects with it",
+	"cmd/basalt/engine.go:keptCredentialSpec:readKeptCredential":                        "service install writes it back for the engine's user and never connects with it",
+	"cmd/basalt/keptcred_unix.go:readOwnCredential:readCredentialFile":                  "only a file this process's user owns (ownedByThisUser): root's own as root",
+	"cmd/basalt/keptcred_unix.go:readCredentialFile:readCredentialFrom":                 "its owner rule is its caller's, and its callers are listed here",
+	"cmd/basalt/init_remote.go:pathCredFiles.read:readOwnCredential":                    "init --remote not as root",
+	"internal/engine/credfiles.go:pathFiles.readCredential:config.ReadCredential":       "an engine not running as root (agentFilesFor)",
+	"internal/engine/credfiles.go:pathFiles.readPending:config.ReadOwnCredential":       "an engine not running as root (agentFilesFor)",
+	"internal/engine/handoff/cache.go:FileCache.Load:config.ReadOwnCredential":          "the probe cache, not a connection string; never as root (a root engine does not collect, basalt status refuses root)",
+	"internal/engine/handoff_files.go:handoffFiles.ReadSecret:config.ReadOwnCredential": "a password, not a connection string, read only on a YES, which an engine running as root never reaches (it never collects)",
 }
 
 // checkedCredentialReads are root's reads of another user's file, which call

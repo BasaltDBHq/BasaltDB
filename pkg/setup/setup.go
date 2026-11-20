@@ -27,6 +27,7 @@ package setup
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -34,6 +35,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/channel"
+	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/setuprun"
 )
@@ -48,6 +50,28 @@ type Request struct {
 	// EngineURL is the address to record with the code's engine key
 	// (https://<host>[:<port>]); "" records none.
 	EngineURL string
+	// ConnectPage accepts a connect-only code (no target), which only the
+	// connect service runs, with the database of the connection it opened.
+	// Unset, such a code is refused CONNECT_ONLY first, as the laptop
+	// command refuses it.
+	ConnectPage bool
+	// Included are the tables the person left ticked on the connect page
+	// (CONTRACT.md, Connect, Tables on the connect page); nil is no ticks
+	// (the laptop command, and CheckSetup, which lists every table). The
+	// connect page ticks tables of an INSTALL code with agent.allTables:
+	// Check and Run then cover exactly the included tables (their
+	// questions, columns and grants), an entry the listing lacks is
+	// TABLES_CHANGED, and none at all is NO_TABLES. For any other code its
+	// Tables must be empty (ANSWERS_INVALID). Run with ConnectPage refuses
+	// such a code without Included, NO_TABLES.
+	Included *Included
+}
+
+// Included are the tables ticked on the connect page.
+type Included struct {
+	// Tables are schema.table, each a plain lowercase name in a schema of
+	// agent.allTables, at most once.
+	Tables []string
 }
 
 // Kind is what a setup code does.
@@ -85,12 +109,18 @@ type Description struct {
 	// AgentRole is the agent's database role, "" for an UPGRADE code.
 	AgentRole string
 	Prefix    string
-	Target    Target
+	// Target is the database the code's agent connects to; nil for a
+	// connect-only code, whose database is the one the connection names.
+	Target    *Target
 	GuardFrom int
 	GuardTo   int
-	// Write and Read are the agent's tables (schema.table).
+	// Write and Read are the agent's tables (schema.table), empty with
+	// AllTablesSchemas.
 	Write []string
 	Read  []string
+	// AllTablesSchemas are, for an agent.allTables code, the schemas whose
+	// tables the agent gets (Check lists them); nil otherwise.
+	AllTablesSchemas []string
 	// StatementTimeoutMs is the agent role's statement timeout, 0 for an
 	// UPGRADE code.
 	StatementTimeoutMs int64
@@ -101,6 +131,10 @@ type Description struct {
 	// EngineFingerprint is the fingerprint of the code's engine key, ""
 	// when the code carries none.
 	EngineFingerprint string
+	// EngineKey is the code's engine key as it carries it (SPKI DER,
+	// base64url): the key a connect-only setup's CollectAddress must be
+	// signed with. "" when the code carries none.
+	EngineKey string
 	// EngineURL is the request's engine address in its written form.
 	EngineURL string
 	// Summary is the summary's fixed lines, without the database's state:
@@ -116,7 +150,7 @@ type Description struct {
 // (BINARY_TOO_OLD, GUARD_TOO_OLD) and ENGINE_KEY_MISSING. A refusal is an
 // *Error.
 func Describe(req Request) (Description, error) {
-	s, err := setuprun.New(req.Code, req.Now, req.EngineURL)
+	s, err := setuprun.New(req.Code, req.Now, req.EngineURL, req.ConnectPage)
 	if err != nil {
 		return Description{}, asError(err)
 	}
@@ -127,15 +161,21 @@ func describe(s *setuprun.Setup) Description {
 	p := s.P
 	d := Description{
 		SetupID: p.SetupID, Kind: Kind(p.Kind), AgentWord: setuprun.AgentWord(p), AgentRole: p.Role(), Prefix: p.Prefix,
-		Target:    Target{Host: p.Target.Host, Port: p.Target.Port, Database: p.Target.Database, SupabaseRef: p.Target.SupabaseRef},
 		GuardFrom: p.Guard.From, GuardTo: p.Guard.To, ExpiresAt: s.Expires, Fingerprint: p.Fingerprint(), EngineURL: s.EngineURL,
 		Summary: setupcode.Summary(p, setupcode.SummaryState{GuardVersion: p.Guard.From}),
+	}
+	if t := p.Target; t != nil {
+		d.Target = &Target{Host: t.Host, Port: t.Port, Database: t.Database, SupabaseRef: t.SupabaseRef}
 	}
 	if a := p.Agent; a != nil {
 		d.Agent, d.StatementTimeoutMs = a.Name, a.StatementTimeoutMs
 		d.Write, d.Read = slices.Clone(a.Write), slices.Clone(a.Read)
+		if a.AllTables != nil {
+			d.AllTablesSchemas = slices.Clone(a.AllTables.Schemas)
+		}
 	}
 	if p.Engine != nil {
+		d.EngineKey = p.Engine.PublicKey
 		// Decode checked the key: it parses.
 		if key, err := p.Engine.Key(); err == nil {
 			d.EngineFingerprint = channel.FingerprintOf(channel.EngineIDOf(key))
@@ -160,6 +200,67 @@ type Checked struct {
 	// PasskeyNeeded is whether the database has no active portal passkey:
 	// Run then needs the person's (RunInput.Passkey).
 	PasskeyNeeded bool
+	// Database is the database the connection names: the setup's target
+	// for a connect-only code, which the page shows before approval.
+	Database Target
+	// Tables are, for an agent.allTables code, the tables the agent will
+	// get, in name order; ReadOnly are those among them it may only read
+	// (no primary key, so the guard cannot key its writes); Excluded are the
+	// tables of its schemas left out because the admin role does not own
+	// them. All empty otherwise.
+	Tables   []string
+	ReadOnly []string
+	Excluded []ExcludedTable
+	// RunsAsInstall is a connect-only recovery AGENT code whose role does
+	// not exist: Run creates the role as an INSTALL code does.
+	RunsAsInstall bool
+	// Columns are every ordinary column of the tables the agent will get
+	// (Tables, else the code's write and read tables), by table in name
+	// order and then column order, with its class in the database now
+	// (UNCLASSIFIED with none stored, and in a database with no guard
+	// yet). Only with Request.ConnectPage; empty for an UPGRADE code.
+	Columns []ColumnLabel
+}
+
+// ColumnLabel is a column and its class now (CONTRACT.md, Connect, Column
+// labels on the connect page).
+type ColumnLabel struct {
+	// Table is schema.table.
+	Table, Column string
+	Label
+}
+
+// Label is a class: PUBLIC, IDENTIFIER, FREE_TEXT, SECRET or UNCLASSIFIED,
+// EntityType with IDENTIFIER (EMAIL, PHONE, PERSON_NAME, ADDRESS or OTHER),
+// PhoneRegion with PHONE (ISO 3166-1 alpha-2, upper case).
+type Label struct {
+	Class, EntityType, PhoneRegion string
+}
+
+// ColumnClass is a class the person set on a column on the connect page,
+// with Was, the class the column had when Check returned it.
+type ColumnClass struct {
+	// Table is schema.table, one of the tables the agent gets.
+	Table, Column string
+	// Label is PUBLIC, IDENTIFIER (with its entity type, and a region with
+	// PHONE) or SECRET.
+	Label
+	Was Label
+}
+
+// ExcludedTable is a table an agent.allTables setup leaves out.
+type ExcludedTable struct {
+	// Table is schema.table.
+	Table string
+	// Owner is the role that owns it.
+	Owner string
+}
+
+// ConnDatabase is the database a connection names, as a setup's target:
+// the Supabase project ref when the host or user names one.
+func ConnDatabase(cfg *pgx.ConnConfig) Target {
+	t := setupcode.ConnTarget(cfg.Host, int(cfg.Port), cfg.Database, cfg.User)
+	return Target{Host: t.Host, Port: t.Port, Database: t.Database, SupabaseRef: t.SupabaseRef}
 }
 
 // NothingToDo is an UPGRADE code whose guard the database already has.
@@ -213,7 +314,7 @@ type RevokeQuestion struct {
 // ROLE_MISSING and ENGINE_REVOKED, then a missing table (TABLES_MISSING).
 // It changes nothing. A refusal is an *Error.
 func Check(ctx context.Context, conn *pgx.Conn, req Request) (Checked, error) {
-	s, err := setuprun.New(req.Code, req.Now, req.EngineURL)
+	s, err := newSetup(req)
 	if err != nil {
 		return Checked{}, asError(err)
 	}
@@ -221,17 +322,53 @@ func Check(ctx context.Context, conn *pgx.Conn, req Request) (Checked, error) {
 	if err != nil {
 		return Checked{}, asError(err)
 	}
-	out := Checked{Description: describe(s)}
+	out := Checked{Description: describe(s), Database: ConnDatabase(conn.Config()), RunsAsInstall: s.RunsAsInstall()}
 	if p.NothingToDo {
 		out.NothingToDo = nothingToDo(p)
 		return out, nil
 	}
 	out.Summary, out.EngineLines = p.Summary(), p.EngineLines()
 	out.Questions = questions(p)
+	tables := s.Tables()
+	out.Tables = append(slices.Clone(tables.Write), tables.ReadOnly...)
+	slices.Sort(out.Tables)
+	out.ReadOnly = slices.Clone(tables.ReadOnly)
+	for _, e := range tables.Excluded {
+		out.Excluded = append(out.Excluded, ExcludedTable(e))
+	}
 	if out.PasskeyNeeded, err = setuprun.PasskeyNeeded(ctx, conn, false); err != nil {
 		return Checked{}, asError(err)
 	}
+	if s.P.Agent != nil && req.ConnectPage { // the laptop command shows no labels
+		labels, err := guard.ReadLabels(ctx, conn, s.Names, agentTables(s))
+		if err != nil {
+			return Checked{}, asError(err)
+		}
+		for _, l := range labels {
+			out.Columns = append(out.Columns, ColumnLabel{Table: l.Table, Column: l.Column, Label: Label(l.Label)})
+		}
+	}
 	return out, nil
+}
+
+// agentTables are the tables the agent gets, in name order.
+func agentTables(s *setuprun.Setup) []string {
+	spec := s.Spec()
+	out := append(slices.Clone(spec.Write), spec.Read...)
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
+// newSetup is setuprun.New for req, with its ticked tables.
+func newSetup(req Request) (*setuprun.Setup, error) {
+	s, err := setuprun.New(req.Code, req.Now, req.EngineURL, req.ConnectPage)
+	if err != nil {
+		return nil, err
+	}
+	if req.Included != nil {
+		s.Include(req.Included.Tables)
+	}
+	return s, nil
 }
 
 func nothingToDo(p *setuprun.Prepared) *NothingToDo {
@@ -305,6 +442,52 @@ type RunInput struct {
 	// Committed, when set, is called once the setup's transaction
 	// committed, before AskPasskey.
 	Committed func(Result)
+	// ColumnClasses are the classes the person set on the connect page, at
+	// most 500, written in the setup's transaction after the grants, as
+	// basalt classify writes them (CONTRACT.md, Connect, Column labels on
+	// the connect page). A column whose class stored now is not its Was,
+	// or that is gone, refuses the setup CLASSES_CHANGED, nothing changed.
+	ColumnClasses []ColumnClass
+	// RestPublic writes PUBLIC to every other column of the agent's
+	// tables that has no class in the transaction.
+	RestPublic bool
+}
+
+// maxColumnClasses bounds RunInput.ColumnClasses.
+const maxColumnClasses = 500
+
+// checkColumnClasses applies the rules of ColumnClasses and RestPublic
+// that need no database (ANSWERS_INVALID): none with an UPGRADE code, at
+// most 500, each on a table the agent gets, at most once per column, with
+// a class the page may set and a Was a column can have.
+func checkColumnClasses(s *setuprun.Setup, in RunInput) error {
+	if len(in.ColumnClasses) == 0 && !in.RestPublic {
+		return nil
+	}
+	invalid := func(why string) error {
+		return asError(&setuprun.RefusalError{Code: CodeAnswersInvalid, Message: "the column labels: " + why + "; nothing changed"})
+	}
+	if s.P.Agent == nil {
+		return invalid("an upgrade sets no labels")
+	}
+	if len(in.ColumnClasses) > maxColumnClasses {
+		return invalid(fmt.Sprintf("more than %d columns", maxColumnClasses))
+	}
+	tables := agentTables(s)
+	seen := map[[2]string]bool{}
+	for _, c := range in.ColumnClasses {
+		key := [2]string{c.Table, c.Column}
+		switch {
+		case !slices.Contains(tables, c.Table):
+			return invalid("a column of a table the agent does not get")
+		case seen[key]:
+			return invalid("a column given twice")
+		case c.Column == "" || !guard.ValidLabel(guard.Label(c.Label)) || !guard.ValidWas(guard.Label(c.Was)):
+			return invalid("a class, entity type or phone region the page does not set")
+		}
+		seen[key] = true
+	}
+	return nil
 }
 
 // Result is what a run did.
@@ -340,7 +523,10 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 	if in.Passkey != nil && in.AskPasskey != nil {
 		return Result{}, errors.New("setup: RunInput.Passkey and RunInput.AskPasskey are both set")
 	}
-	s, err := setuprun.New(req.Code, req.Now, req.EngineURL)
+	if req.ConnectPage && req.Included == nil {
+		req.Included = &Included{} // the page always sends its ticks: none is NO_TABLES
+	}
+	s, err := newSetup(req)
 	if err != nil {
 		return Result{}, asError(err)
 	}
@@ -350,6 +536,9 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 	p, err := s.Prepare(ctx, conn)
 	if err != nil {
 		return Result{}, asError(err)
+	}
+	if err := checkColumnClasses(s, in); err != nil {
+		return Result{}, err
 	}
 	if p.NothingToDo {
 		if err := setuprun.RefuseAnswers(in.Answers.AllRows, in.Answers.Revoke); err != nil {
@@ -367,7 +556,15 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 		}
 	}
 	var registered *RegisteredPasskey
+	// The tables the grants cover, read again in this transaction before
+	// the grants name them.
+	// A table dropped between this read and the grants still fails the
+	// grant itself: SETUP_FAILED, nothing changed.
+	first := func(ctx context.Context, tx pgx.Tx) error { return s.RecheckTables(ctx, tx) }
 	inTx := func(ctx context.Context, tx pgx.Tx) error {
+		if err := writeLabels(ctx, tx, s, in, req.Now); err != nil {
+			return err
+		}
 		switch {
 		case in.Passkey != nil:
 			var err error
@@ -378,7 +575,7 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 		}
 		return nil // the laptop asks after the commit
 	}
-	if err := setuprun.ApplySetupWith(ctx, conn, script, inTx); err != nil {
+	if err := setuprun.ApplySetupWith(ctx, conn, script, first, inTx); err != nil {
 		return Result{}, asError(setuprun.Refused(ctx, conn, s.P, err))
 	}
 	res := Result{SetupID: s.P.SetupID, Ran: true, EngineRecorded: p.Engine.Key != nil, Passkey: registered}
@@ -397,6 +594,26 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 	}
 	res.Passkey = asked
 	return res, nil
+}
+
+// writeLabels writes in.ColumnClasses and in.RestPublic in the setup's
+// transaction.
+func writeLabels(ctx context.Context, tx pgx.Tx, s *setuprun.Setup, in RunInput, now time.Time) error {
+	if s.P.Agent == nil {
+		return nil
+	}
+	changes := make([]guard.LabelChange, 0, len(in.ColumnClasses))
+	for _, c := range in.ColumnClasses {
+		changes = append(changes, guard.LabelChange{Table: c.Table, Column: c.Column, Label: guard.Label(c.Label), Was: guard.Label(c.Was)})
+	}
+	_, err := guard.WriteLabels(ctx, tx, s.Names, agentTables(s), changes, in.RestPublic, now)
+	if errors.Is(err, guard.ErrClassesChanged) {
+		return &setuprun.RefusalError{
+			Code: CodeClassesChanged, Err: err,
+			Message: "a column's label changed since the page showed it (someone classified it, or the column is gone), so the setup did not run and nothing changed: read the labels again",
+		}
+	}
+	return err
 }
 
 // Error is a refused or failed step. Message is what the person reads.
@@ -441,6 +658,19 @@ const (
 	// CodePasskeyNotRegistered is a setup that ran without registering the
 	// passkey it needed: only with RunInput.AskPasskey.
 	CodePasskeyNotRegistered = setuprun.CodePasskeyMissing
+	// CodeNoTables is an agent.allTables code whose schemas hold no table
+	// the admin role owns, or a connect page that ticked none: nothing
+	// changed.
+	CodeNoTables = setuprun.CodeNoTables
+	// CodeTablesChanged is a setup whose tables changed since they were
+	// listed: nothing changed.
+	CodeTablesChanged = setuprun.CodeTablesChanged
+	// CodeClassesChanged is a column label whose class stored now is not
+	// the one the page showed, or whose column is gone: nothing changed.
+	CodeClassesChanged = setuprun.CodeClassesChanged
+	// CodeConnectOnly is a connect-only code given without
+	// Request.ConnectPage: only the connect page runs it.
+	CodeConnectOnly = string(setupcode.RefusalConnectOnly)
 	// CodeSetupFailed is any other failure: the database or its driver.
 	// Nothing changed. Its Message may carry the database's own words; a
 	// service that shows fixed messages maps it to one.
@@ -456,6 +686,7 @@ var codes = []string{
 	string(setupcode.RefusalRoleExists), string(setupcode.RefusalRoleMissing),
 	CodeEngineURLInvalid, CodeEngineKeyMissing, CodeEngineRevoked, CodeTargetMismatch, CodeTablesMissing,
 	CodeAnswersInvalid, CodePasskeyRequired, CodePasskeyInvalid, CodePasskeyNotRegistered, CodeSetupFailed,
+	CodeNoTables, CodeConnectOnly, CodeTablesChanged, CodeClassesChanged,
 }
 
 // Codes is every Error.Code this package returns: the setup code's

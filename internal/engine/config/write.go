@@ -44,6 +44,10 @@ type Settings struct {
 	// Otherwise the config's vault stays: a rerun never undoes the
 	// person's choice (VC-19).
 	VaultDefault string
+	// KeepConnectOnlySetup keeps the replaced agent's pending connect-only
+	// setup in the new entry (basalt service install --agent for an agent
+	// that waits for its database's address).
+	KeepConnectOnlySetup bool
 }
 
 // operatedByPerson is operatedBy's value when empty.
@@ -56,9 +60,9 @@ type VaultWritten struct {
 	Kept  bool
 }
 
-// vaultFor is the vault s writes over the existing config prev (existed
+// VaultFor is the vault s writes over the existing config prev (existed
 // false: no file yet).
-func (s Settings) vaultFor(prev Config, existed bool) VaultWritten {
+func (s Settings) VaultFor(prev Config, existed bool) VaultWritten {
 	switch {
 	case s.Vault != "":
 		return VaultWritten{Vault: s.Vault}
@@ -188,7 +192,7 @@ func UpsertedVault(path string, open func(string) (*os.File, error), s Settings,
 	case err != nil:
 		return nil, VaultWritten{}, err
 	}
-	vault := s.vaultFor(c, existed)
+	vault := s.VaultFor(c, existed)
 	c.Vault = vault.Vault
 	if s.PagesURL != "" {
 		c.PagesURL, c.ApprovalPage, c.DevLocalPages = s.PagesURL, "", s.DevLocalPages
@@ -206,6 +210,9 @@ func UpsertedVault(path string, open func(string) (*os.File, error), s Settings,
 	replaced := false
 	for i := range c.Agents {
 		if c.Agents[i].Name == a.Name {
+			if prev := c.Agents[i].Setup; s.KeepConnectOnlySetup && a.Setup == nil && prev != nil && prev.ConnectOnly() {
+				a.Setup = prev
+			}
 			c.Agents[i], replaced = a, true
 		}
 	}

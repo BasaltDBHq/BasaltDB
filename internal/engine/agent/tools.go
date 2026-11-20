@@ -46,6 +46,7 @@ func Tools(svc *Service) []mcp.Tool {
 		contractTool("request_revert", h.wrap("request_revert", h.requestRevert)),
 		contractTool(toolDescribe, h.wrap(toolDescribe, h.describe)),
 		contractTool(toolStatus, h.wrap(toolStatus, h.status)),
+		contractTool(toolConfirmDatabase, h.wrap(toolConfirmDatabase, h.confirmDatabase)),
 	)
 }
 
@@ -99,7 +100,10 @@ func (h handlers) wrap(tool string, call func(context.Context, json.RawMessage) 
 }
 
 func (h handlers) admitted(ctx context.Context, tool string, args json.RawMessage, call func(context.Context, json.RawMessage) (any, error)) (any, error) {
-	if tool == toolStatus {
+	// status always answers; confirm_database answers INVALID_ARGUMENT
+	// here, where no connect-only database waits (ConnectOnly serves it
+	// while one does).
+	if tool == toolStatus || tool == toolConfirmDatabase {
 		return call(ctx, args)
 	}
 	if err := h.svc.Admit(ctx); err != nil {

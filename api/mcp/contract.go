@@ -325,6 +325,12 @@ type NextSteps struct {
 	// its pages are the portal's and the connect link fits the link budget
 	// (CONTRACT.md, Next steps with the connect link).
 	ConnectLink []VariantSteps `json:"connectLink"`
+	// ConnectOnly replaces the steps of an entry while the agent's pending
+	// setup code is connect-only (no target: the person pastes the database
+	// on the connect page and the engine collects its address). It takes
+	// precedence over ConnectLink and AgentOperated (CONTRACT.md, Next
+	// steps for a connect-only code).
+	ConnectOnly []VariantSteps `json:"connectOnly"`
 }
 
 // ConnectLinkEntry returns the connect-link variant of kind for code, reason
@@ -332,7 +338,19 @@ type NextSteps struct {
 // connect link; otherwise the entry's own steps (or its agentOperated
 // variant) apply.
 func (c NextSteps) ConnectLinkEntry(kind, code, reason, tool string) (VariantSteps, bool) {
-	for _, v := range c.ConnectLink {
+	return variantOf(c.ConnectLink, kind, code, reason, tool)
+}
+
+// ConnectOnlyEntry returns the connect-only variant of kind for code,
+// reason and tool, if the catalog has one. It applies while the agent's
+// pending setup code is connect-only, before ConnectLink and AgentOperated.
+func (c NextSteps) ConnectOnlyEntry(kind, code, reason, tool string) (VariantSteps, bool) {
+	return variantOf(c.ConnectOnly, kind, code, reason, tool)
+}
+
+// variantOf is the variant in vs of kind for code, reason and tool.
+func variantOf(vs []VariantSteps, kind, code, reason, tool string) (VariantSteps, bool) {
+	for _, v := range vs {
 		if v.Kind == kind && v.Code == code && v.Reason == reason && v.Tool == tool {
 			return v, true
 		}
@@ -344,12 +362,7 @@ func (c NextSteps) ConnectLinkEntry(kind, code, reason, tool string) (VariantSte
 // on an agent-operated engine, if the catalog has one; otherwise the entry's
 // own steps apply, resolved with Resolve.
 func (c NextSteps) AgentOperatedEntry(kind, code, reason, tool string) (VariantSteps, bool) {
-	for _, v := range c.AgentOperated {
-		if v.Kind == kind && v.Code == code && v.Reason == reason && v.Tool == tool {
-			return v, true
-		}
-	}
-	return VariantSteps{}, false
+	return variantOf(c.AgentOperated, kind, code, reason, tool)
 }
 
 // LoadNextSteps returns the catalog the engine serves: every entry but the

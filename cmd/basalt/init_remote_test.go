@@ -222,7 +222,7 @@ func TestInitRemoteFirstRunMakesAnInstallCode(t *testing.T) {
 
 	p := r.payload
 	require.Equal(t, setupcode.KindInstall, p.Kind)
-	require.Equal(t, setupcode.Target{Host: "aws-0-eu-central-1.pooler.supabase.com", Port: 6543, Database: "postgres", SupabaseRef: supabaseRef}, p.Target)
+	require.Equal(t, &setupcode.Target{Host: "aws-0-eu-central-1.pooler.supabase.com", Port: 6543, Database: "postgres", SupabaseRef: supabaseRef}, p.Target)
 	require.Equal(t, setupcode.Guard{From: 0, To: guard.LatestVersion()}, p.Guard)
 	require.Equal(t, []string{"public.leads"}, p.Agent.Write)
 	require.Equal(t, []string{"public.companies"}, p.Agent.Read)
@@ -765,7 +765,7 @@ func TestInitRemoteNeverOverwritesTheCredential(t *testing.T) {
 	// Another database: an INSTALL code whose password waits in .pending.
 	other := remote(t, cfg, append(args, "--database-url", "postgres://app@db.example.com:5432/crm")...)
 	require.Equal(t, "INSTALL", other.res.Kind)
-	require.Equal(t, setupcode.Target{Host: "db.example.com", Port: 5432, Database: "crm"}, other.payload.Target)
+	require.Equal(t, &setupcode.Target{Host: "db.example.com", Port: 5432, Database: "crm"}, other.payload.Target)
 	require.Equal(t, pw, credentialPassword(t, first.credFile))
 	pw3 := credentialPassword(t, first.credFile+pendingSuffix)
 	requireVerifierOf(t, other.payload.Agent.Verifier, pw3)

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -21,18 +22,46 @@ import (
 // contract change.
 type SigningContext string
 
-// The five contexts.
+// The signing contexts.
 const (
 	ContextVaultAuth SigningContext = "basalt-vault-engine.1\n"
 	ContextSession   SigningContext = "basalt-vault-session-sig.1\n"
 	ContextReceipt   SigningContext = "basalt-receipt.1\n"
 	ContextBoxKey    SigningContext = "basalt-engine-box-key.1\n"
 	ContextRotate    SigningContext = "basalt-engine-rotate.1\n"
+	// ContextConnectCollect signs a request for a connect-only setup's
+	// address (CONTRACT.md, Connect, The address hand-off).
+	ContextConnectCollect SigningContext = "basalt-connect-collect.1\n"
+	// ContextConnectReach signs the engine's report on whether it reached a
+	// collected address (CONTRACT.md, Connect, The reach check).
+	ContextConnectReach SigningContext = "basalt-connect-reach.1\n"
 )
+
+// ConnectAudience is the connect service's host, the audience every
+// basalt-connect-collect.1 and basalt-connect-reach.1 signature names.
+const ConnectAudience = "connect.basaltvault.app"
+
+// ConnectCollectBody is what follows the basalt-connect-collect.1 line:
+// the audience, the setupId, the setup fingerprint as printed and the time
+// (RFC 3339 UTC, whole seconds), one per line, with nothing after the time.
+func ConnectCollectBody(setupID, fingerprint, at string) []byte {
+	return []byte(ConnectAudience + "\n" + setupID + "\n" + fingerprint + "\n" + at)
+}
+
+// ConnectReachBody is what follows the basalt-connect-reach.1 line: the
+// collect body's lines, then the address in its canonical form (host,
+// port, database, Supabase ref; the caller lowercases the host and the
+// ref), the result and the reason, one per line, with nothing after the
+// reason. An absent ref and the reason of a REACHABLE report are empty
+// lines.
+func ConnectReachBody(setupID, fingerprint, at, host string, port int, database, ref, result, reason string) []byte {
+	return []byte(string(ConnectCollectBody(setupID, fingerprint, at)) + "\n" + host + "\n" + strconv.Itoa(port) + "\n" +
+		database + "\n" + ref + "\n" + result + "\n" + reason)
+}
 
 func (c SigningContext) valid() bool {
 	switch c {
-	case ContextVaultAuth, ContextSession, ContextReceipt, ContextBoxKey, ContextRotate:
+	case ContextVaultAuth, ContextSession, ContextReceipt, ContextBoxKey, ContextRotate, ContextConnectCollect, ContextConnectReach:
 		return true
 	default:
 		return false

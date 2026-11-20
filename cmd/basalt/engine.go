@@ -72,7 +72,17 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 		}
 		return engine.RunWith(ctx, cfg.Config, enginePath(*configPath), log, o)
 	}
-	if err := serveRestarting(ctx, run, osRestart(log), log); err != nil {
+	// A reload (a connect-only agent's setup changed) serves the config as
+	// it is now.
+	reload := func() error {
+		next, err := loadEngineConfigAs(h.Euid(), *configPath)
+		if err != nil {
+			return err
+		}
+		cfg = next
+		return nil
+	}
+	if err := serveRestarting(ctx, run, osRestart(log), reload, log); err != nil {
 		return fail(io.err, "engine", err)
 	}
 	return exitOK
@@ -116,11 +126,21 @@ func osRestart(log *slog.Logger) restart {
 }
 
 // serveRestarting runs the engine and, each time it stops for an upgrade,
-// runs the new binary in this process. When that fails, this binary serves
+// runs the new binary in this process; each time it stops for a reload, it
+// reads the config again and runs the engine anew. When that fails, this binary serves
 // on, until the binary changes again.
-func serveRestarting(ctx context.Context, run func(context.Context, engine.RestartOptions) error, r restart, log *slog.Logger) error {
+func serveRestarting(ctx context.Context, run func(context.Context, engine.RestartOptions) error, r restart, reload func() error, log *slog.Logger) error {
 	for {
 		err := run(ctx, engine.RestartOptions{Upgrade: r.upgrade})
+		if errors.Is(err, engine.ErrReload) && ctx.Err() == nil {
+			// Same binary, same process: the config is read again and the
+			// engine serves anew. A config it cannot read now stops it.
+			log.Info("serving the engine config again: an agent's connect-only setup changed")
+			if err := reload(); err != nil {
+				return err
+			}
+			continue
+		}
 		if !errors.Is(err, engine.ErrRestart) || ctx.Err() != nil {
 			// A stop that came during the restart wins: never run the new
 			// binary after the engine was told to stop.

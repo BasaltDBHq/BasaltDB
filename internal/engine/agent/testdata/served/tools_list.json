@@ -468,6 +468,65 @@
         "type": "object"
       },
       "name": "status"
+    },
+    {
+      "description": "Record the person's answer to the database check of a connect-only setup (CONTRACT.md, Setup from your laptop, On the engine). Call it only after status returned setup.state CONFIRM_DATABASE and you asked the person, in the chat, whether setup.database is their database; pass that setupId and database as status gave them. Pass their answer as given: YES only when they said yes to that database. On YES the engine logs in to it for the first time and serves. On NO the engine forgets the address and its password, having never logged in there, and you make a new setup code. Never answer for the person.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "answer": {
+            "description": "The person's answer to the database named in status's setup.database.",
+            "enum": [
+              "YES",
+              "NO"
+            ],
+            "type": "string"
+          },
+          "database": {
+            "additionalProperties": false,
+            "description": "status's setup.database, the database you named to the person, as given. Refused with INVALID_ARGUMENT when it is not the one waiting for confirmation.",
+            "properties": {
+              "database": {
+                "pattern": "^[A-Za-z0-9_.-]{1,63}$",
+                "type": "string"
+              },
+              "host": {
+                "maxLength": 253,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9.-]+$",
+                "type": "string"
+              },
+              "port": {
+                "maximum": 65535,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "supabaseRef": {
+                "pattern": "^[a-z0-9]{20}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "host",
+              "port",
+              "database"
+            ],
+            "type": "object"
+          },
+          "setupId": {
+            "description": "status's setup.setupId when it showed CONFIRM_DATABASE. Refused with INVALID_ARGUMENT when no database waits for confirmation or the setupId is another one, so an answer given for one database never confirms another.",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "setupId",
+          "database",
+          "answer"
+        ],
+        "type": "object"
+      },
+      "name": "confirm_database"
     }
   ]
 }

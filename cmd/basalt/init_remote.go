@@ -44,7 +44,7 @@ const (
 	// secretSuffix names the file that keeps the agent's password while a
 	// connect-only code waits for the database's address (CONTRACT.md,
 	// Connect-only setup codes): agents/<agent>.secret.
-	secretSuffix = ".secret"
+	secretSuffix = config.SecretSuffix
 	// pendingSuffix names the new password's file while an AGENT code that
 	// rotates it waits: the old password keeps working until the person runs
 	// the code (RI-5).
@@ -1039,7 +1039,7 @@ func (r *remoteInit) restoreFlag(name, v string) error {
 
 // secretPath is agents/<agent>.secret, next to the credential file.
 func (r *remoteInit) secretPath() string {
-	return filepath.Join(filepath.Dir(r.credFile), r.f.agent+secretSuffix)
+	return config.SecretPath(r.credFile, r.f.agent)
 }
 
 // hasSecret reports whether the agent's .secret exists.

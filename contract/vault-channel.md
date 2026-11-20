@@ -24,7 +24,7 @@ Planned (M3.5, Vault channel Phase 1a; owner decisions VC-1 to VC-42). An engine
 | `basalt-receipt.1\n` | Engine signing key | A receipt's payload bytes ([Receipts](#receipts)) |
 | `basalt-engine-box-key.1\n` | Engine signing key | The engine id and the box key's public key |
 | `basalt-engine-rotate.1\n` | The previous signing key | The new keys ([Engine keys](#engine-keys), rotation) |
-| `basalt-connect-collect.1\n` | Engine signing key | Planned. The audience `connect.basaltvault.app`, the `setupId`, the setup fingerprint and the time of a request for a connect-only setup's address ([The address hand-off](connect.md#the-address-hand-off)). Its `SIGNATURE` vector lands with the engine's code that signs it |
+| `basalt-connect-collect.1\n` | Engine signing key | The audience `connect.basaltvault.app`, the `setupId`, the setup fingerprint and the time of a request for a connect-only setup's address ([The address hand-off](connect.md#the-address-hand-off)) |
 
 ### Engine keys
 

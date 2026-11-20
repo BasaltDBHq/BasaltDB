@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -170,7 +171,7 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 	engineStatus := func(probe *fakeProbe, passkeys int, setup *config.Setup) func(t *testing.T) StatusReport {
 		return operatedStatus(probe, passkeys, setup, operatedBy)
 	}
-	return map[string]statusCase{
+	cases := map[string]statusCase{
 		problemEngineUnreachable: {state: guard.GuardUnknown, report: func(t *testing.T) StatusReport {
 			t.Helper()
 			cmds, err := NewCommands("bot", "", "linux", nil)
@@ -247,6 +248,8 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			return pluginStatus(t, operatedBy, "", true, samplePluginProblem(ProblemPluginNoticesDropped))
 		}},
 	}
+	maps.Copy(cases, connectOnlyStatusCases(operatedBy))
+	return cases
 }
 
 // sampleReinstalls is one reinstall reported by two agents.
@@ -543,6 +546,14 @@ func requireOnlyStatusServed(t *testing.T, srv *mcp.Server, tools []mcp.Tool, re
 	require.True(t, ok)
 	for _, tool := range tools {
 		if tool.Name == toolStatus {
+			continue
+		}
+		if tool.Name == toolConfirmDatabase {
+			// No connect-only database waits here: INVALID_ARGUMENT, never
+			// admitted further.
+			body, isError := serveCall(t, srv, tool.Name, map[string]any{})
+			require.True(t, isError)
+			require.Equal(t, CodeInvalidArgument, body["code"])
 			continue
 		}
 		body, isError := serveCall(t, srv, tool.Name, map[string]any{})

@@ -136,8 +136,9 @@ message CheckSetupResponse {
   // records nothing.
   bool nothing_to_do = 4;
   // The database the pasted string names, which the page shows first under
-  // Before you approve.
-  Target database = 5;
+  // Before you approve. Sensitive: it names the person's database, which a
+  // log must not keep.
+  Target database = 5 [(sensitive) = true];
   // With agent.allTables: the tables the agent will get, schema.table, in
   // order. Empty when the code names its tables.
   repeated string tables = 6;
@@ -231,8 +232,9 @@ message CollectAddressRequest {
 }
 
 message CollectAddressResponse {
-  // The database the setup ran in. Never a password.
-  Target address = 1;
+  // The database the setup ran in. Never a password. Sensitive: it names
+  // the person's database, which a log must not keep.
+  Target address = 1 [(sensitive) = true];
 }
 
 message HandoffStatusRequest {

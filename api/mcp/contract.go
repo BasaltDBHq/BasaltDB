@@ -328,9 +328,8 @@ type NextSteps struct {
 	// ConnectOnly replaces the steps of an entry while the agent's pending
 	// setup code is connect-only (no target: the person pastes the database
 	// on the connect page and the engine collects its address). It takes
-	// precedence over ConnectLink and AgentOperated. Planned: the engine
-	// does not apply these yet (CONTRACT.md, Next steps for a connect-only
-	// code).
+	// precedence over ConnectLink and AgentOperated (CONTRACT.md, Next
+	// steps for a connect-only code).
 	ConnectOnly []VariantSteps `json:"connectOnly"`
 }
 

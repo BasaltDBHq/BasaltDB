@@ -21,18 +21,32 @@ import (
 // contract change.
 type SigningContext string
 
-// The five contexts.
+// The six contexts.
 const (
 	ContextVaultAuth SigningContext = "basalt-vault-engine.1\n"
 	ContextSession   SigningContext = "basalt-vault-session-sig.1\n"
 	ContextReceipt   SigningContext = "basalt-receipt.1\n"
 	ContextBoxKey    SigningContext = "basalt-engine-box-key.1\n"
 	ContextRotate    SigningContext = "basalt-engine-rotate.1\n"
+	// ContextConnectCollect signs a request for a connect-only setup's
+	// address (CONTRACT.md, Connect, The address hand-off).
+	ContextConnectCollect SigningContext = "basalt-connect-collect.1\n"
 )
+
+// ConnectAudience is the connect service's host, the audience every
+// basalt-connect-collect.1 signature names.
+const ConnectAudience = "connect.basaltvault.app"
+
+// ConnectCollectBody is what follows the basalt-connect-collect.1 line:
+// the audience, the setupId, the setup fingerprint as printed and the time
+// (RFC 3339 UTC, whole seconds), one per line, with nothing after the time.
+func ConnectCollectBody(setupID, fingerprint, at string) []byte {
+	return []byte(ConnectAudience + "\n" + setupID + "\n" + fingerprint + "\n" + at)
+}
 
 func (c SigningContext) valid() bool {
 	switch c {
-	case ContextVaultAuth, ContextSession, ContextReceipt, ContextBoxKey, ContextRotate:
+	case ContextVaultAuth, ContextSession, ContextReceipt, ContextBoxKey, ContextRotate, ContextConnectCollect:
 		return true
 	default:
 		return false

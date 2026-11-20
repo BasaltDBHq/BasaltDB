@@ -37,6 +37,7 @@ const CONTEXTS = {
   RECEIPT: "basalt-receipt.1\n",
   BOX_KEY: "basalt-engine-box-key.1\n",
   ROTATE: "basalt-engine-rotate.1\n",
+  CONNECT_COLLECT: "basalt-connect-collect.1\n",
 };
 
 const SPKI_P256_PREFIX = fromHex("3059301306072a8648ce3d020106082a8648ce3d030107034200");

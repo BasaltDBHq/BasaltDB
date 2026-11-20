@@ -105,6 +105,7 @@ func ToolError(err error) *mcp.ToolError {
 		ae *ArgumentError
 		pe *action.StoreError
 		se *SetupError
+		dn *DatabaseNotConfirmedError
 		rl *resultsize.RowTooLargeError
 	)
 	switch {
@@ -124,6 +125,8 @@ func ToolError(err error) *mcp.ToolError {
 			reason = reasonSetupExpired
 		}
 		return &mcp.ToolError{Code: CodeUnavailable, Reason: reason, Message: se.Error()}
+	case errors.As(err, &dn):
+		return &mcp.ToolError{Code: CodeUnavailable, Reason: reasonDatabaseNotConfirmed, Message: dn.Error()}
 	case errors.As(err, &ae):
 		return &mcp.ToolError{Code: CodeInvalidArgument, Reason: ae.Reason, Message: ae.Message}
 	case errors.Is(err, ledger.ErrInvalidParams), errors.Is(err, guard.ErrInvalidIntent):

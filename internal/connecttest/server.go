@@ -4,10 +4,12 @@
 // makes against a real Postgres. It is not part of the binary: only test
 // files import it.
 //
-// It follows the contract's calls, order of refusals and refusal reasons. It
-// differs from the hosted service in what is not the setup's own logic: it
-// dials the pasted string as given (the hosted service requires verified TLS
-// and refuses private addresses), and it has no limits.
+// It follows the contract's calls, order of refusals and refusal reasons,
+// the address hand-off included (the hold, the ticket, CollectAddress,
+// HandoffStatus and OfferAddress). It differs from the hosted service in
+// what is not the setup's own logic: it dials the pasted string as given,
+// or through Options.Dial (the hosted service requires verified TLS and
+// refuses private addresses), and it has no limits.
 package connecttest
 
 import (
@@ -47,12 +49,21 @@ var b64 = base64.RawURLEncoding
 
 // Server is the service. Its zero value is not usable: use Start.
 type Server struct {
-	// The address hand-off calls are not served here yet: they answer
-	// unimplemented.
-	connectv1connect.UnimplementedSetupServiceHandler
-
 	skew   atomic.Int64 // nanoseconds the service's clock is ahead
 	secret []byte
+	holds  holds
+	dial   func(ctx context.Context, url string) (*pgx.Conn, error)
+	// collectsRefused counts the CollectAddress calls answered
+	// HANDOFF_UNKNOWN.
+	collectsRefused atomic.Int64
+}
+
+// Options change how the service reaches the pasted database (tests whose
+// database sits behind a test TLS proxy).
+type Options struct {
+	// Dial opens the admin connection for a pasted string; nil dials it as
+	// given.
+	Dial func(ctx context.Context, url string) (*pgx.Conn, error)
 }
 
 // Start serves a Server on a local test server until the test ends and
@@ -60,7 +71,16 @@ type Server struct {
 // <base>/basalt.connect.v1.SetupService/<Method>).
 func Start(t *testing.T) (*Server, string) {
 	t.Helper()
-	s := &Server{secret: make([]byte, 32)}
+	return StartWith(t, Options{})
+}
+
+// StartWith is Start with o.
+func StartWith(t *testing.T, o Options) (*Server, string) {
+	t.Helper()
+	s := &Server{secret: make([]byte, 32), dial: o.Dial}
+	if s.dial == nil {
+		s.dial = dial
+	}
 	if _, err := rand.Read(s.secret); err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +135,7 @@ func (s *Server) DescribeSetup(_ context.Context, r *connect.Request[connectv1.D
 
 // CheckSetup connects and reads.
 func (s *Server) CheckSetup(ctx context.Context, r *connect.Request[connectv1.CheckSetupRequest]) (*connect.Response[connectv1.CheckSetupResponse], error) {
-	conn, err := dial(ctx, r.Msg.GetDatabaseUrl())
+	conn, err := s.dial(ctx, r.Msg.GetDatabaseUrl())
 	if err != nil {
 		return nil, refuse(err)
 	}
@@ -162,12 +182,28 @@ func (s *Server) RunSetup(ctx context.Context, r *connect.Request[connectv1.RunS
 			return nil, err
 		}
 	}
-	conn, err := dial(ctx, m.GetDatabaseUrl())
+	conn, err := s.dial(ctx, m.GetDatabaseUrl())
 	if err != nil {
 		return nil, refuse(err)
 	}
 	defer conn.Close(ctx)
+	// After the login to the pasted database succeeded: only someone who
+	// can log in to a database learns that the code ran elsewhere.
+	at := setup.ConnDatabase(conn.Config())
+	if d.Target == nil && s.otherTarget(d, at) {
+		return nil, refusal(connect.CodeFailedPrecondition, "RUN_ELSEWHERE", runElsewhere)
+	}
 	checked, err := setup.Check(ctx, conn, req)
+	var se *setup.Error
+	if d.Target == nil && errors.As(err, &se) && se.Code == "USED" {
+		// The same connect-only code again in the database it ran in: the
+		// address is held again, nothing changes.
+		ticket, terr := s.holdFor(d, at)
+		if terr != nil {
+			return nil, terr
+		}
+		return connect.NewResponse(&connectv1.RunSetupResponse{Ticket: ticket, Reconnected: true}), nil
+	}
 	if err != nil {
 		return nil, refuse(err)
 	}
@@ -190,6 +226,11 @@ func (s *Server) RunSetup(ctx context.Context, r *connect.Request[connectv1.RunS
 		return nil, refuse(err)
 	}
 	out := &connectv1.RunSetupResponse{Warnings: res.Warnings, NothingToDo: res.NothingToDo != nil}
+	if d.Target == nil {
+		if out.Ticket, err = s.holdFor(d, at); err != nil {
+			return nil, err
+		}
+	}
 	if res.Passkey != nil && reg != nil {
 		out.Passkeys = []*connectv1.RegisteredPasskey{{
 			CredentialId: b64.EncodeToString(res.Passkey.CredentialID), Label: res.Passkey.Label, CheckCode: reg.checkCode,

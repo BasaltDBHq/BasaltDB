@@ -539,7 +539,8 @@ type CheckSetupResponse struct {
 	// records nothing.
 	NothingToDo bool `protobuf:"varint,4,opt,name=nothing_to_do,json=nothingToDo,proto3" json:"nothing_to_do,omitempty"`
 	// The database the pasted string names, which the page shows first under
-	// Before you approve.
+	// Before you approve. Sensitive: it names the person's database, which a
+	// log must not keep.
 	Database *Target `protobuf:"bytes,5,opt,name=database,proto3" json:"database,omitempty"`
 	// With agent.allTables: the tables the agent will get, schema.table, in
 	// order. Empty when the code names its tables.
@@ -1211,7 +1212,8 @@ func (x *CollectAddressRequest) GetSignature() string {
 
 type CollectAddressResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The database the setup ran in. Never a password.
+	// The database the setup ran in. Never a password. Sensitive: it names
+	// the person's database, which a log must not keep.
 	Address       *Target `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1585,13 +1587,13 @@ const file_basalt_connect_v1_connect_proto_rawDesc = "" +
 	"\x03mac\x18\x06 \x01(\tR\x03mac\"P\n" +
 	"\x11CheckSetupRequest\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12'\n" +
-	"\fdatabase_url\x18\x02 \x01(\tB\x04\x88\xaa\x19\x01R\vdatabaseUrl\"\xbd\x02\n" +
+	"\fdatabase_url\x18\x02 \x01(\tB\x04\x88\xaa\x19\x01R\vdatabaseUrl\"\xc3\x02\n" +
 	"\x12CheckSetupResponse\x129\n" +
 	"\tquestions\x18\x01 \x03(\v2\x1b.basalt.connect.v1.QuestionR\tquestions\x12%\n" +
 	"\x0epasskey_needed\x18\x02 \x01(\bR\rpasskeyNeeded\x12\x14\n" +
 	"\x05notes\x18\x03 \x03(\tR\x05notes\x12\"\n" +
-	"\rnothing_to_do\x18\x04 \x01(\bR\vnothingToDo\x125\n" +
-	"\bdatabase\x18\x05 \x01(\v2\x19.basalt.connect.v1.TargetR\bdatabase\x12\x16\n" +
+	"\rnothing_to_do\x18\x04 \x01(\bR\vnothingToDo\x12;\n" +
+	"\bdatabase\x18\x05 \x01(\v2\x19.basalt.connect.v1.TargetB\x04\x88\xaa\x19\x01R\bdatabase\x12\x16\n" +
 	"\x06tables\x18\x06 \x03(\tR\x06tables\x12<\n" +
 	"\bexcluded\x18\a \x03(\v2 .basalt.connect.v1.ExcludedTableR\bexcluded\";\n" +
 	"\rExcludedTable\x12\x14\n" +
@@ -1636,9 +1638,9 @@ const file_basalt_connect_v1_connect_proto_rawDesc = "" +
 	"\bsetup_id\x18\x01 \x01(\tR\asetupId\x12*\n" +
 	"\x11engine_public_key\x18\x02 \x01(\tR\x0fenginePublicKey\x12\x12\n" +
 	"\x04time\x18\x03 \x01(\tR\x04time\x12\x1c\n" +
-	"\tsignature\x18\x04 \x01(\tR\tsignature\"M\n" +
-	"\x16CollectAddressResponse\x123\n" +
-	"\aaddress\x18\x01 \x01(\v2\x19.basalt.connect.v1.TargetR\aaddress\"4\n" +
+	"\tsignature\x18\x04 \x01(\tR\tsignature\"S\n" +
+	"\x16CollectAddressResponse\x129\n" +
+	"\aaddress\x18\x01 \x01(\v2\x19.basalt.connect.v1.TargetB\x04\x88\xaa\x19\x01R\aaddress\"4\n" +
 	"\x14HandoffStatusRequest\x12\x1c\n" +
 	"\x06ticket\x18\x01 \x01(\tB\x04\x88\xaa\x19\x01R\x06ticket\"n\n" +
 	"\x15HandoffStatusResponse\x12\x14\n" +

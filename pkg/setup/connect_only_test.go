@@ -103,6 +103,28 @@ func TestConnectOnlyAllTablesInstalls(t *testing.T) {
 	require.False(t, writes, "a table without a primary key is read only")
 }
 
+// The tables of an allTables code are read again in the setup's own
+// transaction: a table made after the check the person approved stops the
+// setup, and nothing changes.
+func TestAllTablesReadAgainInTheTransaction(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	d := guardtest.New(t).WithDemo(t)
+	code := newCode(t, d, connectOnly(t))
+	_, give := personPasskey(t)
+	_, err := setup.Run(ctx, d.Admin, connectPage(code), setup.RunInput{
+		Passkey: verified(t, give),
+		Approve: func(setup.Plan) error {
+			d.Exec(t, `CREATE TABLE public.made_meanwhile (id bigint PRIMARY KEY)`)
+			return nil
+		},
+	})
+	require.Equal(t, setup.CodeSetupFailed, codeOf(t, err))
+	require.Contains(t, err.Error(), "changed while the setup was prepared")
+	require.Zero(t, installedVersion(t, d), "nothing changed")
+	require.False(t, roleExists(t, d, d.Names.Prefix+"_agent_bot"))
+}
+
 // No table the admin role owns in the schema: NO_TABLES, nothing changed.
 func TestAllTablesNoTables(t *testing.T) {
 	t.Parallel()

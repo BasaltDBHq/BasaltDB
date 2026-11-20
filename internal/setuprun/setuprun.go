@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -227,27 +228,60 @@ func (s *Setup) Prepare(ctx context.Context, conn *pgx.Conn) (*Prepared, error) 
 // without one read only) and those left out, into s and the summary's
 // state. No table at all is NO_TABLES.
 func (s *Setup) readAllTables(ctx context.Context, q guard.Querier, state *setupcode.SummaryState) error {
-	all := s.P.Agent.AllTables
-	if all == nil {
+	if s.P.Agent.AllTables == nil {
 		return nil
 	}
-	s.tables = guard.SchemaTables{Write: []string{}, ReadOnly: []string{}}
+	tables, err := s.listAllTables(ctx, q)
+	if err != nil {
+		return err
+	}
+	s.tables = tables
+	state.Tables, state.ReadOnly, state.Excluded = s.tables.Write, s.tables.ReadOnly, s.tables.Excluded
+	return nil
+}
+
+// listAllTables lists the tables of an agent.allTables code's schemas.
+func (s *Setup) listAllTables(ctx context.Context, q guard.Querier) (guard.SchemaTables, error) {
+	all := s.P.Agent.AllTables
+	out := guard.SchemaTables{Write: []string{}, ReadOnly: []string{}}
 	for _, schema := range all.Schemas {
 		got, err := guard.AllTablesIn(ctx, q, schema)
 		if err != nil {
-			return err
+			return guard.SchemaTables{}, err
 		}
-		s.tables.Write = append(s.tables.Write, got.Write...)
-		s.tables.ReadOnly = append(s.tables.ReadOnly, got.ReadOnly...)
+		out.Write = append(out.Write, got.Write...)
+		out.ReadOnly = append(out.ReadOnly, got.ReadOnly...)
 		for _, e := range got.Excluded {
-			s.tables.Excluded = append(s.tables.Excluded, setupcode.ExcludedTable{Table: e.Table, Owner: printableLabel(e.Owner)})
+			out.Excluded = append(out.Excluded, setupcode.ExcludedTable{Table: e.Table, Owner: printableLabel(e.Owner)})
 		}
 	}
-	if len(s.tables.Write)+len(s.tables.ReadOnly) == 0 {
-		return refuse(CodeNoTables, fmt.Sprintf("schema %s of this database has no table the admin role owns, so the agent would get nothing. "+
+	if len(out.Write)+len(out.ReadOnly) == 0 {
+		return guard.SchemaTables{}, refuse(CodeNoTables, fmt.Sprintf("schema %s of this database has no table the admin role owns, so the agent would get nothing. "+
 			"Create the tables first, or ask %s for a code that names its tables; nothing changed", strings.Join(all.Schemas, ", "), AgentWord(s.P)))
 	}
-	state.Tables, state.ReadOnly, state.Excluded = s.tables.Write, s.tables.ReadOnly, s.tables.Excluded
+	return out, nil
+}
+
+// ErrTablesChanged is an agent.allTables setup whose tables changed between
+// the check the person approved and the setup's transaction: nothing changed.
+var ErrTablesChanged = errors.New("the tables of the agent's schemas changed while the setup was prepared, so it did not run and nothing changed: check the setup again")
+
+// RecheckTables reads an agent.allTables code's tables again with q, the
+// setup's own transaction (CONTRACT.md, Connect, What RunSetup runs), and
+// refuses with ErrTablesChanged when they are not the ones Prepare read,
+// which the plan grants and the person was shown: a table made, dropped or
+// given to another owner in between. Other codes pass.
+func (s *Setup) RecheckTables(ctx context.Context, q guard.Querier) error {
+	if s.P.Agent == nil || s.P.Agent.AllTables == nil {
+		return nil
+	}
+	now, err := s.listAllTables(ctx, q)
+	if err != nil {
+		return err
+	}
+	if !slices.Equal(now.Write, s.tables.Write) || !slices.Equal(now.ReadOnly, s.tables.ReadOnly) || !slices.Equal(now.Excluded, s.tables.Excluded) {
+		return ErrTablesChanged
+	}
 	return nil
 }
 

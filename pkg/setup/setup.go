@@ -420,6 +420,10 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 	}
 	var registered *RegisteredPasskey
 	inTx := func(ctx context.Context, tx pgx.Tx) error {
+		// The tables the grants cover, read again in this transaction.
+		if err := s.RecheckTables(ctx, tx); err != nil {
+			return err
+		}
 		switch {
 		case in.Passkey != nil:
 			var err error

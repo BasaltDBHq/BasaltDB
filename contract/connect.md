@@ -51,10 +51,11 @@ A refusal is a ConnectRPC error whose detail is a `basalt.connect.v1.Refusal`: `
 | `LOGIN_FAILED` | `failed_precondition` | The database refused the login |
 | `TARGET_MISMATCH` | `failed_precondition` | Step 3 of the laptop command |
 | `PREFIX_MISMATCH`, `USED`, `SUPERSEDED`, `ROLE_EXISTS`, `ROLE_MISSING`, `ENGINE_REVOKED` | `failed_precondition` | Step 4 of the laptop command, in its order |
+| `TABLES_MISSING` | `failed_precondition` | After step 4: a table the code names is not in the database. The message names the missing tables and the database |
 | `ANSWERS_INVALID` | `invalid_argument` | `RunSetup` only |
-| `PASSKEY_REQUIRED` | `failed_precondition` | `RunSetup` only |
+| `PASSKEY_REQUIRED` | `failed_precondition` | `RunSetup` only. Nothing changed |
 | `CHALLENGE_EXPIRED`, `CHALLENGE_INVALID`, `PASSKEY_INVALID` | `invalid_argument` | `RunSetup` only ([The passkey challenge](#the-passkey-challenge)) |
-| `SETUP_FAILED` | `failed_precondition` | The transaction failed: nothing changed. The message is fixed per kind of failure (for example, the admin role lacks a privilege) |
+| `SETUP_FAILED` | `failed_precondition` | Reading the database or the transaction failed, the passkey's registration included: nothing changed. The message is fixed per kind of failure (for example, the admin role lacks a privilege) |
 | `TIME_LIMIT` | `deadline_exceeded` | The call ran past 60 seconds; the transaction rolled back |
 | `RATE_LIMITED`, `BUSY` | `resource_exhausted` | [Connect limits](#connect-limits). Always with `retryAfterSeconds` |
 | `REQUEST_TOO_LARGE` | `resource_exhausted` | A body over 16 KiB |

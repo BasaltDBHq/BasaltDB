@@ -177,7 +177,7 @@ func (l *laptopSetup) run() error {
 		return err
 	}
 	res, err := setup.Run(c.ctx, l.conn, l.request(), setup.RunInput{
-		Answers: answers, AddPasskey: l.f.addPasskey, Approve: l.approve, Committed: l.committed, Passkey: l.portalPasskey,
+		Answers: answers, AddPasskey: l.f.addPasskey, Approve: l.approve, Committed: l.committed, AskPasskey: l.portalPasskey,
 	})
 	if errors.Is(err, errDryRun) {
 		return nil

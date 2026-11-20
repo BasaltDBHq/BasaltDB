@@ -164,15 +164,26 @@ func main() {
 	}
 	var checked setup.Checked
 	checked, err = setup.Check(ctx, conn, req)
+	// A service's passkey: the request rebuilt from the challenge it issued,
+	// verified, then registered in the setup's transaction.
+	challenge := setup.PasskeyChallenge{Challenge: make([]byte, 32), UserID: make([]byte, 16), UserName: "db", DisplayName: "BasaltDB · db"}
 	var pkReq setup.PasskeyRequest
-	pkReq, err = setup.NewPasskeyRequest(rand.Reader, "label", "db")
+	pkReq, err = setup.PasskeyRequestFor(challenge, "label")
+	var pk setup.Passkey
+	pk, err = pkReq.Verify("basalt-passkey.1.x")
 	var res setup.Result
 	res, err = setup.Run(ctx, conn, req, setup.RunInput{
 		Answers: setup.Answers{AllRows: []string{checked.Questions.RowSecurity[0].Table}},
 		Approve: func(p setup.Plan) error { fmt.Println(p.SQL); return nil },
-		Passkey: func(context.Context) (setup.Passkey, error) { return pkReq.Verify("basalt-passkey.1.x") },
+		Passkey: &pk,
 	})
-	fmt.Println(res.Ran, err)
+	fmt.Println(res.Ran, err, setup.Codes())
+	// The laptop's way: asked for after the setup committed.
+	laptopReq, _ := setup.NewPasskeyRequest(rand.Reader, "label", "db")
+	_, err = setup.Run(ctx, conn, req, setup.RunInput{
+		AskPasskey: func(context.Context) (setup.Passkey, error) { return laptopReq.Verify("basalt-passkey.1.x") },
+	})
+	fmt.Println(err)
 }
 `
 

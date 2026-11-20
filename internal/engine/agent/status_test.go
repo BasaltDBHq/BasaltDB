@@ -181,6 +181,15 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			require.NoError(t, err)
 			return r
 		}},
+		problemEngineStartFailed: {state: guard.GuardUnknown, report: func(t *testing.T) StatusReport {
+			t.Helper()
+			cmds, err := NewCommands("bot", "", "linux", nil)
+			require.NoError(t, err)
+			cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: operatedBy, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
+			r, err := EngineDownStatusAfterStart("bot", cmds, cfg, nil, "test", statusNow, "basalt mcp could not start the engine: the basalt binary /x/basalt is gone. Its log is /s/engine.log.")
+			require.NoError(t, err)
+			return r
+		}},
 		problemDatabaseUnreachable: {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: fmt.Errorf("dial %s: %w", statusCredential, context.DeadlineExceeded)}, 1, nil)},
 		problemTooManyConnections: {state: guard.GuardUnknown, report: engineStatus(&fakeProbe{err: postgres.MapError(&pgconn.PgError{
 			Code:    "53300",
@@ -991,4 +1000,38 @@ func TestStatusNamesPasskeysWithCheckCodes(t *testing.T) {
 	none := engineStatus(probe(), 0, nil)(t)
 	require.Empty(t, none.Passkeys.Keys)
 	require.Empty(t, none.Passkeys.Summary)
+}
+
+// A basalt mcp that tried to start the engine and could not says why in
+// status and in every other call, with the log's path.
+func TestEngineDownNamesWhyTheStartFailed(t *testing.T) {
+	t.Parallel()
+	cmds, err := NewCommands("bot", "", "linux", nil)
+	require.NoError(t, err)
+	const why = "basalt mcp could not start the engine: the engine did not start within 15s. Its log is /s/engine.log."
+	down := EngineDown{Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow }, StartFailure: func() string { return why }}
+
+	r, err := EngineDownStatusAfterStart("bot", cmds, nil, nil, "test", statusNow, why)
+	require.NoError(t, err)
+	require.Equal(t, problemEngineStartFailed, r.Problems[0].Code, "the start failure comes first")
+	require.Equal(t, why, r.Problems[0].Message)
+	require.Equal(t, problemEngineUnreachable, r.Problems[1].Code, "the manual step stays")
+	require.False(t, r.Ready)
+
+	var query mcp.Tool
+	for _, tool := range down.Tools() {
+		if tool.Name == "query" {
+			query = tool
+		}
+	}
+	_, err = query.Call(context.Background(), json.RawMessage(`{}`))
+	var te *mcp.ToolError
+	require.ErrorAs(t, err, &te)
+	require.Contains(t, te.Message, why)
+
+	// Without a failure nothing is added.
+	r, err = EngineDownStatusAfterStart("bot", cmds, nil, nil, "test", statusNow, "")
+	require.NoError(t, err)
+	require.Equal(t, problemEngineUnreachable, r.Problems[0].Code)
+	require.Len(t, r.Problems, 1)
 }

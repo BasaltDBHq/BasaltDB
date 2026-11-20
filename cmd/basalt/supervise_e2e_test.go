@@ -3,13 +3,19 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -86,4 +92,97 @@ func TestSuperviseRealEngineKilled(t *testing.T) {
 		pid := enginePID()
 		return pid > 0 && pid != first && answers()
 	}, 5*time.Second, 50*time.Millisecond, "the supervisor starts the engine again")
+}
+
+// A basalt mcp that finds no engine starts one under a supervisor, waits
+// for it and answers status through it: no step by anyone.
+func TestMCPStartsDownEngine(t *testing.T) {
+	t.Setenv(testAsBasaltEnv, "1") // the engine it starts is this test binary
+	d := guardtest.New(t).WithDemo(t)
+	a := d.NewAgent(t, "product_a", []string{"public.leads"}, nil)
+	dir, err := os.MkdirTemp("", "bmcp") // short: macOS bounds socket paths
+	require.NoError(t, err)
+	dir, err = filepath.EvalSymlinks(dir)
+	require.NoError(t, err)
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	cfgPath := filepath.Join(dir, "config", "engine.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(cfgPath), 0o700))
+	cred := filepath.Join(dir, "config", "product_a.url")
+	require.NoError(t, os.WriteFile(cred, []byte(a.URL+"\n"), config.FileMode))
+	me, err := user.Current()
+	require.NoError(t, err)
+	socketDir := filepath.Join(dir, "run")
+	raw, err := json.Marshal(map[string]any{
+		"socketDir": socketDir, "stateDir": filepath.Join(dir, "state"), "pagesAddr": "off", "mode": "SAME_USER",
+		"agents": []map[string]any{{"name": "product_a", "osUser": me.Username, "store": map[string]any{"kind": "POSTGRES", "credentialFile": cred}}},
+	})
+	require.NoError(t, err)
+	require.NoError(t, config.WriteFile(cfgPath, raw))
+	t.Cleanup(func() { // the engine is detached: stop its supervisor
+		if pid, up, _ := server.Running(engine.LockPath(socketDir)); up {
+			if ppid, err := parentOf(pid); err == nil {
+				_ = syscall.Kill(ppid, syscall.SIGTERM)
+			}
+			_ = syscall.Kill(pid, syscall.SIGTERM)
+		}
+	})
+	_, up, _ := server.Running(engine.LockPath(socketDir))
+	require.False(t, up, "no engine runs before the call")
+
+	in, inW := io.Pipe()
+	var out bytes.Buffer
+	outR, outW := io.Pipe()
+	done := make(chan int, 1)
+	go func() {
+		done <- runMCPOn(context.Background(), []string{"--agent", "product_a", "--socket-dir", socketDir, "--config", cfgPath}, stdio{in: in, out: outW, err: &out}, osHost{})
+		_ = outW.Close()
+	}()
+	_, err = fmt.Fprintf(inW, "%s\n%s\n",
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"status","arguments":{}}}`)
+	require.NoError(t, err)
+	r := bufio.NewReader(outR)
+	_, err = r.ReadString('\n')
+	require.NoError(t, err)
+	line, err := r.ReadString('\n')
+	require.NoError(t, err)
+	var resp struct {
+		Result struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(line), &resp), line)
+	require.Len(t, resp.Result.Content, 1, line)
+	var report struct {
+		Ready  bool `json:"ready"`
+		Engine struct {
+			Reachable bool `json:"reachable"`
+		} `json:"engine"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(resp.Result.Content[0].Text), &report))
+	require.True(t, report.Engine.Reachable, resp.Result.Content[0].Text)
+	require.True(t, report.Ready, resp.Result.Content[0].Text)
+
+	pid, up, _ := server.Running(engine.LockPath(socketDir))
+	require.True(t, up)
+	ppid, err := parentOf(pid)
+	require.NoError(t, err)
+	cmdline, err := exec.Command("ps", "-o", "command=", "-p", strconv.Itoa(ppid)).Output()
+	require.NoError(t, err)
+	require.Contains(t, string(cmdline), "--supervise", "the engine runs under a supervisor")
+	_, err = os.Stat(filepath.Join(dir, "state", engineLogName))
+	require.NoError(t, err, "its output goes to the engine log")
+
+	require.NoError(t, inW.Close())
+	require.Equal(t, exitOK, <-done, out.String())
+}
+
+func parentOf(pid int) (int, error) {
+	b, err := exec.Command("ps", "-o", "ppid=", "-p", strconv.Itoa(pid)).Output()
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(string(b)))
 }

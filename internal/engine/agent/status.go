@@ -60,6 +60,9 @@ const (
 	problemSetupNotFound      = "SETUP_NOT_FOUND"
 	problemClockSkew          = "CLOCK_SKEW"
 	problemEngineAsRoot       = "ENGINE_AS_ROOT"
+	// problemEngineStartFailed: basalt mcp tried to start the engine and
+	// could not (CONTRACT.md, MCP tools, status).
+	problemEngineStartFailed = "ENGINE_START_FAILED"
 )
 
 // status.engineRecord.state (CONTRACT.md, Configuration and status).
@@ -521,6 +524,15 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 // config the shim could read (cfg nil: it could not, so PERSON and
 // GUARD_ONLY), the pending setup when the config holds one.
 func EngineDownStatus(name string, cmds Commands, cfg *config.Config, cfgErr error, build string, now time.Time) (StatusReport, error) {
+	return EngineDownStatusAfterStart(name, cmds, cfg, cfgErr, build, now, "")
+}
+
+// EngineDownStatusAfterStart is EngineDownStatus for a basalt mcp that tried
+// to start the engine: startFailure, when not empty, is why it could not
+// ("basalt mcp could not start the engine: <reason>. Its log is <path>."),
+// shown as the problem ENGINE_START_FAILED before ENGINE_UNREACHABLE, whose
+// steps stay.
+func EngineDownStatusAfterStart(name string, cmds Commands, cfg *config.Config, cfgErr error, build string, now time.Time, startFailure string) (StatusReport, error) {
 	r := StatusReport{
 		Agent: name, OperatedBy: mcpcontract.OperatedByPerson, Enforcement: EnforcementGuardOnly,
 		Engine: EngineStatus{Reachable: false, Build: build},
@@ -536,6 +548,10 @@ func EngineDownStatus(name string, cmds Commands, cfg *config.Config, cfgErr err
 	if config.IsOldCredentialFile(cfgErr) {
 		// The engine cannot start on this config: say what to edit.
 		msg += "; engine.json: " + cfgErr.Error()
+	}
+	if startFailure != "" {
+		ps.add(problemEngineStartFailed, startFailure,
+			func(b *Steps) string { return engineUnreachableSteps(b, cmds, toolStatus) })
 	}
 	ps.add(problemEngineUnreachable, msg,
 		func(b *Steps) string { return engineUnreachableSteps(b, cmds, toolStatus) })

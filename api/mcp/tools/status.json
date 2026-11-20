@@ -279,6 +279,7 @@
               "type": "string",
               "enum": [
                 "ENGINE_UNREACHABLE",
+                "ENGINE_START_FAILED",
                 "DATABASE_UNREACHABLE",
                 "TOO_MANY_CONNECTIONS",
                 "CREDENTIAL_REJECTED",

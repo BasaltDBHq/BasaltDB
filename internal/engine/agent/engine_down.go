@@ -30,6 +30,17 @@ type EngineDown struct {
 	ConfigErr error
 	Log       *slog.Logger
 	Now       func() time.Time
+	// StartFailure, when set, is why basalt mcp could not start the engine
+	// on its last try ("" when it did not try or it worked): shown in status
+	// as ENGINE_START_FAILED and in the answer to every other call.
+	StartFailure func() string
+}
+
+func (d EngineDown) startFailure() string {
+	if d.StartFailure == nil {
+		return ""
+	}
+	return d.StartFailure()
 }
 
 // Tools are the tools of every IMPLEMENTED contract, and status, each
@@ -58,12 +69,16 @@ func (d EngineDown) status(_ context.Context, raw json.RawMessage) (any, error) 
 	if err := decodeArgs(raw, &args); err != nil {
 		return nil, d.invalidArgument(err)
 	}
-	return EngineDownStatus(d.Name, d.Commands, d.Config, d.ConfigErr, buildinfo.Version, d.Now())
+	return EngineDownStatusAfterStart(d.Name, d.Commands, d.Config, d.ConfigErr, buildinfo.Version, d.Now(), d.startFailure())
 }
 
 func (d EngineDown) unreachable(tool string) func(context.Context, json.RawMessage) (any, error) {
 	return func(context.Context, json.RawMessage) (any, error) {
-		te, err := d.unreachableError(tool, tool, "the basalt engine does not answer on this agent's socket, so "+tool+" cannot run; status still works")
+		message := "the basalt engine does not answer on this agent's socket, so " + tool + " cannot run; status still works"
+		if f := d.startFailure(); f != "" {
+			message += ". " + f
+		}
+		te, err := d.unreachableError(tool, tool, message)
 		if err != nil {
 			return nil, err
 		}

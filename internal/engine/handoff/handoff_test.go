@@ -696,3 +696,21 @@ func TestPreviewClearsAnEarlierProblem(t *testing.T) {
 	h.p.Step(context.Background())
 	require.Empty(t, h.p.State().Problem)
 }
+
+// A status call does not wait for the loop's step: it returns the state as
+// it is while that step runs.
+func TestStatusCollectDoesNotWaitForTheLoop(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.p.stepMu.Lock()
+	done := make(chan State, 1)
+	go func() { done <- h.p.StatusCollect(context.Background()) }()
+	select {
+	case st := <-done:
+		require.Equal(t, PhaseWaiting, st.Phase)
+	case <-time.After(5 * time.Second):
+		t.Fatal("status waited for the loop's step")
+	}
+	h.p.stepMu.Unlock()
+	require.Zero(t, h.col.calls, "no collect while the loop's step runs")
+}

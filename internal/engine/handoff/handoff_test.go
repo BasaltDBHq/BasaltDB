@@ -2,7 +2,9 @@ package handoff
 
 import (
 	"context"
+	"crypto/x509"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -40,33 +42,73 @@ func fixtureSetup() config.Setup {
 }
 
 type fakeCollector struct {
-	mu    sync.Mutex
-	addr  Address
-	err   error
-	calls int
+	mu   sync.Mutex
+	addr Address
+	// phase is the hold's; "" is SET_UP here, so the older tests read as
+	// before.
+	phase   string
+	err     error
+	calls   int
+	reports []report
 }
 
-func (c *fakeCollector) Collect(_ context.Context, id, fp string) (Address, error) {
+type report struct {
+	addr  Address
+	reach Reach
+}
+
+func (c *fakeCollector) Collect(_ context.Context, id, fp string) (Collected, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.calls++
 	if id != fixtureID || fp != fixtureFingerprint {
-		return Address{}, errors.New("another setup")
+		return Collected{}, errors.New("another setup")
 	}
-	return c.addr, c.err
+	phase := c.phase
+	if phase == "" {
+		phase = HoldSetUp
+	}
+	return Collected{Address: c.addr, Phase: phase}, c.err
+}
+
+func (c *fakeCollector) Report(_ context.Context, id, fp string, a Address, r Reach) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if id != fixtureID || fp != fixtureFingerprint {
+		return errors.New("another setup")
+	}
+	c.reports = append(c.reports, report{a, r})
+	return nil
 }
 
 type fakeProber struct {
-	err   error
-	users []string
+	err error
+	// ip is what every host resolves to; 8.8.8.8 when unset.
+	ip     netip.Addr
+	users  []string
+	probes int
 }
 
-func (p *fakeProber) Probe(_ context.Context, a Address, user string) (Probed, error) {
-	p.users = append(p.users, user)
+func (p *fakeProber) Resolve(_ context.Context, a Address) (netip.Addr, error) {
 	if err := a.Check(); err != nil {
-		return Probed{}, err
+		return netip.Addr{}, err
 	}
-	return Probed{IP: netip.MustParseAddr("8.8.8.8"), ChannelBinding: true}, p.err
+	if errors.Is(p.err, ErrAddressInvalid) {
+		return netip.Addr{}, p.err
+	}
+	if p.ip.IsValid() {
+		return p.ip, nil
+	}
+	return netip.MustParseAddr("8.8.8.8"), nil
+}
+
+func (p *fakeProber) ProbeAt(_ context.Context, _ Address, ip netip.Addr, user string) (Probed, error) {
+	p.users = append(p.users, user)
+	p.probes++
+	if p.err != nil {
+		return Probed{}, p.err
+	}
+	return Probed{IP: ip, ChannelBinding: true}, nil
 }
 
 // fakeFiles keeps the agent's files in memory and records each use, so a
@@ -189,6 +231,9 @@ func TestAddressShape(t *testing.T) {
 		"a ref on another host":     {Host: "evil.example.com", Port: 5432, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"},
 		"another project's host":    {Host: "db.zzzzzzzzzzzzzzzzzzzz.supabase.co", Port: 5432, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"},
 		"a lookalike pooler":        {Host: "pooler.supabase.com.evil.example", Port: 6543, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"},
+		// The --database-url rules: init reads db.<ref>.supabase.co as that
+		// project, so the address must say so too.
+		"a project's host without its ref": {Host: "db.abcdefghijklmnopqrst.supabase.co", Port: 5432, Database: "postgres"},
 	} {
 		require.ErrorIs(t, a.Check(), ErrAddressInvalid, name)
 	}
@@ -277,8 +322,8 @@ func TestConnStringAndLoginUser(t *testing.T) {
 	require.Equal(t, "basalt_agent_bot", LoginUser(direct, "basalt_agent_bot"))
 }
 
-// The cadence: every 15 seconds for 30 minutes after the code was made,
-// every 5 minutes for the next 2 hours, then hourly until it expires.
+// The cadence: every 15 seconds for 2 hours after the code was made, then
+// every 5 minutes until it expires.
 func TestCollectCadence(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
@@ -291,18 +336,30 @@ func TestCollectCadence(t *testing.T) {
 	h.p.Step(context.Background())
 	require.Equal(t, fastEvery, wait())
 
-	h.clock.now = fixtureMade.Add(40 * time.Minute)
+	h.clock.now = fixtureMade.Add(110 * time.Minute)
 	h.p.Step(context.Background())
-	require.Equal(t, slowEvery, wait())
+	require.Equal(t, fastEvery, wait())
 
 	h.clock.now = fixtureMade.Add(3 * time.Hour)
 	h.p.Step(context.Background())
-	require.Equal(t, heartbeat, wait())
+	require.Equal(t, slowEvery, wait())
+
+	// While the database cannot be reached, the cadence is the same.
+	h.col.err, h.col.addr, h.prober.err = nil, db, &ReachError{Reason: ReasonNoRoute}
+	h.clock.now = fixtureMade.Add(20 * time.Hour)
+	h.p.Step(context.Background())
+	require.Equal(t, ProblemUnreachable, h.p.State().Problem)
+	require.Equal(t, slowEvery, wait())
+
+	// A status call collects at once, however recent the last collect.
+	calls := h.col.calls
+	h.p.StatusCollect(context.Background())
+	require.Equal(t, calls+1, h.col.calls)
 
 	h.clock.now = fixtureMade.Add(25 * time.Hour)
 	_, ok := h.p.nextWait()
 	require.False(t, ok, "no collect after the code expired")
-	calls := h.col.calls
+	calls = h.col.calls
 	h.p.Step(context.Background())
 	require.Equal(t, calls, h.col.calls, "nor on status")
 	require.True(t, h.p.State().Expired)
@@ -358,7 +415,7 @@ func TestStepCollectsChecksAndProbes(t *testing.T) {
 	st = h.p.State()
 	require.Equal(t, PhaseConfirm, st.Phase)
 	require.Equal(t, &db, st.Database)
-	require.Equal(t, []string{fixtureRole, fixtureRole, fixtureRole}, h.prober.users, "the probe logs in as the agent's role")
+	require.Equal(t, []string{fixtureRole, fixtureRole}, h.prober.users, "the probe logs in as the agent's role, and a refused address is never probed")
 
 	// Once the probe passed, nothing collects: the database the person is
 	// asked about cannot change under the question.
@@ -471,4 +528,150 @@ func TestConfigChangeDropsTheAddress(t *testing.T) {
 	}
 	_, err := h.p.Confirm(context.Background(), fixtureID, db, true)
 	require.ErrorIs(t, err, ErrNotWaiting)
+}
+
+// A PREVIEW address is checked, probed and reported, and nothing else: the
+// setup stays waiting, status shows nothing of it, nothing reads .secret,
+// and the collecting goes on.
+func TestPreviewOnlyReports(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	ctx := context.Background()
+	h.col.err, h.col.addr, h.col.phase = nil, Address{Host: "DB.Example.com", Port: 6543, Database: "app"}, HoldPreview
+	h.p.Step(ctx)
+	st := h.p.State()
+	require.Equal(t, PhaseWaiting, st.Phase)
+	require.Nil(t, st.Database)
+	require.Empty(t, st.Problem)
+	require.Empty(t, h.files.ops, "no file is touched")
+	require.Equal(t, []report{{Address{Host: "DB.Example.com", Port: 6543, Database: "app"}, Reach{}}}, h.col.reports)
+	require.Equal(t, 1, h.prober.probes)
+	_, ok := h.p.nextWait()
+	require.True(t, ok, "it keeps collecting")
+
+	// The same address again within 5 minutes: reported again, not probed.
+	h.clock.advance(fastEvery)
+	h.p.Step(ctx)
+	require.Len(t, h.col.reports, 2)
+	require.Equal(t, 1, h.prober.probes)
+
+	// Another address: probed and reported; a failure carries its reason
+	// and is still not shown.
+	h.col.addr, h.prober.err = db, &ReachError{Reason: ReasonTLSNotVerified}
+	h.clock.advance(fastEvery)
+	h.p.Step(ctx)
+	require.Equal(t, 2, h.prober.probes)
+	require.Equal(t, report{db, Reach{Reason: ReasonTLSNotVerified}}, h.col.reports[2])
+	st = h.p.State()
+	require.Equal(t, PhaseWaiting, st.Phase)
+	require.Nil(t, st.Database)
+	require.Empty(t, st.Problem)
+
+	// The same address after 5 minutes is probed again.
+	h.prober.err = nil
+	h.clock.advance(reuseFor + time.Second)
+	h.p.Step(ctx)
+	require.Equal(t, 3, h.prober.probes)
+	require.Equal(t, report{db, Reach{}}, h.col.reports[3])
+
+	// A refused range is reported ADDRESS_REFUSED; a shape that fails is
+	// never reported.
+	h.prober.err = &ReachError{Reason: ReasonAddressRefused}
+	h.col.addr = Address{Host: "private.example.com", Port: 5432, Database: "app"}
+	h.clock.advance(fastEvery)
+	h.p.Step(ctx)
+	require.Equal(t, report{h.col.addr, Reach{Reason: ReasonAddressRefused}}, h.col.reports[4])
+	h.col.addr = Address{Host: "db example", Port: 5432, Database: "app"}
+	h.clock.advance(fastEvery)
+	h.p.Step(ctx)
+	require.Len(t, h.col.reports, 5)
+	st = h.p.State()
+	require.Equal(t, PhaseWaiting, st.Phase)
+	require.Empty(t, st.Problem, "a preview never shows a problem")
+	require.NotContains(t, h.files.ops, "read secret")
+}
+
+// Any phase but SET_UP is a preview: the engine never asks about it.
+func TestUnknownPhaseIsAPreview(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.col.err, h.col.addr, h.col.phase = nil, db, "SOMETHING_ELSE"
+	h.p.Step(context.Background())
+	require.Equal(t, PhaseWaiting, h.p.State().Phase)
+	require.Len(t, h.col.reports, 1)
+}
+
+// The SET_UP probe reuses a passed PREVIEW probe of the same address and
+// IP within 5 minutes, and probes again otherwise. It never reports.
+func TestSetUpReusesAPassedPreviewProbe(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	preview := func(t *testing.T) harness {
+		t.Helper()
+		h := newHarness(t)
+		h.col.err, h.col.addr, h.col.phase = nil, db, HoldPreview
+		h.p.Step(ctx)
+		require.Equal(t, 1, h.prober.probes)
+		h.col.phase = HoldSetUp
+		h.clock.advance(fastEvery)
+		return h
+	}
+
+	h := preview(t)
+	h.p.Step(ctx)
+	require.Equal(t, PhaseConfirm, h.p.State().Phase)
+	require.Equal(t, 1, h.prober.probes, "the passed preview probe stands in")
+	require.Len(t, h.col.reports, 1, "a SET_UP address is never reported")
+
+	h = preview(t)
+	h.prober.ip = netip.MustParseAddr("8.8.4.4")
+	h.p.Step(ctx)
+	require.Equal(t, PhaseConfirm, h.p.State().Phase)
+	require.Equal(t, 2, h.prober.probes, "another IP: probed again")
+
+	h = preview(t)
+	h.col.addr = Address{Host: "other.example.com", Port: 5432, Database: "app"}
+	h.p.Step(ctx)
+	require.Equal(t, 2, h.prober.probes, "another address on the same IP: probed again")
+
+	h = preview(t)
+	h.clock.advance(reuseFor)
+	h.p.Step(ctx)
+	require.Equal(t, 2, h.prober.probes, "after 5 minutes: probed again")
+}
+
+func TestReachReasons(t *testing.T) {
+	t.Parallel()
+	r, ok := ReachOf(nil)
+	require.True(t, ok)
+	require.Empty(t, r.Reason)
+	_, ok = ReachOf(ErrAddressInvalid)
+	require.False(t, ok, "a shape that fails is never reported")
+	r, ok = ReachOf(&ReachError{Reason: ReasonAddressRefused})
+	require.True(t, ok)
+	require.Equal(t, ReasonAddressRefused, r.Reason)
+	require.ErrorIs(t, &ReachError{Reason: ReasonAddressRefused}, ErrAddressInvalid)
+	require.ErrorIs(t, &ReachError{Reason: ReasonTimeout}, ErrUnreachable)
+	require.NotErrorIs(t, &ReachError{Reason: ReasonTimeout}, ErrAddressInvalid)
+
+	require.Equal(t, ReasonTimeout, reasonOf(context.DeadlineExceeded))
+	require.Equal(t, ReasonTLSNotVerified, reasonOf(fmt.Errorf("connect: %w", x509.HostnameError{Host: "db.example.com", Certificate: &x509.Certificate{}})))
+	require.Equal(t, ReasonTLSNotVerified, reasonOf(fmt.Errorf("connect: %w", x509.UnknownAuthorityError{})))
+	require.Equal(t, ReasonTLSNotVerified, reasonOf(errors.New("failed to connect: server refused TLS connection")))
+	require.Equal(t, ReasonNoRoute, reasonOf(&net.OpError{Op: "dial", Err: errors.New("connection refused")}))
+
+	// A resolver with nothing, and a refused range, before any dial.
+	p := Prober{Resolver: resolverFunc(func(host string) ([]netip.Addr, error) {
+		if host == "private.example.com" {
+			return []netip.Addr{netip.MustParseAddr("10.0.0.5")}, nil
+		}
+		return nil, errors.New("no such host")
+	})}
+	_, err := p.Resolve(context.Background(), db)
+	r, _ = ReachOf(err)
+	require.Equal(t, ReasonNoRoute, r.Reason)
+	_, err = p.Resolve(context.Background(), Address{Host: "private.example.com", Port: 5432, Database: "app"})
+	r, _ = ReachOf(err)
+	require.Equal(t, ReasonAddressRefused, r.Reason)
+	require.ErrorIs(t, err, ErrAddressInvalid)
 }

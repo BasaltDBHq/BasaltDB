@@ -410,8 +410,7 @@ func TestConnectOnlySetupRefused(t *testing.T) {
 	require.True(t, cfg.Agents[0].Setup.Refused)
 	require.False(t, cfg.Agents[0].Setup.AwaitingAddress)
 
-	st, _ = e.call(t, "status", map[string]any{})
-	require.Equal(t, "REFUSED", setupOf(t, st)["state"])
+	st = e.waitForState(t, "REFUSED")
 	require.Contains(t, problemCodes(st), "DATABASE_REFUSED")
 	body, isErr := e.call(t, "list_runs", map[string]any{})
 	require.True(t, isErr)
@@ -438,7 +437,7 @@ func TestConnectOnlyHostileHandoffs(t *testing.T) {
 		require.ErrorIs(t, err, handoff.ErrNotHeld)
 		addr, err := handoff.NewClient(nil, f.page.base, key, time.Now).Collect(context.Background(), f.install.res.SetupID, f.install.res.Fingerprint)
 		require.NoError(t, err)
-		require.Equal(t, dbHost, addr.Host)
+		require.Equal(t, dbHost, addr.Address.Host)
 	})
 
 	t.Run("a replayed collect", func(t *testing.T) {
@@ -550,3 +549,193 @@ type keyWithSigner struct {
 }
 
 func (k keyWithSigner) PublicKeySPKI() []byte { return k.spki }
+
+// checkOnPage is the page's first two calls: DescribeSetup and CheckSetup,
+// before the person approves. It returns CheckSetup's answer.
+func (f handoffFixture) checkOnPage(pasted string) *connectv1.CheckSetupResponse {
+	f.t.Helper()
+	var desc connectv1.DescribeSetupResponse
+	f.page.ok("DescribeSetup", map[string]any{"code": f.install.res.Code}, &desc)
+	var chk connectv1.CheckSetupResponse
+	f.page.ok("CheckSetup", map[string]any{"code": f.install.res.Code, "databaseUrl": pasted}, &chk)
+	return &chk
+}
+
+// waitForReach polls HandoffStatus with ticket, as the page does, until the
+// engine's reach report is there.
+func (f handoffFixture) waitForReach(ticket string) *connectv1.HandoffStatusResponse {
+	f.t.Helper()
+	var hs connectv1.HandoffStatusResponse
+	require.Eventually(f.t, func() bool {
+		hs = connectv1.HandoffStatusResponse{}
+		f.page.ok("HandoffStatus", map[string]any{"ticket": ticket}, &hs)
+		return hs.GetReach() != nil
+	}, 45*time.Second, 200*time.Millisecond, "the engine never reported")
+	return &hs
+}
+
+// roleLogins is how many logins through the proxy were the agent's role's.
+func (f handoffFixture) roleLogins() int {
+	n := 0
+	for _, l := range f.proxy.Logins() {
+		if l.User == f.role {
+			n++
+		}
+	}
+	return n
+}
+
+// The reach check end to end (CONTRACT.md, Connect, The reach check): the
+// page's CheckSetup makes a PREVIEW hold, the engine probes it with a wrong
+// password and reports, and shows nothing of it; after RunSetup the SET_UP
+// probe reuses the preview's, and the engine asks as before. No login
+// carries the agent's real password before the person's YES.
+func TestConnectOnlyReachCheck(t *testing.T) {
+	t.Parallel()
+	f := newHandoffFixture(t)
+	e := startHandoffEngine(t, f.cfg, f.engineOptions(publicDB))
+	pasted := pastedFor(t, f.d, dbHost)
+
+	chk := f.checkOnPage(pasted)
+	require.NotEmpty(t, chk.GetTicket(), "a connect-only INSTALL code gets a preview ticket")
+	require.Equal(t, "PREVIEW", f.srv.HeldPhase(f.install.res.SetupID))
+	hs := f.waitForReach(chk.GetTicket())
+	require.Equal(t, "PREVIEW", hs.GetPhase())
+	require.Equal(t, "REACHABLE", hs.GetReach().GetResult())
+	require.Empty(t, hs.GetReach().GetReason())
+
+	// The engine shows nothing of the preview address and stays waiting.
+	st, _ := e.call(t, "status", map[string]any{})
+	require.Equal(t, "PENDING", setupOf(t, st)["state"])
+	require.Contains(t, problemCodes(st), "SETUP_NOT_RUN")
+	raw, err := json.Marshal(st)
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), dbHost, "status shows nothing of a PREVIEW address")
+	cfgRaw, err := os.ReadFile(f.cfg)
+	require.NoError(t, err)
+	require.NotContains(t, string(cfgRaw), dbHost, "engine.json keeps nothing of it")
+	require.NoFileExists(t, f.install.credFile)
+	require.FileExists(t, secretPathOf(f.cfg))
+	body, isErr := e.call(t, "query", map[string]any{"sql": "SELECT 1"})
+	require.True(t, isErr)
+	require.Equal(t, "SETUP_PENDING", body["reason"])
+	probed := f.roleLogins()
+	require.NotZero(t, probed, "the preview probe reached the database as the agent's role")
+	require.Zero(t, f.carried(), "the preview probe sends a wrong password")
+
+	// The person approves: the SET_UP hold, the reused probe, the question.
+	f.runOnPage(pasted)
+	require.Equal(t, "SET_UP", f.srv.HeldPhase(f.install.res.SetupID))
+	st = e.waitForState(t, "CONFIRM_DATABASE")
+	require.Equal(t, dbHost, setupOf(t, st)["database"].(map[string]any)["host"])
+	require.Equal(t, probed, f.roleLogins(), "the SET_UP probe reuses the preview's: one flow, one probe here")
+	require.Zero(t, f.carried())
+
+	// NO: still nothing real anywhere.
+	res, isErr := e.call(t, "confirm_database", confirmArgs(t, st, "NO"))
+	require.False(t, isErr, "%v", res)
+	require.Zero(t, f.carried(), "no valid proof after a NO either")
+}
+
+// A preview address the engine cannot use is reported with its reason, and
+// still shows nothing in status.
+func TestConnectOnlyReachCheckUnreachable(t *testing.T) {
+	t.Parallel()
+	for name, c := range map[string]struct {
+		resolver fixedResolver
+		reason   string
+	}{
+		"a private address":            {fixedResolver{dbHost: {netip.MustParseAddr("10.0.0.5")}}, "ADDRESS_REFUSED"},
+		"a host that does not resolve": {fixedResolver{}, "NO_ROUTE"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			f := newHandoffFixture(t)
+			e := startHandoffEngine(t, f.cfg, f.engineOptions(c.resolver))
+			chk := f.checkOnPage(pastedFor(t, f.d, dbHost))
+			hs := f.waitForReach(chk.GetTicket())
+			require.Equal(t, "UNREACHABLE", hs.GetReach().GetResult())
+			require.Equal(t, c.reason, hs.GetReach().GetReason())
+			st, _ := e.call(t, "status", map[string]any{})
+			require.Equal(t, "PENDING", setupOf(t, st)["state"])
+			require.Equal(t, []string{"SETUP_NOT_RUN"}, problemCodes(st), "a preview shows no problem")
+			require.Zero(t, f.roleLogins(), "the engine never connected to it")
+		})
+	}
+}
+
+// The hold's phases rank as the contract says, and a report is checked as
+// a collect is.
+func TestConnectOnlyHostileReachCheck(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a report with another key, a forged result, or for another address", func(t *testing.T) {
+		t.Parallel()
+		f := newHandoffFixture(t)
+		chk := f.checkOnPage(pastedFor(t, f.d, dbHost))
+		ctx := context.Background()
+		addr := handoff.Address{Host: dbHost, Port: 5432, Database: f.d.Admin.Config().Database}
+		other, err := channel.GenerateEngineKeys(time.Now)
+		require.NoError(t, err)
+		err = handoff.NewClient(nil, f.page.base, other, time.Now).Report(ctx, f.install.res.SetupID, f.install.res.Fingerprint, addr, handoff.Reach{})
+		require.ErrorIs(t, err, handoff.ErrNotHeld)
+		key := engineKeysOf(t, f.cfg)
+		err = handoff.NewClient(nil, f.page.base, keyWithSigner{Signer: other, spki: key.PublicKeySPKI()}, time.Now).
+			Report(ctx, f.install.res.SetupID, f.install.res.Fingerprint, addr, handoff.Reach{})
+		require.ErrorIs(t, err, handoff.ErrNotHeld)
+		c := handoff.NewClient(nil, f.page.base, key, time.Now)
+		require.ErrorIs(t, c.Report(ctx, f.install.res.SetupID, f.install.res.Fingerprint, addr, handoff.Reach{Reason: "BECAUSE"}), handoff.ErrNotHeld)
+		_, ok := f.srv.Reached(f.install.res.SetupID)
+		require.False(t, ok, "nothing refused is kept")
+
+		// Another address is accepted and ignored.
+		require.NoError(t, c.Report(ctx, f.install.res.SetupID, f.install.res.Fingerprint, handoff.Address{Host: "other.example.com", Port: 5432, Database: "app"}, handoff.Reach{}))
+		_, ok = f.srv.Reached(f.install.res.SetupID)
+		require.False(t, ok)
+		// The hold's own, in another case, is kept.
+		upper := addr
+		upper.Host = "DB.EXAMPLE.COM"
+		require.NoError(t, c.Report(ctx, f.install.res.SetupID, f.install.res.Fingerprint, upper, handoff.Reach{Reason: handoff.ReasonTimeout}))
+		var hs connectv1.HandoffStatusResponse
+		f.page.ok("HandoffStatus", map[string]any{"ticket": chk.GetTicket()}, &hs)
+		require.Equal(t, "TIMEOUT", hs.GetReach().GetReason())
+	})
+
+	t.Run("a preview never replaces a set-up hold", func(t *testing.T) {
+		t.Parallel()
+		f := newHandoffFixture(t)
+		pasted := pastedFor(t, f.d, dbHost)
+		preview := f.checkOnPage(pasted)
+		require.NotEmpty(t, preview.GetTicket())
+		run := f.runOnPage(pasted)
+		require.Equal(t, "SET_UP", f.srv.HeldPhase(f.install.res.SetupID))
+
+		// After a restart, the preview ticket puts back a PREVIEW hold, and
+		// the set-up ticket then replaces it; the preview ticket never
+		// replaces it back.
+		f.srv.Restart()
+		var off connectv1.OfferAddressResponse
+		f.page.ok("OfferAddress", map[string]any{"ticket": preview.GetTicket()}, &off)
+		require.Equal(t, "PREVIEW", f.srv.HeldPhase(f.install.res.SetupID))
+		var hs connectv1.HandoffStatusResponse
+		f.page.ok("HandoffStatus", map[string]any{"ticket": run.GetTicket()}, &hs)
+		require.Equal(t, "UNKNOWN", hs.GetState(), "a set-up ticket reads a PREVIEW hold as none")
+		f.page.ok("OfferAddress", map[string]any{"ticket": run.GetTicket()}, &off)
+		require.Equal(t, "SET_UP", f.srv.HeldPhase(f.install.res.SetupID))
+		f.page.ok("OfferAddress", map[string]any{"ticket": preview.GetTicket()}, &off)
+		require.Equal(t, "SET_UP", f.srv.HeldPhase(f.install.res.SetupID), "a preview ticket never replaces a SET_UP hold")
+	})
+
+	t.Run("someone else's preview of another database refuses nothing", func(t *testing.T) {
+		t.Parallel()
+		f := newHandoffFixture(t)
+		other := guardtest.New(t).WithDemo(t)
+		f.proxies["other.example.com"] = connecttest.StartProxy(t, "other.example.com", upstreamOf(t, other))
+		chk := f.checkOnPage(pastedFor(t, other, "other.example.com"))
+		require.NotEmpty(t, chk.GetTicket())
+		f.runOnPage(pastedFor(t, f.d, dbHost))
+		held, ok := f.srv.Held(f.install.res.SetupID)
+		require.True(t, ok)
+		require.Equal(t, dbHost, held.Host, "RunSetup holds its own address, never the preview's")
+	})
+}

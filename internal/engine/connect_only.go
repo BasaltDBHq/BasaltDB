@@ -48,8 +48,12 @@ var errNoEngineKey = errors.New("the engine key file is refused (vault.state KEY
 
 type noKeyCollector struct{}
 
-func (noKeyCollector) Collect(context.Context, string, string) (handoff.Address, error) {
-	return handoff.Address{}, errNoEngineKey
+func (noKeyCollector) Collect(context.Context, string, string) (handoff.Collected, error) {
+	return handoff.Collected{}, errNoEngineKey
+}
+
+func (noKeyCollector) Report(context.Context, string, string, handoff.Address, handoff.Reach) error {
+	return errNoEngineKey
 }
 
 // connectOnlyAgent says whether a's pending setup is a connect-only one the

@@ -5,7 +5,8 @@
 // files import it.
 //
 // It follows the contract's calls, order of refusals and refusal reasons,
-// the address hand-off included (the hold, the ticket, CollectAddress,
+// the address hand-off and the reach check included (the hold in its
+// PREVIEW and SET_UP phases, the ticket, CollectAddress, ReportReach,
 // HandoffStatus and OfferAddress). It differs from the hosted service in
 // what is not the setup's own logic: it dials the pasted string as given,
 // or through Options.Dial (the hosted service requires verified TLS and
@@ -53,9 +54,9 @@ type Server struct {
 	secret []byte
 	holds  holds
 	dial   func(ctx context.Context, url string) (*pgx.Conn, error)
-	// collectsRefused counts the CollectAddress calls answered
-	// HANDOFF_UNKNOWN.
-	collectsRefused atomic.Int64
+	// collectsRefused and reportsRefused count the CollectAddress and
+	// ReportReach calls answered HANDOFF_UNKNOWN.
+	collectsRefused, reportsRefused atomic.Int64
 }
 
 // Options change how the service reaches the pasted database (tests whose
@@ -157,6 +158,14 @@ func (s *Server) CheckSetup(ctx context.Context, r *connect.Request[connectv1.Ch
 		out.Questions = append(out.Questions, &connectv1.Question{
 			Kind: rowSecurity, Table: q.Table, Text: q.Text, Choices: []string{choiceAllRows, choiceNone},
 		})
+	}
+	// The reach check: a connect-only INSTALL code that logged in and is
+	// not refused gets a PREVIEW hold of the pasted database, unless a
+	// SET_UP hold exists.
+	if c.Description.Target == nil && c.Description.Kind == setup.KindInstall {
+		if out.Ticket, err = s.previewFor(c.Description, c.Database); err != nil {
+			return nil, err
+		}
 	}
 	return connect.NewResponse(out), nil
 }

@@ -283,7 +283,9 @@ type RunInput struct {
 	// Passkey is the person's verified passkey (PasskeyRequest.Verify),
 	// registered in the setup's transaction, after the migrations and
 	// before record_setup, whether or not the database needs one. A
-	// failure to register it rolls the whole setup back.
+	// failure to register it rolls the whole setup back. An UPGRADE code
+	// with nothing to do runs nothing, so it stores no passkey either
+	// (Result.NothingToDo set, Result.Passkey nil).
 	Passkey *Passkey
 	// AskPasskey is the laptop's passkey step (basalt init --setup-code,
 	// step 7): Run calls it at most once, after the setup committed, and

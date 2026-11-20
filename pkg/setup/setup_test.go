@@ -477,7 +477,9 @@ func TestPasskeyRequestForAChallenge(t *testing.T) {
 	issued, other := issue(), issue()
 	req, err := setup.PasskeyRequestFor(issued, "db · bot")
 	require.NoError(t, err)
-	_, err = req.Verify(answer(issued))
+	code := answer(issued)
+	issued.Challenge[0] ^= 0xff // the request holds its own copy
+	_, err = req.Verify(code)
 	require.NoError(t, err)
 	_, err = req.Verify(answer(other))
 	require.Error(t, err, "an answer to another challenge")

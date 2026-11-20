@@ -3,7 +3,9 @@ package setup
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 
@@ -25,6 +27,37 @@ type PasskeyRequest struct {
 // passkey named label on database. The label is at most 64 bytes.
 func NewPasskeyRequest(random io.Reader, label, database string) (PasskeyRequest, error) {
 	req, err := setuprun.NewRegistrationRequest(random, label, database)
+	if err != nil {
+		return PasskeyRequest{}, err
+	}
+	return PasskeyRequest{req: req, label: label}, nil
+}
+
+// PasskeyChallenge is a registration request a caller made and showed the
+// browser itself, such as a service that sends a page the challenge and
+// keeps nothing: the request is rebuilt from it to verify the browser's
+// answer.
+type PasskeyChallenge struct {
+	// Challenge is the 32 random bytes the browser signs.
+	Challenge []byte
+	// UserID is the 16 random bytes the browser keeps as the passkey's
+	// user handle; Run stores it with the passkey.
+	UserID []byte
+	// UserName and DisplayName are the labels the passkey picker showed,
+	// 1 to 64 bytes of UTF-8 each.
+	UserName    string
+	DisplayName string
+}
+
+// PasskeyRequestFor rebuilds the registration request of a challenge the
+// caller issued, for a passkey named label (1 to 64 bytes). Verify then
+// checks the browser's answer against that challenge and user id. The
+// request copies the challenge's bytes.
+func PasskeyRequestFor(c PasskeyChallenge, label string) (PasskeyRequest, error) {
+	if label == "" || len(label) > setuprun.MaxPasskeyLabel || !utf8.ValidString(label) {
+		return PasskeyRequest{}, fmt.Errorf("the passkey label must be 1 to %d bytes of UTF-8", setuprun.MaxPasskeyLabel)
+	}
+	req, err := passkey.RegistrationRequestFor(c.Challenge, c.UserID, c.UserName, c.DisplayName)
 	if err != nil {
 		return PasskeyRequest{}, err
 	}
@@ -67,25 +100,52 @@ type RegisteredPasskey struct {
 	Label        string
 }
 
-// registerPasskey stores the person's passkey when the database has no
-// active portal passkey, or in.AddPasskey asks for another (step 7).
-func registerPasskey(ctx context.Context, conn *pgx.Conn, in RunInput) (*RegisteredPasskey, error) {
+func (p *Passkey) verified() bool { return p.cred.PublicKey != nil }
+
+func (p *Passkey) registered() *RegisteredPasskey {
+	return &RegisteredPasskey{CredentialID: append([]byte(nil), p.cred.ID...), RPID: p.cred.Relying.RPID, Origin: p.cred.Relying.Origin, Label: p.label}
+}
+
+// registerInTx registers the person's verified passkey in the setup's
+// transaction.
+func registerInTx(ctx context.Context, tx pgx.Tx, pk *Passkey) (*RegisteredPasskey, error) {
+	if err := guard.RegisterPasskey(ctx, tx, pk.cred, pk.label); err != nil {
+		return nil, err
+	}
+	return pk.registered(), nil
+}
+
+// requirePasskey refuses PASSKEY_REQUIRED, in the setup's transaction,
+// when the database needs the person's passkey and none was given: the
+// setup rolls back.
+func requirePasskey(ctx context.Context, tx pgx.Tx, add bool) error {
+	need, err := setuprun.PasskeyNeeded(ctx, tx, add)
+	if err != nil {
+		return err
+	}
+	if need {
+		return &setuprun.RefusalError{Code: CodePasskeyRequired, Message: "this setup needs the person's portal passkey, and none was given"}
+	}
+	return nil
+}
+
+// askPasskey is the laptop's passkey step, after the setup committed (step
+// 7): it asks for the person's passkey and stores it when the database has
+// no active portal passkey, or in.AddPasskey asks for another.
+func askPasskey(ctx context.Context, conn *pgx.Conn, in RunInput) (*RegisteredPasskey, error) {
 	need, err := setuprun.PasskeyNeeded(ctx, conn, in.AddPasskey)
 	if err != nil || !need {
 		return nil, err
 	}
-	if in.Passkey == nil {
-		return nil, errors.New("no passkey was given")
-	}
-	pk, err := in.Passkey(ctx)
+	pk, err := in.AskPasskey(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if pk.cred.PublicKey == nil {
+	if !pk.verified() {
 		return nil, errors.New("the passkey was not verified")
 	}
 	if err := guard.RegisterPasskey(ctx, conn, pk.cred, pk.label); err != nil {
 		return nil, err
 	}
-	return &RegisteredPasskey{CredentialID: append([]byte(nil), pk.cred.ID...), RPID: pk.cred.Relying.RPID, Origin: pk.cred.Relying.Origin, Label: pk.label}, nil
+	return pk.registered(), nil
 }

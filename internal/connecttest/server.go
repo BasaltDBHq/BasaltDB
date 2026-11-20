@@ -11,7 +11,6 @@
 package connecttest
 
 import (
-	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/hmac"
@@ -40,6 +39,9 @@ import (
 // ChallengeLife is how long a passkey challenge lives (the contract's 15
 // minutes).
 const ChallengeLife = 15 * time.Minute
+
+// maxPasskeyLabel is the longest passkey picker label, in bytes.
+const maxPasskeyLabel = 64
 
 var b64 = base64.RawURLEncoding
 
@@ -89,6 +91,9 @@ func (s *Server) DescribeSetup(_ context.Context, r *connect.Request[connectv1.D
 	}
 	ch.UserName = d.Target.Database
 	ch.DisplayName = "BasaltDB · " + d.Target.Database
+	if len(ch.DisplayName) > maxPasskeyLabel {
+		ch.DisplayName = d.Target.Database
+	}
 	ch.ExpiresAt = s.Now().Add(ChallengeLife).UTC().Format(time.RFC3339)
 	ch.MAC = s.mac(ch, d.Fingerprint)
 	return connect.NewResponse(&connectv1.DescribeSetupResponse{Summary: summary(d), Challenge: ch.proto()}), nil
@@ -147,7 +152,7 @@ func (s *Server) RunSetup(ctx context.Context, r *connect.Request[connectv1.RunS
 	if err != nil {
 		return nil, refuse(err)
 	}
-	in := setup.RunInput{AddPasskey: reg != nil}
+	var in setup.RunInput
 	if checked.NothingToDo == nil {
 		if in.Answers.AllRows, err = answers(checked.Questions, m.GetAnswers()); err != nil {
 			return nil, err
@@ -159,7 +164,7 @@ func (s *Server) RunSetup(ctx context.Context, r *connect.Request[connectv1.RunS
 		return nil, refusal(connect.CodeInvalidArgument, "ANSWERS_INVALID", "This setup asks no questions.")
 	}
 	if reg != nil {
-		in.Passkey = func(context.Context) (setup.Passkey, error) { return reg.verified, nil }
+		in.Passkey = &reg.verified // registered in the setup's transaction
 	}
 	res, err := setup.Run(ctx, conn, req, in)
 	if err != nil {
@@ -215,8 +220,9 @@ func (s *Server) verifyPasskey(m *connectv1.RunSetupRequest, d setup.Description
 	if label == "" {
 		label = ch.UserName
 	}
-	// The public package rebuilds the request from the challenge's own bytes.
-	req, err := setup.NewPasskeyRequest(bytes.NewReader(append(append([]byte{}, ch.Challenge...), ch.UserID...)), label, ch.UserName)
+	req, err := setup.PasskeyRequestFor(setup.PasskeyChallenge{
+		Challenge: ch.Challenge, UserID: ch.UserID, UserName: ch.UserName, DisplayName: ch.DisplayName,
+	}, label)
 	if err != nil {
 		return nil, refusal(connect.CodeInvalidArgument, "CHALLENGE_INVALID", "The passkey challenge is not valid for this setup. Start again from the link.")
 	}
@@ -399,10 +405,14 @@ func fromSetup(e *setup.Error) *refusalError {
 		return &refusalError{connect.CodeInvalidArgument, e.Code, e.Message}
 	case "BINARY_TOO_OLD":
 		return &refusalError{connect.CodeUnavailable, e.Code, "Basalt Vault is being updated: try again shortly, or use the laptop command."}
-	case setup.CodeTargetMismatch, "PREFIX_MISMATCH", "USED", "SUPERSEDED", "ROLE_EXISTS", "ROLE_MISSING", setup.CodeEngineRevoked:
+	case setup.CodeTargetMismatch, "PREFIX_MISMATCH", "USED", "SUPERSEDED", "ROLE_EXISTS", "ROLE_MISSING", setup.CodeEngineRevoked, setup.CodeTablesMissing:
 		return &refusalError{connect.CodeFailedPrecondition, e.Code, e.Message}
-	case setup.CodeUnknownAnswer:
-		return &refusalError{connect.CodeInvalidArgument, "ANSWERS_INVALID", "The answers do not match the questions for this database."}
+	case setup.CodeAnswersInvalid:
+		return &refusalError{connect.CodeInvalidArgument, e.Code, "The answers do not match the questions for this database."}
+	case setup.CodePasskeyRequired:
+		return &refusalError{connect.CodeFailedPrecondition, e.Code, "A passkey is needed for this setup."}
+	case setup.CodePasskeyInvalid:
+		return &refusalError{connect.CodeInvalidArgument, e.Code, "The passkey was not accepted."}
 	}
 	return &refusalError{connect.CodeFailedPrecondition, "SETUP_FAILED", "The setup failed and nothing changed."}
 }

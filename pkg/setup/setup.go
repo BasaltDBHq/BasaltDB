@@ -280,21 +280,31 @@ type Plan struct {
 // RunInput is what Run needs besides the request.
 type RunInput struct {
 	Answers Answers
-	// AddPasskey registers the person's passkey even when the database has
+	// Passkey is the person's verified passkey (PasskeyRequest.Verify),
+	// registered in the setup's transaction, after the migrations and
+	// before record_setup, whether or not the database needs one. A
+	// failure to register it rolls the whole setup back. An UPGRADE code
+	// with nothing to do runs nothing, so it stores no passkey either
+	// (Result.NothingToDo set, Result.Passkey nil).
+	Passkey *Passkey
+	// AskPasskey is the laptop's passkey step (basalt init --setup-code,
+	// step 7): Run calls it at most once, after the setup committed, and
+	// only when the database has no active portal passkey or AddPasskey is
+	// set. When it fails, the setup has run and Run returns
+	// PASSKEY_NOT_REGISTERED. Set Passkey or AskPasskey, not both.
+	//
+	// With neither set and a passkey needed, Run refuses PASSKEY_REQUIRED
+	// in the transaction, which rolls back: nothing changes.
+	AskPasskey func(ctx context.Context) (Passkey, error)
+	// AddPasskey asks for the person's passkey even when the database has
 	// an active portal passkey.
 	AddPasskey bool
 	// Approve, when set, is shown the SQL before it runs. An error stops
 	// the run with nothing changed, and Run returns that error as it is.
 	Approve func(Plan) error
 	// Committed, when set, is called once the setup's transaction
-	// committed, before the passkey step.
+	// committed, before AskPasskey.
 	Committed func(Result)
-	// Passkey gives the person's verified passkey (PasskeyRequest.Verify).
-	// Run calls it at most once, after the setup committed, and only when
-	// the database has no active portal passkey or AddPasskey is set. Nil
-	// gives none: Run then returns PASSKEY_NOT_REGISTERED with the setup
-	// done.
-	Passkey func(ctx context.Context) (Passkey, error)
 }
 
 // Result is what a run did.
@@ -317,16 +327,25 @@ type Result struct {
 
 // Run checks, plans and runs the setup in one transaction: the migrations,
 // the agent role and its grants, the policies on Answers.AllRows, the
-// engine and the engines in Answers.Revoke, and record_setup last. Any
-// failure in it leaves the database as it was. It first applies every
-// refusal of Describe and Check, in their order, and refuses an answer to a
-// question Check would not ask (UNKNOWN_ANSWER). Then it registers the
-// passkey when one is needed. A refusal is an *Error; when the passkey step
-// fails, the setup has run and Result says so.
+// engine and the engines in Answers.Revoke, the person's passkey
+// (RunInput.Passkey), and record_setup last. Any failure in it leaves the
+// database as it was. It first applies every refusal of Describe, then
+// refuses a Passkey that PasskeyRequest.Verify did not make
+// (PASSKEY_INVALID), then applies every refusal of Check, in their order,
+// and refuses an answer to a question Check would not ask
+// (ANSWERS_INVALID). A refusal is an *Error. Only with RunInput.AskPasskey
+// can the setup run without the passkey it needs: Run then returns
+// PASSKEY_NOT_REGISTERED, and Result says the setup ran.
 func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result, error) {
+	if in.Passkey != nil && in.AskPasskey != nil {
+		return Result{}, errors.New("setup: RunInput.Passkey and RunInput.AskPasskey are both set")
+	}
 	s, err := setuprun.New(req.Code, req.Now, req.EngineURL)
 	if err != nil {
 		return Result{}, asError(err)
+	}
+	if in.Passkey != nil && !in.Passkey.verified() {
+		return Result{}, asError(&setuprun.RefusalError{Code: CodePasskeyInvalid, Message: "the passkey was not verified; nothing changed"})
 	}
 	p, err := s.Prepare(ctx, conn)
 	if err != nil {
@@ -347,32 +366,46 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 			return Result{}, err
 		}
 	}
-	if err := setuprun.ApplySetup(ctx, conn, script); err != nil {
+	var registered *RegisteredPasskey
+	inTx := func(ctx context.Context, tx pgx.Tx) error {
+		switch {
+		case in.Passkey != nil:
+			var err error
+			registered, err = registerInTx(ctx, tx, in.Passkey)
+			return err
+		case in.AskPasskey == nil:
+			return requirePasskey(ctx, tx, in.AddPasskey)
+		}
+		return nil // the laptop asks after the commit
+	}
+	if err := setuprun.ApplySetupWith(ctx, conn, script, inTx); err != nil {
 		return Result{}, asError(setuprun.Refused(ctx, conn, s.P, err))
 	}
-	res := Result{SetupID: s.P.SetupID, Ran: true, EngineRecorded: p.Engine.Key != nil}
+	res := Result{SetupID: s.P.SetupID, Ran: true, EngineRecorded: p.Engine.Key != nil, Passkey: registered}
 	if s.P.Agent != nil {
 		res.Warnings = setuprun.RLSBlindWarnings(ctx, conn, s.P.Role(), s.Spec())
 	}
 	if in.Committed != nil {
 		in.Committed(res)
 	}
-	registered, err := registerPasskey(ctx, conn, in)
+	if in.AskPasskey == nil {
+		return res, nil
+	}
+	asked, err := askPasskey(ctx, conn, in)
 	if err != nil {
 		return res, asError(setuprun.PasskeyFailed(s.P, err))
 	}
-	res.Passkey = registered
+	res.Passkey = asked
 	return res, nil
 }
 
 // Error is a refused or failed step. Message is what the person reads.
-// With CodeDatabase, and with CodePasskeyNotRegistered (after "the setup
+// With CodeSetupFailed, and with CodePasskeyNotRegistered (after "the setup
 // ran but no passkey was registered: "), it may carry the database's or
 // the driver's own words; the other codes' messages are this package's
 // sentences.
 type Error struct {
-	// Code is a setup code refusal (EXPIRED, USED, ...), one of the Code
-	// constants, or CodeDatabase.
+	// Code is one of Codes().
 	Code    string
 	Message string
 	err     error
@@ -397,28 +430,54 @@ const (
 	CodeTargetMismatch = setuprun.CodeTargetMismatch
 	// CodeTablesMissing is an agent table the database does not have.
 	CodeTablesMissing = setuprun.CodeTablesMissing
-	// CodeUnknownAnswer is an answer to a question the setup does not ask.
-	CodeUnknownAnswer = setuprun.CodeUnknownAnswer
+	// CodeAnswersInvalid is an answer to a question the setup does not ask.
+	CodeAnswersInvalid = setuprun.CodeAnswersInvalid
+	// CodePasskeyRequired is a setup that needs the person's passkey, run
+	// with none: nothing changed.
+	CodePasskeyRequired = setuprun.CodePasskeyRequired
+	// CodePasskeyInvalid is a RunInput.Passkey that PasskeyRequest.Verify
+	// did not make.
+	CodePasskeyInvalid = setuprun.CodePasskeyInvalid
 	// CodePasskeyNotRegistered is a setup that ran without registering the
-	// passkey it needed.
+	// passkey it needed: only with RunInput.AskPasskey.
 	CodePasskeyNotRegistered = setuprun.CodePasskeyMissing
-	// CodeDatabase is any other failure: the database or its driver. Its
-	// Message may carry the database's own words; a service that shows
-	// fixed messages maps it to one.
-	CodeDatabase = "DATABASE_ERROR"
+	// CodeSetupFailed is any other failure: the database or its driver.
+	// Nothing changed. Its Message may carry the database's own words; a
+	// service that shows fixed messages maps it to one.
+	CodeSetupFailed = "SETUP_FAILED"
 )
+
+// codes is every Error.Code this package returns.
+var codes = []string{
+	string(setupcode.RefusalNotASetupCode), string(setupcode.RefusalUnsupportedFormat), string(setupcode.RefusalDamaged),
+	string(setupcode.RefusalInvalid), string(setupcode.RefusalExpired), string(setupcode.RefusalSetupIDInFuture),
+	string(setupcode.RefusalExpiryTooFar), string(setupcode.RefusalBinaryTooOld), string(setupcode.RefusalGuardTooOld),
+	string(setupcode.RefusalPrefixMismatch), string(setupcode.RefusalUsed), string(setupcode.RefusalSuperseded),
+	string(setupcode.RefusalRoleExists), string(setupcode.RefusalRoleMissing),
+	CodeEngineURLInvalid, CodeEngineKeyMissing, CodeEngineRevoked, CodeTargetMismatch, CodeTablesMissing,
+	CodeAnswersInvalid, CodePasskeyRequired, CodePasskeyInvalid, CodePasskeyNotRegistered, CodeSetupFailed,
+}
+
+// Codes is every Error.Code this package returns: the setup code's
+// refusals and the Code constants. A code outside it is never returned;
+// an unknown failure is CodeSetupFailed.
+func Codes() []string { return slices.Clone(codes) }
 
 func asError(err error) error {
 	if err == nil {
 		return nil
 	}
+	code := CodeSetupFailed
 	var r *setuprun.RefusalError
-	if errors.As(err, &r) {
-		return &Error{Code: r.Code, Message: err.Error(), err: err}
-	}
 	var se *setupcode.Error
-	if errors.As(err, &se) {
-		return &Error{Code: string(se.Refusal), Message: err.Error(), err: err}
+	switch {
+	case errors.As(err, &r):
+		code = r.Code
+	case errors.As(err, &se):
+		code = string(se.Refusal)
 	}
-	return &Error{Code: CodeDatabase, Message: err.Error(), err: err}
+	if !slices.Contains(codes, code) {
+		code = CodeSetupFailed
+	}
+	return &Error{Code: code, Message: err.Error(), err: err}
 }

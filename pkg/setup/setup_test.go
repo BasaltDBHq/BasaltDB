@@ -104,6 +104,14 @@ func personPasskey(t *testing.T) (*passkeytest.Authenticator, func(context.Conte
 	}
 }
 
+// verified is the person's passkey, verified, for RunInput.Passkey.
+func verified(t *testing.T, give func(context.Context) (setup.Passkey, error)) *setup.Passkey {
+	t.Helper()
+	pk, err := give(context.Background())
+	require.NoError(t, err)
+	return &pk
+}
+
 func codeOf(t *testing.T, err error) string {
 	t.Helper()
 	var e *setup.Error
@@ -171,7 +179,7 @@ func TestCheckThenRunInstalls(t *testing.T) {
 		Answers:   setup.Answers{AllRows: []string{"public.payroll"}},
 		Approve:   func(p setup.Plan) error { shown = p; return nil },
 		Committed: func(setup.Result) { committed++ },
-		Passkey:   give,
+		Passkey:   verified(t, give),
 	})
 	require.NoError(t, err)
 	require.True(t, res.Ran)
@@ -210,15 +218,19 @@ func TestRunRefusesInTheContractsOrder(t *testing.T) {
 	expired := func(p *setupcode.Payload) { p.ExpiresAt = time.Now().Add(-time.Minute).UTC().Format(time.RFC3339) }
 
 	for name, tc := range map[string]struct {
-		code   string
-		engine string
-		in     setup.RunInput
-		want   string
+		code    string
+		engine  string
+		in      setup.RunInput
+		want    string
+		runOnly bool
 	}{
 		"not a code":                {code: "hello", want: "NOT_A_SETUP_CODE"},
 		"bad engine address first":  {code: "hello", engine: "https://127.0.0.1", want: setup.CodeEngineURLInvalid},
 		"expired before the target": {code: newCode(t, other, expired), want: "EXPIRED"},
 		"engine key missing":        {code: newCode(t, d, nil), engine: engineAddr, want: setup.CodeEngineKeyMissing},
+		"a passkey Verify did not make, before the target": {
+			code: newCode(t, other, nil), in: setup.RunInput{Passkey: &setup.Passkey{}}, want: setup.CodePasskeyInvalid, runOnly: true,
+		},
 		"another database": {code: newCode(t, other, func(p *setupcode.Payload) {
 			p.Kind, p.Agent.Verifier = setupcode.KindAgent, ""
 		}), want: setup.CodeTargetMismatch},
@@ -230,11 +242,11 @@ func TestRunRefusesInTheContractsOrder(t *testing.T) {
 		}), want: setup.CodeTablesMissing},
 		"an answer not asked": {
 			code: newCode(t, d, nil), in: setup.RunInput{Answers: setup.Answers{AllRows: []string{"public.leads"}}},
-			want: setup.CodeUnknownAnswer,
+			want: setup.CodeAnswersInvalid, runOnly: true,
 		},
 		"an engine not asked about": {
 			code: newCode(t, d, nil), in: setup.RunInput{Answers: setup.Answers{Revoke: []string{"x"}}},
-			want: setup.CodeUnknownAnswer,
+			want: setup.CodeAnswersInvalid, runOnly: true,
 		},
 	} {
 		approved := false
@@ -243,7 +255,7 @@ func TestRunRefusesInTheContractsOrder(t *testing.T) {
 		_, err := setup.Run(ctx, d.Admin, req, tc.in)
 		require.Equal(t, tc.want, codeOf(t, err), name)
 		require.False(t, approved, name)
-		if tc.want != setup.CodeUnknownAnswer {
+		if !tc.runOnly {
 			_, cerr := setup.Check(ctx, d.Admin, req)
 			require.Equal(t, tc.want, codeOf(t, cerr), "%s: Check refuses alike", name)
 		}
@@ -257,7 +269,7 @@ func TestRunRefusesByTheDatabasesState(t *testing.T) {
 	ctx := context.Background()
 	d := guardtest.New(t).WithDemo(t)
 	_, give := personPasskey(t)
-	_, err := setup.Run(ctx, d.Admin, request(newCode(t, d, nil)), setup.RunInput{Passkey: give})
+	_, err := setup.Run(ctx, d.Admin, request(newCode(t, d, nil)), setup.RunInput{Passkey: verified(t, give)})
 	require.NoError(t, err)
 
 	for name, tc := range map[string]struct {
@@ -290,7 +302,7 @@ func TestRunRevokesOnlyWhatWasAsked(t *testing.T) {
 	ctx := context.Background()
 	d := guardtest.New(t).WithDemo(t)
 	_, give := personPasskey(t)
-	_, err := setup.Run(ctx, d.Admin, request(newCode(t, d, nil)), setup.RunInput{Passkey: give})
+	_, err := setup.Run(ctx, d.Admin, request(newCode(t, d, nil)), setup.RunInput{Passkey: verified(t, give)})
 	require.NoError(t, err)
 	_, oldDER, oldID := engineKey(t)
 	addr := engineAddr
@@ -328,21 +340,164 @@ func TestRunStopsWhenNotApproved(t *testing.T) {
 	require.Zero(t, installedVersion(t, d))
 }
 
+// With no passkey given, a setup that needs one is refused in its
+// transaction: nothing changes.
 func TestRunWithoutTheNeededPasskey(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	d := guardtest.New(t).WithDemo(t)
-	res, err := setup.Run(ctx, d.Admin, request(newCode(t, d, nil)), setup.RunInput{})
+	committed := false
+	res, err := setup.Run(ctx, d.Admin, request(newCode(t, d, nil)), setup.RunInput{Committed: func(setup.Result) { committed = true }})
+	require.Equal(t, setup.CodePasskeyRequired, codeOf(t, err))
+	require.Contains(t, err.Error(), "nothing changed")
+	require.False(t, res.Ran)
+	require.False(t, committed)
+	require.Zero(t, installedVersion(t, d), "the migrations rolled back")
+	require.False(t, roleExists(t, d, d.Names.Prefix+"_agent_bot"))
+
+	// AddPasskey asks for one even when the database has one.
+	_, give := personPasskey(t)
+	_, err = setup.Run(ctx, d.Admin, request(newCode(t, d, nil)), setup.RunInput{Passkey: verified(t, give)})
+	require.NoError(t, err)
+	change := func() string {
+		return newCode(t, d, func(p *setupcode.Payload) { p.Kind, p.Agent.Verifier = setupcode.KindAgent, "" })
+	}
+	_, err = setup.Run(ctx, d.Admin, request(change()), setup.RunInput{AddPasskey: true})
+	require.Equal(t, setup.CodePasskeyRequired, codeOf(t, err))
+
+	// Passkey and AskPasskey together are a mistake, refused before anything.
+	_, err = setup.Run(ctx, d.Admin, request(change()), setup.RunInput{Passkey: verified(t, give), AskPasskey: give})
+	require.Error(t, err)
+}
+
+// The laptop's passkey step comes after the setup committed: when it
+// fails, the setup has run and Run says so.
+func TestRunAsksForThePasskeyAfterCommitting(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	d := guardtest.New(t).WithDemo(t)
+	var order []string
+	res, err := setup.Run(ctx, d.Admin, request(newCode(t, d, nil)), setup.RunInput{
+		Committed: func(setup.Result) { order = append(order, "committed") },
+		AskPasskey: func(context.Context) (setup.Passkey, error) {
+			order = append(order, "asked")
+			return setup.Passkey{}, errors.New("no code pasted")
+		},
+	})
 	require.Equal(t, setup.CodePasskeyNotRegistered, codeOf(t, err))
-	require.True(t, res.Ran, "the setup ran")
 	require.Contains(t, err.Error(), "the setup ran but no passkey was registered")
+	require.True(t, res.Ran, "the setup ran")
+	require.Equal(t, []string{"committed", "asked"}, order)
 
 	// A Passkey that Verify did not make is refused.
 	res, err = setup.Run(ctx, d.Admin, request(newCode(t, d, func(p *setupcode.Payload) {
 		p.Kind, p.Agent.Verifier = setupcode.KindAgent, ""
-	})), setup.RunInput{Passkey: func(context.Context) (setup.Passkey, error) { return setup.Passkey{}, nil }})
+	})), setup.RunInput{AskPasskey: func(context.Context) (setup.Passkey, error) { return setup.Passkey{}, nil }})
 	require.Equal(t, setup.CodePasskeyNotRegistered, codeOf(t, err))
 	require.True(t, res.Ran)
+
+	// The person's passkey, asked for and registered.
+	person, give := personPasskey(t)
+	res, err = setup.Run(ctx, d.Admin, request(newCode(t, d, func(p *setupcode.Payload) {
+		p.Kind, p.Agent.Verifier = setupcode.KindAgent, ""
+	})), setup.RunInput{AskPasskey: give})
+	require.NoError(t, err)
+	require.Equal(t, person.ID, res.Passkey.CredentialID)
+}
+
+// A passkey the database refuses to register rolls the whole setup back:
+// no role, no grant, no setup record.
+func TestRunRollsBackWhenThePasskeyIsNotRegistered(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	d := guardtest.New(t).WithDemo(t)
+	person, give := personPasskey(t)
+	_, err := setup.Run(ctx, d.Admin, request(newCode(t, d, nil)), setup.RunInput{Passkey: verified(t, give)})
+	require.NoError(t, err)
+	// The person revokes that passkey: the database never takes it again.
+	_, err = guard.RevokePasskey(ctx, d.Admin, person.ID, true)
+	require.NoError(t, err)
+
+	code := newCode(t, d, func(p *setupcode.Payload) { p.Agent.Name = "helper" })
+	desc, err := setup.Describe(request(code))
+	require.NoError(t, err)
+	committed := false
+	res, err := setup.Run(ctx, d.Admin, request(code), setup.RunInput{
+		Passkey: verified(t, give), Committed: func(setup.Result) { committed = true },
+	})
+	require.Equal(t, setup.CodeSetupFailed, codeOf(t, err))
+	require.Contains(t, err.Error(), "this passkey was revoked")
+	require.False(t, res.Ran)
+	require.Nil(t, res.Passkey)
+	require.False(t, committed)
+
+	role := desc.AgentRole
+	require.False(t, roleExists(t, d, role), "no role")
+	var grants int
+	require.NoError(t, d.Admin.QueryRow(ctx, `SELECT count(1) FROM information_schema.role_table_grants WHERE grantee = $1`, role).Scan(&grants))
+	require.Zero(t, grants, "no grant")
+	setups, err := guard.SetupsFor(ctx, d.Admin, uuid.MustParse(desc.SetupID), role)
+	require.NoError(t, err)
+	require.Empty(t, setups, "no setup record")
+	keys, err := guard.ActivePasskeys(ctx, d.Admin)
+	require.NoError(t, err)
+	require.Empty(t, keys)
+}
+
+func roleExists(t *testing.T, d *guardtest.DB, role string) bool {
+	t.Helper()
+	var ok bool
+	require.NoError(t, d.Admin.QueryRow(context.Background(), `SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = $1)`, role).Scan(&ok))
+	return ok
+}
+
+// A service rebuilds the request of the challenge it issued and verifies
+// the browser's answer against it; an answer to another challenge fails.
+func TestPasskeyRequestForAChallenge(t *testing.T) {
+	t.Parallel()
+	person, err := passkeytest.New(passkey.Production)
+	require.NoError(t, err)
+	issue := func() setup.PasskeyChallenge {
+		c := setup.PasskeyChallenge{Challenge: make([]byte, 32), UserID: make([]byte, 16), UserName: "db", DisplayName: "BasaltDB · db"}
+		_, err := rand.Read(c.Challenge)
+		require.NoError(t, err)
+		_, err = rand.Read(c.UserID)
+		require.NoError(t, err)
+		return c
+	}
+	answer := func(c setup.PasskeyChallenge) string {
+		page, err := passkey.RegistrationRequestFor(c.Challenge, c.UserID, c.UserName, c.DisplayName)
+		require.NoError(t, err)
+		resp, err := person.Register(page, nil)
+		require.NoError(t, err)
+		code, err := resp.Code()
+		require.NoError(t, err)
+		return code
+	}
+	issued, other := issue(), issue()
+	req, err := setup.PasskeyRequestFor(issued, "db · bot")
+	require.NoError(t, err)
+	code := answer(issued)
+	issued.Challenge[0] ^= 0xff // the request holds its own copy
+	_, err = req.Verify(code)
+	require.NoError(t, err)
+	_, err = req.Verify(answer(other))
+	require.Error(t, err, "an answer to another challenge")
+
+	for name, edit := range map[string]func(c *setup.PasskeyChallenge){
+		"short challenge": func(c *setup.PasskeyChallenge) { c.Challenge = c.Challenge[:31] },
+		"long user id":    func(c *setup.PasskeyChallenge) { c.UserID = append(c.UserID, 0) },
+		"no user name":    func(c *setup.PasskeyChallenge) { c.UserName = "" },
+	} {
+		c := issue()
+		edit(&c)
+		_, err := setup.PasskeyRequestFor(c, "label")
+		require.Error(t, err, name)
+	}
+	_, err = setup.PasskeyRequestFor(issue(), "")
+	require.Error(t, err, "no label")
+	_, err = setup.PasskeyRequestFor(issue(), strings.Repeat("x", 65))
+	require.Error(t, err, "a label over 64 bytes")
 }
 
 // No message carries the connection's password or parameters.
@@ -392,15 +547,17 @@ func TestMessagesCarryNoConnectionSecret(t *testing.T) {
 		other.Exec(t, "CREATE ROLE "+other.Names.Prefix+"_agent_bot NOLOGIN")
 		return nil
 	}})
-	require.Equal(t, setup.CodeDatabase, codeOf(t, err))
+	require.Equal(t, setup.CodeSetupFailed, codeOf(t, err))
 	require.Contains(t, err.Error(), "already exists")
 	require.Zero(t, installedVersion(t, other), "the transaction rolled back")
 	note(nil, err)
 
 	// A run that goes through, with its warnings.
 	other.Exec(t, "DROP ROLE "+other.Names.Prefix+"_agent_bot")
+	_, give := personPasskey(t)
 	res, err := setup.Run(ctx, conn, request(newCode(t, other, func(p *setupcode.Payload) { p.Agent.Read = []string{"public.payroll"} })), setup.RunInput{
 		Approve: func(p setup.Plan) error { out = append(out, p.SQL); out = append(out, p.Warnings...); return nil },
+		Passkey: verified(t, give),
 	})
 	require.True(t, res.Ran)
 	require.NotEmpty(t, res.Warnings, "payroll stays hidden")
@@ -421,7 +578,7 @@ func TestRunUpgrade(t *testing.T) {
 	guardtest.NextVersion(t, false) // a breaking version 2: the build has one version
 	d := guardtest.New(t).WithDemo(t)
 	_, give := personPasskey(t)
-	_, err := setup.Run(ctx, d.Admin, request(newCode(t, d, nil)), setup.RunInput{Passkey: give})
+	_, err := setup.Run(ctx, d.Admin, request(newCode(t, d, nil)), setup.RunInput{Passkey: verified(t, give)})
 	require.NoError(t, err)
 	latest := guard.LatestVersion()
 	d.Exec(t, `DELETE FROM basalt_meta.schema_version WHERE version = `+strconv.Itoa(latest))
@@ -441,7 +598,7 @@ func TestRunUpgrade(t *testing.T) {
 
 	nothing := upgrade()
 	_, err = setup.Run(ctx, d.Admin, request(nothing), setup.RunInput{Answers: setup.Answers{Revoke: []string{"x"}}})
-	require.Equal(t, setup.CodeUnknownAnswer, codeOf(t, err), "nothing is asked, so no answer is taken")
+	require.Equal(t, setup.CodeAnswersInvalid, codeOf(t, err), "nothing is asked, so no answer is taken")
 	res, err = setup.Run(ctx, d.Admin, request(nothing), setup.RunInput{Approve: func(setup.Plan) error { return errors.New("nothing to approve") }})
 	require.NoError(t, err)
 	require.False(t, res.Ran)
@@ -458,7 +615,7 @@ func TestRunRefusesASupersededCode(t *testing.T) {
 	ctx := context.Background()
 	d := guardtest.New(t).WithDemo(t)
 	_, give := personPasskey(t)
-	_, err := setup.Run(ctx, d.Admin, request(newCode(t, d, nil)), setup.RunInput{Passkey: give})
+	_, err := setup.Run(ctx, d.Admin, request(newCode(t, d, nil)), setup.RunInput{Passkey: verified(t, give)})
 	require.NoError(t, err)
 	change := func(made time.Time) string {
 		return newCode(t, d, func(p *setupcode.Payload) {

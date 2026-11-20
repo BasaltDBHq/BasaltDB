@@ -114,7 +114,7 @@ func RevokeQuestion(e guard.RecordedEngine) string {
 func (p *Prepared) checkRevoke(revoke []string) error {
 	for _, id := range revoke {
 		if !slices.ContainsFunc(p.Engine.SameAddress, func(e guard.RecordedEngine) bool { return e.ID == id }) {
-			return refuse(CodeUnknownAnswer, fmt.Sprintf("the answers revoke engine %s, which this setup does not ask about; check the setup again", printableLabel(id)))
+			return refuse(CodeAnswersInvalid, fmt.Sprintf("the answers revoke engine %s, which this setup does not ask about; check the setup again", printableLabel(id)))
 		}
 	}
 	return nil

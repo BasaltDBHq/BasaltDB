@@ -33,7 +33,9 @@ const (
 	CodeEngineRevoked    = "ENGINE_REVOKED"
 	CodeTargetMismatch   = "TARGET_MISMATCH"
 	CodeTablesMissing    = "TABLES_MISSING"
-	CodeUnknownAnswer    = "UNKNOWN_ANSWER"
+	CodeAnswersInvalid   = "ANSWERS_INVALID"
+	CodePasskeyRequired  = "PASSKEY_REQUIRED"
+	CodePasskeyInvalid   = "PASSKEY_INVALID"
 	CodePasskeyMissing   = "PASSKEY_NOT_REGISTERED" //nolint:gosec // a refusal code, not a credential
 )
 
@@ -363,7 +365,7 @@ func (p *Prepared) plan(ctx context.Context, policies []guard.BlindTable, revoke
 // UPGRADE code with nothing to do.
 func RefuseAnswers(allRows, revoke []string) error {
 	if len(allRows) > 0 || len(revoke) > 0 {
-		return refuse(CodeUnknownAnswer, "the answers reply to questions this setup does not ask: it has nothing to do")
+		return refuse(CodeAnswersInvalid, "the answers reply to questions this setup does not ask: it has nothing to do")
 	}
 	return nil
 }
@@ -374,7 +376,7 @@ func (p *Prepared) policies(allRows []string) ([]guard.BlindTable, error) {
 	for _, table := range allRows {
 		i := blindIndex(p.Blind, table)
 		if i < 0 {
-			return nil, refuse(CodeUnknownAnswer, fmt.Sprintf("the answers name table %s, which this setup does not ask about; check the setup again", printableLabel(table)))
+			return nil, refuse(CodeAnswersInvalid, fmt.Sprintf("the answers name table %s, which this setup does not ask about; check the setup again", printableLabel(table)))
 		}
 		if blindIndex(out, table) < 0 {
 			out = append(out, p.Blind[i])
@@ -397,11 +399,34 @@ func blindIndex(tables []guard.BlindTable, table string) int {
 // the setup is recorded only with everything it sets up; any failure rolls
 // all of it back.
 func ApplySetup(ctx context.Context, conn *pgx.Conn, script guard.Script) error {
+	return ApplySetupWith(ctx, conn, script, nil)
+}
+
+// ApplySetupWith is ApplySetup with inTx, when set, run in the same
+// transaction after the migrations and the coverage check and before
+// record_setup (a passkey registered with the setup). An error from it
+// rolls everything back.
+func ApplySetupWith(ctx context.Context, conn *pgx.Conn, script guard.Script, inTx func(context.Context, pgx.Tx) error) error {
 	n := len(script.Statements)
 	if n == 0 {
 		return errors.New("nothing to run")
 	}
-	return ApplyInit(ctx, conn, guard.Script{Statements: script.Statements[:n-1]}, script.Statements[n-1])
+	body, record := guard.Script{Statements: script.Statements[:n-1]}, script.Statements[n-1]
+	err := pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
+		if err := ApplyInitTx(ctx, tx, body); err != nil {
+			return err
+		}
+		if inTx != nil {
+			if err := inTx(ctx, tx); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.Exec(ctx, record.SQL); err != nil {
+			return fmt.Errorf("record the setup: %w", err)
+		}
+		return nil
+	})
+	return WithGuardDetail(err)
 }
 
 // Refused turns a failed transaction into what the person reads. Nothing

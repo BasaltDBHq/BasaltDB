@@ -23,10 +23,10 @@
   <link rel="modulepreload" href="../lib/requestfile.js" integrity="sha384-xiJ/EJcVadxBsme/5iGzfgTEkh7Z8n3zEK7cAKo2UVGeU6MXwWS+7s1XVP6Cbarn">
   <link rel="modulepreload" href="../lib/scope.js" integrity="sha384-EnkYGm9Ai69Q58X/Exq7GM242BywacFmsG4+nrCuDTuhcTC5dSTTg6sRcYrOkv8l">
   <link rel="modulepreload" href="../lib/transport.js" integrity="sha384-FAH67/7vDoua3lNdbmAB5nTF9xVanL8OIofcan/0bpOkQOqtn8rAXhSEFnmzMFhS">
-  <script type="module" src="../lib/connect.js" integrity="sha384-Thfwbf+4cguEqKQDy1ESUU66fejO2SnAuHKwOdpJvyTEM5J4xIqWAjCbdJ10VIK6"></script>
+  <script type="module" src="../lib/connect.js" integrity="sha384-9MSxrD8JkbPglJmV1na3BtSEFhxiKuT74hg3dyAzfRWWxQq/T2RpfpilAtO+8wsD"></script>
   <!-- sri:end -->
 </head>
-<body>
+<body class="connect-page">
   <header class="topbar">
     <div class="bar">
       <svg class="logo" width="22" height="22" viewBox="0 0 100 100" role="img" aria-label="Basalt"><polygon class="col-top" points="50,18 65.59,27 65.59,45 50,54 34.41,45 34.41,27"/><polygon class="col-left" points="31.3,50.4 46.89,59.4 46.89,77.4 31.3,86.4 15.71,77.4 15.71,59.4"/><polygon class="col-right" points="68.7,50.4 84.29,59.4 84.29,77.4 68.7,86.4 53.11,77.4 53.11,59.4"/></svg>
@@ -38,75 +38,159 @@
   <section id="error" class="panel error" hidden>
     <h1>Cannot use this page</h1>
     <p id="error-text"></p>
+    <div id="error-code" hidden>
+      <p>If the setup ran, this is your passkey's check code:</p>
+      <p><output id="error-check-code" class="fp" aria-label="Passkey check code"></output></p>
+    </div>
   </section>
 
   <main id="main" hidden>
-    <h1>Connect your database to your bot</h1>
-    <p>This page is on <strong id="host"></strong> and nowhere else. Check your browser's address bar now: if it shows any other address, close this page. Your database's admin connection string goes from this page to Basalt Vault's connect service for this one setup, and is never stored.</p>
+    <p id="addr-warn" class="strip warn">⚠ Only continue on <strong id="host"></strong></p>
+    <div class="nav-row">
+      <button id="back" type="button" class="back" hidden>‹ Back</button>
+      <div id="progress" class="steps" role="img" aria-label="Step 1 of 6" hidden><span></span><span></span><span></span><span></span><span></span><span></span></div>
+    </div>
 
-    <section id="code-box" class="panel" hidden>
-      <h2>Paste the setup code</h2>
+    <section id="s-code" class="screen" hidden>
+      <h1>Paste the setup code</h1>
       <p class="muted">Paste the code or the whole message your bot sent. The code starts with <code>basalt-setup.1.</code></p>
       <textarea id="code-paste" rows="5" maxlength="20000" autocomplete="off" spellcheck="false" aria-label="The setup code from your bot"></textarea>
-      <div class="buttons"><button id="code-read" type="button">Read the code</button></div>
-    </section>
-    <p id="code-status" class="muted" role="status"></p>
-
-    <section id="summary" class="panel" hidden>
-      <h2 id="kind"></h2>
-      <ul id="summary-lines"></ul>
-      <ul id="facts" class="rows"></ul>
-      <p>Setup fingerprint:</p>
-      <p><output id="fingerprint" class="pairing-code" aria-label="Setup fingerprint"></output></p>
-      <p class="muted">Check that your bot shows the same fingerprint. If it does not, stop: this code is not the one your bot made.</p>
+      <button id="code-read" type="button">Read the code</button>
+      <p id="code-status" class="muted" role="status"></p>
     </section>
 
-    <section id="passkey" class="panel" hidden>
-      <h2>Your passkey</h2>
-      <p id="passkey-lead"></p>
-      <div class="buttons">
-        <button id="passkey-go" type="button"></button>
-        <button id="passkey-skip" type="button" class="secondary" hidden>My passkey is not on this device: go on</button>
+    <section id="s-bot" class="screen" hidden>
+      <div class="bot">
+        <span id="avatar" class="avatar" aria-hidden="true"></span>
+        <div><h1 id="bot-name"></h1><p id="bot-wants" class="muted"></p></div>
       </div>
-      <p class="muted">Your fingerprint or face never leaves this device; Basalt only receives a signature.</p>
+      <div class="box center">
+        <p class="muted">Same code as in your chat?</p>
+        <p><output id="fingerprint" class="fp" aria-label="Setup fingerprint"></output></p>
+      </div>
+      <button id="same-code" type="button">Yes, same code</button>
+      <button id="different-code" type="button" class="secondary reject">No, it's different</button>
+      <details class="more">
+        <summary>What this setup does</summary>
+        <ul id="summary-lines"></ul>
+        <ul id="facts" class="rows"></ul>
+      </details>
+    </section>
+
+    <section id="s-stop" class="screen" hidden>
+      <p class="strip bad">Stop: this link is not from your bot.</p>
+      <h1>Don't go on</h1>
+      <p>The code on this page is not the one in your chat. Close this page without pasting anything, and tell your bot the codes did not match.</p>
+    </section>
+
+    <section id="s-passkey" class="screen" hidden>
+      <h1 id="passkey-title"></h1>
+      <p id="passkey-lead" class="muted"></p>
+      <button id="passkey-go" type="button"></button>
+      <p id="passkey-existing" class="muted">Already have one for this database? <button id="passkey-use" type="button" class="link">Use it</button></p>
+      <button id="passkey-skip" type="button" class="secondary" hidden>My passkey is not on this device: go on</button>
       <p id="passkey-status" class="muted" role="status"></p>
+      <p class="muted">Your fingerprint or face never leaves this device; Basalt only receives a signature.</p>
     </section>
 
-    <section id="paste" class="panel" hidden>
-      <h2>Your database's admin connection string</h2>
-      <p>Paste the connection string with the admin password. It is sent to the connect service when you press Check, kept only in this page's memory until the setup runs, and then forgotten. Never paste it into the chat with your bot.</p>
-      <label class="field" for="database-url">Admin connection string</label>
-      <input id="database-url" class="text" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="postgresql://… with the admin password">
-      <div class="buttons"><button id="check" type="button">Check</button></div>
-      <p id="check-status" class="muted" role="status"></p>
-    </section>
-
-    <section id="review" class="panel" hidden>
-      <h2>Before you approve</h2>
-      <ul id="notes"></ul>
-      <div id="questions"></div>
-      <div class="buttons">
-        <button id="passkey-now" type="button" hidden>Create passkey</button>
-        <button id="approve" type="button">Approve and run the setup</button>
+    <section id="s-paste" class="screen" hidden>
+      <h1><label for="database-url">Paste your database connection string</label></h1>
+      <div class="secret-field">
+        <input id="database-url" class="text" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="postgresql://…">
+        <button id="reveal" type="button" class="secondary icon-btn" aria-label="Show connection string" aria-pressed="false"><svg class="icon eye-open" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg><svg class="icon eye-closed" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4.2M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button>
       </div>
+      <p class="muted">Supabase: Connect → Session pooler. Include the password. Or any Postgres connection string.</p>
+      <p class="strip warn">Never paste this into the chat. Used once, never stored.</p>
+      <p id="paste-error" class="strip bad" role="alert" hidden></p>
+      <button id="check" type="button">Continue</button>
+      <p id="disclosure" class="muted small"></p>
+    </section>
+
+    <section id="s-checking" class="screen" hidden>
+      <h1 id="checking-title">Checking your database…</h1>
+      <ul class="box checks">
+        <li id="chk-login" class="check wait">Signing in to the database</li>
+        <li id="chk-tables" class="check ok" hidden></li>
+        <li id="chk-reach" class="check wait" hidden></li>
+      </ul>
+      <p id="checking-note" class="muted" hidden></p>
+      <div id="nocheck" class="stack" hidden>
+        <p id="nocheck-text" class="strip warn"></p>
+        <button id="retry-reach" type="button">Retry</button>
+        <button id="go-on" type="button" class="secondary">Go on anyway</button>
+      </div>
+    </section>
+
+    <section id="s-unreach" class="screen" hidden>
+      <h1 id="unreach-title"></h1>
+      <p class="strip bad">Its server can't connect to this address.</p>
+      <p id="unreach-text" class="muted"></p>
+      <button id="paste-again" type="button">Paste another string</button>
+    </section>
+
+    <section id="s-tables" class="screen" hidden>
+      <div class="box db-card">
+        <p id="db-label" class="eyebrow"></p>
+        <p id="db-name" class="db-name"></p>
+        <p id="db-sub" class="muted"></p>
+        <p id="db-reach" class="reach-ok" hidden></p>
+      </div>
+      <p id="already-ran" class="strip ok" hidden>This setup already ran; your bot is being reconnected to it.</p>
+      <div id="tables-box" class="box">
+        <h2>Tables it can read and change <span id="tables-count" class="muted"></span></h2>
+        <div id="tables" class="table-grid"></div>
+        <p id="tables-note" class="muted"></p>
+        <p id="excluded" class="muted" hidden></p>
+      </div>
+      <ul id="notes" class="muted" hidden></ul>
+      <p id="tables-error" class="strip bad" role="alert" hidden></p>
+      <button id="tables-next" type="button">Continue</button>
+    </section>
+
+    <section id="s-labels" class="screen" hidden>
+      <h1>Mark personal data</h1>
+      <p class="strip warn">Saved now, enforced when PII protection ships.</p>
+      <p class="muted">Labels apply to every bot on this database.</p>
+      <div id="label-tables" class="label-tables"></div>
+      <p id="unlabeled-warn" class="strip warn"></p>
+      <p id="labels-error" class="strip bad" role="alert" hidden></p>
+      <div id="rest-confirm" class="box stack" role="alertdialog" aria-labelledby="rest-question" hidden>
+        <p id="rest-question"></p>
+        <button id="rest-yes" type="button">Mark them</button>
+        <button id="rest-no" type="button" class="secondary">Cancel</button>
+      </div>
+      <button id="labels-next" type="button">Continue</button>
+      <button id="labels-rest" type="button" class="secondary">Mark the rest as not personal</button>
+      <button id="labels-skip" type="button" class="secondary">Skip: decide later</button>
+    </section>
+
+    <section id="s-approve" class="screen" hidden>
+      <h1>Ready to connect</h1>
+      <div class="box">
+        <p><span id="ap-bot"></span> → <strong id="ap-db" class="mono"></strong></p>
+        <p id="ap-counts" class="muted"></p>
+        <p id="ap-limits" class="muted">It changes up to 10 rows alone, asks you for 11–50, never more.</p>
+      </div>
+      <button id="approve" type="button">Approve with passkey</button>
       <p id="approve-status" class="muted" role="status"></p>
     </section>
 
-    <section id="result" class="panel" hidden>
-      <h2>Result</h2>
-      <p id="result-text"></p>
+    <section id="s-done" class="screen" hidden>
+      <p id="done-title" class="strip ok done-title"></p>
+      <ul class="box checks">
+        <li id="done-setup" class="check ok">Database set up</li>
+        <li id="done-pickup" class="check wait" hidden></li>
+      </ul>
+      <p id="pickup-text" role="status"></p>
+      <p id="reconnected" hidden>This setup already ran; your bot is being reconnected to it.</p>
       <ul id="warnings" hidden></ul>
-      <div id="check-code-box" hidden>
-        <p>Your passkey's check code:</p>
-        <p><output id="check-code" class="pairing-code" aria-label="Passkey check code"></output></p>
-        <p class="muted">Your bot names the same code when it picks up the setup. A different code, or a passkey you did not create, means something is wrong: remove it.</p>
+      <div class="box">
+        <h2>Back to the chat</h2>
+        <p id="chat-text" class="muted"></p>
+        <p><output id="check-code" class="fp" aria-label="Passkey check code" hidden></output></p>
       </div>
-      <p id="check-problem" class="error" hidden></p>
-    </section>
-
-    <section id="done" class="panel" role="status" hidden>
-      <h2>Now tell your bot "done"</h2>
-      <p>Your bot notices the finished setup when it next checks its status. Say "done" in the chat so it checks now.</p>
+      <p id="check-problem" class="strip bad" role="alert" hidden></p>
+      <p id="waitlist" class="muted">Want to hear when Basalt Vault launches? <a href="https://basaltvault.app/#waitlist" target="_blank" rel="noopener noreferrer">Join the list</a></p>
     </section>
   </main>
   </div>

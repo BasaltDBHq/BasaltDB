@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -267,4 +269,84 @@ func TestInitRemoteConnectOnlyNeedsTheEngineKey(t *testing.T) {
 	require.Contains(t, r.stderr, "or give --database-url <the database, without password>")
 	require.NoFileExists(t, cfg)
 	require.NoFileExists(t, secretPathOf(cfg))
+}
+
+// --forget as the contract spells it, with only --agent: the recovery code
+// asks for what the saved flags ask for (tables, prefix, timeout) on the
+// agent-operated engine they name.
+func TestInitRemoteForgetKeepsTheSavedRequest(t *testing.T) {
+	t.Parallel()
+	cfg := connectOnlyConfig(t)
+	first := remote(t, cfg, "--agent", "bot", "--all-tables", "--operated-by", "agent", "--prefix", "acme", "--statement-timeout", "45s")
+	again := remote(t, cfg, "--agent", "bot", "--forget")
+	require.NotEqual(t, first.res.SetupID, again.res.SetupID)
+	require.Equal(t, string(setupcode.KindAgent), again.res.Kind)
+	require.Equal(t, "acme", again.payload.Prefix)
+	require.Equal(t, int64(45000), again.payload.Agent.StatementTimeoutMs)
+	require.NotNil(t, again.payload.Agent.AllTables)
+	require.Equal(t, mcpcontract.OperatedByAgent, again.cfg.OperatedBy)
+	require.Equal(t, first.cfg.Agents[0].InitArgs, again.cfg.Agents[0].InitArgs)
+}
+
+// A connect link over the engine's linkBudget is left out: the message
+// names the connect page without a URL, and the step opens it.
+func TestInitRemoteConnectOnlyOverTheBudget(t *testing.T) {
+	t.Parallel()
+	cfg := connectOnlyConfig(t)
+	remote(t, cfg, connectOnlyArgs...)
+	raw, err := os.ReadFile(cfg)
+	require.NoError(t, err)
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(raw, &doc))
+	doc["linkBudget"] = 100
+	raw, err = json.Marshal(doc)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(cfg, raw, 0o600))
+
+	r := remote(t, cfg, connectOnlyArgs...)
+	require.True(t, r.res.ConnectOnly)
+	require.Empty(t, r.res.ConnectURL)
+	require.Empty(t, r.res.Links)
+	require.NotContains(t, r.res.PersonMessage, "https://")
+	require.Contains(t, r.res.PersonMessage, "portal.basaltvault.app/connect")
+	require.NoError(t, agent.CheckPersonMessage(r.res.PersonMessage), r.res.PersonMessage)
+	mcptest.Require(t, r.res.PersonMessage, r.res.Links)
+	require.Equal(t, "OPEN_LINK", r.res.NextSteps[0].Action)
+	require.Equal(t, links.Portal+links.ConnectPath, r.res.NextSteps[0].URL)
+
+	txt := cliNoDB(t, append([]string{"init", "--remote", "--config", cfg}, connectOnlyArgs...)...)
+	require.Equal(t, exitOK, txt.code, txt.stderr)
+	require.Contains(t, txt.stdout, "\n\n"+r.res.Code+"\n\n")
+	require.NotContains(t, txt.stdout, "--setup-code")
+}
+
+// Not as root, the path a bot's engine user takes: init makes the engine's
+// key itself and writes .secret by path.
+func TestInitRemoteConnectOnlyNotAsRoot(t *testing.T) {
+	t.Parallel()
+	// Not as root the sockets sit next to the config: a short directory,
+	// so the socket path fits.
+	dir, err := os.MkdirTemp("/tmp", "bt")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	cfg := filepath.Join(dir, "engine.json")
+	run := func(t *testing.T, args ...string) result {
+		t.Helper()
+		var stdout, stderr bytes.Buffer
+		c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr}, func(string) string { return "" })
+		c.agentLogin = refusedLogin
+		c.probe = noNetworkProbe
+		c.host = newFakeHost(t)
+		code := runInit(c, args[1:])
+		return result{code, stdout.String(), stderr.String()}
+	}
+	r := remoteWith(t, run, cfg, connectOnlyArgs...)
+	require.True(t, r.res.ConnectOnly)
+	require.NotNil(t, r.payload.Engine)
+	requireVerifierOf(t, r.payload.Agent.Verifier, secretOf(t, cfg))
+	require.FileExists(t, filepath.Join(filepath.Dir(cfg), stateDirName, channel.KeyFileName))
+
+	again := remoteWith(t, run, cfg, "--agent", "bot", "--forget")
+	require.NotEqual(t, r.res.SetupID, again.res.SetupID)
+	requireVerifierOf(t, again.payload.Agent.Verifier, secretOf(t, cfg))
 }

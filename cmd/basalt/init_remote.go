@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -107,6 +108,9 @@ func (o OperatedBy) enum() string {
 	return mcpcontract.OperatedByPerson
 }
 
+// remoteVaultWhy says why the vault is off by default for init --remote.
+const remoteVaultWhy = "default for --operated-by=person; --vault=on to turn it on"
+
 // remoteFlags are basalt init --remote's flags after parsing.
 type remoteFlags struct {
 	agent, write, read, prefix, configPath, databaseURL string
@@ -116,7 +120,9 @@ type remoteFlags struct {
 	// allTables is --all-tables: every table in public, in place of
 	// --write and --read. forget is --forget, one-shot, never saved.
 	allTables, forget bool
-	spec              guard.AgentSpec
+	// given are the flags set on the command line.
+	given map[string]bool
+	spec  guard.AgentSpec
 	// vaultFlag is --vault as given ("" when not); vault is what init
 	// asks the config's vault to be (chooseVault).
 	vaultFlag VaultMode
@@ -247,7 +253,9 @@ func parseInitRemote(c *cliIO, args []string) (remoteFlags, error) {
 		return f, err
 	}
 	var directGiven bool
+	f.given = map[string]bool{}
 	fs.Visit(func(fl *flag.Flag) {
+		f.given[fl.Name] = true
 		switch fl.Name {
 		case "config":
 			f.configGiven = true
@@ -276,7 +284,7 @@ func parseInitRemote(c *cliIO, args []string) (remoteFlags, error) {
 		return f, fmt.Errorf("%w: %w", errUsage, err)
 	}
 	f.spec = guard.AgentSpec{Name: f.agent, Write: splitList(f.write), Read: splitList(f.read), StatementTimeout: f.timeout}
-	vc, err := chooseVault(f.vaultFlag, f.operatedBy, links.Portal, "default for --operated-by=person; --vault=on to turn it on")
+	vc, err := chooseVault(f.vaultFlag, f.operatedBy, links.Portal, remoteVaultWhy)
 	if err != nil {
 		return f, err
 	}
@@ -454,6 +462,9 @@ func (r *remoteInit) paths() error {
 				r.entry = &cfg.Agents[i]
 			}
 		}
+	}
+	if err := r.restoreForForget(); err != nil {
+		return err
 	}
 	if err := config.CheckSocketPath(config.SocketPath(r.settings.SocketDir, r.f.agent)); err != nil {
 		return fmt.Errorf("%w; pass --config in a shorter directory", err)
@@ -770,6 +781,13 @@ func (r *remoteInit) reusable(saved []string) *config.Setup {
 	if r.entry == nil || r.entry.Setup == nil || r.f.newCode || r.recorded || r.password == "" {
 		return nil
 	}
+	if r.entry.Setup.ConnectOnly() {
+		// A connect-only code with a credential file: the engine stopped
+		// between writing the credential and clearing awaitingAddress. It is
+		// never handed out again on this path: the credential's own code
+		// replaces it.
+		return nil
+	}
 	s := r.entry.Setup
 	expires, err := s.Expires()
 	if err != nil || !r.c.now().Before(expires) || !sameRequest(r.entry.InitArgs, saved) {
@@ -888,7 +906,6 @@ func checkBuildVersion(version string) error {
 // run makes (or reuses) the code, writes the credential and the config,
 // and returns the result.
 func (r *remoteInit) run() (RemoteInitResult, error) {
-	r.forgetKeepsTables()
 	saved := r.f.savedArgs(r.osUser)
 	if r.connectOnly {
 		return r.runConnectOnly(saved)
@@ -957,16 +974,67 @@ func (r *remoteInit) pendingConnectOnly() *config.Setup {
 	return r.entry.Setup
 }
 
-// forgetKeepsTables gives --forget the tables the agent's saved flags ask
-// for when the run names none: the recovery code asks for the same.
-func (r *remoteInit) forgetKeepsTables() {
-	if !r.f.forget || r.entry == nil || r.f.write != "" || r.f.read != "" || r.f.allTables {
-		return
+// forgetRestores are the saved flags --forget makes its recovery code
+// with, unless the run gives them: the same tables, role and timeout, and
+// the engine's operator (the connect path needs an agent-operated engine).
+var forgetRestores = []string{"prefix", "statement-timeout", "operated-by"}
+
+// tableFlags name the agent's tables; given one, none is restored.
+var tableFlags = []string{"write", "read", flagAllTables}
+
+// restoreForForget gives a --forget run the request the agent's saved flags
+// ask for, for every flag it does not give, and settles what depends on
+// them (the role's names, the operator and the vault it writes).
+func (r *remoteInit) restoreForForget() error {
+	if !r.f.forget || r.entry == nil {
+		return nil
 	}
 	saved := r.entry.InitArgs
-	r.f.write, r.f.read = savedValue(saved, "write"), savedValue(saved, "read")
-	r.f.allTables = savedValue(saved, flagAllTables) == "true"
-	r.f.spec.Write, r.f.spec.Read = splitList(r.f.write), splitList(r.f.read)
+	if !slices.ContainsFunc(tableFlags, func(n string) bool { return r.f.given[n] }) {
+		r.f.write, r.f.read = savedValue(saved, "write"), savedValue(saved, "read")
+		r.f.allTables = savedValue(saved, flagAllTables) == "true"
+	}
+	for _, name := range forgetRestores {
+		v := savedValue(saved, name)
+		if r.f.given[name] || v == "" {
+			continue
+		}
+		if err := r.restoreFlag(name, v); err != nil {
+			return fmt.Errorf("the saved flag --%s=%s: %w", name, v, err)
+		}
+	}
+	r.f.spec = guard.AgentSpec{Name: r.f.agent, Write: splitList(r.f.write), Read: splitList(r.f.read), StatementTimeout: r.f.timeout}
+	r.names = guard.Names{Prefix: r.f.prefix}
+	role, err := r.names.Agent(r.f.agent)
+	if err != nil {
+		return err
+	}
+	r.role = role
+	vc, err := chooseVault(r.f.vaultFlag, r.f.operatedBy, links.Portal, remoteVaultWhy)
+	if err != nil {
+		return err
+	}
+	r.f.vault = vc
+	r.settings = vc.settings(r.settings)
+	r.settings.OperatedBy = r.f.operatedBy.enum()
+	return nil
+}
+
+// restoreFlag sets the saved value v of flag name.
+func (r *remoteInit) restoreFlag(name, v string) error {
+	switch name {
+	case "prefix":
+		r.f.prefix = v
+	case "statement-timeout":
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return err
+		}
+		r.f.timeout = d
+	case "operated-by":
+		return r.f.operatedBy.Set(v)
+	}
+	return nil
 }
 
 // secretPath is agents/<agent>.secret, next to the credential file.
@@ -1004,11 +1072,6 @@ func (r *remoteInit) removeSecret() error {
 // is gone, the code is a recovery code: AGENT with a new password.
 func (r *remoteInit) runConnectOnly(saved []string) (RemoteInitResult, error) {
 	pending := r.pendingConnectOnly()
-	if r.f.forget {
-		if err := r.removeSecret(); err != nil {
-			return RemoteInitResult{}, err
-		}
-	}
 	if pending != nil && !r.f.forget && !pending.Refused {
 		reuse, err := r.reuseConnectOnly(pending, saved)
 		if err != nil || reuse {
@@ -1035,6 +1098,11 @@ func (r *remoteInit) runConnectOnly(saved []string) (RemoteInitResult, error) {
 	}
 	code, err := encodeSetup(payload)
 	if err != nil {
+		return RemoteInitResult{}, err
+	}
+	// --forget drops the old password only now, after the engine's key and
+	// the code: a refusal before this point leaves everything as it was.
+	if err := r.removeSecret(); err != nil {
 		return RemoteInitResult{}, err
 	}
 	if err := r.files.write(r.secretPath(), []byte(p.password+"\n")); err != nil {
@@ -1068,7 +1136,7 @@ func (r *remoteInit) connectOnlyPayload(p plan) (setupcode.Payload, error) {
 	key, err := r.loadEngineKey()
 	if err != nil {
 		return setupcode.Payload{}, fmt.Errorf("a setup code for the connect page needs the engine's key, and basalt cannot read or make it as this user (%w). "+
-			"Run basalt init --remote as the engine's OS user, or give --database-url <the database, without password>", err)
+			"Run basalt init --remote as the engine's OS user (the owner of the engine's state directory), or give --database-url <the database, without password>", err)
 	}
 	out, err := r.payload(p)
 	if err != nil {
@@ -1184,7 +1252,7 @@ func (r *remoteInit) connectOnlyResult(res RemoteInitResult, s config.Setup) (Re
 	} else {
 		res.pasteAtPortal = true
 		open = links.Portal + links.ConnectPath
-		res.PersonMessage = lead + " Open " + open + ", paste the setup code the agent shows you, check that it shows the setup fingerprint " + s.Fingerprint +
+		res.PersonMessage = lead + " Open " + strings.TrimPrefix(open, "https://") + ", paste the setup code the agent shows you, check that it shows the setup fingerprint " + s.Fingerprint +
 			", and follow the page. The page asks for your database's connection string: paste it there only. The agent never needs it, so never paste it into this chat."
 	}
 	steps, err := agent.NewSteps().

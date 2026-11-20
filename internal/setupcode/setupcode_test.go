@@ -495,3 +495,21 @@ func TestFingerprintOfTheDecodedCode(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, p.Fingerprint(), decoded.Fingerprint())
 }
+
+// A connect-only code relaxes ROLE_MISSING for its recovery AGENT code
+// only: an INSTALL still refuses an existing role, and an AGENT code with a
+// target still needs its role.
+func TestConnectOnlyRoleRules(t *testing.T) {
+	t.Parallel()
+	base := validPayload(t)
+	role := base.Role()
+	install := base
+	install.Target = nil
+	require.Equal(t, setupcode.RefusalRoleExists, refusalOf(t, setupcode.CheckDatabase(install, setupcode.Database{Roles: []string{role}})))
+	withTarget := base
+	withTarget.Kind = setupcode.KindAgent
+	require.Equal(t, setupcode.RefusalRoleMissing, refusalOf(t, setupcode.CheckDatabase(withTarget, setupcode.Database{})))
+	recovery := withTarget
+	recovery.Target = nil
+	require.NoError(t, setupcode.CheckDatabase(recovery, setupcode.Database{}))
+}

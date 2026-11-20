@@ -92,6 +92,7 @@ func TestGeneratedCodeMatchesProto(t *testing.T) {
 		"SetupService.DescribeSetup(DescribeSetupRequest) DescribeSetupResponse",
 		"SetupService.HandoffStatus(HandoffStatusRequest) HandoffStatusResponse",
 		"SetupService.OfferAddress(OfferAddressRequest) OfferAddressResponse",
+		"SetupService.ReportReach(ReportReachRequest) ReportReachResponse",
 		"SetupService.RunSetup(RunSetupRequest) RunSetupResponse",
 	}, want, "connect.proto's service")
 	require.Equal(t, want, got, "the generated service differs from connect.proto: run make proto")
@@ -113,7 +114,8 @@ func TestConnectionStringIsSensitive(t *testing.T) {
 				found++
 				require.True(t, isSensitive(f), "%s is not marked sensitive", f.FullName())
 			}
-			if f.FullName() == "basalt.connect.v1.CheckSetupResponse.database" || f.FullName() == "basalt.connect.v1.CollectAddressResponse.address" {
+			if f.FullName() == "basalt.connect.v1.CheckSetupResponse.database" || f.FullName() == "basalt.connect.v1.CollectAddressResponse.address" ||
+				f.FullName() == "basalt.connect.v1.ReportReachRequest.address" {
 				addresses++
 				require.True(t, isSensitive(f), "%s is not marked sensitive", f.FullName())
 			}
@@ -124,8 +126,8 @@ func TestConnectionStringIsSensitive(t *testing.T) {
 		}
 	}
 	require.Equal(t, 2, found, "CheckSetupRequest and RunSetupRequest carry database_url")
-	require.Equal(t, 4, tickets, "RunSetupResponse, HandoffStatusRequest, HandoffStatusResponse and OfferAddressRequest carry the hand-off ticket, which holds the address")
-	require.Equal(t, 2, addresses, "the database CheckSetup names and the address CollectAddress returns are marked")
+	require.Equal(t, 5, tickets, "CheckSetupResponse, RunSetupResponse, HandoffStatusRequest, HandoffStatusResponse and OfferAddressRequest carry the hand-off ticket, which holds the address")
+	require.Equal(t, 3, addresses, "the database CheckSetup names, the address CollectAddress returns and the address ReportReach sends are marked")
 }
 
 func isSensitive(f protoreflect.FieldDescriptor) bool {

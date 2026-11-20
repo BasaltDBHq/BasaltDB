@@ -530,7 +530,7 @@ func keptCredentialSpec(spec service.Spec, a agentInstall, dryRun bool) (service
 // connect-only setup and no credential file exists at cred: the agent
 // waits for its database's address.
 func waitingForAddress(spec service.Spec, name, cred string) bool {
-	cfg, err := config.LoadOpen(spec.ConfigPath, func(p string) (*os.File, error) { return openEngineFile(p, spec.User) })
+	cfg, err := loadEngineConfigAs(os.Geteuid(), spec.ConfigPath)
 	if err != nil {
 		return false
 	}

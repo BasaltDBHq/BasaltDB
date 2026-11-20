@@ -4,10 +4,12 @@
 // makes against a real Postgres. It is not part of the binary: only test
 // files import it.
 //
-// It follows the contract's calls, order of refusals and refusal reasons. It
-// differs from the hosted service in what is not the setup's own logic: it
-// dials the pasted string as given (the hosted service requires verified TLS
-// and refuses private addresses), and it has no limits.
+// It follows the contract's calls, order of refusals and refusal reasons,
+// the address hand-off included (the hold, the ticket, CollectAddress,
+// HandoffStatus and OfferAddress). It differs from the hosted service in
+// what is not the setup's own logic: it dials the pasted string as given,
+// or through Options.Dial (the hosted service requires verified TLS and
+// refuses private addresses), and it has no limits.
 package connecttest
 
 import (

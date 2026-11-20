@@ -432,11 +432,11 @@ func TestConnectOnlyHostileHandoffs(t *testing.T) {
 		_, err = c.Collect(context.Background(), f.install.res.SetupID, f.install.res.Fingerprint)
 		require.ErrorIs(t, err, handoff.ErrNotHeld)
 		// The real key, with the other's signature: the same answer.
-		real := engineKeysOf(t, f.cfg)
-		_, err = handoff.NewClient(nil, f.page.base, keyWithSigner{Signer: other, spki: real.PublicKeySPKI()}, time.Now).
+		key := engineKeysOf(t, f.cfg)
+		_, err = handoff.NewClient(nil, f.page.base, keyWithSigner{Signer: other, spki: key.PublicKeySPKI()}, time.Now).
 			Collect(context.Background(), f.install.res.SetupID, f.install.res.Fingerprint)
 		require.ErrorIs(t, err, handoff.ErrNotHeld)
-		addr, err := handoff.NewClient(nil, f.page.base, real, time.Now).Collect(context.Background(), f.install.res.SetupID, f.install.res.Fingerprint)
+		addr, err := handoff.NewClient(nil, f.page.base, key, time.Now).Collect(context.Background(), f.install.res.SetupID, f.install.res.Fingerprint)
 		require.NoError(t, err)
 		require.Equal(t, dbHost, addr.Host)
 	})
@@ -445,9 +445,9 @@ func TestConnectOnlyHostileHandoffs(t *testing.T) {
 		t.Parallel()
 		f := newHandoffFixture(t)
 		f.runOnPage(pastedFor(t, f.d, dbHost))
-		real := engineKeysOf(t, f.cfg)
+		key := engineKeysOf(t, f.cfg)
 		at := time.Now()
-		c := handoff.NewClient(nil, f.page.base, real, func() time.Time { return at })
+		c := handoff.NewClient(nil, f.page.base, key, func() time.Time { return at })
 		first, err := c.Collect(context.Background(), f.install.res.SetupID, f.install.res.Fingerprint)
 		require.NoError(t, err)
 		again, err := c.Collect(context.Background(), f.install.res.SetupID, f.install.res.Fingerprint)

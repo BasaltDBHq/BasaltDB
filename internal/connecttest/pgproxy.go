@@ -178,6 +178,9 @@ func (p *Proxy) Dial(ctx context.Context, _, _ string) (net.Conn, error) {
 	return d.DialContext(ctx, "tcp", p.Addr)
 }
 
+// certLife is how long the test certificates are valid.
+const certLife = 24 * time.Hour
+
 const (
 	sslRequestCode = 80877103
 	gssEncCode     = 80877104
@@ -345,11 +348,12 @@ func readStartup(r io.Reader) ([]byte, error) {
 	if n < 2*lengthBytes || n > maxMessage {
 		return nil, errors.New("bad startup length")
 	}
-	rest := make([]byte, n-lengthBytes)
-	if _, err := io.ReadFull(r, rest); err != nil {
+	msg := make([]byte, n)
+	copy(msg, head)
+	if _, err := io.ReadFull(r, msg[lengthBytes:]); err != nil {
 		return nil, err
 	}
-	return append(head, rest...), nil
+	return msg, nil
 }
 
 // startupUser is the user parameter of a startup message.
@@ -382,7 +386,7 @@ func readMessage(r io.Reader) (byte, []byte, error) {
 func writeMessage(w io.Writer, typ byte, body []byte) error {
 	out := make([]byte, 1+lengthBytes, 1+lengthBytes+len(body))
 	out[0] = typ
-	binary.BigEndian.PutUint32(out[1:], uint32(len(body)+lengthBytes)) //nolint:gosec // bounded by maxMessage
+	binary.BigEndian.PutUint32(out[1:], uint32(len(body)+lengthBytes))
 	_, err := w.Write(append(out, body...))
 	return err
 }
@@ -397,7 +401,7 @@ func testCertificate(t *testing.T, host string) (tls.Certificate, *x509.CertPool
 	now := time.Now()
 	ca := &x509.Certificate{
 		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "connecttest CA"},
-		NotBefore: now.Add(-time.Hour), NotAfter: now.Add(24 * time.Hour),
+		NotBefore: now.Add(-time.Hour), NotAfter: now.Add(certLife),
 		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
 	}
 	caDER, err := x509.CreateCertificate(rand.Reader, ca, ca, &caKey.PublicKey, caKey)
@@ -414,7 +418,7 @@ func testCertificate(t *testing.T, host string) (tls.Certificate, *x509.CertPool
 	}
 	leaf := &x509.Certificate{
 		SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: host}, DNSNames: []string{host},
-		NotBefore: now.Add(-time.Hour), NotAfter: now.Add(24 * time.Hour),
+		NotBefore: now.Add(-time.Hour), NotAfter: now.Add(certLife),
 		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
 	der, err := x509.CreateCertificate(rand.Reader, leaf, caCert, &key.PublicKey, caKey)

@@ -21,17 +21,17 @@ func (f handoffFiles) secretPath() string { return config.SecretPath(f.credFile,
 
 func (f handoffFiles) Lock() (func(), error) { return config.LockFile(f.credFile + lockSuffix) }
 
-func (f handoffFiles) PendingSetup() (*config.Setup, error) {
+func (f handoffFiles) PendingSetup() (config.Setup, bool, error) {
 	c, err := config.LoadNoFollow(f.configPath)
 	if err != nil {
-		return nil, err
+		return config.Setup{}, false, err
 	}
 	for _, a := range c.Agents {
-		if a.Name == f.agent {
-			return a.Setup, nil
+		if a.Name == f.agent && a.Setup != nil {
+			return *a.Setup, true, nil
 		}
 	}
-	return nil, nil
+	return config.Setup{}, false, nil
 }
 
 // ReadSecret reads .secret with the credential file's rules: a regular

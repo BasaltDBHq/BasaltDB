@@ -62,9 +62,9 @@ type AddressProber interface {
 // takes; the other methods run under it.
 type Files interface {
 	Lock() (unlock func(), err error)
-	// PendingSetup is the agent's pending setup in engine.json now, nil
+	// PendingSetup is the agent's pending setup in engine.json now; false
 	// when none.
-	PendingSetup() (*config.Setup, error)
+	PendingSetup() (config.Setup, bool, error)
 	// ReadSecret reads the agent's .secret: the password init generated.
 	ReadSecret() (string, error)
 	// WriteCredential writes the agent's credential file, 0600 and
@@ -300,7 +300,7 @@ func (p *Pending) waiting(problem string, db *Address) {
 // no longer this connect-only setup, the collected address is dropped and
 // the engine builds the agent anew. False then, or when it cannot be read.
 func (p *Pending) recheckConfig() bool {
-	now, err := p.o.Files.PendingSetup()
+	now, ok, err := p.o.Files.PendingSetup()
 	if err != nil {
 		p.o.Log.Warn("read the agent's pending setup in engine.json", "err", err)
 		return false
@@ -311,7 +311,7 @@ func (p *Pending) recheckConfig() bool {
 	if phase == PhaseConfirmed || phase == PhaseGone {
 		return false
 	}
-	if now != nil && now.SetupID == id && now.ConnectOnly() {
+	if ok && now.SetupID == id && now.ConnectOnly() {
 		return true
 	}
 	p.mu.Lock()
@@ -349,11 +349,11 @@ func (p *Pending) Confirm(_ context.Context, id string, db Address, yes bool) (A
 		return Answer{}, err
 	}
 	defer unlock()
-	now, err := p.o.Files.PendingSetup()
+	now, ok, err := p.o.Files.PendingSetup()
 	if err != nil {
 		return Answer{}, err
 	}
-	if now == nil || now.SetupID != id || !now.AwaitingAddress {
+	if !ok || now.SetupID != id || !now.AwaitingAddress {
 		return Answer{}, ErrNotWaiting
 	}
 	if !yes {

@@ -392,3 +392,38 @@ func ConnectDatabaseName(host string, port uint16, database string) string {
 	}
 	return net.JoinHostPort(host, strconv.Itoa(int(port))) + ", database " + database
 }
+
+// ConnectOnlyLocalStatus is basalt status for an agent whose connect-only
+// setup waits or was refused: it has no credential, so the report comes
+// from engine.json alone, as the shim's does (guard UNKNOWN), with the
+// engine reachable when it runs. It never collects.
+func ConnectOnlyLocalStatus(l LocalStatus) (StatusReport, error) {
+	if l.Setup == nil || l.Now == nil {
+		panic("agent: a connect-only local status needs the pending setup and a clock")
+	}
+	cmds := l.Commands.OperatedBy(l.OperatedBy)
+	base := l.PagesBase
+	if base == "" {
+		base = links.DefaultLocal
+	}
+	r := StatusReport{
+		Agent: l.Name, OperatedBy: operatedBy(l.OperatedBy), Enforcement: enforcement(l.OperatedBy, true),
+		Engine: EngineStatus{Reachable: l.EngineRunning, Build: buildinfo.Version},
+		Guard:  GuardStatus{State: guard.GuardUnknown, Build: guard.LatestVersion()},
+		Pages:  PagesStatus{Served: l.PagesOrigin != "", URL: base},
+	}
+	ps := problems{cmds: cmds, connectBudget: l.ConnectBudget}
+	if !l.EngineRunning && !l.EngineUnknown {
+		ps.add(problemEngineUnreachable, "the engine is not running, so the agent's tools do not answer",
+			func(b *Steps) string { return engineUnreachableSteps(b, cmds, toolStatus) })
+	}
+	v := setupFrom(l.Setup, false, l.Now())
+	r.Setup = v.status
+	v.addProblem(&ps)
+	list, err := ps.sorted()
+	if err != nil {
+		return StatusReport{}, err
+	}
+	r.Problems, r.Ready = list, ready(list)
+	return r, nil
+}

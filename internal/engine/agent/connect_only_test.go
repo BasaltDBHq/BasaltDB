@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"log/slog"
 	"strings"
 	"testing"
@@ -40,7 +39,6 @@ func connectOnlySetup(expires time.Time) config.Setup {
 
 type fakeHandoff struct {
 	st      handoff.State
-	answer  handoff.Answer
 	err     error
 	asked   []bool
 	statusN int
@@ -71,7 +69,7 @@ func connectOnlyServer(t *testing.T, operatedBy string, h Handoff) ConnectOnly {
 	return ConnectOnly{
 		Name: "bot", Commands: cmds, OperatedBy: operatedBy, PagesBase: "https://portal.basaltvault.app",
 		ConnectBudget: links.DefaultBudget, Handoff: h,
-		Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Now: func() time.Time { return statusNow },
+		Log: slog.New(slog.DiscardHandler), Now: func() time.Time { return statusNow },
 	}
 }
 

@@ -350,3 +350,40 @@ func TestInitRemoteConnectOnlyNotAsRoot(t *testing.T) {
 	require.NotEqual(t, r.res.SetupID, again.res.SetupID)
 	requireVerifierOf(t, again.payload.Agent.Verifier, secretOf(t, cfg))
 }
+
+// basalt status on an agent whose connect-only setup waits reads no
+// credential and no database: it reports the setup from engine.json, with
+// the connect link, and after a NO the refusal.
+func TestStatusOfAWaitingConnectOnlyAgent(t *testing.T) {
+	t.Parallel()
+	cfg := connectOnlyConfig(t)
+	r := remote(t, cfg, connectOnlyArgs...)
+	status := func() map[string]any {
+		t.Helper()
+		var stdout, stderr bytes.Buffer
+		c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr}, func(string) string { return "" })
+		code := runStatus(c, []string{"--agent", "bot", "--config", cfg, "--json"})
+		require.Equal(t, exitOK, code, stderr.String())
+		var out map[string]any
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &out), stdout.String())
+		return out
+	}
+	out := status()
+	setup := out["setup"].(map[string]any)
+	require.Equal(t, "PENDING", setup["state"])
+	require.Equal(t, true, setup["connectOnly"])
+	require.Contains(t, fmtJSON(t, out), r.res.ConnectURL)
+	require.Contains(t, fmtJSON(t, out), "SETUP_NOT_RUN")
+
+	editSetup(t, cfg, func(s *config.Setup) { s.AwaitingAddress, s.Refused = false, true })
+	out = status()
+	require.Equal(t, "REFUSED", out["setup"].(map[string]any)["state"])
+	require.Contains(t, fmtJSON(t, out), "DATABASE_REFUSED")
+}
+
+func fmtJSON(t *testing.T, v any) string {
+	t.Helper()
+	raw, err := json.Marshal(v)
+	require.NoError(t, err)
+	return string(raw)
+}

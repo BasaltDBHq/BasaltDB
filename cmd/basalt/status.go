@@ -225,6 +225,11 @@ func localStatus(c *cliIO, name, configPath string) (statusOut, error) {
 	if !cfg.Service() {
 		cmds = cmds.Foreground()
 	}
+	if a.Setup != nil && a.Setup.ConnectOnly() {
+		if _, err := os.Lstat(a.Store.CredentialFile); errors.Is(err, fs.ErrNotExist) {
+			return connectOnlyStatus(c, cfg.Config, a, cmds, abs)
+		}
+	}
 	dsn, err := cfg.credential(a.Store.CredentialFile)
 	if err != nil {
 		return statusOut{}, fmt.Errorf("the credential of agent %s cannot be read: %w", a.Name, withoutPath(err))
@@ -556,4 +561,25 @@ func (c *cliIO) needAgentName(err error) error {
 		return err
 	}
 	return fmt.Errorf("%w\n%s", err, agentMarkerNote)
+}
+
+// connectOnlyStatus is basalt status for an agent whose connect-only setup
+// waits for its database or was refused: no credential, so nothing reads a
+// database, and the CLI does not collect (CONTRACT.md, The engine and a
+// connect-only code: planned).
+func connectOnlyStatus(c *cliIO, cfg config.Config, a config.Agent, cmds agent.Commands, abs string) (statusOut, error) {
+	eng := runningEngine(cfg.SocketDir)
+	base, err := cfg.PagesBase()
+	if err != nil {
+		return statusOut{}, err
+	}
+	r, err := agent.ConnectOnlyLocalStatus(agent.LocalStatus{
+		Name: a.Name, Commands: cmds, OperatedBy: cfg.OperatedBy, ConnectBudget: cfg.ConnectLinkBudget(), Setup: a.Setup,
+		PagesBase: base, PagesOrigin: servedPages(c, cfg, eng.Reachable), EngineRunning: eng.Reachable, EngineUnknown: eng.Unknown, Now: c.now,
+	})
+	if err != nil {
+		return statusOut{}, err
+	}
+	eng.Build = r.Engine.Build
+	return statusOut{StatusReport: r, Engine: eng, ConfigPath: abs, SocketDir: cfg.SocketDir, StateDir: cfg.StateDirFor(c.goos)}, nil
 }

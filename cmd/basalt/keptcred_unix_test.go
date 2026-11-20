@@ -125,6 +125,12 @@ func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == testPluginFlag {
 		testPluginMain(os.Args[2:])
 	}
+	// With this set, the test binary is the basalt binary: a supervisor
+	// test runs it as basalt engine --supervise, which runs it again as
+	// basalt engine.
+	if os.Getenv(testAsBasaltEnv) != "" {
+		main()
+	}
 	if fi, err := os.Stat(os.TempDir()); err == nil && fi.Mode()&os.ModeSticky != 0 {
 		dir, err := os.MkdirTemp(".", ".tmp-test-")
 		if err != nil {

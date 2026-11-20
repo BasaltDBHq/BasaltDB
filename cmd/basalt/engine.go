@@ -47,7 +47,17 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 	configPath := fs.String("config", config.DefaultPath(runtime.GOOS), "engine config file")
 	runAs := fs.String("user", "", "start as root, then run as this OS user before reading the config (a container without systemd)")
 	pluginDebug := fs.Bool("plugin-debug", false, "show local plugins' stderr on this terminal (a foreground engine only; never logged)")
+	supervised := fs.Bool("supervise", false, "run the engine as a child and restart it when it crashes")
+	startedBy := fs.String("started-by", startedByHand, "why this engine started: hand, mcp or crash (set by basalt mcp and --supervise)")
 	if fs.Parse(args) != nil || fs.NArg() > 0 {
+		return exitUsage
+	}
+	if !slices.Contains([]string{startedByHand, startedByMCP, startedByCrash}, *startedBy) {
+		_, _ = fmt.Fprintf(io.err, "basalt engine: --started-by is hand, mcp or crash, not %q\n", *startedBy)
+		return exitUsage
+	}
+	if *supervised && *runAs != "" {
+		_, _ = fmt.Fprintln(io.err, "basalt engine: --supervise runs as the engine's own user; drop --user")
 		return exitUsage
 	}
 	if *runAs != "" {
@@ -61,12 +71,16 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 	*configPath = configOrFallback(h, fs, *configPath)
 	// Started as root without --user, the hardened read: the config's
 	// directory may belong to another user, who could plant a link there.
+	if *supervised {
+		return runSupervise(ctx, enginePath(*configPath), *startedBy, io, h)
+	}
 	cfg, err := loadEngineConfigAs(h.Euid(), *configPath)
 	if err != nil {
 		return fail(io.err, "engine", err)
 	}
 	log := engineLog(io.err)
 	run := func(ctx context.Context, o engine.RestartOptions) error {
+		o.StartedBy = *startedBy
 		if *pluginDebug {
 			o.PluginStderr = io.err
 		}

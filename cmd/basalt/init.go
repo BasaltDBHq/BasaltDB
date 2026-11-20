@@ -31,10 +31,10 @@ type initFlags struct {
 	// pages, for development only (CONTRACT.md, Page origins).
 	devLocalPages bool
 	// directAddr is --direct-addr as given ("" when not).
-	directAddr                                      string
-	agentRLS                                        AgentRLSMode
-	spec                                            guard.AgentSpec
-	dryRun, yes, skipPasskey, addPasskey, noService bool
+	directAddr                                               string
+	agentRLS                                                 AgentRLSMode
+	spec                                                     guard.AgentSpec
+	dryRun, yes, showSQL, skipPasskey, addPasskey, noService bool
 	// operatedBy is --operated-by; operatedByGiven is true when it was passed.
 	operatedBy      OperatedBy
 	operatedByGiven bool
@@ -65,7 +65,8 @@ type initFlags struct {
 	vault     vaultChoice
 }
 
-// runInit: basalt init. Shows the setup SQL, installs or upgrades
+// runInit: basalt init. Prints a short summary of the setup SQL (the
+// full SQL, passwords redacted, with --show-sql), installs or upgrades
 // basalt_meta with the admin connection string, creates or rotates the
 // agent role, writes the agent's own connection string to a 0600
 // credential file and adds the agent to the engine config, then installs
@@ -166,7 +167,7 @@ func runInit(c *cliIO, args []string) int {
 		return c.fail(missingTablesHint(err, conn.Config().Database))
 	}
 	rollback() // the plan is made; hold nothing open while the person decides
-	fmt.Fprint(c.stdout, demoSQL+script.SQL())
+	printInitSQL(c, f, role, demoSQL, script)
 	printWarnings(c.stderr, script)
 	if f.dryRun {
 		if err := printSetupPlan(c, f); err != nil {
@@ -218,6 +219,43 @@ func runInit(c *cliIO, args []string) int {
 		return c.fail(fmt.Errorf("the guard is installed and the engine is set up, but no passkey was registered, so held writes cannot be approved until you register one (run basalt init again): %w", passkeyErr))
 	}
 	return exitOK
+}
+
+// printInitSQL writes a short summary of the setup SQL, or the full
+// redacted SQL when the person asked for it with --show-sql or --dry-run.
+func printInitSQL(c *cliIO, f initFlags, role, demoSQL string, script guard.Script) {
+	if f.showSQL || f.dryRun {
+		fmt.Fprint(c.stdout, demoSQL+script.SQL())
+		return
+	}
+	fmt.Fprint(c.stdout, initSQLSummary(f, role, demoSQL != ""))
+}
+
+// initSQLSummary is the short account of what the setup SQL will do,
+// at most a screenful. The full SQL is behind --show-sql.
+func initSQLSummary(f initFlags, role string, hasDemoSQL bool) string {
+	var b strings.Builder
+	b.WriteString("basalt: this setup SQL will:\n")
+	if hasDemoSQL {
+		b.WriteString("- create the sample schema basalt_demo\n")
+	}
+	b.WriteString("- install or upgrade the guard (basalt_meta)\n")
+	switch {
+	case f.rotated:
+		b.WriteString("- set a new password for the existing agent role " + role + "\n")
+	case f.keepCredential:
+		b.WriteString("- keep the existing agent role " + role + " (its password is unchanged)\n")
+	default:
+		b.WriteString("- create the agent role " + role + "\n")
+	}
+	if len(f.spec.Write) > 0 {
+		b.WriteString("- let the agent write " + strings.Join(f.spec.Write, ", ") + "\n")
+	}
+	if len(f.spec.Read) > 0 {
+		b.WriteString("- let the agent read " + strings.Join(f.spec.Read, ", ") + "\n")
+	}
+	b.WriteString("Pass --show-sql to print the SQL (passwords redacted).\n")
+	return b.String()
 }
 
 // AgentRLSMode is the value of --agent-rls: what init does about agent
@@ -366,6 +404,7 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 	fs.StringVar(&f.credFile, "credential-file", "", "where to write the agent's connection string (default <config dir>/agents/NAME.url)")
 	fs.BoolVar(&f.rotatePassword, "rotate-password", false, "set a new password for an agent role that exists (init keeps it by default); restart the engine after")
 	fs.BoolVar(&f.dryRun, "dry-run", false, "print the SQL and the engine setup, and exit")
+	fs.BoolVar(&f.showSQL, "show-sql", false, "print the setup SQL (passwords redacted)")
 	fs.BoolVar(&f.yes, "yes", false, "do not ask before running the SQL or installing the engine service")
 	fs.BoolVar(&f.noService, "no-service", false, "do not install the engine service; print the foreground command")
 	fs.BoolVar(&f.demo, "demo", false, "create and guard the sample schema basalt_demo and an agent (demo_bot) that can write only there")

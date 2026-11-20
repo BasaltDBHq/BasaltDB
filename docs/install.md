@@ -114,7 +114,7 @@ basalt init --agent demo_bot \
 `--write` lists tables the agent may read and write, `--read` tables it may only read. Both take a comma-separated list of `schema.table`. Init asks, in order:
 
 1. `Admin connection string (used once, never stored):` Paste the string from step 2. Nothing is echoed.
-2. It prints the setup SQL, then `Run this SQL as postgres? [y/N]`. Type `y`.
+2. It prints a short summary of the setup SQL (pass `--show-sql` to print the SQL), then `Run this SQL as postgres? [y/N]`. Type `y`.
 3. `basalt: guard installed; agent role basalt_agent_demo_bot`
 4. It prints a `http://localhost:8787/passkeys/register#...` link. Open it, press the button, confirm with your passkey, copy the `basalt-passkey.1....` code the page shows, and paste it at `Paste the code the page shows:`. Then `basalt: passkey registered for localhost`.
 5. `Install the engine as a background service? This creates the OS user _basalt and needs your password once. [Y/n]` Press Enter. (On Linux the user is `basalt`.) Init runs one `sudo`, installs and starts the service, then checks it:

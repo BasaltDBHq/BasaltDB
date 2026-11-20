@@ -8,9 +8,11 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/channel"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/handoff"
@@ -46,6 +48,21 @@ func (o HandoffOptions) serviceURL() string {
 // request cannot be signed.
 var errNoEngineKey = errors.New("the engine key file is refused (vault.state KEY_ERROR): the address cannot be collected until it is fixed")
 
+// rootCollector is the collector of an engine started as root without
+// --user: root trusts nothing the agent's OS user could redirect, and the
+// YES would write that user's credential, so it never collects. The agent
+// is served degraded with the problem ENGINE_AS_ROOT; the engine's other
+// agents are served as usual.
+type rootCollector struct{}
+
+func (rootCollector) Collect(context.Context, string, string) (handoff.Collected, error) {
+	return handoff.Collected{}, handoff.ErrEngineAsRoot
+}
+
+func (rootCollector) Report(context.Context, string, string, handoff.Address, handoff.Reach) error {
+	return handoff.ErrEngineAsRoot
+}
+
 type noKeyCollector struct{}
 
 func (noKeyCollector) Collect(context.Context, string, string) (handoff.Collected, error) {
@@ -66,7 +83,10 @@ func connectOnlyAgent(env agentEnv, a config.Agent, log *slog.Logger) (bool, err
 	if a.Setup == nil || !a.Setup.ConnectOnly() {
 		return false, nil
 	}
-	if a.Setup.Refused {
+	if a.Setup.Refused || env.asRoot {
+		// As root the engine touches none of the agent's files here: a
+		// confirmation it stopped in is finished by an engine started as
+		// the agent's OS user.
 		return true, nil
 	}
 	files := handoffFiles{configPath: env.configPath, agent: a.Name, credFile: a.Store.CredentialFile}
@@ -95,9 +115,6 @@ func connectOnlyAgent(env agentEnv, a config.Agent, log *slog.Logger) (bool, err
 // no credential, no connection, status and confirm_database only, and the
 // collect loop. Its runtime closes nothing.
 func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agentRuntime, error) {
-	if env.asRoot {
-		return agentRuntime{}, fmt.Errorf("agent %s waits for its database's address (a connect-only setup code), which an engine started as root does not collect: start the engine with --user, or as the agent's OS user", a.Name)
-	}
 	cmds, err := agent.NewCommands(a.Name, env.configPath, runtime.GOOS, a.InitArgs)
 	if err != nil {
 		return agentRuntime{}, err
@@ -106,7 +123,11 @@ func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agen
 		cmds = cmds.Foreground()
 	}
 	var collector handoff.Collector = noKeyCollector{}
-	if env.keys != nil {
+	switch {
+	case env.asRoot:
+		collector = rootCollector{}
+		log.Warn("the agent waits for its database's address, which an engine started as root does not collect: start the engine with --user, or as the agent's OS user")
+	case env.keys != nil:
 		collector = handoff.NewClient(env.handoff.HTTP, env.handoff.serviceURL(), env.keys, time.Now)
 	}
 	reload := env.reload
@@ -139,4 +160,30 @@ func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agen
 		run:   pending.Run,
 		close: func() {},
 	}, nil
+}
+
+// CollectWhileDown is basalt status for agent a's connect-only setup while
+// the engine is down, in same-user mode, where the CLI runs as the
+// engine's user (CONTRACT.md, The engine and a connect-only code,
+// Collecting): one collect, check, probe and, for a PREVIEW address,
+// report, signed with the engine's own key, and the state after. It never
+// reads .secret and never confirms: only the engine's confirm_database
+// does, so a database the probe passed waits for the engine.
+func CollectWhileDown(ctx context.Context, cfg config.Config, configPath, goos string, a config.Agent, o HandoffOptions, log *slog.Logger) (handoff.State, error) {
+	if a.Setup == nil || !a.Setup.ConnectOnly() || cfg.Service() {
+		return handoff.State{}, errors.New("basalt status collects only for a waiting connect-only agent of a same-user engine")
+	}
+	keys, err := channel.LoadKeys(filepath.Join(cfg.StateDirFor(goos), channel.KeyFileName))
+	if err != nil {
+		return handoff.State{}, fmt.Errorf("the engine's key cannot be read, so the address cannot be collected: %w", err)
+	}
+	pending, err := handoff.New(handoff.Options{
+		Agent: a.Name, Setup: *a.Setup, Collector: handoff.NewClient(o.HTTP, o.serviceURL(), keys, time.Now), Prober: o.Prober,
+		Files:   handoffFiles{configPath: configPath, agent: a.Name, credFile: a.Store.CredentialFile},
+		Changed: func() {}, Log: log, Now: time.Now,
+	})
+	if err != nil {
+		return handoff.State{}, err
+	}
+	return pending.StatusCollect(ctx), nil
 }

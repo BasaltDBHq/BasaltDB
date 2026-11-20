@@ -135,6 +135,15 @@ func clockSkewSteps(b *Steps) string {
 	return "The clock of the agent's machine is more than 5 minutes off, so the agent cannot collect your database's address. Set the machine's clock right (turn on automatic time), then tell the agent."
 }
 
+// engineAsRootSteps: the engine was started as root without --user; it
+// must run as the agent's OS user to collect the address.
+func engineAsRootSteps(b *Steps) string {
+	b.AskPerson("Tell the person the engine runs as root without --user, so it cannot pick up this agent's database address until it is restarted as the agent's OS user or with --user.")
+	b.EndTurn("End your turn: the person restarts the engine next.")
+	return "The engine on the agent's machine runs as root without --user, so it cannot pick up this agent's database address. " +
+		"Restart it as the agent's OS user, or with --user and that user, then tell the agent."
+}
+
 // unreachableFromBotSteps: the bot's machine cannot reach the collected
 // database; the person runs the same link with a string it can reach.
 func unreachableFromBotSteps(b *Steps, code string, budget int, db handoff.Address) string {
@@ -365,8 +374,11 @@ func connectOnlyProblems(st handoff.State, ps *problems, now time.Time) SetupSta
 			func(b *Steps) string { return unreachableFromBotSteps(b, s.Code, ps.connectBudget, db) })
 	default:
 		v.addProblem(ps)
-		if st.Problem == handoff.ProblemClockSkew {
+		switch st.Problem {
+		case handoff.ProblemClockSkew:
 			ps.add(problemClockSkew, "the clock of this machine is more than 5 minutes off; the address cannot be collected until it is set right", clockSkewSteps)
+		case handoff.ProblemEngineAsRoot:
+			ps.add(problemEngineAsRoot, "the engine runs as root without --user, so it does not collect this agent's database address", engineAsRootSteps)
 		}
 	}
 	return out
@@ -395,8 +407,9 @@ func ConnectDatabaseName(host string, port uint16, database string) string {
 
 // ConnectOnlyLocalStatus is basalt status for an agent whose connect-only
 // setup waits or was refused: it has no credential, so the report comes
-// from engine.json alone, as the shim's does (guard UNKNOWN), with the
-// engine reachable when it runs. It never collects.
+// from engine.json, as the shim's does (guard UNKNOWN), with the engine
+// reachable when it runs, or from l.Collected, what the CLI collected
+// while the engine is down. It never collects itself.
 func ConnectOnlyLocalStatus(l LocalStatus) (StatusReport, error) {
 	if l.Setup == nil || l.Now == nil {
 		panic("agent: a connect-only local status needs the pending setup and a clock")
@@ -417,9 +430,13 @@ func ConnectOnlyLocalStatus(l LocalStatus) (StatusReport, error) {
 		ps.add(problemEngineUnreachable, "the engine is not running, so the agent's tools do not answer",
 			func(b *Steps) string { return engineUnreachableSteps(b, cmds, toolStatus) })
 	}
-	v := setupFrom(l.Setup, false, l.Now())
-	r.Setup = v.status
-	v.addProblem(&ps)
+	if l.Collected != nil {
+		r.Setup = connectOnlyProblems(*l.Collected, &ps, l.Now())
+	} else {
+		v := setupFrom(l.Setup, false, l.Now())
+		r.Setup = v.status
+		v.addProblem(&ps)
+	}
 	list, err := ps.sorted()
 	if err != nil {
 		return StatusReport{}, err

@@ -512,11 +512,35 @@ func agentSpecFromStdin(in io.Reader, spec service.Spec, a agentInstall, credStd
 func keptCredentialSpec(spec service.Spec, a agentInstall, dryRun bool) (service.Spec, error) {
 	cred := filepath.Join(filepath.Dir(spec.ConfigPath), "agents", a.name+".url")
 	raw, err := readKeptCredential(cred, spec.User)
+	if err != nil && !dryRun && waitingForAddress(spec, a.name, cred) {
+		// A connect-only setup waits for its address: no credential yet,
+		// and the engine writes it after the person's YES (CONTRACT.md,
+		// Connect-only setup codes).
+		a.keepCredential, a.waiting = true, true
+		return agentServiceSpec(spec.GOOS, spec.Binary, spec.ConfigPath, spec.User, a, dryRun)
+	}
 	if err != nil && !dryRun {
 		return spec, fmt.Errorf("the agent's role keeps its password but its credential file %s is not usable (%w); run basalt init --rotate-password", cred, err)
 	}
 	a.dsn, a.keepCredential = raw, false
 	return agentServiceSpec(spec.GOOS, spec.Binary, spec.ConfigPath, spec.User, a, dryRun)
+}
+
+// waitingForAddress reports whether the config gives agent name a pending
+// connect-only setup and no credential file exists at cred: the agent
+// waits for its database's address.
+func waitingForAddress(spec service.Spec, name, cred string) bool {
+	cfg, err := config.LoadOpen(spec.ConfigPath, func(p string) (*os.File, error) { return openEngineFile(p, spec.User) })
+	if err != nil {
+		return false
+	}
+	for _, ag := range cfg.Agents {
+		if ag.Name == name && ag.Setup != nil && ag.Setup.ConnectOnly() {
+			_, err := os.Lstat(cred)
+			return errors.Is(err, os.ErrNotExist)
+		}
+	}
+	return false
 }
 
 func binaryPath(flagValue string) (string, error) {

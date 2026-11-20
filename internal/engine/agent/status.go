@@ -59,6 +59,7 @@ const (
 	problemAddressInvalid     = "ADDRESS_INVALID"
 	problemSetupNotFound      = "SETUP_NOT_FOUND"
 	problemClockSkew          = "CLOCK_SKEW"
+	problemEngineAsRoot       = "ENGINE_AS_ROOT"
 )
 
 // status.engineRecord.state (CONTRACT.md, Configuration and status).
@@ -397,6 +398,10 @@ type LocalStatus struct {
 	EngineUnknown bool
 	// DevLocalPages is the config's devLocalPages (problem DEV_LOCAL_PAGES).
 	DevLocalPages bool
+	// Collected is, for a connect-only setup, what basalt status collected
+	// while the engine is down (same-user mode); nil reports the setup
+	// from engine.json alone.
+	Collected *handoff.State
 	// ConnectBudget is the config's config.ConnectLinkBudget (0: no connect
 	// link).
 	ConnectBudget int

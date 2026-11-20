@@ -33,7 +33,15 @@ const (
 	ProblemClockSkew      = "CLOCK_SKEW"
 	ProblemAddressInvalid = "ADDRESS_INVALID"
 	ProblemUnreachable    = "DATABASE_UNREACHABLE_FROM_BOT"
+	// ProblemEngineAsRoot: the engine runs as root without --user, so it
+	// does not collect.
+	ProblemEngineAsRoot = "ENGINE_AS_ROOT"
 )
+
+// ErrEngineAsRoot is the collector of an engine started as root without
+// --user: it never collects a connect-only setup's address (problem
+// ENGINE_AS_ROOT).
+var ErrEngineAsRoot = errors.New("the engine runs as root without --user, so it does not collect the database's address")
 
 // The collect cadence (CONTRACT.md, Connect, The reach check, Polling):
 // every 15 seconds while the setup waits for an address or cannot reach
@@ -325,6 +333,8 @@ func (p *Pending) collected(setup config.Setup, err error) bool {
 		p.waiting("", nil)
 	case errors.Is(err, ErrClockSkew):
 		p.waiting(ProblemClockSkew, nil)
+	case errors.Is(err, ErrEngineAsRoot):
+		p.waiting(ProblemEngineAsRoot, nil)
 	case errors.As(err, &rl):
 		p.mu.Lock()
 		p.notBefore = p.o.Now().Add(rl.After)

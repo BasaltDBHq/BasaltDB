@@ -307,6 +307,7 @@ var vectorContexts = map[string]SigningContext{
 	"BOX_KEY":         ContextBoxKey,
 	"ROTATE":          ContextRotate,
 	"CONNECT_COLLECT": ContextConnectCollect,
+	"CONNECT_REACH":   ContextConnectReach,
 }
 
 func TestSignatureVectors(t *testing.T) {

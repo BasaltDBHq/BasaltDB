@@ -13,9 +13,12 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 )
 
 // Address is a collected database address: never a password.
@@ -55,7 +58,35 @@ func (a Address) Check() error {
 		a.SupabaseRef != "" && !refShape.MatchString(a.SupabaseRef):
 		return ErrAddressInvalid
 	}
-	return a.checkRef()
+	if err := a.checkRef(); err != nil {
+		return err
+	}
+	return a.checkAsDatabaseURL()
+}
+
+// checkAsDatabaseURL applies the rules of basalt init --remote's
+// --database-url (step 1) to the connection string the agent would log in
+// with at a: the database that string names, as init reads it, must be
+// exactly a, Supabase ref included. So the engine accepts no address that
+// the laptop path would read as another database.
+func (a Address) checkAsDatabaseURL() error {
+	u := &url.URL{
+		Scheme: "postgres", User: url.User(LoginUser(a, "basalt")),
+		Host: net.JoinHostPort(a.Host, strconv.Itoa(a.Port)), Path: "/" + a.Database,
+	}
+	t, err := setupcode.TargetOf(u)
+	if err != nil || t.Host != a.Host || t.Port != a.Port || t.Database != a.Database || t.SupabaseRef != a.SupabaseRef {
+		return ErrAddressInvalid
+	}
+	return nil
+}
+
+// Canonical is a as a reach report names it: the host and the Supabase ref
+// in lowercase (CONTRACT.md, Connect, The reach check). The port and the
+// database are as given.
+func (a Address) Canonical() Address {
+	a.Host, a.SupabaseRef = strings.ToLower(a.Host), strings.ToLower(a.SupabaseRef)
+	return a
 }
 
 // checkRef ties a Supabase ref to the host, since Name shows the ref in

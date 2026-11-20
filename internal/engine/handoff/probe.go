@@ -57,8 +57,67 @@ const probePasswordBytes = 24
 
 // ErrUnreachable is a probe that reached no server that verified: no
 // address answered, or the certificate did not verify for the host name
-// (problem DATABASE_UNREACHABLE_FROM_BOT).
+// (problem DATABASE_UNREACHABLE_FROM_BOT). Every such failure is a
+// *ReachError with its reason, which errors.Is matches to ErrUnreachable.
 var ErrUnreachable = errors.New("the database cannot be reached from the bot's machine with a verified certificate")
+
+// The results and reasons of a reach report (CONTRACT.md, Connect, The
+// reach check).
+const (
+	ResultReachable   = "REACHABLE"
+	ResultUnreachable = "UNREACHABLE"
+	// ReasonAddressRefused: the host resolves to an address the engine
+	// never connects to.
+	ReasonAddressRefused = "ADDRESS_REFUSED"
+	// ReasonNoRoute: no address of the server accepted a connection (a
+	// host that does not resolve counts as this too).
+	ReasonNoRoute = "NO_ROUTE"
+	// ReasonTLSNotVerified: the server answered without TLS, or with a
+	// certificate that does not verify for the host name.
+	ReasonTLSNotVerified = "TLS_NOT_VERIFIED"
+	// ReasonTimeout: no answer in time.
+	ReasonTimeout = "TIMEOUT"
+)
+
+// Reach is what a probe found, as the engine reports it: Reason is empty
+// when a probe passed.
+type Reach struct{ Reason string }
+
+// ReachError is a probe that failed for Reason. ADDRESS_REFUSED is also
+// ErrAddressInvalid (problem ADDRESS_INVALID); every other reason is
+// ErrUnreachable.
+type ReachError struct{ Reason string }
+
+func (e *ReachError) Error() string {
+	if e.Reason == ReasonAddressRefused {
+		return ErrAddressInvalid.Error()
+	}
+	return ErrUnreachable.Error() + " (" + e.Reason + ")"
+}
+
+// Is matches ErrAddressInvalid for ADDRESS_REFUSED, ErrUnreachable for
+// the others.
+func (e *ReachError) Is(target error) bool {
+	if e.Reason == ReasonAddressRefused {
+		return target == ErrAddressInvalid
+	}
+	return target == ErrUnreachable
+}
+
+// ReachOf is the report for a probe's outcome err, and false when there is
+// none to make: an address that failed the shape rules is never reported,
+// and neither is a failure that is not the database's (a broken random
+// source).
+func ReachOf(err error) (Reach, bool) {
+	if err == nil {
+		return Reach{}, true
+	}
+	var re *ReachError
+	if errors.As(err, &re) {
+		return Reach{Reason: re.Reason}, true
+	}
+	return Reach{}, false
+}
 
 // Prober checks a collected address the way the contract says, with logins
 // bound to fail. It never holds the agent's password: Probe takes none, and
@@ -80,33 +139,52 @@ type Probed struct {
 	ChannelBinding bool
 }
 
-// Probe checks a's shape, resolves its host once and refuses any address
-// outside global unicast (ErrAddressInvalid), then tries logins as user with
-// a random password to that address, the host name kept for TLS, with
-// sslmode=verify-full: first with channel_binding=require, then without.
-// A login refused for its password proves the server is reachable and its
-// certificate verifies; ErrUnreachable when none does.
+// Probe checks a's shape and resolves its host (Resolve), then probes the
+// address it resolved to (ProbeAt).
 func (p Prober) Probe(ctx context.Context, a Address, user string) (Probed, error) {
-	if err := a.Check(); err != nil {
+	ip, err := p.Resolve(ctx, a)
+	if err != nil {
 		return Probed{}, err
+	}
+	return p.ProbeAt(ctx, a, ip, user)
+}
+
+// Resolve checks a's shape (ErrAddressInvalid), resolves its host once and
+// refuses any address outside global unicast (ADDRESS_REFUSED); a host
+// that resolves to nothing is NO_ROUTE. It returns the address to connect
+// to.
+func (p Prober) Resolve(ctx context.Context, a Address) (netip.Addr, error) {
+	if err := a.Check(); err != nil {
+		return netip.Addr{}, err
 	}
 	ip, err := pick(ctx, p.resolver(), a.Host)
 	switch {
 	case errors.Is(err, ErrAddressInvalid):
-		return Probed{}, err
+		return netip.Addr{}, &ReachError{Reason: ReasonAddressRefused}
 	case err != nil:
-		return Probed{}, ErrUnreachable
+		return netip.Addr{}, &ReachError{Reason: ReasonNoRoute}
 	}
+	return ip, nil
+}
+
+// ProbeAt tries logins as user with a random password to ip, which Resolve
+// returned for a, the host name kept for TLS, with sslmode=verify-full:
+// first with channel_binding=require, then without. A login refused for
+// its password proves the server is reachable and its certificate
+// verifies; otherwise a *ReachError says why none did.
+func (p Prober) ProbeAt(ctx context.Context, a Address, ip netip.Addr, user string) (Probed, error) {
+	var last error
 	for _, binding := range []bool{true, false} {
 		err := p.login(ctx, a, ip, user, binding)
 		if proves(binding, err) {
 			return Probed{IP: ip, ChannelBinding: binding}, nil
 		}
+		last = err
 		if unreachable(err) {
 			break
 		}
 	}
-	return Probed{}, ErrUnreachable
+	return Probed{}, &ReachError{Reason: reasonOf(last)}
 }
 
 func (p Prober) resolver() Resolver {
@@ -115,6 +193,31 @@ func (p Prober) resolver() Resolver {
 	}
 	return p.Resolver
 }
+
+// reasonOf is why a probe login that proved nothing failed: TIMEOUT for no
+// answer in time, TLS_NOT_VERIFIED for a server without TLS or with a
+// certificate that does not verify, NO_ROUTE otherwise.
+func reasonOf(err error) string {
+	var (
+		ne      net.Error
+		verify  *tls.CertificateVerificationError
+		host    x509.HostnameError
+		unknown x509.UnknownAuthorityError
+		invalid x509.CertificateInvalidError
+	)
+	switch {
+	case errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &ne) && ne.Timeout()):
+		return ReasonTimeout
+	case errors.As(err, &verify) || errors.As(err, &host) || errors.As(err, &unknown) || errors.As(err, &invalid),
+		err != nil && strings.Contains(err.Error(), serverRefusedTLS):
+		return ReasonTLSNotVerified
+	}
+	return ReasonNoRoute
+}
+
+// serverRefusedTLS is pgconn's error for a server that answered the TLS
+// request with no.
+const serverRefusedTLS = "server refused TLS connection"
 
 // login tries one login bound to fail and closes it at once.
 func (p Prober) login(ctx context.Context, a Address, ip netip.Addr, user string, binding bool) error {

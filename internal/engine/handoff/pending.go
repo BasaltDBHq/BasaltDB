@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -34,27 +35,35 @@ const (
 	ProblemUnreachable    = "DATABASE_UNREACHABLE_FROM_BOT"
 )
 
-// The collect cadence (CONTRACT.md, The engine and a connect-only code,
-// Collecting): every 15 seconds for the first 30 minutes after the code
-// was made, every 5 minutes for the next 2 hours, then only on status and
-// at the hourly heartbeat until the code expires.
+// The collect cadence (CONTRACT.md, Connect, The reach check, Polling):
+// every 15 seconds while the setup waits for an address or cannot reach
+// it, for the first 2 hours after the code was made, then every 5 minutes
+// until the code expires, and at once on status.
 const (
-	fastEvery    = 15 * time.Second
-	fastFor      = 30 * time.Minute
-	slowEvery    = 5 * time.Minute
-	slowFor      = 2 * time.Hour
-	heartbeat    = time.Hour
-	statusMinGap = 10 * time.Second
+	fastEvery = 15 * time.Second
+	fastFor   = 2 * time.Hour
+	slowEvery = 5 * time.Minute
 )
 
-// Collector asks the connect service for the address: *Client.
+// reuseFor is how long a passed PREVIEW probe stands in for the SET_UP
+// probe of the same address and resolved IP (CONTRACT.md, Connect, The
+// reach check, Probes), and how long a PREVIEW address that was not
+// reached waits before it is probed again.
+const reuseFor = 5 * time.Minute
+
+// Collector asks the connect service for the address and reports whether
+// the engine reached a PREVIEW one: *Client.
 type Collector interface {
-	Collect(ctx context.Context, setupID, fingerprint string) (Address, error)
+	Collect(ctx context.Context, setupID, fingerprint string) (Collected, error)
+	Report(ctx context.Context, setupID, fingerprint string, a Address, r Reach) error
 }
 
 // AddressProber probes an address with logins bound to fail: Prober.
+// Resolve checks the address and resolves its host once; ProbeAt probes the
+// address it resolved to.
 type AddressProber interface {
-	Probe(ctx context.Context, a Address, user string) (Probed, error)
+	Resolve(ctx context.Context, a Address) (netip.Addr, error)
+	ProbeAt(ctx context.Context, a Address, ip netip.Addr, user string) (Probed, error)
 }
 
 // Files are the agent's files and its entry in engine.json, as the engine
@@ -120,10 +129,16 @@ type Pending struct {
 	made    time.Time
 	expires time.Time
 
+	// stepMu makes one step at a time: the loop's and status's.
+	stepMu sync.Mutex
+
 	mu sync.Mutex
 	st State
 	// probed is the probe that passed (CONFIRM_DATABASE).
 	probed Probed
+	// preview is the last PREVIEW address the engine probed and what it
+	// found. It is never part of st: nothing of a PREVIEW address is shown.
+	preview previewProbe
 	// lastTry is when the address was last asked for; notBefore holds the
 	// next try back after RATE_LIMITED.
 	lastTry, notBefore time.Time
@@ -159,6 +174,23 @@ func New(o Options) (*Pending, error) {
 	return out, nil
 }
 
+// previewProbe is a probe of a PREVIEW address: the address (canonical),
+// the IP its host resolved to, when, and its outcome (passed with probed,
+// or reach's reason).
+type previewProbe struct {
+	addr   Address
+	ip     netip.Addr
+	at     time.Time
+	reach  Reach
+	probed Probed
+}
+
+// passed reports whether the probe passed for a at ip within reuseFor of
+// now: only then does the SET_UP probe reuse it.
+func (v previewProbe) passed(a Address, ip netip.Addr, now time.Time) bool {
+	return !v.at.IsZero() && v.reach.Reason == "" && v.addr == a.Canonical() && v.ip == ip && now.Sub(v.at) <= reuseFor
+}
+
 // State is the setup's state now: it reads engine.json first, so a pending
 // setup that init replaced or removed drops the collected address at once.
 func (p *Pending) State() State {
@@ -174,15 +206,13 @@ func (p *Pending) State() State {
 	return st
 }
 
-// StatusCollect is a status call: while waiting, and at most every 10
-// seconds, it collects (the only collecting once the cadence's first 2.5
-// hours passed), then returns the state.
+// StatusCollect is a status call: while waiting, it collects at once,
+// then returns the state. When the loop's step is running, it does not
+// wait for it and returns the state as it is.
 func (p *Pending) StatusCollect(ctx context.Context) State {
-	p.mu.Lock()
-	due := p.o.Now().Sub(p.lastTry) >= statusMinGap
-	p.mu.Unlock()
-	if due {
-		p.Step(ctx)
+	if p.stepMu.TryLock() {
+		p.step(ctx)
+		p.stepMu.Unlock()
 	}
 	return p.State()
 }
@@ -215,12 +245,9 @@ func (p *Pending) nextWait() (time.Duration, bool) {
 	if p.st.Phase != PhaseWaiting || !now.Before(p.expires) {
 		return 0, false
 	}
-	every := heartbeat
-	switch age := now.Sub(p.made); {
-	case age < fastFor:
+	every := slowEvery
+	if now.Sub(p.made) < fastFor {
 		every = fastEvery
-	case age < fastFor+slowFor:
-		every = slowEvery
 	}
 	next := p.lastTry.Add(every)
 	if p.notBefore.After(next) {
@@ -231,10 +258,18 @@ func (p *Pending) nextWait() (time.Duration, bool) {
 
 // Step is one collect, check and probe. It does nothing unless the setup
 // waits for its address and the code has not expired. The one condition
-// that stops it for good is a probe that passed: until then each step
-// collects again, so an address the person changes on the page (running
-// the same link again) is picked up and probed.
+// that stops it for good is a probe of a SET_UP address that passed: until
+// then each step collects again, so an address the person changes on the
+// page (running the same link again) is picked up and probed. A PREVIEW
+// address is only checked, probed and reported (preview).
 func (p *Pending) Step(ctx context.Context) {
+	p.stepMu.Lock()
+	defer p.stepMu.Unlock()
+	p.step(ctx)
+}
+
+// step is Step with stepMu held.
+func (p *Pending) step(ctx context.Context) {
 	if !p.recheckConfig() {
 		return
 	}
@@ -248,25 +283,29 @@ func (p *Pending) Step(ctx context.Context) {
 	setup := p.st.Setup
 	p.mu.Unlock()
 
-	addr, err := p.o.Collector.Collect(ctx, setup.SetupID, setup.Fingerprint)
-	var rl *RateLimitedError
-	switch {
-	case errors.Is(err, ErrNotHeld):
-		p.waiting("", nil)
-		return
-	case errors.Is(err, ErrClockSkew):
-		p.waiting(ProblemClockSkew, nil)
-		return
-	case errors.As(err, &rl):
-		p.mu.Lock()
-		p.notBefore = p.o.Now().Add(rl.After)
-		p.mu.Unlock()
-		return
-	case err != nil:
-		p.o.Log.Warn("collect the database's address", "setupId", setup.SetupID, "err", err)
+	got, err := p.o.Collector.Collect(ctx, setup.SetupID, setup.Fingerprint)
+	if !p.collected(setup, err) {
 		return
 	}
-	probed, err := p.o.Prober.Probe(ctx, addr, LoginUser(addr, p.role))
+	if !got.SetUp() {
+		// A preview leaves status as before the address came.
+		p.waiting("", nil)
+		p.previewStep(ctx, setup, got.Address)
+		return
+	}
+	addr := got.Address
+	ip, err := p.o.Prober.Resolve(ctx, addr)
+	var probed Probed
+	if err == nil {
+		p.mu.Lock()
+		reuse, v := p.preview.passed(addr, ip, p.o.Now()), p.preview
+		p.mu.Unlock()
+		if reuse {
+			probed = v.probed
+		} else {
+			probed, err = p.o.Prober.ProbeAt(ctx, addr, ip, LoginUser(addr, p.role))
+		}
+	}
 	switch {
 	case errors.Is(err, ErrAddressInvalid):
 		p.o.Log.Warn("the collected address is refused", "setupId", setup.SetupID)
@@ -282,8 +321,75 @@ func (p *Pending) Step(ctx context.Context) {
 	if p.st.Phase != PhaseWaiting || p.st.Setup.SetupID != setup.SetupID {
 		return
 	}
-	p.st.Phase, p.st.Database, p.st.Problem, p.probed = PhaseConfirm, &addr, "", probed
+	p.st.Phase, p.st.Database, p.st.Problem, p.probed, p.preview = PhaseConfirm, &addr, "", probed, previewProbe{}
 	p.o.Log.Info("the collected database passed the probe; waiting for the person to confirm it", "setupId", setup.SetupID)
+}
+
+// collected handles a collect's refusal and reports whether an address
+// came.
+func (p *Pending) collected(setup config.Setup, err error) bool {
+	var rl *RateLimitedError
+	switch {
+	case err == nil:
+		return true
+	case errors.Is(err, ErrNotHeld):
+		p.waiting("", nil)
+	case errors.Is(err, ErrClockSkew):
+		p.waiting(ProblemClockSkew, nil)
+	case errors.As(err, &rl):
+		p.mu.Lock()
+		p.notBefore = p.o.Now().Add(rl.After)
+		p.mu.Unlock()
+	default:
+		p.o.Log.Warn("collect the database's address", "setupId", setup.SetupID, "err", err)
+	}
+	return false
+}
+
+// previewStep is a PREVIEW address (CONTRACT.md, Connect, The reach
+// check): the person has not approved, so the engine checks it, probes it
+// with a wrong password, reports whether it reached it, and changes
+// nothing else: the setup stays waiting, status shows nothing of it, and
+// the collecting goes on. An address that fails the shape rules is not
+// reported. The same address is reported again from its probe, without a
+// new one, so a page that asks again (its Retry, a new preview hold with no
+// report) gets an answer. An address that was reached is never probed
+// again while it stays the same, so one flow leaves at most two failed
+// logins (this probe and the SET_UP one); one that was not reached is
+// probed again reuseFor after its probe, which logs no failed login there
+// (no connection, no verified certificate, or a refused address).
+func (p *Pending) previewStep(ctx context.Context, setup config.Setup, addr Address) {
+	now := p.o.Now()
+	p.mu.Lock()
+	v := p.preview
+	p.mu.Unlock()
+	if v.at.IsZero() || v.addr != addr.Canonical() || (v.reach.Reason != "" && now.Sub(v.at) > reuseFor) {
+		v = previewProbe{addr: addr.Canonical(), at: now}
+		ip, err := p.o.Prober.Resolve(ctx, addr)
+		if err == nil {
+			v.ip = ip
+			v.probed, err = p.o.Prober.ProbeAt(ctx, addr, ip, LoginUser(addr, p.role))
+		}
+		r, report := ReachOf(err)
+		if !report {
+			p.o.Log.Warn("a preview address is refused or could not be probed; nothing is reported", "setupId", setup.SetupID)
+			return
+		}
+		v.reach = r
+		p.mu.Lock()
+		p.preview = v
+		p.mu.Unlock()
+	}
+	err := p.o.Collector.Report(ctx, setup.SetupID, setup.Fingerprint, addr, v.reach)
+	var rl *RateLimitedError
+	switch {
+	case errors.As(err, &rl):
+		p.mu.Lock()
+		p.notBefore = p.o.Now().Add(rl.After)
+		p.mu.Unlock()
+	case err != nil:
+		p.o.Log.Warn("report whether the preview address was reached", "setupId", setup.SetupID, "err", err)
+	}
 }
 
 // waiting records a step that left the setup waiting, with its problem.
@@ -315,7 +421,7 @@ func (p *Pending) recheckConfig() bool {
 		return true
 	}
 	p.mu.Lock()
-	p.st.Phase, p.st.Database, p.st.Problem, p.probed = PhaseGone, nil, "", Probed{}
+	p.st.Phase, p.st.Database, p.st.Problem, p.probed, p.preview = PhaseGone, nil, "", Probed{}, previewProbe{}
 	p.mu.Unlock()
 	p.o.Log.Info("engine.json no longer records the pending connect-only setup; the collected address is dropped", "setupId", id)
 	p.done()
@@ -396,7 +502,7 @@ func (p *Pending) refuse(id string, db Address) (Answer, error) {
 	if err := p.o.Files.RefuseSetup(id); err != nil {
 		return Answer{}, err
 	}
-	p.st.Phase, p.st.Database, p.st.Problem, p.probed = PhaseRefused, nil, "", Probed{}
+	p.st.Phase, p.st.Database, p.st.Problem, p.probed, p.preview = PhaseRefused, nil, "", Probed{}, previewProbe{}
 	p.st.Setup.AwaitingAddress, p.st.Setup.Refused = false, true
 	p.o.Log.Info("the person refused the collected database; its address and the agent's password are forgotten", "setupId", id)
 	return Answer{Database: db}, nil

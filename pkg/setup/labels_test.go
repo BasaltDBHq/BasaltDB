@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
+	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 	"github.com/basaltdbhq/basaltdb/pkg/setup"
 )
 
@@ -125,9 +127,35 @@ func TestColumnLabelsRefused(t *testing.T) {
 	require.Equal(t, setup.CodeAnswersInvalid, codeOf(t, run(setup.RunInput{ColumnClasses: many}, "public.leads")))
 	require.Zero(t, installedVersion(t, d), "nothing changed")
 
-	// RestPublic leaves a labeled column as it is.
+	// Without RestPublic, a column the person did not label stays so.
 	require.NoError(t, run(setup.RunInput{ColumnClasses: []setup.ColumnClass{twice}}, "public.leads"))
 	got := labelsOf(t, d, "public.leads")
 	require.Equal(t, secret, got["name"])
-	require.Equal(t, unlabeled, got["status"], "a column the person did not label stays unlabeled without RestPublic")
+	require.Equal(t, unlabeled, got["status"])
+}
+
+// RestPublic never touches a column that already has a class: a later
+// setup (another agent on the same database) marks only the unlabeled
+// rest PUBLIC.
+func TestRestPublicKeepsStoredClasses(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	d := guardtest.New(t).WithDemo(t)
+	_, give := personPasskey(t)
+	secret := setup.Label{Class: guard.ClassSecret}
+	first := newCode(t, d, connectOnly(t))
+	_, err := setup.Run(ctx, d.Admin, ticked(first, "public.leads"), setup.RunInput{
+		Passkey:       verified(t, give),
+		ColumnClasses: []setup.ColumnClass{{Table: "public.leads", Column: "name", Label: secret, Was: unlabeled}},
+	})
+	require.NoError(t, err)
+
+	second := newCode(t, d, func(p *setupcode.Payload) {
+		p.Agent.Name, p.Agent.Write = "helper", []string{"public.leads"}
+	})
+	_, err = setup.Run(ctx, d.Admin, setup.Request{Code: second, Now: time.Now(), ConnectPage: true}, setup.RunInput{RestPublic: true})
+	require.NoError(t, err)
+	got := labelsOf(t, d, "public.leads")
+	require.Equal(t, secret, got["name"], "a stored class is never lowered")
+	require.Equal(t, setup.Label{Class: guard.ClassPublic}, got["status"])
 }

@@ -218,7 +218,7 @@ type Checked struct {
 	// (Tables, else the code's write and read tables), by table in name
 	// order and then column order, with its class in the database now
 	// (UNCLASSIFIED with none stored, and in a database with no guard
-	// yet). Empty for an UPGRADE code.
+	// yet). Only with Request.ConnectPage; empty for an UPGRADE code.
 	Columns []ColumnLabel
 }
 
@@ -339,7 +339,7 @@ func Check(ctx context.Context, conn *pgx.Conn, req Request) (Checked, error) {
 	if out.PasskeyNeeded, err = setuprun.PasskeyNeeded(ctx, conn, false); err != nil {
 		return Checked{}, asError(err)
 	}
-	if s.P.Agent != nil {
+	if s.P.Agent != nil && req.ConnectPage { // the laptop command shows no labels
 		labels, err := guard.ReadLabels(ctx, conn, s.Names, agentTables(s))
 		if err != nil {
 			return Checked{}, asError(err)
@@ -558,6 +558,8 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 	var registered *RegisteredPasskey
 	// The tables the grants cover, read again in this transaction before
 	// the grants name them.
+	// A table dropped between this read and the grants still fails the
+	// grant itself: SETUP_FAILED, nothing changed.
 	first := func(ctx context.Context, tx pgx.Tx) error { return s.RecheckTables(ctx, tx) }
 	inTx := func(ctx context.Context, tx pgx.Tx) error {
 		if err := writeLabels(ctx, tx, s, in, req.Now); err != nil {

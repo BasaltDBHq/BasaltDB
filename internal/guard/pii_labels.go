@@ -166,17 +166,22 @@ func WriteLabels(ctx context.Context, tx pgx.Tx, n Names, tables []string, chang
 	if len(changes) == 0 && !restPublic {
 		return 0, nil
 	}
-	cols, err := tableColumns(ctx, tx, tables)
-	if err != nil {
-		return 0, err
-	}
-	types := make(map[[2]string]string, len(cols))
-	for _, c := range cols {
-		types[[2]string{c.table, c.column}] = c.dataType
-	}
 	written := 0
-	err = asGuard(ctx, tx, n, func() error {
-		stored, err := storedLabels(ctx, tx, tables, true)
+	err := asGuard(ctx, tx, n, func() error {
+		// No class lands in between: a basalt classify meanwhile waits for
+		// this transaction (or this one for it, and then sees its rows).
+		if _, err := tx.Exec(ctx, "LOCK TABLE basalt_meta.pii_columns IN SHARE ROW EXCLUSIVE MODE"); err != nil {
+			return fmt.Errorf("lock the stored classes: %w", err)
+		}
+		cols, err := tableColumns(ctx, tx, tables)
+		if err != nil {
+			return err
+		}
+		types := make(map[[2]string]string, len(cols))
+		for _, c := range cols {
+			types[[2]string{c.table, c.column}] = c.dataType
+		}
+		stored, err := storedLabels(ctx, tx, tables, false)
 		if err != nil {
 			return err
 		}

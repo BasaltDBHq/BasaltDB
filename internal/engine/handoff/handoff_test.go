@@ -567,12 +567,19 @@ func TestPreviewOnlyReports(t *testing.T) {
 	require.Nil(t, st.Database)
 	require.Empty(t, st.Problem)
 
-	// The same address after 5 minutes is probed again.
+	// The same address that was not reached is probed again after 5
+	// minutes; once reached, never again while it stays the same, so a flow
+	// leaves at most two failed logins.
 	h.prober.err = nil
 	h.clock.advance(reuseFor + time.Second)
 	h.p.Step(ctx)
 	require.Equal(t, 3, h.prober.probes)
 	require.Equal(t, report{db, Reach{}}, h.col.reports[3])
+	h.clock.advance(20 * time.Minute)
+	h.p.Step(ctx)
+	require.Equal(t, 3, h.prober.probes, "a reached address is not probed again")
+	require.Equal(t, report{db, Reach{}}, h.col.reports[4])
+	h.col.reports = h.col.reports[:4]
 
 	// A refused range is reported ADDRESS_REFUSED; a shape that fails is
 	// never reported.
@@ -674,4 +681,18 @@ func TestReachReasons(t *testing.T) {
 	r, _ = ReachOf(err)
 	require.Equal(t, ReasonAddressRefused, r.Reason)
 	require.ErrorIs(t, err, ErrAddressInvalid)
+}
+
+// A preview leaves status as before the address came: a problem from an
+// earlier collect goes.
+func TestPreviewClearsAnEarlierProblem(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.col.err = ErrClockSkew
+	h.p.Step(context.Background())
+	require.Equal(t, ProblemClockSkew, h.p.State().Problem)
+	h.col.err, h.col.addr, h.col.phase = nil, db, HoldPreview
+	h.clock.advance(fastEvery)
+	h.p.Step(context.Background())
+	require.Empty(t, h.p.State().Problem)
 }

@@ -55,8 +55,8 @@ const (
 
 // reuseFor is how long a passed PREVIEW probe stands in for the SET_UP
 // probe of the same address and resolved IP (CONTRACT.md, Connect, The
-// reach check, Probes). A PREVIEW address collected again within it is
-// reported again without a new probe.
+// reach check, Probes), and how long a PREVIEW address that was not
+// reached waits before it is probed again.
 const reuseFor = 5 * time.Minute
 
 // Collector asks the connect service for the address and reports whether
@@ -215,9 +215,13 @@ func (p *Pending) State() State {
 }
 
 // StatusCollect is a status call: while waiting, it collects at once,
-// then returns the state.
+// then returns the state. When the loop's step is running, it does not
+// wait for it and returns the state as it is.
 func (p *Pending) StatusCollect(ctx context.Context) State {
-	p.Step(ctx)
+	if p.stepMu.TryLock() {
+		p.step(ctx)
+		p.stepMu.Unlock()
+	}
 	return p.State()
 }
 
@@ -269,6 +273,11 @@ func (p *Pending) nextWait() (time.Duration, bool) {
 func (p *Pending) Step(ctx context.Context) {
 	p.stepMu.Lock()
 	defer p.stepMu.Unlock()
+	p.step(ctx)
+}
+
+// step is Step with stepMu held.
+func (p *Pending) step(ctx context.Context) {
 	if !p.recheckConfig() {
 		return
 	}
@@ -287,6 +296,8 @@ func (p *Pending) Step(ctx context.Context) {
 		return
 	}
 	if !got.SetUp() {
+		// A preview leaves status as before the address came.
+		p.waiting("", nil)
 		p.previewStep(ctx, setup, got.Address)
 		return
 	}
@@ -350,15 +361,19 @@ func (p *Pending) collected(setup config.Setup, err error) bool {
 // with a wrong password, reports whether it reached it, and changes
 // nothing else: the setup stays waiting, status shows nothing of it, and
 // the collecting goes on. An address that fails the shape rules is not
-// reported. The same address within reuseFor of its probe is reported
-// again without a new probe, so a page that asks again (its Retry, a new
-// preview hold with no report) gets an answer.
+// reported. The same address is reported again from its probe, without a
+// new one, so a page that asks again (its Retry, a new preview hold with no
+// report) gets an answer. An address that was reached is never probed
+// again while it stays the same, so one flow leaves at most two failed
+// logins (this probe and the SET_UP one); one that was not reached is
+// probed again reuseFor after its probe, which logs no failed login there
+// (no connection, no verified certificate, or a refused address).
 func (p *Pending) previewStep(ctx context.Context, setup config.Setup, addr Address) {
 	now := p.o.Now()
 	p.mu.Lock()
 	v := p.preview
 	p.mu.Unlock()
-	if v.at.IsZero() || v.addr != addr.Canonical() || now.Sub(v.at) > reuseFor {
+	if v.at.IsZero() || v.addr != addr.Canonical() || (v.reach.Reason != "" && now.Sub(v.at) > reuseFor) {
 		v = previewProbe{addr: addr.Canonical(), at: now}
 		ip, err := p.o.Prober.Resolve(ctx, addr)
 		if err == nil {

@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -187,6 +188,17 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			require.NoError(t, err)
 			cfg := &config.Config{SocketDir: "/run/basalt", OperatedBy: operatedBy, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
 			r, err := EngineDownStatusAfterStart("bot", cmds, cfg, nil, "test", statusNow, "basalt mcp could not start the engine: the basalt binary /x/basalt is gone. Its log is /s/engine.log.")
+			require.NoError(t, err)
+			return r
+		}},
+		problemEngineGaveUp: {state: guard.GuardUnknown, report: func(t *testing.T) StatusReport {
+			t.Helper()
+			cmds, err := NewCommands("bot", "", "linux", nil)
+			require.NoError(t, err)
+			dir := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(dir, lastStopFile), []byte(`{"reason":"the engine crashed 5 times within 10s; last: exit status 1","at":"2026-11-20T01:02:03Z"}`), 0o600))
+			cfg := &config.Config{SocketDir: "/run/basalt", StateDir: dir, OperatedBy: operatedBy, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
+			r, err := EngineDownStatus("bot", cmds, cfg, nil, "test", statusNow)
 			require.NoError(t, err)
 			return r
 		}},
@@ -1034,4 +1046,60 @@ func TestEngineDownNamesWhyTheStartFailed(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, problemEngineUnreachable, r.Problems[0].Code)
 	require.Len(t, r.Problems, 1)
+}
+
+func TestStatusStartedBy(t *testing.T) {
+	t.Parallel()
+	for in, want := range map[string]string{"hand": "HAND", "mcp": "MCP", "crash": "CRASH", "": ""} {
+		d := deps()
+		d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
+		setApprovals(&d, keys{n: 1})
+		d.StartedBy = in
+		r, err := NewService(d).Status(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, want, r.Engine.StartedBy, in)
+		require.Nil(t, r.Engine.LastStop, "a running engine reports no last stop")
+	}
+}
+
+func TestEngineDownStatusLastStop(t *testing.T) {
+	t.Parallel()
+	cmds, err := NewCommands("bot", "", "linux", nil)
+	require.NoError(t, err)
+	dir := t.TempDir()
+	cfg := &config.Config{SocketDir: "/run/basalt", StateDir: dir, Agents: []config.Agent{{Name: "bot", OSUser: "bot", Store: config.PostgresStore(statusCredential)}}}
+
+	r, err := EngineDownStatus("bot", cmds, cfg, nil, "test", statusNow)
+	require.NoError(t, err)
+	require.Nil(t, r.Engine.LastStop, "no file, no last stop")
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, lastStopFile), []byte("{\"reason\":\"the engine crashed 5 times within 10s; last: exit status 1\\u0007\",\"at\":\"2026-11-20T01:02:03Z\"}"), 0o600))
+	r, err = EngineDownStatus("bot", cmds, cfg, nil, "test", statusNow)
+	require.NoError(t, err)
+	require.NotNil(t, r.Engine.LastStop)
+	require.Equal(t, "the engine crashed 5 times within 10s; last: exit status 1 ", r.Engine.LastStop.Reason, "unprintable characters are blanked")
+	require.Equal(t, time.Date(2026, 11, 20, 1, 2, 3, 0, time.UTC), r.Engine.LastStop.At)
+	p := findProblem(t, r, problemEngineGaveUp)
+	require.Contains(t, p.Message, "the engine crashed 5 times within 10s")
+	findProblem(t, r, problemEngineUnreachable)
+
+	// A file that is not a record shows nothing.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, lastStopFile), []byte("not json"), 0o600))
+	r, err = EngineDownStatus("bot", cmds, cfg, nil, "test", statusNow)
+	require.NoError(t, err)
+	require.Nil(t, r.Engine.LastStop)
+}
+
+func TestReadLastStopRefusesASymlinkAndAFifo(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.json")
+	require.NoError(t, os.WriteFile(target, []byte(`{"reason":"x","at":"2026-11-20T01:02:03Z"}`), 0o600))
+	require.NoError(t, os.Symlink(target, filepath.Join(dir, lastStopFile)))
+	_, ok := ReadLastStop(dir)
+	require.False(t, ok, "a symlink is not the record")
+	require.NoError(t, os.Remove(filepath.Join(dir, lastStopFile)))
+	require.NoError(t, syscall.Mkfifo(filepath.Join(dir, lastStopFile), 0o600))
+	_, ok = ReadLastStop(dir)
+	require.False(t, ok, "a pipe is not the record and does not block")
 }

@@ -165,6 +165,7 @@ Status problems (`status` tool, every one +pm):
 | Problem | Severity | Steps |
 |---|---|---|
 | `ENGINE_START_FAILED` | `ERROR` | The same steps as `ENGINE_UNREACHABLE`; its message is why `basalt mcp` could not start the engine ([Startup failures](#next-steps)) |
+| `ENGINE_GAVE_UP` | `ERROR` | The same steps as `ENGINE_UNREACHABLE`; its message is why the engine's supervisor gave up restarting it, from `engine.lastStop` |
 | `ENGINE_UNREACHABLE` | `ERROR` | P `RUN_COMMAND` (start the engine), P `TELL_AGENT`, A `STOP` |
 | `DATABASE_UNREACHABLE` | `ERROR` | A `ASK_PERSON` (check the database is up) |
 | `TOO_MANY_CONNECTIONS` | `ERROR` | A `ASK_PERSON` (stop a second engine for the agent, or wait for stale sessions to close; the error's person message) |
@@ -214,6 +215,7 @@ Chat-only operator. When `operatedBy` is `AGENT`, each entry below replaces the 
 | warning | `GUARD_UPGRADE_AVAILABLE` | — | A `RUN_COMMAND` (init --remote: an `UPGRADE` code); +pm |
 | problem | `ENGINE_UNREACHABLE` | — | A `RUN_COMMAND` (start the engine), A `CALL_TOOL` (`status`) |
 | problem | `ENGINE_START_FAILED` | — | A `RUN_COMMAND` (start the engine), A `CALL_TOOL` (`status`) |
+| problem | `ENGINE_GAVE_UP` | — | A `RUN_COMMAND` (start the engine), A `CALL_TOOL` (`status`) |
 | problem | `CREDENTIAL_REJECTED` | — | A `RUN_COMMAND` (init --remote --new-code: an `AGENT` code with a new password); +pm |
 | problem | `GUARD_MISSING` | — | A `RUN_COMMAND` (init --remote: an `INSTALL` code); +pm |
 | problem | `GUARD_OUTDATED` | — | A `RUN_COMMAND` (init --remote: an `UPGRADE` code); +pm |

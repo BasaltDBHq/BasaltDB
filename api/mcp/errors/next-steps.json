@@ -145,6 +145,7 @@
   "problems": [
     { "code": "ENGINE_UNREACHABLE", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "STOP" }] },
     { "code": "ENGINE_START_FAILED", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "STOP" }] },
+    { "code": "ENGINE_GAVE_UP", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "STOP" }] },
     { "code": "DATABASE_UNREACHABLE", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }] },
     { "code": "TOO_MANY_CONNECTIONS", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }] },
     { "code": "CREDENTIAL_REJECTED", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "STOP" }] },
@@ -188,6 +189,7 @@
     { "kind": "WARNING", "code": "GUARD_UPGRADE_AVAILABLE", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }] },
     { "kind": "PROBLEM", "code": "ENGINE_UNREACHABLE", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },
     { "kind": "PROBLEM", "code": "ENGINE_START_FAILED", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },
+    { "kind": "PROBLEM", "code": "ENGINE_GAVE_UP", "personMessage": false, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },
     { "kind": "PROBLEM", "code": "CREDENTIAL_REJECTED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }] },
     { "kind": "PROBLEM", "code": "GUARD_MISSING", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }] },
     { "kind": "PROBLEM", "code": "GUARD_OUTDATED", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }] },

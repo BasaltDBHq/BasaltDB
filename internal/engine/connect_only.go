@@ -148,7 +148,7 @@ func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agen
 		return agentRuntime{}, fmt.Errorf("agent %s: %w", a.Name, err)
 	}
 	co := agent.ConnectOnly{
-		Name: a.Name, Commands: cmds, OperatedBy: env.cfg.OperatedBy, SameUser: !env.cfg.Service(),
+		Name: a.Name, Commands: cmds, OperatedBy: env.cfg.OperatedBy, SameUser: !env.cfg.Service(), StartedBy: env.startedBy,
 		PagesBase: env.pagesBase, PagesOrigin: env.pagesOrigin, ConnectBudget: env.cfg.ConnectLinkBudget(),
 		Vault: env.vault, Handoff: pending, Log: log, Now: time.Now,
 	}

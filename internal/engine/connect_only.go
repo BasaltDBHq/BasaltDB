@@ -137,7 +137,7 @@ func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agen
 	pending, err := handoff.New(handoff.Options{
 		Agent: a.Name, Setup: *a.Setup, Collector: collector, Prober: env.handoff.Prober,
 		Files:   handoffFiles{configPath: env.configPath, agent: a.Name, credFile: a.Store.CredentialFile},
-		Changed: reload, Log: log.With("component", "connect"), Now: time.Now,
+		Changed: reload, Log: log.With("component", "connect"), Now: time.Now, Cache: handoff.FileCache{Dir: env.stateDir},
 	})
 	if err != nil {
 		return agentRuntime{}, fmt.Errorf("agent %s: %w", a.Name, err)
@@ -168,10 +168,13 @@ func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agen
 // Collecting): one collect, check, probe and, for a PREVIEW address,
 // report, signed with the engine's own key, and the state after. It never
 // reads .secret and never confirms: only the engine's confirm_database
-// does, so a database the probe passed waits for the engine.
+// does. It probes a PREVIEW address only when the engine's probe cache has
+// no probe of it, and a SET_UP address not at all (the engine probes it, or
+// reuses a passed preview probe), so a flow still leaves at most two
+// failed logins.
 func CollectWhileDown(ctx context.Context, cfg config.Config, configPath, goos string, a config.Agent, o HandoffOptions, log *slog.Logger) (handoff.State, error) {
-	if a.Setup == nil || !a.Setup.ConnectOnly() || cfg.Service() {
-		return handoff.State{}, errors.New("basalt status collects only for a waiting connect-only agent of a same-user engine")
+	if a.Setup == nil || !a.Setup.ConnectOnly() || cfg.Service() || os.Geteuid() == 0 {
+		return handoff.State{}, errors.New("basalt status collects only for a waiting connect-only agent of a same-user engine, and never as root")
 	}
 	keys, err := channel.LoadKeys(filepath.Join(cfg.StateDirFor(goos), channel.KeyFileName))
 	if err != nil {
@@ -181,6 +184,10 @@ func CollectWhileDown(ctx context.Context, cfg config.Config, configPath, goos s
 		Agent: a.Name, Setup: *a.Setup, Collector: handoff.NewClient(o.HTTP, o.serviceURL(), keys, time.Now), Prober: o.Prober,
 		Files:   handoffFiles{configPath: configPath, agent: a.Name, credFile: a.Store.CredentialFile},
 		Changed: func() {}, Log: log, Now: time.Now,
+		// The engine's own cache, so a reached preview is probed once
+		// whichever process collects it; a SET_UP address waits for the
+		// engine, which asks the person.
+		Cache: handoff.FileCache{Dir: cfg.StateDirFor(goos)}, NoSetUpProbe: true,
 	})
 	if err != nil {
 		return handoff.State{}, err

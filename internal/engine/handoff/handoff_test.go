@@ -714,3 +714,55 @@ func TestStatusCollectDoesNotWaitForTheLoop(t *testing.T) {
 	h.p.stepMu.Unlock()
 	require.Zero(t, h.col.calls, "no collect while the loop's step runs")
 }
+
+type memCache struct {
+	c  Cached
+	ok bool
+}
+
+func (m *memCache) Load(id string) (Cached, bool) { return m.c, m.ok && m.c.SetupID == id }
+func (m *memCache) Save(c Cached) error           { m.c, m.ok = c, true; return nil }
+
+// The probe cache carries a preview probe to the next process: a reached
+// address is reported again without a new probe, and a process that does
+// not probe SET_UP addresses (basalt status) reuses a passed one or waits.
+func TestProbeCacheAcrossProcesses(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	cache := &memCache{}
+	process := func(noSetUp bool) harness {
+		h := newHarness(t)
+		p, err := New(Options{
+			Agent: "lead_bot", Setup: fixtureSetup(), Collector: h.col, Prober: h.prober, Files: h.files,
+			Changed: func() {}, Log: slog.New(slog.DiscardHandler), Now: h.clock.Now, Cache: cache, NoSetUpProbe: noSetUp,
+		})
+		require.NoError(t, err)
+		h.p = p
+		h.col.err, h.col.addr, h.col.phase = nil, db, HoldPreview
+		return h
+	}
+	first := process(true)
+	first.p.StatusCollect(ctx)
+	require.Equal(t, 1, first.prober.probes)
+	require.True(t, cache.ok)
+	require.NotContains(t, cache.c.AddressKey, "example", "the cache keeps a hash, never the address")
+
+	second := process(true)
+	second.p.StatusCollect(ctx)
+	require.Zero(t, second.prober.probes, "a reached address is not probed again in another process")
+	require.Len(t, second.col.reports, 1)
+
+	// SET_UP in a process that does not probe it: the passed preview
+	// stands in within 5 minutes; without it, nothing is probed.
+	second.col.phase = HoldSetUp
+	second.p.StatusCollect(ctx)
+	require.Equal(t, PhaseConfirm, second.p.State().Phase)
+	require.Zero(t, second.prober.probes)
+
+	third := process(true)
+	third.col.phase = HoldSetUp
+	third.clock.advance(reuseFor + time.Minute)
+	third.p.StatusCollect(ctx)
+	require.Equal(t, PhaseWaiting, third.p.State().Phase)
+	require.Zero(t, third.prober.probes, "basalt status never probes a SET_UP address")
+}

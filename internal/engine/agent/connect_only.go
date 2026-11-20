@@ -138,10 +138,10 @@ func clockSkewSteps(b *Steps) string {
 // engineAsRootSteps: the engine was started as root without --user; it
 // must run as the agent's OS user to collect the address.
 func engineAsRootSteps(b *Steps) string {
-	b.AskPerson("Tell the person the engine runs as root without --user, so it cannot pick up this agent's database address until it is restarted as the agent's OS user or with --user.")
+	b.AskPerson("Tell the person the engine runs as root without --user, so it cannot pick up this agent's database address until it is restarted as the engine's user (the owner of its state directory) or with --user.")
 	b.EndTurn("End your turn: the person restarts the engine next.")
 	return "The engine on the agent's machine runs as root without --user, so it cannot pick up this agent's database address. " +
-		"Restart it as the agent's OS user, or with --user and that user, then tell the agent."
+		"Restart it as the engine's user (the owner of its state directory), or with --user and that user, then tell the agent."
 }
 
 // unreachableFromBotSteps: the bot's machine cannot reach the collected

@@ -782,9 +782,15 @@ func TestStatusCollectsWhileTheEngineIsDown(t *testing.T) {
 	var hs connectv1.HandoffStatusResponse
 	f.page.ok("HandoffStatus", map[string]any{"ticket": chk.GetTicket()}, &hs)
 	require.Equal(t, "REACHABLE", hs.GetReach().GetResult(), "the CLI reported for the engine")
+	probed := f.roleLogins()
+	require.NotZero(t, probed)
+	f.cliStatus(o)
+	f.cliStatus(o)
+	require.Equal(t, probed, f.roleLogins(), "a reached preview is probed once, however often status runs")
 
 	f.runOnPage(pasted)
 	out = f.cliStatus(o)
+	require.Equal(t, probed, f.roleLogins(), "the SET_UP address reuses the preview's probe")
 	require.Equal(t, "CONFIRM_DATABASE", setupOf(t, out)["state"])
 	require.Equal(t, dbHost, setupOf(t, out)["database"].(map[string]any)["host"])
 	require.Contains(t, problemCodes(out), "ENGINE_UNREACHABLE", "only the engine asks and confirms")

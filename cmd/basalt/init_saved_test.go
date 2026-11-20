@@ -205,9 +205,15 @@ func TestKeptCredentialSpecForAWaitingAgent(t *testing.T) {
 	spec := service.Spec{GOOS: "linux", Binary: "/b", ConfigPath: cfg, User: me(t)}
 	a := agentInstall{name: "bot", osUser: "tester", keepCredential: true, initArgs: []string{"--agent=bot"}}
 
+	_, err = keptCredentialSpec(spec, a, false)
+	require.ErrorContains(t, err, ".secret", "the engine's user must own the password the YES writes")
+	require.NoError(t, config.WriteFile(config.SecretPath(cred, "bot"), []byte("pw\n")))
 	got, err := keptCredentialSpec(spec, a, false)
 	require.NoError(t, err)
 	require.Len(t, got.Files, 1, "no credential file is written")
+	dry, err := keptCredentialSpec(spec, a, true)
+	require.NoError(t, err)
+	require.Len(t, dry.Files, 1, "a dry run shows the same plan")
 	var written config.Config
 	require.NoError(t, json.Unmarshal(got.Files[0].Content, &written))
 	require.Equal(t, setup, written.Agents[0].Setup, "the pending setup stays")

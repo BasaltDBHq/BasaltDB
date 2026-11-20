@@ -33,7 +33,7 @@ const (
 	maxFastCrashes = 5
 	// childStopWait is how long a child gets after SIGTERM before SIGKILL.
 	childStopWait = 30 * time.Second
-	lastStopFile  = "last-stop.json"
+	lastStopFile  = engine.LastStopFile
 	superviseLock = "supervise.lock"
 )
 

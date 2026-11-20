@@ -63,7 +63,18 @@ type RestartOptions struct {
 	// empty), "mcp" (basalt mcp found it down) or "crash" (the supervisor
 	// restarted it). It is carried here for the status report.
 	StartedBy string
+	// StableAfter is how long the engine serves before it removes the
+	// supervisor's record of giving up; zero means DefaultStableAfter.
+	StableAfter time.Duration
 }
+
+// DefaultStableAfter is how long an engine serves before an earlier
+// give-up of its supervisor is forgotten (last-stop.json is removed).
+const DefaultStableAfter = 10 * time.Second
+
+// LastStopFile is the supervisor's record of giving up, in the state
+// directory (basalt engine --supervise).
+const LastStopFile = "last-stop.json"
 
 // startedByOrHand is v, or "hand" when empty.
 func startedByOrHand(v string) string {

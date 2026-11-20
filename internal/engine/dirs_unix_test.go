@@ -104,3 +104,11 @@ func TestEnsureOwnDirsSkipsAServiceEngine(t *testing.T) {
 	_, err := os.Stat(cfg.StateDir)
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
+
+// A dangling symlink is named for what it is, not as a failed mkdir.
+func TestEnsurePrivateDirsRefusesADanglingSymlink(t *testing.T) {
+	t.Parallel()
+	link := filepath.Join(t.TempDir(), "run")
+	require.NoError(t, os.Symlink(filepath.Join(t.TempDir(), "nowhere"), link))
+	require.ErrorContains(t, ensurePrivateDirs(os.Geteuid(), link), "not a plain directory")
+}

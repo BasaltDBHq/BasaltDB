@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 	"unicode"
 
@@ -1179,11 +1180,15 @@ const (
 // directory): ok is false when there is no usable record. It is read as
 // text and shown, never trusted for anything else.
 func ReadLastStop(dir string) (LastStop, bool) {
-	f, err := os.Open(filepath.Join(dir, lastStopFile))
+	// Not a symlink, and never blocking on a pipe someone left there.
+	f, err := os.OpenFile(filepath.Join(dir, lastStopFile), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return LastStop{}, false
 	}
 	defer f.Close()
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		return LastStop{}, false
+	}
 	var stop LastStop
 	if err := json.NewDecoder(io.LimitReader(f, maxLastStopBytes)).Decode(&stop); err != nil || stop.Reason == "" {
 		return LastStop{}, false

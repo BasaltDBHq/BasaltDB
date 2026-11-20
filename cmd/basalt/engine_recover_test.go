@@ -149,3 +149,21 @@ func TestRunRefusesLooseCredential(t *testing.T) {
 	require.Equal(t, os.FileMode(0o644), permOf(t, r.cred), "the file is not changed")
 	require.False(t, r.answers())
 }
+
+// An engine run by hand that stays up ends the story of an earlier give-up
+// of its supervisor: last-stop.json is removed.
+func TestRunForgetsAnEarlierGiveUp(t *testing.T) {
+	t.Parallel()
+	r := newRecoverRig(t)
+	require.NoError(t, os.MkdirAll(r.stateDir, 0o700))
+	record := filepath.Join(r.stateDir, engine.LastStopFile)
+	require.NoError(t, os.WriteFile(record, []byte(`{"reason":"the engine crashed 5 times within 10s; last: exit status 1","at":"2026-11-20T01:02:03Z"}`), 0o600))
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	go func() {
+		_ = engine.RunWith(ctx, r.cfg, r.cfgPath, slog.New(slog.DiscardHandler), engine.RestartOptions{StableAfter: 300 * time.Millisecond})
+	}()
+
+	require.Eventually(t, r.answers, 30*time.Second, 50*time.Millisecond)
+	require.Eventually(t, func() bool { _, err := os.Stat(record); return os.IsNotExist(err) }, 10*time.Second, 50*time.Millisecond)
+}

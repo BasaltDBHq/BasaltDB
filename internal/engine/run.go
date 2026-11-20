@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -299,6 +300,14 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	var wg sync.WaitGroup
 	defer wg.Wait()
 	defer cancel()
+	// An engine that has stayed up, however it was started, ends the story
+	// of an earlier give-up: status stops reporting it.
+	stable := time.AfterFunc(cmp.Or(restart.StableAfter, DefaultStableAfter), func() {
+		if err := os.Remove(filepath.Join(env.stateDir, LastStopFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			log.Warn("could not remove the record of why the engine stopped", "err", err)
+		}
+	})
+	defer stable.Stop()
 	for _, u := range upkeeps {
 		wg.Go(func() { u.Run(ctx, upkeep.DefaultInterval) })
 	}

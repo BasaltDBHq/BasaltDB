@@ -372,10 +372,14 @@ func (p *Pending) confirm(id string, db Address) (Answer, error) {
 	if err := p.o.Files.WriteCredential(dsn); err != nil {
 		return Answer{}, fmt.Errorf("write the agent's credential: %w", err)
 	}
+	// Past the credential, a failure leaves the YES half done: the engine
+	// builds the agent anew, and its start finishes what the YES began.
 	if err := p.o.Files.RemoveSecret(); err != nil {
+		go p.done()
 		return Answer{}, err
 	}
 	if err := p.o.Files.ConfirmSetup(id); err != nil {
+		go p.done()
 		return Answer{}, err
 	}
 	p.st.Phase = PhaseConfirmed

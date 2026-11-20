@@ -55,8 +55,26 @@ func (a Address) Check() error {
 		a.SupabaseRef != "" && !refShape.MatchString(a.SupabaseRef):
 		return ErrAddressInvalid
 	}
-	return nil
+	return a.checkRef()
 }
+
+// checkRef ties a Supabase ref to the host, since Name shows the ref in
+// place of the host and the person confirms what Name says: the project's
+// own host db.<ref>.supabase.co, or Supabase's pooler, where the agent logs
+// in as <role>.<ref> and the pooler routes the login to that project.
+func (a Address) checkRef() error {
+	if a.SupabaseRef == "" {
+		return nil
+	}
+	host := strings.ToLower(a.Host)
+	if host == "db."+a.SupabaseRef+supabaseDirect || strings.HasSuffix(host, supabasePooler) {
+		return nil
+	}
+	return ErrAddressInvalid
+}
+
+// supabaseDirect is the host suffix of a Supabase project's own database.
+const supabaseDirect = ".supabase.co"
 
 // Name is the database as the agent names it to the person: "Supabase
 // project <ref>, database <db>" or "<host>:<port>, database <db>".

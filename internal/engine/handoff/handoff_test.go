@@ -173,6 +173,7 @@ func TestAddressShape(t *testing.T) {
 	t.Parallel()
 	require.NoError(t, db.Check())
 	require.NoError(t, Address{Host: "aws-0-eu-central-1.pooler.supabase.com", Port: 6543, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"}.Check())
+	require.NoError(t, Address{Host: "db.abcdefghijklmnopqrst.supabase.co", Port: 5432, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"}.Check())
 	for name, a := range map[string]Address{
 		"a host with a space":       {Host: "db example.com", Port: 5432, Database: "app"},
 		"a host with a slash":       {Host: "/var/run/postgresql", Port: 5432, Database: "app"},
@@ -185,6 +186,9 @@ func TestAddressShape(t *testing.T) {
 		"a database too long":       {Host: "db.example.com", Port: 5432, Database: strings.Repeat("d", 64)},
 		"a ref in upper case":       {Host: "db.example.com", Port: 5432, Database: "app", SupabaseRef: "ABCDEFGHIJKLMNOPQRST"},
 		"a ref of 19 characters":    {Host: "db.example.com", Port: 5432, Database: "app", SupabaseRef: "abcdefghijklmnopqrs"},
+		"a ref on another host":     {Host: "evil.example.com", Port: 5432, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"},
+		"another project's host":    {Host: "db.zzzzzzzzzzzzzzzzzzzz.supabase.co", Port: 5432, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"},
+		"a lookalike pooler":        {Host: "pooler.supabase.com.evil.example", Port: 6543, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"},
 	} {
 		require.ErrorIs(t, a.Check(), ErrAddressInvalid, name)
 	}

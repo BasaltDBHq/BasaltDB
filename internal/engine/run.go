@@ -375,13 +375,24 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 // so RunWith returns ErrReload, not ErrRestart.
 func upgradeOrReload(up UpgradeFunc, reload <-chan struct{}, reloading chan struct{}) UpgradeFunc {
 	return func(ctx context.Context) error {
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
 		upgraded := make(chan error, 1)
-		if up != nil {
+		if up == nil {
+			upgraded = nil
+		} else {
 			go func() { upgraded <- up(ctx) }()
 		}
 		select {
 		case <-reload:
 			close(reloading)
+			// The watch ends before the next run watches the same binary.
+			cancel()
+			if upgraded != nil {
+				if err := <-upgraded; err != nil {
+					return nil // the cancel above: a reload, not an error
+				}
+			}
 			return nil
 		case err := <-upgraded:
 			return err

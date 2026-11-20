@@ -1,13 +1,18 @@
 // The connect page (CONTRACT.md, Connect): run a bot's setup code through
-// the connect service. The person opens the link their bot sent, checks the
-// summary and fingerprint, takes the passkey step, and only then pastes the
-// database's admin connection string; the service runs the setup once.
+// the connect service, one step per screen. The person opens the link their
+// bot sent, checks that the code is the one in their chat, takes the passkey
+// step, and only then pastes the database's admin connection string. For a
+// code that names no database, the bot's engine tests that it can reach the
+// pasted one before anything else is shown. The person then sees the
+// database and its tables, may untick tables and label personal data, and
+// approves; the service runs the setup once.
 //
-// The page calls the service's three ConnectRPC methods with fetch and a
-// JSON POST, no generated client. The admin connection string lives only in
-// one variable of this module: never in storage, the address, a log or a
-// message on the page. The input box is emptied as soon as it is read, and
-// the variable after RunSetup, whatever its answer.
+// The page calls the service's ConnectRPC methods with fetch and a JSON
+// POST, no generated client. The admin connection string lives only in one
+// private field of Flow: never in storage, the address, a log or a message
+// on the page. The input box is emptied as soon as it is read, the field
+// after RunSetup whatever its answer, and on every way back to the paste
+// step. The hand-off ticket is kept the same way and never shown.
 import { ALG_ES256, PORTAL, PROD_RP_ID, b64urlDecode, b64urlEncode, hex, sha256, utf8 } from "./codec.js";
 import { pairingCoordinates } from "./pairing.js";
 import { browserFetch } from "./transport.js";
@@ -19,9 +24,15 @@ export const SERVICE_PATH = "/basalt.connect.v1.SetupService/";
 // PAGE_HOST is the one host this page runs at and tells the person to see
 // in the address bar.
 export const PAGE_HOST = "portal.basaltvault.app";
+// WAITLIST is where the final screen's optional line points: a plain link,
+// opened in a new tab. The page sends nothing there itself.
+export const WAITLIST = "https://basaltvault.app/#waitlist";
 
 export const LAPTOP_COMMAND = "basalt init --setup-code <the code your bot sent>";
 const LAPTOP_LINE = `Or run the setup on your own computer instead, with no hosted service: ${LAPTOP_COMMAND}`;
+// A connect-only code names no database, and the laptop command refuses it:
+// the other way is a code made with the database's address.
+const CONNECT_ONLY_LINE = "Or ask your bot for a new setup code made with --database-url.";
 
 // A setup code is at most 1500 characters (CONTRACT.md, The setup code).
 export const MAX_CODE_CHARS = 1500;
@@ -35,6 +46,19 @@ const PROMPT_TIMEOUT_MS = 120000;
 // A connection string longer than this is not one; the service caps the
 // whole body at 16 KiB.
 const MAX_URL_CHARS = 4096;
+const POSTGRES_URL = /^postgres(?:ql)?:\/\//i;
+export const NOT_POSTGRES = "Basalt works with Postgres databases; paste a connection string that starts with postgresql://";
+
+// The polls (CONTRACT.md, The reach check and The address hand-off): every
+// 5 seconds; the reach check for up to a minute; the pick-up is late after
+// 2 minutes, and the page stops asking when the hold's 30 minutes are up.
+export const POLL_MS = 5000;
+export const REACH_WAIT_MS = 60000;
+export const LATE_MS = 120000;
+export const WATCH_MS = 30 * 60000;
+// columnClasses holds at most 500 entries; past that, "Mark the rest as not
+// personal" goes as restPublic.
+export const MAX_LABELS = 500;
 
 // Refusal is a refusal of the connect service: reason and message come from
 // its basalt.connect.v1.Refusal detail, or are fixed words of this page.
@@ -48,6 +72,7 @@ export class Refusal extends Error {
 }
 
 const UNREACHABLE = "The connect service could not be reached. Check your connection and try again.";
+const UNREADABLE = "The connect service sent an answer this page cannot read.";
 
 // readCode finds the setup code in a fragment or a pasted message: white
 // space is dropped first (a wrapped copy still works), as the laptop command
@@ -116,17 +141,18 @@ export async function call(fetchFn, method, request) {
   } catch {
     // Fall through to the fixed message.
   }
-  throw new Refusal("UNKNOWN", "The connect service sent an answer this page cannot read.");
+  throw new Refusal("UNKNOWN", UNREADABLE);
 }
 
 // refusalText is what the page shows for a refusal: its message, when to
-// try again, and the laptop command as the other way (every reason but a
-// limit, which passes).
-export function refusalText(err) {
+// try again, and the other way (every reason but a limit, which passes):
+// the laptop command, or for a connect-only code, which the laptop command
+// refuses, a code made with --database-url.
+export function refusalText(err, connectOnly = false) {
   if (!(err instanceof Refusal)) return "Something went wrong on this page. Nothing was sent.";
   const lines = [err.message];
   if (err.retryAfterSeconds > 0) lines.push(`Try again in ${err.retryAfterSeconds} seconds.`);
-  if (err.reason !== "RATE_LIMITED" && err.reason !== "BUSY") lines.push(LAPTOP_LINE);
+  if (err.reason !== "RATE_LIMITED" && err.reason !== "BUSY") lines.push(connectOnly ? CONNECT_ONLY_LINE : LAPTOP_LINE);
   return lines.join("\n");
 }
 
@@ -218,22 +244,231 @@ function passkeyError(err) {
   return "The passkey step did not finish on this browser.";
 }
 
-const KIND_WORDS = { INSTALL: "Set up a new agent", AGENT: "Change an existing agent", UPGRADE: "Upgrade Basalt's guard" };
-const CHOICE_WORDS = { ALL_ROWS: "Yes, all rows", NONE: "No" };
+const KINDS = new Set(["INSTALL", "AGENT", "UPGRADE"]);
+const WANTS = {
+  INSTALL: "wants access to your database",
+  AGENT: "wants to change its access to your database",
+  UPGRADE: "wants to upgrade Basalt in your database",
+};
+
+// ---- What the screens show, from the service's answers ----
+
+const strings = (v) => (Array.isArray(v) ? v.filter((s) => typeof s === "string") : []);
+
+// botName is the agent's name as the code carries it, else "Your bot".
+export function botName(summary) {
+  return typeof summary?.agent === "string" && summary.agent !== "" ? summary.agent : "Your bot";
+}
+
+// isConnectOnly: a code that names no database; only this page runs it.
+export function isConnectOnly(summary) {
+  return !summary?.target;
+}
+
+// databaseView is how a database is named: large (the Supabase project ref,
+// else the host), the line under it, and the one-line form of the contract
+// (`Supabase project <ref>, database <db>` or `<host>:<port>, database <db>`).
+export function databaseView(t) {
+  if (!t || typeof t !== "object") return null;
+  const db = String(t.database ?? "");
+  if (t.supabaseRef) {
+    const ref = String(t.supabaseRef);
+    return { big: ref, sub: `Supabase project · database ${db}`, line: `Supabase project ${ref}, database ${db}` };
+  }
+  const host = String(t.host ?? "");
+  const port = Number.isInteger(t.port) && t.port > 0 ? t.port : 5432;
+  return { big: host, sub: `Port ${port} · database ${db}`, line: `${host}:${port}, database ${db}` };
+}
+
+// tableName is a table as the page shows it: without public., which most
+// databases put everything in.
+export function tableName(t) {
+  return t.startsWith("public.") ? t.slice("public.".length) : t;
+}
+
+// tableRows is screen 4's list: the tables the agent will get, each with
+// what it may do, and whether the person may untick them. Ticks are only
+// for an allTables INSTALL code (CONTRACT.md, Tables on the connect page);
+// a re-run and an upgrade with nothing to do show none.
+export function tableRows(summary, check) {
+  const allTables = strings(summary?.allTablesSchemas).length > 0;
+  let rows;
+  if (allTables) {
+    const readOnly = new Set(strings(check?.readOnly));
+    rows = strings(check?.tables).map((name) => ({ name, access: readOnly.has(name) ? "noKey" : "write" }));
+  } else {
+    rows = [...strings(summary?.write).map((name) => ({ name, access: "write" })), ...strings(summary?.read).map((name) => ({ name, access: "read" }))];
+  }
+  const ticks = summary?.kind === "INSTALL" && allTables && !check?.alreadyRan && !check?.nothingToDo;
+  const excluded = (Array.isArray(check?.excluded) ? check.excluded : []).filter((e) => typeof e?.table === "string");
+  return { rows, ticks, excluded };
+}
+
+// answersFor answers every row-level security question for an included
+// table with ALL_ROWS (CONTRACT.md, The connect page, step 6): a ticked
+// table gives the bot every row. included is null when every table is.
+export function answersFor(questions, included) {
+  const out = [];
+  for (const q of Array.isArray(questions) ? questions : []) {
+    if (included && !included.includes(q.table)) continue;
+    out.push({ kind: q.kind, table: q.table, choice: "ALL_ROWS" });
+  }
+  return out;
+}
+
+// ---- Column labels (CONTRACT.md, Column labels on the connect page) ----
+
+export const ENTITY_WORDS = { EMAIL: "email", PHONE: "phone", PERSON_NAME: "name", ADDRESS: "address", OTHER: "other" };
+const FIXED_WORDS = { PUBLIC: "Not personal", FREE_TEXT: "Free text" };
+const REGION = /^[A-Z]{2}$/;
+
+const key = (table, column) => `${table}\u0000${column}`;
+
+// labelOf is a column's class as CheckSetup read it, UNCLASSIFIED when it
+// has none.
+export function labelOf(c) {
+  const cls = typeof c?.class === "string" && c.class !== "" ? c.class : "UNCLASSIFIED";
+  // As CheckSetup sent it: the service compares all three fields with what
+  // is stored, so was echoes them unchanged.
+  return {
+    class: cls,
+    entityType: typeof c.entityType === "string" ? c.entityType : "",
+    phoneRegion: typeof c.phoneRegion === "string" ? c.phoneRegion : "",
+  };
+}
+
+const sameLabel = (a, b) => a.class === b.class && a.entityType === b.entityType && a.phoneRegion === b.phoneRegion;
+
+// Labels is screen 5's state: the columns of the included tables, each with
+// its class now, and what the person chose.
+export class Labels {
+  constructor(columns) {
+    this.columns = (Array.isArray(columns) ? columns : []).filter((c) => typeof c?.table === "string" && typeof c?.column === "string");
+    this.chosen = new Map();
+  }
+
+  // set records the person's choice for a column: a class with its entity
+  // type and region, or null for blank (only offered on a column without a
+  // class, so it never erases one).
+  set(table, column, label) {
+    if (label === null) this.chosen.delete(key(table, column));
+    else this.chosen.set(key(table, column), { class: label.class, entityType: label.entityType ?? "", phoneRegion: label.phoneRegion ?? "" });
+  }
+
+  current(c) {
+    return this.chosen.get(key(c.table, c.column)) ?? labelOf(c);
+  }
+
+  of(included) {
+    const set = new Set(included);
+    return this.columns.filter((c) => set.has(c.table));
+  }
+
+  // changes are the columns of the included tables the person changed, as
+  // columnClasses entries, each with the class it had (was).
+  changes(included) {
+    const out = [];
+    for (const c of this.of(included)) {
+      const was = labelOf(c);
+      const now = this.chosen.get(key(c.table, c.column));
+      if (!now || sameLabel(now, was)) continue;
+      const entry = { table: c.table, column: c.column, class: now.class, was: { class: was.class } };
+      if (was.entityType) entry.was.entityType = was.entityType;
+      if (was.phoneRegion) entry.was.phoneRegion = was.phoneRegion;
+      if (now.class === "IDENTIFIER") entry.entityType = now.entityType;
+      if (now.class === "IDENTIFIER" && now.entityType === "PHONE") entry.phoneRegion = now.phoneRegion;
+      out.push(entry);
+    }
+    return out;
+  }
+
+  // unlabeled are the columns of the included tables that have no class
+  // and that the person left blank: what "Mark the rest as not personal"
+  // marks, folded tables included.
+  unlabeled(included) {
+    return this.of(included).filter((c) => this.current(c).class === "UNCLASSIFIED");
+  }
+
+  // problem is what stops Continue: a phone without its country.
+  problem(included) {
+    for (const e of this.changes(included)) {
+      if (e.class === "IDENTIFIER" && e.entityType === "PHONE" && !REGION.test(e.phoneRegion ?? "")) {
+        return `Enter the country of the phone numbers in ${tableName(e.table)}.${e.column} as two letters, such as US.`;
+      }
+    }
+    if (this.changes(included).length > MAX_LABELS) return `Label at most ${MAX_LABELS} columns at once.`;
+    return "";
+  }
+
+  // request is what RunSetup carries: nothing on Skip, the changes on
+  // Continue, and with "Mark the rest" the rest as PUBLIC entries when all
+  // fit in 500, else restPublic.
+  request(included, mode) {
+    if (mode === "skip") return {};
+    const changes = this.changes(included);
+    const out = {};
+    if (mode === "rest") {
+      const rest = this.unlabeled(included).map((c) => ({ table: c.table, column: c.column, class: "PUBLIC", was: { class: "UNCLASSIFIED" } }));
+      if (changes.length + rest.length <= MAX_LABELS) changes.push(...rest);
+      else if (rest.length > 0) out.restPublic = true;
+    }
+    if (changes.length > 0) out.columnClasses = changes;
+    return out;
+  }
+}
+
+// restQuestion is the confirm before "Mark the rest as not personal", with
+// the count of what it marks.
+export function restQuestion(columns) {
+  const tables = new Set(columns.map((c) => c.table)).size;
+  const n = columns.length;
+  return `Mark ${n} ${n === 1 ? "column" : "columns"} in ${tables} ${tables === 1 ? "table" : "tables"} as not personal?`;
+}
+
+// reachText is screen 3c's advice for the reason the engine reported.
+export function reachText(reason, bot) {
+  switch (reason) {
+    case "TLS_NOT_VERIFIED":
+      return `The database's certificate could not be verified from ${bot}'s server. Use Supabase's Session pooler string, or a host with a valid certificate.`;
+    case "ADDRESS_REFUSED":
+      return `This address is private: ${bot}'s server will not connect to it.`;
+    default:
+      return "Supabase: use the Session pooler string instead of the direct one.";
+  }
+}
+
+// disclosure is what the paste step says goes where (CONTRACT.md, The
+// connect page).
+export function disclosure(summary) {
+  if (!isConnectOnly(summary)) {
+    return "Your database password goes to Basalt Vault's connect service for this one setup and is never stored.";
+  }
+  if (summary.kind === "INSTALL") {
+    return "Your database password goes to Basalt Vault's connect service for this one setup and is never stored. The database's address (not the password) is kept in the service's memory for up to 30 minutes: while your bot tests that its server can reach it, without signing in, and after you approve, until your bot picks it up. Until then your bot asks the service for it regularly, for up to 24 hours.";
+  }
+  return "Your database password goes to Basalt Vault's connect service for this one setup and is never stored. The database's address (not the password) is kept in the service's memory for up to 30 minutes, until your bot picks it up.";
+}
+
+const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Flow is the page's state, in its fixed order. Every step checks the one
-// before it ran; the admin connection string is the private #databaseUrl.
+// before it ran; the admin connection string and the hand-off ticket are
+// private fields.
 export class Flow {
   #databaseUrl = "";
+  #ticket = "";
 
-  constructor({ fetch: fetchFn, credentials }) {
+  constructor({ fetch: fetchFn, credentials, sleep = defaultSleep, now = () => Date.now() }) {
     this.fetch = fetchFn;
     this.credentials = credentials;
+    this.sleep = sleep;
+    this.now = now;
     this.step = "code";
     this.code = "";
     this.summary = null;
     this.challenge = null;
     this.passkey = null; // { registration, checkCode } once created
+    this.signed = false;
     this.check = null;
   }
 
@@ -242,20 +477,52 @@ export class Flow {
     const out = await call(this.fetch, "DescribeSetup", { code });
     const summary = out.summary;
     const challenge = out.challenge;
-    if (!summary || typeof summary !== "object" || !challenge || typeof challenge !== "object" || !KIND_WORDS[summary.kind]) {
-      throw new Refusal("UNKNOWN", "The connect service sent an answer this page cannot read.");
+    if (!summary || typeof summary !== "object" || !challenge || typeof challenge !== "object" || !KINDS.has(summary.kind)) {
+      throw new Refusal("UNKNOWN", UNREADABLE);
     }
     this.code = code;
     this.summary = summary;
     this.challenge = challenge;
-    this.step = "passkey";
+    this.step = "bot";
     return summary;
   }
 
-  // needsNewPasskey: an INSTALL creates the approval passkey at step 3; a
-  // later code signs with the existing one.
+  // confirmBot is "Yes, same code": the passkey step comes next.
+  confirmBot() {
+    if (this.step !== "bot") throw new Error("not at the code check");
+    this.step = "passkey";
+  }
+
+  // backTo is Back to the code check or the passkey step, from the passkey
+  // or paste step. A passkey made or signed stays done.
+  backTo(step) {
+    if ((step !== "bot" && step !== "passkey") || (this.step !== "passkey" && this.step !== "paste")) throw new Error("cannot go back there");
+    this.step = step;
+  }
+
+  // passkeyContinue goes on from the passkey step once it was done.
+  passkeyContinue() {
+    if (this.step !== "passkey" || !this.passkeyDone) throw new Error("not at the passkey step");
+    this.step = "paste";
+  }
+
+  // stop is "No, it's different": nothing more happens on this page.
+  stop() {
+    this.step = "stopped";
+  }
+
+  get connectOnly() {
+    return isConnectOnly(this.summary);
+  }
+
+  // needsNewPasskey: an INSTALL creates the approval passkey at the passkey
+  // step, unless the person already has one for this database.
   get needsNewPasskey() {
     return this.summary?.kind === "INSTALL";
+  }
+
+  get passkeyDone() {
+    return this.passkey !== null || this.signed;
   }
 
   async createPasskey() {
@@ -264,14 +531,17 @@ export class Flow {
     if (this.step === "passkey") this.step = "paste";
   }
 
+  // signExisting is the passkey the person already has: for a later code,
+  // and for an INSTALL on a database that has one ("Use it").
   async signExisting() {
     if (this.step !== "passkey") throw new Error("not at the passkey step");
     await signOnce(this.credentials);
+    this.signed = true;
     this.step = "paste";
   }
 
-  // skipSign lets a person whose passkey is on no device at hand go on; the
-  // page has warned them first.
+  // skipSign lets a person whose passkey is on no device at hand go on with
+  // a later code; the page has warned them first.
   skipSign() {
     if (this.step !== "passkey" || this.needsNewPasskey) throw new Error("not at the passkey step");
     this.step = "paste";
@@ -282,46 +552,152 @@ export class Flow {
   async checkSetup(databaseUrl) {
     if (this.step !== "paste") throw new Error("not at the paste step");
     const url = String(databaseUrl ?? "").trim();
-    if (url === "") throw new Refusal("CONNECTION_STRING_REFUSED", "Paste the database's admin connection string first.");
+    if (url === "") throw new Refusal("CONNECTION_STRING_REFUSED", "Paste your database's connection string first.");
     if (url.length > MAX_URL_CHARS) throw new Refusal("CONNECTION_STRING_REFUSED", "That is too long to be a connection string.");
+    if (!POSTGRES_URL.test(url)) throw new Refusal("NOT_POSTGRES", NOT_POSTGRES);
     this.#databaseUrl = url;
     try {
-      const out = await call(this.fetch, "CheckSetup", { code: this.code, databaseUrl: this.#databaseUrl });
-      this.check = {
-        questions: Array.isArray(out.questions) ? out.questions : [],
-        passkeyNeeded: out.passkeyNeeded === true,
-        notes: Array.isArray(out.notes) ? out.notes : [],
-        nothingToDo: out.nothingToDo === true,
-      };
+      await this.#check();
     } catch (err) {
       this.#databaseUrl = "";
+      this.#ticket = "";
       throw err;
     }
     this.step = "questions";
     return this.check;
   }
 
-  get passkeyMissing() {
-    return this.check?.passkeyNeeded === true && !this.passkey;
+  // check is one CheckSetup; an answer that arrives after loop was
+  // cancelled (the person went back) changes nothing.
+  async #check(loop = null) {
+    const out = await call(this.fetch, "CheckSetup", { code: this.code, databaseUrl: this.#databaseUrl });
+    if (loop?.cancelled) return;
+    this.check = {
+      questions: Array.isArray(out.questions) ? out.questions : [],
+      passkeyNeeded: out.passkeyNeeded === true,
+      notes: strings(out.notes),
+      nothingToDo: out.nothingToDo === true,
+      database: out.database && typeof out.database === "object" ? out.database : null,
+      tables: strings(out.tables),
+      readOnly: strings(out.readOnly),
+      excluded: Array.isArray(out.excluded) ? out.excluded : [],
+      columns: Array.isArray(out.columns) ? out.columns : [],
+      alreadyRan: out.alreadyRan === true,
+    };
+    this.#ticket = typeof out.ticket === "string" ? out.ticket : "";
   }
 
-  // runSetup sends the answers. The connection string is cleared whatever
-  // the answer; after a refusal the person pastes it again.
-  async runSetup(answers) {
+  // recheck is "Retry" without a preview ticket (the service's caps were
+  // full): CheckSetup again with the string the page still holds.
+  async recheck(loop) {
+    if (this.step !== "questions" || this.#databaseUrl === "") throw new Error("not at the reach check");
+    try {
+      await this.#check(loop);
+    } catch (err) {
+      if (loop.cancelled) return;
+      this.backToPaste();
+      throw err;
+    }
+  }
+
+  // backToPaste is every way back to the paste step: the string, the check
+  // and the ticket are dropped.
+  backToPaste() {
+    if (this.step !== "questions" && this.step !== "paste") throw new Error("not past the paste step");
+    this.#databaseUrl = "";
+    this.#ticket = "";
+    this.check = null;
+    this.step = "paste";
+  }
+
+  // reachApplies: a connect-only INSTALL code gets the reach check before
+  // anything else is shown (CONTRACT.md, The reach check).
+  get reachApplies() {
+    return this.connectOnly && this.summary?.kind === "INSTALL" && this.check !== null && !this.check.alreadyRan && !this.check.nothingToDo;
+  }
+
+  get hasTicket() {
+    return this.#ticket !== "";
+  }
+
+  // status is one HandoffStatus with the newest ticket, which it keeps;
+  // UNKNOWN sends OfferAddress once per poll loop (offered tracks it).
+  async #status(loop) {
+    const out = await call(this.fetch, "HandoffStatus", { ticket: this.#ticket });
+    // A late answer for a loop the person left (Back, another string, Go
+    // on anyway) neither brings its ticket back nor offers its hold.
+    if (loop.cancelled) return out;
+    if (typeof out.ticket === "string" && out.ticket !== "") this.#ticket = out.ticket;
+    if (out.state === "UNKNOWN" && !loop.offered) {
+      loop.offered = true;
+      await call(this.fetch, "OfferAddress", { ticket: this.#ticket });
+    }
+    return out;
+  }
+
+  // reach polls HandoffStatus with the preview ticket for up to a minute and
+  // returns the engine's report: { result: "REACHABLE" }, { result:
+  // "UNREACHABLE", reason }, or { result: "UNCHECKED" } (no ticket, no
+  // report in time, or a refusal). loop.cancelled stops it.
+  async reach(loop) {
+    if (this.#ticket === "") return { result: "UNCHECKED" };
+    const deadline = this.now() + REACH_WAIT_MS;
+    for (;;) {
+      let out;
+      try {
+        out = await this.#status(loop);
+      } catch {
+        return { result: "UNCHECKED" };
+      }
+      if (loop.cancelled) return { result: "CANCELLED" };
+      // A report counts only for the preview: a SET_UP hold's has none.
+      const r = out.reach;
+      if (out.phase === "PREVIEW" && r && typeof r === "object") {
+        if (r.result === "REACHABLE") return { result: "REACHABLE" };
+        if (r.result === "UNREACHABLE") return { result: "UNREACHABLE", reason: typeof r.reason === "string" ? r.reason : "" };
+      }
+      if (this.now() >= deadline) return { result: "UNCHECKED" };
+      await this.sleep(POLL_MS);
+      if (loop.cancelled) return { result: "CANCELLED" };
+    }
+  }
+
+  get passkeyMissing() {
+    return this.check?.passkeyNeeded === true && !this.passkey && !this.check.alreadyRan;
+  }
+
+  // runSetup sends the answers and the person's choices: includedTables
+  // when the tables had ticks, the labels when they were offered. A re-run
+  // sends neither, and no passkey, since it registers nothing. The
+  // connection string is cleared whatever the answer; after a refusal the
+  // person pastes it again.
+  async runSetup(answers, choices = {}) {
     if (this.step !== "questions") throw new Error("not at the approve step");
     if (this.passkeyMissing) throw new Refusal("PASSKEY_REQUIRED", "Create the passkey first.");
     const req = { code: this.code, databaseUrl: this.#databaseUrl, answers };
-    if (this.passkey) {
-      req.challenge = this.challenge;
-      req.passkey = { ...this.passkey.registration };
+    let sentPasskey = false;
+    if (!this.check.alreadyRan) {
+      if (Array.isArray(choices.includedTables)) req.includedTables = choices.includedTables;
+      if (Array.isArray(choices.columnClasses) && choices.columnClasses.length > 0) req.columnClasses = choices.columnClasses;
+      if (choices.restPublic === true) req.restPublic = true;
+      if (this.passkey) {
+        req.challenge = this.challenge;
+        req.passkey = { ...this.passkey.registration };
+        sentPasskey = true;
+      }
     }
+    this.#ticket = "";
     try {
       const out = await call(this.fetch, "RunSetup", req);
       this.step = "done";
+      this.#ticket = typeof out.ticket === "string" ? out.ticket : "";
       return {
-        warnings: Array.isArray(out.warnings) ? out.warnings : [],
+        warnings: strings(out.warnings),
         passkeys: Array.isArray(out.passkeys) ? out.passkeys : [],
         nothingToDo: out.nothingToDo === true,
+        reconnected: out.reconnected === true,
+        handoff: this.#ticket !== "",
+        sentPasskey,
       };
     } catch (err) {
       this.step = "paste";
@@ -332,9 +708,50 @@ export class Flow {
     }
   }
 
-  // holdsConnectionString is for the tests: whether the variable is set.
+  // watch polls HandoffStatus with the set-up ticket until the engine
+  // collects the address, telling onState "waiting", "late" (after 2
+  // minutes), "collected" or "gone" (the ticket was refused or expired).
+  async watch(loop, onState) {
+    const start = this.now();
+    let late = false;
+    onState("waiting");
+    while (!loop.cancelled && this.#ticket !== "") {
+      let out = null;
+      try {
+        out = await this.#status(loop);
+      } catch (err) {
+        // A tab woken after a while may find the network back later, and
+        // a limit passes; another refusal (an expired ticket) ends the
+        // watch.
+        if (err instanceof Refusal && err.reason === "RATE_LIMITED" && err.retryAfterSeconds > 0) {
+          await this.sleep(err.retryAfterSeconds * 1000);
+        } else if (!(err instanceof Refusal) || err.reason !== "UNREACHABLE") {
+          onState("gone");
+          return;
+        }
+      }
+      if (loop.cancelled) return;
+      if (out && out.state === "COLLECTED" && out.phase !== "PREVIEW") {
+        onState("collected");
+        return;
+      }
+      const elapsed = this.now() - start;
+      if (!late && elapsed >= LATE_MS) {
+        late = true;
+        onState("late");
+      }
+      if (elapsed >= WATCH_MS) return;
+      await this.sleep(POLL_MS);
+    }
+  }
+
+  // holdsConnectionString and holdsTicket are for the tests.
   get holdsConnectionString() {
     return this.#databaseUrl !== "";
+  }
+
+  get holdsTicket() {
+    return this.#ticket !== "";
   }
 }
 
@@ -361,20 +778,30 @@ function show(id, on = true) {
   $(id).hidden = !on;
 }
 
+// The screens, in order, with the progress segment each fills and where
+// Back goes. Every screen but the result carries the address-bar strip.
+const SCREENS = ["s-code", "s-bot", "s-stop", "s-passkey", "s-paste", "s-checking", "s-unreach", "s-tables", "s-labels", "s-approve", "s-done"];
+const PROGRESS = { "s-code": 1, "s-bot": 1, "s-stop": 1, "s-passkey": 2, "s-paste": 3, "s-checking": 3, "s-unreach": 3, "s-tables": 4, "s-labels": 5, "s-approve": 6 };
+
+function showScreen(name) {
+  for (const s of SCREENS) show(s, s === name);
+  const step = PROGRESS[name] ?? 0;
+  show("addr-warn", name !== "s-done");
+  show("progress", step > 0);
+  const bar = $("progress");
+  for (let i = 0; i < bar.children.length; i++) bar.children[i].className = i < step ? "on" : "";
+  $("progress").setAttribute("aria-label", `Step ${step} of 6`);
+}
+
 function fail(message) {
+  for (const s of SCREENS) show(s, false);
+  show("back", false);
+  show("progress", false);
   setText("error-text", message);
   show("error");
 }
 
-function targetText(t) {
-  if (!t || typeof t !== "object") return "";
-  const where = t.supabaseRef ? `Supabase project ${t.supabaseRef}` : `${t.host}:${t.port}`;
-  return `database ${t.database} of ${where}`;
-}
-
-function showSummary(s) {
-  setText("kind", KIND_WORDS[s.kind]);
-  setText("fingerprint", String(s.fingerprint ?? ""));
+function fillDetails(s, connectOnly) {
   const facts = $("facts");
   clear(facts);
   const fact = (label, value) => {
@@ -385,92 +812,26 @@ function showSummary(s) {
     facts.appendChild(row);
   };
   fact("Agent", s.agent ? `${s.agent} (role ${s.role})` : "");
-  fact("Database", targetText(s.target));
-  fact("Changes rows in", Array.isArray(s.write) ? s.write.join(", ") : "");
-  fact("Reads", Array.isArray(s.read) ? s.read.join(", ") : "");
-  fact("Engine fingerprint", s.engineFingerprint ?? "");
-  fact("Code expires", s.expiresAt ?? "");
+  fact("Database", connectOnly ? "the one you paste below" : databaseView(s.target)?.line ?? "");
+  fact("Changes rows in", strings(s.write).join(", "));
+  fact("Reads", strings(s.read).join(", "));
+  fact("Engine fingerprint", typeof s.engineFingerprint === "string" ? s.engineFingerprint : "");
+  fact("Code expires", typeof s.expiresAt === "string" ? s.expiresAt : "");
   const lines = $("summary-lines");
   clear(lines);
-  for (const line of Array.isArray(s.lines) ? s.lines : []) lines.appendChild(el("li", "", String(line)));
-  show("summary");
+  for (const line of strings(s.lines)) lines.appendChild(el("li", "", line));
 }
 
-function showPasskeyStep(flow) {
-  if (flow.needsNewPasskey) {
-    setText("passkey-lead", "Create the passkey that approves this agent's larger changes and reverts. It is made for basaltvault.app and stays on your device or password manager.");
-    setText("passkey-go", "Create passkey");
-  } else {
-    setText("passkey-lead", "Sign once with the passkey you already use for this database. Only the real site can ask for it: if your device offers none, check the address bar before you go on. Nothing of this signature is sent.");
-    setText("passkey-go", "Sign with your passkey");
-  }
-  show("passkey");
+// mark sets a check line: "wait" (a spinner), "ok" (a tick) or hidden.
+function mark(id, state, text) {
+  const li = $(id);
+  li.hidden = state === "hidden";
+  li.className = `check ${state}`;
+  setText(id, text);
 }
 
-function questionNode(q, i) {
-  const box = el("fieldset", "question");
-  box.appendChild(el("legend", "", String(q.text ?? q.table ?? "")));
-  for (const choice of Array.isArray(q.choices) ? q.choices : []) {
-    const label = el("label", "choice");
-    const input = el("input");
-    input.type = "radio";
-    input.name = `q${i}`;
-    input.value = String(choice);
-    input.dataset.question = String(i);
-    label.appendChild(input);
-    label.appendChild(el("span", "", CHOICE_WORDS[choice] ?? String(choice)));
-    box.appendChild(label);
-  }
-  return box;
-}
-
-// answersFrom reads the chosen answer to each question; null when one is
-// left without an answer.
-export function answersFrom(questions, root) {
-  const out = [];
-  for (let i = 0; i < questions.length; i++) {
-    const picked = root.querySelector(`input[name="q${i}"]:checked`);
-    if (!picked) return null;
-    out.push({ kind: questions[i].kind, table: questions[i].table, choice: picked.value });
-  }
-  return out;
-}
-
-function showQuestions(flow) {
-  const c = flow.check;
-  const notes = $("notes");
-  clear(notes);
-  for (const n of c.notes) notes.appendChild(el("li", "", String(n)));
-  const qs = $("questions");
-  clear(qs);
-  c.questions.forEach((q, i) => qs.appendChild(questionNode(q, i)));
-  show("passkey-now", flow.passkeyMissing);
-  $("approve").disabled = flow.passkeyMissing;
-  setText("approve-status", "");
-  show("review");
-}
-
-async function showResult(flow, result) {
-  show("review", false);
-  setText("result-text", result.nothingToDo ? "Nothing to do: the guard is already at that version. Nothing changed." : "Done. The setup ran on your database.");
-  const warnings = $("warnings");
-  clear(warnings);
-  for (const w of result.warnings) warnings.appendChild(el("li", "", String(w)));
-  show("warnings", result.warnings.length > 0);
-  const mine = flow.passkey ? { credentialId: flow.passkey.registration.credentialId, checkCode: flow.passkey.checkCode } : null;
-  if (mine) {
-    setText("check-code", mine.checkCode);
-    show("check-code-box");
-  }
-  const problem = compareCheckCodes(mine, result.passkeys);
-  setText("check-problem", problem);
-  show("check-problem", problem !== "");
-  show("result");
-  show("done");
-}
-
-// start runs the page. env carries the browser's location, fetch and
-// credentials, so the tests can run it against a fake service.
+// start runs the page. env carries the browser's location, fetch,
+// credentials and, for the tests, sleep and now.
 export function start(env) {
   const { location } = env;
   if (location.origin !== PORTAL) {
@@ -481,15 +842,46 @@ export function start(env) {
   setText("host", PAGE_HOST);
   show("main");
 
+  // loop is the poll that runs now; a new one, Back and every way to
+  // another screen cancel it.
+  let loop = { cancelled: true };
+  const newLoop = () => {
+    loop.cancelled = true;
+    loop = { cancelled: false, offered: false };
+    return loop;
+  };
+  let screen = "s-code";
+  let included = null; // the ticked tables, when the tables had ticks
+  let labels = null;
+  let labelMode = "skip";
+  let reachOk = false;
+  // Back is offered on these screens; on the checking screen only once
+  // CheckSetup answered (checkReach shows it).
+  const back = { "s-passkey": "s-bot", "s-paste": "s-passkey", "s-unreach": "s-paste", "s-tables": "s-paste", "s-labels": "s-tables" };
+
+  const go = (name) => {
+    screen = name;
+    showScreen(name);
+    const to = name === "s-approve" ? (labelsApply() ? "s-labels" : "s-tables") : back[name];
+    show("back", Boolean(to));
+  };
+  const bot = () => botName(flow.summary);
+
+  // ---- 1: is this your bot? ----
   const describe = async (code) => {
     setText("code-status", "Reading the setup code…");
     try {
-      showSummary(await flow.describe(code));
-      show("code-box", false);
+      const s = await flow.describe(code);
       setText("code-status", "");
-      showPasskeyStep(flow);
+      const name = bot();
+      setText("avatar", name.charAt(0).toUpperCase());
+      setText("bot-name", name);
+      setText("bot-wants", WANTS[s.kind]);
+      setText("fingerprint", typeof s.fingerprint === "string" ? s.fingerprint : "");
+      fillDetails(s, flow.connectOnly);
+      go("s-bot");
     } catch (err) {
-      show("code-box");
+      go("s-code");
       setText("code-status", refusalText(err));
     }
   };
@@ -504,112 +896,558 @@ export function start(env) {
     return describe(code);
   });
 
+  $("same-code").addEventListener("click", () => {
+    flow.confirmBot();
+    showPasskey();
+  });
+
+  $("different-code").addEventListener("click", () => {
+    flow.stop();
+    go("s-stop");
+  });
+
+  // ---- 2: the passkey ----
+  const showPasskey = () => {
+    const install = flow.needsNewPasskey;
+    if (flow.passkeyDone) {
+      setText("passkey-title", flow.passkey ? "Passkey created" : "Signed with your passkey");
+      setText("passkey-go", "Continue");
+    } else if (install) {
+      setText("passkey-title", "Create your approval passkey");
+      setText("passkey-lead", "You'll use it to approve your bot's bigger changes.");
+      setText("passkey-go", "Create passkey");
+    } else {
+      setText("passkey-title", "Sign with your passkey");
+      setText("passkey-lead", "Use the passkey you already have for this database. Only the real site can ask for it: if your device offers none, check the address bar before you go on.");
+      setText("passkey-go", "Sign with your passkey");
+    }
+    show("passkey-lead", !flow.passkeyDone);
+    show("passkey-existing", install && !flow.passkeyDone);
+    show("passkey-skip", false);
+    setText("passkey-status", "");
+    go("s-passkey");
+  };
+
+  const passkeyDone = (text) => {
+    setText("passkey-status", text);
+    showPaste("");
+  };
+
   $("passkey-go").addEventListener("click", async () => {
+    if (flow.passkeyDone) {
+      flow.passkeyContinue();
+      showPaste("");
+      return;
+    }
     $("passkey-go").disabled = true;
     setText("passkey-status", "");
     try {
       if (flow.needsNewPasskey) await flow.createPasskey();
       else await flow.signExisting();
-      show("passkey-skip", false);
-      setText("passkey-status", flow.passkey ? "Passkey created." : "Signed.");
-      show("paste");
+      passkeyDone("");
     } catch (err) {
-      $("passkey-go").disabled = false;
       setText("passkey-status", passkeyError(err));
-      // Only a later code can go on without signing; an INSTALL needs the
-      // new passkey.
+      // Only a later code can go on without signing; an INSTALL needs a
+      // passkey, new or the one the database has.
       if (!flow.needsNewPasskey) show("passkey-skip");
+    } finally {
+      $("passkey-go").disabled = false;
+    }
+  });
+
+  $("passkey-use").addEventListener("click", async () => {
+    $("passkey-use").disabled = true;
+    setText("passkey-status", "");
+    try {
+      await flow.signExisting();
+      passkeyDone("");
+    } catch (err) {
+      setText("passkey-status", `${passkeyError(err)} Create a new passkey instead.`);
+    } finally {
+      $("passkey-use").disabled = false;
     }
   });
 
   $("passkey-skip").addEventListener("click", () => {
     flow.skipSign();
-    $("passkey-go").disabled = true;
     show("passkey-skip", false);
-    setText("passkey-status", "Went on without signing. If you have a passkey for this database and this page never offered it, stop: this may not be the real site.");
-    show("paste");
+    showPaste("Went on without signing. If you have a passkey for this database and this page never offered it, stop: this may not be the real site.");
   });
+
+  // ---- 3: the connection string ----
+  const hideString = () => {
+    $("database-url").type = "password";
+    $("reveal").setAttribute("aria-pressed", "false");
+    $("reveal").setAttribute("aria-label", "Show connection string");
+  };
+
+  const showPaste = (problem) => {
+    newLoop();
+    if (flow.step === "questions") flow.backToPaste();
+    hideString();
+    setText("disclosure", disclosure(flow.summary));
+    setText("paste-error", problem);
+    show("paste-error", problem !== "");
+    go("s-paste");
+  };
+
+  $("reveal").addEventListener("click", () => {
+    const shown = $("database-url").type === "password";
+    $("database-url").type = shown ? "text" : "password";
+    $("reveal").setAttribute("aria-pressed", shown ? "true" : "false");
+    $("reveal").setAttribute("aria-label", shown ? "Hide connection string" : "Show connection string");
+  });
+  // Every new paste starts hidden.
+  $("database-url").addEventListener("paste", hideString);
 
   $("check").addEventListener("click", async () => {
     const input = $("database-url");
     const typed = input.value;
     input.value = "";
+    hideString();
     $("check").disabled = true;
-    setText("check-status", "Checking your database…");
+    setText("checking-title", "Checking your database…");
+    mark("chk-login", "wait", "Signing in to the database");
+    mark("chk-tables", "hidden", "");
+    mark("chk-reach", "hidden", "");
+    show("checking-note", false);
+    show("nocheck", false);
     try {
+      if (POSTGRES_URL.test(typed.trim())) go("s-checking");
       await flow.checkSetup(typed);
-      setText("check-status", "");
-      show("paste", false);
-      showQuestions(flow);
     } catch (err) {
-      setText("check-status", refusalText(err));
+      showPaste(err instanceof Refusal && err.reason === "NOT_POSTGRES" ? NOT_POSTGRES : refusalText(err, flow.connectOnly));
+      return;
     } finally {
       $("check").disabled = false;
     }
+    mark("chk-login", "ok", "Signed in to the database");
+    const n = tableRows(flow.summary, flow.check).rows.length;
+    if (n > 0) mark("chk-tables", "ok", `Found ${n} ${n === 1 ? "table" : "tables"}`);
+    reachOk = false;
+    if (!flow.reachApplies) {
+      showTables(true);
+      return;
+    }
+    await checkReach();
   });
 
-  $("passkey-now").addEventListener("click", async () => {
-    $("passkey-now").disabled = true;
-    try {
-      await flow.createPasskey();
-      show("passkey-now", false);
-      $("approve").disabled = false;
-      setText("approve-status", "Passkey created.");
-    } catch (err) {
-      setText("approve-status", passkeyError(err));
-    } finally {
-      $("passkey-now").disabled = false;
+  // ---- 3b and 3c: can the bot reach it? ----
+  const checkReach = async () => {
+    const mine = newLoop();
+    go("s-checking");
+    show("back");
+    show("nocheck", false);
+    mark("chk-reach", "wait", `Can ${bot()} reach it?`);
+    setText("checking-note", "Takes up to a minute. Your bot only tests the connection; it can't sign in yet.");
+    show("checking-note");
+    const r = await flow.reach(mine);
+    if (mine.cancelled) return;
+    if (r.result === "REACHABLE") {
+      reachOk = true;
+      mark("chk-reach", "ok", `${bot()} can reach it`);
+      showTables(true);
+    } else if (r.result === "UNREACHABLE") {
+      setText("unreach-title", `${bot()} can't reach this database`);
+      setText("unreach-text", reachText(r.reason, bot()));
+      go("s-unreach");
+    } else {
+      mark("chk-reach", "hidden", "");
+      show("checking-note", false);
+      setText("nocheck-text", `Couldn't check whether ${bot()} can reach it. Tell ${bot()} "check your status" in the chat, then retry.`);
+      show("nocheck");
+    }
+  };
+
+  $("retry-reach").addEventListener("click", async () => {
+    if (!flow.hasTicket) {
+      const mine = newLoop();
+      try {
+        await flow.recheck(mine);
+      } catch (err) {
+        if (!mine.cancelled) showPaste(refusalText(err, flow.connectOnly));
+        return;
+      }
+      // The person went back while CheckSetup ran: stay where they are.
+      if (mine.cancelled) return;
+    }
+    await checkReach();
+  });
+
+  $("go-on").addEventListener("click", () => {
+    newLoop();
+    showTables(true);
+  });
+
+  $("paste-again").addEventListener("click", () => showPaste(""));
+
+  // ---- 4: the database and its tables ----
+  const labelsApply = () => {
+    const c = flow.check;
+    if (!c || c.alreadyRan || c.nothingToDo || flow.summary.kind === "UPGRADE") return false;
+    return labels !== null && labels.of(tablesNow()).length > 0;
+  };
+  const tablesNow = () => included ?? tableRows(flow.summary, flow.check).rows.map((r) => r.name);
+
+  // showTables shows screen 4; fresh (after CheckSetup) ticks every table
+  // and starts the labels from the database's classes, else it keeps the
+  // person's choices (Back from a later screen).
+  const showTables = (fresh = false) => {
+    newLoop();
+    const c = flow.check;
+    const view = databaseView(c.database ?? flow.summary.target);
+    setText("db-label", `This is the database ${bot()} will use`);
+    setText("db-name", view?.big ?? "");
+    setText("db-sub", view?.sub ?? "");
+    setText("db-reach", `✓ ${bot()} can reach it`);
+    show("db-reach", reachOk);
+    show("already-ran", c.alreadyRan);
+    const { rows, ticks, excluded } = tableRows(flow.summary, c);
+    if (fresh) {
+      included = ticks ? rows.map((r) => r.name) : null;
+      labels = new Labels(c.columns);
+    }
+    const list = $("tables");
+    clear(list);
+    for (const r of rows) {
+      const item = el("label", "tick");
+      if (ticks) {
+        const box = el("input");
+        box.type = "checkbox";
+        box.checked = included.includes(r.name);
+        box.value = r.name;
+        box.addEventListener("change", () => {
+          included = rows.filter((x) => x.name === box.value ? box.checked : included.includes(x.name)).map((x) => x.name);
+          countTables(rows.length);
+        });
+        item.appendChild(box);
+      }
+      item.appendChild(el("span", "mono", tableName(r.name)));
+      if (r.access === "noKey") item.appendChild(el("span", "muted", "read only (no row ID)"));
+      if (r.access === "read") item.appendChild(el("span", "muted", "read only"));
+      list.appendChild(item);
+    }
+    show("tables-box", rows.length > 0 && !c.alreadyRan);
+    countTables(rows.length);
+    setText("tables-note", ticks
+      ? `${bot()} can read and change every row of the ticked tables, and can't see the unticked ones.`
+      : `${bot()} can use every row of these tables, and can't see any other.`);
+    setText("excluded", excluded.length > 0 ? `Not offered: ${excluded.map((e) => `${tableName(e.table)} (owned by another role)`).join(", ")}` : "");
+    show("excluded", excluded.length > 0);
+    const notes = $("notes");
+    clear(notes);
+    for (const n of c.notes) notes.appendChild(el("li", "", n));
+    show("notes", c.notes.length > 0);
+    go("s-tables");
+  };
+
+  const countTables = (n) => {
+    const m = included ? included.length : n;
+    setText("tables-count", `${m} of ${n}`);
+    $("tables-next").disabled = included !== null && included.length === 0;
+    setText("tables-error", included !== null && included.length === 0 ? "Tick at least one table." : "");
+    show("tables-error", included !== null && included.length === 0);
+  };
+
+  $("tables-next").addEventListener("click", () => {
+    if (labelsApply()) showLabels();
+    else {
+      labelMode = "skip";
+      showApprove();
     }
   });
+
+  // ---- 5: personal data ----
+  const showLabels = () => {
+    const box = $("label-tables");
+    clear(box);
+    const cols = labels.of(tablesNow());
+    const byTable = new Map();
+    for (const c of cols) {
+      if (!byTable.has(c.table)) byTable.set(c.table, []);
+      byTable.get(c.table).push(c);
+    }
+    let first = true;
+    for (const [table, list] of byTable) {
+      const d = el("details", "label-table");
+      d.open = first;
+      first = false;
+      const head = el("summary");
+      head.appendChild(el("span", "mono", tableName(table)));
+      head.appendChild(el("span", "muted", ` ${list.length} ${list.length === 1 ? "column" : "columns"}`));
+      d.appendChild(head);
+      for (const c of list) d.appendChild(labelRow(c));
+      box.appendChild(d);
+    }
+    setText("unlabeled-warn", `Columns without a label aren't masked: ${bot()} reads them as they are, and they can be sent to its AI provider. They'll be blocked once PII protection ships, until you label them.`);
+    show("labels-error", false);
+    show("rest-confirm", false);
+    restCount();
+    go("s-labels");
+  };
+
+  const restCount = () => {
+    $("labels-rest").disabled = labels.unlabeled(tablesNow()).length === 0;
+  };
+
+  // labelRow is one column with its label: a native select (blank only on
+  // a column without a class), a country box for a phone, and for a class
+  // the page does not offer (PUBLIC, FREE_TEXT) a fixed label with "change".
+  const labelRow = (c) => {
+    const row = el("div", "label-row");
+    const name = `${tableName(c.table)}.${c.column}`;
+    row.appendChild(el("span", "mono col-name", c.column));
+    const was = labelOf(c);
+    const now = labels.current(c);
+    const pick = el("select");
+    pick.setAttribute("aria-label", `Label for ${name}`);
+    const region = el("input", "text region");
+    region.type = "text";
+    region.maxLength = 2;
+    region.autocomplete = "off";
+    region.placeholder = "US";
+    region.setAttribute("aria-label", `Country of the phone numbers in ${name}, two letters`);
+    region.hidden = true;
+    const fixed = was.class === "PUBLIC" || was.class === "FREE_TEXT";
+    const option = (parent, value, text) => {
+      const o = el("option", "", text);
+      o.value = value;
+      parent.appendChild(o);
+    };
+    if (was.class === "UNCLASSIFIED") option(pick, "", "—");
+    if (fixed) {
+      const o = el("option", "", "Choose a label");
+      o.value = "";
+      o.disabled = true;
+      pick.appendChild(o);
+    }
+    const personal = el("optgroup");
+    personal.label = "Personal";
+    for (const [entity, words] of Object.entries(ENTITY_WORDS)) option(personal, `IDENTIFIER:${entity}`, `Personal: ${words}`);
+    if (was.class === "IDENTIFIER" && was.entityType && !ENTITY_WORDS[was.entityType]) option(personal, `IDENTIFIER:${was.entityType}`, `Personal: ${was.entityType.toLowerCase()}`);
+    pick.appendChild(personal);
+    option(pick, "SECRET", "Secret");
+    pick.value = now.class === "IDENTIFIER" ? `IDENTIFIER:${now.entityType}` : now.class === "SECRET" ? "SECRET" : "";
+    region.value = now.phoneRegion;
+    const update = () => {
+      const v = pick.value;
+      region.hidden = v !== "IDENTIFIER:PHONE";
+      if (v === "") {
+        if (was.class === "UNCLASSIFIED") labels.set(c.table, c.column, null);
+      } else if (v === "SECRET") {
+        labels.set(c.table, c.column, { class: "SECRET" });
+      } else {
+        const entityType = v.slice("IDENTIFIER:".length);
+        labels.set(c.table, c.column, { class: "IDENTIFIER", entityType, phoneRegion: entityType === "PHONE" ? region.value.trim().toUpperCase() : "" });
+      }
+      restCount();
+    };
+    pick.addEventListener("change", update);
+    region.addEventListener("input", update);
+    region.hidden = pick.value !== "IDENTIFIER:PHONE";
+    if (fixed) {
+      const label = el("span", "label-fixed", FIXED_WORDS[was.class]);
+      const change = el("button", "link", "change");
+      change.type = "button";
+      change.setAttribute("aria-label", `Change the label of ${name}`);
+      const changed = now.class !== was.class;
+      pick.hidden = !changed;
+      label.hidden = changed;
+      change.hidden = changed;
+      change.addEventListener("click", () => {
+        label.hidden = true;
+        change.hidden = true;
+        pick.hidden = false;
+      });
+      row.appendChild(label);
+      row.appendChild(change);
+    }
+    row.appendChild(pick);
+    row.appendChild(region);
+    return row;
+  };
+
+  const labelsProblem = (text) => {
+    setText("labels-error", text);
+    show("labels-error", text !== "");
+    return text !== "";
+  };
+
+  $("labels-next").addEventListener("click", () => {
+    if (labelsProblem(labels.problem(tablesNow()))) return;
+    labelMode = "changes";
+    showApprove();
+  });
+
+  $("labels-rest").addEventListener("click", () => {
+    if (labelsProblem(labels.problem(tablesNow()))) return;
+    setText("rest-question", restQuestion(labels.unlabeled(tablesNow())));
+    show("rest-confirm");
+  });
+
+  $("rest-yes").addEventListener("click", () => {
+    show("rest-confirm", false);
+    labelMode = "rest";
+    showApprove();
+  });
+
+  $("rest-no").addEventListener("click", () => show("rest-confirm", false));
+
+  $("labels-skip").addEventListener("click", () => {
+    show("labels-error", false);
+    labelMode = "skip";
+    showApprove();
+  });
+
+  // ---- 6: approve ----
+  const showApprove = () => {
+    const c = flow.check;
+    const view = databaseView(c.database ?? flow.summary.target);
+    setText("ap-bot", bot());
+    setText("ap-db", view?.big ?? "");
+    const parts = [];
+    const n = tablesNow().length;
+    if (!c.alreadyRan && n > 0) parts.push(`${n} ${n === 1 ? "table" : "tables"}`);
+    if (labelsApply() && labelMode !== "skip") {
+      const k = labels.changes(tablesNow()).length;
+      parts.push(`${k} ${k === 1 ? "column" : "columns"} marked`);
+      if (labelMode === "rest" && labels.unlabeled(tablesNow()).length > 0) parts.push("the rest not personal");
+    }
+    setText("ap-counts", parts.join(" · "));
+    show("ap-counts", parts.length > 0);
+    show("ap-limits", flow.summary.kind !== "UPGRADE" && !c.alreadyRan && !c.nothingToDo);
+    setText("approve-status", "");
+    go("s-approve");
+  };
 
   $("approve").addEventListener("click", async () => {
-    const answers = answersFrom(flow.check.questions, $("questions"));
-    if (!answers) {
-      setText("approve-status", "Answer every question first.");
-      return;
-    }
+    newLoop();
     $("approve").disabled = true;
-    setText("approve-status", "Running the setup…");
-    let result;
+    // No way back while the setup runs.
+    show("back", false);
     try {
-      result = await flow.runSetup(answers);
-    } catch (err) {
-      show("review", false);
-      // A challenge past its 15 minutes, one for another code, or a passkey
-      // the service refused needs a fresh start (a new challenge and a new
-      // passkey); sending the same registration again would be refused
-      // again.
-      if (err instanceof Refusal && (err.reason.startsWith("CHALLENGE_") || err.reason === "PASSKEY_INVALID")) {
-        fail(refusalText(err) + "\nOpen the link from your bot again to start over.");
-        return;
-      }
-      // No answer arrived: the setup may have run. Pasting again would be
-      // refused USED, so show the page's own check code and send the
-      // person to the bot.
-      if (err instanceof Refusal && (err.reason === "UNREACHABLE" || err.reason === "UNKNOWN")) {
-        fail(`${err.message}\nThis page cannot tell whether the setup ran. Tell your bot "done" so it checks; if it says the setup is still pending, open the link from your bot again.`);
-        if (flow.passkey) {
-          setText("check-code", flow.passkey.checkCode);
-          show("check-code-box");
-          setText("result-text", "If the setup ran, this is your passkey's check code.");
-          show("result");
+      // The database has no passkey and none was made yet: make it now.
+      if (flow.passkeyMissing) {
+        try {
+          await flow.createPasskey();
+        } catch (err) {
+          setText("approve-status", passkeyError(err));
+          show("back");
+          return;
         }
+      }
+      const choices = {};
+      if (included) choices.includedTables = included;
+      if (labelsApply()) Object.assign(choices, labels.request(tablesNow(), labelMode));
+      setText("approve-status", "Running the setup…");
+      let result;
+      try {
+        result = await flow.runSetup(answersFor(flow.check.questions, included), choices);
+      } catch (err) {
+        ranRefused(err);
         return;
       }
-      setText("check-status", refusalText(err) + "\nPaste the connection string again to retry.");
-      show("paste");
-      return;
+      // The setup ran: show it, outside the try, so a display error is
+      // never reported as a refusal.
+      await showDone(result);
     } finally {
       $("approve").disabled = false;
     }
-    // The setup ran: show it, outside the try, so a display error is never
-    // reported as a refusal.
-    await showResult(flow, result);
+  });
+
+  const ranRefused = (err) => {
+    // A challenge past its 15 minutes, one for another code, or a passkey
+    // the service refused needs a fresh start (a new challenge and a new
+    // passkey); sending the same registration again would be refused again.
+    if (err instanceof Refusal && (err.reason.startsWith("CHALLENGE_") || err.reason === "PASSKEY_INVALID")) {
+      fail(refusalText(err, flow.connectOnly) + "\nOpen the link from your bot again to start over.");
+      return;
+    }
+    // No answer arrived: the setup may have run. Pasting again would be
+    // refused USED, so show the page's own check code and send the person
+    // to the bot.
+    if (err instanceof Refusal && (err.reason === "UNREACHABLE" || err.reason === "UNKNOWN")) {
+      fail(`${err.message}\nThis page cannot tell whether the setup ran. Tell your bot "done" so it checks; if it says the setup is still pending, open the link from your bot again.`);
+      if (flow.passkey) {
+        setText("error-check-code", flow.passkey.checkCode);
+        show("error-code");
+      }
+      return;
+    }
+    let text = refusalText(err, flow.connectOnly);
+    if (err instanceof Refusal && err.reason === "TABLES_CHANGED") text += "\nPaste the connection string again to see the tables as they are now.";
+    else if (err instanceof Refusal && err.reason === "CLASSES_CHANGED") text += "\nPaste the connection string again to see the labels as they are now.";
+    else text += "\nPaste the connection string again to retry.";
+    showPaste(text);
+  };
+
+  // ---- 7: done ----
+  const showDone = async (result) => {
+    const c = flow.check;
+    const db = databaseView(c?.database ?? flow.summary.target);
+    setText("done-title", result.nothingToDo ? "Nothing to do: the guard is already at that version. Nothing changed." : "✓ Set up: one step left in the chat");
+    mark("done-setup", "ok", "Database set up");
+    show("reconnected", result.reconnected);
+    const warnings = $("warnings");
+    clear(warnings);
+    for (const w of result.warnings) warnings.appendChild(el("li", "", w));
+    show("warnings", result.warnings.length > 0);
+    // A re-run registers no passkey: no check code to compare or show.
+    const mine = flow.passkey && result.sentPasskey && !result.reconnected ? { credentialId: flow.passkey.registration.credentialId, checkCode: flow.passkey.checkCode } : null;
+    if (mine) setText("check-code", mine.checkCode);
+    show("check-code", mine !== null);
+    const problem = result.reconnected || (flow.passkey && !result.sentPasskey) ? "" : compareCheckCodes(mine, result.passkeys);
+    setText("check-problem", problem);
+    show("check-problem", problem !== "");
+    if (result.handoff) {
+      setText("chat-text", mine ? `${bot()} will ask you to confirm the database and show this passkey code:` : `${bot()} will ask you to confirm the database.`);
+    } else {
+      setText("chat-text", mine ? `Tell ${bot()} "done" so it checks now. It names this passkey code when it picks up the setup:` : `Tell ${bot()} "done" so it checks now.`);
+    }
+    go("s-done");
+    show("back", false);
+    if (!result.handoff) {
+      mark("done-pickup", "hidden", "");
+      setText("pickup-text", "");
+      return;
+    }
+    const mine2 = newLoop();
+    await flow.watch(mine2, (state) => {
+      if (state === "waiting") {
+        mark("done-pickup", "wait", `${bot()} picked up the address`);
+        setText("pickup-text", "Waiting for your bot to pick up the address…");
+      } else if (state === "late") {
+        setText("pickup-text", "Your bot hasn't picked it up yet. Tell it to check its status.");
+      } else if (state === "collected") {
+        mark("done-pickup", "ok", `${bot()} picked up the address`);
+        setText("pickup-text", `Your bot picked up the address of ${db?.line ?? "your database"}. It will ask you in the chat to confirm this database.`);
+      } else {
+        setText("pickup-text", "Your bot hasn't picked it up yet. Tell it to check its status; if it still waits, open the link from your bot again.");
+      }
+    });
+  };
+
+  // ---- Back ----
+  $("back").addEventListener("click", () => {
+    newLoop();
+    if (screen === "s-passkey") {
+      flow.backTo("bot");
+      go("s-bot");
+    } else if (screen === "s-paste") {
+      flow.backTo("passkey");
+      showPasskey();
+    }
+    else if (screen === "s-checking" || screen === "s-unreach" || screen === "s-tables") showPaste("");
+    else if (screen === "s-labels") showTables();
+    else if (screen === "s-approve") {
+      if (labelsApply()) showLabels();
+      else showTables();
+    }
   });
 
   const code = readCode(location.hash.replace(/^#/, ""));
   if (code) return { flow, ready: describe(code) };
-  show("code-box");
+  go("s-code");
   return { flow, ready: Promise.resolve() };
 }
 

@@ -285,11 +285,69 @@ textarea, input.text {
 .sign-foot:empty, #status:empty { display: none; }
 #register, #sign { width: 100%; }
 
-/* The connect page: one fieldset per row-level security question. */
-.question { border: 1px solid var(--ui-border); border-radius: var(--radius-ui); padding: 10px 12px; margin: 0 0 10px; }
-.question legend { padding: 0 4px; font-weight: 500; }
-.choice { display: inline-flex; align-items: center; gap: 6px; margin-right: 16px; cursor: pointer; }
-#paste .field { display: block; font-weight: 500; margin: 8px 0 4px; }
+/* The connect page: one step per screen in a column that reads on a
+   phone first and sits centred on a laptop. Warnings are coloured strips,
+   not paragraphs. */
+.connect-page .bar, .connect-page .page { max-width: 480px; }
+.connect-page main { gap: 12px; }
+.connect-page .screen { display: flex; flex-direction: column; gap: 12px; }
+.connect-page .screen > button, .connect-page .stack > button { width: 100%; }
+.connect-page .stack { display: flex; flex-direction: column; gap: 8px; }
+.connect-page .box { background: var(--ui-panel); border: 1px solid var(--ui-border); border-radius: var(--radius-ui); padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+.connect-page .center { text-align: center; }
+.connect-page .mono { font-family: var(--font-mono); unicode-bidi: isolate; overflow-wrap: anywhere; }
+.connect-page .small { font-size: 12px; }
+.strip { border-radius: var(--radius-ui-sm); padding: 8px 10px; font-size: 13px; border: 1px solid transparent; white-space: pre-line; overflow-wrap: anywhere; }
+.strip.warn { background: var(--diff-hold-bg); color: var(--diff-hold-fg); border-color: var(--diff-hold-fg); }
+.strip.bad { background: var(--diff-del-bg); color: var(--diff-del-fg); border-color: var(--diff-del-fg); }
+.strip.ok { background: var(--diff-add-bg); color: var(--diff-add-fg); border-color: var(--diff-add-fg); }
+.connect-page .done-title { font-size: 15px; font-weight: 600; }
+.nav-row { display: flex; align-items: center; gap: 10px; min-height: 32px; }
+.nav-row:not(:has(> :not([hidden]))) { display: none; }
+.steps { display: flex; gap: 4px; flex: 1; }
+.steps span { flex: 1; height: 4px; border-radius: 2px; background: var(--ui-border); }
+.steps span.on { background: var(--ui-focus); }
+button.back { min-height: 32px; padding: 0 8px; background: transparent; color: var(--ui-primary); font-weight: 500; }
+button.link { min-height: 0; padding: 0; background: transparent; color: var(--ui-primary); font-weight: 500; text-decoration: underline; }
+.connect-page button.reject { color: var(--diff-del-fg); border-color: var(--diff-del-fg); }
+.bot { display: flex; align-items: center; gap: 12px; }
+.avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--ui-primary); color: var(--ui-on-primary); display: grid; place-items: center; font-weight: 600; font-size: 18px; flex: none; }
+.bot h1 { overflow-wrap: anywhere; }
+.fp { display: block; font-family: var(--font-mono); font-size: 20px; font-weight: 500; letter-spacing: 0.04em; user-select: all; overflow-wrap: anywhere; }
+.more summary { cursor: pointer; color: var(--ui-text-2); font-size: 13px; }
+.more ul { margin: 8px 0 0; padding-left: 18px; font-size: 13px; }
+.more .rows { padding: 0; }
+.secret-field { display: flex; gap: 6px; }
+.secret-field input { flex: 1; min-width: 0; }
+button.icon-btn { min-height: 44px; min-width: 44px; padding: 0; display: grid; place-items: center; }
+.icon-btn .eye-closed, .icon-btn[aria-pressed="true"] .eye-open { display: none; }
+.icon-btn[aria-pressed="true"] .eye-closed { display: block; }
+.checks { list-style: none; margin: 0; }
+.check { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.check::before { content: ""; width: 14px; height: 14px; flex: none; }
+.check.ok::before { content: "✓"; color: var(--diff-add-fg); font-weight: 700; text-align: center; line-height: 14px; }
+.check.wait::before { border: 2px solid var(--ui-focus); border-right-color: transparent; border-radius: 50%; animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .check.wait::before { animation: none; border-right-color: var(--ui-focus); opacity: 0.5; } }
+.db-card { border: 2px solid var(--ui-primary); }
+.eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ui-text-2); }
+.db-name { font-family: var(--font-mono); font-size: 22px; font-weight: 500; overflow-wrap: anywhere; unicode-bidi: isolate; }
+.reach-ok { color: var(--diff-add-fg); font-size: 13px; }
+.table-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 2px 12px; align-items: start; }
+.tick { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; padding: 4px 0; font-size: 13px; }
+.tick input { width: 18px; height: 18px; margin: 0; flex: none; accent-color: var(--ui-primary); }
+.tick .muted { font-size: 12px; }
+.label-tables { display: flex; flex-direction: column; gap: 8px; }
+.label-table { background: var(--ui-panel); border: 1px solid var(--ui-border); border-radius: var(--radius-ui); padding: 8px 12px; }
+.label-table summary { cursor: pointer; font-weight: 600; min-height: 32px; display: flex; align-items: center; gap: 4px; list-style: none; }
+.label-table summary::-webkit-details-marker { display: none; }
+.label-table summary::before { content: "▸"; color: var(--ui-text-2); width: 1em; flex: none; }
+.label-table[open] summary::before { content: "▾"; }
+.label-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 6px 0; border-top: 1px solid var(--ui-border); }
+.label-row .col-name { flex: 1 1 8rem; min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
+.label-row select { font: inherit; font-size: 13px; min-height: 36px; max-width: 12rem; background: var(--ui-subtle); color: var(--ui-text); border: 1px solid var(--ui-border-strong); border-radius: var(--radius-ui-sm); padding: 0 6px; }
+.label-row input.region { width: 4.5em; text-transform: uppercase; padding: 6px; }
+.label-fixed { font-size: 12px; border-radius: 10px; padding: 1px 8px; background: var(--ui-subtle); color: var(--ui-text-2); }
 
 /* Lists of the other pages (passkeys): one bordered line each. */
 .rows { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }

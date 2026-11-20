@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -847,4 +848,57 @@ func TestStatusCollectsWhileTheEngineIsDown(t *testing.T) {
 	require.FileExists(t, secretPathOf(f.cfg))
 	require.NoFileExists(t, f.install.credFile)
 	require.Zero(t, f.carried())
+}
+
+// The shape rules of the page's table list, then the re-run of the same
+// code: CheckSetup says it already ran, and RunSetup reconnects without the
+// tables, the labels or a passkey.
+func TestConnectOnlyPageRerun(t *testing.T) {
+	t.Parallel()
+	f := newHandoffFixture(t)
+	pasted := pastedFor(t, f.d, dbHost)
+	code := f.install.res.Code
+	var desc connectv1.DescribeSetupResponse
+	f.page.ok("DescribeSetup", map[string]any{"code": code}, &desc)
+	require.NotEmpty(t, desc.GetSummary().GetAllTablesSchemas(), "a connect-only code gives all tables")
+	chk := f.checkOnPage(pasted)
+	require.False(t, chk.GetAlreadyRan())
+	require.NotEmpty(t, chk.GetTicket(), "a preview ticket for the reach check")
+	all := chk.GetTables()
+	require.NotEmpty(t, all)
+	ch := desc.GetChallenge()
+	body := func(included []string) map[string]any {
+		b := map[string]any{"code": code, "databaseUrl": pasted, "challenge": challengeJSON(ch), "passkey": passkeyOf(t, f.person, ch)}
+		if included != nil {
+			b["includedTables"] = included
+		}
+		return b
+	}
+	for name, c := range map[string]struct {
+		included     []string
+		code, reason string
+	}{
+		"no list":              {nil, "failed_precondition", "NO_TABLES"},
+		"a table twice":        {append([]string{all[0]}, all...), "invalid_argument", "ANSWERS_INVALID"},
+		"not schema-qualified": {[]string{"leads"}, "invalid_argument", "ANSWERS_INVALID"},
+		"a table since gone":   {append(slices.Clone(all), "public.gone"), "failed_precondition", "TABLES_CHANGED"},
+	} {
+		f.page.refused("RunSetup", body(c.included), c.code, c.reason)
+		require.Zero(t, installedVersion(t, f.d), "%s: nothing ran", name)
+	}
+
+	var run connectv1.RunSetupResponse
+	f.page.ok("RunSetup", body(all), &run)
+	require.NotEmpty(t, run.GetTicket())
+	require.False(t, run.GetReconnected())
+
+	again := f.checkOnPage(pasted)
+	require.True(t, again.GetAlreadyRan())
+	require.Equal(t, dbHost, again.GetDatabase().GetHost())
+	require.Empty(t, again.GetTicket(), "no preview hold over a SET_UP one")
+	var rerun connectv1.RunSetupResponse
+	f.page.ok("RunSetup", map[string]any{"code": code, "databaseUrl": pasted}, &rerun)
+	require.True(t, rerun.GetReconnected())
+	require.NotEmpty(t, rerun.GetTicket())
+	require.Empty(t, rerun.GetPasskeys(), "a re-run registers no passkey")
 }

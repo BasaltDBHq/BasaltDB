@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"os"
@@ -55,10 +56,41 @@ func TestConnectOnlyAgentWaits(t *testing.T) {
 	}
 	require.True(t, names["status"])
 	require.True(t, names["confirm_database"])
+}
 
+// An engine started as root without --user serves the waiting agent
+// degraded with ENGINE_AS_ROOT, never collects, and touches none of its
+// files, even a confirmation it stopped in; it does not stop.
+func TestConnectOnlyAgentAsRootDegrades(t *testing.T) {
+	t.Parallel()
+	env, a := connectOnlyEnv(t)
 	env.asRoot = true
-	_, err = newConnectOnlyRuntime(env, a, slog.New(slog.DiscardHandler))
-	require.ErrorContains(t, err, "--user")
+	require.NoError(t, config.WriteFile(a.Store.CredentialFile, []byte("postgres://x@db.example.com/app\n")))
+	waiting, err := connectOnlyAgent(env, a, slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
+	require.True(t, waiting, "as root, an interrupted YES is left for an engine run as the agent's user")
+	require.FileExists(t, config.SecretPath(a.Store.CredentialFile, "bot"))
+	cfg, err := config.Load(env.configPath)
+	require.NoError(t, err)
+	require.True(t, cfg.Agents[0].Setup.AwaitingAddress)
+
+	require.NoError(t, os.Remove(a.Store.CredentialFile))
+	rt, err := newConnectOnlyRuntime(env, a, slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
+	raw, err := rt.info.Status(context.Background())
+	require.NoError(t, err)
+	var st struct {
+		Problems []struct {
+			Code string `json:"code"`
+		} `json:"problems"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &st))
+	codes := make([]string, 0, len(st.Problems))
+	for _, p := range st.Problems {
+		codes = append(codes, p.Code)
+	}
+	require.Contains(t, codes, "ENGINE_AS_ROOT")
+	require.FileExists(t, config.SecretPath(a.Store.CredentialFile, "bot"))
 }
 
 // The engine stopped after the YES wrote the credential and before it

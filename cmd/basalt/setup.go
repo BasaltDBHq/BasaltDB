@@ -186,6 +186,10 @@ type agentInstall struct {
 	// keepCredential leaves the credential file as it is (the role kept its
 	// password); dsn is empty.
 	keepCredential bool
+	// waiting: the agent has no credential file and waits for its
+	// database's address (a connect-only setup code): nothing is written
+	// for its credential, and its pending setup stays in the config.
+	waiting bool
 	// personUIDs are added to the config's personUids.
 	personUIDs []uint32
 	// operatedBy replaces the config's operatedBy when set (PERSON or AGENT).
@@ -213,7 +217,7 @@ func agentServiceSpec(goos, bin, configPath, engineUser string, a agentInstall, 
 	raw, v, err := config.UpsertedVault(configPath, open,
 		config.Settings{
 			SocketDir: config.DefaultSocketDir(goos), PagesURL: a.pagesURL, DevLocalPages: a.devLocalPages, Mode: config.ModeService, PersonUIDs: a.personUIDs,
-			Vault: a.vault, VaultDefault: a.vaultDefault, OperatedBy: a.operatedBy,
+			Vault: a.vault, VaultDefault: a.vaultDefault, OperatedBy: a.operatedBy, KeepConnectOnlySetup: a.waiting,
 		},
 		config.Agent{Name: a.name, OSUser: a.osUser, Store: config.PostgresStore(cred), InitArgs: a.initArgs})
 	if err != nil {

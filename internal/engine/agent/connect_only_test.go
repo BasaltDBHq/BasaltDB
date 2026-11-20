@@ -99,6 +99,7 @@ func connectOnlyStatusCases(operatedBy string) map[string]statusCase {
 		})},
 		problemAddressInvalid: {state: guard.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemAddressInvalid})},
 		problemClockSkew:      {state: guard.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemClockSkew})},
+		problemEngineAsRoot:   {state: guard.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemEngineAsRoot})},
 		problemSetupNotFound: {state: guard.GuardOK, report: func(t *testing.T) StatusReport {
 			t.Helper()
 			return operatedStatus(&fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}, 1, &confirmed, operatedBy)(t)

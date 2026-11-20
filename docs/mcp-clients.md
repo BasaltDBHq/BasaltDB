@@ -70,6 +70,8 @@ One MCP server serves one agent, and one agent uses one database. No server rout
   }
   ```
 
+When the engine's config is not where `basalt mcp` looks by itself (the system path, or the per-user one `basalt init` leaves in your config directory), the line `basalt init` prints carries `--config <absolute path>`, and `--socket-dir` when the sockets are not in the default place. Keep them when you register the server: with the config, `basalt mcp` can answer `status` and, for an engine that runs as you, start it when it is down. [Bot computers with no service manager](bot-setup.md#bot-computers-with-no-service-manager) shows a full line.
+
 The MCP tools `status` and `describe` never name another agent or its database. `describe` names this agent's own database (name and host). To see every agent and its database, run `basalt status` in your own terminal.
 
 ## Check it works

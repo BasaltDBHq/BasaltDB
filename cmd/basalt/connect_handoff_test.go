@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -139,7 +140,11 @@ func (f handoffFixture) runOnPage(pasted string) *connectv1.RunSetupResponse {
 	require.NotEmpty(f.t, chk.GetTables())
 	ch := desc.GetChallenge()
 	var run connectv1.RunSetupResponse
-	f.page.ok("RunSetup", map[string]any{"code": code, "databaseUrl": pasted, "challenge": challengeJSON(ch), "passkey": passkeyOf(f.t, f.person, ch)}, &run)
+	// Every table ticked, as the page sends it by default.
+	f.page.ok("RunSetup", map[string]any{
+		"code": code, "databaseUrl": pasted, "challenge": challengeJSON(ch), "passkey": passkeyOf(f.t, f.person, ch),
+		"includedTables": chk.GetTables(),
+	}, &run)
 	require.NotEmpty(f.t, run.GetTicket())
 	return &run
 }
@@ -738,4 +743,71 @@ func TestConnectOnlyHostileReachCheck(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, dbHost, held.Host, "RunSetup holds its own address, never the preview's")
 	})
+}
+
+// The page's choices on RunSetup against the fake: the shape rules of the
+// tables it may untick and the labels it may set, and the re-run that skips
+// both. The setup package cannot leave a table out or write a label yet, so
+// the fake refuses those instead of dropping them, as the service does.
+func TestConnectOnlyPageChoices(t *testing.T) {
+	t.Parallel()
+	f := newHandoffFixture(t)
+	pasted := pastedFor(t, f.d, dbHost)
+	code := f.install.res.Code
+	var desc connectv1.DescribeSetupResponse
+	f.page.ok("DescribeSetup", map[string]any{"code": code}, &desc)
+	require.NotEmpty(t, desc.GetSummary().GetAllTablesSchemas(), "a connect-only code gives all tables")
+	var chk connectv1.CheckSetupResponse
+	f.page.ok("CheckSetup", map[string]any{"code": code, "databaseUrl": pasted}, &chk)
+	require.NotEmpty(t, chk.GetTables())
+	require.False(t, chk.GetAlreadyRan())
+	require.NotEmpty(t, chk.GetTicket(), "a preview ticket for the reach check")
+	ch := desc.GetChallenge()
+	body := func(extra map[string]any) map[string]any {
+		b := map[string]any{"code": code, "databaseUrl": pasted, "challenge": challengeJSON(ch), "passkey": passkeyOf(t, f.person, ch)}
+		for k, v := range extra {
+			b[k] = v
+		}
+		return b
+	}
+	all := chk.GetTables()
+	for name, c := range map[string]struct {
+		extra        map[string]any
+		code, reason string
+	}{
+		"no list":              {map[string]any{}, "failed_precondition", "NO_TABLES"},
+		"a table twice":        {map[string]any{"includedTables": append([]string{all[0]}, all...)}, "invalid_argument", "ANSWERS_INVALID"},
+		"not schema-qualified": {map[string]any{"includedTables": []string{"users"}}, "invalid_argument", "ANSWERS_INVALID"},
+		"a table since gone":   {map[string]any{"includedTables": append(slices.Clone(all), "public.gone")}, "failed_precondition", "TABLES_CHANGED"},
+		"a table left out":     {map[string]any{"includedTables": all[1:]}, "invalid_argument", "ANSWERS_INVALID"},
+		"a label": {map[string]any{"includedTables": all, "columnClasses": []map[string]any{{
+			"table": all[0], "column": "id", "class": "PUBLIC", "was": map[string]any{"class": "UNCLASSIFIED"},
+		}}}, "invalid_argument", "ANSWERS_INVALID"},
+		"restPublic": {map[string]any{"includedTables": all, "restPublic": true}, "invalid_argument", "ANSWERS_INVALID"},
+	} {
+		if len(all) < 2 && name == "a table left out" {
+			continue
+		}
+		f.page.refused("RunSetup", body(c.extra), c.code, c.reason)
+		require.Zero(t, installedVersion(t, f.d), "%s: nothing ran", name)
+	}
+
+	// Every table ticked, no label: the setup runs.
+	var run connectv1.RunSetupResponse
+	f.page.ok("RunSetup", body(map[string]any{"includedTables": all}), &run)
+	require.NotEmpty(t, run.GetTicket())
+	require.False(t, run.GetReconnected())
+
+	// The same code again in the same database: CheckSetup says it already
+	// ran, and RunSetup reconnects without the tables or the labels.
+	var again connectv1.CheckSetupResponse
+	f.page.ok("CheckSetup", map[string]any{"code": code, "databaseUrl": pasted}, &again)
+	require.True(t, again.GetAlreadyRan())
+	require.Equal(t, dbHost, again.GetDatabase().GetHost())
+	require.Empty(t, again.GetTicket(), "no preview hold over a SET_UP one")
+	var rerun connectv1.RunSetupResponse
+	f.page.ok("RunSetup", map[string]any{"code": code, "databaseUrl": pasted}, &rerun)
+	require.True(t, rerun.GetReconnected())
+	require.NotEmpty(t, rerun.GetTicket())
+	require.Empty(t, rerun.GetPasskeys(), "a re-run registers no passkey")
 }

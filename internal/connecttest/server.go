@@ -141,12 +141,27 @@ func (s *Server) CheckSetup(ctx context.Context, r *connect.Request[connectv1.Ch
 		return nil, refuse(err)
 	}
 	defer conn.Close(ctx)
-	c, err := setup.Check(ctx, conn, s.request(r.Msg.GetCode()))
+	req := s.request(r.Msg.GetCode())
+	c, err := setup.Check(ctx, conn, req)
+	var se *setup.Error
+	if errors.As(err, &se) && se.Code == "USED" {
+		// A connect-only code that ran in this database may run again
+		// (the recovery path): alreadyRan, and the page skips the tables
+		// and the labels. A SET_UP hold of another database is refused
+		// USED as before.
+		if d, derr := setup.Describe(req); derr == nil && d.Target == nil {
+			at := setup.ConnDatabase(conn.Config())
+			if !s.otherTarget(d, at) {
+				return connect.NewResponse(&connectv1.CheckSetupResponse{Database: target(at), AlreadyRan: true}), nil
+			}
+		}
+	}
 	if err != nil {
 		return nil, refuse(err)
 	}
 	out := &connectv1.CheckSetupResponse{
 		PasskeyNeeded: c.PasskeyNeeded, NothingToDo: c.NothingToDo != nil, Database: target(c.Database), Tables: slices.Clone(c.Tables),
+		ReadOnly: slices.Clone(c.ReadOnly),
 	}
 	for _, e := range c.Excluded {
 		out.Excluded = append(out.Excluded, &connectv1.ExcludedTable{Table: e.Table, Owner: e.Owner})
@@ -215,6 +230,9 @@ func (s *Server) RunSetup(ctx context.Context, r *connect.Request[connectv1.RunS
 	}
 	if err != nil {
 		return nil, refuse(err)
+	}
+	if err := choices(d, checked, m); err != nil {
+		return nil, err
 	}
 	var in setup.RunInput
 	if checked.NothingToDo == nil {

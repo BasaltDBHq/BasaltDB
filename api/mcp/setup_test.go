@@ -552,8 +552,8 @@ func TestConnectLinkSteps(t *testing.T) {
 
 // TestConnectOnlySteps checks the catalog's connect-only variants
 // (CONTRACT.md, Next steps for a connect-only code): each replaces an entry
-// of the catalog, none is listed twice, and they are the rows of
-// CONTRACT.md's table.
+// of the catalog, none is listed twice, and CONTRACT.md's table lists the
+// same entries (keys only; the steps are checked by eye).
 func TestConnectOnlySteps(t *testing.T) {
 	t.Parallel()
 	c, err := mcpcontract.LoadAllNextSteps()

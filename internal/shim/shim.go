@@ -31,8 +31,11 @@ const (
 	// DefaultReconnectWait is long enough for a service manager to restart
 	// the engine.
 	DefaultReconnectWait = 15 * time.Second
-	reconnectPoll        = 100 * time.Millisecond
-	retryQueue           = 64
+	// DefaultStartWait is how long a message waits for an engine that
+	// Options.Start started, or found starting.
+	DefaultStartWait = 15 * time.Second
+	reconnectPoll    = 100 * time.Millisecond
+	retryQueue       = 64
 )
 
 // Fallback answers what the engine does not (agent.EngineDownServer).
@@ -79,6 +82,16 @@ type Options struct {
 	// (default mcp.MinEngineProtocol); an older engine is refused with the
 	// message that names the restart.
 	MinEngineProtocol int
+
+	// Start, when set, is called when a message finds no engine and the
+	// engine was not up a moment ago; it returns once it started one (or
+	// found one starting) or failed. The shim then waits up to StartWait
+	// for the socket before answering from the fallback. After an error the
+	// shim tries the socket once and does not wait.
+	Start func(ctx context.Context) error
+	// StartWait is how long to wait for the socket after Start; zero means
+	// DefaultStartWait.
+	StartWait time.Duration
 }
 
 // ServeWith is Serve with options.
@@ -90,6 +103,10 @@ func ServeWith(ctx context.Context, socketPath string, fallback Fallback, in io.
 	if wait == 0 {
 		wait = DefaultReconnectWait
 	}
+	startWait := opts.StartWait
+	if startWait == 0 {
+		startWait = DefaultStartWait
+	}
 	minEngine := opts.MinEngineProtocol
 	if minEngine == 0 {
 		minEngine = mcp.MinEngineProtocol
@@ -97,7 +114,7 @@ func ServeWith(ctx context.Context, socketPath string, fallback Fallback, in io.
 	r := &relay{
 		neg:  negotiation{build: buildinfo.Version, minEngine: minEngine},
 		path: socketPath, fallback: fallback, out: &lineWriter{w: out}, files: defaultRequestFiles(), dial: dial,
-		reconnectWait: wait, retries: make(chan []byte, retryQueue), retried: map[string]bool{},
+		reconnectWait: wait, start: opts.Start, startWait: startWait, retries: make(chan []byte, retryQueue), retried: map[string]bool{},
 	}
 	return serve(ctx, r, in)
 }
@@ -189,6 +206,9 @@ type relay struct {
 	// wasUp is set while the engine answered the last dial; only then does a
 	// message wait for it to come back, so a stopped engine costs one wait.
 	wasUp bool
+	// start and startWait: Options.Start and Options.StartWait.
+	start     func(ctx context.Context) error
+	startWait time.Duration
 
 	// retries carries the in-flight reads a dying session hands back to the
 	// serve loop; retried holds the ids already given their one retry.
@@ -248,18 +268,39 @@ func (r *relay) drainRetries(ctx context.Context) {
 }
 
 // dialWaiting dials, and when the engine was up until now keeps trying for
-// reconnectWait: the engine is restarting, not gone.
+// reconnectWait: the engine is restarting, not gone. When it never comes
+// back, or was not up, and there is a starter, it starts one.
 func (r *relay) dialWaiting(ctx context.Context) (*session, error) {
 	sess, err := r.dial(ctx, r.path, r.out, r.fallback, r.files, r.neg)
 	if err == nil {
-		sess.retry, sess.resend = r.retry, r.resend
-		r.wasUp = true
-		return sess, nil
+		return r.up(sess), nil
 	}
-	if !r.wasUp || r.reconnectWait <= 0 {
-		return nil, err
+	if r.start == nil {
+		if !r.wasUp || r.reconnectWait <= 0 {
+			return nil, err
+		}
+		return r.waitFor(ctx, r.reconnectWait, err)
 	}
-	deadline := time.NewTimer(r.reconnectWait)
+	if r.wasUp && r.reconnectWait > 0 {
+		if sess, err = r.waitFor(ctx, r.reconnectWait, err); sess != nil || ctx.Err() != nil {
+			return sess, err
+		}
+	}
+	r.wasUp = false
+	return r.startEngine(ctx, err)
+}
+
+// up marks the engine as up and gives sess the relay's retry hooks.
+func (r *relay) up(sess *session) *session {
+	sess.retry, sess.resend = r.retry, r.resend
+	r.wasUp = true
+	return sess
+}
+
+// waitFor dials every reconnectPoll until wait passes; it returns the
+// session, or nil with the last dial error (wasUp is then false).
+func (r *relay) waitFor(ctx context.Context, wait time.Duration, err error) (*session, error) {
+	deadline := time.NewTimer(wait)
 	defer deadline.Stop()
 	tick := time.NewTicker(reconnectPoll)
 	defer tick.Stop()
@@ -271,12 +312,32 @@ func (r *relay) dialWaiting(ctx context.Context) (*session, error) {
 			r.wasUp = false
 			return nil, err
 		case <-tick.C:
-			if sess, err = r.dial(ctx, r.path, r.out, r.fallback, r.files, r.neg); err == nil {
-				sess.retry, sess.resend = r.retry, r.resend
-				return sess, nil
+			sess, derr := r.dial(ctx, r.path, r.out, r.fallback, r.files, r.neg)
+			if derr == nil {
+				return r.up(sess), nil
 			}
+			err = derr
 		}
 	}
+}
+
+// startEngine calls the starter, then waits up to startWait for the socket
+// from the call (one try when the starter failed).
+func (r *relay) startEngine(ctx context.Context, err error) (*session, error) {
+	began := time.Now()
+	serr := r.start(ctx)
+	// The engine may already answer, and a short wait would end before the
+	// first poll.
+	sess, derr := r.dial(ctx, r.path, r.out, r.fallback, r.files, r.neg)
+	if derr == nil {
+		return r.up(sess), nil
+	}
+	if serr != nil {
+		return nil, err
+	}
+	// The starter's own wait counts: a message never waits longer than
+	// startWait in all.
+	return r.waitFor(ctx, max(r.startWait-time.Since(began), 0), derr)
 }
 
 // send forwards line to the engine, dialing when there is no live

@@ -181,7 +181,7 @@ func childStarter(exe, configPath, lockPath, stateDir string, io stdio, log *slo
 			stable.Stop()
 			if err != nil && ctx.Err() == nil {
 				// The child has exited, so a live holder is another engine.
-				if _, up, _ := server.Running(lockPath); up {
+				if anotherEngineRuns(lockPath) {
 					return errAnotherEngine
 				}
 			}
@@ -220,4 +220,28 @@ func writeFileAtomic(path string, data []byte) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// anotherEngineRuns is true when the engine lock is held at every one of a
+// few looks. A real engine holds it all the time; a probe by someone else
+// (basalt status, a starting basalt mcp) holds it for a moment and reads as
+// a holder, so one look that finds it free means no engine runs.
+func anotherEngineRuns(lockPath string) bool {
+	return heldAtEveryLook(func() bool {
+		_, up, _ := server.Running(lockPath)
+		return up
+	}, time.Sleep)
+}
+
+func heldAtEveryLook(held func() bool, sleep func(time.Duration)) bool {
+	const looks, gap = 3, 70 * time.Millisecond
+	for i := range looks {
+		if !held() {
+			return false
+		}
+		if i < looks-1 {
+			sleep(gap)
+		}
+	}
+	return true
 }

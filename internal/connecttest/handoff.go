@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"time"
@@ -224,4 +225,10 @@ func (s *Server) OfferAddress(_ context.Context, r *connect.Request[connectv1.Of
 		state = stateCollected
 	}
 	return connect.NewResponse(&connectv1.OfferAddressResponse{State: state}), nil
+}
+
+// ReportReach is contracted (CONTRACT.md, Connect, The reach check) and not
+// faked yet: the fake answers it unimplemented until the engine reports.
+func (s *Server) ReportReach(context.Context, *connect.Request[connectv1.ReportReachRequest]) (*connect.Response[connectv1.ReportReachResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("ReportReach is not faked yet"))
 }

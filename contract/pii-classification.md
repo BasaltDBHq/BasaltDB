@@ -3,7 +3,7 @@
 M5.1. Owner decisions M51-1 to M51-8. Every column an agent can read gets one class, for the whole database and every agent (M51-3). `basalt classify` suggests, the person confirms, `basalt_meta` stores it ([PII objects](basalt-meta.md#pii-objects)). In M5.1 nothing is tokenized on the wire and nothing is refused: an unclassified column is only warned about (M51-5); refusals start in M5.2.
 
 - **No value is ever printed, logged, written to the ledger or stored in plain form.** The CLI and the engine print counts, column names and reasons; the dictionary holds keyed hashes; `basalt_meta` holds classes, never values.
-- Agents can read the classification and never change it. Only the admin writes it, through `basalt classify`.
+- Agents can read the classification and never change it. Only the admin writes it, through `basalt classify`. Planned: also through a setup run from the connect page, with the admin connection string the person pasted there: the columns whose label the person changed, each checked against the class it had when the page read it, and on request `PUBLIC` for the columns that have no class; never a class erased ([Column labels on the connect page](connect.md#column-labels-on-the-connect-page)). It writes as `basalt classify` does: as `<prefix>_guard`, with `confirmed_at` and `confirmed_by`, then `pii_catalog`.
 
 ### Classes
 

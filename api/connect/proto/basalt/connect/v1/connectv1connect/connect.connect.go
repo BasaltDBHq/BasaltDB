@@ -1,9 +1,11 @@
 // The connect service's API (CONTRACT.md, Connect). The connect service is
 // a hosted service of Basalt Vault, used only at setup: it runs a bot's
 // setup code against the person's database, once, and writes nothing
-// anywhere. For a connect-only setup code it holds the database's address
-// (never the password) in memory for up to 30 minutes, until the bot's
-// engine collects it. Planned: no part of BasaltDB serves or calls it yet.
+// anywhere of its own. For a connect-only setup code it holds the
+// database's address (never the password) in memory for up to 30 minutes:
+// from CheckSetup, for the bot's engine to test that it can reach it (the
+// reach check), and from RunSetup, until the engine collects it. Planned:
+// no part of BasaltDB serves it yet; the engine calls CollectAddress.
 //
 // Field names are snake_case here; the proto3 JSON names, which the connect
 // page sends and reads, are their camelCase forms. Byte values are strings
@@ -59,6 +61,9 @@ const (
 	// SetupServiceCollectAddressProcedure is the fully-qualified name of the SetupService's
 	// CollectAddress RPC.
 	SetupServiceCollectAddressProcedure = "/basalt.connect.v1.SetupService/CollectAddress"
+	// SetupServiceReportReachProcedure is the fully-qualified name of the SetupService's ReportReach
+	// RPC.
+	SetupServiceReportReachProcedure = "/basalt.connect.v1.SetupService/ReportReach"
 	// SetupServiceHandoffStatusProcedure is the fully-qualified name of the SetupService's
 	// HandoffStatus RPC.
 	SetupServiceHandoffStatusProcedure = "/basalt.connect.v1.SetupService/HandoffStatus"
@@ -73,7 +78,8 @@ type SetupServiceClient interface {
 	// access.
 	DescribeSetup(context.Context, *connect.Request[v1.DescribeSetupRequest]) (*connect.Response[v1.DescribeSetupResponse], error)
 	// Connects, reads the database's state, and returns the questions to ask.
-	// Changes nothing.
+	// Changes nothing in the database. For a connect-only INSTALL code, holds
+	// the address for the reach check (a PREVIEW hold).
 	CheckSetup(context.Context, *connect.Request[v1.CheckSetupRequest]) (*connect.Response[v1.CheckSetupResponse], error)
 	// Connects and runs the setup in one transaction. For a connect-only
 	// code, then holds the database's address and returns a hand-off ticket.
@@ -81,8 +87,11 @@ type SetupServiceClient interface {
 	// The engine: the address of its connect-only setup, signed with the
 	// engine key the setup code names. No database access.
 	CollectAddress(context.Context, *connect.Request[v1.CollectAddressRequest]) (*connect.Response[v1.CollectAddressResponse], error)
-	// The page: whether the engine has collected the address. No database
-	// access.
+	// The engine: whether it can reach the address it collected, signed with
+	// the same engine key. No database access.
+	ReportReach(context.Context, *connect.Request[v1.ReportReachRequest]) (*connect.Response[v1.ReportReachResponse], error)
+	// The page: whether the engine has collected the address, and what it
+	// reported about reaching it. No database access.
 	HandoffStatus(context.Context, *connect.Request[v1.HandoffStatusRequest]) (*connect.Response[v1.HandoffStatusResponse], error)
 	// The page: puts a hold the service lost (a restart) back, with the
 	// ticket's own expiry. No database access.
@@ -124,6 +133,12 @@ func NewSetupServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(setupServiceMethods.ByName("CollectAddress")),
 			connect.WithClientOptions(opts...),
 		),
+		reportReach: connect.NewClient[v1.ReportReachRequest, v1.ReportReachResponse](
+			httpClient,
+			baseURL+SetupServiceReportReachProcedure,
+			connect.WithSchema(setupServiceMethods.ByName("ReportReach")),
+			connect.WithClientOptions(opts...),
+		),
 		handoffStatus: connect.NewClient[v1.HandoffStatusRequest, v1.HandoffStatusResponse](
 			httpClient,
 			baseURL+SetupServiceHandoffStatusProcedure,
@@ -145,6 +160,7 @@ type setupServiceClient struct {
 	checkSetup     *connect.Client[v1.CheckSetupRequest, v1.CheckSetupResponse]
 	runSetup       *connect.Client[v1.RunSetupRequest, v1.RunSetupResponse]
 	collectAddress *connect.Client[v1.CollectAddressRequest, v1.CollectAddressResponse]
+	reportReach    *connect.Client[v1.ReportReachRequest, v1.ReportReachResponse]
 	handoffStatus  *connect.Client[v1.HandoffStatusRequest, v1.HandoffStatusResponse]
 	offerAddress   *connect.Client[v1.OfferAddressRequest, v1.OfferAddressResponse]
 }
@@ -169,6 +185,11 @@ func (c *setupServiceClient) CollectAddress(ctx context.Context, req *connect.Re
 	return c.collectAddress.CallUnary(ctx, req)
 }
 
+// ReportReach calls basalt.connect.v1.SetupService.ReportReach.
+func (c *setupServiceClient) ReportReach(ctx context.Context, req *connect.Request[v1.ReportReachRequest]) (*connect.Response[v1.ReportReachResponse], error) {
+	return c.reportReach.CallUnary(ctx, req)
+}
+
 // HandoffStatus calls basalt.connect.v1.SetupService.HandoffStatus.
 func (c *setupServiceClient) HandoffStatus(ctx context.Context, req *connect.Request[v1.HandoffStatusRequest]) (*connect.Response[v1.HandoffStatusResponse], error) {
 	return c.handoffStatus.CallUnary(ctx, req)
@@ -185,7 +206,8 @@ type SetupServiceHandler interface {
 	// access.
 	DescribeSetup(context.Context, *connect.Request[v1.DescribeSetupRequest]) (*connect.Response[v1.DescribeSetupResponse], error)
 	// Connects, reads the database's state, and returns the questions to ask.
-	// Changes nothing.
+	// Changes nothing in the database. For a connect-only INSTALL code, holds
+	// the address for the reach check (a PREVIEW hold).
 	CheckSetup(context.Context, *connect.Request[v1.CheckSetupRequest]) (*connect.Response[v1.CheckSetupResponse], error)
 	// Connects and runs the setup in one transaction. For a connect-only
 	// code, then holds the database's address and returns a hand-off ticket.
@@ -193,8 +215,11 @@ type SetupServiceHandler interface {
 	// The engine: the address of its connect-only setup, signed with the
 	// engine key the setup code names. No database access.
 	CollectAddress(context.Context, *connect.Request[v1.CollectAddressRequest]) (*connect.Response[v1.CollectAddressResponse], error)
-	// The page: whether the engine has collected the address. No database
-	// access.
+	// The engine: whether it can reach the address it collected, signed with
+	// the same engine key. No database access.
+	ReportReach(context.Context, *connect.Request[v1.ReportReachRequest]) (*connect.Response[v1.ReportReachResponse], error)
+	// The page: whether the engine has collected the address, and what it
+	// reported about reaching it. No database access.
 	HandoffStatus(context.Context, *connect.Request[v1.HandoffStatusRequest]) (*connect.Response[v1.HandoffStatusResponse], error)
 	// The page: puts a hold the service lost (a restart) back, with the
 	// ticket's own expiry. No database access.
@@ -232,6 +257,12 @@ func NewSetupServiceHandler(svc SetupServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(setupServiceMethods.ByName("CollectAddress")),
 		connect.WithHandlerOptions(opts...),
 	)
+	setupServiceReportReachHandler := connect.NewUnaryHandler(
+		SetupServiceReportReachProcedure,
+		svc.ReportReach,
+		connect.WithSchema(setupServiceMethods.ByName("ReportReach")),
+		connect.WithHandlerOptions(opts...),
+	)
 	setupServiceHandoffStatusHandler := connect.NewUnaryHandler(
 		SetupServiceHandoffStatusProcedure,
 		svc.HandoffStatus,
@@ -254,6 +285,8 @@ func NewSetupServiceHandler(svc SetupServiceHandler, opts ...connect.HandlerOpti
 			setupServiceRunSetupHandler.ServeHTTP(w, r)
 		case SetupServiceCollectAddressProcedure:
 			setupServiceCollectAddressHandler.ServeHTTP(w, r)
+		case SetupServiceReportReachProcedure:
+			setupServiceReportReachHandler.ServeHTTP(w, r)
 		case SetupServiceHandoffStatusProcedure:
 			setupServiceHandoffStatusHandler.ServeHTTP(w, r)
 		case SetupServiceOfferAddressProcedure:
@@ -281,6 +314,10 @@ func (UnimplementedSetupServiceHandler) RunSetup(context.Context, *connect.Reque
 
 func (UnimplementedSetupServiceHandler) CollectAddress(context.Context, *connect.Request[v1.CollectAddressRequest]) (*connect.Response[v1.CollectAddressResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("basalt.connect.v1.SetupService.CollectAddress is not implemented"))
+}
+
+func (UnimplementedSetupServiceHandler) ReportReach(context.Context, *connect.Request[v1.ReportReachRequest]) (*connect.Response[v1.ReportReachResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("basalt.connect.v1.SetupService.ReportReach is not implemented"))
 }
 
 func (UnimplementedSetupServiceHandler) HandoffStatus(context.Context, *connect.Request[v1.HandoffStatusRequest]) (*connect.Response[v1.HandoffStatusResponse], error) {

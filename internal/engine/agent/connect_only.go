@@ -214,7 +214,9 @@ type ConnectOnly struct {
 	Commands   Commands
 	OperatedBy string
 	SameUser   bool
-	PagesBase  string
+	// StartedBy is why this engine started (hand, mcp or crash).
+	StartedBy string
+	PagesBase string
 	// PagesOrigin is the origin of the local pages when served.
 	PagesOrigin   string
 	ConnectBudget int
@@ -329,7 +331,7 @@ func (c ConnectOnly) Status(ctx context.Context) (StatusReport, error) {
 	}
 	r := StatusReport{
 		Agent: c.Name, OperatedBy: operatedBy(c.OperatedBy), Enforcement: enforcement(c.OperatedBy, c.SameUser),
-		Engine: EngineStatus{Reachable: true, Build: buildinfo.Version},
+		Engine: EngineStatus{Reachable: true, Build: buildinfo.Version, StartedBy: startedByEnum(c.StartedBy)},
 		Guard:  GuardStatus{State: guard.GuardUnknown, Build: guard.LatestVersion()},
 		Pages:  PagesStatus{Served: c.PagesOrigin != "", URL: base},
 	}

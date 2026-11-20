@@ -116,6 +116,18 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
 		return errors.New("the engine runs on Linux and macOS only (it needs peer credentials on Unix sockets)")
 	}
+	// Every configured agent's OS user, before any agent is skipped: the
+	// person socket scopes a peer that runs an agent to that agent (SM-4),
+	// served or not, so a skipped agent's user never looks like the person.
+	agentUIDs, err := agentOSUIDs(cfg.Agents, lookupUID)
+	if err != nil {
+		return err
+	}
+	// Folders first: an update of the computer drops empty ones and resets
+	// the rest to 0755, and the lock below makes the socket directory.
+	if err := ensureOwnDirs(cfg, agentUIDs, os.Geteuid()); err != nil {
+		return err
+	}
 	lock, err := server.AcquireLock(LockPath(cfg.SocketDir))
 	if err != nil {
 		return err
@@ -124,14 +136,6 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	if err := lock.WritePID(os.Getpid()); err != nil {
 		// basalt status then shows the engine running without its pid.
 		log.Warn("could not write the engine's pid to its lock file", "err", err)
-	}
-
-	// Every configured agent's OS user, before any agent is skipped: the
-	// person socket scopes a peer that runs an agent to that agent (SM-4),
-	// served or not, so a skipped agent's user never looks like the person.
-	agentUIDs, err := agentOSUIDs(cfg.Agents, lookupUID)
-	if err != nil {
-		return err
 	}
 	var closers []func()
 	defer func() {
@@ -158,7 +162,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	if err != nil {
 		return err
 	}
-	env := agentEnv{cfg: cfg, configPath: configPath, asRoot: os.Geteuid() == 0, pagesBase: base, stateDir: cfg.StateDirFor(runtime.GOOS), pins: statePins(cfg.StateDirFor(runtime.GOOS), log)}
+	env := agentEnv{cfg: cfg, startedBy: startedByOrHand(restart.StartedBy), configPath: configPath, asRoot: os.Geteuid() == 0, pagesBase: base, stateDir: cfg.StateDirFor(runtime.GOOS), pins: statePins(cfg.StateDirFor(runtime.GOOS), log)}
 	// Plugins are verified now and started below, once the agents serve: a
 	// plugin that fails never stops the engine. With no enabled entry
 	// nothing is read or started.
@@ -595,6 +599,7 @@ type agentRuntime struct {
 // agentEnv is what every agent's runtime shares.
 type agentEnv struct {
 	cfg         config.Config
+	startedBy   string // why this engine started (RestartOptions.StartedBy)
 	configPath  string
 	pagesBase   string
 	pagesOrigin string
@@ -734,6 +739,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		DevLocalPages: env.cfg.DevLocalPages,
 		ConnectBudget: env.cfg.ConnectLinkBudget(),
 		SameUser:      !env.cfg.Service(),
+		StartedBy:     env.startedBy,
 		Setup:         a.Setup,
 		Probe:         probe,
 		Vault:         env.vault,
@@ -910,4 +916,23 @@ func (env agentEnv) updateNotice() func() *updatecheck.Notice {
 		return nil
 	}
 	return env.update.Cached
+}
+
+// ensureOwnDirs makes and tightens the folders a same-user engine owns: its
+// state directory, and its socket directory when every agent's OS user is
+// the engine's own (a socket directory other users reach stays 0755). A
+// service engine's folders are the service manager's.
+func ensureOwnDirs(cfg config.Config, agentUIDs map[string]uint32, euid int) error {
+	if cfg.Service() {
+		return nil
+	}
+	dirs := []string{cfg.StateDirFor(runtime.GOOS)}
+	own := true
+	for _, uid := range agentUIDs {
+		own = own && int(uid) == euid
+	}
+	if own {
+		dirs = append(dirs, cfg.SocketDir)
+	}
+	return ensurePrivateDirs(euid, dirs...)
 }

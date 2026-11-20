@@ -86,12 +86,49 @@ func TestSuperviseRealEngineKilled(t *testing.T) {
 	var first int
 	require.Eventually(t, func() bool { first = enginePID(); return first > 0 && answers() }, 30*time.Second, 50*time.Millisecond)
 
+	require.Equal(t, "HAND", engineStartedBy(t, sock), "run by hand under --supervise, with no --started-by")
 	require.NoError(t, syscall.Kill(first, syscall.SIGKILL))
 
 	require.Eventually(t, func() bool {
 		pid := enginePID()
 		return pid > 0 && pid != first && answers()
 	}, 5*time.Second, 50*time.Millisecond, "the supervisor starts the engine again")
+	require.Equal(t, "CRASH", engineStartedBy(t, sock), "the supervisor's restart says so")
+}
+
+// engineStartedBy is status.engine.startedBy as an MCP client on the agent's
+// socket reads it.
+func engineStartedBy(t *testing.T, sock string) string {
+	t.Helper()
+	conn, err := net.Dial("unix", sock)
+	require.NoError(t, err)
+	defer conn.Close()
+	require.NoError(t, conn.SetDeadline(time.Now().Add(30*time.Second)))
+	_, err = fmt.Fprintf(conn, "%s\n%s\n",
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"status","arguments":{}}}`)
+	require.NoError(t, err)
+	r := bufio.NewReader(conn)
+	_, err = r.ReadString('\n')
+	require.NoError(t, err)
+	line, err := r.ReadString('\n')
+	require.NoError(t, err)
+	var resp struct {
+		Result struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(line), &resp), line)
+	require.Len(t, resp.Result.Content, 1, line)
+	var report struct {
+		Engine struct {
+			StartedBy string `json:"startedBy"`
+		} `json:"engine"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(resp.Result.Content[0].Text), &report))
+	return report.Engine.StartedBy
 }
 
 // A basalt mcp that finds no engine starts one under a supervisor, waits
@@ -158,12 +195,14 @@ func TestMCPStartsDownEngine(t *testing.T) {
 	var report struct {
 		Ready  bool `json:"ready"`
 		Engine struct {
-			Reachable bool `json:"reachable"`
+			Reachable bool   `json:"reachable"`
+			StartedBy string `json:"startedBy"`
 		} `json:"engine"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(resp.Result.Content[0].Text), &report))
 	require.True(t, report.Engine.Reachable, resp.Result.Content[0].Text)
 	require.True(t, report.Ready, resp.Result.Content[0].Text)
+	require.Equal(t, "MCP", report.Engine.StartedBy, "basalt mcp started this engine")
 
 	pid, up, _ := server.Running(engine.LockPath(socketDir))
 	require.True(t, up)

@@ -65,6 +65,14 @@ type RestartOptions struct {
 	StartedBy string
 }
 
+// startedByOrHand is v, or "hand" when empty.
+func startedByOrHand(v string) string {
+	if v == "" {
+		return "hand"
+	}
+	return v
+}
+
 func (o RestartOptions) withDefaults() RestartOptions {
 	if o.IdleWait <= 0 {
 		o.IdleWait = DefaultIdleWait

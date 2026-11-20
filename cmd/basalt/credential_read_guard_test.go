@@ -42,7 +42,8 @@ var uncheckedCredentialReads = map[string]string{
 	"cmd/basalt/init_remote.go:pathCredFiles.read:readOwnCredential":                    "init --remote not as root",
 	"internal/engine/credfiles.go:pathFiles.readCredential:config.ReadCredential":       "an engine not running as root (agentFilesFor)",
 	"internal/engine/credfiles.go:pathFiles.readPending:config.ReadOwnCredential":       "an engine not running as root (agentFilesFor)",
-	"internal/engine/handoff_files.go:handoffFiles.ReadSecret:config.ReadOwnCredential": "a password, not a connection string, and only for an engine not running as root (newConnectOnlyRuntime refuses root)",
+	"internal/engine/handoff/cache.go:FileCache.Load:config.ReadOwnCredential":          "the probe cache, not a connection string; never as root (a root engine does not collect, basalt status refuses root)",
+	"internal/engine/handoff_files.go:handoffFiles.ReadSecret:config.ReadOwnCredential": "a password, not a connection string, read only on a YES, which an engine running as root never reaches (it never collects)",
 }
 
 // checkedCredentialReads are root's reads of another user's file, which call

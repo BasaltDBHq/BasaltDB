@@ -14,6 +14,7 @@ import (
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/channel"
+	"github.com/basaltdbhq/basaltdb/internal/connecttest"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/links"
@@ -358,10 +359,12 @@ func TestStatusOfAWaitingConnectOnlyAgent(t *testing.T) {
 	t.Parallel()
 	cfg := connectOnlyConfig(t)
 	r := remote(t, cfg, connectOnlyArgs...)
+	_, service := connecttest.Start(t)
 	status := func() map[string]any {
 		t.Helper()
 		var stdout, stderr bytes.Buffer
 		c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr}, func(string) string { return "" })
+		c.handoff.ServiceURL = service // a connect service that holds nothing
 		code := runStatus(c, []string{"--agent", "bot", "--config", cfg, "--json"})
 		require.Equal(t, exitOK, code, stderr.String())
 		var out map[string]any

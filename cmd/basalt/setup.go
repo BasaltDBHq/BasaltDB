@@ -66,7 +66,7 @@ func setupEngine(c *cliIO, f initFlags, dsn string) error {
 		fmt.Fprintf(c.stderr, "basalt: the agent's password changed; restart the engine so it uses the new one:\n  %s\n",
 			cmds.Foreground().EngineRestart())
 	}
-	fmt.Fprint(c.stderr, foregroundNext(f, c.goos))
+	fmt.Fprint(c.stderr, foregroundNext(f, c.goos, c.host))
 	return offerClaude(c, f)
 }
 
@@ -147,20 +147,33 @@ func writeCredential(path, dsn string, keep bool) error {
 
 // foregroundNext is the one command that starts the engine, and the MCP
 // server line.
-func foregroundNext(f initFlags, goos string) string {
+func foregroundNext(f initFlags, goos string, h host) string {
 	return fmt.Sprintf("next, start the engine; it runs in the foreground as you (same-user mode: writes are guarded, but your OS user can read the credential):\n  basalt engine --config %s\n%s",
-		shellQuote(f.configPath), mcpLine(f, goos))
+		shellQuote(f.configPath), mcpLine(f, goos, h))
 }
 
 // mcpLine is the MCP server command for the agent's client.
-func mcpLine(f initFlags, goos string) string {
+func mcpLine(f initFlags, goos string, h host) string {
 	return fmt.Sprintf("then add this MCP server to the agent's client, running as OS user %s (docs/mcp-clients.md):\n  %s\n",
-		f.osUser, shellJoin(mcpArgs(f, goos, "basalt")))
+		f.osUser, shellJoin(mcpArgs(f, goos, "basalt", h)))
 }
 
 // mcpArgs is basalt mcp for the agent, with bin as the program.
-func mcpArgs(f initFlags, goos, bin string) []string {
-	return append([]string{bin, "mcp", "--agent", f.agent}, socketDirArgs(f, goos)...)
+func mcpArgs(f initFlags, goos, bin string, h host) []string {
+	args := append([]string{bin, "mcp", "--agent", f.agent}, socketDirArgs(f, goos)...)
+	return append(args, mcpConfigArgs(f.configPath, goos, h)...)
+}
+
+// mcpConfigArgs is --config <path> when basalt mcp, given no --config, would
+// not find the engine config at path (it looks where perUserConfigFallback
+// says), else nothing. basalt mcp needs the config to start the engine when
+// it is down and to answer status.
+func mcpConfigArgs(configPath, goos string, h host) []string {
+	abs := enginePath(configPath)
+	if perUserConfigFallback(h, config.DefaultPath(goos)) == abs {
+		return nil
+	}
+	return []string{"--config", abs}
 }
 
 // shellJoin quotes each argument for display.
@@ -315,14 +328,14 @@ func installService(c *cliIO, f initFlags, dsn string) error {
 	if me, _ := invokingUser(); me != f.osUser {
 		// The engine admits only the agent's OS user on its socket.
 		fmt.Fprintf(c.stderr, "basalt: engine service installed as %s; check it as %s with the MCP command below\n", f.engineUser, f.osUser)
-		fmt.Fprint(c.stderr, mcpLine(f, c.goos))
+		fmt.Fprint(c.stderr, mcpLine(f, c.goos, c.host))
 		return nil
 	}
 	if err := c.host.Probe(c.ctx, socket); err != nil {
 		return fmt.Errorf("the engine did not answer on %s (%w)%s; see %s", socket, err, engineLogError(c), engineLogHint(c.goos))
 	}
 	fmt.Fprintf(c.stderr, "basalt: engine running as %s; it answered on %s\n", f.engineUser, socket)
-	fmt.Fprint(c.stderr, mcpLine(f, c.goos))
+	fmt.Fprint(c.stderr, mcpLine(f, c.goos, c.host))
 	return nil
 }
 
@@ -453,7 +466,7 @@ func offerClaude(c *cliIO, f initFlags) error {
 		fmt.Fprintf(c.stderr, "basalt: Claude Code already has %s\n", name)
 		return nil
 	}
-	args := append([]string{claude, "mcp", "add", "--scope", "local", name, "--"}, mcpArgs(f, c.goos, bin)...)
+	args := append([]string{claude, "mcp", "add", "--scope", "local", name, "--"}, mcpArgs(f, c.goos, bin, c.host)...)
 	shown := shellJoin(append([]string{"claude"}, args[1:]...))
 	fmt.Fprintf(c.stderr, "basalt: the server %s is registered for this project directory only (--scope local); sessions in other projects do not see it\n", name)
 	ok, err := c.confirmYes(fmt.Sprintf("Add it to Claude Code now (%s)?", shown))

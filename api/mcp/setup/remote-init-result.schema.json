@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://basaltvault.app/schemas/remote-init-result.v1.json",
   "title": "basalt init --remote --json",
-  "description": "What basalt init --remote --json prints on stdout, exit 0: the setup is pending, not failed (CONTRACT.md, Setup from your laptop). The agent shows personMessage to the person verbatim and follows nextSteps: PERSON RUN_COMMAND (basalt init --setup-code <code> on the person's own computer), PERSON TELL_AGENT, AGENT END_TURN, AGENT CALL_TOOL status. Planned, for a connect-only code (connectOnly): PERSON OPEN_LINK of the connect link, AGENT END_TURN, AGENT CALL_TOOL status, and no laptop command. Never a secret: the code carries the verifier, not the password.",
+  "description": "What basalt init --remote --json prints on stdout, exit 0: the setup is pending, not failed (CONTRACT.md, Setup from your laptop). The agent shows personMessage to the person verbatim and follows nextSteps: PERSON RUN_COMMAND (basalt init --setup-code <code> on the person's own computer), PERSON TELL_AGENT, AGENT END_TURN, AGENT CALL_TOOL status. For a connect-only code (connectOnly): PERSON OPEN_LINK of the connect link, AGENT END_TURN, AGENT CALL_TOOL status, and no laptop command. Never a secret: the code carries the verifier, not the password.",
   "type": "object",
   "additionalProperties": false,
   "required": ["agent", "setupId", "kind", "code", "fingerprint", "expiresAt", "personMessage", "nextSteps"],
@@ -33,7 +33,7 @@
     },
     "connectOnly": {
       "type": "boolean",
-      "description": "Planned (CONTRACT.md, basalt init --remote). True when the code is connect-only: made without --database-url, it has no target, and only the connect page runs it. personMessage then says the page asks for the database's connection string and the agent never needs it, and names no laptop command. Absent otherwise."
+      "description": "CONTRACT.md, basalt init --remote. True when the code is connect-only: made without --database-url, it has no target, and only the connect page runs it. personMessage then says the page asks for the database's connection string and the agent never needs it, and names no laptop command. Absent otherwise."
     },
     "reused": {
       "type": "boolean",
@@ -45,13 +45,13 @@
     },
     "personMessage": {
       "type": "string",
-      "description": "What the person does, in plain words: install basalt from the official release page on their own computer, run the command, check it shows the same fingerprint (named here), then tell the agent. Says never to paste the database password into the chat. Planned, for a connect-only code: open the link, check the fingerprint, paste the database's connection string on that page only; the agent never needs it."
+      "description": "What the person does, in plain words: install basalt from the official release page on their own computer, run the command, check it shows the same fingerprint (named here), then tell the agent. Says never to paste the database password into the chat. For a connect-only code: open the link, check the fingerprint, paste the database's connection string on that page only; the agent never needs it."
     },
     "connectUrl": {
       "type": "string",
       "format": "uri",
       "pattern": "^https://portal\\.basaltvault\\.app/connect#basalt-setup\\.1\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]{6}$",
-      "description": "CONTRACT.md, Connect, The connect link: https://portal.basaltvault.app/connect#<code>, present when operatedBy is AGENT, vault is ON, pagesUrl is the portal and the link fits linkBudget. personMessage then holds it on a line of its own, links lists it, and nextSteps starts with PERSON OPEN_LINK of it before PERSON RUN_COMMAND (planned: a connect-only code has no PERSON RUN_COMMAND)."
+      "description": "CONTRACT.md, Connect, The connect link: https://portal.basaltvault.app/connect#<code>, present when operatedBy is AGENT, vault is ON, pagesUrl is the portal and the link fits linkBudget. personMessage then holds it on a line of its own, links lists it, and nextSteps starts with PERSON OPEN_LINK of it before PERSON RUN_COMMAND (a connect-only code has no PERSON RUN_COMMAND)."
     },
     "links": {
       "type": "array",

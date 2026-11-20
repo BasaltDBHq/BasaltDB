@@ -12,7 +12,7 @@
     "install": {
       "type": "object",
       "additionalProperties": false,
-      "description": "INSTALL: the guard (migrations guard.from+1..guard.to), the agent role with its password set from the verifier, its grants, and a portal passkey when none is active. Planned: without target, a connect-only code (it must carry engine); the database is the one the person pastes on the connect page.",
+      "description": "INSTALL: the guard (migrations guard.from+1..guard.to), the agent role with its password set from the verifier, its grants, and a portal passkey when none is active. Without target, a connect-only code (it must carry engine); the database is the one the person pastes on the connect page.",
       "required": ["format", "setupId", "kind", "prefix", "guard", "build", "agent", "expiresAt"],
       "properties": {
         "format": { "$ref": "#/$defs/format" },
@@ -30,7 +30,7 @@
     "agentChange": {
       "type": "object",
       "additionalProperties": false,
-      "description": "AGENT: an existing agent's tables, replaced by write and read (or agent.allTables) as given; with a verifier its password is rotated, without one it is kept. Also applies missing migrations up to guard.to and registers a portal passkey when none is active. Planned: without target, a connect-only recovery code (it must carry engine and agent.verifier); the connect service rotates the password of an existing role, or creates the role as INSTALL does when it does not exist.",
+      "description": "AGENT: an existing agent's tables, replaced by write and read (or agent.allTables) as given; with a verifier its password is rotated, without one it is kept. Also applies missing migrations up to guard.to and registers a portal passkey when none is active. Without target, a connect-only recovery code (it must carry engine and agent.verifier); the connect service rotates the password of an existing role, or creates the role as INSTALL does when it does not exist.",
       "required": ["format", "setupId", "kind", "prefix", "guard", "build", "agent", "expiresAt"],
       "properties": {
         "format": { "$ref": "#/$defs/format" },
@@ -93,7 +93,7 @@
     "target": {
       "type": "object",
       "additionalProperties": false,
-      "description": "The database the bot's engine connects to, from its password-less connection string. The laptop and the connect service compare it with the admin connection string by database identity and refuse a mismatch (CO-17). Planned: absent in a connect-only code (INSTALL, or AGENT with a verifier, both with engine), which only the connect service runs; the laptop command refuses it (CONNECT_ONLY).",
+      "description": "The database the bot's engine connects to, from its password-less connection string. The laptop and the connect service compare it with the admin connection string by database identity and refuse a mismatch (CO-17). Absent in a connect-only code (INSTALL, or AGENT with a verifier, both with engine), which only the connect service runs; the laptop command refuses it (CONNECT_ONLY).",
       "required": ["host", "port", "database"],
       "properties": {
         "host": {
@@ -143,7 +143,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["schemas"],
-      "description": "Planned (CONTRACT.md, The setup code). In place of write and read: the agent gets write access to every ordinary and partitioned table in these schemas that the admin role owns when the setup runs. Tables made later are not covered. The connect page and the laptop command list the concrete tables before the person approves.",
+      "description": "CONTRACT.md, The setup code. In place of write and read: the agent gets write access to every ordinary and partitioned table in these schemas that the admin role owns when the setup runs (read access only to one without a primary key). Tables made later are not covered. The connect page and the laptop command list the concrete tables before the person approves.",
       "properties": {
         "schemas": {
           "type": "array",
@@ -167,7 +167,7 @@
       "description": "The agent role's statement_timeout (basalt init --statement-timeout)."
     },
     "newAgent": {
-      "description": "The new agent: its tables in write and read, or (planned) agent.allTables in their place. Key order: name, write, read, allTables, verifier, statementTimeoutMs.",
+      "description": "The new agent: its tables in write and read, or agent.allTables in their place. Key order: name, write, read, allTables, verifier, statementTimeoutMs.",
       "oneOf": [
         {
           "type": "object",
@@ -195,7 +195,7 @@
       ]
     },
     "changedAgent": {
-      "description": "The changed agent: its tables in write and read, or (planned) agent.allTables in their place; a verifier when its password is rotated. Key order: name, write, read, allTables, verifier, statementTimeoutMs.",
+      "description": "The changed agent: its tables in write and read, or agent.allTables in their place; a verifier when its password is rotated. Key order: name, write, read, allTables, verifier, statementTimeoutMs.",
       "oneOf": [
         {
           "type": "object",

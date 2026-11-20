@@ -48,6 +48,11 @@ type Request struct {
 	// EngineURL is the address to record with the code's engine key
 	// (https://<host>[:<port>]); "" records none.
 	EngineURL string
+	// ConnectPage accepts a connect-only code (no target), which only the
+	// connect service runs, with the database of the connection it opened.
+	// Unset, such a code is refused CONNECT_ONLY first, as the laptop
+	// command refuses it.
+	ConnectPage bool
 }
 
 // Kind is what a setup code does.
@@ -85,12 +90,18 @@ type Description struct {
 	// AgentRole is the agent's database role, "" for an UPGRADE code.
 	AgentRole string
 	Prefix    string
-	Target    Target
+	// Target is the database the code's agent connects to; nil for a
+	// connect-only code, whose database is the one the connection names.
+	Target    *Target
 	GuardFrom int
 	GuardTo   int
-	// Write and Read are the agent's tables (schema.table).
+	// Write and Read are the agent's tables (schema.table), empty with
+	// AllTablesSchemas.
 	Write []string
 	Read  []string
+	// AllTablesSchemas are, for an agent.allTables code, the schemas whose
+	// tables the agent gets (Check lists them); nil otherwise.
+	AllTablesSchemas []string
 	// StatementTimeoutMs is the agent role's statement timeout, 0 for an
 	// UPGRADE code.
 	StatementTimeoutMs int64
@@ -116,7 +127,7 @@ type Description struct {
 // (BINARY_TOO_OLD, GUARD_TOO_OLD) and ENGINE_KEY_MISSING. A refusal is an
 // *Error.
 func Describe(req Request) (Description, error) {
-	s, err := setuprun.New(req.Code, req.Now, req.EngineURL)
+	s, err := setuprun.New(req.Code, req.Now, req.EngineURL, req.ConnectPage)
 	if err != nil {
 		return Description{}, asError(err)
 	}
@@ -127,13 +138,18 @@ func describe(s *setuprun.Setup) Description {
 	p := s.P
 	d := Description{
 		SetupID: p.SetupID, Kind: Kind(p.Kind), AgentWord: setuprun.AgentWord(p), AgentRole: p.Role(), Prefix: p.Prefix,
-		Target:    Target{Host: p.Target.Host, Port: p.Target.Port, Database: p.Target.Database, SupabaseRef: p.Target.SupabaseRef},
 		GuardFrom: p.Guard.From, GuardTo: p.Guard.To, ExpiresAt: s.Expires, Fingerprint: p.Fingerprint(), EngineURL: s.EngineURL,
 		Summary: setupcode.Summary(p, setupcode.SummaryState{GuardVersion: p.Guard.From}),
+	}
+	if t := p.Target; t != nil {
+		d.Target = &Target{Host: t.Host, Port: t.Port, Database: t.Database, SupabaseRef: t.SupabaseRef}
 	}
 	if a := p.Agent; a != nil {
 		d.Agent, d.StatementTimeoutMs = a.Name, a.StatementTimeoutMs
 		d.Write, d.Read = slices.Clone(a.Write), slices.Clone(a.Read)
+		if a.AllTables != nil {
+			d.AllTablesSchemas = slices.Clone(a.AllTables.Schemas)
+		}
 	}
 	if p.Engine != nil {
 		// Decode checked the key: it parses.
@@ -160,6 +176,35 @@ type Checked struct {
 	// PasskeyNeeded is whether the database has no active portal passkey:
 	// Run then needs the person's (RunInput.Passkey).
 	PasskeyNeeded bool
+	// Database is the database the connection names: the setup's target
+	// for a connect-only code, which the page shows before approval.
+	Database Target
+	// Tables are, for an agent.allTables code, the tables the agent will
+	// get, in name order; ReadOnly are those among them it may only read
+	// (no primary key, so the guard cannot key its writes); Excluded are the
+	// tables of its schemas left out because the admin role does not own
+	// them. All empty otherwise.
+	Tables   []string
+	ReadOnly []string
+	Excluded []ExcludedTable
+	// RunsAsInstall is a connect-only recovery AGENT code whose role does
+	// not exist: Run creates the role as an INSTALL code does.
+	RunsAsInstall bool
+}
+
+// ExcludedTable is a table an agent.allTables setup leaves out.
+type ExcludedTable struct {
+	// Table is schema.table.
+	Table string
+	// Owner is the role that owns it.
+	Owner string
+}
+
+// ConnDatabase is the database a connection names, as a setup's target:
+// the Supabase project ref when the host or user names one.
+func ConnDatabase(cfg *pgx.ConnConfig) Target {
+	t := setupcode.ConnTarget(cfg.Host, int(cfg.Port), cfg.Database, cfg.User)
+	return Target{Host: t.Host, Port: t.Port, Database: t.Database, SupabaseRef: t.SupabaseRef}
 }
 
 // NothingToDo is an UPGRADE code whose guard the database already has.
@@ -213,7 +258,7 @@ type RevokeQuestion struct {
 // ROLE_MISSING and ENGINE_REVOKED, then a missing table (TABLES_MISSING).
 // It changes nothing. A refusal is an *Error.
 func Check(ctx context.Context, conn *pgx.Conn, req Request) (Checked, error) {
-	s, err := setuprun.New(req.Code, req.Now, req.EngineURL)
+	s, err := setuprun.New(req.Code, req.Now, req.EngineURL, req.ConnectPage)
 	if err != nil {
 		return Checked{}, asError(err)
 	}
@@ -221,13 +266,20 @@ func Check(ctx context.Context, conn *pgx.Conn, req Request) (Checked, error) {
 	if err != nil {
 		return Checked{}, asError(err)
 	}
-	out := Checked{Description: describe(s)}
+	out := Checked{Description: describe(s), Database: ConnDatabase(conn.Config()), RunsAsInstall: s.RunsAsInstall()}
 	if p.NothingToDo {
 		out.NothingToDo = nothingToDo(p)
 		return out, nil
 	}
 	out.Summary, out.EngineLines = p.Summary(), p.EngineLines()
 	out.Questions = questions(p)
+	tables := s.Tables()
+	out.Tables = append(slices.Clone(tables.Write), tables.ReadOnly...)
+	slices.Sort(out.Tables)
+	out.ReadOnly = slices.Clone(tables.ReadOnly)
+	for _, e := range tables.Excluded {
+		out.Excluded = append(out.Excluded, ExcludedTable(e))
+	}
 	if out.PasskeyNeeded, err = setuprun.PasskeyNeeded(ctx, conn, false); err != nil {
 		return Checked{}, asError(err)
 	}
@@ -340,7 +392,7 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 	if in.Passkey != nil && in.AskPasskey != nil {
 		return Result{}, errors.New("setup: RunInput.Passkey and RunInput.AskPasskey are both set")
 	}
-	s, err := setuprun.New(req.Code, req.Now, req.EngineURL)
+	s, err := setuprun.New(req.Code, req.Now, req.EngineURL, req.ConnectPage)
 	if err != nil {
 		return Result{}, asError(err)
 	}
@@ -441,6 +493,12 @@ const (
 	// CodePasskeyNotRegistered is a setup that ran without registering the
 	// passkey it needed: only with RunInput.AskPasskey.
 	CodePasskeyNotRegistered = setuprun.CodePasskeyMissing
+	// CodeNoTables is an agent.allTables code whose schemas hold no table
+	// the admin role owns: nothing changed.
+	CodeNoTables = setuprun.CodeNoTables
+	// CodeConnectOnly is a connect-only code given without
+	// Request.ConnectPage: only the connect page runs it.
+	CodeConnectOnly = string(setupcode.RefusalConnectOnly)
 	// CodeSetupFailed is any other failure: the database or its driver.
 	// Nothing changed. Its Message may carry the database's own words; a
 	// service that shows fixed messages maps it to one.
@@ -456,6 +514,7 @@ var codes = []string{
 	string(setupcode.RefusalRoleExists), string(setupcode.RefusalRoleMissing),
 	CodeEngineURLInvalid, CodeEngineKeyMissing, CodeEngineRevoked, CodeTargetMismatch, CodeTablesMissing,
 	CodeAnswersInvalid, CodePasskeyRequired, CodePasskeyInvalid, CodePasskeyNotRegistered, CodeSetupFailed,
+	CodeNoTables, CodeConnectOnly,
 }
 
 // Codes is every Error.Code this package returns: the setup code's

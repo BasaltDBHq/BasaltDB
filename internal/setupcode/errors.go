@@ -22,6 +22,9 @@ const (
 	RefusalSuperseded      Refusal = "SUPERSEDED"
 	RefusalRoleExists      Refusal = "ROLE_EXISTS"
 	RefusalRoleMissing     Refusal = "ROLE_MISSING"
+	// RefusalConnectOnly is a connect-only code on the laptop path: only the
+	// connect page runs it.
+	RefusalConnectOnly Refusal = "CONNECT_ONLY"
 )
 
 // Fixed messages (CONTRACT.md, The setup code).

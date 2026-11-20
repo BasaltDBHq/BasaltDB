@@ -39,6 +39,11 @@ import (
 const (
 	flagRemote      = "remote"
 	flagDatabaseURL = "database-url"
+	flagAllTables   = "all-tables"
+	// secretSuffix names the file that keeps the agent's password while a
+	// connect-only code waits for the database's address (CONTRACT.md,
+	// Connect-only setup codes): agents/<agent>.secret.
+	secretSuffix = ".secret"
 	// pendingSuffix names the new password's file while an AGENT code that
 	// rotates it waits: the old password keeps working until the person runs
 	// the code (RI-5).
@@ -108,7 +113,10 @@ type remoteFlags struct {
 	timeout                                             time.Duration
 	operatedBy                                          OperatedBy
 	newCode, json, configGiven                          bool
-	spec                                                guard.AgentSpec
+	// allTables is --all-tables: every table in public, in place of
+	// --write and --read. forget is --forget, one-shot, never saved.
+	allTables, forget bool
+	spec              guard.AgentSpec
 	// vaultFlag is --vault as given ("" when not); vault is what init
 	// asks the config's vault to be (chooseVault).
 	vaultFlag VaultMode
@@ -120,13 +128,15 @@ type remoteFlags struct {
 // RemoteInitResult is what basalt init --remote --json prints
 // (api/mcp/setup/remote-init-result.schema.json).
 type RemoteInitResult struct {
-	Agent         string `json:"agent"`
-	SetupID       string `json:"setupId"`
-	Kind          string `json:"kind"`
-	Code          string `json:"code"`
-	Fingerprint   string `json:"fingerprint"`
-	Reused        bool   `json:"reused,omitempty"`
-	ExpiresAt     string `json:"expiresAt"`
+	Agent       string `json:"agent"`
+	SetupID     string `json:"setupId"`
+	Kind        string `json:"kind"`
+	Code        string `json:"code"`
+	Fingerprint string `json:"fingerprint"`
+	Reused      bool   `json:"reused,omitempty"`
+	ExpiresAt   string `json:"expiresAt"`
+	// ConnectOnly is a connect-only code: only the connect page runs it.
+	ConnectOnly   bool   `json:"connectOnly,omitempty"`
 	PersonMessage string `json:"personMessage"`
 	// ConnectURL is the connect link, set when the engine is agent-operated
 	// with the Vault on and the whole link fits the link budget
@@ -227,6 +237,8 @@ func parseInitRemote(c *cliIO, args []string) (remoteFlags, error) {
 	fs.Var(&f.operatedBy, "operated-by", "who runs this engine's machine steps: person or agent")
 	fs.StringVar(&f.databaseURL, flagDatabaseURL, "", "the database's connection string WITHOUT a password; needed on the agent's first run")
 	fs.BoolVar(&f.newCode, "new-code", false, "make a new code (and a new agent password) even when one is pending")
+	fs.BoolVar(&f.allTables, flagAllTables, false, "give the agent every table in schema public the admin role owns, in place of --write and --read")
+	fs.BoolVar(&f.forget, "forget", false, "drop the agent's pending setup from the connect page and make a new code for it")
 	fs.StringVar(&f.configPath, "config", config.DefaultPath(c.goos), "engine config file")
 	fs.BoolVar(&f.json, "json", false, "print the result as JSON (remote-init-result.schema.json)")
 	fs.Var(&f.vaultFlag, flagVault, "on or off: whether the engine reaches the portal's pages through the Vault (default on with --operated-by=agent, else off)")
@@ -250,6 +262,12 @@ func parseInitRemote(c *cliIO, args []string) (remoteFlags, error) {
 	}
 	if f.agent == "" {
 		return f, fmt.Errorf("%w: --agent is required", errUsage)
+	}
+	if f.allTables && (f.write != "" || f.read != "") {
+		return f, fmt.Errorf("%w: --all-tables is in place of --write and --read: give one or the other", errUsage)
+	}
+	if f.forget && f.databaseURL != "" {
+		return f, fmt.Errorf("%w: --forget drops a setup from the connect page; give --database-url without it", errUsage)
 	}
 	if !config.ValidAgentName(f.agent) {
 		return f, fmt.Errorf("%w: agent name %q is not valid for the engine", errUsage, f.agent)
@@ -278,6 +296,9 @@ func (f remoteFlags) savedArgs(osUser string) []string {
 	}
 	addIf("write", f.write, "")
 	addIf("read", f.read, "")
+	if f.allTables {
+		args = append(args, "--"+flagAllTables+"=true")
+	}
 	addIf("prefix", f.prefix, guard.DefaultPrefix)
 	addIf("statement-timeout", f.timeout.String(), guard.DefaultStatementTimeout.String())
 	addIf("os-user", osUser, "")
@@ -287,7 +308,7 @@ func (f remoteFlags) savedArgs(osUser string) []string {
 }
 
 // requestFlags are the saved flags whose change asks for a new AGENT code.
-var requestFlags = []string{"write", "read", "prefix", "statement-timeout"}
+var requestFlags = []string{"write", "read", flagAllTables, "prefix", "statement-timeout"}
 
 // sameRequest reports whether two saved flag lists ask for the same tables,
 // prefix and statement timeout.
@@ -356,6 +377,13 @@ type remoteInit struct {
 	connectBudget int
 	// linkBudget is the engine's configured link budget.
 	linkBudget int
+	// prev is the engine config as read (zero when there is none, then
+	// existed is false): the vault this run writes depends on it.
+	prev    config.Config
+	existed bool
+	// connectOnly: no --database-url and no credential file, so this run
+	// makes a connect-only code (CONTRACT.md, Connect-only setup codes).
+	connectOnly bool
 }
 
 func newRemoteInit(c *cliIO, f remoteFlags) (*remoteInit, error) {
@@ -417,6 +445,7 @@ func (r *remoteInit) paths() error {
 	case err != nil:
 		return err
 	default:
+		r.prev, r.existed = cfg.Config, true
 		r.stateDir = cfg.StateDirFor(r.c.goos)
 		r.settings.SocketDir = cfg.SocketDir
 		r.linkBudget = cfg.LinkBudgetOrDefault()
@@ -510,6 +539,8 @@ type credFiles interface {
 	stat(path string) (os.FileInfo, error)
 	write(path string, data []byte) error
 	rename(from, to string) error
+	// remove removes the file at path, not following a link.
+	remove(path string) error
 	close()
 }
 
@@ -531,6 +562,8 @@ func (pathCredFiles) stat(path string) (os.FileInfo, error) { return os.Lstat(pa
 func (pathCredFiles) write(path string, data []byte) error { return config.WriteFile(path, data) }
 
 func (pathCredFiles) rename(from, to string) error { return os.Rename(from, to) }
+
+func (pathCredFiles) remove(path string) error { return os.Remove(path) }
 
 func (pathCredFiles) close() {}
 
@@ -558,6 +591,9 @@ func (r *remoteInit) connection() error {
 	if err != nil {
 		return err
 	}
+	if r.f.forget && (cred != nil || r.pendingConnectOnly() == nil) {
+		return fmt.Errorf("there is no pending setup from the connect page to forget for %s", r.f.agent)
+	}
 	pending, err := readCredentialIfAny(r.files, r.credFile+pendingSuffix)
 	if err != nil {
 		return err
@@ -572,7 +608,13 @@ func (r *remoteInit) connection() error {
 	case cred != nil:
 		r.base, r.target = cred.url, cred.target
 	default:
-		return fmt.Errorf("%w: --database-url is required on the agent's first run (the connection string without its password)", errUsage)
+		// No address and no credential: a code for the connect page, which
+		// collects the address (CONTRACT.md, Connect-only setup codes).
+		if err := r.connectOnlyAllowed(); err != nil {
+			return err
+		}
+		r.connectOnly = true
+		return nil
 	}
 	r.credExists = cred != nil
 	if pending != nil && pending.target != r.target {
@@ -802,14 +844,21 @@ func (r *remoteInit) payload(p plan) (setupcode.Payload, error) {
 		return setupcode.Payload{}, err
 	}
 	out := setupcode.Payload{
-		Format: setupcode.Format, SetupID: id, Kind: p.kind, Prefix: r.f.prefix, Target: r.target,
+		Format: setupcode.Format, SetupID: id, Kind: p.kind, Prefix: r.f.prefix,
 		Guard: setupcode.Guard{From: p.from, To: guard.LatestVersion()}, Build: buildVersion(), ExpiresAt: expires,
-		Engine: r.engineKey(),
+	}
+	if !r.connectOnly {
+		target := r.target
+		out.Target, out.Engine = &target, r.engineKey()
 	}
 	if p.kind == setupcode.KindUpgrade {
 		return out, nil
 	}
 	a := &setupcode.Agent{Name: r.f.agent, Write: r.f.spec.Write, Read: r.f.spec.Read, StatementTimeoutMs: r.f.timeout.Milliseconds()}
+	if r.f.allTables {
+		a.Write, a.Read = nil, nil
+		a.AllTables = &setupcode.AllTables{Schemas: []string{"public"}}
+	}
 	if p.rotate {
 		if a.Verifier, err = setupcode.NewVerifier(p.password); err != nil {
 			return setupcode.Payload{}, err
@@ -839,7 +888,11 @@ func checkBuildVersion(version string) error {
 // run makes (or reuses) the code, writes the credential and the config,
 // and returns the result.
 func (r *remoteInit) run() (RemoteInitResult, error) {
+	r.forgetKeepsTables()
 	saved := r.f.savedArgs(r.osUser)
+	if r.connectOnly {
+		return r.runConnectOnly(saved)
+	}
 	if s := r.reusable(saved); s != nil {
 		if err := r.writeConfig(saved, s); err != nil {
 			return RemoteInitResult{}, err
@@ -854,24 +907,187 @@ func (r *remoteInit) run() (RemoteInitResult, error) {
 	if err != nil {
 		return RemoteInitResult{}, err
 	}
-	code, err := setupcode.Encode(payload)
-	switch {
-	case errors.Is(err, setupcode.ErrCodeTooLong):
-		return RemoteInitResult{}, fmt.Errorf("the setup code would be longer than %d characters: name fewer tables", setupcode.MaxCodeLen)
-	case err != nil:
-		return RemoteInitResult{}, fmt.Errorf("%w: %s", errUsage, setupcode.InvalidDetail(err))
+	code, err := encodeSetup(payload)
+	if err != nil {
+		return RemoteInitResult{}, err
 	}
 	if err := r.writeCredential(p); err != nil {
 		return RemoteInitResult{}, err
 	}
-	s := config.Setup{
-		SetupID: payload.SetupID, Kind: string(p.kind), GuardVersion: payload.Guard.To,
-		ExpiresAt: payload.ExpiresAt, Code: code, Fingerprint: payload.Fingerprint(),
+	s := newSetup(payload, code)
+	if err := r.writeConfig(saved, &s); err != nil {
+		return RemoteInitResult{}, err
 	}
+	// With --database-url the agent's first run goes on with that address:
+	// the password of a connect-only code that was waiting is dropped
+	// (engine.json no longer records that code).
+	if err := r.removeSecret(); err != nil {
+		return RemoteInitResult{}, err
+	}
+	return r.result(s, false)
+}
+
+// newSetup is the pending setup engine.json records for a new code.
+func newSetup(p setupcode.Payload, code string) config.Setup {
+	return config.Setup{
+		SetupID: p.SetupID, Kind: string(p.Kind), GuardVersion: p.Guard.To,
+		ExpiresAt: p.ExpiresAt, Code: code, Fingerprint: p.Fingerprint(), AwaitingAddress: p.ConnectOnly(),
+	}
+}
+
+// connectOnlyAllowed is nil when this run may make a connect-only code: the
+// engine it writes is agent-operated with the Vault on (init --remote
+// always writes the portal's pages). Otherwise --database-url is required,
+// and the message names what the connect path needs.
+func (r *remoteInit) connectOnlyAllowed() error {
+	if r.settings.OperatedBy == mcpcontract.OperatedByAgent && r.settings.VaultFor(r.prev, r.existed).Vault == config.VaultOn {
+		return nil
+	}
+	return fmt.Errorf("%w: --database-url is required on the agent's first run (the connection string without its password). "+
+		"Without it, basalt init --remote makes a code for the connect page, which needs an agent-operated engine (--operated-by=agent) "+
+		"with the Vault on and the portal's pages, and basalt init --remote run as the engine's OS user", errUsage)
+}
+
+// pendingConnectOnly is the agent's pending connect-only setup, nil when
+// none: waiting for its address, or refused by the person.
+func (r *remoteInit) pendingConnectOnly() *config.Setup {
+	if r.entry == nil || r.entry.Setup == nil || !r.entry.Setup.ConnectOnly() {
+		return nil
+	}
+	return r.entry.Setup
+}
+
+// forgetKeepsTables gives --forget the tables the agent's saved flags ask
+// for when the run names none: the recovery code asks for the same.
+func (r *remoteInit) forgetKeepsTables() {
+	if !r.f.forget || r.entry == nil || r.f.write != "" || r.f.read != "" || r.f.allTables {
+		return
+	}
+	saved := r.entry.InitArgs
+	r.f.write, r.f.read = savedValue(saved, "write"), savedValue(saved, "read")
+	r.f.allTables = savedValue(saved, flagAllTables) == "true"
+	r.f.spec.Write, r.f.spec.Read = splitList(r.f.write), splitList(r.f.read)
+}
+
+// secretPath is agents/<agent>.secret, next to the credential file.
+func (r *remoteInit) secretPath() string {
+	return filepath.Join(filepath.Dir(r.credFile), r.f.agent+secretSuffix)
+}
+
+// hasSecret reports whether the agent's .secret exists.
+func (r *remoteInit) hasSecret() (bool, error) {
+	_, err := r.files.stat(r.secretPath())
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return false, nil
+	case err != nil:
+		return false, fmt.Errorf("%s is not usable: %w", r.secretPath(), err)
+	}
+	return true, nil
+}
+
+// removeSecret removes the agent's .secret, when there is one.
+func (r *remoteInit) removeSecret() error {
+	err := r.files.remove(r.secretPath())
+	if err == nil || errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	return fmt.Errorf("remove %s: %w", r.secretPath(), err)
+}
+
+// runConnectOnly makes (or reuses) a connect-only code: no target, the
+// engine's key required, the password in .secret (CONTRACT.md,
+// Connect-only setup codes). While a code waits and has not expired, the
+// same request prints it again and any other is refused, so .secret is
+// never replaced while its code may already have run. After it expired,
+// after the person refused its database, after --forget, or when .secret
+// is gone, the code is a recovery code: AGENT with a new password.
+func (r *remoteInit) runConnectOnly(saved []string) (RemoteInitResult, error) {
+	pending := r.pendingConnectOnly()
+	if r.f.forget {
+		if err := r.removeSecret(); err != nil {
+			return RemoteInitResult{}, err
+		}
+	}
+	if pending != nil && !r.f.forget && !pending.Refused {
+		reuse, err := r.reuseConnectOnly(pending, saved)
+		if err != nil || reuse {
+			if err != nil {
+				return RemoteInitResult{}, err
+			}
+			if err := r.writeConfig(saved, pending); err != nil {
+				return RemoteInitResult{}, err
+			}
+			return r.result(*pending, true)
+		}
+	}
+	kind := setupcode.KindInstall
+	if pending != nil {
+		kind = setupcode.KindAgent
+	}
+	p, err := r.withNewPassword(plan{kind: kind})
+	if err != nil {
+		return RemoteInitResult{}, err
+	}
+	payload, err := r.connectOnlyPayload(p)
+	if err != nil {
+		return RemoteInitResult{}, err
+	}
+	code, err := encodeSetup(payload)
+	if err != nil {
+		return RemoteInitResult{}, err
+	}
+	if err := r.files.write(r.secretPath(), []byte(p.password+"\n")); err != nil {
+		return RemoteInitResult{}, err
+	}
+	s := newSetup(payload, code)
 	if err := r.writeConfig(saved, &s); err != nil {
 		return RemoteInitResult{}, err
 	}
 	return r.result(s, false)
+}
+
+// reuseConnectOnly decides about a connect-only code still waiting: true
+// to print it again (same request, unexpired, .secret there), an error for
+// a change while it may still run, false when it expired or its password
+// is gone (a recovery code then).
+func (r *remoteInit) reuseConnectOnly(pending *config.Setup, saved []string) (bool, error) {
+	expires, err := pending.Expires()
+	if err != nil || !r.c.now().Before(expires) {
+		return false, nil //nolint:nilerr // an expired or malformed pending code is replaced
+	}
+	if r.f.newCode || !sameRequest(r.entry.InitArgs, saved) {
+		return false, fmt.Errorf("finish the pending setup on the connect page first, or wait until it expires at %s", expires.UTC().Format("2006-01-02 15:04 UTC"))
+	}
+	return r.hasSecret()
+}
+
+// connectOnlyPayload is a connect-only code's content: no target, and the
+// engine's key, without which the engine could not collect the address.
+func (r *remoteInit) connectOnlyPayload(p plan) (setupcode.Payload, error) {
+	key, err := r.loadEngineKey()
+	if err != nil {
+		return setupcode.Payload{}, fmt.Errorf("a setup code for the connect page needs the engine's key, and basalt cannot read or make it as this user (%w). "+
+			"Run basalt init --remote as the engine's OS user, or give --database-url <the database, without password>", err)
+	}
+	out, err := r.payload(p)
+	if err != nil {
+		return setupcode.Payload{}, err
+	}
+	out.Target, out.Engine = nil, key
+	return out, nil
+}
+
+// encodeSetup encodes a code, naming what is wrong with this run's flags.
+func encodeSetup(p setupcode.Payload) (string, error) {
+	code, err := setupcode.Encode(p)
+	switch {
+	case errors.Is(err, setupcode.ErrCodeTooLong):
+		return "", fmt.Errorf("the setup code would be longer than %d characters: name fewer tables", setupcode.MaxCodeLen)
+	case err != nil:
+		return "", fmt.Errorf("%w: %s", errUsage, setupcode.InvalidDetail(err))
+	}
+	return code, nil
 }
 
 // writeCredential writes a new password's connection string. It never
@@ -934,6 +1150,9 @@ func (r *remoteInit) result(s config.Setup, reused bool) (RemoteInitResult, erro
 		Agent: r.f.agent, SetupID: s.SetupID, Kind: s.Kind, Code: s.Code, Fingerprint: s.Fingerprint,
 		Reused: reused, ExpiresAt: s.ExpiresAt, PersonMessage: setupPersonMessage(r.f.agent, s.Fingerprint),
 	}
+	if s.AwaitingAddress {
+		return r.connectOnlyResult(res, s)
+	}
 	// An agent-operated engine with the Vault on hands the connect link
 	// first when the whole link fits the budget (no network call: the link
 	// only holds the code); else the text says where to paste the code.
@@ -944,6 +1163,35 @@ func (r *remoteInit) result(s config.Setup, reused bool) (RemoteInitResult, erro
 	}
 	res.pasteAtPortal = r.connectBudget > 0 && url == ""
 	steps, err := setupSteps(s.Code, url)
+	if err != nil {
+		return RemoteInitResult{}, err
+	}
+	res.NextSteps = steps
+	return res, nil
+}
+
+// connectOnlyResult is the result of a connect-only code: the connect link
+// and the fingerprint, no laptop command; the steps P OPEN_LINK, A
+// END_TURN, A CALL_TOOL status. A link over the budget is left out: the
+// text says to paste the code at the connect page, and the step opens it.
+func (r *remoteInit) connectOnlyResult(res RemoteInitResult, s config.Setup) (RemoteInitResult, error) {
+	res.ConnectOnly = true
+	lead := "Connect your database to " + r.f.agent + "."
+	open := agent.ConnectLink(s.Code, r.connectBudget)
+	if open != "" {
+		res.ConnectURL = open
+		res.PersonMessage, res.Links = agent.ConnectOnlyMessage(lead, open, s.Fingerprint)
+	} else {
+		res.pasteAtPortal = true
+		open = links.Portal + links.ConnectPath
+		res.PersonMessage = lead + " Open " + open + ", paste the setup code the agent shows you, check that it shows the setup fingerprint " + s.Fingerprint +
+			", and follow the page. The page asks for your database's connection string: paste it there only. The agent never needs it, so never paste it into this chat."
+	}
+	steps, err := agent.NewSteps().
+		OpenLink(open, "", agent.ConnectOnlyStepText).
+		EndTurn("End your turn: the person runs the setup on the connect page. The page waits until this engine has picked up the database's address.").
+		CallTool(toolStatus, map[string]any{}, "Call status to see whether the setup finished, or what the engine needs next.").
+		Build()
 	if err != nil {
 		return RemoteInitResult{}, err
 	}
@@ -996,6 +1244,9 @@ func printRemoteResult(c *cliIO, f remoteFlags, res RemoteInitResult) error {
 	if err != nil {
 		return err
 	}
+	if res.ConnectOnly {
+		return printConnectOnly(c, res, expires)
+	}
 	_, err = fmt.Fprintf(c.stdout, "Setup code for %s (%s), valid until %s:\n\n%s\n\nSetup fingerprint: %s\n\n%s\n",
 		res.Agent, res.Kind, expires.UTC().Format("2006-01-02 15:04 UTC"), res.Code, res.Fingerprint, res.PersonMessage)
 	if err == nil && res.pasteAtPortal {
@@ -1016,24 +1267,50 @@ const stateDirMode = 0o700
 // unreadable or refused file is never replaced: then the code carries no
 // engine key, and init says why on stderr.
 func (r *remoteInit) engineKey() *setupcode.Engine {
+	key, err := r.loadEngineKey()
+	if err != nil {
+		fmt.Fprintf(r.c.stderr, "basalt: the code carries no engine key: %v\n", err)
+		return nil
+	}
+	return key
+}
+
+// loadEngineKey is engineKey's key, or why there is none.
+func (r *remoteInit) loadEngineKey() (*setupcode.Engine, error) {
 	if r.c.host.Euid() == 0 {
 		// As root, through the state directory opened without following a
 		// link the engine's user controls; a new key file is that user's.
 		spki, err := rootEngineKey(r.stateDir, r.c.goos, r.configDir, r.c.now)
 		if err != nil {
-			fmt.Fprintf(r.c.stderr, "basalt: the code carries no engine key: the engine's key file is refused (%v); basalt status shows KEY_ERROR\n", err)
-			return nil
+			return nil, keyRefused(err)
 		}
-		return &setupcode.Engine{PublicKey: base64.RawURLEncoding.EncodeToString(spki)}
+		return &setupcode.Engine{PublicKey: base64.RawURLEncoding.EncodeToString(spki)}, nil
 	}
 	if err := os.MkdirAll(r.stateDir, stateDirMode); err != nil {
-		fmt.Fprintf(r.c.stderr, "basalt: the code carries no engine key: %v\n", err)
-		return nil
+		return nil, err
 	}
 	keys, err := channel.LoadOrCreateKeys(filepath.Join(r.stateDir, channel.KeyFileName), r.c.now)
 	if err != nil {
-		fmt.Fprintf(r.c.stderr, "basalt: the code carries no engine key: the engine's key file is refused (%v); basalt status shows KEY_ERROR\n", err)
-		return nil
+		return nil, keyRefused(err)
 	}
-	return &setupcode.Engine{PublicKey: base64.RawURLEncoding.EncodeToString(keys.PublicKeySPKI())}
+	return &setupcode.Engine{PublicKey: base64.RawURLEncoding.EncodeToString(keys.PublicKeySPKI())}, nil
+}
+
+func keyRefused(err error) error {
+	return fmt.Errorf("the engine's key file is refused (%w); basalt status shows KEY_ERROR", err)
+}
+
+// printConnectOnly prints a connect-only code's result: the connect link
+// and the fingerprint, never a laptop command, or, over the link budget,
+// the code to paste at the connect page.
+func printConnectOnly(c *cliIO, res RemoteInitResult, expires time.Time) error {
+	until := expires.UTC().Format("2006-01-02 15:04 UTC")
+	if res.ConnectURL == "" {
+		_, err := fmt.Fprintf(c.stdout, "Setup code for %s (%s), for the connect page only, valid until %s:\n\n%s\n\nSetup fingerprint: %s\n\n%s\n",
+			res.Agent, res.Kind, until, res.Code, res.Fingerprint, res.PersonMessage)
+		return err
+	}
+	_, err := fmt.Fprintf(c.stdout, "Connect link for %s (%s), valid until %s:\n\n%s\n\nSetup fingerprint: %s\n\n%s\n",
+		res.Agent, res.Kind, until, res.ConnectURL, res.Fingerprint, res.PersonMessage)
+	return err
 }

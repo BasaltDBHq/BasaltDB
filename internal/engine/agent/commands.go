@@ -49,7 +49,12 @@ var savedInitFlags = map[string]bool{
 	flagAgent: true, flagWrite: true, flagRead: true, "prefix": true, "statement-timeout": true,
 	"socket-dir": true, "os-user": true, "engine-user": true, "credential-file": true,
 	flagPasskeyOrigin: true, "agent-rls": true, "operated-by": true, flagDevLocalPages: true, "direct-addr": true,
+	flagAllTables: true,
 }
+
+// flagAllTables is init --remote's --all-tables: every table in public, read
+// again by each new code, in place of --write and --read.
+const flagAllTables = "all-tables"
 
 // flagDevLocalPages is init's development exception (CONTRACT.md, Page
 // origins); InitPortal leaves it out.
@@ -254,10 +259,15 @@ func (c Commands) RemoteGrant(flag, table string) (string, error) {
 	return g.InitRemote(""), nil
 }
 
-// granted is c with table added to the saved flag's list.
+// granted is c with table added to the saved flag's list. With
+// --all-tables saved it is c as it is: a new code reads every table of
+// public again, the new one included, and --write next to it is refused.
 func (c Commands) granted(flag, table string) (Commands, error) {
 	if !plainTable.MatchString(table) {
 		return Commands{}, fmt.Errorf("%w: %q", ErrBadTable, table)
+	}
+	if c.savedAllTables() {
+		return c, nil
 	}
 	args := append([]string(nil), c.initArgs...)
 	merged := false
@@ -283,6 +293,17 @@ func (c Commands) granted(flag, table string) (Commands, error) {
 // --remote refuses them.
 var remoteInitFlags = map[string]bool{
 	flagAgent: true, flagWrite: true, flagRead: true, "prefix": true, "statement-timeout": true, "operated-by": true,
+	flagAllTables: true,
+}
+
+// savedAllTables reports whether the saved flags ask for every table.
+func (c Commands) savedAllTables() bool {
+	for _, a := range c.initArgs {
+		if name, _, _ := strings.Cut(strings.TrimLeft(a, "-"), "="); name == flagAllTables {
+			return true
+		}
+	}
+	return false
 }
 
 // InitRemote is basalt init --remote on the engine's machine with the saved

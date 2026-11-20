@@ -38,6 +38,26 @@ type SummaryState struct {
 	// precedence over the one the code sets, shown the same way; empty when
 	// it has none there or it is the code's.
 	TimeoutThisDatabase string
+	// RunsAsInstall is a connect-only recovery AGENT code whose role does
+	// not exist: the connect service runs it as an INSTALL.
+	RunsAsInstall bool
+	// Tables are, with agent.allTables, the tables the agent may change,
+	// read from the database; nil when not read (the summary then names the
+	// schema). ReadOnly are those it may only read: no primary key.
+	Tables   []string
+	ReadOnly []string
+	// Excluded are, with agent.allTables, the tables of the schema left out
+	// because the admin role does not own them.
+	Excluded []ExcludedTable
+}
+
+// ExcludedTable is a table of an agent.allTables schema that the setup
+// leaves out, because the admin role does not own it.
+type ExcludedTable struct {
+	// Table is schema.table.
+	Table string
+	// Owner is the role that owns it.
+	Owner string
 }
 
 // Summary is what basalt init --setup-code shows before the SQL, one line
@@ -50,7 +70,7 @@ func Summary(p Payload, s SummaryState) []string {
 	name, role := p.agentWord(), p.Role()
 	var out []string
 	switch {
-	case p.Kind == KindInstall:
+	case p.Kind == KindInstall || s.RunsAsInstall:
 		out = append(out, fmt.Sprintf("This creates the agent %s (role %s). Its password comes from the code: only whoever made this code can log in as %s.",
 			name, role, role))
 	case p.Kind == KindAgent && p.Agent.Verifier != "":
@@ -65,7 +85,7 @@ func Summary(p Payload, s SummaryState) []string {
 		out = append(out, fmt.Sprintf("Prefix %s.", p.Prefix))
 	} else {
 		line := fmt.Sprintf("Prefix %s, statement timeout %d ms", p.Prefix, p.Agent.StatementTimeoutMs)
-		if p.Kind == KindAgent {
+		if p.Kind == KindAgent && !s.RunsAsInstall {
 			line += timeoutNote(s)
 		}
 		out = append(out, fmt.Sprintf("%s, at most %d connections.", line, AgentConnectionLimit))
@@ -74,11 +94,14 @@ func Summary(p Payload, s SummaryState) []string {
 	if p.Agent == nil {
 		return out
 	}
+	if p.Agent.AllTables != nil {
+		return append(out, allTablesLines(p.Agent, s)...)
+	}
 	out = append(out, grantsSentence(p.Agent))
 	for _, t := range append(append([]string{}, p.Agent.Write...), p.Agent.Read...) {
 		schema, _, _ := strings.Cut(t, ".")
 		switch {
-		case p.Target.SupabaseRef != "" && supabaseSchemas[schema]:
+		case p.Target != nil && p.Target.SupabaseRef != "" && supabaseSchemas[schema]:
 			out = append(out, fmt.Sprintf("Warning: %s is in Supabase's own %s schema. An agent there can reach your users' accounts or files: run this only if you are sure.", t, schema))
 		case schema != publicSchema:
 			out = append(out, fmt.Sprintf("Note: %s is not in schema %s: check you meant this table.", t, publicSchema))
@@ -104,10 +127,33 @@ func timeoutNote(s SummaryState) string {
 	return " (" + strings.Join(parts, "; ") + ")"
 }
 
+// allTablesLines say what an agent.allTables code grants: the tables by
+// name once read from the database (s.Tables), else the schema, then each
+// table left out. The schema is public, so no table is flagged.
+func allTablesLines(a *Agent, s SummaryState) []string {
+	if s.Tables == nil {
+		return []string{fmt.Sprintf("%s will be able to read and change rows in every table in schema %s that the admin role owns when the setup runs, %s. "+
+			"It cannot change your tables' structure.", a.Name, strings.Join(a.AllTables.Schemas, ", "), rowLimits())}
+	}
+	out := []string{grantsSentence(&Agent{Name: a.Name, Write: s.Tables, Read: s.ReadOnly})}
+	for _, t := range s.ReadOnly {
+		out = append(out, fmt.Sprintf("%s has no primary key, so %s can read it but not change its rows.", t, a.Name))
+	}
+	for _, e := range s.Excluded {
+		out = append(out, fmt.Sprintf("%s is not included: owned by %s.", e.Table, e.Owner))
+	}
+	return out
+}
+
+// rowLimits are the default policy's row limits in words.
+func rowLimits() string {
+	return fmt.Sprintf("up to %d rows at a time without asking you, %d to %d with your passkey, never more",
+		summaryAutoRows, summaryAutoRows+1, summaryHoldRows)
+}
+
 // grantsSentence says in words what the agent can do with its tables.
 func grantsSentence(a *Agent) string {
-	limits := fmt.Sprintf("up to %d rows at a time without asking you, %d to %d with your passkey, never more",
-		summaryAutoRows, summaryAutoRows+1, summaryHoldRows)
+	limits := rowLimits()
 	const structure = "It cannot change your tables' structure."
 	switch {
 	case len(a.Write) == 0:

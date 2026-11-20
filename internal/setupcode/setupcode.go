@@ -72,15 +72,18 @@ var ErrCodeTooLong = errors.New("this setup code is too long: name fewer tables"
 // Payload is the JSON inside a setup code (setup-code.schema.json). Field
 // order is the schema's key order, which the encoder writes.
 type Payload struct {
-	Format    int    `json:"format"`
-	SetupID   string `json:"setupId"`
-	Kind      Kind   `json:"kind"`
-	Prefix    string `json:"prefix"`
-	Target    Target `json:"target"`
-	Guard     Guard  `json:"guard"`
-	Build     string `json:"build"`
-	Agent     *Agent `json:"agent,omitempty"`
-	ExpiresAt string `json:"expiresAt"`
+	Format  int    `json:"format"`
+	SetupID string `json:"setupId"`
+	Kind    Kind   `json:"kind"`
+	Prefix  string `json:"prefix"`
+	// Target is nil in a connect-only code (CONTRACT.md, Connect-only
+	// setup codes): its database is the one the person pastes on the
+	// connect page.
+	Target    *Target `json:"target,omitempty"`
+	Guard     Guard   `json:"guard"`
+	Build     string  `json:"build"`
+	Agent     *Agent  `json:"agent,omitempty"`
+	ExpiresAt string  `json:"expiresAt"`
 	// Engine is the engine's identity key (M4.1, CO-18), absent when the
 	// code-maker's key file could not be read. Last in the schema's order.
 	Engine *Engine `json:"engine,omitempty"`
@@ -108,14 +111,27 @@ type Guard struct {
 	To   int `json:"to"`
 }
 
-// Agent is the agent part; absent for UPGRADE.
+// Agent is the agent part; absent for UPGRADE. Write and Read are absent
+// (nil) when AllTables is set, and present, possibly empty, otherwise.
 type Agent struct {
-	Name               string   `json:"name"`
-	Write              []string `json:"write"`
-	Read               []string `json:"read"`
-	Verifier           string   `json:"verifier,omitempty"`
-	StatementTimeoutMs int64    `json:"statementTimeoutMs"`
+	Name      string     `json:"name"`
+	Write     []string   `json:"write,omitzero"`
+	Read      []string   `json:"read,omitzero"`
+	AllTables *AllTables `json:"allTables,omitempty"`
+	Verifier  string     `json:"verifier,omitempty"`
+	// StatementTimeoutMs is the agent role's statement timeout.
+	StatementTimeoutMs int64 `json:"statementTimeoutMs"`
 }
+
+// AllTables is agent.allTables: write access to every table in Schemas
+// that the admin role owns when the setup runs (public only).
+type AllTables struct {
+	Schemas []string `json:"schemas"`
+}
+
+// ConnectOnly reports whether p is a connect-only code: no target, so only
+// the connect page runs it, with the database the person pastes there.
+func (p Payload) ConnectOnly() bool { return p.Target == nil }
 
 // Encode validates p and returns its code: compact JSON in the schema's
 // key order, deflated at level 9, base64url without padding, and the
@@ -149,9 +165,9 @@ func Encode(p Payload) (string, error) {
 }
 
 // normalized is p with nil table lists as empty lists, as the code
-// writes them.
+// writes them, unless the agent asks for all tables (then they are absent).
 func (p Payload) normalized() Payload {
-	if p.Agent != nil {
+	if p.Agent != nil && p.Agent.AllTables == nil {
 		a := *p.Agent
 		a.Write = nonNil(a.Write)
 		a.Read = nonNil(a.Read)

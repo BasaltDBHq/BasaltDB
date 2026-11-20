@@ -56,9 +56,9 @@ type VaultWritten struct {
 	Kept  bool
 }
 
-// vaultFor is the vault s writes over the existing config prev (existed
+// VaultFor is the vault s writes over the existing config prev (existed
 // false: no file yet).
-func (s Settings) vaultFor(prev Config, existed bool) VaultWritten {
+func (s Settings) VaultFor(prev Config, existed bool) VaultWritten {
 	switch {
 	case s.Vault != "":
 		return VaultWritten{Vault: s.Vault}
@@ -188,7 +188,7 @@ func UpsertedVault(path string, open func(string) (*os.File, error), s Settings,
 	case err != nil:
 		return nil, VaultWritten{}, err
 	}
-	vault := s.vaultFor(c, existed)
+	vault := s.VaultFor(c, existed)
 	c.Vault = vault.Vault
 	if s.PagesURL != "" {
 		c.PagesURL, c.ApprovalPage, c.DevLocalPages = s.PagesURL, "", s.DevLocalPages

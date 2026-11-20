@@ -79,7 +79,11 @@ func (s *Server) Advance(d time.Duration) { s.skew.Add(int64(d)) }
 // Now is the service's clock.
 func (s *Server) Now() time.Time { return time.Now().Add(time.Duration(s.skew.Load())) }
 
-func (s *Server) request(code string) setup.Request { return setup.Request{Code: code, Now: s.Now()} }
+// request is a setup request as the connect service makes it: a
+// connect-only code is accepted (ConnectPage).
+func (s *Server) request(code string) setup.Request {
+	return setup.Request{Code: code, Now: s.Now(), ConnectPage: true}
+}
 
 // DescribeSetup is the call that needs no database.
 func (s *Server) DescribeSetup(_ context.Context, r *connect.Request[connectv1.DescribeSetupRequest]) (*connect.Response[connectv1.DescribeSetupResponse], error) {
@@ -93,10 +97,16 @@ func (s *Server) DescribeSetup(_ context.Context, r *connect.Request[connectv1.D
 			return nil, err
 		}
 	}
-	ch.UserName = d.Target.Database
-	ch.DisplayName = "BasaltDB · " + d.Target.Database
+	// The picker's label names the database, or the agent's role for a
+	// connect-only code, whose database is not known yet.
+	label := d.AgentRole
+	if d.Target != nil {
+		label = d.Target.Database
+	}
+	ch.UserName = label
+	ch.DisplayName = "BasaltDB · " + label
 	if len(ch.DisplayName) > maxPasskeyLabel {
-		ch.DisplayName = d.Target.Database
+		ch.DisplayName = label
 	}
 	ch.ExpiresAt = s.Now().Add(ChallengeLife).UTC().Format(time.RFC3339)
 	ch.MAC = s.mac(ch, d.Fingerprint)
@@ -114,7 +124,12 @@ func (s *Server) CheckSetup(ctx context.Context, r *connect.Request[connectv1.Ch
 	if err != nil {
 		return nil, refuse(err)
 	}
-	out := &connectv1.CheckSetupResponse{PasskeyNeeded: c.PasskeyNeeded, NothingToDo: c.NothingToDo != nil}
+	out := &connectv1.CheckSetupResponse{
+		PasskeyNeeded: c.PasskeyNeeded, NothingToDo: c.NothingToDo != nil, Database: target(c.Database), Tables: slices.Clone(c.Tables),
+	}
+	for _, e := range c.Excluded {
+		out.Excluded = append(out.Excluded, &connectv1.ExcludedTable{Table: e.Table, Owner: e.Owner})
+	}
 	if c.NothingToDo == nil {
 		out.Notes = notes(c)
 	}
@@ -303,14 +318,21 @@ func notes(c setup.Checked) []string {
 }
 
 func summary(d setup.Description) *connectv1.SetupSummary {
-	return &connectv1.SetupSummary{
+	out := &connectv1.SetupSummary{
 		SetupId: d.SetupID, Kind: string(d.Kind), Agent: d.Agent, Role: d.AgentRole, Prefix: d.Prefix,
-		Target: &connectv1.Target{Host: d.Target.Host, Port: int32(d.Target.Port), Database: d.Target.Database, SupabaseRef: d.Target.SupabaseRef},
-		Write:  slices.Clone(d.Write), Read: slices.Clone(d.Read),
+		Write: slices.Clone(d.Write), Read: slices.Clone(d.Read), AllTablesSchemas: slices.Clone(d.AllTablesSchemas),
 		StatementTimeoutMs: int32(d.StatementTimeoutMs), GuardFrom: int32(d.GuardFrom), GuardTo: int32(d.GuardTo),
 		ExpiresAt: d.ExpiresAt.UTC().Format(time.RFC3339), Fingerprint: d.Fingerprint,
 		EngineFingerprint: d.EngineFingerprint, Lines: slices.Clone(d.Summary),
 	}
+	if d.Target != nil {
+		out.Target = target(*d.Target)
+	}
+	return out
+}
+
+func target(t setup.Target) *connectv1.Target {
+	return &connectv1.Target{Host: t.Host, Port: int32(t.Port), Database: t.Database, SupabaseRef: t.SupabaseRef}
 }
 
 // PasskeyChallenge is the decoded challenge.
@@ -409,7 +431,8 @@ func fromSetup(e *setup.Error) *refusalError {
 		return &refusalError{connect.CodeInvalidArgument, e.Code, e.Message}
 	case "BINARY_TOO_OLD":
 		return &refusalError{connect.CodeUnavailable, e.Code, "Basalt Vault is being updated: try again shortly, or use the laptop command."}
-	case setup.CodeTargetMismatch, "PREFIX_MISMATCH", "USED", "SUPERSEDED", "ROLE_EXISTS", "ROLE_MISSING", setup.CodeEngineRevoked, setup.CodeTablesMissing:
+	case setup.CodeTargetMismatch, "PREFIX_MISMATCH", "USED", "SUPERSEDED", "ROLE_EXISTS", "ROLE_MISSING", setup.CodeEngineRevoked, setup.CodeTablesMissing,
+		setup.CodeNoTables:
 		return &refusalError{connect.CodeFailedPrecondition, e.Code, e.Message}
 	case setup.CodeAnswersInvalid:
 		return &refusalError{connect.CodeInvalidArgument, e.Code, "The answers do not match the questions for this database."}

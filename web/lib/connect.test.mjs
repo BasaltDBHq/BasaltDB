@@ -1031,3 +1031,77 @@ test("without a code in the link, the paste box reads one; a bad code shows the 
   assert.equal(shown(nodes), "s-bot");
   assert.deepEqual(calls.map((c) => c.body), [{ code: CODE }, { code: CODE }]);
 });
+
+test("Back to the code check and the passkey step rewinds the flow, so the person can go on", async () => {
+  const nodes = fakeDocument();
+  const { fetchFn } = service({
+    DescribeSetup: () => ({ body: { summary: summary("AGENT"), challenge: challenge() } }),
+    CheckSetup: () => ({ body: {} }),
+  });
+  const creds = credentials();
+  creds.get = async () => {
+    throw Object.assign(new Error("cancelled"), { name: "NotAllowedError" });
+  };
+  const { flow, ready } = start(env(fetchFn, creds));
+  await ready;
+  await nodes["same-code"].click();
+  await nodes["passkey-go"].click();
+  nodes["passkey-skip"].click();
+  assert.equal(shown(nodes), "s-paste");
+  await nodes.back.click();
+  assert.equal(shown(nodes), "s-passkey");
+  assert.equal(nodes["passkey-skip"].hidden, true);
+  await nodes.back.click();
+  assert.equal(shown(nodes), "s-bot");
+  await nodes["same-code"].click();
+  assert.equal(shown(nodes), "s-passkey");
+  await nodes["passkey-go"].click();
+  assert.equal(nodes["passkey-skip"].hidden, false);
+  nodes["passkey-skip"].click();
+  assert.equal(shown(nodes), "s-paste");
+  await paste(nodes);
+  assert.equal(shown(nodes), "s-tables");
+  assert.equal(flow.step, "questions");
+});
+
+test("Back after a passkey was made keeps it and goes on with Continue", async () => {
+  const nodes = fakeDocument();
+  const { fetchFn } = service({ DescribeSetup: () => ({ body: { summary: connectOnly(), challenge: challenge() } }) });
+  const creds = credentials();
+  await toPaste(nodes, env(fetchFn, creds));
+  await nodes.back.click();
+  await nodes.back.click();
+  await nodes["same-code"].click();
+  assert.equal(nodes["passkey-go"].textContent, "Continue");
+  await nodes["passkey-go"].click();
+  assert.equal(shown(nodes), "s-paste");
+  assert.equal(creds.log.length, 1, "one passkey, never a second");
+});
+
+test("a poll answer that arrives after Back neither brings its ticket back nor offers its hold", async () => {
+  const nodes = fakeDocument();
+  let release;
+  const gate = new Promise((r) => (release = r));
+  const { fetchFn, methods } = service({
+    DescribeSetup: () => ({ body: { summary: connectOnly(), challenge: challenge() } }),
+    CheckSetup: () => ({ body: connectOnlyCheck() }),
+    HandoffStatus: async () => {
+      await gate;
+      return { body: { state: "UNKNOWN", ticket: "late-ticket" } };
+    },
+    OfferAddress: () => assert.fail("no OfferAddress for an abandoned check"),
+  });
+  const { flow } = await toPaste(nodes, env(fetchFn));
+  nodes["database-url"].value = MARKER;
+  const checking = nodes.check.click();
+  for (let i = 0; i < 20 && !methods().includes("HandoffStatus"); i++) await new Promise((r) => setTimeout(r, 1));
+  assert.equal(shown(nodes), "s-checking");
+  await nodes.back.click();
+  assert.equal(shown(nodes), "s-paste");
+  release();
+  await checking;
+  assert.equal(shown(nodes), "s-paste");
+  assert.equal(flow.holdsTicket, false);
+  assert.equal(flow.holdsConnectionString, false);
+  assert.deepEqual(methods(), ["DescribeSetup", "CheckSetup", "HandoffStatus"]);
+});

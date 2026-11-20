@@ -328,10 +328,12 @@ const key = (table, column) => `${table}\u0000${column}`;
 // has none.
 export function labelOf(c) {
   const cls = typeof c?.class === "string" && c.class !== "" ? c.class : "UNCLASSIFIED";
+  // As CheckSetup sent it: the service compares all three fields with what
+  // is stored, so was echoes them unchanged.
   return {
     class: cls,
-    entityType: cls === "IDENTIFIER" && typeof c.entityType === "string" ? c.entityType : "",
-    phoneRegion: cls === "IDENTIFIER" && c.entityType === "PHONE" && typeof c.phoneRegion === "string" ? c.phoneRegion : "",
+    entityType: typeof c.entityType === "string" ? c.entityType : "",
+    phoneRegion: typeof c.phoneRegion === "string" ? c.phoneRegion : "",
   };
 }
 
@@ -491,6 +493,19 @@ export class Flow {
     this.step = "passkey";
   }
 
+  // backTo is Back to the code check or the passkey step, from the passkey
+  // or paste step. A passkey made or signed stays done.
+  backTo(step) {
+    if ((step !== "bot" && step !== "passkey") || (this.step !== "passkey" && this.step !== "paste")) throw new Error("cannot go back there");
+    this.step = step;
+  }
+
+  // passkeyContinue goes on from the passkey step once it was done.
+  passkeyContinue() {
+    if (this.step !== "passkey" || !this.passkeyDone) throw new Error("not at the passkey step");
+    this.step = "paste";
+  }
+
   // stop is "No, it's different": nothing more happens on this page.
   stop() {
     this.step = "stopped";
@@ -552,8 +567,11 @@ export class Flow {
     return this.check;
   }
 
-  async #check() {
+  // check is one CheckSetup; an answer that arrives after loop was
+  // cancelled (the person went back) changes nothing.
+  async #check(loop = null) {
     const out = await call(this.fetch, "CheckSetup", { code: this.code, databaseUrl: this.#databaseUrl });
+    if (loop?.cancelled) return;
     this.check = {
       questions: Array.isArray(out.questions) ? out.questions : [],
       passkeyNeeded: out.passkeyNeeded === true,
@@ -571,11 +589,12 @@ export class Flow {
 
   // recheck is "Retry" without a preview ticket (the service's caps were
   // full): CheckSetup again with the string the page still holds.
-  async recheck() {
+  async recheck(loop) {
     if (this.step !== "questions" || this.#databaseUrl === "") throw new Error("not at the reach check");
     try {
-      await this.#check();
+      await this.#check(loop);
     } catch (err) {
+      if (loop.cancelled) return;
       this.backToPaste();
       throw err;
     }
@@ -605,6 +624,9 @@ export class Flow {
   // UNKNOWN sends OfferAddress once per poll loop (offered tracks it).
   async #status(loop) {
     const out = await call(this.fetch, "HandoffStatus", { ticket: this.#ticket });
+    // A late answer for a loop the person left (Back, another string, Go
+    // on anyway) neither brings its ticket back nor offers its hold.
+    if (loop.cancelled) return out;
     if (typeof out.ticket === "string" && out.ticket !== "") this.#ticket = out.ticket;
     if (out.state === "UNKNOWN" && !loop.offered) {
       loop.offered = true;
@@ -653,6 +675,7 @@ export class Flow {
     if (this.step !== "questions") throw new Error("not at the approve step");
     if (this.passkeyMissing) throw new Refusal("PASSKEY_REQUIRED", "Create the passkey first.");
     const req = { code: this.code, databaseUrl: this.#databaseUrl, answers };
+    let sentPasskey = false;
     if (!this.check.alreadyRan) {
       if (Array.isArray(choices.includedTables)) req.includedTables = choices.includedTables;
       if (Array.isArray(choices.columnClasses) && choices.columnClasses.length > 0) req.columnClasses = choices.columnClasses;
@@ -660,6 +683,7 @@ export class Flow {
       if (this.passkey) {
         req.challenge = this.challenge;
         req.passkey = { ...this.passkey.registration };
+        sentPasskey = true;
       }
     }
     this.#ticket = "";
@@ -673,6 +697,7 @@ export class Flow {
         nothingToDo: out.nothingToDo === true,
         reconnected: out.reconnected === true,
         handoff: this.#ticket !== "",
+        sentPasskey,
       };
     } catch (err) {
       this.step = "paste";
@@ -695,9 +720,12 @@ export class Flow {
       try {
         out = await this.#status(loop);
       } catch (err) {
-        // A tab woken after a while may find the network back later; a
-        // refusal (an expired ticket) ends the watch.
-        if (!(err instanceof Refusal) || err.reason !== "UNREACHABLE") {
+        // A tab woken after a while may find the network back later, and
+        // a limit passes; another refusal (an expired ticket) ends the
+        // watch.
+        if (err instanceof Refusal && err.reason === "RATE_LIMITED" && err.retryAfterSeconds > 0) {
+          await this.sleep(err.retryAfterSeconds * 1000);
+        } else if (!(err instanceof Refusal) || err.reason !== "UNREACHABLE") {
           onState("gone");
           return;
         }
@@ -895,6 +923,8 @@ export function start(env) {
     }
     show("passkey-lead", !flow.passkeyDone);
     show("passkey-existing", install && !flow.passkeyDone);
+    show("passkey-skip", false);
+    setText("passkey-status", "");
     go("s-passkey");
   };
 
@@ -905,6 +935,7 @@ export function start(env) {
 
   $("passkey-go").addEventListener("click", async () => {
     if (flow.passkeyDone) {
+      flow.passkeyContinue();
       showPaste("");
       return;
     }
@@ -1030,12 +1061,15 @@ export function start(env) {
 
   $("retry-reach").addEventListener("click", async () => {
     if (!flow.hasTicket) {
+      const mine = newLoop();
       try {
-        await flow.recheck();
+        await flow.recheck(mine);
       } catch (err) {
-        showPaste(refusalText(err, flow.connectOnly));
+        if (!mine.cancelled) showPaste(refusalText(err, flow.connectOnly));
         return;
       }
+      // The person went back while CheckSetup ran: stay where they are.
+      if (mine.cancelled) return;
     }
     await checkReach();
   });
@@ -1289,6 +1323,8 @@ export function start(env) {
   $("approve").addEventListener("click", async () => {
     newLoop();
     $("approve").disabled = true;
+    // No way back while the setup runs.
+    show("back", false);
     try {
       // The database has no passkey and none was made yet: make it now.
       if (flow.passkeyMissing) {
@@ -1296,6 +1332,7 @@ export function start(env) {
           await flow.createPasskey();
         } catch (err) {
           setText("approve-status", passkeyError(err));
+          show("back");
           return;
         }
       }
@@ -1356,10 +1393,10 @@ export function start(env) {
     for (const w of result.warnings) warnings.appendChild(el("li", "", w));
     show("warnings", result.warnings.length > 0);
     // A re-run registers no passkey: no check code to compare or show.
-    const mine = flow.passkey && !result.reconnected ? { credentialId: flow.passkey.registration.credentialId, checkCode: flow.passkey.checkCode } : null;
+    const mine = flow.passkey && result.sentPasskey && !result.reconnected ? { credentialId: flow.passkey.registration.credentialId, checkCode: flow.passkey.checkCode } : null;
     if (mine) setText("check-code", mine.checkCode);
     show("check-code", mine !== null);
-    const problem = result.reconnected ? "" : compareCheckCodes(mine, result.passkeys);
+    const problem = result.reconnected || (flow.passkey && !result.sentPasskey) ? "" : compareCheckCodes(mine, result.passkeys);
     setText("check-problem", problem);
     show("check-problem", problem !== "");
     if (result.handoff) {
@@ -1393,8 +1430,13 @@ export function start(env) {
   // ---- Back ----
   $("back").addEventListener("click", () => {
     newLoop();
-    if (screen === "s-passkey") go("s-bot");
-    else if (screen === "s-paste") showPasskey();
+    if (screen === "s-passkey") {
+      flow.backTo("bot");
+      go("s-bot");
+    } else if (screen === "s-paste") {
+      flow.backTo("passkey");
+      showPasskey();
+    }
     else if (screen === "s-checking" || screen === "s-unreach" || screen === "s-tables") showPaste("");
     else if (screen === "s-labels") showTables();
     else if (screen === "s-approve") {

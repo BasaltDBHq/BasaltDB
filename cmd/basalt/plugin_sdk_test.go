@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/ecdsa"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -48,23 +49,15 @@ func buildTemplate(t *testing.T) string {
 	return out
 }
 
-// TestTemplatePassesCheck follows the author's steps with the real commands:
-// build the template from the SDK, write its manifest, generate a key, sign,
-// trust the key, add, enable and check it, in same-user mode, over each
-// transport. The plugin is the SDK's template, not a test double, so the
+// TestTemplatePassesCheck follows the author's steps: build the template from
+// the SDK, write its manifest, sign it with a key the engine trusts, add,
+// enable and check it, in same-user mode, over each transport. The plugin is the SDK's template, not a test double, so the
 // initialize and health answers come from the SDK.
 func TestTemplatePassesCheck(t *testing.T) {
 	bin := buildTemplate(t)
 	e := newPluginEngine(t)
 
-	keys := filepath.Join(e.base, "authorkeys")
-	r := e.runAuthor(nil, "keygen", "--out", keys)
-	require.Equal(t, exitOK, r.code, r.stderr)
-	var id, pub string
-	_, err := fmt.Sscanf(r.stdout, "key id %s\npublic key %s\n", &id, &pub)
-	require.NoError(t, err, r.stdout)
-	priv := filepath.Join(keys, id+".key")
-	e.person("trust", pub)
+	priv := e.authorKey()
 
 	for _, tc := range []struct {
 		instance, transport string
@@ -81,13 +74,12 @@ func TestTemplatePassesCheck(t *testing.T) {
 			manifest := fmt.Sprintf(templateManifest, tc.transport, tc.args, sum)
 			require.NoError(t, os.WriteFile(filepath.Join(dir, plugin.ManifestFile), []byte(manifest), 0o644))
 
-			r := e.runAuthor(nil, "sign", dir, "--key", priv)
-			require.Equal(t, exitOK, r.code, r.stderr)
+			signDir(t, dir, priv)
 			e.person("add", dir, "--agents", "product_a", "--instance", tc.instance)
 			e.person("enable", "hello-feed", "--instance", tc.instance)
 			setEntryTimeout(t, e, tc.instance)
 
-			r = e.run(nil, "", "check", "hello-feed", "--instance", tc.instance)
+			r := e.run(nil, "", "check", "hello-feed", "--instance", tc.instance)
 			require.Equal(t, exitOK, r.code, r.stderr)
 			require.Regexp(t, `^plugin hello-feed/`+tc.instance+`: initialize [0-9.]+[µm]?s, health READY [0-9.]+[µm]?s\n`+
 				`plugin hello-feed/`+tc.instance+`: feed\.observe lastSeq 2 [0-9.]+[µm]?s\n$`, r.stdout)
@@ -102,13 +94,7 @@ func TestCheckSendsEachNotifierHookItsSample(t *testing.T) {
 	bin, err := testnotifier.Build(t.TempDir())
 	require.NoError(t, err)
 	e := newPluginEngine(t)
-	keys := filepath.Join(e.base, "authorkeys")
-	r := e.runAuthor(nil, "keygen", "--out", keys)
-	require.Equal(t, exitOK, r.code, r.stderr)
-	var id, pub string
-	_, err = fmt.Sscanf(r.stdout, "key id %s\npublic key %s\n", &id, &pub)
-	require.NoError(t, err, r.stdout)
-	e.person("trust", pub)
+	priv := e.authorKey()
 
 	record := filepath.Join(t.TempDir(), "received.jsonl")
 	for _, tc := range []struct {
@@ -117,13 +103,12 @@ func TestCheckSendsEachNotifierHookItsSample(t *testing.T) {
 	}{{"good", testnotifier.ModeOK}, {"badseq", testnotifier.ModeBadSeq}} {
 		dir := filepath.Join(e.base, "notifier-"+tc.instance)
 		require.NoError(t, testnotifier.WriteDir(dir, bin, testnotifier.Options{Mode: tc.mode, Record: record}))
-		r = e.runAuthor(nil, "sign", dir, "--key", filepath.Join(keys, id+".key"))
-		require.Equal(t, exitOK, r.code, r.stderr)
+		signDir(t, dir, priv)
 		e.person("add", dir, "--agents", "product_a", "--instance", tc.instance)
 		e.person("enable", testnotifier.Name, "--instance", tc.instance)
 	}
 
-	r = e.run(nil, "", "check", testnotifier.Name, "--instance", "good")
+	r := e.run(nil, "", "check", testnotifier.Name, "--instance", "good")
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Regexp(t, `^plugin test-notifier/good: initialize [0-9.]+[µm]?s, health READY [0-9.]+[µm]?s\n`+
 		`plugin test-notifier/good: approval\.deliver [0-9.]+[µm]?s\n`+
@@ -224,4 +209,27 @@ func TestPluginSDKIsNotInTheReleaseBinary(t *testing.T) {
 		require.NotContains(t, pkg, "basalt-plugin-go", "the release binary links %s", pkg)
 		require.NotContains(t, pkg, "internal/plugin/testnotifier", "the release binary links %s", pkg)
 	}
+}
+
+// authorKey makes a publisher key and puts its public half in the engine's
+// trust store. Neither step is a command of the basalt binary: authors make
+// keys and sign with the plugin SDK's basalt-plugin, and the trust store is a
+// folder of PEM files.
+func (e *pluginEngine) authorKey() *ecdsa.PrivateKey {
+	e.t.Helper()
+	k, err := plugin.GenerateKey()
+	require.NoError(e.t, err)
+	e.trustKey(&k.PublicKey)
+	return k
+}
+
+// signDir writes the signature of the manifest in dir, as basalt-plugin sign
+// does.
+func signDir(t *testing.T, dir string, priv *ecdsa.PrivateKey) {
+	t.Helper()
+	manifest, err := os.ReadFile(filepath.Join(dir, plugin.ManifestFile))
+	require.NoError(t, err)
+	sig, err := plugin.SignManifest(manifest, priv)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, plugin.SignatureFile), sig, 0o644))
 }

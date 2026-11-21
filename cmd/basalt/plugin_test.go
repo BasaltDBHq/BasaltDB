@@ -371,7 +371,7 @@ func TestAddRefusesBadManifests(t *testing.T) {
 	require.NoError(t, err)
 	e.writePlugin(dir, pluginManifest("1.0.0", `"feed.observe": {"contract": "feed/1"}`, ""), untrusted)
 	body := refusal(t, e.run(nil, "y\n", "add", dir, "--agents", "product_a", "--json"), "NOT_TRUSTED")
-	require.Contains(t, body.PersonMessage, "not from a key this engine trusts")
+	require.Contains(t, body.PersonMessage, "not signed by a key this engine trusts")
 	require.Len(t, body.NextSteps, 1)
 	require.Equal(t, mcp.ActionStop, body.NextSteps[0].Action)
 

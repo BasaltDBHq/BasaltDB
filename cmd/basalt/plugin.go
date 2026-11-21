@@ -214,8 +214,13 @@ func (e *pluginEnv) verifyRefusal(err error, again string) error {
 	if ve.Path != nil {
 		return pathRuleRefusal(r, ve, again)
 	}
-	r.person = "The plugin was refused: " + ve.File + " " + ve.Why + ". Its signature is not from a key this engine trusts. Nothing was written."
-	r.steps = []mcp.NextStep{{Actor: mcp.ActorAgent, Action: mcp.ActionStop, Text: "Stop: the plugin is not signed by a key this engine trusts."}}
+	r.person = "The plugin failed verification: " + ve.File + " " + ve.Why + ". Nothing was written."
+	stop := "Stop: the plugin failed verification."
+	if ve.Why == plugin.WhyKeyNotTrusted {
+		r.person = "The plugin was refused: " + ve.File + " " + ve.Why + ", so it is not signed by a key this engine trusts. Nothing was written."
+		stop = "Stop: the plugin is not signed by a key this engine trusts."
+	}
+	r.steps = []mcp.NextStep{{Actor: mcp.ActorAgent, Action: mcp.ActionStop, Text: stop}}
 	return r
 }
 

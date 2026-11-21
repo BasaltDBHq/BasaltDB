@@ -180,7 +180,7 @@ done
 step "sign the plugin, trust its key, add and enable it"
 # Signing is the plugin SDK's basalt-plugin, not the basalt binary; trusting a
 # key is placing its public file in the root-owned trust store.
-plugin_tool="github.com/basaltdbhq/basalt-plugin-go/cmd/basalt-plugin@${BASALT_PLUGIN_SDK_REF:-main}"
+plugin_tool="github.com/basaltdbhq/basalt-plugin-go/cmd/basalt-plugin@${BASALT_PLUGIN_SDK_REF:-cbf5a09dddfebe69a8e3efd6ba704c76418f00d6}"
 sum=$(sha256sum "$work/src/bin/$name" | cut -d' ' -f1)
 cat >"$work/src/basalt-plugin.json" <<EOF
 {

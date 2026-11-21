@@ -120,7 +120,7 @@ Planned (owner decisions AE-1 to AE-14). Every error body and every result the a
 | `PLUGIN_REFUSED` | `GUARD_OUTDATED` | — | P `RUN_COMMAND` (`basalt upgrade ...` for the agent), P `TELL_AGENT`, A `STOP`; +pm. On an agent-operated engine its variant is in the [agent-operated table](#next-steps-on-an-agent-operated-engine) |
 | `PLUGIN_REFUSED` | `DATABASE_UNREACHABLE` | — | A `ASK_PERSON` (check the database is up), O `RUN_COMMAND` (the refused command again; after the entry was written, `basalt plugin enable <name> --instance <instance> --approve-with-passkey --json`); +pm |
 | `PLUGIN_REFUSED` | `BAD_MANIFEST` | — | A `STOP` (the plugin's publisher fixes the manifest; the message names the rule); +pm |
-| `PLUGIN_REFUSED` | `NOT_TRUSTED` | — | A `STOP` (the plugin is not signed by a key this engine trusts); +pm |
+| `PLUGIN_REFUSED` | `NOT_TRUSTED` | — | A `STOP` (the plugin failed verification; the text names an untrusted signing key only when that is the cause); +pm |
 | `PLUGIN_REFUSED` | `UNKNOWN_AGENT` | — | P `RUN_COMMAND` (the refused command with `--agents` naming only the engine's agents); +pm |
 | `PLUGIN_REFUSED` | `UNSAFE_PATH` | — | A `ASK_PERSON` (the personMessage names the path, who can write it, its owner or that it is a symlink, and what to do in words: trusting a key does not fix it, Basalt changes no directory it does not own, and the agent changes nothing), P `RUN_COMMAND` (the refused command again, once the path is fixed); +pm |
 | `PLUGIN_REFUSED` | `NAME_TAKEN` | — | A `STOP`, A `ASK_PERSON` (service mode: the `(name, instance)` is the other kind of entry's; the person removes one or picks another instance); +pm |

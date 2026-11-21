@@ -232,3 +232,13 @@ func TestTamperedReportIsSkipped(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(r.Dir, rep.ID+".json"), raw, fileMode))
 	require.Empty(t, List(r.Dir))
 }
+
+func TestIssueURLWithinCutsTheStackToTheLimit(t *testing.T) {
+	t.Parallel()
+	rep := Report{ID: "i", Version: "v1", Command: "query", ErrorCode: "INTERNAL", Stack: strings.Repeat("main.f()\n\t/src/a.go:1 +0x1\n", 400)}
+	link, trimmed := rep.IssueURLWithin(1800)
+	require.True(t, trimmed)
+	require.LessOrEqual(t, len(link), 1800)
+	whole, _ := rep.IssueURL()
+	require.Greater(t, len(whole), 1800)
+}

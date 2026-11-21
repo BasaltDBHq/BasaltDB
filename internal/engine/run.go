@@ -24,6 +24,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
 	"github.com/basaltdbhq/basaltdb/internal/channel"
+	"github.com/basaltdbhq/basaltdb/internal/crash"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/handoff"
@@ -36,6 +37,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/pgcatalog"
 	"github.com/basaltdbhq/basaltdb/internal/pii"
 	"github.com/basaltdbhq/basaltdb/internal/resultsize"
 	"github.com/basaltdbhq/basaltdb/internal/server"
@@ -754,6 +756,8 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 		Vault:         env.vault,
 		Portal:        env.portal,
 		Plugins:       env.plugins,
+		CrashDir:      filepath.Join(env.stateDir, crash.DirName),
+		Access:        func(ctx context.Context) (pgcatalog.Access, error) { return pgcatalog.ListAccess(ctx, pool) },
 		Update:        env.updateNotice(),
 		EngineRecord: func(ctx context.Context, id string) (*guard.RecordedEngine, error) {
 			r, err := guard.EngineRecord(ctx, pool, id)

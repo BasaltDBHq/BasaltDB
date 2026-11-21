@@ -122,6 +122,11 @@ type Deps struct {
 	// that do not serve it (problems PLUGIN_UNAVAILABLE and
 	// PLUGIN_NOT_TRUSTED); status says nothing about plugins when nil.
 	Plugins PluginReporter
+	// CrashDir is the engine's crash directory, for status.crash; Access
+	// lists the agent role's tables, for status.access. Each is left out of
+	// status when nil or empty.
+	CrashDir string
+	Access   AccessReader
 	// EngineRecord reads this engine's row in the agent's database for the
 	// status tool's engineRecord; nil makes its state UNKNOWN. DirectServed
 	// is whether the engine has a direct listener (directAddr is not off).

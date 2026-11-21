@@ -212,7 +212,7 @@ func TestInitInstallsAndWritesCredential(t *testing.T) {
 
 // TestInitWarnsWhenRLSHidesRows: init warns about each agent table where
 // row-level security hides every row from the agent role (Supabase can
-// turn RLS on for new tables), adds no policy for it, and stays quiet
+// turn RLS on for new tables), adds no policy for it with --agent-rls=none, and stays quiet
 // once a policy lets the role see rows. basalt log warns the same.
 func TestInitWarnsWhenRLSHidesRows(t *testing.T) {
 	t.Parallel()

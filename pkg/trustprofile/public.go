@@ -29,7 +29,7 @@ func init() {
 // Only tests call it.
 func SetSystemRootsForTest(pool *x509.CertPool) (restore func()) {
 	old := systemRoots.Load()
-	f := func() (*x509.CertPool, error) { return pool, nil }
+	f := func() (*x509.CertPool, error) { return pool, nil } //nolint:unparam // the same type as x509.SystemCertPool
 	systemRoots.Store(&f)
 	return func() { systemRoots.Store(old) }
 }

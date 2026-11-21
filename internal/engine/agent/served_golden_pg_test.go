@@ -66,6 +66,11 @@ var unreachableCodes = map[string]string{
 	"write QUERY_TIMEOUT":               "needs a write that runs past the statement timeout",
 	"write UNAVAILABLE":                 "needs the database to be down",
 	"write INTERNAL":                    "needs a failure the engine does not expect",
+	"request_plugin INVALID_ARGUMENT":   "the harness keeps no engine-kept plugins; tools_plugin_test.go and the engine's plugin_requests tests cover request_plugin",
+	"request_plugin NOT_FOUND":          "the harness keeps no engine-kept plugins; tools_plugin_test.go and the engine's plugin_requests tests cover request_plugin",
+	"request_plugin PLUGIN_REFUSED":     "the harness keeps no engine-kept plugins; tools_plugin_test.go and the engine's plugin_requests tests cover request_plugin",
+	"request_plugin UNAVAILABLE":        "needs the database to be down",
+	"request_plugin INTERNAL":           "needs a failure the engine does not expect",
 }
 
 // declaredErrors reads every served tool's error codes from the contract's

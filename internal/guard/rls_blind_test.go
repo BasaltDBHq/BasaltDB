@@ -149,3 +149,28 @@ func TestAgentPolicies(t *testing.T) {
 	require.NoError(t, guard.Uninstall(ctx, d.Admin, d.Names))
 	require.Empty(t, policiesOn(t, d))
 }
+
+// TestAgentBlindTablesOnlyTheAgentsTables: a table the agent role can
+// already SELECT through a PUBLIC grant, with row-level security as its only
+// barrier, is never offered for an agent policy when it is not in the
+// agent's lists, whether its --read or its --write list is the empty one.
+func TestAgentBlindTablesOnlyTheAgentsTables(t *testing.T) {
+	t.Parallel()
+	d := guardtest.New(t).WithDemo(t)
+	ctx := context.Background()
+	spec := guard.AgentSpec{Name: "bot", Password: guard.NewPassword(), Write: leads}
+	d.Init(t, spec)
+	d.Exec(t, `ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
+		ALTER TABLE public.lead_notes ENABLE ROW LEVEL SECURITY;
+		ALTER TABLE public.payroll ENABLE ROW LEVEL SECURITY;
+		GRANT SELECT ON public.payroll TO PUBLIC`)
+
+	blind, err := guard.AgentBlindTables(ctx, d.Admin, d.Names, spec)
+	require.NoError(t, err)
+	require.Equal(t, []guard.BlindTable{{Table: "public.leads", Rows: 200, Write: true}}, blind, "no --read: payroll is not the agent's")
+
+	spec = guard.AgentSpec{Name: "bot", Password: guard.NewPassword(), Read: []string{"public.lead_notes"}}
+	blind, err = guard.AgentBlindTables(ctx, d.Admin, d.Names, spec)
+	require.NoError(t, err)
+	require.Equal(t, []guard.BlindTable{{Table: "public.lead_notes", Rows: 60}}, blind, "no --write: payroll is not the agent's")
+}

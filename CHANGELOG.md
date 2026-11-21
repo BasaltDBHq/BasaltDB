@@ -115,6 +115,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Security
 
+- Row-level security answers cover only the agent's own tables. When an agent had no `--read` tables or no `--write` tables (or a setup code listed none of one kind), `basalt init`, `basalt init --setup-code` and the connect page also offered every RLS table the agent's role could already read through another grant, such as one to `PUBLIC`. `--yes`, Enter on the checklist or an empty piped line then let the agent see all rows of those tables, and a read table could get a write policy. Now only tables in the agent's lists get the agent policy, read tables get a read-only one, and naming another table in `--agent-rls` is a usage error. On a database where that happened, drop the agent's policy on each table it was not given: `DROP POLICY <agent role> ON <table>`.
 - Portal setup links expire after 10 minutes and are refused on open when already used or replaced by a newer code, so a link found hours later cannot still walk the setup.
 - The release `SHA256SUMS` is signed with keyless cosign, and the signature is attached to the release as `SHA256SUMS.sigstore.json`. `SHA256SUMS` now also lists the portal checksum, so one signature covers every file. See [docs/install.md](docs/install.md) to check it with `cosign verify-blob`.
 

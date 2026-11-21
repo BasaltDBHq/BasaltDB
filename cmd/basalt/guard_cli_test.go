@@ -372,6 +372,45 @@ func TestInitAsksBeforeLettingTheAgentSeeRLSRows(t *testing.T) {
 		require.Zero(t, payroll, "a table not granted to the agent is never touched")
 	})
 
+	t.Run("a table the agent was not given", func(t *testing.T) {
+		t.Parallel()
+		d, cred, args := setup(t)
+		h := newFakeHost(t)
+		r := initRun(t, d, h, "linux", false, "", append(args, "--yes", "--agent-rls", "none")...)
+		require.Equal(t, exitOK, r.code, r.stderr)
+		// The agent role can SELECT payroll through PUBLIC; RLS is the only
+		// barrier, and payroll is in neither of its lists.
+		d.Exec(t, `GRANT SELECT ON public.payroll TO PUBLIC`)
+		payrollPolicies := func() int {
+			var n int
+			require.NoError(t, d.Admin.QueryRow(context.Background(),
+				`SELECT count(1)::int FROM pg_policy WHERE polrelid = 'public.payroll'::regclass`).Scan(&n))
+			return n
+		}
+
+		r = initRun(t, d, h, "linux", false, "", append(args, "--agent-rls", "public.payroll")...)
+		require.Equal(t, exitUsage, r.code, r.stderr)
+		require.Contains(t, r.stderr, "public.payroll")
+
+		r = initRun(t, d, h, "linux", true, "", append(args, "--dry-run")...)
+		require.Equal(t, exitOK, r.code, r.stderr)
+		require.NotContains(t, r.stdout, "ON public.payroll")
+		require.NotContains(t, r.stderr, "payroll")
+
+		// An empty piped line means all: all of the agent's tables only.
+		r = initRun(t, d, h, "linux", false, "\ny\n", args...)
+		require.Equal(t, exitOK, r.code, r.stderr)
+		require.NotContains(t, r.stderr, "payroll")
+		require.Zero(t, payrollPolicies())
+
+		r = initRun(t, d, h, "linux", true, "", append(args, "--yes")...)
+		require.Equal(t, exitOK, r.code, r.stderr)
+		require.NotContains(t, r.stderr, "payroll")
+		require.Equal(t, 200, agentRows(t, cred, "public.leads"))
+		require.Zero(t, agentRows(t, cred, "public.payroll"))
+		require.Zero(t, payrollPolicies())
+	})
+
 	t.Run("a list on the flag", func(t *testing.T) {
 		t.Parallel()
 		d, cred, args := setup(t)

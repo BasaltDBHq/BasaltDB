@@ -178,6 +178,9 @@ for d in /opt/basalt /opt/basalt/run; do
 done
 
 step "sign the plugin, trust its key, add and enable it"
+# Signing is the plugin SDK's basalt-plugin, not the basalt binary; trusting a
+# key is placing its public file in the root-owned trust store.
+plugin_tool="github.com/basaltdbhq/basalt-plugin-go/cmd/basalt-plugin@${BASALT_PLUGIN_SDK_REF:-main}"
 sum=$(sha256sum "$work/src/bin/$name" | cut -d' ' -f1)
 cat >"$work/src/basalt-plugin.json" <<EOF
 {
@@ -190,12 +193,13 @@ cat >"$work/src/basalt-plugin.json" <<EOF
   "network": { "egress": [] }
 }
 EOF
-keys=$("$basalt" plugin keygen --out "$work/keys")
+keys=$(go run "$plugin_tool" keygen --out "$work/keys")
 key_id=$(echo "$keys" | awk '$1 == "key" && $2 == "id" {print $3}')
 pub=$(echo "$keys" | awk '$1 == "public" && $2 == "key" {print $3}')
 [ -n "$key_id" ] && [ -n "$pub" ] || fail "keygen printed: $keys"
-"$basalt" plugin sign "$work/src" --key "$work/keys/$key_id.key"
-echo y | sudo "$basalt" plugin trust "$pub"
+go run "$plugin_tool" sign "$work/src" --key "$work/keys/$key_id.key"
+sudo install -d -o root -g root -m 0755 /opt/basalt/plugin-trust
+sudo install -o root -g root -m 0644 "$pub" "/opt/basalt/plugin-trust/$key_id.pem"
 echo y | sudo "$basalt" plugin add "$work/src" --agents "$agent"
 echo y | sudo "$basalt" plugin enable "$name"
 touch "$marker"

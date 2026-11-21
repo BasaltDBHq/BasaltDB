@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Removed
+
+- `basalt plugin keygen`, `sign` and `trust`. They are for plugin authors, not people running Basalt. Make a key and sign a plugin with `basalt-plugin keygen` and `basalt-plugin sign` from the plugin SDK (`github.com/basaltdbhq/basalt-plugin-go`); the engine verifies the same signatures. To trust a publisher's key, put its public file in the engine's `plugin-trust` folder as `<keyId>.pem` and restart the engine.
+
 ### Fixed
 
 - The warning for a binary in a temporary folder now also fires on macOS, where the default temp folder is a link (`/var/folders/...` to `/private/var/...`) and the binary path was never matched against it.

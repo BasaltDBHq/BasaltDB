@@ -35,7 +35,7 @@ func TestChannelSpecMatchesVaultLimits(t *testing.T) {
 		"route-message":        fmt.Sprintf("at most %d bytes", maxRoute),
 		"control-message":      fmt.Sprintf("at most %d bytes", maxControl),
 		"request-body":         fmt.Sprintf("at most %d bytes", MaxRequestBody),
-		"response-body":        "at most 16 MiB",
+		"response-body":        "at most 16 MiB, checked by the page only",
 		"handshake-time":       fmt.Sprintf("%d seconds", int(HandshakeTimeout.Seconds())),
 		"idle-session":         fmt.Sprintf("%d minutes", int(IdleTimeout.Minutes())),
 		"session-lifetime":     fmt.Sprintf("%d minutes", int(SessionLifetime.Minutes())),

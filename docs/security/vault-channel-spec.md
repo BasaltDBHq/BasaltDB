@@ -117,7 +117,7 @@ nonce-example = counter 0x0102030405060708 gives 000000000102030405060708
 - The protocol name is 31 bytes, so `h` starts as the name padded with one zero byte to 32 bytes, and `ck = h`.
 - Because the pattern has a `psk` token (Noise section 9.2), every `e` token is followed by `MixKey(e.public_key)` as well as `MixHash(e.public_key)`, on both sides, for both ephemeral keys.
 
-**Prologue.** The UTF-8 bytes of `basalt-vault-prologue.1\n` + the transport word + `\n` + `linkToken` as its 22-character base64url text (not the raw bytes), with nothing after it. The transport word for the relay is `RELAY`. `MixHash(prologue)` is the first step. Each side builds the prologue from what it knows itself (the page from its transport and its link; the engine from the socket the session came on and the token it looked up), so a session moved to another link or transport fails. The engine code still accepts a second transport word, `DIRECT`, for the removed direct transport; the vectors keep two `DIRECT` cases as transport-separation tests (a message 1 made for another transport word is refused).
+**Prologue.** The UTF-8 bytes of `basalt-vault-prologue.1\n` + the transport word + `\n` + `linkToken` as its 22-character base64url text (not the raw bytes), with nothing after it. The transport word for the relay is `RELAY`. `MixHash(prologue)` is the first step. Each side builds the prologue from what it knows itself (the page from its transport and its link; the engine from the socket the session came on and the token it looked up), so a session moved to another link or transport fails. The engine code still accepts a second transport word, `DIRECT`, for the removed direct transport; the vectors keep two `DIRECT` cases: one accepted direct session, and one message 1 made for the direct transport that a relay session refuses (transport separation). Their removal is tracked separately.
 
 **Message 1, page to engine** (tokens `psk, e`). Exactly 99 bytes:
 
@@ -253,7 +253,7 @@ frame = at most 32786 bytes
 route-message = at most 32804 bytes
 control-message = at most 4096 bytes
 request-body = at most 16384 bytes
-response-body = at most 16 MiB
+response-body = at most 16 MiB, checked by the page only
 handshake-time = 10 seconds
 idle-session = 5 minutes
 session-lifetime = 30 minutes
@@ -342,7 +342,7 @@ A receipt checked only against a key that came with it (the session's own `engin
 
 **Accepted residual risks.** These are stated plainly because the design does not remove them.
 
-- **A compromised portal.** The page is the code that builds what the person signs and shows what they sign. If the page is changed, the person can be shown other rows than the ones in the binding they sign. The design's mitigations are partial: the person's passkey signs only a real pending item's binding; the engine's receipt names the real item and its rows hash, built from Postgres's record, so a page that made the person sign another item than the one shown is caught when the receipt is compared in the chat; and `basalt portal verify` compares the served page files with the copy in the binary (it cannot catch a page served to one person alone).
+- **A compromised portal.** The page is the code that builds what the person signs and shows what they sign. If the page is changed, the person can be shown other rows than the ones in the binding they sign. The design's mitigations are partial: the person's passkey signs only a real pending item's binding; the engine's receipt names the real item and its rows hash, built from Postgres's record, so a page that made the person sign another item than the one shown is caught when the receipt is compared in the chat; and a check of the served page files against the copy in the binary exists today (`basalt portal verify`; it is being moved into the release workflow) and cannot catch a page served to one person alone.
 - **Signature substitution.** A hostile page can relay the person's signature for a different real item of the same database than the one shown. The most it obtains is the person's signature over a real item that was pending; the receipt names that item.
 - **Unpinned relay engine identity.** On the relay the link carries no engine id and the page remembers nothing, so the engine's identity is trust on first use, checked only by the person comparing the fingerprint on the page with the one the engine's status or the agent's earlier messages gave. Whoever holds a link secret and gets the relay to route the token to their own engine can show another fingerprint and issue receipts that verify only against their own key. This is accepted; a pin was only possible on the removed direct transport.
 - **Relay metadata.** The relay sees that a page read an item and probably signed, and when (section 5).
@@ -351,10 +351,10 @@ A receipt checked only against a key that came with it (the session's own `engin
 
 **Known limits, as built.**
 
-- Engine revocation is status-only. A person revokes an engine's key on the portal's passkeys page, the engine reports `REVOKED` in its status, and the problem is shown. The engine does not yet stop handing over relay links, revoke its live links or close its relay sessions for a revoked key, and the relay does not refuse a revoked engine: until relay enforcement lands, a person who revokes an engine should treat any relay link it handed over as live. A revoked engine on a compromised server can ignore all of it; it still cannot sign anything a person did not.
+- Engine revocation is status-only. Today a person revokes an engine's key with `basalt engine revoke` (a portal passkeys page for it is planned), the engine reports `REVOKED` in its status, and the problem is shown. The engine does not yet stop handing over relay links, revoke its live links or close its relay sessions for a revoked key, and the relay does not refuse a revoked engine: until relay enforcement lands, a person who revokes an engine should treat any relay link it handed over as live. A revoked engine on a compromised server can ignore all of it; it still cannot sign anything a person did not.
 - An old signing key stays valid at the relay after a rotation or revocation: the relay never reads the person's database, so whoever holds the old key can still authenticate as the old engine id. It gives them only the old id's routing; its links were revoked.
 - The relay may lose its token binding (restart, failover). The engine re-registers live links after every `READY` and, on `LINK_CONFLICT` for a link it holds, revokes that link.
-- The engine counts handshakes per token before it looks the token up, and runs a dead token's tag check under a zero `psk`, to keep the answer and the time the same. The contract orders the rate check after the token lookup; the code runs it first. This document follows the code.
+- The engine counts handshakes per token before it looks the token up, and runs a dead token's tag check under a zero `psk`, to keep the answer and the time the same. The rate check runs before the token lookup, and the contract says the same.
 - No rekey. The session limits make it unnecessary.
 
 **Questions for the reviewer.**
@@ -396,7 +396,7 @@ The first command runs the vectors against a test-only Go reference (`api/mcp/va
 ## 10. Out of scope
 
 - **Phase 1b is design only and is not built:** pairing, envelopes sealed to the box key, device codes, a pending list, notifications and accounts. The box key exists in the key file but nothing uses it. Nothing in this document describes behavior you can test for those.
-- **The direct transport** is removed. The code keeps the `DIRECT` prologue word and two vector cases only as a transport-separation check, and will drop them in a later change.
+- **The direct transport** is removed. The code still keeps the `DIRECT` prologue word and two vector cases (see section 3); their removal is tracked separately.
 - **The relay service itself:** its source, hosting, storage and operations. Only the protocol it speaks and what it is allowed to see are in scope.
 - **Postgres and the guard schema,** and the WebAuthn ceremony: Postgres verifies the passkey signature over the binding of the rows, which this channel only carries.
 - **The setup service** that uses two of the signing contexts is a separate service and not part of this channel.

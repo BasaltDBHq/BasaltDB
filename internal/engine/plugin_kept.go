@@ -212,12 +212,12 @@ func (s *keptPlugins) Open(ctx context.Context, uid uint32, scope person.Scope, 
 		}
 		if taken != nil {
 			return person.PluginOpenResult{}, person.Refused(reasonNameTaken, fmt.Sprintf(
-				"plugin %s is an entry of engine.json, added with sudo (or was when the engine started: one removed since counts until "+
-					"the engine restarts); an engine-kept entry cannot have its name and instance. Use another --instance, "+
-					"or change it with sudo basalt plugin", k))
+				"plugin %s is an entry of engine.json (or was when the engine started: one removed since counts until "+
+					"the engine restarts); an engine-kept entry cannot have its name and instance. Use another instance, "+
+					"or change it by editing engine.json", k))
 		}
 		return person.PluginOpenResult{}, person.Refused(reasonConfigEntry, fmt.Sprintf(
-			"plugin %s is an entry of engine.json, added with sudo; enable it with sudo basalt plugin enable", k))
+			"plugin %s is an entry of engine.json; it is changed by editing that file", k))
 	}
 	entries, err := s.store.Entries(s.cfg)
 	if err != nil {
@@ -662,7 +662,7 @@ func (s *keptPlugins) turnOff(ctx context.Context, scope person.Scope, p person.
 			return notAllowed(k)
 		}
 		return person.Refused(reasonConfigEntry, fmt.Sprintf(
-			"plugin %s is an entry of engine.json, added with sudo; run sudo basalt plugin %s %s", k, verb, k.Name))
+			"plugin %s is an entry of engine.json; to %s it, edit that file", k, verb))
 	}
 	entries, err := s.store.Entries(s.cfg)
 	if err != nil {

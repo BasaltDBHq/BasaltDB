@@ -102,58 +102,6 @@ func engineUserOf(configPath string) (string, error) {
 	return u.Username, nil
 }
 
-// unitAction is what a basalt plugin command does to an entry's service
-// unit in service mode.
-type unitAction int
-
-const (
-	unitWrite  unitAction = iota // write the unit; start it when enabled
-	unitStop                     // stop it and keep it
-	unitRemove                   // stop it and delete it, its directory and its user
-)
-
-// applyUnit runs action for entry p (verified as v, nil for unitStop and
-// unitRemove) on the service manager, in service mode only. engine.json is
-// already written: on failure the person is told to run basalt service
-// install, which writes every unit again.
-func (e *pluginEnv) applyUnit(action unitAction, p config.Plugin, v *plugin.Verified) error {
-	if !e.cfg.Service() {
-		return nil
-	}
-	k := p.Key()
-	sys := e.c.host.System(e.c.stderr, e.c.stderr)
-	var steps []service.Step
-	var err error
-	switch action {
-	case unitWrite:
-		entry, local := unitEntry(p, *v)
-		if !local {
-			// A remote entry has no unit; one left from a local endpoint goes.
-			steps, err = service.PluginRemoveSteps(sys, e.c.goos, k.Name, k.Instance)
-			break
-		}
-		var engineUser string
-		if engineUser, err = engineUserOf(e.configPath); err != nil {
-			break
-		}
-		h := servicePluginHost(e.cfg, e.c.goos, e.configPath, engineUser)
-		steps, err = service.PluginInstallPlan(e.c.ctx, sys, h, []service.PluginEntry{entry})
-	case unitStop:
-		steps, err = service.PluginStopSteps(e.c.goos, k.Name, k.Instance)
-	case unitRemove:
-		steps, err = service.PluginRemoveSteps(sys, e.c.goos, k.Name, k.Instance)
-	}
-	if err == nil && len(steps) > 0 {
-		fmt.Fprintf(e.c.stderr, "basalt: plugin %s's service unit:\n", k)
-		err = service.Settle(service.Apply(e.c.ctx, sys, steps, false, e.c.stderr), sys, e.c.goos)
-	}
-	if err != nil {
-		return fmt.Errorf("plugin %s: engine.json was changed, but its service unit was not: %w. "+
-			"Run sudo basalt service install%s to set up every plugin's unit again", k, err, e.configArg())
-	}
-	return nil
-}
-
 // checkAgentOSUser refuses an agent's OS user that is the engine's own
 // user or is in the engine's group (named as the engine's user): that
 // group reaches every plugin socket in service mode, and the engine's
@@ -202,18 +150,4 @@ func osUserGroups(name string) ([]string, error) {
 		return nil, err
 	}
 	return append(gids, u.Gid), nil
-}
-
-// checkUserClash refuses entry k when another entry of cfg would run as the
-// same OS user on Linux or macOS (a shortened user name matched): two
-// entries never share a user, a socket or a directory.
-func (e *pluginEnv) checkUserClash(cfg config.Config, k plugin.EntryKey) error {
-	keys := make([]plugin.EntryKey, 0, len(cfg.Plugins))
-	for _, p := range cfg.Plugins {
-		keys = append(keys, p.Key())
-	}
-	if o := service.UserClash(k.Name, k.Instance, keys); o != nil {
-		return fmt.Errorf("plugin %s would run as the same OS user as plugin %s; nothing was written. Add it with another --instance", k, *o)
-	}
-	return nil
 }

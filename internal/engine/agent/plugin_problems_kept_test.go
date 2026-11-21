@@ -6,9 +6,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// An entry the engine keeps itself is turned off without sudo (sudo is
-// refused for it) and basalt plugin check does not find it: its steps hold
-// neither, whatever it is withheld for.
 // A plugin in engine.json is not request_plugin's to change: its problems
 // only ask the person, who edits the file.
 func TestConfigEntryStepsOnlyAskThePerson(t *testing.T) {

@@ -17,6 +17,10 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 )
 
+// ecmaEscape is a \uXXXX escape of a schema's ECMA pattern, which Go's
+// regexp writes as \x{XXXX}.
+var ecmaEscape = regexp.MustCompile(`\\u([0-9a-fA-F]{4})`)
+
 // requireRemoteInitSchema checks stdout against remote-init-result.schema.json.
 func requireRemoteInitSchema(t *testing.T, stdout string) {
 	t.Helper()

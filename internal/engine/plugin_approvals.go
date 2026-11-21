@@ -19,11 +19,11 @@ import (
 // and write nothing.
 const (
 	whyNoApproval = "no plugin approval names this agent yet; " +
-		"open one with basalt plugin enable --approve-with-passkey and have a person sign it: the engine starts the plugin within seconds"
+		"the agent opens one with request_plugin and a person signs it: the engine starts the plugin within seconds"
 	whyApprovalReplaced = "no plugin approval names this agent: the newest one for it was replaced by a newer approval that does not name this agent; " +
-		"open one with basalt plugin enable --approve-with-passkey: the engine starts the plugin once a person signed it"
+		"the agent opens one with request_plugin: the engine starts the plugin once a person signed it"
 	whyApprovalEnded = "its plugin approval ended when it was turned off or removed for this agent; " +
-		"turning it on again needs a new approval: open one with basalt plugin enable --approve-with-passkey"
+		"turning it on again needs a new approval, which the agent opens with request_plugin"
 	whyApprovalsOldGuard = "this agent's guard is older than schema version 5, so it holds no plugin approvals; " +
 		"run basalt upgrade for this agent (on an agent-operated engine, an UPGRADE setup code): the engine checks again on its own"
 	whyApprovalsUnread = "its plugin approvals could not be read from this agent's database; " +
@@ -120,7 +120,7 @@ func (a *agentApprovals) check(ctx context.Context, k plugin.EntryKey, d guard.P
 		return withheldWhy{code: agent.ProblemPluginAwaitingApproval, why: whyApprovalReplaced}, false
 	case guard.PluginApprovalStatusExpired:
 		return withheldWhy{code: agent.ProblemPluginApprovalExpired, why: "its plugin approval expired unsigned at " +
-			r.ExpiresAt.UTC().Format("2006-01-02 15:04") + " UTC; open a new one with basalt plugin enable --approve-with-passkey, or remove the plugin"}, false
+			r.ExpiresAt.UTC().Format("2006-01-02 15:04") + " UTC; the agent opens a new one with request_plugin, or removes the plugin"}, false
 	case guard.PluginApprovalStatusApproved:
 	default:
 		return withheldWhy{why: whyApprovalsUnread}, false

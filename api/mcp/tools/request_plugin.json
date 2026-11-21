@@ -30,7 +30,7 @@
         "maxItems": 256,
         "uniqueItems": true,
         "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$", "maxLength": 63 },
-        "description": "With source, or name without remove: the agents the plugin serves from now on, its full list. You must be one of them, and every one must use your database. Default: you alone, for a new plugin; the plugin's current agents, for name."
+        "description": "With source, or name without remove: the agents the plugin serves from now on, its full list. You must be one of them, and every one must use your database. Default: the plugin's current agents when it is installed, else you alone."
       },
       "remove": {
         "type": "boolean",

@@ -1,6 +1,5 @@
 package agent
 
-
 // Status problems of plugin entries (CONTRACT.md, Plugins, Problems and
 // errors; Next steps per code).
 const (
@@ -31,8 +30,8 @@ type PluginProblem struct {
 	Instance string
 	Message  string
 	// EngineKept marks an entry the engine keeps itself (service mode, added
-	// without sudo): basalt plugin disable runs without sudo for it, and
-	// basalt plugin check does not find it, so its steps leave out both.
+	// through request_plugin): only such an entry is the agent's to change;
+	// one of engine.json is changed by editing that file.
 	EngineKept bool
 	// File is the engine's unusable entries file, for a problem that names
 	// no entry: the way out is moving it aside and restarting the engine.
@@ -45,7 +44,6 @@ type PluginReporter interface {
 	PluginProblems(agent string) []PluginProblem
 }
 
-// pluginInstanceFlag names an entry's instance in a basalt plugin command.
 // pluginArgs are the request_plugin arguments naming entry p.
 func pluginArgs(p PluginProblem, remove bool) map[string]any {
 	args := map[string]any{"name": p.Name, "instance": p.Instance}

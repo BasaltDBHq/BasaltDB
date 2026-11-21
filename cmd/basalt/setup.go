@@ -116,6 +116,9 @@ func perUserPaths(c *cliIO, f initFlags) (initFlags, error) {
 	if f.pathsGiven || c.host.Euid() == 0 {
 		return f, nil
 	}
+	if err := c.refuseSecondConfig(); err != nil {
+		return f, err
+	}
 	base, err := c.host.UserConfigDir()
 	if err != nil {
 		return f, err

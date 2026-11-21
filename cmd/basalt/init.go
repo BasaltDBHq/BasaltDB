@@ -461,6 +461,12 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 		return f, err
 	}
 	f.pathsGiven = f.configPath != c.systemConfig() || c.paths.config != ""
+	if f.noService && !f.pathsGiven {
+		// A foreground setup writes the person's own config: refuse before any SQL.
+		if err := c.refuseSecondConfig(); err != nil {
+			return f, err
+		}
+	}
 	f.socketDir = config.DefaultSocketDir(c.goos)
 	if f.pathsGiven && c.paths.config == "" {
 		// The system socket directory is not this person's to write.

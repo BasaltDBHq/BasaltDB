@@ -162,3 +162,32 @@ func TestInitRemoteRefusesASecondConfigBesideTheSystemOne(t *testing.T) {
 	_, err := os.Stat(filepath.Join(h.configDir, perUserDirName, "engine.json"))
 	require.ErrorIs(t, err, os.ErrNotExist, "no second config")
 }
+
+// init and init --demo, not root, with a system engine config in place and
+// --no-service: refused before any SQL, no second config.
+func TestInitRefusesAForegroundSetupBesideTheSystemConfig(t *testing.T) {
+	t.Parallel()
+	for _, extra := range [][]string{
+		{"--agent", "bot", "--write", "public.leads"},
+		{"--demo"},
+	} {
+		h := newFakeHost(t)
+		system := filepath.Join(h.configDir, "etc", "engine.json")
+		require.NoError(t, os.MkdirAll(filepath.Dir(system), 0o700))
+		require.NoError(t, os.WriteFile(system, []byte("{}"), 0o600))
+		var stdout, stderr bytes.Buffer
+		c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr},
+			func(k string) string {
+				if k == envAdminURL {
+					return "postgres://admin@127.0.0.1:1/postgres"
+				}
+				return ""
+			})
+		c.host, c.systemConfigPath = h, system
+		code := runInit(c, append([]string{"--no-service", "--yes", "--skip-passkey"}, extra...))
+		require.Equal(t, exitError, code, "%v: %s", extra, stderr.String())
+		require.Contains(t, stderr.String(), system)
+		_, err := os.Stat(filepath.Join(h.configDir, perUserDirName, "engine.json"))
+		require.ErrorIs(t, err, os.ErrNotExist, "no second config")
+	}
+}

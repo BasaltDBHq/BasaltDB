@@ -433,13 +433,11 @@ func (r *remoteInit) paths() error {
 	dir := filepath.Dir(r.f.configPath)
 	r.settings = r.f.vault.settings(config.Settings{SocketDir: config.DefaultSocketDir(r.c.goos), PagesURL: links.Portal, OperatedBy: r.f.operatedBy.enum(), DirectAddr: r.f.directAddr})
 	if r.c.host.Euid() != 0 && r.c.paths.config == "" {
-		found, err := r.c.findConfig()
-		if err != nil {
+		if _, err := r.c.findConfig(); err != nil {
 			return err
 		}
-		if _, err := os.Stat(found); found == r.c.systemConfig() && !errors.Is(err, fs.ErrNotExist) {
-			// A second config would make every later command stop on two.
-			return fmt.Errorf("the engine config %s exists already: run basalt init --remote as its owner (with sudo), not as this user", found)
+		if err := r.c.refuseSecondConfig(); err != nil {
+			return err
 		}
 		base, err := r.c.host.UserConfigDir()
 		if err != nil {

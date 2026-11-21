@@ -2,6 +2,10 @@ package main
 
 import (
 	"cmp"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 )
@@ -37,4 +41,19 @@ func (c *cliIO) findConfig() (string, error) {
 		return c.paths.config, nil
 	}
 	return discoverConfig(c.host, c.systemConfig())
+}
+
+// refuseSecondConfig is the error of a setup that would write the person's
+// own engine.json while the system one exists: a second config would make
+// every later command stop on two. Root and the tests' path overrides write
+// where they are told.
+func (c *cliIO) refuseSecondConfig() error {
+	if c.host.Euid() == 0 || c.paths.config != "" {
+		return nil
+	}
+	system := c.systemConfig()
+	if _, err := os.Stat(system); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	return fmt.Errorf("the engine config %s exists already: run basalt init as its owner (with sudo), not as this user", system)
 }

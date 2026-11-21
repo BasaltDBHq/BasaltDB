@@ -13,7 +13,7 @@ import { deflateRawSync } from "node:zlib";
 
 import { b64urlDecode, b64urlEncode, sha256, utf8 } from "./codec.js";
 // Imported before any document exists, so the page's main() does not run.
-import { HOOK_LABELS, HOOK_SEES, SENTENCES, main, pluginLevel, pluginSentences, pluginView } from "./plugin.js";
+import { HOOK_LABELS, HOOK_SEES, ON_PORTAL, SENTENCES, describe, main, pluginLevel, pluginSentences, pluginView, portalRefusal } from "./plugin.js";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const vectors = JSON.parse(read("../../api/plugin/approval/vectors.json")).vectors;
@@ -471,4 +471,12 @@ test("every fixed sentence is written in CONTRACT.md word for word", () => {
   for (const s of [...Object.values(SENTENCES), ...Object.values(HOOK_SEES), ...Object.values(HOOK_LABELS)]) {
     assert.ok(contract.includes(s), `CONTRACT.md does not state: ${s}`);
   }
+});
+
+test("on the portal a plugin short link says to open it on your own computer, and nothing else", () => {
+  const err = portalRefusal("https://portal.basaltvault.app");
+  assert.equal(err.name, "RelayError");
+  assert.equal(describe(err), ON_PORTAL);
+  assert.match(ON_PORTAL, /your own computer/);
+  for (const origin of ["http://localhost:8787", "http://127.0.0.1:8787", undefined]) assert.equal(portalRefusal(origin), null, String(origin));
 });

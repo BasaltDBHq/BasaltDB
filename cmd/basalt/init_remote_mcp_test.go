@@ -63,12 +63,7 @@ func remoteNoDBOn(t *testing.T, h *fakeHost, jsonOut bool, args ...string) resul
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr},
-		func(k string) string {
-			if k == envAdminURL {
-				return "postgres://admin:adminsecret@db.example.com/postgres"
-			}
-			return ""
-		})
+		func(string) string { return "" })
 	c.host = h
 	c.agentLogin = refusedLogin
 	c.probe = noNetworkProbe

@@ -794,5 +794,18 @@ func recordExistingPin(c *cliIO, conn guard.Querier, admin, configPath string) {
 	if err != nil || (found && recorded == sha) {
 		return
 	}
+	if found {
+		// The ledger records another certificate: a rotation the person
+		// accepted, or a change someone made. Never replaced silently.
+		fmt.Fprintf(c.stderr, "basalt: the ledger records SHA-256 %s for %s:%d, but the engine pins SHA-256 %s\n", recorded, terminalText(t.host), t.port, sha)
+		if !c.interactive {
+			fmt.Fprintln(c.stderr, "basalt: the record is left as it is; run basalt init at a terminal to record the engine's pin")
+			return
+		}
+		ok, err := c.confirm("Record the engine's pin in the ledger in place of the recorded one?")
+		if err != nil || !ok {
+			return
+		}
+	}
 	recordPin(c, conn, pinChoice{pinTarget: t, top: p.Certificates()[0], sha256: sha})
 }

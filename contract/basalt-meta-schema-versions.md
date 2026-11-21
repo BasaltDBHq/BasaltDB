@@ -47,3 +47,12 @@ Non-breaking (AE-11): on a guard without it the agent and its plugins are served
 | `_check_plugin_detail(p_detail jsonb)` | Replaced: the `signer` rule above |
 
 Every function `SECURITY DEFINER`, owned by `<prefix>_guard`, `SET search_path = pg_catalog, pg_temp`, `EXECUTE` for `<prefix>_agents` only (none for `PUBLIC`); callers must be agent roles (`BS007` `NOT_ALLOWED` otherwise). Clock: `clock_timestamp()`. Postgres builds every text; no client re-serialises one.
+
+### Schema version 6: trust pins
+
+[Pinning on first use](setup-from-laptop.md#pinning-on-first-use), file `016_trust_pins.sql`. **Non-breaking** (AE-11): on a guard without it every tool is served as before, with `GUARD_UPGRADE_AVAILABLE`; `basalt init` cannot record a pin there (it says so and goes on), and `status` has no record to compare a pin with. Idempotent.
+
+| Object | Change |
+|---|---|
+| `record_trust_pin(p_host text, p_port int, p_sha256 text) returns bigint` | New. Admin only: `SECURITY DEFINER`, owned by `<prefix>_guard`, `SET search_path = pg_catalog, pg_temp`, `EXECUTE` revoked from `PUBLIC` and granted to no one, and it refuses an agent role itself (`BS007` `NOT_ALLOWED`) even when given `EXECUTE`. `p_host` a lowercase host name or an address, up to 253 characters; `p_port` 1 to 65535; `p_sha256` the SHA-256 of the pinned certificate's DER, 64 lowercase hex digits (`BS008` `LEDGER_INPUT_INVALID` otherwise). Appends `TRUST_PIN_RECORDED`, `agent` the admin role, detail `{ "host", "port", "sha256", "by" }`; returns its seq |
+| `agent_trust_pins` | New view, `SELECT` for `<prefix>_agents`: the latest `TRUST_PIN_RECORDED` per host and port (`host`, `port`, `sha256`, `recorded_at`). Not secret: a fingerprint of a certificate the server presents to anyone. `status` reads it on the agent's connection (`TRUST_PIN_MISMATCH`) |

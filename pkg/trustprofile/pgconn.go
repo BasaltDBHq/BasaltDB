@@ -22,7 +22,15 @@ func Trust(cfg *pgconn.Config, set *Set) {
 		if !verifiesHost(t) || t.RootCAs != nil {
 			return
 		}
-		if p := set.For(host); p != nil {
+		p := set.For(host)
+		switch {
+		case p == nil:
+		case p.VerifiesCA():
+			// As pgx does for sslmode=verify-ca: the chain is checked here,
+			// against the pin's roots alone, and the name is not.
+			t.InsecureSkipVerify = true
+			t.VerifyConnection = chainTo(p.OwnPool())
+		default:
 			t.RootCAs = p.Pool()
 		}
 	}
@@ -89,4 +97,24 @@ func CertificateNotVerified(err error) bool {
 		invalid x509.CertificateInvalidError
 	)
 	return errors.As(err, &verify) || errors.As(err, &host) || errors.As(err, &unknown) || errors.As(err, &invalid)
+}
+
+// chainTo verifies the server's chain against roots alone, the host name
+// not checked. It is a VerifyConnection, which runs on every handshake, a
+// resumed session's included.
+func chainTo(roots *x509.CertPool) func(tls.ConnectionState) error {
+	return func(cs tls.ConnectionState) error {
+		certs := cs.PeerCertificates
+		if len(certs) == 0 {
+			return &tls.CertificateVerificationError{Err: errors.New("the server sent no certificate")}
+		}
+		inter := x509.NewCertPool()
+		for _, c := range certs[1:] {
+			inter.AddCert(c)
+		}
+		if _, err := certs[0].Verify(x509.VerifyOptions{Roots: roots, Intermediates: inter, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}); err != nil {
+			return &tls.CertificateVerificationError{UnverifiedCertificates: certs, Err: err}
+		}
+		return nil
+	}
 }

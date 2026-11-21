@@ -43,9 +43,11 @@ const (
 	Operator Origin = "OPERATOR"
 )
 
-// Verify values of a profile. VerifyCA is accepted only on a profile whose
-// matches are all exact hosts; this build verifies every profile's hosts as
-// VerifyFull, the host name checked.
+// Verify values of a profile. VerifyFull checks the chain and the host
+// name. VerifyCA, accepted only on a profile whose matches are all exact
+// hosts (a pin), checks that the chain ends at one of the profile's own
+// roots, not the system's, and does not check the name: for a server whose
+// certificate does not name the host (an IP-only certificate).
 const (
 	VerifyFull = "full"
 	VerifyCA   = "ca"
@@ -100,6 +102,8 @@ type Profile struct {
 	// Files are the profile's roots files, in the order of Spec.Roots.
 	Files []RootFile
 	pool  func() *x509.CertPool
+	// own is the profile's roots alone, for VerifyCA.
+	own func() *x509.CertPool
 }
 
 // RootFile is one roots file, read and checked: its bytes match the pinned
@@ -126,15 +130,16 @@ func (p *Profile) Certificates() []*x509.Certificate {
 // Pool is the system's authorities and the profile's roots, built once.
 func (p *Profile) Pool() *x509.CertPool { return p.pool() }
 
+// OwnPool is the profile's roots alone, built once: what VerifyCA checks
+// a chain against.
+func (p *Profile) OwnPool() *x509.CertPool { return p.own() }
+
+// VerifiesCA reports whether p checks the chain against its own roots
+// without the host name (VerifyCA on an exact-host profile).
+func (p *Profile) VerifiesCA() bool { return p.Verify == VerifyCA && p.Exact() }
+
 // Exact reports whether every match entry of p is one exact host.
-func (p *Profile) Exact() bool {
-	for _, m := range p.Match {
-		if !strings.HasPrefix(m, exactPrefix) {
-			return false
-		}
-	}
-	return len(p.Match) > 0
-}
+func (p *Profile) Exact() bool { return exactOnly(p.Match) }
 
 // Parse reads a profile's JSON and, through read, the roots files it names,
 // and checks them: a valid name, at least one valid match entry and one
@@ -170,12 +175,19 @@ func Parse(raw []byte, origin Origin, read func(name string) ([]byte, error)) (*
 	if err := checkVerify(s); err != nil {
 		return nil, err
 	}
-	files, err := readRoots(s, read)
+	files, err := readRoots(s, read, exactOnly(s.Match))
 	if err != nil {
 		return nil, err
 	}
 	p := &Profile{Spec: s, Origin: origin, Files: files}
 	p.pool = sync.OnceValue(func() *x509.CertPool { return withSystem(p.Certificates()) })
+	p.own = sync.OnceValue(func() *x509.CertPool {
+		pool := x509.NewCertPool()
+		for _, c := range p.Certificates() {
+			pool.AddCert(c)
+		}
+		return pool
+	})
 	return p, nil
 }
 
@@ -186,7 +198,8 @@ func parseDisabled(s Spec, origin Origin) (*Profile, error) {
 	if len(s.Match) > 0 || len(s.Roots) > 0 || len(s.Source) > 0 || s.Verify != "" {
 		return nil, errors.New("a disabled profile names only its name and disabled")
 	}
-	return &Profile{Spec: s, Origin: origin, pool: func() *x509.CertPool { return nil }}, nil
+	none := func() *x509.CertPool { return nil }
+	return &Profile{Spec: s, Origin: origin, pool: none, own: none}, nil
 }
 
 func checkMatches(entries []string, origin Origin) ([]string, error) {
@@ -230,7 +243,20 @@ func checkVerify(s Spec) error {
 	return fmt.Errorf("verify %q is not %q or %q", s.Verify, VerifyFull, VerifyCA)
 }
 
-func readRoots(s Spec, read func(string) ([]byte, error)) ([]RootFile, error) {
+// exactOnly reports whether every match entry is an exact host.
+func exactOnly(match []string) bool {
+	for _, m := range match {
+		if !strings.HasPrefix(m, exactPrefix) {
+			return false
+		}
+	}
+	return len(match) > 0
+}
+
+// readRoots reads and checks the roots files. A profile for exact hosts
+// only (a pin) may hold a certificate that is not a CA: the server's own
+// certificate, when it sends no other, pinned for that host alone.
+func readRoots(s Spec, read func(string) ([]byte, error), exact bool) ([]RootFile, error) {
 	if len(s.Roots) == 0 {
 		return nil, errors.New("roots is empty")
 	}
@@ -243,7 +269,7 @@ func readRoots(s Spec, read func(string) ([]byte, error)) ([]RootFile, error) {
 	files := make([]RootFile, 0, len(s.Roots))
 	seen := map[string]bool{}
 	for i, r := range s.Roots {
-		f, err := readRoot(r, read)
+		f, err := readRoot(r, read, exact)
 		if err != nil {
 			return nil, err
 		}
@@ -262,7 +288,7 @@ func readRoots(s Spec, read func(string) ([]byte, error)) ([]RootFile, error) {
 	return files, nil
 }
 
-func readRoot(r RootSpec, read func(string) ([]byte, error)) (RootFile, error) {
+func readRoot(r RootSpec, read func(string) ([]byte, error), exact bool) (RootFile, error) {
 	if !ValidFileName(r.File) {
 		return RootFile{}, fmt.Errorf("roots file %q is not a plain file name next to the profile", r.File)
 	}
@@ -280,7 +306,11 @@ func readRoot(r RootSpec, read func(string) ([]byte, error)) (RootFile, error) {
 	if got := FileSHA256(b); got != want {
 		return RootFile{}, fmt.Errorf("roots file %s has SHA-256 %s, the profile pins %s", r.File, got, want)
 	}
-	certs, err := ParseCAs(b)
+	parse := ParseCAs
+	if exact {
+		parse = ParseCerts
+	}
+	certs, err := parse(b)
 	if err != nil {
 		return RootFile{}, fmt.Errorf("roots file %s: %w", r.File, err)
 	}
@@ -300,6 +330,21 @@ func checkSource(s string) error {
 // one that does not parse, one that is not a CA, or bytes after the last
 // block is refused.
 func ParseCAs(b []byte) ([]*x509.Certificate, error) {
+	certs, err := ParseCerts(b)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range certs {
+		if !c.BasicConstraintsValid || !c.IsCA {
+			return nil, fmt.Errorf("%s (SHA-256 %s) is not a certificate authority (basicConstraints CA:true)", c.Subject, Fingerprint(c))
+		}
+	}
+	return certs, nil
+}
+
+// ParseCerts is every certificate in a PEM file, CA or not, refused as
+// ParseCAs refuses a file.
+func ParseCerts(b []byte) ([]*x509.Certificate, error) {
 	var out []*x509.Certificate
 	rest := b
 	for {
@@ -314,9 +359,6 @@ func ParseCAs(b []byte) ([]*x509.Certificate, error) {
 		c, err := x509.ParseCertificate(block.Bytes)
 		if err != nil {
 			return nil, fmt.Errorf("a certificate does not parse: %w", err)
-		}
-		if !c.BasicConstraintsValid || !c.IsCA {
-			return nil, fmt.Errorf("%s (SHA-256 %s) is not a certificate authority (basicConstraints CA:true)", c.Subject, Fingerprint(c))
 		}
 		out = append(out, c)
 	}
@@ -440,4 +482,44 @@ func withSystem(cas []*x509.Certificate) *x509.CertPool {
 		pool.AddCert(ca)
 	}
 	return pool
+}
+
+// pinPrefix starts the name of a pin's profile.
+const pinPrefix = "pin-"
+
+// PinName is the name of the pin profile for host: pin- and the host's
+// letters and digits, the rest as dashes, up to the longest name. Two hosts
+// can give one name; the pin's match says which host it is for.
+func PinName(host string) string {
+	return pinPrefix + nameOf(NormalizeHost(host), maxLabelLen-len(pinPrefix))
+}
+
+// NameFor is a profile name for host: its letters and digits, the rest as
+// dashes, up to the longest name.
+func NameFor(host string) string { return nameOf(NormalizeHost(host), maxLabelLen) }
+
+func nameOf(host string, limit int) string {
+	var b strings.Builder
+	for _, r := range host {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteByte('-')
+	}
+	name := strings.Trim(b.String(), "-")
+	if len(name) > limit {
+		name = strings.TrimRight(name[:limit], "-")
+	}
+	if name == "" {
+		return "database"
+	}
+	return name
+}
+
+// DERSHA256 is the lowercase hex SHA-256 of a certificate's DER: the
+// fingerprint pins, --trust-root and the ledger compare.
+func DERSHA256(c *x509.Certificate) string {
+	sum := sha256.Sum256(c.Raw)
+	return hex.EncodeToString(sum[:])
 }

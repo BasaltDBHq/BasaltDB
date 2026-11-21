@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -22,6 +23,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/rlspick"
 	"github.com/basaltdbhq/basaltdb/internal/setuprun"
+	"github.com/basaltdbhq/basaltdb/internal/trustdir"
+	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
 // initFlags are basalt init's flags after parsing.
@@ -36,6 +39,10 @@ type initFlags struct {
 	agentRLS                                                 AgentRLSMode
 	spec                                                     guard.AgentSpec
 	dryRun, yes, showSQL, skipPasskey, addPasskey, noService bool
+	// trustRoot is --trust-root; pin is the database chain's top the
+	// person accepted, which setupEngine writes to the engine's trust.d.
+	trustRoot string
+	pin       *pinChoice
 	// operatedBy is --operated-by; operatedByGiven is true when it was passed.
 	operatedBy      OperatedBy
 	operatedByGiven bool
@@ -122,6 +129,23 @@ func runInit(c *cliIO, args []string) int {
 	if _, err := guard.AgentConnString(admin, role, ""); err != nil {
 		return c.fail(err)
 	}
+	// Before the admin connection sends anything: offer to pin a chain no
+	// authority here verifies (only the TLS handshake reaches the server).
+	if !f.dryRun {
+		choice, ok, err := c.initPin(admin, f.trustRoot, f.configPath, f.operatedBy == OperatedByAgent)
+		if err != nil {
+			return c.fail(err)
+		}
+		if ok {
+			// The admin connection itself verifies against the accepted
+			// certificate, so the admin password never reaches a server
+			// that did not present it.
+			if admin, err = c.trustInMemory(choice, admin, f.configPath); err != nil {
+				return c.fail(err)
+			}
+			f.pin = &choice
+		}
+	}
 	conn, err := c.dial(c.ctx, admin)
 	if err != nil {
 		return c.fail(err)
@@ -199,6 +223,18 @@ func runInit(c *cliIO, args []string) int {
 		if err != nil {
 			return c.fail(err)
 		}
+	}
+	if f.pin != nil {
+		// The pin applies with verify-full only, and its chain verified
+		// (the admin string is verify-full already, and dsn is built on it).
+		dsn = withVerifyFull(dsn)
+		recordPin(c, conn, *f.pin)
+		if f.keepCredential {
+			fmt.Fprintf(c.stderr, "basalt: the agent keeps its credential %s, whose sslmode stays as it was, so the pin applies to it only "+
+				"with sslmode=verify-full: run basalt init again with --rotate-password to write one that verifies\n", f.credFile)
+		}
+	} else {
+		recordExistingPin(c, conn, admin, f.configPath)
 	}
 	fmt.Fprintf(c.stderr, "basalt: guard installed; agent role %s\n", role)
 	warnRLSBlind(c, conn, role, f.spec)
@@ -423,9 +459,11 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 			manyAgentsHelp+"\nRun init again with a new --agent NAME for each database you add.\n\nflags:\n")
 		fs.PrintDefaults()
 	}
+	trustRoot := trustRootFlag(fs)
 	if err := parse(fs, args); err != nil {
 		return f, err
 	}
+	f.trustRoot = *trustRoot
 	var originGiven, directGiven bool
 	fs.Visit(func(fl *flag.Flag) {
 		switch fl.Name {
@@ -707,4 +745,67 @@ func printWarningLines(w io.Writer, warnings []string) {
 	for _, warning := range warnings {
 		fmt.Fprintf(w, "basalt: warning: %s\n", warning)
 	}
+}
+
+// withVerifyFull is dsn with sslmode=verify-full ("" stays ""): a pinned
+// chain verified for the host, and a profile applies with verify-full only.
+func withVerifyFull(dsn string) string {
+	if dsn == "" {
+		return dsn
+	}
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return dsn
+	}
+	q := u.Query()
+	q.Set(paramSSLMode, sslVerifyFull)
+	u.RawQuery = strings.ReplaceAll(q.Encode(), "+", "%20")
+	return u.String()
+}
+
+// recordPin records the pin on the admin connection
+// (basalt_meta.record_trust_pin): the ledger keeps it, and status compares
+// the engine's pin with it. A failure is said, not fatal: the pin is the
+// engine's file, the record is only for audit.
+func recordPin(c *cliIO, conn guard.Querier, p pinChoice) {
+	if err := guard.RecordTrustPin(c.ctx, conn, p.host, p.port, p.sha256); err != nil {
+		fmt.Fprintf(c.stderr, "basalt: the pin for %s is not recorded in the ledger (the guard is older than schema version %d, "+
+			"or the record was refused); the pin itself is written\n", terminalText(p.host), guard.TrustPinsVersion)
+		return
+	}
+	fmt.Fprintf(c.stderr, "basalt: recorded the pin for %s:%d in the ledger\n", terminalText(p.host), p.port)
+}
+
+// recordExistingPin records the engine's pin for the admin string's host
+// when the host is pinned already and the ledger records another
+// certificate or none: after basalt trust pin accepted a new root, a rerun
+// of basalt init clears TRUST_PIN_MISMATCH.
+func recordExistingPin(c *cliIO, conn guard.Querier, admin, configPath string) {
+	t, ok := targetOf(admin)
+	if !ok {
+		return
+	}
+	p := trustdir.Set(configPath).For(t.host)
+	if p == nil || p.Name != trustprofile.PinName(t.host) || len(p.Certificates()) == 0 {
+		return
+	}
+	sha := trustprofile.DERSHA256(p.Certificates()[0])
+	recorded, found, err := guard.RecordedTrustPin(c.ctx, conn, t.host, t.port)
+	if err != nil || (found && recorded == sha) {
+		return
+	}
+	if found {
+		// The ledger records another certificate: a rotation the person
+		// accepted, or a change someone made. Never replaced silently.
+		fmt.Fprintf(c.stderr, "basalt: the ledger records SHA-256 %s for %s:%d, but the engine pins SHA-256 %s\n", recorded, terminalText(t.host), t.port, sha)
+		if !c.interactive {
+			fmt.Fprintln(c.stderr, "basalt: the record is left as it is; run basalt init at a terminal to record the engine's pin")
+			return
+		}
+		ok, err := c.confirm("Record the engine's pin in the ledger in place of the recorded one?")
+		if err != nil || !ok {
+			return
+		}
+	}
+	recordPin(c, conn, pinChoice{pinTarget: t, top: p.Certificates()[0], sha256: sha})
 }

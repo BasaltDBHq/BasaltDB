@@ -18,7 +18,7 @@ import (
 )
 
 // trustUsage names basalt trust's subcommands.
-const trustUsage = "basalt trust list | add --name N --match SUFFIX[,...] --ca FILE | remove --name N | disable --name N"
+const trustUsage = "basalt trust list | add --name N --match SUFFIX[,...] --ca FILE | pin --host H [--port P] | remove --name N | disable --name N"
 
 // runTrust is basalt trust (CONTRACT.md, CLI, basalt trust).
 func runTrust(c *cliIO, args []string) int {
@@ -30,6 +30,8 @@ func runTrust(c *cliIO, args []string) int {
 		return trustList(c, args[1:])
 	case "add":
 		return trustAdd(c, args[1:])
+	case "pin":
+		return trustPin(c, args[1:])
 	case "remove":
 		return trustRemove(c, args[1:])
 	case "disable":

@@ -107,10 +107,11 @@ func onOrigin(link string, origin *url.URL) bool {
 	return u.Scheme == origin.Scheme && u.Host == origin.Host
 }
 
-// resultLinks are the URLs of the links lists of a tools/call answer: the
-// body's own, its held approval's, and those of its items and status
-// problems. Nothing else is read: free text and query rows carry database
-// content, never a link to open.
+// resultLinks are the URLs of the links lists of a tools/call answer that
+// hands over a link: the body's own and its held approval's (a held write,
+// request_revert, a plugin approval, a passkey or setup page). Nothing else
+// is read: list items and status problems restate links a person already
+// has, and free text and query rows carry database content.
 func resultLinks(line []byte) []string {
 	if !bytes.Contains(line, linksKey) {
 		return nil
@@ -146,24 +147,12 @@ type linkedBody struct {
 	Approval *struct {
 		Links []mcp.Link `json:"links"`
 	} `json:"approval"`
-	Items []struct {
-		Links []mcp.Link `json:"links"`
-	} `json:"items"`
-	Problems []struct {
-		Links []mcp.Link `json:"links"`
-	} `json:"problems"`
 }
 
 func (b linkedBody) urls(out []string) []string {
 	out = linkURLs(out, b.Links)
 	if b.Approval != nil {
 		out = linkURLs(out, b.Approval.Links)
-	}
-	for _, it := range b.Items {
-		out = linkURLs(out, it.Links)
-	}
-	for _, p := range b.Problems {
-		out = linkURLs(out, p.Links)
 	}
 	return out
 }

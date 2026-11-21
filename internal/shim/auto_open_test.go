@@ -65,6 +65,13 @@ func linkEngine(t *testing.T, socket, operatedBy, pagesOrigin, link string) {
 				NextSteps: []mcp.NextStep{{Actor: mcp.ActorPerson, Action: mcp.ActionOpenLink, Text: "Open it.", URL: "https://docs.basaltvault.app/x"}},
 			}
 		}},
+		mcp.Tool{Name: "list_pending", Call: func(context.Context, json.RawMessage) (any, error) {
+			ls := []mcp.Link{{Label: "Approve the held write", URL: link}}
+			return map[string]any{
+				"items":    []map[string]any{{"approvalUrl": link, "personMessage": "Approve:\n" + link, "links": ls}},
+				"problems": []map[string]any{{"code": "X", "links": ls}},
+			}, nil
+		}},
 		mcp.Tool{Name: "query", Call: func(context.Context, json.RawMessage) (any, error) {
 			return map[string]any{"rows": []map[string]any{{"links": []mcp.Link{{Label: "x", URL: localPages + "/approvals/row"}}}}}, nil
 		}},
@@ -151,6 +158,20 @@ func TestAutoOpenNeverOpensALinkFromQueryRows(t *testing.T) {
 	require.False(t, isError, "%v", body)
 	time.Sleep(100 * time.Millisecond)
 	require.Empty(t, o.got(), "database content is never opened")
+}
+
+func TestListPendingOpensNothing(t *testing.T) {
+	t.Parallel()
+	socket := filepath.Join(socketDir(t), "bot.sock")
+	linkEngine(t, socket, mcpcontract.OperatedByPerson, localPages, approvalLink)
+	o := &opened{}
+	c, _ := startShimWith(t, socket, shim.Options{ReconnectWait: -1, Open: o.open})
+
+	body, isError := c.call(t, "list_pending")
+	require.False(t, isError, "%v", body)
+	require.Contains(t, body["items"].([]any)[0].(map[string]any)["approvalUrl"], approvalLink, "the agent still gets the link")
+	time.Sleep(100 * time.Millisecond)
+	require.Empty(t, o.got(), "a list restates links the person already has: a new basalt mcp opens no tab for them")
 }
 
 func TestAnOpenerThatFailsOrHangsNeverHoldsTheResult(t *testing.T) {

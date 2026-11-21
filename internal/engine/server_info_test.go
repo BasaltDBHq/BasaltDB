@@ -17,4 +17,5 @@ func TestServerInfoNamesTheOperatorAndTheLocalPageOrigin(t *testing.T) {
 
 	info = agentEnv{cfg: config.Config{OperatedBy: mcpcontract.OperatedByAgent, DevLocalPages: true}, pagesOrigin: "http://localhost:8787"}.serverInfo(nil)
 	require.Equal(t, mcpcontract.OperatedByAgent, info.OperatedBy)
+	require.Equal(t, "http://localhost:8787", info.PagesOrigin, "the origin is sent as is; the shim opens nothing for AGENT")
 }

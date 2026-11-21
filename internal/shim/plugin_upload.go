@@ -1,7 +1,6 @@
 package shim
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"time"
@@ -28,15 +27,12 @@ type PluginUploader func(ctx context.Context, source string) (mcp.PluginUpload, 
 // gave its local pages. answered is true when the shim answered the call
 // itself (the folder could not be read or uploaded): nothing is sent.
 func (r *relay) prepare(ctx context.Context, sess *session, line []byte) (out []byte, answered bool) {
-	if !bytes.Contains(line, []byte(toolRequestPlugin)) {
-		return line, false
-	}
 	var msg map[string]json.RawMessage
-	if json.Unmarshal(line, &msg) != nil || string(msg["method"]) != `"tools/call"` {
+	if json.Unmarshal(line, &msg) != nil || stringOf(msg["method"]) != "tools/call" {
 		return line, false
 	}
 	var params map[string]json.RawMessage
-	if json.Unmarshal(msg["params"], &params) != nil || string(params["name"]) != `"`+toolRequestPlugin+`"` {
+	if json.Unmarshal(msg["params"], &params) != nil || stringOf(params["name"]) != toolRequestPlugin {
 		return line, false
 	}
 	meta := map[string]json.RawMessage{}
@@ -83,6 +79,16 @@ func (r *relay) prepare(ctx context.Context, sess *session, line []byte) (out []
 		return line, false
 	}
 	return rebuilt, false
+}
+
+// stringOf is raw as a JSON string, "" when it is not one: an escaped
+// spelling reads as the name it spells, as the engine reads it.
+func stringOf(raw json.RawMessage) string {
+	var v string
+	if json.Unmarshal(raw, &v) != nil {
+		return ""
+	}
+	return v
 }
 
 func asToolError(err error, te **mcp.ToolError) bool {

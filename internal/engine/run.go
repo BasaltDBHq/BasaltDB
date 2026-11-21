@@ -190,7 +190,7 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 		env.deliverer = plugins.DeliverLinks
 	}
 	if cfg.Service() {
-		env.requests = &pluginRequests{uids: agentUIDs}
+		env.requests = &pluginRequests{uids: agentUIDs, admitted: cfg.PersonUIDs}
 	}
 	portal := newPortalChecker(base, env.stateDir, log, time.Now)
 	if portal != nil {

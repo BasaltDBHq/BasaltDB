@@ -180,16 +180,16 @@ func (s *Service) RequestPlugin(ctx context.Context, a requestPluginArgs, meta j
 	if instance == "" {
 		instance = pluginDefaultInstanceName
 	}
+	remove := a.Remove != nil && *a.Remove
+	if err := s.pluginsServed(a.ApprovalID == "" && !remove); err != nil {
+		return requestPluginResult{}, err
+	}
 	if a.ApprovalID != "" {
 		wait := DefaultApprovalWait
 		if a.WaitForApproval != nil {
 			wait = time.Duration(*a.WaitForApproval) * time.Second
 		}
 		return s.waitPlugin(ctx, uuid.MustParse(a.ApprovalID), wait)
-	}
-	remove := a.Remove != nil && *a.Remove
-	if err := s.pluginsServed(!remove); err != nil {
-		return requestPluginResult{}, err
 	}
 	if remove {
 		if err := s.PluginRequests.RemovePlugin(ctx, s.Name, a.Name, instance); err != nil {
@@ -309,12 +309,12 @@ func (s *Service) pluginOpened(ctx context.Context, o PluginOpened) (requestPlug
 // until the engine runs the plugin on it, it is no longer open, or wait is
 // up. It only reads.
 func (s *Service) waitPlugin(ctx context.Context, id uuid.UUID, wait time.Duration) (requestPluginResult, error) {
-	if s.PluginRequests == nil {
-		return requestPluginResult{}, s.pluginError(ErrPluginNotFound)
-	}
 	deadline := s.Now().Add(wait)
 	for {
 		st, err := s.PluginRequests.PluginApproval(ctx, s.Name, id)
+		if errors.Is(err, ErrPluginNotFound) {
+			st, err = s.endedPluginApproval(ctx, id)
+		}
 		if err != nil {
 			return requestPluginResult{}, s.pluginError(err)
 		}
@@ -328,6 +328,24 @@ func (s *Service) waitPlugin(ctx context.Context, id uuid.UUID, wait time.Durati
 		case <-time.After(s.Poll):
 		}
 	}
+}
+
+// endedPluginApproval is approval id when no entry holds it any more (the
+// plugin was removed, or a newer approval replaced it for every agent): an
+// approval the caller's role opened or that names it reads ENDED, anything
+// else is not found.
+func (s *Service) endedPluginApproval(ctx context.Context, id uuid.UUID) (PluginApprovalState, error) {
+	if s.PluginApprovals == nil {
+		return PluginApprovalState{}, ErrPluginNotFound
+	}
+	r, ok, err := s.PluginApprovals.ReadPluginApproval(ctx, id)
+	switch {
+	case err != nil:
+		return PluginApprovalState{}, err
+	case !ok:
+		return PluginApprovalState{}, ErrPluginNotFound
+	}
+	return PluginApprovalState{Name: r.Name, Instance: r.Instance, State: PluginStateEnded}, nil
 }
 
 // pluginWaited is the wait form's answer for st.

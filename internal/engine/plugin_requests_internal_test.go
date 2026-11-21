@@ -45,7 +45,7 @@ func TestRequestAgentsStartWithTheCaller(t *testing.T) {
 // that user; with no engine-kept plugins every call is refused.
 func TestRequestReachIsTheCallersOSUser(t *testing.T) {
 	t.Parallel()
-	p := &pluginRequests{uids: map[string]uint32{"bot": 501, "other": 501, "far": 777}}
+	p := &pluginRequests{uids: map[string]uint32{"bot": 501, "other": 501, "far": 777}, admitted: []uint32{501}}
 	k, _, _, err := p.reach("bot")
 	require.ErrorIs(t, err, errNoKept)
 	require.Nil(t, k)
@@ -60,6 +60,24 @@ func TestRequestReachIsTheCallersOSUser(t *testing.T) {
 	var r *agent.PluginRefusedError
 	require.ErrorAs(t, err, &r)
 	require.Equal(t, agent.ReasonPluginAgentNotAllowed, r.Reason)
+
+	// An agent whose OS user the person socket does not admit changes no
+	// plugin, in any form, and reads no approval.
+	for _, call := range []func() error{
+		func() error {
+			_, err := p.OpenPlugin(context.Background(), "far", agent.PluginOpen{Name: "acme-ner", Instance: "default"})
+			return err
+		},
+		func() error { return p.RemovePlugin(context.Background(), "far", "acme-ner", "default") },
+		func() error {
+			_, err := p.PluginApproval(context.Background(), "far", uuid.New())
+			return err
+		},
+	} {
+		r = nil
+		require.ErrorAs(t, call(), &r)
+		require.Equal(t, agent.ReasonPluginAgentNotAllowed, r.Reason)
+	}
 }
 
 // The wait's state: an approval is RUNNING only once every agent it names

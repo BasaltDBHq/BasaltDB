@@ -77,6 +77,12 @@ func TestPrepareStripsAClientUpload(t *testing.T) {
 	require.False(t, answered)
 	require.NotContains(t, metaOf(t, out), mcp.MetaPluginUpload)
 
+	// An escaped spelling of the tool's name is the tool: its upload is
+	// stripped too.
+	escaped := []byte(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"request\u005fplugin","arguments":{},"_meta":{"dev.basaltdb/upload":{"uploadId":"x"}}}}`)
+	out, _ = r.prepare(context.Background(), readySession(mcpcontract.OperatedByPerson, "http://localhost:7878"), escaped)
+	require.NotContains(t, metaOf(t, out), mcp.MetaPluginUpload)
+
 	// Another tool's line is passed as it is.
 	other := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"query","arguments":{"sql":"SELECT 'request_plugin'"},"_meta":{"dev.basaltdb/upload":{}}}}`)
 	out, _ = r.prepare(context.Background(), readySession(mcpcontract.OperatedByPerson, "http://localhost:7878"), other)

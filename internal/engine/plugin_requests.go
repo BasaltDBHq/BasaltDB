@@ -25,6 +25,10 @@ type pluginRequests struct {
 	kept atomic.Pointer[keptPlugins]
 	// uids is every configured agent's OS user id.
 	uids map[string]uint32
+	// admitted are the OS users the person socket admits (personUids):
+	// only an agent running as one of them may change plugins, as over the
+	// socket itself.
+	admitted []uint32
 }
 
 var _ agent.PluginRequests = (*pluginRequests)(nil)
@@ -47,6 +51,10 @@ func (p *pluginRequests) reach(caller string) (*keptPlugins, uint32, person.Scop
 	uid, ok := p.uids[caller]
 	if !ok {
 		return nil, 0, nil, fmt.Errorf("agent %s has no OS user", caller)
+	}
+	if !slices.Contains(p.admitted, uid) {
+		return nil, 0, nil, &agent.PluginRefusedError{Reason: agent.ReasonPluginAgentNotAllowed, Message: fmt.Sprintf(
+			"agent %s runs as an OS user (uid %d) the engine does not let change plugins: only the person's own users may. Nothing was written", caller, uid)}
 	}
 	scope := person.Scope{}
 	for name, u := range p.uids {

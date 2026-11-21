@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
 )
 
@@ -259,6 +261,29 @@ func TestRequestPluginWaitOnlyReads(t *testing.T) {
 	f = &fakePluginRequests{err: ErrPluginNotFound}
 	_, err = callPlugin(t, pluginService(t, f), map[string]any{"approvalId": casePluginApproval}, nil)
 	requireReason(t, err, CodeNotFound, "")
+
+	// No entry holds it any more (removed, or replaced for every agent), but
+	// the caller's guard still has it: ENDED.
+	s := pluginService(t, &fakePluginRequests{err: ErrPluginNotFound})
+	s.PluginApprovals = endedApprovals{id: uuid.MustParse(casePluginApproval)}
+	out, err = callPlugin(t, s, map[string]any{"approvalId": casePluginApproval}, nil)
+	require.NoError(t, err)
+	require.Equal(t, PluginStateEnded, out.State)
+	require.Equal(t, "local-ner", out.Name)
+}
+
+// endedApprovals is the caller's guard holding one plugin approval.
+type endedApprovals struct{ id uuid.UUID }
+
+func (e endedApprovals) ReadPluginApproval(_ context.Context, id uuid.UUID) (guard.PluginApprovalRecord, bool, error) {
+	if id != e.id {
+		return guard.PluginApprovalRecord{}, false, nil
+	}
+	return guard.PluginApprovalRecord{ApprovalID: id, Name: "local-ner", Instance: "default", Status: guard.PluginApprovalStatusCancelled}, true, nil
+}
+
+func (endedApprovals) SubmitPluginApproval(context.Context, guard.PluginApprovalResponse) (time.Time, error) {
+	return time.Time{}, errors.New("never")
 }
 
 // The engine's refusals reach the agent as PLUGIN_REFUSED with their

@@ -26,7 +26,7 @@ func TestRequestPluginAgainstGuard(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	f := newKeptFixture(t, []string{"bot", "helper"})
-	p := &pluginRequests{uids: map[string]uint32{"bot": keptPerson, "helper": keptPerson}}
+	p := &pluginRequests{uids: map[string]uint32{"bot": keptPerson, "helper": keptPerson}, admitted: []uint32{keptPerson}}
 	p.kept.Store(f.s)
 
 	files, exec := source("1.0.0")

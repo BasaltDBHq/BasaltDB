@@ -12,10 +12,10 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"runtime"
 	"strings"
 	"time"
 
+	"github.com/basaltdbhq/basaltdb/internal/browser"
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
 )
 
@@ -75,16 +75,7 @@ func (osHost) Run(ctx context.Context, args []string, out, errw io.Writer) error
 }
 
 func (osHost) OpenURL(ctx context.Context, link string) error {
-	name, ok := browserOpener(runtime.GOOS)
-	if !ok {
-		return fmt.Errorf("no browser opener on %s", runtime.GOOS)
-	}
-	path, err := exec.LookPath(name)
-	if err != nil {
-		return fmt.Errorf("%s not found", name)
-	}
-	// The link is one argument, never passed through a shell.
-	return exec.CommandContext(ctx, path, link).Run()
+	return browser.Open(ctx, link)
 }
 
 // pagesProbeTimeout bounds the check that the engine serves its pages: a
@@ -138,18 +129,6 @@ func (osHost) IssueLink(ctx context.Context, endpoint, proof string) (string, er
 
 // maxLinkAnswer bounds the engine's answer to a link request.
 const maxLinkAnswer = 16 << 10
-
-// browserOpener is the command that opens a URL in the default browser on
-// goos.
-func browserOpener(goos string) (string, bool) {
-	switch goos {
-	case "darwin":
-		return "open", true
-	case "linux":
-		return "xdg-open", true
-	}
-	return "", false
-}
 
 func (osHost) System(out, errw io.Writer) service.System {
 	return service.OSSystem{Stdout: out, Stderr: errw}

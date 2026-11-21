@@ -57,6 +57,10 @@ type Info struct {
 	// that call with an INTERNAL error instead of the process; without it
 	// the panic is not recovered.
 	OnPanic func(tool string, v any, stack []byte) (reportID string)
+	// OperatedBy and PagesOrigin, optional, go in the hello answer
+	// (Hello.OperatedBy, Hello.PagesOrigin).
+	OperatedBy  string
+	PagesOrigin string
 }
 
 // session is the state of one Serve connection.
@@ -174,7 +178,10 @@ func (s *Server) negotiate(out io.Writer, line []byte, shim *Hello) (handled boo
 	if !ok {
 		return false, nil
 	}
-	engine := Hello{Protocol: ShimProtocol, Build: s.info.Version, MinShimProtocol: &s.minShim}
+	engine := Hello{
+		Protocol: ShimProtocol, Build: s.info.Version, MinShimProtocol: &s.minShim,
+		OperatedBy: s.info.OperatedBy, PagesOrigin: s.info.PagesOrigin,
+	}
 	if req.Method == HelloMethod {
 		_ = json.Unmarshal(req.Params, shim) // malformed: stays version 0
 		if shim.Protocol < s.minShim {

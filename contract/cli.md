@@ -60,6 +60,8 @@ When the engine is person-operated (`operatedBy: PERSON`) and a result carries a
 - It opens only a link that parses and whose origin (scheme, host and port) equals the engine's local page origin. It never opens any other URL from a result.
 - It never opens anything on an agent-operated engine.
 - There is no flag to turn it on or off.
+- `basalt mcp` learns both from the engine's answer to its hello ([Version negotiation](next-steps.md#next-steps): `operatedBy` and `pagesOrigin`), not from `engine.json`, which a service engine's agent cannot read. An engine that gives neither (one older than this rule, or one that stays silent) gets nothing opened. The answers of `basalt mcp` itself, while the engine is down, open nothing.
+- It reads the links only from the result's `links` lists of the call that hands the link over (the body's and its `approval`'s: a held write, `request_revert`, a plugin approval, a passkey or setup page), never from list items (`list_pending`), status problems, free text or query rows, and opens each link once per `basalt mcp` process. The result reaches the agent unchanged and never waits on the browser.
 
 ### `basalt engine`
 

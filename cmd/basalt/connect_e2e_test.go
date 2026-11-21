@@ -370,6 +370,18 @@ func TestConnectPageRefusesHostileSetupsClosed(t *testing.T) {
 			"invalid_argument", "CHALLENGE_EXPIRED")
 		f.untouched()
 	})
+
+	t.Run("opened live, run past the grace", func(t *testing.T) {
+		t.Parallel()
+		f := newConnectFixture(t)
+		desc := f.describe(f.install.res.Code)
+		// Inside the grace only the challenge (15 minutes) has run out;
+		// past expiresAt plus the grace the code itself is refused.
+		f.srv.Advance(setupcode.Lifetime + connecttest.OpenGrace + time.Minute)
+		f.page.refused("RunSetup", f.runBody(f.install.res.Code, desc.GetChallenge(), passkeyOf(t, f.person, desc.GetChallenge())),
+			"invalid_argument", "EXPIRED")
+		f.untouched()
+	})
 }
 
 func installedPasskeys(t *testing.T, d *guardtest.DB) []guard.RegisteredPasskey {

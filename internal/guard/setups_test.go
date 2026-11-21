@@ -25,6 +25,7 @@ import (
 const (
 	setupLifetime = 10 * time.Minute
 	setupSkew     = 5 * time.Minute
+	setupGrace    = 30 * time.Minute
 )
 
 // newVerifier is the SCRAM-SHA-256 verifier of password, as a setup code
@@ -326,13 +327,21 @@ func TestRecordSetupRefusals(t *testing.T) {
 		require.NoError(t, record(older))
 	})
 	t.Run("expired", func(t *testing.T) {
-		now := dbNow(t, d)
-		s := guard.Setup{
-			ID: uuidAt(t, now.Add(-2*time.Minute)), Kind: guard.SetupUpgrade,
-			GuardVersion: guard.LatestVersion(), ExpiresAt: now.Add(-time.Second),
+		now := dbNow(t, d).Truncate(time.Millisecond) // the setup id's precision
+		// Each code expires 10 minutes after its setup id, so only the
+		// grace decides.
+		at := func(expires time.Time) guard.Setup {
+			return guard.Setup{
+				ID: uuidAt(t, expires.Add(-setupLifetime)), Kind: guard.SetupUpgrade,
+				GuardVersion: guard.LatestVersion(), ExpiresAt: expires,
+			}
 		}
-		// Opening and confirming need a live code; record_setup may finish after expiresAt.
-		require.NoError(t, record(s))
+		// Past expiresAt but inside the grace: a confirmed run may finish late.
+		require.NoError(t, record(at(now.Add(-time.Second))))
+		require.NoError(t, record(at(now.Add(-setupGrace+time.Minute))))
+		// Past the grace the database refuses it, whatever the client checked.
+		requireRefused(t, record(at(now.Add(-setupGrace-time.Minute))), guard.SetupExpired)
+		requireRefused(t, record(at(now.Add(-24*time.Hour))), guard.SetupExpired)
 	})
 	t.Run("setup id in the future", func(t *testing.T) {
 		now := dbNow(t, d)
@@ -353,10 +362,10 @@ func TestRecordSetupRefusals(t *testing.T) {
 		}
 		requireRefused(t, record(s), guard.SetupExpiryTooFar)
 		// More than Lifetime after the setup id's time, though near now.
-		s.ID = uuidAt(t, now.Add(-2*time.Hour))
-		s.ExpiresAt = now.Add(setupLifetime - time.Hour)
+		s.ID = uuidAt(t, now.Add(-20*time.Minute))
+		s.ExpiresAt = now
 		requireRefused(t, record(s), guard.SetupExpiryTooFar)
-		s.ExpiresAt = now.Add(setupLifetime - 2*time.Hour)
+		s.ExpiresAt = now.Add(setupLifetime - 20*time.Minute)
 		require.NoError(t, record(s))
 	})
 	t.Run("invalid input", func(t *testing.T) {
@@ -408,16 +417,18 @@ func TestRecordSetupRefusals(t *testing.T) {
 		requireCode(t, err, guard.CodeLedgerInputInvalid)
 	})
 	t.Run("expired inside a long transaction", func(t *testing.T) {
-		// now() is fixed when the transaction starts; record_setup no longer
-		// refuses EXPIRED, so a run that waits past expiresAt can finish.
+		// now() is fixed when the transaction starts; the expiry check
+		// reads the clock, so waiting inside the transaction does not
+		// stretch the grace.
 		err := pgx.BeginFunc(ctx, d.Admin, func(tx pgx.Tx) error {
 			var start, later time.Time
 			if err := tx.QueryRow(ctx, `SELECT now()`).Scan(&start); err != nil {
 				return err
 			}
+			expires := start.Truncate(time.Millisecond).Add(-setupGrace + time.Second)
 			s := guard.Setup{
-				ID: uuidAt(t, start), Kind: guard.SetupUpgrade, GuardVersion: guard.LatestVersion(),
-				ExpiresAt: start.Add(time.Second),
+				ID: uuidAt(t, expires.Add(-setupLifetime)), Kind: guard.SetupUpgrade,
+				GuardVersion: guard.LatestVersion(), ExpiresAt: expires,
 			}
 			if _, err := tx.Exec(ctx, `SELECT pg_sleep(1.5)`); err != nil {
 				return err
@@ -425,11 +436,11 @@ func TestRecordSetupRefusals(t *testing.T) {
 			if err := tx.QueryRow(ctx, `SELECT now()`).Scan(&later); err != nil {
 				return err
 			}
-			require.True(t, later.Before(s.ExpiresAt), "now() did not move")
+			require.True(t, later.Before(s.ExpiresAt.Add(setupGrace)), "now() did not move")
 			_, err := guard.RecordSetup(ctx, tx, d.Names, s)
 			return err
 		})
-		require.NoError(t, err)
+		requireRefused(t, err, guard.SetupExpired)
 	})
 }
 

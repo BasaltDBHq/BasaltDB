@@ -1,7 +1,9 @@
 -- Version 7: shorter setup-code life (CO-13). record_setup's EXPIRY_TOO_FAR
--- bound is 10 minutes plus 5 minutes of clock skew, and it no longer refuses
--- EXPIRED: opening and confirming a code need a live expiresAt, but a run
--- that already passed those checks may finish after the code expires.
+-- bound is 10 minutes plus 5 minutes of clock skew. It refuses EXPIRED only
+-- 30 minutes after expiresAt (the grace, matching the address hold): opening
+-- and confirming a code need a live expiresAt, but a run that already passed
+-- those checks may finish a little after the code expires. Past the grace an
+-- unused code is refused whatever the client checked.
 
 CREATE OR REPLACE FUNCTION basalt_meta.record_setup(
     p_setup_id uuid, p_kind text, p_agent name, p_guard_version int, p_expires_at timestamptz
@@ -10,6 +12,7 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
 DECLARE
     c_skew       constant interval := interval '5 minutes';
     c_lifetime   constant interval := interval '10 minutes';
+    c_grace      constant interval := interval '30 minutes'; -- a confirmed run that finishes late
     c_hex_ms_len constant int      := 12; -- the first 48 bits of a UUIDv7, in hex
     c_version    constant int      := 15; -- 1-based position of the version digit in uuid text
     v_hex      text := replace(p_setup_id::text, '-', '');
@@ -61,6 +64,9 @@ BEGIN
     -- The time now, not the transaction's start: the person may have
     -- waited inside the transaction, and the lock above may have waited.
     v_now := clock_timestamp();
+    IF v_now > p_expires_at + c_grace THEN
+        PERFORM basalt_meta._setup_refused('EXPIRED', 'this setup code expired');
+    END IF;
     v_id_at := to_timestamp((('x' || lpad(substr(v_hex, 1, c_hex_ms_len), 16, '0'))::bit(64)::bigint) / 1000.0);
     IF v_id_at > v_now + c_skew THEN
         PERFORM basalt_meta._setup_refused('SETUP_ID_IN_FUTURE', 'the setup id claims a time in the future');

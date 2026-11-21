@@ -49,7 +49,7 @@ const (
 	// versionTrustPins adds record_trust_pin and agent_trust_pins: schema/016.
 	versionTrustPins
 	// versionSetupCodeLife shortens setup-code life to 10 minutes and
-	// stops record_setup refusing EXPIRED: schema/017.
+	// gives record_setup's EXPIRED a 30-minute grace: schema/017.
 	versionSetupCodeLife
 )
 
@@ -78,7 +78,7 @@ var versionFiles = []int{versionGuard: guardFiles, versionInstallIDs: 1, version
 // versionTrustPins: without it basalt init records no pin and status has
 // nothing to compare a pin with; everything is served as before.
 // versionSetupCodeLife: without it record_setup still uses the 24-hour
-// bound and still refuses EXPIRED; every tool is served as before.
+// bound and refuses EXPIRED with no grace; every tool is served as before.
 var nonBreakingVersions = map[int]bool{versionPluginEvents: true, versionPluginTrustRemoved: true, versionPluginApprovals: true, versionTrustPins: true, versionSetupCodeLife: true}
 
 // guardFiles is how many schema files version 1 has: 001 to 011.

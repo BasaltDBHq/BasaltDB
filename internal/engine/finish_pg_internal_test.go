@@ -44,7 +44,7 @@ func newRemoteAgent(t *testing.T, dsn, kind string) remoteAgent {
 	r := remoteAgent{dir: dir, cfgPath: filepath.Join(dir, "engine.json"), credFile: filepath.Join(dir, "bot.url")}
 	require.NoError(t, config.WriteFile(r.credFile, []byte(dsn+"\n")))
 	r.setupID = uuid.Must(uuid.NewV7())
-	r.expires = time.Now().Add(time.Hour).UTC().Truncate(time.Second)
+	r.expires = time.Now().Add(5 * time.Minute).UTC().Truncate(time.Second)
 	r.setup = config.Setup{
 		SetupID: r.setupID.String(), Kind: kind, GuardVersion: guard.LatestVersion(),
 		ExpiresAt: r.expires.Format(time.RFC3339), Code: "basalt-setup.1.abc.def", Fingerprint: "a1b2 c3d4 e5f6 0718 293a",

@@ -27,7 +27,8 @@ type rlsAsk struct {
 // rlsAnswers answers the row-level security questions by --agent-rls: none
 // says no to all, all-rows yes to all, a list yes to the tables it names
 // (a name that is none of the agent's tables is a usage error, before anything is
-// written). ask says no to all when quiet (--yes, --dry-run); otherwise it
+// written). ask says yes to all when quiet (--yes, --dry-run) and prints one line
+// naming the tables and how to opt out; otherwise it
 // shows the checklist at a terminal, with every table checked, and without
 // one prints the grouped list on stderr and reads one line from stdin: all,
 // none or a list; an empty line or the end of input is all.
@@ -48,8 +49,16 @@ func rlsAnswers(c *cliIO, mode AgentRLSMode, quiet bool, agent string, own []str
 			return nil, fmt.Errorf("%w: --agent-rls: %w", errUsage, err)
 		}
 		return pickByList(entries, own, patterns, "--agent-rls")
-	case quiet || len(asks) == 0:
+	case len(asks) == 0:
 		return out, nil
+	case quiet:
+		names := make([]string, len(asks))
+		for i, a := range asks {
+			names[i] = a.Table
+		}
+		fmt.Fprintf(c.stderr, "basalt: %s can see all rows of %s (row-level security hid them); pass --agent-rls=none to skip this, or --agent-rls=schema.table,... to pick tables\n",
+			agent, strings.Join(names, ", "))
+		return fill(out, true), nil
 	case c.terminal != nil:
 		return checklistAnswers(c, agent, asks, entries)
 	case c.interactive:

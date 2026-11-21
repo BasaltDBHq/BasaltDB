@@ -131,7 +131,7 @@ Without a terminal (a script or a non-interactive run, with the answers piped in
 printf 'us.*,global.user_router\ny\n' | BASALT_ADMIN_DATABASE_URL=... basalt init --agent bot --write us.orders --no-service
 ```
 
-To skip the line, give the list as the flag: `--agent-rls=us.*,global.user_router` (also `all-rows` and `none`). A name that matches no table with hidden rows stops init with a usage error before anything is written. With `--yes` or `--dry-run` the line is not read and the answer is `none` unless you pass `--agent-rls=all-rows` or a list.
+To skip the line, give the list as the flag: `--agent-rls=us.*,global.user_router` (also `all-rows` and `none`). A name that matches no table with hidden rows stops init with a usage error before anything is written. With `--yes` or `--dry-run` the line is not read and the answer is `all`: every table with hidden rows gets the policy, and init prints one line naming them. Pass `--agent-rls=none` or a list to change that.
 
 Port 8787 must be free while init waits for the passkey and afterwards for the engine. If it is taken, init says so; `lsof -nP -iTCP:8787 -sTCP:LISTEN` shows what holds it.
 

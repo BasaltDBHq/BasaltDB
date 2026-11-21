@@ -103,7 +103,7 @@ test("on the relay path no page falls back to a code to paste", async () => {
   for (const text of [RELAY_REFUSED, RELAY_NO_ANSWER]) assert.doesNotMatch(text, /paste/i);
   for (const f of ["approve.js", "revert.js"]) {
     const src = readFileSync(new URL(`./${f}`, import.meta.url), "utf8");
-    assert.match(src, /if \(!pastesCode\(relay\.session\)\) \{\n\s+showRelayFailed\([^\n]*relayRetry\(err\)/, f);
+    assert.match(src, /if \(!pastesCode\(relay\.session\)\) \{\n\s+showRelayFailed\(relayFailure\(err, "(approval|revert)"\)\);/, f);
   }
 
   // Only an answer from the engine says nothing was signed: a refusal with
@@ -134,6 +134,10 @@ test("on the relay path no page falls back to a code to paste", async () => {
     (e) => e,
   );
   assert.equal(relayRetry(err), RELAY_NO_ANSWER);
+  const { relayFailure } = await import("./page.js");
+  assert.equal(relayFailure(err, "approval"), RELAY_NO_ANSWER, "no answer never says the engine did not take it");
+  const [, refused] = await both(409, { code: "APPROVAL_INVALID", message: "this approval was already used" }, (s) => postResponse(s, relayPaths("approvals", id).relay, SECRET, "{}"));
+  assert.equal(relayFailure(refused.err, "approval"), `The engine did not take the approval: this approval was already used. ${RELAY_REFUSED}`);
   assert.match(RELAY_NO_ANSWER, /cannot tell whether the signature went through/);
   assert.match(RELAY_NO_ANSWER, /Open the link again: it shows whether it was signed/);
 });

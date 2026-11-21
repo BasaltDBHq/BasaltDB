@@ -25,7 +25,7 @@ import {
 } from "./codec.js";
 import { pageTransport } from "./transport.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, rejectRevert, revertDone, revertPaths } from "./local.js";
-import { $, REVERT_REOPEN, el, fail, linkFailure, endSession, loadOrPaste, openSession, pastesCode, personText, relayRetry, setPill, showCode, showDone, showEngine, showReceipt, showRelayFailed, webauthnError } from "./page.js";
+import { $, REVERT_REOPEN, el, fail, linkFailure, endSession, loadOrPaste, openSession, pastesCode, personText, relayFailure, setPill, showCode, showDone, showEngine, showReceipt, showRelayFailed, webauthnError } from "./page.js";
 import { canWiden, narrow, widen } from "./rescope.js";
 import { applyReveal, canReveal, clearReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import { changeGroups, countText, rawText, rowKeyText } from "./changes.js";
@@ -235,7 +235,7 @@ async function finish(response, relay, binding) {
       return;
     } catch (err) {
       if (!pastesCode(relay.session)) {
-        showRelayFailed(`The engine did not take the revert: ${personText(err) || err.message}. ${relayRetry(err)}`);
+        showRelayFailed(relayFailure(err, "revert"));
         settle("Not signed", "bad");
         return;
       }

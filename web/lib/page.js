@@ -313,9 +313,23 @@ export const RELAY_NO_ANSWER =
   "This page did not hear back from the engine, so it cannot tell whether the signature went through. " +
   "Open the link again: it shows whether it was signed.";
 
+// relayRefused says whether err, a relayed signature that failed, is the
+// engine's own refusal (an answer with an HTTP status).
+function relayRefused(err) {
+  return err?.name === "RelayError" && err.status > 0;
+}
+
 // relayRetry is the sentence for err, a relayed signature that failed.
 export function relayRetry(err) {
-  return err?.name === "RelayError" && err.status > 0 ? RELAY_REFUSED : RELAY_NO_ANSWER;
+  return relayRefused(err) ? RELAY_REFUSED : RELAY_NO_ANSWER;
+}
+
+// relayFailure is what a portal page shows when the relayed signature of
+// item ("approval", "revert") failed: the engine's refusal and its reason,
+// or, with no answer, only that the page cannot tell.
+export function relayFailure(err, item) {
+  if (!relayRefused(err)) return RELAY_NO_ANSWER;
+  return `The engine did not take the ${item}: ${personText(err) || err.message}. ${RELAY_REFUSED}`;
 }
 
 // showDone says the engine took the signature: nothing to paste.

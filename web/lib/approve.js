@@ -17,7 +17,7 @@ import {
 } from "./codec.js";
 import { pageTransport } from "./transport.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
-import { $, APPROVE_REOPEN, el, fail, linkFailure, endSession, loadOrPaste, openSession, pastesCode, personText, relayRetry, setPill, showCode, showDone, showEngine, showReceipt, showRelayFailed, webauthnError, whenText } from "./page.js";
+import { $, APPROVE_REOPEN, el, fail, linkFailure, endSession, loadOrPaste, openSession, pastesCode, personText, relayFailure, setPill, showCode, showDone, showEngine, showReceipt, showRelayFailed, webauthnError, whenText } from "./page.js";
 import { applyReveal, canReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import { agentName } from "./scope.js";
 import { canStartPasskey, cascadeConfirmation, headline, summarize } from "./summary.js";
@@ -167,7 +167,7 @@ async function finish(response, relay, binding) {
       return;
     } catch (err) {
       if (!pastesCode(relay.session)) {
-        showRelayFailed(`The engine did not take the approval: ${personText(err) || err.message}. ${relayRetry(err)}`);
+        showRelayFailed(relayFailure(err, "approval"));
         setPill("state", "Not approved", "bad");
         return;
       }

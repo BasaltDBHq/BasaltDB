@@ -214,15 +214,11 @@ sudo install -o root -g root -m 0755 "$work/src/bin/$name" "$copy_dir/bin/$name"
 # The entry in engine.json, which keeps its owner and mode.
 config_owner=$(sudo stat -c '%U:%G' /etc/basalt/engine.json)
 config_mode=$(sudo stat -c '%a' /etc/basalt/engine.json)
-sudo jq --arg n "$name" --arg s "$manifest_sha" --arg a "$agent" \
-	'.plugins = [{"name": $n, "instance": "default", "manifestSha256": $s, "enabled": true, "agents": [$a]}]' \
-	/etc/basalt/engine.json >"$work/engine.json"
+sudo cat /etc/basalt/engine.json | jq --arg n "$name" --arg s "$manifest_sha" --arg a "$agent" \
+	'.plugins = [{"name": $n, "instance": "default", "manifestSha256": $s, "enabled": true, "agents": [$a]}]' >"$work/engine.json"
 sudo install -o "${config_owner%%:*}" -g "${config_owner##*:}" -m "$config_mode" "$work/engine.json" /etc/basalt/engine.json
 # basalt service install writes every local config entry's unit.
-sudo "$basalt" service install >"$work/service.out" 2>&1 || {
-	cat "$work/service.out" >&2
-	fail "basalt service install"
-}
+installed=$(sudo "$basalt" service install 2>&1) || fail "basalt service install: $installed"
 touch "$marker"
 run=$(systemctl show -p InvocationID --value "$unit")
 restart_engine

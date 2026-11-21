@@ -36,7 +36,7 @@ func TestRun(t *testing.T) {
 		{args: []string{"mcp"}, code: exitUsage, stderrPart: "-agent"},
 		{args: []string{"mcp", "--agent", "Bad/Name"}, code: exitUsage},
 		// No engine: the shim answers itself; an empty session ends cleanly.
-		{args: []string{"mcp", "--socket", filepath.Join(t.TempDir(), "none.sock")}, code: exitOK},
+		{args: []string{"mcp", "--agent", "nobody_runs_this"}, code: exitOK},
 		{args: []string{"engine", "--config", filepath.Join(t.TempDir(), "none.json")}, code: exitError, stderrPart: "basalt engine:"},
 		{args: []string{"engine", "extra"}, code: exitUsage},
 		{args: []string{"service"}, code: exitUsage, stderrPart: "want install or uninstall"},

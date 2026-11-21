@@ -34,7 +34,7 @@ func requireConnectPending(t *testing.T, kind, code, reason string, pm string, l
 	require.Less(t, strings.Index(pm, url), strings.Index(pm, "basalt init --setup-code"), "the link first")
 	requirePersonMessage(t, pm, ls)
 	for i, st := range steps {
-		requireStepObeysRules(t, st, catalogCase{}, "", kind+code+reason+string(rune('0'+i)))
+		requireStepObeysRules(t, st, catalogCase{}, kind+code+reason+string(rune('0'+i)))
 	}
 }
 
@@ -63,7 +63,7 @@ func TestPendingSetupErrorHandsTheConnectLinkFirst(t *testing.T) {
 			require.Empty(t, te.Links)
 			require.NotContains(t, te.PersonMessage, "Vault")
 			require.Equal(t, "RUN_COMMAND", te.NextSteps[0].Action)
-			requireObeysCatalog(t, catalogCase{tool: "query", args: queryArgs0}, te, "", tc.operatedBy)
+			requireObeysCatalog(t, catalogCase{tool: "query", args: queryArgs0}, te, tc.operatedBy)
 		})
 	}
 }

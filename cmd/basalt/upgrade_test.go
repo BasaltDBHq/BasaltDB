@@ -131,7 +131,7 @@ func cliCmd(t *testing.T, cmd func(*cliIO, []string) int, env map[string]string,
 	c := newIO(context.Background(), stdio{in: strings.NewReader(stdin), out: &stdout, err: &stderr},
 		func(k string) string { return env[k] })
 	c.engine = engineAccess{unitInstalled: func() bool { return false }}
-	code := cmd(c, args)
+	code := cmd(c, takePathFlags(c, cmd, args))
 	return result{code, stdout.String(), stderr.String()}
 }
 

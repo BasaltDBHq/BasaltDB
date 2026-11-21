@@ -210,7 +210,7 @@ func initRun(t *testing.T, d *guardtest.DB, h *fakeHost, goos string, interactiv
 		})
 	c.goos, c.host, c.interactive = goos, h, interactive
 	args := append([]string{"--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix, "--skip-passkey"}, extra...)
-	code := runInit(c, args)
+	code := runInit(c, takePathFlags(c, runInit, args))
 	return result{code, stdout.String(), stderr.String()}
 }
 
@@ -243,7 +243,7 @@ func TestInitInstallsTheServiceWithOneSudo(t *testing.T) {
 			require.Equal(t, []string{script}, h.dialogs, "the first install goes through the administrator dialog, with the fixed script")
 			require.Len(t, h.sudo, 1, "then one sudo carries the agent's config and credential")
 			require.Equal(t, []string{
-				fakeBin, "service", "install", "--config", v.config, "--user", v.user,
+				fakeBin, "service", "install", "--user", v.user,
 				"--agent", "bot", "--os-user", me(t), "--pages-url", links.DefaultLocal, "--vault-default=off",
 				"--init-arg", "--agent=bot", "--init-arg", "--write=public.leads", "--init-arg", "--prefix=" + d.Names.Prefix,
 				"--init-arg", "--os-user=" + me(t), "--person-uid", "501", "--credential-stdin",
@@ -495,7 +495,7 @@ func TestInitRefusesUnprotectedBinaryBeforeAnything(t *testing.T) {
 		}
 		c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr}, getenv)
 		c.goos, c.host = "linux", h
-		code := runInit(c, append([]string{"--agent", "bot", "--write", "public.leads", "--skip-passkey"}, extra...))
+		code := runInit(c, takePathFlags(c, runInit, append([]string{"--agent", "bot", "--write", "public.leads", "--skip-passkey"}, extra...)))
 
 		require.Equal(t, exitError, code, extra)
 		require.Contains(t, stderr.String(), "owned by uid 501, not root", extra)
@@ -520,7 +520,7 @@ func TestInitNoServiceDoesNotCheckTheBinary(t *testing.T) {
 			return ""
 		})
 	c.goos, c.host = "linux", h
-	runInit(c, []string{"--agent", "bot", "--write", "public.leads", "--skip-passkey", "--yes", "--no-service"})
+	runInit(c, takePathFlags(c, runInit, []string{"--agent", "bot", "--write", "public.leads", "--skip-passkey", "--yes", "--no-service"}))
 	require.Empty(t, h.sys.checked)
 }
 

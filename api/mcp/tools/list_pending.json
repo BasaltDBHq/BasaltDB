@@ -139,7 +139,7 @@
                 },
                 "approveCommand": {
                   "type": "string",
-                  "description": "basalt approve --agent <name> [--config <path>] --open <approvalId>: the person runs it in their terminal and it opens the approval page in their browser."
+                  "description": "basalt approve --agent <name> --open <approvalId>: the person runs it in their terminal and it opens the approval page in their browser."
                 },
                 "headline": {
                   "type": "string",

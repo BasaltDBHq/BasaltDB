@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -64,10 +65,17 @@ type agentLedger struct {
 }
 
 // openLedger opens the agent's ledger. With the engine service installed,
-// --agent, the default --config and no credential given, it goes through
+// --agent, the system config and no credential given, it goes through
 // the person socket and never reads the engine's files; else it reads the
 // credential as before (agentURL).
 func openLedger(c *cliIO, agent, credFile, configPath string) (*agentLedger, error) {
+	credFile = cmp.Or(credFile, c.paths.credFile)
+	if c.needsAgent(agent, credFile) {
+		// --agent is needed only when the engine serves more than one.
+		if names, err := c.configuredAgents(configPath); err == nil && len(names) == 1 {
+			agent = names[0]
+		}
+	}
 	if c.serviceMode(agent, credFile, configPath) {
 		return openPersonLedger(c, agent)
 	}
@@ -106,7 +114,7 @@ func (l *agentLedger) ownAgent() string {
 // serviceMode reports whether this command goes through the person socket.
 func (c *cliIO) serviceMode(agent, credFile, configPath string) bool {
 	return agent != "" && credFile == "" && c.getenv(envAgentURL) == "" &&
-		configPath == config.DefaultPath(c.goos) && c.engine.unitInstalled()
+		configPath == c.systemConfig() && c.engine.unitInstalled()
 }
 
 // openPersonLedger asks the engine for its pages, which also tells whether

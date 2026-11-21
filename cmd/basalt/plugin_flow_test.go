@@ -208,7 +208,7 @@ func (f *flowEngine) plugin(env map[string]string, args ...string) result {
 	var stdout, stderr bytes.Buffer
 	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr}, func(k string) string { return env[k] })
 	c.engine = engineAccess{unitInstalled: func() bool { return false }}
-	code := runPlugin(c, append(args, "--config", f.configPath))
+	code := runPlugin(c, takePathFlags(c, runPlugin, append(args, "--config", f.configPath)))
 	return result{code, stdout.String(), stderr.String()}
 }
 

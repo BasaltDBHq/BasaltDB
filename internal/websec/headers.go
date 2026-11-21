@@ -26,6 +26,23 @@ func Headers() func(http.Handler) http.Handler {
 	}
 }
 
+// PortalCSP is the policy the hosted portal serves its pages with
+// (web/_headers; a test fails on drift): the engine's own, plus connect-src
+// naming the Vault and nothing else (CONTRACT.md, Vault channel, The page's
+// socket), so a short link's page can open its session through
+// wss://relay.basaltvault.app. The portal pages never fetch their own
+// origin, so connect-src lists no 'self'. The engine's own pages keep
+// cspPolicy: they fetch only their own origin and never open the Vault.
+const PortalCSP = "default-src 'self'; connect-src wss://relay.basaltvault.app; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+
+// ExpectedPortal is the header set the portal must serve its pages with:
+// Expected's, with PortalCSP.
+func ExpectedPortal() http.Header {
+	h := Expected()
+	h.Set("Content-Security-Policy", PortalCSP)
+	return h
+}
+
 // ConnectPageCSP is the portal's connect page policy (CONTRACT.md, The
 // connect page): the pages' policy with connect-src naming the connect
 // service, its one other origin. The portal's edge function serves it
@@ -42,8 +59,8 @@ func ExpectedConnectPage() http.Header {
 	return h
 }
 
-// Expected is the header set Headers sends, for a check that a page served
-// from somewhere else (the hosted portal) carries the same policy.
+// Expected is the header set Headers sends. The hosted portal serves the
+// same, with its own CSP (ExpectedPortal).
 func Expected() http.Header {
 	return http.Header{
 		"Content-Security-Policy":    {cspPolicy},

@@ -232,7 +232,7 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 	link := str(t, ap["approvalUrl"])
 	require.True(t, strings.HasPrefix(link, links.DefaultLocal+"/approvals/"+str(t, ap["approvalId"])+"#2."), link)
 	approvalID := str(t, ap["approvalId"])
-	command := "basalt approve --agent bot --config /etc/basalt-test/engine.json --open " + approvalID
+	command := "basalt approve --agent bot --open " + approvalID
 	require.Equal(t, command, ap["approveCommand"])
 	require.Contains(t, str(t, body["message"]), "Show the person approval.personMessage verbatim")
 	require.Contains(t, str(t, body["message"]), "without ending your turn, call write once with the same arguments plus approvalId")

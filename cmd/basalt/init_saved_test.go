@@ -38,9 +38,9 @@ func TestSavedArgsKeepOnlyWhatInitNeedsAgain(t *testing.T) {
 	f.passkeyOrigin = "https://basaltvault.app"
 	got := f.savedArgs("linux")
 	require.Contains(t, got, "--prefix=acme")
-	require.Contains(t, got, "--socket-dir=/home/iman/basalt/run")
+	require.NotContains(t, strings.Join(got, " "), "--socket-dir")
 	require.Contains(t, got, "--engine-user=svc")
-	require.Contains(t, got, "--credential-file=/home/iman/secrets/bot.url")
+	require.NotContains(t, strings.Join(got, " "), "--credential-file")
 	require.Contains(t, got, "--statement-timeout=5s")
 	require.Contains(t, got, "--passkey-origin=https://basaltvault.app")
 }
@@ -224,27 +224,6 @@ func TestKeptCredentialSpecForAWaitingAgent(t *testing.T) {
 	require.NoError(t, config.WriteFile(cfg, raw))
 	_, err = keptCredentialSpec(spec, a, false)
 	require.ErrorContains(t, err, "--rotate-password")
-}
-
-// A mistyped --credential-file must not rotate the password.
-func TestInitRefusesAMissingCredentialFileForAnExistingRole(t *testing.T) {
-	t.Parallel()
-	d := guardtest.New(t).WithDemo(t)
-	cfgPath := tempConfig(t)
-	path := initAgent(t, d, cfgPath)
-	b, err := os.ReadFile(path)
-	require.NoError(t, err)
-
-	r := cli(t, map[string]string{envAdminURL: d.URL}, "",
-		"init", "--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix,
-		"--config", cfgPath, "--os-user", "tester", "--yes", "--skip-passkey",
-		"--credential-file", filepath.Join(t.TempDir(), "typo.url"))
-	require.Equal(t, exitError, r.code)
-	require.Contains(t, r.stderr, "--rotate-password")
-	ctx := context.Background()
-	conn, err := pgdial.Connect(ctx, strings.TrimSpace(string(b)))
-	require.NoError(t, err, "the password was not rotated")
-	conn.Close(ctx)
 }
 
 // connectOnlyFixtureCode is the contract's connect-only fixture

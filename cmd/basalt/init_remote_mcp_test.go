@@ -100,7 +100,7 @@ func TestInitRemoteMCPCommandDefaultConfig(t *testing.T) {
 	require.Equal(t, exitOK, r.code, r.stderr)
 	res := decodeRemoteResult(t, r.stdout)
 	socketDir := filepath.Join(h.configDir, perUserDirName, "run")
-	want := []string{"basalt", "mcp", "--agent", "bot", "--socket-dir", socketDir}
+	want := []string{fakeBin, "mcp", "--agent", "bot", "--socket-dir", socketDir}
 	require.Equal(t, want, res.MCPCommand)
 	txt := remoteNoDBOn(t, h, false, args...)
 	require.Equal(t, exitOK, txt.code, txt.stderr)
@@ -123,7 +123,7 @@ func TestInitRemoteMCPCommandWithConfig(t *testing.T) {
 	res := decodeRemoteResult(t, r.stdout)
 	abs, err := filepath.Abs(cfg)
 	require.NoError(t, err)
-	want := []string{"basalt", "mcp", "--agent", "lead_bot", "--socket-dir", filepath.Join(filepath.Dir(abs), "run"), "--config", abs}
+	want := []string{fakeBin, "mcp", "--agent", "lead_bot", "--socket-dir", filepath.Join(filepath.Dir(abs), "run"), "--config", abs}
 	require.Equal(t, want, res.MCPCommand)
 	txt := remoteNoDBOn(t, h, false, "--remote", "--config", cfg, "--agent", "lead_bot", "--write", "public.leads")
 	require.Equal(t, exitOK, txt.code, txt.stderr)
@@ -145,6 +145,6 @@ func TestInitRemoteMCPCommandAsRootService(t *testing.T) {
 	require.Equal(t, config.DefaultSocketDir(runtime.GOOS), r.cfg.SocketDir)
 	abs, err := filepath.Abs(cfg)
 	require.NoError(t, err)
-	require.Equal(t, []string{"basalt", "mcp", "--agent", "bot", "--config", abs}, r.res.MCPCommand)
+	require.Equal(t, []string{fakeBin, "mcp", "--agent", "bot", "--config", abs}, r.res.MCPCommand)
 	require.NotContains(t, r.res.MCPCommand, "--socket-dir")
 }

@@ -1259,6 +1259,7 @@ func (r *remoteInit) withSetupGuidance(res RemoteInitResult, s config.Setup) (Re
 func (r *remoteInit) withMCP(res RemoteInitResult) RemoteInitResult {
 	res.osUser = r.osUser
 	res.MCPCommand = remoteMCPArgs(r.f.agent, r.f.configPath, r.settings.SocketDir, r.c.goos, r.c.host)
+	fmt.Fprint(r.c.stderr, temporaryBinaryWarning(res.MCPCommand[0], os.TempDir()))
 	return res
 }
 

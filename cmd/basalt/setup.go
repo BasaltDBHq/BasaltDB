@@ -154,8 +154,32 @@ func foregroundNext(f initFlags, goos string, h host) string {
 
 // mcpLine is the MCP server command for the agent's client.
 func mcpLine(f initFlags, goos string, h host) string {
-	return fmt.Sprintf("then add this MCP server to the agent's client, running as OS user %s (docs/mcp-clients.md):\n  %s\n",
-		f.osUser, shellJoin(mcpArgs(f, goos, "basalt", h)))
+	bin := mcpBinary(h)
+	return fmt.Sprintf("then add this MCP server to the agent's client, running as OS user %s (docs/mcp-clients.md):\n  %s\n%s",
+		f.osUser, shellJoin(mcpArgs(f, goos, bin, h)), temporaryBinaryWarning(bin, os.TempDir()))
+}
+
+// mcpBinary is the program of the printed basalt mcp command: the absolute,
+// link-resolved path of the running binary, which the agent app finds
+// whatever its PATH is. Bare basalt only when the path is unknown.
+func mcpBinary(h host) string {
+	if exe, err := h.Executable(); err == nil {
+		return exe
+	}
+	return "basalt"
+}
+
+// temporaryBinaryWarning is a line to print after the mcp command when bin
+// is in a folder that is often temporary (under tmp, or a Go build cache),
+// else nothing. The command keeps the path; the person should move the
+// binary somewhere that survives and register that path.
+func temporaryBinaryWarning(bin, tmp string) string {
+	rel, err := filepath.Rel(tmp, bin)
+	underTmp := err == nil && rel != "." && !strings.HasPrefix(rel, "..")
+	if !underTmp && !strings.Contains(filepath.ToSlash(bin), "/go-build") {
+		return ""
+	}
+	return fmt.Sprintf("basalt: %s is in a folder that may be cleared; put the binary in a folder that survives and register that path instead\n", bin)
 }
 
 // mcpArgs is basalt mcp for the agent, with bin as the program.
@@ -170,7 +194,7 @@ func mcpArgs(f initFlags, goos, bin string, h host) []string {
 // directory from the config), and --config whenever basalt mcp would not
 // find the config by default.
 func remoteMCPArgs(agent, configPath, socketDir, goos string, h host) []string {
-	return mcpArgs(initFlags{agent: agent, configPath: configPath, socketDir: socketDir}, goos, "basalt", h)
+	return mcpArgs(initFlags{agent: agent, configPath: configPath, socketDir: socketDir}, goos, mcpBinary(h), h)
 }
 
 // mcpConfigArgs is --config <path> when basalt mcp, given no --config, would

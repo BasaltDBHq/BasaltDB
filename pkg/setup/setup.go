@@ -142,8 +142,7 @@ type Description struct {
 // in the contract's order: the codec
 // (NOT_A_SETUP_CODE, UNSUPPORTED_FORMAT, DAMAGED, INVALID), the clock
 // (EXPIRED, SETUP_ID_IN_FUTURE, EXPIRY_TOO_FAR), this build's guard
-// (BINARY_TOO_OLD, GUARD_TOO_OLD) and ENGINE_KEY_MISSING. A refusal is an
-// *Error.
+// (BINARY_TOO_OLD, GUARD_TOO_OLD). A refusal is an *Error.
 func Describe(req Request) (Description, error) {
 	s, err := setuprun.New(req.Code, req.Now, req.ConnectPage)
 	if err != nil {

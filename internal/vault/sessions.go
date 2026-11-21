@@ -45,8 +45,8 @@ const (
 	phaseOpen
 )
 
-// Tally counts the sessions open on one socket, for the per-engine and
-// per-link limits.
+// Tally counts the sessions open on every socket of one Client, for the
+// per-engine and per-link limits: a socket that ends releases its own.
 type Tally struct {
 	mu          sync.Mutex
 	total       int

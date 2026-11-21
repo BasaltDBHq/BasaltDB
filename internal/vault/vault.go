@@ -202,6 +202,10 @@ type Client struct {
 	opts    Options
 	target  target
 	running atomic.Bool
+	// tally counts the sessions of every socket this client opens, so the
+	// per-engine and per-link limits hold while an old socket's sessions
+	// are still ending as a new socket starts.
+	tally *Tally
 
 	mu sync.Mutex
 	// cur is the READY socket, nil while there is none.
@@ -222,7 +226,7 @@ func New(opts Options) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Client{opts: opts, target: t, waitingSince: opts.Now()}, nil
+	return &Client{opts: opts, target: t, waitingSince: opts.Now(), tally: newTally()}, nil
 }
 
 // Status is the connection's state now, with the engine's identity.

@@ -200,3 +200,44 @@ func TestRotateAfterTheSessionEndedMovesNoSlot(t *testing.T) {
 	require.Zero(t, s.tally.established[oldTok])
 	require.Zero(t, s.tally.total)
 }
+
+// A client's sockets share one Tally: while an old socket's sessions are
+// still open, a new socket cannot take the engine past its limit, and the
+// old socket's end gives the slots back.
+func TestSocketsOfOneClientShareTheLimits(t *testing.T) {
+	t.Parallel()
+	keys, err := channel.GenerateEngineKeys(time.Now)
+	require.NoError(t, err)
+	c, err := New(Options{Keys: keys})
+	require.NoError(t, err)
+	old := newSessions(10*time.Second, time.Now, c.tally)
+	next := newSessions(10*time.Second, time.Now, c.tally)
+
+	for i := range MaxSessions {
+		code, _ := old.add(sid{1, byte(i)}, channel.LinkToken{1, byte(i)})
+		require.Zero(t, code)
+	}
+	code, _ := next.add(sid{2}, channel.LinkToken{2})
+	require.Equal(t, channel.ErrSessionLimit, code, "the engine's limit holds across the old and the new socket")
+
+	require.Len(t, old.takeAll(), MaxSessions, "the old socket ends")
+	code, _ = next.add(sid{2}, channel.LinkToken{2})
+	require.Zero(t, code, "its slots are back")
+
+	// The per-link limit holds across both too.
+	tok := channel.LinkToken{9}
+	a := newSessions(10*time.Second, time.Now, c.tally)
+	for i := range MaxSessionsPerLink {
+		code, _ := a.add(sid{3, byte(i)}, tok)
+		require.Zero(t, code)
+		_, ss := a.lookup(sid{3, byte(i)})
+		ok, _ := a.establish(ss, &established{})
+		require.True(t, ok)
+	}
+	code, _ = next.add(sid{4}, tok)
+	require.Zero(t, code)
+	_, ss := next.lookup(sid{4})
+	ok, code := next.establish(ss, &established{})
+	require.False(t, ok)
+	require.Equal(t, channel.ErrSessionLimit, code)
+}

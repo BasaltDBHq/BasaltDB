@@ -69,6 +69,10 @@ func TestRecordEngine(t *testing.T) {
 	require.NoError(t, d.Admin.QueryRow(ctx,
 		`SELECT has_function_privilege('public', 'basalt_meta.record_engine(bytea)', 'EXECUTE')`).Scan(&public))
 	require.False(t, public, "PUBLIC cannot run it")
+	var agentCan bool
+	require.NoError(t, d.Admin.QueryRow(ctx,
+		`SELECT has_function_privilege($1, 'basalt_meta.record_engine(bytea)', 'EXECUTE')`, a.Role).Scan(&agentCan))
+	require.False(t, agentCan, "the agent role cannot run it")
 }
 
 // A guard installed up to version 7 records an engine with its address; the

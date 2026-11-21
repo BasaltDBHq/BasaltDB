@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 
 import { ChannelError, CLOSE, fingerprint, linkKeys, MAX_REQUESTS } from "./channel.js";
 import { fetchRequest, postResponse, RelayError } from "./local.js";
-import { BUSY, ENGINE_CHANGED, ENGINE_NOT_CONNECTED, linkSocketURL, relayTransport, VAULT_UNREACHABLE } from "./relay.js";
+import { BUSY, ENGINE_CHANGED, ENGINE_NOT_CONNECTED, linkSocketURL, relayTransport, STALE_MS, VAULT_UNREACHABLE } from "./relay.js";
 import { pageTransport } from "./transport.js";
 
 const SECRET = "oo3hsfnTW0SXS80SkQL_vQ";
@@ -163,8 +163,9 @@ function fakeChannel(engineId, answer) {
 
 const ok = (body = "{}") => ({ status: 200, headers: { "content-type": "application/json" }, body });
 
-// sessionWith opens a RELAY session whose channels come from make(secret).
-async function sessionWith(make) {
+// sessionWith opens a RELAY session whose channels come from make(secret),
+// on the clock clock.t.
+async function sessionWith(make, clock = { t: 0 }) {
   const opened = [];
   let hide = null;
   const transport = relayTransport({
@@ -176,6 +177,7 @@ async function sessionWith(make) {
       return ch;
     },
     pageHide: (fn) => (hide = fn),
+    now: () => clock.t,
   });
   const session = await transport.open({ page: "reverts", id: "x", secret: SECRET });
   return { session, opened, hide: () => hide() };
@@ -318,4 +320,32 @@ test("hiding the page ends its channel; a page shown again opens a new one", asy
   await session.request("GET", PATH, { "basalt-link-secret": SECRET });
   assert.equal(opened.length, 2);
   assert.equal(opened[0].ch.requests.length, 0);
+});
+
+test("a POST after a long idle goes on a fresh session, before the engine's idle close", async () => {
+  const clock = { t: 0 };
+  const { session, opened } = await sessionWith(() => fakeChannel(ENGINE, () => ok()), clock);
+  clock.t = STALE_MS - 1;
+  await session.request("POST", PATH + "/approve", { "basalt-link-secret": SECRET, "content-type": "application/json" }, "{}");
+  assert.equal(opened.length, 1, "not yet stale");
+  clock.t += STALE_MS;
+  // A GET is read again if it meets the close, so it keeps the channel.
+  await session.request("GET", PATH, { "basalt-link-secret": SECRET });
+  assert.equal(opened.length, 1);
+  clock.t += STALE_MS;
+  await session.request("POST", PATH + "/approve", { "basalt-link-secret": SECRET, "content-type": "application/json" }, "{}");
+  assert.equal(opened.length, 2);
+  assert.ok(opened[0].ch.closed, "the stale channel is closed");
+  assert.equal(opened[1].ch.requests.length, 1, "the POST went on the new one, once");
+  assert.equal(opened[0].ch.requests.filter((r) => r.method === "POST").length, 1);
+});
+
+test("the idle clock restarts with every answer", async () => {
+  const clock = { t: 0 };
+  const { session, opened } = await sessionWith(() => fakeChannel(ENGINE, () => ok()), clock);
+  for (let i = 0; i < 3; i++) {
+    clock.t += STALE_MS - 1;
+    await session.request("POST", PATH + "/scope", { "basalt-link-secret": SECRET, "content-type": "application/json" }, "{}");
+  }
+  assert.equal(opened.length, 1);
 });

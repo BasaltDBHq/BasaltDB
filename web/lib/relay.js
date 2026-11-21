@@ -24,6 +24,12 @@ export function linkSocketURL(tokenText) {
   return `${RELAY_ORIGIN}/v1/links/${tokenText}`;
 }
 
+// The engine closes a session idle for 5 minutes (CONTRACT.md, Limits). A
+// POST is never sent twice, so one that could meet that close in flight
+// goes on a fresh session instead: past STALE_MS idle, the channel is
+// opened again before a POST. A GET may simply be read again.
+export const STALE_MS = 4 * 60 * 1000;
+
 // The request headers a session carries besides origin (CONTRACT.md,
 // Frames, Requests): any other header is answered 400, so none is sent.
 const SENT_HEADERS = [SECRET_HEADER, "content-type"];
@@ -83,15 +89,18 @@ function sentHeaders(headers) {
 
 // RelaySession is the pages' session over the Vault. One request is in
 // flight at a time (the contract's rule): requests wait their turn. A
-// channel that ended (idle for 5 minutes, dropped) or used its 64 requests
-// is opened again before the next request is sent, never in the middle of
+// channel that ended (idle for 5 minutes, dropped) or used its 64 requests,
+// or that is close to its idle close before a POST (STALE_MS), is opened
+// again before the next request is sent, never in the middle of
 // one, so a POST is never sent twice. The secret for that comes from the
 // request's own basalt-link-secret, never from the link the page opened
 // with: after a widen the revert's secret is the new one.
 class RelaySession {
-  constructor(channel, connect) {
+  constructor(channel, connect, now) {
     this.channel = channel;
     this.connect = connect;
+    this.now = now;
+    this.usedAt = now();
     this.closed = false;
     this.transport = RELAY;
     this.engine = { engineId: channel.engineId, fingerprint: fingerprint(channel.engineId) };
@@ -107,9 +116,12 @@ class RelaySession {
   async exchange(method, path, headers, body) {
     if (this.closed) throw new RelayError("this session to the engine is closed", "CLOSED");
     const spent = this.channel !== null && this.channel.nextId >= MAX_REQUESTS;
-    if (this.channel === null || this.channel.ended !== null || spent) await this.reopen(headers?.[SECRET_HEADER] ?? "");
+    const stale = method !== "GET" && this.now() - this.usedAt >= STALE_MS;
+    if (this.channel === null || this.channel.ended !== null || spent || stale) await this.reopen(headers?.[SECRET_HEADER] ?? "");
     try {
-      return await this.channel.request(method, path, sentHeaders(headers), body ?? "");
+      const res = await this.channel.request(method, path, sentHeaders(headers), body ?? "");
+      this.usedAt = this.now();
+      return res;
     } catch (err) {
       if (this.closed) throw new RelayError("this session to the engine is closed", "CLOSED");
       throw terminal(err) ?? err;
@@ -136,6 +148,7 @@ class RelaySession {
       throw new RelayError("this session to the engine is closed", "CLOSED");
     }
     this.channel = channel;
+    this.usedAt = this.now();
   }
 
   // hide ends the channel when the page is hidden: no session outlives the
@@ -158,8 +171,9 @@ function onPageHide(fn) {
 }
 
 // relayTransport opens link sessions through the Vault. socket(url) makes
-// the WebSocket; open is channel.js's openChannel (a test may wrap it).
-export function relayTransport({ socket, open = openChannel, pageHide = onPageHide }) {
+// the WebSocket; open is channel.js's openChannel (a test may wrap it);
+// now is the clock for how long a channel has been idle.
+export function relayTransport({ socket, open = openChannel, pageHide = onPageHide, now = () => Date.now() }) {
   const connect = (secret) => open((tokenText) => socket(linkSocketURL(tokenText)), { transport: RELAY, secret });
   return {
     kind: RELAY,
@@ -170,7 +184,7 @@ export function relayTransport({ socket, open = openChannel, pageHide = onPageHi
       } catch (err) {
         throw openFailure(err);
       }
-      const session = new RelaySession(channel, connect);
+      const session = new RelaySession(channel, connect, now);
       pageHide(() => session.hide());
       return session;
     },

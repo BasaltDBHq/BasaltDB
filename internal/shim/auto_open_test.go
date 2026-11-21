@@ -1,0 +1,169 @@
+//go:build linux || darwin
+
+package shim_test
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net"
+	"path/filepath"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
+	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/mcp"
+	"github.com/basaltdbhq/basaltdb/internal/shim"
+)
+
+const (
+	localPages   = "http://localhost:8787"
+	approvalLink = localPages + "/approvals/0193a1b2-7c4d-7e8f-9a0b-1c2d3e4f5a6b#s=q3Jv8sLk2mT0xYp1aBcD9w"
+)
+
+// opened records the links the shim asked to open.
+type opened struct {
+	mu    sync.Mutex
+	links []string
+	err   error
+	block chan struct{} // when set, every open waits for it
+}
+
+func (o *opened) open(_ context.Context, link string) error {
+	o.mu.Lock()
+	o.links = append(o.links, link)
+	block, err := o.block, o.err
+	o.mu.Unlock()
+	if block != nil {
+		<-block
+	}
+	return err
+}
+
+func (o *opened) got() []string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return append([]string(nil), o.links...)
+}
+
+// linkEngine serves, as an engine whose hello answer says operatedBy and
+// pagesOrigin, a write tool that answers APPROVAL_REQUIRED with link (and a
+// docs link on another origin), and a query tool whose rows hold a local
+// page link, as database content can.
+func linkEngine(t *testing.T, socket, operatedBy, pagesOrigin, link string) {
+	t.Helper()
+	srv := mcp.NewServer(mcp.Info{Name: "basalt", Version: "engine", OperatedBy: operatedBy, PagesOrigin: pagesOrigin},
+		mcp.Tool{Name: "write", Call: func(context.Context, json.RawMessage) (any, error) {
+			ls := []mcp.Link{{Label: "Approve the held write", URL: link}}
+			return nil, &mcp.ToolError{
+				Code: "APPROVAL_REQUIRED", Message: "held",
+				Approval:      &mcp.ApprovalNotice{ApprovalID: "a", ApprovalURL: link, PersonMessage: "Approve:\n" + link, Links: ls},
+				PersonMessage: "Approve:\n" + link, Links: ls,
+				NextSteps: []mcp.NextStep{{Actor: mcp.ActorPerson, Action: mcp.ActionOpenLink, Text: "Open it.", URL: "https://docs.basaltvault.app/x"}},
+			}
+		}},
+		mcp.Tool{Name: "query", Call: func(context.Context, json.RawMessage) (any, error) {
+			return map[string]any{"rows": []map[string]any{{"links": []mcp.Link{{Label: "x", URL: localPages + "/approvals/row"}}}}}, nil
+		}},
+	)
+	ln, err := net.Listen("unix", socket)
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() { cancel(); _ = ln.Close() })
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				_ = srv.Serve(ctx, conn, conn)
+			}()
+		}
+	}()
+}
+
+// write calls write and checks the agent still gets the link.
+func write(t *testing.T, c *client, link string) {
+	t.Helper()
+	body, isError := c.call(t, "write")
+	require.True(t, isError)
+	require.Equal(t, "APPROVAL_REQUIRED", body["code"])
+	require.Contains(t, body["personMessage"], link, "the link still reaches the agent")
+	require.Equal(t, link, body["approval"].(map[string]any)["approvalUrl"])
+}
+
+func TestAHeldWriteOnAPersonOperatedEngineOpensTheApprovalPageOnce(t *testing.T) {
+	t.Parallel()
+	socket := filepath.Join(socketDir(t), "bot.sock")
+	linkEngine(t, socket, mcpcontract.OperatedByPerson, localPages, approvalLink)
+	o := &opened{}
+	c, _ := startShimWith(t, socket, shim.Options{ReconnectWait: -1, Open: o.open})
+
+	write(t, c, approvalLink)
+	require.Eventually(t, func() bool { return len(o.got()) == 1 }, 5*time.Second, 10*time.Millisecond)
+	require.Equal(t, []string{approvalLink}, o.got(), "only the local page link, once though it is in two links lists")
+
+	write(t, c, approvalLink)
+	time.Sleep(100 * time.Millisecond)
+	require.Len(t, o.got(), 1, "a link already opened is not opened again")
+}
+
+func TestAutoOpenOpensNothingElse(t *testing.T) {
+	t.Parallel()
+	for name, tc := range map[string]struct{ operatedBy, origin, link string }{
+		"agent-operated engine":        {mcpcontract.OperatedByAgent, localPages, approvalLink},
+		"engine that says no origin":   {mcpcontract.OperatedByPerson, "", approvalLink},
+		"engine that says no operator": {"", localPages, approvalLink},
+		"link on the portal":           {mcpcontract.OperatedByPerson, localPages, "https://portal.basaltvault.app/approvals/a#s=q3Jv8sLk2mT0xYp1aBcD9w"},
+		"link on another port":         {mcpcontract.OperatedByPerson, localPages, "http://localhost:8788/approvals/a#s=x"},
+		"link on another host":         {mcpcontract.OperatedByPerson, localPages, "http://127.0.0.1:8787/approvals/a#s=x"},
+		"link with a user part":        {mcpcontract.OperatedByPerson, localPages, "http://evil@localhost:8787/approvals/a"},
+		"link with a prefix match":     {mcpcontract.OperatedByPerson, localPages, "http://localhost:87870/approvals/a"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			socket := filepath.Join(socketDir(t), "bot.sock")
+			linkEngine(t, socket, tc.operatedBy, tc.origin, tc.link)
+			o := &opened{}
+			c, _ := startShimWith(t, socket, shim.Options{ReconnectWait: -1, Open: o.open})
+
+			write(t, c, tc.link)
+			_, _ = c.call(t, "query")
+			time.Sleep(100 * time.Millisecond)
+			require.Empty(t, o.got())
+		})
+	}
+}
+
+func TestAutoOpenNeverOpensALinkFromQueryRows(t *testing.T) {
+	t.Parallel()
+	socket := filepath.Join(socketDir(t), "bot.sock")
+	linkEngine(t, socket, mcpcontract.OperatedByPerson, localPages, approvalLink)
+	o := &opened{}
+	c, _ := startShimWith(t, socket, shim.Options{ReconnectWait: -1, Open: o.open})
+
+	body, isError := c.call(t, "query")
+	require.False(t, isError, "%v", body)
+	time.Sleep(100 * time.Millisecond)
+	require.Empty(t, o.got(), "database content is never opened")
+}
+
+func TestAnOpenerThatFailsOrHangsNeverHoldsTheResult(t *testing.T) {
+	t.Parallel()
+	socket := filepath.Join(socketDir(t), "bot.sock")
+	linkEngine(t, socket, mcpcontract.OperatedByPerson, localPages, approvalLink)
+	block := make(chan struct{})
+	t.Cleanup(func() { close(block) })
+	o := &opened{err: errors.New("no display"), block: block}
+	c, _ := startShimWith(t, socket, shim.Options{ReconnectWait: -1, Open: o.open})
+
+	write(t, c, approvalLink) // answered while the opener hangs
+	require.Eventually(t, func() bool { return len(o.got()) == 1 }, 5*time.Second, 10*time.Millisecond)
+	body, _ := c.call(t, "query")
+	require.NotNil(t, body["rows"], "later calls are served too")
+}

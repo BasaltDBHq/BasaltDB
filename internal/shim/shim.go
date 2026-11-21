@@ -16,6 +16,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
@@ -92,6 +93,12 @@ type Options struct {
 	// StartWait is how long to wait for the socket after Start; zero means
 	// DefaultStartWait.
 	StartWait time.Duration
+
+	// Open, when set, opens a link in the person's browser. The shim calls
+	// it for the links of the engine's answers that point to the engine's
+	// own local pages, when the engine said in its hello answer that a
+	// person operates it (CONTRACT.md, Auto-open). Nil opens nothing.
+	Open func(ctx context.Context, link string) error
 }
 
 // ServeWith is Serve with options.
@@ -115,6 +122,7 @@ func ServeWith(ctx context.Context, socketPath string, fallback Fallback, in io.
 		neg:  negotiation{build: buildinfo.Version, minEngine: minEngine},
 		path: socketPath, fallback: fallback, out: &lineWriter{w: out}, files: defaultRequestFiles(), dial: dial,
 		reconnectWait: wait, start: opts.Start, startWait: startWait, retries: make(chan []byte, retryQueue), retried: map[string]bool{},
+		opener: newAutoOpener(opts.Open),
 	}
 	return serve(ctx, r, in)
 }
@@ -209,6 +217,9 @@ type relay struct {
 	// start and startWait: Options.Start and Options.StartWait.
 	start     func(ctx context.Context) error
 	startWait time.Duration
+	// opener opens the engine's local page links (Options.Open); nil when
+	// there is no opener.
+	opener *autoOpener
 
 	// retries carries the in-flight reads a dying session hands back to the
 	// serve loop; retried holds the ids already given their one retry.
@@ -293,6 +304,7 @@ func (r *relay) dialWaiting(ctx context.Context) (*session, error) {
 // up marks the engine as up and gives sess the relay's retry hooks.
 func (r *relay) up(sess *session) *session {
 	sess.retry, sess.resend = r.retry, r.resend
+	sess.opener.Store(r.opener)
 	r.wasUp = true
 	return sess
 }
@@ -434,6 +446,10 @@ type session struct {
 	// beforeWrite, when set (tests), runs once a request is pending and
 	// before it is written.
 	beforeWrite func()
+	// engine is the engine's hello answer, read only by copyAnswers;
+	// opener opens the links of its answers (relay.opener).
+	engine mcp.Hello
+	opener atomic.Pointer[autoOpener]
 
 	// wmu is held by forward from recording a request as pending until its
 	// write returns, and by abandon while it takes the pending requests.
@@ -481,6 +497,9 @@ func (s *session) copyAnswers(ctx context.Context, out *lineWriter) {
 			continue
 		}
 		if hello, known, ok := mcp.HelloAnswer(sc.Bytes()); ok {
+			if known {
+				s.engine = hello
+			}
 			if known && s.engineTooOld(hello) {
 				// Not ready yet: the deferred abandon marks the session ended
 				// first, then releases forward, which then finds it ended.
@@ -498,6 +517,7 @@ func (s *session) copyAnswers(ctx context.Context, out *lineWriter) {
 			s.err = fmt.Errorf("write to the MCP client: %w", err)
 			return
 		}
+		s.opener.Load().answer(ctx, s.engine, sc.Bytes())
 	}
 	if err := sc.Err(); err != nil && !errors.Is(err, net.ErrClosed) {
 		s.err = fmt.Errorf("relay from engine: %w", err)

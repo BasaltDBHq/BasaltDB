@@ -20,6 +20,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 
+	mcpcontract "github.com/basaltdbhq/basaltdb/api/mcp"
 	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/buildinfo"
 	"github.com/basaltdbhq/basaltdb/internal/chainpin"
@@ -476,7 +477,7 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 			// only, and nothing that reads a database.
 			out.agents = append(out.agents, Agent{
 				Name: a.Name, UID: uids[a.Name], SocketPath: cfg.SocketPath(a.Name),
-				Server: mcp.NewServer(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: Instructions, OnPanic: env.onPanic}, rt.tools...),
+				Server: mcp.NewServer(env.serverInfo(nil), rt.tools...),
 			})
 			continue
 		}
@@ -496,10 +497,25 @@ func startAgents(ctx context.Context, cfg config.Config, env agentEnv, uids map[
 			Name:       a.Name,
 			UID:        uids[a.Name],
 			SocketPath: cfg.SocketPath(a.Name),
-			Server:     mcp.NewServer(mcp.Info{Name: "basalt", Version: buildinfo.Version, Instructions: Instructions, Notice: rt.svc.UpdateNotice, OnPanic: env.onPanic}, agent.Tools(rt.svc)...),
+			Server:     mcp.NewServer(env.serverInfo(rt.svc.UpdateNotice), agent.Tools(rt.svc)...),
 		})
 	}
 	return out, nil
+}
+
+// serverInfo is what an agent's MCP server says of itself, with notice as
+// its update notice (nil for none). The hello answer carries who operates
+// the engine and its local page origin, so basalt mcp knows which links it
+// may open in the browser (CONTRACT.md, Auto-open).
+func (env agentEnv) serverInfo(notice func() string) mcp.Info {
+	operatedBy := mcpcontract.OperatedByPerson
+	if env.cfg.AgentOperated() {
+		operatedBy = mcpcontract.OperatedByAgent
+	}
+	return mcp.Info{
+		Name: "basalt", Version: buildinfo.Version, Instructions: Instructions, Notice: notice, OnPanic: env.onPanic,
+		OperatedBy: operatedBy, PagesOrigin: env.pagesOrigin,
+	}
 }
 
 // listenPerson opens the person socket of a service-mode engine (CONTRACT.md,

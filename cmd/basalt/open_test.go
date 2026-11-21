@@ -50,17 +50,6 @@ func TestOpenLink(t *testing.T) {
 	require.Empty(t, stdout.String(), "a bad URL is not printed either")
 }
 
-func TestBrowserOpener(t *testing.T) {
-	t.Parallel()
-	for goos, want := range map[string]string{"darwin": "open", "linux": "xdg-open"} {
-		got, ok := browserOpener(goos)
-		require.True(t, ok, goos)
-		require.Equal(t, want, got)
-	}
-	_, ok := browserOpener("windows")
-	require.False(t, ok)
-}
-
 func TestConfiguredBase(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

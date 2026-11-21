@@ -12,21 +12,20 @@
 // their Go values imply. A connection string that sets
 // default_query_exec_mode keeps its own mode.
 //
-// Every connection also trusts Supabase's root certificates for Supabase
-// hosts with sslmode=verify-full (package supabaseca), so the agent's
-// credential, the hand-off probe and init's probes verify Supabase's
-// certificates without an sslrootcert.
+// Every connection also trusts a provider's root certificates for that
+// provider's hosts (Supabase, Amazon RDS) with sslmode=verify-full (package
+// providerca), so the agent's credential, the hand-off probe and init's
+// probes verify those providers' certificates without an sslrootcert.
 package pgdial
 
 import (
 	"context"
-	"crypto/x509"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/basaltdbhq/basaltdb/internal/supabaseca"
+	"github.com/basaltdbhq/basaltdb/internal/providerca"
 )
 
 // execModeKey is pgx's connection string setting for the query mode.
@@ -36,21 +35,21 @@ const execModeKey = "default_query_exec_mode"
 // connection string sets one.
 const DefaultMode = pgx.QueryExecModeExec
 
-// ConnConfig parses dsn, applies DefaultMode and trusts Supabase's roots
-// for Supabase hosts.
+// ConnConfig parses dsn, applies DefaultMode and trusts each provider's
+// roots for its hosts.
 func ConnConfig(dsn string) (*pgx.ConnConfig, error) {
-	return ConnConfigTrusting(dsn, supabaseca.Roots()...)
+	return ConnConfigTrusting(dsn, nil)
 }
 
-// ConnConfigTrusting is ConnConfig with supabaseRoots in place of
-// Supabase's roots: tests give test CAs to stand in for them.
-func ConnConfigTrusting(dsn string, supabaseRoots ...*x509.Certificate) (*pgx.ConnConfig, error) {
+// ConnConfigTrusting is ConnConfig with override's roots in place of the
+// providers' it names: tests give test CAs to stand in for them.
+func ConnConfigTrusting(dsn string, override providerca.Override) (*pgx.ConnConfig, error) {
 	cfg, err := pgx.ParseConfig(dsn)
 	if err != nil {
 		return nil, err
 	}
 	apply(dsn, cfg)
-	supabaseca.Trust(&cfg.Config, supabaseRoots...)
+	providerca.Trust(&cfg.Config, override)
 	return cfg, nil
 }
 
@@ -63,15 +62,15 @@ func Connect(ctx context.Context, dsn string) (*pgx.Conn, error) {
 	return pgx.ConnectConfig(ctx, cfg)
 }
 
-// PoolConfig parses dsn for a pool, applies DefaultMode and trusts
-// Supabase's roots for Supabase hosts.
+// PoolConfig parses dsn for a pool, applies DefaultMode and trusts each
+// provider's roots for its hosts.
 func PoolConfig(dsn string) (*pgxpool.Config, error) {
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		return nil, err
 	}
 	apply(dsn, cfg.ConnConfig)
-	supabaseca.Trust(&cfg.ConnConfig.Config, supabaseca.Roots()...)
+	providerca.Trust(&cfg.ConnConfig.Config, nil)
 	return cfg, nil
 }
 

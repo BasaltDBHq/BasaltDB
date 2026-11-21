@@ -711,7 +711,7 @@ func TestPluginApprovalsMigration(t *testing.T) {
 
 	restore()
 	d.NewAgent(t, "bot", leads, nil)
-	require.Equal(t, guard.PluginApprovalsVersion, scalarOf[int](t, d.Admin, `SELECT max(version) FROM basalt_meta.schema_version`))
+	require.Equal(t, guard.LatestVersion(), scalarOf[int](t, d.Admin, `SELECT max(version) FROM basalt_meta.schema_version`))
 	sql := guard.PluginApprovalsSQL(d.Names)
 	for range 2 {
 		d.Exec(t, "BEGIN; SET LOCAL ROLE "+d.Names.Guard()+"; SET LOCAL search_path = pg_catalog, pg_temp;"+sql+"COMMIT;")

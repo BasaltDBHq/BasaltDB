@@ -3,6 +3,7 @@
 package trustdir
 
 import (
+	"crypto/x509"
 	"errors"
 
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
@@ -22,3 +23,8 @@ func Disable(string, string) error { return errUnsupported }
 
 // Remove: see errUnsupported.
 func Remove(string, string) error { return errUnsupported }
+
+// Pin: see errUnsupported.
+func Pin(string, string, *x509.Certificate, bool) (*trustprofile.Profile, []string, error) {
+	return nil, nil, errUnsupported
+}

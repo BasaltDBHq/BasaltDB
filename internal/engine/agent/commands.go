@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -410,6 +411,12 @@ func (c Commands) trust(sub string, args ...string) string {
 	return strings.Join(parts, " ")
 }
 
+// TrustPin is basalt trust pin for host and port: the person sees the
+// certificate authority the server presents now and decides.
+func (c Commands) TrustPin(host string, port uint16) string {
+	return c.trust("pin", "--host", shellQuote(trustprofile.NormalizeHost(host)), "--port", strconv.Itoa(int(port)))
+}
+
 // TrustList is basalt trust list.
 func (c Commands) TrustList() string { return c.trust("list") }
 
@@ -420,27 +427,5 @@ const TrustCAFile = "./ca.pem"
 // TrustAdd is basalt trust add for host alone (=host), the profile named
 // after the host, its CA read from TrustCAFile.
 func (c Commands) TrustAdd(host string) string {
-	return c.trust("add", "--name", trustName(host), "--match", shellQuote("="+trustprofile.NormalizeHost(host)), "--ca", TrustCAFile)
-}
-
-// trustName is a profile name for host: its letters and digits, the rest
-// as dashes, up to the longest name.
-func trustName(host string) string {
-	const maxName = 63
-	var b strings.Builder
-	for _, r := range trustprofile.NormalizeHost(host) {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
-			b.WriteRune(r)
-			continue
-		}
-		b.WriteByte('-')
-	}
-	name := strings.Trim(b.String(), "-")
-	if len(name) > maxName {
-		name = strings.TrimRight(name[:maxName], "-")
-	}
-	if name == "" {
-		return "database"
-	}
-	return name
+	return c.trust("add", "--name", trustprofile.NameFor(host), "--match", shellQuote("="+trustprofile.NormalizeHost(host)), "--ca", TrustCAFile)
 }

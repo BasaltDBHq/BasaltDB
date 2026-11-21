@@ -3,7 +3,9 @@
 package trustdir
 
 import (
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -31,6 +33,10 @@ const pemExt = ".pem"
 // config lock, owned by the config directory's owner. A name trust.d
 // already holds is ErrExists; a built-in's name replaces that built-in.
 func Add(configPath, name string, match []string, ca []byte) (*trustprofile.Profile, error) {
+	// Only a pin (Pin) holds a certificate that is not a CA.
+	if _, err := trustprofile.ParseCAs(ca); err != nil {
+		return nil, err
+	}
 	pemName := name + pemExt
 	raw, err := json.MarshalIndent(trustprofile.Spec{
 		Name: name, Match: match,
@@ -193,4 +199,92 @@ func fileOwner(trusted int) int {
 		return -1
 	}
 	return trusted
+}
+
+// pinFingerprintLen is how much of a pinned certificate's fingerprint its
+// PEM file's name carries, so a new root gets a new file.
+const pinFingerprintLen = 16
+
+// Pin writes the exact-host operator profile for host (pin-<host>, match
+// =host) holding cert, the chain's top the person accepted, with verify:
+// ca when caOnly (a certificate that does not name the host). A pin for
+// host that trust.d holds already is replaced: the new PEM file first,
+// then the profile, then the old PEM file removed, under the config lock.
+// A profile of that name for another host, or one that is not a pin, is
+// ErrExists. It returns the pin and the fingerprints it replaced.
+func Pin(configPath, host string, cert *x509.Certificate, caOnly bool) (*trustprofile.Profile, []string, error) {
+	h := trustprofile.NormalizeHost(host)
+	match, err := trustprofile.NormalizeMatch("=" + h)
+	if err != nil {
+		return nil, nil, err
+	}
+	name := trustprofile.PinName(h)
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
+	pemName := name + "-" + trustprofile.DERSHA256(cert)[:pinFingerprintLen] + pemExt
+	spec := trustprofile.Spec{Name: name, Match: []string{match}, Roots: []trustprofile.RootSpec{{File: pemName, SHA256: trustprofile.FileSHA256(pemBytes)}}}
+	if caOnly {
+		spec.Verify = trustprofile.VerifyCA
+	}
+	raw, err := json.MarshalIndent(spec, "", "  ")
+	if err != nil {
+		return nil, nil, err
+	}
+	raw = append(raw, '\n')
+	p, err := trustprofile.Parse(raw, trustprofile.Operator, func(string) ([]byte, error) { return pemBytes, nil })
+	if err != nil {
+		return nil, nil, err
+	}
+	var replaced []string
+	err = write(configPath, func(d *service.TrustedDir, trusted int) error {
+		old, err := existingPin(d, name, match, trusted)
+		if err != nil {
+			return err
+		}
+		if err := d.WriteFile(pemName, pemBytes, fileMode, fileOwner(trusted)); err != nil {
+			return err
+		}
+		if err := d.WriteFile(trustprofile.FileName(name), raw, fileMode, fileOwner(trusted)); err != nil {
+			return err
+		}
+		for _, r := range old.Roots {
+			if r.File != pemName && trustprofile.ValidFileName(r.File) {
+				_ = d.Remove(r.File)
+			}
+		}
+		replaced = old.fingerprints
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return p, replaced, nil
+}
+
+// oldPin is the pin a Pin replaces: its roots files and the fingerprints of
+// their certificates.
+type oldPin struct {
+	Roots        []trustprofile.RootSpec
+	fingerprints []string
+}
+
+// existingPin is the pin for match that trust.d holds as name, or none. A
+// file of that name that is not that host's pin is ErrExists.
+func existingPin(d *service.TrustedDir, name, match string, trusted int) (oldPin, error) {
+	file := trustprofile.FileName(name)
+	if !exists(d, file) {
+		return oldPin{}, nil
+	}
+	raw, err := Read(d, file, trusted, trustprofile.MaxProfileBytes)
+	if err != nil {
+		return oldPin{}, fmt.Errorf("%w: %s cannot be read (%w); remove it first", ErrExists, file, err)
+	}
+	p, err := trustprofile.Parse(raw, trustprofile.Operator, func(n string) ([]byte, error) { return Read(d, n, trusted, trustprofile.MaxRootFileBytes) })
+	if err != nil || len(p.Match) != 1 || p.Match[0] != match {
+		return oldPin{}, fmt.Errorf("%w: %s is not the pin for %s; remove it first with basalt trust remove --name %s", ErrExists, file, match, name)
+	}
+	out := oldPin{Roots: p.Roots}
+	for _, c := range p.Certificates() {
+		out.fingerprints = append(out.fingerprints, trustprofile.DERSHA256(c))
+	}
+	return out, nil
 }

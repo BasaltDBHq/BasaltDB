@@ -33,15 +33,15 @@ var ErrNoPersonSocket = errors.New("the engine has no person socket")
 func NewPluginUploader(socketPath string) PluginUploader {
 	client := person.Client{Path: socketPath}
 	return func(ctx context.Context, source string) (mcp.PluginUpload, error) {
-		files, execs, m, err := ReadPluginSource(source)
+		src, err := ReadPluginSource(source)
 		if err != nil {
 			return mcp.PluginUpload{}, err
 		}
-		id, err := client.PluginUpload(ctx, files)
+		id, err := client.PluginUpload(ctx, src.Files)
 		if err != nil {
 			return mcp.PluginUpload{}, uploadError(err)
 		}
-		return mcp.PluginUpload{UploadID: id.String(), Name: m.Name, Executables: execs}, nil
+		return mcp.PluginUpload{UploadID: id.String(), Name: src.Manifest.Name, Executables: src.Executables}, nil
 	}
 }
 
@@ -86,19 +86,27 @@ func badFolder(format string, args ...any) *mcp.ToolError {
 	}
 }
 
+// PluginSource is a plugin folder as read for an upload.
+type PluginSource struct {
+	Files []person.PluginFile
+	// Executables are the listed files with an execute bit.
+	Executables []string
+	Manifest    plugin.Manifest
+}
+
 // ReadPluginSource reads a plugin folder for an upload: the manifest, its
 // .sig when there is one, and every file the manifest lists, each a regular
 // file reached through no symlink, of at most maxSourceBytes in all.
 // Executables are the listed files with an execute bit. A manifest that
 // does not parse is PLUGIN_REFUSED BAD_MANIFEST; any other problem
 // INVALID_ARGUMENT.
-func ReadPluginSource(dir string) ([]person.PluginFile, []string, plugin.Manifest, error) {
+func ReadPluginSource(dir string) (PluginSource, error) {
 	if !filepath.IsAbs(dir) {
-		return nil, nil, plugin.Manifest{}, badFolder("source must be an absolute path, not %q", dir)
+		return PluginSource{}, badFolder("source must be an absolute path, not %q", dir)
 	}
 	root, err := os.OpenRoot(dir)
 	if err != nil {
-		return nil, nil, plugin.Manifest{}, badFolder("%s cannot be opened as a folder", dir)
+		return PluginSource{}, badFolder("%s cannot be opened as a folder", dir)
 	}
 	defer func() { _ = root.Close() }()
 	var total int64
@@ -134,11 +142,11 @@ func ReadPluginSource(dir string) ([]person.PluginFile, []string, plugin.Manifes
 	}
 	manifest, _, err := read(plugin.ManifestFile, plugin.MaxManifestBytes)
 	if err != nil {
-		return nil, nil, plugin.Manifest{}, err
+		return PluginSource{}, err
 	}
 	m, err := plugin.ParseManifest(manifest)
 	if err != nil {
-		return nil, nil, plugin.Manifest{}, &mcp.ToolError{
+		return PluginSource{}, &mcp.ToolError{
 			Code: "PLUGIN_REFUSED", Reason: "BAD_MANIFEST", Message: "the plugin is refused: " + err.Error() + ". Nothing was written",
 			PersonMessage: "The plugin was refused because its manifest breaks a rule (" + err.Error() + "). Its publisher must fix the manifest.",
 			NextSteps:     []mcp.NextStep{{Actor: mcp.ActorAgent, Action: mcp.ActionStop, Text: "Stop: the plugin's publisher must fix its manifest."}},
@@ -148,7 +156,7 @@ func ReadPluginSource(dir string) ([]person.PluginFile, []string, plugin.Manifes
 	if _, err := root.Lstat(plugin.SignatureFile); err == nil {
 		sig, _, err := read(plugin.SignatureFile, plugin.MaxSignatureFileBytes)
 		if err != nil {
-			return nil, nil, plugin.Manifest{}, err
+			return PluginSource{}, err
 		}
 		files = append(files, person.PluginFile{Path: plugin.SignatureFile, Data: sig})
 	}
@@ -156,12 +164,12 @@ func ReadPluginSource(dir string) ([]person.PluginFile, []string, plugin.Manifes
 	for _, rel := range slices.Sorted(maps.Keys(m.Files)) {
 		b, exec, err := read(rel, maxSourceBytes)
 		if err != nil {
-			return nil, nil, plugin.Manifest{}, err
+			return PluginSource{}, err
 		}
 		files = append(files, person.PluginFile{Path: rel, Data: b})
 		if exec {
 			execs = append(execs, rel)
 		}
 	}
-	return files, execs, m, nil
+	return PluginSource{Files: files, Executables: execs, Manifest: m}, nil
 }

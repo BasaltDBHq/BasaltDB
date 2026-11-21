@@ -89,7 +89,7 @@ func TestPrepareAnswersAnUnreadableFolder(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
 	r := &relay{out: &lineWriter{w: &buf}, upload: func(_ context.Context, source string) (mcp.PluginUpload, error) {
-		_, _, _, err := ReadPluginSource(source)
+		_, err := ReadPluginSource(source)
 		return mcp.PluginUpload{}, err
 	}}
 	_, answered := r.prepare(context.Background(), readySession(mcpcontract.OperatedByPerson, "http://localhost:7878"), []byte(pluginCall))
@@ -103,13 +103,13 @@ func TestPrepareAnswersAnUnreadableFolder(t *testing.T) {
 func TestReadPluginSourceRules(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	_, _, _, err := ReadPluginSource(dir)
+	_, err := ReadPluginSource(dir)
 	te, ok := err.(*mcp.ToolError) //nolint:errorlint // returned unwrapped
 	require.True(t, ok)
 	require.Equal(t, "INVALID_ARGUMENT", te.Code, "no manifest")
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "basalt-plugin.json"), []byte(`{"name": 1}`), 0o600))
-	_, _, _, err = ReadPluginSource(dir)
+	_, err = ReadPluginSource(dir)
 	te, ok = err.(*mcp.ToolError) //nolint:errorlint // returned unwrapped
 	require.True(t, ok)
 	require.Equal(t, "PLUGIN_REFUSED", te.Code)
@@ -117,10 +117,10 @@ func TestReadPluginSourceRules(t *testing.T) {
 
 	link := filepath.Join(t.TempDir(), "link")
 	require.NoError(t, os.Symlink(dir, link))
-	_, _, _, err = ReadPluginSource(filepath.Join(link, "."))
+	_, err = ReadPluginSource(filepath.Join(link, "."))
 	require.Error(t, err)
 
-	_, _, _, err = ReadPluginSource("relative")
+	_, err = ReadPluginSource("relative")
 	te, ok = err.(*mcp.ToolError) //nolint:errorlint // returned unwrapped
 	require.True(t, ok)
 	require.Equal(t, "INVALID_ARGUMENT", te.Code)

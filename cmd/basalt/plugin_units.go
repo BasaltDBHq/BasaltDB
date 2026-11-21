@@ -7,7 +7,6 @@ import (
 	"os/user"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
@@ -86,20 +85,6 @@ func serviceUnitNames(cfg config.Config) []service.PluginEntry {
 		out = append(out, service.PluginEntry{Name: k.Name, Instance: k.Instance})
 	}
 	return out
-}
-
-// engineUserOf is the engine's OS user: the owner of its config directory,
-// which basalt service install gives it.
-func engineUserOf(configPath string) (string, error) {
-	uid, err := rootTrustedOwner(filepath.Dir(configPath))
-	if err != nil {
-		return "", err
-	}
-	u, err := user.LookupId(strconv.Itoa(uid))
-	if err != nil {
-		return "", err
-	}
-	return u.Username, nil
 }
 
 // checkAgentOSUser refuses an agent's OS user that is the engine's own

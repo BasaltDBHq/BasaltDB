@@ -54,7 +54,7 @@ const (
 // PluginRequests serve request_plugin with the engine's engine-kept plugin
 // entries (CONTRACT.md, Plugin approval in service mode). caller is the
 // agent that calls; every method applies its OS user's scope. Errors are
-// *PluginRefusal, ErrPluginNotFound or *ArgumentError; anything else is
+// *PluginRefusedError, ErrPluginNotFound or *ArgumentError; anything else is
 // INTERNAL.
 type PluginRequests interface {
 	// OpenPlugin is PLUGIN_OPEN for caller: the uploaded copy, or the
@@ -99,12 +99,12 @@ type PluginApprovalState struct {
 	ExpiresAt      time.Time
 }
 
-// PluginRefusal is PLUGIN_REFUSED with its reason, from the engine.
-type PluginRefusal struct {
+// PluginRefusedError is PLUGIN_REFUSED with its reason, from the engine.
+type PluginRefusedError struct {
 	Reason, Message string
 }
 
-func (r *PluginRefusal) Error() string { return r.Message }
+func (r *PluginRefusedError) Error() string { return r.Message }
 
 // ErrPluginNotFound: no entry, or no approval, the caller may reach.
 var ErrPluginNotFound = errors.New("the engine keeps no such plugin or plugin approval for this agent")
@@ -386,7 +386,7 @@ func pluginDone(state, name, instance, msg, text string) (requestPluginResult, e
 // pluginError maps the engine's answer to the tool's error body, with the
 // catalog's steps for each PLUGIN_REFUSED reason.
 func (s *Service) pluginError(err error) error {
-	var r *PluginRefusal
+	var r *PluginRefusedError
 	switch {
 	case errors.Is(err, ErrPluginNotFound):
 		return &mcp.ToolError{Code: CodeNotFound, Message: err.Error()}

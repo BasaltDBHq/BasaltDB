@@ -925,9 +925,12 @@ func newKeptApprovalReader(ctx context.Context, s *keptPlugins, scope person.Sco
 	return r
 }
 
-// stateOf is agent's newest approval of k as basalt plugin list shows it.
+// approvalStateUnavailable is an agent whose approvals could not be read.
+const approvalStateUnavailable = "UNAVAILABLE"
+
+// stateOf is agent's newest approval of k as PLUGIN_LIST shows it.
 func (r *keptApprovalReader) stateOf(agent string, k plugin.EntryKey) person.PluginAgentStatus {
-	st := person.PluginAgentStatus{Agent: agent, State: "UNAVAILABLE"}
+	st := person.PluginAgentStatus{Agent: agent, State: approvalStateUnavailable}
 	if !r.ok[agent] {
 		return st
 	}

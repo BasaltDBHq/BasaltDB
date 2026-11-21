@@ -4,6 +4,9 @@ package engine
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/google/uuid"
@@ -12,6 +15,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/approval"
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/person"
+	"github.com/basaltdbhq/basaltdb/internal/shim"
 )
 
 // request_plugin on a real guard: the caller's upload opens one approval
@@ -28,13 +32,33 @@ func TestRequestPluginAgainstGuard(t *testing.T) {
 	files, exec := source("1.0.0")
 	id, err := f.client.PluginUpload(ctx, files)
 	require.NoError(t, err)
-	open := agent.PluginOpen{UploadID: &id, Name: "acme-ner", Instance: "default", Executables: exec}
 
-	// Not the caller among the agents: refused before the upload is taken.
+	// Not the caller among the agents: refused, and the upload is dropped,
+	// so a refused call holds none of the engine's few uploads.
 	_, err = p.OpenPlugin(ctx, "bot", agent.PluginOpen{UploadID: &id, Name: "acme-ner", Instance: "default", Agents: []string{"helper"}, Executables: exec})
-	var r *agent.PluginRefusal
+	var r *agent.PluginRefusedError
 	require.ErrorAs(t, err, &r)
 	require.Equal(t, agent.ReasonPluginAgentNotAllowed, r.Reason)
+	_, err = p.OpenPlugin(ctx, "bot", agent.PluginOpen{UploadID: &id, Name: "acme-ner", Instance: "default", Executables: exec})
+	var gone *agent.ArgumentError
+	require.ErrorAs(t, err, &gone, "the refused call's upload is gone")
+
+	// The real folder through basalt mcp's uploader, as the agent's OS user.
+	dir := t.TempDir()
+	for _, f := range files {
+		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(dir, f.Path)), 0o755))
+		mode := os.FileMode(0o644)
+		if slices.Contains(exec, f.Path) {
+			mode = 0o755
+		}
+		require.NoError(t, os.WriteFile(filepath.Join(dir, f.Path), f.Data, mode))
+	}
+	up, err := shim.NewPluginUploader(f.client.Path)(ctx, dir)
+	require.NoError(t, err)
+	require.Equal(t, "acme-ner", up.Name)
+	require.Equal(t, exec, up.Executables)
+	id = uuid.MustParse(up.UploadID)
+	open := agent.PluginOpen{UploadID: &id, Name: up.Name, Instance: "default", Executables: up.Executables}
 
 	opened, err := p.OpenPlugin(ctx, "bot", open)
 	require.NoError(t, err)

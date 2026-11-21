@@ -265,7 +265,7 @@ func TestRequestPluginWaitOnlyReads(t *testing.T) {
 // reason; a narrowing needs no approval.
 func TestRequestPluginEngineAnswers(t *testing.T) {
 	t.Parallel()
-	f := &fakePluginRequests{err: &PluginRefusal{Reason: ReasonPluginAgentNotAllowed, Message: "agent other uses another database"}}
+	f := &fakePluginRequests{err: &PluginRefusedError{Reason: ReasonPluginAgentNotAllowed, Message: "agent other uses another database"}}
 	_, err := callPlugin(t, pluginService(t, f), map[string]any{"source": "/p"}, uploadMeta())
 	te := requireReason(t, err, codePluginRefused, ReasonPluginAgentNotAllowed)
 	require.Contains(t, te.PersonMessage, "another database")
@@ -328,7 +328,7 @@ func pluginCatalogCases() map[string]catalogCase {
 	engine := func(reason string) func(*testing.T, *Service) error {
 		return func(t *testing.T, s *Service) error {
 			s.PagesOrigin = "http://localhost:7878"
-			s.PluginRequests = &fakePluginRequests{err: &PluginRefusal{Reason: reason, Message: "refused: " + reason}}
+			s.PluginRequests = &fakePluginRequests{err: &PluginRefusedError{Reason: reason, Message: "refused: " + reason}}
 			_, err := callPlugin(t, s, source, uploadMeta())
 			return err
 		}

@@ -29,8 +29,8 @@ type pluginRequests struct {
 
 var _ agent.PluginRequests = (*pluginRequests)(nil)
 
-// noKept is the refusal while the engine keeps no plugins of its own.
-var noKept = &agent.PluginRefusal{
+// errNoKept is the refusal while the engine keeps no plugins of its own.
+var errNoKept error = &agent.PluginRefusedError{
 	Reason:  reasonUnsafePath,
 	Message: "the engine keeps no plugins of its own: its state directory cannot hold them (the engine's log says why). Nothing was written",
 }
@@ -42,7 +42,7 @@ const reasonUnsafePath = "UNSAFE_PATH"
 func (p *pluginRequests) reach(caller string) (*keptPlugins, uint32, person.Scope, error) {
 	k := p.kept.Load()
 	if k == nil {
-		return nil, 0, nil, noKept
+		return nil, 0, nil, errNoKept
 	}
 	uid, ok := p.uids[caller]
 	if !ok {
@@ -73,6 +73,7 @@ func (p *pluginRequests) OpenPlugin(ctx context.Context, caller string, o agent.
 	}
 	agents, err = k.callerFirst(caller, agents)
 	if err != nil {
+		k.dropUpload(uid, o.UploadID)
 		return agent.PluginOpened{}, err
 	}
 	res, err := k.Open(ctx, uid, scope, person.PluginOpenParams{
@@ -91,7 +92,7 @@ func (p *pluginRequests) OpenPlugin(ctx context.Context, caller string, o agent.
 	a := res.Approvals[0]
 	switch {
 	case a.Refused != nil:
-		return agent.PluginOpened{}, &agent.PluginRefusal{Reason: a.Refused.Reason, Message: a.Refused.Message}
+		return agent.PluginOpened{}, &agent.PluginRefusedError{Reason: a.Refused.Reason, Message: a.Refused.Message}
 	case a.ApprovalID == nil || a.ExpiresAt == nil:
 		return agent.PluginOpened{}, fmt.Errorf("plugin %s: an approval without its id", key)
 	}
@@ -142,7 +143,7 @@ func approvalStateOf(l person.PluginListed, id uuid.UUID) (agent.PluginApprovalS
 	st := agent.PluginApprovalState{Name: l.Name, Instance: l.Instance, State: agent.PluginStateApproved}
 	unread := false
 	for _, a := range l.Approval.Agents {
-		if a.State == "UNAVAILABLE" {
+		if a.State == approvalStateUnavailable {
 			unread = true
 		}
 		if a.ApprovalID == nil || *a.ApprovalID != id {
@@ -199,7 +200,7 @@ func (s *keptPlugins) agentsOf(k plugin.EntryKey, caller string) []string {
 // is left for PLUGIN_OPEN to refuse (UNKNOWN_AGENT).
 func (s *keptPlugins) callerFirst(caller string, agents []string) ([]string, error) {
 	if !slices.Contains(agents, caller) {
-		return nil, &agent.PluginRefusal{Reason: agent.ReasonPluginAgentNotAllowed, Message: fmt.Sprintf(
+		return nil, &agent.PluginRefusedError{Reason: agent.ReasonPluginAgentNotAllowed, Message: fmt.Sprintf(
 			"agents must include you (%s): an agent asks for a plugin for itself, and for other agents only beside itself. Nothing was written", caller)}
 	}
 	own, ok := s.agents[caller]
@@ -212,12 +213,24 @@ func (s *keptPlugins) callerFirst(caller string, agents []string) ([]string, err
 			continue
 		}
 		if other, known := s.agents[a]; known && (other.host != own.host || other.port != own.port || other.database != own.database) {
-			return nil, &agent.PluginRefusal{Reason: agent.ReasonPluginAgentNotAllowed, Message: fmt.Sprintf(
+			return nil, &agent.PluginRefusedError{Reason: agent.ReasonPluginAgentNotAllowed, Message: fmt.Sprintf(
 				"agent %s uses another database than yours: list only agents of your own database, each other database's agent asks for itself. Nothing was written", a)}
 		}
 		out = append(out, a)
 	}
 	return out, nil
+}
+
+// dropUpload removes the caller's upload id of a request refused before
+// PLUGIN_OPEN took it, so a refused call does not hold one of the engine's
+// few open uploads until it expires.
+func (s *keptPlugins) dropUpload(uid uint32, id *uuid.UUID) {
+	if id == nil {
+		return
+	}
+	if t, err := s.store.Take(uid, *id); err == nil {
+		t.Release()
+	}
 }
 
 // requestError maps the person socket's errors to request_plugin's. A
@@ -230,9 +243,9 @@ func requestError(err error, upload bool) error {
 	}
 	switch pe.Code {
 	case person.CodePluginRefused:
-		return &agent.PluginRefusal{Reason: pe.Reason, Message: pe.Message}
+		return &agent.PluginRefusedError{Reason: pe.Reason, Message: pe.Message}
 	case person.CodeAgentNotAllowed:
-		return &agent.PluginRefusal{Reason: agent.ReasonPluginAgentNotAllowed, Message: pe.Message}
+		return &agent.PluginRefusedError{Reason: agent.ReasonPluginAgentNotAllowed, Message: pe.Message}
 	case person.CodeNotFound:
 		if upload {
 			return &agent.ArgumentError{Message: "the plugin's files are no longer on the engine (it restarted, or 15 minutes passed): call request_plugin again with source"}
@@ -240,6 +253,7 @@ func requestError(err error, upload bool) error {
 		return agent.ErrPluginNotFound
 	case person.CodeInvalidArgument:
 		return &agent.ArgumentError{Message: pe.Message}
+	case person.CodeUIDNotAllowed, person.CodeUnknownAgent, person.CodeUnknownMethod, person.CodeRefused, person.CodeInternal:
 	}
 	return err
 }

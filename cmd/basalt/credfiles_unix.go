@@ -93,16 +93,6 @@ func (d *rootConfigDir) upsert(name string, s config.Settings, a config.Agent) (
 	return config.UpsertAgentVaultAt(d.dir, name, func(f *os.File) error { return checkConfigFile(f, d.trusted) }, credentialOwner(dirUID), s, a)
 }
 
-// update is config.UpdateConfig on the config file name, relative to the
-// opened directory, checked and owned as upsert does.
-func (d *rootConfigDir) update(name string, ch config.Change) error {
-	dirUID, err := d.dir.Owner()
-	if err != nil {
-		return err
-	}
-	return config.UpdateConfigAt(d.dir, name, func(f *os.File) error { return checkConfigFile(f, d.trusted) }, credentialOwner(dirUID), ch)
-}
-
 func (d *rootConfigDir) close() { _ = d.dir.Close() }
 
 // rootEngineKey is the engine's public key for a root init --remote: the

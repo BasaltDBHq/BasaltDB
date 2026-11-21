@@ -31,7 +31,7 @@ func TestRequestAgentsStartWithTheCaller(t *testing.T) {
 
 	for _, agents := range [][]string{{"other"}, {"bot", "far"}} {
 		_, err := k.callerFirst("bot", agents)
-		var r *agent.PluginRefusal
+		var r *agent.PluginRefusedError
 		require.ErrorAs(t, err, &r, "%v", agents)
 		require.Equal(t, agent.ReasonPluginAgentNotAllowed, r.Reason)
 	}
@@ -46,8 +46,9 @@ func TestRequestAgentsStartWithTheCaller(t *testing.T) {
 func TestRequestReachIsTheCallersOSUser(t *testing.T) {
 	t.Parallel()
 	p := &pluginRequests{uids: map[string]uint32{"bot": 501, "other": 501, "far": 777}}
-	_, _, _, err := p.reach("bot")
-	require.ErrorIs(t, err, error(noKept))
+	k, _, _, err := p.reach("bot")
+	require.ErrorIs(t, err, errNoKept)
+	require.Nil(t, k)
 
 	p.kept.Store(requestsKept())
 	_, uid, scope, err := p.reach("bot")
@@ -56,7 +57,7 @@ func TestRequestReachIsTheCallersOSUser(t *testing.T) {
 	require.Equal(t, person.Scope{"bot": true, "other": true}, scope)
 
 	_, err = p.OpenPlugin(context.Background(), "bot", agent.PluginOpen{Name: "acme-ner", Instance: "default", Agents: []string{"other"}})
-	var r *agent.PluginRefusal
+	var r *agent.PluginRefusedError
 	require.ErrorAs(t, err, &r)
 	require.Equal(t, agent.ReasonPluginAgentNotAllowed, r.Reason)
 }
@@ -113,7 +114,7 @@ func TestRequestApprovalState(t *testing.T) {
 // an argument problem (call again with source), never NOT_FOUND.
 func TestRequestErrors(t *testing.T) {
 	t.Parallel()
-	var r *agent.PluginRefusal
+	var r *agent.PluginRefusedError
 	require.ErrorAs(t, requestError(person.Refused("TOO_LARGE", "too large"), true), &r)
 	require.Equal(t, "TOO_LARGE", r.Reason)
 	require.ErrorAs(t, requestError(&person.Error{Code: person.CodeAgentNotAllowed, Message: "scope"}, false), &r)

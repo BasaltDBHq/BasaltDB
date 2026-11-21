@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/laststop"
 )
 
 // superviseRig is supervise with a fake clock: a child "runs" by moving the
@@ -197,10 +198,13 @@ func TestLastStopIsWrittenAndCleared(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "state")
 	log := slog.New(slog.DiscardHandler)
 
-	writeLastStop(dir, "the engine crashed 5 times within 10s", time.Date(2026, 11, 20, 1, 2, 3, 0, time.UTC), log)
+	cfg := filepath.Join(t.TempDir(), "engine.json")
+	require.NoError(t, os.WriteFile(cfg, []byte("cfg-v1\n"), 0o600))
+	writeLastStop(dir, "the engine crashed 5 times within 10s", cfg, time.Date(2026, 11, 20, 1, 2, 3, 0, time.UTC), log)
 	raw, err := os.ReadFile(filepath.Join(dir, lastStopFile))
 	require.NoError(t, err)
-	require.JSONEq(t, `{"reason":"the engine crashed 5 times within 10s","at":"2026-11-20T01:02:03Z"}`, string(raw))
+	want := `{"reason":"the engine crashed 5 times within 10s","at":"2026-11-20T01:02:03Z","engineSha256":"` + laststop.HashEngineJSON(cfg) + `"}`
+	require.JSONEq(t, want, string(raw))
 
 	clearLastStop(dir, log)
 	_, err = os.Stat(filepath.Join(dir, lastStopFile))

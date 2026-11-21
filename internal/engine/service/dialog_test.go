@@ -154,8 +154,30 @@ func trustedBase(t *testing.T) string {
 
 func shellQuoteTest(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
+// A command the script cannot find exits 127, which pkexec uses for "no
+// dialog": the script ends with 1 instead.
+func TestScriptNeverExitsWithPkexecCodes(t *testing.T) {
+	t.Parallel()
+	for _, call := range []string{"basalt-no-such-command", "exit 126", "fail stop"} {
+		out, err := helperScript(t, call)
+		var exitErr *exec.ExitError
+		require.ErrorAs(t, err, &exitErr, out)
+		require.Equal(t, 1, exitErr.ExitCode(), call)
+	}
+}
+
+// skipAsRoot: the walk tests stand this user in for the engine's, and
+// root passes every owner check.
+func skipAsRoot(t *testing.T) {
+	t.Helper()
+	if os.Geteuid() == 0 {
+		t.Skip("run as root: every directory passes the owner check")
+	}
+}
+
 func TestScriptTrustedWalk(t *testing.T) {
 	t.Parallel()
+	skipAsRoot(t)
 	base := trustedBase(t)
 	me := strconv.Itoa(os.Getuid())
 
@@ -188,6 +210,7 @@ func TestScriptTrustedWalk(t *testing.T) {
 
 func TestScriptMakeDir(t *testing.T) {
 	t.Parallel()
+	skipAsRoot(t)
 	base := trustedBase(t)
 	me := strconv.Itoa(os.Getuid())
 	gid := strconv.Itoa(os.Getgid())
@@ -212,6 +235,7 @@ func TestScriptMakeDir(t *testing.T) {
 
 func TestScriptPutFile(t *testing.T) {
 	t.Parallel()
+	skipAsRoot(t)
 	base := trustedBase(t)
 	// put_file wants a directory only root can change: this user's own
 	// stands in for root's by allowing its uid as the engine's.

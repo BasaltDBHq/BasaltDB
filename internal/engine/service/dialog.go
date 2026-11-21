@@ -164,6 +164,9 @@ func scriptHelpers(goos string) string {
 		uid, mode = "stat -f %u", "stat -f %Lp"
 	}
 	return `set -eu
+# pkexec's own 126 and 127 mean a dismissed dialog and no dialog: the
+# script's failures (a missing command exits 127) end with 1 instead.
+trap 'rc=$?; [ "$rc" -ne 126 ] && [ "$rc" -ne 127 ] || exit 1' EXIT
 PATH=/usr/bin:/bin:/usr/sbin:/sbin
 export PATH
 umask 022

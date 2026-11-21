@@ -397,7 +397,7 @@ func printSetupPlan(c *cliIO, f initFlags) error {
 	if err != nil {
 		return err
 	}
-	if needsDialog(c) {
+	if needsDialog(c, f) {
 		fmt.Fprintf(c.stderr, "basalt: dry run; then init asks for your password in the system's administrator dialog, to create the OS user %s and the system folders and install and start the service that runs:\n  %s\n",
 			service.DefaultUser(c.goos), shellJoin(dialogEngineArgs(c.goos, bin)))
 	}

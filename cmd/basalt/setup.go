@@ -93,7 +93,7 @@ func chooseService(c *cliIO, f initFlags) (bool, error) {
 	}
 	question := fmt.Sprintf("Install the engine as a background service? This creates the OS user %s", f.engineUser)
 	switch {
-	case needsDialog(c):
+	case needsDialog(c, f):
 		question += " and asks for your password twice: in the system's administrator dialog, then in this terminal."
 	case c.host.Euid() != 0:
 		question += " and needs your password once."
@@ -426,18 +426,21 @@ func checkedExecutable(c *cliIO) (string, error) {
 // mayInstallService reports whether this init can go on to install the
 // engine service (or print its plan): then the binary is checked before
 // anything else, so a refusal leaves the database as it was.
-// needsDialog: init runs as the person and the engine service is not
-// installed yet, so the first install goes through the system's
-// administrator dialog (CONTRACT.md, The administrator dialog).
-func needsDialog(c *cliIO) bool {
-	return c.host.Euid() != 0 && !c.host.System(io.Discard, io.Discard).Exists(service.UnitPath(c.goos))
+// needsDialog: init runs as the person on a person-operated engine and the
+// engine service is not installed yet, so the first install goes through
+// the system's administrator dialog (CONTRACT.md, The administrator
+// dialog). An engine set up for a bot (--operated-by=agent) keeps sudo
+// alone: its person often has no desktop session there.
+func needsDialog(c *cliIO, f initFlags) bool {
+	return c.host.Euid() != 0 && f.operatedBy != OperatedByAgent &&
+		!c.host.System(io.Discard, io.Discard).Exists(service.UnitPath(c.goos))
 }
 
 // checkDialog stops init before it asks for the admin connection when the
 // first install needs the administrator dialog and none can be shown, or
 // the binary cannot go into the dialog's script.
 func checkDialog(c *cliIO, f initFlags) error {
-	if !needsDialog(c) {
+	if !needsDialog(c, f) {
 		return nil
 	}
 	if err := dialogFits(c.goos, f); err != nil {
@@ -470,7 +473,7 @@ func dialogScript(c *cliIO) (bin, script string, err error) {
 // writes the unit that runs the engine supervised from the system config,
 // and starts it. No agent, flag, environment or folder of init's reaches it.
 func dialogInstall(c *cliIO, f initFlags) error {
-	if !needsDialog(c) {
+	if !needsDialog(c, f) {
 		return nil
 	}
 	if err := dialogFits(c.goos, f); err != nil {

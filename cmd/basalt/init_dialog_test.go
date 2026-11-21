@@ -150,13 +150,26 @@ func TestDialogScriptIsTheSameForEveryAgent(t *testing.T) {
 	require.NotContains(t, h.dialogs[0], "bot")
 }
 
+// An engine set up for a bot keeps sudo alone: its person often has no
+// desktop session on the bot's machine.
+func TestElevateInstallForABotEngineAsksNoDialog(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost(t)
+	c := dialogIO(h, "linux")
+	f, err := parseInit(c, []string{"--agent", "bot", "--write", "public.leads", "--skip-passkey", "--yes", "--os-user", me(t), "--operated-by=agent"})
+	require.NoError(t, err)
+	require.NoError(t, elevateInstall(c, f, fakeAgentDSN))
+	require.Empty(t, h.dialogs)
+	require.Len(t, h.sudo, 1)
+}
+
 // As root, init installs in this process: no dialog.
 func TestElevateInstallAsRootAsksNoDialog(t *testing.T) {
 	t.Parallel()
 	h := newFakeHost(t)
 	h.euid = 0
 	c := dialogIO(h, "linux")
-	require.False(t, needsDialog(c))
+	require.False(t, needsDialog(c, dialogFlags(t, c)))
 	require.NoError(t, dialogInstall(c, dialogFlags(t, c)))
 	require.Empty(t, h.dialogs)
 }

@@ -236,7 +236,8 @@ func TestTamperedReportIsSkipped(t *testing.T) {
 func TestIssueURLWithinCutsTheStackToTheLimit(t *testing.T) {
 	t.Parallel()
 	rep := Report{ID: "i", Version: "v1", Command: "query", ErrorCode: "INTERNAL", Stack: strings.Repeat("main.f()\n\t/src/a.go:1 +0x1\n", 400)}
-	link, trimmed := rep.IssueURLWithin(1800)
+	link, trimmed, ok := rep.IssueURLWithin(1800)
+	require.True(t, ok)
 	require.True(t, trimmed)
 	require.LessOrEqual(t, len(link), 1800)
 	whole, _ := rep.IssueURL()
@@ -254,8 +255,24 @@ func TestIssueURLWithinFitsTheBudgetForTheWorstReport(t *testing.T) {
 		Stack: strings.Repeat("é <>&\n", 3000),
 	}
 	for _, limit := range []int{1800} {
-		link, trimmed := rep.IssueURLWithin(limit)
+		link, trimmed, ok := rep.IssueURLWithin(limit)
+		require.True(t, ok)
 		require.True(t, trimmed)
 		require.LessOrEqual(t, len(link), limit)
 	}
+}
+
+func TestIssueURLWithinLeavesTheLinkOutWhenNothingFits(t *testing.T) {
+	t.Parallel()
+	rep := Report{
+		ID: strings.Repeat("a", 36), Version: strings.Repeat("v", maxField), Command: strings.Repeat("c", 40),
+		OS: strings.Repeat("o", maxField), Arch: strings.Repeat("a", maxField), GoVersion: strings.Repeat("g", maxField),
+		ErrorCode: strings.Repeat("E", maxField), Stack: strings.Repeat("é <>&\n", 3000),
+	}
+	link, trimmed, ok := rep.IssueURLWithin(1000)
+	require.Empty(t, link)
+	require.False(t, trimmed)
+	require.False(t, ok)
+	whole, _ := rep.IssueURL()
+	require.NotEmpty(t, whole, "the CLI link is unchanged")
 }

@@ -32,8 +32,8 @@ type CrashStatus struct {
 	// Path is the report's file; the person can read it.
 	Path string `json:"path"`
 	// IssueURL is the pre-filled GitHub new-issue link, within the link
-	// budget; the person submits the issue. Nothing is sent by basalt.
-	IssueURL string `json:"issueUrl"`
+	// budget; left out when it cannot fit; the person submits the issue. Nothing is sent by basalt.
+	IssueURL string `json:"issueUrl,omitempty"`
 }
 
 // AccessStatus is status.access: the tables the agent's role can read and
@@ -73,7 +73,7 @@ func (s statusDeps) crashStatus() *CrashStatus {
 		return nil
 	}
 	rep := reports[0]
-	link, _ := rep.IssueURLWithin(s.linkBudget)
+	link, _, _ := rep.IssueURLWithin(s.linkBudget)
 	path := ""
 	for _, d := range s.crashDirs {
 		if p := filepath.Join(d, rep.ID+".json"); fileExists(p) {

@@ -318,7 +318,7 @@
       "crash": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "time", "version", "command", "path", "issueUrl"],
+        "required": ["id", "time", "version", "command", "path"],
         "description": "The newest saved crash report (CONTRACT.md, Crash reports). Absent when none is saved. Nothing is sent: tell the person the report was saved and give them issueUrl to file it on GitHub if they want to; they submit the issue.",
         "properties": {
           "id": { "type": "string", "description": "The report's id." },
@@ -326,7 +326,7 @@
           "version": { "type": "string", "description": "The build that crashed." },
           "command": { "type": "string", "description": "The command or tool that was running." },
           "path": { "type": "string", "description": "The report's file on the engine's machine; it holds scrubbed text the person can read." },
-          "issueUrl": { "type": "string", "format": "uri", "description": "The pre-filled GitHub new-issue link, within the link budget (the stack is cut from the bottom to fit)." }
+          "issueUrl": { "type": "string", "format": "uri", "description": "The pre-filled GitHub new-issue link, within the link budget (the stack is cut from the bottom to fit). Left out when it cannot fit the budget (a linkBudget under about 1700): then give the person the report's path instead." }
         }
       },
       "access": {

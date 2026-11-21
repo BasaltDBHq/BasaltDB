@@ -56,16 +56,28 @@ func (rep Report) body(stack string) string {
 // from the bottom (the top frames say where it crashed) until the whole link
 // fits maxURL. Reports whether it was cut.
 func (rep Report) IssueURL() (link string, trimmed bool) {
-	return rep.IssueURLWithin(maxURL)
+	link, trimmed, _ = rep.issueURL(maxURL)
+	return link, trimmed
 }
 
 // IssueURLWithin is IssueURL for a link of at most limit characters (the
-// status tool hands one over inside the link budget). A limit that even the
-// bare title and note do not fit gets the shortest link, which may be over.
-func (rep Report) IssueURLWithin(limit int) (link string, trimmed bool) {
+// status tool hands one over inside the link budget). When even the title,
+// the fields and the note do not fit, it returns "" and ok false: no link is
+// better than one over the budget.
+func (rep Report) IssueURLWithin(limit int) (link string, trimmed, ok bool) {
+	link, trimmed, ok = rep.issueURL(limit)
+	if !ok {
+		return "", false, false
+	}
+	return link, trimmed, true
+}
+
+// issueURL is the link of at most limit characters, or, when none fits, the
+// shortest one with ok false.
+func (rep Report) issueURL(limit int) (link string, trimmed, ok bool) {
 	link = build(rep.Title(), rep.body(rep.Stack))
 	if len(link) <= limit {
-		return link, false
+		return link, false, true
 	}
 	lines := strings.Split(rep.Stack, "\n")
 	cut := func(n int) string {
@@ -73,7 +85,8 @@ func (rep Report) IssueURLWithin(limit int) (link string, trimmed bool) {
 	}
 	// The longest prefix of the stack's lines that fits, with the note.
 	n := sort.Search(len(lines), func(n int) bool { return len(cut(n+1)) > limit })
-	return cut(n), true
+	link = cut(n)
+	return link, true, len(link) <= limit
 }
 
 func build(title, body string) string {

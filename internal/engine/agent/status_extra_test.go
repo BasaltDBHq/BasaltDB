@@ -123,3 +123,17 @@ func TestStatusLeavesPluginsOutWithoutEntries(t *testing.T) {
 	require.Nil(t, r.Plugins)
 	require.NotContains(t, raw, `"plugins"`)
 }
+
+func TestStatusLeavesTheCrashLinkOutWhenItCannotFitTheBudget(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rec := crash.Recorder{Dir: dir, Version: strings.Repeat("v", 64), Scrub: crash.NewScrubber("", "", nil), Now: func() time.Time { return statusNow }}
+	rep, err := rec.Save(crash.Input{Command: strings.Repeat("c", 40), Kind: crash.KindPanic, ErrorCode: strings.Repeat("E", 60), Value: "x", Stack: []byte(strings.Repeat("main.f()\n\t/src/a.go:1 +0x1\n", 400))})
+	require.NoError(t, err)
+	r, raw := extraStatus(t, func(d *Deps) { d.CrashDirs = []string{dir}; d.LinkBudget = 1000 })
+	require.NotNil(t, r.Crash)
+	require.Equal(t, rep.ID, r.Crash.ID)
+	require.Empty(t, r.Crash.IssueURL, "no link rather than one over the budget")
+	require.NotContains(t, raw, "issueUrl")
+	require.FileExists(t, r.Crash.Path, "the path is still given")
+}

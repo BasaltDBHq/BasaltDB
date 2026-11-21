@@ -210,8 +210,14 @@ type StatusReport struct {
 	EngineRecord *EngineRecordStatus `json:"engineRecord,omitempty"`
 	// Trust is what verifies the agent's database certificate; absent when
 	// the engine is down.
-	Trust    *TrustStatus `json:"trust,omitempty"`
-	Problems []Problem    `json:"problems"`
+	Trust *TrustStatus `json:"trust,omitempty"`
+	// Crash is the newest saved crash report, Access what the agent can
+	// read and write, Plugins the health of the plugin entries served to
+	// it; each absent when there is nothing to show.
+	Crash    *CrashStatus   `json:"crash,omitempty"`
+	Access   *AccessStatus  `json:"access,omitempty"`
+	Plugins  []PluginHealth `json:"plugins,omitempty"`
+	Problems []Problem      `json:"problems"`
 	// Update is set when a newer release is out (CONTRACT.md, Update
 	// notice).
 	Update *UpdateInfo `json:"update,omitempty"`
@@ -375,6 +381,9 @@ type statusDeps struct {
 	vault                     VaultReporter
 	portal                    PortalReporter
 	plugins                   PluginReporter
+	crashDirs                 []string
+	linkBudget                int
+	access                    AccessReader
 	update                    *UpdateInfo
 	// engineKey is the engine id basalt status read from the running
 	// engine's key file ("" when it is refused), nil when it reports no
@@ -405,6 +414,7 @@ func (s *Service) statusDeps() statusDeps {
 	return statusDeps{
 		name: s.Name, operatedBy: s.OperatedBy, build: s.Build, startedBy: s.StartedBy, pagesBase: s.PagesBase, pagesOrigin: s.PagesOrigin,
 		sameUser: s.SameUser, devLocalPages: s.DevLocalPages, connectBudget: s.ConnectBudget, engineReachable: true, vault: s.Vault, portal: s.Portal, plugins: s.Plugins,
+		crashDirs: s.CrashDirs, linkBudget: s.LinkBudget, access: s.Access,
 		engineRecord: s.EngineRecord, trust: s.Trust, database: s.Database, cmds: s.Commands, setup: s.pendingSetup(), probe: s.Probe,
 		update: s.updateInfo(), finisher: s.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, lockTrouble: &s.lockTrouble, passkeys: s.Store.Passkeys, log: s.Log, now: s.Now,
 	}
@@ -530,6 +540,10 @@ func (s statusDeps) report(ctx context.Context) (StatusReport, error) {
 	}
 	if err == nil {
 		r.Ledger = s.ledgerStatus(ctx, st)
+	}
+	r.Crash, r.Plugins = s.crashStatus(), s.pluginHealth()
+	if err == nil && st.State != guard.GuardMissing {
+		r.Access = s.accessStatus(ctx)
 	}
 	readable := err == nil && st.State != guard.GuardMissing
 	if readable {

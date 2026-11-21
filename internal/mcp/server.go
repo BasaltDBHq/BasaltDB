@@ -316,8 +316,7 @@ func panicError(reportID string) *ToolError {
 		return te
 	}
 	te.PersonMessage = "The basalt engine hit an internal error and saved a crash report. " +
-		"See exactly what it holds with `basalt crash show " + reportID + "`; " +
-		"to file it on GitHub, run `basalt crash report " + reportID + "` in your own terminal, on the machine the engine runs on."
+		"Its id is " + reportID + ". The status tool names the report's file and the link to file it on GitHub."
 	return te
 }
 

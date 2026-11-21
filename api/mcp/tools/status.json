@@ -310,6 +310,46 @@
           "message": { "type": "string", "description": "Starts WARNING: or SECURITY UPDATE:. Relay it to the person." }
         }
       },
+      "crash": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "time", "version", "command", "path"],
+        "description": "The newest saved crash report (CONTRACT.md, Crash reports). Absent when none is saved. Nothing is sent: tell the person the report was saved and give them issueUrl to file it on GitHub if they want to; they submit the issue.",
+        "properties": {
+          "id": { "type": "string", "description": "The report's id." },
+          "time": { "type": "string", "format": "date-time", "description": "When it crashed (UTC)." },
+          "version": { "type": "string", "description": "The build that crashed." },
+          "command": { "type": "string", "description": "The command or tool that was running." },
+          "path": { "type": "string", "description": "The report's file on the engine's machine; it holds scrubbed text the person can read." },
+          "issueUrl": { "type": "string", "format": "uri", "description": "The pre-filled GitHub new-issue link, within the link budget (the stack is cut from the bottom to fit). Left out when it cannot fit the budget (a linkBudget under about 1700): then give the person the report's path instead." }
+        }
+      },
+      "access": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["read", "write"],
+        "description": "The tables this agent's role can read and write. Absent when the database cannot be read.",
+        "properties": {
+          "read": { "type": "array", "items": { "type": "string" }, "description": "Tables the agent can read (schema-qualified), sorted; at most 200." },
+          "write": { "type": "array", "items": { "type": "string" }, "description": "Tables the agent can insert into, update or delete from, sorted; at most 200." },
+          "truncated": { "type": "boolean", "description": "True when a list was cut at 200 names." }
+        }
+      },
+      "plugins": {
+        "type": "array",
+        "description": "The plugin entries served to this agent and their health. Absent when it has none.",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "instance", "health"],
+          "properties": {
+            "name": { "type": "string" },
+            "instance": { "type": "string" },
+            "health": { "type": "string", "enum": ["READY", "NOT_READY"], "description": "NOT_READY: the entry is not serving this agent; its problem is in problems." },
+            "problem": { "type": "string", "description": "The code of the problem that says why, when it is not ready." }
+          }
+        }
+      },
       "problems": {
         "type": "array",
         "description": "Empty when everything is ready. Errors first.",

@@ -189,7 +189,8 @@ func actualEnvironment(t *testing.T, actual map[string]surfaceEntry) {
 				return err
 			}
 			if d.IsDir() {
-				if d.Name() == "testnotifier" { // a test helper's own variables
+				// Test helper packages have variables of their own.
+				if d.Name() == "testnotifier" || d.Name() == "guardtest" {
 					return filepath.SkipDir
 				}
 				return nil
@@ -202,9 +203,6 @@ func actualEnvironment(t *testing.T, actual map[string]surfaceEntry) {
 				return err
 			}
 			for _, m := range envNames.FindAllStringSubmatch(string(raw), -1) {
-				if strings.Contains(m[1], "_TEST_") {
-					continue // test helpers' own variables
-				}
 				e := surfaceEntry{Kind: "env", Name: m[1]}
 				actual[e.key()] = e
 			}

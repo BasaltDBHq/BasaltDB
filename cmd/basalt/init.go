@@ -115,6 +115,11 @@ func runInit(c *cliIO, args []string) int {
 		if _, err := checkedExecutable(c); err != nil {
 			return c.fail(err)
 		}
+		if !f.dryRun {
+			if err := checkDialog(c, f); err != nil {
+				return c.fail(err)
+			}
+		}
 	}
 	admin, err := c.adminURL()
 	if err != nil {
@@ -383,6 +388,10 @@ func printSetupPlan(c *cliIO, f initFlags) error {
 	bin, err := c.host.Executable()
 	if err != nil {
 		return err
+	}
+	if needsDialog(c, f) {
+		fmt.Fprintf(c.stderr, "basalt: dry run; then init asks for your password in the system's administrator dialog, to create the OS user %s and the system folders and install and start the service that runs:\n  %s\n",
+			service.DefaultUser(c.goos), shellJoin(dialogEngineArgs(c.goos, bin)))
 	}
 	fmt.Fprintf(c.stderr, "basalt: dry run; then init asks to install the engine service, which runs (the credential on stdin):\n  sudo %s\nwith these steps:\n",
 		shellJoin(serviceInstallArgs(f, bin)))

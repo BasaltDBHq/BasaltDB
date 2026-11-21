@@ -15,7 +15,7 @@ The six flags are `--agent`, `--remote`, `--demo`, `--config`, `--supervise` and
 
 ### Config discovery
 
-Every command looks for `engine.json` at the system path (`/Library/Application Support/Basalt/engine.json` on macOS, `/etc/basalt/engine.json` on Linux), then at the user's path (`~/Library/Application Support/Basalt/engine.json` on macOS, `$XDG_CONFIG_HOME/basalt/engine.json` on Linux), When one exists, the command uses it. When both exist, the command stops with an error that names both paths. `--config` exists only on `basalt engine`, which the service and `basalt mcp` start with the path they found.
+Every command looks for `engine.json` at the system path (`/Library/Application Support/Basalt/engine.json` on macOS, `/etc/basalt/engine.json` on Linux), then at the user's path (`~/Library/Application Support/Basalt/engine.json` on macOS, `$XDG_CONFIG_HOME/basalt/engine.json` on Linux). When one exists, the command uses it. When both exist, the command stops with an error that names both paths. `--config` exists only on `basalt engine`, which the service and `basalt mcp` start with the path they found.
 
 ### Environment variables
 

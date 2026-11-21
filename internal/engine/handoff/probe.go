@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/supabaseca"
 )
 
 // The connection string settings the engine's agent credential uses for a
@@ -128,8 +129,14 @@ type Prober struct {
 	Resolver Resolver
 	// Dial opens the TCP connection to the checked address; nil dials it.
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
-	// Roots verify the server's certificate; nil uses the system's.
+	// Roots, when set, replace every root the server's certificate is
+	// verified against; nil uses the system's, plus Supabase's roots for a
+	// Supabase host.
 	Roots *x509.CertPool
+	// SupabaseRoots stand in for Supabase's root certificates, which the
+	// probe trusts for Supabase hosts (package supabaseca); empty is the
+	// real ones. Tests set test CAs.
+	SupabaseRoots []*x509.Certificate
 }
 
 // Probed is a probe that passed: the address the host resolved to, and
@@ -240,7 +247,7 @@ func (p Prober) login(ctx context.Context, a Address, ip netip.Addr, user string
 
 // connConfig is the connection to a as user with password, made to ip only.
 func (p Prober) connConfig(a Address, ip netip.Addr, user, password string, binding bool) (*pgx.ConnConfig, error) {
-	cfg, err := pgdial.ConnConfig(ConnString(a, user, password, binding))
+	cfg, err := pgdial.ConnConfigTrusting(ConnString(a, user, password, binding), p.supabaseRoots()...)
 	if err != nil {
 		return nil, err
 	}
@@ -253,6 +260,14 @@ func (p Prober) connConfig(a Address, ip netip.Addr, user, password string, bind
 		setRoots(&cfg.Config, p.Roots)
 	}
 	return cfg, nil
+}
+
+// supabaseRoots are the roots the probe trusts for Supabase hosts.
+func (p Prober) supabaseRoots() []*x509.Certificate {
+	if len(p.SupabaseRoots) == 0 {
+		return supabaseca.Roots()
+	}
+	return p.SupabaseRoots
 }
 
 // setRoots verifies every TLS attempt of cfg against roots.
@@ -271,7 +286,8 @@ func setRoots(cfg *pgconn.Config, roots *x509.CertPool) {
 // ConnString is the agent's connection string for a: user and password at
 // a's host, port and database, with sslmode=verify-full and, when binding,
 // channel_binding=require. Nothing from the connect service but the checked
-// address goes in it.
+// address goes in it. It names no sslrootcert: for a Supabase host the
+// engine trusts Supabase's roots when it opens the connection (pgdial).
 func ConnString(a Address, user, password string, binding bool) string {
 	q := url.Values{}
 	q.Set(paramSSLMode, sslVerifyFull)

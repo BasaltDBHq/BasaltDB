@@ -13,10 +13,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/supabaseca"
+	"github.com/basaltdbhq/basaltdb/internal/supabaseca/supabasecatest"
 )
 
 // The contract's connect-only fixture (api/mcp/setup/setup-code.fixtures.json,
@@ -765,4 +770,70 @@ func TestProbeCacheAcrossProcesses(t *testing.T) {
 	third.p.StatusCollect(ctx)
 	require.Equal(t, PhaseWaiting, third.p.State().Phase)
 	require.Zero(t, third.prober.probes, "basalt status never probes a SET_UP address")
+}
+
+// probeAt probes a at a public address, through a server presenting a chain
+// for certHost from a test CA that stands in for Supabase's root.
+func probeAt(t *testing.T, a Address, certHost string) error {
+	t.Helper()
+	ca, cert := supabasecatest.Chain(t, certHost)
+	p := Prober{Dial: supabasecatest.Serve(t, cert), SupabaseRoots: []*x509.Certificate{ca}}
+	_, err := p.ProbeAt(context.Background(), a, netip.MustParseAddr("203.0.113.7"), fixtureRole)
+	return err
+}
+
+// The probe verifies a chain from Supabase's root on a Supabase host, the
+// direct one and the pooler; the same chain on any other host, or for
+// another host name, is TLS_NOT_VERIFIED.
+func TestProbeTrustsSupabaseRootOnSupabaseHosts(t *testing.T) {
+	t.Parallel()
+	for _, host := range []string{"db.abcdefghijklmnopqrst.supabase.co", "aws-0-eu-central-1.pooler.supabase.com"} {
+		a := Address{Host: host, Port: 5432, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"}
+		require.NoError(t, probeAt(t, a, host), host)
+	}
+	notVerified := func(a Address, certHost string) {
+		r, ok := ReachOf(probeAt(t, a, certHost))
+		require.True(t, ok)
+		require.Equal(t, ReasonTLSNotVerified, r.Reason, a.Host)
+	}
+	for _, host := range []string{"db.example.com", "db.evilsupabase.co"} {
+		notVerified(Address{Host: host, Port: 5432, Database: "postgres"}, host)
+	}
+	notVerified(Address{Host: "db.abcdefghijklmnopqrst.supabase.co", Port: 5432, Database: "postgres"}, "db.otherprojectref000000.supabase.co")
+}
+
+// The agent's saved connection string, opened as the engine opens it,
+// verifies a Supabase host's chain with the host name checked.
+func TestSavedConnStringVerifiesSupabaseHost(t *testing.T) {
+	t.Parallel()
+	host := "db.abcdefghijklmnopqrst.supabase.co"
+	a := Address{Host: host, Port: 5432, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"}
+	login := func(certHost string) error {
+		ca, cert := supabasecatest.Chain(t, certHost)
+		cfg, err := pgdial.ConnConfigTrusting(ConnString(a, LoginUser(a, fixtureRole), "pw", true), ca)
+		require.NoError(t, err)
+		require.Equal(t, host, cfg.TLSConfig.ServerName)
+		require.False(t, cfg.TLSConfig.InsecureSkipVerify)
+		cfg.LookupFunc = func(context.Context, string) ([]string, error) { return []string{"127.0.0.1"}, nil }
+		cfg.DialFunc = supabasecatest.Serve(t, cert)
+		ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+		defer cancel()
+		conn, err := pgx.ConnectConfig(ctx, cfg)
+		if err == nil {
+			_ = conn.Close(ctx)
+		}
+		return err
+	}
+	var pg *pgconn.PgError
+	require.ErrorAs(t, login(host), &pg)
+	require.Equal(t, sqlstateInvalidPassword, pg.Code)
+	require.Equal(t, ReasonTLSNotVerified, reasonOf(login("db.otherprojectref000000.supabase.co")))
+
+	// In production the engine opens it with Supabase's real root.
+	pool, err := pgdial.PoolConfig(ConnString(a, fixtureRole, "pw", false))
+	require.NoError(t, err)
+	for _, root := range supabaseca.Roots() {
+		_, err = root.Verify(x509.VerifyOptions{Roots: pool.ConnConfig.TLSConfig.RootCAs})
+		require.NoError(t, err)
+	}
 }

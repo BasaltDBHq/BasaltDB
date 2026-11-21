@@ -656,6 +656,7 @@ test("a bot that can't reach the database: the reason's advice, and another stri
   assert.equal(shown(nodes), "s-unreach");
   assert.equal(nodes["unreach-title"].textContent, "familite-bot can't reach this database");
   assert.match(nodes["unreach-text"].textContent, /certificate could not be verified from familite-bot's server/);
+  assert.doesNotMatch(nodes["unreach-text"].textContent, /pooler/i, "the pooler string is no certificate fix");
   await nodes["paste-again"].click();
   assert.equal(shown(nodes), "s-paste");
   assert.equal(flow.holdsConnectionString, false);

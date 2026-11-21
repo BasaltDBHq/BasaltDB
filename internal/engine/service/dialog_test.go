@@ -59,6 +59,40 @@ func TestInstallScriptIsBuiltFromConstants(t *testing.T) {
 	}
 }
 
+// Every check runs before the script creates anything: a refused folder or
+// account never leaves a new OS user or folder behind.
+func TestInstallScriptChecksBeforeItCreates(t *testing.T) {
+	t.Parallel()
+	for _, v := range []struct {
+		goos   string
+		checks []string
+	}{
+		{"linux", []string{
+			"check_dir /etc/basalt \"$engine_uid\"", "trusted /etc/systemd/system \"\"", "no_link /etc/systemd/system/basalt-engine.service",
+			"SYS_UID_MAX", "getent group basalt", "getent passwd basalt",
+		}},
+		{"darwin", []string{
+			"check_dir '/Library/Application Support/Basalt' \"$engine_uid\"", "check_dir '/Library/Application Support/Basalt/run' \"$engine_uid\"",
+			"check_dir '/Library/Application Support/Basalt/state' \"$engine_uid\"", "check_dir /Library/Logs/Basalt \"$engine_uid\"",
+			"no_link /Library/Logs/Basalt/engine.log", "trusted /Library/LaunchDaemons \"\"", "no_link /Library/LaunchDaemons/dev.basaltdb.engine.plist",
+			"-ge 300", "-le 499", "dscl . -read /Groups/_basalt", "dscl . -read /Users/_basalt UserShell",
+		}},
+	} {
+		script, err := service.InstallScript(v.goos, dialogBinary)
+		require.NoError(t, err)
+		_, rest, ok := strings.Cut(script, service.ScriptHelpersEnd)
+		require.True(t, ok)
+		checks, _, ok := strings.Cut(rest, service.ScriptPreflightEnd)
+		require.True(t, ok)
+		for _, c := range append(v.checks, "bin=/usr/local/bin/basalt\n", `[ "$(uid_of "$bin")" = 0 ]`) {
+			require.Contains(t, checks, c, v.goos)
+		}
+		for _, change := range []string{"useradd", "dscl . -create", "make_dir", "mkdir", "put_file", "chown", "chmod", "systemctl", "launchctl", ": >"} {
+			require.NotContains(t, checks, change, "%s: the checks change nothing", v.goos)
+		}
+	}
+}
+
 // shellWord is s as the script writes a constant path.
 func shellWord(s string) string {
 	if strings.Contains(s, " ") {

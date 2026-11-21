@@ -24,12 +24,21 @@ const (
 	pkexecDismissed     = 126
 	pkexecNotAuthorized = 127
 
+	// linuxSysUIDMax is the highest system uid when /etc/login.defs
+	// names no SYS_UID_MAX.
+	linuxSysUIDMax = 999
+
 	// unitEnd ends the here-document that carries the unit.
 	unitEnd = "END_OF_ENGINE_UNIT"
 )
 
-// ScriptHelpersEnd marks the end of the install script's helper functions.
-const ScriptHelpersEnd = "# end of helpers\n"
+// ScriptHelpersEnd marks the end of the install script's helper functions,
+// and ScriptPreflightEnd the end of its checks: nothing before it creates
+// or changes anything.
+const (
+	ScriptHelpersEnd   = "# end of helpers\n"
+	ScriptPreflightEnd = "# end of checks: nothing above creates anything\n"
+)
 
 // Errors of an administrator dialog run.
 var (
@@ -136,10 +145,17 @@ func InstallScript(goos, binary string) (string, error) {
 	var b strings.Builder
 	b.WriteString(scriptHelpers(goos))
 	b.WriteString(ScriptHelpersEnd)
+	// Every check runs before anything is created: a refused folder never
+	// leaves a new OS user or folder behind.
+	b.WriteString(binaryCheck(binary))
 	switch goos {
 	case goosLinux:
+		b.WriteString(linuxPreflight(spec))
+		b.WriteString(ScriptPreflightEnd)
 		b.WriteString(linuxScript(spec))
 	case goosDarwin:
+		b.WriteString(darwinPreflight(spec))
+		b.WriteString(ScriptPreflightEnd)
 		b.WriteString(darwinScript(spec))
 	}
 	unit := SystemdUnit(spec)
@@ -204,12 +220,20 @@ trusted() {
 		[ $((0$(mode_of "$p") & 022)) -eq 0 ] || fail "$p is writable by group or others"
 	done
 }
+# check_dir DIR UID: the walk, and DIR itself is no symlink.
+check_dir() {
+	trusted "$1" "$2"
+	[ ! -L "$1" ] || fail "$1 is a symlink"
+}
+# no_link PATH: PATH is no symlink.
+no_link() {
+	[ ! -L "$1" ] || fail "$1 is a symlink"
+}
 # make_dir DIR MODE OWNER GROUP: make DIR when it is missing; one that
 # exists must pass the walk. mkdir never follows a link at DIR, and chown -h
 # changes only what mkdir made.
 make_dir() {
-	trusted "$1" "$engine_uid"
-	[ ! -L "$1" ] || fail "$1 is a symlink"
+	check_dir "$1" "$engine_uid"
 	[ -d "$1" ] && return 0
 	mkdir -m "$2" "$1"
 	chown -h "$3:$4" "$1"
@@ -218,7 +242,7 @@ make_dir() {
 # can change, replacing the file whole.
 put_file() {
 	trusted "${1%/*}" ""
-	[ ! -L "$1" ] || fail "$1 is a symlink"
+	no_link "$1"
 	t=$1.basalt-new
 	rm -f "$t"
 	(umask 077 && cat >"$t")
@@ -228,11 +252,84 @@ put_file() {
 `
 }
 
+// binaryCheck re-checks, as root, the binary the unit runs: every folder
+// above it root's and not writable by group or others, and the file itself
+// a plain root-owned file nobody else can write.
+func binaryCheck(binary string) string {
+	return fmt.Sprintf(`bin=%s
+trusted "${bin%%/*}" ""
+no_link "$bin"
+[ -f "$bin" ] || fail "$bin is not a file"
+[ "$(uid_of "$bin")" = 0 ] || fail "$bin is not owned by root"
+[ $((0$(mode_of "$bin") & 022)) -eq 0 ] || fail "$bin is writable by group or others"
+`, binary)
+}
+
+// shellCheck refuses an existing account whose login shell is not one
+// that refuses a login; shellCmd prints its shell.
+func shellCheck(user, shellCmd string) string {
+	return fmt.Sprintf(`	shell=$(%[2]s)
+	case $shell in
+	/usr/sbin/nologin | /sbin/nologin | /usr/bin/false | /bin/false) ;;
+	*) fail "the OS user %[1]s exists with the login shell $shell; basalt takes over only a system account that cannot log in" ;;
+	esac
+`, user, shellCmd)
+}
+
+// linuxPreflight checks an existing engine account (a system uid, up to
+// SYS_UID_MAX, and no login shell; no group of that name without the user)
+// and every folder the script writes in.
+func linuxPreflight(s Spec) string {
+	u := s.User
+	return fmt.Sprintf(`engine_uid=
+if id -u %[1]s >/dev/null 2>&1; then
+	engine_uid=$(id -u %[1]s)
+	sys_max=$(awk '$1 == "SYS_UID_MAX" { print $2 }' /etc/login.defs 2>/dev/null || true)
+	case $sys_max in '' | *[!0-9]*) sys_max=%[4]d ;; esac
+	[ "$engine_uid" -ge 1 ] && [ "$engine_uid" -le "$sys_max" ] ||
+		fail "the OS user %[1]s exists with uid $engine_uid, not a system account (1 to $sys_max); basalt does not take it over"
+%[5]selif getent group %[1]s >/dev/null 2>&1; then
+	fail "the group %[1]s exists without the OS user %[1]s; basalt does not take it over"
+fi
+check_dir %[2]s "$engine_uid"
+trusted %[3]s ""
+no_link %[6]s
+`, u, scriptWord(filepath.Dir(s.ConfigPath)), scriptWord(filepath.Dir(SystemdUnitPath)), linuxSysUIDMax,
+		shellCheck(u, "getent passwd "+u+" | cut -d: -f7"), scriptWord(SystemdUnitPath))
+}
+
+// darwinPreflight checks an existing engine account (uid 300 to 499, no
+// login shell; no group of that name without the user, whose gid dscl
+// would change) and every folder and file the script writes in.
+func darwinPreflight(s Spec) string {
+	u := s.User
+	return fmt.Sprintf(`engine_uid=
+if id -u %[1]s >/dev/null 2>&1; then
+	engine_uid=$(id -u %[1]s)
+	[ "$engine_uid" -ge %[2]d ] && [ "$engine_uid" -le %[3]d ] ||
+		fail "the OS user %[1]s exists with uid $engine_uid, not a system account (%[2]d to %[3]d); basalt does not take it over"
+%[4]selif dscl . -read /Groups/%[1]s >/dev/null 2>&1; then
+	fail "the group %[1]s exists without the OS user %[1]s; basalt does not take it over"
+fi
+check_dir %[5]s "$engine_uid"
+check_dir %[6]s "$engine_uid"
+check_dir %[7]s "$engine_uid"
+check_dir %[8]s "$engine_uid"
+no_link %[9]s
+trusted %[10]s ""
+no_link %[11]s
+`, u, darwinIDMin, darwinIDMax,
+		shellCheck(u, "dscl . -read /Users/"+u+" UserShell | awk '{ print $2 }'"),
+		scriptWord(filepath.Dir(s.ConfigPath)), scriptWord(config.DefaultSocketDir(goosDarwin)),
+		scriptWord(config.DefaultStateDir(goosDarwin)), scriptWord(darwinLogDir), scriptWord(darwinLogFile),
+		scriptWord(filepath.Dir(LaunchdPlist)), scriptWord(LaunchdPlist))
+}
+
 // linuxScript creates the engine's user and its config directory; systemd
 // makes the runtime and state directories from the unit.
 func linuxScript(s Spec) string {
 	u := s.User
-	return fmt.Sprintf(`if ! id -u %[1]s >/dev/null 2>&1; then
+	return fmt.Sprintf(`if [ -z "$engine_uid" ]; then
 	useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin %[1]s
 fi
 engine_uid=$(id -u %[1]s)
@@ -246,7 +343,7 @@ make_dir %[2]s %04[3]o %[1]s %[1]s
 func darwinScript(s Spec) string {
 	u := s.User
 	configDir := filepath.Dir(s.ConfigPath)
-	return fmt.Sprintf(`if ! id -u %[1]s >/dev/null 2>&1; then
+	return fmt.Sprintf(`if [ -z "$engine_uid" ]; then
 	used=$(dscl . -list /Users UniqueID; dscl . -list /Groups PrimaryGroupID)
 	id=%[2]d
 	while [ "$id" -le %[3]d ] && printf '%%s\n' "$used" | awk -v id="$id" '$NF == id { f = 1 } END { exit !f }'; do
@@ -269,7 +366,7 @@ make_dir %[6]s %04[7]o %[1]s %[1]s
 make_dir %[8]s %04[9]o %[1]s %[1]s
 make_dir %[10]s %04[11]o 0 0
 log=%[12]s
-[ ! -L "$log" ] || fail "$log is a symlink"
+no_link "$log"
 [ -e "$log" ] || (umask 077 && : >"$log")
 [ -f "$log" ] || fail "$log is not a file"
 chown -h %[1]s:%[1]s "$log"

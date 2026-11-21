@@ -53,7 +53,7 @@ func (s *Setup) readEngine(ctx context.Context, q guard.Querier) (EngineState, e
 	}
 	if r := st.Recorded; r != nil && r.RevokedAt != nil {
 		return EngineState{}, refuse(CodeEngineRevoked, fmt.Sprintf("ENGINE_REVOKED: engine %s was revoked in this database on %s. A revoked engine is never recorded again: "+
-			"ask %s to run basalt engine rotate-key and make a new code", channel.FingerprintOf(st.ID), UTCMinute(*r.RevokedAt), AgentWord(s.P)))
+			"ask %s to set the engine up again from the start and make a new code", channel.FingerprintOf(st.ID), UTCMinute(*r.RevokedAt), AgentWord(s.P)))
 	}
 	return st, nil
 }

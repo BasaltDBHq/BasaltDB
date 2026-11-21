@@ -57,8 +57,7 @@ func (o HandoffOptions) now() func() time.Time {
 // request cannot be signed.
 var errNoEngineKey = errors.New("the engine key file is refused (vault.state KEY_ERROR): the address cannot be collected until it is fixed")
 
-// rootCollector is the collector of an engine started as root without
-// --user: root trusts nothing the agent's OS user could redirect, and the
+// rootCollector is the collector of an engine started as root: root trusts nothing the agent's OS user could redirect, and the
 // YES would write that user's credential, so it never collects. The agent
 // is served degraded with the problem ENGINE_AS_ROOT; the engine's other
 // agents are served as usual.
@@ -135,7 +134,7 @@ func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agen
 	switch {
 	case env.asRoot:
 		collector = rootCollector{}
-		log.Warn("the agent waits for its database's address, which an engine started as root does not collect: start the engine with --user, or as the agent's OS user")
+		log.Warn("the agent waits for its database's address, which an engine started as root does not collect: start the engine as the agent's OS user")
 	case env.keys != nil:
 		collector = handoff.NewClient(env.handoff.HTTP, env.handoff.serviceURL(), env.keys, env.handoff.now())
 	}

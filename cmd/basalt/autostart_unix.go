@@ -164,11 +164,12 @@ func (s *starter) record(err error) error {
 }
 
 // start follows the steps of the contract: the start lock, the engine lock
-// again under it, the last-stop hold-off, the log, the detached supervisor,
-// and the wait for the agent's socket to answer. Only the text of the last
-// failure is remembered between calls, and whether an engine that holds
-// its lock failed to serve this socket (then the next calls look once and
-// do not wait again until that engine is gone).
+// again under it, a supervisor holding supervise.lock, the last-stop
+// hold-off, the log, the detached supervisor, and the wait for the agent's
+// socket to answer. Only the text of the last failure is remembered
+// between calls, and whether an engine that holds its lock failed to serve
+// this socket (then the next calls look once and do not wait again until
+// that engine is gone).
 func (s *starter) start(ctx context.Context) error {
 	// An update drops empty folders and resets modes; these are ours.
 	if err := os.MkdirAll(s.cfg.SocketDir, privateDirMode); err != nil {
@@ -188,6 +189,15 @@ func (s *starter) start(ctx context.Context) error {
 
 	if _, up, _ := server.Running(engine.LockPath(s.cfg.SocketDir)); up {
 		return s.engineRuns(ctx)
+	}
+	// A supervisor may hold its lock before its child takes the engine
+	// lock (it is starting, or waiting to restart). Do not launch another.
+	held, err := lockHeld(filepath.Join(s.cfg.SocketDir, superviseLock))
+	if err != nil {
+		return s.record(err)
+	}
+	if held {
+		return s.waitSocket(ctx)
 	}
 	s.forgetStuck()
 	if until, stop, ok := s.holdOff(); ok {
@@ -256,6 +266,20 @@ func (s *starter) waitSocket(ctx context.Context) error {
 		case <-tick.C:
 		}
 	}
+}
+
+// lockHeld reports whether another process holds an exclusive flock on
+// path, without keeping the lock. A missing file is not held.
+func lockHeld(path string) (bool, error) {
+	release, err := config.LockFile(path)
+	if errors.Is(err, config.ErrLocked) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	release()
+	return false, nil
 }
 
 // lockStart is config.LockFile, trying again a few times when the folder

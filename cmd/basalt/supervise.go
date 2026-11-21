@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine"
+	"github.com/basaltdbhq/basaltdb/internal/engine/binwatch"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/engine/laststop"
 	"github.com/basaltdbhq/basaltdb/internal/server"
@@ -46,6 +47,14 @@ var restartBackoff = []time.Duration{time.Second, 2 * time.Second, 4 * time.Seco
 // because another engine holds the config's engine lock.
 var errAnotherEngine = errors.New("another engine already runs for this config")
 
+// binaryGoneError is a crash restart whose binary path is gone: the
+// supervisor records why and stops instead of looping on a missing file.
+type binaryGoneError struct{ path string }
+
+func (e *binaryGoneError) Error() string {
+	return fmt.Sprintf("the basalt binary %s is gone", e.path)
+}
+
 type superviseOptions struct {
 	// firstStartedBy is the --started-by of the first child; every restart
 	// is startedByCrash.
@@ -61,8 +70,8 @@ type superviseOptions struct {
 }
 
 // supervise runs children until one stops cleanly, ctx is done, the
-// children keep crashing, or another engine runs. The error is the reason
-// it gave up.
+// children keep crashing, another engine runs, or the binary path is
+// gone. The error is the reason it gave up.
 func supervise(ctx context.Context, o superviseOptions) error {
 	startedBy := o.firstStartedBy
 	fast, restarts := 0, 0
@@ -78,6 +87,13 @@ func supervise(ctx context.Context, o superviseOptions) error {
 		if errors.Is(err, errAnotherEngine) {
 			o.log.Info(errAnotherEngine.Error())
 			return nil
+		}
+		var gone *binaryGoneError
+		if errors.As(err, &gone) {
+			reason := gone.Error()
+			o.log.Error("giving up", "reason", reason)
+			o.lastStop(reason)
+			return err
 		}
 		if o.now().Sub(began) < fastCrash {
 			fast++
@@ -115,7 +131,7 @@ func runSupervise(ctx context.Context, configPath, startedBy string, io stdio, h
 	if err != nil {
 		return fail(io.err, "engine", err)
 	}
-	exe, err := os.Executable()
+	startedFrom, err := superviseBinaryPath()
 	if err != nil {
 		return fail(io.err, "engine", err)
 	}
@@ -138,7 +154,7 @@ func runSupervise(ctx context.Context, configPath, startedBy string, io stdio, h
 	lockPath := engine.LockPath(cfg.SocketDir)
 	o := superviseOptions{
 		firstStartedBy: startedBy,
-		start:          childStarter(exe, configPath, lockPath, stateDir, io, log),
+		start:          childStarter(startedFrom, configPath, lockPath, stateDir, io, log),
 		sleep:          sleepCtx,
 		now:            time.Now,
 		log:            log,
@@ -163,16 +179,44 @@ func sleepCtx(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-// childStarter runs the engine as exe engine --config ... --started-by ...
-// with this process's output. A child that stays up for fastCrash clears
-// the last give-up; one that fails because another engine holds the lock
-// reports errAnotherEngine.
-func childStarter(exe, configPath, lockPath, stateDir string, io stdio, log *slog.Logger) func(context.Context, string) (func() error, error) {
+// superviseBinaryPath is the path the supervisor was started from: a
+// crash restart resolves it again, so a new file at the same path is run
+// and a missing one is not looped on.
+func superviseBinaryPath() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return binwatch.ExecPath(os.Args[0], exec.LookPath, func() (string, error) { return exe, nil }, binwatch.OS{}.Stat)
+}
+
+// resolveSuperviseBinary looks up startedFrom again; a missing file is
+// binaryGoneError.
+func resolveSuperviseBinary(startedFrom string) (string, error) {
+	if _, err := os.Stat(startedFrom); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", &binaryGoneError{path: startedFrom}
+		}
+		return "", err
+	}
+	return startedFrom, nil
+}
+
+// childStarter runs the engine as startedFrom engine --config ... --started-by ...
+// with this process's output, after resolving startedFrom again. A child
+// that stays up for fastCrash clears the last give-up; one that fails
+// because another engine holds the lock reports errAnotherEngine.
+func childStarter(startedFrom, configPath, lockPath, stateDir string, io stdio, log *slog.Logger) func(context.Context, string) (func() error, error) {
 	return func(ctx context.Context, startedBy string) (func() error, error) {
+		exe, err := resolveSuperviseBinary(startedFrom)
+		if err != nil {
+			return nil, err
+		}
 		cmd := exec.CommandContext(ctx, exe, "engine", "--config", configPath, "--started-by", startedBy)
 		cmd.Stdout, cmd.Stderr = io.out, io.err
 		cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
 		cmd.WaitDelay = childStopWait
+		prepareSuperviseChild(cmd)
 		if err := cmd.Start(); err != nil {
 			return nil, err
 		}

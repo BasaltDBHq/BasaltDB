@@ -19,7 +19,7 @@ runs:
     # the same line). Its own cache is off: every job would race to save the
     # same key, and only the first one would.
     - id: go
-      uses: actions/setup-go@v6
+      uses: actions/setup-go@v7
       with:
         go-version-file: go.mod
         cache: false

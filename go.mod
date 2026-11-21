@@ -16,7 +16,7 @@ require (
 	github.com/jackc/pgx/v5 v5.13.0
 	github.com/nyaruka/phonenumbers v1.8.1
 	github.com/pganalyze/pg_query_go/v6 v6.2.5
-	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/stretchr/testify v1.12.1
 	github.com/wasilibs/go-pgquery v0.0.0-20261106060434-4301e51f8dbf
 	go.uber.org/goleak v1.3.0

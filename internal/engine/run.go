@@ -622,7 +622,7 @@ type agentEnv struct {
 	relayLinks *relayLinks
 	// dict is the engine's PII dictionary, shared by every agent.
 	dict *pii.FuseDictionary
-	// asRoot: the engine runs as root (started without --user); it then
+	// asRoot: the engine runs as root; it then
 	// reaches each agent's files through openRootFiles.
 	asRoot bool
 	// keys sign a connect-only agent's collect requests; nil when the key
@@ -778,7 +778,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 }
 
 // agentFilesFor is how the engine reaches agent a's files: by path, or,
-// started as root without --user, through directories opened without
+// started as root, through directories opened without
 // following a link, from the computed credential path only (rootFiles).
 func agentFilesFor(env agentEnv, a config.Agent) (agentFiles, error) {
 	if !env.asRoot {

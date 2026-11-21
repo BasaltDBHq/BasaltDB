@@ -6,7 +6,7 @@ import (
 )
 
 // RootCredentialPath is the only credential file a root process (basalt
-// init --remote, basalt engine without --user) reads and writes for agent:
+// init --remote, basalt engine) reads and writes for agent:
 // agents/<agent>.url next to configPath, absolute, where basalt init puts
 // it. The config may belong to its directory's owner, the engine's user,
 // who must not be able to send root's credential reads and writes to

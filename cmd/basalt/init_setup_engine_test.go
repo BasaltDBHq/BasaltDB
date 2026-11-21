@@ -60,7 +60,7 @@ func TestInitSetupCodeRecordsTheEngine(t *testing.T) {
 	r = laptopRun(t, d.URL, "", time.Time{}, "--setup-code", again.res.Code, "--yes")
 	require.Equal(t, exitError, r.code)
 	require.Contains(t, r.stderr, "ENGINE_REVOKED: engine "+channel.FingerprintOf(id)+" was revoked in this database on ")
-	require.Contains(t, r.stderr, "basalt engine rotate-key")
+	require.Contains(t, r.stderr, "set the engine up again from the start")
 }
 
 // remoteAsUser is basalt init --remote run by the engine's own OS user (not

@@ -35,7 +35,7 @@ type System interface {
 	// Stat is the identity of the file at path, following symlinks.
 	Stat(path string) (Identity, error)
 	// Trusted refuses a binary anyone but root could change (the check
-	// basalt service install and basalt engine --user make).
+	// basalt service install makes).
 	Trusted(path string) error
 	// Probe runs the binary at path (basalt version) and returns its
 	// version; an error when it does not run or is not basalt.

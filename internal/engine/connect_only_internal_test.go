@@ -66,7 +66,7 @@ func TestConnectOnlyAgentWaits(t *testing.T) {
 	require.True(t, names["confirm_database"])
 }
 
-// An engine started as root without --user serves the waiting agent
+// An engine started as root serves the waiting agent
 // degraded with ENGINE_AS_ROOT, never collects, and touches none of its
 // files, even a confirmation it stopped in; it does not stop.
 func TestConnectOnlyAgentAsRootDegrades(t *testing.T) {

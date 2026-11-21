@@ -23,7 +23,7 @@ import (
 )
 
 // The plugin isolation check runs as root in a throwaway Linux container
-// (make test-privdrop): it makes real OS users and directories. It never
+// (make test-root-container): it makes real OS users and directories. It never
 // runs anywhere else.
 const isolationEnv = "BASALT_TEST_PLUGIN_ISOLATION"
 
@@ -140,7 +140,7 @@ func apply(t *testing.T, steps []Step) {
 // systemd and is checked by the golden units only.
 func TestPluginIsolationAsRoot(t *testing.T) {
 	if os.Getenv(isolationEnv) != "1" || os.Geteuid() != 0 {
-		t.Skip("makes OS users: runs as root in a throwaway container only (make test-privdrop)")
+		t.Skip("makes OS users: runs as root in a throwaway container only (make test-root-container)")
 	}
 	// The test binary may sit in a directory only root can enter: copy it
 	// where the plugin's user can run it.

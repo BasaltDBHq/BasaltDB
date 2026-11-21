@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// maxEngines bounds an engine list (basalt engine list): a database records
+// maxEngines bounds an engine list (basalt engine revoke): a database records
 // a handful.
 const maxEngines = 100
 

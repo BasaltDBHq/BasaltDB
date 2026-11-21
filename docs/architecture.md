@@ -42,7 +42,7 @@ The whole CLI: one file or a few per command (`init.go`, `approve.go`, `revert.g
 
 | Package | What it does |
 |---|---|
-| `engine` | The engine: sockets, peer checks, config, service install, Vault connection. Subpackages: `agent` (the tool services, start here for an MCP tool), `pages` (local approval and revert pages), `person` (the person socket for the CLI), `config`, `service`, `privdrop`, `peercred`, `upkeep`, `piidict`. |
+| `engine` | The engine: sockets, peer checks, config, service install, Vault connection. Subpackages: `agent` (the tool services, start here for an MCP tool), `pages` (local approval and revert pages), `person` (the person socket for the CLI), `config`, `service`, `peercred`, `upkeep`, `piidict`. |
 | `mcp` | A minimal MCP server over JSON-RPC 2.0. Used by the engine and its tests. |
 | `shim` | The `basalt mcp` relay. |
 | `sqlguard` | Parses one agent statement with libpg_query and classifies or refuses it. |

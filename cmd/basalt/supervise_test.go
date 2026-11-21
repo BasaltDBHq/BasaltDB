@@ -179,14 +179,6 @@ func TestSuperviseSecondInstanceExits(t *testing.T) {
 	require.Contains(t, stderr.String(), "another basalt engine --supervise runs")
 }
 
-func TestSuperviseRefusesUser(t *testing.T) {
-	t.Parallel()
-	var stderr bytes.Buffer
-	code := runEngineOn(context.Background(), []string{"--supervise", "--user", "basalt"}, stdio{in: bytes.NewReader(nil), out: &bytes.Buffer{}, err: &stderr}, osHost{})
-	require.Equal(t, exitUsage, code)
-	require.Contains(t, stderr.String(), "--supervise runs as the engine's own user; drop --user")
-}
-
 func TestStartedByRefusesUnknownValue(t *testing.T) {
 	t.Parallel()
 	var stderr bytes.Buffer

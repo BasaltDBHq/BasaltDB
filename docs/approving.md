@@ -96,7 +96,7 @@ The short link only works on the machine where the engine runs. An optional host
 
 ## Revoking an engine
 
-If the server is lost or compromised, `basalt engine list --admin` shows the engines your database records, and `basalt engine revoke` revokes one from your own computer. `status` then reports `ENGINE_REVOKED`, and a revoked engine is never recorded again. While the engine is running, `basalt status` shows its record as `Engine key:` (`RECORDED`, `NOT_RECORDED`, `REVOKED` or `UNKNOWN`); the agent's `status` tool shows it as `engineRecord`. A compromised server can ignore the flag, but it still cannot sign anything you did not.
+If the server is lost or compromised, `basalt engine revoke` revokes the engine your database records, from your own computer. `status` then reports `ENGINE_REVOKED`, and a revoked engine is never recorded again. While the engine is running, `basalt status` shows its record as `Engine key:` (`RECORDED`, `NOT_RECORDED`, `REVOKED` or `UNKNOWN`); the agent's `status` tool shows it as `engineRecord`. A compromised server can ignore the flag, but it still cannot sign anything you did not.
 
 ## Authenticators
 

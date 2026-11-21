@@ -26,10 +26,10 @@ brew install basaltdbhq/tap/basaltdb
 Download an archive from [GitHub Releases](https://github.com/BasaltDBHq/BasaltDB/releases), together with `SHA256SUMS`. Check the archive against `SHA256SUMS`, unpack it, and put `basalt` on your `PATH`.
 
 ```sh
-curl -fsSL -O https://github.com/BasaltDBHq/BasaltDB/releases/download/v0.0.1-alpha.2/basaltdb_0.0.1-alpha.2_linux_amd64.tar.gz
-curl -fsSL -O https://github.com/BasaltDBHq/BasaltDB/releases/download/v0.0.1-alpha.2/SHA256SUMS
-grep 'basaltdb_0.0.1-alpha.2_linux_amd64.tar.gz$' SHA256SUMS | sha256sum -c -
-tar -xzf basaltdb_0.0.1-alpha.2_linux_amd64.tar.gz
+curl -fsSL -O https://github.com/BasaltDBHq/BasaltDB/releases/download/v0.1.0-alpha/basaltdb_0.1.0-alpha_linux_amd64.tar.gz
+curl -fsSL -O https://github.com/BasaltDBHq/BasaltDB/releases/download/v0.1.0-alpha/SHA256SUMS
+grep 'basaltdb_0.1.0-alpha_linux_amd64.tar.gz$' SHA256SUMS | sha256sum -c -
+tar -xzf basaltdb_0.1.0-alpha_linux_amd64.tar.gz
 ```
 
 #### Check the signature
@@ -39,7 +39,7 @@ Releases after `v0.0.1-alpha.2` also carry `SHA256SUMS.sigstore.json`, a [Sigsto
 With `cosign` 2.4 or later installed (the bundle is in the Sigstore bundle format), check the signature before you check the archive:
 
 ```sh
-TAG=v0.0.1-alpha.3   # the release you downloaded
+TAG=v0.1.0-alpha   # the release you downloaded
 curl -fsSL -O "https://github.com/BasaltDBHq/BasaltDB/releases/download/$TAG/SHA256SUMS"
 curl -fsSL -O "https://github.com/BasaltDBHq/BasaltDB/releases/download/$TAG/SHA256SUMS.sigstore.json"
 cosign verify-blob SHA256SUMS \

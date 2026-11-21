@@ -13,7 +13,7 @@ const IssueBase = "https://github.com/BasaltDBHq/BasaltDB/issues/new"
 // past about 8 KB; this leaves room for proxies and terminals.
 const maxURL = 6000
 
-const trimmedNote = "...stack trimmed to fit the link; the full text is in `basalt crash show`..."
+const trimmedNote = "...stack trimmed to fit the link; the full text is in the saved report..."
 
 // Title is the issue title: the command and what happened.
 func (rep Report) Title() string {
@@ -31,7 +31,7 @@ func (rep Report) Title() string {
 // body is the issue text with stack as the stack's text.
 func (rep Report) body(stack string) string {
 	var b strings.Builder
-	b.WriteString("Saved by `basalt crash report`. It holds what `basalt crash show " + rep.ID + "` prints and nothing else.\n\n")
+	b.WriteString("Crash report " + rep.ID + ", saved by basalt. It holds the saved report and nothing else.\n\n")
 	b.WriteString("| | |\n|---|---|\n")
 	row := func(k, v string) {
 		if v != "" {
@@ -56,17 +56,37 @@ func (rep Report) body(stack string) string {
 // from the bottom (the top frames say where it crashed) until the whole link
 // fits maxURL. Reports whether it was cut.
 func (rep Report) IssueURL() (link string, trimmed bool) {
+	link, trimmed, _ = rep.issueURL(maxURL)
+	return link, trimmed
+}
+
+// IssueURLWithin is IssueURL for a link of at most limit characters (the
+// status tool hands one over inside the link budget). When even the title,
+// the fields and the note do not fit, it returns "" and ok false: no link is
+// better than one over the budget.
+func (rep Report) IssueURLWithin(limit int) (link string, trimmed, ok bool) {
+	link, trimmed, ok = rep.issueURL(limit)
+	if !ok {
+		return "", false, false
+	}
+	return link, trimmed, true
+}
+
+// issueURL is the link of at most limit characters, or, when none fits, the
+// shortest one with ok false.
+func (rep Report) issueURL(limit int) (link string, trimmed, ok bool) {
 	link = build(rep.Title(), rep.body(rep.Stack))
-	if len(link) <= maxURL {
-		return link, false
+	if len(link) <= limit {
+		return link, false, true
 	}
 	lines := strings.Split(rep.Stack, "\n")
 	cut := func(n int) string {
 		return build(rep.Title(), rep.body(strings.Join(lines[:n], "\n")+"\n"+trimmedNote))
 	}
 	// The longest prefix of the stack's lines that fits, with the note.
-	n := sort.Search(len(lines), func(n int) bool { return len(cut(n+1)) > maxURL })
-	return cut(n), true
+	n := sort.Search(len(lines), func(n int) bool { return len(cut(n+1)) > limit })
+	link = cut(n)
+	return link, true, len(link) <= limit
 }
 
 func build(title, body string) string {

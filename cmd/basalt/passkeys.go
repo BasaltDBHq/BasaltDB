@@ -5,13 +5,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"runtime"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
@@ -43,24 +41,24 @@ func runPasskey(c *cliIO, args []string) int {
 	return c.fail(fmt.Errorf("%w: unknown passkey command %q (list, remove, check)", errUsage, args[0]))
 }
 
-// agentFlags are the flags that find the agent credential, as for basalt log.
+// agentFlags find the agent credential: --agent, and the engine config the
+// command discovers.
 type agentFlags struct {
-	agent, configPath, credFile *string
+	agent      *string
+	configPath string
 }
 
 func addAgentFlags(c *cliIO, name string) (*flag.FlagSet, agentFlags) {
 	fs := c.flags(name)
 	return fs, agentFlags{
-		agent:      fs.String("agent", "", "use this agent's credential from the engine config"),
-		configPath: fs.String("config", config.DefaultPath(runtime.GOOS), "engine config file"),
-		credFile:   fs.String("credential-file", "", "read the agent's connection string from this file"),
+		agent: fs.String("agent", "", "use this agent's credential from the engine config"),
 	}
 }
 
 // passkeys lists the active passkeys with the agent the flags name: over
 // the person socket in service mode, else with the agent's credential.
 func (f agentFlags) passkeys(c *cliIO) ([]ledger.Passkey, error) {
-	l, err := openLedger(c, *f.agent, *f.credFile, *f.configPath)
+	l, err := openLedger(c, *f.agent, "", f.configPath)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +91,10 @@ func passkeyList(c *cliIO, args []string) int {
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
 	}
-	*af.configPath = configOrFallback(c.host, fs, *af.configPath)
+	var err error
+	if af.configPath, err = c.findConfig(); err != nil {
+		return c.fail(err)
+	}
 	keys, err := af.passkeys(c)
 	if err != nil {
 		return c.fail(err)
@@ -373,8 +374,11 @@ func passkeyCheck(c *cliIO, args []string) int {
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
 	}
-	*af.configPath = configOrFallback(c.host, fs, *af.configPath)
-	l, err := openLedger(c, *af.agent, *af.credFile, *af.configPath)
+	var err error
+	if af.configPath, err = c.findConfig(); err != nil {
+		return c.fail(err)
+	}
+	l, err := openLedger(c, *af.agent, "", af.configPath)
 	if err != nil {
 		return c.fail(err)
 	}

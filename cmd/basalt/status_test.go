@@ -287,32 +287,6 @@ func TestUpgradeJudgesTheGuardByThisBuildNotTheRunningEngines(t *testing.T) {
 	require.Equal(t, latest, g.version(t))
 }
 
-// A credential file outside the default is saved in initArgs (AE-15): its
-// path may appear as that flag in an init command, never on its own, and
-// its contents never.
-func TestStatusNamesANonDefaultCredentialFileOnlyAsTheSavedFlag(t *testing.T) {
-	t.Parallel()
-	g := newOlderGuard(t, 0)
-	custom := filepath.Join(filepath.Dir(g.configPath), "custom-cred.url")
-	require.NoError(t, os.Rename(g.credFile, custom))
-	cfg, err := config.Load(g.configPath)
-	require.NoError(t, err)
-	cfg.Agents[0].Store.CredentialFile = custom
-	cfg.Agents[0].InitArgs = append(cfg.Agents[0].InitArgs, "--credential-file="+custom)
-	raw, err := json.Marshal(cfg)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(g.configPath, raw, 0o600))
-
-	for _, args := range [][]string{{"--json"}, nil} {
-		r := g.status(t, args...)
-		require.Equal(t, exitOK, r.code, r.stderr)
-		out := r.stdout + r.stderr
-		g.requireNoSecret(t, out)
-		require.NotContains(t, out, custom, "no step replays a saved flag, so the path never appears")
-		require.Contains(t, out, "basalt init --agent bot", "NO_PASSKEY's step is the agent's basalt init")
-	}
-}
-
 func TestStatusSaysUnknownForALockFileItCannotOpen(t *testing.T) {
 	t.Parallel()
 	if os.Geteuid() == 0 {

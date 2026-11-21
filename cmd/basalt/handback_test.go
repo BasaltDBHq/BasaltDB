@@ -324,7 +324,8 @@ func TestInitTakesThePasskeyFromThePage(t *testing.T) {
 		func(k string) string { return map[string]string{envAdminURL: d.URL}[k] })
 	codes := make(chan int, 1)
 	go func() {
-		codes <- guardCommands["init"](c, []string{
+		codes <- runGuard(c, []string{
+			"init",
 			"--agent", "bot", "--write", "public.leads", "--prefix", d.Names.Prefix,
 			"--config", filepath.Join(t.TempDir(), "engine.json"), "--os-user", "tester", "--yes", "--passkey-origin", origin,
 		})

@@ -157,7 +157,7 @@ func (e *pluginEngine) run(env map[string]string, stdin string, args ...string) 
 	var stdout, stderr bytes.Buffer
 	c := newIO(context.Background(), stdio{in: strings.NewReader(stdin), out: &stdout, err: &stderr}, func(k string) string { return env[k] })
 	c.host = e.host
-	code := runPlugin(c, append(args, "--config", e.configPath))
+	code := runPlugin(c, takePathFlags(c, runPlugin, append(args, "--config", e.configPath)))
 	r := result{code, stdout.String(), stderr.String()}
 	for _, s := range []string{"TOP-SECRET", "PRIVATE KEY"} {
 		require.NotContains(e.t, r.stdout+r.stderr, s, "basalt plugin %v printed a file's contents", args)
@@ -274,7 +274,7 @@ func TestAddShowsConsent(t *testing.T) {
 	// Yes: the entry is added, disabled, naming the copy consent showed.
 	r = e.person("add", e.src, "--agents", "product_a,product_b")
 	require.Contains(t, r.stderr, "added, disabled")
-	require.Contains(t, r.stderr, "basalt plugin enable acme-ner --config "+e.configPath)
+	require.Contains(t, r.stderr, "basalt plugin enable acme-ner")
 	require.Contains(t, r.stderr, "basalt engine --config "+e.configPath, "prints the engine restart command")
 	c := e.config()
 	require.Len(t, c.Plugins, 1)
@@ -371,11 +371,12 @@ func TestAddRefusesBadManifests(t *testing.T) {
 	require.NoError(t, err)
 	e.writePlugin(dir, pluginManifest("1.0.0", `"feed.observe": {"contract": "feed/1"}`, ""), untrusted)
 	body := refusal(t, e.run(nil, "y\n", "add", dir, "--agents", "product_a", "--json"), "NOT_TRUSTED")
-	require.Equal(t, "basalt plugin trust <publisher key file> --config "+e.configPath, body.NextSteps[0].Command)
-	require.Contains(t, body.NextSteps[1].Command, "basalt plugin add "+dir+" --agents product_a --config "+e.configPath)
+	require.Contains(t, body.PersonMessage, "not signed by a key this engine trusts")
+	require.Len(t, body.NextSteps, 1)
+	require.Equal(t, mcp.ActionStop, body.NextSteps[0].Action)
 
 	body = refusal(t, e.run(nil, "y\n", "add", e.src, "--agents", "product_a,client_x", "--json"), "UNKNOWN_AGENT")
-	require.Equal(t, "basalt plugin add "+e.src+" --agents product_a --config "+e.configPath, body.NextSteps[0].Command)
+	require.Equal(t, "basalt plugin add "+e.src+" --agents product_a", body.NextSteps[0].Command)
 	require.Contains(t, body.PersonMessage, "product_a, product_b")
 	require.Equal(t, before, e.snapshot(), "nothing written for a refused command; no plugin root made")
 }
@@ -404,12 +405,6 @@ func TestWideningByAgentOpensNothingUnchecked(t *testing.T) {
 			e.writeConfig(tc.operatedBy)
 			newer := e.newSource(pluginManifest("1.5.0", `"wire.detect": {"contract": "detector/1", "roles": ["VALUE"], "entityTypes": ["PERSON_NAME", "acme-ner.EMPLOYEE_ID"]}`, ""))
 			egress := e.newSource(pluginManifest("1.4.0", `"wire.detect": {"contract": "detector/1", "roles": ["VALUE"], "entityTypes": ["PERSON_NAME", "acme-ner.EMPLOYEE_ID"]}`, `"evil.example:443"`))
-			key, err := plugin.GenerateKey()
-			require.NoError(t, err)
-			pub, err := plugin.MarshalPublicKey(&key.PublicKey)
-			require.NoError(t, err)
-			keyFile := filepath.Join(t.TempDir(), "publisher.pub")
-			require.NoError(t, os.WriteFile(keyFile, pub, 0o644))
 			before := e.snapshot()
 
 			for what, c := range map[string]struct {
@@ -423,7 +418,6 @@ func TestWideningByAgentOpensNothingUnchecked(t *testing.T) {
 				"new version":          {[]string{"add", newer, "--agents", "product_a"}, reasonDatabaseUnreachable},
 				"new egress":           {[]string{"add", egress, "--agents", "product_a"}, reasonDatabaseUnreachable},
 				"new plugin":           {[]string{"add", e.newSource(remotePluginManifest), "--agents", "product_a"}, reasonDatabaseUnreachable},
-				"trust":                {[]string{"trust", keyFile}, reasonAgentOperated},
 				"unknown agent":        {[]string{"add", e.src, "--agents", "client_x"}, reasonUnknownAgent},
 			} {
 				r := e.run(tc.env, "y\n", append(c.args, "--json")...)
@@ -555,38 +549,6 @@ func TestEnableShowsConsentAndVerifies(t *testing.T) {
 	require.Contains(t, r.stderr, "has no plugin nope/default")
 }
 
-func TestTrustAsksAndAddsOnce(t *testing.T) {
-	t.Parallel()
-	e := newPluginEngine(t)
-	k, err := plugin.GenerateKey()
-	require.NoError(t, err)
-	pub, err := plugin.MarshalPublicKey(&k.PublicKey)
-	require.NoError(t, err)
-	file := filepath.Join(t.TempDir(), "acme.pub")
-	require.NoError(t, os.WriteFile(file, pub, 0o644))
-	id := signerID(t, k)
-
-	r := e.run(nil, "n\n", "trust", file)
-	require.Equal(t, exitError, r.code)
-	require.Contains(t, r.stderr, "Key id "+id)
-	require.NotContains(t, entriesUnder(t, e.trustDir), id+".pem")
-
-	r = e.person("trust", file)
-	require.Contains(t, r.stderr, "key "+id+" trusted")
-	require.Contains(t, entriesUnder(t, e.trustDir), id+".pem")
-	require.Contains(t, r.stderr, "restart the engine so it trusts the key:\n  basalt engine --config "+e.configPath+"\n",
-		"the engine reads its trust store at start, so trust names the restart")
-	r = e.person("trust", file)
-	require.Contains(t, r.stderr, "already trusted; nothing changed")
-	require.NotContains(t, r.stderr, "restart the engine", "nothing changed, so nothing to restart for")
-
-	bad := filepath.Join(t.TempDir(), "bad.pub")
-	require.NoError(t, os.WriteFile(bad, []byte("not a key TOP-SECRET"), 0o644))
-	r = e.run(nil, "y\n", "trust", bad)
-	require.Equal(t, exitError, r.code)
-	require.Contains(t, r.stderr, bad)
-}
-
 func TestPluginUsage(t *testing.T) {
 	t.Parallel()
 	e := newPluginEngine(t)
@@ -616,13 +578,13 @@ func TestPluginHelpSaysWhatTheCommandsTake(t *testing.T) {
 		"approve [code] [--agent NAME] [--json]",
 		"disable <name> [--instance NAME]",
 		"check <name> [--instance NAME] [--json]",
-		"trust <public key file> [--json]",
 		"remove <name> [--instance NAME]",
-		"keygen --out DIR",
-		"sign <dir> --key FILE",
-		"--config PATH",
 	} {
 		require.Contains(t, usage, part)
+	}
+	require.NotContains(t, usage, "--config", "the config is found by itself")
+	for _, gone := range []string{"trust", "keygen", "sign"} {
+		require.NotContains(t, usage, gone, "the author commands moved to the plugin SDK")
 	}
 
 	help := e.run(nil, "", "enable", "-h")
@@ -652,7 +614,9 @@ func TestPluginApproveWithoutCodeNeedsATerminal(t *testing.T) {
 	c := newIO(context.Background(), stdio{in: stdin, out: &stdout, err: &stderr}, func(string) string { return "" })
 	c.host = e.host
 	var code int
-	within(t, func() { code = runPlugin(c, []string{"approve", "--config", e.configPath}) })
+	within(t, func() {
+		code = runPlugin(c, takePathFlags(c, runPlugin, []string{"approve", "--config", e.configPath}))
+	})
 	require.Equal(t, exitUsage, code, stderr.String())
 	require.Contains(t, stderr.String(), "basalt plugin approve <code>")
 	require.NotContains(t, stderr.String(), "Paste the code", "it does not ask where nobody can answer")
@@ -663,7 +627,9 @@ func TestPluginApproveWithoutCodeNeedsATerminal(t *testing.T) {
 	stderr.Reset()
 	_, err := tw.WriteString("basalt-plugin.1.not-a-code\n")
 	require.NoError(t, err)
-	within(t, func() { code = runPlugin(term, []string{"approve", "--config", e.configPath}) })
+	within(t, func() {
+		code = runPlugin(term, takePathFlags(term, runPlugin, []string{"approve", "--config", e.configPath}))
+	})
 	require.Equal(t, exitUsage, code, "the pasted text was read and is no code: %s", stderr.String())
 	require.Contains(t, stderr.String(), "Paste the code the plugin approval page showed: ")
 }

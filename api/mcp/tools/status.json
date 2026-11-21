@@ -278,17 +278,12 @@
         "type": "object",
         "additionalProperties": false,
         "required": ["state"],
-        "description": "CONTRACT.md, Direct transport and Version 33: this engine's key as the agent's database records it. Absent when the engine is down.",
+        "description": "CONTRACT.md, Vault channel, Configuration and status: this engine's key as the agent's database records it. Absent when the engine is down.",
         "properties": {
           "state": {
             "type": "string",
             "enum": ["RECORDED", "NOT_RECORDED", "REVOKED", "UNKNOWN"],
-            "description": "RECORDED: the agent's database records this engine's key and has not revoked it. NOT_RECORDED: it does not record it (no setup code carried it, or the key was rotated since). REVOKED: the person revoked it; the engine hands over long links for this agent and refuses its portal sessions. UNKNOWN: the guard is older than version 33, the key file is refused, or the record could not be read."
-          },
-          "url": {
-            "type": "string",
-            "pattern": "^https://([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?(:[1-9][0-9]{0,4})?$",
-            "description": "The engine address recorded with the key, when there is one."
+            "description": "RECORDED: the agent's database records this engine's key and has not revoked it. NOT_RECORDED: it does not record it (no setup code carried it, or the key was rotated since). REVOKED: the person revoked it; status reports ENGINE_REVOKED, and the relay does not enforce it yet (CONTRACT.md, Vault channel, Engine revocation). UNKNOWN: the guard is older than version 33, the key file is refused, or the record could not be read."
           },
           "recordedAt": {
             "type": "string",
@@ -389,7 +384,6 @@
                 "ENGINE_AS_ROOT",
                 "DEV_LOCAL_PAGES",
                 "ENGINE_REVOKED",
-                "DIRECT_NOT_SERVED",
                 "LOCK_FILE_UNUSABLE",
                 "LEDGER_REINSTALLED",
                 "PORTAL_MISMATCH",

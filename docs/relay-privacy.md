@@ -35,4 +35,4 @@ Request logs are off. The relay writes one kind of log line: an event name with 
 
 ## If you do not want this
 
-Run with the relay off (`basalt init --vault=off`). Approvals still work through long links, or through your own tunnel ([approving.md](approving.md#your-own-tunnel-without-the-vault)).
+Run with the relay off (`basalt init --vault=off`). Approvals still work through long links.

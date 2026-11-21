@@ -491,7 +491,7 @@ func TestEveryCatalogErrorGivesTheCatalogsSteps(t *testing.T) {
 				t.Parallel()
 				s := operatedService(t, variant.goos, variant.config, variant.operatedBy)
 				te := s.Failure(kase.tool, kase.args, kase.fail(t, s))
-				requireObeysCatalog(t, kase, te, variant.config, variant.operatedBy)
+				requireObeysCatalog(t, kase, te, variant.operatedBy)
 			})
 		}
 	}
@@ -531,10 +531,8 @@ func requireOperatorRules(t *testing.T, steps []mcp.NextStep, personMessage stri
 		// steps too (CONTRACT.md, Plugin approval).
 		if strings.HasPrefix(st.Command, "basalt init") {
 			require.Regexp(t, initCommand, st.Command, where)
-			if !strings.Contains(st.Command, "--direct-addr") {
-				require.Equal(t, operatedBy == mcpcontract.OperatedByAgent, strings.Contains(st.Command, " --remote"),
-					"%s: --remote exactly on an agent-operated engine: %q", where, st.Command)
-			}
+			require.Equal(t, operatedBy == mcpcontract.OperatedByAgent, strings.Contains(st.Command, " --remote"),
+				"%s: --remote exactly on an agent-operated engine: %q", where, st.Command)
 			continue
 		}
 		require.Equal(t, mcpcontract.OperatedByAgent, operatedBy, "%s: on a person-operated engine the agent runs only basalt init: %q", where, st.Command)
@@ -551,7 +549,7 @@ func requireOperatorRules(t *testing.T, steps []mcp.NextStep, personMessage stri
 	}
 }
 
-func requireObeysCatalog(t *testing.T, kase catalogCase, te *mcp.ToolError, config, operatedBy string) {
+func requireObeysCatalog(t *testing.T, kase catalogCase, te *mcp.ToolError, operatedBy string) {
 	t.Helper()
 	entry, ok := catalogOf(t).ErrorEntry(te.Code, te.Reason, kase.tool)
 	require.True(t, ok, "no catalog entry for %s %s %s", te.Code, te.Reason, kase.tool)
@@ -564,7 +562,7 @@ func requireObeysCatalog(t *testing.T, kase catalogCase, te *mcp.ToolError, conf
 	requireOperatorRules(t, te.NextSteps, te.PersonMessage, variant, operatedBy, entryKey(entry))
 	requirePersonMessage(t, te.PersonMessage, te.Links)
 	for i, st := range te.NextSteps {
-		requireStepObeysRules(t, st, kase, config, fmt.Sprintf("%s step %d", entryKey(entry), i+1))
+		requireStepObeysRules(t, st, kase, fmt.Sprintf("%s step %d", entryKey(entry), i+1))
 	}
 	if te.Code == CodeInternal || te.Code == CodeUnavailable {
 		require.NotEmpty(t, te.ErrorID, "errorId on UNAVAILABLE and INTERNAL")
@@ -579,7 +577,7 @@ var conditionalWords = regexp.MustCompile(`(?i)\b(if|unless|otherwise)\b`)
 
 var secretPattern = regexp.MustCompile(`(?i)(://|#s=|secret|token|postgres)`)
 
-func requireStepObeysRules(t *testing.T, st mcp.NextStep, kase catalogCase, config, where string) {
+func requireStepObeysRules(t *testing.T, st mcp.NextStep, kase catalogCase, where string) {
 	t.Helper()
 	require.Contains(t, mcpcontract.ActorActions[st.Actor], st.Action, where)
 	require.NotEmpty(t, st.Text, where)
@@ -597,11 +595,11 @@ func requireStepObeysRules(t *testing.T, st mcp.NextStep, kase catalogCase, conf
 		require.Positive(t, st.MaxRows, where)
 		require.LessOrEqual(t, st.MaxRows, MaxRetryRows, where)
 	case mcp.ActionRunCommand:
-		requireCommand(t, st.Command, config, where)
+		requireCommand(t, st.Command, where)
 	case mcp.ActionOpenLink:
 		require.NotEmpty(t, st.URL, where)
 		if st.Command != "" {
-			requireCommand(t, st.Command, config, where)
+			requireCommand(t, st.Command, where)
 		}
 	}
 	if st.Action != mcp.ActionRetrySmallerBatches {
@@ -625,12 +623,10 @@ var serviceManager = regexp.MustCompile(`^sudo (systemctl|launchctl|chown) `)
 // (PLUGIN_CONFIG_INVALID), the others edit it.
 var agentPluginCommand = regexp.MustCompile(`^basalt plugin (enable|disable|remove|list)( |$)`)
 
-// initCommand is the agent's basalt init as a step names it. The
-// --direct-addr form is DIRECT_NOT_SERVED's, which goes with the direct
-// transport.
-var initCommand = regexp.MustCompile(`^basalt init --agent bot( --remote)?( --direct-addr 127\.0\.0\.1:8787)?$`)
+// initCommand is the agent's basalt init as a step names it.
+var initCommand = regexp.MustCompile(`^basalt init --agent bot( --remote)?$`)
 
-func requireCommand(t *testing.T, command, config, where string) {
+func requireCommand(t *testing.T, command, where string) {
 	t.Helper()
 	require.NotEmpty(t, command, where)
 	if serviceManager.MatchString(command) {
@@ -657,11 +653,8 @@ func requireCommand(t *testing.T, command, config, where string) {
 	// agent's: basalt plugin takes no --agent.
 	require.True(t, strings.HasPrefix(command, "basalt plugin "), "%s: a step names no other basalt command: %q", where, command)
 	require.NotContains(t, command, "<", "%s: no placeholders: %q", where, command)
-	if config == "" {
-		require.NotContains(t, command, "--config", where)
-		return
-	}
-	require.Contains(t, command, "--config "+config, where)
+	// Only the foreground engine names its config: every other command finds it.
+	require.NotContains(t, command, "--config", where)
 }
 
 func requireToolArguments(t *testing.T, st mcp.NextStep, kase catalogCase, where string) {

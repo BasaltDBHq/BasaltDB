@@ -54,7 +54,7 @@ func cliOn(t *testing.T, h *fakeHost, env map[string]string, stdin string, args 
 			return cache
 		})
 	c.host = h
-	code := guardCommands[args[0]](c, args[1:])
+	code := runGuard(c, args)
 	return result{code, stdout.String(), stderr.String()}
 }
 
@@ -942,4 +942,10 @@ func TestInitShowsTheGuardsDetailAndHint(t *testing.T) {
 	v, err := guard.InstalledVersion(context.Background(), d.Admin)
 	require.NoError(t, err)
 	require.Zero(t, v, "the transaction rolled back")
+}
+
+// runGuard runs args[0] on c with the path flags moved into c.paths.
+func runGuard(c *cliIO, args []string) int {
+	cmd := guardCommands[args[0]]
+	return cmd(c, takePathFlags(c, cmd, args[1:]))
 }

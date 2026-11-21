@@ -17,7 +17,7 @@ import {
 } from "./codec.js";
 import { pageTransport } from "./transport.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
-import { $, APPROVE_REOPEN, el, fail, linkFailure, loadOrPaste, personText, setPill, showCode, showDone, showEngine, showRelayFailed, webauthnError, whenText } from "./page.js";
+import { $, APPROVE_REOPEN, el, fail, linkFailure, loadOrPaste, personText, setPill, showCode, showDone, showRelayFailed, webauthnError, whenText } from "./page.js";
 import { applyReveal, canReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import { agentName } from "./scope.js";
 import { canStartPasskey, cascadeConfirmation, headline, summarize } from "./summary.js";
@@ -264,7 +264,6 @@ async function main() {
   }
   const summary = summarize(req.lines);
   renderSummary(req, summary);
-  showEngine(relay?.session);
   const state = { req, relay, shown: new Map() };
   renderLines(state);
   wireReveal(rp, state);

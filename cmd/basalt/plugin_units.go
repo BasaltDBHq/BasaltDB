@@ -149,7 +149,7 @@ func (e *pluginEnv) applyUnit(action unitAction, p config.Plugin, v *plugin.Veri
 	}
 	if err != nil {
 		return fmt.Errorf("plugin %s: engine.json was changed, but its service unit was not: %w. "+
-			"Run sudo basalt service install%s to set up every plugin's unit again", k, err, e.configArg())
+			"Run sudo basalt service install to set up every plugin's unit again", k, err)
 	}
 	return nil
 }

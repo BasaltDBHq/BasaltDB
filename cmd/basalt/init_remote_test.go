@@ -86,7 +86,7 @@ func cliNoDBEnv(t *testing.T, probe func(context.Context, string) error, env map
 	c.probe = probe
 	c.fetchChain = nil // no network: the example hosts are never dialed
 	c.host = systemSocketHost(t)
-	code := runInit(c, args[1:])
+	code := runInit(c, takePathFlags(c, runInit, args[1:]))
 	return result{code, stdout.String(), stderr.String()}
 }
 
@@ -499,7 +499,7 @@ func TestInitRemoteExplainsACredentialWithTargetParams(t *testing.T) {
 
 			require.Equal(t, exitError, r.code, "%q %v: %s", suffix, extra, r.stderr)
 			require.Contains(t, r.stderr, "was written by basalt init for a connection string with a host= parameter")
-			require.Contains(t, r.stderr, "Use another --agent name, or another --config")
+			require.Contains(t, r.stderr, "Use another --agent name")
 			require.NotContains(t, r.stderr, "enginepw")
 			require.Empty(t, r.stdout)
 			raw, err := os.ReadFile(path)
@@ -871,10 +871,10 @@ func TestInitRemoteKeepsARootlessSocketDirNextToTheConfig(t *testing.T) {
 		})
 	c.host = h
 	c.agentLogin = refusedLogin
-	code := runInit(c, []string{
+	code := runInit(c, takePathFlags(c, runInit, []string{
 		"--remote", "--config", cfg, "--json", "--agent", "bot", "--write", "public.leads",
 		"--database-url", "postgres://postgres@db.example.com:5432/postgres",
-	})
+	}))
 	require.Equal(t, exitOK, code, stderr.String())
 	loaded, err := config.Load(cfg)
 	require.NoError(t, err)

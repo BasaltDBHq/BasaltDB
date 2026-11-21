@@ -24,7 +24,7 @@ import (
 //     service's system directories owned by that user, installs and
 //     starts the unit; init then checks the engine answers on the socket.
 //   - in the foreground as the person (--no-service, an answer of no, or
-//     paths given with --config, --socket-dir or --credential-file):
+//     the engine config found in the person's own config directory):
 //     init writes the config and credential where the person can, and
 //     prints the one command.
 //
@@ -32,7 +32,7 @@ import (
 // falls back to the foreground on its own (checkServiceAnswer).
 
 // perUserDirName is the per-user config directory under os.UserConfigDir.
-const perUserDirName = "basalt"
+const perUserDirName = config.UserDirName
 
 // setupEngine is init's last step.
 func setupEngine(c *cliIO, f initFlags, dsn string) error {
@@ -56,7 +56,7 @@ func setupEngine(c *cliIO, f initFlags, dsn string) error {
 	}
 	if f.pin != nil {
 		if err := c.writePin(*f.pin, f.configPath); err != nil {
-			return fmt.Errorf("the guard is installed but the pin is not written (run %s): %w", pinCommand(f.pin.pinTarget, f.configPath, c.goos), err)
+			return fmt.Errorf("the guard is installed but the pin is not written (run %s): %w", pinCommand(f.pin.pinTarget), err)
 		}
 	}
 	f.initArgs = f.savedArgs(c.goos)
@@ -74,7 +74,7 @@ func setupEngine(c *cliIO, f initFlags, dsn string) error {
 		fmt.Fprintf(c.stderr, "basalt: the agent's password changed; restart the engine so it uses the new one:\n  %s\n",
 			cmds.Foreground().EngineRestart())
 	}
-	fmt.Fprint(c.stderr, foregroundNext(f, c.goos, c.host))
+	fmt.Fprint(c.stderr, foregroundNext(f, c.host))
 	return offerClaude(c, f)
 }
 
@@ -116,6 +116,9 @@ func perUserPaths(c *cliIO, f initFlags) (initFlags, error) {
 	if f.pathsGiven || c.host.Euid() == 0 {
 		return f, nil
 	}
+	if err := c.refuseSecondConfig(); err != nil {
+		return f, err
+	}
 	base, err := c.host.UserConfigDir()
 	if err != nil {
 		return f, err
@@ -125,7 +128,7 @@ func perUserPaths(c *cliIO, f initFlags) (initFlags, error) {
 	f.socketDir = filepath.Join(dir, "run")
 	f.credFile = filepath.Join(dir, "agents", f.agent+".url")
 	if err := config.CheckSocketPath(config.SocketPath(f.socketDir, f.agent)); err != nil {
-		return f, fmt.Errorf("%w; pass --socket-dir", err)
+		return f, fmt.Errorf("%w; use a shorter agent name", err)
 	}
 	return f, nil
 }
@@ -155,16 +158,16 @@ func writeCredential(path, dsn string, keep bool) error {
 
 // foregroundNext is the one command that starts the engine, and the MCP
 // server line.
-func foregroundNext(f initFlags, goos string, h host) string {
+func foregroundNext(f initFlags, h host) string {
 	return fmt.Sprintf("next, start the engine; it runs in the foreground as you (same-user mode: writes are guarded, but your OS user can read the credential):\n  basalt engine --config %s\n%s",
-		shellQuote(f.configPath), mcpLine(f, goos, h))
+		shellQuote(f.configPath), mcpLine(f, h))
 }
 
 // mcpLine is the MCP server command for the agent's client.
-func mcpLine(f initFlags, goos string, h host) string {
+func mcpLine(f initFlags, h host) string {
 	bin := mcpBinary(h)
 	return fmt.Sprintf("then add this MCP server to the agent's client, running as OS user %s (docs/mcp-clients.md):\n  %s\n%s",
-		f.osUser, shellJoin(mcpArgs(f, goos, bin, h)), temporaryBinaryWarning(bin, os.TempDir()))
+		f.osUser, shellJoin(mcpArgs(f.agent, bin)), temporaryBinaryWarning(bin, os.TempDir()))
 }
 
 // mcpBinary is the program of the printed basalt mcp command: the absolute,
@@ -195,31 +198,10 @@ func temporaryBinaryWarning(bin, tmp string) string {
 	return fmt.Sprintf("basalt: %s is in a folder that may be cleared; put the binary in a folder that survives and register that path instead\n", bin)
 }
 
-// mcpArgs is basalt mcp for the agent, with bin as the program.
-func mcpArgs(f initFlags, goos, bin string, h host) []string {
-	args := append([]string{bin, "mcp", "--agent", f.agent}, socketDirArgs(f, goos)...)
-	return append(args, mcpConfigArgs(f.configPath, goos, h)...)
-}
-
-// remoteMCPArgs is the mcpCommand of basalt init --remote: mcpArgs, so it
-// carries --socket-dir whenever the socket directory is not the one
-// basalt mcp uses when no --socket-dir is given (it never reads the socket
-// directory from the config), and --config whenever basalt mcp would not
-// find the config by default.
-func remoteMCPArgs(agent, configPath, socketDir, goos string, h host) []string {
-	return mcpArgs(initFlags{agent: agent, configPath: configPath, socketDir: socketDir}, goos, mcpBinary(h), h)
-}
-
-// mcpConfigArgs is --config <path> when basalt mcp, given no --config, would
-// not find the engine config at path (it looks where perUserConfigFallback
-// says), else nothing. basalt mcp needs the config to start the engine when
-// it is down and to answer status.
-func mcpConfigArgs(configPath, goos string, h host) []string {
-	abs := enginePath(configPath)
-	if perUserConfigFallback(h, config.DefaultPath(goos)) == abs {
-		return nil
-	}
-	return []string{"--config", abs}
+// mcpArgs is basalt mcp for the agent, with bin as the program. basalt mcp
+// finds the engine config and the socket directory by itself.
+func mcpArgs(agent, bin string) []string {
+	return []string{bin, "mcp", "--agent", agent}
 }
 
 // shellJoin quotes each argument for display.
@@ -318,7 +300,7 @@ func (f initFlags) agentInstall(dsn string) agentInstall {
 // kept its password the credential file stays and nothing goes on stdin.
 func serviceInstallArgs(f initFlags, bin string) []string {
 	args := []string{
-		bin, "service", "install", "--config", f.configPath, "--user", f.engineUser,
+		bin, "service", "install", "--user", f.engineUser,
 		"--agent", f.agent, "--os-user", f.osUser,
 	}
 	if f.passkeyOrigin != "" {
@@ -374,14 +356,14 @@ func installService(c *cliIO, f initFlags, dsn string) error {
 	if me, _ := invokingUser(); me != f.osUser {
 		// The engine admits only the agent's OS user on its socket.
 		fmt.Fprintf(c.stderr, "basalt: engine service installed as %s; check it as %s with the MCP command below\n", f.engineUser, f.osUser)
-		fmt.Fprint(c.stderr, mcpLine(f, c.goos, c.host))
+		fmt.Fprint(c.stderr, mcpLine(f, c.host))
 		return nil
 	}
 	if err := c.host.Probe(c.ctx, socket); err != nil {
 		return fmt.Errorf("the engine did not answer on %s (%w)%s; see %s", socket, err, engineLogError(c), engineLogHint(c.goos))
 	}
 	fmt.Fprintf(c.stderr, "basalt: engine running as %s; it answered on %s\n", f.engineUser, socket)
-	fmt.Fprint(c.stderr, mcpLine(f, c.goos, c.host))
+	fmt.Fprint(c.stderr, mcpLine(f, c.host))
 	return nil
 }
 
@@ -512,7 +494,7 @@ func offerClaude(c *cliIO, f initFlags) error {
 		fmt.Fprintf(c.stderr, "basalt: Claude Code already has %s\n", name)
 		return nil
 	}
-	args := append([]string{claude, "mcp", "add", "--scope", "local", name, "--"}, mcpArgs(f, c.goos, bin, c.host)...)
+	args := append([]string{claude, "mcp", "add", "--scope", "local", name, "--"}, mcpArgs(f.agent, bin)...)
 	shown := shellJoin(append([]string{"claude"}, args[1:]...))
 	fmt.Fprintf(c.stderr, "basalt: the server %s is registered for this project directory only (--scope local); sessions in other projects do not see it\n", name)
 	ok, err := c.confirmYes(fmt.Sprintf("Add it to Claude Code now (%s)?", shown))
@@ -523,13 +505,6 @@ func offerClaude(c *cliIO, f initFlags) error {
 		return errors.New("claude mcp add failed; add the server by hand with the line above")
 	}
 	return nil
-}
-
-func socketDirArgs(f initFlags, goos string) []string {
-	if f.socketDir == config.DefaultSocketDir(goos) {
-		return nil
-	}
-	return []string{"--socket-dir", f.socketDir}
 }
 
 // envSudoUID is the uid of the user who ran sudo.
@@ -627,11 +602,11 @@ func servicePin(c *cliIO, f initFlags) error {
 	}
 	args := []string{
 		bin, "trust", "pin", "--host", f.pin.host, "--port", strconv.Itoa(f.pin.port),
-		"--trust-root", f.pin.sha256, "--config", f.configPath,
+		"--trust-root", f.pin.sha256,
 	}
 	fmt.Fprintln(c.stderr, "basalt: pinning the database's certificate for the engine service with sudo:")
 	if err := c.host.Sudo(c.ctx, args, "", c.stderr, c.stderr); err != nil {
-		return fmt.Errorf("the engine service is installed but the pin is not written (run sudo %s): %w", pinCommand(f.pin.pinTarget, f.configPath, c.goos), err)
+		return fmt.Errorf("the engine service is installed but the pin is not written (run sudo %s): %w", pinCommand(f.pin.pinTarget), err)
 	}
 	return nil
 }

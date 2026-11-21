@@ -58,17 +58,11 @@ var PageRoutes = []PageRoute{
 	{Path: links.ForgetPath, File: "passkeys/index.html"},
 }
 
-// PortalRoutes are pages only the portal serves: the pin page of the
-// DIRECT transport (CONTRACT.md, Direct transport) and the connect page
-// (CONTRACT.md, The connect page). The engine embeds their files, so basalt
-// portal verify checks them, but never serves them: a pin belongs to the
-// portal's origin, the local pages have no DIRECT, and the connect service
-// allows only the portal.
+// PortalRoutes are pages only the portal serves: the connect page
+// (CONTRACT.md, The connect page), where the connect service runs a setup
+// code. The engine embeds its file, so basalt portal verify checks it, but
+// never serves it: the connect service allows only the portal.
 var PortalRoutes = []PageRoute{
-	{Path: links.EnginesPath, File: "engines/index.html"},
-	{Path: links.EnginesAddPath, File: "engines/index.html"},
-	// The connect page (CONTRACT.md, The connect page): the connect
-	// service runs a setup code. Portal only, like the pin page.
 	{Path: links.ConnectPath, File: "connect/index.html"},
 }
 

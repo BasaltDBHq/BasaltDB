@@ -49,7 +49,7 @@ func classifyCLI(t *testing.T, d *guardtest.DB, stdin string, interactive bool, 
 		})
 	c.interactive = interactive
 	c.width = func() int { return width }
-	code := runClassify(c, args)
+	code := runClassify(c, takePathFlags(c, runClassify, args))
 	return result{code, stdout.String(), stderr.String()}
 }
 

@@ -79,15 +79,6 @@ func (c Commands) Init() string {
 	return strings.Join(parts, " ")
 }
 
-// configFlag is "--config PATH", or "" when the engine runs from the default
-// config. Only the plugin commands, which the plugin epic replaces, name it.
-func (c Commands) configFlag() string {
-	if c.configPath == "" || c.configPath == config.DefaultPath(c.goos) {
-		return ""
-	}
-	return "--config " + shellQuote(c.configPath)
-}
-
 // EngineStart starts the engine: the foreground command, or the service
 // manager's start for the installed service.
 func (c Commands) EngineStart() string {

@@ -20,9 +20,8 @@ import (
 // and lines whole, and a page decodes at most 1 MiB of them (Format 2,
 // Limits). A larger request reaches a page only on a short link whose page
 // fetches it from the engine: the engine's local pages, or the portal over
-// the Vault when its lines cost at most maxPortalRequestCost (not yet the
-// direct transport's short link, a follow-up). With neither, the answer is
-// REQUEST_TOO_LARGE.
+// the Vault when its lines cost at most maxPortalRequestCost. With neither,
+// the answer is REQUEST_TOO_LARGE.
 
 // argReissueLink is list_pending's and request_revert's argument that
 // issues a new link.

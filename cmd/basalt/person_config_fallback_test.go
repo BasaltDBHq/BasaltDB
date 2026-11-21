@@ -66,6 +66,8 @@ func TestPersonCommandsFindThePerUserConfigWithoutTheConfigFlag(t *testing.T) {
 	require.Contains(t, list.stdout, "Can write\n  public.leads")
 	// access prints no command: the person grants a table on a page.
 	require.NotContains(t, list.stdout, "basalt init")
+	// The commands access prints name the per-user config.
+	require.NotContains(t, list.stdout, "--config")
 
 	up := cliOn(t, h, map[string]string{envAdminURL: d.URL}, "", "upgrade", "--agent", "bot", "--dry-run")
 	require.Equal(t, exitOK, up.code, up.stderr)
@@ -163,13 +165,12 @@ func TestMCPFindsThePerUserConfigWithoutTheConfigFlag(t *testing.T) {
 	run := func(args ...string) string {
 		var out, errOut bytes.Buffer
 		in := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"status","arguments":{}}}` + "\n"
-		args = append(args, "--socket", filepath.Join(h.configDir, "none.sock"))
 		code := runMCPOn(context.Background(), args, stdio{in: strings.NewReader(in), out: &out, err: &errOut}, h)
 		require.Equal(t, exitOK, code, errOut.String())
 		return out.String()
 	}
 	require.Contains(t, run("--agent", "bot"), "basalt engine --config ")
 	require.Contains(t, run("--agent", "bot"), path)
-	// An explicit --config is not replaced by the fallback.
-	require.NotContains(t, run("--agent", "bot", "--config", filepath.Join(h.configDir, "other.json")), path)
+	// The one agent the config serves needs no --agent.
+	require.Contains(t, run(), path)
 }

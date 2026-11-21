@@ -23,10 +23,6 @@ const minEnginePrefix = 8
 // version 33 has no engines table or view.
 const sqlUndefinedTable = "42P01"
 
-// pinPageURL is where each device pins and unpins engines (CONTRACT.md,
-// Direct transport).
-const pinPageURL = "https://portal.basaltvault.app/engines"
-
 // runEngineRecords: basalt engine list | revoke (CONTRACT.md, CLI, and
 // basalt_meta "Version 33"). The engines recorded in the person's database
 // and their revocation; basalt engine with no subcommand runs the engine.
@@ -50,7 +46,6 @@ func isEngineRecordsCommand(args []string) bool {
 type engineDTO struct {
 	EngineID    string     `json:"engineId"`
 	Fingerprint string     `json:"fingerprint"`
-	URL         *string    `json:"url"`
 	RecordedAt  time.Time  `json:"recordedAt"`
 	RevokedAt   *time.Time `json:"revokedAt"`
 	Self        bool       `json:"self"`
@@ -58,7 +53,7 @@ type engineDTO struct {
 
 func engineFromDomain(e guard.RecordedEngine, self string) engineDTO {
 	return engineDTO{
-		EngineID: e.ID, Fingerprint: channel.FingerprintOf(e.ID), URL: e.URL,
+		EngineID: e.ID, Fingerprint: channel.FingerprintOf(e.ID),
 		RecordedAt: e.RecordedAt, RevokedAt: e.RevokedAt, Self: self != "" && e.ID == self,
 	}
 }
@@ -108,7 +103,11 @@ func engineListConn(c *cliIO, af agentFlags, admin bool) (*pgx.Conn, string, err
 		conn, err := connectAdmin(c)
 		return conn, "", err
 	}
-	dsn, err := agentURL(c, *af.agent, *af.credFile, *af.configPath)
+	configPath, err := c.findConfig()
+	if err != nil {
+		return nil, "", err
+	}
+	dsn, err := agentURL(c, *af.agent, c.paths.credFile, configPath)
 	if err != nil {
 		return nil, "", err
 	}
@@ -116,7 +115,7 @@ func engineListConn(c *cliIO, af agentFlags, admin bool) (*pgx.Conn, string, err
 	if err != nil {
 		return nil, "", err
 	}
-	return conn, localEngineID(c, *af.configPath), nil
+	return conn, localEngineID(c, configPath), nil
 }
 
 // localEngineID is the engine id of this machine's engine key file, read
@@ -138,11 +137,7 @@ func localEngineID(c *cliIO, configPath string) string {
 }
 
 func engineLine(e engineDTO) string {
-	url := "no address"
-	if e.URL != nil {
-		url = *e.URL
-	}
-	line := fmt.Sprintf("%s  %-40s recorded %s", e.Fingerprint, visibleText(url), e.RecordedAt.UTC().Format(dateLayout))
+	line := fmt.Sprintf("%s  recorded %s", e.Fingerprint, e.RecordedAt.UTC().Format(dateLayout))
 	if e.RevokedAt != nil {
 		line += "  revoked " + e.RevokedAt.UTC().Format(time.DateTime) + " UTC"
 	}
@@ -197,9 +192,9 @@ func revokeEngine(c *cliIO, conn *pgx.Conn, ref string, yes bool) error {
 	if err != nil {
 		return err
 	}
-	fprintSafef(c.stderr, "basalt: engine %s at %s, recorded %s\n", channel.FingerprintOf(e.ID), addressOf(e), e.RecordedAt.UTC().Format(dateLayout))
+	fmt.Fprintf(c.stderr, "basalt: engine %s, recorded %s\n", channel.FingerprintOf(e.ID), e.RecordedAt.UTC().Format(dateLayout))
 	if !yes {
-		ok, err := c.confirm(fmt.Sprintf("Revoke engine %s? Its portal links stop working; approvals go on through long links.", channel.FingerprintOf(e.ID)))
+		ok, err := c.confirm(fmt.Sprintf("Revoke engine %s? A revoked engine is never recorded again.", channel.FingerprintOf(e.ID)))
 		if err != nil {
 			return err
 		}
@@ -212,9 +207,7 @@ func revokeEngine(c *cliIO, conn *pgx.Conn, ref string, yes bool) error {
 		return fmt.Errorf("the database refused: %s", pgDetail(err))
 	}
 	fmt.Fprintf(c.stderr, "basalt: engine %s revoked. %d engines remain recorded and not revoked.\n", channel.FingerprintOf(e.ID), remaining)
-	fmt.Fprintln(c.stderr, "basalt: an honest engine stops serving the portal for this database at its next check: it closes its portal sessions,")
-	fmt.Fprintln(c.stderr, "basalt: hands over long links instead, and reports ENGINE_REVOKED in status. Remove its pin on each device:")
-	fmt.Fprintln(c.stdout, pinPageURL)
+	fmt.Fprintln(c.stderr, "basalt: the engine reports ENGINE_REVOKED in status.")
 	return nil
 }
 
@@ -235,17 +228,10 @@ func askEngine(c *cliIO, active []guard.RecordedEngine) (string, error) {
 		return "", errors.New("no engine is recorded and not revoked in this database")
 	}
 	for _, e := range active {
-		fprintSafef(c.stderr, "  %s  %s  recorded %s\n", channel.FingerprintOf(e.ID), addressOf(e), e.RecordedAt.UTC().Format(dateLayout))
+		fmt.Fprintf(c.stderr, "  %s  recorded %s\n", channel.FingerprintOf(e.ID), e.RecordedAt.UTC().Format(dateLayout))
 	}
 	fmt.Fprint(c.stderr, "Which engine? Type the start of its fingerprint: ")
 	return c.line()
-}
-
-func addressOf(e guard.RecordedEngine) string {
-	if e.URL == nil {
-		return "no address"
-	}
-	return *e.URL
 }
 
 // findEngine is the engine whose id is ref, or whose id or fingerprint

@@ -23,76 +23,29 @@ func TestForegroundNext(t *testing.T) {
 	require.Equal(t, `next, start the engine; it runs in the foreground as you (same-user mode: writes are guarded, but your OS user can read the credential):
   basalt engine --config /home/dev/basalt/engine.json
 then add this MCP server to the agent's client, running as OS user iman (docs/mcp-clients.md):
-  /opt/basalt/bin/basalt mcp --agent bot --socket-dir /home/dev/basalt/run --config /home/dev/basalt/engine.json
-`, foregroundNext(f, "linux", newFakeHost(t)))
+  /opt/basalt/bin/basalt mcp --agent bot
+`, foregroundNext(f, newFakeHost(t)))
 
 	f.configPath, f.socketDir = "/Users/me/Library/Application Support/basalt/engine.json", config.DefaultSocketDir("darwin")
 	h := newFakeHost(t)
-	require.Contains(t, foregroundNext(f, "darwin", h), "basalt engine --config '/Users/me/Library/Application Support/basalt/engine.json'")
-	require.True(t, strings.HasSuffix(foregroundNext(f, "darwin", h), "  /opt/basalt/bin/basalt mcp --agent bot --config '/Users/me/Library/Application Support/basalt/engine.json'\n"),
-		"the default socket dir needs no flag, a config basalt mcp would not find does")
+	require.Contains(t, foregroundNext(f, h), "basalt engine --config '/Users/me/Library/Application Support/basalt/engine.json'")
+	require.True(t, strings.HasSuffix(foregroundNext(f, h), "  /opt/basalt/bin/basalt mcp --agent bot\n"),
+		"basalt mcp finds the config and the socket directory itself")
 }
 
-// With the config where basalt mcp looks with no --config, the line is the
-// one it always was.
-func TestInitMCPLineDefaultConfigUnchanged(t *testing.T) {
+// basalt mcp finds the config and the socket directory itself, so the line
+// is the same wherever the config is.
+func TestMCPArgsNameOnlyTheAgent(t *testing.T) {
 	t.Parallel()
-	h := newFakeHost(t)
-	f := initFlags{agent: "bot", osUser: "iman", configPath: config.DefaultPath("linux"), socketDir: config.DefaultSocketDir("linux")}
-	require.Equal(t, []string{"basalt", "mcp", "--agent", "bot"}, mcpArgs(f, "linux", "basalt", h))
-
-	// The per-user config init left, found by basalt mcp itself.
-	user := filepath.Join(h.configDir, perUserDirName, "engine.json")
-	require.NoError(t, os.MkdirAll(filepath.Dir(user), 0o700))
-	require.NoError(t, os.WriteFile(user, []byte("{}"), 0o600))
-	f.configPath = user
-	require.Equal(t, []string{"basalt", "mcp", "--agent", "bot"}, mcpArgs(f, "linux", "basalt", h))
-
-	// Any other config is named, as an absolute path.
-	f.configPath = "/workspace/basalt/engine.json"
-	f.socketDir = "/workspace/basalt/run"
-	require.Equal(t, []string{"basalt", "mcp", "--agent", "bot", "--socket-dir", "/workspace/basalt/run", "--config", "/workspace/basalt/engine.json"}, mcpArgs(f, "linux", "basalt", h))
-}
-
-func TestRemoteMCPArgsGoldens(t *testing.T) {
-	t.Parallel()
-	h := newFakeHost(t)
-
-	// Non-root, no --config: the per-user config basalt mcp finds itself,
-	// but --socket-dir is required because basalt mcp never reads the
-	// socket directory from the config.
-	user := filepath.Join(h.configDir, perUserDirName, "engine.json")
-	run := filepath.Join(filepath.Dir(user), "run")
-	require.NoError(t, os.MkdirAll(filepath.Dir(user), 0o700))
-	require.NoError(t, os.WriteFile(user, []byte("{}"), 0o600))
-	require.Equal(t, []string{fakeBin, "mcp", "--agent", "bot", "--socket-dir", run},
-		remoteMCPArgs("bot", user, run, "linux", h))
-
-	// Non-root, --config elsewhere: both flags, sockets next to the config.
-	cfg := "/workspace/basalt/engine.json"
-	require.Equal(t, []string{fakeBin, "mcp", "--agent", "bot", "--socket-dir", "/workspace/basalt/run", "--config", cfg},
-		remoteMCPArgs("bot", cfg, "/workspace/basalt/run", "linux", h))
-
-	// Root/service, default paths: the agent's OS user talks to the service socket.
-	h.euid = 0
-	require.Equal(t, []string{fakeBin, "mcp", "--agent", "bot"},
-		remoteMCPArgs("bot", config.DefaultPath("linux"), config.DefaultSocketDir("linux"), "linux", h))
-}
-
-// root looks only at the system path.
-func TestMCPConfigArgsAsRoot(t *testing.T) {
-	t.Parallel()
-	h := newFakeHost(t)
-	h.euid = 0
-	require.Nil(t, mcpConfigArgs(config.DefaultPath("linux"), "linux", h))
-	require.Equal(t, []string{"--config", "/srv/b/engine.json"}, mcpConfigArgs("/srv/b/engine.json", "linux", h))
+	require.Equal(t, []string{"basalt", "mcp", "--agent", "bot"}, mcpArgs("bot", "basalt"))
+	require.Equal(t, []string{fakeBin, "mcp", "--agent", "bot"}, mcpArgs("bot", mcpBinary(newFakeHost(t))))
 }
 
 func TestServiceInstallArgsKeepTheCredentialOffTheCommandLine(t *testing.T) {
 	t.Parallel()
 	f := initFlags{agent: "bot", configPath: "/etc/basalt/engine.json", engineUser: "basalt", osUser: "iman"}
 	require.Equal(t, []string{
-		"/usr/local/bin/basalt", "service", "install", "--config", "/etc/basalt/engine.json", "--user", "basalt",
+		"/usr/local/bin/basalt", "service", "install", "--user", "basalt",
 		"--agent", "bot", "--os-user", "iman", "--credential-stdin",
 	}, serviceInstallArgs(f, "/usr/local/bin/basalt"))
 	f.passkeyOrigin = "http://localhost:8787"
@@ -147,7 +100,7 @@ func TestInitRefusesAnUnusableAdminStringBeforeConnecting(t *testing.T) {
 			t.Errorf("init connected with %q", admin)
 			return nil, context.Canceled
 		}
-		code := runInit(c, []string{"--agent", "bot", "--yes", "--no-service", "--config", t.TempDir() + "/engine.json"})
+		code := runInit(c, takePathFlags(c, runInit, []string{"--agent", "bot", "--yes", "--no-service", "--config", t.TempDir() + "/engine.json"}))
 		require.Equal(t, exitError, code, stderr.String())
 		require.Contains(t, stderr.String(), want.Error())
 		require.NotContains(t, stderr.String(), "ADMINSECRET")
@@ -264,8 +217,8 @@ func TestMCPLineWarnsForTemporaryBinary(t *testing.T) {
 	t.Parallel()
 	h := newFakeHost(t)
 	f := initFlags{agent: "bot", osUser: "iman", configPath: config.DefaultPath("linux"), socketDir: config.DefaultSocketDir("linux")}
-	require.NotContains(t, mcpLine(f, "linux", h), "may be cleared")
-	require.Contains(t, mcpLine(f, "linux", h), fakeBin+" mcp --agent bot")
+	require.NotContains(t, mcpLine(f, h), "may be cleared")
+	require.Contains(t, mcpLine(f, h), fakeBin+" mcp --agent bot")
 }
 
 // Saved init arguments never carry a password or a connection string with

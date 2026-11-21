@@ -33,7 +33,6 @@ func TestPageCSPConnectSrc(t *testing.T) {
 		"passkeys/index.html": "'none'",
 		// The pin page reaches only the address it checks, which the
 		// portal's edge function adds for that request.
-		"engines/index.html": "'none'",
 		// The connect page reaches the connect service and nothing else.
 		"connect/index.html": "https://connect.basaltvault.app",
 	}

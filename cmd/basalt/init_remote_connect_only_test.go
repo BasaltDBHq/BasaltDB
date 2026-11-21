@@ -338,7 +338,7 @@ func TestInitRemoteConnectOnlyNotAsRoot(t *testing.T) {
 		c.agentLogin = refusedLogin
 		c.probe = noNetworkProbe
 		c.host = newFakeHost(t)
-		code := runInit(c, args[1:])
+		code := runInit(c, takePathFlags(c, runInit, args[1:]))
 		return result{code, stdout.String(), stderr.String()}
 	}
 	r := remoteWith(t, run, cfg, connectOnlyArgs...)

@@ -22,7 +22,7 @@ func cliHost(t *testing.T, h host, args ...string) result {
 	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr},
 		func(string) string { return "" })
 	c.host = h
-	code := guardCommands[args[0]](c, args[1:])
+	code := runGuard(c, args)
 	return result{code, stdout.String(), stderr.String()}
 }
 

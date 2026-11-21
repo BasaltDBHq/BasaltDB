@@ -10,11 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/action"
-
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/basaltdbhq/basaltdb/internal/action"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
@@ -309,7 +308,7 @@ func requireSendRequestFirst(t *testing.T, steps []mcp.NextStep, file *links.Req
 	require.Equal(t, mcp.ActionSendRequest, steps[0].Action, where)
 	require.Equal(t, sendRequestText(file), steps[0].Text, where)
 	for i, st := range steps {
-		requireStepObeysRules(t, st, catalogCase{tool: toolWrite, args: writeArgs0}, "", fmt.Sprintf("%s step %d", where, i+1))
+		requireStepObeysRules(t, st, catalogCase{tool: toolWrite, args: writeArgs0}, fmt.Sprintf("%s step %d", where, i+1))
 	}
 	require.NotEqual(t, mcp.ActionSendRequest, catalogKinds(steps)[0].Action, "the catalog checks skip it")
 }

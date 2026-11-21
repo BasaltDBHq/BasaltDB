@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 	"github.com/basaltdbhq/basaltdb/internal/trustdir"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
@@ -89,14 +88,16 @@ func trustRoots(p *trustprofile.Profile) []trustRoot {
 
 func trustList(c *cliIO, args []string) int {
 	fs := c.flags("trust list")
-	configPath := fs.String("config", config.DefaultPath(c.goos), "engine config file; its trust.d holds the operator's profiles")
 	asJSON := fs.Bool("json", false, "print the list as JSON")
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
 	}
-	*configPath = configOrFallback(c.host, fs, *configPath)
-	set := trustdir.Set(*configPath)
-	v := trustListView{TrustDir: trustdir.Path(*configPath), Refused: set.Refused(), Agents: trustAgents(c, *configPath)}
+	configPath, err := c.findConfig()
+	if err != nil {
+		return c.fail(err)
+	}
+	set := trustdir.Set(configPath)
+	v := trustListView{TrustDir: trustdir.Path(configPath), Refused: set.Refused(), Agents: trustAgents(c, configPath)}
 	for _, l := range set.Profiles() {
 		v.Profiles = append(v.Profiles, trustProfileView{
 			Name: l.Name, Origin: string(l.Origin), State: string(l.State), Match: l.Match, Verify: l.Verify, Roots: trustRoots(l.Profile),
@@ -201,29 +202,31 @@ func appliesWords(applies string) string {
 
 func trustAdd(c *cliIO, args []string) int {
 	fs := c.flags("trust add")
-	configPath := fs.String("config", config.DefaultPath(c.goos), "engine config file; the profile goes in its trust.d")
 	name := fs.String("name", "", "the profile's name: lowercase letters, digits and dashes (a built-in's name replaces it)")
 	match := fs.String("match", "", "the hosts it applies to, comma-separated: a domain (its hosts below it) or =host (one host)")
 	caFile := fs.String("ca", "", "PEM file of the certificate authority (or authorities) that signs the database's certificate")
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
 	}
-	*configPath = configOrFallback(c.host, fs, *configPath)
+	configPath, err := c.findConfig()
+	if err != nil {
+		return c.fail(err)
+	}
 	if *name == "" || *match == "" || *caFile == "" {
 		return c.fail(fmt.Errorf("%w: --name, --match and --ca are required: %s", errUsage, trustUsage))
 	}
-	if err := c.refuseAgentTrust("add", *configPath); err != nil {
+	if err := c.refuseAgentTrust("add", configPath); err != nil {
 		return c.fail(err)
 	}
 	ca, err := readCAFile(*caFile)
 	if err != nil {
 		return c.fail(fmt.Errorf("%w: --ca: %w", errUsage, err))
 	}
-	p, err := trustdir.Add(*configPath, *name, splitList(*match), ca)
+	p, err := trustdir.Add(configPath, *name, splitList(*match), ca)
 	if err != nil {
 		return c.fail(trustWriteError(c, "add", err))
 	}
-	fmt.Fprintf(c.stdout, "basalt: added trust profile %s for %s in %s\n", p.Name, strings.Join(p.Match, ", "), trustdir.Path(*configPath))
+	fmt.Fprintf(c.stdout, "basalt: added trust profile %s for %s in %s\n", p.Name, strings.Join(p.Match, ", "), trustdir.Path(configPath))
 	printRoots(c.stdout, p.Certificates())
 	if b := trustprofile.BuiltInSet().Named(p.Name); b != nil {
 		fmt.Fprintf(c.stdout, "basalt: it replaces the built-in profile %s\n", p.Name)
@@ -257,27 +260,29 @@ func readCAFile(path string) ([]byte, error) {
 
 func trustRemove(c *cliIO, args []string) int {
 	fs := c.flags("trust remove")
-	configPath := fs.String("config", config.DefaultPath(c.goos), "engine config file whose trust.d holds the profile")
 	name := fs.String("name", "", "the operator profile to remove (a disabled built-in applies again)")
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
 	}
-	*configPath = configOrFallback(c.host, fs, *configPath)
+	configPath, err := c.findConfig()
+	if err != nil {
+		return c.fail(err)
+	}
 	if *name == "" {
 		return c.fail(fmt.Errorf("%w: --name is required: basalt trust remove --name N", errUsage))
 	}
 	// Removing a profile that disables or narrows a built-in brings the
 	// built-in's roots back, so an agent never removes one either.
-	if err := c.refuseAgentTrust("remove", *configPath); err != nil {
+	if err := c.refuseAgentTrust("remove", configPath); err != nil {
 		return c.fail(err)
 	}
-	if err := trustdir.Remove(*configPath, *name); err != nil {
+	if err := trustdir.Remove(configPath, *name); err != nil {
 		if errors.Is(err, trustdir.ErrNotFound) && trustprofile.BuiltInSet().Named(*name) != nil {
 			err = fmt.Errorf("%s is a built-in profile, which cannot be removed; turn it off with basalt trust disable --name %s", *name, *name)
 		}
 		return c.fail(trustWriteError(c, "remove", err))
 	}
-	fmt.Fprintf(c.stdout, "basalt: removed trust profile %s from %s\n", *name, trustdir.Path(*configPath))
+	fmt.Fprintf(c.stdout, "basalt: removed trust profile %s from %s\n", *name, trustdir.Path(configPath))
 	if trustprofile.BuiltInSet().Named(*name) != nil {
 		fmt.Fprintf(c.stdout, "basalt: the built-in profile %s applies again\n", *name)
 	}
@@ -286,19 +291,21 @@ func trustRemove(c *cliIO, args []string) int {
 
 func trustDisable(c *cliIO, args []string) int {
 	fs := c.flags("trust disable")
-	configPath := fs.String("config", config.DefaultPath(c.goos), "engine config file; the profile that disables goes in its trust.d")
 	name := fs.String("name", "", "the built-in profile to turn off")
 	if err := parse(fs, args); err != nil {
 		return c.fail(err)
 	}
-	*configPath = configOrFallback(c.host, fs, *configPath)
+	configPath, err := c.findConfig()
+	if err != nil {
+		return c.fail(err)
+	}
 	if *name == "" {
 		return c.fail(fmt.Errorf("%w: --name is required: basalt trust disable --name N", errUsage))
 	}
 	if trustprofile.BuiltInSet().Named(*name) == nil {
 		return c.fail(fmt.Errorf("%w: %q is not a built-in profile (basalt trust list shows them); remove an operator profile with basalt trust remove", errUsage, *name))
 	}
-	if err := trustdir.Disable(*configPath, *name); err != nil {
+	if err := trustdir.Disable(configPath, *name); err != nil {
 		if errors.Is(err, trustdir.ErrExists) {
 			err = fmt.Errorf("trust.d already holds a profile named %s (it replaces or disables the built-in); remove it first with basalt trust remove --name %s", *name, *name)
 		}

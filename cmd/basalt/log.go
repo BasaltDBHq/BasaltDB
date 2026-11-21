@@ -123,7 +123,7 @@ func agentURL(c *cliIO, agent, credFile, configPath string) (string, error) {
 	if v := c.getenv(envAgentURL); v != "" {
 		return v, nil
 	}
-	return "", fmt.Errorf("%w: give --agent, --credential-file or %s", errUsage, envAgentURL)
+	return "", fmt.Errorf("%w: give --agent or %s", errUsage, envAgentURL)
 }
 
 // agentConfigURL reads the credential file the engine config names for agent.

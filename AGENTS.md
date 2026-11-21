@@ -2,7 +2,7 @@
 
 BasaltDB is **the action ledger for AI agents on your database**. It is not a database: data stays in the person's own Postgres. One Go binary runs next to each agent as its MCP server (the edge engine), and a guard installed in the person's Postgres (`basalt_meta`: roles, triggers, ledger) records, holds and reverts agent writes. Surfaces: **MCP tools**, the **`basalt` CLI**, and the **approval and revert pages**. There is no REST API.
 
-**Source of truth:** the contract fixes every surface: MCP tools, the CLI, the pages and `basalt_meta`. [CONTRACT.md](CONTRACT.md) is its index, with the rules every change needs and a map of the section files under [`contract/`](contract/). Before working on the engine, the guard or the CLI, read the index and then only the section files your change touches: do not load the whole contract. Update the section file in the same PR as any change to a surface. A reference such as `(CONTRACT.md, Direct transport)` names a heading; the index says which file holds it.
+**Source of truth:** the contract fixes every surface: MCP tools, the CLI, the pages and `basalt_meta`. [CONTRACT.md](CONTRACT.md) is its index, with the rules every change needs and a map of the section files under [`contract/`](contract/). Before working on the engine, the guard or the CLI, read the index and then only the section files your change touches: do not load the whole contract. Update the section file in the same PR as any change to a surface. A reference such as `(CONTRACT.md, Link secrets)` names a heading; the index says which file holds it.
 
 ## Repo quick facts
 

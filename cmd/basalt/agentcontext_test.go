@@ -148,7 +148,7 @@ func personCLI(t *testing.T, env map[string]string, args ...string) result {
 		func(k string) string { return env[k] })
 	c.host = newFakeHost(t)
 	c.interactive = true
-	code := guardCommands[args[0]](c, args[1:])
+	code := runGuard(c, args)
 	return result{code, stdout.String(), stderr.String()}
 }
 

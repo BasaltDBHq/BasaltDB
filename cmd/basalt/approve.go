@@ -4,13 +4,11 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"runtime"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/approval"
-	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/passkey"
@@ -29,12 +27,13 @@ func runApprove(c *cliIO, args []string) int {
 	var pagesURL string
 	pagesURLFlag(fs, &pagesURL, "pages base URL for --show and --open (default: the engine config's pagesUrl, else "+links.DefaultLocal+")")
 	agent := fs.String("agent", "", "use this agent's credential from the engine config")
-	configPath := fs.String("config", config.DefaultPath(runtime.GOOS), "engine config file")
-	credFile := fs.String("credential-file", "", "read the agent's connection string from this file")
 	if err := fs.Parse(args); err != nil {
 		return c.fail(fmt.Errorf("%w: %w", errUsage, err))
 	}
-	*configPath = configOrFallback(c.host, fs, *configPath)
+	configPath, err := c.findConfig()
+	if err != nil {
+		return c.fail(err)
+	}
 	if *show != "" && *open != "" {
 		return c.fail(fmt.Errorf("%w: give --show or --open, not both", errUsage))
 	}
@@ -46,12 +45,12 @@ func runApprove(c *cliIO, args []string) int {
 	if err != nil {
 		return c.fail(err)
 	}
-	if c.needsAgent(*agent, *credFile) {
-		if *agent, err = approvalAgent(c, *configPath, held, code); err != nil {
+	if c.needsAgent(*agent, "") {
+		if *agent, err = approvalAgent(c, configPath, held, code); err != nil {
 			return c.fail(err)
 		}
 	}
-	l, err := openLedger(c, *agent, *credFile, *configPath)
+	l, err := openLedger(c, *agent, "", configPath)
 	if err != nil {
 		return c.fail(err)
 	}

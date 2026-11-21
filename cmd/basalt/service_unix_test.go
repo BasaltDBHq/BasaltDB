@@ -24,8 +24,8 @@ func TestServiceInstallBinaryErrorHasNoInitHint(t *testing.T) {
 	require.NoError(t, os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755))
 	var out, errb bytes.Buffer
 
-	code := runService(context.Background(), []string{"install", "--binary", bin, "--config", tempConfig(t), "--dry-run"},
-		stdio{in: strings.NewReader(""), out: &out, err: &errb})
+	code := runServiceAt(context.Background(), []string{"install", "--binary", bin, "--dry-run"},
+		stdio{in: strings.NewReader(""), out: &out, err: &errb}, tempConfig(t))
 
 	require.Equal(t, exitError, code, errb.String())
 	require.Contains(t, errb.String(), "only root may be able to change it")

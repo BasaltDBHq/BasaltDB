@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"flag"
@@ -33,9 +34,7 @@ type initFlags struct {
 	passkeyOrigin, passkeyLabel                                                     string
 	// devLocalPages is --dev-local-pages: an agent-operated engine on local
 	// pages, for development only (CONTRACT.md, Page origins).
-	devLocalPages bool
-	// directAddr is --direct-addr as given ("" when not).
-	directAddr                                               string
+	devLocalPages                                            bool
 	agentRLS                                                 AgentRLSMode
 	spec                                                     guard.AgentSpec
 	dryRun, yes, showSQL, skipPasskey, addPasskey, noService bool
@@ -48,12 +47,9 @@ type initFlags struct {
 	operatedByGiven bool
 	// demo is --demo: create and guard the sample schema (demo.go).
 	demo bool
-	// pathsGiven is true when --config, --socket-dir or --credential-file
-	// was given: the person runs the engine in the foreground themselves.
+	// pathsGiven is true when the engine config found is not the system
+	// one: the person runs the engine in the foreground themselves.
 	pathsGiven bool
-	// credFileGiven is true when --credential-file was given: a missing file
-	// there is more likely a typo than a lost credential.
-	credFileGiven bool
 	// rotatePassword sets a new password even when the agent's role exists.
 	rotatePassword bool
 	// keepCredential: the role exists and keeps its password, so the
@@ -157,10 +153,6 @@ func runInit(c *cliIO, args []string) int {
 		return c.fail(err)
 	}
 	f.keepCredential = exists && !f.rotatePassword
-	if f.keepCredential && f.credFileGiven && !fileExists(f.credFile) {
-		// A mistyped path must not rotate the password.
-		return c.fail(fmt.Errorf("role %s exists but there is no credential file %s; check the path, or run init with --rotate-password", role, f.credFile))
-	}
 	if f.keepCredential {
 		if f.keepCredential, err = keepOrReplaceCredential(c, f, role); err != nil {
 			return c.fail(err)
@@ -379,7 +371,7 @@ func printSetupPlan(c *cliIO, f initFlags) error {
 	if f.noService || f.pathsGiven {
 		fmt.Fprintf(c.stderr, "basalt: dry run; then init writes %s and %s, and prints:\n", f.credFile, f.configPath)
 		fmt.Fprint(c.stderr, f.vault.dryRunLine())
-		fmt.Fprint(c.stderr, foregroundNext(f, c.goos, c.host))
+		fmt.Fprint(c.stderr, foregroundNext(f, c.host))
 		return nil
 	}
 	f.initArgs = f.savedArgs(c.goos)
@@ -415,11 +407,8 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 	fs.StringVar(&f.read, "read", "", "comma-separated schema.table the agent may only read")
 	fs.StringVar(&f.prefix, "prefix", guard.DefaultPrefix, "role name prefix")
 	fs.DurationVar(&f.spec.StatementTimeout, "statement-timeout", guard.DefaultStatementTimeout, "query time limit of the agent role")
-	fs.StringVar(&f.configPath, "config", config.DefaultPath(c.goos), "engine config file to add the agent to; another path means you run the engine yourself")
-	fs.StringVar(&f.socketDir, "socket-dir", config.DefaultSocketDir(c.goos), "engine socket directory, when the config is new")
 	fs.StringVar(&f.osUser, "os-user", "", "OS user the agent runs as, the only one allowed on its socket (default: you)")
 	fs.StringVar(&f.engineUser, "engine-user", service.DefaultUser(c.goos), "OS user the engine service runs as")
-	fs.StringVar(&f.credFile, "credential-file", "", "where to write the agent's connection string (default <config dir>/agents/NAME.url)")
 	fs.BoolVar(&f.rotatePassword, "rotate-password", false, "set a new password for an agent role that exists (init keeps it by default); restart the engine after")
 	fs.BoolVar(&f.dryRun, "dry-run", false, "print the SQL and the engine setup, and exit")
 	fs.BoolVar(&f.showSQL, "show-sql", false, "print the setup SQL (passwords redacted)")
@@ -432,7 +421,6 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 		"pages origin the passkey belongs to: the engine's local pages http://localhost:<port> (RP ID localhost), or the portal "+links.Portal+" (RP ID basaltvault.app; the default with --operated-by=agent)")
 	fs.BoolVar(&f.devLocalPages, flagDevLocalPages, false,
 		"development only, with --operated-by=agent: use local pages (--passkey-origin http://localhost:<port>) instead of the portal; never with a bot you do not control")
-	fs.StringVar(&f.directAddr, flagDirectAddr, "", directAddrUsage)
 	fs.StringVar(&f.passkeyLabel, "passkey-label", "", "name of the passkey in the picker (default: <database> · <agent> · <date>)")
 	fs.Func(flagPersonUID, "service: an OS user id the engine's person socket admits for basalt log, approve and revert (repeatable; default: you)", func(v string) error {
 		uid, err := parseUID(v)
@@ -464,14 +452,27 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 		return f, err
 	}
 	f.trustRoot = *trustRoot
-	var originGiven, directGiven bool
+	// The config is found by itself: the system one, else the person's.
+	var err error
+	if f.configPath, err = c.findConfig(); err != nil {
+		return f, err
+	}
+	f.pathsGiven = f.configPath != c.systemConfig() || c.paths.config != ""
+	if f.noService && !f.pathsGiven {
+		// A foreground setup writes the person's own config: refuse before any SQL.
+		if err := c.refuseSecondConfig(); err != nil {
+			return f, err
+		}
+	}
+	f.socketDir = config.DefaultSocketDir(c.goos)
+	if f.pathsGiven && c.paths.config == "" {
+		// The system socket directory is not this person's to write.
+		f.socketDir = filepath.Join(filepath.Dir(f.configPath), "run")
+	}
+	f.socketDir = cmp.Or(c.paths.socketDir, f.socketDir)
+	var originGiven bool
 	fs.Visit(func(fl *flag.Flag) {
 		switch fl.Name {
-		case flagDirectAddr:
-			directGiven = true
-		case "config", "socket-dir", "credential-file":
-			f.pathsGiven = true
-			f.credFileGiven = f.credFileGiven || fl.Name == "credential-file"
 		case "operated-by":
 			f.operatedByGiven = true
 		case "passkey-origin":
@@ -498,9 +499,6 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 	if err := f.agentPages(originGiven); err != nil {
 		return f, err
 	}
-	if err := f.checkDirect(directGiven); err != nil {
-		return f, err
-	}
 	vc, err := chooseVault(f.vaultFlag, f.operatedBy, f.passkeyOrigin, personDefaultWhy)
 	if err != nil {
 		return f, err
@@ -510,11 +508,9 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 		return f, fmt.Errorf("%w: agent name %q is not valid for the engine", errUsage, f.agent)
 	}
 	if err := config.CheckSocketPath(config.SocketPath(f.socketDir, f.agent)); err != nil {
-		return f, fmt.Errorf("%w: --socket-dir: %w", errUsage, err)
+		return f, fmt.Errorf("%w: %w", errUsage, err)
 	}
-	if f.credFile == "" {
-		f.credFile = filepath.Join(filepath.Dir(f.configPath), "agents", f.agent+".url")
-	}
+	f.credFile = cmp.Or(c.paths.credFile, filepath.Join(filepath.Dir(f.configPath), "agents", f.agent+".url"))
 	if f.osUser == "" {
 		u, err := invokingUser()
 		if err != nil {
@@ -579,26 +575,6 @@ func (f *initFlags) agentPages(originGiven bool) error {
 	return nil
 }
 
-// checkDirect applies --direct-addr's rules (CONTRACT.md, Direct
-// transport): only for an agent-operated engine on the portal's pages, and
-// a loopback address or off.
-func (f initFlags) checkDirect(given bool) error {
-	if !given {
-		return nil
-	}
-	if err := checkDirectAddr(f.directAddr); err != nil {
-		return err
-	}
-	switch {
-	case f.operatedBy != OperatedByAgent:
-		return fmt.Errorf("%w: --%s is only for --operated-by=agent or basalt init --remote: the direct transport serves the portal's pages, "+
-			"which an engine on a machine you reach through a tunnel has", errUsage, flagDirectAddr)
-	case f.passkeyOrigin != links.Portal:
-		return fmt.Errorf("%w: --%s needs the portal's pages, not the local --passkey-origin %s", errUsage, flagDirectAddr, f.passkeyOrigin)
-	}
-	return nil
-}
-
 // engineSettings are what init writes to the engine config besides the
 // agent. A config outside the platform default is a per-user setup, run
 // with basalt engine in the foreground, so its state directory sits next
@@ -610,7 +586,7 @@ func engineSettings(f initFlags, goos string) config.Settings {
 	if f.configPath != config.DefaultPath(goos) {
 		s.StateDir = filepath.Join(filepath.Dir(f.configPath), stateDirName)
 	}
-	s.PagesURL, s.DevLocalPages, s.DirectAddr = f.passkeyOrigin, f.devLocalPages, f.directAddr
+	s.PagesURL, s.DevLocalPages = f.passkeyOrigin, f.devLocalPages
 	if f.operatedByGiven {
 		s.OperatedBy = f.operatedBy.enum()
 	}
@@ -651,14 +627,11 @@ func (f initFlags) savedArgs(goos string) []string {
 	addIf("read", f.read, "")
 	addIf("prefix", f.prefix, guard.DefaultPrefix)
 	addIf("statement-timeout", f.spec.StatementTimeout.String(), guard.DefaultStatementTimeout.String())
-	addIf("socket-dir", f.socketDir, config.DefaultSocketDir(goos))
 	addIf("os-user", f.osUser, "")
 	addIf("engine-user", f.engineUser, service.DefaultUser(goos))
-	addIf("credential-file", f.credFile, filepath.Join(filepath.Dir(f.configPath), "agents", f.agent+".url"))
 	addIf("passkey-origin", f.passkeyOrigin, links.DefaultLocal)
 	addIf("operated-by", string(f.operatedBy), string(OperatedByPerson))
 	addIf("agent-rls", string(f.agentRLS), string(AgentRLSAsk))
-	addIf(flagDirectAddr, f.directAddr, "")
 	if f.devLocalPages {
 		args = append(args, "--"+flagDevLocalPages+"=true")
 	}
@@ -676,11 +649,6 @@ func (f initFlags) commands(goos string) (agent.Commands, error) {
 		return agent.Commands{}, err
 	}
 	return agent.NewCommands(f.agent, path, goos)
-}
-
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }
 
 // keepOrReplaceCredential decides, for an agent role that exists, whether

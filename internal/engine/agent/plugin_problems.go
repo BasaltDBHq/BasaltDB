@@ -92,11 +92,7 @@ func (c Commands) PluginRemove(name, instance string) string {
 // PluginList is basalt plugin list, which reads engine.json and says what
 // is wrong with it when it cannot.
 func (c Commands) PluginList() string {
-	parts := []string{cmdBasalt, "plugin", "list"}
-	if flag := c.configFlag(); flag != "" {
-		parts = append(parts, flag)
-	}
-	return strings.Join(parts, " ")
+	return cmdBasalt + " plugin list"
 }
 
 func (c Commands) plugin(sub, name, instance string, flags ...string) string {
@@ -105,9 +101,6 @@ func (c Commands) plugin(sub, name, instance string, flags ...string) string {
 		parts = append(parts, pluginInstanceFlag, instance)
 	}
 	parts = append(parts, flags...)
-	if flag := c.configFlag(); flag != "" {
-		parts = append(parts, flag)
-	}
 	return strings.Join(parts, " ")
 }
 

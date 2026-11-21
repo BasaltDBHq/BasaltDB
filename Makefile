@@ -60,10 +60,6 @@ test-privdrop: ## basalt engine --user and plugin isolation as root in a Linux c
 		"go test -count=1 -v -run 'TestDropEveryThread|TestParseOwnStatus' ./internal/engine/privdrop/ && \
 		go test -count=1 -v -run 'TestPluginIsolationAsRoot' ./internal/engine/service/"
 
-.PHONY: test-compose
-test-compose: ## The docker compose example (examples/compose): setup, isolation, restart, removal (needs Docker)
-	@examples/compose/smoke.sh
-
 .PHONY: test-systemd
 test-systemd: ## A plugin under its systemd unit, isolation checked live (throwaway host with systemd and passwordless sudo only: changes it as root)
 	@bash scripts/systemd-smoke/smoke.sh
@@ -166,7 +162,7 @@ PORTAL_DIR ?= dist/portal
 portal-build: ## Copy only the served portal files to dist/portal (Cloudflare Pages output)
 	@rm -rf "$(PORTAL_DIR)"
 	@mkdir -p "$(PORTAL_DIR)/lib" "$(PORTAL_DIR)/fonts"
-	@for d in approve revert plugin register passkeys engines connect; do mkdir -p "$(PORTAL_DIR)/$$d" && cp "web/$$d/index.html" "$(PORTAL_DIR)/$$d/index.html" || exit 1; done
+	@for d in approve revert plugin register passkeys connect; do mkdir -p "$(PORTAL_DIR)/$$d" && cp "web/$$d/index.html" "$(PORTAL_DIR)/$$d/index.html" || exit 1; done
 	@for f in web/lib/*.js; do cp "$$f" "$(PORTAL_DIR)/lib/" || exit 1; done
 	@cp web/fonts/*.woff2 web/fonts/OFL.txt "$(PORTAL_DIR)/fonts/"
 	@cp web/index.html web/404.html web/style.css web/_headers web/_redirects web/_routes.json "$(PORTAL_DIR)/"

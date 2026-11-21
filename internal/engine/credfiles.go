@@ -25,7 +25,7 @@ type agentFiles interface {
 }
 
 // pathFiles reaches the files by path: an engine not running as root (a
-// service engine after --user, or a person's own engine), in its user's
+// service engine, or a person's own engine), in its user's
 // directories.
 type pathFiles struct{ configPath, credFile string }
 
@@ -64,7 +64,7 @@ func errNotExist(err error) bool { return errors.Is(err, fs.ErrNotExist) }
 func rootCredentialPath(configPath, agent, named string) (string, error) {
 	path, err := config.RootCredentialPath(configPath, agent, named)
 	if err != nil {
-		return "", fmt.Errorf("%w; as root, basalt engine uses only that path. Fix the agent's store.credentialFile in the config, or start the engine with --user", err)
+		return "", fmt.Errorf("%w; as root, basalt engine uses only that path. Fix the agent's store.credentialFile in the config, or start the engine as the agent's user", err)
 	}
 	return path, nil
 }

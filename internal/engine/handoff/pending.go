@@ -38,15 +38,14 @@ const (
 	// authority to this machine than the one the person trusted on the
 	// connect page; nothing is pinned.
 	ProblemTrustRootMismatch = "TRUST_ROOT_MISMATCH"
-	// ProblemEngineAsRoot: the engine runs as root without --user, so it
+	// ProblemEngineAsRoot: the engine runs as root, so it
 	// does not collect.
 	ProblemEngineAsRoot = "ENGINE_AS_ROOT"
 )
 
-// ErrEngineAsRoot is the collector of an engine started as root without
-// --user: it never collects a connect-only setup's address (problem
+// ErrEngineAsRoot is the collector of an engine started as root: it never collects a connect-only setup's address (problem
 // ENGINE_AS_ROOT).
-var ErrEngineAsRoot = errors.New("the engine runs as root without --user, so it does not collect the database's address")
+var ErrEngineAsRoot = errors.New("the engine runs as root, so it does not collect the database's address")
 
 // The collect cadence (CONTRACT.md, The engine and a connect-only code):
 // every 15 seconds while the setup waits for an address or cannot reach

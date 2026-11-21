@@ -68,8 +68,7 @@ type keyFile struct {
 	RotatedFrom *rotatedFrom    `json:"rotatedFrom,omitempty"`
 }
 
-// rotatedFrom is the latest rotation's statement (written by basalt engine
-// rotate-key, a later task). It is checked for shape here and kept as is.
+// rotatedFrom is the latest rotation's statement (written by a later rotation). It is checked for shape here and kept as is.
 type rotatedFrom struct {
 	EngineID   string `json:"engineId"`
 	SigningKey string `json:"signingKey"`

@@ -166,7 +166,7 @@
           "state": {
             "type": "string",
             "enum": ["OFF", "CONNECTING", "CONNECTED", "UNREACHABLE", "KEY_ERROR"],
-            "description": "OFF: engine.json vault is OFF, or pagesUrl is not the portal; short links use the local pages or long links. CONNECTING: dialling or authenticating. CONNECTED: authenticated (READY); portal short links work. UNREACHABLE: no READY for 30 seconds or more; the engine hands over long links and keeps retrying. KEY_ERROR: the key file is insecure, unreadable or invalid and was not replaced; long links until it is fixed or basalt engine rotate-key runs. Approvals work in every state."
+            "description": "OFF: engine.json vault is OFF, or pagesUrl is not the portal; short links use the local pages or long links. CONNECTING: dialling or authenticating. CONNECTED: authenticated (READY); portal short links work. UNREACHABLE: no READY for 30 seconds or more; the engine hands over long links and keeps retrying. KEY_ERROR: the key file is insecure, unreadable or invalid and was not replaced; long links until it is fixed. Approvals work in every state."
           },
           "engineId": {
             "type": "string",

@@ -308,9 +308,8 @@ func TestStatusNamesANonDefaultCredentialFileOnlyAsTheSavedFlag(t *testing.T) {
 		require.Equal(t, exitOK, r.code, r.stderr)
 		out := r.stdout + r.stderr
 		g.requireNoSecret(t, out)
-		require.Contains(t, out, "--credential-file="+custom, "NO_PASSKEY's init command carries the saved flag")
-		require.Equal(t, strings.Count(out, custom), strings.Count(out, "--credential-file="+custom),
-			"the path appears only as the saved flag")
+		require.NotContains(t, out, custom, "no step replays a saved flag, so the path never appears")
+		require.Contains(t, out, "basalt init --agent bot", "NO_PASSKEY's step is the agent's basalt init")
 	}
 }
 

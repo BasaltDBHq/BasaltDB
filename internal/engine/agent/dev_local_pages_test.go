@@ -41,8 +41,9 @@ func TestDevLocalPagesStepIsTheAgentsInit(t *testing.T) {
 	person := devLocalPagesSteps(b, cmds.OperatedBy(mcpcontract.OperatedByAgent))
 	steps, err := b.Build()
 	require.NoError(t, err)
-	require.Len(t, steps, 1)
-	require.Equal(t, mcp.NextStep{Actor: mcp.ActorAgent, Action: mcp.ActionRunCommand, Text: steps[0].Text, Command: "basalt init --agent bot --remote"}, steps[0])
+	require.Len(t, steps, 2)
+	require.Equal(t, mcp.ActionAskPerson, steps[0].Action)
+	require.Equal(t, mcp.NextStep{Actor: mcp.ActorAgent, Action: mcp.ActionRunCommand, Text: steps[1].Text, Command: "basalt init --agent bot --remote"}, steps[1])
 	require.NotContains(t, person, "basalt ", "the person runs no command")
 }
 

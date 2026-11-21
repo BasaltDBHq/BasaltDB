@@ -140,7 +140,7 @@
   ],
   "warnings": [
     { "code": "RLS_HIDES_ROWS", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }] },
-    { "code": "GUARD_UPGRADE_AVAILABLE", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }] }
+    { "code": "GUARD_UPGRADE_AVAILABLE", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "RUN_COMMAND" }] }
   ],
   "problems": [
     { "code": "ENGINE_UNREACHABLE", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "STOP" }] },
@@ -151,7 +151,7 @@
     { "code": "CREDENTIAL_REJECTED", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "STOP" }] },
     { "code": "GUARD_MISSING", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "STOP" }] },
     { "code": "GUARD_OUTDATED", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "STOP" }] },
-    { "code": "GUARD_UPGRADE_AVAILABLE", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }] },
+    { "code": "GUARD_UPGRADE_AVAILABLE", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "RUN_COMMAND" }] },
     { "code": "NO_PASSKEY", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }] },
     { "code": "SETUP_NOT_RUN", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }, { "actor": "AGENT", "action": "END_TURN" }, { "actor": "AGENT", "action": "CALL_TOOL" }] },
     { "code": "SETUP_EXPIRED", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }, { "actor": "AGENT", "action": "END_TURN" }] },
@@ -164,15 +164,15 @@
     { "code": "SETUP_NOT_FOUND", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "RUN_COMMAND" }, { "actor": "AGENT", "action": "END_TURN" }] },
     { "code": "CLOCK_SKEW", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "END_TURN" }] },
     { "code": "ENGINE_AS_ROOT", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "END_TURN" }] },
-    { "code": "DEV_LOCAL_PAGES", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }] },
+    { "code": "DEV_LOCAL_PAGES", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "RUN_COMMAND" }] },
     { "code": "ENGINE_REVOKED", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "END_TURN" }] },
     { "code": "DIRECT_NOT_SERVED", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "OPERATOR", "action": "RUN_COMMAND" }] },
     { "code": "LEDGER_REINSTALLED", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }] },
     { "code": "LOCK_FILE_UNUSABLE", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }] },
     { "code": "CERTIFICATE_NOT_VERIFIED", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }] },
-    { "code": "TRUST_ROOT_EXPIRING", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }] },
+    { "code": "TRUST_ROOT_EXPIRING", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "RUN_COMMAND" }] },
     { "code": "TRUST_ROOT_CHANGED", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "TELL_AGENT" }] },
-    { "code": "TRUST_PIN_MISMATCH", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "RUN_COMMAND" }] },
+    { "code": "TRUST_PIN_MISMATCH", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }, { "actor": "AGENT", "action": "RUN_COMMAND" }] },
     { "code": "TRUST_PROFILE_REFUSED", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "TELL_AGENT" }] },
     { "code": "PORTAL_MISMATCH", "severity": "WARNING", "personMessage": true, "steps": [{ "actor": "AGENT", "action": "ASK_PERSON" }] },
     { "code": "PLUGIN_UNAVAILABLE", "severity": "ERROR", "personMessage": true, "steps": [{ "actor": "PERSON", "action": "RUN_COMMAND" }, { "actor": "PERSON", "action": "RUN_COMMAND" }] },

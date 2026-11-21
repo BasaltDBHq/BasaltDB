@@ -164,7 +164,8 @@ func (s statusDeps) addPinMismatch(ctx context.Context, ps *problems, rep TrustR
 	host := rep.Applied.Host
 	ps.add(problemTrustPinMismatch, fmt.Sprintf("the engine pins %s to %s, but the ledger records SHA-256 %s for it", host, pinFingerprints(p), sha),
 		func(b *Steps) string {
-			b.AgentRunCommand(s.cmds.Init(), "When the person accepted a rotation, run this and show them the link it prints, where they record the engine's pin.")
+			b.AskPerson("Tell the person the ledger records another pin than the engine's, and ask whether they accepted a rotation.")
+			b.AgentRunCommand(s.cmds.Init(), "On the person's yes, run this and show them the link it prints, where they record the engine's pin.")
 			return fmt.Sprintf("The engine trusts the certificate authority with SHA-256 %s for your database %s, but the pin recorded in the "+
 				"ledger is SHA-256 %s. Check both in your provider's console; after a rotation you accepted, the agent gives you a link "+
 				"to record the engine's pin.", pinFingerprints(p), host, sha)
@@ -206,7 +207,8 @@ func (s statusDeps) addTrustExpiring(ps *problems, a trustprofile.Applied, sorte
 	}
 	ps.add(problemTrustRootExpiring, fmt.Sprintf("the trust profile %s verifying %s holds %s that %s", a.Profile.Name, a.Host, what, when),
 		func(b *Steps) string {
-			b.AgentRunCommand(s.cmds.Init(), "When the person wants to add the new root, run this and show them the link it prints, where they add it.")
+			b.AskPerson("Tell the person the root that verifies their database expires soon, and ask whether to add the new one now.")
+			b.AgentRunCommand(s.cmds.Init(), "On the person's yes, run this and show them the link it prints, where they add it.")
 			return fmt.Sprintf("The certificate authority that verifies your database %s %s (trust profile %s). "+
 				"Once no root of it is valid, the agent cannot connect. %s",
 				a.Host, when, a.Profile.Name, fix)

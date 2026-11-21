@@ -19,18 +19,12 @@
   },
   "nextSteps": [
     {
-      "action": "RUN_COMMAND",
-      "actor": "PERSON",
-      "command": "basalt access --agent bot",
-      "text": "Run this to list the tables the agent cannot read, with the basalt init flag that would grant each."
-    },
-    {
       "action": "TELL_AGENT",
       "actor": "PERSON",
-      "text": "Tell the agent when you grant it a table it needs."
+      "text": "Tell the agent when it needs one of these tables: it gives you a link where you pick them."
     }
   ],
-  "personMessage": "1 table in this database is not granted to the agent, so it cannot see it. To list the tables the agent cannot read, run: basalt access --agent bot",
+  "personMessage": "1 table in this database is not granted to the agent, so it cannot see it. To give it one, tell the agent: it gives you a link where you pick the tables.",
   "resources": [
     {
       "access": [

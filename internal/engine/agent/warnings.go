@@ -168,6 +168,7 @@ func (s *Service) upgradeWarnings(ctx context.Context) []mcp.Warning {
 // upgradeSteps: the person adds the missing non-breaking migrations when it
 // suits them, in a warning and in status, on the page basalt init links to.
 func upgradeSteps(b *Steps, cmds Commands) string {
-	b.AgentRunCommand(cmds.Init(), "When the person wants the guard update, run this and show them the link it prints: nothing stops, and the agent needs no restart.")
+	b.AskPerson("Tell the person the guard can be updated when it suits them, and ask whether to do it now.")
+	b.AgentRunCommand(cmds.Init(), "On the person's yes, run this and show them the link it prints: nothing stops, and the agent needs no restart.")
 	return "The guard in this database can be updated. Everything works as it is; when it suits you, tell the agent: it gives you a link to update it."
 }

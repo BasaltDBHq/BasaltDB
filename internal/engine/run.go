@@ -62,7 +62,7 @@ const Instructions = "BasaltDB records every action you take on this database. "
 	"Call status at the start of a session, after the person says they fixed something, and when a call fails with UNAVAILABLE. " +
 	"Start a run with run_start and an intent, read with query, and change data with write and an intent. " +
 	"Every error and every result that needs action carries nextSteps: do them in order. Do the AGENT steps yourself; CALL_TOOL steps have their arguments filled in. " +
-	"Show the person personMessage verbatim, and every PERSON step's link unchanged. " +
+	"Show the person personMessage verbatim, and every PERSON step's command and link unchanged. " +
 	"STOP means do not retry or work around it; END_TURN means end your turn and let the person act. " +
 	"When status says operatedBy PERSON, never start, stop, restart or upgrade anything yourself. " +
 	"Never split a write to avoid a hold, and never retry a refusal in a loop. " +

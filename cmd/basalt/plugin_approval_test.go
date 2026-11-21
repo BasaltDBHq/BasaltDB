@@ -247,7 +247,7 @@ func TestOneApprovalPerDatabase(t *testing.T) {
 	require.Len(t, res.Links, 2)
 	require.Contains(t, res.Links[1].Label, labelText(dbName(t, e.other)))
 	require.Contains(t, res.PersonMessage, "no passkey is registered for database "+dbName(t, e.other), "nobody can sign there yet")
-	require.Equal(t, "PERSON RUN_COMMAND", stepKinds(res.NextSteps)[0], "registering a passkey comes first")
+	require.Equal(t, "AGENT RUN_COMMAND", stepKinds(res.NextSteps)[0], "registering a passkey comes first: the agent's basalt init links it")
 	require.Equal(t, 1, e.ledgerKind("client_x", string(guard.PluginApprovalPending)))
 }
 

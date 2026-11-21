@@ -160,7 +160,7 @@ Results and warnings:
 | `confirm_database` | `CONFIRMED` | For a connect-only code. A `CALL_TOOL` (`status`) |
 | `confirm_database` | `REFUSED` | For a connect-only code. A `RUN_COMMAND` (`basalt init`: a new link), A `END_TURN`; +pm: the database was not theirs, the bot never logged in there, and it will give them a new link |
 | `RLS_HIDES_ROWS` | — | A `ASK_PERSON`, A `RUN_COMMAND` (on the person's yes: `basalt init`, whose page asks the row-level security question), P `TELL_AGENT`; +pm |
-| `GUARD_UPGRADE_AVAILABLE` | — | A `RUN_COMMAND` (when the person wants it: `basalt init`, whose page updates the guard); +pm |
+| `GUARD_UPGRADE_AVAILABLE` | — | A `ASK_PERSON` (whether to update the guard now), A `RUN_COMMAND` (on the person's yes: `basalt init`, whose page updates the guard); +pm |
 
 Status problems (`status` tool, every one +pm):
 
@@ -174,7 +174,7 @@ Status problems (`status` tool, every one +pm):
 | `CREDENTIAL_REJECTED` | `ERROR` | A `RUN_COMMAND` (`basalt init`: its page sets a new password), P `TELL_AGENT`, A `STOP` |
 | `GUARD_MISSING` | `ERROR` | A `RUN_COMMAND` (`basalt init`: its page installs the guard again), P `TELL_AGENT`, A `STOP` |
 | `GUARD_OUTDATED` | `ERROR` | A `RUN_COMMAND` (`basalt init`: its page updates the guard), P `TELL_AGENT`, A `STOP` |
-| `GUARD_UPGRADE_AVAILABLE` | `WARNING` | A `RUN_COMMAND` (when the person wants it: `basalt init`, whose page updates the guard) |
+| `GUARD_UPGRADE_AVAILABLE` | `WARNING` | A `ASK_PERSON` (whether to update the guard now), A `RUN_COMMAND` (on the person's yes: `basalt init`, whose page updates the guard) |
 | `NO_PASSKEY` | `WARNING` | A `RUN_COMMAND` (`basalt init`: its page registers a passkey) |
 | `SETUP_NOT_RUN` | `ERROR` | A `RUN_COMMAND` (`basalt init`, which prints the link for the pending setup), P `TELL_AGENT`, A `END_TURN`, A `CALL_TOOL` (`status`) |
 | `SETUP_EXPIRED` | `ERROR` | A `RUN_COMMAND` (`basalt init`, which prints a new link), A `END_TURN` |
@@ -189,12 +189,12 @@ Status problems (`status` tool, every one +pm):
 | `ENGINE_AS_ROOT` | `ERROR` | For a connect-only code. A `ASK_PERSON` (the engine runs as root without `--user`, so it does not collect the address; restart it as the engine's user, the owner of its state directory, or with `--user`), A `END_TURN` |
 | `LOCK_FILE_UNUSABLE` | `WARNING` | P `RUN_COMMAND` (`sudo chown <engine user> <lock file>`, on the engine's machine), P `TELL_AGENT` |
 | `CERTIFICATE_NOT_VERIFIED` | `ERROR` | [Trust profiles](setup.md#trust-profiles): the agent's database presents a certificate that does not verify (unknown authority, wrong name, expired). A `RUN_COMMAND` (`basalt init`, whose page shows the certificate the database presents and lets the person trust it; the person message also offers naming the CA with `sslrootcert` in the agent's connection string, and, when the connection names its own roots or its `sslmode` is below `verify-full`, says to fix the root file or use `sslrootcert`), P `TELL_AGENT`. The message and person message name the host |
-| `TRUST_ROOT_EXPIRING` | `WARNING` | [Trust profiles](setup.md#trust-profiles): a root of the profile that verifies the agent's database expires within 90 days, or has expired; the message names the profile, the root (or how many, and the first) and the date. A `RUN_COMMAND` (when the person wants to add the new root: `basalt init`, whose page adds it) |
+| `TRUST_ROOT_EXPIRING` | `WARNING` | [Trust profiles](setup.md#trust-profiles): a root of the profile that verifies the agent's database expires within 90 days, or has expired; the message names the profile, the root (or how many, and the first) and the date. A `ASK_PERSON` (whether to add the new root now), A `RUN_COMMAND` (on the person's yes: `basalt init`, whose page adds it) |
 | `TRUST_ROOT_CHANGED` | `ERROR` | [Pinning on first use](setup.md#pinning-on-first-use): the agent's database is pinned (an exact-host profile) and presents another chain top now, read by the engine with the TLS handshake alone; the message names both fingerprints. A `RUN_COMMAND` (`basalt init`, whose page shows the new certificate and pins it on the person's yes), P `TELL_AGENT`. Never accepted automatically |
-| `TRUST_PIN_MISMATCH` | `WARNING` | [Pinning on first use](setup.md#pinning-on-first-use): the ledger's latest `TRUST_PIN_RECORDED` for the database's host and port names another certificate than the engine's pin; no record is no problem. A `RUN_COMMAND` (after a rotation the person accepted: `basalt init`, whose page records the engine's pin) |
+| `TRUST_PIN_MISMATCH` | `WARNING` | [Pinning on first use](setup.md#pinning-on-first-use): the ledger's latest `TRUST_PIN_RECORDED` for the database's host and port names another certificate than the engine's pin; no record is no problem. A `ASK_PERSON` (whether the person accepted a rotation), A `RUN_COMMAND` (on the person's yes: `basalt init`, whose page records the engine's pin) |
 | `TRUST_PROFILE_REFUSED` | `WARNING` | [Trust profiles](setup.md#trust-profiles): a file in `trust.d` was not loaded (owner, mode, symlink, hard link, SHA-256, a non-CA certificate, a public suffix, a bad profile); one problem per file, naming it and why. A refused file named after a built-in keeps that built-in off until it is fixed; any other changes nothing. P `TELL_AGENT` (after fixing or removing the file) |
 | `PORTAL_MISMATCH` | `WARNING` | A `ASK_PERSON` (the engine's daily check found the portal serving pages other than this build embeds: the person signs nothing there until they know why) |
-| `DEV_LOCAL_PAGES` | `WARNING` | A `RUN_COMMAND` (when the person wants the portal's pages: `basalt init`, whose link registers a passkey for them) |
+| `DEV_LOCAL_PAGES` | `WARNING` | A `ASK_PERSON` (whether to move to the portal's pages), A `RUN_COMMAND` (on the person's yes: `basalt init`, whose link registers a passkey for them) |
 | `ENGINE_REVOKED` | `WARNING` | A `ASK_PERSON` (whether they revoked this engine on purpose; until a new key is recorded the agent hands over long links, and a replacement means setting the engine up again with a new link), A `END_TURN` |
 | `DIRECT_NOT_SERVED` | `WARNING` | O `RUN_COMMAND` (`basalt init --remote ... --direct-addr 127.0.0.1:8787`, the saved flags `--remote` takes, then restart the engine), so the tunnel has a listener to forward to |
 | `LEDGER_REINSTALLED` | `WARNING` | [Reinstalls on the record](basalt-meta-installs.md#reinstalls-on-the-record). A `ASK_PERSON` (show the notice and ask whether someone on their team reinstalled Basalt; the tools keep working, and the notice stays until an admin acknowledges it) |

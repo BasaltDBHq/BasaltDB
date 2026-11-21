@@ -63,7 +63,7 @@ func TestErrorsFromARealGuardCarryTheCatalogsSteps(t *testing.T) {
 	requireCatalogSteps(t, body, isError, "query", "SQL_ERROR", "")
 	body, isError = h.call(t, "query", map[string]any{"sql": "SELECT amount FROM payroll", "runId": runID})
 	steps = requireCatalogSteps(t, body, isError, "query", "PERMISSION_DENIED", "")
-	require.Contains(t, str(t, steps[2]["command"]), "--dry-run", "Postgres names the table without its schema: the person sees the plan")
+	require.Equal(t, "basalt init --agent bot", str(t, steps[4]["command"]), "the setup page grants the table")
 
 	// STALE_READ: the first step is the query that reads the row again;
 	// following it and then the write goes through.

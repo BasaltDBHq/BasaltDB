@@ -80,7 +80,8 @@ func TestStatusTrust(t *testing.T) {
 	require.Equal(t, "WARNING", w.Severity)
 	require.Contains(t, w.Message, trustprofile.Fingerprint(soon))
 	require.Contains(t, w.Message, soon.NotAfter.Format(time.DateOnly))
-	require.Equal(t, "basalt init --agent bot", w.NextSteps[0].Command, "the setup page adds the new root")
+	require.Equal(t, mcp.ActionAskPerson, w.NextSteps[0].Action)
+	require.Equal(t, "basalt init --agent bot", w.NextSteps[1].Command, "the setup page adds the new root")
 	require.True(t, r.Ready)
 
 	fine := trustprofiletest.Profile(t, trustprofile.Operator, "internal", []string{"internal.example.com"}, later)

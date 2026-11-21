@@ -55,18 +55,23 @@ func TestInitRerunWithoutCredentialSetsANewPassword(t *testing.T) {
 	require.False(t, logsIn(t, old), "the old password no longer works")
 }
 
-func TestInitRerunWithoutCredentialYesInstallsTheService(t *testing.T) {
+// The config the first run left in the person's own directory is the one the
+// rerun finds, so it goes on in the foreground: --yes sets the new password
+// and writes the credential again, with no sudo.
+func TestInitRerunWithoutCredentialYesGoesOnWithTheFoundConfig(t *testing.T) {
 	t.Parallel()
 	d := guardtest.New(t).WithDemo(t)
 	h := newFakeHost(t)
-	interruptedInit(t, d, h)
+	old := interruptedInit(t, d, h)
 
 	r := initRun(t, d, h, "linux", false, "", "--yes")
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.NotContains(t, r.stderr, "[Y/n]", "--yes asks nothing")
-	require.Len(t, h.sudo, 1)
-	require.Equal(t, "--credential-stdin", h.sudo[0][len(h.sudo[0])-1], "a new credential, not the kept one")
-	require.True(t, logsIn(t, strings.TrimSpace(h.sudoIn[0])))
+	require.Empty(t, h.sudo, "the found config is the person's: no service install")
+	b, err := os.ReadFile(filepath.Join(h.configDir, perUserDirName, "agents", "bot.url"))
+	require.NoError(t, err, "the credential is written again")
+	require.True(t, logsIn(t, strings.TrimSpace(string(b))))
+	require.False(t, logsIn(t, old), "the old password no longer works")
 }
 
 func TestInitRerunWithoutCredentialRefusedKeepsThePassword(t *testing.T) {

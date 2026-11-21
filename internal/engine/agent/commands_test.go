@@ -30,38 +30,19 @@ func allCommands(c Commands) map[string]string {
 	}
 }
 
-func TestCommandsConfigFlagOnlyOffDefault(t *testing.T) {
+// No command names the config: the CLI finds it by itself, wherever it is.
+func TestCommandsNeverNameTheConfig(t *testing.T) {
 	t.Parallel()
 	for _, goos := range []string{"linux", "darwin"} {
-		def := config.DefaultPath(goos)
-		for name, cmd := range allCommands(mustCommands(t, def, goos, nil)) {
-			require.NotContains(t, cmd, "--config", "%s on %s: the default path is found by the CLI itself", name, goos)
-			if strings.HasPrefix(cmd, "basalt ") {
-				require.Contains(t, cmd, "--agent bot", name)
-			}
-		}
-		for name, cmd := range allCommands(mustCommands(t, "", goos, nil)) {
-			require.NotContains(t, cmd, "--config", name)
-		}
-		for name, cmd := range allCommands(mustCommands(t, "/home/me/engine.json", goos, nil)) {
-			if strings.HasPrefix(cmd, "basalt ") {
-				require.Contains(t, cmd, "--agent bot --config /home/me/engine.json", name)
+		for _, path := range []string{config.DefaultPath(goos), "", "/home/me/my cfg/engine.json"} {
+			for name, cmd := range allCommands(mustCommands(t, path, goos, nil)) {
+				if strings.HasPrefix(cmd, "basalt ") {
+					require.NotContains(t, cmd, "--config", "%s on %s", name, goos)
+					require.Contains(t, cmd, "--agent bot", name)
+				}
 			}
 		}
 	}
-}
-
-func TestCommandsDefaultPathIsPerPlatform(t *testing.T) {
-	t.Parallel()
-	linuxDefault := mustCommands(t, config.DefaultPath("linux"), "darwin", nil)
-	require.Contains(t, linuxDefault.PasskeyList(), "--config /etc/basalt/engine.json",
-		"the Linux default is not the macOS default")
-}
-
-func TestCommandsQuoteAConfigPathWithSpaces(t *testing.T) {
-	t.Parallel()
-	c := mustCommands(t, "/home/me/my cfg/engine.json", "linux", nil)
-	require.Equal(t, "basalt passkey list --agent bot --config '/home/me/my cfg/engine.json'", c.PasskeyList())
 }
 
 func TestCommandsRefuseARelativeConfigPath(t *testing.T) {
@@ -74,7 +55,7 @@ func TestCommandShapes(t *testing.T) {
 	t.Parallel()
 	c := mustCommands(t, "/x/engine.json", "linux", []string{"--write", "public.leads", "--agent-rls", "all-rows"})
 	id := uuid.MustParse("0198a5c4-0000-7000-8000-000000000001")
-	cfg := "--agent bot --config /x/engine.json"
+	cfg := "--agent bot"
 	require.Equal(t, "basalt approve "+cfg+" --open "+id.String(), c.Approve(id))
 	require.Equal(t, "basalt revert "+cfg+" --run "+id.String()+" --open", c.Revert(action.Scope{Kind: revert.ScopeRun, ID: id}))
 	require.Equal(t, "basalt revert "+cfg+" --status "+id.String(), c.RevertStatus(id))
@@ -93,22 +74,21 @@ func TestCommandShapes(t *testing.T) {
 func TestCommandsNeverCarryACredentialValue(t *testing.T) {
 	t.Parallel()
 	const secret = "hunter2"
-	// The credential file's path is not a secret (AE-15): it may appear.
 	c := mustCommands(t, "/x/engine.json", "linux",
-		[]string{"--write", "public.leads", "--credential-file", "/etc/basalt/agents/bot.cred"})
+		[]string{"--write", "public.leads", "--prefix", "acme"})
 	for name, cmd := range allCommands(c) {
 		require.False(t, urlUserInfo.MatchString(cmd), "%s: %s", name, cmd)
 		require.NotContains(t, cmd, "://", name)
 		require.NotContains(t, strings.ReplaceAll(strings.ToLower(cmd), "--rotate-password", ""), "password", name)
 	}
-	require.Contains(t, c.Init("--add-passkey"), "--credential-file /etc/basalt/agents/bot.cred")
+	require.Contains(t, c.Init("--add-passkey"), "--prefix acme")
 
 	// A credential value fed through any input never reaches a command.
 	for _, args := range [][]string{
 		{"--write", "postgres://admin:" + secret + "@db.example.com/app"},
 		{"--write=postgres://admin:" + secret + "@db"},
 		{"--prefix", "host=db password=" + secret},
-		{"--credential-file", "postgres://u:" + secret + "@h/d"},
+		{"--prefix", "postgres://u:" + secret + "@h/d"},
 		{"-password", secret},
 		{"--admin-url", secret},
 		{secret},
@@ -131,9 +111,8 @@ func TestCommandsAllowOnlyTheFlagsInitSaves(t *testing.T) {
 		{"--write=public.leads"},
 		{"-write=public.leads"},
 		{"--agent", "bot", "--agent-rls", "all-rows", "--operated-by=person"},
-		{"--credential-file", "/etc/basalt/agents/bot.cred"},
 		{
-			"--statement-timeout", "5s", "--engine-user", "basalt", "--os-user", "me", "--socket-dir", "/run/basalt",
+			"--statement-timeout", "5s", "--engine-user", "basalt", "--os-user", "me",
 			"--passkey-origin", "http://localhost:8787", "--prefix", "basalt", "--read", "public.a",
 		},
 	} {
@@ -178,7 +157,7 @@ func TestCommandsQuoteALeadingEquals(t *testing.T) {
 func TestInitDoesNotRepeatAgent(t *testing.T) {
 	t.Parallel()
 	c := mustCommands(t, "/x/engine.json", "linux", []string{"--agent", "bot", "--write", "public.leads"})
-	require.Equal(t, "basalt init --config /x/engine.json --agent bot --write public.leads --add-passkey", c.Init("--add-passkey"))
+	require.Equal(t, "basalt init --agent bot --write public.leads --add-passkey", c.Init("--add-passkey"))
 	require.Equal(t, 1, strings.Count(c.Init("--add-passkey"), "--agent"))
 }
 
@@ -228,15 +207,15 @@ func TestGrantExtendsTheSavedList(t *testing.T) {
 func TestInitRemoteKeepsTheFlagsItTakes(t *testing.T) {
 	t.Parallel()
 	c := mustCommands(t, "/srv/basalt/engine.json", "linux",
-		[]string{"--agent=bot", "--write=public.leads", "--os-user", "bot", "--socket-dir=/run/b", "--read", "public.companies", "--operated-by=agent"})
+		[]string{"--agent=bot", "--write=public.leads", "--os-user", "bot", "--read", "public.companies", "--operated-by=agent"})
 	const saved = "--agent=bot --write=public.leads --read public.companies --operated-by=agent"
-	require.Equal(t, "basalt init --remote --config /srv/basalt/engine.json "+saved+" --new-code", c.InitRemote("--new-code"))
+	require.Equal(t, "basalt init --remote "+saved+" --new-code", c.InitRemote("--new-code"))
 	agentOperated := c.OperatedBy("AGENT")
 	require.True(t, agentOperated.AgentOperated())
-	require.Equal(t, "basalt init --remote --config /srv/basalt/engine.json "+saved+" --json", agentOperated.InitRemote(""))
+	require.Equal(t, "basalt init --remote "+saved+" --json", agentOperated.InitRemote(""))
 	grant, err := agentOperated.RemoteGrant("write", "public.notes")
 	require.NoError(t, err)
-	require.Equal(t, "basalt init --remote --config /srv/basalt/engine.json --agent=bot '--write=public.leads,public.notes' "+
+	require.Equal(t, "basalt init --remote --agent=bot '--write=public.leads,public.notes' "+
 		"--read public.companies --operated-by=agent --json", grant)
 	require.Equal(t, "basalt init --setup-code basalt-setup.1.abc.def", SetupCode("basalt-setup.1.abc.def"))
 	require.False(t, c.OperatedBy("PERSON").AgentOperated())
@@ -249,5 +228,5 @@ func TestRemoteGrantWithAllTables(t *testing.T) {
 	c := mustCommands(t, "/srv/basalt/engine.json", "linux", []string{"--agent=bot", "--all-tables=true", "--operated-by=agent"}).OperatedBy("AGENT")
 	grant, err := c.RemoteGrant("write", "public.notes")
 	require.NoError(t, err)
-	require.Equal(t, "basalt init --remote --config /srv/basalt/engine.json --agent=bot --all-tables=true --operated-by=agent --json", grant)
+	require.Equal(t, "basalt init --remote --agent=bot --all-tables=true --operated-by=agent --json", grant)
 }

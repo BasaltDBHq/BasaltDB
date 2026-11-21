@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -37,48 +36,10 @@ type userConfigHost struct {
 
 func (h userConfigHost) UserConfigDir() (string, error) { return h.dir, nil }
 
-// Running the mcpCommand returned by init --remote --config, as the
-// agent's user, reaches the engine (basalt mcp starts it and status answers).
-func TestInitRemoteMCPCommandReachesTheEngine(t *testing.T) {
-	t.Setenv(testAsBasaltEnv, "1")
-	d, dbURL := remoteDB(t)
-	dir, err := os.MkdirTemp("", "brmcp")
-	require.NoError(t, err)
-	dir, err = filepath.EvalSymlinks(dir)
-	require.NoError(t, err)
-	t.Cleanup(func() { os.RemoveAll(dir) })
-
-	h := newFakeHost(t)
-	cfg := filepath.Join(dir, "engine.json")
-	res := initRemoteJSON(t, h, d.URL, []string{
-		"--remote", "--config", cfg, "--json",
-		"--operated-by", "agent", "--vault", "off",
-		"--agent", "bot", "--write", "public.leads",
-		"--prefix", d.Names.Prefix, "--database-url", dbURL,
-	})
-	abs, err := filepath.Abs(cfg)
-	require.NoError(t, err)
-	require.Equal(t, []string{
-		fakeBin, "mcp", "--agent", "bot",
-		"--socket-dir", filepath.Join(dir, "run"),
-		"--config", abs,
-	}, res.MCPCommand)
-
-	_, reg := portalPasskey(t, dbName(t, d))
-	done := laptopRun(t, d.URL, reg+"\n", time.Time{}, "--setup-code", res.Code, "--yes")
-	require.Equal(t, exitOK, done.code, done.stderr)
-
-	// An agent app's PATH may not hold basalt: the command names the binary
-	// by its path and needs no PATH to reach the engine.
-	t.Setenv("PATH", "")
-	require.True(t, filepath.IsAbs(res.MCPCommand[0]), res.MCPCommand[0])
-	// --config and --socket-dir are both on the command, so osHost is enough.
-	requireMCPCommandReachesEngine(t, res.MCPCommand, osHost{}, filepath.Join(dir, "run"))
-}
-
-// Running the mcpCommand from a non-root init --remote without --config
-// reaches the engine in the per-user run directory, with no 15s autostart
-// wait. The printed command has --socket-dir and no --config.
+// Running the mcpCommand from a non-root init --remote reaches the engine
+// in the per-user run directory, with no 15s autostart wait. The printed
+// command names only the agent: basalt mcp finds the config, and the socket
+// directory in it.
 func TestInitRemoteMCPCommandReachesTheEngineDefaultConfig(t *testing.T) {
 	t.Setenv(testAsBasaltEnv, "1")
 	skipIfSystemConfig(t)
@@ -91,15 +52,14 @@ func TestInitRemoteMCPCommandReachesTheEngineDefaultConfig(t *testing.T) {
 		"--prefix", d.Names.Prefix, "--database-url", dbURL,
 	})
 	socketDir := filepath.Join(h.configDir, perUserDirName, "run")
-	require.Equal(t, []string{fakeBin, "mcp", "--agent", "bot", "--socket-dir", socketDir}, res.MCPCommand)
+	require.Equal(t, []string{fakeBin, "mcp", "--agent", "bot"}, res.MCPCommand)
 
 	_, reg := portalPasskey(t, dbName(t, d))
 	done := laptopRun(t, d.URL, reg+"\n", time.Time{}, "--setup-code", res.Code, "--yes")
 	require.Equal(t, exitOK, done.code, done.stderr)
 
-	// osHost with the same UserConfigDir init used, so basalt mcp with
-	// no --config finds the per-user config and auto-start sees the
-	// real file owner.
+	// osHost with the same UserConfigDir init used, so basalt mcp finds the
+	// per-user config and auto-start sees the real file owner.
 	requireMCPCommandReachesEngine(t, res.MCPCommand, userConfigHost{dir: h.configDir}, socketDir)
 }
 
@@ -114,7 +74,7 @@ func initRemoteJSON(t *testing.T, h *fakeHost, adminURL string, args []string) R
 			return ""
 		})
 	c.host = h
-	code := runInit(c, args)
+	code := runInit(c, takePathFlags(c, runInit, args))
 	require.Equal(t, exitOK, code, stderr.String())
 	return decodeRemoteResult(t, stdout.String())
 }

@@ -71,7 +71,7 @@ func TestPickAgentFindsTheOwner(t *testing.T) {
 
 	// A config that cannot be read: the usage error as before.
 	_, err = pickAgent(c, filepath.Join(t.TempDir(), "missing.json"), item, owner("bot"))
-	require.ErrorContains(t, err, "give --agent, --credential-file or "+envAgentURL)
+	require.ErrorContains(t, err, "give --agent or "+envAgentURL)
 }
 
 // In service mode the agents are the sockets the person can list; with one

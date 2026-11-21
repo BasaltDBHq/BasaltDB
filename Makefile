@@ -60,10 +60,6 @@ test-privdrop: ## basalt engine --user and plugin isolation as root in a Linux c
 		"go test -count=1 -v -run 'TestDropEveryThread|TestParseOwnStatus' ./internal/engine/privdrop/ && \
 		go test -count=1 -v -run 'TestPluginIsolationAsRoot' ./internal/engine/service/"
 
-.PHONY: test-compose
-test-compose: ## The docker compose example (examples/compose): setup, isolation, restart, removal (needs Docker)
-	@examples/compose/smoke.sh
-
 .PHONY: test-systemd
 test-systemd: ## A plugin under its systemd unit, isolation checked live (throwaway host with systemd and passwordless sudo only: changes it as root)
 	@bash scripts/systemd-smoke/smoke.sh

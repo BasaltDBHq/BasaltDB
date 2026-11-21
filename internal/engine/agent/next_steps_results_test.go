@@ -365,7 +365,7 @@ func TestEveryCatalogResultGivesTheCatalogsSteps(t *testing.T) {
 				s := resultService(t, variant.goos, variant.config, variant.initArgs)
 				person, links, steps := kase.build(t, s)
 				requireObeysCatalogSteps(t, mcpcontract.ErrorSteps{PersonMessage: entry.PersonMessage, Steps: entry.Steps},
-					catalogCase{tool: kase.tool, args: kase.args}, person, links, steps, variant.config, kase.openWithoutURL)
+					catalogCase{tool: kase.tool, args: kase.args}, person, links, steps, kase.openWithoutURL)
 			})
 		}
 	}
@@ -373,7 +373,7 @@ func TestEveryCatalogResultGivesTheCatalogsSteps(t *testing.T) {
 
 // requireObeysCatalogSteps checks a result's or warning's person message and
 // steps against its catalog entry and the rules every step follows.
-func requireObeysCatalogSteps(t *testing.T, entry mcpcontract.ErrorSteps, kase catalogCase, person string, links []mcp.Link, steps []mcp.NextStep, config string, openWithoutURL bool) {
+func requireObeysCatalogSteps(t *testing.T, entry mcpcontract.ErrorSteps, kase catalogCase, person string, links []mcp.Link, steps []mcp.NextStep, openWithoutURL bool) {
 	t.Helper()
 	got := catalogKinds(steps)
 	require.Equal(t, mcpcontract.Resolve(entry.Steps, mcpcontract.OperatedByPerson), got, "(actor, action) sequence")
@@ -383,7 +383,7 @@ func requireObeysCatalogSteps(t *testing.T, entry mcpcontract.ErrorSteps, kase c
 		if st.Action == mcp.ActionOpenLink && st.URL == "" && openWithoutURL {
 			st.URL = "http://localhost/the-link-given-earlier"
 		}
-		requireStepObeysRules(t, st, kase, config, "step "+string(rune('1'+i)))
+		requireStepObeysRules(t, st, kase, "step "+string(rune('1'+i)))
 	}
 }
 
@@ -488,7 +488,7 @@ func TestEveryCatalogWarningGivesTheCatalogsSteps(t *testing.T) {
 				require.Equal(t, entry.Code, w.Code)
 				require.NotEmpty(t, w.Message)
 				requireObeysCatalogSteps(t, mcpcontract.ErrorSteps{PersonMessage: entry.PersonMessage, Steps: entry.Steps},
-					catalogCase{tool: kase.tool}, w.PersonMessage, nil, w.NextSteps, variant.config, false)
+					catalogCase{tool: kase.tool}, w.PersonMessage, nil, w.NextSteps, false)
 			})
 		}
 	}
@@ -519,7 +519,7 @@ func TestEveryCatalogWarningGivesTheVariantOnAnAgentOperatedEngine(t *testing.T)
 			mcptest.Require(t, w.PersonMessage, nil)
 			requireOperatorRules(t, w.NextSteps, w.PersonMessage, variant, entry.Code)
 			for i, st := range w.NextSteps {
-				requireStepObeysRules(t, st, catalogCase{tool: kase.tool}, "", "step "+strconv.Itoa(i+1))
+				requireStepObeysRules(t, st, catalogCase{tool: kase.tool}, "step "+strconv.Itoa(i+1))
 			}
 		})
 	}

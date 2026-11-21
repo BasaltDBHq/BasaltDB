@@ -33,7 +33,7 @@ basalt init --remote --operated-by=agent --vault=off \
 - Without root, init keeps the config and the sockets in your own config directory: `engine.json` in `basalt` inside your user config directory (`${XDG_CONFIG_HOME:-$HOME/.config}/basalt/engine.json` on Linux, `$HOME/Library/Application Support/basalt/engine.json` on macOS). With `--config <dir>/engine.json`, the config goes there and the sockets go in `<dir>/run`. Without `--config`, `basalt status`, `log`, `approve`, `revert`, `access`, `upgrade`, `passkey list`, `passkey check`, `mcp` and `engine` find the per-user config when no system config is installed.
 - A URL with a password is refused. Do not work around it.
 
-The command prints a setup code (`basalt-setup.1.…`), a setup fingerprint, and the `basalt mcp` command to register in your agent app. It does not install or start the engine. Add `--json` to get a `personMessage`, `nextSteps`, and `mcpCommand` (the same command as an argv array). The command is `basalt mcp --agent NAME`, plus `--socket-dir` whenever the socket directory is not the one `basalt mcp` uses when no `--socket-dir` is given (`basalt mcp` never reads the socket directory from the config), and `--config` whenever `basalt mcp` would not find the config by default. A non-root init without `--config` therefore includes `--socket-dir` pointing at the per-user run directory.
+The command prints a setup code (`basalt-setup.1.…`), a setup fingerprint, and the `basalt mcp` command to register in your agent app. It does not install or start the engine. Add `--json` to get a `personMessage`, `nextSteps`, and `mcpCommand` (the same command as an argv array). The command is `basalt mcp --agent NAME`: `basalt mcp` finds the config, and the socket directory in it, by itself.
 
 If the code already exists and is still valid, the same command prints it again. `--new-code` makes a new one.
 
@@ -103,18 +103,17 @@ Some bot computers have no systemd, no cron and no Docker, and start nothing at 
    cp "$(command -v basalt)" /workspace/basalt/bin/basalt
    ```
 
-2. Make the setup code as step 2 says, with `--config` in that folder:
+2. Make the setup code as step 2 says. The config goes in your user config directory, which these computers keep (it is under `/home`):
 
    ```sh
    /workspace/basalt/bin/basalt init --remote --operated-by=agent --vault=off \
-     --config /workspace/basalt/engine.json \
      --agent NAME --write schema.table,… --read schema.table,… \
      --database-url 'postgresql://postgres.<ref>@<host>:6543/postgres'
    ```
 
-   The config, the engine's key and the state go under `/workspace/basalt`: `engine.json`, `state/` and, for the sockets, `run/`. Send the code to the person as step 3 says. Init also prints the `basalt mcp` command; with `--json` it is `mcpCommand`.
+   The config, the engine's key and the state go under your user config directory: `engine.json`, `state/` and, for the sockets, `run/`. Send the code to the person as step 3 says. Init also prints the `basalt mcp` command; with `--json` it is `mcpCommand`.
 
-3. Register that printed `basalt mcp` command in your agent app. The printed command starts with the full path of the binary init ran from, so the app needs no `PATH` entry for it; run init from the copy in the surviving folder. It already has `--socket-dir` and `--config` when `basalt mcp` would not find them by default, so that it can start the engine when it is down.
+3. Register that printed `basalt mcp` command in your agent app. The printed command starts with the full path of the binary init ran from, so the app needs no `PATH` entry for it; run init from the copy in the surviving folder. `basalt mcp` finds the config by itself, so that it can start the engine when it is down.
 
 What happens from then on:
 
@@ -161,7 +160,7 @@ basalt init --remote --operated-by=agent --vault=off \
   --database-url 'postgresql://<user>@<host>:<port>/<database>'
 ```
 
-Use the same `--config` as the first time, if you gave one. The new agent joins the same engine. Send the person its setup code as in step 3, then restart the engine so it serves the new agent.
+The new agent joins the same engine. Send the person its setup code as in step 3, then restart the engine so it serves the new agent.
 
 ## If someone gives you the admin password
 

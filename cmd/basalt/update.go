@@ -48,7 +48,12 @@ func updateOff(ctx context.Context, getenv func(string) string, goos string, h h
 	if updatecheck.Disabled(getenv) || buildinfo.Version == updatecheck.DevVersion {
 		return true
 	}
-	cfg, err := loadEngineConfigAs(h.Euid(), perUserConfigFallback(h, config.DefaultPath(goos)))
+	path, derr := discoverConfig(h, config.DefaultPath(goos))
+	if derr != nil {
+		// Two configs: the command itself reports it; the system one decides.
+		path = config.DefaultPath(goos)
+	}
+	cfg, err := loadEngineConfigAs(h.Euid(), path)
 	switch {
 	case err == nil:
 		return !cfg.UpdateCheckOn()

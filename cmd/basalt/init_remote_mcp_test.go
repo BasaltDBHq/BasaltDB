@@ -70,7 +70,7 @@ func remoteNoDBOn(t *testing.T, h *fakeHost, jsonOut bool, args ...string) resul
 	if jsonOut {
 		args = append(args, "--json")
 	}
-	code := runInit(c, args)
+	code := runInit(c, takePathFlags(c, runInit, args))
 	return result{code, stdout.String(), stderr.String()}
 }
 
@@ -99,8 +99,7 @@ func TestInitRemoteMCPCommandDefaultConfig(t *testing.T) {
 	r := remoteNoDBOn(t, h, true, args...)
 	require.Equal(t, exitOK, r.code, r.stderr)
 	res := decodeRemoteResult(t, r.stdout)
-	socketDir := filepath.Join(h.configDir, perUserDirName, "run")
-	want := []string{fakeBin, "mcp", "--agent", "bot", "--socket-dir", socketDir}
+	want := []string{fakeBin, "mcp", "--agent", "bot"}
 	require.Equal(t, want, res.MCPCommand)
 	txt := remoteNoDBOn(t, h, false, args...)
 	require.Equal(t, exitOK, txt.code, txt.stderr)
@@ -108,8 +107,7 @@ func TestInitRemoteMCPCommandDefaultConfig(t *testing.T) {
 	require.NotContains(t, txt.stdout, "--config")
 }
 
-// Non-root init --remote --config prints and returns the command with
-// --config and the matching --socket-dir next to it.
+// A config in another place gives the same command: basalt mcp finds it.
 func TestInitRemoteMCPCommandWithConfig(t *testing.T) {
 	t.Parallel()
 	h := newFakeHost(t)
@@ -121,9 +119,7 @@ func TestInitRemoteMCPCommandWithConfig(t *testing.T) {
 	r := remoteNoDBOn(t, h, true, args...)
 	require.Equal(t, exitOK, r.code, r.stderr)
 	res := decodeRemoteResult(t, r.stdout)
-	abs, err := filepath.Abs(cfg)
-	require.NoError(t, err)
-	want := []string{fakeBin, "mcp", "--agent", "lead_bot", "--socket-dir", filepath.Join(filepath.Dir(abs), "run"), "--config", abs}
+	want := []string{fakeBin, "mcp", "--agent", "lead_bot"}
 	require.Equal(t, want, res.MCPCommand)
 	txt := remoteNoDBOn(t, h, false, "--remote", "--config", cfg, "--agent", "lead_bot", "--write", "public.leads")
 	require.Equal(t, exitOK, txt.code, txt.stderr)
@@ -131,9 +127,7 @@ func TestInitRemoteMCPCommandWithConfig(t *testing.T) {
 }
 
 // Root/service init --remote with a service config returns the command the
-// agent's OS user runs for the service socket: no --socket-dir, because
-// the sockets stay at the system default, and --config when the file is
-// not the system default.
+// agent's OS user runs for the service socket: only the agent.
 func TestInitRemoteMCPCommandAsRootService(t *testing.T) {
 	t.Parallel()
 	cfg := tempConfig(t)
@@ -143,8 +137,79 @@ func TestInitRemoteMCPCommandAsRootService(t *testing.T) {
 	}, cfg, "--agent", "bot", "--write", "public.leads", "--database-url", "postgres://u@db.example.com:5432/app")
 	require.True(t, r.cfg.Service())
 	require.Equal(t, config.DefaultSocketDir(runtime.GOOS), r.cfg.SocketDir)
-	abs, err := filepath.Abs(cfg)
+	require.Equal(t, []string{fakeBin, "mcp", "--agent", "bot"}, r.res.MCPCommand)
+}
+
+// Not root, with a system engine config in place, init --remote stops and
+// names it: a second config in the user's folder would make every later
+// command stop on two.
+func TestInitRemoteRefusesASecondConfigBesideTheSystemOne(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost(t)
+	system := filepath.Join(h.configDir, "etc", "engine.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(system), 0o700))
+	require.NoError(t, os.WriteFile(system, []byte("{}"), 0o600))
+	var stdout, stderr bytes.Buffer
+	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr},
+		func(string) string { return "" })
+	c.host, c.agentLogin, c.probe, c.systemConfigPath = h, refusedLogin, noNetworkProbe, system
+	code := runInit(c, []string{
+		"--remote", "--agent", "bot", "--write", "public.leads",
+		"--database-url", "postgres://postgres@db.example.com:5432/postgres",
+	})
+	require.Equal(t, exitError, code, stderr.String())
+	require.Contains(t, stderr.String(), system)
+	_, err := os.Stat(filepath.Join(h.configDir, perUserDirName, "engine.json"))
+	require.ErrorIs(t, err, os.ErrNotExist, "no second config")
+}
+
+// init and init --demo, not root, with a system engine config in place and
+// --no-service: refused before any SQL, no second config.
+func TestInitRefusesAForegroundSetupBesideTheSystemConfig(t *testing.T) {
+	t.Parallel()
+	for _, extra := range [][]string{
+		{"--agent", "bot", "--write", "public.leads"},
+		{"--demo"},
+	} {
+		h := newFakeHost(t)
+		system := filepath.Join(h.configDir, "etc", "engine.json")
+		require.NoError(t, os.MkdirAll(filepath.Dir(system), 0o700))
+		require.NoError(t, os.WriteFile(system, []byte("{}"), 0o600))
+		var stdout, stderr bytes.Buffer
+		c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr},
+			func(k string) string {
+				if k == envAdminURL {
+					return "postgres://admin@127.0.0.1:1/postgres"
+				}
+				return ""
+			})
+		c.host, c.systemConfigPath = h, system
+		code := runInit(c, append([]string{"--no-service", "--yes", "--skip-passkey"}, extra...))
+		require.Equal(t, exitError, code, "%v: %s", extra, stderr.String())
+		require.Contains(t, stderr.String(), system)
+		_, err := os.Stat(filepath.Join(h.configDir, perUserDirName, "engine.json"))
+		require.ErrorIs(t, err, os.ErrNotExist, "no second config")
+	}
+}
+
+// The backstop for a service declined at the prompt: perUserPaths, which
+// moves a foreground setup to the person's folder, refuses beside a system
+// config.
+func TestPerUserPathsRefusesBesideTheSystemConfig(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost(t)
+	system := filepath.Join(h.configDir, "etc", "engine.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(system), 0o700))
+	require.NoError(t, os.WriteFile(system, []byte("{}"), 0o600))
+	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &bytes.Buffer{}, err: &bytes.Buffer{}},
+		func(string) string { return "" })
+	c.host, c.systemConfigPath = h, system
+	_, err := perUserPaths(c, initFlags{agent: "bot"})
+	require.ErrorContains(t, err, system)
+
+	// With no system config it moves to the person's folder.
+	require.NoError(t, os.Remove(system))
+	f, err := perUserPaths(c, initFlags{agent: "bot"})
 	require.NoError(t, err)
-	require.Equal(t, []string{fakeBin, "mcp", "--agent", "bot", "--config", abs}, r.res.MCPCommand)
-	require.NotContains(t, r.res.MCPCommand, "--socket-dir")
+	require.Equal(t, filepath.Join(h.configDir, perUserDirName, "engine.json"), f.configPath)
 }

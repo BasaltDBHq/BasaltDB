@@ -135,7 +135,7 @@ func TestStatusCertificateNotVerified(t *testing.T) {
 
 	cmds, cerr := NewCommands("bot", "/srv/basalt/engine.json", "linux", nil)
 	require.NoError(t, cerr)
-	require.Equal(t, "sudo basalt trust add --name db-x-y --match '=db.x.y' --ca ./ca.pem --config /srv/basalt/engine.json", cmds.TrustAdd("DB.X.Y."))
+	require.Equal(t, "sudo basalt trust add --name db-x-y --match '=db.x.y' --ca ./ca.pem", cmds.TrustAdd("DB.X.Y."))
 }
 
 // trustStatusOf is the engine's status with rep as its trust reporter.

@@ -28,13 +28,15 @@ var ErrReload = errors.New("the engine stopped to serve its config again")
 // HandoffOptions reach the connect service and the collected database for
 // the agents of a connect-only setup code. The zero value is the
 // contract's: the connect service at handoff.ServiceURL, the system's
-// resolver, dialer and certificate roots. Tests give their own, by
-// construction only: nothing in the config or the environment changes
-// them.
+// resolver, dialer and certificate roots, and the real clock. Tests give
+// their own, by construction only: nothing in the config or the
+// environment changes them.
 type HandoffOptions struct {
 	ServiceURL string
 	HTTP       *http.Client
 	Prober     handoff.Prober
+	// Now is the clock a waiting connect-only setup uses; nil is time.Now.
+	Now func() time.Time
 }
 
 func (o HandoffOptions) serviceURL() string {
@@ -42,6 +44,13 @@ func (o HandoffOptions) serviceURL() string {
 		return handoff.ServiceURL
 	}
 	return o.ServiceURL
+}
+
+func (o HandoffOptions) now() func() time.Time {
+	if o.Now != nil {
+		return o.Now
+	}
+	return time.Now
 }
 
 // errNoEngineKey is a collect while the engine key file is refused: the
@@ -128,7 +137,7 @@ func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agen
 		collector = rootCollector{}
 		log.Warn("the agent waits for its database's address, which an engine started as root does not collect: start the engine with --user, or as the agent's OS user")
 	case env.keys != nil:
-		collector = handoff.NewClient(env.handoff.HTTP, env.handoff.serviceURL(), env.keys, time.Now)
+		collector = handoff.NewClient(env.handoff.HTTP, env.handoff.serviceURL(), env.keys, env.handoff.now())
 	}
 	reload := env.reload
 	if reload == nil {
@@ -142,7 +151,7 @@ func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agen
 	pending, err := handoff.New(handoff.Options{
 		Agent: a.Name, Setup: *a.Setup, Collector: collector, Prober: env.handoff.Prober,
 		Files:   handoffFiles{configPath: env.configPath, agent: a.Name, credFile: a.Store.CredentialFile},
-		Changed: reload, Log: log.With("component", "connect"), Now: time.Now, Cache: cache,
+		Changed: reload, Log: log.With("component", "connect"), Now: env.handoff.now(), Cache: cache,
 	})
 	if err != nil {
 		return agentRuntime{}, fmt.Errorf("agent %s: %w", a.Name, err)
@@ -150,7 +159,7 @@ func newConnectOnlyRuntime(env agentEnv, a config.Agent, log *slog.Logger) (agen
 	co := agent.ConnectOnly{
 		Name: a.Name, Commands: cmds, OperatedBy: env.cfg.OperatedBy, SameUser: !env.cfg.Service(), StartedBy: env.startedBy,
 		PagesBase: env.pagesBase, PagesOrigin: env.pagesOrigin, ConnectBudget: env.cfg.ConnectLinkBudget(),
-		Vault: env.vault, Handoff: pending, Log: log, Now: time.Now,
+		Vault: env.vault, Handoff: pending, Log: log, Now: env.handoff.now(),
 	}
 	log.Info("the agent waits for its database's address from the connect page; only status and confirm_database answer", "setupId", a.Setup.SetupID)
 	return agentRuntime{
@@ -186,9 +195,9 @@ func CollectWhileDown(ctx context.Context, cfg config.Config, configPath, goos s
 		return handoff.State{}, fmt.Errorf("the engine's key cannot be read, so the address cannot be collected: %w", err)
 	}
 	pending, err := handoff.New(handoff.Options{
-		Agent: a.Name, Setup: *a.Setup, Collector: handoff.NewClient(o.HTTP, o.serviceURL(), keys, time.Now), Prober: o.Prober,
+		Agent: a.Name, Setup: *a.Setup, Collector: handoff.NewClient(o.HTTP, o.serviceURL(), keys, o.now()), Prober: o.Prober,
 		Files:   handoffFiles{configPath: configPath, agent: a.Name, credFile: a.Store.CredentialFile},
-		Changed: func() {}, Log: log, Now: time.Now,
+		Changed: func() {}, Log: log, Now: o.now(),
 		// The engine's own cache, so a reached preview is probed once
 		// whichever process collects it; a SET_UP address waits for the
 		// engine, which asks the person.

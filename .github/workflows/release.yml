@@ -33,7 +33,7 @@ jobs:
 
       # setup-go v6 installs the go.mod toolchain line. No Go cache: a
       # release builds from a clean module and build cache.
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: false

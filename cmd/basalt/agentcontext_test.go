@@ -302,9 +302,10 @@ func (r failingReader) Read([]byte) (int, error) {
 }
 
 // Plain init refuses the admin path whenever an agent may be running it: an
-// agent marker, or stdin that is not a terminal. Neither
-// BASALT_ADMIN_DATABASE_URL nor stdin is read, and the message names the
-// leaked variable so the person changes that password.
+// agent marker, or stdin that is not a terminal; and at a terminal it
+// refuses a set BASALT_ADMIN_DATABASE_URL, which it never uses. Neither the
+// variable's value nor stdin is read, and the message tells the person to
+// change that password.
 func TestPlainInitRefusesTheAdminPathUnderAnAgentOrWithoutATerminal(t *testing.T) {
 	t.Parallel()
 	for name, tc := range map[string]struct {
@@ -315,6 +316,7 @@ func TestPlainInitRefusesTheAdminPathUnderAnAgentOrWithoutATerminal(t *testing.T
 		"agent marker at a terminal": {marker: true, interactive: true, want: "running under an agent (CLAUDECODE is set)"},
 		"no marker, no terminal":     {interactive: false, want: "stdin is not a terminal"},
 		"marker and no terminal":     {marker: true, want: "running under an agent (CLAUDECODE is set)"},
+		"a person at a terminal":     {interactive: true, want: adminEnvRefused},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -336,7 +338,7 @@ func TestPlainInitRefusesTheAdminPathUnderAnAgentOrWithoutATerminal(t *testing.T
 			code := runInit(c, []string{"--agent", "bot", "--write", "public.leads", "--yes"})
 			require.Equal(t, exitError, code, stderr.String())
 			require.Contains(t, stderr.String(), tc.want)
-			require.Contains(t, stderr.String(), adminEnvLeaked, "the person is told to change the leaked password")
+			require.Contains(t, stderr.String(), "change that database password now", "the person is told to change the leaked password")
 			require.NotContains(t, stderr.String()+stdout.String(), "pw@db", "the value is never echoed")
 			require.True(t, readAdmin, "only checked for presence, to warn")
 			require.Empty(t, stdout.String())

@@ -191,6 +191,12 @@ func (c *cliIO) adminURL() (string, error) {
 	if v := c.getenv(envAdminURL); v != "" {
 		return v, nil
 	}
+	return c.promptAdminURL()
+}
+
+// promptAdminURL asks for the admin connection string with a hidden
+// prompt; it never reads the environment.
+func (c *cliIO) promptAdminURL() (string, error) {
 	fmt.Fprint(c.stderr, "Admin connection string (used once, never stored): ")
 	if c.terminal != nil {
 		b, err := term.ReadPassword(int(c.terminal.Fd()))

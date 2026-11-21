@@ -116,7 +116,9 @@ func runInit(c *cliIO, args []string) int {
 			return c.fail(err)
 		}
 	}
-	admin, err := c.adminURL()
+	// Typed at the prompt only: agentInitError refused a set
+	// BASALT_ADMIN_DATABASE_URL.
+	admin, err := c.initAdminURL()
 	if err != nil {
 		return c.fail(err)
 	}

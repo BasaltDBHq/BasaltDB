@@ -1,7 +1,6 @@
 package main
 
 import (
-	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -25,7 +24,7 @@ import (
 // Consent). add and enable show what the plugin may see and where it runs,
 // and write engine.json only after the person says yes. Under an agent
 // marker, or on an engine an agent operates, add, enable, any widening
-// change and trust are refused before anything is written; disable and
+// change are refused before anything is written; disable and
 // remove stay allowed, since they only narrow.
 
 // pluginUsage names every flag each command takes; a test holds it to that.
@@ -33,8 +32,8 @@ const pluginUsage = "basalt plugin list [--json] | " +
 	"add <dir> --agents a,b [--instance NAME] [--approve-with-passkey] [--wait SECONDS] [--json] | " +
 	"enable <name> [--instance NAME] [--approve-with-passkey] [--approval-id ID[,ID]] [--wait SECONDS] [--json] | " +
 	"approve [code] [--agent NAME] [--json] | " +
-	"disable <name> [--instance NAME] | check <name> [--instance NAME] [--json] | trust <public key file> [--json] | " +
-	"remove <name> [--instance NAME] | keygen --out DIR | sign <dir> --key FILE"
+	"disable <name> [--instance NAME] | check <name> [--instance NAME] [--json] | " +
+	"remove <name> [--instance NAME]"
 
 // runPlugin: basalt plugin <command>.
 func runPlugin(c *cliIO, args []string) int {
@@ -43,8 +42,7 @@ func runPlugin(c *cliIO, args []string) int {
 	}
 	cmds := map[string]func(*cliIO, []string) int{
 		"list": pluginList, "add": pluginAdd, "enable": pluginEnable, "disable": pluginDisable,
-		"trust": pluginTrust, "remove": pluginRemove, "check": pluginCheck, "keygen": pluginKeygen, "sign": pluginSign,
-		"approve": pluginApprove,
+		"remove": pluginRemove, "check": pluginCheck, "approve": pluginApprove,
 	}
 	if run, ok := cmds[args[0]]; ok {
 		return run(c, args[1:])
@@ -171,27 +169,20 @@ func (e *pluginEnv) refuseAgentOperated(cfg config.Config, sub, again string) er
 	}
 	r := &pluginRefusedError{reason: reasonAgentOperated}
 	switch {
-	case sub == "trust" && !cfg.Service():
-		// Same-user mode: plugins are added through a passkey approval, and
-		// trusting a key stays a person's step at their own terminal.
-		r.message = fmt.Sprintf("basalt plugin trust is refused: an agent never adds a trust root (%s). Nothing was written",
-			cmp.Or(marker, "this engine is operatedBy AGENT"))
-		r.person = "An agent never trusts a plugin key. If you trust this publisher, add their key in a terminal of your own, " +
-			"which no agent reads:\n  " + again + "\nTo add a plugin, the agent can open an approval you sign with your passkey instead."
 	case cfg.AgentOperated():
 		r.message = fmt.Sprintf("basalt plugin %s is refused: this engine is operatedBy AGENT, so a prompt answered on this machine "+
 			"is no proof that a person consented. Nothing was written", sub)
-		r.person = "With sudo, plugins cannot be added or enabled, and plugin keys cannot be trusted, on an engine an agent operates. " +
+		r.person = "With sudo, plugins cannot be added or enabled on an engine an agent operates. " +
 			"Without sudo, basalt plugin add and enable open an approval that you sign with your passkey. " +
 			"Disabling and removing a plugin still work."
 	default:
 		r.message = fmt.Sprintf("basalt plugin %s is refused: %s is set, so an agent is running it. An agent never adds, enables or "+
-			"widens a plugin and never trusts a plugin key. Nothing was written", sub, marker)
-		r.person = "Adding, enabling or widening a plugin, and trusting a plugin key, need your consent. " +
+			"widens a plugin. Nothing was written", sub, marker)
+		r.person = "Adding, enabling or widening a plugin needs your consent. " +
 			"Run this in a terminal of your own, which no agent reads:\n  " + again
 	}
 	r.steps = []mcp.NextStep{
-		{Actor: mcp.ActorAgent, Action: mcp.ActionStop, Text: "Stop: an agent never adds, enables or widens a plugin, and never trusts a plugin key."},
+		{Actor: mcp.ActorAgent, Action: mcp.ActionStop, Text: "Stop: an agent never adds, enables or widens a plugin."},
 		{Actor: mcp.ActorAgent, Action: mcp.ActionAskPerson, Text: "Show the person the personMessage; only they can decide about this plugin."},
 	}
 	return r
@@ -213,13 +204,13 @@ func (e *pluginEnv) verifyRefusal(err error, again string) error {
 	if ve.Path != nil {
 		return pathRuleRefusal(r, ve, again)
 	}
-	trust := e.command("trust", "<publisher key file>")
-	r.person = "The plugin was refused: " + ve.File + " " + ve.Why + ". If you trust its publisher, trust their public key " +
-		"and run the command again:\n  " + trust + "\n  " + again
-	r.steps = []mcp.NextStep{
-		{Actor: mcp.ActorPerson, Action: mcp.ActionRunCommand, Text: "Only if you trust this plugin's publisher: trust their public key.", Command: trust},
-		{Actor: mcp.ActorPerson, Action: mcp.ActionRunCommand, Text: "Run the refused command again.", Command: again},
+	r.person = "The plugin failed verification: " + ve.File + " " + ve.Why + ". Nothing was written."
+	stop := "Stop: the plugin failed verification."
+	if ve.Why == plugin.WhyKeyNotTrusted {
+		r.person = "The plugin was refused: " + ve.File + " " + ve.Why + ", so it is not signed by a key this engine trusts. Nothing was written."
+		stop = "Stop: the plugin is not signed by a key this engine trusts."
 	}
+	r.steps = []mcp.NextStep{{Actor: mcp.ActorAgent, Action: mcp.ActionStop, Text: stop}}
 	return r
 }
 
@@ -1151,77 +1142,4 @@ func (e *pluginEnv) remove(k plugin.EntryKey) error {
 	e.endAfterTurnOff(p)
 	e.narrowed()
 	return nil
-}
-
-func pluginTrust(c *cliIO, args []string) int {
-	fs := c.flags("plugin trust")
-	configPath, cfgErr := c.findConfig()
-	if cfgErr != nil {
-		return c.fail(cfgErr)
-	}
-	asJSON := fs.Bool("json", false, "print a refusal as the JSON error body")
-	file, err := parseOne(fs, args, "the publisher's public key file")
-	if err != nil {
-		return c.fail(err)
-	}
-	if file, err = filepath.Abs(file); err != nil {
-		return c.fail(err)
-	}
-	e, err := loadPluginEnv(c, configPath)
-	if err != nil {
-		return c.fail(err)
-	}
-	return c.pluginDone(e.trustKey(file), *asJSON)
-}
-
-// trustKey shows the key's id, asks, and adds it to the trust store.
-func (e *pluginEnv) trustKey(file string) error {
-	if refused := e.refuseAgentOperated(e.cfg, "trust", e.command("trust", shellQuote(file))); refused != nil {
-		return refused
-	}
-	if err := e.needsSudo("trust"); err != nil {
-		return err
-	}
-	pemBytes, err := readSmallFile(file, plugin.MaxKeyFileBytes)
-	if err != nil {
-		return fmt.Errorf("public key file %s cannot be read", file)
-	}
-	_, id, err := plugin.ParsePublicKey(pemBytes)
-	if err != nil {
-		return fmt.Errorf("public key file %s: %w", file, err)
-	}
-	fmt.Fprintf(e.c.stderr, "Key id %s, from %s.\nA trusted key may sign plugins for every agent of this engine.\n", id, file)
-	if err := e.ask("Trust this key?"); err != nil {
-		return err
-	}
-	id, added, err := e.trust.Add(pemBytes)
-	if err != nil {
-		return err
-	}
-	if !added {
-		fmt.Fprintf(e.c.stderr, "basalt: key %s is already trusted; nothing changed\n", id)
-		return nil
-	}
-	fmt.Fprintf(e.c.stderr, "basalt: key %s trusted (%s)\n", id, filepath.Join(e.trust.Dir(), id+".pem"))
-	// The engine reads its trust store, and records the new key in the
-	// ledgers, at start.
-	e.restartSo("it trusts the key")
-	return nil
-}
-
-// readSmallFile reads at most limit bytes of path; a larger file is refused.
-func readSmallFile(path string, limit int64) ([]byte, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	b, err := io.ReadAll(io.LimitReader(f, limit+1))
-	if err != nil {
-		return nil, err
-	}
-	if int64(len(b)) > limit {
-		return nil, errors.New("file too large")
-	}
-	return b, nil
 }

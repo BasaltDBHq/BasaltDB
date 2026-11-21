@@ -4,6 +4,8 @@ The Vault is a hosted relay at `relay.basaltvault.app`. It exists for one case: 
 
 The protocol is in [CONTRACT.md, Vault channel](../contract/vault-channel.md#vault-channel). The Vault service itself is closed source and is not in this repository, so this page describes what the engine does and what the protocol allows the Vault to see. It cannot show what the service does with what it sees.
 
+For a short statement of what the relay sees, stores and logs, see [relay-privacy.md](relay-privacy.md).
+
 ## What is built, and what is not
 
 Built on `master`:

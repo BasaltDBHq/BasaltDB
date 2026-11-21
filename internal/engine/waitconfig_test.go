@@ -70,9 +70,14 @@ func TestWaitForConfigServesOnlyTheSetupPageThenReturns(t *testing.T) {
 	t.Parallel()
 	addr := freeAddr(t)
 	configPath := filepath.Join(t.TempDir(), "engine.json")
-	done := make(chan error, 1)
+	type waited struct {
+		ln  net.Listener
+		err error
+	}
+	done := make(chan waited, 1)
 	go func() {
-		done <- engine.WaitForConfig(context.Background(), addr, configPath, slog.New(slog.DiscardHandler))
+		ln, err := engine.WaitForConfig(context.Background(), addr, configPath, slog.New(slog.DiscardHandler))
+		done <- waited{ln, err}
 	}()
 	waitUp(t, addr)
 
@@ -95,21 +100,33 @@ func TestWaitForConfigServesOnlyTheSetupPageThenReturns(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, code, "a foreign Origin is refused")
 
 	select {
-	case err := <-done:
-		t.Fatalf("returned before the config exists: %v", err)
+	case w := <-done:
+		t.Fatalf("returned before the config exists: %v", w.err)
 	default:
 	}
 	require.NoError(t, os.WriteFile(configPath, []byte("{}"), 0o600))
+	var w waited
 	select {
-	case err := <-done:
-		require.NoError(t, err)
+	case w = <-done:
+		require.NoError(t, w.err)
 	case <-time.After(5 * time.Second):
 		t.Fatal("the engine did not see its config")
 	}
-	// The port is free again for the engine's own pages.
-	ln, err := net.Listen("tcp", addr)
+	// The listener is handed on still bound: no other process can take the
+	// port between the setup page and the engine's own pages.
+	require.Equal(t, addr, w.ln.Addr().String())
+	_, err := net.Listen("tcp", addr)
+	require.Error(t, err, "the port is still held")
+	// And it still accepts: the engine serves its pages on it.
+	hs := &http.Server{Handler: http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) { _, _ = rw.Write([]byte("pages")) }), ReadHeaderTimeout: time.Second}
+	go func() { _ = hs.Serve(w.ln) }()
+	t.Cleanup(func() { _ = hs.Close() })
+	resp, err := http.Get("http://" + addr + "/")
 	require.NoError(t, err)
-	require.NoError(t, ln.Close())
+	raw, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	require.Equal(t, "pages", string(raw))
 }
 
 func TestWaitForConfigNamesATakenPort(t *testing.T) {
@@ -119,7 +136,7 @@ func TestWaitForConfigNamesATakenPort(t *testing.T) {
 	t.Cleanup(func() { _ = ln.Close() })
 	_, port, err := net.SplitHostPort(ln.Addr().String())
 	require.NoError(t, err)
-	err = engine.WaitForConfig(context.Background(), ln.Addr().String(), filepath.Join(t.TempDir(), "engine.json"), slog.New(slog.DiscardHandler))
+	_, err = engine.WaitForConfig(context.Background(), ln.Addr().String(), filepath.Join(t.TempDir(), "engine.json"), slog.New(slog.DiscardHandler))
 	require.ErrorContains(t, err, "serves its setup page on "+ln.Addr().String()+", but another process holds it")
 	require.ErrorContains(t, err, "lsof -nP -iTCP:"+port+" -sTCP:LISTEN")
 }
@@ -130,7 +147,8 @@ func TestWaitForConfigStopsWithItsContext(t *testing.T) {
 	addr := freeAddr(t)
 	done := make(chan error, 1)
 	go func() {
-		done <- engine.WaitForConfig(ctx, addr, filepath.Join(t.TempDir(), "engine.json"), slog.New(slog.DiscardHandler))
+		_, err := engine.WaitForConfig(ctx, addr, filepath.Join(t.TempDir(), "engine.json"), slog.New(slog.DiscardHandler))
+		done <- err
 	}()
 	waitUp(t, addr)
 	cancel()
@@ -140,4 +158,7 @@ func TestWaitForConfigStopsWithItsContext(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("did not stop")
 	}
+	ln, err := net.Listen("tcp", addr)
+	require.NoError(t, err, "a stopped wait frees its port")
+	require.NoError(t, ln.Close())
 }

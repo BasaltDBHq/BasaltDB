@@ -24,47 +24,76 @@ const configPollInterval = time.Second
 
 // WaitForConfig is an engine with no config (CONTRACT.md, The local setup
 // page): it serves only GET /healthz and the setup routes on addr until
-// configPath exists, then stops serving and returns nil, so the caller
-// loads the config and runs the engine in this process. A taken port is
-// an error naming it; so is a config path that cannot be looked at.
-func WaitForConfig(ctx context.Context, addr, configPath string, log *slog.Logger) error {
+// configPath exists, then stops serving and returns the listener, still
+// bound, for the engine's own pages (RestartOptions.PagesListener): the
+// port is never free for another process between the two. A taken port is
+// an error naming it; so is a config path that cannot be looked at. On any
+// error the listener is closed.
+func WaitForConfig(ctx context.Context, addr, configPath string, log *slog.Logger) (net.Listener, error) {
 	ln, h, err := server.Listen(server.Options{}, "setup page", addr, pages.SetupOnlyHandler())
 	if err != nil {
-		return setupPortError(addr, err)
+		return nil, setupPortError(addr, err)
+	}
+	keep, ok := ln.(deadliner)
+	if !ok {
+		_ = ln.Close()
+		return nil, errors.New("the setup page's listener cannot be handed on")
 	}
 	hs := &http.Server{Handler: h, ReadHeaderTimeout: pagesHeaderTimeout}
 	served := make(chan error, 1)
 	go func() {
-		served <- hs.Serve(ln)
+		served <- hs.Serve(keptListener{Listener: ln, keep: keep})
 		close(served)
 	}()
-	defer func() {
+	// stop ends the setup page's serving and waits for it, leaving ln bound.
+	stop := func() {
 		_ = hs.Shutdown(context.WithoutCancel(ctx))
-		// Wait until it stopped serving (http.ErrServerClosed), so the port
-		// is free for the engine's own pages.
 		for range served {
 		}
-	}()
+		_ = keep.SetDeadline(time.Time{})
+	}
 	log.Info("no engine config yet: serving only the setup page until it exists", "config", configPath, "addr", ln.Addr().String())
 	t := time.NewTicker(configPollInterval)
 	defer t.Stop()
 	for {
 		switch _, err := os.Lstat(configPath); {
 		case err == nil:
+			stop()
 			log.Info("engine config found: starting the engine", "config", configPath)
-			return nil
+			return ln, nil
 		case !errors.Is(err, fs.ErrNotExist):
-			return err
+			stop()
+			_ = ln.Close()
+			return nil, err
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			stop()
+			_ = ln.Close()
+			return nil, ctx.Err()
 		case err := <-served:
-			return fmt.Errorf("the setup page stopped: %w", err)
+			_ = ln.Close()
+			return nil, fmt.Errorf("the setup page stopped: %w", err)
 		case <-t.C:
 		}
 	}
 }
+
+// deadliner is a listener whose Accept a deadline can wake (a TCP
+// listener).
+type deadliner interface {
+	SetDeadline(t time.Time) error
+}
+
+// keptListener is what the setup page serves on: closing it, as
+// http.Server.Shutdown does, only wakes its Accept with a deadline, so the
+// socket stays bound for the engine that takes it over.
+type keptListener struct {
+	net.Listener
+	keep deadliner
+}
+
+func (k keptListener) Close() error { return k.keep.SetDeadline(time.Now()) }
 
 func setupPortError(addr string, err error) error {
 	port := addr

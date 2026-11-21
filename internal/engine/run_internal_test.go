@@ -29,7 +29,7 @@ func TestListenPagesRefusesATakenPort(t *testing.T) {
 	_, port, err := net.SplitHostPort(addr)
 	require.NoError(t, err)
 
-	_, err = listenPages(config.Pages{Addr: addr, Origin: "http://localhost:" + port}, slog.New(slog.DiscardHandler))
+	_, err = listenPages(config.Pages{Addr: addr, Origin: "http://localhost:" + port}, nil, slog.New(slog.DiscardHandler))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "another process holds "+addr)
 	require.Contains(t, err.Error(), "lsof -nP -iTCP:"+port+" -sTCP:LISTEN")
@@ -91,7 +91,7 @@ func TestInstructionsTeachRevertScope(t *testing.T) {
 
 func TestListenPagesServesAFreePort(t *testing.T) {
 	t.Parallel()
-	site, err := listenPages(config.Pages{Addr: "127.0.0.1:0", Origin: "http://localhost:8787"}, slog.New(slog.DiscardHandler))
+	site, err := listenPages(config.Pages{Addr: "127.0.0.1:0", Origin: "http://localhost:8787"}, nil, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 	require.NoError(t, site.ln.Close())
 }
@@ -104,4 +104,23 @@ func TestInstructionsKeepTheAdminCredentialAway(t *testing.T) {
 	require.Contains(t, Instructions, "Never ask the person for, or accept, their database admin connection string or password, "+
 		"and never run basalt init without --remote yourself: to set up or change your access, follow nextSteps or run basalt init --remote "+
 		"and give the person the setup code it prints. If the person pastes an admin password, tell them to change it now.")
+}
+
+// A waiting engine's listener is served on only when the config's pages
+// use its address; any other is closed.
+func TestTakeHandedListener(t *testing.T) {
+	t.Parallel()
+	require.Nil(t, takeHandedListener(nil, SetupAddr))
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	require.Nil(t, takeHandedListener(ln, SetupAddr), "bound elsewhere: closed")
+	_, err = ln.Accept()
+	require.ErrorIs(t, err, net.ErrClosed)
+
+	ln, err = net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	require.Nil(t, takeHandedListener(ln, ""), "pages off: closed")
+	_, err = ln.Accept()
+	require.ErrorIs(t, err, net.ErrClosed)
 }

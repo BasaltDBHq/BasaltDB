@@ -20,6 +20,12 @@ type Options struct {
 	AllowInsecurePlaintext bool
 }
 
+// Wrap is h in the websec hardening for ln, a loopback listener bound
+// earlier at addr (one Listen made and handed on).
+func Wrap(addr string, ln net.Listener, h http.Handler) http.Handler {
+	return secureHTTPHandler(Options{}, addr, ln, h)
+}
+
 // Listen binds addr over TCP and returns the listener with h wrapped in the
 // websec hardening for that bind. It refuses plaintext on a non-loopback
 // bind, checking the requested address before Listen and the address

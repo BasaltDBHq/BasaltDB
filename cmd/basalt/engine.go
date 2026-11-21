@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"net"
 	"os"
 	"os/exec"
 	"os/user"
@@ -82,13 +83,18 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 	// A supervised child on macOS stops when its supervisor dies.
 	watchSupervisedParent(ctx)
 	log := engineLog(io.err)
+	// handed is the setup page's listener of an engine that waited for its
+	// config: the first run serves its own pages on it.
+	var handed net.Listener
 	if waitsForConfig(h.Euid(), enginePath(*configPath)) {
-		if err := engine.WaitForConfig(ctx, engine.SetupAddr, *configPath, log); err != nil {
+		ln, err := engine.WaitForConfig(ctx, engine.SetupAddr, *configPath, log)
+		if err != nil {
 			if ctx.Err() != nil {
 				return exitOK
 			}
 			return fail(io.err, "engine", err)
 		}
+		handed = ln
 	}
 	cfg, err := loadEngineConfigAs(h.Euid(), *configPath)
 	if err != nil {
@@ -96,6 +102,7 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 	}
 	run := func(ctx context.Context, o engine.RestartOptions) error {
 		o.StartedBy = *startedBy
+		o.PagesListener, handed = handed, nil
 		if *pluginDebug {
 			o.PluginStderr = io.err
 		}
@@ -120,7 +127,7 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 // waitsForConfig: a service engine on a first install, started before its
 // config exists (CONTRACT.md, The local setup page). It runs as its own OS
 // user from the system config path, whose folder the install made, and
-// finds no engine.json there yet. It then serves only the setup page and
+// finds no engine.json there yet, in a folder it owns. It then serves only the setup page and
 // waits for the config instead of exiting.
 func waitsForConfig(euid int, configPath string) bool {
 	return waitsForConfigAt(euid, configPath, config.DefaultPath(runtime.GOOS))
@@ -134,8 +141,14 @@ func waitsForConfigAt(euid int, configPath, systemPath string) bool {
 	if _, err := os.Lstat(configPath); !errors.Is(err, fs.ErrNotExist) {
 		return false
 	}
+	// The install made the folder for this engine's own user: a folder
+	// anyone else owns is not this engine's to wait in.
 	dir, err := os.Lstat(filepath.Dir(configPath))
-	return err == nil && dir.IsDir()
+	if err != nil || !dir.IsDir() {
+		return false
+	}
+	owner, ok := infoOwnerUID(dir)
+	return ok && owner == euid
 }
 
 // restart is how the engine restarts onto an upgraded binary: upgrade says

@@ -853,9 +853,9 @@ func genSignatures(keys vectorKeys, relay sessionKeys) vectorFile[signatureCase]
 			b64(cat(spkiP256Prefix, keys.rotatedBox.PublicKey().Bytes())) + "\n" + at},
 		// The fixtures' setup code, its fingerprint and the time of
 		// CONTRACT.md, Connect, The address hand-off.
-		{"CONNECT_COLLECT", "connect.basaltvault.app\n01a1f78c-52b8-7c3a-9f00-0000000000e1\nd48b ee66 a1d9 d005 1f63\n2026-11-20T06:10:00Z"},
+		{"CONNECT_COLLECT", "connect.basaltvault.app\n01a1f78c-52b8-7c3a-9f00-0000000000e1\n734b aaea 804e 1065 4148\n2026-11-20T06:10:00Z"},
 		// The reachable report of CONTRACT.md, Connect, The reach check.
-		{"CONNECT_REACH", "connect.basaltvault.app\n01a1f78c-52b8-7c3a-9f00-0000000000e1\nd48b ee66 a1d9 d005 1f63\n2026-11-20T06:10:15Z\n" +
+		{"CONNECT_REACH", "connect.basaltvault.app\n01a1f78c-52b8-7c3a-9f00-0000000000e1\n734b aaea 804e 1065 4148\n2026-11-20T06:10:15Z\n" +
 			"aws-0-eu-central-1.pooler.supabase.com\n5432\npostgres\nabcdefghijklmnopqrst\nREACHABLE\n"},
 	}
 	add := func(name, context, publicKey string, message []byte, sig, expect string) {

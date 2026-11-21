@@ -11,7 +11,7 @@ import (
 
 func TestCheckLocalEdges(t *testing.T) {
 	t.Parallel()
-	p := validPayload(t) // setupId time 2026-11-12T06:02:11Z, expires 24h later
+	p := validPayload(t) // setupId time 2026-11-12T06:02:11Z, expires 10 minutes later
 	created, err := p.CreatedAt()
 	require.NoError(t, err)
 	expires, err := p.ExpiresTime()
@@ -48,9 +48,9 @@ func TestCheckLocalEdges(t *testing.T) {
 	}
 }
 
-// An expiresAt more than 24 hours and 5 minutes ahead of now cannot pass
+// An expiresAt more than 10 minutes and 5 minutes ahead of now cannot pass
 // the codec (it is bound to the setupId's time) unless the setupId is also
-// ahead: a setupId 4 minutes ahead and an expiry at its time plus 24 hours
+// ahead: a setupId 4 minutes ahead and an expiry at its time plus 10 minutes
 // is fine, but CheckLocal is still the clock's word on its own.
 func TestCheckLocalExpiryTooFar(t *testing.T) {
 	t.Parallel()
@@ -73,7 +73,7 @@ func TestCheckLocalMessagesNameTheAgent(t *testing.T) {
 	expires, err := p.ExpiresTime()
 	require.NoError(t, err)
 	err = setupcode.CheckLocal(p, expires, 16)
-	require.EqualError(t, err, "This setup code expired on 2026-11-13 06:02 UTC. Ask lead_bot for a new one.")
+	require.EqualError(t, err, "This setup code expired on 2026-11-12 06:12 UTC. Ask lead_bot for a new one.")
 }
 
 func TestCheckDatabaseUsedBeforeSuperseded(t *testing.T) {

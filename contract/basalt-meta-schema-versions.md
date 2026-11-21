@@ -56,3 +56,11 @@ Every function `SECURITY DEFINER`, owned by `<prefix>_guard`, `SET search_path =
 |---|---|
 | `record_trust_pin(p_host text, p_port int, p_sha256 text) returns bigint` | New. Admin only: `SECURITY DEFINER`, owned by `<prefix>_guard`, `SET search_path = pg_catalog, pg_temp`, `EXECUTE` revoked from `PUBLIC` and granted to no one, and it refuses an agent role itself (`BS007` `NOT_ALLOWED`) even when given `EXECUTE`. `p_host` a lowercase host name or an address, up to 253 characters; `p_port` 1 to 65535; `p_sha256` the SHA-256 of the pinned certificate's DER, 64 lowercase hex digits (`BS008` `LEDGER_INPUT_INVALID` otherwise). Appends `TRUST_PIN_RECORDED`, `agent` the admin role, detail `{ "host", "port", "sha256", "by" }`; returns its seq |
 | `agent_trust_pins` | New view, `SELECT` for `<prefix>_agents`: the latest `TRUST_PIN_RECORDED` per host and port (`host`, `port`, `sha256`, `recorded_at`). Not secret: a fingerprint of a certificate the server presents to anyone. `status` reads it on the agent's connection (`TRUST_PIN_MISMATCH`) |
+
+### Schema version 7: shorter setup-code life
+
+[Valid for 10 minutes, single use (CO-13)](setup-from-laptop.md#the-setup-code), file `017_setup_code_life.sql`. **Non-breaking** (AE-11): on a guard without it every tool is served as before, with `GUARD_UPGRADE_AVAILABLE`. A setup that already confirmed a live code may fail `EXPIRED` at `record_setup` on a guard below this version if the 10 minutes have passed; `basalt upgrade` applies the new `record_setup`. New installs get it with the rest. Idempotent.
+
+| Object | Change |
+|---|---|
+| `record_setup(setup_id uuid, kind text, agent name, guard_version int, expires_at timestamptz) returns bigint` | Replaced (owner and grants kept). `EXPIRY_TOO_FAR` is now an `expires_at` more than 10 minutes and 5 minutes after the clock reading, or more than 10 minutes after the `setup_id`'s time (it was 24 hours). It no longer refuses `EXPIRED`: opening and confirming a code need a live `expiresAt`, and a run that already passed those checks may finish after the code expires. `USED`, `SUPERSEDED`, `SETUP_ID_IN_FUTURE` and every other rule are unchanged |

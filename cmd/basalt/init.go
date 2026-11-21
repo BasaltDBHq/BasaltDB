@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -299,9 +300,9 @@ func (a AgentRLSMode) isList() bool {
 
 // agentPolicies picks the agent's tables where row-level security hides
 // every row from its role and the person lets the agent see all rows
-// (decision "Agent RLS", Nov 12): asked once per table at a terminal,
-// default no; never without a terminal, with --yes or on a dry run unless
-// --agent-rls=all-rows. Tables without RLS are never asked about. The
+// (decision "Agent RLS", Nov 12): a checklist at a terminal or one line on
+// piped input, every table checked by default; with --yes or on a dry run
+// none unless --agent-rls=all-rows or a list. Tables without RLS are never asked about. The
 // rest get warnRLSBlind's warning after init.
 func agentPolicies(c *cliIO, conn guard.Querier, names guard.Names, f initFlags) ([]guard.BlindTable, error) {
 	if f.agentRLS == AgentRLSNone {
@@ -315,7 +316,7 @@ func agentPolicies(c *cliIO, conn guard.Querier, names guard.Names, f initFlags)
 	for _, b := range blind {
 		asks = append(asks, rlsAsk{Table: b.Table, Rows: b.Rows, Text: setuprun.RLSQuestion(b, f.agent)})
 	}
-	yes, err := rlsAnswers(c, f.agentRLS, f.yes || f.dryRun, f.agent, asks)
+	yes, err := rlsAnswers(c, f.agentRLS, f.yes || f.dryRun, f.agent, append(slices.Clone(f.spec.Write), f.spec.Read...), asks)
 	if err != nil {
 		return nil, err
 	}

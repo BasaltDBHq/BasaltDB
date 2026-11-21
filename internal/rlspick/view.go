@@ -95,7 +95,7 @@ func ParseKeys(b []byte) (keys []Key, rest []byte) {
 			keys = append(keys, KeyRight)
 		case 'h':
 			keys = append(keys, KeyLeft)
-		case '\r', '\n':
+		case '\r':
 			keys = append(keys, KeyEnter)
 		case ctrlC, ctrlD:
 			keys = append(keys, KeyCancel)

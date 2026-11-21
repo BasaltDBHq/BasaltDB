@@ -12,13 +12,16 @@ import (
 func TestRLSAnswers(t *testing.T) {
 	t.Parallel()
 	asks := []rlsAsk{{Table: "global.user_router", Rows: 7}, {Table: "us.activities", Rows: 53}, {Table: "us.transactions", Rows: 898}}
-	run := func(mode AgentRLSMode, quiet bool, stdin string) ([]bool, string, error) {
+	runOwn := func(mode AgentRLSMode, quiet bool, stdin string, own []string) ([]bool, string, error) {
 		var stderr bytes.Buffer
 		c := newIO(context.Background(), stdio{in: strings.NewReader(stdin), out: &bytes.Buffer{}, err: &stderr}, func(string) string { return "" })
-		got, err := rlsAnswers(c, mode, quiet, "bot", asks)
+		got, err := rlsAnswers(c, mode, quiet, "bot", own, asks)
 		return got, stderr.String(), err
 	}
 
+	run := func(mode AgentRLSMode, quiet bool, stdin string) ([]bool, string, error) {
+		return runOwn(mode, quiet, stdin, nil)
+	}
 	t.Run("flag values", func(t *testing.T) {
 		t.Parallel()
 		got, _, err := run(AgentRLSAllRows, false, "")
@@ -40,6 +43,15 @@ func TestRLSAnswers(t *testing.T) {
 		_, _, err := run("us.nope", false, "")
 		require.ErrorIs(t, err, errUsage)
 		require.Contains(t, err.Error(), "us.nope")
+	})
+
+	t.Run("a re-run names tables that are no longer hidden", func(t *testing.T) {
+		t.Parallel()
+		got, _, err := runOwn("us.orders,us.activities", false, "", []string{"us.orders", "us.activities"})
+		require.NoError(t, err)
+		require.Equal(t, []bool{false, true, false}, got)
+		_, _, err = runOwn("eu.orders", false, "", []string{"us.orders"})
+		require.ErrorIs(t, err, errUsage)
 	})
 
 	t.Run("ask quiet says no", func(t *testing.T) {

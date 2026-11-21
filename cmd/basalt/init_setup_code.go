@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -213,7 +214,7 @@ func (l *laptopSetup) rowSecurity(questions []setup.RowSecurityQuestion) ([]stri
 	for _, q := range questions {
 		asks = append(asks, rlsAsk{Table: q.Table, Rows: q.Rows, Text: q.Text})
 	}
-	yes, err := rlsAnswers(l.c, l.f.agentRLS, l.f.yes || l.f.dryRun, l.desc.AgentWord, asks)
+	yes, err := rlsAnswers(l.c, l.f.agentRLS, l.f.yes || l.f.dryRun, l.desc.AgentWord, l.ownTables(), asks)
 	if err != nil {
 		return nil, err
 	}
@@ -373,3 +374,14 @@ func sameEffectiveTarget(admin string, t setupcode.Target) error {
 
 // sameDatabase compares by database identity (setuprun.SameDatabase).
 func sameDatabase(want, got setupcode.Target) bool { return setuprun.SameDatabase(want, got) }
+
+// ownTables are the agent's tables for the --agent-rls list: its named
+// tables, and one placeholder per schema of an allTables code, so that
+// schema.* names it.
+func (l *laptopSetup) ownTables() []string {
+	own := append(slices.Clone(l.desc.Write), l.desc.Read...)
+	for _, s := range l.desc.AllTablesSchemas {
+		own = append(own, s+".*")
+	}
+	return own
+}

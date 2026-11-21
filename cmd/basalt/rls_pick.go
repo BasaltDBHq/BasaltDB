@@ -26,12 +26,12 @@ type rlsAsk struct {
 
 // rlsAnswers answers the row-level security questions by --agent-rls: none
 // says no to all, all-rows yes to all, a list yes to the tables it names
-// (a name that matches no table is a usage error, before anything is
+// (a name that is none of the agent's tables is a usage error, before anything is
 // written). ask says no to all when quiet (--yes, --dry-run); otherwise it
 // shows the checklist at a terminal, with every table checked, and without
 // one prints the grouped list on stderr and reads one line from stdin: all,
 // none or a list; an empty line or the end of input is all.
-func rlsAnswers(c *cliIO, mode AgentRLSMode, quiet bool, agent string, asks []rlsAsk) ([]bool, error) {
+func rlsAnswers(c *cliIO, mode AgentRLSMode, quiet bool, agent string, own []string, asks []rlsAsk) ([]bool, error) {
 	out := make([]bool, len(asks))
 	entries := make([]rlspick.Entry, len(asks))
 	for i, a := range asks {
@@ -47,7 +47,7 @@ func rlsAnswers(c *cliIO, mode AgentRLSMode, quiet bool, agent string, asks []rl
 		if err != nil {
 			return nil, fmt.Errorf("%w: --agent-rls: %w", errUsage, err)
 		}
-		return pickByList(entries, patterns, "--agent-rls")
+		return pickByList(entries, own, patterns, "--agent-rls")
 	case quiet || len(asks) == 0:
 		return out, nil
 	case c.terminal != nil:
@@ -63,7 +63,7 @@ func rlsAnswers(c *cliIO, mode AgentRLSMode, quiet bool, agent string, asks []rl
 		}
 		return out, nil
 	}
-	return pipedAnswers(c, agent, entries)
+	return pipedAnswers(c, agent, own, entries)
 }
 
 func fill(b []bool, v bool) []bool {
@@ -75,15 +75,22 @@ func fill(b []bool, v bool) []bool {
 
 // pickByList marks the entries the patterns select; a pattern that selects
 // none is a usage error naming it.
-func pickByList(entries []rlspick.Entry, patterns []rlspick.Pattern, what string) ([]bool, error) {
+func pickByList(entries []rlspick.Entry, own []string, patterns []rlspick.Pattern, what string) ([]bool, error) {
 	picked, unknown := rlspick.Match(entries, patterns)
+	// A name that is one of the agent's own tables but no longer hidden (a
+	// re-run after the policy was added, or RLS off) is fine: only a name
+	// outside the agent's tables is an error.
+	ownEntries := make([]rlspick.Entry, len(own))
+	for i, t := range own {
+		ownEntries[i] = rlspick.Entry{Table: t}
+	}
+	_, unknown = rlspick.Match(ownEntries, unknown)
 	if len(unknown) > 0 {
 		names := make([]string, len(unknown))
 		for i, p := range unknown {
 			names[i] = terminalText(p.String())
 		}
-		return nil, fmt.Errorf("%w: %s names %s, which matches no table where row-level security hides every row from the agent; "+
-			"those tables are: %s", errUsage, what, strings.Join(names, ", "), tableNames(entries))
+		return nil, fmt.Errorf("%w: %s names %s, which is none of the agent's tables; the tables row-level security hides from it are: %s", errUsage, what, strings.Join(names, ", "), tableNames(entries))
 	}
 	return picked, nil
 }
@@ -107,7 +114,7 @@ const rlsListExample = "--agent-rls=us.*,global.user_router"
 
 // pipedAnswers prints the tables grouped by schema on stderr and reads one
 // line of stdin.
-func pipedAnswers(c *cliIO, agent string, entries []rlspick.Entry) ([]bool, error) {
+func pipedAnswers(c *cliIO, agent string, own []string, entries []rlspick.Entry) ([]bool, error) {
 	fmt.Fprintf(c.stderr, "Row-level security hides every row of these tables from %s:\n", terminalText(agent))
 	m := rlspick.New(entries)
 	for _, g := range m.Groups() {
@@ -129,7 +136,7 @@ func pipedAnswers(c *cliIO, agent string, entries []rlspick.Entry) ([]bool, erro
 	case ans.None:
 		return make([]bool, len(entries)), nil
 	}
-	return pickByList(entries, ans.Patterns, "the answer")
+	return pickByList(entries, own, ans.Patterns, "the answer")
 }
 
 // checklistAnswers runs the checklist on the terminal.

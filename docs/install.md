@@ -125,7 +125,7 @@ basalt init --agent demo_bot \
 
 If some of the agent's tables have row-level security on and no policy lets the agent see rows, init shows a checklist of those tables grouped by schema, every table checked. Arrow keys move, `→` and `←` open and close a schema, Space toggles a table, `a` toggles the whole schema under the cursor, Enter confirms. A checked table gets a policy for the agent role only; an unchecked table stays hidden and the agent reads zero rows from it. Supabase can turn row-level security on for every new table, so this can happen with the demo tables too.
 
-Without a terminal (an AI agent runs init for you, with the answers piped in), init prints the same tables grouped by schema on stderr and reads one line from stdin: `all`, `none`, or a list of `schema.table` and `schema.*` separated by commas. An empty line or the end of input means `all`. The line comes after the admin connection string (when it is not in `BASALT_ADMIN_DATABASE_URL`) and before the `Run this SQL as ...? [y/N]` answer:
+Without a terminal (a script or a non-interactive run, with the answers piped in), init prints the same tables grouped by schema on stderr and reads one line from stdin: `all`, `none`, or a list of `schema.table` and `schema.*` separated by commas. An empty line or the end of input means `all`. The line comes after the admin connection string (when it is not in `BASALT_ADMIN_DATABASE_URL`) and before the `Run this SQL as ...? [y/N]` answer:
 
 ```sh
 printf 'us.*,global.user_router\ny\n' | BASALT_ADMIN_DATABASE_URL=... basalt init --agent bot --write us.orders --no-service

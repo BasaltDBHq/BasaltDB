@@ -31,7 +31,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/pkg/setup"
 )
 
-const engineAddr = "https://engine.example.com"
 
 // newCode is a setup code for d's database, made as basalt init --remote
 // makes one: an INSTALL code for agent bot writing public.leads, changed
@@ -143,10 +142,6 @@ func TestDescribe(t *testing.T) {
 	require.Equal(t, "EXPIRED", codeOf(t, err))
 	_, err = setup.Describe(request("hello"))
 	require.Equal(t, "NOT_A_SETUP_CODE", codeOf(t, err))
-	_, err = setup.Describe(setup.Request{Code: code, Now: time.Now(), EngineURL: engineAddr})
-	require.Equal(t, setup.CodeEngineKeyMissing, codeOf(t, err))
-	_, err = setup.Describe(setup.Request{Code: "hello", Now: time.Now(), EngineURL: "http://engine.example.com"})
-	require.Equal(t, setup.CodeEngineURLInvalid, codeOf(t, err), "the address is checked before anything else")
 }
 
 func TestCheckThenRunInstalls(t *testing.T) {
@@ -219,15 +214,12 @@ func TestRunRefusesInTheContractsOrder(t *testing.T) {
 
 	for name, tc := range map[string]struct {
 		code    string
-		engine  string
 		in      setup.RunInput
 		want    string
 		runOnly bool
 	}{
 		"not a code":                {code: "hello", want: "NOT_A_SETUP_CODE"},
-		"bad engine address first":  {code: "hello", engine: "https://127.0.0.1", want: setup.CodeEngineURLInvalid},
 		"expired before the target": {code: newCode(t, other, expired), want: "EXPIRED"},
-		"engine key missing":        {code: newCode(t, d, nil), engine: engineAddr, want: setup.CodeEngineKeyMissing},
 		"a passkey Verify did not make, before the target": {
 			code: newCode(t, other, nil), in: setup.RunInput{Passkey: &setup.Passkey{}}, want: setup.CodePasskeyInvalid, runOnly: true,
 		},
@@ -244,14 +236,10 @@ func TestRunRefusesInTheContractsOrder(t *testing.T) {
 			code: newCode(t, d, nil), in: setup.RunInput{Answers: setup.Answers{AllRows: []string{"public.leads"}}},
 			want: setup.CodeAnswersInvalid, runOnly: true,
 		},
-		"an engine not asked about": {
-			code: newCode(t, d, nil), in: setup.RunInput{Answers: setup.Answers{Revoke: []string{"x"}}},
-			want: setup.CodeAnswersInvalid, runOnly: true,
-		},
 	} {
 		approved := false
 		tc.in.Approve = func(setup.Plan) error { approved = true; return nil }
-		req := setup.Request{Code: tc.code, Now: time.Now(), EngineURL: tc.engine}
+		req := setup.Request{Code: tc.code, Now: time.Now()}
 		_, err := setup.Run(ctx, d.Admin, req, tc.in)
 		require.Equal(t, tc.want, codeOf(t, err), name)
 		require.False(t, approved, name)
@@ -285,7 +273,7 @@ func TestRunRefusesByTheDatabasesState(t *testing.T) {
 
 	// A revoked engine is refused, after the role checks.
 	eng, der, id := engineKey(t)
-	_, err = guard.RecordEngine(ctx, d.Admin, der, nil)
+	_, err = guard.RecordEngine(ctx, d.Admin, der)
 	require.NoError(t, err)
 	_, err = guard.RevokeEngine(ctx, d.Admin, id)
 	require.NoError(t, err)
@@ -297,7 +285,9 @@ func TestRunRefusesByTheDatabasesState(t *testing.T) {
 	require.Equal(t, setup.CodeEngineRevoked, codeOf(t, err))
 }
 
-func TestRunRevokesOnlyWhatWasAsked(t *testing.T) {
+// A code's engine is recorded by its key alone; the other engines the
+// database records are left as they are.
+func TestRunRecordsTheEngine(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	d := guardtest.New(t).WithDemo(t)
@@ -305,29 +295,27 @@ func TestRunRevokesOnlyWhatWasAsked(t *testing.T) {
 	_, err := setup.Run(ctx, d.Admin, request(newCode(t, d, nil)), setup.RunInput{Passkey: verified(t, give)})
 	require.NoError(t, err)
 	_, oldDER, oldID := engineKey(t)
-	addr := engineAddr
-	_, err = guard.RecordEngine(ctx, d.Admin, oldDER, &addr)
+	_, err = guard.RecordEngine(ctx, d.Admin, oldDER)
 	require.NoError(t, err)
 
 	eng, _, newID := engineKey(t)
 	code := newCode(t, d, func(p *setupcode.Payload) { p.Kind, p.Agent.Verifier, p.Engine = setupcode.KindAgent, "", eng })
-	req := setup.Request{Code: code, Now: time.Now(), EngineURL: engineAddr + "/"}
-	checked, err := setup.Check(ctx, d.Admin, req)
+	checked, err := setup.Check(ctx, d.Admin, request(code))
 	require.NoError(t, err)
 	require.False(t, checked.PasskeyNeeded)
-	require.Len(t, checked.Questions.Revoke, 1)
-	require.Equal(t, oldID, checked.Questions.Revoke[0].EngineID)
-	require.Equal(t, "This records engine "+channel.FingerprintOf(newID)+" for bot. Its address: "+engineAddr+".", checked.EngineLines[0])
+	require.Equal(t, "This records engine "+channel.FingerprintOf(newID)+" for bot.", checked.EngineLines[0])
 
-	res, err := setup.Run(ctx, d.Admin, req, setup.RunInput{Answers: setup.Answers{Revoke: []string{oldID}}})
+	res, err := setup.Run(ctx, d.Admin, request(code), setup.RunInput{})
 	require.NoError(t, err)
 	require.True(t, res.EngineRecorded)
 	require.Nil(t, res.Passkey, "a portal passkey is registered already")
 	engines, err := guard.Engines(ctx, d.Admin, true)
 	require.NoError(t, err)
+	require.Len(t, engines, 2)
 	for _, e := range engines {
-		require.Equal(t, e.ID == oldID, e.RevokedAt != nil, e.ID)
+		require.Nil(t, e.RevokedAt, e.ID)
 	}
+	require.Contains(t, []string{engines[0].ID, engines[1].ID}, oldID)
 }
 
 func TestRunStopsWhenNotApproved(t *testing.T) {
@@ -597,7 +585,7 @@ func TestRunUpgrade(t *testing.T) {
 	require.Equal(t, latest, installedVersion(t, d))
 
 	nothing := upgrade()
-	_, err = setup.Run(ctx, d.Admin, request(nothing), setup.RunInput{Answers: setup.Answers{Revoke: []string{"x"}}})
+	_, err = setup.Run(ctx, d.Admin, request(nothing), setup.RunInput{Answers: setup.Answers{AllRows: []string{"public.leads"}}})
 	require.Equal(t, setup.CodeAnswersInvalid, codeOf(t, err), "nothing is asked, so no answer is taken")
 	res, err = setup.Run(ctx, d.Admin, request(nothing), setup.RunInput{Approve: func(setup.Plan) error { return errors.New("nothing to approve") }})
 	require.NoError(t, err)

@@ -123,10 +123,8 @@ type Deps struct {
 	// PLUGIN_NOT_TRUSTED); status says nothing about plugins when nil.
 	Plugins PluginReporter
 	// EngineRecord reads this engine's row in the agent's database for the
-	// status tool's engineRecord; nil makes its state UNKNOWN. DirectServed
-	// is whether the engine has a direct listener (directAddr is not off).
+	// status tool's engineRecord; nil makes its state UNKNOWN.
 	EngineRecord EngineRecordReader
-	DirectServed bool
 	// Trust says what verifies the agent's database certificate now (status
 	// trust, problems TRUST_ROOT_EXPIRING and TRUST_PROFILE_REFUSED); status
 	// leaves trust out when nil.

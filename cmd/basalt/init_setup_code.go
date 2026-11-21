@@ -12,7 +12,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/basaltdbhq/basaltdb/internal/engineaddr"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
 	"github.com/basaltdbhq/basaltdb/internal/setuprun"
@@ -36,8 +35,6 @@ var setupCodeOS = map[string]bool{"darwin": true, "linux": true}
 // setupCodeFlags are basalt init --setup-code's flags after parsing.
 type setupCodeFlags struct {
 	code, passkeyLabel string
-	// engineURL is --engine-url in its written form, "" when not given.
-	engineURL               string
 	agentRLS                AgentRLSMode
 	yes, addPasskey, dryRun bool
 }
@@ -64,7 +61,6 @@ func parseInitSetupCode(c *cliIO, args []string) (setupCodeFlags, error) {
 	fs.BoolVar(&f.addPasskey, "add-passkey", false, "register another portal passkey even if one is registered")
 	fs.StringVar(&f.passkeyLabel, "passkey-label", "", "name of the passkey in the picker (default: <database> · <agent> · <date>)")
 	fs.BoolVar(&f.dryRun, "dry-run", false, "print what the code does and its SQL, and run nothing")
-	fs.StringVar(&f.engineURL, "engine-url", "", "your tunnel's address for the agent's engine (https://<host>[:<port>]), recorded with the engine's key")
 	f.agentRLS = AgentRLSAsk
 	fs.Var(&f.agentRLS, "agent-rls",
 		"on agent tables where row-level security hides every row: ask (a checklist at a terminal, one line from piped input), all-rows adds a policy letting the agent see them all, none adds none, or a list such as us.*,public.orders adds it on those tables only")
@@ -73,13 +69,6 @@ func parseInitSetupCode(c *cliIO, args []string) (setupCodeFlags, error) {
 	}
 	if strings.TrimSpace(f.code) == "" {
 		return f, fmt.Errorf("%w: --setup-code needs the code", errUsage)
-	}
-	if f.engineURL != "" {
-		u, err := engineaddr.Parse(f.engineURL)
-		if err != nil {
-			return f, fmt.Errorf("%w: --engine-url: %w", errUsage, err)
-		}
-		f.engineURL = u
 	}
 	return f, nil
 }
@@ -135,7 +124,7 @@ func runInitSetupCode(c *cliIO, args []string) int {
 // setup.Describe) and keeps the decoded code for the target check, which
 // reads the admin connection string before anything connects.
 func newLaptopSetup(c *cliIO, f setupCodeFlags) (*laptopSetup, error) {
-	desc, err := setup.Describe(setup.Request{Code: f.code, Now: c.now(), EngineURL: f.engineURL})
+	desc, err := setup.Describe(setup.Request{Code: f.code, Now: c.now()})
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +136,7 @@ func newLaptopSetup(c *cliIO, f setupCodeFlags) (*laptopSetup, error) {
 }
 
 func (l *laptopSetup) request() setup.Request {
-	return setup.Request{Code: l.f.code, Now: l.c.now(), EngineURL: l.f.engineURL}
+	return setup.Request{Code: l.f.code, Now: l.c.now()}
 }
 
 // errDryRun stops a dry run after the SQL is shown.
@@ -170,9 +159,7 @@ func (l *laptopSetup) run() error {
 		fmt.Fprintln(c.stdout, line)
 	}
 	var answers setup.Answers
-	if answers.Revoke, err = l.engineSummary(checked); err != nil {
-		return err
-	}
+	l.engineSummary(checked)
 	fmt.Fprintln(c.stdout)
 	if answers.AllRows, err = l.rowSecurity(checked.Questions.RowSecurity); err != nil {
 		return err
@@ -194,10 +181,6 @@ func (l *laptopSetup) run() error {
 		fmt.Fprintf(c.stderr, "basalt: passkey registered for %s\n", res.Passkey.RPID)
 	}
 	fmt.Fprintf(c.stdout, "Done. Tell %s to check its status.\n", l.desc.AgentWord)
-	if res.EngineRecorded && l.f.engineURL != "" {
-		fmt.Fprintln(c.stdout, "Pin it on each device you approve from:")
-		fmt.Fprintln(c.stdout, pinAddURL)
-	}
 	return nil
 }
 
@@ -281,9 +264,9 @@ func (l *laptopSetup) portalPasskey(context.Context) (setup.Passkey, error) {
 }
 
 // plan is the setup's SQL as Run builds it, with no row-level security
-// policy and no engine revoked.
+// policy.
 func (l *laptopSetup) plan() (guard.Script, error) {
-	s, err := setuprun.New(l.f.code, l.c.now(), l.f.engineURL, false)
+	s, err := setuprun.New(l.f.code, l.c.now(), false)
 	if err != nil {
 		return guard.Script{}, err
 	}
@@ -291,7 +274,7 @@ func (l *laptopSetup) plan() (guard.Script, error) {
 	if err != nil {
 		return guard.Script{}, err
 	}
-	return p.Plan(l.c.ctx, nil, nil)
+	return p.Plan(l.c.ctx, nil)
 }
 
 // upgradeDone is whether an UPGRADE code has nothing to add

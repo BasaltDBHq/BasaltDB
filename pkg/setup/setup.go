@@ -47,9 +47,6 @@ type Request struct {
 	Code string
 	// Now is the clock the code's times are checked against.
 	Now time.Time
-	// EngineURL is the address to record with the code's engine key
-	// (https://<host>[:<port>]); "" records none.
-	EngineURL string
 	// ConnectPage accepts a connect-only code (no target), which only the
 	// connect service runs, with the database of the connection it opened.
 	// Unset, such a code is refused CONNECT_ONLY first, as the laptop
@@ -135,8 +132,6 @@ type Description struct {
 	// base64url): the key a connect-only setup's CollectAddress must be
 	// signed with. "" when the code carries none.
 	EngineKey string
-	// EngineURL is the request's engine address in its written form.
-	EngineURL string
 	// Summary is the summary's fixed lines, without the database's state:
 	// an UPGRADE code's line names the guard version the code was made
 	// against. Check's Summary is the one to show before running.
@@ -144,13 +139,13 @@ type Description struct {
 }
 
 // Describe decodes the code and applies the checks that need no database,
-// in the contract's order: the engine address's rules, the codec
+// in the contract's order: the codec
 // (NOT_A_SETUP_CODE, UNSUPPORTED_FORMAT, DAMAGED, INVALID), the clock
 // (EXPIRED, SETUP_ID_IN_FUTURE, EXPIRY_TOO_FAR), this build's guard
 // (BINARY_TOO_OLD, GUARD_TOO_OLD) and ENGINE_KEY_MISSING. A refusal is an
 // *Error.
 func Describe(req Request) (Description, error) {
-	s, err := setuprun.New(req.Code, req.Now, req.EngineURL, req.ConnectPage)
+	s, err := setuprun.New(req.Code, req.Now, req.ConnectPage)
 	if err != nil {
 		return Description{}, asError(err)
 	}
@@ -161,7 +156,7 @@ func describe(s *setuprun.Setup) Description {
 	p := s.P
 	d := Description{
 		SetupID: p.SetupID, Kind: Kind(p.Kind), AgentWord: setuprun.AgentWord(p), AgentRole: p.Role(), Prefix: p.Prefix,
-		GuardFrom: p.Guard.From, GuardTo: p.Guard.To, ExpiresAt: s.Expires, Fingerprint: p.Fingerprint(), EngineURL: s.EngineURL,
+		GuardFrom: p.Guard.From, GuardTo: p.Guard.To, ExpiresAt: s.Expires, Fingerprint: p.Fingerprint(),
 		Summary: setupcode.Summary(p, setupcode.SummaryState{GuardVersion: p.Guard.From}),
 	}
 	if t := p.Target; t != nil {
@@ -276,10 +271,6 @@ type Questions struct {
 	// every row from its role: yes lets the agent see all of them (a
 	// policy), no leaves them hidden. Answered in Answers.AllRows.
 	RowSecurity []RowSecurityQuestion
-	// Revoke are the other engines recorded at the request's engine
-	// address: yes revokes one in the setup's transaction. Answered in
-	// Answers.Revoke.
-	Revoke []RevokeQuestion
 	// OutsidePublic are the agent's tables outside schema public. The
 	// summary flags each; nothing is asked and Run takes no answer for
 	// them.
@@ -294,16 +285,6 @@ type RowSecurityQuestion struct {
 	Rows int64
 	// Write is whether the agent may change the table's rows.
 	Write bool
-	// Text is the question as basalt init asks it.
-	Text string
-}
-
-// RevokeQuestion is one other engine recorded at the engine address.
-type RevokeQuestion struct {
-	EngineID    string
-	Fingerprint string
-	URL         string
-	RecordedAt  time.Time
 	// Text is the question as basalt init asks it.
 	Text string
 }
@@ -361,7 +342,7 @@ func agentTables(s *setuprun.Setup) []string {
 
 // newSetup is setuprun.New for req, with its ticked tables.
 func newSetup(req Request) (*setuprun.Setup, error) {
-	s, err := setuprun.New(req.Code, req.Now, req.EngineURL, req.ConnectPage)
+	s, err := setuprun.New(req.Code, req.Now, req.ConnectPage)
 	if err != nil {
 		return nil, err
 	}
@@ -382,11 +363,6 @@ func questions(p *setuprun.Prepared) Questions {
 			Table: b.Table, Rows: b.Rows, Write: b.Write, Text: setuprun.RLSQuestion(b, p.P.Agent.Name),
 		})
 	}
-	for _, e := range p.Engine.SameAddress {
-		q.Revoke = append(q.Revoke, RevokeQuestion{
-			EngineID: e.ID, Fingerprint: channel.FingerprintOf(e.ID), URL: *e.URL, RecordedAt: e.RecordedAt, Text: setuprun.RevokeQuestion(e),
-		})
-	}
 	if a := p.P.Agent; a != nil {
 		for _, t := range append(slices.Clone(a.Write), a.Read...) {
 			if schema, _, _ := strings.Cut(t, "."); schema != "public" {
@@ -401,8 +377,6 @@ func questions(p *setuprun.Prepared) Questions {
 type Answers struct {
 	// AllRows are the RowSecurity tables the agent may see every row of.
 	AllRows []string
-	// Revoke are the engine ids of the Revoke questions answered yes.
-	Revoke []string
 }
 
 // Plan is the SQL Run is about to run.
@@ -510,7 +484,7 @@ type Result struct {
 
 // Run checks, plans and runs the setup in one transaction: the migrations,
 // the agent role and its grants, the policies on Answers.AllRows, the
-// engine and the engines in Answers.Revoke, the person's passkey
+// engine, the person's passkey
 // (RunInput.Passkey), and record_setup last. Any failure in it leaves the
 // database as it was. It first applies every refusal of Describe, then
 // refuses a Passkey that PasskeyRequest.Verify did not make
@@ -541,12 +515,12 @@ func Run(ctx context.Context, conn *pgx.Conn, req Request, in RunInput) (Result,
 		return Result{}, err
 	}
 	if p.NothingToDo {
-		if err := setuprun.RefuseAnswers(in.Answers.AllRows, in.Answers.Revoke); err != nil {
+		if err := setuprun.RefuseAnswers(in.Answers.AllRows); err != nil {
 			return Result{}, asError(err)
 		}
 		return Result{SetupID: s.P.SetupID, NothingToDo: nothingToDo(p)}, nil
 	}
-	script, err := p.Plan(ctx, in.Answers.AllRows, in.Answers.Revoke)
+	script, err := p.Plan(ctx, in.Answers.AllRows)
 	if err != nil {
 		return Result{}, asError(err)
 	}
@@ -635,11 +609,6 @@ func (e *Error) Unwrap() error { return e.err }
 // Codes this package returns besides the setup code's refusals
 // (CONTRACT.md, The setup code and basalt init --setup-code).
 const (
-	// CodeEngineURLInvalid is an engine address the address rules refuse.
-	CodeEngineURLInvalid = setuprun.CodeEngineURLInvalid
-	// CodeEngineKeyMissing is an engine address for a code without an
-	// engine key.
-	CodeEngineKeyMissing = setuprun.CodeEngineKeyMissing
 	// CodeEngineRevoked is a code whose engine the database revoked.
 	CodeEngineRevoked = setuprun.CodeEngineRevoked
 	// CodeTargetMismatch is a connection to another database than the
@@ -684,7 +653,7 @@ var codes = []string{
 	string(setupcode.RefusalExpiryTooFar), string(setupcode.RefusalBinaryTooOld), string(setupcode.RefusalGuardTooOld),
 	string(setupcode.RefusalPrefixMismatch), string(setupcode.RefusalUsed), string(setupcode.RefusalSuperseded),
 	string(setupcode.RefusalRoleExists), string(setupcode.RefusalRoleMissing),
-	CodeEngineURLInvalid, CodeEngineKeyMissing, CodeEngineRevoked, CodeTargetMismatch, CodeTablesMissing,
+	CodeEngineRevoked, CodeTargetMismatch, CodeTablesMissing,
 	CodeAnswersInvalid, CodePasskeyRequired, CodePasskeyInvalid, CodePasskeyNotRegistered, CodeSetupFailed,
 	CodeNoTables, CodeConnectOnly, CodeTablesChanged, CodeClassesChanged,
 }

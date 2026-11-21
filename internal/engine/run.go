@@ -215,21 +215,16 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	// Link sessions through the Vault are answered by the pages API on the
 	// portal's origin (CONTRACT.md, Vault channel, Frames), with no
 	// listener: only the session reaches these handlers.
-	directAddr, err := cfg.Direct()
-	if err != nil {
-		return err
-	}
 	var sessionPages *pages.Server
 	var dispatch vault.Dispatcher
 	// gate counts the agent calls, person requests and page sessions
 	// running, so a restart onto an upgraded binary waits for them.
 	gate := newCallGate()
-	if cfg.VaultEnabled() || directAddr != "" {
+	if cfg.VaultEnabled() {
 		sessionPages = pages.New(base, log.With("component", "vault-pages"))
 		dispatch = gatedDispatcher{gate: gate, next: sessionPages}
 	}
-	tally := vault.NewTally()
-	ev := openVault(cfg, env.stateDir, time.Now, log, relay, dispatch, tally)
+	ev := openVault(cfg, env.stateDir, time.Now, log, relay, dispatch)
 	env.vault, env.receipts = ev, ev.receipts()
 	if ev.keys != nil {
 		env.keys = ev.keys
@@ -248,33 +243,6 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	restart.Upgrade = upgradeOrReload(restart.Upgrade, reload, reloading)
 	if ev.client != nil {
 		env.relay, env.relayLinks = ev.client, relay
-	}
-	var direct *directSite
-	if directAddr != "" && ev.keys == nil {
-		log.Error("directAddr is set but the engine key file is refused: no direct listener until it is fixed", "addr", directAddr)
-	}
-	if directAddr != "" && ev.keys != nil {
-		env.records = newEngineRecords(ev.keys.EngineID(), time.Now, log.With("component", "direct"))
-		client := ev.client
-		env.direct = vault.NewDirect(vault.DirectOptions{
-			Keys: ev.keys, Log: log.With("component", "direct"), SessionLinks: relay, Pages: dispatch, Tally: tally,
-			Recheck: env.records.revoked,
-			// A widen in a direct session ends the old token's sessions
-			// through the Vault too, without unregistering it.
-			OnRotate: func(old channel.LinkToken) {
-				if client != nil {
-					client.EndSessions(old)
-				}
-			},
-		})
-		relay.setDirect(env.direct)
-		env.relayLinks = relay
-		direct, err = listenDirect(directAddr)
-		if err != nil {
-			return err
-		}
-		closers = append(closers, func() { _ = direct.ln.Close() })
-		log.Info("direct listener", "addr", directAddr)
 	}
 	st := ev.status()
 	log.Info("vault", "state", st.State, "engineId", st.EngineID, "fingerprint", st.Fingerprint)
@@ -365,12 +333,6 @@ func RunWith(ctx context.Context, cfg config.Config, configPath string, log *slo
 	}
 	if site != nil {
 		wg.Go(func() { site.serve(ctx, log) })
-	}
-	if direct != nil {
-		h := newDirectHandler(ctx, env.records, ev.keys.PublicKeySPKI(), env.direct, time.Now)
-		wg.Go(func() { env.records.refresh(ctx) })
-		wg.Go(func() { env.records.watchRevoked(ctx, env.direct, directRecheckEvery) })
-		wg.Go(func() { direct.serve(ctx, h, env.direct, log) })
 	}
 	err = New(log, agents).withGate(gate).WithRestart(restart).Serve(ctx)
 	select {
@@ -634,10 +596,6 @@ type agentEnv struct {
 	// each agent registers its portal short links there.
 	relay      *vault.Client
 	relayLinks *relayLinks
-	// direct serves the direct transport's sessions and records reads the
-	// engine's record per agent database; both nil without directAddr.
-	direct  *vault.Direct
-	records *engineRecords
 	// dict is the engine's PII dictionary, shared by every agent.
 	dict *pii.FuseDictionary
 	// asRoot: the engine runs as root (started without --user); it then
@@ -721,9 +679,6 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	if env.relayLinks != nil {
 		env.relayLinks.add(a.Name, secrets, env.dropLink)
 	}
-	if env.records != nil {
-		env.records.add(a.Name, pool)
-	}
 	blind := agent.NewBlindCache(func(ctx context.Context, tables []string) ([]string, error) {
 		return guard.RLSBlindTables(ctx, budgeted, "", tables)
 	})
@@ -759,14 +714,13 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 			r, err := guard.EngineRecord(ctx, pool, id)
 			return r, postgres.MapError(err)
 		},
-		DirectServed: env.direct != nil,
-		Trust:        TrustOf(pool),
-		Database:     agent.ConnectDatabaseName(pool.Config().ConnConfig.Host, pool.Config().ConnConfig.Port, pool.Config().ConnConfig.Database),
-		Receipts:     env.receipts,
-		Finisher:     finisher,
-		PII:          observer.On(pool),
-		Catalog:      postgres.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database).WithHost(pool.Config().ConnConfig.Host),
-		Columns:      postgres.NewColumnOrder(budgeted),
+		Trust:    TrustOf(pool),
+		Database: agent.ConnectDatabaseName(pool.Config().ConnConfig.Host, pool.Config().ConnConfig.Port, pool.Config().ConnConfig.Database),
+		Receipts: env.receipts,
+		Finisher: finisher,
+		PII:      observer.On(pool),
+		Catalog:  postgres.NewCatalog(budgeted, limits, pool.Config().ConnConfig.Database).WithHost(pool.Config().ConnConfig.Host),
+		Columns:  postgres.NewColumnOrder(budgeted),
 		// The plugin approval routes read and relay on the agent's own
 		// credential, as the approval routes do.
 		PluginApprovals: store,
@@ -909,14 +863,10 @@ func linkSecrets(dir, agent string, log *slog.Logger) *links.Secrets {
 // directory: <stateDir>/<agent>.links.json.
 const linkSecretsSuffix = ".links.json"
 
-// dropLink ends what a dropped link has: its token at the Vault and its
-// direct sessions.
+// dropLink ends what a dropped link has: its token at the Vault.
 func (env agentEnv) dropLink(token channel.LinkToken) {
 	if env.relay != nil {
 		env.relay.Unregister(token)
-	}
-	if env.direct != nil {
-		env.direct.EndLink(token)
 	}
 }
 

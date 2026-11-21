@@ -45,19 +45,16 @@ const (
 	phaseOpen
 )
 
-// Tally counts the sessions open on every transport of one engine, so the
-// per-engine and per-link limits hold across the Vault's socket and the
-// direct listener together (CONTRACT.md, Direct transport, Limits). One
-// Tally is given to the Client and to Direct; a table made without one
-// counts only its own sessions.
+// Tally counts the sessions open on one socket, for the per-engine and
+// per-link limits.
 type Tally struct {
 	mu          sync.Mutex
 	total       int
 	established map[channel.LinkToken]int
 }
 
-// NewTally returns an empty Tally.
-func NewTally() *Tally { return &Tally{established: map[channel.LinkToken]int{}} }
+// newTally returns an empty Tally.
+func newTally() *Tally { return &Tally{established: map[channel.LinkToken]int{}} }
 
 // reserve takes one of the engine's session slots; false at the limit.
 func (t *Tally) reserve() bool {
@@ -152,7 +149,7 @@ type established struct {
 
 func newSessions(timeout time.Duration, now func() time.Time, tally *Tally) *sessions {
 	if tally == nil {
-		tally = NewTally()
+		tally = newTally()
 	}
 	return &sessions{
 		timeout: timeout, now: now, tally: tally,

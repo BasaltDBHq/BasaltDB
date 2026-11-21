@@ -76,21 +76,17 @@ type cliIO struct {
 	// handshake alone, before a pin is offered (fetchChain outside tests;
 	// nil offers no pin).
 	fetchChain func(ctx context.Context, host string, port int) ([]*x509.Certificate, error)
-	// tunnelProbe fetches an engine address's /v1/engine for basalt tunnel
-	// (engineProbe outside tests).
-	tunnelProbe func(ctx context.Context, url string) (probeAnswer, error)
 }
 
 func newIO(ctx context.Context, std stdio, getenv func(string) string) *cliIO {
 	c := &cliIO{
 		ctx: ctx, stdin: bufio.NewReader(std.in), stdout: std.out, stderr: std.err,
 		getenv: getenv, now: time.Now, rand: rand.Reader, goos: runtime.GOOS, host: osHost{},
-		agentLogin:  loginAsAgent,
-		dial:        connect,
-		engine:      osEngineAccess(runtime.GOOS),
-		tunnelProbe: engineProbe,
-		fetchChain:  fetchChain,
-		width:       func() int { return terminalWidth(std.out) },
+		agentLogin: loginAsAgent,
+		dial:       connect,
+		engine:     osEngineAccess(runtime.GOOS),
+		fetchChain: fetchChain,
+		width:      func() int { return terminalWidth(std.out) },
 	}
 	c.probe = probeLogin(c)
 	stdin := std.in

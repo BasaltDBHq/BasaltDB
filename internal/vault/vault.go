@@ -132,10 +132,6 @@ type Options struct {
 	HandshakeTimeout time.Duration
 	// RegisterTimeout defaults to RegisterTimeout when zero.
 	RegisterTimeout time.Duration
-	// OnRotate is told the old token of a link a widen rotated in a session
-	// on this socket, after this socket's other sessions of it ended, so the
-	// engine ends the token's sessions on its other transport (DIRECT).
-	OnRotate func(old channel.LinkToken)
 	// Links are the live links registered again after every READY; none
 	// when nil.
 	Links Links
@@ -148,9 +144,6 @@ type Options struct {
 	// when zero. Tests shorten them.
 	IdleTimeout     time.Duration
 	SessionLifetime time.Duration
-	// Tally counts sessions together with the other transport's (give the
-	// same Tally to DirectOptions); nil counts this socket's alone.
-	Tally *Tally
 }
 
 func (o *Options) defaults() {

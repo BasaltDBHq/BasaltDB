@@ -18,30 +18,27 @@ const maxEngines = 100
 // (CONTRACT.md, basalt_meta "Version 33").
 const (
 	EngineRefusedKey     = "ENGINE_KEY"
-	EngineRefusedURL     = "ENGINE_URL"
 	EngineRefusedRevoked = "ENGINE_REVOKED"
 	EngineRefusedUnknown = "ENGINE_UNKNOWN"
 )
 
 // RecordedEngine is a row of basalt_meta.engines: an engine's public
-// identity and the address the person pinned. Never key material beyond
-// the public key.
+// identity and whether it is revoked. Never key material beyond the public
+// key.
 type RecordedEngine struct {
 	ID         string
 	PublicKey  []byte
-	URL        *string
 	RecordedAt time.Time
 	RevokedAt  *time.Time
 }
 
 // RecordEngine records an engine's signing key (its SPKI DER) with the
-// admin connection and returns its engine id. A nil url keeps the address
-// already recorded. Postgres refuses a malformed key or address and a
-// revoked engine (BS008, details above) and appends ENGINE_RECORDED when
-// it inserts a key or changes its address. Kept for tests, which run
+// admin connection and returns its engine id. Postgres refuses a malformed
+// key and a revoked engine (BS008, details above) and appends
+// ENGINE_RECORDED when it inserts a key. Kept for tests, which run
 // record_engine through it; basalt init runs RecordEngineStatement.
-func RecordEngine(ctx context.Context, q Querier, publicKey []byte, url *string) (string, error) {
-	sql, args, err := psql.Select().Column(sq.Expr("basalt_meta.record_engine(?::bytea, ?::text)", publicKey, url)).ToSql()
+func RecordEngine(ctx context.Context, q Querier, publicKey []byte) (string, error) {
+	sql, args, err := psql.Select().Column(sq.Expr("basalt_meta.record_engine(?::bytea)", publicKey)).ToSql()
 	if err != nil {
 		return "", err
 	}
@@ -71,7 +68,7 @@ func Engines(ctx context.Context, q Querier, admin bool) ([]RecordedEngine, erro
 	if admin {
 		from = "basalt_meta.engines"
 	}
-	sql, args, err := psql.Select("engine_id", "public_key", "url", "recorded_at", "revoked_at").
+	sql, args, err := psql.Select("engine_id", "public_key", "recorded_at", "revoked_at").
 		From(from).
 		OrderBy("recorded_at DESC", "engine_id").
 		Limit(maxEngines).
@@ -85,24 +82,24 @@ func Engines(ctx context.Context, q Querier, admin bool) ([]RecordedEngine, erro
 	}
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (RecordedEngine, error) {
 		var e RecordedEngine
-		err := row.Scan(&e.ID, &e.PublicKey, &e.URL, &e.RecordedAt, &e.RevokedAt)
+		err := row.Scan(&e.ID, &e.PublicKey, &e.RecordedAt, &e.RevokedAt)
 		return e, err
 	})
 }
 
 // RecordEngineStatement is record_engine as a statement of the install
-// transaction basalt init --setup-code runs (before record_setup). A nil
-// url keeps the recorded address.
-func RecordEngineStatement(publicKey []byte, url *string) Statement {
-	u := "NULL"
-	if url != nil {
-		u = quoteLiteral(*url)
+// transaction basalt init --setup-code runs (before record_setup), for a
+// guard migrated up to guardVersion.
+func RecordEngineStatement(publicKey []byte, guardVersion int) Statement {
+	key := hex.EncodeToString(publicKey)
+	if guardVersion < EngineAddressRemovedVersion {
+		// A guard installed only up to an earlier version still has the
+		// two-argument function; NULL records no address.
+		return Statement{SQL: fmt.Sprintf("\nSELECT basalt_meta.record_engine('\\x%s'::bytea, NULL::text);", key)}
 	}
-	return Statement{SQL: fmt.Sprintf("\nSELECT basalt_meta.record_engine('\\x%s'::bytea, %s::text);", hex.EncodeToString(publicKey), u)}
+	return Statement{SQL: fmt.Sprintf("\nSELECT basalt_meta.record_engine('\\x%s'::bytea);", key)}
 }
 
-// RevokeEngineStatement is revoke_engine as a statement of the same
-// transaction, for an engine the person chose to revoke at setup.
 func RevokeEngineStatement(engineID string) Statement {
 	return Statement{SQL: fmt.Sprintf("\nSELECT basalt_meta.revoke_engine(%s::text);", quoteLiteral(engineID))}
 }
@@ -110,7 +107,7 @@ func RevokeEngineStatement(engineID string) Statement {
 // EngineRecord is engineID's row in basalt_meta.agent_engines, read with an
 // agent's connection: nil when the database does not record it.
 func EngineRecord(ctx context.Context, q Querier, engineID string) (*RecordedEngine, error) {
-	sql, args, err := psql.Select("engine_id", "public_key", "url", "recorded_at", "revoked_at").
+	sql, args, err := psql.Select("engine_id", "public_key", "recorded_at", "revoked_at").
 		From("basalt_meta.agent_engines").
 		Where(sq.Eq{"engine_id": engineID}).
 		ToSql()
@@ -123,7 +120,7 @@ func EngineRecord(ctx context.Context, q Querier, engineID string) (*RecordedEng
 	}
 	out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (RecordedEngine, error) {
 		var e RecordedEngine
-		err := row.Scan(&e.ID, &e.PublicKey, &e.URL, &e.RecordedAt, &e.RevokedAt)
+		err := row.Scan(&e.ID, &e.PublicKey, &e.RecordedAt, &e.RevokedAt)
 		return e, err
 	})
 	if err != nil || len(out) == 0 {

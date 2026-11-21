@@ -59,8 +59,7 @@ const (
 	scalarLen      = 32
 	nonceLen       = 12
 
-	transportRelay  = "RELAY"
-	transportDirect = "DIRECT"
+	transportRelay = "RELAY"
 
 	infoLinkToken = "basalt-vault-link.1"
 	infoPSK       = "basalt-vault-psk.1"

@@ -65,6 +65,9 @@ type PluginRequests interface {
 	// PluginApproval is the state of approval id, as PLUGIN_LIST shows the
 	// entry that holds it to caller, and what the engine serves of it.
 	PluginApproval(ctx context.Context, caller string, id uuid.UUID) (PluginApprovalState, error)
+	// DropUpload removes caller's upload id of a call refused before the
+	// engine took it, so no refusal holds one of its few open uploads.
+	DropUpload(caller string, id uuid.UUID)
 }
 
 // PluginOpen is one request to open a plugin approval.
@@ -182,6 +185,9 @@ func (s *Service) RequestPlugin(ctx context.Context, a requestPluginArgs, meta j
 	}
 	remove := a.Remove != nil && *a.Remove
 	if err := s.pluginsServed(a.ApprovalID == "" && !remove); err != nil {
+		if up, upErr := uploadOf(meta); a.Source != "" && upErr == nil && s.PluginRequests != nil {
+			s.PluginRequests.DropUpload(s.Name, uuid.MustParse(up.UploadID))
+		}
 		return requestPluginResult{}, err
 	}
 	if a.ApprovalID != "" {

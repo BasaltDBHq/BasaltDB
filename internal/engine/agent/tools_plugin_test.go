@@ -37,6 +37,7 @@ type fakePluginRequests struct {
 	mu      sync.Mutex
 	opens   []PluginOpen
 	removes []string
+	dropped []uuid.UUID
 	reads   int
 	opened  PluginOpened
 	err     error
@@ -58,6 +59,12 @@ func (f *fakePluginRequests) RemovePlugin(_ context.Context, caller, name, insta
 	defer f.mu.Unlock()
 	f.removes = append(f.removes, name+"/"+instance)
 	return f.err
+}
+
+func (f *fakePluginRequests) DropUpload(_ string, id uuid.UUID) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.dropped = append(f.dropped, id)
 }
 
 func (f *fakePluginRequests) PluginApproval(context.Context, string, uuid.UUID) (PluginApprovalState, error) {
@@ -137,6 +144,9 @@ func TestRequestPluginRefusedWhereNotServed(t *testing.T) {
 			_, err := callPlugin(t, s, map[string]any{"source": "/home/me/local-ner"}, uploadMeta())
 			requireReason(t, err, codePluginRefused, kase.reason)
 			require.Empty(t, f.opens, "nothing is asked of the engine")
+			if s.PluginRequests != nil {
+				require.Equal(t, []uuid.UUID{uuid.MustParse(casePluginUpload)}, f.dropped, "the refused call's upload is dropped")
+			}
 		})
 	}
 	// Removing needs no page.

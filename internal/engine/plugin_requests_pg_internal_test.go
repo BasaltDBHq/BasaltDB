@@ -43,6 +43,32 @@ func TestRequestPluginAgainstGuard(t *testing.T) {
 	var gone *agent.ArgumentError
 	require.ErrorAs(t, err, &gone, "the refused call's upload is gone")
 
+	// A refusal of PLUGIN_OPEN itself drops the upload too: one before it
+	// took the upload (its scope check) and one after (the manifest).
+	for _, kase := range []struct {
+		reason string
+		open   agent.PluginOpen
+	}{
+		{agent.ReasonPluginAgentNotAllowed, agent.PluginOpen{Name: "acme-ner", Instance: "default", Agents: []string{"bot", "ghost"}, Executables: exec}},
+		{"BAD_MANIFEST", agent.PluginOpen{Name: "other-ner", Instance: "default", Executables: exec}},
+	} {
+		id, err = f.client.PluginUpload(ctx, files)
+		require.NoError(t, err)
+		kase.open.UploadID = &id
+		_, err = p.OpenPlugin(ctx, "bot", kase.open)
+		require.ErrorAs(t, err, &r)
+		require.Equal(t, kase.reason, r.Reason)
+		_, err = p.OpenPlugin(ctx, "bot", agent.PluginOpen{UploadID: &id, Name: "acme-ner", Instance: "default", Executables: exec})
+		require.ErrorAs(t, err, &gone, "the refused call's upload is gone (%s)", kase.reason)
+	}
+
+	// The agent's own refusals drop it through DropUpload.
+	id, err = f.client.PluginUpload(ctx, files)
+	require.NoError(t, err)
+	p.DropUpload("bot", id)
+	_, err = p.OpenPlugin(ctx, "bot", agent.PluginOpen{UploadID: &id, Name: "acme-ner", Instance: "default", Executables: exec})
+	require.ErrorAs(t, err, &gone, "a dropped upload is gone")
+
 	// The real folder through basalt mcp's uploader, as the agent's OS user.
 	dir := t.TempDir()
 	for _, f := range files {

@@ -88,6 +88,9 @@ func (p *pluginRequests) OpenPlugin(ctx context.Context, caller string, o agent.
 		UploadID: o.UploadID, Name: o.Name, Instance: o.Instance, Agents: agents, Executables: o.Executables,
 	})
 	if err != nil {
+		// A refusal before PLUGIN_OPEN took the upload (its scope check)
+		// leaves it; one it took is gone already.
+		k.dropUpload(uid, o.UploadID)
 		return agent.PluginOpened{}, requestError(err, o.UploadID != nil)
 	}
 	out := agent.PluginOpened{Name: res.Name, Instance: res.Instance, Version: res.Version, Agents: agents, Narrowed: res.Narrowed}
@@ -106,6 +109,16 @@ func (p *pluginRequests) OpenPlugin(ctx context.Context, caller string, o agent.
 	}
 	out.ApprovalID, out.ExpiresAt, out.BindingText = *a.ApprovalID, *a.ExpiresAt, a.BindingText
 	return out, nil
+}
+
+// DropUpload removes caller's upload id; nothing when there is none.
+func (p *pluginRequests) DropUpload(caller string, id uuid.UUID) {
+	k := p.kept.Load()
+	uid, ok := p.uids[caller]
+	if k == nil || !ok {
+		return
+	}
+	k.dropUpload(uid, &id)
 }
 
 // RemovePlugin removes an engine-kept entry for the caller.

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -16,6 +17,11 @@ import (
 // connectOnlyCode is the contract's connect-only fixture
 // (api/mcp/setup/setup-code.fixtures.json).
 const connectOnlyCode = "basalt-setup.1.PJBdb6JAFIb_y0nvlmlnrKJO4sUUtFXESou2uNmYAQecOjB0gPrR-N837G72XJ3kPDlvnvcbUm1yXgMlFlSibsrpDihgwknaHySo14kHqJ_cczRMMUb4_wgCFhxk0dLTxWvI5nOwoDQilSegEPOKqxosyBpudkC_ITU6B4otqDVQYl8tiBup_oTd9m4xWMAzUdQtWvBcAAUl-G4b6_YLVyrksRJVe66Svch5BfQnlE2sZAK_rhZ8CSNTKQxQeHVemI9enxjq9OybLh7alAVT94GtHh-O2czJKt8NussxG41uzt33U3R3Kcovd_nj7TDTy_eJDPjjnVfNVPg514P95lE5jX4ejGjWU5FbzLpv2jddW77tz59RkXB395Lovn_5IpNz9vR81vu78QgsqGpei1wUdShzoZvar4Det-VdLRCnUhpRsRoodHDHRoSgDgmxTXGHErIBC0SRyUK0xn81PXEGCv7kcBwfoydPb6aXD-ywIJr-210WJG6QsfFqfRzGpvhQ5jDG276XknB4CS4P9kZsF-TeW61NUFbPmJHhZGG69mrpR2ibqxdycLScBB4aLNbI8Vf9ue-o-JRuULhmcL3-DgAA__8._9xzIw"
+
+// connectOnlyMade is the fixture's setupId time (its UUIDv7). Tests use a
+// clock just after it, so a waiting agent's status does not depend on the
+// wall clock: the signed code expires 24 hours after this time.
+var connectOnlyMade = time.UnixMilli(0x01a1f78c52b8).UTC()
 
 // connectOnlyEnv is an engine.json whose agent bot waits for its database's
 // address, with its .secret.
@@ -33,7 +39,9 @@ func connectOnlyEnv(t *testing.T) (agentEnv, config.Agent) {
 	require.NoError(t, err)
 	require.NoError(t, config.WriteFile(cfgPath, raw))
 	require.NoError(t, config.WriteFile(config.SecretPath(cred, "bot"), []byte("pw\n")))
-	return agentEnv{cfg: cfg, configPath: cfgPath}, a
+	return agentEnv{cfg: cfg, configPath: cfgPath, handoff: HandoffOptions{
+		Now: func() time.Time { return connectOnlyMade.Add(time.Minute) },
+	}}, a
 }
 
 // Waiting for the address: the agent is served by the connect-only

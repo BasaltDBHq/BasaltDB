@@ -26,6 +26,13 @@ const (
 // postgresPassword matches a postgres:// or postgresql:// URL (scheme in any
 // case) with a password: in its user part (user:secret@host), or as a
 // password parameter. A URL without a password does not match.
+//
+// postgresPasswordInString is the same match for one decoded string or key,
+// where a quote cannot end the value: the user part and the password value
+// may hold quotes. The raw JSON text keeps the stricter form, because there a
+// quote can end one string and start the next.
+var postgresPasswordInString = regexp.MustCompile(`(?i)postgres(?:ql)?://(?:[^\s/?#@:]*:\S+@|[^\s?#]*\?(?:[^\s#]*&)?password=[^&\s#]+)`)
+
 var postgresPassword = regexp.MustCompile(`(?i)postgres(?:ql)?://(?:[^\s"'/?#@:]*:\S+@|[^\s"'?#]*\?(?:[^\s"'#]*&)?password=[^&\s"'#]+)`)
 
 // holdsAdminCredential reports whether a tool call's raw arguments hold such
@@ -41,7 +48,7 @@ func holdsAdminCredential(raw json.RawMessage) bool {
 		if err != nil {
 			return false
 		}
-		if s, ok := tok.(string); ok && postgresPassword.MatchString(s) {
+		if s, ok := tok.(string); ok && postgresPasswordInString.MatchString(s) {
 			return true
 		}
 	}

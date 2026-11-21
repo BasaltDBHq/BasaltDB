@@ -1,8 +1,9 @@
-// Package supabasecatest is a stand-in for a Supabase database in tests: a
-// test CA playing Supabase's root, and a Postgres server that completes TLS
+// Package providercatest is a stand-in for a provider's database (Supabase,
+// Amazon RDS) in tests: a test CA playing the provider's root, and a
+// Postgres server that completes TLS
 // with a certificate that CA signed and then refuses the password. A client
 // that gets the refusal (28P01) verified the certificate.
-package supabasecatest
+package providercatest
 
 import (
 	"context"
@@ -45,7 +46,7 @@ func Chain(t *testing.T, host string) (*x509.Certificate, tls.Certificate) {
 	}
 	now := time.Now()
 	tmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "supabasecatest root"},
+		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "providercatest root"},
 		NotBefore: now.Add(-time.Hour), NotAfter: now.Add(certLife),
 		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
 	}

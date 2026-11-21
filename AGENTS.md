@@ -106,5 +106,6 @@ Read **this file before implementing**; do not introduce conventions that confli
 
 - **Makefile** is the entry point (`.misc/make/tools.Makefile` pins tools into `./bin`, `make help` via `help.Makefile`). Targets include `help`, `deps`, `lint`, `fmt`, `vet`, `test`, `test-cover`, `build`, `mocks`, `ci`.
 - CI calls the same **`make`** targets; "run exact CI steps" means `make ci`.
+- `make check-provider-roots` downloads each provider roots file `internal/providerca` carries (Supabase, Amazon RDS) and compares it with the pinned SHA-256. It needs the network and is not in `make ci`; run it before a release. When it fails, check the change is only new roots from the provider, replace the file, and update the pin in `providerca.go` and the pin and count in `pins_test.go`.
 - **golangci-lint** v2 (pinned in `tools.Makefile`); config in `.golangci.yml`; fix all findings; `//nolint` only with the specific linter and an explanation.
 - Do not commit local `data/`, `tmp/` or credentials.

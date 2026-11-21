@@ -68,6 +68,10 @@ test-compose: ## The docker compose example (examples/compose): setup, isolation
 test-systemd: ## A plugin under its systemd unit, isolation checked live (throwaway host with systemd and passwordless sudo only: changes it as root)
 	@bash scripts/systemd-smoke/smoke.sh
 
+.PHONY: check-provider-roots
+check-provider-roots: ## Download where each embedded provider roots file is published (Supabase's download URL and its CLI's source, AWS's RDS bundle) and compare with the pinned SHA-256 (needs the network; not in CI)
+	@go test -tags providerroots -run '^TestProviderRootsCurrent$$' -count=1 -v ./internal/providerca/
+
 .PHONY: test-cover
 test-cover: bin/gotestsum ## Tests with coverage.out
 	@$(GOTESTSUM) --format pkgname -- -race -count=1 -timeout 15m -coverprofile=coverage.out -covermode=atomic $(PKG)

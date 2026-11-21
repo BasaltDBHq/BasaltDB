@@ -1114,6 +1114,8 @@ test("a poll answer that arrives after Back neither brings its ticket back nor o
 // ---- A certificate authority to trust (CONTRACT.md, Trusting a certificate authority on the page) ----
 
 const ROOT = { subject: "CN=Google Cloud SQL Server CA,O=Google\\, Inc,C=US", sha256: "ab".repeat(32), expiresAt: "2035-01-31T00:00:00Z" };
+// A connection string to a database reached by its IP address, as Cloud SQL's often is.
+const BY_IP = ["postgresql://admin", "Marker-7f3a9c@34.120.1.2:5432/app"].join(":");
 const NOT_VERIFIED = "The database's TLS certificate could not be verified, so the password was not sent. Use a host with a certificate from a public authority, or use the laptop command.";
 
 test("a refusal's certificate authority is read only when every part is well formed", () => {
@@ -1154,7 +1156,7 @@ test("an unknown certificate authority: the question with its subject, SHA-256 a
   const nodes = fakeDocument();
   const { calls, fetchFn, methods } = trustService();
   const { flow } = await toPaste(nodes, env(fetchFn));
-  await paste(nodes, "postgresql://admin:Marker-7f3a9c@34.120.1.2:5432/app");
+  await paste(nodes, BY_IP);
   assert.equal(shown(nodes), "s-trust");
   assert.equal(nodes["trust-text"].textContent,
     `34.120.1.2 presents a certificate authority Basalt does not know: ${ROOT.subject}, SHA-256 ${fingerprintText(ROOT.sha256)}, valid until 2035-01-31. Check it against your provider's console. Trust it for this host only?`);
@@ -1180,7 +1182,7 @@ test("Cancel drops the string and sends nothing", async () => {
   const nodes = fakeDocument();
   const { calls, fetchFn } = trustService();
   const { flow } = await toPaste(nodes, env(fetchFn));
-  await paste(nodes, "postgresql://admin:Marker-7f3a9c@34.120.1.2:5432/app");
+  await paste(nodes, BY_IP);
   const sent = calls.length;
   await nodes["trust-cancel"].click();
   assert.equal(shown(nodes), "s-paste");
@@ -1194,7 +1196,7 @@ test("a subject the server chose is shown as text only", async () => {
   const evil = { ...ROOT, subject: '<img src=x onerror="alert(1)">' };
   const { fetchFn } = trustService(evil);
   await toPaste(nodes, env(fetchFn));
-  await paste(nodes, "postgresql://admin:pw@34.120.1.2:5432/app");
+  await paste(nodes, BY_IP);
   assert.equal(shown(nodes), "s-trust");
   assert.match(nodes["trust-text"].textContent, /<img src=x onerror="alert\(1\)">/);
   assert.equal(nodes["trust-text"].children.length, 0);
@@ -1214,7 +1216,7 @@ test("a certificate authority that changed: asked again with the refusal's messa
     },
   });
   const { flow } = await toPaste(nodes, env(fetchFn));
-  await paste(nodes, "postgresql://admin:pw@34.120.1.2:5432/app");
+  await paste(nodes, BY_IP);
   await nodes["trust-go"].click();
   assert.equal(shown(nodes), "s-trust");
   assert.equal(nodes["trust-error"].textContent, "It changed.");

@@ -159,11 +159,6 @@ func (cn *conn) handshake(ctx context.Context, ss *session, msg []byte) error {
 		}
 		return cn.end(ctx, ss.id, code)
 	}
-	if cn.admit != nil {
-		if code := cn.admit(ctx, link); code != 0 {
-			return cn.end(ctx, ss.id, code)
-		}
-	}
 	o := cn.c.opts
 	sctx, cancel := context.WithCancel(ctx)
 	est := &established{link: link, cancel: cancel, work: make(chan Request, 1)}
@@ -326,12 +321,6 @@ func (cn *conn) work(ctx context.Context, ss *session) {
 		case <-ctx.Done():
 			return
 		case req := <-e.work:
-			if cn.recheck != nil {
-				if code := cn.recheck(ctx, e.link); code != 0 {
-					cn.endAsync(ss.id, code)
-					return
-				}
-			}
 			after := &afterAnswer{}
 			dctx := context.WithValue(ctx, rotateKey{}, rotator(func(token channel.LinkToken) { cn.rotate(ss, token) }))
 			dctx = context.WithValue(dctx, afterKey{}, after)
@@ -415,10 +404,6 @@ func (cn *conn) rotate(ss *session, token channel.LinkToken) {
 	cn.sessions.mu.Unlock()
 	ss.est.link.Token = token
 	if old == token {
-		return
-	}
-	if cn.endOld != nil {
-		cn.endOld(old)
 		return
 	}
 	cn.endLink(old)
@@ -509,7 +494,7 @@ func (cn *conn) sendFrame(ctx context.Context, ss *session, content []byte) erro
 }
 
 // writeRoute sends payload to session id's page: a ROUTE message on the
-// Vault's socket, the page's own socket on DIRECT.
+// Vault's socket.
 func (cn *conn) writeRoute(ctx context.Context, id sid, payload []byte) error {
 	return cn.out.send(ctx, id, payload)
 }

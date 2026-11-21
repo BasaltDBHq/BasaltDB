@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Removed
+
+- The direct transport: `basalt tunnel`, the engine's direct listener (`directAddr` in `engine.json`), `--direct-addr` on `basalt init` and `basalt init --remote`, `--engine-url` on `basalt init --setup-code`, and the portal's engine pin pages (`/engines`, `/engines/add`) with their per-person `connect-src` cookie. Portal pages reach the engine through the Vault relay only; until its page side ships, a portal short link says to use the long link. An `engine.json` that still has `directAddr` is refused at load, as any unknown key is: delete the key.
+- The engine address recorded with an engine's key. The guard's schema moves to version 8 (non-breaking): `record_engine` takes the key alone and `basalt_meta.engines` drops its `url` column. `status.engineRecord` and `basalt engine list` (`--json` too) no longer show an address, `status` no longer reports `DIRECT_NOT_SERVED`, and `basalt init --setup-code` no longer asks to revoke another engine at the same address. `basalt engine revoke` and `basalt engine rotate-key` stay.
+
 ### Fixed
 
 - The warning for a binary in a temporary folder now also fires on macOS, where the default temp folder is a link (`/var/folders/...` to `/private/var/...`) and the binary path was never matched against it.

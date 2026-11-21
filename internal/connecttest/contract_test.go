@@ -17,8 +17,6 @@ import (
 // notFromTheService are the setup package's codes the connect service
 // cannot get, so the contract's refusal table leaves them out.
 var notFromTheService = map[string]string{
-	setup.CodeEngineURLInvalid:     "needs Request.EngineURL, which the service never sets",
-	setup.CodeEngineKeyMissing:     "needs Request.EngineURL, which the service never sets",
 	setup.CodePasskeyNotRegistered: "needs RunInput.AskPasskey, the laptop's passkey step",
 	setup.CodeConnectOnly:          "needs Request.ConnectPage unset; the service always sets it",
 }

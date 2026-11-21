@@ -2,7 +2,7 @@
 // it knows which transport carries a request (design: vault channel,
 // section 4.1):
 //
-//   transport.kind                              SAME_ORIGIN, DIRECT (later RELAY)
+//   transport.kind                              SAME_ORIGIN, UNAVAILABLE (later RELAY)
 //   transport.open(link) -> Promise<session>    link: { page, id, secret }
 //   session.request(method, path, headers, body)
 //     -> Promise<{ status, headers, body }>
@@ -21,13 +21,13 @@
 // the session stays open; later requests carry the new secret.
 
 import { PORTAL } from "./codec.js";
-import { directTransport, policyAllows } from "./direct.js";
-import { pinStore } from "./pins.js";
+import { RelayError } from "./local.js";
 
 export const SAME_ORIGIN = "SAME_ORIGIN";
+export const UNAVAILABLE = "UNAVAILABLE";
 
-// The browser's network calls. Only the transports (this file, direct.js
-// and channel.js) reach the network; the pages call them.
+// The browser's network calls. Only the transports (this file and
+// channel.js) reach the network; the pages call them.
 const windowFetch = (path, init) => window.fetch(path, init);
 export const browserFetch = windowFetch;
 export const browserSocket = (url) => new window.WebSocket(url);
@@ -73,50 +73,29 @@ export function sameOriginTransport(fetchFn = windowFetch) {
   };
 }
 
-// RELOADED marks, for this tab, that the page already reloaded once to
-// bring its CSP up to date with the pins, so it never loops.
-const RELOADED = "basalt-engines-reloaded";
+// UNREACHABLE is what a short link on the portal tells the person while
+// the portal page has no way to reach their engine: the long link carries
+// the request in the page itself.
+export const UNREACHABLE =
+  "This page cannot reach your engine from the portal yet. Ask the agent for the long link (list_pending gives it), " +
+  "or run basalt approve or basalt revert with --open on your own computer.";
 
-// reloadOnce reloads the page once per tab after the pins cookie was
-// rewritten: the portal's edge function builds this load's connect-src
-// from the cookie it received, so a stale cookie means a CSP without the
-// pins. true when it reloads.
-function reloadOnce(loc, storage) {
-  try {
-    if (storage.getItem(RELOADED) === "1") return false;
-    storage.setItem(RELOADED, "1");
-  } catch {
-    return false;
-  }
-  loc.reload();
-  return true;
-}
-
-// pagePolicy is the page's own meta CSP, which the portal's edge function
-// rewrites together with the header: what this page load may connect to.
-function pagePolicy() {
-  return globalThis.document?.querySelector('meta[http-equiv="Content-Security-Policy"]')?.getAttribute("content") ?? "";
+// unreachableTransport opens no session: every open rejects with
+// UNREACHABLE, which the page shows.
+export function unreachableTransport() {
+  return {
+    kind: UNAVAILABLE,
+    open: async () => {
+      throw new RelayError("cannot reach the engine from the portal", "UNAVAILABLE", 0, { personMessage: UNREACHABLE });
+    },
+  };
 }
 
 // pageTransport is the transport the approval and revert pages use: on the
-// portal, DIRECT over this device's pinned engines (the relay transport
-// comes with its own ticket); on the engine's own local pages, the same
-// origin.
+// engine's own local pages, the same origin; on the portal, none yet (the
+// relay transport comes with its own task), so a short link there says to
+// use the long link.
 export function pageTransport(loc = globalThis.window?.location) {
-  if (loc?.origin !== PORTAL) return sameOriginTransport();
-  const tab = globalThis.sessionStorage;
-  return directTransport({
-    store: pinStore(),
-    fetchFn: browserFetch,
-    socket: browserSocket,
-    cspAllows: (addresses) => policyAllows(pagePolicy(), addresses),
-    onStaleCookie: () => reloadOnce(loc, tab),
-    onOpened: () => {
-      try {
-        tab.removeItem(RELOADED);
-      } catch {
-        // Nothing to clear.
-      }
-    },
-  });
+  if (loc?.origin === PORTAL) return unreachableTransport();
+  return sameOriginTransport();
 }

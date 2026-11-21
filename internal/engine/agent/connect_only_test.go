@@ -97,6 +97,9 @@ func connectOnlyStatusCases(operatedBy string) map[string]statusCase {
 		problemUnreachableFromBot: {state: guard.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{
 			Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemUnreachable, Database: &db,
 		})},
+		problemTrustRootMismatch: {state: guard.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{
+			Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemTrustRootMismatch, Database: &db,
+		})},
 		problemAddressInvalid: {state: guard.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemAddressInvalid})},
 		problemClockSkew:      {state: guard.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemClockSkew})},
 		problemEngineAsRoot:   {state: guard.GuardUnknown, report: connectOnlyStatusOf(operatedBy, handoff.State{Setup: waiting, Phase: handoff.PhaseWaiting, Problem: handoff.ProblemEngineAsRoot})},

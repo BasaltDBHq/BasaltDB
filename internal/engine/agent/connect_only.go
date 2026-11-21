@@ -164,6 +164,23 @@ func unreachableFromBotSteps(b *Steps, code string, budget int, db handoff.Addre
 	return "The setup ran, but the agent's machine cannot reach " + db.Name() + ". To fix it, " + fix + ", then tell the agent."
 }
 
+// trustRootMismatchSteps: the collected database presents another
+// certificate authority to the bot's machine than the one the person
+// trusted on the connect page; nothing was pinned.
+func trustRootMismatchSteps(b *Steps, code string, budget int, db handoff.Address) string {
+	url := ConnectLink(code, budget)
+	text := "Open the same link again: the page reads the database's certificate again. Check it against your provider's console before you trust it."
+	if url == "" {
+		b.OpenGivenLink("", text)
+	} else {
+		b.OpenLink(url, "", text)
+	}
+	b.EndTurn("End your turn: the person acts next.")
+	b.CallTool(toolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
+	return "The setup ran, but " + db.Name() + " shows the agent's machine another certificate authority than the one you trusted on the connect page, so the agent trusts nothing and does not sign in. " +
+		"Open the same link again and check the certificate against your provider's console. If it changes again, something between the agent's machine and your database may be in the way."
+}
+
 // DatabaseNotConfirmedError refuses a tool while the collected database
 // waits for the person's confirmation (UNAVAILABLE DATABASE_NOT_CONFIRMED).
 type DatabaseNotConfirmedError struct {
@@ -370,6 +387,10 @@ func connectOnlyProblems(st handoff.State, ps *problems, now time.Time) SetupSta
 	case st.Problem == handoff.ProblemAddressInvalid:
 		ps.add(problemAddressInvalid, "the database address the connect page handed over was refused",
 			func(b *Steps) string { return addressInvalidSteps(b, ps.cmds) })
+	case st.Problem == handoff.ProblemTrustRootMismatch && st.Database != nil:
+		db := *st.Database
+		ps.add(problemTrustRootMismatch, db.Name()+" presents another certificate authority to this machine than the one the person trusted on the connect page; nothing was pinned",
+			func(b *Steps) string { return trustRootMismatchSteps(b, s.Code, ps.connectBudget, db) })
 	case st.Problem == handoff.ProblemUnreachable && st.Database != nil:
 		db := *st.Database
 		ps.add(problemUnreachableFromBot, "this machine cannot reach "+db.Name(),

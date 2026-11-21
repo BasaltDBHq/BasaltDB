@@ -63,6 +63,7 @@ const (
 	problemConfirmDatabase    = "CONFIRM_DATABASE"
 	problemDatabaseRefused    = "DATABASE_REFUSED"
 	problemUnreachableFromBot = "DATABASE_UNREACHABLE_FROM_BOT"
+	problemTrustRootMismatch  = "TRUST_ROOT_MISMATCH"
 	problemAddressInvalid     = "ADDRESS_INVALID"
 	problemSetupNotFound      = "SETUP_NOT_FOUND"
 	problemClockSkew          = "CLOCK_SKEW"

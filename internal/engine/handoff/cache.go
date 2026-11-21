@@ -32,7 +32,9 @@ type Cached struct {
 	At             time.Time  `json:"at"`
 	Reason         string     `json:"reason,omitempty"`
 	ChannelBinding bool       `json:"channelBinding,omitempty"`
-	NotBefore      time.Time  `json:"notBefore"`
+	// Pinned is the SHA-256 of the pin the probe passed with, "" for none.
+	Pinned    string    `json:"pinned,omitempty"`
+	NotBefore time.Time `json:"notBefore"`
 }
 
 // ProbeCache keeps Cached between processes, so a reached PREVIEW address

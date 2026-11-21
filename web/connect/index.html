@@ -23,7 +23,7 @@
   <link rel="modulepreload" href="../lib/requestfile.js" integrity="sha384-xiJ/EJcVadxBsme/5iGzfgTEkh7Z8n3zEK7cAKo2UVGeU6MXwWS+7s1XVP6Cbarn">
   <link rel="modulepreload" href="../lib/scope.js" integrity="sha384-EnkYGm9Ai69Q58X/Exq7GM242BywacFmsG4+nrCuDTuhcTC5dSTTg6sRcYrOkv8l">
   <link rel="modulepreload" href="../lib/transport.js" integrity="sha384-FAH67/7vDoua3lNdbmAB5nTF9xVanL8OIofcan/0bpOkQOqtn8rAXhSEFnmzMFhS">
-  <script type="module" src="../lib/connect.js" integrity="sha384-kzy7/rVBakq3kBPbvouqhz4VfNHy3VgRhD/KDqX2CCHv8vZmPgyYxyAE95LFZzy1"></script>
+  <script type="module" src="../lib/connect.js" integrity="sha384-tOqIaCo8wshicHgG7Uo7xdfx6bTaAhzLqIijTowtFqgGk2N7g3NB1Mh7tmgusNTm"></script>
   <!-- sri:end -->
 </head>
 <body class="connect-page">
@@ -104,6 +104,15 @@
       <p id="paste-error" class="strip bad" role="alert" hidden></p>
       <button id="check" type="button">Continue</button>
       <p id="disclosure" class="muted small"></p>
+    </section>
+
+    <section id="s-trust" class="screen" hidden>
+      <h1>Trust this certificate authority?</h1>
+      <p id="trust-text" class="box"></p>
+      <p class="muted small">Google Cloud SQL shows it with <code>gcloud sql ssl server-ca-certs list</code>. <a href="https://cloud.google.com/sql/docs/postgres/manage-ssl-instance" target="_blank" rel="noopener noreferrer">How to find it</a></p>
+      <p id="trust-error" class="strip bad" role="alert" hidden></p>
+      <button id="trust-go" type="button">Trust and continue</button>
+      <button id="trust-cancel" type="button" class="secondary">Cancel</button>
     </section>
 
     <section id="s-checking" class="screen" hidden>

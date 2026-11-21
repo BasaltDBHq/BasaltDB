@@ -7,6 +7,8 @@ import (
 	"slices"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
+	"github.com/basaltdbhq/basaltdb/internal/engine/handoff"
+	"github.com/basaltdbhq/basaltdb/internal/trustdir"
 )
 
 // handoffFiles are a connect-only agent's files as the hand-off reaches
@@ -80,4 +82,17 @@ func (f handoffFiles) change(id string, edit func(*config.Setup)) error {
 		edit(c.Agents[i].Setup)
 		return nil
 	}})
+}
+
+// WritePin writes pin for host to trust.d next to engine.json, as basalt
+// trust pin does: the person trusted its certificate authority on the
+// connect page and the engine's own reading of the chain confirmed it. It
+// never replaces trust: when a profile covers host by now, it writes
+// nothing, and refuses unless that profile is this very pin.
+func (f handoffFiles) WritePin(host string, pin handoff.Pin) error {
+	_, err := trustdir.PinNew(f.configPath, host, pin.Top, pin.CAOnly)
+	if errors.Is(err, trustdir.ErrCovered) {
+		return fmt.Errorf("%w, so the certificate authority trusted on the connect page is not pinned", err)
+	}
+	return err
 }

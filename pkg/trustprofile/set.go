@@ -230,3 +230,23 @@ type FileError struct {
 func (e *FileError) Error() string { return e.File + ": " + e.Err.Error() }
 
 func (e *FileError) Unwrap() error { return e.Err }
+
+// Replacing is s with the operator profile name left out and add, when not
+// nil, in its place: a pin that applies before it is written, or a pin
+// left out.
+func (s *Set) Replacing(name string, add *Profile) *Set {
+	var ops, builtin []*Profile
+	for _, l := range s.listed {
+		switch {
+		case l.Origin == Operator && l.Name == name:
+		case l.Origin == Operator:
+			ops = append(ops, l.Profile)
+		default:
+			builtin = append(builtin, l.Profile)
+		}
+	}
+	if add != nil {
+		ops = append(ops, add)
+	}
+	return NewSet(builtin, ops, s.refused)
+}

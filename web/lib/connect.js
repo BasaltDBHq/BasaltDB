@@ -62,13 +62,60 @@ export const MAX_LABELS = 500;
 
 // Refusal is a refusal of the connect service: reason and message come from
 // its basalt.connect.v1.Refusal detail, or are fixed words of this page.
+// trustRoot is the certificate authority the database presents, for the
+// person to trust (CONTRACT.md, Trusting a certificate authority on the
+// page), or null.
 export class Refusal extends Error {
-  constructor(reason, message, retryAfterSeconds = 0) {
+  constructor(reason, message, retryAfterSeconds = 0, trustRoot = null) {
     super(message);
     this.name = "Refusal";
     this.reason = reason;
     this.retryAfterSeconds = retryAfterSeconds;
+    this.trustRoot = trustRoot;
   }
+}
+
+// The refusals that may carry a certificate authority to trust.
+const TRUST_REASONS = new Set(["CERTIFICATE_NOT_VERIFIED", "TRUST_ROOT_MISMATCH"]);
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+// The server chooses the subject; the service cuts it to 512 characters.
+const MAX_SUBJECT_CHARS = 512;
+const RFC3339_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+
+// trustRootFrom is a Refusal detail's trustRoot, checked: its subject as
+// text, its SHA-256 as 64 lowercase hex digits and its expiry as RFC 3339
+// UTC. null when there is none or any part is unreadable: the refusal is
+// then shown as it is.
+export function trustRootFrom(reason, t) {
+  if (!TRUST_REASONS.has(reason) || !t || typeof t !== "object") return null;
+  const { subject, sha256: fp, expiresAt } = t;
+  if (typeof subject !== "string" || subject === "" || [...subject].length > MAX_SUBJECT_CHARS) return null;
+  if (typeof fp !== "string" || !SHA256_HEX.test(fp)) return null;
+  if (typeof expiresAt !== "string" || !RFC3339_UTC.test(expiresAt) || Number.isNaN(Date.parse(expiresAt))) return null;
+  return { subject, sha256: fp, expiresAt };
+}
+
+// fingerprintText is a SHA-256 as the laptop command shows it: uppercase
+// hex pairs with colons.
+export function fingerprintText(fp) {
+  return fp.toUpperCase().match(/../g).join(":");
+}
+
+// trustText is the question the page asks about trustRoot for host.
+export function trustText(host, trustRoot) {
+  const date = trustRoot.expiresAt.slice(0, 10);
+  return `${host} presents a certificate authority Basalt does not know: ${trustRoot.subject}, SHA-256 ${fingerprintText(trustRoot.sha256)}, valid until ${date}. Check it against your provider's console. Trust it for this host only?`;
+}
+
+// hostOf is the host a pasted connection string names, or a plain word.
+export function hostOf(url) {
+  try {
+    const h = new URL(url).hostname;
+    if (h !== "") return h.replace(/^\[|\]$/g, "");
+  } catch {
+    // Fall through.
+  }
+  return "This database";
 }
 
 const UNREACHABLE = "The connect service could not be reached. Check your connection and try again.";
@@ -102,7 +149,7 @@ export function refusalFrom(status, body) {
     const reason = typeof d.reason === "string" && /^[A-Z_]{1,64}$/.test(d.reason) ? d.reason : "UNKNOWN";
     const message = typeof d.message === "string" && d.message !== "" ? d.message : `The connect service refused this (${reason}).`;
     const retry = Number.isInteger(d.retryAfterSeconds) && d.retryAfterSeconds > 0 ? d.retryAfterSeconds : 0;
-    return new Refusal(reason, message, retry);
+    return new Refusal(reason, message, retry, trustRootFrom(reason, d.trustRoot));
   }
   const code = typeof parsed?.code === "string" && /^[a-z_]{1,32}$/.test(parsed.code) ? parsed.code : `HTTP ${status}`;
   return new Refusal("UNKNOWN", `The connect service answered with an error (${code}).`);
@@ -432,6 +479,8 @@ export function reachText(reason, bot) {
       return `The database's certificate could not be verified from ${bot}'s server for this host. Check that the string is your database's own address, or use a host whose certificate a public authority signed.`;
     case "ADDRESS_REFUSED":
       return `This address is private: ${bot}'s server will not connect to it.`;
+    case "TRUST_ROOT_MISMATCH":
+      return `${bot}'s server sees a different certificate authority for this database than the one you trusted, so it trusts neither. Check the certificate against your provider's console. If it changes again, something between ${bot}'s server and your database may be in the way.`;
     default:
       return "Supabase: use the Session pooler string instead of the direct one.";
   }
@@ -457,6 +506,9 @@ const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 export class Flow {
   #databaseUrl = "";
   #ticket = "";
+  // #trustRoot is the SHA-256 the person trusted, sent with CheckSetup and
+  // RunSetup; "" when they trusted none.
+  #trustRoot = "";
 
   constructor({ fetch: fetchFn, credentials, sleep = defaultSleep, now = () => Date.now() }) {
     this.fetch = fetchFn;
@@ -470,6 +522,8 @@ export class Flow {
     this.passkey = null; // { registration, checkCode } once created
     this.signed = false;
     this.check = null;
+    // asking is the certificate authority the trust step asks about.
+    this.asking = null;
   }
 
   async describe(code) {
@@ -556,21 +610,61 @@ export class Flow {
     if (url.length > MAX_URL_CHARS) throw new Refusal("CONNECTION_STRING_REFUSED", "That is too long to be a connection string.");
     if (!POSTGRES_URL.test(url)) throw new Refusal("NOT_POSTGRES", NOT_POSTGRES);
     this.#databaseUrl = url;
+    this.#trustRoot = "";
+    return this.#checkOrAsk();
+  }
+
+  // #checkOrAsk is CheckSetup. A refusal that carries a certificate
+  // authority to trust keeps the string and goes to the trust step, where
+  // nothing is sent until the person answers; any other drops it.
+  async #checkOrAsk() {
     try {
       await this.#check();
     } catch (err) {
-      this.#databaseUrl = "";
       this.#ticket = "";
+      if (err instanceof Refusal && err.trustRoot) {
+        this.asking = err.trustRoot;
+        this.step = "trust";
+      } else {
+        this.#databaseUrl = "";
+        this.#trustRoot = "";
+        this.step = "paste";
+      }
       throw err;
     }
     this.step = "questions";
     return this.check;
   }
 
+  // trustHost is the host the trust step names.
+  get trustHost() {
+    return hostOf(this.#databaseUrl);
+  }
+
+  // trust is "Trust and continue": CheckSetup again with the certificate
+  // authority the person was shown.
+  async trust() {
+    if (this.step !== "trust" || !this.asking) throw new Error("not at the trust step");
+    this.#trustRoot = this.asking.sha256;
+    this.asking = null;
+    return this.#checkOrAsk();
+  }
+
+  // cancelTrust is "Cancel": the string is dropped, back to the paste step.
+  cancelTrust() {
+    if (this.step !== "trust") throw new Error("not at the trust step");
+    this.#databaseUrl = "";
+    this.#trustRoot = "";
+    this.asking = null;
+    this.step = "paste";
+  }
+
   // check is one CheckSetup; an answer that arrives after loop was
   // cancelled (the person went back) changes nothing.
   async #check(loop = null) {
-    const out = await call(this.fetch, "CheckSetup", { code: this.code, databaseUrl: this.#databaseUrl });
+    const req = { code: this.code, databaseUrl: this.#databaseUrl };
+    if (this.#trustRoot !== "") req.trustRoot = this.#trustRoot;
+    const out = await call(this.fetch, "CheckSetup", req);
     if (loop?.cancelled) return;
     this.check = {
       questions: Array.isArray(out.questions) ? out.questions : [],
@@ -603,9 +697,11 @@ export class Flow {
   // backToPaste is every way back to the paste step: the string, the check
   // and the ticket are dropped.
   backToPaste() {
-    if (this.step !== "questions" && this.step !== "paste") throw new Error("not past the paste step");
+    if (this.step !== "questions" && this.step !== "paste" && this.step !== "trust") throw new Error("not past the paste step");
     this.#databaseUrl = "";
     this.#ticket = "";
+    this.#trustRoot = "";
+    this.asking = null;
     this.check = null;
     this.step = "paste";
   }
@@ -675,6 +771,7 @@ export class Flow {
     if (this.step !== "questions") throw new Error("not at the approve step");
     if (this.passkeyMissing) throw new Refusal("PASSKEY_REQUIRED", "Create the passkey first.");
     const req = { code: this.code, databaseUrl: this.#databaseUrl, answers };
+    if (this.#trustRoot !== "") req.trustRoot = this.#trustRoot;
     let sentPasskey = false;
     if (!this.check.alreadyRan) {
       if (Array.isArray(choices.includedTables)) req.includedTables = choices.includedTables;
@@ -705,6 +802,7 @@ export class Flow {
       throw err;
     } finally {
       this.#databaseUrl = "";
+      this.#trustRoot = "";
     }
   }
 
@@ -780,8 +878,8 @@ function show(id, on = true) {
 
 // The screens, in order, with the progress segment each fills and where
 // Back goes. Every screen but the result carries the address-bar strip.
-const SCREENS = ["s-code", "s-bot", "s-stop", "s-passkey", "s-paste", "s-checking", "s-unreach", "s-tables", "s-labels", "s-approve", "s-done"];
-const PROGRESS = { "s-code": 1, "s-bot": 1, "s-stop": 1, "s-passkey": 2, "s-paste": 3, "s-checking": 3, "s-unreach": 3, "s-tables": 4, "s-labels": 5, "s-approve": 6 };
+const SCREENS = ["s-code", "s-bot", "s-stop", "s-passkey", "s-paste", "s-trust", "s-checking", "s-unreach", "s-tables", "s-labels", "s-approve", "s-done"];
+const PROGRESS = { "s-code": 1, "s-bot": 1, "s-stop": 1, "s-passkey": 2, "s-paste": 3, "s-trust": 3, "s-checking": 3, "s-unreach": 3, "s-tables": 4, "s-labels": 5, "s-approve": 6 };
 
 function showScreen(name) {
   for (const s of SCREENS) show(s, s === name);
@@ -983,7 +1081,7 @@ export function start(env) {
 
   const showPaste = (problem) => {
     newLoop();
-    if (flow.step === "questions") flow.backToPaste();
+    if (flow.step === "questions" || flow.step === "trust") flow.backToPaste();
     hideString();
     setText("disclosure", disclosure(flow.summary));
     setText("paste-error", problem);
@@ -1016,11 +1114,54 @@ export function start(env) {
       if (POSTGRES_URL.test(typed.trim())) go("s-checking");
       await flow.checkSetup(typed);
     } catch (err) {
-      showPaste(err instanceof Refusal && err.reason === "NOT_POSTGRES" ? NOT_POSTGRES : refusalText(err, flow.connectOnly));
+      if (flow.step === "trust") showTrust("");
+      else showPaste(err instanceof Refusal && err.reason === "NOT_POSTGRES" ? NOT_POSTGRES : refusalText(err, flow.connectOnly));
       return;
     } finally {
       $("check").disabled = false;
     }
+    await checked();
+  });
+
+  // ---- 3a: a certificate authority to trust ----
+  // The question names the host, and the subject, SHA-256 and expiry the
+  // service read with the TLS handshake alone; all of it as text.
+  const showTrust = (problem) => {
+    setText("trust-text", trustText(flow.trustHost, flow.asking));
+    setText("trust-error", problem);
+    show("trust-error", problem !== "");
+    go("s-trust");
+  };
+
+  $("trust-go").addEventListener("click", async () => {
+    $("trust-go").disabled = true;
+    setText("checking-title", "Checking your database…");
+    mark("chk-login", "wait", "Signing in to the database");
+    mark("chk-tables", "hidden", "");
+    mark("chk-reach", "hidden", "");
+    show("checking-note", false);
+    show("nocheck", false);
+    go("s-checking");
+    try {
+      await flow.trust();
+    } catch (err) {
+      if (flow.step === "trust") showTrust(err.message);
+      else showPaste(refusalText(err, flow.connectOnly));
+      return;
+    } finally {
+      $("trust-go").disabled = false;
+    }
+    await checked();
+  });
+
+  $("trust-cancel").addEventListener("click", () => {
+    flow.cancelTrust();
+    showPaste("");
+  });
+
+  // checked shows what CheckSetup found, then the reach check where it
+  // applies.
+  const checked = async () => {
     mark("chk-login", "ok", "Signed in to the database");
     const n = tableRows(flow.summary, flow.check).rows.length;
     if (n > 0) mark("chk-tables", "ok", `Found ${n} ${n === 1 ? "table" : "tables"}`);
@@ -1030,7 +1171,7 @@ export function start(env) {
       return;
     }
     await checkReach();
-  });
+  };
 
   // ---- 3b and 3c: can the bot reach it? ----
   const checkReach = async () => {
@@ -1437,7 +1578,7 @@ export function start(env) {
       flow.backTo("passkey");
       showPasskey();
     }
-    else if (screen === "s-checking" || screen === "s-unreach" || screen === "s-tables") showPaste("");
+    else if (screen === "s-checking" || screen === "s-unreach" || screen === "s-tables" || screen === "s-trust") showPaste("");
     else if (screen === "s-labels") showTables();
     else if (screen === "s-approve") {
       if (labelsApply()) showLabels();

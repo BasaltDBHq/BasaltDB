@@ -55,6 +55,8 @@ type fakeCollector struct {
 	err     error
 	calls   int
 	reports []report
+	// trustRoot is the certificate authority the hold carries.
+	trustRoot string
 }
 
 type report struct {
@@ -73,7 +75,7 @@ func (c *fakeCollector) Collect(_ context.Context, id, fp string) (Collected, er
 	if phase == "" {
 		phase = HoldSetUp
 	}
-	return Collected{Address: c.addr, Phase: phase}, c.err
+	return Collected{Address: c.addr, Phase: phase, TrustRoot: c.trustRoot}, c.err
 }
 
 func (c *fakeCollector) Report(_ context.Context, id, fp string, a Address, r Reach) error {
@@ -92,6 +94,17 @@ type fakeProber struct {
 	ip     netip.Addr
 	users  []string
 	probes int
+	// approved records every Approve; pin and approveErr are its answer.
+	approved   []string
+	pin        Pin
+	approveErr error
+	// pins records the pin each probe ran with.
+	pins []Pin
+}
+
+func (p *fakeProber) Approve(_ context.Context, _ Address, _ netip.Addr, approved string) (Pin, error) {
+	p.approved = append(p.approved, approved)
+	return p.pin, p.approveErr
 }
 
 func (p *fakeProber) Resolve(_ context.Context, a Address) (netip.Addr, error) {
@@ -107,8 +120,9 @@ func (p *fakeProber) Resolve(_ context.Context, a Address) (netip.Addr, error) {
 	return netip.MustParseAddr("8.8.8.8"), nil
 }
 
-func (p *fakeProber) ProbeAt(_ context.Context, _ Address, ip netip.Addr, user string) (Probed, error) {
+func (p *fakeProber) ProbeAt(_ context.Context, _ Address, ip netip.Addr, user string, pin Pin) (Probed, error) {
 	p.users = append(p.users, user)
+	p.pins = append(p.pins, pin)
 	p.probes++
 	if p.err != nil {
 		return Probed{}, p.err
@@ -124,6 +138,17 @@ type fakeFiles struct {
 	credential string
 	ops        []string
 	failWrite  bool
+	pinned     []Pin
+	failPin    bool
+}
+
+func (f *fakeFiles) WritePin(_ string, pin Pin) error {
+	f.ops = append(f.ops, "write pin")
+	if f.failPin {
+		return errors.New("a profile covers the host now")
+	}
+	f.pinned = append(f.pinned, pin)
+	return nil
 }
 
 func (f *fakeFiles) Lock() (func(), error) {
@@ -778,7 +803,7 @@ func probeAt(t *testing.T, a Address, certHost string) error {
 	t.Helper()
 	ca, cert := trustprofiletest.Chain(t, certHost)
 	p := Prober{Dial: trustprofiletest.Serve(t, cert), Profiles: trustprofiletest.Set(t, map[string][]*x509.Certificate{"supabase": {ca}})}
-	_, err := p.ProbeAt(context.Background(), a, netip.MustParseAddr("203.0.113.7"), fixtureRole)
+	_, err := p.ProbeAt(context.Background(), a, netip.MustParseAddr("203.0.113.7"), fixtureRole, Pin{})
 	return err
 }
 

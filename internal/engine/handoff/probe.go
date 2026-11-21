@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
+	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
@@ -78,29 +79,45 @@ const (
 	ReasonTLSNotVerified = "TLS_NOT_VERIFIED"
 	// ReasonTimeout: no answer in time.
 	ReasonTimeout = "TIMEOUT"
+	// ReasonTrustRootMismatch: the address came with a certificate
+	// authority the person trusted on the connect page, and the server
+	// presents another one to this machine (or one its certificate does not
+	// verify against).
+	ReasonTrustRootMismatch = "TRUST_ROOT_MISMATCH"
 )
+
+// ErrTrustRootMismatch is a probe whose server presents another chain top
+// than the one the person approved on the connect page (problem
+// TRUST_ROOT_MISMATCH): nothing is pinned and no login is tried.
+var ErrTrustRootMismatch = errors.New("the database presents another certificate authority to this machine than the one trusted on the connect page")
 
 // Reach is what a probe found, as the engine reports it: Reason is empty
 // when a probe passed.
 type Reach struct{ Reason string }
 
 // ReachError is a probe that failed for Reason. ADDRESS_REFUSED is also
-// ErrAddressInvalid (problem ADDRESS_INVALID); every other reason is
-// ErrUnreachable.
+// ErrAddressInvalid (problem ADDRESS_INVALID), TRUST_ROOT_MISMATCH is
+// ErrTrustRootMismatch; every other reason is ErrUnreachable.
 type ReachError struct{ Reason string }
 
 func (e *ReachError) Error() string {
-	if e.Reason == ReasonAddressRefused {
+	switch e.Reason {
+	case ReasonAddressRefused:
 		return ErrAddressInvalid.Error()
+	case ReasonTrustRootMismatch:
+		return ErrTrustRootMismatch.Error()
 	}
 	return ErrUnreachable.Error() + " (" + e.Reason + ")"
 }
 
-// Is matches ErrAddressInvalid for ADDRESS_REFUSED, ErrUnreachable for
-// the others.
+// Is matches ErrAddressInvalid for ADDRESS_REFUSED, ErrTrustRootMismatch
+// for TRUST_ROOT_MISMATCH, ErrUnreachable for the others.
 func (e *ReachError) Is(target error) bool {
-	if e.Reason == ReasonAddressRefused {
+	switch e.Reason {
+	case ReasonAddressRefused:
 		return target == ErrAddressInvalid
+	case ReasonTrustRootMismatch:
+		return target == ErrTrustRootMismatch
 	}
 	return target == ErrUnreachable
 }
@@ -136,6 +153,81 @@ type Prober struct {
 	// Profiles are the trust profiles the probe uses (package
 	// trustprofile); nil is pgdial's. Tests give test CAs.
 	Profiles *trustprofile.Set
+	// Now is the clock certificates are checked at; nil is time.Now.
+	Now func() time.Time
+}
+
+// Pin is a certificate authority the person trusted on the connect page
+// that this machine's own reading of the server's chain confirmed (Approve):
+// the pin for the host, held in memory until the person's yes writes it.
+// The zero Pin is none: the server's certificate verifies without one.
+type Pin struct {
+	Profile *trustprofile.Profile
+	Top     *x509.Certificate
+	// CAOnly: the leaf does not name the host, so the pin verifies the
+	// chain alone (verify: ca).
+	CAOnly bool
+}
+
+// Approve is what the engine makes of approved, the SHA-256 of the chain
+// top the person trusted on the connect page for a's host, which ip
+// resolved to (CONTRACT.md, Pinning from the connect page). The engine reads the chain itself, with the TLS
+// handshake alone, over its own network: no startup message, no user, no
+// password. The zero Pin, with no reading, when a trust profile covers the
+// host or Roots replace every root: the engine's own trust decides, and the
+// approval adds nothing. The zero Pin too when the chain verifies against
+// the system's authorities. Otherwise the pin for the chain's top, only
+// when its SHA-256 is approved and the chain verifies against it
+// (TRUST_ROOT_MISMATCH): the connect service can never add trust that this
+// check did not find itself.
+func (p Prober) Approve(ctx context.Context, a Address, ip netip.Addr, approved string) (Pin, error) {
+	if p.Roots != nil || p.profiles().For(a.Host) != nil {
+		return Pin{}, nil
+	}
+	chain, err := trustpin.Fetch(ctx, p.dialTo(ip, a.Port), a.Host, a.Port)
+	switch {
+	case errors.Is(err, trustpin.ErrNoTLS):
+		return Pin{}, &ReachError{Reason: ReasonTLSNotVerified}
+	case err != nil:
+		return Pin{}, &ReachError{Reason: reasonOf(err)}
+	}
+	seen, prof, err := trustpin.Approved(chain, a.Host, p.now(), approved)
+	switch {
+	case seen.System:
+		return Pin{}, nil
+	case errors.Is(err, trustpin.ErrMismatch), errors.Is(err, trustpin.ErrNotPinnable):
+		return Pin{}, &ReachError{Reason: ReasonTrustRootMismatch}
+	case err != nil:
+		return Pin{}, err
+	}
+	return Pin{Profile: prof, Top: seen.Top, CAOnly: !seen.Full}, nil
+}
+
+// dialTo dials ip, whatever address is asked for: the one the host
+// resolved to and the checks passed.
+func (p Prober) dialTo(ip netip.Addr, port int) trustpin.Dial {
+	to := net.JoinHostPort(ip.String(), strconv.Itoa(port))
+	return func(ctx context.Context, network, _ string) (net.Conn, error) {
+		if p.Dial != nil {
+			return p.Dial(ctx, network, to)
+		}
+		var d net.Dialer
+		return d.DialContext(ctx, network, to)
+	}
+}
+
+func (p Prober) profiles() *trustprofile.Set {
+	if p.Profiles != nil {
+		return p.Profiles
+	}
+	return pgdial.Trust()
+}
+
+func (p Prober) now() time.Time {
+	if p.Now != nil {
+		return p.Now()
+	}
+	return time.Now()
 }
 
 // Probed is a probe that passed: the address the host resolved to, and
@@ -146,13 +238,13 @@ type Probed struct {
 }
 
 // Probe checks a's shape and resolves its host (Resolve), then probes the
-// address it resolved to (ProbeAt).
+// address it resolved to (ProbeAt), with no pin.
 func (p Prober) Probe(ctx context.Context, a Address, user string) (Probed, error) {
 	ip, err := p.Resolve(ctx, a)
 	if err != nil {
 		return Probed{}, err
 	}
-	return p.ProbeAt(ctx, a, ip, user)
+	return p.ProbeAt(ctx, a, ip, user, Pin{})
 }
 
 // Resolve checks a's shape (ErrAddressInvalid), resolves its host once and
@@ -175,13 +267,14 @@ func (p Prober) Resolve(ctx context.Context, a Address) (netip.Addr, error) {
 
 // ProbeAt tries logins as user with a random password to ip, which Resolve
 // returned for a, the host name kept for TLS, with sslmode=verify-full:
-// first with channel_binding=require, then without. A login refused for
-// its password proves the server is reachable and its certificate
-// verifies; otherwise a *ReachError says why none did.
-func (p Prober) ProbeAt(ctx context.Context, a Address, ip netip.Addr, user string) (Probed, error) {
+// first with channel_binding=require, then without. With a pin (Approve),
+// the certificate is verified against it as if it were written already. A
+// login refused for its password proves the server is reachable and its
+// certificate verifies; otherwise a *ReachError says why none did.
+func (p Prober) ProbeAt(ctx context.Context, a Address, ip netip.Addr, user string, pin Pin) (Probed, error) {
 	var last error
 	for _, binding := range []bool{true, false} {
-		err := p.login(ctx, a, ip, user, binding)
+		err := p.login(ctx, a, ip, user, binding, pin)
 		if proves(binding, err) {
 			return Probed{IP: ip, ChannelBinding: binding}, nil
 		}
@@ -226,12 +319,12 @@ func reasonOf(err error) string {
 const serverRefusedTLS = "server refused TLS connection"
 
 // login tries one login bound to fail and closes it at once.
-func (p Prober) login(ctx context.Context, a Address, ip netip.Addr, user string, binding bool) error {
+func (p Prober) login(ctx context.Context, a Address, ip netip.Addr, user string, binding bool, pin Pin) error {
 	password := make([]byte, probePasswordBytes)
 	if _, err := rand.Read(password); err != nil {
 		return err
 	}
-	cfg, err := p.connConfig(a, ip, user, hex.EncodeToString(password), binding)
+	cfg, err := p.connConfig(a, ip, user, hex.EncodeToString(password), binding, pin)
 	if err != nil {
 		return err
 	}
@@ -244,9 +337,14 @@ func (p Prober) login(ctx context.Context, a Address, ip netip.Addr, user string
 	return conn.Close(ctx)
 }
 
-// connConfig is the connection to a as user with password, made to ip only.
-func (p Prober) connConfig(a Address, ip netip.Addr, user, password string, binding bool) (*pgx.ConnConfig, error) {
-	cfg, err := pgdial.ConnConfigTrusting(ConnString(a, user, password, binding), p.Profiles)
+// connConfig is the connection to a as user with password, made to ip only,
+// trusting pin as well when there is one.
+func (p Prober) connConfig(a Address, ip netip.Addr, user, password string, binding bool, pin Pin) (*pgx.ConnConfig, error) {
+	set := p.Profiles
+	if pin.Profile != nil {
+		set = p.profiles().Replacing(pin.Profile.Name, pin.Profile)
+	}
+	cfg, err := pgdial.ConnConfigTrusting(ConnString(a, user, password, binding), set)
 	if err != nil {
 		return nil, err
 	}

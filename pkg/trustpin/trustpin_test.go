@@ -12,13 +12,14 @@ import (
 	"io"
 	"math/big"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/trustpin"
+	"github.com/basaltdbhq/basaltdb/pkg/trustpin"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 	"github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest"
 )
@@ -139,4 +140,58 @@ func selfSigned(t *testing.T) *x509.Certificate {
 	c, err := x509.ParseCertificate(der)
 	require.NoError(t, err)
 	return c
+}
+
+// Approved pins only the top the person approved, and only one the chain
+// verifies against: verify-full when the leaf names the host, ca when not.
+func TestApproved(t *testing.T) {
+	t.Parallel()
+	const host = "db.example.com"
+	ca, cert := trustprofiletest.Chain(t, host)
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	require.NoError(t, err)
+	chain := []*x509.Certificate{leaf, ca}
+	fp := trustprofile.DERSHA256(ca)
+
+	seen, pin, err := trustpin.Approved(chain, host, time.Now(), fp)
+	require.NoError(t, err)
+	require.Equal(t, fp, seen.SHA256)
+	require.Equal(t, trustprofile.PinName(host), pin.Name)
+	require.Equal(t, []string{"=" + host}, pin.Match)
+	require.NotEqual(t, trustprofile.VerifyCA, pin.Verify)
+
+	_, pin, err = trustpin.Approved(chain, "203.0.113.7", time.Now(), fp)
+	require.NoError(t, err, "a leaf that does not name the host pins with verify: ca")
+	require.Equal(t, trustprofile.VerifyCA, pin.Verify)
+
+	other, _ := trustprofiletest.Chain(t, host)
+	for name, approved := range map[string]string{
+		"another root": trustprofile.DERSHA256(other),
+		"upper case":   strings.ToUpper(fp),
+		"with colons":  fp[:2] + ":" + fp[2:],
+		"empty":        "",
+	} {
+		_, pin, err := trustpin.Approved(chain, host, time.Now(), approved)
+		require.ErrorIs(t, err, trustpin.ErrMismatch, name)
+		require.Nil(t, pin, name)
+	}
+
+	// A top the leaf does not chain to cannot be pinned, even approved.
+	broken := []*x509.Certificate{leaf, other}
+	_, pin, err = trustpin.Approved(broken, host, time.Now(), trustprofile.DERSHA256(other))
+	require.ErrorIs(t, err, trustpin.ErrNotPinnable)
+	require.Nil(t, pin)
+}
+
+func TestValidSHA256AndSubject(t *testing.T) {
+	t.Parallel()
+	ca, _ := trustprofiletest.Chain(t, "x")
+	require.True(t, trustpin.ValidSHA256(trustprofile.DERSHA256(ca)))
+	require.False(t, trustpin.ValidSHA256(strings.Repeat("g", 64)))
+	require.False(t, trustpin.ValidSHA256(strings.Repeat("a", 63)))
+	seen := trustpin.Check([]*x509.Certificate{ca}, "x", time.Now())
+	require.Equal(t, "CN=trustprofiletest root", seen.Subject())
+	long := *ca
+	long.Subject = pkix.Name{CommonName: strings.Repeat("é", 600)}
+	require.Len(t, []rune(trustpin.Seen{Top: &long}.Subject()), 512)
 }

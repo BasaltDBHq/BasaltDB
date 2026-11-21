@@ -88,6 +88,11 @@ const (
 type Collected struct {
 	Address Address
 	Phase   string
+	// TrustRoot is the SHA-256 of the certificate authority the person
+	// trusted on the connect page for the address's host, or "". It adds
+	// no trust by itself: Prober.Approve checks it against the chain the
+	// engine reads.
+	TrustRoot string
 }
 
 // SetUp reports whether the address is the setup's own: only then may the
@@ -117,8 +122,9 @@ func (c *Client) Collect(ctx context.Context, setupID, fingerprint string) (Coll
 		return Collected{}, errors.New("the connect service answered without an address")
 	}
 	return Collected{
-		Address: Address{Host: t.GetHost(), Port: int(t.GetPort()), Database: t.GetDatabase(), SupabaseRef: t.GetSupabaseRef()},
-		Phase:   res.Msg.GetPhase(),
+		Address:   Address{Host: t.GetHost(), Port: int(t.GetPort()), Database: t.GetDatabase(), SupabaseRef: t.GetSupabaseRef()},
+		Phase:     res.Msg.GetPhase(),
+		TrustRoot: res.Msg.GetTrustRoot(),
 	}, nil
 }
 

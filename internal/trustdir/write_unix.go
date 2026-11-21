@@ -5,7 +5,6 @@ package trustdir
 import (
 	"crypto/x509"
 	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -201,10 +200,6 @@ func fileOwner(trusted int) int {
 	return trusted
 }
 
-// pinFingerprintLen is how much of a pinned certificate's fingerprint its
-// PEM file's name carries, so a new root gets a new file.
-const pinFingerprintLen = 16
-
 // Pin writes the exact-host operator profile for host (pin-<host>, match
 // =host) holding cert, the chain's top the person accepted, with verify:
 // ca when caOnly (a certificate that does not name the host). A pin for
@@ -213,13 +208,55 @@ const pinFingerprintLen = 16
 // A profile of that name for another host, or one that is not a pin, is
 // ErrExists. It returns the pin and the fingerprints it replaced.
 func Pin(configPath, host string, cert *x509.Certificate, caOnly bool) (*trustprofile.Profile, []string, error) {
-	pf, err := pinFiles(host, cert, caOnly)
+	pf, err := trustprofile.NewPin(host, cert, caOnly)
 	if err != nil {
 		return nil, nil, err
 	}
-	p, name, match, pemName, pemBytes, raw := pf.profile, pf.profile.Name, pf.profile.Match[0], pf.pemName, pf.pem, pf.json
 	var replaced []string
 	err = write(configPath, func(d *service.TrustedDir, trusted int) error {
+		var err error
+		replaced, err = writePin(d, trusted, pf)
+		return err
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return pf.Profile, replaced, nil
+}
+
+// ErrCovered: PinNew found a trust profile that covers the host already.
+var ErrCovered = errors.New("a trust profile covers this host already")
+
+// PinNew is Pin for a pin that may add trust and never replace it: under
+// the config lock, when a profile covers host (built-in or operator, a pin
+// included), it writes nothing and returns false when that profile is this
+// very pin, else ErrCovered naming it. True when it wrote the pin.
+func PinNew(configPath, host string, cert *x509.Certificate, caOnly bool) (bool, error) {
+	pf, err := trustprofile.NewPin(host, cert, caOnly)
+	if err != nil {
+		return false, err
+	}
+	wrote := false
+	err = write(configPath, func(d *service.TrustedDir, trusted int) error {
+		if cur := Set(configPath).For(host); cur != nil {
+			if cur.Name == pf.Profile.Name && slices.ContainsFunc(cur.Certificates(), cert.Equal) {
+				return nil
+			}
+			return fmt.Errorf("%w: %s covers %s", ErrCovered, cur.Name, host)
+		}
+		_, err := writePin(d, trusted, pf)
+		wrote = err == nil
+		return err
+	})
+	return wrote, err
+}
+
+// writePin writes pf in d, replacing the pin of the same name, and returns
+// the fingerprints it replaced. The config lock is held.
+func writePin(d *service.TrustedDir, trusted int, pf trustprofile.PinFiles) ([]string, error) {
+	name, match, pemName, pemBytes, raw := pf.Profile.Name, pf.Profile.Match[0], pf.PEMName, pf.PEM, pf.JSON
+	var replaced []string
+	err := func() error {
 		old, err := existingPin(d, name, match, trusted)
 		if err != nil {
 			return err
@@ -237,52 +274,16 @@ func Pin(configPath, host string, cert *x509.Certificate, caOnly bool) (*trustpr
 		}
 		replaced = old.fingerprints
 		return nil
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	return p, replaced, nil
-}
-
-// pinFile is a pin's profile and the files that hold it.
-type pinFile struct {
-	profile   *trustprofile.Profile
-	pemName   string
-	pem, json []byte
-}
-
-// pinFiles is the pin profile for host holding cert, as Pin writes it.
-func pinFiles(host string, cert *x509.Certificate, caOnly bool) (pinFile, error) {
-	h := trustprofile.NormalizeHost(host)
-	match, err := trustprofile.NormalizeMatch("=" + h)
-	if err != nil {
-		return pinFile{}, err
-	}
-	name := trustprofile.PinName(h)
-	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
-	pemName := name + "-" + trustprofile.DERSHA256(cert)[:pinFingerprintLen] + pemExt
-	spec := trustprofile.Spec{Name: name, Match: []string{match}, Roots: []trustprofile.RootSpec{{File: pemName, SHA256: trustprofile.FileSHA256(pemBytes)}}}
-	if caOnly {
-		spec.Verify = trustprofile.VerifyCA
-	}
-	raw, err := json.MarshalIndent(spec, "", "  ")
-	if err != nil {
-		return pinFile{}, err
-	}
-	raw = append(raw, '\n')
-	p, err := trustprofile.Parse(raw, trustprofile.Operator, func(string) ([]byte, error) { return pemBytes, nil })
-	if err != nil {
-		return pinFile{}, err
-	}
-	return pinFile{profile: p, pemName: pemName, pem: pemBytes, json: raw}, nil
+	}()
+	return replaced, err
 }
 
 // PinProfile is the pin profile Pin would write for host, built in memory
 // and written nowhere: basalt init verifies its admin connection with it
 // before the engine's trust.d is known.
 func PinProfile(host string, cert *x509.Certificate, caOnly bool) (*trustprofile.Profile, error) {
-	pf, err := pinFiles(host, cert, caOnly)
-	return pf.profile, err
+	pf, err := trustprofile.NewPin(host, cert, caOnly)
+	return pf.Profile, err
 }
 
 // oldPin is the pin a Pin replaces: its roots files and the fingerprints of

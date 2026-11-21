@@ -373,6 +373,41 @@ func TestInitSetupCodeAgentCodeReplacesTheTables(t *testing.T) {
 	require.True(t, agentLogsIn(t, install.credFile, change.res.SetupID), "the password stays")
 }
 
+// TestInitSetupCodeYesOnlyTheAgentsRLSTables: --setup-code --yes gives the
+// agent all rows of its own RLS tables only. A table its role can already
+// SELECT through PUBLIC, with RLS as the only barrier, gets no policy when
+// the code does not list it, and a read table never gets a write policy.
+// The connect page asks the same questions, so its answers cannot name it.
+func TestInitSetupCodeYesOnlyTheAgentsRLSTables(t *testing.T) {
+	t.Parallel()
+	d, dbURL := remoteDB(t)
+	cfg := tempConfig(t)
+	installed(t, d, dbURL, cfg, "--write", "public.leads")
+	d.Exec(t, `ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
+		ALTER TABLE public.payroll ENABLE ROW LEVEL SECURITY;
+		GRANT SELECT ON public.payroll TO PUBLIC`)
+	role := d.Names.Prefix + "_agent_bot"
+	policies := func(table string) int {
+		var n int
+		require.NoError(t, d.Admin.QueryRow(context.Background(),
+			`SELECT count(1)::int FROM pg_policy WHERE polrelid = $1::regclass AND $2 = ANY (polroles::regrole[]::text[])`, table, role).Scan(&n))
+		return n
+	}
+
+	// No --write list: the empty list must not mean every table the role can read.
+	change := remoteDBRun(t, cfg, "--agent", "bot", "--read", "public.leads", "--prefix", d.Names.Prefix)
+	require.Equal(t, "AGENT", change.res.Kind)
+	r := laptopRun(t, d.URL, "", time.Time{}, "--setup-code", change.res.Code, "--yes")
+	require.Equal(t, exitOK, r.code, r.stderr)
+	require.NotContains(t, r.stdout+r.stderr, "payroll")
+	require.Equal(t, 1, policies("public.leads"))
+	require.Zero(t, policies("public.payroll"))
+	var cmd string
+	require.NoError(t, d.Admin.QueryRow(context.Background(),
+		`SELECT polcmd::text FROM pg_policy WHERE polrelid = 'public.leads'::regclass AND polname = $1`, role).Scan(&cmd))
+	require.Equal(t, "r", cmd, "a read table gets a SELECT policy, never FOR ALL")
+}
+
 func TestInitSetupCodeUpgrade(t *testing.T) {
 	guardtest.NextVersion(t, false) // a breaking version 2: the build has one version
 	d, dbURL := remoteDB(t)

@@ -97,14 +97,45 @@ test("a request the engine altered is refused over the relay as on loopback, bef
 });
 
 test("on the relay path no page falls back to a code to paste", async () => {
-  const { pastesCode, RELAY_RETRY } = await import("./page.js");
+  const { pastesCode, relayRetry, RELAY_NO_ANSWER, RELAY_REFUSED } = await import("./page.js");
   assert.equal(pastesCode({ transport: "RELAY" }), false);
   assert.equal(pastesCode(sameOriginSession(async () => new Response("{}"))), true);
-  assert.doesNotMatch(RELAY_RETRY, /paste/i);
+  for (const text of [RELAY_REFUSED, RELAY_NO_ANSWER]) assert.doesNotMatch(text, /paste/i);
   for (const f of ["approve.js", "revert.js"]) {
     const src = readFileSync(new URL(`./${f}`, import.meta.url), "utf8");
-    assert.match(src, /if \(!pastesCode\(relay\.session\)\) \{\n\s+showRelayFailed\([^\n]*RELAY_RETRY/, f);
+    assert.match(src, /if \(!pastesCode\(relay\.session\)\) \{\n\s+showRelayFailed\([^\n]*relayRetry\(err\)/, f);
   }
+
+  // Only an answer from the engine says nothing was signed: a refusal with
+  // its HTTP status. A session that dropped after the request went out may
+  // have been applied, and the page says it cannot tell.
+  for (const [status, body] of [[409, { code: "APPROVAL_INVALID", message: "used" }], [410, { code: "APPROVAL_EXPIRED", message: "expired" }], [400, { code: "INVALID_ARGUMENT", message: "bad" }]]) {
+    const [, relay] = await both(status, body, (s) => postResponse(s, relayPaths("approvals", id).relay, SECRET, "{}"));
+    assert.equal(relayRetry(relay.err), RELAY_REFUSED, String(status));
+  }
+  const dropped = relayTransport({
+    socket: () => assert.fail("no socket"),
+    pageHide: () => {},
+    open: async () => ({
+      engineId: ENGINE,
+      engineKey: "k",
+      ended: null,
+      nextId: 0,
+      async request() {
+        this.ended = Object.assign(new Error("dropped"), { name: "ChannelError", code: "CONNECTION_FAILED" });
+        throw this.ended;
+      },
+      close() {},
+    }),
+  });
+  const session = await dropped.open({ page: "approvals", id, secret: SECRET });
+  const err = await postResponse(session, relayPaths("approvals", id).relay, SECRET, "{}").then(
+    () => assert.fail("posted"),
+    (e) => e,
+  );
+  assert.equal(relayRetry(err), RELAY_NO_ANSWER);
+  assert.match(RELAY_NO_ANSWER, /cannot tell whether the signature went through/);
+  assert.match(RELAY_NO_ANSWER, /Open the link again: it shows whether it was signed/);
 });
 
 test("registration and the plugin page never use the relay", () => {

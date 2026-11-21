@@ -2,6 +2,7 @@
 // into the page through textContent, never innerHTML: every value on these
 // pages came from a link someone else built.
 import { checkReceipt, RELAY, fingerprint as engineFingerprint } from "./channel.js";
+import { visibleText } from "./codec.js";
 import { readPaste, repairHash } from "./repair.js";
 import { BlockAssembler, HASH_PREFIX, MAX_REQUEST_FILE_BYTES, readRequestFile } from "./requestfile.js";
 
@@ -239,41 +240,57 @@ export async function openSession(transport, link) {
   }
 }
 
-// Why an answer carries no receipt (CONTRACT.md, Receipts, No receipt).
-const NO_RECEIPT = {
-  KEY_ERROR: "No receipt: the engine's key file is refused (basalt status shows KEY_ERROR), so nothing confirms what was signed.",
-  WIDENED: "No receipt: the revert's scope was changed on this page, so the engine cannot name its rows. If you did not change it, tell the agent at once.",
-};
+// noReceiptText is why an answer carries no receipt (CONTRACT.md,
+// Receipts, No receipt), as the engine's receipt line says it.
+function noReceiptText(result) {
+  switch (result.noReceipt) {
+    case "KEY_ERROR":
+      return "No receipt: the engine's key file is refused (basalt status shows KEY_ERROR), so nothing confirms what was signed.";
+    case "WIDENED": {
+      const rows = result.batched ? `${result.pending ?? 0} rows to restore in batches` : `${result.rows ?? 0} rows restored`;
+      return `No receipt: the revert's scope was changed on the signing page (${rows}). If you did not change it, tell the agent at once.`;
+    }
+    default:
+      return visibleText(`No receipt: ${result.noReceipt}.`);
+  }
+}
 
 export const RECEIPT_REFUSED =
-  "The engine's receipt does not check against the key of this session, so this page shows nothing from it. Tell the agent.";
+  "The engine's receipt does not check against the key of this session or does not name what this page signed, " +
+  "so this page shows nothing from it. Tell the agent.";
 
 // receiptText is what the page says of a receipt it checked against the
 // session's own key: what the engine says was signed, and the fingerprint
 // to compare with the one in the chat. It never calls the receipt verified:
 // on the relay the session's key is not pinned (CONTRACT.md, Receipts, In
 // the page), so only the person's comparison checks which engine signed.
+// The headline is the engine's text: it goes through visibleText.
 export function receiptText(payload, fp) {
   const kind = payload.kind === "REVERT" ? "revert" : "approval";
-  return `Receipt from the engine with fingerprint ${fp}: ${payload.headline} (${kind} ${payload.itemId}, ${payload.status}). ` +
+  return `Receipt from the engine with fingerprint ${fp}: ${visibleText(payload.headline)} (${kind} ${payload.itemId}, ${payload.status}). ` +
     "Compare this fingerprint with the one the agent showed you in the chat; this page cannot tell on its own which engine signed it.";
 }
 
 // receiptLine is the line for an approve or apply answer on a session:
-// the receipt checked against the session's key, why there is none, or
-// nothing (a same-origin page, an answer without either).
-export async function receiptLine(result, session) {
+// the receipt checked against the session's key and against what the page
+// signed (expect: kind APPROVAL or REVERT, itemId and the binding's
+// rowsHash), why there is none, or nothing (a same-origin page, an answer
+// without either). A receipt for another item, kind or set of rows is
+// refused like one that does not verify.
+export async function receiptLine(result, session, expect) {
   const engine = session?.engine;
   if (!engine?.engineKey) return "";
-  if (typeof result?.noReceipt === "string") return NO_RECEIPT[result.noReceipt] ?? `No receipt: ${result.noReceipt}.`;
+  if (typeof result?.noReceipt === "string") return noReceiptText(result);
   if (typeof result?.receipt !== "string") return "";
   const payload = await checkReceipt(result.receipt, engine.engineKey);
-  return payload === null ? RECEIPT_REFUSED : receiptText(payload, engineFingerprint(engine.engineId));
+  if (payload === null) return RECEIPT_REFUSED;
+  if (payload.kind !== expect?.kind || payload.itemId !== expect?.itemId || payload.rowsHash !== expect?.rowsHash) return RECEIPT_REFUSED;
+  return receiptText(payload, engineFingerprint(engine.engineId));
 }
 
 // showReceipt shows receiptLine's text, when there is one.
-export async function showReceipt(result, session) {
-  const text = await receiptLine(result, session);
+export async function showReceipt(result, session, expect) {
+  const text = await receiptLine(result, session, expect);
   if (text === "") return;
   $("receipt").textContent = text;
   $("receipt").hidden = false;
@@ -287,9 +304,19 @@ export function pastesCode(session) {
   return session?.transport !== RELAY;
 }
 
-// RELAY_RETRY is what a portal page says after the engine did not take a
-// relayed signature.
-export const RELAY_RETRY = "Nothing was signed through this page. Open the link again to sign again, or ask the agent for a new link.";
+// What a portal page says after a relayed signature failed. The engine
+// answered with a refusal (an HTTP status): nothing was signed. No answer
+// came (the session dropped after the request may have gone out): the page
+// cannot tell, and the link shows whether it went through.
+export const RELAY_REFUSED = "Nothing was signed through this page. Open the link again to sign again, or ask the agent for a new link.";
+export const RELAY_NO_ANSWER =
+  "This page did not hear back from the engine, so it cannot tell whether the signature went through. " +
+  "Open the link again: it shows whether it was signed.";
+
+// relayRetry is the sentence for err, a relayed signature that failed.
+export function relayRetry(err) {
+  return err?.name === "RelayError" && err.status > 0 ? RELAY_REFUSED : RELAY_NO_ANSWER;
+}
 
 // showDone says the engine took the signature: nothing to paste.
 export function showDone(message) {

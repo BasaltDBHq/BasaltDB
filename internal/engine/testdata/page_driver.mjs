@@ -38,6 +38,9 @@ const transport = relayTransport({
 });
 
 let session = null;
+// read keeps each item's checked request: what the page signs and the
+// receipt must name.
+const read = new Map();
 const noWait = async () => {};
 
 const pages = {
@@ -53,6 +56,7 @@ async function run(c) {
     case "read": {
       const p = pages[c.kind];
       const req = await p.check(await fetchRequest(session, p.paths(c.id).request, c.secret, noWait));
+      read.set(c.id, req);
       return { id: req[p.idField], challenge: b64urlEncode(req.challenge), credentialIds: req.credentialIds.map((b) => b64urlEncode(b)), rows: req.binding?.rows ?? null };
     }
     case "sign": {
@@ -66,7 +70,8 @@ async function run(c) {
         signature: b64urlDecode(a.signature),
       };
       const result = await postResponse(session, p.paths(c.id).relay, c.secret, p.json(response));
-      return { result, receiptLine: await receiptLine(result, session) };
+      const expect = { kind: c.kind === "approvals" ? "APPROVAL" : "REVERT", itemId: c.id, rowsHash: read.get(c.id)?.binding.rowsHash };
+      return { result, receiptLine: await receiptLine(result, session, expect) };
     }
     case "request": {
       const headers = { "basalt-link-secret": c.secret };

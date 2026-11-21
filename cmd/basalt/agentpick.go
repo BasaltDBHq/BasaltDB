@@ -16,9 +16,9 @@ import (
 )
 
 // needsAgent reports whether nothing names the agent: no --agent, no
-// --credential-file and no BASALT_DATABASE_URL.
+// credential given and no BASALT_DATABASE_URL.
 func (c *cliIO) needsAgent(agent, credFile string) bool {
-	return agent == "" && credFile == "" && c.getenv(envAgentURL) == ""
+	return agent == "" && credFile == "" && c.paths.credFile == "" && c.getenv(envAgentURL) == ""
 }
 
 // configuredAgents are the agents this person can name: in service mode
@@ -26,7 +26,7 @@ func (c *cliIO) needsAgent(agent, credFile string) bool {
 // read engine.json, but can list that directory), else the agents of the
 // engine config.
 func (c *cliIO) configuredAgents(configPath string) ([]string, error) {
-	if configPath == config.DefaultPath(c.goos) && c.engine.unitInstalled() {
+	if configPath == c.systemConfig() && c.engine.unitInstalled() {
 		entries, err := os.ReadDir(filepath.Dir(c.engine.personSocket))
 		if err != nil {
 			return nil, err
@@ -52,7 +52,7 @@ func (c *cliIO) configuredAgents(configPath string) ([]string, error) {
 }
 
 // errNoAgentNamed is the usage error when the agent cannot be picked.
-var errNoAgentNamed = fmt.Errorf("%w: give --agent, --credential-file or %s", errUsage, envAgentURL)
+var errNoAgentNamed = fmt.Errorf("%w: give --agent or %s", errUsage, envAgentURL)
 
 // pickAgent is the agent a code belongs to when the person named none:
 // the only configured agent, else the one whose ledger owns the item the

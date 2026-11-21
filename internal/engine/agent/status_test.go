@@ -363,7 +363,7 @@ func requireProblemObeysCatalog(t *testing.T, statusTool mcpcontract.Tool, code 
 			require.NotEmpty(t, st.Text, where)
 			continue
 		}
-		requireStepObeysRules(t, st, catalogCase{tool: toolStatus, args: map[string]any{}}, "", where)
+		requireStepObeysRules(t, st, catalogCase{tool: toolStatus, args: map[string]any{}}, where)
 	}
 	require.Equal(t, entry.Severity != mcpcontract.SeverityError, r.Ready, "ready exactly when no ERROR problem")
 	for i := 1; i < len(r.Problems); i++ {

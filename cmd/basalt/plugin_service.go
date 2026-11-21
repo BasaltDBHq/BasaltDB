@@ -42,7 +42,7 @@ const maxSourceBytes = 256 << 20
 func (c *cliIO) pluginViaSocket(configPath string) bool {
 	want := c.engine.configPath
 	if want == "" {
-		want = config.DefaultPath(c.goos)
+		want = c.systemConfig()
 	}
 	return c.host.Euid() != 0 && c.engine.unitInstalled != nil && configPath == want && c.engine.unitInstalled()
 }
@@ -56,7 +56,7 @@ func socketPluginEnv(c *cliIO) (*pluginEnv, error) {
 		return nil, socketError(c, err)
 	}
 	return &pluginEnv{
-		c: c, configPath: cmpOr(c.engine.configPath, config.DefaultPath(c.goos)), cfg: config.Config{Mode: config.ModeService},
+		c: c, configPath: cmpOr(c.engine.configPath, c.systemConfig()), cfg: config.Config{Mode: config.ModeService},
 		mode: plugin.ModeService, sock: &client, pages: pages,
 	}, nil
 }
@@ -79,7 +79,7 @@ func socketError(c *cliIO, err error) error {
 }
 
 func startCommand(c *cliIO) string {
-	cmds, err := (&pluginEnv{c: c, configPath: config.DefaultPath(c.goos), cfg: config.Config{Mode: config.ModeService}}).commandsFor("")
+	cmds, err := (&pluginEnv{c: c, configPath: c.systemConfig(), cfg: config.Config{Mode: config.ModeService}}).commandsFor("")
 	if err != nil {
 		return "the engine's service"
 	}

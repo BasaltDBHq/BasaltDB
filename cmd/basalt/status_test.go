@@ -62,7 +62,7 @@ func TestStatusShowsAnOutdatedGuardAndTheUpgradeCommand(t *testing.T) {
 	breaking := latestBreaking(t)
 	older := breaking - 1
 	g := newOlderGuard(t, older)
-	upgrade := "basalt upgrade --agent bot --config " + g.configPath
+	upgrade := "basalt upgrade --agent bot"
 
 	r := g.status(t, "--json")
 	require.Equal(t, exitOK, r.code, r.stderr)
@@ -285,33 +285,6 @@ func TestUpgradeJudgesTheGuardByThisBuildNotTheRunningEngines(t *testing.T) {
 	require.NotContains(t, r.stderr, "nothing to upgrade")
 	require.Contains(t, r.stdout, setupcode.UpgradeLine(latest-1, latest))
 	require.Equal(t, latest, g.version(t))
-}
-
-// A credential file outside the default is saved in initArgs (AE-15): its
-// path may appear as that flag in an init command, never on its own, and
-// its contents never.
-func TestStatusNamesANonDefaultCredentialFileOnlyAsTheSavedFlag(t *testing.T) {
-	t.Parallel()
-	g := newOlderGuard(t, 0)
-	custom := filepath.Join(filepath.Dir(g.configPath), "custom-cred.url")
-	require.NoError(t, os.Rename(g.credFile, custom))
-	cfg, err := config.Load(g.configPath)
-	require.NoError(t, err)
-	cfg.Agents[0].Store.CredentialFile = custom
-	cfg.Agents[0].InitArgs = append(cfg.Agents[0].InitArgs, "--credential-file="+custom)
-	raw, err := json.Marshal(cfg)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(g.configPath, raw, 0o600))
-
-	for _, args := range [][]string{{"--json"}, nil} {
-		r := g.status(t, args...)
-		require.Equal(t, exitOK, r.code, r.stderr)
-		out := r.stdout + r.stderr
-		g.requireNoSecret(t, out)
-		require.Contains(t, out, "--credential-file="+custom, "NO_PASSKEY's init command carries the saved flag")
-		require.Equal(t, strings.Count(out, custom), strings.Count(out, "--credential-file="+custom),
-			"the path appears only as the saved flag")
-	}
 }
 
 func TestStatusSaysUnknownForALockFileItCannotOpen(t *testing.T) {

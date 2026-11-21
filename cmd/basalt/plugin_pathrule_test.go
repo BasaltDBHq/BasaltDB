@@ -50,7 +50,7 @@ func TestAddRefusesAWritableDirectoryAsUnsafePath(t *testing.T) {
 	words := strings.ReplaceAll(strings.ReplaceAll(body.PersonMessage, body.NextSteps[1].Command, ""), e.root, "")
 	require.LessOrEqual(t, len(words), 300, words)
 	requireNoTrustStep(t, body)
-	require.Equal(t, "basalt plugin add "+e.src+" --agents product_a --config "+e.configPath, body.NextSteps[1].Command)
+	require.Equal(t, "basalt plugin add "+e.src+" --agents product_a", body.NextSteps[1].Command)
 	require.Contains(t, body.NextSteps[0].Text, e.root)
 }
 

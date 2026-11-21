@@ -30,10 +30,10 @@ basalt init --remote --operated-by=agent --vault=off \
 
 - `--write` lists the tables you read and write. `--read` lists the tables you only read.
 - `--vault=off` keeps the free path: the person signs on `portal.basaltvault.app` and pastes codes back. The hosted relay is coming later.
-- Without root, init keeps the config and the sockets in your own config directory: `engine.json` in `basalt` inside your user config directory (`${XDG_CONFIG_HOME:-$HOME/.config}/basalt/engine.json` on Linux, `$HOME/Library/Application Support/basalt/engine.json` on macOS). Init does not print it. With `--config <dir>/engine.json`, the config goes there and the sockets go in `<dir>/run`. Without `--config`, `basalt status`, `log`, `approve`, `revert`, `access`, `upgrade`, `passkey list`, `passkey check`, `mcp` and `engine` find the per-user config when no system config is installed.
+- Without root, init keeps the config and the sockets in your own config directory: `engine.json` in `basalt` inside your user config directory (`${XDG_CONFIG_HOME:-$HOME/.config}/basalt/engine.json` on Linux, `$HOME/Library/Application Support/basalt/engine.json` on macOS). With `--config <dir>/engine.json`, the config goes there and the sockets go in `<dir>/run`. Without `--config`, `basalt status`, `log`, `approve`, `revert`, `access`, `upgrade`, `passkey list`, `passkey check`, `mcp` and `engine` find the per-user config when no system config is installed.
 - A URL with a password is refused. Do not work around it.
 
-The command prints a setup code (`basalt-setup.1.…`) and a setup fingerprint. It does not install or start the engine. Add `--json` to get a `personMessage` and `nextSteps`.
+The command prints a setup code (`basalt-setup.1.…`), a setup fingerprint, and the `basalt mcp` command to register in your agent app. It does not install or start the engine. Add `--json` to get a `personMessage`, `nextSteps`, and `mcpCommand` (the same command as an argv array). The command is `basalt mcp --agent NAME`, plus `--socket-dir` and `--config` exactly when `basalt mcp` would not find them by default.
 
 If the code already exists and is still valid, the same command prints it again. `--new-code` makes a new one.
 
@@ -86,7 +86,7 @@ To keep the engine up across reboots on a Linux server with systemd, install it 
    basalt status --agent NAME
    ```
 
-   `basalt status --agent NAME` needs no `sudo`. Point your MCP client at `basalt mcp --agent NAME`.
+   `basalt status --agent NAME` needs no `sudo`. Point your MCP client at the `basalt mcp` command init printed (`basalt mcp --agent NAME` with the default paths).
 
 Run `sudo basalt init --remote` again with the same flags when you need a new code, then restart the service as in step 3, so the engine reads the new config.
 
@@ -112,15 +112,9 @@ Some bot computers have no systemd, no cron and no Docker, and start nothing at 
      --database-url 'postgresql://postgres.<ref>@<host>:6543/postgres'
    ```
 
-   The config, the engine's key and the state go under `/workspace/basalt`: `engine.json`, `state/` and, for the sockets, `run/`. Send the code to the person as step 3 says.
+   The config, the engine's key and the state go under `/workspace/basalt`: `engine.json`, `state/` and, for the sockets, `run/`. Send the code to the person as step 3 says. Init also prints the `basalt mcp` command; with `--json` it is `mcpCommand`.
 
-3. Register this MCP server in your agent app, with the binary's full path and both folders:
-
-   ```sh
-   /workspace/basalt/bin/basalt mcp --agent NAME --socket-dir /workspace/basalt/run --config /workspace/basalt/engine.json
-   ```
-
-   `--config` is how `basalt mcp` finds the engine's config when the engine is down, so that it can start it.
+3. Register that printed `basalt mcp` command in your agent app. If you copied the binary into the surviving folder, use that path in place of `basalt`. The printed command already has `--socket-dir` and `--config` when `basalt mcp` would not find them by default, so that it can start the engine when it is down.
 
 What happens from then on:
 

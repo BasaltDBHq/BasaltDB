@@ -148,13 +148,17 @@ type RemoteInitResult struct {
 	// with the Vault on and the whole link fits the link budget
 	// (CONTRACT.md, Connect, The connect link). Links are PersonMessage's
 	// URLs, set exactly when it holds one.
-	ConnectURL string           `json:"connectUrl,omitempty"`
-	Links      []mcp.Link       `json:"links,omitempty"`
+	ConnectURL string     `json:"connectUrl,omitempty"`
+	Links      []mcp.Link `json:"links,omitempty"`
+	// MCPCommand is the basalt mcp command the agent registers, as argv.
+	MCPCommand []string         `json:"mcpCommand"`
 	NextSteps  []agent.NextStep `json:"nextSteps"`
 	// pasteAtPortal: the engine would hand the connect link but the whole
 	// link does not fit the budget, so the text output says to paste the
 	// code at the connect page instead.
 	pasteAtPortal bool
+	// osUser is the OS user the MCP command runs as, for the text output.
+	osUser string
 }
 
 // isRemote reports whether args ask for basalt init --remote.
@@ -1218,9 +1222,21 @@ func (r *remoteInit) result(s config.Setup, reused bool) (RemoteInitResult, erro
 		Agent: r.f.agent, SetupID: s.SetupID, Kind: s.Kind, Code: s.Code, Fingerprint: s.Fingerprint,
 		Reused: reused, ExpiresAt: s.ExpiresAt, PersonMessage: setupPersonMessage(r.f.agent, s.Fingerprint),
 	}
+	var err error
 	if s.AwaitingAddress {
-		return r.connectOnlyResult(res, s)
+		res, err = r.connectOnlyResult(res, s)
+	} else {
+		res, err = r.withSetupGuidance(res, s)
 	}
+	if err != nil {
+		return RemoteInitResult{}, err
+	}
+	return r.withMCP(res), nil
+}
+
+// withSetupGuidance is the person message, connect link and steps of a
+// code that is not connect-only.
+func (r *remoteInit) withSetupGuidance(res RemoteInitResult, s config.Setup) (RemoteInitResult, error) {
 	// An agent-operated engine with the Vault on hands the connect link
 	// first when the whole link fits the budget (no network call: the link
 	// only holds the code); else the text says where to paste the code.
@@ -1236,6 +1252,14 @@ func (r *remoteInit) result(s config.Setup, reused bool) (RemoteInitResult, erro
 	}
 	res.NextSteps = steps
 	return res, nil
+}
+
+// withMCP adds the basalt mcp command the agent registers, and the OS user
+// the text output names.
+func (r *remoteInit) withMCP(res RemoteInitResult) RemoteInitResult {
+	res.osUser = r.osUser
+	res.MCPCommand = remoteMCPArgs(r.f.agent, r.f.configPath, r.settings.SocketDir, r.c.goos, r.c.host)
+	return res
 }
 
 // connectOnlyResult is the result of a connect-only code: the connect link
@@ -1313,7 +1337,10 @@ func printRemoteResult(c *cliIO, f remoteFlags, res RemoteInitResult) error {
 		return err
 	}
 	if res.ConnectOnly {
-		return printConnectOnly(c, res, expires)
+		if err := printConnectOnly(c, res, expires); err != nil {
+			return err
+		}
+		return printRemoteMCP(c, res)
 	}
 	_, err = fmt.Fprintf(c.stdout, "Setup code for %s (%s), valid until %s:\n\n%s\n\nSetup fingerprint: %s\n\n%s\n",
 		res.Agent, res.Kind, expires.UTC().Format("2006-01-02 15:04 UTC"), res.Code, res.Fingerprint, res.PersonMessage)
@@ -1322,6 +1349,16 @@ func printRemoteResult(c *cliIO, f remoteFlags, res RemoteInitResult) error {
 		// pasted at the connect page instead.
 		_, err = fmt.Fprintf(c.stdout, "\nTo use Basalt Vault, a hosted service, paste the setup code at %s.\n", strings.TrimPrefix(links.Portal+links.ConnectPath, "https://"))
 	}
+	if err != nil {
+		return err
+	}
+	return printRemoteMCP(c, res)
+}
+
+// printRemoteMCP prints the basalt mcp command the agent registers.
+func printRemoteMCP(c *cliIO, res RemoteInitResult) error {
+	_, err := fmt.Fprintf(c.stdout, "then add this MCP server to the agent's client, running as OS user %s:\n  %s\n",
+		res.osUser, shellJoin(res.MCPCommand))
 	return err
 }
 

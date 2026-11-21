@@ -129,7 +129,7 @@ basalt init --agent demo_bot \
 2. It prints a short summary of the setup SQL (pass `--show-sql` to print the SQL), then `Run this SQL as postgres? [y/N]`. Type `y`.
 3. `basalt: guard installed; agent role basalt_agent_demo_bot`
 4. It prints a `http://localhost:8787/passkeys/register#...` link. Open it, press the button, confirm with your passkey, copy the `basalt-passkey.1....` code the page shows, and paste it at `Paste the code the page shows:`. Then `basalt: passkey registered for localhost`.
-5. `Install the engine as a background service? This creates the OS user _basalt and needs your password once. [Y/n]` Press Enter. (On Linux the user is `basalt`.) Init runs one `sudo`, installs and starts the service, then checks it:
+5. `Install the engine as a background service? This creates the OS user _basalt and asks for your password twice: in the system's administrator dialog, then in this terminal. [Y/n]` Press Enter. (On Linux the user is `basalt`.) On a first install the system's administrator dialog asks for your password and installs the service (without a desktop session init stops here); then init runs one `sudo` for the agent's config and credential, restarts the service, then checks it:
 
    `basalt: engine running as _basalt; it answered on /Library/Application Support/Basalt/run/demo_bot.sock` (on Linux, `/run/basalt/demo_bot.sock`)
 

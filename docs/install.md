@@ -79,6 +79,16 @@ Fill in `[PASSWORD]` with your database password, URL-encoding characters such a
 
 **Plain Postgres.** `postgresql://postgres:PASSWORD@HOST:5432/DBNAME?sslmode=require`
 
+### Databases signed by their own CA
+
+Basalt checks the database's certificate whenever it can. Supabase and Amazon RDS sign with their own roots, which Basalt carries, so their hosts verify with no extra step. Google Cloud SQL, DigitalOcean, Aiven and self-signed databases use a CA per instance or project. Download that CA from your provider and add it as a trust profile on the engine's machine:
+
+```sh
+basalt trust add --name mydb --match '=db.example.com' --ca ./ca.pem
+```
+
+`--match` takes one host (`=db.example.com`) or a domain whose hosts it covers (`example.com`), never a bare public suffix such as `com`. Use `sudo` when the engine runs as a service. The engine uses the profile from its next connection; no restart. `basalt trust list` shows every profile, its roots' fingerprints and expiry dates, and which one verifies each agent's database. `basalt status` warns 90 days before a root in use expires. Naming the CA with `sslrootcert=/path/ca.pem` in the connection string still works and wins over any profile.
+
 ### Connections
 
 Each agent's engine opens up to 4 connections to the database, plus 1 while `basalt status` runs. Postgres caps each agent role at 8 connections (`CONNECTION LIMIT 8`).

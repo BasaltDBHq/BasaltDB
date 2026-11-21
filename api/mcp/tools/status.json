@@ -241,6 +241,38 @@
           }
         }
       },
+      "trust": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["host", "applies"],
+        "description": "What verifies the agent's database certificate now (CONTRACT.md, Trust profiles), for the first host of its connection string. Absent when the engine is down.",
+        "properties": {
+          "host": { "type": "string", "description": "The host as the connection string names it." },
+          "applies": {
+            "type": "string",
+            "enum": ["PROFILE", "SSLROOTCERT", "SYSTEM", "NOT_VERIFIED"],
+            "description": "PROFILE: a trust profile's roots with the system's authorities. SSLROOTCERT: the roots the connection string names (sslrootcert, PGSSLROOTCERT, ~/.postgresql/root.crt). SYSTEM: the system's authorities alone. NOT_VERIFIED: sslmode is below verify-full, so the host name is not checked and no profile applies."
+          },
+          "profile": { "type": "string", "description": "The profile's name, when applies is PROFILE." },
+          "origin": { "type": "string", "enum": ["BUILT_IN", "OPERATOR"], "description": "BUILT_IN: embedded in this build. OPERATOR: a file in trust.d." },
+          "rootCount": { "type": "integer", "minimum": 1, "description": "How many roots the profile holds." },
+          "roots": {
+            "type": "array",
+            "maxItems": 8,
+            "description": "Up to 8 of the profile's roots, those that expire first.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["subject", "sha256", "notAfter"],
+              "properties": {
+                "subject": { "type": "string" },
+                "sha256": { "type": "string", "description": "SHA-256 of the certificate's DER, uppercase hex pairs joined by colons." },
+                "notAfter": { "type": "string", "format": "date-time", "description": "RFC 3339 UTC." }
+              }
+            }
+          }
+        }
+      },
       "engineRecord": {
         "type": "object",
         "additionalProperties": false,
@@ -325,9 +357,12 @@
                 "PLUGIN_APPROVAL_EXPIRED",
                 "PLUGIN_APPROVAL_MISMATCH",
                 "PLUGIN_CONFIG_INVALID",
-                "PLUGIN_NOTICES_DROPPED"
+                "PLUGIN_NOTICES_DROPPED",
+                "CERTIFICATE_NOT_VERIFIED",
+                "TRUST_ROOT_EXPIRING",
+                "TRUST_PROFILE_REFUSED"
               ],
-              "description": "PORTAL_MISMATCH (CONTRACT.md, CLI, basalt portal verify): the engine's daily check found the portal serving pages other than the ones this build embeds. DEV_LOCAL_PAGES (CONTRACT.md, Page origins): the engine.json devLocalPages development exception is on, so the pages are on the agent's machine. ENGINE_REVOKED (CONTRACT.md, Direct transport): the agent's database revoked this engine's key. DIRECT_NOT_SERVED (CONTRACT.md, Direct transport): the agent's database records an address for this engine, but directAddr is off, so a tunnel has nothing to forward to. LOCK_FILE_UNUSABLE (CONTRACT.md, On the engine, Lock files): the engine cannot open engine.json.lock or the agent's credential lock, so a finished setup is not written back. LEDGER_REINSTALLED (CONTRACT.md, Version 36): the ledger records that the guard was installed again and an engine set its pin of the old ledger aside; personMessage is the reinstall notice, to show the person as it is. PLUGIN_UNAVAILABLE (CONTRACT.md, Plugins): an enabled plugin entry for this agent is not ready, so a wire.detect plugin fails the agent's requests to the AI provider closed until it is back or disabled. PLUGIN_NOT_TRUSTED (CONTRACT.md, Plugins): the engine refused to start a plugin entry for this agent because its signature, file hashes or file permissions failed, or, in service mode, an agent's OS user is in the engine's group. PLUGIN_AWAITING_APPROVAL, PLUGIN_APPROVAL_EXPIRED and PLUGIN_APPROVAL_MISMATCH (CONTRACT.md, Plugins, Plugin approvals at engine start): an entry that requires a passkey approval is withheld from this agent because no signed approval names it, its approval expired unsigned, or its signed approval does not match the installed copy or config (the message names the fields that differ). A withheld entry blocks none of the agent calls. PLUGIN_CONFIG_INVALID (CONTRACT.md, Plugins, Plugin changes while the engine runs): engine.json changed while the engine runs and its plugins cannot be read, so the engine applies no plugin change and every plugin keeps its state. PLUGIN_NOTICES_DROPPED (Planned; CONTRACT.md, Plugins, Notifier messages): an approval.deliver entry for this agent dropped notices in the last 24 hours; the message names the entry and how many, never what they were about. The agent's answers carried the links all along. For a connect-only setup (CONTRACT.md, Setup from your laptop, The engine and a connect-only code): CONFIRM_DATABASE: the engine collected the database's address and asks the person, through the agent, to confirm it before it logs in. DATABASE_REFUSED: the person said no; a new code is needed. DATABASE_UNREACHABLE_FROM_BOT: the setup ran, but the engine's machine cannot reach that database (a firewall allow-list, an IPv6-only host); the person runs the same link again with a reachable connection string. ADDRESS_INVALID: the address the connect service handed over breaks the engine's own address rules, so nothing of it is shown. SETUP_NOT_FOUND: after the person confirmed, the engine logged in but the database does not record its setup. CLOCK_SKEW: the connect service refused the engine's collect request because the engine's clock is more than 5 minutes off. ENGINE_AS_ROOT: the engine runs as root without --user, so it does not collect this agent's address; the engine's other agents are served as usual."
+              "description": "CERTIFICATE_NOT_VERIFIED, TRUST_ROOT_EXPIRING and TRUST_PROFILE_REFUSED (CONTRACT.md, Trust profiles): the agent's database presents a certificate that verifies against neither the system's authorities nor a trust profile (the message names the host; the person adds its CA with basalt trust add or names it with sslrootcert); a root of the profile that verifies the agent's database expires within 90 days or has expired; a file in trust.d was not loaded, one problem per file naming it and why (it changes nothing: a built-in profile of the same name still applies). PORTAL_MISMATCH (CONTRACT.md, CLI, basalt portal verify): the engine's daily check found the portal serving pages other than the ones this build embeds. DEV_LOCAL_PAGES (CONTRACT.md, Page origins): the engine.json devLocalPages development exception is on, so the pages are on the agent's machine. ENGINE_REVOKED (CONTRACT.md, Direct transport): the agent's database revoked this engine's key. DIRECT_NOT_SERVED (CONTRACT.md, Direct transport): the agent's database records an address for this engine, but directAddr is off, so a tunnel has nothing to forward to. LOCK_FILE_UNUSABLE (CONTRACT.md, On the engine, Lock files): the engine cannot open engine.json.lock or the agent's credential lock, so a finished setup is not written back. LEDGER_REINSTALLED (CONTRACT.md, Version 36): the ledger records that the guard was installed again and an engine set its pin of the old ledger aside; personMessage is the reinstall notice, to show the person as it is. PLUGIN_UNAVAILABLE (CONTRACT.md, Plugins): an enabled plugin entry for this agent is not ready, so a wire.detect plugin fails the agent's requests to the AI provider closed until it is back or disabled. PLUGIN_NOT_TRUSTED (CONTRACT.md, Plugins): the engine refused to start a plugin entry for this agent because its signature, file hashes or file permissions failed, or, in service mode, an agent's OS user is in the engine's group. PLUGIN_AWAITING_APPROVAL, PLUGIN_APPROVAL_EXPIRED and PLUGIN_APPROVAL_MISMATCH (CONTRACT.md, Plugins, Plugin approvals at engine start): an entry that requires a passkey approval is withheld from this agent because no signed approval names it, its approval expired unsigned, or its signed approval does not match the installed copy or config (the message names the fields that differ). A withheld entry blocks none of the agent calls. PLUGIN_CONFIG_INVALID (CONTRACT.md, Plugins, Plugin changes while the engine runs): engine.json changed while the engine runs and its plugins cannot be read, so the engine applies no plugin change and every plugin keeps its state. PLUGIN_NOTICES_DROPPED (Planned; CONTRACT.md, Plugins, Notifier messages): an approval.deliver entry for this agent dropped notices in the last 24 hours; the message names the entry and how many, never what they were about. The agent's answers carried the links all along. For a connect-only setup (CONTRACT.md, Setup from your laptop, The engine and a connect-only code): CONFIRM_DATABASE: the engine collected the database's address and asks the person, through the agent, to confirm it before it logs in. DATABASE_REFUSED: the person said no; a new code is needed. DATABASE_UNREACHABLE_FROM_BOT: the setup ran, but the engine's machine cannot reach that database (a firewall allow-list, an IPv6-only host); the person runs the same link again with a reachable connection string. ADDRESS_INVALID: the address the connect service handed over breaks the engine's own address rules, so nothing of it is shown. SETUP_NOT_FOUND: after the person confirmed, the engine logged in but the database does not record its setup. CLOCK_SKEW: the connect service refused the engine's collect request because the engine's clock is more than 5 minutes off. ENGINE_AS_ROOT: the engine runs as root without --user, so it does not collect this agent's address; the engine's other agents are served as usual."
             },
             "severity": {
               "type": "string",

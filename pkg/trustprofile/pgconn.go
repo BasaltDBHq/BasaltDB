@@ -2,6 +2,8 @@ package trustprofile
 
 import (
 	"crypto/tls"
+	"crypto/x509"
+	"errors"
 
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -74,4 +76,17 @@ func Explain(cfg *pgconn.Config, set *Set) Applied {
 		}
 	}
 	return a
+}
+
+// CertificateNotVerified reports whether err is a server certificate that
+// did not verify: an unknown authority, a name that does not match, or a
+// certificate that is not valid.
+func CertificateNotVerified(err error) bool {
+	var (
+		verify  *tls.CertificateVerificationError
+		host    x509.HostnameError
+		unknown x509.UnknownAuthorityError
+		invalid x509.CertificateInvalidError
+	)
+	return errors.As(err, &verify) || errors.As(err, &host) || errors.As(err, &unknown) || errors.As(err, &invalid)
 }

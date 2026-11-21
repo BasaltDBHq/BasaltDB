@@ -270,6 +270,7 @@ func statusCasesFor(operatedBy string) map[string]statusCase {
 			return pluginStatus(t, operatedBy, "", true, samplePluginProblem(ProblemPluginNoticesDropped))
 		}},
 	}
+	maps.Copy(cases, trustStatusCases(operatedBy))
 	maps.Copy(cases, connectOnlyStatusCases(operatedBy))
 	return cases
 }

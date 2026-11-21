@@ -125,7 +125,7 @@ func trustAgents(c *cliIO, configPath string) []trustAgentView {
 			out = append(out, v)
 			continue
 		}
-		applied, err := pgdial.TrustOf(dsn)
+		applied, _, err := pgdial.TrustOf(dsn)
 		if err != nil {
 			v.Unknown = "the agent's credential is not a valid connection string"
 			out = append(out, v)

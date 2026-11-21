@@ -24,9 +24,7 @@ package pgdial
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
-	"errors"
+	"fmt"
 	"strings"
 	"sync/atomic"
 
@@ -115,28 +113,43 @@ func PoolConfig(dsn string) (*pgxpool.Config, error) {
 	return cfg, nil
 }
 
-// TrustOf is what verifies the certificate of dsn's first host: the
-// profile Trust gives now, the connection's own sslrootcert, the system's
-// authorities, or nothing (sslmode below verify-full).
-func TrustOf(dsn string) (trustprofile.Applied, error) {
+// TrustOf is what verifies the certificate of dsn's first host (TrustOfConfig).
+func TrustOf(dsn string) (trustprofile.Applied, []trustprofile.Refused, error) {
 	cfg, err := pgconn.ParseConfig(dsn)
 	if err != nil {
-		return trustprofile.Applied{}, err
+		return trustprofile.Applied{}, nil, err
 	}
-	return trustprofile.Explain(cfg, Trust()), nil
+	a, refused := TrustOfConfig(cfg)
+	return a, refused, nil
+}
+
+// TrustOfConfig is what verifies the certificate of cfg's first host, a
+// config as parsed (a pool's own, before BeforeConnect): the profile Trust
+// gives now, the connection's own sslrootcert, the system's authorities,
+// or nothing (sslmode below verify-full); and the operator files Trust
+// refused.
+func TrustOfConfig(cfg *pgconn.Config) (trustprofile.Applied, []trustprofile.Refused) {
+	set := Trust()
+	return trustprofile.Explain(cfg, set), set.Refused()
 }
 
 // CertificateNotVerified reports whether err is a server certificate that
-// did not verify: an unknown authority, a name that does not match, or a
-// certificate that is not valid.
-func CertificateNotVerified(err error) bool {
-	var (
-		verify  *tls.CertificateVerificationError
-		host    x509.HostnameError
-		unknown x509.UnknownAuthorityError
-		invalid x509.CertificateInvalidError
-	)
-	return errors.As(err, &verify) || errors.As(err, &host) || errors.As(err, &unknown) || errors.As(err, &invalid)
+// did not verify (trustprofile.CertificateNotVerified).
+func CertificateNotVerified(err error) bool { return trustprofile.CertificateNotVerified(err) }
+
+// WithCertificateHint is err, when it is a certificate of dsn's host that
+// did not verify, with what to do: add the host's CA as a trust profile, or
+// name it with sslrootcert. Any other err is returned as it is.
+func WithCertificateHint(dsn string, err error) error {
+	if !CertificateNotVerified(err) {
+		return err
+	}
+	host := "the database's host"
+	if cfg, perr := pgconn.ParseConfig(dsn); perr == nil && cfg.Host != "" {
+		host = cfg.Host
+	}
+	return fmt.Errorf("%w; the certificate of %s does not verify: add its CA with basalt trust add --name NAME --match '=%s' --ca <CA file>, "+
+		"or name it with sslrootcert=<CA file> in the connection string", err, host, host)
 }
 
 // apply sets DefaultMode unless dsn names a mode itself (pgx has already

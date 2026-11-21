@@ -119,6 +119,12 @@ func TestConnConfigTrustingVerifiesASupabaseChain(t *testing.T) {
 	err := login("db.example.com")
 	require.ErrorAs(t, err, &verify)
 	require.True(t, pgdial.CertificateNotVerified(err))
+	hinted := pgdial.WithCertificateHint("postgres://u:p@db.example.com:5432/postgres?sslmode=verify-full", err)
+	require.ErrorAs(t, hinted, &verify)
+	require.Contains(t, hinted.Error(), "basalt trust add --name NAME --match '=db.example.com'")
+	require.Contains(t, hinted.Error(), "sslrootcert")
+	plain := errors.New("connection refused")
+	require.Same(t, plain, pgdial.WithCertificateHint("postgres://h/db", plain))
 	require.False(t, pgdial.CertificateNotVerified(errors.New("connection refused")))
 }
 
@@ -146,7 +152,7 @@ func TestPoolPicksUpANewProfile(t *testing.T) {
 	_, err = pool.Exec(ctx, "SELECT 1")
 	require.ErrorAs(t, err, &verify)
 
-	applied, err := pgdial.TrustOf("postgres://u:p@" + host + "/postgres?sslmode=verify-full")
+	applied, _, err := pgdial.TrustOf("postgres://u:p@" + host + "/postgres?sslmode=verify-full")
 	require.NoError(t, err)
 	require.Equal(t, trustprofile.AppliesSystem, applied.Applies)
 
@@ -157,7 +163,7 @@ func TestPoolPicksUpANewProfile(t *testing.T) {
 	require.ErrorAs(t, err, &pg, "the next connection verifies and reaches the login")
 	require.Equal(t, "28P01", pg.Code)
 
-	applied, err = pgdial.TrustOf("postgres://u:p@" + host + "/postgres?sslmode=verify-full")
+	applied, _, err = pgdial.TrustOf("postgres://u:p@" + host + "/postgres?sslmode=verify-full")
 	require.NoError(t, err)
 	require.Equal(t, trustprofile.AppliesProfile, applied.Applies)
 	require.Equal(t, "internal", applied.Profile.Name)

@@ -1,14 +1,12 @@
 // The page's side of a link session against the shared vectors the Go
 // engine runs too (api/mcp/vault/testdata), and its socket handling with a
-// fake WebSocket. internal/vault/direct_page_test.go runs a whole session
-// of this module against the engine's direct listener.
+// fake WebSocket.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   ChannelError,
   CLOSE,
-  DIRECT,
   engineIdOf,
   finishHandshake,
   fingerprint,
@@ -17,6 +15,7 @@ import {
   openFrame,
   pad,
   parseEngineKey,
+  RELAY,
   sealFrame,
   startHandshake,
   unpad,
@@ -191,7 +190,7 @@ async function opened(options) {
 }
 
 test("the page sends exactly one 99-byte message 1 after the socket opens", async () => {
-  const { ws, opening } = await opened({ transport: DIRECT, secret: SECRET });
+  const { ws, opening } = await opened({ transport: RELAY, secret: SECRET });
   await tick();
   assert.equal(ws.sent.length, 0, "nothing before open");
   ws.open();
@@ -203,7 +202,7 @@ test("the page sends exactly one 99-byte message 1 after the socket opens", asyn
 });
 
 test("a text message during the handshake closes with PROTOCOL", async () => {
-  const { ws, opening } = await opened({ transport: DIRECT, secret: SECRET });
+  const { ws, opening } = await opened({ transport: RELAY, secret: SECRET });
   ws.open();
   await untilSent(ws);
   ws.message("hello");
@@ -212,7 +211,7 @@ test("a text message during the handshake closes with PROTOCOL", async () => {
 });
 
 test("a garbled message 2 closes with HANDSHAKE_FAILED and shows nothing", async () => {
-  const { ws, opening } = await opened({ transport: DIRECT, secret: SECRET });
+  const { ws, opening } = await opened({ transport: RELAY, secret: SECRET });
   ws.open();
   await untilSent(ws);
   const junk = new Uint8Array(2 + 65 + 16 + 10);
@@ -225,14 +224,14 @@ test("a garbled message 2 closes with HANDSHAKE_FAILED and shows nothing", async
 });
 
 test("a socket that never opens fails without sending", async () => {
-  const { ws, opening } = await opened({ transport: DIRECT, secret: SECRET });
+  const { ws, opening } = await opened({ transport: RELAY, secret: SECRET });
   ws.remoteClose(1006);
   await assert.rejects(opening, (e) => e.code === "CONNECTION_FAILED");
   assert.equal(ws.sent.length, 0);
 });
 
 test("the handshake times out", async () => {
-  const { ws, opening } = await opened({ transport: DIRECT, secret: SECRET, handshakeMs: 200 });
+  const { ws, opening } = await opened({ transport: RELAY, secret: SECRET, handshakeMs: 200 });
   ws.open();
   await untilSent(ws);
   await assert.rejects(opening, (e) => e.code === "TIMEOUT");

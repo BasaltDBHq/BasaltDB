@@ -21,7 +21,8 @@ func TestSchemaFiles(t *testing.T) {
 		all += m.sql
 	}
 	require.Equal(t, strings.Join(files, ""), all)
-	require.Equal(t, versionSetupCodeLife, LatestVersion())
+	require.Equal(t, versionEngineAddressRemoved, LatestVersion())
+	require.True(t, migrations[versionEngineAddressRemoved-1].nonBreaking)
 	require.True(t, migrations[versionTrustPins-1].nonBreaking)
 	require.True(t, migrations[versionSetupCodeLife-1].nonBreaking)
 	require.True(t, migrations[versionPluginEvents-1].nonBreaking)

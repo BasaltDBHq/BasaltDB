@@ -13,7 +13,7 @@ import (
 func TestCheckOperatorMatch(t *testing.T) {
 	t.Parallel()
 	for _, m := range []string{
-		"com", "internal", "co.uk", "com.au", "amazonaws.com", "amazonaws.com.cn", "azure.com", "cloudapp.azure.com", "cloudapp.net", "windows.net", "azurewebsites.net", "googleapis.com", "appspot.com",
+		"com", "internal", "co.uk", "com.au", "amazonaws.com", "amazonaws.com.cn", "azure.com", "cloudapp.azure.com", "cloudapp.net", "windows.net", "rds.amazonaws.com", "rds.amazonaws.com.cn", "database.windows.net", "postgres.database.azure.com", "azurewebsites.net", "googleapis.com", "appspot.com",
 		"github.io", "blogspot.com", "cloudfront.net",
 		"s3.amazonaws.com", "elb.amazonaws.com", "compute-1.amazonaws.com",
 	} {

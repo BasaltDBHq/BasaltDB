@@ -19,16 +19,21 @@ var sharedZones = []string{
 	"azure.com",
 	"cloudapp.azure.com",
 	"windows.net",
+	"rds.amazonaws.com",
+	"rds.amazonaws.com.cn",
+	"database.windows.net",
+	"postgres.database.azure.com",
 }
 
 // CheckOperatorMatch refuses an operator's suffix entry that is a public
 // suffix on its own, by Go's public suffix list (ICANN and private entries):
-// a single label (com), a country's second level (co.uk, com.au), or a
-// zone a provider hands out to many parties (github.io, cloudfront.net,
-// s3.amazonaws.com, elb.amazonaws.com), or one of a short list of shared cloud zones the
-// list does not mark (amazonaws.com, azure.com, windows.net). A profile for one of them would be a global root by
-// another name. A domain below a public suffix (db.example.com) and an
-// exact host (=host) are never refused here.
+// a single label (com), a country's second level (co.uk, com.au), or a zone
+// a provider hands out to many parties (github.io, cloudfront.net,
+// s3.amazonaws.com, elb.amazonaws.com). It also refuses a short list of
+// shared cloud and database zones the list does not mark (amazonaws.com,
+// rds.amazonaws.com, database.windows.net). A profile for one of them would
+// be a global root by another name. A domain below a public suffix
+// (db.example.com) and an exact host (=host) are never refused here.
 func CheckOperatorMatch(m string) error {
 	if strings.HasPrefix(m, exactPrefix) {
 		return nil

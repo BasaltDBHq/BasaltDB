@@ -182,6 +182,11 @@ func mcpBinary(h host) string {
 // else nothing. The command keeps the path; the person should move the
 // binary somewhere that survives and register that path.
 func temporaryBinaryWarning(bin, tmp string) string {
+	// bin is link-resolved; resolve tmp too, or a tmp that is a link
+	// (macOS /var -> /private/var) never matches.
+	if resolved, err := filepath.EvalSymlinks(tmp); err == nil {
+		tmp = resolved
+	}
 	rel, err := filepath.Rel(tmp, bin)
 	underTmp := err == nil && rel != "." && !strings.HasPrefix(rel, "..")
 	if !underTmp && !strings.Contains(filepath.ToSlash(bin), "/go-build") {

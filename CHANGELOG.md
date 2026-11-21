@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- The warning for a binary in a temporary folder now also fires on macOS, where the default temp folder is a link (`/var/folders/...` to `/private/var/...`) and the binary path was never matched against it.
+
 ### Breaking for alpha installs
 
 - A `basalt init` or `basalt init --remote` without a terminal, against a database whose certificate verifies against no authority this machine trusts and no trust profile, now stops with a usage error that names `--trust-root` and the fingerprint the server presents: pass `--trust-root <SHA-256>` after checking it with your provider, or name the CA with `sslrootcert`. Under an agent marker `init --remote` goes on and prints the person's `basalt trust pin` command instead.

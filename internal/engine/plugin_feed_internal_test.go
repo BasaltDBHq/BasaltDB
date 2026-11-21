@@ -304,6 +304,18 @@ func (e *feedEnv) started(k plugin.EntryKey, agent string) feedCursor {
 	return c
 }
 
+// waitCursor waits until entry k's cursor for agent is written at seq.
+func (e *feedEnv) waitCursor(k plugin.EntryKey, agent string, seq int64) feedCursor {
+	e.t.Helper()
+	var c feedCursor
+	require.Eventually(e.t, func() bool {
+		var ok bool
+		c, ok = e.cursor(k, agent)
+		return ok && c.Seq == seq
+	}, 10*time.Second, 10*time.Millisecond, "the cursor of %s for %s to reach %d", k, agent, seq)
+	return c
+}
+
 // appendRow appends a ledger row for agent as _append does for the guard's
 // own functions, and returns its seq.
 func (e *feedEnv) appendRow(agent, kind string, op any, changeID any, detail map[string]any) int64 {
@@ -349,6 +361,46 @@ func waitSeqs(t *testing.T, p *feedPlugin, agent string, want ...int64) {
 	if !assert.Eventually(t, func() bool { return slices.Equal(p.seqsFor(agent), want) }, 10*time.Second, 10*time.Millisecond) {
 		require.Equal(t, want, p.seqsFor(agent), "for %s", agent)
 	}
+}
+
+func (g gotEvent) afterSeq() (int64, bool) {
+	v, ok := g.Data["afterSeq"].(float64)
+	return int64(v), ok
+}
+
+// skippedAfter is the first skipped-ahead marker received for agent whose
+// afterSeq is after, and the call that carried it.
+func (p *feedPlugin) skippedAfter(agent string, after int64) (gotCall, gotEvent, bool) {
+	for _, c := range p.received() {
+		if c.agent != agent {
+			continue
+		}
+		for _, e := range c.events {
+			if e.Type != feedTypeSkipped {
+				continue
+			}
+			if got, ok := e.afterSeq(); ok && got == after {
+				return c, e, true
+			}
+		}
+	}
+	return gotCall{}, gotEvent{}, false
+}
+
+// waitSkipped waits until p received a skipped-ahead marker for agent after
+// the given cursor, and returns the call that carried it and the marker.
+func waitSkipped(t *testing.T, p *feedPlugin, agent string, after int64) (gotCall, gotEvent) {
+	t.Helper()
+	var call gotCall
+	var ev gotEvent
+	if !assert.Eventually(t, func() bool {
+		var ok bool
+		call, ev, ok = p.skippedAfter(agent, after)
+		return ok
+	}, 10*time.Second, 10*time.Millisecond) {
+		require.Failf(t, "no skipped marker", "after %d for %s (seqs %v)", after, agent, p.seqsFor(agent))
+	}
+	return call, ev
 }
 
 // settle lets several polls pass.
@@ -474,25 +526,25 @@ func TestFeedSaysWhenItSkipped(t *testing.T) {
 	next := e.applied("product_a")
 	e.start()
 	waitSeqs(t, p, "product_a", next-1, next)
-	ev := p.received()[0].events[0]
+	// The plugin records a call before the engine writes the cursor, and
+	// the first delivery may be one call or several under load. Wait for
+	// the marker and the cursor, not a call count or a cursor read right
+	// after the call is seen.
+	_, ev := waitSkipped(t, p, "product_a", start.Seq)
 	install := e.installID()
-	require.Equal(t, "dev.basaltdb.feed.skipped", ev.Type)
+	require.Equal(t, feedTypeSkipped, ev.Type)
 	require.Equal(t, fmt.Sprintf("%s:skipped:%d:%d", install, start.Seq, next-1), ev.ID)
 	require.Empty(t, ev.Time)
-	require.Equal(t, float64(start.Seq), ev.Data["afterSeq"])
-	c, _ := e.cursor(p.key, "product_a")
-	require.Equal(t, next, c.Seq)
+	e.waitCursor(p.key, "product_a", next)
 
 	// No row of the agent left after the cursor: the marker names the head.
 	e.stop()
 	e.applied("product_a")
 	e.l.d.Exec(t, `SELECT basalt_meta._prune(now() + interval '366 days')`)
 	e.start()
-	require.Eventually(t, func() bool { return len(p.received()) == 2 }, 10*time.Second, 10*time.Millisecond)
-	ev = p.received()[1].events[0]
-	require.Equal(t, "dev.basaltdb.feed.skipped", ev.Type)
-	require.Len(t, p.received()[1].events, 1)
-	require.Equal(t, float64(next), ev.Data["afterSeq"])
+	call, ev := waitSkipped(t, p, "product_a", next)
+	require.Equal(t, feedTypeSkipped, ev.Type)
+	require.Len(t, call.events, 1)
 	require.Equal(t, e.head(), ev.seq(), "the head; the PRUNED row is the admin's")
 
 	// A cursor at 0 is no gap.

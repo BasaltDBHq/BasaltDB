@@ -13,7 +13,7 @@
 //	})
 //
 // pluginDir then holds bin/basalt-test-notifier and an unsigned
-// basalt-plugin.json naming both hooks. Sign it (plugin.SignDir) for an entry
+// basalt-plugin.json naming both hooks. Sign it (plugin.SignManifest, writing basalt-plugin.json.sig) for an entry
 // that needs a trusted signature, or install it through the approval flow,
 // which accepts it unsigned. Then:
 //

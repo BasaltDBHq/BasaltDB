@@ -401,31 +401,6 @@ func TestPersonAtTerminalUnchanged(t *testing.T) {
 	})
 }
 
-// TestTrustStillRefused: an agent never adds a trust root, under a marker
-// or on an agent-operated engine.
-func TestTrustStillRefused(t *testing.T) {
-	t.Parallel()
-	for name, tc := range map[string]struct {
-		env        map[string]string
-		operatedBy string
-	}{"marker": {env: agentEnv}, "operatedBy AGENT": {operatedBy: "AGENT"}} {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			e := newPluginEngine(t)
-			e.writeConfig(tc.operatedBy)
-			k, err := plugin.GenerateKey()
-			require.NoError(t, err)
-			pub, err := plugin.MarshalPublicKey(&k.PublicKey)
-			require.NoError(t, err)
-			file := filepath.Join(t.TempDir(), "publisher.pub")
-			require.NoError(t, os.WriteFile(file, pub, 0o644))
-			before := e.snapshot()
-			refusal(t, e.run(tc.env, "y\n", "trust", file, "--json"), reasonAgentOperated)
-			require.Equal(t, before, e.snapshot())
-		})
-	}
-}
-
 // TestAddInServiceModeStillRefused: in service mode an agent's add and
 // enable are refused as before, and the flag and approve are usage errors.
 func TestAddInServiceModeStillRefused(t *testing.T) {

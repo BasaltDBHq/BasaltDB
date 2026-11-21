@@ -132,7 +132,7 @@ func (t TrustStore) key(keyID string) (*ecdsa.PublicKey, error) {
 	if pub, ok := t.embedded[keyID]; ok {
 		return pub, nil
 	}
-	notTrusted := &VerifyError{Reason: RefusedNotTrusted, File: SignatureFile, Why: "the signature names a key that is not trusted"}
+	notTrusted := &VerifyError{Reason: RefusedNotTrusted, File: SignatureFile, Why: WhyKeyNotTrusted}
 	entries, err := os.ReadDir(t.dir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, notTrusted
@@ -162,12 +162,16 @@ func (t TrustStore) key(keyID string) (*ecdsa.PublicKey, error) {
 	return nil, notTrusted
 }
 
+// WhyKeyNotTrusted is the reason of a NOT_TRUSTED refusal whose cause is a
+// signing key the trust store does not hold.
+const WhyKeyNotTrusted = "the signature names a key that is not trusted"
+
 // Add trusts the public key in pemBytes: it writes the key to
 // plugin-trust/<keyId>.pem, the id computed from the key, creating the
 // directory when needed, and checks the path rule over the store first. A
-// key that is already trusted changes nothing and reports added false. The
-// caller asks the person to confirm the key id first, refuses on an
-// agent-operated engine, and records PLUGIN_TRUST_ADDED when added is true.
+// key that is already trusted changes nothing and reports added false. No
+// basalt command calls it now; the engine's tests use it to set up a trusted
+// key, and the engine records PLUGIN_TRUST_ADDED at its next start.
 func (t TrustStore) Add(pemBytes []byte) (keyID string, added bool, err error) {
 	pub, id, err := ParsePublicKey(pemBytes)
 	if err != nil {

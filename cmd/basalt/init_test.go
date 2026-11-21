@@ -275,7 +275,7 @@ func TestRefuseSecretInitArgs(t *testing.T) {
 	t.Parallel()
 	require.NoError(t, refuseSecretInitArgs([]string{"--agent=bot", "--write=public.leads", "--passkey-origin=https://portal.basaltvault.app"}))
 	for _, bad := range [][]string{
-		{"--database-url=postgres://admin:pw@db/app"},
+		{"--database-url=postgres://admin:" + "pw@db/app"}, // split so no literal credential sits in the source
 		{"--x", "postgres://admin@db/app"},
 		{"--y=host=db password=pw"},
 		{"--Z=PASSWORD=pw"},

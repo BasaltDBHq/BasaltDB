@@ -53,7 +53,7 @@
             "type": "object",
             "additionalProperties": false,
             "required": ["reason", "at"],
-            "description": "Reported by basalt mcp when the engine does not answer and its supervisor gave up restarting it (the problem ENGINE_GAVE_UP): why, and when. Removed once an engine has stayed up for 10 seconds.",
+            "description": "Reported by basalt mcp when the engine does not answer and its supervisor gave up restarting it (the problem ENGINE_GAVE_UP): why, and when. The problem message also says when the next try happens during the 1-minute hold-off after that give-up. Removed once an engine has stayed up for 10 seconds.",
             "properties": {
               "reason": { "type": "string", "description": "The supervisor's reason; exit statuses and counts, never a secret." },
               "at": { "type": "string", "format": "date-time", "description": "RFC 3339 UTC." }

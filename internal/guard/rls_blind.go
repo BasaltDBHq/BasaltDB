@@ -71,6 +71,15 @@ func rlsBlind(ctx context.Context, q Querier, role, group string, tables []strin
 	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
+// listedBlind is rlsBlind over the listed tables only: no tables is none,
+// where rlsBlind would check the role's whole SELECT set.
+func listedBlind(ctx context.Context, q Querier, role, group string, tables []string) ([]string, error) {
+	if len(tables) == 0 {
+		return nil, nil
+	}
+	return rlsBlind(ctx, q, role, group, tables)
+}
+
 // BlindTable is one of an agent's tables where row-level security hides
 // every row from the agent role.
 type BlindTable struct {
@@ -84,7 +93,10 @@ type BlindTable struct {
 
 // AgentBlindTables lists the agent's --write and --read tables where
 // row-level security would hide every row from its role, before or after
-// init creates the role. Missing tables fail as in PlanInit.
+// init creates the role. Missing tables fail as in PlanInit. Only the
+// tables in those lists count: an empty list adds none, never every table
+// the role can already SELECT (a PUBLIC or agents-group grant), so an agent
+// policy is never offered on a table the agent was not given.
 func AgentBlindTables(ctx context.Context, q Querier, n Names, spec AgentSpec) ([]BlindTable, error) {
 	if err := checkTablesExist(ctx, q, spec); err != nil {
 		return nil, err
@@ -93,11 +105,11 @@ func AgentBlindTables(ctx context.Context, q Querier, n Names, spec AgentSpec) (
 	if err != nil {
 		return nil, err
 	}
-	writes, err := rlsBlind(ctx, q, role, n.Agents(), spec.Write)
+	writes, err := listedBlind(ctx, q, role, n.Agents(), spec.Write)
 	if err != nil {
 		return nil, err
 	}
-	reads, err := rlsBlind(ctx, q, role, n.Agents(), spec.Read)
+	reads, err := listedBlind(ctx, q, role, n.Agents(), spec.Read)
 	if err != nil {
 		return nil, err
 	}

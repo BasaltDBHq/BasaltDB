@@ -241,10 +241,23 @@ func TestResolveExecutableFollowsLinks(t *testing.T) {
 
 func TestTemporaryBinaryWarning(t *testing.T) {
 	t.Parallel()
-	require.Contains(t, temporaryBinaryWarning("/var/tmp/x/basalt", "/var/tmp"), "put the binary in a folder that survives")
-	require.Contains(t, temporaryBinaryWarning("/home/u/.cache/go-build/ab/basalt", "/var/tmp"), "/home/u/.cache/go-build/ab/basalt")
-	require.Empty(t, temporaryBinaryWarning("/opt/basalt/bin/basalt", "/var/tmp"))
-	require.Empty(t, temporaryBinaryWarning("/var/tmpx/basalt", "/var/tmp"))
+	tmp, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	require.Contains(t, temporaryBinaryWarning(filepath.Join(tmp, "x", "basalt"), tmp), "put the binary in a folder that survives")
+	require.Contains(t, temporaryBinaryWarning("/home/u/.cache/go-build/ab/basalt", tmp), "/home/u/.cache/go-build/ab/basalt")
+	require.Empty(t, temporaryBinaryWarning("/opt/basalt/bin/basalt", tmp))
+	require.Empty(t, temporaryBinaryWarning(tmp+"x/basalt", tmp))
+}
+
+func TestTemporaryBinaryWarningResolvesLinkedTempDir(t *testing.T) {
+	t.Parallel()
+	realTmp, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	link := filepath.Join(t.TempDir(), "tmp-link")
+	require.NoError(t, os.Symlink(realTmp, link))
+	bin := filepath.Join(realTmp, "basalt")
+	require.Contains(t, temporaryBinaryWarning(bin, link), "put the binary in a folder that survives")
+	require.Empty(t, temporaryBinaryWarning("/opt/basalt/bin/basalt", link))
 }
 
 func TestMCPLineWarnsForTemporaryBinary(t *testing.T) {

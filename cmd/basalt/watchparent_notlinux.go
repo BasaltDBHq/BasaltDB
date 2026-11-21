@@ -5,14 +5,20 @@ package main
 import (
 	"context"
 	"os"
+	"strconv"
 	"syscall"
 )
 
-// watchSupervisedParent stops this engine when its supervisor is gone
-// (Linux already does this with Pdeathsig).
 func watchSupervisedParent(ctx context.Context) {
-	if os.Getenv(watchParentEnv) == "" {
+	want, err := strconv.Atoi(os.Getenv(watchParentEnv))
+	if err != nil || want <= 1 {
 		return
 	}
-	watchParent(ctx, os.Getppid(), func() { _ = syscall.Kill(os.Getpid(), syscall.SIGTERM) })
+	stop := func() { _ = syscall.Kill(os.Getpid(), syscall.SIGTERM) }
+	if os.Getppid() != want {
+		// The supervisor is already gone (parent is pid 1 or another reaper).
+		stop()
+		return
+	}
+	watchParent(ctx, want, stop)
 }

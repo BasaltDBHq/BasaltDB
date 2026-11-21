@@ -680,6 +680,9 @@ func Refused(ctx context.Context, q guard.Querier, p setupcode.Payload, err erro
 // either way.
 func RLSBlindWarnings(ctx context.Context, q guard.Querier, role string, spec guard.AgentSpec) []string {
 	tables := append(append([]string{}, spec.Write...), spec.Read...)
+	if len(tables) == 0 {
+		return nil // no tables would check every table the role can SELECT
+	}
 	blind, err := guard.RLSBlindTables(ctx, q, role, tables)
 	if err != nil {
 		return []string{fmt.Sprintf("could not check row-level security on the agent's tables: %v", err)}

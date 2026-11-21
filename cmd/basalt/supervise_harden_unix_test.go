@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -34,7 +35,7 @@ const (
 func TestSupervisedChildStopsWhenParentIsKilled(t *testing.T) {
 	switch os.Getenv(testSuperviseRoleEnv) {
 	case "child":
-		watchParent(context.Background(), os.Getppid(), func() { _ = syscall.Kill(os.Getpid(), syscall.SIGTERM) })
+		watchSupervisedParent(context.Background())
 		time.Sleep(30 * time.Second)
 		os.Exit(0)
 	case "parent":
@@ -175,4 +176,29 @@ func copyFile(t *testing.T, src, dst string) {
 	defer func() { require.NoError(t, out.Close()) }()
 	_, err = io.Copy(out, in)
 	require.NoError(t, err)
+}
+
+// The supervisor can die between forking the child and the child's first
+// look at its parent: the child must still stop, not watch pid 1.
+func TestSupervisedChildStopsWhenSupervisorIsAlreadyGone(t *testing.T) {
+	if os.Getenv(testSuperviseRoleEnv) == "orphan" {
+		watchSupervisedParent(context.Background())
+		time.Sleep(30 * time.Second)
+		os.Exit(0)
+	}
+	if runtime.GOOS == "linux" {
+		t.Skip("Linux uses Pdeathsig; there is no parent watcher")
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestSupervisedChildStopsWhenSupervisorIsAlreadyGone$")
+	// BASALT_SUPERVISED names a pid that is not this child's parent.
+	cmd.Env = append(cleanTestEnv(), testSuperviseRoleEnv+"=orphan", "BASALT_SUPERVISED="+strconv.Itoa(os.Getpid()+1000))
+	require.NoError(t, cmd.Start())
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the child kept running although its parent is not the supervisor named in the environment")
+	}
 }

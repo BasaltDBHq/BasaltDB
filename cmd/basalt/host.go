@@ -56,7 +56,7 @@ type host interface {
 type osHost struct{}
 
 func (osHost) Euid() int                      { return os.Geteuid() }
-func (osHost) Executable() (string, error)    { return binaryPath("") }
+func (osHost) Executable() (string, error)    { return shimExecutable() }
 func (osHost) UserConfigDir() (string, error) { return os.UserConfigDir() }
 func (osHost) LookPath(name string) (string, error) {
 	return exec.LookPath(name)

@@ -14,7 +14,7 @@ Install the engine as a background service? This creates the OS user _basalt and
 - **No**, or `--no-service`: init writes the config and credential under your config directory (`~/.config/basalt` on Linux, `~/Library/Application Support/basalt` on macOS) and prints the one command that runs the engine in the foreground as you. Giving `--config`, `--socket-dir` or `--credential-file` also means you run the engine yourself. That is same-user mode: writes are still guarded in Postgres, but the agent's OS user can read its credential file.
 - **No terminal** (answers piped in) and neither `--yes` nor `--no-service`: init stops before writing anything and asks you to pass one of them. It never picks same-user mode for you.
 
-`--dry-run` prints the SQL and the exact service steps without running anything. If the `claude` CLI is on your `PATH`, init also offers to run `claude mcp add --scope local basalt-NAME -- basalt mcp --agent NAME` for you; it never runs it without a yes. `--scope local` registers the server for the current project directory only, and init says so.
+`--dry-run` prints the SQL and the exact service steps without running anything. If the `claude` CLI is on your `PATH`, init also offers to run `claude mcp add --scope local basalt-NAME -- basalt mcp --agent NAME` for you (with the full path of the running binary in place of `basalt`); it never runs it without a yes. `--scope local` registers the server for the current project directory only, and init says so.
 
 ## Client configuration
 

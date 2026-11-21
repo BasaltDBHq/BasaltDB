@@ -50,7 +50,7 @@
     "mcpCommand": {
       "type": "array",
       "minItems": 4,
-      "description": "The basalt mcp command the agent registers in its client, as argv. It is basalt mcp --agent <name>, plus --socket-dir whenever the socket directory is not the one basalt mcp uses when no --socket-dir is given (basalt mcp never reads the socket directory from the config), and --config whenever basalt mcp would not find the config by default (CONTRACT.md, Setup from your laptop).",
+      "description": "The basalt mcp command the agent registers in its client, as argv. It is <binary> mcp --agent <name>, where <binary> is the absolute, link-resolved path of the running basalt binary, plus --socket-dir whenever the socket directory is not the one basalt mcp uses when no --socket-dir is given (basalt mcp never reads the socket directory from the config), and --config whenever basalt mcp would not find the config by default (CONTRACT.md, Setup from your laptop).",
       "items": { "type": "string", "minLength": 1 }
     },
     "connectUrl": {

@@ -236,7 +236,7 @@ func TestInitInstallsTheServiceWithOneSudo(t *testing.T) {
 
 			require.Contains(t, r.stderr, "Install the engine as a background service? This creates the OS user "+v.user+" and needs your password once. [Y/n]")
 			require.Contains(t, r.stderr, "basalt: engine running as "+v.user+"; it answered on "+v.socket)
-			require.Contains(t, r.stderr, "  basalt mcp --agent bot\n")
+			require.Contains(t, r.stderr, "  /opt/basalt/bin/basalt mcp --agent bot\n")
 			require.Contains(t, r.stderr, "Add it to Claude Code now (claude mcp add --scope local basalt-bot -- "+fakeBin+" mcp --agent bot)? [Y/n]")
 			require.Contains(t, r.stderr, "basalt: the server basalt-bot is registered for this project directory only (--scope local); sessions in other projects do not see it\n")
 			require.NotContains(t, r.stderr, "chown")

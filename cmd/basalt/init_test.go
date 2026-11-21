@@ -23,13 +23,13 @@ func TestForegroundNext(t *testing.T) {
 	require.Equal(t, `next, start the engine; it runs in the foreground as you (same-user mode: writes are guarded, but your OS user can read the credential):
   basalt engine --config /home/dev/basalt/engine.json
 then add this MCP server to the agent's client, running as OS user iman (docs/mcp-clients.md):
-  basalt mcp --agent bot --socket-dir /home/dev/basalt/run --config /home/dev/basalt/engine.json
+  /opt/basalt/bin/basalt mcp --agent bot --socket-dir /home/dev/basalt/run --config /home/dev/basalt/engine.json
 `, foregroundNext(f, "linux", newFakeHost(t)))
 
 	f.configPath, f.socketDir = "/Users/me/Library/Application Support/basalt/engine.json", config.DefaultSocketDir("darwin")
 	h := newFakeHost(t)
 	require.Contains(t, foregroundNext(f, "darwin", h), "basalt engine --config '/Users/me/Library/Application Support/basalt/engine.json'")
-	require.True(t, strings.HasSuffix(foregroundNext(f, "darwin", h), "  basalt mcp --agent bot --config '/Users/me/Library/Application Support/basalt/engine.json'\n"),
+	require.True(t, strings.HasSuffix(foregroundNext(f, "darwin", h), "  /opt/basalt/bin/basalt mcp --agent bot --config '/Users/me/Library/Application Support/basalt/engine.json'\n"),
 		"the default socket dir needs no flag, a config basalt mcp would not find does")
 }
 
@@ -65,17 +65,17 @@ func TestRemoteMCPArgsGoldens(t *testing.T) {
 	run := filepath.Join(filepath.Dir(user), "run")
 	require.NoError(t, os.MkdirAll(filepath.Dir(user), 0o700))
 	require.NoError(t, os.WriteFile(user, []byte("{}"), 0o600))
-	require.Equal(t, []string{"basalt", "mcp", "--agent", "bot", "--socket-dir", run},
+	require.Equal(t, []string{fakeBin, "mcp", "--agent", "bot", "--socket-dir", run},
 		remoteMCPArgs("bot", user, run, "linux", h))
 
 	// Non-root, --config elsewhere: both flags, sockets next to the config.
 	cfg := "/workspace/basalt/engine.json"
-	require.Equal(t, []string{"basalt", "mcp", "--agent", "bot", "--socket-dir", "/workspace/basalt/run", "--config", cfg},
+	require.Equal(t, []string{fakeBin, "mcp", "--agent", "bot", "--socket-dir", "/workspace/basalt/run", "--config", cfg},
 		remoteMCPArgs("bot", cfg, "/workspace/basalt/run", "linux", h))
 
 	// Root/service, default paths: the agent's OS user talks to the service socket.
 	h.euid = 0
-	require.Equal(t, []string{"basalt", "mcp", "--agent", "bot"},
+	require.Equal(t, []string{fakeBin, "mcp", "--agent", "bot"},
 		remoteMCPArgs("bot", config.DefaultPath("linux"), config.DefaultSocketDir("linux"), "linux", h))
 }
 
@@ -225,4 +225,32 @@ func TestPrintInitSQL(t *testing.T) {
 	stdout.Reset()
 	printInitSQL(c, initFlags{dryRun: true}, "basalt_agent_bot", "", script)
 	require.Equal(t, "CREATE SCHEMA IF NOT EXISTS basalt_meta;\n", stdout.String())
+}
+
+func TestResolveExecutableFollowsLinks(t *testing.T) {
+	t.Parallel()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	target := filepath.Join(dir, "basalt-real")
+	require.NoError(t, os.WriteFile(target, []byte("x"), 0o700))
+	link := filepath.Join(dir, "basalt")
+	require.NoError(t, os.Symlink(target, link))
+	require.Equal(t, target, resolveExecutable(link))
+	require.Equal(t, filepath.Join(dir, "gone"), resolveExecutable(filepath.Join(dir, "gone")))
+}
+
+func TestTemporaryBinaryWarning(t *testing.T) {
+	t.Parallel()
+	require.Contains(t, temporaryBinaryWarning("/var/tmp/x/basalt", "/var/tmp"), "put the binary in a folder that survives")
+	require.Contains(t, temporaryBinaryWarning("/home/u/.cache/go-build/ab/basalt", "/var/tmp"), "/home/u/.cache/go-build/ab/basalt")
+	require.Empty(t, temporaryBinaryWarning("/opt/basalt/bin/basalt", "/var/tmp"))
+	require.Empty(t, temporaryBinaryWarning("/var/tmpx/basalt", "/var/tmp"))
+}
+
+func TestMCPLineWarnsForTemporaryBinary(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost(t)
+	f := initFlags{agent: "bot", osUser: "iman", configPath: config.DefaultPath("linux"), socketDir: config.DefaultSocketDir("linux")}
+	require.NotContains(t, mcpLine(f, "linux", h), "may be cleared")
+	require.Contains(t, mcpLine(f, "linux", h), fakeBin+" mcp --agent bot")
 }

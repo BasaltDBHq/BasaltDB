@@ -275,7 +275,7 @@ func TestInitRemoteFirstRunMakesAnInstallCode(t *testing.T) {
 func requireSetupGuidance(t *testing.T, res RemoteInitResult) {
 	t.Helper()
 	require.GreaterOrEqual(t, len(res.MCPCommand), 4)
-	require.Equal(t, []string{"basalt", "mcp", "--agent", res.Agent}, res.MCPCommand[:4])
+	require.Equal(t, []string{fakeBin, "mcp", "--agent", res.Agent}, res.MCPCommand[:4])
 	pm := res.PersonMessage
 	require.Contains(t, pm, res.Fingerprint)
 	require.Contains(t, pm, "Never paste your database password")

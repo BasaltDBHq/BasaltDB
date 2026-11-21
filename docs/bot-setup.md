@@ -114,7 +114,7 @@ Some bot computers have no systemd, no cron and no Docker, and start nothing at 
 
    The config, the engine's key and the state go under `/workspace/basalt`: `engine.json`, `state/` and, for the sockets, `run/`. Send the code to the person as step 3 says. Init also prints the `basalt mcp` command; with `--json` it is `mcpCommand`.
 
-3. Register that printed `basalt mcp` command in your agent app. If you copied the binary into the surviving folder, use that path in place of `basalt`. The printed command already has `--socket-dir` and `--config` when `basalt mcp` would not find them by default, so that it can start the engine when it is down.
+3. Register that printed `basalt mcp` command in your agent app. The printed command starts with the full path of the binary init ran from, so the app needs no `PATH` entry for it; run init from the copy in the surviving folder. It already has `--socket-dir` and `--config` when `basalt mcp` would not find them by default, so that it can start the engine when it is down.
 
 What happens from then on:
 

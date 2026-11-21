@@ -338,10 +338,15 @@ func shimExecutable() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return resolveExecutable(exe), nil
+}
+
+// resolveExecutable is exe with its links resolved, else exe as given.
+func resolveExecutable(exe string) string {
 	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
-		return resolved, nil
+		return resolved
 	}
-	return exe, nil
+	return exe
 }
 
 func shimCommands(name, configPath string, cfg *config.Config) (agent.Commands, error) {

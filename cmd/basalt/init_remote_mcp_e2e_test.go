@@ -59,7 +59,7 @@ func TestInitRemoteMCPCommandReachesTheEngine(t *testing.T) {
 	abs, err := filepath.Abs(cfg)
 	require.NoError(t, err)
 	require.Equal(t, []string{
-		"basalt", "mcp", "--agent", "bot",
+		fakeBin, "mcp", "--agent", "bot",
 		"--socket-dir", filepath.Join(dir, "run"),
 		"--config", abs,
 	}, res.MCPCommand)
@@ -68,6 +68,10 @@ func TestInitRemoteMCPCommandReachesTheEngine(t *testing.T) {
 	done := laptopRun(t, d.URL, reg+"\n", time.Time{}, "--setup-code", res.Code, "--yes")
 	require.Equal(t, exitOK, done.code, done.stderr)
 
+	// An agent app's PATH may not hold basalt: the command names the binary
+	// by its path and needs no PATH to reach the engine.
+	t.Setenv("PATH", "")
+	require.True(t, filepath.IsAbs(res.MCPCommand[0]), res.MCPCommand[0])
 	// --config and --socket-dir are both on the command, so osHost is enough.
 	requireMCPCommandReachesEngine(t, res.MCPCommand, osHost{}, filepath.Join(dir, "run"))
 }
@@ -87,7 +91,7 @@ func TestInitRemoteMCPCommandReachesTheEngineDefaultConfig(t *testing.T) {
 		"--prefix", d.Names.Prefix, "--database-url", dbURL,
 	})
 	socketDir := filepath.Join(h.configDir, perUserDirName, "run")
-	require.Equal(t, []string{"basalt", "mcp", "--agent", "bot", "--socket-dir", socketDir}, res.MCPCommand)
+	require.Equal(t, []string{fakeBin, "mcp", "--agent", "bot", "--socket-dir", socketDir}, res.MCPCommand)
 
 	_, reg := portalPasskey(t, dbName(t, d))
 	done := laptopRun(t, d.URL, reg+"\n", time.Time{}, "--setup-code", res.Code, "--yes")

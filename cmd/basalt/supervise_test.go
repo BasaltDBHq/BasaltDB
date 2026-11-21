@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -220,4 +221,115 @@ func TestAnotherEngineNeedsEveryLookHeld(t *testing.T) {
 	require.True(t, heldAtEveryLook(looks(true, true, true), nap))
 	require.False(t, heldAtEveryLook(looks(true, false, true), nap), "a probe that ended is not an engine")
 	require.False(t, heldAtEveryLook(looks(false), nap))
+}
+
+func TestSuperviseGivesUpWhenBinaryIsGone(t *testing.T) {
+	t.Parallel()
+	var stops []string
+	var starts int
+	err := supervise(context.Background(), superviseOptions{
+		firstStartedBy: startedByMCP,
+		start: func(context.Context, string) (func() error, error) {
+			starts++
+			return nil, &binaryGoneError{path: "/workspace/basalt/bin/basalt"}
+		},
+		sleep: func(context.Context, time.Duration) bool {
+			t.Fatal("a missing binary must not be retried")
+			return false
+		},
+		now:      time.Now,
+		log:      slog.New(slog.DiscardHandler),
+		lastStop: func(reason string) { stops = append(stops, reason) },
+	})
+
+	require.ErrorContains(t, err, "the basalt binary /workspace/basalt/bin/basalt is gone")
+	require.Equal(t, 1, starts)
+	require.Equal(t, []string{"the basalt binary /workspace/basalt/bin/basalt is gone"}, stops)
+}
+
+// A binary removed after a crash is recorded and stops the supervisor,
+// not counted as another crash in the loop.
+func TestSuperviseGivesUpWhenBinaryIsGoneOnRestart(t *testing.T) {
+	t.Parallel()
+	r := &superviseRig{clock: time.Unix(1000, 0)}
+	var starts int
+	opts := r.options()
+	opts.start = func(ctx context.Context, by string) (func() error, error) {
+		starts++
+		r.starts = append(r.starts, by)
+		if starts == 1 {
+			return func() error { r.clock = r.clock.Add(time.Second); return errors.New("exit status 2") }, nil
+		}
+		return nil, &binaryGoneError{path: "/opt/basalt"}
+	}
+
+	err := supervise(context.Background(), opts)
+
+	require.ErrorContains(t, err, "the basalt binary /opt/basalt is gone")
+	require.Equal(t, []string{"mcp", "crash"}, r.starts)
+	require.Equal(t, []time.Duration{time.Second}, r.sleeps)
+	require.Equal(t, []string{"the basalt binary /opt/basalt is gone"}, r.stops)
+}
+
+func TestResolveSuperviseBinary(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "basalt")
+	_, err := resolveSuperviseBinary(path)
+	var gone *binaryGoneError
+	require.ErrorAs(t, err, &gone)
+	require.Equal(t, path, gone.path)
+	require.Equal(t, "the basalt binary "+path+" is gone", gone.Error())
+
+	require.NoError(t, os.WriteFile(path, []byte("x"), 0o755))
+	got, err := resolveSuperviseBinary(path)
+	require.NoError(t, err)
+	require.Equal(t, path, got)
+}
+
+func TestChildStarterResolvesThePathAtEachRestart(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "basalt")
+	trace := filepath.Join(dir, "trace")
+	writeSh(t, bin, "echo first >> '"+trace+"'; exit 1")
+	start := childStarter(bin, filepath.Join(dir, "cfg"), filepath.Join(dir, "lock"), dir, stdio{out: io.Discard, err: io.Discard}, slog.New(slog.DiscardHandler))
+
+	wait, err := start(context.Background(), startedByMCP)
+	require.NoError(t, err)
+	require.Error(t, wait())
+
+	writeSh(t, bin, "echo second >> '"+trace+"'; exit 0")
+	wait, err = start(context.Background(), startedByCrash)
+	require.NoError(t, err)
+	require.NoError(t, wait())
+
+	got, err := os.ReadFile(trace)
+	require.NoError(t, err)
+	require.Equal(t, "first\nsecond\n", string(got))
+}
+
+func TestChildStarterStopsWhenThePathIsGone(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "basalt")
+	writeSh(t, bin, "exit 1")
+	start := childStarter(bin, filepath.Join(dir, "cfg"), filepath.Join(dir, "lock"), dir, stdio{out: io.Discard, err: io.Discard}, slog.New(slog.DiscardHandler))
+	wait, err := start(context.Background(), startedByMCP)
+	require.NoError(t, err)
+	require.Error(t, wait())
+	require.NoError(t, os.Remove(bin))
+
+	_, err = start(context.Background(), startedByCrash)
+	var gone *binaryGoneError
+	require.ErrorAs(t, err, &gone)
+	require.Equal(t, bin, gone.path)
+}
+
+func writeSh(t *testing.T, path, body string) {
+	t.Helper()
+	tmp := path + ".tmp"
+	require.NoError(t, os.WriteFile(tmp, []byte("#!/bin/sh\n"+body+"\n"), 0o755))
+	f, err := os.Open(tmp)
+	require.NoError(t, err)
+	require.NoError(t, f.Sync())
+	require.NoError(t, f.Close())
+	require.NoError(t, os.Rename(tmp, path))
 }

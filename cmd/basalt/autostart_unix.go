@@ -165,6 +165,15 @@ func (s *starter) start(ctx context.Context) error {
 	if _, up, _ := server.Running(engine.LockPath(s.cfg.SocketDir)); up {
 		return s.engineRuns(ctx)
 	}
+	// A supervisor may hold its lock before its child takes the engine
+	// lock (it is starting, or waiting to restart). Do not launch another.
+	held, err := lockHeld(filepath.Join(s.cfg.SocketDir, superviseLock))
+	if err != nil {
+		return s.record(err)
+	}
+	if held {
+		return s.waitSocket(ctx)
+	}
 	s.forgetStuck()
 	if _, err := os.Stat(s.exe); err != nil {
 		return s.record(fmt.Errorf("the basalt binary %s is gone", s.exe))
@@ -228,6 +237,20 @@ func (s *starter) waitSocket(ctx context.Context) error {
 		case <-tick.C:
 		}
 	}
+}
+
+// lockHeld reports whether another process holds an exclusive flock on
+// path, without keeping the lock. A missing file is not held.
+func lockHeld(path string) (bool, error) {
+	release, err := config.LockFile(path)
+	if errors.Is(err, config.ErrLocked) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	release()
+	return false, nil
 }
 
 // lockStart is config.LockFile, trying again a few times when the folder

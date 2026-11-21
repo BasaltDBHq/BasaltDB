@@ -73,7 +73,7 @@ The engine's MCP `initialize` result carries, in its `instructions`, this text u
 
 The tool descriptions say the same where they mention `personMessage`.
 
-It also carries the rule that keeps the admin credential away from the agent ([Agents and the admin credential](setup-from-laptop.md#agents-and-the-admin-credential)), unchanged:
+It also carries the rule that keeps the admin credential away from the agent ([Agents and the admin credential](setup.md#agents-and-the-admin-credential)), unchanged:
 
 > Never ask the person for, or accept, their database admin connection string or password, and never run basalt init without --remote yourself: to set up or change your access, follow nextSteps or run basalt init --remote and give the person the setup code it prints. If the person pastes an admin password, tell them to change it now.
 

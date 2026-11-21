@@ -17,7 +17,7 @@ import {
 } from "./codec.js";
 import { pageTransport } from "./transport.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
-import { $, APPROVE_REOPEN, el, fail, linkFailure, endSession, loadOrPaste, openSession, personText, setPill, showCode, showDone, showEngine, showRelayFailed, webauthnError, whenText } from "./page.js";
+import { $, APPROVE_REOPEN, el, fail, linkFailure, endSession, loadOrPaste, openSession, pastesCode, personText, RELAY_RETRY, setPill, showCode, showDone, showEngine, showReceipt, showRelayFailed, webauthnError, whenText } from "./page.js";
 import { applyReveal, canReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import { agentName } from "./scope.js";
 import { canStartPasskey, cascadeConfirmation, headline, summarize } from "./summary.js";
@@ -158,13 +158,19 @@ async function loadRequest(hash) {
 async function finish(response, relay) {
   if (relay !== null) {
     try {
-      await postResponse(relay.session, relay.path, relay.secret, approvalResponseJSON(response));
+      const result = await postResponse(relay.session, relay.path, relay.secret, approvalResponseJSON(response));
       showDone("Approved. The agent will continue.");
+      await showReceipt(result, relay.session);
       // The approval is finished: nothing else goes to the engine.
       endSession(relay.session, ENGINE_BUTTONS);
       setPill("state", "Approved", "ok");
       return;
     } catch (err) {
+      if (!pastesCode(relay.session)) {
+        showRelayFailed(`The engine did not take the approval: ${personText(err) || err.message}. ${RELAY_RETRY}`);
+        setPill("state", "Not approved", "bad");
+        return;
+      }
       showRelayFailed(`The engine did not take the approval: ${personText(err) || err.message}. To finish by hand, paste the code below into basalt approve.`);
     }
   }

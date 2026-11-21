@@ -25,7 +25,7 @@ import {
 } from "./codec.js";
 import { pageTransport } from "./transport.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, rejectRevert, revertDone, revertPaths } from "./local.js";
-import { $, REVERT_REOPEN, el, fail, linkFailure, endSession, loadOrPaste, openSession, personText, setPill, showCode, showDone, showEngine, showRelayFailed, webauthnError } from "./page.js";
+import { $, REVERT_REOPEN, el, fail, linkFailure, endSession, loadOrPaste, openSession, pastesCode, personText, RELAY_RETRY, setPill, showCode, showDone, showEngine, showReceipt, showRelayFailed, webauthnError } from "./page.js";
 import { canWiden, narrow, widen } from "./rescope.js";
 import { applyReveal, canReveal, clearReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import { changeGroups, countText, rawText, rowKeyText } from "./changes.js";
@@ -228,11 +228,17 @@ async function finish(response, relay) {
     try {
       const result = await postResponse(relay.session, relay.path, relay.secret, revertResponseJSON(response));
       showDone(revertDone(result));
+      await showReceipt(result, relay.session);
       // The revert is signed: nothing else goes to the engine.
       endSession(relay.session, ENGINE_BUTTONS);
       settle(result?.batched ? "Signed" : "Reverted", "ok");
       return;
     } catch (err) {
+      if (!pastesCode(relay.session)) {
+        showRelayFailed(`The engine did not take the revert: ${personText(err) || err.message}. ${RELAY_RETRY}`);
+        settle("Not signed", "bad");
+        return;
+      }
       showRelayFailed(`The engine did not take the revert: ${personText(err) || err.message}. To finish by hand, paste the code below into basalt revert --apply.`);
     }
   }

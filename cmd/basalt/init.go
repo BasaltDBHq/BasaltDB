@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
@@ -20,6 +19,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/service"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/links"
+	"github.com/basaltdbhq/basaltdb/internal/rlspick"
 	"github.com/basaltdbhq/basaltdb/internal/setuprun"
 )
 
@@ -266,7 +266,8 @@ type AgentRLSMode string
 
 // --agent-rls values.
 const (
-	// AgentRLSAsk asks once per table at a terminal (the default).
+	// AgentRLSAsk shows a checklist at a terminal, or reads one line from
+	// piped input (the default).
 	AgentRLSAsk AgentRLSMode = "ask"
 	// AgentRLSAllRows adds the agent policy on every such table, for scripts.
 	AgentRLSAllRows AgentRLSMode = "all-rows"
@@ -274,19 +275,26 @@ const (
 	AgentRLSNone AgentRLSMode = "none"
 )
 
-// agentRLSRule is the validator rule of --agent-rls.
-const agentRLSRule = "oneof=ask all-rows none"
-
 // String implements flag.Value.
 func (a *AgentRLSMode) String() string { return string(*a) }
 
-// Set implements flag.Value, refusing anything but the three values.
+// Set implements flag.Value: ask, all-rows, none, or a list of tables
+// (schema.table, schema.* separated by commas).
 func (a *AgentRLSMode) Set(v string) error {
-	if err := validator.New().Var(v, agentRLSRule); err != nil {
-		return fmt.Errorf("must be %s, %s or %s", AgentRLSAsk, AgentRLSAllRows, AgentRLSNone)
+	switch AgentRLSMode(v) {
+	case AgentRLSAsk, AgentRLSAllRows, AgentRLSNone:
+	default:
+		if _, err := rlspick.ParseList(v); err != nil {
+			return fmt.Errorf("must be %s, %s, %s or a list like us.*,public.orders: %w", AgentRLSAsk, AgentRLSAllRows, AgentRLSNone, err)
+		}
 	}
 	*a = AgentRLSMode(v)
 	return nil
+}
+
+// isList is true when the mode is a list of tables.
+func (a AgentRLSMode) isList() bool {
+	return a != AgentRLSAsk && a != AgentRLSAllRows && a != AgentRLSNone
 }
 
 // agentPolicies picks the agent's tables where row-level security hides
@@ -303,11 +311,11 @@ func agentPolicies(c *cliIO, conn guard.Querier, names guard.Names, f initFlags)
 	if err != nil {
 		return nil, err
 	}
-	questions := make([]string, 0, len(blind))
+	asks := make([]rlsAsk, 0, len(blind))
 	for _, b := range blind {
-		questions = append(questions, setuprun.RLSQuestion(b, f.agent))
+		asks = append(asks, rlsAsk{Table: b.Table, Rows: b.Rows, Text: setuprun.RLSQuestion(b, f.agent)})
 	}
-	yes, err := rlsAnswers(c, f.agentRLS, f.yes || f.dryRun, questions)
+	yes, err := rlsAnswers(c, f.agentRLS, f.yes || f.dryRun, f.agent, asks)
 	if err != nil {
 		return nil, err
 	}
@@ -316,33 +324,6 @@ func agentPolicies(c *cliIO, conn guard.Querier, names guard.Names, f initFlags)
 		if yes[i] {
 			out = append(out, b)
 		}
-	}
-	return out, nil
-}
-
-// rlsAnswers answers the row-level security questions by --agent-rls:
-// none says no to all, all-rows yes to all, and ask asks each at a
-// terminal (default no), or says no to all without a terminal or when
-// quiet (--yes, --dry-run).
-func rlsAnswers(c *cliIO, mode AgentRLSMode, quiet bool, questions []string) ([]bool, error) {
-	out := make([]bool, len(questions))
-	switch {
-	case mode == AgentRLSNone:
-		return out, nil
-	case mode == AgentRLSAllRows:
-		for i := range out {
-			out[i] = true
-		}
-		return out, nil
-	case !c.interactive || quiet:
-		return out, nil
-	}
-	for i, q := range questions {
-		ok, err := c.confirm(q)
-		if err != nil {
-			return nil, err
-		}
-		out[i] = ok
 	}
 	return out, nil
 }
@@ -426,7 +407,7 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 	})
 	f.agentRLS = AgentRLSAsk
 	fs.Var(&f.agentRLS, "agent-rls",
-		"on agent tables where row-level security hides every row: ask at a terminal, all-rows adds a policy letting the agent see them all, none skips the question")
+		"on agent tables where row-level security hides every row: ask (a checklist at a terminal, one line from piped input), all-rows adds a policy letting the agent see them all, none adds none, or a list such as us.*,public.orders adds it on those tables only")
 	fs.Var(&f.vaultFlag, flagVault, "on or off: whether the engine reaches the portal's pages through the Vault (default off, on with --operated-by=agent)")
 	f.operatedBy = OperatedByPerson
 	fs.Var(&f.operatedBy, "operated-by", "who runs this engine's machine steps: person or agent (agent: you run init here, then hand the engine to a bot; the pages are the portal's)")

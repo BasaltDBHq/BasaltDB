@@ -101,7 +101,7 @@ N12-7 and N12-8, and owner decision "Agent RLS" (Nov 12).
 | Object | Purpose |
 |---|---|
 | Policy `<prefix>_guard` | `AS PERMISSIVE FOR ALL TO <prefix>_guard USING (true) WITH CHECK (true)` on every guarded table with RLS enabled, created by `attach` (every `basalt init`), dropped by `basalt uninstall`. Agent roles keep `NOBYPASSRLS`; they get a policy only as in the next row |
-| Policy `<prefix>_agent_<name>` | `AS PERMISSIVE FOR SELECT TO <role> USING (true)` on a `--read` table, `FOR ALL ... USING (true) WITH CHECK (true)` on a `--write` table. Created by `basalt init` only on agent tables where RLS hid every row from the role and the person confirmed it (or passed `--agent-rls=all-rows`); kept on re-init; dropped by `basalt uninstall` |
+| Policy `<prefix>_agent_<name>` | `AS PERMISSIVE FOR SELECT TO <role> USING (true)` on a `--read` table, `FOR ALL ... USING (true) WITH CHECK (true)` on a `--write` table. Created by `basalt init` only on agent tables where RLS hid every row from the role and the person left it checked (or passed `--agent-rls=all-rows`, or listed it); kept on re-init; dropped by `basalt uninstall` |
 | `record_agent_policy(agent name, table regclass, command text) returns bigint` | Admin only (init, after its `CREATE POLICY`): appends ledger kind `AGENT_POLICY_ADDED` for the agent (detail `policy`, `command` `SELECT` or `ALL`, `by`). Refuses a role that is not an agent or a table without that policy |
 | `uncovered_tables()` | Also returns guarded tables with RLS enabled and no guard policy, `why` = `RLS_WITHOUT_GUARD_POLICY` |
 | Revert lines | Redacted on RLS tables as in [Revert](revert.md#lines-binding-and-codes) |

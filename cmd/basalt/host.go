@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -32,6 +33,16 @@ type host interface {
 	// Sudo runs args under sudo with stdin, which carries the agent's
 	// credential; sudo asks for the password on the terminal.
 	Sudo(ctx context.Context, args []string, stdin string, out, errw io.Writer) error
+	// ResolvedExecutable is this basalt binary's path with every link
+	// resolved; an error when a link cannot be resolved.
+	ResolvedExecutable() (string, error)
+	// DialogAvailable says why the system's administrator dialog cannot be
+	// shown here, or nil when it can (service.ErrNoDialog wrapped).
+	DialogAvailable(goos string) error
+	// AdminDialog asks the person, through the system's administrator
+	// dialog, to run script as root (service.DialogCommand), with a fixed
+	// environment and / as its directory.
+	AdminDialog(ctx context.Context, goos, script string, out io.Writer) error
 	// LookPath finds a command on PATH.
 	LookPath(name string) (string, error)
 	// Run runs a command as the person.
@@ -60,6 +71,63 @@ func (osHost) Executable() (string, error)    { return shimExecutable() }
 func (osHost) UserConfigDir() (string, error) { return os.UserConfigDir() }
 func (osHost) LookPath(name string) (string, error) {
 	return exec.LookPath(name)
+}
+
+func (osHost) ResolvedExecutable() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(exe)
+}
+
+// darwinConsole is owned by the user logged in at the Mac's screen.
+const darwinConsole = "/dev/console"
+
+func (osHost) DialogAvailable(goos string) error {
+	paths, err := service.DialogPaths(goos)
+	if err != nil {
+		return err
+	}
+	for _, p := range paths {
+		if _, err := os.Stat(p); err != nil {
+			return fmt.Errorf("%w (%s is missing)", service.ErrNoDialog, p)
+		}
+	}
+	if goos != "darwin" {
+		return nil
+	}
+	// The dialog shows on the Mac's screen: only for the person logged in there.
+	uid, err := fileOwnerUID(darwinConsole)
+	if err != nil {
+		return fmt.Errorf("%w (%s: %w)", service.ErrNoDialog, darwinConsole, err)
+	}
+	if uid != os.Geteuid() {
+		return fmt.Errorf("%w (you are not the user logged in at this Mac's screen)", service.ErrNoDialog)
+	}
+	return nil
+}
+
+// dialogEnv is the whole environment of the dialog program: nothing of the
+// caller's reaches the script.
+var dialogEnv = []string{"PATH=/usr/bin:/bin:/usr/sbin:/sbin"}
+
+func (osHost) AdminDialog(ctx context.Context, goos, script string, out io.Writer) error {
+	argv, err := service.DialogCommand(goos, script)
+	if err != nil {
+		return err
+	}
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.Env, cmd.Dir = dialogEnv, "/"
+	var said bytes.Buffer
+	cmd.Stdout, cmd.Stderr = out, io.MultiWriter(out, &said)
+	err = cmd.Run()
+	code := -1
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		code = exitErr.ExitCode()
+	}
+	return service.DialogError(goos, code, said.String(), err)
 }
 
 func (osHost) Sudo(ctx context.Context, args []string, stdin string, out, errw io.Writer) error {

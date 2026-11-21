@@ -133,8 +133,23 @@ func (c *cliIO) fail(err error) int {
 const failIndent = "  "
 
 func (c *cliIO) flags(name string) *flag.FlagSet {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs := newFlagSet(name)
 	fs.SetOutput(c.stderr)
+	return fs
+}
+
+// flagSetMade, when set, sees every flag set newFlagSet makes. Only the
+// surface test sets it, to read the flags the binary really has
+// (contract/surface.json).
+var flagSetMade func(*flag.FlagSet)
+
+// newFlagSet makes the flag set of a command or subcommand. Every command
+// makes its flag set here, so the surface test sees all of them.
+func newFlagSet(name string) *flag.FlagSet {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	if flagSetMade != nil {
+		flagSetMade(fs)
+	}
 	return fs
 }
 

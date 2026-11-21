@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -42,7 +41,7 @@ func runEngine(ctx context.Context, args []string, io stdio) int {
 
 // runEngineOn is runEngine with the host that tells root and the config dir.
 func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
-	fs := flag.NewFlagSet("engine", flag.ContinueOnError)
+	fs := newFlagSet("engine")
 	fs.SetOutput(io.err)
 	configPath := fs.String("config", config.DefaultPath(runtime.GOOS), "engine config file")
 	runAs := fs.String("user", "", "start as root, then run as this OS user before reading the config (a container without systemd)")
@@ -259,7 +258,7 @@ func runMCP(ctx context.Context, args []string, io stdio) int {
 
 // runMCPOn is runMCP with the host that tells root and the config dir.
 func runMCPOn(ctx context.Context, args []string, io stdio, h host) int {
-	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
+	fs := newFlagSet("mcp")
 	fs.SetOutput(io.err)
 	name := fs.String("agent", "", "agent name (socket <socket-dir>/<agent>.sock)")
 	socketDir := fs.String("socket-dir", config.DefaultSocketDir(runtime.GOOS), "engine socket directory")
@@ -384,7 +383,7 @@ func runService(ctx context.Context, args []string, io stdio) int {
 		return exitUsage
 	}
 	action := args[0]
-	fs := flag.NewFlagSet("service "+action, flag.ContinueOnError)
+	fs := newFlagSet("service " + action)
 	fs.SetOutput(io.err)
 	user := fs.String("user", service.DefaultUser(runtime.GOOS), "OS user the engine runs as")
 	configPath := fs.String("config", config.DefaultPath(runtime.GOOS), "engine config file")

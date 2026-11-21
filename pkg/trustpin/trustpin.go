@@ -121,8 +121,8 @@ type Seen struct {
 func (s Seen) Pinnable() bool { return !s.Public && (s.Full || s.NameOnly) }
 
 // Check is what chain, leaf first, proves for host, against the system's
-// trust store (trustprofile.SystemRoots; a store that cannot be read makes
-// the chain Public, so nothing is pinned).
+// trust store (trustprofile.SystemRoots) and, for Public, the public roots
+// the binary carries as well (trustprofile.PublicRoots).
 func Check(chain []*x509.Certificate, host string, now time.Time) Seen {
 	top := chain[len(chain)-1]
 	s := Seen{Top: top, SHA256: trustprofile.DERSHA256(top)}
@@ -132,16 +132,12 @@ func Check(chain []*x509.Certificate, host string, now time.Time) Seen {
 	}
 	system, serr := trustprofile.SystemRoots()
 	if serr != nil || system == nil {
-		system = x509.NewCertPool()
-		s.Public = true
+		system = x509.NewCertPool() // PublicRoots still answer for the public authorities
 	}
 	opts := x509.VerifyOptions{DNSName: host, Roots: system, Intermediates: inter, CurrentTime: now, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
 	_, err := chain[0].Verify(opts)
 	s.System = err == nil
-	nameless := opts
-	nameless.DNSName = ""
-	_, err = chain[0].Verify(nameless)
-	s.Public = s.Public || s.System || err == nil || trustprofile.IsPublic(top, system)
+	s.Public = s.System || publicChain(chain, inter, now, system)
 	opts.Roots = x509.NewCertPool()
 	opts.Roots.AddCert(top)
 	_, err = chain[0].Verify(opts)
@@ -153,6 +149,24 @@ func Check(chain []*x509.Certificate, host string, now time.Time) Seen {
 		s.NameOnly = err == nil && hostnameFailed(chain[0], host, &hostErr)
 	}
 	return s
+}
+
+// publicChain reports whether the leaf chains, without the name, to a
+// public root or a root of system, or any certificate of chain is, or
+// chains to, one (trustprofile.IsPublic).
+func publicChain(chain []*x509.Certificate, inter *x509.CertPool, now time.Time, system *x509.CertPool) bool {
+	for _, roots := range []*x509.CertPool{trustprofile.PublicRoots(), system} {
+		opts := x509.VerifyOptions{Roots: roots, Intermediates: inter, CurrentTime: now, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}
+		if _, err := chain[0].Verify(opts); err == nil {
+			return true
+		}
+	}
+	for _, c := range chain {
+		if trustprofile.IsPublic(c, system) {
+			return true
+		}
+	}
+	return false
 }
 
 // hostnameFailed reports whether leaf fails for host on the name alone.

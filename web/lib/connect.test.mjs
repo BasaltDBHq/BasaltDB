@@ -21,6 +21,7 @@ import {
   answersFor,
   call,
   compareCheckCodes,
+  reachText,
   fingerprintText,
   trustRootFrom,
   databaseView,
@@ -1224,4 +1225,11 @@ test("a certificate authority that changed: asked again with the refusal's messa
   await nodes["trust-go"].click();
   assert.equal(shown(nodes), "s-paste");
   assert.equal(flow.holdsConnectionString, false);
+});
+
+test("a bot that sees another certificate authority is told so, not given pooler advice", () => {
+  const t = reachText("TRUST_ROOT_MISMATCH", "familite-bot");
+  assert.match(t, /^familite-bot's server sees a different certificate authority/);
+  assert.match(t, /provider's console/);
+  assert.doesNotMatch(t, /pooler/i);
 });

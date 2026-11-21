@@ -37,6 +37,9 @@ func newTrustServer(t *testing.T, certHost string, operator ...*trustprofile.Pro
 		Resolver: resolverFunc(func(string) ([]netip.Addr, error) { return []netip.Addr{netip.MustParseAddr("8.8.8.8")}, nil }),
 		Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			s.dials.Add(1)
+			if addr != "8.8.8.8:5432" {
+				t.Errorf("dialled %s, not the resolved and checked address", addr)
+			}
 			return dial(ctx, network, addr)
 		},
 		Profiles: trustprofiletest.Set(t, nil, operator...),
@@ -232,4 +235,30 @@ func TestPreviewWithTrustedRoot(t *testing.T) {
 	h.p.Step(ctx)
 	require.Zero(t, h.prober.probes)
 	require.Equal(t, []report{{db, Reach{Reason: ReasonTrustRootMismatch}}}, h.col.reports)
+}
+
+// A passed preview stands in for SET_UP only on the same trust: when the
+// chain read again for SET_UP gives another pin, or none, it probes again.
+func TestPreviewReuseNeedsTheSamePin(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	ca, _ := trustprofiletest.Chain(t, db.Host)
+	other, _ := trustprofiletest.Chain(t, db.Host)
+	for name, setUp := range map[string]Pin{
+		"no pin now":  {},
+		"another pin": {Profile: &trustprofile.Profile{}, Top: other},
+	} {
+		h := newHarness(t)
+		h.col.err, h.col.addr, h.col.phase, h.col.trustRoot = nil, db, HoldPreview, "ab"
+		h.prober.pin = Pin{Profile: &trustprofile.Profile{}, Top: ca}
+		h.p.Step(ctx)
+		require.Equal(t, 1, h.prober.probes, name)
+		h.col.phase = HoldSetUp
+		h.prober.pin = setUp
+		h.clock.advance(fastEvery)
+		h.p.Step(ctx)
+		require.Equal(t, PhaseConfirm, h.p.State().Phase, name)
+		require.Equal(t, 2, h.prober.probes, name+": probed again on the new trust")
+		require.Equal(t, setUp, h.prober.pins[1], name)
+	}
 }

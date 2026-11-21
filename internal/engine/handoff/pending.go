@@ -11,6 +11,7 @@ import (
 
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/setupcode"
+	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
 // Phases of a connect-only setup on the engine.
@@ -200,7 +201,7 @@ func New(o Options) (*Pending, error) {
 		if c, ok := o.Cache.Load(o.Setup.SetupID); ok {
 			out.notBefore = c.NotBefore
 			if !c.At.IsZero() {
-				out.preview = previewProbe{key: c.AddressKey, ip: c.IP, at: c.At, reach: Reach{Reason: c.Reason}, probed: Probed{IP: c.IP, ChannelBinding: c.ChannelBinding}}
+				out.preview = previewProbe{key: c.AddressKey, ip: c.IP, at: c.At, reach: Reach{Reason: c.Reason}, probed: Probed{IP: c.IP, ChannelBinding: c.ChannelBinding}, pinned: c.Pinned}
 			}
 		}
 	}
@@ -219,6 +220,16 @@ type previewProbe struct {
 	at     time.Time
 	reach  Reach
 	probed Probed
+	// pinned is the SHA-256 of the pin it passed with, "" for none.
+	pinned string
+}
+
+// pinnedOf is the SHA-256 of pin's top, "" for no pin.
+func pinnedOf(pin Pin) string {
+	if pin.Top == nil {
+		return ""
+	}
+	return trustprofile.DERSHA256(pin.Top)
 }
 
 // passed reports whether the probe passed for key (probeKey) at ip within
@@ -359,8 +370,11 @@ func (p *Pending) step(ctx context.Context) {
 		}
 		switch {
 		case err != nil:
-		case reuse:
+		case reuse && v.pinned == pinnedOf(pin):
+			// The preview passed on the same trust: the same pin, or none.
 			probed = v.probed
+		case p.o.NoSetUpProbe:
+			return
 		default:
 			probed, err = p.o.Prober.ProbeAt(ctx, addr, ip, LoginUser(addr, p.role), pin)
 		}
@@ -442,6 +456,7 @@ func (p *Pending) previewStep(ctx context.Context, setup config.Setup, got Colle
 		if err == nil {
 			v.ip = ip
 			v.probed, err = p.o.Prober.ProbeAt(ctx, addr, ip, LoginUser(addr, p.role), pin)
+			v.pinned = pinnedOf(pin)
 		}
 		r, report := ReachOf(err)
 		if !report {
@@ -513,7 +528,7 @@ func (p *Pending) save() {
 	p.mu.Lock()
 	v, c := p.preview, Cached{SetupID: p.st.Setup.SetupID, NotBefore: p.notBefore}
 	p.mu.Unlock()
-	c.AddressKey, c.IP, c.At, c.Reason, c.ChannelBinding = v.key, v.ip, v.at, v.reach.Reason, v.probed.ChannelBinding
+	c.AddressKey, c.IP, c.At, c.Reason, c.ChannelBinding, c.Pinned = v.key, v.ip, v.at, v.reach.Reason, v.probed.ChannelBinding, v.pinned
 	if err := p.o.Cache.Save(c); err != nil {
 		p.o.Log.Warn("keep the preview probe for the next process", "err", err)
 	}

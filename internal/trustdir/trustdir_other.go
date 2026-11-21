@@ -29,6 +29,12 @@ func Pin(string, string, *x509.Certificate, bool) (*trustprofile.Profile, []stri
 	return nil, nil, errUnsupported
 }
 
+// PinNew: see errUnsupported.
+func PinNew(string, string, *x509.Certificate, bool) (bool, error) { return false, errUnsupported }
+
+// ErrCovered: PinNew found a trust profile that covers the host already.
+var ErrCovered = errors.New("a trust profile covers this host already")
+
 // PinProfile: see errUnsupported.
 func PinProfile(string, *x509.Certificate, bool) (*trustprofile.Profile, error) {
 	return nil, errUnsupported

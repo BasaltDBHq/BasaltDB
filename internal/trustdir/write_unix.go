@@ -212,9 +212,51 @@ func Pin(configPath, host string, cert *x509.Certificate, caOnly bool) (*trustpr
 	if err != nil {
 		return nil, nil, err
 	}
-	p, name, match, pemName, pemBytes, raw := pf.Profile, pf.Profile.Name, pf.Profile.Match[0], pf.PEMName, pf.PEM, pf.JSON
 	var replaced []string
 	err = write(configPath, func(d *service.TrustedDir, trusted int) error {
+		var err error
+		replaced, err = writePin(d, trusted, pf)
+		return err
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return pf.Profile, replaced, nil
+}
+
+// ErrCovered: PinNew found a trust profile that covers the host already.
+var ErrCovered = errors.New("a trust profile covers this host already")
+
+// PinNew is Pin for a pin that may add trust and never replace it: under
+// the config lock, when a profile covers host (built-in or operator, a pin
+// included), it writes nothing and returns false when that profile is this
+// very pin, else ErrCovered naming it. True when it wrote the pin.
+func PinNew(configPath, host string, cert *x509.Certificate, caOnly bool) (bool, error) {
+	pf, err := trustprofile.NewPin(host, cert, caOnly)
+	if err != nil {
+		return false, err
+	}
+	wrote := false
+	err = write(configPath, func(d *service.TrustedDir, trusted int) error {
+		if cur := Set(configPath).For(host); cur != nil {
+			if cur.Name == pf.Profile.Name && slices.ContainsFunc(cur.Certificates(), cert.Equal) {
+				return nil
+			}
+			return fmt.Errorf("%w: %s covers %s", ErrCovered, cur.Name, host)
+		}
+		_, err := writePin(d, trusted, pf)
+		wrote = err == nil
+		return err
+	})
+	return wrote, err
+}
+
+// writePin writes pf in d, replacing the pin of the same name, and returns
+// the fingerprints it replaced. The config lock is held.
+func writePin(d *service.TrustedDir, trusted int, pf trustprofile.PinFiles) ([]string, error) {
+	name, match, pemName, pemBytes, raw := pf.Profile.Name, pf.Profile.Match[0], pf.PEMName, pf.PEM, pf.JSON
+	var replaced []string
+	err := func() error {
 		old, err := existingPin(d, name, match, trusted)
 		if err != nil {
 			return err
@@ -232,11 +274,8 @@ func Pin(configPath, host string, cert *x509.Certificate, caOnly bool) (*trustpr
 		}
 		replaced = old.fingerprints
 		return nil
-	})
-	if err != nil {
-		return nil, nil, err
-	}
-	return p, replaced, nil
+	}()
+	return replaced, err
 }
 
 // PinProfile is the pin profile Pin would write for host, built in memory

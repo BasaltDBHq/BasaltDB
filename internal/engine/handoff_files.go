@@ -90,12 +90,9 @@ func (f handoffFiles) change(id string, edit func(*config.Setup)) error {
 // never replaces trust: when a profile covers host by now, it writes
 // nothing, and refuses unless that profile is this very pin.
 func (f handoffFiles) WritePin(host string, pin handoff.Pin) error {
-	if cur := trustdir.Set(f.configPath).For(host); cur != nil {
-		if cur.Name == pin.Profile.Name && slices.ContainsFunc(cur.Certificates(), pin.Top.Equal) {
-			return nil
-		}
-		return fmt.Errorf("trust profile %s covers %s now, so the certificate authority trusted on the connect page is not pinned", cur.Name, host)
+	_, err := trustdir.PinNew(f.configPath, host, pin.Top, pin.CAOnly)
+	if errors.Is(err, trustdir.ErrCovered) {
+		return fmt.Errorf("%w, so the certificate authority trusted on the connect page is not pinned", err)
 	}
-	_, _, err := trustdir.Pin(f.configPath, host, pin.Top, pin.CAOnly)
 	return err
 }

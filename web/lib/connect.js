@@ -479,6 +479,8 @@ export function reachText(reason, bot) {
       return `The database's certificate could not be verified from ${bot}'s server for this host. Check that the string is your database's own address, or use a host whose certificate a public authority signed.`;
     case "ADDRESS_REFUSED":
       return `This address is private: ${bot}'s server will not connect to it.`;
+    case "TRUST_ROOT_MISMATCH":
+      return `${bot}'s server sees a different certificate authority for this database than the one you trusted, so it trusts neither. Check the certificate against your provider's console. If it changes again, something between ${bot}'s server and your database may be in the way.`;
     default:
       return "Supabase: use the Session pooler string instead of the direct one.";
   }

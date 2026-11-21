@@ -285,7 +285,7 @@ func runMCPOn(ctx context.Context, args []string, io stdio, h host) int {
 	}
 	// Links to the engine's own local pages open in the browser on a
 	// person-operated engine; the engine says which in its hello answer.
-	opts := shim.Options{Open: h.OpenURL}
+	opts := shim.Options{Open: h.OpenURL, UploadPlugin: shim.NewPluginUploader(config.PersonSocketPath(personSocketDir(down.Config, *socketDir)))}
 	if exe, err := shimExecutable(); err == nil {
 		var failure func() string
 		opts.Start, failure = engineStarter(enginePath(*configPath), path, down.Config, h.Euid(), exe, log)
@@ -295,6 +295,16 @@ func runMCPOn(ctx context.Context, args []string, io stdio, h host) int {
 		return fail(io.err, "mcp", err)
 	}
 	return exitOK
+}
+
+// personSocketDir is where basalt mcp looks for the person socket, to
+// upload a plugin the agent asks for: the config's socket directory when it
+// can read the config, else the one it was given.
+func personSocketDir(cfg *config.Config, given string) string {
+	if cfg != nil && cfg.SocketDir != "" {
+		return cfg.SocketDir
+	}
+	return given
 }
 
 // shimAgent names the agent in status when basalt mcp was given only a

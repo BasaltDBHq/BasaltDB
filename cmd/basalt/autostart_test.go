@@ -287,3 +287,56 @@ func TestEngineStarterEngineRunsButNeverServesThisSocket(t *testing.T) {
 	require.NoError(t, start(context.Background()))
 	require.EqualValues(t, 1, r.launches.Load())
 }
+
+// A supervisor already starting (or restarting) its engine holds
+// supervise.lock before the engine lock is taken: basalt mcp launches
+// nothing and waits for the socket.
+func TestEngineStarterWaitsWhenSupervisorHoldsLock(t *testing.T) {
+	t.Parallel()
+	r := newStarterRig(t)
+	require.NoError(t, os.MkdirAll(r.cfg.SocketDir, 0o700))
+	release, err := config.LockFile(filepath.Join(r.cfg.SocketDir, superviseLock))
+	require.NoError(t, err)
+	t.Cleanup(release)
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		ln, err := net.Listen("unix", r.socket())
+		if err != nil {
+			return
+		}
+		r.mu.Lock()
+		r.listeners = append(r.listeners, ln)
+		r.mu.Unlock()
+		for {
+			c, aerr := ln.Accept()
+			if aerr != nil {
+				return
+			}
+			c.Close()
+		}
+	}()
+	start, failure := newEngineStarter(r.deps(testEuid, nil), "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
+
+	require.NoError(t, start(context.Background()))
+
+	require.EqualValues(t, 0, r.launches.Load(), "a supervisor that already runs is not started again")
+	require.Empty(t, failure())
+}
+
+// Once the supervisor is gone, the next call starts a fresh one.
+func TestEngineStarterStartsAfterSupervisorLockIsReleased(t *testing.T) {
+	t.Parallel()
+	r := newStarterRig(t)
+	require.NoError(t, os.MkdirAll(r.cfg.SocketDir, 0o700))
+	release, err := config.LockFile(filepath.Join(r.cfg.SocketDir, superviseLock))
+	require.NoError(t, err)
+	d := r.deps(testEuid, nil)
+	d.wait = 200 * time.Millisecond
+	start, _ := newEngineStarter(d, "/x/engine.json", r.socket(), &r.cfg, testEuid, r.exe, slog.New(slog.DiscardHandler))
+	require.ErrorContains(t, start(context.Background()), "did not answer on")
+	require.EqualValues(t, 0, r.launches.Load())
+
+	release()
+	require.NoError(t, start(context.Background()))
+	require.EqualValues(t, 1, r.launches.Load())
+}

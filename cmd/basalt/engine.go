@@ -78,6 +78,8 @@ func runEngineOn(ctx context.Context, args []string, io stdio, h host) int {
 	if *supervised {
 		return runSupervise(ctx, enginePath(*configPath), *startedBy, io, h)
 	}
+	// A supervised child on macOS stops when its supervisor dies.
+	watchSupervisedParent(ctx)
 	cfg, err := loadEngineConfigAs(h.Euid(), *configPath)
 	if err != nil {
 		return fail(io.err, "engine", err)

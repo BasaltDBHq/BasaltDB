@@ -166,7 +166,9 @@ sudo install -o root -g root -m 0755 "$work/basalt" "$basalt"
 step "basalt init installs the engine service"
 sudo useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$agent_user"
 # Its output is the setup SQL (the password redacted): shown only on failure.
-"$basalt" init --demo --os-user "$agent_user" --skip-passkey --yes </dev/null >"$work/init.out" 2>&1 || {
+# Run on a pseudo-terminal: init without --remote refuses the admin path
+# when stdin is not a terminal, since an agent is what runs it there.
+script -qec "$(printf '%q ' "$basalt" init --demo --os-user "$agent_user" --skip-passkey --yes)" /dev/null </dev/null >"$work/init.out" 2>&1 || {
 	cat "$work/init.out" >&2
 	fail "basalt init"
 }

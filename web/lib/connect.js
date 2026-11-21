@@ -429,7 +429,7 @@ export function restQuestion(columns) {
 export function reachText(reason, bot) {
   switch (reason) {
     case "TLS_NOT_VERIFIED":
-      return `The database's certificate could not be verified from ${bot}'s server. Use Supabase's Session pooler string, or a host with a valid certificate.`;
+      return `The database's certificate could not be verified from ${bot}'s server for this host. Check that the string is your database's own address, or use a host whose certificate a public authority signed.`;
     case "ADDRESS_REFUSED":
       return `This address is private: ${bot}'s server will not connect to it.`;
     default:

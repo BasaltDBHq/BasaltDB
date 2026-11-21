@@ -1,12 +1,19 @@
 package pgdial_test
 
 import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
+	"github.com/basaltdbhq/basaltdb/internal/supabaseca"
+	"github.com/basaltdbhq/basaltdb/internal/supabaseca/supabasecatest"
 )
 
 func TestDefaultModeUnlessTheStringSetsOne(t *testing.T) {
@@ -28,4 +35,59 @@ func TestDefaultModeUnlessTheStringSetsOne(t *testing.T) {
 	}
 	_, err := pgdial.ConnConfig("postgres://u:p@h:5432/db?default_query_exec_mode=bogus")
 	require.Error(t, err)
+}
+
+// trusts reports whether pool verifies Supabase's own root certificate.
+func trusts(pool *x509.CertPool) bool {
+	_, err := supabaseca.Root().Verify(x509.VerifyOptions{Roots: pool})
+	return err == nil
+}
+
+// Every connection config trusts Supabase's root for a Supabase host with
+// verify-full, a pool's too, and whatever query mode the string sets; other
+// hosts keep the system's roots.
+func TestSupabaseRootForSupabaseHosts(t *testing.T) {
+	t.Parallel()
+	for _, dsn := range []string{
+		"postgres://u:p@db.abcdefghijklmnopqrst.supabase.co:5432/postgres?sslmode=verify-full",
+		"postgres://u:p@aws-0-eu-central-1.pooler.supabase.com:6543/postgres?sslmode=verify-full&default_query_exec_mode=simple_protocol",
+	} {
+		cfg, err := pgdial.ConnConfig(dsn)
+		require.NoError(t, err, dsn)
+		require.True(t, trusts(cfg.TLSConfig.RootCAs), dsn)
+		pool, err := pgdial.PoolConfig(dsn)
+		require.NoError(t, err, dsn)
+		require.True(t, trusts(pool.ConnConfig.TLSConfig.RootCAs), dsn)
+	}
+	cfg, err := pgdial.ConnConfig("postgres://u:p@db.example.com:5432/postgres?sslmode=verify-full")
+	require.NoError(t, err)
+	require.Nil(t, cfg.TLSConfig.RootCAs)
+	pool, err := pgdial.PoolConfig("postgres://u:p@db.example.com:5432/postgres?sslmode=verify-full")
+	require.NoError(t, err)
+	require.Nil(t, pool.ConnConfig.TLSConfig.RootCAs)
+}
+
+// A login through pgdial to a Supabase host whose chain ends at the
+// (stand-in) Supabase root verifies; the same chain on another host does not.
+func TestConnConfigTrustingVerifiesASupabaseChain(t *testing.T) {
+	t.Parallel()
+	login := func(host string) error {
+		ca, cert := supabasecatest.Chain(t, host)
+		cfg, err := pgdial.ConnConfigTrusting("postgres://u:p@"+host+":5432/postgres?sslmode=verify-full", ca)
+		require.NoError(t, err)
+		cfg.LookupFunc = func(context.Context, string) ([]string, error) { return []string{"127.0.0.1"}, nil }
+		cfg.DialFunc = supabasecatest.Serve(t, cert)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		conn, err := pgx.ConnectConfig(ctx, cfg)
+		if err == nil {
+			_ = conn.Close(ctx)
+		}
+		return err
+	}
+	var pg *pgconn.PgError
+	require.ErrorAs(t, login("db.abcdefghijklmnopqrst.supabase.co"), &pg)
+	require.Equal(t, "28P01", pg.Code)
+	var verify *tls.CertificateVerificationError
+	require.ErrorAs(t, login("db.example.com"), &verify)
 }

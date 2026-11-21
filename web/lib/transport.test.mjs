@@ -100,3 +100,9 @@ test("only transport.js touches the browser's network globals", () => {
     assert.doesNotMatch(src, /window\.fetch|new\s+(window\.)?WebSocket\s*\(|globalThis\.fetch/, `${f} uses the browser's network itself`);
   }
 });
+
+test("the plugin approval page stays on the same origin, never the relay", () => {
+  const src = readFileSync(new URL("./plugin.js", import.meta.url), "utf8");
+  assert.doesNotMatch(src, /pageTransport|relay\.js/);
+  assert.match(src, /sameOriginTransport\(\)\.open/);
+});

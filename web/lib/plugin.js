@@ -29,7 +29,7 @@ import {
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
 import { $, el, fail, loadOrPaste, personText, setPill, showCode, showDone, showRelayFailed, webauthnError, whenText } from "./page.js";
 import { agentName } from "./scope.js";
-import { pageTransport } from "./transport.js";
+import { sameOriginTransport } from "./transport.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
 
@@ -237,7 +237,10 @@ async function loadRequest(hash) {
     }
     const paths = relayPaths("plugins", id);
     const secret = linkSecret(hash);
-    const session = await pageTransport().open({ page: "plugins", id, secret });
+    // Plugin changes are refused on agent-operated engines, so a plugin
+    // approval is only ever served by the engine's own local pages: same
+    // origin, never the relay.
+    const session = await sameOriginTransport().open({ page: "plugins", id, secret });
     const req = await checkPluginRequest(await fetchRequest(session, paths.request, secret));
     if (req.approvalId !== id) throw new CodeError("the engine sent another plugin approval than this link's");
     return { req, relay: { path: paths.relay, secret, session } };

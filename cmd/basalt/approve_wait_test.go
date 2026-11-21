@@ -25,7 +25,7 @@ func cliPages(t *testing.T, h host, stdin string, limit time.Duration, args ...s
 	var stdout, stderr bytes.Buffer
 	c := newIO(ctx, stdio{in: strings.NewReader(stdin), out: &stdout, err: &stderr}, func(string) string { return "" })
 	c.host = h
-	code := guardCommands[args[0]](c, args[1:])
+	code := runGuard(c, args)
 	return result{code, stdout.String(), stderr.String()}
 }
 

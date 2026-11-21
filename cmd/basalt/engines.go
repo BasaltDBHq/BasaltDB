@@ -103,7 +103,11 @@ func engineListConn(c *cliIO, af agentFlags, admin bool) (*pgx.Conn, string, err
 		conn, err := connectAdmin(c)
 		return conn, "", err
 	}
-	dsn, err := agentURL(c, *af.agent, *af.credFile, *af.configPath)
+	configPath, err := c.findConfig()
+	if err != nil {
+		return nil, "", err
+	}
+	dsn, err := agentURL(c, *af.agent, c.paths.credFile, configPath)
 	if err != nil {
 		return nil, "", err
 	}
@@ -111,7 +115,7 @@ func engineListConn(c *cliIO, af agentFlags, admin bool) (*pgx.Conn, string, err
 	if err != nil {
 		return nil, "", err
 	}
-	return conn, localEngineID(c, *af.configPath), nil
+	return conn, localEngineID(c, configPath), nil
 }
 
 // localEngineID is the engine id of this machine's engine key file, read

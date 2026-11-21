@@ -490,7 +490,7 @@ func TestEveryCatalogErrorGivesTheCatalogsSteps(t *testing.T) {
 				t.Parallel()
 				s := operatedService(t, variant.goos, variant.config, variant.initArgs, variant.operatedBy)
 				te := s.Failure(kase.tool, kase.args, kase.fail(t, s))
-				requireObeysCatalog(t, kase, te, variant.config, variant.operatedBy)
+				requireObeysCatalog(t, kase, te, variant.operatedBy)
 			})
 		}
 	}
@@ -539,7 +539,7 @@ func requireOperatorRules(t *testing.T, steps []mcp.NextStep, personMessage stri
 	}
 }
 
-func requireObeysCatalog(t *testing.T, kase catalogCase, te *mcp.ToolError, config, operatedBy string) {
+func requireObeysCatalog(t *testing.T, kase catalogCase, te *mcp.ToolError, operatedBy string) {
 	t.Helper()
 	entry, ok := catalogOf(t).ErrorEntry(te.Code, te.Reason, kase.tool)
 	require.True(t, ok, "no catalog entry for %s %s %s", te.Code, te.Reason, kase.tool)
@@ -552,7 +552,7 @@ func requireObeysCatalog(t *testing.T, kase catalogCase, te *mcp.ToolError, conf
 	requireOperatorRules(t, te.NextSteps, te.PersonMessage, variant, entryKey(entry))
 	requirePersonMessage(t, te.PersonMessage, te.Links)
 	for i, st := range te.NextSteps {
-		requireStepObeysRules(t, st, kase, config, fmt.Sprintf("%s step %d", entryKey(entry), i+1))
+		requireStepObeysRules(t, st, kase, fmt.Sprintf("%s step %d", entryKey(entry), i+1))
 	}
 	if te.Code == CodeInternal || te.Code == CodeUnavailable {
 		require.NotEmpty(t, te.ErrorID, "errorId on UNAVAILABLE and INTERNAL")
@@ -567,7 +567,7 @@ var conditionalWords = regexp.MustCompile(`(?i)\b(if|unless|otherwise)\b`)
 
 var secretPattern = regexp.MustCompile(`(?i)(://|#s=|secret|token|postgres)`)
 
-func requireStepObeysRules(t *testing.T, st mcp.NextStep, kase catalogCase, config, where string) {
+func requireStepObeysRules(t *testing.T, st mcp.NextStep, kase catalogCase, where string) {
 	t.Helper()
 	require.Contains(t, mcpcontract.ActorActions[st.Actor], st.Action, where)
 	require.NotEmpty(t, st.Text, where)
@@ -584,11 +584,11 @@ func requireStepObeysRules(t *testing.T, st mcp.NextStep, kase catalogCase, conf
 		require.Positive(t, st.MaxRows, where)
 		require.LessOrEqual(t, st.MaxRows, MaxRetryRows, where)
 	case mcp.ActionRunCommand:
-		requireCommand(t, st.Command, config, where)
+		requireCommand(t, st.Command, where)
 	case mcp.ActionOpenLink:
 		require.NotEmpty(t, st.URL, where)
 		if st.Command != "" {
-			requireCommand(t, st.Command, config, where)
+			requireCommand(t, st.Command, where)
 		}
 	}
 	if st.Action != mcp.ActionRetrySmallerBatches {
@@ -607,7 +607,7 @@ func requireStepObeysRules(t *testing.T, st mcp.NextStep, kase catalogCase, conf
 // (LOCK_FILE_UNUSABLE).
 var serviceManager = regexp.MustCompile(`^sudo (systemctl|launchctl|chown) `)
 
-func requireCommand(t *testing.T, command, config, where string) {
+func requireCommand(t *testing.T, command, where string) {
 	t.Helper()
 	require.NotEmpty(t, command, where)
 	if serviceManager.MatchString(command) {
@@ -637,11 +637,8 @@ func requireCommand(t *testing.T, command, config, where string) {
 		require.Regexp(t, `--agent[ =]bot`, command, where)
 	}
 	require.NotContains(t, command, "<", "%s: no placeholders: %q", where, command)
-	if config == "" {
-		require.NotContains(t, command, "--config", where)
-		return
-	}
-	require.Contains(t, command, "--config "+config, where)
+	// Only the foreground engine names its config: every other command finds it.
+	require.NotContains(t, command, "--config", where)
 }
 
 func requireToolArguments(t *testing.T, st mcp.NextStep, kase catalogCase, where string) {

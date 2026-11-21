@@ -41,7 +41,7 @@ func laptopRun(t *testing.T, admin, stdin string, now time.Time, args ...string)
 	if !now.IsZero() {
 		c.now = func() time.Time { return now }
 	}
-	code := runInit(c, args)
+	code := runInit(c, takePathFlags(c, runInit, args))
 	return result{code, stdout.String(), stderr.String()}
 }
 
@@ -203,7 +203,7 @@ func TestInitSetupCodeUsage(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr}, func(string) string { return "" })
 	c.goos = "windows"
-	require.Equal(t, exitError, runInit(c, []string{"--setup-code", "x"}))
+	require.Equal(t, exitError, runInit(c, takePathFlags(c, runInit, []string{"--setup-code", "x"})))
 	require.Contains(t, stderr.String(), "macOS and Linux only")
 
 	require.True(t, isSetupCode([]string{"--setup-code=x"}))

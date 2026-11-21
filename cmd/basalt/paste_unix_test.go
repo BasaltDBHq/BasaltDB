@@ -217,7 +217,7 @@ func TestApproveOpenTakesALongCode(t *testing.T) {
 	c.host = h
 	go term.typeIn(strings.Repeat(" ", overLineLimit) + code + "\n")
 	exit, _ := inTime(t, func() (int, error) {
-		return guardCommands["approve"](c, []string{"--agent", "bot", "--config", localConfig(t, cred), "--open", id}), nil
+		return runGuard(c, append([]string{"approve"}, []string{"--agent", "bot", "--config", localConfig(t, cred), "--open", id}...)), nil
 	})
 	require.Equal(t, exitOK, exit, stderr.String())
 	require.Contains(t, stderr.String(), "waiting for your signature on the approval page")
@@ -321,7 +321,7 @@ func TestPasskeyCheckPromptTakesALongCode(t *testing.T) {
 		_, _ = io.WriteString(term.master, "n\n") // keep the phone's passkey
 	}()
 	exit, _ := inTime(t, func() (int, error) {
-		return runPasskey(c, []string{"check", "--credential-file", credFile, "--pages-url", links.Portal}), nil
+		return runPasskey(c, takePathFlags(c, runPasskey, []string{"check", "--credential-file", credFile, "--pages-url", links.Portal})), nil
 	})
 	require.Equal(t, exitOK, exit, stderr.String())
 	require.Contains(t, stderr.String(), "Paste the code the page showed: ")

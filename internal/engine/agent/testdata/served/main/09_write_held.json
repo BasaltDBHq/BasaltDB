@@ -3,7 +3,7 @@
     "approval": {
       "approvalId": "<id-5>",
       "approvalUrl": "http://localhost:8787/approvals/<id-5>#<fragment>",
-      "approveCommand": "basalt approve --agent bot --config /etc/basalt-test/engine.json --open <id-5>",
+      "approveCommand": "basalt approve --agent bot --open <id-5>",
       "expiresAt": "<time>",
       "headline": "Update 11 rows in public.leads",
       "links": [
@@ -12,7 +12,7 @@
           "url": "http://localhost:8787/approvals/<id-5>#<fragment>"
         }
       ],
-      "personMessage": "Held for your approval: Update 11 rows in public·leads.\nApprove it with your passkey here; the page then shows a code for the agent:\n\nhttp://localhost:8787/approvals/<id-5>#<fragment>\n\nOr run: basalt approve --agent bot --config /etc/basalt-test/engine.json --open <id-5>\nExpires <time>.",
+      "personMessage": "Held for your approval: Update 11 rows in public·leads.\nApprove it with your passkey here; the page then shows a code for the agent:\n\nhttp://localhost:8787/approvals/<id-5>#<fragment>\n\nOr run: basalt approve --agent bot --open <id-5>\nExpires <time>.",
       "rows": 11
     },
     "code": "APPROVAL_REQUIRED",
@@ -28,7 +28,7 @@
       {
         "action": "RUN_COMMAND",
         "actor": "PERSON",
-        "command": "basalt approve --agent bot --config /etc/basalt-test/engine.json --open <id-5>",
+        "command": "basalt approve --agent bot --open <id-5>",
         "text": "Run this to open the approval page, then approve with your passkey."
       },
       {
@@ -42,7 +42,7 @@
         "tool": "write"
       }
     ],
-    "personMessage": "Held for your approval: Update 11 rows in public·leads.\nApprove it with your passkey here; the page then shows a code for the agent:\n\nhttp://localhost:8787/approvals/<id-5>#<fragment>\n\nOr run: basalt approve --agent bot --config /etc/basalt-test/engine.json --open <id-5>\nExpires <time>.",
+    "personMessage": "Held for your approval: Update 11 rows in public·leads.\nApprove it with your passkey here; the page then shows a code for the agent:\n\nhttp://localhost:8787/approvals/<id-5>#<fragment>\n\nOr run: basalt approve --agent bot --open <id-5>\nExpires <time>.",
     "reason": "HELD_NO_PAGES"
   },
   "isError": true,

@@ -35,7 +35,10 @@ var plainConfigLoads = map[string]string{
 	// service install, as root, reads only pii.maxMemoryMB for the unit's
 	// memory limits, refusing a link at the config; the config itself is
 	// read again through openEngineFile before anything is written.
-	"engine.go:runService:LoadNoFollow": "the unit's memory limit only",
+	"engine.go:runServiceAt:LoadNoFollow": "the unit's memory limit only",
+	// basalt mcp reads the socket directory and the agents from the config,
+	// as the agent's OS user.
+	"engine.go:runMCPAt:Load": "basalt mcp, as the agent's user",
 }
 
 // configLoadsIn lists the config loaders f refers to, as

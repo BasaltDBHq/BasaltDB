@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -550,4 +551,47 @@ func readSmall(path string, open func(string) (*os.File, error)) ([]byte, error)
 		return nil, errors.New("file " + path + " is larger than 1 MiB")
 	}
 	return raw, nil
+}
+
+// UserDirName is the per-user config directory under the person's config
+// directory (os.UserConfigDir: ~/Library/Application Support on macOS,
+// $XDG_CONFIG_HOME or ~/.config on Linux).
+const UserDirName = "basalt"
+
+// UserPath is engine.json in the person's own config directory, where a
+// bot computer's setup leaves it. userConfigDir is os.UserConfigDir.
+func UserPath(userConfigDir string) string {
+	return filepath.Join(userConfigDir, UserDirName, "engine.json")
+}
+
+// BothConfigsError is Discover's error when engine.json exists at the
+// system path and at the user's path: which one is meant is not for the
+// command to guess.
+type BothConfigsError struct{ System, User string }
+
+func (e *BothConfigsError) Error() string {
+	return fmt.Sprintf("found two engine configs, %s and %s: remove the one you do not use", e.System, e.User)
+}
+
+// Discover is the engine.json every command but basalt engine uses: the
+// one at system, else the one at user, else system (so the error a missing
+// config gives names the path init would create). A system path that
+// cannot be inspected for any reason but its absence counts as found: a
+// service engine's config this person cannot read is still the config. An
+// empty user skips the user path. Both found is a *BothConfigsError.
+func Discover(system, user string) (string, error) {
+	_, serr := os.Stat(system)
+	haveSystem := !errors.Is(serr, fs.ErrNotExist)
+	haveUser := false
+	if user != "" {
+		_, uerr := os.Stat(user)
+		haveUser = uerr == nil
+	}
+	switch {
+	case haveSystem && haveUser:
+		return "", &BothConfigsError{System: system, User: user}
+	case haveUser:
+		return user, nil
+	}
+	return system, nil
 }

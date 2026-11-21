@@ -52,7 +52,7 @@ func TestRequestRevertPrepareTimeLimit(t *testing.T) {
 	require.Equal(t, CodeQueryTimeout, te.Code)
 	require.Equal(t, ReasonTimeLimit, te.Reason)
 	require.Contains(t, te.Message, "nothing was prepared")
-	command := "basalt revert --agent bot --config /etc/basalt-test/engine.json --run " + run.String() + " --open"
+	command := "basalt revert --agent bot --run " + run.String() + " --open"
 	require.Contains(t, te.Message, command)
 	require.Contains(t, te.PersonMessage, command)
 	kinds := make([]string, 0, len(te.NextSteps))

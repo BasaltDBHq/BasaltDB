@@ -5,12 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/basaltdbhq/basaltdb/internal/action"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -18,7 +15,6 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/ledger"
 	"github.com/basaltdbhq/basaltdb/internal/links"
 	"github.com/basaltdbhq/basaltdb/internal/mcp"
-	"github.com/basaltdbhq/basaltdb/internal/revert"
 )
 
 func TestChooseLink(t *testing.T) {
@@ -256,73 +252,6 @@ func TestRevertNoticeStaysWithin500CharactersWhateverIsLong(t *testing.T) {
 	}
 }
 
-// TestApprovalMessageStaysWithinTheLimitWithALongConfigPath: the approve
-// command names --config, so a long path would push the message over 500
-// characters; the message then points to the command in the step instead.
-func TestApprovalMessageStaysWithinTheLimitWithALongConfigPath(t *testing.T) {
-	t.Parallel()
-	long := "/" + strings.Repeat("a-long-directory-name-of-sixty-characters-in-total-ok-ok-ok-", 4) + "engine.json"
-	cmds, err := NewCommands("pbot", long, "linux", nil)
-	require.NoError(t, err)
-	id := uuid.New()
-	command := cmds.Approve(id)
-	require.Contains(t, command, long)
-	lead := "Held for your approval: " + strings.Repeat("Delete 1 row in a table with many cascaded rows ", 2)[:96] + "."
-	for _, pick := range []handOver{
-		{URL: "https://portal.basaltvault.app/approvals/" + id.String() + "#s=q3Jv8sLk2mT0xYp1aBcD9w", Kind: linkShort},
-		{URL: "https://portal.basaltvault.app/approvals/" + id.String() + "#h=q3Jv8sLk2mT0xYp1aBcD9w", Kind: linkHash, File: &links.RequestFile{Blocks: []string{"b"}}},
-	} {
-		text, _ := approvalMessage(lead, pick, command, "Expires 2026-11-12 07:02 UTC.")
-		require.NoError(t, CheckPersonMessage(text), text)
-		require.Contains(t, text, "approve command the agent shows you")
-		require.NotContains(t, text, long)
-	}
-
-	// A short path keeps the command in the message.
-	short, err := NewCommands("pbot", "/etc/basalt/engine.json", "linux", nil)
-	require.NoError(t, err)
-	text, _ := approvalMessage(lead, handOver{URL: "https://portal.basaltvault.app/approvals/" + id.String() + "#s=q3Jv8sLk2mT0xYp1aBcD9w", Kind: linkShort}, short.Approve(id))
-	require.Contains(t, text, short.Approve(id))
-}
-
-// TestMessagesOfferingACommandStayWithinTheLimitWithALongConfigPath builds
-// every personMessage that carries a command named after --config with a
-// 252-character path.
-func TestMessagesOfferingACommandStayWithinTheLimitWithALongConfigPath(t *testing.T) {
-	t.Parallel()
-	long := "/" + strings.Repeat("a-long-directory-name-of-sixty-characters-in-total-ok-ok-ok-", 4) + "engine.json"
-	cmds, err := NewCommands("pbot", long, "linux", nil)
-	require.NoError(t, err)
-	s := &Service{Deps: Deps{Commands: cmds, Log: slog.New(slog.DiscardHandler)}}
-	scope := action.Scope{Kind: revert.ScopeTask, ID: uuid.New()}
-
-	messages := map[string]string{}
-	for _, tool := range []string{toolPreviewRevert, toolRequestRevert} {
-		err := s.prepareTimeout(tool, scope, "57014")
-		var te *mcp.ToolError
-		require.ErrorAs(t, err, &te)
-		messages["timeout "+tool] = te.PersonMessage
-	}
-	err = s.nothingToRevertError(context.Background(), toolPreviewRevert, scope, reasonReadsOnly, "changed no rows")
-	var te *mcp.ToolError
-	require.ErrorAs(t, err, &te)
-	messages["nothing to revert, task"] = te.PersonMessage
-	require.Equal(t, cmds.Revert(scope), te.NextSteps[len(te.NextSteps)-1].Command, "the command stays in a PERSON step")
-	messages["not granted"] = s.notGrantedSteps(NewSteps(), 12)
-	messages["describe not found"] = s.describeNotFoundSteps(NewSteps(), failure{tool: toolDescribe})
-	rls := &Service{Deps: Deps{Commands: cmds, Log: slog.New(slog.DiscardHandler)}}
-	w, err := rls.rlsWarning("public." + strings.Repeat("t", 60))
-	require.NoError(t, err)
-	messages["rls warning"] = w.PersonMessage
-	messages["wait"], _ = waitMessage("Held for your approval: "+strings.Repeat("x", 96)+".", cmds.Approve(uuid.New()), time.Now().Add(time.Hour))
-
-	for name, m := range messages {
-		require.NoError(t, CheckPersonMessage(m), "%s: %s", name, m)
-	}
-	// The preview timeout holds two commands: it must have been cut.
-	require.Contains(t, messages["timeout "+toolPreviewRevert], commandElsewhere)
-}
-
 // requireSendRequestFirst checks a result over the budget: requestFile beside
 // the hash link, and SEND_REQUEST first, then the catalog's steps, every
 // step obeying the step rules.
@@ -334,7 +263,7 @@ func requireSendRequestFirst(t *testing.T, steps []mcp.NextStep, file *links.Req
 	require.Equal(t, mcp.ActionSendRequest, steps[0].Action, where)
 	require.Equal(t, sendRequestText(file), steps[0].Text, where)
 	for i, st := range steps {
-		requireStepObeysRules(t, st, catalogCase{tool: toolWrite, args: writeArgs0}, "", fmt.Sprintf("%s step %d", where, i+1))
+		requireStepObeysRules(t, st, catalogCase{tool: toolWrite, args: writeArgs0}, fmt.Sprintf("%s step %d", where, i+1))
 	}
 	require.NotEqual(t, mcp.ActionSendRequest, catalogKinds(steps)[0].Action, "the catalog checks skip it")
 }

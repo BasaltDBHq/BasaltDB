@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 
-import { SAME_ORIGIN, UNAVAILABLE, UNREACHABLE, pageTransport, sameOriginSession, sameOriginTransport } from "./transport.js";
+import { SAME_ORIGIN, pageTransport, sameOriginSession, sameOriginTransport } from "./transport.js";
 
 function recorder(answer) {
   const calls = [];
@@ -73,26 +73,16 @@ test("a closed session sends nothing", async () => {
   assert.equal(calls.length, 0);
 });
 
-test("the pages use the same-origin transport", () => {
+test("the pages use the same-origin transport off the portal, and the relay on it", () => {
   assert.equal(pageTransport().kind, SAME_ORIGIN);
   assert.equal(pageTransport({ origin: "http://localhost:8787" }).kind, SAME_ORIGIN);
-});
-
-test("on the portal a short link reaches no engine and says to use the long link", async () => {
-  const transport = pageTransport({ origin: "https://portal.basaltvault.app" });
-  assert.equal(transport.kind, UNAVAILABLE);
-  await assert.rejects(transport.open({ page: "approvals", id: "x", secret: "s" }), (err) => {
-    assert.equal(err.name, "RelayError");
-    assert.equal(err.code, "UNAVAILABLE");
-    assert.equal(err.personMessage, UNREACHABLE);
-    assert.match(err.personMessage, /long link/);
-    return true;
-  });
+  assert.equal(pageTransport({ origin: "http://127.0.0.1:8787" }).kind, SAME_ORIGIN);
+  assert.equal(pageTransport({ origin: "https://portal.basaltvault.app" }).kind, "RELAY");
 });
 
 // The transports: transport.js holds the browser's network calls and hands
-// them to the link session (channel.js), which takes them as arguments.
-const TRANSPORTS = new Set(["transport.js", "channel.js"]);
+// them to the link session (channel.js), the relay transport (relay.js), which take them as arguments.
+const TRANSPORTS = new Set(["transport.js", "channel.js", "relay.js"]);
 
 test("no page reaches the engine except through the transport", () => {
   const dir = new URL("./", import.meta.url);
@@ -108,4 +98,10 @@ test("only transport.js touches the browser's network globals", () => {
     const src = readFileSync(new URL(f, dir), "utf8");
     assert.doesNotMatch(src, /window\.fetch|new\s+(window\.)?WebSocket\s*\(|globalThis\.fetch/, `${f} uses the browser's network itself`);
   }
+});
+
+test("the plugin approval page stays on the same origin, never the relay", () => {
+  const src = readFileSync(new URL("./plugin.js", import.meta.url), "utf8");
+  assert.doesNotMatch(src, /pageTransport|relay\.js/);
+  assert.match(src, /sameOriginTransport\(\)\.open/);
 });

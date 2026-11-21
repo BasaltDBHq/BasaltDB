@@ -243,7 +243,7 @@ func TestRequestRevertOfOwnTaskWithNothingToRevert(t *testing.T) {
 	steps := requireScopedErrorSteps(t, body, isError, "NOTHING_TO_REVERT", "READS_ONLY", "TASK")
 	require.Contains(t, steps[1]["command"], "--task "+taskID)
 	require.Contains(t, str(t, body["personMessage"]), "To include other agents' changes in this task, run "+
-		"basalt revert --agent bot --config /etc/basalt-test/engine.json --task "+taskID+" --open")
+		"basalt revert --agent bot --task "+taskID+" --open")
 	var n int
 	require.NoError(t, env.d.Admin.QueryRow(context.Background(), `SELECT count(revert_id)::int FROM basalt_meta.reverts`).Scan(&n))
 	require.Zero(t, n, "the empty proposal is rolled back")

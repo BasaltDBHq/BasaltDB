@@ -32,7 +32,7 @@ Most MCP clients take a command and its arguments. Add one server per agent, run
 ```
 
 - Use the absolute path of `basalt` (`which basalt`) if the client does not inherit your `PATH`.
-- If `init` used a non-default `--socket-dir`, add `"--socket-dir", "DIR"` to `args`, or pass the socket directly with `"--socket", "DIR/NAME.sock"`.
+- `basalt mcp` finds the engine config by itself (the system path, else the one `basalt init` leaves in your config directory) and reads the socket directory from it. `--agent NAME` is the only flag, and it is needed only when the engine serves more than one agent. When both configs exist, `basalt mcp` stops and names both.
 - Do not put a database URL in the client config. The agent never holds one.
 
 The client then lists twelve tools: `run_start`, `describe`, `query`, `write`, `run_history`, `list_runs`, `list_pending`, `preview_revert`, `request_revert`, `status`, `revert_plan` and `apply_revert_batch`. A session usually starts a run with an intent, reads with `query` inside that run, and writes with `write` and an intent.
@@ -69,8 +69,6 @@ One MCP server serves one agent, and one agent uses one database. No server rout
     }
   }
   ```
-
-When the engine's config is not where `basalt mcp` looks by itself (the system path, or the per-user one `basalt init` leaves in your config directory), the line `basalt init` prints carries `--config <absolute path>`, and `--socket-dir` when the sockets are not in the default place. Keep them when you register the server: with the config, `basalt mcp` can answer `status` and, for an engine that runs as you, start it when it is down. [Bot computers with no service manager](bot-setup.md#bot-computers-with-no-service-manager) shows a full line.
 
 The MCP tools `status` and `describe` never name another agent or its database. `describe` names this agent's own database (name and host). To see every agent and its database, run `basalt status` in your own terminal.
 

@@ -11,14 +11,18 @@ import (
 
 // useTrustDir makes every connection this process opens trust the
 // operator's profiles in trust.d next to the engine config the command
-// names with --config (the default config otherwise), with the built-in
-// ones, read again for each connection (CONTRACT.md, Trust profiles).
+// is in: the one basalt engine names with --config, else the one every
+// command finds by itself, with the built-in ones, read again for each
+// connection (CONTRACT.md, Trust profiles).
 func useTrustDir(args []string) {
 	path, given := configArg(args)
 	if !given {
-		// As the person commands find their config (configOrFallback): the
-		// per-user config init left when nothing is installed system-wide.
-		path = perUserConfigFallback(osHost{}, config.DefaultPath(runtime.GOOS))
+		// Both configs found is the command's own error to report; the
+		// system one holds the profiles then.
+		path, _ = discoverConfig(osHost{}, config.DefaultPath(runtime.GOOS))
+		if path == "" {
+			path = config.DefaultPath(runtime.GOOS)
+		}
 	}
 	pgdial.SetTrust(trustdir.Source(path))
 }

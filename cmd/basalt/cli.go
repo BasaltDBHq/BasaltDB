@@ -52,6 +52,11 @@ type cliIO struct {
 	// width is the terminal's width in columns, 0 when stdout is no
 	// terminal; tests set it.
 	width func() int
+	// systemConfigPath replaces the system path of engine.json in tests
+	// (empty: config.DefaultPath(goos)).
+	systemConfigPath string
+	// paths point commands at temporary files in tests.
+	paths pathOverrides
 	// goos is the platform whose paths and service manager init uses.
 	goos string
 	// host runs what init does outside Postgres (sudo, the service probe,

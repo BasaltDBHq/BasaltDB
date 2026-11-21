@@ -176,8 +176,10 @@ func actualCommandsAndFlags(t *testing.T, actual map[string]surfaceEntry) {
 	}
 }
 
-// envNames matches the quoted name of a BASALT_ environment variable.
-var envNames = regexp.MustCompile(`"(BASALT_[A-Z0-9_]+)"`)
+// envNames matches the quoted name of a BASALT_ or BASALTDB_ environment
+// variable. Limit: only names written as one string in the Go source are
+// seen; BASALTDB_REPO, which install.sh reads, is not listed.
+var envNames = regexp.MustCompile(`"(BASALT(?:DB)?_[A-Z0-9_]+)"`)
 
 func actualEnvironment(t *testing.T, actual map[string]surfaceEntry) {
 	t.Helper()
@@ -200,6 +202,9 @@ func actualEnvironment(t *testing.T, actual map[string]surfaceEntry) {
 				return err
 			}
 			for _, m := range envNames.FindAllStringSubmatch(string(raw), -1) {
+				if strings.Contains(m[1], "_TEST_") {
+					continue // test helpers' own variables
+				}
 				e := surfaceEntry{Kind: "env", Name: m[1]}
 				actual[e.key()] = e
 			}
@@ -305,6 +310,12 @@ func surfaceDifferences(declared, actual map[string]surfaceEntry) []string {
 	return diffs
 }
 
+// epics are the epics that may remove an entry.
+var epics = map[string]bool{
+	"cli-cut": true, "direct-transport-removal": true, "one-setup-flow": true,
+	"relay-carrier": true, "plugins-through-pages": true,
+}
+
 func declaredSurface(t *testing.T) map[string]surfaceEntry {
 	t.Helper()
 	file := loadSurface(t)
@@ -324,6 +335,8 @@ func declaredSurface(t *testing.T) map[string]surfaceEntry {
 		switch {
 		case e.Status == "removing" && e.Epic == "":
 			t.Errorf("%s is marked removing without the epic that removes it", e.key())
+		case e.Epic != "" && !epics[e.Epic]:
+			t.Errorf("%s names the unknown epic %q", e.key(), e.Epic)
 		case e.Status != "" && e.Status != "removing":
 			t.Errorf("%s has status %q, want \"removing\" or none", e.key(), e.Status)
 		case e.Status == "" && e.Epic != "":

@@ -51,14 +51,16 @@ func portalFS(t *testing.T) fstest.MapFS {
 	return m
 }
 
-// portalHost serves files with the engine's headers, as the portal's
-// _headers does. A test server stands in for portal.basaltvault.app.
+// portalHost serves files with the engine's headers and the portal's CSP,
+// as the portal's _headers does. A test server stands in for portal.basaltvault.app.
 func portalHost(t *testing.T, files fs.FS, wrap func(http.Handler) http.Handler) string {
 	t.Helper()
 	// The portal's _redirects: each page route is rewritten (200) to its file.
 	static := http.FileServer(http.FS(files))
 	rewrite := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// The portal's edge function gives the connect page its own policy.
+		// The portal's _headers policy, and the edge function's own for the
+		// connect page.
+		w.Header().Set("Content-Security-Policy", websec.PortalCSP)
 		if r.URL.Path == "/connect" || r.URL.Path == "/connect/" {
 			w.Header().Set("Content-Security-Policy", websec.ConnectPageCSP)
 			w.Header().Set("Cache-Control", "no-store")

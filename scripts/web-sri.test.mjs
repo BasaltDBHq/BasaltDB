@@ -184,6 +184,23 @@ test("only the connect page may name the connect service, and it names nothing e
   }
 });
 
+test("only the approval and revert pages may name the Vault, and nothing broader", () => {
+  const relay = "connect-src 'self' wss://relay.basaltvault.app;";
+  for (const page of [join("approve", "index.html"), join("revert", "index.html")]) {
+    for (const repl of ["connect-src 'self';", "connect-src wss://relay.basaltvault.app;", "connect-src 'self' wss:;", "connect-src 'self' wss://*.basaltvault.app;", "connect-src 'self' wss://relay.basaltvault.app https:;"]) {
+      const r = check((h) => {
+        assert.ok(h.includes(relay), page);
+        return h.replace(relay, repl);
+      }, page);
+      assert.equal(r.code, 1, `${page}: ${repl}`);
+      assert.match(r.out, /meta CSP line/, repl);
+    }
+  }
+  const plugin = check((h) => h.replace("connect-src 'self';", "connect-src 'self' wss://relay.basaltvault.app;"), join("plugin", "index.html"));
+  assert.equal(plugin.code, 1);
+  assert.match(plugin.out, /meta CSP line/);
+});
+
 test("an iframe, object, embed or frame in the body fails", () => {
   const tags = [
     ['<iframe srcdoc="&lt;script type=module src=../portal.sha256&gt;&lt;/script&gt;"></iframe>', /<iframe after the head/],

@@ -166,6 +166,12 @@ type vaultSession struct {
 func newVaultSession(t *testing.T) *vaultSession {
 	t.Helper()
 	w := &wire{}
+	return newVaultSessionWith(t, w, vaulttest.Options{Tamper: w.tamper, OnEngineMessage: w.observe})
+}
+
+// newVaultSessionWith is newVaultSession behind a fake Vault with opts.
+func newVaultSessionWith(t *testing.T, w *wire, opts vaulttest.Options) *vaultSession {
+	t.Helper()
 	person, err := passkeytest.New(passkey.Production)
 	require.NoError(t, err)
 	id := uuid.Must(uuid.NewV7())
@@ -175,7 +181,7 @@ func newVaultSession(t *testing.T) *vaultSession {
 		secrets: store, id: id, binding: heldBinding(id, lines), lines: lines, cred: person.Credential(),
 		receipt: agent.Receipt{Token: "basalt-receipt.1.cA.cw"},
 	}
-	s := serveOverVault(t, w, held, store, id)
+	s := serveOverVaultWith(t, w, opts, held, store, id)
 	s.agent, s.person = held, person
 	return s
 }
@@ -184,7 +190,13 @@ func newVaultSession(t *testing.T) *vaultSession {
 // that records into w, and issues and registers a relay link for item id.
 func serveOverVault(t *testing.T, w *wire, a pages.Agent, store *links.Secrets, id uuid.UUID) *vaultSession {
 	t.Helper()
-	v := vaulttest.New(vaulttest.Options{Tamper: w.tamper, OnEngineMessage: w.observe})
+	return serveOverVaultWith(t, w, vaulttest.Options{Tamper: w.tamper, OnEngineMessage: w.observe}, a, store, id)
+}
+
+// serveOverVaultWith is serveOverVault with the fake Vault's options.
+func serveOverVaultWith(t *testing.T, w *wire, opts vaulttest.Options, a pages.Agent, store *links.Secrets, id uuid.UUID) *vaultSession {
+	t.Helper()
+	v := vaulttest.New(opts)
 	t.Cleanup(v.Close)
 	relay := newRelayLinks(quietLog())
 	site := pages.New(links.Portal, quietLog())

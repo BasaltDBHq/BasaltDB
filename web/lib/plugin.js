@@ -17,6 +17,7 @@ import {
   ENDPOINT_REMOTE,
   PluginLinkError,
   SETTINGS_MISMATCH,
+  PORTAL,
   SIGNER_KNOWN,
   WRONG_KIND,
   checkPluginRequest,
@@ -26,10 +27,10 @@ import {
   relyingParty,
   visibleText,
 } from "./codec.js";
-import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
+import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, RelayError, relayPaths } from "./local.js";
 import { $, el, fail, loadOrPaste, personText, setPill, showCode, showDone, showRelayFailed, webauthnError, whenText } from "./page.js";
 import { agentName } from "./scope.js";
-import { pageTransport } from "./transport.js";
+import { sameOriginTransport } from "./transport.js";
 
 const PROMPT_TIMEOUT_MS = 120000;
 
@@ -203,6 +204,20 @@ const SETTINGS_DIFFER = "The settings in this link do not match what would be ap
 const LINK_GONE = "This plugin approval link is incomplete, was replaced by a newer one, or the approval is gone. Ask the agent for a new link.";
 const PLUGIN_REFUSALS = { [WRONG_KIND]: NOT_A_PLUGIN, [SETTINGS_MISMATCH]: SETTINGS_DIFFER };
 
+// ON_PORTAL is what a plugin approval's short link says on the portal: it
+// is served only by the engine's own local pages, on the computer the
+// engine runs on.
+export const ON_PORTAL =
+  "This plugin approval opens only on your own computer, from the engine's own pages: open the link there, " +
+  "or ask the agent for the link again from the engine that runs on it.";
+
+// portalRefusal is the error a short link meets on origin, the portal, or
+// null elsewhere. Plugin changes are refused on agent-operated engines, so
+// the portal never reaches one: the page tries no connection there.
+export function portalRefusal(origin) {
+  return origin === PORTAL ? new RelayError("plugin approvals open on the engine's own pages", "UNAVAILABLE", 0, { personMessage: ON_PORTAL }) : null;
+}
+
 // describe is the sentence the page shows when its link cannot be used.
 export function describe(err) {
   if (err?.name === "PluginLinkError") return PLUGIN_REFUSALS[err.reason] ?? `This plugin approval link cannot be used: ${err.message}`;
@@ -235,9 +250,14 @@ async function loadRequest(hash) {
       if (req.approvalId !== id) throw new CodeError("the link is for another plugin approval than its path");
       return { req, relay: null };
     }
+    const refusal = portalRefusal(window.location.origin);
+    if (refusal !== null) throw refusal;
     const paths = relayPaths("plugins", id);
     const secret = linkSecret(hash);
-    const session = await pageTransport().open({ page: "plugins", id, secret });
+    // Plugin changes are refused on agent-operated engines, so a plugin
+    // approval is only ever served by the engine's own local pages: same
+    // origin, never the relay.
+    const session = await sameOriginTransport().open({ page: "plugins", id, secret });
     const req = await checkPluginRequest(await fetchRequest(session, paths.request, secret));
     if (req.approvalId !== id) throw new CodeError("the engine sent another plugin approval than this link's");
     return { req, relay: { path: paths.relay, secret, session } };

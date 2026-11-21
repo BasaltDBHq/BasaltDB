@@ -1,6 +1,7 @@
 // DOM helpers shared by the approval and registration pages. Text only goes
 // into the page through textContent, never innerHTML: every value on these
 // pages came from a link someone else built.
+import { RELAY, fingerprint as engineFingerprint } from "./channel.js";
 import { readPaste, repairHash } from "./repair.js";
 import { BlockAssembler, HASH_PREFIX, MAX_REQUEST_FILE_BYTES, readRequestFile } from "./requestfile.js";
 
@@ -202,6 +203,40 @@ export function fail(message) {
   $("error-text").textContent = message;
   $("error").hidden = false;
   $("main").hidden = true;
+}
+
+// showEngine names the engine a portal session reached, with the
+// fingerprint of the key the session verified, for the person to compare
+// with basalt status (CONTRACT.md, Engine keys: shown on every portal page
+// with a session). Nothing for the engine's own local pages.
+export function showEngine(session) {
+  const engine = session?.engine;
+  if (!engine) return;
+  const fp = engineFingerprint(engine.engineId);
+  $("engine").textContent = `Through the BasaltDB Vault to the engine with fingerprint ${fp}. Before you sign, check that basalt status shows the same fingerprint.`;
+  $("engine").hidden = false;
+}
+
+// endSession closes a finished page's session to the engine and disables
+// the buttons that would still send it a request.
+export function endSession(session, buttons) {
+  session.close();
+  for (const id of buttons) {
+    const b = $(id);
+    if (b) b.disabled = true;
+  }
+}
+
+// openSession opens transport's session for link, saying so on the page
+// while a RELAY session connects through the Vault.
+export async function openSession(transport, link) {
+  const note = transport.kind === RELAY ? $("connecting") : null;
+  if (note) note.hidden = false;
+  try {
+    return await transport.open(link);
+  } finally {
+    if (note) note.hidden = true;
+  }
 }
 
 // showDone says the engine took the signature: nothing to paste.

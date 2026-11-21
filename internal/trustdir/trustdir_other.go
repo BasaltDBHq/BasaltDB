@@ -28,3 +28,8 @@ func Remove(string, string) error { return errUnsupported }
 func Pin(string, string, *x509.Certificate, bool) (*trustprofile.Profile, []string, error) {
 	return nil, nil, errUnsupported
 }
+
+// PinProfile: see errUnsupported.
+func PinProfile(string, *x509.Certificate, bool) (*trustprofile.Profile, error) {
+	return nil, errUnsupported
+}

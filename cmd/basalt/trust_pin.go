@@ -83,7 +83,7 @@ var errNoPinNeeded = errors.New("no pin needed")
 // terminal and without it, the usage error names the flag and the
 // fingerprint seen. Under an agent marker or on an engine operatedBy AGENT
 // it pins nothing (refuseAgentTrust): an agent never creates trust.
-func (c *cliIO) askPin(t pinTarget, trustRoot, configPath, repinning string) (pinChoice, error) {
+func (c *cliIO) askPin(t pinTarget, trustRoot, configPath, repinning string, agentOperated bool) (pinChoice, error) {
 	if c.fetchChain == nil {
 		return pinChoice{}, errNoPinNeeded
 	}
@@ -105,6 +105,9 @@ func (c *cliIO) askPin(t pinTarget, trustRoot, configPath, repinning string) (pi
 	if !seen.Full && !seen.NameOnly {
 		return pinChoice{}, fmt.Errorf("the certificate chain %s presents does not verify even against its own top certificate "+
 			"(expired, not valid for a server, or not sent whole), so it cannot be pinned; name its CA with sslrootcert in the connection string", t.host)
+	}
+	if agentOperated {
+		return pinChoice{}, fmt.Errorf("%w: the engine is operatedBy AGENT", errAgentPin)
 	}
 	if err := c.refuseAgentTrust("pin", configPath); err != nil {
 		return pinChoice{}, fmt.Errorf("%w: %w", errAgentPin, err)
@@ -193,7 +196,7 @@ func trustPin(c *cliIO, args []string) int {
 		return c.fail(fmt.Errorf("%w: --host is required: basalt trust pin --host H [--port P]", errUsage))
 	}
 	t := pinTarget{host: trustprofile.NormalizeHost(*host), port: *port}
-	choice, err := c.askPin(t, *trustRoot, *configPath, c.repin(t, *configPath))
+	choice, err := c.askPin(t, *trustRoot, *configPath, c.repin(t, *configPath), false)
 	switch {
 	case errors.Is(err, errNoPinNeeded):
 		fmt.Fprintf(c.stdout, "basalt: %s needs no pin: its certificate verifies already\n", t.host)
@@ -226,15 +229,24 @@ func (c *cliIO) repin(t pinTarget, configPath string) string {
 
 // withoutProfile is set without the operator profile name.
 func withoutProfile(set *trustprofile.Set, name string) *trustprofile.Set {
+	return replacing(set, name, nil)
+}
+
+// replacing is set with the operator profile name left out and add, when
+// not nil, in its place.
+func replacing(set *trustprofile.Set, name string, add *trustprofile.Profile) *trustprofile.Set {
 	var ops, builtin []*trustprofile.Profile
 	for _, l := range set.Profiles() {
 		switch {
-		case l.Name == name && l.Origin == trustprofile.Operator:
+		case l.Origin == trustprofile.Operator && l.Name == name:
 		case l.Origin == trustprofile.Operator:
 			ops = append(ops, l.Profile)
 		default:
 			builtin = append(builtin, l.Profile)
 		}
+	}
+	if add != nil {
+		ops = append(ops, add)
 	}
 	return trustprofile.NewSet(builtin, ops, set.Refused())
 }
@@ -250,12 +262,16 @@ func trustRootFlag(fs *flag.FlagSet) *string {
 // it is declined, or it cannot be made (an agent runs init, the chain
 // cannot be read): init then goes on as before. A usage error (no terminal
 // and no --trust-root, or one that does not match) ends init.
-func (c *cliIO) initPin(dsn, trustRoot, configPath string) (pinChoice, bool, error) {
+func (c *cliIO) initPin(dsn, trustRoot, configPath string, agentOperated bool) (pinChoice, bool, error) {
 	t, ok := targetOf(dsn)
-	if !ok {
+	if !ok || namesOwnRoots(dsn) {
+		if trustRoot != "" {
+			return pinChoice{}, false, fmt.Errorf("%w: --trust-root is given, but the connection string names its own roots "+
+				"(sslrootcert) or does not use TLS, so no pin applies", errUsage)
+		}
 		return pinChoice{}, false, nil
 	}
-	choice, err := c.askPin(t, trustRoot, configPath, "")
+	choice, err := c.askPin(t, trustRoot, configPath, "", agentOperated)
 	switch {
 	case err == nil:
 		return choice, true, nil
@@ -265,6 +281,9 @@ func (c *cliIO) initPin(dsn, trustRoot, configPath string) (pinChoice, bool, err
 		}
 	case errors.Is(err, errPinDeclined):
 		fmt.Fprintf(c.stderr, "basalt: nothing pinned for %s; its certificate is not verified\n", terminalText(t.host))
+	case errors.Is(err, errAgentPin) && trustRoot != "":
+		return pinChoice{}, false, fmt.Errorf("%w: --trust-root is refused: an agent never pins a certificate; the person runs %s",
+			errUsage, pinCommand(t, configPath, c.goos))
 	case errors.Is(err, errAgentPin):
 		fmt.Fprintf(c.stderr, "basalt: %s presents a certificate no authority here verifies, and an agent never pins one. "+
 			"The person checks it and pins it on this machine:\n  %s\n", terminalText(t.host), pinCommand(t, configPath, c.goos))
@@ -300,10 +319,10 @@ func rootChangedVia(ctx context.Context, dsn string, err error, dial trustpin.Di
 		return nil //nolint:nilerr // a string pgx cannot parse has no pinned host to compare
 	}
 	a := trustprofile.Explain(cfg, pgdial.Trust())
-	if a.Profile == nil || !a.Profile.Exact() {
+	host := trustprofile.NormalizeHost(cfg.Host)
+	if a.Profile == nil || a.Profile.Name != trustprofile.PinName(host) {
 		return nil
 	}
-	host := trustprofile.NormalizeHost(cfg.Host)
 	chain, ferr := trustpin.Fetch(ctx, dial, host, int(cfg.Port))
 	if ferr != nil {
 		return nil //nolint:nilerr // the chain cannot be read now: the certificate error is said as it is
@@ -319,4 +338,29 @@ func rootChangedVia(ctx context.Context, dsn string, err error, dial trustpin.Di
 	return fmt.Errorf("%w; %s: %s presents the certificate authority SHA-256 %s, but it is pinned to %s. Check it against your "+
 		"provider's console; to accept it run: basalt trust pin --host %s --port %d", err, codeTrustRootChanged, host,
 		trustprofile.Fingerprint(top), strings.Join(pinnedTo, ", "), shellQuote(host), cfg.Port)
+}
+
+// namesOwnRoots reports whether dsn names its own roots (sslrootcert,
+// PGSSLROOTCERT, ~/.postgresql/root.crt) or uses no TLS: no profile, and so
+// no pin, applies to it.
+func namesOwnRoots(dsn string) bool {
+	cfg, err := pgconn.ParseConfig(dsn)
+	if err != nil {
+		return false
+	}
+	return cfg.TLSConfig == nil || cfg.TLSConfig.RootCAs != nil
+}
+
+// trustInMemory makes this process's connections trust choice for its
+// host, without writing it, and returns admin with sslmode=verify-full: the
+// admin connection then verifies against the certificate the person just
+// accepted before it sends the admin's login (verify: ca, the chain only,
+// for a name-only pin).
+func (c *cliIO) trustInMemory(choice pinChoice, admin, configPath string) (string, error) {
+	p, err := trustdir.PinProfile(choice.host, choice.top, choice.caOnly)
+	if err != nil {
+		return "", err
+	}
+	pgdial.SetTrust(func() *trustprofile.Set { return replacing(trustdir.Set(configPath), p.Name, p) })
+	return withVerifyFull(admin), nil
 }

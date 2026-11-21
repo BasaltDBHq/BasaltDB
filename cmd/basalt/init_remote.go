@@ -648,6 +648,11 @@ func (r *remoteInit) connection() error {
 			r.password = c.password()
 		}
 	}
+	// Before any login sends a startup message: offer to pin a chain no
+	// authority here verifies.
+	if err := r.pin(); err != nil {
+		return err
+	}
 	return r.login(pending, cred)
 }
 
@@ -1182,11 +1187,6 @@ func (r *remoteInit) writeCredential(p plan) error {
 	if err != nil {
 		return err
 	}
-	// Before any probe sends a login: offer to pin a chain no authority
-	// here verifies, so the probes below can reach verify-full with it.
-	if err := r.pin(); err != nil {
-		return err
-	}
 	dsn, applied := hardenedCredential(r.c.ctx, r.c.probe, dsn)
 	fmt.Fprint(r.c.stderr, applied.line())
 	path := r.credFile
@@ -1202,7 +1202,7 @@ func (r *remoteInit) pin() error {
 	if r.base == nil {
 		return nil
 	}
-	choice, ok, err := r.c.initPin(r.base.String(), r.f.trustRoot, r.f.configPath)
+	choice, ok, err := r.c.initPin(r.base.String(), r.f.trustRoot, r.f.configPath, r.f.operatedBy == OperatedByAgent)
 	if err != nil || !ok {
 		return err
 	}

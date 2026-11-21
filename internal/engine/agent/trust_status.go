@@ -116,7 +116,7 @@ const verifyCAStatus = "CA"
 
 // pinned is the profile of rep when it is an exact-host pin.
 func pinned(rep *TrustReport) *trustprofile.Profile {
-	if rep == nil || rep.Applied.Profile == nil || !rep.Applied.Profile.Exact() {
+	if rep == nil || rep.Applied.Profile == nil || rep.Applied.Profile.Name != trustprofile.PinName(rep.Applied.Host) {
 		return nil
 	}
 	return rep.Applied.Profile
@@ -162,8 +162,8 @@ func (s statusDeps) addPinMismatch(ctx context.Context, ps *problems, rep TrustR
 		func(b *Steps) string {
 			b.RunCommand(s.cmds.TrustList(), "Compare the engine's pin with the one the ledger records, and with your provider's console.")
 			return fmt.Sprintf("The engine trusts the certificate authority with SHA-256 %s for your database %s, but the pin recorded in the "+
-				"database's ledger is SHA-256 %s. Someone changed one of them. Check both against your database provider's console. "+
-				"To see the engine's, run: %s", pinFingerprints(p), host, sha, s.cmds.TrustList())
+				"ledger is SHA-256 %s. Check both in your provider's console; after a rotation you accepted, run basalt init again "+
+				"to record the engine's pin. To see it: %s", pinFingerprints(p), host, sha, s.cmds.TrustList())
 		})
 }
 

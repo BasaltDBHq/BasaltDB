@@ -184,6 +184,13 @@ func TestInitRemotePins(t *testing.T) {
 		c.fetchChain = func(ctx context.Context, h string, p int) ([]*x509.Certificate, error) {
 			return trustpin.Fetch(ctx, s.dial, h, p)
 		}
+		for i := 0; i+1 < len(extra); i++ {
+			if extra[i] == "--fetch" && extra[i+1] == "off" {
+				c.fetchChain = nil
+				extra = append(extra[:i], extra[i+2:]...)
+				break
+			}
+		}
 		args := append([]string{
 			"--remote", "--config", cfg, "--agent", "bot", "--write", "public.leads",
 			"--database-url", "postgres://postgres@" + host + ":5432/postgres?sslmode=require",
@@ -213,8 +220,73 @@ func TestInitRemotePins(t *testing.T) {
 	require.NotContains(t, r.stderr, "--trust-root", "the agent is not handed the flag")
 	require.NoFileExists(t, pinFile(cfg))
 	r = run(map[string]string{"CLAUDECODE": "1"}, tempConfig(t), "--trust-root", trustprofile.DERSHA256(s.ca))
+	require.Equal(t, exitUsage, r.code, "--trust-root is refused under an agent")
+	require.Contains(t, r.stderr, "an agent never pins")
+
+	cfg = tempConfig(t)
+	r = run(nil, cfg, "--operated-by", "agent", "--trust-root", trustprofile.DERSHA256(s.ca))
+	require.Equal(t, exitUsage, r.code, "--operated-by=agent never pins: %s", r.stderr)
+	require.NoFileExists(t, pinFile(cfg))
+	r = run(nil, cfg, "--operated-by", "agent")
 	require.Equal(t, exitOK, r.code, r.stderr)
 	require.Contains(t, r.stderr, "an agent never pins one")
+	require.NoFileExists(t, pinFile(cfg))
+}
+
+// init --remote offers the pin before it logs in with a credential it
+// already holds: nothing but the handshake reaches the server first.
+func TestInitRemotePinsBeforeLogin(t *testing.T) {
+	t.Parallel()
+	const host = "db.internal.example.com"
+	s := newPinServer(t, host)
+	cfg := tempConfig(t)
+	dbURL := "postgres://postgres@" + host + ":5432/postgres?sslmode=require"
+	base := make([]string, 0, 11)
+	base = append(base, "--remote", "--config", cfg, "--agent", "bot", "--write", "public.leads", "--database-url", dbURL)
+	first := func() int {
+		var out, errb bytes.Buffer
+		c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &out, err: &errb}, func(string) string { return "" })
+		c.agentLogin, c.probe, c.host, c.fetchChain = refusedLogin, noNetworkProbe, systemSocketHost(t), nil
+		return runInit(c, base)
+	}
+	require.Equal(t, exitOK, first())
+	var events []string
+	var out, errb bytes.Buffer
+	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &out, err: &errb}, func(string) string { return "" })
+	c.probe, c.host = noNetworkProbe, systemSocketHost(t)
+	c.agentLogin = func(ctx context.Context, dsn string) (agentConn, error) {
+		events = append(events, "login")
+		return nil, errLoginRefused
+	}
+	c.fetchChain = func(ctx context.Context, h string, p int) ([]*x509.Certificate, error) {
+		events = append(events, "handshake")
+		return trustpin.Fetch(ctx, s.dial, h, p)
+	}
+	code := runInit(c, append(base, "--trust-root", trustprofile.DERSHA256(s.ca)))
+	require.Equal(t, exitOK, code, errb.String())
+	require.NotEmpty(t, events)
+	require.Equal(t, "handshake", events[0], "the handshake comes before any login: %v", events)
+}
+
+// A connection string that names its own roots gets no pin offer: the
+// pin would not apply to it.
+func TestInitPinSkipsOwnRoots(t *testing.T) {
+	t.Parallel()
+	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &bytes.Buffer{}, err: &bytes.Buffer{}}, func(string) string { return "" })
+	fetched := false
+	c.fetchChain = func(context.Context, string, int) ([]*x509.Certificate, error) {
+		fetched = true
+		return nil, errors.New("not reached")
+	}
+	file := filepath.Join(t.TempDir(), "ca.pem")
+	ca, _ := trustprofiletest.Chain(t, "x")
+	require.NoError(t, os.WriteFile(file, trustprofiletest.PEM(ca), 0o600))
+	_, ok, err := c.initPin("postgres://u@db.internal.example.com/postgres?sslmode=verify-full&sslrootcert="+file, "", trustConfig(t), false)
+	require.NoError(t, err)
+	require.False(t, ok)
+	_, _, err = c.initPin("postgres://u@db.internal.example.com/postgres?sslmode=disable", "abc", trustConfig(t), false)
+	require.ErrorIs(t, err, errUsage, "--trust-root with no TLS is a usage error")
+	require.False(t, fetched)
 }
 
 // basalt init's accepted pin reaches a service engine through one sudo

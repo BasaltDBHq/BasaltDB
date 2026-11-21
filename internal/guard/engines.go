@@ -100,10 +100,6 @@ func RecordEngineStatement(publicKey []byte, guardVersion int) Statement {
 	return Statement{SQL: fmt.Sprintf("\nSELECT basalt_meta.record_engine('\\x%s'::bytea);", key)}
 }
 
-func RevokeEngineStatement(engineID string) Statement {
-	return Statement{SQL: fmt.Sprintf("\nSELECT basalt_meta.revoke_engine(%s::text);", quoteLiteral(engineID))}
-}
-
 // EngineRecord is engineID's row in basalt_meta.agent_engines, read with an
 // agent's connection: nil when the database does not record it.
 func EngineRecord(ctx context.Context, q Querier, engineID string) (*RecordedEngine, error) {

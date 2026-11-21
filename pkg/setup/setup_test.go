@@ -669,7 +669,7 @@ func TestCheckAsksOnlyAboutTheAgentsRLSTables(t *testing.T) {
 
 	checked, err := setup.Check(ctx, d.Admin, request(code))
 	require.NoError(t, err)
-	var asked []string
+	asked := make([]string, 0, len(checked.Questions.RowSecurity))
 	for _, q := range checked.Questions.RowSecurity {
 		asked = append(asked, q.Table)
 	}

@@ -173,7 +173,7 @@ jobs:
           fi
 
   # Tests that need root in a Linux container without systemd: plugin
-  # isolation (make test-root-container).
+  # isolation (make test-root-container) and the install script as root.
   containers:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest

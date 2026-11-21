@@ -1166,7 +1166,7 @@ func engineRevokedSteps(b *Steps) string {
 	b.AskPerson("Tell the person this engine's key is revoked in their database. Ask whether they revoked it on purpose, and show the message.")
 	b.EndTurn("End your turn: the person answers next.")
 	return "This engine's key is revoked in your database. Status shows it; the relay does not enforce it yet, so a link this engine already handed over may still work. " +
-		"Did you revoke it on purpose? If you replaced the engine, the agent makes a new key with basalt engine rotate-key and gives you a new setup code."
+		"Did you revoke it on purpose? If you replaced the engine, it is set up again from the start: the agent makes a new setup code."
 }
 
 // startedByEnum is the status enum of a --started-by value ("" for none).

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"os"
-	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -96,54 +95,6 @@ func TestEngineFindsThePerUserConfigWithoutTheConfigFlag(t *testing.T) {
 	require.Contains(t, run(), "engine.json", "the per-user config was loaded")
 	require.NotContains(t, run(), config.DefaultPath(runtime.GOOS))
 	require.Contains(t, run("--config", filepath.Join(h.configDir, "x.json")), "x.json")
-}
-
-// The engine run with --user looks for the per-user config in the home of the
-// user it dropped to, not in the HOME it inherited from root.
-func TestUserConfigDirIn(t *testing.T) {
-	t.Parallel()
-	got, err := userConfigDirIn("linux", "/home/bot", "")
-	require.NoError(t, err)
-	require.Equal(t, "/home/bot/.config", got)
-	got, err = userConfigDirIn("darwin", "/Users/bot", "")
-	require.NoError(t, err)
-	require.Equal(t, "/Users/bot/Library/Application Support", got)
-	_, err = userConfigDirIn("linux", "", "")
-	require.Error(t, err)
-}
-
-// With XDG_CONFIG_HOME set, the directory init uses (os.UserConfigDir) and the
-// one engine --user looks in are the same, off macOS. A relative value is
-// refused by init (os.UserConfigDir errors) and engine --user falls back to
-// the home; macOS ignores the variable.
-func TestUserConfigDirInHonorsXDGLikeInit(t *testing.T) {
-	t.Parallel()
-	got, err := userConfigDirIn("linux", "/home/bot", "/srv/cfg")
-	require.NoError(t, err)
-	require.Equal(t, "/srv/cfg", got)
-	got, err = userConfigDirIn("linux", "/home/bot", "relative/cfg")
-	require.NoError(t, err)
-	require.Equal(t, "/home/bot/.config", got)
-	got, err = userConfigDirIn("darwin", "/Users/bot", "/srv/cfg")
-	require.NoError(t, err)
-	require.Equal(t, "/Users/bot/Library/Application Support", got)
-}
-
-// init (the real host's UserConfigDir) and engine --user (the dropped user's
-// directory) resolve one directory when XDG_CONFIG_HOME is set.
-func TestInitAndEngineUserAgreeOnTheConfigDirWithXDG(t *testing.T) {
-	if runtime.GOOS == "darwin" {
-		t.Skip("macOS ignores XDG_CONFIG_HOME")
-	}
-	me, err := user.Current()
-	require.NoError(t, err)
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	initDir, err := osHost{}.UserConfigDir()
-	require.NoError(t, err)
-	engineDir, err := engineUserHost{host: osHost{}, name: me.Username}.UserConfigDir()
-	require.NoError(t, err)
-	require.Equal(t, initDir, engineDir)
-	require.Equal(t, os.Getenv("XDG_CONFIG_HOME"), engineDir)
 }
 
 // basalt mcp without --config reads the per-user config a rootless bot's init

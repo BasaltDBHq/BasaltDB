@@ -154,13 +154,13 @@ func clockSkewSteps(b *Steps) string {
 	return "The clock of the agent's machine is more than 5 minutes off, so the agent cannot collect your database's address. Set the machine's clock right (turn on automatic time), then tell the agent."
 }
 
-// engineAsRootSteps: the engine was started as root without --user; it
+// engineAsRootSteps: the engine was started as root; it
 // must run as the agent's OS user to collect the address.
 func engineAsRootSteps(b *Steps) string {
-	b.AskPerson("Tell the person the engine runs as root without --user, so it cannot pick up this agent's database address until it is restarted as the engine's user (the owner of its state directory) or with --user.")
+	b.AskPerson("Tell the person the engine runs as root, so it cannot pick up this agent's database address until it is restarted as the engine's user (the owner of its state directory).")
 	b.EndTurn("End your turn: the person restarts the engine next.")
-	return "The engine on the agent's machine runs as root without --user, so it cannot pick up this agent's database address. " +
-		"Restart it as the engine's user (the owner of its state directory), or with --user and that user, then tell the agent."
+	return "The engine on the agent's machine runs as root, so it cannot pick up this agent's database address. " +
+		"Restart it as the engine's user (the owner of its state directory), then tell the agent."
 }
 
 // unreachableFromBotSteps: the bot's machine cannot reach the collected
@@ -420,7 +420,7 @@ func connectOnlyProblems(st handoff.State, ps *problems, now time.Time) SetupSta
 		case handoff.ProblemClockSkew:
 			ps.add(problemClockSkew, "the clock of this machine is more than 5 minutes off; the address cannot be collected until it is set right", clockSkewSteps)
 		case handoff.ProblemEngineAsRoot:
-			ps.add(problemEngineAsRoot, "the engine runs as root without --user, so it does not collect this agent's database address", engineAsRootSteps)
+			ps.add(problemEngineAsRoot, "the engine runs as root, so it does not collect this agent's database address", engineAsRootSteps)
 		}
 	}
 	return out

@@ -181,7 +181,7 @@ func TestKeptCredentialSpec(t *testing.T) {
 	got, err := keptCredentialSpec(spec, a, false)
 	require.NoError(t, err)
 	// The kept file is written back unchanged by the install, which owns it
-	// to --user, so a changed --user can still read it.
+	// to the engine user, so a changed user can still read it.
 	require.Len(t, got.Files, 2)
 	require.Equal(t, cred, got.Files[1].Path)
 	require.Equal(t, "postgres://r:p@h/d\n", string(got.Files[1].Content))

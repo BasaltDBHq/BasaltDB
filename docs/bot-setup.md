@@ -90,7 +90,7 @@ To keep the engine up across reboots on a Linux server with systemd, install it 
 
 Run `sudo basalt init --remote` again with the same flags when you need a new code, then restart the service as in step 3, so the engine reads the new config.
 
-Without systemd, skip this. On a bot computer that keeps only some folders through a reboot, follow "Bot computers with no service manager" below. For a container, only the `basalt engine --user basalt` start in "Containers without systemd" in [install.md](install.md) applies; make the setup code with `basalt init --remote` as step 2 says, not with the `basalt init` command shown there.
+Without systemd, skip this. On a bot computer that keeps only some folders through a reboot, follow "Bot computers with no service manager" below. For a container, see "Containers without systemd" in [install.md](install.md); make the setup code with `basalt init --remote` as step 2 says, not with the `basalt init` command shown there.
 
 ### Bot computers with no service manager
 

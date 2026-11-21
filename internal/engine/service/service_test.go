@@ -470,8 +470,7 @@ func TestInstallWritesOwnedFilesAndRestartsAnInstalledService(t *testing.T) {
 	require.NotContains(t, sys.ran, "launchctl bootstrap system "+service.LaunchdPlist)
 }
 
-// basalt engine --user makes the directories a container has no service
-// manager to make, with the modes the unit gives them.
+// The install makes the directories with the modes the unit gives them.
 func TestEngineDirsMatchTheUnit(t *testing.T) {
 	dirs := service.EngineDirs("linux")
 	require.Len(t, dirs, 2)

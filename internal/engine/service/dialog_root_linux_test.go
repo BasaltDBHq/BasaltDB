@@ -15,7 +15,7 @@ import (
 )
 
 // The install script runs as root only in a throwaway Linux container
-// (make test-privdrop): it makes real OS users and folders and replaces
+// (make test-root-container): it makes real OS users and folders and replaces
 // systemctl with a stub.
 const rootScriptEnv = "BASALT_TEST_PLUGIN_ISOLATION"
 
@@ -54,7 +54,7 @@ func requireRefused(t *testing.T, binary, want string) {
 
 func TestInstallScriptAsRoot(t *testing.T) {
 	if os.Getenv(rootScriptEnv) != "1" || os.Geteuid() != 0 {
-		t.Skip("runs as root in a throwaway container: make test-privdrop")
+		t.Skip("runs as root in a throwaway container: make test-root-container")
 	}
 	// A stub systemctl records its calls; the binary is root's, 0755.
 	sh(t, `printf '#!/bin/sh\necho "$*" >>/tmp/systemctl.log\n' >/usr/bin/systemctl && chmod 0755 /usr/bin/systemctl`)

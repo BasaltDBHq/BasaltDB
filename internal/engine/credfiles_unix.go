@@ -14,7 +14,7 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
 )
 
-// rootFiles reaches the files of an engine started as root without --user
+// rootFiles reaches the files of an engine started as root
 // (CONTRACT.md, basalt engine). The config's directory may belong to
 // another user, who could swap it or agents/ for a symlink to send root's
 // reads and writes elsewhere, so both directories are opened once, from /
@@ -92,7 +92,7 @@ func (r *rootFiles) read(name string) (string, os.FileInfo, error) {
 	if st, ok := fi.Sys().(*syscall.Stat_t); !ok || r.self < 0 || uint64(st.Uid) != uint64(r.self) {
 		if err := pgdial.CheckForeignDSN(dsn); err != nil {
 			return "", nil, fmt.Errorf("the credential file %s belongs to the owner of %s, not root: as root, basalt engine takes from it %w; "+
-				"start the engine with --user (as basalt service install does), or fix the file", filepath.Join(r.agentsDir.Path(), name), r.agentsDir.Path(), err)
+				"start the engine as its own user (as basalt service install does), or fix the file", filepath.Join(r.agentsDir.Path(), name), r.agentsDir.Path(), err)
 		}
 	}
 	return dsn, fi, nil

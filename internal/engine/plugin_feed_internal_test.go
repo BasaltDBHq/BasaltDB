@@ -403,6 +403,24 @@ func waitSkipped(t *testing.T, p *feedPlugin, agent string, after int64) (gotCal
 	return call, ev
 }
 
+// assertNoLaterSeqBefore asserts that no event delivered to agent before
+// marker has a seq later than marker's.
+func assertNoLaterSeqBefore(t *testing.T, p *feedPlugin, agent string, marker gotEvent) {
+	t.Helper()
+	for _, c := range p.received() {
+		if c.agent != agent {
+			continue
+		}
+		for _, e := range c.events {
+			if e.ID == marker.ID {
+				return
+			}
+			require.LessOrEqual(t, e.seq(), marker.seq(), "no event with a later seq arrived before the skipped marker")
+		}
+	}
+	require.Fail(t, "skipped marker not among received events")
+}
+
 // settle lets several polls pass.
 func settle() { time.Sleep(10 * fastFeed.poll) }
 
@@ -531,6 +549,7 @@ func TestFeedSaysWhenItSkipped(t *testing.T) {
 	// the marker and the cursor, not a call count or a cursor read right
 	// after the call is seen.
 	_, ev := waitSkipped(t, p, "product_a", start.Seq)
+	assertNoLaterSeqBefore(t, p, "product_a", ev)
 	install := e.installID()
 	require.Equal(t, feedTypeSkipped, ev.Type)
 	require.Equal(t, fmt.Sprintf("%s:skipped:%d:%d", install, start.Seq, next-1), ev.ID)

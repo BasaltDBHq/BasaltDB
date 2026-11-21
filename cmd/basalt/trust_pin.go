@@ -297,7 +297,7 @@ func rootChangedVia(ctx context.Context, dsn string, err error, dial trustpin.Di
 	}
 	cfg, perr := pgconn.ParseConfig(dsn)
 	if perr != nil {
-		return nil
+		return nil //nolint:nilerr // a string pgx cannot parse has no pinned host to compare
 	}
 	a := trustprofile.Explain(cfg, pgdial.Trust())
 	if a.Profile == nil || !a.Profile.Exact() {
@@ -306,7 +306,7 @@ func rootChangedVia(ctx context.Context, dsn string, err error, dial trustpin.Di
 	host := trustprofile.NormalizeHost(cfg.Host)
 	chain, ferr := trustpin.Fetch(ctx, dial, host, int(cfg.Port))
 	if ferr != nil {
-		return nil
+		return nil //nolint:nilerr // the chain cannot be read now: the certificate error is said as it is
 	}
 	top := chain[len(chain)-1]
 	pinnedTo := make([]string, 0, len(a.Profile.Certificates()))

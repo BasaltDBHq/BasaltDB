@@ -1,9 +1,9 @@
-// Package providercatest is a stand-in for a provider's database (Supabase,
-// Amazon RDS) in tests: a test CA playing the provider's root, and a
+// Package trustprofiletest is a stand-in for a database whose certificate
+// chains to a trust profile's root, in tests: a test CA playing the root, and a
 // Postgres server that completes TLS
 // with a certificate that CA signed and then refuses the password. A client
 // that gets the refusal (28P01) verified the certificate.
-package providercatest
+package trustprofiletest
 
 import (
 	"context"
@@ -14,12 +14,16 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/binary"
+	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"io"
 	"math/big"
 	"net"
 	"testing"
 	"time"
+
+	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
 // certLife is how long the test certificates are valid.
@@ -46,7 +50,7 @@ func Chain(t *testing.T, host string) (*x509.Certificate, tls.Certificate) {
 	}
 	now := time.Now()
 	tmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "providercatest root"},
+		SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "trustprofiletest root"},
 		NotBefore: now.Add(-time.Hour), NotAfter: now.Add(certLife),
 		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
 	}
@@ -153,4 +157,46 @@ func errorResponse(code, msg string) []byte {
 	out[0] = 'E'
 	binary.BigEndian.PutUint32(out[1:], uint32(len(body)+lenBytes))
 	return append(out, body...)
+}
+
+// pemSize is about the size of one test certificate in PEM.
+const pemSize = 1024
+
+// PEM is cas as one PEM file.
+func PEM(cas ...*x509.Certificate) []byte {
+	out := make([]byte, 0, len(cas)*pemSize)
+	for _, ca := range cas {
+		out = append(out, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Raw})...)
+	}
+	return out
+}
+
+// Profile is a profile called name of origin, matching match, whose one
+// roots file holds cas, loaded through trustprofile.Parse.
+func Profile(t testing.TB, origin trustprofile.Origin, name string, match []string, cas ...*x509.Certificate) *trustprofile.Profile {
+	t.Helper()
+	b := PEM(cas...)
+	raw, err := json.Marshal(trustprofile.Spec{Name: name, Match: match, Roots: []trustprofile.RootSpec{{File: name + ".pem", SHA256: trustprofile.FileSHA256(b)}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := trustprofile.Parse(raw, origin, func(string) ([]byte, error) { return b, nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+// Set is the built-in profiles with each named one's roots replaced by
+// cas (a test CA standing in for the provider's roots), and operator.
+func Set(t testing.TB, replace map[string][]*x509.Certificate, operator ...*trustprofile.Profile) *trustprofile.Set {
+	t.Helper()
+	builtin := make([]*trustprofile.Profile, 0, len(trustprofile.BuiltIns()))
+	for _, p := range trustprofile.BuiltIns() {
+		if cas, ok := replace[p.Name]; ok {
+			p = Profile(t, trustprofile.BuiltIn, p.Name, p.Match, cas...)
+		}
+		builtin = append(builtin, p)
+	}
+	return trustprofile.NewSet(builtin, operator, nil)
 }

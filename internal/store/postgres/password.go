@@ -37,7 +37,13 @@ func NewSwitchablePool(ctx context.Context, url string, maxConns int32) (*pgxpoo
 	cfg.ConnConfig.RuntimeParams["application_name"] = "basalt-engine"
 	pw := &Password{}
 	pw.Set(cfg.ConnConfig.Password)
-	cfg.BeforeConnect = func(_ context.Context, cc *pgx.ConnConfig) error {
+	// pgdial's BeforeConnect trusts the roots of the host's profile on each
+	// new connection; it runs first.
+	trust := cfg.BeforeConnect
+	cfg.BeforeConnect = func(ctx context.Context, cc *pgx.ConnConfig) error {
+		if err := trust(ctx, cc); err != nil {
+			return err
+		}
 		cc.Password = pw.get()
 		return nil
 	}

@@ -24,6 +24,9 @@ Tags are semver with a leading `v`. Release tags **MUST** start with `v` (e.g. `
 
 On a machine with push access, after `master` is the commit you want:
 
+1. Run `make check-provider-roots`. It downloads each built-in trust profile's `source` (Supabase's and Amazon RDS's published roots) and compares each with the file the binary embeds. It needs the network and is not part of CI. When it fails, check that the provider only added roots, replace the file under `pkg/trustprofile/profiles/`, update its `sha256` in the profile and its pin in `pkg/trustprofile/builtin_test.go`, and merge that first.
+2. Tag and push:
+
 ```bash
 git checkout master
 git pull origin master

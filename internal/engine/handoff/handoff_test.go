@@ -20,8 +20,8 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard"
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
-	"github.com/basaltdbhq/basaltdb/internal/providerca"
-	"github.com/basaltdbhq/basaltdb/internal/providerca/providercatest"
+	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
+	"github.com/basaltdbhq/basaltdb/pkg/trustprofile/trustprofiletest"
 )
 
 // The contract's connect-only fixture (api/mcp/setup/setup-code.fixtures.json,
@@ -776,8 +776,8 @@ func TestProbeCacheAcrossProcesses(t *testing.T) {
 // for certHost from a test CA that stands in for Supabase's root.
 func probeAt(t *testing.T, a Address, certHost string) error {
 	t.Helper()
-	ca, cert := providercatest.Chain(t, certHost)
-	p := Prober{Dial: providercatest.Serve(t, cert), ProviderRoots: providerca.Override{providerca.Supabase: {ca}}}
+	ca, cert := trustprofiletest.Chain(t, certHost)
+	p := Prober{Dial: trustprofiletest.Serve(t, cert), Profiles: trustprofiletest.Set(t, map[string][]*x509.Certificate{"supabase": {ca}})}
 	_, err := p.ProbeAt(context.Background(), a, netip.MustParseAddr("203.0.113.7"), fixtureRole)
 	return err
 }
@@ -809,13 +809,13 @@ func TestSavedConnStringVerifiesSupabaseHost(t *testing.T) {
 	host := "db.abcdefghijklmnopqrst.supabase.co"
 	a := Address{Host: host, Port: 5432, Database: "postgres", SupabaseRef: "abcdefghijklmnopqrst"}
 	login := func(certHost string) error {
-		ca, cert := providercatest.Chain(t, certHost)
-		cfg, err := pgdial.ConnConfigTrusting(ConnString(a, LoginUser(a, fixtureRole), "pw", true), providerca.Override{providerca.Supabase: {ca}})
+		ca, cert := trustprofiletest.Chain(t, certHost)
+		cfg, err := pgdial.ConnConfigTrusting(ConnString(a, LoginUser(a, fixtureRole), "pw", true), trustprofiletest.Set(t, map[string][]*x509.Certificate{"supabase": {ca}}))
 		require.NoError(t, err)
 		require.Equal(t, host, cfg.TLSConfig.ServerName)
 		require.False(t, cfg.TLSConfig.InsecureSkipVerify)
 		cfg.LookupFunc = func(context.Context, string) ([]string, error) { return []string{"127.0.0.1"}, nil }
-		cfg.DialFunc = providercatest.Serve(t, cert)
+		cfg.DialFunc = trustprofiletest.Serve(t, cert)
 		ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
 		defer cancel()
 		conn, err := pgx.ConnectConfig(ctx, cfg)
@@ -832,8 +832,10 @@ func TestSavedConnStringVerifiesSupabaseHost(t *testing.T) {
 	// In production the engine opens it with Supabase's real root.
 	pool, err := pgdial.PoolConfig(ConnString(a, fixtureRole, "pw", false))
 	require.NoError(t, err)
-	for _, root := range providerca.Roots(providerca.Supabase) {
-		_, err = root.Verify(x509.VerifyOptions{Roots: pool.ConnConfig.TLSConfig.RootCAs})
+	cc := pool.ConnConfig.Copy()
+	require.NoError(t, pool.BeforeConnect(context.Background(), cc))
+	for _, root := range trustprofile.BuiltInSet().Named("supabase").Certificates() {
+		_, err = root.Verify(x509.VerifyOptions{Roots: cc.TLSConfig.RootCAs})
 		require.NoError(t, err)
 	}
 }

@@ -18,7 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/basaltdbhq/basaltdb/internal/pgdial"
-	"github.com/basaltdbhq/basaltdb/internal/providerca"
+	"github.com/basaltdbhq/basaltdb/pkg/trustprofile"
 )
 
 // The connection string settings the engine's agent credential uses for a
@@ -130,13 +130,12 @@ type Prober struct {
 	// Dial opens the TCP connection to the checked address; nil dials it.
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
 	// Roots, when set, replace every root the server's certificate is
-	// verified against; nil uses the system's, plus a provider's roots for
-	// that provider's host (Supabase, Amazon RDS).
+	// verified against; nil uses the system's, plus the roots of the trust
+	// profile that matches the host (Supabase, Amazon RDS, the operator's).
 	Roots *x509.CertPool
-	// ProviderRoots stand in for the named providers' root certificates,
-	// which the probe trusts for each provider's hosts (package
-	// providerca); nil is the real ones. Tests set test CAs.
-	ProviderRoots providerca.Override
+	// Profiles are the trust profiles the probe uses (package
+	// trustprofile); nil is pgdial's. Tests give test CAs.
+	Profiles *trustprofile.Set
 }
 
 // Probed is a probe that passed: the address the host resolved to, and
@@ -247,7 +246,7 @@ func (p Prober) login(ctx context.Context, a Address, ip netip.Addr, user string
 
 // connConfig is the connection to a as user with password, made to ip only.
 func (p Prober) connConfig(a Address, ip netip.Addr, user, password string, binding bool) (*pgx.ConnConfig, error) {
-	cfg, err := pgdial.ConnConfigTrusting(ConnString(a, user, password, binding), p.ProviderRoots)
+	cfg, err := pgdial.ConnConfigTrusting(ConnString(a, user, password, binding), p.Profiles)
 	if err != nil {
 		return nil, err
 	}

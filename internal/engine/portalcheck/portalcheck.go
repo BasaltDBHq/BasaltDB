@@ -118,7 +118,7 @@ const ConnectPageFile = "connect/index.html"
 // same.
 func Options(base string) portalverify.Options {
 	o := portalverify.Options{
-		Base: base, Files: web.Files, Headers: websec.Expected(),
+		Base: base, Files: web.Files, Headers: websec.ExpectedPortal(),
 		// The connect page reaches the connect service (CONTRACT.md, The
 		// connect page): its own policy, never stored.
 		FileHeaders: map[string]http.Header{ConnectPageFile: websec.ExpectedConnectPage()},

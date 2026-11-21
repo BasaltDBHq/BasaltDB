@@ -25,7 +25,7 @@ import {
 } from "./codec.js";
 import { pageTransport } from "./transport.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, rejectRevert, revertDone, revertPaths } from "./local.js";
-import { $, REVERT_REOPEN, el, fail, linkFailure, loadOrPaste, personText, setPill, showCode, showDone, showEngine, showRelayFailed, webauthnError } from "./page.js";
+import { $, REVERT_REOPEN, el, fail, linkFailure, loadOrPaste, openSession, personText, setPill, showCode, showDone, showEngine, showRelayFailed, webauthnError } from "./page.js";
 import { canWiden, narrow, widen } from "./rescope.js";
 import { applyReveal, canReveal, clearReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import { changeGroups, countText, rawText, rowKeyText } from "./changes.js";
@@ -212,7 +212,7 @@ async function loadRequest(hash) {
   const secret = linkSecret(hash);
   // Every later call for this link (scope, Show values, Reject, the relay)
   // uses the same session; a widen changes the secret, not the session.
-  const session = await pageTransport().open({ page: "reverts", id, secret });
+  const session = await openSession(pageTransport(), { page: "reverts", id, secret });
   const req = await checkRevertRequest(await fetchRequest(session, paths.request, secret));
   if (req.revertId !== id) throw new Error(`the engine sent revert ${req.revertId}, not ${id}`);
   return { req, relay: { path: paths.relay, secret, id, session } };
@@ -225,6 +225,8 @@ async function finish(response, relay) {
     try {
       const result = await postResponse(relay.session, relay.path, relay.secret, revertResponseJSON(response));
       showDone(revertDone(result));
+      // The revert is signed: nothing else goes to the engine.
+      relay.session.close();
       settle(result?.batched ? "Signed" : "Reverted", "ok");
       return;
     } catch (err) {
@@ -298,6 +300,8 @@ async function reject(state) {
     $("reject-status").textContent = err?.reason === "LINK_RESET" ? RESET_MESSAGE : personText(err) || `The engine did not take the reject: ${err.message}`;
     return;
   }
+  // The engine revoked the link with the reject: the session is done.
+  relay.session.close();
   $("reject-note").hidden = true;
   $("sheet-dim").hidden = true;
   showDone(rejectDone(note.trim() !== "", req.binding.requestedBy));

@@ -1,7 +1,7 @@
 // DOM helpers shared by the approval and registration pages. Text only goes
 // into the page through textContent, never innerHTML: every value on these
 // pages came from a link someone else built.
-import { fingerprint as engineFingerprint } from "./channel.js";
+import { RELAY, fingerprint as engineFingerprint } from "./channel.js";
 import { readPaste, repairHash } from "./repair.js";
 import { BlockAssembler, HASH_PREFIX, MAX_REQUEST_FILE_BYTES, readRequestFile } from "./requestfile.js";
 
@@ -205,15 +205,30 @@ export function fail(message) {
   $("main").hidden = true;
 }
 
-// showEngine names the engine a DIRECT session reached, with the
-// fingerprint the person can compare with basalt status (CONTRACT.md,
-// Engine keys: shown on every portal page with a session). Nothing for the
-// engine's own local pages.
+// showEngine names the engine a portal session reached, with the
+// fingerprint of the key the session verified, for the person to compare
+// with basalt status (CONTRACT.md, Engine keys: shown on every portal page
+// with a session). Nothing for the engine's own local pages.
 export function showEngine(session) {
   const engine = session?.engine;
   if (!engine) return;
-  $("engine").textContent = `Through your engine at ${engine.address}, fingerprint ${engineFingerprint(engine.engineId)}, pinned on this device.`;
+  const fp = engineFingerprint(engine.engineId);
+  $("engine").textContent = engine.address
+    ? `Through your engine at ${engine.address}, fingerprint ${fp}, pinned on this device.`
+    : `Through the BasaltDB Vault to the engine with fingerprint ${fp}. Before you sign, check that basalt status shows the same fingerprint.`;
   $("engine").hidden = false;
+}
+
+// openSession opens transport's session for link, saying so on the page
+// while a RELAY session connects through the Vault.
+export async function openSession(transport, link) {
+  const note = transport.kind === RELAY ? $("connecting") : null;
+  if (note) note.hidden = false;
+  try {
+    return await transport.open(link);
+  } finally {
+    if (note) note.hidden = true;
+  }
 }
 
 // showDone says the engine took the signature: nothing to paste.

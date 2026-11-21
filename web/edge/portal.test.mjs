@@ -116,7 +116,10 @@ test("the cookie the page writes is the one the function reads", () => {
 
 test("the per-person policy is the default plus connect-src, nothing broader", () => {
   const p = policyWith(["https://a.example.com", "wss://a.example.com"]);
-  assert.equal(p, "default-src 'self'; connect-src 'self' https://a.example.com wss://a.example.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+  assert.equal(
+    p,
+    "default-src 'self'; connect-src wss://relay.basaltvault.app 'self' https://a.example.com wss://a.example.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  );
   assert.doesNotMatch(p, /connect-src[^;]*\b(https|wss):(\s|;)/);
 });
 
@@ -124,7 +127,7 @@ test("the page's meta CSP gets the same sources, and only its connect-src change
   const sources = ["https://a.example.com", "wss://a.example.com"];
   for (const html of [APPROVE_HTML, REVERT_HTML]) {
     const out = rewriteMeta(html, sources);
-    assert.match(out, /connect-src 'self' https:\/\/a\.example\.com wss:\/\/a\.example\.com;/);
+    assert.match(out, /connect-src 'self' wss:\/\/relay\.basaltvault\.app https:\/\/a\.example\.com wss:\/\/a\.example\.com;/);
     assert.equal(out.replace(" https://a.example.com wss://a.example.com", ""), html);
   }
   const pin = rewriteMeta(ENGINES_HTML, ["https://a.example.com"]);
@@ -175,7 +178,7 @@ test("a person with pins gets them in connect-src, never stored and varying with
   assert.equal(res.headers.get("Vary"), "Cookie");
   assert.equal(res.headers.get("ETag"), null);
   for (const [k, v] of Object.entries(DEFAULT_HEADERS)) if (k !== "Content-Security-Policy") assert.equal(res.headers.get(k), v);
-  assert.match(await res.text(), /connect-src 'self' https:\/\/a\.example\.com wss:\/\/a\.example\.com;/);
+  assert.match(await res.text(), /connect-src 'self' wss:\/\/relay\.basaltvault\.app https:\/\/a\.example\.com wss:\/\/a\.example\.com;/);
 });
 
 test("without a valid pin the strict default is served as it is", async () => {
@@ -265,7 +268,7 @@ test("the asset's own answer is never changed in place", async () => {
 
 test("the connect page gets its own policy, the same for everyone, never stored", async () => {
   assert.equal(CONNECT_SERVICE, PAGE_SERVICE);
-  assert.equal(CONNECT_CSP, DEFAULT_CSP.replace("default-src 'self'; ", `default-src 'self'; connect-src ${CONNECT_SERVICE}; `));
+  assert.equal(CONNECT_CSP, DEFAULT_CSP.replace(/connect-src [^;]*;/, `connect-src ${CONNECT_SERVICE};`));
   const meta = /<meta http-equiv="Content-Security-Policy" content="([^"]*)">/.exec(CONNECT_HTML)[1];
   assert.match(meta, new RegExp(`; connect-src ${CONNECT_SERVICE.replace(/[.]/g, "\\.")};`));
   for (const path of ["/connect", "/connect/"]) {

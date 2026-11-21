@@ -28,11 +28,12 @@ export const MAX_ORIGINS = 8;
 // A cookie value longer than 8 pins of the longest address cannot be ours.
 const MAX_COOKIE_VALUE = MAX_ORIGINS * 300;
 
-// DEFAULT_HEADERS are web/_headers' /* block, the same as the engine's own
-// pages (internal/websec); a test fails on drift. The function sets all of
+// DEFAULT_HEADERS are web/_headers' /* block: the engine's own pages'
+// headers with the portal's connect-src, the Vault (internal/websec
+// PortalCSP); a test fails on drift. The function sets all of
 // them on every answer it builds, so they never depend on the static host
 // applying _headers to a function's answer.
-export const DEFAULT_CSP = "default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+export const DEFAULT_CSP = "default-src 'self'; connect-src wss://relay.basaltvault.app; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 export const DEFAULT_HEADERS = Object.freeze({
   "Content-Security-Policy": DEFAULT_CSP,
   "X-Frame-Options": "DENY",
@@ -101,11 +102,12 @@ export function connectSources(origins, { sockets = true } = {}) {
   return origins.flatMap((o) => (sockets ? [o, socketOrigin(o)] : [o]));
 }
 
-// policyWith is the default policy with connect-src 'self' and sources.
+// policyWith is the default policy with 'self' and sources added to its
+// connect-src.
 export function policyWith(sources) {
-  const directives = DEFAULT_CSP.split("; ");
-  directives.splice(1, 0, ["connect-src 'self'", ...sources].join(" "));
-  return directives.join("; ");
+  return DEFAULT_CSP.split("; ")
+    .map((d) => (d.startsWith("connect-src ") ? [d, "'self'", ...sources].join(" ") : d))
+    .join("; ");
 }
 
 const META_CSP = /(<meta http-equiv="Content-Security-Policy" content=")([^"]*)(">)/;

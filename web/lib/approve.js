@@ -17,7 +17,7 @@ import {
 } from "./codec.js";
 import { pageTransport } from "./transport.js";
 import { fetchRequest, isLongLink, linkSecret, pageId, postResponse, relayPaths } from "./local.js";
-import { $, APPROVE_REOPEN, el, fail, linkFailure, loadOrPaste, personText, setPill, showCode, showDone, showEngine, showRelayFailed, webauthnError, whenText } from "./page.js";
+import { $, APPROVE_REOPEN, el, fail, linkFailure, loadOrPaste, openSession, personText, setPill, showCode, showDone, showEngine, showRelayFailed, webauthnError, whenText } from "./page.js";
 import { applyReveal, canReveal, hiddenLines, reveal, revealFailure, revealPath, SHOWN_TO_YOU } from "./reveal.js";
 import { agentName } from "./scope.js";
 import { canStartPasskey, cascadeConfirmation, headline, summarize } from "./summary.js";
@@ -147,7 +147,7 @@ async function loadRequest(hash) {
   const secret = linkSecret(hash);
   // Every later call for this link (Show values, the relay) uses the same
   // session.
-  const session = await pageTransport().open({ page: "approvals", id, secret });
+  const session = await openSession(pageTransport(), { page: "approvals", id, secret });
   const req = await checkApprovalRequest(await fetchRequest(session, paths.request, secret));
   if (req.approvalId !== id) throw new Error(`the engine sent approval ${req.approvalId}, not ${id}`);
   return { req, relay: { path: paths.relay, secret, session } };
@@ -160,6 +160,8 @@ async function finish(response, relay) {
     try {
       await postResponse(relay.session, relay.path, relay.secret, approvalResponseJSON(response));
       showDone("Approved. The agent will continue.");
+      // The approval is finished: nothing else goes to the engine.
+      relay.session.close();
       setPill("state", "Approved", "ok");
       return;
     } catch (err) {

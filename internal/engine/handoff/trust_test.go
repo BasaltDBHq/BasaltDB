@@ -38,7 +38,7 @@ func newTrustServer(t *testing.T, certHost string, operator ...*trustprofile.Pro
 		Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			s.dials.Add(1)
 			if addr != "8.8.8.8:5432" {
-				t.Errorf("dialled %s, not the resolved and checked address", addr)
+				t.Errorf("dialed %s, not the resolved and checked address", addr)
 			}
 			return dial(ctx, network, addr)
 		},

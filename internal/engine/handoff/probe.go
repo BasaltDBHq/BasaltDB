@@ -195,6 +195,10 @@ func (p Prober) Approve(ctx context.Context, a Address, ip netip.Addr, approved 
 	switch {
 	case seen.System:
 		return Pin{}, nil
+	case errors.Is(err, trustpin.ErrPublic):
+		// A public authority's certificate failed on the name: no pin can
+		// fix that, and none is made.
+		return Pin{}, &ReachError{Reason: ReasonTLSNotVerified}
 	case errors.Is(err, trustpin.ErrMismatch), errors.Is(err, trustpin.ErrNotPinnable):
 		return Pin{}, &ReachError{Reason: ReasonTrustRootMismatch}
 	case err != nil:

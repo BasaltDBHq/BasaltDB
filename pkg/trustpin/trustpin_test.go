@@ -195,3 +195,33 @@ func TestValidSHA256AndSubject(t *testing.T) {
 	long.Subject = pkix.Name{CommonName: strings.Repeat("é", 600)}
 	require.Len(t, []rune(trustpin.Seen{Top: &long}.Subject()), 512)
 }
+
+// A chain from an authority in the system's trust store is never pinned,
+// whatever is approved: with the name it needs no pin, and without it a
+// verify: ca pin would accept anything that authority issues as the host.
+// It covers a top that is a store root and a leaf that chains to one (the
+// root not sent). Not parallel: it swaps the system's store.
+func TestPublicChainsAreNeverPinned(t *testing.T) {
+	ca, cert := trustprofiletest.Chain(t, "other.example.com")
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	require.NoError(t, err)
+	store := x509.NewCertPool()
+	store.AddCert(ca)
+	defer trustprofile.SetSystemRootsForTest(store)()
+
+	for name, chain := range map[string][]*x509.Certificate{
+		"the top is a store root": {leaf, ca},
+		"the leaf chains to one":  {leaf},
+	} {
+		seen := trustpin.Check(chain, "db.example.com", time.Now())
+		require.True(t, seen.Public, name)
+		require.False(t, seen.System, name)
+		require.False(t, seen.Pinnable(), name)
+		_, pin, err := trustpin.Approved(chain, "db.example.com", time.Now(), seen.SHA256)
+		require.ErrorIs(t, err, trustpin.ErrPublic, name)
+		require.Nil(t, pin, name)
+	}
+	seen := trustpin.Check([]*x509.Certificate{leaf, ca}, "other.example.com", time.Now())
+	require.True(t, seen.System)
+	require.True(t, seen.Public, "a chain that verifies needs no pin either")
+}

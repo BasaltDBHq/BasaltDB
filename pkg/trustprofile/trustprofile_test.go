@@ -420,3 +420,20 @@ func fallbackTLS(cfg *pgconn.Config) []*tls.Config {
 	}
 	return out
 }
+
+// An operator verify: ca profile whose root is in the system's store is
+// refused: pins and hand-written profiles alike. Not parallel: it swaps the
+// system's store.
+func TestVerifyCARefusesPublicRoots(t *testing.T) {
+	ca, _ := trustprofiletest.Chain(t, "x")
+	store := x509.NewCertPool()
+	store.AddCert(ca)
+	defer trustprofile.SetSystemRootsForTest(store)()
+	_, err := trustprofile.NewPin("203.0.113.7", ca, true)
+	require.ErrorIs(t, err, trustprofile.ErrPublic)
+	_, err = trustprofile.NewPin("203.0.113.7", ca, false)
+	require.NoError(t, err, "verify-full checks the name, so the rule is trustpin's there")
+	require.True(t, trustprofile.IsPublic(ca, nil))
+	other, _ := trustprofiletest.Chain(t, "x")
+	require.False(t, trustprofile.IsPublic(other, nil))
+}

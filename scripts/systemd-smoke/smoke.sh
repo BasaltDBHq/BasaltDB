@@ -199,6 +199,11 @@ wait_for "the engine's agent socket" sudo test -S "/run/basalt/$agent.sock"
 # several times within seconds: clear systemd's start-rate count so its
 # default limit (5 starts in 10s) measures the steps, not the install.
 sudo systemctl reset-failed "$engine_unit"
+# Started by the dialog before engine.json existed, the engine waited for it
+# and served only its setup page: no exit on the missing file, no crash loop.
+if sudo journalctl --no-pager -o cat -u "$engine_unit" | grep -E 'engine.json: no such file|crashed [0-9]+ times' >&2; then
+	fail "the engine exited on its missing config instead of waiting for it"
+fi
 for d in /opt/basalt /opt/basalt/run; do
 	got=$(stat -c '%U:%G %a' "$d") || fail "basalt service install did not make $d"
 	[ "$got" = "root:root 755" ] || fail "$d is $got, not root:root 755"

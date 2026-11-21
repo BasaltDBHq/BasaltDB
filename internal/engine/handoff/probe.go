@@ -262,7 +262,7 @@ func (p Prober) connConfig(a Address, ip netip.Addr, user, password string, bind
 	return cfg, nil
 }
 
-// setRoots verifies every TLS attempt of cfg against roots.
+// supabaseRoot is the root the probe trusts for Supabase hosts.
 func (p Prober) supabaseRoot() *x509.Certificate {
 	if p.SupabaseRoot == nil {
 		return supabaseca.Root()
@@ -270,6 +270,7 @@ func (p Prober) supabaseRoot() *x509.Certificate {
 	return p.SupabaseRoot
 }
 
+// setRoots verifies every TLS attempt of cfg against roots.
 func setRoots(cfg *pgconn.Config, roots *x509.CertPool) {
 	set := func(t *tls.Config) {
 		if t != nil {

@@ -18,7 +18,9 @@ import (
 )
 
 // rootPEM is Supabase Root 2021 CA as Supabase publishes it
-// (https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt).
+// (https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt). It
+// expires on 2031-04-26: replace it, and the pinned fingerprint in the
+// test, when Supabase publishes its successor.
 //
 //go:embed prod-ca-2021.crt
 var rootPEM []byte

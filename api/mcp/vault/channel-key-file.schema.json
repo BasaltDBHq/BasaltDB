@@ -40,7 +40,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["engineId", "signingKey", "at", "sig"],
-      "description": "The latest rotation, present when the old key file was valid at basalt engine rotate-key. The old private key is not kept.",
+      "description": "The latest rotation, present when the key was rotated from a valid old key file. The old private key is not kept.",
       "properties": {
         "engineId": {
           "type": "string",

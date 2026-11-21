@@ -44,7 +44,7 @@ Planned (M3.5, Vault channel Phase 1a; owner decisions VC-1 to VC-42). An engine
 
 ### Engine revocation
 
-The person revokes an engine on the portal's passkeys page, signed with their passkey; Postgres checks the signature and calls `revoke_engine` ([Engine records](basalt-meta-installs.md#engine-records)). There is no CLI for it: `basalt engine revoke`, `basalt engine list` and `basalt engine rotate-key` are removed ([Removed](cli.md#removed)). The page's routes and the signed binding are fixed by the task that builds it.
+The person revokes an engine on the portal's passkeys page, signed with their passkey; Postgres checks the signature and calls `revoke_engine` ([Engine records](basalt-meta-installs.md#engine-records)). `basalt engine revoke` stays until that page can do it, because the relay still uses it; `basalt engine list` and `basalt engine rotate-key` are gone ([Removed](cli.md#removed)). The page's routes and the signed binding are fixed by the task that builds it.
 
 - **Per database.** `engines` has no agent column, so a revoke applies to every agent of that database.
 - **What the engine does.** For every agent of a database that revoked its key, the engine reports `engineRecord.state` `REVOKED` and the problem `ENGINE_REVOKED` in `status`.

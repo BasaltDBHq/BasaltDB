@@ -30,6 +30,8 @@ func TestOnlyEngineTakesTheConfigFlags(t *testing.T) {
 		{"upgrade"},
 		{"uninstall"},
 		{"classify"},
+		{"plugin", "keygen"},
+		{"plugin", "sign"},
 		{"plugin", "list"},
 		{"plugin", "add", "dir"},
 		{"plugin", "enable", "p"},

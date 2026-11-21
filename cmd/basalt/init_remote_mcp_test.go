@@ -139,3 +139,26 @@ func TestInitRemoteMCPCommandAsRootService(t *testing.T) {
 	require.Equal(t, config.DefaultSocketDir(runtime.GOOS), r.cfg.SocketDir)
 	require.Equal(t, []string{fakeBin, "mcp", "--agent", "bot"}, r.res.MCPCommand)
 }
+
+// Not root, with a system engine config in place, init --remote stops and
+// names it: a second config in the user's folder would make every later
+// command stop on two.
+func TestInitRemoteRefusesASecondConfigBesideTheSystemOne(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost(t)
+	system := filepath.Join(h.configDir, "etc", "engine.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(system), 0o700))
+	require.NoError(t, os.WriteFile(system, []byte("{}"), 0o600))
+	var stdout, stderr bytes.Buffer
+	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &stdout, err: &stderr},
+		func(string) string { return "" })
+	c.host, c.agentLogin, c.probe, c.systemConfigPath = h, refusedLogin, noNetworkProbe, system
+	code := runInit(c, []string{
+		"--remote", "--agent", "bot", "--write", "public.leads",
+		"--database-url", "postgres://postgres@db.example.com:5432/postgres",
+	})
+	require.Equal(t, exitError, code, stderr.String())
+	require.Contains(t, stderr.String(), system)
+	_, err := os.Stat(filepath.Join(h.configDir, perUserDirName, "engine.json"))
+	require.ErrorIs(t, err, os.ErrNotExist, "no second config")
+}

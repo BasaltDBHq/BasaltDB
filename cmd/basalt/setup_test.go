@@ -47,6 +47,11 @@ type fakeHost struct {
 	// probeErr is what Probe returns; engineLog what EngineLog reads.
 	probeErr  error
 	engineLog string
+	// dialogs are the scripts the administrator dialog ran; noDialog is
+	// what DialogAvailable says, dialogErr what the dialog run returns.
+	dialogs   []string
+	noDialog  error
+	dialogErr error
 }
 
 const fakeBin = "/opt/basalt/bin/basalt"
@@ -68,6 +73,15 @@ func (h *fakeHost) LookPath(string) (string, error) {
 		return "", errors.New("not found")
 	}
 	return h.claude, nil
+}
+
+func (h *fakeHost) ResolvedExecutable() (string, error) { return fakeBin, nil }
+
+func (h *fakeHost) DialogAvailable(string) error { return h.noDialog }
+
+func (h *fakeHost) AdminDialog(_ context.Context, _, script string, _ io.Writer) error {
+	h.dialogs = append(h.dialogs, script)
+	return h.dialogErr
 }
 
 func (h *fakeHost) Sudo(_ context.Context, args []string, stdin string, _, _ io.Writer) error {
@@ -132,10 +146,12 @@ type fakeSys struct {
 	// binaryErr is what CheckBinary returns; checked records its calls.
 	binaryErr error
 	checked   []string
+	// existing are the files Exists finds (an installed unit).
+	existing map[string]bool
 }
 
-func (s *fakeSys) UserExists(string) bool { return false }
-func (s *fakeSys) Exists(string) bool     { return false }
+func (s *fakeSys) UserExists(string) bool  { return false }
+func (s *fakeSys) Exists(path string) bool { return s.existing[path] }
 func (s *fakeSys) Output(_ context.Context, args ...string) (string, error) {
 	if strings.Join(args, " ") == "dscl . -list /Users UniqueID" {
 		return "root 0\n", nil
@@ -222,7 +238,10 @@ func TestInitInstallsTheServiceWithOneSudo(t *testing.T) {
 			r := initRun(t, d, h, v.goos, true, "y\n\ny\n")
 			require.Equal(t, exitOK, r.code, r.stderr)
 
-			require.Len(t, h.sudo, 1, "one elevation")
+			script, err := service.InstallScript(v.goos, fakeBin)
+			require.NoError(t, err)
+			require.Equal(t, []string{script}, h.dialogs, "the first install goes through the administrator dialog, with the fixed script")
+			require.Len(t, h.sudo, 1, "then one sudo carries the agent's config and credential")
 			require.Equal(t, []string{
 				fakeBin, "service", "install", "--user", v.user,
 				"--agent", "bot", "--os-user", me(t), "--pages-url", links.DefaultLocal, "--vault-default=off",
@@ -234,13 +253,16 @@ func TestInitInstallsTheServiceWithOneSudo(t *testing.T) {
 			require.Equal(t, []string{v.socket}, h.probed)
 			require.Equal(t, [][]string{{"/usr/local/bin/claude", "mcp", "add", "--scope", "local", "basalt-bot", "--", fakeBin, "mcp", "--agent", "bot"}}, h.ran)
 
-			require.Contains(t, r.stderr, "Install the engine as a background service? This creates the OS user "+v.user+" and needs your password once. [Y/n]")
+			require.Contains(t, r.stderr, "Install the engine as a background service? This creates the OS user "+v.user+
+				" and asks for your password twice: in the system's administrator dialog, then in this terminal. [Y/n]")
+			require.Contains(t, r.stderr, "basalt: asking for your password in the system's administrator dialog to install the engine service as "+v.user+"; it runs:\n  "+
+				shellJoin([]string{fakeBin, "engine", "--config", v.config, "--supervise"})+"\n")
 			require.Contains(t, r.stderr, "basalt: engine running as "+v.user+"; it answered on "+v.socket)
 			require.Contains(t, r.stderr, "  /opt/basalt/bin/basalt mcp --agent bot\n")
 			require.Contains(t, r.stderr, "Add it to Claude Code now (claude mcp add --scope local basalt-bot -- "+fakeBin+" mcp --agent bot)? [Y/n]")
 			require.Contains(t, r.stderr, "basalt: the server basalt-bot is registered for this project directory only (--scope local); sessions in other projects do not see it\n")
 			require.NotContains(t, r.stderr, "chown")
-			require.NotContains(t, r.stderr, "basalt engine --config")
+			require.NotContains(t, r.stderr, "it runs in the foreground", "no foreground engine")
 			require.NoDirExists(t, filepath.Join(h.configDir, perUserDirName), "nothing in the person's home")
 		})
 	}

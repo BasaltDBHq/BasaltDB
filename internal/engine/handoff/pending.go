@@ -48,15 +48,11 @@ const (
 // ENGINE_AS_ROOT).
 var ErrEngineAsRoot = errors.New("the engine runs as root without --user, so it does not collect the database's address")
 
-// The collect cadence (CONTRACT.md, Connect, The reach check, Polling):
+// The collect cadence (CONTRACT.md, The engine and a connect-only code):
 // every 15 seconds while the setup waits for an address or cannot reach
-// it, for the first 2 hours after the code was made, then every 5 minutes
-// until the code expires, and at once on status.
-const (
-	fastEvery = 15 * time.Second
-	fastFor   = 2 * time.Hour
-	slowEvery = 5 * time.Minute
-)
+// it, for the code's life plus the connect service's 30-minute hold, and
+// at once on status.
+const fastEvery = 15 * time.Second
 
 // reuseFor is how long a passed PREVIEW probe stands in for the SET_UP
 // probe of the same address and resolved IP (CONTRACT.md, Connect, The
@@ -293,20 +289,22 @@ func (p *Pending) Run(ctx context.Context) {
 	}
 }
 
+// collectUntil is the last time the engine polls for this code's address:
+// the code's life plus the 30-minute hold, measured from when it was made.
+func (p *Pending) collectUntil() time.Time {
+	return p.made.Add(setupcode.CollectWindow)
+}
+
 // nextWait is how long until the next collect, and false once there is
 // none to make.
 func (p *Pending) nextWait() (time.Duration, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	now := p.o.Now()
-	if p.st.Phase != PhaseWaiting || !now.Before(p.expires) {
+	if p.st.Phase != PhaseWaiting || !now.Before(p.collectUntil()) {
 		return 0, false
 	}
-	every := slowEvery
-	if now.Sub(p.made) < fastFor {
-		every = fastEvery
-	}
-	next := p.lastTry.Add(every)
+	next := p.lastTry.Add(fastEvery)
 	if p.notBefore.After(next) {
 		next = p.notBefore
 	}
@@ -314,7 +312,7 @@ func (p *Pending) nextWait() (time.Duration, bool) {
 }
 
 // Step is one collect, check and probe. It does nothing unless the setup
-// waits for its address and the code has not expired. The one condition
+// waits for its address and the collect window has not ended. The one condition
 // that stops it for good is a probe of a SET_UP address that passed: until
 // then each step collects again, so an address the person changes on the
 // page (running the same link again) is picked up and probed. A PREVIEW
@@ -332,7 +330,7 @@ func (p *Pending) step(ctx context.Context) {
 	}
 	p.mu.Lock()
 	now := p.o.Now()
-	if p.st.Phase != PhaseWaiting || !now.Before(p.expires) || now.Before(p.notBefore) {
+	if p.st.Phase != PhaseWaiting || !now.Before(p.collectUntil()) || now.Before(p.notBefore) {
 		p.mu.Unlock()
 		return
 	}

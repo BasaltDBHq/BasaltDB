@@ -73,7 +73,7 @@ func TestNewSetupID(t *testing.T) {
 	id, expires, err := NewSetupID(now, bytes.NewReader(make([]byte, 16)))
 	require.NoError(t, err)
 	require.Regexp(t, setupIDPattern, id)
-	require.Equal(t, "2026-11-13T06:02:11Z", expires)
+	require.Equal(t, "2026-11-12T06:12:11Z", expires)
 	p := Payload{SetupID: id, ExpiresAt: expires}
 	created, err := p.CreatedAt()
 	require.NoError(t, err)

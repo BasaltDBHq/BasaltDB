@@ -14,7 +14,7 @@ import (
 func TestHoldPhasesRank(t *testing.T) {
 	t.Parallel()
 	s, _ := Start(t)
-	d := setup.Description{SetupID: "01a1f78c-52b8-7c3a-9f00-0000000000e1", EngineKey: "key", Fingerprint: "d48b ee66 a1d9 d005 1f63"}
+	d := setup.Description{SetupID: "01a1f78c-52b8-7c3a-9f00-0000000000e1", EngineKey: "key", Fingerprint: "734b aaea 804e 1065 4148"}
 	mine := setup.Target{Host: "db.example.com", Port: 5432, Database: "app"}
 	other := setup.Target{Host: "other.example.com", Port: 5432, Database: "app"}
 

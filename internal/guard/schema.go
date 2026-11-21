@@ -48,6 +48,9 @@ const (
 	versionPluginApprovals
 	// versionTrustPins adds record_trust_pin and agent_trust_pins: schema/016.
 	versionTrustPins
+	// versionSetupCodeLife shortens setup-code life to 10 minutes and
+	// stops record_setup refusing EXPIRED: schema/017.
+	versionSetupCodeLife
 )
 
 // TrustPinsVersion is the basalt_meta version that records trust pins. A
@@ -62,7 +65,7 @@ const PluginApprovalsVersion = versionPluginApprovals
 // versionFiles is how many schema files each version runs, in version
 // order: a new version appends its own schema files after the last and its
 // count here, and every earlier version keeps the files it has.
-var versionFiles = []int{versionGuard: guardFiles, versionInstallIDs: 1, versionPluginEvents: 1, versionPluginTrustRemoved: 1, versionPluginApprovals: 1, versionTrustPins: 1}
+var versionFiles = []int{versionGuard: guardFiles, versionInstallIDs: 1, versionPluginEvents: 1, versionPluginTrustRemoved: 1, versionPluginApprovals: 1, versionTrustPins: 1, versionSetupCodeLife: 1}
 
 // nonBreakingVersions are the versions an engine serves an agent without
 // (migration.nonBreaking). versionPluginEvents: without it the engine
@@ -74,7 +77,9 @@ var versionFiles = []int{versionGuard: guardFiles, versionInstallIDs: 1, version
 // and no approval can be opened there; everything else is served as before.
 // versionTrustPins: without it basalt init records no pin and status has
 // nothing to compare a pin with; everything is served as before.
-var nonBreakingVersions = map[int]bool{versionPluginEvents: true, versionPluginTrustRemoved: true, versionPluginApprovals: true, versionTrustPins: true}
+// versionSetupCodeLife: without it record_setup still uses the 24-hour
+// bound and still refuses EXPIRED; every tool is served as before.
+var nonBreakingVersions = map[int]bool{versionPluginEvents: true, versionPluginTrustRemoved: true, versionPluginApprovals: true, versionTrustPins: true, versionSetupCodeLife: true}
 
 // guardFiles is how many schema files version 1 has: 001 to 011.
 const guardFiles = 11

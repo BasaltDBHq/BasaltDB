@@ -28,9 +28,9 @@ import (
 // "connect-only install of all tables"): setupId ...e1, made at its UUIDv7
 // time, role basalt_agent_lead_bot.
 const (
-	fixtureCode        = "basalt-setup.1.PJBdb6JAFIb_y0nvlmlnrKJO4sUUtFXESou2uNmYAQecOjB0gPrR-N837G72XJ3kPDlvnvcbUm1yXgMlFlSibsrpDihgwknaHySo14kHqJ_cczRMMUb4_wgCFhxk0dLTxWvI5nOwoDQilSegEPOKqxosyBpudkC_ITU6B4otqDVQYl8tiBup_oTd9m4xWMAzUdQtWvBcAAUl-G4b6_YLVyrksRJVe66Svch5BfQnlE2sZAK_rhZ8CSNTKQxQeHVemI9enxjq9OybLh7alAVT94GtHh-O2czJKt8NussxG41uzt33U3R3Kcovd_nj7TDTy_eJDPjjnVfNVPg514P95lE5jX4ejGjWU5FbzLpv2jddW77tz59RkXB395Lovn_5IpNz9vR81vu78QgsqGpei1wUdShzoZvar4Det-VdLRCnUhpRsRoodHDHRoSgDgmxTXGHErIBC0SRyUK0xn81PXEGCv7kcBwfoydPb6aXD-ywIJr-210WJG6QsfFqfRzGpvhQ5jDG276XknB4CS4P9kZsF-TeW61NUFbPmJHhZGG69mrpR2ibqxdycLScBB4aLNbI8Vf9ue-o-JRuULhmcL3-DgAA__8._9xzIw"
+	fixtureCode        = "basalt-setup.1.PJBdb6JAFIb_y0nvlmlnrKJO4sUUtFXESou2uNmYAQecOjB0gPrR-N837G72XJ3kPDlvnvcbUm1yXgMlFlSibsrpDihgwknaHySo14kHqJ_cczRMMUb4_wgCFhxk0dLTxWvI5nOwoDQilSegEPOKqxosyBpudkC_ITU6B4otqDVQYl8tiBup_oTd9m4xWMAzUdQtWvBcAAUl-G4b6_YLVyrksRJVe66Svch5BfQnlE2sZAK_rhZ8CSNTKQxQeHVemI9enxjq9OybLh7alAVT94GtHh-O2czJKt8NussxG41uzt33U3R3Kcovd_nj7TDTy_eJDPjjnVfNVPg514P95lE5jX4ejGjWU5FbzLpv2jddW77tz59RkXB395Lovn_5IpNz9vR81vu78QgsqGpei1wUdShzoZvar4Det-VdLRCnUhpRsRoodHDHRoSgDg6xTUmHErIBC0SRyUK0xn81PXEGCv7kcBwfoydPb6aXD-ywIJr-210WJG6QsfFqfRzGpvhQ5jDG276XknB4CS4P9kZsF-TeW61NUFbPmJHhZGG69mrpR2ibqxdycLScBB4aLNbI8Vf9ue-o-JRuULhmcL3-HgA.RtQ68Q"
 	fixtureID          = "01a1f78c-52b8-7c3a-9f00-0000000000e1"
-	fixtureFingerprint = "d48b ee66 a1d9 d005 1f63"
+	fixtureFingerprint = "734b aaea 804e 1065 4148"
 	fixtureRole        = "basalt_agent_lead_bot"
 )
 
@@ -41,7 +41,7 @@ var db = Address{Host: "db.example.com", Port: 5432, Database: "app"}
 
 func fixtureSetup() config.Setup {
 	return config.Setup{
-		SetupID: fixtureID, Kind: guard.SetupInstall, GuardVersion: 16, ExpiresAt: "2026-11-21T06:02:11Z",
+		SetupID: fixtureID, Kind: guard.SetupInstall, GuardVersion: 16, ExpiresAt: "2026-11-20T06:12:11Z",
 		Code: fixtureCode, Fingerprint: fixtureFingerprint, AwaitingAddress: true,
 	}
 }
@@ -352,8 +352,8 @@ func TestConnStringAndLoginUser(t *testing.T) {
 	require.Equal(t, "basalt_agent_bot", LoginUser(direct, "basalt_agent_bot"))
 }
 
-// The cadence: every 15 seconds for 2 hours after the code was made, then
-// every 5 minutes until it expires.
+// The cadence: every 15 seconds for the code's life plus the 30-minute
+// hold (40 minutes after the code was made).
 func TestCollectCadence(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
@@ -366,29 +366,25 @@ func TestCollectCadence(t *testing.T) {
 	h.p.Step(context.Background())
 	require.Equal(t, fastEvery, wait())
 
-	h.clock.now = fixtureMade.Add(110 * time.Minute)
+	h.clock.now = fixtureMade.Add(30 * time.Minute)
 	h.p.Step(context.Background())
 	require.Equal(t, fastEvery, wait())
 
-	h.clock.now = fixtureMade.Add(3 * time.Hour)
-	h.p.Step(context.Background())
-	require.Equal(t, slowEvery, wait())
-
 	// While the database cannot be reached, the cadence is the same.
 	h.col.err, h.col.addr, h.prober.err = nil, db, &ReachError{Reason: ReasonNoRoute}
-	h.clock.now = fixtureMade.Add(20 * time.Hour)
+	h.clock.now = fixtureMade.Add(35 * time.Minute)
 	h.p.Step(context.Background())
 	require.Equal(t, ProblemUnreachable, h.p.State().Problem)
-	require.Equal(t, slowEvery, wait())
+	require.Equal(t, fastEvery, wait())
 
 	// A status call collects at once, however recent the last collect.
 	calls := h.col.calls
 	h.p.StatusCollect(context.Background())
 	require.Equal(t, calls+1, h.col.calls)
 
-	h.clock.now = fixtureMade.Add(25 * time.Hour)
+	h.clock.now = fixtureMade.Add(40 * time.Minute)
 	_, ok := h.p.nextWait()
-	require.False(t, ok, "no collect after the code expired")
+	require.False(t, ok, "no collect after the collect window")
 	calls = h.col.calls
 	h.p.Step(context.Background())
 	require.Equal(t, calls, h.col.calls, "nor on status")

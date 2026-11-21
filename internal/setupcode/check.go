@@ -25,7 +25,7 @@ const MinGuardVersion = 1
 // CheckLocal applies the person's computer's checks to a decoded code, in
 // the contract's order: EXPIRED (now at or past expiresAt),
 // SETUP_ID_IN_FUTURE (the setupId's time more than ClockSkew ahead),
-// EXPIRY_TOO_FAR (expiresAt more than 24 hours and ClockSkew ahead), then
+// EXPIRY_TOO_FAR (expiresAt more than Lifetime and ClockSkew ahead), then
 // BINARY_TOO_OLD (guard.to newer than binaryGuardVersion), then
 // GUARD_TOO_OLD (guard.to older than MinGuardVersion). The code-maker writes
 // both times, so the clock decides, not the code.

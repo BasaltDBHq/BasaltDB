@@ -13,7 +13,11 @@ import (
 // Limits from setup-code.schema.json and CONTRACT.md.
 const (
 	// Lifetime is how long a code is valid after it is made (CO-13).
-	Lifetime = 24 * time.Hour
+	Lifetime = 10 * time.Minute
+	// CollectWindow is how long the engine polls CollectAddress after the
+	// code was made: the code's life plus the connect service's 30-minute
+	// hold (CONTRACT.md, The engine and a connect-only code).
+	CollectWindow = Lifetime + 30*time.Minute
 	// maxRoleLen is Postgres's NAMEDATALEN - 1.
 	maxRoleLen = 63
 	// maxTables is the most tables in one list.
@@ -43,7 +47,7 @@ var (
 // Validate checks p against setup-code.schema.json and the rules the
 // schema cannot state (guard.from <= guard.to, < for UPGRADE; at least one
 // table; no table in both lists; the role at most 63 bytes; expiresAt no
-// later than the setupId's time plus 24 hours). Failing one is INVALID.
+// later than the setupId's time plus 10 minutes). Failing one is INVALID.
 // None of these depend on the clock.
 func (p Payload) Validate() error {
 	checks := []func() error{p.validateHeader, p.validateTarget, p.validateGuard, p.validateAgent, p.validateExpiry, p.validateEngine, p.validateConnectOnly}
@@ -233,7 +237,7 @@ func (p Payload) validateExpiry() error {
 		return err
 	}
 	if expires.After(created.Add(Lifetime)) {
-		return invalid("expiresAt is more than 24 hours after the code was made")
+		return invalid("expiresAt is more than 10 minutes after the code was made")
 	}
 	return nil
 }

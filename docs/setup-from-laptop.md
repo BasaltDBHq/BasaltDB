@@ -57,7 +57,7 @@ You do this once per agent.
 9. Init opens `https://portal.basaltvault.app/passkeys/register` in your browser. Check the address bar. Press the button, confirm with your passkey, and paste the code the page shows back into the terminal.
 10. Init prints `Done. Tell <agent> to check its status.` Tell your bot in the chat.
 
-The code works for 24 hours and once. If it expired or you ran it already, ask the bot for a new one.
+The code works for 10 minutes and once. If it expired or you ran it already, ask the bot for a new one.
 
 The bot then calls `status`. It confirms that the role, the guard and your passkey are in place, and starts to work.
 

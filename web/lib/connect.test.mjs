@@ -32,6 +32,8 @@ import {
   restQuestion,
   start,
   tableRows,
+  expiryCountdown,
+  openLinkMessage,
 } from "./connect.js";
 
 const PORTAL = "https://portal.basaltvault.app";
@@ -344,6 +346,23 @@ test("a refusal is read from its detail's debug form, with the other way for the
   assert.equal(refusalFrom(502, "<html>bad gateway</html>").message, "The connect service answered with an error (HTTP 502).");
   assert.equal(refusalFrom(400, JSON.stringify({ code: "invalid_argument", message: "raw" })).message, "The connect service answered with an error (invalid_argument).");
   assert.equal(refusalFrom(400, JSON.stringify({ details: [{ type: "basalt.connect.v1.Refusal", debug: { reason: "<b>", message: "m" } }] })).reason, "UNKNOWN");
+});
+
+
+test("the expiry countdown is in whole minutes and expires at zero", () => {
+  const at = Date.parse("2026-11-21T10:00:00Z");
+  assert.deepEqual(expiryCountdown("2026-11-21T10:00:00Z", at - 7 * 60_000), { expired: false, text: "expires in 7 min" });
+  assert.deepEqual(expiryCountdown("2026-11-21T10:00:00Z", at - 1), { expired: false, text: "expires in 1 min" });
+  assert.deepEqual(expiryCountdown("2026-11-21T10:00:00Z", at), { expired: true, text: "" });
+  assert.equal(expiryCountdown("soon", 0).expired, true);
+});
+
+test("an open-link refusal uses the service message and names the bot", () => {
+  const r = refusalFrom(400, refusalBody("invalid_argument", "EXPIRED", "This link expired. Ask familite-bot for a new one."));
+  assert.equal(openLinkMessage(r, "familite-bot"), "This link expired. Ask familite-bot for a new one.");
+  assert.equal(openLinkMessage(refusalFrom(400, refusalBody("failed_precondition", "ALREADY_USED", "This link was already used. Ask familite-bot for a new one.")), "familite-bot"), "This link was already used. Ask familite-bot for a new one.");
+  assert.equal(openLinkMessage(refusalFrom(400, refusalBody("failed_precondition", "REPLACED", "This link was replaced by a newer link. Ask familite-bot for a new one.")), "familite-bot"), "This link was replaced by a newer link. Ask familite-bot for a new one.");
+  assert.equal(openLinkMessage(refusalFrom(400, refusalBody("failed_precondition", "LOGIN_FAILED", "The database refused the login."))), null);
 });
 
 test("a call is one JSON POST to the service, without cookies, referrer, cache or redirects", async () => {
@@ -1233,3 +1252,62 @@ test("a bot that sees another certificate authority is told so, not given pooler
   assert.match(t, /provider's console/);
   assert.doesNotMatch(t, /pooler/i);
 });
+
+test("the page shows a countdown, and at zero only the expired message with no setup steps", async () => {
+  const nodes = fakeDocument();
+  guardStorage();
+  const expiresAt = "2026-11-21T10:00:00Z";
+  const { fetchFn } = service({ DescribeSetup: () => ({ body: { summary: { ...summary("INSTALL"), expiresAt }, challenge: challenge() } }) });
+  const e = env(fetchFn);
+  e.clock.t = Date.parse(expiresAt) - 7 * 60_000;
+  const out = start(e);
+  await out.ready;
+  assert.equal(shown(nodes), "s-bot");
+  assert.equal(find(nodes.facts, (n) => n.id === "code-expires-value").textContent, "expires in 7 min");
+  e.clock.t = Date.parse(expiresAt);
+  out.paintExpiry();
+  assert.equal(nodes.error.hidden, false);
+  assert.equal(nodes["error-text"].textContent, "This link expired. Ask familite-bot for a new one.");
+  for (const id of Object.keys(nodes).filter((id) => id.startsWith("s-"))) {
+    assert.equal(nodes[id].hidden, true, id);
+  }
+  assert.equal(nodes.progress.hidden, true);
+});
+
+test("an expired or used or replaced link is refused on open with no setup steps", async () => {
+  for (const [reason, message] of [
+    ["EXPIRED", "This link expired. Ask familite-bot for a new one."],
+    ["ALREADY_USED", "This link was already used. Ask familite-bot for a new one."],
+    ["REPLACED", "This link was replaced by a newer link. Ask familite-bot for a new one."],
+  ]) {
+    const nodes = fakeDocument();
+    guardStorage();
+    const { fetchFn } = service({
+      DescribeSetup: () => ({ status: 400, body: refusalBody(reason === "EXPIRED" ? "invalid_argument" : "failed_precondition", reason, message) }),
+    });
+    await start(env(fetchFn)).ready;
+    assert.equal(nodes.error.hidden, false);
+    assert.equal(nodes["error-text"].textContent, message);
+    for (const id of Object.keys(nodes).filter((id) => id.startsWith("s-"))) {
+      assert.equal(nodes[id].hidden, true, `${reason} ${id}`);
+    }
+  }
+});
+
+test("once the code is confirmed, the run continues after the countdown reaches zero", async () => {
+  const nodes = fakeDocument();
+  guardStorage();
+  const expiresAt = "2026-11-21T10:00:00Z";
+  const { fetchFn } = service({ DescribeSetup: () => ({ body: { summary: { ...summary("INSTALL"), expiresAt }, challenge: challenge() } }) });
+  const e = env(fetchFn);
+  e.clock.t = Date.parse(expiresAt) - 60_000;
+  const out = start(e);
+  await out.ready;
+  await nodes["same-code"].click();
+  assert.equal(shown(nodes), "s-passkey");
+  e.clock.t = Date.parse(expiresAt);
+  out.paintExpiry();
+  assert.equal(shown(nodes), "s-passkey");
+  assert.equal(nodes.error.hidden, true);
+});
+

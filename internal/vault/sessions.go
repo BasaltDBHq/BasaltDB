@@ -45,19 +45,16 @@ const (
 	phaseOpen
 )
 
-// Tally counts the sessions open on every transport of one engine, so the
-// per-engine and per-link limits hold across the Vault's socket and the
-// direct listener together (CONTRACT.md, Direct transport, Limits). One
-// Tally is given to the Client and to Direct; a table made without one
-// counts only its own sessions.
+// Tally counts the sessions open on every socket of one Client, for the
+// per-engine and per-link limits: a socket that ends releases its own.
 type Tally struct {
 	mu          sync.Mutex
 	total       int
 	established map[channel.LinkToken]int
 }
 
-// NewTally returns an empty Tally.
-func NewTally() *Tally { return &Tally{established: map[channel.LinkToken]int{}} }
+// newTally returns an empty Tally.
+func newTally() *Tally { return &Tally{established: map[channel.LinkToken]int{}} }
 
 // reserve takes one of the engine's session slots; false at the limit.
 func (t *Tally) reserve() bool {
@@ -152,7 +149,7 @@ type established struct {
 
 func newSessions(timeout time.Duration, now func() time.Time, tally *Tally) *sessions {
 	if tally == nil {
-		tally = NewTally()
+		tally = newTally()
 	}
 	return &sessions{
 		timeout: timeout, now: now, tally: tally,
@@ -203,36 +200,6 @@ func (s *sessions) takeAll() []*session {
 	for id, ss := range s.open {
 		out = append(out, ss)
 		s.drop(id, ss)
-	}
-	return out
-}
-
-// ofAgent lists the established sessions of agent's links. A session's
-// link, and so its agent, is set before it is established and the agent
-// never changes.
-func (s *sessions) ofAgent(agent string) []sid {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	var out []sid
-	for id, ss := range s.open {
-		if ss.est != nil && ss.est.link.Agent == agent {
-			out = append(out, id)
-		}
-	}
-	return out
-}
-
-// agents lists the agents with an established session, each once.
-func (s *sessions) agents() []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	seen := map[string]bool{}
-	var out []string
-	for _, ss := range s.open {
-		if ss.est != nil && !seen[ss.est.link.Agent] {
-			seen[ss.est.link.Agent] = true
-			out = append(out, ss.est.link.Agent)
-		}
 	}
 	return out
 }

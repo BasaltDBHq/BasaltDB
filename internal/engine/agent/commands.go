@@ -48,7 +48,7 @@ const (
 var savedInitFlags = map[string]bool{
 	flagAgent: true, flagWrite: true, flagRead: true, "prefix": true, "statement-timeout": true,
 	"os-user": true, "engine-user": true,
-	flagPasskeyOrigin: true, "agent-rls": true, "operated-by": true, flagDevLocalPages: true, "direct-addr": true,
+	flagPasskeyOrigin: true, "agent-rls": true, "operated-by": true, flagDevLocalPages: true,
 	flagAllTables: true,
 }
 

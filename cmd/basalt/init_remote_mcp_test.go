@@ -191,3 +191,25 @@ func TestInitRefusesAForegroundSetupBesideTheSystemConfig(t *testing.T) {
 		require.ErrorIs(t, err, os.ErrNotExist, "no second config")
 	}
 }
+
+// The backstop for a service declined at the prompt: perUserPaths, which
+// moves a foreground setup to the person's folder, refuses beside a system
+// config.
+func TestPerUserPathsRefusesBesideTheSystemConfig(t *testing.T) {
+	t.Parallel()
+	h := newFakeHost(t)
+	system := filepath.Join(h.configDir, "etc", "engine.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(system), 0o700))
+	require.NoError(t, os.WriteFile(system, []byte("{}"), 0o600))
+	c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &bytes.Buffer{}, err: &bytes.Buffer{}},
+		func(string) string { return "" })
+	c.host, c.systemConfigPath = h, system
+	_, err := perUserPaths(c, initFlags{agent: "bot"})
+	require.ErrorContains(t, err, system)
+
+	// With no system config it moves to the person's folder.
+	require.NoError(t, os.Remove(system))
+	f, err := perUserPaths(c, initFlags{agent: "bot"})
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(h.configDir, perUserDirName, "engine.json"), f.configPath)
+}

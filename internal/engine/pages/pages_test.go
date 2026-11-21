@@ -263,8 +263,8 @@ func TestPagesRelayChecks(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, status, out)
 	require.Empty(t, a.relayed)
 
-	// The page's own post: through the tunnel the browser's Origin is
-	// http://localhost:<port>, the page origin.
+	// The page's own post: forwarded to localhost, the browser's Origin
+	// is http://localhost:<port>, the page origin.
 	// The answer carries the engine's receipt of the signature.
 	a.receipt = agent.Receipt{Token: "basalt-receipt.1.cA.cw", Line: "Approved: ..."}
 	status, out = s.do(t, http.MethodPost, path, host, s.origin, "application/json", body, secret)

@@ -1,7 +1,6 @@
 // DOM helpers shared by the approval and registration pages. Text only goes
 // into the page through textContent, never innerHTML: every value on these
 // pages came from a link someone else built.
-import { fingerprint as engineFingerprint } from "./channel.js";
 import { readPaste, repairHash } from "./repair.js";
 import { BlockAssembler, HASH_PREFIX, MAX_REQUEST_FILE_BYTES, readRequestFile } from "./requestfile.js";
 
@@ -203,17 +202,6 @@ export function fail(message) {
   $("error-text").textContent = message;
   $("error").hidden = false;
   $("main").hidden = true;
-}
-
-// showEngine names the engine a DIRECT session reached, with the
-// fingerprint the person can compare with basalt status (CONTRACT.md,
-// Engine keys: shown on every portal page with a session). Nothing for the
-// engine's own local pages.
-export function showEngine(session) {
-  const engine = session?.engine;
-  if (!engine) return;
-  $("engine").textContent = `Through your engine at ${engine.address}, fingerprint ${engineFingerprint(engine.engineId)}, pinned on this device.`;
-  $("engine").hidden = false;
 }
 
 // showDone says the engine took the signature: nothing to paste.

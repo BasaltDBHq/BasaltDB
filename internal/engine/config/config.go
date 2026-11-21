@@ -96,10 +96,6 @@ type Config struct {
 	// PagesAddr is where the engine serves the approval and revert pages on
 	// loopback (see Pages); "off" disables them, empty is the default.
 	PagesAddr string `json:"pagesAddr,omitempty"`
-	// DirectAddr is the loopback listener a person's tunnel forwards to for
-	// the direct transport (CONTRACT.md, Direct transport); "off" or empty
-	// is off. Only with the portal as pagesUrl.
-	DirectAddr string `json:"directAddr,omitempty"`
 	// LinkBudget is the longest long link, in characters of the whole URL,
 	// the engine hands an agent as the way to open a page (CONTRACT.md, The
 	// link budget). A pointer so that a written 0 is refused rather than read
@@ -403,9 +399,6 @@ func (c Config) check() error {
 		return err
 	}
 	if err := c.checkLinkBudget(); err != nil {
-		return err
-	}
-	if _, err := c.Direct(); err != nil {
 		return err
 	}
 	if _, err := c.Pages(); err != nil {

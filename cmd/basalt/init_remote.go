@@ -130,8 +130,6 @@ type remoteFlags struct {
 	// asks the config's vault to be (chooseVault).
 	vaultFlag VaultMode
 	vault     vaultChoice
-	// directAddr is --direct-addr as given ("" when not).
-	directAddr string
 }
 
 // RemoteInitResult is what basalt init --remote --json prints
@@ -254,27 +252,16 @@ func parseInitRemote(c *cliIO, args []string) (remoteFlags, error) {
 	fs.BoolVar(&f.forget, "forget", false, "drop the agent's pending setup from the connect page and make a new code for it")
 	fs.BoolVar(&f.json, "json", false, "print the result as JSON (remote-init-result.schema.json)")
 	fs.Var(&f.vaultFlag, flagVault, "on or off: whether the engine reaches the portal's pages through the Vault (default on with --operated-by=agent, else off)")
-	fs.StringVar(&f.directAddr, flagDirectAddr, "", directAddrUsage)
 	trustRoot := trustRootFlag(fs)
 	if err := parse(fs, args); err != nil {
 		return f, err
 	}
 	f.trustRoot = *trustRoot
 	f.configPath = cmp.Or(c.paths.config, c.systemConfig())
-	var directGiven bool
 	f.given = map[string]bool{}
 	fs.Visit(func(fl *flag.Flag) {
 		f.given[fl.Name] = true
-		switch fl.Name {
-		case flagDirectAddr:
-			directGiven = true
-		}
 	})
-	if directGiven {
-		if err := checkDirectAddr(f.directAddr); err != nil {
-			return f, err
-		}
-	}
 	if f.agent == "" {
 		return f, fmt.Errorf("%w: --agent is required", errUsage)
 	}
@@ -318,7 +305,6 @@ func (f remoteFlags) savedArgs(osUser string) []string {
 	addIf("statement-timeout", f.timeout.String(), guard.DefaultStatementTimeout.String())
 	addIf("os-user", osUser, "")
 	addIf("operated-by", string(f.operatedBy), string(OperatedByPerson))
-	addIf(flagDirectAddr, f.directAddr, "")
 	return args
 }
 
@@ -431,7 +417,7 @@ func newRemoteInit(c *cliIO, f remoteFlags) (*remoteInit, error) {
 // config directory, as init's foreground setup, with the sockets next to it.
 func (r *remoteInit) paths() error {
 	dir := filepath.Dir(r.f.configPath)
-	r.settings = r.f.vault.settings(config.Settings{SocketDir: config.DefaultSocketDir(r.c.goos), PagesURL: links.Portal, OperatedBy: r.f.operatedBy.enum(), DirectAddr: r.f.directAddr})
+	r.settings = r.f.vault.settings(config.Settings{SocketDir: config.DefaultSocketDir(r.c.goos), PagesURL: links.Portal, OperatedBy: r.f.operatedBy.enum()})
 	if r.c.host.Euid() != 0 && r.c.paths.config == "" {
 		if _, err := r.c.findConfig(); err != nil {
 			return err

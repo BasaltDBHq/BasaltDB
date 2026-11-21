@@ -57,7 +57,6 @@ const (
 	problemLedgerReinstalled   = "LEDGER_REINSTALLED"
 	problemPortalMismatch      = "PORTAL_MISMATCH"
 	problemEngineRevoked       = "ENGINE_REVOKED"
-	problemDirectNotServed     = "DIRECT_NOT_SERVED"
 	// The problems of a connect-only setup (CONTRACT.md, The engine and a
 	// connect-only code).
 	problemConfirmDatabase    = "CONFIRM_DATABASE"
@@ -186,10 +185,9 @@ type PortalReporter interface {
 }
 
 // EngineRecordStatus is status.engineRecord: this engine's key as the
-// agent's database records it (CONTRACT.md, Direct transport).
+// agent's database records it (CONTRACT.md, Vault channel, Engine keys).
 type EngineRecordStatus struct {
 	State      string `json:"state"`
-	URL        string `json:"url,omitempty"`
 	RecordedAt string `json:"recordedAt,omitempty"`
 	RevokedAt  string `json:"revokedAt,omitempty"`
 }
@@ -392,7 +390,6 @@ type statusDeps struct {
 	// engine record (LocalStatus.EngineKey); the engine uses vault.
 	engineKey    *string
 	engineRecord EngineRecordReader
-	directServed bool
 	trust        TrustReporter
 	// database names the credential's database (Deps.Database).
 	database string
@@ -418,7 +415,7 @@ func (s *Service) statusDeps() statusDeps {
 		name: s.Name, operatedBy: s.OperatedBy, build: s.Build, startedBy: s.StartedBy, pagesBase: s.PagesBase, pagesOrigin: s.PagesOrigin,
 		sameUser: s.SameUser, devLocalPages: s.DevLocalPages, connectBudget: s.ConnectBudget, engineReachable: true, vault: s.Vault, portal: s.Portal, plugins: s.Plugins,
 		crashDirs: s.CrashDirs, linkBudget: s.LinkBudget, access: s.Access,
-		engineRecord: s.EngineRecord, directServed: s.DirectServed, trust: s.Trust, database: s.Database, cmds: s.Commands, setup: s.pendingSetup(), probe: s.Probe,
+		engineRecord: s.EngineRecord, trust: s.Trust, database: s.Database, cmds: s.Commands, setup: s.pendingSetup(), probe: s.Probe,
 		update: s.updateInfo(), finisher: s.Finisher, finished: s.setupFinished, notRecorded: &s.notRecorded, lockTrouble: &s.lockTrouble, passkeys: s.Store.Passkeys, log: s.Log, now: s.Now,
 	}
 }
@@ -454,12 +451,10 @@ type LocalStatus struct {
 	Portal PortalReporter
 	// EngineKey, for an engine that runs and whose key file this user
 	// reads, is its engine id ("" when the key file is refused): the report
-	// then has engineRecord, read with EngineRecord, and its problems, with
-	// DirectServed telling whether the engine has a direct listener. Nil
+	// then has engineRecord, read with EngineRecord, and its problems. Nil
 	// leaves engineRecord out, as for an engine that is down.
 	EngineKey    *string
 	EngineRecord EngineRecordReader
-	DirectServed bool
 	// Trust: see Deps.Trust.
 	Trust    TrustReporter
 	Probe    Probe
@@ -481,7 +476,7 @@ func (l LocalStatus) Report(ctx context.Context) (StatusReport, error) {
 	return statusDeps{
 		name: l.Name, operatedBy: l.OperatedBy, build: buildinfo.Version, pagesBase: base, pagesOrigin: l.PagesOrigin,
 		sameUser: true, devLocalPages: l.DevLocalPages, connectBudget: l.ConnectBudget, portal: l.Portal, engineReachable: l.EngineRunning, engineUnknown: l.EngineUnknown, cmds: l.Commands, setup: l.Setup, probe: l.Probe,
-		engineKey: l.EngineKey, engineRecord: l.EngineRecord, directServed: l.DirectServed, trust: l.Trust,
+		engineKey: l.EngineKey, engineRecord: l.EngineRecord, trust: l.Trust,
 		// basalt status reads; the running engine finishes the setup.
 		finisher: noFinisher{}, finished: func(string) {}, notRecorded: &setupCache{}, lockTrouble: &lockTrouble{}, passkeys: l.Passkeys, log: l.Log, now: l.Now,
 	}.report(ctx)
@@ -1138,8 +1133,7 @@ func (g guardUpgrade) UpgradeAvailable(ctx context.Context) (bool, error) {
 }
 
 // engineRecordStatus reads this engine's record for status and adds its
-// problems: ENGINE_REVOKED, and DIRECT_NOT_SERVED when the database records
-// an address the engine has no direct listener for. Without the engine's
+// problem ENGINE_REVOKED. Without the engine's
 // key (the key file is refused) or a readable guard of version 33 or later,
 // the state is UNKNOWN and no problem is added.
 func (s statusDeps) engineRecordStatus(ctx context.Context, engineID string, guardReadable bool, ps *problems) *EngineRecordStatus {
@@ -1158,17 +1152,10 @@ func (s statusDeps) engineRecordStatus(ctx context.Context, engineID string, gua
 		return &EngineRecordStatus{State: engineNotRecorded}
 	}
 	out := &EngineRecordStatus{State: engineRecorded, RecordedAt: e.RecordedAt.UTC().Format(time.RFC3339)}
-	if e.URL != nil {
-		out.URL = *e.URL
-	}
-	switch {
-	case e.RevokedAt != nil:
+	if e.RevokedAt != nil {
 		out.State, out.RevokedAt = engineRevoked, e.RevokedAt.UTC().Format(time.RFC3339)
-		ps.add(problemEngineRevoked, "the agent's database revoked this engine's key: its portal links stop working and its portal sessions are refused",
+		ps.add(problemEngineRevoked, "the agent's database revoked this engine's key; the relay does not enforce the revocation yet, so links already handed over may still work",
 			engineRevokedSteps)
-	case out.URL != "" && !s.directServed:
-		ps.add(problemDirectNotServed, "the agent's database records an address for this engine, but directAddr is off, so a tunnel has nothing to forward to",
-			func(b *Steps) string { return directNotServedSteps(b, ps.cmds, out.URL) })
 	}
 	return out
 }
@@ -1176,30 +1163,10 @@ func (s statusDeps) engineRecordStatus(ctx context.Context, engineID string, gua
 // engineRevokedSteps: the agent asks whether the person revoked this engine
 // on purpose. Until a new key is recorded the agent hands over long links.
 func engineRevokedSteps(b *Steps) string {
-	b.AskPerson("Tell the person this engine's key is revoked in their database, so portal links stop working. Ask whether they revoked it on purpose, and show the message.")
+	b.AskPerson("Tell the person this engine's key is revoked in their database. Ask whether they revoked it on purpose, and show the message.")
 	b.EndTurn("End your turn: the person answers next.")
-	return "This engine's key is revoked in your database. Its portal links stop working; approvals go on through long links. " +
+	return "This engine's key is revoked in your database. Status shows it; the relay does not enforce it yet, so a link this engine already handed over may still work. " +
 		"Did you revoke it on purpose? If you replaced the engine, the agent makes a new key with basalt engine rotate-key and gives you a new setup code."
-}
-
-// directNotServedAddr is the loopback address the step suggests for
-// directAddr.
-const directNotServedAddr = "127.0.0.1:8787"
-
-// directNotServedSteps: set directAddr on the engine's machine, then
-// restart the engine, so the person's tunnel has a listener to forward to.
-func directNotServedSteps(b *Steps, cmds Commands, url string) string {
-	command := cmds.InitRemote("--direct-addr " + directNotServedAddr)
-	b.MachineCommand(cmds, command,
-		"On the engine's machine, run this to set the address your tunnel forwards to, then restart the engine.",
-		"Run this to set the engine's direct address, then restart the engine and call status again.")
-	host := strings.TrimPrefix(url, "https://")
-	if cmds.AgentOperated() {
-		return "Your database records " + host + " for this engine, but the engine has no listener for your tunnel to forward to. " +
-			"The agent sets one on its machine and restarts the engine; follow what it shows you next."
-	}
-	return "Your database records " + host + " for this engine, but the engine has no listener for your tunnel to forward to. " +
-		"On the engine's machine, run this, then restart the engine: " + command
 }
 
 // startedByEnum is the status enum of a --started-by value ("" for none).

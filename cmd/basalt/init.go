@@ -34,9 +34,7 @@ type initFlags struct {
 	passkeyOrigin, passkeyLabel                                                     string
 	// devLocalPages is --dev-local-pages: an agent-operated engine on local
 	// pages, for development only (CONTRACT.md, Page origins).
-	devLocalPages bool
-	// directAddr is --direct-addr as given ("" when not).
-	directAddr                                               string
+	devLocalPages                                            bool
 	agentRLS                                                 AgentRLSMode
 	spec                                                     guard.AgentSpec
 	dryRun, yes, showSQL, skipPasskey, addPasskey, noService bool
@@ -423,7 +421,6 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 		"pages origin the passkey belongs to: the engine's local pages http://localhost:<port> (RP ID localhost), or the portal "+links.Portal+" (RP ID basaltvault.app; the default with --operated-by=agent)")
 	fs.BoolVar(&f.devLocalPages, flagDevLocalPages, false,
 		"development only, with --operated-by=agent: use local pages (--passkey-origin http://localhost:<port>) instead of the portal; never with a bot you do not control")
-	fs.StringVar(&f.directAddr, flagDirectAddr, "", directAddrUsage)
 	fs.StringVar(&f.passkeyLabel, "passkey-label", "", "name of the passkey in the picker (default: <database> · <agent> · <date>)")
 	fs.Func(flagPersonUID, "service: an OS user id the engine's person socket admits for basalt log, approve and revert (repeatable; default: you)", func(v string) error {
 		uid, err := parseUID(v)
@@ -473,11 +470,9 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 		f.socketDir = filepath.Join(filepath.Dir(f.configPath), "run")
 	}
 	f.socketDir = cmp.Or(c.paths.socketDir, f.socketDir)
-	var originGiven, directGiven bool
+	var originGiven bool
 	fs.Visit(func(fl *flag.Flag) {
 		switch fl.Name {
-		case flagDirectAddr:
-			directGiven = true
 		case "operated-by":
 			f.operatedByGiven = true
 		case "passkey-origin":
@@ -502,9 +497,6 @@ func parseInit(c *cliIO, args []string) (initFlags, error) {
 	// An agent-operated engine serves the portal's pages (CONTRACT.md, Who
 	// operates the engine): the bot's machine has no pages the person can reach.
 	if err := f.agentPages(originGiven); err != nil {
-		return f, err
-	}
-	if err := f.checkDirect(directGiven); err != nil {
 		return f, err
 	}
 	vc, err := chooseVault(f.vaultFlag, f.operatedBy, f.passkeyOrigin, personDefaultWhy)
@@ -583,26 +575,6 @@ func (f *initFlags) agentPages(originGiven bool) error {
 	return nil
 }
 
-// checkDirect applies --direct-addr's rules (CONTRACT.md, Direct
-// transport): only for an agent-operated engine on the portal's pages, and
-// a loopback address or off.
-func (f initFlags) checkDirect(given bool) error {
-	if !given {
-		return nil
-	}
-	if err := checkDirectAddr(f.directAddr); err != nil {
-		return err
-	}
-	switch {
-	case f.operatedBy != OperatedByAgent:
-		return fmt.Errorf("%w: --%s is only for --operated-by=agent or basalt init --remote: the direct transport serves the portal's pages, "+
-			"which an engine on a machine you reach through a tunnel has", errUsage, flagDirectAddr)
-	case f.passkeyOrigin != links.Portal:
-		return fmt.Errorf("%w: --%s needs the portal's pages, not the local --passkey-origin %s", errUsage, flagDirectAddr, f.passkeyOrigin)
-	}
-	return nil
-}
-
 // engineSettings are what init writes to the engine config besides the
 // agent. A config outside the platform default is a per-user setup, run
 // with basalt engine in the foreground, so its state directory sits next
@@ -614,7 +586,7 @@ func engineSettings(f initFlags, goos string) config.Settings {
 	if f.configPath != config.DefaultPath(goos) {
 		s.StateDir = filepath.Join(filepath.Dir(f.configPath), stateDirName)
 	}
-	s.PagesURL, s.DevLocalPages, s.DirectAddr = f.passkeyOrigin, f.devLocalPages, f.directAddr
+	s.PagesURL, s.DevLocalPages = f.passkeyOrigin, f.devLocalPages
 	if f.operatedByGiven {
 		s.OperatedBy = f.operatedBy.enum()
 	}
@@ -660,7 +632,6 @@ func (f initFlags) savedArgs(goos string) []string {
 	addIf("passkey-origin", f.passkeyOrigin, links.DefaultLocal)
 	addIf("operated-by", string(f.operatedBy), string(OperatedByPerson))
 	addIf("agent-rls", string(f.agentRLS), string(AgentRLSAsk))
-	addIf(flagDirectAddr, f.directAddr, "")
 	if f.devLocalPages {
 		args = append(args, "--"+flagDevLocalPages+"=true")
 	}

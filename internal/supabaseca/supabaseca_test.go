@@ -22,27 +22,37 @@ import (
 	"github.com/basaltdbhq/basaltdb/internal/supabaseca/supabasecatest"
 )
 
-// rootSHA256 is the SHA-256 of Supabase Root 2021 CA's DER, as Supabase
-// publishes it.
-const rootSHA256 = "80:70:25:AD:50:D4:ED:21:9D:2C:9C:7D:29:9C:00:4F:82:4E:B0:0C:F7:F6:5A:FE:F6:07:D0:7B:72:E6:CA:FA"
+// rootSHA256 are the SHA-256 fingerprints of Supabase's two roots' DER, by
+// file, as Supabase publishes them.
+var rootSHA256 = []struct{ file, sum string }{
+	{"prod-ca-2021.crt", "80:70:25:AD:50:D4:ED:21:9D:2C:9C:7D:29:9C:00:4F:82:4E:B0:0C:F7:F6:5A:FE:F6:07:D0:7B:72:E6:CA:FA"},
+	{"prod-ca-2025.crt", "5F:9B:77:95:1A:7A:A1:30:3F:9B:58:EE:A9:BF:A8:9E:35:8C:FD:C1:5F:97:86:FF:10:D4:93:0A:72:2C:9A:E2"},
+}
 
 const supabaseHost = "db.abcdefghijklmnopqrst.supabase.co"
 
 const connectTimeout = 10 * time.Second
 
-func TestEmbeddedRootIsSupabaseRoot2021(t *testing.T) {
+func TestEmbeddedRootsAreSupabases(t *testing.T) {
 	t.Parallel()
-	sum := sha256.Sum256(supabaseca.Root().Raw)
-	require.Equal(t, rootSHA256, strings.ToUpper(colons(hex.EncodeToString(sum[:]))))
-	require.Equal(t, "Supabase Root 2021 CA", supabaseca.Root().Subject.CommonName)
-	require.True(t, supabaseca.Root().IsCA)
+	roots := supabaseca.Roots()
+	require.Len(t, roots, len(rootSHA256))
+	for i, want := range rootSHA256 {
+		sum := sha256.Sum256(roots[i].Raw)
+		require.Equal(t, want.sum, strings.ToUpper(colons(hex.EncodeToString(sum[:]))), want.file)
+		require.Equal(t, "Supabase Root 2021 CA", roots[i].Subject.CommonName, want.file)
+		require.True(t, roots[i].IsCA, want.file)
 
-	b, err := os.ReadFile("prod-ca-2021.crt")
-	require.NoError(t, err)
-	block, rest := pem.Decode(b)
-	require.NotNil(t, block)
-	require.Equal(t, "CERTIFICATE", block.Type)
-	require.Empty(t, bytes.TrimSpace(rest), "the file holds exactly one certificate")
+		b, err := os.ReadFile(want.file)
+		require.NoError(t, err)
+		block, rest := pem.Decode(b)
+		require.NotNil(t, block, want.file)
+		require.Equal(t, "CERTIFICATE", block.Type, want.file)
+		require.Equal(t, roots[i].Raw, block.Bytes, want.file)
+		require.Empty(t, bytes.TrimSpace(rest), "%s holds exactly one certificate", want.file)
+	}
+	roots[0] = nil
+	require.NotNil(t, supabaseca.Roots()[0], "Roots returns a copy")
 }
 
 func colons(h string) string {
@@ -80,9 +90,15 @@ func TestCovers(t *testing.T) {
 // server presenting cert. It returns the login's error.
 func connect(t *testing.T, dsn string, ca *x509.Certificate, cert tls.Certificate) error {
 	t.Helper()
+	return connectTrusting(t, dsn, cert, ca)
+}
+
+// connectTrusting is connect with cas as Supabase's roots.
+func connectTrusting(t *testing.T, dsn string, cert tls.Certificate, cas ...*x509.Certificate) error {
+	t.Helper()
 	cfg, err := pgconn.ParseConfig(dsn)
 	require.NoError(t, err)
-	supabaseca.Trust(cfg, ca)
+	supabaseca.Trust(cfg, cas...)
 	cfg.LookupFunc = func(context.Context, string) ([]string, error) { return []string{"127.0.0.1"}, nil }
 	cfg.DialFunc = supabasecatest.Serve(t, cert)
 	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
@@ -120,6 +136,26 @@ func TestSupabaseHostVerifies(t *testing.T) {
 		ca, cert := supabasecatest.Chain(t, host)
 		refusedPassword(t, connect(t, dsnFor(host, "sslmode=verify-full"), ca, cert))
 		refusedPassword(t, connect(t, dsnFor(host, "sslmode=verify-full&channel_binding=require"), ca, cert))
+	}
+}
+
+// With two roots trusted (Supabase has two), a chain from either verifies
+// on a Supabase host, and on no other host.
+func TestEitherRootVerifies(t *testing.T) {
+	t.Parallel()
+	caA, certA := supabasecatest.Chain(t, supabaseHost)
+	caB, certB := supabasecatest.Chain(t, supabaseHost)
+	dsn := dsnFor(supabaseHost, "sslmode=verify-full")
+	for _, cert := range []tls.Certificate{certA, certB} {
+		refusedPassword(t, connectTrusting(t, dsn, cert, caA, caB))
+	}
+	_, other := supabasecatest.Chain(t, supabaseHost)
+	notVerified(t, connectTrusting(t, dsn, other, caA, caB))
+	host := "db.example.com"
+	ca1, c1 := supabasecatest.Chain(t, host)
+	ca2, c2 := supabasecatest.Chain(t, host)
+	for _, cert := range []tls.Certificate{c1, c2} {
+		notVerified(t, connectTrusting(t, dsnFor(host, "sslmode=verify-full"), cert, ca1, ca2))
 	}
 }
 

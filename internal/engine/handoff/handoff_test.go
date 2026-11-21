@@ -777,7 +777,7 @@ func TestProbeCacheAcrossProcesses(t *testing.T) {
 func probeAt(t *testing.T, a Address, certHost string) error {
 	t.Helper()
 	ca, cert := supabasecatest.Chain(t, certHost)
-	p := Prober{Dial: supabasecatest.Serve(t, cert), SupabaseRoot: ca}
+	p := Prober{Dial: supabasecatest.Serve(t, cert), SupabaseRoots: []*x509.Certificate{ca}}
 	_, err := p.ProbeAt(context.Background(), a, netip.MustParseAddr("203.0.113.7"), fixtureRole)
 	return err
 }
@@ -832,6 +832,8 @@ func TestSavedConnStringVerifiesSupabaseHost(t *testing.T) {
 	// In production the engine opens it with Supabase's real root.
 	pool, err := pgdial.PoolConfig(ConnString(a, fixtureRole, "pw", false))
 	require.NoError(t, err)
-	_, err = supabaseca.Root().Verify(x509.VerifyOptions{Roots: pool.ConnConfig.TLSConfig.RootCAs})
-	require.NoError(t, err)
+	for _, root := range supabaseca.Roots() {
+		_, err = root.Verify(x509.VerifyOptions{Roots: pool.ConnConfig.TLSConfig.RootCAs})
+		require.NoError(t, err)
+	}
 }

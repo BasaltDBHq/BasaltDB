@@ -37,10 +37,14 @@ func TestDefaultModeUnlessTheStringSetsOne(t *testing.T) {
 	require.Error(t, err)
 }
 
-// trusts reports whether pool verifies Supabase's own root certificate.
+// trusts reports whether pool verifies both of Supabase's own roots.
 func trusts(pool *x509.CertPool) bool {
-	_, err := supabaseca.Root().Verify(x509.VerifyOptions{Roots: pool})
-	return err == nil
+	for _, root := range supabaseca.Roots() {
+		if _, err := root.Verify(x509.VerifyOptions{Roots: pool}); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // Every connection config trusts Supabase's root for a Supabase host with

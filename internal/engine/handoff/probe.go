@@ -130,13 +130,13 @@ type Prober struct {
 	// Dial opens the TCP connection to the checked address; nil dials it.
 	Dial func(ctx context.Context, network, addr string) (net.Conn, error)
 	// Roots, when set, replace every root the server's certificate is
-	// verified against; nil uses the system's, plus Supabase's root for a
+	// verified against; nil uses the system's, plus Supabase's roots for a
 	// Supabase host.
 	Roots *x509.CertPool
-	// SupabaseRoot stands in for Supabase's root certificate, which the
-	// probe trusts for Supabase hosts (package supabaseca); nil is the real
-	// one. Tests set a test CA.
-	SupabaseRoot *x509.Certificate
+	// SupabaseRoots stand in for Supabase's root certificates, which the
+	// probe trusts for Supabase hosts (package supabaseca); empty is the
+	// real ones. Tests set test CAs.
+	SupabaseRoots []*x509.Certificate
 }
 
 // Probed is a probe that passed: the address the host resolved to, and
@@ -247,7 +247,7 @@ func (p Prober) login(ctx context.Context, a Address, ip netip.Addr, user string
 
 // connConfig is the connection to a as user with password, made to ip only.
 func (p Prober) connConfig(a Address, ip netip.Addr, user, password string, binding bool) (*pgx.ConnConfig, error) {
-	cfg, err := pgdial.ConnConfigTrusting(ConnString(a, user, password, binding), p.supabaseRoot())
+	cfg, err := pgdial.ConnConfigTrusting(ConnString(a, user, password, binding), p.supabaseRoots()...)
 	if err != nil {
 		return nil, err
 	}
@@ -262,12 +262,12 @@ func (p Prober) connConfig(a Address, ip netip.Addr, user, password string, bind
 	return cfg, nil
 }
 
-// supabaseRoot is the root the probe trusts for Supabase hosts.
-func (p Prober) supabaseRoot() *x509.Certificate {
-	if p.SupabaseRoot == nil {
-		return supabaseca.Root()
+// supabaseRoots are the roots the probe trusts for Supabase hosts.
+func (p Prober) supabaseRoots() []*x509.Certificate {
+	if len(p.SupabaseRoots) == 0 {
+		return supabaseca.Roots()
 	}
-	return p.SupabaseRoot
+	return p.SupabaseRoots
 }
 
 // setRoots verifies every TLS attempt of cfg against roots.
@@ -287,7 +287,7 @@ func setRoots(cfg *pgconn.Config, roots *x509.CertPool) {
 // a's host, port and database, with sslmode=verify-full and, when binding,
 // channel_binding=require. Nothing from the connect service but the checked
 // address goes in it. It names no sslrootcert: for a Supabase host the
-// engine trusts Supabase's root when it opens the connection (pgdial).
+// engine trusts Supabase's roots when it opens the connection (pgdial).
 func ConnString(a Address, user, password string, binding bool) string {
 	q := url.Values{}
 	q.Set(paramSSLMode, sslVerifyFull)

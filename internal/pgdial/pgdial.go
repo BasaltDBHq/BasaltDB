@@ -12,7 +12,7 @@
 // their Go values imply. A connection string that sets
 // default_query_exec_mode keeps its own mode.
 //
-// Every connection also trusts Supabase's root certificate for Supabase
+// Every connection also trusts Supabase's root certificates for Supabase
 // hosts with sslmode=verify-full (package supabaseca), so the agent's
 // credential, the hand-off probe and init's probes verify Supabase's
 // certificates without an sslrootcert.
@@ -36,21 +36,21 @@ const execModeKey = "default_query_exec_mode"
 // connection string sets one.
 const DefaultMode = pgx.QueryExecModeExec
 
-// ConnConfig parses dsn, applies DefaultMode and trusts Supabase's root
+// ConnConfig parses dsn, applies DefaultMode and trusts Supabase's roots
 // for Supabase hosts.
 func ConnConfig(dsn string) (*pgx.ConnConfig, error) {
-	return ConnConfigTrusting(dsn, supabaseca.Root())
+	return ConnConfigTrusting(dsn, supabaseca.Roots()...)
 }
 
-// ConnConfigTrusting is ConnConfig with supabaseRoot in place of Supabase's
-// root: tests give a test CA to stand in for it.
-func ConnConfigTrusting(dsn string, supabaseRoot *x509.Certificate) (*pgx.ConnConfig, error) {
+// ConnConfigTrusting is ConnConfig with supabaseRoots in place of
+// Supabase's roots: tests give test CAs to stand in for them.
+func ConnConfigTrusting(dsn string, supabaseRoots ...*x509.Certificate) (*pgx.ConnConfig, error) {
 	cfg, err := pgx.ParseConfig(dsn)
 	if err != nil {
 		return nil, err
 	}
 	apply(dsn, cfg)
-	supabaseca.Trust(&cfg.Config, supabaseRoot)
+	supabaseca.Trust(&cfg.Config, supabaseRoots...)
 	return cfg, nil
 }
 
@@ -64,14 +64,14 @@ func Connect(ctx context.Context, dsn string) (*pgx.Conn, error) {
 }
 
 // PoolConfig parses dsn for a pool, applies DefaultMode and trusts
-// Supabase's root for Supabase hosts.
+// Supabase's roots for Supabase hosts.
 func PoolConfig(dsn string) (*pgxpool.Config, error) {
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		return nil, err
 	}
 	apply(dsn, cfg.ConnConfig)
-	supabaseca.Trust(&cfg.ConnConfig.Config, supabaseca.Root())
+	supabaseca.Trust(&cfg.ConnConfig.Config, supabaseca.Roots()...)
 	return cfg, nil
 }
 

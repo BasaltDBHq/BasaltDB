@@ -6,6 +6,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -285,4 +286,60 @@ func requireGoStringsAgentLed(t *testing.T, dir string) {
 		return nil
 	}))
 	require.Positive(t, files, dir)
+}
+
+// The tests stand in for a person at a terminal when they run plain init
+// with piped input; TestPlainInitRefusesTheAdminPathUnderAnAgentOrWithoutATerminal
+// checks the refusal the binary gives (strictInit).
+func init() { pipedAdminInitAllowed = true }
+
+// failingReader fails the test when anything reads it.
+type failingReader struct{ t *testing.T }
+
+func (r failingReader) Read([]byte) (int, error) {
+	r.t.Error("stdin was read")
+	return 0, io.EOF
+}
+
+// Plain init refuses the admin path whenever an agent may be running it: an
+// agent marker, or stdin that is not a terminal. Neither
+// BASALT_ADMIN_DATABASE_URL nor stdin is read, and the message names the
+// leaked variable so the person changes that password.
+func TestPlainInitRefusesTheAdminPathUnderAnAgentOrWithoutATerminal(t *testing.T) {
+	t.Parallel()
+	for name, tc := range map[string]struct {
+		marker      bool
+		interactive bool
+		want        string
+	}{
+		"agent marker at a terminal": {marker: true, interactive: true, want: "running under an agent (CLAUDECODE is set)"},
+		"no marker, no terminal":     {interactive: false, want: "stdin is not a terminal"},
+		"marker and no terminal":     {marker: true, want: "running under an agent (CLAUDECODE is set)"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			var stdout, stderr bytes.Buffer
+			var readAdmin bool
+			c := newIO(context.Background(), stdio{in: failingReader{t}, out: &stdout, err: &stderr}, func(k string) string {
+				switch {
+				case k == "CLAUDECODE" && tc.marker:
+					return "1"
+				case k == envAdminURL:
+					readAdmin = true
+					return "postgres://admin:" + "pw@db/app"
+				}
+				return ""
+			})
+			c.host = newFakeHost(t)
+			c.interactive = tc.interactive
+			c.strictInit = true
+			code := runInit(c, []string{"--agent", "bot", "--write", "public.leads", "--yes"})
+			require.Equal(t, exitError, code, stderr.String())
+			require.Contains(t, stderr.String(), tc.want)
+			require.Contains(t, stderr.String(), adminEnvLeaked, "the person is told to change the leaked password")
+			require.NotContains(t, stderr.String()+stdout.String(), "pw@db", "the value is never echoed")
+			require.True(t, readAdmin, "only checked for presence, to warn")
+			require.Empty(t, stdout.String())
+		})
+	}
 }

@@ -24,8 +24,31 @@ func requirePersonMessage(t *testing.T, message string, links []mcp.Link) {
 }
 
 // removedCommand is a basalt command or init flag the person no longer runs
-// ([Removed](contract/cli.md#removed)).
-var removedCommand = regexp.MustCompile(`basalt (approve|revert|upgrade|passkey|trust|access|status|portal|crash|service|log|classify|uninstall|tunnel)\b|--setup-code|--add-passkey|--rotate-password|--agent-rls|--new-code|rotate-key`)
+// ([Removed](contract/cli.md#removed)). --json and --forget count only on
+// basalt init: the plugin steps, which the plugin epic replaces, still take
+// --json.
+var removedCommand = regexp.MustCompile(`basalt (approve|revert|upgrade|passkey|trust|access|status|portal|crash|service|log|classify|uninstall|tunnel)\b|--setup-code|--add-passkey|--rotate-password|--agent-rls|--new-code|rotate-key|basalt init\b[^\n]*?--(forget|json)`)
+
+// TestRemovedCommandCatchesEveryRemovedForm: the check the catalog tests
+// run on every step and personMessage catches each removed command and
+// init flag, and lets the agent's basalt init and plain words through.
+func TestRemovedCommandCatchesEveryRemovedForm(t *testing.T) {
+	t.Parallel()
+	for _, bad := range []string{
+		"Run: basalt upgrade --agent bot", "basalt approve --open x", "basalt revert --run x --open", "basalt passkey list",
+		"basalt trust pin --host h", "basalt access --agent bot", "basalt portal verify", "basalt init --setup-code c",
+		"basalt init --agent bot --add-passkey", "basalt init --remote --new-code", "basalt init --remote --forget",
+		"basalt init --remote --json", "basalt log", "basalt engine rotate-key",
+	} {
+		require.NotEmpty(t, removedCommand.FindString(bad), bad)
+	}
+	for _, ok := range []string{
+		"basalt init --agent bot", "basalt init --agent bot --remote", "sudo systemctl start basalt-engine.service",
+		"Basalt's status reports KEY_ERROR", "Tell the agent when it is done.", "the revert page",
+	} {
+		require.Empty(t, removedCommand.FindString(ok), ok)
+	}
+}
 
 func TestMessageLimitMatchesTheContract(t *testing.T) {
 	t.Parallel()

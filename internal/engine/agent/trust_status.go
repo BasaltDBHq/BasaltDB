@@ -243,8 +243,8 @@ func (s statusDeps) addCertificateNotVerified(ctx context.Context, ps *problems,
 			func(b *Steps) string {
 				b.AgentRunCommand(s.cmds.Init(), trustInitText)
 				b.TellAgent("Tell the agent when it is done.")
-				return "The certificate of your database " + host + " does not verify: " + why + ", or check the certificate on the setup " +
-					"page the agent gives you a link to. Then tell the agent."
+				return "The certificate of your database " + host + " does not verify: " + why + ". Or change the agent's connection on the " +
+					"setup page the agent gives you a link to. Then tell the agent."
 			})
 		return
 	case trustprofile.AppliesProfile, trustprofile.AppliesSystem:

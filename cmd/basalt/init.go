@@ -87,10 +87,10 @@ func runInit(c *cliIO, args []string) int {
 	if isSetupCode(args) {
 		return runInitSetupCode(c, args)
 	}
-	// Under an agent, init with the admin credential is refused before
-	// anything else, a usage error included: the agent makes a setup code.
+	// Under an agent, or with no terminal, init with the admin credential is
+	// refused before anything else, a usage error included.
 	if !helpAsked(args) {
-		if err := c.agentContextError("basalt init without --remote", hintAgentInit); err != nil {
+		if err := c.agentInitError(); err != nil {
 			return c.fail(err)
 		}
 	}

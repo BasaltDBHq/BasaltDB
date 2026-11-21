@@ -73,6 +73,36 @@ func (c *cliIO) agentContextError(command, hint string) error {
 	return fmt.Errorf("%s", msg)
 }
 
+// pipedAdminInitAllowed lets init without --remote take the admin
+// connection string with stdin not a terminal. It is false in the binary;
+// only the test binary sets it (its tests stand in for a person at a
+// terminal), and a test sets strictInit to check the refusal.
+var pipedAdminInitAllowed = false
+
+// agentInitError refuses init without --remote whenever an agent may be
+// the one running it: an agent marker is set, or stdin is not a terminal (a
+// person types the admin connection string at a terminal; an MCP client
+// that sets no marker still runs commands with no terminal). It refuses
+// before BASALT_ADMIN_DATABASE_URL or stdin is read. Steps hand the agent
+// basalt init --agent NAME (CONTRACT.md, Next steps); until the local setup
+// page exists, that run ends here with this message, never with admin
+// access.
+func (c *cliIO) agentInitError() error {
+	if err := c.agentContextError("basalt init without --remote", hintAgentInit); err != nil {
+		return err
+	}
+	if c.interactive || (pipedAdminInitAllowed && !c.strictInit) {
+		return nil
+	}
+	msg := "basalt init without --remote needs the database admin connection string, typed by a person at a terminal, " +
+		"and stdin is not a terminal, so basalt does not read one. An agent never asks for, accepts or types the admin " +
+		"connection string or password.\n" + hintAgentInit
+	if c.getenv(envAdminURL) != "" {
+		msg += "\n" + adminEnvLeaked
+	}
+	return fmt.Errorf("%s", msg)
+}
+
 // adminEnvLeaked is said when BASALT_ADMIN_DATABASE_URL is set where an
 // agent runs: basalt does not use it, and the password it holds is exposed.
 const adminEnvLeaked = envAdminURL + " is set where an agent can read it; basalt did not use it. " +

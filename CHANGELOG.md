@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - Every next step, warning and person message now hands the person a link, never a `basalt` command. Setup jobs (a guard update, a passkey, a table to grant, row-level security, a database certificate, a new password, a reinstall, an expired setup link) are an `AGENT` `RUN_COMMAND` of `basalt init --agent NAME` (with `--remote` on an agent-operated engine), which prints the link the person opens; the agent runs it on a person-operated engine too. A held write's link stands alone: the `approveCommand` field of `APPROVAL_REQUIRED` and `list_pending`, the `command` of `preview_revert` and the "Or run" line of the approval message are gone. A revert too large to prepare in one call asks for a narrower one (`runs` or `tables`), and an expired one is requested again with `request_revert`. Steps no longer carry `--config` or the flags `basalt init` saved. The MCP instructions name only `basalt init`.
+- `basalt init` without `--remote` refuses when stdin is not a terminal, as it already did under an agent marker, before it reads `BASALT_ADMIN_DATABASE_URL` or stdin. A person types the admin connection string at a terminal; piping it in no longer works.
 
 ### Fixed
 

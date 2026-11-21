@@ -154,7 +154,7 @@ type Dir struct {
 // EngineDirs are the engine's socket and state directories on goos, with the
 // modes its service gives them: the systemd unit's RuntimeDirectory and
 // StateDirectory on Linux, the launchd install's directories on macOS.
-// basalt engine --user makes them itself when no service manager does.
+// The install and the unit are tested against one list.
 func EngineDirs(goos string) []Dir {
 	state := os.FileMode(stateDirMode)
 	if goos == goosDarwin {

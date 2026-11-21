@@ -105,7 +105,7 @@ func setCredentialFile(t *testing.T, cfg, path string) {
 	require.NoError(t, config.WriteFile(cfg, raw))
 }
 
-// basalt engine started as root without --user reads its config with the
+// basalt engine started as root reads its config with the
 // hardened read: a link is not followed and a config writable by group or
 // others is refused, before the engine starts. Not as root, the plain read
 // is unchanged.

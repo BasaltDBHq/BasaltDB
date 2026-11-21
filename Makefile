@@ -53,12 +53,11 @@ shard-check: ## Every Go package is in exactly one CI test shard
 .PHONY: script-checks
 script-checks: install-sh-check npm-check web-check portal-build ## The script checks job of the CI workflow
 
-.PHONY: test-privdrop
-test-privdrop: ## basalt engine --user and plugin isolation as root in a Linux container without systemd (needs Docker)
+.PHONY: test-root-container
+test-root-container: ## Plugin isolation as root in a Linux container without systemd (needs Docker)
 	@docker run --rm -v "$(CURDIR)":/src:ro -v basalt-gomod:/go/pkg/mod -w /src -e CGO_ENABLED=0 -e GOFLAGS=-buildvcs=false \
 		-e BASALT_TEST_PLUGIN_ISOLATION=1 golang:$(GO_VERSION) sh -c \
-		"go test -count=1 -v -run 'TestDropEveryThread|TestParseOwnStatus' ./internal/engine/privdrop/ && \
-		go test -count=1 -v -run 'TestPluginIsolationAsRoot' ./internal/engine/service/"
+		"go test -count=1 -v -run 'TestPluginIsolationAsRoot' ./internal/engine/service/"
 
 .PHONY: test-systemd
 test-systemd: ## A plugin under its systemd unit, isolation checked live (throwaway host with systemd and passwordless sudo only: changes it as root)

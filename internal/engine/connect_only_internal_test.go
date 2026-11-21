@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -25,7 +26,7 @@ func connectOnlyEnv(t *testing.T) (agentEnv, config.Agent) {
 	cfgPath := filepath.Join(dir, "engine.json")
 	cred := filepath.Join(dir, "agents", "bot.url")
 	a := config.Agent{Name: "bot", OSUser: "bot", Store: config.PostgresStore(cred), Setup: &config.Setup{
-		SetupID: "01a1f78c-52b8-7c3a-9f00-0000000000e1", Kind: "INSTALL", GuardVersion: 16, ExpiresAt: "2026-11-21T06:02:11Z",
+		SetupID: "01a1f78c-52b8-7c3a-9f00-0000000000e1", Kind: "INSTALL", GuardVersion: 16, ExpiresAt: time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339),
 		Code: connectOnlyCode, Fingerprint: "d48b ee66 a1d9 d005 1f63", AwaitingAddress: true,
 	}}
 	cfg := config.Config{SocketDir: "/run/basalt", Agents: []config.Agent{a}}

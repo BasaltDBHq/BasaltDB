@@ -54,11 +54,30 @@ func TestRLSAnswers(t *testing.T) {
 		require.ErrorIs(t, err, errUsage)
 	})
 
-	t.Run("ask quiet says no", func(t *testing.T) {
+	t.Run("ask quiet says yes and names the tables", func(t *testing.T) {
 		t.Parallel()
-		got, _, err := run(AgentRLSAsk, true, "all\n")
+		got, errText, err := run(AgentRLSAsk, true, "none\n")
+		require.NoError(t, err)
+		require.Equal(t, []bool{true, true, true}, got)
+		require.Contains(t, errText, "bot can see all rows of global.user_router, us.activities, us.transactions")
+		require.Contains(t, errText, "--agent-rls=none")
+	})
+
+	t.Run("ask quiet escapes names in the line", func(t *testing.T) {
+		t.Parallel()
+		var stderr bytes.Buffer
+		c := newIO(context.Background(), stdio{in: strings.NewReader(""), out: &bytes.Buffer{}, err: &stderr}, func(string) string { return "" })
+		_, err := rlsAnswers(c, AgentRLSAsk, true, "bot", nil, []rlsAsk{{Table: "public.x\x1b[31m", Rows: 1}})
+		require.NoError(t, err)
+		require.NotContains(t, stderr.String(), "\x1b")
+	})
+
+	t.Run("none quiet says no and prints nothing", func(t *testing.T) {
+		t.Parallel()
+		got, errText, err := run(AgentRLSNone, true, "")
 		require.NoError(t, err)
 		require.Equal(t, []bool{false, false, false}, got)
+		require.Empty(t, errText)
 	})
 
 	t.Run("piped line", func(t *testing.T) {

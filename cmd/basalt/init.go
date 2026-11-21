@@ -302,7 +302,7 @@ func (a AgentRLSMode) isList() bool {
 // every row from its role and the person lets the agent see all rows
 // (decision "Agent RLS", Nov 12): a checklist at a terminal or one line on
 // piped input, every table checked by default; with --yes or on a dry run
-// none unless --agent-rls=all-rows or a list. Tables without RLS are never asked about. The
+// all of them (and one line says which) unless --agent-rls=none or a list. Tables without RLS are never asked about. The
 // rest get warnRLSBlind's warning after init.
 func agentPolicies(c *cliIO, conn guard.Querier, names guard.Names, f initFlags) ([]guard.BlindTable, error) {
 	if f.agentRLS == AgentRLSNone {

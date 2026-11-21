@@ -148,7 +148,7 @@ const (
 // approvalNotice builds what the agent shows the person about a held
 // write: its headline, the link chosen by the link budget (chooseLink: a
 // newly issued short link when this engine serves the pages and issue is
-// set, else the long one), the equivalent command and the message to show
+// set, else the long one) and the message to show
 // verbatim.
 func (s *Service) approvalNotice(ctx context.Context, id, runID uuid.UUID, req sizedRequest, expires time.Time, issue bool) (heldNotice, error) {
 	ids, err := s.credentialIDs(ctx)
@@ -166,9 +166,8 @@ func (s *Service) approvalNotice(ctx context.Context, id, runID uuid.UUID, req s
 	if err != nil {
 		return heldNotice{}, err
 	}
-	command := s.Commands.Approve(id)
 	if tooLarge {
-		return s.largeApprovalNotice(ctx, id, runID, req, summary, command, expires, issue, len(ids) == 0)
+		return s.largeApprovalNotice(ctx, id, runID, req, summary, expires, issue, len(ids) == 0)
 	}
 	short, err := s.shortLink(ctx, links.Approval, id, expires, issue)
 	if err != nil {
@@ -187,12 +186,12 @@ func (s *Service) approvalNotice(ctx context.Context, id, runID uuid.UUID, req s
 		// A wait or a list that issues no new link: the link already handed
 		// over still works, so the message adds no URL.
 		pick = handOver{URL: long, Kind: linkLong}
-		text, msgLinks = waitMessage(lead, command, expires)
+		text, msgLinks = waitMessage(lead, expires)
 	default:
 		if short == "" {
 			reason = reasonHeldNoPages
 		}
-		text, msgLinks = approvalMessage(lead, pick, command, expiryLine(expires))
+		text, msgLinks = approvalMessage(lead, pick, expiryLine(expires))
 	}
 	if len(ids) == 0 {
 		reason = reasonNoPasskey // nobody can sign: the first step is to register a passkey
@@ -201,7 +200,7 @@ func (s *Service) approvalNotice(ctx context.Context, id, runID uuid.UUID, req s
 		reason: reason,
 		ApprovalNotice: mcp.ApprovalNotice{
 			ApprovalID: id.String(), ExpiresAt: timeText(expires), Rows: len(req.Lines), Headline: summary.Headline(),
-			ApprovalURL: pick.URL, RequestFile: pick.File, ApproveCommand: command, PersonMessage: text, Links: msgLinks,
+			ApprovalURL: pick.URL, RequestFile: pick.File, PersonMessage: text, Links: msgLinks,
 		},
 		pick:     pick,
 		longURL:  long,
@@ -211,22 +210,18 @@ func (s *Service) approvalNotice(ctx context.Context, id, runID uuid.UUID, req s
 
 // waitMessage is the personMessage of a wait or a list that issues no new
 // link: the link already handed over still works.
-func waitMessage(lead, command string, expires time.Time) (string, []mcp.Link) {
-	return pointBackMessage(lead, command, expiryLine(expires))
+func waitMessage(lead string, expires time.Time) (string, []mcp.Link) {
+	return pointBackMessage(lead, expiryLine(expires))
 }
 
 // pointBackMessage is lead, then a pointer to the approval link the person
-// was given, with the approve command, then tail.
-func pointBackMessage(lead, command string, tail ...string) (string, []mcp.Link) {
-	return fitCommand(func(c commandPhrases) (string, []mcp.Link) {
-		msg := newMessage().Text(lead).Text(c.orRun)
-		for _, line := range tail {
-			msg.Text(line)
-		}
-		return msg.Build()
-	},
-		commandPhrases{orRun: "Approve with the link you were given, or run: " + command},
-		commandPhrases{orRun: "Approve with the link you were given, or run the approve command the agent shows you."})
+// was given, then tail.
+func pointBackMessage(lead string, tail ...string) (string, []mcp.Link) {
+	msg := newMessage().Text(lead).Text("Approve with the link you were given.")
+	for _, line := range tail {
+		msg.Text(line)
+	}
+	return msg.Build()
 }
 
 // personTime is how a person-facing message states a deadline.
@@ -279,7 +274,7 @@ func approvalStillPendingError(n heldNotice) error {
 	n.reason = reasonWaitEnded
 	return approvalError(n, fmt.Sprintf("still waiting for the person's approval of %d rows; nothing was applied. "+
 		"Do not call write to wait again. End your turn: tell the person the write is waiting for their approval "+
-		"(approval.personMessage has the link; approval.approveCommand has the command), that it expires at %s, and that you apply it when they "+
+		"(approval.personMessage has the link), that it expires at %s, and that you apply it when they "+
 		"tell you they approved. Then call write with the same arguments plus approvalId: it applies at once.",
 		n.Rows, n.ExpiresAt))
 }
@@ -320,14 +315,14 @@ func requestOf(a ledger.Approval) sizedRequest {
 // one; the page's address when a short link given earlier carries it; else
 // REQUEST_TOO_LARGE.
 func (s *Service) largeApprovalNotice(ctx context.Context, id, runID uuid.UUID, req sizedRequest, summary approval.Summary,
-	command string, expires time.Time, issue, noPasskey bool,
+	expires time.Time, issue, noPasskey bool,
 ) (heldNotice, error) {
 	lead := "Held for your approval: " + shown(summary.Headline(), maxHeadlineChars) + "."
 	n := heldNotice{
 		reason: reasonHeld,
 		ApprovalNotice: mcp.ApprovalNotice{
 			ApprovalID: id.String(), ExpiresAt: timeText(expires), Rows: len(req.Lines), Headline: summary.Headline(),
-			ApprovalURL: s.pageAddress(links.Approval, id), ApproveCommand: command,
+			ApprovalURL: s.pageAddress(links.Approval, id),
 		},
 	}
 	short := ""
@@ -340,10 +335,10 @@ func (s *Service) largeApprovalNotice(ctx context.Context, id, runID uuid.UUID, 
 	switch {
 	case short != "":
 		n.pick, n.shortURL, n.ApprovalURL = handOver{URL: short, Kind: linkShort}, short, short
-		n.PersonMessage, n.Links = approvalMessage(lead, n.pick, command, expiryLine(expires))
+		n.PersonMessage, n.Links = approvalMessage(lead, n.pick, expiryLine(expires))
 	case !issue && s.carriesLarge(req.Cost):
 		// The short link handed over still works: the message points back.
-		n.PersonMessage, n.Links = waitMessage(lead, command, expires)
+		n.PersonMessage, n.Links = waitMessage(lead, expires)
 	default:
 		steps, err := approvalTooLargeSteps(runID)
 		if err != nil {

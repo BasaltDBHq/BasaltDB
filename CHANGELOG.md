@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Every next step, warning and person message now hands the person a link, never a `basalt` command. Setup jobs (a guard update, a passkey, a table to grant, row-level security, a database certificate, a new password, a reinstall, an expired setup link) are an `AGENT` `RUN_COMMAND` of `basalt init --agent NAME` (with `--remote` on an agent-operated engine), which prints the link the person opens; the agent runs it on a person-operated engine too. A held write's link stands alone: the `approveCommand` field of `APPROVAL_REQUIRED` and `list_pending`, the `command` of `preview_revert` and the "Or run" line of the approval message are gone. A revert too large to prepare in one call asks for a narrower one (`runs` or `tables`), and an expired one is requested again with `request_revert`. Steps no longer carry `--config` or the flags `basalt init` saved. The MCP instructions name only `basalt init`.
+
 ### Fixed
 
 - The warning for a binary in a temporary folder now also fires on macOS, where the default temp folder is a link (`/var/folders/...` to `/private/var/...`) and the binary path was never matched against it.

@@ -354,23 +354,30 @@ func shimCommands(name, configPath string, cfg *config.Config) (agent.Commands, 
 	if !config.ValidAgentName(name) {
 		name = fallbackAgentName
 	}
-	if cfg == nil {
-		return agent.NewCommands(name, configPath, runtime.GOOS, nil)
-	}
-	var initArgs []string
-	for _, a := range cfg.Agents {
-		if a.Name == name {
-			initArgs = a.InitArgs
-		}
-	}
-	cmds, err := agent.NewCommands(name, configPath, runtime.GOOS, initArgs)
-	if err != nil {
-		return agent.NewCommands(name, configPath, runtime.GOOS, nil)
+	cmds, err := agent.NewCommands(name, configPath, runtime.GOOS)
+	if err != nil || cfg == nil {
+		return cmds, err
 	}
 	if !cfg.Service() {
 		cmds = cmds.Foreground()
 	}
 	return cmds, nil
+}
+
+// refuseSecretInitArgs refuses saved init arguments that look like a
+// connection string or carry a password, so none is written to engine.json.
+// The engine replays none of them.
+func refuseSecretInitArgs(args []string) error {
+	for _, a := range args {
+		lower := strings.ToLower(a)
+		if strings.Contains(lower, "password=") {
+			return fmt.Errorf("saved init argument %q carries a password", a)
+		}
+		if _, rest, ok := strings.Cut(a, "://"); ok && strings.Contains(rest, "@") {
+			return fmt.Errorf("saved init argument %q looks like a connection string", a)
+		}
+	}
+	return nil
 }
 
 // fallbackAgentName names the agent in commands when basalt mcp was given a
@@ -531,7 +538,10 @@ func agentSpecFromStdin(in io.Reader, spec service.Spec, a agentInstall, credStd
 	if err != nil {
 		return spec, err
 	}
-	if _, err := agent.NewCommands(a.name, cfgPath, spec.GOOS, a.initArgs); err != nil {
+	if _, err := agent.NewCommands(a.name, cfgPath, spec.GOOS); err != nil {
+		return spec, err
+	}
+	if err := refuseSecretInitArgs(a.initArgs); err != nil {
 		return spec, fmt.Errorf("--init-arg: %w", err)
 	}
 	if _, err := user.Lookup(a.osUser); err != nil {

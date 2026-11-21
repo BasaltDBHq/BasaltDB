@@ -82,7 +82,7 @@ func startShimWaiting(t *testing.T, socket string, wait time.Duration) (*client,
 // startShimWith is startShim with the relay's options.
 func startShimWith(t *testing.T, socket string, opts shim.Options) (*client, <-chan error) {
 	t.Helper()
-	cmds, err := agent.NewCommands("bot", "", "linux", nil)
+	cmds, err := agent.NewCommands("bot", "", "linux")
 	require.NoError(t, err)
 	down := agent.EngineDown{Name: "bot", Commands: cmds, Log: slog.New(slog.DiscardHandler), Now: time.Now}
 	fallback := down.Server(mcp.Info{Name: "basalt", Version: "test"})

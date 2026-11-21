@@ -131,13 +131,12 @@ func caseRevert(signed bool) ledger.Revert {
 	return r
 }
 
-func caseNotice(s *Service, url string) mcp.ApprovalNotice {
+func caseNotice(url string) mcp.ApprovalNotice {
 	return mcp.ApprovalNotice{
 		ApprovalID: caseApproval, ExpiresAt: "2026-11-12T10:00:00Z", Rows: 3,
 		Headline: "Delete 3 rows in public.leads", ApprovalURL: url,
-		ApproveCommand: s.Commands.Approve(uuid.MustParse(caseApproval)),
-		PersonMessage:  "Held for your approval: Delete 3 rows in public.leads.\nApprove it with your passkey here:\n\n" + url + "\n\nExpires 2026-11-12 10:00 UTC.",
-		Links:          []mcp.Link{{Label: labelApprove, URL: url}},
+		PersonMessage: "Held for your approval: Delete 3 rows in public.leads.\nApprove it with your passkey here:\n\n" + url + "\n\nExpires 2026-11-12 10:00 UTC.",
+		Links:         []mcp.Link{{Label: labelApprove, URL: url}},
 	}
 }
 
@@ -145,7 +144,7 @@ const caseShortLink = "http://localhost:7878/approvals/" + caseApproval + "#s=AA
 
 func held(reason string, url string) func(*testing.T, *Service) error {
 	return func(_ *testing.T, s *Service) error {
-		n := heldNotice{ApprovalNotice: caseNotice(s, url), reason: reason}
+		n := heldNotice{ApprovalNotice: caseNotice(url), reason: reason}
 		if reason == reasonWaitEnded {
 			return approvalStillPendingError(n)
 		}
@@ -155,7 +154,7 @@ func held(reason string, url string) func(*testing.T, *Service) error {
 
 func approvalLink(reason string) func(*testing.T, *Service) error {
 	return func(_ *testing.T, s *Service) error {
-		n := heldNotice{ApprovalNotice: caseNotice(s, caseShortLink), longURL: caseShortLink, pick: handOver{URL: caseShortLink, Kind: linkLong}}
+		n := heldNotice{ApprovalNotice: caseNotice(caseShortLink), longURL: caseShortLink, pick: handOver{URL: caseShortLink, Kind: linkLong}}
 		return s.approvalLinkError(&mcp.ToolError{Code: CodeApprovalInvalid, Reason: reason, Message: "m"}, n)
 	}
 }
@@ -458,15 +457,15 @@ func TestEveryCatalogErrorHasACase(t *testing.T) {
 
 // serviceFor builds the service the cases run on: configPath "" is the
 // platform default config.
-func serviceFor(t *testing.T, goos, configPath string, initArgs []string) *Service {
+func serviceFor(t *testing.T, goos, configPath string) *Service {
 	t.Helper()
-	return operatedService(t, goos, configPath, initArgs, "")
+	return operatedService(t, goos, configPath, "")
 }
 
 // operatedService is serviceFor on an engine whose operatedBy is operatedBy.
-func operatedService(t *testing.T, goos, configPath string, initArgs []string, operatedBy string) *Service {
+func operatedService(t *testing.T, goos, configPath, operatedBy string) *Service {
 	t.Helper()
-	cmds, err := NewCommands("bot", configPath, goos, initArgs)
+	cmds, err := NewCommands("bot", configPath, goos)
 	require.NoError(t, err)
 	d := deps()
 	d.Commands = cmds
@@ -490,7 +489,7 @@ func TestEveryCatalogErrorGivesTheCatalogsSteps(t *testing.T) {
 		for key, kase := range catalogCases() {
 			t.Run(variant.name+"/"+key, func(t *testing.T) {
 				t.Parallel()
-				s := operatedService(t, variant.goos, variant.config, variant.initArgs, variant.operatedBy)
+				s := operatedService(t, variant.goos, variant.config, variant.operatedBy)
 				te := s.Failure(kase.tool, kase.args, kase.fail(t, s))
 				requireObeysCatalog(t, kase, te, variant.config, variant.operatedBy)
 			})
@@ -513,28 +512,35 @@ func expectedSteps(t *testing.T, kind, code, reason, tool string, steps []mcpcon
 	return mcpcontract.Resolve(steps, operatedBy), personMessage, false
 }
 
-// requireOperatorRules checks the steps of an agent-operated engine: an
-// AGENT command runs on the engine's machine and never needs the admin
-// connection string (CO-9), so it is init --remote or the engine's start;
-// and a variant's personMessage names none of them.
-func requireOperatorRules(t *testing.T, steps []mcp.NextStep, personMessage string, variant bool, where string) {
+// requireOperatorRules checks the agent's commands on an engine operated by
+// operatedBy: an AGENT command runs on the engine's machine and never needs
+// the admin connection string (CO-9), so it is basalt init (with --remote
+// exactly on an agent-operated engine) or, on an agent-operated engine, the
+// engine's start; and a variant's personMessage names none of them.
+func requireOperatorRules(t *testing.T, steps []mcp.NextStep, personMessage string, variant bool, operatedBy, where string) {
 	t.Helper()
 	for _, st := range steps {
 		if st.Actor != mcp.ActorAgent || st.Action != mcp.ActionRunCommand {
 			continue
 		}
-		// basalt plugin enable (opening a plugin approval with the agent's
-		// own credential), disable and remove edit engine.json, and list
-		// reads it: machine steps too (CONTRACT.md, Plugin approval), needing
-		// no admin connection string. Never trust: an agent never adds a
-		// trust root.
-		machine := strings.HasPrefix(st.Command, "basalt init --remote ") || serviceManager.MatchString(st.Command) ||
-			strings.HasPrefix(st.Command, "basalt engine ") || agentPluginCommand.MatchString(st.Command)
-		require.True(t, machine, "%s: an AGENT command is init --remote, the engine's start or basalt plugin enable, disable or remove: %q", where, st.Command)
-		if strings.HasPrefix(st.Command, "basalt init --remote ") {
-			require.True(t, strings.HasSuffix(st.Command, " --json"), "%s: the agent reads init --remote's steps: %q", where, st.Command)
-			require.NotContains(t, st.Command, "--os-user", "%s: init --remote takes no --os-user", where)
+		// basalt init prints the link the person opens and never takes the
+		// admin connection string (CONTRACT.md, basalt init); on an
+		// agent-operated engine it names --remote. basalt plugin enable
+		// (opening a plugin approval with the agent's own credential),
+		// disable and remove edit engine.json, and list reads it: machine
+		// steps too (CONTRACT.md, Plugin approval).
+		if strings.HasPrefix(st.Command, "basalt init") {
+			require.Regexp(t, initCommand, st.Command, where)
+			if !strings.Contains(st.Command, "--direct-addr") {
+				require.Equal(t, operatedBy == mcpcontract.OperatedByAgent, strings.Contains(st.Command, " --remote"),
+					"%s: --remote exactly on an agent-operated engine: %q", where, st.Command)
+			}
+			continue
 		}
+		require.Equal(t, mcpcontract.OperatedByAgent, operatedBy, "%s: on a person-operated engine the agent runs only basalt init: %q", where, st.Command)
+		machine := serviceManager.MatchString(st.Command) ||
+			strings.HasPrefix(st.Command, "basalt engine ") || agentPluginCommand.MatchString(st.Command)
+		require.True(t, machine, "%s: an AGENT command is basalt init, the engine's start or basalt plugin enable, disable or remove: %q", where, st.Command)
 		if variant {
 			require.NotContains(t, personMessage, st.Command, "%s: personMessage names no command on the agent's machine", where)
 		}
@@ -555,7 +561,7 @@ func requireObeysCatalog(t *testing.T, kase catalogCase, te *mcp.ToolError, conf
 	want, pm, variant := expectedSteps(t, mcpcontract.VariantError, entry.Code, entry.Reason, entry.Tool, entry.Steps, entry.PersonMessage, operatedBy)
 	require.Equal(t, want, got, "(actor, action) sequence of %s", entryKey(entry))
 	require.Equal(t, pm, te.PersonMessage != "", "personMessage set exactly when the catalog says: %q", te.PersonMessage)
-	requireOperatorRules(t, te.NextSteps, te.PersonMessage, variant, entryKey(entry))
+	requireOperatorRules(t, te.NextSteps, te.PersonMessage, variant, operatedBy, entryKey(entry))
 	requirePersonMessage(t, te.PersonMessage, te.Links)
 	for i, st := range te.NextSteps {
 		requireStepObeysRules(t, st, kase, config, fmt.Sprintf("%s step %d", entryKey(entry), i+1))
@@ -579,6 +585,7 @@ func requireStepObeysRules(t *testing.T, st mcp.NextStep, kase catalogCase, conf
 	require.NotEmpty(t, st.Text, where)
 	require.LessOrEqual(t, len([]rune(st.Text)), MaxStepTextLength, where)
 	require.Empty(t, conditionalWords.FindString(st.Text), "%s: no conditional steps: %q", where, st.Text)
+	require.Empty(t, removedCommand.FindString(st.Text+" "+st.Command), "%s: a step names no removed command: %q %q", where, st.Text, st.Command)
 	require.Empty(t, secretPattern.FindString(st.Command), "%s: a command never carries a secret: %q", where, st.Command)
 	require.NotContains(t, strings.ReplaceAll(strings.ToLower(st.Command), "--rotate-password", ""), "password", where)
 	require.LessOrEqual(t, st.WaitSeconds, MaxWaitSeconds, where)
@@ -618,6 +625,11 @@ var serviceManager = regexp.MustCompile(`^sudo (systemctl|launchctl|chown) `)
 // (PLUGIN_CONFIG_INVALID), the others edit it.
 var agentPluginCommand = regexp.MustCompile(`^basalt plugin (enable|disable|remove|list)( |$)`)
 
+// initCommand is the agent's basalt init as a step names it. The
+// --direct-addr form is DIRECT_NOT_SERVED's, which goes with the direct
+// transport.
+var initCommand = regexp.MustCompile(`^basalt init --agent bot( --remote)?( --direct-addr 127\.0\.0\.1:8787)?$`)
+
 func requireCommand(t *testing.T, command, config, where string) {
 	t.Helper()
 	require.NotEmpty(t, command, where)
@@ -630,24 +642,20 @@ func requireCommand(t *testing.T, command, config, where string) {
 		command = rest
 	}
 	require.True(t, strings.HasPrefix(command, "basalt "), "%s: %q", where, command)
-	if code, ok := strings.CutPrefix(command, "basalt init --setup-code "); ok {
-		// Run on the person's own computer: it writes no engine config, so
-		// it names no agent and no config (CONTRACT.md, basalt init
-		// --setup-code).
-		require.Regexp(t, `^[A-Za-z0-9._-]+$`, code, where)
+	if strings.HasPrefix(command, "basalt init") {
+		// The one setup command (CONTRACT.md, Next steps): --agent, and
+		// --remote on an agent-operated engine, never --config or a saved
+		// flag.
+		require.Regexp(t, initCommand, command, where)
 		return
 	}
 	if strings.HasPrefix(command, "basalt engine ") { // the foreground engine names its config itself
 		return
 	}
-	if command == "basalt portal verify" { // reads public pages only: no agent, no config
-		return
-	}
-	// A plugin entry or a trust profile is the engine's, not one agent's:
-	// basalt plugin and basalt trust take no --agent.
-	if !strings.HasPrefix(command, "basalt plugin ") && !strings.HasPrefix(command, "basalt trust ") {
-		require.Regexp(t, `--agent[ =]bot`, command, where)
-	}
+	// The plugin steps, which the plugin epic replaces, are the only other
+	// basalt command a step names. A plugin entry is the engine's, not one
+	// agent's: basalt plugin takes no --agent.
+	require.True(t, strings.HasPrefix(command, "basalt plugin "), "%s: a step names no other basalt command: %q", where, command)
 	require.NotContains(t, command, "<", "%s: no placeholders: %q", where, command)
 	if config == "" {
 		require.NotContains(t, command, "--config", where)
@@ -853,7 +861,7 @@ func TestStepRulesRefuseABadStep(t *testing.T) {
 // to do: stop and ask.
 func TestStaleReadWithAnUnreadableDetailStopsAndAsks(t *testing.T) {
 	t.Parallel()
-	s := serviceFor(t, "linux", "", nil)
+	s := serviceFor(t, "linux", "")
 	te := s.Failure("write", writeArgs0, postgres.MapError(&pgconn.PgError{Code: "BS004", Message: "STALE_READ", Detail: "something else"}))
 	require.Equal(t, CodeStaleRead, te.Code)
 	require.Len(t, te.NextSteps, 2)
@@ -866,7 +874,7 @@ func TestStaleReadWithAnUnreadableDetailStopsAndAsks(t *testing.T) {
 // failed read elsewhere.
 func TestMessageTooLargeIsSizeLimitOnlyWhereDeclared(t *testing.T) {
 	t.Parallel()
-	s := serviceFor(t, "linux", "", nil)
+	s := serviceFor(t, "linux", "")
 	tooLarge := postgres.MapError(fmt.Errorf("read: %w", &pgproto3.ExceededMaxBodyLenErr{MaxExpectedBodyLen: 1, ActualBodyLen: 2}))
 	for tool, want := range map[string]string{
 		"query": CodeQueryTimeout, "write": CodeQueryTimeout, "describe": CodeQueryTimeout,
@@ -886,7 +894,7 @@ func TestMessageTooLargeIsSizeLimitOnlyWhereDeclared(t *testing.T) {
 // and SIZE_LIMIT for any other tool.
 func TestRowTooLargeOnlyForTheAgentsOwnStatement(t *testing.T) {
 	t.Parallel()
-	s := serviceFor(t, "linux", "", nil)
+	s := serviceFor(t, "linux", "")
 	row := fmt.Errorf("read: %w", &resultsize.RowTooLargeError{Bytes: 20 << 20, Columns: []resultsize.ColumnSize{{Name: "body", Bytes: 20 << 20}}})
 	for tool, want := range map[string]string{
 		"query": ReasonRowTooLarge, "write": ReasonRowTooLarge,
@@ -902,20 +910,23 @@ func TestRowTooLargeOnlyForTheAgentsOwnStatement(t *testing.T) {
 	}
 }
 
-// PERMISSION_DENIED grants only a plain schema.table name; anything else, or a
-// table named without its schema, falls back to the plan.
-func TestPermissionDeniedGrantsOnlyAPlainQualifiedTable(t *testing.T) {
+// PERMISSION_DENIED hands the grant to the setup page: the agent's basalt
+// init, whatever table Postgres named, and a message that names the table
+// but no command.
+func TestPermissionDeniedHandsTheGrantToTheSetupPage(t *testing.T) {
 	t.Parallel()
-	s := serviceFor(t, "linux", "", []string{"--agent=bot", "--read=public.leads"})
-	for message, want := range map[string]string{
-		"permission denied for table public.events": "--read=public.leads,public.events",
-		"permission denied for table events":        "--dry-run",
-		`permission denied for table "a,b"`:         "--dry-run",
-		"permission denied for table a,public.b":    "--dry-run",
+	s := serviceFor(t, "linux", "")
+	for message, table := range map[string]string{
+		"permission denied for table public.events": "public·events",
+		"permission denied for table events":        "events",
+		`permission denied for table "a,b"`:         `"a,b"`,
 	} {
 		te := s.Failure("query", queryArgs0, postgres.MapError(&pgconn.PgError{Code: "42501", Message: message}))
-		require.Contains(t, te.NextSteps[2].Command, want, message)
-		require.NotContains(t, te.PersonMessage, "basalt init", "the command is in the step, not in the message")
+		last := te.NextSteps[len(te.NextSteps)-1]
+		require.Equal(t, mcp.ActorAgent, last.Actor, message)
+		require.Equal(t, "basalt init --agent bot", last.Command, message)
+		require.Contains(t, te.PersonMessage, "read access to "+table, message)
+		require.NotContains(t, te.PersonMessage, "basalt ", "the person runs no command")
 		requirePersonMessage(t, te.PersonMessage, te.Links)
 	}
 }

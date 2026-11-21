@@ -25,7 +25,7 @@ const (
 	whyApprovalEnded = "its plugin approval ended when it was turned off or removed for this agent; " +
 		"turning it on again needs a new approval: open one with basalt plugin enable --approve-with-passkey"
 	whyApprovalsOldGuard = "this agent's guard is older than schema version 5, so it holds no plugin approvals; " +
-		"run basalt upgrade for this agent (on an agent-operated engine, an UPGRADE setup code): the engine checks again on its own"
+		"update it through the link basalt init prints for this agent: the engine checks again on its own"
 	whyApprovalsUnread = "its plugin approvals could not be read from this agent's database; " +
 		"the engine checks again once the database answers"
 )

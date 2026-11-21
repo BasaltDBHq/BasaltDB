@@ -128,7 +128,7 @@ func TestAfterTheLaptopStatusClearsTheSetupAndTheToolsAreServed(t *testing.T) {
 	fin := &fakeFinisher{}
 	svc := finishing(probe, fin, setup, 0)
 	srv, tools := serverOf(svc)
-	requireOnlyStatusServed(t, srv, tools, reasonSetupPending, SetupCode(testSetupCode), testFingerprint)
+	requireOnlyStatusServed(t, srv, tools, reasonSetupPending, testFingerprint)
 
 	// The person ran the code on their computer.
 	id := uuid.MustParse(setup.SetupID)

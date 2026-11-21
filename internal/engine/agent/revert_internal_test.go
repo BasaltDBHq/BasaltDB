@@ -36,7 +36,7 @@ func TestRequestRevertPrepareTimeLimit(t *testing.T) {
 	var limit time.Duration
 	d := deps()
 	setReverts(&d, slowPrepare{timeout: &limit})
-	cmds, err := NewCommands("bot", "/etc/basalt-test/engine.json", "linux", nil)
+	cmds, err := NewCommands("bot", "/etc/basalt-test/engine.json", "linux")
 	require.NoError(t, err)
 	d.Commands = cmds
 	svc := NewService(d)
@@ -52,16 +52,16 @@ func TestRequestRevertPrepareTimeLimit(t *testing.T) {
 	require.Equal(t, CodeQueryTimeout, te.Code)
 	require.Equal(t, ReasonTimeLimit, te.Reason)
 	require.Contains(t, te.Message, "nothing was prepared")
-	command := "basalt revert --agent bot --config /etc/basalt-test/engine.json --run " + run.String() + " --open"
-	require.Contains(t, te.Message, command)
-	require.Contains(t, te.PersonMessage, command)
+	require.Contains(t, te.Message, "runs or tables")
+	require.NotContains(t, te.Message, "basalt ", "no person command")
+	require.NotContains(t, te.PersonMessage, "basalt ", "the person runs no command")
 	kinds := make([]string, 0, len(te.NextSteps))
 	for _, s := range te.NextSteps {
 		kinds = append(kinds, s.Actor+" "+s.Action)
+		require.Empty(t, s.Command)
 	}
-	require.Equal(t, []string{"AGENT STOP", "PERSON RUN_COMMAND", "PERSON TELL_AGENT", "AGENT END_TURN"}, kinds,
+	require.Equal(t, []string{"AGENT STOP", "AGENT ASK_PERSON", "AGENT END_TURN"}, kinds,
 		"api/mcp/errors/next-steps.json, QUERY_TIMEOUT TIME_LIMIT request_revert")
-	require.Equal(t, command, te.NextSteps[1].Command)
 
 	// A call the client canceled is not the time limit.
 	ctx, cancel := context.WithCancel(context.Background())

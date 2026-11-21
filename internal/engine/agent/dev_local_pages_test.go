@@ -15,8 +15,6 @@ import (
 )
 
 // devLocalSaved are init's saved flags on a development engine.
-var devLocalSaved = []string{"--agent=bot", "--write=public.leads", "--passkey-origin=http://localhost:9000", "--operated-by=agent", "--dev-local-pages=true"}
-
 // devLocalStatus is the status report of an agent-operated engine on
 // development pages.
 func devLocalStatus(t *testing.T, operatedBy string) StatusReport {
@@ -27,7 +25,7 @@ func devLocalStatus(t *testing.T, operatedBy string) StatusReport {
 	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
 	setApprovals(&d, keys{n: 1})
 	d.Now = func() time.Time { return statusNow }
-	cmds, err := NewCommands("bot", "", "linux", devLocalSaved)
+	cmds, err := NewCommands("bot", "", "linux")
 	require.NoError(t, err)
 	d.Commands = cmds
 	r, err := NewService(d).Status(context.Background())
@@ -35,11 +33,17 @@ func devLocalStatus(t *testing.T, operatedBy string) StatusReport {
 	return r
 }
 
-func TestInitPortalDropsTheDevelopmentPages(t *testing.T) {
+func TestDevLocalPagesStepIsTheAgentsInit(t *testing.T) {
 	t.Parallel()
-	cmds, err := NewCommands("bot", "", "linux", append(devLocalSaved, "--passkey-origin", "http://localhost:9999"))
+	cmds, err := NewCommands("bot", "", "linux")
 	require.NoError(t, err)
-	require.Equal(t, "basalt init --agent=bot --write=public.leads --operated-by=agent --add-passkey", cmds.InitPortal())
+	b := NewSteps()
+	person := devLocalPagesSteps(b, cmds.OperatedBy(mcpcontract.OperatedByAgent))
+	steps, err := b.Build()
+	require.NoError(t, err)
+	require.Len(t, steps, 1)
+	require.Equal(t, mcp.NextStep{Actor: mcp.ActorAgent, Action: mcp.ActionRunCommand, Text: steps[0].Text, Command: "basalt init --agent bot --remote"}, steps[0])
+	require.NotContains(t, person, "basalt ", "the person runs no command")
 }
 
 func TestDevLocalPagesWarnsOnEveryPersonMessage(t *testing.T) {
@@ -50,7 +54,7 @@ func TestDevLocalPagesWarnsOnEveryPersonMessage(t *testing.T) {
 	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
 	setApprovals(&d, keys{n: 0}) // NO_PASSKEY too: two problems
 	d.Now = func() time.Time { return statusNow }
-	cmds, err := NewCommands("bot", "", "linux", devLocalSaved)
+	cmds, err := NewCommands("bot", "", "linux")
 	require.NoError(t, err)
 	d.Commands = cmds
 	srv, _ := serverOf(NewService(d))

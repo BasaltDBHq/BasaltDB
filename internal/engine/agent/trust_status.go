@@ -141,6 +141,10 @@ func pinFingerprints(p *trustprofile.Profile) string {
 	return strings.Join(fps, ", ")
 }
 
+// trustInitText is the text of the agent's basalt init step for a
+// certificate the person checks and trusts on the setup page.
+const trustInitText = "Run this once and show the person the link it prints: the setup page shows the database's certificate, and they decide."
+
 // addPinMismatch is TRUST_PIN_MISMATCH when the ledger records, for the
 // pinned host and port, another certificate than the engine's pin. No
 // record is no problem: only basalt init records one.
@@ -160,19 +164,19 @@ func (s statusDeps) addPinMismatch(ctx context.Context, ps *problems, rep TrustR
 	host := rep.Applied.Host
 	ps.add(problemTrustPinMismatch, fmt.Sprintf("the engine pins %s to %s, but the ledger records SHA-256 %s for it", host, pinFingerprints(p), sha),
 		func(b *Steps) string {
-			b.RunCommand(s.cmds.TrustList(), "Compare the engine's pin with the one the ledger records, and with your provider's console.")
+			b.AgentRunCommand(s.cmds.Init(), "When the person accepted a rotation, run this and show them the link it prints, where they record the engine's pin.")
 			return fmt.Sprintf("The engine trusts the certificate authority with SHA-256 %s for your database %s, but the pin recorded in the "+
-				"ledger is SHA-256 %s. Check both in your provider's console; after a rotation you accepted, run basalt init again "+
-				"to record the engine's pin. To see it: %s", pinFingerprints(p), host, sha, s.cmds.TrustList())
+				"ledger is SHA-256 %s. Check both in your provider's console; after a rotation you accepted, the agent gives you a link "+
+				"to record the engine's pin.", pinFingerprints(p), host, sha)
 		})
 }
 
 func (s statusDeps) addTrustRefused(ps *problems, r trustprofile.Refused) {
 	ps.add(problemTrustProfileRefused, "the trust profile file "+r.File+" is refused: "+r.Reason,
 		func(b *Steps) string {
-			b.RunCommand(s.cmds.TrustList(), "See why the file is refused, then fix it or remove it with basalt trust remove.")
+			b.TellAgent("Fix or remove the file on the engine's machine, then tell the agent.")
 			return "Basalt refused the trust profile file " + r.File + ": " + r.Reason + ". It does not apply, and a built-in profile of the same " +
-				"name stays off until it is fixed; the other files still apply. To see it, run: " + s.cmds.TrustList()
+				"name stays off until it is fixed; the other files still apply. Fix or remove the file, then tell the agent."
 		})
 }
 
@@ -196,16 +200,16 @@ func (s statusDeps) addTrustExpiring(ps *problems, a trustprofile.Applied, sorte
 	if len(soon) > 1 {
 		what = fmt.Sprintf("%d roots, the first %s (SHA-256 %s),", len(soon), first.Subject, trustprofile.Fingerprint(first))
 	}
-	fix := "Add the provider's new root with basalt trust add, or name it with sslrootcert in the agent's connection string."
+	fix := "Add the provider's new root on the setup page the agent gives you a link to, or name it with sslrootcert in the agent's connection string."
 	if a.Profile.Origin == trustprofile.BuiltIn {
-		fix = "Update basalt for the provider's new roots, or add them with basalt trust add."
+		fix = "Update basalt for the provider's new roots, or add them on the setup page the agent gives you a link to."
 	}
 	ps.add(problemTrustRootExpiring, fmt.Sprintf("the trust profile %s verifying %s holds %s that %s", a.Profile.Name, a.Host, what, when),
 		func(b *Steps) string {
-			b.RunCommand(s.cmds.TrustList(), "Check the profile's roots. "+fix)
+			b.AgentRunCommand(s.cmds.Init(), "When the person wants to add the new root, run this and show them the link it prints, where they add it.")
 			return fmt.Sprintf("The certificate authority that verifies your database %s %s (trust profile %s). "+
-				"Once no root of it is valid, the agent cannot connect. %s To see the roots, run: %s",
-				a.Host, when, a.Profile.Name, fix, s.cmds.TrustList())
+				"Once no root of it is valid, the agent cannot connect. %s",
+				a.Host, when, a.Profile.Name, fix)
 		})
 }
 
@@ -235,29 +239,28 @@ func (s statusDeps) addCertificateNotVerified(ctx context.Context, ps *problems,
 		}
 		ps.add(problemCertificateNotVerified, msg,
 			func(b *Steps) string {
-				b.RunCommand(s.cmds.TrustList(), "See what verifies the database's certificate, then fix the root its connection string names.")
+				b.AgentRunCommand(s.cmds.Init(), trustInitText)
 				b.TellAgent("Tell the agent when it is done.")
-				return "The certificate of your database " + host + " does not verify: " + why + ". To see what verifies it, run: " +
-					s.cmds.TrustList() + "\nThen tell the agent."
+				return "The certificate of your database " + host + " does not verify: " + why + ", or check the certificate on the setup " +
+					"page the agent gives you a link to. Then tell the agent."
 			})
 		return
 	case trustprofile.AppliesProfile, trustprofile.AppliesSystem:
 	}
-	add := s.cmds.TrustAdd(host)
 	ps.add(problemCertificateNotVerified, msg,
 		func(b *Steps) string {
-			b.RunCommand(add, "Save your database provider's CA certificate as "+strings.TrimPrefix(TrustCAFile, "./")+
-				", then run this on the engine's machine (or name the CA with sslrootcert in the agent's connection string).")
+			b.AgentRunCommand(s.cmds.Init(), trustInitText)
 			b.TellAgent("Tell the agent when it is done.")
 			return "The certificate of your database " + host + " does not verify against the system's authorities or any trust profile. " +
-				"Get its CA certificate from your provider, save it as " + strings.TrimPrefix(TrustCAFile, "./") +
-				", and on the engine's machine run: " + add + "\nOr name the CA with sslrootcert in the agent's connection string. Then tell the agent."
+				"The agent gives you a link: the setup page shows the certificate the database presents, and you check it against your " +
+				"provider's console and trust it there. Or name the CA with sslrootcert in the agent's connection string. Then tell the agent."
 		})
 }
 
 // addRootChanged is TRUST_ROOT_CHANGED when the agent's database is pinned
 // and the chain top it presents now is not the pinned one: refused, naming
-// both, with basalt trust pin to accept the new one. Never automatic.
+// both; the person accepts the new one on the setup page basalt init links
+// to. Never automatic.
 func (s statusDeps) addRootChanged(ctx context.Context, ps *problems, rep *TrustReport) bool {
 	p := pinned(rep)
 	if p == nil || rep.Presented == nil {
@@ -268,16 +271,15 @@ func (s statusDeps) addRootChanged(ctx context.Context, ps *problems, rep *Trust
 		return false
 	}
 	host := rep.Applied.Host
-	cmd := s.cmds.TrustPin(host, rep.Port)
 	ps.add(problemTrustRootChanged, fmt.Sprintf("%s presents the certificate authority SHA-256 %s, but it is pinned to %s, so the agent cannot connect",
 		host, trustprofile.Fingerprint(top), pinFingerprints(p)),
 		func(b *Steps) string {
-			b.RunCommand(cmd, "Check the new certificate against your database provider's console, then accept it on the engine's machine.")
+			b.AgentRunCommand(s.cmds.Init(), trustInitText)
 			b.TellAgent("Tell the agent when it is done.")
 			return fmt.Sprintf("Your database %s presents another certificate authority than the pinned one.\nPinned: %s\nNow: %s\n"+
 				"A provider's CA rotation, or someone between the engine and the database. Check it in your provider's console; "+
-				"to accept it, on the engine's machine run: %s",
-				host, pinFingerprints(p), trustprofile.Fingerprint(top), cmd)
+				"to accept it, open the link the agent gives you and pin it on the setup page.",
+				host, pinFingerprints(p), trustprofile.Fingerprint(top))
 		})
 	return true
 }

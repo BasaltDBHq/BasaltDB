@@ -186,8 +186,8 @@ func TestRootCLIRefusesACredentialOwnedByAnotherUser(t *testing.T) {
 	require.Equal(t, rootCredURL, got)
 }
 
-// As root, the config reads behind log's dictionary line, access's commands
-// and the pages links go through the hardened read: a FIFO swapped in for
+// As root, the config reads behind log's dictionary line and the pages
+// links go through the hardened read: a FIFO swapped in for
 // the config does not hang them, and a link is not followed.
 func TestRootCLIConfigReadsDoNotFollowLinksOrBlockOnAFIFO(t *testing.T) {
 	t.Parallel()
@@ -205,7 +205,6 @@ func TestRootCLIConfigReadsDoNotFollowLinksOrBlockOnAFIFO(t *testing.T) {
 	// of blocking it; their results are checked back here.
 	type result struct {
 		path, base, local string
-		known             bool
 		dictNil           bool
 	}
 	results := make(chan []result, 1)
@@ -213,10 +212,9 @@ func TestRootCLIConfigReadsDoNotFollowLinksOrBlockOnAFIFO(t *testing.T) {
 		paths := []string{fifo, link}
 		out := make([]result, 0, len(paths))
 		for _, path := range paths {
-			_, known := accessCommands(f.c, "bot", path)
 			out = append(out, result{
 				path: path, base: configuredBase(f.c, "", "bot", path), local: localPages(f.c, "", "bot", path),
-				known: known, dictNil: statusDictionary(f.c, path) == nil,
+				dictNil: statusDictionary(f.c, path) == nil,
 			})
 		}
 		results <- out
@@ -226,7 +224,6 @@ func TestRootCLIConfigReadsDoNotFollowLinksOrBlockOnAFIFO(t *testing.T) {
 		for _, r := range got {
 			require.Equal(t, links.DefaultLocal, r.base, r.path)
 			require.Empty(t, r.local, r.path)
-			require.False(t, r.known, r.path)
 			require.True(t, r.dictNil, r.path)
 		}
 	case <-time.After(10 * time.Second):

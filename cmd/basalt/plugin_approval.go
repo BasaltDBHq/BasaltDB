@@ -217,14 +217,7 @@ func holdsPluginApprovals(st guard.Status) bool {
 
 // commandsFor are the commands of agent on this engine.
 func (e *pluginEnv) commandsFor(agentName string) (agent.Commands, error) {
-	var initArgs []string
-	if a, ok := agentOf(e.cfg, agentName); ok {
-		initArgs = a.InitArgs
-	}
-	cmds, err := agent.NewCommands(agentName, e.configPath, e.c.goos, initArgs)
-	if err != nil {
-		cmds, err = agent.NewCommands(agentName, e.configPath, e.c.goos, nil)
-	}
+	cmds, err := agent.NewCommands(agentName, e.configPath, e.c.goos)
 	if err != nil {
 		return agent.Commands{}, err
 	}
@@ -270,16 +263,13 @@ func (e *pluginEnv) guardOutdated(agentName string) error {
 			"which holds plugin approvals. Nothing was written", agentName, guard.PluginApprovalsVersion),
 	}
 	b := agent.NewSteps()
-	if cmds.AgentOperated() {
-		b.AgentRunCommand(cmds.InitRemote(""), "Run this once to make a setup code, then show the person its personMessage and follow its nextSteps.")
-		r.person = "Basalt's guard in this database is older than plugin approvals need. The agent gives you a setup code: run the " +
-			"basalt init --setup-code command it shows on your own computer, then tell the agent."
-	} else {
-		b.RunCommand(cmds.Upgrade(), "Upgrade the guard in the agent's database; it asks for the admin connection string.").
-			TellAgent("Tell the agent once the guard is upgraded.").
-			Stop("Stop until the person says the guard is upgraded, then run the refused command again.")
-		r.person = "Basalt's guard in the agent's database is older than plugin approvals need. Upgrade it in a terminal of your own:\n  " + cmds.Upgrade()
+	b.AgentRunCommand(cmds.Init(), guardUpdateText)
+	if !cmds.AgentOperated() {
+		b.TellAgent("Tell the agent once the guard is updated.").
+			Stop("Stop until the person says the guard is updated, then run the refused command again.")
 	}
+	r.person = "Basalt's guard in the agent's database is older than plugin approvals need. The agent gives you a link to update it: " +
+		"open it, follow the page, then tell the agent."
 	steps, err := b.Build()
 	if err != nil {
 		return err
@@ -287,6 +277,10 @@ func (e *pluginEnv) guardOutdated(agentName string) error {
 	r.steps = steps
 	return r
 }
+
+// guardUpdateText is the text of the agent's basalt init step for a guard
+// older than plugin approvals need.
+const guardUpdateText = "Run this once and show the person the link it prints, where they update the guard in the agent's database."
 
 // approvalResult is basalt plugin add and enable --json when the command
 // opened plugin approvals (api/plugin/approval/result.schema.json).
@@ -515,11 +509,7 @@ func (e *pluginEnv) approvalOutcome(k plugin.EntryKey, version string, items []o
 		if err != nil {
 			return approvalResult{}, err
 		}
-		if gc.AgentOperated() {
-			steps.AgentRunCommand(gc.InitRemote(""), "Nobody can approve yet: run this once to make a setup code that registers a passkey, then follow what it prints.")
-		} else {
-			steps.RunCommand(gc.Init("--add-passkey"), "Register a passkey first: approvals are signed with one.")
-		}
+		steps.AgentRunCommand(gc.Init(), "Nobody can approve yet: run this once and show the person the link it prints, where they register a passkey.")
 	}
 	if opened > 0 {
 		lead := fmt.Sprintf("%s asks you to approve the plugin %s %s.", requester, k.Name, visibleText(version))
@@ -543,7 +533,7 @@ func (e *pluginEnv) approvalOutcome(k plugin.EntryKey, version string, items []o
 		var ids []uuid.UUID
 		for _, o := range items {
 			if o.refused == nil {
-				steps.OpenLink(o.url, "", "Open the link, read what the plugin may do and approve it with your passkey.")
+				steps.OpenLink(o.url, "Open the link, read what the plugin may do and approve it with your passkey.")
 				ids = append(ids, o.opened.ID)
 			}
 		}
@@ -618,12 +608,10 @@ func (e *pluginEnv) refusedSteps(b *agent.Steps, cmds agent.Commands, items []op
 			b.Stop("Stop: 8 plugin approvals already wait in that database.")
 			b.AskPerson("Ask the person to sign the waiting plugin approvals or let them expire, 24 hours after each was opened; then run basalt plugin enable with --approve-with-passkey.")
 		case reasonGuardOutdated:
-			if cmds.AgentOperated() {
-				b.AgentRunCommand(cmds.InitRemote(""), "Run this once to make a setup code, then show the person its personMessage and follow its nextSteps.")
-			} else {
-				b.RunCommand(cmds.Upgrade(), "Upgrade the guard in the agent's database; it asks for the admin connection string.")
-				b.TellAgent("Tell the agent once the guard is upgraded.")
-				b.Stop("Stop until the person says the guard is upgraded, then run basalt plugin enable with --approve-with-passkey.")
+			b.AgentRunCommand(cmds.Init(), guardUpdateText)
+			if !cmds.AgentOperated() {
+				b.TellAgent("Tell the agent once the guard is updated.")
+				b.Stop("Stop until the person says the guard is updated, then run basalt plugin enable with --approve-with-passkey.")
 			}
 		case reasonUnknownAgent:
 			b.MachineCommand(cmds, enable, "Once the entry names only agents of that database's guard, run this to open the missing approval.",

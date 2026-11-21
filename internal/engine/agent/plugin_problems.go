@@ -93,8 +93,8 @@ func (c Commands) PluginRemove(name, instance string) string {
 // is wrong with it when it cannot.
 func (c Commands) PluginList() string {
 	parts := []string{cmdBasalt, "plugin", "list"}
-	if c.configFlag != "" {
-		parts = append(parts, c.configFlag)
+	if flag := c.configFlag(); flag != "" {
+		parts = append(parts, flag)
 	}
 	return strings.Join(parts, " ")
 }
@@ -105,8 +105,8 @@ func (c Commands) plugin(sub, name, instance string, flags ...string) string {
 		parts = append(parts, pluginInstanceFlag, instance)
 	}
 	parts = append(parts, flags...)
-	if c.configFlag != "" {
-		parts = append(parts, c.configFlag)
+	if flag := c.configFlag(); flag != "" {
+		parts = append(parts, flag)
 	}
 	return strings.Join(parts, " ")
 }
@@ -151,7 +151,7 @@ func pluginApprovalSteps(b *Steps, cmds Commands, p PluginProblem) string {
 	var lead, person string
 	switch p.Code {
 	case ProblemPluginAwaitingApproval:
-		b.OpenGivenLink("", "Open the plugin approval link the agent gave you, check what the page shows and approve it with your passkey.")
+		b.OpenGivenLink("Open the plugin approval link the agent gave you, check what the page shows and approve it with your passkey.")
 		b.MachineCommand(cmds, approve,
 			"When that link is lost or expired, or none was given, run this: it opens a new approval and prints its link.",
 			"When the person no longer has a pending link, run this: it opens a new approval; hand its link to the person.")

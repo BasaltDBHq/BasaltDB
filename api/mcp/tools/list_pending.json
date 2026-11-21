@@ -71,8 +71,7 @@
                 "status",
                 "createdAt",
                 "expiresAt",
-                "approvalUrl",
-                "approveCommand"
+                "approvalUrl"
               ],
               "properties": {
                 "kind": {
@@ -136,10 +135,6 @@
                 "requestFile": {
                   "$ref": "../links/request-file.schema.json",
                   "description": "Only with a hash link in approvalUrl: the request to send the person as a file or text blocks (CONTRACT.md, The request file and pasted blocks)."
-                },
-                "approveCommand": {
-                  "type": "string",
-                  "description": "basalt approve --agent <name> [--config <path>] --open <approvalId>: the person runs it in their terminal and it opens the approval page in their browser."
                 },
                 "headline": {
                   "type": "string",

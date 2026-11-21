@@ -126,7 +126,7 @@ func TestHeldWriteStepsCarryTheLinkAndTheRepeat(t *testing.T) {
 	steps := requireCatalogSteps(t, body, isError, "write", "APPROVAL_REQUIRED", "HELD")
 	approval := approvalOf(t, body)
 	require.Equal(t, approval["approvalUrl"], steps[0]["url"])
-	require.Equal(t, approval["approveCommand"], steps[0]["command"])
+	require.Nil(t, steps[0]["command"], "the step is the link alone")
 	require.Equal(t, true, steps[1]["repeatCall"])
 	require.Equal(t, map[string]any{"approvalId": approval["approvalId"]}, stepArgs(t, steps[1]))
 	require.Equal(t, approval["personMessage"], body["personMessage"])
@@ -138,7 +138,7 @@ func TestHeldWriteStepsCarryTheLinkAndTheRepeat(t *testing.T) {
 	again["approvalId"] = approval["approvalId"]
 	body, isError = env.h.call(t, "write", again)
 	steps = requireCatalogSteps(t, body, isError, "write", "APPROVAL_INVALID", "NOT_SIGNED")
-	require.Equal(t, approval["approvalId"], str(t, steps[0]["command"])[len(str(t, steps[0]["command"]))-len(str(t, approval["approvalId"])):])
+	require.Nil(t, steps[0]["command"], "the person opens the link they were given, no command")
 }
 
 // The redo (AE-14): the person reverted the agent's run; preview_revert says

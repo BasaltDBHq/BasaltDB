@@ -62,11 +62,11 @@ const Instructions = "BasaltDB records every action you take on this database. "
 	"Call status at the start of a session, after the person says they fixed something, and when a call fails with UNAVAILABLE. " +
 	"Start a run with run_start and an intent, read with query, and change data with write and an intent. " +
 	"Every error and every result that needs action carries nextSteps: do them in order. Do the AGENT steps yourself; CALL_TOOL steps have their arguments filled in. " +
-	"Show the person personMessage verbatim, and every PERSON step's command and link unchanged. " +
+	"Show the person personMessage verbatim, and every PERSON step's link unchanged. " +
 	"STOP means do not retry or work around it; END_TURN means end your turn and let the person act. " +
 	"When status says operatedBy PERSON, never start, stop, restart or upgrade anything yourself. " +
 	"Never split a write to avoid a hold, and never retry a refusal in a loop. " +
-	"A write of 11 to 50 rows, or any DELETE, is held for the person's passkey approval: show them approval.personMessage verbatim (it has the approval link and the equivalent basalt command), then, in the same turn, repeat the write once with approvalId: it waits for their approval and applies it. " +
+	"A write of 11 to 50 rows, or any DELETE, is held for the person's passkey approval: show them approval.personMessage verbatim (it has the approval link), then, in the same turn, repeat the write once with approvalId: it waits for their approval and applies it. " +
 	"If that wait runs out (APPROVAL_REQUIRED again), do not wait again: end your turn and say you apply it once they tell you they approved. " +
 	"Over 50 rows, DDL and functions outside the allowlist are refused. " +
 	"To undo your own work, find the run with list_runs, check it with preview_revert and query, tell the person what you recommend, then call request_revert: show its personMessage, then call request_revert once with revertId to wait for their passkey; if that wait runs out, do not wait again. " +
@@ -88,9 +88,9 @@ const updateInstructions = "When a result carries a WARNING: or SECURITY UPDATE:
 // adminInstructions is the sentence CONTRACT.md (Agents and the admin
 // credential, What the agent is told) puts in the initialize instructions,
 // unchanged: the admin credential never reaches the agent.
-const adminInstructions = "Never ask the person for, or accept, their database admin connection string or password, " +
-	"and never run basalt init without --remote yourself: to set up or change your access, follow nextSteps or run basalt init --remote " +
-	"and give the person the setup code it prints. If the person pastes an admin password, tell them to change it now."
+const adminInstructions = "Never ask the person for, or accept, their database admin connection string or password: " +
+	"to set up, repair or change your access, follow nextSteps or run basalt init, and show the person the one link it prints; " +
+	"they finish on that page. If the person pastes an admin password, tell them to change it now."
 
 // docsInstructions is the one sentence that points an agent to the public
 // docs (CONTRACT.md, What the agent is told). The .md form of each page is
@@ -674,7 +674,7 @@ func newAgentRuntime(ctx context.Context, env agentEnv, a config.Agent, log *slo
 	if err != nil {
 		return agentRuntime{}, err
 	}
-	cmds, err := agent.NewCommands(a.Name, env.configPath, runtime.GOOS, a.InitArgs)
+	cmds, err := agent.NewCommands(a.Name, env.configPath, runtime.GOOS)
 	if err != nil {
 		return agentRuntime{}, err
 	}
@@ -850,7 +850,7 @@ func logGuard(ctx context.Context, probe agent.Probe, log *slog.Logger) {
 		log.Error("the guard cannot serve this agent; only status works until it is installed or upgraded",
 			"guard", st.State, "installed", st.Installed, "build", st.Build, "missingBreaking", st.MissingBreaking)
 	case st.State == guard.GuardUpgradeAvailable:
-		log.Warn("the guard misses non-breaking migrations; basalt upgrade adds them", "missingNonBreaking", st.MissingNonBreaking)
+		log.Warn("the guard misses non-breaking migrations; the guard update basalt init links to adds them", "missingNonBreaking", st.MissingNonBreaking)
 	}
 }
 

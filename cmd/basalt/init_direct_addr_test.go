@@ -7,7 +7,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/basaltdbhq/basaltdb/internal/engine/agent"
 	"github.com/basaltdbhq/basaltdb/internal/engine/config"
 	"github.com/basaltdbhq/basaltdb/internal/guard/guardtest"
 	"github.com/basaltdbhq/basaltdb/internal/links"
@@ -65,10 +64,6 @@ func TestInitDirectAddrIsWrittenAndKept(t *testing.T) {
 	require.Equal(t, "127.0.0.1:8787", c.DirectAddr)
 	require.Equal(t, links.Portal, c.PagesURL)
 	require.Contains(t, c.Agents[0].InitArgs, "--direct-addr=127.0.0.1:8787")
-	cmds, err := agent.NewCommands("x1", cfgPath, "linux", c.Agents[0].InitArgs)
-	require.NoError(t, err, "the saved flag round-trips")
-	require.Contains(t, cmds.Init("--add-passkey"), "--direct-addr=127.0.0.1:8787")
-	require.NotContains(t, cmds.InitRemote("--new-code"), "direct-addr", "init --remote's saved flags leave it out")
 
 	// Without the flag the engine.json value stays.
 	r = cli(t, env, "", base...)

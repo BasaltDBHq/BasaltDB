@@ -665,15 +665,17 @@ func (f initFlags) savedArgs(goos string) []string {
 	return args
 }
 
-// commands are the agent's commands for what init saves. It refuses saved
-// arguments the engine would not accept (a connection URL, a password), so
-// init fails before it writes them.
+// commands are the agent's commands. It refuses saved arguments that carry
+// a connection URL or a password, so init fails before it writes them.
 func (f initFlags) commands(goos string) (agent.Commands, error) {
 	path, err := filepath.Abs(f.configPath)
 	if err != nil {
 		return agent.Commands{}, err
 	}
-	return agent.NewCommands(f.agent, path, goos, f.savedArgs(goos))
+	if err := refuseSecretInitArgs(f.savedArgs(goos)); err != nil {
+		return agent.Commands{}, err
+	}
+	return agent.NewCommands(f.agent, path, goos)
 }
 
 func fileExists(path string) bool {

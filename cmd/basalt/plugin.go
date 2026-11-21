@@ -293,7 +293,7 @@ func (e *pluginEnv) restartSo(why string) {
 	if len(e.cfg.Agents) == 0 {
 		return
 	}
-	cmds, err := agent.NewCommands(e.cfg.Agents[0].Name, e.configPath, e.c.goos, nil)
+	cmds, err := agent.NewCommands(e.cfg.Agents[0].Name, e.configPath, e.c.goos)
 	if err != nil {
 		return
 	}

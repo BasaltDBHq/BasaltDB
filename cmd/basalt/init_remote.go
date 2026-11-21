@@ -1304,7 +1304,7 @@ func (r *remoteInit) connectOnlyResult(res RemoteInitResult, s config.Setup) (Re
 			", and follow the page. The page asks for your database's connection string: paste it there only. The agent never needs it, so never paste it into this chat."
 	}
 	steps, err := agent.NewSteps().
-		OpenLink(open, "", agent.ConnectOnlyStepText).
+		OpenLink(open, agent.ConnectOnlyStepText).
 		EndTurn("End your turn: the person runs the setup on the connect page. The page waits until this engine has picked up the database's address.").
 		CallTool(toolStatus, map[string]any{}, "Call status to see whether the setup finished, or what the engine needs next.").
 		Build()
@@ -1324,7 +1324,7 @@ func setupCommand(code string) string { return "basalt init --setup-code " + cod
 func setupSteps(code, url string) ([]agent.NextStep, error) {
 	b := agent.NewSteps()
 	if url != "" {
-		b.OpenLink(url, "", agent.ConnectStepText)
+		b.OpenLink(url, agent.ConnectStepText)
 	}
 	return b.
 		RunCommand(setupCommand(code), "On your own computer, not the agent's machine: install basalt from the official release page, run this, and check it shows the same fingerprint.").

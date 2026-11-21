@@ -195,15 +195,14 @@ func (s *Service) pluginRelayError(ctx context.Context, id uuid.UUID, err error)
 	te := ToolError(err)
 	if te.Reason == reasonPasskeyRevoked {
 		steps, stepErr := NewSteps().
-			RunCommand(s.Commands.PasskeyList(), "See which passkeys this database accepts.").
-			RunCommand(s.Commands.Init("--add-passkey"), "Register your passkey with this command: it adds the one you use and changes nothing else.").
+			TellAgent(askAgentForRegisterLinkText).
 			Build()
 		if stepErr != nil {
 			return errors.Join(err, stepErr)
 		}
 		return pluginPageError(CodeApprovalInvalid, reasonPasskeyRevoked, msg,
 			"The plugin approval was signed with a passkey this database does not accept (unknown or revoked), so nothing was "+
-				"approved. Check your passkeys, register one if needed, then try again on this page.", steps)
+				"approved. Ask the agent for a link to register the passkey you use, then try again on this page.", steps)
 	}
 	return pluginPageError(CodeApprovalInvalid, reasonBadSignature, msg,
 		"The plugin approval code did not verify, so nothing was approved. Approve again on this page.", nil)

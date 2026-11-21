@@ -113,12 +113,10 @@ func TestStatusEscapesControlCharacters(t *testing.T) {
 
 func TestAccessEscapesControlCharacters(t *testing.T) {
 	t.Parallel()
-	cmds, err := agent.NewCommands("bot", "", "linux", []string{"--write=public.leads"})
-	require.NoError(t, err)
 	var out strings.Builder
 	printAccess(&out, pgcatalog.Access{
 		Read: []string{"public.r" + evil}, Write: []string{"other.w" + evil}, NotGranted: []string{"public.n" + evil},
-	}, cmds, true)
+	})
 	requireTerminalSafe(t, out.String())
 }
 

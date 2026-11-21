@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/basaltdbhq/basaltdb/internal/guard"
+	"github.com/basaltdbhq/basaltdb/internal/mcp"
 )
 
 type fakePortal struct {
@@ -25,7 +26,7 @@ func portalStatus(t *testing.T, operatedBy string, p PortalReporter) StatusRepor
 	d.Probe = &fakeProbe{st: guardAt(guard.GuardOK, nil, nil)}
 	setApprovals(&d, keys{n: 1})
 	d.Now = func() time.Time { return statusNow }
-	cmds, err := NewCommands("bot", "", "linux", nil)
+	cmds, err := NewCommands("bot", "", "linux")
 	require.NoError(t, err)
 	d.Commands = cmds
 	r, err := NewService(d).Status(context.Background())
@@ -41,7 +42,7 @@ func portalCodes(r StatusReport) []string {
 	return out
 }
 
-func TestAMismatchingPortalIsAWarningWithTheVerifyCommand(t *testing.T) {
+func TestAMismatchingPortalIsAWarningToSignNothingThere(t *testing.T) {
 	t.Parallel()
 	r := portalStatus(t, "", fakePortal{ok: true, f: PortalFinding{CheckedAt: statusNow, Mismatch: true, Summary: "2 DIFFERS, 1 MISSING"}})
 	require.Equal(t, []string{problemPortalMismatch}, portalCodes(r))
@@ -50,7 +51,9 @@ func TestAMismatchingPortalIsAWarningWithTheVerifyCommand(t *testing.T) {
 	require.True(t, r.Ready, "a warning does not stop the tools")
 	require.Contains(t, p.Message, "2 DIFFERS, 1 MISSING")
 	require.Len(t, p.NextSteps, 1)
-	require.Equal(t, "basalt portal verify", p.NextSteps[0].Command)
+	require.Equal(t, mcp.ActionAskPerson, p.NextSteps[0].Action)
+	require.Empty(t, p.NextSteps[0].Command)
+	require.Contains(t, p.PersonMessage, "Do not sign anything on it")
 }
 
 func TestNoPortalProblemWithoutAMismatch(t *testing.T) {

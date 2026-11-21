@@ -255,7 +255,7 @@ func TestInitRemoteFirstRunMakesAnInstallCode(t *testing.T) {
 		ExpiresAt: p.ExpiresAt, Code: r.res.Code, Fingerprint: r.res.Fingerprint,
 	}, a.Setup)
 	require.Contains(t, a.InitArgs, "--operated-by=agent")
-	_, err = agent.NewCommands(a.Name, cfg, "linux", a.InitArgs)
+	_, err = agent.NewCommands(a.Name, cfg, "linux")
 	require.NoError(t, err, "the saved flags are ones the engine accepts")
 	pages, err := r.cfg.Pages()
 	require.NoError(t, err)

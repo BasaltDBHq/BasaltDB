@@ -172,7 +172,7 @@ func agentHarnessLimits(t *testing.T, d *guardtest.DB, a *guardtest.Agent, keys 
 	require.NoError(t, err)
 	require.NoError(t, guard.RegisterPasskey(context.Background(), d.Admin, person.Credential(), "app"))
 
-	cmds, err := agent.NewCommands("bot", "/etc/basalt-test/engine.json", "linux", nil)
+	cmds, err := agent.NewCommands("bot", "/etc/basalt-test/engine.json", "linux")
 	require.NoError(t, err)
 	sent := &notices{}
 	var watched *finds
@@ -232,15 +232,14 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 	link := str(t, ap["approvalUrl"])
 	require.True(t, strings.HasPrefix(link, links.DefaultLocal+"/approvals/"+str(t, ap["approvalId"])+"#2."), link)
 	approvalID := str(t, ap["approvalId"])
-	command := "basalt approve --agent bot --config /etc/basalt-test/engine.json --open " + approvalID
-	require.Equal(t, command, ap["approveCommand"])
+	require.NotContains(t, ap, "approveCommand", "the person acts on the link, never a command")
 	require.Contains(t, str(t, body["message"]), "Show the person approval.personMessage verbatim")
 	require.Contains(t, str(t, body["message"]), "without ending your turn, call write once with the same arguments plus approvalId")
 	require.Contains(t, str(t, body["message"]), "do not wait again")
 	require.Equal(t, "Update 15 rows in public.leads", ap["headline"])
 	require.True(t, strings.HasPrefix(str(t, ap["personMessage"]),
 		"Held for your approval: Update 15 rows in public·leads.\nApprove it with your passkey here; the page then shows a code for the agent:\n\n"+
-			link+"\n\nOr run: "+command+"\nExpires "),
+			link+"\n\nExpires "),
 		"without local pages and within the budget the message carries the long link: %v", ap["personMessage"])
 	mcptest.Require(t, str(t, ap["personMessage"]), mcptest.LinksOf(t, ap))
 	require.Equal(t, []mcp.Link{{Label: "Approve the held write", URL: link}}, mcptest.LinksOf(t, ap))
@@ -257,14 +256,14 @@ func TestHeldWriteApprovedWithPasskey(t *testing.T) {
 	require.Equal(t, approvalID, list[0]["approvalId"])
 	require.Equal(t, "PENDING", list[0]["status"])
 	require.Equal(t, link, list[0]["approvalUrl"])
-	require.Equal(t, command, list[0]["approveCommand"])
+	require.NotContains(t, list[0], "approveCommand")
 	require.Equal(t, ap["personMessage"], list[0]["personMessage"], "list_pending gives the link back")
 	require.Equal(t, ap["links"], list[0]["links"])
 	mcptest.Require(t, str(t, list[0]["personMessage"]), mcptest.LinksOf(t, list[0]))
 	require.Equal(t, ap["headline"], list[0]["headline"])
 	pendingSteps := requireToolSteps(t, list[0], "list_pending", "PENDING")
 	require.Equal(t, link, pendingSteps[0]["url"])
-	require.Equal(t, command, pendingSteps[0]["command"])
+	require.Nil(t, pendingSteps[0]["command"], "the step is the link alone")
 	require.Equal(t, []any{"status"}, list[0]["assignedColumns"])
 
 	withApproval := func(extra map[string]any) map[string]any {

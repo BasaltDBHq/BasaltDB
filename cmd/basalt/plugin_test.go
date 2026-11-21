@@ -226,8 +226,8 @@ func refusal(t *testing.T, r result, reason string) mcp.ToolError {
 	require.True(t, ok)
 	steps := want.Steps
 	// On an agent-operated engine a variant may replace the steps.
-	if v, ok := catalog.AgentOperatedEntry("ERROR", body.Code, body.Reason, ""); ok && len(body.NextSteps) > 0 &&
-		body.NextSteps[0].Actor == mcp.ActorAgent && steps[0].Actor != mcp.ActorAgent {
+	if v, ok := catalog.AgentOperatedEntry("ERROR", body.Code, body.Reason, ""); ok && len(body.NextSteps) == len(v.Steps) &&
+		body.NextSteps[0].Actor == v.Steps[0].Actor && body.NextSteps[0].Action == v.Steps[0].Action {
 		steps = v.Steps
 	}
 	require.Len(t, body.NextSteps, len(steps))

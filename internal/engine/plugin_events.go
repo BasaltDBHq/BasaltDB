@@ -40,7 +40,7 @@ const pluginEventTimeout = 15 * time.Second
 // what to do; the engine writes the record at its next start.
 const (
 	whyNoPluginEvents = "this agent's guard is older than schema version 3, so its plugin record could not be written; " +
-		"run basalt upgrade for this agent, then restart the engine"
+		"update it through the link basalt init prints for this agent, then restart the engine"
 	whyNoGuard = "this agent's database has no guard, so its plugin record could not be written; " +
 		"install the guard, then restart the engine"
 	whyNotAdmitted = "this agent is served status only until its guard or setup is ready, so its plugin record was not written; " +

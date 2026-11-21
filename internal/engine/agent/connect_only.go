@@ -79,9 +79,9 @@ func connectOnlySteps(b *Steps, code, fingerprint string, budget int) (string, [
 	url := ConnectLink(code, budget)
 	lead := "This agent's setup has not run yet, or its database's address did not reach the agent."
 	if url == "" {
-		b.OpenGivenLink("", "Open "+connectPortal+" on your own computer or phone, paste the setup code the agent gave you, and paste your database's connection string on that page only.")
+		b.OpenGivenLink("Open " + connectPortal + " on your own computer or phone, paste the setup code the agent gave you, and paste your database's connection string on that page only.")
 	} else {
-		b.OpenLink(url, "", ConnectOnlyStepText)
+		b.OpenLink(url, ConnectOnlyStepText)
 	}
 	b.EndTurn("End your turn: the person acts on the connect page next.")
 	b.CallTool(toolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
@@ -115,8 +115,7 @@ func databaseArg(db handoff.Address) map[string]any {
 
 // databaseRefusedSteps: a recovery code, made on the engine's machine.
 func databaseRefusedSteps(b *Steps, cmds Commands) string {
-	b.MachineCommand(cmds, cmds.InitRemote(""), "Make a new setup code on the agent's machine with this, then follow the steps it prints.",
-		"Run this once to make a new setup code, then show the person its personMessage and follow its nextSteps.")
+	b.AgentRunCommand(cmds.Init(), "Run this once, then show the person the new link it prints and follow its steps.")
 	b.EndTurn("End your turn: the person opens the new link next.")
 	return "You said the database the setup reached is not yours, so the agent never logged in there and forgot its address and password. " +
 		"The agent gives you a new link to set it up again; paste your own database's connection string there."
@@ -126,8 +125,7 @@ func databaseRefusedSteps(b *Steps, cmds Commands) string {
 // recovery code with --forget.
 func addressInvalidSteps(b *Steps, cmds Commands) string {
 	b.AskPerson("Tell the person the database address the connect page handed over was refused, so you did not use it.")
-	b.MachineCommand(cmds, cmds.InitRemote("--forget"), "Make a new setup code on the agent's machine with this, then follow the steps it prints.",
-		"Run this once to make a new setup code, then show the person its personMessage and follow its nextSteps.")
+	b.AgentRunCommand(cmds.Init(), "Run this once, then show the person the new link it prints and follow its steps.")
 	b.EndTurn("End your turn: the person opens the new link next.")
 	return "The database address the connect page handed over was refused, so the agent did not use it. The agent gives you a new link: " +
 		"paste your database's connection string there again."
@@ -141,8 +139,7 @@ func setupNotFoundSteps(b *Steps, cmds Commands, database string) string {
 		where = database
 	}
 	b.AskPerson("Tell the person " + shown(where, maxTableChars) + " does not record this agent's setup, and that you make a new setup code.")
-	b.MachineCommand(cmds, cmds.InitRemote("--new-code"), "Make a new setup code on the agent's machine with this, then follow the steps it prints.",
-		"Run this once to make a new setup code, then show the person its personMessage and follow its nextSteps.")
+	b.AgentRunCommand(cmds.Init(), "Run this once, then show the person the new link it prints and follow its steps.")
 	b.EndTurn("End your turn: the person opens the new link next.")
 	return "The database you confirmed, " + shown(where, maxTableChars) + ", does not record this agent's setup. The agent gives you a new link to run the setup there."
 }
@@ -173,9 +170,9 @@ func unreachableFromBotSteps(b *Steps, code string, budget int, db handoff.Addre
 	}
 	text := "Open the same link again and approve once more with a connection string the agent's machine can reach, or open the database's firewall to it."
 	if url == "" {
-		b.OpenGivenLink("", text)
+		b.OpenGivenLink(text)
 	} else {
-		b.OpenLink(url, "", text)
+		b.OpenLink(url, text)
 	}
 	b.EndTurn("End your turn: the person acts next.")
 	b.CallTool(toolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")
@@ -190,9 +187,9 @@ func trustRootMismatchSteps(b *Steps, code string, budget int, db handoff.Addres
 	url := ConnectLink(code, budget)
 	text := "Open the same link again: the page reads the database's certificate again. Check it against your provider's console before you trust it."
 	if url == "" {
-		b.OpenGivenLink("", text)
+		b.OpenGivenLink(text)
 	} else {
-		b.OpenLink(url, "", text)
+		b.OpenLink(url, text)
 	}
 	b.EndTurn("End your turn: the person acts next.")
 	b.CallTool(toolStatus, map[string]any{}, "When the person says it is done, check that the agent is ready.")

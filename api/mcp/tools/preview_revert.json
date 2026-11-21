@@ -63,7 +63,6 @@
       "scopeId",
       "rows",
       "skipped",
-      "command",
       "items"
     ],
     "properties": {
@@ -92,10 +91,6 @@
         "type": "integer",
         "minimum": 0,
         "description": "SKIP lines in the whole preview."
-      },
-      "command": {
-        "type": "string",
-        "description": "The command the person runs to revert, e.g. basalt revert --run <runId>. The CLI takes no runs or tables filter: with them, it opens the page on all of your work in the scope."
       },
       "items": {
         "type": "array",

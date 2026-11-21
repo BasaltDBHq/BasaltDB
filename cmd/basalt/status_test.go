@@ -62,7 +62,7 @@ func TestStatusShowsAnOutdatedGuardAndTheUpgradeCommand(t *testing.T) {
 	breaking := latestBreaking(t)
 	older := breaking - 1
 	g := newOlderGuard(t, older)
-	upgrade := "basalt upgrade --agent bot --config " + g.configPath
+	upgrade := "basalt init --agent bot"
 
 	r := g.status(t, "--json")
 	require.Equal(t, exitOK, r.code, r.stderr)
@@ -185,7 +185,7 @@ func serviceCmd(t *testing.T, cmd func(*cliIO, []string) int, socket string, env
 
 func outdatedReport(t *testing.T, g olderGuard) agent.StatusReport {
 	t.Helper()
-	cmds, err := agent.NewCommands("bot", "", "", nil)
+	cmds, err := agent.NewCommands("bot", "", "")
 	require.NoError(t, err)
 	r, err := agent.LocalStatus{
 		Name: "bot", Commands: cmds, EngineRunning: true,
@@ -229,7 +229,7 @@ func TestStatusAndUpgradeGoThroughThePersonSocketInServiceMode(t *testing.T) {
 
 		text := serviceCmd(t, runStatus, socket, nil, "--agent", "bot")
 		require.Contains(t, text.stdout, "Engine:       running (pid 77, OS user basalt)")
-		require.Contains(t, text.stdout, "Run: basalt upgrade --agent bot")
+		require.Contains(t, text.stdout, "Run: basalt init --agent bot")
 
 		// The engine's only agent is the one reported, and its database is
 		// named by host and name only.

@@ -489,13 +489,15 @@ func TestRefusedGuardOutdated(t *testing.T) {
 	restore()
 	before := e.snapshot()
 	body := refusal(t, e.run(agentEnv, "", "add", e.unsigned, "--agents", "product_a", "--json"), reasonGuardOutdated)
-	require.Contains(t, body.NextSteps[0].Command, "basalt upgrade")
+	require.Equal(t, mcp.ActorAgent, body.NextSteps[0].Actor, "the agent's basalt init links the guard update")
+	require.Equal(t, "basalt init --agent product_a", body.NextSteps[0].Command)
+	require.NotContains(t, body.PersonMessage, "basalt ", "the person runs no command")
 	require.Equal(t, before, e.snapshot())
 
 	e.writeConfig("AGENT")
 	body = refusal(t, e.run(nil, "", "add", e.unsigned, "--agents", "product_a", "--json"), reasonGuardOutdated)
-	require.Equal(t, mcp.ActorAgent, body.NextSteps[0].Actor, "the agent makes an UPGRADE setup code")
-	require.Contains(t, body.NextSteps[0].Command, "basalt init --remote")
+	require.Equal(t, mcp.ActorAgent, body.NextSteps[0].Actor, "the agent's basalt init makes the connect link")
+	require.Equal(t, "basalt init --agent product_a --remote", body.NextSteps[0].Command)
 }
 
 // TestPersonMessageCarriesThePageWarning: the level lines personMessage

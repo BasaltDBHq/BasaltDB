@@ -526,7 +526,7 @@ func (s *keptPlugins) checkDatabase(ctx context.Context, g *keptGroup) error {
 	if !holdsPluginApprovals(st) {
 		return person.Refused(reasonGuardOutdated, fmt.Sprintf(
 			"the guard in the database of agent %s is older than schema version %d, which holds plugin approvals; nothing was written. "+
-				"Upgrade it with basalt upgrade --agent %s", name, guard.PluginApprovalsVersion, name))
+				"Update it with the link basalt init prints for agent %s", name, guard.PluginApprovalsVersion, name))
 	}
 	if g.install, err = guard.InstallID(ctx, db); err != nil {
 		return unreachable(name, err)

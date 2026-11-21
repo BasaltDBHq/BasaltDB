@@ -445,6 +445,7 @@ func TestInstallWritesOwnedFilesAndRestartsAnInstalledService(t *testing.T) {
 		"mkdir -m 0700 -o basalt /etc/basalt/agents",
 		"systemctl daemon-reload",
 		"systemctl enable basalt-engine.service",
+		"systemctl reset-failed basalt-engine.service",
 		"systemctl restart basalt-engine.service",
 		"mkdir -m 0755 -o root /opt/basalt",
 		"mkdir -m 0755 -o root /opt/basalt/run",
